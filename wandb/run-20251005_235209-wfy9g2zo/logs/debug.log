@@ -1,0 +1,23 @@
+2025-10-05 23:52:09,406 INFO    MainThread:3487073 [wandb_setup.py:_flush():81] Current SDK version is 0.22.1
+2025-10-05 23:52:09,406 INFO    MainThread:3487073 [wandb_setup.py:_flush():81] Configure stats pid to 3487073
+2025-10-05 23:52:09,406 INFO    MainThread:3487073 [wandb_setup.py:_flush():81] Loading settings from /home/jackking/.config/wandb/settings
+2025-10-05 23:52:09,406 INFO    MainThread:3487073 [wandb_setup.py:_flush():81] Loading settings from /rdma/vast-rdma/vast/fiete/jackking/cls/wandb/settings
+2025-10-05 23:52:09,406 INFO    MainThread:3487073 [wandb_setup.py:_flush():81] Loading settings from environment variables
+2025-10-05 23:52:09,406 INFO    MainThread:3487073 [wandb_init.py:setup_run_log_directory():705] Logging user logs to /rdma/vast-rdma/vast/fiete/jackking/cls/wandb/run-20251005_235209-wfy9g2zo/logs/debug.log
+2025-10-05 23:52:09,406 INFO    MainThread:3487073 [wandb_init.py:setup_run_log_directory():706] Logging internal logs to /rdma/vast-rdma/vast/fiete/jackking/cls/wandb/run-20251005_235209-wfy9g2zo/logs/debug-internal.log
+2025-10-05 23:52:09,406 INFO    MainThread:3487073 [wandb_init.py:init():832] calling init triggers
+2025-10-05 23:52:09,406 INFO    MainThread:3487073 [wandb_init.py:init():837] wandb.init called with sweep_config: {}
+config: {'size': 10, 'speed': 1, 'seed': 0, 'num_envs': 32, 'num_val_envs': 4, 'input_size': 12, 'hidden_size': 128, 'num_rnn_layers': 1, 'batch_episodes': 1024, 'steps_per_episode': 20, 'n_epochs': 400, 'val_batch_episodes': 16, 'plot_every': 100, 'lr': 0.001, 'device': 'cuda', 'input_addendum': 'goal', 'input_type': 'g_idx', 'model_class': 'GRU', 'encoder_dim': 128, 'num_encoder_layers': 2, 'train_method': 'supervised', 'ppo_clip': 0.2, 'ppo_vf_coef': 0.5, 'ppo_ent_coef': 0.01, 'ppo_epochs': 4, 'max_envs_per_epoch': 8, '_wandb': {}}
+2025-10-05 23:52:09,406 INFO    MainThread:3487073 [wandb_init.py:init():880] starting backend
+2025-10-05 23:52:09,627 INFO    MainThread:3487073 [wandb_init.py:init():883] sending inform_init request
+2025-10-05 23:52:09,639 INFO    MainThread:3487073 [wandb_init.py:init():891] backend started and connected
+2025-10-05 23:52:09,640 INFO    MainThread:3487073 [wandb_init.py:init():961] updated telemetry
+2025-10-05 23:52:09,641 INFO    MainThread:3487073 [wandb_init.py:init():985] communicating run to backend with 90.0 second timeout
+2025-10-05 23:52:10,046 INFO    MainThread:3487073 [wandb_init.py:init():1036] starting run threads in backend
+2025-10-05 23:52:10,426 INFO    MainThread:3487073 [wandb_run.py:_console_start():2506] atexit reg
+2025-10-05 23:52:10,426 INFO    MainThread:3487073 [wandb_run.py:_redirect():2354] redirect: wrap_raw
+2025-10-05 23:52:10,426 INFO    MainThread:3487073 [wandb_run.py:_redirect():2423] Wrapping output streams.
+2025-10-05 23:52:10,426 INFO    MainThread:3487073 [wandb_run.py:_redirect():2446] Redirects installed.
+2025-10-05 23:52:10,437 INFO    MainThread:3487073 [wandb_init.py:init():1076] run started, returning control to user process
+2025-10-05 23:52:10,440 INFO    wandb-AsyncioManager-main:3487073 [service_client.py:_forward_responses():80] Reached EOF.
+2025-10-05 23:52:10,441 INFO    wandb-AsyncioManager-main:3487073 [mailbox.py:close():137] Closing mailbox, abandoning 2 handles.

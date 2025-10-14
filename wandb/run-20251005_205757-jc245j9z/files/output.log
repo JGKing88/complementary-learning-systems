@@ -1,0 +1,14 @@
+Traceback (most recent call last):
+  File "/rdma/vast-rdma/vast/fiete/jackking/cls/train.py", line 646, in <module>
+    main()
+  File "/rdma/vast-rdma/vast/fiete/jackking/cls/train.py", line 615, in main
+    train(
+  File "/rdma/vast-rdma/vast/fiete/jackking/cls/train.py", line 446, in train
+    generate_episodes_vectorized(
+  File "/om2/user/jackking/conda/envs/cls/lib/python3.12/site-packages/torch/utils/_contextlib.py", line 116, in decorate_context
+    return func(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^
+  File "/rdma/vast-rdma/vast/fiete/jackking/cls/train.py", line 144, in generate_episodes_vectorized
+    logits, h_out = model(x, h_in)
+    ^^^^^^^^^^^^^
+ValueError: too many values to unpack (expected 2)

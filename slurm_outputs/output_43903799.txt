@@ -1,0 +1,10 @@
+/var/slurm/slurmd/job43903799/slurm_script: line 20: module: command not found
+/om2/user/jackking/conda/envs/cls/bin/python
+wandb: Currently logged in as: jack-g-king (generalization-bounds) to https://api.wandb.ai. Use `wandb login --relogin` to force relogin
+wandb: Tracking run with wandb version 0.22.1
+wandb: Run data is saved locally in /rdma/vast-rdma/vast/fiete/jackking/cls/wandb/run-20251005_235541-0pikqpom
+wandb: Run `wandb offline` to turn off syncing.
+wandb: Syncing run vibrant-galaxy-38
+wandb: ⭐️ View project at https://wandb.ai/generalization-bounds/cls
+wandb: 🚀 View run at https://wandb.ai/generalization-bounds/cls/runs/0pikqpom
+slurmstepd: error: *** JOB 43903799 ON node110 CANCELLED AT 2025-10-06T00:02:49 ***

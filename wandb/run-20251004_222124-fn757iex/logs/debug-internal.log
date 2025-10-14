@@ -1,0 +1,11 @@
+{"time":"2025-10-04T22:21:25.346086038-04:00","level":"INFO","msg":"stream: starting","core version":"0.22.1"}
+{"time":"2025-10-04T22:21:26.882286362-04:00","level":"INFO","msg":"stream: created new stream","id":"fn757iex"}
+{"time":"2025-10-04T22:21:26.882323662-04:00","level":"INFO","msg":"handler: started","stream_id":"fn757iex"}
+{"time":"2025-10-04T22:21:26.886507652-04:00","level":"INFO","msg":"stream: started","id":"fn757iex"}
+{"time":"2025-10-04T22:21:26.886513482-04:00","level":"INFO","msg":"writer: started","stream_id":"fn757iex"}
+{"time":"2025-10-04T22:21:26.886526562-04:00","level":"INFO","msg":"sender: started","stream_id":"fn757iex"}
+{"time":"2025-10-04T22:34:43.075247269-04:00","level":"INFO","msg":"stream: closing","id":"fn757iex"}
+{"time":"2025-10-04T22:34:43.445744776-04:00","level":"INFO","msg":"fileTransfer: Close: file transfer manager closed"}
+{"time":"2025-10-04T22:34:43.559640207-04:00","level":"INFO","msg":"handler: closed","stream_id":"fn757iex"}
+{"time":"2025-10-04T22:34:43.56119565-04:00","level":"INFO","msg":"sender: closed","stream_id":"fn757iex"}
+{"time":"2025-10-04T22:34:43.56120602-04:00","level":"INFO","msg":"stream: closed","id":"fn757iex"}

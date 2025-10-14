@@ -1,0 +1,400 @@
+epoch 0001 | loss 1.4732 | train acc 0.002
+epoch 0001 | train acc mean 0.075 | train success mean 0.000 | acc per-env: 0.075 | success per-env: 0/4
+epoch 0001 | pos_validation acc mean 0.000 | pos_validation success mean 0.000 | acc per-env: 0.000 | success per-env: 0/4
+epoch 0001 | goal_validation acc mean 0.062 | goal_validation success mean 0.000 | acc per-env: 0.062 | success per-env: 0/4
+epoch 0002 | loss 1.3960 | train acc 0.035
+epoch 0002 | train acc mean 0.113 | train success mean 0.000 | acc per-env: 0.113 | success per-env: 0/4
+epoch 0002 | pos_validation acc mean 0.275 | pos_validation success mean 0.000 | acc per-env: 0.275 | success per-env: 0/4
+epoch 0002 | goal_validation acc mean 0.000 | goal_validation success mean 0.000 | acc per-env: 0.000 | success per-env: 0/4
+epoch 0003 | loss 1.3371 | train acc 0.129
+epoch 0003 | train acc mean 0.150 | train success mean 0.000 | acc per-env: 0.150 | success per-env: 0/4
+epoch 0003 | pos_validation acc mean 0.212 | pos_validation success mean 0.250 | acc per-env: 0.212 | success per-env: 1/4
+epoch 0003 | goal_validation acc mean 0.050 | goal_validation success mean 0.000 | acc per-env: 0.050 | success per-env: 0/4
+epoch 0004 | loss 1.2658 | train acc 0.141
+epoch 0004 | train acc mean 0.050 | train success mean 0.000 | acc per-env: 0.050 | success per-env: 0/4
+epoch 0004 | pos_validation acc mean 0.123 | pos_validation success mean 0.250 | acc per-env: 0.123 | success per-env: 1/4
+epoch 0004 | goal_validation acc mean 0.075 | goal_validation success mean 0.000 | acc per-env: 0.075 | success per-env: 0/4
+epoch 0005 | loss 1.3002 | train acc 0.156
+epoch 0005 | train acc mean 0.237 | train success mean 0.000 | acc per-env: 0.237 | success per-env: 0/4
+epoch 0005 | pos_validation acc mean 0.296 | pos_validation success mean 0.500 | acc per-env: 0.296 | success per-env: 2/4
+epoch 0005 | goal_validation acc mean 0.000 | goal_validation success mean 0.000 | acc per-env: 0.000 | success per-env: 0/4
+epoch 0006 | loss 1.3027 | train acc 0.129
+epoch 0006 | train acc mean 0.294 | train success mean 0.500 | acc per-env: 0.294 | success per-env: 2/4
+epoch 0006 | pos_validation acc mean 0.263 | pos_validation success mean 0.000 | acc per-env: 0.263 | success per-env: 0/4
+epoch 0006 | goal_validation acc mean 0.062 | goal_validation success mean 0.000 | acc per-env: 0.062 | success per-env: 0/4
+epoch 0007 | loss 1.2660 | train acc 0.173
+epoch 0007 | train acc mean 0.287 | train success mean 0.000 | acc per-env: 0.287 | success per-env: 0/4
+epoch 0007 | pos_validation acc mean 0.269 | pos_validation success mean 0.500 | acc per-env: 0.269 | success per-env: 2/4
+epoch 0007 | goal_validation acc mean 0.087 | goal_validation success mean 0.000 | acc per-env: 0.087 | success per-env: 0/4
+epoch 0008 | loss 1.1964 | train acc 0.193
+epoch 0008 | train acc mean 0.287 | train success mean 0.000 | acc per-env: 0.287 | success per-env: 0/4
+epoch 0008 | pos_validation acc mean 0.309 | pos_validation success mean 0.500 | acc per-env: 0.309 | success per-env: 2/4
+epoch 0008 | goal_validation acc mean 0.087 | goal_validation success mean 0.000 | acc per-env: 0.087 | success per-env: 0/4
+epoch 0009 | loss 1.3088 | train acc 0.198
+epoch 0009 | train acc mean 0.062 | train success mean 0.000 | acc per-env: 0.062 | success per-env: 0/4
+epoch 0009 | pos_validation acc mean 0.478 | pos_validation success mean 0.750 | acc per-env: 0.478 | success per-env: 3/4
+epoch 0009 | goal_validation acc mean 0.113 | goal_validation success mean 0.000 | acc per-env: 0.113 | success per-env: 0/4
+epoch 0010 | loss 1.1881 | train acc 0.202
+epoch 0010 | train acc mean 0.274 | train success mean 0.250 | acc per-env: 0.274 | success per-env: 1/4
+epoch 0010 | pos_validation acc mean 0.255 | pos_validation success mean 0.500 | acc per-env: 0.255 | success per-env: 2/4
+epoch 0010 | goal_validation acc mean 0.050 | goal_validation success mean 0.000 | acc per-env: 0.050 | success per-env: 0/4
+epoch 0011 | loss 1.2975 | train acc 0.251
+epoch 0011 | train acc mean 0.400 | train success mean 0.500 | acc per-env: 0.400 | success per-env: 2/4
+epoch 0011 | pos_validation acc mean 0.288 | pos_validation success mean 0.250 | acc per-env: 0.288 | success per-env: 1/4
+epoch 0011 | goal_validation acc mean 0.013 | goal_validation success mean 0.000 | acc per-env: 0.013 | success per-env: 0/4
+epoch 0012 | loss 1.2104 | train acc 0.270
+epoch 0012 | train acc mean 0.302 | train success mean 0.500 | acc per-env: 0.302 | success per-env: 2/4
+epoch 0012 | pos_validation acc mean 0.282 | pos_validation success mean 0.250 | acc per-env: 0.282 | success per-env: 1/4
+epoch 0012 | goal_validation acc mean 0.013 | goal_validation success mean 0.000 | acc per-env: 0.013 | success per-env: 0/4
+epoch 0013 | loss 1.2063 | train acc 0.359
+epoch 0013 | train acc mean 0.379 | train success mean 0.750 | acc per-env: 0.379 | success per-env: 3/4
+epoch 0013 | pos_validation acc mean 0.452 | pos_validation success mean 0.500 | acc per-env: 0.452 | success per-env: 2/4
+epoch 0013 | goal_validation acc mean 0.098 | goal_validation success mean 0.250 | acc per-env: 0.098 | success per-env: 1/4
+epoch 0014 | loss 1.1833 | train acc 0.358
+epoch 0014 | train acc mean 0.271 | train success mean 0.500 | acc per-env: 0.271 | success per-env: 2/4
+epoch 0014 | pos_validation acc mean 0.480 | pos_validation success mean 0.750 | acc per-env: 0.480 | success per-env: 3/4
+epoch 0014 | goal_validation acc mean 0.087 | goal_validation success mean 0.000 | acc per-env: 0.087 | success per-env: 0/4
+epoch 0015 | loss 1.1201 | train acc 0.372
+epoch 0015 | train acc mean 0.821 | train success mean 1.000 | acc per-env: 0.821 | success per-env: 4/4
+epoch 0015 | pos_validation acc mean 0.179 | pos_validation success mean 0.250 | acc per-env: 0.179 | success per-env: 1/4
+epoch 0015 | goal_validation acc mean 0.000 | goal_validation success mean 0.000 | acc per-env: 0.000 | success per-env: 0/4
+epoch 0016 | loss 1.1234 | train acc 0.342
+epoch 0016 | train acc mean 0.274 | train success mean 0.500 | acc per-env: 0.274 | success per-env: 2/4
+epoch 0016 | pos_validation acc mean 0.176 | pos_validation success mean 0.250 | acc per-env: 0.176 | success per-env: 1/4
+epoch 0016 | goal_validation acc mean 0.050 | goal_validation success mean 0.000 | acc per-env: 0.050 | success per-env: 0/4
+epoch 0017 | loss 1.1174 | train acc 0.349
+epoch 0017 | train acc mean 0.395 | train success mean 0.750 | acc per-env: 0.395 | success per-env: 3/4
+epoch 0017 | pos_validation acc mean 0.162 | pos_validation success mean 0.250 | acc per-env: 0.162 | success per-env: 1/4
+epoch 0017 | goal_validation acc mean 0.113 | goal_validation success mean 0.000 | acc per-env: 0.113 | success per-env: 0/4
+epoch 0018 | loss 1.1219 | train acc 0.304
+epoch 0018 | train acc mean 0.273 | train success mean 0.750 | acc per-env: 0.273 | success per-env: 3/4
+epoch 0018 | pos_validation acc mean 0.225 | pos_validation success mean 0.000 | acc per-env: 0.225 | success per-env: 0/4
+epoch 0018 | goal_validation acc mean 0.037 | goal_validation success mean 0.000 | acc per-env: 0.037 | success per-env: 0/4
+epoch 0019 | loss 1.1028 | train acc 0.414
+epoch 0019 | train acc mean 0.238 | train success mean 0.750 | acc per-env: 0.238 | success per-env: 3/4
+epoch 0019 | pos_validation acc mean 0.237 | pos_validation success mean 0.000 | acc per-env: 0.237 | success per-env: 0/4
+epoch 0019 | goal_validation acc mean 0.087 | goal_validation success mean 0.000 | acc per-env: 0.087 | success per-env: 0/4
+epoch 0020 | loss 1.1131 | train acc 0.358
+epoch 0020 | train acc mean 0.479 | train success mean 0.750 | acc per-env: 0.479 | success per-env: 3/4
+epoch 0020 | pos_validation acc mean 0.125 | pos_validation success mean 0.000 | acc per-env: 0.125 | success per-env: 0/4
+epoch 0020 | goal_validation acc mean 0.037 | goal_validation success mean 0.000 | acc per-env: 0.037 | success per-env: 0/4
+epoch 0021 | loss 1.1069 | train acc 0.366
+epoch 0021 | train acc mean 0.408 | train success mean 0.750 | acc per-env: 0.408 | success per-env: 3/4
+epoch 0021 | pos_validation acc mean 0.118 | pos_validation success mean 0.250 | acc per-env: 0.118 | success per-env: 1/4
+epoch 0021 | goal_validation acc mean 0.150 | goal_validation success mean 0.000 | acc per-env: 0.150 | success per-env: 0/4
+epoch 0022 | loss 1.1141 | train acc 0.356
+epoch 0022 | train acc mean 0.246 | train success mean 0.250 | acc per-env: 0.246 | success per-env: 1/4
+epoch 0022 | pos_validation acc mean 0.265 | pos_validation success mean 0.250 | acc per-env: 0.265 | success per-env: 1/4
+epoch 0022 | goal_validation acc mean 0.025 | goal_validation success mean 0.000 | acc per-env: 0.025 | success per-env: 0/4
+epoch 0023 | loss 1.0999 | train acc 0.359
+epoch 0023 | train acc mean 0.579 | train success mean 1.000 | acc per-env: 0.579 | success per-env: 4/4
+epoch 0023 | pos_validation acc mean 0.203 | pos_validation success mean 0.250 | acc per-env: 0.203 | success per-env: 1/4
+epoch 0023 | goal_validation acc mean 0.037 | goal_validation success mean 0.000 | acc per-env: 0.037 | success per-env: 0/4
+epoch 0024 | loss 1.0956 | train acc 0.432
+epoch 0024 | train acc mean 0.297 | train success mean 0.250 | acc per-env: 0.297 | success per-env: 1/4
+epoch 0024 | pos_validation acc mean 0.287 | pos_validation success mean 0.000 | acc per-env: 0.287 | success per-env: 0/4
+epoch 0024 | goal_validation acc mean 0.062 | goal_validation success mean 0.000 | acc per-env: 0.062 | success per-env: 0/4
+epoch 0025 | loss 1.0868 | train acc 0.373
+epoch 0025 | train acc mean 0.513 | train success mean 0.750 | acc per-env: 0.513 | success per-env: 3/4
+epoch 0025 | pos_validation acc mean 0.163 | pos_validation success mean 0.250 | acc per-env: 0.163 | success per-env: 1/4
+epoch 0025 | goal_validation acc mean 0.115 | goal_validation success mean 0.250 | acc per-env: 0.115 | success per-env: 1/4
+epoch 0026 | loss 1.0779 | train acc 0.350
+epoch 0026 | train acc mean 0.406 | train success mean 0.750 | acc per-env: 0.406 | success per-env: 3/4
+epoch 0026 | pos_validation acc mean 0.150 | pos_validation success mean 0.000 | acc per-env: 0.150 | success per-env: 0/4
+epoch 0026 | goal_validation acc mean 0.082 | goal_validation success mean 0.250 | acc per-env: 0.082 | success per-env: 1/4
+epoch 0027 | loss 1.0699 | train acc 0.387
+epoch 0027 | train acc mean 0.404 | train success mean 0.500 | acc per-env: 0.404 | success per-env: 2/4
+epoch 0027 | pos_validation acc mean 0.107 | pos_validation success mean 0.500 | acc per-env: 0.107 | success per-env: 2/4
+epoch 0027 | goal_validation acc mean 0.025 | goal_validation success mean 0.000 | acc per-env: 0.025 | success per-env: 0/4
+epoch 0028 | loss 1.0686 | train acc 0.380
+epoch 0028 | train acc mean 0.241 | train success mean 0.500 | acc per-env: 0.241 | success per-env: 2/4
+epoch 0028 | pos_validation acc mean 0.397 | pos_validation success mean 0.250 | acc per-env: 0.397 | success per-env: 1/4
+epoch 0028 | goal_validation acc mean 0.050 | goal_validation success mean 0.000 | acc per-env: 0.050 | success per-env: 0/4
+epoch 0029 | loss 1.0721 | train acc 0.347
+epoch 0029 | train acc mean 0.382 | train success mean 0.500 | acc per-env: 0.382 | success per-env: 2/4
+epoch 0029 | pos_validation acc mean 0.176 | pos_validation success mean 0.250 | acc per-env: 0.176 | success per-env: 1/4
+epoch 0029 | goal_validation acc mean 0.025 | goal_validation success mean 0.000 | acc per-env: 0.025 | success per-env: 0/4
+epoch 0030 | loss 1.0485 | train acc 0.386
+epoch 0030 | train acc mean 0.375 | train success mean 0.500 | acc per-env: 0.375 | success per-env: 2/4
+epoch 0030 | pos_validation acc mean 0.241 | pos_validation success mean 0.500 | acc per-env: 0.241 | success per-env: 2/4
+epoch 0030 | goal_validation acc mean 0.075 | goal_validation success mean 0.000 | acc per-env: 0.075 | success per-env: 0/4
+epoch 0031 | loss 1.0444 | train acc 0.329
+epoch 0031 | train acc mean 0.511 | train success mean 0.750 | acc per-env: 0.511 | success per-env: 3/4
+epoch 0031 | pos_validation acc mean 0.125 | pos_validation success mean 0.000 | acc per-env: 0.125 | success per-env: 0/4
+epoch 0031 | goal_validation acc mean 0.062 | goal_validation success mean 0.000 | acc per-env: 0.062 | success per-env: 0/4
+epoch 0032 | loss 1.0615 | train acc 0.328
+epoch 0032 | train acc mean 0.389 | train success mean 0.500 | acc per-env: 0.389 | success per-env: 2/4
+epoch 0032 | pos_validation acc mean 0.138 | pos_validation success mean 0.000 | acc per-env: 0.138 | success per-env: 0/4
+epoch 0032 | goal_validation acc mean 0.098 | goal_validation success mean 0.250 | acc per-env: 0.098 | success per-env: 1/4
+epoch 0033 | loss 1.0396 | train acc 0.438
+epoch 0033 | train acc mean 0.225 | train success mean 0.000 | acc per-env: 0.225 | success per-env: 0/4
+epoch 0033 | pos_validation acc mean 0.150 | pos_validation success mean 0.000 | acc per-env: 0.150 | success per-env: 0/4
+epoch 0033 | goal_validation acc mean 0.037 | goal_validation success mean 0.000 | acc per-env: 0.037 | success per-env: 0/4
+epoch 0034 | loss 1.0409 | train acc 0.404
+epoch 0034 | train acc mean 0.659 | train success mean 1.000 | acc per-env: 0.659 | success per-env: 4/4
+epoch 0034 | pos_validation acc mean 0.224 | pos_validation success mean 0.250 | acc per-env: 0.224 | success per-env: 1/4
+epoch 0034 | goal_validation acc mean 0.062 | goal_validation success mean 0.000 | acc per-env: 0.062 | success per-env: 0/4
+epoch 0035 | loss 1.0390 | train acc 0.393
+epoch 0035 | train acc mean 0.292 | train success mean 0.250 | acc per-env: 0.292 | success per-env: 1/4
+epoch 0035 | pos_validation acc mean 0.149 | pos_validation success mean 0.250 | acc per-env: 0.149 | success per-env: 1/4
+epoch 0035 | goal_validation acc mean 0.125 | goal_validation success mean 0.000 | acc per-env: 0.125 | success per-env: 0/4
+epoch 0036 | loss 1.0217 | train acc 0.476
+epoch 0036 | train acc mean 0.446 | train success mean 0.500 | acc per-env: 0.446 | success per-env: 2/4
+epoch 0036 | pos_validation acc mean 0.250 | pos_validation success mean 0.000 | acc per-env: 0.250 | success per-env: 0/4
+epoch 0036 | goal_validation acc mean 0.075 | goal_validation success mean 0.000 | acc per-env: 0.075 | success per-env: 0/4
+epoch 0037 | loss 1.0191 | train acc 0.477
+epoch 0037 | train acc mean 0.406 | train success mean 0.500 | acc per-env: 0.406 | success per-env: 2/4
+epoch 0037 | pos_validation acc mean 0.000 | pos_validation success mean 0.000 | acc per-env: 0.000 | success per-env: 0/4
+epoch 0037 | goal_validation acc mean 0.250 | goal_validation success mean 0.000 | acc per-env: 0.250 | success per-env: 0/4
+epoch 0038 | loss 1.0155 | train acc 0.391
+epoch 0038 | train acc mean 0.417 | train success mean 0.500 | acc per-env: 0.417 | success per-env: 2/4
+epoch 0038 | pos_validation acc mean 0.179 | pos_validation success mean 0.250 | acc per-env: 0.179 | success per-env: 1/4
+epoch 0038 | goal_validation acc mean 0.075 | goal_validation success mean 0.000 | acc per-env: 0.075 | success per-env: 0/4
+epoch 0039 | loss 1.0353 | train acc 0.409
+epoch 0039 | train acc mean 0.897 | train success mean 1.000 | acc per-env: 0.897 | success per-env: 4/4
+epoch 0039 | pos_validation acc mean 0.188 | pos_validation success mean 0.000 | acc per-env: 0.188 | success per-env: 0/4
+epoch 0039 | goal_validation acc mean 0.138 | goal_validation success mean 0.000 | acc per-env: 0.138 | success per-env: 0/4
+epoch 0040 | loss 1.0338 | train acc 0.386
+epoch 0040 | train acc mean 0.383 | train success mean 0.750 | acc per-env: 0.383 | success per-env: 3/4
+epoch 0040 | pos_validation acc mean 0.212 | pos_validation success mean 0.250 | acc per-env: 0.212 | success per-env: 1/4
+epoch 0040 | goal_validation acc mean 0.087 | goal_validation success mean 0.000 | acc per-env: 0.087 | success per-env: 0/4
+epoch 0041 | loss 1.0168 | train acc 0.422
+epoch 0041 | train acc mean 0.338 | train success mean 0.250 | acc per-env: 0.338 | success per-env: 1/4
+epoch 0041 | pos_validation acc mean 0.212 | pos_validation success mean 0.000 | acc per-env: 0.212 | success per-env: 0/4
+epoch 0041 | goal_validation acc mean 0.000 | goal_validation success mean 0.000 | acc per-env: 0.000 | success per-env: 0/4
+epoch 0042 | loss 1.0215 | train acc 0.479
+epoch 0042 | train acc mean 0.395 | train success mean 0.750 | acc per-env: 0.395 | success per-env: 3/4
+epoch 0042 | pos_validation acc mean 0.250 | pos_validation success mean 0.000 | acc per-env: 0.250 | success per-env: 0/4
+epoch 0042 | goal_validation acc mean 0.250 | goal_validation success mean 0.000 | acc per-env: 0.250 | success per-env: 0/4
+epoch 0043 | loss 1.0275 | train acc 0.420
+epoch 0043 | train acc mean 0.500 | train success mean 0.750 | acc per-env: 0.500 | success per-env: 3/4
+epoch 0043 | pos_validation acc mean 0.200 | pos_validation success mean 0.000 | acc per-env: 0.200 | success per-env: 0/4
+epoch 0043 | goal_validation acc mean 0.237 | goal_validation success mean 0.000 | acc per-env: 0.237 | success per-env: 0/4
+epoch 0044 | loss 1.0402 | train acc 0.426
+epoch 0044 | train acc mean 0.620 | train success mean 0.750 | acc per-env: 0.620 | success per-env: 3/4
+epoch 0044 | pos_validation acc mean 0.340 | pos_validation success mean 0.500 | acc per-env: 0.340 | success per-env: 2/4
+epoch 0044 | goal_validation acc mean 0.338 | goal_validation success mean 0.250 | acc per-env: 0.338 | success per-env: 1/4
+epoch 0045 | loss 1.0377 | train acc 0.417
+epoch 0045 | train acc mean 0.268 | train success mean 0.250 | acc per-env: 0.268 | success per-env: 1/4
+epoch 0045 | pos_validation acc mean 0.288 | pos_validation success mean 0.500 | acc per-env: 0.288 | success per-env: 2/4
+epoch 0045 | goal_validation acc mean 0.312 | goal_validation success mean 0.000 | acc per-env: 0.312 | success per-env: 0/4
+epoch 0046 | loss 1.0363 | train acc 0.377
+epoch 0046 | train acc mean 0.382 | train success mean 0.500 | acc per-env: 0.382 | success per-env: 2/4
+epoch 0046 | pos_validation acc mean 0.286 | pos_validation success mean 0.250 | acc per-env: 0.286 | success per-env: 1/4
+epoch 0046 | goal_validation acc mean 0.016 | goal_validation success mean 0.250 | acc per-env: 0.016 | success per-env: 1/4
+epoch 0047 | loss 1.0260 | train acc 0.395
+epoch 0047 | train acc mean 0.403 | train success mean 0.500 | acc per-env: 0.403 | success per-env: 2/4
+epoch 0047 | pos_validation acc mean 0.259 | pos_validation success mean 0.500 | acc per-env: 0.259 | success per-env: 2/4
+epoch 0047 | goal_validation acc mean 0.075 | goal_validation success mean 0.000 | acc per-env: 0.075 | success per-env: 0/4
+epoch 0048 | loss 1.0439 | train acc 0.396
+epoch 0048 | train acc mean 0.350 | train success mean 0.750 | acc per-env: 0.350 | success per-env: 3/4
+epoch 0048 | pos_validation acc mean 0.323 | pos_validation success mean 0.250 | acc per-env: 0.323 | success per-env: 1/4
+epoch 0048 | goal_validation acc mean 0.037 | goal_validation success mean 0.000 | acc per-env: 0.037 | success per-env: 0/4
+epoch 0049 | loss 1.0001 | train acc 0.437
+epoch 0049 | train acc mean 0.418 | train success mean 0.750 | acc per-env: 0.418 | success per-env: 3/4
+epoch 0049 | pos_validation acc mean 0.113 | pos_validation success mean 0.000 | acc per-env: 0.113 | success per-env: 0/4
+epoch 0049 | goal_validation acc mean 0.050 | goal_validation success mean 0.000 | acc per-env: 0.050 | success per-env: 0/4
+epoch 0050 | loss 1.0222 | train acc 0.394
+epoch 0050 | train acc mean 0.724 | train success mean 1.000 | acc per-env: 0.724 | success per-env: 4/4
+epoch 0050 | pos_validation acc mean 0.113 | pos_validation success mean 0.000 | acc per-env: 0.113 | success per-env: 0/4
+epoch 0050 | goal_validation acc mean 0.225 | goal_validation success mean 0.000 | acc per-env: 0.225 | success per-env: 0/4
+epoch 0051 | loss 1.0205 | train acc 0.388
+epoch 0051 | train acc mean 0.480 | train success mean 0.750 | acc per-env: 0.480 | success per-env: 3/4
+epoch 0051 | pos_validation acc mean 0.163 | pos_validation success mean 0.000 | acc per-env: 0.163 | success per-env: 0/4
+epoch 0051 | goal_validation acc mean 0.175 | goal_validation success mean 0.000 | acc per-env: 0.175 | success per-env: 0/4
+epoch 0052 | loss 1.0076 | train acc 0.483
+epoch 0052 | train acc mean 0.350 | train success mean 0.500 | acc per-env: 0.350 | success per-env: 2/4
+epoch 0052 | pos_validation acc mean 0.194 | pos_validation success mean 0.250 | acc per-env: 0.194 | success per-env: 1/4
+epoch 0052 | goal_validation acc mean 0.225 | goal_validation success mean 0.000 | acc per-env: 0.225 | success per-env: 0/4
+epoch 0053 | loss 1.0510 | train acc 0.369
+epoch 0053 | train acc mean 0.274 | train success mean 0.500 | acc per-env: 0.274 | success per-env: 2/4
+epoch 0053 | pos_validation acc mean 0.333 | pos_validation success mean 0.500 | acc per-env: 0.333 | success per-env: 2/4
+epoch 0053 | goal_validation acc mean 0.125 | goal_validation success mean 0.000 | acc per-env: 0.125 | success per-env: 0/4
+epoch 0054 | loss 1.0330 | train acc 0.358
+epoch 0054 | train acc mean 0.353 | train success mean 0.250 | acc per-env: 0.353 | success per-env: 1/4
+epoch 0054 | pos_validation acc mean 0.143 | pos_validation success mean 0.250 | acc per-env: 0.143 | success per-env: 1/4
+epoch 0054 | goal_validation acc mean 0.212 | goal_validation success mean 0.000 | acc per-env: 0.212 | success per-env: 0/4
+epoch 0055 | loss 1.0241 | train acc 0.418
+epoch 0055 | train acc mean 0.309 | train success mean 0.250 | acc per-env: 0.309 | success per-env: 1/4
+epoch 0055 | pos_validation acc mean 0.345 | pos_validation success mean 0.500 | acc per-env: 0.345 | success per-env: 2/4
+epoch 0055 | goal_validation acc mean 0.219 | goal_validation success mean 0.250 | acc per-env: 0.219 | success per-env: 1/4
+epoch 0056 | loss 0.9947 | train acc 0.430
+epoch 0056 | train acc mean 0.467 | train success mean 0.500 | acc per-env: 0.467 | success per-env: 2/4
+epoch 0056 | pos_validation acc mean 0.188 | pos_validation success mean 0.000 | acc per-env: 0.188 | success per-env: 0/4
+epoch 0056 | goal_validation acc mean 0.087 | goal_validation success mean 0.000 | acc per-env: 0.087 | success per-env: 0/4
+epoch 0057 | loss 1.0129 | train acc 0.389
+epoch 0057 | train acc mean 0.352 | train success mean 0.500 | acc per-env: 0.352 | success per-env: 2/4
+epoch 0057 | pos_validation acc mean 0.213 | pos_validation success mean 0.250 | acc per-env: 0.213 | success per-env: 1/4
+epoch 0057 | goal_validation acc mean 0.250 | goal_validation success mean 0.000 | acc per-env: 0.250 | success per-env: 0/4
+epoch 0058 | loss 0.9923 | train acc 0.418
+epoch 0058 | train acc mean 0.659 | train success mean 1.000 | acc per-env: 0.659 | success per-env: 4/4
+epoch 0058 | pos_validation acc mean 0.406 | pos_validation success mean 0.250 | acc per-env: 0.406 | success per-env: 1/4
+epoch 0058 | goal_validation acc mean 0.292 | goal_validation success mean 0.250 | acc per-env: 0.292 | success per-env: 1/4
+epoch 0059 | loss 0.9926 | train acc 0.451
+epoch 0059 | train acc mean 0.510 | train success mean 0.750 | acc per-env: 0.510 | success per-env: 3/4
+epoch 0059 | pos_validation acc mean 0.188 | pos_validation success mean 0.000 | acc per-env: 0.188 | success per-env: 0/4
+epoch 0059 | goal_validation acc mean 0.138 | goal_validation success mean 0.000 | acc per-env: 0.138 | success per-env: 0/4
+epoch 0060 | loss 1.0075 | train acc 0.465
+epoch 0060 | train acc mean 0.250 | train success mean 0.250 | acc per-env: 0.250 | success per-env: 1/4
+epoch 0060 | pos_validation acc mean 0.138 | pos_validation success mean 0.000 | acc per-env: 0.138 | success per-env: 0/4
+epoch 0060 | goal_validation acc mean 0.275 | goal_validation success mean 0.000 | acc per-env: 0.275 | success per-env: 0/4
+epoch 0061 | loss 1.0137 | train acc 0.447
+epoch 0061 | train acc mean 0.300 | train success mean 0.250 | acc per-env: 0.300 | success per-env: 1/4
+epoch 0061 | pos_validation acc mean 0.134 | pos_validation success mean 0.250 | acc per-env: 0.134 | success per-env: 1/4
+epoch 0061 | goal_validation acc mean 0.450 | goal_validation success mean 0.000 | acc per-env: 0.450 | success per-env: 0/4
+epoch 0062 | loss 1.0124 | train acc 0.449
+epoch 0062 | train acc mean 0.508 | train success mean 0.500 | acc per-env: 0.508 | success per-env: 2/4
+epoch 0062 | pos_validation acc mean 0.150 | pos_validation success mean 0.000 | acc per-env: 0.150 | success per-env: 0/4
+epoch 0062 | goal_validation acc mean 0.212 | goal_validation success mean 0.000 | acc per-env: 0.212 | success per-env: 0/4
+epoch 0063 | loss 1.0183 | train acc 0.434
+epoch 0063 | train acc mean 0.383 | train success mean 0.750 | acc per-env: 0.383 | success per-env: 3/4
+epoch 0063 | pos_validation acc mean 0.368 | pos_validation success mean 0.500 | acc per-env: 0.368 | success per-env: 2/4
+epoch 0063 | goal_validation acc mean 0.098 | goal_validation success mean 0.250 | acc per-env: 0.098 | success per-env: 1/4
+epoch 0064 | loss 1.0011 | train acc 0.487
+epoch 0064 | train acc mean 0.475 | train success mean 0.750 | acc per-env: 0.475 | success per-env: 3/4
+epoch 0064 | pos_validation acc mean 0.200 | pos_validation success mean 0.000 | acc per-env: 0.200 | success per-env: 0/4
+epoch 0064 | goal_validation acc mean 0.100 | goal_validation success mean 0.000 | acc per-env: 0.100 | success per-env: 0/4
+epoch 0065 | loss 1.0152 | train acc 0.450
+epoch 0065 | train acc mean 0.365 | train success mean 0.500 | acc per-env: 0.365 | success per-env: 2/4
+epoch 0065 | pos_validation acc mean 0.221 | pos_validation success mean 0.250 | acc per-env: 0.221 | success per-env: 1/4
+epoch 0065 | goal_validation acc mean 0.317 | goal_validation success mean 0.250 | acc per-env: 0.317 | success per-env: 1/4
+epoch 0066 | loss 0.9893 | train acc 0.469
+epoch 0066 | train acc mean 0.508 | train success mean 0.500 | acc per-env: 0.508 | success per-env: 2/4
+epoch 0066 | pos_validation acc mean 0.149 | pos_validation success mean 0.250 | acc per-env: 0.149 | success per-env: 1/4
+epoch 0066 | goal_validation acc mean 0.150 | goal_validation success mean 0.000 | acc per-env: 0.150 | success per-env: 0/4
+epoch 0067 | loss 0.9867 | train acc 0.468
+epoch 0067 | train acc mean 0.412 | train success mean 0.500 | acc per-env: 0.412 | success per-env: 2/4
+epoch 0067 | pos_validation acc mean 0.310 | pos_validation success mean 0.500 | acc per-env: 0.310 | success per-env: 2/4
+epoch 0067 | goal_validation acc mean 0.200 | goal_validation success mean 0.000 | acc per-env: 0.200 | success per-env: 0/4
+epoch 0068 | loss 1.0029 | train acc 0.417
+epoch 0068 | train acc mean 0.378 | train success mean 0.750 | acc per-env: 0.378 | success per-env: 3/4
+epoch 0068 | pos_validation acc mean 0.250 | pos_validation success mean 0.250 | acc per-env: 0.250 | success per-env: 1/4
+epoch 0068 | goal_validation acc mean 0.150 | goal_validation success mean 0.000 | acc per-env: 0.150 | success per-env: 0/4
+epoch 0069 | loss 0.9973 | train acc 0.399
+epoch 0069 | train acc mean 0.591 | train success mean 0.750 | acc per-env: 0.591 | success per-env: 3/4
+epoch 0069 | pos_validation acc mean 0.197 | pos_validation success mean 0.250 | acc per-env: 0.197 | success per-env: 1/4
+epoch 0069 | goal_validation acc mean 0.037 | goal_validation success mean 0.000 | acc per-env: 0.037 | success per-env: 0/4
+epoch 0070 | loss 0.9989 | train acc 0.431
+epoch 0070 | train acc mean 0.565 | train success mean 0.750 | acc per-env: 0.565 | success per-env: 3/4
+epoch 0070 | pos_validation acc mean 0.188 | pos_validation success mean 0.000 | acc per-env: 0.188 | success per-env: 0/4
+epoch 0070 | goal_validation acc mean 0.188 | goal_validation success mean 0.000 | acc per-env: 0.188 | success per-env: 0/4
+epoch 0071 | loss 0.9965 | train acc 0.448
+epoch 0071 | train acc mean 0.508 | train success mean 0.500 | acc per-env: 0.508 | success per-env: 2/4
+epoch 0071 | pos_validation acc mean 0.163 | pos_validation success mean 0.000 | acc per-env: 0.163 | success per-env: 0/4
+epoch 0071 | goal_validation acc mean 0.050 | goal_validation success mean 0.000 | acc per-env: 0.050 | success per-env: 0/4
+epoch 0072 | loss 0.9744 | train acc 0.452
+epoch 0072 | train acc mean 0.547 | train success mean 0.750 | acc per-env: 0.547 | success per-env: 3/4
+epoch 0072 | pos_validation acc mean 0.345 | pos_validation success mean 0.500 | acc per-env: 0.345 | success per-env: 2/4
+epoch 0072 | goal_validation acc mean 0.237 | goal_validation success mean 0.000 | acc per-env: 0.237 | success per-env: 0/4
+epoch 0073 | loss 1.0031 | train acc 0.467
+epoch 0073 | train acc mean 0.236 | train success mean 0.500 | acc per-env: 0.236 | success per-env: 2/4
+epoch 0073 | pos_validation acc mean 0.250 | pos_validation success mean 0.250 | acc per-env: 0.250 | success per-env: 1/4
+epoch 0073 | goal_validation acc mean 0.125 | goal_validation success mean 0.000 | acc per-env: 0.125 | success per-env: 0/4
+epoch 0074 | loss 0.9861 | train acc 0.436
+epoch 0074 | train acc mean 0.600 | train success mean 0.750 | acc per-env: 0.600 | success per-env: 3/4
+epoch 0074 | pos_validation acc mean 0.163 | pos_validation success mean 0.000 | acc per-env: 0.163 | success per-env: 0/4
+epoch 0074 | goal_validation acc mean 0.013 | goal_validation success mean 0.000 | acc per-env: 0.013 | success per-env: 0/4
+epoch 0075 | loss 0.9934 | train acc 0.471
+epoch 0075 | train acc mean 0.725 | train success mean 1.000 | acc per-env: 0.725 | success per-env: 4/4
+epoch 0075 | pos_validation acc mean 0.250 | pos_validation success mean 0.000 | acc per-env: 0.250 | success per-env: 0/4
+epoch 0075 | goal_validation acc mean 0.275 | goal_validation success mean 0.000 | acc per-env: 0.275 | success per-env: 0/4
+epoch 0076 | loss 0.9860 | train acc 0.455
+epoch 0076 | train acc mean 0.227 | train success mean 0.250 | acc per-env: 0.227 | success per-env: 1/4
+epoch 0076 | pos_validation acc mean 0.163 | pos_validation success mean 0.500 | acc per-env: 0.163 | success per-env: 2/4
+epoch 0076 | goal_validation acc mean 0.100 | goal_validation success mean 0.000 | acc per-env: 0.100 | success per-env: 0/4
+epoch 0077 | loss 0.9598 | train acc 0.474
+epoch 0077 | train acc mean 0.351 | train success mean 0.500 | acc per-env: 0.351 | success per-env: 2/4
+epoch 0077 | pos_validation acc mean 0.163 | pos_validation success mean 0.000 | acc per-env: 0.163 | success per-env: 0/4
+epoch 0077 | goal_validation acc mean 0.125 | goal_validation success mean 0.000 | acc per-env: 0.125 | success per-env: 0/4
+epoch 0078 | loss 0.9926 | train acc 0.456
+epoch 0078 | train acc mean 0.587 | train success mean 1.000 | acc per-env: 0.587 | success per-env: 4/4
+epoch 0078 | pos_validation acc mean 0.175 | pos_validation success mean 0.000 | acc per-env: 0.175 | success per-env: 0/4
+epoch 0078 | goal_validation acc mean 0.180 | goal_validation success mean 0.250 | acc per-env: 0.180 | success per-env: 1/4
+epoch 0079 | loss 0.9768 | train acc 0.490
+epoch 0079 | train acc mean 0.492 | train success mean 0.750 | acc per-env: 0.492 | success per-env: 3/4
+epoch 0079 | pos_validation acc mean 0.241 | pos_validation success mean 0.500 | acc per-env: 0.241 | success per-env: 2/4
+epoch 0079 | goal_validation acc mean 0.087 | goal_validation success mean 0.000 | acc per-env: 0.087 | success per-env: 0/4
+epoch 0080 | loss 0.9829 | train acc 0.438
+epoch 0080 | train acc mean 0.407 | train success mean 1.000 | acc per-env: 0.407 | success per-env: 4/4
+epoch 0080 | pos_validation acc mean 0.138 | pos_validation success mean 0.000 | acc per-env: 0.138 | success per-env: 0/4
+epoch 0080 | goal_validation acc mean 0.125 | goal_validation success mean 0.000 | acc per-env: 0.125 | success per-env: 0/4
+epoch 0081 | loss 0.9443 | train acc 0.527
+epoch 0081 | train acc mean 0.500 | train success mean 0.750 | acc per-env: 0.500 | success per-env: 3/4
+epoch 0081 | pos_validation acc mean 0.275 | pos_validation success mean 0.000 | acc per-env: 0.275 | success per-env: 0/4
+epoch 0081 | goal_validation acc mean 0.000 | goal_validation success mean 0.000 | acc per-env: 0.000 | success per-env: 0/4
+epoch 0082 | loss 0.9865 | train acc 0.462
+epoch 0082 | train acc mean 0.389 | train success mean 0.500 | acc per-env: 0.389 | success per-env: 2/4
+epoch 0082 | pos_validation acc mean 0.175 | pos_validation success mean 0.000 | acc per-env: 0.175 | success per-env: 0/4
+epoch 0082 | goal_validation acc mean 0.210 | goal_validation success mean 0.250 | acc per-env: 0.210 | success per-env: 1/4
+epoch 0083 | loss 0.9829 | train acc 0.429
+epoch 0083 | train acc mean 0.510 | train success mean 0.750 | acc per-env: 0.510 | success per-env: 3/4
+epoch 0083 | pos_validation acc mean 0.224 | pos_validation success mean 0.250 | acc per-env: 0.224 | success per-env: 1/4
+epoch 0083 | goal_validation acc mean 0.175 | goal_validation success mean 0.000 | acc per-env: 0.175 | success per-env: 0/4
+epoch 0084 | loss 0.9836 | train acc 0.465
+epoch 0084 | train acc mean 0.420 | train success mean 0.500 | acc per-env: 0.420 | success per-env: 2/4
+epoch 0084 | pos_validation acc mean 0.200 | pos_validation success mean 0.000 | acc per-env: 0.200 | success per-env: 0/4
+epoch 0084 | goal_validation acc mean 0.113 | goal_validation success mean 0.000 | acc per-env: 0.113 | success per-env: 0/4
+epoch 0085 | loss 0.9610 | train acc 0.461
+epoch 0085 | train acc mean 0.458 | train success mean 0.500 | acc per-env: 0.458 | success per-env: 2/4
+epoch 0085 | pos_validation acc mean 0.225 | pos_validation success mean 0.000 | acc per-env: 0.225 | success per-env: 0/4
+epoch 0085 | goal_validation acc mean 0.250 | goal_validation success mean 0.250 | acc per-env: 0.250 | success per-env: 1/4
+epoch 0086 | loss 0.9479 | train acc 0.537
+epoch 0086 | train acc mean 0.569 | train success mean 1.000 | acc per-env: 0.569 | success per-env: 4/4
+epoch 0086 | pos_validation acc mean 0.239 | pos_validation success mean 0.250 | acc per-env: 0.239 | success per-env: 1/4
+epoch 0086 | goal_validation acc mean 0.287 | goal_validation success mean 0.000 | acc per-env: 0.287 | success per-env: 0/4
+epoch 0087 | loss 0.9640 | train acc 0.500
+epoch 0087 | train acc mean 0.686 | train success mean 1.000 | acc per-env: 0.686 | success per-env: 4/4
+epoch 0087 | pos_validation acc mean 0.163 | pos_validation success mean 0.000 | acc per-env: 0.163 | success per-env: 0/4
+epoch 0087 | goal_validation acc mean 0.087 | goal_validation success mean 0.000 | acc per-env: 0.087 | success per-env: 0/4
+epoch 0088 | loss 0.9625 | train acc 0.536
+epoch 0088 | train acc mean 0.667 | train success mean 1.000 | acc per-env: 0.667 | success per-env: 4/4
+epoch 0088 | pos_validation acc mean 0.412 | pos_validation success mean 0.000 | acc per-env: 0.412 | success per-env: 0/4
+epoch 0088 | goal_validation acc mean 0.300 | goal_validation success mean 0.000 | acc per-env: 0.300 | success per-env: 0/4
+epoch 0089 | loss 0.9450 | train acc 0.529
+epoch 0089 | train acc mean 0.628 | train success mean 1.000 | acc per-env: 0.628 | success per-env: 4/4
+epoch 0089 | pos_validation acc mean 0.087 | pos_validation success mean 0.000 | acc per-env: 0.087 | success per-env: 0/4
+epoch 0089 | goal_validation acc mean 0.225 | goal_validation success mean 0.000 | acc per-env: 0.225 | success per-env: 0/4
+epoch 0090 | loss 0.9701 | train acc 0.477
+epoch 0090 | train acc mean 0.710 | train success mean 1.000 | acc per-env: 0.710 | success per-env: 4/4
+epoch 0090 | pos_validation acc mean 0.163 | pos_validation success mean 0.000 | acc per-env: 0.163 | success per-env: 0/4
+epoch 0090 | goal_validation acc mean 0.098 | goal_validation success mean 0.250 | acc per-env: 0.098 | success per-env: 1/4
+epoch 0091 | loss 0.9693 | train acc 0.465
+epoch 0091 | train acc mean 0.344 | train success mean 0.750 | acc per-env: 0.344 | success per-env: 3/4
+epoch 0091 | pos_validation acc mean 0.327 | pos_validation success mean 0.500 | acc per-env: 0.327 | success per-env: 2/4
+epoch 0091 | goal_validation acc mean 0.075 | goal_validation success mean 0.000 | acc per-env: 0.075 | success per-env: 0/4
+epoch 0092 | loss 0.9483 | train acc 0.488
+epoch 0092 | train acc mean 0.484 | train success mean 0.500 | acc per-env: 0.484 | success per-env: 2/4
+epoch 0092 | pos_validation acc mean 0.545 | pos_validation success mean 0.750 | acc per-env: 0.545 | success per-env: 3/4
+epoch 0092 | goal_validation acc mean 0.075 | goal_validation success mean 0.000 | acc per-env: 0.075 | success per-env: 0/4
+epoch 0093 | loss 0.9509 | train acc 0.449
+epoch 0093 | train acc mean 0.558 | train success mean 0.750 | acc per-env: 0.558 | success per-env: 3/4
+epoch 0093 | pos_validation acc mean 0.275 | pos_validation success mean 0.000 | acc per-env: 0.275 | success per-env: 0/4
+epoch 0093 | goal_validation acc mean 0.048 | goal_validation success mean 0.250 | acc per-env: 0.048 | success per-env: 1/4
+epoch 0094 | loss 0.9565 | train acc 0.443
+epoch 0094 | train acc mean 0.375 | train success mean 0.750 | acc per-env: 0.375 | success per-env: 3/4
+epoch 0094 | pos_validation acc mean 0.225 | pos_validation success mean 0.000 | acc per-env: 0.225 | success per-env: 0/4
+epoch 0094 | goal_validation acc mean 0.013 | goal_validation success mean 0.000 | acc per-env: 0.013 | success per-env: 0/4
+epoch 0095 | loss 0.9387 | train acc 0.439
+epoch 0095 | train acc mean 0.579 | train success mean 0.750 | acc per-env: 0.579 | success per-env: 3/4
+epoch 0095 | pos_validation acc mean 0.250 | pos_validation success mean 0.000 | acc per-env: 0.250 | success per-env: 0/4
+epoch 0095 | goal_validation acc mean 0.113 | goal_validation success mean 0.000 | acc per-env: 0.113 | success per-env: 0/4
+epoch 0096 | loss 0.9480 | train acc 0.450
+epoch 0096 | train acc mean 0.519 | train success mean 0.750 | acc per-env: 0.519 | success per-env: 3/4
+epoch 0096 | pos_validation acc mean 0.212 | pos_validation success mean 0.000 | acc per-env: 0.212 | success per-env: 0/4
+epoch 0096 | goal_validation acc mean 0.075 | goal_validation success mean 0.000 | acc per-env: 0.075 | success per-env: 0/4
+epoch 0097 | loss 0.9262 | train acc 0.514
+epoch 0097 | train acc mean 0.659 | train success mean 1.000 | acc per-env: 0.659 | success per-env: 4/4
+epoch 0097 | pos_validation acc mean 0.319 | pos_validation success mean 0.250 | acc per-env: 0.319 | success per-env: 1/4
+epoch 0097 | goal_validation acc mean 0.177 | goal_validation success mean 0.250 | acc per-env: 0.177 | success per-env: 1/4
+epoch 0098 | loss 0.9575 | train acc 0.494
+epoch 0098 | train acc mean 0.458 | train success mean 0.750 | acc per-env: 0.458 | success per-env: 3/4
+epoch 0098 | pos_validation acc mean 0.163 | pos_validation success mean 0.000 | acc per-env: 0.163 | success per-env: 0/4
+epoch 0098 | goal_validation acc mean 0.100 | goal_validation success mean 0.000 | acc per-env: 0.100 | success per-env: 0/4
+epoch 0099 | loss 0.9537 | train acc 0.481
+epoch 0099 | train acc mean 0.561 | train success mean 1.000 | acc per-env: 0.561 | success per-env: 4/4
+epoch 0099 | pos_validation acc mean 0.261 | pos_validation success mean 0.250 | acc per-env: 0.261 | success per-env: 1/4
+epoch 0099 | goal_validation acc mean 0.048 | goal_validation success mean 0.250 | acc per-env: 0.048 | success per-env: 1/4
+epoch 0100 | loss 0.9336 | train acc 0.513
+epoch 0100 | train acc mean 0.591 | train success mean 1.000 | acc per-env: 0.591 | success per-env: 4/4
+epoch 0100 | pos_validation acc mean 0.345 | pos_validation success mean 0.500 | acc per-env: 0.345 | success per-env: 2/4
+epoch 0100 | goal_validation acc mean 0.013 | goal_validation success mean 0.000 | acc per-env: 0.013 | success per-env: 0/4

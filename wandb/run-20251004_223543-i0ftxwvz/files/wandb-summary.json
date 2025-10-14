@@ -1,0 +1,1 @@
+{"_wandb":{"runtime":45},"epoch":1,"train/success":0.06640625,"goal_validation/acc":0.10571682235535719,"pos_validation/acc":0.11674714026153048,"_step":1,"goal_validation/success":0.0390625,"_runtime":45.39739125,"_timestamp":1.7596317758256292e+09,"pos_validation/success":0.05859375,"train/loss":1.4116816520690918,"train/acc":0.13773511431155483}

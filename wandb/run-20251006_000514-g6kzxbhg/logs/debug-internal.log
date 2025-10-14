@@ -1,0 +1,13 @@
+{"time":"2025-10-06T00:05:14.355423018-04:00","level":"INFO","msg":"stream: starting","core version":"0.22.1"}
+{"time":"2025-10-06T00:05:14.579912685-04:00","level":"INFO","msg":"stream: created new stream","id":"g6kzxbhg"}
+{"time":"2025-10-06T00:05:14.579938045-04:00","level":"INFO","msg":"handler: started","stream_id":"g6kzxbhg"}
+{"time":"2025-10-06T00:05:14.582474018-04:00","level":"INFO","msg":"stream: started","id":"g6kzxbhg"}
+{"time":"2025-10-06T00:05:14.582546438-04:00","level":"INFO","msg":"writer: started","stream_id":"g6kzxbhg"}
+{"time":"2025-10-06T00:05:14.582556548-04:00","level":"INFO","msg":"sender: started","stream_id":"g6kzxbhg"}
+{"time":"2025-10-06T00:26:43.22678402-04:00","level":"INFO","msg":"api: retrying error","error":"Post \"https://api.wandb.ai/files/generalization-bounds/cls/g6kzxbhg/file_stream\": unexpected EOF"}
+{"time":"2025-10-06T01:25:59.518209295-04:00","level":"INFO","msg":"handler: operation stats","stats":{"operations":[{"desc":"updating run metadata","runtime_seconds":0.002667623}],"total_operations":1}}
+{"time":"2025-10-06T01:26:00.371422949-04:00","level":"INFO","msg":"fileTransfer: Close: file transfer manager closed"}
+{"time":"2025-10-06T01:26:00.476413752-04:00","level":"INFO","msg":"stream: closing","id":"g6kzxbhg"}
+{"time":"2025-10-06T01:26:00.476428752-04:00","level":"INFO","msg":"handler: closed","stream_id":"g6kzxbhg"}
+{"time":"2025-10-06T01:26:00.477550293-04:00","level":"INFO","msg":"sender: closed","stream_id":"g6kzxbhg"}
+{"time":"2025-10-06T01:26:00.477569133-04:00","level":"INFO","msg":"stream: closed","id":"g6kzxbhg"}

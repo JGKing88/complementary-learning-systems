@@ -1,0 +1,147 @@
+_wandb:
+    value:
+        cli_version: 0.22.1
+        e:
+            cihtu9aa7mcfsry10pwj3zfypovl16ky:
+                args:
+                    - --size
+                    - "8"
+                    - --speed
+                    - "1"
+                    - --n_epochs
+                    - "500"
+                    - --num_envs
+                    - "4"
+                    - --val_batch_episodes
+                    - "16"
+                    - --vectorhash
+                    - --input_type
+                    - g
+                    - --use_wandb
+                codePath: train.py
+                codePathLocal: train.py
+                cpu_count: 24
+                cpu_count_logical: 48
+                cudaVersion: "12.4"
+                disk:
+                    /:
+                        total: "144595103744"
+                        used: "10933739520"
+                email: jack.g.king@gmail.com
+                executable: /om2/user/jackking/conda/envs/cls/bin/python
+                gpu: NVIDIA GeForce GTX 1080 Ti
+                gpu_count: 1
+                gpu_nvidia:
+                    - architecture: Pascal
+                      cudaCores: 3584
+                      memoryTotal: "11811160064"
+                      name: NVIDIA GeForce GTX 1080 Ti
+                      uuid: GPU-da846f3f-c309-2bec-df9d-253487897afe
+                host: node055
+                memory:
+                    total: "270074257408"
+                os: Linux-4.18.0-372.9.1.el8.x86_64-x86_64-with-glibc2.28
+                program: /rdma/vast-rdma/vast/fiete/jackking/cls/train.py
+                python: CPython 3.12.11
+                root: /rdma/vast-rdma/vast/fiete/jackking/cls
+                slurm:
+                    cluster_name: openmind7
+                    conf: /etc/slurm/slurm.conf
+                    cpu_bind: verbose
+                    cpu_bind_list: ""
+                    cpu_bind_type: ""
+                    cpu_bind_verbose: verbose
+                    cpus_on_node: "2"
+                    gpus_on_node: "1"
+                    gtids: "0"
+                    job_account: evlab
+                    job_cpus_per_node: "2"
+                    job_gid: "102035"
+                    job_id: "43900797"
+                    job_name: bash
+                    job_nodelist: node055
+                    job_num_nodes: "1"
+                    job_partition: normal
+                    job_qos: normal
+                    job_uid: "192617"
+                    job_user: jackking
+                    jobid: "43900797"
+                    launch_node_ipaddr: 172.16.24.234
+                    localid: "0"
+                    nnodes: "1"
+                    nodeid: "0"
+                    nodelist: node055
+                    nprocs: "1"
+                    ntasks: "1"
+                    prio_process: "0"
+                    procid: "0"
+                    pty_port: "46730"
+                    pty_win_col: "140"
+                    pty_win_row: "14"
+                    script_context: prolog_task
+                    srun_comm_host: 172.16.24.234
+                    srun_comm_port: "38330"
+                    step_gpus: "1"
+                    step_id: "0"
+                    step_launcher_port: "38330"
+                    step_nodelist: node055
+                    step_num_nodes: "1"
+                    step_num_tasks: "1"
+                    step_tasks_per_node: "1"
+                    stepid: "0"
+                    submit_dir: /rdma/vast-rdma/vast/fiete/jackking/cls
+                    submit_host: evnode
+                    task_pid: "1330709"
+                    tasks_per_node: "1"
+                    topology_addr: node055
+                    topology_addr_pattern: node
+                    umask: "0022"
+                    working_cluster: openmind7:om-svc01:6817:9728:109
+                startedAt: "2025-10-05T02:02:29.851298Z"
+                writerId: cihtu9aa7mcfsry10pwj3zfypovl16ky
+        m: []
+        python_version: 3.12.11
+        t:
+            "1":
+                - 1
+            "2":
+                - 1
+            "3":
+                - 16
+                - 61
+            "4": 3.12.11
+            "5": 0.22.1
+            "12": 0.22.1
+            "13": linux-x86_64
+batch_episodes:
+    value: 128
+device:
+    value: cpu
+hidden_size:
+    value: 128
+input_goal:
+    value: false
+input_size:
+    value: 90
+input_type:
+    value: g
+lr:
+    value: 0.001
+n_epochs:
+    value: 500
+num_envs:
+    value: 4
+num_layers:
+    value: 1
+plot_every:
+    value: 100
+seed:
+    value: 0
+size:
+    value: 8
+speed:
+    value: 1
+steps_per_episode:
+    value: 20
+val_batch_episodes:
+    value: 16

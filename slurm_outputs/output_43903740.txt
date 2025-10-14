@@ -1,0 +1,3 @@
+/var/slurm/slurmd/job43903740/slurm_script: line 20: module: command not found
+/om2/user/jackking/conda/envs/cls/bin/python
+slurmstepd: error: *** JOB 43903740 ON node112 CANCELLED AT 2025-10-05T23:50:06 ***

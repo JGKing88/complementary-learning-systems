@@ -1,0 +1,15 @@
+rollout steps=160 | obs 112096.6ms | label 149.4ms | forward 213.0ms | action 111.1ms | step 150.2ms | total 112720.3ms
+epoch 0001 | loss 1.3991 | train acc 0.156
+epoch 0001 | train acc mean 0.031 | train success mean 0.035 | acc per-env: 0.000, 0.047, 0.000, 0.006, 0.013, 0.000, 0.023, 0.000, 0.085, 0.013, 0.000, 0.000, 0.017, 0.070, 0.144, 0.052, 0.043, 0.000, 0.056, 0.010, 0.030, 0.023, 0.058, 0.000, 0.056, 0.044, 0.092, 0.000, 0.000, 0.000, 0.000, 0.115 | success per-env: 0/16, 1/16, 0/16, 0/16, 0/16, 0/16, 1/16, 0/16, 1/16, 0/16, 0/16, 0/16, 1/16, 1/16, 2/16, 1/16, 1/16, 0/16, 1/16, 1/16, 1/16, 1/16, 2/16, 0/16, 1/16, 0/16, 1/16, 0/16, 0/16, 0/16, 0/16, 1/16
+epoch 0001 | pos_validation acc mean 0.013 | pos_validation success mean 0.016 | acc per-env: 0.000, 0.047, 0.000, 0.006 | success per-env: 0/16, 1/16, 0/16, 0/16
+epoch 0001 | goal_validation acc mean 0.037 | goal_validation success mean 0.031 | acc per-env: 0.056, 0.000, 0.043, 0.050 | success per-env: 1/16, 0/16, 1/16, 0/16
+rollout steps=160 | obs 115285.9ms | label 147.9ms | forward 98.8ms | action 95.3ms | step 152.0ms | total 115780.0ms
+epoch 0002 | loss 1.5882 | train acc 0.036
+epoch 0002 | train acc mean 0.031 | train success mean 0.033 | acc per-env: 0.000, 0.047, 0.000, 0.006, 0.013, 0.000, 0.023, 0.000, 0.085, 0.013, 0.000, 0.000, 0.017, 0.070, 0.144, 0.052, 0.043, 0.000, 0.056, 0.010, 0.030, 0.023, 0.056, 0.000, 0.056, 0.044, 0.092, 0.000, 0.000, 0.000, 0.000, 0.115 | success per-env: 0/16, 1/16, 0/16, 0/16, 0/16, 0/16, 1/16, 0/16, 1/16, 0/16, 0/16, 0/16, 1/16, 1/16, 2/16, 1/16, 1/16, 0/16, 1/16, 1/16, 1/16, 1/16, 1/16, 0/16, 1/16, 0/16, 1/16, 0/16, 0/16, 0/16, 0/16, 1/16
+epoch 0002 | pos_validation acc mean 0.013 | pos_validation success mean 0.016 | acc per-env: 0.000, 0.047, 0.000, 0.006 | success per-env: 0/16, 1/16, 0/16, 0/16
+epoch 0002 | goal_validation acc mean 0.038 | goal_validation success mean 0.047 | acc per-env: 0.056, 0.000, 0.043, 0.053 | success per-env: 1/16, 0/16, 1/16, 1/16
+rollout steps=160 | obs 115979.2ms | label 150.4ms | forward 98.2ms | action 96.5ms | step 153.6ms | total 116477.8ms
+epoch 0003 | loss 1.5257 | train acc 0.026
+epoch 0003 | train acc mean 0.035 | train success mean 0.035 | acc per-env: 0.000, 0.047, 0.000, 0.006, 0.013, 0.025, 0.023, 0.000, 0.088, 0.033, 0.003, 0.000, 0.017, 0.070, 0.144, 0.052, 0.043, 0.037, 0.056, 0.007, 0.030, 0.023, 0.056, 0.000, 0.056, 0.044, 0.102, 0.019, 0.000, 0.000, 0.003, 0.115 | success per-env: 0/16, 1/16, 0/16, 0/16, 0/16, 0/16, 1/16, 0/16, 1/16, 1/16, 0/16, 0/16, 1/16, 1/16, 2/16, 1/16, 1/16, 0/16, 1/16, 1/16, 1/16, 1/16, 1/16, 0/16, 1/16, 0/16, 1/16, 0/16, 0/16, 0/16, 0/16, 1/16
+epoch 0003 | pos_validation acc mean 0.027 | pos_validation success mean 0.031 | acc per-env: 0.050, 0.047, 0.003, 0.010 | success per-env: 0/16, 1/16, 0/16, 1/16
+epoch 0003 | goal_validation acc mean 0.038 | goal_validation success mean 0.047 | acc per-env: 0.056, 0.000, 0.043, 0.053 | success per-env: 1/16, 0/16, 1/16, 1/16

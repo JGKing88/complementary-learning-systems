@@ -1,0 +1,1500 @@
+rollout steps=20 | obs 1554.1ms | label 6.8ms | forward 87.6ms | action 26.5ms | step 6.0ms | total 1681.0ms
+epoch 0001 | loss 1.3494 | train acc 0.038
+epoch 0001 | train acc mean 0.280 | train success mean 0.031 | acc per-env: 0.280 | success per-env: 2/64
+epoch 0001 | pos_validation acc mean 0.138 | pos_validation success mean 0.016 | acc per-env: 0.138 | success per-env: 1/64
+epoch 0001 | goal_validation acc mean 0.062 | goal_validation success mean 0.031 | acc per-env: 0.062 | success per-env: 2/64
+rollout steps=20 | obs 1495.6ms | label 6.5ms | forward 7.3ms | action 5.4ms | step 5.9ms | total 1520.8ms
+epoch 0002 | loss 1.3529 | train acc 0.316
+epoch 0002 | train acc mean 0.155 | train success mean 0.062 | acc per-env: 0.155 | success per-env: 4/64
+epoch 0002 | pos_validation acc mean 0.142 | pos_validation success mean 0.062 | acc per-env: 0.142 | success per-env: 4/64
+epoch 0002 | goal_validation acc mean 0.048 | goal_validation success mean 0.062 | acc per-env: 0.048 | success per-env: 4/64
+rollout steps=20 | obs 1483.0ms | label 6.4ms | forward 7.0ms | action 5.4ms | step 5.7ms | total 1507.6ms
+epoch 0003 | loss 1.3760 | train acc 0.199
+epoch 0003 | train acc mean 0.233 | train success mean 0.344 | acc per-env: 0.233 | success per-env: 22/64
+epoch 0003 | pos_validation acc mean 0.081 | pos_validation success mean 0.062 | acc per-env: 0.081 | success per-env: 4/64
+epoch 0003 | goal_validation acc mean 0.039 | goal_validation success mean 0.047 | acc per-env: 0.039 | success per-env: 3/64
+rollout steps=20 | obs 1312.9ms | label 6.2ms | forward 8.1ms | action 5.4ms | step 5.3ms | total 1337.8ms
+epoch 0004 | loss 1.3419 | train acc 0.254
+epoch 0004 | train acc mean 0.202 | train success mean 0.234 | acc per-env: 0.202 | success per-env: 15/64
+epoch 0004 | pos_validation acc mean 0.083 | pos_validation success mean 0.062 | acc per-env: 0.083 | success per-env: 4/64
+epoch 0004 | goal_validation acc mean 0.026 | goal_validation success mean 0.016 | acc per-env: 0.026 | success per-env: 1/64
+rollout steps=20 | obs 1340.2ms | label 6.3ms | forward 7.7ms | action 5.5ms | step 5.5ms | total 1365.3ms
+epoch 0005 | loss 1.2766 | train acc 0.245
+epoch 0005 | train acc mean 0.128 | train success mean 0.234 | acc per-env: 0.128 | success per-env: 15/64
+epoch 0005 | pos_validation acc mean 0.094 | pos_validation success mean 0.062 | acc per-env: 0.094 | success per-env: 4/64
+epoch 0005 | goal_validation acc mean 0.026 | goal_validation success mean 0.000 | acc per-env: 0.026 | success per-env: 0/64
+rollout steps=20 | obs 1344.9ms | label 6.2ms | forward 7.5ms | action 5.3ms | step 5.3ms | total 1369.3ms
+epoch 0006 | loss 1.2494 | train acc 0.148
+epoch 0006 | train acc mean 0.231 | train success mean 0.234 | acc per-env: 0.231 | success per-env: 15/64
+epoch 0006 | pos_validation acc mean 0.093 | pos_validation success mean 0.062 | acc per-env: 0.093 | success per-env: 4/64
+epoch 0006 | goal_validation acc mean 0.026 | goal_validation success mean 0.000 | acc per-env: 0.026 | success per-env: 0/64
+rollout steps=20 | obs 1329.1ms | label 6.3ms | forward 7.1ms | action 5.3ms | step 5.4ms | total 1353.2ms
+epoch 0007 | loss 1.2344 | train acc 0.268
+epoch 0007 | train acc mean 0.235 | train success mean 0.250 | acc per-env: 0.235 | success per-env: 16/64
+epoch 0007 | pos_validation acc mean 0.093 | pos_validation success mean 0.062 | acc per-env: 0.093 | success per-env: 4/64
+epoch 0007 | goal_validation acc mean 0.026 | goal_validation success mean 0.016 | acc per-env: 0.026 | success per-env: 1/64
+rollout steps=20 | obs 1333.4ms | label 6.3ms | forward 7.2ms | action 5.3ms | step 5.4ms | total 1357.5ms
+epoch 0008 | loss 1.2025 | train acc 0.263
+epoch 0008 | train acc mean 0.318 | train success mean 0.281 | acc per-env: 0.318 | success per-env: 18/64
+epoch 0008 | pos_validation acc mean 0.093 | pos_validation success mean 0.062 | acc per-env: 0.093 | success per-env: 4/64
+epoch 0008 | goal_validation acc mean 0.026 | goal_validation success mean 0.016 | acc per-env: 0.026 | success per-env: 1/64
+rollout steps=20 | obs 1314.0ms | label 6.3ms | forward 7.3ms | action 5.5ms | step 5.4ms | total 1338.4ms
+epoch 0009 | loss 1.2649 | train acc 0.334
+epoch 0009 | train acc mean 0.309 | train success mean 0.281 | acc per-env: 0.309 | success per-env: 18/64
+epoch 0009 | pos_validation acc mean 0.093 | pos_validation success mean 0.062 | acc per-env: 0.093 | success per-env: 4/64
+epoch 0009 | goal_validation acc mean 0.025 | goal_validation success mean 0.016 | acc per-env: 0.025 | success per-env: 1/64
+rollout steps=20 | obs 1303.5ms | label 6.2ms | forward 7.1ms | action 5.3ms | step 5.4ms | total 1327.5ms
+epoch 0010 | loss 1.2592 | train acc 0.335
+epoch 0010 | train acc mean 0.295 | train success mean 0.219 | acc per-env: 0.295 | success per-env: 14/64
+epoch 0010 | pos_validation acc mean 0.123 | pos_validation success mean 0.062 | acc per-env: 0.123 | success per-env: 4/64
+epoch 0010 | goal_validation acc mean 0.086 | goal_validation success mean 0.016 | acc per-env: 0.086 | success per-env: 1/64
+rollout steps=20 | obs 1333.2ms | label 6.2ms | forward 7.0ms | action 5.3ms | step 5.4ms | total 1357.0ms
+epoch 0011 | loss 1.2395 | train acc 0.313
+epoch 0011 | train acc mean 0.292 | train success mean 0.391 | acc per-env: 0.292 | success per-env: 25/64
+epoch 0011 | pos_validation acc mean 0.179 | pos_validation success mean 0.047 | acc per-env: 0.179 | success per-env: 3/64
+epoch 0011 | goal_validation acc mean 0.108 | goal_validation success mean 0.016 | acc per-env: 0.108 | success per-env: 1/64
+rollout steps=20 | obs 1180.8ms | label 5.9ms | forward 7.0ms | action 5.1ms | step 5.0ms | total 1203.8ms
+epoch 0012 | loss 1.1875 | train acc 0.344
+epoch 0012 | train acc mean 0.173 | train success mean 0.281 | acc per-env: 0.173 | success per-env: 18/64
+epoch 0012 | pos_validation acc mean 0.168 | pos_validation success mean 0.047 | acc per-env: 0.168 | success per-env: 3/64
+epoch 0012 | goal_validation acc mean 0.123 | goal_validation success mean 0.016 | acc per-env: 0.123 | success per-env: 1/64
+rollout steps=20 | obs 1292.2ms | label 6.1ms | forward 6.9ms | action 5.1ms | step 5.3ms | total 1315.7ms
+epoch 0013 | loss 1.2089 | train acc 0.175
+epoch 0013 | train acc mean 0.167 | train success mean 0.266 | acc per-env: 0.167 | success per-env: 17/64
+epoch 0013 | pos_validation acc mean 0.107 | pos_validation success mean 0.031 | acc per-env: 0.107 | success per-env: 2/64
+epoch 0013 | goal_validation acc mean 0.155 | goal_validation success mean 0.016 | acc per-env: 0.155 | success per-env: 1/64
+rollout steps=20 | obs 1269.7ms | label 6.1ms | forward 6.9ms | action 5.1ms | step 5.3ms | total 1293.0ms
+epoch 0014 | loss 1.2010 | train acc 0.190
+epoch 0014 | train acc mean 0.189 | train success mean 0.312 | acc per-env: 0.189 | success per-env: 20/64
+epoch 0014 | pos_validation acc mean 0.109 | pos_validation success mean 0.031 | acc per-env: 0.109 | success per-env: 2/64
+epoch 0014 | goal_validation acc mean 0.162 | goal_validation success mean 0.016 | acc per-env: 0.162 | success per-env: 1/64
+rollout steps=20 | obs 1195.9ms | label 6.1ms | forward 7.4ms | action 5.3ms | step 5.2ms | total 1219.8ms
+epoch 0015 | loss 1.1826 | train acc 0.247
+epoch 0015 | train acc mean 0.279 | train success mean 0.516 | acc per-env: 0.279 | success per-env: 33/64
+epoch 0015 | pos_validation acc mean 0.172 | pos_validation success mean 0.047 | acc per-env: 0.172 | success per-env: 3/64
+epoch 0015 | goal_validation acc mean 0.135 | goal_validation success mean 0.016 | acc per-env: 0.135 | success per-env: 1/64
+rollout steps=20 | obs 1106.3ms | label 5.7ms | forward 7.1ms | action 5.1ms | step 4.8ms | total 1129.2ms
+epoch 0016 | loss 1.1543 | train acc 0.331
+epoch 0016 | train acc mean 0.288 | train success mean 0.500 | acc per-env: 0.288 | success per-env: 32/64
+epoch 0016 | pos_validation acc mean 0.177 | pos_validation success mean 0.047 | acc per-env: 0.177 | success per-env: 3/64
+epoch 0016 | goal_validation acc mean 0.128 | goal_validation success mean 0.016 | acc per-env: 0.128 | success per-env: 1/64
+rollout steps=20 | obs 1116.0ms | label 5.8ms | forward 10.2ms | action 5.2ms | step 4.9ms | total 1142.1ms
+epoch 0017 | loss 1.1342 | train acc 0.360
+epoch 0017 | train acc mean 0.345 | train success mean 0.594 | acc per-env: 0.345 | success per-env: 38/64
+epoch 0017 | pos_validation acc mean 0.181 | pos_validation success mean 0.047 | acc per-env: 0.181 | success per-env: 3/64
+epoch 0017 | goal_validation acc mean 0.125 | goal_validation success mean 0.016 | acc per-env: 0.125 | success per-env: 1/64
+rollout steps=20 | obs 1154.4ms | label 5.8ms | forward 7.1ms | action 5.2ms | step 5.0ms | total 1177.5ms
+epoch 0018 | loss 1.1183 | train acc 0.406
+epoch 0018 | train acc mean 0.347 | train success mean 0.406 | acc per-env: 0.347 | success per-env: 26/64
+epoch 0018 | pos_validation acc mean 0.166 | pos_validation success mean 0.062 | acc per-env: 0.166 | success per-env: 4/64
+epoch 0018 | goal_validation acc mean 0.073 | goal_validation success mean 0.016 | acc per-env: 0.073 | success per-env: 1/64
+rollout steps=20 | obs 1265.1ms | label 6.2ms | forward 7.8ms | action 5.3ms | step 5.3ms | total 1289.7ms
+epoch 0019 | loss 1.1091 | train acc 0.407
+epoch 0019 | train acc mean 0.454 | train success mean 0.359 | acc per-env: 0.454 | success per-env: 23/64
+epoch 0019 | pos_validation acc mean 0.133 | pos_validation success mean 0.094 | acc per-env: 0.133 | success per-env: 6/64
+epoch 0019 | goal_validation acc mean 0.032 | goal_validation success mean 0.016 | acc per-env: 0.032 | success per-env: 1/64
+rollout steps=20 | obs 1374.8ms | label 6.5ms | forward 7.2ms | action 5.4ms | step 5.7ms | total 1399.6ms
+epoch 0020 | loss 1.0852 | train acc 0.457
+epoch 0020 | train acc mean 0.471 | train success mean 0.281 | acc per-env: 0.471 | success per-env: 18/64
+epoch 0020 | pos_validation acc mean 0.133 | pos_validation success mean 0.125 | acc per-env: 0.133 | success per-env: 8/64
+epoch 0020 | goal_validation acc mean 0.027 | goal_validation success mean 0.016 | acc per-env: 0.027 | success per-env: 1/64
+rollout steps=20 | obs 1411.7ms | label 6.6ms | forward 7.4ms | action 5.4ms | step 5.7ms | total 1436.9ms
+epoch 0021 | loss 1.0929 | train acc 0.470
+epoch 0021 | train acc mean 0.464 | train success mean 0.391 | acc per-env: 0.464 | success per-env: 25/64
+epoch 0021 | pos_validation acc mean 0.133 | pos_validation success mean 0.125 | acc per-env: 0.133 | success per-env: 8/64
+epoch 0021 | goal_validation acc mean 0.027 | goal_validation success mean 0.016 | acc per-env: 0.027 | success per-env: 1/64
+rollout steps=20 | obs 1342.7ms | label 6.4ms | forward 7.3ms | action 5.4ms | step 5.6ms | total 1367.3ms
+epoch 0022 | loss 1.0910 | train acc 0.454
+epoch 0022 | train acc mean 0.472 | train success mean 0.656 | acc per-env: 0.472 | success per-env: 42/64
+epoch 0022 | pos_validation acc mean 0.128 | pos_validation success mean 0.109 | acc per-env: 0.128 | success per-env: 7/64
+epoch 0022 | goal_validation acc mean 0.027 | goal_validation success mean 0.016 | acc per-env: 0.027 | success per-env: 1/64
+rollout steps=20 | obs 1151.9ms | label 7.3ms | forward 7.6ms | action 5.2ms | step 5.0ms | total 1177.1ms
+epoch 0023 | loss 1.0652 | train acc 0.491
+epoch 0023 | train acc mean 0.344 | train success mean 0.500 | acc per-env: 0.344 | success per-env: 32/64
+epoch 0023 | pos_validation acc mean 0.124 | pos_validation success mean 0.062 | acc per-env: 0.124 | success per-env: 4/64
+epoch 0023 | goal_validation acc mean 0.029 | goal_validation success mean 0.016 | acc per-env: 0.029 | success per-env: 1/64
+rollout steps=20 | obs 1238.5ms | label 6.1ms | forward 7.1ms | action 5.2ms | step 5.2ms | total 1262.2ms
+epoch 0024 | loss 1.0812 | train acc 0.385
+epoch 0024 | train acc mean 0.343 | train success mean 0.562 | acc per-env: 0.343 | success per-env: 36/64
+epoch 0024 | pos_validation acc mean 0.147 | pos_validation success mean 0.062 | acc per-env: 0.147 | success per-env: 4/64
+epoch 0024 | goal_validation acc mean 0.077 | goal_validation success mean 0.016 | acc per-env: 0.077 | success per-env: 1/64
+rollout steps=20 | obs 1147.0ms | label 5.8ms | forward 7.0ms | action 5.1ms | step 4.9ms | total 1169.9ms
+epoch 0025 | loss 1.0597 | train acc 0.402
+epoch 0025 | train acc mean 0.384 | train success mean 0.641 | acc per-env: 0.384 | success per-env: 41/64
+epoch 0025 | pos_validation acc mean 0.214 | pos_validation success mean 0.062 | acc per-env: 0.214 | success per-env: 4/64
+epoch 0025 | goal_validation acc mean 0.108 | goal_validation success mean 0.016 | acc per-env: 0.108 | success per-env: 1/64
+rollout steps=20 | obs 1089.0ms | label 5.7ms | forward 7.0ms | action 5.1ms | step 4.8ms | total 1111.5ms
+epoch 0026 | loss 1.0632 | train acc 0.436
+epoch 0026 | train acc mean 0.417 | train success mean 0.656 | acc per-env: 0.417 | success per-env: 42/64
+epoch 0026 | pos_validation acc mean 0.220 | pos_validation success mean 0.062 | acc per-env: 0.220 | success per-env: 4/64
+epoch 0026 | goal_validation acc mean 0.140 | goal_validation success mean 0.016 | acc per-env: 0.140 | success per-env: 1/64
+rollout steps=20 | obs 1116.6ms | label 5.8ms | forward 7.4ms | action 5.2ms | step 4.9ms | total 1139.9ms
+epoch 0027 | loss 1.0846 | train acc 0.424
+epoch 0027 | train acc mean 0.400 | train success mean 0.641 | acc per-env: 0.400 | success per-env: 41/64
+epoch 0027 | pos_validation acc mean 0.207 | pos_validation success mean 0.047 | acc per-env: 0.207 | success per-env: 3/64
+epoch 0027 | goal_validation acc mean 0.127 | goal_validation success mean 0.016 | acc per-env: 0.127 | success per-env: 1/64
+rollout steps=20 | obs 1126.4ms | label 5.7ms | forward 6.6ms | action 5.1ms | step 4.9ms | total 1148.7ms
+epoch 0028 | loss 1.0832 | train acc 0.416
+epoch 0028 | train acc mean 0.404 | train success mean 0.672 | acc per-env: 0.404 | success per-env: 43/64
+epoch 0028 | pos_validation acc mean 0.179 | pos_validation success mean 0.062 | acc per-env: 0.179 | success per-env: 4/64
+epoch 0028 | goal_validation acc mean 0.090 | goal_validation success mean 0.016 | acc per-env: 0.090 | success per-env: 1/64
+rollout steps=20 | obs 1093.4ms | label 5.7ms | forward 6.9ms | action 5.0ms | step 4.8ms | total 1115.9ms
+epoch 0029 | loss 1.0680 | train acc 0.434
+epoch 0029 | train acc mean 0.434 | train success mean 0.703 | acc per-env: 0.434 | success per-env: 45/64
+epoch 0029 | pos_validation acc mean 0.131 | pos_validation success mean 0.062 | acc per-env: 0.131 | success per-env: 4/64
+epoch 0029 | goal_validation acc mean 0.055 | goal_validation success mean 0.016 | acc per-env: 0.055 | success per-env: 1/64
+rollout steps=20 | obs 1072.3ms | label 5.6ms | forward 6.8ms | action 5.0ms | step 4.8ms | total 1094.4ms
+epoch 0030 | loss 1.0427 | train acc 0.463
+epoch 0030 | train acc mean 0.510 | train success mean 0.859 | acc per-env: 0.510 | success per-env: 55/64
+epoch 0030 | pos_validation acc mean 0.115 | pos_validation success mean 0.062 | acc per-env: 0.115 | success per-env: 4/64
+epoch 0030 | goal_validation acc mean 0.036 | goal_validation success mean 0.016 | acc per-env: 0.036 | success per-env: 1/64
+rollout steps=20 | obs 1024.8ms | label 5.5ms | forward 7.1ms | action 5.0ms | step 4.6ms | total 1047.0ms
+epoch 0031 | loss 1.0155 | train acc 0.549
+epoch 0031 | train acc mean 0.472 | train success mean 0.656 | acc per-env: 0.472 | success per-env: 42/64
+epoch 0031 | pos_validation acc mean 0.147 | pos_validation success mean 0.188 | acc per-env: 0.147 | success per-env: 12/64
+epoch 0031 | goal_validation acc mean 0.027 | goal_validation success mean 0.016 | acc per-env: 0.027 | success per-env: 1/64
+rollout steps=20 | obs 1043.9ms | label 5.5ms | forward 6.7ms | action 5.0ms | step 4.7ms | total 1065.8ms
+epoch 0032 | loss 1.0159 | train acc 0.521
+epoch 0032 | train acc mean 0.463 | train success mean 0.688 | acc per-env: 0.463 | success per-env: 44/64
+epoch 0032 | pos_validation acc mean 0.149 | pos_validation success mean 0.203 | acc per-env: 0.149 | success per-env: 13/64
+epoch 0032 | goal_validation acc mean 0.027 | goal_validation success mean 0.016 | acc per-env: 0.027 | success per-env: 1/64
+rollout steps=20 | obs 984.4ms | label 5.4ms | forward 6.9ms | action 5.0ms | step 4.5ms | total 1006.2ms
+epoch 0033 | loss 1.0091 | train acc 0.516
+epoch 0033 | train acc mean 0.456 | train success mean 0.719 | acc per-env: 0.456 | success per-env: 46/64
+epoch 0033 | pos_validation acc mean 0.166 | pos_validation success mean 0.172 | acc per-env: 0.166 | success per-env: 11/64
+epoch 0033 | goal_validation acc mean 0.033 | goal_validation success mean 0.016 | acc per-env: 0.033 | success per-env: 1/64
+rollout steps=20 | obs 970.9ms | label 5.3ms | forward 6.5ms | action 4.9ms | step 4.4ms | total 992.0ms
+epoch 0034 | loss 1.0060 | train acc 0.507
+epoch 0034 | train acc mean 0.499 | train success mean 0.828 | acc per-env: 0.499 | success per-env: 53/64
+epoch 0034 | pos_validation acc mean 0.145 | pos_validation success mean 0.078 | acc per-env: 0.145 | success per-env: 5/64
+epoch 0034 | goal_validation acc mean 0.034 | goal_validation success mean 0.016 | acc per-env: 0.034 | success per-env: 1/64
+rollout steps=20 | obs 877.3ms | label 5.1ms | forward 6.7ms | action 4.9ms | step 4.3ms | total 898.2ms
+epoch 0035 | loss 0.9932 | train acc 0.563
+epoch 0035 | train acc mean 0.510 | train success mean 0.781 | acc per-env: 0.510 | success per-env: 50/64
+epoch 0035 | pos_validation acc mean 0.116 | pos_validation success mean 0.062 | acc per-env: 0.116 | success per-env: 4/64
+epoch 0035 | goal_validation acc mean 0.040 | goal_validation success mean 0.016 | acc per-env: 0.040 | success per-env: 1/64
+rollout steps=20 | obs 929.7ms | label 5.2ms | forward 6.6ms | action 4.9ms | step 4.4ms | total 950.8ms
+epoch 0036 | loss 1.0004 | train acc 0.535
+epoch 0036 | train acc mean 0.524 | train success mean 0.781 | acc per-env: 0.524 | success per-env: 50/64
+epoch 0036 | pos_validation acc mean 0.119 | pos_validation success mean 0.062 | acc per-env: 0.119 | success per-env: 4/64
+epoch 0036 | goal_validation acc mean 0.057 | goal_validation success mean 0.016 | acc per-env: 0.057 | success per-env: 1/64
+rollout steps=20 | obs 960.6ms | label 5.3ms | forward 6.8ms | action 5.0ms | step 4.5ms | total 982.0ms
+epoch 0037 | loss 1.0039 | train acc 0.529
+epoch 0037 | train acc mean 0.548 | train success mean 0.812 | acc per-env: 0.548 | success per-env: 52/64
+epoch 0037 | pos_validation acc mean 0.129 | pos_validation success mean 0.062 | acc per-env: 0.129 | success per-env: 4/64
+epoch 0037 | goal_validation acc mean 0.044 | goal_validation success mean 0.016 | acc per-env: 0.044 | success per-env: 1/64
+rollout steps=20 | obs 903.5ms | label 5.1ms | forward 6.5ms | action 4.9ms | step 4.3ms | total 924.2ms
+epoch 0038 | loss 0.9891 | train acc 0.578
+epoch 0038 | train acc mean 0.533 | train success mean 0.859 | acc per-env: 0.533 | success per-env: 55/64
+epoch 0038 | pos_validation acc mean 0.145 | pos_validation success mean 0.094 | acc per-env: 0.145 | success per-env: 6/64
+epoch 0038 | goal_validation acc mean 0.038 | goal_validation success mean 0.016 | acc per-env: 0.038 | success per-env: 1/64
+rollout steps=20 | obs 930.1ms | label 5.3ms | forward 6.6ms | action 4.9ms | step 4.4ms | total 951.2ms
+epoch 0039 | loss 0.9725 | train acc 0.594
+epoch 0039 | train acc mean 0.581 | train success mean 0.922 | acc per-env: 0.581 | success per-env: 59/64
+epoch 0039 | pos_validation acc mean 0.149 | pos_validation success mean 0.094 | acc per-env: 0.149 | success per-env: 6/64
+epoch 0039 | goal_validation acc mean 0.036 | goal_validation success mean 0.016 | acc per-env: 0.036 | success per-env: 1/64
+rollout steps=20 | obs 907.7ms | label 5.2ms | forward 6.7ms | action 4.9ms | step 4.3ms | total 928.9ms
+epoch 0040 | loss 0.9609 | train acc 0.615
+epoch 0040 | train acc mean 0.574 | train success mean 0.922 | acc per-env: 0.574 | success per-env: 59/64
+epoch 0040 | pos_validation acc mean 0.146 | pos_validation success mean 0.078 | acc per-env: 0.146 | success per-env: 5/64
+epoch 0040 | goal_validation acc mean 0.036 | goal_validation success mean 0.016 | acc per-env: 0.036 | success per-env: 1/64
+rollout steps=20 | obs 939.5ms | label 5.2ms | forward 6.5ms | action 4.9ms | step 4.4ms | total 960.6ms
+epoch 0041 | loss 0.9583 | train acc 0.609
+epoch 0041 | train acc mean 0.583 | train success mean 0.922 | acc per-env: 0.583 | success per-env: 59/64
+epoch 0041 | pos_validation acc mean 0.143 | pos_validation success mean 0.062 | acc per-env: 0.143 | success per-env: 4/64
+epoch 0041 | goal_validation acc mean 0.034 | goal_validation success mean 0.016 | acc per-env: 0.034 | success per-env: 1/64
+rollout steps=20 | obs 905.7ms | label 5.2ms | forward 6.6ms | action 4.9ms | step 4.3ms | total 926.7ms
+epoch 0042 | loss 0.9465 | train acc 0.629
+epoch 0042 | train acc mean 0.589 | train success mean 0.922 | acc per-env: 0.589 | success per-env: 59/64
+epoch 0042 | pos_validation acc mean 0.144 | pos_validation success mean 0.062 | acc per-env: 0.144 | success per-env: 4/64
+epoch 0042 | goal_validation acc mean 0.036 | goal_validation success mean 0.016 | acc per-env: 0.036 | success per-env: 1/64
+rollout steps=20 | obs 896.9ms | label 5.1ms | forward 6.4ms | action 4.8ms | step 4.3ms | total 917.5ms
+epoch 0043 | loss 0.9427 | train acc 0.635
+epoch 0043 | train acc mean 0.609 | train success mean 0.875 | acc per-env: 0.609 | success per-env: 56/64
+epoch 0043 | pos_validation acc mean 0.141 | pos_validation success mean 0.047 | acc per-env: 0.141 | success per-env: 3/64
+epoch 0043 | goal_validation acc mean 0.036 | goal_validation success mean 0.016 | acc per-env: 0.036 | success per-env: 1/64
+rollout steps=20 | obs 923.5ms | label 5.2ms | forward 6.5ms | action 4.9ms | step 4.4ms | total 944.5ms
+epoch 0044 | loss 0.9453 | train acc 0.643
+epoch 0044 | train acc mean 0.594 | train success mean 0.828 | acc per-env: 0.594 | success per-env: 53/64
+epoch 0044 | pos_validation acc mean 0.141 | pos_validation success mean 0.047 | acc per-env: 0.141 | success per-env: 3/64
+epoch 0044 | goal_validation acc mean 0.049 | goal_validation success mean 0.016 | acc per-env: 0.049 | success per-env: 1/64
+rollout steps=20 | obs 946.7ms | label 5.3ms | forward 6.6ms | action 5.0ms | step 4.4ms | total 968.0ms
+epoch 0045 | loss 0.9495 | train acc 0.627
+epoch 0045 | train acc mean 0.543 | train success mean 0.672 | acc per-env: 0.543 | success per-env: 43/64
+epoch 0045 | pos_validation acc mean 0.153 | pos_validation success mean 0.047 | acc per-env: 0.153 | success per-env: 3/64
+epoch 0045 | goal_validation acc mean 0.048 | goal_validation success mean 0.016 | acc per-env: 0.048 | success per-env: 1/64
+rollout steps=20 | obs 1005.6ms | label 5.4ms | forward 6.6ms | action 5.0ms | step 4.6ms | total 1027.1ms
+epoch 0046 | loss 0.9609 | train acc 0.557
+epoch 0046 | train acc mean 0.572 | train success mean 0.781 | acc per-env: 0.572 | success per-env: 50/64
+epoch 0046 | pos_validation acc mean 0.160 | pos_validation success mean 0.047 | acc per-env: 0.160 | success per-env: 3/64
+epoch 0046 | goal_validation acc mean 0.036 | goal_validation success mean 0.016 | acc per-env: 0.036 | success per-env: 1/64
+rollout steps=20 | obs 941.5ms | label 5.3ms | forward 7.1ms | action 4.9ms | step 4.4ms | total 963.1ms
+epoch 0047 | loss 0.9400 | train acc 0.620
+epoch 0047 | train acc mean 0.585 | train success mean 0.859 | acc per-env: 0.585 | success per-env: 55/64
+epoch 0047 | pos_validation acc mean 0.162 | pos_validation success mean 0.047 | acc per-env: 0.162 | success per-env: 3/64
+epoch 0047 | goal_validation acc mean 0.034 | goal_validation success mean 0.016 | acc per-env: 0.034 | success per-env: 1/64
+rollout steps=20 | obs 885.0ms | label 5.1ms | forward 6.3ms | action 4.8ms | step 4.2ms | total 905.5ms
+epoch 0048 | loss 0.9161 | train acc 0.641
+epoch 0048 | train acc mean 0.575 | train success mean 0.797 | acc per-env: 0.575 | success per-env: 51/64
+epoch 0048 | pos_validation acc mean 0.165 | pos_validation success mean 0.047 | acc per-env: 0.165 | success per-env: 3/64
+epoch 0048 | goal_validation acc mean 0.032 | goal_validation success mean 0.016 | acc per-env: 0.032 | success per-env: 1/64
+rollout steps=20 | obs 947.8ms | label 5.3ms | forward 6.9ms | action 5.0ms | step 4.4ms | total 969.5ms
+epoch 0049 | loss 0.9115 | train acc 0.619
+epoch 0049 | train acc mean 0.563 | train success mean 0.797 | acc per-env: 0.563 | success per-env: 51/64
+epoch 0049 | pos_validation acc mean 0.161 | pos_validation success mean 0.047 | acc per-env: 0.161 | success per-env: 3/64
+epoch 0049 | goal_validation acc mean 0.032 | goal_validation success mean 0.016 | acc per-env: 0.032 | success per-env: 1/64
+rollout steps=20 | obs 948.1ms | label 5.3ms | forward 6.5ms | action 4.9ms | step 4.4ms | total 969.1ms
+epoch 0050 | loss 0.9056 | train acc 0.627
+epoch 0050 | train acc mean 0.649 | train success mean 0.969 | acc per-env: 0.649 | success per-env: 62/64
+epoch 0050 | pos_validation acc mean 0.161 | pos_validation success mean 0.047 | acc per-env: 0.161 | success per-env: 3/64
+epoch 0050 | goal_validation acc mean 0.032 | goal_validation success mean 0.016 | acc per-env: 0.032 | success per-env: 1/64
+rollout steps=20 | obs 874.1ms | label 5.0ms | forward 6.3ms | action 4.8ms | step 4.2ms | total 894.4ms
+epoch 0051 | loss 0.8956 | train acc 0.666
+epoch 0051 | train acc mean 0.583 | train success mean 0.781 | acc per-env: 0.583 | success per-env: 50/64
+epoch 0051 | pos_validation acc mean 0.157 | pos_validation success mean 0.031 | acc per-env: 0.157 | success per-env: 2/64
+epoch 0051 | goal_validation acc mean 0.040 | goal_validation success mean 0.016 | acc per-env: 0.040 | success per-env: 1/64
+rollout steps=20 | obs 916.6ms | label 5.2ms | forward 6.4ms | action 4.9ms | step 4.3ms | total 937.4ms
+epoch 0052 | loss 0.9147 | train acc 0.613
+epoch 0052 | train acc mean 0.525 | train success mean 0.672 | acc per-env: 0.525 | success per-env: 43/64
+epoch 0052 | pos_validation acc mean 0.157 | pos_validation success mean 0.031 | acc per-env: 0.157 | success per-env: 2/64
+epoch 0052 | goal_validation acc mean 0.040 | goal_validation success mean 0.016 | acc per-env: 0.040 | success per-env: 1/64
+rollout steps=20 | obs 927.4ms | label 5.2ms | forward 6.5ms | action 4.9ms | step 4.4ms | total 948.4ms
+epoch 0053 | loss 0.9225 | train acc 0.552
+epoch 0053 | train acc mean 0.571 | train success mean 0.797 | acc per-env: 0.571 | success per-env: 51/64
+epoch 0053 | pos_validation acc mean 0.168 | pos_validation success mean 0.031 | acc per-env: 0.168 | success per-env: 2/64
+epoch 0053 | goal_validation acc mean 0.032 | goal_validation success mean 0.016 | acc per-env: 0.032 | success per-env: 1/64
+rollout steps=20 | obs 827.1ms | label 5.0ms | forward 6.8ms | action 4.9ms | step 4.1ms | total 847.8ms
+epoch 0054 | loss 0.8843 | train acc 0.637
+epoch 0054 | train acc mean 0.611 | train success mean 0.891 | acc per-env: 0.611 | success per-env: 57/64
+epoch 0054 | pos_validation acc mean 0.163 | pos_validation success mean 0.031 | acc per-env: 0.163 | success per-env: 2/64
+epoch 0054 | goal_validation acc mean 0.032 | goal_validation success mean 0.016 | acc per-env: 0.032 | success per-env: 1/64
+rollout steps=20 | obs 800.4ms | label 4.9ms | forward 6.5ms | action 4.8ms | step 4.0ms | total 820.4ms
+epoch 0055 | loss 0.8622 | train acc 0.674
+epoch 0055 | train acc mean 0.575 | train success mean 0.875 | acc per-env: 0.575 | success per-env: 56/64
+epoch 0055 | pos_validation acc mean 0.161 | pos_validation success mean 0.031 | acc per-env: 0.161 | success per-env: 2/64
+epoch 0055 | goal_validation acc mean 0.032 | goal_validation success mean 0.016 | acc per-env: 0.032 | success per-env: 1/64
+rollout steps=20 | obs 915.7ms | label 5.2ms | forward 7.0ms | action 5.0ms | step 4.3ms | total 937.2ms
+epoch 0056 | loss 0.8814 | train acc 0.626
+epoch 0056 | train acc mean 0.598 | train success mean 0.891 | acc per-env: 0.598 | success per-env: 57/64
+epoch 0056 | pos_validation acc mean 0.143 | pos_validation success mean 0.031 | acc per-env: 0.143 | success per-env: 2/64
+epoch 0056 | goal_validation acc mean 0.032 | goal_validation success mean 0.016 | acc per-env: 0.032 | success per-env: 1/64
+rollout steps=20 | obs 912.6ms | label 5.2ms | forward 6.4ms | action 4.9ms | step 4.3ms | total 933.5ms
+epoch 0057 | loss 0.8670 | train acc 0.651
+epoch 0057 | train acc mean 0.663 | train success mean 0.953 | acc per-env: 0.663 | success per-env: 61/64
+epoch 0057 | pos_validation acc mean 0.141 | pos_validation success mean 0.031 | acc per-env: 0.141 | success per-env: 2/64
+epoch 0057 | goal_validation acc mean 0.032 | goal_validation success mean 0.016 | acc per-env: 0.032 | success per-env: 1/64
+rollout steps=20 | obs 847.6ms | label 5.0ms | forward 6.3ms | action 4.8ms | step 4.1ms | total 867.8ms
+epoch 0058 | loss 0.8559 | train acc 0.675
+epoch 0058 | train acc mean 0.542 | train success mean 0.703 | acc per-env: 0.542 | success per-env: 45/64
+epoch 0058 | pos_validation acc mean 0.147 | pos_validation success mean 0.031 | acc per-env: 0.147 | success per-env: 2/64
+epoch 0058 | goal_validation acc mean 0.039 | goal_validation success mean 0.016 | acc per-env: 0.039 | success per-env: 1/64
+rollout steps=20 | obs 883.5ms | label 5.1ms | forward 6.6ms | action 4.9ms | step 4.2ms | total 904.2ms
+epoch 0059 | loss 0.8819 | train acc 0.606
+epoch 0059 | train acc mean 0.548 | train success mean 0.688 | acc per-env: 0.548 | success per-env: 44/64
+epoch 0059 | pos_validation acc mean 0.184 | pos_validation success mean 0.031 | acc per-env: 0.184 | success per-env: 2/64
+epoch 0059 | goal_validation acc mean 0.055 | goal_validation success mean 0.016 | acc per-env: 0.055 | success per-env: 1/64
+rollout steps=20 | obs 833.0ms | label 4.9ms | forward 6.4ms | action 4.7ms | step 4.1ms | total 853.1ms
+epoch 0060 | loss 0.8713 | train acc 0.636
+epoch 0060 | train acc mean 0.571 | train success mean 0.766 | acc per-env: 0.571 | success per-env: 49/64
+epoch 0060 | pos_validation acc mean 0.167 | pos_validation success mean 0.031 | acc per-env: 0.167 | success per-env: 2/64
+epoch 0060 | goal_validation acc mean 0.034 | goal_validation success mean 0.016 | acc per-env: 0.034 | success per-env: 1/64
+rollout steps=20 | obs 819.2ms | label 4.9ms | forward 6.4ms | action 4.7ms | step 4.1ms | total 839.3ms
+epoch 0061 | loss 0.8684 | train acc 0.652
+epoch 0061 | train acc mean 0.619 | train success mean 0.844 | acc per-env: 0.619 | success per-env: 54/64
+epoch 0061 | pos_validation acc mean 0.155 | pos_validation success mean 0.031 | acc per-env: 0.155 | success per-env: 2/64
+epoch 0061 | goal_validation acc mean 0.032 | goal_validation success mean 0.016 | acc per-env: 0.032 | success per-env: 1/64
+rollout steps=20 | obs 806.0ms | label 4.9ms | forward 6.3ms | action 4.8ms | step 4.0ms | total 826.0ms
+epoch 0062 | loss 0.8398 | train acc 0.671
+epoch 0062 | train acc mean 0.669 | train success mean 0.938 | acc per-env: 0.669 | success per-env: 60/64
+epoch 0062 | pos_validation acc mean 0.142 | pos_validation success mean 0.031 | acc per-env: 0.142 | success per-env: 2/64
+epoch 0062 | goal_validation acc mean 0.032 | goal_validation success mean 0.016 | acc per-env: 0.032 | success per-env: 1/64
+rollout steps=20 | obs 785.7ms | label 4.8ms | forward 6.4ms | action 4.8ms | step 3.9ms | total 805.6ms
+epoch 0063 | loss 0.8239 | train acc 0.688
+epoch 0063 | train acc mean 0.663 | train success mean 0.953 | acc per-env: 0.663 | success per-env: 61/64
+epoch 0063 | pos_validation acc mean 0.141 | pos_validation success mean 0.031 | acc per-env: 0.141 | success per-env: 2/64
+epoch 0063 | goal_validation acc mean 0.032 | goal_validation success mean 0.016 | acc per-env: 0.032 | success per-env: 1/64
+rollout steps=20 | obs 808.0ms | label 4.8ms | forward 6.3ms | action 4.7ms | step 4.0ms | total 828.0ms
+epoch 0064 | loss 0.8267 | train acc 0.671
+epoch 0064 | train acc mean 0.663 | train success mean 0.938 | acc per-env: 0.663 | success per-env: 60/64
+epoch 0064 | pos_validation acc mean 0.142 | pos_validation success mean 0.031 | acc per-env: 0.142 | success per-env: 2/64
+epoch 0064 | goal_validation acc mean 0.032 | goal_validation success mean 0.016 | acc per-env: 0.032 | success per-env: 1/64
+rollout steps=20 | obs 790.5ms | label 4.8ms | forward 6.3ms | action 4.7ms | step 4.0ms | total 810.3ms
+epoch 0065 | loss 0.8214 | train acc 0.675
+epoch 0065 | train acc mean 0.677 | train success mean 0.938 | acc per-env: 0.677 | success per-env: 60/64
+epoch 0065 | pos_validation acc mean 0.154 | pos_validation success mean 0.031 | acc per-env: 0.154 | success per-env: 2/64
+epoch 0065 | goal_validation acc mean 0.032 | goal_validation success mean 0.016 | acc per-env: 0.032 | success per-env: 1/64
+rollout steps=20 | obs 777.0ms | label 4.8ms | forward 6.4ms | action 4.7ms | step 3.9ms | total 796.8ms
+epoch 0066 | loss 0.8051 | train acc 0.698
+epoch 0066 | train acc mean 0.655 | train success mean 0.891 | acc per-env: 0.655 | success per-env: 57/64
+epoch 0066 | pos_validation acc mean 0.155 | pos_validation success mean 0.031 | acc per-env: 0.155 | success per-env: 2/64
+epoch 0066 | goal_validation acc mean 0.036 | goal_validation success mean 0.016 | acc per-env: 0.036 | success per-env: 1/64
+rollout steps=20 | obs 791.4ms | label 4.8ms | forward 6.3ms | action 4.7ms | step 3.9ms | total 811.2ms
+epoch 0067 | loss 0.8192 | train acc 0.688
+epoch 0067 | train acc mean 0.645 | train success mean 0.875 | acc per-env: 0.645 | success per-env: 56/64
+epoch 0067 | pos_validation acc mean 0.151 | pos_validation success mean 0.031 | acc per-env: 0.151 | success per-env: 2/64
+epoch 0067 | goal_validation acc mean 0.048 | goal_validation success mean 0.016 | acc per-env: 0.048 | success per-env: 1/64
+rollout steps=20 | obs 795.7ms | label 4.9ms | forward 6.3ms | action 4.8ms | step 4.0ms | total 815.8ms
+epoch 0068 | loss 0.8179 | train acc 0.678
+epoch 0068 | train acc mean 0.651 | train success mean 0.891 | acc per-env: 0.651 | success per-env: 57/64
+epoch 0068 | pos_validation acc mean 0.144 | pos_validation success mean 0.031 | acc per-env: 0.144 | success per-env: 2/64
+epoch 0068 | goal_validation acc mean 0.041 | goal_validation success mean 0.016 | acc per-env: 0.041 | success per-env: 1/64
+rollout steps=20 | obs 789.9ms | label 4.8ms | forward 6.3ms | action 4.7ms | step 3.9ms | total 809.6ms
+epoch 0069 | loss 0.8093 | train acc 0.681
+epoch 0069 | train acc mean 0.700 | train success mean 0.984 | acc per-env: 0.700 | success per-env: 63/64
+epoch 0069 | pos_validation acc mean 0.149 | pos_validation success mean 0.031 | acc per-env: 0.149 | success per-env: 2/64
+epoch 0069 | goal_validation acc mean 0.036 | goal_validation success mean 0.016 | acc per-env: 0.036 | success per-env: 1/64
+rollout steps=20 | obs 754.8ms | label 4.7ms | forward 6.2ms | action 4.7ms | step 3.8ms | total 774.3ms
+epoch 0070 | loss 0.7783 | train acc 0.723
+epoch 0070 | train acc mean 0.689 | train success mean 0.953 | acc per-env: 0.689 | success per-env: 61/64
+epoch 0070 | pos_validation acc mean 0.149 | pos_validation success mean 0.031 | acc per-env: 0.149 | success per-env: 2/64
+epoch 0070 | goal_validation acc mean 0.033 | goal_validation success mean 0.016 | acc per-env: 0.033 | success per-env: 1/64
+rollout steps=20 | obs 760.1ms | label 4.7ms | forward 6.6ms | action 4.7ms | step 3.9ms | total 779.9ms
+epoch 0071 | loss 0.7763 | train acc 0.702
+epoch 0071 | train acc mean 0.685 | train success mean 0.969 | acc per-env: 0.685 | success per-env: 62/64
+epoch 0071 | pos_validation acc mean 0.154 | pos_validation success mean 0.031 | acc per-env: 0.154 | success per-env: 2/64
+epoch 0071 | goal_validation acc mean 0.032 | goal_validation success mean 0.016 | acc per-env: 0.032 | success per-env: 1/64
+rollout steps=20 | obs 750.5ms | label 4.7ms | forward 6.2ms | action 4.7ms | step 3.8ms | total 769.9ms
+epoch 0072 | loss 0.7666 | train acc 0.701
+epoch 0072 | train acc mean 0.684 | train success mean 0.969 | acc per-env: 0.684 | success per-env: 62/64
+epoch 0072 | pos_validation acc mean 0.160 | pos_validation success mean 0.031 | acc per-env: 0.160 | success per-env: 2/64
+epoch 0072 | goal_validation acc mean 0.032 | goal_validation success mean 0.016 | acc per-env: 0.032 | success per-env: 1/64
+rollout steps=20 | obs 756.1ms | label 4.7ms | forward 6.2ms | action 4.7ms | step 3.8ms | total 775.5ms
+epoch 0073 | loss 0.7621 | train acc 0.696
+epoch 0073 | train acc mean 0.667 | train success mean 0.953 | acc per-env: 0.667 | success per-env: 61/64
+epoch 0073 | pos_validation acc mean 0.162 | pos_validation success mean 0.031 | acc per-env: 0.162 | success per-env: 2/64
+epoch 0073 | goal_validation acc mean 0.033 | goal_validation success mean 0.016 | acc per-env: 0.033 | success per-env: 1/64
+rollout steps=20 | obs 764.8ms | label 4.7ms | forward 6.1ms | action 4.6ms | step 3.9ms | total 784.2ms
+epoch 0074 | loss 0.7659 | train acc 0.677
+epoch 0074 | train acc mean 0.683 | train success mean 0.953 | acc per-env: 0.683 | success per-env: 61/64
+epoch 0074 | pos_validation acc mean 0.156 | pos_validation success mean 0.031 | acc per-env: 0.156 | success per-env: 2/64
+epoch 0074 | goal_validation acc mean 0.065 | goal_validation success mean 0.016 | acc per-env: 0.065 | success per-env: 1/64
+rollout steps=20 | obs 743.8ms | label 4.7ms | forward 6.2ms | action 4.6ms | step 3.8ms | total 763.1ms
+epoch 0075 | loss 0.7555 | train acc 0.702
+epoch 0075 | train acc mean 0.686 | train success mean 0.969 | acc per-env: 0.686 | success per-env: 62/64
+epoch 0075 | pos_validation acc mean 0.146 | pos_validation success mean 0.031 | acc per-env: 0.146 | success per-env: 2/64
+epoch 0075 | goal_validation acc mean 0.065 | goal_validation success mean 0.016 | acc per-env: 0.065 | success per-env: 1/64
+rollout steps=20 | obs 743.6ms | label 4.7ms | forward 6.4ms | action 4.7ms | step 3.8ms | total 763.2ms
+epoch 0076 | loss 0.7501 | train acc 0.712
+epoch 0076 | train acc mean 0.708 | train success mean 0.984 | acc per-env: 0.708 | success per-env: 63/64
+epoch 0076 | pos_validation acc mean 0.146 | pos_validation success mean 0.031 | acc per-env: 0.146 | success per-env: 2/64
+epoch 0076 | goal_validation acc mean 0.070 | goal_validation success mean 0.016 | acc per-env: 0.070 | success per-env: 1/64
+rollout steps=20 | obs 735.5ms | label 4.6ms | forward 6.2ms | action 4.6ms | step 3.8ms | total 754.6ms
+epoch 0077 | loss 0.7382 | train acc 0.743
+epoch 0077 | train acc mean 0.701 | train success mean 0.938 | acc per-env: 0.701 | success per-env: 60/64
+epoch 0077 | pos_validation acc mean 0.159 | pos_validation success mean 0.031 | acc per-env: 0.159 | success per-env: 2/64
+epoch 0077 | goal_validation acc mean 0.079 | goal_validation success mean 0.016 | acc per-env: 0.079 | success per-env: 1/64
+rollout steps=20 | obs 744.1ms | label 4.7ms | forward 6.2ms | action 4.6ms | step 3.8ms | total 763.4ms
+epoch 0078 | loss 0.7338 | train acc 0.740
+epoch 0078 | train acc mean 0.706 | train success mean 0.953 | acc per-env: 0.706 | success per-env: 61/64
+epoch 0078 | pos_validation acc mean 0.209 | pos_validation success mean 0.031 | acc per-env: 0.209 | success per-env: 2/64
+epoch 0078 | goal_validation acc mean 0.079 | goal_validation success mean 0.016 | acc per-env: 0.079 | success per-env: 1/64
+rollout steps=20 | obs 734.2ms | label 4.6ms | forward 6.1ms | action 4.6ms | step 3.8ms | total 753.4ms
+epoch 0079 | loss 0.7247 | train acc 0.747
+epoch 0079 | train acc mean 0.716 | train success mean 1.000 | acc per-env: 0.716 | success per-env: 64/64
+epoch 0079 | pos_validation acc mean 0.213 | pos_validation success mean 0.031 | acc per-env: 0.213 | success per-env: 2/64
+epoch 0079 | goal_validation acc mean 0.079 | goal_validation success mean 0.016 | acc per-env: 0.079 | success per-env: 1/64
+rollout steps=18 | obs 721.3ms | label 4.3ms | forward 5.6ms | action 4.2ms | step 3.6ms | total 739.0ms
+epoch 0080 | loss 0.7139 | train acc 0.754
+epoch 0080 | train acc mean 0.711 | train success mean 1.000 | acc per-env: 0.711 | success per-env: 64/64
+epoch 0080 | pos_validation acc mean 0.213 | pos_validation success mean 0.031 | acc per-env: 0.213 | success per-env: 2/64
+epoch 0080 | goal_validation acc mean 0.079 | goal_validation success mean 0.016 | acc per-env: 0.079 | success per-env: 1/64
+rollout steps=18 | obs 717.9ms | label 4.4ms | forward 5.9ms | action 4.3ms | step 3.6ms | total 736.0ms
+epoch 0081 | loss 0.7131 | train acc 0.752
+epoch 0081 | train acc mean 0.696 | train success mean 0.984 | acc per-env: 0.696 | success per-env: 63/64
+epoch 0081 | pos_validation acc mean 0.185 | pos_validation success mean 0.031 | acc per-env: 0.185 | success per-env: 2/64
+epoch 0081 | goal_validation acc mean 0.075 | goal_validation success mean 0.016 | acc per-env: 0.075 | success per-env: 1/64
+rollout steps=20 | obs 739.4ms | label 4.7ms | forward 6.2ms | action 4.6ms | step 3.8ms | total 758.7ms
+epoch 0082 | loss 0.7460 | train acc 0.706
+epoch 0082 | train acc mean 0.689 | train success mean 0.969 | acc per-env: 0.689 | success per-env: 62/64
+epoch 0082 | pos_validation acc mean 0.175 | pos_validation success mean 0.031 | acc per-env: 0.175 | success per-env: 2/64
+epoch 0082 | goal_validation acc mean 0.068 | goal_validation success mean 0.016 | acc per-env: 0.068 | success per-env: 1/64
+rollout steps=20 | obs 727.0ms | label 4.7ms | forward 6.4ms | action 4.7ms | step 3.8ms | total 746.5ms
+epoch 0083 | loss 0.7409 | train acc 0.703
+epoch 0083 | train acc mean 0.691 | train success mean 0.969 | acc per-env: 0.691 | success per-env: 62/64
+epoch 0083 | pos_validation acc mean 0.178 | pos_validation success mean 0.031 | acc per-env: 0.178 | success per-env: 2/64
+epoch 0083 | goal_validation acc mean 0.065 | goal_validation success mean 0.016 | acc per-env: 0.065 | success per-env: 1/64
+rollout steps=20 | obs 717.5ms | label 4.6ms | forward 6.3ms | action 4.6ms | step 3.7ms | total 736.8ms
+epoch 0084 | loss 0.7258 | train acc 0.714
+epoch 0084 | train acc mean 0.651 | train success mean 0.938 | acc per-env: 0.651 | success per-env: 60/64
+epoch 0084 | pos_validation acc mean 0.171 | pos_validation success mean 0.031 | acc per-env: 0.171 | success per-env: 2/64
+epoch 0084 | goal_validation acc mean 0.065 | goal_validation success mean 0.016 | acc per-env: 0.065 | success per-env: 1/64
+rollout steps=20 | obs 735.5ms | label 4.7ms | forward 6.4ms | action 4.7ms | step 3.8ms | total 755.1ms
+epoch 0085 | loss 0.7274 | train acc 0.688
+epoch 0085 | train acc mean 0.656 | train success mean 0.938 | acc per-env: 0.656 | success per-env: 60/64
+epoch 0085 | pos_validation acc mean 0.175 | pos_validation success mean 0.031 | acc per-env: 0.175 | success per-env: 2/64
+epoch 0085 | goal_validation acc mean 0.065 | goal_validation success mean 0.016 | acc per-env: 0.065 | success per-env: 1/64
+rollout steps=20 | obs 738.9ms | label 4.7ms | forward 6.5ms | action 4.7ms | step 3.8ms | total 758.7ms
+epoch 0086 | loss 0.7198 | train acc 0.698
+epoch 0086 | train acc mean 0.717 | train success mean 1.000 | acc per-env: 0.717 | success per-env: 64/64
+epoch 0086 | pos_validation acc mean 0.205 | pos_validation success mean 0.031 | acc per-env: 0.205 | success per-env: 2/64
+epoch 0086 | goal_validation acc mean 0.070 | goal_validation success mean 0.016 | acc per-env: 0.070 | success per-env: 1/64
+rollout steps=20 | obs 710.5ms | label 4.6ms | forward 6.3ms | action 4.7ms | step 3.7ms | total 729.7ms
+epoch 0087 | loss 0.7086 | train acc 0.735
+epoch 0087 | train acc mean 0.740 | train success mean 1.000 | acc per-env: 0.740 | success per-env: 64/64
+epoch 0087 | pos_validation acc mean 0.217 | pos_validation success mean 0.031 | acc per-env: 0.217 | success per-env: 2/64
+epoch 0087 | goal_validation acc mean 0.079 | goal_validation success mean 0.016 | acc per-env: 0.079 | success per-env: 1/64
+rollout steps=20 | obs 697.6ms | label 4.6ms | forward 6.2ms | action 4.7ms | step 3.7ms | total 716.7ms
+epoch 0088 | loss 0.6888 | train acc 0.754
+epoch 0088 | train acc mean 0.740 | train success mean 1.000 | acc per-env: 0.740 | success per-env: 64/64
+epoch 0088 | pos_validation acc mean 0.216 | pos_validation success mean 0.031 | acc per-env: 0.216 | success per-env: 2/64
+epoch 0088 | goal_validation acc mean 0.079 | goal_validation success mean 0.016 | acc per-env: 0.079 | success per-env: 1/64
+rollout steps=20 | obs 691.2ms | label 4.6ms | forward 6.4ms | action 4.6ms | step 3.7ms | total 710.4ms
+epoch 0089 | loss 0.6839 | train acc 0.757
+epoch 0089 | train acc mean 0.744 | train success mean 1.000 | acc per-env: 0.744 | success per-env: 64/64
+epoch 0089 | pos_validation acc mean 0.218 | pos_validation success mean 0.031 | acc per-env: 0.218 | success per-env: 2/64
+epoch 0089 | goal_validation acc mean 0.079 | goal_validation success mean 0.016 | acc per-env: 0.079 | success per-env: 1/64
+rollout steps=19 | obs 676.7ms | label 4.4ms | forward 6.0ms | action 4.4ms | step 3.5ms | total 695.0ms
+epoch 0090 | loss 0.6593 | train acc 0.783
+epoch 0090 | train acc mean 0.748 | train success mean 1.000 | acc per-env: 0.748 | success per-env: 64/64
+epoch 0090 | pos_validation acc mean 0.216 | pos_validation success mean 0.031 | acc per-env: 0.216 | success per-env: 2/64
+epoch 0090 | goal_validation acc mean 0.074 | goal_validation success mean 0.016 | acc per-env: 0.074 | success per-env: 1/64
+rollout steps=19 | obs 686.5ms | label 4.4ms | forward 5.9ms | action 4.4ms | step 3.5ms | total 704.7ms
+epoch 0091 | loss 0.6569 | train acc 0.780
+epoch 0091 | train acc mean 0.750 | train success mean 1.000 | acc per-env: 0.750 | success per-env: 64/64
+epoch 0091 | pos_validation acc mean 0.216 | pos_validation success mean 0.031 | acc per-env: 0.216 | success per-env: 2/64
+epoch 0091 | goal_validation acc mean 0.074 | goal_validation success mean 0.016 | acc per-env: 0.074 | success per-env: 1/64
+rollout steps=19 | obs 685.4ms | label 4.4ms | forward 5.9ms | action 4.4ms | step 3.5ms | total 703.6ms
+epoch 0092 | loss 0.6531 | train acc 0.778
+epoch 0092 | train acc mean 0.726 | train success mean 1.000 | acc per-env: 0.726 | success per-env: 64/64
+epoch 0092 | pos_validation acc mean 0.210 | pos_validation success mean 0.031 | acc per-env: 0.210 | success per-env: 2/64
+epoch 0092 | goal_validation acc mean 0.074 | goal_validation success mean 0.016 | acc per-env: 0.074 | success per-env: 1/64
+rollout steps=19 | obs 704.6ms | label 4.4ms | forward 5.9ms | action 4.4ms | step 3.6ms | total 723.0ms
+epoch 0093 | loss 0.6538 | train acc 0.770
+epoch 0093 | train acc mean 0.718 | train success mean 0.984 | acc per-env: 0.718 | success per-env: 63/64
+epoch 0093 | pos_validation acc mean 0.209 | pos_validation success mean 0.031 | acc per-env: 0.209 | success per-env: 2/64
+epoch 0093 | goal_validation acc mean 0.074 | goal_validation success mean 0.016 | acc per-env: 0.074 | success per-env: 1/64
+rollout steps=20 | obs 742.9ms | label 4.8ms | forward 6.4ms | action 4.8ms | step 3.8ms | total 762.6ms
+epoch 0094 | loss 0.6721 | train acc 0.741
+epoch 0094 | train acc mean 0.726 | train success mean 0.984 | acc per-env: 0.726 | success per-env: 63/64
+epoch 0094 | pos_validation acc mean 0.209 | pos_validation success mean 0.031 | acc per-env: 0.209 | success per-env: 2/64
+epoch 0094 | goal_validation acc mean 0.074 | goal_validation success mean 0.016 | acc per-env: 0.074 | success per-env: 1/64
+rollout steps=19 | obs 711.5ms | label 4.5ms | forward 5.9ms | action 4.4ms | step 3.6ms | total 729.9ms
+epoch 0095 | loss 0.6475 | train acc 0.765
+epoch 0095 | train acc mean 0.728 | train success mean 0.984 | acc per-env: 0.728 | success per-env: 63/64
+epoch 0095 | pos_validation acc mean 0.213 | pos_validation success mean 0.031 | acc per-env: 0.213 | success per-env: 2/64
+epoch 0095 | goal_validation acc mean 0.074 | goal_validation success mean 0.016 | acc per-env: 0.074 | success per-env: 1/64
+rollout steps=20 | obs 706.7ms | label 4.6ms | forward 6.6ms | action 4.7ms | step 3.7ms | total 726.3ms
+epoch 0096 | loss 0.6464 | train acc 0.767
+epoch 0096 | train acc mean 0.737 | train success mean 1.000 | acc per-env: 0.737 | success per-env: 64/64
+epoch 0096 | pos_validation acc mean 0.214 | pos_validation success mean 0.031 | acc per-env: 0.214 | success per-env: 2/64
+epoch 0096 | goal_validation acc mean 0.079 | goal_validation success mean 0.016 | acc per-env: 0.079 | success per-env: 1/64
+rollout steps=20 | obs 714.4ms | label 4.6ms | forward 6.2ms | action 4.6ms | step 3.7ms | total 733.5ms
+epoch 0097 | loss 0.6626 | train acc 0.741
+epoch 0097 | train acc mean 0.726 | train success mean 0.969 | acc per-env: 0.726 | success per-env: 62/64
+epoch 0097 | pos_validation acc mean 0.214 | pos_validation success mean 0.031 | acc per-env: 0.214 | success per-env: 2/64
+epoch 0097 | goal_validation acc mean 0.075 | goal_validation success mean 0.016 | acc per-env: 0.075 | success per-env: 1/64
+rollout steps=20 | obs 711.8ms | label 4.6ms | forward 6.1ms | action 4.6ms | step 3.7ms | total 730.8ms
+epoch 0098 | loss 0.6396 | train acc 0.761
+epoch 0098 | train acc mean 0.719 | train success mean 0.953 | acc per-env: 0.719 | success per-env: 61/64
+epoch 0098 | pos_validation acc mean 0.212 | pos_validation success mean 0.031 | acc per-env: 0.212 | success per-env: 2/64
+epoch 0098 | goal_validation acc mean 0.071 | goal_validation success mean 0.016 | acc per-env: 0.071 | success per-env: 1/64
+rollout steps=20 | obs 702.4ms | label 4.5ms | forward 6.2ms | action 4.6ms | step 3.7ms | total 721.4ms
+epoch 0099 | loss 0.6314 | train acc 0.763
+epoch 0099 | train acc mean 0.733 | train success mean 0.953 | acc per-env: 0.733 | success per-env: 61/64
+epoch 0099 | pos_validation acc mean 0.208 | pos_validation success mean 0.031 | acc per-env: 0.208 | success per-env: 2/64
+epoch 0099 | goal_validation acc mean 0.071 | goal_validation success mean 0.016 | acc per-env: 0.071 | success per-env: 1/64
+rollout steps=20 | obs 699.7ms | label 4.5ms | forward 6.1ms | action 4.5ms | step 3.7ms | total 718.5ms
+epoch 0100 | loss 0.6233 | train acc 0.775
+epoch 0100 | train acc mean 0.742 | train success mean 0.953 | acc per-env: 0.742 | success per-env: 61/64
+epoch 0100 | pos_validation acc mean 0.208 | pos_validation success mean 0.031 | acc per-env: 0.208 | success per-env: 2/64
+epoch 0100 | goal_validation acc mean 0.070 | goal_validation success mean 0.016 | acc per-env: 0.070 | success per-env: 1/64
+rollout steps=20 | obs 699.5ms | label 4.5ms | forward 6.2ms | action 4.6ms | step 3.6ms | total 718.4ms
+epoch 0101 | loss 0.6154 | train acc 0.778
+epoch 0101 | train acc mean 0.746 | train success mean 0.953 | acc per-env: 0.746 | success per-env: 61/64
+epoch 0101 | pos_validation acc mean 0.212 | pos_validation success mean 0.031 | acc per-env: 0.212 | success per-env: 2/64
+epoch 0101 | goal_validation acc mean 0.057 | goal_validation success mean 0.016 | acc per-env: 0.057 | success per-env: 1/64
+rollout steps=20 | obs 693.0ms | label 4.5ms | forward 6.3ms | action 4.6ms | step 3.6ms | total 712.1ms
+epoch 0102 | loss 0.6103 | train acc 0.781
+epoch 0102 | train acc mean 0.747 | train success mean 0.953 | acc per-env: 0.747 | success per-env: 61/64
+epoch 0102 | pos_validation acc mean 0.202 | pos_validation success mean 0.031 | acc per-env: 0.202 | success per-env: 2/64
+epoch 0102 | goal_validation acc mean 0.044 | goal_validation success mean 0.016 | acc per-env: 0.044 | success per-env: 1/64
+rollout steps=20 | obs 686.1ms | label 4.5ms | forward 6.1ms | action 4.5ms | step 3.6ms | total 704.8ms
+epoch 0103 | loss 0.6371 | train acc 0.753
+epoch 0103 | train acc mean 0.730 | train success mean 0.953 | acc per-env: 0.730 | success per-env: 61/64
+epoch 0103 | pos_validation acc mean 0.161 | pos_validation success mean 0.031 | acc per-env: 0.161 | success per-env: 2/64
+epoch 0103 | goal_validation acc mean 0.051 | goal_validation success mean 0.016 | acc per-env: 0.051 | success per-env: 1/64
+rollout steps=20 | obs 674.8ms | label 4.5ms | forward 6.1ms | action 4.6ms | step 3.5ms | total 693.4ms
+epoch 0104 | loss 0.6113 | train acc 0.778
+epoch 0104 | train acc mean 0.702 | train success mean 0.922 | acc per-env: 0.702 | success per-env: 59/64
+epoch 0104 | pos_validation acc mean 0.161 | pos_validation success mean 0.031 | acc per-env: 0.161 | success per-env: 2/64
+epoch 0104 | goal_validation acc mean 0.048 | goal_validation success mean 0.016 | acc per-env: 0.048 | success per-env: 1/64
+rollout steps=20 | obs 675.9ms | label 4.5ms | forward 6.2ms | action 4.5ms | step 3.6ms | total 694.6ms
+epoch 0105 | loss 0.6201 | train acc 0.766
+epoch 0105 | train acc mean 0.734 | train success mean 0.953 | acc per-env: 0.734 | success per-env: 61/64
+epoch 0105 | pos_validation acc mean 0.167 | pos_validation success mean 0.031 | acc per-env: 0.167 | success per-env: 2/64
+epoch 0105 | goal_validation acc mean 0.048 | goal_validation success mean 0.016 | acc per-env: 0.048 | success per-env: 1/64
+rollout steps=20 | obs 687.1ms | label 4.5ms | forward 6.2ms | action 4.6ms | step 3.6ms | total 706.0ms
+epoch 0106 | loss 0.6324 | train acc 0.751
+epoch 0106 | train acc mean 0.741 | train success mean 0.984 | acc per-env: 0.741 | success per-env: 63/64
+epoch 0106 | pos_validation acc mean 0.167 | pos_validation success mean 0.031 | acc per-env: 0.167 | success per-env: 2/64
+epoch 0106 | goal_validation acc mean 0.048 | goal_validation success mean 0.016 | acc per-env: 0.048 | success per-env: 1/64
+rollout steps=20 | obs 679.9ms | label 4.5ms | forward 6.2ms | action 4.6ms | step 3.6ms | total 698.8ms
+epoch 0107 | loss 0.6127 | train acc 0.773
+epoch 0107 | train acc mean 0.753 | train success mean 1.000 | acc per-env: 0.753 | success per-env: 64/64
+epoch 0107 | pos_validation acc mean 0.169 | pos_validation success mean 0.031 | acc per-env: 0.169 | success per-env: 2/64
+epoch 0107 | goal_validation acc mean 0.049 | goal_validation success mean 0.016 | acc per-env: 0.049 | success per-env: 1/64
+rollout steps=20 | obs 686.9ms | label 4.5ms | forward 6.2ms | action 4.6ms | step 3.6ms | total 705.8ms
+epoch 0108 | loss 0.5984 | train acc 0.776
+epoch 0108 | train acc mean 0.739 | train success mean 0.969 | acc per-env: 0.739 | success per-env: 62/64
+epoch 0108 | pos_validation acc mean 0.181 | pos_validation success mean 0.031 | acc per-env: 0.181 | success per-env: 2/64
+epoch 0108 | goal_validation acc mean 0.044 | goal_validation success mean 0.016 | acc per-env: 0.044 | success per-env: 1/64
+rollout steps=20 | obs 706.7ms | label 4.6ms | forward 6.2ms | action 4.6ms | step 3.7ms | total 725.7ms
+epoch 0109 | loss 0.6015 | train acc 0.763
+epoch 0109 | train acc mean 0.697 | train success mean 0.891 | acc per-env: 0.697 | success per-env: 57/64
+epoch 0109 | pos_validation acc mean 0.179 | pos_validation success mean 0.031 | acc per-env: 0.179 | success per-env: 2/64
+epoch 0109 | goal_validation acc mean 0.044 | goal_validation success mean 0.016 | acc per-env: 0.044 | success per-env: 1/64
+rollout steps=20 | obs 733.5ms | label 4.7ms | forward 6.5ms | action 4.7ms | step 3.8ms | total 753.2ms
+epoch 0110 | loss 0.6134 | train acc 0.746
+epoch 0110 | train acc mean 0.728 | train success mean 0.953 | acc per-env: 0.728 | success per-env: 61/64
+epoch 0110 | pos_validation acc mean 0.179 | pos_validation success mean 0.031 | acc per-env: 0.179 | success per-env: 2/64
+epoch 0110 | goal_validation acc mean 0.044 | goal_validation success mean 0.016 | acc per-env: 0.044 | success per-env: 1/64
+rollout steps=20 | obs 709.2ms | label 4.6ms | forward 6.2ms | action 4.7ms | step 3.7ms | total 728.4ms
+epoch 0111 | loss 0.6297 | train acc 0.749
+epoch 0111 | train acc mean 0.750 | train success mean 1.000 | acc per-env: 0.750 | success per-env: 64/64
+epoch 0111 | pos_validation acc mean 0.178 | pos_validation success mean 0.031 | acc per-env: 0.178 | success per-env: 2/64
+epoch 0111 | goal_validation acc mean 0.048 | goal_validation success mean 0.016 | acc per-env: 0.048 | success per-env: 1/64
+rollout steps=20 | obs 706.0ms | label 4.6ms | forward 6.2ms | action 4.6ms | step 3.7ms | total 725.0ms
+epoch 0112 | loss 0.6245 | train acc 0.750
+epoch 0112 | train acc mean 0.728 | train success mean 0.984 | acc per-env: 0.728 | success per-env: 63/64
+epoch 0112 | pos_validation acc mean 0.177 | pos_validation success mean 0.031 | acc per-env: 0.177 | success per-env: 2/64
+epoch 0112 | goal_validation acc mean 0.049 | goal_validation success mean 0.016 | acc per-env: 0.049 | success per-env: 1/64
+rollout steps=20 | obs 679.9ms | label 4.5ms | forward 6.1ms | action 4.5ms | step 3.6ms | total 698.6ms
+epoch 0113 | loss 0.5980 | train acc 0.765
+epoch 0113 | train acc mean 0.755 | train success mean 1.000 | acc per-env: 0.755 | success per-env: 64/64
+epoch 0113 | pos_validation acc mean 0.177 | pos_validation success mean 0.031 | acc per-env: 0.177 | success per-env: 2/64
+epoch 0113 | goal_validation acc mean 0.047 | goal_validation success mean 0.016 | acc per-env: 0.047 | success per-env: 1/64
+rollout steps=20 | obs 670.6ms | label 4.5ms | forward 6.0ms | action 4.5ms | step 3.6ms | total 689.2ms
+epoch 0114 | loss 0.5943 | train acc 0.784
+epoch 0114 | train acc mean 0.763 | train success mean 1.000 | acc per-env: 0.763 | success per-env: 64/64
+epoch 0114 | pos_validation acc mean 0.178 | pos_validation success mean 0.031 | acc per-env: 0.178 | success per-env: 2/64
+epoch 0114 | goal_validation acc mean 0.046 | goal_validation success mean 0.016 | acc per-env: 0.046 | success per-env: 1/64
+rollout steps=20 | obs 680.4ms | label 4.5ms | forward 6.1ms | action 4.5ms | step 3.6ms | total 699.1ms
+epoch 0115 | loss 0.5932 | train acc 0.784
+epoch 0115 | train acc mean 0.765 | train success mean 1.000 | acc per-env: 0.765 | success per-env: 64/64
+epoch 0115 | pos_validation acc mean 0.178 | pos_validation success mean 0.031 | acc per-env: 0.178 | success per-env: 2/64
+epoch 0115 | goal_validation acc mean 0.048 | goal_validation success mean 0.016 | acc per-env: 0.048 | success per-env: 1/64
+rollout steps=16 | obs 675.2ms | label 4.0ms | forward 5.2ms | action 3.8ms | step 3.3ms | total 691.5ms
+epoch 0116 | loss 0.5791 | train acc 0.791
+epoch 0116 | train acc mean 0.764 | train success mean 1.000 | acc per-env: 0.764 | success per-env: 64/64
+epoch 0116 | pos_validation acc mean 0.182 | pos_validation success mean 0.031 | acc per-env: 0.182 | success per-env: 2/64
+epoch 0116 | goal_validation acc mean 0.048 | goal_validation success mean 0.016 | acc per-env: 0.048 | success per-env: 1/64
+rollout steps=18 | obs 667.5ms | label 4.3ms | forward 5.6ms | action 4.2ms | step 3.4ms | total 684.9ms
+epoch 0117 | loss 0.5719 | train acc 0.796
+epoch 0117 | train acc mean 0.757 | train success mean 1.000 | acc per-env: 0.757 | success per-env: 64/64
+epoch 0117 | pos_validation acc mean 0.172 | pos_validation success mean 0.031 | acc per-env: 0.172 | success per-env: 2/64
+epoch 0117 | goal_validation acc mean 0.048 | goal_validation success mean 0.016 | acc per-env: 0.048 | success per-env: 1/64
+rollout steps=16 | obs 673.3ms | label 4.0ms | forward 5.3ms | action 3.8ms | step 3.3ms | total 689.7ms
+epoch 0118 | loss 0.5650 | train acc 0.791
+epoch 0118 | train acc mean 0.759 | train success mean 1.000 | acc per-env: 0.759 | success per-env: 64/64
+epoch 0118 | pos_validation acc mean 0.172 | pos_validation success mean 0.031 | acc per-env: 0.172 | success per-env: 2/64
+epoch 0118 | goal_validation acc mean 0.050 | goal_validation success mean 0.016 | acc per-env: 0.050 | success per-env: 1/64
+rollout steps=16 | obs 664.1ms | label 3.9ms | forward 5.1ms | action 3.8ms | step 3.3ms | total 680.2ms
+epoch 0119 | loss 0.5611 | train acc 0.793
+epoch 0119 | train acc mean 0.767 | train success mean 1.000 | acc per-env: 0.767 | success per-env: 64/64
+epoch 0119 | pos_validation acc mean 0.176 | pos_validation success mean 0.031 | acc per-env: 0.176 | success per-env: 2/64
+epoch 0119 | goal_validation acc mean 0.050 | goal_validation success mean 0.016 | acc per-env: 0.050 | success per-env: 1/64
+rollout steps=16 | obs 661.4ms | label 3.9ms | forward 5.0ms | action 3.8ms | step 3.3ms | total 677.4ms
+epoch 0120 | loss 0.5581 | train acc 0.798
+epoch 0120 | train acc mean 0.776 | train success mean 1.000 | acc per-env: 0.776 | success per-env: 64/64
+epoch 0120 | pos_validation acc mean 0.178 | pos_validation success mean 0.031 | acc per-env: 0.178 | success per-env: 2/64
+epoch 0120 | goal_validation acc mean 0.047 | goal_validation success mean 0.016 | acc per-env: 0.047 | success per-env: 1/64
+rollout steps=16 | obs 658.2ms | label 3.9ms | forward 5.1ms | action 3.8ms | step 3.3ms | total 674.2ms
+epoch 0121 | loss 0.5552 | train acc 0.802
+epoch 0121 | train acc mean 0.782 | train success mean 1.000 | acc per-env: 0.782 | success per-env: 64/64
+epoch 0121 | pos_validation acc mean 0.172 | pos_validation success mean 0.031 | acc per-env: 0.172 | success per-env: 2/64
+epoch 0121 | goal_validation acc mean 0.048 | goal_validation success mean 0.016 | acc per-env: 0.048 | success per-env: 1/64
+rollout steps=20 | obs 664.5ms | label 4.4ms | forward 6.0ms | action 4.5ms | step 3.5ms | total 683.0ms
+epoch 0122 | loss 0.5640 | train acc 0.780
+epoch 0122 | train acc mean 0.755 | train success mean 1.000 | acc per-env: 0.755 | success per-env: 64/64
+epoch 0122 | pos_validation acc mean 0.166 | pos_validation success mean 0.031 | acc per-env: 0.166 | success per-env: 2/64
+epoch 0122 | goal_validation acc mean 0.050 | goal_validation success mean 0.016 | acc per-env: 0.050 | success per-env: 1/64
+rollout steps=16 | obs 652.5ms | label 3.9ms | forward 5.0ms | action 3.8ms | step 3.2ms | total 668.4ms
+epoch 0123 | loss 0.5494 | train acc 0.793
+epoch 0123 | train acc mean 0.770 | train success mean 1.000 | acc per-env: 0.770 | success per-env: 64/64
+epoch 0123 | pos_validation acc mean 0.166 | pos_validation success mean 0.031 | acc per-env: 0.166 | success per-env: 2/64
+epoch 0123 | goal_validation acc mean 0.048 | goal_validation success mean 0.016 | acc per-env: 0.048 | success per-env: 1/64
+rollout steps=16 | obs 650.3ms | label 3.9ms | forward 5.1ms | action 3.8ms | step 3.2ms | total 666.3ms
+epoch 0124 | loss 0.5420 | train acc 0.799
+epoch 0124 | train acc mean 0.776 | train success mean 1.000 | acc per-env: 0.776 | success per-env: 64/64
+epoch 0124 | pos_validation acc mean 0.168 | pos_validation success mean 0.031 | acc per-env: 0.168 | success per-env: 2/64
+epoch 0124 | goal_validation acc mean 0.049 | goal_validation success mean 0.016 | acc per-env: 0.049 | success per-env: 1/64
+rollout steps=20 | obs 661.2ms | label 4.4ms | forward 6.1ms | action 4.5ms | step 3.5ms | total 679.8ms
+epoch 0125 | loss 0.5431 | train acc 0.780
+epoch 0125 | train acc mean 0.778 | train success mean 1.000 | acc per-env: 0.778 | success per-env: 64/64
+epoch 0125 | pos_validation acc mean 0.171 | pos_validation success mean 0.031 | acc per-env: 0.171 | success per-env: 2/64
+epoch 0125 | goal_validation acc mean 0.050 | goal_validation success mean 0.016 | acc per-env: 0.050 | success per-env: 1/64
+rollout steps=16 | obs 651.7ms | label 3.9ms | forward 5.1ms | action 3.8ms | step 3.2ms | total 667.8ms
+epoch 0126 | loss 0.5286 | train acc 0.808
+epoch 0126 | train acc mean 0.773 | train success mean 1.000 | acc per-env: 0.773 | success per-env: 64/64
+epoch 0126 | pos_validation acc mean 0.172 | pos_validation success mean 0.031 | acc per-env: 0.172 | success per-env: 2/64
+epoch 0126 | goal_validation acc mean 0.052 | goal_validation success mean 0.016 | acc per-env: 0.052 | success per-env: 1/64
+rollout steps=16 | obs 646.5ms | label 3.9ms | forward 5.0ms | action 3.8ms | step 3.2ms | total 662.4ms
+epoch 0127 | loss 0.5242 | train acc 0.807
+epoch 0127 | train acc mean 0.766 | train success mean 1.000 | acc per-env: 0.766 | success per-env: 64/64
+epoch 0127 | pos_validation acc mean 0.167 | pos_validation success mean 0.031 | acc per-env: 0.167 | success per-env: 2/64
+epoch 0127 | goal_validation acc mean 0.052 | goal_validation success mean 0.016 | acc per-env: 0.052 | success per-env: 1/64
+rollout steps=16 | obs 648.5ms | label 3.9ms | forward 5.2ms | action 3.8ms | step 3.2ms | total 664.7ms
+epoch 0128 | loss 0.5172 | train acc 0.804
+epoch 0128 | train acc mean 0.776 | train success mean 1.000 | acc per-env: 0.776 | success per-env: 64/64
+epoch 0128 | pos_validation acc mean 0.170 | pos_validation success mean 0.031 | acc per-env: 0.170 | success per-env: 2/64
+epoch 0128 | goal_validation acc mean 0.054 | goal_validation success mean 0.016 | acc per-env: 0.054 | success per-env: 1/64
+rollout steps=16 | obs 641.6ms | label 3.9ms | forward 5.0ms | action 3.8ms | step 3.2ms | total 657.4ms
+epoch 0129 | loss 0.5129 | train acc 0.808
+epoch 0129 | train acc mean 0.778 | train success mean 1.000 | acc per-env: 0.778 | success per-env: 64/64
+epoch 0129 | pos_validation acc mean 0.170 | pos_validation success mean 0.031 | acc per-env: 0.170 | success per-env: 2/64
+epoch 0129 | goal_validation acc mean 0.054 | goal_validation success mean 0.016 | acc per-env: 0.054 | success per-env: 1/64
+rollout steps=16 | obs 641.8ms | label 3.9ms | forward 5.3ms | action 3.8ms | step 3.2ms | total 658.2ms
+epoch 0130 | loss 0.5089 | train acc 0.809
+epoch 0130 | train acc mean 0.781 | train success mean 1.000 | acc per-env: 0.781 | success per-env: 64/64
+epoch 0130 | pos_validation acc mean 0.165 | pos_validation success mean 0.031 | acc per-env: 0.165 | success per-env: 2/64
+epoch 0130 | goal_validation acc mean 0.051 | goal_validation success mean 0.016 | acc per-env: 0.051 | success per-env: 1/64
+rollout steps=16 | obs 633.9ms | label 3.9ms | forward 5.2ms | action 3.8ms | step 3.2ms | total 649.9ms
+epoch 0131 | loss 0.5078 | train acc 0.812
+epoch 0131 | train acc mean 0.791 | train success mean 1.000 | acc per-env: 0.791 | success per-env: 64/64
+epoch 0131 | pos_validation acc mean 0.167 | pos_validation success mean 0.031 | acc per-env: 0.167 | success per-env: 2/64
+epoch 0131 | goal_validation acc mean 0.049 | goal_validation success mean 0.016 | acc per-env: 0.049 | success per-env: 1/64
+rollout steps=20 | obs 642.2ms | label 4.5ms | forward 6.5ms | action 4.6ms | step 3.5ms | total 661.2ms
+epoch 0132 | loss 0.5134 | train acc 0.804
+epoch 0132 | train acc mean 0.733 | train success mean 0.969 | acc per-env: 0.733 | success per-env: 62/64
+epoch 0132 | pos_validation acc mean 0.170 | pos_validation success mean 0.047 | acc per-env: 0.170 | success per-env: 3/64
+epoch 0132 | goal_validation acc mean 0.049 | goal_validation success mean 0.016 | acc per-env: 0.049 | success per-env: 1/64
+rollout steps=20 | obs 647.8ms | label 4.4ms | forward 6.2ms | action 4.6ms | step 3.5ms | total 666.5ms
+epoch 0133 | loss 0.5435 | train acc 0.783
+epoch 0133 | train acc mean 0.736 | train success mean 0.969 | acc per-env: 0.736 | success per-env: 62/64
+epoch 0133 | pos_validation acc mean 0.174 | pos_validation success mean 0.062 | acc per-env: 0.174 | success per-env: 4/64
+epoch 0133 | goal_validation acc mean 0.047 | goal_validation success mean 0.016 | acc per-env: 0.047 | success per-env: 1/64
+rollout steps=20 | obs 630.3ms | label 4.4ms | forward 6.2ms | action 4.6ms | step 3.5ms | total 648.9ms
+epoch 0134 | loss 0.5416 | train acc 0.794
+epoch 0134 | train acc mean 0.778 | train success mean 1.000 | acc per-env: 0.778 | success per-env: 64/64
+epoch 0134 | pos_validation acc mean 0.177 | pos_validation success mean 0.062 | acc per-env: 0.177 | success per-env: 4/64
+epoch 0134 | goal_validation acc mean 0.049 | goal_validation success mean 0.016 | acc per-env: 0.049 | success per-env: 1/64
+rollout steps=20 | obs 632.2ms | label 4.4ms | forward 6.0ms | action 4.5ms | step 3.4ms | total 650.6ms
+epoch 0135 | loss 0.5101 | train acc 0.807
+epoch 0135 | train acc mean 0.784 | train success mean 1.000 | acc per-env: 0.784 | success per-env: 64/64
+epoch 0135 | pos_validation acc mean 0.179 | pos_validation success mean 0.062 | acc per-env: 0.179 | success per-env: 4/64
+epoch 0135 | goal_validation acc mean 0.049 | goal_validation success mean 0.016 | acc per-env: 0.049 | success per-env: 1/64
+rollout steps=20 | obs 630.4ms | label 4.3ms | forward 6.0ms | action 4.5ms | step 3.4ms | total 648.7ms
+epoch 0136 | loss 0.5019 | train acc 0.806
+epoch 0136 | train acc mean 0.793 | train success mean 1.000 | acc per-env: 0.793 | success per-env: 64/64
+epoch 0136 | pos_validation acc mean 0.176 | pos_validation success mean 0.047 | acc per-env: 0.176 | success per-env: 3/64
+epoch 0136 | goal_validation acc mean 0.051 | goal_validation success mean 0.016 | acc per-env: 0.051 | success per-env: 1/64
+rollout steps=20 | obs 639.9ms | label 4.4ms | forward 6.1ms | action 4.5ms | step 3.5ms | total 658.4ms
+epoch 0137 | loss 0.4979 | train acc 0.807
+epoch 0137 | train acc mean 0.795 | train success mean 1.000 | acc per-env: 0.795 | success per-env: 64/64
+epoch 0137 | pos_validation acc mean 0.185 | pos_validation success mean 0.062 | acc per-env: 0.185 | success per-env: 4/64
+epoch 0137 | goal_validation acc mean 0.051 | goal_validation success mean 0.016 | acc per-env: 0.051 | success per-env: 1/64
+rollout steps=20 | obs 635.0ms | label 4.3ms | forward 6.1ms | action 4.5ms | step 3.5ms | total 653.5ms
+epoch 0138 | loss 0.4951 | train acc 0.809
+epoch 0138 | train acc mean 0.787 | train success mean 1.000 | acc per-env: 0.787 | success per-env: 64/64
+epoch 0138 | pos_validation acc mean 0.191 | pos_validation success mean 0.094 | acc per-env: 0.191 | success per-env: 6/64
+epoch 0138 | goal_validation acc mean 0.056 | goal_validation success mean 0.016 | acc per-env: 0.056 | success per-env: 1/64
+rollout steps=20 | obs 635.7ms | label 4.3ms | forward 6.0ms | action 4.5ms | step 3.5ms | total 654.0ms
+epoch 0139 | loss 0.4925 | train acc 0.808
+epoch 0139 | train acc mean 0.793 | train success mean 1.000 | acc per-env: 0.793 | success per-env: 64/64
+epoch 0139 | pos_validation acc mean 0.180 | pos_validation success mean 0.062 | acc per-env: 0.180 | success per-env: 4/64
+epoch 0139 | goal_validation acc mean 0.057 | goal_validation success mean 0.016 | acc per-env: 0.057 | success per-env: 1/64
+rollout steps=20 | obs 631.2ms | label 4.3ms | forward 6.0ms | action 4.5ms | step 3.4ms | total 649.5ms
+epoch 0140 | loss 0.4850 | train acc 0.813
+epoch 0140 | train acc mean 0.795 | train success mean 1.000 | acc per-env: 0.795 | success per-env: 64/64
+epoch 0140 | pos_validation acc mean 0.175 | pos_validation success mean 0.062 | acc per-env: 0.175 | success per-env: 4/64
+epoch 0140 | goal_validation acc mean 0.057 | goal_validation success mean 0.016 | acc per-env: 0.057 | success per-env: 1/64
+rollout steps=20 | obs 627.3ms | label 4.4ms | forward 6.1ms | action 4.5ms | step 3.4ms | total 645.7ms
+epoch 0141 | loss 0.4825 | train acc 0.816
+epoch 0141 | train acc mean 0.802 | train success mean 1.000 | acc per-env: 0.802 | success per-env: 64/64
+epoch 0141 | pos_validation acc mean 0.187 | pos_validation success mean 0.094 | acc per-env: 0.187 | success per-env: 6/64
+epoch 0141 | goal_validation acc mean 0.055 | goal_validation success mean 0.016 | acc per-env: 0.055 | success per-env: 1/64
+rollout steps=20 | obs 616.0ms | label 4.3ms | forward 6.0ms | action 4.5ms | step 3.4ms | total 634.2ms
+epoch 0142 | loss 0.4815 | train acc 0.823
+epoch 0142 | train acc mean 0.799 | train success mean 1.000 | acc per-env: 0.799 | success per-env: 64/64
+epoch 0142 | pos_validation acc mean 0.186 | pos_validation success mean 0.094 | acc per-env: 0.186 | success per-env: 6/64
+epoch 0142 | goal_validation acc mean 0.055 | goal_validation success mean 0.016 | acc per-env: 0.055 | success per-env: 1/64
+rollout steps=20 | obs 625.6ms | label 4.4ms | forward 6.1ms | action 4.5ms | step 3.4ms | total 644.0ms
+epoch 0143 | loss 0.4855 | train acc 0.815
+epoch 0143 | train acc mean 0.799 | train success mean 1.000 | acc per-env: 0.799 | success per-env: 64/64
+epoch 0143 | pos_validation acc mean 0.187 | pos_validation success mean 0.094 | acc per-env: 0.187 | success per-env: 6/64
+epoch 0143 | goal_validation acc mean 0.055 | goal_validation success mean 0.016 | acc per-env: 0.055 | success per-env: 1/64
+rollout steps=20 | obs 621.8ms | label 4.3ms | forward 6.1ms | action 4.5ms | step 3.4ms | total 640.1ms
+epoch 0144 | loss 0.4802 | train acc 0.815
+epoch 0144 | train acc mean 0.799 | train success mean 1.000 | acc per-env: 0.799 | success per-env: 64/64
+epoch 0144 | pos_validation acc mean 0.192 | pos_validation success mean 0.125 | acc per-env: 0.192 | success per-env: 8/64
+epoch 0144 | goal_validation acc mean 0.059 | goal_validation success mean 0.016 | acc per-env: 0.059 | success per-env: 1/64
+rollout steps=20 | obs 622.6ms | label 4.3ms | forward 5.7ms | action 4.4ms | step 3.4ms | total 640.4ms
+epoch 0145 | loss 0.4751 | train acc 0.817
+epoch 0145 | train acc mean 0.788 | train success mean 1.000 | acc per-env: 0.788 | success per-env: 64/64
+epoch 0145 | pos_validation acc mean 0.186 | pos_validation success mean 0.094 | acc per-env: 0.186 | success per-env: 6/64
+epoch 0145 | goal_validation acc mean 0.068 | goal_validation success mean 0.016 | acc per-env: 0.068 | success per-env: 1/64
+rollout steps=20 | obs 634.0ms | label 4.3ms | forward 6.2ms | action 4.5ms | step 3.4ms | total 652.4ms
+epoch 0146 | loss 0.5043 | train acc 0.806
+epoch 0146 | train acc mean 0.800 | train success mean 1.000 | acc per-env: 0.800 | success per-env: 64/64
+epoch 0146 | pos_validation acc mean 0.197 | pos_validation success mean 0.125 | acc per-env: 0.197 | success per-env: 8/64
+epoch 0146 | goal_validation acc mean 0.077 | goal_validation success mean 0.016 | acc per-env: 0.077 | success per-env: 1/64
+rollout steps=16 | obs 620.8ms | label 3.8ms | forward 5.0ms | action 3.8ms | step 3.1ms | total 636.5ms
+epoch 0147 | loss 0.4628 | train acc 0.828
+epoch 0147 | train acc mean 0.796 | train success mean 1.000 | acc per-env: 0.796 | success per-env: 64/64
+epoch 0147 | pos_validation acc mean 0.184 | pos_validation success mean 0.047 | acc per-env: 0.184 | success per-env: 3/64
+epoch 0147 | goal_validation acc mean 0.076 | goal_validation success mean 0.016 | acc per-env: 0.076 | success per-env: 1/64
+rollout steps=16 | obs 619.4ms | label 3.8ms | forward 5.0ms | action 3.8ms | step 3.1ms | total 635.1ms
+epoch 0148 | loss 0.4611 | train acc 0.822
+epoch 0148 | train acc mean 0.796 | train success mean 1.000 | acc per-env: 0.796 | success per-env: 64/64
+epoch 0148 | pos_validation acc mean 0.183 | pos_validation success mean 0.047 | acc per-env: 0.183 | success per-env: 3/64
+epoch 0148 | goal_validation acc mean 0.076 | goal_validation success mean 0.016 | acc per-env: 0.076 | success per-env: 1/64
+rollout steps=16 | obs 619.8ms | label 3.8ms | forward 5.2ms | action 3.8ms | step 3.1ms | total 635.7ms
+epoch 0149 | loss 0.4540 | train acc 0.825
+epoch 0149 | train acc mean 0.801 | train success mean 1.000 | acc per-env: 0.801 | success per-env: 64/64
+epoch 0149 | pos_validation acc mean 0.184 | pos_validation success mean 0.047 | acc per-env: 0.184 | success per-env: 3/64
+epoch 0149 | goal_validation acc mean 0.071 | goal_validation success mean 0.016 | acc per-env: 0.071 | success per-env: 1/64
+rollout steps=16 | obs 614.8ms | label 3.8ms | forward 5.0ms | action 3.7ms | step 3.1ms | total 630.5ms
+epoch 0150 | loss 0.4517 | train acc 0.828
+epoch 0150 | train acc mean 0.796 | train success mean 1.000 | acc per-env: 0.796 | success per-env: 64/64
+epoch 0150 | pos_validation acc mean 0.182 | pos_validation success mean 0.047 | acc per-env: 0.182 | success per-env: 3/64
+epoch 0150 | goal_validation acc mean 0.059 | goal_validation success mean 0.016 | acc per-env: 0.059 | success per-env: 1/64
+rollout steps=16 | obs 616.5ms | label 3.8ms | forward 5.1ms | action 3.8ms | step 3.1ms | total 632.4ms
+epoch 0151 | loss 0.4453 | train acc 0.826
+epoch 0151 | train acc mean 0.793 | train success mean 1.000 | acc per-env: 0.793 | success per-env: 64/64
+epoch 0151 | pos_validation acc mean 0.185 | pos_validation success mean 0.047 | acc per-env: 0.185 | success per-env: 3/64
+epoch 0151 | goal_validation acc mean 0.054 | goal_validation success mean 0.016 | acc per-env: 0.054 | success per-env: 1/64
+rollout steps=16 | obs 619.5ms | label 3.8ms | forward 5.0ms | action 3.8ms | step 3.1ms | total 635.2ms
+epoch 0152 | loss 0.4502 | train acc 0.823
+epoch 0152 | train acc mean 0.799 | train success mean 1.000 | acc per-env: 0.799 | success per-env: 64/64
+epoch 0152 | pos_validation acc mean 0.184 | pos_validation success mean 0.031 | acc per-env: 0.184 | success per-env: 2/64
+epoch 0152 | goal_validation acc mean 0.055 | goal_validation success mean 0.016 | acc per-env: 0.055 | success per-env: 1/64
+rollout steps=16 | obs 620.9ms | label 3.8ms | forward 5.0ms | action 3.8ms | step 3.1ms | total 636.6ms
+epoch 0153 | loss 0.4398 | train acc 0.820
+epoch 0153 | train acc mean 0.792 | train success mean 1.000 | acc per-env: 0.792 | success per-env: 64/64
+epoch 0153 | pos_validation acc mean 0.176 | pos_validation success mean 0.031 | acc per-env: 0.176 | success per-env: 2/64
+epoch 0153 | goal_validation acc mean 0.060 | goal_validation success mean 0.016 | acc per-env: 0.060 | success per-env: 1/64
+rollout steps=16 | obs 619.2ms | label 3.8ms | forward 5.0ms | action 3.8ms | step 3.2ms | total 635.0ms
+epoch 0154 | loss 0.4410 | train acc 0.827
+epoch 0154 | train acc mean 0.797 | train success mean 1.000 | acc per-env: 0.797 | success per-env: 64/64
+epoch 0154 | pos_validation acc mean 0.174 | pos_validation success mean 0.031 | acc per-env: 0.174 | success per-env: 2/64
+epoch 0154 | goal_validation acc mean 0.079 | goal_validation success mean 0.016 | acc per-env: 0.079 | success per-env: 1/64
+rollout steps=16 | obs 621.0ms | label 3.8ms | forward 5.0ms | action 3.7ms | step 3.1ms | total 636.7ms
+epoch 0155 | loss 0.4363 | train acc 0.831
+epoch 0155 | train acc mean 0.798 | train success mean 1.000 | acc per-env: 0.798 | success per-env: 64/64
+epoch 0155 | pos_validation acc mean 0.174 | pos_validation success mean 0.031 | acc per-env: 0.174 | success per-env: 2/64
+epoch 0155 | goal_validation acc mean 0.079 | goal_validation success mean 0.016 | acc per-env: 0.079 | success per-env: 1/64
+rollout steps=16 | obs 616.0ms | label 3.8ms | forward 5.1ms | action 3.8ms | step 3.1ms | total 631.8ms
+epoch 0156 | loss 0.4343 | train acc 0.833
+epoch 0156 | train acc mean 0.791 | train success mean 1.000 | acc per-env: 0.791 | success per-env: 64/64
+epoch 0156 | pos_validation acc mean 0.179 | pos_validation success mean 0.031 | acc per-env: 0.179 | success per-env: 2/64
+epoch 0156 | goal_validation acc mean 0.077 | goal_validation success mean 0.016 | acc per-env: 0.077 | success per-env: 1/64
+rollout steps=16 | obs 622.4ms | label 3.8ms | forward 5.0ms | action 3.7ms | step 3.1ms | total 638.0ms
+epoch 0157 | loss 0.4338 | train acc 0.829
+epoch 0157 | train acc mean 0.803 | train success mean 1.000 | acc per-env: 0.803 | success per-env: 64/64
+epoch 0157 | pos_validation acc mean 0.180 | pos_validation success mean 0.031 | acc per-env: 0.180 | success per-env: 2/64
+epoch 0157 | goal_validation acc mean 0.060 | goal_validation success mean 0.016 | acc per-env: 0.060 | success per-env: 1/64
+rollout steps=16 | obs 618.2ms | label 3.8ms | forward 5.2ms | action 3.8ms | step 3.1ms | total 634.0ms
+epoch 0158 | loss 0.4371 | train acc 0.828
+epoch 0158 | train acc mean 0.807 | train success mean 1.000 | acc per-env: 0.807 | success per-env: 64/64
+epoch 0158 | pos_validation acc mean 0.181 | pos_validation success mean 0.031 | acc per-env: 0.181 | success per-env: 2/64
+epoch 0158 | goal_validation acc mean 0.056 | goal_validation success mean 0.016 | acc per-env: 0.056 | success per-env: 1/64
+rollout steps=16 | obs 612.6ms | label 3.8ms | forward 5.1ms | action 3.8ms | step 3.1ms | total 628.4ms
+epoch 0159 | loss 0.4367 | train acc 0.832
+epoch 0159 | train acc mean 0.804 | train success mean 1.000 | acc per-env: 0.804 | success per-env: 64/64
+epoch 0159 | pos_validation acc mean 0.181 | pos_validation success mean 0.031 | acc per-env: 0.181 | success per-env: 2/64
+epoch 0159 | goal_validation acc mean 0.056 | goal_validation success mean 0.016 | acc per-env: 0.056 | success per-env: 1/64
+rollout steps=16 | obs 621.3ms | label 3.8ms | forward 5.2ms | action 3.8ms | step 3.2ms | total 637.3ms
+epoch 0160 | loss 0.4344 | train acc 0.833
+epoch 0160 | train acc mean 0.798 | train success mean 1.000 | acc per-env: 0.798 | success per-env: 64/64
+epoch 0160 | pos_validation acc mean 0.176 | pos_validation success mean 0.031 | acc per-env: 0.176 | success per-env: 2/64
+epoch 0160 | goal_validation acc mean 0.057 | goal_validation success mean 0.016 | acc per-env: 0.057 | success per-env: 1/64
+rollout steps=16 | obs 614.8ms | label 3.8ms | forward 5.0ms | action 3.8ms | step 3.1ms | total 630.4ms
+epoch 0161 | loss 0.4311 | train acc 0.833
+epoch 0161 | train acc mean 0.797 | train success mean 1.000 | acc per-env: 0.797 | success per-env: 64/64
+epoch 0161 | pos_validation acc mean 0.179 | pos_validation success mean 0.031 | acc per-env: 0.179 | success per-env: 2/64
+epoch 0161 | goal_validation acc mean 0.050 | goal_validation success mean 0.016 | acc per-env: 0.050 | success per-env: 1/64
+rollout steps=16 | obs 616.1ms | label 3.8ms | forward 5.1ms | action 3.8ms | step 3.1ms | total 631.9ms
+epoch 0162 | loss 0.4295 | train acc 0.839
+epoch 0162 | train acc mean 0.801 | train success mean 1.000 | acc per-env: 0.801 | success per-env: 64/64
+epoch 0162 | pos_validation acc mean 0.179 | pos_validation success mean 0.031 | acc per-env: 0.179 | success per-env: 2/64
+epoch 0162 | goal_validation acc mean 0.052 | goal_validation success mean 0.016 | acc per-env: 0.052 | success per-env: 1/64
+rollout steps=16 | obs 618.0ms | label 3.8ms | forward 5.4ms | action 3.7ms | step 3.1ms | total 634.1ms
+epoch 0163 | loss 0.4281 | train acc 0.842
+epoch 0163 | train acc mean 0.809 | train success mean 1.000 | acc per-env: 0.809 | success per-env: 64/64
+epoch 0163 | pos_validation acc mean 0.180 | pos_validation success mean 0.031 | acc per-env: 0.180 | success per-env: 2/64
+epoch 0163 | goal_validation acc mean 0.063 | goal_validation success mean 0.016 | acc per-env: 0.063 | success per-env: 1/64
+rollout steps=16 | obs 613.2ms | label 3.8ms | forward 5.1ms | action 3.8ms | step 3.1ms | total 628.9ms
+epoch 0164 | loss 0.4235 | train acc 0.839
+epoch 0164 | train acc mean 0.800 | train success mean 1.000 | acc per-env: 0.800 | success per-env: 64/64
+epoch 0164 | pos_validation acc mean 0.182 | pos_validation success mean 0.031 | acc per-env: 0.182 | success per-env: 2/64
+epoch 0164 | goal_validation acc mean 0.067 | goal_validation success mean 0.016 | acc per-env: 0.067 | success per-env: 1/64
+rollout steps=16 | obs 615.2ms | label 3.8ms | forward 5.0ms | action 3.8ms | step 3.1ms | total 630.9ms
+epoch 0165 | loss 0.4185 | train acc 0.837
+epoch 0165 | train acc mean 0.809 | train success mean 1.000 | acc per-env: 0.809 | success per-env: 64/64
+epoch 0165 | pos_validation acc mean 0.182 | pos_validation success mean 0.031 | acc per-env: 0.182 | success per-env: 2/64
+epoch 0165 | goal_validation acc mean 0.058 | goal_validation success mean 0.016 | acc per-env: 0.058 | success per-env: 1/64
+rollout steps=16 | obs 616.1ms | label 3.8ms | forward 5.1ms | action 3.8ms | step 3.1ms | total 631.9ms
+epoch 0166 | loss 0.4148 | train acc 0.844
+epoch 0166 | train acc mean 0.805 | train success mean 1.000 | acc per-env: 0.805 | success per-env: 64/64
+epoch 0166 | pos_validation acc mean 0.182 | pos_validation success mean 0.031 | acc per-env: 0.182 | success per-env: 2/64
+epoch 0166 | goal_validation acc mean 0.051 | goal_validation success mean 0.016 | acc per-env: 0.051 | success per-env: 1/64
+rollout steps=16 | obs 611.4ms | label 3.8ms | forward 5.1ms | action 3.8ms | step 3.1ms | total 627.2ms
+epoch 0167 | loss 0.4177 | train acc 0.846
+epoch 0167 | train acc mean 0.801 | train success mean 1.000 | acc per-env: 0.801 | success per-env: 64/64
+epoch 0167 | pos_validation acc mean 0.186 | pos_validation success mean 0.031 | acc per-env: 0.186 | success per-env: 2/64
+epoch 0167 | goal_validation acc mean 0.048 | goal_validation success mean 0.016 | acc per-env: 0.048 | success per-env: 1/64
+rollout steps=16 | obs 618.5ms | label 3.8ms | forward 5.2ms | action 3.9ms | step 3.2ms | total 634.5ms
+epoch 0168 | loss 0.4231 | train acc 0.843
+epoch 0168 | train acc mean 0.794 | train success mean 1.000 | acc per-env: 0.794 | success per-env: 64/64
+epoch 0168 | pos_validation acc mean 0.183 | pos_validation success mean 0.031 | acc per-env: 0.183 | success per-env: 2/64
+epoch 0168 | goal_validation acc mean 0.068 | goal_validation success mean 0.016 | acc per-env: 0.068 | success per-env: 1/64
+rollout steps=16 | obs 620.0ms | label 3.8ms | forward 5.1ms | action 3.8ms | step 3.1ms | total 635.9ms
+epoch 0169 | loss 0.4162 | train acc 0.840
+epoch 0169 | train acc mean 0.798 | train success mean 1.000 | acc per-env: 0.798 | success per-env: 64/64
+epoch 0169 | pos_validation acc mean 0.181 | pos_validation success mean 0.031 | acc per-env: 0.181 | success per-env: 2/64
+epoch 0169 | goal_validation acc mean 0.068 | goal_validation success mean 0.016 | acc per-env: 0.068 | success per-env: 1/64
+rollout steps=16 | obs 612.0ms | label 3.8ms | forward 5.1ms | action 3.8ms | step 3.1ms | total 627.9ms
+epoch 0170 | loss 0.4052 | train acc 0.847
+epoch 0170 | train acc mean 0.790 | train success mean 1.000 | acc per-env: 0.790 | success per-env: 64/64
+epoch 0170 | pos_validation acc mean 0.180 | pos_validation success mean 0.031 | acc per-env: 0.180 | success per-env: 2/64
+epoch 0170 | goal_validation acc mean 0.067 | goal_validation success mean 0.016 | acc per-env: 0.067 | success per-env: 1/64
+rollout steps=16 | obs 614.2ms | label 3.8ms | forward 5.7ms | action 3.8ms | step 3.1ms | total 630.7ms
+epoch 0171 | loss 0.4089 | train acc 0.839
+epoch 0171 | train acc mean 0.789 | train success mean 1.000 | acc per-env: 0.789 | success per-env: 64/64
+epoch 0171 | pos_validation acc mean 0.180 | pos_validation success mean 0.031 | acc per-env: 0.180 | success per-env: 2/64
+epoch 0171 | goal_validation acc mean 0.063 | goal_validation success mean 0.016 | acc per-env: 0.063 | success per-env: 1/64
+rollout steps=16 | obs 615.1ms | label 3.8ms | forward 5.1ms | action 3.8ms | step 3.1ms | total 630.9ms
+epoch 0172 | loss 0.4047 | train acc 0.841
+epoch 0172 | train acc mean 0.791 | train success mean 1.000 | acc per-env: 0.791 | success per-env: 64/64
+epoch 0172 | pos_validation acc mean 0.185 | pos_validation success mean 0.047 | acc per-env: 0.185 | success per-env: 3/64
+epoch 0172 | goal_validation acc mean 0.063 | goal_validation success mean 0.016 | acc per-env: 0.063 | success per-env: 1/64
+rollout steps=16 | obs 611.4ms | label 3.8ms | forward 5.0ms | action 3.7ms | step 3.1ms | total 627.0ms
+epoch 0173 | loss 0.3972 | train acc 0.848
+epoch 0173 | train acc mean 0.801 | train success mean 1.000 | acc per-env: 0.801 | success per-env: 64/64
+epoch 0173 | pos_validation acc mean 0.190 | pos_validation success mean 0.062 | acc per-env: 0.190 | success per-env: 4/64
+epoch 0173 | goal_validation acc mean 0.057 | goal_validation success mean 0.016 | acc per-env: 0.057 | success per-env: 1/64
+rollout steps=16 | obs 614.7ms | label 3.8ms | forward 5.0ms | action 3.8ms | step 3.1ms | total 630.5ms
+epoch 0174 | loss 0.4036 | train acc 0.847
+epoch 0174 | train acc mean 0.802 | train success mean 1.000 | acc per-env: 0.802 | success per-env: 64/64
+epoch 0174 | pos_validation acc mean 0.192 | pos_validation success mean 0.062 | acc per-env: 0.192 | success per-env: 4/64
+epoch 0174 | goal_validation acc mean 0.056 | goal_validation success mean 0.016 | acc per-env: 0.056 | success per-env: 1/64
+rollout steps=16 | obs 620.0ms | label 3.8ms | forward 5.0ms | action 3.8ms | step 3.1ms | total 635.6ms
+epoch 0175 | loss 0.4175 | train acc 0.845
+epoch 0175 | train acc mean 0.808 | train success mean 1.000 | acc per-env: 0.808 | success per-env: 64/64
+epoch 0175 | pos_validation acc mean 0.193 | pos_validation success mean 0.062 | acc per-env: 0.193 | success per-env: 4/64
+epoch 0175 | goal_validation acc mean 0.056 | goal_validation success mean 0.016 | acc per-env: 0.056 | success per-env: 1/64
+rollout steps=16 | obs 614.7ms | label 3.8ms | forward 5.0ms | action 3.8ms | step 3.1ms | total 630.5ms
+epoch 0176 | loss 0.4053 | train acc 0.849
+epoch 0176 | train acc mean 0.808 | train success mean 1.000 | acc per-env: 0.808 | success per-env: 64/64
+epoch 0176 | pos_validation acc mean 0.189 | pos_validation success mean 0.047 | acc per-env: 0.189 | success per-env: 3/64
+epoch 0176 | goal_validation acc mean 0.061 | goal_validation success mean 0.016 | acc per-env: 0.061 | success per-env: 1/64
+rollout steps=16 | obs 618.2ms | label 3.8ms | forward 5.1ms | action 3.8ms | step 3.1ms | total 634.1ms
+epoch 0177 | loss 0.3997 | train acc 0.849
+epoch 0177 | train acc mean 0.815 | train success mean 1.000 | acc per-env: 0.815 | success per-env: 64/64
+epoch 0177 | pos_validation acc mean 0.190 | pos_validation success mean 0.047 | acc per-env: 0.190 | success per-env: 3/64
+epoch 0177 | goal_validation acc mean 0.067 | goal_validation success mean 0.016 | acc per-env: 0.067 | success per-env: 1/64
+rollout steps=16 | obs 605.7ms | label 3.8ms | forward 5.1ms | action 3.7ms | step 3.1ms | total 621.3ms
+epoch 0178 | loss 0.3894 | train acc 0.855
+epoch 0178 | train acc mean 0.815 | train success mean 1.000 | acc per-env: 0.815 | success per-env: 64/64
+epoch 0178 | pos_validation acc mean 0.189 | pos_validation success mean 0.047 | acc per-env: 0.189 | success per-env: 3/64
+epoch 0178 | goal_validation acc mean 0.062 | goal_validation success mean 0.016 | acc per-env: 0.062 | success per-env: 1/64
+rollout steps=16 | obs 605.6ms | label 3.8ms | forward 5.1ms | action 3.8ms | step 3.1ms | total 621.3ms
+epoch 0179 | loss 0.3859 | train acc 0.854
+epoch 0179 | train acc mean 0.817 | train success mean 1.000 | acc per-env: 0.817 | success per-env: 64/64
+epoch 0179 | pos_validation acc mean 0.189 | pos_validation success mean 0.047 | acc per-env: 0.189 | success per-env: 3/64
+epoch 0179 | goal_validation acc mean 0.067 | goal_validation success mean 0.016 | acc per-env: 0.067 | success per-env: 1/64
+rollout steps=16 | obs 605.7ms | label 3.8ms | forward 5.2ms | action 3.8ms | step 3.1ms | total 621.5ms
+epoch 0180 | loss 0.3824 | train acc 0.857
+epoch 0180 | train acc mean 0.821 | train success mean 1.000 | acc per-env: 0.821 | success per-env: 64/64
+epoch 0180 | pos_validation acc mean 0.191 | pos_validation success mean 0.047 | acc per-env: 0.191 | success per-env: 3/64
+epoch 0180 | goal_validation acc mean 0.064 | goal_validation success mean 0.016 | acc per-env: 0.064 | success per-env: 1/64
+rollout steps=16 | obs 606.7ms | label 3.8ms | forward 5.1ms | action 3.8ms | step 3.1ms | total 622.4ms
+epoch 0181 | loss 0.3744 | train acc 0.856
+epoch 0181 | train acc mean 0.813 | train success mean 1.000 | acc per-env: 0.813 | success per-env: 64/64
+epoch 0181 | pos_validation acc mean 0.186 | pos_validation success mean 0.047 | acc per-env: 0.186 | success per-env: 3/64
+epoch 0181 | goal_validation acc mean 0.059 | goal_validation success mean 0.016 | acc per-env: 0.059 | success per-env: 1/64
+rollout steps=16 | obs 611.3ms | label 3.8ms | forward 5.0ms | action 3.7ms | step 3.1ms | total 627.0ms
+epoch 0182 | loss 0.3797 | train acc 0.850
+epoch 0182 | train acc mean 0.818 | train success mean 1.000 | acc per-env: 0.818 | success per-env: 64/64
+epoch 0182 | pos_validation acc mean 0.185 | pos_validation success mean 0.047 | acc per-env: 0.185 | success per-env: 3/64
+epoch 0182 | goal_validation acc mean 0.059 | goal_validation success mean 0.016 | acc per-env: 0.059 | success per-env: 1/64
+rollout steps=16 | obs 606.8ms | label 3.8ms | forward 5.3ms | action 3.7ms | step 3.1ms | total 622.6ms
+epoch 0183 | loss 0.3710 | train acc 0.855
+epoch 0183 | train acc mean 0.816 | train success mean 1.000 | acc per-env: 0.816 | success per-env: 64/64
+epoch 0183 | pos_validation acc mean 0.184 | pos_validation success mean 0.047 | acc per-env: 0.184 | success per-env: 3/64
+epoch 0183 | goal_validation acc mean 0.057 | goal_validation success mean 0.016 | acc per-env: 0.057 | success per-env: 1/64
+rollout steps=16 | obs 608.1ms | label 3.8ms | forward 4.9ms | action 3.7ms | step 3.1ms | total 623.7ms
+epoch 0184 | loss 0.3662 | train acc 0.862
+epoch 0184 | train acc mean 0.824 | train success mean 1.000 | acc per-env: 0.824 | success per-env: 64/64
+epoch 0184 | pos_validation acc mean 0.184 | pos_validation success mean 0.047 | acc per-env: 0.184 | success per-env: 3/64
+epoch 0184 | goal_validation acc mean 0.057 | goal_validation success mean 0.016 | acc per-env: 0.057 | success per-env: 1/64
+rollout steps=16 | obs 605.3ms | label 3.8ms | forward 4.9ms | action 3.7ms | step 3.1ms | total 620.8ms
+epoch 0185 | loss 0.3703 | train acc 0.868
+epoch 0185 | train acc mean 0.827 | train success mean 1.000 | acc per-env: 0.827 | success per-env: 64/64
+epoch 0185 | pos_validation acc mean 0.185 | pos_validation success mean 0.047 | acc per-env: 0.185 | success per-env: 3/64
+epoch 0185 | goal_validation acc mean 0.058 | goal_validation success mean 0.016 | acc per-env: 0.058 | success per-env: 1/64
+rollout steps=16 | obs 606.5ms | label 3.8ms | forward 5.2ms | action 3.7ms | step 3.1ms | total 622.4ms
+epoch 0186 | loss 0.3686 | train acc 0.862
+epoch 0186 | train acc mean 0.821 | train success mean 1.000 | acc per-env: 0.821 | success per-env: 64/64
+epoch 0186 | pos_validation acc mean 0.183 | pos_validation success mean 0.047 | acc per-env: 0.183 | success per-env: 3/64
+epoch 0186 | goal_validation acc mean 0.059 | goal_validation success mean 0.016 | acc per-env: 0.059 | success per-env: 1/64
+rollout steps=16 | obs 606.7ms | label 3.8ms | forward 5.0ms | action 3.7ms | step 3.1ms | total 622.2ms
+epoch 0187 | loss 0.3625 | train acc 0.866
+epoch 0187 | train acc mean 0.829 | train success mean 1.000 | acc per-env: 0.829 | success per-env: 64/64
+epoch 0187 | pos_validation acc mean 0.182 | pos_validation success mean 0.047 | acc per-env: 0.182 | success per-env: 3/64
+epoch 0187 | goal_validation acc mean 0.063 | goal_validation success mean 0.016 | acc per-env: 0.063 | success per-env: 1/64
+rollout steps=16 | obs 607.7ms | label 3.8ms | forward 5.0ms | action 3.8ms | step 3.1ms | total 623.3ms
+epoch 0188 | loss 0.3599 | train acc 0.868
+epoch 0188 | train acc mean 0.835 | train success mean 1.000 | acc per-env: 0.835 | success per-env: 64/64
+epoch 0188 | pos_validation acc mean 0.186 | pos_validation success mean 0.047 | acc per-env: 0.186 | success per-env: 3/64
+epoch 0188 | goal_validation acc mean 0.062 | goal_validation success mean 0.016 | acc per-env: 0.062 | success per-env: 1/64
+rollout steps=16 | obs 606.9ms | label 3.8ms | forward 5.0ms | action 3.7ms | step 3.1ms | total 622.4ms
+epoch 0189 | loss 0.3581 | train acc 0.869
+epoch 0189 | train acc mean 0.831 | train success mean 1.000 | acc per-env: 0.831 | success per-env: 64/64
+epoch 0189 | pos_validation acc mean 0.192 | pos_validation success mean 0.062 | acc per-env: 0.192 | success per-env: 4/64
+epoch 0189 | goal_validation acc mean 0.063 | goal_validation success mean 0.016 | acc per-env: 0.063 | success per-env: 1/64
+rollout steps=16 | obs 605.1ms | label 3.8ms | forward 5.0ms | action 3.7ms | step 3.1ms | total 620.7ms
+epoch 0190 | loss 0.3566 | train acc 0.865
+epoch 0190 | train acc mean 0.826 | train success mean 1.000 | acc per-env: 0.826 | success per-env: 64/64
+epoch 0190 | pos_validation acc mean 0.186 | pos_validation success mean 0.062 | acc per-env: 0.186 | success per-env: 4/64
+epoch 0190 | goal_validation acc mean 0.060 | goal_validation success mean 0.016 | acc per-env: 0.060 | success per-env: 1/64
+rollout steps=16 | obs 605.8ms | label 3.8ms | forward 5.1ms | action 3.7ms | step 3.1ms | total 621.4ms
+epoch 0191 | loss 0.3553 | train acc 0.867
+epoch 0191 | train acc mean 0.849 | train success mean 1.000 | acc per-env: 0.849 | success per-env: 64/64
+epoch 0191 | pos_validation acc mean 0.183 | pos_validation success mean 0.047 | acc per-env: 0.183 | success per-env: 3/64
+epoch 0191 | goal_validation acc mean 0.059 | goal_validation success mean 0.016 | acc per-env: 0.059 | success per-env: 1/64
+rollout steps=16 | obs 604.0ms | label 3.8ms | forward 5.1ms | action 3.8ms | step 3.1ms | total 619.8ms
+epoch 0192 | loss 0.3494 | train acc 0.878
+epoch 0192 | train acc mean 0.844 | train success mean 1.000 | acc per-env: 0.844 | success per-env: 64/64
+epoch 0192 | pos_validation acc mean 0.182 | pos_validation success mean 0.047 | acc per-env: 0.182 | success per-env: 3/64
+epoch 0192 | goal_validation acc mean 0.052 | goal_validation success mean 0.016 | acc per-env: 0.052 | success per-env: 1/64
+rollout steps=16 | obs 601.9ms | label 3.8ms | forward 5.0ms | action 3.7ms | step 3.1ms | total 617.5ms
+epoch 0193 | loss 0.3497 | train acc 0.877
+epoch 0193 | train acc mean 0.840 | train success mean 1.000 | acc per-env: 0.840 | success per-env: 64/64
+epoch 0193 | pos_validation acc mean 0.195 | pos_validation success mean 0.047 | acc per-env: 0.195 | success per-env: 3/64
+epoch 0193 | goal_validation acc mean 0.054 | goal_validation success mean 0.016 | acc per-env: 0.054 | success per-env: 1/64
+rollout steps=16 | obs 607.0ms | label 3.8ms | forward 5.4ms | action 3.8ms | step 3.1ms | total 623.1ms
+epoch 0194 | loss 0.3498 | train acc 0.876
+epoch 0194 | train acc mean 0.840 | train success mean 1.000 | acc per-env: 0.840 | success per-env: 64/64
+epoch 0194 | pos_validation acc mean 0.186 | pos_validation success mean 0.047 | acc per-env: 0.186 | success per-env: 3/64
+epoch 0194 | goal_validation acc mean 0.052 | goal_validation success mean 0.016 | acc per-env: 0.052 | success per-env: 1/64
+rollout steps=16 | obs 602.2ms | label 3.8ms | forward 5.0ms | action 3.8ms | step 3.1ms | total 617.7ms
+epoch 0195 | loss 0.3456 | train acc 0.876
+epoch 0195 | train acc mean 0.860 | train success mean 1.000 | acc per-env: 0.860 | success per-env: 64/64
+epoch 0195 | pos_validation acc mean 0.184 | pos_validation success mean 0.047 | acc per-env: 0.184 | success per-env: 3/64
+epoch 0195 | goal_validation acc mean 0.052 | goal_validation success mean 0.016 | acc per-env: 0.052 | success per-env: 1/64
+rollout steps=16 | obs 598.1ms | label 3.7ms | forward 4.9ms | action 3.7ms | step 3.1ms | total 613.5ms
+epoch 0196 | loss 0.3482 | train acc 0.879
+epoch 0196 | train acc mean 0.854 | train success mean 1.000 | acc per-env: 0.854 | success per-env: 64/64
+epoch 0196 | pos_validation acc mean 0.185 | pos_validation success mean 0.047 | acc per-env: 0.185 | success per-env: 3/64
+epoch 0196 | goal_validation acc mean 0.047 | goal_validation success mean 0.016 | acc per-env: 0.047 | success per-env: 1/64
+rollout steps=16 | obs 602.1ms | label 3.8ms | forward 5.1ms | action 3.8ms | step 3.1ms | total 617.7ms
+epoch 0197 | loss 0.3438 | train acc 0.879
+epoch 0197 | train acc mean 0.846 | train success mean 1.000 | acc per-env: 0.846 | success per-env: 64/64
+epoch 0197 | pos_validation acc mean 0.183 | pos_validation success mean 0.047 | acc per-env: 0.183 | success per-env: 3/64
+epoch 0197 | goal_validation acc mean 0.048 | goal_validation success mean 0.016 | acc per-env: 0.048 | success per-env: 1/64
+rollout steps=16 | obs 603.0ms | label 3.8ms | forward 5.0ms | action 3.7ms | step 3.1ms | total 618.7ms
+epoch 0198 | loss 0.3422 | train acc 0.874
+epoch 0198 | train acc mean 0.865 | train success mean 1.000 | acc per-env: 0.865 | success per-env: 64/64
+epoch 0198 | pos_validation acc mean 0.182 | pos_validation success mean 0.062 | acc per-env: 0.182 | success per-env: 4/64
+epoch 0198 | goal_validation acc mean 0.053 | goal_validation success mean 0.016 | acc per-env: 0.053 | success per-env: 1/64
+rollout steps=16 | obs 603.0ms | label 3.8ms | forward 5.1ms | action 3.8ms | step 3.1ms | total 618.7ms
+epoch 0199 | loss 0.3471 | train acc 0.888
+epoch 0199 | train acc mean 0.859 | train success mean 1.000 | acc per-env: 0.859 | success per-env: 64/64
+epoch 0199 | pos_validation acc mean 0.181 | pos_validation success mean 0.062 | acc per-env: 0.181 | success per-env: 4/64
+epoch 0199 | goal_validation acc mean 0.052 | goal_validation success mean 0.016 | acc per-env: 0.052 | success per-env: 1/64
+rollout steps=16 | obs 602.3ms | label 3.8ms | forward 5.0ms | action 3.7ms | step 3.1ms | total 617.8ms
+epoch 0200 | loss 0.3429 | train acc 0.889
+epoch 0200 | train acc mean 0.856 | train success mean 1.000 | acc per-env: 0.856 | success per-env: 64/64
+epoch 0200 | pos_validation acc mean 0.185 | pos_validation success mean 0.062 | acc per-env: 0.185 | success per-env: 4/64
+epoch 0200 | goal_validation acc mean 0.049 | goal_validation success mean 0.016 | acc per-env: 0.049 | success per-env: 1/64
+rollout steps=16 | obs 606.7ms | label 3.8ms | forward 5.1ms | action 3.8ms | step 3.1ms | total 622.4ms
+epoch 0201 | loss 0.3400 | train acc 0.891
+epoch 0201 | train acc mean 0.860 | train success mean 1.000 | acc per-env: 0.860 | success per-env: 64/64
+epoch 0201 | pos_validation acc mean 0.181 | pos_validation success mean 0.062 | acc per-env: 0.181 | success per-env: 4/64
+epoch 0201 | goal_validation acc mean 0.049 | goal_validation success mean 0.016 | acc per-env: 0.049 | success per-env: 1/64
+rollout steps=16 | obs 605.0ms | label 3.8ms | forward 5.0ms | action 3.8ms | step 3.1ms | total 620.6ms
+epoch 0202 | loss 0.3377 | train acc 0.893
+epoch 0202 | train acc mean 0.847 | train success mean 1.000 | acc per-env: 0.847 | success per-env: 64/64
+epoch 0202 | pos_validation acc mean 0.195 | pos_validation success mean 0.078 | acc per-env: 0.195 | success per-env: 5/64
+epoch 0202 | goal_validation acc mean 0.049 | goal_validation success mean 0.016 | acc per-env: 0.049 | success per-env: 1/64
+rollout steps=16 | obs 607.4ms | label 3.8ms | forward 5.1ms | action 3.7ms | step 3.1ms | total 623.1ms
+epoch 0203 | loss 0.3388 | train acc 0.885
+epoch 0203 | train acc mean 0.849 | train success mean 1.000 | acc per-env: 0.849 | success per-env: 64/64
+epoch 0203 | pos_validation acc mean 0.195 | pos_validation success mean 0.078 | acc per-env: 0.195 | success per-env: 5/64
+epoch 0203 | goal_validation acc mean 0.051 | goal_validation success mean 0.016 | acc per-env: 0.051 | success per-env: 1/64
+rollout steps=16 | obs 605.0ms | label 3.8ms | forward 5.0ms | action 3.7ms | step 3.1ms | total 620.6ms
+epoch 0204 | loss 0.3326 | train acc 0.885
+epoch 0204 | train acc mean 0.854 | train success mean 1.000 | acc per-env: 0.854 | success per-env: 64/64
+epoch 0204 | pos_validation acc mean 0.186 | pos_validation success mean 0.062 | acc per-env: 0.186 | success per-env: 4/64
+epoch 0204 | goal_validation acc mean 0.051 | goal_validation success mean 0.016 | acc per-env: 0.051 | success per-env: 1/64
+rollout steps=16 | obs 604.1ms | label 3.8ms | forward 5.0ms | action 3.8ms | step 3.1ms | total 619.8ms
+epoch 0205 | loss 0.3226 | train acc 0.893
+epoch 0205 | train acc mean 0.841 | train success mean 1.000 | acc per-env: 0.841 | success per-env: 64/64
+epoch 0205 | pos_validation acc mean 0.202 | pos_validation success mean 0.078 | acc per-env: 0.202 | success per-env: 5/64
+epoch 0205 | goal_validation acc mean 0.051 | goal_validation success mean 0.016 | acc per-env: 0.051 | success per-env: 1/64
+rollout steps=16 | obs 605.0ms | label 3.8ms | forward 5.0ms | action 3.7ms | step 3.1ms | total 620.6ms
+epoch 0206 | loss 0.3247 | train acc 0.890
+epoch 0206 | train acc mean 0.853 | train success mean 1.000 | acc per-env: 0.853 | success per-env: 64/64
+epoch 0206 | pos_validation acc mean 0.210 | pos_validation success mean 0.078 | acc per-env: 0.210 | success per-env: 5/64
+epoch 0206 | goal_validation acc mean 0.053 | goal_validation success mean 0.016 | acc per-env: 0.053 | success per-env: 1/64
+rollout steps=16 | obs 604.9ms | label 3.8ms | forward 5.0ms | action 3.7ms | step 3.1ms | total 620.5ms
+epoch 0207 | loss 0.3207 | train acc 0.886
+epoch 0207 | train acc mean 0.856 | train success mean 1.000 | acc per-env: 0.856 | success per-env: 64/64
+epoch 0207 | pos_validation acc mean 0.209 | pos_validation success mean 0.078 | acc per-env: 0.209 | success per-env: 5/64
+epoch 0207 | goal_validation acc mean 0.051 | goal_validation success mean 0.016 | acc per-env: 0.051 | success per-env: 1/64
+rollout steps=16 | obs 608.4ms | label 3.8ms | forward 4.9ms | action 3.7ms | step 3.1ms | total 624.0ms
+epoch 0208 | loss 0.3241 | train acc 0.884
+epoch 0208 | train acc mean 0.842 | train success mean 1.000 | acc per-env: 0.842 | success per-env: 64/64
+epoch 0208 | pos_validation acc mean 0.206 | pos_validation success mean 0.078 | acc per-env: 0.206 | success per-env: 5/64
+epoch 0208 | goal_validation acc mean 0.048 | goal_validation success mean 0.016 | acc per-env: 0.048 | success per-env: 1/64
+rollout steps=16 | obs 609.9ms | label 3.8ms | forward 5.2ms | action 3.8ms | step 3.1ms | total 625.7ms
+epoch 0209 | loss 0.3220 | train acc 0.881
+epoch 0209 | train acc mean 0.857 | train success mean 1.000 | acc per-env: 0.857 | success per-env: 64/64
+epoch 0209 | pos_validation acc mean 0.214 | pos_validation success mean 0.078 | acc per-env: 0.214 | success per-env: 5/64
+epoch 0209 | goal_validation acc mean 0.053 | goal_validation success mean 0.016 | acc per-env: 0.053 | success per-env: 1/64
+rollout steps=16 | obs 605.0ms | label 3.8ms | forward 5.0ms | action 3.8ms | step 3.1ms | total 620.7ms
+epoch 0210 | loss 0.3165 | train acc 0.885
+epoch 0210 | train acc mean 0.845 | train success mean 1.000 | acc per-env: 0.845 | success per-env: 64/64
+epoch 0210 | pos_validation acc mean 0.210 | pos_validation success mean 0.078 | acc per-env: 0.210 | success per-env: 5/64
+epoch 0210 | goal_validation acc mean 0.041 | goal_validation success mean 0.016 | acc per-env: 0.041 | success per-env: 1/64
+rollout steps=16 | obs 610.5ms | label 3.8ms | forward 5.1ms | action 3.8ms | step 3.1ms | total 626.3ms
+epoch 0211 | loss 0.3124 | train acc 0.888
+epoch 0211 | train acc mean 0.862 | train success mean 1.000 | acc per-env: 0.862 | success per-env: 64/64
+epoch 0211 | pos_validation acc mean 0.198 | pos_validation success mean 0.062 | acc per-env: 0.198 | success per-env: 4/64
+epoch 0211 | goal_validation acc mean 0.047 | goal_validation success mean 0.016 | acc per-env: 0.047 | success per-env: 1/64
+rollout steps=16 | obs 604.8ms | label 3.8ms | forward 5.0ms | action 3.7ms | step 3.1ms | total 620.5ms
+epoch 0212 | loss 0.3062 | train acc 0.895
+epoch 0212 | train acc mean 0.864 | train success mean 1.000 | acc per-env: 0.864 | success per-env: 64/64
+epoch 0212 | pos_validation acc mean 0.198 | pos_validation success mean 0.047 | acc per-env: 0.198 | success per-env: 3/64
+epoch 0212 | goal_validation acc mean 0.047 | goal_validation success mean 0.016 | acc per-env: 0.047 | success per-env: 1/64
+rollout steps=16 | obs 611.2ms | label 3.8ms | forward 5.0ms | action 3.7ms | step 3.1ms | total 626.9ms
+epoch 0213 | loss 0.3064 | train acc 0.893
+epoch 0213 | train acc mean 0.855 | train success mean 1.000 | acc per-env: 0.855 | success per-env: 64/64
+epoch 0213 | pos_validation acc mean 0.195 | pos_validation success mean 0.047 | acc per-env: 0.195 | success per-env: 3/64
+epoch 0213 | goal_validation acc mean 0.050 | goal_validation success mean 0.016 | acc per-env: 0.050 | success per-env: 1/64
+rollout steps=16 | obs 608.9ms | label 3.8ms | forward 5.0ms | action 3.8ms | step 3.1ms | total 624.5ms
+epoch 0214 | loss 0.3029 | train acc 0.893
+epoch 0214 | train acc mean 0.857 | train success mean 1.000 | acc per-env: 0.857 | success per-env: 64/64
+epoch 0214 | pos_validation acc mean 0.185 | pos_validation success mean 0.031 | acc per-env: 0.185 | success per-env: 2/64
+epoch 0214 | goal_validation acc mean 0.055 | goal_validation success mean 0.016 | acc per-env: 0.055 | success per-env: 1/64
+rollout steps=16 | obs 603.4ms | label 3.8ms | forward 5.0ms | action 3.7ms | step 3.1ms | total 619.0ms
+epoch 0215 | loss 0.2990 | train acc 0.897
+epoch 0215 | train acc mean 0.865 | train success mean 1.000 | acc per-env: 0.865 | success per-env: 64/64
+epoch 0215 | pos_validation acc mean 0.184 | pos_validation success mean 0.031 | acc per-env: 0.184 | success per-env: 2/64
+epoch 0215 | goal_validation acc mean 0.056 | goal_validation success mean 0.016 | acc per-env: 0.056 | success per-env: 1/64
+rollout steps=16 | obs 604.3ms | label 3.8ms | forward 5.0ms | action 3.7ms | step 3.1ms | total 620.0ms
+epoch 0216 | loss 0.2974 | train acc 0.899
+epoch 0216 | train acc mean 0.869 | train success mean 1.000 | acc per-env: 0.869 | success per-env: 64/64
+epoch 0216 | pos_validation acc mean 0.190 | pos_validation success mean 0.031 | acc per-env: 0.190 | success per-env: 2/64
+epoch 0216 | goal_validation acc mean 0.056 | goal_validation success mean 0.016 | acc per-env: 0.056 | success per-env: 1/64
+rollout steps=16 | obs 604.6ms | label 3.8ms | forward 5.1ms | action 3.8ms | step 3.1ms | total 620.4ms
+epoch 0217 | loss 0.2934 | train acc 0.898
+epoch 0217 | train acc mean 0.876 | train success mean 1.000 | acc per-env: 0.876 | success per-env: 64/64
+epoch 0217 | pos_validation acc mean 0.191 | pos_validation success mean 0.031 | acc per-env: 0.191 | success per-env: 2/64
+epoch 0217 | goal_validation acc mean 0.055 | goal_validation success mean 0.016 | acc per-env: 0.055 | success per-env: 1/64
+rollout steps=16 | obs 605.2ms | label 3.8ms | forward 5.2ms | action 3.8ms | step 3.1ms | total 621.2ms
+epoch 0218 | loss 0.2895 | train acc 0.898
+epoch 0218 | train acc mean 0.878 | train success mean 1.000 | acc per-env: 0.878 | success per-env: 64/64
+epoch 0218 | pos_validation acc mean 0.202 | pos_validation success mean 0.031 | acc per-env: 0.202 | success per-env: 2/64
+epoch 0218 | goal_validation acc mean 0.052 | goal_validation success mean 0.016 | acc per-env: 0.052 | success per-env: 1/64
+rollout steps=16 | obs 603.1ms | label 3.8ms | forward 5.0ms | action 3.8ms | step 3.1ms | total 618.8ms
+epoch 0219 | loss 0.2869 | train acc 0.900
+epoch 0219 | train acc mean 0.882 | train success mean 1.000 | acc per-env: 0.882 | success per-env: 64/64
+epoch 0219 | pos_validation acc mean 0.200 | pos_validation success mean 0.031 | acc per-env: 0.200 | success per-env: 2/64
+epoch 0219 | goal_validation acc mean 0.048 | goal_validation success mean 0.016 | acc per-env: 0.048 | success per-env: 1/64
+rollout steps=16 | obs 606.6ms | label 3.8ms | forward 5.2ms | action 3.8ms | step 3.1ms | total 622.5ms
+epoch 0220 | loss 0.2821 | train acc 0.903
+epoch 0220 | train acc mean 0.882 | train success mean 1.000 | acc per-env: 0.882 | success per-env: 64/64
+epoch 0220 | pos_validation acc mean 0.205 | pos_validation success mean 0.031 | acc per-env: 0.205 | success per-env: 2/64
+epoch 0220 | goal_validation acc mean 0.044 | goal_validation success mean 0.016 | acc per-env: 0.044 | success per-env: 1/64
+rollout steps=16 | obs 605.5ms | label 3.8ms | forward 5.1ms | action 3.8ms | step 3.1ms | total 621.3ms
+epoch 0221 | loss 0.2812 | train acc 0.907
+epoch 0221 | train acc mean 0.878 | train success mean 1.000 | acc per-env: 0.878 | success per-env: 64/64
+epoch 0221 | pos_validation acc mean 0.205 | pos_validation success mean 0.031 | acc per-env: 0.205 | success per-env: 2/64
+epoch 0221 | goal_validation acc mean 0.046 | goal_validation success mean 0.016 | acc per-env: 0.046 | success per-env: 1/64
+rollout steps=16 | obs 603.1ms | label 3.8ms | forward 5.1ms | action 3.8ms | step 3.1ms | total 618.7ms
+epoch 0222 | loss 0.2818 | train acc 0.902
+epoch 0222 | train acc mean 0.882 | train success mean 1.000 | acc per-env: 0.882 | success per-env: 64/64
+epoch 0222 | pos_validation acc mean 0.205 | pos_validation success mean 0.031 | acc per-env: 0.205 | success per-env: 2/64
+epoch 0222 | goal_validation acc mean 0.044 | goal_validation success mean 0.016 | acc per-env: 0.044 | success per-env: 1/64
+rollout steps=16 | obs 604.0ms | label 3.8ms | forward 5.2ms | action 3.8ms | step 3.1ms | total 619.9ms
+epoch 0223 | loss 0.2787 | train acc 0.903
+epoch 0223 | train acc mean 0.888 | train success mean 1.000 | acc per-env: 0.888 | success per-env: 64/64
+epoch 0223 | pos_validation acc mean 0.198 | pos_validation success mean 0.031 | acc per-env: 0.198 | success per-env: 2/64
+epoch 0223 | goal_validation acc mean 0.045 | goal_validation success mean 0.016 | acc per-env: 0.045 | success per-env: 1/64
+rollout steps=16 | obs 603.5ms | label 3.8ms | forward 5.1ms | action 3.7ms | step 3.1ms | total 619.2ms
+epoch 0224 | loss 0.2769 | train acc 0.910
+epoch 0224 | train acc mean 0.876 | train success mean 1.000 | acc per-env: 0.876 | success per-env: 64/64
+epoch 0224 | pos_validation acc mean 0.198 | pos_validation success mean 0.031 | acc per-env: 0.198 | success per-env: 2/64
+epoch 0224 | goal_validation acc mean 0.049 | goal_validation success mean 0.016 | acc per-env: 0.049 | success per-env: 1/64
+rollout steps=16 | obs 602.8ms | label 3.8ms | forward 5.0ms | action 3.7ms | step 3.1ms | total 618.4ms
+epoch 0225 | loss 0.2737 | train acc 0.906
+epoch 0225 | train acc mean 0.876 | train success mean 1.000 | acc per-env: 0.876 | success per-env: 64/64
+epoch 0225 | pos_validation acc mean 0.192 | pos_validation success mean 0.031 | acc per-env: 0.192 | success per-env: 2/64
+epoch 0225 | goal_validation acc mean 0.049 | goal_validation success mean 0.016 | acc per-env: 0.049 | success per-env: 1/64
+rollout steps=16 | obs 603.9ms | label 3.8ms | forward 5.2ms | action 3.8ms | step 3.1ms | total 619.8ms
+epoch 0226 | loss 0.2712 | train acc 0.906
+epoch 0226 | train acc mean 0.888 | train success mean 1.000 | acc per-env: 0.888 | success per-env: 64/64
+epoch 0226 | pos_validation acc mean 0.194 | pos_validation success mean 0.031 | acc per-env: 0.194 | success per-env: 2/64
+epoch 0226 | goal_validation acc mean 0.046 | goal_validation success mean 0.016 | acc per-env: 0.046 | success per-env: 1/64
+rollout steps=16 | obs 603.2ms | label 3.8ms | forward 5.1ms | action 3.8ms | step 3.1ms | total 618.9ms
+epoch 0227 | loss 0.2647 | train acc 0.911
+epoch 0227 | train acc mean 0.888 | train success mean 1.000 | acc per-env: 0.888 | success per-env: 64/64
+epoch 0227 | pos_validation acc mean 0.196 | pos_validation success mean 0.031 | acc per-env: 0.196 | success per-env: 2/64
+epoch 0227 | goal_validation acc mean 0.044 | goal_validation success mean 0.016 | acc per-env: 0.044 | success per-env: 1/64
+rollout steps=16 | obs 607.6ms | label 3.8ms | forward 5.1ms | action 3.8ms | step 3.1ms | total 623.3ms
+epoch 0228 | loss 0.2636 | train acc 0.909
+epoch 0228 | train acc mean 0.876 | train success mean 1.000 | acc per-env: 0.876 | success per-env: 64/64
+epoch 0228 | pos_validation acc mean 0.200 | pos_validation success mean 0.031 | acc per-env: 0.200 | success per-env: 2/64
+epoch 0228 | goal_validation acc mean 0.044 | goal_validation success mean 0.016 | acc per-env: 0.044 | success per-env: 1/64
+rollout steps=16 | obs 604.6ms | label 3.8ms | forward 5.0ms | action 3.8ms | step 3.1ms | total 620.3ms
+epoch 0229 | loss 0.2610 | train acc 0.908
+epoch 0229 | train acc mean 0.884 | train success mean 1.000 | acc per-env: 0.884 | success per-env: 64/64
+epoch 0229 | pos_validation acc mean 0.196 | pos_validation success mean 0.031 | acc per-env: 0.196 | success per-env: 2/64
+epoch 0229 | goal_validation acc mean 0.043 | goal_validation success mean 0.016 | acc per-env: 0.043 | success per-env: 1/64
+rollout steps=16 | obs 602.5ms | label 3.8ms | forward 5.0ms | action 3.7ms | step 3.1ms | total 618.1ms
+epoch 0230 | loss 0.2585 | train acc 0.907
+epoch 0230 | train acc mean 0.884 | train success mean 1.000 | acc per-env: 0.884 | success per-env: 64/64
+epoch 0230 | pos_validation acc mean 0.202 | pos_validation success mean 0.031 | acc per-env: 0.202 | success per-env: 2/64
+epoch 0230 | goal_validation acc mean 0.043 | goal_validation success mean 0.016 | acc per-env: 0.043 | success per-env: 1/64
+rollout steps=16 | obs 602.0ms | label 3.8ms | forward 5.0ms | action 3.7ms | step 3.1ms | total 617.6ms
+epoch 0231 | loss 0.2561 | train acc 0.907
+epoch 0231 | train acc mean 0.875 | train success mean 1.000 | acc per-env: 0.875 | success per-env: 64/64
+epoch 0231 | pos_validation acc mean 0.202 | pos_validation success mean 0.031 | acc per-env: 0.202 | success per-env: 2/64
+epoch 0231 | goal_validation acc mean 0.043 | goal_validation success mean 0.016 | acc per-env: 0.043 | success per-env: 1/64
+rollout steps=16 | obs 603.9ms | label 3.8ms | forward 5.1ms | action 3.8ms | step 3.1ms | total 619.6ms
+epoch 0232 | loss 0.2515 | train acc 0.909
+epoch 0232 | train acc mean 0.875 | train success mean 1.000 | acc per-env: 0.875 | success per-env: 64/64
+epoch 0232 | pos_validation acc mean 0.201 | pos_validation success mean 0.031 | acc per-env: 0.201 | success per-env: 2/64
+epoch 0232 | goal_validation acc mean 0.045 | goal_validation success mean 0.016 | acc per-env: 0.045 | success per-env: 1/64
+rollout steps=16 | obs 604.1ms | label 3.8ms | forward 5.0ms | action 3.8ms | step 3.1ms | total 619.8ms
+epoch 0233 | loss 0.2484 | train acc 0.909
+epoch 0233 | train acc mean 0.884 | train success mean 1.000 | acc per-env: 0.884 | success per-env: 64/64
+epoch 0233 | pos_validation acc mean 0.205 | pos_validation success mean 0.031 | acc per-env: 0.205 | success per-env: 2/64
+epoch 0233 | goal_validation acc mean 0.042 | goal_validation success mean 0.016 | acc per-env: 0.042 | success per-env: 1/64
+rollout steps=16 | obs 604.0ms | label 3.8ms | forward 5.0ms | action 3.8ms | step 3.1ms | total 619.6ms
+epoch 0234 | loss 0.2480 | train acc 0.908
+epoch 0234 | train acc mean 0.884 | train success mean 1.000 | acc per-env: 0.884 | success per-env: 64/64
+epoch 0234 | pos_validation acc mean 0.201 | pos_validation success mean 0.031 | acc per-env: 0.201 | success per-env: 2/64
+epoch 0234 | goal_validation acc mean 0.048 | goal_validation success mean 0.016 | acc per-env: 0.048 | success per-env: 1/64
+rollout steps=16 | obs 603.1ms | label 3.8ms | forward 5.0ms | action 3.7ms | step 3.1ms | total 618.7ms
+epoch 0235 | loss 0.2430 | train acc 0.912
+epoch 0235 | train acc mean 0.871 | train success mean 1.000 | acc per-env: 0.871 | success per-env: 64/64
+epoch 0235 | pos_validation acc mean 0.201 | pos_validation success mean 0.031 | acc per-env: 0.201 | success per-env: 2/64
+epoch 0235 | goal_validation acc mean 0.056 | goal_validation success mean 0.016 | acc per-env: 0.056 | success per-env: 1/64
+rollout steps=16 | obs 603.9ms | label 3.8ms | forward 5.0ms | action 3.8ms | step 3.1ms | total 619.6ms
+epoch 0236 | loss 0.2418 | train acc 0.910
+epoch 0236 | train acc mean 0.874 | train success mean 1.000 | acc per-env: 0.874 | success per-env: 64/64
+epoch 0236 | pos_validation acc mean 0.200 | pos_validation success mean 0.031 | acc per-env: 0.200 | success per-env: 2/64
+epoch 0236 | goal_validation acc mean 0.048 | goal_validation success mean 0.016 | acc per-env: 0.048 | success per-env: 1/64
+rollout steps=16 | obs 607.5ms | label 3.8ms | forward 5.1ms | action 3.7ms | step 3.1ms | total 623.2ms
+epoch 0237 | loss 0.2446 | train acc 0.911
+epoch 0237 | train acc mean 0.885 | train success mean 1.000 | acc per-env: 0.885 | success per-env: 64/64
+epoch 0237 | pos_validation acc mean 0.200 | pos_validation success mean 0.031 | acc per-env: 0.200 | success per-env: 2/64
+epoch 0237 | goal_validation acc mean 0.048 | goal_validation success mean 0.016 | acc per-env: 0.048 | success per-env: 1/64
+rollout steps=16 | obs 607.8ms | label 3.8ms | forward 5.0ms | action 3.8ms | step 3.1ms | total 623.5ms
+epoch 0238 | loss 0.2459 | train acc 0.908
+epoch 0238 | train acc mean 0.885 | train success mean 1.000 | acc per-env: 0.885 | success per-env: 64/64
+epoch 0238 | pos_validation acc mean 0.205 | pos_validation success mean 0.031 | acc per-env: 0.205 | success per-env: 2/64
+epoch 0238 | goal_validation acc mean 0.047 | goal_validation success mean 0.016 | acc per-env: 0.047 | success per-env: 1/64
+rollout steps=16 | obs 599.7ms | label 3.7ms | forward 4.9ms | action 3.7ms | step 3.1ms | total 615.1ms
+epoch 0239 | loss 0.2411 | train acc 0.912
+epoch 0239 | train acc mean 0.881 | train success mean 1.000 | acc per-env: 0.881 | success per-env: 64/64
+epoch 0239 | pos_validation acc mean 0.207 | pos_validation success mean 0.031 | acc per-env: 0.207 | success per-env: 2/64
+epoch 0239 | goal_validation acc mean 0.048 | goal_validation success mean 0.016 | acc per-env: 0.048 | success per-env: 1/64
+rollout steps=16 | obs 601.0ms | label 3.8ms | forward 5.1ms | action 3.7ms | step 3.1ms | total 616.6ms
+epoch 0240 | loss 0.2386 | train acc 0.917
+epoch 0240 | train acc mean 0.890 | train success mean 1.000 | acc per-env: 0.890 | success per-env: 64/64
+epoch 0240 | pos_validation acc mean 0.201 | pos_validation success mean 0.031 | acc per-env: 0.201 | success per-env: 2/64
+epoch 0240 | goal_validation acc mean 0.044 | goal_validation success mean 0.016 | acc per-env: 0.044 | success per-env: 1/64
+rollout steps=16 | obs 600.2ms | label 3.7ms | forward 5.0ms | action 3.7ms | step 3.1ms | total 615.7ms
+epoch 0241 | loss 0.2384 | train acc 0.914
+epoch 0241 | train acc mean 0.890 | train success mean 1.000 | acc per-env: 0.890 | success per-env: 64/64
+epoch 0241 | pos_validation acc mean 0.203 | pos_validation success mean 0.031 | acc per-env: 0.203 | success per-env: 2/64
+epoch 0241 | goal_validation acc mean 0.038 | goal_validation success mean 0.016 | acc per-env: 0.038 | success per-env: 1/64
+rollout steps=16 | obs 598.9ms | label 3.8ms | forward 4.9ms | action 3.7ms | step 3.1ms | total 614.4ms
+epoch 0242 | loss 0.2326 | train acc 0.915
+epoch 0242 | train acc mean 0.886 | train success mean 1.000 | acc per-env: 0.886 | success per-env: 64/64
+epoch 0242 | pos_validation acc mean 0.205 | pos_validation success mean 0.031 | acc per-env: 0.205 | success per-env: 2/64
+epoch 0242 | goal_validation acc mean 0.042 | goal_validation success mean 0.016 | acc per-env: 0.042 | success per-env: 1/64
+rollout steps=16 | obs 598.8ms | label 3.8ms | forward 5.0ms | action 3.7ms | step 3.1ms | total 614.3ms
+epoch 0243 | loss 0.2254 | train acc 0.918
+epoch 0243 | train acc mean 0.890 | train success mean 1.000 | acc per-env: 0.890 | success per-env: 64/64
+epoch 0243 | pos_validation acc mean 0.207 | pos_validation success mean 0.031 | acc per-env: 0.207 | success per-env: 2/64
+epoch 0243 | goal_validation acc mean 0.040 | goal_validation success mean 0.016 | acc per-env: 0.040 | success per-env: 1/64
+rollout steps=16 | obs 597.5ms | label 3.8ms | forward 5.1ms | action 3.7ms | step 3.1ms | total 613.2ms
+epoch 0244 | loss 0.2279 | train acc 0.918
+epoch 0244 | train acc mean 0.890 | train success mean 1.000 | acc per-env: 0.890 | success per-env: 64/64
+epoch 0244 | pos_validation acc mean 0.209 | pos_validation success mean 0.031 | acc per-env: 0.209 | success per-env: 2/64
+epoch 0244 | goal_validation acc mean 0.043 | goal_validation success mean 0.016 | acc per-env: 0.043 | success per-env: 1/64
+rollout steps=16 | obs 598.2ms | label 3.8ms | forward 4.9ms | action 3.7ms | step 3.0ms | total 613.7ms
+epoch 0245 | loss 0.2252 | train acc 0.918
+epoch 0245 | train acc mean 0.892 | train success mean 1.000 | acc per-env: 0.892 | success per-env: 64/64
+epoch 0245 | pos_validation acc mean 0.203 | pos_validation success mean 0.031 | acc per-env: 0.203 | success per-env: 2/64
+epoch 0245 | goal_validation acc mean 0.048 | goal_validation success mean 0.016 | acc per-env: 0.048 | success per-env: 1/64
+rollout steps=16 | obs 595.4ms | label 3.8ms | forward 5.0ms | action 3.7ms | step 3.1ms | total 611.0ms
+epoch 0246 | loss 0.2229 | train acc 0.924
+epoch 0246 | train acc mean 0.895 | train success mean 1.000 | acc per-env: 0.895 | success per-env: 64/64
+epoch 0246 | pos_validation acc mean 0.207 | pos_validation success mean 0.031 | acc per-env: 0.207 | success per-env: 2/64
+epoch 0246 | goal_validation acc mean 0.045 | goal_validation success mean 0.016 | acc per-env: 0.045 | success per-env: 1/64
+rollout steps=16 | obs 598.4ms | label 3.7ms | forward 4.9ms | action 3.7ms | step 3.0ms | total 613.7ms
+epoch 0247 | loss 0.2228 | train acc 0.922
+epoch 0247 | train acc mean 0.895 | train success mean 1.000 | acc per-env: 0.895 | success per-env: 64/64
+epoch 0247 | pos_validation acc mean 0.205 | pos_validation success mean 0.031 | acc per-env: 0.205 | success per-env: 2/64
+epoch 0247 | goal_validation acc mean 0.048 | goal_validation success mean 0.016 | acc per-env: 0.048 | success per-env: 1/64
+rollout steps=16 | obs 597.2ms | label 3.8ms | forward 5.1ms | action 3.8ms | step 3.1ms | total 612.9ms
+epoch 0248 | loss 0.2211 | train acc 0.922
+epoch 0248 | train acc mean 0.895 | train success mean 1.000 | acc per-env: 0.895 | success per-env: 64/64
+epoch 0248 | pos_validation acc mean 0.205 | pos_validation success mean 0.031 | acc per-env: 0.205 | success per-env: 2/64
+epoch 0248 | goal_validation acc mean 0.045 | goal_validation success mean 0.016 | acc per-env: 0.045 | success per-env: 1/64
+rollout steps=16 | obs 598.3ms | label 3.8ms | forward 5.3ms | action 3.8ms | step 3.1ms | total 614.3ms
+epoch 0249 | loss 0.2184 | train acc 0.926
+epoch 0249 | train acc mean 0.895 | train success mean 1.000 | acc per-env: 0.895 | success per-env: 64/64
+epoch 0249 | pos_validation acc mean 0.210 | pos_validation success mean 0.031 | acc per-env: 0.210 | success per-env: 2/64
+epoch 0249 | goal_validation acc mean 0.048 | goal_validation success mean 0.016 | acc per-env: 0.048 | success per-env: 1/64
+rollout steps=16 | obs 599.4ms | label 3.8ms | forward 5.1ms | action 3.8ms | step 3.1ms | total 615.2ms
+epoch 0250 | loss 0.2186 | train acc 0.923
+epoch 0250 | train acc mean 0.895 | train success mean 1.000 | acc per-env: 0.895 | success per-env: 64/64
+epoch 0250 | pos_validation acc mean 0.200 | pos_validation success mean 0.031 | acc per-env: 0.200 | success per-env: 2/64
+epoch 0250 | goal_validation acc mean 0.050 | goal_validation success mean 0.016 | acc per-env: 0.050 | success per-env: 1/64
+rollout steps=16 | obs 596.7ms | label 3.8ms | forward 5.1ms | action 3.8ms | step 3.1ms | total 612.5ms
+epoch 0251 | loss 0.2144 | train acc 0.926
+epoch 0251 | train acc mean 0.895 | train success mean 1.000 | acc per-env: 0.895 | success per-env: 64/64
+epoch 0251 | pos_validation acc mean 0.198 | pos_validation success mean 0.031 | acc per-env: 0.198 | success per-env: 2/64
+epoch 0251 | goal_validation acc mean 0.047 | goal_validation success mean 0.016 | acc per-env: 0.047 | success per-env: 1/64
+rollout steps=16 | obs 599.9ms | label 3.9ms | forward 5.3ms | action 3.8ms | step 3.1ms | total 615.9ms
+epoch 0252 | loss 0.2127 | train acc 0.926
+epoch 0252 | train acc mean 0.890 | train success mean 1.000 | acc per-env: 0.890 | success per-env: 64/64
+epoch 0252 | pos_validation acc mean 0.198 | pos_validation success mean 0.031 | acc per-env: 0.198 | success per-env: 2/64
+epoch 0252 | goal_validation acc mean 0.050 | goal_validation success mean 0.016 | acc per-env: 0.050 | success per-env: 1/64
+rollout steps=16 | obs 595.7ms | label 3.7ms | forward 5.0ms | action 3.8ms | step 3.0ms | total 611.3ms
+epoch 0253 | loss 0.2135 | train acc 0.928
+epoch 0253 | train acc mean 0.890 | train success mean 1.000 | acc per-env: 0.890 | success per-env: 64/64
+epoch 0253 | pos_validation acc mean 0.205 | pos_validation success mean 0.031 | acc per-env: 0.205 | success per-env: 2/64
+epoch 0253 | goal_validation acc mean 0.052 | goal_validation success mean 0.016 | acc per-env: 0.052 | success per-env: 1/64
+rollout steps=16 | obs 604.3ms | label 3.8ms | forward 5.2ms | action 3.8ms | step 3.1ms | total 620.2ms
+epoch 0254 | loss 0.2132 | train acc 0.929
+epoch 0254 | train acc mean 0.894 | train success mean 1.000 | acc per-env: 0.894 | success per-env: 64/64
+epoch 0254 | pos_validation acc mean 0.207 | pos_validation success mean 0.031 | acc per-env: 0.207 | success per-env: 2/64
+epoch 0254 | goal_validation acc mean 0.048 | goal_validation success mean 0.016 | acc per-env: 0.048 | success per-env: 1/64
+rollout steps=16 | obs 596.3ms | label 3.7ms | forward 5.0ms | action 3.7ms | step 3.0ms | total 611.7ms
+epoch 0255 | loss 0.2105 | train acc 0.931
+epoch 0255 | train acc mean 0.899 | train success mean 1.000 | acc per-env: 0.899 | success per-env: 64/64
+epoch 0255 | pos_validation acc mean 0.204 | pos_validation success mean 0.031 | acc per-env: 0.204 | success per-env: 2/64
+epoch 0255 | goal_validation acc mean 0.044 | goal_validation success mean 0.016 | acc per-env: 0.044 | success per-env: 1/64
+rollout steps=16 | obs 596.3ms | label 3.7ms | forward 5.0ms | action 3.8ms | step 3.0ms | total 611.9ms
+epoch 0256 | loss 0.2114 | train acc 0.927
+epoch 0256 | train acc mean 0.899 | train success mean 1.000 | acc per-env: 0.899 | success per-env: 64/64
+epoch 0256 | pos_validation acc mean 0.209 | pos_validation success mean 0.031 | acc per-env: 0.209 | success per-env: 2/64
+epoch 0256 | goal_validation acc mean 0.049 | goal_validation success mean 0.016 | acc per-env: 0.049 | success per-env: 1/64
+rollout steps=16 | obs 600.3ms | label 3.8ms | forward 5.3ms | action 3.8ms | step 3.1ms | total 616.3ms
+epoch 0257 | loss 0.2095 | train acc 0.931
+epoch 0257 | train acc mean 0.899 | train success mean 1.000 | acc per-env: 0.899 | success per-env: 64/64
+epoch 0257 | pos_validation acc mean 0.205 | pos_validation success mean 0.031 | acc per-env: 0.205 | success per-env: 2/64
+epoch 0257 | goal_validation acc mean 0.048 | goal_validation success mean 0.016 | acc per-env: 0.048 | success per-env: 1/64
+rollout steps=16 | obs 595.5ms | label 3.8ms | forward 5.0ms | action 3.8ms | step 3.0ms | total 611.1ms
+epoch 0258 | loss 0.2076 | train acc 0.931
+epoch 0258 | train acc mean 0.899 | train success mean 1.000 | acc per-env: 0.899 | success per-env: 64/64
+epoch 0258 | pos_validation acc mean 0.205 | pos_validation success mean 0.031 | acc per-env: 0.205 | success per-env: 2/64
+epoch 0258 | goal_validation acc mean 0.049 | goal_validation success mean 0.016 | acc per-env: 0.049 | success per-env: 1/64
+rollout steps=16 | obs 598.3ms | label 3.7ms | forward 5.0ms | action 3.8ms | step 3.0ms | total 613.8ms
+epoch 0259 | loss 0.2059 | train acc 0.928
+epoch 0259 | train acc mean 0.892 | train success mean 1.000 | acc per-env: 0.892 | success per-env: 64/64
+epoch 0259 | pos_validation acc mean 0.197 | pos_validation success mean 0.031 | acc per-env: 0.197 | success per-env: 2/64
+epoch 0259 | goal_validation acc mean 0.049 | goal_validation success mean 0.016 | acc per-env: 0.049 | success per-env: 1/64
+rollout steps=16 | obs 594.1ms | label 3.7ms | forward 5.0ms | action 3.8ms | step 3.0ms | total 609.7ms
+epoch 0260 | loss 0.2182 | train acc 0.923
+epoch 0260 | train acc mean 0.899 | train success mean 1.000 | acc per-env: 0.899 | success per-env: 64/64
+epoch 0260 | pos_validation acc mean 0.208 | pos_validation success mean 0.031 | acc per-env: 0.208 | success per-env: 2/64
+epoch 0260 | goal_validation acc mean 0.049 | goal_validation success mean 0.016 | acc per-env: 0.049 | success per-env: 1/64
+rollout steps=16 | obs 600.3ms | label 3.7ms | forward 5.0ms | action 3.7ms | step 3.0ms | total 615.9ms
+epoch 0261 | loss 0.2054 | train acc 0.928
+epoch 0261 | train acc mean 0.888 | train success mean 1.000 | acc per-env: 0.888 | success per-env: 64/64
+epoch 0261 | pos_validation acc mean 0.199 | pos_validation success mean 0.031 | acc per-env: 0.199 | success per-env: 2/64
+epoch 0261 | goal_validation acc mean 0.050 | goal_validation success mean 0.016 | acc per-env: 0.050 | success per-env: 1/64
+rollout steps=16 | obs 598.3ms | label 3.8ms | forward 5.0ms | action 3.8ms | step 3.1ms | total 613.8ms
+epoch 0262 | loss 0.2152 | train acc 0.927
+epoch 0262 | train acc mean 0.894 | train success mean 1.000 | acc per-env: 0.894 | success per-env: 64/64
+epoch 0262 | pos_validation acc mean 0.192 | pos_validation success mean 0.031 | acc per-env: 0.192 | success per-env: 2/64
+epoch 0262 | goal_validation acc mean 0.049 | goal_validation success mean 0.016 | acc per-env: 0.049 | success per-env: 1/64
+rollout steps=16 | obs 597.9ms | label 3.7ms | forward 5.0ms | action 3.8ms | step 3.0ms | total 613.5ms
+epoch 0263 | loss 0.2031 | train acc 0.932
+epoch 0263 | train acc mean 0.894 | train success mean 1.000 | acc per-env: 0.894 | success per-env: 64/64
+epoch 0263 | pos_validation acc mean 0.197 | pos_validation success mean 0.031 | acc per-env: 0.197 | success per-env: 2/64
+epoch 0263 | goal_validation acc mean 0.047 | goal_validation success mean 0.016 | acc per-env: 0.047 | success per-env: 1/64
+rollout steps=16 | obs 597.1ms | label 3.8ms | forward 5.0ms | action 3.8ms | step 3.1ms | total 612.7ms
+epoch 0264 | loss 0.2034 | train acc 0.929
+epoch 0264 | train acc mean 0.888 | train success mean 1.000 | acc per-env: 0.888 | success per-env: 64/64
+epoch 0264 | pos_validation acc mean 0.197 | pos_validation success mean 0.031 | acc per-env: 0.197 | success per-env: 2/64
+epoch 0264 | goal_validation acc mean 0.047 | goal_validation success mean 0.016 | acc per-env: 0.047 | success per-env: 1/64
+rollout steps=16 | obs 595.8ms | label 3.7ms | forward 4.9ms | action 3.7ms | step 3.0ms | total 611.2ms
+epoch 0265 | loss 0.2125 | train acc 0.924
+epoch 0265 | train acc mean 0.894 | train success mean 1.000 | acc per-env: 0.894 | success per-env: 64/64
+epoch 0265 | pos_validation acc mean 0.200 | pos_validation success mean 0.031 | acc per-env: 0.200 | success per-env: 2/64
+epoch 0265 | goal_validation acc mean 0.049 | goal_validation success mean 0.016 | acc per-env: 0.049 | success per-env: 1/64
+rollout steps=16 | obs 596.5ms | label 3.8ms | forward 5.2ms | action 3.7ms | step 3.1ms | total 612.3ms
+epoch 0266 | loss 0.1998 | train acc 0.930
+epoch 0266 | train acc mean 0.884 | train success mean 1.000 | acc per-env: 0.884 | success per-env: 64/64
+epoch 0266 | pos_validation acc mean 0.204 | pos_validation success mean 0.031 | acc per-env: 0.204 | success per-env: 2/64
+epoch 0266 | goal_validation acc mean 0.047 | goal_validation success mean 0.016 | acc per-env: 0.047 | success per-env: 1/64
+rollout steps=16 | obs 598.7ms | label 3.7ms | forward 5.0ms | action 3.8ms | step 3.0ms | total 614.3ms
+epoch 0267 | loss 0.2099 | train acc 0.925
+epoch 0267 | train acc mean 0.884 | train success mean 1.000 | acc per-env: 0.884 | success per-env: 64/64
+epoch 0267 | pos_validation acc mean 0.206 | pos_validation success mean 0.031 | acc per-env: 0.206 | success per-env: 2/64
+epoch 0267 | goal_validation acc mean 0.047 | goal_validation success mean 0.016 | acc per-env: 0.047 | success per-env: 1/64
+rollout steps=16 | obs 596.2ms | label 3.7ms | forward 5.0ms | action 3.8ms | step 3.0ms | total 611.7ms
+epoch 0268 | loss 0.2075 | train acc 0.926
+epoch 0268 | train acc mean 0.890 | train success mean 1.000 | acc per-env: 0.890 | success per-env: 64/64
+epoch 0268 | pos_validation acc mean 0.205 | pos_validation success mean 0.031 | acc per-env: 0.205 | success per-env: 2/64
+epoch 0268 | goal_validation acc mean 0.046 | goal_validation success mean 0.016 | acc per-env: 0.046 | success per-env: 1/64
+rollout steps=16 | obs 597.0ms | label 3.8ms | forward 5.1ms | action 3.8ms | step 3.0ms | total 612.7ms
+epoch 0269 | loss 0.1957 | train acc 0.932
+epoch 0269 | train acc mean 0.890 | train success mean 1.000 | acc per-env: 0.890 | success per-env: 64/64
+epoch 0269 | pos_validation acc mean 0.208 | pos_validation success mean 0.031 | acc per-env: 0.208 | success per-env: 2/64
+epoch 0269 | goal_validation acc mean 0.046 | goal_validation success mean 0.016 | acc per-env: 0.046 | success per-env: 1/64
+rollout steps=16 | obs 596.7ms | label 3.7ms | forward 5.0ms | action 3.7ms | step 3.1ms | total 612.2ms
+epoch 0270 | loss 0.1950 | train acc 0.932
+epoch 0270 | train acc mean 0.895 | train success mean 1.000 | acc per-env: 0.895 | success per-env: 64/64
+epoch 0270 | pos_validation acc mean 0.203 | pos_validation success mean 0.031 | acc per-env: 0.203 | success per-env: 2/64
+epoch 0270 | goal_validation acc mean 0.043 | goal_validation success mean 0.016 | acc per-env: 0.043 | success per-env: 1/64
+rollout steps=16 | obs 599.1ms | label 3.8ms | forward 5.1ms | action 3.8ms | step 3.1ms | total 614.8ms
+epoch 0271 | loss 0.1940 | train acc 0.932
+epoch 0271 | train acc mean 0.895 | train success mean 1.000 | acc per-env: 0.895 | success per-env: 64/64
+epoch 0271 | pos_validation acc mean 0.209 | pos_validation success mean 0.031 | acc per-env: 0.209 | success per-env: 2/64
+epoch 0271 | goal_validation acc mean 0.045 | goal_validation success mean 0.016 | acc per-env: 0.045 | success per-env: 1/64
+rollout steps=16 | obs 595.3ms | label 3.7ms | forward 5.0ms | action 3.7ms | step 3.1ms | total 610.8ms
+epoch 0272 | loss 0.1926 | train acc 0.932
+epoch 0272 | train acc mean 0.879 | train success mean 1.000 | acc per-env: 0.879 | success per-env: 64/64
+epoch 0272 | pos_validation acc mean 0.209 | pos_validation success mean 0.031 | acc per-env: 0.209 | success per-env: 2/64
+epoch 0272 | goal_validation acc mean 0.045 | goal_validation success mean 0.016 | acc per-env: 0.045 | success per-env: 1/64
+rollout steps=16 | obs 596.8ms | label 3.8ms | forward 4.9ms | action 3.7ms | step 3.0ms | total 612.2ms
+epoch 0273 | loss 0.2032 | train acc 0.927
+epoch 0273 | train acc mean 0.879 | train success mean 1.000 | acc per-env: 0.879 | success per-env: 64/64
+epoch 0273 | pos_validation acc mean 0.201 | pos_validation success mean 0.031 | acc per-env: 0.201 | success per-env: 2/64
+epoch 0273 | goal_validation acc mean 0.045 | goal_validation success mean 0.016 | acc per-env: 0.045 | success per-env: 1/64
+rollout steps=16 | obs 594.2ms | label 3.7ms | forward 5.0ms | action 3.7ms | step 3.0ms | total 609.6ms
+epoch 0274 | loss 0.2029 | train acc 0.929
+epoch 0274 | train acc mean 0.890 | train success mean 1.000 | acc per-env: 0.890 | success per-env: 64/64
+epoch 0274 | pos_validation acc mean 0.207 | pos_validation success mean 0.031 | acc per-env: 0.207 | success per-env: 2/64
+epoch 0274 | goal_validation acc mean 0.046 | goal_validation success mean 0.016 | acc per-env: 0.046 | success per-env: 1/64
+rollout steps=16 | obs 595.9ms | label 3.7ms | forward 5.4ms | action 3.7ms | step 3.0ms | total 611.8ms
+epoch 0275 | loss 0.1926 | train acc 0.936
+epoch 0275 | train acc mean 0.884 | train success mean 1.000 | acc per-env: 0.884 | success per-env: 64/64
+epoch 0275 | pos_validation acc mean 0.207 | pos_validation success mean 0.031 | acc per-env: 0.207 | success per-env: 2/64
+epoch 0275 | goal_validation acc mean 0.046 | goal_validation success mean 0.016 | acc per-env: 0.046 | success per-env: 1/64
+rollout steps=16 | obs 597.2ms | label 3.7ms | forward 5.0ms | action 3.7ms | step 3.0ms | total 612.7ms
+epoch 0276 | loss 0.1977 | train acc 0.932
+epoch 0276 | train acc mean 0.890 | train success mean 1.000 | acc per-env: 0.890 | success per-env: 64/64
+epoch 0276 | pos_validation acc mean 0.220 | pos_validation success mean 0.047 | acc per-env: 0.220 | success per-env: 3/64
+epoch 0276 | goal_validation acc mean 0.050 | goal_validation success mean 0.016 | acc per-env: 0.050 | success per-env: 1/64
+rollout steps=16 | obs 594.3ms | label 3.7ms | forward 5.1ms | action 3.7ms | step 3.1ms | total 609.9ms
+epoch 0277 | loss 0.1912 | train acc 0.939
+epoch 0277 | train acc mean 0.882 | train success mean 1.000 | acc per-env: 0.882 | success per-env: 64/64
+epoch 0277 | pos_validation acc mean 0.223 | pos_validation success mean 0.031 | acc per-env: 0.223 | success per-env: 2/64
+epoch 0277 | goal_validation acc mean 0.050 | goal_validation success mean 0.016 | acc per-env: 0.050 | success per-env: 1/64
+rollout steps=16 | obs 598.9ms | label 3.7ms | forward 5.2ms | action 3.8ms | step 3.1ms | total 614.7ms
+epoch 0278 | loss 0.2003 | train acc 0.935
+epoch 0278 | train acc mean 0.887 | train success mean 1.000 | acc per-env: 0.887 | success per-env: 64/64
+epoch 0278 | pos_validation acc mean 0.222 | pos_validation success mean 0.031 | acc per-env: 0.222 | success per-env: 2/64
+epoch 0278 | goal_validation acc mean 0.050 | goal_validation success mean 0.016 | acc per-env: 0.050 | success per-env: 1/64
+rollout steps=16 | obs 597.4ms | label 3.8ms | forward 5.1ms | action 3.8ms | step 3.0ms | total 613.0ms
+epoch 0279 | loss 0.1981 | train acc 0.939
+epoch 0279 | train acc mean 0.889 | train success mean 1.000 | acc per-env: 0.889 | success per-env: 64/64
+epoch 0279 | pos_validation acc mean 0.224 | pos_validation success mean 0.031 | acc per-env: 0.224 | success per-env: 2/64
+epoch 0279 | goal_validation acc mean 0.048 | goal_validation success mean 0.016 | acc per-env: 0.048 | success per-env: 1/64
+rollout steps=16 | obs 602.0ms | label 3.8ms | forward 5.1ms | action 3.8ms | step 3.0ms | total 617.7ms
+epoch 0280 | loss 0.1958 | train acc 0.940
+epoch 0280 | train acc mean 0.900 | train success mean 1.000 | acc per-env: 0.900 | success per-env: 64/64
+epoch 0280 | pos_validation acc mean 0.214 | pos_validation success mean 0.031 | acc per-env: 0.214 | success per-env: 2/64
+epoch 0280 | goal_validation acc mean 0.049 | goal_validation success mean 0.016 | acc per-env: 0.049 | success per-env: 1/64
+rollout steps=16 | obs 599.0ms | label 3.7ms | forward 5.1ms | action 3.8ms | step 3.0ms | total 614.7ms
+epoch 0281 | loss 0.1878 | train acc 0.945
+epoch 0281 | train acc mean 0.911 | train success mean 1.000 | acc per-env: 0.911 | success per-env: 64/64
+epoch 0281 | pos_validation acc mean 0.211 | pos_validation success mean 0.031 | acc per-env: 0.211 | success per-env: 2/64
+epoch 0281 | goal_validation acc mean 0.049 | goal_validation success mean 0.016 | acc per-env: 0.049 | success per-env: 1/64
+rollout steps=16 | obs 600.0ms | label 3.7ms | forward 5.0ms | action 3.8ms | step 3.0ms | total 615.6ms
+epoch 0282 | loss 0.1861 | train acc 0.945
+epoch 0282 | train acc mean 0.913 | train success mean 1.000 | acc per-env: 0.913 | success per-env: 64/64
+epoch 0282 | pos_validation acc mean 0.212 | pos_validation success mean 0.031 | acc per-env: 0.212 | success per-env: 2/64
+epoch 0282 | goal_validation acc mean 0.052 | goal_validation success mean 0.016 | acc per-env: 0.052 | success per-env: 1/64
+rollout steps=16 | obs 594.4ms | label 3.7ms | forward 5.1ms | action 3.8ms | step 3.0ms | total 610.0ms
+epoch 0283 | loss 0.1860 | train acc 0.943
+epoch 0283 | train acc mean 0.911 | train success mean 1.000 | acc per-env: 0.911 | success per-env: 64/64
+epoch 0283 | pos_validation acc mean 0.211 | pos_validation success mean 0.047 | acc per-env: 0.211 | success per-env: 3/64
+epoch 0283 | goal_validation acc mean 0.052 | goal_validation success mean 0.016 | acc per-env: 0.052 | success per-env: 1/64
+rollout steps=16 | obs 594.9ms | label 3.8ms | forward 5.1ms | action 3.7ms | step 3.0ms | total 610.6ms
+epoch 0284 | loss 0.1842 | train acc 0.944
+epoch 0284 | train acc mean 0.902 | train success mean 1.000 | acc per-env: 0.902 | success per-env: 64/64
+epoch 0284 | pos_validation acc mean 0.206 | pos_validation success mean 0.047 | acc per-env: 0.206 | success per-env: 3/64
+epoch 0284 | goal_validation acc mean 0.052 | goal_validation success mean 0.016 | acc per-env: 0.052 | success per-env: 1/64
+rollout steps=16 | obs 594.8ms | label 3.7ms | forward 5.0ms | action 3.7ms | step 3.0ms | total 610.3ms
+epoch 0285 | loss 0.1843 | train acc 0.942
+epoch 0285 | train acc mean 0.908 | train success mean 1.000 | acc per-env: 0.908 | success per-env: 64/64
+epoch 0285 | pos_validation acc mean 0.206 | pos_validation success mean 0.047 | acc per-env: 0.206 | success per-env: 3/64
+epoch 0285 | goal_validation acc mean 0.052 | goal_validation success mean 0.016 | acc per-env: 0.052 | success per-env: 1/64
+rollout steps=16 | obs 595.0ms | label 3.7ms | forward 5.0ms | action 3.7ms | step 3.1ms | total 610.6ms
+epoch 0286 | loss 0.1808 | train acc 0.943
+epoch 0286 | train acc mean 0.904 | train success mean 1.000 | acc per-env: 0.904 | success per-env: 64/64
+epoch 0286 | pos_validation acc mean 0.205 | pos_validation success mean 0.047 | acc per-env: 0.205 | success per-env: 3/64
+epoch 0286 | goal_validation acc mean 0.052 | goal_validation success mean 0.016 | acc per-env: 0.052 | success per-env: 1/64
+rollout steps=16 | obs 595.1ms | label 3.7ms | forward 5.0ms | action 3.7ms | step 3.0ms | total 610.6ms
+epoch 0287 | loss 0.1787 | train acc 0.944
+epoch 0287 | train acc mean 0.900 | train success mean 1.000 | acc per-env: 0.900 | success per-env: 64/64
+epoch 0287 | pos_validation acc mean 0.205 | pos_validation success mean 0.047 | acc per-env: 0.205 | success per-env: 3/64
+epoch 0287 | goal_validation acc mean 0.052 | goal_validation success mean 0.016 | acc per-env: 0.052 | success per-env: 1/64
+rollout steps=16 | obs 595.0ms | label 3.8ms | forward 5.2ms | action 3.8ms | step 3.0ms | total 610.8ms
+epoch 0288 | loss 0.1811 | train acc 0.943
+epoch 0288 | train acc mean 0.906 | train success mean 1.000 | acc per-env: 0.906 | success per-env: 64/64
+epoch 0288 | pos_validation acc mean 0.214 | pos_validation success mean 0.047 | acc per-env: 0.214 | success per-env: 3/64
+epoch 0288 | goal_validation acc mean 0.049 | goal_validation success mean 0.016 | acc per-env: 0.049 | success per-env: 1/64
+rollout steps=16 | obs 594.6ms | label 3.8ms | forward 5.0ms | action 3.8ms | step 3.0ms | total 610.2ms
+epoch 0289 | loss 0.1792 | train acc 0.948
+epoch 0289 | train acc mean 0.902 | train success mean 1.000 | acc per-env: 0.902 | success per-env: 64/64
+epoch 0289 | pos_validation acc mean 0.213 | pos_validation success mean 0.047 | acc per-env: 0.213 | success per-env: 3/64
+epoch 0289 | goal_validation acc mean 0.048 | goal_validation success mean 0.016 | acc per-env: 0.048 | success per-env: 1/64
+rollout steps=16 | obs 595.4ms | label 3.8ms | forward 5.0ms | action 3.8ms | step 3.0ms | total 611.0ms
+epoch 0290 | loss 0.1845 | train acc 0.946
+epoch 0290 | train acc mean 0.899 | train success mean 1.000 | acc per-env: 0.899 | success per-env: 64/64
+epoch 0290 | pos_validation acc mean 0.212 | pos_validation success mean 0.047 | acc per-env: 0.212 | success per-env: 3/64
+epoch 0290 | goal_validation acc mean 0.050 | goal_validation success mean 0.016 | acc per-env: 0.050 | success per-env: 1/64
+rollout steps=16 | obs 594.5ms | label 3.8ms | forward 5.1ms | action 3.8ms | step 3.0ms | total 610.1ms
+epoch 0291 | loss 0.1815 | train acc 0.948
+epoch 0291 | train acc mean 0.886 | train success mean 1.000 | acc per-env: 0.886 | success per-env: 64/64
+epoch 0291 | pos_validation acc mean 0.210 | pos_validation success mean 0.031 | acc per-env: 0.210 | success per-env: 2/64
+epoch 0291 | goal_validation acc mean 0.055 | goal_validation success mean 0.016 | acc per-env: 0.055 | success per-env: 1/64
+rollout steps=16 | obs 595.8ms | label 3.8ms | forward 5.0ms | action 3.8ms | step 3.0ms | total 611.4ms
+epoch 0292 | loss 0.1796 | train acc 0.948
+epoch 0292 | train acc mean 0.886 | train success mean 1.000 | acc per-env: 0.886 | success per-env: 64/64
+epoch 0292 | pos_validation acc mean 0.210 | pos_validation success mean 0.031 | acc per-env: 0.210 | success per-env: 2/64
+epoch 0292 | goal_validation acc mean 0.056 | goal_validation success mean 0.016 | acc per-env: 0.056 | success per-env: 1/64
+rollout steps=16 | obs 596.4ms | label 3.8ms | forward 5.1ms | action 3.7ms | step 3.0ms | total 612.0ms
+epoch 0293 | loss 0.1779 | train acc 0.949
+epoch 0293 | train acc mean 0.888 | train success mean 1.000 | acc per-env: 0.888 | success per-env: 64/64
+epoch 0293 | pos_validation acc mean 0.210 | pos_validation success mean 0.031 | acc per-env: 0.210 | success per-env: 2/64
+epoch 0293 | goal_validation acc mean 0.062 | goal_validation success mean 0.016 | acc per-env: 0.062 | success per-env: 1/64
+rollout steps=16 | obs 592.5ms | label 3.8ms | forward 5.1ms | action 3.7ms | step 3.1ms | total 608.2ms
+epoch 0294 | loss 0.1766 | train acc 0.952
+epoch 0294 | train acc mean 0.888 | train success mean 1.000 | acc per-env: 0.888 | success per-env: 64/64
+epoch 0294 | pos_validation acc mean 0.210 | pos_validation success mean 0.031 | acc per-env: 0.210 | success per-env: 2/64
+epoch 0294 | goal_validation acc mean 0.062 | goal_validation success mean 0.016 | acc per-env: 0.062 | success per-env: 1/64
+rollout steps=16 | obs 596.7ms | label 3.8ms | forward 5.5ms | action 3.7ms | step 3.0ms | total 612.7ms
+epoch 0295 | loss 0.1759 | train acc 0.951
+epoch 0295 | train acc mean 0.888 | train success mean 1.000 | acc per-env: 0.888 | success per-env: 64/64
+epoch 0295 | pos_validation acc mean 0.212 | pos_validation success mean 0.031 | acc per-env: 0.212 | success per-env: 2/64
+epoch 0295 | goal_validation acc mean 0.060 | goal_validation success mean 0.016 | acc per-env: 0.060 | success per-env: 1/64
+rollout steps=16 | obs 596.9ms | label 3.8ms | forward 5.0ms | action 3.8ms | step 3.0ms | total 612.5ms
+epoch 0296 | loss 0.1743 | train acc 0.951
+epoch 0296 | train acc mean 0.890 | train success mean 1.000 | acc per-env: 0.890 | success per-env: 64/64
+epoch 0296 | pos_validation acc mean 0.213 | pos_validation success mean 0.031 | acc per-env: 0.213 | success per-env: 2/64
+epoch 0296 | goal_validation acc mean 0.059 | goal_validation success mean 0.016 | acc per-env: 0.059 | success per-env: 1/64
+rollout steps=16 | obs 600.8ms | label 3.8ms | forward 5.2ms | action 3.8ms | step 3.1ms | total 616.6ms
+epoch 0297 | loss 0.1729 | train acc 0.951
+epoch 0297 | train acc mean 0.890 | train success mean 1.000 | acc per-env: 0.890 | success per-env: 64/64
+epoch 0297 | pos_validation acc mean 0.213 | pos_validation success mean 0.031 | acc per-env: 0.213 | success per-env: 2/64
+epoch 0297 | goal_validation acc mean 0.057 | goal_validation success mean 0.016 | acc per-env: 0.057 | success per-env: 1/64
+rollout steps=16 | obs 599.2ms | label 3.8ms | forward 5.0ms | action 3.7ms | step 3.0ms | total 614.8ms
+epoch 0298 | loss 0.1715 | train acc 0.951
+epoch 0298 | train acc mean 0.890 | train success mean 1.000 | acc per-env: 0.890 | success per-env: 64/64
+epoch 0298 | pos_validation acc mean 0.213 | pos_validation success mean 0.031 | acc per-env: 0.213 | success per-env: 2/64
+epoch 0298 | goal_validation acc mean 0.059 | goal_validation success mean 0.016 | acc per-env: 0.059 | success per-env: 1/64
+rollout steps=16 | obs 598.2ms | label 3.8ms | forward 5.0ms | action 3.8ms | step 3.0ms | total 613.8ms
+epoch 0299 | loss 0.1716 | train acc 0.948
+epoch 0299 | train acc mean 0.903 | train success mean 1.000 | acc per-env: 0.903 | success per-env: 64/64
+epoch 0299 | pos_validation acc mean 0.212 | pos_validation success mean 0.031 | acc per-env: 0.212 | success per-env: 2/64
+epoch 0299 | goal_validation acc mean 0.057 | goal_validation success mean 0.016 | acc per-env: 0.057 | success per-env: 1/64
+rollout steps=16 | obs 596.0ms | label 3.7ms | forward 4.9ms | action 3.7ms | step 3.0ms | total 611.4ms
+epoch 0300 | loss 0.1687 | train acc 0.951
+epoch 0300 | train acc mean 0.903 | train success mean 1.000 | acc per-env: 0.903 | success per-env: 64/64
+epoch 0300 | pos_validation acc mean 0.212 | pos_validation success mean 0.031 | acc per-env: 0.212 | success per-env: 2/64
+epoch 0300 | goal_validation acc mean 0.055 | goal_validation success mean 0.016 | acc per-env: 0.055 | success per-env: 1/64

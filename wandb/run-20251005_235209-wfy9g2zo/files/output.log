@@ -1,0 +1,9 @@
+Traceback (most recent call last):
+  File "/rdma/vast-rdma/vast/fiete/jackking/cls/train.py", line 883, in <module>
+    main()
+  File "/rdma/vast-rdma/vast/fiete/jackking/cls/train.py", line 844, in main
+    train(
+  File "/rdma/vast-rdma/vast/fiete/jackking/cls/train.py", line 618, in train
+    use_preconv_codebook=args.use_preconv_codebook,
+                         ^^^^
+NameError: name 'args' is not defined

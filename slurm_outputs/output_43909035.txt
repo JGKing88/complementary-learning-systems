@@ -1,0 +1,4 @@
+/var/slurm/slurmd/job43909035/slurm_script: line 20: module: command not found
+/om2/user/jackking/conda/envs/cls/bin/python
+/var/slurm/slurmd/job43909035/slurm_script: line 54: 2388449 Killed                  python train.py --size 10 --speed 1 --n_epochs 3000 --num_envs 8 --num_val_envs 8 --batch_episodes 2048 --val_batch_episodes 256 --vectorhash --input_type g_hot --use_wandb --lr 1e-3 --max_envs_per_epoch 8 --input_addendum goal --train_method supervised --ppo_clip 0.2 --ppo_vf_coef 0.5 --ppo_ent_coef 0.01 --ppo_epochs 4 --encoder_dim 128 --num_encoder_layers 2 --num_rnn_layers 1 --use_preconv_codebook
+slurmstepd: error: Detected 1 oom-kill event(s) in StepId=43909035.batch. Some of your processes may have been killed by the cgroup out-of-memory handler.

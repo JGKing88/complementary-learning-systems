@@ -1,0 +1,31 @@
+/home/jackking/.bashrc: line 14: module: command not found
+/home/jackking/.bashrc: line 15: module: command not found
+/var/slurm/slurmd/job44005171/slurm_script: line 16: module: command not found
+[I 2025-10-13 20:36:16.784 ServerApp] jupyter_lsp | extension was successfully linked.
+[I 2025-10-13 20:36:16.791 ServerApp] jupyter_server_terminals | extension was successfully linked.
+[W 2025-10-13 20:36:16.794 LabApp] 'allow_origin' has moved from NotebookApp to ServerApp. This config will be passed to ServerApp. Be sure to update your config before our next release.
+[W 2025-10-13 20:36:16.794 LabApp] 'port_retries' has moved from NotebookApp to ServerApp. This config will be passed to ServerApp. Be sure to update your config before our next release.
+[I 2025-10-13 20:36:16.798 ServerApp] jupyterlab | extension was successfully linked.
+[I 2025-10-13 20:36:18.203 ServerApp] notebook_shim | extension was successfully linked.
+[I 2025-10-13 20:36:18.297 ServerApp] notebook_shim | extension was successfully loaded.
+[I 2025-10-13 20:36:18.301 ServerApp] jupyter_lsp | extension was successfully loaded.
+[I 2025-10-13 20:36:18.303 ServerApp] jupyter_server_terminals | extension was successfully loaded.
+[I 2025-10-13 20:36:18.312 LabApp] JupyterLab extension loaded from /om2/user/jackking/conda/envs/cls/lib/python3.12/site-packages/jupyterlab
+[I 2025-10-13 20:36:18.312 LabApp] JupyterLab application directory is /rdma/vast-rdma/vast/fiete/jackking/conda/envs/cls/share/jupyter/lab
+[I 2025-10-13 20:36:18.314 LabApp] Extension Manager is 'pypi'.
+[I 2025-10-13 20:36:18.528 ServerApp] jupyterlab | extension was successfully loaded.
+[I 2025-10-13 20:36:18.528 ServerApp] Serving notebooks from local directory: /rdma/vast-rdma/vast/fiete/jackking/cls
+[I 2025-10-13 20:36:18.528 ServerApp] Jupyter Server 2.17.0 is running at:
+[I 2025-10-13 20:36:18.528 ServerApp] http://node076:8091/lab?token=f5d23ad87fcbde4ada59bb820c98d92d9aca70f414df40df
+[I 2025-10-13 20:36:18.528 ServerApp]     http://127.0.0.1:8091/lab?token=f5d23ad87fcbde4ada59bb820c98d92d9aca70f414df40df
+[I 2025-10-13 20:36:18.528 ServerApp] Use Control-C to stop this server and shut down all kernels (twice to skip confirmation).
+[C 2025-10-13 20:36:18.540 ServerApp] 
+    
+    To access the server, open this file in a browser:
+        file:///rdma/vast-rdma/vast-home/jackking/.local/share/jupyter/runtime/jpserver-4009774-open.html
+    Or copy and paste one of these URLs:
+        http://node076:8091/lab?token=f5d23ad87fcbde4ada59bb820c98d92d9aca70f414df40df
+        http://127.0.0.1:8091/lab?token=f5d23ad87fcbde4ada59bb820c98d92d9aca70f414df40df
+[I 2025-10-13 20:36:18.600 ServerApp] Skipped non-installed server(s): basedpyright, bash-language-server, dockerfile-language-server-nodejs, javascript-typescript-langserver, jedi-language-server, julia-language-server, pyrefly, pyright, python-language-server, python-lsp-server, r-languageserver, sql-language-server, texlab, typescript-language-server, unified-language-server, vscode-css-languageserver-bin, vscode-html-languageserver-bin, vscode-json-languageserver-bin, yaml-language-server
+[I 2025-10-13 20:41:11.962 ServerApp] Saving file at /cls/envs/environments.py
+[I 2025-10-13 21:16:01.847 ServerApp] Saving file at /cls/envs/environments.py

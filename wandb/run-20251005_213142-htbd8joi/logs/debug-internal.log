@@ -1,0 +1,12 @@
+{"time":"2025-10-05T21:31:42.72324574-04:00","level":"INFO","msg":"stream: starting","core version":"0.22.1"}
+{"time":"2025-10-05T21:31:42.971935281-04:00","level":"INFO","msg":"stream: created new stream","id":"htbd8joi"}
+{"time":"2025-10-05T21:31:42.971963711-04:00","level":"INFO","msg":"handler: started","stream_id":"htbd8joi"}
+{"time":"2025-10-05T21:31:42.975738419-04:00","level":"INFO","msg":"stream: started","id":"htbd8joi"}
+{"time":"2025-10-05T21:31:42.97575164-04:00","level":"INFO","msg":"writer: started","stream_id":"htbd8joi"}
+{"time":"2025-10-05T21:31:42.97576392-04:00","level":"INFO","msg":"sender: started","stream_id":"htbd8joi"}
+{"time":"2025-10-05T21:45:01.791043074-04:00","level":"INFO","msg":"handler: operation stats","stats":{"operations":[{"desc":"updating run metadata","runtime_seconds":0.001437944}],"total_operations":1}}
+{"time":"2025-10-05T21:45:02.371798669-04:00","level":"INFO","msg":"fileTransfer: Close: file transfer manager closed"}
+{"time":"2025-10-05T21:45:02.518339213-04:00","level":"INFO","msg":"stream: closing","id":"htbd8joi"}
+{"time":"2025-10-05T21:45:02.518352313-04:00","level":"INFO","msg":"handler: closed","stream_id":"htbd8joi"}
+{"time":"2025-10-05T21:45:02.519490636-04:00","level":"INFO","msg":"sender: closed","stream_id":"htbd8joi"}
+{"time":"2025-10-05T21:45:02.519514236-04:00","level":"INFO","msg":"stream: closed","id":"htbd8joi"}

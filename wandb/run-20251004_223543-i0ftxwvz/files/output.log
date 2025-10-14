@@ -1,0 +1,36 @@
+epoch 0001 | loss 1.4117 | train acc 0.097
+epoch 0001 | train acc mean 0.138 | train success mean 0.066 | acc per-env: 0.207, 0.241, 0.103, 0.070, 0.053, 0.092, 0.036, 0.225, 0.044, 0.059, 0.173, 0.106, 0.191, 0.143, 0.322, 0.141 | success per-env: 2/16, 0/16, 2/16, 1/16, 0/16, 1/16, 1/16, 0/16, 0/16, 1/16, 1/16, 3/16, 2/16, 3/16, 0/16, 0/16
+epoch 0001 | pos_validation acc mean 0.117 | pos_validation success mean 0.059 | acc per-env: 0.205, 0.016, 0.037, 0.256, 0.081, 0.046, 0.052, 0.056, 0.081, 0.150, 0.208, 0.056, 0.075, 0.237, 0.100, 0.211 | success per-env: 1/16, 0/16, 0/16, 1/16, 3/16, 1/16, 1/16, 2/16, 0/16, 1/16, 3/16, 0/16, 0/16, 0/16, 0/16, 2/16
+epoch 0001 | goal_validation acc mean 0.106 | goal_validation success mean 0.039 | acc per-env: 0.033, 0.006, 0.143, 0.041, 0.213, 0.105, 0.069, 0.015, 0.065, 0.031, 0.013, 0.263, 0.284, 0.241, 0.009, 0.159 | success per-env: 1/16, 0/16, 1/16, 0/16, 2/16, 1/16, 0/16, 3/16, 1/16, 0/16, 1/16, 0/16, 0/16, 0/16, 0/16, 0/16
+Traceback (most recent call last):
+  File "/rdma/vast-rdma/vast/fiete/jackking/cls/train.py", line 652, in <module>
+    main()
+  File "/rdma/vast-rdma/vast/fiete/jackking/cls/train.py", line 624, in main
+    train(
+  File "/rdma/vast-rdma/vast/fiete/jackking/cls/train.py", line 464, in train
+    generate_episodes_vectorized(
+  File "/om2/user/jackking/conda/envs/cls/lib/python3.12/site-packages/torch/utils/_contextlib.py", line 116, in decorate_context
+    return func(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^
+  File "/rdma/vast-rdma/vast/fiete/jackking/cls/train.py", line 156, in generate_episodes_vectorized
+    cur, goal, _, _ = sub_envs[i].step(vec)
+                      ^^^^^^^^^^^^^^^^^^^^^
+  File "/rdma/vast-rdma/vast/fiete/jackking/cls/cls/envs/environments.py", line 144, in step
+    return self.state()
+           ^^^^^^^^^^^^
+  File "/rdma/vast-rdma/vast/fiete/jackking/cls/cls/envs/environments.py", line 296, in state
+    return self._pos, self._goal, self.obs(), self.reward()
+                                  ^^^^^^^^^^
+  File "/rdma/vast-rdma/vast/fiete/jackking/cls/cls/envs/environments.py", line 412, in obs
+    return self.convert_obs(obs)
+           ^^^^^^^^^^^^^^^^^^^^^
+  File "/rdma/vast-rdma/vast/fiete/jackking/cls/cls/envs/environments.py", line 399, in convert_obs
+    s,p,g = self.vectorhash.recall(obs.copy())
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/rdma/vast-rdma/vast/fiete/jackking/cls/cls/utils/GridUtils.py", line 164, in recall
+    pout = nonlin(self.Wpg@gout, thresh=self.thresh)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/rdma/vast-rdma/vast/fiete/jackking/cls/cls/vectorhash/assoc_utils_np.py", line 16, in nonlin
+    def nonlin(x, thresh=2.5):
+
+KeyboardInterrupt

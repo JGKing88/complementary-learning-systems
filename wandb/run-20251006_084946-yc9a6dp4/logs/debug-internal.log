@@ -1,0 +1,13 @@
+{"time":"2025-10-06T08:49:47.070869917-04:00","level":"INFO","msg":"stream: starting","core version":"0.22.1"}
+{"time":"2025-10-06T08:49:47.319515958-04:00","level":"INFO","msg":"stream: created new stream","id":"yc9a6dp4"}
+{"time":"2025-10-06T08:49:47.319553538-04:00","level":"INFO","msg":"handler: started","stream_id":"yc9a6dp4"}
+{"time":"2025-10-06T08:49:47.32190787-04:00","level":"INFO","msg":"stream: started","id":"yc9a6dp4"}
+{"time":"2025-10-06T08:49:47.32191772-04:00","level":"INFO","msg":"writer: started","stream_id":"yc9a6dp4"}
+{"time":"2025-10-06T08:49:47.32193122-04:00","level":"INFO","msg":"sender: started","stream_id":"yc9a6dp4"}
+{"time":"2025-10-06T14:56:17.894139245-04:00","level":"INFO","msg":"api: retrying HTTP error","status":502,"url":"https://api.wandb.ai/files/generalization-bounds/cls/yc9a6dp4/file_stream","body":"\n<html><head>\n<meta http-equiv=\"content-type\" content=\"text/html;charset=utf-8\">\n<title>502 Server Error</title>\n</head>\n<body text=#000000 bgcolor=#ffffff>\n<h1>Error: Server Error</h1>\n<h2>The server encountered a temporary error and could not complete your request.<p>Please try again in 30 seconds.</h2>\n<h2></h2>\n</body></html>\n"}
+{"time":"2025-10-07T03:48:49.379715897-04:00","level":"INFO","msg":"handler: operation stats","stats":{"operations":[{"desc":"updating run metadata","runtime_seconds":0.00125298}],"total_operations":1}}
+{"time":"2025-10-07T03:48:53.152727935-04:00","level":"INFO","msg":"fileTransfer: Close: file transfer manager closed"}
+{"time":"2025-10-07T03:48:53.278543978-04:00","level":"INFO","msg":"stream: closing","id":"yc9a6dp4"}
+{"time":"2025-10-07T03:48:53.278557368-04:00","level":"INFO","msg":"handler: closed","stream_id":"yc9a6dp4"}
+{"time":"2025-10-07T03:48:53.279492708-04:00","level":"INFO","msg":"sender: closed","stream_id":"yc9a6dp4"}
+{"time":"2025-10-07T03:48:53.279508128-04:00","level":"INFO","msg":"stream: closed","id":"yc9a6dp4"}

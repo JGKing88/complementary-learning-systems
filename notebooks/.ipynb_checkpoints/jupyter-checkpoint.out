@@ -1,0 +1,68 @@
+/home/jackking/.bashrc: line 14: module: command not found
+/home/jackking/.bashrc: line 15: module: command not found
+/var/slurm/slurmd/job44005170/slurm_script: line 16: module: command not found
+[I 2025-10-13 20:30:57.082 ServerApp] jupyter_lsp | extension was successfully linked.
+[I 2025-10-13 20:30:57.089 ServerApp] jupyter_server_terminals | extension was successfully linked.
+[W 2025-10-13 20:30:57.093 LabApp] 'allow_origin' has moved from NotebookApp to ServerApp. This config will be passed to ServerApp. Be sure to update your config before our next release.
+[W 2025-10-13 20:30:57.093 LabApp] 'port_retries' has moved from NotebookApp to ServerApp. This config will be passed to ServerApp. Be sure to update your config before our next release.
+[I 2025-10-13 20:30:57.096 ServerApp] jupyterlab | extension was successfully linked.
+[I 2025-10-13 20:30:58.536 ServerApp] notebook_shim | extension was successfully linked.
+[I 2025-10-13 20:30:58.643 ServerApp] notebook_shim | extension was successfully loaded.
+[I 2025-10-13 20:30:58.646 ServerApp] jupyter_lsp | extension was successfully loaded.
+[I 2025-10-13 20:30:58.650 ServerApp] jupyter_server_terminals | extension was successfully loaded.
+[I 2025-10-13 20:30:58.662 LabApp] JupyterLab extension loaded from /om2/user/jackking/conda/envs/cls/lib/python3.12/site-packages/jupyterlab
+[I 2025-10-13 20:30:58.662 LabApp] JupyterLab application directory is /rdma/vast-rdma/vast/fiete/jackking/conda/envs/cls/share/jupyter/lab
+[I 2025-10-13 20:30:58.664 LabApp] Extension Manager is 'pypi'.
+[I 2025-10-13 20:30:58.892 ServerApp] jupyterlab | extension was successfully loaded.
+[I 2025-10-13 20:30:58.893 ServerApp] Serving notebooks from local directory: /rdma/vast-rdma/vast/fiete/jackking/cls/notebooks
+[I 2025-10-13 20:30:58.893 ServerApp] Jupyter Server 2.17.0 is running at:
+[I 2025-10-13 20:30:58.893 ServerApp] http://node075:8091/lab?token=c647ac24b294b28d90ef9faca190519128975ebfbbbea353
+[I 2025-10-13 20:30:58.893 ServerApp]     http://127.0.0.1:8091/lab?token=c647ac24b294b28d90ef9faca190519128975ebfbbbea353
+[I 2025-10-13 20:30:58.893 ServerApp] Use Control-C to stop this server and shut down all kernels (twice to skip confirmation).
+[C 2025-10-13 20:30:58.905 ServerApp] 
+    
+    To access the server, open this file in a browser:
+        file:///rdma/vast-rdma/vast-home/jackking/.local/share/jupyter/runtime/jpserver-3721987-open.html
+    Or copy and paste one of these URLs:
+        http://node075:8091/lab?token=c647ac24b294b28d90ef9faca190519128975ebfbbbea353
+        http://127.0.0.1:8091/lab?token=c647ac24b294b28d90ef9faca190519128975ebfbbbea353
+[I 2025-10-13 20:30:58.986 ServerApp] Skipped non-installed server(s): basedpyright, bash-language-server, dockerfile-language-server-nodejs, javascript-typescript-langserver, jedi-language-server, julia-language-server, pyrefly, pyright, python-language-server, python-lsp-server, r-languageserver, sql-language-server, texlab, typescript-language-server, unified-language-server, vscode-css-languageserver-bin, vscode-html-languageserver-bin, vscode-json-languageserver-bin, yaml-language-server
+[I 2025-10-13 20:33:52.454 ServerApp] 302 GET / (@172.16.24.234) 0.55ms
+[I 2025-10-13 20:33:52.517 LabApp] 302 GET /lab? (@172.16.24.234) 0.91ms
+[I 2025-10-13 20:34:01.962 ServerApp] User a28717ca39b841b99dfb65804f5e6748 logged in.
+[I 2025-10-13 20:34:01.963 ServerApp] 302 POST /login?next=%2Flab%3F (a28717ca39b841b99dfb65804f5e6748@172.16.24.234) 1.45ms
+[W 2025-10-13 20:34:03.677 LabApp] Could not determine jupyterlab build status without nodejs
+[W 2025-10-13 20:34:03.863 ServerApp] 404 GET /api/contents/scripts/perturbation_testing/subspace_perturbation_test.ipynb?content=0&hash=0&1760402043795 (a28717ca39b841b99dfb65804f5e6748@172.16.24.234) 1.75ms referer=http://localhost:8091/lab?
+[W 2025-10-13 20:34:03.864 ServerApp] 404 GET /api/contents/scripts/perturbation_testing/subspace_perturbation_test.ipynb?content=0&hash=0&1760402043795 (172.16.24.234): No such file or directory: scripts/perturbation_testing/subspace_perturbation_test.ipynb
+[W 2025-10-13 20:34:03.864 ServerApp] 404 GET /api/contents/scripts/perturbation_testing?content=0&hash=0&1760402043795 (a28717ca39b841b99dfb65804f5e6748@172.16.24.234) 2.52ms referer=http://localhost:8091/lab?
+[W 2025-10-13 20:34:03.865 ServerApp] 404 GET /api/contents/scripts/perturbation_testing?content=0&hash=0&1760402043795 (172.16.24.234): No such file or directory: scripts/perturbation_testing
+[W 2025-10-13 20:34:03.872 ServerApp] 404 GET /api/contents/scripts/analyzing_entropy/analysis_notebook.ipynb?content=0&hash=0&1760402043796 (a28717ca39b841b99dfb65804f5e6748@172.16.24.234) 1.81ms referer=http://localhost:8091/lab?
+[W 2025-10-13 20:34:03.873 ServerApp] 404 GET /api/contents/scripts/analyzing_entropy/analysis_notebook.ipynb?content=0&hash=0&1760402043796 (172.16.24.234): No such file or directory: scripts/analyzing_entropy/analysis_notebook.ipynb
+[W 2025-10-13 20:34:03.873 ServerApp] 404 GET /api/contents/scripts/analyzing_entropy?content=0&hash=0&1760402043796 (a28717ca39b841b99dfb65804f5e6748@172.16.24.234) 2.37ms referer=http://localhost:8091/lab?
+[W 2025-10-13 20:34:03.873 ServerApp] 404 GET /api/contents/scripts/analyzing_entropy?content=0&hash=0&1760402043796 (172.16.24.234): No such file or directory: scripts/analyzing_entropy
+[W 2025-10-13 20:34:03.874 ServerApp] 404 GET /api/contents/scripts/perturbation_testing/perturbations.py?content=0&hash=0&1760402043795 (a28717ca39b841b99dfb65804f5e6748@172.16.24.234) 3.02ms referer=http://localhost:8091/lab?
+[W 2025-10-13 20:34:03.874 ServerApp] 404 GET /api/contents/scripts/perturbation_testing/perturbations.py?content=0&hash=0&1760402043795 (172.16.24.234): No such file or directory: scripts/perturbation_testing/perturbations.py
+[W 2025-10-13 20:34:03.912 ServerApp] 404 GET /api/contents/scripts?content=0&hash=0&1760402043796 (a28717ca39b841b99dfb65804f5e6748@172.16.24.234) 4.54ms referer=http://localhost:8091/lab?
+[W 2025-10-13 20:34:03.912 ServerApp] 404 GET /api/contents/scripts?content=0&hash=0&1760402043796 (172.16.24.234): No such file or directory: scripts
+[W 2025-10-13 20:34:03.912 ServerApp] 404 GET /api/contents/scripts/slurm-43975681.out?content=0&hash=0&1760402043796 (a28717ca39b841b99dfb65804f5e6748@172.16.24.234) 5.06ms referer=http://localhost:8091/lab?
+[W 2025-10-13 20:34:03.913 ServerApp] 404 GET /api/contents/scripts/slurm-43975681.out?content=0&hash=0&1760402043796 (172.16.24.234): No such file or directory: scripts/slurm-43975681.out
+[W 2025-10-13 20:34:03.913 ServerApp] 404 GET /api/contents/scripts/slurm-43990827.out?content=0&hash=0&1760402043796 (a28717ca39b841b99dfb65804f5e6748@172.16.24.234) 5.75ms referer=http://localhost:8091/lab?
+[W 2025-10-13 20:34:03.914 ServerApp] 404 GET /api/contents/scripts/slurm-43990827.out?content=0&hash=0&1760402043796 (172.16.24.234): No such file or directory: scripts/slurm-43990827.out
+[W 2025-10-13 20:34:03.930 ServerApp] 404 GET /api/contents/scripts/slurm-43990827.out?content=0&hash=0&1760402043796 (a28717ca39b841b99dfb65804f5e6748@172.16.24.234) 1.19ms referer=http://localhost:8091/lab?
+[W 2025-10-13 20:34:03.930 ServerApp] 404 GET /api/contents/scripts/slurm-43990827.out?content=0&hash=0&1760402043796 (172.16.24.234): No such file or directory: scripts/slurm-43990827.out
+[W 2025-10-13 20:34:03.939 ServerApp] 404 GET /api/contents/scripts/perturbation_testing/subspace_perturbation_test.ipynb?content=0&hash=0&1760402043796 (a28717ca39b841b99dfb65804f5e6748@172.16.24.234) 1.24ms referer=http://localhost:8091/lab?
+[W 2025-10-13 20:34:03.939 ServerApp] 404 GET /api/contents/scripts/perturbation_testing/subspace_perturbation_test.ipynb?content=0&hash=0&1760402043796 (172.16.24.234): No such file or directory: scripts/perturbation_testing/subspace_perturbation_test.ipynb
+[W 2025-10-13 20:34:03.949 ServerApp] 404 GET /api/contents/scripts/analyzing_entropy/analysis_notebook.ipynb?content=0&hash=0&1760402043796 (a28717ca39b841b99dfb65804f5e6748@172.16.24.234) 1.62ms referer=http://localhost:8091/lab?
+[W 2025-10-13 20:34:03.949 ServerApp] 404 GET /api/contents/scripts/analyzing_entropy/analysis_notebook.ipynb?content=0&hash=0&1760402043796 (172.16.24.234): No such file or directory: scripts/analyzing_entropy/analysis_notebook.ipynb
+[W 2025-10-13 20:34:03.950 ServerApp] 404 GET /api/contents/scripts/perturbation_testing/perturbations.py?content=0&hash=0&1760402043796 (a28717ca39b841b99dfb65804f5e6748@172.16.24.234) 2.28ms referer=http://localhost:8091/lab?
+[W 2025-10-13 20:34:03.950 ServerApp] 404 GET /api/contents/scripts/perturbation_testing/perturbations.py?content=0&hash=0&1760402043796 (172.16.24.234): No such file or directory: scripts/perturbation_testing/perturbations.py
+[W 2025-10-13 20:34:03.952 ServerApp] 404 GET /api/contents/scripts/run_script.sh?content=0&hash=0&1760402043796 (a28717ca39b841b99dfb65804f5e6748@172.16.24.234) 0.98ms referer=http://localhost:8091/lab?
+[W 2025-10-13 20:34:03.952 ServerApp] 404 GET /api/contents/scripts/run_script.sh?content=0&hash=0&1760402043796 (172.16.24.234): No such file or directory: scripts/run_script.sh
+[W 2025-10-13 20:34:03.985 ServerApp] 404 GET /api/contents/scripts/slurm-43975681.out?content=0&hash=0&1760402043796 (a28717ca39b841b99dfb65804f5e6748@172.16.24.234) 1.18ms referer=http://localhost:8091/lab?
+[W 2025-10-13 20:34:03.985 ServerApp] 404 GET /api/contents/scripts/slurm-43975681.out?content=0&hash=0&1760402043796 (172.16.24.234): No such file or directory: scripts/slurm-43975681.out
+[W 2025-10-13 20:34:03.986 ServerApp] 404 GET /api/contents/scripts/slurm-43975741.out?content=0&hash=0&1760402043796 (a28717ca39b841b99dfb65804f5e6748@172.16.24.234) 1.00ms referer=http://localhost:8091/lab?
+[W 2025-10-13 20:34:03.986 ServerApp] 404 GET /api/contents/scripts/slurm-43975741.out?content=0&hash=0&1760402043796 (172.16.24.234): No such file or directory: scripts/slurm-43975741.out
+[W 2025-10-13 20:34:03.994 ServerApp] 404 GET /api/contents/scripts/slurm-43990731.out?content=0&hash=0&1760402043796 (a28717ca39b841b99dfb65804f5e6748@172.16.24.234) 1.52ms referer=http://localhost:8091/lab?
+[W 2025-10-13 20:34:03.994 ServerApp] 404 GET /api/contents/scripts/slurm-43990731.out?content=0&hash=0&1760402043796 (172.16.24.234): No such file or directory: scripts/slurm-43990731.out
+[W 2025-10-13 20:34:03.995 ServerApp] 404 GET /api/contents/scripts/slurm-43990827.out?content=0&hash=0&1760402043796 (a28717ca39b841b99dfb65804f5e6748@172.16.24.234) 2.07ms referer=http://localhost:8091/lab?
+[W 2025-10-13 20:34:03.995 ServerApp] 404 GET /api/contents/scripts/slurm-43990827.out?content=0&hash=0&1760402043796 (172.16.24.234): No such file or directory: scripts/slurm-43990827.out
