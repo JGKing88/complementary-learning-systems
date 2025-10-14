@@ -151,7 +151,12 @@ class WMEnv:
         return self._code_for(self._goal, self._heading)
 
     def obs_at_best_next_step(self) -> np.ndarray:
-        return self._code_for(self.goal, self._heading)
+        best_action = self.best_action_to_goal()
+        ndx, ndy = self._normalize_vector(best_action[0], best_action[1])
+        next_pos = self._simulate_move(self._pos, (ndx, ndy), self.speed)
+        moved = next_pos != self._pos
+        next_heading = (ndx, ndy) if moved else self._heading
+        return self._code_for(next_pos, next_heading)
 
     def best_action_to_goal(self, randomize: bool = False) -> Vector2:
         """Return the best relative action toward the goal.
@@ -423,7 +428,8 @@ class GridWMEnv(WMEnv):
         return self.convert_obs(obs)
 
     def obs_at_next_best_step(self) -> np.ndarrary:
-        obs = super().ob
+        obs = super().obs_at_next_best_step()
+        return self.convert_obs(obs)
     
     def clone(self) -> "GridWMEnv":
         new_env = type(self)(
@@ -504,6 +510,32 @@ class WMVecEnv:
             h_idx[x_part] = np.where(hx[x_part] > 0, 1, 3)
             h_idx[y_part] = np.where(hy[y_part] > 0, 0, 2)
         return h_idx
+
+    def _simulate_step_batch(
+        self,
+        pos: np.ndarray,
+        heading: np.ndarray,
+        vec: np.ndarray,
+        speed: int,
+    ) -> tuple[np.ndarray, np.ndarray]:
+        """Pure batched simulation of one step.
+
+        Returns (next_pos, next_heading) without mutating env state.
+        Heading updates only for rows that moved, matching WMEnv.step semantics.
+        """
+        vec = np.sign(vec).astype(np.int32)
+        pos = pos.astype(np.int32)
+        new_pos = pos.copy()
+        for _ in range(speed):
+            nx = new_pos[:, 0] + vec[:, 0]
+            ny = new_pos[:, 1] + vec[:, 1]
+            inside = (nx >= 0) & (nx < self.size) & (ny >= 0) & (ny < self.size)
+            new_pos[:, 0] = np.where(inside, nx, new_pos[:, 0])
+            new_pos[:, 1] = np.where(inside, ny, new_pos[:, 1])
+        moved = (new_pos[:, 0] != pos[:, 0]) | (new_pos[:, 1] != pos[:, 1])
+        new_heading = heading.copy()
+        new_heading[moved] = vec[moved]
+        return new_pos, new_heading
 
     def obs_batch(self, indices: List[int], input_addendum: Optional[str] = None) -> np.ndarray:
         idx = np.asarray(indices, dtype=np.int64)
@@ -661,6 +693,15 @@ class GridWMVecEnv(WMVecEnv):
                 gy = np.full(y.shape[0], self._goal[1], dtype=np.int32)
                 goal_conv = self._preconv_codebook[gx, gy, h_idx]
                 return np.concatenate([conv, goal_conv], axis=-1)
+            elif input_addendum == "next_best":
+                best_vecs = self.best_action_to_goal_batch(indices, randomize=False)
+                pos = self._pos[idx]
+                cur_heading = self._heading[idx]
+                vec = np.asarray(best_vecs, dtype=np.int32)
+                next_pos, next_heading = self._simulate_step_batch(pos, cur_heading, vec, self.speed)
+                next_h_idx = self._heading_index_batch(next_heading)
+                next_conv = self._preconv_codebook[next_pos[:, 0], next_pos[:, 1], next_h_idx]
+                return np.concatenate([conv, next_conv], axis=-1)
             elif input_addendum == "diff":
                 gx = np.full(x.shape[0], self._goal[0], dtype=np.int32)
                 gy = np.full(y.shape[0], self._goal[1], dtype=np.int32)
@@ -682,6 +723,16 @@ class GridWMVecEnv(WMVecEnv):
             goal_raw = self._codebook[gx, gy, h_idx]
             goal_conv = self._convert_obs_batch(goal_raw)
             return goal_conv - conv
+        elif input_addendum == "next_best":
+            best_vecs = self.best_action_to_goal_batch(indices, randomize=False)
+            pos = self._pos[idx]
+            cur_heading = self._heading[idx]
+            vec = np.asarray(best_vecs, dtype=np.int32)
+            next_pos, next_heading = self._simulate_step_batch(pos, cur_heading, vec, self.speed)
+            next_h_idx = self._heading_index_batch(next_heading)
+            next_raw = self._codebook[next_pos[:, 0], next_pos[:, 1], next_h_idx]
+            next_conv = self._convert_obs_batch(next_raw)
+            return np.concatenate([conv, next_conv], axis=-1)
         return conv
 
     def _build_preconv_codebook(self) -> np.ndarray:

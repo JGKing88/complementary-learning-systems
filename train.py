@@ -77,6 +77,8 @@ def generate_episode(
             obs = np.concatenate([obs, env.obs_at_goal()])
         elif input_addendum == "diff":
             obs = env.obs_at_goal() - env.obs()
+        elif input_addendum == "next_best":
+            obs = np.concatenate([obs, env.obs_at_next_best_step()])
         if ppo_input_reward:
             obs = np.concatenate([obs, np.asarray([last_reward], dtype=np.float32)])
 
@@ -417,6 +419,8 @@ def rollout_policy_episode(
             obs = np.concatenate([env.obs(), env.obs_at_goal()])
         elif input_addendum == "diff":
             obs = env.obs_at_goal() - env.obs()
+        elif input_addendum == "next_best":
+            obs = np.concatenate([obs, env.obs_at_next_best_step()])
         else:
             obs = env.obs()
 
@@ -786,7 +790,7 @@ def main():
     parser.add_argument("--time_penalty", type=float, default=0.01)
     parser.add_argument("--observation_size", type=int, default=512)
     parser.add_argument("--ppo_input_reward", action="store_true", default=False)
-    parser.add_argument("--input_addendum", type=str, choices=["goal", "diff", "none"], default="none")
+    parser.add_argument("--input_addendum", type=str, choices=["goal", "diff", "none", "next_best"], default="none")
     parser.add_argument("--train_method", type=str, choices=["supervised", "ppo"], default="supervised")
     parser.add_argument("--ppo_clip", type=float, default=0.2)
     parser.add_argument("--ppo_vf_coef", type=float, default=0.5)
@@ -804,8 +808,8 @@ def main():
     
     args = parser.parse_args()
 
-    if args.input_addendum not in ("goal", "diff", "none"):
-        raise ValueError("input_addendum must be one of: goal, diff, none")
+    if args.input_addendum not in ("goal", "diff", "none", "next_best"):
+        raise ValueError("input_addendum must be one of: goal, diff, none, next_best")
 
     # Initialize a pool of environments with fixed goals per env
     seed = args.seed
@@ -863,7 +867,7 @@ def main():
     #     vectorhash.initiate_vectorhash(all_envs)
 
     input_size = env_pool[0].get_input_size()
-    if args.input_addendum == "goal":
+    if args.input_addendum == "goal" or args.input_addendum == "next_best":
         input_size = input_size * 2
     if args.ppo_input_reward:
         input_size = input_size + 1
