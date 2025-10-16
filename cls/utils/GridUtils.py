@@ -1,9 +1,12 @@
 import numpy as np
+import torch
 from cls.vectorhash.seq_utils import *
 from cls.vectorhash.assoc_utils_np import *
 from cls.vectorhash.senstranspose_utils import *
 from cls.vectorhash.assoc_utils_np_2D import gen_gbook_2d, path_integration_Wgg_2d, module_wise_NN_2d
-    
+device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+import copy
+
 class VectorHash:
     def __init__(self, Np, lambdas, size):
         self.thresh = 2.0
@@ -24,10 +27,11 @@ class VectorHash:
             indices[2*l_idx : 2*l_idx+2] = (y, x)
             start += size
         return indices
-
+    
     def setup_scaffold(self, Np, lambdas, thresh, c):
         Ng = np.sum(np.square(lambdas))
         Npos = np.prod(lambdas)
+        print("      gen_gbook_2d")
         gbook = gen_gbook_2d(lambdas, Ng, Npos)
         gbook.shape     # (Ng, Npos, Npos)
 
@@ -40,12 +44,20 @@ class VectorHash:
         mask = np.ones((Np, Ng))
         mask[randint(low=0, high=Np, size=prune), randint(low=0, high=Ng, size=prune)] = 0
         Wpg = np.multiply(mask, Wpg)
-        
-        pbook = nonlin(np.einsum('jk,klm->jlm', Wpg, gbook), thresh=thresh)  # (Np, Npos, Npos) 
+
+        print(Wpg.shape)
+        print(gbook.shape)
+        print("      pbook")
+        # pbook = nonlin(np.einsum('jk,klm->jlm', Wpg, gbook), thresh=thresh)  # (Np, Npos, Npos) 
+
+        pbook = nonlin(train_pbook(Wpg, gbook), thresh=thresh) # (Np, Npos, Npos) 
+        print(pbook.shape)
         gbook_flattened = gbook.reshape(Ng, Npos*Npos)  #order='F'
         pbook_flattened = pbook.reshape(Np, Npos*Npos)
 
+        print("      train_gcpc")
         Wgp = train_gcpc(pbook_flattened, gbook_flattened,Npatts=Npos*Npos)
+        print(Wgp.shape)
 
         return pbook, pbook_flattened, gbook, gbook_flattened, Wpg, Wgp, module_sizes, module_gbooks, Npos, Ng
     
@@ -79,11 +91,14 @@ class VectorHash:
         all_observations = []
         abook = []
 
+        self.env_locations = []
+
         for env_idx, env in enumerate(envs):
             pos_obs_head = env.fully_explore_random()
             path_locations = np.array([poh[0] for poh in pos_obs_head]) # if poh[2] == (1, 0)])
             observations = np.array([poh[1] for poh in pos_obs_head]) # if poh[2] == (1, 0)])
             C_X, C_Y = C_pairs[env_idx]
+            self.env_locations.append((C_X, C_Y))
             path_locations[:,0] = path_locations[:,0] + C_X
             path_locations[:,1] = path_locations[:,1] + C_Y
 
@@ -99,6 +114,7 @@ class VectorHash:
         Np = pbook.shape[0]
         path_pbook = np.zeros((Np, Npatts))
         path_gbook = np.zeros((Ng, Npatts))
+            
         k = 0
         for i in all_path_locations:
             path_pbook[:,k] = pbook[:,i[0],i[1]]
@@ -110,6 +126,8 @@ class VectorHash:
 
         return path_sbook, path_pbook, path_gbook, Wsp, Wps
 
+    def get_loc_from_grid_state(self, g):
+        return self.g_to_location[tuple(g)]
 
     def initiate_vectorhash(self, envs):
         """
@@ -137,8 +155,18 @@ class VectorHash:
         n_envs = len(envs)
 
         # Setup scaffold and environment encodings
+        print("   setup scaffold")
         self.pbook, self.pbook_flattened, self.gbook, self.gbook_flattened, self.Wpg, self.Wgp, self.module_sizes, self.module_gbooks, self.Npos, self.Ng = self.setup_scaffold(Np, lambdas, thresh, c)
 
+        #for debugging
+        self.g_to_location = {}
+        width,height = self.gbook.shape[1],self.gbook.shape[2]
+        gbook_copy = self.gbook.copy()
+        for x in range(width):
+            for y in range(height):
+                self.g_to_location[tuple(gbook_copy[:, x, y])] = (x, y)
+
+        print("   setup envs")
         self.path_sbook, self.path_pbook, self.path_gbook, self.Wsp, self.Wps = self.setup_envs(
             envs, size, n_envs, self.Npos, self.Ng, self.pbook, self.gbook
         )
@@ -147,6 +175,7 @@ class VectorHash:
         self.Np = self.pbook.shape[0]
         self.Ng = self.gbook.shape[0]
 
+        print("   initialize envs vh")
         for env in envs:
             env.initiate_vectorhash(self)
         

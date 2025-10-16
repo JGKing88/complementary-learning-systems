@@ -1,6 +1,6 @@
 # corrupt_p01() and topk() from assoc_utils.py
 # haven't been converted to numpy so they are missing 
-
+import torch
 import numpy as np
 from scipy.ndimage import gaussian_filter1d
 from numpy.random import rand
@@ -67,29 +67,193 @@ def train_hopfield(pbook, Npatts):
     return (1/Npatts)*np.einsum('ijk, ilk->ijl', pbook[:,:,:Npatts], pbook[:,:,:Npatts])
 
 
-#EQUATION 3
-def train_gcpc(pbook, gbook, Npatts):
-    if len(pbook.shape) == 3:
-        return (1/Npatts)*np.einsum('ij, klj -> kil', gbook[:,:Npatts], pbook[:,:,:Npatts])  
-    else:
-        return (1/Npatts)*np.einsum('ij, lj -> il', gbook[:,:Npatts], pbook[:,:Npatts])  
-    
-#EQUATION 7
-def pseudotrain_Wsp(sbook, ca1book, Npatts):
-    if len(sbook.shape) == 3:
-        ca1inv = np.linalg.pinv(ca1book[:, :, :Npatts])
-        return np.einsum('ij, kjl -> kil', sbook[:,:Npatts], ca1inv[:,:Npatts,:]) 
-    else:
-        ca1inv = np.linalg.pinv(ca1book[:, :Npatts])
-        return np.einsum('ij, jl -> il', sbook[:,:Npatts], ca1inv[:Npatts,:]) 
+# -------------------- device / dtype helpers --------------------
 
-#EQUATION 6
-def pseudotrain_Wps(ca1book, sbook, Npatts):
-    sbookinv = np.linalg.pinv(sbook[:, :Npatts])    
-    if len(ca1book.shape) == 3:
-        return np.einsum('ij, kli -> klj', sbookinv[:Npatts,:], ca1book[:,:,:Npatts]) 
+def _dev():
+    return 'cuda' if torch.cuda.is_available() else 'cpu'
+
+def _to_torch(x, device=None, dtype=torch.float32):
+    return torch.as_tensor(x, device=device or _dev(), dtype=dtype)
+
+def _to_numpy(x_t):
+    return x_t.detach().cpu().numpy()
+
+# -------------------- GEMM helpers (torch, shape-agnostic) --------------------
+
+def _ij_klj_to_kil_torch(G_t, T_t):
+    """
+    torch equivalent of einsum('ij,klj->kil', G, T) via GEMM.
+    G_t: (I, J)
+    T_t: (K, L, J)
+    -> (K, I, L)
+    """
+    I, J = G_t.shape
+    K, L, J2 = T_t.shape
+    assert J == J2, "Dimension mismatch on J"
+
+    T2 = T_t.reshape(K * L, J)          # (K*L, J)
+    out = (T2 @ G_t.T).reshape(K, L, I) # (K, L, I)
+    out = out.transpose(1, 2)           # (K, I, L)
+    return out
+
+def _ij_kli_to_klj_torch(G_t, T_t):
+    """
+    torch equivalent of einsum('ij,kli->klj' with G: (J, I), T: (K, L, I)) via GEMM.
+    G_t: (J, I)
+    T_t: (K, L, I)
+    -> (K, L, J)
+    """
+    J, I = G_t.shape
+    K, L, I2 = T_t.shape
+    assert I == I2, "Dimension mismatch on I"
+
+    T2 = T_t.reshape(K * L, I)          # (K*L, I)
+    out = (T2 @ G_t.T).reshape(K, L, J) # (K, L, J)
+    return out
+
+# -------------------- EQUATION 3 --------------------
+
+def train_gcpc(pbook, gbook, Npatts):
+    """
+    NumPy in -> NumPy out, uses GPU if available.
+    gbook: (I, J)
+    pbook: (K, L, J)  or (L, J)
+    Returns:
+      if 3D pbook -> (K, I, L)
+      if 2D pbook -> (I, L)
+    Implements (1/Npatts) * einsum('ij,klj->kil', ...) or (1/Npatts)*einsum('ij,lj->il').
+    """
+    device = _dev()
+    # Slice first to reduce transfers
+    G_np = np.asarray(gbook)[:, :Npatts]   # (I, J’)
+    if pbook.ndim == 3:
+        P_np = np.asarray(pbook)[:, :, :Npatts]  # (K, L, J’)
+
+        G_t = _to_torch(G_np, device)
+        P_t = _to_torch(P_np, device)
+
+        out_t = _ij_klj_to_kil_torch(G_t, P_t)   # (K, I, L)
+        out_np = _to_numpy(out_t) / float(Npatts)
+        return out_np
     else:
-        return np.einsum('ij, li -> lj', sbookinv[:Npatts,:], ca1book[:,:Npatts]) 
+        P_np = np.asarray(pbook)[:, :Npatts]     # (L, J’)
+
+        G_t = _to_torch(G_np, device)            # (I, J’)
+        PT_t = _to_torch(P_np.T, device)         # (J’, L)
+        out_t = G_t @ PT_t                       # (I, L)
+        out_np = _to_numpy(out_t) / float(Npatts)
+        return out_np
+
+# -------------------- train_pbook (NumPy I/O, GEMM) --------------------
+
+def train_pbook(Wpg, gbook):
+    """
+    NumPy in -> NumPy out, GPU-accelerated GEMM.
+    Wpg:   (J, K)
+    gbook: (K, L, M)
+    Returns: (Wpg @ gbook.reshape(K, L*M)).reshape(J, L, M), applied in NumPy.
+    """
+    device = _dev()
+    W_np = np.asarray(Wpg)
+    G_np = np.asarray(gbook)
+
+    J, K = W_np.shape
+    K2, *rest = G_np.shape
+    assert K == K2, "Inner dims must match: Wpg[:,K] vs gbook[K,...]"
+
+    W_t = _to_torch(W_np, device)
+    Gflat_t = _to_torch(G_np.reshape(K, -1), device)   # (K, L*M)
+
+    P_t = W_t @ Gflat_t                                # (J, L*M)
+    P_np = _to_numpy(P_t).reshape(J, *rest)            # back to NumPy for nonlin
+    return P_np
+
+# -------------------- EQUATION 7 --------------------
+
+def pseudotrain_Wsp(sbook, ca1book, Npatts):
+    """
+    NumPy in -> NumPy out, GPU-accelerated.
+    sbook:   (I, J_full)
+    ca1book: (K, L, J_full)  or (L, J_full)
+    Returns:
+      if 3D ca1book -> (K, I, L)  [einsum('ij, kjl -> kil')]
+      if 2D ca1book -> (I, L)     [einsum('ij, jl  -> il')]
+    Uses torch.linalg.pinv (batched) for the pseudoinverse.
+    """
+    device = _dev()
+    S_np = np.asarray(sbook)[:, :Npatts]     # (I, J’)
+
+    if ca1book.ndim == 3:
+        C_np = np.asarray(ca1book)[:, :, :Npatts]   # (K, L, J’)
+        C_t  = _to_torch(C_np, device)
+        # pinv over last two dims: (K, L, J’) -> (K, J’, L)
+        Cinv_t = torch.linalg.pinv(C_t)
+        S_t = _to_torch(S_np, device)              # (I, J’)
+        out_t = _ij_klj_to_kil_torch(S_t, Cinv_t)  # (K, I, L)
+        return _to_numpy(out_t)
+
+    else:
+        C_np = np.asarray(ca1book)[:, :Npatts]     # (L, J’)
+        C_t  = _to_torch(C_np, device)
+        Cinv_t = torch.linalg.pinv(C_t)            # (J’, L)
+        S_t = _to_torch(S_np, device)              # (I, J’)
+        out_t = S_t @ Cinv_t                       # (I, L)
+        return _to_numpy(out_t)
+
+# -------------------- EQUATION 6 --------------------
+
+def pseudotrain_Wps(ca1book, sbook, Npatts):
+    """
+    NumPy in → NumPy out (GPU if available).
+    Original intent:
+      sbookinv = pinv(sbook[:, :Npatts])  # (J', I) with J'=Npatts
+      3D: einsum('ij, kli -> klj', sbookinv[:Npatts,:], ca1book[:,:,:Npatts])
+      2D: einsum('ij, li  -> lj', sbookinv[:Npatts,:], ca1book[:,:Npatts])
+    """
+    device = _dev()
+
+    # S[:, :Npatts] has shape (I, I') with I' = Npatts
+    S_np = np.asarray(sbook)[:, :Npatts]
+    S_t  = _to_torch(S_np, device)
+    S_inv_t = torch.linalg.pinv(S_t)          # (I', I)  ≡ (J', I)
+
+    if ca1book.ndim == 3:
+        # C: (K, L, I') so dims match the 'i' index in einsum
+        C_np = np.asarray(ca1book)[:, :, :Npatts]
+        C_t  = _to_torch(C_np, device)        # (K, L, I')
+        out_t = _ij_kli_to_klj_torch(S_inv_t, C_t)  # (K, L, J')
+        return _to_numpy(out_t)
+    else:
+        # C: (L, I')  and S_inv_t: (I', I)  → (L, I)
+        C_np = np.asarray(ca1book)[:, :Npatts]
+        C_t  = _to_torch(C_np, device)        # (L, I')
+        out_t = C_t @ S_inv_t                 # (L, I)   <<< no transpose
+        return _to_numpy(out_t)
+
+
+# #EQUATION 3
+# def train_gcpc(pbook, gbook, Npatts):
+#     if len(pbook.shape) == 3:
+#         return (1/Npatts)*np.einsum('ij, klj -> kil', gbook[:,:Npatts], pbook[:,:,:Npatts])  
+#     else:
+#         return (1/Npatts)*np.einsum('ij, lj -> il', gbook[:,:Npatts], pbook[:,:Npatts])  
+    
+# #EQUATION 7
+# def pseudotrain_Wsp(sbook, ca1book, Npatts):
+#     if len(sbook.shape) == 3:
+#         ca1inv = np.linalg.pinv(ca1book[:, :, :Npatts])
+#         return np.einsum('ij, kjl -> kil', sbook[:,:Npatts], ca1inv[:,:Npatts,:]) 
+#     else:
+#         ca1inv = np.linalg.pinv(ca1book[:, :Npatts])
+#         return np.einsum('ij, jl -> il', sbook[:,:Npatts], ca1inv[:Npatts,:]) 
+
+# #EQUATION 6
+# def pseudotrain_Wps(ca1book, sbook, Npatts):
+#     sbookinv = np.linalg.pinv(sbook[:, :Npatts])    
+#     if len(ca1book.shape) == 3:
+#         return np.einsum('ij, kli -> klj', sbookinv[:Npatts,:], ca1book[:,:,:Npatts]) 
+#     else:
+#         return np.einsum('ij, li -> lj', sbookinv[:Npatts,:], ca1book[:,:Npatts]) 
     
 #NOT SURE WHY ANY OF THESE ARE NEEDED
 def pseudotrain_Wpp(ca1book, Npatts):

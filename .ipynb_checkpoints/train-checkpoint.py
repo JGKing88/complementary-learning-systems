@@ -20,7 +20,7 @@ import argparse
 import math
 import os
 from dataclasses import dataclass
-from typing import List, Tuple
+from typing import List, Tuple, Optional
 
 import numpy as np
 import torch
@@ -36,6 +36,44 @@ from cls.utils.GridUtils import VectorHash
 from cls.envs.environments import GridWMEnv, GridWMVecEnv, WMVecEnv
 
 CARDINAL_ACTIONS: List[Tuple[int, int]] = [(0, 1), (1, 0), (0, -1), (-1, 0)]  # N, E, S, W
+
+@dataclass
+class TrainConfig:
+    size: int
+    speed: int
+    seed: int
+    num_envs: int
+    num_val_envs: int
+    hidden_size: int
+    num_rnn_layers: int
+    batch_episodes: int
+    steps_per_episode: int
+    n_epochs: int
+    val_batch_episodes: int
+    plot_every: int
+    val_epochs: int
+    lr: float
+    device: str
+    use_wandb: bool
+    wandb_project: str
+    time_penalty: float
+    input_size: int
+    input_addendum: Optional[str]
+    input_type: str
+    model_class: str
+    encoder_dim: Optional[int]
+    num_encoder_layers: int
+    num_actions: int
+    dropout: float
+    train_method: str
+    ppo_clip: float
+    ppo_vf_coef: float
+    ppo_ent_coef: float
+    ppo_epochs: int
+    max_envs_per_epoch: int
+    use_preconv_codebook: bool
+    ppo_input_reward: bool
+    lambdas: list
 
 @torch.no_grad()
 def _policy_action(model: Agent, obs: np.ndarray, h: torch.Tensor | None, device: str, epsilon: float = 0.0) -> tuple[int, torch.Tensor | None]:
@@ -77,6 +115,8 @@ def generate_episode(
             obs = np.concatenate([obs, env.obs_at_goal()])
         elif input_addendum == "diff":
             obs = env.obs_at_goal() - env.obs()
+        elif input_addendum == "next_best":
+            obs = np.concatenate([obs, env.obs_at_next_best_step()])
         if ppo_input_reward:
             obs = np.concatenate([obs, np.asarray([last_reward], dtype=np.float32)])
 
@@ -120,6 +160,7 @@ def generate_episodes_vectorized(
     but has independent start/heading state.
     """
     # Build true vectorized env from base env (shared codebook/goal semantics)
+    print("building vectorized env")
     B = max(1, int(batch_episodes))
     if isinstance(env, GridWMEnv):
         # use_preconv_codebook will be controlled at call-site
@@ -138,6 +179,7 @@ def generate_episodes_vectorized(
     buffers_values: list[list[float]] = [[] for _ in range(B)]
     buffers_logprobs: list[list[float]] = [[] for _ in range(B)]
 
+    print("rolling out episodes")
     for step in range(max_steps):
         active_idx = [i for i, d in enumerate(done) if not d]
         if not active_idx:
@@ -417,6 +459,8 @@ def rollout_policy_episode(
             obs = np.concatenate([env.obs(), env.obs_at_goal()])
         elif input_addendum == "diff":
             obs = env.obs_at_goal() - env.obs()
+        elif input_addendum == "next_best":
+            obs = np.concatenate([obs, env.obs_at_next_best_step()])
         else:
             obs = env.obs()
 
@@ -523,40 +567,7 @@ def train(
     env_pool: List[WMEnv | GridWMEnv],
     pos_env_pool: List[WMEnv | GridWMEnv],
     new_env_pool: List[WMEnv | GridWMEnv],
-    size: int = 8,
-    speed: int = 1,
-    seed: int = 0,
-    num_envs: int = 16,
-    num_val_envs: int = 100,
-    hidden_size: int = 128,
-    num_rnn_layers: int = 1,
-    batch_episodes: int = 32,
-    steps_per_episode: int = 32,
-    n_epochs: int = 100,
-    val_batch_episodes: int = 4,
-    plot_every: int = 5,
-    val_epochs: int = 1,
-    lr: float = 1e-3,
-    device: str = "cpu",
-    use_wandb: bool = False,
-    wandb_project: str = "cls",
-    time_penalty: float = 0.01,
-    input_size: int = 128,
-    input_addendum: str | None = None,
-    input_type: str = "g_idx",
-    model_class: str = "GRU",
-    encoder_dim: int | None = None,
-    num_encoder_layers: int = 0,
-    num_actions: int = 4,
-    dropout: float = 0.0,
-    train_method: str = "supervised",
-    ppo_clip: float = 0.2,
-    ppo_vf_coef: float = 0.5,
-    ppo_ent_coef: float = 0.0,
-    ppo_epochs: int = 4,
-    max_envs_per_epoch: int = 16,
-    use_preconv_codebook: bool = False,
-    ppo_input_reward: bool = False,
+    cfg: TrainConfig,
 ):
     """Main training loop.
 
@@ -565,9 +576,9 @@ def train(
     Prints running loss and token-level accuracy every 50 updates.
     """
 
-    model = Agent(input_size=input_size, hidden_size=hidden_size, num_rnn_layers=num_rnn_layers, model_class=model_class, encoder_dim=encoder_dim, num_encoder_layers=num_encoder_layers, num_actions=num_actions, dropout=dropout)
-    model.to(device)
-    opt = optim.Adam(model.parameters(), lr=lr)
+    model = Agent(input_size=cfg.input_size, hidden_size=cfg.hidden_size, num_rnn_layers=cfg.num_rnn_layers, model_class=cfg.model_class, encoder_dim=cfg.encoder_dim, num_encoder_layers=cfg.num_encoder_layers, num_actions=cfg.num_actions, dropout=cfg.dropout)
+    model.to(cfg.device)
+    opt = optim.Adam(model.parameters(), lr=cfg.lr)
     criterion = nn.CrossEntropyLoss(ignore_index=-100)
 
     out_dir_base = os.path.join(os.getcwd(), "runs")
@@ -575,47 +586,48 @@ def train(
     out_dir_pos_validation = os.path.join(out_dir_base, "pos_validation")
     out_dir_goal_validation = os.path.join(out_dir_base, "goal_validation")
     # Optional Weights & Biases tracking
-    if use_wandb:
-        cfg = dict(
-            size=size,
-            speed=speed,
-            seed=seed,
-            num_envs=num_envs,
-            num_val_envs=num_val_envs,
-            input_size=input_size,
-            hidden_size=hidden_size,
-            num_rnn_layers=num_rnn_layers,
-            batch_episodes=batch_episodes,
-            steps_per_episode=steps_per_episode,
-            n_epochs=n_epochs,
-            val_batch_episodes=val_batch_episodes,
-            plot_every=plot_every,
-            val_epochs=val_epochs,
-            lr=lr,
-            device=device,
-            input_addendum=input_addendum,
-            input_type=input_type,
-            model_class=model_class,
-            encoder_dim=encoder_dim,
-            num_encoder_layers=num_encoder_layers,
-            train_method=train_method,
-            ppo_clip=ppo_clip,
-            ppo_vf_coef=ppo_vf_coef,
-            ppo_ent_coef=ppo_ent_coef,
-            ppo_epochs=ppo_epochs,
-            max_envs_per_epoch=max_envs_per_epoch,
+    if cfg.use_wandb:
+        wandb_cfg = dict(
+            size=cfg.size,
+            speed=cfg.speed,
+            seed=cfg.seed,
+            num_envs=cfg.num_envs,
+            num_val_envs=cfg.num_val_envs,
+            input_size=cfg.input_size,
+            hidden_size=cfg.hidden_size,
+            num_rnn_layers=cfg.num_rnn_layers,
+            batch_episodes=cfg.batch_episodes,
+            steps_per_episode=cfg.steps_per_episode,
+            n_epochs=cfg.n_epochs,
+            val_batch_episodes=cfg.val_batch_episodes,
+            plot_every=cfg.plot_every,
+            val_epochs=cfg.val_epochs,
+            lr=cfg.lr,
+            device=cfg.device,
+            input_addendum=cfg.input_addendum,
+            input_type=cfg.input_type,
+            model_class=cfg.model_class,
+            encoder_dim=cfg.encoder_dim,
+            num_encoder_layers=cfg.num_encoder_layers,
+            train_method=cfg.train_method,
+            ppo_clip=cfg.ppo_clip,
+            ppo_vf_coef=cfg.ppo_vf_coef,
+            ppo_ent_coef=cfg.ppo_ent_coef,
+            ppo_epochs=cfg.ppo_epochs,
+            max_envs_per_epoch=cfg.max_envs_per_epoch,
         )
-        wandb.init(project=wandb_project, config=cfg)
-
+        wandb.init(project=cfg.wandb_project, config=wandb_cfg)
+        
+    print("Starting training")
     model.train()
-    for epoch in range(1, n_epochs + 1):
+    for epoch in range(1, cfg.n_epochs + 1):
         # For each episode in the batch, pick a random environment from the pool
         episodes = []
         # Collect episodes
         model.eval()
         with torch.no_grad():
-            if len(env_pool) >= max_envs_per_epoch:
-                env_idxs = np.random.choice(len(env_pool), max_envs_per_epoch, replace=False)
+            if len(env_pool) >= cfg.max_envs_per_epoch:
+                env_idxs = np.random.choice(len(env_pool), cfg.max_envs_per_epoch, replace=False)
             else:
                 env_idxs = range(len(env_pool))
             prof = {}
@@ -625,15 +637,15 @@ def train(
                     generate_episodes_vectorized(
                         env,
                         model,
-                        device,
-                        steps_per_episode,
-                        batch_episodes=batch_episodes,
-                        input_addendum=input_addendum,
-                        ppo_input_reward=ppo_input_reward,
-                        action_selection=("sample" if train_method == "ppo" else "greedy"),
+                        cfg.device,
+                        cfg.steps_per_episode,
+                        batch_episodes=cfg.batch_episodes,
+                        input_addendum=cfg.input_addendum,
+                        ppo_input_reward=cfg.ppo_input_reward,
+                        action_selection=("sample" if cfg.train_method == "ppo" else "greedy"),
                         profile=True,
                         prof=prof,
-                        use_preconv_codebook=use_preconv_codebook,
+                        use_preconv_codebook=cfg.use_preconv_codebook,
                     )
                 )
         model.train()
@@ -643,10 +655,10 @@ def train(
                 f"rollout steps={prof.get('steps',0)} | obs {prof.get('obs_ms',0.0):.1f}ms | label {prof.get('label_ms',0.0):.1f}ms | forward {prof.get('forward_ms',0.0):.1f}ms | action {prof.get('action_ms',0.0):.1f}ms | step {prof.get('step_ms',0.0):.1f}ms | total {total:.1f}ms"
             )
 
-        if train_method == "supervised":
+        if cfg.train_method == "supervised":
             obs, tgt, lengths = collate_supervised(episodes)
-            obs = obs.to(device)
-            tgt = tgt.to(device)
+            obs = obs.to(cfg.device)
+            tgt = tgt.to(cfg.device)
 
             opt.zero_grad(set_to_none=True)
             logits, values, _ = model(obs)
@@ -660,17 +672,17 @@ def train(
                 mask = tgt != -100
                 acc = (pred[mask] == tgt[mask]).float().mean().item()
             print(f"epoch {epoch:04d} | loss {loss.item():.4f} | train acc {acc:.3f}")
-            if use_wandb:
+            if cfg.use_wandb:
                 wandb.log({"train/loss": float(loss.item()), "train/acc": float(acc)}, step=epoch)
-        elif train_method == "ppo":
+        elif cfg.train_method == "ppo":
             obs, actions, rewards, dones, old_values, old_log_probs, mask, lengths = collate_rollouts(episodes)
-            obs = obs.to(device).float()
-            actions = actions.to(device)
-            rewards = rewards.to(device)
-            dones = dones.to(device)
-            old_values = old_values.to(device)
-            old_log_probs = old_log_probs.to(device)
-            mask = mask.to(device)
+            obs = obs.to(cfg.device).float()
+            actions = actions.to(cfg.device)
+            rewards = rewards.to(cfg.device)
+            dones = dones.to(cfg.device)
+            old_values = old_values.to(cfg.device)
+            old_log_probs = old_log_probs.to(cfg.device)
+            mask = mask.to(cfg.device)
 
             with torch.no_grad():
                 _, values, _ = model(obs)
@@ -681,7 +693,7 @@ def train(
             advantages = (advantages - adv_mean) / adv_std
 
             # PPO epochs (single minibatch over full batch for simplicity)
-            for _ in range(ppo_epochs):
+            for _ in range(cfg.ppo_epochs):
                 opt.zero_grad(set_to_none=True)
                 logits, values, _ = model(obs)
                 total_loss, pol_loss, val_loss, ent = ppo_loss(
@@ -692,15 +704,15 @@ def train(
                     advantages=advantages,
                     returns=returns,
                     mask=mask,
-                    clip_coef=ppo_clip,
-                    vf_coef=ppo_vf_coef,
-                    ent_coef=ppo_ent_coef,
+                    clip_coef=cfg.ppo_clip,
+                    vf_coef=cfg.ppo_vf_coef,
+                    ent_coef=cfg.ppo_ent_coef,
                 )
                 total_loss.backward()
                 nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
                 opt.step()
 
-            if use_wandb:
+            if cfg.use_wandb:
                 wandb.log({
                     "train/ppo_total_loss": float(total_loss.item()),
                     "train/ppo_policy_loss": float(pol_loss.item()),
@@ -711,29 +723,29 @@ def train(
             raise ValueError("train_method must be 'supervised' or 'ppo'")
 
         # Validation based on val_epochs cadence
-        if val_epochs <= 0:
+        if cfg.val_epochs <= 0:
             do_val = False
         else:
-            do_val = (epoch % val_epochs == 0)
+            do_val = (epoch % cfg.val_epochs == 0)
         if do_val:
             model.eval()
-            save_plots = (plot_every > 0 and (epoch % plot_every == 0))
+            save_plots = (cfg.plot_every > 0 and (epoch % cfg.plot_every == 0))
             # Progress on the training env pool (was "val")
             train_acc, train_success = validate(
-                model, env_pool, steps_per_episode, val_batch_episodes, device, epoch, out_dir_train, save_plots, label="train", input_addendum=input_addendum
+                model, env_pool, cfg.steps_per_episode, cfg.val_batch_episodes, cfg.device, epoch, out_dir_train, save_plots, label="train", input_addendum=cfg.input_addendum
             )
 
             # Position validation: same goals as train, new env instances
             pos_acc, pos_success = validate(
-                model, pos_env_pool, steps_per_episode, val_batch_episodes, device, epoch, out_dir_pos_validation, save_plots, label="pos_validation", input_addendum=input_addendum
+                model, pos_env_pool, cfg.steps_per_episode, cfg.val_batch_episodes, cfg.device, epoch, out_dir_pos_validation, save_plots, label="pos_validation", input_addendum=cfg.input_addendum
             )
 
             # Goal validation (was "newval"): different goals and env instances
             goal_acc, goal_success = validate(
-                model, new_env_pool, steps_per_episode, val_batch_episodes, device, epoch, out_dir_goal_validation, save_plots, label="goal_validation", input_addendum=input_addendum
+                model, new_env_pool, cfg.steps_per_episode, cfg.val_batch_episodes, cfg.device, epoch, out_dir_goal_validation, save_plots, label="goal_validation", input_addendum=cfg.input_addendum
             )
             model.train()
-            if use_wandb:
+            if cfg.use_wandb:
                 wandb.log(
                     {
                         "epoch": epoch,
@@ -747,7 +759,7 @@ def train(
                     step=epoch,
                 )
 
-    if use_wandb:
+    if cfg.use_wandb:
         wandb.finish()
 
     return model
@@ -786,7 +798,7 @@ def main():
     parser.add_argument("--time_penalty", type=float, default=0.01)
     parser.add_argument("--observation_size", type=int, default=512)
     parser.add_argument("--ppo_input_reward", action="store_true", default=False)
-    parser.add_argument("--input_addendum", type=str, choices=["goal", "diff", "none"], default="none")
+    parser.add_argument("--input_addendum", type=str, choices=["goal", "diff", "none", "next_best"], default="none")
     parser.add_argument("--train_method", type=str, choices=["supervised", "ppo"], default="supervised")
     parser.add_argument("--ppo_clip", type=float, default=0.2)
     parser.add_argument("--ppo_vf_coef", type=float, default=0.5)
@@ -796,7 +808,7 @@ def main():
     # Vectorhash
     parser.add_argument("--vectorhash", action="store_true", default=False)
     parser.add_argument("--Np", type=int, default=1600)
-    parser.add_argument("--lambdas", type=int, default=[11,12,13])
+    parser.add_argument("--lambdas", type=int, nargs="+", default=[11,12])
     parser.add_argument("--input_type", type=str, default="g_idx") #g_idx, g_hot, s, or p
     parser.add_argument("--use_preconv_codebook", action="store_true", default=False)
 
@@ -804,8 +816,15 @@ def main():
     
     args = parser.parse_args()
 
-    if args.input_addendum not in ("goal", "diff", "none"):
-        raise ValueError("input_addendum must be one of: goal, diff, none")
+    if args.input_addendum not in ("goal", "diff", "none", "next_best"):
+        raise ValueError("input_addendum must be one of: goal, diff, none, next_best")
+
+    # Helper: safe env factory that passes only supported kwargs
+    def _make_env(env_cls, *, size: int, speed: int, seed: int, observation_size: int, time_penalty: float, input_type: str | None):
+        if env_cls is GridWMEnv:
+            return env_cls(size=size, speed=speed, seed=seed, time_penalty=time_penalty, observation_size=observation_size, input_type=input_type)
+        else:
+            return WMEnv(size=size, speed=speed, seed=seed, time_penalty=time_penalty, observation_size=observation_size)
 
     # Initialize a pool of environments with fixed goals per env
     seed = args.seed
@@ -816,62 +835,87 @@ def main():
     rng = np.random.RandomState(seed)
     env_pool: List[WMEnv | GridWMEnv] = []
 
-    if args.vectorhash:
-        env_class = GridWMEnv
-    else:
-        env_class = WMEnv
+    env_class = GridWMEnv if args.vectorhash else WMEnv
 
     all_envs = []
 
+    print('initializing train envs')
     for i in range(num_envs):
-        env_i = env_class(size=size, speed=speed, seed=int(rng.randint(0, 10_000_000)), time_penalty=args.time_penalty, observation_size=args.observation_size, input_type=args.input_type)
+        env_i = _make_env(
+            env_class,
+            size=size,
+            speed=speed,
+            seed=int(rng.randint(0, 10_000_000)),
+            time_penalty=args.time_penalty,
+            observation_size=args.observation_size,
+            input_type=(args.input_type if args.vectorhash else None),
+        )
         env_pool.append(env_i)
     all_envs.extend(env_pool)
 
-    if args.vectorhash:
-        main_vectorhash = VectorHash(Np=args.Np, lambdas=args.lambdas, size=size)
-        main_vectorhash.initiate_vectorhash(all_envs)
-
+    # if args.vectorhash:
+    #     main_vectorhash = VectorHash(Np=args.Np, lambdas=args.lambdas, size=size)
+    #     main_vectorhash.initiate_vectorhash(all_envs)
+    
     # Position validation pool: new env instances but with same goals as training envs
+    print('initializing pos val envs')
     pos_env_pool: List[WMEnv | GridWMEnv] = []
     for i in range(num_val_envs):
-        env_i = env_class(size=size, speed=speed, seed=int(rng.randint(0, 10_000_000)), time_penalty=args.time_penalty, observation_size=args.observation_size, input_type=args.input_type)
+        env_i = _make_env(
+            env_class,
+            size=size,
+            speed=speed,
+            seed=int(rng.randint(0, 10_000_000)),
+            time_penalty=args.time_penalty,
+            observation_size=args.observation_size,
+            input_type=(args.input_type if args.vectorhash else None),
+        )
         # copy goal from training envs
         env_i._goal = env_pool[i]._goal
         pos_env_pool.append(env_i)
     all_envs.extend(pos_env_pool)
 
-    if args.vectorhash:
-        pos_vectorhash = VectorHash(Np=args.Np, lambdas=args.lambdas, size=size)
-        pos_vectorhash.initiate_vectorhash(all_envs)
+    # if args.vectorhash:
+    #     pos_vectorhash = VectorHash(Np=args.Np, lambdas=args.lambdas, size=size)
+    #     pos_vectorhash.initiate_vectorhash(all_envs)
 
     # New goal validation pool: new env instances with new goals
-
+    print('initializing new goal val envs')
     new_env_pool: List[WMEnv | GridWMEnv] = []
     for i in range(num_val_envs):
-        env_i = env_class(size=size, speed=speed, seed=int(rng.randint(0, 10_000_000)), time_penalty=args.time_penalty, observation_size=args.observation_size, input_type=args.input_type)
+        env_i = _make_env(
+            env_class,
+            size=size,
+            speed=speed,
+            seed=int(rng.randint(0, 10_000_000)),
+            time_penalty=args.time_penalty,
+            observation_size=args.observation_size,
+            input_type=(args.input_type if args.vectorhash else None),
+        )
         new_env_pool.append(env_i)
     all_envs.extend(new_env_pool)
     
-    if args.vectorhash:
-        new_vectorhash = VectorHash(Np=args.Np, lambdas=args.lambdas, size=size)
-        new_vectorhash.initiate_vectorhash(all_envs)
+    # if args.vectorhash:
+    #     new_vectorhash = VectorHash(Np=args.Np, lambdas=args.lambdas, size=size)
+    #     new_vectorhash.initiate_vectorhash(all_envs)
     
     # Not sure if we should hav one vectorhash for all envs
-    # if args.vectorhash:
-    #     vectorhash = VectorHash(Np=args.Np, lambdas=args.lambdas, size=size)
-    #     vectorhash.initiate_vectorhash(all_envs)
+    if args.vectorhash:
+        vectorhash = VectorHash(Np=args.Np, lambdas=args.lambdas, size=size)
+        vectorhash.initiate_vectorhash(all_envs)
 
-    input_size = env_pool[0].get_input_size()
-    if args.input_addendum == "goal":
+    # Determine model input size
+    if args.vectorhash:
+        input_size = env_pool[0].get_input_size()
+    else:
+        # Raw WMEnv observation size
+        input_size = env_pool[0]._observation_size
+    if args.input_addendum == "goal" or args.input_addendum == "next_best":
         input_size = input_size * 2
     if args.ppo_input_reward:
         input_size = input_size + 1
     
-    train(
-        env_pool=env_pool,
-        pos_env_pool=pos_env_pool,
-        new_env_pool=new_env_pool,
+    cfg = TrainConfig(
         size=size,
         speed=speed,
         seed=seed,
@@ -883,8 +927,8 @@ def main():
         steps_per_episode=args.steps_per_episode,
         n_epochs=args.n_epochs,
         val_batch_episodes=args.val_batch_episodes,
-        val_epochs=args.val_epochs,
         plot_every=args.plot_every,
+        val_epochs=args.val_epochs,
         lr=args.lr,
         device=device,
         use_wandb=args.use_wandb,
@@ -906,6 +950,14 @@ def main():
         max_envs_per_epoch=args.max_envs_per_epoch,
         use_preconv_codebook=args.use_preconv_codebook,
         ppo_input_reward=args.ppo_input_reward,
+        lambdas=args.lambdas
+    )
+
+    train(
+        env_pool=env_pool,
+        pos_env_pool=pos_env_pool,
+        new_env_pool=new_env_pool,
+        cfg=cfg,
     )
 
 
