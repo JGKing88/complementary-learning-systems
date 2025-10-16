@@ -1,31 +1,280 @@
-/home/jackking/.bashrc: line 14: module: command not found
-/home/jackking/.bashrc: line 15: module: command not found
-/var/slurm/slurmd/job44005171/slurm_script: line 16: module: command not found
-[I 2025-10-13 20:36:16.784 ServerApp] jupyter_lsp | extension was successfully linked.
-[I 2025-10-13 20:36:16.791 ServerApp] jupyter_server_terminals | extension was successfully linked.
-[W 2025-10-13 20:36:16.794 LabApp] 'allow_origin' has moved from NotebookApp to ServerApp. This config will be passed to ServerApp. Be sure to update your config before our next release.
-[W 2025-10-13 20:36:16.794 LabApp] 'port_retries' has moved from NotebookApp to ServerApp. This config will be passed to ServerApp. Be sure to update your config before our next release.
-[I 2025-10-13 20:36:16.798 ServerApp] jupyterlab | extension was successfully linked.
-[I 2025-10-13 20:36:18.203 ServerApp] notebook_shim | extension was successfully linked.
-[I 2025-10-13 20:36:18.297 ServerApp] notebook_shim | extension was successfully loaded.
-[I 2025-10-13 20:36:18.301 ServerApp] jupyter_lsp | extension was successfully loaded.
-[I 2025-10-13 20:36:18.303 ServerApp] jupyter_server_terminals | extension was successfully loaded.
-[I 2025-10-13 20:36:18.312 LabApp] JupyterLab extension loaded from /om2/user/jackking/conda/envs/cls/lib/python3.12/site-packages/jupyterlab
-[I 2025-10-13 20:36:18.312 LabApp] JupyterLab application directory is /rdma/vast-rdma/vast/fiete/jackking/conda/envs/cls/share/jupyter/lab
-[I 2025-10-13 20:36:18.314 LabApp] Extension Manager is 'pypi'.
-[I 2025-10-13 20:36:18.528 ServerApp] jupyterlab | extension was successfully loaded.
-[I 2025-10-13 20:36:18.528 ServerApp] Serving notebooks from local directory: /rdma/vast-rdma/vast/fiete/jackking/cls
-[I 2025-10-13 20:36:18.528 ServerApp] Jupyter Server 2.17.0 is running at:
-[I 2025-10-13 20:36:18.528 ServerApp] http://node076:8091/lab?token=f5d23ad87fcbde4ada59bb820c98d92d9aca70f414df40df
-[I 2025-10-13 20:36:18.528 ServerApp]     http://127.0.0.1:8091/lab?token=f5d23ad87fcbde4ada59bb820c98d92d9aca70f414df40df
-[I 2025-10-13 20:36:18.528 ServerApp] Use Control-C to stop this server and shut down all kernels (twice to skip confirmation).
-[C 2025-10-13 20:36:18.540 ServerApp] 
+[I 2025-10-15 13:17:46.193 ServerApp] jupyter_lsp | extension was successfully linked.
+[I 2025-10-15 13:17:46.199 ServerApp] jupyter_server_terminals | extension was successfully linked.
+[W 2025-10-15 13:17:46.202 LabApp] 'allow_origin' has moved from NotebookApp to ServerApp. This config will be passed to ServerApp. Be sure to update your config before our next release.
+[W 2025-10-15 13:17:46.202 LabApp] 'port_retries' has moved from NotebookApp to ServerApp. This config will be passed to ServerApp. Be sure to update your config before our next release.
+[I 2025-10-15 13:17:46.206 ServerApp] jupyterlab | extension was successfully linked.
+[I 2025-10-15 13:17:47.438 ServerApp] notebook_shim | extension was successfully linked.
+[I 2025-10-15 13:17:47.534 ServerApp] notebook_shim | extension was successfully loaded.
+[I 2025-10-15 13:17:47.536 ServerApp] jupyter_lsp | extension was successfully loaded.
+[I 2025-10-15 13:17:47.538 ServerApp] jupyter_server_terminals | extension was successfully loaded.
+[I 2025-10-15 13:17:47.548 LabApp] JupyterLab extension loaded from /om2/user/jackking/conda/envs/cls/lib/python3.12/site-packages/jupyterlab
+[I 2025-10-15 13:17:47.549 LabApp] JupyterLab application directory is /rdma/vast-rdma/vast/fiete/jackking/conda/envs/cls/share/jupyter/lab
+[I 2025-10-15 13:17:47.550 LabApp] Extension Manager is 'pypi'.
+[I 2025-10-15 13:17:47.759 ServerApp] jupyterlab | extension was successfully loaded.
+[I 2025-10-15 13:17:47.760 ServerApp] Serving notebooks from local directory: /rdma/vast-rdma/vast/fiete/jackking/cls
+[I 2025-10-15 13:17:47.760 ServerApp] Jupyter Server 2.17.0 is running at:
+[I 2025-10-15 13:17:47.760 ServerApp] http://node073:8091/lab?token=eadaa97e1a1ac009ba405a7310c37385b2c870d65ed730a2
+[I 2025-10-15 13:17:47.760 ServerApp]     http://127.0.0.1:8091/lab?token=eadaa97e1a1ac009ba405a7310c37385b2c870d65ed730a2
+[I 2025-10-15 13:17:47.760 ServerApp] Use Control-C to stop this server and shut down all kernels (twice to skip confirmation).
+[C 2025-10-15 13:17:47.771 ServerApp] 
     
     To access the server, open this file in a browser:
-        file:///rdma/vast-rdma/vast-home/jackking/.local/share/jupyter/runtime/jpserver-4009774-open.html
+        file:///rdma/vast-rdma/vast-home/jackking/.local/share/jupyter/runtime/jpserver-2405935-open.html
     Or copy and paste one of these URLs:
-        http://node076:8091/lab?token=f5d23ad87fcbde4ada59bb820c98d92d9aca70f414df40df
-        http://127.0.0.1:8091/lab?token=f5d23ad87fcbde4ada59bb820c98d92d9aca70f414df40df
-[I 2025-10-13 20:36:18.600 ServerApp] Skipped non-installed server(s): basedpyright, bash-language-server, dockerfile-language-server-nodejs, javascript-typescript-langserver, jedi-language-server, julia-language-server, pyrefly, pyright, python-language-server, python-lsp-server, r-languageserver, sql-language-server, texlab, typescript-language-server, unified-language-server, vscode-css-languageserver-bin, vscode-html-languageserver-bin, vscode-json-languageserver-bin, yaml-language-server
-[I 2025-10-13 20:41:11.962 ServerApp] Saving file at /cls/envs/environments.py
-[I 2025-10-13 21:16:01.847 ServerApp] Saving file at /cls/envs/environments.py
+        http://node073:8091/lab?token=eadaa97e1a1ac009ba405a7310c37385b2c870d65ed730a2
+        http://127.0.0.1:8091/lab?token=eadaa97e1a1ac009ba405a7310c37385b2c870d65ed730a2
+[I 2025-10-15 13:17:47.836 ServerApp] Skipped non-installed server(s): basedpyright, bash-language-server, dockerfile-language-server-nodejs, javascript-typescript-langserver, jedi-language-server, julia-language-server, pyrefly, pyright, python-language-server, python-lsp-server, r-languageserver, sql-language-server, texlab, typescript-language-server, unified-language-server, vscode-css-languageserver-bin, vscode-html-languageserver-bin, vscode-json-languageserver-bin, yaml-language-server
+[I 2025-10-15 13:19:55.350 ServerApp] 302 GET / (@172.16.24.234) 0.42ms
+[W 2025-10-15 13:19:58.040 LabApp] Could not determine jupyterlab build status without nodejs
+[W 2025-10-15 13:19:58.217 ServerApp] 404 GET /api/contents/scripts/perturbation_testing?content=0&hash=0&1760548798189 (a28717ca39b841b99dfb65804f5e6748@172.16.24.234) 1.09ms referer=http://localhost:8091/lab?
+[W 2025-10-15 13:19:58.217 ServerApp] 404 GET /api/contents/scripts/perturbation_testing?content=0&hash=0&1760548798189 (172.16.24.234): No such file or directory: scripts/perturbation_testing
+[W 2025-10-15 13:19:58.219 ServerApp] 404 GET /api/contents/scripts/perturbation_testing/subspace_perturbation_test.ipynb?content=0&hash=0&1760548798189 (a28717ca39b841b99dfb65804f5e6748@172.16.24.234) 0.93ms referer=http://localhost:8091/lab?
+[W 2025-10-15 13:19:58.219 ServerApp] 404 GET /api/contents/scripts/perturbation_testing/subspace_perturbation_test.ipynb?content=0&hash=0&1760548798189 (172.16.24.234): No such file or directory: scripts/perturbation_testing/subspace_perturbation_test.ipynb
+[W 2025-10-15 13:19:58.221 ServerApp] 404 GET /api/contents/scripts/analyzing_entropy?content=0&hash=0&1760548798189 (a28717ca39b841b99dfb65804f5e6748@172.16.24.234) 1.20ms referer=http://localhost:8091/lab?
+[W 2025-10-15 13:19:58.221 ServerApp] 404 GET /api/contents/scripts/analyzing_entropy?content=0&hash=0&1760548798189 (172.16.24.234): No such file or directory: scripts/analyzing_entropy
+[W 2025-10-15 13:19:58.222 ServerApp] 404 GET /api/contents/scripts/analyzing_entropy/long_context_deps.txt?content=0&hash=0&1760548798189 (a28717ca39b841b99dfb65804f5e6748@172.16.24.234) 1.83ms referer=http://localhost:8091/lab?
+[W 2025-10-15 13:19:58.222 ServerApp] 404 GET /api/contents/scripts/analyzing_entropy/long_context_deps.txt?content=0&hash=0&1760548798189 (172.16.24.234): No such file or directory: scripts/analyzing_entropy/long_context_deps.txt
+[W 2025-10-15 13:19:58.223 ServerApp] 404 GET /api/contents/scripts/analyzing_entropy/analysis_notebook.ipynb?content=0&hash=0&1760548798189 (a28717ca39b841b99dfb65804f5e6748@172.16.24.234) 0.91ms referer=http://localhost:8091/lab?
+[W 2025-10-15 13:19:58.223 ServerApp] 404 GET /api/contents/scripts/analyzing_entropy/analysis_notebook.ipynb?content=0&hash=0&1760548798189 (172.16.24.234): No such file or directory: scripts/analyzing_entropy/analysis_notebook.ipynb
+[W 2025-10-15 13:19:58.227 ServerApp] 404 GET /api/contents/scripts/analyzing_entropy/config.py?content=0&hash=0&1760548798189 (a28717ca39b841b99dfb65804f5e6748@172.16.24.234) 0.86ms referer=http://localhost:8091/lab?
+[W 2025-10-15 13:19:58.227 ServerApp] 404 GET /api/contents/scripts/analyzing_entropy/config.py?content=0&hash=0&1760548798189 (172.16.24.234): No such file or directory: scripts/analyzing_entropy/config.py
+[W 2025-10-15 13:19:58.230 ServerApp] 404 GET /api/contents/scripts/analyzing_entropy/visualization.py?content=0&hash=0&1760548798189 (a28717ca39b841b99dfb65804f5e6748@172.16.24.234) 0.89ms referer=http://localhost:8091/lab?
+[W 2025-10-15 13:19:58.230 ServerApp] 404 GET /api/contents/scripts/analyzing_entropy/visualization.py?content=0&hash=0&1760548798189 (172.16.24.234): No such file or directory: scripts/analyzing_entropy/visualization.py
+[W 2025-10-15 13:19:58.232 ServerApp] 404 GET /api/contents/scripts/analyzing_entropy/analysis.py?content=0&hash=0&1760548798189 (a28717ca39b841b99dfb65804f5e6748@172.16.24.234) 1.20ms referer=http://localhost:8091/lab?
+[W 2025-10-15 13:19:58.232 ServerApp] 404 GET /api/contents/scripts/analyzing_entropy/analysis.py?content=0&hash=0&1760548798189 (172.16.24.234): No such file or directory: scripts/analyzing_entropy/analysis.py
+[W 2025-10-15 13:19:58.233 ServerApp] 404 GET /api/contents/scripts/analyzing_entropy/plot_generation.py?content=0&hash=0&1760548798189 (a28717ca39b841b99dfb65804f5e6748@172.16.24.234) 1.78ms referer=http://localhost:8091/lab?
+[W 2025-10-15 13:19:58.233 ServerApp] 404 GET /api/contents/scripts/analyzing_entropy/plot_generation.py?content=0&hash=0&1760548798189 (172.16.24.234): No such file or directory: scripts/analyzing_entropy/plot_generation.py
+[W 2025-10-15 13:19:58.237 ServerApp] 404 GET /api/contents/scripts/analyzing_entropy/analysis_notebook.ipynb?content=0&hash=0&1760548798189 (a28717ca39b841b99dfb65804f5e6748@172.16.24.234) 1.06ms referer=http://localhost:8091/lab?
+[W 2025-10-15 13:19:58.237 ServerApp] 404 GET /api/contents/scripts/analyzing_entropy/analysis_notebook.ipynb?content=0&hash=0&1760548798189 (172.16.24.234): No such file or directory: scripts/analyzing_entropy/analysis_notebook.ipynb
+[W 2025-10-15 13:19:58.241 ServerApp] 404 GET /api/contents/scripts/perturbation_testing/subspace_perturbation_test.ipynb?content=0&hash=0&1760548798189 (a28717ca39b841b99dfb65804f5e6748@172.16.24.234) 0.93ms referer=http://localhost:8091/lab?
+[W 2025-10-15 13:19:58.241 ServerApp] 404 GET /api/contents/scripts/perturbation_testing/subspace_perturbation_test.ipynb?content=0&hash=0&1760548798189 (172.16.24.234): No such file or directory: scripts/perturbation_testing/subspace_perturbation_test.ipynb
+[W 2025-10-15 13:19:58.247 ServerApp] 404 GET /api/contents/scripts/run_script.sh?content=0&hash=0&1760548798190 (a28717ca39b841b99dfb65804f5e6748@172.16.24.234) 3.28ms referer=http://localhost:8091/lab?
+[W 2025-10-15 13:19:58.247 ServerApp] 404 GET /api/contents/scripts/run_script.sh?content=0&hash=0&1760548798190 (172.16.24.234): No such file or directory: scripts/run_script.sh
+[W 2025-10-15 13:19:58.248 ServerApp] 404 GET /api/contents/scripts/analyzing_entropy/analysis.py?content=0&hash=0&1760548798190 (a28717ca39b841b99dfb65804f5e6748@172.16.24.234) 0.90ms referer=http://localhost:8091/lab?
+[W 2025-10-15 13:19:58.249 ServerApp] 404 GET /api/contents/scripts/analyzing_entropy/analysis.py?content=0&hash=0&1760548798190 (172.16.24.234): No such file or directory: scripts/analyzing_entropy/analysis.py
+[W 2025-10-15 13:19:58.251 ServerApp] 404 GET /api/contents/scripts/analyzing_entropy/visualization.py?content=0&hash=0&1760548798190 (a28717ca39b841b99dfb65804f5e6748@172.16.24.234) 0.93ms referer=http://localhost:8091/lab?
+[W 2025-10-15 13:19:58.251 ServerApp] 404 GET /api/contents/scripts/analyzing_entropy/visualization.py?content=0&hash=0&1760548798190 (172.16.24.234): No such file or directory: scripts/analyzing_entropy/visualization.py
+[W 2025-10-15 13:19:58.253 ServerApp] 404 GET /api/contents/scripts/analyzing_entropy/plot_generation.py?content=0&hash=0&1760548798190 (a28717ca39b841b99dfb65804f5e6748@172.16.24.234) 0.86ms referer=http://localhost:8091/lab?
+[W 2025-10-15 13:19:58.253 ServerApp] 404 GET /api/contents/scripts/analyzing_entropy/plot_generation.py?content=0&hash=0&1760548798190 (172.16.24.234): No such file or directory: scripts/analyzing_entropy/plot_generation.py
+[W 2025-10-15 13:19:58.256 ServerApp] 404 GET /api/contents/scripts/analyzing_entropy/config.py?content=0&hash=0&1760548798190 (a28717ca39b841b99dfb65804f5e6748@172.16.24.234) 0.94ms referer=http://localhost:8091/lab?
+[W 2025-10-15 13:19:58.256 ServerApp] 404 GET /api/contents/scripts/analyzing_entropy/config.py?content=0&hash=0&1760548798190 (172.16.24.234): No such file or directory: scripts/analyzing_entropy/config.py
+[W 2025-10-15 13:19:58.257 ServerApp] 404 GET /api/contents/scripts/analyzing_entropy/long_context_deps.txt?content=0&hash=0&1760548798190 (a28717ca39b841b99dfb65804f5e6748@172.16.24.234) 0.86ms referer=http://localhost:8091/lab?
+[W 2025-10-15 13:19:58.257 ServerApp] 404 GET /api/contents/scripts/analyzing_entropy/long_context_deps.txt?content=0&hash=0&1760548798190 (172.16.24.234): No such file or directory: scripts/analyzing_entropy/long_context_deps.txt
+[W 2025-10-15 13:19:58.857 ServerApp] 404 GET /api/contents/scripts/perturbation_testing?1760548798831 (a28717ca39b841b99dfb65804f5e6748@172.16.24.234) 0.80ms referer=http://localhost:8091/lab?
+[W 2025-10-15 13:19:58.857 ServerApp] 404 GET /api/contents/scripts/perturbation_testing?1760548798831 (172.16.24.234): No such file or directory: scripts/perturbation_testing
+[I 2025-10-15 13:22:12.123 ServerApp] Kernel started: 628f3c98-72cb-4b7d-87e6-84735023427c
+[I 2025-10-15 13:22:15.018 ServerApp] Connecting to kernel 628f3c98-72cb-4b7d-87e6-84735023427c.
+[I 2025-10-15 13:22:15.020 ServerApp] Connecting to kernel 628f3c98-72cb-4b7d-87e6-84735023427c.
+[W 2025-10-15 13:22:15.022 ServerApp] The websocket_ping_timeout (90000) cannot be longer than the websocket_ping_interval (30000).
+    Setting websocket_ping_timeout=30000
+[I 2025-10-15 13:22:15.049 ServerApp] Connecting to kernel 628f3c98-72cb-4b7d-87e6-84735023427c.
+[I 2025-10-15 13:24:05.296 ServerApp] Kernel interrupted: 628f3c98-72cb-4b7d-87e6-84735023427c
+[I 2025-10-15 13:24:12.018 ServerApp] Saving file at /notebooks/testing_gridfield.ipynb
+[I 2025-10-15 13:26:12.122 ServerApp] Saving file at /notebooks/testing_gridfield.ipynb
+[I 2025-10-15 13:28:12.215 ServerApp] Saving file at /notebooks/testing_gridfield.ipynb
+[I 2025-10-15 13:30:12.299 ServerApp] Saving file at /notebooks/testing_gridfield.ipynb
+[I 2025-10-15 13:34:12.390 ServerApp] Saving file at /notebooks/testing_gridfield.ipynb
+[I 2025-10-15 13:36:12.478 ServerApp] Saving file at /notebooks/testing_gridfield.ipynb
+[I 2025-10-15 13:37:51.445 ServerApp] Kernel restarted: 628f3c98-72cb-4b7d-87e6-84735023427c
+[I 2025-10-15 13:37:51.454 ServerApp] Starting buffering for 628f3c98-72cb-4b7d-87e6-84735023427c:6d751f35-43a5-41ad-8c9b-cf813f1f264b
+[I 2025-10-15 13:37:51.466 ServerApp] Connecting to kernel 628f3c98-72cb-4b7d-87e6-84735023427c.
+[I 2025-10-15 13:37:51.466 ServerApp] Restoring connection for 628f3c98-72cb-4b7d-87e6-84735023427c:6d751f35-43a5-41ad-8c9b-cf813f1f264b
+[I 2025-10-15 13:38:12.566 ServerApp] Saving file at /notebooks/testing_gridfield.ipynb
+[I 2025-10-15 13:40:12.650 ServerApp] Saving file at /notebooks/testing_gridfield.ipynb
+[I 2025-10-15 13:42:12.753 ServerApp] Saving file at /notebooks/testing_gridfield.ipynb
+[I 2025-10-15 13:44:12.847 ServerApp] Saving file at /notebooks/testing_gridfield.ipynb
+[I 2025-10-15 13:48:12.942 ServerApp] Saving file at /notebooks/testing_gridfield.ipynb
+[I 2025-10-15 13:50:13.035 ServerApp] Saving file at /notebooks/testing_gridfield.ipynb
+[I 2025-10-15 14:02:13.122 ServerApp] Saving file at /notebooks/testing_gridfield.ipynb
+[I 2025-10-15 14:08:13.218 ServerApp] Saving file at /notebooks/testing_gridfield.ipynb
+[I 2025-10-15 14:10:13.320 ServerApp] Saving file at /notebooks/testing_gridfield.ipynb
+[I 2025-10-15 14:12:13.412 ServerApp] Saving file at /notebooks/testing_gridfield.ipynb
+[I 2025-10-15 14:16:13.520 ServerApp] Saving file at /notebooks/testing_gridfield.ipynb
+[I 2025-10-15 14:18:13.615 ServerApp] Saving file at /notebooks/testing_gridfield.ipynb
+[I 2025-10-15 14:20:13.979 ServerApp] Saving file at /notebooks/testing_gridfield.ipynb
+[I 2025-10-15 14:22:14.099 ServerApp] Saving file at /notebooks/testing_gridfield.ipynb
+[I 2025-10-15 14:24:14.215 ServerApp] Saving file at /notebooks/testing_gridfield.ipynb
+[I 2025-10-15 14:26:14.335 ServerApp] Saving file at /notebooks/testing_gridfield.ipynb
+[I 2025-10-15 14:30:14.645 ServerApp] Saving file at /notebooks/testing_gridfield.ipynb
+[I 2025-10-15 14:32:14.962 ServerApp] Saving file at /notebooks/testing_gridfield.ipynb
+[I 2025-10-15 14:32:32.205 ServerApp] Saving file at /notebooks/testing_gridfield.ipynb
+[I 2025-10-15 14:34:32.318 ServerApp] Saving file at /notebooks/testing_gridfield.ipynb
+[I 2025-10-15 14:36:32.431 ServerApp] Saving file at /notebooks/testing_gridfield.ipynb
+[I 2025-10-15 14:38:32.598 ServerApp] Saving file at /notebooks/testing_gridfield.ipynb
+[I 2025-10-15 14:40:32.711 ServerApp] Saving file at /notebooks/testing_gridfield.ipynb
+[I 2025-10-15 14:42:32.834 ServerApp] Saving file at /notebooks/testing_gridfield.ipynb
+[I 2025-10-15 14:44:33.013 ServerApp] Saving file at /notebooks/testing_gridfield.ipynb
+[I 2025-10-15 14:46:33.143 ServerApp] Saving file at /notebooks/testing_gridfield.ipynb
+[I 2025-10-15 14:46:53.918 ServerApp] Saving file at /notebooks/testing_gridfield.ipynb
+[I 2025-10-15 14:48:54.027 ServerApp] Saving file at /notebooks/testing_gridfield.ipynb
+[I 2025-10-15 14:50:54.138 ServerApp] Saving file at /notebooks/testing_gridfield.ipynb
+[I 2025-10-15 14:52:54.261 ServerApp] Saving file at /notebooks/testing_gridfield.ipynb
+[I 2025-10-15 14:53:08.091 ServerApp] Saving file at /train.sh
+[I 2025-10-15 14:53:58.741 ServerApp] Saving file at /train.sh
+[I 2025-10-15 14:58:41.353 ServerApp] Saving file at /train.sh
+[I 2025-10-15 14:58:52.282 ServerApp] Saving file at /train.sh
+[I 2025-10-15 14:58:56.517 ServerApp] Saving file at /train.sh
+[I 2025-10-15 14:58:57.103 ServerApp] Saving file at /train.sh
+[I 2025-10-15 14:58:57.592 ServerApp] Saving file at /train.sh
+[I 2025-10-15 14:59:08.515 ServerApp] Saving file at /train.py
+[I 2025-10-15 15:01:05.357 ServerApp] Saving file at /train.py
+[I 2025-10-15 15:01:25.743 ServerApp] Saving file at /train.py
+[I 2025-10-15 15:02:21.016 ServerApp] Saving file at /train.py
+[I 2025-10-15 15:02:23.729 ServerApp] Saving file at /train.py
+[I 2025-10-15 15:02:24.550 ServerApp] Saving file at /train.py
+[I 2025-10-15 15:02:42.657 ServerApp] Saving file at /train.sh
+[I 2025-10-15 15:03:03.637 ServerApp] Saving file at /train.sh
+[I 2025-10-15 15:03:36.975 ServerApp] Saving file at /train.sh
+[I 2025-10-15 15:04:32.884 ServerApp] Saving file at /train.sh
+[I 2025-10-15 15:06:54.368 ServerApp] Saving file at /notebooks/testing_gridfield.ipynb
+[I 2025-10-15 15:10:54.476 ServerApp] Saving file at /notebooks/testing_gridfield.ipynb
+[I 2025-10-15 15:14:54.588 ServerApp] Saving file at /notebooks/testing_gridfield.ipynb
+[I 2025-10-15 15:24:14.102 ServerApp] Saving file at /notebooks/testing_gridfield.ipynb
+[I 2025-10-15 15:24:14.593 ServerApp] Saving file at /notebooks/testing_gridfield.ipynb
+[I 2025-10-15 15:31:12.889 ServerApp] Saving file at /train.sh
+[I 2025-10-15 15:31:19.120 ServerApp] Saving file at /train.sh
+[I 2025-10-15 15:32:28.552 ServerApp] Saving file at /train.sh
+[I 2025-10-15 15:32:56.049 ServerApp] Saving file at /train.sh
+[I 2025-10-15 15:32:56.333 ServerApp] Saving file at /train.sh
+[I 2025-10-15 15:32:57.012 ServerApp] Saving file at /train.sh
+[I 2025-10-15 15:32:57.477 ServerApp] Saving file at /train.sh
+[I 2025-10-15 15:34:44.607 ServerApp] Saving file at /train.sh
+[I 2025-10-15 15:34:48.978 ServerApp] Saving file at /train.sh
+[I 2025-10-15 15:34:49.465 ServerApp] Saving file at /train.sh
+[I 2025-10-15 15:34:50.299 ServerApp] Saving file at /train.sh
+[I 2025-10-15 15:39:03.679 ServerApp] Saving file at /notebooks/testing_gridfield.ipynb
+[I 2025-10-15 15:55:50.908 ServerApp] Starting buffering for 628f3c98-72cb-4b7d-87e6-84735023427c:6d751f35-43a5-41ad-8c9b-cf813f1f264b
+[W 2025-10-15 15:55:52.423 LabApp] Could not determine jupyterlab build status without nodejs
+[I 2025-10-15 15:55:52.455 ServerApp] Connecting to kernel 628f3c98-72cb-4b7d-87e6-84735023427c.
+[I 2025-10-15 15:55:52.586 ServerApp] Starting buffering for 628f3c98-72cb-4b7d-87e6-84735023427c:5fd19eda-7d85-4145-98cc-8a176dfad194
+[I 2025-10-15 15:55:53.560 ServerApp] Connecting to kernel 628f3c98-72cb-4b7d-87e6-84735023427c.
+[I 2025-10-15 16:23:12.475 ServerApp] Saving file at /notebooks/testing_gridfield.ipynb
+[I 2025-10-15 16:34:38.674 ServerApp] Kernel started: f101bc06-641d-46a4-8cb4-ca8b22f0a603
+[I 2025-10-15 16:34:38.676 ServerApp] Kernel shutdown: 628f3c98-72cb-4b7d-87e6-84735023427c
+[I 2025-10-15 16:34:39.259 ServerApp] Starting buffering for 628f3c98-72cb-4b7d-87e6-84735023427c:1face48c-b4e3-49ee-85b6-b133c71e9dd3
+[I 2025-10-15 16:34:41.629 ServerApp] Connecting to kernel f101bc06-641d-46a4-8cb4-ca8b22f0a603.
+[I 2025-10-15 16:34:41.631 ServerApp] Connecting to kernel f101bc06-641d-46a4-8cb4-ca8b22f0a603.
+[I 2025-10-15 16:34:42.938 ServerApp] Saving file at /notebooks/testing_gridfield.ipynb
+[I 2025-10-15 16:40:21.446 ServerApp] Starting buffering for f101bc06-641d-46a4-8cb4-ca8b22f0a603:1face48c-b4e3-49ee-85b6-b133c71e9dd3
+[I 2025-10-15 16:40:21.991 ServerApp] Connecting to kernel f101bc06-641d-46a4-8cb4-ca8b22f0a603.
+[I 2025-10-15 16:40:21.991 ServerApp] Restoring connection for f101bc06-641d-46a4-8cb4-ca8b22f0a603:1face48c-b4e3-49ee-85b6-b133c71e9dd3
+[W 2025-10-15 16:46:21.993 ServerApp] WebSocket ping timeout after 119991 ms.
+[I 2025-10-15 16:46:27.005 ServerApp] Starting buffering for f101bc06-641d-46a4-8cb4-ca8b22f0a603:1face48c-b4e3-49ee-85b6-b133c71e9dd3
+[I 2025-10-15 16:51:10.567 ServerApp] Connecting to kernel f101bc06-641d-46a4-8cb4-ca8b22f0a603.
+[I 2025-10-15 16:51:10.577 ServerApp] Restoring connection for f101bc06-641d-46a4-8cb4-ca8b22f0a603:1face48c-b4e3-49ee-85b6-b133c71e9dd3
+[W 2025-10-15 17:00:40.570 ServerApp] WebSocket ping timeout after 119994 ms.
+[I 2025-10-15 17:00:45.572 ServerApp] Starting buffering for f101bc06-641d-46a4-8cb4-ca8b22f0a603:1face48c-b4e3-49ee-85b6-b133c71e9dd3
+[W 2025-10-16 07:00:12.804 LabApp] Could not determine jupyterlab build status without nodejs
+[I 2025-10-16 07:00:12.874 ServerApp] Connecting to kernel f101bc06-641d-46a4-8cb4-ca8b22f0a603.
+[I 2025-10-16 07:00:13.007 ServerApp] Starting buffering for f101bc06-641d-46a4-8cb4-ca8b22f0a603:43c78a31-03ee-4cb3-ade1-6650c19c8c4f
+[W 2025-10-16 07:00:13.018 ServerApp] 404 GET /api/contents/scripts?content=0&hash=0&1760612412835 (a28717ca39b841b99dfb65804f5e6748@172.16.24.234) 1.18ms referer=http://localhost:8091/lab/tree/notebooks/testing_gridfield.ipynb
+[W 2025-10-16 07:00:13.018 ServerApp] 404 GET /api/contents/scripts?content=0&hash=0&1760612412835 (172.16.24.234): No such file or directory: scripts
+[W 2025-10-16 07:00:13.028 ServerApp] 404 GET /api/contents/data/easy/segs/1/sample_3.png?content=0&hash=0&1760612412835 (a28717ca39b841b99dfb65804f5e6748@172.16.24.234) 1.49ms referer=http://localhost:8091/lab/tree/notebooks/testing_gridfield.ipynb
+[W 2025-10-16 07:00:13.029 ServerApp] 404 GET /api/contents/data/easy/segs/1/sample_3.png?content=0&hash=0&1760612412835 (172.16.24.234): No such file or directory: data/easy/segs/1/sample_3.png
+[W 2025-10-16 07:00:13.029 ServerApp] 404 GET /api/contents/scripts/clean_figure_generation.ipynb?content=0&hash=0&1760612412835 (a28717ca39b841b99dfb65804f5e6748@172.16.24.234) 1.94ms referer=http://localhost:8091/lab/tree/notebooks/testing_gridfield.ipynb
+[W 2025-10-16 07:00:13.029 ServerApp] 404 GET /api/contents/scripts/clean_figure_generation.ipynb?content=0&hash=0&1760612412835 (172.16.24.234): No such file or directory: scripts/clean_figure_generation.ipynb
+[W 2025-10-16 07:00:13.030 ServerApp] 404 GET /api/contents/data/easy/segs/1?content=0&hash=0&1760612412835 (a28717ca39b841b99dfb65804f5e6748@172.16.24.234) 0.77ms referer=http://localhost:8091/lab/tree/notebooks/testing_gridfield.ipynb
+[W 2025-10-16 07:00:13.030 ServerApp] 404 GET /api/contents/data/easy/segs/1?content=0&hash=0&1760612412835 (172.16.24.234): No such file or directory: data/easy/segs/1
+[W 2025-10-16 07:00:13.037 ServerApp] 404 GET /api/contents/data/easy/segs/1/sample_6.png?content=0&hash=0&1760612412835 (a28717ca39b841b99dfb65804f5e6748@172.16.24.234) 0.79ms referer=http://localhost:8091/lab/tree/notebooks/testing_gridfield.ipynb
+[W 2025-10-16 07:00:13.037 ServerApp] 404 GET /api/contents/data/easy/segs/1/sample_6.png?content=0&hash=0&1760612412835 (172.16.24.234): No such file or directory: data/easy/segs/1/sample_6.png
+[W 2025-10-16 07:00:13.044 ServerApp] 404 GET /api/contents/data/easy/segs/1/sample_5.png?content=0&hash=0&1760612412835 (a28717ca39b841b99dfb65804f5e6748@172.16.24.234) 0.83ms referer=http://localhost:8091/lab/tree/notebooks/testing_gridfield.ipynb
+[W 2025-10-16 07:00:13.044 ServerApp] 404 GET /api/contents/data/easy/segs/1/sample_5.png?content=0&hash=0&1760612412835 (172.16.24.234): No such file or directory: data/easy/segs/1/sample_5.png
+[W 2025-10-16 07:00:13.053 ServerApp] 404 GET /api/contents/data/easy/segs/1/sample_1.png?content=0&hash=0&1760612412836 (a28717ca39b841b99dfb65804f5e6748@172.16.24.234) 0.81ms referer=http://localhost:8091/lab/tree/notebooks/testing_gridfield.ipynb
+[W 2025-10-16 07:00:13.053 ServerApp] 404 GET /api/contents/data/easy/segs/1/sample_1.png?content=0&hash=0&1760612412836 (172.16.24.234): No such file or directory: data/easy/segs/1/sample_1.png
+[W 2025-10-16 07:00:13.063 ServerApp] 404 GET /api/contents/data/easy/segs/1/sample_2.png?content=0&hash=0&1760612412838 (a28717ca39b841b99dfb65804f5e6748@172.16.24.234) 1.36ms referer=http://localhost:8091/lab/tree/notebooks/testing_gridfield.ipynb
+[W 2025-10-16 07:00:13.063 ServerApp] 404 GET /api/contents/data/easy/segs/1/sample_2.png?content=0&hash=0&1760612412838 (172.16.24.234): No such file or directory: data/easy/segs/1/sample_2.png
+[W 2025-10-16 07:00:13.064 ServerApp] 404 GET /api/contents/data/easy/imgs/1?content=0&hash=0&1760612412837 (a28717ca39b841b99dfb65804f5e6748@172.16.24.234) 1.85ms referer=http://localhost:8091/lab/tree/notebooks/testing_gridfield.ipynb
+[W 2025-10-16 07:00:13.064 ServerApp] 404 GET /api/contents/data/easy/imgs/1?content=0&hash=0&1760612412837 (172.16.24.234): No such file or directory: data/easy/imgs/1
+[W 2025-10-16 07:00:13.064 ServerApp] 404 GET /api/contents/data/easy/imgs/1/sample_0.png?content=0&hash=0&1760612412838 (a28717ca39b841b99dfb65804f5e6748@172.16.24.234) 2.33ms referer=http://localhost:8091/lab/tree/notebooks/testing_gridfield.ipynb
+[W 2025-10-16 07:00:13.064 ServerApp] 404 GET /api/contents/data/easy/imgs/1/sample_0.png?content=0&hash=0&1760612412838 (172.16.24.234): No such file or directory: data/easy/imgs/1/sample_0.png
+[W 2025-10-16 07:00:13.071 ServerApp] 404 GET /api/contents/data/easy/segs/1/sample_6.png?content=0&hash=0&1760612412838 (a28717ca39b841b99dfb65804f5e6748@172.16.24.234) 0.76ms referer=http://localhost:8091/lab/tree/notebooks/testing_gridfield.ipynb
+[W 2025-10-16 07:00:13.071 ServerApp] 404 GET /api/contents/data/easy/segs/1/sample_6.png?content=0&hash=0&1760612412838 (172.16.24.234): No such file or directory: data/easy/segs/1/sample_6.png
+[W 2025-10-16 07:00:13.089 ServerApp] 404 GET /api/contents/data/easy/segs/1/sample_5.png?content=0&hash=0&1760612412838 (a28717ca39b841b99dfb65804f5e6748@172.16.24.234) 1.15ms referer=http://localhost:8091/lab/tree/notebooks/testing_gridfield.ipynb
+[W 2025-10-16 07:00:13.089 ServerApp] 404 GET /api/contents/data/easy/segs/1/sample_5.png?content=0&hash=0&1760612412838 (172.16.24.234): No such file or directory: data/easy/segs/1/sample_5.png
+[W 2025-10-16 07:00:13.090 ServerApp] 404 GET /api/contents/data/easy/segs/1/sample_3.png?content=0&hash=0&1760612412838 (a28717ca39b841b99dfb65804f5e6748@172.16.24.234) 1.67ms referer=http://localhost:8091/lab/tree/notebooks/testing_gridfield.ipynb
+[W 2025-10-16 07:00:13.090 ServerApp] 404 GET /api/contents/data/easy/segs/1/sample_3.png?content=0&hash=0&1760612412838 (172.16.24.234): No such file or directory: data/easy/segs/1/sample_3.png
+[W 2025-10-16 07:00:13.098 ServerApp] 404 GET /api/contents/data/easy/segs/1/sample_0.png?content=0&hash=0&1760612412838 (a28717ca39b841b99dfb65804f5e6748@172.16.24.234) 1.11ms referer=http://localhost:8091/lab/tree/notebooks/testing_gridfield.ipynb
+[W 2025-10-16 07:00:13.098 ServerApp] 404 GET /api/contents/data/easy/segs/1/sample_0.png?content=0&hash=0&1760612412838 (172.16.24.234): No such file or directory: data/easy/segs/1/sample_0.png
+[W 2025-10-16 07:00:13.099 ServerApp] 404 GET /api/contents/data/easy/segs/1/sample_1.png?content=0&hash=0&1760612412838 (a28717ca39b841b99dfb65804f5e6748@172.16.24.234) 1.56ms referer=http://localhost:8091/lab/tree/notebooks/testing_gridfield.ipynb
+[W 2025-10-16 07:00:13.099 ServerApp] 404 GET /api/contents/data/easy/segs/1/sample_1.png?content=0&hash=0&1760612412838 (172.16.24.234): No such file or directory: data/easy/segs/1/sample_1.png
+[W 2025-10-16 07:00:13.107 ServerApp] 404 GET /api/contents/data/easy/segs/50/sample_48.png?content=0&hash=0&1760612412838 (a28717ca39b841b99dfb65804f5e6748@172.16.24.234) 1.05ms referer=http://localhost:8091/lab/tree/notebooks/testing_gridfield.ipynb
+[W 2025-10-16 07:00:13.107 ServerApp] 404 GET /api/contents/data/easy/segs/50/sample_48.png?content=0&hash=0&1760612412838 (172.16.24.234): No such file or directory: data/easy/segs/50/sample_48.png
+[W 2025-10-16 07:00:13.108 ServerApp] 404 GET /api/contents/scripts/cABC_tests.ipynb?content=0&hash=0&1760612412838 (a28717ca39b841b99dfb65804f5e6748@172.16.24.234) 1.49ms referer=http://localhost:8091/lab/tree/notebooks/testing_gridfield.ipynb
+[W 2025-10-16 07:00:13.108 ServerApp] 404 GET /api/contents/scripts/cABC_tests.ipynb?content=0&hash=0&1760612412838 (172.16.24.234): No such file or directory: scripts/cABC_tests.ipynb
+[W 2025-10-16 07:00:13.130 ServerApp] 404 GET /api/contents/scripts/clean_figure_generation.ipynb?content=0&hash=0&1760612412838 (a28717ca39b841b99dfb65804f5e6748@172.16.24.234) 1.03ms referer=http://localhost:8091/lab/tree/notebooks/testing_gridfield.ipynb
+[W 2025-10-16 07:00:13.130 ServerApp] 404 GET /api/contents/scripts/clean_figure_generation.ipynb?content=0&hash=0&1760612412838 (172.16.24.234): No such file or directory: scripts/clean_figure_generation.ipynb
+[W 2025-10-16 07:00:13.140 ServerApp] 404 GET /api/contents/src/bioplnn/datasets/cabc.py?content=0&hash=0&1760612412838 (a28717ca39b841b99dfb65804f5e6748@172.16.24.234) 1.90ms referer=http://localhost:8091/lab/tree/notebooks/testing_gridfield.ipynb
+[W 2025-10-16 07:00:13.140 ServerApp] 404 GET /api/contents/src/bioplnn/datasets/cabc.py?content=0&hash=0&1760612412838 (172.16.24.234): No such file or directory: src/bioplnn/datasets/cabc.py
+[W 2025-10-16 07:00:13.140 ServerApp] 404 GET /api/contents/scripts/solving_mazes.py?content=0&hash=0&1760612412838 (a28717ca39b841b99dfb65804f5e6748@172.16.24.234) 2.28ms referer=http://localhost:8091/lab/tree/notebooks/testing_gridfield.ipynb
+[W 2025-10-16 07:00:13.141 ServerApp] 404 GET /api/contents/scripts/solving_mazes.py?content=0&hash=0&1760612412838 (172.16.24.234): No such file or directory: scripts/solving_mazes.py
+[W 2025-10-16 07:00:13.165 ServerApp] 404 GET /api/contents/run_job.sh?content=0&hash=0&1760612412839 (a28717ca39b841b99dfb65804f5e6748@172.16.24.234) 1.25ms referer=http://localhost:8091/lab/tree/notebooks/testing_gridfield.ipynb
+[W 2025-10-16 07:00:13.165 ServerApp] 404 GET /api/contents/run_job.sh?content=0&hash=0&1760612412839 (172.16.24.234): No such file or directory: run_job.sh
+[W 2025-10-16 07:00:13.175 ServerApp] 404 GET /api/contents/src/bioplnn/utils/dataloaders.py?content=0&hash=0&1760612412839 (a28717ca39b841b99dfb65804f5e6748@172.16.24.234) 1.12ms referer=http://localhost:8091/lab/tree/notebooks/testing_gridfield.ipynb
+[W 2025-10-16 07:00:13.175 ServerApp] 404 GET /api/contents/src/bioplnn/utils/dataloaders.py?content=0&hash=0&1760612412839 (172.16.24.234): No such file or directory: src/bioplnn/utils/dataloaders.py
+[W 2025-10-16 07:00:13.176 ServerApp] 404 GET /api/contents/src/bioplnn/utils/initializers.py?content=0&hash=0&1760612412839 (a28717ca39b841b99dfb65804f5e6748@172.16.24.234) 1.59ms referer=http://localhost:8091/lab/tree/notebooks/testing_gridfield.ipynb
+[W 2025-10-16 07:00:13.176 ServerApp] 404 GET /api/contents/src/bioplnn/utils/initializers.py?content=0&hash=0&1760612412839 (172.16.24.234): No such file or directory: src/bioplnn/utils/initializers.py
+[W 2025-10-16 07:00:13.177 ServerApp] 404 GET /api/contents/data/easy/imgs/1/sample_0.png?content=0&hash=0&1760612412838 (a28717ca39b841b99dfb65804f5e6748@172.16.24.234) 1.10ms referer=http://localhost:8091/lab/tree/notebooks/testing_gridfield.ipynb
+[W 2025-10-16 07:00:13.177 ServerApp] 404 GET /api/contents/data/easy/imgs/1/sample_0.png?content=0&hash=0&1760612412838 (172.16.24.234): No such file or directory: data/easy/imgs/1/sample_0.png
+[W 2025-10-16 07:00:13.178 ServerApp] 404 GET /api/contents/data/easy/segs/1/sample_2.png?content=0&hash=0&1760612412838 (a28717ca39b841b99dfb65804f5e6748@172.16.24.234) 1.55ms referer=http://localhost:8091/lab/tree/notebooks/testing_gridfield.ipynb
+[W 2025-10-16 07:00:13.178 ServerApp] 404 GET /api/contents/data/easy/segs/1/sample_2.png?content=0&hash=0&1760612412838 (172.16.24.234): No such file or directory: data/easy/segs/1/sample_2.png
+[W 2025-10-16 07:00:13.192 ServerApp] 404 GET /api/contents/scripts/cABC_tests.ipynb?content=0&hash=0&1760612412838 (a28717ca39b841b99dfb65804f5e6748@172.16.24.234) 0.68ms referer=http://localhost:8091/lab/tree/notebooks/testing_gridfield.ipynb
+[W 2025-10-16 07:00:13.192 ServerApp] 404 GET /api/contents/scripts/cABC_tests.ipynb?content=0&hash=0&1760612412838 (172.16.24.234): No such file or directory: scripts/cABC_tests.ipynb
+[I 2025-10-16 07:00:14.174 ServerApp] Connecting to kernel f101bc06-641d-46a4-8cb4-ca8b22f0a603.
+[I 2025-10-16 07:00:16.572 ServerApp] Starting buffering for f101bc06-641d-46a4-8cb4-ca8b22f0a603:7f5927af-b71b-40a5-9f7c-d1996a7913f7
+[W 2025-10-16 07:00:17.344 LabApp] Could not determine jupyterlab build status without nodejs
+[I 2025-10-16 07:00:17.556 ServerApp] Connecting to kernel f101bc06-641d-46a4-8cb4-ca8b22f0a603.
+[I 2025-10-16 07:00:17.618 ServerApp] Starting buffering for f101bc06-641d-46a4-8cb4-ca8b22f0a603:382b6b59-67de-4426-bbfd-bab22388a06b
+[E 2025-10-16 07:00:17.641 ServerApp] Uncaught exception GET /lab/api/settings?ids_only=true&1760612417419 (172.16.24.234)
+    HTTPServerRequest(protocol='http', host='localhost:8091', method='GET', uri='/lab/api/settings?ids_only=true&1760612417419', version='HTTP/1.1', remote_ip='172.16.24.234')
+    Traceback (most recent call last):
+      File "/om2/user/jackking/conda/envs/cls/lib/python3.12/site-packages/tornado/web.py", line 1848, in _execute
+        result = await result
+                 ^^^^^^^^^^^^
+    tornado.iostream.StreamClosedError: Stream is closed
+[W 2025-10-16 07:00:18.322 LabApp] Could not determine jupyterlab build status without nodejs
+[I 2025-10-16 07:00:18.372 ServerApp] Connecting to kernel f101bc06-641d-46a4-8cb4-ca8b22f0a603.
+[I 2025-10-16 07:00:18.543 ServerApp] Starting buffering for f101bc06-641d-46a4-8cb4-ca8b22f0a603:9e7e90df-9e97-483e-8c90-b9430652fe37
+[I 2025-10-16 07:00:19.369 ServerApp] Connecting to kernel f101bc06-641d-46a4-8cb4-ca8b22f0a603.
+[I 2025-10-16 07:14:55.290 ServerApp] Creating new file in 
+[W 2025-10-16 07:14:59.328 ServerApp] 400 PATCH /api/contents/untitled.txt?1760613299132 (172.16.24.234): Cannot rename file or directory '/untitled.txt'
+[W 2025-10-16 07:14:59.329 ServerApp] wrote error: "Cannot rename file or directory '/untitled.txt'"
+    Traceback (most recent call last):
+      File "/om2/user/jackking/conda/envs/cls/lib/python3.12/site-packages/tornado/web.py", line 1848, in _execute
+        result = await result
+                 ^^^^^^^^^^^^
+      File "/om2/user/jackking/conda/envs/cls/lib/python3.12/site-packages/jupyter_server/auth/decorator.py", line 73, in inner
+        return await out
+               ^^^^^^^^^
+      File "/om2/user/jackking/conda/envs/cls/lib/python3.12/site-packages/jupyter_server/services/contents/handlers.py", line 204, in patch
+        raise web.HTTPError(400, f"Cannot rename file or directory {path!r}")
+    tornado.web.HTTPError: HTTP 400: Bad Request (Cannot rename file or directory '/untitled.txt')
+[W 2025-10-16 07:14:59.338 ServerApp] 400 PATCH /api/contents/untitled.txt?1760613299132 (a28717ca39b841b99dfb65804f5e6748@172.16.24.234) 11.11ms referer=http://localhost:8091/lab
+[W 2025-10-16 07:15:36.064 ServerApp] 400 PATCH /api/contents/untitled.txt?1760613335858 (172.16.24.234): Cannot rename file or directory '/untitled.txt'
+[W 2025-10-16 07:15:36.064 ServerApp] wrote error: "Cannot rename file or directory '/untitled.txt'"
+    Traceback (most recent call last):
+      File "/om2/user/jackking/conda/envs/cls/lib/python3.12/site-packages/tornado/web.py", line 1848, in _execute
+        result = await result
+                 ^^^^^^^^^^^^
+      File "/om2/user/jackking/conda/envs/cls/lib/python3.12/site-packages/jupyter_server/auth/decorator.py", line 73, in inner
+        return await out
+               ^^^^^^^^^
+      File "/om2/user/jackking/conda/envs/cls/lib/python3.12/site-packages/jupyter_server/services/contents/handlers.py", line 204, in patch
+        raise web.HTTPError(400, f"Cannot rename file or directory {path!r}")
+    tornado.web.HTTPError: HTTP 400: Bad Request (Cannot rename file or directory '/untitled.txt')
+[W 2025-10-16 07:15:36.066 ServerApp] 400 PATCH /api/contents/untitled.txt?1760613335858 (a28717ca39b841b99dfb65804f5e6748@172.16.24.234) 3.12ms referer=http://localhost:8091/lab
+[W 2025-10-16 07:15:49.538 ServerApp] delete /untitled.txt
+[I 2025-10-16 07:15:51.398 ServerApp] Creating new file in 
+[W 2025-10-16 07:15:55.641 ServerApp] 400 PATCH /api/contents/untitled.txt?1760613355438 (172.16.24.234): Cannot rename file or directory '/untitled.txt'
+[W 2025-10-16 07:15:55.642 ServerApp] wrote error: "Cannot rename file or directory '/untitled.txt'"
+    Traceback (most recent call last):
+      File "/om2/user/jackking/conda/envs/cls/lib/python3.12/site-packages/tornado/web.py", line 1848, in _execute
+        result = await result
+                 ^^^^^^^^^^^^
+      File "/om2/user/jackking/conda/envs/cls/lib/python3.12/site-packages/jupyter_server/auth/decorator.py", line 73, in inner
+        return await out
+               ^^^^^^^^^
+      File "/om2/user/jackking/conda/envs/cls/lib/python3.12/site-packages/jupyter_server/services/contents/handlers.py", line 204, in patch
+        raise web.HTTPError(400, f"Cannot rename file or directory {path!r}")
+    tornado.web.HTTPError: HTTP 400: Bad Request (Cannot rename file or directory '/untitled.txt')
+[W 2025-10-16 07:15:55.643 ServerApp] 400 PATCH /api/contents/untitled.txt?1760613355438 (a28717ca39b841b99dfb65804f5e6748@172.16.24.234) 2.21ms referer=http://localhost:8091/lab
+[W 2025-10-16 07:16:12.283 ServerApp] delete /untitled.txt

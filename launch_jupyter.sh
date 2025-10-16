@@ -1,5 +1,5 @@
-#!/bin/bash
-#BATCH -J jupyter
+#!/bin/bash -l
+#SBATCH -J jupyter
 #SBATCH --time=1-00:00
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
@@ -7,7 +7,7 @@
 ###SBATCH --gres=gpu:a100:1
 ###SBATCH --gres=gpu:1
 ###SBATCH --gres=gpu:GEFORCERTX2080:1
-#SBATCH --mem 20G
+#SBATCH --mem 50G
 ###SBATCH --partition=evlab
 #SBATCH -o jupyter.out
 
