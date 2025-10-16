@@ -24,20 +24,20 @@ class GRU(nn.Module):
         self,
         input_size: int,
         hidden_size: int = 128,
-        num_rnn_layers: int = 1,
+        num_model_layers: int = 1,
         dropout: float = 0.0,
     ) -> None:
         super().__init__()
         self.input_size = input_size
         self.hidden_size = hidden_size
-        self.num_rnn_layers = num_rnn_layers
+        self.num_model_layers = num_model_layers
 
         self.rnn = nn.GRU(
             input_size=input_size,
             hidden_size=hidden_size,
-            num_layers=num_rnn_layers,
+            num_layers=num_model_layers,
             batch_first=True,
-            dropout=dropout if num_rnn_layers > 1 else 0.0,
+            dropout=dropout if num_model_layers > 1 else 0.0,
         )
 
     def forward(
@@ -45,6 +45,42 @@ class GRU(nn.Module):
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         out, h_next = self.rnn(x, h)
         return out, h_next
+
+
+class MLP(nn.Module):
+    """Stateless MLP backbone. Returns features per timestep and no hidden state.
+
+    Applies an MLP to each time step independently.
+    """
+
+    def __init__(
+        self,
+        input_size: int,
+        hidden_size: int = 128,
+        num_model_layers: int = 1,
+        dropout: float = 0.0,
+    ) -> None:
+        super().__init__()
+        self.input_size = input_size
+        self.hidden_size = hidden_size
+        self.num_model_layers = num_model_layers
+
+        layers: list[nn.Module] = []
+        in_dim = input_size
+        for i in range(max(1, num_model_layers)):
+            layers.append(nn.Linear(in_dim, hidden_size))
+            layers.append(nn.Dropout(p=dropout))
+            layers.append(nn.ReLU())
+            in_dim = hidden_size
+        self.net = nn.Sequential(*layers)
+
+    def forward(self, x: torch.Tensor, h: Optional[torch.Tensor] = None) -> Tuple[torch.Tensor, None]:
+        # x: (B, T, F)
+        B, T, F = x.shape
+        x_flat = x.reshape(B * T, F)
+        y = self.net(x_flat)
+        y = y.reshape(B, T, self.hidden_size)
+        return y, None
 
 
 class Agent(nn.Module):
@@ -59,7 +95,7 @@ class Agent(nn.Module):
         self,
         input_size: int,
         hidden_size: int = 128,
-        num_rnn_layers: int = 1,
+        num_model_layers: int = 1,
         num_actions: int = 4,
         dropout: float = 0.0,
         model_class: str = "GRU",
@@ -69,37 +105,41 @@ class Agent(nn.Module):
         super().__init__()
         self.input_size = input_size
         self.hidden_size = hidden_size
-        self.num_rnn_layers = num_rnn_layers
+        self.num_model_layers = num_model_layers
         self.num_actions = num_actions
 
         # Encoder head (optional multi-layer with nonlinearity on hidden layers)
         model_input_size = encoder_dim if (encoder_dim is not None) else input_size
         if num_encoder_layers <= 0:
-            if encoder_dim is not None and encoder_dim != input_size:
-                self.encoder = nn.Linear(input_size, encoder_dim)
-            else:
-                self.encoder = nn.Identity()
+            self.encoder = nn.Identity()
         else:
             layers: list[nn.Module] = []
             in_dim = input_size
             out_dim = model_input_size
             for layer_idx in range(num_encoder_layers):
                 layers.append(nn.Linear(in_dim, out_dim))
-                if layer_idx < num_encoder_layers - 1:
-                    layers.append(nn.ReLU())
+                layers.append(nn.ReLU())
                 in_dim = out_dim
             self.encoder = nn.Sequential(*layers)
 
-        if model_class == "GRU":
-            model_class = GRU
+        if isinstance(model_class, str):
+            if model_class.upper() == "GRU":
+                model_class = GRU
+            elif model_class.upper() == "MLP":
+                model_class = MLP
+            else:
+                raise ValueError("model_class must be 'GRU' or 'MLP'")
 
         # Backbone model (feature extractor)
         self.model = model_class(
             input_size=model_input_size,
             hidden_size=hidden_size,
-            num_rnn_layers=num_rnn_layers,
+            num_model_layers=num_model_layers,
             dropout=dropout,
         )
+
+        # Whether backbone is recurrent (expects/returns hidden state)
+        self.is_recurrent = isinstance(self.model, GRU)
 
         # Policy and value heads
         self.policy_head = nn.Linear(hidden_size, num_actions)
@@ -109,7 +149,10 @@ class Agent(nn.Module):
         self, x: torch.Tensor, h: Optional[torch.Tensor] = None
     ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         enc = self.encoder(x)
-        features, h_next = self.model(enc, h)
+        if self.is_recurrent:
+            features, h_next = self.model(enc, h)
+        else:
+            features, h_next = self.model(enc, None)
         logits = self.policy_head(features)
         values = self.value_head(features).squeeze(-1)
         return logits, values, h_next
