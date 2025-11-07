@@ -4,10 +4,10 @@
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
 ###SBATCH --cpus-per-task=32
-###SBATCH --gres=gpu:a100:1
+#SBATCH --gres=gpu:a100:1
 ###SBATCH --gres=gpu:1
 ###SBATCH --gres=gpu:GEFORCERTX2080:1
-#SBATCH --mem 50G
+#SBATCH --mem 100G
 ###SBATCH --partition=evlab
 #SBATCH -o jupyter.out
 

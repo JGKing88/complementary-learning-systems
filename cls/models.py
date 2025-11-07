@@ -109,10 +109,11 @@ class Agent(nn.Module):
         self.num_actions = num_actions
 
         # Encoder head (optional multi-layer with nonlinearity on hidden layers)
-        model_input_size = encoder_dim if (encoder_dim is not None) else input_size
         if num_encoder_layers <= 0:
+            model_input_size = input_size
             self.encoder = nn.Identity()
         else:
+            model_input_size = encoder_dim
             layers: list[nn.Module] = []
             in_dim = input_size
             out_dim = model_input_size

@@ -205,7 +205,7 @@ def generate_episodes_vectorized(
         # Prepare hidden state with correct shape (num_layers, batch, hidden)
         need_init_h = any(hs[i] is None for i in active_idx)
         h_in = None if need_init_h else torch.stack([hs[i] for i in active_idx], dim=1)
-        if h_in is None and step > 0:
+        if h_in is None and step > 0 and model.is_recurrent:
             raise ValueError("Hidden state went to None")
 
         t2 = time.perf_counter() if profile else 0.0

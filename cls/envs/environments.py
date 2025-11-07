@@ -79,13 +79,9 @@ class WMEnv:
             dtype=np.int32,
         ).astype(np.float32)
 
+        self._start_type = start_type
         self._goal: Position = (self._rng.randrange(self.size), self._rng.randrange(self.size))
-        if start_type == "random":
-            self._start: Position = self._sample_start_not_equal_to(self._goal)
-            self._heading: Vector2 = self._random_cardinal_heading()
-        elif start_type == "corner":
-            self._start = (0, 0)
-            self._heading = (1, 0)
+        self._set_start()
         self._pos: Position = self._start
 
     # --------------------- Public API ---------------------
@@ -106,7 +102,8 @@ class WMEnv:
 
         The goal remains fixed across resets. Use `reset_goal()` to change it.
         """
-        self._start = self._sample_start_not_equal_to(self._goal)
+        # self._start = self._sample_start_not_equal_to(self._goal)
+        self._set_start()
         self._pos = self._start
         self._heading = self._random_cardinal_heading()
         return self.state()
@@ -158,7 +155,7 @@ class WMEnv:
         next_heading = (ndx, ndy) if moved else self._heading
         return self._code_for(next_pos, next_heading)
 
-    def best_action_to_goal(self, randomize: bool = False) -> Vector2:
+    def best_action_to_goal(self, randomize: bool = False, return_all: bool = False) -> Vector2 | List[Vector2]:
         """Return the best relative action toward the goal.
 
         Candidates are relative to a cardinal basis heading determined from the
@@ -198,7 +195,10 @@ class WMEnv:
         else:
             choice_idx = best_indices[0] if best_indices else 0
 
-        return candidates[choice_idx]
+        if return_all:
+            return [candidates[i] for i in best_indices]
+        else:
+            return candidates[choice_idx]
 
     def fully_explore(self) -> list[tuple[Position, np.ndarray, Vector2]]:
         """Return a deterministic coverage of all positions from all headings.
@@ -323,6 +323,31 @@ class WMEnv:
         x, y = pos
         h = self._heading_index(heading)
         return self._codebook[x, y, h]
+    
+    def _set_start(self):
+        start_type = self._start_type
+        if start_type == "random":
+            self._start: Position = self._sample_start_not_equal_to(self._goal)
+            self._heading: Vector2 = self._random_cardinal_heading()
+        elif start_type == "corner":
+            self._start = (0, 0)
+            self._heading = (1, 0)
+        elif start_type == "wall":
+            #randomly choose a wall and start in middle of it
+            wall = self._rng.choice(['top', 'bottom', 'left', 'right'])
+            mid = self.size // 2
+            if wall == 'top':
+                self._start = (mid, 0)
+                self._heading = (0, 1)
+            elif wall == 'bottom':
+                self._start = (mid, self.size - 1)
+                self._heading = (0, -1)
+            elif wall == 'left':
+                self._start = (0, mid)
+                self._heading = (1, 0)
+            elif wall == 'right':
+                self._start = (self.size - 1, mid)
+                self._heading = (-1, 0)
 
     def _sample_start_not_equal_to(self, goal: Position) -> Position:
         while True:

@@ -187,7 +187,7 @@ class VectorHash:
         Np = self.pbook.shape[0]
         Ng = self.gbook.shape[0]
 
-        pin = nonlin(self.Wps@obs, thresh=0)
+        pin = nonlin(self.Wps@obs, thresh=self.thresh)
 
         p = np.copy(pin)
         gin = self.Wgp@p
@@ -215,7 +215,7 @@ class VectorHash:
         Np = self.pbook.shape[0]
         Ng = self.gbook.shape[0]
 
-        pin = nonlin(self.Wps@self.path_sbook, thresh=0)
+        pin = nonlin(self.Wps@self.path_sbook, thresh=self.thresh)
 
         p = np.copy(pin)
         gin = self.Wgp@p

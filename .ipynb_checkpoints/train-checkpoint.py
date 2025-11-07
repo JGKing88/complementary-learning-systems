@@ -45,7 +45,7 @@ class TrainConfig:
     num_envs: int
     num_val_envs: int
     hidden_size: int
-    num_rnn_layers: int
+    num_model_layers: int
     batch_episodes: int
     steps_per_episode: int
     n_epochs: int
@@ -205,7 +205,7 @@ def generate_episodes_vectorized(
         # Prepare hidden state with correct shape (num_layers, batch, hidden)
         need_init_h = any(hs[i] is None for i in active_idx)
         h_in = None if need_init_h else torch.stack([hs[i] for i in active_idx], dim=1)
-        if h_in is None and step > 0:
+        if h_in is None and step > 0 and model.is_recurrent:
             raise ValueError("Hidden state went to None")
 
         t2 = time.perf_counter() if profile else 0.0
@@ -576,7 +576,7 @@ def train(
     Prints running loss and token-level accuracy every 50 updates.
     """
 
-    model = Agent(input_size=cfg.input_size, hidden_size=cfg.hidden_size, num_rnn_layers=cfg.num_rnn_layers, model_class=cfg.model_class, encoder_dim=cfg.encoder_dim, num_encoder_layers=cfg.num_encoder_layers, num_actions=cfg.num_actions, dropout=cfg.dropout)
+    model = Agent(input_size=cfg.input_size, hidden_size=cfg.hidden_size, num_model_layers=cfg.num_model_layers, model_class=cfg.model_class, encoder_dim=cfg.encoder_dim, num_encoder_layers=cfg.num_encoder_layers, num_actions=cfg.num_actions, dropout=cfg.dropout)
     model.to(cfg.device)
     opt = optim.Adam(model.parameters(), lr=cfg.lr)
     criterion = nn.CrossEntropyLoss(ignore_index=-100)
@@ -595,7 +595,7 @@ def train(
             num_val_envs=cfg.num_val_envs,
             input_size=cfg.input_size,
             hidden_size=cfg.hidden_size,
-            num_rnn_layers=cfg.num_rnn_layers,
+            num_model_layers=cfg.num_model_layers,
             batch_episodes=cfg.batch_episodes,
             steps_per_episode=cfg.steps_per_episode,
             n_epochs=cfg.n_epochs,
@@ -777,7 +777,7 @@ def main():
 
     # Model
     parser.add_argument("--hidden_size", type=int, default=128)
-    parser.add_argument("--num_rnn_layers", type=int, default=1)
+    parser.add_argument("--num_model_layers", type=int, default=1)
     parser.add_argument("--model_class", type=str, default="GRU")
     parser.add_argument("--encoder_dim", type=int, default=None)
     parser.add_argument("--num_encoder_layers", type=int, default=0)
@@ -922,7 +922,7 @@ def main():
         num_envs=num_envs,
         num_val_envs=num_val_envs,
         hidden_size=args.hidden_size,
-        num_rnn_layers=args.num_rnn_layers,
+        num_model_layers=args.num_model_layers,
         batch_episodes=args.batch_episodes,
         steps_per_episode=args.steps_per_episode,
         n_epochs=args.n_epochs,
