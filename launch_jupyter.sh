@@ -1,23 +1,23 @@
 #!/bin/bash -l
 #SBATCH -J jupyter
-#SBATCH --time=1-00:00
+#SBATCH --time=2-00:00
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
-###SBATCH --cpus-per-task=32
+#SBATCH --cpus-per-task=8
 #SBATCH --gres=gpu:a100:1
 ###SBATCH --gres=gpu:1
 ###SBATCH --gres=gpu:GEFORCERTX2080:1
-#SBATCH --mem 100G
-###SBATCH --partition=evlab
+#SBATCH --mem 200G
+#SBATCH --partition=pi_fiete
 #SBATCH -o jupyter.out
 
-source ~/.bashrc
+module load miniforge/24.3.0-0
+module load cuda/13.0.1
 
-module load openmind8/cuda/12.4
-conda activate cls
+source activate cls
 
 unset XDG_RUNTIME_DIR
 
-PORT=8091
+PORT=8090
 
 jupyter lab --ip=0.0.0.0 --port=${PORT} --no-browser --NotebookApp.allow_origin='*' --NotebookApp.port_retries=0

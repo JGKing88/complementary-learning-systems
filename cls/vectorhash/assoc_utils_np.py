@@ -41,26 +41,46 @@ def cont_gbook(gbook, discretize=10, std=1):
 
 # generate modular grid code
 def gen_gbook(lambdas, Ng, Npos):
-    ginds = list(np.cumsum(lambdas))
-    ginds = [0] + ginds[:-1]
-    # if len(lambdas) == 2:
-        # ginds = [0,lambdas[0]] 
-    # elif len(lambdas) == 3:
-        # ginds = [0,lambdas[0],lambdas[0]+lambdas[1]] 
-    # elif len(lambdas) == 4:
-        # ginds = [0,lambdas[0],lambdas[0]+lambdas[1],lambdas[0]+lambdas[1]+lambdas[2]]
-    # elif len(lambdas) == 5:
-        # ginds = [0,lambdas[0],lambdas[0]+lambdas[1],lambdas[0]+lambdas[1]+lambdas[2],
-                 # lambdas[0]+lambdas[1]+lambdas[2]+lambdas[3]]  
-    # elif len(lambdas) == 6:
-        # ginds = [0,lambdas[0],lambdas[0]+lambdas[1],lambdas[0]+lambdas[1]+lambdas[2],
-                 # lambdas[0]+lambdas[1]+lambdas[2]+lambdas[3],
-                 # lambdas[0]+lambdas[1]+lambdas[2]+lambdas[3]+lambdas[4]]                   
-    gbook=np.zeros((Ng,Npos))
-    for x in range(Npos):
-        phis = np.mod(x,lambdas) 
-        gbook[phis+ginds,x]=1    
+    lambdas = np.asarray(lambdas, dtype=int)
+    # Offsets into the stacked modules
+    ginds = np.cumsum(lambdas, dtype=int)
+    ginds = np.concatenate(([0], ginds[:-1]))
+
+    # Allocate output (keep dtype consistent with previous behavior)
+    gbook = np.zeros((Ng, Npos))
+
+    # Vectorized construction (column-wise semantics, identical to the loop):
+    # For each position x (0..Npos-1), set rows (x % lambdas) + ginds at column x to 1
+    x = np.arange(Npos, dtype=int)                       # [Npos]
+    phis = (x[None, :] % lambdas[:, None])               # [m, Npos]
+    rows2 = phis + ginds[:, None]                        # [m, Npos]
+    cols2 = np.broadcast_to(x[None, :], rows2.shape)     # [m, Npos]
+    gbook[rows2, cols2] = 1
     return gbook
+
+
+# generate modular grid code
+# def gen_gbook(lambdas, Ng, Npos):
+#     ginds = list(np.cumsum(lambdas))
+#     ginds = [0] + ginds[:-1]
+#     # if len(lambdas) == 2:
+#         # ginds = [0,lambdas[0]] 
+#     # elif len(lambdas) == 3:
+#         # ginds = [0,lambdas[0],lambdas[0]+lambdas[1]] 
+#     # elif len(lambdas) == 4:
+#         # ginds = [0,lambdas[0],lambdas[0]+lambdas[1],lambdas[0]+lambdas[1]+lambdas[2]]
+#     # elif len(lambdas) == 5:
+#         # ginds = [0,lambdas[0],lambdas[0]+lambdas[1],lambdas[0]+lambdas[1]+lambdas[2],
+#                  # lambdas[0]+lambdas[1]+lambdas[2]+lambdas[3]]  
+#     # elif len(lambdas) == 6:
+#         # ginds = [0,lambdas[0],lambdas[0]+lambdas[1],lambdas[0]+lambdas[1]+lambdas[2],
+#                  # lambdas[0]+lambdas[1]+lambdas[2]+lambdas[3],
+#                  # lambdas[0]+lambdas[1]+lambdas[2]+lambdas[3]+lambdas[4]]                   
+#     gbook=np.zeros((Ng,Npos))
+#     for x in range(Npos):
+#         phis = np.mod(x,lambdas) 
+#         gbook[phis+ginds,x]=1    
+#     return gbook
 
 
 def train_hopfield(pbook, Npatts):
@@ -72,7 +92,7 @@ def train_hopfield(pbook, Npatts):
 def _dev():
     return 'cuda' if torch.cuda.is_available() else 'cpu'
 
-def _to_torch(x, device=None, dtype=torch.float32):
+def _to_torch(x, device=None, dtype=torch.float64):
     return torch.as_tensor(x, device=device or _dev(), dtype=dtype)
 
 def _to_numpy(x_t):
@@ -238,7 +258,7 @@ def pseudotrain_Wps(ca1book, sbook, Npatts):
 #     else:
 #         return (1/Npatts)*np.einsum('ij, lj -> il', gbook[:,:Npatts], pbook[:,:Npatts])  
     
-# #EQUATION 7
+#EQUATION 7
 # def pseudotrain_Wsp(sbook, ca1book, Npatts):
 #     if len(sbook.shape) == 3:
 #         ca1inv = np.linalg.pinv(ca1book[:, :, :Npatts])
@@ -247,7 +267,7 @@ def pseudotrain_Wps(ca1book, sbook, Npatts):
 #         ca1inv = np.linalg.pinv(ca1book[:, :Npatts])
 #         return np.einsum('ij, jl -> il', sbook[:,:Npatts], ca1inv[:Npatts,:]) 
 
-# #EQUATION 6
+#EQUATION 6
 # def pseudotrain_Wps(ca1book, sbook, Npatts):
 #     sbookinv = np.linalg.pinv(sbook[:, :Npatts])    
 #     if len(ca1book.shape) == 3:

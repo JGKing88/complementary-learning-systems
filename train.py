@@ -34,6 +34,7 @@ from cls import WMEnv
 from cls.models import Agent, GRU
 from cls.utils.GridUtils import VectorHash
 from cls.envs.environments import GridWMEnv, GridWMVecEnv, WMVecEnv
+from cls.encoder import GridEncoder
 
 CARDINAL_ACTIONS: List[Tuple[int, int]] = [(0, 1), (1, 0), (0, -1), (-1, 0)]  # N, E, S, W
 
@@ -44,6 +45,7 @@ class TrainConfig:
     seed: int
     num_envs: int
     num_val_envs: int
+    num_train_worlds: int
     hidden_size: int
     num_model_layers: int
     batch_episodes: int
@@ -74,6 +76,11 @@ class TrainConfig:
     use_preconv_codebook: bool
     ppo_input_reward: bool
     lambdas: list
+    Npos: int | None
+    encoder_gain: float | None
+    hopfield_gain: float | None
+    hopfield_alpha: float
+    expert_actions: bool
 
 @torch.no_grad()
 def _policy_action(model: Agent, obs: np.ndarray, h: torch.Tensor | None, device: str, epsilon: float = 0.0) -> tuple[int, torch.Tensor | None]:
@@ -117,6 +124,9 @@ def generate_episode(
             obs = env.obs_at_goal() - env.obs()
         elif input_addendum == "next_best":
             obs = np.concatenate([obs, env.obs_at_next_best_step()])
+        elif input_addendum == "hopfield":
+            recalled = env.vectorhash.hopfield_recall(obs)
+            obs = np.concatenate([obs, recalled])
         if ppo_input_reward:
             obs = np.concatenate([obs, np.asarray([last_reward], dtype=np.float32)])
 
@@ -153,6 +163,7 @@ def generate_episodes_vectorized(
     profile: bool = False,
     prof: dict | None = None,
     use_preconv_codebook: bool = False,
+    expert_actions: bool = False,  # If True, step with best action instead of model's prediction
 ):
     """Run multiple independent clones of the same env in lockstep and return episodes.
 
@@ -241,7 +252,9 @@ def generate_episodes_vectorized(
             buffers_values[i].append(float(values[j, 0].item()))
             buffers_logprobs[i].append(float(step_logprobs[j]))
         # Step all active envs at once using vectorized env
-        action_vectors = [CARDINAL_ACTIONS[a] for a in pred_indices]
+        # Use best actions if expert_actions, otherwise use model's predictions
+        step_indices = best_idx_batch if expert_actions else pred_indices
+        action_vectors = [CARDINAL_ACTIONS[a] for a in step_indices]
         t4 = time.perf_counter() if profile else 0.0
         curs, goals, rewards, dones = vec.step_batch(active_idx, action_vectors)
         if profile and prof is not None:
@@ -507,6 +520,8 @@ def validate(
     save_plots: bool,
     label: str = "val",
     input_addendum: str | None = None,
+    use_preconv_codebook: bool = False,
+    expert_actions: bool = False,
 ):
     """Validate current policy using batched rollouts per environment.
 
@@ -528,6 +543,8 @@ def validate(
                 randomize_best=False,
                 epsilon=0.0,
                 input_addendum=input_addendum,
+                use_preconv_codebook=use_preconv_codebook,
+                expert_actions=expert_actions,
             )
 
             if not episodes:
@@ -593,6 +610,7 @@ def train(
             seed=cfg.seed,
             num_envs=cfg.num_envs,
             num_val_envs=cfg.num_val_envs,
+            num_train_worlds=cfg.num_train_worlds,
             input_size=cfg.input_size,
             hidden_size=cfg.hidden_size,
             num_model_layers=cfg.num_model_layers,
@@ -615,6 +633,10 @@ def train(
             ppo_ent_coef=cfg.ppo_ent_coef,
             ppo_epochs=cfg.ppo_epochs,
             max_envs_per_epoch=cfg.max_envs_per_epoch,
+            lambdas=cfg.lambdas,
+            encoder_gain=cfg.encoder_gain,
+            hopfield_gain=cfg.hopfield_gain,
+            hopfield_alpha=cfg.hopfield_alpha,
         )
         wandb.init(project=cfg.wandb_project, config=wandb_cfg)
         
@@ -646,6 +668,7 @@ def train(
                         profile=True,
                         prof=prof,
                         use_preconv_codebook=cfg.use_preconv_codebook,
+                        expert_actions=cfg.expert_actions,
                     )
                 )
         model.train()
@@ -671,6 +694,44 @@ def train(
                 pred = logits.argmax(dim=-1)
                 mask = tgt != -100
                 acc = (pred[mask] == tgt[mask]).float().mean().item()
+                
+                # Diagnostic: label distribution and per-class accuracy (every 100 epochs)
+                if epoch % 100 == 1:
+                    valid_tgt = tgt[mask].cpu().numpy()
+                    valid_pred = pred[mask].cpu().numpy()
+                    valid_obs = obs[mask].cpu().numpy()
+                    
+                    label_counts = np.bincount(valid_tgt, minlength=4)
+                    per_class_correct = np.zeros(4)
+                    per_class_total = np.zeros(4)
+                    for c in range(4):
+                        class_mask = valid_tgt == c
+                        per_class_total[c] = class_mask.sum()
+                        per_class_correct[c] = (valid_pred[class_mask] == c).sum()
+                    per_class_acc = per_class_correct / np.maximum(per_class_total, 1)
+                    print(f"  Label dist: N={label_counts[0]}, E={label_counts[1]}, S={label_counts[2]}, W={label_counts[3]}")
+                    print(f"  Per-class acc: N={per_class_acc[0]:.3f}, E={per_class_acc[1]:.3f}, S={per_class_acc[2]:.3f}, W={per_class_acc[3]:.3f}")
+                    
+                    # Check prediction distribution
+                    pred_counts = np.bincount(valid_pred, minlength=4)
+                    print(f"  Pred dist: N={pred_counts[0]}, E={pred_counts[1]}, S={pred_counts[2]}, W={pred_counts[3]}")
+                    
+                    # Check for ambiguous cases (current == next_best) if using next_best addendum
+                    if cfg.input_addendum == "next_best" and valid_obs.shape[1] % 2 == 0:
+                        half = valid_obs.shape[1] // 2
+                        current_obs = valid_obs[:, :half]
+                        next_best_obs = valid_obs[:, half:]
+                        same_obs = np.allclose(current_obs, next_best_obs, atol=1e-5)
+                        n_same = np.sum(np.all(np.abs(current_obs - next_best_obs) < 1e-5, axis=1))
+                        print(f"  Ambiguous (current==next_best): {n_same}/{len(valid_obs)} ({100*n_same/len(valid_obs):.1f}%)")
+                        
+                        # Accuracy on non-ambiguous vs ambiguous
+                        if n_same > 0:
+                            is_same = np.all(np.abs(current_obs - next_best_obs) < 1e-5, axis=1)
+                            acc_same = (valid_pred[is_same] == valid_tgt[is_same]).mean() if is_same.sum() > 0 else 0
+                            acc_diff = (valid_pred[~is_same] == valid_tgt[~is_same]).mean() if (~is_same).sum() > 0 else 0
+                            print(f"  Acc on ambiguous: {acc_same:.3f}, Acc on clear: {acc_diff:.3f}")
+                    
             print(f"epoch {epoch:04d} | loss {loss.item():.4f} | train acc {acc:.3f}")
             if cfg.use_wandb:
                 wandb.log({"train/loss": float(loss.item()), "train/acc": float(acc)}, step=epoch)
@@ -732,17 +793,17 @@ def train(
             save_plots = (cfg.plot_every > 0 and (epoch % cfg.plot_every == 0))
             # Progress on the training env pool (was "val")
             train_acc, train_success = validate(
-                model, env_pool, cfg.steps_per_episode, cfg.val_batch_episodes, cfg.device, epoch, out_dir_train, save_plots, label="train", input_addendum=cfg.input_addendum
+                model, env_pool, cfg.steps_per_episode, cfg.val_batch_episodes, cfg.device, epoch, out_dir_train, save_plots, label="train", input_addendum=cfg.input_addendum, use_preconv_codebook=cfg.use_preconv_codebook, expert_actions=cfg.expert_actions
             )
 
             # Position validation: same goals as train, new env instances
             pos_acc, pos_success = validate(
-                model, pos_env_pool, cfg.steps_per_episode, cfg.val_batch_episodes, cfg.device, epoch, out_dir_pos_validation, save_plots, label="pos_validation", input_addendum=cfg.input_addendum
+                model, pos_env_pool, cfg.steps_per_episode, cfg.val_batch_episodes, cfg.device, epoch, out_dir_pos_validation, save_plots, label="pos_validation", input_addendum=cfg.input_addendum, use_preconv_codebook=cfg.use_preconv_codebook, expert_actions=cfg.expert_actions
             )
 
             # Goal validation (was "newval"): different goals and env instances
             goal_acc, goal_success = validate(
-                model, new_env_pool, cfg.steps_per_episode, cfg.val_batch_episodes, cfg.device, epoch, out_dir_goal_validation, save_plots, label="goal_validation", input_addendum=cfg.input_addendum
+                model, new_env_pool, cfg.steps_per_episode, cfg.val_batch_episodes, cfg.device, epoch, out_dir_goal_validation, save_plots, label="goal_validation", input_addendum=cfg.input_addendum, use_preconv_codebook=cfg.use_preconv_codebook, expert_actions=cfg.expert_actions
             )
             model.train()
             if cfg.use_wandb:
@@ -774,6 +835,8 @@ def main():
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--num_envs", type=int, default=1)
     parser.add_argument("--num_val_envs", type=int, default=4)
+    parser.add_argument("--num_train_worlds", type=int, default=1,
+                        help="Number of independent training worlds, each with its own GridEnv, VectorHash, and Hopfield")
 
     # Model
     parser.add_argument("--hidden_size", type=int, default=128)
@@ -797,8 +860,8 @@ def main():
     parser.add_argument("--wandb_project", type=str, default="cls")
     parser.add_argument("--time_penalty", type=float, default=0.01)
     parser.add_argument("--observation_size", type=int, default=512)
-    parser.add_argument("--ppo_input_reward", action="store_true", default=False)
-    parser.add_argument("--input_addendum", type=str, choices=["goal", "diff", "none", "next_best"], default="none")
+    parser.add_argument("--ppo_input_reward", action="store_true", default=True)
+    parser.add_argument("--input_addendum", type=str, choices=["goal", "diff", "none", "next_best", "hopfield"], default="none")
     parser.add_argument("--train_method", type=str, choices=["supervised", "ppo"], default="supervised")
     parser.add_argument("--ppo_clip", type=float, default=0.2)
     parser.add_argument("--ppo_vf_coef", type=float, default=0.5)
@@ -809,22 +872,101 @@ def main():
     parser.add_argument("--vectorhash", action="store_true", default=False)
     parser.add_argument("--Np", type=int, default=1600)
     parser.add_argument("--lambdas", type=int, nargs="+", default=[11,12])
-    parser.add_argument("--input_type", type=str, default="g_idx") #g_idx, g_hot, s, or p
+    parser.add_argument("--Npos", type=int, default=None)
+    parser.add_argument("--input_type", type=str, default="g_idx") #g_idx, g_hot, s, p, or encoded_g
     parser.add_argument("--use_preconv_codebook", action="store_true", default=False)
+    parser.add_argument("--fwhm_ratio", type=float, default=0.0,
+                        help="FWHM ratio for smoothing g_hot (0 = no smoothing, e.g. 0.25 = FWHM is 1/4 of lambda)")
+    
+    # GridEncoder (for input_type="encoded_g")
+    parser.add_argument("--encoder_weights", type=str, default=None, 
+                        help="Filename of encoder weights in encoders/ directory (e.g. 'my_encoder.pt')")
+    parser.add_argument("--encoder_gain", type=float, default=None,
+                        help="Override gain from loaded encoder (default: use encoder's saved gain)")
+    
+    # Hopfield (for input_addendum="hopfield")
+    parser.add_argument("--hopfield_gain", type=float, default=None,
+                        help="Hopfield gain/beta (default: use encoder's gain if using encoder, else 2.0)")
+    parser.add_argument("--hopfield_alpha", type=float, default=1.0,
+                        help="Hopfield recall mixing coefficient (1.0 = full update)")
+    parser.add_argument("--hopfield_steps", type=int, default=1)
+    parser.add_argument("--expert_actions", action="store_true", default=False,
+                        help="Use best action for stepping during rollouts (behavioral cloning from expert)")
+    parser.add_argument("--use_headings", action="store_true", default=False,
+                        help="Use heading-dependent observations (default: heading-invariant)")
 
     device = "cuda" if torch.cuda.is_available() else "cpu"
     
     args = parser.parse_args()
 
-    if args.input_addendum not in ("goal", "diff", "none", "next_best"):
-        raise ValueError("input_addendum must be one of: goal, diff, none, next_best")
+    if args.input_addendum not in ("goal", "diff", "none", "next_best", "hopfield"):
+        raise ValueError("input_addendum must be one of: goal, diff, none, next_best, hopfield")
+
+    # Initialize GridEncoder if using encoded_g
+    grid_encoder = None
+    encoder_gain = None  # Will be set from loaded encoder or args
+    if args.input_type == "encoded_g" and args.vectorhash:
+        
+        g_hot_dim = sum(l**2 for l in args.lambdas)
+        
+        if args.encoder_weights is None:
+            raise ValueError("--encoder_weights required when using input_type='encoded_g'")
+        
+        # Load encoder config and weights from file
+        encoder_path = os.path.join(os.getcwd(), "encoders", args.encoder_weights)
+        if not os.path.exists(encoder_path):
+            raise FileNotFoundError(f"Encoder weights not found: {encoder_path}")
+        
+        checkpoint = torch.load(encoder_path, map_location=device, weights_only=False)
+        
+        # Load config from checkpoint
+        config = checkpoint.get("config", {})
+        hidden = config.get("hidden")
+        out_dim = config.get("out_dim")
+        nonlinearity = config.get("nonlinearity", "gelu")
+        output_nonlinearity = config.get("output_nonlinearity", "tanh")
+        
+        if hidden is None or out_dim is None:
+            raise ValueError(f"Encoder checkpoint missing 'hidden' or 'out_dim' in config: {encoder_path}")
+        
+        # Get gain: use args override if provided, else use checkpoint's value
+        loaded_gain = config.get("gain")
+        # Also check sweep_params for sigmoid_scale_end (common in sweep-trained encoders)
+        if loaded_gain is None:
+            sweep_params = checkpoint.get("sweep_params", {})
+            loaded_gain = sweep_params.get("sigmoid_scale_end", 1.0)
+        
+        encoder_gain = args.encoder_gain if args.encoder_gain is not None else loaded_gain
+        
+        grid_encoder = GridEncoder(
+            in_dim=g_hot_dim,
+            hidden=hidden,
+            out_dim=out_dim,
+            nonlinearity=nonlinearity,
+            output_nonlinearity=output_nonlinearity,
+            gain=encoder_gain,
+        )
+        
+        # Load weights
+        if "state_dict" in checkpoint:
+            grid_encoder.load_state_dict(checkpoint["state_dict"])
+        else:
+            grid_encoder.load_state_dict(checkpoint)
+        
+        print(f"Loaded GridEncoder from {encoder_path}: {g_hot_dim} -> {hidden} -> {out_dim}, gain={encoder_gain}")
+        
+        grid_encoder.to(device)
+        grid_encoder.eval()
 
     # Helper: safe env factory that passes only supported kwargs
-    def _make_env(env_cls, *, size: int, speed: int, seed: int, observation_size: int, time_penalty: float, input_type: str | None):
+    def _make_env(env_cls, *, size: int, speed: int, seed: int, observation_size: int, time_penalty: float, input_type: str | None, encoder=None, fwhm_ratio: float = 0.0, use_headings: bool = False):
         if env_cls is GridWMEnv:
-            return env_cls(size=size, speed=speed, seed=seed, time_penalty=time_penalty, observation_size=observation_size, input_type=input_type)
+            env = env_cls(size=size, speed=speed, seed=seed, time_penalty=time_penalty, observation_size=observation_size, input_type=input_type, encoder=encoder, fwhm_ratio=fwhm_ratio, use_headings=use_headings)
+            if encoder is not None:
+                env._encoder_device = torch.device(device)
+            return env
         else:
-            return WMEnv(size=size, speed=speed, seed=seed, time_penalty=time_penalty, observation_size=observation_size)
+            return WMEnv(size=size, speed=speed, seed=seed, time_penalty=time_penalty, observation_size=observation_size, use_headings=use_headings)
 
     # Initialize a pool of environments with fixed goals per env
     seed = args.seed
@@ -832,31 +974,58 @@ def main():
     speed = args.speed
     num_envs = args.num_envs
     num_val_envs = args.num_val_envs
+    num_train_worlds = args.num_train_worlds
     rng = np.random.RandomState(seed)
     env_pool: List[WMEnv | GridWMEnv] = []
 
     env_class = GridWMEnv if args.vectorhash else WMEnv
 
     all_envs = []
-
-    print('initializing train envs')
-    for i in range(num_envs):
-        env_i = _make_env(
-            env_class,
-            size=size,
-            speed=speed,
-            seed=int(rng.randint(0, 10_000_000)),
-            time_penalty=args.time_penalty,
-            observation_size=args.observation_size,
-            input_type=(args.input_type if args.vectorhash else None),
-        )
-        env_pool.append(env_i)
-    all_envs.extend(env_pool)
-
-    # if args.vectorhash:
-    #     main_vectorhash = VectorHash(Np=args.Np, lambdas=args.lambdas, size=size)
-    #     main_vectorhash.initiate_vectorhash(all_envs)
     
+    # Determine hopfield_gain early: use args if provided, else use encoder's gain, else default to 2.0
+    hopfield_gain = args.hopfield_gain
+    if hopfield_gain is None:
+        hopfield_gain = encoder_gain if encoder_gain is not None else 2.0
+
+    print(f'initializing {num_train_worlds} train world(s) with {num_envs} envs each')
+    for world_idx in range(num_train_worlds):
+        print(f'  world {world_idx + 1}/{num_train_worlds}')
+        world_envs: List[WMEnv | GridWMEnv] = []
+        
+        for i in range(num_envs):
+            env_i = _make_env(
+                env_class,
+                size=size,
+                speed=speed,
+                seed=int(rng.randint(0, 10_000_000)),
+                time_penalty=args.time_penalty,
+                observation_size=args.observation_size,
+                input_type=(args.input_type if args.vectorhash else None),
+                encoder=grid_encoder,
+                fwhm_ratio=args.fwhm_ratio,
+                use_headings=args.use_headings,
+            )
+            world_envs.append(env_i)
+        
+        # Each world gets its own VectorHash (and Hopfield if enabled)
+        if args.vectorhash:
+            use_hopfield = (args.input_addendum == "hopfield")
+            world_vectorhash = VectorHash(
+                Np=args.Np,
+                Npos=args.Npos,
+                lambdas=args.lambdas, 
+                size=size,
+                use_hopfield=use_hopfield,
+                hopfield_gain=hopfield_gain,
+                hopfield_alpha=args.hopfield_alpha,
+                hopfield_steps=args.hopfield_steps,
+                use_headings=args.use_headings,
+            )
+            world_vectorhash.initiate_vectorhash(world_envs)
+        
+        env_pool.extend(world_envs)
+        all_envs.extend(world_envs)
+
     # Position validation pool: new env instances but with same goals as training envs
     print('initializing pos val envs')
     pos_env_pool: List[WMEnv | GridWMEnv] = []
@@ -869,15 +1038,29 @@ def main():
             time_penalty=args.time_penalty,
             observation_size=args.observation_size,
             input_type=(args.input_type if args.vectorhash else None),
+            encoder=grid_encoder,
+            fwhm_ratio=args.fwhm_ratio,
+            use_headings=args.use_headings,
         )
-        # copy goal from training envs
-        env_i._goal = env_pool[i]._goal
+        # copy goal from training envs (use modulo in case num_val_envs > total train envs)
+        env_i._goal = env_pool[i % len(env_pool)]._goal
         pos_env_pool.append(env_i)
+    
+    if args.vectorhash:
+        use_hopfield = (args.input_addendum == "hopfield")
+        pos_vectorhash = VectorHash(
+            Np=args.Np,
+            Npos=args.Npos,
+            lambdas=args.lambdas, 
+            size=size,
+            use_hopfield=use_hopfield,
+            hopfield_gain=hopfield_gain,
+            hopfield_alpha=args.hopfield_alpha,
+            hopfield_steps=args.hopfield_steps,
+            use_headings=args.use_headings,
+        )
+        pos_vectorhash.initiate_vectorhash(pos_env_pool)
     all_envs.extend(pos_env_pool)
-
-    # if args.vectorhash:
-    #     pos_vectorhash = VectorHash(Np=args.Np, lambdas=args.lambdas, size=size)
-    #     pos_vectorhash.initiate_vectorhash(all_envs)
 
     # New goal validation pool: new env instances with new goals
     print('initializing new goal val envs')
@@ -891,18 +1074,27 @@ def main():
             time_penalty=args.time_penalty,
             observation_size=args.observation_size,
             input_type=(args.input_type if args.vectorhash else None),
+            encoder=grid_encoder,
+            fwhm_ratio=args.fwhm_ratio,
+            use_headings=args.use_headings,
         )
         new_env_pool.append(env_i)
-    all_envs.extend(new_env_pool)
     
-    # if args.vectorhash:
-    #     new_vectorhash = VectorHash(Np=args.Np, lambdas=args.lambdas, size=size)
-    #     new_vectorhash.initiate_vectorhash(all_envs)
-    
-    # Not sure if we should hav one vectorhash for all envs
     if args.vectorhash:
-        vectorhash = VectorHash(Np=args.Np, lambdas=args.lambdas, size=size)
-        vectorhash.initiate_vectorhash(all_envs)
+        use_hopfield = (args.input_addendum == "hopfield")
+        new_vectorhash = VectorHash(
+            Np=args.Np,
+            Npos=args.Npos,
+            lambdas=args.lambdas, 
+            size=size,
+            use_hopfield=use_hopfield,
+            hopfield_gain=hopfield_gain,
+            hopfield_alpha=args.hopfield_alpha,
+            hopfield_steps=args.hopfield_steps,
+            use_headings=args.use_headings,
+        )
+        new_vectorhash.initiate_vectorhash(new_env_pool)
+    all_envs.extend(new_env_pool)
 
     # Determine model input size
     if args.vectorhash:
@@ -910,7 +1102,7 @@ def main():
     else:
         # Raw WMEnv observation size
         input_size = env_pool[0]._observation_size
-    if args.input_addendum == "goal" or args.input_addendum == "next_best":
+    if args.input_addendum in ("goal", "next_best", "hopfield"):
         input_size = input_size * 2
     if args.ppo_input_reward:
         input_size = input_size + 1
@@ -921,6 +1113,7 @@ def main():
         seed=seed,
         num_envs=num_envs,
         num_val_envs=num_val_envs,
+        num_train_worlds=num_train_worlds,
         hidden_size=args.hidden_size,
         num_model_layers=args.num_model_layers,
         batch_episodes=args.batch_episodes,
@@ -950,7 +1143,12 @@ def main():
         max_envs_per_epoch=args.max_envs_per_epoch,
         use_preconv_codebook=args.use_preconv_codebook,
         ppo_input_reward=args.ppo_input_reward,
-        lambdas=args.lambdas
+        lambdas=args.lambdas,
+        Npos=args.Npos,
+        encoder_gain=encoder_gain,
+        hopfield_gain=hopfield_gain,
+        hopfield_alpha=args.hopfield_alpha,
+        expert_actions=args.expert_actions,
     )
 
     train(

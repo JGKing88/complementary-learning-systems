@@ -9,6 +9,9 @@ Description-Content-Type: text/markdown
 Provides-Extra: viz
 Requires-Dist: numpy>=1.20; extra == "viz"
 Requires-Dist: matplotlib>=3.4; extra == "viz"
+Provides-Extra: train
+Requires-Dist: torch>=2.0; extra == "train"
+Requires-Dist: numpy>=1.20; extra == "train"
 
 ## cls
 
@@ -21,19 +24,19 @@ This repo is pure Python stdlib. Add the folder to your PYTHONPATH or install as
 ### Quickstart
 
 ```python
-from cls import SquareEnvironment
+from cls import WMEnv
 
-env = SquareEnvironment(size=8, speed=1, seed=42)
+env = WMEnv(size=8, speed=1, seed=42)
 
-cur, goal, sense = env.reset()
-print("start:", cur, "goal:", goal, "sense:", sense)
+cur, goal, ob = env.reset()
+print("start:", cur, "goal:", goal, "obs:", ob)
 
 # Vector actions: (dx, dy) in {-1,0,1}; scaled by speed per step.
 # Movement proceeds in sub-steps; if a boundary is reached mid-step,
 # the agent stops at the boundary (partial movement allowed).
 for a in [(0, 1), (1, 0), (1, 1), (0, 0), (-1, 0)]:
-    cur, goal, sense = env.step(a)
-    print(a, cur, goal, sense)
+    cur, goal, ob = env.step(a)
+    print(a, cur, goal, ob)
 ```
 
 ### Design Notes
@@ -47,7 +50,7 @@ for a in [(0, 1), (1, 0), (1, 1), (0, 0), (-1, 0)]:
 from math import log
 
 # Example: capped linear FOV, or a mild non-linear FOV
-env = SquareEnvironment(
+env = WMEnv(
     size=8,
     speed=1,
     fov_fn=lambda d, s: min(5, d + 1),  # capped linear

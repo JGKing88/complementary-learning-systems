@@ -1,108 +1,1591 @@
-[I 2025-11-04 10:30:42.014 ServerApp] jupyter_lsp | extension was successfully linked.
-[I 2025-11-04 10:30:42.018 ServerApp] jupyter_server_terminals | extension was successfully linked.
-[W 2025-11-04 10:30:42.020 LabApp] 'allow_origin' has moved from NotebookApp to ServerApp. This config will be passed to ServerApp. Be sure to update your config before our next release.
-[W 2025-11-04 10:30:42.020 LabApp] 'port_retries' has moved from NotebookApp to ServerApp. This config will be passed to ServerApp. Be sure to update your config before our next release.
-[I 2025-11-04 10:30:42.022 ServerApp] jupyterlab | extension was successfully linked.
-[I 2025-11-04 10:30:43.382 ServerApp] notebook_shim | extension was successfully linked.
-[I 2025-11-04 10:30:43.474 ServerApp] notebook_shim | extension was successfully loaded.
-[I 2025-11-04 10:30:43.476 ServerApp] jupyter_lsp | extension was successfully loaded.
-[I 2025-11-04 10:30:43.477 ServerApp] jupyter_server_terminals | extension was successfully loaded.
-[I 2025-11-04 10:30:43.486 LabApp] JupyterLab extension loaded from /om2/user/jackking/conda/envs/cls/lib/python3.12/site-packages/jupyterlab
-[I 2025-11-04 10:30:43.486 LabApp] JupyterLab application directory is /rdma/vast-rdma/vast/fiete/jackking/conda/envs/cls/share/jupyter/lab
-[I 2025-11-04 10:30:43.488 LabApp] Extension Manager is 'pypi'.
-[I 2025-11-04 10:30:43.707 ServerApp] jupyterlab | extension was successfully loaded.
-[I 2025-11-04 10:30:43.707 ServerApp] Serving notebooks from local directory: /rdma/vast-rdma/vast/fiete/jackking/cls
-[I 2025-11-04 10:30:43.707 ServerApp] Jupyter Server 2.17.0 is running at:
-[I 2025-11-04 10:30:43.707 ServerApp] http://node105:8091/lab?token=cd8e45dae3df41196660323f8639637701fe5374fd7737da
-[I 2025-11-04 10:30:43.707 ServerApp]     http://127.0.0.1:8091/lab?token=cd8e45dae3df41196660323f8639637701fe5374fd7737da
-[I 2025-11-04 10:30:43.707 ServerApp] Use Control-C to stop this server and shut down all kernels (twice to skip confirmation).
-[C 2025-11-04 10:30:43.717 ServerApp] 
+[I 2026-02-04 12:49:19.770 ServerApp] jupyter_lsp | extension was successfully linked.
+[I 2026-02-04 12:49:19.774 ServerApp] jupyter_server_terminals | extension was successfully linked.
+[W 2026-02-04 12:49:19.776 LabApp] 'allow_origin' has moved from NotebookApp to ServerApp. This config will be passed to ServerApp. Be sure to update your config before our next release.
+[W 2026-02-04 12:49:19.777 LabApp] 'port_retries' has moved from NotebookApp to ServerApp. This config will be passed to ServerApp. Be sure to update your config before our next release.
+[I 2026-02-04 12:49:19.779 ServerApp] jupyterlab | extension was successfully linked.
+[I 2026-02-04 12:49:20.066 ServerApp] notebook_shim | extension was successfully linked.
+[I 2026-02-04 12:49:20.067 ServerApp] panel.io.jupyter_server_extension | extension was successfully linked.
+[I 2026-02-04 12:49:20.091 ServerApp] notebook_shim | extension was successfully loaded.
+[I 2026-02-04 12:49:20.093 ServerApp] jupyter_lsp | extension was successfully loaded.
+[I 2026-02-04 12:49:20.094 ServerApp] jupyter_server_terminals | extension was successfully loaded.
+[I 2026-02-04 12:49:20.099 LabApp] JupyterLab extension loaded from /orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/jupyterlab
+[I 2026-02-04 12:49:20.099 LabApp] JupyterLab application directory is /orcd/software/core/001/pkg/miniforge/24.3.0-0/share/jupyter/lab
+[I 2026-02-04 12:49:20.099 LabApp] Extension Manager is 'pypi'.
+[I 2026-02-04 12:49:20.142 ServerApp] jupyterlab | extension was successfully loaded.
+[I 2026-02-04 12:49:20.142 ServerApp] panel.io.jupyter_server_extension | extension was successfully loaded.
+[I 2026-02-04 12:49:20.143 ServerApp] Serving notebooks from local directory: /orcd/home/002/jackking/cls
+[I 2026-02-04 12:49:20.143 ServerApp] Jupyter Server 2.15.0 is running at:
+[I 2026-02-04 12:49:20.143 ServerApp] http://node3807:8090/lab?token=9d3bb7fc9d8d0a8f41f1c79a2f9bee43e35e772b0bb2c794
+[I 2026-02-04 12:49:20.143 ServerApp]     http://127.0.0.1:8090/lab?token=9d3bb7fc9d8d0a8f41f1c79a2f9bee43e35e772b0bb2c794
+[I 2026-02-04 12:49:20.143 ServerApp] Use Control-C to stop this server and shut down all kernels (twice to skip confirmation).
+[C 2026-02-04 12:49:20.148 ServerApp] 
     
     To access the server, open this file in a browser:
-        file:///rdma/vast-rdma/vast-home/jackking/.local/share/jupyter/runtime/jpserver-2207637-open.html
+        file:///orcd/home/002/jackking/.local/share/jupyter/runtime/jpserver-365652-open.html
     Or copy and paste one of these URLs:
-        http://node105:8091/lab?token=cd8e45dae3df41196660323f8639637701fe5374fd7737da
-        http://127.0.0.1:8091/lab?token=cd8e45dae3df41196660323f8639637701fe5374fd7737da
-[I 2025-11-04 10:30:43.764 ServerApp] Skipped non-installed server(s): basedpyright, bash-language-server, dockerfile-language-server-nodejs, javascript-typescript-langserver, jedi-language-server, julia-language-server, pyrefly, pyright, python-language-server, python-lsp-server, r-languageserver, sql-language-server, texlab, typescript-language-server, unified-language-server, vscode-css-languageserver-bin, vscode-html-languageserver-bin, vscode-json-languageserver-bin, yaml-language-server
-[I 2025-11-04 10:31:32.849 ServerApp] 302 GET / (@172.16.24.55) 0.40ms
-[I 2025-11-04 10:31:32.854 LabApp] 302 GET /lab? (@172.16.24.55) 0.48ms
-[I 2025-11-04 10:31:33.756 ServerApp] 302 GET / (@172.16.24.55) 0.32ms
-[I 2025-11-04 10:31:33.760 LabApp] 302 GET /lab? (@172.16.24.55) 0.30ms
-[I 2025-11-04 10:32:35.598 ServerApp] 302 GET / (@172.16.24.55) 0.32ms
-[I 2025-11-04 10:32:35.602 LabApp] 302 GET /lab? (@172.16.24.55) 0.29ms
-[I 2025-11-04 10:32:35.685 ServerApp] Kernel started: dd96dbc3-74d5-4141-928c-51a53f9a2e47
-[I 2025-11-04 10:32:37.104 ServerApp] Connecting to kernel dd96dbc3-74d5-4141-928c-51a53f9a2e47.
-[W 2025-11-04 10:32:37.105 ServerApp] The websocket_ping_timeout (90000) cannot be longer than the websocket_ping_interval (30000).
-    Setting websocket_ping_timeout=30000
-[I 2025-11-04 10:34:02.908 ServerApp] Kernel interrupted: dd96dbc3-74d5-4141-928c-51a53f9a2e47
-[I 2025-11-04 10:34:36.080 ServerApp] Kernel restarted: dd96dbc3-74d5-4141-928c-51a53f9a2e47
-[I 2025-11-04 10:34:36.084 ServerApp] Starting buffering for dd96dbc3-74d5-4141-928c-51a53f9a2e47:0583bea0-6ecf-4510-97e0-f69fe2bed18e
-[I 2025-11-04 10:34:36.090 ServerApp] Connecting to kernel dd96dbc3-74d5-4141-928c-51a53f9a2e47.
-[I 2025-11-04 10:34:36.090 ServerApp] Restoring connection for dd96dbc3-74d5-4141-928c-51a53f9a2e47:0583bea0-6ecf-4510-97e0-f69fe2bed18e
-[I 2025-11-04 10:41:41.559 ServerApp] Kernel interrupted: dd96dbc3-74d5-4141-928c-51a53f9a2e47
-[I 2025-11-04 10:43:44.391 ServerApp] Kernel interrupted: dd96dbc3-74d5-4141-928c-51a53f9a2e47
-[I 2025-11-04 11:42:36.605 ServerApp] Kernel interrupted: dd96dbc3-74d5-4141-928c-51a53f9a2e47
-[I 2025-11-04 15:42:19.308 ServerApp] Kernel interrupted: dd96dbc3-74d5-4141-928c-51a53f9a2e47
-[I 2025-11-04 15:49:10.968 ServerApp] Kernel interrupted: dd96dbc3-74d5-4141-928c-51a53f9a2e47
-[I 2025-11-04 15:57:38.260 ServerApp] Kernel interrupted: dd96dbc3-74d5-4141-928c-51a53f9a2e47
-[I 2025-11-04 16:05:11.842 ServerApp] Kernel interrupted: dd96dbc3-74d5-4141-928c-51a53f9a2e47
-[I 2025-11-04 16:12:21.544 ServerApp] Kernel interrupted: dd96dbc3-74d5-4141-928c-51a53f9a2e47
-[I 2025-11-04 16:25:10.911 ServerApp] Kernel interrupted: dd96dbc3-74d5-4141-928c-51a53f9a2e47
-[I 2025-11-04 16:36:01.331 ServerApp] Kernel interrupted: dd96dbc3-74d5-4141-928c-51a53f9a2e47
-[I 2025-11-04 16:41:20.746 ServerApp] Kernel interrupted: dd96dbc3-74d5-4141-928c-51a53f9a2e47
-[I 2025-11-04 16:45:31.500 ServerApp] Kernel interrupted: dd96dbc3-74d5-4141-928c-51a53f9a2e47
-[I 2025-11-04 16:52:41.801 ServerApp] Kernel interrupted: dd96dbc3-74d5-4141-928c-51a53f9a2e47
-[I 2025-11-04 17:00:26.999 ServerApp] Kernel interrupted: dd96dbc3-74d5-4141-928c-51a53f9a2e47
-[I 2025-11-04 17:08:24.242 ServerApp] Kernel interrupted: dd96dbc3-74d5-4141-928c-51a53f9a2e47
-[I 2025-11-04 17:27:16.765 ServerApp] Kernel interrupted: dd96dbc3-74d5-4141-928c-51a53f9a2e47
-[I 2025-11-04 17:34:59.378 ServerApp] Kernel restarted: dd96dbc3-74d5-4141-928c-51a53f9a2e47
-[I 2025-11-04 17:34:59.382 ServerApp] Starting buffering for dd96dbc3-74d5-4141-928c-51a53f9a2e47:0583bea0-6ecf-4510-97e0-f69fe2bed18e
-[I 2025-11-04 17:34:59.393 ServerApp] Connecting to kernel dd96dbc3-74d5-4141-928c-51a53f9a2e47.
-[I 2025-11-04 17:34:59.393 ServerApp] Restoring connection for dd96dbc3-74d5-4141-928c-51a53f9a2e47:0583bea0-6ecf-4510-97e0-f69fe2bed18e
-[I 2025-11-04 17:37:08.009 ServerApp] Kernel interrupted: dd96dbc3-74d5-4141-928c-51a53f9a2e47
-[I 2025-11-04 17:44:41.348 ServerApp] Kernel interrupted: dd96dbc3-74d5-4141-928c-51a53f9a2e47
-[I 2025-11-04 18:01:32.706 ServerApp] Kernel interrupted: dd96dbc3-74d5-4141-928c-51a53f9a2e47
-[I 2025-11-04 18:06:49.707 ServerApp] Kernel interrupted: dd96dbc3-74d5-4141-928c-51a53f9a2e47
-[I 2025-11-04 18:10:08.185 ServerApp] Kernel interrupted: dd96dbc3-74d5-4141-928c-51a53f9a2e47
-[I 2025-11-04 18:23:40.299 ServerApp] Kernel interrupted: dd96dbc3-74d5-4141-928c-51a53f9a2e47
-[I 2025-11-04 19:17:12.976 ServerApp] Kernel interrupted: dd96dbc3-74d5-4141-928c-51a53f9a2e47
-[I 2025-11-04 19:18:24.497 ServerApp] Kernel interrupted: dd96dbc3-74d5-4141-928c-51a53f9a2e47
-[I 2025-11-04 19:18:36.733 ServerApp] Kernel interrupted: dd96dbc3-74d5-4141-928c-51a53f9a2e47
-[I 2025-11-04 19:19:53.276 ServerApp] Kernel interrupted: dd96dbc3-74d5-4141-928c-51a53f9a2e47
-[I 2025-11-04 19:20:02.071 ServerApp] Kernel interrupted: dd96dbc3-74d5-4141-928c-51a53f9a2e47
-[I 2025-11-04 19:20:15.108 ServerApp] Kernel interrupted: dd96dbc3-74d5-4141-928c-51a53f9a2e47
-[I 2025-11-04 19:20:22.338 ServerApp] Kernel interrupted: dd96dbc3-74d5-4141-928c-51a53f9a2e47
-[I 2025-11-04 19:20:38.824 ServerApp] Kernel interrupted: dd96dbc3-74d5-4141-928c-51a53f9a2e47
-[I 2025-11-04 19:21:09.042 ServerApp] Kernel interrupted: dd96dbc3-74d5-4141-928c-51a53f9a2e47
-[I 2025-11-04 19:21:31.160 ServerApp] Kernel interrupted: dd96dbc3-74d5-4141-928c-51a53f9a2e47
-[I 2025-11-04 19:21:38.750 ServerApp] Kernel interrupted: dd96dbc3-74d5-4141-928c-51a53f9a2e47
-[I 2025-11-04 19:21:50.191 ServerApp] Kernel interrupted: dd96dbc3-74d5-4141-928c-51a53f9a2e47
-[I 2025-11-04 19:22:01.172 ServerApp] Kernel interrupted: dd96dbc3-74d5-4141-928c-51a53f9a2e47
-[I 2025-11-04 19:22:15.790 ServerApp] Kernel interrupted: dd96dbc3-74d5-4141-928c-51a53f9a2e47
-[I 2025-11-04 19:22:22.504 ServerApp] Kernel interrupted: dd96dbc3-74d5-4141-928c-51a53f9a2e47
-[I 2025-11-04 19:22:26.914 ServerApp] Kernel interrupted: dd96dbc3-74d5-4141-928c-51a53f9a2e47
-[I 2025-11-04 19:22:42.395 ServerApp] Kernel interrupted: dd96dbc3-74d5-4141-928c-51a53f9a2e47
-[I 2025-11-04 19:22:45.934 ServerApp] Kernel interrupted: dd96dbc3-74d5-4141-928c-51a53f9a2e47
-[I 2025-11-04 19:22:57.085 ServerApp] Kernel interrupted: dd96dbc3-74d5-4141-928c-51a53f9a2e47
-[I 2025-11-04 19:23:14.771 ServerApp] Kernel interrupted: dd96dbc3-74d5-4141-928c-51a53f9a2e47
-[I 2025-11-04 19:23:25.480 ServerApp] Kernel interrupted: dd96dbc3-74d5-4141-928c-51a53f9a2e47
-[I 2025-11-04 20:15:55.515 ServerApp] 302 GET / (@172.16.24.55) 0.29ms
-[I 2025-11-04 20:15:55.629 LabApp] 302 GET /lab? (@172.16.24.55) 0.36ms
-[I 2025-11-04 20:15:56.210 ServerApp] 302 GET / (@172.16.24.55) 0.19ms
-[I 2025-11-04 20:15:56.214 LabApp] 302 GET /lab? (@172.16.24.55) 0.24ms
-[I 2025-11-04 20:15:56.259 ServerApp] Connecting to kernel dd96dbc3-74d5-4141-928c-51a53f9a2e47.
-[I 2025-11-04 21:23:27.176 ServerApp] 302 GET / (@172.16.24.55) 0.26ms
-[I 2025-11-04 21:23:27.295 LabApp] 302 GET /lab? (@172.16.24.55) 0.27ms
-[I 2025-11-04 21:23:27.888 ServerApp] 302 GET / (@172.16.24.55) 0.18ms
-[I 2025-11-04 21:23:27.891 LabApp] 302 GET /lab? (@172.16.24.55) 0.21ms
-[I 2025-11-04 21:23:27.948 ServerApp] Connecting to kernel dd96dbc3-74d5-4141-928c-51a53f9a2e47.
-[I 2025-11-05 04:18:28.299 ServerApp] Starting buffering for dd96dbc3-74d5-4141-928c-51a53f9a2e47:698be82a-37bb-40f9-ac6f-dd575274ca19
-[I 2025-11-05 06:57:45.108 ServerApp] 302 GET / (@172.16.24.55) 0.29ms
-[I 2025-11-05 06:57:45.233 LabApp] 302 GET /lab? (@172.16.24.55) 0.39ms
-[I 2025-11-05 06:57:46.167 ServerApp] 302 GET / (@172.16.24.55) 0.16ms
-[I 2025-11-05 06:57:46.178 LabApp] 302 GET /lab? (@172.16.24.55) 0.22ms
-[I 2025-11-05 06:57:46.238 ServerApp] Connecting to kernel dd96dbc3-74d5-4141-928c-51a53f9a2e47.
-[I 2025-11-05 07:13:55.175 ServerApp] Kernel interrupted: dd96dbc3-74d5-4141-928c-51a53f9a2e47
-[I 2025-11-05 09:24:08.383 ServerApp] 302 GET / (@172.16.24.55) 0.28ms
-[I 2025-11-05 09:24:08.495 LabApp] 302 GET /lab? (@172.16.24.55) 0.38ms
-slurmstepd: error: *** JOB 44187166 ON node105 CANCELLED AT 2025-11-05T10:30:55 DUE TO TIME LIMIT ***
+        http://node3807:8090/lab?token=9d3bb7fc9d8d0a8f41f1c79a2f9bee43e35e772b0bb2c794
+        http://127.0.0.1:8090/lab?token=9d3bb7fc9d8d0a8f41f1c79a2f9bee43e35e772b0bb2c794
+[I 2026-02-04 12:49:20.182 ServerApp] Skipped non-installed server(s): bash-language-server, dockerfile-language-server-nodejs, javascript-typescript-langserver, jedi-language-server, julia-language-server, pyright, python-language-server, python-lsp-server, r-languageserver, sql-language-server, texlab, typescript-language-server, unified-language-server, vscode-css-languageserver-bin, vscode-html-languageserver-bin, vscode-json-languageserver-bin, yaml-language-server
+[I 2026-02-04 12:50:14.623 ServerApp] 302 GET / (@10.1.38.7) 0.43ms
+[I 2026-02-04 12:50:14.625 LabApp] 302 GET /lab? (@10.1.38.7) 0.40ms
+[I 2026-02-04 12:50:15.223 ServerApp] 302 GET / (@10.1.38.7) 0.39ms
+[I 2026-02-04 12:50:15.225 LabApp] 302 GET /lab? (@10.1.38.7) 0.40ms
+[I 2026-02-04 12:50:17.383 ServerApp] 302 GET / (@10.1.38.7) 0.40ms
+[I 2026-02-04 12:50:17.385 LabApp] 302 GET /lab? (@10.1.38.7) 0.40ms
+[I 2026-02-04 12:50:17.422 ServerApp] Kernel started: e1f18756-d083-4cff-abaa-f36ddc32c415
+[I 2026-02-04 12:50:17.874 ServerApp] Connecting to kernel e1f18756-d083-4cff-abaa-f36ddc32c415.
+[I 2026-02-04 12:50:18.066 ServerApp] 302 GET / (@10.1.38.7) 0.40ms
+[I 2026-02-04 12:50:18.175 LabApp] 302 GET /lab? (@10.1.38.7) 0.53ms
+[W 2026-02-04 12:50:18.222 ServerApp] wrote error: 'Forbidden'
+    Traceback (most recent call last):
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/tornado/web.py", line 1788, in _execute
+        result = method(*self.path_args, **self.path_kwargs)
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/tornado/web.py", line 3289, in wrapper
+        url = self.get_login_url()
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/jupyter_server/base/handlers.py", line 784, in get_login_url
+        raise web.HTTPError(403)
+    tornado.web.HTTPError: HTTP 403: Forbidden
+[W 2026-02-04 12:50:18.225 ServerApp] 403 GET /api/kernelspecs?1770227418220 (@10.1.38.7) 2.98ms referer=None
+[W 2026-02-04 12:50:18.229 ServerApp] wrote error: 'Forbidden'
+    Traceback (most recent call last):
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/tornado/web.py", line 1788, in _execute
+        result = method(*self.path_args, **self.path_kwargs)
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/tornado/web.py", line 3289, in wrapper
+        url = self.get_login_url()
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/jupyter_server/base/handlers.py", line 784, in get_login_url
+        raise web.HTTPError(403)
+    tornado.web.HTTPError: HTTP 403: Forbidden
+[W 2026-02-04 12:50:18.229 ServerApp] 403 GET /api/kernels?1770227418221 (@10.1.38.7) 0.66ms referer=None
+[W 2026-02-04 12:50:18.230 ServerApp] wrote error: 'Forbidden'
+    Traceback (most recent call last):
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/tornado/web.py", line 1788, in _execute
+        result = method(*self.path_args, **self.path_kwargs)
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/tornado/web.py", line 3289, in wrapper
+        url = self.get_login_url()
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/jupyter_server/base/handlers.py", line 784, in get_login_url
+        raise web.HTTPError(403)
+    tornado.web.HTTPError: HTTP 403: Forbidden
+[W 2026-02-04 12:50:18.230 ServerApp] 403 GET /api/kernels?1770227418222 (@10.1.38.7) 0.62ms referer=None
+[W 2026-02-04 12:50:18.231 ServerApp] wrote error: 'Forbidden'
+    Traceback (most recent call last):
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/tornado/web.py", line 1788, in _execute
+        result = method(*self.path_args, **self.path_kwargs)
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/tornado/web.py", line 3289, in wrapper
+        url = self.get_login_url()
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/jupyter_server/base/handlers.py", line 784, in get_login_url
+        raise web.HTTPError(403)
+    tornado.web.HTTPError: HTTP 403: Forbidden
+[W 2026-02-04 12:50:18.231 ServerApp] 403 GET /api/sessions?1770227418223 (@10.1.38.7) 0.58ms referer=None
+[W 2026-02-04 12:50:18.233 ServerApp] wrote error: 'Forbidden'
+    Traceback (most recent call last):
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/tornado/web.py", line 1788, in _execute
+        result = method(*self.path_args, **self.path_kwargs)
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/tornado/web.py", line 3289, in wrapper
+        url = self.get_login_url()
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/jupyter_server/base/handlers.py", line 784, in get_login_url
+        raise web.HTTPError(403)
+    tornado.web.HTTPError: HTTP 403: Forbidden
+[W 2026-02-04 12:50:18.234 ServerApp] 403 GET /api/kernelspecs?1770227418229 (@10.1.38.7) 0.66ms referer=None
+[I 2026-02-04 12:50:18.239 ServerApp] 302 GET / (@10.1.38.7) 0.30ms
+[I 2026-02-04 12:50:18.241 LabApp] 302 GET /lab? (@10.1.38.7) 0.45ms
+[W 2026-02-04 12:50:18.269 ServerApp] wrote error: 'Forbidden'
+    Traceback (most recent call last):
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/tornado/web.py", line 1788, in _execute
+        result = method(*self.path_args, **self.path_kwargs)
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/tornado/web.py", line 3289, in wrapper
+        url = self.get_login_url()
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/jupyter_server/base/handlers.py", line 784, in get_login_url
+        raise web.HTTPError(403)
+    tornado.web.HTTPError: HTTP 403: Forbidden
+[W 2026-02-04 12:50:18.270 ServerApp] 403 GET /api/kernelspecs?1770227418267 (@10.1.38.7) 0.78ms referer=None
+[W 2026-02-04 12:50:18.319 ServerApp] wrote error: 'Forbidden'
+    Traceback (most recent call last):
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/tornado/web.py", line 1788, in _execute
+        result = method(*self.path_args, **self.path_kwargs)
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/tornado/web.py", line 3289, in wrapper
+        url = self.get_login_url()
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/jupyter_server/base/handlers.py", line 784, in get_login_url
+        raise web.HTTPError(403)
+    tornado.web.HTTPError: HTTP 403: Forbidden
+[W 2026-02-04 12:50:18.320 ServerApp] 403 GET /api/kernels?1770227418268 (@10.1.38.7) 0.94ms referer=None
+[W 2026-02-04 12:50:18.320 ServerApp] wrote error: 'Forbidden'
+    Traceback (most recent call last):
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/tornado/web.py", line 1788, in _execute
+        result = method(*self.path_args, **self.path_kwargs)
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/tornado/web.py", line 3289, in wrapper
+        url = self.get_login_url()
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/jupyter_server/base/handlers.py", line 784, in get_login_url
+        raise web.HTTPError(403)
+    tornado.web.HTTPError: HTTP 403: Forbidden
+[W 2026-02-04 12:50:18.320 ServerApp] 403 GET /api/kernels?1770227418269 (@10.1.38.7) 0.58ms referer=None
+[W 2026-02-04 12:50:18.322 ServerApp] wrote error: 'Forbidden'
+    Traceback (most recent call last):
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/tornado/web.py", line 1788, in _execute
+        result = method(*self.path_args, **self.path_kwargs)
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/tornado/web.py", line 3289, in wrapper
+        url = self.get_login_url()
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/jupyter_server/base/handlers.py", line 784, in get_login_url
+        raise web.HTTPError(403)
+    tornado.web.HTTPError: HTTP 403: Forbidden
+[W 2026-02-04 12:50:18.322 ServerApp] 403 GET /api/sessions?1770227418270 (@10.1.38.7) 0.53ms referer=None
+[W 2026-02-04 12:50:18.325 ServerApp] wrote error: 'Forbidden'
+    Traceback (most recent call last):
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/tornado/web.py", line 1788, in _execute
+        result = method(*self.path_args, **self.path_kwargs)
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/tornado/web.py", line 3289, in wrapper
+        url = self.get_login_url()
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/jupyter_server/base/handlers.py", line 784, in get_login_url
+        raise web.HTTPError(403)
+    tornado.web.HTTPError: HTTP 403: Forbidden
+[W 2026-02-04 12:50:18.325 ServerApp] 403 GET /api/kernelspecs?1770227418295 (@10.1.38.7) 0.57ms referer=None
+[I 2026-02-04 17:01:06.794 ServerApp] 302 GET / (@10.1.38.7) 1.69ms
+[I 2026-02-04 17:01:06.899 LabApp] 302 GET /lab? (@10.1.38.7) 3.63ms
+[I 2026-02-04 17:01:07.179 ServerApp] 302 GET / (@10.1.38.7) 0.28ms
+[I 2026-02-04 17:01:07.207 LabApp] 302 GET /lab? (@10.1.38.7) 0.32ms
+[W 2026-02-04 17:01:07.226 ServerApp] wrote error: 'Forbidden'
+    Traceback (most recent call last):
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/tornado/web.py", line 1788, in _execute
+        result = method(*self.path_args, **self.path_kwargs)
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/tornado/web.py", line 3289, in wrapper
+        url = self.get_login_url()
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/jupyter_server/base/handlers.py", line 784, in get_login_url
+        raise web.HTTPError(403)
+    tornado.web.HTTPError: HTTP 403: Forbidden
+[W 2026-02-04 17:01:07.231 ServerApp] 403 GET /api/kernelspecs?1770242467223 (@10.1.38.7) 5.77ms referer=None
+[W 2026-02-04 17:01:07.263 ServerApp] wrote error: 'Forbidden'
+    Traceback (most recent call last):
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/tornado/web.py", line 1788, in _execute
+        result = method(*self.path_args, **self.path_kwargs)
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/tornado/web.py", line 3289, in wrapper
+        url = self.get_login_url()
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/jupyter_server/base/handlers.py", line 784, in get_login_url
+        raise web.HTTPError(403)
+    tornado.web.HTTPError: HTTP 403: Forbidden
+[W 2026-02-04 17:01:07.263 ServerApp] 403 GET /api/kernels?1770242467224 (@10.1.38.7) 0.54ms referer=None
+[W 2026-02-04 17:01:07.263 ServerApp] wrote error: 'Forbidden'
+    Traceback (most recent call last):
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/tornado/web.py", line 1788, in _execute
+        result = method(*self.path_args, **self.path_kwargs)
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/tornado/web.py", line 3289, in wrapper
+        url = self.get_login_url()
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/jupyter_server/base/handlers.py", line 784, in get_login_url
+        raise web.HTTPError(403)
+    tornado.web.HTTPError: HTTP 403: Forbidden
+[W 2026-02-04 17:01:07.264 ServerApp] 403 GET /api/kernels?1770242467241 (@10.1.38.7) 0.61ms referer=None
+[W 2026-02-04 17:01:07.267 ServerApp] wrote error: 'Forbidden'
+    Traceback (most recent call last):
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/tornado/web.py", line 1788, in _execute
+        result = method(*self.path_args, **self.path_kwargs)
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/tornado/web.py", line 3289, in wrapper
+        url = self.get_login_url()
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/jupyter_server/base/handlers.py", line 784, in get_login_url
+        raise web.HTTPError(403)
+    tornado.web.HTTPError: HTTP 403: Forbidden
+[W 2026-02-04 17:01:07.268 ServerApp] 403 GET /api/sessions?1770242467241 (@10.1.38.7) 0.54ms referer=None
+[W 2026-02-04 17:01:07.274 ServerApp] wrote error: 'Forbidden'
+    Traceback (most recent call last):
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/tornado/web.py", line 1788, in _execute
+        result = method(*self.path_args, **self.path_kwargs)
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/tornado/web.py", line 3289, in wrapper
+        url = self.get_login_url()
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/jupyter_server/base/handlers.py", line 784, in get_login_url
+        raise web.HTTPError(403)
+    tornado.web.HTTPError: HTTP 403: Forbidden
+[W 2026-02-04 17:01:07.275 ServerApp] 403 GET /api/kernelspecs?1770242467247 (@10.1.38.7) 0.45ms referer=None
+[I 2026-02-04 17:01:07.280 ServerApp] 302 GET / (@10.1.38.7) 0.22ms
+[I 2026-02-04 17:01:07.296 LabApp] 302 GET /lab? (@10.1.38.7) 0.31ms
+[W 2026-02-04 17:01:07.306 ServerApp] wrote error: 'Forbidden'
+    Traceback (most recent call last):
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/tornado/web.py", line 1788, in _execute
+        result = method(*self.path_args, **self.path_kwargs)
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/tornado/web.py", line 3289, in wrapper
+        url = self.get_login_url()
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/jupyter_server/base/handlers.py", line 784, in get_login_url
+        raise web.HTTPError(403)
+    tornado.web.HTTPError: HTTP 403: Forbidden
+[W 2026-02-04 17:01:07.306 ServerApp] 403 GET /api/kernelspecs?1770242467304 (@10.1.38.7) 0.54ms referer=None
+[W 2026-02-04 17:01:07.310 ServerApp] wrote error: 'Forbidden'
+    Traceback (most recent call last):
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/tornado/web.py", line 1788, in _execute
+        result = method(*self.path_args, **self.path_kwargs)
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/tornado/web.py", line 3289, in wrapper
+        url = self.get_login_url()
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/jupyter_server/base/handlers.py", line 784, in get_login_url
+        raise web.HTTPError(403)
+    tornado.web.HTTPError: HTTP 403: Forbidden
+[W 2026-02-04 17:01:07.311 ServerApp] 403 GET /api/kernels?1770242467305 (@10.1.38.7) 0.44ms referer=None
+[W 2026-02-04 17:01:07.311 ServerApp] wrote error: 'Forbidden'
+    Traceback (most recent call last):
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/tornado/web.py", line 1788, in _execute
+        result = method(*self.path_args, **self.path_kwargs)
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/tornado/web.py", line 3289, in wrapper
+        url = self.get_login_url()
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/jupyter_server/base/handlers.py", line 784, in get_login_url
+        raise web.HTTPError(403)
+    tornado.web.HTTPError: HTTP 403: Forbidden
+[W 2026-02-04 17:01:07.311 ServerApp] 403 GET /api/kernels?1770242467307 (@10.1.38.7) 0.41ms referer=None
+[W 2026-02-04 17:01:07.315 ServerApp] wrote error: 'Forbidden'
+    Traceback (most recent call last):
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/tornado/web.py", line 1788, in _execute
+        result = method(*self.path_args, **self.path_kwargs)
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/tornado/web.py", line 3289, in wrapper
+        url = self.get_login_url()
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/jupyter_server/base/handlers.py", line 784, in get_login_url
+        raise web.HTTPError(403)
+    tornado.web.HTTPError: HTTP 403: Forbidden
+[W 2026-02-04 17:01:07.316 ServerApp] 403 GET /api/sessions?1770242467308 (@10.1.38.7) 0.43ms referer=None
+[W 2026-02-04 17:01:07.318 ServerApp] wrote error: 'Forbidden'
+    Traceback (most recent call last):
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/tornado/web.py", line 1788, in _execute
+        result = method(*self.path_args, **self.path_kwargs)
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/tornado/web.py", line 3289, in wrapper
+        url = self.get_login_url()
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/jupyter_server/base/handlers.py", line 784, in get_login_url
+        raise web.HTTPError(403)
+    tornado.web.HTTPError: HTTP 403: Forbidden
+[W 2026-02-04 17:01:07.318 ServerApp] 403 GET /api/kernelspecs?1770242467311 (@10.1.38.7) 0.48ms referer=None
+[I 2026-02-04 17:01:08.030 ServerApp] 302 GET / (@10.1.38.7) 0.48ms
+[I 2026-02-04 17:01:08.034 LabApp] 302 GET /lab? (@10.1.38.7) 0.34ms
+[I 2026-02-04 17:01:08.086 ServerApp] Connecting to kernel e1f18756-d083-4cff-abaa-f36ddc32c415.
+[I 2026-02-04 17:01:08.205 ServerApp] 302 GET / (@10.1.38.7) 0.20ms
+[I 2026-02-04 17:01:08.238 LabApp] 302 GET /lab? (@10.1.38.7) 0.27ms
+[W 2026-02-04 17:01:08.278 ServerApp] wrote error: 'Forbidden'
+    Traceback (most recent call last):
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/tornado/web.py", line 1788, in _execute
+        result = method(*self.path_args, **self.path_kwargs)
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/tornado/web.py", line 3289, in wrapper
+        url = self.get_login_url()
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/jupyter_server/base/handlers.py", line 784, in get_login_url
+        raise web.HTTPError(403)
+    tornado.web.HTTPError: HTTP 403: Forbidden
+[W 2026-02-04 17:01:08.279 ServerApp] 403 GET /api/kernelspecs?1770242468277 (@10.1.38.7) 0.57ms referer=None
+[W 2026-02-04 17:01:08.284 ServerApp] wrote error: 'Forbidden'
+    Traceback (most recent call last):
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/tornado/web.py", line 1788, in _execute
+        result = method(*self.path_args, **self.path_kwargs)
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/tornado/web.py", line 3289, in wrapper
+        url = self.get_login_url()
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/jupyter_server/base/handlers.py", line 784, in get_login_url
+        raise web.HTTPError(403)
+    tornado.web.HTTPError: HTTP 403: Forbidden
+[W 2026-02-04 17:01:08.285 ServerApp] 403 GET /api/kernels?1770242468277 (@10.1.38.7) 0.43ms referer=None
+[W 2026-02-04 17:01:08.285 ServerApp] wrote error: 'Forbidden'
+    Traceback (most recent call last):
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/tornado/web.py", line 1788, in _execute
+        result = method(*self.path_args, **self.path_kwargs)
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/tornado/web.py", line 3289, in wrapper
+        url = self.get_login_url()
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/jupyter_server/base/handlers.py", line 784, in get_login_url
+        raise web.HTTPError(403)
+    tornado.web.HTTPError: HTTP 403: Forbidden
+[W 2026-02-04 17:01:08.285 ServerApp] 403 GET /api/kernels?1770242468280 (@10.1.38.7) 0.62ms referer=None
+[W 2026-02-04 17:01:08.286 ServerApp] wrote error: 'Forbidden'
+    Traceback (most recent call last):
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/tornado/web.py", line 1788, in _execute
+        result = method(*self.path_args, **self.path_kwargs)
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/tornado/web.py", line 3289, in wrapper
+        url = self.get_login_url()
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/jupyter_server/base/handlers.py", line 784, in get_login_url
+        raise web.HTTPError(403)
+    tornado.web.HTTPError: HTTP 403: Forbidden
+[W 2026-02-04 17:01:08.286 ServerApp] 403 GET /api/kernelspecs?1770242468283 (@10.1.38.7) 0.46ms referer=None
+[W 2026-02-04 17:01:08.287 ServerApp] wrote error: 'Forbidden'
+    Traceback (most recent call last):
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/tornado/web.py", line 1788, in _execute
+        result = method(*self.path_args, **self.path_kwargs)
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/tornado/web.py", line 3289, in wrapper
+        url = self.get_login_url()
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/jupyter_server/base/handlers.py", line 784, in get_login_url
+        raise web.HTTPError(403)
+    tornado.web.HTTPError: HTTP 403: Forbidden
+[W 2026-02-04 17:01:08.287 ServerApp] 403 GET /api/sessions?1770242468281 (@10.1.38.7) 0.54ms referer=None
+[I 2026-02-04 17:01:08.290 ServerApp] 302 GET / (@10.1.38.7) 0.20ms
+[I 2026-02-04 17:01:08.291 LabApp] 302 GET /lab? (@10.1.38.7) 0.25ms
+[W 2026-02-04 17:01:08.295 ServerApp] wrote error: 'Forbidden'
+    Traceback (most recent call last):
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/tornado/web.py", line 1788, in _execute
+        result = method(*self.path_args, **self.path_kwargs)
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/tornado/web.py", line 3289, in wrapper
+        url = self.get_login_url()
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/jupyter_server/base/handlers.py", line 784, in get_login_url
+        raise web.HTTPError(403)
+    tornado.web.HTTPError: HTTP 403: Forbidden
+[W 2026-02-04 17:01:08.295 ServerApp] 403 GET /api/kernelspecs?1770242468293 (@10.1.38.7) 0.43ms referer=None
+[W 2026-02-04 17:01:08.298 ServerApp] wrote error: 'Forbidden'
+    Traceback (most recent call last):
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/tornado/web.py", line 1788, in _execute
+        result = method(*self.path_args, **self.path_kwargs)
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/tornado/web.py", line 3289, in wrapper
+        url = self.get_login_url()
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/jupyter_server/base/handlers.py", line 784, in get_login_url
+        raise web.HTTPError(403)
+    tornado.web.HTTPError: HTTP 403: Forbidden
+[W 2026-02-04 17:01:08.298 ServerApp] 403 GET /api/kernels?1770242468294 (@10.1.38.7) 0.43ms referer=None
+[W 2026-02-04 17:01:08.298 ServerApp] wrote error: 'Forbidden'
+    Traceback (most recent call last):
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/tornado/web.py", line 1788, in _execute
+        result = method(*self.path_args, **self.path_kwargs)
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/tornado/web.py", line 3289, in wrapper
+        url = self.get_login_url()
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/jupyter_server/base/handlers.py", line 784, in get_login_url
+        raise web.HTTPError(403)
+    tornado.web.HTTPError: HTTP 403: Forbidden
+[W 2026-02-04 17:01:08.299 ServerApp] 403 GET /api/kernels?1770242468295 (@10.1.38.7) 0.52ms referer=None
+[W 2026-02-04 17:01:08.299 ServerApp] wrote error: 'Forbidden'
+    Traceback (most recent call last):
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/tornado/web.py", line 1788, in _execute
+        result = method(*self.path_args, **self.path_kwargs)
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/tornado/web.py", line 3289, in wrapper
+        url = self.get_login_url()
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/jupyter_server/base/handlers.py", line 784, in get_login_url
+        raise web.HTTPError(403)
+    tornado.web.HTTPError: HTTP 403: Forbidden
+[W 2026-02-04 17:01:08.299 ServerApp] 403 GET /api/sessions?1770242468296 (@10.1.38.7) 0.42ms referer=None
+[W 2026-02-04 17:01:08.300 ServerApp] wrote error: 'Forbidden'
+    Traceback (most recent call last):
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/tornado/web.py", line 1788, in _execute
+        result = method(*self.path_args, **self.path_kwargs)
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/tornado/web.py", line 3289, in wrapper
+        url = self.get_login_url()
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/jupyter_server/base/handlers.py", line 784, in get_login_url
+        raise web.HTTPError(403)
+    tornado.web.HTTPError: HTTP 403: Forbidden
+[W 2026-02-04 17:01:08.300 ServerApp] 403 GET /api/kernelspecs?1770242468298 (@10.1.38.7) 0.40ms referer=None
+[I 2026-02-04 17:01:10.030 ServerApp] 302 GET / (@10.1.38.7) 0.18ms
+[I 2026-02-04 17:01:10.065 LabApp] 302 GET /lab? (@10.1.38.7) 0.31ms
+[W 2026-02-04 17:01:10.103 ServerApp] wrote error: 'Forbidden'
+    Traceback (most recent call last):
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/tornado/web.py", line 1788, in _execute
+        result = method(*self.path_args, **self.path_kwargs)
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/tornado/web.py", line 3289, in wrapper
+        url = self.get_login_url()
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/jupyter_server/base/handlers.py", line 784, in get_login_url
+        raise web.HTTPError(403)
+    tornado.web.HTTPError: HTTP 403: Forbidden
+[W 2026-02-04 17:01:10.103 ServerApp] 403 GET /api/kernelspecs?1770242470101 (@10.1.38.7) 0.72ms referer=None
+[W 2026-02-04 17:01:10.109 ServerApp] wrote error: 'Forbidden'
+    Traceback (most recent call last):
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/tornado/web.py", line 1788, in _execute
+        result = method(*self.path_args, **self.path_kwargs)
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/tornado/web.py", line 3289, in wrapper
+        url = self.get_login_url()
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/jupyter_server/base/handlers.py", line 784, in get_login_url
+        raise web.HTTPError(403)
+    tornado.web.HTTPError: HTTP 403: Forbidden
+[W 2026-02-04 17:01:10.109 ServerApp] 403 GET /api/kernels?1770242470101 (@10.1.38.7) 0.55ms referer=None
+[W 2026-02-04 17:01:10.110 ServerApp] wrote error: 'Forbidden'
+    Traceback (most recent call last):
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/tornado/web.py", line 1788, in _execute
+        result = method(*self.path_args, **self.path_kwargs)
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/tornado/web.py", line 3289, in wrapper
+        url = self.get_login_url()
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/jupyter_server/base/handlers.py", line 784, in get_login_url
+        raise web.HTTPError(403)
+    tornado.web.HTTPError: HTTP 403: Forbidden
+[W 2026-02-04 17:01:10.110 ServerApp] 403 GET /api/kernels?1770242470104 (@10.1.38.7) 0.58ms referer=None
+[W 2026-02-04 17:01:10.111 ServerApp] wrote error: 'Forbidden'
+    Traceback (most recent call last):
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/tornado/web.py", line 1788, in _execute
+        result = method(*self.path_args, **self.path_kwargs)
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/tornado/web.py", line 3289, in wrapper
+        url = self.get_login_url()
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/jupyter_server/base/handlers.py", line 784, in get_login_url
+        raise web.HTTPError(403)
+    tornado.web.HTTPError: HTTP 403: Forbidden
+[W 2026-02-04 17:01:10.111 ServerApp] 403 GET /api/sessions?1770242470104 (@10.1.38.7) 0.49ms referer=None
+[W 2026-02-04 17:01:10.111 ServerApp] wrote error: 'Forbidden'
+    Traceback (most recent call last):
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/tornado/web.py", line 1788, in _execute
+        result = method(*self.path_args, **self.path_kwargs)
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/tornado/web.py", line 3289, in wrapper
+        url = self.get_login_url()
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/jupyter_server/base/handlers.py", line 784, in get_login_url
+        raise web.HTTPError(403)
+    tornado.web.HTTPError: HTTP 403: Forbidden
+[W 2026-02-04 17:01:10.112 ServerApp] 403 GET /api/kernelspecs?1770242470108 (@10.1.38.7) 0.53ms referer=None
+[I 2026-02-04 17:01:10.115 ServerApp] 302 GET / (@10.1.38.7) 0.19ms
+[I 2026-02-04 17:01:10.135 LabApp] 302 GET /lab? (@10.1.38.7) 0.23ms
+[W 2026-02-04 17:01:10.139 ServerApp] wrote error: 'Forbidden'
+    Traceback (most recent call last):
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/tornado/web.py", line 1788, in _execute
+        result = method(*self.path_args, **self.path_kwargs)
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/tornado/web.py", line 3289, in wrapper
+        url = self.get_login_url()
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/jupyter_server/base/handlers.py", line 784, in get_login_url
+        raise web.HTTPError(403)
+    tornado.web.HTTPError: HTTP 403: Forbidden
+[W 2026-02-04 17:01:10.139 ServerApp] 403 GET /api/kernelspecs?1770242470138 (@10.1.38.7) 0.47ms referer=None
+[W 2026-02-04 17:01:10.141 ServerApp] wrote error: 'Forbidden'
+    Traceback (most recent call last):
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/tornado/web.py", line 1788, in _execute
+        result = method(*self.path_args, **self.path_kwargs)
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/tornado/web.py", line 3289, in wrapper
+        url = self.get_login_url()
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/jupyter_server/base/handlers.py", line 784, in get_login_url
+        raise web.HTTPError(403)
+    tornado.web.HTTPError: HTTP 403: Forbidden
+[W 2026-02-04 17:01:10.141 ServerApp] 403 GET /api/kernels?1770242470139 (@10.1.38.7) 0.61ms referer=None
+[W 2026-02-04 17:01:10.142 ServerApp] wrote error: 'Forbidden'
+    Traceback (most recent call last):
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/tornado/web.py", line 1788, in _execute
+        result = method(*self.path_args, **self.path_kwargs)
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/tornado/web.py", line 3289, in wrapper
+        url = self.get_login_url()
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/jupyter_server/base/handlers.py", line 784, in get_login_url
+        raise web.HTTPError(403)
+    tornado.web.HTTPError: HTTP 403: Forbidden
+[W 2026-02-04 17:01:10.142 ServerApp] 403 GET /api/sessions?1770242470139 (@10.1.38.7) 0.95ms referer=None
+[W 2026-02-04 17:01:10.142 ServerApp] wrote error: 'Forbidden'
+    Traceback (most recent call last):
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/tornado/web.py", line 1788, in _execute
+        result = method(*self.path_args, **self.path_kwargs)
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/tornado/web.py", line 3289, in wrapper
+        url = self.get_login_url()
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/jupyter_server/base/handlers.py", line 784, in get_login_url
+        raise web.HTTPError(403)
+    tornado.web.HTTPError: HTTP 403: Forbidden
+[W 2026-02-04 17:01:10.143 ServerApp] 403 GET /api/kernels?1770242470138 (@10.1.38.7) 0.43ms referer=None
+[W 2026-02-04 17:01:10.143 ServerApp] wrote error: 'Forbidden'
+    Traceback (most recent call last):
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/tornado/web.py", line 1788, in _execute
+        result = method(*self.path_args, **self.path_kwargs)
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/tornado/web.py", line 3289, in wrapper
+        url = self.get_login_url()
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/jupyter_server/base/handlers.py", line 784, in get_login_url
+        raise web.HTTPError(403)
+    tornado.web.HTTPError: HTTP 403: Forbidden
+[W 2026-02-04 17:01:10.143 ServerApp] 403 GET /api/kernelspecs?1770242470141 (@10.1.38.7) 0.42ms referer=None
+[I 2026-02-04 20:13:27.776 ServerApp] Starting buffering for e1f18756-d083-4cff-abaa-f36ddc32c415:0efdae69-ddfa-46ba-82ba-c6b1869de253
+[I 2026-02-04 23:37:29.726 ServerApp] 302 GET / (@10.1.38.7) 1.36ms
+[I 2026-02-04 23:37:29.804 LabApp] 302 GET /lab? (@10.1.38.7) 1.41ms
+[I 2026-02-04 23:37:29.975 ServerApp] 302 GET / (@10.1.38.7) 0.36ms
+[I 2026-02-04 23:37:30.000 LabApp] 302 GET /lab? (@10.1.38.7) 0.62ms
+[W 2026-02-04 23:37:30.028 ServerApp] wrote error: 'Forbidden'
+    Traceback (most recent call last):
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/tornado/web.py", line 1788, in _execute
+        result = method(*self.path_args, **self.path_kwargs)
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/tornado/web.py", line 3289, in wrapper
+        url = self.get_login_url()
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/jupyter_server/base/handlers.py", line 784, in get_login_url
+        raise web.HTTPError(403)
+    tornado.web.HTTPError: HTTP 403: Forbidden
+[W 2026-02-04 23:37:30.029 ServerApp] 403 GET /api/kernelspecs?1770266250025 (@10.1.38.7) 2.13ms referer=None
+[W 2026-02-04 23:37:30.052 ServerApp] wrote error: 'Forbidden'
+    Traceback (most recent call last):
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/tornado/web.py", line 1788, in _execute
+        result = method(*self.path_args, **self.path_kwargs)
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/tornado/web.py", line 3289, in wrapper
+        url = self.get_login_url()
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/jupyter_server/base/handlers.py", line 784, in get_login_url
+        raise web.HTTPError(403)
+    tornado.web.HTTPError: HTTP 403: Forbidden
+[W 2026-02-04 23:37:30.052 ServerApp] 403 GET /api/kernels?1770266250026 (@10.1.38.7) 0.74ms referer=None
+[W 2026-02-04 23:37:30.054 ServerApp] wrote error: 'Forbidden'
+    Traceback (most recent call last):
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/tornado/web.py", line 1788, in _execute
+        result = method(*self.path_args, **self.path_kwargs)
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/tornado/web.py", line 3289, in wrapper
+        url = self.get_login_url()
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/jupyter_server/base/handlers.py", line 784, in get_login_url
+        raise web.HTTPError(403)
+    tornado.web.HTTPError: HTTP 403: Forbidden
+[W 2026-02-04 23:37:30.054 ServerApp] 403 GET /api/kernels?1770266250031 (@10.1.38.7) 0.75ms referer=None
+[W 2026-02-04 23:37:30.055 ServerApp] wrote error: 'Forbidden'
+    Traceback (most recent call last):
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/tornado/web.py", line 1788, in _execute
+        result = method(*self.path_args, **self.path_kwargs)
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/tornado/web.py", line 3289, in wrapper
+        url = self.get_login_url()
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/jupyter_server/base/handlers.py", line 784, in get_login_url
+        raise web.HTTPError(403)
+    tornado.web.HTTPError: HTTP 403: Forbidden
+[W 2026-02-04 23:37:30.055 ServerApp] 403 GET /api/sessions?1770266250031 (@10.1.38.7) 0.69ms referer=None
+[W 2026-02-04 23:37:30.067 ServerApp] wrote error: 'Forbidden'
+    Traceback (most recent call last):
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/tornado/web.py", line 1788, in _execute
+        result = method(*self.path_args, **self.path_kwargs)
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/tornado/web.py", line 3289, in wrapper
+        url = self.get_login_url()
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/jupyter_server/base/handlers.py", line 784, in get_login_url
+        raise web.HTTPError(403)
+    tornado.web.HTTPError: HTTP 403: Forbidden
+[W 2026-02-04 23:37:30.067 ServerApp] 403 GET /api/kernelspecs?1770266250054 (@10.1.38.7) 0.87ms referer=None
+[I 2026-02-04 23:37:30.070 ServerApp] 302 GET / (@10.1.38.7) 0.29ms
+[I 2026-02-04 23:37:30.081 LabApp] 302 GET /lab? (@10.1.38.7) 0.37ms
+[W 2026-02-04 23:37:30.123 ServerApp] wrote error: 'Forbidden'
+    Traceback (most recent call last):
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/tornado/web.py", line 1788, in _execute
+        result = method(*self.path_args, **self.path_kwargs)
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/tornado/web.py", line 3289, in wrapper
+        url = self.get_login_url()
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/jupyter_server/base/handlers.py", line 784, in get_login_url
+        raise web.HTTPError(403)
+    tornado.web.HTTPError: HTTP 403: Forbidden
+[W 2026-02-04 23:37:30.124 ServerApp] 403 GET /api/kernelspecs?1770266250121 (@10.1.38.7) 1.06ms referer=None
+[W 2026-02-04 23:37:30.126 ServerApp] wrote error: 'Forbidden'
+    Traceback (most recent call last):
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/tornado/web.py", line 1788, in _execute
+        result = method(*self.path_args, **self.path_kwargs)
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/tornado/web.py", line 3289, in wrapper
+        url = self.get_login_url()
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/jupyter_server/base/handlers.py", line 784, in get_login_url
+        raise web.HTTPError(403)
+    tornado.web.HTTPError: HTTP 403: Forbidden
+[W 2026-02-04 23:37:30.127 ServerApp] 403 GET /api/kernels?1770266250121 (@10.1.38.7) 0.85ms referer=None
+[W 2026-02-04 23:37:30.127 ServerApp] wrote error: 'Forbidden'
+    Traceback (most recent call last):
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/tornado/web.py", line 1788, in _execute
+        result = method(*self.path_args, **self.path_kwargs)
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/tornado/web.py", line 3289, in wrapper
+        url = self.get_login_url()
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/jupyter_server/base/handlers.py", line 784, in get_login_url
+        raise web.HTTPError(403)
+    tornado.web.HTTPError: HTTP 403: Forbidden
+[W 2026-02-04 23:37:30.128 ServerApp] 403 GET /api/kernels?1770266250123 (@10.1.38.7) 0.76ms referer=None
+[W 2026-02-04 23:37:30.136 ServerApp] wrote error: 'Forbidden'
+    Traceback (most recent call last):
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/tornado/web.py", line 1788, in _execute
+        result = method(*self.path_args, **self.path_kwargs)
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/tornado/web.py", line 3289, in wrapper
+        url = self.get_login_url()
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/jupyter_server/base/handlers.py", line 784, in get_login_url
+        raise web.HTTPError(403)
+    tornado.web.HTTPError: HTTP 403: Forbidden
+[W 2026-02-04 23:37:30.136 ServerApp] 403 GET /api/sessions?1770266250124 (@10.1.38.7) 0.83ms referer=None
+[W 2026-02-04 23:37:30.138 ServerApp] wrote error: 'Forbidden'
+    Traceback (most recent call last):
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/tornado/web.py", line 1788, in _execute
+        result = method(*self.path_args, **self.path_kwargs)
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/tornado/web.py", line 3289, in wrapper
+        url = self.get_login_url()
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/jupyter_server/base/handlers.py", line 784, in get_login_url
+        raise web.HTTPError(403)
+    tornado.web.HTTPError: HTTP 403: Forbidden
+[W 2026-02-04 23:37:30.138 ServerApp] 403 GET /api/kernelspecs?1770266250126 (@10.1.38.7) 0.66ms referer=None
+[I 2026-02-04 23:37:31.032 ServerApp] 302 GET / (@10.1.38.7) 0.47ms
+[I 2026-02-04 23:37:31.038 LabApp] 302 GET /lab? (@10.1.38.7) 0.55ms
+[I 2026-02-04 23:37:31.073 ServerApp] Connecting to kernel e1f18756-d083-4cff-abaa-f36ddc32c415.
+[I 2026-02-04 23:37:31.210 ServerApp] 302 GET / (@10.1.38.7) 0.98ms
+[I 2026-02-04 23:37:31.261 LabApp] 302 GET /lab? (@10.1.38.7) 0.56ms
+[W 2026-02-04 23:37:31.321 ServerApp] wrote error: 'Forbidden'
+    Traceback (most recent call last):
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/tornado/web.py", line 1788, in _execute
+        result = method(*self.path_args, **self.path_kwargs)
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/tornado/web.py", line 3289, in wrapper
+        url = self.get_login_url()
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/jupyter_server/base/handlers.py", line 784, in get_login_url
+        raise web.HTTPError(403)
+    tornado.web.HTTPError: HTTP 403: Forbidden
+[W 2026-02-04 23:37:31.321 ServerApp] 403 GET /api/kernelspecs?1770266251319 (@10.1.38.7) 1.00ms referer=None
+[W 2026-02-04 23:37:31.374 ServerApp] wrote error: 'Forbidden'
+    Traceback (most recent call last):
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/tornado/web.py", line 1788, in _execute
+        result = method(*self.path_args, **self.path_kwargs)
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/tornado/web.py", line 3289, in wrapper
+        url = self.get_login_url()
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/jupyter_server/base/handlers.py", line 784, in get_login_url
+        raise web.HTTPError(403)
+    tornado.web.HTTPError: HTTP 403: Forbidden
+[W 2026-02-04 23:37:31.375 ServerApp] 403 GET /api/kernels?1770266251319 (@10.1.38.7) 1.04ms referer=None
+[W 2026-02-04 23:37:31.376 ServerApp] wrote error: 'Forbidden'
+    Traceback (most recent call last):
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/tornado/web.py", line 1788, in _execute
+        result = method(*self.path_args, **self.path_kwargs)
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/tornado/web.py", line 3289, in wrapper
+        url = self.get_login_url()
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/jupyter_server/base/handlers.py", line 784, in get_login_url
+        raise web.HTTPError(403)
+    tornado.web.HTTPError: HTTP 403: Forbidden
+[W 2026-02-04 23:37:31.376 ServerApp] 403 GET /api/kernels?1770266251353 (@10.1.38.7) 1.01ms referer=None
+[W 2026-02-04 23:37:31.377 ServerApp] wrote error: 'Forbidden'
+    Traceback (most recent call last):
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/tornado/web.py", line 1788, in _execute
+        result = method(*self.path_args, **self.path_kwargs)
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/tornado/web.py", line 3289, in wrapper
+        url = self.get_login_url()
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/jupyter_server/base/handlers.py", line 784, in get_login_url
+        raise web.HTTPError(403)
+    tornado.web.HTTPError: HTTP 403: Forbidden
+[W 2026-02-04 23:37:31.377 ServerApp] 403 GET /api/sessions?1770266251354 (@10.1.38.7) 1.66ms referer=None
+[W 2026-02-04 23:37:31.378 ServerApp] wrote error: 'Forbidden'
+    Traceback (most recent call last):
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/tornado/web.py", line 1788, in _execute
+        result = method(*self.path_args, **self.path_kwargs)
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/tornado/web.py", line 3289, in wrapper
+        url = self.get_login_url()
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/jupyter_server/base/handlers.py", line 784, in get_login_url
+        raise web.HTTPError(403)
+    tornado.web.HTTPError: HTTP 403: Forbidden
+[W 2026-02-04 23:37:31.379 ServerApp] 403 GET /api/kernelspecs?1770266251372 (@10.1.38.7) 0.72ms referer=None
+[I 2026-02-04 23:37:31.382 ServerApp] 302 GET / (@10.1.38.7) 0.30ms
+[I 2026-02-04 23:37:31.384 LabApp] 302 GET /lab? (@10.1.38.7) 0.35ms
+[W 2026-02-04 23:37:31.413 ServerApp] wrote error: 'Forbidden'
+    Traceback (most recent call last):
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/tornado/web.py", line 1788, in _execute
+        result = method(*self.path_args, **self.path_kwargs)
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/tornado/web.py", line 3289, in wrapper
+        url = self.get_login_url()
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/jupyter_server/base/handlers.py", line 784, in get_login_url
+        raise web.HTTPError(403)
+    tornado.web.HTTPError: HTTP 403: Forbidden
+[W 2026-02-04 23:37:31.414 ServerApp] 403 GET /api/kernelspecs?1770266251411 (@10.1.38.7) 0.88ms referer=None
+[W 2026-02-04 23:37:31.420 ServerApp] wrote error: 'Forbidden'
+    Traceback (most recent call last):
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/tornado/web.py", line 1788, in _execute
+        result = method(*self.path_args, **self.path_kwargs)
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/tornado/web.py", line 3289, in wrapper
+        url = self.get_login_url()
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/jupyter_server/base/handlers.py", line 784, in get_login_url
+        raise web.HTTPError(403)
+    tornado.web.HTTPError: HTTP 403: Forbidden
+[W 2026-02-04 23:37:31.420 ServerApp] 403 GET /api/kernels?1770266251412 (@10.1.38.7) 1.00ms referer=None
+[W 2026-02-04 23:37:31.421 ServerApp] wrote error: 'Forbidden'
+    Traceback (most recent call last):
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/tornado/web.py", line 1788, in _execute
+        result = method(*self.path_args, **self.path_kwargs)
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/tornado/web.py", line 3289, in wrapper
+        url = self.get_login_url()
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/jupyter_server/base/handlers.py", line 784, in get_login_url
+        raise web.HTTPError(403)
+    tornado.web.HTTPError: HTTP 403: Forbidden
+[W 2026-02-04 23:37:31.422 ServerApp] 403 GET /api/kernels?1770266251413 (@10.1.38.7) 0.88ms referer=None
+[W 2026-02-04 23:37:31.422 ServerApp] wrote error: 'Forbidden'
+    Traceback (most recent call last):
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/tornado/web.py", line 1788, in _execute
+        result = method(*self.path_args, **self.path_kwargs)
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/tornado/web.py", line 3289, in wrapper
+        url = self.get_login_url()
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/jupyter_server/base/handlers.py", line 784, in get_login_url
+        raise web.HTTPError(403)
+    tornado.web.HTTPError: HTTP 403: Forbidden
+[W 2026-02-04 23:37:31.422 ServerApp] 403 GET /api/sessions?1770266251414 (@10.1.38.7) 1.53ms referer=None
+[W 2026-02-04 23:37:31.423 ServerApp] wrote error: 'Forbidden'
+    Traceback (most recent call last):
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/tornado/web.py", line 1788, in _execute
+        result = method(*self.path_args, **self.path_kwargs)
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/tornado/web.py", line 3289, in wrapper
+        url = self.get_login_url()
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/jupyter_server/base/handlers.py", line 784, in get_login_url
+        raise web.HTTPError(403)
+    tornado.web.HTTPError: HTTP 403: Forbidden
+[W 2026-02-04 23:37:31.423 ServerApp] 403 GET /api/kernelspecs?1770266251418 (@10.1.38.7) 0.63ms referer=None
+[I 2026-02-05 03:56:43.579 ServerApp] Starting buffering for e1f18756-d083-4cff-abaa-f36ddc32c415:a6fefe53-deed-4afe-aad3-e4949b50bc6c
+[I 2026-02-05 08:19:09.584 ServerApp] 302 GET / (@10.1.38.7) 0.73ms
+[I 2026-02-05 08:19:09.612 LabApp] 302 GET /lab? (@10.1.38.7) 0.77ms
+[I 2026-02-05 08:19:09.983 ServerApp] 302 GET / (@10.1.38.7) 0.35ms
+[I 2026-02-05 08:19:10.021 LabApp] 302 GET /lab? (@10.1.38.7) 0.47ms
+[W 2026-02-05 08:19:10.052 ServerApp] wrote error: 'Forbidden'
+    Traceback (most recent call last):
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/tornado/web.py", line 1788, in _execute
+        result = method(*self.path_args, **self.path_kwargs)
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/tornado/web.py", line 3289, in wrapper
+        url = self.get_login_url()
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/jupyter_server/base/handlers.py", line 784, in get_login_url
+        raise web.HTTPError(403)
+    tornado.web.HTTPError: HTTP 403: Forbidden
+[W 2026-02-05 08:19:10.053 ServerApp] 403 GET /api/kernelspecs?1770297550050 (@10.1.38.7) 1.50ms referer=None
+[W 2026-02-05 08:19:10.066 ServerApp] wrote error: 'Forbidden'
+    Traceback (most recent call last):
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/tornado/web.py", line 1788, in _execute
+        result = method(*self.path_args, **self.path_kwargs)
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/tornado/web.py", line 3289, in wrapper
+        url = self.get_login_url()
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/jupyter_server/base/handlers.py", line 784, in get_login_url
+        raise web.HTTPError(403)
+    tornado.web.HTTPError: HTTP 403: Forbidden
+[W 2026-02-05 08:19:10.066 ServerApp] 403 GET /api/kernels?1770297550051 (@10.1.38.7) 0.64ms referer=None
+[W 2026-02-05 08:19:10.067 ServerApp] wrote error: 'Forbidden'
+    Traceback (most recent call last):
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/tornado/web.py", line 1788, in _execute
+        result = method(*self.path_args, **self.path_kwargs)
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/tornado/web.py", line 3289, in wrapper
+        url = self.get_login_url()
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/jupyter_server/base/handlers.py", line 784, in get_login_url
+        raise web.HTTPError(403)
+    tornado.web.HTTPError: HTTP 403: Forbidden
+[W 2026-02-05 08:19:10.067 ServerApp] 403 GET /api/kernels?1770297550056 (@10.1.38.7) 0.65ms referer=None
+[W 2026-02-05 08:19:10.067 ServerApp] wrote error: 'Forbidden'
+    Traceback (most recent call last):
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/tornado/web.py", line 1788, in _execute
+        result = method(*self.path_args, **self.path_kwargs)
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/tornado/web.py", line 3289, in wrapper
+        url = self.get_login_url()
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/jupyter_server/base/handlers.py", line 784, in get_login_url
+        raise web.HTTPError(403)
+    tornado.web.HTTPError: HTTP 403: Forbidden
+[W 2026-02-05 08:19:10.068 ServerApp] 403 GET /api/sessions?1770297550057 (@10.1.38.7) 1.47ms referer=None
+[W 2026-02-05 08:19:10.074 ServerApp] wrote error: 'Forbidden'
+    Traceback (most recent call last):
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/tornado/web.py", line 1788, in _execute
+        result = method(*self.path_args, **self.path_kwargs)
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/tornado/web.py", line 3289, in wrapper
+        url = self.get_login_url()
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/jupyter_server/base/handlers.py", line 784, in get_login_url
+        raise web.HTTPError(403)
+    tornado.web.HTTPError: HTTP 403: Forbidden
+[W 2026-02-05 08:19:10.075 ServerApp] 403 GET /api/kernelspecs?1770297550064 (@10.1.38.7) 0.51ms referer=None
+[I 2026-02-05 08:19:10.080 ServerApp] 302 GET / (@10.1.38.7) 0.28ms
+[I 2026-02-05 08:19:10.084 LabApp] 302 GET /lab? (@10.1.38.7) 0.36ms
+[W 2026-02-05 08:19:10.090 ServerApp] wrote error: 'Forbidden'
+    Traceback (most recent call last):
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/tornado/web.py", line 1788, in _execute
+        result = method(*self.path_args, **self.path_kwargs)
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/tornado/web.py", line 3289, in wrapper
+        url = self.get_login_url()
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/jupyter_server/base/handlers.py", line 784, in get_login_url
+        raise web.HTTPError(403)
+    tornado.web.HTTPError: HTTP 403: Forbidden
+[W 2026-02-05 08:19:10.090 ServerApp] 403 GET /api/kernelspecs?1770297550088 (@10.1.38.7) 0.68ms referer=None
+[W 2026-02-05 08:19:10.103 ServerApp] wrote error: 'Forbidden'
+    Traceback (most recent call last):
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/tornado/web.py", line 1788, in _execute
+        result = method(*self.path_args, **self.path_kwargs)
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/tornado/web.py", line 3289, in wrapper
+        url = self.get_login_url()
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/jupyter_server/base/handlers.py", line 784, in get_login_url
+        raise web.HTTPError(403)
+    tornado.web.HTTPError: HTTP 403: Forbidden
+[W 2026-02-05 08:19:10.103 ServerApp] 403 GET /api/kernels?1770297550090 (@10.1.38.7) 1.22ms referer=None
+[W 2026-02-05 08:19:10.104 ServerApp] wrote error: 'Forbidden'
+    Traceback (most recent call last):
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/tornado/web.py", line 1788, in _execute
+        result = method(*self.path_args, **self.path_kwargs)
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/tornado/web.py", line 3289, in wrapper
+        url = self.get_login_url()
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/jupyter_server/base/handlers.py", line 784, in get_login_url
+        raise web.HTTPError(403)
+    tornado.web.HTTPError: HTTP 403: Forbidden
+[W 2026-02-05 08:19:10.104 ServerApp] 403 GET /api/kernels?1770297550088 (@10.1.38.7) 1.80ms referer=None
+[W 2026-02-05 08:19:10.125 ServerApp] wrote error: 'Forbidden'
+    Traceback (most recent call last):
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/tornado/web.py", line 1788, in _execute
+        result = method(*self.path_args, **self.path_kwargs)
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/tornado/web.py", line 3289, in wrapper
+        url = self.get_login_url()
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/jupyter_server/base/handlers.py", line 784, in get_login_url
+        raise web.HTTPError(403)
+    tornado.web.HTTPError: HTTP 403: Forbidden
+[W 2026-02-05 08:19:10.125 ServerApp] 403 GET /api/sessions?1770297550090 (@10.1.38.7) 0.98ms referer=None
+[W 2026-02-05 08:19:10.126 ServerApp] wrote error: 'Forbidden'
+    Traceback (most recent call last):
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/tornado/web.py", line 1788, in _execute
+        result = method(*self.path_args, **self.path_kwargs)
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/tornado/web.py", line 3289, in wrapper
+        url = self.get_login_url()
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/jupyter_server/base/handlers.py", line 784, in get_login_url
+        raise web.HTTPError(403)
+    tornado.web.HTTPError: HTTP 403: Forbidden
+[W 2026-02-05 08:19:10.126 ServerApp] 403 GET /api/kernelspecs?1770297550092 (@10.1.38.7) 0.77ms referer=None
+[I 2026-02-05 08:19:10.617 ServerApp] 302 GET / (@10.1.38.7) 0.39ms
+[I 2026-02-05 08:19:10.620 LabApp] 302 GET /lab? (@10.1.38.7) 0.44ms
+[I 2026-02-05 08:19:10.643 ServerApp] Connecting to kernel e1f18756-d083-4cff-abaa-f36ddc32c415.
+[I 2026-02-05 08:19:11.345 ServerApp] 302 GET / (@10.1.38.7) 2.05ms
+[I 2026-02-05 08:19:11.348 LabApp] 302 GET /lab? (@10.1.38.7) 0.63ms
+[W 2026-02-05 08:19:11.355 ServerApp] wrote error: 'Forbidden'
+    Traceback (most recent call last):
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/tornado/web.py", line 1788, in _execute
+        result = method(*self.path_args, **self.path_kwargs)
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/tornado/web.py", line 3289, in wrapper
+        url = self.get_login_url()
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/jupyter_server/base/handlers.py", line 784, in get_login_url
+        raise web.HTTPError(403)
+    tornado.web.HTTPError: HTTP 403: Forbidden
+[W 2026-02-05 08:19:11.355 ServerApp] 403 GET /api/kernelspecs?1770297551353 (@10.1.38.7) 0.49ms referer=None
+[W 2026-02-05 08:19:11.357 ServerApp] wrote error: 'Forbidden'
+    Traceback (most recent call last):
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/tornado/web.py", line 1788, in _execute
+        result = method(*self.path_args, **self.path_kwargs)
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/tornado/web.py", line 3289, in wrapper
+        url = self.get_login_url()
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/jupyter_server/base/handlers.py", line 784, in get_login_url
+        raise web.HTTPError(403)
+    tornado.web.HTTPError: HTTP 403: Forbidden
+[W 2026-02-05 08:19:11.357 ServerApp] 403 GET /api/sessions?1770297551355 (@10.1.38.7) 0.48ms referer=None
+[W 2026-02-05 08:19:11.358 ServerApp] wrote error: 'Forbidden'
+    Traceback (most recent call last):
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/tornado/web.py", line 1788, in _execute
+        result = method(*self.path_args, **self.path_kwargs)
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/tornado/web.py", line 3289, in wrapper
+        url = self.get_login_url()
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/jupyter_server/base/handlers.py", line 784, in get_login_url
+        raise web.HTTPError(403)
+    tornado.web.HTTPError: HTTP 403: Forbidden
+[W 2026-02-05 08:19:11.358 ServerApp] 403 GET /api/kernels?1770297551354 (@10.1.38.7) 0.64ms referer=None
+[W 2026-02-05 08:19:11.358 ServerApp] wrote error: 'Forbidden'
+    Traceback (most recent call last):
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/tornado/web.py", line 1788, in _execute
+        result = method(*self.path_args, **self.path_kwargs)
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/tornado/web.py", line 3289, in wrapper
+        url = self.get_login_url()
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/jupyter_server/base/handlers.py", line 784, in get_login_url
+        raise web.HTTPError(403)
+    tornado.web.HTTPError: HTTP 403: Forbidden
+[W 2026-02-05 08:19:11.359 ServerApp] 403 GET /api/kernels?1770297551355 (@10.1.38.7) 1.09ms referer=None
+[W 2026-02-05 08:19:11.359 ServerApp] wrote error: 'Forbidden'
+    Traceback (most recent call last):
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/tornado/web.py", line 1788, in _execute
+        result = method(*self.path_args, **self.path_kwargs)
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/tornado/web.py", line 3289, in wrapper
+        url = self.get_login_url()
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/jupyter_server/base/handlers.py", line 784, in get_login_url
+        raise web.HTTPError(403)
+    tornado.web.HTTPError: HTTP 403: Forbidden
+[W 2026-02-05 08:19:11.360 ServerApp] 403 GET /api/kernelspecs?1770297551357 (@10.1.38.7) 0.45ms referer=None
+[I 2026-02-05 08:19:11.361 ServerApp] 302 GET / (@10.1.38.7) 0.19ms
+[I 2026-02-05 08:19:11.375 LabApp] 302 GET /lab? (@10.1.38.7) 0.43ms
+[W 2026-02-05 08:19:11.380 ServerApp] wrote error: 'Forbidden'
+    Traceback (most recent call last):
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/tornado/web.py", line 1788, in _execute
+        result = method(*self.path_args, **self.path_kwargs)
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/tornado/web.py", line 3289, in wrapper
+        url = self.get_login_url()
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/jupyter_server/base/handlers.py", line 784, in get_login_url
+        raise web.HTTPError(403)
+    tornado.web.HTTPError: HTTP 403: Forbidden
+[W 2026-02-05 08:19:11.380 ServerApp] 403 GET /api/kernelspecs?1770297551378 (@10.1.38.7) 0.44ms referer=None
+[W 2026-02-05 08:19:11.382 ServerApp] wrote error: 'Forbidden'
+    Traceback (most recent call last):
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/tornado/web.py", line 1788, in _execute
+        result = method(*self.path_args, **self.path_kwargs)
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/tornado/web.py", line 3289, in wrapper
+        url = self.get_login_url()
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/jupyter_server/base/handlers.py", line 784, in get_login_url
+        raise web.HTTPError(403)
+    tornado.web.HTTPError: HTTP 403: Forbidden
+[W 2026-02-05 08:19:11.382 ServerApp] 403 GET /api/kernels?1770297551379 (@10.1.38.7) 0.45ms referer=None
+[W 2026-02-05 08:19:11.382 ServerApp] wrote error: 'Forbidden'
+    Traceback (most recent call last):
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/tornado/web.py", line 1788, in _execute
+        result = method(*self.path_args, **self.path_kwargs)
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/tornado/web.py", line 3289, in wrapper
+        url = self.get_login_url()
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/jupyter_server/base/handlers.py", line 784, in get_login_url
+        raise web.HTTPError(403)
+    tornado.web.HTTPError: HTTP 403: Forbidden
+[W 2026-02-05 08:19:11.383 ServerApp] 403 GET /api/sessions?1770297551380 (@10.1.38.7) 0.47ms referer=None
+[W 2026-02-05 08:19:11.383 ServerApp] wrote error: 'Forbidden'
+    Traceback (most recent call last):
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/tornado/web.py", line 1788, in _execute
+        result = method(*self.path_args, **self.path_kwargs)
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/tornado/web.py", line 3289, in wrapper
+        url = self.get_login_url()
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/jupyter_server/base/handlers.py", line 784, in get_login_url
+        raise web.HTTPError(403)
+    tornado.web.HTTPError: HTTP 403: Forbidden
+[W 2026-02-05 08:19:11.383 ServerApp] 403 GET /api/kernels?1770297551380 (@10.1.38.7) 0.44ms referer=None
+[W 2026-02-05 08:19:11.396 ServerApp] wrote error: 'Forbidden'
+    Traceback (most recent call last):
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/tornado/web.py", line 1788, in _execute
+        result = method(*self.path_args, **self.path_kwargs)
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/tornado/web.py", line 3289, in wrapper
+        url = self.get_login_url()
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/jupyter_server/base/handlers.py", line 784, in get_login_url
+        raise web.HTTPError(403)
+    tornado.web.HTTPError: HTTP 403: Forbidden
+[W 2026-02-05 08:19:11.396 ServerApp] 403 GET /api/kernelspecs?1770297551391 (@10.1.38.7) 0.47ms referer=None
+[I 2026-02-05 08:27:04.577 ServerApp] 302 GET / (@10.1.38.7) 0.35ms
+[I 2026-02-05 08:27:04.579 LabApp] 302 GET /lab? (@10.1.38.7) 0.38ms
+[I 2026-02-05 08:27:04.605 ServerApp] Connecting to kernel e1f18756-d083-4cff-abaa-f36ddc32c415.
+[I 2026-02-05 08:27:04.733 ServerApp] 302 GET / (@10.1.38.7) 0.31ms
+[I 2026-02-05 08:27:04.765 LabApp] 302 GET /lab? (@10.1.38.7) 0.42ms
+[W 2026-02-05 08:27:04.801 ServerApp] wrote error: 'Forbidden'
+    Traceback (most recent call last):
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/tornado/web.py", line 1788, in _execute
+        result = method(*self.path_args, **self.path_kwargs)
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/tornado/web.py", line 3289, in wrapper
+        url = self.get_login_url()
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/jupyter_server/base/handlers.py", line 784, in get_login_url
+        raise web.HTTPError(403)
+    tornado.web.HTTPError: HTTP 403: Forbidden
+[W 2026-02-05 08:27:04.802 ServerApp] 403 GET /api/kernelspecs?1770298024800 (@10.1.38.7) 0.96ms referer=None
+[W 2026-02-05 08:27:04.805 ServerApp] wrote error: 'Forbidden'
+    Traceback (most recent call last):
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/tornado/web.py", line 1788, in _execute
+        result = method(*self.path_args, **self.path_kwargs)
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/tornado/web.py", line 3289, in wrapper
+        url = self.get_login_url()
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/jupyter_server/base/handlers.py", line 784, in get_login_url
+        raise web.HTTPError(403)
+    tornado.web.HTTPError: HTTP 403: Forbidden
+[W 2026-02-05 08:27:04.805 ServerApp] 403 GET /api/kernels?1770298024800 (@10.1.38.7) 0.63ms referer=None
+[W 2026-02-05 08:27:04.806 ServerApp] wrote error: 'Forbidden'
+    Traceback (most recent call last):
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/tornado/web.py", line 1788, in _execute
+        result = method(*self.path_args, **self.path_kwargs)
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/tornado/web.py", line 3289, in wrapper
+        url = self.get_login_url()
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/jupyter_server/base/handlers.py", line 784, in get_login_url
+        raise web.HTTPError(403)
+    tornado.web.HTTPError: HTTP 403: Forbidden
+[W 2026-02-05 08:27:04.806 ServerApp] 403 GET /api/kernels?1770298024801 (@10.1.38.7) 0.66ms referer=None
+[W 2026-02-05 08:27:04.807 ServerApp] wrote error: 'Forbidden'
+    Traceback (most recent call last):
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/tornado/web.py", line 1788, in _execute
+        result = method(*self.path_args, **self.path_kwargs)
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/tornado/web.py", line 3289, in wrapper
+        url = self.get_login_url()
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/jupyter_server/base/handlers.py", line 784, in get_login_url
+        raise web.HTTPError(403)
+    tornado.web.HTTPError: HTTP 403: Forbidden
+[W 2026-02-05 08:27:04.807 ServerApp] 403 GET /api/sessions?1770298024802 (@10.1.38.7) 0.67ms referer=None
+[W 2026-02-05 08:27:04.808 ServerApp] wrote error: 'Forbidden'
+    Traceback (most recent call last):
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/tornado/web.py", line 1788, in _execute
+        result = method(*self.path_args, **self.path_kwargs)
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/tornado/web.py", line 3289, in wrapper
+        url = self.get_login_url()
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/jupyter_server/base/handlers.py", line 784, in get_login_url
+        raise web.HTTPError(403)
+    tornado.web.HTTPError: HTTP 403: Forbidden
+[W 2026-02-05 08:27:04.808 ServerApp] 403 GET /api/kernelspecs?1770298024804 (@10.1.38.7) 0.65ms referer=None
+[I 2026-02-05 08:27:04.811 ServerApp] 302 GET / (@10.1.38.7) 0.21ms
+[I 2026-02-05 08:27:04.832 LabApp] 302 GET /lab? (@10.1.38.7) 0.28ms
+[W 2026-02-05 08:27:04.836 ServerApp] wrote error: 'Forbidden'
+    Traceback (most recent call last):
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/tornado/web.py", line 1788, in _execute
+        result = method(*self.path_args, **self.path_kwargs)
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/tornado/web.py", line 3289, in wrapper
+        url = self.get_login_url()
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/jupyter_server/base/handlers.py", line 784, in get_login_url
+        raise web.HTTPError(403)
+    tornado.web.HTTPError: HTTP 403: Forbidden
+[W 2026-02-05 08:27:04.836 ServerApp] 403 GET /api/kernelspecs?1770298024834 (@10.1.38.7) 0.44ms referer=None
+[W 2026-02-05 08:27:04.838 ServerApp] wrote error: 'Forbidden'
+    Traceback (most recent call last):
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/tornado/web.py", line 1788, in _execute
+        result = method(*self.path_args, **self.path_kwargs)
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/tornado/web.py", line 3289, in wrapper
+        url = self.get_login_url()
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/jupyter_server/base/handlers.py", line 784, in get_login_url
+        raise web.HTTPError(403)
+    tornado.web.HTTPError: HTTP 403: Forbidden
+[W 2026-02-05 08:27:04.838 ServerApp] 403 GET /api/kernels?1770298024835 (@10.1.38.7) 0.46ms referer=None
+[W 2026-02-05 08:27:04.839 ServerApp] wrote error: 'Forbidden'
+    Traceback (most recent call last):
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/tornado/web.py", line 1788, in _execute
+        result = method(*self.path_args, **self.path_kwargs)
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/tornado/web.py", line 3289, in wrapper
+        url = self.get_login_url()
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/jupyter_server/base/handlers.py", line 784, in get_login_url
+        raise web.HTTPError(403)
+    tornado.web.HTTPError: HTTP 403: Forbidden
+[W 2026-02-05 08:27:04.839 ServerApp] 403 GET /api/kernels?1770298024836 (@10.1.38.7) 0.60ms referer=None
+[W 2026-02-05 08:27:04.839 ServerApp] wrote error: 'Forbidden'
+    Traceback (most recent call last):
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/tornado/web.py", line 1788, in _execute
+        result = method(*self.path_args, **self.path_kwargs)
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/tornado/web.py", line 3289, in wrapper
+        url = self.get_login_url()
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/jupyter_server/base/handlers.py", line 784, in get_login_url
+        raise web.HTTPError(403)
+    tornado.web.HTTPError: HTTP 403: Forbidden
+[W 2026-02-05 08:27:04.840 ServerApp] 403 GET /api/sessions?1770298024836 (@10.1.38.7) 0.45ms referer=None
+[W 2026-02-05 08:27:04.840 ServerApp] wrote error: 'Forbidden'
+    Traceback (most recent call last):
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/tornado/web.py", line 1788, in _execute
+        result = method(*self.path_args, **self.path_kwargs)
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/tornado/web.py", line 3289, in wrapper
+        url = self.get_login_url()
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/jupyter_server/base/handlers.py", line 784, in get_login_url
+        raise web.HTTPError(403)
+    tornado.web.HTTPError: HTTP 403: Forbidden
+[W 2026-02-05 08:27:04.840 ServerApp] 403 GET /api/kernelspecs?1770298024838 (@10.1.38.7) 0.44ms referer=None
+[I 2026-02-05 12:06:28.789 ServerApp] Starting buffering for e1f18756-d083-4cff-abaa-f36ddc32c415:7f99b98b-3d1e-43d9-b3ed-cceedadc9d92
+[I 2026-02-05 14:56:26.221 ServerApp] 302 GET / (@10.1.38.7) 12.77ms
+[I 2026-02-05 14:56:26.253 LabApp] 302 GET /lab? (@10.1.38.7) 8.80ms
+[I 2026-02-05 14:56:26.297 ServerApp] 302 GET / (@10.1.38.7) 0.25ms
+[I 2026-02-05 14:56:26.325 LabApp] 302 GET /lab? (@10.1.38.7) 5.55ms
+[W 2026-02-05 14:56:26.346 ServerApp] wrote error: 'Forbidden'
+    Traceback (most recent call last):
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/tornado/web.py", line 1788, in _execute
+        result = method(*self.path_args, **self.path_kwargs)
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/tornado/web.py", line 3289, in wrapper
+        url = self.get_login_url()
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/jupyter_server/base/handlers.py", line 784, in get_login_url
+        raise web.HTTPError(403)
+    tornado.web.HTTPError: HTTP 403: Forbidden
+[W 2026-02-05 14:56:26.351 ServerApp] 403 GET /api/kernelspecs?1770321386344 (@10.1.38.7) 5.63ms referer=None
+[W 2026-02-05 14:56:26.354 ServerApp] wrote error: 'Forbidden'
+    Traceback (most recent call last):
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/tornado/web.py", line 1788, in _execute
+        result = method(*self.path_args, **self.path_kwargs)
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/tornado/web.py", line 3289, in wrapper
+        url = self.get_login_url()
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/jupyter_server/base/handlers.py", line 784, in get_login_url
+        raise web.HTTPError(403)
+    tornado.web.HTTPError: HTTP 403: Forbidden
+[W 2026-02-05 14:56:26.355 ServerApp] 403 GET /api/kernels?1770321386345 (@10.1.38.7) 0.46ms referer=None
+[W 2026-02-05 14:56:26.356 ServerApp] wrote error: 'Forbidden'
+    Traceback (most recent call last):
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/tornado/web.py", line 1788, in _execute
+        result = method(*self.path_args, **self.path_kwargs)
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/tornado/web.py", line 3289, in wrapper
+        url = self.get_login_url()
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/jupyter_server/base/handlers.py", line 784, in get_login_url
+        raise web.HTTPError(403)
+    tornado.web.HTTPError: HTTP 403: Forbidden
+[W 2026-02-05 14:56:26.356 ServerApp] 403 GET /api/kernels?1770321386348 (@10.1.38.7) 0.41ms referer=None
+[W 2026-02-05 14:56:26.359 ServerApp] wrote error: 'Forbidden'
+    Traceback (most recent call last):
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/tornado/web.py", line 1788, in _execute
+        result = method(*self.path_args, **self.path_kwargs)
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/tornado/web.py", line 3289, in wrapper
+        url = self.get_login_url()
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/jupyter_server/base/handlers.py", line 784, in get_login_url
+        raise web.HTTPError(403)
+    tornado.web.HTTPError: HTTP 403: Forbidden
+[W 2026-02-05 14:56:26.360 ServerApp] 403 GET /api/sessions?1770321386349 (@10.1.38.7) 0.59ms referer=None
+[W 2026-02-05 14:56:26.364 ServerApp] wrote error: 'Forbidden'
+    Traceback (most recent call last):
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/tornado/web.py", line 1788, in _execute
+        result = method(*self.path_args, **self.path_kwargs)
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/tornado/web.py", line 3289, in wrapper
+        url = self.get_login_url()
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/jupyter_server/base/handlers.py", line 784, in get_login_url
+        raise web.HTTPError(403)
+    tornado.web.HTTPError: HTTP 403: Forbidden
+[W 2026-02-05 14:56:26.364 ServerApp] 403 GET /api/kernelspecs?1770321386356 (@10.1.38.7) 0.47ms referer=None
+[I 2026-02-05 14:56:26.368 ServerApp] 302 GET / (@10.1.38.7) 0.19ms
+[I 2026-02-05 14:56:26.370 LabApp] 302 GET /lab? (@10.1.38.7) 0.28ms
+[W 2026-02-05 14:56:26.383 ServerApp] wrote error: 'Forbidden'
+    Traceback (most recent call last):
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/tornado/web.py", line 1788, in _execute
+        result = method(*self.path_args, **self.path_kwargs)
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/tornado/web.py", line 3289, in wrapper
+        url = self.get_login_url()
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/jupyter_server/base/handlers.py", line 784, in get_login_url
+        raise web.HTTPError(403)
+    tornado.web.HTTPError: HTTP 403: Forbidden
+[W 2026-02-05 14:56:26.384 ServerApp] 403 GET /api/kernelspecs?1770321386382 (@10.1.38.7) 0.54ms referer=None
+[W 2026-02-05 14:56:26.386 ServerApp] wrote error: 'Forbidden'
+    Traceback (most recent call last):
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/tornado/web.py", line 1788, in _execute
+        result = method(*self.path_args, **self.path_kwargs)
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/tornado/web.py", line 3289, in wrapper
+        url = self.get_login_url()
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/jupyter_server/base/handlers.py", line 784, in get_login_url
+        raise web.HTTPError(403)
+    tornado.web.HTTPError: HTTP 403: Forbidden
+[W 2026-02-05 14:56:26.386 ServerApp] 403 GET /api/kernels?1770321386382 (@10.1.38.7) 0.47ms referer=None
+[W 2026-02-05 14:56:26.387 ServerApp] wrote error: 'Forbidden'
+    Traceback (most recent call last):
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/tornado/web.py", line 1788, in _execute
+        result = method(*self.path_args, **self.path_kwargs)
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/tornado/web.py", line 3289, in wrapper
+        url = self.get_login_url()
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/jupyter_server/base/handlers.py", line 784, in get_login_url
+        raise web.HTTPError(403)
+    tornado.web.HTTPError: HTTP 403: Forbidden
+[W 2026-02-05 14:56:26.387 ServerApp] 403 GET /api/kernels?1770321386384 (@10.1.38.7) 0.46ms referer=None
+[W 2026-02-05 14:56:26.388 ServerApp] wrote error: 'Forbidden'
+    Traceback (most recent call last):
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/tornado/web.py", line 1788, in _execute
+        result = method(*self.path_args, **self.path_kwargs)
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/tornado/web.py", line 3289, in wrapper
+        url = self.get_login_url()
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/jupyter_server/base/handlers.py", line 784, in get_login_url
+        raise web.HTTPError(403)
+    tornado.web.HTTPError: HTTP 403: Forbidden
+[W 2026-02-05 14:56:26.388 ServerApp] 403 GET /api/kernelspecs?1770321386386 (@10.1.38.7) 0.52ms referer=None
+[W 2026-02-05 14:56:26.389 ServerApp] wrote error: 'Forbidden'
+    Traceback (most recent call last):
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/tornado/web.py", line 1788, in _execute
+        result = method(*self.path_args, **self.path_kwargs)
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/tornado/web.py", line 3289, in wrapper
+        url = self.get_login_url()
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/jupyter_server/base/handlers.py", line 784, in get_login_url
+        raise web.HTTPError(403)
+    tornado.web.HTTPError: HTTP 403: Forbidden
+[W 2026-02-05 14:56:26.389 ServerApp] 403 GET /api/sessions?1770321386384 (@10.1.38.7) 0.51ms referer=None
+[I 2026-02-05 15:01:46.102 ServerApp] 302 GET / (@10.1.38.7) 0.53ms
+[I 2026-02-05 15:01:46.112 LabApp] 302 GET /lab? (@10.1.38.7) 0.50ms
+[I 2026-02-05 15:01:46.155 ServerApp] Connecting to kernel e1f18756-d083-4cff-abaa-f36ddc32c415.
+[I 2026-02-05 15:01:46.263 ServerApp] 302 GET / (@10.1.38.7) 0.30ms
+[I 2026-02-05 15:01:46.304 LabApp] 302 GET /lab? (@10.1.38.7) 0.30ms
+[W 2026-02-05 15:01:46.345 ServerApp] wrote error: 'Forbidden'
+    Traceback (most recent call last):
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/tornado/web.py", line 1788, in _execute
+        result = method(*self.path_args, **self.path_kwargs)
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/tornado/web.py", line 3289, in wrapper
+        url = self.get_login_url()
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/jupyter_server/base/handlers.py", line 784, in get_login_url
+        raise web.HTTPError(403)
+    tornado.web.HTTPError: HTTP 403: Forbidden
+[W 2026-02-05 15:01:46.346 ServerApp] 403 GET /api/kernelspecs?1770321706343 (@10.1.38.7) 0.89ms referer=None
+[W 2026-02-05 15:01:46.351 ServerApp] wrote error: 'Forbidden'
+    Traceback (most recent call last):
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/tornado/web.py", line 1788, in _execute
+        result = method(*self.path_args, **self.path_kwargs)
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/tornado/web.py", line 3289, in wrapper
+        url = self.get_login_url()
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/jupyter_server/base/handlers.py", line 784, in get_login_url
+        raise web.HTTPError(403)
+    tornado.web.HTTPError: HTTP 403: Forbidden
+[W 2026-02-05 15:01:46.351 ServerApp] 403 GET /api/kernels?1770321706344 (@10.1.38.7) 0.55ms referer=None
+[W 2026-02-05 15:01:46.352 ServerApp] wrote error: 'Forbidden'
+    Traceback (most recent call last):
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/tornado/web.py", line 1788, in _execute
+        result = method(*self.path_args, **self.path_kwargs)
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/tornado/web.py", line 3289, in wrapper
+        url = self.get_login_url()
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/jupyter_server/base/handlers.py", line 784, in get_login_url
+        raise web.HTTPError(403)
+    tornado.web.HTTPError: HTTP 403: Forbidden
+[W 2026-02-05 15:01:46.352 ServerApp] 403 GET /api/kernels?1770321706345 (@10.1.38.7) 0.56ms referer=None
+[W 2026-02-05 15:01:46.353 ServerApp] wrote error: 'Forbidden'
+    Traceback (most recent call last):
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/tornado/web.py", line 1788, in _execute
+        result = method(*self.path_args, **self.path_kwargs)
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/tornado/web.py", line 3289, in wrapper
+        url = self.get_login_url()
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/jupyter_server/base/handlers.py", line 784, in get_login_url
+        raise web.HTTPError(403)
+    tornado.web.HTTPError: HTTP 403: Forbidden
+[W 2026-02-05 15:01:46.353 ServerApp] 403 GET /api/sessions?1770321706345 (@10.1.38.7) 0.73ms referer=None
+[W 2026-02-05 15:01:46.353 ServerApp] wrote error: 'Forbidden'
+    Traceback (most recent call last):
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/tornado/web.py", line 1788, in _execute
+        result = method(*self.path_args, **self.path_kwargs)
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/tornado/web.py", line 3289, in wrapper
+        url = self.get_login_url()
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/jupyter_server/base/handlers.py", line 784, in get_login_url
+        raise web.HTTPError(403)
+    tornado.web.HTTPError: HTTP 403: Forbidden
+[W 2026-02-05 15:01:46.354 ServerApp] 403 GET /api/kernelspecs?1770321706349 (@10.1.38.7) 1.37ms referer=None
+[I 2026-02-05 15:01:46.373 ServerApp] 302 GET / (@10.1.38.7) 0.21ms
+[I 2026-02-05 15:01:46.376 LabApp] 302 GET /lab? (@10.1.38.7) 0.28ms
+[W 2026-02-05 15:01:46.381 ServerApp] wrote error: 'Forbidden'
+    Traceback (most recent call last):
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/tornado/web.py", line 1788, in _execute
+        result = method(*self.path_args, **self.path_kwargs)
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/tornado/web.py", line 3289, in wrapper
+        url = self.get_login_url()
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/jupyter_server/base/handlers.py", line 784, in get_login_url
+        raise web.HTTPError(403)
+    tornado.web.HTTPError: HTTP 403: Forbidden
+[W 2026-02-05 15:01:46.381 ServerApp] 403 GET /api/kernelspecs?1770321706379 (@10.1.38.7) 0.46ms referer=None
+[W 2026-02-05 15:01:46.383 ServerApp] wrote error: 'Forbidden'
+    Traceback (most recent call last):
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/tornado/web.py", line 1788, in _execute
+        result = method(*self.path_args, **self.path_kwargs)
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/tornado/web.py", line 3289, in wrapper
+        url = self.get_login_url()
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/jupyter_server/base/handlers.py", line 784, in get_login_url
+        raise web.HTTPError(403)
+    tornado.web.HTTPError: HTTP 403: Forbidden
+[W 2026-02-05 15:01:46.383 ServerApp] 403 GET /api/kernels?1770321706380 (@10.1.38.7) 0.56ms referer=None
+[W 2026-02-05 15:01:46.384 ServerApp] wrote error: 'Forbidden'
+    Traceback (most recent call last):
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/tornado/web.py", line 1788, in _execute
+        result = method(*self.path_args, **self.path_kwargs)
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/tornado/web.py", line 3289, in wrapper
+        url = self.get_login_url()
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/jupyter_server/base/handlers.py", line 784, in get_login_url
+        raise web.HTTPError(403)
+    tornado.web.HTTPError: HTTP 403: Forbidden
+[W 2026-02-05 15:01:46.384 ServerApp] 403 GET /api/kernels?1770321706381 (@10.1.38.7) 1.26ms referer=None
+[W 2026-02-05 15:01:46.384 ServerApp] wrote error: 'Forbidden'
+    Traceback (most recent call last):
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/tornado/web.py", line 1788, in _execute
+        result = method(*self.path_args, **self.path_kwargs)
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/tornado/web.py", line 3289, in wrapper
+        url = self.get_login_url()
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/jupyter_server/base/handlers.py", line 784, in get_login_url
+        raise web.HTTPError(403)
+    tornado.web.HTTPError: HTTP 403: Forbidden
+[W 2026-02-05 15:01:46.385 ServerApp] 403 GET /api/sessions?1770321706381 (@10.1.38.7) 0.46ms referer=None
+[W 2026-02-05 15:01:46.385 ServerApp] wrote error: 'Forbidden'
+    Traceback (most recent call last):
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/tornado/web.py", line 1788, in _execute
+        result = method(*self.path_args, **self.path_kwargs)
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/tornado/web.py", line 3289, in wrapper
+        url = self.get_login_url()
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/jupyter_server/base/handlers.py", line 784, in get_login_url
+        raise web.HTTPError(403)
+    tornado.web.HTTPError: HTTP 403: Forbidden
+[W 2026-02-05 15:01:46.386 ServerApp] 403 GET /api/kernelspecs?1770321706383 (@10.1.38.7) 0.49ms referer=None
+[I 2026-02-05 17:44:21.173 ServerApp] 302 GET / (@10.1.38.7) 1.54ms
+[I 2026-02-05 17:44:21.181 LabApp] 302 GET /lab? (@10.1.38.7) 3.92ms
+[I 2026-02-05 17:44:21.225 ServerApp] Connecting to kernel e1f18756-d083-4cff-abaa-f36ddc32c415.
+[I 2026-02-05 17:44:21.338 ServerApp] 302 GET / (@10.1.38.7) 0.20ms
+[I 2026-02-05 17:44:21.383 LabApp] 302 GET /lab? (@10.1.38.7) 0.53ms
+[W 2026-02-05 17:44:21.428 ServerApp] wrote error: 'Forbidden'
+    Traceback (most recent call last):
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/tornado/web.py", line 1788, in _execute
+        result = method(*self.path_args, **self.path_kwargs)
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/tornado/web.py", line 3289, in wrapper
+        url = self.get_login_url()
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/jupyter_server/base/handlers.py", line 784, in get_login_url
+        raise web.HTTPError(403)
+    tornado.web.HTTPError: HTTP 403: Forbidden
+[W 2026-02-05 17:44:21.432 ServerApp] 403 GET /api/kernelspecs?1770331461426 (@10.1.38.7) 4.61ms referer=None
+[W 2026-02-05 17:44:21.433 ServerApp] wrote error: 'Forbidden'
+    Traceback (most recent call last):
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/tornado/web.py", line 1788, in _execute
+        result = method(*self.path_args, **self.path_kwargs)
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/tornado/web.py", line 3289, in wrapper
+        url = self.get_login_url()
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/jupyter_server/base/handlers.py", line 784, in get_login_url
+        raise web.HTTPError(403)
+    tornado.web.HTTPError: HTTP 403: Forbidden
+[W 2026-02-05 17:44:21.433 ServerApp] 403 GET /api/kernels?1770331461426 (@10.1.38.7) 0.96ms referer=None
+[W 2026-02-05 17:44:21.433 ServerApp] wrote error: 'Forbidden'
+    Traceback (most recent call last):
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/tornado/web.py", line 1788, in _execute
+        result = method(*self.path_args, **self.path_kwargs)
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/tornado/web.py", line 3289, in wrapper
+        url = self.get_login_url()
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/jupyter_server/base/handlers.py", line 784, in get_login_url
+        raise web.HTTPError(403)
+    tornado.web.HTTPError: HTTP 403: Forbidden
+[W 2026-02-05 17:44:21.434 ServerApp] 403 GET /api/kernels?1770331461427 (@10.1.38.7) 1.79ms referer=None
+[W 2026-02-05 17:44:21.434 ServerApp] wrote error: 'Forbidden'
+    Traceback (most recent call last):
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/tornado/web.py", line 1788, in _execute
+        result = method(*self.path_args, **self.path_kwargs)
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/tornado/web.py", line 3289, in wrapper
+        url = self.get_login_url()
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/jupyter_server/base/handlers.py", line 784, in get_login_url
+        raise web.HTTPError(403)
+    tornado.web.HTTPError: HTTP 403: Forbidden
+[W 2026-02-05 17:44:21.435 ServerApp] 403 GET /api/sessions?1770331461428 (@10.1.38.7) 2.25ms referer=None
+[W 2026-02-05 17:44:21.439 ServerApp] wrote error: 'Forbidden'
+    Traceback (most recent call last):
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/tornado/web.py", line 1788, in _execute
+        result = method(*self.path_args, **self.path_kwargs)
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/tornado/web.py", line 3289, in wrapper
+        url = self.get_login_url()
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/jupyter_server/base/handlers.py", line 784, in get_login_url
+        raise web.HTTPError(403)
+    tornado.web.HTTPError: HTTP 403: Forbidden
+[W 2026-02-05 17:44:21.439 ServerApp] 403 GET /api/kernelspecs?1770331461433 (@10.1.38.7) 0.53ms referer=None
+[I 2026-02-05 17:44:21.440 ServerApp] 302 GET / (@10.1.38.7) 0.23ms
+[I 2026-02-05 17:44:21.441 LabApp] 302 GET /lab? (@10.1.38.7) 0.28ms
+[W 2026-02-05 17:44:21.445 ServerApp] wrote error: 'Forbidden'
+    Traceback (most recent call last):
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/tornado/web.py", line 1788, in _execute
+        result = method(*self.path_args, **self.path_kwargs)
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/tornado/web.py", line 3289, in wrapper
+        url = self.get_login_url()
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/jupyter_server/base/handlers.py", line 784, in get_login_url
+        raise web.HTTPError(403)
+    tornado.web.HTTPError: HTTP 403: Forbidden
+[W 2026-02-05 17:44:21.445 ServerApp] 403 GET /api/kernelspecs?1770331461444 (@10.1.38.7) 0.46ms referer=None
+[W 2026-02-05 17:44:21.447 ServerApp] wrote error: 'Forbidden'
+    Traceback (most recent call last):
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/tornado/web.py", line 1788, in _execute
+        result = method(*self.path_args, **self.path_kwargs)
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/tornado/web.py", line 3289, in wrapper
+        url = self.get_login_url()
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/jupyter_server/base/handlers.py", line 784, in get_login_url
+        raise web.HTTPError(403)
+    tornado.web.HTTPError: HTTP 403: Forbidden
+[W 2026-02-05 17:44:21.447 ServerApp] 403 GET /api/kernels?1770331461444 (@10.1.38.7) 0.66ms referer=None
+[W 2026-02-05 17:44:21.448 ServerApp] wrote error: 'Forbidden'
+    Traceback (most recent call last):
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/tornado/web.py", line 1788, in _execute
+        result = method(*self.path_args, **self.path_kwargs)
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/tornado/web.py", line 3289, in wrapper
+        url = self.get_login_url()
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/jupyter_server/base/handlers.py", line 784, in get_login_url
+        raise web.HTTPError(403)
+    tornado.web.HTTPError: HTTP 403: Forbidden
+[W 2026-02-05 17:44:21.448 ServerApp] 403 GET /api/kernels?1770331461445 (@10.1.38.7) 1.12ms referer=None
+[W 2026-02-05 17:44:21.449 ServerApp] wrote error: 'Forbidden'
+    Traceback (most recent call last):
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/tornado/web.py", line 1788, in _execute
+        result = method(*self.path_args, **self.path_kwargs)
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/tornado/web.py", line 3289, in wrapper
+        url = self.get_login_url()
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/jupyter_server/base/handlers.py", line 784, in get_login_url
+        raise web.HTTPError(403)
+    tornado.web.HTTPError: HTTP 403: Forbidden
+[W 2026-02-05 17:44:21.449 ServerApp] 403 GET /api/sessions?1770331461445 (@10.1.38.7) 0.62ms referer=None
+[W 2026-02-05 17:44:21.471 ServerApp] wrote error: 'Forbidden'
+    Traceback (most recent call last):
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/tornado/web.py", line 1788, in _execute
+        result = method(*self.path_args, **self.path_kwargs)
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/tornado/web.py", line 3289, in wrapper
+        url = self.get_login_url()
+      File "/orcd/software/core/001/pkg/miniforge/24.3.0-0/lib/python3.10/site-packages/jupyter_server/base/handlers.py", line 784, in get_login_url
+        raise web.HTTPError(403)
+    tornado.web.HTTPError: HTTP 403: Forbidden
+[W 2026-02-05 17:44:21.471 ServerApp] 403 GET /api/kernelspecs?1770331461465 (@10.1.38.7) 0.52ms referer=None
+[I 2026-02-05 17:54:02.752 ServerApp] Kernel restarted: e1f18756-d083-4cff-abaa-f36ddc32c415
+[I 2026-02-05 17:54:02.772 ServerApp] Connecting to kernel e1f18756-d083-4cff-abaa-f36ddc32c415.
+[I 2026-02-05 17:54:06.458 ServerApp] Kernel restarted: e1f18756-d083-4cff-abaa-f36ddc32c415
+[I 2026-02-05 17:54:06.463 ServerApp] Connecting to kernel e1f18756-d083-4cff-abaa-f36ddc32c415.
+/opt/conda/conda-bld/pytorch_1729647382455/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [189,0,0], thread: [112,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647382455/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [189,0,0], thread: [113,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647382455/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [189,0,0], thread: [114,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647382455/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [189,0,0], thread: [115,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647382455/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [189,0,0], thread: [116,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647382455/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [189,0,0], thread: [117,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647382455/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [189,0,0], thread: [118,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647382455/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [189,0,0], thread: [119,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647382455/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [189,0,0], thread: [120,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647382455/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [189,0,0], thread: [121,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647382455/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [189,0,0], thread: [122,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647382455/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [189,0,0], thread: [123,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647382455/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [189,0,0], thread: [124,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647382455/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [189,0,0], thread: [125,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647382455/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [189,0,0], thread: [126,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647382455/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [189,0,0], thread: [127,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647382455/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [204,0,0], thread: [96,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647382455/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [204,0,0], thread: [97,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647382455/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [204,0,0], thread: [98,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647382455/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [204,0,0], thread: [99,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647382455/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [204,0,0], thread: [100,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647382455/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [204,0,0], thread: [101,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647382455/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [204,0,0], thread: [102,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647382455/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [204,0,0], thread: [103,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647382455/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [204,0,0], thread: [104,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647382455/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [204,0,0], thread: [105,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647382455/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [204,0,0], thread: [106,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647382455/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [204,0,0], thread: [107,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647382455/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [204,0,0], thread: [108,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647382455/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [204,0,0], thread: [109,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647382455/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [204,0,0], thread: [110,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647382455/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [204,0,0], thread: [111,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647382455/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [204,0,0], thread: [112,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647382455/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [204,0,0], thread: [113,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647382455/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [204,0,0], thread: [114,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647382455/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [204,0,0], thread: [115,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647382455/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [204,0,0], thread: [116,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647382455/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [204,0,0], thread: [117,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647382455/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [204,0,0], thread: [118,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647382455/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [204,0,0], thread: [119,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647382455/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [204,0,0], thread: [120,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647382455/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [204,0,0], thread: [121,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647382455/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [204,0,0], thread: [122,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647382455/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [204,0,0], thread: [123,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647382455/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [204,0,0], thread: [124,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647382455/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [204,0,0], thread: [125,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647382455/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [204,0,0], thread: [126,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647382455/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [204,0,0], thread: [127,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647382455/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [205,0,0], thread: [64,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647382455/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [205,0,0], thread: [65,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647382455/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [205,0,0], thread: [66,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647382455/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [205,0,0], thread: [67,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647382455/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [205,0,0], thread: [68,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647382455/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [205,0,0], thread: [69,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647382455/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [205,0,0], thread: [70,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647382455/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [205,0,0], thread: [71,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647382455/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [205,0,0], thread: [72,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647382455/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [205,0,0], thread: [73,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647382455/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [205,0,0], thread: [74,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647382455/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [205,0,0], thread: [75,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647382455/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [205,0,0], thread: [76,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647382455/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [205,0,0], thread: [77,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647382455/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [205,0,0], thread: [78,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647382455/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [205,0,0], thread: [79,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647382455/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [205,0,0], thread: [80,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647382455/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [205,0,0], thread: [81,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647382455/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [205,0,0], thread: [82,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647382455/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [205,0,0], thread: [83,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647382455/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [205,0,0], thread: [84,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647382455/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [205,0,0], thread: [85,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647382455/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [205,0,0], thread: [86,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647382455/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [205,0,0], thread: [87,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647382455/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [205,0,0], thread: [88,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647382455/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [205,0,0], thread: [89,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647382455/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [205,0,0], thread: [90,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647382455/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [205,0,0], thread: [91,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647382455/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [205,0,0], thread: [92,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647382455/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [205,0,0], thread: [93,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647382455/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [205,0,0], thread: [94,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647382455/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [205,0,0], thread: [95,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647382455/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [204,0,0], thread: [64,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647382455/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [204,0,0], thread: [65,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647382455/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [204,0,0], thread: [66,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647382455/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [204,0,0], thread: [67,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647382455/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [204,0,0], thread: [68,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647382455/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [204,0,0], thread: [69,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647382455/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [204,0,0], thread: [70,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647382455/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [204,0,0], thread: [71,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647382455/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [204,0,0], thread: [72,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647382455/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [204,0,0], thread: [73,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647382455/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [204,0,0], thread: [74,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647382455/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [204,0,0], thread: [75,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647382455/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [204,0,0], thread: [76,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647382455/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [204,0,0], thread: [77,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647382455/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [204,0,0], thread: [78,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647382455/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [204,0,0], thread: [79,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647382455/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [204,0,0], thread: [80,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647382455/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [204,0,0], thread: [81,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647382455/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [204,0,0], thread: [82,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647382455/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [204,0,0], thread: [83,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647382455/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [204,0,0], thread: [84,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647382455/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [204,0,0], thread: [85,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647382455/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [204,0,0], thread: [86,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647382455/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [204,0,0], thread: [87,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647382455/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [204,0,0], thread: [88,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647382455/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [204,0,0], thread: [89,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647382455/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [204,0,0], thread: [90,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647382455/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [204,0,0], thread: [91,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647382455/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [204,0,0], thread: [92,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647382455/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [204,0,0], thread: [93,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647382455/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [204,0,0], thread: [94,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647382455/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [204,0,0], thread: [95,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647382455/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [205,0,0], thread: [96,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647382455/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [205,0,0], thread: [97,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647382455/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [205,0,0], thread: [98,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647382455/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [205,0,0], thread: [99,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647382455/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [205,0,0], thread: [100,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647382455/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [205,0,0], thread: [101,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647382455/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [205,0,0], thread: [102,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647382455/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [205,0,0], thread: [103,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647382455/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [205,0,0], thread: [104,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647382455/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [205,0,0], thread: [105,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647382455/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [205,0,0], thread: [106,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647382455/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [205,0,0], thread: [107,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647382455/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [205,0,0], thread: [108,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647382455/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [205,0,0], thread: [109,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647382455/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [205,0,0], thread: [110,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647382455/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [205,0,0], thread: [111,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647382455/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [205,0,0], thread: [112,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647382455/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [205,0,0], thread: [113,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647382455/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [205,0,0], thread: [114,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647382455/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [205,0,0], thread: [115,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647382455/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [205,0,0], thread: [116,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647382455/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [205,0,0], thread: [117,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647382455/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [205,0,0], thread: [118,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647382455/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [205,0,0], thread: [119,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647382455/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [205,0,0], thread: [120,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647382455/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [205,0,0], thread: [121,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647382455/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [205,0,0], thread: [122,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647382455/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [205,0,0], thread: [123,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647382455/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [205,0,0], thread: [124,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647382455/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [205,0,0], thread: [125,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647382455/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [205,0,0], thread: [126,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647382455/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [205,0,0], thread: [127,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647382455/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [204,0,0], thread: [0,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647382455/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [204,0,0], thread: [1,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647382455/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [204,0,0], thread: [2,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647382455/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [204,0,0], thread: [3,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647382455/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [204,0,0], thread: [4,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647382455/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [204,0,0], thread: [5,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647382455/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [204,0,0], thread: [6,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647382455/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [204,0,0], thread: [7,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647382455/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [204,0,0], thread: [8,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647382455/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [204,0,0], thread: [9,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647382455/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [204,0,0], thread: [10,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647382455/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [204,0,0], thread: [11,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647382455/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [204,0,0], thread: [12,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647382455/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [204,0,0], thread: [13,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647382455/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [204,0,0], thread: [14,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647382455/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [204,0,0], thread: [15,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647382455/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [204,0,0], thread: [16,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647382455/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [204,0,0], thread: [17,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647382455/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [204,0,0], thread: [18,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647382455/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [204,0,0], thread: [19,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647382455/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [204,0,0], thread: [20,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647382455/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [204,0,0], thread: [21,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647382455/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [204,0,0], thread: [22,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647382455/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [204,0,0], thread: [23,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647382455/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [204,0,0], thread: [24,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647382455/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [204,0,0], thread: [25,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647382455/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [204,0,0], thread: [26,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647382455/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [204,0,0], thread: [27,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647382455/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [204,0,0], thread: [28,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647382455/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [204,0,0], thread: [29,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647382455/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [204,0,0], thread: [30,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647382455/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [204,0,0], thread: [31,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647382455/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [240,0,0], thread: [0,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647382455/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [240,0,0], thread: [1,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647382455/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [240,0,0], thread: [2,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647382455/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [240,0,0], thread: [3,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647382455/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [240,0,0], thread: [4,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647382455/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [240,0,0], thread: [5,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647382455/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [240,0,0], thread: [6,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647382455/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [240,0,0], thread: [7,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647382455/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [240,0,0], thread: [8,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647382455/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [240,0,0], thread: [9,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647382455/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [240,0,0], thread: [10,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647382455/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [240,0,0], thread: [11,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647382455/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [240,0,0], thread: [12,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647382455/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [240,0,0], thread: [13,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647382455/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [240,0,0], thread: [14,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647382455/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [240,0,0], thread: [15,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647382455/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [240,0,0], thread: [16,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647382455/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [240,0,0], thread: [17,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647382455/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [240,0,0], thread: [18,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647382455/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [240,0,0], thread: [19,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647382455/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [240,0,0], thread: [20,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647382455/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [240,0,0], thread: [21,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647382455/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [240,0,0], thread: [22,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647382455/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [240,0,0], thread: [23,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647382455/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [240,0,0], thread: [24,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647382455/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [240,0,0], thread: [25,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647382455/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [240,0,0], thread: [26,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647382455/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [240,0,0], thread: [27,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647382455/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [240,0,0], thread: [28,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647382455/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [240,0,0], thread: [29,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647382455/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [240,0,0], thread: [30,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647382455/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [240,0,0], thread: [31,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647382455/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [283,0,0], thread: [96,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647382455/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [283,0,0], thread: [97,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647382455/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [283,0,0], thread: [98,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647382455/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [283,0,0], thread: [99,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647382455/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [283,0,0], thread: [100,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647382455/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [283,0,0], thread: [101,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647382455/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [283,0,0], thread: [102,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647382455/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [283,0,0], thread: [103,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647382455/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [283,0,0], thread: [104,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647382455/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [283,0,0], thread: [105,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647382455/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [283,0,0], thread: [106,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647382455/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [283,0,0], thread: [107,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647382455/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [283,0,0], thread: [108,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647382455/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [283,0,0], thread: [109,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647382455/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [283,0,0], thread: [110,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647382455/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [283,0,0], thread: [111,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647382455/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [283,0,0], thread: [112,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647382455/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [283,0,0], thread: [113,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647382455/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [283,0,0], thread: [114,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647382455/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [283,0,0], thread: [115,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647382455/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [283,0,0], thread: [116,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647382455/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [283,0,0], thread: [117,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647382455/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [283,0,0], thread: [118,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647382455/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [283,0,0], thread: [119,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647382455/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [283,0,0], thread: [120,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647382455/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [283,0,0], thread: [121,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647382455/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [283,0,0], thread: [122,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647382455/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [283,0,0], thread: [123,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647382455/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [283,0,0], thread: [124,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647382455/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [283,0,0], thread: [125,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647382455/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [283,0,0], thread: [126,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647382455/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [283,0,0], thread: [127,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647382455/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [377,0,0], thread: [64,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647382455/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [377,0,0], thread: [65,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647382455/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [377,0,0], thread: [66,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647382455/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [377,0,0], thread: [67,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647382455/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [377,0,0], thread: [68,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647382455/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [377,0,0], thread: [69,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647382455/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [377,0,0], thread: [70,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647382455/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [377,0,0], thread: [71,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647382455/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [377,0,0], thread: [72,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647382455/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [377,0,0], thread: [73,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647382455/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [377,0,0], thread: [74,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647382455/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [377,0,0], thread: [75,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647382455/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [377,0,0], thread: [76,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647382455/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [377,0,0], thread: [77,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647382455/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [377,0,0], thread: [78,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647382455/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [377,0,0], thread: [79,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647382455/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [377,0,0], thread: [80,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647382455/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [377,0,0], thread: [81,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647382455/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [377,0,0], thread: [82,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647382455/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [377,0,0], thread: [83,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647382455/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [377,0,0], thread: [84,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647382455/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [377,0,0], thread: [85,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647382455/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [377,0,0], thread: [86,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647382455/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [377,0,0], thread: [87,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647382455/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [377,0,0], thread: [88,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647382455/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [377,0,0], thread: [89,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647382455/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [377,0,0], thread: [90,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647382455/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [377,0,0], thread: [91,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647382455/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [377,0,0], thread: [92,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647382455/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [377,0,0], thread: [93,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647382455/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [377,0,0], thread: [94,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+/opt/conda/conda-bld/pytorch_1729647382455/work/aten/src/ATen/native/cuda/Indexing.cu:1308: indexSelectLargeIndex: block: [377,0,0], thread: [95,0,0] Assertion `srcIndex < srcSelectDimSize` failed.
+[I 2026-02-05 18:12:24.973 ServerApp] Kernel restarted: e1f18756-d083-4cff-abaa-f36ddc32c415
+[I 2026-02-05 18:12:24.980 ServerApp] Connecting to kernel e1f18756-d083-4cff-abaa-f36ddc32c415.

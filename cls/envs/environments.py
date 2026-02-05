@@ -2,12 +2,17 @@ from __future__ import annotations
 
 from ..types import Position, FovFunction, Vector2
 from ..utils import VectorHash
+from ..utils.GridUtils import smooth_g
 
 import random
 from dataclasses import dataclass
-from typing import List, Optional, Tuple
+from typing import List, Optional, Tuple, TYPE_CHECKING
 
 import numpy as np
+import torch
+
+if TYPE_CHECKING:
+    from ..encoder import GridEncoder
 
 
 class WMEnv:
@@ -53,6 +58,7 @@ class WMEnv:
         fov_deg: float = 120.0,
         time_penalty: float = 0.01,
         start_type: Optional[str] = "random",
+        use_headings: bool = False,
     ) -> None:
         if not isinstance(size, int) or size <= 1:
             raise ValueError("size must be an integer >= 2")
@@ -63,6 +69,7 @@ class WMEnv:
 
         self.size: int = size
         self.speed: int = speed
+        self.use_headings: bool = use_headings
         self._rng = random.Random(seed)
 
         self._fov_fn: FovFunction = fov_fn or (lambda d, s: max(1, d + 1))
@@ -72,12 +79,27 @@ class WMEnv:
         self._time_penalty: float = time_penalty
         # Initialize codebook as numpy array (size, size, 4, observation_size)
         rs = np.random.RandomState(self._rng.randrange(10_000_000))
-        self._codebook = rs.randint(
-            0,
-            2,
-            size=(self.size, self.size, 4, self._observation_size),
-            dtype=np.int32,
-        ).astype(np.float32)
+        if use_headings:
+            # Different observation per (position, heading)
+            self._codebook = rs.randint(
+                0,
+                2,
+                size=(self.size, self.size, 4, self._observation_size),
+                dtype=np.int32,
+            ).astype(np.float32)
+        else:
+            # Same observation for all headings at each position
+            base_codes = rs.randint(
+                0,
+                2,
+                size=(self.size, self.size, 1, self._observation_size),
+                dtype=np.int32,
+            ).astype(np.float32)
+            # Broadcast to all 4 headings
+            self._codebook = np.broadcast_to(
+                base_codes, 
+                (self.size, self.size, 4, self._observation_size)
+            ).copy()
 
         self._start_type = start_type
         self._goal: Position = (self._rng.randrange(self.size), self._rng.randrange(self.size))
@@ -147,7 +169,7 @@ class WMEnv:
     def obs_at_goal(self) -> np.ndarray:
         return self._code_for(self._goal, self._heading)
 
-    def obs_at_best_next_step(self) -> np.ndarray:
+    def obs_at_next_best_step(self) -> np.ndarray:
         best_action = self.best_action_to_goal()
         ndx, ndy = self._normalize_vector(best_action[0], best_action[1])
         next_pos = self._simulate_move(self._pos, (ndx, ndy), self.speed)
@@ -290,6 +312,7 @@ class WMEnv:
             observation_size=self._observation_size,
             fov_deg=self._fov_deg,
             time_penalty=self._time_penalty,
+            use_headings=self.use_headings,
         )
         # Share large immutable arrays
         new_env._codebook = self._codebook
@@ -407,9 +430,17 @@ class WMEnv:
 
 
 class GridWMEnv(WMEnv):
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args, encoder: Optional["GridEncoder"] = None, **kwargs):
         self.input_type = kwargs.pop("input_type", "g")
+        self.fwhm_ratio = kwargs.pop("fwhm_ratio", 0.0)  # 0 = no smoothing
+        self.encoder = encoder
+        self._encoder_device = None
         super().__init__(*args, **kwargs)
+    
+    def set_encoder(self, encoder: "GridEncoder", device: Optional[torch.device] = None):
+        """Set the encoder for encoded_g input type."""
+        self.encoder = encoder
+        self._encoder_device = device
     
     @property
     def goal_location(self) -> Position:
@@ -419,7 +450,12 @@ class GridWMEnv(WMEnv):
         self.vectorhash = vectorhash
     
     def get_input_size(self) -> int:
-        if self.input_type == "g_hot":
+        if self.input_type == "encoded_g":
+            if self.encoder is None:
+                raise ValueError("Encoder required for input_type='encoded_g'")
+            # Get output dimension from encoder
+            return self.encoder.out_dim
+        elif self.input_type == "g_hot":
             return self.vectorhash.Ng
         elif self.input_type == "g_idx":
             return len(self.vectorhash.lambdas)*2
@@ -433,8 +469,24 @@ class GridWMEnv(WMEnv):
     def convert_obs(self, obs: np.ndarray) -> np.ndarray:
         s,p,g = self.vectorhash.recall(obs.copy())
 
-        if self.input_type == "g_hot":
-            return np.asarray(g, dtype=np.float32)
+        if self.input_type == "encoded_g":
+            # Get g_hot, optionally smooth it, then encode
+            g_hot = np.asarray(g, dtype=np.float32)
+            if self.fwhm_ratio > 0:
+                g_hot = smooth_g(g_hot, self.vectorhash.lambdas, self.fwhm_ratio)
+            if self.encoder is None:
+                raise ValueError("Encoder required for input_type='encoded_g'")
+            with torch.no_grad():
+                g_t = torch.from_numpy(g_hot).float().unsqueeze(0)
+                if self._encoder_device is not None:
+                    g_t = g_t.to(self._encoder_device)
+                encoded = self.encoder(g_t).squeeze(0).cpu().numpy()
+            return encoded
+        elif self.input_type == "g_hot":
+            g_hot = np.asarray(g, dtype=np.float32)
+            if self.fwhm_ratio > 0:
+                g_hot = smooth_g(g_hot, self.vectorhash.lambdas, self.fwhm_ratio)
+            return g_hot
         elif self.input_type == "g_idx":
             return np.asarray(self.vectorhash.grid_onehot_to_indices(g), dtype=np.float32)
         elif self.input_type == "s":
@@ -452,7 +504,7 @@ class GridWMEnv(WMEnv):
         obs = super().obs_at_goal()
         return self.convert_obs(obs)
 
-    def obs_at_next_best_step(self) -> np.ndarrary:
+    def obs_at_next_best_step(self) -> np.ndarray:
         obs = super().obs_at_next_best_step()
         return self.convert_obs(obs)
     
@@ -465,12 +517,16 @@ class GridWMEnv(WMEnv):
             fov_deg=self._fov_deg,
             time_penalty=self._time_penalty,
             input_type=self.input_type,
+            encoder=self.encoder,
+            fwhm_ratio=self.fwhm_ratio,
+            use_headings=self.use_headings,
         )
         # Share codebook and vectorhash; copy goal
         new_env._codebook = self._codebook
         if hasattr(self, "vectorhash"):
             new_env.vectorhash = self.vectorhash
         new_env._goal = self._goal
+        new_env._encoder_device = self._encoder_device
         return new_env
 
 
@@ -677,8 +733,12 @@ class WMVecEnv:
 class GridWMVecEnv(WMVecEnv):
     def __init__(self, base_env: GridWMEnv, batch_size: int, seed: Optional[int] = None, use_preconv_codebook: bool = True) -> None:
         self.input_type = base_env.input_type
+        self.fwhm_ratio = base_env.fwhm_ratio if hasattr(base_env, "fwhm_ratio") else 0.0
+        self.encoder = base_env.encoder if hasattr(base_env, "encoder") else None
+        self._encoder_device = base_env._encoder_device if hasattr(base_env, "_encoder_device") else None
         if hasattr(base_env, "vectorhash"):
             self.vectorhash = base_env.vectorhash
+        self.base_env = base_env  # Keep reference for hopfield access
         super().__init__(base_env=base_env, batch_size=batch_size, seed=seed)
         # Precompute converted codebook for fast batched lookup when possible
         self._preconv_codebook: Optional[np.ndarray] = None
@@ -694,8 +754,16 @@ class GridWMVecEnv(WMVecEnv):
         converted = []
         for i in range(obs_batch.shape[0]):
             s, p, g = self.vectorhash.recall(obs_batch[i].copy())
-            if self.input_type == "g_hot":
-                converted.append(np.asarray(g, dtype=np.float32))
+            if self.input_type == "encoded_g":
+                g_hot = np.asarray(g, dtype=np.float32)
+                if self.fwhm_ratio > 0:
+                    g_hot = smooth_g(g_hot, self.vectorhash.lambdas, self.fwhm_ratio)
+                converted.append(g_hot)
+            elif self.input_type == "g_hot":
+                g_hot = np.asarray(g, dtype=np.float32)
+                if self.fwhm_ratio > 0:
+                    g_hot = smooth_g(g_hot, self.vectorhash.lambdas, self.fwhm_ratio)
+                converted.append(g_hot)
             elif self.input_type == "g_idx":
                 converted.append(np.asarray(self.vectorhash.grid_onehot_to_indices(g), dtype=np.float32))
             elif self.input_type == "s":
@@ -704,7 +772,19 @@ class GridWMVecEnv(WMVecEnv):
                 converted.append(np.asarray(p, dtype=np.float32))
             else:
                 raise ValueError(f"Invalid input type: {self.input_type}")
-        return np.stack(converted)
+        result = np.stack(converted)
+        
+        # Apply encoder for encoded_g (batched)
+        if self.input_type == "encoded_g":
+            if self.encoder is None:
+                raise ValueError("Encoder required for input_type='encoded_g'")
+            with torch.no_grad():
+                g_t = torch.from_numpy(result).float()
+                if self._encoder_device is not None:
+                    g_t = g_t.to(self._encoder_device)
+                result = self.encoder(g_t).cpu().numpy()
+        
+        return result
 
     def obs_batch(self, indices: List[int], input_addendum: Optional[str] = None) -> np.ndarray:
         idx = np.asarray(indices, dtype=np.int64)
@@ -732,6 +812,9 @@ class GridWMVecEnv(WMVecEnv):
                 gy = np.full(y.shape[0], self._goal[1], dtype=np.int32)
                 goal_conv = self._preconv_codebook[gx, gy, h_idx]
                 return goal_conv - conv
+            elif input_addendum == "hopfield":
+                recalled = self.vectorhash.hopfield_recall_batch(conv)
+                return np.concatenate([conv, recalled], axis=-1)
             return conv
         # Fallback: convert on the fly
         raw = super().obs_batch(indices, input_addendum=None)
@@ -758,6 +841,9 @@ class GridWMVecEnv(WMVecEnv):
             next_raw = self._codebook[next_pos[:, 0], next_pos[:, 1], next_h_idx]
             next_conv = self._convert_obs_batch(next_raw)
             return np.concatenate([conv, next_conv], axis=-1)
+        elif input_addendum == "hopfield":
+            recalled = self.vectorhash.hopfield_recall_batch(conv)
+            return np.concatenate([conv, recalled], axis=-1)
         return conv
 
     def _build_preconv_codebook(self) -> np.ndarray:
@@ -772,7 +858,11 @@ class GridWMVecEnv(WMVecEnv):
         # Determine output feature size by converting one sample
         sample = self._codebook[0, 0, 0]
         s, p, g = self.vectorhash.recall(sample.copy())
-        if self.input_type == "g_hot":
+        if self.input_type == "encoded_g":
+            if self.encoder is None:
+                raise RuntimeError("encoder not available for encoded_g preconversion")
+            out_dim = self.encoder.out_dim
+        elif self.input_type == "g_hot":
             out_dim = len(g)
         elif self.input_type == "g_idx":
             out_dim = len(self.vectorhash.grid_onehot_to_indices(g))
@@ -788,8 +878,20 @@ class GridWMVecEnv(WMVecEnv):
                 for h in range(4):
                     code = self._codebook[x, y, h].copy()
                     s, p, g = self.vectorhash.recall(code)
-                    if self.input_type == "g_hot":
-                        pre[x, y, h] = np.asarray(g, dtype=np.float32)
+                    if self.input_type == "encoded_g":
+                        g_hot = np.asarray(g, dtype=np.float32)
+                        if self.fwhm_ratio > 0:
+                            g_hot = smooth_g(g_hot, self.vectorhash.lambdas, self.fwhm_ratio)
+                        with torch.no_grad():
+                            g_t = torch.from_numpy(g_hot).float().unsqueeze(0)
+                            if self._encoder_device is not None:
+                                g_t = g_t.to(self._encoder_device)
+                            pre[x, y, h] = self.encoder(g_t).squeeze(0).cpu().numpy()
+                    elif self.input_type == "g_hot":
+                        g_hot = np.asarray(g, dtype=np.float32)
+                        if self.fwhm_ratio > 0:
+                            g_hot = smooth_g(g_hot, self.vectorhash.lambdas, self.fwhm_ratio)
+                        pre[x, y, h] = g_hot
                     elif self.input_type == "g_idx":
                         pre[x, y, h] = np.asarray(self.vectorhash.grid_onehot_to_indices(g), dtype=np.float32)
                     elif self.input_type == "s":

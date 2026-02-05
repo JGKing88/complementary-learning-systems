@@ -1,9 +1,9 @@
 import os
 import sys
+import itertools
 from typing import List, Tuple
 
 import numpy as np
-import matplotlib.pyplot as plt
 
 import torch
 import torch.nn as nn
@@ -128,7 +128,7 @@ def smooth_gbook(gbook, lambdas, FWHM_ratio):
             smooth_gbook[:, i, j] = smooth_g(gbook[:, i, j], lambdas, FWHM_ratio)
     return smooth_gbook
 
-def overlaps(self, x, y, px, py, size, touch_ok=True):
+def overlaps(x, y, px, py, size, touch_ok=True):
         if touch_ok:
             # touching edges allowed
             return not (x + size <= px or px + size <= x or y + size <= py or py + size <= y)
@@ -489,7 +489,24 @@ class IndexDataset(Dataset):
 # -----------------------------
 # Training step
 # -----------------------------
-def train_epoch(encoder, Phi, Xcoords, tau, optimizer, batch_size, triples_all, T_triple_batch, centered=True, sigmoid_scale=1, uniformity_lambda=0, lambda_plane=0, lambda_local=0):
+def train_epoch(
+    encoder,
+    Phi,
+    Xcoords,
+    tau,
+    optimizer,
+    batch_size,
+    triples_all,
+    T_triple_batch,
+    centered=True,
+    sigmoid_scale=1,
+    uniformity_lambda=0,
+    lambda_plane=0,
+    lambda_local=0,
+    # Modulate target kernel before CKA: Kt_mod = clamp(Kt,0,1)^cka_alpha with optional top-k mask
+    cka_alpha: float = 1.0,
+    cka_topk: int | None = None,
+):
     device = next(encoder.parameters()).device
     ds = IndexDataset(Phi.size(0))
     dl = DataLoader(ds, batch_size=batch_size, shuffle=True, drop_last=True)
@@ -508,9 +525,25 @@ def train_epoch(encoder, Phi, Xcoords, tau, optimizer, batch_size, triples_all, 
         # K_tgt  = Kt_full.index_select(0, idx).index_select(1, idx)    # [B, B]
         K_tgt  = rbf_kernel_from_coords_batch(Xcoords, idx, tau)
 
-        # alignment loss (centered = CKA-like)
-        loss = kernel_alignment_loss(K_pred, K_tgt, centered=centered)
-        # loss += uniformity_lambda * uniformity_loss(zb)
+        # Optionally modulate target kernel to emphasize local pairs inside the CKA term
+        K_tgt_mod = K_tgt
+        if (cka_alpha is not None and cka_alpha != 1.0) or (cka_topk is not None):
+            B = K_tgt.size(0)
+            eye = torch.eye(B, device=K_tgt.device, dtype=K_tgt.dtype)
+            K_tgt_mod = K_tgt.clamp(0, 1)
+            if cka_alpha is not None and cka_alpha != 1.0:
+                K_tgt_mod = K_tgt_mod.pow(cka_alpha)
+            if cka_topk is not None and cka_topk < B - 1:
+                vals, idx = torch.topk(K_tgt, k=min(cka_topk, B-1), dim=1)
+                mask = torch.zeros_like(K_tgt, dtype=torch.bool)
+                mask.scatter_(1, idx, True)
+                mask = mask | mask.T
+                mask = mask & (~torch.eye(B, dtype=torch.bool, device=K_tgt.device))
+                K_tgt_mod = K_tgt_mod * mask + eye  # keep diagonal at 1
+
+        # alignment loss (centered = CKA-like) with modulated target kernel
+        loss = kernel_alignment_loss(K_pred, K_tgt_mod, centered=centered)
+        loss += uniformity_lambda * uniformity_loss(zb)
 
         # after global loss pieces (CKA, uniformity, plane, etc.)
         with torch.no_grad():
@@ -559,6 +592,8 @@ def eval_full(
     D_true: torch.Tensor | None = None,  # [N, N] optional true distances
     tau_for_rbf: float | None = None,    # optional, if you want to reconstruct RBF from D
     sigmoid_scale: float = 1.0,
+    cka_alpha: float = 1.0,
+    cka_topk: int | None = None,
 ):
     """
     Returns a dict of metrics on a random subset.
@@ -574,7 +609,22 @@ def eval_full(
     Z   = encoder(Xb, sigmoid_scale)                   # [M, k], unit sphere
     Kp  = (Z @ Z.T).clamp(-1, 1)        # predicted cosine kernel
     # Kt  = Kt_full[idx][:, idx]          # target kernel on this subset
-    Kt = rbf_kernel_from_coords_batch(X_coords=Xcoords, idx=idx, tau=tau) 
+    Kt = rbf_kernel_from_coords_batch(X_coords=Xcoords, idx=idx, tau=tau)
+    # Apply same modulation as training for alignment metric
+    Kt_mod = Kt
+    if (cka_alpha is not None and cka_alpha != 1.0) or (cka_topk is not None):
+        B = Kt.size(0)
+        eye = torch.eye(B, device=Kt.device, dtype=Kt.dtype)
+        Kt_mod = Kt.clamp(0, 1)
+        if cka_alpha is not None and cka_alpha != 1.0:
+            Kt_mod = Kt_mod.pow(cka_alpha)
+        if cka_topk is not None and cka_topk < B - 1:
+            vals, idx_top = torch.topk(Kt, k=min(cka_topk, B-1), dim=1)
+            mask = torch.zeros_like(Kt, dtype=torch.bool)
+            mask.scatter_(1, idx_top, True)
+            mask = mask | mask.T
+            mask = mask & (~torch.eye(B, dtype=torch.bool, device=Kt.device))
+            Kt_mod = Kt_mod * mask + eye
 
     # ---- Kernel correlation metrics (shape-of-geometry)
     s_pred = upper_tri_vec(Kp).detach().cpu().numpy()
@@ -594,7 +644,7 @@ def eval_full(
         sp = float("nan")
 
     # Centered kernel alignment loss re-using your function
-    align_loss = kernel_alignment_loss(Kp, Kt, centered=centered).item()
+    align_loss = kernel_alignment_loss(Kp, Kt_mod, centered=centered).item()
     
     # after global loss pieces (CKA, uniformity, plane, etc.)
     lambda_local = 0.5  # tune 0.2–1.0
@@ -831,6 +881,164 @@ def trajectory_straightness_metrics(
         "angle_monotonic_frac_mean": float(torch.tensor(mono_list).mean().item()),
     }
 
+def hebbian_weights(Z, zero_diag=True, scale=None):
+    """
+    Z: [P, D] stored patterns (rows). We'll L2-normalize rows.
+    Returns W: [D, D]
+    """
+    Z = F.normalize(Z, dim=-1)
+    P, D = Z.shape
+    W = Z.t() @ Z                       # sum z z^T
+    if scale is None:
+        scale = 1.0 / D                 # keeps gains reasonable
+    W = scale * W
+    if zero_diag:
+        W.fill_diagonal_(0.0)
+    return W
+
+def hopfield_recall(
+    x0,
+    W,
+    target=None,
+    Phi_matrix=None,
+    steps=15,
+    beta=2.0,
+    normalize_each=False,
+    tanh=False,
+    alpha=1,
+    asynchronous=False,
+    update_order="random",  # "random" | "sequential"
+    rng=None,
+):
+    """
+    x_{t+1} = tanh(beta * (W x_t)) (synchronous) or coordinate-updates (asynchronous).
+    x0: [D]
+    W : [D, D]
+    Returns:
+        x: final state
+        cos_sims: list of cosine similarities to target at each step
+        closest_idxs_2d: list of (i, j) indices into Phi_matrix at each step (if Phi_matrix is provided)
+    """
+    x = x0.clone()
+    cos_sims = []
+    closest_idxs_2d = []
+    D = x.numel()
+
+    for _ in range(steps):
+        # record similarity to target (if provided)
+        cos_sim = F.cosine_similarity(x, target, dim=0).item()
+        cos_sims.append(cos_sim)
+        if Phi_matrix is not None:
+            sims_to_Phi = torch.tensordot(x, Phi_matrix, dims=([0], [0]))  # [H, W]
+            flat_idx = torch.argmax(sims_to_Phi).item()
+            i = flat_idx // Phi_matrix.shape[2]
+            j = flat_idx % Phi_matrix.shape[2]
+            closest_idxs_2d.append((i, j))
+
+        if not asynchronous:
+            delta_x = torch.tanh(beta * (W @ x)) if tanh else (W @ x)
+            x = (1 - alpha) * x + alpha * delta_x
+        else:
+            # Asynchronous coordinate updates in-place, using latest partial state
+            if update_order == "random":
+                if rng is not None:
+                    order = torch.randperm(D, generator=rng, device=x.device)
+                else:
+                    order = torch.randperm(D, device=x.device)
+            else:
+                order = torch.arange(D, device=x.device)
+
+            # Maintain local field h = W @ x and update it incrementally for efficiency
+            h = W @ x
+            for k in order.tolist():
+                hk = h[k]
+                new_val = torch.tanh(beta * hk) if tanh else hk
+                updated = (1 - alpha) * x[k] + alpha * new_val
+                delta = updated - x[k]
+                if delta != 0:
+                    x[k] = updated
+                    # h <- h + delta * W[:, k]
+                    h = h + delta * W[:, k]
+
+        if normalize_each:
+            x = F.normalize(x, dim=0)
+
+    # Add final similarity and closest index after last update
+    cos_sim = F.cosine_similarity(x, target, dim=0).item()
+    cos_sims.append(cos_sim)
+    if Phi_matrix is not None:
+        sims_to_Phi = torch.tensordot(x, Phi_matrix, dims=([0], [0]))  # [H, W]
+        flat_idx = torch.argmax(sims_to_Phi).item()
+        i = flat_idx // Phi_matrix.shape[2]
+        j = flat_idx % Phi_matrix.shape[2]
+        closest_idxs_2d.append((i, j))
+        return x, cos_sims, closest_idxs_2d
+    else:
+        return x, cos_sims
+
+
+def cosine(a, B):
+    """a: [D], B: [P, D] -> [P]"""
+    if B.ndim == 1:
+        B = B.unsqueeze(0)
+    return F.cosine_similarity(a.unsqueeze(0), B, dim=-1)
+
+@torch.no_grad()
+def test_hopfield(
+    encoder,
+    Phi,
+    Phi_flat,
+    embed_dim,
+    H,
+    W,
+    goal_states,
+    goal_locations,
+    sigmoid_scale_eval,
+    device,
+    n_envs,
+    all_env_indices,
+    size,
+    alpha,
+    beta,
+):
+    if len(goal_states) == 0:
+        raise ValueError("goal_states must be non-empty for Hopfield evaluation.")
+
+    encoded_Phi = encoder(Phi_flat, sigmoid_scale=sigmoid_scale_eval).detach().cpu()
+    encoded_Phi = encoded_Phi.T.reshape(embed_dim, H, W)
+
+    Phi_mem = torch.stack(goal_states).to(device)
+    Phi_mem_encoded = encoder(Phi_mem, sigmoid_scale=sigmoid_scale_eval).detach().cpu()
+
+    W = hebbian_weights(Phi_mem_encoded, zero_diag=True, scale=None)
+    accuracies = []
+
+    for env_idx in range(n_envs):
+        correct = 0
+        env_indices = all_env_indices[env_idx]
+        for x in range(size):
+            for y in range(size):
+                location = env_indices[x, y]
+                loc_x = int(location[0])
+                loc_y = int(location[1])
+                phi_vec = Phi[:, loc_x, loc_y].unsqueeze(0).to(device)
+                phi_query = (
+                    encoder(phi_vec, sigmoid_scale=sigmoid_scale_eval)
+                    .detach()
+                    .cpu()
+                    .squeeze(0)
+                )
+
+                x_star, cos_sims, closest_idxs_2d = hopfield_recall(phi_query, W, target=Phi_mem_encoded[env_idx], Phi_matrix=encoded_Phi,
+                                                    steps=20, beta=beta, normalize_each=True, tanh=True, alpha=alpha)
+
+                last_idx = closest_idxs_2d[-1]
+                if last_idx == tuple(goal_locations[env_idx]):
+                    correct += 1
+        accuracies.append(correct / (size * size))
+
+    return accuracies
+
 if __name__ == "__main__":
     lambdas = [11,12]
     Ng = np.sum(np.square(lambdas))
@@ -839,30 +1047,83 @@ if __name__ == "__main__":
     Phi_np = smooth_gbook(gbook, lambdas, 0.25)
     Phi = torch.tensor(Phi_np, dtype=torch.float32)
 
+    # --- Build disjoint sub-grids and nominate goals for Hopfield evaluation ---
+    n_envs = 3
+    size = 5
+    touch_ok = False
+    max_tries = 10_000
+    used: list[tuple[int, int]] = []
+    C_pairs: list[tuple[int, int]] = []
+    tries = 0
+    while len(C_pairs) < n_envs and tries < max_tries:
+        x = int(rng.integers(0, Npos - size + 1))
+        y = int(rng.integers(0, Npos - size + 1))
+        if all(not overlaps(x, y, px, py, size, touch_ok) for (px, py) in used):
+            used.append((x, y))
+            C_pairs.append((x, y))
+        tries += 1
+    if len(C_pairs) < n_envs:
+        raise RuntimeError(
+            f"Could not place {n_envs} sub-grids of size {size}; "
+            "increase max_tries or relax touch_ok."
+        )
+
+    all_env_indices: list[np.ndarray] = []
+    goal_states: list[torch.Tensor] = []
+    goal_locations: list[tuple[int, int]] = []
+    for env_idx in range(n_envs):
+        C_X, C_Y = C_pairs[env_idx]
+        x_coords, y_coords = np.meshgrid(np.arange(size), np.arange(size), indexing="ij")
+        env_indices = np.stack((C_X + x_coords, C_Y + y_coords), axis=-1)
+        all_env_indices.append(env_indices)
+
+        flat_env = env_indices.reshape(-1, 2)
+        goal_loc = flat_env[int(rng.integers(len(flat_env)))]
+        goal_states.append(Phi[:, goal_loc[0], goal_loc[1]].clone())
+        goal_locations.append((int(goal_loc[0]), int(goal_loc[1])))
+
     torch.manual_seed(0)
 
+    epochs = 150
+    # Early stopping on align_loss (lower is better)
+    early_stop_patience = 200
+    early_stop_min_delta = 1e-5
+    early_stop_buffer = 200  # delay early-stop checks until after this many epochs
+
     lrs = [1e-3]
-    batch_sizes = [1024]
-    hidden_sizes = [2048]
-    embed_dims = [256]
-    sigmoid_scales = [100]
+    batch_sizes = [512]
+    hidden_sizes = [1024]
+    embed_dims = [512]
+    sigmoid_scales = [3, 4, 5]
+    cka_alphas = [20, 40, 80, 120]
+    uniformity_lambda_ends = [0.01, 0.03]
+    alphas = [0.8, 0.9, 1.0]
+    hopfield_eval_interval = 1   # set >1 to evaluate less frequently
+    
+    # Directory for saving encoders
+    encoders_dir = os.path.join(PROJECT_ROOT, "encoders")
+    os.makedirs(encoders_dir, exist_ok=True)
 
     #make a grid of all combinations
-    configs = list(itertools.product(lrs, batch_sizes, hidden_sizes, embed_dims, sigmoid_scales))
+    configs = list(itertools.product(lrs, batch_sizes, hidden_sizes, embed_dims, sigmoid_scales, cka_alphas, uniformity_lambda_ends))
 
-    for config in configs:
-        lr, batch_size, hidden_size, embed_dim, sigmoid_scale = config
+    for config_idx, config in enumerate(configs):
+        lr, batch_size, hidden_size, embed_dim, sigmoid_scale, cka_alpha, uniformity_lambda_end = config
 
         embed_dim = embed_dim
         hidden = hidden_size
         batch_size = batch_size
         lr = lr
-        epochs = 1000
+
+        print(f"\n{'='*70}")
+        print(f"Config {config_idx+1}/{len(configs)}: cka_alpha={cka_alpha}, sigmoid_scale={sigmoid_scale}, uniformity_lambda_end={uniformity_lambda_end}")
+        print(f"{'='*70}")
+
         centered = True  
         output_nonlinearity = "tanh"
         sigmoid_scale_start = 1
         sigmoid_scale_end = sigmoid_scale
-        sigmoid_scale_up_epochs = 40
+        sigmoid_scale_up_epochs = 80
         sigmoid_scales = np.logspace(np.log10(sigmoid_scale_start), np.log10(sigmoid_scale_end), sigmoid_scale_up_epochs)
         sigmoid_scales = np.concatenate([sigmoid_scales, np.ones(epochs - sigmoid_scale_up_epochs) * sigmoid_scales[-1]])
         # sigmoid_scales = np.linspace(sigmoid_scale_start, sigmoid_scale_end, epochs)
@@ -872,18 +1133,17 @@ if __name__ == "__main__":
         include_diagonals = False
         plane_lambda_start = 0
         plane_lambda_end = 0
-        plane_lambda_scale_up_epochs = 30
+        plane_lambda_scale_up_epochs = 1
         plane_lambda_scales = np.linspace(plane_lambda_start, plane_lambda_end, plane_lambda_scale_up_epochs)
         plane_lambda_scales = np.concatenate([plane_lambda_scales, np.ones(epochs - plane_lambda_scale_up_epochs) * plane_lambda_scales[-1]])
 
         local_lambda_start = 0
         local_lambda_end = 0
-        local_lambda_scale_up_epochs = 100
+        local_lambda_scale_up_epochs = 1
         local_lambda_scales = np.linspace(local_lambda_start, local_lambda_end, local_lambda_scale_up_epochs)
         local_lambda_scales = np.concatenate([local_lambda_scales, np.ones(epochs - local_lambda_scale_up_epochs) * local_lambda_scales[-1]])
 
-        uniformity_lambda_start = 0 #0.01
-        uniformity_lambda_end = 0 #5
+        uniformity_lambda_start = 0.0
         uniformity_lambda_scales = np.linspace(uniformity_lambda_start, uniformity_lambda_end, epochs)
 
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -932,12 +1192,17 @@ if __name__ == "__main__":
             "local_lambda_scale_up_epochs": local_lambda_scale_up_epochs,
             "uniformity_lambda_start": uniformity_lambda_start,
             "uniformity_lambda_end": uniformity_lambda_end,
+            "cka_alpha": cka_alpha,
             "H": H,
             "W": W,
             "N": N,
             "tau": float(tau),
             "device": str(device),
             "lambdas": lambdas,
+            "early_stop_patience": early_stop_patience,
+            "early_stop_min_delta": early_stop_min_delta,
+            "hopfield_n_envs": n_envs,
+            "hopfield_patch_size": size,
         }
         wandb_run = wandb.init(project="dist-encoder", name=run_name, config=wandb_config)
 
@@ -953,6 +1218,13 @@ if __name__ == "__main__":
 
         sims = []
         triplet_accs = []
+        best_align_loss = float("inf")
+        best_epoch = 0
+        epochs_since_improve = 0
+        best_state_dict = None
+        best_metrics = None
+        best_traj_metrics = None
+        early_stop_triggered = False
 
         for ep in range(1, epochs + 1):
             sigmoid_scale = sigmoid_scales[ep - 1]
@@ -970,6 +1242,7 @@ if __name__ == "__main__":
                 uniformity_lambda=uniformity_lambda_scales[ep - 1],
                 lambda_plane=plane_lambda_scales[ep - 1],
                 lambda_local=local_lambda_scales[ep - 1],
+                cka_alpha=cka_alpha,
             )
 
             metrics = eval_full(
@@ -980,7 +1253,8 @@ if __name__ == "__main__":
                 subset=min(2048, N),
                 centered=True,         # same as training
                 D_true=None,
-                tau_for_rbf=tau
+            tau_for_rbf=tau,
+            cka_alpha=cka_alpha,
             )
 
             print(
@@ -1014,27 +1288,213 @@ if __name__ == "__main__":
                 f"angle_monotonic_frac_mean={metrics_traj['angle_monotonic_frac_mean']:.3f}"
             )
 
+            hopfield_epoch_logs: dict[str, float] = {}
+            should_eval_hopfield = (
+                hopfield_eval_interval > 0
+                and goal_states
+                and all_env_indices
+                and (
+                    ep % hopfield_eval_interval == 0
+                    or ep == 1
+                    or ep == epochs
+                )
+            )
+            if should_eval_hopfield:
+                hopfield_console_lines = []
+                for recall_alpha in alphas:
+                    accuracies = test_hopfield(
+                        encoder=encoder,
+                        Phi=Phi,
+                        Phi_flat=Phi_flat,
+                        embed_dim=embed_dim,
+                        H=H,
+                        W=W,
+                        goal_states=goal_states,
+                        goal_locations=goal_locations,
+                        sigmoid_scale_eval=sigmoid_scale,
+                        device=device,
+                        n_envs=n_envs,
+                        all_env_indices=all_env_indices,
+                        size=size,
+                        alpha=recall_alpha,
+                        beta=sigmoid_scale_end,
+                    )
+                    alpha_key = f"{recall_alpha:.2f}".replace(".", "p")
+                    env_msgs = []
+                    env_vals = []
+                    for env_idx, acc in enumerate(accuracies):
+                        key = f"hopfield_acc_env{env_idx}_alpha_{alpha_key}"
+                        hopfield_epoch_logs[key] = float(acc)
+                        env_msgs.append(f"env{env_idx}:{acc:.3f}")
+                        env_vals.append(acc)
+                    mean_acc = float(torch.tensor(env_vals).mean().item())
+                    hopfield_epoch_logs[f"hopfield_acc_alpha_{alpha_key}_mean"] = mean_acc
+                    hopfield_console_lines.append(
+                        f"alpha={recall_alpha:.2f} -> " + " ".join(env_msgs)
+                    )
+                if hopfield_console_lines:
+                    print("Hopfield eval | " + " | ".join(hopfield_console_lines))
+
             # Log to Weights & Biases
+            log_payload = {
+                "epoch": ep,
+                "train_align_loss": tr_loss,
+                "align_loss": metrics["align_loss"],
+                "local_loss": metrics["local_loss"],
+                "pearson_sim": metrics["pearson_sim"],
+                "spearman_sim": metrics["spearman_sim"],
+                "triplet_acc": metrics["triplet_acc"],
+                "nn_consistency": metrics["nn_consistency"],
+                "sigmoid_scale": float(sigmoid_scale),
+                "plane_dev_mean": metrics_traj["plane_dev_mean"],
+                "plane_dev_max_mean": metrics_traj["plane_dev_max_mean"],
+                "triple_det_mean": metrics_traj["triple_det_mean"],
+                "angle_R2_mean": metrics_traj["angle_R2_mean"],
+                "angle_monotonic_frac_mean": metrics_traj["angle_monotonic_frac_mean"],
+                "lr": float(optim.param_groups[0]["lr"]),
+            }
+            if hopfield_epoch_logs:
+                log_payload.update(hopfield_epoch_logs)
+            try:
+                wandb_run.log(log_payload)
+            except Exception:
+                pass
+
+            current_align = metrics["align_loss"]
+            if current_align + early_stop_min_delta < best_align_loss:
+                best_align_loss = current_align
+                best_epoch = ep
+                epochs_since_improve = 0
+                best_state_dict = {k: v.detach().cpu().clone() for k, v in encoder.state_dict().items()}
+                best_metrics = {k: v for k, v in metrics.items()}
+                best_traj_metrics = {k: v for k, v in metrics_traj.items()}
+            else:
+                if ep > early_stop_buffer:
+                    epochs_since_improve += 1
+                else:
+                    epochs_since_improve = 0  # still warming up; don't accumulate patience
+                if ep > early_stop_buffer and epochs_since_improve >= early_stop_patience:
+                    early_stop_triggered = True
+                    print(
+                        f"Early stopping at epoch {ep} "
+                        f"(best align_loss={best_align_loss:.4f} at epoch {best_epoch})"
+                    )
+                    try:
+                        wandb_run.log({
+                            "early_stop_epoch": ep,
+                            "best_align_loss": best_align_loss,
+                            "best_align_epoch": best_epoch,
+                        })
+                    except Exception:
+                        pass
+                    break
+
+        if best_state_dict is not None:
+            encoder.load_state_dict(best_state_dict)
+
+        if best_metrics is not None:
+            print(
+                f"Best epoch {best_epoch}: align_loss={best_align_loss:.4f}, "
+                f"local_loss={best_metrics['local_loss']:.6f}, "
+                f"triplet_acc={best_metrics['triplet_acc']:.3f}, "
+                f"nn_consistency={best_metrics['nn_consistency']:.3f}"
+            )
+            if best_traj_metrics and best_traj_metrics.get("num_seqs", 0):
+                print(
+                    "Best trajectory stats | "
+                    f"plane_dev_mean={best_traj_metrics['plane_dev_mean']:.3f} | "
+                    f"plane_dev_max_mean={best_traj_metrics['plane_dev_max_mean']:.3f} | "
+                    f"triple_det_mean={best_traj_metrics['triple_det_mean']:.5f} | "
+                    f"angle_R2_mean={best_traj_metrics['angle_R2_mean']:.3f} | "
+                    f"angle_monotonic_frac_mean={best_traj_metrics['angle_monotonic_frac_mean']:.3f}"
+                )
             try:
                 wandb_run.log({
-                    "epoch": ep,
-                    "train_align_loss": tr_loss,
-                    "align_loss": metrics["align_loss"],
-                    "local_loss": metrics["local_loss"],
-                    "pearson_sim": metrics["pearson_sim"],
-                    "spearman_sim": metrics["spearman_sim"],
-                    "triplet_acc": metrics["triplet_acc"],
-                    "nn_consistency": metrics["nn_consistency"],
-                    "sigmoid_scale": float(sigmoid_scale),
-                    "plane_dev_mean": metrics_traj["plane_dev_mean"],
-                    "plane_dev_max_mean": metrics_traj["plane_dev_max_mean"],
-                    "triple_det_mean": metrics_traj["triple_det_mean"],
-                    "angle_R2_mean": metrics_traj["angle_R2_mean"],
-                    "angle_monotonic_frac_mean": metrics_traj["angle_monotonic_frac_mean"],
-                    "lr": float(optim.param_groups[0]["lr"]),
+                    "best_align_loss": best_align_loss,
+                    "best_align_epoch": best_epoch,
+                    "best_triplet_acc": best_metrics["triplet_acc"],
+                    "best_nn_consistency": best_metrics["nn_consistency"],
                 })
             except Exception:
                 pass
+
+        hopfield_logs = {}
+        if goal_states and all_env_indices:
+            for recall_alpha in alphas:
+                accuracies = test_hopfield(
+                    encoder=encoder,
+                    Phi=Phi,
+                    Phi_flat=Phi_flat,
+                    embed_dim=embed_dim,
+                    H=H,
+                    W=W,
+                    goal_states=goal_states,
+                    goal_locations=goal_locations,
+                    sigmoid_scale_eval=sigmoid_scale_end,
+                    device=device,
+                    n_envs=n_envs,
+                    all_env_indices=all_env_indices,
+                    size=size,
+                    alpha=recall_alpha, 
+                    beta=sigmoid_scale_end,
+                )
+                alpha_key = f"{recall_alpha:.2f}".replace(".", "p")
+                env_msgs = []
+                env_vals = []
+                for env_idx, acc in enumerate(accuracies):
+                    hopfield_logs[f"best_hopfield_acc_env{env_idx}_alpha_{alpha_key}"] = float(acc)
+                    env_msgs.append(f"env{env_idx}:{acc:.3f}")
+                    env_vals.append(acc)
+                mean_acc = float(torch.tensor(env_vals).mean().item())
+                hopfield_logs[f"best_hopfield_acc_alpha_{alpha_key}_mean"] = mean_acc
+                print(
+                    f"Best Hopfield alpha={recall_alpha:.2f} -> "
+                    + " ".join(env_msgs)
+                )
+            if hopfield_logs:
+                try:
+                    wandb_run.log(hopfield_logs)
+                except Exception:
+                    pass
+
+        if early_stop_triggered and ep < epochs:
+            print(f"Stopped early after {ep} epochs (patience={early_stop_patience}).")
+
+        # Save encoder with descriptive name
+        encoder_name = f"encoder_alpha{cka_alpha}_sig{sigmoid_scale_end}_uni{uniformity_lambda_end}.pt"
+        encoder_path = os.path.join(encoders_dir, encoder_name)
+        save_payload = {
+            "config": {
+                "hidden": hidden,
+                "out_dim": embed_dim,
+                "nonlinearity": "gelu",
+                "output_nonlinearity": output_nonlinearity,
+            },
+            "state_dict": encoder.state_dict(),
+            "sweep_params": {
+                "cka_alpha": cka_alpha,
+                "sigmoid_scale_end": sigmoid_scale_end,
+                "uniformity_lambda_end": uniformity_lambda_end,
+                "lr": lr,
+                "batch_size": batch_size,
+                "hidden_size": hidden_size,
+                "embed_dim": embed_dim,
+            },
+            "training_info": {
+                "best_epoch": best_epoch,
+                "best_align_loss": best_align_loss,
+                "early_stop_triggered": early_stop_triggered,
+            },
+        }
+        if best_metrics is not None:
+            save_payload["final_metrics"] = {
+                "align_loss": best_metrics.get("align_loss"),
+                "triplet_acc": best_metrics.get("triplet_acc"),
+                "nn_consistency": best_metrics.get("nn_consistency"),
+                "pearson_sim": best_metrics.get("pearson_sim"),
+            }
+        torch.save(save_payload, encoder_path)
+        print(f"Saved encoder to {encoder_path}")
 
         try:
             wandb_run.finish()

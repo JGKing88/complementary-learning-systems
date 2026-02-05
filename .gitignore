@@ -1,3 +1,32 @@
 wandb/
 .ipynb_checkpoints/
 slurm_outputs/
+encoders/
+*.pt
+# add any other files that are not needed to be tracked
+*.npy
+*.npz
+*.pkl
+*.pt
+*.pth
+*.pt.tar
+*.pt.tar.gz
+*.pt.tar.bz2
+*.pt.tar.xz
+*.pt.tar.lzma
+# add anything that might be large
+*.eps
+*.pdf
+*.png
+*.jpg
+*.jpeg
+*.gif
+*.bmp
+*.tiff
+*.ico
+*.webp
+*.svg
+__pycache__/
+*.pyc
+*.pyoslurm-*.out
+*.out
