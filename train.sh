@@ -1,15 +1,15 @@
 #!/bin/bash -l
 #SBATCH --job-name=cls
 #SBATCH --time=2-00:00:00
-###SBATCH --gres=gpu:a100:1
-#SBATCH --gres=gpu:1
+#SBATCH --gres=gpu:a100:1
+####SBATCH --gres=gpu:1
 ###SBATCH --gres=gpu:GEFORCERTX2080:2
 
 #SBATCH --ntasks=1
 #SBATCH --mail-type=ALL
 #SBATCH --mail-user=jackking@mit.edu
-#SBATCH --partition=pi_evelina9
-#SBATCH --mem=10G
+#SBATCH --partition=pi_fiete
+#SBATCH --mem=100G
 
 module load miniforge/24.3.0-0
 module load cuda/13.0.1
@@ -23,7 +23,7 @@ unset CUDA_VISIBLE_DEVICES
 
 MT_HOME="/home/$USER_NAME/cls"
 
-# python notebooks/testing_dist_encoder.py
+python notebooks/train_dist_encoder.py
 
 # prrint examples
 
@@ -58,28 +58,28 @@ MT_HOME="/home/$USER_NAME/cls"
     # --shared_vectorhash \
     # --full_scaffold
 
-python train_action_classifier.py \
-    --model_type mlp \
-    --vectorhash \
-    --input_type encoded_g \
-    --max_steps 1 4 \
-    --fwhm_ratio 0.25 \
-    --lambdas 11 12 13 \
-    --Npos 300 \
-    --thresh 0.5 \
-    --val_fraction 0.2 \
-    --dropout 0.2 \
-    --hidden_size 512 \
-    --num_model_layers 2 \
-    --batch_size 2048 \
-    --n_epochs 5000 \
-    --lr 2e-5 \
-    --encoder_weights goated_cnn_encoder.pt \
-    --use_wandb \
-    --wandb_project cls_action_classifier \
-    --global_space \
-    --save_every 1000 \
-    --save_dir action_classifiers
+# python train_action_classifier.py \
+#     --model_type mlp \
+#     --vectorhash \
+#     --input_type encoded_g \
+#     --max_steps 1 4 \
+#     --fwhm_ratio 0.25 \
+#     --lambdas 11 12 13 \
+#     --Npos 300 \
+#     --thresh 0.5 \
+#     --val_fraction 0.2 \
+#     --dropout 0.2 \
+#     --hidden_size 512 \
+#     --num_model_layers 2 \
+#     --batch_size 2048 \
+#     --n_epochs 5000 \
+#     --lr 2e-5 \
+#     --encoder_weights goated_cnn_encoder.pt \
+#     --use_wandb \
+#     --wandb_project cls_action_classifier \
+#     --global_space \
+#     --save_every 1000 \
+#     --save_dir action_classifiers
     #--use_displacement
 
 # python train_action_classifier.py \

@@ -12,6 +12,7 @@ import torch.nn.functional as F
 from torch.utils.data import DataLoader, Dataset
 from typing import Optional, Callable, Tuple
 import torch.nn.functional as F
+from itertools import product
 
 from scipy.stats import spearmanr, pearsonr
 
@@ -864,6 +865,8 @@ def load_encoder(encoder_name, encoders_dir=None, device=None):
     training_info = checkpoint.get("training_info", {})
     lambdas = config["model_params"]["lambdas"]
     hidden_channels = config["model_params"]["hidden_channels"]
+    num_hidden_layers = config["model_params"].get("num_hidden_layers", 1)
+    kernel_size = config["model_params"].get("kernel_size", 3)
     hidden_dim = config["model_params"]["hidden_dim"]
     out_dim = config["model_params"]["out_dim"]
     nonlinearity = config["model_params"]["nonlinearity"]
@@ -883,7 +886,9 @@ def load_encoder(encoder_name, encoders_dir=None, device=None):
         out_dim=out_dim, 
         hidden_dim=hidden_dim, 
         nonlinearity=nonlinearity,    
-        output_nonlinearity=output_nonlinearity
+        output_nonlinearity=output_nonlinearity,
+        num_hidden_layers=num_hidden_layers,
+        kernel_size=kernel_size
     ).to(device)
 
     encoder.load_state_dict(checkpoint["state_dict"])
@@ -1001,15 +1006,17 @@ def extract_patches_to_flat(
     return Phi_flat, X
 
 
-def train(Phi, config):
+def train(Phi, config, save_every = True):
     lambdas = config["model_params"]["lambdas"]
     full_Npos = np.prod(lambdas)
     Npos = config["model_params"]["Npos"]
     Nenv = config["model_params"].get("Nenv", 1)  # Default to 1 (full grid behavior if Nenv not specified)
     num_layers = config["model_params"]["num_layers"]
     hidden_channels = config["model_params"]["hidden_channels"]
+    kernel_size = config["model_params"]["kernel_size"]
     embed_dim = config["model_params"]["out_dim"]
     hidden_dim = config["model_params"]["hidden_dim"]
+    num_hidden_layers = config["model_params"]["num_hidden_layers"]
     batch_size = config["training_params"]["batch_size"]
     lr = config["training_params"]["lr"]
     epochs = config["training_params"]["epochs"]
@@ -1058,6 +1065,32 @@ def train(Phi, config):
     # Sample Nenv non-overlapping patches of size Npos x Npos
     y0s, x0s = sample_nonoverlapping_patches(H_full, W_full, Npos, Nenv)
     
+    # Visualize patch placements
+    fig, ax = plt.subplots(figsize=(8, 8))
+    ax.set_xlim(-0.5, W_full - 0.5)
+    ax.set_ylim(H_full - 0.5, -0.5)  # Invert y-axis to match image coordinates
+    ax.set_aspect('equal')
+    ax.set_title(f"Sampled {Nenv} patches ({Npos}x{Npos}) on {H_full}x{W_full} grid")
+    ax.set_xlabel("x")
+    ax.set_ylabel("y")
+    
+    # Draw grid outline
+    ax.add_patch(plt.Rectangle((0, 0), W_full, H_full, fill=False, edgecolor='black', linewidth=2))
+    
+    # Draw each patch with a different color
+    colors = plt.cm.tab10(np.linspace(0, 1, max(Nenv, 10)))
+    for i, (y0, x0) in enumerate(zip(y0s, x0s)):
+        color = colors[i % len(colors)]
+        rect = plt.Rectangle((x0, y0), Npos, Npos, fill=True, facecolor=color, 
+                              edgecolor='white', linewidth=1.5, alpha=0.6)
+        ax.add_patch(rect)
+        # Add patch number label at center
+        ax.text(x0 + Npos/2, y0 + Npos/2, str(i), ha='center', va='center', 
+                fontsize=10, fontweight='bold', color='white')
+    
+    plt.tight_layout()
+    plt.show()
+    
     # Extract patches and get flattened Phi values with original coordinates
     Phi_flat, X = extract_patches_to_flat(Phi, y0s, x0s, Npos, device)
     
@@ -1070,12 +1103,22 @@ def train(Phi, config):
     print(f"Precomputed {triples_all.size(0)} curvature triples.")
 
     # encoder = SphericalMLP(in_dim=Phi_flat.size(1), hidden=hidden, out_dim=embed_dim, nonlinearity="gelu", output_nonlinearity=output_nonlinearity).to(device)
-    encoder = GridEncoderCNN(lambdas, hidden_channels=hidden_channels, out_dim=embed_dim, hidden_dim=hidden_dim, nonlinearity="gelu", output_nonlinearity=output_nonlinearity, num_conv_layers=num_layers).to(device)
+    encoder = GridEncoderCNN(lambdas, hidden_channels=hidden_channels, out_dim=embed_dim, hidden_dim=hidden_dim, nonlinearity="gelu", output_nonlinearity=output_nonlinearity, num_conv_layers=num_layers, kernel_size=kernel_size, num_hidden_layers=num_hidden_layers).to(device)
 
     optim = torch.optim.AdamW(encoder.parameters(), lr=lr, weight_decay=1e-4)
 
     print(f"Using device: {device} | N={N} | code_dim={Phi_flat.size(1)} | embed_dim={embed_dim}")
     print(f"RBF tau (median dist) = {tau:.4f}")
+
+    viz_idx_y, viz_idx_x = y0s[0] + Npos // 2, x0s[0] + Npos // 2
+
+    #grab an idx_y and idx_x that are not in any of the patches
+    def in_any_patch(y, x):
+        return any(y0 <= y < y0 + Npos and x0 <= x < x0 + Npos for y0, x0 in zip(y0s, x0s))
+    
+    rand_idx_y, rand_idx_x = np.random.randint(0, full_Npos), np.random.randint(0, full_Npos)
+    while in_any_patch(rand_idx_y, rand_idx_x):
+        rand_idx_y, rand_idx_x = np.random.randint(0, full_Npos), np.random.randint(0, full_Npos)
 
     sims = []
     triplet_accs = []
@@ -1084,7 +1127,6 @@ def train(Phi, config):
 
     for ep in range(1, epochs + 1):
         gain = gains[ep - 1]
-        print(Phi_flat.shape)
         tr_loss = train_epoch(
             encoder,
             Phi_flat,
@@ -1152,19 +1194,32 @@ def train(Phi, config):
                 f"angle_monotonic_frac_mean={metrics_traj['angle_monotonic_frac_mean']:.3f}"
             )
 
-        save_encoder(encoder, config, f"encoder_{ep}.pt")
+        if save_every:
+            save_encoder(encoder, config, f"encoder_{ep}.pt")
+        
+        def plot_metrics(encoded_Phi_grid, idx_y, idx_x):
+            phix = encoded_Phi_grid[idx_y, idx_x, :]
 
-        if ep % 5 == 0:
-            plt.clf()  # Clear the current figure
-            plt.plot(sims, label='pearson_sim')
-            plt.plot(triplet_accs, label='triplet_acc')
-            plt.plot(nn_consistencies, label='nn_consistency')
-            plt.plot(losses, label='loss')
-            plt.legend()
-            plt.draw()
-            plt.pause(0.001)
+            #vectorized version
+            cosine_sims = np.sum(encoded_Phi_grid * phix, axis=-1) / np.sqrt(np.sum(encoded_Phi_grid**2, axis=-1) * np.sum(phix**2, axis=-1))
+            plt.imshow(cosine_sims)
+            
+            # Add circle marker at the reference point
+            plt.scatter(idx_x, idx_y, s=100, facecolors='none', edgecolors='red', linewidths=2, marker='o')
+
+            plt.title(f"cosine_sim(E(phi({idx_y},{idx_x})), E(phi(x,y))), lambdas = {lambdas}")
+            plt.xlabel("delta(x)")
+            plt.ylabel("delta(y)")
+            plt.colorbar(label="cosine sim")
+            ax = plt.gca()
+            ax.ticklabel_format(axis='y', style='plain', useOffset=False)
+            ax.yaxis.get_offset_text().set_visible(False)
             plt.show()
 
+            plt.plot(cosine_sims[idx_y])
+            plt.show()
+
+        if ep % 10 == 0:
             # Batch processing: encode the FULL Phi grid for visualization (not just sampled patches)
             Phi_full_flat = Phi.reshape(code_dim, full_Npos * full_Npos).T.to(device)  # [full_Npos*full_Npos, code_dim]
             batch_size = 1000  # adjust as needed according to GPU/CPU RAM constraints
@@ -1176,27 +1231,18 @@ def train(Phi, config):
             encoded_Phi = torch.cat(encoded_Phi_chunks, dim=0)
             encoded_Phi_grid = encoded_Phi.reshape(full_Npos, full_Npos, embed_dim).to("cpu").numpy()
 
-            idx = full_Npos // 2
-            phix = encoded_Phi_grid[idx, idx, :]
-            print(phix.shape)
-
-            #vectorized version
-            cosine_sims = np.sum(encoded_Phi_grid * phix, axis=-1) / np.sqrt(np.sum(encoded_Phi_grid**2, axis=-1) * np.sum(phix**2, axis=-1))
-
-            plt.imshow(cosine_sims)
-
-            plt.title(f"E(phi(x)), lambdas = {lambdas}")
-            plt.xlabel("delta(x)")
-            plt.ylabel("delta(y)")
-            plt.colorbar(label="cosine sim")
-            ax = plt.gca()
-            ax.ticklabel_format(axis='y', style='plain', useOffset=False)
-            ax.yaxis.get_offset_text().set_visible(False)
+            plt.clf()  # Clear the current figure
+            plt.plot(sims, label='pearson_sim')
+            plt.plot(triplet_accs, label='triplet_acc')
+            plt.plot(nn_consistencies, label='nn_consistency')
+            plt.plot(losses, label='loss')
             plt.legend()
+            plt.draw()
+            plt.pause(0.001)
             plt.show()
 
-            plt.plot(cosine_sims[idx])
-            plt.show()
+            plot_metrics(encoded_Phi_grid, viz_idx_y, viz_idx_x)
+            plot_metrics(encoded_Phi_grid, rand_idx_y, rand_idx_x)
 
 
     plt.plot(sims, label='pearson_sim')
@@ -1207,3 +1253,62 @@ def train(Phi, config):
     plt.show()
 
     return encoder
+
+
+if __name__ == "__main__":
+    lambdas = [11,12,13]
+    Ng = np.sum(np.square(lambdas))
+    Npos = np.prod(lambdas)
+    gbook = gen_gbook_2d(lambdas, Ng, Npos)
+    Phi_np = smooth_gbook(gbook, lambdas, 0.25)
+    Phi = torch.tensor(Phi_np, dtype=torch.float32)
+
+    # lower learning rate, larger model.
+    config = {
+        "model_params": {
+            "lambdas": lambdas,
+            "hidden_dim": 512,
+            "hidden_channels": 128,
+            "num_layers": 3,
+            "out_dim": 128,
+            "num_hidden_layers": 2,
+            "kernel_size": 5,
+            "nonlinearity": "gelu",
+            "output_nonlinearity": "tanh",
+            "gain": 5,
+            "Npos": 50,
+            "Nenv": 200
+        },
+        "training_params": {
+            "lr": 0.0001,
+            "batch_size": 8192,
+            "epochs": 200,
+            "gain_start": 1,
+            "gain_end": 5,
+            "gain_up_epochs": 50,
+            "uniformity_lambda_start": 0,
+            "uniformity_lambda_end": 0.1,
+            "uniformity_lambda_scale_up_epochs": 25,
+            "cka_alpha": 1,
+            "cka_topk": 20,
+            "mod_loss_lambda": 0.75,
+        },
+        "hopfield_params": {
+            "alpha": 0.85
+        }
+    }
+
+    cka_topks = [10, 20, 40, 80]
+    mod_loss_lambdas = [0.5, 0.75, 1.0, 1.5]
+    out_dims = [64, 128, 256]
+
+    iterator = product(cka_topks, mod_loss_lambdas, out_dims)
+    for cka_topk, mod_loss_lambda, out_dim in iterator:
+        config["training_params"]["cka_topk"] = cka_topk
+        config["training_params"]["mod_loss_lambda"] = mod_loss_lambda
+        config["model_params"]["out_dim"] = out_dim
+        print(f"Training with cka_topk={cka_topk}, mod_loss_lambda={mod_loss_lambda}, out_dim={out_dim}")
+        encoder = train(Phi, config, save_every = False)
+        save_encoder(encoder, config, f"encoder_cka_topk={cka_topk}_mod_loss_lambda={mod_loss_lambda}_out_dim={out_dim}.pt")
+        print(f"Saved encoder_cka_topk={cka_topk}_mod_loss_lambda={mod_loss_lambda}_out_dim={out_dim}.pt")
+        print(f"--------------------------------")

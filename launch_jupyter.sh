@@ -7,8 +7,8 @@
 #SBATCH --gres=gpu:a100:1
 ###SBATCH --gres=gpu:1
 ###SBATCH --gres=gpu:GEFORCERTX2080:1
-#SBATCH --mem 200G
-#SBATCH --partition=pi_fiete
+#SBATCH --mem 100G
+#SBATCH --partition=pi_evelina9
 #SBATCH -o jupyter.out
 
 module load miniforge/24.3.0-0
@@ -18,6 +18,6 @@ source activate cls
 
 unset XDG_RUNTIME_DIR
 
-PORT=8090
+PORT=8091
 
 jupyter lab --ip=0.0.0.0 --port=${PORT} --no-browser --NotebookApp.allow_origin='*' --NotebookApp.port_retries=0

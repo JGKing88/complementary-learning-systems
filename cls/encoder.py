@@ -31,9 +31,11 @@ class GridEncoderCNN(nn.Module):
         self,
         lambdas: list[int],
         hidden_channels: int,
-        out_dim: int,
-        hidden_dim = None,
         num_conv_layers: int = 3,
+        kernel_size: int = 3,
+        num_hidden_layers: int = 1,
+        hidden_dim = 128,
+        out_dim: int = 128,
         nonlinearity: str = "gelu",
         output_nonlinearity: str = "tanh",
         gain: float = 1.0,
@@ -63,7 +65,7 @@ class GridEncoderCNN(nn.Module):
         conv_layers = []
         in_ch = self.num_modules
         for _ in range(num_conv_layers):
-            conv_layers.append(nn.Conv2d(in_ch, hidden_channels, kernel_size=3, padding=1))
+            conv_layers.append(nn.Conv2d(in_ch, hidden_channels, kernel_size=kernel_size, padding=kernel_size // 2))
             conv_layers.append(act_fn())
             in_ch = hidden_channels
 
@@ -71,16 +73,18 @@ class GridEncoderCNN(nn.Module):
 
         self.pool = nn.AdaptiveAvgPool2d((4, 4))
 
-        # Lazy FC head
-        if hidden_dim is None:
-            self.fc = nn.Linear(hidden_channels * 4 * 4, out_dim)
+        hidden_layers = []
+        if num_hidden_layers == 0:
+            hidden_layers.append(nn.Linear(hidden_channels * 4 * 4, out_dim))
         else:
-            self.fc1 = nn.Linear(hidden_channels * 4 * 4, hidden_dim)
-            self.act_fn = act_fn()
-            self.fc2 = nn.Linear(hidden_dim, out_dim)
+            hidden_layers.append(nn.Linear(hidden_channels * 4 * 4, hidden_dim))
+            hidden_layers.append(act_fn())
+            for _ in range(num_hidden_layers - 1):
+                hidden_layers.append(nn.Linear(hidden_dim, hidden_dim))
+                hidden_layers.append(act_fn())
+            hidden_layers.append(nn.Linear(hidden_dim, out_dim))
 
-        # track initialized feature dim for safety
-        self._fc_feature_dim: Optional[int] = None
+        self.mlp = nn.Sequential(*hidden_layers)
 
     def _reshape_single_g(self, g: torch.Tensor, channel_offset: int, out: torch.Tensor) -> None:
         batch_size = g.shape[0]
@@ -126,24 +130,7 @@ class GridEncoderCNN(nn.Module):
         features = self.pool(features)              # [B, C, 4, 4]
         features = features.flatten(1)              # [B, C*16]
 
-        # shape-stability guard
-        feat_dim = features.size(1)
-        if self._fc_feature_dim is None:
-            self._fc_feature_dim = feat_dim
-        else:
-            if feat_dim != self._fc_feature_dim:
-                raise RuntimeError(
-                    f"GridEncoderCNN: input spatial size changed after LazyLinear init "
-                    f"(expected {self._fc_feature_dim}, got {feat_dim}). "
-                    f"Use adaptive pooling if variable sizes are intended."
-                )
-
-        if self.hidden_dim is None:
-            z = self.fc(features)
-        else:
-            z = self.fc1(features)
-            z = self.act_fn(z)
-            z = self.fc2(z)
+        z = self.mlp(features)
 
         g = gain if gain is not None else self.gain
         if self.output_nonlinearity == "tanh":
@@ -157,3 +144,16 @@ class GridEncoderCNN(nn.Module):
             z = z.reshape(B, T, -1)
 
         return z
+    
+    def load_state_dict(self, state_dict, strict=True, **kwargs):
+        # Remap legacy fc1/fc2 keys → mlp.0/mlp.2
+        key_map = {
+            "fc1.weight": "mlp.0.weight",
+            "fc1.bias":   "mlp.0.bias",
+            "fc2.weight": "mlp.2.weight",
+            "fc2.bias":   "mlp.2.bias",
+        }
+        remapped = {}
+        for k, v in state_dict.items():
+            remapped[key_map.get(k, k)] = v
+        return nn.Module.load_state_dict(self, remapped, strict=strict, **kwargs)
