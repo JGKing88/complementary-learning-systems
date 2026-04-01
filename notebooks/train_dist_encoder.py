@@ -1016,7 +1016,7 @@ def extract_patches_to_flat(
 def train(Phi, config, save_every=True, encoders_dir="/home/jackking/cls/encoders"):
     # --- Extract config ---
     lambdas = config["model_params"]["lambdas"]
-    full_Npos = np.prod(lambdas)
+    full_Npos = config["model_params"].get("full_Npos", np.prod(lambdas))
     Npos = config["model_params"]["Npos"]
     Nenv = config["model_params"].get("Nenv", 1)
     num_layers = config["model_params"]["num_layers"]
@@ -1072,11 +1072,11 @@ def train(Phi, config, save_every=True, encoders_dir="/home/jackking/cls/encoder
 
     # Nav eval params
     nav_cfg = config.get("nav_eval_params", {})
-    nav_eval_every = nav_cfg.get("eval_every", 10)
+    nav_eval_every = nav_cfg.get("eval_every", 30)
     nav_eval_env_size = nav_cfg.get("eval_env_size", 20)
     nav_n_train_envs = nav_cfg.get("n_train_envs", 5)
-    nav_n_val_envs = nav_cfg.get("n_val_envs", 10)
-    nav_n_val_envs_final = nav_cfg.get("n_val_envs_final", 30)
+    nav_n_val_envs = nav_cfg.get("n_val_envs", 5)
+    nav_n_val_envs_final = nav_cfg.get("n_val_envs_final", 5)
     nav_n_starts = nav_cfg.get("n_starts_per_env", 100)
     nav_max_steps_mult = nav_cfg.get("max_steps_mult", 3)
     nav_scale = nav_cfg.get("scale", 1.0)
@@ -1084,7 +1084,7 @@ def train(Phi, config, save_every=True, encoders_dir="/home/jackking/cls/encoder
     nav_platform_radius = nav_cfg.get("platform_radius", 1.0)
     nav_recompute_interval = nav_cfg.get("recompute_interval", 1)
     nav_hopfield_alpha = nav_cfg.get("hopfield_alpha", 0.8)
-    nav_save_heatmaps_final = nav_cfg.get("save_heatmaps_final", True)
+    nav_save_heatmaps_final = nav_cfg.get("save_heatmaps_final", False)
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -1126,7 +1126,7 @@ def train(Phi, config, save_every=True, encoders_dir="/home/jackking/cls/encoder
     fig.savefig(os.path.join(run_dir, "patches.png"), dpi=100, bbox_inches='tight')
     if use_wandb:
         wandb.log({"patches": wandb.Image(fig)})
-    plt.close(fig)
+    plt.show()
 
     # Extract patches and get flattened Phi values with original coordinates
     Phi_flat, X = extract_patches_to_flat(Phi, y0s, x0s, Npos, device)
@@ -1245,7 +1245,9 @@ def train(Phi, config, save_every=True, encoders_dir="/home/jackking/cls/encoder
                 fig.savefig(path, dpi=100, bbox_inches='tight')
                 if use_wandb:
                     wandb.log({f"viz/cosine_sim_{suffix}": wandb.Image(fig)}, step=ep)
-                plt.close(fig)
+                plt.show()
+                plt.plot(cosine_sims[idx_y])
+                plt.show()
 
             _save_cosine_sim_plot(encoded_Phi_grid, viz_idx_y, viz_idx_x, "train")
             _save_cosine_sim_plot(encoded_Phi_grid, rand_idx_y, rand_idx_x, "val")
