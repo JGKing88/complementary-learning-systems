@@ -433,8 +433,11 @@ class GridWMEnv(WMEnv):
     def __init__(self, *args, encoder: Optional["GridEncoder"] = None, **kwargs):
         self.input_type = kwargs.pop("input_type", "g")
         self.fwhm_ratio = kwargs.pop("fwhm_ratio", 0.0)  # 0 = no smoothing
+        self.recompute_interval = kwargs.pop("recompute_interval", 1)
         self.encoder = encoder
         self._encoder_device = None
+        self.env_idx = 0
+        self.env_offset = (0, 0)
         super().__init__(*args, **kwargs)
     
     def set_encoder(self, encoder: "GridEncoder", device: Optional[torch.device] = None):
@@ -446,8 +449,13 @@ class GridWMEnv(WMEnv):
     def goal_location(self) -> Position:
         return super().goal_location
 
-    def initiate_vectorhash(self, vectorhash: VectorHash):
+    def initiate_vectorhash(self, vectorhash: VectorHash, env_idx=0):
         self.vectorhash = vectorhash
+        self.env_idx = env_idx
+        if hasattr(vectorhash, 'env_locations') and env_idx < len(vectorhash.env_locations):
+            self.env_offset = vectorhash.env_locations[env_idx]
+        else:
+            self.env_offset = (0, 0)
     
     def get_input_size(self) -> int:
         if self.input_type == "encoded_g":
@@ -463,10 +471,23 @@ class GridWMEnv(WMEnv):
             return self.vectorhash.Ns
         elif self.input_type == "p":
             return self.vectorhash.Np
+        elif self.input_type == "hopfield_onehot":
+            return 4
+        elif self.input_type == "hopfield_proj":
+            return 2
         else:
             raise ValueError(f"Invalid input type: {self.input_type}")
     
     def convert_obs(self, obs: np.ndarray) -> np.ndarray:
+        if self.input_type in ("hopfield_onehot", "hopfield_proj"):
+            local_pos = np.array([[self._pos[0], self._pos[1]]], dtype=np.int32)
+            onehot, proj, _ = self.vectorhash.compute_hopfield_direction_batch(
+                local_pos, self.env_offset, return_proj=(self.input_type == "hopfield_proj"),
+            )
+            if self.input_type == "hopfield_proj":
+                return proj[0].astype(np.float32)
+            return onehot[0].astype(np.float32)
+
         s,p,g = self.vectorhash.recall(obs.copy())
 
         if self.input_type == "encoded_g":
@@ -520,6 +541,7 @@ class GridWMEnv(WMEnv):
             encoder=self.encoder,
             fwhm_ratio=self.fwhm_ratio,
             use_headings=self.use_headings,
+            recompute_interval=self.recompute_interval,
         )
         # Share codebook and vectorhash; copy goal
         new_env._codebook = self._codebook
@@ -527,6 +549,8 @@ class GridWMEnv(WMEnv):
             new_env.vectorhash = self.vectorhash
         new_env._goal = self._goal
         new_env._encoder_device = self._encoder_device
+        new_env.env_idx = self.env_idx
+        new_env.env_offset = self.env_offset
         return new_env
 
 
@@ -739,15 +763,29 @@ class GridWMVecEnv(WMVecEnv):
         if hasattr(base_env, "vectorhash"):
             self.vectorhash = base_env.vectorhash
         self.base_env = base_env  # Keep reference for hopfield access
+        self.env_offset = getattr(base_env, 'env_offset', (0, 0))
+        self.recompute_interval = getattr(base_env, 'recompute_interval', 1)
+        self._cached_W = None
+        self._steps_since_recompute = None
         super().__init__(base_env=base_env, batch_size=batch_size, seed=seed)
         # Precompute converted codebook for fast batched lookup when possible
         self._preconv_codebook: Optional[np.ndarray] = None
-        if use_preconv_codebook:
+        if use_preconv_codebook and self.input_type not in ("hopfield_onehot", "hopfield_proj"):
             try:
                 self._preconv_codebook = self._build_preconv_codebook()
             except Exception:
                 # Fallback to on-the-fly conversion path if anything goes wrong
                 self._preconv_codebook = None
+
+    def reset_all(self) -> None:
+        super().reset_all()
+        self._cached_W = None
+        self._steps_since_recompute = None
+
+    def reset_recompute_state(self, indices):
+        """Reset recompute counters for finished episodes."""
+        if self._steps_since_recompute is not None:
+            self._steps_since_recompute[indices] = 0
 
     def _convert_obs_batch(self, obs_batch: np.ndarray) -> np.ndarray:
         # Fallback: per-row conversion via vectorhash.recall
@@ -788,6 +826,42 @@ class GridWMVecEnv(WMVecEnv):
 
     def obs_batch(self, indices: List[int], input_addendum: Optional[str] = None) -> np.ndarray:
         idx = np.asarray(indices, dtype=np.int64)
+
+        if self.input_type in ("hopfield_onehot", "hopfield_proj"):
+            B = len(idx)
+            local_pos = self._pos[idx]  # (B, 2)
+            embed_dim = self.vectorhash.encoded_Phi.shape[2]
+
+            # Lazily initialize caching state
+            if self._cached_W is None:
+                self._cached_W = np.zeros((self.B, 2, embed_dim), dtype=np.float32)
+                self._steps_since_recompute = np.zeros(self.B, dtype=np.int32)
+
+            # Determine which slots need recomputation
+            counters = self._steps_since_recompute[idx]
+            if self.recompute_interval <= 0:
+                # recompute_interval=0 means never recompute after first time
+                recompute_mask = (counters == 0)
+            else:
+                recompute_mask = (counters == 0) | (counters >= self.recompute_interval)
+
+            onehot, proj, W_new = self.vectorhash.compute_hopfield_direction_batch(
+                local_pos, self.env_offset,
+                cached_W=self._cached_W[idx],
+                recompute_mask=recompute_mask,
+                return_proj=(self.input_type == "hopfield_proj"),
+            )
+
+            # Update cache
+            self._cached_W[idx] = W_new
+            self._steps_since_recompute[idx] += 1
+            # Reset counter for recomputed elements
+            self._steps_since_recompute[idx[recompute_mask]] = 1
+
+            if self.input_type == "hopfield_proj":
+                return proj.astype(np.float32)
+            return onehot.astype(np.float32)
+
         h_idx = self._heading_index_batch(self._heading[idx])
         if self._preconv_codebook is not None:
             x = self._pos[idx, 0]
@@ -849,53 +923,56 @@ class GridWMVecEnv(WMVecEnv):
     def _build_preconv_codebook(self) -> np.ndarray:
         """Precompute converted codebook (size, size, 4, Fconv) for current input_type.
 
-        Falls back to per-row conversion if vectorhash is not available.
+        Uses batched matrix operations instead of per-sample loops.
         """
         if not hasattr(self, "vectorhash"):
             raise RuntimeError("vectorhash not available for preconversion")
         size = self.size
-        F = self._observation_size
-        # Determine output feature size by converting one sample
-        sample = self._codebook[0, 0, 0]
-        s, p, g = self.vectorhash.recall(sample.copy())
+        vh = self.vectorhash
+
+        # Flatten codebook: (size, size, 4, F) -> (N, F) where N = size*size*4
+        N = size * size * 4
+        codes_flat = self._codebook.reshape(N, -1).copy()  # (N, F)
+
+        # Batched recall: codes_flat.T is (F, N)
+        s_all, p_all, g_all = vh._recall_batched(codes_flat.T)
+        # s_all: (Ns, N), p_all: (Np, N), g_all: (Ng, N)
+
         if self.input_type == "encoded_g":
             if self.encoder is None:
                 raise RuntimeError("encoder not available for encoded_g preconversion")
-            out_dim = self.encoder.out_dim
+            g_hot = g_all.T.astype(np.float32)  # (N, Ng)
+            if self.fwhm_ratio > 0:
+                # Batch smooth: reshape to look like gbook then smooth
+                from cls.utils.GridUtils import smooth_g
+                smoothed = np.zeros_like(g_hot)
+                for i in range(g_hot.shape[0]):
+                    smoothed[i] = smooth_g(g_hot[i], vh.lambdas, self.fwhm_ratio)
+                g_hot = smoothed
+            with torch.no_grad():
+                g_t = torch.from_numpy(g_hot).float()
+                if self._encoder_device is not None:
+                    g_t = g_t.to(self._encoder_device)
+                encoded = self.encoder(g_t).cpu().numpy()  # (N, out_dim)
+            return encoded.reshape(size, size, 4, -1)
         elif self.input_type == "g_hot":
-            out_dim = len(g)
+            g_hot = g_all.T.astype(np.float32)  # (N, Ng)
+            if self.fwhm_ratio > 0:
+                from cls.utils.GridUtils import smooth_g
+                smoothed = np.zeros_like(g_hot)
+                for i in range(g_hot.shape[0]):
+                    smoothed[i] = smooth_g(g_hot[i], vh.lambdas, self.fwhm_ratio)
+                g_hot = smoothed
+            return g_hot.reshape(size, size, 4, -1)
         elif self.input_type == "g_idx":
-            out_dim = len(self.vectorhash.grid_onehot_to_indices(g))
+            # Need per-sample grid_onehot_to_indices — vectorize
+            result = np.zeros((N, len(vh.lambdas) * 2), dtype=np.float32)
+            for i in range(N):
+                result[i] = vh.grid_onehot_to_indices(g_all[:, i]).astype(np.float32)
+            return result.reshape(size, size, 4, -1)
         elif self.input_type == "s":
-            out_dim = len(s)
+            return s_all.T.astype(np.float32).reshape(size, size, 4, -1)
         elif self.input_type == "p":
-            out_dim = len(p)
+            return p_all.T.astype(np.float32).reshape(size, size, 4, -1)
         else:
             raise ValueError(f"Invalid input type: {self.input_type}")
-        pre = np.zeros((size, size, 4, out_dim), dtype=np.float32)
-        for x in range(size):
-            for y in range(size):
-                for h in range(4):
-                    code = self._codebook[x, y, h].copy()
-                    s, p, g = self.vectorhash.recall(code)
-                    if self.input_type == "encoded_g":
-                        g_hot = np.asarray(g, dtype=np.float32)
-                        if self.fwhm_ratio > 0:
-                            g_hot = smooth_g(g_hot, self.vectorhash.lambdas, self.fwhm_ratio)
-                        with torch.no_grad():
-                            g_t = torch.from_numpy(g_hot).float().unsqueeze(0)
-                            if self._encoder_device is not None:
-                                g_t = g_t.to(self._encoder_device)
-                            pre[x, y, h] = self.encoder(g_t).squeeze(0).cpu().numpy()
-                    elif self.input_type == "g_hot":
-                        g_hot = np.asarray(g, dtype=np.float32)
-                        if self.fwhm_ratio > 0:
-                            g_hot = smooth_g(g_hot, self.vectorhash.lambdas, self.fwhm_ratio)
-                        pre[x, y, h] = g_hot
-                    elif self.input_type == "g_idx":
-                        pre[x, y, h] = np.asarray(self.vectorhash.grid_onehot_to_indices(g), dtype=np.float32)
-                    elif self.input_type == "s":
-                        pre[x, y, h] = np.asarray(s, dtype=np.float32)
-                    elif self.input_type == "p":
-                        pre[x, y, h] = np.asarray(p, dtype=np.float32)
-        return pre

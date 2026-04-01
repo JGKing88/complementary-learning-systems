@@ -7,8 +7,10 @@ A codebase for training navigation agents on discrete grid environments using **
 This project implements:
 1. **Grid-based navigation environments** (`WMEnv`, `GridWMEnv`) with codebook-based observations
 2. **VectorHash memory system** - a biologically-inspired encoding that maps sensory observations to modular grid cell representations
-3. **Policy training** using supervised imitation learning or PPO reinforcement learning
-4. **Vectorized environments** for efficient batched rollouts
+3. **Policy training** using supervised imitation learning or PPO reinforcement learning (`train.py`)
+4. **Action classifier training** from (start, end) state pairs (`train_action_classifier.py`)
+5. **Grid encoders** (MLP and CNN) for learning normalized embeddings of grid cell activations
+6. **Vectorized environments** for efficient batched rollouts
 
 ---
 
@@ -33,12 +35,21 @@ pip install -e ".[viz]"
 cls/
 ├── __init__.py          # Public API: WMEnv, Position, Vector2, FovFunction
 ├── types.py             # Type definitions
-├── models.py            # Neural network agents (GRU, MLP, Agent)
+├── models.py            # Neural network agents (GRU, MLP, GridCNN, Agent)
+├── hopfield.py          # Hopfield associative memory
+├── encoder.py           # GridEncoder (MLP) and GridEncoderCNN
 ├── envs/
 │   └── environments.py  # WMEnv, GridWMEnv, WMVecEnv, GridWMVecEnv
 ├── utils/
 │   └── GridUtils.py     # VectorHash class for memory encoding
 └── vectorhash/          # Core vector hash utilities (see below)
+
+train.py                 # Policy training (supervised / PPO)
+train_action_classifier.py  # Action classifier training
+notebooks/
+└── train_dist_encoder.py   # Encoder training script
+encoders/                # Saved encoder checkpoints
+action_classifiers/      # Saved action classifier checkpoints
 ```
 
 ---
@@ -70,6 +81,7 @@ env = WMEnv(
     seed=42,             # Random seed
     observation_size=64, # Binary observation code length
     time_penalty=0.01,   # Penalty per timestep
+    use_headings=False,  # If False, observation is heading-invariant
 )
 
 # Reset and get initial state
@@ -84,7 +96,7 @@ best_action = env.best_action_to_goal()
 
 **Key features:**
 - **Coordinate system**: Origin at bottom-left `(0,0)`, x increases right, y increases up
-- **Observations**: Pre-generated binary codes indexed by `(position, heading)` - stored in `_codebook` array of shape `(size, size, 4, observation_size)`
+- **Observations**: Pre-generated binary codes indexed by `(position, heading)` - stored in `_codebook` array of shape `(size, size, 4, observation_size)`. When `use_headings=False` (default), the same code is shared across all headings at each position
 - **Heading**: One of 4 cardinal directions: `(0,1)` North, `(1,0)` East, `(0,-1)` South, `(-1,0)` West
 - **Actions**: Vector `(dx, dy)` with components in `{-1, 0, 1}`
 
@@ -115,6 +127,7 @@ obs = env.obs()  # Shape depends on input_type
 - `"g_idx"`: Grid phase indices per module (size: `2 * len(lambdas)`)
 - `"s"`: Sensory representation
 - `"p"`: Place cell representation
+- `"encoded_g"`: Grid activations projected through a pretrained `GridEncoder` or `GridEncoderCNN` (requires `--encoder_weights`)
 
 #### Vectorized Environments
 
@@ -220,9 +233,10 @@ agent = Agent(
     hidden_size=128,         # Hidden layer size
     num_model_layers=1,      # Backbone depth
     num_actions=4,           # Output actions (N, E, S, W)
-    model_class="GRU",       # "GRU" or "MLP"
+    model_class="GRU",       # "GRU", "MLP", or "CNN"
     encoder_dim=64,          # Optional encoder output dim
     num_encoder_layers=2,    # Number of encoder layers
+    lambdas=[11, 12],        # Grid module periods (required for CNN backbone)
 )
 
 logits, values, h_next = agent(obs_tensor, hidden_state)
@@ -240,16 +254,22 @@ Input (B, T, input_size)
 └─────────────────────────────────────────────┘
     │
     ▼
-┌─────────────────────────────────────────────┐
-│ BACKBONE (GRU or MLP)                       │
-│                                             │
-│ GRU: nn.GRU (internal sigmoid/tanh gates)   │
-│      ├─ input: (B, T, dim)                  │
-│      └─ output: features + hidden state     │
-│                                             │
-│ MLP: [Linear → Dropout → ReLU] × num_layers │
-│      └─ output: features (no hidden state)  │
-└─────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────┐
+│ BACKBONE (GRU, MLP, or CNN)                      │
+│                                                  │
+│ GRU: nn.GRU (internal sigmoid/tanh gates)        │
+│      ├─ input: (B, T, dim)                       │
+│      └─ output: features + hidden state          │
+│                                                  │
+│ MLP: [Linear → Dropout → ReLU] × num_layers      │
+│      └─ output: features (no hidden state)       │
+│                                                  │
+│ CNN (GridCNNBackbone): reshapes g_hot → 2D        │
+│      ├─ [Conv2d → ReLU] × num_layers             │
+│      ├─ AdaptiveAvgPool2d(1) → flatten            │
+│      └─ output: features (no hidden state)       │
+│      Note: disables encoder layers automatically  │
+└──────────────────────────────────────────────────┘
     │
     ├──────────────────┐
     ▼                  ▼
@@ -265,7 +285,8 @@ Input (B, T, input_size)
 **Nonlinearities:**
 - Encoder: ReLU after each layer
 - GRU: sigmoid (gates) + tanh (candidate) — standard PyTorch GRU
-- MLP: ReLU after each layer  
+- MLP: ReLU after each layer
+- CNN: ReLU after each conv layer
 - Output heads: None (raw logits/values)
 
 ---
@@ -541,7 +562,9 @@ generate_episodes_vectorized()
 
 ### 7. Grid Encoder (`cls/encoder.py`)
 
-MLP encoder for projecting `g_hot` observations to a learned normalized embedding space.
+Encoders for projecting `g_hot` observations to a learned normalized embedding space. Two architectures are available:
+
+#### `GridEncoder` - MLP Encoder
 
 ```python
 from cls.encoder import GridEncoder
@@ -556,6 +579,29 @@ enc = GridEncoder(
 )
 z = enc(x)  # Output: L2-normalized embedding
 ```
+
+#### `GridEncoderCNN` - CNN Encoder
+
+Reshapes flattened `g_hot` into 2D module grids and applies convolutions:
+
+```python
+from cls.encoder import GridEncoderCNN
+
+enc = GridEncoderCNN(
+    lambdas=[11, 12],          # Grid module periods (determines 2D reshape)
+    hidden_channels=32,        # Conv channels
+    num_conv_layers=3,         # Number of conv layers
+    hidden_dim=128,            # MLP hidden dimension after pooling
+    num_hidden_layers=1,       # Number of MLP hidden layers
+    out_dim=128,               # Embedding dimension
+    nonlinearity="gelu",       # Hidden activation
+    output_nonlinearity="tanh",# Output activation before normalization
+    gain=5.0,                  # Scales output
+)
+z = enc(x)  # Output: L2-normalized embedding, supports (B, D) or (B, T, D) input
+```
+
+The CNN encoder reshapes each grid module into a 2D grid, zero-pads to `max(λ) × max(λ)`, stacks as channels, then applies conv layers followed by adaptive average pooling and an MLP head.
 
 #### Where GridEncoder is Used
 
@@ -595,10 +641,11 @@ GridWMVecEnv._convert_obs_batch() / GridWMVecEnv._build_preconv_codebook()
 
 #### Training Encoders
 
-Encoders are trained separately in `notebooks/testing_dist_encoder.py` using:
+Encoders are trained separately via `notebooks/train_dist_encoder.py` (run with `python notebooks/train_dist_encoder.py` or via `train.sh`) using:
 - **CKA loss**: Kernel alignment between encoded distances and target distances
 - **Uniformity loss**: Encourages spread across the embedding sphere
 - **Sweep parameters**: `cka_alpha`, `sigmoid_scale_end` (gain), `uniformity_lambda_end`
+- Supports both `GridEncoder` (MLP) and `GridEncoderCNN` architectures
 
 Trained encoders are saved to `encoders/` with descriptive names like:
 ```
@@ -616,21 +663,67 @@ gain = checkpoint["sweep_params"]["sigmoid_scale_end"]  # use this for forward p
 
 ---
 
+### 8. Action Classifier (`train_action_classifier.py`)
+
+Trains an MLP to classify the action direction given (start_state, end_state) observation pairs. This is a standalone training script separate from `train.py`.
+
+#### How It Works
+
+1. **Sample generation**: For each training environment, enumerate all valid (start_pos, end_pos) pairs within a configurable displacement shell (`--max_steps min max`)
+2. **Label**: Each pair is labeled with the direction of the first step (N/E/S/W) based on the displacement vector
+3. **Input**: Concatenation of start and end observations (or their difference with `--use_displacement`), using the chosen `--input_type` representation
+4. **Model**: Agent with MLP backbone trained via cross-entropy
+
+#### Key Features
+
+- **Multiple training environments**: `--num_train_envs` with independent or `--shared_vectorhash`
+- **Global space mode**: `--global_space` places environments at random offsets in VectorHash's abstract position space, enabling cross-environment generalization
+- **Displacement shells**: `--max_steps 1 4` trains on displacements from 1 to 3 cells
+- **Validation on new environments**: `--num_val_new_envs` creates held-out environments with separate VectorHash instances
+- **Learning rate scheduling**: `--scheduler cosine|step|plateau` with `--warmup_epochs`
+- **Model checkpointing**: `--save_every N --save_dir action_classifiers`
+
+#### Example Usage
+
+```bash
+python train_action_classifier.py \
+    --model_type mlp \
+    --vectorhash \
+    --input_type encoded_g \
+    --max_steps 1 4 \
+    --fwhm_ratio 0.25 \
+    --size 8 \
+    --num_train_envs 20 \
+    --Np 4000 \
+    --lambdas 11 12 13 \
+    --Npos 60 \
+    --hidden_size 512 \
+    --num_model_layers 2 \
+    --batch_size 256 \
+    --n_epochs 20000 \
+    --lr 1e-6 \
+    --encoder_weights goated_cnn_encoder.pt \
+    --use_wandb \
+    --wandb_project cls_action_classifier
+```
+
+---
+
 ## File Structure Summary
 
 ```
 cls/
 ├── __init__.py              # Package exports
 ├── types.py                 # Type aliases
-├── models.py                # GRU, MLP, Agent
+├── models.py                # GRU, MLP, GridCNNBackbone, Agent
 ├── hopfield.py              # Hopfield associative memory
-├── encoder.py               # GridEncoder
+├── encoder.py               # GridEncoder (MLP) and GridEncoderCNN
 ├── envs/
 │   ├── __init__.py
 │   └── environments.py      # WMEnv, GridWMEnv, WMVecEnv, GridWMVecEnv
 ├── utils/
 │   ├── __init__.py
-│   └── GridUtils.py         # VectorHash
+│   └── GridUtils.py         # VectorHash, smooth_g, smooth_gbook
 └── vectorhash/
     ├── assoc_utils_np.py    # Core associative memory functions
     ├── assoc_utils_np_2D.py # 2D grid cell functions
@@ -638,7 +731,12 @@ cls/
     ├── seq_utils.py         # Sequence/action utilities
     └── ...                  # Additional utilities
 
-train.py                     # Main training script
+train.py                     # Policy training (supervised / PPO)
+train_action_classifier.py   # Action classifier from (start, end) state pairs
+notebooks/
+└── train_dist_encoder.py    # Encoder training script
+encoders/                    # Saved encoder checkpoints
+action_classifiers/          # Saved action classifier checkpoints
 ```
 
 ---
@@ -652,10 +750,12 @@ train.py                     # Main training script
 | `--size` | int | 8 | Grid world size (size × size) |
 | `--speed` | int | 1 | Steps per action |
 | `--seed` | int | 0 | Random seed |
-| `--num_envs` | int | 1 | Number of training environments |
+| `--num_envs` | int | 1 | Number of training environments per world |
 | `--num_val_envs` | int | 4 | Number of validation environments |
+| `--num_train_worlds` | int | 1 | Number of independent training worlds (each with its own VectorHash/Hopfield) |
 | `--time_penalty` | float | 0.01 | Penalty per timestep (reward = -time_penalty) |
 | `--observation_size` | int | 512 | Binary observation code length |
+| `--use_headings` | flag | False | Use heading-dependent observations (default: heading-invariant) |
 
 ### Model
 
@@ -663,7 +763,7 @@ train.py                     # Main training script
 |----------|------|---------|-------------|
 | `--hidden_size` | int | 128 | Hidden layer size |
 | `--num_model_layers` | int | 1 | Number of backbone layers |
-| `--model_class` | str | "GRU" | Backbone type: `"GRU"` or `"MLP"` |
+| `--model_class` | str | "GRU" | Backbone type: `"GRU"`, `"MLP"`, or `"CNN"` |
 | `--encoder_dim` | int | None | Encoder output dimension |
 | `--num_encoder_layers` | int | 0 | Number of encoder layers (0 = no encoder) |
 | `--num_actions` | int | 4 | Action space size |
@@ -682,7 +782,8 @@ train.py                     # Main training script
 | `--val_epochs` | int | 1 | Validate every N epochs |
 | `--val_batch_episodes` | int | 4 | Episodes per validation batch |
 | `--plot_every` | int | 100 | Save plots every N epochs |
-| `--input_addendum` | str | "none" | Extra input: `"goal"`, `"diff"`, `"next_best"`, `"none"` |
+| `--input_addendum` | str | "none" | Extra input: `"goal"`, `"diff"`, `"next_best"`, `"hopfield"`, `"none"` |
+| `--expert_actions` | flag | False | Use best action for stepping during rollouts (behavioral cloning from expert) |
 
 ### PPO-Specific
 
@@ -692,7 +793,7 @@ train.py                     # Main training script
 | `--ppo_vf_coef` | float | 0.5 | Value function loss coefficient |
 | `--ppo_ent_coef` | float | 0.0 | Entropy bonus coefficient |
 | `--ppo_epochs` | int | 4 | PPO optimization epochs per batch |
-| `--ppo_input_reward` | flag | False | Append previous reward to observation |
+| `--ppo_input_reward` | flag | True | Append previous reward to observation |
 
 ### VectorHash
 
@@ -700,9 +801,26 @@ train.py                     # Main training script
 |----------|------|---------|-------------|
 | `--vectorhash` | flag | False | Enable VectorHash encoding |
 | `--Np` | int | 1600 | Number of place cells |
+| `--Npos` | int | None | Number of unique positions (default: product of lambdas) |
 | `--lambdas` | int[] | [11, 12] | Grid module periods |
-| `--input_type` | str | "g_idx" | Output type: `"g_idx"`, `"g_hot"`, `"s"`, `"p"` |
+| `--input_type` | str | "g_idx" | Output type: `"g_idx"`, `"g_hot"`, `"s"`, `"p"`, `"encoded_g"` |
 | `--use_preconv_codebook` | flag | False | Precompute converted codebook for speed |
+| `--fwhm_ratio` | float | 0.0 | FWHM ratio for smoothing g_hot (0 = no smoothing, e.g. 0.25 = FWHM is 1/4 of λ) |
+
+### GridEncoder
+
+| Argument | Type | Default | Description |
+|----------|------|---------|-------------|
+| `--encoder_weights` | str | None | Filename of encoder weights in `encoders/` directory |
+| `--encoder_gain` | float | None | Override gain from loaded encoder (default: use saved gain) |
+
+### Hopfield
+
+| Argument | Type | Default | Description |
+|----------|------|---------|-------------|
+| `--hopfield_gain` | float | None | Hopfield gain/beta (default: use encoder's gain if available, else 2.0) |
+| `--hopfield_alpha` | float | 1.0 | Hopfield recall mixing coefficient (1.0 = full update) |
+| `--hopfield_steps` | int | 1 | Number of Hopfield recall iterations |
 
 ### Logging
 

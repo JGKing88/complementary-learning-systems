@@ -93,11 +93,92 @@ def smooth_g(g: np.ndarray, lambdas: list, fwhm_ratio: float) -> np.ndarray:
     return gout
 
 def smooth_gbook(gbook, lambdas, fwhm_ratio):
-    smooth_gbook = np.zeros_like(gbook)
-    for i in range(gbook.shape[1]):
-        for j in range(gbook.shape[2]):
-            smooth_gbook[:, i, j] = smooth_g(gbook[:, i, j], lambdas, fwhm_ratio)
-    return smooth_gbook
+    """Smooth all gbook positions. Vectorized over positions per module."""
+    if fwhm_ratio <= 0:
+        return gbook.copy()
+
+    Ng, Npos1, Npos2 = gbook.shape
+    out = np.zeros_like(gbook, dtype=np.float32)
+
+    offset = 0
+    for l in lambdas:
+        n = l * l
+        fwhm = l * fwhm_ratio
+        sigma = fwhm / (2 * np.sqrt(2 * np.log(2)))
+
+        # Extract module block: (n, Npos1, Npos2) -> reshape to (Npos1*Npos2, l, l)
+        block = gbook[offset:offset + n].reshape(l, l, Npos1 * Npos2)  # (l, l, N)
+        block = block.transpose(2, 0, 1)  # (N, l, l)
+
+        # Find active pixel per position (each is one-hot)
+        flat = block.reshape(block.shape[0], -1)  # (N, l*l)
+        active = np.argmax(flat, axis=1)  # (N,)
+        cy = active // l  # row
+        cx = active % l   # col
+
+        # Compute wrapped distances for all positions at once
+        # cy: (N,), rows_1d: (l,) -> dy: (N, l, 1)
+        rows_1d = np.arange(l)
+        cols_1d = np.arange(l)
+        dy = np.abs(rows_1d[None, :, None] - cy[:, None, None])  # (N, l, 1)
+        dy = np.minimum(dy, l - dy)
+        dx = np.abs(cols_1d[None, None, :] - cx[:, None, None])  # (N, 1, l)
+        dx = np.minimum(dx, l - dx)
+
+        bumps = np.exp(-0.5 * ((dy / sigma) ** 2 + (dx / sigma) ** 2))  # (N, l, l)
+
+        # Reshape back: (N, l, l) -> (l, l, N) -> (l*l, Npos1, Npos2)
+        bumps = bumps.transpose(1, 2, 0).reshape(n, Npos1, Npos2)
+        out[offset:offset + n] = bumps
+        offset += n
+
+    return out
+
+def gram_schmidt_2d_batch(d_forward, d_right):
+    """Batched Gram-Schmidt: compute 2D projection matrices from forward/right displacement vectors.
+
+    Args:
+        d_forward: (B, D) array — forward (North) displacement vectors
+        d_right:   (B, D) array — right (East) displacement vectors
+
+    Returns:
+        W: (B, 2, D) projection matrices. Row 0 = "right" (East) basis, Row 1 = "forward" (North) basis.
+    """
+    # Normalize forward to get e1
+    norms_f = np.linalg.norm(d_forward, axis=1, keepdims=True)
+    norms_f = np.maximum(norms_f, 1e-12)
+    e1 = d_forward / norms_f
+
+    # Orthogonalize right against forward
+    dots = np.sum(d_right * e1, axis=1, keepdims=True)
+    e2 = d_right - dots * e1
+    norms_r = np.linalg.norm(e2, axis=1, keepdims=True)
+    norms_r = np.maximum(norms_r, 1e-12)
+    e2 = e2 / norms_r
+
+    # Stack: row 0 = e2 (right/East), row 1 = e1 (forward/North)
+    W = np.stack([e2, e1], axis=1)  # (B, 2, D)
+    return W
+
+
+def classify_direction_batch(q):
+    """Batched angle classification of 2D projected vectors into compass directions.
+
+    Args:
+        q: (B, 2) array — projected 2D vectors [x, y]
+
+    Returns:
+        direction_idx: (B,) int array — 0=N, 1=E, 2=S, 3=W
+    """
+    angles = np.arctan2(q[:, 1], q[:, 0])  # (B,)
+
+    direction_idx = np.full(angles.shape, 3, dtype=np.int32)  # default W (|angle| >= 3pi/4)
+    direction_idx[(-np.pi/4 <= angles) & (angles < np.pi/4)] = 1       # E (right)
+    direction_idx[(np.pi/4 <= angles) & (angles < 3*np.pi/4)] = 0      # N (forward)
+    direction_idx[(-3*np.pi/4 <= angles) & (angles < -np.pi/4)] = 2    # S (backward)
+
+    return direction_idx
+
 
 def overlaps(x, y, px, py, size, touch_ok=True):
     if touch_ok:
@@ -230,7 +311,7 @@ class VectorHash:
         return path_sbook, path_pbook, path_gbook, Wsp, Wps
 
     def get_loc_from_grid_state(self, g):
-        return self.g_to_location[tuple(g)]
+        return self.g_to_location[np.asarray(g, dtype=np.float64).tobytes()]
 
     def initiate_vectorhash(self, envs):
         """
@@ -268,13 +349,12 @@ class VectorHash:
         print("   setup scaffold")
         self.pbook, self.pbook_flattened, self.gbook, self.gbook_flattened, self.Wpg, self.Wgp, self.module_sizes, self.module_gbooks = self.setup_scaffold(Np, lambdas, thresh)
 
-        #for debugging
+        #for debugging — use tobytes() for fast hashing instead of tuple()
         self.g_to_location = {}
-        width,height = self.gbook.shape[1],self.gbook.shape[2]
-        gbook_copy = self.gbook.copy()
+        width, height = self.gbook.shape[1], self.gbook.shape[2]
         for x in range(width):
             for y in range(height):
-                self.g_to_location[tuple(gbook_copy[:, x, y])] = (x, y)
+                self.g_to_location[self.gbook[:, x, y].tobytes()] = (x, y)
 
         print("   setup envs")
         self.path_sbook, self.path_pbook, self.path_gbook, self.Wsp, self.Wps = self.setup_envs(
@@ -286,13 +366,15 @@ class VectorHash:
         self.Ng = self.gbook.shape[0]
 
         print("   initialize envs vh")
-        for env in envs:
-            env.initiate_vectorhash(self)
+        for env_idx, env in enumerate(envs):
+            env.initiate_vectorhash(self, env_idx=env_idx)
         
         self.envs = envs
         
         # Initialize Hopfield network if requested
-        if self.use_hopfield:
+        # For hopfield_onehot/hopfield_proj, defer to init_hopfield_encoded (after precompute_encoded_phi)
+        input_type = getattr(envs[0], 'input_type', None) if envs else None
+        if self.use_hopfield and input_type not in ("hopfield_onehot", "hopfield_proj"):
             self._init_hopfield(envs)
         
         # Verify scaffold integrity
@@ -384,105 +466,249 @@ class VectorHash:
             recalled_list.append(recalled.cpu().numpy())
         return np.stack(recalled_list, axis=0)
 
+    def precompute_encoded_phi(self, encoder, fwhm_ratio, device):
+        """Encode all gbook positions through the encoder and store as encoded_Phi.
+
+        Args:
+            encoder: GridEncoder model (already on device, in eval mode)
+            fwhm_ratio: Smoothing ratio (0 = no smoothing)
+            device: torch.device for encoder forward pass
+        """
+        Npos = self.gbook.shape[1]
+
+        if fwhm_ratio > 0:
+            sgb = smooth_gbook(self.gbook, self.lambdas, fwhm_ratio)
+        else:
+            sgb = self.gbook.copy()
+
+        # Reshape from (Ng, Npos, Npos) -> (Npos*Npos, Ng)
+        flat = sgb.reshape(self.Ng, Npos * Npos).T.astype(np.float32)  # (Npos*Npos, Ng)
+
+        # Encode in batches
+        encoded_parts = []
+        batch_size = 1000
+        with torch.no_grad():
+            for start in range(0, flat.shape[0], batch_size):
+                chunk = torch.from_numpy(flat[start:start + batch_size]).to(device)
+                enc = encoder(chunk).cpu().numpy()
+                encoded_parts.append(enc)
+
+        encoded_flat = np.concatenate(encoded_parts, axis=0)  # (Npos*Npos, embed_dim)
+        embed_dim = encoded_flat.shape[1]
+        self.encoded_Phi = encoded_flat.reshape(Npos, Npos, embed_dim)
+        print(f"   precomputed encoded_Phi: shape={self.encoded_Phi.shape}")
+
+    def init_hopfield_encoded(self, envs):
+        """Initialize Hopfield network in encoded space using encoded_Phi and goal positions.
+
+        Must be called after precompute_encoded_phi. Stores encoded goal patterns
+        looked up from encoded_Phi using each env's goal location + offset.
+        """
+        embed_dim = self.encoded_Phi.shape[2]
+        print(f"   initializing Hopfield network in encoded space (units={embed_dim}, gain={self.hopfield_gain})")
+
+        self.hopfield = Hopfield(
+            num_units=embed_dim,
+            beta=self.hopfield_gain,
+            device=device,
+        )
+
+        print("   storing encoded goal patterns in Hopfield network...")
+        for env_idx, env in enumerate(envs):
+            offset = self.env_locations[env_idx] if env_idx < len(self.env_locations) else (0, 0)
+            gx = env.goal_location[0] + offset[0]
+            gy = env.goal_location[1] + offset[1]
+            # Clamp to valid range
+            gx = min(max(gx, 0), self.encoded_Phi.shape[0] - 1)
+            gy = min(max(gy, 0), self.encoded_Phi.shape[1] - 1)
+            goal_encoded = self.encoded_Phi[gx, gy]  # (embed_dim,)
+            goal_t = torch.from_numpy(goal_encoded).float()
+            self.hopfield.input_memory(goal_t)
+
+        print(f"   stored {self.hopfield.num_memories} encoded goal patterns")
+
+    def compute_hopfield_direction_batch(
+        self,
+        local_positions,
+        env_offset,
+        cached_W=None,
+        recompute_mask=None,
+        return_proj=False,
+    ):
+        """Compute Hopfield-based direction classification for a batch of positions.
+
+        Args:
+            local_positions: (B, 2) local coords within env
+            env_offset:      (C_X, C_Y) tuple — env's offset in global grid
+            cached_W:        (B, 2, embed_dim) or None — cached projection matrices
+            recompute_mask:  (B,) bool — which slots need fresh W computation
+            return_proj:     whether to also return the 2D projected vectors
+
+        Returns:
+            onehot:   (B, 4) one-hot direction vectors
+            proj:     (B, 2) projected vectors or None (if return_proj=False)
+            W:        (B, 2, embed_dim) updated projection matrices
+        """
+        B = local_positions.shape[0]
+        C_X, C_Y = env_offset
+        Npos = self.encoded_Phi.shape[0]
+        embed_dim = self.encoded_Phi.shape[2]
+
+        # Convert local -> global coordinates
+        gx = local_positions[:, 0] + C_X
+        gy = local_positions[:, 1] + C_Y
+
+        # Clamp to valid range (need neighbors at +1 for E and N)
+        gx = np.clip(gx, 1, Npos - 2)
+        gy = np.clip(gy, 1, Npos - 2)
+
+        # Look up current encoded state
+        current = self.encoded_Phi[gx, gy]  # (B, embed_dim)
+
+        # Initialize or copy W
+        if cached_W is None:
+            W = np.zeros((B, 2, embed_dim), dtype=np.float32)
+            recompute_mask = np.ones(B, dtype=bool)
+        else:
+            W = cached_W.copy()
+
+        if recompute_mask is None:
+            recompute_mask = np.ones(B, dtype=bool)
+
+        # Recompute projection matrices where needed
+        rc_idx = np.where(recompute_mask)[0]
+        if len(rc_idx) > 0:
+            rc_gx = gx[rc_idx]
+            rc_gy = gy[rc_idx]
+            rc_current = current[rc_idx]
+
+            # North neighbor: (gx, gy+1) — forward
+            north = self.encoded_Phi[rc_gx, rc_gy + 1]
+            d_forward = north - rc_current  # (rc, embed_dim)
+
+            # East neighbor: (gx+1, gy) — right
+            east = self.encoded_Phi[rc_gx + 1, rc_gy]
+            d_right = east - rc_current  # (rc, embed_dim)
+
+            W_new = gram_schmidt_2d_batch(d_forward, d_right)  # (rc, 2, embed_dim)
+            W[rc_idx] = W_new
+
+        # Hopfield recall
+        recalled = self.hopfield_recall_batch(current)  # (B, embed_dim)
+
+        # Project displacement
+        displacement = recalled - current  # (B, embed_dim)
+        q = np.einsum('bij,bj->bi', W, displacement)  # (B, 2)
+
+        # Classify direction
+        direction_idx = classify_direction_batch(q)  # (B,)
+
+        # Build one-hot
+        onehot = np.zeros((B, 4), dtype=np.float32)
+        onehot[np.arange(B), direction_idx] = 1.0
+
+        proj = q if return_proj else None
+        return onehot, proj, W
+
+    def _recall_batched(self, S):
+        """Batched recall: S is (Ns, N) — each column is a sensory vector.
+
+        Returns (s_out, p_out, g_out) each of shape (dim, N).
+        """
+        # S: (Ns, N) — columns are observations
+        pin = nonlin(self.Wps @ S, thresh=self.thresh)  # (Np, N)
+        gin = self.Wgp @ pin  # (Ng, N)
+
+        # Module-wise argmax (vectorized)
+        ls = [l**2 for l in self.lambdas]
+        gout = np.zeros_like(gin)
+        idx = 0
+        for j in ls:
+            gmod = gin[idx:idx+j]  # (j, N)
+            maxes = gmod.argmax(axis=0)  # (N,)
+            gout[maxes + idx, np.arange(gin.shape[1])] = 1
+            idx += j
+
+        pout = nonlin(self.Wpg @ gout, thresh=self.thresh)  # (Np, N)
+        sout = (self.Wsp @ pout > 0).astype(float)  # (Ns, N)
+        return sout, pout, gout
+
     def test_vectorhash(self):
         """Test that recall() correctly recovers grid state from sensory input.
-        
+
         For every explored position, verifies:
             sensory → recall() → grid_recovered == grid_true
-        
+
         Raises:
             RuntimeError: If any position fails to recover the correct grid state.
         """
         n_samples = self.path_sbook.shape[1]
-        n_correct = 0
-        n_p_correct = 0  # Track HPC accuracy separately
-        failures = []
-        
+
         print(f"   testing vectorhash recall on {n_samples} samples...")
         print(f"   shapes: path_sbook={self.path_sbook.shape}, path_pbook={self.path_pbook.shape}, path_gbook={self.path_gbook.shape}")
         print(f"   Wps={self.Wps.shape}, Wgp={self.Wgp.shape}, thresh={self.thresh}")
-        
-        # Check if sensory observations are unique
-        n_unique_s = len(set(tuple(self.path_sbook[:, i]) for i in range(n_samples)))
-        n_unique_p = len(set(tuple(self.path_pbook[:, i]) for i in range(n_samples)))
-        print(f"   unique s: {n_unique_s}/{n_samples}, unique p: {n_unique_p}/{n_samples}")
-        
-        n_pin_correct = 0  # Direct s→p (before g correction)
-        n_pin_argmax = 0   # Does argmax match?
-        for i in range(n_samples):
-            # Get sensory input for this position
-            s = self.path_sbook[:, i]
-            
-            # Check DIRECT s→p (before g→p correction)
-            p_raw = self.Wps @ s  # Before nonlin
-            pin = nonlin(p_raw, thresh=self.thresh)
-            p_true = self.path_pbook[:, i]
-            
-            if np.array_equal(pin, p_true):
-                n_pin_correct += 1
-            # Check if at least the argmax matches (direction is right)
-            if np.argmax(p_raw) == np.argmax(p_true):
-                n_pin_argmax += 1
-            
-            # Print first few examples for debugging
-            if i < 3:
-                print(f"   sample {i}: p_raw max={p_raw.max():.3f} min={p_raw.min():.3f} argmax={np.argmax(p_raw)} | p_true argmax={np.argmax(p_true)} nnz={np.sum(p_true>0)}")
-            
-            # Use the actual recall function
-            s_out, p_out, g_recovered = self.recall(s)
-            
-            # Compare recovered grid to ground truth
-            g_true = self.path_gbook[:, i]
-            
-            # Check round-trip p (s→p→g→p)
-            if np.array_equal(p_out, p_true):
-                n_p_correct += 1
-            
-            if np.array_equal(g_recovered, g_true):
-                n_correct += 1
-            else:
-                failures.append(i)
-        
-        accuracy = n_correct / n_samples
+
+        # Uniqueness check (vectorized with hashing)
+        s_bytes = set(self.path_sbook[:, i].tobytes() for i in range(n_samples))
+        p_bytes = set(self.path_pbook[:, i].tobytes() for i in range(n_samples))
+        print(f"   unique s: {len(s_bytes)}/{n_samples}, unique p: {len(p_bytes)}/{n_samples}")
+
+        # --- Batched s→p check ---
+        S = self.path_sbook  # (Ns, N)
+        P_true = self.path_pbook  # (Np, N)
+        G_true = self.path_gbook  # (Ng, N)
+
+        P_raw = self.Wps @ S  # (Np, N)
+        Pin = nonlin(P_raw, thresh=self.thresh)
+
+        n_pin_correct = int(np.all(Pin == P_true, axis=0).sum())
+        n_pin_argmax = int((P_raw.argmax(axis=0) == P_true.argmax(axis=0)).sum())
+
+        # Print first 3 samples
+        for i in range(min(3, n_samples)):
+            p_raw_i = P_raw[:, i]
+            p_true_i = P_true[:, i]
+            print(f"   sample {i}: p_raw max={p_raw_i.max():.3f} min={p_raw_i.min():.3f} argmax={np.argmax(p_raw_i)} | p_true argmax={np.argmax(p_true_i)} nnz={np.sum(p_true_i>0)}")
+
+        # --- Batched full recall ---
+        s_out, p_out, g_recovered = self._recall_batched(S)
+
+        # Compare
+        p_match = np.all(p_out == P_true, axis=0)  # (N,)
+        g_match = np.all(g_recovered == G_true, axis=0)  # (N,)
+        n_p_correct = int(p_match.sum())
+        n_correct = int(g_match.sum())
+        failures = np.where(~g_match)[0].tolist()
+
         pin_accuracy = n_pin_correct / n_samples
         pin_argmax_acc = n_pin_argmax / n_samples
         p_accuracy = n_p_correct / n_samples
+        accuracy = n_correct / n_samples
         print(f"   s→p exact: {n_pin_correct}/{n_samples} ({pin_accuracy*100:.1f}%)")
         print(f"   s→p argmax: {n_pin_argmax}/{n_samples} ({pin_argmax_acc*100:.1f}%)")
         print(f"   s→p→g→p roundtrip: {n_p_correct}/{n_samples} ({p_accuracy*100:.1f}%)")
         print(f"   grid recovery: {n_correct}/{n_samples} ({accuracy*100:.1f}%)")
-        
-        # Additional diagnostic: test p→g pathway directly (bypassing sensory)
-        n_pg_correct = 0
-        n_gp_correct = 0  # g→p direction
-        for i in range(n_samples):
-            p_true = self.path_pbook[:, i]
-            g_true = self.path_gbook[:, i]
-            
-            # Direct p→g (same logic as recall)
-            gin = self.Wgp @ p_true
-            ls = [l**2 for l in self.lambdas]
-            idx = 0
-            gout = np.zeros(gin.shape)
-            for j in ls:
-                gmod = gin[idx:idx+j]
-                maxes = gmod.argmax()
-                gout[maxes+idx] = 1
-                idx += j
-            
-            if np.array_equal(gout, g_true):
-                n_pg_correct += 1
-            
-            # Direct g→p (Wpg @ g_true should give p_true)
-            p_from_g = nonlin(self.Wpg @ g_true, thresh=self.thresh)
-            if np.allclose(p_from_g, p_true):
-                n_gp_correct += 1
-        
+
+        # --- Batched p→g and g→p direct tests ---
+        Gin_direct = self.Wgp @ P_true  # (Ng, N)
+        Gout_direct = np.zeros_like(Gin_direct)
+        ls = [l**2 for l in self.lambdas]
+        idx = 0
+        for j in ls:
+            gmod = Gin_direct[idx:idx+j]
+            maxes = gmod.argmax(axis=0)
+            Gout_direct[maxes + idx, np.arange(n_samples)] = 1
+            idx += j
+        n_pg_correct = int(np.all(Gout_direct == G_true, axis=0).sum())
+
+        P_from_g = nonlin(self.Wpg @ G_true, thresh=self.thresh)
+        n_gp_correct = int(np.all(np.isclose(P_from_g, P_true), axis=0).sum())
+
         pg_accuracy = n_pg_correct / n_samples
         gp_accuracy = n_gp_correct / n_samples
         print(f"   p→g direct: {n_pg_correct}/{n_samples} correct ({pg_accuracy*100:.1f}%)")
         print(f"   g→p direct: {n_gp_correct}/{n_samples} correct ({gp_accuracy*100:.1f}%)")
-        
+
         if failures:
             raise RuntimeError(
                 f"VectorHash scaffold test FAILED: {len(failures)}/{n_samples} positions "

@@ -1,0 +1,15 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python3 -c \" import json with open\\(''notebooks/agent_testing.ipynb'', ''r''\\) as f: nb = json.load\\(f\\) for i, cell in enumerate\\(nb[''cells'']\\): if cell[''cell_type''] == ''code'': src = ''''.join\\(cell[''source'']\\) if ''ALPHA'' in src or ''alpha'' in src or ''beta'' in src or ''hop.recall'' in src: print\\(f''Cell {i}:''\\) print\\(src\\) print\\(''---''\\) \")",
+      "Bash(python3:*)",
+      "Bash(python -c:*)",
+      "Bash(module load:*)",
+      "Bash(source activate cls)",
+      "Bash(python train.py:*)",
+      "Bash(while:*)",
+      "Bash(do sleep 10)",
+      "Bash(done)"
+    ]
+  }
+}

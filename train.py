@@ -34,7 +34,7 @@ from cls import WMEnv
 from cls.models import Agent, GRU
 from cls.utils.GridUtils import VectorHash
 from cls.envs.environments import GridWMEnv, GridWMVecEnv, WMVecEnv
-from cls.encoder import GridEncoder
+from cls.encoder import GridEncoder, GridEncoderCNN
 
 CARDINAL_ACTIONS: List[Tuple[int, int]] = [(0, 1), (1, 0), (0, -1), (-1, 0)]  # N, E, S, W
 
@@ -81,6 +81,7 @@ class TrainConfig:
     hopfield_gain: float | None
     hopfield_alpha: float
     expert_actions: bool
+    recompute_interval: int
 
 @torch.no_grad()
 def _policy_action(model: Agent, obs: np.ndarray, h: torch.Tensor | None, device: str, epsilon: float = 0.0) -> tuple[int, torch.Tensor | None]:
@@ -266,6 +267,8 @@ def generate_episodes_vectorized(
             hs[i] = h_out[:, j, :] if h_out is not None else None
             if done_flag:
                 done[i] = True
+                if hasattr(vec, '_steps_since_recompute') and vec._steps_since_recompute is not None:
+                    vec._steps_since_recompute[i] = 0
         if profile and prof is not None:
             prof['steps'] = prof.get('steps', 0) + 1
 
@@ -637,6 +640,7 @@ def train(
             encoder_gain=cfg.encoder_gain,
             hopfield_gain=cfg.hopfield_gain,
             hopfield_alpha=cfg.hopfield_alpha,
+            recompute_interval=cfg.recompute_interval,
         )
         wandb.init(project=cfg.wandb_project, config=wandb_cfg)
         
@@ -873,7 +877,8 @@ def main():
     parser.add_argument("--Np", type=int, default=1600)
     parser.add_argument("--lambdas", type=int, nargs="+", default=[11,12])
     parser.add_argument("--Npos", type=int, default=None)
-    parser.add_argument("--input_type", type=str, default="g_idx") #g_idx, g_hot, s, p, or encoded_g
+    parser.add_argument("--input_type", type=str, default="g_idx",
+                        choices=["g_idx", "g_hot", "s", "p", "encoded_g", "hopfield_onehot", "hopfield_proj"])
     parser.add_argument("--use_preconv_codebook", action="store_true", default=False)
     parser.add_argument("--fwhm_ratio", type=float, default=0.0,
                         help="FWHM ratio for smoothing g_hot (0 = no smoothing, e.g. 0.25 = FWHM is 1/4 of lambda)")
@@ -894,6 +899,8 @@ def main():
                         help="Use best action for stepping during rollouts (behavioral cloning from expert)")
     parser.add_argument("--use_headings", action="store_true", default=False,
                         help="Use heading-dependent observations (default: heading-invariant)")
+    parser.add_argument("--recompute_interval", type=int, default=1,
+                        help="How often to recompute projection matrix W (1=every step, 0=never)")
 
     device = "cuda" if torch.cuda.is_available() else "cpu"
     
@@ -905,7 +912,7 @@ def main():
     # Initialize GridEncoder if using encoded_g
     grid_encoder = None
     encoder_gain = None  # Will be set from loaded encoder or args
-    if args.input_type == "encoded_g" and args.vectorhash:
+    if args.input_type in ("encoded_g", "hopfield_onehot", "hopfield_proj") and args.vectorhash:
         
         g_hot_dim = sum(l**2 for l in args.lambdas)
         
@@ -919,49 +926,83 @@ def main():
         
         checkpoint = torch.load(encoder_path, map_location=device, weights_only=False)
         
-        # Load config from checkpoint
+        # Load config from checkpoint — support both flat (GridEncoder) and nested (GridEncoderCNN) formats
         config = checkpoint.get("config", {})
-        hidden = config.get("hidden")
-        out_dim = config.get("out_dim")
-        nonlinearity = config.get("nonlinearity", "gelu")
-        output_nonlinearity = config.get("output_nonlinearity", "tanh")
-        
-        if hidden is None or out_dim is None:
-            raise ValueError(f"Encoder checkpoint missing 'hidden' or 'out_dim' in config: {encoder_path}")
-        
-        # Get gain: use args override if provided, else use checkpoint's value
-        loaded_gain = config.get("gain")
-        # Also check sweep_params for sigmoid_scale_end (common in sweep-trained encoders)
-        if loaded_gain is None:
-            sweep_params = checkpoint.get("sweep_params", {})
-            loaded_gain = sweep_params.get("sigmoid_scale_end", 1.0)
-        
-        encoder_gain = args.encoder_gain if args.encoder_gain is not None else loaded_gain
-        
-        grid_encoder = GridEncoder(
-            in_dim=g_hot_dim,
-            hidden=hidden,
-            out_dim=out_dim,
-            nonlinearity=nonlinearity,
-            output_nonlinearity=output_nonlinearity,
-            gain=encoder_gain,
-        )
-        
-        # Load weights
-        if "state_dict" in checkpoint:
-            grid_encoder.load_state_dict(checkpoint["state_dict"])
+        model_params = config.get("model_params", None)
+
+        if model_params is not None:
+            # CNN-style checkpoint with nested model_params
+            out_dim = model_params.get("out_dim")
+            nonlinearity = model_params.get("nonlinearity", "gelu")
+            output_nonlinearity = model_params.get("output_nonlinearity", "tanh")
+            loaded_gain = model_params.get("gain")
+            hidden_channels = model_params.get("hidden_channels", 128)
+            num_conv_layers = model_params.get("num_layers", 3)
+            hidden_dim = model_params.get("hidden_dim", 128)
+            num_hidden_layers = model_params.get("num_hidden_layers", 1)
+            kernel_size = model_params.get("kernel_size", 3)
+
+            encoder_gain = args.encoder_gain if args.encoder_gain is not None else (loaded_gain or 1.0)
+
+            grid_encoder = GridEncoderCNN(
+                lambdas=args.lambdas,
+                hidden_channels=hidden_channels,
+                num_conv_layers=num_conv_layers,
+                kernel_size=kernel_size,
+                num_hidden_layers=num_hidden_layers,
+                hidden_dim=hidden_dim,
+                out_dim=out_dim,
+                nonlinearity=nonlinearity,
+                output_nonlinearity=output_nonlinearity,
+                gain=encoder_gain,
+            )
+
+            if "state_dict" in checkpoint:
+                grid_encoder.load_state_dict(checkpoint["state_dict"])
+            else:
+                grid_encoder.load_state_dict(checkpoint)
+
+            print(f"Loaded GridEncoderCNN from {encoder_path}: lambdas={args.lambdas}, out_dim={out_dim}, gain={encoder_gain}")
         else:
-            grid_encoder.load_state_dict(checkpoint)
-        
-        print(f"Loaded GridEncoder from {encoder_path}: {g_hot_dim} -> {hidden} -> {out_dim}, gain={encoder_gain}")
+            # Flat MLP-style checkpoint (GridEncoder)
+            hidden = config.get("hidden")
+            out_dim = config.get("out_dim")
+            nonlinearity = config.get("nonlinearity", "gelu")
+            output_nonlinearity = config.get("output_nonlinearity", "tanh")
+
+            if hidden is None or out_dim is None:
+                raise ValueError(f"Encoder checkpoint missing 'hidden' or 'out_dim' in config: {encoder_path}")
+
+            loaded_gain = config.get("gain")
+            if loaded_gain is None:
+                sweep_params = checkpoint.get("sweep_params", {})
+                loaded_gain = sweep_params.get("sigmoid_scale_end", 1.0)
+
+            encoder_gain = args.encoder_gain if args.encoder_gain is not None else loaded_gain
+
+            grid_encoder = GridEncoder(
+                in_dim=g_hot_dim,
+                hidden=hidden,
+                out_dim=out_dim,
+                nonlinearity=nonlinearity,
+                output_nonlinearity=output_nonlinearity,
+                gain=encoder_gain,
+            )
+
+            if "state_dict" in checkpoint:
+                grid_encoder.load_state_dict(checkpoint["state_dict"])
+            else:
+                grid_encoder.load_state_dict(checkpoint)
+
+            print(f"Loaded GridEncoder from {encoder_path}: {g_hot_dim} -> {hidden} -> {out_dim}, gain={encoder_gain}")
         
         grid_encoder.to(device)
         grid_encoder.eval()
 
     # Helper: safe env factory that passes only supported kwargs
-    def _make_env(env_cls, *, size: int, speed: int, seed: int, observation_size: int, time_penalty: float, input_type: str | None, encoder=None, fwhm_ratio: float = 0.0, use_headings: bool = False):
+    def _make_env(env_cls, *, size: int, speed: int, seed: int, observation_size: int, time_penalty: float, input_type: str | None, encoder=None, fwhm_ratio: float = 0.0, use_headings: bool = False, recompute_interval: int = 1):
         if env_cls is GridWMEnv:
-            env = env_cls(size=size, speed=speed, seed=seed, time_penalty=time_penalty, observation_size=observation_size, input_type=input_type, encoder=encoder, fwhm_ratio=fwhm_ratio, use_headings=use_headings)
+            env = env_cls(size=size, speed=speed, seed=seed, time_penalty=time_penalty, observation_size=observation_size, input_type=input_type, encoder=encoder, fwhm_ratio=fwhm_ratio, use_headings=use_headings, recompute_interval=recompute_interval)
             if encoder is not None:
                 env._encoder_device = torch.device(device)
             return env
@@ -1004,12 +1045,13 @@ def main():
                 encoder=grid_encoder,
                 fwhm_ratio=args.fwhm_ratio,
                 use_headings=args.use_headings,
+                recompute_interval=args.recompute_interval,
             )
             world_envs.append(env_i)
         
         # Each world gets its own VectorHash (and Hopfield if enabled)
         if args.vectorhash:
-            use_hopfield = (args.input_addendum == "hopfield")
+            use_hopfield = (args.input_addendum == "hopfield") or (args.input_type in ("hopfield_onehot", "hopfield_proj"))
             world_vectorhash = VectorHash(
                 Np=args.Np,
                 Npos=args.Npos,
@@ -1022,7 +1064,10 @@ def main():
                 use_headings=args.use_headings,
             )
             world_vectorhash.initiate_vectorhash(world_envs)
-        
+            if args.input_type in ("hopfield_onehot", "hopfield_proj"):
+                world_vectorhash.precompute_encoded_phi(grid_encoder, args.fwhm_ratio, device=torch.device(device))
+                world_vectorhash.init_hopfield_encoded(world_envs)
+
         env_pool.extend(world_envs)
         all_envs.extend(world_envs)
 
@@ -1041,17 +1086,18 @@ def main():
             encoder=grid_encoder,
             fwhm_ratio=args.fwhm_ratio,
             use_headings=args.use_headings,
+            recompute_interval=args.recompute_interval,
         )
         # copy goal from training envs (use modulo in case num_val_envs > total train envs)
         env_i._goal = env_pool[i % len(env_pool)]._goal
         pos_env_pool.append(env_i)
     
     if args.vectorhash:
-        use_hopfield = (args.input_addendum == "hopfield")
+        use_hopfield = (args.input_addendum == "hopfield") or (args.input_type in ("hopfield_onehot", "hopfield_proj"))
         pos_vectorhash = VectorHash(
             Np=args.Np,
             Npos=args.Npos,
-            lambdas=args.lambdas, 
+            lambdas=args.lambdas,
             size=size,
             use_hopfield=use_hopfield,
             hopfield_gain=hopfield_gain,
@@ -1060,6 +1106,9 @@ def main():
             use_headings=args.use_headings,
         )
         pos_vectorhash.initiate_vectorhash(pos_env_pool)
+        if args.input_type in ("hopfield_onehot", "hopfield_proj"):
+            pos_vectorhash.precompute_encoded_phi(grid_encoder, args.fwhm_ratio, device=torch.device(device))
+            pos_vectorhash.init_hopfield_encoded(pos_env_pool)
     all_envs.extend(pos_env_pool)
 
     # New goal validation pool: new env instances with new goals
@@ -1077,15 +1126,16 @@ def main():
             encoder=grid_encoder,
             fwhm_ratio=args.fwhm_ratio,
             use_headings=args.use_headings,
+            recompute_interval=args.recompute_interval,
         )
         new_env_pool.append(env_i)
     
     if args.vectorhash:
-        use_hopfield = (args.input_addendum == "hopfield")
+        use_hopfield = (args.input_addendum == "hopfield") or (args.input_type in ("hopfield_onehot", "hopfield_proj"))
         new_vectorhash = VectorHash(
             Np=args.Np,
             Npos=args.Npos,
-            lambdas=args.lambdas, 
+            lambdas=args.lambdas,
             size=size,
             use_hopfield=use_hopfield,
             hopfield_gain=hopfield_gain,
@@ -1094,6 +1144,9 @@ def main():
             use_headings=args.use_headings,
         )
         new_vectorhash.initiate_vectorhash(new_env_pool)
+        if args.input_type in ("hopfield_onehot", "hopfield_proj"):
+            new_vectorhash.precompute_encoded_phi(grid_encoder, args.fwhm_ratio, device=torch.device(device))
+            new_vectorhash.init_hopfield_encoded(new_env_pool)
     all_envs.extend(new_env_pool)
 
     # Determine model input size
@@ -1102,8 +1155,9 @@ def main():
     else:
         # Raw WMEnv observation size
         input_size = env_pool[0]._observation_size
-    if args.input_addendum in ("goal", "next_best", "hopfield"):
-        input_size = input_size * 2
+    if args.input_type not in ("hopfield_onehot", "hopfield_proj"):
+        if args.input_addendum in ("goal", "next_best", "hopfield"):
+            input_size = input_size * 2
     if args.ppo_input_reward:
         input_size = input_size + 1
     
@@ -1149,6 +1203,7 @@ def main():
         hopfield_gain=hopfield_gain,
         hopfield_alpha=args.hopfield_alpha,
         expert_actions=args.expert_actions,
+        recompute_interval=args.recompute_interval,
     )
 
     train(

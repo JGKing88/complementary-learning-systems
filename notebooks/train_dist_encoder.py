@@ -1,8 +1,11 @@
 import os
 import sys
 from typing import List, Tuple
+from datetime import datetime
 
 import numpy as np
+import matplotlib
+matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 from matplotlib.lines import Line2D
 
@@ -14,6 +17,7 @@ from typing import Optional, Callable, Tuple
 import torch.nn.functional as F
 from itertools import product
 
+import wandb
 from scipy.stats import spearmanr, pearsonr
 
 # Ensure project root on sys.path for local imports when running directly
@@ -33,6 +37,9 @@ from cls.vectorhash.assoc_utils_np import *
 from cls.vectorhash.senstranspose_utils import *
 from cls.vectorhash.assoc_utils_np_2D import gen_gbook_2d, path_integration_Wgg_2d, module_wise_NN_2d
 from cls.encoder import GridEncoder, GridEncoderCNN
+from cls.eval.nav_eval import (
+    encode_full_grid, sample_train_eval_envs, sample_val_eval_envs, run_navigation_eval
+)
 
 seed = 3
 rng = np.random.default_rng(seed)
@@ -519,7 +526,7 @@ def train_epoch(
         optimizer.zero_grad(set_to_none=True)
         loss.backward()
         optimizer.step()
-        running += float(loss)
+        running += loss.item()
     return running / len(dl)
 
 def upper_tri_vec(M: torch.Tensor) -> torch.Tensor:
@@ -1006,17 +1013,19 @@ def extract_patches_to_flat(
     return Phi_flat, X
 
 
-def train(Phi, config, save_every = True):
+def train(Phi, config, save_every=True, encoders_dir="/home/jackking/cls/encoders"):
+    # --- Extract config ---
     lambdas = config["model_params"]["lambdas"]
     full_Npos = np.prod(lambdas)
     Npos = config["model_params"]["Npos"]
-    Nenv = config["model_params"].get("Nenv", 1)  # Default to 1 (full grid behavior if Nenv not specified)
+    Nenv = config["model_params"].get("Nenv", 1)
     num_layers = config["model_params"]["num_layers"]
     hidden_channels = config["model_params"]["hidden_channels"]
     kernel_size = config["model_params"]["kernel_size"]
     embed_dim = config["model_params"]["out_dim"]
     hidden_dim = config["model_params"]["hidden_dim"]
     num_hidden_layers = config["model_params"]["num_hidden_layers"]
+    model_gain = config["model_params"]["gain"]
     batch_size = config["training_params"]["batch_size"]
     lr = config["training_params"]["lr"]
     epochs = config["training_params"]["epochs"]
@@ -1037,7 +1046,7 @@ def train(Phi, config, save_every = True):
     uniformity_lambda_scales = np.linspace(uniformity_lambda_start, uniformity_lambda_end, uniformity_lambda_scale_up_epochs)
     uniformity_lambda_scales = np.concatenate([uniformity_lambda_scales, np.ones(epochs - uniformity_lambda_scale_up_epochs) * uniformity_lambda_scales[-1]])
 
-    # Parameters for modulating target kernel used by CKA
+    # CKA params
     cka_alpha = config["training_params"]["cka_alpha"]
     cka_topk = config["training_params"]["cka_topk"]
     mod_loss_lambda = config["training_params"]["mod_loss_lambda"]
@@ -1057,52 +1066,79 @@ def train(Phi, config, save_every = True):
     local_lambda_scales = np.linspace(local_lambda_start, local_lambda_end, local_lambda_scale_up_epochs)
     local_lambda_scales = np.concatenate([local_lambda_scales, np.ones(epochs - local_lambda_scale_up_epochs) * local_lambda_scales[-1]])
 
+    # Wandb params
+    use_wandb = config.get("wandb_params", {}).get("use_wandb", False)
+    wandb_project = config.get("wandb_params", {}).get("wandb_project", "dist-encoder")
+
+    # Nav eval params
+    nav_cfg = config.get("nav_eval_params", {})
+    nav_eval_every = nav_cfg.get("eval_every", 10)
+    nav_eval_env_size = nav_cfg.get("eval_env_size", 20)
+    nav_n_train_envs = nav_cfg.get("n_train_envs", 5)
+    nav_n_val_envs = nav_cfg.get("n_val_envs", 10)
+    nav_n_val_envs_final = nav_cfg.get("n_val_envs_final", 30)
+    nav_n_starts = nav_cfg.get("n_starts_per_env", 100)
+    nav_max_steps_mult = nav_cfg.get("max_steps_mult", 3)
+    nav_scale = nav_cfg.get("scale", 1.0)
+    nav_normalize = nav_cfg.get("normalize", True)
+    nav_platform_radius = nav_cfg.get("platform_radius", 1.0)
+    nav_recompute_interval = nav_cfg.get("recompute_interval", 1)
+    nav_hopfield_alpha = nav_cfg.get("hopfield_alpha", 0.8)
+    nav_save_heatmaps_final = nav_cfg.get("save_heatmaps_final", True)
+
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    # Phi: [code_dim, H_full, W_full]
+    # --- Wandb init ---
+    if use_wandb:
+        wandb.init(project=wandb_project, config=config)
+        run_name = wandb.run.name
+    else:
+        run_name = f"run_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+
+    run_dir = os.path.join(encoders_dir, run_name)
+    os.makedirs(run_dir, exist_ok=True)
+    print(f"Run directory: {run_dir}")
+
+    # --- Phi: [code_dim, H_full, W_full] ---
     code_dim, H_full, W_full = Phi.shape
 
     # Sample Nenv non-overlapping patches of size Npos x Npos
     y0s, x0s = sample_nonoverlapping_patches(H_full, W_full, Npos, Nenv)
-    
-    # Visualize patch placements
+
+    # Save patch visualization
     fig, ax = plt.subplots(figsize=(8, 8))
     ax.set_xlim(-0.5, W_full - 0.5)
-    ax.set_ylim(H_full - 0.5, -0.5)  # Invert y-axis to match image coordinates
+    ax.set_ylim(H_full - 0.5, -0.5)
     ax.set_aspect('equal')
     ax.set_title(f"Sampled {Nenv} patches ({Npos}x{Npos}) on {H_full}x{W_full} grid")
     ax.set_xlabel("x")
     ax.set_ylabel("y")
-    
-    # Draw grid outline
     ax.add_patch(plt.Rectangle((0, 0), W_full, H_full, fill=False, edgecolor='black', linewidth=2))
-    
-    # Draw each patch with a different color
     colors = plt.cm.tab10(np.linspace(0, 1, max(Nenv, 10)))
     for i, (y0, x0) in enumerate(zip(y0s, x0s)):
         color = colors[i % len(colors)]
-        rect = plt.Rectangle((x0, y0), Npos, Npos, fill=True, facecolor=color, 
+        rect = plt.Rectangle((x0, y0), Npos, Npos, fill=True, facecolor=color,
                               edgecolor='white', linewidth=1.5, alpha=0.6)
         ax.add_patch(rect)
-        # Add patch number label at center
-        ax.text(x0 + Npos/2, y0 + Npos/2, str(i), ha='center', va='center', 
+        ax.text(x0 + Npos/2, y0 + Npos/2, str(i), ha='center', va='center',
                 fontsize=10, fontweight='bold', color='white')
-    
     plt.tight_layout()
-    plt.show()
-    
+    fig.savefig(os.path.join(run_dir, "patches.png"), dpi=100, bbox_inches='tight')
+    if use_wandb:
+        wandb.log({"patches": wandb.Image(fig)})
+    plt.close(fig)
+
     # Extract patches and get flattened Phi values with original coordinates
     Phi_flat, X = extract_patches_to_flat(Phi, y0s, x0s, Npos, device)
-    
+
     N = Phi_flat.shape[0]  # Nenv * Npos * Npos
-    H, W = Npos, Npos  # Patch dimensions for triples calculation
-    
+    H, W = Npos, Npos
+
     tau = estimate_tau_median(X, sample_pairs=min(50000, N * (N - 1) // 2))
 
     triples_all = build_grid_triples(H, W, stride=triple_stride, include_diagonals=include_diagonals, both_directions=True)
     print(f"Precomputed {triples_all.size(0)} curvature triples.")
 
-    # encoder = SphericalMLP(in_dim=Phi_flat.size(1), hidden=hidden, out_dim=embed_dim, nonlinearity="gelu", output_nonlinearity=output_nonlinearity).to(device)
     encoder = GridEncoderCNN(lambdas, hidden_channels=hidden_channels, out_dim=embed_dim, hidden_dim=hidden_dim, nonlinearity="gelu", output_nonlinearity=output_nonlinearity, num_conv_layers=num_layers, kernel_size=kernel_size, num_hidden_layers=num_hidden_layers).to(device)
 
     optim = torch.optim.AdamW(encoder.parameters(), lr=lr, weight_decay=1e-4)
@@ -1110,53 +1146,32 @@ def train(Phi, config, save_every = True):
     print(f"Using device: {device} | N={N} | code_dim={Phi_flat.size(1)} | embed_dim={embed_dim}")
     print(f"RBF tau (median dist) = {tau:.4f}")
 
+    # Visualization reference points
     viz_idx_y, viz_idx_x = y0s[0] + Npos // 2, x0s[0] + Npos // 2
-
-    #grab an idx_y and idx_x that are not in any of the patches
     def in_any_patch(y, x):
         return any(y0 <= y < y0 + Npos and x0 <= x < x0 + Npos for y0, x0 in zip(y0s, x0s))
-    
     rand_idx_y, rand_idx_x = np.random.randint(0, full_Npos), np.random.randint(0, full_Npos)
     while in_any_patch(rand_idx_y, rand_idx_x):
         rand_idx_y, rand_idx_x = np.random.randint(0, full_Npos), np.random.randint(0, full_Npos)
 
-    sims = []
-    triplet_accs = []
-    nn_consistencies = []
-    losses = []
+    nav_eval_rng = np.random.RandomState(42)
 
+    # --- Training loop ---
     for ep in range(1, epochs + 1):
         gain = gains[ep - 1]
         tr_loss = train_epoch(
-            encoder,
-            Phi_flat,
-            X,
-            tau,
-            optim,
-            batch_size,
-            triples_all,
-            T_triple_batch,
-            centered=centered,
-            gain=gain,
+            encoder, Phi_flat, X, tau, optim, batch_size,
+            triples_all, T_triple_batch, centered=centered, gain=gain,
             uniformity_lambda=uniformity_lambda_scales[ep - 1],
             lambda_plane=plane_lambda_scales[ep - 1],
             lambda_local=local_lambda_scales[ep - 1],
-            cka_alpha=cka_alpha,
-            cka_topk=cka_topk,
-            mod_loss_lambda=mod_loss_lambda,
+            cka_alpha=cka_alpha, cka_topk=cka_topk, mod_loss_lambda=mod_loss_lambda,
         )
 
         metrics = eval_full(
-            encoder,
-            Phi_flat,
-            Xcoords=X,
-            tau=tau,
-            subset=min(2048, N),
-            centered=True,         # same as training
-            D_true=None,
-            tau_for_rbf=tau,
-            cka_alpha=cka_alpha,
-            cka_topk=cka_topk,
+            encoder, Phi_flat, Xcoords=X, tau=tau,
+            subset=min(2048, N), centered=True,
+            D_true=None, tau_for_rbf=tau, cka_alpha=cka_alpha, cka_topk=cka_topk,
         )
 
         print(
@@ -1170,21 +1185,28 @@ def train(Phi, config, save_every = True):
             + (f" | R2={metrics['R2_distproxy']:.3f} | RMSE={metrics['shepard_RMSE']:.3f}" if 'R2_distproxy' in metrics else "")
         )
 
-        sims.append(metrics['pearson_sim'])
-        triplet_accs.append(metrics['triplet_acc'])
-        nn_consistencies.append(metrics['nn_consistency'])
-        losses.append(tr_loss)
+        # Log training metrics to wandb
+        if use_wandb:
+            log_dict = {
+                "train/align_loss": tr_loss,
+                "eval/align_loss": metrics["align_loss"],
+                "eval/local_loss": metrics["local_loss"],
+                "eval/pearson_sim": metrics["pearson_sim"],
+                "eval/spearman_sim": metrics["spearman_sim"],
+                "eval/triplet_acc": metrics["triplet_acc"],
+                "eval/nn_consistency": metrics["nn_consistency"],
+                "gain": gain,
+            }
+            if "R2_distproxy" in metrics:
+                log_dict["eval/R2_distproxy"] = metrics["R2_distproxy"]
+                log_dict["eval/shepard_RMSE"] = metrics["shepard_RMSE"]
+            wandb.log(log_dict, step=ep)
 
-        # Only compute trajectory metrics if Phi_flat is a contiguous grid (N == H*W)
+        # Trajectory straightness metrics
         if N == H * W:
             metrics_traj = trajectory_straightness_metrics(
-                encoder,
-                Phi_flat,            # [N, code_dim] on same device
-                H=H, W=W,
-                L_seq=16,            # try 8, 16, 32
-                stride=triple_stride,
-                num_per_axis=256,    # more sequences → tighter estimates
-                gain=gain,
+                encoder, Phi_flat, H=H, W=W, L_seq=16,
+                stride=triple_stride, num_per_axis=256, gain=gain,
             )
             print(
                 f"plane_dev_mean={metrics_traj['plane_dev_mean']:.3f} | "
@@ -1193,77 +1215,135 @@ def train(Phi, config, save_every = True):
                 f"angle_R2_mean={metrics_traj['angle_R2_mean']:.3f} | "
                 f"angle_monotonic_frac_mean={metrics_traj['angle_monotonic_frac_mean']:.3f}"
             )
+            if use_wandb:
+                wandb.log({
+                    "eval/plane_dev_mean": metrics_traj["plane_dev_mean"],
+                    "eval/triple_det_mean": metrics_traj["triple_det_mean"],
+                    "eval/angle_R2_mean": metrics_traj["angle_R2_mean"],
+                    "eval/angle_monotonic_frac": metrics_traj["angle_monotonic_frac_mean"],
+                }, step=ep)
 
+        # --- Save checkpoint ---
         if save_every:
-            save_encoder(encoder, config, f"encoder_{ep}.pt")
-        
-        def plot_metrics(encoded_Phi_grid, idx_y, idx_x):
-            phix = encoded_Phi_grid[idx_y, idx_x, :]
+            save_encoder(encoder, config, f"encoder_ep{ep}.pt", encoders_dir=run_dir)
 
-            #vectorized version
-            cosine_sims = np.sum(encoded_Phi_grid * phix, axis=-1) / np.sqrt(np.sum(encoded_Phi_grid**2, axis=-1) * np.sum(phix**2, axis=-1))
-            plt.imshow(cosine_sims)
-            
-            # Add circle marker at the reference point
-            plt.scatter(idx_x, idx_y, s=100, facecolors='none', edgecolors='red', linewidths=2, marker='o')
-
-            plt.title(f"cosine_sim(E(phi({idx_y},{idx_x})), E(phi(x,y))), lambdas = {lambdas}")
-            plt.xlabel("delta(x)")
-            plt.ylabel("delta(y)")
-            plt.colorbar(label="cosine sim")
-            ax = plt.gca()
-            ax.ticklabel_format(axis='y', style='plain', useOffset=False)
-            ax.yaxis.get_offset_text().set_visible(False)
-            plt.show()
-
-            plt.plot(cosine_sims[idx_y])
-            plt.show()
-
+        # --- Cosine similarity visualization (every 10 epochs) ---
         if ep % 10 == 0:
-            # Batch processing: encode the FULL Phi grid for visualization (not just sampled patches)
-            Phi_full_flat = Phi.reshape(code_dim, full_Npos * full_Npos).T.to(device)  # [full_Npos*full_Npos, code_dim]
-            batch_size = 1000  # adjust as needed according to GPU/CPU RAM constraints
-            encoded_Phi_chunks = []
-            with torch.no_grad():
-                for i in range(0, Phi_full_flat.shape[0], batch_size):
-                    encoded_chunk = encoder(Phi_full_flat[i:i+batch_size], gain=gain).detach().cpu()
-                    encoded_Phi_chunks.append(encoded_chunk)
-            encoded_Phi = torch.cat(encoded_Phi_chunks, dim=0)
-            encoded_Phi_grid = encoded_Phi.reshape(full_Npos, full_Npos, embed_dim).to("cpu").numpy()
+            encoded_Phi_grid = encode_full_grid(encoder, Phi.numpy(), gain, device)
 
-            plt.clf()  # Clear the current figure
-            plt.plot(sims, label='pearson_sim')
-            plt.plot(triplet_accs, label='triplet_acc')
-            plt.plot(nn_consistencies, label='nn_consistency')
-            plt.plot(losses, label='loss')
-            plt.legend()
-            plt.draw()
-            plt.pause(0.001)
-            plt.show()
+            def _save_cosine_sim_plot(encoded_grid, idx_y, idx_x, suffix):
+                phix = encoded_grid[idx_y, idx_x, :]
+                cosine_sims = np.sum(encoded_grid * phix, axis=-1) / (
+                    np.sqrt(np.sum(encoded_grid**2, axis=-1) * np.sum(phix**2, axis=-1)) + 1e-12)
+                fig, ax = plt.subplots(figsize=(8, 6))
+                im = ax.imshow(cosine_sims)
+                ax.scatter(idx_x, idx_y, s=100, facecolors='none', edgecolors='red', linewidths=2, marker='o')
+                ax.set_title(f"cosine_sim(E(phi({idx_y},{idx_x})), E(phi(y,x))), lambdas={lambdas}")
+                plt.colorbar(im, label="cosine sim")
+                plt.tight_layout()
+                path = os.path.join(run_dir, f"cosine_sim_{suffix}_ep{ep}.png")
+                fig.savefig(path, dpi=100, bbox_inches='tight')
+                if use_wandb:
+                    wandb.log({f"viz/cosine_sim_{suffix}": wandb.Image(fig)}, step=ep)
+                plt.close(fig)
 
-            plot_metrics(encoded_Phi_grid, viz_idx_y, viz_idx_x)
-            plot_metrics(encoded_Phi_grid, rand_idx_y, rand_idx_x)
+            _save_cosine_sim_plot(encoded_Phi_grid, viz_idx_y, viz_idx_x, "train")
+            _save_cosine_sim_plot(encoded_Phi_grid, rand_idx_y, rand_idx_x, "val")
 
+        # --- Navigation eval ---
+        if nav_eval_every > 0 and ep % nav_eval_every == 0:
+            is_final = (ep == epochs)
+            n_val = nav_n_val_envs_final if is_final else nav_n_val_envs
+            save_heatmaps = is_final and nav_save_heatmaps_final
+            heatmap_dir = os.path.join(run_dir, "heatmaps") if save_heatmaps else None
 
-    plt.plot(sims, label='pearson_sim')
-    plt.plot(triplet_accs, label='triplet_acc')
-    plt.plot(losses, label='loss')
-    plt.plot(nn_consistencies, label='nn_consistency')
-    plt.legend()
-    plt.show()
+            print(f"\n--- Nav eval (epoch {ep}) ---")
+            # Encode full grid with current encoder weights
+            encoded_Phi_nav = encode_full_grid(encoder, Phi.numpy(), gain, device)
+
+            # Train nav eval
+            train_placements = sample_train_eval_envs(
+                y0s, x0s, Npos, nav_eval_env_size, nav_n_train_envs, nav_eval_rng)
+            if train_placements:
+                print(f"  Train nav eval ({len(train_placements)} envs):")
+                train_nav = run_navigation_eval(
+                    encoded_Phi_nav, train_placements, nav_eval_env_size, gain,
+                    hopfield_alpha=nav_hopfield_alpha,
+                    n_starts_per_env=nav_n_starts, max_steps_mult=nav_max_steps_mult,
+                    scale=nav_scale, normalize=nav_normalize,
+                    platform_radius=nav_platform_radius,
+                    recompute_interval=nav_recompute_interval, rng=nav_eval_rng,
+                )
+                print(f"  Train nav: acc={train_nav['accuracy']:.3f} | "
+                      f"steps={train_nav['mean_steps']:.1f} | speed={train_nav['mean_speed']:.3f}")
+                if use_wandb:
+                    wandb.log({
+                        "train_nav/accuracy": train_nav["accuracy"],
+                        "train_nav/mean_steps": train_nav["mean_steps"],
+                        "train_nav/mean_speed": train_nav["mean_speed"],
+                        "train_nav/mean_dist_success": train_nav["mean_dist_success"],
+                        "train_nav/mean_dist_fail": train_nav["mean_dist_fail"],
+                        "train_nav/dir_acc_success": train_nav["mean_dir_acc_success"],
+                        "train_nav/dir_acc_fail": train_nav["mean_dir_acc_fail"],
+                    }, step=ep)
+
+            # Val nav eval
+            val_placements = sample_val_eval_envs(
+                H_full, W_full, y0s, x0s, Npos, nav_eval_env_size, n_val, nav_eval_rng)
+            if val_placements:
+                print(f"  Val nav eval ({len(val_placements)} envs):")
+                val_nav = run_navigation_eval(
+                    encoded_Phi_nav, val_placements, nav_eval_env_size, gain,
+                    hopfield_alpha=nav_hopfield_alpha,
+                    n_starts_per_env=nav_n_starts, max_steps_mult=nav_max_steps_mult,
+                    scale=nav_scale, normalize=nav_normalize,
+                    platform_radius=nav_platform_radius,
+                    recompute_interval=nav_recompute_interval, rng=nav_eval_rng,
+                    save_heatmaps=save_heatmaps, heatmap_dir=heatmap_dir,
+                )
+                print(f"  Val nav: acc={val_nav['accuracy']:.3f} | "
+                      f"steps={val_nav['mean_steps']:.1f} | speed={val_nav['mean_speed']:.3f}")
+                if use_wandb:
+                    wandb.log({
+                        "val_nav/accuracy": val_nav["accuracy"],
+                        "val_nav/mean_steps": val_nav["mean_steps"],
+                        "val_nav/mean_speed": val_nav["mean_speed"],
+                        "val_nav/mean_dist_success": val_nav["mean_dist_success"],
+                        "val_nav/mean_dist_fail": val_nav["mean_dist_fail"],
+                        "val_nav/dir_acc_success": val_nav["mean_dir_acc_success"],
+                        "val_nav/dir_acc_fail": val_nav["mean_dir_acc_fail"],
+                    }, step=ep)
+                    # Log heatmap images at final epoch
+                    if save_heatmaps and "figures" in val_nav:
+                        for fi, fig in enumerate(val_nav["figures"]):
+                            wandb.log({f"val_nav/heatmap_env{fi}": wandb.Image(fig)}, step=ep)
+
+            print(f"--- End nav eval ---\n")
+
+    # --- Final save ---
+    save_encoder(encoder, config, "encoder_final.pt", encoders_dir=run_dir)
+    print(f"Final encoder saved to {run_dir}/encoder_final.pt")
+
+    if use_wandb:
+        wandb.finish()
 
     return encoder
 
 
 if __name__ == "__main__":
-    lambdas = [11,12,13]
+    import argparse
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--smoke-test", action="store_true",
+                        help="Run a minimal config for quick verification")
+    args = parser.parse_args()
+
+    lambdas = [11, 12, 13]
     Ng = np.sum(np.square(lambdas))
     Npos = np.prod(lambdas)
     gbook = gen_gbook_2d(lambdas, Ng, Npos)
     Phi_np = smooth_gbook(gbook, lambdas, 0.25)
     Phi = torch.tensor(Phi_np, dtype=torch.float32)
 
-    # lower learning rate, larger model.
     config = {
         "model_params": {
             "lambdas": lambdas,
@@ -1277,7 +1357,7 @@ if __name__ == "__main__":
             "output_nonlinearity": "tanh",
             "gain": 5,
             "Npos": 50,
-            "Nenv": 200
+            "Nenv": 50,
         },
         "training_params": {
             "lr": 0.0001,
@@ -1293,22 +1373,53 @@ if __name__ == "__main__":
             "cka_topk": 20,
             "mod_loss_lambda": 0.75,
         },
-        "hopfield_params": {
-            "alpha": 0.85
-        }
+        "wandb_params": {
+            "use_wandb": True,
+            "wandb_project": "dist-encoder",
+        },
+        "nav_eval_params": {
+            "eval_every": 20,
+            "eval_env_size": 20,
+            "n_train_envs": 10,
+            "n_val_envs": 20,
+            "n_val_envs_final": 50,
+            "n_starts_per_env": 100,
+            "max_steps_mult": 3,
+            "scale": 1.0,
+            "normalize": True,
+            "platform_radius": 1.0,
+            "recompute_interval": 1,
+            "hopfield_alpha": 0.8,
+            "save_heatmaps_final": True,
+        },
     }
 
-    cka_topks = [10, 20, 40, 80]
-    mod_loss_lambdas = [0.5, 0.75, 1.0, 1.5]
-    out_dims = [64, 128, 256]
+    if args.smoke_test:
+        # Minimal config for quick verification
+        config["training_params"]["epochs"] = 4
+        config["training_params"]["gain_up_epochs"] = 2
+        config["training_params"]["uniformity_lambda_scale_up_epochs"] = 2
+        config["training_params"]["batch_size"] = 512
+        config["model_params"]["Nenv"] = 3
+        config["nav_eval_params"]["eval_every"] = 2
+        config["nav_eval_params"]["n_train_envs"] = 2
+        config["nav_eval_params"]["n_val_envs"] = 2
+        config["nav_eval_params"]["n_val_envs_final"] = 3
+        config["nav_eval_params"]["n_starts_per_env"] = 16
+        print("=== SMOKE TEST MODE ===")
+        encoder = train(Phi, config, save_every=False)
+    else:
+        cka_topks = [5, 10, 20, 40]
+        mod_loss_lambdas = [2, 3, 4]
+        out_dims = [128, 256]
+        Nenvs = [25, 50, 100]
 
-    iterator = product(cka_topks, mod_loss_lambdas, out_dims)
-    for cka_topk, mod_loss_lambda, out_dim in iterator:
-        config["training_params"]["cka_topk"] = cka_topk
-        config["training_params"]["mod_loss_lambda"] = mod_loss_lambda
-        config["model_params"]["out_dim"] = out_dim
-        print(f"Training with cka_topk={cka_topk}, mod_loss_lambda={mod_loss_lambda}, out_dim={out_dim}")
-        encoder = train(Phi, config, save_every = False)
-        save_encoder(encoder, config, f"encoder_cka_topk={cka_topk}_mod_loss_lambda={mod_loss_lambda}_out_dim={out_dim}.pt")
-        print(f"Saved encoder_cka_topk={cka_topk}_mod_loss_lambda={mod_loss_lambda}_out_dim={out_dim}.pt")
-        print(f"--------------------------------")
+        iterator = product(cka_topks, mod_loss_lambdas, out_dims, Nenvs)
+        for cka_topk, mod_loss_lambda, out_dim, Nenv in iterator:
+            config["training_params"]["cka_topk"] = cka_topk
+            config["training_params"]["mod_loss_lambda"] = mod_loss_lambda
+            config["model_params"]["out_dim"] = out_dim
+            config["model_params"]["Nenv"] = Nenv
+            print(f"Training with cka_topk={cka_topk}, mod_loss_lambda={mod_loss_lambda}, out_dim={out_dim}, Nenv={Nenv}")
+            encoder = train(Phi, config, save_every=False)
+            print(f"--------------------------------")
