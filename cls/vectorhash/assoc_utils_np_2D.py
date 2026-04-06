@@ -45,6 +45,36 @@ def gen_gbook_2d(lambdas, Ng, Npos):
 
     return gbook
 
+# # --- grid cells
+# def gen_gbook_2d(lambdas, Ng, Npos):
+#     """
+#     Return grid codebook (grid activity vector for each position)
+
+#     Inputs:
+#         lambdas - list[int], grid periods
+#         Ng - int, number of grid cells
+#             should equal to sum of period squared
+#         Npos - int, number of spatial positions in each axis
+    
+#     Outputs:
+#         gbook - np.array, size (Ng, Npos, Npos)
+#             gbook[:, a, b] = grid vector at position (a, b)
+#     """
+#     # Ng = np.sum(np.dot(lambdas, lambdas))
+#     # Npos = np.prod(lambdas)
+#     gbook = np.zeros((Ng, Npos, Npos))
+#     for x in range(Npos):
+#         for y in range(Npos):
+#             index = 0
+#             for period in lambdas:
+#                 phi1, phi2 = x % period, y % period
+#                 gpattern = np.zeros((period, period))
+#                 gpattern[phi1, phi2] = 1
+#                 gpattern = gpattern.flatten()
+#                 gbook[index:index+len(gpattern), x, y] = gpattern
+#                 index += len(gpattern)
+#     return gbook
+
 def shift_matrix(size, shift_amount):
     """
     Return permutation matrix that shifts entries in a vector

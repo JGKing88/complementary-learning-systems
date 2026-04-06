@@ -134,6 +134,56 @@ def smooth_gbook(gbook, lambdas, fwhm_ratio):
 
     return out
 
+class RHCEncoder:
+    """Random-phase Holographic Code encoder.
+
+    Generates random phase vectors once (deterministic given seed), then
+    encodes arbitrary (x, y) positions on demand without materializing the
+    full grid.
+    """
+
+    def __init__(self, lambdas, D, seed=0):
+        rng = np.random.RandomState(seed)
+        lambdas = np.asarray(lambdas, dtype=int)
+        self.lambdas = lambdas
+        self.D = D
+
+        # Random phase vectors: ψ_k^x[d] = 2π·r/λ_k
+        self.psi_x = np.zeros((len(lambdas), D))
+        self.psi_y = np.zeros((len(lambdas), D))
+        for k, lam in enumerate(lambdas):
+            self.psi_x[k] = 2 * np.pi * rng.randint(0, lam, size=D) / lam
+            self.psi_y[k] = 2 * np.pi * rng.randint(0, lam, size=D) / lam
+
+    def encode_positions(self, xs, ys):
+        """Encode a set of (x, y) positions.
+
+        Args:
+            xs: array-like of x coordinates, shape (N,)
+            ys: array-like of y coordinates, shape (N,)
+
+        Returns:
+            out: np.array of shape (N, 2*D) — [real | imag] concatenated
+        """
+        xs = np.asarray(xs)
+        ys = np.asarray(ys)
+        N = len(xs)
+
+        # a_k[k, n] = xs[n] % λ_k,  b_k[k, n] = ys[n] % λ_k
+        a_k = xs[None, :] % self.lambdas[:, None]  # (K, N)
+        b_k = ys[None, :] % self.lambdas[:, None]  # (K, N)
+
+        # phase_x[k, d, n] = ψ_k^x[d] * a_k[k, n]  →  sum over k → (D, N)
+        total_phase = (
+            np.einsum('kd,kn->dn', self.psi_x, a_k) +
+            np.einsum('kd,kn->dn', self.psi_y, b_k)
+        )  # (D, N)
+
+        z = np.exp(1j * total_phase)  # (D, N)
+        out = np.concatenate([z.real, z.imag], axis=0).T.astype(np.float32)  # (N, 2D)
+        return out
+
+
 def gram_schmidt_2d_batch(d_forward, d_right):
     """Batched Gram-Schmidt: compute 2D projection matrices from forward/right displacement vectors.
 
@@ -190,9 +240,9 @@ def overlaps(x, y, px, py, size, touch_ok=True):
 
 
 class VectorHash:
-    def __init__(self, Np, lambdas, size, Npos = None, use_hopfield: bool = False, hopfield_gain: float = 2.0, hopfield_alpha: float = 1.0, hopfield_steps: int = 1, thresh: float = 2.0, use_headings: bool = False):
+    def __init__(self, Np, lambdas, size, Npos = None, use_hopfield: bool = False, hopfield_gain: float = 2.0, hopfield_alpha: float = 1.0, hopfield_steps: int = 1, thresh: float = 2.0, c: float = 0.5, use_headings: bool = False):
         self.thresh = thresh
-        self.c = 0.5
+        self.c = c
         self.Np = Np
         self.lambdas = lambdas
         self.Ng = np.sum(np.square(lambdas))

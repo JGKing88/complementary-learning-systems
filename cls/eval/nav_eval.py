@@ -25,28 +25,33 @@ def encode_full_grid(encoder, Phi, gain, device, batch_size=1000):
 
     Args:
         encoder: GridEncoderCNN (or compatible) on *device*, in eval mode.
-        Phi: np.ndarray of shape (code_dim, Npos, Npos) — smoothed grid codes.
+        Phi: np.ndarray of shape (code_dim, Npos, Npos) — grid codes
+            (dim0 = x, dim1 = y, matching gen_gbook_2d convention).
         gain: float — encoder gain parameter.
         device: torch.device.
         batch_size: int — batch size for encoding.
 
     Returns:
         encoded_Phi: np.ndarray of shape (Npos, Npos, embed_dim).
+            Indexed as encoded_Phi[gx, gy].
     """
-    code_dim, Npos_y, Npos_x = Phi.shape
-    flat = Phi.reshape(code_dim, Npos_y * Npos_x).T.astype(np.float32)  # (N, code_dim)
+    code_dim, Npos_x, Npos_y = Phi.shape
+    flat = Phi.reshape(code_dim, Npos_x * Npos_y).T.astype(np.float32)  # (N, code_dim)
 
     parts = []
+    was_training = encoder.training
     encoder.eval()
     with torch.no_grad():
         for start in range(0, flat.shape[0], batch_size):
             chunk = torch.from_numpy(flat[start:start + batch_size]).to(device)
             enc = encoder(chunk, gain=gain).cpu().numpy()
             parts.append(enc)
+    if was_training:
+        encoder.train()
 
     encoded_flat = np.concatenate(parts, axis=0)  # (N, embed_dim)
     embed_dim = encoded_flat.shape[1]
-    return encoded_flat.reshape(Npos_y, Npos_x, embed_dim)
+    return encoded_flat.reshape(Npos_x, Npos_y, embed_dim)
 
 
 # ---------------------------------------------------------------------------
@@ -54,7 +59,11 @@ def encode_full_grid(encoder, Phi, gain, device, batch_size=1000):
 # ---------------------------------------------------------------------------
 
 def _rects_overlap(y0a, x0a, size_a, y0b, x0b, size_b):
-    """Check if two axis-aligned rectangles overlap (touching = no overlap)."""
+    """Check if two axis-aligned rectangles overlap (touching = no overlap).
+
+    Note: parameter names use (y0, x0) for compatibility with train_dist_encoder,
+    but in grid convention these are (dim0, dim1) = (gx, gy).
+    """
     return not (y0a + size_a <= y0b or y0b + size_b <= y0a or
                 x0a + size_a <= x0b or x0b + size_b <= x0a)
 
@@ -144,21 +153,23 @@ def sample_val_eval_envs(grid_H, grid_W, train_y0s, train_x0s, train_patch_size,
 # Trajectory simulation
 # ---------------------------------------------------------------------------
 
-def _compute_projection_matrix(encoded_Phi, y, x):
-    """Compute Gram-Schmidt projection matrix at (y, x) using fixed N=(0,+1), E=(+1,0).
+def _compute_projection_matrix(encoded_Phi, gx, gy):
+    """Compute Gram-Schmidt projection matrix at (gx, gy).
+
+    Axes follow the grid codebook convention: dim0 = x (East), dim1 = y (North).
 
     Returns:
         W: (2, embed_dim) — row 0 = East basis, row 1 = North basis.
-        current: (embed_dim,) — encoded state at (y, x).
+        current: (embed_dim,) — encoded state at (gx, gy).
     """
-    Ny, Nx = encoded_Phi.shape[:2]
-    y = np.clip(y, 1, Ny - 2)
-    x = np.clip(x, 1, Nx - 2)
+    Nx, Ny = encoded_Phi.shape[:2]
+    gx = np.clip(gx, 1, Nx - 2)
+    gy = np.clip(gy, 1, Ny - 2)
 
-    current = encoded_Phi[y, x]
-    # North neighbor: (y, x+1), East neighbor: (y+1, x)
-    d_forward = encoded_Phi[y, x + 1] - current
-    d_right = encoded_Phi[y + 1, x] - current
+    current = encoded_Phi[gx, gy]
+    # North neighbor: (gx, gy+1) — +dim1, East neighbor: (gx+1, gy) — +dim0
+    d_forward = encoded_Phi[gx, gy + 1] - current
+    d_right = encoded_Phi[gx + 1, gy] - current
 
     # Gram-Schmidt: e1 = normalize(d_forward), e2 = orthogonalize(d_right, e1)
     norm_f = np.linalg.norm(d_forward)
@@ -175,7 +186,7 @@ def _continuous_step(W, current_np, next_state_np, scale, normalize):
     """Compute continuous movement from Hopfield displacement.
 
     Returns:
-        (dy, dx): step in grid coordinates (y-axis = North, x-axis = East).
+        (dgx, dgy): step in grid coordinates (dim0 = x/East, dim1 = y/North).
         magnitude: raw magnitude of projected vector.
     """
     d_query = next_state_np - current_np
@@ -190,31 +201,25 @@ def _continuous_step(W, current_np, next_state_np, scale, normalize):
     else:
         q_scaled = q * scale
 
-    # q[0] = East = +x direction, q[1] = North = +y direction
-    # Grid axes: dim0 = y, dim1 = x
-    # East (q[0]) maps to dx (+1, 0) → dim0 += q[0]? No.
-    # With fixed directions N=(0,+1) meaning (dy=0, dx=+1) and E=(+1,0) meaning (dy=+1, dx=0):
-    # Actually, looking at VectorHash.compute_hopfield_direction_batch:
-    #   North neighbor: (gx, gy+1), East neighbor: (gx+1, gy)
-    #   d_forward = encoded_Phi[gx, gy+1] - current  → forward is +dim1
-    #   d_right = encoded_Phi[gx+1, gy] - current    → right is +dim0
-    # So q[1] (North/forward) → +dim1, q[0] (East/right) → +dim0
-    dy = q_scaled[0]  # East → +dim0 (which is y in encoded_Phi[y, x])
-    dx = q_scaled[1]  # North → +dim1 (which is x in encoded_Phi[y, x])
+    # q[0] = East = +dim0 (+x), q[1] = North = +dim1 (+y)
+    dgx = q_scaled[0]  # East  → +dim0
+    dgy = q_scaled[1]  # North → +dim1
 
-    return (dy, dx), magnitude
+    return (dgx, dgy), magnitude
 
 
-def simulate_trajectory(encoded_Phi, hopfield, start_y, start_x, goal_loc,
+def simulate_trajectory(encoded_Phi, hopfield, start_gx, start_gy, goal_loc,
                         gain, max_steps, scale, normalize,
                         platform_radius, recompute_interval, alpha):
     """Simulate one continuous trajectory.
 
+    Positions are (gx, gy) in global grid coords (dim0 = x, dim1 = y).
+
     Args:
         encoded_Phi: (Npos, Npos, embed_dim) array.
         hopfield: Hopfield network with stored goals.
-        start_y, start_x: global starting position.
-        goal_loc: (y, x) global goal position.
+        start_gx, start_gy: global starting position.
+        goal_loc: (gx, gy) global goal position.
         gain: Hopfield recall beta.
         max_steps: maximum number of steps.
         scale: step scale (with normalize=True, each step is unit * scale).
@@ -224,21 +229,21 @@ def simulate_trajectory(encoded_Phi, hopfield, start_y, start_x, goal_loc,
         alpha: Hopfield recall alpha (mixing coefficient).
 
     Returns:
-        trajectory: np.ndarray of shape (T, 2) — positions visited.
+        trajectory: np.ndarray of shape (T, 2) — positions visited as [gx, gy].
     """
-    Ny, Nx = encoded_Phi.shape[:2]
-    min_y, max_y = 1, Ny - 2
-    min_x, max_x = 1, Nx - 2
+    Nx, Ny = encoded_Phi.shape[:2]
+    min_gx, max_gx = 1, Nx - 2
+    min_gy, max_gy = 1, Ny - 2
 
-    position = np.array([float(start_y), float(start_x)])
+    position = np.array([float(start_gx), float(start_gy)])
     trajectory = [position.copy()]
 
-    grid_pos = np.clip(np.round(position).astype(int), [min_y, min_x], [max_y, max_x])
+    grid_pos = np.clip(np.round(position).astype(int), [min_gx, min_gy], [max_gx, max_gy])
     W, _ = _compute_projection_matrix(encoded_Phi, grid_pos[0], grid_pos[1])
     steps_since_recompute = 0
 
     for _ in range(max_steps):
-        grid_pos = np.clip(np.round(position).astype(int), [min_y, min_x], [max_y, max_x])
+        grid_pos = np.clip(np.round(position).astype(int), [min_gx, min_gy], [max_gx, max_gy])
         state = torch.from_numpy(encoded_Phi[grid_pos[0], grid_pos[1]].copy()).float()
         current_np = state.numpy()
 
@@ -249,15 +254,15 @@ def simulate_trajectory(encoded_Phi, hopfield, start_y, start_x, goal_loc,
             W, _ = _compute_projection_matrix(encoded_Phi, grid_pos[0], grid_pos[1])
             steps_since_recompute = 0
 
-        (dy, dx), mag = _continuous_step(W, current_np, next_state.numpy(), scale, normalize)
+        (dgx, dgy), mag = _continuous_step(W, current_np, next_state.numpy(), scale, normalize)
         steps_since_recompute += 1
 
         if mag < 1e-6:
             break
 
-        new_position = position + np.array([dy, dx])
-        new_position[0] = np.clip(new_position[0], min_y, max_y)
-        new_position[1] = np.clip(new_position[1], min_x, max_x)
+        new_position = position + np.array([dgx, dgy])
+        new_position[0] = np.clip(new_position[0], min_gx, max_gx)
+        new_position[1] = np.clip(new_position[1], min_gy, max_gy)
 
         if np.linalg.norm(new_position - position) < 1e-6:
             break
@@ -275,75 +280,26 @@ def simulate_trajectory(encoded_Phi, hopfield, start_y, start_x, goal_loc,
 # Main evaluation
 # ---------------------------------------------------------------------------
 
-def run_navigation_eval(encoded_Phi, env_placements, eval_env_size, gain,
-                        hopfield_alpha=0.8,
-                        n_starts_per_env=100, max_steps_mult=3,
-                        scale=1.0, normalize=True, platform_radius=1.0,
-                        recompute_interval=1, rng=None,
-                        save_heatmaps=False, heatmap_dir=None):
-    """Run Hopfield navigation evaluation across multiple environments.
+def _eval_single_hopfield(encoded_Phi, chunk_placements, goal_locations, hopfield,
+                          eval_env_size, gain, local_vals,
+                          max_steps, scale, normalize, platform_radius,
+                          recompute_interval, hopfield_alpha,
+                          save_heatmaps, heatmap_dir, env_idx_offset):
+    """Evaluate a single Hopfield network across its environments.
 
-    Args:
-        encoded_Phi: np.ndarray (Npos, Npos, embed_dim) — full encoded grid.
-        env_placements: list of (y0, x0) — top-left corners of eval envs.
-        eval_env_size: int — side length of each eval env.
-        gain: float — used as Hopfield beta and for encoding (from model config).
-        hopfield_alpha: float — Hopfield recall mixing coefficient.
-        n_starts_per_env: int — target number of starting positions per env.
-        max_steps_mult: int — max_steps = max_steps_mult * eval_env_size.
-        scale: float — step size scale.
-        normalize: bool — normalize steps to unit length.
-        platform_radius: float — goal reached threshold (Euclidean).
-        recompute_interval: int — how often to recompute W.
-        rng: np.random.RandomState — random state.
-        save_heatmaps: bool — whether to save heatmap PNGs.
-        heatmap_dir: str — directory for heatmap PNGs (required if save_heatmaps).
-
-    Returns:
-        dict with keys:
-            'accuracy', 'mean_steps', 'mean_speed',
-            'mean_dist_success', 'mean_dist_fail',
-            'mean_dir_acc_success', 'mean_dir_acc_fail',
-            'per_env_results' (list of per-env dicts),
-            'figures' (list of matplotlib Figures, only if save_heatmaps).
+    Placements and goals use (gx, gy) convention: dim0 = x, dim1 = y.
     """
-    if rng is None:
-        rng = np.random.RandomState(42)
-
-    n_envs = len(env_placements)
-    if n_envs == 0:
-        return {'accuracy': float('nan'), 'per_env_results': []}
-
-    embed_dim = encoded_Phi.shape[2]
-    max_steps = max_steps_mult * eval_env_size
-
-    # --- Pick goals and build Hopfield ---
-    goal_locations = []
-    for y0, x0 in env_placements:
-        gy = y0 + rng.randint(0, eval_env_size)
-        gx = x0 + rng.randint(0, eval_env_size)
-        goal_locations.append((gy, gx))
-
-    hopfield = Hopfield(num_units=embed_dim, beta=gain, device="cpu")
-    for gy, gx in goal_locations:
-        goal_enc = torch.from_numpy(encoded_Phi[gy, gx].copy()).float()
-        hopfield.input_memory(goal_enc)
-
-    # --- Evenly spaced starts ---
-    n_per_side = int(np.ceil(np.sqrt(n_starts_per_env)))
-    local_vals = np.linspace(0, eval_env_size - 1, n_per_side).astype(int)
-
-    # --- Evaluate each environment ---
     per_env_results = []
     figures = []
 
-    for env_idx in range(n_envs):
-        y0, x0 = env_placements[env_idx]
-        goal_loc = goal_locations[env_idx]
-        goal_local = (goal_loc[0] - y0, goal_loc[1] - x0)
+    for local_idx in range(len(chunk_placements)):
+        global_idx = env_idx_offset + local_idx
+        gx0, gy0 = chunk_placements[local_idx]
+        goal_loc = goal_locations[local_idx]
+        goal_local = (goal_loc[0] - gx0, goal_loc[1] - gy0)
 
-        starts = [(sy, sx) for sy in local_vals for sx in local_vals
-                  if (sy, sx) != goal_local]
+        starts = [(sx, sy) for sx in local_vals for sy in local_vals
+                  if (sx, sy) != goal_local]
 
         successes = 0
         steps_list = []
@@ -354,12 +310,9 @@ def run_navigation_eval(encoded_Phi, env_placements, eval_env_size, gain,
         dir_acc_fail = []
         success_indices = set()
 
-        for i, (sy, sx) in enumerate(starts):
-            start_y = y0 + sy
-            start_x = x0 + sx
-
+        for i, (sx, sy) in enumerate(starts):
             traj = simulate_trajectory(
-                encoded_Phi, hopfield, start_y, start_x, goal_loc,
+                encoded_Phi, hopfield, gx0 + sx, gy0 + sy, goal_loc,
                 gain, max_steps, scale, normalize,
                 platform_radius, recompute_interval, hopfield_alpha,
             )
@@ -370,12 +323,10 @@ def run_navigation_eval(encoded_Phi, env_placements, eval_env_size, gain,
             final_dist = np.linalg.norm(final_pos - np.array(goal_loc, dtype=float))
             n_steps = len(traj) - 1
 
-            # Direction accuracy
             if n_steps > 0:
                 dists_along = np.linalg.norm(
                     traj - np.array(goal_loc, dtype=float), axis=1)
-                closer = np.sum(dists_along[1:] < dists_along[:-1])
-                da = closer / n_steps
+                da = float(np.sum(dists_along[1:] < dists_along[:-1])) / n_steps
             else:
                 da = float('nan')
 
@@ -394,8 +345,8 @@ def run_navigation_eval(encoded_Phi, env_placements, eval_env_size, gain,
 
         accuracy = successes / len(starts) if starts else 0.0
         env_result = {
-            'env_idx': env_idx,
-            'placement': (y0, x0),
+            'env_idx': global_idx,
+            'placement': (gx0, gy0),
             'goal': goal_loc,
             'n_starts': len(starts),
             'accuracy': accuracy,
@@ -408,7 +359,7 @@ def run_navigation_eval(encoded_Phi, env_placements, eval_env_size, gain,
         }
         per_env_results.append(env_result)
 
-        print(f"  Env {env_idx:2d} | acc={accuracy:.2f} | "
+        print(f"  Env {global_idx:2d} | acc={accuracy:.2f} | "
               f"dir_acc_succ={env_result['mean_dir_acc_success']:.2f} | "
               f"dir_acc_fail={env_result['mean_dir_acc_fail']:.2f} | "
               f"mean_steps={env_result['mean_steps']:5.1f} | "
@@ -416,22 +367,21 @@ def run_navigation_eval(encoded_Phi, env_placements, eval_env_size, gain,
               f"dist_succ={env_result['mean_dist_success']:.2f} | "
               f"dist_fail={env_result['mean_dist_fail']:.2f}")
 
-        # --- Heatmap ---
         if save_heatmaps:
             heatmap = np.full((eval_env_size, eval_env_size), np.nan)
-            for i, (sy, sx) in enumerate(starts):
-                heatmap[sy, sx] = 1.0 if i in success_indices else 0.0
+            for i, (sx, sy) in enumerate(starts):
+                heatmap[sx, sy] = 1.0 if i in success_indices else 0.0
 
             fig, ax = plt.subplots(figsize=(7, 7))
             im = ax.imshow(heatmap.T, origin='lower', cmap='RdYlGn', vmin=0, vmax=1,
                            extent=[0, eval_env_size, 0, eval_env_size])
-            gx_local = goal_loc[0] - y0
-            gy_local = goal_loc[1] - x0
-            ax.scatter(gx_local + 0.5, gy_local + 0.5, s=200, c='blue', marker='*',
+            local_gx = goal_loc[0] - gx0
+            local_gy = goal_loc[1] - gy0
+            ax.scatter(local_gx + 0.5, local_gy + 0.5, s=200, c='blue', marker='*',
                        edgecolors='white', linewidths=1.5, zorder=6, label='Goal')
-            ax.set_xlabel('Local Y')
-            ax.set_ylabel('Local X')
-            ax.set_title(f'Env {env_idx} | acc={accuracy:.2f} | '
+            ax.set_xlabel('Local X')
+            ax.set_ylabel('Local Y')
+            ax.set_title(f'Env {global_idx} | acc={accuracy:.2f} | '
                          f'dir_acc S={env_result["mean_dir_acc_success"]:.2f} '
                          f'F={env_result["mean_dir_acc_fail"]:.2f}',
                          fontsize=11, fontweight='bold')
@@ -443,18 +393,108 @@ def run_navigation_eval(encoded_Phi, env_placements, eval_env_size, gain,
 
             if heatmap_dir:
                 os.makedirs(heatmap_dir, exist_ok=True)
-                fig.savefig(os.path.join(heatmap_dir, f"heatmap_env{env_idx}.png"),
+                fig.savefig(os.path.join(heatmap_dir, f"heatmap_env{global_idx}.png"),
                             dpi=100, bbox_inches='tight')
             plt.close(fig)
 
-    # --- Aggregate ---
-    accs = [r['accuracy'] for r in per_env_results]
-    steps_all = [r['mean_steps'] for r in per_env_results if not np.isnan(r['mean_steps'])]
-    speeds_all = [r['mean_speed'] for r in per_env_results if not np.isnan(r['mean_speed'])]
-    ds = [r['mean_dist_success'] for r in per_env_results if not np.isnan(r['mean_dist_success'])]
-    df = [r['mean_dist_fail'] for r in per_env_results if not np.isnan(r['mean_dist_fail'])]
-    das = [r['mean_dir_acc_success'] for r in per_env_results if not np.isnan(r['mean_dir_acc_success'])]
-    daf = [r['mean_dir_acc_fail'] for r in per_env_results if not np.isnan(r['mean_dir_acc_fail'])]
+    return per_env_results, figures
+
+
+def run_navigation_eval(encoded_Phi, env_placements, eval_env_size, gain,
+                        hopfield_alpha=0.8,
+                        n_starts_per_env=100, max_steps_mult=3,
+                        scale=1.0, normalize=True, platform_radius=1.0,
+                        recompute_interval=1, rng=None,
+                        num_hopfields=1,
+                        save_heatmaps=False, heatmap_dir=None):
+    """Run Hopfield navigation evaluation across multiple environments.
+
+    Splits env_placements into `num_hopfields` groups, builds a separate
+    Hopfield network for each group, and evaluates all environments.
+    This avoids Hopfield capacity issues when testing many environments.
+
+    Coordinates use (gx, gy) convention: dim0 = x (East), dim1 = y (North).
+
+    Args:
+        encoded_Phi: np.ndarray (Npos, Npos, embed_dim) — full encoded grid,
+            indexed as encoded_Phi[gx, gy].
+        env_placements: list of (gx0, gy0) — top-left corners of eval envs.
+            Length should be num_hopfields * envs_per_hopfield.
+        eval_env_size: int — side length of each eval env.
+        gain: float — used as Hopfield beta (from model config gain).
+        hopfield_alpha: float — Hopfield recall mixing coefficient.
+        n_starts_per_env: int — target number of starting positions per env.
+        max_steps_mult: int — max_steps = max_steps_mult * eval_env_size.
+        scale: float — step size scale.
+        normalize: bool — normalize steps to unit length.
+        platform_radius: float — goal reached threshold (Euclidean).
+        recompute_interval: int — how often to recompute W.
+        rng: np.random.RandomState — random state.
+        num_hopfields: int — number of separate Hopfield networks to use.
+        save_heatmaps: bool — whether to save heatmap PNGs.
+        heatmap_dir: str — directory for heatmap PNGs (required if save_heatmaps).
+
+    Returns:
+        dict with aggregate metrics and per_env_results list.
+    """
+    if rng is None:
+        rng = np.random.RandomState(42)
+
+    n_total = len(env_placements)
+    if n_total == 0:
+        return {'accuracy': float('nan'), 'per_env_results': []}
+
+    embed_dim = encoded_Phi.shape[2]
+    max_steps = max_steps_mult * eval_env_size
+
+    # Evenly spaced starts (shared across all envs)
+    n_per_side = int(np.ceil(np.sqrt(n_starts_per_env)))
+    local_vals = np.linspace(0, eval_env_size - 1, n_per_side).astype(int)
+
+    # Chunk placements into groups for separate Hopfield networks
+    envs_per_hop = max(1, n_total // num_hopfields)
+    chunks = []
+    for i in range(0, n_total, envs_per_hop):
+        chunks.append(env_placements[i:i + envs_per_hop])
+
+    all_per_env_results = []
+    all_figures = []
+    env_idx_offset = 0
+
+    for hop_idx, chunk in enumerate(chunks):
+        print(f"  Hopfield {hop_idx} ({len(chunk)} envs):")
+
+        # Pick goals and build Hopfield for this chunk
+        goal_locations = []
+        for gx0, gy0 in chunk:
+            goal_gx = gx0 + rng.randint(0, eval_env_size)
+            goal_gy = gy0 + rng.randint(0, eval_env_size)
+            goal_locations.append((goal_gx, goal_gy))
+
+        hopfield = Hopfield(num_units=embed_dim, beta=gain, device="cpu")
+        for goal_gx, goal_gy in goal_locations:
+            goal_enc = torch.from_numpy(encoded_Phi[goal_gx, goal_gy].copy()).float()
+            hopfield.input_memory(goal_enc)
+
+        chunk_results, chunk_figs = _eval_single_hopfield(
+            encoded_Phi, chunk, goal_locations, hopfield,
+            eval_env_size, gain, local_vals,
+            max_steps, scale, normalize, platform_radius,
+            recompute_interval, hopfield_alpha,
+            save_heatmaps, heatmap_dir, env_idx_offset,
+        )
+        all_per_env_results.extend(chunk_results)
+        all_figures.extend(chunk_figs)
+        env_idx_offset += len(chunk)
+
+    # --- Aggregate across all envs ---
+    accs = [r['accuracy'] for r in all_per_env_results]
+    steps_all = [r['mean_steps'] for r in all_per_env_results if not np.isnan(r['mean_steps'])]
+    speeds_all = [r['mean_speed'] for r in all_per_env_results if not np.isnan(r['mean_speed'])]
+    ds = [r['mean_dist_success'] for r in all_per_env_results if not np.isnan(r['mean_dist_success'])]
+    df = [r['mean_dist_fail'] for r in all_per_env_results if not np.isnan(r['mean_dist_fail'])]
+    das = [r['mean_dir_acc_success'] for r in all_per_env_results if not np.isnan(r['mean_dir_acc_success'])]
+    daf = [r['mean_dir_acc_fail'] for r in all_per_env_results if not np.isnan(r['mean_dir_acc_fail'])]
 
     result = {
         'accuracy': float(np.mean(accs)) if accs else float('nan'),
@@ -465,9 +505,9 @@ def run_navigation_eval(encoded_Phi, env_placements, eval_env_size, gain,
         'mean_dist_fail': float(np.mean(df)) if df else float('nan'),
         'mean_dir_acc_success': float(np.mean(das)) if das else float('nan'),
         'mean_dir_acc_fail': float(np.mean(daf)) if daf else float('nan'),
-        'per_env_results': per_env_results,
+        'per_env_results': all_per_env_results,
     }
     if save_heatmaps:
-        result['figures'] = figures
+        result['figures'] = all_figures
 
     return result

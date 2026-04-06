@@ -1,0 +1,30 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python3 -c \" import json with open\\(''notebooks/agent_testing.ipynb'', ''r''\\) as f: nb = json.load\\(f\\) for i, cell in enumerate\\(nb[''cells'']\\): if cell[''cell_type''] == ''code'': src = ''''.join\\(cell[''source'']\\) if ''ALPHA'' in src or ''alpha'' in src or ''beta'' in src or ''hop.recall'' in src: print\\(f''Cell {i}:''\\) print\\(src\\) print\\(''---''\\) \")",
+      "Bash(python3:*)",
+      "Bash(python -c:*)",
+      "Bash(module load:*)",
+      "Bash(source activate cls)",
+      "Bash(python train.py:*)",
+      "Bash(while:*)",
+      "Bash(do sleep 10)",
+      "Bash(done)",
+      "Bash(sbatch:*)",
+      "Bash(squeue:*)",
+      "Bash(scontrol show:*)",
+      "Bash(sinfo -p pi_evelina9 --format=\"%P %a %D %C\")",
+      "Bash(sinfo:*)",
+      "Bash(sacct:*)",
+      "Bash(WANDB_API_KEY=5aee75a09d43e7f6c9ec80e003687a8a3a820b08 wandb sweep sweep_encoder.yaml --project dist-encoder 2>&1)",
+      "Skill(schedule)",
+      "Bash(git checkout:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(sed 's/^#[ ]\\\\?//')",
+      "Read(//tmp/**)",
+      "Bash(find:*)",
+      "Bash(grep -n \"def similarity_analysis\\\\|def.*similarity\\\\|distance.*analysis\" /orcd/home/002/jackking/cls/notebooks/*.py)"
+    ]
+  }
+}

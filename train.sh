@@ -1,16 +1,16 @@
 #!/bin/bash -l
 #SBATCH --job-name=cls
-#SBATCH --time=1-00:00:00
-#SBATCH --gres=gpu:a100:1
-###SBATCH --gres=gpu:1
+#SBATCH --time=0-06:00:00
+###SBATCH --gres=gpu:a100:1
+#SBATCH --gres=gpu:1
 ###SBATCH --gres=gpu:GEFORCERTX2080:2
 
 #SBATCH --ntasks=1
 #SBATCH --mail-type=ALL
 #SBATCH --mail-user=jackking@mit.edu
-#SBATCH --partition=pi_fiete
-###SBATCH --partition=mit_normal_gpu
-#SBATCH --mem=50G
+###SBATCH --partition=pi_evelina9
+#SBATCH --partition=mit_normal_gpu
+#SBATCH --mem=100G
 
 module load miniforge/24.3.0-0
 module load cuda/13.0.1

@@ -36,7 +36,7 @@ from cls.vectorhash.seq_utils import *
 from cls.vectorhash.assoc_utils_np import *
 from cls.vectorhash.senstranspose_utils import *
 from cls.vectorhash.assoc_utils_np_2D import gen_gbook_2d, path_integration_Wgg_2d, module_wise_NN_2d
-from cls.encoder import GridEncoder, GridEncoderCNN
+from cls.encoder import GridEncoder, GridEncoderCNN, create_encoder
 from cls.eval.nav_eval import (
     encode_full_grid, sample_train_eval_envs, sample_val_eval_envs, run_navigation_eval
 )
@@ -863,41 +863,15 @@ def load_encoder(encoder_name, encoders_dir=None, device=None):
     encoders_dir = "/home/jackking/cls/encoders"
     if device is None:
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    
+
     encoder_path = os.path.join(encoders_dir, encoder_name)
     checkpoint = torch.load(encoder_path, map_location=device, weights_only=False)
-    
+
     config = checkpoint["config"]
-    sweep_params = checkpoint.get("sweep_params", {})
-    training_info = checkpoint.get("training_info", {})
-    lambdas = config["model_params"]["lambdas"]
-    hidden_channels = config["model_params"]["hidden_channels"]
-    num_hidden_layers = config["model_params"].get("num_hidden_layers", 1)
-    kernel_size = config["model_params"].get("kernel_size", 3)
-    hidden_dim = config["model_params"]["hidden_dim"]
-    out_dim = config["model_params"]["out_dim"]
-    nonlinearity = config["model_params"]["nonlinearity"]
-    output_nonlinearity = config["model_params"]["output_nonlinearity"]
-    
-    # Create encoder
-    # encoder = SphericalMLP(
-    #     in_dim=in_dim,
-    #     hidden=config["hidden"],
-    #     out_dim=config["out_dim"],
-    #     nonlinearity=config.get("nonlinearity", "gelu"),
-    #     output_nonlinearity=config.get("output_nonlinearity", "tanh"),
-    # ).to(device)
+    # Default to "cnn" for checkpoints saved before encoder_type was added
+    config["model_params"].setdefault("encoder_type", "cnn")
 
-    encoder = GridEncoderCNN(lambdas, 
-        hidden_channels=hidden_channels,
-        out_dim=out_dim, 
-        hidden_dim=hidden_dim, 
-        nonlinearity=nonlinearity,    
-        output_nonlinearity=output_nonlinearity,
-        num_hidden_layers=num_hidden_layers,
-        kernel_size=kernel_size
-    ).to(device)
-
+    encoder = create_encoder(config, device=device)
     encoder.load_state_dict(checkpoint["state_dict"])
     encoder.eval()
 
@@ -1013,10 +987,13 @@ def extract_patches_to_flat(
     return Phi_flat, X
 
 
-def train(Phi, config, save_every=True, encoders_dir="/home/jackking/cls/encoders"):
+def train(config, save_every=True, encoders_dir="/home/jackking/cls/encoders"):
     # --- Extract config ---
     lambdas = config["model_params"]["lambdas"]
-    full_Npos = config["model_params"].get("full_Npos", np.prod(lambdas))
+    full_Npos = np.prod(lambdas)
+
+    # --- Input type ---
+    input_type = config["model_params"].get("input_type", "smoothed")
     Npos = config["model_params"]["Npos"]
     Nenv = config["model_params"].get("Nenv", 1)
     num_layers = config["model_params"]["num_layers"]
@@ -1072,11 +1049,11 @@ def train(Phi, config, save_every=True, encoders_dir="/home/jackking/cls/encoder
 
     # Nav eval params
     nav_cfg = config.get("nav_eval_params", {})
-    nav_eval_every = nav_cfg.get("eval_every", 30)
+    nav_eval_every = nav_cfg.get("eval_every", 10)
     nav_eval_env_size = nav_cfg.get("eval_env_size", 20)
     nav_n_train_envs = nav_cfg.get("n_train_envs", 5)
     nav_n_val_envs = nav_cfg.get("n_val_envs", 5)
-    nav_n_val_envs_final = nav_cfg.get("n_val_envs_final", 5)
+    nav_num_hopfields = nav_cfg.get("num_hopfields", 5)
     nav_n_starts = nav_cfg.get("n_starts_per_env", 100)
     nav_max_steps_mult = nav_cfg.get("max_steps_mult", 3)
     nav_scale = nav_cfg.get("scale", 1.0)
@@ -1090,7 +1067,10 @@ def train(Phi, config, save_every=True, encoders_dir="/home/jackking/cls/encoder
 
     # --- Wandb init ---
     if use_wandb:
-        wandb.init(project=wandb_project, config=config)
+        if wandb.run is None:
+            wandb.init(project=wandb_project, config=config)
+        else:
+            wandb.config.update(config, allow_val_change=True)
         run_name = wandb.run.name
     else:
         run_name = f"run_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
@@ -1099,10 +1079,8 @@ def train(Phi, config, save_every=True, encoders_dir="/home/jackking/cls/encoder
     os.makedirs(run_dir, exist_ok=True)
     print(f"Run directory: {run_dir}")
 
-    # --- Phi: [code_dim, H_full, W_full] ---
-    code_dim, H_full, W_full = Phi.shape
-
-    # Sample Nenv non-overlapping patches of size Npos x Npos
+    # --- Sample patches and build Phi_flat ---
+    H_full = W_full = full_Npos
     y0s, x0s = sample_nonoverlapping_patches(H_full, W_full, Npos, Nenv)
 
     # Save patch visualization
@@ -1126,10 +1104,37 @@ def train(Phi, config, save_every=True, encoders_dir="/home/jackking/cls/encoder
     fig.savefig(os.path.join(run_dir, "patches.png"), dpi=100, bbox_inches='tight')
     if use_wandb:
         wandb.log({"patches": wandb.Image(fig)})
-    plt.show()
+    plt.close(fig)
 
-    # Extract patches and get flattened Phi values with original coordinates
-    Phi_flat, X = extract_patches_to_flat(Phi, y0s, x0s, Npos, device)
+    # Build Phi_flat and X from patches
+    if input_type == "smoothed":
+        Ng = np.sum(np.square(lambdas))
+        gbook = gen_gbook_2d(lambdas, Ng, full_Npos)
+        Phi_full = torch.tensor(smooth_gbook(gbook, lambdas, 0.25), dtype=torch.float32)
+        del gbook
+        Phi_flat, X = extract_patches_to_flat(Phi_full, y0s, x0s, Npos, device)
+    elif input_type == "rhc":
+        rhc_D = config["model_params"]["rhc_D"]
+        rhc_encoder = RHCEncoder(lambdas, rhc_D)
+        # Collect patch positions
+        all_ys, all_xs = [], []
+        for i in range(Nenv):
+            ys_patch, xs_patch = torch.meshgrid(
+                torch.arange(y0s[i], y0s[i] + Npos),
+                torch.arange(x0s[i], x0s[i] + Npos),
+                indexing="ij"
+            )
+            all_ys.append(ys_patch.reshape(-1))
+            all_xs.append(xs_patch.reshape(-1))
+        all_ys = torch.cat(all_ys)
+        all_xs = torch.cat(all_xs)
+        X = torch.stack([all_ys.float(), all_xs.float()], dim=-1).to(device)
+        Phi_flat = torch.tensor(
+            rhc_encoder.encode_positions(all_xs.numpy(), all_ys.numpy()),
+            dtype=torch.float32
+        ).to(device)
+    else:
+        raise ValueError(f"Unknown input_type: {input_type}")
 
     N = Phi_flat.shape[0]  # Nenv * Npos * Npos
     H, W = Npos, Npos
@@ -1139,7 +1144,32 @@ def train(Phi, config, save_every=True, encoders_dir="/home/jackking/cls/encoder
     triples_all = build_grid_triples(H, W, stride=triple_stride, include_diagonals=include_diagonals, both_directions=True)
     print(f"Precomputed {triples_all.size(0)} curvature triples.")
 
-    encoder = GridEncoderCNN(lambdas, hidden_channels=hidden_channels, out_dim=embed_dim, hidden_dim=hidden_dim, nonlinearity="gelu", output_nonlinearity=output_nonlinearity, num_conv_layers=num_layers, kernel_size=kernel_size, num_hidden_layers=num_hidden_layers).to(device)
+    # Helper to encode the full grid for visualization / nav eval
+    def encode_full_grid_viz(enc, g, batch_size=1000):
+        """Encode full Npos x Npos grid → (full_Npos, full_Npos, embed_dim) numpy."""
+        parts = []
+        was_training = enc.training
+        enc.eval()
+        N_total = full_Npos * full_Npos
+        with torch.no_grad():
+            if input_type == "smoothed":
+                flat = Phi_full.reshape(Phi_full.shape[0], -1).T  # (N, code_dim)
+                for i in range(0, N_total, batch_size):
+                    parts.append(enc(flat[i:i+batch_size].to(device), gain=g).cpu())
+            else:  # rhc — encode in batches to avoid OOM
+                all_positions = np.mgrid[0:full_Npos, 0:full_Npos].reshape(2, -1)  # (2, N)
+                all_ys, all_xs = all_positions[0], all_positions[1]
+                for i in range(0, N_total, batch_size):
+                    chunk = torch.tensor(
+                        rhc_encoder.encode_positions(all_xs[i:i+batch_size], all_ys[i:i+batch_size]),
+                        dtype=torch.float32,
+                    ).to(device)
+                    parts.append(enc(chunk, gain=g).cpu())
+        if was_training:
+            enc.train()
+        return torch.cat(parts, 0).reshape(full_Npos, full_Npos, -1).numpy()
+
+    encoder = create_encoder(config, device=device)
 
     optim = torch.optim.AdamW(encoder.parameters(), lr=lr, weight_decay=1e-4)
 
@@ -1155,6 +1185,8 @@ def train(Phi, config, save_every=True, encoders_dir="/home/jackking/cls/encoder
         rand_idx_y, rand_idx_x = np.random.randint(0, full_Npos), np.random.randint(0, full_Npos)
 
     nav_eval_rng = np.random.RandomState(42)
+    best_train_nav_acc = float('-inf')
+    best_val_nav_acc = float('-inf')
 
     # --- Training loop ---
     for ep in range(1, epochs + 1):
@@ -1229,7 +1261,7 @@ def train(Phi, config, save_every=True, encoders_dir="/home/jackking/cls/encoder
 
         # --- Cosine similarity visualization (every 10 epochs) ---
         if ep % 10 == 0:
-            encoded_Phi_grid = encode_full_grid(encoder, Phi.numpy(), gain, device)
+            encoded_Phi_grid = encode_full_grid_viz(encoder, gain)
 
             def _save_cosine_sim_plot(encoded_grid, idx_y, idx_x, suffix):
                 phix = encoded_grid[idx_y, idx_x, :]
@@ -1245,9 +1277,7 @@ def train(Phi, config, save_every=True, encoders_dir="/home/jackking/cls/encoder
                 fig.savefig(path, dpi=100, bbox_inches='tight')
                 if use_wandb:
                     wandb.log({f"viz/cosine_sim_{suffix}": wandb.Image(fig)}, step=ep)
-                plt.show()
-                plt.plot(cosine_sims[idx_y])
-                plt.show()
+                plt.close(fig)
 
             _save_cosine_sim_plot(encoded_Phi_grid, viz_idx_y, viz_idx_x, "train")
             _save_cosine_sim_plot(encoded_Phi_grid, rand_idx_y, rand_idx_x, "val")
@@ -1255,19 +1285,22 @@ def train(Phi, config, save_every=True, encoders_dir="/home/jackking/cls/encoder
         # --- Navigation eval ---
         if nav_eval_every > 0 and ep % nav_eval_every == 0:
             is_final = (ep == epochs)
-            n_val = nav_n_val_envs_final if is_final else nav_n_val_envs
             save_heatmaps = is_final and nav_save_heatmaps_final
             heatmap_dir = os.path.join(run_dir, "heatmaps") if save_heatmaps else None
 
-            print(f"\n--- Nav eval (epoch {ep}) ---")
+            n_train_total = nav_num_hopfields * nav_n_train_envs
+            n_val_total = nav_num_hopfields * nav_n_val_envs
+
+            print(f"\n--- Nav eval (epoch {ep}) | {nav_num_hopfields} Hopfields x "
+                  f"{nav_n_train_envs} train + {nav_n_val_envs} val envs ---")
             # Encode full grid with current encoder weights
-            encoded_Phi_nav = encode_full_grid(encoder, Phi.numpy(), gain, device)
+            encoded_Phi_nav = encode_full_grid_viz(encoder, gain)
 
             # Train nav eval
             train_placements = sample_train_eval_envs(
-                y0s, x0s, Npos, nav_eval_env_size, nav_n_train_envs, nav_eval_rng)
+                y0s, x0s, Npos, nav_eval_env_size, n_train_total, nav_eval_rng)
             if train_placements:
-                print(f"  Train nav eval ({len(train_placements)} envs):")
+                print(f"  Train nav eval ({len(train_placements)} envs, {nav_num_hopfields} Hopfields):")
                 train_nav = run_navigation_eval(
                     encoded_Phi_nav, train_placements, nav_eval_env_size, gain,
                     hopfield_alpha=nav_hopfield_alpha,
@@ -1275,6 +1308,7 @@ def train(Phi, config, save_every=True, encoders_dir="/home/jackking/cls/encoder
                     scale=nav_scale, normalize=nav_normalize,
                     platform_radius=nav_platform_radius,
                     recompute_interval=nav_recompute_interval, rng=nav_eval_rng,
+                    num_hopfields=nav_num_hopfields,
                 )
                 print(f"  Train nav: acc={train_nav['accuracy']:.3f} | "
                       f"steps={train_nav['mean_steps']:.1f} | speed={train_nav['mean_speed']:.3f}")
@@ -1288,12 +1322,14 @@ def train(Phi, config, save_every=True, encoders_dir="/home/jackking/cls/encoder
                         "train_nav/dir_acc_success": train_nav["mean_dir_acc_success"],
                         "train_nav/dir_acc_fail": train_nav["mean_dir_acc_fail"],
                     }, step=ep)
+                    best_train_nav_acc = max(best_train_nav_acc, train_nav["accuracy"])
+                    wandb.run.summary["train_nav/accuracy"] = best_train_nav_acc
 
             # Val nav eval
             val_placements = sample_val_eval_envs(
-                H_full, W_full, y0s, x0s, Npos, nav_eval_env_size, n_val, nav_eval_rng)
+                H_full, W_full, y0s, x0s, Npos, nav_eval_env_size, n_val_total, nav_eval_rng)
             if val_placements:
-                print(f"  Val nav eval ({len(val_placements)} envs):")
+                print(f"  Val nav eval ({len(val_placements)} envs, {nav_num_hopfields} Hopfields):")
                 val_nav = run_navigation_eval(
                     encoded_Phi_nav, val_placements, nav_eval_env_size, gain,
                     hopfield_alpha=nav_hopfield_alpha,
@@ -1301,6 +1337,7 @@ def train(Phi, config, save_every=True, encoders_dir="/home/jackking/cls/encoder
                     scale=nav_scale, normalize=nav_normalize,
                     platform_radius=nav_platform_radius,
                     recompute_interval=nav_recompute_interval, rng=nav_eval_rng,
+                    num_hopfields=nav_num_hopfields,
                     save_heatmaps=save_heatmaps, heatmap_dir=heatmap_dir,
                 )
                 print(f"  Val nav: acc={val_nav['accuracy']:.3f} | "
@@ -1315,13 +1352,15 @@ def train(Phi, config, save_every=True, encoders_dir="/home/jackking/cls/encoder
                         "val_nav/dir_acc_success": val_nav["mean_dir_acc_success"],
                         "val_nav/dir_acc_fail": val_nav["mean_dir_acc_fail"],
                     }, step=ep)
+                    best_val_nav_acc = max(best_val_nav_acc, val_nav["accuracy"])
+                    wandb.run.summary["val_nav/accuracy"] = best_val_nav_acc
                     # Log heatmap images at final epoch
                     if save_heatmaps and "figures" in val_nav:
                         for fi, fig in enumerate(val_nav["figures"]):
                             wandb.log({f"val_nav/heatmap_env{fi}": wandb.Image(fig)}, step=ep)
 
             print(f"--- End nav eval ---\n")
-
+        encoder.train()
     # --- Final save ---
     save_encoder(encoder, config, "encoder_final.pt", encoders_dir=run_dir)
     print(f"Final encoder saved to {run_dir}/encoder_final.pt")
@@ -1340,40 +1379,38 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     lambdas = [11, 12, 13]
-    Ng = np.sum(np.square(lambdas))
-    Npos = np.prod(lambdas)
-    gbook = gen_gbook_2d(lambdas, Ng, Npos)
-    Phi_np = smooth_gbook(gbook, lambdas, 0.25)
-    Phi = torch.tensor(Phi_np, dtype=torch.float32)
 
     config = {
         "model_params": {
             "lambdas": lambdas,
-            "hidden_dim": 512,
+            "hidden_dim": 1024,
             "hidden_channels": 128,
             "num_layers": 3,
-            "out_dim": 128,
-            "num_hidden_layers": 2,
+            "out_dim": 256,
+            "num_hidden_layers": 4,
             "kernel_size": 5,
             "nonlinearity": "gelu",
             "output_nonlinearity": "tanh",
-            "gain": 5,
+            "gain": 3,
             "Npos": 50,
-            "Nenv": 50,
+            "Nenv": 100,
+            "encoder_type": "mlp",
+            "input_type": "smoothed",
+            "rhc_D": 256,
         },
         "training_params": {
-            "lr": 0.0001,
-            "batch_size": 8192,
+            "lr": 0.00023025494644580443,
+            "batch_size": 4096,
             "epochs": 200,
             "gain_start": 1,
-            "gain_end": 5,
+            "gain_end": 3,
             "gain_up_epochs": 50,
             "uniformity_lambda_start": 0,
-            "uniformity_lambda_end": 0.1,
+            "uniformity_lambda_end": 0.07487417081836345,
             "uniformity_lambda_scale_up_epochs": 25,
             "cka_alpha": 1,
-            "cka_topk": 20,
-            "mod_loss_lambda": 0.75,
+            "cka_topk": 5,
+            "mod_loss_lambda": 1,
         },
         "wandb_params": {
             "use_wandb": True,
@@ -1382,9 +1419,9 @@ if __name__ == "__main__":
         "nav_eval_params": {
             "eval_every": 20,
             "eval_env_size": 20,
-            "n_train_envs": 10,
-            "n_val_envs": 20,
-            "n_val_envs_final": 50,
+            "n_train_envs": 5,
+            "n_val_envs": 5,
+            "num_hopfields": 20,
             "n_starts_per_env": 100,
             "max_steps_mult": 3,
             "scale": 1.0,
@@ -1392,7 +1429,7 @@ if __name__ == "__main__":
             "platform_radius": 1.0,
             "recompute_interval": 1,
             "hopfield_alpha": 0.8,
-            "save_heatmaps_final": True,
+            "save_heatmaps_final": False,
         },
     }
 
@@ -1406,22 +1443,23 @@ if __name__ == "__main__":
         config["nav_eval_params"]["eval_every"] = 2
         config["nav_eval_params"]["n_train_envs"] = 2
         config["nav_eval_params"]["n_val_envs"] = 2
-        config["nav_eval_params"]["n_val_envs_final"] = 3
+        config["nav_eval_params"]["num_hopfields"] = 2
         config["nav_eval_params"]["n_starts_per_env"] = 16
         print("=== SMOKE TEST MODE ===")
-        encoder = train(Phi, config, save_every=False)
+        encoder = train(config, save_every=False)
     else:
-        cka_topks = [5, 10, 20, 40]
-        mod_loss_lambdas = [2, 3, 4]
-        out_dims = [128, 256]
-        Nenvs = [25, 50, 100]
+        encoder = train(config, save_every=False)
+        # cka_topks = [20] #[5, 10, 20, 40]
+        # mod_loss_lambdas = [0.75] #[2, 3, 4]
+        # out_dims = [128]
+        # Nenvs = [200]
 
-        iterator = product(cka_topks, mod_loss_lambdas, out_dims, Nenvs)
-        for cka_topk, mod_loss_lambda, out_dim, Nenv in iterator:
-            config["training_params"]["cka_topk"] = cka_topk
-            config["training_params"]["mod_loss_lambda"] = mod_loss_lambda
-            config["model_params"]["out_dim"] = out_dim
-            config["model_params"]["Nenv"] = Nenv
-            print(f"Training with cka_topk={cka_topk}, mod_loss_lambda={mod_loss_lambda}, out_dim={out_dim}, Nenv={Nenv}")
-            encoder = train(Phi, config, save_every=False)
-            print(f"--------------------------------")
+        # iterator = product(cka_topks, mod_loss_lambdas, out_dims, Nenvs)
+        # for cka_topk, mod_loss_lambda, out_dim, Nenv in iterator:
+        #     config["training_params"]["cka_topk"] = cka_topk
+        #     config["training_params"]["mod_loss_lambda"] = mod_loss_lambda
+        #     config["model_params"]["out_dim"] = out_dim
+        #     config["model_params"]["Nenv"] = Nenv
+        #     print(f"Training with cka_topk={cka_topk}, mod_loss_lambda={mod_loss_lambda}, out_dim={out_dim}, Nenv={Nenv}")
+        #     encoder = train(Phi, config, save_every=False)
+        #     print(f"--------------------------------")

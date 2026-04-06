@@ -4,25 +4,46 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 class GridEncoder(nn.Module):
-    def __init__(self, in_dim: int, hidden: int, out_dim: int, nonlinearity: str = "gelu", output_nonlinearity: str = "tanh", gain: float = 1.0):
+    def __init__(self, lambdas: list[int], hidden_dim: int = 512,
+                 num_hidden_layers: int = 2, out_dim: int = 128,
+                 nonlinearity: str = "gelu", output_nonlinearity: str = "tanh",
+                 gain: float = 1.0, in_dim: int | None = None, **kwargs):
         super().__init__()
-        act = {"relu": nn.ReLU, "gelu": nn.GELU, "tanh": nn.Tanh}.get(nonlinearity.lower(), nn.GELU)
-        self.net = nn.Sequential(
-            nn.Linear(in_dim, hidden),
-            act(),
-            nn.Linear(hidden, out_dim),
-        )
+        if in_dim is None:
+            in_dim = sum(l * l for l in lambdas)
         self.output_nonlinearity = output_nonlinearity
         self.gain = gain
 
+        act = {"relu": nn.ReLU, "gelu": nn.GELU, "tanh": nn.Tanh}.get(
+            nonlinearity.lower(), nn.GELU)
+
+        layers = []
+        layers.append(nn.Linear(in_dim, hidden_dim))
+        layers.append(act())
+        for _ in range(num_hidden_layers - 1):
+            layers.append(nn.Linear(hidden_dim, hidden_dim))
+            layers.append(act())
+        layers.append(nn.Linear(hidden_dim, out_dim))
+        self.net = nn.Sequential(*layers)
+
     def forward(self, x: torch.Tensor, gain: float | None = None) -> torch.Tensor:
-        z = self.net(x)                         # [B, out_dim]
+        if x.dim() == 3:
+            B, T, D = x.shape
+            x = x.reshape(B * T, D)
+            squeeze_time = True
+        else:
+            squeeze_time = False
+
+        z = self.net(x)
         g = gain if gain is not None else self.gain
         if self.output_nonlinearity == "tanh":
             z = torch.tanh(g * z)
         elif self.output_nonlinearity == "sigmoid":
             z = torch.sigmoid(g * z)
-        z = F.normalize(z, p=2, dim=-1)          # project to unit sphere
+        z = F.normalize(z, p=2, dim=-1)
+
+        if squeeze_time:
+            z = z.reshape(B, T, -1)
         return z
 
 
@@ -157,3 +178,50 @@ class GridEncoderCNN(nn.Module):
         for k, v in state_dict.items():
             remapped[key_map.get(k, k)] = v
         return nn.Module.load_state_dict(self, remapped, strict=strict, **kwargs)
+
+
+def create_encoder(config, device=None):
+    """Create encoder from config, dispatching on encoder_type."""
+    mp = config["model_params"]
+    encoder_type = mp.get("encoder_type", "cnn")
+    lambdas = mp["lambdas"]
+    input_type = mp.get("input_type", "smoothed")
+
+    if input_type == "rhc" and encoder_type != "mlp":
+        raise ValueError(f"input_type='rhc' requires encoder_type='mlp', got '{encoder_type}'")
+
+    # Determine in_dim override for RHC input
+    in_dim = None
+    if input_type == "rhc":
+        in_dim = 2 * mp["rhc_D"]
+
+    if encoder_type == "mlp":
+        encoder = GridEncoder(
+            lambdas=lambdas,
+            hidden_dim=mp.get("hidden_dim", 512),
+            num_hidden_layers=mp.get("num_hidden_layers", 2),
+            out_dim=mp.get("out_dim", 128),
+            nonlinearity=mp.get("nonlinearity", "gelu"),
+            output_nonlinearity=mp.get("output_nonlinearity", "tanh"),
+            gain=mp.get("gain", 1.0),
+            in_dim=in_dim,
+        )
+    elif encoder_type == "cnn":
+        encoder = GridEncoderCNN(
+            lambdas=lambdas,
+            hidden_channels=mp.get("hidden_channels", 128),
+            num_conv_layers=mp.get("num_layers", 3),
+            kernel_size=mp.get("kernel_size", 5),
+            num_hidden_layers=mp.get("num_hidden_layers", 2),
+            hidden_dim=mp.get("hidden_dim", 512),
+            out_dim=mp.get("out_dim", 128),
+            nonlinearity=mp.get("nonlinearity", "gelu"),
+            output_nonlinearity=mp.get("output_nonlinearity", "tanh"),
+            gain=mp.get("gain", 1.0),
+        )
+    else:
+        raise ValueError(f"Unknown encoder_type: {encoder_type}")
+
+    if device is not None:
+        encoder = encoder.to(device)
+    return encoder
