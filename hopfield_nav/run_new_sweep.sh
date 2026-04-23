@@ -6,7 +6,7 @@
 #SBATCH --cpus-per-task=4
 #SBATCH --mail-type=ALL
 #SBATCH --mail-user=jackking@mit.edu
-#SBATCH --partition=pi_fiete
+#SBATCH --partition=pi_evelina9
 #SBATCH --mem=100G
 #SBATCH --output=/home/jackking/cls/hopfield_nav/logs/slurm_hnav_sweep_%j.out
 
