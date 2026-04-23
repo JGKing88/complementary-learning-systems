@@ -55,7 +55,7 @@ COMMON="--encoder_checkpoint encoders/confused-sweep-160/encoder_final.pt \
     --no-input_encoded_state \
     --num_worlds 1 \
     --envs_per_world 2 \
-    --val_envs_per_world 1 \
+    --num_val_envs 1 \
     --batch_envs 16 \
     --steps_per_rollout 128 \
     --n_updates 1000 \
@@ -91,7 +91,7 @@ python -m hopfield_nav.train \
     --no-input_encoded_state \
     --num_worlds 1 \
     --envs_per_world 2 \
-    --val_envs_per_world 1 \
+    --num_val_envs 1 \
     --batch_envs 16 \
     --steps_per_rollout 32 \
     --n_updates 200 \

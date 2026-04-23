@@ -5,7 +5,6 @@ from datetime import datetime
 
 import numpy as np
 import matplotlib
-matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 from matplotlib.lines import Line2D
 
@@ -137,6 +136,55 @@ def weighted_kernel_alignment_loss(
     num = (A * Bm).sum()
     den = torch.sqrt(A.square().sum().clamp_min(eps)) * torch.sqrt(Bm.square().sum().clamp_min(eps))
     return 1.0 - num / den
+
+
+def local_attract_far_repel_loss(
+    K_pred: torch.Tensor,   # [B, B] cosine similarity
+    K_tgt: torch.Tensor,    # [B, B] RBF target kernel
+    topk: int = 5,
+    centered: bool = True,
+    far_lambda: float = 1.0,
+    eps: float = 1e-8,
+) -> torch.Tensor:
+    """
+    Local pairs (top-K nearest by K_tgt): kernel alignment loss.
+    Far pairs (not in top-K): repulsion (push cosine similarity toward -1).
+
+    Returns combined loss.
+    """
+    B = K_pred.size(0)
+    device = K_pred.device
+    eye = torch.eye(B, device=device, dtype=torch.bool)
+
+    # Build local mask: top-K nearest neighbors per row (excluding self)
+    K_tgt_noself = K_tgt.clone()
+    K_tgt_noself.masked_fill_(eye, -1.0)
+    _, topk_idx = torch.topk(K_tgt_noself, k=min(topk, B - 1), dim=1)
+    local_mask = torch.zeros(B, B, device=device, dtype=torch.bool)
+    local_mask.scatter_(1, topk_idx, True)
+    local_mask = local_mask | local_mask.T  # symmetrize
+    local_mask = local_mask & (~eye)  # exclude diagonal
+
+    # Far mask: everything not local and not self
+    far_mask = (~local_mask) & (~eye)
+
+    # --- Local loss: CKA on the local subkernel ---
+    # Zero out non-local entries, keep diagonal
+    K_pred_local = K_pred * local_mask.float() + torch.eye(B, device=device) * K_pred.diagonal()
+    K_tgt_local = K_tgt * local_mask.float() + torch.eye(B, device=device) * K_tgt.diagonal()
+
+    local_loss = kernel_alignment_loss(K_pred_local, K_tgt_local, centered=centered, eps=eps)
+
+    # --- Far loss: push far pairs apart ---
+    # For far pairs, we want cosine similarity to be low (ideally -1)
+    # Loss = mean of (1 + cos_sim) / 2 for far pairs = mean of K_pred mapped to [0,1]
+    if far_mask.any():
+        far_sims = K_pred[far_mask]  # cosine similarities in [-1, 1]
+        far_loss = ((far_sims + 1.0) / 2.0).mean()  # 0 when cos=-1, 1 when cos=+1
+    else:
+        far_loss = K_pred.new_zeros(())
+
+    return local_loss + far_lambda * far_loss
 
 
 def uniformity_loss(z: torch.Tensor, t: float = 2.0) -> torch.Tensor:
@@ -455,6 +503,8 @@ def train_epoch(
     cka_alpha: float = 1.0,
     cka_topk: int | None = None,
     mod_loss_lambda: float = 1.0,
+    loss_mode: str = "cka",  # "cka" (default) or "local_far"
+    far_lambda: float = 1.0,
 ):
     device = next(encoder.parameters()).device
     # ds = IndexDataset(Phi.size(0))
@@ -475,15 +525,24 @@ def train_epoch(
         # K_tgt  = Kt_full.index_select(0, idx).index_select(1, idx)    # [B, B]
         K_tgt  = rbf_kernel_from_coords_batch(Xcoords, idx, tau)
 
-        # Optionally modulate target kernel to emphasize local pairs inside the CKA term
-        K_tgt_mod = K_tgt
-        if (cka_alpha is not None and cka_alpha != 1.0) or (cka_topk is not None):
+        if loss_mode in ("mod_only", "mod_only_dist"):
+            # Modulated CKA only (no global CKA) — simulates no fine-grained
+            # global distance info, only local neighborhood + binary "far"
             B = K_tgt.size(0)
             eye = torch.eye(B, device=K_tgt.device, dtype=K_tgt.dtype)
             K_tgt_mod = K_tgt.clamp(0, 1)
             if cka_alpha is not None and cka_alpha != 1.0:
                 K_tgt_mod = K_tgt_mod.pow(cka_alpha)
-            if cka_topk is not None and cka_topk < B - 1:
+
+            if loss_mode == "mod_only_dist":
+                # Distance-based mask: keep pairs within `local_radius` of each other
+                local_radius = far_lambda  # reuse far_lambda param as radius
+                Xb = Xcoords.index_select(0, idx)  # [B, 2]
+                diff = Xb[:, None, :] - Xb[None, :, :]  # [B, B, 2]
+                dist = (diff * diff).sum(-1).sqrt()  # [B, B]
+                mask = (dist < local_radius) & (~torch.eye(B, dtype=torch.bool, device=K_tgt.device))
+                K_tgt_mod = K_tgt_mod * mask.float() + eye
+            elif cka_topk is not None and cka_topk < B - 1:
                 vals, idx = torch.topk(K_tgt, k=min(cka_topk, B-1), dim=1)
                 mask = torch.zeros_like(K_tgt, dtype=torch.bool)
                 mask.scatter_(1, idx, True)
@@ -491,12 +550,36 @@ def train_epoch(
                 mask = mask & (~torch.eye(B, dtype=torch.bool, device=K_tgt.device))
                 K_tgt_mod = K_tgt_mod * mask + eye  # keep diagonal at 1
 
-        # alignment loss (centered = CKA-like) with modulated target kernel
-        loss = kernel_alignment_loss(K_pred, K_tgt, centered=centered)
-        mod_loss = kernel_alignment_loss(K_pred, K_tgt_mod, centered=centered) 
-        loss = loss + mod_loss * mod_loss_lambda
-        # loss = weighted_kernel_alignment_loss(K_pred, K_tgt, topk=cka_topk, near_mult=10.0, centered=True)
-        loss += uniformity_lambda * uniformity_loss(zb)
+            loss = mod_loss_lambda * kernel_alignment_loss(K_pred, K_tgt_mod, centered=centered)
+            loss += uniformity_lambda * uniformity_loss(zb)
+        elif loss_mode == "local_far":
+            # Local-attract + far-repel: top-K get CKA, rest get pushed apart
+            loss = local_attract_far_repel_loss(
+                K_pred, K_tgt, topk=cka_topk or 5,
+                centered=centered, far_lambda=far_lambda,
+            )
+            loss += uniformity_lambda * uniformity_loss(zb)
+        else:
+            # Default CKA mode: global CKA + modulated CKA
+            K_tgt_mod = K_tgt
+            if (cka_alpha is not None and cka_alpha != 1.0) or (cka_topk is not None):
+                B = K_tgt.size(0)
+                eye = torch.eye(B, device=K_tgt.device, dtype=K_tgt.dtype)
+                K_tgt_mod = K_tgt.clamp(0, 1)
+                if cka_alpha is not None and cka_alpha != 1.0:
+                    K_tgt_mod = K_tgt_mod.pow(cka_alpha)
+                if cka_topk is not None and cka_topk < B - 1:
+                    vals, idx = torch.topk(K_tgt, k=min(cka_topk, B-1), dim=1)
+                    mask = torch.zeros_like(K_tgt, dtype=torch.bool)
+                    mask.scatter_(1, idx, True)
+                    mask = mask | mask.T
+                    mask = mask & (~torch.eye(B, dtype=torch.bool, device=K_tgt.device))
+                    K_tgt_mod = K_tgt_mod * mask + eye  # keep diagonal at 1
+
+            loss = kernel_alignment_loss(K_pred, K_tgt, centered=centered)
+            mod_loss = kernel_alignment_loss(K_pred, K_tgt_mod, centered=centered)
+            loss = loss + mod_loss * mod_loss_lambda
+            loss += uniformity_lambda * uniformity_loss(zb)
 
         # after global loss pieces (CKA, uniformity, plane, etc.)
         with torch.no_grad():
@@ -525,6 +608,7 @@ def train_epoch(
         
         optimizer.zero_grad(set_to_none=True)
         loss.backward()
+        torch.nn.utils.clip_grad_norm_(encoder.parameters(), max_norm=1.0)
         optimizer.step()
         running += loss.item()
     return running / len(dl)
@@ -879,65 +963,77 @@ def load_encoder(encoder_name, encoders_dir=None, device=None):
 
 
 def sample_nonoverlapping_patches(
-    H_full: int, 
-    W_full: int, 
-    Npos: int, 
-    Nenv: int, 
-    max_attempts_per_patch: int = 1000
+    H_full: int, W_full: int, Npos: int, Nenv: int,
+    max_attempts_per_patch: int = 1000,
+) -> Tuple[List[int], List[int]]:
+    """Sample Nenv non-overlapping square patches via rejection sampling."""
+    assert H_full >= Npos and W_full >= Npos
+    def patches_overlap(y0_a, x0_a, y0_b, x0_b, size):
+        return not (y0_a + size <= y0_b or y0_b + size <= y0_a or
+                    x0_a + size <= x0_b or x0_b + size <= x0_a)
+    y0s, x0s = [], []
+    total_attempts = 0
+    max_total = Nenv * max_attempts_per_patch
+    while len(y0s) < Nenv and total_attempts < max_total:
+        y0 = torch.randint(0, H_full - Npos + 1, (1,)).item()
+        x0 = torch.randint(0, W_full - Npos + 1, (1,)).item()
+        if not any(patches_overlap(y0, x0, y0s[i], x0s[i], Npos) for i in range(len(y0s))):
+            y0s.append(y0); x0s.append(x0)
+        total_attempts += 1
+    if len(y0s) < Nenv:
+        raise RuntimeError(f"Could only fit {len(y0s)} patches after {total_attempts} attempts")
+    print(f"Sampled {Nenv} non-overlapping {Npos}x{Npos} patches (took {total_attempts} attempts)")
+    return y0s, x0s
+
+
+def evenly_spaced_patches(
+    H_full: int,
+    W_full: int,
+    Npos: int,
+    Nenv: int,
 ) -> Tuple[List[int], List[int]]:
     """
-    Sample Nenv non-overlapping square patches of size Npos x Npos from a grid of size H_full x W_full.
-    Uses rejection sampling to place patches at arbitrary positions.
-    
+    Place Nenv patches of size Npos x Npos on an evenly spaced grid over H_full x W_full.
+
+    Computes a grid with ceil(sqrt(Nenv)) patches per side, evenly spaced so that
+    patches are centered within their cells. Takes the first Nenv positions in
+    row-major order.
+
     Args:
         H_full: Height of the full grid
         W_full: Width of the full grid
         Npos: Size of each square patch
-        Nenv: Number of patches to sample
-        max_attempts_per_patch: Max attempts per patch before giving up
-        
+        Nenv: Number of patches to place
+
     Returns:
         y0s: List of top-left y coordinates for each patch
         x0s: List of top-left x coordinates for each patch
     """
-    assert H_full >= Npos and W_full >= Npos, \
-        f"Grid dims ({H_full}, {W_full}) must be >= Npos ({Npos})"
-    
-    def patches_overlap(y0_a: int, x0_a: int, y0_b: int, x0_b: int, size: int) -> bool:
-        """Check if two square patches of given size overlap."""
-        return not (y0_a + size <= y0_b or y0_b + size <= y0_a or
-                    x0_a + size <= x0_b or x0_b + size <= x0_a)
-    
+    import math
+    n_per_side = math.ceil(math.sqrt(Nenv))
+
+    # Spacing between patch centers
+    stride_y = H_full / n_per_side
+    stride_x = W_full / n_per_side
+
     y0s = []
     x0s = []
-    total_attempts = 0
-    max_total_attempts = Nenv * max_attempts_per_patch
-    
-    while len(y0s) < Nenv and total_attempts < max_total_attempts:
-        # Sample random corner
-        y0 = torch.randint(0, H_full - Npos + 1, (1,)).item()
-        x0 = torch.randint(0, W_full - Npos + 1, (1,)).item()
-        
-        # Check overlap with all existing patches
-        overlaps = False
-        for i in range(len(y0s)):
-            if patches_overlap(y0, x0, y0s[i], x0s[i], Npos):
-                overlaps = True
+    for row in range(n_per_side):
+        for col in range(n_per_side):
+            if len(y0s) >= Nenv:
                 break
-        
-        if not overlaps:
+            # Center of this cell
+            cy = stride_y * (row + 0.5)
+            cx = stride_x * (col + 0.5)
+            # Top-left corner, clamped to grid bounds
+            y0 = int(round(cy - Npos / 2))
+            x0 = int(round(cx - Npos / 2))
+            y0 = max(0, min(y0, H_full - Npos))
+            x0 = max(0, min(x0, W_full - Npos))
             y0s.append(y0)
             x0s.append(x0)
-        
-        total_attempts += 1
-    
-    if len(y0s) < Nenv:
-        raise RuntimeError(
-            f"Could only fit {len(y0s)} non-overlapping patches after {total_attempts} attempts. "
-            f"Requested {Nenv} patches of size {Npos}x{Npos} in {H_full}x{W_full} grid."
-        )
-    
-    print(f"Sampled {Nenv} non-overlapping {Npos}x{Npos} patches (took {total_attempts} attempts)")
+
+    print(f"Placed {len(y0s)} evenly-spaced {Npos}x{Npos} patches on {n_per_side}x{n_per_side} grid")
     return y0s, x0s
 
 
@@ -988,6 +1084,12 @@ def extract_patches_to_flat(
 
 
 def train(config, save_every=True, encoders_dir="/home/jackking/cls/encoders"):
+    # --- Seed all RNGs for reproducibility ---
+    _seed = 42
+    torch.manual_seed(_seed)
+    torch.cuda.manual_seed_all(_seed)
+    np.random.seed(_seed)
+
     # --- Extract config ---
     lambdas = config["model_params"]["lambdas"]
     full_Npos = np.prod(lambdas)
@@ -1027,6 +1129,8 @@ def train(config, save_every=True, encoders_dir="/home/jackking/cls/encoders"):
     cka_alpha = config["training_params"]["cka_alpha"]
     cka_topk = config["training_params"]["cka_topk"]
     mod_loss_lambda = config["training_params"]["mod_loss_lambda"]
+    loss_mode = config["training_params"].get("loss_mode", "cka")
+    far_lambda = config["training_params"].get("far_lambda", 1.0)
 
     T_triple_batch = 4096
     triple_stride = 3
@@ -1175,6 +1279,7 @@ def train(config, save_every=True, encoders_dir="/home/jackking/cls/encoders"):
 
     print(f"Using device: {device} | N={N} | code_dim={Phi_flat.size(1)} | embed_dim={embed_dim}")
     print(f"RBF tau (median dist) = {tau:.4f}")
+    print(f"Loss mode: {loss_mode}" + (f" | far_lambda={far_lambda}" if loss_mode == "local_far" else ""))
 
     # Visualization reference points
     viz_idx_y, viz_idx_x = y0s[0] + Npos // 2, x0s[0] + Npos // 2
@@ -1198,6 +1303,7 @@ def train(config, save_every=True, encoders_dir="/home/jackking/cls/encoders"):
             lambda_plane=plane_lambda_scales[ep - 1],
             lambda_local=local_lambda_scales[ep - 1],
             cka_alpha=cka_alpha, cka_topk=cka_topk, mod_loss_lambda=mod_loss_lambda,
+            loss_mode=loss_mode, far_lambda=far_lambda,
         )
 
         metrics = eval_full(
@@ -1297,8 +1403,9 @@ def train(config, save_every=True, encoders_dir="/home/jackking/cls/encoders"):
             encoded_Phi_nav = encode_full_grid_viz(encoder, gain)
 
             # Train nav eval
+            patch_sizes = [Npos] * len(y0s)
             train_placements = sample_train_eval_envs(
-                y0s, x0s, Npos, nav_eval_env_size, n_train_total, nav_eval_rng)
+                y0s, x0s, patch_sizes, nav_eval_env_size, n_train_total, nav_eval_rng)
             if train_placements:
                 print(f"  Train nav eval ({len(train_placements)} envs, {nav_num_hopfields} Hopfields):")
                 train_nav = run_navigation_eval(
@@ -1391,7 +1498,7 @@ if __name__ == "__main__":
             "kernel_size": 5,
             "nonlinearity": "gelu",
             "output_nonlinearity": "tanh",
-            "gain": 3,
+            "gain": 5,
             "Npos": 50,
             "Nenv": 100,
             "encoder_type": "mlp",
@@ -1399,25 +1506,27 @@ if __name__ == "__main__":
             "rhc_D": 256,
         },
         "training_params": {
-            "lr": 0.00023025494644580443,
+            "lr": 0.000248,
             "batch_size": 4096,
-            "epochs": 200,
+            "epochs": 300,
             "gain_start": 1,
-            "gain_end": 3,
+            "gain_end": 5,
             "gain_up_epochs": 50,
             "uniformity_lambda_start": 0,
-            "uniformity_lambda_end": 0.07487417081836345,
+            "uniformity_lambda_end": 0.1848,
             "uniformity_lambda_scale_up_epochs": 25,
             "cka_alpha": 1,
-            "cka_topk": 5,
-            "mod_loss_lambda": 1,
+            "cka_topk": 50,
+            "mod_loss_lambda": 1.5,
+            "loss_mode": "mod_only_dist",
+            "far_lambda": 5.0,
         },
         "wandb_params": {
-            "use_wandb": True,
-            "wandb_project": "dist-encoder",
+            "use_wandb": False,
+            "wandb_project": "autoresearch-encoder",
         },
         "nav_eval_params": {
-            "eval_every": 20,
+            "eval_every": 50,
             "eval_env_size": 20,
             "n_train_envs": 5,
             "n_val_envs": 5,

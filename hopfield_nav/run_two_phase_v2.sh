@@ -48,7 +48,7 @@ for COST in 0.0 0.05; do
         --no-input_encoded_state \
         --num_worlds 1 \
         --envs_per_world 2 \
-        --val_envs_per_world 1 \
+        --num_val_envs 1 \
         --batch_envs 16 \
         --steps_per_rollout 128 \
         --explore_steps 64 \
@@ -88,7 +88,7 @@ python -m hopfield_nav.train \
     --no-input_encoded_state \
     --num_worlds 1 \
     --envs_per_world 2 \
-    --val_envs_per_world 1 \
+    --num_val_envs 1 \
     --batch_envs 16 \
     --steps_per_rollout 128 \
     --explore_steps 32 \

@@ -2,6 +2,8 @@ wandb/
 .ipynb_checkpoints/
 slurm_outputs/
 encoders/
+checkpoints/
+checkpoint/
 *.pt
 # add any other files that are not needed to be tracked
 *.npy

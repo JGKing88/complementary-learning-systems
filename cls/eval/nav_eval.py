@@ -8,8 +8,6 @@ continuous trajectories across randomly placed environments.
 import os
 import numpy as np
 import torch
-import matplotlib
-matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 from matplotlib.lines import Line2D
 
@@ -68,33 +66,46 @@ def _rects_overlap(y0a, x0a, size_a, y0b, x0b, size_b):
                 x0a + size_a <= x0b or x0b + size_b <= x0a)
 
 
-def sample_train_eval_envs(train_y0s, train_x0s, train_patch_size,
+def sample_train_eval_envs(train_y0s, train_x0s, train_sizes,
                            eval_env_size, n_envs, rng, max_attempts=10000):
     """Sample eval envs that fit entirely within training patches.
 
     Each eval env is placed so its bounding box (plus 1-cell border for
     Gram-Schmidt neighbors) lies inside one of the training patches.
 
+    Args:
+        train_y0s, train_x0s: parallel lists of patch top-left corners (global gx, gy).
+        train_sizes: parallel list of patch side lengths (one int per patch).
+
     Returns:
         List of (y0, x0) global coords for each eval env.
     """
-    # Need border of 1 for neighbor lookups
     margin = 1
-    inner = train_patch_size - eval_env_size - 2 * margin
-    if inner < 0:
-        print(f"WARNING: eval_env_size ({eval_env_size}) + border doesn't fit in "
-              f"train_patch_size ({train_patch_size}). Skipping train nav eval.")
+    n_patches = len(train_y0s)
+    if n_patches == 0:
+        return []
+    if len(train_x0s) != n_patches or len(train_sizes) != n_patches:
+        raise ValueError(
+            "train_y0s, train_x0s, train_sizes must have equal length "
+            f"({n_patches}, {len(train_x0s)}, {len(train_sizes)})"
+        )
+
+    if not any(s >= eval_env_size + 2 * margin for s in train_sizes):
+        print(f"WARNING: eval_env_size ({eval_env_size}) + border doesn't fit in any "
+              f"training patch (sizes={train_sizes}). Skipping train nav eval.")
         return []
 
-    n_patches = len(train_y0s)
     placements = []
     attempts = 0
 
     while len(placements) < n_envs and attempts < max_attempts:
-        # Pick a random training patch
         pi = rng.randint(0, n_patches)
+        patch_size = int(train_sizes[pi])
+        inner = patch_size - eval_env_size - 2 * margin
+        if inner < 0:
+            attempts += 1
+            continue
         py0, px0 = train_y0s[pi], train_x0s[pi]
-        # Sample position within patch (with margin)
         y0 = py0 + margin + rng.randint(0, inner + 1)
         x0 = px0 + margin + rng.randint(0, inner + 1)
         # Check no overlap with existing placements
@@ -152,128 +163,13 @@ def sample_val_eval_envs(grid_H, grid_W, train_y0s, train_x0s, train_patch_size,
 # ---------------------------------------------------------------------------
 # Trajectory simulation
 # ---------------------------------------------------------------------------
+# Core primitives live in cls.nav — re-exported here for backward compatibility.
 
-def _compute_projection_matrix(encoded_Phi, gx, gy):
-    """Compute Gram-Schmidt projection matrix at (gx, gy).
-
-    Axes follow the grid codebook convention: dim0 = x (East), dim1 = y (North).
-
-    Returns:
-        W: (2, embed_dim) — row 0 = East basis, row 1 = North basis.
-        current: (embed_dim,) — encoded state at (gx, gy).
-    """
-    Nx, Ny = encoded_Phi.shape[:2]
-    gx = np.clip(gx, 1, Nx - 2)
-    gy = np.clip(gy, 1, Ny - 2)
-
-    current = encoded_Phi[gx, gy]
-    # North neighbor: (gx, gy+1) — +dim1, East neighbor: (gx+1, gy) — +dim0
-    d_forward = encoded_Phi[gx, gy + 1] - current
-    d_right = encoded_Phi[gx + 1, gy] - current
-
-    # Gram-Schmidt: e1 = normalize(d_forward), e2 = orthogonalize(d_right, e1)
-    norm_f = np.linalg.norm(d_forward)
-    e1 = d_forward / max(norm_f, 1e-12)
-    e2 = d_right - np.dot(d_right, e1) * e1
-    norm_r = np.linalg.norm(e2)
-    e2 = e2 / max(norm_r, 1e-12)
-
-    W = np.stack([e2, e1], axis=0)  # (2, embed_dim): row0=East, row1=North
-    return W, current
-
-
-def _continuous_step(W, current_np, next_state_np, scale, normalize):
-    """Compute continuous movement from Hopfield displacement.
-
-    Returns:
-        (dgx, dgy): step in grid coordinates (dim0 = x/East, dim1 = y/North).
-        magnitude: raw magnitude of projected vector.
-    """
-    d_query = next_state_np - current_np
-    q = W @ d_query  # q[0] = East component, q[1] = North component
-
-    magnitude = np.linalg.norm(q)
-    if magnitude < 1e-8:
-        return (0.0, 0.0), 0.0
-
-    if normalize:
-        q_scaled = (q / magnitude) * scale
-    else:
-        q_scaled = q * scale
-
-    # q[0] = East = +dim0 (+x), q[1] = North = +dim1 (+y)
-    dgx = q_scaled[0]  # East  → +dim0
-    dgy = q_scaled[1]  # North → +dim1
-
-    return (dgx, dgy), magnitude
-
-
-def simulate_trajectory(encoded_Phi, hopfield, start_gx, start_gy, goal_loc,
-                        gain, max_steps, scale, normalize,
-                        platform_radius, recompute_interval, alpha):
-    """Simulate one continuous trajectory.
-
-    Positions are (gx, gy) in global grid coords (dim0 = x, dim1 = y).
-
-    Args:
-        encoded_Phi: (Npos, Npos, embed_dim) array.
-        hopfield: Hopfield network with stored goals.
-        start_gx, start_gy: global starting position.
-        goal_loc: (gx, gy) global goal position.
-        gain: Hopfield recall beta.
-        max_steps: maximum number of steps.
-        scale: step scale (with normalize=True, each step is unit * scale).
-        normalize: whether to normalize steps to unit length.
-        platform_radius: goal reached threshold.
-        recompute_interval: how often to recompute projection matrix W.
-        alpha: Hopfield recall alpha (mixing coefficient).
-
-    Returns:
-        trajectory: np.ndarray of shape (T, 2) — positions visited as [gx, gy].
-    """
-    Nx, Ny = encoded_Phi.shape[:2]
-    min_gx, max_gx = 1, Nx - 2
-    min_gy, max_gy = 1, Ny - 2
-
-    position = np.array([float(start_gx), float(start_gy)])
-    trajectory = [position.copy()]
-
-    grid_pos = np.clip(np.round(position).astype(int), [min_gx, min_gy], [max_gx, max_gy])
-    W, _ = _compute_projection_matrix(encoded_Phi, grid_pos[0], grid_pos[1])
-    steps_since_recompute = 0
-
-    for _ in range(max_steps):
-        grid_pos = np.clip(np.round(position).astype(int), [min_gx, min_gy], [max_gx, max_gy])
-        state = torch.from_numpy(encoded_Phi[grid_pos[0], grid_pos[1]].copy()).float()
-        current_np = state.numpy()
-
-        next_state, _ = hopfield.recall(state, steps=1, beta=gain, alpha=alpha,
-                                        use_tanh=True, normalize_each=True)
-
-        if recompute_interval > 0 and steps_since_recompute >= recompute_interval:
-            W, _ = _compute_projection_matrix(encoded_Phi, grid_pos[0], grid_pos[1])
-            steps_since_recompute = 0
-
-        (dgx, dgy), mag = _continuous_step(W, current_np, next_state.numpy(), scale, normalize)
-        steps_since_recompute += 1
-
-        if mag < 1e-6:
-            break
-
-        new_position = position + np.array([dgx, dgy])
-        new_position[0] = np.clip(new_position[0], min_gx, max_gx)
-        new_position[1] = np.clip(new_position[1], min_gy, max_gy)
-
-        if np.linalg.norm(new_position - position) < 1e-6:
-            break
-
-        position = new_position
-        trajectory.append(position.copy())
-
-        if np.linalg.norm(position - np.array(goal_loc, dtype=float)) < platform_radius:
-            break
-
-    return np.array(trajectory)
+from cls.nav import (
+    compute_projection_matrix as _compute_projection_matrix,
+    continuous_step as _continuous_step,
+    simulate_trajectory,
+)
 
 
 # ---------------------------------------------------------------------------

@@ -47,7 +47,7 @@ for COST in 0.1 0.2 0.5; do
         --no-input_encoded_state \
         --num_worlds 1 \
         --envs_per_world 2 \
-        --val_envs_per_world 1 \
+        --num_val_envs 1 \
         --batch_envs 16 \
         --steps_per_rollout 128 \
         --n_updates 1000 \

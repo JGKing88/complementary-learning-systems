@@ -1,81 +1,72 @@
-"""Evaluation metrics for encoder quality."""
+"""Navigation-evaluation wrapper.
+
+Replaces the old pearson/triplet metrics with the real nav-eval pipeline
+from `cls.eval.nav_eval` — that is what we actually care about.
+"""
 from __future__ import annotations
 
+from typing import Optional
+
+import numpy as np
 import torch
-import torch.nn.functional as F
-from scipy.stats import spearmanr, pearsonr
 
-from .losses import kernel_alignment_loss, upper_tri_vec
-from .data import rbf_kernel_batch
+from cls.eval.nav_eval import (
+    encode_full_grid as _encode_full_grid,
+    sample_train_eval_envs,
+    sample_val_eval_envs,
+    run_navigation_eval,
+)
+
+from .config import NavEvalConfig
 
 
-@torch.no_grad()
-def eval_encoder(
-    encoder,
-    Phi: torch.Tensor,
-    Xcoords: torch.Tensor,
-    tau: float,
-    subset: int = 2048,
-    centered: bool = True,
-    gain: float = 1.0,
-    cka_alpha: float = 1.0,
-    cka_topk: int | None = None,
-) -> dict[str, float]:
-    """Compute evaluation metrics on a random subset.
+def encode_grid(encoder, Phi_full: torch.Tensor, gain: float,
+                device: torch.device, batch_size: int = 1000) -> np.ndarray:
+    """Encode the full grid; returns (full_Npos, full_Npos, embed_dim) np.ndarray."""
+    Phi_np = Phi_full.numpy() if torch.is_tensor(Phi_full) else Phi_full
+    return _encode_full_grid(encoder, Phi_np, gain, device, batch_size=batch_size)
 
-    Returns dict with: align_loss, pearson_sim, spearman_sim, triplet_acc, nn_consistency.
+
+def run_nav_eval(
+    encoded: np.ndarray,
+    y0s: list[int],
+    x0s: list[int],
+    sizes: list[int],
+    full_Npos: int,
+    gain: float,
+    cfg: NavEvalConfig,
+    rng: Optional[np.random.RandomState] = None,
+    split: str = "val",
+) -> dict:
+    """Run navigation eval on either 'train' (inside training patches) or
+    'val' (outside training patches) environments.
     """
-    device = next(encoder.parameters()).device
-    N = Phi.size(0)
-    M = min(subset, N)
-    idx = torch.randperm(N, device=device)[:M]
+    rng = rng or np.random.RandomState(42)
+    if isinstance(sizes, list):
+        max_patch = max(sizes) if sizes else 0
+    else:
+        max_patch = sizes
+    n_total = cfg.num_hopfields * (cfg.n_train_envs if split == "train"
+                                   else cfg.n_val_envs)
 
-    Z = encoder(Phi[idx], gain)
-    Kp = (Z @ Z.T).clamp(-1, 1)
-    Kt = rbf_kernel_batch(Xcoords, idx, tau)
+    if split == "train":
+        placements = sample_train_eval_envs(
+            y0s, x0s, sizes, cfg.env_size, n_total, rng)
+    else:
+        placements = sample_val_eval_envs(
+            full_Npos, full_Npos, y0s, x0s, max_patch, cfg.env_size, n_total, rng)
 
-    # Optionally modulate target kernel (match training)
-    Kt_mod = Kt
-    if (cka_alpha is not None and cka_alpha != 1.0) or (cka_topk is not None):
-        B = Kt.size(0)
-        eye = torch.eye(B, device=Kt.device, dtype=Kt.dtype)
-        Kt_mod = Kt.clamp(0, 1)
-        if cka_alpha is not None and cka_alpha != 1.0:
-            Kt_mod = Kt_mod.pow(cka_alpha)
-        if cka_topk is not None and cka_topk < B - 1:
-            _, idx_top = torch.topk(Kt, k=min(cka_topk, B - 1), dim=1)
-            mask = torch.zeros_like(Kt, dtype=torch.bool)
-            mask.scatter_(1, idx_top, True)
-            mask = (mask | mask.T) & ~eye.bool()
-            Kt_mod = Kt_mod * mask.float() + eye
+    if not placements:
+        return {"accuracy": float("nan"), "mean_steps": float("nan"),
+                "mean_speed": float("nan"), "n_envs": 0}
 
-    align_loss = kernel_alignment_loss(Kp, Kt_mod, centered=centered).item()
-
-    # Pearson / Spearman on upper-triangular entries
-    s_pred = upper_tri_vec(Kp).cpu().numpy()
-    s_tgt = upper_tri_vec(Kt).cpu().numpy()
-    pe, _ = pearsonr(s_pred, s_tgt)
-    sp, _ = spearmanr(s_pred, s_tgt)
-
-    # Triplet accuracy
-    T = min(200_000, M * 200)
-    i = torch.randint(0, M, (T,), device=device)
-    a = torch.randint(0, M, (T,), device=device)
-    b = torch.randint(0, M, (T,), device=device)
-    tgt_cmp = Kt[i, a] > Kt[i, b]
-    pred_cmp = Kp[i, a] > Kp[i, b]
-    valid = (a != b) & (i != a) & (i != b) & (Kt[i, a] != Kt[i, b])
-    triplet_acc = float((pred_cmp[valid] == tgt_cmp[valid]).float().mean().item()) if valid.any() else float("nan")
-
-    # Nearest-neighbor consistency
-    Kt_m = Kt - torch.eye(M, device=device) * 1e9
-    Kp_m = Kp - torch.eye(M, device=device) * 1e9
-    nn_acc = float((Kt_m.argmax(1) == Kp_m.argmax(1)).float().mean().item())
-
-    return {
-        "align_loss": align_loss,
-        "pearson_sim": float(pe),
-        "spearman_sim": float(sp),
-        "triplet_acc": triplet_acc,
-        "nn_consistency": nn_acc,
-    }
+    return run_navigation_eval(
+        encoded, placements, cfg.env_size, gain,
+        hopfield_alpha=cfg.hopfield_alpha,
+        n_starts_per_env=cfg.n_starts_per_env,
+        max_steps_mult=cfg.max_steps_mult,
+        scale=cfg.scale, normalize=cfg.normalize,
+        platform_radius=cfg.platform_radius,
+        recompute_interval=cfg.recompute_interval,
+        rng=rng, num_hopfields=cfg.num_hopfields,
+    )
