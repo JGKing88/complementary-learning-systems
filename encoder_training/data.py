@@ -1,5 +1,7 @@
-"""Data generation and kernel computation for encoder training."""
+"""Data generation and batch sampling for binary-method encoder training."""
 from __future__ import annotations
+
+from typing import List, Tuple
 
 import numpy as np
 import torch
@@ -10,173 +12,139 @@ from cls.vectorhash.assoc_utils_np_2D import gen_gbook_2d
 from .utils import smooth_gbook
 
 
-# ---------------------------------------------------------------------------
-# Dataset
-# ---------------------------------------------------------------------------
-
 class IndexDataset(Dataset):
-    """Trivial dataset that just yields integer indices."""
-    def __init__(self, N: int):
-        self.N = N
-    def __len__(self) -> int:
-        return self.N
-    def __getitem__(self, idx: int) -> int:
-        return idx
+    def __init__(self, n: int):
+        self.n = n
+    def __len__(self) -> int: return self.n
+    def __getitem__(self, i: int) -> int: return i
 
 
 # ---------------------------------------------------------------------------
-# Grid code generation
+# Full-grid code generation
 # ---------------------------------------------------------------------------
 
-def build_grid_data(
+def build_full_grid(
     lambdas: list[int],
     fwhm_ratio: float = 0.25,
-    device: str = "cpu",
-) -> tuple[torch.Tensor, torch.Tensor, int]:
-    """Generate grid codes and coordinate tensors.
+) -> Tuple[torch.Tensor, int]:
+    """Generate the full smoothed grid-code book.
 
     Returns:
-        Phi: (Npos*Npos, Ng) flattened grid codes (optionally smoothed)
-        Xcoords: (Npos*Npos, 2) grid coordinates (y, x)
-        Npos: grid side length = product of lambdas
+        Phi_full: (code_dim, full_Npos, full_Npos) float32 CPU tensor.
+        full_Npos: grid side length = product of lambdas.
     """
-    Ng = sum(l * l for l in lambdas)
-    Npos = int(np.prod(lambdas))
-
-    gbook = gen_gbook_2d(lambdas, Ng, Npos)  # (Ng, Npos, Npos)
-
-    if fwhm_ratio > 0:
-        gbook = smooth_gbook(gbook, lambdas, fwhm_ratio)
-
-    # Flatten to (N, Ng) where N = Npos*Npos
-    Phi = torch.from_numpy(
-        gbook.reshape(Ng, -1).T.astype(np.float32)
-    ).to(device)  # (N, Ng)
-
-    # Build coordinate tensor
-    ys, xs = np.meshgrid(np.arange(Npos), np.arange(Npos), indexing='ij')
-    Xcoords = torch.from_numpy(
-        np.stack([ys.ravel(), xs.ravel()], axis=1).astype(np.float32)
-    ).to(device)  # (N, 2)
-
-    return Phi, Xcoords, Npos
-
-
-# ---------------------------------------------------------------------------
-# Kernel computation
-# ---------------------------------------------------------------------------
-
-def rbf_kernel_batch(
-    Xcoords: torch.Tensor,
-    idx: torch.Tensor,
-    tau: float,
-) -> torch.Tensor:
-    """Build RBF kernel K[idx, idx] on the fly.
-
-    Xcoords: (N, 2), idx: (B,).  Returns (B, B).
-    """
-    Xb = Xcoords.index_select(0, idx)
-    diff = Xb[:, None, :] - Xb[None, :, :]
-    dist2 = (diff * diff).sum(-1)
-    return torch.exp(-dist2 / (2.0 * tau ** 2))
-
-
-def rbf_kernel_local(
-    Xcoords: torch.Tensor,
-    idx: torch.Tensor,
-    tau: float | None = None,
-) -> tuple[torch.Tensor, float]:
-    """RBF kernel with local (median-based) tau estimation."""
-    Xi = Xcoords.index_select(0, idx)
-    x2 = (Xi ** 2).sum(1, keepdim=True)
-    D2 = (x2 + x2.T - 2 * (Xi @ Xi.T)).clamp_min(0.0)
-    if tau is None:
-        tri = torch.triu(torch.ones_like(D2, dtype=torch.bool), diagonal=1)
-        tau = float(torch.quantile(torch.sqrt(D2[tri] + 1e-12), 0.5).clamp_min(1e-6).item())
-    K = torch.exp(-D2 / (2.0 * tau ** 2))
-    return K, tau
-
-
-@torch.no_grad()
-def estimate_tau_median(Xcoords: torch.Tensor, sample_pairs: int = 50000) -> float:
-    """Estimate median pairwise distance from random pairs."""
-    N = Xcoords.size(0)
-    i = torch.randint(0, N, (sample_pairs,), device=Xcoords.device)
-    j = torch.randint(0, N, (sample_pairs,), device=Xcoords.device)
-    mask = i != j
-    d = torch.linalg.norm(Xcoords[i[mask]] - Xcoords[j[mask]], dim=-1)
-    return float(d.median().item())
+    full_Npos = int(np.prod(lambdas))
+    Ng = int(np.sum(np.square(lambdas)))
+    gbook = gen_gbook_2d(lambdas, Ng, full_Npos)
+    Phi = torch.tensor(
+        smooth_gbook(gbook, lambdas, fwhm_ratio) if fwhm_ratio > 0
+        else gbook.astype(np.float32),
+        dtype=torch.float32,
+    )
+    return Phi, full_Npos
 
 
 # ---------------------------------------------------------------------------
 # Patch sampling
 # ---------------------------------------------------------------------------
 
-def sample_random_patches(
+def sample_nonoverlapping_patches(
     H: int, W: int,
-    num_patches: int = 16,
-    min_size: int = 4,
-    max_size: int = 10,
-    device: torch.device | None = None,
-) -> list[torch.Tensor]:
-    """Sample random rectangular patches, return lists of flat indices (y*W + x)."""
-    device = device or torch.device("cpu")
-    patches = []
-    for _ in range(num_patches):
-        ph = torch.randint(min_size, max_size + 1, (1,), device=device).item()
-        pw = torch.randint(min_size, max_size + 1, (1,), device=device).item()
-        ph, pw = min(ph, H), min(pw, W)
-        y0 = torch.randint(0, max(1, H - ph + 1), (1,), device=device).item()
-        x0 = torch.randint(0, max(1, W - pw + 1), (1,), device=device).item()
-        rows = []
-        for dy in range(ph):
-            rows.append(torch.arange(x0, x0 + pw, device=device, dtype=torch.long) + (y0 + dy) * W)
-        patches.append(torch.cat(rows))
-    return patches
+    npos: int | list[int],
+    nenv: int | None = None,
+    max_attempts: int = 1000,
+) -> Tuple[List[int], List[int], List[int]]:
+    """Sample non-overlapping square patches via rejection sampling.
+
+    Args:
+        H, W: grid bounds.
+        npos: either an int (all patches that size) or a list of sizes.
+        nenv: number of patches (required if npos is int; ignored otherwise).
+
+    Returns (y0s, x0s, sizes) as parallel lists of length nenv.
+    """
+    if isinstance(npos, int):
+        assert nenv is not None, "nenv required when npos is an int"
+        sizes = [npos] * nenv
+    else:
+        sizes = list(npos)
+        nenv = len(sizes)
+
+    def overlaps(y0a, x0a, sa, y0b, x0b, sb):
+        return not (y0a + sa <= y0b or y0b + sb <= y0a or
+                    x0a + sa <= x0b or x0b + sb <= x0a)
+
+    y0s, x0s = [], []
+    total_attempts = 0
+    max_total = nenv * max_attempts
+    for i in range(nenv):
+        s = sizes[i]
+        placed = False
+        while total_attempts < max_total:
+            y0 = int(torch.randint(0, H - s + 1, (1,)).item())
+            x0 = int(torch.randint(0, W - s + 1, (1,)).item())
+            if not any(overlaps(y0, x0, s, y0s[j], x0s[j], sizes[j])
+                       for j in range(len(y0s))):
+                y0s.append(y0); x0s.append(x0)
+                placed = True
+                break
+            total_attempts += 1
+        if not placed:
+            raise RuntimeError(f"Could only place {len(y0s)}/{nenv} patches")
+    return y0s, x0s, sizes
+
+
+def extract_patches(
+    Phi_full: torch.Tensor,
+    y0s: List[int],
+    x0s: List[int],
+    sizes: List[int],
+    device: torch.device,
+) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    """Extract patches → (Phi_flat, coords, env_ids), all on `device`."""
+    all_phi, all_coords, all_env = [], [], []
+    for i, s in enumerate(sizes):
+        patch = Phi_full[:, y0s[i]:y0s[i] + s, x0s[i]:x0s[i] + s]   # [C, s, s]
+        all_phi.append(patch.reshape(patch.shape[0], -1).T)         # [s*s, C]
+        ys, xs = torch.meshgrid(
+            torch.arange(y0s[i], y0s[i] + s),
+            torch.arange(x0s[i], x0s[i] + s), indexing="ij")
+        all_coords.append(
+            torch.stack([ys.reshape(-1).float(), xs.reshape(-1).float()], dim=-1))
+        all_env.append(torch.full((s * s,), i, dtype=torch.long))
+    return (
+        torch.cat(all_phi).to(device),
+        torch.cat(all_coords).to(device),
+        torch.cat(all_env).to(device),
+    )
 
 
 # ---------------------------------------------------------------------------
-# Triple generation for coplanarity loss
+# Batching
 # ---------------------------------------------------------------------------
 
-def build_grid_triples(
-    H: int, W: int,
-    stride: int = 1,
-    include_diagonals: bool = False,
-    both_directions: bool = True,
-) -> torch.Tensor:
-    """Build (T, 3) LongTensor of consecutive triple indices for a H x W grid."""
-    triples = []
+def mixed_batch_iterator(n_points: int, batch_size: int):
+    """Yield random batches across the entire dataset (mixed envs)."""
+    dl = DataLoader(IndexDataset(n_points), batch_size=batch_size,
+                    shuffle=True, drop_last=True)
+    for idx in dl:
+        yield idx
 
-    for y in range(H):
-        for x in range(W - 2 * stride):
-            i0, i1, i2 = y * W + x, y * W + x + stride, y * W + x + 2 * stride
-            triples.append((i0, i1, i2))
-            if both_directions:
-                triples.append((i2, i1, i0))
 
-    for x in range(W):
-        for y in range(H - 2 * stride):
-            i0, i1, i2 = y * W + x, (y + stride) * W + x, (y + 2 * stride) * W + x
-            triples.append((i0, i1, i2))
-            if both_directions:
-                triples.append((i2, i1, i0))
+def single_env_batch_iterator(
+    env_indices: List[torch.Tensor],
+    batch_size: int,
+):
+    """Yield one batch per env per call, drawn only from that env's points.
 
-    if include_diagonals:
-        for y in range(H - 2 * stride):
-            for x in range(W - 2 * stride):
-                i0 = y * W + x
-                i1 = (y + stride) * W + x + stride
-                i2 = (y + 2 * stride) * W + x + 2 * stride
-                triples.append((i0, i1, i2))
-                if both_directions:
-                    triples.append((i2, i1, i0))
-            for x in range(2 * stride, W):
-                i0 = y * W + x
-                i1 = (y + stride) * W + x - stride
-                i2 = (y + 2 * stride) * W + x - 2 * stride
-                triples.append((i0, i1, i2))
-                if both_directions:
-                    triples.append((i2, i1, i0))
-
-    return torch.tensor(triples, dtype=torch.long)
+    env_indices: list of 1-D long tensors, where env_indices[e] is the set of
+    global point indices belonging to env e.
+    """
+    order = torch.randperm(len(env_indices)).tolist()
+    for e in order:
+        ids = env_indices[e]
+        if len(ids) >= batch_size:
+            perm = torch.randperm(len(ids))[:batch_size]
+            yield ids[perm]
+        else:
+            yield ids

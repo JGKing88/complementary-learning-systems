@@ -103,6 +103,34 @@ class Hopfield:
                 X = F.normalize(X, dim=-1)
         return X
 
+
+def recall_per_env_batch(
+    x0_batch: torch.Tensor,
+    W_batch: torch.Tensor,
+    steps: int = 1,
+    beta: float = 2.0,
+    alpha: float = 1.0,
+    use_tanh: bool = True,
+    normalize_each: bool = True,
+) -> torch.Tensor:
+    """Batched recall across B envs each with its own W matrix.
+
+    Args:
+        x0_batch: (B, D) cues.
+        W_batch: (B, D, D) per-env weight matrices.
+
+    Returns (B, D).
+    """
+    X = x0_batch.clone()                                   # (B, D)
+    for _ in range(steps):
+        # Per-env matmul: H[b] = W_batch[b] @ X[b]. Use bmm with X as (B, D, 1).
+        H = torch.bmm(W_batch, X.unsqueeze(-1)).squeeze(-1)  # (B, D)
+        delta = torch.tanh(beta * H) if use_tanh else H
+        X = (1 - alpha) * X + alpha * delta
+        if normalize_each:
+            X = F.normalize(X, dim=-1)
+    return X
+
     # ------------------------------------------------------------------
     # Utilities
     # ------------------------------------------------------------------

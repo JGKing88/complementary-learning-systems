@@ -45,7 +45,10 @@ class NavAgent(nn.Module):
             self.movement_head = nn.Linear(cfg.hidden_size, 4)
         else:
             self.movement_mean = nn.Linear(cfg.hidden_size, 2)
-            self.movement_log_std = nn.Parameter(torch.zeros(2))
+            # Init log_std negative so std < 1: deterministic eval (action = mean)
+            # is meaningful. With zero-init, training entropy bonus drives std up
+            # to 2-3 per dim, making the policy reliant on sampling noise for motion.
+            self.movement_log_std = nn.Parameter(torch.full((2,), cfg.init_log_std))
 
         # Store head (binary)
         self.store_head = nn.Linear(cfg.hidden_size, 1)
@@ -95,10 +98,20 @@ class NavAgent(nn.Module):
         x: torch.Tensor,
         h: torch.Tensor | None = None,
         deterministic: bool = False,
+        move_action_override: torch.Tensor | None = None,
+        move_override_mask: torch.Tensor | None = None,
     ) -> dict:
         """Single-step action selection for rollout collection.
 
         x: (B, 1, input_dim)
+
+        Optional teacher forcing on the movement action:
+            move_action_override: (B, 1) long for discrete, (B, 1, 2) float for continuous.
+            move_override_mask:   (B,) bool — envs where the override should replace the sample.
+        When the mask is True for env b, move_action[b] is set to move_action_override[b] and
+        its log_prob is re-scored under the current policy so PPO's importance ratio is
+        well-defined for the action that was actually executed.
+
         Returns dict with: move_action, store_action, move_log_prob,
                            store_log_prob, value, h_next
         """
@@ -113,6 +126,22 @@ class NavAgent(nn.Module):
         else:
             move_action = move_dist.sample()  # (B, 1) or (B, 1, 2)
             store_action = store_dist.sample()  # (B, 1)
+
+        if move_action_override is not None and move_override_mask is not None:
+            if self.cfg.movement_mode == "discrete":
+                # move_action: (B, 1) long; override: (B, 1) long; mask: (B,) bool
+                move_action = torch.where(
+                    move_override_mask.unsqueeze(-1),
+                    move_action_override.to(move_action.dtype),
+                    move_action,
+                )
+            else:
+                # move_action: (B, 1, 2) float; override: (B, 1, 2) float; mask: (B,) bool
+                move_action = torch.where(
+                    move_override_mask.view(-1, 1, 1),
+                    move_action_override.to(move_action.dtype),
+                    move_action,
+                )
 
         move_log_prob = move_dist.log_prob(move_action)
         if self.cfg.movement_mode == "continuous":

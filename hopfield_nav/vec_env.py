@@ -94,6 +94,10 @@ class VecEnv:
     ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         """Step environments with cardinal action indices (0=N, 1=E, 2=S, 3=W).
 
+        Semantics: if the agent's current (pre-action) position is the goal,
+        this step consumes the at-goal turn — reward +1, teleport, and the move
+        action is ignored. This gives the agent one observable step at goal.
+
         actions: (B,) int array of action indices, or list of action tuples.
         Returns (rewards, goal_reached, positions) all shape (B,) or (len(indices),).
         """
@@ -105,6 +109,12 @@ class VecEnv:
         goal_reached = np.zeros(n, dtype=bool)
 
         for j, b in enumerate(indices):
+            # Pre-action at-goal check — this step consumes the at-goal turn.
+            if (int(self._pos[b, 0]), int(self._pos[b, 1])) == self._goal:
+                goal_reached[j] = True
+                rewards[j] = 1.0
+                continue  # skip movement; teleport applied below
+
             if isinstance(actions[j], (int, np.integer)):
                 dx, dy = CARDINAL_ACTIONS[int(actions[j])]
             else:
@@ -118,11 +128,7 @@ class VecEnv:
                                     np.sign(ny - self._pos[b, 1])]
             self._pos[b] = [nx, ny]
 
-            if (nx, ny) == self._goal:
-                rewards[j] = 1.0
-                goal_reached[j] = True
-
-        # Auto-teleport on goal reach
+        # Teleport envs that were at goal.
         reached_b = indices[goal_reached]
         if len(reached_b) > 0:
             self.reset_indices(reached_b)
@@ -240,6 +246,14 @@ class ContinuousVecEnv:
     ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         """Step with continuous (dx, dy) actions.
 
+        Semantics: if the agent's current (pre-action) position is the goal,
+        this step consumes the at-goal turn — reward +1, teleport, and the move
+        action is ignored. Otherwise apply the move and emit -time_penalty.
+
+        This gives the agent exactly one observable step at the goal before
+        teleportation, so `at_goal` checks computed from `positions()` pre-action
+        are meaningful (and the agent can fire store on that step).
+
         actions: (B, 2) float array.
         Returns (rewards, goal_reached, snapped_positions).
         """
@@ -254,7 +268,17 @@ class ContinuousVecEnv:
         if actions.ndim == 1:
             actions = actions.reshape(-1, 2)
 
+        # Identify envs that start the step at goal — they reap +1 and teleport,
+        # their movement is ignored.
         for j, b in enumerate(indices):
+            if (int(self._pos[b, 0]), int(self._pos[b, 1])) == self._goal:
+                goal_reached[j] = True
+                rewards[j] = 1.0
+
+        # Apply movement only to envs not at goal.
+        for j, b in enumerate(indices):
+            if goal_reached[j]:
+                continue
             self._pos_f[b] = np.clip(
                 self._pos_f[b] + actions[j] * self.scale,
                 0.0, float(self.size - 1),
@@ -262,12 +286,7 @@ class ContinuousVecEnv:
 
         self._update_snapped(indices)
 
-        for j, b in enumerate(indices):
-            if (int(self._pos[b, 0]), int(self._pos[b, 1])) == self._goal:
-                rewards[j] = 1.0
-                goal_reached[j] = True
-
-        # Auto-teleport on goal reach
+        # Teleport envs that were at goal.
         reached_b = indices[goal_reached]
         if len(reached_b) > 0:
             self.reset_indices(reached_b)

@@ -93,6 +93,19 @@ class GridEnv:
         self._heading = (1, 0)
         return EnvState(self._pos, self._goal, self.obs(), self.reward())
 
+    def set_position(self, pos: tuple[int, int]) -> None:
+        """Place the agent at an externally-chosen cell.
+
+        Used by eval to place the agent at a seeded random start without
+        going through reset() (which samples from the env's internal RNG).
+        Goal, codebook, and RNG are untouched.
+        """
+        x, y = int(pos[0]), int(pos[1])
+        if not (0 <= x < self.size and 0 <= y < self.size):
+            raise ValueError(f"position {(x, y)} out of bounds for size {self.size}")
+        self._pos = (x, y)
+        self._heading = (1, 0)
+
     def reset_goal(self) -> None:
         """Pick a new random goal."""
         self._goal = self._random_position(exclude=self._pos)
@@ -202,3 +215,41 @@ class ContinuousGridEnv(GridEnv):
         state = super().reset()
         self._continuous_pos = np.array(self._pos, dtype=np.float64)
         return state
+
+    def set_position(self, pos: tuple[int, int]) -> None:
+        super().set_position(pos)
+        self._continuous_pos = np.array(self._pos, dtype=np.float64)
+
+    def oracle_unit_toward_goal(self) -> np.ndarray:
+        """Unit (dx, dy) toward the goal in grid coordinates; used by eval action oracle."""
+        g = np.array(self._goal, dtype=np.float64)
+        v = g - self._continuous_pos
+        n = float(np.linalg.norm(v))
+        if n < 1e-8:
+            return np.array([0.0, 0.0], dtype=np.float32)
+        return (v / n).astype(np.float32)
+
+
+def make_env(env_cfg: EnvConfig, movement_mode: str, seed: int) -> GridEnv:
+    """Single-env factory: picks GridEnv or ContinuousGridEnv based on movement_mode.
+
+    Used by eval to build val envs that can natively handle the agent's action
+    format via env.step(...) — no hand-rolled movement math needed.
+    """
+    if movement_mode == "continuous":
+        return ContinuousGridEnv(
+            size=env_cfg.size,
+            speed=env_cfg.speed,
+            observation_size=env_cfg.observation_size,
+            seed=seed,
+            time_penalty=env_cfg.time_penalty,
+            scale=env_cfg.continuous_scale,
+            normalize=env_cfg.continuous_normalize,
+        )
+    return GridEnv(
+        size=env_cfg.size,
+        speed=env_cfg.speed,
+        observation_size=env_cfg.observation_size,
+        seed=seed,
+        time_penalty=env_cfg.time_penalty,
+    )

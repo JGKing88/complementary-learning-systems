@@ -46,6 +46,9 @@ class VectorHash:
         3. register_envs(envs)
         4. precompute_encoded_phi(encoder, ...)
         5. At runtime: recall(), gram_schmidt_projection(), get_encoded_state()
+
+    If cfg.gbook_only: steps 2–3 build only gbook and env offsets (no pbook / Wgp /
+    Wsp); recall() is unavailable. Training/eval that only use encoded_Phi are supported.
     """
 
     def __init__(self, cfg: VectorHashConfig, size: int) -> None:
@@ -66,10 +69,14 @@ class VectorHash:
     # ------------------------------------------------------------------
 
     def build_scaffold(self) -> None:
-        """Generate gbook, pbook, Wpg, Wgp."""
+        """Generate gbook, pbook, Wpg, Wgp (or only gbook when cfg.gbook_only)."""
         lambdas = self.lambdas
         print("  build_scaffold: gen_gbook_2d")
         self.gbook = gen_gbook_2d(lambdas, self.Ng, self.Npos)  # (Ng, Npos, Npos)
+        self.module_sizes = [l ** 2 for l in lambdas]
+        if self.cfg.gbook_only:
+            print("  build_scaffold: gbook_only — skipping pbook / Wgp")
+            return
 
         Wpg = _randn(self.Np, self.Ng)
         prune = int((1 - self.c) * self.Np * self.Ng)
@@ -87,19 +94,11 @@ class VectorHash:
         print("  build_scaffold: train_gcpc (Wgp)")
         self.Wgp = train_gcpc(pbook_flat, gbook_flat, Npatts=self.Npos ** 2)
 
-        # Module sizes for recall
-        self.module_sizes = [l ** 2 for l in lambdas]
-
     # ------------------------------------------------------------------
     # 2. Register environments
     # ------------------------------------------------------------------
 
-    def register_envs(self, envs: list[GridEnv]) -> None:
-        """Explore envs, place them in the grid, build Wsp/Wps."""
-        n_envs = len(envs)
-        size = self.size
-
-        # Place envs in non-overlapping positions
+    def _random_offsets(self, n_envs: int, size: int) -> list[tuple[int, int]]:
         used: list[tuple[int, int]] = []
         pairs: list[tuple[int, int]] = []
         for _ in range(100_000):
@@ -110,8 +109,99 @@ class VectorHash:
             if all(not _overlaps(x, y, px, py, size) for (px, py) in used):
                 used.append((x, y))
                 pairs.append((x, y))
+        return pairs
+
+    def _spread_offsets(
+        self, n_envs: int, size: int, jitter: float = 0.4,
+    ) -> list[tuple[int, int]]:
+        """Roughly-uniform grid layout with random jitter within each cell.
+
+        Places envs on a rows x cols lattice spanning [0, Npos - size] in
+        each axis, then perturbs each offset by up to
+            jitter * (spacing - size) / 2
+        in each axis. With jitter in [0, 1] the post-jitter offsets are
+        guaranteed non-overlapping. Uses global np.random (seeded by the
+        caller), so results are deterministic per np seed.
+        """
+        max_off = self.Npos - size
+        if n_envs <= 0:
+            return []
+        if n_envs == 1:
+            return [(max_off // 2, max_off // 2)]
+
+        # rows x cols layout covering n_envs slots, rows <= cols.
+        rows = max(int(np.floor(np.sqrt(n_envs))), 1)
+        cols = int(np.ceil(n_envs / rows))
+
+        # Per-axis spacing of the ideal lattice (0 if only 1 row/col).
+        sp_x = max_off / (rows - 1) if rows > 1 else 0.0
+        sp_y = max_off / (cols - 1) if cols > 1 else 0.0
+
+        # Max jitter per axis that keeps envs non-overlapping (half the slack,
+        # scaled by the jitter fraction). Clamp to 0 if spacing <= size.
+        j_x = max(0.0, (sp_x - size) / 2.0) * jitter
+        j_y = max(0.0, (sp_y - size) / 2.0) * jitter
+
+        # Shrink the lattice bounds by the jitter radius so jitter can't push
+        # past [0, max_off].
+        xs = (np.linspace(j_x, max_off - j_x, rows) if rows > 1
+              else np.array([max_off / 2.0]))
+        ys = (np.linspace(j_y, max_off - j_y, cols) if cols > 1
+              else np.array([max_off / 2.0]))
+
+        pairs: list[tuple[int, int]] = []
+        for x in xs:
+            for y in ys:
+                if len(pairs) >= n_envs:
+                    break
+                dx = np.random.uniform(-j_x, j_x) if j_x > 0 else 0.0
+                dy = np.random.uniform(-j_y, j_y) if j_y > 0 else 0.0
+                pairs.append((int(round(x + dx)), int(round(y + dy))))
+            if len(pairs) >= n_envs:
+                break
+
+        # Sanity: verify non-overlap. Guaranteed with jitter <= 1 and
+        # spacing > size, but guard against degenerate Npos/size combos.
+        for i, (xi, yi) in enumerate(pairs):
+            for (xj, yj) in pairs[:i]:
+                if _overlaps(xi, yi, xj, yj, size):
+                    raise RuntimeError(
+                        f"Spread placement produced overlapping envs "
+                        f"(size={size}, Npos={self.Npos}, n_envs={n_envs}, "
+                        f"jitter={jitter}). Scaffold too small."
+                    )
+        return pairs
+
+    def register_envs(
+        self, envs: list[GridEnv], placement: str = "random",
+        spread_jitter: float = 0.4,
+    ) -> None:
+        """Explore envs, place them in the grid, build Wsp/Wps.
+
+        placement:
+          - "random": rejection-sampled non-overlapping offsets (default).
+          - "spread": rows x cols lattice spanning the scaffold with random
+            jitter per offset so envs are roughly uniformly distributed but
+            not on a perfect grid. spread_jitter in [0, 1] scales the
+            per-axis perturbation; 0 = exact lattice, 1 = maximum safe
+            jitter (post-jitter envs still guaranteed non-overlapping).
+        """
+        n_envs = len(envs)
+        size = self.size
+
+        if placement == "spread":
+            pairs = self._spread_offsets(n_envs, size, jitter=spread_jitter)
+        elif placement == "random":
+            pairs = self._random_offsets(n_envs, size)
+        else:
+            raise ValueError(f"Unknown placement: {placement!r}")
         if len(pairs) < n_envs:
             raise RuntimeError(f"Could only place {len(pairs)}/{n_envs} envs.")
+
+        if self.cfg.gbook_only:
+            self.env_offsets = [pairs[i] for i in range(n_envs)]
+            print("  register_envs: gbook_only — skipping Wsp/Wps and scaffold test")
+            return
 
         all_locs: list[np.ndarray] = []
         all_obs: list[np.ndarray] = []
@@ -162,6 +252,8 @@ class VectorHash:
         obs: (Ns,) binary observation.
         Returns (s_out, p_out, g_out) numpy arrays.
         """
+        if self.cfg.gbook_only:
+            raise RuntimeError("VectorHash.recall is unavailable when cfg.gbook_only is True")
         # No second nonlin: Wps reconstructs already-thresholded pbook values.
         # Re-thresholding destroys the signal (double threshold bug).
         pin = self.Wps @ obs
@@ -181,6 +273,10 @@ class VectorHash:
 
     def recall_batch(self, obs_batch: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         """Batched recall.  obs_batch: (B, Ns).  Returns (s, p, g) each (B, dim)."""
+        if self.cfg.gbook_only:
+            raise RuntimeError(
+                "VectorHash.recall_batch is unavailable when cfg.gbook_only is True"
+            )
         S = obs_batch.T  # (Ns, B)
         pin = self.Wps @ S  # no second nonlin
         gin = self.Wgp @ pin

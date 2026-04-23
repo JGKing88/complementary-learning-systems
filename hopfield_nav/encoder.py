@@ -20,33 +20,43 @@ def load_encoder(
         effective_gain: The gain to use (override or checkpoint's).
     """
     ckpt = torch.load(checkpoint_path, map_location=device, weights_only=False)
-    raw_cfg = ckpt["config"]
 
-    # Support both old format (nested model_params) and new format (flat)
-    cfg_dict = raw_cfg.get("model_params", raw_cfg)
+    # Three historical save formats:
+    #   1. Newest (encoder_training/_save_ckpt):   top-level "model_config" + "gain"
+    #   2. Middle (old train_binary_encoder.py):   ckpt["config"]["model_params"]
+    #   3. Oldest:                                 ckpt["config"] is already the model dict
+    if "model_config" in ckpt:
+        cfg_dict = ckpt["model_config"]
+    elif "config" in ckpt:
+        raw_cfg = ckpt["config"]
+        cfg_dict = raw_cfg.get("model_params", raw_cfg)
+    else:
+        raise KeyError(
+            f"Could not find encoder model config in checkpoint {checkpoint_path}. "
+            f"Expected 'model_config' or 'config'/'config.model_params'. "
+            f"Top-level keys: {list(ckpt.keys())}"
+        )
 
-    cfg = EncoderModelConfig(
-        encoder_type=cfg_dict.get("encoder_type", "cnn"),
-        lambdas=cfg_dict["lambdas"],
-        out_dim=cfg_dict["out_dim"],
-        hidden_dim=cfg_dict.get("hidden_dim", 512),
-        num_hidden_layers=cfg_dict.get("num_hidden_layers", 2),
-        hidden_channels=cfg_dict.get("hidden_channels", 128),
-        num_conv_layers=cfg_dict.get("num_conv_layers", 3),
-        kernel_size=cfg_dict.get("kernel_size", 5),
-        nonlinearity=cfg_dict.get("nonlinearity", "gelu"),
-        output_nonlinearity=cfg_dict.get("output_nonlinearity", "tanh"),
-        gain=cfg_dict.get("gain", 1.0),
-    )
+    # Only keep fields EncoderModelConfig knows about (new save format dumps
+    # extra training-time fields alongside model fields).
+    valid_fields = set(EncoderModelConfig.__dataclass_fields__.keys())
+    filtered = {k: v for k, v in cfg_dict.items() if k in valid_fields}
+    cfg = EncoderModelConfig(**filtered)
 
     encoder = create_encoder(cfg, device)
-    # Support both key names
     state_dict = ckpt.get("model_state_dict", ckpt.get("state_dict"))
     encoder.load_state_dict(state_dict)
     encoder.eval()
     encoder.requires_grad_(False)
 
-    effective_gain = gain_override if gain_override is not None else cfg.gain
+    # Gain resolution order: explicit override → top-level "gain" (new format)
+    # → model-config "gain" (old format) → 1.0 fallback.
+    if gain_override is not None:
+        effective_gain = gain_override
+    elif "gain" in ckpt:
+        effective_gain = float(ckpt["gain"])
+    else:
+        effective_gain = float(cfg.gain)
     return encoder, cfg, effective_gain
 
 

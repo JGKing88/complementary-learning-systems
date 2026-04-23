@@ -119,7 +119,7 @@ Creates `VecEnv` or `ContinuousVecEnv` based on `movement_mode`.
 
 - `RolloutBatch` — dataclass holding `obs, move_actions, store_actions, move_log_probs, store_log_probs, values, rewards, bootstrap_value`.
 - `compute_gae(rewards, values, bootstrap_value, gamma, lam)` — GAE with truncation bootstrap only (no terminal states within rollout).
-- `ppo_update(agent, rollout, cfg, optimizer)` — PPO clipped update for both movement and store actions sharing the same advantages. Separate entropy coefficients.
+- `ppo_update(agent, rollouts, cfg, optimizer, aux_scale)` — PPO clipped update on a POOLED list of rollouts. Concatenates rollouts along the trajectory axis, computes per-rollout GAE, normalizes advantages globally, then runs `ppo_epochs × n_minibatches` gradient steps with shuffled trajectory-level minibatches. Store head and store entropy are masked by `explore_mask`.
 
 ### train.py
 

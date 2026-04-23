@@ -1,29 +1,27 @@
 #!/bin/bash -l
 #SBATCH --job-name=hnav-cont
-#SBATCH --time=0-02:00:00
+#SBATCH --time=2-00:00:00
 #SBATCH --gres=gpu:1
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=4
 #SBATCH --mail-type=ALL
 #SBATCH --mail-user=jackking@mit.edu
-#SBATCH --partition=mit_normal_gpu
-#SBATCH --mem=64G
-#SBATCH --output=/home/jackking/cls/hopfield_nav/logs/slurm_hnav_cont_%j.out
+#SBATCH --partition=pi_fiete
+#SBATCH --mem=100G
+#SBATCH --output=/home/jackking/cls/hopfield_nav/logs/slurm_hnav_sweep_%j.out
 
 module load miniforge/24.3.0-0
 module load cuda/13.0.1
 
 source activate cls
-export WANDB_API_KEY=5aee75a09d43e7f6c9ec80e003687a8a3a820b08
 unset CUDA_VISIBLE_DEVICES
 
 cd /home/jackking/cls
 
-python -m hopfield_nav.train \
-    --encoder_checkpoint encoders/run_20260422_185816/encoder_best.pt \
+COMMON="--encoder_checkpoint encoders/run_20260422_185816/encoder_best.pt \
     --fwhm_ratio 0.25 \
     --size 8 \
-    --observation_size 512 \
+    --observation_size 1600 \
     --time_penalty 0.01 \
     --movement_mode continuous \
     --lambdas 11 12 13 \
@@ -45,10 +43,29 @@ python -m hopfield_nav.train \
     --steps_per_rollout 200 \
     --auto_nav_warmup 0 \
     --explore_steps 100 \
-    --n_updates 400 \
+    --n_updates 500 \
     --lr 3e-4 \
     --eval_every 25 \
     --save_every 100 \
     --seed 42 \
     --use_wandb \
-    --device cuda
+    --device cuda"
+
+echo "=== explore=0 ==="
+python -m hopfield_nav.train $COMMON
+echo ""
+
+echo "=== auto_nav_warmup=100 ==="
+python -m hopfield_nav.train $COMMON \
+    --auto_nav_warmup 200
+echo ""
+
+echo "=== explore=0, auto_nav_warmup=100 ==="
+python -m hopfield_nav.train $COMMON \
+    --auto_nav_warmup 100
+echo ""
+
+echo "=== 2 layers ==="
+python -m hopfield_nav.train $COMMON \
+    --num_rnn_layers 2
+echo ""
