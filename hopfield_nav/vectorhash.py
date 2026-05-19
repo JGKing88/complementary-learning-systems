@@ -47,8 +47,10 @@ class VectorHash:
         4. precompute_encoded_phi(encoder, ...)
         5. At runtime: recall(), gram_schmidt_projection(), get_encoded_state()
 
-    If cfg.gbook_only: steps 2–3 build only gbook and env offsets (no pbook / Wgp /
-    Wsp); recall() is unavailable. Training/eval that only use encoded_Phi are supported.
+    If cfg.static_vectorhash: steps 2–3 build only gbook and env offsets (no
+    pbook / Wgp / Wsp / self-test); recall() is unavailable. Sensory input
+    (when enabled) is read directly from each env's own codebook, so no
+    scaffold-sized sbook is needed here.
     """
 
     def __init__(self, cfg: VectorHashConfig, size: int) -> None:
@@ -69,13 +71,13 @@ class VectorHash:
     # ------------------------------------------------------------------
 
     def build_scaffold(self) -> None:
-        """Generate gbook, pbook, Wpg, Wgp (or only gbook when cfg.gbook_only)."""
+        """Generate gbook, pbook, Wpg, Wgp (or only gbook when cfg.static_vectorhash)."""
         lambdas = self.lambdas
         print("  build_scaffold: gen_gbook_2d")
         self.gbook = gen_gbook_2d(lambdas, self.Ng, self.Npos)  # (Ng, Npos, Npos)
         self.module_sizes = [l ** 2 for l in lambdas]
-        if self.cfg.gbook_only:
-            print("  build_scaffold: gbook_only — skipping pbook / Wgp")
+        if self.cfg.static_vectorhash:
+            print("  build_scaffold: static_vectorhash — skipping pbook / Wgp")
             return
 
         Wpg = _randn(self.Np, self.Ng)
@@ -198,9 +200,9 @@ class VectorHash:
         if len(pairs) < n_envs:
             raise RuntimeError(f"Could only place {len(pairs)}/{n_envs} envs.")
 
-        if self.cfg.gbook_only:
+        if self.cfg.static_vectorhash:
             self.env_offsets = [pairs[i] for i in range(n_envs)]
-            print("  register_envs: gbook_only — skipping Wsp/Wps and scaffold test")
+            print("  register_envs: static_vectorhash — skipping Wsp/Wps and scaffold test")
             return
 
         all_locs: list[np.ndarray] = []
@@ -252,8 +254,8 @@ class VectorHash:
         obs: (Ns,) binary observation.
         Returns (s_out, p_out, g_out) numpy arrays.
         """
-        if self.cfg.gbook_only:
-            raise RuntimeError("VectorHash.recall is unavailable when cfg.gbook_only is True")
+        if self.cfg.static_vectorhash:
+            raise RuntimeError("VectorHash.recall is unavailable when cfg.static_vectorhash is True")
         # No second nonlin: Wps reconstructs already-thresholded pbook values.
         # Re-thresholding destroys the signal (double threshold bug).
         pin = self.Wps @ obs
@@ -273,9 +275,9 @@ class VectorHash:
 
     def recall_batch(self, obs_batch: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         """Batched recall.  obs_batch: (B, Ns).  Returns (s, p, g) each (B, dim)."""
-        if self.cfg.gbook_only:
+        if self.cfg.static_vectorhash:
             raise RuntimeError(
-                "VectorHash.recall_batch is unavailable when cfg.gbook_only is True"
+                "VectorHash.recall_batch is unavailable when cfg.static_vectorhash is True"
             )
         S = obs_batch.T  # (Ns, B)
         pin = self.Wps @ S  # no second nonlin

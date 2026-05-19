@@ -30,6 +30,9 @@ def _coerce_legacy_cfg(cd: dict) -> dict:
     # single global num_val_envs for the dedicated eval world.
     if "val_envs_per_world" in cd and "num_val_envs" not in cd:
         cd["num_val_envs"] = cd.pop("val_envs_per_world")
+    vh = cd.get("vectorhash")
+    if isinstance(vh, dict) and "gbook_only" in vh and "static_vectorhash" not in vh:
+        vh["static_vectorhash"] = vh.pop("gbook_only")
     return cd
 
 
@@ -85,10 +88,13 @@ def main():
     parser.add_argument("--distractors", nargs="+", type=int,
                         default=[0, 1, 3, 5, 10])
     parser.add_argument(
-        "--gbook-only", dest="gbook_only", default=None,
+        "--static-vectorhash", dest="static_vectorhash", default=None,
         action=argparse.BooleanOptionalAction,
-        help="Override checkpoint: gbook-only scaffold. Omit to use ckpt value.",
+        help="Override checkpoint: static VectorHash scaffold (gbook + sbook only). "
+             "Omit to use ckpt value.",
     )
+    parser.add_argument("--goal_radius", type=float, default=None,
+                        help="Override env.goal_radius for eval (default: use ckpt value)")
     args = parser.parse_args()
 
     device = torch.device(args.device)
@@ -99,12 +105,15 @@ def main():
 
     ck = torch.load(args.checkpoint, map_location=device, weights_only=False)
     cfg = make_cfg(ck["config"])
-    if args.gbook_only is not None:
-        cfg.vectorhash.gbook_only = bool(args.gbook_only)
+    if args.static_vectorhash is not None:
+        cfg.vectorhash.static_vectorhash = bool(args.static_vectorhash)
+    if args.goal_radius is not None:
+        cfg.env.goal_radius = args.goal_radius
+        print(f"Override: goal_radius={args.goal_radius}")
 
     val_envs, vh, val_idxs = build_eval_world(cfg, encoder, str(device))
 
-    input_dim = compute_input_dim(cfg.agent, embed_dim)
+    input_dim = compute_input_dim(cfg.agent, embed_dim, cfg.env.observation_size)
     agent = NavAgent(cfg.agent, input_dim).to(device)
     agent.load_state_dict(ck["agent_state_dict"])
     agent.eval()
@@ -133,15 +142,16 @@ def main():
         n_distractors_list=args.distractors,
     )
 
-    print(f"{'n_dist':>7} {'navD':>6} {'navS':>6} {'stEff':>6} {'stRate':>7} {'reach':>6} {'cov':>6} {'findR':>6}")
-    print("-" * 60)
+    print(f"{'n_dist':>7} {'srD':>6} {'msD':>6} {'srS':>6} {'msS':>6} {'stEff':>6} {'reach':>6} {'cov':>6} {'findR':>6}")
+    print("-" * 70)
     for n in args.distractors:
         d = disc[n]; e = expl[n]
         print(f"{n:>7} "
-              f"{nav_det[n]['success_rate']:>6.2f} "
-              f"{nav_stoch[n]['success_rate']:>6.2f} "
+              f"{nav_det[n]['success_rate']:>6.3f} "
+              f"{nav_det[n]['mean_steps']:>6.1f} "
+              f"{nav_stoch[n]['success_rate']:>6.3f} "
+              f"{nav_stoch[n]['mean_steps']:>6.1f} "
               f"{d['store_efficiency']:>6.2f} "
-              f"{d['store_success_rate']:>7.2f} "
               f"{d['reach_success_rate']:>6.2f} "
               f"{e['mean_coverage']:>6.2f} "
               f"{e['goal_find_rate']:>6.2f}")

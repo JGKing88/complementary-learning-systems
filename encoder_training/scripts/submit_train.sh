@@ -5,7 +5,7 @@
 #SBATCH --ntasks=1
 #SBATCH --gres=gpu:a100:1
 #SBATCH --mem=64G
-#SBATCH --partition=pi_fiete
+#SBATCH --partition=pi_evelina9
 #SBATCH --output=/home/jackking/cls/encoder_training/scripts/logs/slurm-%j.out
 
 # ==========================================================================
@@ -36,7 +36,7 @@ NPOS=100
 # Radius: use PER_ENV_RADIUS_FRAC (e.g. 0.1) OR RADIUS (fixed, in cells).
 PER_ENV_RADIUS_FRAC=0.1
 # RADIUS=10.0
-SINGLE_ENV_BATCH=0            # 1 to enable --single_env_batch, 0 for mixed
+SINGLE_ENV_BATCH=1            # 1 to enable --single_env_batch, 0 for mixed
 
 # --- Loss -------------------------------------------------------------------
 LOSS_MODE=mse_contrastive     # mse_contrastive | cka

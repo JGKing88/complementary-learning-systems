@@ -11,17 +11,21 @@ Per timestep:
 """
 from __future__ import annotations
 
+import math
+
 import numpy as np
 import torch
+import torch.nn.functional as F
 
 from .config import TrainConfig
-from .hopfield import Hopfield, recall_per_env_batch
+from .hopfield import Hopfield, recall_per_env_batch, recall_per_env_batch_trajectory
 from .vectorhash import VectorHash
 from .vec_env import VecEnv, ContinuousVecEnv
-from .env import GridEnv
+from .env import GridEnv, at_goal
 from .agent import NavAgent
 from .ppo import RolloutBatch
 from .utils import classify_direction_batch, direction_to_onehot
+from .bc import novelty_action_batch_discrete, novelty_action_batch_continuous
 
 
 class RolloutCollector:
@@ -50,6 +54,8 @@ class RolloutCollector:
         env_offset: tuple[int, int] = (0, 0),
         update_idx: int = 0,
         aux_scale: float = 1.0,
+        epsilon_now: float = 0.0,
+        goal_in_memory_init: bool = False,
     ) -> RolloutBatch:
         """Collect one rollout of T steps across B parallel episodes in one env.
 
@@ -79,14 +85,46 @@ class RolloutCollector:
         )
         effective_bonus = cfg.hopfield.store_bonus * aux_scale
 
+        # DAgger BC mode: record teacher labels, but let the student act on
+        # its own sample. When collect_teacher is True, auto_nav teacher-
+        # forcing is suppressed so the student visits its own distribution.
+        collect_teacher = (cfg.training_mode == "bc")
+        # The teacher only trusts the Hopfield-direction reading when a
+        # **goal** pattern is known to be in memory. We track per env whether
+        # a store fired *while at goal* this rollout — that's the only way
+        # the agent can plant a trustworthy memory. Store-firings at non-goal
+        # cells (common early in training) would populate the Hopfield with
+        # nonsense and make a naive `has_memory` gate steer the student toward
+        # junk. With pre-populated distractors, `has_memory` is True from step
+        # zero but no goal-memory exists until the agent stores at goal.
+        # When `goal_in_memory_init=True` (caller-declared: pre_stored
+        # rollouts where the goal pattern was loaded into the Hopfield
+        # before the rollout started), initialize all B trajectories' bit
+        # to True. This matches eval-time semantics for evaluate_navigation
+        # (which hardcodes goal_in_memory=True since the eval pre-loads goal).
+        agent_goal_store_fired = np.full(B, goal_in_memory_init, dtype=bool)
+
         if cfg.agent.movement_mode == "continuous":
-            vec = ContinuousVecEnv(env, batch_size=B, scale=cfg.env.continuous_scale)
+            vec = ContinuousVecEnv(
+                env, batch_size=B,
+                scale=cfg.env.continuous_scale,
+                normalize=cfg.env.continuous_normalize,
+                max_action_norm=cfg.env.max_action_norm,
+                min_action_norm=cfg.env.min_action_norm,
+            )
         else:
             vec = VecEnv(env, batch_size=B)
         vec.reset_all()
 
         # Determine input dimensions for signal
         signal_dim = 4 if cfg.agent.hopfield_mode == "discrete" else 2
+        prev_action_dim = 4 if cfg.agent.movement_mode == "discrete" else 2
+
+        # Enrichment buffers: prev_reward and prev_action feed step t's input
+        # based on step t-1's outcomes. Initialized to zero at rollout start;
+        # reset to zero for envs that just teleported (post-goal-reach).
+        prev_reward_t = torch.zeros(B, 1, device=self.device)
+        prev_action_t = torch.zeros(B, prev_action_dim, device=self.device)
 
         # Buffers
         all_obs = torch.zeros(B, T, agent.rnn.input_size, device=self.device)
@@ -101,18 +139,47 @@ class RolloutCollector:
         all_rewards = torch.zeros(B, T, device=self.device)
         all_goal_reached = torch.zeros(B, T, device=self.device)  # 1 if agent is at goal this step
         all_explore_mask = torch.zeros(B, T, device=self.device)
+        # 1 where the executed action came from the policy sample, 0 where it
+        # was replaced by an off-policy override (ε-explore or auto-nav teacher
+        # forcing). PPO move_loss masks these out — those steps were env
+        # exploration, not policy gradient signal, and including them blows
+        # up the importance ratio under narrow / unfrozen std.
+        all_policy_action_mask = torch.ones(B, T, device=self.device)
 
         # Novelty bonus: track per-rollout visited cells (B, size, size) bool.
         # +novelty_reward on first visit during the explore phase; revisits get 0.
+        # BC mode also needs this buffer for the novelty-action teacher.
         novelty_on = cfg.hopfield.novelty_reward > 0
-        if novelty_on:
+        revisit_on = cfg.hopfield.revisit_penalty > 0
+        wall_on = cfg.hopfield.wall_penalty > 0
+        persistence_on = cfg.hopfield.persistence_bonus > 0
+        # visited_cells is needed for novelty + revisit shaping (and BC novelty
+        # teacher). Wall + persistence shaping only need positional / action
+        # info, not visited_cells.
+        need_visited = novelty_on or revisit_on or collect_teacher
+        if need_visited:
             visited_cells = np.zeros((B, cfg.env.size, cfg.env.size), dtype=bool)
             # Mark initial positions as visited so first step doesn't award novelty for starting cell
             init_pos = vec.positions()
             visited_cells[np.arange(B), init_pos[:, 0], init_pos[:, 1]] = True
 
+        # BC teacher-label buffers (populated only in collect_teacher mode).
+        if collect_teacher:
+            if cfg.agent.movement_mode == "discrete":
+                teacher_move = torch.zeros(B, T, dtype=torch.long, device=self.device)
+            else:
+                teacher_move = torch.zeros(B, T, 2, device=self.device)
+            teacher_store = torch.zeros(B, T, device=self.device)
+            move_label_mask = torch.zeros(B, T, device=self.device)
+            store_label_mask = torch.zeros(B, T, device=self.device)
+            trust_hop_mask = torch.zeros(B, T, device=self.device)
+
+        # Caching for the Gram-Schmidt basis. We invalidate the cache for an
+        # env on (a) the very first step (cached_W=None forces full recompute),
+        # (b) every recompute_interval steps, and (c) the step right after a
+        # teleport (the cached W was computed at a now-stale position).
         cached_W: np.ndarray | None = None
-        steps_since_recompute = np.zeros(B, dtype=np.int32)
+        invalidated_envs = np.zeros(B, dtype=bool)
 
         agent.eval()
         with torch.no_grad():
@@ -121,83 +188,211 @@ class RolloutCollector:
                 positions = vec.positions()  # (B, 2) int
 
                 # 2. Current reward from current position (before acting)
-                goal_arr = np.array(vec._goal)
-                at_goal = (positions[:, 0] == goal_arr[0]) & (positions[:, 1] == goal_arr[1])
-                current_reward = np.where(at_goal, 1.0, -cfg.env.time_penalty).astype(np.float32)
+                at_goal_mask = at_goal(vec)
+                if vec.goals_active:
+                    current_reward = np.where(
+                        at_goal_mask, cfg.env.goal_reward, -cfg.env.time_penalty
+                    ).astype(np.float32)
+                else:
+                    current_reward = np.full(at_goal_mask.shape, -cfg.env.time_penalty, dtype=np.float32)
                 current_reward_t = torch.from_numpy(current_reward).to(self.device).unsqueeze(1)  # (B, 1)
 
                 # 3. Look up embeddings from encoded_Phi
                 embeddings_np = self.vectorhash.get_encoded_state(positions, env_offset)
                 embeddings = torch.from_numpy(embeddings_np).float().to(self.device)
 
-                # 4. Hopfield signal (and raw projected displacement q for teacher forcing)
-                hopfield_signal = torch.zeros(B, signal_dim, device=self.device)
-                q_full = np.zeros((B, 2), dtype=np.float32)
-                memory_mask = torch.zeros(B, dtype=torch.bool, device=self.device)
-
-                if shared_hopfield:
-                    hop = hopfields
-                    if hop.num_memories > 0:
-                        recalled = hop.recall_batch(
-                            embeddings, steps=cfg.hopfield.steps,
-                            beta=cfg.hopfield.beta, alpha=cfg.hopfield.alpha,
-                        )
-                        sig_np, q_full = self._compute_signal(
-                            embeddings_np, recalled.cpu().numpy(),
-                            positions, env_offset, cached_W, steps_since_recompute,
-                        )
-                        hopfield_signal = torch.from_numpy(sig_np).float().to(self.device)
-                        memory_mask[:] = True
+                # 3b. Raw sensory observations from env codebook (if agent uses them)
+                if cfg.agent.input_sensory:
+                    sensory_np = vec.obs_batch()
+                    sensory = torch.from_numpy(sensory_np).float().to(self.device)
                 else:
-                    # Batched per-env recall: stack W matrices for envs that have memories
-                    # and run one bmm instead of B python-dispatched recall calls.
-                    has_memory = [b for b in range(B) if hopfields[b].num_memories > 0]
-                    if has_memory:
-                        idx = torch.as_tensor(has_memory, device=self.device, dtype=torch.long)
-                        W_stack = torch.stack([hopfields[b].W for b in has_memory], dim=0)  # (M, D, D)
-                        x0_stack = embeddings.index_select(0, idx)                          # (M, D)
-                        recalled_stack = recall_per_env_batch(
-                            x0_stack, W_stack,
-                            steps=cfg.hopfield.steps,
-                            beta=cfg.hopfield.beta, alpha=cfg.hopfield.alpha,
-                        )
-                        recalled_np_full = np.zeros((B, self.embed_dim), dtype=np.float32)
-                        recalled_np_full[has_memory] = recalled_stack.cpu().numpy()
-                        sig, q_full = self._compute_signal(
-                            embeddings_np, recalled_np_full,
-                            positions, env_offset, cached_W, steps_since_recompute,
-                        )
-                        sig_t = torch.from_numpy(sig).float().to(self.device)
-                        memory_mask[idx] = True
-                        hopfield_signal = torch.where(memory_mask.unsqueeze(-1), sig_t, hopfield_signal)
+                    sensory = None
 
-                steps_since_recompute += 1
+                # 4. Hopfield signal (and raw projected displacement q for teacher forcing).
+                # Build per-env recompute mask: full recompute on first step, every
+                # recompute_interval steps, or for any env that just teleported.
+                if cached_W is None or (t % cfg.recompute_interval == 0):
+                    recompute_mask = np.ones(B, dtype=bool)
+                else:
+                    recompute_mask = invalidated_envs.copy()
+                invalidated_envs[:] = False
+
+                hopfield_signal, q_full, memory_mask, new_W = self._hopfield_signal_at(
+                    embeddings_np, embeddings, positions, env_offset,
+                    hopfields, shared_hopfield, signal_dim,
+                    cached_W=cached_W, recompute_mask=recompute_mask,
+                )
+                multistep_q = self._compute_multistep_q(
+                    embeddings_np, embeddings, hopfields, shared_hopfield,
+                    cached_W if new_W is None else new_W,
+                    cfg.agent.input_hopfield_multistep,
+                )
+                if new_W is not None:
+                    cached_W = new_W
 
                 # 4b. Teacher action (auto-nav warmup): override move_action for any env
                 # that has a stored memory with the Hopfield-suggested direction.
                 # Re-scoring log_prob under the current policy is handled inside the agent.
+                # DAgger BC mode records labels instead of overriding actions — the
+                # student must visit its own state distribution, so the override is
+                # suppressed. Labels are attached further down.
+                # Compose epsilon-explore + auto-nav overrides. Both write into
+                # the agent's move_action_override slot; if naively assigned in
+                # sequence, the second one clobbers the first. We resolve with
+                # epsilon precedence on its mask, auto_nav filling memory_mask
+                # elsewhere. Both branches re-score log_prob inside
+                # get_action_and_value so PPO's ratio stays well-defined.
                 move_action_override = None
                 move_override_mask = None
-                if auto_nav_active and memory_mask.any():
+                eps_action: torch.Tensor | None = None
+                eps_mask: torch.Tensor | None = None
+                if epsilon_now > 0 and not collect_teacher:
+                    eps_roll = torch.rand(B, device=self.device)
+                    candidate_mask = eps_roll < epsilon_now
+                    if candidate_mask.any():
+                        if cfg.agent.movement_mode == "continuous":
+                            theta = torch.rand(B, device=self.device) * (2 * math.pi)
+                            rand_vec = torch.stack(
+                                [torch.cos(theta), torch.sin(theta)], dim=-1,
+                            )
+                            eps_action = rand_vec.unsqueeze(1)  # (B, 1, 2)
+                        else:
+                            rand_idx = torch.randint(
+                                0, 4, (B,), device=self.device, dtype=torch.long,
+                            )
+                            eps_action = rand_idx.unsqueeze(1)  # (B, 1)
+                        eps_mask = candidate_mask
+
+                nav_action: torch.Tensor | None = None
+                nav_mask: torch.Tensor | None = None
+                if auto_nav_active and memory_mask.any() and not collect_teacher:
                     if cfg.agent.movement_mode == "discrete":
-                        teacher_idx = classify_direction_batch(q_full)  # (B,) int
-                        move_action_override = torch.from_numpy(
+                        teacher_idx = classify_direction_batch(q_full)
+                        nav_action = torch.from_numpy(
                             teacher_idx.astype(np.int64)
                         ).to(self.device).unsqueeze(1)  # (B, 1)
                     else:
                         mag = np.linalg.norm(q_full, axis=-1, keepdims=True).clip(1e-8)
-                        teacher_vec = (q_full / mag).astype(np.float32)  # unit vector
-                        move_action_override = torch.from_numpy(
+                        teacher_vec = (q_full / mag).astype(np.float32)
+                        nav_action = torch.from_numpy(
                             teacher_vec
                         ).to(self.device).unsqueeze(1)  # (B, 1, 2)
-                    move_override_mask = memory_mask
+                    nav_mask = memory_mask
 
-                # 5. Build RNN input (current_reward, not prev_reward)
+                if eps_action is not None and nav_action is not None:
+                    # Both fire: epsilon wins on its mask, nav fills the rest of memory_mask.
+                    if cfg.agent.movement_mode == "continuous":
+                        move_action_override = torch.where(
+                            eps_mask.view(-1, 1, 1), eps_action, nav_action,
+                        )
+                    else:
+                        move_action_override = torch.where(
+                            eps_mask.view(-1, 1), eps_action, nav_action,
+                        )
+                    move_override_mask = eps_mask | nav_mask
+                elif eps_action is not None:
+                    move_action_override = eps_action
+                    move_override_mask = eps_mask
+                elif nav_action is not None:
+                    move_action_override = nav_action
+                    move_override_mask = nav_mask
+
+                # 4c. BC teacher-label computation. Movement label:
+                #   has_memory=True  -> Hopfield-derived direction (student
+                #                       learns to reproduce its own input).
+                #   has_memory=False -> novelty action (first-visit neighbor).
+                # Store label: 1 at goal else 0.
+                # Masks: skip movement label at goal (env about to teleport);
+                # optionally skip pre-memory nav labels when supervise_explore=False.
+                if collect_teacher:
+                    has_memory_np = memory_mask.cpu().numpy()
+                    # Trust Hopfield-as-goal-direction only when (a) memory is
+                    # populated AND (b) the agent has stored while *at goal*
+                    # this rollout. Mid-training the agent can also fire store
+                    # at non-goal cells — treating such memories as reliable
+                    # would teach the student to follow junk recalls. With
+                    # distractors pre-populated, has_memory is True from step 0
+                    # but no goal pattern is present until the agent stores at
+                    # goal — this gate handles both cases uniformly.
+                    trust_hop = has_memory_np & agent_goal_store_fired
+                    if cfg.agent.movement_mode == "discrete":
+                        hop_idx = classify_direction_batch(q_full)                 # (B,) int
+                        nov_idx = novelty_action_batch_discrete(
+                            positions, visited_cells, cfg.env.size, vec._rng,
+                            fallback=cfg.bc.novelty_fallback,
+                        )
+                        tm_t = np.where(trust_hop, hop_idx, nov_idx).astype(np.int64)
+                        teacher_move[:, t] = torch.from_numpy(tm_t).to(self.device)
+                    else:
+                        mag = np.linalg.norm(q_full, axis=-1, keepdims=True).clip(1e-8)
+                        hop_vec = (q_full / mag).astype(np.float32)                # (B, 2)
+                        pos_cont = (
+                            vec.positions_continuous()
+                            if hasattr(vec, "positions_continuous")
+                            else positions.astype(np.float32)
+                        )
+                        nov_vec = novelty_action_batch_continuous(
+                            pos_cont, visited_cells, cfg.env.size, vec._rng,
+                        )
+                        tm_t = np.where(trust_hop[:, None], hop_vec, nov_vec).astype(np.float32)
+                        teacher_move[:, t] = torch.from_numpy(tm_t).to(self.device)
+
+                    teacher_store[:, t] = torch.from_numpy(
+                        at_goal_mask.astype(np.float32)
+                    ).to(self.device)
+
+                    move_valid = ~at_goal_mask
+                    if not cfg.bc.supervise_explore:
+                        # `supervise_explore=False` means only supervise trusted
+                        # post-memory nav — gate on trust_hop, not raw has_memory.
+                        move_valid = move_valid & trust_hop
+                    move_label_mask[:, t] = torch.from_numpy(
+                        move_valid.astype(np.float32)
+                    ).to(self.device)
+                    # trust_hop_mask: 1 wherever the teacher's move label is a
+                    # Hopfield-direction (post-store-at-goal) label AND the step
+                    # is non-at-goal (i.e., move_valid AND trust_hop). Used to
+                    # upweight nav labels in the BC loss.
+                    trust_hop_mask[:, t] = torch.from_numpy(
+                        ((~at_goal_mask) & trust_hop).astype(np.float32)
+                    ).to(self.device)
+                    store_label_mask[:, t] = 1.0
+
+                # 5. Build RNN input. Two extra enrichment channels (gated by
+                # config flags) carry information the RNN would otherwise have
+                # to reconstruct from hidden state alone: prev_reward (did my
+                # last step land on goal?) and prev_action. Raw hopfield
+                # feeds the unnormalized q so magnitude encodes memory presence
+                # + signal confidence — the agent reads "is there a memory" off
+                # ‖q‖ instead of a ground-truth flag.
+                if (cfg.agent.input_hopfield_raw
+                        and cfg.agent.hopfield_mode == "continuous"):
+                    sig_for_rnn = torch.from_numpy(q_full).float().to(self.device)
+                else:
+                    sig_for_rnn = hopfield_signal
+
                 parts = [current_reward_t]
+                if cfg.agent.input_prev_reward:
+                    parts.append(prev_reward_t)
                 if cfg.agent.input_encoded_state:
                     parts.append(embeddings)
                 if cfg.agent.input_hopfield_signal:
-                    parts.append(hopfield_signal)
+                    parts.append(sig_for_rnn)
+                if (cfg.agent.input_hopfield_multistep
+                        and cfg.agent.hopfield_mode == "continuous"):
+                    for s in cfg.agent.input_hopfield_multistep:
+                        parts.append(
+                            torch.from_numpy(multistep_q[s]).float().to(self.device)
+                        )
+                if cfg.agent.input_prev_action:
+                    parts.append(prev_action_t)
+                if cfg.agent.input_sensory:
+                    parts.append(sensory)
+                if cfg.agent.input_goal_in_memory:
+                    gim_t = torch.from_numpy(
+                        agent_goal_store_fired.astype(np.float32)
+                    ).to(self.device).unsqueeze(-1)  # (B, 1)
+                    parts.append(gim_t)
 
                 rnn_input = torch.cat(parts, dim=-1).unsqueeze(1)  # (B, 1, input_dim)
 
@@ -217,19 +412,32 @@ class RolloutCollector:
                 all_store_lp[:, t] = result["store_log_prob"]
                 all_values[:, t] = result["value"]
                 all_goal_reached[:, t] = torch.from_numpy(
-                    at_goal.astype(np.float32)).to(self.device)
+                    at_goal_mask.astype(np.float32)).to(self.device)
 
                 in_explore = cfg.explore_steps is None or t < cfg.explore_steps
                 all_explore_mask[:, t] = float(in_explore)
+                # ε / auto-nav overrides replace the policy sample. Mask
+                # those out of move_loss.
+                if move_override_mask is not None:
+                    all_policy_action_mask[:, t] = (~move_override_mask).float()
                 agent_store = (result["store_action"] > 0.5).cpu().numpy()
 
                 # 7. Apply stores BEFORE the env step. Under the new vec_env semantics,
                 #    the agent observably sits at the goal for one step before teleport,
-                #    so `at_goal` here is True precisely when the agent is at goal and
+                #    so `at_goal_mask` here is True precisely when the agent is at goal and
                 #    embeddings[b] is the goal embedding — so auto_store and agent_store
                 #    can both just store embeddings[b] directly.
-                effective_store = agent_store | (auto_store_active & at_goal)
+                effective_store = agent_store | (auto_store_active & at_goal_mask)
+                # Update agent_goal_store_fired for the BC teacher's trust gate
+                # (BC mode) AND for the agent's input bit (PPO + BC modes when
+                # cfg.agent.input_goal_in_memory is True). Only count stores
+                # that fire *at goal* — those are the only events that plant a
+                # trustworthy goal pattern in memory. Gated by in_explore so the
+                # bit cannot flip True during the exploit phase, when the
+                # input_memory() call below is suppressed (otherwise the bit
+                # would claim "goal in memory" without actually storing it).
                 if not shared_hopfield and in_explore:
+                    agent_goal_store_fired |= (effective_store & at_goal_mask)
                     for b in range(B):
                         if effective_store[b]:
                             hopfields[b].input_memory(embeddings[b])
@@ -248,41 +456,164 @@ class RolloutCollector:
 
                 # Store bonus: agent fired store on the at-goal step.
                 if effective_bonus > 0 and in_explore:
-                    rewards += effective_bonus * (agent_store & at_goal).astype(np.float32)
+                    rewards += effective_bonus * (agent_store & at_goal_mask).astype(np.float32)
 
                 # Novelty bonus: reward first-visit to a snapped cell during explore.
-                if novelty_on and in_explore:
+                # In BC mode we still track visits to drive the novelty teacher,
+                # but only the PPO-mode reward path fires when novelty_on.
+                # Gated by ~at_goal_mask so the post-step position used for shaping
+                # is the actual move outcome, not a teleport target (envs that
+                # were at-goal pre-step were teleported by step_batch).
+                # Explore-phase reward shaping. Each shaping component fires
+                # independently of the others — earlier code coupled them all
+                # under `need_visited`, which silently disabled wall_penalty
+                # and revisit_penalty when novelty=0.
+                if in_explore and (need_visited or wall_on or persistence_on):
                     new_pos = vec.positions()  # (B, 2) post-step snapped ints
                     xs, ys = new_pos[:, 0], new_pos[:, 1]
-                    not_visited = ~visited_cells[np.arange(B), xs, ys]
-                    rewards += cfg.hopfield.novelty_reward * not_visited.astype(np.float32)
-                    visited_cells[np.arange(B), xs, ys] = True
+                    moved = (~at_goal_mask).astype(np.float32)  # zero out teleport rows
+
+                    if need_visited:
+                        not_visited = ~visited_cells[np.arange(B), xs, ys]
+                        if novelty_on:
+                            if cfg.hopfield.novelty_scale_remaining:
+                                # Per-env scale: each new visit pays
+                                # base * (total / n_remaining), capped.
+                                # n_remaining computed pre-update.
+                                total_cells = float(cfg.env.size * cfg.env.size)
+                                n_visited_pre = visited_cells.sum(axis=(1, 2)).astype(np.float32)
+                                n_remaining = np.maximum(1.0, total_cells - n_visited_pre)
+                                scale = np.minimum(
+                                    cfg.hopfield.novelty_scale_cap,
+                                    total_cells / n_remaining,
+                                ).astype(np.float32)
+                                rewards += (cfg.hopfield.novelty_reward
+                                            * not_visited.astype(np.float32)
+                                            * scale
+                                            * moved)
+                            else:
+                                rewards += (cfg.hopfield.novelty_reward
+                                            * not_visited.astype(np.float32)
+                                            * moved)
+                        if revisit_on:
+                            rewards -= (cfg.hopfield.revisit_penalty
+                                        * (~not_visited).astype(np.float32)
+                                        * moved)
+                        # Mark post-step positions as visited (including
+                        # teleport targets) so a future deliberate visit
+                        # doesn't re-claim novelty for that cell.
+                        visited_cells[np.arange(B), xs, ys] = True
+
+                    if wall_on:
+                        size = cfg.env.size
+                        at_edge = (
+                            (xs == 0) | (xs == size - 1)
+                            | (ys == 0) | (ys == size - 1)
+                        )
+                        rewards -= (cfg.hopfield.wall_penalty
+                                    * at_edge.astype(np.float32)
+                                    * moved)
+                    if persistence_on:
+                        # cos(action_t, action_{t-1}). prev_action_t was
+                        # set at end of previous iteration (or zeros at
+                        # rollout start / post-teleport). Continuous: raw
+                        # 2D vectors, normalize. Discrete: one-hot codes,
+                        # dot product == 1 if same direction else 0.
+                        if cfg.agent.movement_mode == "discrete":
+                            a_t = F.one_hot(
+                                result["move_action"].long(), num_classes=4
+                            ).float()
+                            cos_sim = (a_t * prev_action_t).sum(-1)
+                        else:
+                            a_t = result["move_action"].float()
+                            a_norm = a_t.norm(dim=-1, keepdim=True).clamp_min(1e-8)
+                            p_norm = prev_action_t.norm(dim=-1, keepdim=True).clamp_min(1e-8)
+                            cos_sim = ((a_t / a_norm) * (prev_action_t / p_norm)).sum(-1)
+                        rewards += (cfg.hopfield.persistence_bonus
+                                    * cos_sim.cpu().numpy().astype(np.float32)
+                                    * moved)
 
                 all_rewards[:, t] = torch.from_numpy(rewards).to(self.device)
 
+                # Advance enrichment buffers for next step. prev_reward is the
+                # reward the agent *just observed* at its decision position
+                # this step. prev_action is what the agent actually committed
+                # (post teacher-forcing override, post sampling).
+                prev_reward_t = current_reward_t
+                if cfg.agent.movement_mode == "discrete":
+                    prev_action_t = F.one_hot(
+                        result["move_action"].long(), num_classes=4
+                    ).float()
+                else:
+                    prev_action_t = result["move_action"].float()
+
                 # Reset state for teleported episodes
                 if goal_reached.any():
-                    steps_since_recompute[goal_reached] = 0
+                    # Cached Gram-Schmidt basis is stale at the new (teleported)
+                    # position; force-recompute next step for these envs.
+                    invalidated_envs |= goal_reached
+                    reached_idx = torch.from_numpy(
+                        np.where(goal_reached)[0]).to(self.device)
                     if h_rnn is not None:
-                        reached_idx = torch.from_numpy(
-                            np.where(goal_reached)[0]).to(self.device)
                         h_rnn[:, reached_idx, :] = 0.0
+                    # Enrichment buffers also reset: the post-teleport agent
+                    # has no valid "previous step" in its new episode segment.
+                    prev_reward_t[reached_idx] = 0.0
+                    prev_action_t[reached_idx] = 0.0
 
             # Bootstrap value at truncation
             pos_final = vec.positions()
-            goal_arr = np.array(vec._goal)
-            at_goal_final = (pos_final[:, 0] == goal_arr[0]) & (pos_final[:, 1] == goal_arr[1])
-            boot_reward = np.where(at_goal_final, 1.0, -cfg.env.time_penalty).astype(np.float32)
+            at_goal_final = at_goal(vec)
+            if vec.goals_active:
+                boot_reward = np.where(
+                    at_goal_final, cfg.env.goal_reward, -cfg.env.time_penalty
+                ).astype(np.float32)
+            else:
+                boot_reward = np.full(at_goal_final.shape, -cfg.env.time_penalty, dtype=np.float32)
             boot_reward_t = torch.from_numpy(boot_reward).to(self.device).unsqueeze(1)
 
+            # Real Hopfield signal at the bootstrap state (was zeros). Without
+            # this the value head sees "no memory" at horizon regardless of the
+            # actual Hopfield content, biasing the truncation bootstrap.
+            emb_final_np = self.vectorhash.get_encoded_state(pos_final, env_offset)
+            emb_final = torch.from_numpy(emb_final_np).float().to(self.device)
+            sig_final, q_final, _, W_final = self._hopfield_signal_at(
+                emb_final_np, emb_final, pos_final, env_offset,
+                hopfields, shared_hopfield, signal_dim,
+                cached_W=None, recompute_mask=None,
+            )
+            multistep_q_final = self._compute_multistep_q(
+                emb_final_np, emb_final, hopfields, shared_hopfield,
+                W_final, cfg.agent.input_hopfield_multistep,
+            )
+            if cfg.agent.input_hopfield_raw and cfg.agent.hopfield_mode == "continuous":
+                sig_for_rnn_final = torch.from_numpy(q_final).float().to(self.device)
+            else:
+                sig_for_rnn_final = sig_final
+
             parts_final = [boot_reward_t]
+            if cfg.agent.input_prev_reward:
+                parts_final.append(prev_reward_t)
             if cfg.agent.input_encoded_state:
-                emb_final = torch.from_numpy(
-                    self.vectorhash.get_encoded_state(pos_final, env_offset)
-                ).float().to(self.device)
                 parts_final.append(emb_final)
             if cfg.agent.input_hopfield_signal:
-                parts_final.append(torch.zeros(B, signal_dim, device=self.device))
+                parts_final.append(sig_for_rnn_final)
+            if (cfg.agent.input_hopfield_multistep
+                    and cfg.agent.hopfield_mode == "continuous"):
+                for s in cfg.agent.input_hopfield_multistep:
+                    parts_final.append(
+                        torch.from_numpy(multistep_q_final[s]).float().to(self.device)
+                    )
+            if cfg.agent.input_prev_action:
+                parts_final.append(prev_action_t)
+            if cfg.agent.input_sensory:
+                sensory_final = torch.from_numpy(vec.obs_batch()).float().to(self.device)
+                parts_final.append(sensory_final)
+            if cfg.agent.input_goal_in_memory:
+                gim_final = torch.from_numpy(
+                    agent_goal_store_fired.astype(np.float32)
+                ).to(self.device).unsqueeze(-1)
+                parts_final.append(gim_final)
 
             final_input = torch.cat(parts_final, dim=-1).unsqueeze(1)
             _, _, bootstrap_val, _ = agent(final_input, h_rnn)
@@ -299,7 +630,137 @@ class RolloutCollector:
             bootstrap_value=bootstrap_value,
             goal_reached=all_goal_reached,
             explore_mask=all_explore_mask,
+            policy_action_mask=all_policy_action_mask,
+            trust_hop_mask=trust_hop_mask if collect_teacher else None,
+            teacher_move_action=teacher_move if collect_teacher else None,
+            teacher_store_action=teacher_store if collect_teacher else None,
+            move_label_mask=move_label_mask if collect_teacher else None,
+            store_label_mask=store_label_mask if collect_teacher else None,
         )
+
+    def _hopfield_signal_at(
+        self,
+        embeddings_np: np.ndarray,
+        embeddings: torch.Tensor,
+        positions: np.ndarray,
+        env_offset: tuple[int, int],
+        hopfields,
+        shared_hopfield: bool,
+        signal_dim: int,
+        cached_W: np.ndarray | None = None,
+        recompute_mask: np.ndarray | None = None,
+    ) -> tuple[torch.Tensor, np.ndarray, torch.Tensor, np.ndarray | None]:
+        """Run Hopfield recall + Gram-Schmidt projection for a batch of states.
+
+        Returns (signal_t, q_full_np, memory_mask_t, new_cached_W).
+        ``new_cached_W`` is None if no recall happened (no env had memory) — in
+        that case the caller's previous cache is unchanged.
+
+        Used by both the per-step rollout loop and the truncation bootstrap.
+        """
+        B = positions.shape[0]
+        hopfield_signal = torch.zeros(B, signal_dim, device=self.device)
+        q_full = np.zeros((B, 2), dtype=np.float32)
+        memory_mask = torch.zeros(B, dtype=torch.bool, device=self.device)
+
+        if recompute_mask is None:
+            recompute_mask = np.ones(B, dtype=bool)
+
+        if shared_hopfield:
+            hop = hopfields
+            if hop.num_memories > 0:
+                recalled = hop.recall_batch(
+                    embeddings, steps=self.cfg.hopfield.steps,
+                    beta=self.cfg.hopfield.beta, alpha=self.cfg.hopfield.alpha,
+                )
+                sig_np, q_full, cached_W = self._compute_signal(
+                    embeddings_np, recalled.cpu().numpy(),
+                    positions, env_offset, cached_W, recompute_mask,
+                )
+                hopfield_signal = torch.from_numpy(sig_np).float().to(self.device)
+                memory_mask[:] = True
+                return hopfield_signal, q_full, memory_mask, cached_W
+            return hopfield_signal, q_full, memory_mask, None
+
+        # Per-env Hopfields: stack W matrices for envs that have memories.
+        has_memory = [b for b in range(B) if hopfields[b].num_memories > 0]
+        if has_memory:
+            idx = torch.as_tensor(has_memory, device=self.device, dtype=torch.long)
+            W_stack = torch.stack([hopfields[b].W for b in has_memory], dim=0)
+            x0_stack = embeddings.index_select(0, idx)
+            recalled_stack = recall_per_env_batch(
+                x0_stack, W_stack,
+                steps=self.cfg.hopfield.steps,
+                beta=self.cfg.hopfield.beta, alpha=self.cfg.hopfield.alpha,
+            )
+            recalled_np_full = np.zeros((B, self.embed_dim), dtype=np.float32)
+            recalled_np_full[has_memory] = recalled_stack.cpu().numpy()
+            sig, q_full, cached_W = self._compute_signal(
+                embeddings_np, recalled_np_full,
+                positions, env_offset, cached_W, recompute_mask,
+            )
+            sig_t = torch.from_numpy(sig).float().to(self.device)
+            memory_mask[idx] = True
+            hopfield_signal = torch.where(
+                memory_mask.unsqueeze(-1), sig_t, hopfield_signal,
+            )
+            return hopfield_signal, q_full, memory_mask, cached_W
+        return hopfield_signal, q_full, memory_mask, None
+
+    def _compute_multistep_q(
+        self,
+        embeddings_np: np.ndarray,
+        embeddings: torch.Tensor,
+        hopfields,
+        shared_hopfield: bool,
+        cached_W: np.ndarray | None,
+        multistep_steps: list[int],
+    ) -> dict[int, np.ndarray]:
+        """Recall trajectory at each requested Hopfield iteration count, project
+        each via the cached Gram-Schmidt basis. Returns {step: (B, 2) np.float32}.
+        Zero arrays where memory is empty / W unavailable.
+        """
+        if not multistep_steps:
+            return {}
+        B = embeddings.shape[0]
+        out = {s: np.zeros((B, 2), dtype=np.float32) for s in multistep_steps}
+        if cached_W is None:
+            return out
+
+        if shared_hopfield:
+            hop = hopfields
+            if hop.num_memories == 0:
+                return out
+            traj = hop.recall_batch_trajectory(
+                embeddings, multistep_steps,
+                beta=self.cfg.hopfield.beta, alpha=self.cfg.hopfield.alpha,
+            )
+            for s, X_s in traj.items():
+                q_s = self.vectorhash.project_displacement(
+                    embeddings_np, X_s.cpu().numpy(), cached_W,
+                )
+                out[s] = q_s.astype(np.float32, copy=False)
+            return out
+
+        # Per-env Hopfields.
+        has_memory = [b for b in range(B) if hopfields[b].num_memories > 0]
+        if not has_memory:
+            return out
+        idx_t = torch.as_tensor(has_memory, device=self.device, dtype=torch.long)
+        W_stack = torch.stack([hopfields[b].W for b in has_memory], dim=0)
+        x0_stack = embeddings.index_select(0, idx_t)
+        traj = recall_per_env_batch_trajectory(
+            x0_stack, W_stack, multistep_steps,
+            beta=self.cfg.hopfield.beta, alpha=self.cfg.hopfield.alpha,
+        )
+        for s, X_s in traj.items():
+            recalled_np_full = np.zeros((B, self.embed_dim), dtype=np.float32)
+            recalled_np_full[has_memory] = X_s.cpu().numpy()
+            q_s = self.vectorhash.project_displacement(
+                embeddings_np, recalled_np_full, cached_W,
+            )
+            out[s] = q_s.astype(np.float32, copy=False)
+        return out
 
     def _compute_signal(
         self,
@@ -308,16 +769,20 @@ class RolloutCollector:
         positions: np.ndarray,
         env_offset: tuple[int, int],
         cached_W: np.ndarray | None,
-        steps_since_recompute: np.ndarray,
-    ) -> tuple[np.ndarray, np.ndarray]:
+        recompute_mask: np.ndarray,
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         """Compute Hopfield signal from embeddings and recalled patterns.
 
-        Returns (signal, q):
+        Returns (signal, q, W):
             signal: (B, signal_dim) — 4 for discrete, 2 for continuous.
             q:      (B, 2)          — raw projected displacement in (East, North)
                                        coordinates, used for teacher forcing.
+            W:      (B, 2, embed_dim) — Gram-Schmidt basis. Caller is expected to
+                                        hold this as the next call's cached_W so
+                                        ``recompute_interval`` actually saves
+                                        work (otherwise W is recomputed every
+                                        step regardless of the config).
         """
-        recompute_mask = (steps_since_recompute >= self.cfg.recompute_interval)
         W = self.vectorhash.gram_schmidt_projection(
             positions, env_offset,
             cached_W=cached_W, recompute_mask=recompute_mask,
@@ -331,4 +796,4 @@ class RolloutCollector:
         else:
             mag = np.linalg.norm(q, axis=-1, keepdims=True).clip(1e-8)
             signal = (q / mag).astype(np.float32)
-        return signal, q
+        return signal, q, W

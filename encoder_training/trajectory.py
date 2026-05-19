@@ -13,10 +13,14 @@ complete `cls.eval.nav_eval.run_navigation_eval` for aggregate metrics.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import List, Tuple
+from typing import List, Sequence, Tuple
 
 import numpy as np
 import matplotlib.pyplot as plt
+from matplotlib.cm import ScalarMappable
+from matplotlib.colors import Normalize
+from matplotlib.lines import Line2D
+from matplotlib.ticker import MaxNLocator
 import torch
 
 from cls.hopfield import Hopfield
@@ -245,24 +249,209 @@ def plot_trajectory(
     for i in range(T - 1):
         ax.plot(xs[i:i+2], ys[i:i+2], color=colors[i],
                 linewidth=2.5, alpha=0.85, zorder=2)
-    ax.scatter(xs, ys, c=np.arange(T), cmap="plasma", s=50,
-               edgecolors="white", linewidths=0.5, zorder=3)
 
-    # Start / end markers
-    ax.scatter(xs[0], ys[0], c="limegreen", s=180, marker="o",
-               edgecolors="darkgreen", linewidths=2, zorder=4, label="start")
-    ax.scatter(xs[-1], ys[-1], c="orange", s=180, marker="s",
-               edgecolors="darkorange", linewidths=2, zorder=4, label="end")
+    # Start / end: small dots (env-sized panels are tight)
+    ax.scatter(xs[0], ys[0], c="limegreen", s=12, marker="o",
+               edgecolors="darkgreen", linewidths=0.45, zorder=4, label="start")
+    ax.scatter(xs[-1], ys[-1], c="orange", s=12, marker="o",
+               edgecolors="darkorange", linewidths=0.45, zorder=4, label="end")
     ax.add_patch(plt.Circle((env.goal_gy, env.goal_gx), 1.0,
-                            fill=False, edgecolor="red", linewidth=2,
+                            fill=False, edgecolor="red", linewidth=1.25,
                             zorder=5, label="goal"))
-    ax.scatter(env.goal_gy, env.goal_gx, c="red", s=140, marker="*",
-               edgecolors="darkred", linewidths=1, zorder=6)
+    ax.scatter(env.goal_gy, env.goal_gx, c="red", s=28, marker="o",
+               edgecolors="darkred", linewidths=0.5, zorder=6)
 
     ax.set_aspect("equal")
-    pad = 2
-    ax.set_xlim(env.x0 - pad, env.x0 + env.size + pad)
-    ax.set_ylim(env.y0 + env.size + pad, env.y0 - pad)  # y flipped (image coord)
+    # Minimal margin: goal ring has radius 1 in grid units, so pad≈1 avoids
+    # clipping when the goal sits on the env edge.
+    pad = 1.0
+    ax.set_xlim(env.x0 - pad, env.x0 + env.size + pad - 1)
+    ax.set_ylim(env.y0 + env.size + pad - 1, env.y0 - pad)  # y flipped (image coord)
+    ax.margins(0)
     ax.set_title(title)
     ax.legend(loc="upper right", fontsize=8)
+    return ax
+
+
+def plot_all_envs_global(
+    full_npos: int,
+    env_trajs: Sequence[Tuple[EvalEnv, np.ndarray]],
+    *,
+    method_label: str = "Continuous Method",
+    figsize: Tuple[float, float] = (10.0, 9.0),
+    ax: plt.Axes | None = None,
+) -> plt.Axes:
+    """Single full-grid figure: env regions, goals, trajectories colored by time.
+
+    Matches the ``All Environments`` overview style: light-gray grid (sparse
+    major ticks via ``MaxNLocator``), semi-transparent env boxes with dashed edges, per-step
+    scatter along each path (``plasma``), one **Time Step** colorbar, legend
+    (start / end / goal), and a small compass in the lower-left (axes coords).
+
+    Trajectory arrays use the same layout as ``simulate_trajectory`` output:
+    ``[:, 0]`` = row (gx), ``[:, 1]`` = column (gy). Axes follow the notebook /
+    heatmap convention: **y increases downward** (row 0 at the top), x is
+    column index left to right.
+    """
+    own_fig = ax is None
+    if own_fig:
+        _, ax = plt.subplots(figsize=figsize, layout="constrained")
+
+    n_env = len(env_trajs)
+    vmax_t = 1
+    for _, tr in env_trajs:
+        vmax_t = max(vmax_t, len(tr) - 1)
+
+    norm = Normalize(vmin=0, vmax=float(vmax_t))
+
+    ax.set_xlim(-0.5, full_npos - 0.5)
+    ax.set_ylim(full_npos - 0.5, -0.5)
+    ax.set_aspect("equal")
+    ax.set_xlabel("X Position")
+    ax.set_ylabel("Y Position")
+    ax.set_title(
+        f"All Environments ({method_label})\n"
+        f"{n_env} environment{'s' if n_env != 1 else ''} in "
+        f"{full_npos}×{full_npos} space",
+        fontsize=12,
+        fontweight="bold",
+    )
+    ax.xaxis.set_major_locator(MaxNLocator(nbins=6, prune="both"))
+    ax.yaxis.set_major_locator(MaxNLocator(nbins=6, prune="both"))
+    ax.grid(True, which="major", color="0.85", linewidth=0.6, linestyle="-")
+    ax.set_axisbelow(True)
+
+    # Distinct env + trajectory colors (tab10-like, readable on white).
+    base = plt.cm.tab10(np.linspace(0, 0.9, max(n_env, 3)))
+
+    for k, (env, traj) in enumerate(env_trajs):
+        ec = base[k % len(base)]
+        fc = (*ec[:3], 0.22)
+        ax.add_patch(
+            plt.Rectangle(
+                (env.x0 - 0.5, env.y0 - 0.5),
+                env.size,
+                env.size,
+                facecolor=fc,
+                edgecolor=ec,
+                linewidth=1.4,
+                linestyle="--",
+                zorder=1,
+            )
+        )
+        ax.text(
+            env.x0 + env.size * 0.5,
+            env.y0 - max(2.0, env.size * 0.08),
+            f"Env {k}",
+            ha="center",
+            va="bottom",
+            fontsize=11,
+            fontweight="bold",
+            color=ec,
+            zorder=5,
+        )
+
+        xs = traj[:, 1]
+        ys = traj[:, 0]
+        T = len(traj)
+        ax.scatter(
+            xs,
+            ys,
+            c=np.arange(T),
+            cmap="plasma",
+            norm=norm,
+            s=14,
+            linewidths=0.2,
+            edgecolors="face",
+            zorder=4,
+        )
+        ax.scatter(
+            xs[0],
+            ys[0],
+            c="limegreen",
+            s=28,
+            marker="o",
+            edgecolors="darkgreen",
+            linewidths=0.55,
+            zorder=6,
+        )
+        ax.scatter(
+            xs[-1],
+            ys[-1],
+            c="orange",
+            s=26,
+            marker="s",
+            edgecolors="darkorange",
+            linewidths=0.55,
+            zorder=6,
+        )
+        ax.add_patch(
+            plt.Circle(
+                (env.goal_gy, env.goal_gx),
+                1.0,
+                fill=False,
+                edgecolor="gold",
+                linewidth=1.8,
+                zorder=3,
+            )
+        )
+
+    sm = ScalarMappable(norm=norm, cmap="plasma")
+    sm.set_array([])
+    cbar = ax.figure.colorbar(sm, ax=ax, fraction=0.046, pad=0.04)
+    cbar.set_label("Time Step")
+
+    leg = [
+        Line2D(
+            [0],
+            [0],
+            marker="o",
+            color="w",
+            markerfacecolor="limegreen",
+            markeredgecolor="darkgreen",
+            markersize=6,
+            linestyle="None",
+            label="Start",
+        ),
+        Line2D(
+            [0],
+            [0],
+            marker="s",
+            color="w",
+            markerfacecolor="orange",
+            markeredgecolor="darkorange",
+            markersize=6,
+            linestyle="None",
+            label="End",
+        ),
+        Line2D(
+            [0],
+            [0],
+            marker="o",
+            color="w",
+            markerfacecolor="none",
+            markeredgecolor="gold",
+            markeredgewidth=1.4,
+            markersize=6,
+            linestyle="None",
+            label="Goal (r=1)",
+        ),
+    ]
+    ax.legend(handles=leg, loc="upper right", fontsize=9, framealpha=0.95)
+
+    # Decorative compass (axes fraction, lower-left; matches reference layout).
+    cx, cy = 0.045, 0.08
+    ax.text(cx, cy + 0.035, "N", transform=ax.transAxes, fontsize=11,
+            color="tab:green", fontweight="bold", ha="center", va="center",
+            zorder=20, clip_on=False)
+    ax.text(cx, cy - 0.035, "S", transform=ax.transAxes, fontsize=11,
+            color="tab:red", fontweight="bold", ha="center", va="center",
+            zorder=20, clip_on=False)
+    ax.text(cx - 0.032, cy, "W", transform=ax.transAxes, fontsize=11,
+            color="tab:purple", fontweight="bold", ha="center", va="center",
+            zorder=20, clip_on=False)
+    ax.text(cx + 0.032, cy, "E", transform=ax.transAxes, fontsize=11,
+            color="tab:blue", fontweight="bold", ha="center", va="center",
+            zorder=20, clip_on=False)
+
     return ax

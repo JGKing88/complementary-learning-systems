@@ -21,16 +21,17 @@ from __future__ import annotations
 
 import numpy as np
 import torch
+import torch.nn.functional as F
 
 from .config import TrainConfig
-from .env import GridEnv, ContinuousGridEnv, CARDINAL_ACTIONS
+from .env import GridEnv, ContinuousGridEnv, CARDINAL_ACTIONS, at_goal
 from .vectorhash import VectorHash
 from .hopfield import Hopfield
 from .agent import NavAgent
 from .utils import classify_direction_batch, direction_to_onehot
 
 
-def _random_start(env_size: int, goal: tuple[int, int], rng: np.random.RandomState) -> tuple[int, int]:
+def random_start(env_size: int, goal: tuple[int, int], rng: np.random.RandomState) -> tuple[int, int]:
     """Sample a random grid cell != goal."""
     while True:
         s = (int(rng.randint(0, env_size)), int(rng.randint(0, env_size)))
@@ -83,7 +84,7 @@ def _goal_encoding(
 # Shared single-step agent logic
 # ---------------------------------------------------------------------------
 
-def _agent_step(
+def agent_step(
     agent: NavAgent,
     env: GridEnv,
     env_offset: tuple[int, int],
@@ -95,6 +96,9 @@ def _agent_step(
     deterministic: bool = True,
     goal_local: tuple[int, int] | None = None,
     goal_in_memory: bool = True,
+    prev_reward: torch.Tensor | None = None,
+    prev_action: torch.Tensor | None = None,
+    action_temperature: float = 1.0,
 ) -> dict:
     """Run one agent step. Env owns all position/movement state.
 
@@ -110,6 +114,15 @@ def _agent_step(
     toward the goal in continuous space, while the store head is unchanged.
     """
     signal_dim = 4 if cfg.agent.hopfield_mode == "discrete" else 2
+    prev_action_dim = 4 if cfg.agent.movement_mode == "discrete" else 2
+
+    # Enrichment defaults: if caller didn't thread prev_* state, fall back to
+    # zeros (correct at start-of-episode, OOD for subsequent steps — callers
+    # must pass these for accurate behavior once enrichment flags are on).
+    if prev_reward is None:
+        prev_reward = torch.zeros(1, 1, device=device)
+    if prev_action is None:
+        prev_action = torch.zeros(1, prev_action_dim, device=device)
 
     pos_tuple = env.current_location
     pos_arr = np.array([pos_tuple], dtype=np.int32)
@@ -126,6 +139,18 @@ def _agent_step(
         and hopfield.num_memories > 0
     )
 
+    def _q_to_signal(q: np.ndarray) -> torch.Tensor:
+        """Convert a (1, 2) projected displacement into the agent's expected
+        signal form: one-hot (discrete), unit-vector (continuous), or raw q
+        when ``input_hopfield_raw`` is set in continuous mode."""
+        if cfg.agent.hopfield_mode == "discrete":
+            return torch.from_numpy(direction_to_onehot(
+                classify_direction_batch(q))).float().to(device)
+        if cfg.agent.input_hopfield_raw:
+            return torch.from_numpy(q.astype(np.float32)).to(device)
+        mag = np.linalg.norm(q, axis=-1, keepdims=True).clip(1e-8)
+        return torch.from_numpy((q / mag).astype(np.float32)).to(device)
+
     if not cfg.agent.input_hopfield_signal:
         hop_signal = torch.zeros(1, signal_dim, device=device)
     elif use_oracle:
@@ -133,12 +158,7 @@ def _agent_step(
         goal_enc = vectorhash.get_encoded_state(g_arr, env_offset)
         W = vectorhash.gram_schmidt_projection(pos_arr, env_offset)
         q = vectorhash.project_displacement(embeddings_np, goal_enc, W)
-        if cfg.agent.hopfield_mode == "discrete":
-            hop_signal = torch.from_numpy(direction_to_onehot(
-                classify_direction_batch(q))).float().to(device)
-        else:
-            mag = np.linalg.norm(q, axis=-1, keepdims=True).clip(1e-8)
-            hop_signal = torch.from_numpy((q / mag).astype(np.float32)).to(device)
+        hop_signal = _q_to_signal(q)
     elif hopfield.num_memories > 0:
         recalled = hopfield.recall_batch(
             embeddings, steps=cfg.hopfield.steps,
@@ -146,20 +166,46 @@ def _agent_step(
         )
         W = vectorhash.gram_schmidt_projection(pos_arr, env_offset)
         q = vectorhash.project_displacement(embeddings_np, recalled.cpu().numpy(), W)
-        if cfg.agent.hopfield_mode == "discrete":
-            hop_signal = torch.from_numpy(direction_to_onehot(
-                classify_direction_batch(q))).float().to(device)
-        else:
-            mag = np.linalg.norm(q, axis=-1, keepdims=True).clip(1e-8)
-            hop_signal = torch.from_numpy((q / mag).astype(np.float32)).to(device)
+        hop_signal = _q_to_signal(q)
     else:
         hop_signal = torch.zeros(1, signal_dim, device=device)
 
     parts = [current_reward]
+    if cfg.agent.input_prev_reward:
+        parts.append(prev_reward)
     if cfg.agent.input_encoded_state:
         parts.append(embeddings)
     if cfg.agent.input_hopfield_signal:
         parts.append(hop_signal)
+    if (cfg.agent.input_hopfield_multistep
+            and cfg.agent.hopfield_mode == "continuous"):
+        # Project recall trajectory at requested iteration counts.
+        if hopfield.num_memories > 0:
+            traj = hopfield.recall_batch_trajectory(
+                embeddings, cfg.agent.input_hopfield_multistep,
+                beta=cfg.hopfield.beta, alpha=cfg.hopfield.alpha,
+            )
+            W = vectorhash.gram_schmidt_projection(pos_arr, env_offset)
+            for s in cfg.agent.input_hopfield_multistep:
+                X_s = traj[s]
+                q_s = vectorhash.project_displacement(
+                    embeddings_np, X_s.cpu().numpy(), W,
+                )
+                parts.append(
+                    torch.from_numpy(q_s.astype(np.float32)).to(device)
+                )
+        else:
+            for _ in cfg.agent.input_hopfield_multistep:
+                parts.append(torch.zeros(1, 2, device=device))
+    if cfg.agent.input_prev_action:
+        parts.append(prev_action)
+    if cfg.agent.input_sensory:
+        sensory_np = env.obs_at(pos_tuple)[None, :]  # (1, obs_size)
+        sensory = torch.from_numpy(sensory_np).float().to(device)
+        parts.append(sensory)
+    if cfg.agent.input_goal_in_memory:
+        gim = torch.tensor([[1.0 if goal_in_memory else 0.0]], device=device)
+        parts.append(gim)
     rnn_input = torch.cat(parts, dim=-1).unsqueeze(1)
 
     use_action_oracle = (
@@ -190,19 +236,27 @@ def _agent_step(
         deterministic=deterministic,
         move_action_override=move_action_override,
         move_override_mask=move_override_mask,
+        action_temperature=action_temperature,
     )
 
     if cfg.agent.movement_mode == "discrete":
         action_idx = int(result["move_action"].item())
         env.step(CARDINAL_ACTIONS[action_idx])
+        next_prev_action = F.one_hot(
+            result["move_action"].long().view(-1), num_classes=4
+        ).float()  # (1, 4)
     else:
         action_vec = result["move_action"].cpu().numpy()[0]
         env.step(action_vec)
+        next_prev_action = result["move_action"].float().view(1, -1)  # (1, 2)
 
     return {
         "h_rnn": result["h_next"],
         "embedding": embeddings,
         "store_action": result["store_action"].item(),
+        # For the caller to thread into the next agent_step call:
+        "next_prev_reward": current_reward,        # (1, 1)
+        "next_prev_action": next_prev_action,      # (1, D)
     }
 
 
@@ -223,6 +277,7 @@ def evaluate_navigation(
     n_distractors_list: list[int] | None = None,
     deterministic: bool = True,
     seed: int = 42,
+    action_temperature: float = 1.0,
 ) -> dict[int, dict[str, float]]:
     """Evaluate whether the agent can follow a preloaded goal signal to the goal.
 
@@ -255,13 +310,16 @@ def evaluate_navigation(
 
             for _trial in range(num_trials):
                 hopfield = Hopfield(embed_dim, beta=cfg.hopfield.beta, device=str(device))
-                hopfield.input_memory(torch.from_numpy(goal_enc).float())
-                for pat in _sample_distractor_goals(
+                # Goal + distractors, shuffled so storage order is random.
+                patterns = [goal_enc]
+                patterns.extend(_sample_distractor_goals(
                     vectorhash, env_offset, cfg.env.size, n_dist, rng,
-                ):
+                ))
+                rng.shuffle(patterns)
+                for pat in patterns:
                     hopfield.input_memory(torch.from_numpy(pat).float())
 
-                start = _random_start(env.size, goal, rng)
+                start = random_start(env.size, goal, rng)
                 dy = start[0] - goal[0]
                 dx = start[1] - goal[1]
                 if cfg.env.movement_mode == "continuous":
@@ -270,16 +328,22 @@ def evaluate_navigation(
                     start_dist = float(abs(dy) + abs(dx))
                 env.set_position(start)
                 h_rnn = None
+                prev_reward = None
+                prev_action = None
 
                 for step in range(max_steps):
-                    out = _agent_step(
+                    out = agent_step(
                         agent, env, env_offset, vectorhash, hopfield,
                         h_rnn, cfg, device, deterministic=deterministic,
                         goal_local=goal, goal_in_memory=True,
+                        prev_reward=prev_reward, prev_action=prev_action,
+                        action_temperature=action_temperature,
                     )
                     h_rnn = out["h_rnn"]
+                    prev_reward = out["next_prev_reward"]
+                    prev_action = out["next_prev_action"]
 
-                    if env.current_location == goal:
+                    if at_goal(env):
                         total_successes += 1
                         steps_taken = step + 1
                         speed_sum += start_dist / steps_taken
@@ -316,6 +380,7 @@ def evaluate_goal_discovery(
     n_distractors_list: list[int] | None = None,
     seed: int = 42,
     deterministic: bool = True,
+    action_temperature: float = 1.0,
 ) -> dict[int, dict[str, float]]:
     """For each val env + distractor count, run trials where the agent explores
     with store enabled. Each trial gets a fresh Hopfield pre-loaded with ONLY
@@ -352,27 +417,33 @@ def evaluate_goal_discovery(
                 for pat in distractors:
                     hopfield.input_memory(torch.from_numpy(pat).float())
 
-                start = _random_start(env.size, goal, rng)
+                start = random_start(env.size, goal, rng)
                 env.set_position(start)
                 h_rnn = None
+                prev_reward = None
+                prev_action = None
                 reached_goal = False
                 stored_goal = False
                 steps_to_store = max_steps
                 goal_in_mem = False  # this env's goal pattern written to Hopfield
 
                 for step in range(max_steps):
-                    at_g_pre = env.current_location == goal
+                    at_g_pre = at_goal(env)
                     if at_g_pre:
                         reached_goal = True
 
-                    out = _agent_step(
+                    out = agent_step(
                         agent, env, env_offset, vectorhash, hopfield,
                         h_rnn, cfg, device, deterministic=deterministic,
                         goal_local=goal, goal_in_memory=goal_in_mem,
+                        prev_reward=prev_reward, prev_action=prev_action,
+                        action_temperature=action_temperature,
                     )
                     h_rnn = out["h_rnn"]
+                    prev_reward = out["next_prev_reward"]
+                    prev_action = out["next_prev_action"]
 
-                    if env.current_location == goal:
+                    if at_goal(env):
                         reached_goal = True
 
                     if out["store_action"] > 0.5:
@@ -423,11 +494,19 @@ def evaluate_exploration(
     n_distractors_list: list[int] | None = None,
     seed: int = 42,
     deterministic: bool = True,
+    action_temperature: float = 1.0,
+    disable_store: bool = True,
 ) -> dict[int, dict[str, float]]:
     """For each val env + distractor count, measure grid coverage and steps-to-goal
     for full-length (no early termination) rollouts. Each trial gets a fresh Hopfield
     pre-loaded with ONLY distractors. Default ``deterministic=True`` (see
-    :func:`evaluate_goal_discovery`)."""
+    :func:`evaluate_goal_discovery`).
+
+    When ``disable_store`` is True (default), the agent's store action is ignored
+    and ``goal_in_memory`` stays False for the entire rollout — measuring pure
+    exploration with no goal pattern in Hopfield. When False, stores write to
+    Hopfield and storing at the goal flips ``goal_in_memory`` to True, so coverage
+    after that point reflects post-discovery navigation, not pure exploration."""
     if n_distractors_list is None:
         n_distractors_list = [0]
 
@@ -456,9 +535,11 @@ def evaluate_exploration(
                 for pat in distractors:
                     hopfield.input_memory(torch.from_numpy(pat).float())
 
-                start = _random_start(grid_size, goal, rng)
+                start = random_start(grid_size, goal, rng)
                 env.set_position(start)
                 h_rnn = None
+                prev_reward = None
+                prev_action = None
                 goal_in_mem = False
 
                 visited: set[tuple[int, int]] = set()
@@ -467,21 +548,25 @@ def evaluate_exploration(
                 steps_to_goal = max_steps
 
                 for step in range(max_steps):
-                    at_g_pre = env.current_location == goal
-                    out = _agent_step(
+                    at_g_pre = at_goal(env)
+                    out = agent_step(
                         agent, env, env_offset, vectorhash, hopfield,
                         h_rnn, cfg, device, deterministic=deterministic,
                         goal_local=goal, goal_in_memory=goal_in_mem,
+                        prev_reward=prev_reward, prev_action=prev_action,
+                        action_temperature=action_temperature,
                     )
                     h_rnn = out["h_rnn"]
+                    prev_reward = out["next_prev_reward"]
+                    prev_action = out["next_prev_action"]
                     visited.add(env.current_location)
 
-                    if out["store_action"] > 0.5:
+                    if not disable_store and out["store_action"] > 0.5:
                         hopfield.input_memory(out["embedding"][0])
                         if at_g_pre:
                             goal_in_mem = True
 
-                    if env.current_location == goal and not found_goal:
+                    if at_goal(env) and not found_goal:
                         found_goal = True
                         steps_to_goal = step + 1
 
@@ -496,6 +581,97 @@ def evaluate_exploration(
             "mean_coverage": float(np.mean(trial_coverage)) if trial_coverage else 0.0,
             "goal_find_rate": float(n_found / n),
             "mean_steps_to_goal": float(np.mean(found_steps)) if found_steps else float("nan"),
+        }
+
+    return results
+
+
+def evaluate_union_coverage(
+    agent: NavAgent,
+    val_envs: list[GridEnv],
+    vectorhash: VectorHash,
+    env_global_indices: list[int],
+    cfg: TrainConfig,
+    device: torch.device,
+    num_trials: int = 100,
+    max_steps: int = 100,
+    n_distractors_list: list[int] | None = None,
+    seed: int = 42,
+    deterministic: bool = True,
+) -> dict[int, dict[str, float]]:
+    """Multi-rollout union coverage. Per (env, n_distractors), run
+    ``num_trials`` independent rollouts (fresh Hopfield each time, no goal
+    stored), take the union of all visited cells across those rollouts,
+    and divide by total cells × num_trials. Returns mean per-rollout-
+    amortized cov across envs.
+
+    Captures "average fraction of grid newly visited per rollout
+    (amortized across N attempts)" — penalizes agents whose rollouts are
+    highly redundant (small union → small value) and rewards diverse
+    trajectories. Larger N (default 100) preserves resolution at high
+    coverage agents that would otherwise saturate the unnormalized union.
+    Stores are always disabled (matches ``evaluate_exploration`` semantics:
+    pure explore, no goal can land in memory).
+    """
+    if n_distractors_list is None:
+        n_distractors_list = [0]
+
+    agent.eval()
+    embed_dim = vectorhash.encoded_Phi.shape[2]
+    grid_size = cfg.env.size
+    total_positions = grid_size * grid_size
+    results: dict[int, dict[str, float]] = {}
+
+    for n_dist in n_distractors_list:
+        rng = np.random.RandomState(seed)
+        per_env_union_cov: list[float] = []
+
+        for local_idx, env in enumerate(val_envs):
+            global_idx = env_global_indices[local_idx]
+            env_offset = vectorhash.env_offsets[global_idx]
+            goal = env.goal_location
+
+            union_visited: set[tuple[int, int]] = set()
+
+            for _trial in range(num_trials):
+                distractors = _sample_distractor_goals(
+                    vectorhash, env_offset, grid_size, n_dist, rng,
+                )
+                hopfield = Hopfield(embed_dim, beta=cfg.hopfield.beta, device=str(device))
+                for pat in distractors:
+                    hopfield.input_memory(torch.from_numpy(pat).float())
+
+                start = random_start(grid_size, goal, rng)
+                env.set_position(start)
+                h_rnn = None
+                prev_reward = None
+                prev_action = None
+                union_visited.add(env.current_location)
+
+                for _step in range(max_steps):
+                    out = agent_step(
+                        agent, env, env_offset, vectorhash, hopfield,
+                        h_rnn, cfg, device, deterministic=deterministic,
+                        goal_local=goal, goal_in_memory=False,
+                        prev_reward=prev_reward, prev_action=prev_action,
+                    )
+                    h_rnn = out["h_rnn"]
+                    prev_reward = out["next_prev_reward"]
+                    prev_action = out["next_prev_action"]
+                    union_visited.add(env.current_location)
+                    # Stores disabled (match evaluate_exploration default).
+
+            per_env_union_cov.append(len(union_visited) / total_positions)
+
+        # Divide by num_trials → "fraction of grid newly explored per
+        # rollout, amortized." Range [0, 1/num_trials]. At num_trials=100
+        # on 8x8 grid: [0, 0.01]. Keep raw mean_union_coverage too for
+        # interpretability.
+        raw_mean = float(np.mean(per_env_union_cov)) if per_env_union_cov else 0.0
+        results[n_dist] = {
+            "mean_union_coverage": raw_mean,
+            "mean_union_per_rollout": raw_mean / float(num_trials),
+            "num_trials_per_env": int(num_trials),
         }
 
     return results
@@ -518,6 +694,7 @@ def evaluate_realistic(
     steps_per_env: int = 1000,
     seed: int = 42,
     deterministic: bool = True,
+    lock_store_after_goal: bool = False,
 ) -> dict:
     """End-of-training realistic eval with persistent Hopfield memory.
 
@@ -530,6 +707,12 @@ def evaluate_realistic(
 
     The Hopfield is never reset: it accumulates memories across the entire
     eval.  Retests measure interference from later-stored patterns.
+
+    If ``lock_store_after_goal`` is True, a per-env store lock is enforced:
+    once an env's goal has been stored into the (shared) Hopfield, all further
+    store actions in that env are suppressed for the rest of the eval. This
+    isolates "store discipline" — an agent that fires store every step still
+    only writes the goal once per env.
 
     Returns a dict with keys:
       - "primary": {env_idx: {n_reaches, intervals, mean_interval, stored_at_reach, ...}}
@@ -552,44 +735,63 @@ def evaluate_realistic(
         allow_store: bool,
         local_idx: int,
     ) -> dict:
+        """Training-matched semantics: a "reach" is the iter where the agent
+        *sits* at the goal (pre-step ``at_g=True``), matching ``VecEnv.step_batch``
+        which returns ``goal_reached`` from the pre-step check. On such an iter
+        the agent reads ``reward=+1``, may fire store (writing the goal
+        embedding), then teleports + RNN reset. The prior landing iter is a
+        normal step (agent decides from non-goal state, writes a non-goal
+        embedding if it fires store).
+        """
         goal = env.goal_location
-        start = _random_start(env.size, goal, rng)
+        start = random_start(env.size, goal, rng)
         env.set_position(start)
         h_rnn = None
+        prev_reward = None
+        prev_action = None
         last_reach_step = 0
         intervals: list[int] = []
         stored_at_reach: list[bool] = []
 
         for step in range(steps_per_env):
+            at_g = at_goal(env)
             goal_in_mem = shared_goal_stored[local_idx]
-            out = _agent_step(
+            out = agent_step(
                 agent, env, env_offset, vectorhash, hopfield,
                 h_rnn, cfg, device, deterministic=deterministic,
                 goal_local=goal, goal_in_memory=goal_in_mem,
+                prev_reward=prev_reward, prev_action=prev_action,
             )
             h_rnn = out["h_rnn"]
+            prev_reward = out["next_prev_reward"]
+            prev_action = out["next_prev_action"]
 
-            store_fired = bool(allow_store and (out["store_action"] > 0.5))
+            allow_store_now = allow_store and not (
+                lock_store_after_goal and shared_goal_stored[local_idx]
+            )
+            store_fired = bool(allow_store_now and (out["store_action"] > 0.5))
             if store_fired:
                 hopfield.input_memory(out["embedding"][0])
 
-            if env.current_location == goal:
-                if allow_store and store_fired:
+            if at_g:
+                # Training-matching reach: agent sat on goal this iter.
+                # ``out["embedding"][0]`` is the pre-step (= goal) embedding,
+                # so ``store_fired`` here means the goal was actually written.
+                if allow_store_now and store_fired:
                     shared_goal_stored[local_idx] = True
                 intervals.append(step + 1 - last_reach_step)
-                # Count a "store at reach" only when a write actually happens on
-                # this step (store_fired) while at goal. Retest: allow_store is
-                # False, so this is always False.
                 stored_at_reach.append(store_fired)
-                new_start = _random_start(env.size, goal, rng)
+                # Teleport + RNN reset (VecEnv.step_batch ignores move and
+                # teleports in this case; the move ``agent_step`` applied is
+                # overridden here). Enrichment state also resets — the new
+                # episode segment has no valid "previous step".
+                new_start = random_start(env.size, goal, rng)
                 env.set_position(new_start)
                 h_rnn = None
+                prev_reward = None
+                prev_action = None
                 last_reach_step = step + 1
 
-        # Trailing partial segment: steps since last reach (or phase start) that
-        # did NOT culminate in a goal reach. Kept separately so metric
-        # aggregation still uses only completed intervals, but the plot can
-        # show where the phase was cut off.
         tail_steps = steps_per_env - last_reach_step
         return {
             "n_reaches": len(intervals),
@@ -690,34 +892,43 @@ def evaluate_repeat(
         hopfield: Hopfield,
     ) -> dict:
         goal = env.goal_location
-        start = _random_start(env.size, goal, rng)
+        start = random_start(env.size, goal, rng)
         env.set_position(start)
         h_rnn = None
+        prev_reward = None
+        prev_action = None
         last_reach_step = 0
         intervals: list[int] = []
         stored_at_reach: list[bool] = []
         goal_in_mem = False
 
+        # Training-matched "reach" semantics (see ``evaluate_realistic._run_phase``).
         for step in range(steps_per_env):
-            out = _agent_step(
+            at_g = at_goal(env)
+            out = agent_step(
                 agent, env, env_offset, vectorhash, hopfield,
                 h_rnn, cfg, device, deterministic=deterministic,
                 goal_local=goal, goal_in_memory=goal_in_mem,
+                prev_reward=prev_reward, prev_action=prev_action,
             )
             h_rnn = out["h_rnn"]
+            prev_reward = out["next_prev_reward"]
+            prev_action = out["next_prev_action"]
 
             store_fired = bool(out["store_action"] > 0.5)
             if store_fired:
                 hopfield.input_memory(out["embedding"][0])
 
-            if env.current_location == goal:
+            if at_g:
                 if store_fired:
                     goal_in_mem = True
                 intervals.append(step + 1 - last_reach_step)
                 stored_at_reach.append(store_fired)
-                new_start = _random_start(env.size, goal, rng)
+                new_start = random_start(env.size, goal, rng)
                 env.set_position(new_start)
                 h_rnn = None
+                prev_reward = None
+                prev_action = None
                 last_reach_step = step + 1
 
         tail_steps = steps_per_env - last_reach_step
@@ -749,5 +960,203 @@ def evaluate_repeat(
             "n_trials": int(n_trials),
             "steps_per_env": int(steps_per_env),
             "mean_reaches": float(np.mean(flat_reaches)) if flat_reaches else 0.0,
+        },
+    }
+
+
+# ---------------------------------------------------------------------------
+# Eval 6: Sequential continual — episodic success, persistent Hopfield
+# ---------------------------------------------------------------------------
+
+@torch.no_grad()
+def evaluate_sequential_episodes(
+    agent: NavAgent,
+    val_envs: list[GridEnv],
+    vectorhash: VectorHash,
+    env_global_indices: list[int],
+    cfg: TrainConfig,
+    device: torch.device,
+    iters_per_block: int = 50,
+    max_steps: int = 32,
+    seed: int = 42,
+    deterministic: bool = True,
+    lock_store_after_goal: bool = False,
+    oracle_store_at_goal: bool = False,
+) -> dict:
+    """Sequential continual-learning eval, reproducing the paper-style figure.
+
+    Protocol:
+      - Introduce ``val_envs`` in order, producing one "block" per env.
+      - At every outer iteration within block ``i``, run **one mini-episode in
+        every already-introduced env** ``j <= i``:
+          * random non-goal start, fresh RNN, run up to ``max_steps`` steps;
+          * ``j == i`` (primary) → agent's store head may write into the
+            shared Hopfield;
+          * ``j < i``  (revisit) → stores disabled (Hopfield frozen for that
+            mini-episode).
+        Each mini-episode contributes a single 0/1 "success" bit (goal reached
+        within ``max_steps`` from that random start).
+      - The Hopfield is never reset — it accumulates across all blocks.
+
+    If ``lock_store_after_goal`` is True, once an env's goal has been stored
+    (``goal_in_mem[local_idx]`` flips True), all further store actions in that
+    env are suppressed for the rest of the eval — both within the current
+    mini-episode and in any subsequent primary mini-episode of the same env.
+
+    If ``oracle_store_at_goal`` is True, the agent's store head is bypassed:
+    a store fires automatically and only when the agent is on the goal cell
+    of the current env. Off-goal stores are suppressed. Useful for evaluating
+    Phase-A-only ckpts whose store policy is untrained.
+
+    Returns a dict whose main payload is
+    ``env_iters[j] = [(iter, success, stored_at_goal, stored_off_goal), ...]``:
+    the per-env sequence of (outer-iteration, success-bit, at-goal-store-bit,
+    off-goal-store-bit) tuples, ready to plot as a moving-average line plus
+    store-event markers. Also returns per-block boundaries and summary
+    statistics.
+    """
+    agent.eval()
+    N = len(val_envs)
+    embed_dim = vectorhash.encoded_Phi.shape[2]
+    hopfield = Hopfield(embed_dim, beta=cfg.hopfield.beta, device=str(device))
+    rng = np.random.RandomState(seed)
+    goal_in_mem: dict[int, bool] = {i: False for i in range(N)}
+    env_iters: dict[int, list[tuple[int, int]]] = {i: [] for i in range(N)}
+    stored_at_goal_count: dict[int, int] = {i: 0 for i in range(N)}
+
+    def _mini_episode(env: GridEnv, env_offset: tuple[int, int],
+                      local_idx: int, allow_store: bool) -> tuple[int, int, int]:
+        """Run up to ``max_steps`` with training at-goal semantics.
+
+        Training's ``goal_reached`` in ``VecEnv.step_batch`` fires on the
+        pre-step at-goal check — i.e. the iter where the agent *sits* on the
+        goal, reads ``reward=+1``, can fire store, and then teleports. The
+        landing iter itself is just a normal step. We mirror that here:
+        ``reached=1`` iff the agent ever sat on the goal at decision time.
+
+        Returns (reached, stored_at_goal, stored_off_goal): whether the agent
+        reached the goal, fired a store at the goal cell, and fired any off-
+        goal store within the mini-episode (each as 0/1 ints).
+        """
+        goal = env.goal_location
+        start = random_start(env.size, goal, rng)
+        env.set_position(start)
+        h_rnn = None
+        prev_reward = None
+        prev_action = None
+        reached = False
+        stored_at_goal = 0
+        stored_off_goal = 0
+        for _step in range(max_steps):
+            at_g = at_goal(env)
+            out = agent_step(
+                agent, env, env_offset, vectorhash, hopfield,
+                h_rnn, cfg, device, deterministic=deterministic,
+                goal_local=goal, goal_in_memory=goal_in_mem[local_idx],
+                prev_reward=prev_reward, prev_action=prev_action,
+            )
+            h_rnn = out["h_rnn"]
+            prev_reward = out["next_prev_reward"]
+            prev_action = out["next_prev_action"]
+
+            allow_store_now = allow_store and not (
+                lock_store_after_goal and goal_in_mem[local_idx]
+            )
+
+            store_fired = (
+                True if oracle_store_at_goal
+                else (out["store_action"] > 0.5)
+            )
+
+            if at_g:
+                # Training-matching "reach": agent was at goal when deciding,
+                # saw reward=+1, and (optionally) stored. Train would teleport
+                # now; we terminate the mini-episode.
+                if allow_store_now and store_fired:
+                    hopfield.input_memory(out["embedding"][0])
+                    goal_in_mem[local_idx] = True
+                    stored_at_goal_count[local_idx] += 1
+                    stored_at_goal = 1
+                reached = True
+                break
+
+            # Off-goal: under oracle mode, never store. Otherwise honor agent's
+            # store action. (Training fires non-goal stores too.)
+            if (not oracle_store_at_goal) and allow_store_now and (out["store_action"] > 0.5):
+                hopfield.input_memory(out["embedding"][0])
+                stored_off_goal = 1
+
+        return int(reached), stored_at_goal, stored_off_goal
+
+    boundaries: list[int] = []
+    cur_iter = 0
+    for i in range(N):
+        env_offset_i = vectorhash.env_offsets[env_global_indices[i]]
+        for _k in range(iters_per_block):
+            for j in range(i + 1):
+                env_j = val_envs[j]
+                env_offset_j = (
+                    env_offset_i if j == i
+                    else vectorhash.env_offsets[env_global_indices[j]]
+                )
+                allow_store = (j == i)
+                success, sag, sog = _mini_episode(
+                    env_j, env_offset_j, local_idx=j, allow_store=allow_store,
+                )
+                env_iters[j].append((cur_iter, int(success), int(sag), int(sog)))
+            cur_iter += 1
+        boundaries.append(cur_iter)
+        print(f"  sequential block {i} (env {i}): iters={iters_per_block} "
+              f"hopfield_mem={hopfield.num_memories} "
+              f"goal_in_mem={goal_in_mem[i]}", flush=True)
+
+    # Per-env primary success: mean success during own block.
+    per_env_primary: list[float] = []
+    per_env_final_revisit: list[float] = []
+    for j in range(N):
+        pts = env_iters[j]
+        if not pts:
+            per_env_primary.append(float("nan"))
+            per_env_final_revisit.append(float("nan"))
+            continue
+        # own primary block: iters in [boundaries[j-1] (or 0), boundaries[j])
+        b_lo = boundaries[j - 1] if j > 0 else 0
+        b_hi = boundaries[j]
+        prim = [p[1] for p in pts if b_lo <= p[0] < b_hi]
+        per_env_primary.append(float(np.mean(prim)) if prim else float("nan"))
+        # final revisit (only for j < N - 1): iters in last block
+        if j < N - 1:
+            f_lo = boundaries[N - 2]
+            f_hi = boundaries[N - 1]
+            final_rv = [p[1] for p in pts if f_lo <= p[0] < f_hi]
+            per_env_final_revisit.append(
+                float(np.mean(final_rv)) if final_rv else float("nan")
+            )
+        else:
+            per_env_final_revisit.append(float("nan"))
+
+    mean_prim = float(np.nanmean(per_env_primary)) if per_env_primary else float("nan")
+    final_vals = [v for v in per_env_final_revisit if not np.isnan(v)]
+    mean_final_rv = float(np.mean(final_vals)) if final_vals else float("nan")
+
+    return {
+        "params": {
+            "iters_per_block": int(iters_per_block),
+            "max_steps": int(max_steps),
+            "seed": int(seed),
+            "deterministic": bool(deterministic),
+        },
+        "env_iters": {int(j): env_iters[j] for j in range(N)},
+        "boundaries": boundaries,
+        "summary": {
+            "per_env_primary_success": per_env_primary,
+            "per_env_final_revisit_success": per_env_final_revisit,
+            "mean_primary_success": mean_prim,
+            "mean_final_revisit_success": mean_final_rv,
+            "interference_drop": (mean_prim - mean_final_rv)
+            if not np.isnan(mean_prim) and not np.isnan(mean_final_rv)
+            else float("nan"),
+            "hopfield_final_memories": int(hopfield.num_memories),
+            "stored_at_goal_count": stored_at_goal_count,
         },
     }

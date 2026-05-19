@@ -69,6 +69,11 @@ def unique_radius_per_theta(
 ) -> Tuple[np.ndarray, np.ndarray]:
     """For each direction θ, compute the unique radius along that ray.
 
+    Uses only the outward half-line in direction θ (positive t along
+    ``(cos θ, sin θ)``). The opposite direction is a different θ and is
+    computed separately — we do **not** take ``min(left, right)`` on the same
+    undirected line, which would force 180° symmetry in the polar plot.
+
     Returns (thetas, widths) arrays of length n_rays.
     """
     H, W = cos_map.shape
@@ -83,18 +88,6 @@ def unique_radius_per_theta(
     for i, theta in enumerate(thetas):
         c, s = np.cos(theta), np.sin(theta)
 
-        ts_neg: list[float] = []
-        t = 0.0
-        while True:
-            t -= dt
-            x, y = ref_x + t * c, ref_y + t * s
-            if not (xmin <= x <= xmax and ymin <= y <= ymax):
-                break
-            if not np.isfinite(float(interp((y, x)))):
-                break
-            ts_neg.append(t)
-        ts_neg.reverse()
-
         ts_pos: list[float] = []
         t = 0.0
         while True:
@@ -106,9 +99,10 @@ def unique_radius_per_theta(
                 break
             ts_pos.append(t)
 
-        all_t = np.concatenate([
-            np.array(ts_neg), np.array([0.0]), np.array(ts_pos)])
-        ref_ix = len(ts_neg)
+        # ref_ix == 0 ⇒ ``compute_unique_radius`` uses only the +t flank
+        # (no min with the opposite direction on the same line).
+        all_t = np.concatenate([np.array([0.0]), np.array(ts_pos)])
+        ref_ix = 0
         sim = np.array([
             float(interp((ref_y + t * s, ref_x + t * c))) for t in all_t])
         widths[i] = compute_unique_radius(all_t, ref_ix, sim)

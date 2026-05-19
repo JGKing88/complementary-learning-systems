@@ -31,6 +31,14 @@ class RolloutBatch:
     bootstrap_value: torch.Tensor   # (B,) — value at truncation point
     goal_reached: torch.Tensor           # (B, T) float 0/1 — BC label for store head
     explore_mask: torch.Tensor      # (B, T) float 0/1 — 1 during explore phase (store-eligible steps)
+    policy_action_mask: torch.Tensor | None = None  # (B, T) float 0/1 — 1 where executed action came from policy sample, 0 where ε / auto-nav override replaced it. ε actions are env-exploration only and including them in the PPO surrogate explodes ratios under narrow std (the action lies far from the policy mean → log_prob is large negative → tiny mean drift → huge ratio).
+    # DAgger teacher labels — populated only in training_mode == "bc". All
+    # None in PPO mode; PPO update ignores these fields entirely.
+    teacher_move_action: torch.Tensor | None = None   # (B, T) long | (B, T, 2) float
+    teacher_store_action: torch.Tensor | None = None  # (B, T) float
+    move_label_mask: torch.Tensor | None = None       # (B, T) float 0/1
+    store_label_mask: torch.Tensor | None = None      # (B, T) float 0/1
+    trust_hop_mask: torch.Tensor | None = None        # (B, T) float 0/1 — 1 when teacher's move label was a Hopfield-direction (post-store-at-goal) label, 0 when novelty. Used for upweighting nav labels in BC loss.
 
 
 # ---------------------------------------------------------------------------
@@ -89,6 +97,15 @@ def _pool_rollouts(
         advs.append(a)
         rets.append(g)
 
+    # Per-rollout policy_action_mask is optional; default all-ones (every
+    # step counts toward move_loss). All rollouts in a pool should agree on
+    # whether the mask is populated.
+    pol_masks = []
+    for r in rollouts:
+        if r.policy_action_mask is not None:
+            pol_masks.append(r.policy_action_mask)
+        else:
+            pol_masks.append(torch.ones_like(r.explore_mask))
     return {
         "obs": torch.cat([r.obs for r in rollouts], dim=0),
         "move_actions": torch.cat([r.move_actions for r in rollouts], dim=0),
@@ -97,6 +114,7 @@ def _pool_rollouts(
         "old_store_lp": torch.cat([r.store_log_probs for r in rollouts], dim=0),
         "goal_reached": torch.cat([r.goal_reached for r in rollouts], dim=0),
         "explore_mask": torch.cat([r.explore_mask for r in rollouts], dim=0),
+        "policy_action_mask": torch.cat(pol_masks, dim=0),
         "advantages": torch.cat(advs, dim=0),
         "returns": torch.cat(rets, dim=0),
     }
@@ -137,6 +155,7 @@ def ppo_update(
     old_store_lp = pool["old_store_lp"]
     goal_reached = pool["goal_reached"]
     explore_mask = pool["explore_mask"]
+    policy_action_mask = pool["policy_action_mask"]
     advantages = pool["advantages"]
     returns = pool["returns"]
 
@@ -176,8 +195,15 @@ def ppo_update(
             mb_ret = returns[idx]
             mb_goal = goal_reached[idx]
             mb_mask = explore_mask[idx]
+            mb_pol_mask = policy_action_mask[idx]
 
-            move_dist, store_dist, new_values, _ = agent(mb_obs)
+            # Return features so detached-trunk BCE has access (below). When
+            # bce_detach_trunk=False the features tensor is unused — PyTorch
+            # keeps its graph alive until the loss backward finishes either way,
+            # so the cost of always returning it is negligible.
+            move_dist, store_dist, new_values, _, features = agent(
+                mb_obs, return_features=True
+            )
 
             # Movement policy loss
             new_move_lp = move_dist.log_prob(mb_move_act)
@@ -186,7 +212,11 @@ def ppo_update(
             ratio_move = torch.exp(new_move_lp - mb_old_move_lp)
             surr1 = ratio_move * mb_adv
             surr2 = torch.clamp(ratio_move, 1 - cfg.clip_coef, 1 + cfg.clip_coef) * mb_adv
-            move_loss = -torch.min(surr1, surr2).mean()
+            # Mask ε / auto-nav steps out of move_loss — those actions did
+            # not come from the policy sample, so including them in the PPO
+            # surrogate explodes the importance ratio under narrow std.
+            pol_mask_sum = mb_pol_mask.sum().clamp_min(1.0)
+            move_loss = (-torch.min(surr1, surr2) * mb_pol_mask).sum() / pol_mask_sum
 
             # Store policy loss — masked by explore_mask: during exploit the
             # store action is inert (rollout ignores it, no store_cost/
@@ -217,11 +247,20 @@ def ppo_update(
             # drives the network to always predict 0 (never store).
             # pos_weight = n_neg / n_pos restores balance.
             if effective_bc_weight > 0:
-                store_logits = store_dist.logits
+                # Phase 2 enrichment: route BCE through detached features so
+                # its gradient only updates the store_head Linear's own weights,
+                # not the shared RNN trunk. Keeps PPO's store log_prob gradient
+                # (through store_dist.logits) flowing normally through the trunk.
+                if cfg.bce_detach_trunk:
+                    store_logits = agent.store_logits_from(features.detach())
+                else:
+                    store_logits = store_dist.logits
                 masked_goal = mb_goal * mb_mask
                 n_pos = masked_goal.sum().clamp_min(1.0)
                 n_neg = (mb_mask - masked_goal).sum().clamp_min(1.0)
                 pos_weight = n_neg / n_pos
+                if cfg.bce_pos_weight_cap > 0:
+                    pos_weight = pos_weight.clamp_max(cfg.bce_pos_weight_cap)
                 bce_full = F.binary_cross_entropy_with_logits(
                     store_logits, mb_goal, reduction="none",
                     pos_weight=pos_weight,

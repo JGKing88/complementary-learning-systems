@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from .env import GridEnv, CARDINAL_ACTIONS
+from .env import GridEnv, CARDINAL_ACTIONS, at_goal
 
 
 class VecEnv:
@@ -30,6 +30,9 @@ class VecEnv:
         self._goal = base_env._goal
         self._obs_size = base_env._observation_size
         self.time_penalty = base_env.time_penalty
+        self.goals_active = getattr(base_env, "goals_active", True)
+        self.goal_reward = getattr(base_env, "goal_reward", 1.0)
+        self.goal_radius = getattr(base_env, "goal_radius", 0.5)
 
         # Batched state: (B, 2) integer positions
         self._pos = np.zeros((batch_size, 2), dtype=np.int32)
@@ -106,13 +109,19 @@ class VecEnv:
 
         n = len(indices)
         rewards = np.full(n, -self.time_penalty, dtype=np.float32)
-        goal_reached = np.zeros(n, dtype=bool)
+
+        # Pre-action at-goal check — this step consumes the at-goal turn.
+        # Skipped entirely when goals_active is False (pure-explore Phase A).
+        # Computed once over the full batch via the centralized helper, then
+        # sliced to `indices` for this step. Discrete envs use _pos (int).
+        if self.goals_active:
+            goal_reached = at_goal(self)[indices].copy()
+        else:
+            goal_reached = np.zeros(n, dtype=bool)
+        rewards[goal_reached] = self.goal_reward
 
         for j, b in enumerate(indices):
-            # Pre-action at-goal check — this step consumes the at-goal turn.
-            if (int(self._pos[b, 0]), int(self._pos[b, 1])) == self._goal:
-                goal_reached[j] = True
-                rewards[j] = 1.0
+            if goal_reached[j]:
                 continue  # skip movement; teleport applied below
 
             if isinstance(actions[j], (int, np.integer)):
@@ -167,7 +176,9 @@ class ContinuousVecEnv:
     """
 
     def __init__(self, base_env: GridEnv, batch_size: int,
-                 scale: float = 1.0) -> None:
+                 scale: float = 1.0, normalize: bool = False,
+                 max_action_norm: float | None = None,
+                 min_action_norm: float | None = None) -> None:
         self.base_env = base_env
         self.B = batch_size
         self.size = base_env.size
@@ -175,7 +186,18 @@ class ContinuousVecEnv:
         self._goal = base_env._goal
         self._obs_size = base_env._observation_size
         self.time_penalty = base_env.time_penalty
+        self.goals_active = getattr(base_env, "goals_active", True)
+        self.goal_reward = getattr(base_env, "goal_reward", 1.0)
+        self.goal_radius = getattr(base_env, "goal_radius", 0.5)
         self.scale = scale
+        # When True, each (dx, dy) action is L2-normalized to a unit vector
+        # before * scale, matching ContinuousGridEnv.step's behavior. Train and
+        # eval must agree on this flag — see PARAMETER_AUDIT bug #6.
+        self.normalize_step = normalize
+        # Soft cap on action magnitude (only honored when normalize=False).
+        self.max_action_norm = max_action_norm
+        # Soft floor on action magnitude (only honored when normalize=False).
+        self.min_action_norm = min_action_norm
 
         self._pos_f = np.zeros((batch_size, 2), dtype=np.float64)
         self._pos = np.zeros((batch_size, 2), dtype=np.int32)
@@ -262,18 +284,43 @@ class ContinuousVecEnv:
 
         n = len(indices)
         rewards = np.full(n, -self.time_penalty, dtype=np.float32)
-        goal_reached = np.zeros(n, dtype=bool)
 
         actions = np.asarray(actions, dtype=np.float64)
         if actions.ndim == 1:
             actions = actions.reshape(-1, 2)
 
+        if self.normalize_step:
+            norms = np.linalg.norm(actions, axis=-1, keepdims=True)
+            # Avoid div-by-zero on zero-vector actions (leave them as-is).
+            safe = np.where(norms > 1e-8, norms, 1.0)
+            actions = actions / safe
+        else:
+            if self.max_action_norm is not None:
+                norms = np.linalg.norm(actions, axis=-1, keepdims=True)
+                scale_down = np.where(norms > self.max_action_norm,
+                                      self.max_action_norm / np.maximum(norms, 1e-8),
+                                      1.0)
+                actions = actions * scale_down
+            if self.min_action_norm is not None:
+                norms = np.linalg.norm(actions, axis=-1, keepdims=True)
+                # Only scale up when action is non-trivially nonzero (>1e-8) so
+                # we don't synthesize a direction from numerical noise.
+                scale_up = np.where(
+                    (norms > 1e-8) & (norms < self.min_action_norm),
+                    self.min_action_norm / np.maximum(norms, 1e-8),
+                    1.0,
+                )
+                actions = actions * scale_up
+
         # Identify envs that start the step at goal — they reap +1 and teleport,
-        # their movement is ignored.
-        for j, b in enumerate(indices):
-            if (int(self._pos[b, 0]), int(self._pos[b, 1])) == self._goal:
-                goal_reached[j] = True
-                rewards[j] = 1.0
+        # their movement is ignored. Skipped when goals_active is False (pure-explore).
+        # The check is on the *continuous* pre-action position (_pos_f), via the
+        # centralized at_goal helper which auto-resolves to _pos_f for ContinuousVecEnv.
+        if self.goals_active:
+            goal_reached = at_goal(self)[indices].copy()
+        else:
+            goal_reached = np.zeros(n, dtype=bool)
+        rewards[goal_reached] = self.goal_reward
 
         # Apply movement only to envs not at goal.
         for j, b in enumerate(indices):

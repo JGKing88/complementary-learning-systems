@@ -213,7 +213,7 @@ Eval 4 (realistic) runs **only at end of training** with a **single persistent H
 - Runs for the **full** `max_steps` — no early termination, even if goal is found
 - Track all unique snapped grid positions visited
 - Track whether/when the agent first reaches the goal
-- Agent can store if it wants (store actions modify the Hopfield)
+- Agent can store or not (it's a flag, default false)
 
 **Metrics (per distractor count):**
 
@@ -284,6 +284,66 @@ This runs quadratically in `N`: primary is `N · B` steps, retests total `N(N-1)
 
 
 **What it tells you:** Whether the trained agent's memory system scales beyond one env — the hardest version of the task. High `mean_primary_reaches` with a low `interference_drop` means the agent learns a good policy AND its Hopfield memory survives contamination from later envs. Low primary reaches mean the policy itself is bad; low retest with high primary means the memory is being overwritten.
+
+### Eval 5: Repeat (`evaluate_repeat`)
+
+**Question:** Ignoring interference, how reliably does the agent **cold-start** in an env — find the goal, store it, then exploit the store to return — when Hopfield and RNN are fully reset between trials?
+
+Runs **only on demand** from `eval_all.py` (set `--repeat-trials > 0`). Not run during training.
+
+**Setup:** reuses the dedicated eval world. For each val env, runs `n_trials` independent trials with a **fresh Hopfield** and **fresh RNN** each trial. Agent weights frozen, `deterministic=True`.
+
+**Per trial:**
+
+- Random non-goal start, fresh RNN, fresh empty Hopfield
+- Run `steps_per_env` steps with the agent's own store head enabled. On every goal-reach: teleport + reset RNN + mark that env's `goal_in_memory=True`. Interval data recorded exactly like the primary phase of the realistic eval (including an open ring on reaches where a store fired, and a cut-off square if the trial ends mid-trajectory).
+
+**Output:** per-env list of trial dicts (`intervals`, `stored_at_reach`, `tail_steps`, `start`, `trial_idx`) and a per-trial intervals plot (`*_repeat_intervals.png`). One scalar summary `mean_reaches = mean over (env, trial) of n_reaches`.
+
+**What it tells you:** the policy's cold-start competence, independent of catastrophic interference. Use it together with the realistic eval: a big gap between repeat-eval `mean_reaches` and realistic-eval `mean_primary_reaches` points at interference; a low repeat-eval score points at policy weakness or insufficient training.
+
+### Eval 6: Sequential continual (`evaluate_sequential_episodes`)
+
+**Question:** Under a continual-learning protocol — introduce envs one at a time, then revisit **every** previously introduced env on **every** iteration — can the agent keep solving old envs as new ones are added to the shared Hopfield?
+
+Runs **only on demand** from `eval_all.py` (set `--seq-iters-per-block > 0`). Not run during training.
+
+**Setup:** reuses the dedicated eval world with `N = cfg.num_val_envs` envs. A **single persistent Hopfield** is built once and never reset. Agent weights frozen, `deterministic=True`.
+
+**Protocol:** for each env `i = 0..N-1` (block `i`):
+
+- For each outer iteration `k = 0..iters_per_block-1`:
+  - For **every already-introduced env** `j ≤ i`:
+    - random non-goal start, fresh RNN, run up to `max_steps` steps;
+    - `j == i` (primary) — agent's store head may write into the shared Hopfield;
+    - `j < i` (revisit) — stores disabled, Hopfield frozen for that mini-episode;
+    - record **one 0/1 bit**: `reached = True` if the agent touched the goal during the episode.
+
+This produces, for each env `j`, a sequence `env_iters[j] = [(outer_iter, 0/1), ...]` covering the outer iterations in which env `j` is active (its primary block + all later blocks as a revisit). In total there are `∑_{i=0..N-1} (i+1) * iters_per_block` mini-episodes, `≤ max_steps` steps each.
+
+**Plot (`*_sequential.png`):** one colored line per env, y = trailing moving-average of the 0/1 success bit over `ma_window` iterations, x = outer iteration. Dashed verticals mark block boundaries; the env introduced in each block is labeled below the x-axis. This reproduces the figure style from the reference paper.
+
+**Metrics (in `summary`):**
+
+- `per_env_primary_success[j]` — mean success during env `j`'s primary block
+- `per_env_final_revisit_success[j]` — mean success of env `j` in the last block (revisit after all envs introduced), `NaN` for `j == N-1`
+- `mean_primary_success`, `mean_final_revisit_success`
+- `interference_drop = mean_primary_success - mean_final_revisit_success`
+- `hopfield_final_memories`
+- `stored_at_goal_count[j]` — times the agent fired store while at env `j`'s goal during its primary block
+
+**Key flags:**
+
+
+| Flag                    | Effect                                                                                |
+| ----------------------- | ------------------------------------------------------------------------------------- |
+| `--seq-iters-per-block` | Iterations per env block. Default 0 (skip). `SEQ_ITERS_PER_BLOCK` in the shell.       |
+| `--seq-max-steps`       | Max steps per mini-episode. Default 32. `SEQ_MAX_STEPS`.                              |
+| `--seq-ma-window`       | Moving-average window for the plot (plot-only; does not affect stored data). Def. 20. |
+| `--seq-seed-offset`     | Added to `cfg.seed` for the sequential-eval RNG. Default 3000.                        |
+
+
+**What it tells you:** same question as the realistic eval (does the Hopfield survive adding new envs?) but with the paper's episodic success rate metric instead of teleport-based reach counts, and with **every** previous env retested at **every** outer iteration instead of once per new env. That gives a dense moving-average line per env that cleanly shows when, and by how much, each env's performance degrades as new memories are added.
 
 ### Running eval on a batch of checkpoints
 

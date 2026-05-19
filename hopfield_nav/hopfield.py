@@ -103,6 +103,82 @@ class Hopfield:
                 X = F.normalize(X, dim=-1)
         return X
 
+    def recall_batch_trajectory(
+        self,
+        x0_batch: torch.Tensor,
+        snapshot_steps: list[int],
+        beta: float | None = None,
+        alpha: float = 1.0,
+        use_tanh: bool = True,
+        normalize_each: bool = True,
+    ) -> dict[int, torch.Tensor]:
+        """Like recall_batch but returns intermediate states at requested steps.
+
+        Lets the policy see the recall-convergence trajectory: clean memory
+        attractors converge in 1-2 steps; diffuse landscapes wander.
+        """
+        if not snapshot_steps:
+            return {}
+        beta = beta if beta is not None else self.beta
+        X = x0_batch.to(self.device).clone()
+        snapshot_set = set(snapshot_steps)
+        max_step = max(snapshot_steps)
+        out: dict[int, torch.Tensor] = {}
+        for s in range(1, max_step + 1):
+            H = X @ self.W.T
+            delta = torch.tanh(beta * H) if use_tanh else H
+            X = (1 - alpha) * X + alpha * delta
+            if normalize_each:
+                X = F.normalize(X, dim=-1)
+            if s in snapshot_set:
+                out[s] = X.clone()
+        return out
+
+    # ------------------------------------------------------------------
+    # Utilities
+    # ------------------------------------------------------------------
+
+    def reset(self) -> None:
+        """Clear all stored memories."""
+        self.W.zero_()
+        self.num_memories = 0
+
+    def clone(self) -> Hopfield:
+        """Deep copy (independent W matrix)."""
+        return copy.deepcopy(self)
+
+    def energy(self, x: torch.Tensor) -> float:
+        """Hopfield energy E = -0.5 x^T W x."""
+        x = x.to(self.device).view(-1)
+        return -0.5 * (x @ self.W @ x).item()
+
+
+def recall_per_env_batch_trajectory(
+    x0_batch: torch.Tensor,
+    W_batch: torch.Tensor,
+    snapshot_steps: list[int],
+    beta: float = 2.0,
+    alpha: float = 1.0,
+    use_tanh: bool = True,
+    normalize_each: bool = True,
+) -> dict[int, torch.Tensor]:
+    """Per-env-W version of recall_batch_trajectory."""
+    if not snapshot_steps:
+        return {}
+    X = x0_batch.clone()
+    snapshot_set = set(snapshot_steps)
+    max_step = max(snapshot_steps)
+    out: dict[int, torch.Tensor] = {}
+    for s in range(1, max_step + 1):
+        H = torch.bmm(W_batch, X.unsqueeze(-1)).squeeze(-1)
+        delta = torch.tanh(beta * H) if use_tanh else H
+        X = (1 - alpha) * X + alpha * delta
+        if normalize_each:
+            X = F.normalize(X, dim=-1)
+        if s in snapshot_set:
+            out[s] = X.clone()
+    return out
+
 
 def recall_per_env_batch(
     x0_batch: torch.Tensor,
@@ -130,21 +206,3 @@ def recall_per_env_batch(
         if normalize_each:
             X = F.normalize(X, dim=-1)
     return X
-
-    # ------------------------------------------------------------------
-    # Utilities
-    # ------------------------------------------------------------------
-
-    def reset(self) -> None:
-        """Clear all stored memories."""
-        self.W.zero_()
-        self.num_memories = 0
-
-    def clone(self) -> Hopfield:
-        """Deep copy (independent W matrix)."""
-        return copy.deepcopy(self)
-
-    def energy(self, x: torch.Tensor) -> float:
-        """Hopfield energy E = -0.5 x^T W x."""
-        x = x.to(self.device).view(-1)
-        return -0.5 * (x @ self.W @ x).item()

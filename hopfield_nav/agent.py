@@ -8,15 +8,25 @@ from torch.distributions import Categorical, Bernoulli, Normal
 from .config import AgentConfig
 
 
-def compute_input_dim(cfg: AgentConfig, embed_dim: int) -> int:
+def compute_input_dim(cfg: AgentConfig, embed_dim: int, sensory_dim: int = 0) -> int:
     """Compute RNN input dimension from config."""
-    dim = 1  # prev_reward (always)
+    dim = 1  # current_reward (always)
+    if cfg.input_prev_reward:
+        dim += 1  # explicit prev_reward channel (1 bit of history, RNN anchor)
     if cfg.input_encoded_state:
         dim += embed_dim
     if cfg.input_hopfield_signal:
+        # Raw (unnormalized) q only defined in continuous mode; discrete stays one-hot.
         dim += 4 if cfg.hopfield_mode == "discrete" else 2
+    if cfg.input_hopfield_multistep and cfg.hopfield_mode == "continuous":
+        # Each multistep snapshot contributes a 2-D projected q.
+        dim += 2 * len(cfg.input_hopfield_multistep)
     if cfg.input_prev_action:
         dim += 4 if cfg.movement_mode == "discrete" else 2
+    if cfg.input_sensory:
+        dim += sensory_dim
+    if cfg.input_goal_in_memory:
+        dim += 1  # 1 bool: agent has stored at goal during this rollout
     return dim
 
 
@@ -49,6 +59,8 @@ class NavAgent(nn.Module):
             # is meaningful. With zero-init, training entropy bonus drives std up
             # to 2-3 per dim, making the policy reliant on sampling noise for motion.
             self.movement_log_std = nn.Parameter(torch.full((2,), cfg.init_log_std))
+            if cfg.freeze_log_std:
+                self.movement_log_std.requires_grad = False
 
         # Store head (binary)
         self.store_head = nn.Linear(cfg.hidden_size, 1)
@@ -60,17 +72,18 @@ class NavAgent(nn.Module):
         self,
         x: torch.Tensor,
         h: torch.Tensor | None = None,
+        return_features: bool = False,
     ) -> tuple:
         """Forward pass.
 
         x: (B, T, input_dim)
         h: (num_layers, B, hidden_size) or None
+        return_features: if True, also return the RNN features so a caller can
+            apply supervised losses with trunk gradient detached
+            (e.g. BCE on store head that shouldn't backprop through the RNN).
 
-        Returns (move_dist, store_dist, values, h_next):
-            move_dist: Categorical or Normal distribution
-            store_dist: Bernoulli distribution
-            values: (B, T)
-            h_next: (num_layers, B, hidden_size)
+        Returns (move_dist, store_dist, values, h_next) or, with
+        return_features=True, (move_dist, store_dist, values, h_next, features).
         """
         features, h_next = self.rnn(x, h)  # (B, T, hidden)
 
@@ -90,7 +103,18 @@ class NavAgent(nn.Module):
         # Value
         values = self.value_head(features).squeeze(-1)  # (B, T)
 
+        if return_features:
+            return move_dist, store_dist, values, h_next, features
         return move_dist, store_dist, values, h_next
+
+    def store_logits_from(self, features: torch.Tensor) -> torch.Tensor:
+        """Recompute store logits from arbitrary features tensor.
+
+        Used to route BCE through ``features.detach()`` so its gradient only
+        updates the store_head Linear's own weights — the trunk-pollution fix
+        that runs 2/8/10 in Phase 1 lacked.
+        """
+        return self.store_head(features).squeeze(-1)
 
     @torch.no_grad()
     def get_action_and_value(
@@ -100,6 +124,7 @@ class NavAgent(nn.Module):
         deterministic: bool = False,
         move_action_override: torch.Tensor | None = None,
         move_override_mask: torch.Tensor | None = None,
+        action_temperature: float = 1.0,
     ) -> dict:
         """Single-step action selection for rollout collection.
 
@@ -116,6 +141,15 @@ class NavAgent(nn.Module):
                            store_log_prob, value, h_next
         """
         move_dist, store_dist, values, h_next = self.forward(x, h)
+
+        # Scale movement distribution std by action_temperature for sampling.
+        # Default 1.0 = no change. Used to do "low-noise stochastic" eval.
+        # Continuous-only — discrete movement uses categorical, no σ to scale.
+        if (action_temperature != 1.0
+                and self.cfg.movement_mode == "continuous"):
+            scaled_std = move_dist.scale * float(action_temperature)
+            scaled_std = scaled_std.clamp_min(1e-8)
+            move_dist = Normal(move_dist.mean, scaled_std)
 
         if deterministic:
             if self.cfg.movement_mode == "discrete":

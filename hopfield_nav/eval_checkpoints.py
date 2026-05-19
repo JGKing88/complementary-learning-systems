@@ -30,6 +30,9 @@ from hopfield_nav.eval import (
 def _coerce_legacy_cfg(cd: dict) -> dict:
     if "val_envs_per_world" in cd and "num_val_envs" not in cd:
         cd["num_val_envs"] = cd.pop("val_envs_per_world")
+    vh = cd.get("vectorhash")
+    if isinstance(vh, dict) and "gbook_only" in vh and "static_vectorhash" not in vh:
+        vh["static_vectorhash"] = vh.pop("gbook_only")
     return cd
 
 
@@ -75,19 +78,19 @@ def build_eval_world(cfg: TrainConfig, encoder, device: str):
 def eval_one_checkpoint(
     path: str, encoder, enc_cfg, device: torch.device,
     num_trials: int = 32, max_steps: int = 200,
-    gbook_only: bool | None = None,
+    static_vectorhash: bool | None = None,
 ):
     ck = torch.load(path, map_location=device, weights_only=False)
     cfg = make_cfg_from_checkpoint(ck["config"])
-    if gbook_only is not None:
-        cfg.vectorhash.gbook_only = bool(gbook_only)
+    if static_vectorhash is not None:
+        cfg.vectorhash.static_vectorhash = bool(static_vectorhash)
     embed_dim = enc_cfg.out_dim
 
     torch.manual_seed(0)
     np.random.seed(0)
 
     val_envs, vh, val_idxs = build_eval_world(cfg, encoder, str(device))
-    input_dim = compute_input_dim(cfg.agent, embed_dim)
+    input_dim = compute_input_dim(cfg.agent, embed_dim, cfg.env.observation_size)
     agent = NavAgent(cfg.agent, input_dim).to(device)
     agent.load_state_dict(ck["agent_state_dict"])
     agent.eval()
@@ -135,9 +138,10 @@ def main():
     parser.add_argument("--updates", nargs="+", type=int,
                         default=[200, 400, 600, 800, 1000, 1200])
     parser.add_argument(
-        "--gbook-only", dest="gbook_only", default=None,
+        "--static-vectorhash", dest="static_vectorhash", default=None,
         action=argparse.BooleanOptionalAction,
-        help="Override checkpoint: gbook-only scaffold. Omit to use ckpt value.",
+        help="Override checkpoint: static VectorHash scaffold (gbook + sbook only). "
+             "Omit to use ckpt value.",
     )
     args = parser.parse_args()
 
@@ -155,7 +159,7 @@ def main():
                 continue
             m = eval_one_checkpoint(
                 path, encoder, enc_cfg, device, num_trials=args.num_trials,
-                gbook_only=args.gbook_only,
+                static_vectorhash=args.static_vectorhash,
             )
             passes = m["nav_stoch"] >= 0.7 and m["store_eff"] >= 0.7 and m["coverage"] >= 0.45
             score = (m["nav_stoch"] + m["store_eff"] + m["coverage"]) / 3

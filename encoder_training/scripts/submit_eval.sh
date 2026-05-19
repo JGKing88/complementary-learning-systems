@@ -25,6 +25,8 @@
 CKPT=/home/jackking/cls/encoders/run_20260422_185816/encoder_best.pt
 # MSE AND actually good
 
+CKPT=/home/jackking/cls/encoders/run_20260424_003439/encoder_best.pt
+
 # --- Nav eval overrides ---
 ENV_SIZE=20
 N_TRAIN_ENVS=5

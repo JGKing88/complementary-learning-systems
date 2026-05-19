@@ -1,7 +1,10 @@
-"""Evaluate a single checkpoint on all four evaluation types.
+"""Evaluate a single checkpoint on all evaluation types.
 
 Used by `run_eval_all.sh` to run a batch of models through the full eval
-stack (navigation det/stoch, goal discovery, exploration, realistic).
+stack: navigation det (+ optional stoch), goal discovery, exploration,
+optional realistic (persistent Hopfield), optional repeat (fresh Hopfield
+per trial), and optional sequential continual (paper-style moving-average
+episodic success plot).
 
 Usage:
     python -m hopfield_nav.eval_all --ckpt CHECKPOINT [flags]
@@ -29,13 +32,16 @@ from hopfield_nav.vectorhash import VectorHash
 from hopfield_nav.agent import NavAgent, compute_input_dim
 from hopfield_nav.eval import (
     evaluate_navigation, evaluate_goal_discovery, evaluate_exploration,
-    evaluate_realistic, evaluate_repeat,
+    evaluate_realistic, evaluate_repeat, evaluate_sequential_episodes,
 )
 
 
 def _coerce_legacy_cfg(cd: dict) -> dict:
     if "val_envs_per_world" in cd and "num_val_envs" not in cd:
         cd["num_val_envs"] = cd.pop("val_envs_per_world")
+    vh = cd.get("vectorhash")
+    if isinstance(vh, dict) and "gbook_only" in vh and "static_vectorhash" not in vh:
+        vh["static_vectorhash"] = vh.pop("gbook_only")
     return cd
 
 
@@ -105,7 +111,7 @@ def scaffold_layout_dict(
         "Npos_config": cfg.vectorhash.Npos,
         "prod_lambdas": prod_lambdas,
         "lambdas": list(cfg.vectorhash.lambdas),
-        "gbook_only": bool(cfg.vectorhash.gbook_only),
+        "static_vectorhash": bool(cfg.vectorhash.static_vectorhash),
         "env_size": int(cfg.env.size),
         "placement": "spread",
         "envs": envs_out,
@@ -128,10 +134,17 @@ def eval_checkpoint(
     repeat_trials: int = 0,
     repeat_steps: int = 200,
     repeat_seed_offset: int = 2000,
+    seq_iters_per_block: int = 0,
+    seq_max_steps: int = 32,
+    seq_ma_window: int = 20,
+    seq_seed_offset: int = 3000,
     hopfield_oracle: bool | None = None,
     action_oracle: bool | None = None,
-    gbook_only: bool | None = None,
+    static_vectorhash: bool | None = None,
     num_val_envs: int | None = None,
+    lock_store_after_goal: bool = False,
+    oracle_store_at_goal: bool = False,
+    goal_radius: float | None = None,
 ) -> dict:
     ck = torch.load(ckpt_path, map_location=device, weights_only=False)
     cfg = make_cfg_from_checkpoint(ck["config"])
@@ -139,8 +152,10 @@ def eval_checkpoint(
         cfg.hopfield_oracle = bool(hopfield_oracle)
     if action_oracle is not None:
         cfg.action_oracle = bool(action_oracle)
-    if gbook_only is not None:
-        cfg.vectorhash.gbook_only = bool(gbook_only)
+    if static_vectorhash is not None:
+        cfg.vectorhash.static_vectorhash = bool(static_vectorhash)
+    if goal_radius is not None:
+        cfg.env.goal_radius = float(goal_radius)
     if num_val_envs is not None:
         cfg.num_val_envs = int(num_val_envs)
     if bool(getattr(cfg, "hopfield_oracle", False)) and not bool(cfg.agent.input_hopfield_signal):
@@ -176,7 +191,7 @@ def eval_checkpoint(
     np.random.seed(0)
 
     val_envs, vh, val_idxs = build_eval_world(cfg, encoder, str(device))
-    input_dim = compute_input_dim(cfg.agent, embed_dim)
+    input_dim = compute_input_dim(cfg.agent, embed_dim, cfg.env.observation_size)
     agent = NavAgent(cfg.agent, input_dim).to(device)
     agent.load_state_dict(ck["agent_state_dict"])
     agent.eval()
@@ -190,12 +205,14 @@ def eval_checkpoint(
         "hopfield_oracle": bool(getattr(cfg, "hopfield_oracle", False)),
         "input_hopfield_signal": bool(cfg.agent.input_hopfield_signal),
         "input_encoded_state": bool(cfg.agent.input_encoded_state),
+        "input_sensory": bool(cfg.agent.input_sensory),
         "hopfield_oracle_effective": bool(getattr(cfg, "hopfield_oracle", False))
         and bool(cfg.agent.input_hopfield_signal),
         "action_oracle": bool(getattr(cfg, "action_oracle", False)),
-        "gbook_only": bool(cfg.vectorhash.gbook_only),
+        "static_vectorhash": bool(cfg.vectorhash.static_vectorhash),
         "num_val_envs": cfg.num_val_envs,
         "movement_mode": cfg.env.movement_mode,
+        "lock_store_after_goal": bool(lock_store_after_goal),
         "scaffold_layout": scaffold_layout_dict(cfg, vh, val_envs, val_idxs),
     }
 
@@ -244,6 +261,7 @@ def eval_checkpoint(
             steps_per_env=realistic_steps,
             seed=cfg.seed + realistic_seed_offset,
             deterministic=True,
+            lock_store_after_goal=lock_store_after_goal,
         )
         # Collapse non-serializable parts (tuple keys, intervals lists are fine)
         retest_serializable = {
@@ -273,6 +291,29 @@ def eval_checkpoint(
         results["repeat"] = {
             "trials": {str(k): v for k, v in rep["trials"].items()},
             "summary": rep["summary"],
+        }
+
+    if seq_iters_per_block > 0:
+        print(f"  [sequential] iters_per_block={seq_iters_per_block} "
+              f"max_steps={seq_max_steps} n_envs={cfg.num_val_envs}", flush=True)
+        seq = evaluate_sequential_episodes(
+            agent, val_envs, vh, val_idxs, cfg, device,
+            iters_per_block=seq_iters_per_block,
+            max_steps=seq_max_steps,
+            seed=cfg.seed + seq_seed_offset,
+            deterministic=True,
+            lock_store_after_goal=lock_store_after_goal,
+            oracle_store_at_goal=oracle_store_at_goal,
+        )
+        # Keep lists-of-tuples JSON-serializable.
+        results["sequential"] = {
+            "params": {**seq["params"], "ma_window": int(seq_ma_window)},
+            "env_iters": {
+                str(k): [[int(t) for t in pt] for pt in v]
+                for k, v in seq["env_iters"].items()
+            },
+            "boundaries": [int(b) for b in seq["boundaries"]],
+            "summary": seq["summary"],
         }
 
     return results
@@ -314,6 +355,15 @@ def print_summary(tag: str, results: dict, n_distractors: list[int]) -> None:
         print(f"  repeat/summary: n_trials={rs['n_trials']} "
               f"steps_per_env={rs['steps_per_env']} "
               f"mean_reaches={rs['mean_reaches']:.2f}")
+    if "sequential" in results:
+        ss = results["sequential"]["summary"]
+        sp = results["sequential"]["params"]
+        print(f"  sequential/summary: iters_per_block={sp['iters_per_block']} "
+              f"max_steps={sp['max_steps']} "
+              f"mean_primary={ss['mean_primary_success']:.2f} "
+              f"mean_final_revisit={ss['mean_final_revisit_success']:.2f} "
+              f"drop={ss['interference_drop']:.3f} "
+              f"hopfield_final={ss['hopfield_final_memories']}")
     if "realistic" in results:
         r = results["realistic"]
         s = r["summary"]
@@ -566,6 +616,125 @@ def save_repeat_intervals_plot(results: dict, out_path: str) -> None:
     plt.close(fig)
 
 
+def _sequential_plot_path(drift_plot_path: str) -> str:
+    if drift_plot_path.endswith("_realistic_drift.png"):
+        return drift_plot_path.replace("_realistic_drift.png", "_sequential.png")
+    base, ext = os.path.splitext(drift_plot_path)
+    return f"{base}_sequential{ext}"
+
+
+def save_sequential_episodes_plot(
+    results: dict, out_path: str, show_stores: bool = True,
+) -> None:
+    """Continual-learning plot in the forgetting-curve style.
+
+    One smoothed success-rate line per env; block-shaded background colored
+    by the active env in that block; "train env i" label centered above each
+    block. ``show_stores=True`` overlays per-iter goal-store / off-goal-store
+    markers above/below each line; ``False`` for a clean line plot.
+    """
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+
+    if "sequential" not in results:
+        return
+    s = results["sequential"]
+    boundaries = [int(b) for b in s["boundaries"]]
+    if not boundaries:
+        return
+    total_iters = boundaries[-1]
+    ma_w = int(s["params"].get("ma_window", 20))
+    env_iters = s["env_iters"]
+    env_keys = sorted(env_iters.keys(), key=lambda k: int(k))
+    N = len(env_keys)
+
+    fig, ax = plt.subplots(figsize=(max(8, N * 1.6), 4.8))
+    cmap = plt.cm.tab10
+
+    # Block-shaded background regions (active env per block).
+    prev = 0
+    for j, b in enumerate(boundaries):
+        ax.axvspan(prev, b, color=cmap(j % 10), alpha=0.10, zorder=0)
+        prev = b
+
+    for env_k in env_keys:
+        pts = env_iters[env_k]
+        if not pts:
+            continue
+        pts = sorted(pts, key=lambda xy: xy[0])
+        xs = np.array([p[0] for p in pts], dtype=np.int64)
+        ys = np.array([p[1] for p in pts], dtype=np.float64)
+        sag = np.array([p[2] if len(p) > 2 else 0 for p in pts], dtype=np.int64)
+        sog = np.array([p[3] if len(p) > 3 else 0 for p in pts], dtype=np.int64)
+        w = max(1, min(ma_w, len(ys)))
+        kernel = np.ones(w) / w
+        ma = np.convolve(ys, kernel, mode="full")[: len(ys)]
+        if len(ys) >= 1:
+            for i in range(min(w - 1, len(ys))):
+                ma[i] = float(np.mean(ys[: i + 1]))
+        color = cmap(int(env_k) % 10)
+        ax.plot(xs, ma * 100.0, color=color, linewidth=1.6, label=f"env {env_k}")
+
+        if show_stores:
+            sag_xs = xs[sag == 1]
+            if sag_xs.size > 0:
+                sag_ys = ma[sag == 1] * 100.0 + 4.0
+                ax.scatter(sag_xs, sag_ys, marker="o", s=14, color=color,
+                           edgecolors="black", linewidths=0.4, zorder=5)
+            sog_xs = xs[sog == 1]
+            if sog_xs.size > 0:
+                sog_ys = ma[sog == 1] * 100.0 - 4.0
+                ax.scatter(sog_xs, sog_ys, marker="x", s=18, color=color,
+                           linewidths=1.0, zorder=5)
+
+    # Block labels at top, in active env's color (matches forgetting plot).
+    prev = 0
+    for j, b in enumerate(boundaries):
+        center = (prev + b) / 2.0
+        ax.text(
+            center, 0.96, f"train env {j}",
+            ha="center", va="top", fontsize=9, color=cmap(j % 10),
+            transform=ax.get_xaxis_transform(),
+            bbox=dict(boxstyle="round,pad=0.2", fc="white", ec="none", alpha=0.7),
+        )
+        prev = b
+
+    ax.set_xlim(0, total_iters)
+    ax.set_ylim(-2, 102)
+    ax.set_xlabel("sequential iteration")
+    ax.set_ylabel("episode success rate (%)")
+    s_sum = s["summary"]
+    title = f"Sequential continual eval — {results.get('tag', '')}"
+    if ma_w > 1:
+        title = f"{title}  (smooth window={ma_w})"
+    ax.set_title(
+        f"{title}\n"
+        f"mean_primary={s_sum['mean_primary_success']:.2f}  "
+        f"mean_final_revisit={s_sum['mean_final_revisit_success']:.2f}  "
+        f"drop={s_sum['interference_drop']:.3f}",
+        fontsize=10, pad=10,
+    )
+    ax.grid(True, alpha=0.3)
+
+    if show_stores:
+        from matplotlib.lines import Line2D
+        marker_handles = [
+            Line2D([0], [0], marker="o", linestyle="", color="grey",
+                   markerfacecolor="grey", markeredgecolor="black",
+                   markersize=6, label="store @ goal"),
+            Line2D([0], [0], marker="x", linestyle="", color="grey",
+                   markersize=7, mew=1.5, label="store off goal"),
+        ]
+        leg1 = ax.legend(handles=marker_handles, loc="upper left", fontsize=8)
+        ax.add_artist(leg1)
+    ax.legend(loc="lower right", fontsize=8, ncol=max(1, N // 5 + 1))
+    fig.tight_layout()
+    os.makedirs(os.path.dirname(out_path) or ".", exist_ok=True)
+    fig.savefig(out_path, dpi=120)
+    plt.close(fig)
+
+
 def _scaffold_layout_plot_path(drift_plot_path: str) -> str:
     if drift_plot_path.endswith("_realistic_drift.png"):
         return drift_plot_path.replace("_realistic_drift.png", "_scaffold_layout.png")
@@ -678,10 +847,11 @@ def main():
              "Omit to keep the checkpoint's hopfield_oracle setting.",
     )
     p.add_argument(
-        "--gbook-only", dest="gbook_only", default=None,
+        "--static-vectorhash", dest="static_vectorhash", default=None,
         action=argparse.BooleanOptionalAction,
-        help="Override checkpoint VectorHash: gbook-only scaffold (no pbook / assoc). "
-             "Omit to use the value saved in the checkpoint (default False for old ckpts).",
+        help="Override checkpoint VectorHash: static scaffold with gbook + position-indexed "
+             "sbook (no pbook / assoc). Omit to use the value saved in the checkpoint "
+             "(default False for old ckpts).",
     )
     p.add_argument(
         "--action-oracle", dest="action_oracle", default=None,
@@ -694,11 +864,36 @@ def main():
         help="Override cfg.num_val_envs (number of val envs built for every eval). "
              "Omit to keep the checkpoint's saved value.",
     )
+    p.add_argument(
+        "--lock-store-after-goal", dest="lock_store_after_goal",
+        action="store_true",
+        help="In the realistic and sequential evals, suppress all further "
+             "Hopfield store actions in an env once that env's goal has been "
+             "stored. Has no effect on nav/discovery/exploration/repeat.",
+    )
+    p.add_argument(
+        "--oracle-store-at-goal", dest="oracle_store_at_goal",
+        action="store_true",
+        help="In the sequential eval only: bypass the agent's store head — "
+             "store fires automatically and only when at the env's goal. "
+             "Off-goal stores suppressed. Useful for evaluating Phase-A-only "
+             "ckpts whose store policy is untrained.",
+    )
+    p.add_argument(
+        "--show-stores", dest="show_stores",
+        action=argparse.BooleanOptionalAction, default=True,
+        help="On the sequential plot, show goal-store / off-goal-store "
+             "markers. Use --no-show-stores for a clean lines-only plot.",
+    )
 
     # Nav/discovery/exploration eval params
     p.add_argument("--num_trials", type=int, default=32)
     p.add_argument("--max_steps", type=int, default=200)
     p.add_argument("--n_distractors", type=int, nargs="+", default=[0])
+    p.add_argument("--goal_radius", type=float, default=None,
+                   help="Override EnvConfig.goal_radius from the saved checkpoint. "
+                        "Default: use the value saved at training time (or 0.5 for "
+                        "checkpoints saved before the field was added).")
     p.add_argument("--no-nav-stoch", action="store_true",
                    help="Skip the stochastic navigation eval (nav_det only)")
 
@@ -717,6 +912,18 @@ def main():
                    help="Steps per trial in the repeat eval")
     p.add_argument("--repeat-seed-offset", type=int, default=2000,
                    help="Added to cfg.seed for the repeat-eval RNG")
+
+    # Sequential continual eval params: introduce envs one by one with
+    # episodic success = binary "reached goal in ≤max_steps". Hopfield is
+    # persistent; revisits have store disabled.
+    p.add_argument("--seq-iters-per-block", type=int, default=0,
+                   help="Iterations per env block in the sequential eval (0 = skip)")
+    p.add_argument("--seq-max-steps", type=int, default=32,
+                   help="Max steps per mini-episode in the sequential eval")
+    p.add_argument("--seq-ma-window", type=int, default=20,
+                   help="Moving-average window for the sequential plot")
+    p.add_argument("--seq-seed-offset", type=int, default=3000,
+                   help="Added to cfg.seed for the sequential-eval RNG")
 
     p.add_argument("--output-json", default=None,
                    help="Write full results dict as JSON to this path")
@@ -737,12 +944,14 @@ def main():
         print(f"    Npos override: {args.Npos}")
     if args.hopfield_oracle is not None:
         print(f"    hopfield_oracle: {args.hopfield_oracle} (CLI override)")
-    if args.gbook_only is not None:
-        print(f"    gbook_only: {args.gbook_only} (CLI override)")
+    if args.static_vectorhash is not None:
+        print(f"    static_vectorhash: {args.static_vectorhash} (CLI override)")
     if args.action_oracle is not None:
         print(f"    action_oracle: {args.action_oracle} (CLI override)")
     if args.num_val_envs is not None:
         print(f"    num_val_envs: {args.num_val_envs} (CLI override)")
+    if args.lock_store_after_goal:
+        print("    lock_store_after_goal: True (realistic + sequential)")
 
     results = eval_checkpoint(
         ckpt_path=args.ckpt,
@@ -751,7 +960,7 @@ def main():
         npos=args.Npos,
         hopfield_oracle=args.hopfield_oracle,
         action_oracle=args.action_oracle,
-        gbook_only=args.gbook_only,
+        static_vectorhash=args.static_vectorhash,
         num_trials=args.num_trials,
         max_steps=args.max_steps,
         n_distractors=args.n_distractors,
@@ -762,7 +971,14 @@ def main():
         repeat_trials=args.repeat_trials,
         repeat_steps=args.repeat_steps,
         repeat_seed_offset=args.repeat_seed_offset,
+        seq_iters_per_block=args.seq_iters_per_block,
+        seq_max_steps=args.seq_max_steps,
+        seq_ma_window=args.seq_ma_window,
+        seq_seed_offset=args.seq_seed_offset,
         num_val_envs=args.num_val_envs,
+        lock_store_after_goal=args.lock_store_after_goal,
+        oracle_store_at_goal=args.oracle_store_at_goal,
+        goal_radius=args.goal_radius,
     )
     results["tag"] = tag
 
@@ -788,6 +1004,12 @@ def main():
             rpath = _repeat_plot_path(args.plot_path)
             save_repeat_intervals_plot(results, rpath)
             print(f"  wrote {rpath}")
+        if "sequential" in results:
+            spath = _sequential_plot_path(args.plot_path)
+            save_sequential_episodes_plot(
+                results, spath, show_stores=args.show_stores,
+            )
+            print(f"  wrote {spath}")
 
 
 if __name__ == "__main__":
