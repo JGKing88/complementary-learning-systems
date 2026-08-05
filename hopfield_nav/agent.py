@@ -5,29 +5,20 @@ import torch
 import torch.nn as nn
 from torch.distributions import Categorical, Bernoulli, Normal
 
+from . import channels
 from .config import AgentConfig
 
 
 def compute_input_dim(cfg: AgentConfig, embed_dim: int, sensory_dim: int = 0) -> int:
-    """Compute RNN input dimension from config."""
-    dim = 1  # current_reward (always)
-    if cfg.input_prev_reward:
-        dim += 1  # explicit prev_reward channel (1 bit of history, RNN anchor)
-    if cfg.input_encoded_state:
-        dim += embed_dim
-    if cfg.input_hopfield_signal:
-        # Raw (unnormalized) q only defined in continuous mode; discrete stays one-hot.
-        dim += 4 if cfg.hopfield_mode == "discrete" else 2
-    if cfg.input_hopfield_multistep and cfg.hopfield_mode == "continuous":
-        # Each multistep snapshot contributes a 2-D projected q.
-        dim += 2 * len(cfg.input_hopfield_multistep)
-    if cfg.input_prev_action:
-        dim += 4 if cfg.movement_mode == "discrete" else 2
-    if cfg.input_sensory:
-        dim += sensory_dim
-    if cfg.input_goal_in_memory:
-        dim += 1  # 1 bool: agent has stored at goal during this rollout
-    return dim
+    """RNN input dimension for this config.
+
+    Derived from the channel specs in ``channels.py`` rather than restating the
+    per-channel widths, so the width the agent is built with and the layout the
+    observation is assembled from cannot disagree. Kept here under its original
+    name: it is imported by the training entry points, the evaluators and the
+    analysis scripts.
+    """
+    return channels.input_dim(cfg, embed_dim, sensory_dim)
 
 
 class NavAgent(nn.Module):

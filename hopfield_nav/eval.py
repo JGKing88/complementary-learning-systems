@@ -23,6 +23,7 @@ import numpy as np
 import torch
 import torch.nn.functional as F
 
+from . import channels
 from .config import TrainConfig
 from .env import GridEnv, ContinuousGridEnv, CARDINAL_ACTIONS, at_goal
 from .vectorhash import VectorHash
@@ -185,16 +186,23 @@ def agent_step(
     else:
         hop_signal = torch.zeros(1, signal_dim, device=device)
 
-    parts = [current_reward]
-    if cfg.agent.input_prev_reward:
-        parts.append(prev_reward)
-    if cfg.agent.input_encoded_state:
-        parts.append(embeddings)
-    if cfg.agent.input_hopfield_signal:
-        parts.append(hop_signal)
+    values = {
+        "current_reward": current_reward,
+        "prev_reward": prev_reward,
+        "encoded_state": embeddings,
+        "hopfield_signal": hop_signal,
+        "prev_action": prev_action,
+        "goal_in_memory": torch.tensor(
+            [[1.0 if goal_in_memory else 0.0]], device=device),
+    }
+    if cfg.agent.input_sensory:
+        values["sensory"] = torch.from_numpy(
+            env.obs_at(pos_tuple)[None, :]).float().to(device)   # (1, obs_size)
     if (cfg.agent.input_hopfield_multistep
             and cfg.agent.hopfield_mode == "continuous"):
-        # Project recall trajectory at requested iteration counts.
+        # Project the recall trajectory at each requested iteration count.
+        # Zeros when the Hopfield is empty: there is nothing to recall, so
+        # there is no displacement to project.
         if hopfield.num_memories > 0:
             traj = hopfield.recall_batch_trajectory(
                 embeddings, cfg.agent.input_hopfield_multistep,
@@ -202,26 +210,21 @@ def agent_step(
             )
             W = vectorhash.gram_schmidt_projection(pos_arr, env_offset)
             for s in cfg.agent.input_hopfield_multistep:
-                X_s = traj[s]
                 q_s = vectorhash.project_displacement(
-                    embeddings_np, X_s.cpu().numpy(), W,
+                    embeddings_np, traj[s].cpu().numpy(), W,
                 )
-                parts.append(
-                    torch.from_numpy(q_s.astype(np.float32)).to(device)
-                )
+                values[channels.multistep_name(s)] = torch.from_numpy(
+                    q_s.astype(np.float32)).to(device)
         else:
-            for _ in cfg.agent.input_hopfield_multistep:
-                parts.append(torch.zeros(1, 2, device=device))
-    if cfg.agent.input_prev_action:
-        parts.append(prev_action)
-    if cfg.agent.input_sensory:
-        sensory_np = env.obs_at(pos_tuple)[None, :]  # (1, obs_size)
-        sensory = torch.from_numpy(sensory_np).float().to(device)
-        parts.append(sensory)
-    if cfg.agent.input_goal_in_memory:
-        gim = torch.tensor([[1.0 if goal_in_memory else 0.0]], device=device)
-        parts.append(gim)
-    rnn_input = torch.cat(parts, dim=-1).unsqueeze(1)
+            for s in cfg.agent.input_hopfield_multistep:
+                values[channels.multistep_name(s)] = torch.zeros(
+                    1, 2, device=device)
+
+    rnn_input = channels.build_policy_input(
+        channels.channel_specs(cfg.agent, embeddings.shape[1],
+                               cfg.env.observation_size),
+        values, batch_size=1,
+    ).unsqueeze(1)
 
     use_action_oracle = (
         bool(getattr(cfg, "action_oracle", False))

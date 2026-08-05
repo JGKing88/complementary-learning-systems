@@ -17,6 +17,7 @@ import numpy as np
 import torch
 import torch.nn.functional as F
 
+from . import channels
 from .config import TrainConfig
 from .hopfield import Hopfield, recall_per_env_batch, recall_per_env_batch_trajectory
 from .vectorhash import VectorHash
@@ -117,8 +118,13 @@ class RolloutCollector:
         vec.reset_all()
 
         # Determine input dimensions for signal
-        signal_dim = 4 if cfg.agent.hopfield_mode == "discrete" else 2
-        prev_action_dim = 4 if cfg.agent.movement_mode == "discrete" else 2
+        signal_dim = channels.signal_width(cfg.agent)
+        prev_action_dim = channels.prev_action_width(cfg.agent)
+        # The policy input layout, resolved once: both assembly sites below
+        # (per-step and truncation bootstrap) build against this same list.
+        input_specs = channels.channel_specs(
+            cfg.agent, self.embed_dim, cfg.env.observation_size,
+        )
 
         # Enrichment buffers: prev_reward and prev_action feed step t's input
         # based on step t-1's outcomes. Initialized to zero at rollout start;
@@ -371,30 +377,25 @@ class RolloutCollector:
                 else:
                     sig_for_rnn = hopfield_signal
 
-                parts = [current_reward_t]
-                if cfg.agent.input_prev_reward:
-                    parts.append(prev_reward_t)
-                if cfg.agent.input_encoded_state:
-                    parts.append(embeddings)
-                if cfg.agent.input_hopfield_signal:
-                    parts.append(sig_for_rnn)
-                if (cfg.agent.input_hopfield_multistep
-                        and cfg.agent.hopfield_mode == "continuous"):
-                    for s in cfg.agent.input_hopfield_multistep:
-                        parts.append(
-                            torch.from_numpy(multistep_q[s]).float().to(self.device)
-                        )
-                if cfg.agent.input_prev_action:
-                    parts.append(prev_action_t)
-                if cfg.agent.input_sensory:
-                    parts.append(sensory)
-                if cfg.agent.input_goal_in_memory:
-                    gim_t = torch.from_numpy(
+                values = {
+                    "current_reward": current_reward_t,
+                    "prev_reward": prev_reward_t,
+                    "encoded_state": embeddings,
+                    "hopfield_signal": sig_for_rnn,
+                    "prev_action": prev_action_t,
+                    "goal_in_memory": torch.from_numpy(
                         agent_goal_store_fired.astype(np.float32)
-                    ).to(self.device).unsqueeze(-1)  # (B, 1)
-                    parts.append(gim_t)
+                    ).to(self.device).unsqueeze(-1),
+                }
+                if cfg.agent.input_sensory:
+                    values["sensory"] = sensory
+                for s, q_s in multistep_q.items():
+                    values[channels.multistep_name(s)] = (
+                        torch.from_numpy(q_s).float().to(self.device))
 
-                rnn_input = torch.cat(parts, dim=-1).unsqueeze(1)  # (B, 1, input_dim)
+                rnn_input = channels.build_policy_input(
+                    input_specs, values, batch_size=B,
+                ).unsqueeze(1)  # (B, 1, input_dim)
 
                 # 6. Agent forward
                 result = agent.get_action_and_value(
@@ -607,31 +608,26 @@ class RolloutCollector:
             else:
                 sig_for_rnn_final = sig_final
 
-            parts_final = [boot_reward_t]
-            if cfg.agent.input_prev_reward:
-                parts_final.append(prev_reward_t)
-            if cfg.agent.input_encoded_state:
-                parts_final.append(emb_final)
-            if cfg.agent.input_hopfield_signal:
-                parts_final.append(sig_for_rnn_final)
-            if (cfg.agent.input_hopfield_multistep
-                    and cfg.agent.hopfield_mode == "continuous"):
-                for s in cfg.agent.input_hopfield_multistep:
-                    parts_final.append(
-                        torch.from_numpy(multistep_q_final[s]).float().to(self.device)
-                    )
-            if cfg.agent.input_prev_action:
-                parts_final.append(prev_action_t)
-            if cfg.agent.input_sensory:
-                sensory_final = torch.from_numpy(vec.obs_batch()).float().to(self.device)
-                parts_final.append(sensory_final)
-            if cfg.agent.input_goal_in_memory:
-                gim_final = torch.from_numpy(
+            values_final = {
+                "current_reward": boot_reward_t,
+                "prev_reward": prev_reward_t,
+                "encoded_state": emb_final,
+                "hopfield_signal": sig_for_rnn_final,
+                "prev_action": prev_action_t,
+                "goal_in_memory": torch.from_numpy(
                     agent_goal_store_fired.astype(np.float32)
-                ).to(self.device).unsqueeze(-1)
-                parts_final.append(gim_final)
+                ).to(self.device).unsqueeze(-1),
+            }
+            if cfg.agent.input_sensory:
+                values_final["sensory"] = torch.from_numpy(
+                    vec.obs_batch()).float().to(self.device)
+            for s, q_s in multistep_q_final.items():
+                values_final[channels.multistep_name(s)] = (
+                    torch.from_numpy(q_s).float().to(self.device))
 
-            final_input = torch.cat(parts_final, dim=-1).unsqueeze(1)
+            final_input = channels.build_policy_input(
+                input_specs, values_final, batch_size=B,
+            ).unsqueeze(1)
             _, _, bootstrap_val, _ = agent(final_input, h_rnn)
             bootstrap_value = bootstrap_val.squeeze(1)
 
