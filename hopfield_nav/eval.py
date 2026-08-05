@@ -25,6 +25,7 @@ import torch.nn.functional as F
 
 from . import channels
 from . import signal as signal_ops
+from .evaluation import protocols
 from .world import episode
 from .config import TrainConfig
 from .env import GridEnv, ContinuousGridEnv, CARDINAL_ACTIONS, at_goal
@@ -1104,91 +1105,39 @@ def evaluate_sequential_episodes(
     env_iters: dict[int, list[tuple[int, int]]] = {i: [] for i in range(N)}
     stored_at_goal_count: dict[int, int] = {i: 0 for i in range(N)}
 
-    def _mini_episode(env: GridEnv, env_offset: tuple[int, int],
-                      local_idx: int, allow_store: bool) -> tuple[int, int, int]:
-        """Run up to ``max_steps`` with training at-goal semantics.
-
-        Training's ``goal_reached`` in ``VecEnv.step_batch`` fires on the
-        pre-step at-goal check — i.e. the iter where the agent *sits* on the
-        goal, reads ``reward=+1``, can fire store, and then teleports. The
-        landing iter itself is just a normal step. We mirror that here:
-        ``reached=1`` iff the agent ever sat on the goal at decision time.
-
-        Returns (reached, stored_at_goal, stored_off_goal): whether the agent
-        reached the goal, fired a store at the goal cell, and fired any off-
-        goal store within the mini-episode (each as 0/1 ints).
-        """
-        goal = env.goal_location
-        start = random_start(env.size, goal, rng)
-        env.set_position(start)
-        h_rnn = None
-        prev_reward = None
-        prev_action = None
-        reached = False
-        stored_at_goal = 0
-        stored_off_goal = 0
-        for _step in range(max_steps):
-            at_g = at_goal(env)
-            out = agent_step(
-                agent, env, env_offset, vectorhash, hopfield,
-                h_rnn, cfg, device, deterministic=deterministic,
-                goal_local=goal, goal_in_memory=goal_in_mem[local_idx],
-                prev_reward=prev_reward, prev_action=prev_action,
-            )
-            h_rnn = out["h_rnn"]
-            prev_reward = out["next_prev_reward"]
-            prev_action = out["next_prev_action"]
-
-            allow_store_now = allow_store and not (
-                lock_store_after_goal and goal_in_mem[local_idx]
-            )
-
-            store_fired = (
-                True if oracle_store_at_goal
-                else (out["store_action"] > 0.5)
-            )
-
-            if at_g:
-                # Training-matching "reach": agent was at goal when deciding,
-                # saw reward=+1, and (optionally) stored. Train would teleport
-                # now; we terminate the mini-episode.
-                if allow_store_now and store_fired:
-                    hopfield.input_memory(out["store_embedding"][0])
-                    goal_in_mem[local_idx] = True
-                    stored_at_goal_count[local_idx] += 1
-                    stored_at_goal = 1
-                reached = True
-                break
-
-            # Off-goal: under oracle mode, never store. Otherwise honor agent's
-            # store action. (Training fires non-goal stores too.)
-            if (not oracle_store_at_goal) and allow_store_now and (out["store_action"] > 0.5):
-                hopfield.input_memory(out["store_embedding"][0])
-                stored_off_goal = 1
-
-        return int(reached), stored_at_goal, stored_off_goal
+    # The protocol itself lives in evaluation/protocols.py, shared with the
+    # figure pipeline in final_plotting/agenthash.py. This function keeps its
+    # signature, its accumulator and its summary block, so the eval_all JSON
+    # schema is unchanged; only the ~85 lines of duplicated control flow moved.
+    #
+    # eval exposes one --oracle-store-at-goal flag meaning both "force a store
+    # at the goal" and "suppress stores anywhere else". agenthash splits those.
+    # Passing the same value for both preserves the combined meaning exactly.
+    env_offsets = [vectorhash.env_offsets[env_global_indices[j]] for j in range(N)]
 
     boundaries: list[int] = []
-    cur_iter = 0
-    for i in range(N):
-        env_offset_i = vectorhash.env_offsets[env_global_indices[i]]
-        for _k in range(iters_per_block):
-            for j in range(i + 1):
-                env_j = val_envs[j]
-                env_offset_j = (
-                    env_offset_i if j == i
-                    else vectorhash.env_offsets[env_global_indices[j]]
-                )
-                allow_store = (j == i)
-                success, sag, sog = _mini_episode(
-                    env_j, env_offset_j, local_idx=j, allow_store=allow_store,
-                )
-                env_iters[j].append((cur_iter, int(success), int(sag), int(sog)))
-            cur_iter += 1
+
+    def _record_block(block: int, cur_iter: int) -> None:
         boundaries.append(cur_iter)
-        print(f"  sequential block {i} (env {i}): iters={iters_per_block} "
+        print(f"  sequential block {block} (env {block}): iters={iters_per_block} "
               f"hopfield_mem={hopfield.num_memories} "
-              f"goal_in_mem={goal_in_mem[i]}", flush=True)
+              f"goal_in_mem={goal_in_mem[block]}", flush=True)
+
+    for step in protocols.run_sequential_protocol(
+        agent=agent, val_envs=val_envs, env_offsets=env_offsets,
+        vectorhash=vectorhash, hopfield=hopfield, cfg=cfg, device=device,
+        iters_per_block=iters_per_block, max_steps=max_steps, rng=rng,
+        goal_in_mem=goal_in_mem, stored_at_goal_count=stored_at_goal_count,
+        deterministic=deterministic,
+        oracle_store_at_goal=oracle_store_at_goal,
+        suppress_off_goal_stores=oracle_store_at_goal,
+        lock_store_after_goal=lock_store_after_goal,
+        on_block_end=_record_block,
+    ):
+        r = step.record
+        env_iters[step.env_idx].append(
+            (step.iteration, int(r.reached), int(r.stored_at_goal),
+             int(r.stored_off_goal)))
 
     # Per-env primary success: mean success during own block.
     per_env_primary: list[float] = []

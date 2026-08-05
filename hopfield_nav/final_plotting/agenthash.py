@@ -32,6 +32,7 @@ import torch.nn.functional as F
 from ..agent import NavAgent, compute_input_dim
 from ..encoder import load_encoder
 from ..env import GridEnv, at_goal
+from ..evaluation import protocols
 from ..env import make_env
 from ..eval import agent_step, random_start
 from ..eval_all import build_eval_world, make_cfg_from_checkpoint
@@ -139,16 +140,6 @@ class _StoreTrainer:
                 "n_steps": n_steps, "skipped": False}
 
 
-def _env_xy_float(env: GridEnv) -> np.ndarray:
-    """Float (x, y) position. Continuous envs expose ``_continuous_pos``;
-    discrete envs use the snapped int position. Used to accumulate per-step
-    path distance."""
-    cp = getattr(env, "_continuous_pos", None)
-    if cp is not None:
-        return np.asarray(cp, dtype=np.float64).copy()
-    return np.asarray(env._pos, dtype=np.float64)
-
-
 def mini_episode(
     *,
     agent: NavAgent,
@@ -172,76 +163,30 @@ def mini_episode(
 ) -> tuple[int, int | None, float | None, int, int]:
     """Run one mini-episode from a random non-goal start.
 
+    Thin wrapper over ``evaluation.protocols.run_mini_episode``, which is
+    shared with ``eval.evaluate_sequential_episodes``. The tuple return is kept
+    so this module's caller and its history schema are unchanged.
+
     Returns ``(reached, steps_to_goal, path_to_goal, stored_at_goal,
     stored_off_goal)``. ``steps_to_goal`` is the loop step at which the agent
-    first sat on the goal at decision time, or ``None`` if the cap was hit.
-    ``path_to_goal`` is the cumulative L2 displacement from the random start
-    to that at-goal moment (does not include the post-at_g step), or ``None``
-    on timeout. Mirrors the ``training-at-goal`` semantics of
-    ``eval._mini_episode`` (the at-goal iter is the success iter; we then
-    break before the env's teleport step).
+    first sat on the goal at decision time, or ``None`` if the cap was hit;
+    ``path_to_goal`` is the cumulative L2 displacement to that moment.
     """
-    goal = env.goal_location
-    env.set_position(random_start(env.size, goal, rng))
-    h_rnn = None
-    prev_reward = None
-    prev_action = None
-    reached = False
-    steps_to_goal: int | None = None
-    path_to_goal: float | None = None
-    path_acc = 0.0
-    prev_xy = _env_xy_float(env)
-    stored_at_goal = 0
-    stored_off_goal = 0
-
     if store_trainer is not None:
         store_trainer.begin_episode()
-
-    for step in range(max_steps):
-        at_g = at_goal(env)
-        out = agent_step(
-            agent, env, env_offset, vectorhash, hopfield,
-            h_rnn, cfg, device, deterministic=deterministic,
-            goal_local=goal, goal_in_memory=goal_in_mem[local_idx],
-            prev_reward=prev_reward, prev_action=prev_action,
-        )
-        h_rnn = out["h_rnn"]
-        prev_reward = out["next_prev_reward"]
-        prev_action = out["next_prev_action"]
-
-        if store_trainer is not None:
-            # h_rnn shape: (num_layers, B=1, hidden). Last-layer GRU output
-            # equals the trunk features that the store head reads at this step.
-            store_trainer.add(h_rnn[-1, 0, :], bool(at_g))
-
-        allow_store_now = allow_store and not (
-            lock_store_after_goal and goal_in_mem[local_idx]
-        )
-        agent_wants_store = out["store_action"] > 0.5
-
-        if at_g:
-            store_fired = True if oracle_store_at_goal else agent_wants_store
-            if allow_store_now and store_fired:
-                hopfield.input_memory(out["store_embedding"][0])
-                goal_in_mem[local_idx] = True
-                stored_at_goal_count[local_idx] += 1
-                stored_at_goal = 1
-            reached = True
-            steps_to_goal = step
-            path_to_goal = path_acc
-            break
-
-        # Off-goal: accumulate the step we just took, then handle off-goal store.
-        new_xy = _env_xy_float(env)
-        path_acc += float(np.linalg.norm(new_xy - prev_xy))
-        prev_xy = new_xy
-
-        if not oracle_lock_store_not_at_goal:
-            if allow_store_now and agent_wants_store:
-                hopfield.input_memory(out["store_embedding"][0])
-                stored_off_goal = 1
-
-    return int(reached), steps_to_goal, path_to_goal, stored_at_goal, stored_off_goal
+    rec = protocols.run_mini_episode(
+        agent=agent, env=env, env_offset=env_offset, vectorhash=vectorhash,
+        hopfield=hopfield, cfg=cfg, device=device, local_idx=local_idx,
+        allow_store=allow_store, max_steps=max_steps, rng=rng,
+        goal_in_mem=goal_in_mem, stored_at_goal_count=stored_at_goal_count,
+        deterministic=deterministic,
+        oracle_store_at_goal=oracle_store_at_goal,
+        suppress_off_goal_stores=oracle_lock_store_not_at_goal,
+        lock_store_after_goal=lock_store_after_goal,
+        on_step=(None if store_trainer is None else store_trainer.add),
+    )
+    return (rec.reached, rec.steps_to_goal, rec.path_to_goal,
+            rec.stored_at_goal, rec.stored_off_goal)
 
 
 def run_sequential(
