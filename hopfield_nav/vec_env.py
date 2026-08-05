@@ -12,6 +12,8 @@ from __future__ import annotations
 import numpy as np
 
 from .env import GridEnv, CARDINAL_ACTIONS, at_goal
+from .world import episode
+from .world.episode import GoalContract
 
 
 class VecEnv:
@@ -94,12 +96,16 @@ class VecEnv:
         self,
         actions: np.ndarray | list,
         indices: np.ndarray | None = None,
+        contract: GoalContract | None = None,
     ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         """Step environments with cardinal action indices (0=N, 1=E, 2=S, 3=W).
 
-        Semantics: if the agent's current (pre-action) position is the goal,
-        this step consumes the at-goal turn — reward +1, teleport, and the move
-        action is ignored. This gives the agent one observable step at goal.
+        Semantics at the goal are governed by ``contract`` -- see
+        ``world/episode.py``. The default reproduces the historical bundling:
+        ``goals_active`` True means the at-goal step is consumed (reward
+        ``goal_reward``, movement ignored, teleport), False means the goal is
+        not an event at all. Pass a contract explicitly to decouple those, e.g.
+        to reward the goal without teleporting away from it.
 
         actions: (B,) int array of action indices, or list of action tuples.
         Returns (rewards, goal_reached, positions) all shape (B,) or (len(indices),).
@@ -108,21 +114,23 @@ class VecEnv:
             indices = np.arange(self.B)
 
         n = len(indices)
-        rewards = np.full(n, -self.time_penalty, dtype=np.float32)
+        if contract is None:
+            contract = episode.contract_from_goals_active(self.goals_active)
 
-        # Pre-action at-goal check — this step consumes the at-goal turn.
-        # Skipped entirely when goals_active is False (pure-explore Phase A).
-        # Computed once over the full batch via the centralized helper, then
-        # sliced to `indices` for this step. Discrete envs use _pos (int).
-        if self.goals_active:
-            goal_reached = at_goal(self)[indices].copy()
-        else:
-            goal_reached = np.zeros(n, dtype=bool)
-        rewards[goal_reached] = self.goal_reward
+        # Pre-action at-goal check — this is what gives the agent one
+        # observable step at the goal. Computed over the full batch via the
+        # centralized helper, then sliced to `indices`. Discrete envs use _pos.
+        at_goal_mask = (at_goal(self)[indices].copy() if self.goals_active
+                        else np.zeros(n, dtype=bool))
+        res = episode.resolve_at_goal(
+            at_goal_mask, contract,
+            goal_reward=self.goal_reward, time_penalty=self.time_penalty,
+        )
+        rewards, goal_reached = res.rewards, res.at_goal
 
         for j, b in enumerate(indices):
-            if goal_reached[j]:
-                continue  # skip movement; teleport applied below
+            if not res.apply_move[j]:
+                continue  # movement ignored; teleport (if any) applied below
 
             if isinstance(actions[j], (int, np.integer)):
                 dx, dy = CARDINAL_ACTIONS[int(actions[j])]
@@ -137,8 +145,8 @@ class VecEnv:
                                     np.sign(ny - self._pos[b, 1])]
             self._pos[b] = [nx, ny]
 
-        # Teleport envs that were at goal.
-        reached_b = indices[goal_reached]
+        # Relocate the envs the contract says to teleport.
+        reached_b = indices[res.teleport]
         if len(reached_b) > 0:
             self.reset_indices(reached_b)
 
@@ -265,16 +273,16 @@ class ContinuousVecEnv:
         self,
         actions: np.ndarray,
         indices: np.ndarray | None = None,
+        contract: GoalContract | None = None,
     ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         """Step with continuous (dx, dy) actions.
 
-        Semantics: if the agent's current (pre-action) position is the goal,
-        this step consumes the at-goal turn — reward +1, teleport, and the move
-        action is ignored. Otherwise apply the move and emit -time_penalty.
-
-        This gives the agent exactly one observable step at the goal before
-        teleportation, so `at_goal` checks computed from `positions()` pre-action
-        are meaningful (and the agent can fire store on that step).
+        Semantics at the goal are governed by ``contract`` -- see
+        ``world/episode.py``. The default reproduces the historical bundling
+        via ``goals_active``: the at-goal step is consumed (reward
+        ``goal_reward``, movement ignored, teleport), giving the agent exactly
+        one observable step at the goal in which to fire store, so that
+        pre-action ``at_goal`` checks are meaningful.
 
         actions: (B, 2) float array.
         Returns (rewards, goal_reached, snapped_positions).
@@ -283,7 +291,8 @@ class ContinuousVecEnv:
             indices = np.arange(self.B)
 
         n = len(indices)
-        rewards = np.full(n, -self.time_penalty, dtype=np.float32)
+        if contract is None:
+            contract = episode.contract_from_goals_active(self.goals_active)
 
         actions = np.asarray(actions, dtype=np.float64)
         if actions.ndim == 1:
@@ -312,19 +321,19 @@ class ContinuousVecEnv:
                 )
                 actions = actions * scale_up
 
-        # Identify envs that start the step at goal — they reap +1 and teleport,
-        # their movement is ignored. Skipped when goals_active is False (pure-explore).
-        # The check is on the *continuous* pre-action position (_pos_f), via the
-        # centralized at_goal helper which auto-resolves to _pos_f for ContinuousVecEnv.
-        if self.goals_active:
-            goal_reached = at_goal(self)[indices].copy()
-        else:
-            goal_reached = np.zeros(n, dtype=bool)
-        rewards[goal_reached] = self.goal_reward
+        # The pre-action check is on the *continuous* position (_pos_f), via the
+        # centralized at_goal helper, which auto-resolves to _pos_f here. What
+        # follows from it is the contract's decision, not this method's.
+        at_goal_mask = (at_goal(self)[indices].copy() if self.goals_active
+                        else np.zeros(n, dtype=bool))
+        res = episode.resolve_at_goal(
+            at_goal_mask, contract,
+            goal_reward=self.goal_reward, time_penalty=self.time_penalty,
+        )
+        rewards, goal_reached = res.rewards, res.at_goal
 
-        # Apply movement only to envs not at goal.
         for j, b in enumerate(indices):
-            if goal_reached[j]:
+            if not res.apply_move[j]:
                 continue
             self._pos_f[b] = np.clip(
                 self._pos_f[b] + actions[j] * self.scale,
@@ -333,8 +342,8 @@ class ContinuousVecEnv:
 
         self._update_snapped(indices)
 
-        # Teleport envs that were at goal.
-        reached_b = indices[goal_reached]
+        # Relocate the envs the contract says to teleport.
+        reached_b = indices[res.teleport]
         if len(reached_b) > 0:
             self.reset_indices(reached_b)
 

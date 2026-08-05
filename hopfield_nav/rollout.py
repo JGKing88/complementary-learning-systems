@@ -18,6 +18,7 @@ import torch
 import torch.nn.functional as F
 
 from . import channels, signal
+from .world import episode
 from .config import TrainConfig
 from .hopfield import Hopfield, recall_per_env_batch, recall_per_env_batch_trajectory
 from .vectorhash import VectorHash
@@ -116,6 +117,12 @@ class RolloutCollector:
         else:
             vec = VecEnv(env, batch_size=B)
         vec.reset_all()
+
+        # The at-goal contract this rollout runs under, stated rather than
+        # inherited from whichever env class was constructed. When goals_active
+        # is False the env reports no at-goal rows at all, so the contract has
+        # nothing to act on and behavior is unchanged.
+        goal_contract = episode.contract_for("training_rollout")
 
         # Determine input dimensions for signal
         signal_dim = channels.signal_width(cfg.agent)
@@ -465,7 +472,8 @@ class RolloutCollector:
                 else:
                     actions = result["move_action"].cpu().numpy()
 
-                rewards, goal_reached, _ = vec.step_batch(actions)
+                rewards, goal_reached, _ = vec.step_batch(
+                    actions, contract=goal_contract)
 
                 # Store cost: metabolic penalty on the agent's own store action.
                 if cfg.hopfield.store_cost > 0 and in_explore:

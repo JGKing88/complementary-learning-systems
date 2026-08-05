@@ -445,29 +445,131 @@ def test_c2_holds_even_when_at_goal_off_cell():
 # Phase 5 acceptance criteria
 # ---------------------------------------------------------------------------
 
-@pytest.mark.xfail(reason="Phase 5 not implemented: no parameterized stepping "
-                          "primitive exists yet", strict=True)
-def test_phase5_single_parameterized_primitive_exists():
-    """After Phase 5 there is one stepping entry point taking C1-C5.
+def test_phase5_one_parameterized_decision_point_exists():
+    """The five clauses are a value both stepping paths consult.
 
-    Not 'VecEnv.step_batch has a flag' -- one implementation that GridEnv-shaped
-    and VecEnv-shaped callers both route through, so a site's contract is a
-    value it passes rather than a consequence of which class it constructed.
+    Delivered as a pure resolution function rather than the new stepping entry
+    point this file originally sketched: `resolve_at_goal` decides, and the two
+    existing steppers call it. That keeps one implementation of the contract
+    without needing the batched/single env unification, which is phase 4c.
     """
-    from hopfield_nav.world import episode          # noqa: F401
+    from hopfield_nav.world import episode
+    import inspect
+
     assert hasattr(episode, "GoalContract")
-    assert hasattr(episode, "step_with_contract")
+    assert hasattr(episode, "resolve_at_goal")
+    from hopfield_nav.vec_env import ContinuousVecEnv, VecEnv
+    for cls in (VecEnv, ContinuousVecEnv):
+        params = inspect.signature(cls.step_batch).parameters
+        assert "contract" in params, f"{cls.__name__}.step_batch takes no contract"
 
 
-@pytest.mark.xfail(reason="Phase 5 not implemented: sites do not yet declare "
-                          "their contract", strict=True)
-def test_phase5_every_site_declares_its_contract():
-    """After Phase 5 each site names its row of SITE_CONTRACTS in code.
-
-    The anti-drift property: today a site's contract is implied by which env
-    class it happens to hold, so the three declining evaluators decline by
-    accident. Afterwards it is a visible argument, and this table is the thing
-    it must match.
-    """
-    from hopfield_nav.world import episode          # noqa: F401
+def test_phase5_the_two_tables_agree():
+    """episode.SITE_CONTRACTS and the spec table above must not drift."""
+    from hopfield_nav.world import episode
     assert set(episode.SITE_CONTRACTS) == set(SITE_CONTRACTS)
+    for name, spec in SITE_CONTRACTS.items():
+        impl = episode.SITE_CONTRACTS[name]
+        if spec.teleport is None:
+            assert impl.ends_on_arrival, (
+                f"{name}: spec says the clauses are unreachable, so the "
+                f"implementation should mark it ends_on_arrival")
+        else:
+            assert impl.teleport == spec.teleport, name
+            assert impl.move_ignored == spec.move_ignored, name
+            assert impl.reset_state == spec.reset_state, name
+        assert impl.reward == spec.reward, name
+
+
+def test_phase5_contract_for_rejects_undeclared_sites():
+    """Adding an at-goal site must force a row in the table, not a default."""
+    from hopfield_nav.world import episode
+    with pytest.raises(KeyError, match="no at-goal contract declared"):
+        episode.contract_for("some_new_evaluator")
+
+
+def test_phase5_reset_without_teleport_is_rejected():
+    """C5 is meaningless without C4, and the type refuses to express it."""
+    from hopfield_nav.world.episode import GoalContract
+    with pytest.raises(ValueError, match="nothing to reset"):
+        GoalContract(teleport=False, reset_state=True)
+
+
+def test_phase5_contract_can_reward_without_teleporting():
+    """The combination goals_active could not express, now a value.
+
+    This is what unblocks batching the coverage-style evaluators: they can run
+    on VecEnv with the goal rewarded and no teleport.
+    """
+    from hopfield_nav.world import episode
+    res = episode.resolve_at_goal(
+        np.array([True, False]), episode.OBSERVE,
+        goal_reward=1.0, time_penalty=0.01)
+    assert res.rewards[0] == pytest.approx(1.0)      # C1 on
+    assert res.apply_move[0]                          # C3 off
+    assert not res.teleport[0]                        # C4 off
+
+
+def test_phase5_vecenv_honours_an_explicit_contract():
+    """End to end: the same VecEnv, two contracts, two outcomes."""
+    from hopfield_nav.world import episode
+    for contract, expect_teleport in ((episode.TRAINING, True),
+                                      (episode.OBSERVE, False)):
+        env, goal = _goal_env()
+        vec = VecEnv(env, batch_size=1)
+        vec.reset_all()
+        vec._pos[0] = np.array(goal, dtype=np.int32)
+        rewards, reached, pos = vec.step_batch(np.array([1]), contract=contract)
+        after = tuple(int(v) for v in pos[0])
+        assert reached[0], "both contracts still report the at-goal event"
+        assert rewards[0] == pytest.approx(env.goal_reward), "C1 in both"
+        moved_east = after == (goal[0] + 1, goal[1])
+        assert (after not in (goal, (goal[0] + 1, goal[1]))) is expect_teleport
+        if not expect_teleport:
+            assert moved_east, "OBSERVE should apply the move"
+
+
+def test_phase5_every_site_calls_contract_for():
+    """The anti-drift property: a site's contract is stated, not inherited.
+
+    Checked by source inspection rather than behavior, because the point is
+    that the choice is *visible* at the call site.
+    """
+    import pathlib as _p
+    root = _p.Path(__file__).resolve().parents[1]
+    sources = {
+        "evaluate_realistic": root / "eval.py",
+        "evaluate_repeat": root / "eval.py",
+        "evaluate_goal_discovery": root / "eval.py",
+        "evaluate_exploration": root / "eval.py",
+        "training_rollout": root / "rollout.py",
+    }
+    missing = [site for site, path in sources.items()
+               if f'contract_for("{site}")' not in path.read_text()]
+    assert not missing, f"sites not declaring their contract: {missing}"
+
+
+def test_phase5_the_guard_fires_on_an_impossible_declaration():
+    """Change a GridEnv-stepping site's row to TRAINING and it must break.
+
+    This is the property that keeps the table honest: the declaration cannot
+    become aspirational, because a site that cannot honour what it declares
+    refuses to run.
+    """
+    from hopfield_nav.world import episode
+    with pytest.raises(NotImplementedError, match="steps a GridEnv directly"):
+        episode.require_single_env_support(episode.TRAINING, "evaluate_exploration")
+    # The contracts those sites actually declare are accepted.
+    for site in ("evaluate_exploration", "evaluate_goal_discovery",
+                 "evaluate_navigation"):
+        episode.require_single_env_support(episode.contract_for(site), site)
+
+
+def test_phase5_declared_contract_reaches_the_training_stepper():
+    """rollout.py passes its contract to step_batch rather than relying on the
+    goals_active default, so the two cannot silently disagree."""
+    import inspect
+    from hopfield_nav.rollout import RolloutCollector
+    src = inspect.getsource(RolloutCollector.collect_rollout)
+    assert 'contract_for("training_rollout")' in src
+    assert "contract=goal_contract" in src

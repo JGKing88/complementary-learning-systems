@@ -25,6 +25,7 @@ import torch.nn.functional as F
 
 from . import channels
 from . import signal as signal_ops
+from .world import episode
 from .config import TrainConfig
 from .env import GridEnv, ContinuousGridEnv, CARDINAL_ACTIONS, at_goal
 from .vectorhash import VectorHash
@@ -317,6 +318,10 @@ def evaluate_navigation(
 
     agent.eval()
     embed_dim = vectorhash.encoded_Phi.shape[2]
+    # Declared, not inherited. The guard fails loudly if this row
+    # is ever changed to one a GridEnv-stepping loop cannot honour.
+    episode.require_single_env_support(
+        episode.contract_for("evaluate_navigation"), "evaluate_navigation")
     results: dict[int, dict[str, float]] = {}
 
     for n_dist in n_distractors_list:
@@ -431,6 +436,10 @@ def evaluate_goal_discovery(
 
     agent.eval()
     embed_dim = vectorhash.encoded_Phi.shape[2]
+    # Declared, not inherited. The guard fails loudly if this row
+    # is ever changed to one a GridEnv-stepping loop cannot honour.
+    episode.require_single_env_support(
+        episode.contract_for("evaluate_goal_discovery"), "evaluate_goal_discovery")
     results: dict[int, dict[str, float]] = {}
 
     for n_dist in n_distractors_list:
@@ -558,6 +567,10 @@ def evaluate_exploration(
 
     agent.eval()
     embed_dim = vectorhash.encoded_Phi.shape[2]
+    # Declared, not inherited. The guard fails loudly if this row
+    # is ever changed to one a GridEnv-stepping loop cannot honour.
+    episode.require_single_env_support(
+        episode.contract_for("evaluate_exploration"), "evaluate_exploration")
     grid_size = cfg.env.size
     total_positions = grid_size * grid_size
     results: dict[int, dict[str, float]] = {}
@@ -776,6 +789,9 @@ def evaluate_realistic(
     embed_dim = vectorhash.encoded_Phi.shape[2]
     hopfield = Hopfield(embed_dim, beta=cfg.hopfield.beta, device=str(device))
     rng = np.random.RandomState(seed)
+    # Declared, not inherited: this evaluator measures reach intervals against
+    # the training distribution, so it takes the training contract at the goal.
+    contract = episode.contract_for("evaluate_realistic")
     # Per-env: has this val env's goal ever been written into the (shared) Hopfield?
     shared_goal_stored: dict[int, bool] = {i: False for i in range(len(val_envs))}
 
@@ -831,15 +847,21 @@ def evaluate_realistic(
                     shared_goal_stored[local_idx] = True
                 intervals.append(step + 1 - last_reach_step)
                 stored_at_reach.append(store_fired)
-                # Teleport + RNN reset (VecEnv.step_batch ignores move and
-                # teleports in this case; the move ``agent_step`` applied is
-                # overridden here). Enrichment state also resets — the new
+                # The declared contract decides what follows. Under TRAINING
+                # that is: discard the move agent_step already applied by
+                # relocating, and reset the recurrent state, because the new
                 # episode segment has no valid "previous step".
-                new_start = random_start(env.size, goal, rng)
-                env.set_position(new_start)
-                h_rnn = None
-                prev_reward = None
-                prev_action = None
+                res = episode.resolve_at_goal(
+                    np.array([True]), contract,
+                    goal_reward=cfg.env.goal_reward,
+                    time_penalty=cfg.env.time_penalty,
+                )
+                if res.teleport[0]:
+                    env.set_position(random_start(env.size, goal, rng))
+                if res.reset_state[0]:
+                    h_rnn = None
+                    prev_reward = None
+                    prev_action = None
                 last_reach_step = step + 1
 
         tail_steps = steps_per_env - last_reach_step
@@ -935,6 +957,7 @@ def evaluate_repeat(
     agent.eval()
     embed_dim = vectorhash.encoded_Phi.shape[2]
     rng = np.random.RandomState(seed)
+    contract = episode.contract_for("evaluate_repeat")
 
     def _run_trial(
         env: GridEnv,
@@ -974,11 +997,18 @@ def evaluate_repeat(
                     goal_in_mem = True
                 intervals.append(step + 1 - last_reach_step)
                 stored_at_reach.append(store_fired)
-                new_start = random_start(env.size, goal, rng)
-                env.set_position(new_start)
-                h_rnn = None
-                prev_reward = None
-                prev_action = None
+                # Same declared contract as evaluate_realistic; see there.
+                res = episode.resolve_at_goal(
+                    np.array([True]), contract,
+                    goal_reward=cfg.env.goal_reward,
+                    time_penalty=cfg.env.time_penalty,
+                )
+                if res.teleport[0]:
+                    env.set_position(random_start(env.size, goal, rng))
+                if res.reset_state[0]:
+                    h_rnn = None
+                    prev_reward = None
+                    prev_action = None
                 last_reach_step = step + 1
 
         tail_steps = steps_per_env - last_reach_step
