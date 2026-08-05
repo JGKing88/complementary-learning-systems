@@ -842,7 +842,7 @@ def evaluate_realistic(
 
             if at_g:
                 # Training-matching reach: agent sat on goal this iter.
-                # ``out["embedding"][0]`` is the pre-step (= goal) embedding,
+                # ``out["store_embedding"][0]`` is the pre-step (= goal) pattern,
                 # so ``store_fired`` here means the goal was actually written.
                 if allow_store_now and store_fired:
                     shared_goal_stored[local_idx] = True
