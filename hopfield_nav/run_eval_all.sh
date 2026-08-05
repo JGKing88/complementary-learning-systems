@@ -64,7 +64,10 @@ HOPFIELD_ORACLE=0
 # Set to 1 to pass --action-oracle, 0 to pass --no-action-oracle, empty = leave checkpoint as-is
 ACTION_ORACLE=0
 
-# Optional: 1 = --gbook-only, 0 = --no-gbook-only, empty = use checkpoint's vectorhash.gbook_only
+# Optional: 1 = --static-vectorhash, 0 = --no-static-vectorhash,
+# empty = use the checkpoint's vectorhash.static_vectorhash.
+# (Named GBOOK_ONLY for continuity with older run logs; the flag was renamed
+# --gbook-only -> --static-vectorhash.)
 GBOOK_ONLY=1
 
 # ---------------------------------------------------------------------------
@@ -131,9 +134,9 @@ for ckpt in "${CKPTS[@]}"; do
         cmd+=(--no-action-oracle)
     fi
     if [ "$GBOOK_ONLY" = "1" ] || [ "$GBOOK_ONLY" = "true" ] || [ "$GBOOK_ONLY" = "True" ]; then
-        cmd+=(--gbook-only)
+        cmd+=(--static-vectorhash)
     elif [ "$GBOOK_ONLY" = "0" ] || [ "$GBOOK_ONLY" = "false" ] || [ "$GBOOK_ONLY" = "False" ]; then
-        cmd+=(--no-gbook-only)
+        cmd+=(--no-static-vectorhash)
     fi
 
     echo ">>> ${ckpt}"

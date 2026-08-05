@@ -26,7 +26,7 @@ COMMON="--encoder_checkpoint encoders/run_20260422_185816/encoder_best.pt \
     --movement_mode continuous \
     --lambdas 11 12 13 \
     --Np 400 \
-    --gbook-only \
+    --static-vectorhash \
     --hopfield_alpha 0.8 \
     --hopfield_steps 1 \
     --hopfield_init empty \

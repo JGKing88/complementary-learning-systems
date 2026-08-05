@@ -478,10 +478,15 @@ def main():
     parser.add_argument("--Npos", type=int, default=None,
                         help="Override Npos (default: product of lambdas). Use to limit memory.")
     parser.add_argument(
-        "--static-vectorhash", dest="static_vectorhash", action=argparse.BooleanOptionalAction,
+        # --gbook-only / --no-gbook-only are the pre-rename spelling, kept as a
+        # deprecated alias so old sbatch scripts and sweep variants still parse.
+        # BooleanOptionalAction generates the --no- form for every long option.
+        "--static-vectorhash", "--gbook-only",
+        dest="static_vectorhash", action=argparse.BooleanOptionalAction,
         default=False,
         help="Build only gbook (+ encoded_Phi); skip pbook, Wgp, Wsp, and scaffold "
-             "self-test. Sensory input (when enabled) reads directly from each env's codebook.",
+             "self-test. Sensory input (when enabled) reads directly from each env's codebook. "
+             "(--gbook-only is a deprecated alias.)",
     )
     # Hopfield
     parser.add_argument("--hopfield_beta", type=float, default=None,

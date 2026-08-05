@@ -296,39 +296,9 @@ class GridEnv:
         self.rng.shuffle(items)
         return items
 
-    def clone(self) -> GridEnv:
-        """Shallow clone sharing codebook but with independent state."""
-        new = GridEnv.__new__(GridEnv)
-        new.size = self.size
-        new.speed = self.speed
-        new._observation_size = self._observation_size
-        new.time_penalty = self.time_penalty
-        new.goals_active = self.goals_active
-        new.goal_reward = self.goal_reward
-        new.goal_radius = self.goal_radius
-        new.rng = np.random.RandomState(self.rng.randint(0, 2**31))
-        new._codebook = self._codebook  # shared
-        new._wall_code = self._wall_code  # shared
-        new._goal = self._goal
-        new._pos = self._random_position_with_rng(new.rng, exclude=self._goal)
-        new._heading = (1, 0)
-        return new
-
     # ------------------------------------------------------------------
     # Internal
     # ------------------------------------------------------------------
-
-    def _random_position(self, exclude: tuple[int, int] | None = None) -> tuple[int, int]:
-        return self._random_position_with_rng(self.rng, exclude)
-
-    @staticmethod
-    def _random_position_with_rng(
-        rng: np.random.RandomState,
-        exclude: tuple[int, int] | None = None,
-        size: int | None = None,
-    ) -> tuple[int, int]:
-        # size is inferred from the instance in normal usage
-        raise NotImplementedError("Use instance method")
 
     def _random_position(self, exclude: tuple[int, int] | None = None) -> tuple[int, int]:
         while True:

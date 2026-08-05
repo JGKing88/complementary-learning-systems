@@ -14,7 +14,8 @@ module load miniforge/24.3.0-0
 module load cuda/13.0.1
 
 source activate cls
-export WANDB_API_KEY=5aee75a09d43e7f6c9ec80e003687a8a3a820b08
+# wandb auth comes from ~/.netrc (machine api.wandb.ai). Run `wandb login`
+# once if it is missing; never paste an API key into a tracked script.
 unset CUDA_VISIBLE_DEVICES
 
 cd /home/jackking/cls
@@ -28,7 +29,7 @@ python -m hopfield_nav.train \
     --movement_mode continuous \
     --lambdas 11 12 13 \
     --Np 400 \
-    --gbook-only \
+    --static-vectorhash \
     --hopfield_alpha 0.8 \
     --hopfield_steps 1 \
     --hopfield_init empty \

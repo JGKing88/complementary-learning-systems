@@ -110,7 +110,7 @@ POLICY_FLAG=--deterministic CKPT=... bash run_exp1.sh
 ## Tests
 
 ```bash
-hopfield_nav/run_tests.sh hopfield_nav/tests/test_phase_decoding_v2.py
+./run_tests.sh hopfield_nav/tests/test_phase_decoding_v2.py
 ```
 
 End-to-end smoke test runs in seconds on CPU with a tiny synthetic ckpt-shaped

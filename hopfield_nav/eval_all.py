@@ -847,11 +847,15 @@ def main():
              "Omit to keep the checkpoint's hopfield_oracle setting.",
     )
     p.add_argument(
-        "--static-vectorhash", dest="static_vectorhash", default=None,
+        # --gbook-only / --no-gbook-only are the pre-rename spelling, kept as a
+        # deprecated alias so old sbatch scripts still parse (run_eval_all.sh
+        # passed it until 2026-08). BooleanOptionalAction generates the --no- form.
+        "--static-vectorhash", "--gbook-only",
+        dest="static_vectorhash", default=None,
         action=argparse.BooleanOptionalAction,
         help="Override checkpoint VectorHash: static scaffold with gbook + position-indexed "
              "sbook (no pbook / assoc). Omit to use the value saved in the checkpoint "
-             "(default False for old ckpts).",
+             "(default False for old ckpts). (--gbook-only is a deprecated alias.)",
     )
     p.add_argument(
         "--action-oracle", dest="action_oracle", default=None,

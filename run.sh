@@ -13,7 +13,8 @@ module load miniforge/24.3.0-0
 module load cuda/13.0.1
 
 source activate cls
-export WANDB_API_KEY=5aee75a09d43e7f6c9ec80e003687a8a3a820b08
+# wandb auth comes from ~/.netrc (machine api.wandb.ai). Run `wandb login`
+# once if it is missing; never paste an API key into a tracked script.
 
 # find the user name
 USER_NAME=$(whoami)

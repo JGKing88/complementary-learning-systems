@@ -29,4 +29,17 @@ where = ["."]
 include = ["cls*"]
 exclude = ["notebooks*", "tests*", "examples*"]
 
+[tool.pytest.ini_options]
+# The live suite is hopfield_nav/tests. The root tests/ directory only exercises
+# the legacy `cls` package and does not currently collect (see run_tests.sh);
+# it is retired together with `cls/` in phase 7 of the 2026-08 refactor.
+testpaths = ["hopfield_nav/tests"]
+python_files = ["test_*.py"]
+addopts = "-q --strict-markers"
+markers = [
+  "slow: takes more than a few seconds; deselect with -m 'not slow'",
+]
+filterwarnings = [
+  "ignore::DeprecationWarning",
+]
 

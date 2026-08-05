@@ -1,22 +1,23 @@
+# --- run outputs (moved to $CLS_RUNS on pool; repo entries are symlinks) ---
 wandb/
-.ipynb_checkpoints/
 slurm_outputs/
 encoders/
 checkpoints/
 checkpoint/
+
+# --- large binaries ---
 *.pt
-# add any other files that are not needed to be tracked
+*.pth
 *.npy
 *.npz
 *.pkl
-*.pt
-*.pth
 *.pt.tar
 *.pt.tar.gz
 *.pt.tar.bz2
 *.pt.tar.xz
 *.pt.tar.lzma
-# add anything that might be large
+
+# --- figures ---
 *.eps
 *.pdf
 *.png
@@ -28,10 +29,24 @@ checkpoint/
 *.ico
 *.webp
 *.svg
+
+# --- python / tooling ---
 __pycache__/
 *.pyc
-*.pyoslurm-*.out
+*.pyo
+.ipynb_checkpoints/
+.pytest_cache/
+*.egg-info/
+
+# --- job + run logs ---
+slurm-*.out
 *.out
 *.json
 *.log
-wandb/
+
+# --- exceptions -----------------------------------------------------------
+# Golden regression fixtures are checked in on purpose: they are the contract
+# that the refactor preserves behavior. Regenerating them is deliberate
+# (tests/gen_golden.py), never automatic.
+!**/tests/golden/
+!**/tests/golden/**

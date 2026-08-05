@@ -118,13 +118,23 @@ def bc_update(
     Rollouts must carry teacher_move_action / teacher_store_action /
     move_label_mask / store_label_mask (populated by RolloutCollector in BC mode).
     Trajectory-level minibatching, same convention as ppo_update.
+
+    trust_hop_mask is optional: RolloutBatch leaves it None outside BC mode, and
+    hand-built batches (tests, ad-hoc drivers) routinely omit it. Absent means
+    "no trust information", which is the same thing as no nav upweighting, so it
+    defaults to all-zeros -- step_w below becomes 1.0 everywhere regardless of
+    cfg.nav_weight.
     """
     obs = torch.cat([r.obs for r in rollouts], dim=0)
     tm  = torch.cat([r.teacher_move_action for r in rollouts], dim=0)
     ts  = torch.cat([r.teacher_store_action for r in rollouts], dim=0)
     mm  = torch.cat([r.move_label_mask for r in rollouts], dim=0)
     sm  = torch.cat([r.store_label_mask for r in rollouts], dim=0)
-    th  = torch.cat([r.trust_hop_mask for r in rollouts], dim=0)
+    th  = torch.cat([
+        r.trust_hop_mask if r.trust_hop_mask is not None
+        else torch.zeros_like(r.move_label_mask)
+        for r in rollouts
+    ], dim=0)
 
     N = obs.shape[0]
     n_mb = max(1, min(cfg.n_minibatches, N))
