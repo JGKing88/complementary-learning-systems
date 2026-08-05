@@ -348,3 +348,34 @@ class ContinuousVecEnv:
             self.reset_indices(reached_b)
 
         return rewards, goal_reached, self._pos[indices].copy()
+
+
+def make_vec(
+    env: GridEnv,
+    batch: int,
+    movement_mode: str,
+    continuous_scale: float = 1.0,
+    continuous_normalize: bool = False,
+    *,
+    reset: bool = True,
+) -> VecEnv | ContinuousVecEnv:
+    """Build the batched env matching ``movement_mode``.
+
+    Lives beside the two classes it constructs, so every layer above can reach
+    it without an upward import. There were three copies of this: train_rnn,
+    eval_rnn, and baseline importing train_rnn's private one -- and they were
+    not identical. train_rnn's reset positions before returning; eval_rnn's did
+    not, because its caller places the agent explicitly. That difference is now
+    the ``reset`` argument rather than a discrepancy between two functions with
+    the same name.
+    """
+    if movement_mode == "continuous":
+        vec = ContinuousVecEnv(
+            env, batch_size=batch, scale=continuous_scale,
+            normalize=continuous_normalize,
+        )
+    else:
+        vec = VecEnv(env, batch_size=batch)
+    if reset:
+        vec.reset_all()
+    return vec

@@ -29,8 +29,9 @@ from .final_plotting.plotting import (  # noqa: F401  (re-export for regen_plots
     save_forgetting_plot, save_steps_to_goal_plot,
 )
 from .rollout_rnn import collect_rollout_rnn
+from .training.rnn_sequential import UpdateResult, run_sequential_blocks
 from .utils import smooth_gbook
-from .vec_env import ContinuousVecEnv, VecEnv
+from .vec_env import ContinuousVecEnv, VecEnv, make_vec
 from .vectorhash import VectorHash
 
 
@@ -93,15 +94,9 @@ def build_envs(cfg: RNNTrainConfig, rng: np.random.RandomState) -> list[GridEnv]
 def _make_vec(env: GridEnv, batch: int, movement_mode: str,
               continuous_scale: float,
               continuous_normalize: bool = False) -> VecEnv | ContinuousVecEnv:
-    if movement_mode == "continuous":
-        vec = ContinuousVecEnv(
-            env, batch_size=batch, scale=continuous_scale,
-            normalize=continuous_normalize,
-        )
-    else:
-        vec = VecEnv(env, batch_size=batch)
-    vec.reset_all()
-    return vec
+    """Deprecated alias for vec_env.make_vec; kept for existing importers."""
+    return make_vec(env, batch, movement_mode, continuous_scale,
+                    continuous_normalize, reset=True)
 
 
 def train_sequential(
@@ -121,69 +116,47 @@ def train_sequential(
       - "trace": list of (global_step, training_env_idx, {env_idx: nav_det})
       - "blocks": list of (start_step_inclusive, end_step_inclusive, env_idx)
     """
-    movement_mode = cfg.agent.movement_mode
     n_envs = len(envs)
     trace: list[tuple[int, int, dict[int, float]]] = []
-    blocks: list[tuple[int, int, int]] = []
-    global_step = 0
 
-    for i, env in enumerate(envs):
+    def _announce(i: int, env: GridEnv) -> None:
         print(f"\n=== Sequential env {i}/{n_envs - 1}  goal={env.goal_location} ===")
-        block_start = global_step + 1
-        vec = _make_vec(env, cfg.batch_envs, movement_mode, cfg.env.continuous_scale,
-                       continuous_normalize=cfg.env.continuous_normalize)
-        env_offset_i = env_offsets[i] if env_offsets is not None else None
 
-        for upd in range(1, cfg.updates_per_env + 1):
-            vec.reset_all()
-            rollout = collect_rollout_rnn(
-                vec, agent, cfg.agent, cfg.steps_per_rollout, device,
-                deterministic=False, teacher_force=False,
-                sgb=sgb, env_offset=env_offset_i,
+    def _record(u: UpdateResult) -> None:
+        trace.append((u.global_step, u.block, u.metrics))
+        per_env_navdet = {j: m["nav_det"] for j, m in u.metrics.items()}
+
+        if (u.update == 1 or u.update % cfg.eval_every == 0
+                or u.update == cfg.updates_per_env):
+            rollout_goal_rate = float(u.rollout.goal_reached.sum().item()) / max(
+                1, cfg.batch_envs * cfg.steps_per_rollout
             )
-            losses = bc_rnn_update(agent, [rollout], cfg.bc, optimizer, movement_mode)
-            global_step += 1
-
-            # Per-update eval on every env that has started training (envs
-            # 0..i). Untrained envs are excluded — both to save compute and
-            # so the plot doesn't show pre-training noise lines.
-            metrics = evaluate_nav_all(
-                envs[: i + 1], agent, cfg.n_eval_trials, cfg.eval_max_steps,
-                device, deterministic=True,
-                continuous_scale=cfg.env.continuous_scale,
-                continuous_normalize=cfg.env.continuous_normalize,
-                sgb=sgb,
-                env_offsets=env_offsets[: i + 1] if env_offsets is not None else None,
+            summary = "  ".join(
+                f"e{j}={per_env_navdet[j]:.2f}"
+                for j in sorted(per_env_navdet.keys())
             )
-            trace.append((global_step, i, metrics))
-            per_env_navdet = {j: m["nav_det"] for j, m in metrics.items()}
+            print(
+                f"  env={u.block} upd={u.update}/{cfg.updates_per_env}  "
+                f"loss={u.losses['move_loss']:.3f}  "
+                f"ent={u.losses['move_entropy']:.2f}  "
+                f"goal_rate={rollout_goal_rate:.2f}  |  {summary}"
+            )
+        if wandb_run is not None:
+            log = {
+                "train/move_loss": u.losses["move_loss"],
+                "train/move_entropy": u.losses["move_entropy"],
+                "train/training_env": u.block,
+                "global_step": u.global_step,
+            }
+            for j, nd in per_env_navdet.items():
+                log[f"eval/env_{j}/nav_det"] = nd
+            wandb_run.log(log)
 
-            if upd == 1 or upd % cfg.eval_every == 0 or upd == cfg.updates_per_env:
-                rollout_goal_rate = float(rollout.goal_reached.sum().item()) / max(
-                    1, cfg.batch_envs * cfg.steps_per_rollout
-                )
-                summary = "  ".join(
-                    f"e{j}={per_env_navdet[j]:.2f}"
-                    for j in sorted(per_env_navdet.keys())
-                )
-                print(
-                    f"  env={i} upd={upd}/{cfg.updates_per_env}  "
-                    f"loss={losses['move_loss']:.3f}  "
-                    f"ent={losses['move_entropy']:.2f}  "
-                    f"goal_rate={rollout_goal_rate:.2f}  |  {summary}"
-                )
-            if wandb_run is not None:
-                log = {
-                    f"train/move_loss": losses["move_loss"],
-                    f"train/move_entropy": losses["move_entropy"],
-                    f"train/training_env": i,
-                    "global_step": global_step,
-                }
-                for j, nd in per_env_navdet.items():
-                    log[f"eval/env_{j}/nav_det"] = nd
-                wandb_run.log(log)
-
-        blocks.append((block_start, global_step, i))
+    blocks = run_sequential_blocks(
+        cfg=cfg, agent=agent, optimizer=optimizer, envs=envs, device=device,
+        n_eval_trials=cfg.n_eval_trials, sgb=sgb, env_offsets=env_offsets,
+        on_update=_record, on_block_start=_announce,
+    )
 
     return {"trace": trace, "blocks": blocks}
 

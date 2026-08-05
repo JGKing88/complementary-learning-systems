@@ -187,3 +187,84 @@ def test_on_block_end_fires_once_per_block():
         goal_in_mem=gim, stored_at_goal_count=cnt,
         on_block_end=lambda block, cur: calls.append((block, cur))))
     assert calls == [(0, 2), (1, 4), (2, 6)]
+
+
+# ---------------------------------------------------------------------------
+# The RNN baseline's block loop -- a separate protocol, also deduplicated
+# ---------------------------------------------------------------------------
+
+def _rnn_cfg(n_envs: int = 2):
+    from hopfield_nav.config import (
+        EnvConfig, RNNAgentConfig, RNNBCConfig, RNNTrainConfig,
+    )
+    return RNNTrainConfig(
+        env=EnvConfig(size=5, observation_size=12, time_penalty=0.01),
+        agent=RNNAgentConfig(hidden_size=16, num_rnn_layers=1),
+        bc=RNNBCConfig(), n_envs=n_envs, updates_per_env=3, batch_envs=2,
+        steps_per_rollout=6, eval_max_steps=8, n_eval_trials=2,
+        eval_every=2, device="cpu")
+
+
+def _rnn_agent(cfg):
+    from hopfield_nav.agent_rnn import RNNAgent, compute_rnn_input_dim
+    torch.manual_seed(0)
+    np.random.seed(0)
+    agent = RNNAgent(
+        cfg.agent, compute_rnn_input_dim(cfg.agent, cfg.env.observation_size))
+    return agent, torch.optim.Adam(agent.parameters(), lr=1e-3)
+
+
+def test_rnn_block_schedule_and_boundaries():
+    """One block per env; blocks tile the step range with inclusive ends."""
+    from hopfield_nav.train_rnn import build_envs
+    from hopfield_nav.training.rnn_sequential import run_sequential_blocks
+
+    cfg = _rnn_cfg(n_envs=3)
+    envs = build_envs(cfg, np.random.RandomState(0))
+    agent, opt = _rnn_agent(cfg)
+    seen = []
+    blocks = run_sequential_blocks(
+        cfg=cfg, agent=agent, optimizer=opt, envs=envs,
+        device=torch.device("cpu"), n_eval_trials=1,
+        on_update=lambda u: seen.append(u))
+
+    assert blocks == [(1, 3, 0), (4, 6, 1), (7, 9, 2)]
+    assert [u.global_step for u in seen] == list(range(1, 10))
+    # Every update evaluates exactly the envs introduced so far.
+    for u in seen:
+        assert sorted(u.metrics) == list(range(u.block + 1))
+
+
+def test_rnn_untrained_envs_are_not_evaluated():
+    """Untrained envs would inject pre-training noise into the forgetting curve."""
+    from hopfield_nav.train_rnn import build_envs
+    from hopfield_nav.training.rnn_sequential import run_sequential_blocks
+
+    cfg = _rnn_cfg(n_envs=3)
+    envs = build_envs(cfg, np.random.RandomState(0))
+    agent, opt = _rnn_agent(cfg)
+    seen = []
+    run_sequential_blocks(
+        cfg=cfg, agent=agent, optimizer=opt, envs=envs,
+        device=torch.device("cpu"), n_eval_trials=1,
+        on_update=lambda u: seen.append(u))
+    first_block = [u for u in seen if u.block == 0]
+    assert all(set(u.metrics) == {0} for u in first_block)
+
+
+def test_both_rnn_drivers_run_the_same_loop():
+    """train_rnn and the figure driver agree step-for-step on the block
+    schedule, differing only in trial count and what they record."""
+    from hopfield_nav.final_plotting.baseline import run_sequential
+    from hopfield_nav.train_rnn import build_envs, train_sequential
+
+    outs = {}
+    for name, fn in (("train_rnn", train_sequential), ("baseline", run_sequential)):
+        cfg = _rnn_cfg()
+        envs = build_envs(cfg, np.random.RandomState(0))
+        agent, opt = _rnn_agent(cfg)
+        torch.manual_seed(0)
+        np.random.seed(0)
+        res = fn(cfg, agent, opt, envs, torch.device("cpu"))
+        outs[name] = res["blocks"] if isinstance(res, dict) else res[1]
+    assert outs["train_rnn"] == outs["baseline"] == [(1, 3, 0), (4, 6, 1)]

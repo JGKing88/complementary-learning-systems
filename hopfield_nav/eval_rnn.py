@@ -15,18 +15,19 @@ from .agent_rnn import RNNAgent, compute_rnn_input_dim
 from .config import RNNAgentConfig
 from .env import GridEnv, at_goal
 from .rollout_rnn import _action_to_prev_channel, _build_rnn_input, _grid_state_vec
-from .vec_env import ContinuousVecEnv, VecEnv
+from .vec_env import ContinuousVecEnv, VecEnv, make_vec
 
 
 def _make_vec(env: GridEnv, batch: int, movement_mode: str,
               continuous_scale: float = 1.0,
               continuous_normalize: bool = False) -> VecEnv | ContinuousVecEnv:
-    if movement_mode == "continuous":
-        return ContinuousVecEnv(
-            env, batch_size=batch, scale=continuous_scale,
-            normalize=continuous_normalize,
-        )
-    return VecEnv(env, batch_size=batch)
+    """Deprecated alias for vec_env.make_vec.
+
+    reset=False: this evaluator places the agent at seeded start positions
+    itself, so resetting here would consume the env RNG and move them.
+    """
+    return make_vec(env, batch, movement_mode, continuous_scale,
+                    continuous_normalize, reset=False)
 
 
 @torch.no_grad()

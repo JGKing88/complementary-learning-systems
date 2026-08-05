@@ -21,12 +21,10 @@ import numpy as np
 import torch
 
 from ..agent_rnn import RNNAgent, compute_rnn_input_dim
-from ..bc_rnn import bc_rnn_update
 from ..config import EnvConfig, RNNAgentConfig, RNNBCConfig, RNNTrainConfig, VectorHashConfig
 from ..env import GridEnv
-from ..eval_rnn import evaluate_nav_all
-from ..rollout_rnn import collect_rollout_rnn
-from ..train_rnn import _make_vec, build_envs, restore_arch_from_ckpt
+from ..train_rnn import build_envs, restore_arch_from_ckpt
+from ..training.rnn_sequential import UpdateResult, run_sequential_blocks
 from ..utils import smooth_gbook
 from ..vectorhash import VectorHash
 
@@ -113,49 +111,25 @@ def run_sequential(
 
     Returns (trace, blocks). `blocks` end is inclusive.
     """
-    movement_mode = cfg.agent.movement_mode
     trace: list[tuple[int, int, dict[int, dict]]] = []
-    blocks: list[tuple[int, int, int]] = []
-    global_step = 0
 
-    for i, env in enumerate(envs):
-        block_start = global_step + 1
-        vec = _make_vec(
-            env, cfg.batch_envs, movement_mode,
-            cfg.env.continuous_scale,
-            continuous_normalize=cfg.env.continuous_normalize,
-        )
-        env_offset_i = env_offsets[i] if env_offsets is not None else None
-        for upd in range(cfg.updates_per_env):
-            vec.reset_all()
-            rollout = collect_rollout_rnn(
-                vec, agent, cfg.agent, cfg.steps_per_rollout, device,
-                deterministic=False, teacher_force=False,
-                sgb=sgb, env_offset=env_offset_i,
+    def _record(u: UpdateResult) -> None:
+        inner = {j: _to_emit_metrics(m) for j, m in u.metrics.items()}
+        trace.append((u.global_step, u.block, inner))
+        if (u.update == 1 or u.update % 25 == 0
+                or u.update == cfg.updates_per_env):
+            summary = "  ".join(
+                f"e{j}={inner[j]['reached']}" for j in sorted(inner.keys())
             )
-            bc_rnn_update(agent, [rollout], cfg.bc, optimizer, movement_mode)
-            global_step += 1
+            print(f"  env={u.block} upd={u.update}/{cfg.updates_per_env}  {summary}")
 
-            metrics = evaluate_nav_all(
-                envs[: i + 1], agent,
-                n_trials=1,                              # single trial → raw 0/1
-                max_steps=cfg.eval_max_steps,
-                device=device, deterministic=True,
-                continuous_scale=cfg.env.continuous_scale,
-                continuous_normalize=cfg.env.continuous_normalize,
-                sgb=sgb,
-                env_offsets=env_offsets[: i + 1] if env_offsets is not None else None,
-            )
-            inner = {j: _to_emit_metrics(m) for j, m in metrics.items()}
-            trace.append((global_step, i, inner))
-
-            if upd == 0 or (upd + 1) % 25 == 0 or upd + 1 == cfg.updates_per_env:
-                summary = "  ".join(
-                    f"e{j}={inner[j]['reached']}" for j in sorted(inner.keys())
-                )
-                print(f"  env={i} upd={upd + 1}/{cfg.updates_per_env}  {summary}")
-
-        blocks.append((block_start, global_step, i))
+    blocks = run_sequential_blocks(
+        cfg=cfg, agent=agent, optimizer=optimizer, envs=envs, device=device,
+        # A single trial per env per update, so each point is a raw 0/1 rather
+        # than an average -- the figure smooths it afterwards.
+        n_eval_trials=1,
+        sgb=sgb, env_offsets=env_offsets, on_update=_record,
+    )
 
     return trace, blocks
 
