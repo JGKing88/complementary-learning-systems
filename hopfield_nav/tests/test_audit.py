@@ -25,6 +25,7 @@ from hopfield_nav.oracle_bfs import bfs_action_batch_discrete
 from hopfield_nav.utils import (
     classify_direction_batch, direction_to_onehot, gram_schmidt_2d_batch,
 )
+from hopfield_nav.tests.fixtures import StubVectorHash, make_stub_cfg
 from hopfield_nav.vec_env import ContinuousVecEnv, VecEnv
 
 
@@ -278,85 +279,11 @@ class TestConfigValidation:
 # rollout collector but skips the heavy scaffold build, so they are fast.
 # ---------------------------------------------------------------------------
 
-class StubVectorHash:
-    """Minimal stand-in for VectorHash with deterministic encodings.
-
-    encoded_Phi[gx, gy] = a fixed-pattern (D,) embedding tied to (gx, gy).
-    Gram-Schmidt and project_displacement are inherited via the real
-    VectorHash class methods through monkey-patching `__class__`.
-    """
-    def __init__(self, Npos=16, embed_dim=8):
-        self.Npos = Npos
-        rng = np.random.default_rng(0)
-        # Build a smooth encoded_Phi: position-encoded + small noise.
-        # Translation-similarity is enough for the projection to be well-defined.
-        coords = np.stack(np.meshgrid(
-            np.arange(Npos), np.arange(Npos), indexing="ij"), axis=-1)
-        phase = coords[..., None, :] * np.array([[0.31, 0.71]])
-        feat = np.concatenate(
-            [np.sin(phase * np.pi).reshape(Npos, Npos, 2),
-             np.cos(phase * np.pi).reshape(Npos, Npos, 2)],
-            axis=-1)
-        # Pad to embed_dim
-        pad = embed_dim - feat.shape[-1]
-        if pad > 0:
-            feat = np.concatenate(
-                [feat, rng.standard_normal((Npos, Npos, pad)) * 0.01], axis=-1)
-        feat = feat / np.linalg.norm(feat, axis=-1, keepdims=True).clip(1e-9)
-        self.encoded_Phi = feat.astype(np.float32)
-
-    def get_encoded_state(self, positions: np.ndarray, env_offset):
-        gx = np.clip(positions[:, 0] + env_offset[0], 0, self.Npos - 1)
-        gy = np.clip(positions[:, 1] + env_offset[1], 0, self.Npos - 1)
-        return self.encoded_Phi[gx, gy]
-
-    def gram_schmidt_projection(self, positions, env_offset, cached_W=None,
-                                recompute_mask=None):
-        # Reuse the real VectorHash logic by import-time delegation.
-        from hopfield_nav.vectorhash import VectorHash
-        return VectorHash.gram_schmidt_projection(
-            self, positions, env_offset, cached_W, recompute_mask,
-        )
-
-    def project_displacement(self, current, recalled, W):
-        return np.einsum("bij,bj->bi", W, recalled - current)
-
-
-def _make_stub_cfg(*, movement_mode="discrete", explore_steps=None,
-                   novelty_reward=0.0, revisit_penalty=0.0, wall_penalty=0.0,
-                   epsilon_explore=0.0, auto_nav_warmup=0,
-                   input_goal_in_memory=False, agent_can_store=True,
-                   continuous_normalize=False) -> TrainConfig:
-    return TrainConfig(
-        env=EnvConfig(size=6, observation_size=12, time_penalty=0.01,
-                      movement_mode=movement_mode,
-                      continuous_normalize=continuous_normalize),
-        vectorhash=VectorHashConfig(),
-        hopfield=HopfieldConfig(
-            beta=1.0, alpha=1.0, steps=1,
-            agent_can_store=agent_can_store,
-            novelty_reward=novelty_reward,
-            revisit_penalty=revisit_penalty,
-            wall_penalty=wall_penalty,
-            epsilon_explore=epsilon_explore,
-            auto_nav_warmup=auto_nav_warmup,
-        ),
-        agent=AgentConfig(
-            hidden_size=16, num_rnn_layers=1,
-            hopfield_mode=movement_mode,
-            movement_mode=movement_mode,
-            input_encoded_state=False,
-            input_hopfield_signal=True,
-            input_goal_in_memory=input_goal_in_memory,
-        ),
-        ppo=PPOConfig(),
-        bc=BCConfig(),
-        encoder_checkpoint="dummy",
-        explore_steps=explore_steps,
-        batch_envs=4,
-        steps_per_rollout=8,
-        device="cpu",
-    )
+# StubVectorHash and _make_stub_cfg now live in tests/fixtures.py: the golden
+# fixtures depend on them byte-for-byte, and two copies of "the stub world"
+# would drift. _make_stub_cfg is re-bound below so the call sites in this file
+# read unchanged.
+_make_stub_cfg = make_stub_cfg
 
 
 def _make_collector(cfg: TrainConfig, embed_dim: int = 8):

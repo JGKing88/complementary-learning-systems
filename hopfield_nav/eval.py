@@ -298,6 +298,7 @@ def evaluate_navigation(
     deterministic: bool = True,
     seed: int = 42,
     action_temperature: float = 1.0,
+    per_trial: list | None = None,
 ) -> dict[int, dict[str, float]]:
     """Evaluate whether the agent can follow a preloaded goal signal to the goal.
 
@@ -307,6 +308,13 @@ def evaluate_navigation(
 
     Returns {n_dist: {success_rate, mean_speed, mean_steps, total_trials,
                       total_successes}}.
+
+    If ``per_trial`` is a list, one record per trial is appended to it:
+    ``(n_dist, env_local_idx, trial_idx, success, steps_taken)`` with
+    ``steps_taken = -1`` on failure. The aggregate floats above are averages
+    over exactly these records. Per-trial outcomes are the stable contract --
+    they survive changes to batching and RNG consumption order that would move
+    the aggregates -- so this is what the golden fixtures pin.
     """
     if n_distractors_list is None:
         n_distractors_list = [0]
@@ -328,7 +336,7 @@ def evaluate_navigation(
             goal = env.goal_location
             goal_enc = _goal_encoding(vectorhash, env_offset, goal)
 
-            for _trial in range(num_trials):
+            for _trial_idx in range(num_trials):
                 hopfield = Hopfield(embed_dim, beta=cfg.hopfield.beta, device=str(device))
                 # Goal + distractors, shuffled so storage order is random.
                 patterns = [goal_enc]
@@ -351,6 +359,7 @@ def evaluate_navigation(
                 prev_reward = None
                 prev_action = None
 
+                trial_steps = -1
                 for step in range(max_steps):
                     out = agent_step(
                         agent, env, env_offset, vectorhash, hopfield,
@@ -366,11 +375,15 @@ def evaluate_navigation(
                     if at_goal(env):
                         total_successes += 1
                         steps_taken = step + 1
+                        trial_steps = steps_taken
                         speed_sum += start_dist / steps_taken
                         steps_sum += steps_taken
                         break
 
                 total_trials += 1
+                if per_trial is not None:
+                    per_trial.append((n_dist, local_idx, _trial_idx,
+                                      int(trial_steps > 0), trial_steps))
 
         results[n_dist] = {
             "success_rate": float(total_successes / max(total_trials, 1)),
@@ -401,6 +414,7 @@ def evaluate_goal_discovery(
     seed: int = 42,
     deterministic: bool = True,
     action_temperature: float = 1.0,
+    per_trial: list | None = None,
 ) -> dict[int, dict[str, float]]:
     """For each val env + distractor count, run trials where the agent explores
     with store enabled. Each trial gets a fresh Hopfield pre-loaded with ONLY
@@ -410,6 +424,11 @@ def evaluate_goal_discovery(
     When ``deterministic`` is True (default), actions follow the policy mean /
     argmax and store uses prob > 0.5, matching the navigation eval. Set False to
     sample from the action and store distributions.
+
+    If ``per_trial`` is a list, one record per trial is appended to it:
+    ``(n_dist, env_local_idx, trial_idx, reached, stored, steps_to_store)``.
+    See evaluate_navigation for why per-trial records, not aggregates, are what
+    the golden fixtures pin.
     """
     if n_distractors_list is None:
         n_distractors_list = [0]
@@ -429,7 +448,7 @@ def evaluate_goal_discovery(
             env_offset = vectorhash.env_offsets[global_idx]
             goal = env.goal_location
 
-            for _trial in range(num_trials):
+            for _trial_idx in range(num_trials):
                 distractors = _sample_distractor_goals(
                     vectorhash, env_offset, cfg.env.size, n_dist, rng,
                 )
@@ -479,6 +498,10 @@ def evaluate_goal_discovery(
                 trial_steps.append(steps_to_store)
                 trial_reached.append(reached_goal)
                 trial_stored.append(stored_goal)
+                if per_trial is not None:
+                    per_trial.append((n_dist, local_idx, _trial_idx,
+                                      int(reached_goal), int(stored_goal),
+                                      steps_to_store))
 
         n = max(len(trial_stored), 1)
         n_stored = sum(trial_stored)
@@ -516,6 +539,7 @@ def evaluate_exploration(
     deterministic: bool = True,
     action_temperature: float = 1.0,
     disable_store: bool = True,
+    per_trial: list | None = None,
 ) -> dict[int, dict[str, float]]:
     """For each val env + distractor count, measure grid coverage and steps-to-goal
     for full-length (no early termination) rollouts. Each trial gets a fresh Hopfield
@@ -526,7 +550,13 @@ def evaluate_exploration(
     and ``goal_in_memory`` stays False for the entire rollout — measuring pure
     exploration with no goal pattern in Hopfield. When False, stores write to
     Hopfield and storing at the goal flips ``goal_in_memory`` to True, so coverage
-    after that point reflects post-discovery navigation, not pure exploration."""
+    after that point reflects post-discovery navigation, not pure exploration.
+
+    If ``per_trial`` is a list, one record per trial is appended to it:
+    ``(n_dist, env_local_idx, trial_idx, n_cells_visited, found_goal,
+    steps_to_goal)``. Cell counts rather than the coverage fraction, so the
+    record is exact. See evaluate_navigation for why per-trial records, not
+    aggregates, are what the golden fixtures pin."""
     if n_distractors_list is None:
         n_distractors_list = [0]
 
@@ -547,7 +577,7 @@ def evaluate_exploration(
             env_offset = vectorhash.env_offsets[global_idx]
             goal = env.goal_location
 
-            for _trial in range(num_trials):
+            for _trial_idx in range(num_trials):
                 distractors = _sample_distractor_goals(
                     vectorhash, env_offset, grid_size, n_dist, rng,
                 )
@@ -593,6 +623,10 @@ def evaluate_exploration(
                 trial_coverage.append(len(visited) / total_positions)
                 trial_found.append(found_goal)
                 trial_steps_to_goal.append(steps_to_goal)
+                if per_trial is not None:
+                    per_trial.append((n_dist, local_idx, _trial_idx,
+                                      len(visited), int(found_goal),
+                                      steps_to_goal))
 
         n = max(len(trial_found), 1)
         n_found = sum(trial_found)
