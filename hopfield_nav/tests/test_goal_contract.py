@@ -573,3 +573,60 @@ def test_phase5_declared_contract_reaches_the_training_stepper():
     src = inspect.getsource(RolloutCollector.collect_rollout)
     assert 'contract_for("training_rollout")' in src
     assert "contract=goal_contract" in src
+
+
+# ---------------------------------------------------------------------------
+# The inert at-goal action must not reach the movement surrogate
+# ---------------------------------------------------------------------------
+
+def _rollout_with_goal_contact(*, goals_active: bool = True):
+    """A rollout on a wide goal radius, so at-goal steps actually occur."""
+    from hopfield_nav.tests.fixtures import make_collector
+
+    cfg = make_stub_cfg(movement_mode="discrete", batch_envs=16,
+                        steps_per_rollout=40)
+    cfg.env.goal_radius = 1.5
+    cfg.env.goals_active = goals_active
+    collector, agent, _vh = make_collector(cfg, EMBED_DIM, seed=0)
+    env = make_env(cfg.env, "discrete", seed=1234)
+    hops = [Hopfield(EMBED_DIM, beta=1.0, device="cpu")
+            for _ in range(cfg.batch_envs)]
+    torch.manual_seed(0)
+    np.random.seed(0)
+    return collector.collect_rollout(env, agent, hops, update_idx=1)
+
+
+def test_at_goal_steps_are_masked_out_of_move_loss():
+    """C3 says the env discards the move, so the advantage is the same
+    whichever action was sampled: expected gradient zero, sample gradient pure
+    variance -- and injected at the highest-|advantage| steps in the buffer,
+    since those are the ones collecting goal_reward.
+    """
+    b = _rollout_with_goal_contact()
+    goal = b.goal_reached.bool()
+    pol = b.policy_action_mask.bool()
+    assert goal.sum() > 0, "vacuous: no at-goal steps occurred"
+    assert (goal & pol).sum() == 0
+    assert {round(float(v), 3) for v in b.rewards[goal]} == {1.0}
+
+
+def test_ordinary_steps_are_not_masked():
+    """Only the inert ones drop out -- no ε or auto-nav in this config."""
+    b = _rollout_with_goal_contact()
+    goal = b.goal_reached.bool()
+    pol = b.policy_action_mask.bool()
+    assert (~goal & pol).sum() == (~goal).sum()
+
+
+def test_at_goal_steps_stay_in_the_store_loss():
+    """Store IS causal at the goal -- that is the step it must fire on."""
+    b = _rollout_with_goal_contact()
+    goal = b.goal_reached.bool()
+    assert (goal & b.explore_mask.bool()).sum() == goal.sum()
+
+
+def test_nothing_is_masked_when_the_move_is_not_discarded():
+    """With goals_active off the contract applies no C3, so every action is
+    the policy's and belongs in the surrogate."""
+    b = _rollout_with_goal_contact(goals_active=False)
+    assert b.policy_action_mask.bool().all()

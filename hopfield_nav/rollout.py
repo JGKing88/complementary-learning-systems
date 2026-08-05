@@ -424,10 +424,25 @@ class RolloutCollector:
 
                 in_explore = cfg.explore_steps is None or t < cfg.explore_steps
                 all_explore_mask[:, t] = float(in_explore)
-                # ε / auto-nav overrides replace the policy sample. Mask
-                # those out of move_loss.
+                # move_loss may only see steps whose action actually moved the
+                # agent. Two kinds do not:
+                #   - ε / auto-nav overrides, which replaced the policy sample;
+                #   - at-goal steps, where the contract discards the move.
+                # The second is the subtler one. That action is inert, so the
+                # advantage is identical whichever action was sampled: the
+                # expected gradient is zero and the sample gradient is pure
+                # variance -- injected at precisely the highest-|advantage|
+                # steps in the buffer, since those are the ones that collect
+                # goal_reward. These steps stay in the store loss (store IS
+                # causal at the goal) and in the value loss (the return is
+                # real); only the movement surrogate drops them.
+                move_ignored = (
+                    at_goal_mask & vec.goals_active & goal_contract.move_ignored
+                )
+                policy_chose = torch.from_numpy(~move_ignored).to(self.device)
                 if move_override_mask is not None:
-                    all_policy_action_mask[:, t] = (~move_override_mask).float()
+                    policy_chose &= ~move_override_mask
+                all_policy_action_mask[:, t] = policy_chose.float()
                 agent_store = (result["store_action"] > 0.5).cpu().numpy()
 
                 # 7. Apply stores BEFORE the env step. Under the new vec_env semantics,
