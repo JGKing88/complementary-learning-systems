@@ -44,6 +44,17 @@ class EnvConfig:
     goals_active: bool = True               # When False: no +1 goal reward, no teleport on goal-reach. For pure-explore Phase A.
     goal_reward: float = 1.0                # +reward at goal cell when goals_active. Bumping >1 strengthens follow PPO updates vs explore reward signals (novelty + revisit).
     goal_radius: float = 0.5                # Euclidean radius around goal that counts as "at goal". Default 0.5 reproduces snap-equality on integer-snapped positions. Larger values fuzz the goal region; e.g. 1.0 includes 4-connected neighbor cells.
+    # What a store writes when the agent is at goal but standing on a different
+    # cell. Only reachable when goal_radius > 0.5 in continuous mode: at_goal
+    # tests the float position while embeddings are read at the *snapped* cell,
+    # so at radius 1.0 the agent can be at goal on a 4-connected neighbour and a
+    # store there writes the NEIGHBOUR's embedding as the goal memory. True
+    # (default) keeps that behavior -- it is what every run through 2026-08 did,
+    # including the run_agenthash.sh figure pipeline (GOAL_RADIUS=1). False
+    # substitutes the goal cell's embedding, so the stored pattern is the one
+    # navigation will later recall. Setup prints a warning when this is True
+    # and goal_radius > 0.5.
+    allow_offcell_store: bool = True
 
 
 @dataclass

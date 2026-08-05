@@ -18,7 +18,7 @@ from .config import (
     AgentConfig, PPOConfig, BCConfig, validate_train_config,
 )
 from .encoder import load_encoder, validate_config
-from .env import GridEnv, make_env
+from .env import make_env, warn_if_offcell_stores
 from .vectorhash import VectorHash
 from .hopfield import Hopfield
 from .agent import NavAgent, compute_input_dim
@@ -52,9 +52,13 @@ def setup_train_world(
     n_train = cfg.envs_per_world
     size = cfg.env.size
 
+    # make_env forwards the whole EnvConfig. Constructing GridEnv by hand here
+    # used to drop goals_active, goal_reward and goal_radius, which VecEnv then
+    # read off the base env -- so --goal_radius was silently ignored during
+    # training while eval honored it (train_phased.setup_world always used
+    # make_env). See docs/REFACTOR_ASSESSMENT.md, phase 2.
     train_envs = [
-        GridEnv(size=size, speed=cfg.env.speed, observation_size=cfg.env.observation_size,
-                seed=int(rng.randint(0, 10_000_000)), time_penalty=cfg.env.time_penalty)
+        make_env(cfg.env, cfg.agent.movement_mode, seed=int(rng.randint(0, 10_000_000)))
         for _ in range(n_train)
     ]
 
@@ -123,6 +127,7 @@ def setup_eval_world(
 
 def train(cfg: TrainConfig) -> None:
     validate_train_config(cfg)
+    warn_if_offcell_stores(cfg.env, where="train")
     device = torch.device(cfg.device if torch.cuda.is_available() else "cpu")
     torch.manual_seed(cfg.seed)
     np.random.seed(cfg.seed)
@@ -472,6 +477,9 @@ def main():
                         help="Euclidean radius around goal that counts as 'at goal'. "
                              "Default 0.5 reproduces snap-equality on integer-snapped "
                              "positions; larger values fuzz the goal region.")
+    parser.add_argument("--allow_offcell_store",
+                   action=argparse.BooleanOptionalAction, default=True,
+                   help="Whether a store fired while at goal may write a cell other than the goal's. Only reachable at goal_radius > 0.5, where at_goal tests the float position but embeddings are read at the snapped cell. True (default) preserves the behavior of every run through 2026-08; --no-allow_offcell_store stores the goal cell's embedding instead.")
     # VectorHash
     parser.add_argument("--lambdas", type=int, nargs="+", default=[11, 12])
     parser.add_argument("--Np", type=int, default=1600)
@@ -622,6 +630,7 @@ def main():
             size=args.size, observation_size=args.observation_size,
             time_penalty=args.time_penalty, movement_mode=args.movement_mode,
             goal_radius=args.goal_radius,
+            allow_offcell_store=args.allow_offcell_store,
         ),
         vectorhash=VectorHashConfig(
             lambdas=args.lambdas, Np=args.Np, Npos=args.Npos,

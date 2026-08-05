@@ -10,6 +10,22 @@
 #SBATCH --mem=100G
 #SBATCH --output=/home/jackking/cls/hopfield_nav/logs/slurm_phase_a_sweep_%j.out
 
+# ---------------------------------------------------------------------------
+# 2026-08-05 -- behavior note for anyone re-running an older variant.
+#
+# Every variant below runs through `hopfield_nav.train_phase_a_only`, which has
+# always honored --goal_radius. The sibling entry point `hopfield_nav.train`
+# did NOT: setup_train_world built its GridEnvs by hand and dropped
+# goals_active / goal_reward / goal_radius, so VecEnv (which reads them off the
+# base env) silently used the GridEnv defaults during training while eval used
+# the configured values. Fixed on this date. Variants recorded here are
+# unaffected; runs launched from `train.py` with --goal_radius != 0.5 before
+# this date trained at radius 0.5 regardless of the flag.
+#
+# Also added on this date: --allow_offcell_store, default True, which preserves
+# existing behavior. See EnvConfig.allow_offcell_store.
+# ---------------------------------------------------------------------------
+
 SEED=${SEED:-42}
 VARIANT=${VARIANT:-v6b}
 
@@ -23,6 +39,7 @@ unset CUDA_VISIBLE_DEVICES
 
 cd /home/jackking/cls
 
+source scripts/cls_env.sh
 case $VARIANT in
   v6a)
     EXTRA="--warmup_explore_only_updates 0 --phase_a_updates 600 --phase_a_novelty_reward 0 --interleave_empty_fraction 1.0 --randomize_goal_per_rollout --no-novelty_anneal"

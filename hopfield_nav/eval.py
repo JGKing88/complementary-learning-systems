@@ -131,6 +131,21 @@ def agent_step(
     embeddings_np = vectorhash.get_encoded_state(pos_arr, env_offset)
     embeddings = torch.from_numpy(embeddings_np).float().to(device)
 
+    # Which pattern a store on this step writes. Only differs from `embeddings`
+    # when off-cell stores are suppressed and the agent is at goal on some other
+    # cell -- see VectorHash.get_store_patterns.
+    if getattr(cfg.env, "allow_offcell_store", True) or goal_local is None:
+        store_embeddings = embeddings
+    else:
+        store_embeddings = torch.from_numpy(
+            vectorhash.get_store_patterns(
+                pos_arr, env_offset,
+                at_goal_mask=np.array([at_goal(env)]),
+                goal=goal_local,
+                allow_offcell=False,
+            )
+        ).float().to(device)
+
     use_oracle = (
         bool(getattr(cfg, "hopfield_oracle", False))
         and bool(cfg.agent.input_hopfield_signal)
@@ -253,6 +268,11 @@ def agent_step(
     return {
         "h_rnn": result["h_next"],
         "embedding": embeddings,
+        # The pattern a store fired on THIS step should write. Identical to
+        # "embedding" unless cfg.env.allow_offcell_store is False and the agent
+        # is at goal on a non-goal cell (reachable only at goal_radius > 0.5).
+        # Callers that store must use this key, not "embedding".
+        "store_embedding": store_embeddings,
         "store_action": result["store_action"].item(),
         # For the caller to thread into the next agent_step call:
         "next_prev_reward": current_reward,        # (1, 1)
@@ -451,7 +471,7 @@ def evaluate_goal_discovery(
                             stored_goal = True
                             steps_to_store = step + 1
                             goal_in_mem = True
-                        hopfield.input_memory(out["embedding"][0])
+                        hopfield.input_memory(out["store_embedding"][0])
 
                     if stored_goal:
                         break
@@ -562,7 +582,7 @@ def evaluate_exploration(
                     visited.add(env.current_location)
 
                     if not disable_store and out["store_action"] > 0.5:
-                        hopfield.input_memory(out["embedding"][0])
+                        hopfield.input_memory(out["store_embedding"][0])
                         if at_g_pre:
                             goal_in_mem = True
 
@@ -771,7 +791,7 @@ def evaluate_realistic(
             )
             store_fired = bool(allow_store_now and (out["store_action"] > 0.5))
             if store_fired:
-                hopfield.input_memory(out["embedding"][0])
+                hopfield.input_memory(out["store_embedding"][0])
 
             if at_g:
                 # Training-matching reach: agent sat on goal this iter.
@@ -917,7 +937,7 @@ def evaluate_repeat(
 
             store_fired = bool(out["store_action"] > 0.5)
             if store_fired:
-                hopfield.input_memory(out["embedding"][0])
+                hopfield.input_memory(out["store_embedding"][0])
 
             if at_g:
                 if store_fired:
@@ -1073,7 +1093,7 @@ def evaluate_sequential_episodes(
                 # saw reward=+1, and (optionally) stored. Train would teleport
                 # now; we terminate the mini-episode.
                 if allow_store_now and store_fired:
-                    hopfield.input_memory(out["embedding"][0])
+                    hopfield.input_memory(out["store_embedding"][0])
                     goal_in_mem[local_idx] = True
                     stored_at_goal_count[local_idx] += 1
                     stored_at_goal = 1
@@ -1083,7 +1103,7 @@ def evaluate_sequential_episodes(
             # Off-goal: under oracle mode, never store. Otherwise honor agent's
             # store action. (Training fires non-goal stores too.)
             if (not oracle_store_at_goal) and allow_store_now and (out["store_action"] > 0.5):
-                hopfield.input_memory(out["embedding"][0])
+                hopfield.input_memory(out["store_embedding"][0])
                 stored_off_goal = 1
 
         return int(reached), stored_at_goal, stored_off_goal

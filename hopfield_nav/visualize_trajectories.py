@@ -212,7 +212,7 @@ def _rollout_combined(
                 # drop it so the explore segment terminates ON the goal.
                 positions.pop()
                 cont_positions.pop()
-                hopfield.input_memory(out["embedding"][0])
+                hopfield.input_memory(out["store_embedding"][0])
                 stored = True
                 explore_end_idx = len(positions) - 1
                 reached_explore = True

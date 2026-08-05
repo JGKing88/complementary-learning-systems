@@ -32,7 +32,7 @@ from .config import (
     AgentConfig, PPOConfig, PhasedConfig, validate_train_config,
 )
 from .encoder import load_encoder, validate_config
-from .env import GridEnv, make_env
+from .env import GridEnv, make_env, warn_if_offcell_stores
 from .vectorhash import VectorHash
 from .hopfield import Hopfield
 from .agent import NavAgent, compute_input_dim
@@ -400,6 +400,7 @@ def do_eval(cfg, agent, eval_world, device, update_tag: str,
 
 def train_phased(cfg: TrainConfig, pcfg: PhasedConfig) -> None:
     validate_train_config(cfg)
+    warn_if_offcell_stores(cfg.env, where="train_phased")
     device = torch.device(cfg.device if torch.cuda.is_available() else "cpu")
     torch.manual_seed(cfg.seed)
     np.random.seed(cfg.seed)
@@ -526,6 +527,9 @@ def main():
                    help="Euclidean radius around goal that counts as 'at goal'. "
                         "Default 0.5 reproduces snap-equality on integer-snapped "
                         "positions; larger values fuzz the goal region.")
+    p.add_argument("--allow_offcell_store",
+                   action=argparse.BooleanOptionalAction, default=True,
+                   help="Whether a store fired while at goal may write a cell other than the goal's. Only reachable at goal_radius > 0.5, where at_goal tests the float position but embeddings are read at the snapped cell. True (default) preserves the behavior of every run through 2026-08; --no-allow_offcell_store stores the goal cell's embedding instead.")
     p.add_argument("--hopfield_mode", default="continuous",
                    choices=["discrete", "continuous"])
     # Enrichment flags (phase 2 defaults: all ON)
@@ -578,7 +582,8 @@ def main():
     cfg = TrainConfig(
         env=EnvConfig(size=args.size, observation_size=args.observation_size,
                       movement_mode=args.movement_mode,
-                      goal_radius=args.goal_radius),
+                      goal_radius=args.goal_radius,
+                      allow_offcell_store=args.allow_offcell_store),
         vectorhash=VectorHashConfig(lambdas=args.lambdas, Np=args.Np,
                                     static_vectorhash=args.static_vectorhash),
         hopfield=HopfieldConfig(),

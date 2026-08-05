@@ -383,6 +383,49 @@ class VectorHash:
         gy = np.clip(positions[:, 1] + env_offset[1], 0, self.Npos - 1)
         return self.encoded_Phi[gx, gy]
 
+    def get_store_patterns(
+        self,
+        positions: np.ndarray,
+        env_offset: tuple[int, int],
+        *,
+        at_goal_mask: np.ndarray | None = None,
+        goal: tuple[int, int] | None = None,
+        allow_offcell: bool = True,
+    ) -> np.ndarray:
+        """Patterns a store action writes, one row per batch element.
+
+        Normally this is exactly ``get_encoded_state`` -- the encoded state of
+        the cell the agent is standing on. It differs only in the off-cell case:
+        with ``goal_radius > 0.5`` in continuous mode, ``at_goal`` tests the
+        float position while embeddings are read at the snapped cell, so an
+        agent can be "at goal" while standing on a neighbour, and a store there
+        would write the neighbour's embedding as the goal memory.
+
+        ``allow_offcell=True`` (the default, and every run through 2026-08)
+        keeps that. ``allow_offcell=False`` substitutes ``encoded_Phi`` at the
+        goal cell for the rows that are at goal, so the stored pattern is the
+        one navigation will later recall.
+
+        positions: (B, 2) local env coords.
+        at_goal_mask: (B,) bool, or None to mean "no row is at goal".
+        goal: local goal coords, required when suppressing off-cell stores.
+        Returns (B, embed_dim).
+        """
+        patterns = self.get_encoded_state(positions, env_offset)
+        if allow_offcell or at_goal_mask is None or goal is None:
+            return patterns
+        at_goal_mask = np.asarray(at_goal_mask, dtype=bool).reshape(-1)
+        offcell = at_goal_mask & (
+            (positions[:, 0] != goal[0]) | (positions[:, 1] != goal[1])
+        )
+        if not offcell.any():
+            return patterns
+        goal_arr = np.array([goal], dtype=np.int32)
+        goal_pattern = self.get_encoded_state(goal_arr, env_offset)[0]
+        patterns = patterns.copy()
+        patterns[offcell] = goal_pattern
+        return patterns
+
     def gram_schmidt_projection(
         self,
         positions: np.ndarray,

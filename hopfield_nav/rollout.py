@@ -438,9 +438,25 @@ class RolloutCollector:
                 # would claim "goal in memory" without actually storing it).
                 if not shared_hopfield and in_explore:
                     agent_goal_store_fired |= (effective_store & at_goal_mask)
+                    # With goal_radius > 0.5 the at-goal ball can extend onto
+                    # neighbouring cells, so `embeddings[b]` is not necessarily
+                    # the goal cell's pattern. cfg.env.allow_offcell_store
+                    # decides which one a store writes; the default (True)
+                    # returns `embeddings` unchanged.
+                    if cfg.env.allow_offcell_store:
+                        store_patterns = embeddings
+                    else:
+                        store_patterns = torch.from_numpy(
+                            self.vectorhash.get_store_patterns(
+                                positions, env_offset,
+                                at_goal_mask=at_goal_mask,
+                                goal=tuple(vec._goal),
+                                allow_offcell=False,
+                            )
+                        ).float().to(self.device)
                     for b in range(B):
                         if effective_store[b]:
-                            hopfields[b].input_memory(embeddings[b])
+                            hopfields[b].input_memory(store_patterns[b])
 
                 # 8. Step environment — teleports envs that were at goal this step.
                 if cfg.agent.movement_mode == "discrete":

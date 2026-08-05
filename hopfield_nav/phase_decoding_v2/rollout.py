@@ -212,7 +212,7 @@ class RolloutEngine:
             store_buf.append(float(out["store_action"]))
 
             if out["store_action"] > 0.5:
-                hopfield.input_memory(out["embedding"][0])
+                hopfield.input_memory(out["store_embedding"][0])
 
             h_rnn = out["h_rnn"]
             prev_reward = out["next_prev_reward"]

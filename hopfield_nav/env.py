@@ -68,6 +68,49 @@ def _at_goal_l2(pos, goal, radius: float = 0.5):
     raise ValueError(f"pos must be (2,) or (B, 2), got shape {pos_arr.shape}")
 
 
+def max_offcell_offset(goal_radius: float) -> int:
+    """Largest per-axis cell offset between an at-goal position and the goal.
+
+    ``at_goal`` is an L2 ball of radius ``goal_radius`` around the goal in float
+    coordinates, but embeddings and sensory input are read at the *snapped*
+    cell. A position lands on the cell ``k`` steps away along an axis once it
+    reaches ``goal + k - 0.5``, so offset ``k`` is reachable when
+    ``k - 0.5 < goal_radius``; the largest such ``k`` is
+    ``ceil(goal_radius + 0.5) - 1``.
+
+    0 means every at-goal position snaps to the goal cell itself. That is the
+    case at the default radius 0.5, where the only positions that would snap
+    elsewhere sit exactly on the boundary (measure zero, and resolved by
+    round-half-to-even in favour of the goal cell).
+
+        radius 0.5 -> 0     radius 1.0 -> 1     radius 2.0 -> 2
+    """
+    return int(np.ceil(float(goal_radius) + 0.5)) - 1
+
+
+def warn_if_offcell_stores(env_cfg, *, where: str = "") -> None:
+    """Print a one-line warning when stores can land off the goal cell.
+
+    Fires only when off-cell stores are allowed AND the radius is large enough
+    to reach a neighbouring cell -- i.e. exactly when a store fired "at goal"
+    may write a cell other than the goal's into memory, which is then what
+    navigation recalls. Silent in the default configuration.
+    """
+    if not getattr(env_cfg, "allow_offcell_store", True):
+        return
+    offset = max_offcell_offset(env_cfg.goal_radius)
+    if offset == 0:
+        return
+    prefix = f"[{where}] " if where else ""
+    print(
+        f"{prefix}WARNING: goal_radius={env_cfg.goal_radius} with "
+        f"allow_offcell_store=True — a store fired at goal can write the "
+        f"embedding of a cell up to {offset} cell(s) away from the goal along "
+        f"either axis. Pass --no-allow_offcell_store to store the goal cell's "
+        f"embedding instead."
+    )
+
+
 class EnvState(NamedTuple):
     position: tuple[int, int]
     goal: tuple[int, int]

@@ -27,6 +27,7 @@ from .config import (
     AgentConfig, PPOConfig, PhasedConfigV3, validate_train_config,
 )
 from .encoder import load_encoder, validate_config
+from .env import warn_if_offcell_stores
 from .vectorhash import VectorHash
 from .hopfield import Hopfield
 from .agent import NavAgent, compute_input_dim
@@ -416,6 +417,7 @@ def train_phase_a_only(
     log_std_anneal_target: float | None = None,
 ) -> None:
     validate_train_config(cfg)
+    warn_if_offcell_stores(cfg.env, where="train_phase_a_only")
     device = torch.device(cfg.device if torch.cuda.is_available() else "cpu")
     torch.manual_seed(cfg.seed)
     np.random.seed(cfg.seed)
@@ -535,7 +537,9 @@ def main():
     p.add_argument("--phase_a_novelty_reward", type=float, default=0.1)
     # New sweep knobs
     p.add_argument("--warmup_explore_only_updates", type=int, default=0,
-                   help="Pure-explore (100% empty) prefix; 0 to disable")
+                   # argparse formats help text with `help % params`, so a bare
+                   # `%` must be escaped or --help raises TypeError.
+                   help="Pure-explore (100%% empty) prefix; 0 to disable")
     p.add_argument("--novelty_anneal", action=argparse.BooleanOptionalAction, default=False)
     p.add_argument("--interleave_empty_fraction", type=float, default=0.5,
                    help="Fraction of envs in interleaved phase that run empty")
@@ -651,6 +655,9 @@ def main():
                    help="Euclidean radius around goal that counts as 'at goal'. "
                         "Default 0.5 reproduces snap-equality on integer-snapped "
                         "positions; larger values fuzz the goal region.")
+    p.add_argument("--allow_offcell_store",
+                   action=argparse.BooleanOptionalAction, default=True,
+                   help="Whether a store fired while at goal may write a cell other than the goal's. Only reachable at goal_radius > 0.5, where at_goal tests the float position but embeddings are read at the snapped cell. True (default) preserves the behavior of every run through 2026-08; --no-allow_offcell_store stores the goal cell's embedding instead.")
     p.add_argument("--time_penalty", type=float, default=None,
                    help="Override EnvConfig.time_penalty (default 0.01). "
                         "Higher values directly punish step count, "
@@ -694,7 +701,8 @@ def main():
                       movement_mode=args.movement_mode,
                       goals_active=args.goals_active,
                       goal_reward=args.goal_reward,
-                      goal_radius=args.goal_radius)
+                      goal_radius=args.goal_radius,
+                      allow_offcell_store=args.allow_offcell_store)
     if args.time_penalty is not None:
         env_kwargs["time_penalty"] = args.time_penalty
     if args.continuous_normalize is not None:

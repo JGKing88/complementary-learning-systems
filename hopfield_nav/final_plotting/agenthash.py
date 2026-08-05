@@ -222,7 +222,7 @@ def mini_episode(
         if at_g:
             store_fired = True if oracle_store_at_goal else agent_wants_store
             if allow_store_now and store_fired:
-                hopfield.input_memory(out["embedding"][0])
+                hopfield.input_memory(out["store_embedding"][0])
                 goal_in_mem[local_idx] = True
                 stored_at_goal_count[local_idx] += 1
                 stored_at_goal = 1
@@ -238,7 +238,7 @@ def mini_episode(
 
         if not oracle_lock_store_not_at_goal:
             if allow_store_now and agent_wants_store:
-                hopfield.input_memory(out["embedding"][0])
+                hopfield.input_memory(out["store_embedding"][0])
                 stored_off_goal = 1
 
     return int(reached), steps_to_goal, path_to_goal, stored_at_goal, stored_off_goal

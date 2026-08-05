@@ -27,7 +27,7 @@ from hopfield_nav.config import (
     AgentConfig, PPOConfig,
 )
 from hopfield_nav.encoder import load_encoder
-from hopfield_nav.env import make_env
+from hopfield_nav.env import make_env, warn_if_offcell_stores
 from hopfield_nav.vectorhash import VectorHash
 from hopfield_nav.agent import NavAgent, compute_input_dim
 from hopfield_nav.eval import (
@@ -145,6 +145,7 @@ def eval_checkpoint(
     lock_store_after_goal: bool = False,
     oracle_store_at_goal: bool = False,
     goal_radius: float | None = None,
+    allow_offcell_store: bool | None = None,
 ) -> dict:
     ck = torch.load(ckpt_path, map_location=device, weights_only=False)
     cfg = make_cfg_from_checkpoint(ck["config"])
@@ -156,6 +157,9 @@ def eval_checkpoint(
         cfg.vectorhash.static_vectorhash = bool(static_vectorhash)
     if goal_radius is not None:
         cfg.env.goal_radius = float(goal_radius)
+    if allow_offcell_store is not None:
+        cfg.env.allow_offcell_store = bool(allow_offcell_store)
+    warn_if_offcell_stores(cfg.env, where="eval_all")
     if num_val_envs is not None:
         cfg.num_val_envs = int(num_val_envs)
     if bool(getattr(cfg, "hopfield_oracle", False)) and not bool(cfg.agent.input_hopfield_signal):
@@ -898,6 +902,12 @@ def main():
                    help="Override EnvConfig.goal_radius from the saved checkpoint. "
                         "Default: use the value saved at training time (or 0.5 for "
                         "checkpoints saved before the field was added).")
+    p.add_argument("--allow_offcell_store",
+                   action=argparse.BooleanOptionalAction, default=None,
+                   help="Override whether a store fired while at goal may write "
+                        "a cell other than the goal's. Only reachable at "
+                        "goal_radius > 0.5. Omit to use the checkpoint's value "
+                        "(True for checkpoints saved before the field existed).")
     p.add_argument("--no-nav-stoch", action="store_true",
                    help="Skip the stochastic navigation eval (nav_det only)")
 
@@ -983,6 +993,7 @@ def main():
         lock_store_after_goal=args.lock_store_after_goal,
         oracle_store_at_goal=args.oracle_store_at_goal,
         goal_radius=args.goal_radius,
+        allow_offcell_store=args.allow_offcell_store,
     )
     results["tag"] = tag
 

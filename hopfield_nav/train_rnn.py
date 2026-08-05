@@ -23,7 +23,7 @@ import torch
 from .agent_rnn import RNNAgent, compute_rnn_input_dim
 from .bc_rnn import bc_rnn_update
 from .config import EnvConfig, RNNAgentConfig, RNNBCConfig, RNNTrainConfig, VectorHashConfig
-from .env import GridEnv
+from .env import GridEnv, warn_if_offcell_stores
 from .eval_rnn import evaluate_nav_all
 from .final_plotting.plotting import (  # noqa: F401  (re-export for regen_plots.py)
     save_forgetting_plot, save_steps_to_goal_plot,
@@ -81,6 +81,11 @@ def build_envs(cfg: RNNTrainConfig, rng: np.random.RandomState) -> list[GridEnv]
             seed=seed,
             time_penalty=cfg.env.time_penalty,
             goals_active=cfg.env.goals_active,
+            # goal_reward and goal_radius were previously left at the GridEnv
+            # defaults, so VecEnv (which reads them off the base env) ignored
+            # the configured values.
+            goal_reward=cfg.env.goal_reward,
+            goal_radius=cfg.env.goal_radius,
         ))
     return envs
 
@@ -253,6 +258,7 @@ def train_mixed(
 
 
 def train(cfg: RNNTrainConfig) -> None:
+    warn_if_offcell_stores(cfg.env, where="train_rnn")
     device = torch.device(cfg.device if torch.cuda.is_available() else "cpu")
     torch.manual_seed(cfg.seed)
     np.random.seed(cfg.seed)
@@ -366,6 +372,9 @@ def main() -> None:
                    help="Euclidean radius around goal that counts as 'at goal'. "
                         "Default 0.5 reproduces snap-equality on integer-snapped "
                         "positions; larger values fuzz the goal region.")
+    p.add_argument("--allow_offcell_store",
+                   action=argparse.BooleanOptionalAction, default=True,
+                   help="Whether a store fired while at goal may write a cell other than the goal's. Only reachable at goal_radius > 0.5, where at_goal tests the float position but embeddings are read at the snapped cell. True (default) preserves the behavior of every run through 2026-08; --no-allow_offcell_store stores the goal cell's embedding instead.")
     # Agent
     p.add_argument("--hidden_size", type=int, default=128)
     p.add_argument("--num_rnn_layers", type=int, default=1)
@@ -416,6 +425,7 @@ def main() -> None:
             size=args.size, observation_size=args.observation_size,
             time_penalty=args.time_penalty, movement_mode=args.movement_mode,
             goal_radius=args.goal_radius,
+            allow_offcell_store=args.allow_offcell_store,
         ),
         agent=RNNAgentConfig(
             hidden_size=args.hidden_size, num_rnn_layers=args.num_rnn_layers,
