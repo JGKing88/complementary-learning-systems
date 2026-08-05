@@ -24,6 +24,11 @@ signals       ``q``, the memory mask, and the Gram-Schmidt basis out of
 evaluators    Per-trial success *bits* (not aggregate floats) from the three
               headline evaluators. Bits survive phase 4's rebatching; the
               aggregate floats would not, because batching changes RNG order.
+long_horizon  The full returned dict of the four evaluators that have no
+              per-trial recorder -- realistic, repeat, union_coverage and
+              sequential_episodes. Added after an audit found that no test
+              executed any of them, while phases 5a and 5c had rewritten code
+              inside three.
 """
 from __future__ import annotations
 
@@ -258,11 +263,109 @@ def gen_evaluators() -> dict[str, np.ndarray]:
     return out
 
 
+def _flatten(d, prefix: str = "") -> dict[str, str]:
+    """Nested result dict -> flat {dotted.key: repr(value)}.
+
+    These evaluators return dicts of dicts with mixed value types (floats,
+    ints, lists, tuple keys), so repr of a flattened view is what is both
+    storable in an .npz and readable in a diff.
+    """
+    flat: dict[str, str] = {}
+    for k, v in d.items():
+        key = f"{prefix}{k}"
+        if isinstance(v, dict):
+            flat.update(_flatten(v, key + "."))
+        else:
+            flat[key] = repr(v)
+    return flat
+
+
+def gen_long_horizon_evaluators() -> dict[str, np.ndarray]:
+    """The four evaluators the per-trial goldens do not reach.
+
+    evaluate_realistic, evaluate_repeat, evaluate_union_coverage and
+    evaluate_sequential_episodes have no per-trial recorder and were, until
+    this fixture existed, executed by no test at all -- while phases 5a and 5c
+    rewrote the at-goal handling inside two of them and the whole protocol
+    inside a third. Their full returned dict is pinned instead.
+    """
+    from hopfield_nav import eval as ev
+
+    def _world(n=2):
+        # A small grid and a wide goal radius, so an untrained policy actually
+        # reaches the goal within the step budget. Without that, the at-goal
+        # branch these evaluators hand-rolled -- the code phase 5a rewrote --
+        # never executes and the fixture pins nothing. The radius also puts the
+        # off-cell store path in scope, which is the other thing that changed.
+        cfg = make_stub_cfg(movement_mode="discrete")
+        cfg.env.size = 4
+        cfg.env.goal_radius = 1.5
+        _c, agent, vh = make_collector(cfg, EMBED_DIM, seed=0)
+        vh.env_offsets = [(0, 0), (8, 0), (0, 8)][:n]
+        envs = [make_env(cfg.env, "discrete", seed=100 + i) for i in range(n)]
+        return cfg, agent, vh, envs
+
+    results: dict[str, dict] = {}
+
+    for lock in (False, True):
+        cfg, agent, vh, envs = _world()
+        torch.manual_seed(0)
+        np.random.seed(0)
+        results[f"realistic_lock{lock}"] = ev.evaluate_realistic(
+            agent, envs, vh, [0, 1], cfg, torch.device("cpu"),
+            steps_per_env=120, seed=13, lock_store_after_goal=lock)
+
+    cfg, agent, vh, envs = _world()
+    torch.manual_seed(0)
+    np.random.seed(0)
+    results["repeat"] = ev.evaluate_repeat(
+        agent, envs, vh, [0, 1], cfg, torch.device("cpu"),
+        n_trials=3, steps_per_env=80, seed=21)
+
+    cfg, agent, vh, envs = _world()
+    torch.manual_seed(0)
+    np.random.seed(0)
+    results["union_coverage"] = ev.evaluate_union_coverage(
+        agent, envs, vh, [0, 1], cfg, torch.device("cpu"),
+        num_trials=4, max_steps=20)
+
+    # Guard against a silently vacuous fixture. If the agent never reaches the
+    # goal, none of the at-goal handling runs and this golden pins nothing --
+    # which is exactly the state this file was in when first written.
+    for tag in ("realistic_lockFalse", "realistic_lockTrue"):
+        reaches = sum(v["n_reaches"] for v in results[tag]["primary"].values())
+        if reaches == 0:
+            raise AssertionError(
+                f"{tag} fixture is vacuous: the agent never reached the goal, "
+                f"so the at-goal branch was never exercised. Widen the goal "
+                f"radius, shrink the grid, or raise steps_per_env.")
+    if results["repeat"]["summary"]["mean_reaches"] <= 0:
+        raise AssertionError("repeat fixture is vacuous: no goal reaches")
+
+    for oracle in (False, True):
+        cfg, agent, vh, envs = _world(3)
+        torch.manual_seed(0)
+        np.random.seed(0)
+        results[f"sequential_oracle{oracle}"] = ev.evaluate_sequential_episodes(
+            agent, envs, vh, [0, 1, 2], cfg, torch.device("cpu"),
+            iters_per_block=6, max_steps=12, seed=7,
+            oracle_store_at_goal=oracle)
+
+    out: dict[str, np.ndarray] = {}
+    for name, res in results.items():
+        flat = _flatten(res)
+        keys = sorted(flat)
+        out[f"{name}__keys"] = np.array(keys)
+        out[f"{name}__vals"] = np.array([flat[k] for k in keys])
+    return out
+
+
 GENERATORS = {
     "observations": gen_observations,
     "eval_observations": gen_eval_observations,
     "signals": gen_signals,
     "evaluators": gen_evaluators,
+    "long_horizon_evaluators": gen_long_horizon_evaluators,
 }
 
 
