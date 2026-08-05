@@ -17,7 +17,7 @@ import numpy as np
 import torch
 import torch.nn.functional as F
 
-from . import channels
+from . import channels, signal
 from .config import TrainConfig
 from .hopfield import Hopfield, recall_per_env_batch, recall_per_env_batch_trajectory
 from .vectorhash import VectorHash
@@ -650,6 +650,11 @@ class RolloutCollector:
             store_label_mask=store_label_mask if collect_teacher else None,
         )
 
+    # The three helpers below moved to signal.py so that eval.agent_step runs
+    # the same code instead of its own B=1 reimplementation. They stay as thin
+    # methods because the call sites read better with the collector's state
+    # (cfg, vectorhash, device, embed_dim) supplied implicitly.
+
     def _hopfield_signal_at(
         self,
         embeddings_np: np.ndarray,
@@ -662,62 +667,16 @@ class RolloutCollector:
         cached_W: np.ndarray | None = None,
         recompute_mask: np.ndarray | None = None,
     ) -> tuple[torch.Tensor, np.ndarray, torch.Tensor, np.ndarray | None]:
-        """Run Hopfield recall + Gram-Schmidt projection for a batch of states.
+        """Recall + Gram-Schmidt projection for a batch of states.
 
-        Returns (signal_t, q_full_np, memory_mask_t, new_cached_W).
-        ``new_cached_W`` is None if no recall happened (no env had memory) — in
-        that case the caller's previous cache is unchanged.
-
-        Used by both the per-step rollout loop and the truncation bootstrap.
+        ``signal_dim`` is accepted for call-site symmetry and derived from the
+        config inside; see :func:`signal.hopfield_signal_at`.
         """
-        B = positions.shape[0]
-        hopfield_signal = torch.zeros(B, signal_dim, device=self.device)
-        q_full = np.zeros((B, 2), dtype=np.float32)
-        memory_mask = torch.zeros(B, dtype=torch.bool, device=self.device)
-
-        if recompute_mask is None:
-            recompute_mask = np.ones(B, dtype=bool)
-
-        if shared_hopfield:
-            hop = hopfields
-            if hop.num_memories > 0:
-                recalled = hop.recall_batch(
-                    embeddings, steps=self.cfg.hopfield.steps,
-                    beta=self.cfg.hopfield.beta, alpha=self.cfg.hopfield.alpha,
-                )
-                sig_np, q_full, cached_W = self._compute_signal(
-                    embeddings_np, recalled.cpu().numpy(),
-                    positions, env_offset, cached_W, recompute_mask,
-                )
-                hopfield_signal = torch.from_numpy(sig_np).float().to(self.device)
-                memory_mask[:] = True
-                return hopfield_signal, q_full, memory_mask, cached_W
-            return hopfield_signal, q_full, memory_mask, None
-
-        # Per-env Hopfields: stack W matrices for envs that have memories.
-        has_memory = [b for b in range(B) if hopfields[b].num_memories > 0]
-        if has_memory:
-            idx = torch.as_tensor(has_memory, device=self.device, dtype=torch.long)
-            W_stack = torch.stack([hopfields[b].W for b in has_memory], dim=0)
-            x0_stack = embeddings.index_select(0, idx)
-            recalled_stack = recall_per_env_batch(
-                x0_stack, W_stack,
-                steps=self.cfg.hopfield.steps,
-                beta=self.cfg.hopfield.beta, alpha=self.cfg.hopfield.alpha,
-            )
-            recalled_np_full = np.zeros((B, self.embed_dim), dtype=np.float32)
-            recalled_np_full[has_memory] = recalled_stack.cpu().numpy()
-            sig, q_full, cached_W = self._compute_signal(
-                embeddings_np, recalled_np_full,
-                positions, env_offset, cached_W, recompute_mask,
-            )
-            sig_t = torch.from_numpy(sig).float().to(self.device)
-            memory_mask[idx] = True
-            hopfield_signal = torch.where(
-                memory_mask.unsqueeze(-1), sig_t, hopfield_signal,
-            )
-            return hopfield_signal, q_full, memory_mask, cached_W
-        return hopfield_signal, q_full, memory_mask, None
+        return signal.hopfield_signal_at(
+            self.vectorhash, self.cfg, embeddings_np, embeddings, positions,
+            env_offset, hopfields, shared_hopfield, self.device,
+            self.embed_dim, cached_W=cached_W, recompute_mask=recompute_mask,
+        )
 
     def _compute_multistep_q(
         self,
@@ -728,51 +687,12 @@ class RolloutCollector:
         cached_W: np.ndarray | None,
         multistep_steps: list[int],
     ) -> dict[int, np.ndarray]:
-        """Recall trajectory at each requested Hopfield iteration count, project
-        each via the cached Gram-Schmidt basis. Returns {step: (B, 2) np.float32}.
-        Zero arrays where memory is empty / W unavailable.
-        """
-        if not multistep_steps:
-            return {}
-        B = embeddings.shape[0]
-        out = {s: np.zeros((B, 2), dtype=np.float32) for s in multistep_steps}
-        if cached_W is None:
-            return out
-
-        if shared_hopfield:
-            hop = hopfields
-            if hop.num_memories == 0:
-                return out
-            traj = hop.recall_batch_trajectory(
-                embeddings, multistep_steps,
-                beta=self.cfg.hopfield.beta, alpha=self.cfg.hopfield.alpha,
-            )
-            for s, X_s in traj.items():
-                q_s = self.vectorhash.project_displacement(
-                    embeddings_np, X_s.cpu().numpy(), cached_W,
-                )
-                out[s] = q_s.astype(np.float32, copy=False)
-            return out
-
-        # Per-env Hopfields.
-        has_memory = [b for b in range(B) if hopfields[b].num_memories > 0]
-        if not has_memory:
-            return out
-        idx_t = torch.as_tensor(has_memory, device=self.device, dtype=torch.long)
-        W_stack = torch.stack([hopfields[b].W for b in has_memory], dim=0)
-        x0_stack = embeddings.index_select(0, idx_t)
-        traj = recall_per_env_batch_trajectory(
-            x0_stack, W_stack, multistep_steps,
-            beta=self.cfg.hopfield.beta, alpha=self.cfg.hopfield.alpha,
+        """See :func:`signal.multistep_q`."""
+        return signal.multistep_q(
+            self.vectorhash, self.cfg, embeddings_np, embeddings, hopfields,
+            shared_hopfield, cached_W, multistep_steps, self.embed_dim,
+            self.device,
         )
-        for s, X_s in traj.items():
-            recalled_np_full = np.zeros((B, self.embed_dim), dtype=np.float32)
-            recalled_np_full[has_memory] = X_s.cpu().numpy()
-            q_s = self.vectorhash.project_displacement(
-                embeddings_np, recalled_np_full, cached_W,
-            )
-            out[s] = q_s.astype(np.float32, copy=False)
-        return out
 
     def _compute_signal(
         self,
@@ -783,29 +703,9 @@ class RolloutCollector:
         cached_W: np.ndarray | None,
         recompute_mask: np.ndarray,
     ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-        """Compute Hopfield signal from embeddings and recalled patterns.
-
-        Returns (signal, q, W):
-            signal: (B, signal_dim) — 4 for discrete, 2 for continuous.
-            q:      (B, 2)          — raw projected displacement in (East, North)
-                                       coordinates, used for teacher forcing.
-            W:      (B, 2, embed_dim) — Gram-Schmidt basis. Caller is expected to
-                                        hold this as the next call's cached_W so
-                                        ``recompute_interval`` actually saves
-                                        work (otherwise W is recomputed every
-                                        step regardless of the config).
-        """
-        W = self.vectorhash.gram_schmidt_projection(
-            positions, env_offset,
-            cached_W=cached_W, recompute_mask=recompute_mask,
+        """See :func:`signal.project_to_signal`."""
+        return signal.project_to_signal(
+            self.vectorhash, embeddings_np, recalled_np, positions, env_offset,
+            self.cfg.agent, cached_W, recompute_mask,
         )
-        q = self.vectorhash.project_displacement(embeddings_np, recalled_np, W)  # (B, 2)
-        q = q.astype(np.float32, copy=False)
 
-        if self.cfg.agent.hopfield_mode == "discrete":
-            idx = classify_direction_batch(q)
-            signal = direction_to_onehot(idx)
-        else:
-            mag = np.linalg.norm(q, axis=-1, keepdims=True).clip(1e-8)
-            signal = (q / mag).astype(np.float32)
-        return signal, q, W

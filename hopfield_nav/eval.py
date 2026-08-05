@@ -24,12 +24,12 @@ import torch
 import torch.nn.functional as F
 
 from . import channels
+from . import signal as signal_ops
 from .config import TrainConfig
 from .env import GridEnv, ContinuousGridEnv, CARDINAL_ACTIONS, at_goal
 from .vectorhash import VectorHash
 from .hopfield import Hopfield
 from .agent import NavAgent
-from .utils import classify_direction_batch, direction_to_onehot
 
 
 def random_start(env_size: int, goal: tuple[int, int], rng: np.random.RandomState) -> tuple[int, int]:
@@ -155,34 +155,34 @@ def agent_step(
         and hopfield.num_memories > 0
     )
 
-    def _q_to_signal(q: np.ndarray) -> torch.Tensor:
-        """Convert a (1, 2) projected displacement into the agent's expected
-        signal form: one-hot (discrete), unit-vector (continuous), or raw q
-        when ``input_hopfield_raw`` is set in continuous mode."""
-        if cfg.agent.hopfield_mode == "discrete":
-            return torch.from_numpy(direction_to_onehot(
-                classify_direction_batch(q))).float().to(device)
-        if cfg.agent.input_hopfield_raw:
+    def _to_channel(sig: torch.Tensor, q: np.ndarray) -> torch.Tensor:
+        """Which of the two the policy is fed: the normalized signal, or raw q.
+
+        ``input_hopfield_raw`` hands the policy the unnormalized displacement,
+        so magnitude ("how far to the goal") survives alongside direction. Only
+        defined in continuous mode; discrete stays a one-hot. The rollout
+        collector makes the same choice at its own call site.
+        """
+        if cfg.agent.input_hopfield_raw and cfg.agent.hopfield_mode != "discrete":
             return torch.from_numpy(q.astype(np.float32)).to(device)
-        mag = np.linalg.norm(q, axis=-1, keepdims=True).clip(1e-8)
-        return torch.from_numpy((q / mag).astype(np.float32)).to(device)
+        return sig
 
     if not cfg.agent.input_hopfield_signal:
         hop_signal = torch.zeros(1, signal_dim, device=device)
     elif use_oracle:
-        g_arr = np.array([goal_local], dtype=np.int32)
-        goal_enc = vectorhash.get_encoded_state(g_arr, env_offset)
-        W = vectorhash.gram_schmidt_projection(pos_arr, env_offset)
-        q = vectorhash.project_displacement(embeddings_np, goal_enc, W)
-        hop_signal = _q_to_signal(q)
-    elif hopfield.num_memories > 0:
-        recalled = hopfield.recall_batch(
-            embeddings, steps=cfg.hopfield.steps,
-            beta=cfg.hopfield.beta, alpha=cfg.hopfield.alpha,
+        sig_np, q = signal_ops.oracle_signal_at(
+            vectorhash, embeddings_np, pos_arr, env_offset, goal_local,
+            cfg.agent,
         )
-        W = vectorhash.gram_schmidt_projection(pos_arr, env_offset)
-        q = vectorhash.project_displacement(embeddings_np, recalled.cpu().numpy(), W)
-        hop_signal = _q_to_signal(q)
+        hop_signal = _to_channel(
+            torch.from_numpy(sig_np).float().to(device), q)
+    elif hopfield.num_memories > 0:
+        # B=1 through the same batched implementation the collector uses.
+        sig_t, q, _mask, _W = signal_ops.hopfield_signal_at(
+            vectorhash, cfg, embeddings_np, embeddings, pos_arr, env_offset,
+            hopfield, True, device, embeddings.shape[1],
+        )
+        hop_signal = _to_channel(sig_t, q)
     else:
         hop_signal = torch.zeros(1, signal_dim, device=device)
 
@@ -201,24 +201,17 @@ def agent_step(
     if (cfg.agent.input_hopfield_multistep
             and cfg.agent.hopfield_mode == "continuous"):
         # Project the recall trajectory at each requested iteration count.
-        # Zeros when the Hopfield is empty: there is nothing to recall, so
-        # there is no displacement to project.
-        if hopfield.num_memories > 0:
-            traj = hopfield.recall_batch_trajectory(
-                embeddings, cfg.agent.input_hopfield_multistep,
-                beta=cfg.hopfield.beta, alpha=cfg.hopfield.alpha,
-            )
-            W = vectorhash.gram_schmidt_projection(pos_arr, env_offset)
-            for s in cfg.agent.input_hopfield_multistep:
-                q_s = vectorhash.project_displacement(
-                    embeddings_np, traj[s].cpu().numpy(), W,
-                )
-                values[channels.multistep_name(s)] = torch.from_numpy(
-                    q_s.astype(np.float32)).to(device)
-        else:
-            for s in cfg.agent.input_hopfield_multistep:
-                values[channels.multistep_name(s)] = torch.zeros(
-                    1, 2, device=device)
+        # multistep_q returns zeros when there is no basis, which is exactly
+        # the empty-Hopfield case: nothing recalled, no displacement to project.
+        W = (vectorhash.gram_schmidt_projection(pos_arr, env_offset)
+             if hopfield.num_memories > 0 else None)
+        msq = signal_ops.multistep_q(
+            vectorhash, cfg, embeddings_np, embeddings, hopfield, True, W,
+            cfg.agent.input_hopfield_multistep, embeddings.shape[1], device,
+        )
+        for s, q_s in msq.items():
+            values[channels.multistep_name(s)] = torch.from_numpy(
+                q_s.astype(np.float32)).to(device)
 
     rnn_input = channels.build_policy_input(
         channels.channel_specs(cfg.agent, embeddings.shape[1],
