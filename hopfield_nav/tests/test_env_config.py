@@ -12,7 +12,8 @@ Two things are pinned here.
    ``at_goal`` tests the float position while embeddings are read at the
    *snapped* cell, so a store fired "at goal" can write a neighbouring cell's
    embedding as the goal memory. ``EnvConfig.allow_offcell_store`` names that
-   behavior; its default (True) is what every run through 2026-08 did.
+   behavior and defaults to False, so the goal cell's embedding is stored
+   instead. True restores what every run through 2026-08 did.
 """
 from __future__ import annotations
 
@@ -93,10 +94,10 @@ def test_max_offcell_offset_matches_sampling(radius):
 
 
 @pytest.mark.parametrize("radius,allow,should_warn", [
-    (0.5, True, False),    # default config is silent
+    (0.5, True, False),    # radius too small for the two policies to differ
     (0.5, False, False),
-    (1.0, True, True),     # the case that actually bites
-    (1.0, False, False),   # suppressed: nothing to warn about
+    (1.0, True, True),     # opted back into writing a neighbour's embedding
+    (1.0, False, False),   # suppressed: a note, not a warning
     (2.0, True, True),
 ])
 def test_warning_gating(radius, allow, should_warn):
@@ -105,6 +106,26 @@ def test_warning_gating(radius, allow, should_warn):
     with contextlib.redirect_stdout(buf):
         warn_if_offcell_stores(cfg)
     assert ("WARNING" in buf.getvalue()) is should_warn
+
+
+def test_offcell_store_is_disallowed_by_default():
+    """The default must not let a store write a cell other than the goal's."""
+    assert EnvConfig().allow_offcell_store is False
+
+
+def test_suppression_is_reported_when_the_radius_makes_it_matter():
+    """Silent at 0.5 (nothing to substitute); a note above it."""
+    buf = io.StringIO()
+    with contextlib.redirect_stdout(buf):
+        warn_if_offcell_stores(EnvConfig(size=6, goal_radius=0.5))
+    assert buf.getvalue() == ""
+
+    buf = io.StringIO()
+    with contextlib.redirect_stdout(buf):
+        warn_if_offcell_stores(EnvConfig(size=6, goal_radius=1.0))
+    out = buf.getvalue()
+    assert "WARNING" not in out
+    assert "goal cell's embedding" in out
 
 
 # ---------------------------------------------------------------------------
@@ -127,7 +148,7 @@ def _coordinate_scaffold(Npos: int = 8) -> VectorHash:
     return vh
 
 
-def test_store_patterns_default_is_current_behavior():
+def test_store_patterns_allowed_is_a_plain_lookup():
     """allow_offcell=True must be byte-identical to get_encoded_state."""
     vh = _coordinate_scaffold()
     positions = np.array([[4, 4], [5, 4], [1, 1]], dtype=np.int32)

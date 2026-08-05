@@ -656,8 +656,8 @@ def main():
                         "Default 0.5 reproduces snap-equality on integer-snapped "
                         "positions; larger values fuzz the goal region.")
     p.add_argument("--allow_offcell_store",
-                   action=argparse.BooleanOptionalAction, default=True,
-                   help="Whether a store fired while at goal may write a cell other than the goal's. Only reachable at goal_radius > 0.5, where at_goal tests the float position but embeddings are read at the snapped cell. True (default) preserves the behavior of every run through 2026-08; --no-allow_offcell_store stores the goal cell's embedding instead.")
+                   action=argparse.BooleanOptionalAction, default=False,
+                   help="Whether a store fired while at goal may write a cell other than the goal's. Only reachable at goal_radius > 0.5, where at_goal tests the float position but embeddings are read at the snapped cell. Default False: the goal cell's embedding is stored instead, so the pattern written is the one navigation will later recall. Pass --allow_offcell_store for the pre-2026-08 behavior.")
     p.add_argument("--time_penalty", type=float, default=None,
                    help="Override EnvConfig.time_penalty (default 0.01). "
                         "Higher values directly punish step count, "

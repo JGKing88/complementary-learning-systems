@@ -89,26 +89,34 @@ def max_offcell_offset(goal_radius: float) -> int:
 
 
 def warn_if_offcell_stores(env_cfg, *, where: str = "") -> None:
-    """Print a one-line warning when stores can land off the goal cell.
+    """Report the at-goal store policy when the radius makes it observable.
 
-    Fires only when off-cell stores are allowed AND the radius is large enough
-    to reach a neighbouring cell -- i.e. exactly when a store fired "at goal"
-    may write a cell other than the goal's into memory, which is then what
-    navigation recalls. Silent in the default configuration.
+    Silent unless ``goal_radius`` is large enough that an at-goal position can
+    snap to some cell other than the goal's -- below that, the two policies are
+    the same thing. Above it, warn when off-cell stores are allowed (memory
+    receives a neighbour's embedding, which is then what navigation recalls) and
+    note it when they are suppressed (the substitution is active and worth
+    knowing about).
     """
-    if not getattr(env_cfg, "allow_offcell_store", True):
-        return
     offset = max_offcell_offset(env_cfg.goal_radius)
     if offset == 0:
         return
     prefix = f"[{where}] " if where else ""
-    print(
-        f"{prefix}WARNING: goal_radius={env_cfg.goal_radius} with "
-        f"allow_offcell_store=True — a store fired at goal can write the "
-        f"embedding of a cell up to {offset} cell(s) away from the goal along "
-        f"either axis. Pass --no-allow_offcell_store to store the goal cell's "
-        f"embedding instead."
-    )
+    if getattr(env_cfg, "allow_offcell_store", False):
+        print(
+            f"{prefix}WARNING: goal_radius={env_cfg.goal_radius} with "
+            f"allow_offcell_store=True — a store fired at goal can write the "
+            f"embedding of a cell up to {offset} cell(s) away from the goal "
+            f"along either axis. Drop --allow_offcell_store to store the goal "
+            f"cell's embedding instead."
+        )
+    else:
+        print(
+            f"{prefix}note: goal_radius={env_cfg.goal_radius} puts at-goal "
+            f"positions up to {offset} cell(s) from the goal; stores fired "
+            f"there write the goal cell's embedding, not the cell the agent "
+            f"is standing on (allow_offcell_store=False)."
+        )
 
 
 class EnvState(NamedTuple):

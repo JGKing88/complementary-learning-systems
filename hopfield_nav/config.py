@@ -48,13 +48,13 @@ class EnvConfig:
     # cell. Only reachable when goal_radius > 0.5 in continuous mode: at_goal
     # tests the float position while embeddings are read at the *snapped* cell,
     # so at radius 1.0 the agent can be at goal on a 4-connected neighbour and a
-    # store there writes the NEIGHBOUR's embedding as the goal memory. True
-    # (default) keeps that behavior -- it is what every run through 2026-08 did,
-    # including the run_agenthash.sh figure pipeline (GOAL_RADIUS=1). False
-    # substitutes the goal cell's embedding, so the stored pattern is the one
-    # navigation will later recall. Setup prints a warning when this is True
-    # and goal_radius > 0.5.
-    allow_offcell_store: bool = True
+    # store there would write the NEIGHBOUR's embedding as the goal memory.
+    # False (default) substitutes the goal cell's embedding instead, so the
+    # stored pattern is the one navigation will later recall. True restores the
+    # pre-2026-08 behavior, in which such a store wrote the neighbour; setup
+    # warns when that is combined with goal_radius > 0.5. At goal_radius <= 0.5
+    # the two are identical -- every at-goal position snaps to the goal cell.
+    allow_offcell_store: bool = False
 
 
 @dataclass

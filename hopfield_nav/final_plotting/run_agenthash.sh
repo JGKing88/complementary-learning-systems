@@ -56,6 +56,10 @@ TRAIN_STORE_LR=1e-5
 TRAIN_STORE_UPDATES_PER_ROLLOUT=1
 
 # Override EnvConfig.goal_radius from the saved checkpoint. Empty → use saved value.
+# 2026-08-05: at GOAL_RADIUS=1 an at-goal position can snap to a neighbouring
+# cell. Stores fired there now write the GOAL cell's embedding rather than the
+# neighbour's (EnvConfig.allow_offcell_store, default False). Pass
+# --allow_offcell_store to reproduce figures generated before this date.
 GOAL_RADIUS=1
 
 # Plotting
