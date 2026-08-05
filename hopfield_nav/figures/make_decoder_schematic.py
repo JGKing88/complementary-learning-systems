@@ -19,6 +19,10 @@ from matplotlib.patches import FancyArrowPatch, Rectangle
 from mpl_toolkits.mplot3d.art3d import Line3DCollection, Poly3DCollection
 from mpl_toolkits.mplot3d.proj3d import proj_transform
 
+import os
+
+from cls_paths import figures_dir
+
 # ---------- style (matches encoder_schematic.py) ----------
 rcParams["pdf.fonttype"] = 42
 rcParams["svg.fonttype"] = "none"
@@ -52,7 +56,10 @@ LABEL_SIZE = 14
 TITLE_SIZE = 15
 TITLE_COLOR = "#333333"
 
-OUT_DIR = "/orcd/home/002/jackking/cls/hopfield_nav/figures"
+# Schematics render to the shared figures root on pool, not into the
+# source tree. Override the root with the CLS_RUNS env var.
+OUT_DIR = str(figures_dir(ensure=True) / "schematics")
+os.makedirs(OUT_DIR, exist_ok=True)
 
 
 # ---------- 3D arrow patch with constant-size arrowhead ----------

@@ -6,7 +6,7 @@ Examples:
     python -m encoder_training.save_untrained_encoder \
         --encoder-type mlp --out-dim 256 --hidden-dim 1024 \
         --num-hidden-layers 4 --gain 5.0 \
-        --out /home/jackking/cls/encoders/untrained_mlp.pt
+        --out "$CLS_RUNS/encoders/untrained_mlp.pt"
 
     # Or load the model config from a JSON file:
     python -m encoder_training.save_untrained_encoder \

@@ -55,6 +55,7 @@ from matplotlib.patches import Circle
 import numpy as np
 import torch
 
+from cls_paths import REPO_ROOT, encoders_dir
 from hopfield_nav.agent import NavAgent, compute_input_dim
 from hopfield_nav.encoder import load_encoder
 from hopfield_nav.env import at_goal
@@ -617,16 +618,29 @@ def discover_checkpoints(checkpoint_dir: str) -> list[tuple[int, str]]:
 
 
 def _resolve_encoder_path(enc_path: str, checkpoint_dir: str) -> str:
-    """Resolve cfg.encoder_checkpoint relative to common roots if not absolute."""
+    """Resolve cfg.encoder_checkpoint relative to common roots if not absolute.
+
+    Checkpoints store the encoder path as saved at train time, which is usually
+    relative to the repo root ("encoders/run_<ts>/encoder_best.pt"). Since the
+    2026-08 storage migration the real directory lives under CLS_RUNS, with
+    "encoders" left in the repo as a symlink -- so the repo-root candidates below
+    still work, and the encoders_dir() candidate keeps working if that symlink is
+    ever removed.
+    """
     if os.path.isabs(enc_path) and os.path.exists(enc_path):
         return enc_path
     candidates = [
         enc_path,
         os.path.join(os.getcwd(), enc_path),
+        os.path.join(str(REPO_ROOT), enc_path),
         os.path.join("/home/jackking/cls", enc_path),
         os.path.join("/orcd/home/002/jackking/cls", enc_path),
         os.path.join(checkpoint_dir, enc_path),
     ]
+    # "encoders/<run>/<file>" -> "<CLS_RUNS>/encoders/<run>/<file>"
+    parts = os.path.normpath(enc_path).split(os.sep)
+    if parts and parts[0] == "encoders":
+        candidates.append(str(encoders_dir().joinpath(*parts[1:])))
     for c in candidates:
         if os.path.exists(c):
             return c

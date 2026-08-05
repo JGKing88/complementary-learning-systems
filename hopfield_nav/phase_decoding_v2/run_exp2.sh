@@ -21,6 +21,7 @@ unset CUDA_VISIBLE_DEVICES
 
 cd /home/jackking/cls
 
+source scripts/cls_env.sh
 CKPT="${CKPT:?CKPT is required}"
 ENCODER="${ENCODER:-}"
 TRIALS_DIR="${TRIALS_DIR:-}"
@@ -44,7 +45,7 @@ RANDOM_SUFFIX=""
 if [ -n "$RANDOM_AGENT" ] && [ "$RANDOM_AGENT" != "0" ]; then
     RANDOM_SUFFIX="_random_init_seed${RANDOM_INIT_SEED}"
 fi
-OUT="${OUT:-/home/jackking/cls/hopfield_nav/phase_decoding_v2/results/exp2_${CKPT_TAG}${RANDOM_SUFFIX}}"
+OUT="${OUT:-$CLS_RESULTS/phase_decoding_v2/exp2_${CKPT_TAG}${RANDOM_SUFFIX}}"
 mkdir -p "$OUT"
 
 ENCODER_FLAG=""

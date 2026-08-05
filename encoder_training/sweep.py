@@ -19,6 +19,8 @@ import subprocess
 import sys
 from datetime import datetime
 
+from cls_paths import REPO_ROOT, sweeps_dir
+
 # ---------------------------------------------------------------------------
 # Base training config — matches flags in encoder_training.train
 # Any value below can be overridden per-run by putting it in GRID.
@@ -107,8 +109,8 @@ SLURM = dict(
     cpus_per_task=4,
 )
 
-SWEEP_BASE_DIR = "/home/jackking/cls/encoder_training/sweeps"
-WORKDIR = "/orcd/home/002/jackking/cls"
+SWEEP_BASE_DIR = str(sweeps_dir())
+WORKDIR = str(REPO_ROOT)
 
 # `store_true` flags on train.py — these take no value, just the flag name.
 _BOOL_FLAGS = {"single_env_batch", "shuffle"}

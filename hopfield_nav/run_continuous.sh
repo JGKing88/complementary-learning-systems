@@ -20,6 +20,7 @@ unset CUDA_VISIBLE_DEVICES
 
 cd /home/jackking/cls
 
+source scripts/cls_env.sh
 python -m hopfield_nav.train \
     --encoder_checkpoint encoders/run_20260422_185816/encoder_best.pt \
     --fwhm_ratio 0.25 \

@@ -1,9 +1,34 @@
-# --- run outputs (moved to $CLS_RUNS on pool; repo entries are symlinks) ---
-wandb/
-slurm_outputs/
-encoders/
-checkpoints/
-checkpoint/
+# --- run outputs -----------------------------------------------------------
+# These were migrated to $CLS_RUNS on pool in 2026-08; what remains in the tree
+# is a symlink under the old name, so that relative paths saved inside old
+# checkpoints keep resolving. No trailing slashes: a symlink to a directory is
+# not a directory as far as gitignore is concerned.
+slurm_outputs
+wandb
+encoders
+checkpoints
+checkpoint
+checkpoint_rnn
+plots
+images
+npos_sweep
+displacement_plots
+smoke_pd2
+smoke_seq
+encoder_training/sweeps
+hopfield_nav/logs
+hopfield_nav/eval_results
+hopfield_nav/eval_all
+hopfield_nav/diagnostics
+hopfield_nav/inspect
+hopfield_nav/trajectory_plots
+hopfield_nav/phase_decoding
+hopfield_nav/phase_decoding_v2/results
+hopfield_nav/final_plotting/histories
+hopfield_nav/final_plotting/scaffold_cache
+hopfield_nav/final_plotting/figures
+hopfield_nav/final_plotting/final_figures
+hopfield_nav/final_plotting/model_comparison
 
 # --- large binaries ---
 *.pt

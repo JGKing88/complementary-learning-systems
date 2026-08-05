@@ -3,6 +3,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
+from cls_paths import encoders_dir
+
 
 @dataclass
 class EncoderModelConfig:
@@ -110,6 +112,6 @@ class TrainConfig:
     shuffle_inputs: bool = False
 
     # Checkpointing
-    save_dir: str = "/home/jackking/cls/encoders"
+    save_dir: str = str(encoders_dir())
     run_name: str = ""                  # empty → auto timestamp
     eval_every: int = 50                # epochs between nav evals (0 = off)

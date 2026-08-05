@@ -19,6 +19,7 @@ unset CUDA_VISIBLE_DEVICES
 
 cd /home/jackking/cls
 
+source scripts/cls_env.sh
 python -m hopfield_nav.train_rnn --mode mixed --n_envs 32 --n_updates 1000 \
 --save_dir checkpoint_rnn/pretrain_20x20_w_gridstate --batch_envs 32 --steps_per_rollout 100 \
 --size 20 --observation_size 60 --movement_mode continuous --hidden_size 128 --num_rnn_layers 1 \

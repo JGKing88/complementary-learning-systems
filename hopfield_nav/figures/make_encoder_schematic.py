@@ -8,6 +8,10 @@ from matplotlib import rcParams
 from matplotlib.patches import FancyArrowPatch, Circle
 from mpl_toolkits.mplot3d.art3d import Line3DCollection
 
+import os
+
+from cls_paths import figures_dir
+
 # ---------- style ----------
 rcParams["pdf.fonttype"] = 42
 rcParams["svg.fonttype"] = "none"
@@ -39,7 +43,10 @@ TITLE_SIZE = 15
 LABEL_SIZE = 15
 TITLE_COLOR = "#333333"
 
-OUT_DIR = "/orcd/home/002/jackking/cls/hopfield_nav/figures"
+# Schematics render to the shared figures root on pool, not into the
+# source tree. Override the root with the CLS_RUNS env var.
+OUT_DIR = str(figures_dir(ensure=True) / "schematics")
+os.makedirs(OUT_DIR, exist_ok=True)
 
 # ---------- data ----------
 n = 17

@@ -63,7 +63,8 @@ unset CUDA_VISIBLE_DEVICES
 
 cd /home/jackking/cls
 
-HIST="hopfield_nav/final_plotting/histories/${RUN_NAME}.json"
+source scripts/cls_env.sh
+HIST="$CLS_HISTORIES/${RUN_NAME}.json"
 PLOT_PREFIX="hopfield_nav/final_plotting/final_figures/${RUN_NAME}"
 
 EXTRA_FLAGS=()
@@ -87,7 +88,7 @@ PER_ITER_HISTS=()
 PIDS=()
 for k in $(seq 0 $((NUM_FULL_ITERS - 1))); do
     SEED_K=$((SEED + k))
-    HIST_K="hopfield_nav/final_plotting/histories/${RUN_NAME}_iter${k}.json"
+    HIST_K="$CLS_HISTORIES/${RUN_NAME}_iter${k}.json"
     PER_ITER_HISTS+=("$HIST_K")
     LOG_K="hopfield_nav/logs/${RUN_NAME}_iter${k}.log"
     mkdir -p "$(dirname "$LOG_K")"

@@ -62,6 +62,7 @@ source activate cls
 unset CUDA_VISIBLE_DEVICES
 cd /home/jackking/cls
 
+source scripts/cls_env.sh
 ARGS=(
     --checkpoint_dir "$CHECKPOINT_DIR"
     --mode "$MODE"

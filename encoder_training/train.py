@@ -28,6 +28,7 @@ from typing import Optional
 import numpy as np
 import torch
 
+from cls_paths import encoders_dir
 from .config import (
     TrainConfig, EncoderModelConfig, LossConfig, PatchConfig, NavEvalConfig,
 )
@@ -360,7 +361,7 @@ def main():
     p.add_argument("--nav_num_hopfields", type=int, default=20)
     p.add_argument("--nav_n_starts", type=int, default=100)
     # Checkpointing
-    p.add_argument("--save_dir", default="/home/jackking/cls/encoders")
+    p.add_argument("--save_dir", default=str(encoders_dir()))
     p.add_argument("--run_name", default="")
     p.add_argument("--eval_every", type=int, default=50)
 

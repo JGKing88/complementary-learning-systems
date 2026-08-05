@@ -35,7 +35,7 @@ KEEP_PER_ITER_HISTORIES=0       # 1 to keep the intermediate ${RUN_NAME}_iter*.j
 # future job with the same scaffold params reuses it instead of rebuilding.
 USE_SCAFFOLD_CACHE=1
 USE_MMAP=1
-SCAFFOLD_CACHE_ROOT="hopfield_nav/final_plotting/scaffold_cache"
+SCAFFOLD_CACHE_ROOT="$CLS_SCAFFOLD_CACHE"
 KEEP_SCAFFOLD_CACHE=1           # default keep — the cross-job cache is meant to persist
 
 # Optional cfg overrides
@@ -75,8 +75,9 @@ unset CUDA_VISIBLE_DEVICES
 
 cd /home/jackking/cls
 
-HIST="hopfield_nav/final_plotting/histories/${RUN_NAME}.json"
-PLOT_PREFIX="hopfield_nav/final_plotting/model_comparison/${RUN_NAME}"
+source scripts/cls_env.sh
+HIST="$CLS_HISTORIES/${RUN_NAME}.json"
+PLOT_PREFIX="$CLS_FIGURES/model_comparison/${RUN_NAME}"
 SCAFFOLD_DIR=""   # resolved by prep_scaffold from $SCAFFOLD_CACHE_ROOT
 
 EXTRA_FLAGS=()
@@ -123,7 +124,7 @@ PER_ITER_HISTS=()
 PIDS=()
 for k in $(seq 0 $((NUM_FULL_ITERS - 1))); do
     SEED_K=$((SEED + k))
-    HIST_K="hopfield_nav/final_plotting/histories/${RUN_NAME}_iter${k}.json"
+    HIST_K="$CLS_HISTORIES/${RUN_NAME}_iter${k}.json"
     PER_ITER_HISTS+=("$HIST_K")
     LOG_K="hopfield_nav/logs/${RUN_NAME}_iter${k}.log"
     mkdir -p "$(dirname "$LOG_K")"

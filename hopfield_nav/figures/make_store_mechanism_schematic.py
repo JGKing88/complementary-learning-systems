@@ -12,11 +12,18 @@ import matplotlib.pyplot as plt
 from matplotlib import rcParams
 from matplotlib.patches import Circle
 
+import os
+
+from cls_paths import figures_dir
+
 rcParams["pdf.fonttype"] = 42
 rcParams["svg.fonttype"] = "none"
 rcParams["font.family"] = "sans-serif"
 
-OUT_DIR = "/orcd/home/002/jackking/cls/hopfield_nav/figures"
+# Schematics render to the shared figures root on pool, not into the
+# source tree. Override the root with the CLS_RUNS env var.
+OUT_DIR = str(figures_dir(ensure=True) / "schematics")
+os.makedirs(OUT_DIR, exist_ok=True)
 
 env_center = np.array([0.0, 0.0])
 env_radius = 3.6

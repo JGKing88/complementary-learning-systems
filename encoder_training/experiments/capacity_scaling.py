@@ -30,6 +30,7 @@ import types
 import numpy as np
 import torch
 
+from cls_paths import figures_dir
 from encoder_training.experiments.encoder_scaffold import (
     ScaffoldCommon,
     EncoderScaffold,
@@ -212,7 +213,7 @@ def main() -> None:
     p.add_argument("--device", type=str, default=None)
     p.add_argument("--fwhm_ratio", type=float, default=None)
     p.add_argument("--out_dir", type=str,
-                   default="/home/jackking/cls/encoder_training/experiments/plots")
+                   default=str(figures_dir() / "capacity_scaling"))
     p.add_argument("--tag", type=str, default="",
                    help="Optional suffix for the output filenames.")
     args = p.parse_args()

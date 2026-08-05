@@ -20,6 +20,7 @@ unset CUDA_VISIBLE_DEVICES
 
 cd /home/jackking/cls
 
+source scripts/cls_env.sh
 # ---------------------------------------------------------------------------
 # Checkpoints to evaluate. One path per line.
 # ---------------------------------------------------------------------------
@@ -49,7 +50,7 @@ SKIP_REALISTIC=1
 SKIP_NAV_STOCH=1
 
 # Where to dump per-ckpt JSON result files (empty = don't write).
-OUTPUT_DIR="${OUTPUT_DIR:-/home/jackking/cls/hopfield_nav/eval_results/$(date +%Y%m%d_%H%M%S)}"
+OUTPUT_DIR="${OUTPUT_DIR:-$CLS_RESULTS/eval_results/$(date +%Y%m%d_%H%M%S)}"
 mkdir -p "$OUTPUT_DIR"
 
 # Optional encoder override — leave empty to use the checkpoint's saved path.

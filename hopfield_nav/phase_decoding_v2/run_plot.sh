@@ -16,7 +16,7 @@
 #   python -m hopfield_nav.phase_decoding_v2.plot \
 #       --metrics A.json B.json --labels trained random --out cmp.png
 
-##METRICS=/home/jackking/cls/hopfield_nav/phase_decoding_v2/results/exp1_phase_a_only_glamorous-field-97_phase_a_u360_stochastic_random_init_seed0 bash /home/jackking/cls/hopfield_nav/phase_decoding_v2/run_plot.sh
+##METRICS=$CLS_RESULTS/phase_decoding_v2/exp1_phase_a_only_glamorous-field-97_phase_a_u360_stochastic_random_init_seed0 bash /home/jackking/cls/hopfield_nav/phase_decoding_v2/run_plot.sh
 
 set -euo pipefail
 
@@ -25,6 +25,7 @@ source activate cls 2>/dev/null || true
 
 cd /home/jackking/cls
 
+source scripts/cls_env.sh
 METRICS="${METRICS:?METRICS is required (space-separated paths to metrics.json or run dirs)}"
 LABELS="${LABELS:-}"
 

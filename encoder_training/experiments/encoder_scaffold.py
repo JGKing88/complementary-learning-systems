@@ -47,12 +47,13 @@ from cls.vectorhash.assoc_utils_np import (
     pseudotrain_Wps,
     pseudotrain_Wgp,
 )
+from cls_paths import encoders_dir
 from encoder_training.train import load_encoder
 from encoder_training.utils import smooth_gbook
 from hopfield_nav.env import GridEnv
 
 
-DEFAULT_CKPT = "/home/jackking/cls/encoders/binary_20260409_083227/encoder_final.pt"
+DEFAULT_CKPT = str(encoders_dir() / "binary_20260409_083227" / "encoder_final.pt")
 
 
 # ---------------------------------------------------------------------------

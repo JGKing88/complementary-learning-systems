@@ -35,6 +35,7 @@ unset CUDA_VISIBLE_DEVICES
 
 cd /home/jackking/cls
 
+source scripts/cls_env.sh
 CKPT="/orcd/home/002/jackking/cls/checkpoint/phase_a_only_glamorous-field-97/phase_a_u360.pt"
 ENCODER="${ENCODER:-}"
 TRIALS_DIR="${TRIALS_DIR:-}"
@@ -58,7 +59,7 @@ RANDOM_SUFFIX=""
 if [ -n "$RANDOM_AGENT" ] && [ "$RANDOM_AGENT" != "0" ]; then
     RANDOM_SUFFIX="_random_init_seed${RANDOM_INIT_SEED}"
 fi
-OUT="${OUT:-/home/jackking/cls/hopfield_nav/phase_decoding_v2/results/exp1_${CKPT_TAG}_${POLICY}${RANDOM_SUFFIX}}"
+OUT="${OUT:-$CLS_RESULTS/phase_decoding_v2/exp1_${CKPT_TAG}_${POLICY}${RANDOM_SUFFIX}}"
 mkdir -p "$OUT"
 
 ENCODER_FLAG=""

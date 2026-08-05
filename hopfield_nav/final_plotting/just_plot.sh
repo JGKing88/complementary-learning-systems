@@ -25,8 +25,9 @@ unset CUDA_VISIBLE_DEVICES
 
 cd /home/jackking/cls
 
-HIST="hopfield_nav/final_plotting/histories/${RUN_NAME}.json"
-PLOT_PREFIX="hopfield_nav/final_plotting/model_comparison/${RUN_NAME}"
+source scripts/cls_env.sh
+HIST="$CLS_HISTORIES/${RUN_NAME}.json"
+PLOT_PREFIX="$CLS_FIGURES/model_comparison/${RUN_NAME}"
 
 python -u -m hopfield_nav.final_plotting.plotting \
     --history "$HIST" \
