@@ -5,7 +5,7 @@ Handoff note for the 2026-08 refactor. The original plan lives at
 ways listed under "Plan corrections" below.** Read this file first.
 
 Branch `refactor/2026-08`, 17 commits from tag `pre-refactor-2026-08` on `main`.
-Suite: 270 passing, tree clean, all entry points import.
+Suite: 274 passing, tree clean, all 25 entry points import.
 
 ```bash
 ./run_tests.sh
@@ -29,6 +29,7 @@ Suite: 270 passing, tree clean, all entry points import.
 | 5b | Inert at-goal move dropped from `move_loss` (**behavior change**) |
 | 5c | `evaluation/protocols.py` — one sequential protocol, −106 lines |
 | 5d | `training/rnn_sequential.py` + `vec_env.make_vec` — one RNN block loop, −66 lines |
+| 6-prep | Smoke tests for the four entry points Phase 6 will move |
 
 Each dedup was verified by running the pre-change code in a `git worktree` and
 diffing the output, not by trusting a green suite. All byte-identical.
@@ -104,21 +105,32 @@ exist; `make_vec` deduped; `baseline` no longer imports privates from
 - Move `RolloutBatch` out of `ppo.py` and the novelty oracles out of `bc.py`,
   so `rollout.py` stops importing upward.
 - `evaluation/checkpoint_io.py`: dedup `coerce_legacy_cfg` / `cfg_from_checkpoint`
-  / `build_eval_world` / `load_agent` / `scaffold_layout_dict` from 3 copies,
-  repoint **5** importers.
+  / `build_eval_world` / `load_agent` / `scaffold_layout_dict` from 3 copies and
+  repoint **5 importers**, verified 2026-08-05: `train_phase_b_only.py:34`,
+  `visualize_trajectories.py:65`, `final_plotting/agenthash.py:38`,
+  `final_plotting/prep_scaffold.py:41`, `phase_decoding_v2/rollout.py:20`. Two
+  import from `eval_checkpoints` and three from `eval_all`, so both source
+  modules must be drained before either can be deleted.
 - `rollout/distractors.py`: promote `eval._sample_distractor_goals` /
   `_goal_encoding`, replace 3 inline loops.
 - Delete `eval_checkpoints.py`, `eval_distractors.py` (after repointing).
 - Delete root strays; archive `hopfield_nav/*.md` and `notebooks/`.
 - The `git mv` to the layered tree + `tests/test_layering.py`.
 
-**Prerequisite.** These have *no* test coverage and Phase 6 changes their
-import paths — add a smoke test before moving them:
+**Prerequisite: done.** These four had no coverage at all, and Phase 6 changes
+every import they use — a stale import in an analysis script surfaces only when
+someone runs it. `tests/test_smoke_train.py` now covers all four
+(`test_eval_all_cli_end_to_end`, `test_train_phase_b_only_end_to_end`,
+`test_visualize_trajectories_renders`, `test_agenthash_run_sequential_outer_loop`),
+chained off a shared phase-A checkpoint fixture. Mutation-verified: repointing a
+`visualize_trajectories` import at a module Phase 6 has not created yet fails
+the suite. ~43s.
 
-- `train_phase_b_only`
-- `eval_all`'s `main()` (its helpers are covered, the CLI path is not)
-- `visualize_trajectories`' render path
-- `agenthash.run_sequential`'s outer loop (its `mini_episode` is covered)
+One thing that fixture exposed, worth knowing independently of the refactor:
+phase A writes its numbered checkpoint *inside* the eval branch, and
+`visualize_trajectories` skips files whose basename lacks an update number. At a
+large `--eval_every` only `phase_a_only_final.pt` exists, and the run cannot be
+visualized at all.
 
 ---
 
