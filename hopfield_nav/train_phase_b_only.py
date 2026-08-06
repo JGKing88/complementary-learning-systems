@@ -30,7 +30,9 @@ from .encoder import load_encoder, validate_config
 from .agent import NavAgent, compute_input_dim
 from .rollout import RolloutCollector
 from .ppo import ppo_update
-from .train_phased import setup_world, make_hops, set_phase_freeze, do_eval
+from .training.world_setup import (
+    do_eval, make_hops, set_phase_freeze, setup_world,
+)
 from .evaluation.checkpoint_io import cfg_from_checkpoint
 
 

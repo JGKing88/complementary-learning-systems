@@ -48,7 +48,7 @@ def _to_emit_metrics(m: dict) -> dict:
     }
 
 
-def _merge_iter_traces(
+def merge_iter_traces(
     iter_traces: list[tuple[list, list]],
 ) -> tuple[list, list]:
     """Merge N (trace, blocks) tuples into one combined (trace, blocks).
@@ -318,7 +318,7 @@ def main() -> None:
         last_vh_Npos = vh_Npos
         last_gbook_dim = gbook_dim
 
-    trace, blocks = _merge_iter_traces(iter_traces)
+    trace, blocks = merge_iter_traces(iter_traces)
     # Local rebinds for metadata block below.
     vh_lambdas = last_vh_lambdas
     vh_Npos = last_vh_Npos

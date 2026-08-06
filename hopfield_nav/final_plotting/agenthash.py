@@ -38,7 +38,7 @@ from ..eval import agent_step, random_start
 from ..evaluation.checkpoint_io import (
     build_eval_world, cfg_from_checkpoint, load_agent,
 )
-from ..final_plotting.baseline import _merge_iter_traces
+from ..final_plotting.baseline import merge_iter_traces
 from ..hopfield import Hopfield
 from ..vectorhash import VectorHash
 
@@ -503,7 +503,7 @@ def main() -> None:
             {int(j): int(c) for j, c in stored_at_goal_count.items()}
         )
 
-    trace, blocks = _merge_iter_traces(iter_traces)
+    trace, blocks = merge_iter_traces(iter_traces)
     run_name = args.run_name or os.path.splitext(os.path.basename(args.out))[0]
     history = {
         "metadata": {

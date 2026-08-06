@@ -33,9 +33,8 @@ from .hopfield import Hopfield
 from .agent import NavAgent, compute_input_dim
 from .rollout import RolloutCollector
 from .ppo import ppo_update
-from .train_phased import (
-    setup_world, make_hops, set_phase_freeze,
-    do_eval,
+from .training.world_setup import (
+    do_eval, make_hops, set_phase_freeze, setup_world,
 )
 
 

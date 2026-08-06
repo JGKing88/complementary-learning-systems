@@ -14,7 +14,7 @@ import torch
 from .agent_rnn import RNNAgent, compute_rnn_input_dim
 from .config import RNNAgentConfig
 from .env import GridEnv, at_goal
-from .rollout_rnn import _action_to_prev_channel, _build_rnn_input, _grid_state_vec
+from .rollout_rnn import action_to_prev_channel, build_rnn_input, grid_state_vec
 from .vec_env import ContinuousVecEnv, VecEnv, make_vec
 
 
@@ -91,15 +91,15 @@ def evaluate_nav_one_env(
         success |= at_goal_mask
 
         prev_act_ch = (
-            _action_to_prev_channel(prev_action_np, movement_mode)
+            action_to_prev_channel(prev_action_np, movement_mode)
             if (agent.cfg.input_prev_action and prev_action_np is not None) else None
         )
         grid_state = (
-            _grid_state_vec(positions, env_offset, sgb)
+            grid_state_vec(positions, env_offset, sgb)
             if (agent.cfg.input_grid_state and sgb is not None
                 and env_offset is not None) else None
         )
-        x = _build_rnn_input(sensory, prev_act_ch, prev_reward_np, grid_state,
+        x = build_rnn_input(sensory, prev_act_ch, prev_reward_np, grid_state,
                              agent.cfg, device)
         out = agent.act(x, h, deterministic=deterministic)
         h = out["h_next"]

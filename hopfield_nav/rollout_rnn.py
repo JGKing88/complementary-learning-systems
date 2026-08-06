@@ -33,27 +33,31 @@ class RNNRolloutBatch:
     student_move_action: torch.Tensor       # (B, T) int64 or (B, T, 2) float — for logging
 
 
-def _build_rnn_input(
+def build_rnn_input(
     sensory: np.ndarray,                    # (B, obs_size) float32
     prev_action: np.ndarray | None,         # (B, 4) or (B, 2) float32 or None
     prev_reward: np.ndarray | None,         # (B,) float32 or None
-    grid_state_vec: np.ndarray | None,      # (B, Ng) smoothed-gbook lookup or None
+    grid_state: np.ndarray | None,          # (B, Ng) smoothed-gbook lookup or None
     cfg: RNNAgentConfig,
     device: torch.device,
 ) -> torch.Tensor:
-    """Assemble per-step RNN input -> (B, 1, input_dim) tensor on device."""
+    """Assemble per-step RNN input -> (B, 1, input_dim) tensor on device.
+
+    (The ``grid_state`` argument is what ``grid_state_vec`` below returns; the
+    parameter is named differently so it does not shadow that function.)
+    """
     parts = [sensory]
     if cfg.input_prev_action and prev_action is not None:
         parts.append(prev_action)
     if cfg.input_prev_reward and prev_reward is not None:
         parts.append(prev_reward.reshape(-1, 1))
-    if cfg.input_grid_state and grid_state_vec is not None:
-        parts.append(grid_state_vec)
+    if cfg.input_grid_state and grid_state is not None:
+        parts.append(grid_state)
     x = np.concatenate(parts, axis=1)                # (B, input_dim)
     return torch.from_numpy(x.astype(np.float32)).unsqueeze(1).to(device)  # (B, 1, D)
 
 
-def _grid_state_vec(
+def grid_state_vec(
     positions: np.ndarray,                  # (B, 2) int — local env coords
     env_offset: tuple[int, int],            # (ox, oy) — env's offset in the global scaffold
     sgb: np.ndarray,                        # (Ng, Npos, Npos) — smooth_gbook(vh.gbook, lambdas, fwhm_ratio)
@@ -65,7 +69,7 @@ def _grid_state_vec(
     return sgb[:, gx, gy].T.astype(np.float32)
 
 
-def _action_to_prev_channel(
+def action_to_prev_channel(
     action: np.ndarray, movement_mode: str
 ) -> np.ndarray:
     """One-hot (discrete) or pass-through (continuous) for prev_action input."""
@@ -136,15 +140,15 @@ def collect_rollout_rnn(
 
         # Build RNN input and step the agent.
         prev_act_ch = (
-            _action_to_prev_channel(prev_action_np, movement_mode)
+            action_to_prev_channel(prev_action_np, movement_mode)
             if (agent.cfg.input_prev_action and prev_action_np is not None) else None
         )
         grid_state = (
-            _grid_state_vec(positions, env_offset, sgb)
+            grid_state_vec(positions, env_offset, sgb)
             if (agent.cfg.input_grid_state and sgb is not None
                 and env_offset is not None) else None
         )
-        x = _build_rnn_input(sensory, prev_act_ch, prev_reward_np, grid_state,
+        x = build_rnn_input(sensory, prev_act_ch, prev_reward_np, grid_state,
                              agent.cfg, device)
         out = agent.act(x, h, deterministic=deterministic)
         h = out["h_next"]

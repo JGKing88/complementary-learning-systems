@@ -16,7 +16,7 @@ import argparse
 import json
 import os
 
-from .baseline import _merge_iter_traces
+from .baseline import merge_iter_traces
 
 
 def _load_history(path: str) -> tuple[list, list, dict]:
@@ -54,7 +54,7 @@ def merge(in_paths: list[str], out_path: str, run_name: str | None) -> None:
         metadatas.append(md)
     _check_compat(metadatas)
 
-    merged_trace, merged_blocks = _merge_iter_traces(iter_traces)
+    merged_trace, merged_blocks = merge_iter_traces(iter_traces)
 
     n = len(metadatas)
     base_md = dict(metadatas[0])
