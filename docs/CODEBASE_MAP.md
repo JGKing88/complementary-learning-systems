@@ -78,6 +78,7 @@ is always loaded frozen (`hopfield_nav/encoder_io.py:50` `requires_grad_(False)`
 |---|---|---|---|
 | `gridcode/` | package | live | `gen_gbook_2d`, `smooth_g*`, and the associative trainers — the live remnant of `cls/`, extracted in phase 7 (§5). |
 | `hopfield/` | package | live | The Hopfield memory model, shared by both research stacks (§5). |
+| `run_manifest.py` | module | live | `run.json` beside every run's checkpoints: what the run was (git sha, argv, encoder identity, parent, checkpoint list). Top-level for `cls_paths`' reason — the CLIs write it, `analysis` reads it, `scripts/` is not a layered package. An index, never the source of truth: absent or corrupt, readers fall back to globbing. |
 | `encoder_training/` | package | live | Encoder architecture, contrastive training, nav-eval, sweeps. |
 | `hopfield_nav/` | package | live | Layered since phase 6: `world/` (env, vec_env, scaffold, memory, episode), `policy/`, `rollout/`, `updates/`, `evaluation/`, `training/`, plus the six CLIs at the top level. |
 | `analysis/` | package | live | Figure and experiment pipelines, moved out of `hopfield_nav` in phase 6: `continual/` (was `final_plotting`), `phase_decoding/` (was `phase_decoding_v2`), `schematics/` (was `figures`), `scaffold_experiments/` (was `encoder_training/experiments`). Nothing may import it, and nothing outside it may import matplotlib at module scope — see `hopfield_nav/tests/test_layering.py`. |
@@ -87,7 +88,7 @@ is always loaded frozen (`hopfield_nav/encoder_io.py:50` `requires_grad_(False)`
 | `docs/` | docs | live | `coordinate_conventions.md`, these three files, `REFACTOR_STATUS.md`, and `archive/` (the nine `hopfield_nav/*.md` experiment logs). |
 | `run.sh` | script | legacy | Root sbatch runner; invokes `python -m encoder_training.sweep_cosine_width`. `launch_jupyter.sh` went with the notebooks. |
 | `encoder_training/sweep_cosine_width.py` | script | legacy | Cosine-width sweep over the raw scaffold. Moved out of the repo root 2026-08-06 and repointed at `gridcode/` in phase 7. |
-| `scripts/` | scripts | live | `cls_env.sh` (shell counterpart of `cls_paths.py`), `migrate_outputs_to_pool.sh`, `check_entry_points.py` (runs all 30 entry points; the five guard-less `analysis/schematics/make_*.py` are executed in full against a scratch `CLS_RUNS`). |
+| `scripts/` | scripts | live | `cls_env.sh` (shell counterpart of `cls_paths.py`), `migrate_outputs_to_pool.sh`, `check_entry_points.py` (runs all 32 entry points; the five guard-less `analysis/schematics/make_*.py` are executed in full against a scratch `CLS_RUNS`), `backfill_manifests.py` (reconstructs `run.json` for pre-manifest run directories), `gc_runs.py` (classifies the run tree: test / empty / unfinished / orphaned / keep). |
 | `checkpoint/`, `checkpoints/`, `checkpoint_rnn/`, `encoders/`, `wandb/`, `plots/`, `images/`, `npos_sweep/`, `displacement_plots/`, `smoke_pd2/`, `smoke_seq/` | outputs | symlinks | Moved to `$CLS_RUNS` in phase 1; what remains in the tree is a symlink under the old name so paths saved in old checkpoints keep resolving (§6). |
 
 Package installability: since phase 7 `pyproject.toml` installs all five live

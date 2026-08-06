@@ -33,6 +33,12 @@ Every entry point is a module, run from the **repository root**:
 cd /home/jackking/cls && python -m hopfield_nav.train_phase_a_only --encoder_checkpoint ...
 ```
 
+**Updated 2026-08-06:** run *outputs* no longer depend on the CWD. All five
+trainers resolve their default `save_dir` through `cls_paths.run_dir()`, so
+`CLS_RUNS` relocates agent checkpoints along with everything else, and starting
+a job outside the repo root no longer creates a stray `./checkpoint/`. The `cd`
+is still required for *imports*.
+
 The root must be the CWD because `hopfield_nav` and `encoder_training` are not
 installed packages — `pyproject.toml` installs only `cls`. All sbatch scripts
 therefore contain `cd /home/jackking/cls` (note: `/home/jackking/cls` and
@@ -75,7 +81,7 @@ unset CUDA_VISIBLE_DEVICES
 - slurm stdout → `hopfield_nav/logs/slurm_*_%j.out`, `encoder_training/scripts/logs/`,
   `encoder_training/logs/<run_name>.log`.
 - With `--use_wandb`, the **wandb run name** becomes the checkpoint directory
-  name (`checkpoint/phase_a_only_<name>/`). Without it, a `YYYYmmdd_HHMMSS`
+  name (`$CLS_RUNS/agent_ckpts/phase_a_only_<name>/`). Without it, a `YYYYmmdd_HHMMSS`
   timestamp. That name is the only key linking wandb ↔ checkpoint ↔ slurm log.
 
 ---
@@ -86,7 +92,7 @@ unset CUDA_VISIBLE_DEVICES
  (1) encoder_training.train                 → encoders/<run>/encoder_best.pt
         │  contrastive embedding of grid codes; nav-eval gates "best"
         ▼
- (2) hopfield_nav.train_phase_a_only        → checkpoint/phase_a_only_<run>/phase_a_u{N}.pt
+ (2) hopfield_nav.train_phase_a_only        → $CLS_RUNS/agent_ckpts/phase_a_only_<run>/phase_a_u{N}.pt
      (or .train / .train_phased / .train_phase_b_only / .train_rnn)
         │  frozen encoder + VectorHash scaffold + Hopfield + GRU policy, PPO or BC
         ▼
@@ -263,7 +269,7 @@ Per update (`train.py:198-407`):
 8. Every `eval_every`: `eval_max = max(200, 5·size²)`, then `nav_det`,
    `nav_stoch`, `discovery`, `exploration`, and `union` (10 trials,
    `eval_max/2` steps).
-9. Every `save_every`: `checkpoint/<run>/hopfield_nav_update{u}.pt`.
+9. Every `save_every`: `$CLS_RUNS/agent_ckpts/<run>/hopfield_nav_update{u}.pt`.
 10. After training, `evaluate_realistic` if `realistic_steps_per_env > 0`.
 
 <details>
@@ -383,8 +389,9 @@ Not exposed (PPO defaults from `PPOConfig`): `gamma=0.99`, `gae_lambda=0.95`,
 | `--hopfield_oracle` | off | Eval-only: replace recall with the true goal-minus-current displacement. |
 | `--action_oracle` | off | Eval-only: replace movement with a greedy step toward the goal. |
 | `--eval_every` | `50` | Updates between evals (0 disables). |
+| `--ckpt_every` | `None` | Updates between checkpoints. `None` = follow `--eval_every`. Before 2026-08-06 the save sat inside the eval branch, so a large `--eval_every` also thinned the checkpoint series `analysis.trajectories` draws its rows from. |
 | `--save_every` | `100` | Updates between checkpoints. |
-| `--save_dir` | `None` | Defaults to `checkpoint/<wandb name or timestamp>`. |
+| `--save_dir` | `None` | Defaults to `$CLS_RUNS/agent_ckpts/<wandb name or timestamp>`. |
 | `--load_checkpoint` | `None` | Resume/fine-tune; also restores the optimizer state but forces the CLI lr onto every param group. |
 | `--seed` | `0` | torch + numpy + env seeds. |
 | `--device` | `cuda` | |
@@ -521,7 +528,8 @@ live gradients are the store surrogate and the store BCE.
 | `--phase_b_lr` | `3e-4` | Adam lr on the store head. |
 | `--bce_pos_weight_cap` | `5.0` | Cap on `n_neg/n_pos`; 0 = uncapped. Uncapped values (~19) previously drove high off-goal firing. |
 | `--steps_per_rollout` | `None` | Override the checkpoint's value. |
-| `--eval_every` | `5` | Also the checkpoint cadence (`phase_b_u{u}.pt`). |
+| `--eval_every` | `5` | Evaluation cadence. |
+| `--ckpt_every` | `None` | Checkpoint cadence (`phase_b_u{u}.pt`). `None` = follow `--eval_every`, which is what it did unconditionally before 2026-08-06. |
 | `--seed` / `--device` / `--use_wandb` / `--wandb_project` | `42` / `cuda` / off / `hopfield-nav-phase-b` | |
 
 ### 4.5 What one rollout actually does
@@ -854,6 +862,17 @@ Traced to source; use these when comparing numbers across docs.
 | `train_phase_b_only` | `agent_state_dict`, `config`, `update` |
 | `train_phased` | `agent_state_dict`, `config`, `phased_config` |
 | `train_rnn` | `agent_state_dict`, `optimizer_state_dict`, `cfg`, `history`, `env_goals` |
+
+Every run directory also carries a `run.json` manifest (`run_manifest.py`):
+kind, name, status, git sha/branch/dirty, argv, host, slurm job id, wandb
+block, `parent` (the `--load_checkpoint` it resumed from), `encoder`
+(path + sha256 + out_dim + lambdas + gain), the full config, and the checkpoint
+list with update numbers. It is an **index, not the source of truth** — the
+config embedded in each `.pt` remains authoritative, and a missing or corrupt
+manifest degrades to the pre-manifest behavior. `scripts/backfill_manifests.py`
+wrote one for each of the ~350 pre-existing run directories (marked
+`provenance: "backfilled"`, with argv/git/wandb null rather than guessed);
+`scripts/gc_runs.py` classifies the tree from them.
 
 Compatibility shims that exist in the code:
 
