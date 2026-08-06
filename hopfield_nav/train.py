@@ -13,6 +13,7 @@ import numpy as np
 import torch
 
 from cls_paths import run_dir, run_name
+import run_manifest
 from .config import (
     TrainConfig, EnvConfig, VectorHashConfig, HopfieldConfig,
     AgentConfig, PPOConfig, BCConfig, validate_train_config,
@@ -190,6 +191,16 @@ def train(cfg: TrainConfig) -> None:
     if cfg.save_dir is None:
         sub = run_name(*((wandb.run.name, wandb.run.id) if cfg.use_wandb else ()))
         cfg.save_dir = str(run_dir("train", sub))
+    else:
+        sub = os.path.basename(str(cfg.save_dir).rstrip("/"))
+
+    run_manifest.begin(
+        cfg.save_dir, kind="train", name=sub, config=asdict(cfg),
+        encoder=run_manifest.encoder_identity(
+            cfg.encoder_checkpoint, enc_cfg, encoder_gain),
+        parent=cfg.load_checkpoint,
+        wandb_run=wandb.run if cfg.use_wandb else None,
+    )
 
     # Distractor RNG for training: deterministic seeding lets the same distractor
     # patterns recur across updates, but with per-update offset so the agent can't
@@ -394,6 +405,8 @@ def train(cfg: TrainConfig) -> None:
                 "config": asdict(cfg),
                 "update": update,
             }, os.path.join(cfg.save_dir, f"hopfield_nav_update{update}.pt"))
+            run_manifest.record_checkpoint(
+                cfg.save_dir, f"hopfield_nav_update{update}.pt", update)
 
     print("Training complete.")
 
@@ -433,6 +446,8 @@ def train(cfg: TrainConfig) -> None:
                     tbl.add_data(gap, m["n_reaches"], m["mean_interval"])
                 log[f"realistic/drift/env_{j}"] = tbl
             wandb.log(log, step=cfg.n_updates)
+
+    run_manifest.finish(cfg.save_dir)
 
     if cfg.use_wandb:
         import wandb

@@ -31,6 +31,7 @@ import torch
 import torch.nn.functional as F
 
 from cls_paths import run_dir, run_name
+import run_manifest
 from .config import (
     TrainConfig, EnvConfig, VectorHashConfig, HopfieldConfig,
     AgentConfig, PPOConfig, PhasedConfig, validate_train_config,
@@ -291,6 +292,16 @@ def train_phased(cfg: TrainConfig, pcfg: PhasedConfig) -> None:
     if cfg.save_dir is None:
         sub = run_name(*((wandb.run.name, wandb.run.id) if cfg.use_wandb else ()))
         cfg.save_dir = str(run_dir("phased", sub))
+    else:
+        sub = os.path.basename(str(cfg.save_dir).rstrip("/"))
+
+    run_manifest.begin(
+        cfg.save_dir, kind="phased", name=sub, config=asdict(cfg),
+        encoder=run_manifest.encoder_identity(
+            cfg.encoder_checkpoint, enc_cfg, encoder_gain),
+        parent=cfg.load_checkpoint,
+        wandb_run=wandb.run if cfg.use_wandb else None,
+    )
 
     # ----- Phase 1 -----
     run_phase1(cfg, pcfg, worlds, agent, embed_dim, device)
@@ -358,6 +369,8 @@ def train_phased(cfg: TrainConfig, pcfg: PhasedConfig) -> None:
         "config": asdict(cfg),
         "phased_config": asdict(pcfg),
     }, os.path.join(cfg.save_dir, "phased_final.pt"))
+    run_manifest.record_checkpoint(cfg.save_dir, "phased_final.pt")
+    run_manifest.finish(cfg.save_dir)
     print(f"\nDone. Saved to {cfg.save_dir}/phased_final.pt")
 
     if cfg.use_wandb:

@@ -22,6 +22,7 @@ import numpy as np
 import torch
 
 from cls_paths import run_dir, run_name
+import run_manifest
 from .config import (
     TrainConfig, EnvConfig, VectorHashConfig, HopfieldConfig,
     AgentConfig, PPOConfig, PhasedConfigV3, validate_train_config,
@@ -365,6 +366,8 @@ def run_phase_a_sweep(
                 "config": asdict(cfg),
                 "update": update,
             }, os.path.join(cfg.save_dir, f"phase_a_u{update}.pt"))
+            run_manifest.record_checkpoint(
+                cfg.save_dir, f"phase_a_u{update}.pt", update)
 
     do_eval(cfg, agent, eval_world, device, "after_phase_a", use_wandb,
             max_steps=cfg.steps_per_rollout)
@@ -449,6 +452,16 @@ def train_phase_a_only(
     if cfg.save_dir is None:
         sub = run_name(*((wandb.run.name, wandb.run.id) if cfg.use_wandb else ()))
         cfg.save_dir = str(run_dir("phase_a_only", sub))
+    else:
+        sub = os.path.basename(str(cfg.save_dir).rstrip("/"))
+
+    run_manifest.begin(
+        cfg.save_dir, kind="phase_a_only", name=sub, config=asdict(cfg),
+        encoder=run_manifest.encoder_identity(
+            cfg.encoder_checkpoint, enc_cfg, encoder_gain),
+        parent=load_checkpoint,
+        wandb_run=wandb.run if cfg.use_wandb else None,
+    )
 
     run_phase_a_sweep(
         cfg, pcfg, worlds, agent, embed_dim, device,
@@ -478,6 +491,8 @@ def train_phase_a_only(
         "agent_state_dict": agent.state_dict(),
         "config": asdict(cfg),
     }, os.path.join(cfg.save_dir, "phase_a_only_final.pt"))
+    run_manifest.record_checkpoint(cfg.save_dir, "phase_a_only_final.pt")
+    run_manifest.finish(cfg.save_dir)
     print(f"\nDone. Saved to {cfg.save_dir}/phase_a_only_final.pt", flush=True)
 
     if cfg.use_wandb:

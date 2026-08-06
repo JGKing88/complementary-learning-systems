@@ -206,6 +206,33 @@ def test_eval_all_cli_end_to_end(sandbox, phase_a_checkpoint):
 
 
 @pytest.mark.slow
+def test_phase_a_writes_a_usable_manifest(phase_a_checkpoint, tiny_encoder):
+    """A real training run leaves a manifest that identifies it.
+
+    The unit tests in test_run_manifest.py drive the module directly; this is
+    the one that catches a trainer forgetting to call it, or calling it before
+    `cfg.encoder_checkpoint` is resolved.
+    """
+    import run_manifest
+
+    save_dir, _ckpt = phase_a_checkpoint
+    m = run_manifest.read(save_dir)
+    assert m is not None, "phase A wrote no run.json"
+    assert m["kind"] == "phase_a_only"
+    assert m["status"] == run_manifest.STATUS_DONE
+    assert m["config"]["env"]["size"] == 4          # the flag this run passed
+    assert m["encoder"]["path"] == str(tiny_encoder)
+    assert m["encoder"]["sha256"] == run_manifest.file_digest(tiny_encoder)
+
+    # The manifest's checkpoint list agrees with what is on disk, which is the
+    # property `analysis.trajectories` now depends on instead of a basename regex.
+    from_manifest = {os.path.basename(p) for _u, p in
+                     run_manifest.checkpoints_in(save_dir)}
+    on_disk = {p.name for p in save_dir.glob("*_u*.pt")}
+    assert from_manifest == on_disk, f"manifest {from_manifest} != disk {on_disk}"
+
+
+@pytest.mark.slow
 def test_train_phase_b_only_end_to_end(sandbox, tiny_encoder, phase_a_checkpoint):
     """Phase B resumes from a phase-A checkpoint and trains the store head."""
     root, env = sandbox

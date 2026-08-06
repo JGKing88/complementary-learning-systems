@@ -78,6 +78,7 @@ LAYERS: dict[str, int] = {
     "gridcode": 0,                     # the live remnant of cls/vectorhash, phase 7
     "hopfield": 0,                     # the memory model, shared by both stacks
     "cls_paths": 0,
+    "run_manifest": 0,                 # run.json: written by the CLIs, read by analysis
 
     "hopfield_nav.world": 1,           # env, vec_env, scaffold, memory, episode
     "hopfield_nav.policy": 2,          # agent, agent_rnn, channels

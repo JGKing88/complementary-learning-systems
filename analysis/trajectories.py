@@ -27,10 +27,12 @@ can read changes off the row-axis as training progresses.
 Encoder path is read from each checkpoint's saved ``cfg.encoder_checkpoint``
 and is NOT a CLI flag.
 
-Checkpoint files matched: anything in ``--checkpoint_dir`` whose basename ends
-in ``_u{N}.pt`` or ``_update{N}.pt`` (so both ``hopfield_nav_update200.pt``
-and ``phase_a_u200.pt`` style runs work). Files like ``phase_a_only_final.pt``
-that lack an update number are skipped.
+Checkpoints come from the run's ``run.json`` manifest when it has one. For the
+run directories written before manifests existed, the fallback matches any
+basename ending in ``_u{N}.pt`` or ``_update{N}.pt`` (so both
+``hopfield_nav_update200.pt`` and ``phase_a_u200.pt`` style runs work); files
+like ``phase_a_only_final.pt`` that lack an update number are skipped either
+way, since the figure's rows are indexed by update.
 
 Usage:
     python -m analysis.trajectories \\
@@ -42,9 +44,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
-import glob
 import os
-import re
 from dataclasses import dataclass
 
 import matplotlib
@@ -56,6 +56,7 @@ import numpy as np
 import torch
 
 from cls_paths import REPO_ROOT, encoders_dir
+import run_manifest
 from hopfield_nav.encoder_io import load_encoder
 from hopfield_nav.world.env import at_goal
 from hopfield_nav.evaluation.metrics import agent_step, random_start
@@ -598,23 +599,20 @@ def plot_grid(
 # Checkpoint discovery
 # ---------------------------------------------------------------------------
 
-# Matches the update suffix on every checkpoint naming scheme we use:
-#   hopfield_nav_update{N}.pt   (PPO runs)
-#   phase_a_u{N}.pt             (phase A / B / C training)
-#   phase_b_u{N}.pt
-#   phase_c_u{N}.pt
-# Excludes things like phase_a_only_final.pt which have no update number.
-CKPT_RE = re.compile(r"(?:_u|_update)(\d+)\.pt$")
-
-
 def discover_checkpoints(checkpoint_dir: str) -> list[tuple[int, str]]:
-    out: list[tuple[int, str]] = []
-    for p in glob.glob(os.path.join(checkpoint_dir, "*.pt")):
-        m = CKPT_RE.search(os.path.basename(p))
-        if m:
-            out.append((int(m.group(1)), p))
-    out.sort(key=lambda x: x[0])
-    return out
+    """[(update, path)] for a run directory, sorted by update.
+
+    Delegates to `run_manifest.checkpoints_in`, which reads the run's manifest
+    when it has one and otherwise falls back to the regex over filenames that
+    used to live here. The regex is not gone -- there are 2503 checkpoints
+    across ten naming schemes in directories written before manifests existed,
+    and they still have to be readable.
+
+    What the manifest buys is that the *next* naming scheme costs nothing: the
+    update number is recorded at write time instead of being recovered from a
+    basename by a pattern that has to be extended each time.
+    """
+    return run_manifest.checkpoints_in(checkpoint_dir)
 
 
 def _resolve_encoder_path(enc_path: str, checkpoint_dir: str) -> str:

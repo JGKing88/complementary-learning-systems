@@ -20,6 +20,7 @@ import numpy as np
 import torch
 
 from cls_paths import run_dir, run_name
+import run_manifest
 from .policy.agent_rnn import RNNAgent, compute_rnn_input_dim
 from .updates.bc_rnn import bc_rnn_update
 from .config import EnvConfig, RNNAgentConfig, RNNBCConfig, RNNTrainConfig, VectorHashConfig
@@ -230,8 +231,17 @@ def train(cfg: RNNTrainConfig) -> None:
     if cfg.save_dir is None:
         sub = run_name(wandb_run.name if wandb_run is not None else None)
         cfg.save_dir = str(run_dir("rnn", sub))
+    else:
+        sub = os.path.basename(str(cfg.save_dir).rstrip("/"))
     os.makedirs(cfg.save_dir, exist_ok=True)
     print(f"save_dir={cfg.save_dir}")
+
+    # The RNN baseline has no encoder: it reads sensory input straight from the
+    # env codebook, which is the point of the comparison.
+    run_manifest.begin(
+        cfg.save_dir, kind="rnn", name=sub, config=asdict(cfg),
+        parent=cfg.load_checkpoint, wandb_run=wandb_run,
+    )
 
     if cfg.mode in ("sequential", "finetune"):
         history = train_sequential(
@@ -268,6 +278,8 @@ def train(cfg: RNNTrainConfig) -> None:
         "history": history,
         "env_goals": [env.goal_location for env in envs],
     }, ckpt_path)
+    run_manifest.record_checkpoint(cfg.save_dir, "final.pt")
+    run_manifest.finish(cfg.save_dir)
     print(f"Saved {ckpt_path}")
 
     if wandb_run is not None:
