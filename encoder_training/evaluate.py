@@ -1,7 +1,7 @@
 """Navigation-evaluation wrapper.
 
 Replaces the old pearson/triplet metrics with the real nav-eval pipeline
-from `cls.eval.nav_eval` — that is what we actually care about.
+from `encoder_training.nav_eval` — that is what we actually care about.
 """
 from __future__ import annotations
 
@@ -10,7 +10,7 @@ from typing import Optional
 import numpy as np
 import torch
 
-from cls.eval.nav_eval import (
+from .nav_eval import (
     encode_full_grid as _encode_full_grid,
     sample_train_eval_envs,
     sample_val_eval_envs,

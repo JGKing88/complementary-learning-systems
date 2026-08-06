@@ -20,7 +20,7 @@ from hopfield_nav.config import (
     VectorHashConfig, validate_train_config,
 )
 from hopfield_nav.world.env import CARDINAL_ACTIONS, ContinuousGridEnv, GridEnv
-from hopfield_nav.world.memory import Hopfield, recall_per_env_batch
+from hopfield import Hopfield, recall_per_env_batch
 from hopfield_nav.rollout.oracles import bfs_action_batch_discrete
 from hopfield_nav.utils import (
     classify_direction_batch, direction_to_onehot, gram_schmidt_2d_batch,

@@ -13,7 +13,7 @@ import pytest
 import torch
 
 from hopfield_nav.rollout import signal as signal_ops
-from hopfield_nav.world.memory import Hopfield
+from hopfield import Hopfield
 from hopfield_nav.tests.fixtures import StubVectorHash, make_stub_cfg
 
 EMBED_DIM = 8

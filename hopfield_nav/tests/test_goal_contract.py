@@ -57,7 +57,7 @@ import torch
 
 from hopfield_nav.world.env import CARDINAL_ACTIONS, GridEnv, at_goal, make_env
 from hopfield_nav.config import EnvConfig
-from hopfield_nav.world.memory import Hopfield
+from hopfield import Hopfield
 from hopfield_nav.tests.fixtures import StubVectorHash, make_stub_cfg
 from hopfield_nav.world.vec_env import VecEnv
 

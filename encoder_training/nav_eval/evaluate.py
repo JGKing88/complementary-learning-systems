@@ -8,10 +8,8 @@ continuous trajectories across randomly placed environments.
 import os
 import numpy as np
 import torch
-import matplotlib.pyplot as plt
-from matplotlib.lines import Line2D
 
-from cls.hopfield import Hopfield
+from hopfield import Hopfield
 
 
 # ---------------------------------------------------------------------------
@@ -165,7 +163,7 @@ def sample_val_eval_envs(grid_H, grid_W, train_y0s, train_x0s, train_patch_size,
 # ---------------------------------------------------------------------------
 # Core primitives live in cls.nav — re-exported here for backward compatibility.
 
-from cls.nav import (
+from .nav import (
     compute_projection_matrix as _compute_projection_matrix,
     continuous_step as _continuous_step,
     simulate_trajectory,
@@ -268,6 +266,8 @@ def _eval_single_hopfield(encoded_Phi, chunk_placements, goal_locations, hopfiel
             for i, (sx, sy) in enumerate(starts):
                 heatmap[sx, sy] = 1.0 if i in success_indices else 0.0
 
+            import matplotlib.pyplot as plt
+            from matplotlib.lines import Line2D
             fig, ax = plt.subplots(figsize=(7, 7))
             im = ax.imshow(heatmap.T, origin='lower', cmap='RdYlGn', vmin=0, vmax=1,
                            extent=[0, eval_env_size, 0, eval_env_size])

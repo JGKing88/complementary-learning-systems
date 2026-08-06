@@ -19,7 +19,7 @@ from hopfield_nav.evaluation import metrics as ev
 from hopfield_nav.rollout import distractors
 from hopfield_nav.world.env import make_env
 from hopfield_nav.evaluation.batched import batched_navigation_trials
-from hopfield_nav.world.memory import Hopfield
+from hopfield import Hopfield
 from hopfield_nav.tests.fixtures import make_collector, make_stub_cfg
 
 EMBED_DIM = 8

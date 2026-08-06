@@ -24,7 +24,7 @@ from hopfield_nav.evaluation.checkpoint_io import (
     load_agent,
     scaffold_layout_dict,
 )
-from hopfield_nav.world.memory import Hopfield
+from hopfield import Hopfield
 
 
 @dataclass

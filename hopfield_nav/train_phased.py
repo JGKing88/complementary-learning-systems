@@ -37,7 +37,7 @@ from .config import (
 )
 from .encoder_io import load_encoder, validate_config
 from .world.env import warn_if_offcell_stores
-from .world.memory import Hopfield
+from hopfield import Hopfield
 from .policy.agent import NavAgent, compute_input_dim
 from .rollout.collector import RolloutCollector
 from .updates.ppo import ppo_update

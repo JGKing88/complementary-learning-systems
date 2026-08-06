@@ -21,7 +21,7 @@ from ..policy import channels
 from . import signal
 from ..world import episode
 from ..config import TrainConfig
-from ..world.memory import Hopfield, recall_per_env_batch, recall_per_env_batch_trajectory
+from hopfield import Hopfield, recall_per_env_batch, recall_per_env_batch_trajectory
 from ..world.scaffold import VectorHash
 from ..world.vec_env import VecEnv, ContinuousVecEnv
 from ..world.env import GridEnv, at_goal

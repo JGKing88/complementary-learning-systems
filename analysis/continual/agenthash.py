@@ -39,7 +39,7 @@ from hopfield_nav.evaluation.checkpoint_io import (
     build_eval_world, cfg_from_checkpoint, load_agent,
 )
 from .baseline import merge_iter_traces
-from hopfield_nav.world.memory import Hopfield
+from hopfield import Hopfield
 from hopfield_nav.world.scaffold import VectorHash
 
 

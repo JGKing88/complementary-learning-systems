@@ -107,7 +107,11 @@ def simulate_trajectory(
         state = torch.from_numpy(encoded_Phi[grid_pos[0], grid_pos[1]].copy()).float()
         current_np = state.numpy()
 
-        next_state, _ = hopfield.recall(
+        # The shared Hopfield returns the recalled state. The `cls` copy this
+        # replaced returned `(state, cos_sims)` and this line discarded the
+        # second element -- it only ever filled in when a `target=` was passed,
+        # which no caller did.
+        next_state = hopfield.recall(
             state, steps=1, beta=gain, alpha=alpha,
             use_tanh=True, normalize_each=True,
         )

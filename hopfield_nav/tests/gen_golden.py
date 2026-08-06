@@ -40,7 +40,7 @@ import numpy as np
 import torch
 
 from hopfield_nav.world.env import GridEnv, make_env
-from hopfield_nav.world.memory import Hopfield
+from hopfield import Hopfield
 from hopfield_nav.tests.fixtures import (
     RecordingAgent, StubVectorHash, make_collector, make_stub_cfg,
 )

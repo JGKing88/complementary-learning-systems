@@ -21,7 +21,7 @@ import numpy as np
 import torch
 
 from ..config import AgentConfig, TrainConfig
-from ..world.memory import (
+from hopfield import (
     Hopfield, recall_per_env_batch, recall_per_env_batch_trajectory,
 )
 from ..utils import classify_direction_batch, direction_to_onehot

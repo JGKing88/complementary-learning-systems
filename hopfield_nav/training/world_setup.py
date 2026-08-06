@@ -23,7 +23,7 @@ from ..evaluation.metrics import (
     evaluate_exploration, evaluate_goal_discovery, evaluate_navigation,
     evaluate_union_coverage,
 )
-from ..world.memory import Hopfield
+from hopfield import Hopfield
 from ..world.scaffold import VectorHash
 
 

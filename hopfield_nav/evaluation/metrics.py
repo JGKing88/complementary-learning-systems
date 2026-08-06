@@ -32,7 +32,7 @@ from ..config import TrainConfig
 from ..world.env import GridEnv, ContinuousGridEnv, CARDINAL_ACTIONS, at_goal
 from ..rollout.distractors import goal_encoding, sample_distractors
 from ..world.scaffold import VectorHash
-from ..world.memory import Hopfield
+from hopfield import Hopfield
 from ..policy.agent import NavAgent
 
 

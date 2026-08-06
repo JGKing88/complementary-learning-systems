@@ -63,7 +63,7 @@ from hopfield_nav.rollout.distractors import goal_encoding, sample_distractors
 from hopfield_nav.evaluation.checkpoint_io import (
     build_eval_world, cfg_from_checkpoint, load_agent,
 )
-from hopfield_nav.world.memory import Hopfield
+from hopfield import Hopfield
 
 
 MODES = ("combined", "explore_only", "exploit_only")

@@ -35,7 +35,7 @@ import torch
 from ..policy import channels
 from ..rollout import signal as signal_ops
 from ..world.env import GridEnv, at_goal
-from ..world.memory import Hopfield
+from hopfield import Hopfield
 from ..world.vec_env import make_vec
 from ..world import episode
 

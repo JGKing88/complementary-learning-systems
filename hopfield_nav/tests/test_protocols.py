@@ -19,7 +19,7 @@ import torch
 from hopfield_nav.world.env import make_env
 from hopfield_nav.evaluation import protocols
 from analysis.continual.agenthash import mini_episode
-from hopfield_nav.world.memory import Hopfield
+from hopfield import Hopfield
 from hopfield_nav.tests.fixtures import make_collector, make_stub_cfg
 
 EMBED_DIM = 8
