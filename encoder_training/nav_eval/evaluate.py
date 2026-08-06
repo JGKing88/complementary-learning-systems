@@ -161,7 +161,7 @@ def sample_val_eval_envs(grid_H, grid_W, train_y0s, train_x0s, train_patch_size,
 # ---------------------------------------------------------------------------
 # Trajectory simulation
 # ---------------------------------------------------------------------------
-# Core primitives live in cls.nav — re-exported here for backward compatibility.
+# Core primitives live in .nav — re-exported here for backward compatibility.
 
 from .nav import (
     compute_projection_matrix as _compute_projection_matrix,
