@@ -38,11 +38,11 @@ The scientific chain, in the order the code executes it:
 ```
 lambdas = [11,12,13]
    │
-   │  cls.vectorhash.assoc_utils_np_2D.gen_gbook_2d
+   │  gridcode.codebook.gen_gbook_2d
    ▼
 gbook  (Ng, Npos, Npos)          Ng = Σλ², Npos = Πλ  — one-hot per module
    │
-   │  encoder_training.utils.smooth_gbook(fwhm_ratio)     Gaussian bump per module
+   │  gridcode.smoothing.smooth_gbook(fwhm_ratio)     Gaussian bump per module
    ▼
 Phi    (Ng, Npos, Npos)          smoothed grid codes
    │
@@ -76,25 +76,27 @@ is always loaded frozen (`hopfield_nav/encoder_io.py:50` `requires_grad_(False)`
 
 | Path | Kind | Status | Notes |
 |---|---|---|---|
-| `cls/` | package | mostly legacy, narrowly live | Original VectorHash research library. Live code uses only a handful of functions (§5). |
+| `gridcode/` | package | live | `gen_gbook_2d`, `smooth_g*`, and the associative trainers — the live remnant of `cls/`, extracted in phase 7 (§5). |
+| `hopfield/` | package | live | The Hopfield memory model, shared by both research stacks (§5). |
 | `encoder_training/` | package | live | Encoder architecture, contrastive training, nav-eval, sweeps. |
 | `hopfield_nav/` | package | live | Layered since phase 6: `world/` (env, vec_env, scaffold, memory, episode), `policy/`, `rollout/`, `updates/`, `evaluation/`, `training/`, plus the six CLIs at the top level. |
 | `analysis/` | package | live | Figure and experiment pipelines, moved out of `hopfield_nav` in phase 6: `continual/` (was `final_plotting`), `phase_decoding/` (was `phase_decoding_v2`), `schematics/` (was `figures`), `scaffold_experiments/` (was `encoder_training/experiments`). Nothing may import it, and nothing outside it may import matplotlib at module scope — see `hopfield_nav/tests/test_layering.py`. |
-| `tests/` | tests | legacy | Only exercises `cls.*` (`GridWMEnv`, `cls.utils.GridUtils.VectorHash`, `cls.encoder`, `cls.hopfield`). Nothing here covers `hopfield_nav` or `encoder_training`. |
-| `hopfield_nav/tests/` | tests | live | The suite. Run it with `./run_tests.sh` (phase 0 added the runner and `[tool.pytest.ini_options]`). 312 passing as of phase 6, including golden regression fixtures, the at-goal contract spec, four entry-point smoke tests, and the layering test. |
+| ~~`tests/`~~ | — | deleted | Exercised only `cls.*` and had not collected since a top-level `train.py` disappeared. Removed with `cls/` in phase 7; both are at tag `legacy-cls`. |
+| `hopfield_nav/tests/` | tests | live | The suite, and the only one. Run it with `./run_tests.sh`. 313 passing as of phase 7, including golden regression fixtures, the at-goal contract spec, four entry-point smoke tests, and the layering test. |
 | ~~`notebooks/`~~ | — | archived | Moved to `$CLS_RUNS/archive/notebooks/` in phase 6 (52 MB of Nov 2025 – Apr 2026 exploration that predates `encoder_training/`). |
 | `docs/` | docs | live | `coordinate_conventions.md`, these three files, `REFACTOR_STATUS.md`, and `archive/` (the nine `hopfield_nav/*.md` experiment logs). |
 | `run.sh` | script | legacy | Root sbatch runner; invokes `python -m encoder_training.sweep_cosine_width`. `launch_jupyter.sh` went with the notebooks. |
-| `encoder_training/sweep_cosine_width.py` | script | legacy | Cosine-width sweep over the raw scaffold. Moved out of the repo root 2026-08-06. Still imports `cls.utils.GridUtils` and `cls.vectorhash.*`, so phase 7 must repoint it at `gridcode/` rather than archive it. |
+| `encoder_training/sweep_cosine_width.py` | script | legacy | Cosine-width sweep over the raw scaffold. Moved out of the repo root 2026-08-06 and repointed at `gridcode/` in phase 7. |
 | `scripts/` | scripts | live | `cls_env.sh` (shell counterpart of `cls_paths.py`), `migrate_outputs_to_pool.sh`, `check_entry_points.py` (runs all 30 entry points; the five guard-less `analysis/schematics/make_*.py` are executed in full against a scratch `CLS_RUNS`). |
 | `checkpoint/`, `checkpoints/`, `checkpoint_rnn/`, `encoders/`, `wandb/`, `plots/`, `images/`, `npos_sweep/`, `displacement_plots/`, `smoke_pd2/`, `smoke_seq/` | outputs | symlinks | Moved to `$CLS_RUNS` in phase 1; what remains in the tree is a symlink under the old name so paths saved in old checkpoints keep resolving (§6). |
 
-Package installability: `pyproject.toml` declares only `cls` as a package
-(`include = ["cls*"]`). `hopfield_nav`, `encoder_training` and `analysis` are
-**not** installed — they work because every entry point is run as
-`python -m ...` from the repo root, so the CWD is on `sys.path`. This is why
-every sbatch script contains `cd /home/jackking/cls`. Phase 7 fixes
-`pyproject.toml` to install all of them.
+Package installability: since phase 7 `pyproject.toml` installs all five live
+packages (`gridcode`, `hopfield`, `encoder_training`, `hopfield_nav`,
+`analysis`). Before that it declared only `cls`, and the rest worked solely
+because every entry point runs as `python -m ...` from the repo root, putting
+the CWD on `sys.path` — which is why every sbatch script still starts with
+`cd /home/jackking/cls`. The project is still *named* `cls`: the repo
+directory, the conda env and 309 checkpoint paths all say so.
 
 ---
 
@@ -236,7 +238,7 @@ trajectories, in `combined` / `explore_only` / `exploit_only` mode.
 | `models.py` | `GridEncoder` (MLP) and `GridEncoderCNN`; both end with `tanh(gain · z)` then L2-normalize, so outputs live on the unit sphere. `create_encoder()` factory. |
 | `losses.py` | `mse_attract_repel` (the "binary method": near pairs → cos 1, far pairs → cos 0), plus `cka_loss` and `uniformity_loss` for ablation. |
 | `train.py` | Training loop with per-epoch gain annealing (`gain_start → gain_end`), uniformity ramp, periodic nav-eval, `encoder_best.pt` / `encoder_final.pt`. |
-| `evaluate.py` | Thin wrapper that delegates to `cls.eval.nav_eval`. |
+| `evaluate.py` | Thin wrapper that delegates to `encoder_training.nav_eval`. |
 | `evaluate_nav.py` | Standalone nav eval of a saved encoder checkpoint (16 flags, optional JSON line for sweeps). |
 | `sweep.py` | Cartesian-product SLURM sweep driver — **edit `BASE`/`GRID`/`EVAL`/`SLURM` dicts in the file**, then `python -m encoder_training.sweep [name]`. |
 | ~~`plot_sweep.py`~~ | Moved to `analysis/encoder_sweep.py` (it draws figures). Aggregates `meta.json` + `result.json` per run → bar chart, CSV, 1-D curve or 2-D heatmap. |
@@ -246,29 +248,34 @@ trajectories, in `combined` / `explore_only` / `exploit_only` mode.
 | `experiments/capacity_scaling.py` | Sweeps the number of stored patterns for encoder-tap vs random-projection scaffolds; plots accuracy vs flip probability. |
 
 The nav-eval that gates `encoder_best.pt` is **not** the agent eval — it is a
-policy-free simulation (`cls/nav.py:simulate_trajectory`) in which the agent
+policy-free simulation (`encoder_training/nav_eval/nav.py:simulate_trajectory`) in which the agent
 always steps along the projected Hopfield recall direction. An encoder is
 "good" if that open-loop chase reaches the goal from a lattice of starts.
 
 ---
 
-## 5. `cls/` — legacy library, narrow live surface
+## 5. `gridcode/` and `hopfield/` — the shared bottom of the stack
 
-| Module | Lines | Still used? |
+Phase 7 deleted `cls/`, the original VectorHash research library: ~5,900 lines
+of which ~300 were on the live path. Those became two small top-level packages
+that both `hopfield_nav` and `encoder_training` import, plus one subpackage.
+`cls/` itself is at tag `legacy-cls` if you need it.
+
+| Module | Lines | What |
 |---|---:|---|
-| `cls/vectorhash/assoc_utils_np.py` | 957 | **Yes** — `nonlin`, `train_pbook`, `train_gcpc`, `pseudotrain_Wsp`, `pseudotrain_Wps` (imported by `hopfield_nav/world/scaffold.py`, `analysis/scaffold_experiments/encoder_scaffold.py`). |
-| `cls/vectorhash/assoc_utils_np_2D.py` | 227 | **Yes** — `gen_gbook_2d` (imported by `hopfield_nav/world/scaffold.py`, `encoder_training/data.py`, `encoder_scaffold.py`). |
-| `cls/eval/nav_eval.py` | 409 | **Yes** — the encoder nav-eval (`encoder_training/evaluate.py`). |
-| `cls/nav.py` | 137 | **Yes** — projection + trajectory primitives used by `nav_eval.py` and `encoder_training/trajectory.py`. |
-| `cls/hopfield.py` | 182 | **Yes** (encoder side only). Note: its `recall()` returns `(x, cos_sims)`, whereas `hopfield_nav/world/memory.py`'s returns a bare tensor — two incompatible Hopfield classes coexist. |
-| `cls/vectorhash/{seq,sensory,sensgrid,sens_pcrec,sens_sparseproj,senstranspose,theory,capacity,data}_utils.py`, `assoc_utils.py` | ~3200 | No live importer outside `cls` itself and the root `tests/`. |
-| `cls/utils/GridUtils.py` | 767 | Only `cls/envs/environments.py` and root `tests/`. |
-| `cls/envs/environments.py` | 978 | Only root `tests/`. (`WMEnv` is the package's public API in `cls/__init__.py`.) |
-| `cls/models.py`, `cls/encoder.py`, `cls/types.py` | 543 | `cls/encoder.py` + `cls/hopfield.py` used by root `tests/`; `models.py` has no live importer. |
+| `gridcode/codebook.py` | 56 | `gen_gbook_2d` — the one-hot grid book everything starts from. |
+| `gridcode/smoothing.py` | 100 | `smooth_g`, `smooth_gbook` — one-hot columns to Gaussian bumps. Was `encoder_training/utils.py`; there were three copies of this (also `cls/utils/GridUtils.py` and a shim in `hopfield_nav/utils.py`), verified numerically identical before consolidating. |
+| `gridcode/assoc.py` | 204 | `nonlin`, `relu`, `train_pbook`, `train_gcpc`, `pseudotrain_W{sp,ps,gp}` — the place-book and pseudoinverse trainers `VectorHash` builds a scaffold from. The transitive closure of what the live code imported, out of 958 lines. |
+| `hopfield/core.py` | 208 | `Hopfield` (Hebbian store, iterative tanh recall) plus the batched per-env free functions. Was `hopfield_nav/world/memory.py`; promoted so the encoder side can use it without importing `hopfield_nav`, which layering rule 2 forbids. |
+| `encoder_training/nav_eval/` | 549 | The encoder's own nav metric, absorbed from `cls/eval/nav_eval.py` + `cls/nav.py`. Walks a Hopfield recall gradient over `encoded_Phi` directly — no policy, no `GridEnv`, no `VectorHash`. |
 
-So: about 1,700 of ~5,900 lines in `cls/` are on the live path, and they are
-almost all pure functions (`gen_gbook_2d` and the pseudo-inverse trainers) plus
-the encoder nav-eval.
+**The second Hopfield class is gone.** `cls/hopfield.py` and
+`hopfield_nav/world/memory.py` implemented the same synchronous dynamics; the
+`cls` one additionally had an asynchronous coordinate-wise mode and cosine-
+similarity tracking that no caller used, and returned `(x, cos_sims)` where the
+other returned `x`. They were verified equivalent over 54 cases before the copy
+was deleted. The return-type mismatch broke exactly one line
+(`nav_eval/nav.py:110`), caught immediately by the differential probe.
 
 ---
 

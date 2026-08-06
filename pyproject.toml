@@ -5,9 +5,9 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "cls"
 version = "0.1.0"
-description = "Navigation environments for agent trajectories on a square grid."
+description = "Hopfield-memory navigation: grid-code encoder, scaffold, policy, evaluation."
 readme = "README.md"
-requires-python = ">=3.8"
+requires-python = ">=3.9"
 authors = [{ name = "Project Authors" }]
 license = { text = "MIT" }
 
@@ -24,15 +24,31 @@ train = [
 [tool.setuptools]
 include-package-data = true
 
+# All five live packages, in layer order. Until phase 7 this said
+# `include = ["cls*"]` and nothing else was installed -- the others worked only
+# because every entry point runs as `python -m ...` from the repo root, which is
+# why every sbatch script starts with `cd /home/jackking/cls`. `cls` itself is
+# gone (tag `legacy-cls`); the project name is kept because the repo directory,
+# the conda env and 309 checkpoint paths are all called that.
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["cls*"]
-exclude = ["notebooks*", "tests*", "examples*"]
+include = [
+  "gridcode*",
+  "hopfield*",
+  "encoder_training*",
+  "hopfield_nav*",
+  "analysis*",
+]
+exclude = ["docs*", "scripts*"]
+
+# `requires-python` is >=3.9 rather than the old >=3.8: the source uses PEP 604
+# unions (`int | None`) at runtime in dataclass fields, which 3.8 cannot parse.
+# The environment is 3.13.
 
 [tool.pytest.ini_options]
-# The live suite is hopfield_nav/tests. The root tests/ directory only exercises
-# the legacy `cls` package and does not currently collect (see run_tests.sh);
-# it is retired together with `cls/` in phase 7 of the 2026-08 refactor.
+# The live suite. The root tests/ directory was deleted in phase 7 together
+# with the `cls` package it exercised; it had not collected since a top-level
+# train.py disappeared some time before 2026-08.
 testpaths = ["hopfield_nav/tests"]
 python_files = ["test_*.py"]
 addopts = "-q --strict-markers"
@@ -42,4 +58,3 @@ markers = [
 filterwarnings = [
   "ignore::DeprecationWarning",
 ]
-

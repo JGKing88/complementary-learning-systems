@@ -66,7 +66,6 @@ LAYERS: dict[str, int] = {
     "encoder_training": 0,
     "gridcode": 0,                     # the live remnant of cls/vectorhash, phase 7
     "hopfield": 0,                     # the memory model, shared by both stacks
-    "cls": 0,                          # legacy, being retired in phase 7
     "cls_paths": 0,
 
     "hopfield_nav.world": 1,           # env, vec_env, scaffold, memory, episode
@@ -100,16 +99,11 @@ SKIP_DIRS = {"__pycache__", ".ipynb_checkpoints", ".git", "docs", "tests"}
 # row only with a reason, and prefer fixing the import.
 PRIVATE_IMPORT_ALLOWLIST: set[tuple[str, str, str]] = set()
 
-# Packages exempt from rule 4 (figure code lives in analysis/).
-#
-# `cls` is the legacy research library phase 7 retires. Eight of its modules
-# import matplotlib at module scope, including `cls/eval/nav_eval.py`, which is
-# *live* -- `encoder_training/evaluate.py` imports it, so every encoder nav-eval
-# drags the figure stack in. Refactoring a package that is about to be deleted
-# is not worth it; absorbing those six live functions into `gridcode/` and
-# `encoder_training/nav_eval/` is phase 7's job, and this exemption goes away
-# with the package.
-FIGURE_RULE_EXEMPT = ("cls",)
+# Packages exempt from rule 4 (figure code lives in analysis/). Empty since
+# phase 7: the only entry was `cls`, whose eight module-scope matplotlib imports
+# went with the package. `encoder_training/nav_eval` inherited one of them and
+# now imports lazily inside the single branch that plots.
+FIGURE_RULE_EXEMPT: tuple[str, ...] = ()
 
 # (importer, target) pairs allowed to import upward *inside a function body*.
 # Each one is a deliberate inversion: the lower layer hands off to the higher

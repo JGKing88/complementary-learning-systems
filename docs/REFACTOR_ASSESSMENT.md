@@ -104,7 +104,7 @@ implementations of "the same" protocol.
 (`hopfield_nav/encoder_io.py` → `(encoder, cfg, gain)`;
 `encoder_training/train.py` → `(encoder, ckpt)`). Two `Hopfield` classes whose
 `recall()` return types differ (`cls/hopfield.py` returns `(x, cos_sims)`,
-`hopfield_nav/world/memory.py` returns `x`).
+`hopfield/core.py` returns `x`).
 
 ### 2.2 The five training entry points
 
@@ -195,7 +195,7 @@ cls/                                  repo root
 │   └── assoc.py                      nonlin, train_pbook, train_gcpc, pseudotrain_W{sp,ps}
 ├── encoder_training/
 │   ├── config.py  data.py  losses.py  models.py  train.py
-│   ├── nav_eval/                     ← absorbed from cls/eval/nav_eval.py + cls/nav.py + cls/hopfield.py
+│   ├── nav_eval/                     ← absorbed from encoder_training/nav_eval/evaluate.py + encoder_training/nav_eval/nav.py + cls/hopfield.py
 │   └── experiments/
 ├── hopfield_nav/
 │   ├── config.py                     UNCHANGED field names (checkpoint compat)
@@ -309,7 +309,7 @@ continues past the current paper.
 ### Phase 5 — retire `cls/` (1–2 days)
 18. Move `gen_gbook_2d`, `nonlin`, `train_pbook`, `train_gcpc`,
     `pseudotrain_Wsp`, `pseudotrain_Wps` into `gridcode/`; move
-    `cls/eval/nav_eval.py`, `cls/nav.py`, `cls/hopfield.py` into
+    `encoder_training/nav_eval/evaluate.py`, `encoder_training/nav_eval/nav.py`, `cls/hopfield.py` into
     `encoder_training/nav_eval/` (and reconcile the two `Hopfield` classes:
     give the encoder-side one the same `recall()` contract, or make the
     encoder-side path use `hopfield_nav`'s).

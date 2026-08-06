@@ -4,8 +4,11 @@ Handoff note for the 2026-08 refactor. The original plan lives at
 `~/.claude/plans/ok-that-sounds-good-drifting-whale.md`; **it is stale in the
 ways listed under "Plan corrections" below.** Read this file first.
 
-Branch `refactor/2026-08`, 22 commits from tag `pre-refactor-2026-08` on `main`.
-Suite: 312 passing, tree clean, all 25 entry points import.
+Branch `refactor/2026-08`, 29 commits from tag `pre-refactor-2026-08` on `main`.
+Suite: 313 passing, tree clean, all 30 entry points import.
+
+**Phases 0-2 and 4-7 are done. Phase 3 (one training loop) is not started, and
+is the only structural work left.**
 
 ```bash
 ./run_tests.sh
@@ -38,6 +41,10 @@ python scripts/check_entry_points.py
 | 6b | `training/world_setup.py` — world setup leaves `train_phased`; four privates promoted |
 | 6c/6d | Strays deleted, experiment record archived to `docs/archive/`, bulk artifacts to `$CLS_RUNS` |
 | 6a/6e | Cycles broken, layered tree, `tests/test_layering.py` |
+| 6f | The three figure generators the move left behind go to `analysis/`; two more layering rules |
+| 7a | `gridcode/` — `gen_gbook_2d`, `smooth_g*`, the assoc trainers. **Last back-edge removed** |
+| 7b | `hopfield/` — one memory model for both stacks; `encoder_training/nav_eval/` absorbs the encoder nav eval |
+| 7c | `cls/` and the root `tests/` deleted (tag `legacy-cls`); `pyproject.toml` installs all five packages |
 
 Each dedup was verified by running the pre-change code in a `git worktree` and
 diffing the output, not by trusting a green suite. All byte-identical except
@@ -48,9 +55,11 @@ where noted.
 ## The layout, as it now stands
 
 ```
+gridcode/      codebook smoothing assoc     grid codes + associative trainers
+hopfield/      core                         the memory model, shared
 hopfield_nav/
   config.py  utils.py  encoder_io.py       leaves; anything may import them
-  world/       env vec_env scaffold memory episode
+  world/       env vec_env scaffold episode
   policy/      agent agent_rnn channels
   rollout/     collector rnn signal oracles distractors types
   updates/     ppo bc bc_rnn
@@ -60,10 +69,14 @@ hopfield_nav/
   train.py train_phased.py train_phase_a_only.py train_phase_b_only.py
   train_rnn.py eval_all.py                        <- the six CLIs
 analysis/
+  trajectories.py  encoder_sweep.py
   continual/ phase_decoding/ schematics/ scaffold_experiments/
 encoder_training/
-cls/                                        legacy, retired in phase 7
+  nav_eval/                                 the encoder's own nav metric
 ```
+
+`cls/` is gone. Everything live was extracted first; the package itself is at
+tag `legacy-cls` along with the root `tests/` that only exercised it.
 
 `hopfield_nav/tests/test_layering.py` enforces five rules by AST walk: no
 upward imports at module scope; `encoder_training` never imports
@@ -139,6 +152,23 @@ on these points.**
 12. **`HopfieldConfig.init_mode` is live, not dead.** The plan lists it as
     undecided. It is read by `train.py:74` and set/restored at three sites in
     `train_phased.py`. Kept.
+13. **The two `Hopfield` classes could not be reconciled "onto the
+    `hopfield_nav` core dynamics"** as phase 7 asks, because that requires
+    `encoder_training` to import `hopfield_nav` — the one direction the layering
+    test forbids outright. The model moved out from under both instead:
+    `hopfield_nav/world/memory.py` became the top-level `hopfield/` package at
+    layer 0. Same outcome (one class), legal direction.
+14. **`sweep_cosine_width.py` is a repoint target, not an archive candidate.**
+    The plan says to move it to `docs/archive/`. It moved into
+    `encoder_training/` instead on 2026-08-06 and imports three things
+    `gridcode/` now owns, so deleting `cls/` without touching it would have
+    broken it.
+15. **Three figure generators were left in library packages by 6e.** Phase 6
+    sorted entry points by "has a `__main__` guard" rather than by what they
+    produce. `visualize_trajectories`, `viz_sensory` and
+    `encoder_training/plot_sweep` all moved to `analysis/` in 6f, and layering
+    rule 4 now makes it impossible to repeat. `viz_sensory` was additionally
+    *broken* by the 6e move — it defaulted its output into a deleted directory.
 
 ---
 
@@ -170,37 +200,42 @@ on these points.**
 
 ---
 
-## Phase 7 — next
+## What is left
 
-Unchanged from the plan, plus what phase 6 left it:
+**Phase 3 — one training loop.** The only structural work outstanding.
+`training/phases.py` holds a `PhaseSpec` (which Hopfield role per env, which
+heads frozen, which schedules, which update function); `training/loop.py` runs
+a list of them; the five training entry points become five `PhaseSpec` lists
+behind one CLI. This is the point at which the CLIs would move under
+`training/` (see correction 10) and the sbatch drivers would need rewriting.
+Validate by reproducing one known Phase-A variant end to end at a fixed seed.
 
-- Move the six live `cls/vectorhash` functions plus `smooth_g` / `smooth_gbook`
-  (currently re-exported through `hopfield_nav/utils.py`) into a top-level
-  `gridcode/`. That removes the last back-edge,
-  `hopfield_nav.utils → encoder_training.utils`.
-- Move `cls/eval/nav_eval.py`, `cls/nav.py`, `cls/hopfield.py` into
-  `encoder_training/nav_eval/`, reconciling the two `Hopfield` classes onto the
-  `hopfield_nav` core dynamics.
-- `sweep_cosine_width.py` moved from the repo root into `encoder_training/`
-  on 2026-08-06, so it is kept rather than archived. It still imports
-  `cls.utils.GridUtils.smooth_gbook` and `cls.vectorhash.{assoc_utils_np,
-  assoc_utils_np_2D}`, which makes it a **repoint target for `gridcode/`**, not
-  a deletion. `run.sh` invokes it as `python -m encoder_training.sweep_cosine_width`.
-- Tag `legacy-cls`, delete `cls/` and the root `tests/`.
-- **Update `pyproject.toml`**: it still installs only `cls` (`include =
-  ["cls*"]`) and still excludes a `notebooks*` directory that no longer exists.
-  `hopfield_nav`, `encoder_training` and `analysis` work only because every
-  entry point runs as `python -m` from the repo root.
-- Add `gridcode` and the retired `cls` to `LAYERS` in `tests/test_layering.py`.
+**Phase 4c′ — batching the other three evaluators.** Deferred, and it is a
+decision about what the metrics mean rather than a refactor. `evaluate_goal_discovery`
+and `evaluate_exploration` keep stepping while the agent stands on the goal, so
+they need reward-without-teleport. That is expressible as `episode.OBSERVE`
+since 5a. Adopting the *training* contract instead would make goal_discovery
+stricter (one store chance per visit, matching training) and would inflate
+`mean_coverage` for exploration, since a teleport is a free random jump. Both
+rows are marked `DECISION` in `tests/test_goal_contract.py`.
 
-Do **not** delete `run_phase_a_sweep_evelina.sh` — it is the only record of what
-the 101 named variants were.
+**`experiments/` as config.** The assessment proposes replacing
+`run_phase_a_sweep_evelina.sh`'s 101-variant `case` block with one YAML per
+variant plus a `launch.py`. Not started. Do **not** delete the shell script even
+then — it is the only record of what those variants were.
 
-Phase 3 (one training loop: `training/phases.py` + `training/loop.py`, the five
-entry points as `PhaseSpec` lists behind one CLI) remains unstarted, and is the
-point at which the CLIs would move under `training/`. Phase 4c′ (batching the
-other three evaluators) is deferred — it is a decision about what the metrics
-mean, not a refactor; see the plan.
+Smaller things, none blocking:
+
+- `hopfield_nav/utils.py` is now three unrelated things: Gram-Schmidt, direction
+  classification, and a re-export of `gridcode.smoothing`. It could be split or
+  the re-export dropped once callers are repointed.
+- `analysis/schematics/make_*_schematic.py` have no `__main__` guard — their
+  bodies run at import. `check_entry_points.py` runs them in full for that
+  reason. Giving them `main()` functions would be tidier.
+- `VectorHash.build_scaffold` draws `Wpg` and its prune mask from the **global**
+  `np.random`, not from `cfg.seed` (`world/scaffold.py:26-27, 83-86`). Runs
+  reproduce only because the entry points call `np.random.seed(cfg.seed)` first.
+- `run.sh` still hardcodes `/home/$USER/cls` and runs a legacy `cls`-era sweep.
 
 ---
 
