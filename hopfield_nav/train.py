@@ -28,7 +28,7 @@ from .updates.ppo import ppo_update
 from .updates.bc import bc_update
 from .evaluation.metrics import (
     evaluate_navigation, evaluate_goal_discovery, evaluate_exploration,
-    evaluate_realistic, evaluate_union_coverage,
+    evaluate_realistic,
 )
 
 
@@ -366,17 +366,11 @@ def train(cfg: TrainConfig) -> None:
                 num_trials=n_trials, max_steps=eval_max,
                 n_distractors_list=dist_list,
             )
-            union = evaluate_union_coverage(
-                agent, val_envs, val_vh, val_idxs, cfg, device,
-                num_trials=10, max_steps=eval_max // 2,
-                n_distractors_list=dist_list,
-            )
 
             print(f"  eval nav_det: {nav_det}")
             print(f"  eval nav_stoch: {nav_stoch}")
             print(f"  eval disc: {disc}")
             print(f"  eval expl: {expl}")
-            print(f"  eval union: {union}")
 
             if cfg.use_wandb:
                 import wandb

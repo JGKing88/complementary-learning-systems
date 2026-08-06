@@ -21,7 +21,6 @@ from ..config import TrainConfig
 from ..world.env import GridEnv, make_env
 from ..evaluation.metrics import (
     evaluate_exploration, evaluate_goal_discovery, evaluate_navigation,
-    evaluate_union_coverage,
 )
 from hopfield import Hopfield
 from ..world.scaffold import VectorHash
@@ -150,24 +149,14 @@ def do_eval(cfg, agent, eval_world, device, update_tag: str,
     print(f"  [{update_tag}] nav={nav}")
     print(f"  [{update_tag}] disc={disc}")
     print(f"  [{update_tag}] expl={expl}")
-    union_cov = None
-    union_trials = getattr(cfg, "union_cov_trials", 0)
-    if union_trials > 0:
-        union_cov = evaluate_union_coverage(
-            agent, val_envs, val_vh, val_idxs, cfg, device,
-            num_trials=union_trials, max_steps=max_steps,
-            n_distractors_list=dist, deterministic=True,
-        )
-        print(f"  [{update_tag}] union_cov={union_cov}")
     if use_wandb:
         import wandb
         log = {}
         for n_d in dist:
             for k, v in nav[n_d].items(): log[f"eval/nav_{n_d}/{k}"] = v
             for k, v in disc[n_d].items(): log[f"eval/disc_{n_d}/{k}"] = v
+            # union_coverage / redundancy now arrive inside expl.
             for k, v in expl[n_d].items(): log[f"eval/expl_{n_d}/{k}"] = v
-            if union_cov is not None:
-                for k, v in union_cov[n_d].items(): log[f"eval/union_cov_{n_d}/{k}"] = v
         log["phase_tag"] = update_tag
         wandb.log(log)
 

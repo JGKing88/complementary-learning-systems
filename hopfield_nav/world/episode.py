@@ -104,8 +104,7 @@ SITE_CONTRACTS: dict[str, GoalContract] = {
     "agenthash_mini_episode": ENDS_ON_ARRIVAL,
     "phase_decoding_v2_rollout": ENDS_ON_ARRIVAL,
     "evaluate_goal_discovery": TRAINING,
-    "evaluate_exploration": OBSERVE,
-    "evaluate_union_coverage": OBSERVE,
+    "evaluate_exploration": NO_GOALS,
     "visualize_trajectories_combined": TRAINING,
 }
 

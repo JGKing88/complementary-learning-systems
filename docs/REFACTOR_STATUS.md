@@ -46,6 +46,7 @@ python scripts/check_entry_points.py
 | 7b | `hopfield/` — one memory model for both stacks; `encoder_training/nav_eval/` absorbs the encoder nav eval |
 | 7c | `cls/` and the root `tests/` deleted (tag `legacy-cls`); `pyproject.toml` installs all five packages |
 | 8 | `evaluate_goal_discovery` takes the training contract: teleport on arrival (**behavior change**) |
+| 8b | `evaluate_exploration` takes `NO_GOALS`, absorbs `evaluate_union_coverage`, and is batched (**behavior change**) |
 
 Each dedup was verified by running the pre-change code in a `git worktree` and
 diffing the output, not by trusting a green suite. All byte-identical except
@@ -181,11 +182,12 @@ on these points.**
   flag **True** and the empty Hopfield is the normal phase-A explore case, so
   this was live. Pinned as a characterization test in `test_signal.py`; not
   fixed, because fixing it changes training results.
-- **One `SITE_CONTRACTS` row is still marked DECISION**: `evaluate_exploration`
-  (and `evaluate_union_coverage` alongside it) declines the teleport, because a
-  teleport is a free random jump and would inflate `mean_coverage` for reasons
-  unrelated to the exploration policy. `evaluate_goal_discovery` took the
-  training contract on 2026-08-06 — see below.
+- **No `SITE_CONTRACTS` row is marked DECISION any more.** Both were resolved
+  on 2026-08-06: `evaluate_goal_discovery` took `TRAINING` (one store
+  opportunity per arrival, then relocate) and `evaluate_exploration` took
+  `NO_GOALS` (the goal is inert — no teleport *and* no reward, since a reward
+  spike is itself a signal the goal is there). `evaluate_union_coverage` was
+  absorbed into exploration and deleted.
 - **The wandb key is still in git history.** Stripping it from the working tree
   does not remove it. Rotate at wandb.ai.
 - **`eval_checkpoints`' pass gate has no replacement.** That CLI applied
@@ -211,25 +213,20 @@ behind one CLI. This is the point at which the CLIs would move under
 `training/` (see correction 10) and the sbatch drivers would need rewriting.
 Validate by reproducing one known Phase-A variant end to end at a fixed seed.
 
-**Phase 4c′ — batching the other three evaluators.** Two separable things, and
-only one is a decision:
+**Phase 4c′ — batching the remaining evaluators.** Two of the three are done.
+`evaluate_exploration` is batched (2026-08-06) and `evaluate_union_coverage` no
+longer exists — it computed a union over its own independent rollouts, and
+exploration now computes the same union over the walks it was already doing.
+That leaves `evaluate_goal_discovery`, which is the awkward one: it declares
+`TRAINING`, so it hand-rolls the teleport at its call site the way
+`evaluate_realistic` does. Batching it means routing it through
+`step_batch(contract=TRAINING)` and *removing* the hand-rolled boundary rather
+than sitting alongside it.
 
-- *Batching under the declared contract* is a pure speedup and is unblocked.
-  The old obstacle was `goals_active` bundling C1+C3+C4; 5a split them,
-  `step_batch` takes an explicit `contract=`, and `batched.py` already passes
-  one for navigation. Nobody has done it for the other three.
-- *Which contract each site declares* is the decision.
-  `evaluate_goal_discovery` resolved it on 2026-08-06: it now declares
-  `TRAINING` and hand-rolls the boundary the way `evaluate_realistic` does, so
-  the agent gets one store opportunity per arrival and is then relocated. It
-  had declared `OBSERVE`, which let a policy park inside the goal radius and
-  take a fresh store decision every step until its probability drifted past
-  0.5. `evaluate_exploration` and `evaluate_union_coverage` keep `OBSERVE`
-  deliberately.
-
-Note the two interact: goal_discovery now declares a contract a bare `GridEnv`
-loop cannot honour, so batching it onto `VecEnv` would *replace* the hand-rolled
-teleport rather than sit alongside it.
+The general point, since it was muddled once already: batching under a site's
+declared contract is a pure speedup and is unblocked. Which contract a site
+declares is the decision. Those are separate, and only the second moves
+numbers.
 
 **`experiments/` as config.** The assessment proposes replacing
 `run_phase_a_sweep_evelina.sh`'s 101-variant `case` block with one YAML per

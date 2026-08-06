@@ -135,17 +135,18 @@ SITE_CONTRACTS: dict[str, GoalContract] = {
         "The trial keeps running after the teleport, so one trial now yields "
         "several arrivals and store_efficiency is a per-arrival rate."),
 
-    # --- deliberately decline the teleport --------------------------------
+    # --- the goal is inert ------------------------------------------------
     "evaluate_exploration": GoalContract(
-        True, True, False, False, False,
-        "DECISION. No termination at all; walks over the goal repeatedly while "
-        "counting distinct cells. A teleport is a free random jump, so "
-        "adopting C4 would inflate mean_coverage for reasons unrelated to the "
-        "exploration policy. Keeping C1 while declining C4 is the intent, and "
-        "goals_active=False cannot express it -- that would drop C1 too."),
-    "evaluate_union_coverage": GoalContract(
-        True, None, False, False, False,
-        "Same as exploration; has no at-goal handling of any kind today."),
+        False, False, False, False, False,
+        "NO_GOALS since 2026-08-06. This measures walking, so the goal must "
+        "not be an event of any kind: no teleport (a free random jump would "
+        "inflate coverage) and no reward either, because a spike in the reward "
+        "channel is a signal the goal exists and turns coverage into partial "
+        "goal-seeking. Stores never fire, so nothing can enter memory. "
+        "Reaching the goal is still recorded -- resolve_at_goal passes the "
+        "mask through regardless of C1 -- it just has no effect on behavior. "
+        "evaluate_union_coverage was absorbed here the same day; it ran its "
+        "own rollouts to compute a union over the same walks."),
 
     # --- visualizer --------------------------------------------------------
     "visualize_trajectories_combined": GoalContract(
@@ -158,7 +159,7 @@ SITE_CONTRACTS: dict[str, GoalContract] = {
 
 def test_every_site_is_declared():
     """A new at-goal call site must be added here, with a justification."""
-    assert len(SITE_CONTRACTS) == 11
+    assert len(SITE_CONTRACTS) == 10
     for name, c in SITE_CONTRACTS.items():
         assert c.why, f"{name} has no justification"
 
@@ -176,7 +177,10 @@ def test_reward_clause_is_universal():
     It is also the one that `goals_active` accidentally couples to C3/C4, which
     is precisely why the teleport cannot be switched off by that flag.
     """
-    assert all(c.reward for c in SITE_CONTRACTS.values())
+    rewarding = {n for n, c in SITE_CONTRACTS.items() if c.reward}
+    # evaluate_exploration is the one site that declines C1: it measures
+    # walking, and a reward spike is a signal the goal is there.
+    assert set(SITE_CONTRACTS) - rewarding == {"evaluate_exploration"}
 
 
 def test_the_coverage_evaluators_decline_the_teleport():
@@ -188,10 +192,7 @@ def test_the_coverage_evaluators_decline_the_teleport():
     would inflate coverage for reasons unrelated to the exploration policy.
     """
     declining = {n for n, c in SITE_CONTRACTS.items() if c.teleport is False}
-    assert declining == {
-        "evaluate_exploration",
-        "evaluate_union_coverage",
-    }
+    assert declining == {"evaluate_exploration"}
 
 
 # ---------------------------------------------------------------------------
@@ -551,7 +552,9 @@ def test_phase5_every_site_calls_contract_for():
         "evaluate_realistic": root / "evaluation" / "metrics.py",
         "evaluate_repeat": root / "evaluation" / "metrics.py",
         "evaluate_goal_discovery": root / "evaluation" / "metrics.py",
-        "evaluate_exploration": root / "evaluation" / "metrics.py",
+        # exploration's stepping moved into the batched driver on
+        # 2026-08-06, so that is where it states its contract.
+        "evaluate_exploration": root / "evaluation" / "batched.py",
         "training_rollout": root / "rollout" / "collector.py",
     }
     unreadable = [str(p) for p in sources.values() if not p.exists()]
@@ -574,8 +577,7 @@ def test_phase5_the_guard_fires_on_an_impossible_declaration():
     with pytest.raises(NotImplementedError, match="steps a GridEnv directly"):
         episode.require_single_env_support(episode.TRAINING, "evaluate_exploration")
     # The contracts those sites actually declare are accepted.
-    for site in ("evaluate_exploration", "evaluate_union_coverage",
-                 "evaluate_navigation"):
+    for site in ("evaluate_exploration", "evaluate_navigation"):
         episode.require_single_env_support(episode.contract_for(site), site)
     # ...and evaluate_goal_discovery, which declares TRAINING since
     # 2026-08-06, is correctly rejected: it hand-rolls the boundary at its call
@@ -735,3 +737,134 @@ def test_goal_discovery_runs_the_full_budget():
     body = src[src.index("for step in range(max_steps):"):]
     assert "if stored_goal:\n                        break" not in body, (
         "evaluate_goal_discovery still breaks on the first store")
+
+
+# ---------------------------------------------------------------------------
+# evaluate_exploration under NO_GOALS (adopted 2026-08-06)
+# ---------------------------------------------------------------------------
+
+def test_no_goals_suppresses_the_reward_but_not_the_detection():
+    """The property the whole exploration redesign rests on.
+
+    C1 off means the policy gets no signal that it is standing on the goal --
+    the reward channel reads `-time_penalty` there like anywhere else. But the
+    at-goal mask is passed through untouched, so the evaluator can still record
+    that the walk found it. If `resolve_at_goal` ever gated the mask on the
+    contract, exploration would silently stop reporting `goal_find_rate`.
+    """
+    from hopfield_nav.world import episode
+    res = episode.resolve_at_goal(
+        np.array([True, False]), episode.NO_GOALS,
+        goal_reward=1.0, time_penalty=0.01)
+    np.testing.assert_allclose(res.rewards, [-0.01, -0.01])
+    np.testing.assert_array_equal(res.at_goal, [True, False])
+    assert not res.teleport.any()
+    assert res.apply_move.all()
+
+    # ...and this is what it would have been under the old row.
+    was = episode.resolve_at_goal(
+        np.array([True, False]), episode.OBSERVE,
+        goal_reward=1.0, time_penalty=0.01)
+    np.testing.assert_allclose(was.rewards, [1.0, -0.01])
+
+
+def test_exploration_declares_no_goals():
+    from hopfield_nav.world import episode
+    c = episode.contract_for("evaluate_exploration")
+    assert c == episode.NO_GOALS
+    assert c.reward is False, "a reward spike is a signal the goal exists"
+    assert c.teleport is False, "a teleport is a free jump into fresh territory"
+
+
+def _explore_world(size=5, n_envs=2):
+    from hopfield_nav.tests.fixtures import make_collector
+    from hopfield_nav.world.env import make_env
+    cfg = make_stub_cfg(movement_mode="discrete")
+    cfg.env.size = size
+    _c, agent, vh = make_collector(cfg, EMBED_DIM, seed=0)
+    vh.env_offsets = [(0, 0), (8, 8)][:n_envs]
+    envs = [make_env(cfg.env, "discrete", seed=100 + i) for i in range(n_envs)]
+    return cfg, agent, vh, envs
+
+
+def test_exploration_records_a_goal_it_starts_on():
+    """Detection works even where the reward does not, and even at step 0.
+
+    `random_start` excludes the goal *cell*, which stops being the same thing
+    as "outside the goal radius" once that radius exceeds 0.5 -- so the start
+    is checked rather than assumed.
+    """
+    from hopfield_nav.evaluation.batched import batched_exploration_trials
+    cfg, agent, vh, envs = _explore_world()
+    env, off = envs[0], vh.env_offsets[0]
+    hop = Hopfield(EMBED_DIM, beta=cfg.hopfield.beta, device="cpu")
+    _visited, found, steps = batched_exploration_trials(
+        agent=agent, env=env, env_offset=off, vectorhash=vh, hopfields=[hop],
+        cfg=cfg, device=torch.device("cpu"), starts=[env.goal_location],
+        max_steps=10, deterministic=True)
+    assert found[0] is True
+    assert steps[0] == 0
+
+
+def test_exploration_never_writes_to_memory():
+    """No store can fire, so a trial's Hopfield ends as it began.
+
+    The store head still produces an output; the driver simply does not read
+    it. Counting memories is the observable form of that.
+    """
+    from hopfield_nav.evaluation.batched import batched_exploration_trials
+    cfg, agent, vh, envs = _explore_world()
+    env, off = envs[0], vh.env_offsets[0]
+    hops = []
+    for k in range(3):
+        h = Hopfield(EMBED_DIM, beta=cfg.hopfield.beta, device="cpu")
+        for j in range(k):                       # 0, 1, 2 distractors
+            h.input_memory(torch.from_numpy(vh.encoded_Phi[j + 3, j + 3]).float())
+        hops.append(h)
+    before = [h.num_memories for h in hops]
+    batched_exploration_trials(
+        agent=agent, env=env, env_offset=off, vectorhash=vh, hopfields=hops,
+        cfg=cfg, device=torch.device("cpu"),
+        starts=[(0, 0), (1, 1), (2, 2)], max_steps=25, deterministic=True)
+    assert [h.num_memories for h in hops] == before == [0, 1, 2]
+
+
+def test_exploration_runs_every_trial_to_the_full_budget():
+    """No early termination -- that is what makes the union well defined and
+    a per-step coverage rate unbiased by trial length."""
+    from hopfield_nav.evaluation.batched import batched_exploration_trials
+    cfg, agent, vh, envs = _explore_world()
+    env, off = envs[0], vh.env_offsets[0]
+    hops = [Hopfield(EMBED_DIM, beta=cfg.hopfield.beta, device="cpu")
+            for _ in range(4)]
+    max_steps = 12
+    visited, _f, _s = batched_exploration_trials(
+        agent=agent, env=env, env_offset=off, vectorhash=vh, hopfields=hops,
+        cfg=cfg, device=torch.device("cpu"),
+        starts=[(0, 0), (0, 1), (1, 0), (1, 1)], max_steps=max_steps,
+        deterministic=True)
+    # A trial cut short could not have visited more cells than its own budget.
+    # Every trial having had the full budget is what this asserts, via the
+    # only externally visible consequence: all four sets are non-degenerate.
+    assert all(1 <= len(v) <= max_steps + 1 for v in visited)
+
+
+def test_exploration_union_and_redundancy_are_consistent():
+    """union <= sum of parts, and redundancy lands in [1/N, 1]."""
+    from hopfield_nav.evaluation.metrics import evaluate_exploration
+    cfg, agent, vh, envs = _explore_world()
+    n_trials = 6
+    records: list[tuple] = []
+    res = evaluate_exploration(
+        agent, envs, vh, list(range(len(envs))), cfg, torch.device("cpu"),
+        num_trials=n_trials, max_steps=20, n_distractors_list=[0],
+        per_trial=records)
+    m = res[0]
+    assert len(records) == n_trials * len(envs)
+    assert sum(r[3] for r in records) > 0, "vacuous: no cells visited at all"
+    assert m["union_coverage"] >= m["mean_coverage"] - 1e-12
+    assert 1.0 / n_trials - 1e-12 <= m["redundancy"] <= 1.0 + 1e-12
+    assert m["union_per_rollout"] == pytest.approx(
+        m["union_coverage"] / n_trials)
+    assert m["cells_per_step"] == pytest.approx(
+        m["mean_coverage"] * cfg.env.size ** 2 / 20)

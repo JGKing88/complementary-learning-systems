@@ -26,7 +26,7 @@ import torch.nn.functional as F
 from ..policy import channels
 from ..rollout import signal as signal_ops
 from . import protocols
-from .batched import batched_navigation_trials
+from .batched import batched_exploration_trials, batched_navigation_trials
 from ..world import episode
 from ..config import TrainConfig
 from ..world.env import GridEnv, ContinuousGridEnv, CARDINAL_ACTIONS, at_goal
@@ -561,138 +561,49 @@ def evaluate_exploration(
     seed: int = 42,
     deterministic: bool = True,
     action_temperature: float = 1.0,
-    disable_store: bool = True,
     per_trial: list | None = None,
 ) -> dict[int, dict[str, float]]:
-    """For each val env + distractor count, measure grid coverage and steps-to-goal
-    for full-length (no early termination) rollouts. Each trial gets a fresh Hopfield
-    pre-loaded with ONLY distractors. Default ``deterministic=True`` (see
-    :func:`evaluate_goal_discovery`).
+    """How much ground the policy covers when there is nothing to find.
 
-    When ``disable_store`` is True (default), the agent's store action is ignored
-    and ``goal_in_memory`` stays False for the entire rollout — measuring pure
-    exploration with no goal pattern in Hopfield. When False, stores write to
-    Hopfield and storing at the goal flips ``goal_in_memory`` to True, so coverage
-    after that point reflects post-discovery navigation, not pure exploration.
+    Each trial gets a fresh Hopfield holding distractors and nothing else, a
+    random non-goal start, and exactly ``max_steps`` steps. **No store fires**
+    -- the store head's output is not read, so the goal can never enter memory
+    -- and the goal is **inert**: contract `NO_GOALS`, so standing on it pays
+    `-time_penalty` like any other cell. The policy has no signal that the goal
+    exists, which is what makes this a measurement of walking rather than of
+    goal-seeking. Reaching the goal is recorded anyway, as an incidental.
+
+    Nothing terminates early. That is deliberate: with variable-length trials a
+    per-step coverage rate is biased by trial length, and trial length would be
+    set by goal-finding -- folding the thing being controlled for back into the
+    number. Equal lengths also make the union across trials well defined.
+
+    Metrics per distractor count. Only five are independent:
+
+      mean_coverage        cells one rollout visits, / grid cells
+      cells_per_step       the same quantity / max_steps -- a rescale of
+                           mean_coverage, kept because it is invariant to grid
+                           size where the other is invariant to step budget
+      union_coverage       cells ALL rollouts in an env visit between them, /
+                           grid cells, then averaged over envs
+      union_per_rollout    union_coverage / num_trials -- a rescale
+      redundancy           |union| / sum of per-trial counts, in [1/N, 1]. 1.0
+                           means every rollout explored disjoint ground; 1/N
+                           means they all retraced the same path. This is what
+                           separates "each rollout covers little" from "every
+                           rollout covers the same little", which neither
+                           coverage number can distinguish on its own.
+      goal_find_rate       trials that ever stood on the goal / trials
+      mean_steps_to_goal   first-arrival step, over trials that found it; nan
+                           if none did
+
+    Absorbed ``evaluate_union_coverage`` on 2026-08-06: it ran its own
+    independent rollouts to compute the same union, so the two now share one
+    set. ``num_trials`` is the N the union is taken over, and the union
+    saturates toward 1.0 as N grows -- at large N it stops discriminating.
 
     If ``per_trial`` is a list, one record per trial is appended to it:
-    ``(n_dist, env_local_idx, trial_idx, n_cells_visited, found_goal,
-    steps_to_goal)``. Cell counts rather than the coverage fraction, so the
-    record is exact. See evaluate_navigation for why per-trial records, not
-    aggregates, are what the golden fixtures pin."""
-    if n_distractors_list is None:
-        n_distractors_list = [0]
-
-    agent.eval()
-    embed_dim = vectorhash.encoded_Phi.shape[2]
-    # Declared, not inherited. The guard fails loudly if this row
-    # is ever changed to one a GridEnv-stepping loop cannot honour.
-    episode.require_single_env_support(
-        episode.contract_for("evaluate_exploration"), "evaluate_exploration")
-    grid_size = cfg.env.size
-    total_positions = grid_size * grid_size
-    results: dict[int, dict[str, float]] = {}
-
-    for n_dist in n_distractors_list:
-        rng = np.random.RandomState(seed)
-        trial_coverage: list[float] = []
-        trial_found: list[bool] = []
-        trial_steps_to_goal: list[int] = []
-
-        for local_idx, env in enumerate(val_envs):
-            global_idx = env_global_indices[local_idx]
-            env_offset = vectorhash.env_offsets[global_idx]
-            goal = env.goal_location
-
-            for _trial_idx in range(num_trials):
-                distractors = sample_distractors(
-                    vectorhash, env_offset, grid_size, n_dist, rng,
-                )
-                hopfield = Hopfield(embed_dim, beta=cfg.hopfield.beta, device=str(device))
-                for pat in distractors:
-                    hopfield.input_memory(torch.from_numpy(pat).float())
-
-                start = random_start(grid_size, goal, rng)
-                env.set_position(start)
-                h_rnn = None
-                prev_reward = None
-                prev_action = None
-                goal_in_mem = False
-
-                visited: set[tuple[int, int]] = set()
-                visited.add(env.current_location)
-                found_goal = False
-                steps_to_goal = max_steps
-
-                for step in range(max_steps):
-                    at_g_pre = at_goal(env)
-                    out = agent_step(
-                        agent, env, env_offset, vectorhash, hopfield,
-                        h_rnn, cfg, device, deterministic=deterministic,
-                        goal_local=goal, goal_in_memory=goal_in_mem,
-                        prev_reward=prev_reward, prev_action=prev_action,
-                        action_temperature=action_temperature,
-                    )
-                    h_rnn = out["h_rnn"]
-                    prev_reward = out["next_prev_reward"]
-                    prev_action = out["next_prev_action"]
-                    visited.add(env.current_location)
-
-                    if not disable_store and out["store_action"] > 0.5:
-                        hopfield.input_memory(out["store_embedding"][0])
-                        if at_g_pre:
-                            goal_in_mem = True
-
-                    if at_goal(env) and not found_goal:
-                        found_goal = True
-                        steps_to_goal = step + 1
-
-                trial_coverage.append(len(visited) / total_positions)
-                trial_found.append(found_goal)
-                trial_steps_to_goal.append(steps_to_goal)
-                if per_trial is not None:
-                    per_trial.append((n_dist, local_idx, _trial_idx,
-                                      len(visited), int(found_goal),
-                                      steps_to_goal))
-
-        n = max(len(trial_found), 1)
-        n_found = sum(trial_found)
-        found_steps = [s for s, ok in zip(trial_steps_to_goal, trial_found) if ok]
-        results[n_dist] = {
-            "mean_coverage": float(np.mean(trial_coverage)) if trial_coverage else 0.0,
-            "goal_find_rate": float(n_found / n),
-            "mean_steps_to_goal": float(np.mean(found_steps)) if found_steps else float("nan"),
-        }
-
-    return results
-
-
-def evaluate_union_coverage(
-    agent: NavAgent,
-    val_envs: list[GridEnv],
-    vectorhash: VectorHash,
-    env_global_indices: list[int],
-    cfg: TrainConfig,
-    device: torch.device,
-    num_trials: int = 100,
-    max_steps: int = 100,
-    n_distractors_list: list[int] | None = None,
-    seed: int = 42,
-    deterministic: bool = True,
-) -> dict[int, dict[str, float]]:
-    """Multi-rollout union coverage. Per (env, n_distractors), run
-    ``num_trials`` independent rollouts (fresh Hopfield each time, no goal
-    stored), take the union of all visited cells across those rollouts,
-    and divide by total cells × num_trials. Returns mean per-rollout-
-    amortized cov across envs.
-
-    Captures "average fraction of grid newly visited per rollout
-    (amortized across N attempts)" — penalizes agents whose rollouts are
-    highly redundant (small union → small value) and rewards diverse
-    trajectories. Larger N (default 100) preserves resolution at high
-    coverage agents that would otherwise saturate the unnormalized union.
-    Stores are always disabled (matches ``evaluate_exploration`` semantics:
-    pure explore, no goal can land in memory).
+    ``(n_dist, env_local_idx, trial_idx, n_cells, found_goal, steps_to_goal)``.
     """
     if n_distractors_list is None:
         n_distractors_list = [0]
@@ -705,54 +616,73 @@ def evaluate_union_coverage(
 
     for n_dist in n_distractors_list:
         rng = np.random.RandomState(seed)
-        per_env_union_cov: list[float] = []
+        trial_cells: list[int] = []
+        trial_found: list[bool] = []
+        trial_steps_to_goal: list[int] = []
+        per_env_union: list[float] = []
+        per_env_redundancy: list[float] = []
 
         for local_idx, env in enumerate(val_envs):
             global_idx = env_global_indices[local_idx]
             env_offset = vectorhash.env_offsets[global_idx]
             goal = env.goal_location
 
-            union_visited: set[tuple[int, int]] = set()
-
-            for _trial in range(num_trials):
+            # Setup draws from the caller's RNG in the original per-trial
+            # order, so the batched run sees the same worlds the sequential
+            # one would have.
+            hopfields, starts = [], []
+            for _trial_idx in range(num_trials):
                 distractors = sample_distractors(
                     vectorhash, env_offset, grid_size, n_dist, rng,
                 )
-                hopfield = Hopfield(embed_dim, beta=cfg.hopfield.beta, device=str(device))
+                hopfield = Hopfield(embed_dim, beta=cfg.hopfield.beta,
+                                    device=str(device))
                 for pat in distractors:
                     hopfield.input_memory(torch.from_numpy(pat).float())
+                hopfields.append(hopfield)
+                starts.append(random_start(grid_size, goal, rng))
 
-                start = random_start(grid_size, goal, rng)
-                env.set_position(start)
-                h_rnn = None
-                prev_reward = None
-                prev_action = None
-                union_visited.add(env.current_location)
+            visited, found, steps_to_goal = batched_exploration_trials(
+                agent=agent, env=env, env_offset=env_offset,
+                vectorhash=vectorhash, hopfields=hopfields, cfg=cfg,
+                device=device, starts=starts, max_steps=max_steps,
+                deterministic=deterministic,
+                action_temperature=action_temperature,
+            )
 
-                for _step in range(max_steps):
-                    out = agent_step(
-                        agent, env, env_offset, vectorhash, hopfield,
-                        h_rnn, cfg, device, deterministic=deterministic,
-                        goal_local=goal, goal_in_memory=False,
-                        prev_reward=prev_reward, prev_action=prev_action,
-                    )
-                    h_rnn = out["h_rnn"]
-                    prev_reward = out["next_prev_reward"]
-                    prev_action = out["next_prev_action"]
-                    union_visited.add(env.current_location)
-                    # Stores disabled (match evaluate_exploration default).
+            union: set = set()
+            summed = 0
+            for _trial_idx, (cells, hit, s) in enumerate(
+                    zip(visited, found, steps_to_goal)):
+                union |= cells
+                summed += len(cells)
+                trial_cells.append(len(cells))
+                trial_found.append(hit)
+                trial_steps_to_goal.append(s if s >= 0 else max_steps)
+                if per_trial is not None:
+                    per_trial.append((n_dist, local_idx, _trial_idx,
+                                      len(cells), int(hit),
+                                      s if s >= 0 else max_steps))
+            per_env_union.append(len(union) / total_positions)
+            # |union| / sum of parts: 1.0 iff no two rollouts shared a cell.
+            per_env_redundancy.append(len(union) / max(summed, 1))
 
-            per_env_union_cov.append(len(union_visited) / total_positions)
-
-        # Divide by num_trials → "fraction of grid newly explored per
-        # rollout, amortized." Range [0, 1/num_trials]. At num_trials=100
-        # on 8x8 grid: [0, 0.01]. Keep raw mean_union_coverage too for
-        # interpretability.
-        raw_mean = float(np.mean(per_env_union_cov)) if per_env_union_cov else 0.0
+        mean_cells = float(np.mean(trial_cells)) if trial_cells else 0.0
+        union_cov = float(np.mean(per_env_union)) if per_env_union else 0.0
+        reach_steps = [s for s, ok in zip(trial_steps_to_goal, trial_found) if ok]
         results[n_dist] = {
-            "mean_union_coverage": raw_mean,
-            "mean_union_per_rollout": raw_mean / float(num_trials),
-            "num_trials_per_env": int(num_trials),
+            "mean_coverage": mean_cells / total_positions,
+            "cells_per_step": mean_cells / max(max_steps, 1),
+            "union_coverage": union_cov,
+            "union_per_rollout": union_cov / max(num_trials, 1),
+            "redundancy": (float(np.mean(per_env_redundancy))
+                           if per_env_redundancy else 0.0),
+            "goal_find_rate": (float(np.mean(trial_found))
+                               if trial_found else 0.0),
+            "mean_steps_to_goal": (float(np.mean(reach_steps))
+                                   if reach_steps else float("nan")),
+            "num_trials_per_env": float(num_trials),
+            "max_steps": float(max_steps),
         }
 
     return results

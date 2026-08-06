@@ -574,9 +574,10 @@ def main():
     p.add_argument("--n_val_trials", type=int, default=32)
     p.add_argument("--val_distractors", type=int, nargs="+", default=[0])
     p.add_argument("--union_cov_trials", type=int, default=0,
-                   help="If >0, do_eval also runs evaluate_union_coverage "
-                        "with this many rollouts per env per distractor "
-                        "count. 10 is a good default.")
+                   help="DEPRECATED and ignored since 2026-08-06. Union "
+                        "coverage is now computed by evaluate_exploration "
+                        "over its own rollouts, so the union is taken over "
+                        "--n_val_trials. Passing a nonzero value warns.")
     p.add_argument("--seed", type=int, default=0)
     p.add_argument("--device", type=str, default="cuda")
     p.add_argument("--eval_every", type=int, default=50)
@@ -694,6 +695,13 @@ def main():
         env_kwargs["max_action_norm"] = args.max_action_norm
     if args.min_action_norm is not None:
         env_kwargs["min_action_norm"] = args.min_action_norm
+    if args.union_cov_trials:
+        print("  WARNING: --union_cov_trials is ignored since 2026-08-06. "
+              "Union coverage is computed by evaluate_exploration over its own "
+              "rollouts, so it is taken over --n_val_trials "
+              f"({args.n_val_trials}), not over {args.union_cov_trials}.",
+              flush=True)
+
     cfg = TrainConfig(
         env=EnvConfig(**env_kwargs),
         vectorhash=VectorHashConfig(lambdas=args.lambdas, Np=args.Np,
@@ -721,7 +729,7 @@ def main():
         num_worlds=args.num_worlds, envs_per_world=args.envs_per_world,
         num_val_envs=args.num_val_envs, n_val_trials=args.n_val_trials,
         val_n_distractors_list=args.val_distractors,
-        union_cov_trials=args.union_cov_trials,
+        union_cov_trials=args.union_cov_trials,   # deprecated; see below
         batch_envs=args.batch_envs, steps_per_rollout=args.steps_per_rollout,
         eval_every=args.eval_every, save_dir=args.save_dir,
         seed=args.seed, device=args.device,

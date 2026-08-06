@@ -24,9 +24,8 @@ signals       ``q``, the memory mask, and the Gram-Schmidt basis out of
 evaluators    Per-trial success *bits* (not aggregate floats) from the three
               headline evaluators. Bits survive phase 4's rebatching; the
               aggregate floats would not, because batching changes RNG order.
-long_horizon  The full returned dict of the four evaluators that have no
-              per-trial recorder -- realistic, repeat, union_coverage and
-              sequential_episodes. Added after an audit found that no test
+long_horizon  The full returned dict of the evaluators that have no per-trial
+              recorder -- realistic, repeat and sequential_episodes. Added after an audit found that no test
               executed any of them, while phases 5a and 5c had rewritten code
               inside three.
 """
@@ -293,9 +292,9 @@ def _flatten(d, prefix: str = "") -> dict[str, str]:
 
 
 def gen_long_horizon_evaluators() -> dict[str, np.ndarray]:
-    """The four evaluators the per-trial goldens do not reach.
+    """The evaluators the per-trial goldens do not reach.
 
-    evaluate_realistic, evaluate_repeat, evaluate_union_coverage and
+    evaluate_realistic, evaluate_repeat and
     evaluate_sequential_episodes have no per-trial recorder and were, until
     this fixture existed, executed by no test at all -- while phases 5a and 5c
     rewrote the at-goal handling inside two of them and the whole protocol
@@ -333,13 +332,6 @@ def gen_long_horizon_evaluators() -> dict[str, np.ndarray]:
     results["repeat"] = ev.evaluate_repeat(
         agent, envs, vh, [0, 1], cfg, torch.device("cpu"),
         n_trials=3, steps_per_env=80, seed=21)
-
-    cfg, agent, vh, envs = _world()
-    torch.manual_seed(0)
-    np.random.seed(0)
-    results["union_coverage"] = ev.evaluate_union_coverage(
-        agent, envs, vh, [0, 1], cfg, torch.device("cpu"),
-        num_trials=4, max_steps=20)
 
     # Guard against a silently vacuous fixture. If the agent never reaches the
     # goal, none of the at-goal handling runs and this golden pins nothing --

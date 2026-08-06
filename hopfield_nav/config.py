@@ -186,7 +186,7 @@ class TrainConfig:
     num_val_envs: int = 2
     n_val_trials: int = 32
     val_n_distractors_list: list[int] = field(default_factory=lambda: [0])
-    union_cov_trials: int = 0           # if >0, do_eval also runs evaluate_union_coverage with this many rollouts per env per distractor count. Captures multi-rollout cov: across N attempts, what fraction of grid does the agent visit at least once?
+    union_cov_trials: int = 0           # DEPRECATED 2026-08-06, no longer read. evaluate_union_coverage was absorbed into evaluate_exploration, which now computes the union over its own rollouts -- so the union is taken over n_val_trials, not over a separate budget. Kept because checkpoints are keyed by field name and 309 run dirs carry it.
     # Realistic end-of-training eval: one Hopfield accumulates across envs
     # sequentially. Set 0 to skip. Only runs at the end of training.
     realistic_steps_per_env: int = 1000
