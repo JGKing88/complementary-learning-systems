@@ -250,6 +250,18 @@ Smaller things, none blocking:
 
 ## How the safety net works
 
+**The goldens pin behavior; they do not validate it.** A fixture records what
+an evaluator returned last time on an untrained network, so it catches a metric
+that *moves* and is blind to one that was wrong from the start — a `mean_coverage`
+with the wrong divisor would have been pinned, not caught.
+`tests/test_evaluator_correctness.py` is the other half: a `ScriptedAgent` walks
+a fixed direction on a small grid, so every expected value is arithmetic rather
+than a recording. Five wrong-metric mutations are known to fail it (wrong
+coverage divisor, `store_efficiency` over trials instead of arrivals, an
+off-by-one in `steps_to_goal`, a `visited` set missing its start cell, and `0`
+instead of `-1` as navigation's failure sentinel) — the first two of which no
+golden could have flagged.
+
 `tests/golden/` holds 5 `.npz` fixtures generated from pre-refactor behavior.
 Regenerate **deliberately only**:
 
@@ -266,10 +278,11 @@ runs it with `--help`. Most of those modules are executed by no test, so a
 stale import in one surfaces only when somebody runs it — which for the
 analysis scripts has historically been weeks later.
 
-Nine mutations are known to fail the suite, which is what makes the coverage
+Fourteen mutations are known to fail the suite, which is what makes the coverage
 claim real rather than nominal: a channel swap, a contract-table edit, an
 impossible contract declaration, the `move_loss` mask, the teleport clause,
-either `coerce_legacy_cfg` rename clause, and each of the three layering rules.
+either `coerce_legacy_cfg` rename clause, each of the five layering rules, and
+the five wrong-metric mutations above.
 A tenth, outside the suite: swapping the two `randint` calls in
 `sample_distractors` changes phase-A weights, which is what proved the
 distractor differential was not vacuous.

@@ -193,3 +193,68 @@ class RecordingAgent(torch.nn.Module):
     def recorded(self) -> np.ndarray:
         """(n_calls, B, D) stack of every observation the agent has seen."""
         return np.stack([t.squeeze(1).cpu().numpy() for t in self.inputs])
+
+
+class ScriptedAgent(torch.nn.Module):
+    """An agent whose policy is written by hand, so the answer is computable.
+
+    The golden fixtures pin the evaluators against *their own previous output*
+    on an untrained network. That catches drift, but it cannot say whether a
+    metric is correct -- if `mean_coverage` were off by a factor of two, the
+    golden would happily pin the wrong number forever. Nothing in the suite
+    knew the right answer.
+
+    This does. Give it a movement rule and a store rule and it obeys them
+    exactly, so on a small grid every metric has a value you can work out with
+    a pencil and assert against.
+
+    ``move``  int | (dx,dy) | callable(step, B) -> per-row action
+    ``store`` float in [0,1] | callable(step, B) -> per-row store probability.
+              The evaluators threshold at > 0.5, so 1.0 means "always fire" and
+              0.0 means "never".
+
+    Only ``move_action``, ``store_action`` and ``h_next`` are read off the
+    result by any evaluator, which is why that is all this returns.
+    """
+
+    def __init__(self, move, store=0.0, *, movement_mode: str = "discrete"):
+        super().__init__()
+        self._move = move
+        self._store = store
+        self.movement_mode = movement_mode
+        self.step = 0
+        # A parameter so .to(device) / .eval() behave like the real thing.
+        self._anchor = torch.nn.Parameter(torch.zeros(1), requires_grad=False)
+
+    def _resolve(self, rule, B: int, default):
+        if callable(rule):
+            return rule(self.step, B)
+        if rule is None:
+            return default
+        return rule
+
+    def get_action_and_value(self, x, h=None, deterministic=True,
+                            move_action_override=None, move_override_mask=None,
+                            action_temperature=1.0) -> dict:
+        B = x.shape[0]
+        mv = self._resolve(self._move, B, 0)
+        if self.movement_mode == "discrete":
+            arr = np.full(B, mv, dtype=np.int64) if np.isscalar(mv) else np.asarray(mv, dtype=np.int64)
+            move_action = torch.from_numpy(arr)
+        else:
+            arr = np.asarray(mv, dtype=np.float32)
+            if arr.ndim == 1:
+                arr = np.tile(arr, (B, 1))
+            move_action = torch.from_numpy(arr)
+        st = self._resolve(self._store, B, 0.0)
+        st_arr = np.full(B, st, dtype=np.float32) if np.isscalar(st) else np.asarray(st, dtype=np.float32)
+        self.step += 1
+        return {
+            "move_action": move_action.to(x.device),
+            "store_action": torch.from_numpy(st_arr).to(x.device),
+            "h_next": h,
+        }
+
+    def reset(self) -> None:
+        """Rewind the step counter, for a rule that keys on it."""
+        self.step = 0
