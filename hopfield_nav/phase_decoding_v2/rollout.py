@@ -13,13 +13,14 @@ from typing import Any
 import numpy as np
 import torch
 
-from hopfield_nav.agent import NavAgent, compute_input_dim
+from hopfield_nav.agent import NavAgent
 from hopfield_nav.encoder import load_encoder
 from hopfield_nav.env import at_goal
 from hopfield_nav.eval import agent_step, random_start, _sample_distractor_goals
-from hopfield_nav.eval_all import (
+from hopfield_nav.evaluation.checkpoint_io import (
     build_eval_world,
-    make_cfg_from_checkpoint,
+    cfg_from_checkpoint,
+    load_agent,
     scaffold_layout_dict,
 )
 from hopfield_nav.hopfield import Hopfield
@@ -83,7 +84,7 @@ class RolloutEngine:
                  if self.random_agent else ""),
               flush=True)
         ck = torch.load(ckpt_path, map_location=self.device, weights_only=False)
-        cfg = make_cfg_from_checkpoint(ck["config"])
+        cfg = cfg_from_checkpoint(ck["config"])
         cfg.num_val_envs = self.num_arenas
         self.cfg = cfg
         print(f"[rollout] cfg ok: env_size={cfg.env.size} hidden_size="
@@ -102,17 +103,18 @@ class RolloutEngine:
         print(f"[rollout] building val world (precomputing encoded_Phi over "
               "Npos² positions — slow on CPU, seconds on GPU)", flush=True)
         val_envs, vh, val_idxs = build_eval_world(cfg, encoder, str(self.device))
-        input_dim = compute_input_dim(cfg.agent, embed_dim, cfg.env.observation_size)
         # Seed BEFORE NavAgent construction so the random init is reproducible.
         torch.manual_seed(self.random_init_seed)
-        agent = NavAgent(cfg.agent, input_dim).to(self.device)
         if self.random_agent:
             print(f"[rollout] RANDOM-AGENT: using freshly-initialized weights "
                   f"(torch.manual_seed={self.random_init_seed}); ckpt "
                   "agent_state_dict NOT loaded", flush=True)
-        else:
-            agent.load_state_dict(ck["agent_state_dict"])
-        agent.eval()
+        agent = load_agent(
+            cfg,
+            None if self.random_agent else ck["agent_state_dict"],
+            embed_dim,
+            self.device,
+        )
         print(f"[rollout] val world built: {len(val_envs)} envs, "
               f"agent ready ({sum(p.numel() for p in agent.parameters())} "
               "params)", flush=True)

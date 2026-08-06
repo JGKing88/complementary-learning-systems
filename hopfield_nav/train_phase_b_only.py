@@ -31,7 +31,7 @@ from .agent import NavAgent, compute_input_dim
 from .rollout import RolloutCollector
 from .ppo import ppo_update
 from .train_phased import setup_world, make_hops, set_phase_freeze, do_eval
-from .eval_checkpoints import make_cfg_from_checkpoint
+from .evaluation.checkpoint_io import cfg_from_checkpoint
 
 
 def run_phase_b(
@@ -130,7 +130,7 @@ def train_phase_b_only(args) -> None:
     # Load Phase A checkpoint and reconstruct its config.
     print(f"Loading Phase A checkpoint: {args.load_checkpoint}", flush=True)
     ck = torch.load(args.load_checkpoint, map_location=device, weights_only=False)
-    cfg = make_cfg_from_checkpoint(ck["config"])
+    cfg = cfg_from_checkpoint(ck["config"])
 
     # Phase B overrides on top of Phase A's cfg.
     cfg.env.goals_active = True               # need at-goal labels

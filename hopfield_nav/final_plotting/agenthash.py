@@ -29,13 +29,15 @@ import numpy as np
 import torch
 import torch.nn.functional as F
 
-from ..agent import NavAgent, compute_input_dim
+from ..agent import NavAgent
 from ..encoder import load_encoder
 from ..env import GridEnv, at_goal
 from ..evaluation import protocols
 from ..env import make_env
 from ..eval import agent_step, random_start
-from ..eval_all import build_eval_world, make_cfg_from_checkpoint
+from ..evaluation.checkpoint_io import (
+    build_eval_world, cfg_from_checkpoint, load_agent,
+)
 from ..final_plotting.baseline import _merge_iter_traces
 from ..hopfield import Hopfield
 from ..vectorhash import VectorHash
@@ -362,7 +364,7 @@ def main() -> None:
     device = torch.device(args.device if torch.cuda.is_available() else "cpu")
     print(f"[agenthash] loading {args.ckpt}")
     ck = torch.load(args.ckpt, map_location=device, weights_only=False)
-    cfg = make_cfg_from_checkpoint(ck["config"])
+    cfg = cfg_from_checkpoint(ck["config"])
     if args.n_envs is not None:
         cfg.num_val_envs = int(args.n_envs)
     if args.static_vectorhash:
@@ -420,10 +422,7 @@ def main() -> None:
         val_idxs = list(range(cfg.num_val_envs))
         val_envs = []  # rebuilt per iter below
 
-    input_dim = compute_input_dim(cfg.agent, embed_dim, cfg.env.observation_size)
-    agent = NavAgent(cfg.agent, input_dim).to(device)
-    agent.load_state_dict(ck["agent_state_dict"])
-    agent.eval()
+    agent = load_agent(cfg, ck["agent_state_dict"], embed_dim, device)
 
     n_full_iters = max(1, int(args.num_full_iters))
     print(f"[agenthash] iters_per_block={args.iters_per_block}  "

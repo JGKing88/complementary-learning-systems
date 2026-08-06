@@ -38,7 +38,7 @@ import numpy as np
 import torch
 
 from ..encoder import load_encoder
-from ..eval_all import make_cfg_from_checkpoint
+from ..evaluation.checkpoint_io import cfg_from_checkpoint
 from ..vectorhash import VectorHash
 
 
@@ -107,7 +107,7 @@ def main() -> None:
         device = torch.device(args.device if torch.cuda.is_available() else "cpu")
         _log(f"[prep_scaffold] loading {args.ckpt}")
         ck = torch.load(args.ckpt, map_location=device, weights_only=False)
-        cfg = make_cfg_from_checkpoint(ck["config"])
+        cfg = cfg_from_checkpoint(ck["config"])
         if args.static_vectorhash:
             cfg.vectorhash.static_vectorhash = True
 

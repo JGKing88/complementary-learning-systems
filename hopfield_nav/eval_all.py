@@ -22,100 +22,15 @@ import sys
 import numpy as np
 import torch
 
-from hopfield_nav.config import (
-    TrainConfig, EnvConfig, VectorHashConfig, HopfieldConfig,
-    AgentConfig, PPOConfig,
-)
 from hopfield_nav.encoder import load_encoder
-from hopfield_nav.env import make_env, warn_if_offcell_stores
-from hopfield_nav.vectorhash import VectorHash
-from hopfield_nav.agent import NavAgent, compute_input_dim
+from hopfield_nav.env import warn_if_offcell_stores
+from hopfield_nav.evaluation.checkpoint_io import (
+    build_eval_world, cfg_from_checkpoint, load_agent, scaffold_layout_dict,
+)
 from hopfield_nav.eval import (
     evaluate_navigation, evaluate_goal_discovery, evaluate_exploration,
     evaluate_realistic, evaluate_repeat, evaluate_sequential_episodes,
 )
-
-
-def _coerce_legacy_cfg(cd: dict) -> dict:
-    if "val_envs_per_world" in cd and "num_val_envs" not in cd:
-        cd["num_val_envs"] = cd.pop("val_envs_per_world")
-    vh = cd.get("vectorhash")
-    if isinstance(vh, dict) and "gbook_only" in vh and "static_vectorhash" not in vh:
-        vh["static_vectorhash"] = vh.pop("gbook_only")
-    return cd
-
-
-def make_cfg_from_checkpoint(ck_cfg_dict: dict) -> TrainConfig:
-    cd = _coerce_legacy_cfg(dict(ck_cfg_dict))
-    env = EnvConfig(**cd["env"])
-    vh = VectorHashConfig(**cd["vectorhash"])
-    hop = HopfieldConfig(**cd["hopfield"])
-    ag = AgentConfig(**cd["agent"])
-    ppo = PPOConfig(**cd["ppo"])
-    cfg = TrainConfig(env=env, vectorhash=vh, hopfield=hop, agent=ag, ppo=ppo)
-    for k, v in cd.items():
-        if k in {"env", "vectorhash", "hopfield", "agent", "ppo"}:
-            continue
-        if hasattr(cfg, k):
-            setattr(cfg, k, v)
-    return cfg
-
-
-def build_eval_world(cfg: TrainConfig, encoder, device: str):
-    """Rebuild the training-time eval world: same seeding + scaffold."""
-    rng = np.random.RandomState(cfg.seed)
-    size = cfg.env.size
-    # Skip train-env seeds to keep val-env seeds aligned with training.
-    for _ in range(cfg.envs_per_world * cfg.num_worlds):
-        rng.randint(0, 10_000_000)
-    val_envs = [
-        make_env(cfg.env, cfg.agent.movement_mode,
-                 seed=int(rng.randint(0, 10_000_000)))
-        for _ in range(cfg.num_val_envs)
-    ]
-    vh = VectorHash(cfg.vectorhash, size=size)
-    vh.build_scaffold()
-    vh.register_envs(val_envs, placement="spread")
-    vh.precompute_encoded_phi(encoder, cfg.fwhm_ratio, device=device)
-    val_idxs = list(range(cfg.num_val_envs))
-    return val_envs, vh, val_idxs
-
-
-def scaffold_layout_dict(
-    cfg: TrainConfig,
-    vh: VectorHash,
-    val_envs: list,
-    val_idxs: list[int],
-) -> dict:
-    """Serializable layout: Npos×Npos grid indices, env footprints, goals.
-
-    ``cfg.vectorhash.Npos`` (when not None) is the checkpoint override; ``Npos``
-    is the resolved size used by ``VectorHash`` (same as training when the
-    checkpoint was saved with that config).
-    """
-    prod_lambdas = int(np.prod(cfg.vectorhash.lambdas))
-    envs_out: list[dict] = []
-    for i in range(len(val_envs)):
-        off = vh.env_offsets[val_idxs[i]]
-        g = val_envs[i].goal_location
-        ox, oy = int(off[0]), int(off[1])
-        gl0, gl1 = int(g[0]), int(g[1])
-        envs_out.append({
-            "idx": i,
-            "offset": [ox, oy],
-            "goal_local": [gl0, gl1],
-            "goal_global": [gl0 + ox, gl1 + oy],
-        })
-    return {
-        "Npos": int(vh.Npos),
-        "Npos_config": cfg.vectorhash.Npos,
-        "prod_lambdas": prod_lambdas,
-        "lambdas": list(cfg.vectorhash.lambdas),
-        "static_vectorhash": bool(cfg.vectorhash.static_vectorhash),
-        "env_size": int(cfg.env.size),
-        "placement": "spread",
-        "envs": envs_out,
-    }
 
 
 @torch.no_grad()
@@ -148,7 +63,7 @@ def eval_checkpoint(
     allow_offcell_store: bool | None = None,
 ) -> dict:
     ck = torch.load(ckpt_path, map_location=device, weights_only=False)
-    cfg = make_cfg_from_checkpoint(ck["config"])
+    cfg = cfg_from_checkpoint(ck["config"])
     if hopfield_oracle is not None:
         cfg.hopfield_oracle = bool(hopfield_oracle)
     if action_oracle is not None:
@@ -195,10 +110,7 @@ def eval_checkpoint(
     np.random.seed(0)
 
     val_envs, vh, val_idxs = build_eval_world(cfg, encoder, str(device))
-    input_dim = compute_input_dim(cfg.agent, embed_dim, cfg.env.observation_size)
-    agent = NavAgent(cfg.agent, input_dim).to(device)
-    agent.load_state_dict(ck["agent_state_dict"])
-    agent.eval()
+    agent = load_agent(cfg, ck["agent_state_dict"], embed_dim, device)
 
     results: dict = {
         "ckpt_path": ckpt_path,

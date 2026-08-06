@@ -56,13 +56,14 @@ import numpy as np
 import torch
 
 from cls_paths import REPO_ROOT, encoders_dir
-from hopfield_nav.agent import NavAgent, compute_input_dim
 from hopfield_nav.encoder import load_encoder
 from hopfield_nav.env import at_goal
 from hopfield_nav.eval import (
     agent_step, _goal_encoding, _sample_distractor_goals, random_start,
 )
-from hopfield_nav.eval_checkpoints import build_eval_world, make_cfg_from_checkpoint
+from hopfield_nav.evaluation.checkpoint_io import (
+    build_eval_world, cfg_from_checkpoint, load_agent,
+)
 from hopfield_nav.hopfield import Hopfield
 
 
@@ -705,7 +706,7 @@ def main():
     # Build the eval world from the first checkpoint's cfg.
     first_update, first_path = all_ckpts[0]
     ck0 = torch.load(first_path, map_location=device, weights_only=False)
-    cfg = make_cfg_from_checkpoint(ck0["config"])
+    cfg = cfg_from_checkpoint(ck0["config"])
     if args.goal_radius is not None:
         cfg.env.goal_radius = float(args.goal_radius)
 
@@ -732,14 +733,11 @@ def main():
           f"{'  force_store' if args.force_store else ''}")
     print(f"Checkpoints: {[u for u, _ in all_ckpts]}")
 
-    input_dim = compute_input_dim(cfg.agent, embed_dim, cfg.env.observation_size)
     ckpt_results: list[tuple[int, list[dict]]] = []
     for update, path in all_ckpts:
         print(f"  loading update {update}: {path}")
         ck = torch.load(path, map_location=device, weights_only=False)
-        agent = NavAgent(cfg.agent, input_dim).to(device)
-        agent.load_state_dict(ck["agent_state_dict"])
-        agent.eval()
+        agent = load_agent(cfg, ck["agent_state_dict"], embed_dim, device)
         trials = collect_trials(
             agent, val_envs, vh, val_idxs, cfg, device, plans,
             mode=args.mode, n_distractors=args.n_distractors,
