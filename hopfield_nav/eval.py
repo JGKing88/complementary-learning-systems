@@ -26,6 +26,7 @@ import torch.nn.functional as F
 from . import channels
 from . import signal as signal_ops
 from .evaluation import protocols
+from .evaluation.batched import batched_navigation_trials
 from .world import episode
 from .config import TrainConfig
 from .env import GridEnv, ContinuousGridEnv, CARDINAL_ACTIONS, at_goal
@@ -338,6 +339,13 @@ def evaluate_navigation(
             goal = env.goal_location
             goal_enc = _goal_encoding(vectorhash, env_offset, goal)
 
+            # Set up all num_trials trials first, drawing from `rng` in exactly
+            # the sequential order -- distractors, shuffle, start, per trial.
+            # Batching must not change which memories or which starts a trial
+            # gets; only how many forward passes it takes to run them.
+            hopfields: list[Hopfield] = []
+            starts: list[tuple[int, int]] = []
+            start_dists: list[float] = []
             for _trial_idx in range(num_trials):
                 hopfield = Hopfield(embed_dim, beta=cfg.hopfield.beta, device=str(device))
                 # Goal + distractors, shuffled so storage order is random.
@@ -348,40 +356,30 @@ def evaluate_navigation(
                 rng.shuffle(patterns)
                 for pat in patterns:
                     hopfield.input_memory(torch.from_numpy(pat).float())
+                hopfields.append(hopfield)
 
                 start = random_start(env.size, goal, rng)
+                starts.append(start)
                 dy = start[0] - goal[0]
                 dx = start[1] - goal[1]
-                if cfg.env.movement_mode == "continuous":
-                    start_dist = float(np.hypot(dy, dx))
-                else:
-                    start_dist = float(abs(dy) + abs(dx))
-                env.set_position(start)
-                h_rnn = None
-                prev_reward = None
-                prev_action = None
+                start_dists.append(
+                    float(np.hypot(dy, dx)) if cfg.env.movement_mode == "continuous"
+                    else float(abs(dy) + abs(dx))
+                )
 
-                trial_steps = -1
-                for step in range(max_steps):
-                    out = agent_step(
-                        agent, env, env_offset, vectorhash, hopfield,
-                        h_rnn, cfg, device, deterministic=deterministic,
-                        goal_local=goal, goal_in_memory=True,
-                        prev_reward=prev_reward, prev_action=prev_action,
-                        action_temperature=action_temperature,
-                    )
-                    h_rnn = out["h_rnn"]
-                    prev_reward = out["next_prev_reward"]
-                    prev_action = out["next_prev_action"]
+            trial_steps_arr = batched_navigation_trials(
+                agent=agent, env=env, env_offset=env_offset,
+                vectorhash=vectorhash, hopfields=hopfields, cfg=cfg,
+                device=device, starts=starts, goal=goal, max_steps=max_steps,
+                deterministic=deterministic,
+                action_temperature=action_temperature,
+            )
 
-                    if at_goal(env):
-                        total_successes += 1
-                        steps_taken = step + 1
-                        trial_steps = steps_taken
-                        speed_sum += start_dist / steps_taken
-                        steps_sum += steps_taken
-                        break
-
+            for _trial_idx, trial_steps in enumerate(trial_steps_arr):
+                if trial_steps > 0:
+                    total_successes += 1
+                    speed_sum += start_dists[_trial_idx] / trial_steps
+                    steps_sum += trial_steps
                 total_trials += 1
                 if per_trial is not None:
                     per_trial.append((n_dist, local_idx, _trial_idx,

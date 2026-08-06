@@ -88,6 +88,20 @@ class VecEnv:
             return self._pos.copy()
         return self._pos[indices].copy()
 
+    def set_positions(self, positions) -> None:
+        """Place each episode at a caller-chosen cell.
+
+        The batched counterpart of ``GridEnv.set_position``: evaluators seed
+        their own start positions from a dedicated RNG rather than letting the
+        env sample them, so that batching does not change which starts a trial
+        gets. Heading is reset, matching set_position.
+        """
+        pos = np.asarray(positions, dtype=np.int32).reshape(-1, 2)
+        if pos.shape[0] != self.B:
+            raise ValueError(f"expected {self.B} positions, got {pos.shape[0]}")
+        self._pos[:] = pos
+        self._heading[:] = [1, 0]
+
     # ------------------------------------------------------------------
     # Step
     # ------------------------------------------------------------------
@@ -254,6 +268,14 @@ class ContinuousVecEnv:
         if indices is None:
             return self._pos.copy()
         return self._pos[indices].copy()
+
+    def set_positions(self, positions) -> None:
+        """Place each episode at a caller-chosen cell (float position = cell)."""
+        pos = np.asarray(positions, dtype=np.float64).reshape(-1, 2)
+        if pos.shape[0] != self.B:
+            raise ValueError(f"expected {self.B} positions, got {pos.shape[0]}")
+        self._pos_f[:] = pos
+        self._update_snapped()
 
     def positions_continuous(self, indices: np.ndarray | None = None) -> np.ndarray:
         """Raw float positions (B, 2) float."""
