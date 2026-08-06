@@ -290,6 +290,11 @@ def test_resuming_inherits_the_parents_recipe(sandbox, tiny_encoder):
     ]
     _run(base + ["--schedule", "explore:2",
                  "--goal_reward", "5.0", "--wall_penalty", "0.1",
+                 # Passed rather than left to the flag's default: the assertion
+                 # below distinguishes the run's novelty from the 0.0 the loop
+                 # parks in cfg between rollouts, which it cannot do if the
+                 # default happens to be 0.0 too.
+                 "--novelty_reward", "0.25",
                  "--save_dir", str(parent_dir)], env)
 
     child_dir = root / "inherit_child"
@@ -311,9 +316,11 @@ def test_resuming_inherits_the_parents_recipe(sandbox, tiny_encoder):
 
     parent = run_manifest.read(parent_dir)["config"]
     assert parent["schedule"] == "explore:2"
-    # The parent's own novelty_reward survived into its checkpoint, rather than
+    # The parent's own novelty_reward survived into its manifest, rather than
     # being recorded as the 0.0 the loop parks it at between rollouts.
-    assert parent["hopfield"]["novelty_reward"] == pytest.approx(0.1)
+    assert parent["hopfield"]["novelty_reward"] == pytest.approx(0.25)
+    # ...and the child inherited that too, having said nothing about it.
+    assert child["hopfield"]["novelty_reward"] == pytest.approx(0.25)
 
 
 @pytest.mark.slow

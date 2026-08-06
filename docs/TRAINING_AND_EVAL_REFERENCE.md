@@ -9,7 +9,11 @@
 > `RUN_KINDS` keeps their prefixes so `backfill_manifests` can parse them.
 >
 > **`train_navigate` took a schedule, 2026-08-06.** Its `--phase_a_*` and
-> `--interleave_*` flags are **gone**, replaced by `--schedule` (§4.2). The
+> `--interleave_*` flags are **gone**, replaced by `--schedule` (§4.2).
+> `--goals_active` went too, and that one was never doing anything: every
+> rollout assigns `env.goals_active` from its regime, so a run-wide value was
+> overwritten before the first step. `--explore_goals_off` is the live knob.
+> The
 > 101 variants in `run_phase_a_sweep_evelina.sh` will not run as written; that
 > script is now a record of a completed sweep, not a launcher. Use
 > `run_navigate.sh` / `run_explore.sh` / `run_exploit.sh` instead.
@@ -505,7 +509,7 @@ Everything else is bit-identical — `hopfield_nav/tests/test_schedule.py` pins
 both the equivalence and the exception.
 
 <details>
-<summary><b>All 73 flags</b></summary>
+<summary><b>All 70 flags</b></summary>
 
 Flags shared with `train.py` (`--encoder_checkpoint`, `--encoder_gain`,
 `--fwhm_ratio`, `--size`, `--observation_size`, `--movement_mode`,
@@ -526,8 +530,7 @@ Flags shared with `train.py` (`--encoder_checkpoint`, `--encoder_gain`,
 | `--novelty_anneal` / `--no-` | `False` | Linear decay of novelty to 0 over the full budget. A stage's `novelty=` ignores it. |
 | `--load_checkpoint` | `None` | Start from this `.pt`. Its config becomes the **base** for the run: every setting is inherited except the flags actually on the command line, so a child reproduces its parent's recipe without re-listing it. `--save_dir` is never inherited. |
 | `--randomize_goal_per_rollout` / `--no-` | `False` | New goal each rollout for explore-regime envs (breaks the "memorize this env's goal cell from its sensory fingerprint" shortcut). |
-| `--goals_active` / `--no-` | `True` | Training envs emit no goal reward and never teleport when off. Eval envs are always built with `goals_active=True`. |
-| `--explore_goals_off` / `--no-` | `False` | Per-regime version of the above: goals off for empty-regime envs only. |
+| `--explore_goals_off` / `--no-` | `False` | Explore-regime envs emit no goal reward and never teleport on goal-reach; exploit-regime envs are unaffected. Forces explore to be paid purely by novelty / revisit / wall / time. Eval envs are always built with `goals_active=True` regardless. |
 | `--move_ent_coef` | `None` | Overrides `PPOConfig.ent_coef`. |
 | `--ppo_clip_coef` | `None` | Overrides `PPOConfig.clip_coef` (0.2). |
 | `--persistence_bonus` | `0.0` | `+bonus · cos(aₜ, aₜ₋₁)` per step — stateless straightness reward. |
@@ -572,12 +575,11 @@ default, and under `LOAD_CKPT` it is inherited from the parent. Booleans take
 passed. (`--union_cov_trials` is the one flag with no variable — it is
 deprecated and ignored.)
 
-`run_navigate.sh` **sets all 70 explicitly**, so it doubles as the full control
-panel: edit a value in the file, or override it from the environment, since
-each is written `X=${X:-value}`. They sit inside an `if [ -z "$LOAD_CKPT" ]`
-block, because on a resume spelling out a value would overwrite the parent with
-the launcher's defaults instead of inheriting them. `run_explore.sh` and
-`run_exploit.sh` stay minimal and set only the handful they mean to say.
+Each launcher assigns only the knobs that run means to set, as
+`X=${X:-value}` so the environment still wins, and leaves the rest to the
+trainer's defaults. Any of the 70 can be added to a launcher — the shared body
+has a variable for every one. Note that anything a launcher assigns overrides
+a `LOAD_CKPT` parent too, so on a resume set only what you mean to change.
 
 **Sweep mechanics (historical).** `run_phase_a_sweep_evelina.sh` picks `EXTRA`
 from a `case $VARIANT` block and appends it to a fixed base command, so a

@@ -353,8 +353,12 @@ def train_navigate(
 
     worlds = [setup_world(cfg, encoder, embed_dim, rng, role="train")
               for _ in range(cfg.num_worlds)]
-    # Eval always uses goals_active=True so disc/nav metrics work, even when
-    # training envs have goals_active=False (pure-explore schedules).
+    # Eval envs are always built with goals_active=True, so nav and discovery
+    # have a goal event to measure. Training envs are not: each rollout sets
+    # theirs from its regime, and under --explore_goals_off the explore ones
+    # run with no goal reward at all. `cfg.env.goals_active` reaching here as
+    # False means it was inherited from a --load_checkpoint parent written by
+    # `train` or `train_phased`, which do still expose the flag.
     saved_goals_active = cfg.env.goals_active
     cfg.env.goals_active = True
     eval_world = setup_world(cfg, encoder, embed_dim, rng, role="eval")
@@ -423,7 +427,6 @@ CFG_FIELDS: dict[str, tuple[str, ...]] = {
     "size": ("env.size",),
     "observation_size": ("env.observation_size",),
     "movement_mode": ("env.movement_mode", "agent.movement_mode"),
-    "goals_active": ("env.goals_active",),
     "goal_reward": ("env.goal_reward",),
     "goal_radius": ("env.goal_radius",),
     "allow_offcell_store": ("env.allow_offcell_store",),
@@ -593,7 +596,7 @@ def build_parser() -> argparse.ArgumentParser:
                    help="Adam learning rate. A stage may override it with "
                         "'lr='; the optimizer is retuned in place, so Adam's "
                         "moments survive the boundary.")
-    p.add_argument("--novelty_reward", type=float, default=0.1,
+    p.add_argument("--novelty_reward", type=float, default=0.0,
                    help="Reward per first-visit cell, explore regime only.")
     p.add_argument("--novelty_anneal", action=argparse.BooleanOptionalAction, default=False,
                    help="Linearly scale --novelty_reward to 0 across the whole "
@@ -609,11 +612,11 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--epsilon_anneal_updates", type=int, default=0,
                    help="Linearly anneal epsilon_explore to 0 over this "
                         "many updates. 0 = constant.")
-    p.add_argument("--goals_active", action=argparse.BooleanOptionalAction,
-                   default=True,
-                   help="When False, training envs emit no +1 goal reward "
-                        "and never teleport on goal-reach. Eval envs always "
-                        "use goals_active=True.")
+    # No --goals_active here. Every rollout assigns `env.goals_active` from its
+    # regime -- exploit always True, explore `not explore_goals_off` -- so a
+    # run-wide value was overwritten before the first step and the flag did
+    # nothing at all. Use --explore_goals_off, which is the knob that survives.
+    # `EnvConfig.goals_active` stays: `train` and `train_phased` still set it.
     p.add_argument("--move_ent_coef", type=float, default=None,
                    help="Override PPOConfig.ent_coef (entropy bonus on "
                         "movement policy).")
