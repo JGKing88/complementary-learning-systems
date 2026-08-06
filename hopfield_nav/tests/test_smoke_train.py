@@ -75,11 +75,11 @@ def test_save_untrained_encoder_is_loadable(tiny_encoder):
 
 
 @pytest.mark.slow
-def test_train_phase_a_only_end_to_end(sandbox, tiny_encoder):
+def test_train_navigate_end_to_end(sandbox, tiny_encoder):
     """encoder -> scaffold -> rollouts -> PPO update -> checkpoint on disk."""
     root, env = sandbox
-    save_dir = root / "phase_a_ckpt"
-    _run(["hopfield_nav.train_phase_a_only",
+    save_dir = root / "navigate_ckpt"
+    _run(["hopfield_nav.train_navigate",
           "--encoder_checkpoint", str(tiny_encoder),
           "--lambdas", "3", "4", "--Np", "40",
           "--size", "4", "--observation_size", "16",
@@ -158,22 +158,23 @@ def test_outputs_land_under_cls_runs(sandbox, tiny_encoder):
 
 
 @pytest.fixture(scope="module")
-def phase_a_checkpoint(sandbox, tiny_encoder):
+def navigate_checkpoint(sandbox, tiny_encoder):
     """A real checkpoint for the downstream entry points to consume."""
     root, env = sandbox
     save_dir = root / "downstream_ckpt"
     if not sorted(save_dir.glob("*.pt")):
-        _run(["hopfield_nav.train_phase_a_only",
+        _run(["hopfield_nav.train_navigate",
               "--encoder_checkpoint", str(tiny_encoder),
               "--lambdas", "3", "4", "--Np", "40",
               "--size", "4", "--observation_size", "16",
               "--batch_envs", "2", "--steps_per_rollout", "8",
               "--phase_a_updates", "2", "--envs_per_world", "1",
               "--num_worlds", "1", "--num_val_envs", "2",
-              # eval_every 1: the per-update checkpoint is written inside the
-              # eval branch, and analysis.trajectories only accepts files whose
-              # basename carries an update number -- it deliberately skips
-              # phase_a_only_final.pt. Kept cheap by n_val_trials 1.
+              # eval_every 1: analysis.trajectories indexes its rows by update
+              # number, so it skips navigate_final.pt and needs at least one
+              # navigate_u{N}.pt. Cheap via n_val_trials 1. (--ckpt_every would
+              # now do this without paying for the evals; left as-is so the
+              # fixture still exercises the default coupled cadence.)
               "--eval_every", "1", "--n_val_trials", "1",
               "--val_distractors", "0", "--device", "cpu",
               "--static-vectorhash", "--save_dir", str(save_dir)], env)
@@ -183,14 +184,14 @@ def phase_a_checkpoint(sandbox, tiny_encoder):
 
 
 @pytest.mark.slow
-def test_eval_all_cli_end_to_end(sandbox, phase_a_checkpoint):
+def test_eval_all_cli_end_to_end(sandbox, navigate_checkpoint):
     """eval_all's main(): checkpoint -> rebuilt eval world -> evaluators -> JSON.
 
     Its helpers are covered by the goldens; this covers the CLI path that
     stitches them together, including the config-from-checkpoint rebuild.
     """
     root, env = sandbox
-    _save_dir, ckpt = phase_a_checkpoint
+    _save_dir, ckpt = navigate_checkpoint
     out_json = root / "eval_all_out.json"
     _run(["hopfield_nav.eval_all",
           "--ckpt", str(ckpt), "--device", "cpu",
@@ -211,7 +212,7 @@ def test_ckpt_every_beats_eval_every_in_a_real_run(sandbox, tiny_encoder):
 
     test_ckpt_cadence.py pins the schedule with local helpers, which cannot
     catch the trainer's own expression changing -- and the expression is the
-    thing that was wrong. So this runs phase A with the two cadences set apart
+    thing that was wrong. So this runs train_navigate with the two cadences set apart
     and counts what lands on disk: 4 checkpoints from 4 updates, while
     --eval_every 4 permits only one eval.
     """
@@ -219,7 +220,7 @@ def test_ckpt_every_beats_eval_every_in_a_real_run(sandbox, tiny_encoder):
 
     root, env = sandbox
     save_dir = root / "cadence_ckpt"
-    _run(["hopfield_nav.train_phase_a_only",
+    _run(["hopfield_nav.train_navigate",
           "--encoder_checkpoint", str(tiny_encoder),
           "--lambdas", "3", "4", "--Np", "40",
           "--size", "4", "--observation_size", "16",
@@ -237,7 +238,7 @@ def test_ckpt_every_beats_eval_every_in_a_real_run(sandbox, tiny_encoder):
 
 
 @pytest.mark.slow
-def test_phase_a_writes_a_usable_manifest(phase_a_checkpoint, tiny_encoder):
+def test_navigate_writes_a_usable_manifest(navigate_checkpoint, tiny_encoder):
     """A real training run leaves a manifest that identifies it.
 
     The unit tests in test_run_manifest.py drive the module directly; this is
@@ -246,10 +247,10 @@ def test_phase_a_writes_a_usable_manifest(phase_a_checkpoint, tiny_encoder):
     """
     import run_manifest
 
-    save_dir, _ckpt = phase_a_checkpoint
+    save_dir, _ckpt = navigate_checkpoint
     m = run_manifest.read(save_dir)
-    assert m is not None, "phase A wrote no run.json"
-    assert m["kind"] == "phase_a_only"
+    assert m is not None, "train_navigate wrote no run.json"
+    assert m["kind"] == "navigate"
     assert m["status"] == run_manifest.STATUS_DONE
     assert m["config"]["env"]["size"] == 4          # the flag this run passed
     assert m["encoder"]["path"] == str(tiny_encoder)
@@ -264,11 +265,11 @@ def test_phase_a_writes_a_usable_manifest(phase_a_checkpoint, tiny_encoder):
 
 
 @pytest.mark.slow
-def test_train_phase_b_only_end_to_end(sandbox, tiny_encoder, phase_a_checkpoint):
-    """Phase B resumes from a phase-A checkpoint and trains the store head."""
+def test_train_store_end_to_end(sandbox, tiny_encoder, navigate_checkpoint):
+    """train_store resumes from a train_navigate checkpoint and trains the store head."""
     root, env = sandbox
-    _save_dir, ckpt = phase_a_checkpoint
-    proc = _run(["hopfield_nav.train_phase_b_only",
+    _save_dir, ckpt = navigate_checkpoint
+    proc = _run(["hopfield_nav.train_store",
                  "--load_checkpoint", str(ckpt),
                  "--encoder_checkpoint", str(tiny_encoder),
                  "--phase_b_updates", "2", "--steps_per_rollout", "8",
@@ -277,14 +278,14 @@ def test_train_phase_b_only_end_to_end(sandbox, tiny_encoder, phase_a_checkpoint
 
 
 @pytest.mark.slow
-def test_visualize_trajectories_renders(sandbox, phase_a_checkpoint):
+def test_visualize_trajectories_renders(sandbox, navigate_checkpoint):
     """The figure path: checkpoint dir -> rollouts -> PNG + PDF on disk.
 
     Also exercises _resolve_encoder_path, which reads the encoder location out
     of the checkpoint and has to find it after the storage migration.
     """
     root, env = sandbox
-    save_dir, _ckpt = phase_a_checkpoint
+    save_dir, _ckpt = navigate_checkpoint
     out_stem = root / "viz_smoke"
     _run(["analysis.trajectories",
           "--checkpoint_dir", str(save_dir),

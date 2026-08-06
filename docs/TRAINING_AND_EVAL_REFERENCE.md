@@ -1,5 +1,17 @@
 # Training and Evaluation Reference
 
+> **Renamed 2026-08-06.** `train_phase_a_only` is now **`train_navigate`** and
+> `train_phase_b_only` is now **`train_store`**. Run directories, checkpoint
+> filenames and eval tags follow: `agent_ckpts/navigate_<run>/navigate_u{N}.pt`
+> and `navigate_final.pt`, `agent_ckpts/store_<run>/store_u{N}.pt` and
+> `store_final.pt`. The **flags are unchanged** — `--phase_a_updates`,
+> `--phase_a_lr`, `--phase_a_novelty_reward`, `--phase_b_updates`,
+> `--phase_b_lr` keep their names, because the 101 sweep variants pass them by
+> name and `PhasedConfigV3`'s fields are a checkpoint-compatibility surface.
+> The ~150 pre-rename run directories are untouched and still readable;
+> `RUN_KINDS` keeps their prefixes so `backfill_manifests` can parse them.
+
+
 Written 2026-08-05 from the code on `main` (`959322f`). Every flag table below
 was read off the `argparse` blocks in the source, and every "what it does" entry
 was traced to the line that consumes the value. Nothing here is inherited from
@@ -30,7 +42,7 @@ Contents:
 Every entry point is a module, run from the **repository root**:
 
 ```bash
-cd /home/jackking/cls && python -m hopfield_nav.train_phase_a_only --encoder_checkpoint ...
+cd /home/jackking/cls && python -m hopfield_nav.train_navigate --encoder_checkpoint ...
 ```
 
 **Updated 2026-08-06:** run *outputs* no longer depend on the CWD. All five
@@ -59,7 +71,7 @@ unset CUDA_VISIBLE_DEVICES
 
 | Script | Launches | Partition / time | How you configure it |
 |---|---|---|---|
-| `hopfield_nav/run_phase_a_sweep_evelina.sh` | `hopfield_nav.train_phase_a_only` | `pi_evelina9`, 7 d, 1 GPU, 100 G | `VARIANT=<name> SEED=<n> sbatch ...` — 101 named variants in a `case` block |
+| `hopfield_nav/run_phase_a_sweep_evelina.sh` | `hopfield_nav.train_navigate` | `pi_evelina9`, 7 d, 1 GPU, 100 G | `VARIANT=<name> SEED=<n> sbatch ...` — 101 named variants in a `case` block |
 | `hopfield_nav/run_continuous.sh` | `hopfield_nav.train` | `mit_normal_gpu`, 2 h | edit flags in file — **currently broken**, passes `--gbook-only` |
 | `hopfield_nav/run_new_sweep.sh` | `hopfield_nav.train` ×4 | `pi_evelina9`, 2 d | edit `COMMON` in file — same `--gbook-only` breakage |
 | `hopfield_nav/pretrain_baseline_rnn.sh` | `hopfield_nav.train_rnn --mode mixed` | `mit_normal_gpu`, 2 h | edit flags in file |
@@ -81,7 +93,7 @@ unset CUDA_VISIBLE_DEVICES
 - slurm stdout → `hopfield_nav/logs/slurm_*_%j.out`, `encoder_training/scripts/logs/`,
   `encoder_training/logs/<run_name>.log`.
 - With `--use_wandb`, the **wandb run name** becomes the checkpoint directory
-  name (`$CLS_RUNS/agent_ckpts/phase_a_only_<name>/`). Without it, a `YYYYmmdd_HHMMSS`
+  name (`$CLS_RUNS/agent_ckpts/navigate_<name>/`). Without it, a `YYYYmmdd_HHMMSS`
   timestamp. That name is the only key linking wandb ↔ checkpoint ↔ slurm log.
 
 ---
@@ -92,8 +104,8 @@ unset CUDA_VISIBLE_DEVICES
  (1) encoder_training.train                 → encoders/<run>/encoder_best.pt
         │  contrastive embedding of grid codes; nav-eval gates "best"
         ▼
- (2) hopfield_nav.train_phase_a_only        → $CLS_RUNS/agent_ckpts/phase_a_only_<run>/phase_a_u{N}.pt
-     (or .train / .train_phased / .train_phase_b_only / .train_rnn)
+ (2) hopfield_nav.train_navigate        → $CLS_RUNS/agent_ckpts/navigate_<run>/navigate_u{N}.pt
+     (or .train / .train_phased / .train_store / .train_rnn)
         │  frozen encoder + VectorHash scaffold + Hopfield + GRU policy, PPO or BC
         ▼
  (3) hopfield_nav.eval_all                  → JSON + PNG per checkpoint
@@ -329,7 +341,7 @@ Per update (`train.py:198-407`):
 
 Note: `persistence_bonus`, `novelty_scale_remaining` and `novelty_scale_cap`
 exist in `HopfieldConfig` but are **not** exposed here (only in
-`train_phase_a_only`).
+`train_navigate`).
 
 **Agent architecture / inputs**
 
@@ -349,7 +361,7 @@ exist in `HopfieldConfig` but are **not** exposed here (only in
 | `--freeze_log_std` | off | Pin log σ (no gradient). |
 
 `--input_hopfield_multistep` is **not** available here (only in
-`train_phase_a_only`), even though `AgentConfig` supports it.
+`train_navigate`), even though `AgentConfig` supports it.
 
 **PPO / BC**
 
@@ -400,10 +412,10 @@ Not exposed (PPO defaults from `PPOConfig`): `gamma=0.99`, `gae_lambda=0.95`,
 
 </details>
 
-### 4.2 `python -m hopfield_nav.train_phase_a_only` — the active harness
+### 4.2 `python -m hopfield_nav.train_navigate` — the active harness
 
 This is the script the 101-variant sweep drives. Structure
-(`train_phase_a_only.py:54-393`):
+(`train_navigate.py:54-393`):
 
 - Store head frozen for the entire run (`set_phase_freeze(..., freeze_store=True)`);
   `auto_nav_warmup`, `auto_store_warmup`, `store_bc_weight` are forced to 0 and
@@ -511,7 +523,7 @@ Remaining flags (39 total) mirror §4.1: `--encoder_checkpoint`, `--encoder_gain
 (`hopfield-nav-phased`), `--lambdas` (11 12 13), `--Np` (1600),
 `--static-vectorhash` (default **True**).
 
-### 4.4 `python -m hopfield_nav.train_phase_b_only` — store-head pretrain
+### 4.4 `python -m hopfield_nav.train_store` — store-head pretrain
 
 Loads a Phase-A checkpoint, reconstructs its config, then forces
 `goals_active=True`, `store_bc_weight=1.0`, `bce_detach_trunk=True`,
@@ -529,7 +541,7 @@ live gradients are the store surrogate and the store BCE.
 | `--bce_pos_weight_cap` | `5.0` | Cap on `n_neg/n_pos`; 0 = uncapped. Uncapped values (~19) previously drove high off-goal firing. |
 | `--steps_per_rollout` | `None` | Override the checkpoint's value. |
 | `--eval_every` | `5` | Evaluation cadence. |
-| `--ckpt_every` | `None` | Checkpoint cadence (`phase_b_u{u}.pt`). `None` = follow `--eval_every`, which is what it did unconditionally before 2026-08-06. |
+| `--ckpt_every` | `None` | Checkpoint cadence (`store_u{u}.pt`). `None` = follow `--eval_every`, which is what it did unconditionally before 2026-08-06. |
 | `--seed` / `--device` / `--use_wandb` / `--wandb_project` | `42` / `cuda` / off / `hopfield-nav-phase-b` | |
 
 ### 4.5 What one rollout actually does
@@ -858,8 +870,8 @@ Traced to source; use these when comparing numbers across docs.
 |---|---|
 | `encoder_training.train` | `state_dict`, `model_config`, `train_config`, `y0s`, `x0s`, `sizes`, `gain`, (+`val_nav_acc`, `epoch` for best) |
 | `hopfield_nav.train` | `agent_state_dict`, `optimizer_state_dict`, `config` (=`asdict(TrainConfig)`), `update` |
-| `train_phase_a_only` | `agent_state_dict`, `config`, `update` (per-eval) / no `update` (final) |
-| `train_phase_b_only` | `agent_state_dict`, `config`, `update` |
+| `train_navigate` | `agent_state_dict`, `config`, `update` (per-eval) / no `update` (final) |
+| `train_store` | `agent_state_dict`, `config`, `update` |
 | `train_phased` | `agent_state_dict`, `config`, `phased_config` |
 | `train_rnn` | `agent_state_dict`, `optimizer_state_dict`, `cfg`, `history`, `env_goals` |
 

@@ -56,7 +56,7 @@ dependency anything ships.
 Every rule is mutation-verified -- an upward import in `world/env.py`, an
 `encoder_training -> hopfield_nav` import, a private import from a lower layer,
 a module-scope matplotlib import in `train.py`, an `analysis -> train_rnn`
-import, and `os.path.join("checkpoint", sub)` restored in `train_phase_a_only`
+import, and `os.path.join("checkpoint", sub)` restored in `train_navigate`
 each fail exactly the rule they should, and nothing else.
 """
 from __future__ import annotations
@@ -90,8 +90,8 @@ LAYERS: dict[str, int] = {
     # The CLIs. They wire the layers together; rule 5 keeps them unimported.
     "hopfield_nav.train": 7,
     "hopfield_nav.train_phased": 7,
-    "hopfield_nav.train_phase_a_only": 7,
-    "hopfield_nav.train_phase_b_only": 7,
+    "hopfield_nav.train_navigate": 7,
+    "hopfield_nav.train_store": 7,
     "hopfield_nav.train_rnn": 7,
     "hopfield_nav.eval_all": 7,
 
@@ -451,7 +451,7 @@ def _trainer_modules() -> list[str]:
 def test_every_trainer_accepts_save_dir():
     """Every trainer takes `--save_dir`, so every one can be sandboxed.
 
-    `train_phase_b_only` was the one that did not, which is the whole reason
+    `train_store` (then `train_phase_b_only`) was the one that did not, which is the whole reason
     the pytest leak was possible: the smoke fixture sets `CLS_RUNS` to a
     tmpdir, and with the default path ignoring it there was no second way out.
     """

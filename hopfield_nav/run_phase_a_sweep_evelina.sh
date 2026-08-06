@@ -13,7 +13,7 @@
 # ---------------------------------------------------------------------------
 # 2026-08-05 -- behavior note for anyone re-running an older variant.
 #
-# Every variant below runs through `hopfield_nav.train_phase_a_only`, which has
+# Every variant below runs through `hopfield_nav.train_navigate`, which has
 # always honored --goal_radius. The sibling entry point `hopfield_nav.train`
 # did NOT: setup_train_world built its GridEnvs by hand and dropped
 # goals_active / goal_reward / goal_radius, so VecEnv (which reads them off the
@@ -770,7 +770,7 @@ esac
 
 echo "Running variant=$VARIANT with: $EXTRA"
 
-python -u -m hopfield_nav.train_phase_a_only \
+python -u -m hopfield_nav.train_navigate \
     --encoder_checkpoint encoders/run_20260422_185816/encoder_best.pt \
     --fwhm_ratio 0.25 \
     --size 8 \

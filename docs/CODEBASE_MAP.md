@@ -1,5 +1,17 @@
 # Codebase Map
 
+> **Renamed 2026-08-06.** `train_phase_a_only` is now **`train_navigate`** and
+> `train_phase_b_only` is now **`train_store`**. Run directories, checkpoint
+> filenames and eval tags follow: `agent_ckpts/navigate_<run>/navigate_u{N}.pt`
+> and `navigate_final.pt`, `agent_ckpts/store_<run>/store_u{N}.pt` and
+> `store_final.pt`. The **flags are unchanged** — `--phase_a_updates`,
+> `--phase_a_lr`, `--phase_a_novelty_reward`, `--phase_b_updates`,
+> `--phase_b_lr` keep their names, because the 101 sweep variants pass them by
+> name and `PhasedConfigV3`'s fields are a checkpoint-compatibility surface.
+> The ~150 pre-rename run directories are untouched and still readable;
+> `RUN_KINDS` keeps their prefixes so `backfill_manifests` can parse them.
+
+
 Written 2026-08-05 from the code on `main` (`959322f`). Everything here was
 checked against the source, not against the older markdown files (now under
 `docs/archive/`). Where the code and an existing doc/script disagree, the code
@@ -131,8 +143,8 @@ directory, the conda env and 309 checkpoint paths all say so.
 |---|---:|---|---|
 | `hopfield_nav.train` | 77 | Single-phase PPO **or** DAgger BC (`--training_mode`) over `num_worlds × envs_per_world` envs. | `checkpoint/<run>/hopfield_nav_update{N}.pt` |
 | `hopfield_nav.train_phased` | 39 | Four sequential phases (store pretrain → follow → explore → compose). Also the **shared helper module** (`setup_world`, `make_hops`, `set_phase_freeze`, `do_eval`) imported by the two entry points below. | `checkpoint/phased_<run>/phased_final.pt` |
-| `hopfield_nav.train_phase_a_only` | 73 | The **active** harness. Phase A only: interleaved pre-stored ("follow") and empty ("explore") rollouts with novelty/revisit/wall/persistence shaping, ε-greedy, distractor curricula, log-std annealing. | `checkpoint/phase_a_only_<run>/phase_a_u{N}.pt` |
-| `hopfield_nav.train_phase_b_only` | 11 | Loads a Phase-A checkpoint, freezes everything but the store head, trains it with detached-trunk BCE. | `checkpoint/phase_b_only_<run>/phase_b_u{N}.pt` |
+| `hopfield_nav.train_navigate` | 73 | The **active** harness. Phase A only: interleaved pre-stored ("follow") and empty ("explore") rollouts with novelty/revisit/wall/persistence shaping, ε-greedy, distractor curricula, log-std annealing. | `checkpoint/phase_a_only_<run>/phase_a_u{N}.pt` |
+| `hopfield_nav.train_store` | 11 | Loads a Phase-A checkpoint, freezes everything but the store head, trains it with detached-trunk BCE. | `checkpoint/phase_b_only_<run>/phase_b_u{N}.pt` |
 | `hopfield_nav.train_rnn` | 37 | No-memory control baseline: GRU policy on raw sensory, BC against the BFS oracle, in `sequential` / `mixed` / `finetune` mode. | `checkpoint_rnn/<run>/final.pt` |
 
 Supporting modules for the baseline: `policy/agent_rnn.py`, `rollout/rnn.py`,
@@ -287,7 +299,7 @@ was deleted. The return-type mismatch broke exactly one line
 | `encoders/` | 21 GB (870 run dirs) | `encoder_training.train` (`--save_dir`) |
 | `analysis/continual/` | 21 GB | histories, scaffold cache, figures |
 | `analysis/phase_decoding/results/` | 17 GB | per-arena `.npz` trial dumps |
-| `checkpoint/` | 8.5 GB (309 run dirs) | `train.py`, `train_phase_a_only.py`, `train_phase_b_only.py`, `train_phased.py` |
+| `checkpoint/` | 8.5 GB (309 run dirs) | `train.py`, `train_navigate.py`, `train_store.py`, `train_phased.py` |
 | `wandb/` | 6.6 GB (817 runs) | wandb local cache |
 | `hopfield_nav/phase_decoding` | 1.1 GB | the **v1** phase-decoding pipeline — present on disk, not in git |
 | `checkpoints/` (plural) | 63 MB | older `train.py` runs (the driver that hardcoded this root was deleted in phase 6) |
@@ -316,7 +328,7 @@ gain annealing. Metric: nav-eval accuracy on **val** patches (envs placed
 outside every training patch). Driven by `scripts/submit_train.sh` for single
 runs and `sweep.py` for grids.
 
-**B. Phase-A PPO explore/follow** — `train_phase_a_only.py` +
+**B. Phase-A PPO explore/follow** — `train_navigate.py` +
 `run_phase_a_sweep_evelina.sh`.
 Question: can one policy both explore a novel arena and follow a Hopfield recall
 signal to a stored goal? The sbatch script is a 785-line `case` statement with
@@ -362,8 +374,8 @@ Each of these was verified against the current source.
    `goal_reward` and `goal_radius` fall back to the `GridEnv` defaults. The eval
    world *does* honor them (it goes through `make_env(cfg.env, ...)`). The same
    applies to `train_rnn.py`'s `build_envs()`, which passes `goals_active` but
-   not `goal_radius`. `train_phased.py` / `train_phase_a_only.py` /
-   `train_phase_b_only.py` use `setup_world` → `make_env` and are unaffected.
+   not `goal_radius`. `train_phased.py` / `train_navigate.py` /
+   `train_store.py` use `setup_world` → `make_env` and are unaffected.
 3. **`GridEnv.clone()` cannot run.** It calls `self._random_position_with_rng`
    ([env.py:313](../hopfield_nav/world/env.py#L313)), which is a `@staticmethod` that
    unconditionally raises `NotImplementedError`

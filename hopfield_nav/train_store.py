@@ -1,13 +1,13 @@
 """Phase B store-head pretrain on a frozen Phase-A trunk.
 
-Loads a V10 (or compatible) Phase A checkpoint, freezes everything except
+Loads a V10 (or compatible) navigation-training checkpoint, freezes everything except
 the store head, trains the store head with BCE-on-at-goal labels through
 detached features. Goals are active so the agent encounters at-goal
 cells and gets positive labels.
 
 Usage:
-    python -m hopfield_nav.train_phase_b_only \
-        --load_checkpoint checkpoint/phase_a_only_giddy-morning-15/phase_a_u160.pt \
+    python -m hopfield_nav.train_store \
+        --load_checkpoint $CLS_RUNS/agent_ckpts/navigate_<run>/navigate_u160.pt \
         --encoder_checkpoint encoders/run_20260422_185816/encoder_best.pt \
         --phase_b_updates 50 --eval_every 5 \
         --use_wandb --wandb_project hopfield-nav-phase-b
@@ -37,7 +37,7 @@ from .training.world_setup import (
 from .evaluation.checkpoint_io import cfg_from_checkpoint
 
 
-def run_phase_b(
+def run_store(
     cfg: TrainConfig,
     agent: NavAgent,
     worlds: list[dict],
@@ -115,25 +115,25 @@ def run_phase_b(
 
         if eval_world is not None and update % max(eval_every, 1) == 0:
             do_eval(cfg, agent, eval_world, device,
-                    f"phase_b_u{update}", use_wandb,
+                    f"store_u{update}", use_wandb,
                     max_steps=cfg.steps_per_rollout)
 
-        # Separate cadence -- see the same block in train_phase_a_only for why.
+        # Separate cadence -- see the same block in train_navigate for why.
         if update % max(ckpt_every, 1) == 0:
             os.makedirs(cfg.save_dir, exist_ok=True)
             torch.save({
                 "agent_state_dict": agent.state_dict(),
                 "config": asdict(cfg),
                 "update": update,
-            }, os.path.join(cfg.save_dir, f"phase_b_u{update}.pt"))
+            }, os.path.join(cfg.save_dir, f"store_u{update}.pt"))
             run_manifest.record_checkpoint(
-                cfg.save_dir, f"phase_b_u{update}.pt", update)
+                cfg.save_dir, f"store_u{update}.pt", update)
 
-    do_eval(cfg, agent, eval_world, device, "after_phase_b", use_wandb,
+    do_eval(cfg, agent, eval_world, device, "after_store", use_wandb,
             max_steps=cfg.steps_per_rollout)
 
 
-def train_phase_b_only(args) -> None:
+def train_store(args) -> None:
     device = torch.device(args.device if torch.cuda.is_available() else "cpu")
 
     # Load Phase A checkpoint and reconstruct its config.
@@ -195,19 +195,19 @@ def train_phase_b_only(args) -> None:
 
     if cfg.save_dir is None:
         sub = run_name(*((wandb.run.name, wandb.run.id) if cfg.use_wandb else ()))
-        cfg.save_dir = str(run_dir("phase_b_only", sub))
+        cfg.save_dir = str(run_dir("store", sub))
     else:
         sub = os.path.basename(str(cfg.save_dir).rstrip("/"))
 
     run_manifest.begin(
-        cfg.save_dir, kind="phase_b_only", name=sub, config=asdict(cfg),
+        cfg.save_dir, kind="store", name=sub, config=asdict(cfg),
         encoder=run_manifest.encoder_identity(
             cfg.encoder_checkpoint, enc_cfg, encoder_gain),
         parent=args.load_checkpoint,
         wandb_run=wandb.run if cfg.use_wandb else None,
     )
 
-    run_phase_b(
+    run_store(
         cfg, agent, worlds, eval_world, embed_dim, device,
         n_updates=args.phase_b_updates,
         eval_every=cfg.eval_every,
@@ -221,10 +221,10 @@ def train_phase_b_only(args) -> None:
     torch.save({
         "agent_state_dict": agent.state_dict(),
         "config": asdict(cfg),
-    }, os.path.join(cfg.save_dir, "phase_b_only_final.pt"))
-    run_manifest.record_checkpoint(cfg.save_dir, "phase_b_only_final.pt")
+    }, os.path.join(cfg.save_dir, "store_final.pt"))
+    run_manifest.record_checkpoint(cfg.save_dir, "store_final.pt")
     run_manifest.finish(cfg.save_dir)
-    print(f"\nDone. Saved to {cfg.save_dir}/phase_b_only_final.pt", flush=True)
+    print(f"\nDone. Saved to {cfg.save_dir}/store_final.pt", flush=True)
 
     if cfg.use_wandb:
         import wandb
@@ -249,17 +249,17 @@ def main():
     p.add_argument("--eval_every", type=int, default=5)
     p.add_argument("--ckpt_every", type=int, default=None,
                    help="Checkpoint cadence, in updates. Default: follow "
-                        "--eval_every. See train_phase_a_only for why they "
+                        "--eval_every. See train_navigate for why they "
                         "are separate.")
     p.add_argument("--save_dir", type=str, default=None,
                    help="Checkpoint directory. Default: "
-                        "<CLS_RUNS>/agent_ckpts/phase_b_only_<wandb run name "
+                        "<CLS_RUNS>/agent_ckpts/store_<wandb run name "
                         "or timestamp>.")
     p.add_argument("--use_wandb", action="store_true")
     p.add_argument("--wandb_project", type=str, default="hopfield-nav-phase-b")
     args = p.parse_args()
 
-    train_phase_b_only(args)
+    train_store(args)
 
 
 if __name__ == "__main__":

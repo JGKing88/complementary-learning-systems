@@ -184,6 +184,12 @@ RUN_KINDS: dict[str, tuple[str, str]] = {
     # kind           (subdirectory of RUNS_ROOT, run-directory name prefix)
     "train":         ("agent_ckpts", ""),            # irregular: no prefix
     "phased":        ("agent_ckpts", "phased_"),
+    "navigate":      ("agent_ckpts", "navigate_"),
+    "store":         ("agent_ckpts", "store_"),
+    # The pre-rename spellings of navigate/store. `train_phase_a_only` and
+    # `train_phase_b_only` became `train_navigate` and `train_store` on
+    # 2026-08-06; ~150 directories are named the old way and backfill parses
+    # them through these two rows. Nothing writes them any more.
     "phase_a_only":  ("agent_ckpts", "phase_a_only_"),
     "phase_b_only":  ("agent_ckpts", "phase_b_only_"),
     "rnn":           ("checkpoint_rnn", ""),         # irregular: own subdir

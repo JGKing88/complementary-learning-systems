@@ -2,7 +2,7 @@
 balance without paying for Phase B+C.
 
 Skips Phase B (store pretrain) and Phase C (compose). After Phase A finishes,
-runs a single after_phase_a eval and exits. Total runtime ~1-2h per seed
+runs a single after_navigate eval and exits. Total runtime ~1-2h per seed
 instead of 5-7h. Designed for sweeping novelty/interleave configurations to
 find a setting that consistently produces coverage ≥ 0.55.
 
@@ -53,7 +53,7 @@ def _compute_epsilon(update: int, total: int, base: float, anneal: int) -> float
     return base * scale
 
 
-def run_phase_a_sweep(
+def run_navigate_sweep(
     cfg: TrainConfig,
     pcfg: PhasedConfigV3,
     worlds,
@@ -358,7 +358,7 @@ def run_phase_a_sweep(
 
         if eval_world is not None and update % max(eval_every, 1) == 0:
             do_eval(cfg, agent, eval_world, device,
-                    f"phase_a_u{update}", use_wandb,
+                    f"navigate_u{update}", use_wandb,
                     max_steps=cfg.steps_per_rollout)
 
         # Checkpointing on its own cadence. It used to sit inside the eval
@@ -374,11 +374,11 @@ def run_phase_a_sweep(
                 "agent_state_dict": agent.state_dict(),
                 "config": asdict(cfg),
                 "update": update,
-            }, os.path.join(cfg.save_dir, f"phase_a_u{update}.pt"))
+            }, os.path.join(cfg.save_dir, f"navigate_u{update}.pt"))
             run_manifest.record_checkpoint(
-                cfg.save_dir, f"phase_a_u{update}.pt", update)
+                cfg.save_dir, f"navigate_u{update}.pt", update)
 
-    do_eval(cfg, agent, eval_world, device, "after_phase_a", use_wandb,
+    do_eval(cfg, agent, eval_world, device, "after_navigate", use_wandb,
             max_steps=cfg.steps_per_rollout)
 
     for k, v in saved.items():
@@ -388,7 +388,7 @@ def run_phase_a_sweep(
             setattr(cfg.ppo, k, v)
 
 
-def train_phase_a_only(
+def train_navigate(
     cfg: TrainConfig, pcfg: PhasedConfigV3,
     warmup_explore_only_updates: int,
     novelty_anneal: bool,
@@ -412,7 +412,7 @@ def train_phase_a_only(
     log_std_anneal_target: float | None = None,
 ) -> None:
     validate_train_config(cfg)
-    warn_if_offcell_stores(cfg.env, where="train_phase_a_only")
+    warn_if_offcell_stores(cfg.env, where="train_navigate")
     device = torch.device(cfg.device if torch.cuda.is_available() else "cpu")
     torch.manual_seed(cfg.seed)
     np.random.seed(cfg.seed)
@@ -460,19 +460,19 @@ def train_phase_a_only(
 
     if cfg.save_dir is None:
         sub = run_name(*((wandb.run.name, wandb.run.id) if cfg.use_wandb else ()))
-        cfg.save_dir = str(run_dir("phase_a_only", sub))
+        cfg.save_dir = str(run_dir("navigate", sub))
     else:
         sub = os.path.basename(str(cfg.save_dir).rstrip("/"))
 
     run_manifest.begin(
-        cfg.save_dir, kind="phase_a_only", name=sub, config=asdict(cfg),
+        cfg.save_dir, kind="navigate", name=sub, config=asdict(cfg),
         encoder=run_manifest.encoder_identity(
             cfg.encoder_checkpoint, enc_cfg, encoder_gain),
         parent=load_checkpoint,
         wandb_run=wandb.run if cfg.use_wandb else None,
     )
 
-    run_phase_a_sweep(
+    run_navigate_sweep(
         cfg, pcfg, worlds, agent, embed_dim, device,
         cfg.use_wandb, eval_world, cfg.eval_every,
         cfg.ckpt_every if cfg.ckpt_every is not None else cfg.eval_every,
@@ -500,10 +500,10 @@ def train_phase_a_only(
     torch.save({
         "agent_state_dict": agent.state_dict(),
         "config": asdict(cfg),
-    }, os.path.join(cfg.save_dir, "phase_a_only_final.pt"))
-    run_manifest.record_checkpoint(cfg.save_dir, "phase_a_only_final.pt")
+    }, os.path.join(cfg.save_dir, "navigate_final.pt"))
+    run_manifest.record_checkpoint(cfg.save_dir, "navigate_final.pt")
     run_manifest.finish(cfg.save_dir)
-    print(f"\nDone. Saved to {cfg.save_dir}/phase_a_only_final.pt", flush=True)
+    print(f"\nDone. Saved to {cfg.save_dir}/navigate_final.pt", flush=True)
 
     if cfg.use_wandb:
         import wandb
@@ -780,7 +780,7 @@ def main():
         phase_a_lr=args.phase_a_lr,
         phase_a_novelty_reward=args.phase_a_novelty_reward,
     )
-    train_phase_a_only(
+    train_navigate(
         cfg, pcfg,
         warmup_explore_only_updates=args.warmup_explore_only_updates,
         novelty_anneal=args.novelty_anneal,

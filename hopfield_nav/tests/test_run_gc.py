@@ -53,6 +53,10 @@ def _run_dir(tmp_path, name, files=("phase_a_u2.pt",), *, age_days=0.0):
 # ---------------------------------------------------------------------------
 
 @pytest.mark.parametrize("dirname,kind,name", [
+    ("navigate_amber-plant-56", "navigate", "amber-plant-56"),
+    ("store_20260806_125705", "store", "20260806_125705"),
+    # The pre-2026-08-06 spellings. ~150 directories are named this way and
+    # backfill still has to parse them.
     ("phase_a_only_amber-plant-56", "phase_a_only", "amber-plant-56"),
     ("phase_b_only_20260806_125705", "phase_b_only", "20260806_125705"),
     ("phased_lively-surf-104", "phased", "lively-surf-104"),
@@ -61,7 +65,7 @@ def _run_dir(tmp_path, name, files=("phase_a_u2.pt",), *, age_days=0.0):
     ("revived-water-17", "train", "revived-water-17"),
 ])
 def test_infer_kind_takes_the_longest_prefix(dirname, kind, name):
-    """`phase_b_only_x` must not be read as kind `train` with a funny name.
+    """`store_x` must not be read as kind `train` with a funny name.
 
     RUN_KINDS has an empty prefix for `train`, so a naive scan matches it
     against everything.
@@ -74,7 +78,7 @@ def test_a_new_kind_needs_no_entry_in_run_kinds():
 
     RUN_KINDS describes how the *existing* tree is laid out -- it is read
     backwards by `infer_kind` to parse legacy directory names, which is why
-    three regular rows are listed even though `default_layout` reproduces them.
+    rows are listed even when `default_layout` reproduces them.
     It is not a registry of permitted kinds, and `run_dir` used to raise on an
     unlisted one, which made every new trainer edit a file it has no other
     reason to touch.
@@ -88,7 +92,7 @@ def test_a_new_kind_needs_no_entry_in_run_kinds():
 
 
 def test_the_regular_rows_of_run_kinds_agree_with_the_default():
-    """The three listed-but-regular kinds must not drift from the convention.
+    """The listed-but-regular kinds must not drift from the convention.
 
     If someone edits one of those rows, `run_dir` and `default_layout` start
     disagreeing for a kind that looks ordinary, and new runs land beside the
@@ -96,9 +100,11 @@ def test_the_regular_rows_of_run_kinds_agree_with_the_default():
     """
     from cls_paths import RUN_KINDS, default_layout
 
-    regular = [k for k, v in RUN_KINDS.items() if v == default_layout(k)]
-    assert set(regular) == {"phased", "phase_a_only", "phase_b_only"}
-    # The other two are irregular on purpose and are what the table is for.
+    irregular = {k for k, v in RUN_KINDS.items() if v != default_layout(k)}
+    # Exactly two rows deviate, and both are historical. Everything else in the
+    # table is listed only so backfill can parse legacy directory names, and
+    # must therefore still agree with the convention.
+    assert irregular == {"train", "rnn"}
     assert RUN_KINDS["train"] == ("agent_ckpts", "")
     assert RUN_KINDS["rnn"] == ("checkpoint_rnn", "")
 
@@ -106,12 +112,13 @@ def test_the_regular_rows_of_run_kinds_agree_with_the_default():
 def test_infer_kind_is_ordered_not_just_lucky(monkeypatch):
     """The longest-prefix sort has to be tested with prefixes that overlap.
 
-    None of the three real prefixes is a prefix of another (`phased_` does not
-    match `phase_a_only_...`), so the ordering happens to be irrelevant today
-    and every mutation of it survives -- the sort reads as tested when it is
-    not. It still guards a real hazard: the moment RUN_KINDS gains a pair like
-    `phase_c_` and `phase_c_only_`, unordered scanning silently files every
-    `phase_c_only_*` run under kind `phase_c`. This pins the property directly.
+    No real prefix is a prefix of another (`phased_` does not match
+    `phase_a_only_...`), so the ordering happens to be irrelevant today and
+    every mutation of it survives -- the sort reads as tested when it is not.
+    It still guards a real hazard, and one that is now closer: the table gained
+    `navigate_` and `store_` in the 2026-08-06 rename, so a future `store_bc_`
+    or `navigate_v2_` would make unordered scanning silently file every run of
+    the longer kind under the shorter one. This pins the property directly.
     """
     # Built with the same key the module uses, so mutating that key breaks
     # this test rather than being papered over by a hand-ordered list.
