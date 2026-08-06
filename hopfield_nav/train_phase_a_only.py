@@ -17,11 +17,11 @@ from __future__ import annotations
 import argparse
 import os
 from dataclasses import asdict
-from datetime import datetime
 
 import numpy as np
 import torch
 
+from cls_paths import run_dir, run_name
 from .config import (
     TrainConfig, EnvConfig, VectorHashConfig, HopfieldConfig,
     AgentConfig, PPOConfig, PhasedConfigV3, validate_train_config,
@@ -447,9 +447,8 @@ def train_phase_a_only(
         wandb.init(project=cfg.wandb_project, config=full_cfg)
 
     if cfg.save_dir is None:
-        sub = (wandb.run.name or wandb.run.id) if cfg.use_wandb else \
-              datetime.now().strftime("%Y%m%d_%H%M%S")
-        cfg.save_dir = os.path.join("checkpoint", f"phase_a_only_{sub}")
+        sub = run_name(*((wandb.run.name, wandb.run.id) if cfg.use_wandb else ()))
+        cfg.save_dir = str(run_dir("phase_a_only", sub))
 
     run_phase_a_sweep(
         cfg, pcfg, worlds, agent, embed_dim, device,

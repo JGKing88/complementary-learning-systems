@@ -8,11 +8,11 @@ from __future__ import annotations
 import argparse
 import os
 from dataclasses import asdict
-from datetime import datetime
 
 import numpy as np
 import torch
 
+from cls_paths import run_dir, run_name
 from .config import (
     TrainConfig, EnvConfig, VectorHashConfig, HopfieldConfig,
     AgentConfig, PPOConfig, BCConfig, validate_train_config,
@@ -188,11 +188,8 @@ def train(cfg: TrainConfig) -> None:
         wandb.init(project=cfg.wandb_project, config=asdict(cfg))
 
     if cfg.save_dir is None:
-        if cfg.use_wandb:
-            sub = wandb.run.name or wandb.run.id
-        else:
-            sub = datetime.now().strftime("%Y%m%d_%H%M%S")
-        cfg.save_dir = os.path.join("checkpoint", sub)
+        sub = run_name(*((wandb.run.name, wandb.run.id) if cfg.use_wandb else ()))
+        cfg.save_dir = str(run_dir("train", sub))
 
     # Distractor RNG for training: deterministic seeding lets the same distractor
     # patterns recur across updates, but with per-update offset so the agent can't
@@ -601,7 +598,8 @@ def main():
         "--save_dir",
         type=str,
         default=None,
-        help="Checkpoint directory (default: checkpoint/<wandb run name> with --use_wandb, else checkpoint/<YYYYMMDD_HHMMSS>)",
+        help="Checkpoint directory. Default: <CLS_RUNS>/agent_ckpts/<wandb run "
+             "name> with --use_wandb, else <CLS_RUNS>/agent_ckpts/<YYYYMMDD_HHMMSS>.",
     )
     # Checkpoint loading
     parser.add_argument("--load_checkpoint", type=str, default=None,

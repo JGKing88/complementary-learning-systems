@@ -41,6 +41,7 @@ resolved path compares equal to itself.
 from __future__ import annotations
 
 import os
+from datetime import datetime
 from pathlib import Path
 
 # Repo root: this module lives at the top of the source tree.
@@ -125,6 +126,76 @@ def wandb_dir(*, ensure: bool = False) -> Path:
     return _sub("wandb", ensure=ensure)
 
 
+# --- run identity and run directories --------------------------------------
+#
+# A training run's output is one directory named ``<prefix><run name>``. The
+# prefix records which trainer wrote it; the name is the run's identity -- the
+# wandb run name, or a timestamp when wandb is off. That name is the only key
+# linking wandb <-> checkpoint <-> slurm log, which is why it is worth having
+# one function produce it.
+#
+# Why this is here and not in each trainer
+# ----------------------------------------
+# Until 2026-08 all five trainers built this path by concatenating the string
+# literal ``"checkpoint"``. That is a *relative* path, so it resolved against
+# the CWD, then through a repo symlink, to the default runs root -- no matter
+# what ``CLS_RUNS`` said. Three consequences, all observed rather than
+# theorised:
+#
+#   1. ``CLS_RUNS`` relocated every output except the one there are 8.5 GB of.
+#   2. Run from anywhere but the repo root, a job silently created a stray
+#      ``./checkpoint/`` next to wherever it was started. This is why every
+#      sbatch script has to ``cd`` to the repo root first.
+#   3. ``test_smoke_train.py``'s sandbox fixture sets ``CLS_RUNS`` to a tmpdir
+#      "so the smoke test never writes to real outputs", and it worked for
+#      every trainer that accepted ``--save_dir`` -- but ``train_phase_b_only``
+#      had no such flag, so each test run deposited one more junk directory in
+#      the real tree. 36 of the 346 run directories arrived that way.
+#
+# ``test_no_hardcoded_output_dirs`` in the layering suite is what stops a sixth
+# trainer reintroducing the literal.
+RUN_KINDS: dict[str, tuple[str, str]] = {
+    # kind           (subdirectory of RUNS_ROOT, run-directory name prefix)
+    "train":         ("agent_ckpts", ""),
+    "phased":        ("agent_ckpts", "phased_"),
+    "phase_a_only":  ("agent_ckpts", "phase_a_only_"),
+    "phase_b_only":  ("agent_ckpts", "phase_b_only_"),
+    "rnn":           ("checkpoint_rnn", ""),
+}
+
+
+def run_name(wandb_name: str | None = None, wandb_id: str | None = None) -> str:
+    """Identity for a run: the wandb run name, its id, else a timestamp.
+
+    Callers pass ``wandb.run.name`` / ``wandb.run.id`` when wandb is on and
+    nothing when it is off. The precedence is the one all five trainers already
+    used independently; centralising it means the fallback is the same
+    everywhere and can be tested without a wandb session.
+    """
+    return wandb_name or wandb_id or datetime.now().strftime("%Y%m%d_%H%M%S")
+
+
+def run_dir(kind: str, name: str, *, ensure: bool = False) -> Path:
+    """Output directory for one training run.
+
+    ``kind`` is a key of :data:`RUN_KINDS`; ``name`` is the run identity from
+    :func:`run_name`. The resulting directory name is unchanged from the
+    pre-2026-08 layout (``phase_a_only_<name>``, ``phased_<name>``, a bare
+    ``<name>`` for ``train`` and ``rnn``), so existing run directories are
+    still addressed by the same string -- only the root moves, and only when
+    ``CLS_RUNS`` is set.
+    """
+    if kind not in RUN_KINDS:
+        raise KeyError(
+            f"Unknown run kind {kind!r}. Known kinds: {sorted(RUN_KINDS)}"
+        )
+    subdir, prefix = RUN_KINDS[kind]
+    p = _sub(subdir) / f"{prefix}{name}"
+    if ensure:
+        p.mkdir(parents=True, exist_ok=True)
+    return p
+
+
 def archive_dir(*, ensure: bool = False) -> Path:
     """Superseded material kept for provenance (notebooks, reference PDFs)."""
     return _sub("archive", ensure=ensure)
@@ -147,4 +218,7 @@ __all__ = [
     "logs_dir",
     "wandb_dir",
     "archive_dir",
+    "RUN_KINDS",
+    "run_name",
+    "run_dir",
 ]

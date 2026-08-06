@@ -36,6 +36,16 @@ Five rules:
    declared. Shared setup goes in `training/`, which is what
    `training/rnn_setup.py` and `training/world_setup.py` are for.
 
+6. **Only `cls_paths` names an output directory.** Building a path out of the
+   literal `"checkpoint"`, `"encoders"`, `"histories"`, … is how all five
+   trainers came to ignore `CLS_RUNS`: the string is *relative*, so it resolved
+   against the CWD and then through a repo symlink to the default root, whatever
+   the environment said. The failure was invisible for months because from the
+   repo root the answer is right. This rule is scoped to path *construction* --
+   `os.path.join`, `Path(...)`, `/` and `+` -- so a reader comparing
+   `parts[0] == "encoders"`, or an argparse `help=` string quoting a default,
+   is untouched.
+
 The layer numbers are the whole specification; a new package that is not in the
 table fails rule 1 loudly rather than being silently exempt.
 
@@ -45,8 +55,9 @@ dependency anything ships.
 
 Every rule is mutation-verified -- an upward import in `world/env.py`, an
 `encoder_training -> hopfield_nav` import, a private import from a lower layer,
-a module-scope matplotlib import in `train.py`, and an `analysis -> train_rnn`
-import each fail exactly the rule they should, and nothing else.
+a module-scope matplotlib import in `train.py`, an `analysis -> train_rnn`
+import, and `os.path.join("checkpoint", sub)` restored in `train_phase_a_only`
+each fail exactly the rule they should, and nothing else.
 """
 from __future__ import annotations
 
@@ -118,6 +129,26 @@ DEFERRED_UPWARD_IMPORTS: set[tuple[str, str]] = {
 }
 
 
+# Directory names owned by cls_paths. Each is the first component of a path
+# under CLS_RUNS, and each existed as an in-repo directory before the 2026-08
+# storage migration left it behind as a symlink -- which is exactly why a
+# hardcoded literal still resolves and the mistake is silent.
+RESERVED_OUTPUT_DIRS = frozenset({
+    "checkpoint", "checkpoints", "checkpoint_rnn", "agent_ckpts",
+    "agent_ckpts_legacy", "encoders", "histories", "scaffold_cache",
+    "results", "figures", "sweeps", "logs",
+})
+
+# Modules allowed to build a path from one of those names. `cls_paths` *is* the
+# definition of the layout, so it is the only one. Unlike rules 1-5 this rule
+# covers every source file in the tree, `scripts/` included: a maintenance
+# script that hardcodes `checkpoint/` is wrong in exactly the same way.
+OUTPUT_DIR_LITERAL_EXEMPT = frozenset({"cls_paths"})
+
+# Calls whose string arguments are path components.
+_PATH_BUILDERS = ("join", "Path", "PosixPath", "makedirs", "joinpath")
+
+
 def _layer(module: str) -> int | None:
     """Layer of a dotted module, by longest matching prefix."""
     if module in NAMESPACE_ONLY:
@@ -146,6 +177,30 @@ def _iter_modules():
             try:
                 tree = ast.parse(open(path, encoding="utf-8").read())
             except SyntaxError:  # pragma: no cover
+                continue
+            yield mod, os.path.relpath(path, REPO_ROOT), tree
+
+
+def _iter_all_source():
+    """(dotted module, path, AST) for every source file, layered or not.
+
+    `_iter_modules` yields only modules the layer table classifies, which
+    deliberately excludes `scripts/`. Rule 6 is not a layering rule and applies
+    to the whole tree, so it needs its own walk.
+    """
+    for dirpath, dirnames, filenames in os.walk(REPO_ROOT):
+        dirnames[:] = [d for d in dirnames if d not in SKIP_DIRS]
+        rel = os.path.relpath(dirpath, REPO_ROOT)
+        parts = [] if rel == "." else rel.split(os.sep)
+        for fn in sorted(filenames):
+            if not fn.endswith(".py"):
+                continue
+            path = os.path.join(dirpath, fn)
+            name = fn[:-3]
+            mod = ".".join(parts + ([] if name == "__init__" else [name])) or name
+            try:
+                tree = ast.parse(open(path, encoding="utf-8").read())
+            except (SyntaxError, UnicodeDecodeError):  # pragma: no cover
                 continue
             yield mod, os.path.relpath(path, REPO_ROOT), tree
 
@@ -310,6 +365,89 @@ def test_no_cross_module_private_imports():
     assert not violations, (
         "private names imported across modules:\n  " + "\n  ".join(sorted(violations))
     )
+
+
+def _reserved_literals_in_paths(tree: ast.AST):
+    """(literal, lineno) for reserved dir names used to *build* a path.
+
+    Three shapes, which between them cover every way the five trainers and the
+    scripts have ever spelled it:
+
+        os.path.join("checkpoint", sub)      -> argument of a path builder
+        Path("encoders") / run                  (same; `Path` is a builder)
+        "checkpoint_rnn/" + sub              -> operand of + or /
+
+    A bare literal that never reaches a path is not a violation: rule 6 is
+    about constructing locations, not about mentioning them. That is what keeps
+    `parts[0] == "encoders"` in `analysis/trajectories.py`'s encoder-path
+    fallback legal, and it has to stay legal -- ~300 checkpoints store their
+    encoder as a repo-relative `encoders/...` string and that resolver is how
+    they are still found.
+    """
+    def reserved(node):
+        if not (isinstance(node, ast.Constant) and isinstance(node.value, str)):
+            return None
+        first = node.value.replace("\\", "/").lstrip("/").split("/")[0]
+        return first if first in RESERVED_OUTPUT_DIRS else None
+
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Call):
+            fn = node.func
+            name = fn.attr if isinstance(fn, ast.Attribute) else (
+                fn.id if isinstance(fn, ast.Name) else "")
+            if name not in _PATH_BUILDERS:
+                continue
+            for arg in node.args:
+                lit = reserved(arg)
+                if lit:
+                    yield lit, arg.lineno
+        elif isinstance(node, ast.BinOp) and isinstance(node.op, (ast.Add, ast.Div)):
+            for side in (node.left, node.right):
+                lit = reserved(side)
+                if lit:
+                    yield lit, side.lineno
+
+
+def test_no_hardcoded_output_dirs():
+    """Only `cls_paths` may turn an output-directory name into a path.
+
+    The bug this exists for: every trainer resolved its default `save_dir` as
+    `os.path.join("checkpoint", sub)`. Relative, so it resolved against the CWD
+    and then through a repo symlink to the *default* runs root -- `CLS_RUNS`
+    was ignored for the one artifact class there are 8.5 GB of, a job started
+    outside the repo root silently wrote a stray `./checkpoint/`, and the test
+    suite's sandboxed `CLS_RUNS` leaked 36 junk run directories into the real
+    tree because `train_phase_b_only` had no `--save_dir` to escape with.
+    """
+    violations = []
+    for mod, path, tree in _iter_all_source():
+        if mod in OUTPUT_DIR_LITERAL_EXEMPT:
+            continue
+        for literal, lineno in _reserved_literals_in_paths(tree):
+            violations.append(
+                f"{path}:{lineno}  builds a path from {literal!r} "
+                f"(use cls_paths.run_dir / the *_dir accessors)"
+            )
+    assert not violations, (
+        "hardcoded output directories:\n  " + "\n  ".join(sorted(violations))
+    )
+
+
+def test_every_trainer_accepts_save_dir():
+    """All five trainers take `--save_dir`, so all five can be sandboxed.
+
+    `train_phase_b_only` was the one that did not, which is the whole reason
+    the pytest leak was possible: the smoke fixture sets `CLS_RUNS` to a
+    tmpdir, and with the default path ignoring it there was no second way out.
+    """
+    missing = []
+    for kind in ("train", "train_phased", "train_phase_a_only",
+                 "train_phase_b_only", "train_rnn"):
+        src = open(os.path.join(REPO_ROOT, "hopfield_nav", f"{kind}.py"),
+                   encoding="utf-8").read()
+        if '"--save_dir"' not in src:
+            missing.append(kind)
+    assert not missing, f"trainers with no --save_dir flag: {missing}"
 
 
 @pytest.mark.parametrize("package", sorted(LAYERS))

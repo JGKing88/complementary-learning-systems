@@ -17,11 +17,11 @@ from __future__ import annotations
 import argparse
 import os
 from dataclasses import asdict
-from datetime import datetime
 
 import numpy as np
 import torch
 
+from cls_paths import run_dir, run_name
 from .config import (
     TrainConfig, EnvConfig, VectorHashConfig, HopfieldConfig,
     AgentConfig, PPOConfig, validate_train_config,
@@ -148,7 +148,9 @@ def train_phase_b_only(args) -> None:
     cfg.eval_every = args.eval_every
     if args.steps_per_rollout is not None:
         cfg.steps_per_rollout = args.steps_per_rollout
-    cfg.save_dir = None  # resolved below
+    # Not inherited from the Phase A checkpoint: that field holds where Phase A
+    # wrote, and reusing it would have Phase B overwrite its own parent.
+    cfg.save_dir = args.save_dir
 
     validate_train_config(cfg)
     torch.manual_seed(cfg.seed)
@@ -184,9 +186,8 @@ def train_phase_b_only(args) -> None:
         })
 
     if cfg.save_dir is None:
-        sub = (wandb.run.name or wandb.run.id) if cfg.use_wandb else \
-              datetime.now().strftime("%Y%m%d_%H%M%S")
-        cfg.save_dir = os.path.join("checkpoint", f"phase_b_only_{sub}")
+        sub = run_name(*((wandb.run.name, wandb.run.id) if cfg.use_wandb else ()))
+        cfg.save_dir = str(run_dir("phase_b_only", sub))
 
     run_phase_b(
         cfg, agent, worlds, eval_world, embed_dim, device,
@@ -224,6 +225,10 @@ def main():
     p.add_argument("--seed", type=int, default=42)
     p.add_argument("--device", type=str, default="cuda")
     p.add_argument("--eval_every", type=int, default=5)
+    p.add_argument("--save_dir", type=str, default=None,
+                   help="Checkpoint directory. Default: "
+                        "<CLS_RUNS>/agent_ckpts/phase_b_only_<wandb run name "
+                        "or timestamp>.")
     p.add_argument("--use_wandb", action="store_true")
     p.add_argument("--wandb_project", type=str, default="hopfield-nav-phase-b")
     args = p.parse_args()

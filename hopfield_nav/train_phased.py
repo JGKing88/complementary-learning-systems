@@ -25,12 +25,12 @@ from __future__ import annotations
 import argparse
 import os
 from dataclasses import asdict
-from datetime import datetime
 
 import numpy as np
 import torch
 import torch.nn.functional as F
 
+from cls_paths import run_dir, run_name
 from .config import (
     TrainConfig, EnvConfig, VectorHashConfig, HopfieldConfig,
     AgentConfig, PPOConfig, PhasedConfig, validate_train_config,
@@ -289,9 +289,8 @@ def train_phased(cfg: TrainConfig, pcfg: PhasedConfig) -> None:
         wandb.init(project=cfg.wandb_project, config=full_cfg)
 
     if cfg.save_dir is None:
-        sub = (wandb.run.name or wandb.run.id) if cfg.use_wandb else \
-              datetime.now().strftime("%Y%m%d_%H%M%S")
-        cfg.save_dir = os.path.join("checkpoint", f"phased_{sub}")
+        sub = run_name(*((wandb.run.name, wandb.run.id) if cfg.use_wandb else ()))
+        cfg.save_dir = str(run_dir("phased", sub))
 
     # ----- Phase 1 -----
     run_phase1(cfg, pcfg, worlds, agent, embed_dim, device)

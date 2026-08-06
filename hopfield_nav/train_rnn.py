@@ -15,11 +15,11 @@ from __future__ import annotations
 import argparse
 import os
 from dataclasses import asdict
-from datetime import datetime
 
 import numpy as np
 import torch
 
+from cls_paths import run_dir, run_name
 from .policy.agent_rnn import RNNAgent, compute_rnn_input_dim
 from .updates.bc_rnn import bc_rnn_update
 from .config import EnvConfig, RNNAgentConfig, RNNBCConfig, RNNTrainConfig, VectorHashConfig
@@ -228,9 +228,8 @@ def train(cfg: RNNTrainConfig) -> None:
         wandb_run = wandb.init(project=cfg.wandb_project, config=asdict(cfg))
 
     if cfg.save_dir is None:
-        sub = (wandb_run.name if wandb_run is not None and wandb_run.name
-               else datetime.now().strftime("%Y%m%d_%H%M%S"))
-        cfg.save_dir = os.path.join("checkpoint_rnn", sub)
+        sub = run_name(wandb_run.name if wandb_run is not None else None)
+        cfg.save_dir = str(run_dir("rnn", sub))
     os.makedirs(cfg.save_dir, exist_ok=True)
     print(f"save_dir={cfg.save_dir}")
 
