@@ -22,12 +22,12 @@ import sys
 import numpy as np
 import torch
 
-from hopfield_nav.encoder import load_encoder
-from hopfield_nav.env import warn_if_offcell_stores
+from hopfield_nav.encoder_io import load_encoder
+from hopfield_nav.world.env import warn_if_offcell_stores
 from hopfield_nav.evaluation.checkpoint_io import (
     build_eval_world, cfg_from_checkpoint, load_agent, scaffold_layout_dict,
 )
-from hopfield_nav.eval import (
+from hopfield_nav.evaluation.metrics import (
     evaluate_navigation, evaluate_goal_discovery, evaluate_exploration,
     evaluate_realistic, evaluate_repeat, evaluate_sequential_episodes,
 )

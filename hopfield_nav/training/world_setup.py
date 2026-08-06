@@ -16,15 +16,15 @@ from __future__ import annotations
 
 import torch
 
-from ..agent import NavAgent
+from ..policy.agent import NavAgent
 from ..config import TrainConfig
-from ..env import GridEnv, make_env
-from ..eval import (
+from ..world.env import GridEnv, make_env
+from ..evaluation.metrics import (
     evaluate_exploration, evaluate_goal_discovery, evaluate_navigation,
     evaluate_union_coverage,
 )
-from ..hopfield import Hopfield
-from ..vectorhash import VectorHash
+from ..world.memory import Hopfield
+from ..world.scaffold import VectorHash
 
 
 # ---------------------------------------------------------------------------

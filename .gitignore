@@ -22,13 +22,13 @@ hopfield_nav/eval_all
 hopfield_nav/diagnostics
 hopfield_nav/inspect
 hopfield_nav/trajectory_plots
-hopfield_nav/phase_decoding
-hopfield_nav/phase_decoding_v2/results
-hopfield_nav/final_plotting/histories
-hopfield_nav/final_plotting/scaffold_cache
-hopfield_nav/final_plotting/figures
-hopfield_nav/final_plotting/final_figures
-hopfield_nav/final_plotting/model_comparison
+analysis/phase_decoding_v1_results
+analysis/phase_decoding/results
+analysis/continual/histories
+analysis/continual/scaffold_cache
+analysis/continual/figures
+analysis/continual/final_figures
+analysis/continual/model_comparison
 
 # --- large binaries ---
 *.pt

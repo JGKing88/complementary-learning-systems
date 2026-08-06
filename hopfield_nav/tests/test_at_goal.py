@@ -31,8 +31,8 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from hopfield_nav.env import ContinuousGridEnv, GridEnv
-from hopfield_nav.vec_env import ContinuousVecEnv, VecEnv
+from hopfield_nav.world.env import ContinuousGridEnv, GridEnv
+from hopfield_nav.world.vec_env import ContinuousVecEnv, VecEnv
 
 
 # ---------------------------------------------------------------------------
@@ -422,7 +422,7 @@ class TestHelperParity:
 
     @pytest.fixture(scope="class")
     def helper(self):
-        from hopfield_nav.env import _at_goal_l2
+        from hopfield_nav.world.env import _at_goal_l2
         return _at_goal_l2
 
     @pytest.mark.parametrize("pos,goal,expected", _HELPER_CASES_SCALAR)
@@ -482,7 +482,7 @@ class TestRadiusSemantics:
 
     @pytest.fixture(scope="class")
     def helper(self):
-        from hopfield_nav.env import _at_goal_l2
+        from hopfield_nav.world.env import _at_goal_l2
         return _at_goal_l2
 
     # --- Default radius=0.5 on continuous positions ----------------------
@@ -594,14 +594,14 @@ class TestGoalRadiusPlumbing:
 
     def test_make_env_threads_goal_radius(self):
         from hopfield_nav.config import EnvConfig
-        from hopfield_nav.env import make_env
+        from hopfield_nav.world.env import make_env
         cfg = EnvConfig(size=8, observation_size=12, goal_radius=1.5)
         env = make_env(cfg, "discrete", seed=0)
         assert env.goal_radius == 1.5
 
     def test_make_env_threads_goal_radius_continuous(self):
         from hopfield_nav.config import EnvConfig
-        from hopfield_nav.env import make_env
+        from hopfield_nav.world.env import make_env
         cfg = EnvConfig(size=8, observation_size=12, movement_mode="continuous",
                         goal_radius=2.0)
         env = make_env(cfg, "continuous", seed=0)
@@ -684,7 +684,7 @@ class TestGoalRadiusPlumbing:
 class TestAtGoalEnvDispatch:
 
     def test_grid_env_uses_pos(self):
-        from hopfield_nav.env import at_goal
+        from hopfield_nav.world.env import at_goal
         env = GridEnv(size=8, seed=0, observation_size=12)
         env._goal = (3, 4)
         env._pos = (3, 4)
@@ -700,7 +700,7 @@ class TestAtGoalEnvDispatch:
         env.current_location, which is the snap) said at_goal=True. The
         FIXED behavior uses the actual continuous position, so at_goal=False.
         """
-        from hopfield_nav.env import at_goal
+        from hopfield_nav.world.env import at_goal
         env = ContinuousGridEnv(
             size=8, seed=0, observation_size=12,
             scale=1.0, normalize=False,
@@ -713,7 +713,7 @@ class TestAtGoalEnvDispatch:
         assert at_goal(env) is False                  # but L2 says no
 
     def test_continuous_grid_env_uses_continuous_pos_inside(self):
-        from hopfield_nav.env import at_goal
+        from hopfield_nav.world.env import at_goal
         env = ContinuousGridEnv(
             size=8, seed=0, observation_size=12,
             scale=1.0, normalize=False,
@@ -725,7 +725,7 @@ class TestAtGoalEnvDispatch:
         assert at_goal(env) is True
 
     def test_continuous_grid_env_axis_aligned_at_radius(self):
-        from hopfield_nav.env import at_goal
+        from hopfield_nav.world.env import at_goal
         env = ContinuousGridEnv(
             size=8, seed=0, observation_size=12,
             scale=1.0, normalize=False, goal_radius=0.5,
@@ -736,7 +736,7 @@ class TestAtGoalEnvDispatch:
         assert at_goal(env) is True
 
     def test_vec_env_uses_pos(self):
-        from hopfield_nav.env import at_goal
+        from hopfield_nav.world.env import at_goal
         base = GridEnv(size=8, seed=0, observation_size=12)
         base._goal = (3, 4)
         vec = VecEnv(base, batch_size=4)
@@ -748,7 +748,7 @@ class TestAtGoalEnvDispatch:
 
     def test_continuous_vec_env_uses_pos_f_not_pos(self):
         """Vec-env analog of the snap-vs-continuous regression."""
-        from hopfield_nav.env import at_goal
+        from hopfield_nav.world.env import at_goal
         base = ContinuousGridEnv(
             size=8, seed=0, observation_size=12,
             scale=1.0, normalize=False,
@@ -769,7 +769,7 @@ class TestAtGoalEnvDispatch:
 
     def test_continuous_vec_env_step_batch_uses_continuous_position(self):
         """End-to-end: the bug surfaces in step_batch's goal_reached."""
-        from hopfield_nav.env import at_goal
+        from hopfield_nav.world.env import at_goal
         base = ContinuousGridEnv(
             size=8, seed=0, observation_size=12,
             scale=1.0, normalize=False,
@@ -799,7 +799,7 @@ class TestAtGoalEnvDispatch:
         assert env.reward() == pytest.approx(-0.01)
 
     def test_at_goal_rejects_explicit_goal_or_radius(self):
-        from hopfield_nav.env import at_goal
+        from hopfield_nav.world.env import at_goal
         env = GridEnv(size=8, seed=0, observation_size=12)
         env._goal = (3, 4)
         env._pos = (3, 4)

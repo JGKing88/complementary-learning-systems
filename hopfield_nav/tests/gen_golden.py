@@ -39,8 +39,8 @@ from pathlib import Path
 import numpy as np
 import torch
 
-from hopfield_nav.env import GridEnv, make_env
-from hopfield_nav.hopfield import Hopfield
+from hopfield_nav.world.env import GridEnv, make_env
+from hopfield_nav.world.memory import Hopfield
 from hopfield_nav.tests.fixtures import (
     RecordingAgent, StubVectorHash, make_collector, make_stub_cfg,
 )
@@ -146,7 +146,7 @@ def gen_eval_observations() -> dict[str, np.ndarray]:
     Driven over a fixed action sequence from a fixed start so the trajectory --
     and therefore every observation on it -- is reproducible.
     """
-    from hopfield_nav.eval import agent_step
+    from hopfield_nav.evaluation.metrics import agent_step
 
     out: dict[str, np.ndarray] = {}
     device = torch.device("cpu")
@@ -231,7 +231,7 @@ def gen_evaluators() -> dict[str, np.ndarray]:
     deterministic policy survive that; the aggregates do not. The aggregates are
     stored too, but as a diagnostic -- test_golden.py asserts on the records.
     """
-    from hopfield_nav import eval as ev
+    from hopfield_nav.evaluation import metrics as ev
 
     out: dict[str, np.ndarray] = {}
     cfg = make_stub_cfg(movement_mode="discrete", batch_envs=4)
@@ -289,7 +289,7 @@ def gen_long_horizon_evaluators() -> dict[str, np.ndarray]:
     rewrote the at-goal handling inside two of them and the whole protocol
     inside a third. Their full returned dict is pinned instead.
     """
-    from hopfield_nav import eval as ev
+    from hopfield_nav.evaluation import metrics as ev
 
     def _world(n=2):
         # A small grid and a wide goal radius, so an untrained policy actually

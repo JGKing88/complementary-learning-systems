@@ -19,14 +19,14 @@ from hopfield_nav.config import (
     AgentConfig, BCConfig, EnvConfig, HopfieldConfig, PPOConfig, TrainConfig,
     VectorHashConfig, validate_train_config,
 )
-from hopfield_nav.env import CARDINAL_ACTIONS, ContinuousGridEnv, GridEnv
-from hopfield_nav.hopfield import Hopfield, recall_per_env_batch
-from hopfield_nav.oracle_bfs import bfs_action_batch_discrete
+from hopfield_nav.world.env import CARDINAL_ACTIONS, ContinuousGridEnv, GridEnv
+from hopfield_nav.world.memory import Hopfield, recall_per_env_batch
+from hopfield_nav.rollout.oracles import bfs_action_batch_discrete
 from hopfield_nav.utils import (
     classify_direction_batch, direction_to_onehot, gram_schmidt_2d_batch,
 )
 from hopfield_nav.tests.fixtures import StubVectorHash, make_stub_cfg
-from hopfield_nav.vec_env import ContinuousVecEnv, VecEnv
+from hopfield_nav.world.vec_env import ContinuousVecEnv, VecEnv
 
 
 # ---------------------------------------------------------------------------
@@ -287,8 +287,8 @@ _make_stub_cfg = make_stub_cfg
 
 
 def _make_collector(cfg: TrainConfig, embed_dim: int = 8):
-    from hopfield_nav.agent import NavAgent, compute_input_dim
-    from hopfield_nav.rollout import RolloutCollector
+    from hopfield_nav.policy.agent import NavAgent, compute_input_dim
+    from hopfield_nav.rollout.collector import RolloutCollector
     vh = StubVectorHash(Npos=16, embed_dim=embed_dim)
     device = torch.device("cpu")
     collector = RolloutCollector(vh, cfg, embed_dim, device)
@@ -508,7 +508,8 @@ class TestPPOAdvantageNormalization:
     """Bug audit: advantage normalization is buffer-global, not per-rollout."""
 
     def test_pool_norm_is_buffer_global(self):
-        from hopfield_nav.ppo import RolloutBatch, _pool_rollouts
+        from hopfield_nav.rollout.types import RolloutBatch
+        from hopfield_nav.updates.ppo import _pool_rollouts
         torch.manual_seed(0)
         # Two rollouts with disparate scales.
         def make(scale, B=2, T=4):
@@ -538,8 +539,9 @@ class TestPPOStoreLossMask:
     """Store loss must be zero when explore_mask is all zero."""
 
     def test_zero_explore_mask_zero_store_loss(self):
-        from hopfield_nav.agent import NavAgent
-        from hopfield_nav.ppo import RolloutBatch, ppo_update
+        from hopfield_nav.policy.agent import NavAgent
+        from hopfield_nav.rollout.types import RolloutBatch
+        from hopfield_nav.updates.ppo import ppo_update
         cfg_ppo = PPOConfig()
         agent_cfg = AgentConfig(
             hidden_size=8, num_rnn_layers=1,
@@ -570,7 +572,7 @@ class TestBCEDetachTrunkNoGrad:
     """With bce_detach_trunk=True, store-only BCE doesn't leak into the trunk."""
 
     def test_detached_bce_has_no_rnn_grad(self):
-        from hopfield_nav.agent import NavAgent
+        from hopfield_nav.policy.agent import NavAgent
         torch.manual_seed(0)
         agent_cfg = AgentConfig(
             hidden_size=8, num_rnn_layers=1,
@@ -592,7 +594,7 @@ class TestBCEDetachTrunkNoGrad:
 
 class TestGAEBootstrap:
     def test_one_step_truncation(self):
-        from hopfield_nav.ppo import compute_gae
+        from hopfield_nav.updates.ppo import compute_gae
         rewards = torch.tensor([[1.0]])
         values = torch.tensor([[0.5]])
         boot = torch.tensor([2.0])
@@ -607,9 +609,9 @@ class TestBCStoreCap:
     """BCConfig.bce_pos_weight_cap actually caps pos_weight in bc_update."""
 
     def test_cap_active(self):
-        from hopfield_nav.agent import NavAgent
-        from hopfield_nav.bc import bc_update
-        from hopfield_nav.ppo import RolloutBatch
+        from hopfield_nav.policy.agent import NavAgent
+        from hopfield_nav.updates.bc import bc_update
+        from hopfield_nav.rollout.types import RolloutBatch
         agent_cfg = AgentConfig(
             hidden_size=8, num_rnn_layers=1,
             input_encoded_state=False, input_hopfield_signal=False,

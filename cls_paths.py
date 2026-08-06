@@ -12,7 +12,7 @@ Why this module exists
 ----------------------
 Until 2026-08 every output directory lived inside the source tree: encoder
 checkpoints in ``encoders/``, agent checkpoints in ``checkpoint/``, continual
-histories in ``hopfield_nav/final_plotting/histories/``, and so on. That put
+histories in ``analysis/continual/histories/``, and so on. That put
 ~64 GB of run artifacts on a 200 GB HOME quota shared with everything else, so
 a long training job could fail on write. Outputs now live under a single root
 on pool storage; the in-repo names survive as symlinks.

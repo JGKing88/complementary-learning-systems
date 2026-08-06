@@ -90,7 +90,7 @@ def _expected_width(cfg, embed_dim: int) -> int:
 
 @pytest.mark.parametrize("name,kwargs", gen_golden.OBS_CONFIGS)
 def test_input_width_matches_channel_order(name, kwargs):
-    from hopfield_nav.agent import compute_input_dim
+    from hopfield_nav.policy.agent import compute_input_dim
     cfg = make_stub_cfg(**kwargs)
     expected = _expected_width(cfg, gen_golden.EMBED_DIM)
     actual = compute_input_dim(cfg.agent, gen_golden.EMBED_DIM,

@@ -20,19 +20,16 @@ from datetime import datetime
 import numpy as np
 import torch
 
-from .agent_rnn import RNNAgent, compute_rnn_input_dim
-from .bc_rnn import bc_rnn_update
+from .policy.agent_rnn import RNNAgent, compute_rnn_input_dim
+from .updates.bc_rnn import bc_rnn_update
 from .config import EnvConfig, RNNAgentConfig, RNNBCConfig, RNNTrainConfig, VectorHashConfig
-from .env import GridEnv, warn_if_offcell_stores
-from .eval_rnn import evaluate_nav_all
-from .final_plotting.plotting import (  # noqa: F401  (re-export for regen_plots.py)
-    save_forgetting_plot, save_steps_to_goal_plot,
-)
-from .rollout_rnn import collect_rollout_rnn
+from .world.env import GridEnv, warn_if_offcell_stores
+from .evaluation.rnn import evaluate_nav_all
+from .rollout.rnn import collect_rollout_rnn
 from .training.rnn_sequential import UpdateResult, run_sequential_blocks
 from .utils import smooth_gbook
-from .vec_env import ContinuousVecEnv, VecEnv, make_vec
-from .vectorhash import VectorHash
+from .world.vec_env import ContinuousVecEnv, VecEnv, make_vec
+from .world.scaffold import VectorHash
 
 
 def restore_arch_from_ckpt(cfg: RNNTrainConfig, ckpt: dict) -> None:
@@ -296,6 +293,13 @@ def train(cfg: RNNTrainConfig) -> None:
         history = train_sequential(
             cfg, agent, optimizer, envs, device, wandb_run,
             sgb=sgb, env_offsets=env_offsets,
+        )
+        # Imported here, not at module scope: `analysis` is the layer above
+        # training, and a top-level import would make matplotlib and the whole
+        # figure stack a dependency of every training run. See
+        # tests/test_layering.py.
+        from analysis.continual.plotting import (
+            save_forgetting_plot, save_steps_to_goal_plot,
         )
         nd_path = os.path.join(cfg.save_dir, "forgetting.png")
         steps_path = os.path.join(cfg.save_dir, "steps_to_goal.png")

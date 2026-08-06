@@ -21,13 +21,13 @@ from __future__ import annotations
 
 import numpy as np
 
-from ..agent import NavAgent, compute_input_dim
+from ..policy.agent import NavAgent, compute_input_dim
 from ..config import (
     AgentConfig, EnvConfig, HopfieldConfig, PPOConfig, TrainConfig,
     VectorHashConfig,
 )
-from ..env import make_env
-from ..vectorhash import VectorHash
+from ..world.env import make_env
+from ..world.scaffold import VectorHash
 
 
 def coerce_legacy_cfg(cd: dict) -> dict:

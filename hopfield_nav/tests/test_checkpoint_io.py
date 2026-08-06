@@ -18,7 +18,7 @@ from dataclasses import asdict
 import pytest
 import torch
 
-from hopfield_nav.agent import compute_input_dim
+from hopfield_nav.policy.agent import compute_input_dim
 from hopfield_nav.evaluation.checkpoint_io import (
     cfg_from_checkpoint, coerce_legacy_cfg, load_agent,
 )

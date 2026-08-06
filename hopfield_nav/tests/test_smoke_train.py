@@ -65,10 +65,10 @@ def tiny_encoder(sandbox):
 def test_save_untrained_encoder_is_loadable(tiny_encoder):
     """The checkpoint the rest of the chain depends on round-trips.
 
-    Loaded through hopfield_nav.encoder.load_encoder -- the adapter the
+    Loaded through hopfield_nav.encoder_io.load_encoder -- the adapter the
     training entry points use, which resolves the encoder gain as well.
     """
-    from hopfield_nav.encoder import load_encoder
+    from hopfield_nav.encoder_io import load_encoder
     encoder, enc_cfg, gain = load_encoder(str(tiny_encoder), "cpu")
     assert enc_cfg.out_dim == 8
     assert gain == pytest.approx(5.0)
@@ -246,8 +246,8 @@ def test_agenthash_run_sequential_outer_loop():
     """
     import numpy as np
     import torch
-    from hopfield_nav.env import make_env
-    from hopfield_nav.final_plotting.agenthash import run_sequential
+    from hopfield_nav.world.env import make_env
+    from analysis.continual.agenthash import run_sequential
     from hopfield_nav.tests.fixtures import make_collector, make_stub_cfg
 
     cfg = make_stub_cfg(movement_mode="discrete")

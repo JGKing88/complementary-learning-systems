@@ -25,7 +25,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.patches import Polygon, Rectangle
 
-from hopfield_nav.env import FOVEAL_HALF_ANGLE_DEG, GridEnv
+from hopfield_nav.world.env import FOVEAL_HALF_ANGLE_DEG, GridEnv
 
 NEG_COLOR = "#222222"
 POS_COLOR = "#dddddd"

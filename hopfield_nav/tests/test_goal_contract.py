@@ -55,11 +55,11 @@ import numpy as np
 import pytest
 import torch
 
-from hopfield_nav.env import CARDINAL_ACTIONS, GridEnv, at_goal, make_env
+from hopfield_nav.world.env import CARDINAL_ACTIONS, GridEnv, at_goal, make_env
 from hopfield_nav.config import EnvConfig
-from hopfield_nav.hopfield import Hopfield
+from hopfield_nav.world.memory import Hopfield
 from hopfield_nav.tests.fixtures import StubVectorHash, make_stub_cfg
-from hopfield_nav.vec_env import VecEnv
+from hopfield_nav.world.vec_env import VecEnv
 
 EMBED_DIM = 8
 
@@ -350,7 +350,7 @@ def _run_agent_step_from_goal(cfg, vh, *, store: bool, n_steps: int = 3):
     This is the primitive every evaluator uses, so what it does here is what
     they all do -- their differences are termination rules layered on top.
     """
-    from hopfield_nav.eval import agent_step
+    from hopfield_nav.evaluation.metrics import agent_step
 
     env = make_env(cfg.env, "discrete", seed=3)
     while env.goal_location[0] >= cfg.env.size - 1:
@@ -420,7 +420,7 @@ def test_c2_holds_even_when_at_goal_off_cell():
     """
     cfg, vh = _stub_world(goal_radius=1.0)
     assert cfg.env.allow_offcell_store is False
-    from hopfield_nav.eval import agent_step
+    from hopfield_nav.evaluation.metrics import agent_step
 
     env = make_env(cfg.env, "discrete", seed=3)
     goal = tuple(int(v) for v in env.goal_location)
@@ -458,7 +458,7 @@ def test_phase5_one_parameterized_decision_point_exists():
 
     assert hasattr(episode, "GoalContract")
     assert hasattr(episode, "resolve_at_goal")
-    from hopfield_nav.vec_env import ContinuousVecEnv, VecEnv
+    from hopfield_nav.world.vec_env import ContinuousVecEnv, VecEnv
     for cls in (VecEnv, ContinuousVecEnv):
         params = inspect.signature(cls.step_batch).parameters
         assert "contract" in params, f"{cls.__name__}.step_batch takes no contract"
@@ -538,12 +538,16 @@ def test_phase5_every_site_calls_contract_for():
     import pathlib as _p
     root = _p.Path(__file__).resolve().parents[1]
     sources = {
-        "evaluate_realistic": root / "eval.py",
-        "evaluate_repeat": root / "eval.py",
-        "evaluate_goal_discovery": root / "eval.py",
-        "evaluate_exploration": root / "eval.py",
-        "training_rollout": root / "rollout.py",
+        "evaluate_realistic": root / "evaluation" / "metrics.py",
+        "evaluate_repeat": root / "evaluation" / "metrics.py",
+        "evaluate_goal_discovery": root / "evaluation" / "metrics.py",
+        "evaluate_exploration": root / "evaluation" / "metrics.py",
+        "training_rollout": root / "rollout" / "collector.py",
     }
+    unreadable = [str(p) for p in sources.values() if not p.exists()]
+    assert not unreadable, (
+        f"source paths are stale -- these files moved: {unreadable}"
+    )
     missing = [site for site, path in sources.items()
                if f'contract_for("{site}")' not in path.read_text()]
     assert not missing, f"sites not declaring their contract: {missing}"
@@ -569,7 +573,7 @@ def test_phase5_declared_contract_reaches_the_training_stepper():
     """rollout.py passes its contract to step_batch rather than relying on the
     goals_active default, so the two cannot silently disagree."""
     import inspect
-    from hopfield_nav.rollout import RolloutCollector
+    from hopfield_nav.rollout.collector import RolloutCollector
     src = inspect.getsource(RolloutCollector.collect_rollout)
     assert 'contract_for("training_rollout")' in src
     assert "contract=goal_contract" in src

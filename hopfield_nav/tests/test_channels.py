@@ -11,8 +11,8 @@ from __future__ import annotations
 import pytest
 import torch
 
-from hopfield_nav import channels
-from hopfield_nav.agent import compute_input_dim
+from hopfield_nav.policy import channels
+from hopfield_nav.policy.agent import compute_input_dim
 from hopfield_nav.tests.fixtures import make_stub_cfg
 
 

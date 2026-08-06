@@ -26,13 +26,14 @@ from .config import (
     TrainConfig, EnvConfig, VectorHashConfig, HopfieldConfig,
     AgentConfig, PPOConfig, PhasedConfigV3, validate_train_config,
 )
-from .encoder import load_encoder, validate_config
-from .env import warn_if_offcell_stores
-from .vectorhash import VectorHash
-from .hopfield import Hopfield
-from .agent import NavAgent, compute_input_dim
-from .rollout import RolloutCollector
-from .ppo import ppo_update
+from .encoder_io import load_encoder, validate_config
+from .world.env import warn_if_offcell_stores
+from .world.scaffold import VectorHash
+from .world.memory import Hopfield
+from .policy.agent import NavAgent, compute_input_dim
+from .rollout.collector import RolloutCollector
+from .rollout.distractors import sample_distractors
+from .updates.ppo import ppo_update
 from .training.world_setup import (
     do_eval, make_hops, set_phase_freeze, setup_world,
 )
@@ -248,17 +249,8 @@ def run_phase_a_sweep(
                             cur_distractors_max + 1,
                         ))
                         if n_dist > 0:
-                            Npos = vh.Npos
-                            cx, cy = env_offset
-                            placed = 0
-                            while placed < n_dist:
-                                rx = dist_rng.randint(0, Npos)
-                                ry = dist_rng.randint(0, Npos)
-                                if (cx <= rx < cx + cfg.env.size and
-                                        cy <= ry < cy + cfg.env.size):
-                                    continue
-                                patterns.append(vh.encoded_Phi[rx, ry])
-                                placed += 1
+                            patterns.extend(sample_distractors(
+                                vh, env_offset, cfg.env.size, n_dist, dist_rng))
                         dist_rng.shuffle(patterns)
                         for pat in patterns:
                             hop.input_memory(torch.from_numpy(pat).float())
@@ -280,18 +272,10 @@ def run_phase_a_sweep(
                             cur_emp_distractors_max + 1,
                         ))
                         if n_emp_dist > 0:
-                            Npos = vh.Npos
-                            cx, cy = env_offset
-                            placed = 0
-                            while placed < n_emp_dist:
-                                rx = dist_rng.randint(0, Npos)
-                                ry = dist_rng.randint(0, Npos)
-                                if (cx <= rx < cx + cfg.env.size and
-                                        cy <= ry < cy + cfg.env.size):
-                                    continue
-                                hop.input_memory(torch.from_numpy(
-                                    vh.encoded_Phi[rx, ry]).float())
-                                placed += 1
+                            for pat in sample_distractors(
+                                    vh, env_offset, cfg.env.size,
+                                    n_emp_dist, dist_rng):
+                                hop.input_memory(torch.from_numpy(pat).float())
                     else:
                         hop = emp_pools[w_idx][local_idx]
                     cfg.hopfield.novelty_reward = current_novelty

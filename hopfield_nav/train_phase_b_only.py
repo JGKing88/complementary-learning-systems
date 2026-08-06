@@ -26,10 +26,10 @@ from .config import (
     TrainConfig, EnvConfig, VectorHashConfig, HopfieldConfig,
     AgentConfig, PPOConfig, validate_train_config,
 )
-from .encoder import load_encoder, validate_config
-from .agent import NavAgent, compute_input_dim
-from .rollout import RolloutCollector
-from .ppo import ppo_update
+from .encoder_io import load_encoder, validate_config
+from .policy.agent import NavAgent, compute_input_dim
+from .rollout.collector import RolloutCollector
+from .updates.ppo import ppo_update
 from .training.world_setup import (
     do_eval, make_hops, set_phase_freeze, setup_world,
 )

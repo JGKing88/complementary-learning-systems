@@ -20,11 +20,11 @@ from typing import Callable
 import numpy as np
 import torch
 
-from ..bc_rnn import bc_rnn_update
-from ..env import GridEnv
-from ..eval_rnn import evaluate_nav_all
-from ..rollout_rnn import collect_rollout_rnn
-from ..vec_env import make_vec
+from ..updates.bc_rnn import bc_rnn_update
+from ..world.env import GridEnv
+from ..evaluation.rnn import evaluate_nav_all
+from ..rollout.rnn import collect_rollout_rnn
+from ..world.vec_env import make_vec
 
 
 @dataclass

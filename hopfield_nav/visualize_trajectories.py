@@ -56,15 +56,14 @@ import numpy as np
 import torch
 
 from cls_paths import REPO_ROOT, encoders_dir
-from hopfield_nav.encoder import load_encoder
-from hopfield_nav.env import at_goal
-from hopfield_nav.eval import (
-    agent_step, _goal_encoding, _sample_distractor_goals, random_start,
-)
+from hopfield_nav.encoder_io import load_encoder
+from hopfield_nav.world.env import at_goal
+from hopfield_nav.evaluation.metrics import agent_step, random_start
+from hopfield_nav.rollout.distractors import goal_encoding, sample_distractors
 from hopfield_nav.evaluation.checkpoint_io import (
     build_eval_world, cfg_from_checkpoint, load_agent,
 )
-from hopfield_nav.hopfield import Hopfield
+from hopfield_nav.world.memory import Hopfield
 
 
 MODES = ("combined", "explore_only", "exploit_only")
@@ -127,7 +126,7 @@ def _build_hopfield_with_distractors(
     rng = np.random.RandomState(seed)
     embed_dim = vh.encoded_Phi.shape[2]
     hopfield = Hopfield(embed_dim, beta=beta, device=str(device))
-    for pat in _sample_distractor_goals(vh, env_offset, env_size, n_distractors, rng):
+    for pat in sample_distractors(vh, env_offset, env_size, n_distractors, rng):
         hopfield.input_memory(torch.from_numpy(pat).float())
     return hopfield
 
@@ -145,7 +144,7 @@ def _store_goal_and_mark_timeout(
       - explore_end_idx: index to terminate the explore segment in plotting
       - timed_out_store: True, to signal an "X" marker at timeout location
     """
-    goal_enc = _goal_encoding(vh, env_offset, goal)
+    goal_enc = goal_encoding(vh, env_offset, goal)
     hopfield.input_memory(torch.from_numpy(goal_enc).float())
     explore_end_idx = len(positions) - 1
     return explore_end_idx, True
@@ -334,8 +333,8 @@ def _rollout_exploit(
     embed_dim = vh.encoded_Phi.shape[2]
     hopfield = Hopfield(embed_dim, beta=cfg.hopfield.beta, device=str(device))
     goal = env.goal_location
-    goal_enc = _goal_encoding(vh, env_offset, goal)
-    patterns = [goal_enc] + _sample_distractor_goals(
+    goal_enc = goal_encoding(vh, env_offset, goal)
+    patterns = [goal_enc] + sample_distractors(
         vh, env_offset, cfg.env.size, n_distractors, rng,
     )
     rng.shuffle(patterns)

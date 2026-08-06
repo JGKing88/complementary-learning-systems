@@ -16,10 +16,10 @@ import numpy as np
 import pytest
 import torch
 
-from hopfield_nav.env import make_env
+from hopfield_nav.world.env import make_env
 from hopfield_nav.evaluation import protocols
-from hopfield_nav.final_plotting.agenthash import mini_episode
-from hopfield_nav.hopfield import Hopfield
+from analysis.continual.agenthash import mini_episode
+from hopfield_nav.world.memory import Hopfield
 from hopfield_nav.tests.fixtures import make_collector, make_stub_cfg
 
 EMBED_DIM = 8
@@ -206,7 +206,7 @@ def _rnn_cfg(n_envs: int = 2):
 
 
 def _rnn_agent(cfg):
-    from hopfield_nav.agent_rnn import RNNAgent, compute_rnn_input_dim
+    from hopfield_nav.policy.agent_rnn import RNNAgent, compute_rnn_input_dim
     torch.manual_seed(0)
     np.random.seed(0)
     agent = RNNAgent(
@@ -255,7 +255,7 @@ def test_rnn_untrained_envs_are_not_evaluated():
 def test_both_rnn_drivers_run_the_same_loop():
     """train_rnn and the figure driver agree step-for-step on the block
     schedule, differing only in trial count and what they record."""
-    from hopfield_nav.final_plotting.baseline import run_sequential
+    from analysis.continual.baseline import run_sequential
     from hopfield_nav.train_rnn import build_envs, train_sequential
 
     outs = {}

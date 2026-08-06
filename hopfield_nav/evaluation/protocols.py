@@ -37,7 +37,7 @@ from typing import Callable, Iterator
 import numpy as np
 import torch
 
-from ..env import GridEnv, at_goal
+from ..world.env import GridEnv, at_goal
 from ..world import episode
 
 
@@ -99,7 +99,7 @@ def run_mini_episode(
     # Deferred import: agent_step still lives in eval.py, which imports this
     # module. Phase 6 moves it to evaluation/agent_step.py and this becomes a
     # normal top-level import.
-    from ..eval import agent_step, random_start
+    from .metrics import agent_step, random_start
 
     episode.require_single_env_support(
         episode.contract_for("evaluate_sequential_episodes"),

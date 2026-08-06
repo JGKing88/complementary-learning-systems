@@ -53,7 +53,7 @@ class StubVectorHash:
 
     def get_store_patterns(self, positions, env_offset, *, at_goal_mask=None,
                            goal=None, allow_offcell=True):
-        from hopfield_nav.vectorhash import VectorHash
+        from hopfield_nav.world.scaffold import VectorHash
         return VectorHash.get_store_patterns(
             self, positions, env_offset, at_goal_mask=at_goal_mask,
             goal=goal, allow_offcell=allow_offcell,
@@ -61,7 +61,7 @@ class StubVectorHash:
 
     def gram_schmidt_projection(self, positions, env_offset, cached_W=None,
                                 recompute_mask=None):
-        from hopfield_nav.vectorhash import VectorHash
+        from hopfield_nav.world.scaffold import VectorHash
         return VectorHash.gram_schmidt_projection(
             self, positions, env_offset, cached_W, recompute_mask,
         )
@@ -145,8 +145,8 @@ def make_collector(cfg: TrainConfig, embed_dim: int = 8, *, seed: int = 0):
     The agent's weights are seeded, so its outputs -- and therefore the whole
     rollout -- are reproducible.
     """
-    from hopfield_nav.agent import NavAgent, compute_input_dim
-    from hopfield_nav.rollout import RolloutCollector
+    from hopfield_nav.policy.agent import NavAgent, compute_input_dim
+    from hopfield_nav.rollout.collector import RolloutCollector
 
     vh = StubVectorHash(Npos=16, embed_dim=embed_dim)
     device = torch.device("cpu")

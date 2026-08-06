@@ -35,12 +35,12 @@ from .config import (
     TrainConfig, EnvConfig, VectorHashConfig, HopfieldConfig,
     AgentConfig, PPOConfig, PhasedConfig, validate_train_config,
 )
-from .encoder import load_encoder, validate_config
-from .env import warn_if_offcell_stores
-from .hopfield import Hopfield
-from .agent import NavAgent, compute_input_dim
-from .rollout import RolloutCollector
-from .ppo import ppo_update
+from .encoder_io import load_encoder, validate_config
+from .world.env import warn_if_offcell_stores
+from .world.memory import Hopfield
+from .policy.agent import NavAgent, compute_input_dim
+from .rollout.collector import RolloutCollector
+from .updates.ppo import ppo_update
 from .training.world_setup import (
     do_eval, make_hops, set_phase_freeze, setup_world, store_params,
 )

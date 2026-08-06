@@ -15,10 +15,11 @@ import numpy as np
 import pytest
 import torch
 
-from hopfield_nav import eval as ev
-from hopfield_nav.env import make_env
+from hopfield_nav.evaluation import metrics as ev
+from hopfield_nav.rollout import distractors
+from hopfield_nav.world.env import make_env
 from hopfield_nav.evaluation.batched import batched_navigation_trials
-from hopfield_nav.hopfield import Hopfield
+from hopfield_nav.world.memory import Hopfield
 from hopfield_nav.tests.fixtures import make_collector, make_stub_cfg
 
 EMBED_DIM = 8
@@ -50,7 +51,7 @@ def _sequential_reference(agent, env, env_offset, vh, hopfields, cfg, device,
             h_rnn = res["h_rnn"]
             prev_reward = res["next_prev_reward"]
             prev_action = res["next_prev_action"]
-            from hopfield_nav.env import at_goal
+            from hopfield_nav.world.env import at_goal
             if at_goal(env):
                 steps = step + 1
                 break
@@ -70,7 +71,7 @@ def test_batched_matches_sequential_trial_for_trial(goal_radius):
     for _ in range(16):
         hop = Hopfield(EMBED_DIM, beta=cfg.hopfield.beta, device="cpu")
         hop.input_memory(torch.from_numpy(
-            ev._goal_encoding(vh, env_offset, goal)).float())
+            distractors.goal_encoding(vh, env_offset, goal)).float())
         hopfields.append(hop)
         starts.append(ev.random_start(env.size, goal, rng))
 
@@ -98,7 +99,7 @@ def test_finished_trials_are_frozen():
     for _ in range(8):
         hop = Hopfield(EMBED_DIM, beta=cfg.hopfield.beta, device="cpu")
         hop.input_memory(torch.from_numpy(
-            ev._goal_encoding(vh, env_offset, goal)).float())
+            distractors.goal_encoding(vh, env_offset, goal)).float())
         hopfields.append(hop)
         starts.append(ev.random_start(env.size, goal, rng))
 
@@ -120,7 +121,7 @@ def test_trials_keep_their_own_memory_and_start():
     # Two trials: one with the goal preloaded, one with an unrelated pattern.
     good = Hopfield(EMBED_DIM, beta=cfg.hopfield.beta, device="cpu")
     good.input_memory(torch.from_numpy(
-        ev._goal_encoding(vh, env_offset, goal)).float())
+        distractors.goal_encoding(vh, env_offset, goal)).float())
     junk = Hopfield(EMBED_DIM, beta=cfg.hopfield.beta, device="cpu")
     junk.input_memory(torch.from_numpy(vh.encoded_Phi[13, 13]).float())
 

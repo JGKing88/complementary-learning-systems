@@ -17,15 +17,16 @@ from .config import (
     TrainConfig, EnvConfig, VectorHashConfig, HopfieldConfig,
     AgentConfig, PPOConfig, BCConfig, validate_train_config,
 )
-from .encoder import load_encoder, validate_config
-from .env import make_env, warn_if_offcell_stores
-from .vectorhash import VectorHash
-from .hopfield import Hopfield
-from .agent import NavAgent, compute_input_dim
-from .rollout import RolloutCollector
-from .ppo import ppo_update
-from .bc import bc_update
-from .eval import (
+from .encoder_io import load_encoder, validate_config
+from .world.env import make_env, warn_if_offcell_stores
+from .world.scaffold import VectorHash
+from .world.memory import Hopfield
+from .policy.agent import NavAgent, compute_input_dim
+from .rollout.collector import RolloutCollector
+from .rollout.distractors import sample_distractors
+from .updates.ppo import ppo_update
+from .updates.bc import bc_update
+from .evaluation.metrics import (
     evaluate_navigation, evaluate_goal_discovery, evaluate_exploration,
     evaluate_realistic, evaluate_union_coverage,
 )
@@ -270,8 +271,6 @@ def train(cfg: TrainConfig) -> None:
                 use_variable = cfg.hopfield.n_train_distractors_max > 0
                 use_fixed = cfg.hopfield.n_train_distractors > 0
                 if (use_variable or use_fixed) and isinstance(hops, list):
-                    Npos = vh.Npos
-                    cx, cy = env_offset
                     env_size = cfg.env.size
                     lo = cfg.hopfield.n_train_distractors_min
                     hi = cfg.hopfield.n_train_distractors_max
@@ -280,15 +279,9 @@ def train(cfg: TrainConfig) -> None:
                             n_d = int(dist_rng.randint(lo, hi + 1))
                         else:
                             n_d = cfg.hopfield.n_train_distractors
-                        placed = 0
-                        while placed < n_d:
-                            gx = dist_rng.randint(0, Npos)
-                            gy = dist_rng.randint(0, Npos)
-                            if cx <= gx < cx + env_size and cy <= gy < cy + env_size:
-                                continue
-                            pat = vh.encoded_Phi[gx, gy].copy()
+                        for pat in sample_distractors(
+                                vh, env_offset, env_size, n_d, dist_rng):
                             hops[b].input_memory(torch.from_numpy(pat).float())
-                            placed += 1
 
                 rollout = collector.collect_rollout(
                     env, agent, hops, h_rnn=None, env_offset=env_offset,

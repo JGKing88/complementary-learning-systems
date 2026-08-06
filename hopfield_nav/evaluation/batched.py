@@ -32,11 +32,11 @@ from __future__ import annotations
 import numpy as np
 import torch
 
-from .. import channels
-from .. import signal as signal_ops
-from ..env import GridEnv, at_goal
-from ..hopfield import Hopfield
-from ..vec_env import make_vec
+from ..policy import channels
+from ..rollout import signal as signal_ops
+from ..world.env import GridEnv, at_goal
+from ..world.memory import Hopfield
+from ..world.vec_env import make_vec
 from ..world import episode
 
 

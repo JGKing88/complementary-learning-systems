@@ -24,11 +24,11 @@ import numpy as np
 import pytest
 
 from hopfield_nav.config import EnvConfig
-from hopfield_nav.env import (
+from hopfield_nav.world.env import (
     at_goal, make_env, max_offcell_offset, warn_if_offcell_stores,
 )
-from hopfield_nav.vec_env import VecEnv
-from hopfield_nav.vectorhash import VectorHash
+from hopfield_nav.world.vec_env import VecEnv
+from hopfield_nav.world.scaffold import VectorHash
 
 
 # ---------------------------------------------------------------------------
