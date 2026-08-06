@@ -434,20 +434,40 @@ def test_no_hardcoded_output_dirs():
     )
 
 
+def _trainer_modules() -> list[str]:
+    """Every `hopfield_nav/train*.py`, discovered rather than listed.
+
+    A hardcoded list goes stale in exactly the direction that hurts: a *sixth*
+    trainer is the one that could reintroduce the bug, and naming five would
+    leave the sixth silently exempt from the rule written to catch it.
+    """
+    root = os.path.join(REPO_ROOT, "hopfield_nav")
+    return sorted(
+        f[:-3] for f in os.listdir(root)
+        if f.startswith("train") and f.endswith(".py") and f != "__init__.py"
+    )
+
+
 def test_every_trainer_accepts_save_dir():
-    """All five trainers take `--save_dir`, so all five can be sandboxed.
+    """Every trainer takes `--save_dir`, so every one can be sandboxed.
 
     `train_phase_b_only` was the one that did not, which is the whole reason
     the pytest leak was possible: the smoke fixture sets `CLS_RUNS` to a
     tmpdir, and with the default path ignoring it there was no second way out.
     """
+    trainers = _trainer_modules()
+    # Vacuity guard: a discovery that found nothing would pass silently, which
+    # is the failure mode of replacing a list with a glob.
+    assert len(trainers) >= 5, (
+        f"expected at least the five known trainers, discovered {trainers}"
+    )
+
     missing = []
-    for kind in ("train", "train_phased", "train_phase_a_only",
-                 "train_phase_b_only", "train_rnn"):
-        src = open(os.path.join(REPO_ROOT, "hopfield_nav", f"{kind}.py"),
+    for module in trainers:
+        src = open(os.path.join(REPO_ROOT, "hopfield_nav", f"{module}.py"),
                    encoding="utf-8").read()
         if '"--save_dir"' not in src:
-            missing.append(kind)
+            missing.append(module)
     assert not missing, f"trainers with no --save_dir flag: {missing}"
 
 

@@ -154,13 +154,39 @@ def wandb_dir(*, ensure: bool = False) -> Path:
 #
 # ``test_no_hardcoded_output_dirs`` in the layering suite is what stops a sixth
 # trainer reintroducing the literal.
+# The convention every new kind gets for free.
+DEFAULT_RUN_SUBDIR = "agent_ckpts"
+
+
+def default_layout(kind: str) -> tuple[str, str]:
+    """(subdirectory, name prefix) for a kind with no entry in RUN_KINDS."""
+    return DEFAULT_RUN_SUBDIR, f"{kind}_"
+
+
+# How the *existing* tree is laid out -- not a registry of permitted kinds.
+#
+# Three of these five rows are just `default_layout`: `phased_`, `phase_a_only_`
+# and `phase_b_only_` are each `kind + "_"`. They are listed anyway because
+# `scripts/backfill_manifests.py` reads this table backwards, to parse a legacy
+# directory name into (kind, name) -- `phase_a_only_amber-plant-56` cannot be
+# split any other way. Removing them would silently reclassify ~150 directories
+# as kind "train".
+#
+# The two that carry real information are the irregular ones, both historical:
+# `train` writes a bare wandb run name (`agent_ckpts/revived-water-17/`, ~100
+# directories), and `rnn` writes a bare name into a *different* subdirectory.
+#
+# A new kind needs no entry here. `run_dir("phase_c_only", name)` gives
+# `agent_ckpts/phase_c_only_<name>/` on its own; add a row only to deviate from
+# that, or -- once the run has legacy directories of its own -- so that backfill
+# can parse them.
 RUN_KINDS: dict[str, tuple[str, str]] = {
     # kind           (subdirectory of RUNS_ROOT, run-directory name prefix)
-    "train":         ("agent_ckpts", ""),
+    "train":         ("agent_ckpts", ""),            # irregular: no prefix
     "phased":        ("agent_ckpts", "phased_"),
     "phase_a_only":  ("agent_ckpts", "phase_a_only_"),
     "phase_b_only":  ("agent_ckpts", "phase_b_only_"),
-    "rnn":           ("checkpoint_rnn", ""),
+    "rnn":           ("checkpoint_rnn", ""),         # irregular: own subdir
 }
 
 
@@ -178,18 +204,24 @@ def run_name(wandb_name: str | None = None, wandb_id: str | None = None) -> str:
 def run_dir(kind: str, name: str, *, ensure: bool = False) -> Path:
     """Output directory for one training run.
 
-    ``kind`` is a key of :data:`RUN_KINDS`; ``name`` is the run identity from
-    :func:`run_name`. The resulting directory name is unchanged from the
-    pre-2026-08 layout (``phase_a_only_<name>``, ``phased_<name>``, a bare
-    ``<name>`` for ``train`` and ``rnn``), so existing run directories are
-    still addressed by the same string -- only the root moves, and only when
+    ``name`` is the run identity from :func:`run_name`. ``kind`` names the
+    trainer: it takes its layout from :data:`RUN_KINDS` if it has a row there,
+    and otherwise from :func:`default_layout` -- so a new trainer picks a kind
+    string and needs nothing here.
+
+    For the five existing kinds the resulting directory name is unchanged from
+    the pre-2026-08 layout (``phase_a_only_<name>``, ``phased_<name>``, a bare
+    ``<name>`` for ``train`` and ``rnn``), so existing run directories are still
+    addressed by the same string -- only the root moves, and only when
     ``CLS_RUNS`` is set.
+
+    An unknown kind is not an error. It used to raise, on the theory that this
+    caught typos (``"phase_a"`` for ``"phase_a_only"``), but that made every new
+    trainer edit a file it otherwise has no reason to touch -- real coupling
+    paid for a weak guard, since a mistyped kind produces a visibly wrong
+    directory that is printed at startup.
     """
-    if kind not in RUN_KINDS:
-        raise KeyError(
-            f"Unknown run kind {kind!r}. Known kinds: {sorted(RUN_KINDS)}"
-        )
-    subdir, prefix = RUN_KINDS[kind]
+    subdir, prefix = RUN_KINDS.get(kind) or default_layout(kind)
     p = _sub(subdir) / f"{prefix}{name}"
     if ensure:
         p.mkdir(parents=True, exist_ok=True)
@@ -219,6 +251,8 @@ __all__ = [
     "wandb_dir",
     "archive_dir",
     "RUN_KINDS",
+    "DEFAULT_RUN_SUBDIR",
+    "default_layout",
     "run_name",
     "run_dir",
 ]

@@ -69,6 +69,40 @@ def test_infer_kind_takes_the_longest_prefix(dirname, kind, name):
     assert backfill.infer_kind(dirname, rnn=False) == (kind, name)
 
 
+def test_a_new_kind_needs_no_entry_in_run_kinds():
+    """Adding a trainer must not require editing cls_paths.
+
+    RUN_KINDS describes how the *existing* tree is laid out -- it is read
+    backwards by `infer_kind` to parse legacy directory names, which is why
+    three regular rows are listed even though `default_layout` reproduces them.
+    It is not a registry of permitted kinds, and `run_dir` used to raise on an
+    unlisted one, which made every new trainer edit a file it has no other
+    reason to touch.
+    """
+    from cls_paths import RUN_KINDS, run_dir
+
+    assert "phase_c_only" not in RUN_KINDS
+    got = run_dir("phase_c_only", "zesty-fog-9")
+    assert got.name == "phase_c_only_zesty-fog-9"
+    assert got.parent.name == "agent_ckpts"
+
+
+def test_the_regular_rows_of_run_kinds_agree_with_the_default():
+    """The three listed-but-regular kinds must not drift from the convention.
+
+    If someone edits one of those rows, `run_dir` and `default_layout` start
+    disagreeing for a kind that looks ordinary, and new runs land beside the
+    old ones instead of in them.
+    """
+    from cls_paths import RUN_KINDS, default_layout
+
+    regular = [k for k, v in RUN_KINDS.items() if v == default_layout(k)]
+    assert set(regular) == {"phased", "phase_a_only", "phase_b_only"}
+    # The other two are irregular on purpose and are what the table is for.
+    assert RUN_KINDS["train"] == ("agent_ckpts", "")
+    assert RUN_KINDS["rnn"] == ("checkpoint_rnn", "")
+
+
 def test_infer_kind_is_ordered_not_just_lucky(monkeypatch):
     """The longest-prefix sort has to be tested with prefixes that overlap.
 
