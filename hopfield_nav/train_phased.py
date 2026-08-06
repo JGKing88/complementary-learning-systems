@@ -1,4 +1,8 @@
-"""Phased training orchestrator for Hopfield-nav (see EXPERIMENTS_PHASE2.md).
+"""Phased training orchestrator for Hopfield-nav.
+
+(The `EXPERIMENTS_PHASE2.md` this used to cite was never written; the four-phase
+rationale below is the whole of it. Related experiment logs are under
+`docs/archive/`.)
 
 Four phases run sequentially from a single agent init:
 

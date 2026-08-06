@@ -1,3 +1,8 @@
+> **Archived.** Moved out of `hopfield_nav/` by phase 6 of the 2026-08
+> refactor. Not maintained; describes what was believed and tried at the time,
+> which in places is no longer true of the code. Start from `docs/archive/README.md`
+> for what replaced it.
+
 # RNN Baseline (`*_rnn.py`)
 
 The vanilla-RNN baseline is a **memory-free control** for the Hopfield-nav

@@ -292,7 +292,7 @@ class PhasedConfigV3:
     V3 fix: apply ``phase_a_novelty_reward`` (per first-visit cell) to ONLY
     the empty-regime envs in Phase A. The follow-regime envs train clean.
     Because the two regimes live in entirely separate rollouts, novelty
-    cannot contaminate follow — the pathology from EXPERIMENTS.md runs 18/19
+    cannot contaminate follow — the pathology from docs/archive/EXPERIMENTS.md runs 18/19
     (single-phase novelty vs store_bonus conflict) doesn't apply.
     """
     phase_a_updates: int = 600
@@ -308,41 +308,6 @@ class PhasedConfigV3:
     phase_c_lr_trunk: float = 1e-5
     phase_c_lr_move: float = 1e-5
     phase_c_lr_heads: float = 1e-4
-    phase_c_bce_weight: float = 0.1
-    phase_c_bce_detach_trunk: bool = True
-
-
-@dataclass
-class PhasedConfigV2:
-    """V2: follow+explore interleaved → store pretrain → compose (frozen trunk).
-
-    Rationale in EXPERIMENTS_PHASE2_V2.md. Three phases:
-
-      A. Interleaved trunk training: half the envs run with pre_stored goal
-         (follow gradient), half with empty hopfield (explore gradient).
-         Trunk + move + value unfrozen; store head frozen at init.
-         ``init_log_std=-0.5`` should be set on AgentConfig throughout.
-      B. Store head pretrain on frozen Phase-A trunk. Only store_head
-         trainable; BCE with features.detach(). Short (~30 updates).
-      C. Compose. Soft-frozen trunk (tiny LR) + trainable heads. Agent-driven
-         store; hopfield accumulates within each rollout. Permanent detached
-         BCE anchors store head.
-    """
-    # Phase A — interleaved follow+explore
-    phase_a_updates: int = 500
-    phase_a_interleave_ratio: float = 0.5   # fraction of envs_per_world that run pre_stored
-    phase_a_lr: float = 3e-4
-
-    # Phase B — store pretrain on frozen trunk
-    phase_b_updates: int = 30
-    phase_b_lr: float = 3e-4
-    phase_b_bce_weight: float = 1.0
-
-    # Phase C — compose with soft-frozen trunk
-    phase_c_updates: int = 300
-    phase_c_lr_trunk: float = 1e-5          # Set to 0.0 for hard freeze.
-    phase_c_lr_move: float = 1e-5           # Move head shares trunk's caution.
-    phase_c_lr_heads: float = 1e-4          # Store + value adapt normally.
     phase_c_bce_weight: float = 0.1
     phase_c_bce_detach_trunk: bool = True
 

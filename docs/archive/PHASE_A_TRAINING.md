@@ -1,3 +1,8 @@
+> **Archived.** Moved out of `hopfield_nav/` by phase 6 of the 2026-08
+> refactor. Not maintained; describes what was believed and tried at the time,
+> which in places is no longer true of the code. Start from `docs/archive/README.md`
+> for what replaced it.
+
 # Phase A training — full reference
 
 Companion to `PHASE_A_SIZE20.md` (recipe + workflow) and `PHASE_A_SIZE20_FINDINGS.md` (experiment log). This doc explains **what every CLI flag actually does** in code. Behavior here is verified against `train_phase_a_only.py`, `rollout.py`, `config.py`, `env.py`, `vec_env.py`, `agent.py`, `ppo.py`, and `train_phased.py` as of `merge-workspace`.

@@ -1,3 +1,8 @@
+> **Archived.** Moved out of `hopfield_nav/` by phase 6 of the 2026-08
+> refactor. Not maintained; describes what was believed and tried at the time,
+> which in places is no longer true of the code. Start from `docs/archive/README.md`
+> for what replaced it. Step 9's instruction to keep appending to `PHASE_A_SIZE20_FINDINGS.md` is retired with the protocol.
+
 # Phase A on 20×20 — getting started
 
 **This document is the only thing you need.** Ignore the many `EXPERIMENTS_*.md`, `experiment_tracking_*` etc files in this directory — they're stale logs from earlier waves.

@@ -1,3 +1,8 @@
+> **Archived.** Moved out of `hopfield_nav/` by phase 6 of the 2026-08
+> refactor. Not maintained; describes what was believed and tried at the time,
+> which in places is no longer true of the code. Start from `docs/archive/README.md`
+> for what replaced it. **Superseded by `docs/TRAINING_AND_EVAL_REFERENCE.md`** -- at-goal behavior and the evaluator internals described below were changed by phases 2, 4 and 5.
+
 # Training and Evaluation Guide
 
 ## Overview

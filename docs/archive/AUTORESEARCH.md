@@ -1,3 +1,8 @@
+> **Archived.** Moved out of `hopfield_nav/` by phase 6 of the 2026-08
+> refactor. Not maintained; describes what was believed and tried at the time,
+> which in places is no longer true of the code. Start from `docs/archive/README.md`
+> for what replaced it. The protocol it defines is no longer running.
+
 You will be training models on a navigation task with PPO, as is set up in hopfield_nav/. I need you to iterate on this framework to reach the best model possible.
 
 The models are evaluated along three different types of evaluation. Make sure you understand these. Look at the code, and you can look at TRAINING_AND_EVALUATION.md. Of the different measures, what you need to particularly focuson on are:

@@ -515,26 +515,26 @@ case $VARIANT in
     ;;
   v18d39_size20_v20)
     # 20x20 attempt 20: v16 recipe (raw signal) + hidden_size 1024
-    # (open question #3 from PHASE_A_SIZE20.md, on the winning recipe).
+    # (open question #3 from docs/archive/PHASE_A_SIZE20.md, on the winning recipe).
     # Post-epsilon-anneal v16 hit sr=0.95 d=10 vs v17 norm 0.77 — raw
     # is decisively better for follow. Test if capacity helps v16 too.
     EXTRA="--warmup_explore_only_updates 0 --phase_a_updates 3000 --phase_a_novelty_reward 0.3 --revisit_penalty 0 --wall_penalty 0.1 --persistence_bonus 0.05 --interleave_empty_fraction 1.0 --interleave_empty_target 0.50 --interleave_anneal_updates 50 --move_ent_coef 0 --no-novelty_anneal --size 20 --steps_per_rollout 400 --eval_every 20 --init_log_std -1.8 --freeze_log_std --epsilon_explore 0.4 --epsilon_anneal_updates 200 --no-input_prev_action --input_hopfield_raw --input_hopfield_multistep 1 2 3 --novelty_scale_remaining --novelty_scale_cap 10 --explore_goals_off --envs_per_world 80 --n_train_distractors_min 0 --n_train_distractors_max 10 --n_train_emp_distractors_min 0 --n_train_emp_distractors_max 10 --hidden_size 1024 --goal_reward 5.0 --ppo_clip_coef 0.15"
     ;;
   v18d39_size20_v19)
     # 20x20 attempt 19: v17 recipe (norm signal) + hidden_size 1024
-    # (open question #3 from PHASE_A_SIZE20.md). v17 is winning on
+    # (open question #3 from docs/archive/PHASE_A_SIZE20.md). v17 is winning on
     # both cov and sr at u140 — does more capacity push it further?
     EXTRA="--warmup_explore_only_updates 0 --phase_a_updates 3000 --phase_a_novelty_reward 0.3 --revisit_penalty 0 --wall_penalty 0.1 --persistence_bonus 0.05 --interleave_empty_fraction 1.0 --interleave_empty_target 0.50 --interleave_anneal_updates 50 --move_ent_coef 0 --no-novelty_anneal --size 20 --steps_per_rollout 400 --eval_every 20 --init_log_std -1.8 --freeze_log_std --epsilon_explore 0.4 --epsilon_anneal_updates 200 --no-input_prev_action --no-input_hopfield_raw --input_hopfield_multistep 1 2 3 --novelty_scale_remaining --novelty_scale_cap 10 --explore_goals_off --envs_per_world 80 --n_train_distractors_min 0 --n_train_distractors_max 10 --n_train_emp_distractors_min 0 --n_train_emp_distractors_max 10 --hidden_size 1024 --goal_reward 5.0 --ppo_clip_coef 0.15"
     ;;
   v18d39_size20_v18)
     # 20x20 attempt 18: v16 with --no-freeze_log_std. Open question #2
-    # from PHASE_A_SIZE20.md — does unfreezing log_std help on size 20
+    # from docs/archive/PHASE_A_SIZE20.md — does unfreezing log_std help on size 20
     # the way it did on 8x8 V18d42? Single-knob ablation off v16.
     EXTRA="--warmup_explore_only_updates 0 --phase_a_updates 3000 --phase_a_novelty_reward 0.3 --revisit_penalty 0 --wall_penalty 0.1 --persistence_bonus 0.05 --interleave_empty_fraction 1.0 --interleave_empty_target 0.50 --interleave_anneal_updates 50 --move_ent_coef 0 --no-novelty_anneal --size 20 --steps_per_rollout 400 --eval_every 20 --init_log_std -1.8 --no-freeze_log_std --epsilon_explore 0.4 --epsilon_anneal_updates 200 --no-input_prev_action --input_hopfield_raw --input_hopfield_multistep 1 2 3 --novelty_scale_remaining --novelty_scale_cap 10 --explore_goals_off --envs_per_world 80 --n_train_distractors_min 0 --n_train_distractors_max 10 --n_train_emp_distractors_min 0 --n_train_emp_distractors_max 10 --hidden_size 512 --goal_reward 5.0 --ppo_clip_coef 0.15"
     ;;
   v18d39_size20_v17)
     # 20x20 attempt 17: v16 with --no-input_hopfield_raw. Open
-    # question #1 from PHASE_A_SIZE20.md — does normalized hopfield
+    # question #1 from docs/archive/PHASE_A_SIZE20.md — does normalized hopfield
     # signal (unit-vector direction, no magnitude) beat raw projected
     # q when the multistep recall channels already carry magnitude
     # info? Pure single-knob ablation off v16.
@@ -542,7 +542,7 @@ case $VARIANT in
     ;;
   v18d39_size20_v16)
     # 20x20 attempt 16: single long-run from scratch (no checkpoint
-    # resume) of the canonical v15-style recipe per PHASE_A_SIZE20.md
+    # resume) of the canonical v15-style recipe per docs/archive/PHASE_A_SIZE20.md
     # "Recommended next steps". Phase_a_updates 3000, ppo_clip 0.15
     # (matches v7's clip; v15's 0.05 was too tight for fresh training),
     # explore_goals_off (true bitless explore signal), 400-step rollouts.

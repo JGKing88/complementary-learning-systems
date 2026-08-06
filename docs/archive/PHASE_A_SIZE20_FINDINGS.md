@@ -1,3 +1,8 @@
+> **Archived.** Moved out of `hopfield_nav/` by phase 6 of the 2026-08
+> refactor. Not maintained; describes what was believed and tried at the time,
+> which in places is no longer true of the code. Start from `docs/archive/README.md`
+> for what replaced it.
+
 # Phase A 20×20 — findings log
 
 Single living doc per `PHASE_A_SIZE20.md` step 9. Append-only. Newest entries at top.
