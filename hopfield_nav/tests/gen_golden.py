@@ -251,7 +251,19 @@ def gen_evaluators() -> dict[str, np.ndarray]:
                  num_trials=4, max_steps=20, n_distractors_list=[0, 2],
                  per_trial=records)
         # (n_trials, n_fields) integer records -- exactly comparable.
-        out[f"{fn_name}__per_trial"] = np.array(records, dtype=np.int64)
+        arr = np.array(records, dtype=np.int64)
+        out[f"{fn_name}__per_trial"] = arr
+        if fn_name == "evaluate_goal_discovery" and arr[:, 6].sum() == 0:
+            # Column 6 is n_arrivals. On this small stub world an untrained
+            # policy reaches the goal rarely, so this fixture pins the at-goal
+            # branch only weakly -- but zero would mean it pins nothing at all,
+            # which is how the long-horizon fixture was vacuous on its first
+            # attempt. The real coverage of the teleport is
+            # test_goal_contract.py::test_goal_discovery_arrivals_are_never_consecutive.
+            raise AssertionError(
+                "goal_discovery fixture is vacuous: no trial reached the goal, "
+                "so the at-goal branch never ran. Widen the goal radius or "
+                "raise max_steps.")
 
         keys, vals = [], []
         for n_dist in sorted(res.keys()):

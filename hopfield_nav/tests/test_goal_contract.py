@@ -123,14 +123,19 @@ SITE_CONTRACTS: dict[str, GoalContract] = {
         True, True, None, None, None,
         "Breaks on goal when stop_on_goal is set."),
 
-    # --- deliberately decline the teleport --------------------------------
+    # --- adopted the training contract 2026-08-06 --------------------------
     "evaluate_goal_discovery": GoalContract(
-        True, True, False, False, False,
-        "DECISION. Runs until the store head fires at the goal, so the agent "
-        "may stand there for several steps. Under the training contract it "
-        "would get exactly one chance per visit and then be teleported away, "
-        "which is stricter and matches training -- but it changes "
-        "store_success_rate. Adopt only deliberately."),
+        True, True, True, True, True,
+        "Discovery is 'find the goal and write it down on arrival', so the "
+        "agent gets exactly one store opportunity per visit and is then "
+        "relocated -- the same deal training gives it. It previously declined "
+        "the teleport, which let a policy park inside the goal radius and "
+        "accumulate opportunities until its store probability drifted past "
+        "0.5, measuring 'fires eventually' rather than 'fires on arrival'. "
+        "The trial keeps running after the teleport, so one trial now yields "
+        "several arrivals and store_efficiency is a per-arrival rate."),
+
+    # --- deliberately decline the teleport --------------------------------
     "evaluate_exploration": GoalContract(
         True, True, False, False, False,
         "DECISION. No termination at all; walks over the goal repeatedly while "
@@ -174,11 +179,16 @@ def test_reward_clause_is_universal():
     assert all(c.reward for c in SITE_CONTRACTS.values())
 
 
-def test_three_sites_decline_the_teleport():
-    """The population that blocks batching onto VecEnv, enumerated."""
+def test_the_coverage_evaluators_decline_the_teleport():
+    """The population that still needs reward-without-teleport, enumerated.
+
+    `evaluate_goal_discovery` left this set on 2026-08-06: discovery is about
+    storing *on arrival*, so it takes the training contract. The two that
+    remain count distinct cells, and a teleport is a free random jump that
+    would inflate coverage for reasons unrelated to the exploration policy.
+    """
     declining = {n for n, c in SITE_CONTRACTS.items() if c.teleport is False}
     assert declining == {
-        "evaluate_goal_discovery",
         "evaluate_exploration",
         "evaluate_union_coverage",
     }
@@ -564,9 +574,16 @@ def test_phase5_the_guard_fires_on_an_impossible_declaration():
     with pytest.raises(NotImplementedError, match="steps a GridEnv directly"):
         episode.require_single_env_support(episode.TRAINING, "evaluate_exploration")
     # The contracts those sites actually declare are accepted.
-    for site in ("evaluate_exploration", "evaluate_goal_discovery",
+    for site in ("evaluate_exploration", "evaluate_union_coverage",
                  "evaluate_navigation"):
         episode.require_single_env_support(episode.contract_for(site), site)
+    # ...and evaluate_goal_discovery, which declares TRAINING since
+    # 2026-08-06, is correctly rejected: it hand-rolls the boundary at its call
+    # site the way evaluate_realistic does, so it must not route through here.
+    with pytest.raises(NotImplementedError, match="steps a GridEnv directly"):
+        episode.require_single_env_support(
+            episode.contract_for("evaluate_goal_discovery"),
+            "evaluate_goal_discovery")
 
 
 def test_phase5_declared_contract_reaches_the_training_stepper():
@@ -634,3 +651,87 @@ def test_nothing_is_masked_when_the_move_is_not_discarded():
     the policy's and belongs in the surrogate."""
     b = _rollout_with_goal_contact(goals_active=False)
     assert b.policy_action_mask.bool().all()
+
+
+# ---------------------------------------------------------------------------
+# evaluate_goal_discovery under the training contract (adopted 2026-08-06)
+# ---------------------------------------------------------------------------
+
+def _discovery_world(size=4, goal_radius=0.5, n_envs=2):
+    from hopfield_nav.tests.fixtures import make_collector
+    from hopfield_nav.world.env import make_env
+    cfg = make_stub_cfg(movement_mode="discrete")
+    cfg.env.size = size
+    cfg.env.goal_radius = goal_radius
+    _c, agent, vh = make_collector(cfg, EMBED_DIM, seed=0)
+    vh.env_offsets = [(0, 0), (8, 8)][:n_envs]
+    envs = [make_env(cfg.env, "discrete", seed=100 + i) for i in range(n_envs)]
+    return cfg, agent, vh, envs
+
+
+def test_goal_discovery_arrivals_are_never_consecutive():
+    """The teleport, observed through the only channel that exposes it.
+
+    At ``goal_radius`` 0.5 the relocation target -- ``random_start``, which
+    excludes the goal cell -- is necessarily *not* at goal. So a step that
+    begins at the goal guarantees the next one does not, and arrivals cannot
+    exceed every other step. Without the teleport the agent keeps whatever
+    position its policy chose and can begin any number of consecutive steps at
+    the goal, which is exactly the behavior this contract change removes.
+    """
+    import math
+    from hopfield_nav.evaluation.metrics import evaluate_goal_discovery
+    cfg, agent, vh, envs = _discovery_world()
+    max_steps = 40
+    records: list[tuple] = []
+    evaluate_goal_discovery(
+        agent, envs, vh, list(range(len(envs))), cfg, torch.device("cpu"),
+        num_trials=24, max_steps=max_steps, n_distractors_list=[0],
+        per_trial=records)
+
+    arrivals = [r[6] for r in records]
+    assert sum(arrivals) > 0, "vacuous: no trial ever reached the goal"
+    cap = math.ceil(max_steps / 2)
+    assert max(arrivals) <= cap, (
+        f"a trial recorded {max(arrivals)} arrivals in {max_steps} steps "
+        f"(cap {cap}); arrivals on consecutive steps mean the agent was not "
+        f"relocated")
+
+
+def test_goal_discovery_store_efficiency_is_per_arrival():
+    """store_efficiency == stores / arrivals, counted, not inferred.
+
+    It used to be ``store_rate / reach_rate`` over per-trial booleans, which
+    was a proxy for the same thing. Once a trial can arrive several times that
+    ratio stops meaning anything, so the counts are kept directly.
+    """
+    from hopfield_nav.evaluation.metrics import evaluate_goal_discovery
+    cfg, agent, vh, envs = _discovery_world()
+    records: list[tuple] = []
+    res = evaluate_goal_discovery(
+        agent, envs, vh, list(range(len(envs))), cfg, torch.device("cpu"),
+        num_trials=24, max_steps=40, n_distractors_list=[0],
+        per_trial=records)
+
+    arrivals = sum(r[6] for r in records)
+    stores = sum(r[7] for r in records)
+    assert arrivals > 0, "vacuous: no arrivals to compute an efficiency over"
+    assert res[0]["store_efficiency"] == pytest.approx(stores / arrivals)
+    assert res[0]["mean_arrivals"] == pytest.approx(arrivals / len(records))
+    # A store can only be credited on an arrival step.
+    assert stores <= arrivals
+
+
+def test_goal_discovery_runs_the_full_budget():
+    """The trial no longer ends at the first successful store.
+
+    Under OBSERVE it broke there, so one trial meant at most one arrival.
+    Continuing is what makes ``mean_arrivals`` and the per-arrival efficiency
+    mean anything.
+    """
+    import inspect
+    from hopfield_nav.evaluation import metrics
+    src = inspect.getsource(metrics.evaluate_goal_discovery)
+    body = src[src.index("for step in range(max_steps):"):]
+    assert "if stored_goal:\n                        break" not in body, (
+        "evaluate_goal_discovery still breaks on the first store")

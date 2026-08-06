@@ -383,29 +383,51 @@ def evaluate_goal_discovery(
     action_temperature: float = 1.0,
     per_trial: list | None = None,
 ) -> dict[int, dict[str, float]]:
-    """For each val env + distractor count, run trials where the agent explores
-    with store enabled. Each trial gets a fresh Hopfield pre-loaded with ONLY
-    distractors (not this env's goal, and not other val envs' goals).
+    """Explore a world holding only distractors; store the goal on arrival.
 
-    Trial ends when agent stores at goal or after max_steps.
+    Each trial gets a fresh Hopfield pre-loaded with ONLY distractors -- not
+    this env's goal, and not any other val env's goal -- and a random non-goal
+    start. The agent explores. Every step that *begins* at the goal is one
+    arrival: the store head gets exactly that step to fire, and then the agent
+    is teleported to a fresh non-goal cell with its recurrent state reset. The
+    trial runs the full ``max_steps``, so it yields as many arrivals as the
+    policy earns.
+
+    The teleport is the point (contract `TRAINING`, see `world/episode.py`).
+    Without it the agent could park inside the goal radius and take a fresh
+    store decision every step until its probability drifted past 0.5 -- which
+    measures "fires eventually", not "fires on arrival", and is not the deal
+    training gives it. Adopted 2026-08-06; before that this site declared
+    `OBSERVE` and the trial ended at the first successful store.
+
+    Stores fire into the Hopfield wherever they happen; only those on an
+    arrival step count as successes. After the first success `goal_in_memory`
+    is True for the rest of the trial, because by then it is.
+
     When ``deterministic`` is True (default), actions follow the policy mean /
     argmax and store uses prob > 0.5, matching the navigation eval. Set False to
     sample from the action and store distributions.
 
+    Metrics: ``store_success_rate`` and ``reach_success_rate`` are per *trial*
+    (did it ever store / ever arrive); ``store_efficiency`` is per *arrival*
+    (stores / arrivals), which is what the old ``store_rate / reach_rate``
+    approximated and can now be counted exactly; ``mean_steps_to_store`` is to
+    the first success; ``mean_arrivals`` is new.
+
     If ``per_trial`` is a list, one record per trial is appended to it:
-    ``(n_dist, env_local_idx, trial_idx, reached, stored, steps_to_store)``.
-    See evaluate_navigation for why per-trial records, not aggregates, are what
-    the golden fixtures pin.
+    ``(n_dist, env_local_idx, trial_idx, reached, stored, steps_to_store,
+    n_arrivals, n_stores)``. See evaluate_navigation for why per-trial records,
+    not aggregates, are what the golden fixtures pin.
     """
     if n_distractors_list is None:
         n_distractors_list = [0]
 
     agent.eval()
     embed_dim = vectorhash.encoded_Phi.shape[2]
-    # Declared, not inherited. The guard fails loudly if this row
-    # is ever changed to one a GridEnv-stepping loop cannot honour.
-    episode.require_single_env_support(
-        episode.contract_for("evaluate_goal_discovery"), "evaluate_goal_discovery")
+    # The full training contract, applied by hand below the way
+    # evaluate_realistic does -- GridEnv.step implements neither C3 nor C4, so
+    # this site cannot go through require_single_env_support.
+    contract = episode.contract_for("evaluate_goal_discovery")
     results: dict[int, dict[str, float]] = {}
 
     for n_dist in n_distractors_list:
@@ -413,6 +435,8 @@ def evaluate_goal_discovery(
         trial_steps: list[int] = []
         trial_reached: list[bool] = []
         trial_stored: list[bool] = []
+        trial_arrivals: list[int] = []
+        trial_store_events: list[int] = []
 
         for local_idx, env in enumerate(val_envs):
             global_idx = env_global_indices[local_idx]
@@ -432,15 +456,19 @@ def evaluate_goal_discovery(
                 h_rnn = None
                 prev_reward = None
                 prev_action = None
-                reached_goal = False
                 stored_goal = False
                 steps_to_store = max_steps
                 goal_in_mem = False  # this env's goal pattern written to Hopfield
+                n_arrivals = 0       # steps that *began* at the goal
+                n_stores = 0         # arrivals on which the store head fired
 
                 for step in range(max_steps):
+                    # An arrival is a step that begins at the goal: that is the
+                    # step on which the agent can act on being there. A
+                    # post-step arrival becomes the next iteration's at_g_pre.
                     at_g_pre = at_goal(env)
                     if at_g_pre:
-                        reached_goal = True
+                        n_arrivals += 1
 
                     out = agent_step(
                         agent, env, env_offset, vectorhash, hopfield,
@@ -453,26 +481,43 @@ def evaluate_goal_discovery(
                     prev_reward = out["next_prev_reward"]
                     prev_action = out["next_prev_action"]
 
-                    if at_goal(env):
-                        reached_goal = True
-
                     if out["store_action"] > 0.5:
                         if at_g_pre:
-                            stored_goal = True
-                            steps_to_store = step + 1
+                            n_stores += 1
+                            if not stored_goal:
+                                stored_goal = True
+                                steps_to_store = step + 1
                             goal_in_mem = True
                         hopfield.input_memory(out["store_embedding"][0])
 
-                    if stored_goal:
-                        break
+                    if at_g_pre:
+                        # One opportunity per visit, then relocate -- the deal
+                        # training gives it. Without this the agent could sit
+                        # inside the goal radius accumulating chances until its
+                        # store probability drifted past 0.5, which measures
+                        # "fires eventually", not "fires on arrival".
+                        res = episode.resolve_at_goal(
+                            np.array([True]), contract,
+                            goal_reward=cfg.env.goal_reward,
+                            time_penalty=cfg.env.time_penalty,
+                        )
+                        if res.teleport[0]:
+                            env.set_position(random_start(env.size, goal, rng))
+                        if res.reset_state[0]:
+                            h_rnn = None
+                            prev_reward = None
+                            prev_action = None
 
+                reached_goal = n_arrivals > 0
                 trial_steps.append(steps_to_store)
                 trial_reached.append(reached_goal)
                 trial_stored.append(stored_goal)
+                trial_arrivals.append(n_arrivals)
+                trial_store_events.append(n_stores)
                 if per_trial is not None:
                     per_trial.append((n_dist, local_idx, _trial_idx,
                                       int(reached_goal), int(stored_goal),
-                                      steps_to_store))
+                                      steps_to_store, n_arrivals, n_stores))
 
         n = max(len(trial_stored), 1)
         n_stored = sum(trial_stored)
@@ -480,12 +525,19 @@ def evaluate_goal_discovery(
         reach_rate = n_reached / n
         store_rate = n_stored / n
         store_steps = [s for s, ok in zip(trial_steps, trial_stored) if ok]
+        # Per-arrival, now that a trial yields several. This is what
+        # store_rate / reach_rate was approximating with per-trial rates; with
+        # the teleport in place the exact version is available, and the ratio
+        # of rates would be meaningless (a trial can arrive many times).
+        total_arrivals = sum(trial_arrivals)
+        total_stores = sum(trial_store_events)
         results[n_dist] = {
             "store_success_rate": float(store_rate),
             "reach_success_rate": float(reach_rate),
-            "store_efficiency": float(store_rate / max(reach_rate, 1e-8)),
+            "store_efficiency": float(total_stores / max(total_arrivals, 1e-8)),
             "mean_steps_to_store": float(np.mean(store_steps)) if store_steps else float("nan"),
             "mean_steps_all": float(np.mean(trial_steps)) if trial_steps else float("nan"),
+            "mean_arrivals": float(np.mean(trial_arrivals)) if trial_arrivals else float("nan"),
         }
 
     return results

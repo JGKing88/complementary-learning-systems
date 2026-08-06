@@ -45,6 +45,7 @@ python scripts/check_entry_points.py
 | 7a | `gridcode/` — `gen_gbook_2d`, `smooth_g*`, the assoc trainers. **Last back-edge removed** |
 | 7b | `hopfield/` — one memory model for both stacks; `encoder_training/nav_eval/` absorbs the encoder nav eval |
 | 7c | `cls/` and the root `tests/` deleted (tag `legacy-cls`); `pyproject.toml` installs all five packages |
+| 8 | `evaluate_goal_discovery` takes the training contract: teleport on arrival (**behavior change**) |
 
 Each dedup was verified by running the pre-change code in a `git worktree` and
 diffing the output, not by trusting a green suite. All byte-identical except
@@ -180,11 +181,11 @@ on these points.**
   flag **True** and the empty Hopfield is the normal phase-A explore case, so
   this was live. Pinned as a characterization test in `test_signal.py`; not
   fixed, because fixing it changes training results.
-- **Two `SITE_CONTRACTS` rows are marked DECISION** in
-  `tests/test_goal_contract.py`: `evaluate_goal_discovery` and
-  `evaluate_exploration` decline the teleport. Adopting the training contract
-  would make them stricter and match training, but moves
-  `store_success_rate` and `mean_coverage`.
+- **One `SITE_CONTRACTS` row is still marked DECISION**: `evaluate_exploration`
+  (and `evaluate_union_coverage` alongside it) declines the teleport, because a
+  teleport is a free random jump and would inflate `mean_coverage` for reasons
+  unrelated to the exploration policy. `evaluate_goal_discovery` took the
+  training contract on 2026-08-06 — see below.
 - **The wandb key is still in git history.** Stripping it from the working tree
   does not remove it. Rotate at wandb.ai.
 - **`eval_checkpoints`' pass gate has no replacement.** That CLI applied
@@ -210,14 +211,25 @@ behind one CLI. This is the point at which the CLIs would move under
 `training/` (see correction 10) and the sbatch drivers would need rewriting.
 Validate by reproducing one known Phase-A variant end to end at a fixed seed.
 
-**Phase 4c′ — batching the other three evaluators.** Deferred, and it is a
-decision about what the metrics mean rather than a refactor. `evaluate_goal_discovery`
-and `evaluate_exploration` keep stepping while the agent stands on the goal, so
-they need reward-without-teleport. That is expressible as `episode.OBSERVE`
-since 5a. Adopting the *training* contract instead would make goal_discovery
-stricter (one store chance per visit, matching training) and would inflate
-`mean_coverage` for exploration, since a teleport is a free random jump. Both
-rows are marked `DECISION` in `tests/test_goal_contract.py`.
+**Phase 4c′ — batching the other three evaluators.** Two separable things, and
+only one is a decision:
+
+- *Batching under the declared contract* is a pure speedup and is unblocked.
+  The old obstacle was `goals_active` bundling C1+C3+C4; 5a split them,
+  `step_batch` takes an explicit `contract=`, and `batched.py` already passes
+  one for navigation. Nobody has done it for the other three.
+- *Which contract each site declares* is the decision.
+  `evaluate_goal_discovery` resolved it on 2026-08-06: it now declares
+  `TRAINING` and hand-rolls the boundary the way `evaluate_realistic` does, so
+  the agent gets one store opportunity per arrival and is then relocated. It
+  had declared `OBSERVE`, which let a policy park inside the goal radius and
+  take a fresh store decision every step until its probability drifted past
+  0.5. `evaluate_exploration` and `evaluate_union_coverage` keep `OBSERVE`
+  deliberately.
+
+Note the two interact: goal_discovery now declares a contract a bare `GridEnv`
+loop cannot honour, so batching it onto `VecEnv` would *replace* the hand-rolled
+teleport rather than sit alongside it.
 
 **`experiments/` as config.** The assessment proposes replacing
 `run_phase_a_sweep_evelina.sh`'s 101-variant `case` block with one YAML per
