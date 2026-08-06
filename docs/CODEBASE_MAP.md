@@ -1,9 +1,20 @@
 # Codebase Map
 
 Written 2026-08-05 from the code on `main` (`959322f`). Everything here was
-checked against the source, not against the older markdown files in
-`hopfield_nav/`. Where the code and an existing doc/script disagree, the code
+checked against the source, not against the older markdown files (now under
+`docs/archive/`). Where the code and an existing doc/script disagree, the code
 wins and the disagreement is listed in [Known drift](#known-drift-and-landmines).
+
+> **Updated 2026-08-06 for the phase-6 layout.** Module paths throughout were
+> rewritten mechanically; the prose was checked only where phase 6 changed what
+> is true, and those spots say so inline. The moves:
+> `env/vec_env/vectorhash/hopfield` -> `world/{env,vec_env,scaffold,memory}`,
+> `agent/agent_rnn/channels` -> `policy/`,
+> `rollout/rollout_rnn/signal/oracle_bfs` -> `rollout/{collector,rnn,signal,oracles}`,
+> `ppo/bc/bc_rnn` -> `updates/`, `eval/eval_rnn` -> `evaluation/{metrics,rnn}`,
+> `encoder.py` -> `encoder_io.py`, and `final_plotting`/`phase_decoding_v2`/`figures`
+> out to top-level `analysis/{continual,phase_decoding,schematics}`.
+> `hopfield_nav/tests/test_layering.py` now enforces the layer order.
 
 Companion docs:
 - [TRAINING_AND_EVAL_REFERENCE.md](TRAINING_AND_EVAL_REFERENCE.md) — how every
@@ -53,7 +64,7 @@ encoded_Phi (Npos, Npos, D)      unit-sphere embedding of every global position
 
 The **encoder is the object of study** in `encoder_training/`; the **policy on
 top of a frozen encoder** is the object of study in `hopfield_nav/`. The encoder
-is always loaded frozen (`hopfield_nav/encoder.py:50` `requires_grad_(False)`).
+is always loaded frozen (`hopfield_nav/encoder_io.py:50` `requires_grad_(False)`).
 
 ---
 
@@ -63,19 +74,22 @@ is always loaded frozen (`hopfield_nav/encoder.py:50` `requires_grad_(False)`).
 |---|---|---|---|
 | `cls/` | package | mostly legacy, narrowly live | Original VectorHash research library. Live code uses only a handful of functions (§5). |
 | `encoder_training/` | package | live | Encoder architecture, contrastive training, nav-eval, sweeps. |
-| `hopfield_nav/` | package | live | Envs, scaffold, Hopfield, policy, PPO/BC, evals, figure pipelines. |
+| `hopfield_nav/` | package | live | Layered since phase 6: `world/` (env, vec_env, scaffold, memory, episode), `policy/`, `rollout/`, `updates/`, `evaluation/`, `training/`, plus the seven CLIs at the top level. |
+| `analysis/` | package | live | Figure and experiment pipelines, moved out of `hopfield_nav` in phase 6: `continual/` (was `final_plotting`), `phase_decoding/` (was `phase_decoding_v2`), `schematics/` (was `figures`), `scaffold_experiments/` (was `encoder_training/experiments`). Nothing may import it — see `hopfield_nav/tests/test_layering.py`. |
 | `tests/` | tests | legacy | Only exercises `cls.*` (`GridWMEnv`, `cls.utils.GridUtils.VectorHash`, `cls.encoder`, `cls.hopfield`). Nothing here covers `hopfield_nav` or `encoder_training`. |
-| `hopfield_nav/tests/` | tests | live | `test_at_goal.py`, `test_audit.py`, `test_phase_decoding_v2.py`. No runner script and no `conftest.py`/pytest config. Verified 2026-08-05: `~/.conda/envs/cls/bin/python -m pytest hopfield_nav/tests -q` from the repo root gives **135 passed, 1 failed** (see §8 item 4). |
-| `notebooks/` | exploration | legacy | Nov 2025 – Apr 2026 exploratory notebooks + two large scripts (`train_dist_encoder.py` 1573 lines, `testing_dist_encoder.py` 1501 lines) that predate `encoder_training/`. |
-| `docs/` | docs | live | `coordinate_conventions.md` + these three new files. |
-| `run.sh`, `sweep_cosine_width.py`, `launch_jupyter.sh` | scripts | legacy | Root sbatch runner currently points at `sweep_cosine_width.py` (a `cls`-only cosine-width sweep). |
-| `checkpoint/`, `checkpoints/`, `checkpoint_rnn/`, `encoders/`, `wandb/`, `plots/`, `images/`, `npos_sweep/`, `displacement_plots/`, `action_classifiers/`, `smoke_pd2/`, `smoke_seq/` | outputs | untracked | ~75 GB total (§6). |
+| `hopfield_nav/tests/` | tests | live | The suite. Run it with `./run_tests.sh` (phase 0 added the runner and `[tool.pytest.ini_options]`). 312 passing as of phase 6, including golden regression fixtures, the at-goal contract spec, four entry-point smoke tests, and the layering test. |
+| ~~`notebooks/`~~ | — | archived | Moved to `$CLS_RUNS/archive/notebooks/` in phase 6 (52 MB of Nov 2025 – Apr 2026 exploration that predates `encoder_training/`). |
+| `docs/` | docs | live | `coordinate_conventions.md`, these three files, `REFACTOR_STATUS.md`, and `archive/` (the nine `hopfield_nav/*.md` experiment logs). |
+| `run.sh`, `sweep_cosine_width.py` | scripts | legacy | Root sbatch runner points at `sweep_cosine_width.py` (a `cls`-only cosine-width sweep). Phase 7 archives both. `launch_jupyter.sh` went with the notebooks. |
+| `scripts/` | scripts | live | `cls_env.sh` (shell counterpart of `cls_paths.py`), `migrate_outputs_to_pool.sh`, `check_entry_points.py`. |
+| `checkpoint/`, `checkpoints/`, `checkpoint_rnn/`, `encoders/`, `wandb/`, `plots/`, `images/`, `npos_sweep/`, `displacement_plots/`, `smoke_pd2/`, `smoke_seq/` | outputs | symlinks | Moved to `$CLS_RUNS` in phase 1; what remains in the tree is a symlink under the old name so paths saved in old checkpoints keep resolving (§6). |
 
 Package installability: `pyproject.toml` declares only `cls` as a package
-(`include = ["cls*"]`). `hopfield_nav` and `encoder_training` are **not**
-installed — they work because every entry point is run as `python -m ...` from
-the repo root, so the CWD is on `sys.path`. This is why every sbatch script
-contains `cd /home/jackking/cls`.
+(`include = ["cls*"]`). `hopfield_nav`, `encoder_training` and `analysis` are
+**not** installed — they work because every entry point is run as
+`python -m ...` from the repo root, so the CWD is on `sys.path`. This is why
+every sbatch script contains `cd /home/jackking/cls`. Phase 7 fixes
+`pyproject.toml` to install all of them.
 
 ---
 
@@ -85,17 +99,22 @@ contains `cd /home/jackking/cls`.
 
 | Module | Lines | Responsibility |
 |---|---:|---|
-| `config.py` | 368 | All dataclasses: `EnvConfig`, `VectorHashConfig`, `HopfieldConfig`, `AgentConfig`, `PPOConfig`, `BCConfig`, `TrainConfig`, `RNNAgentConfig`, `RNNBCConfig`, `RNNTrainConfig`, and three phase schedules `PhasedConfig` / `PhasedConfigV2` / `PhasedConfigV3`. `validate_train_config()` performs exactly one cross-check (`agent_can_store=False` + `auto_store_warmup>0` → `ValueError`). |
-| `env.py` | 429 | `GridEnv` (discrete) and `ContinuousGridEnv` (float positions, snapped for lookup); the canonical `at_goal(env)` predicate (L2 ball of radius `goal_radius` on the *raw* position); the per-cell foveal sensory codebook (120° cone, heading fixed North, one ±1 code per ray from the wall segment it hits); `make_env()` factory. |
-| `vec_env.py` | 341 | `VecEnv` / `ContinuousVecEnv`: B parallel episodes sharing one env's codebook and goal. Defines the at-goal step semantics used everywhere (§3.3). |
-| `vectorhash.py` | 472 | `VectorHash`: builds `gbook` (+ optional place/sensory layers), places envs as non-overlapping patches in the `Npos × Npos` scaffold, precomputes `encoded_Phi`, and provides `get_encoded_state`, `gram_schmidt_projection`, `project_displacement`, `get_goal_encodings`. |
-| `hopfield.py` | 208 | `Hopfield` (Hebbian store, iterative tanh recall) plus batched free functions `recall_per_env_batch` / `recall_per_env_batch_trajectory` for per-env weight matrices. |
-| `encoder.py` | 78 | Loads a frozen `encoder_training` checkpoint; tolerates three historical save formats; resolves the effective gain. `validate_config()` only checks that encoder `lambdas` match VectorHash `lambdas`. |
-| `agent.py` | 192 | `NavAgent` = GRU trunk + movement head (Categorical(4) or Normal(2)) + Bernoulli store head + value head. `compute_input_dim()` is the single source of truth for the input layout. |
-| `rollout.py` | 799 | `RolloutCollector.collect_rollout()` — the heart of training: env stepping, embedding lookup, Hopfield recall, reward shaping, ε-exploration, teacher forcing, BC label generation, GAE bootstrap. |
-| `ppo.py` | 302 | `RolloutBatch` dataclass, `compute_gae`, `ppo_update` (clipped surrogate + value + entropies + auxiliary store BCE). |
-| `bc.py` | 204 | DAgger novelty oracles and `bc_update` (CE on teacher move + weighted BCE on store). |
-| `oracle_bfs.py` | 78 | Shortest-path oracle for the open grid (greedy Manhattan with random tie-break), used by the RNN baseline. |
+| `config.py` | 368 | All dataclasses: `EnvConfig`, `VectorHashConfig`, `HopfieldConfig`, `AgentConfig`, `PPOConfig`, `BCConfig`, `TrainConfig`, `RNNAgentConfig`, `RNNBCConfig`, `RNNTrainConfig`, and two phase schedules `PhasedConfig` / `PhasedConfigV3` (`PhasedConfigV2` was deleted in phase 6; see `docs/archive/phase_schedules.md`). `validate_train_config()` performs exactly one cross-check (`agent_can_store=False` + `auto_store_warmup>0` → `ValueError`). |
+| `world/env.py` | 429 | `GridEnv` (discrete) and `ContinuousGridEnv` (float positions, snapped for lookup); the canonical `at_goal(env)` predicate (L2 ball of radius `goal_radius` on the *raw* position); the per-cell foveal sensory codebook (120° cone, heading fixed North, one ±1 code per ray from the wall segment it hits); `make_env()` factory. |
+| `world/vec_env.py` | 341 | `VecEnv` / `ContinuousVecEnv`: B parallel episodes sharing one env's codebook and goal. Defines the at-goal step semantics used everywhere (§3.3). |
+| `world/scaffold.py` | 472 | `VectorHash`: builds `gbook` (+ optional place/sensory layers), places envs as non-overlapping patches in the `Npos × Npos` scaffold, precomputes `encoded_Phi`, and provides `get_encoded_state`, `gram_schmidt_projection`, `project_displacement`, `get_goal_encodings`. |
+| `world/memory.py` | 208 | `Hopfield` (Hebbian store, iterative tanh recall) plus batched free functions `recall_per_env_batch` / `recall_per_env_batch_trajectory` for per-env weight matrices. |
+| `encoder_io.py` | 78 | The one sanctioned edge out to `encoder_training`. Loads a frozen encoder checkpoint; tolerates three historical save formats; resolves the effective gain. `validate_config()` only checks that encoder `lambdas` match VectorHash `lambdas`. |
+| `policy/agent.py` | 192 | `NavAgent` = GRU trunk + movement head (Categorical(4) or Normal(2)) + Bernoulli store head + value head. `compute_input_dim()` derives the input width from `policy/channels.py`. |
+| `policy/channels.py` | 152 | The policy-input layout, defined once (phase 4a): one ordered channel list, one function that builds the tensor, one that sums the widths. Channel order is a checkpoint-compatibility surface — new channels append. |
+| `rollout/signal.py` | — | One Hopfield recall → projection → direction implementation (phase 4b), shared by the collector and every evaluator. |
+| `rollout/types.py` | 21 | `RolloutBatch`: what a rollout produces. Consumed by both `ppo` and `bc`. |
+| `rollout/distractors.py` | — | `sample_distractors` / `goal_encoding`, one copy (phase 6), replacing four. |
+| `world/episode.py` | — | The at-goal contract as a value (phase 5a): five independent clauses, `resolve_at_goal()` as a pure function, and `SITE_CONTRACTS` declaring all 11 call sites. |
+| `rollout/collector.py` | 799 | `RolloutCollector.collect_rollout()` — the heart of training: env stepping, embedding lookup, Hopfield recall, reward shaping, ε-exploration, teacher forcing, BC label generation, GAE bootstrap. |
+| `updates/ppo.py` | 281 | `compute_gae`, `ppo_update` (clipped surrogate + value + entropies + auxiliary store BCE). `RolloutBatch` moved to `rollout/types.py` in phase 6. |
+| `updates/bc.py` | 133 | `bc_update` (CE on teacher move + weighted BCE on store). The novelty oracles moved to `rollout/oracles.py` in phase 6 — they are teachers, not losses. |
+| `rollout/oracles.py` | 149 | Teacher actions for DAgger: the shortest-path oracle for the open grid (greedy Manhattan with random tie-break, used by the RNN baseline) and the novelty oracles that label the explore phase. |
 | `utils.py` | 72 | Gram–Schmidt basis, direction classification/one-hot, re-export of `smooth_g`/`smooth_gbook` from `encoder_training.utils`. |
 
 ### 3.2 Training entry points (five of them)
@@ -108,9 +127,9 @@ contains `cd /home/jackking/cls`.
 | `hopfield_nav.train_phase_b_only` | 11 | Loads a Phase-A checkpoint, freezes everything but the store head, trains it with detached-trunk BCE. | `checkpoint/phase_b_only_<run>/phase_b_u{N}.pt` |
 | `hopfield_nav.train_rnn` | 37 | No-memory control baseline: GRU policy on raw sensory, BC against the BFS oracle, in `sequential` / `mixed` / `finetune` mode. | `checkpoint_rnn/<run>/final.pt` |
 
-Supporting modules for the baseline: `agent_rnn.py`, `rollout_rnn.py`,
-`bc_rnn.py`, `eval_rnn.py`. They deliberately share nothing with the Hopfield
-stack except `env.py`/`vec_env.py`.
+Supporting modules for the baseline: `policy/agent_rnn.py`, `rollout/rnn.py`,
+`updates/bc_rnn.py`, `evaluation/rnn.py`. They deliberately share nothing with the Hopfield
+stack except `world/env.py`/`world/vec_env.py`.
 
 ### 3.3 The one semantic everything depends on: the at-goal step
 
@@ -124,13 +143,13 @@ stack except `env.py`/`vec_env.py`.
 
 So the agent gets exactly one observable timestep at the goal — which is the
 step on which it can fire `store` and have `embeddings[b]` be the goal
-embedding. Every evaluator in `eval.py` reproduces this by treating "pre-step
+embedding. Every evaluator in `evaluation/metrics.py` reproduces this by treating "pre-step
 `at_goal` is True" as the success/reach event. `goals_active=False` disables
 the whole branch (no reward, no teleport) — the pure-explore regime.
 
 ### 3.4 Evaluation stack
 
-`eval.py` (1162 lines) is single-env, single-trial, `@torch.no_grad`, built on
+`evaluation/metrics.py` (1162 lines) is single-env, single-trial, `@torch.no_grad`, built on
 one shared step function `agent_step()`. Seven evaluators:
 
 | Function | Question it answers | Hopfield contents |
@@ -143,10 +162,10 @@ one shared step function `agent_step()`. Seven evaluators:
 | `evaluate_repeat` | Same as realistic's primary phase, but a fresh Hopfield per trial | per-trial |
 | `evaluate_sequential_episodes` | Paper-style continual protocol: block *i* introduces env *i*, each iteration runs one mini-episode in every env ≤ *i* | persistent, revisits frozen |
 
-Drivers: `eval_all.py` (29 flags — the general one, JSON + plots),
-`eval_checkpoints.py` (sweeps run × update over a hardcoded `checkpoints/`
-root), `eval_distractors.py` (one ckpt × distractor sweep), `eval_rnn.py`
-(standalone, for the RNN baseline).
+Drivers: `eval_all.py` (29 flags — the general one, JSON + plots) and
+`evaluation/rnn.py` (standalone, for the RNN baseline). Phase 6 deleted
+`eval_checkpoints.py` and `eval_distractors.py`, which were thinner CLIs over
+the same evaluators; `eval_all.py` covers both with more flags.
 
 Two oracle switches let you cut the loop at different points
 (`eval.agent_step`): `hopfield_oracle` replaces the *recall* with the true
@@ -232,11 +251,11 @@ always steps along the projected Hopfield recall direction. An encoder is
 
 | Module | Lines | Still used? |
 |---|---:|---|
-| `cls/vectorhash/assoc_utils_np.py` | 957 | **Yes** — `nonlin`, `train_pbook`, `train_gcpc`, `pseudotrain_Wsp`, `pseudotrain_Wps` (imported by `hopfield_nav/vectorhash.py`, `encoder_training/experiments/encoder_scaffold.py`). |
-| `cls/vectorhash/assoc_utils_np_2D.py` | 227 | **Yes** — `gen_gbook_2d` (imported by `hopfield_nav/vectorhash.py`, `encoder_training/data.py`, `encoder_scaffold.py`). |
+| `cls/vectorhash/assoc_utils_np.py` | 957 | **Yes** — `nonlin`, `train_pbook`, `train_gcpc`, `pseudotrain_Wsp`, `pseudotrain_Wps` (imported by `hopfield_nav/world/scaffold.py`, `analysis/scaffold_experiments/encoder_scaffold.py`). |
+| `cls/vectorhash/assoc_utils_np_2D.py` | 227 | **Yes** — `gen_gbook_2d` (imported by `hopfield_nav/world/scaffold.py`, `encoder_training/data.py`, `encoder_scaffold.py`). |
 | `cls/eval/nav_eval.py` | 409 | **Yes** — the encoder nav-eval (`encoder_training/evaluate.py`). |
 | `cls/nav.py` | 137 | **Yes** — projection + trajectory primitives used by `nav_eval.py` and `encoder_training/trajectory.py`. |
-| `cls/hopfield.py` | 182 | **Yes** (encoder side only). Note: its `recall()` returns `(x, cos_sims)`, whereas `hopfield_nav/hopfield.py`'s returns a bare tensor — two incompatible Hopfield classes coexist. |
+| `cls/hopfield.py` | 182 | **Yes** (encoder side only). Note: its `recall()` returns `(x, cos_sims)`, whereas `hopfield_nav/world/memory.py`'s returns a bare tensor — two incompatible Hopfield classes coexist. |
 | `cls/vectorhash/{seq,sensory,sensgrid,sens_pcrec,sens_sparseproj,senstranspose,theory,capacity,data}_utils.py`, `assoc_utils.py` | ~3200 | No live importer outside `cls` itself and the root `tests/`. |
 | `cls/utils/GridUtils.py` | 767 | Only `cls/envs/environments.py` and root `tests/`. |
 | `cls/envs/environments.py` | 978 | Only root `tests/`. (`WMEnv` is the package's public API in `cls/__init__.py`.) |
@@ -253,12 +272,12 @@ the encoder nav-eval.
 | Directory | Size | Written by |
 |---|---:|---|
 | `encoders/` | 21 GB (870 run dirs) | `encoder_training.train` (`--save_dir`) |
-| `hopfield_nav/final_plotting/` | 21 GB | histories, scaffold cache, figures |
-| `hopfield_nav/phase_decoding_v2/results/` | 17 GB | per-arena `.npz` trial dumps |
+| `analysis/continual/` | 21 GB | histories, scaffold cache, figures |
+| `analysis/phase_decoding/results/` | 17 GB | per-arena `.npz` trial dumps |
 | `checkpoint/` | 8.5 GB (309 run dirs) | `train.py`, `train_phase_a_only.py`, `train_phase_b_only.py`, `train_phased.py` |
 | `wandb/` | 6.6 GB (817 runs) | wandb local cache |
 | `hopfield_nav/phase_decoding` | 1.1 GB | the **v1** phase-decoding pipeline — present on disk, not in git |
-| `checkpoints/` (plural) | 63 MB | older `train.py` runs; `eval_checkpoints.py` still hardcodes this root |
+| `checkpoints/` (plural) | 63 MB | older `train.py` runs (the driver that hardcoded this root was deleted in phase 6) |
 | `checkpoint_rnn/` | 13 MB | `train_rnn.py` |
 | others (`plots/`, `images/`, `npos_sweep/`, `smoke_*`, `action_classifiers/`, `displacement_plots/`) | ~50 MB | ad-hoc |
 
@@ -301,7 +320,7 @@ abstract, arena-general "explore vs exploit" axis in the controller's hidden
 state (parallelism + decodability + PCA)?
 
 **D. BC/DAgger and RNN baselines** — `train.py --training_mode bc`,
-`train_rnn.py`, `bc.py`, `bc_rnn.py`, `eval_rnn.py`, `pretrain_baseline_rnn.sh`.
+`train_rnn.py`, `updates/bc.py`, `updates/bc_rnn.py`, `evaluation/rnn.py`, `pretrain_baseline_rnn.sh`.
 Question: how much of the behavior is reachable by supervised imitation of an
 oracle, and how does a memoryless GRU do on the same continual protocol?
 
@@ -313,8 +332,10 @@ Each of these was verified against the current source.
 
 1. **Three sbatch scripts are broken by a flag rename.** `--gbook-only` was
    renamed to `--static-vectorhash`, but the shim was only added for *checkpoint
-   config dicts* (`_coerce_legacy_cfg`), not for the CLI. argparse exits 2 on
-   the unknown flag, so these fail immediately:
+   config dicts* (`coerce_legacy_cfg`, now in `evaluation/checkpoint_io.py`), not
+   for the CLI. argparse exits 2 on the unknown flag, so these failed
+   immediately. **Fixed in phase 0** by restoring `--gbook-only` as a deprecated
+   alias; the sites below are kept as the record of what broke:
    - [run_eval_all.sh:134](../hopfield_nav/run_eval_all.sh#L134) (`GBOOK_ONLY=1`
      by default) → `eval_all.py`, whose parser has only `--static-vectorhash`
      ([eval_all.py:850](../hopfield_nav/eval_all.py#L850));
@@ -331,31 +352,32 @@ Each of these was verified against the current source.
    not `goal_radius`. `train_phased.py` / `train_phase_a_only.py` /
    `train_phase_b_only.py` use `setup_world` → `make_env` and are unaffected.
 3. **`GridEnv.clone()` cannot run.** It calls `self._random_position_with_rng`
-   ([env.py:313](../hopfield_nav/env.py#L313)), which is a `@staticmethod` that
+   ([env.py:313](../hopfield_nav/world/env.py#L313)), which is a `@staticmethod` that
    unconditionally raises `NotImplementedError`
-   ([env.py:324-331](../hopfield_nav/env.py#L324)). No live caller exists —
+   ([env.py:324-331](../hopfield_nav/world/env.py#L324)). No live caller exists —
    `train.py:253` clones a *Hopfield*, not an env — so this is dead code, not an
    active bug. (`_random_position` is also defined twice in the class; the
    second definition wins.)
 4. **One failing test, and the reason is a latent fragility.**
    `hopfield_nav/tests/test_audit.py::TestBCStoreCap::test_cap_active` fails
    with `TypeError: expected Tensor as element 0 in argument 0, but got
-   NoneType` at [bc.py:127](../hopfield_nav/bc.py#L127). `bc_update`
+   NoneType` at [bc.py:127](../hopfield_nav/updates/bc.py#L127). `bc_update`
    unconditionally does `torch.cat([r.trust_hop_mask for r in rollouts])`, but
    `RolloutBatch.trust_hop_mask` defaults to `None`
-   ([ppo.py:41](../hopfield_nav/ppo.py#L41)). The live path is safe —
+   ([ppo.py:41](../hopfield_nav/updates/ppo.py#L41)). The live path is safe —
    `RolloutCollector` always populates it when `training_mode == "bc"` — but any
    hand-built batch, or a PPO-mode rollout handed to `bc_update`, crashes. The
    test predates the `trust_hop_mask` / `nav_weight` feature and was never
    updated. Fix is one line (`torch.ones_like(mm)` when the field is `None`),
    plus the test.
-   Also: **`phase_decoding_v2/README.md` points at `hopfield_nav/run_tests.sh`**,
-   which does not exist, and there is no `conftest.py` or pytest config, so the
-   suite must be run as `python -m pytest` from the repo root.
-5. **`eval_checkpoints.py` and `eval_distractors.py` hardcode absolute
-   paths** to `/home/jackking/cls/checkpoints/...` and a 2026-04-09 encoder.
-   `eval_checkpoints.py`'s default `--runs` list (`r2_r2a_low_ent`, …) refers to
-   runs from that era.
+   **Fixed in phase 0.** Also fixed there: the phase-decoding README's pointer
+   at a `hopfield_nav/run_tests.sh` that never existed, and the absence of any
+   pytest config — there is now `[tool.pytest.ini_options]` in
+   `pyproject.toml` and a root `run_tests.sh`.
+5. ~~**`eval_checkpoints.py` and `eval_distractors.py` hardcode absolute
+   paths** to `/home/jackking/cls/checkpoints/...` and a 2026-04-09 encoder.~~
+   **Resolved in phase 6**: both modules were deleted after their shared
+   helpers moved to `evaluation/checkpoint_io.py`.
 6. **The eval-world reconstruction is not bit-identical to training.**
    `build_eval_world` replays the val-env seed sequence
    (`RandomState(cfg.seed)`, burning `envs_per_world × num_worlds` draws first),
@@ -365,14 +387,16 @@ Each of these was verified against the current source.
    differ from the training run's. Offsets are arbitrary, so this is not a
    correctness problem; it does mean "same checkpoint, same flags" can differ
    from the number logged during training.
-7. **Three near-identical copies of the checkpoint-loading helpers** exist:
-   `_coerce_legacy_cfg` + `make_cfg_from_checkpoint` + `build_eval_world` in
-   `eval_all.py`, `eval_checkpoints.py` and `eval_distractors.py`.
-   `train_phase_b_only.py` imports `make_cfg_from_checkpoint` from
-   `eval_checkpoints`, while `final_plotting/agenthash.py` and
-   `phase_decoding_v2/rollout.py` import their copy from `eval_all`.
-8. **Unused config surface.** `PhasedConfigV2` is defined in `config.py` and
-   imported nowhere. `HopfieldConfig.n_train_distractors` (the fixed-count
+7. ~~**Three near-identical copies of the checkpoint-loading helpers**~~
+   **Resolved in phase 6.** `evaluation/checkpoint_io.py` is the one copy:
+   `coerce_legacy_cfg`, `cfg_from_checkpoint` (was `make_cfg_from_checkpoint` /
+   `make_cfg`), `build_eval_world`, `load_agent`, `scaffold_layout_dict`. All
+   five importers point at it, and `tests/test_checkpoint_io.py` pins the
+   compatibility surface.
+8. **Unused config surface.** ~~`PhasedConfigV2` is defined in `config.py` and
+   imported nowhere.~~ Deleted in phase 6; its docstring, the only record of the
+   V2 schedule, is in `docs/archive/phase_schedules.md`.
+   `HopfieldConfig.n_train_distractors` (the fixed-count
    variant) is read only by `train.py`; the Phase-A harness uses the
    `_min`/`_max` pair instead. `HopfieldConfig.init_mode` is *read* in exactly
    one place (`train.py:69`, to decide whether to build a pre-stored template);
@@ -380,7 +404,7 @@ Each of these was verified against the current source.
    downstream consumes it — the actual Hopfield contents come from
    `make_hops(role)`.
 9. **Two `load_encoder` functions** with different return signatures:
-    `hopfield_nav/encoder.py:load_encoder` → `(encoder, cfg, gain)` and
+    `hopfield_nav/encoder_io.py:load_encoder` → `(encoder, cfg, gain)` and
     `encoder_training/train.py:load_encoder` → `(encoder, ckpt_dict)`.
 10. **SLURM partitions are inconsistent**: `pi_evelina9` in most scripts,
     `mit_normal_gpu` in `run_continuous.sh` and `pretrain_baseline_rnn.sh`,

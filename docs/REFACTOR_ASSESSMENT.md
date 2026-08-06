@@ -3,6 +3,15 @@
 Written 2026-08-05 against `main` (`959322f`). Verdict, evidence, a target
 layout, and a phased plan. No code was changed to produce this document.
 
+> **This is a diagnosis, kept as written.** Most of what it describes has since
+> been fixed, and the sections below still describe the repo as it was found —
+> deliberately, because the evidence is the reason the work was done. For what
+> is true now, read `REFACTOR_STATUS.md`. In brief: §2's duplication is gone
+> (phases 4–6), §3's target layout is implemented except for `gridcode/` and
+> `experiments/`, §4's phases 0–2 are done, and phase 3 (one training loop) is
+> not. Module paths in the text below were rewritten to the current layout so
+> the file references resolve; the claims around them were not.
+
 ---
 
 ## 1. Verdict
@@ -92,10 +101,10 @@ implementations of "the same" protocol.
 
 **(e) Smaller ones.** `_make_vec` in both `train_rnn.py:88` and
 `eval_rnn.py:21`. Two `load_encoder` functions with different signatures
-(`hopfield_nav/encoder.py` → `(encoder, cfg, gain)`;
+(`hopfield_nav/encoder_io.py` → `(encoder, cfg, gain)`;
 `encoder_training/train.py` → `(encoder, ckpt)`). Two `Hopfield` classes whose
 `recall()` return types differ (`cls/hopfield.py` returns `(x, cos_sims)`,
-`hopfield_nav/hopfield.py` returns `x`).
+`hopfield_nav/world/memory.py` returns `x`).
 
 ### 2.2 The five training entry points
 
@@ -138,7 +147,7 @@ in the code:
 
 ### 2.4 Outputs inside the source tree
 
-`hopfield_nav/final_plotting/` is 21 GB, `hopfield_nav/phase_decoding_v2/` is
+`analysis/continual/` is 21 GB, `analysis/phase_decoding/` is
 17 GB — because `histories/`, `scaffold_cache/`, `figures/`, `results/` live
 *inside the python packages*. `.gitignore` hides them, which is why this hasn't
 hurt yet, but it means `du`, `grep -r`, IDE indexing, and any future `pip
@@ -258,15 +267,15 @@ continues past the current paper.
 
 ### Phase 1 — de-duplicate the dangerous parts (2–3 days)
 6. Extract `hopfield_nav/rollout/inputs.py` with `build_policy_input` +
-   `input_layout`; rewrite `rollout.py`'s two call sites and `eval.agent_step`
+   `input_layout`; rewrite `rollout/collector.py`'s two call sites and `eval.agent_step`
    to use it. Regression test: for a fixed config and fixed state, the three old
    paths and the new one must produce identical tensors (a characterization test
    in the style of the existing `test_at_goal.py`).
 7. Extract `evaluation/checkpoint_io.py`; delete the three copies; repoint
    `train_phase_b_only`, `agenthash`, `phase_decoding_v2.rollout`.
 8. Extract `sample_distractors(vh, offset, size, n, rng)` into one module and
-   call it from `eval.py` and both training paths.
-9. Unify `mini_episode`: have `agenthash.py` call the `eval.py` protocol with a
+   call it from `evaluation/metrics.py` and both training paths.
+9. Unify `mini_episode`: have `agenthash.py` call the `evaluation/metrics.py` protocol with a
    richer return type, rather than keeping a parallel implementation.
 10. Delete `PhasedConfigV2`; either wire `init_mode` into the rollout or drop it.
 
@@ -322,7 +331,7 @@ work in.
   keyed by those names. If a rename is unavoidable, add it to a single
   `coerce_legacy_cfg` (one copy, after Phase 1) with a comment naming the date
   and the runs affected.
-- **Don't rewrite `eval.py`'s protocols while the paper figures are in flight.**
+- **Don't rewrite `evaluation/metrics.py`'s protocols while the paper figures are in flight.**
   The at-goal semantics ("the reach is the step where the agent *sits* on the
   goal, pre-action") are subtle, replicated deliberately across seven
   evaluators, and pinned by `tests/test_at_goal.py`. Consolidate the *plumbing*
@@ -333,7 +342,7 @@ work in.
   fair price.
 - **Don't delete `run_phase_a_sweep_evelina.sh`**, even after moving to YAML
   configs — it is the only record of what 101 named runs actually were.
-- **Don't "clean up" the long docstrings** in `config.py`, `rollout.py` and
-  `ppo.py`. They encode experimental findings (why BCE is detached, why ε steps
+- **Don't "clean up" the long docstrings** in `config.py`, `rollout/collector.py` and
+  `updates/ppo.py`. They encode experimental findings (why BCE is detached, why ε steps
   are masked out of the surrogate, why novelty and store_bonus conflict) that
   exist nowhere else in executable form.

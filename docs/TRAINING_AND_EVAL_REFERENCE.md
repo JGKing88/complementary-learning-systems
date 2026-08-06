@@ -3,7 +3,14 @@
 Written 2026-08-05 from the code on `main` (`959322f`). Every flag table below
 was read off the `argparse` blocks in the source, and every "what it does" entry
 was traced to the line that consumes the value. Nothing here is inherited from
-the older markdown files.
+the older markdown files (now under `docs/archive/`).
+
+> **Updated 2026-08-06 for the phase-6 layout.** Module paths were rewritten
+> mechanically; see the banner in `CODEBASE_MAP.md` for the full mapping. Flag
+> names and semantics are unchanged, and every entry point is still invoked the
+> same way — except the analysis pipelines, which moved out of `hopfield_nav`:
+> `python -m hopfield_nav.final_plotting.X` is now `python -m analysis.continual.X`,
+> and `hopfield_nav.phase_decoding_v2.X` is now `analysis.phase_decoding.X`.
 
 Contents:
 1. [How anything gets run](#1-how-anything-gets-run)
@@ -52,15 +59,15 @@ unset CUDA_VISIBLE_DEVICES
 | `hopfield_nav/pretrain_baseline_rnn.sh` | `hopfield_nav.train_rnn --mode mixed` | `mit_normal_gpu`, 2 h | edit flags in file |
 | `hopfield_nav/run_eval_all.sh` | `hopfield_nav.eval_all` per ckpt | `pi_evelina9`, 12 h | `CKPTS` array + env vars — **currently broken**, passes `--gbook-only` |
 | `hopfield_nav/run_visualize_trajectories.sh` | `hopfield_nav.visualize_trajectories` | `pi_evelina9`, 30 m | edit variables at top |
-| `hopfield_nav/final_plotting/run_agenthash.sh` | `prep_scaffold` → N× `agenthash` → `merge_histories` → `plotting` | `pi_evelina9`, 6 h, 32 CPU | edit variables at top |
-| `hopfield_nav/final_plotting/run_baseline.sh` | N× `baseline` → `merge_histories` → `plotting` | `pi_evelina9`, 12 h, 32 CPU | edit variables at top |
-| `hopfield_nav/final_plotting/just_plot.sh` | `plotting` only | `mit_normal`, 2 h | edit variables |
-| `hopfield_nav/phase_decoding_v2/run_exp1.sh` | `phase_decoding_v2.exp1` | `pi_evelina9`, 1 d | env vars: `CKPT`, `NUM_ARENAS`, `N_STARTS`, `MAX_STEPS`, `N_DIST_MIN/MAX`, `N_RAND`, `TEST_FRAC`, `SEED`, `POLICY_FLAG`, `OUT` |
-| `hopfield_nav/phase_decoding_v2/run_exp2.sh` | `phase_decoding_v2.exp2` | `pi_evelina9`, 2 h | env vars incl. `TRIALS_DIR` to reuse exp1 trials |
+| `analysis/continual/run_agenthash.sh` | `prep_scaffold` → N× `agenthash` → `merge_histories` → `plotting` | `pi_evelina9`, 6 h, 32 CPU | edit variables at top |
+| `analysis/continual/run_baseline.sh` | N× `baseline` → `merge_histories` → `plotting` | `pi_evelina9`, 12 h, 32 CPU | edit variables at top |
+| `analysis/continual/just_plot.sh` | `plotting` only | `mit_normal`, 2 h | edit variables |
+| `analysis/phase_decoding/run_exp1.sh` | `phase_decoding_v2.exp1` | `pi_evelina9`, 1 d | env vars: `CKPT`, `NUM_ARENAS`, `N_STARTS`, `MAX_STEPS`, `N_DIST_MIN/MAX`, `N_RAND`, `TEST_FRAC`, `SEED`, `POLICY_FLAG`, `OUT` |
+| `analysis/phase_decoding/run_exp2.sh` | `phase_decoding_v2.exp2` | `pi_evelina9`, 2 h | env vars incl. `TRIALS_DIR` to reuse exp1 trials |
 | `encoder_training/scripts/submit_train.sh` | `encoder_training.train` | `pi_evelina9`, 4 h, A100 | variables at top; empty string ⇒ fall back to `train.py` default |
 | `encoder_training/scripts/submit_eval.sh` | `encoder_training.evaluate_nav` | `pi_evelina9`, 30 m, A100 | variables at top |
 | `encoder_training/sweep.py` | N× (train → evaluate_nav) | `pi_fiete`, 12 h | edit `BASE`/`GRID`/`EVAL`/`SLURM` dicts, then run the module (it calls `sbatch` itself) |
-| `encoder_training/experiments/run_exp.sh` | `capacity_scaling` ×2 | `pi_evelina9`, 1.5 h | fixed |
+| `analysis/scaffold_experiments/run_exp.sh` | `capacity_scaling` ×2 | `pi_evelina9`, 1.5 h | fixed |
 | `run.sh` (repo root) | `sweep_cosine_width.py` | `pi_evelina9`, 2 d, CPU | legacy `cls`-only sweep |
 
 ### Logs and run identity
@@ -631,14 +638,14 @@ loads the agent, and runs whichever evaluators are enabled.
 
 ### 5.2 Other eval drivers
 
-- `python -m hopfield_nav.eval_distractors --checkpoint <p> --distractors 0 1 3 5 10`
-  — one checkpoint, nav-det + nav-stoch + discovery + exploration across a
-  distractor sweep. 8 flags; defaults point at April-2026 paths.
-- `python -m hopfield_nav.eval_checkpoints --runs <names> --updates <ints>` —
-  table over `checkpoints/<run>/hopfield_nav_update{N}.pt` with a pass gate
-  (`nav_stoch ≥ 0.7`, `store_eff ≥ 0.7`, `coverage ≥ 0.45`) and a
-  best-checkpoint pick by `mean(nav_stoch, store_eff, coverage)`. Hardcodes
-  `/home/jackking/cls/checkpoints` as the root.
+- ~~`python -m hopfield_nav.eval_distractors`~~ and
+  ~~`python -m hopfield_nav.eval_checkpoints`~~ — **deleted in phase 6**. Both
+  were thinner CLIs over the same evaluators `eval_all` drives, with hardcoded
+  April-2026 paths. For the distractor sweep use
+  `eval_all --n_distractors 0 1 3 5 10`; for a run × update table, loop
+  `eval_all --ckpt <dir>/<name>_update{N}.pt --output-json` and compare the
+  JSON. `eval_checkpoints`' pass gate (`nav_stoch ≥ 0.7`, `store_eff ≥ 0.7`,
+  `coverage ≥ 0.45`) has no replacement and was not carried over.
 - `python -m hopfield_nav.visualize_trajectories --checkpoint_dir <dir>` —
   rows = checkpoints (files matching `*_u{N}.pt` or `*_update{N}.pt`; files
   without an update number are skipped), cols = trials, with a fixed
@@ -675,9 +682,9 @@ All of them: fresh Hopfield per trial, `RandomState(seed)` per distractor level
 ### 6.1 Continual-learning figure (`final_plotting/`)
 
 ```bash
-sbatch hopfield_nav/final_plotting/run_agenthash.sh   # edit RUN_NAME / CKPT / knobs at top
-sbatch hopfield_nav/final_plotting/run_baseline.sh
-bash   hopfield_nav/final_plotting/just_plot.sh       # re-render only
+sbatch analysis/continual/run_agenthash.sh   # edit RUN_NAME / CKPT / knobs at top
+sbatch analysis/continual/run_baseline.sh
+bash   analysis/continual/just_plot.sh       # re-render only
 ```
 
 `run_agenthash.sh` does: `prep_scaffold` once (content-addressed cache keyed by
@@ -719,8 +726,8 @@ inputs to agree on `model_class`, `n_envs`, `env_size`, `iters_per_block`.
 ### 6.2 Phase decoding (`phase_decoding_v2/`)
 
 ```bash
-CKPT=/path/to/ckpt.pt sbatch hopfield_nav/phase_decoding_v2/run_exp1.sh
-CKPT=/path/to/ckpt.pt TRIALS_DIR=/path/to/exp1/trials sbatch hopfield_nav/phase_decoding_v2/run_exp2.sh
+CKPT=/path/to/ckpt.pt sbatch analysis/phase_decoding/run_exp1.sh
+CKPT=/path/to/ckpt.pt TRIALS_DIR=/path/to/exp1/trials sbatch analysis/phase_decoding/run_exp2.sh
 ```
 
 **Exp 1** (`exp1.py`, 19 flags): collect `n_starts` explore trials and
@@ -850,21 +857,22 @@ Traced to source; use these when comparing numbers across docs.
 
 Compatibility shims that exist in the code:
 
-- `hopfield_nav/encoder.py:load_encoder` accepts three encoder-checkpoint
+- `hopfield_nav/encoder_io.py:load_encoder` accepts three encoder-checkpoint
   layouts: top-level `model_config`, `config["model_params"]`, or `config` as
   the model dict; and resolves gain from override → `ckpt["gain"]` →
   `model_config.gain`.
-- `_coerce_legacy_cfg` (duplicated in `eval_all.py`, `eval_checkpoints.py`,
-  `eval_distractors.py`) renames `val_envs_per_world → num_val_envs` and
+- `coerce_legacy_cfg` (one copy, in `evaluation/checkpoint_io.py` since phase 6;
+  previously duplicated across the three eval drivers) renames
+  `val_envs_per_world → num_val_envs` and
   `vectorhash.gbook_only → vectorhash.static_vectorhash` when loading old agent
-  checkpoints. **This shim covers checkpoints only — the CLI flag was renamed
-  with no alias**, which is why three sbatch scripts still fail on
-  `--gbook-only`.
+  checkpoints. **This shim covers checkpoints only** — the CLI flag was renamed
+  separately, and phase 0 restored `--gbook-only` as a deprecated alias.
+  `hopfield_nav/tests/test_checkpoint_io.py` pins both renames.
 - `train_rnn.restore_arch_from_ckpt` overrides CLI architecture flags with the
   values saved in the checkpoint (printing a NOTE for each), so finetune runs
   can't accidentally change parameter shapes.
 
 Fields added to `TrainConfig` after a checkpoint was written simply take their
-dataclass defaults on load (`make_cfg_from_checkpoint` only sets keys present in
+dataclass defaults on load (`cfg_from_checkpoint` only sets keys present in
 the saved dict), so e.g. `goal_radius` becomes 0.5 for pre-`goal_radius`
 checkpoints.
