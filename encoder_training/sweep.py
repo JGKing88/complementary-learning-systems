@@ -12,6 +12,7 @@ Plot aggregated results with:
 """
 from __future__ import annotations
 
+import argparse
 import itertools
 import json
 import os
@@ -161,21 +162,46 @@ def _tag(keys: list[str], combo: tuple) -> str:
 
 
 def main():
+    # A real parser, because this reads argv[1] as the sweep *name* and then
+    # submits one GPU job per grid point. Without it, `python -m
+    # encoder_training.sweep --help` -- which is exactly what
+    # `scripts/check_entry_points.py` runs against every entry point -- named
+    # the sweep "--help" and submitted the whole grid. That gate had queued
+    # ~150 stray jobs before anyone noticed, and each one trains an encoder for
+    # 12 h on an A100. `--help` must not launch anything.
+    p = argparse.ArgumentParser(
+        description=__doc__,
+        formatter_class=argparse.RawDescriptionHelpFormatter)
+    p.add_argument("sweep_name", nargs="?", default=None,
+                   help="Directory name under the sweeps root. "
+                        "Default: sweep_<timestamp>.")
+    p.add_argument("--dry-run", action="store_true",
+                   help="Print what would be submitted and exit without "
+                        "calling sbatch or creating run directories.")
+    args = p.parse_args()
+
     # Validate grid keys
     unknown = [k for k in GRID if k not in BASE]
     if unknown:
         sys.exit(f"GRID keys not in BASE: {unknown}")
 
-    sweep_name = sys.argv[1] if len(sys.argv) > 1 else \
+    sweep_name = args.sweep_name or \
         datetime.now().strftime("sweep_%Y%m%d_%H%M%S")
     sweep_dir = os.path.join(SWEEP_BASE_DIR, sweep_name)
-    os.makedirs(os.path.join(sweep_dir, "slurm"), exist_ok=True)
 
     keys = list(GRID.keys())
     combos = list(itertools.product(*[GRID[k] for k in keys])) or [()]
     print(f"Sweep {sweep_name}: {len(combos)} runs  →  {sweep_dir}")
     for k in keys:
         print(f"  {k}: {GRID[k]}")
+    if args.dry_run:
+        for i, combo in enumerate(combos):
+            tag = _tag(keys, combo) if keys else "run"
+            print(f"  [{i:3d}] {f'{i:03d}_{tag}' if tag != 'run' else f'{i:03d}'}")
+        print("--dry-run: nothing submitted, nothing written")
+        return
+
+    os.makedirs(os.path.join(sweep_dir, "slurm"), exist_ok=True)
 
     train_time = SLURM["time"]
     include_train_flag = "--train_eval" if EVAL.get("include_train_eval") else ""

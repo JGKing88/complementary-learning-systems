@@ -75,3 +75,6 @@ slurm-*.out
 # (tests/gen_golden.py), never automatic.
 !**/tests/golden/
 !**/tests/golden/**
+
+# Agent worktrees: full repo copies, checked out under the repo root.
+.claude/worktrees/

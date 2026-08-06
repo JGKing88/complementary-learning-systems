@@ -33,7 +33,10 @@ import sys
 import tempfile
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-SKIP_DIRS = {"__pycache__", ".ipynb_checkpoints", ".git", "notebooks", "docs"}
+# `.claude` holds agent worktrees -- full copies of the repo. Walking into one
+# found every entry point a second time (32 -> 59) and ran each of them again.
+SKIP_DIRS = {"__pycache__", ".ipynb_checkpoints", ".git", ".claude",
+             "notebooks", "docs"}
 SKIP_PARTS = {"tests"}
 
 
