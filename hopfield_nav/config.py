@@ -316,38 +316,6 @@ class RNNTrainConfig:
 
 
 @dataclass
-class PhasedConfigV3:
-    """V3: adds intrinsic coverage reward on empty-regime envs in Phase A.
-
-    V2 data showed Phase A interleaving converges follow but plateaus
-    exploration at coverage ~0.25-0.35 (target 0.75). Diagnosis: pre-stored
-    rollouts have dense reach-driven reward, their gradient dominates the
-    shared trunk, empty-regime gradient is too sparse to build coverage.
-
-    V3 fix: apply ``phase_a_novelty_reward`` (per first-visit cell) to ONLY
-    the empty-regime envs in Phase A. The follow-regime envs train clean.
-    Because the two regimes live in entirely separate rollouts, novelty
-    cannot contaminate follow — the pathology from docs/archive/EXPERIMENTS.md runs 18/19
-    (single-phase novelty vs store_bonus conflict) doesn't apply.
-    """
-    phase_a_updates: int = 600
-    phase_a_interleave_ratio: float = 0.5
-    phase_a_lr: float = 3e-4
-    phase_a_novelty_reward: float = 0.1     # Per first-visit cell on empty-regime envs only.
-
-    phase_b_updates: int = 30
-    phase_b_lr: float = 3e-4
-    phase_b_bce_weight: float = 1.0
-
-    phase_c_updates: int = 200
-    phase_c_lr_trunk: float = 1e-5
-    phase_c_lr_move: float = 1e-5
-    phase_c_lr_heads: float = 1e-4
-    phase_c_bce_weight: float = 0.1
-    phase_c_bce_detach_trunk: bool = True
-
-
-@dataclass
 class PhasedConfig:
     """Per-phase overrides for train_phased.py.
 
