@@ -10,10 +10,10 @@ from typing import TYPE_CHECKING
 import numpy as np
 import torch
 
-from cls.vectorhash.assoc_utils_np import (
+from gridcode.assoc import (
     nonlin, train_pbook, train_gcpc, pseudotrain_Wsp, pseudotrain_Wps,
 )
-from cls.vectorhash.assoc_utils_np_2D import gen_gbook_2d
+from gridcode.codebook import gen_gbook_2d
 
 from ..config import VectorHashConfig
 from ..utils import gram_schmidt_2d_batch, smooth_gbook

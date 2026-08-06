@@ -64,7 +64,8 @@ LAYERS: dict[str, int] = {
     "hopfield_nav.utils": 0,
     "hopfield_nav.encoder_io": 0,     # the one deliberate edge to encoder_training
     "encoder_training": 0,
-    "cls": 0,                          # legacy, retired in phase 7
+    "gridcode": 0,                     # the live remnant of cls/, phase 7
+    "cls": 0,                          # legacy, being retired in phase 7
     "cls_paths": 0,
 
     "hopfield_nav.world": 1,           # env, vec_env, scaffold, memory, episode

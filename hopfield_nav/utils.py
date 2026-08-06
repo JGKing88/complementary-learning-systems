@@ -56,16 +56,11 @@ def direction_to_onehot(idx: np.ndarray) -> np.ndarray:
 
 
 # ---------------------------------------------------------------------------
-# Smoothing (re-exported from encoder_training for convenience)
+# Smoothing
 # ---------------------------------------------------------------------------
+# Re-exported from gridcode so that `from hopfield_nav.utils import smooth_gbook`
+# keeps working for the callers that already say it. Until phase 7 these were
+# shims around `encoder_training.utils` -- a sideways reach into a sibling
+# package for two functions that belong to neither.
 
-def smooth_g(g: np.ndarray, lambdas: list[int], fwhm_ratio: float) -> np.ndarray:
-    """Smooth a one-hot grid vector per module with wrapped Gaussian."""
-    from encoder_training.utils import smooth_g as _smooth_g
-    return _smooth_g(g, lambdas, fwhm_ratio)
-
-
-def smooth_gbook(gbook: np.ndarray, lambdas: list[int], fwhm_ratio: float) -> np.ndarray:
-    """Smooth all gbook positions."""
-    from encoder_training.utils import smooth_gbook as _smooth_gbook
-    return _smooth_gbook(gbook, lambdas, fwhm_ratio)
+from gridcode.smoothing import smooth_g, smooth_gbook  # noqa: F401

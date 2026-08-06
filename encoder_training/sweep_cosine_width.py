@@ -26,9 +26,9 @@ _ROOT = Path(__file__).resolve().parent
 if str(_ROOT) not in sys.path:
     sys.path.insert(0, str(_ROOT))
 
-from cls.utils.GridUtils import smooth_gbook
-from cls.vectorhash.assoc_utils_np import nonlin, train_pbook
-from cls.vectorhash.assoc_utils_np_2D import gen_gbook_2d
+from gridcode.smoothing import smooth_gbook
+from gridcode.assoc import nonlin, train_pbook
+from gridcode.codebook import gen_gbook_2d
 
 
 # Default sweep grids — edit here or extend CLI later

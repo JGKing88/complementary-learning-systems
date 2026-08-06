@@ -38,8 +38,8 @@ import numpy as np
 import torch
 
 # --- Reused, unmodified utilities ------------------------------------------
-from cls.vectorhash.assoc_utils_np_2D import gen_gbook_2d
-from cls.vectorhash.assoc_utils_np import (
+from gridcode.codebook import gen_gbook_2d
+from gridcode.assoc import (
     nonlin,
     train_pbook,
     train_gcpc,
@@ -49,7 +49,7 @@ from cls.vectorhash.assoc_utils_np import (
 )
 from cls_paths import encoders_dir
 from encoder_training.train import load_encoder
-from encoder_training.utils import smooth_gbook
+from gridcode.smoothing import smooth_gbook
 from hopfield_nav.world.env import GridEnv
 
 

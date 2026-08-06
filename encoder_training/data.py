@@ -7,9 +7,9 @@ import numpy as np
 import torch
 from torch.utils.data import Dataset, DataLoader
 
-from cls.vectorhash.assoc_utils_np_2D import gen_gbook_2d
+from gridcode.codebook import gen_gbook_2d
 
-from .utils import smooth_gbook
+from gridcode.smoothing import smooth_gbook
 
 
 class IndexDataset(Dataset):
