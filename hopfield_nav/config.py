@@ -199,6 +199,13 @@ class TrainConfig:
     # Training
     n_updates: int = 1000
     eval_every: int = 50
+    # Checkpoint cadence for the phased trainers, independent of eval_every.
+    # None = follow eval_every, which is what they did unconditionally until
+    # 2026-08: the per-update save sat inside the eval branch, so raising
+    # eval_every to make a long run affordable also thinned the checkpoints
+    # that analysis.trajectories draws its rows from. `hopfield_nav.train` has
+    # always had its own save_every below and is unaffected.
+    ckpt_every: int | None = None
     save_every: int = 100
     save_dir: str | None = None  # default resolved in train() from wandb name or timestamp
     seed: int = 0

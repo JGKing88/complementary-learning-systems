@@ -63,6 +63,7 @@ def run_phase_a_sweep(
     use_wandb: bool,
     eval_world,
     eval_every: int,
+    ckpt_every: int,
     warmup_explore_only_updates: int,
     novelty_anneal: bool,
     interleave_empty_fraction: float,
@@ -359,7 +360,15 @@ def run_phase_a_sweep(
             do_eval(cfg, agent, eval_world, device,
                     f"phase_a_u{update}", use_wandb,
                     max_steps=cfg.steps_per_rollout)
-            # Save per-eval checkpoint so we can pick a best one later.
+
+        # Checkpointing on its own cadence. It used to sit inside the eval
+        # branch above, which coupled two things with opposite costs: an eval
+        # is expensive and wants to be rare, a checkpoint is cheap and wants to
+        # be frequent. So `--eval_every 20` on a 300-update run left 15
+        # checkpoints, and `analysis.trajectories` -- whose rows are one
+        # checkpoint each -- had nothing to draw. `--ckpt_every` defaults to
+        # `--eval_every`, so an existing command line is unchanged.
+        if update % max(ckpt_every, 1) == 0:
             os.makedirs(cfg.save_dir, exist_ok=True)
             torch.save({
                 "agent_state_dict": agent.state_dict(),
@@ -466,6 +475,7 @@ def train_phase_a_only(
     run_phase_a_sweep(
         cfg, pcfg, worlds, agent, embed_dim, device,
         cfg.use_wandb, eval_world, cfg.eval_every,
+        cfg.ckpt_every if cfg.ckpt_every is not None else cfg.eval_every,
         warmup_explore_only_updates, novelty_anneal,
         interleave_empty_fraction, randomize_goal_per_rollout,
         epsilon_explore=epsilon_explore,
@@ -595,6 +605,12 @@ def main():
     p.add_argument("--seed", type=int, default=0)
     p.add_argument("--device", type=str, default="cuda")
     p.add_argument("--eval_every", type=int, default=50)
+    p.add_argument("--ckpt_every", type=int, default=None,
+                   help="Checkpoint cadence, in updates. Default: follow "
+                        "--eval_every, which is what this did unconditionally "
+                        "before. Set it lower to keep a dense checkpoint "
+                        "series (what analysis.trajectories draws rows from) "
+                        "without paying for an eval at each one.")
     p.add_argument("--save_dir", type=str, default=None)
     p.add_argument("--use_wandb", action="store_true")
     p.add_argument("--wandb_project", type=str, default="hopfield-nav-phase-a-sweep")
@@ -745,7 +761,8 @@ def main():
         val_n_distractors_list=args.val_distractors,
         union_cov_trials=args.union_cov_trials,   # deprecated; see below
         batch_envs=args.batch_envs, steps_per_rollout=args.steps_per_rollout,
-        eval_every=args.eval_every, save_dir=args.save_dir,
+        eval_every=args.eval_every, ckpt_every=args.ckpt_every,
+        save_dir=args.save_dir,
         seed=args.seed, device=args.device,
         use_wandb=args.use_wandb, wandb_project=args.wandb_project,
     )

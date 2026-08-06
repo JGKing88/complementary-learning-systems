@@ -46,6 +46,7 @@ def run_phase_b(
     device: torch.device,
     n_updates: int,
     eval_every: int,
+    ckpt_every: int,
     lr: float,
     use_wandb: bool,
 ) -> None:
@@ -116,6 +117,9 @@ def run_phase_b(
             do_eval(cfg, agent, eval_world, device,
                     f"phase_b_u{update}", use_wandb,
                     max_steps=cfg.steps_per_rollout)
+
+        # Separate cadence -- see the same block in train_phase_a_only for why.
+        if update % max(ckpt_every, 1) == 0:
             os.makedirs(cfg.save_dir, exist_ok=True)
             torch.save({
                 "agent_state_dict": agent.state_dict(),
@@ -149,6 +153,7 @@ def train_phase_b_only(args) -> None:
     cfg.use_wandb = args.use_wandb
     cfg.wandb_project = args.wandb_project
     cfg.eval_every = args.eval_every
+    cfg.ckpt_every = args.ckpt_every
     if args.steps_per_rollout is not None:
         cfg.steps_per_rollout = args.steps_per_rollout
     # Not inherited from the Phase A checkpoint: that field holds where Phase A
@@ -206,6 +211,8 @@ def train_phase_b_only(args) -> None:
         cfg, agent, worlds, eval_world, embed_dim, device,
         n_updates=args.phase_b_updates,
         eval_every=cfg.eval_every,
+        ckpt_every=(cfg.ckpt_every if cfg.ckpt_every is not None
+                    else cfg.eval_every),
         lr=args.phase_b_lr,
         use_wandb=cfg.use_wandb,
     )
@@ -240,6 +247,10 @@ def main():
     p.add_argument("--seed", type=int, default=42)
     p.add_argument("--device", type=str, default="cuda")
     p.add_argument("--eval_every", type=int, default=5)
+    p.add_argument("--ckpt_every", type=int, default=None,
+                   help="Checkpoint cadence, in updates. Default: follow "
+                        "--eval_every. See train_phase_a_only for why they "
+                        "are separate.")
     p.add_argument("--save_dir", type=str, default=None,
                    help="Checkpoint directory. Default: "
                         "<CLS_RUNS>/agent_ckpts/phase_b_only_<wandb run name "

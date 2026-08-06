@@ -206,6 +206,37 @@ def test_eval_all_cli_end_to_end(sandbox, phase_a_checkpoint):
 
 
 @pytest.mark.slow
+def test_ckpt_every_beats_eval_every_in_a_real_run(sandbox, tiny_encoder):
+    """Drive the real trainer, not a copy of its arithmetic.
+
+    test_ckpt_cadence.py pins the schedule with local helpers, which cannot
+    catch the trainer's own expression changing -- and the expression is the
+    thing that was wrong. So this runs phase A with the two cadences set apart
+    and counts what lands on disk: 4 checkpoints from 4 updates, while
+    --eval_every 4 permits only one eval.
+    """
+    import run_manifest
+
+    root, env = sandbox
+    save_dir = root / "cadence_ckpt"
+    _run(["hopfield_nav.train_phase_a_only",
+          "--encoder_checkpoint", str(tiny_encoder),
+          "--lambdas", "3", "4", "--Np", "40",
+          "--size", "4", "--observation_size", "16",
+          "--batch_envs", "2", "--steps_per_rollout", "8",
+          "--phase_a_updates", "4", "--envs_per_world", "1",
+          "--num_worlds", "1", "--num_val_envs", "2",
+          "--eval_every", "4", "--ckpt_every", "1",
+          "--n_val_trials", "1", "--val_distractors", "0", "--device", "cpu",
+          "--static-vectorhash", "--save_dir", str(save_dir)], env)
+
+    updates = [u for u, _ in run_manifest.checkpoints_in(save_dir)]
+    assert updates == [1, 2, 3, 4], (
+        f"--ckpt_every 1 over 4 updates should save 4 times, got {updates}. "
+        f"[1, 4] means the save is still gated on --eval_every.")
+
+
+@pytest.mark.slow
 def test_phase_a_writes_a_usable_manifest(phase_a_checkpoint, tiny_encoder):
     """A real training run leaves a manifest that identifies it.
 
