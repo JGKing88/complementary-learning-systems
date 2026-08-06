@@ -22,5 +22,5 @@ unset CUDA_VISIBLE_DEVICES
 
 MT_HOME="/home/$USER_NAME/cls"
 
-# python notebooks/test_placefield.py
-python sweep_cosine_width.py -o cosine_width_sweep.csv
+# (notebooks/ was archived to $CLS_RUNS/archive/ in phase 6)
+python -m encoder_training.sweep_cosine_width -o cosine_width_sweep.csv

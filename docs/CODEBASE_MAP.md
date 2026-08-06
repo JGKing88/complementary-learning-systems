@@ -84,7 +84,8 @@ is always loaded frozen (`hopfield_nav/encoder_io.py:50` `requires_grad_(False)`
 | `hopfield_nav/tests/` | tests | live | The suite. Run it with `./run_tests.sh` (phase 0 added the runner and `[tool.pytest.ini_options]`). 312 passing as of phase 6, including golden regression fixtures, the at-goal contract spec, four entry-point smoke tests, and the layering test. |
 | ~~`notebooks/`~~ | — | archived | Moved to `$CLS_RUNS/archive/notebooks/` in phase 6 (52 MB of Nov 2025 – Apr 2026 exploration that predates `encoder_training/`). |
 | `docs/` | docs | live | `coordinate_conventions.md`, these three files, `REFACTOR_STATUS.md`, and `archive/` (the nine `hopfield_nav/*.md` experiment logs). |
-| `run.sh`, `sweep_cosine_width.py` | scripts | legacy | Root sbatch runner points at `sweep_cosine_width.py` (a `cls`-only cosine-width sweep). Phase 7 archives both. `launch_jupyter.sh` went with the notebooks. |
+| `run.sh` | script | legacy | Root sbatch runner; invokes `python -m encoder_training.sweep_cosine_width`. `launch_jupyter.sh` went with the notebooks. |
+| `encoder_training/sweep_cosine_width.py` | script | legacy | Cosine-width sweep over the raw scaffold. Moved out of the repo root 2026-08-06. Still imports `cls.utils.GridUtils` and `cls.vectorhash.*`, so phase 7 must repoint it at `gridcode/` rather than archive it. |
 | `scripts/` | scripts | live | `cls_env.sh` (shell counterpart of `cls_paths.py`), `migrate_outputs_to_pool.sh`, `check_entry_points.py` (runs all 30 entry points; the five guard-less `analysis/schematics/make_*.py` are executed in full against a scratch `CLS_RUNS`). |
 | `checkpoint/`, `checkpoints/`, `checkpoint_rnn/`, `encoders/`, `wandb/`, `plots/`, `images/`, `npos_sweep/`, `displacement_plots/`, `smoke_pd2/`, `smoke_seq/` | outputs | symlinks | Moved to `$CLS_RUNS` in phase 1; what remains in the tree is a symlink under the old name so paths saved in old checkpoints keep resolving (§6). |
 

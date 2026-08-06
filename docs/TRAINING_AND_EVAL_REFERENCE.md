@@ -68,7 +68,7 @@ unset CUDA_VISIBLE_DEVICES
 | `encoder_training/scripts/submit_eval.sh` | `encoder_training.evaluate_nav` | `pi_evelina9`, 30 m, A100 | variables at top |
 | `encoder_training/sweep.py` | N× (train → evaluate_nav) | `pi_fiete`, 12 h | edit `BASE`/`GRID`/`EVAL`/`SLURM` dicts, then run the module (it calls `sbatch` itself) |
 | `analysis/scaffold_experiments/run_exp.sh` | `capacity_scaling` ×2 | `pi_evelina9`, 1.5 h | fixed |
-| `run.sh` (repo root) | `sweep_cosine_width.py` | `pi_evelina9`, 2 d, CPU | legacy `cls`-only sweep |
+| `run.sh` (repo root) | `encoder_training.sweep_cosine_width` | `pi_evelina9`, 2 d, CPU | legacy `cls`-only sweep |
 
 ### Logs and run identity
 

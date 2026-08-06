@@ -181,7 +181,11 @@ Unchanged from the plan, plus what phase 6 left it:
 - Move `cls/eval/nav_eval.py`, `cls/nav.py`, `cls/hopfield.py` into
   `encoder_training/nav_eval/`, reconciling the two `Hopfield` classes onto the
   `hopfield_nav` core dynamics.
-- Move root `sweep_cosine_width.py` and `run.sh` to `docs/archive/`.
+- `sweep_cosine_width.py` moved from the repo root into `encoder_training/`
+  on 2026-08-06, so it is kept rather than archived. It still imports
+  `cls.utils.GridUtils.smooth_gbook` and `cls.vectorhash.{assoc_utils_np,
+  assoc_utils_np_2D}`, which makes it a **repoint target for `gridcode/`**, not
+  a deletion. `run.sh` invokes it as `python -m encoder_training.sweep_cosine_width`.
 - Tag `legacy-cls`, delete `cls/` and the root `tests/`.
 - **Update `pyproject.toml`**: it still installs only `cls` (`include =
   ["cls*"]`) and still excludes a `notebooks*` directory that no longer exists.
