@@ -113,6 +113,12 @@ def file_digest(path: str | os.PathLike[str] | None) -> str | None:
     try:
         with open(path, "rb") as fh:
             return hashlib.sha256(fh.read(_HASH_BYTES)).hexdigest()
+    except (FileNotFoundError, NotADirectoryError):
+        # Silent: a checkpoint pointing at an encoder that no longer exists is
+        # a normal state of this tree, not an error. 35 of the ~350 runs are in
+        # it. `sha256: null` in the manifest is the record of that, and
+        # gc_runs classifies on it -- a warning per run would just be noise.
+        return None
     except Exception as exc:
         _warn(f"hashing {path}", exc)
         return None
@@ -152,8 +158,14 @@ def read(run_dir: str | os.PathLike[str]) -> dict[str, Any] | None:
         return None
 
 
-def _write(run_dir: str | os.PathLike[str], data: dict[str, Any]) -> None:
-    """Write atomically: a half-written manifest would read as corrupt."""
+def write(run_dir: str | os.PathLike[str], data: dict[str, Any]) -> None:
+    """Write a complete manifest, atomically.
+
+    Public because `scripts/backfill_manifests.py` legitimately writes whole
+    manifests for the ~350 legacy run directories; the incremental helpers
+    below cover every other caller. Atomic via os.replace, so a reader never
+    sees a half-written file.
+    """
     p = path_for(run_dir)
     tmp = p.with_suffix(".json.tmp")
     tmp.write_text(json.dumps(data, indent=2, sort_keys=True, default=str))
@@ -190,7 +202,7 @@ def begin(
                 "project": getattr(wandb_run, "project", None),
                 "url": getattr(wandb_run, "url", None),
             }
-        _write(run_dir, {
+        write(run_dir, {
             "schema": SCHEMA_VERSION,
             "kind": kind,
             "name": name,
@@ -231,7 +243,7 @@ def record_checkpoint(run_dir: str | os.PathLike[str], filename: str,
         entries.append(entry)
         entries.sort(key=lambda e: (e["update"] is None, e["update"] or 0, e["file"]))
         data["checkpoints"] = entries
-        _write(run_dir, data)
+        write(run_dir, data)
     except Exception as exc:
         _warn(f"recording {filename} in {run_dir}", exc)
 
@@ -244,7 +256,7 @@ def finish(run_dir: str | os.PathLike[str], status: str = STATUS_DONE) -> None:
             return
         data["status"] = status
         data["finished"] = datetime.now().isoformat(timespec="seconds")
-        _write(run_dir, data)
+        write(run_dir, data)
     except Exception as exc:
         _warn(f"finishing {run_dir}", exc)
 
@@ -307,6 +319,7 @@ __all__ = [
     "STATUS_RUNNING",
     "STATUS_DONE",
     "LEGACY_CKPT_RE",
+    "write",
     "begin",
     "record_checkpoint",
     "finish",
