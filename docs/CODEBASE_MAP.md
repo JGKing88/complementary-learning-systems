@@ -4,12 +4,18 @@
 > `train_phase_b_only` is now **`train_store`**. Run directories, checkpoint
 > filenames and eval tags follow: `agent_ckpts/navigate_<run>/navigate_u{N}.pt`
 > and `navigate_final.pt`, `agent_ckpts/store_<run>/store_u{N}.pt` and
-> `store_final.pt`. The **flags are unchanged** — `--phase_a_updates`,
-> `--phase_a_lr`, `--phase_a_novelty_reward`, `--phase_b_updates`,
-> `--phase_b_lr` keep their names, because the 101 sweep variants pass them by
-> name and `PhasedConfigV3`'s fields are a checkpoint-compatibility surface.
+> `store_final.pt`. `train_store` keeps `--phase_b_updates` / `--phase_b_lr`.
 > The ~150 pre-rename run directories are untouched and still readable;
 > `RUN_KINDS` keeps their prefixes so `backfill_manifests` can parse them.
+>
+> **`train_navigate` took a schedule, 2026-08-06.** Its `--phase_a_*` and
+> `--interleave_*` flags are gone, replaced by a single `--schedule` string
+> (`explore:200 ; interleave:800,empty_frac=1.0->0.5 ; exploit:100`). The
+> regimes moved into `training/explore.py` and `training/exploit.py`, the
+> grammar into `training/stages.py`, and `train_navigate.py` is now the
+> composer plus the CLI. `run_phase_a_sweep_evelina.sh` no longer runs and is
+> kept as the record of its 101 variants; `run_navigate.sh` /
+> `run_explore.sh` / `run_exploit.sh` replace it.
 
 
 Written 2026-08-05 from the code on `main` (`959322f`). Everything here was
@@ -143,7 +149,7 @@ directory, the conda env and 309 checkpoint paths all say so.
 |---|---:|---|---|
 | `hopfield_nav.train` | 77 | Single-phase PPO **or** DAgger BC (`--training_mode`) over `num_worlds × envs_per_world` envs. | `checkpoint/<run>/hopfield_nav_update{N}.pt` |
 | `hopfield_nav.train_phased` | 39 | Four sequential phases (store pretrain → follow → explore → compose). Also the **shared helper module** (`setup_world`, `make_hops`, `set_phase_freeze`, `do_eval`) imported by the two entry points below. | `checkpoint/phased_<run>/phased_final.pt` |
-| `hopfield_nav.train_navigate` | 73 | The **active** harness. Phase A only: interleaved pre-stored ("follow") and empty ("explore") rollouts with novelty/revisit/wall/persistence shaping, ε-greedy, distractor curricula, log-std annealing. | `checkpoint/phase_a_only_<run>/phase_a_u{N}.pt` |
+| `hopfield_nav.train_navigate` | 71 | The **active** harness. Walks a `--schedule` of explore / exploit / interleave stages, pooling both regimes' rollouts into one PPO step per update, with novelty/revisit/wall/persistence shaping, ε-greedy, distractor curricula, log-std annealing. `--load_checkpoint` inherits the parent's whole config, overriding only the flags actually passed. | `agent_ckpts/navigate_<run>/navigate_u{N}.pt` |
 | `hopfield_nav.train_store` | 11 | Loads a Phase-A checkpoint, freezes everything but the store head, trains it with detached-trunk BCE. | `checkpoint/phase_b_only_<run>/phase_b_u{N}.pt` |
 | `hopfield_nav.train_rnn` | 37 | No-memory control baseline: GRU policy on raw sensory, BC against the BFS oracle, in `sequential` / `mixed` / `finetune` mode. | `checkpoint_rnn/<run>/final.pt` |
 

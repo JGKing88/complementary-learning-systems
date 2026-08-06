@@ -1,21 +1,29 @@
-"""Phase-A-only experiment harness — fast iteration on the explore/follow
-balance without paying for Phase B+C.
+"""Navigation training: PPO over a schedule of explore and exploit stages.
 
-Skips Phase B (store pretrain) and Phase C (compose). After Phase A finishes,
-runs a single after_navigate eval and exits. Total runtime ~1-2h per seed
-instead of 5-7h. Designed for sweeping novelty/interleave configurations to
-find a setting that consistently produces coverage ≥ 0.55.
+Explore and exploit are two *regimes* an env can be in, not two halves of a
+rollout. An exploit env starts with the goal already in its Hopfield and follows
+the recall signal; an explore env starts without it and is paid for coverage.
+Every update collects rollouts from both and pools them into a single PPO step,
+so what a schedule controls is the *fraction of envs in the explore regime* on
+each update:
 
-Adds two knobs vs train_phased_v3.run_phase_a:
-  - ``warmup_explore_only_updates``: if >0, run that many updates of
-    100%-empty rollouts with novelty before starting interleaved Phase A.
-  - ``novelty_anneal``: linearly anneal phase_a_novelty_reward from full
-    to 0 over the entire Phase A budget (warmup + interleaved).
+    --schedule "explore:200 ; interleave:800,empty_frac=1.0->0.5,anneal=50 ; exploit:100"
+
+Until 2026-08 that fraction was implicit in four coupled flags -- a
+100%-explore warmup prefix plus one monotone anneal -- which could not express
+a third segment at all, let alone a stage-specific learning rate or novelty.
+Those flags are gone; `hopfield_nav/training/stages.py` holds the grammar,
+`training/explore.py` and `training/exploit.py` hold one regime each, and what
+is left here is the composition: walk the stages, build each update's rollout
+mix, and run the shared machinery around it.
+
+The store head never trains here -- that is `train_store`'s job.
 """
 from __future__ import annotations
 
 import argparse
 import os
+import sys
 from dataclasses import asdict
 
 import numpy as np
@@ -23,27 +31,28 @@ import torch
 
 from cls_paths import run_dir, run_name
 import run_manifest
-from .config import (
-    TrainConfig, EnvConfig, VectorHashConfig, HopfieldConfig,
-    AgentConfig, PPOConfig, PhasedConfigV3, validate_train_config,
-)
+from .config import TrainConfig, validate_train_config
 from .encoder_io import load_encoder, validate_config
 from .world.env import warn_if_offcell_stores
-from .world.scaffold import VectorHash
-from hopfield import Hopfield
 from .policy.agent import NavAgent, compute_input_dim
 from .rollout.collector import RolloutCollector
-from .rollout.distractors import sample_distractors
 from .updates.ppo import ppo_update
-from .training.world_setup import (
-    do_eval, make_hops, set_phase_freeze, setup_world,
+from .evaluation.checkpoint_io import cfg_from_checkpoint
+from .training.explore import ExploreRegime
+from .training.exploit import ExploitRegime
+from .training.stages import (
+    Knobs, ScheduleError, Stage, format_schedule, parse_schedule, resolve,
+    stage_at, total_updates,
 )
+from .training.world_setup import do_eval, set_phase_freeze, setup_world
 
 
-def _compute_epsilon(update: int, total: int, base: float, anneal: int) -> float:
+def _compute_epsilon(update: int, base: float, anneal: int) -> float:
     """Linear anneal of ε from `base` → 0 over `anneal` updates (0 = constant).
 
-    `update` is 1-indexed. Returns 0.0 when base==0.
+    `update` is 1-indexed and global: ε is a property of how far the *run* has
+    got, not of the current stage. A stage that wants its own value says
+    `eps=` and bypasses this entirely.
     """
     if base <= 0:
         return 0.0
@@ -53,9 +62,9 @@ def _compute_epsilon(update: int, total: int, base: float, anneal: int) -> float
     return base * scale
 
 
-def run_navigate_sweep(
+def run_navigate(
     cfg: TrainConfig,
-    pcfg: PhasedConfigV3,
+    stages: list[Stage],
     worlds,
     agent,
     embed_dim,
@@ -64,87 +73,70 @@ def run_navigate_sweep(
     eval_world,
     eval_every: int,
     ckpt_every: int,
-    warmup_explore_only_updates: int,
-    novelty_anneal: bool,
-    interleave_empty_fraction: float,
-    randomize_goal_per_rollout: bool = False,
-    epsilon_explore: float = 0.0,
-    epsilon_anneal_updates: int = 0,
-    interleave_empty_target: float | None = None,
-    interleave_anneal_updates: int = 0,
-    explore_goals_off: bool = False,
-    n_train_distractors_min: int = 0,
-    n_train_distractors_max: int = 0,
-    n_train_emp_distractors_min: int = 0,
-    n_train_emp_distractors_max: int = 0,
-    n_train_distractors_max_end: int | None = None,
-    n_train_emp_distractors_max_end: int | None = None,
-    distractor_curriculum_updates: int = 0,
-    log_std_anneal_start_update: int = 0,
-    log_std_anneal_end_update: int = 0,
-    log_std_anneal_target: float | None = None,
     dist_rng: np.random.RandomState | None = None,
 ) -> None:
-    """Phase A with optional pure-explore warmup and novelty annealing.
+    """Walk the schedule, one pooled PPO update per step.
 
-    interleave_empty_fraction: 0.5 = half envs empty, half pre_stored. 1.0 =
-    all empty (pure explore). 0.0 = all pre_stored (pure follow).
-
-    epsilon_explore: per-step probability of replacing the sampled action
-    with a uniform-random direction. Linearly annealed to 0 over
-    `epsilon_anneal_updates` updates (0 = constant). Applied only to
-    empty-regime envs to keep follow gradient clean.
-
-    interleave_empty_target / interleave_anneal_updates: optional curriculum
-    on interleave fraction. If `interleave_empty_target` is set, the
-    fraction linearly anneals from `interleave_empty_fraction` (initial)
-    to `interleave_empty_target` (final) over `interleave_anneal_updates`
-    updates, then holds.
+    Everything the schedule does not control is read off `cfg`: the run-wide
+    novelty / ε / distractor counts and the three global anneals (novelty,
+    ε, movement_log_std) that are keyed off the global update counter rather
+    than a stage-local one.
     """
-    n_updates_total = warmup_explore_only_updates + pcfg.phase_a_updates
-    print(f"\n=== Phase A sweep: warmup={warmup_explore_only_updates}, "
-          f"interleave_empty={interleave_empty_fraction}, "
-          f"novelty={pcfg.phase_a_novelty_reward}, "
-          f"anneal={novelty_anneal}, total {n_updates_total} updates ===",
-          flush=True)
+    n_updates_total = total_updates(stages)
+    print(f"\n=== navigate: {format_schedule(stages)} "
+          f"({n_updates_total} updates) ===", flush=True)
 
     set_phase_freeze(agent, freeze_move=False, freeze_store=True,
                      freeze_value=False, freeze_rnn=False)
     trainable = [p for p in agent.parameters() if p.requires_grad]
-    optimizer = torch.optim.Adam(trainable, lr=pcfg.phase_a_lr)
+    optimizer = torch.optim.Adam(trainable, lr=cfg.ppo.lr)
+    # One optimizer for the whole run: stages are segments of a single training
+    # trajectory, so Adam's moments carry across a boundary. A stage-level `lr`
+    # retunes the existing group instead of building a new optimizer.
+    current_lr = cfg.ppo.lr
 
-    pre_pools = {}
-    emp_pools = {}
-    for w_idx, world in enumerate(worlds):
-        vh = world["vectorhash"]
-        envs = world["envs"]
-        pre_pools[w_idx] = make_hops(
-            "pre_stored_shared", cfg, vh, envs, embed_dim, device, cfg.batch_envs,
-        )
-        emp_pools[w_idx] = make_hops(
-            "empty_shared", cfg, vh, envs, embed_dim, device, cfg.batch_envs,
-        )
-
-    use_distractors = n_train_distractors_max > 0
-    use_emp_distractors = n_train_emp_distractors_max > 0
+    # Distractors are a property of the run, not of an update -- see
+    # ExploitRegime for why the count reaching 0 must not change the code path.
+    use_distractors = (
+        cfg.n_train_distractors_max > 0
+        or (cfg.n_train_distractors_max_end or 0) > 0
+        or any(s.dist_max for s in stages if s.dist_max is not None)
+    )
+    use_emp_distractors = (
+        cfg.n_train_emp_distractors_max > 0
+        or (cfg.n_train_emp_distractors_max_end or 0) > 0
+        or any(s.emp_dist_max for s in stages if s.emp_dist_max is not None)
+    )
     if use_distractors or use_emp_distractors:
         if dist_rng is None:
             dist_rng = np.random.RandomState(cfg.seed + 7919)
         if use_distractors:
-            print(f"Phase A train distractors per pre_stored rollout: "
-                  f"~U[{n_train_distractors_min}, {n_train_distractors_max}]",
-                  flush=True)
+            print(f"Exploit-regime distractors per rollout: "
+                  f"~U[{cfg.n_train_distractors_min}, "
+                  f"{cfg.n_train_distractors_max}]", flush=True)
         if use_emp_distractors:
-            print(f"Phase A train distractors per empty rollout: "
-                  f"~U[{n_train_emp_distractors_min}, {n_train_emp_distractors_max}] "
-                  f"(no goal pattern)", flush=True)
+            print(f"Explore-regime distractors per rollout: "
+                  f"~U[{cfg.n_train_emp_distractors_min}, "
+                  f"{cfg.n_train_emp_distractors_max}] (no goal pattern)",
+                  flush=True)
+
+    exploit_regime = ExploitRegime(cfg, worlds, embed_dim, device, dist_rng,
+                                   use_distractors=use_distractors)
+    explore_regime = ExploreRegime(cfg, worlds, embed_dim, device, dist_rng,
+                                   goals_off=cfg.explore_goals_off,
+                                   randomize_goal=cfg.randomize_goal_per_rollout,
+                                   use_distractors=use_emp_distractors)
 
     n_envs = cfg.envs_per_world
-    # Interleave fraction may anneal over training. Initial value used for
-    # update 1; final value reached at u=interleave_anneal_updates.
-    interleave_start = interleave_empty_fraction
-    interleave_end = (interleave_empty_target if interleave_empty_target is not None
-                      else interleave_empty_fraction)
+
+    # Snapshot the config *before* the temporary overrides below. Checkpoints
+    # are written mid-loop, at a moment when `novelty_reward` has been zeroed
+    # for the eval that may follow and `store_bc_weight` is held at 0 for the
+    # duration -- so `asdict(cfg)` taken there records the loop's scratch
+    # values as if they were the run's settings. That was invisible while a
+    # checkpoint's config was only ever read for its architecture; it stops
+    # being invisible now that --load_checkpoint inherits the whole recipe.
+    ckpt_config = asdict(cfg)
 
     saved = {
         "auto_nav_warmup": cfg.hopfield.auto_nav_warmup,
@@ -158,33 +150,35 @@ def run_navigate_sweep(
     cfg.ppo.store_bc_weight = 0.0
     cfg.ppo.bce_detach_trunk = False
 
-    base_novelty = pcfg.phase_a_novelty_reward
+    base_novelty = cfg.hopfield.novelty_reward
 
     log_std_anneal_active = (
-        log_std_anneal_target is not None
-        and log_std_anneal_end_update > log_std_anneal_start_update
+        cfg.log_std_anneal_target is not None
+        and cfg.log_std_anneal_end_update > cfg.log_std_anneal_start_update
     )
     log_std_init_val = float(agent.movement_log_std.detach().mean().item()) \
         if hasattr(agent, "movement_log_std") else None
 
     for update in range(1, n_updates_total + 1):
+        stage, local_update = stage_at(stages, update)
+
         # log_std anneal: programmatically interpolate the parameter from its
         # init value to the target value across [start, end] update window.
         if log_std_anneal_active and log_std_init_val is not None:
-            if update >= log_std_anneal_end_update:
+            if update >= cfg.log_std_anneal_end_update:
                 t_ls = 1.0
-            elif update <= log_std_anneal_start_update:
+            elif update <= cfg.log_std_anneal_start_update:
                 t_ls = 0.0
             else:
-                t_ls = (update - log_std_anneal_start_update) / float(
-                    log_std_anneal_end_update - log_std_anneal_start_update)
+                t_ls = (update - cfg.log_std_anneal_start_update) / float(
+                    cfg.log_std_anneal_end_update - cfg.log_std_anneal_start_update)
             new_log_std = log_std_init_val + t_ls * (
-                log_std_anneal_target - log_std_init_val)
+                cfg.log_std_anneal_target - log_std_init_val)
             with torch.no_grad():
                 agent.movement_log_std.data.fill_(new_log_std)
 
         # Anneal novelty if requested.
-        if novelty_anneal:
+        if cfg.novelty_anneal:
             scale = max(0.0, 1.0 - (update - 1) / max(n_updates_total, 1))
             current_novelty = base_novelty * scale
         else:
@@ -192,39 +186,47 @@ def run_navigate_sweep(
 
         # Distractor curriculum: linearly ramp max counts from start to end
         # over the first `distractor_curriculum_updates`.
-        if distractor_curriculum_updates > 0:
-            t = min(1.0, max(0.0, (update - 1) / float(distractor_curriculum_updates)))
+        if cfg.distractor_curriculum_updates > 0:
+            t = min(1.0, max(0.0,
+                             (update - 1) / float(cfg.distractor_curriculum_updates)))
         else:
             t = 1.0
-        if n_train_distractors_max_end is not None:
+        if cfg.n_train_distractors_max_end is not None:
             cur_distractors_max = int(round(
-                n_train_distractors_max + t * (n_train_distractors_max_end - n_train_distractors_max)
+                cfg.n_train_distractors_max
+                + t * (cfg.n_train_distractors_max_end - cfg.n_train_distractors_max)
             ))
         else:
-            cur_distractors_max = n_train_distractors_max
-        if n_train_emp_distractors_max_end is not None:
+            cur_distractors_max = cfg.n_train_distractors_max
+        if cfg.n_train_emp_distractors_max_end is not None:
             cur_emp_distractors_max = int(round(
-                n_train_emp_distractors_max
-                + t * (n_train_emp_distractors_max_end - n_train_emp_distractors_max)
+                cfg.n_train_emp_distractors_max
+                + t * (cfg.n_train_emp_distractors_max_end
+                       - cfg.n_train_emp_distractors_max)
             ))
         else:
-            cur_emp_distractors_max = n_train_emp_distractors_max
+            cur_emp_distractors_max = cfg.n_train_emp_distractors_max
 
-        # Compute current interleave fraction (curriculum if anneal>0).
-        if interleave_anneal_updates > 0:
-            t = min(1.0, max(0.0, (update - 1) / float(interleave_anneal_updates)))
-            current_emp_frac = interleave_start + t * (interleave_end - interleave_start)
-        else:
-            current_emp_frac = interleave_start
-        n_emp_interleave = int(round(n_envs * current_emp_frac))
-        n_pre_interleave = n_envs - n_emp_interleave
+        # The run-wide values for this update, then the stage's overrides.
+        knobs = resolve(stage, local_update, Knobs(
+            lr=cfg.ppo.lr,
+            empty_frac=0.0,             # always replaced by resolve()
+            novelty=current_novelty,
+            eps=_compute_epsilon(update, cfg.epsilon_explore,
+                                 cfg.epsilon_anneal_updates),
+            dist_min=cfg.n_train_distractors_min,
+            dist_max=cur_distractors_max,
+            emp_dist_min=cfg.n_train_emp_distractors_min,
+            emp_dist_max=cur_emp_distractors_max,
+        ))
 
-        # First `warmup_explore_only_updates` are 100% empty (pure explore).
-        in_warmup = update <= warmup_explore_only_updates
-        if in_warmup:
-            n_pre_now, n_emp_now = 0, n_envs
-        else:
-            n_pre_now, n_emp_now = n_pre_interleave, n_emp_interleave
+        if knobs.lr != current_lr:
+            for group in optimizer.param_groups:
+                group["lr"] = knobs.lr
+            current_lr = knobs.lr
+
+        n_emp_now = int(round(n_envs * knobs.empty_frac))
+        n_pre_now = n_envs - n_emp_now
 
         rollouts = []
         for w_idx, world in enumerate(worlds):
@@ -232,84 +234,26 @@ def run_navigate_sweep(
             collector = RolloutCollector(vh, cfg, embed_dim, device)
             for local_idx, env in enumerate(world["envs"]):
                 env_offset = vh.env_offsets[world["env_indices"][local_idx]]
-                # Order: first n_pre_now envs are pre_stored, rest are empty.
-                if local_idx < n_pre_now:
-                    if use_distractors:
-                        # Fresh Hopfield: goal pattern + N distractor patterns,
-                        # N ~ Uniform[min, max] resampled per rollout.
-                        hop = Hopfield(embed_dim, beta=cfg.hopfield.beta,
-                                       device=str(device))
-                        gx = min(max(env.goal_location[0] + env_offset[0], 0),
-                                 vh.Npos - 1)
-                        gy = min(max(env.goal_location[1] + env_offset[1], 0),
-                                 vh.Npos - 1)
-                        # Collect goal + distractor patterns, then shuffle
-                        # the storage order so the goal isn't always first.
-                        patterns = [vh.encoded_Phi[gx, gy]]
-                        n_dist = int(dist_rng.randint(
-                            n_train_distractors_min,
-                            cur_distractors_max + 1,
-                        ))
-                        if n_dist > 0:
-                            patterns.extend(sample_distractors(
-                                vh, env_offset, cfg.env.size, n_dist, dist_rng))
-                        dist_rng.shuffle(patterns)
-                        for pat in patterns:
-                            hop.input_memory(torch.from_numpy(pat).float())
-                    else:
-                        hop = pre_pools[w_idx][local_idx]
-                    cfg.hopfield.novelty_reward = 0.0
-                    # Follow regime: goals on so agent gets +1 + teleport.
-                    env.goals_active = True
-                else:
-                    if use_emp_distractors:
-                        # Fresh Hopfield with N distractor patterns (no goal).
-                        # Trains explore policy to ignore non-goal recall
-                        # signals, so eval-time distractors don't trigger
-                        # spurious follow behavior in explore mode.
-                        hop = Hopfield(embed_dim, beta=cfg.hopfield.beta,
-                                       device=str(device))
-                        n_emp_dist = int(dist_rng.randint(
-                            n_train_emp_distractors_min,
-                            cur_emp_distractors_max + 1,
-                        ))
-                        if n_emp_dist > 0:
-                            for pat in sample_distractors(
-                                    vh, env_offset, cfg.env.size,
-                                    n_emp_dist, dist_rng):
-                                hop.input_memory(torch.from_numpy(pat).float())
-                    else:
-                        hop = emp_pools[w_idx][local_idx]
-                    cfg.hopfield.novelty_reward = current_novelty
-                    # Explore regime: optionally turn goals off so the agent
-                    # is rewarded purely for novelty/coverage, not goal-find.
-                    env.goals_active = not explore_goals_off
-                # Goal randomization: pick a fresh goal each rollout to break
-                # the memorization shortcut (each env has a fixed sensory
-                # codebook → without this, agent learns "in env X go to
-                # position Y" via sensory fingerprint, capping coverage).
-                # Only sensible in pure-explore phases where there's no
-                # pre-stored Hopfield (which would be invalidated by goal
-                # change). Skip for pre_stored envs.
-                if randomize_goal_per_rollout and local_idx >= n_pre_now:
+                # Order: the first n_pre_now envs are exploit, the rest explore.
+                # The reward split logged below slices on the same boundary.
+                regime = (exploit_regime if local_idx < n_pre_now
+                          else explore_regime)
+                spec = regime.spec(w_idx, world, local_idx, env, env_offset, knobs)
+                # The collector reads novelty off cfg and the goal reward off
+                # the env, so the regime's choice has to be written into both.
+                cfg.hopfield.novelty_reward = spec.novelty_reward
+                env.goals_active = spec.goals_active
+                # Fresh goal each rollout breaks the memorization shortcut: each
+                # env has a fixed sensory codebook, so without this the agent
+                # learns "in env X go to position Y" from the fingerprint alone
+                # and coverage caps out. Explore regime only -- a new goal would
+                # invalidate an exploit env's pre-stored pattern.
+                if spec.reset_goal:
                     env.reset_goal()
-                # Epsilon-greedy injection only on empty-regime envs.
-                # Pre_stored envs need clean follow signal; ε would corrupt it.
-                if local_idx >= n_pre_now:
-                    eps_now = _compute_epsilon(
-                        update, n_updates_total, epsilon_explore,
-                        epsilon_anneal_updates,
-                    )
-                else:
-                    eps_now = 0.0
-                # Pre_stored regime always starts with goal in Hopfield;
-                # empty regime never has goal. Caller declares this so
-                # the input_goal_in_memory bit (if enabled) reflects the
-                # true memory contents at training time, matching eval.
                 rollout = collector.collect_rollout(
-                    env, agent, hop, h_rnn=None, env_offset=env_offset,
-                    update_idx=update, aux_scale=1.0, epsilon_now=eps_now,
-                    goal_in_memory_init=(local_idx < n_pre_now),
+                    env, agent, spec.hop, h_rnn=None, env_offset=env_offset,
+                    update_idx=update, aux_scale=1.0, epsilon_now=spec.epsilon,
+                    goal_in_memory_init=spec.goal_in_memory_init,
                 )
                 rollouts.append(rollout)
         cfg.hopfield.novelty_reward = 0.0
@@ -337,22 +281,21 @@ def run_navigate_sweep(
             log["train/mean_reward"] = mean_r
             log["train/mean_reward_pre"] = _mr(pre_rs)
             log["train/mean_reward_emp"] = _mr(emp_rs)
-            log["train/current_novelty"] = current_novelty
-            log["train/current_epsilon"] = _compute_epsilon(
-                update, n_updates_total, epsilon_explore,
-                epsilon_anneal_updates,
-            )
-            log["train/current_emp_frac"] = current_emp_frac
-            log["train/in_warmup"] = float(in_warmup)
-            log["phase_name"] = "Phase A sweep"
+            log["train/current_novelty"] = knobs.novelty
+            log["train/current_epsilon"] = knobs.eps
+            log["train/current_emp_frac"] = knobs.empty_frac
+            log["train/current_lr"] = knobs.lr
+            log["train/stage_kind"] = stage.kind
+            log["train/stage_local_update"] = local_update
+            log["phase_name"] = "navigate"
             wandb.log(log)
 
         if update == 1 or update % 10 == 0:
             log_std_mean = float(agent.movement_log_std.exp().mean().item())
-            print(f"  u{update}{'(warmup)' if in_warmup else ''}: "
+            print(f"  u{update}({stage.kind}): "
                   f"mean_r={mean_r:.4f} (pre={_mr(pre_rs):.4f}, "
-                  f"emp={_mr(emp_rs):.4f}) nov={current_novelty:.3f} "
-                  f"std={log_std_mean:.3f} | "
+                  f"emp={_mr(emp_rs):.4f}) nov={knobs.novelty:.3f} "
+                  f"emp_frac={knobs.empty_frac:.3f} std={log_std_mean:.3f} | "
                   + " ".join(f"{k}={v:.3f}" for k, v in losses.items()),
                   flush=True)
 
@@ -372,7 +315,7 @@ def run_navigate_sweep(
             os.makedirs(cfg.save_dir, exist_ok=True)
             torch.save({
                 "agent_state_dict": agent.state_dict(),
-                "config": asdict(cfg),
+                "config": ckpt_config,
                 "update": update,
             }, os.path.join(cfg.save_dir, f"navigate_u{update}.pt"))
             run_manifest.record_checkpoint(
@@ -389,27 +332,9 @@ def run_navigate_sweep(
 
 
 def train_navigate(
-    cfg: TrainConfig, pcfg: PhasedConfigV3,
-    warmup_explore_only_updates: int,
-    novelty_anneal: bool,
-    interleave_empty_fraction: float,
-    randomize_goal_per_rollout: bool = False,
-    epsilon_explore: float = 0.0,
-    epsilon_anneal_updates: int = 0,
-    interleave_empty_target: float | None = None,
-    interleave_anneal_updates: int = 0,
+    cfg: TrainConfig,
+    stages: list[Stage],
     load_checkpoint: str | None = None,
-    explore_goals_off: bool = False,
-    n_train_distractors_min: int = 0,
-    n_train_distractors_max: int = 0,
-    n_train_emp_distractors_min: int = 0,
-    n_train_emp_distractors_max: int = 0,
-    n_train_distractors_max_end: int | None = None,
-    n_train_emp_distractors_max_end: int | None = None,
-    distractor_curriculum_updates: int = 0,
-    log_std_anneal_start_update: int = 0,
-    log_std_anneal_end_update: int = 0,
-    log_std_anneal_target: float | None = None,
 ) -> None:
     validate_train_config(cfg)
     warn_if_offcell_stores(cfg.env, where="train_navigate")
@@ -429,7 +354,7 @@ def train_navigate(
     worlds = [setup_world(cfg, encoder, embed_dim, rng, role="train")
               for _ in range(cfg.num_worlds)]
     # Eval always uses goals_active=True so disc/nav metrics work, even when
-    # training envs have goals_active=False (V7 pure-explore Phase A).
+    # training envs have goals_active=False (pure-explore schedules).
     saved_goals_active = cfg.env.goals_active
     cfg.env.goals_active = True
     eval_world = setup_world(cfg, encoder, embed_dim, rng, role="eval")
@@ -447,16 +372,7 @@ def train_navigate(
 
     if cfg.use_wandb:
         import wandb
-        full_cfg = {
-            **asdict(cfg),
-            "phased_v3": asdict(pcfg),
-            "warmup_explore_only_updates": warmup_explore_only_updates,
-            "novelty_anneal": novelty_anneal,
-            "interleave_empty_fraction": interleave_empty_fraction,
-            "epsilon_explore": epsilon_explore,
-            "epsilon_anneal_updates": epsilon_anneal_updates,
-        }
-        wandb.init(project=cfg.wandb_project, config=full_cfg)
+        wandb.init(project=cfg.wandb_project, config=asdict(cfg))
 
     if cfg.save_dir is None:
         sub = run_name(*((wandb.run.name, wandb.run.id) if cfg.use_wandb else ()))
@@ -472,27 +388,10 @@ def train_navigate(
         wandb_run=wandb.run if cfg.use_wandb else None,
     )
 
-    run_navigate_sweep(
-        cfg, pcfg, worlds, agent, embed_dim, device,
+    run_navigate(
+        cfg, stages, worlds, agent, embed_dim, device,
         cfg.use_wandb, eval_world, cfg.eval_every,
         cfg.ckpt_every if cfg.ckpt_every is not None else cfg.eval_every,
-        warmup_explore_only_updates, novelty_anneal,
-        interleave_empty_fraction, randomize_goal_per_rollout,
-        epsilon_explore=epsilon_explore,
-        epsilon_anneal_updates=epsilon_anneal_updates,
-        interleave_empty_target=interleave_empty_target,
-        interleave_anneal_updates=interleave_anneal_updates,
-        explore_goals_off=explore_goals_off,
-        n_train_distractors_min=n_train_distractors_min,
-        n_train_distractors_max=n_train_distractors_max,
-        n_train_emp_distractors_min=n_train_emp_distractors_min,
-        n_train_emp_distractors_max=n_train_emp_distractors_max,
-        n_train_distractors_max_end=n_train_distractors_max_end,
-        n_train_emp_distractors_max_end=n_train_emp_distractors_max_end,
-        distractor_curriculum_updates=distractor_curriculum_updates,
-        log_std_anneal_start_update=log_std_anneal_start_update,
-        log_std_anneal_end_update=log_std_anneal_end_update,
-        log_std_anneal_target=log_std_anneal_target,
         dist_rng=rng,
     )
 
@@ -510,8 +409,146 @@ def train_navigate(
         wandb.finish()
 
 
-def main():
-    p = argparse.ArgumentParser(description="Phase-A-only sweep harness")
+# ---------------------------------------------------------------------------
+# CLI
+# ---------------------------------------------------------------------------
+
+# Which TrainConfig field each flag writes, as a dotted path. One table rather
+# than a hand-written constructor because the same mapping now serves two
+# callers: a fresh run applies every entry, a run resuming from
+# --load_checkpoint applies only the entries the caller actually typed.
+# `movement_mode` has two homes and gets a tuple.
+CFG_FIELDS: dict[str, tuple[str, ...]] = {
+    # env
+    "size": ("env.size",),
+    "observation_size": ("env.observation_size",),
+    "movement_mode": ("env.movement_mode", "agent.movement_mode"),
+    "goals_active": ("env.goals_active",),
+    "goal_reward": ("env.goal_reward",),
+    "goal_radius": ("env.goal_radius",),
+    "allow_offcell_store": ("env.allow_offcell_store",),
+    "time_penalty": ("env.time_penalty",),
+    "continuous_normalize": ("env.continuous_normalize",),
+    "max_action_norm": ("env.max_action_norm",),
+    "min_action_norm": ("env.min_action_norm",),
+    # scaffold
+    "lambdas": ("vectorhash.lambdas",),
+    "Np": ("vectorhash.Np",),
+    "static_vectorhash": ("vectorhash.static_vectorhash",),
+    # agent
+    "hopfield_mode": ("agent.hopfield_mode",),
+    "input_encoded_state": ("agent.input_encoded_state",),
+    "input_hopfield_signal": ("agent.input_hopfield_signal",),
+    "input_prev_action": ("agent.input_prev_action",),
+    "input_prev_reward": ("agent.input_prev_reward",),
+    "input_hopfield_raw": ("agent.input_hopfield_raw",),
+    "input_hopfield_multistep": ("agent.input_hopfield_multistep",),
+    "input_sensory": ("agent.input_sensory",),
+    "input_goal_in_memory": ("agent.input_goal_in_memory",),
+    "init_log_std": ("agent.init_log_std",),
+    "freeze_log_std": ("agent.freeze_log_std",),
+    "hidden_size": ("agent.hidden_size",),
+    "num_rnn_layers": ("agent.num_rnn_layers",),
+    # ppo
+    "lr": ("ppo.lr",),
+    "move_ent_coef": ("ppo.ent_coef",),
+    "ppo_clip_coef": ("ppo.clip_coef",),
+    # reward shaping
+    "novelty_reward": ("hopfield.novelty_reward",),
+    "revisit_penalty": ("hopfield.revisit_penalty",),
+    "wall_penalty": ("hopfield.wall_penalty",),
+    "persistence_bonus": ("hopfield.persistence_bonus",),
+    "novelty_scale_remaining": ("hopfield.novelty_scale_remaining",),
+    "novelty_scale_cap": ("hopfield.novelty_scale_cap",),
+    # run structure
+    "encoder_checkpoint": ("encoder_checkpoint",),
+    "encoder_gain": ("encoder_gain",),
+    "fwhm_ratio": ("fwhm_ratio",),
+    "num_worlds": ("num_worlds",),
+    "envs_per_world": ("envs_per_world",),
+    "num_val_envs": ("num_val_envs",),
+    "n_val_trials": ("n_val_trials",),
+    "val_distractors": ("val_n_distractors_list",),
+    "union_cov_trials": ("union_cov_trials",),
+    "batch_envs": ("batch_envs",),
+    "steps_per_rollout": ("steps_per_rollout",),
+    "eval_every": ("eval_every",),
+    "ckpt_every": ("ckpt_every",),
+    "save_dir": ("save_dir",),
+    "seed": ("seed",),
+    "device": ("device",),
+    "use_wandb": ("use_wandb",),
+    "wandb_project": ("wandb_project",),
+    # schedule
+    "schedule": ("schedule",),
+    "novelty_anneal": ("novelty_anneal",),
+    "epsilon_explore": ("epsilon_explore",),
+    "epsilon_anneal_updates": ("epsilon_anneal_updates",),
+    "explore_goals_off": ("explore_goals_off",),
+    "randomize_goal_per_rollout": ("randomize_goal_per_rollout",),
+    "n_train_distractors_min": ("n_train_distractors_min",),
+    "n_train_distractors_max": ("n_train_distractors_max",),
+    "n_train_emp_distractors_min": ("n_train_emp_distractors_min",),
+    "n_train_emp_distractors_max": ("n_train_emp_distractors_max",),
+    "n_train_distractors_max_end": ("n_train_distractors_max_end",),
+    "n_train_emp_distractors_max_end": ("n_train_emp_distractors_max_end",),
+    "distractor_curriculum_updates": ("distractor_curriculum_updates",),
+    "log_std_anneal_start_update": ("log_std_anneal_start_update",),
+    "log_std_anneal_end_update": ("log_std_anneal_end_update",),
+    "log_std_anneal_target": ("log_std_anneal_target",),
+}
+
+
+def _explicit_dests(parser: argparse.ArgumentParser, argv: list[str]) -> set[str]:
+    """The dests of the flags the caller actually typed.
+
+    `--load_checkpoint` makes the checkpoint's config the base, so "not
+    mentioned" has to mean "inherit". A parsed Namespace cannot say that -- it
+    holds a value either way -- so the information survives only in argv.
+
+    `--flag=value` is split on '='. `BooleanOptionalAction`'s `--no-flag` needs
+    no special case: argparse lists it in the same action's `option_strings`.
+    The parser is built with `allow_abbrev=False` so a shortened flag cannot
+    reach the Namespace while going unmatched here.
+    """
+    typed = {tok.split("=", 1)[0] for tok in argv if tok.startswith("-")}
+    return {action.dest for action in parser._actions
+            if any(opt in typed for opt in action.option_strings)}
+
+
+def _set_path(cfg: TrainConfig, path: str, value) -> None:
+    obj = cfg
+    *parents, leaf = path.split(".")
+    for part in parents:
+        obj = getattr(obj, part)
+    setattr(obj, leaf, value)
+
+
+def apply_args(cfg: TrainConfig, args: argparse.Namespace, dests) -> None:
+    """Write the named flags onto `cfg`.
+
+    A `None` value means "the flag has no opinion" -- every such flag defaults
+    to None precisely so that not passing it leaves the dataclass default (or,
+    when resuming, the parent's value) in place.
+    """
+    for dest in dests:
+        paths = CFG_FIELDS.get(dest)
+        if paths is None:
+            continue
+        value = getattr(args, dest, None)
+        if value is None:
+            continue
+        for path in paths:
+            _set_path(cfg, path, value)
+
+
+def build_parser() -> argparse.ArgumentParser:
+    # allow_abbrev=False: _explicit_dests matches option strings literally, and
+    # an abbreviation would parse fine while silently failing to override an
+    # inherited config value.
+    p = argparse.ArgumentParser(
+        description="Navigation training over an explore/exploit schedule",
+        allow_abbrev=False)
     p.add_argument("--encoder_checkpoint", required=True)
     p.add_argument("--size", type=int, default=8)
     p.add_argument("--observation_size", type=int, default=12)
@@ -527,7 +564,7 @@ def main():
     p.add_argument("--input_hopfield_signal", action=argparse.BooleanOptionalAction, default=True)
     p.add_argument("--input_goal_in_memory", action=argparse.BooleanOptionalAction, default=False,
                    help="Add 1-bit input: 'goal pattern is in Hopfield'. "
-                        "Pre_stored rollouts: bit=True from t=0. Empty: "
+                        "Exploit rollouts: bit=True from t=0. Explore: "
                         "bit=False (or flips when agent stores at goal). "
                         "Eval matches: nav-eval bit=True, explore-eval bit "
                         "starts False. Bypasses regime-cue learning.")
@@ -537,26 +574,37 @@ def main():
                    help="Hold movement_log_std at init_log_std with no "
                         "gradient. Pins policy variance so PPO loss directly "
                         "pressures the policy mean.")
-    # Phase A core
-    p.add_argument("--phase_a_updates", type=int, default=600,
-                   help="Number of interleaved updates AFTER any warmup")
-    p.add_argument("--phase_a_lr", type=float, default=3e-4)
-    p.add_argument("--phase_a_novelty_reward", type=float, default=0.1)
-    # New sweep knobs
-    p.add_argument("--warmup_explore_only_updates", type=int, default=0,
-                   # argparse formats help text with `help % params`, so a bare
-                   # `%` must be escaped or --help raises TypeError.
-                   help="Pure-explore (100%% empty) prefix; 0 to disable")
-    p.add_argument("--novelty_anneal", action=argparse.BooleanOptionalAction, default=False)
-    p.add_argument("--interleave_empty_fraction", type=float, default=0.5,
-                   help="Fraction of envs in interleaved phase that run empty")
+    # The schedule
+    p.add_argument("--schedule", type=str, default=None,
+                   help="Stages, separated by ';'. Each is '<kind>:<updates>' "
+                        "with optional ',key=value' overrides. Kinds: explore "
+                        "(all envs start without the goal in memory), exploit "
+                        "(all envs start with it), interleave (a mix). Keys: "
+                        "lr, empty_frac (a number, or 'start->end' to anneal "
+                        "across the stage), anneal (updates from the stage's "
+                        "start to reach the end fraction), novelty, eps, "
+                        "dist_min, dist_max, emp_dist_min, emp_dist_max. "
+                        "A stage value overrides the run-wide flag outright. "
+                        "Example: 'explore:200 ; "
+                        "interleave:800,empty_frac=1.0->0.5,anneal=50 ; "
+                        "exploit:100,lr=1e-4'. Required, unless "
+                        "--load_checkpoint supplies one.")
+    p.add_argument("--lr", type=float, default=3e-4,
+                   help="Adam learning rate. A stage may override it with "
+                        "'lr='; the optimizer is retuned in place, so Adam's "
+                        "moments survive the boundary.")
+    p.add_argument("--novelty_reward", type=float, default=0.1,
+                   help="Reward per first-visit cell, explore regime only.")
+    p.add_argument("--novelty_anneal", action=argparse.BooleanOptionalAction, default=False,
+                   help="Linearly scale --novelty_reward to 0 across the whole "
+                        "schedule. A stage's 'novelty=' ignores this.")
     p.add_argument("--randomize_goal_per_rollout",
                    action=argparse.BooleanOptionalAction, default=False,
                    help="Re-pick goal each rollout to break memorization "
-                        "shortcut. Only applies to empty-regime envs.")
+                        "shortcut. Only applies to explore-regime envs.")
     p.add_argument("--epsilon_explore", type=float, default=0.0,
                    help="Per-step probability of replacing the policy's "
-                        "movement with a uniform-random direction (empty-"
+                        "movement with a uniform-random direction (explore-"
                         "regime envs only). 0.0 disables.")
     p.add_argument("--epsilon_anneal_updates", type=int, default=0,
                    help="Linearly anneal epsilon_explore to 0 over this "
@@ -564,12 +612,11 @@ def main():
     p.add_argument("--goals_active", action=argparse.BooleanOptionalAction,
                    default=True,
                    help="When False, training envs emit no +1 goal reward "
-                        "and never teleport on goal-reach (pure-explore "
-                        "Phase A). Eval envs always use goals_active=True.")
+                        "and never teleport on goal-reach. Eval envs always "
+                        "use goals_active=True.")
     p.add_argument("--move_ent_coef", type=float, default=None,
                    help="Override PPOConfig.ent_coef (entropy bonus on "
-                        "movement policy). V7 default 0.0 disables the "
-                        "log_std inflation that collapsed V6.")
+                        "movement policy).")
     p.add_argument("--revisit_penalty", type=float, default=0.0,
                    help="Per-step reward penalty when agent occupies an "
                         "already-visited cell. Densifies the coverage "
@@ -621,34 +668,31 @@ def main():
     p.add_argument("--fwhm_ratio", type=float, default=0.25)
     p.add_argument("--encoder_gain", type=float, default=None)
     p.add_argument("--load_checkpoint", type=str, default=None,
-                   help="Phase A/B checkpoint to load before training")
-    p.add_argument("--interleave_empty_target", type=float, default=None,
-                   help="If set, anneal interleave_empty_fraction → this "
-                        "value linearly over interleave_anneal_updates.")
-    p.add_argument("--interleave_anneal_updates", type=int, default=0,
-                   help="Updates over which to anneal interleave fraction "
-                        "from initial → target. 0 = no anneal.")
+                   help="Checkpoint to start from. Its config becomes the base "
+                        "for this run -- every setting is inherited except the "
+                        "flags you pass explicitly, so a child reproduces its "
+                        "parent's recipe without re-listing it. --save_dir is "
+                        "never inherited.")
     p.add_argument("--explore_goals_off", action=argparse.BooleanOptionalAction,
                    default=False,
-                   help="If True, disable goals_active for empty-regime envs "
-                        "(no goal +1 reward, no teleport). Pre-stored envs "
-                        "keep goals_active=True. Forces explore mode to be "
+                   help="If True, disable goals_active for explore-regime envs "
+                        "(no goal reward, no teleport). Exploit envs keep "
+                        "goals_active=True. Forces explore mode to be "
                         "rewarded purely by novelty / revisit / time.")
     p.add_argument("--n_train_distractors_min", type=int, default=0,
-                   help="Min distractor patterns added to pre_stored "
+                   help="Min distractor patterns added to an exploit-regime "
                         "Hopfield per rollout. Distractors come from grid "
                         "cells outside this env's region.")
     p.add_argument("--n_train_distractors_max", type=int, default=0,
-                   help="Max distractor patterns per pre_stored rollout. "
+                   help="Max distractor patterns per exploit rollout. "
                         "Per rollout, N ~ Uniform[min, max] is sampled. "
                         "0 disables (legacy: persistent goal-only Hopfield).")
     p.add_argument("--n_train_emp_distractors_min", type=int, default=0,
-                   help="Min distractors in empty-regime Hopfield per "
+                   help="Min distractors in an explore-regime Hopfield per "
                         "rollout. No goal pattern; explore policy learns "
                         "to ignore non-goal recall signals.")
     p.add_argument("--n_train_emp_distractors_max", type=int, default=0,
-                   help="Max distractors in empty-regime Hopfield per "
-                        "rollout. 0 disables (legacy: empty Hopfield).")
+                   help="Max distractors per explore rollout. 0 disables.")
     p.add_argument("--n_train_distractors_max_end", type=int, default=None,
                    help="Curriculum target for n_train_distractors_max. "
                         "If set, max ramps linearly from start to this over "
@@ -659,12 +703,12 @@ def main():
                    help="Number of updates over which to anneal distractor "
                         "max counts from start to end. 0 = no curriculum.")
     p.add_argument("--hidden_size", type=int, default=128,
-                   help="RNN hidden dim. V18 baseline used 128.")
+                   help="RNN hidden dim.")
     p.add_argument("--num_rnn_layers", type=int, default=1,
-                   help="Number of RNN layers. V18 baseline used 1.")
+                   help="Number of RNN layers.")
     p.add_argument("--goal_reward", type=float, default=1.0,
                    help="Reward at goal cell when goals_active. Bumping >1 "
-                        "strengthens follow PPO updates vs explore reward.")
+                        "strengthens exploit PPO updates vs explore reward.")
     p.add_argument("--goal_radius", type=float, default=0.5,
                    help="Euclidean radius around goal that counts as 'at goal'. "
                         "Default 0.5 reproduces snap-equality on integer-snapped "
@@ -695,7 +739,8 @@ def main():
                         "magnitude so small policy means don't waste steps.")
     p.add_argument("--log_std_anneal_start_update", type=int, default=0,
                    help="Update at which to start ramping movement_log_std toward "
-                        "--log_std_anneal_target. 0 disables the anneal.")
+                        "--log_std_anneal_target. 0 disables the anneal. Counted "
+                        "over the whole schedule, not within a stage.")
     p.add_argument("--log_std_anneal_end_update", type=int, default=0,
                    help="Update at which the anneal completes (log_std reaches "
                         "target). Must be > start. Requires --no-freeze_log_std "
@@ -708,23 +753,14 @@ def main():
                    help="Override PPOConfig.clip_coef (default 0.2). Lower "
                         "values (0.1-0.15) limit policy update size, helping "
                         "stability when goal_reward inflates value targets.")
+    return p
 
+
+def main():
+    p = build_parser()
     args = p.parse_args()
+    explicit = _explicit_dests(p, sys.argv[1:])
 
-    env_kwargs = dict(size=args.size, observation_size=args.observation_size,
-                      movement_mode=args.movement_mode,
-                      goals_active=args.goals_active,
-                      goal_reward=args.goal_reward,
-                      goal_radius=args.goal_radius,
-                      allow_offcell_store=args.allow_offcell_store)
-    if args.time_penalty is not None:
-        env_kwargs["time_penalty"] = args.time_penalty
-    if args.continuous_normalize is not None:
-        env_kwargs["continuous_normalize"] = args.continuous_normalize
-    if args.max_action_norm is not None:
-        env_kwargs["max_action_norm"] = args.max_action_norm
-    if args.min_action_norm is not None:
-        env_kwargs["min_action_norm"] = args.min_action_norm
     if args.union_cov_trials:
         print("  WARNING: --union_cov_trials is ignored since 2026-08-06. "
               "Union coverage is computed by evaluate_exploration over its own "
@@ -732,77 +768,36 @@ def main():
               f"({args.n_val_trials}), not over {args.union_cov_trials}.",
               flush=True)
 
-    cfg = TrainConfig(
-        env=EnvConfig(**env_kwargs),
-        vectorhash=VectorHashConfig(lambdas=args.lambdas, Np=args.Np,
-                                    static_vectorhash=args.static_vectorhash),
-        hopfield=HopfieldConfig(),
-        agent=AgentConfig(
-            hopfield_mode=args.hopfield_mode, movement_mode=args.movement_mode,
-            input_encoded_state=args.input_encoded_state,
-            input_hopfield_signal=args.input_hopfield_signal,
-            input_prev_action=args.input_prev_action,
-            input_prev_reward=args.input_prev_reward,
-            input_hopfield_raw=args.input_hopfield_raw,
-            input_hopfield_multistep=args.input_hopfield_multistep,
-            input_sensory=args.input_sensory,
-            input_goal_in_memory=args.input_goal_in_memory,
-            init_log_std=args.init_log_std,
-            freeze_log_std=args.freeze_log_std,
-            hidden_size=args.hidden_size,
-            num_rnn_layers=args.num_rnn_layers,
-        ),
-        ppo=PPOConfig(),
-        encoder_checkpoint=args.encoder_checkpoint,
-        encoder_gain=args.encoder_gain,
-        fwhm_ratio=args.fwhm_ratio,
-        num_worlds=args.num_worlds, envs_per_world=args.envs_per_world,
-        num_val_envs=args.num_val_envs, n_val_trials=args.n_val_trials,
-        val_n_distractors_list=args.val_distractors,
-        union_cov_trials=args.union_cov_trials,   # deprecated; see below
-        batch_envs=args.batch_envs, steps_per_rollout=args.steps_per_rollout,
-        eval_every=args.eval_every, ckpt_every=args.ckpt_every,
-        save_dir=args.save_dir,
-        seed=args.seed, device=args.device,
-        use_wandb=args.use_wandb, wandb_project=args.wandb_project,
-    )
-    if args.move_ent_coef is not None:
-        cfg.ppo.ent_coef = args.move_ent_coef
-    if args.ppo_clip_coef is not None:
-        cfg.ppo.clip_coef = args.ppo_clip_coef
-    cfg.hopfield.revisit_penalty = args.revisit_penalty
-    cfg.hopfield.wall_penalty = args.wall_penalty
-    cfg.hopfield.persistence_bonus = args.persistence_bonus
-    cfg.hopfield.novelty_scale_remaining = args.novelty_scale_remaining
-    cfg.hopfield.novelty_scale_cap = args.novelty_scale_cap
-    pcfg = PhasedConfigV3(
-        phase_a_updates=args.phase_a_updates,
-        phase_a_lr=args.phase_a_lr,
-        phase_a_novelty_reward=args.phase_a_novelty_reward,
-    )
-    train_navigate(
-        cfg, pcfg,
-        warmup_explore_only_updates=args.warmup_explore_only_updates,
-        novelty_anneal=args.novelty_anneal,
-        interleave_empty_fraction=args.interleave_empty_fraction,
-        randomize_goal_per_rollout=args.randomize_goal_per_rollout,
-        epsilon_explore=args.epsilon_explore,
-        epsilon_anneal_updates=args.epsilon_anneal_updates,
-        interleave_empty_target=args.interleave_empty_target,
-        interleave_anneal_updates=args.interleave_anneal_updates,
-        load_checkpoint=args.load_checkpoint,
-        explore_goals_off=args.explore_goals_off,
-        n_train_distractors_min=args.n_train_distractors_min,
-        n_train_distractors_max=args.n_train_distractors_max,
-        n_train_emp_distractors_min=args.n_train_emp_distractors_min,
-        n_train_emp_distractors_max=args.n_train_emp_distractors_max,
-        n_train_distractors_max_end=args.n_train_distractors_max_end,
-        n_train_emp_distractors_max_end=args.n_train_emp_distractors_max_end,
-        distractor_curriculum_updates=args.distractor_curriculum_updates,
-        log_std_anneal_start_update=args.log_std_anneal_start_update,
-        log_std_anneal_end_update=args.log_std_anneal_end_update,
-        log_std_anneal_target=args.log_std_anneal_target,
-    )
+    if args.load_checkpoint is not None:
+        ck = torch.load(args.load_checkpoint, map_location="cpu",
+                        weights_only=False)
+        cfg = cfg_from_checkpoint(ck["config"])
+        apply_args(cfg, args, explicit)
+        # Never inherited: that field holds where the parent wrote, and reusing
+        # it would have this run overwrite its own parent.
+        cfg.save_dir = args.save_dir
+    else:
+        cfg = TrainConfig()
+        apply_args(cfg, args, set(CFG_FIELDS))
+
+    if cfg.schedule is None:
+        p.error("--schedule is required. It is a list of stages separated by "
+                "';', e.g. --schedule 'explore:200 ; "
+                "interleave:800,empty_frac=1.0->0.5,anneal=50'. Pure "
+                "exploration is --schedule 'explore:600'."
+                + ("" if args.load_checkpoint is None else
+                   " (--load_checkpoint carried no schedule either: it "
+                   "predates the field.)"))
+    try:
+        stages = parse_schedule(cfg.schedule)
+    except ScheduleError as exc:
+        p.error(str(exc))
+    # Store the canonical form, so run.json says what ran rather than however
+    # it happened to be typed.
+    cfg.schedule = format_schedule(stages)
+    cfg.n_updates = total_updates(stages)
+
+    train_navigate(cfg, stages, load_checkpoint=args.load_checkpoint)
 
 
 if __name__ == "__main__":

@@ -223,6 +223,34 @@ class TrainConfig:
     use_wandb: bool = False
     wandb_project: str = "hopfield-nav"
 
+    # --- train_navigate's schedule -----------------------------------------
+    # Read only by `hopfield_nav.train_navigate`; harmless defaults everywhere
+    # else. They live on TrainConfig rather than as bare function arguments so
+    # that `asdict(cfg)` -- which is what the checkpoint and `run.json` record --
+    # says what regime the run actually trained under. Before this they reached
+    # the manifest only as raw `argv`, which meant a run could not describe
+    # itself and a child run could not inherit its parent's recipe.
+    #
+    # `schedule` is the stage list; see hopfield_nav/training/stages.py for the
+    # grammar. Everything below it is a run-wide default that a stage may
+    # override.
+    schedule: str | None = None
+    novelty_anneal: bool = False            # linearly scale novelty_reward -> 0 across the whole run
+    epsilon_explore: float = 0.0            # per-step chance of a uniform-random move, explore regime only
+    epsilon_anneal_updates: int = 0         # linearly scale epsilon_explore -> 0 over this many updates; 0 = constant
+    explore_goals_off: bool = False         # explore-regime envs emit no goal reward and never teleport
+    randomize_goal_per_rollout: bool = False  # re-draw the goal each explore rollout, breaking the memorization shortcut
+    n_train_distractors_min: int = 0        # non-goal patterns preloaded per exploit rollout
+    n_train_distractors_max: int = 0
+    n_train_emp_distractors_min: int = 0    # ditto per explore rollout (no goal among them)
+    n_train_emp_distractors_max: int = 0
+    n_train_distractors_max_end: int | None = None      # curriculum target for the two maxima
+    n_train_emp_distractors_max_end: int | None = None
+    distractor_curriculum_updates: int = 0  # updates over which the maxima ramp start -> end; 0 = no ramp
+    log_std_anneal_start_update: int = 0    # window over which movement_log_std is driven to its target
+    log_std_anneal_end_update: int = 0
+    log_std_anneal_target: float | None = None
+
 
 @dataclass
 class RNNAgentConfig:

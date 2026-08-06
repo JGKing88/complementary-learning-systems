@@ -1,0 +1,81 @@
+"""The explore regime: envs whose Hopfield starts empty of the goal.
+
+The agent has nothing useful to recall, so coverage is the job and novelty is
+what pays for it. Optionally the goal reward is switched off entirely
+(`goals_off`), which makes the regime purely about covering ground rather than
+stumbling onto the goal; optionally the goal is re-drawn each rollout
+(`randomize_goal`), which breaks the memorization shortcut where a fixed sensory
+codebook lets the agent learn "in env X, go to position Y" without exploring.
+
+Epsilon-greedy is applied here and only here -- see `exploit.py` for why.
+
+The Hopfield may still be preloaded with *distractors*: patterns from cells
+outside this env's region, with no goal among them. That is what teaches the
+explore policy to ignore a recall signal rather than chase it, so eval-time
+distractors don't trigger spurious follow behavior.
+"""
+from __future__ import annotations
+
+import numpy as np
+import torch
+
+from hopfield import Hopfield
+from ..config import TrainConfig
+from ..rollout.distractors import sample_distractors
+from .stages import Knobs, RolloutSpec
+from .world_setup import make_hops
+
+
+class ExploreRegime:
+    """Per-world pools of empty Hopfields, plus the per-rollout choice.
+
+    Same pooling rule as `ExploitRegime`: shared and reused when the contents
+    are fixed, freshly built per rollout when distractors are resampled.
+    """
+
+    def __init__(self, cfg: TrainConfig, worlds: list[dict], embed_dim: int,
+                 device: torch.device, dist_rng: np.random.RandomState, *,
+                 goals_off: bool = False, randomize_goal: bool = False,
+                 use_distractors: bool = False):
+        self.cfg = cfg
+        self.embed_dim = embed_dim
+        self.device = device
+        self.dist_rng = dist_rng
+        self.goals_off = goals_off
+        self.randomize_goal = randomize_goal
+        # See ExploitRegime for why this is a per-run decision, not per-update.
+        self.use_distractors = use_distractors
+        self.pools = {
+            w_idx: make_hops("empty_shared", cfg, world["vectorhash"],
+                             world["envs"], embed_dim, device, cfg.batch_envs)
+            for w_idx, world in enumerate(worlds)
+        }
+
+    def _with_distractors(self, vh, env_offset, knobs: Knobs) -> Hopfield:
+        hop = Hopfield(self.embed_dim, beta=self.cfg.hopfield.beta,
+                       device=str(self.device))
+        n_dist = int(self.dist_rng.randint(
+            knobs.emp_dist_min, knobs.emp_dist_max + 1))
+        if n_dist > 0:
+            for pat in sample_distractors(
+                    vh, env_offset, self.cfg.env.size, n_dist, self.dist_rng):
+                hop.input_memory(torch.from_numpy(pat).float())
+        return hop
+
+    def spec(self, w_idx: int, world: dict, local_idx: int, env, env_offset,
+             knobs: Knobs) -> RolloutSpec:
+        if self.use_distractors:
+            hop = self._with_distractors(world["vectorhash"], env_offset, knobs)
+        else:
+            hop = self.pools[w_idx][local_idx]
+        return RolloutSpec(
+            hop=hop,
+            novelty_reward=knobs.novelty,
+            goals_active=not self.goals_off,
+            reset_goal=self.randomize_goal,
+            epsilon=knobs.eps,
+            goal_in_memory_init=False,
+        )
+
+
+__all__ = ["ExploreRegime"]

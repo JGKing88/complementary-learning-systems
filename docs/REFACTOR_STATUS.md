@@ -7,8 +7,9 @@ ways listed under "Plan corrections" below.** Read this file first.
 Branch `refactor/2026-08`, 29 commits from tag `pre-refactor-2026-08` on `main`.
 Suite: 313 passing, tree clean, all 30 entry points import.
 
-**Phases 0-2 and 4-7 are done. Phase 3 (one training loop) is not started, and
-is the only structural work left.**
+**Phases 0-2 and 4-7 are done. Phase 3 (one training loop) is partly done:
+`train_navigate` was taken apart along its schedule on 2026-08-06 (see below);
+the other four trainers still each own their own loop.**
 
 ```bash
 ./run_tests.sh
@@ -66,9 +67,9 @@ hopfield_nav/
   rollout/     collector rnn signal oracles distractors types
   updates/     ppo bc bc_rnn
   evaluation/  metrics rnn protocols batched checkpoint_io
-  training/    world_setup rnn_sequential
+  training/    world_setup rnn_sequential stages explore exploit
   tests/
-  train.py train_phased.py train_phase_a_only.py train_phase_b_only.py
+  train.py train_phased.py train_navigate.py train_store.py
   train_rnn.py eval_all.py                        <- the six CLIs
 analysis/
   trajectories.py  encoder_sweep.py
@@ -205,13 +206,27 @@ on these points.**
 
 ## What is left
 
-**Phase 3 — one training loop.** The only structural work outstanding.
-`training/phases.py` holds a `PhaseSpec` (which Hopfield role per env, which
-heads frozen, which schedules, which update function); `training/loop.py` runs
-a list of them; the five training entry points become five `PhaseSpec` lists
-behind one CLI. This is the point at which the CLIs would move under
-`training/` (see correction 10) and the sbatch drivers would need rewriting.
-Validate by reproducing one known Phase-A variant end to end at a fixed seed.
+**Phase 3 — one training loop.** Partly done.
+
+*Done, 2026-08-06:* `train_navigate` was split along its schedule.
+`training/stages.py` holds the `Stage` grammar (`explore:200 ;
+interleave:800,empty_frac=1.0->0.5 ; exploit:100`) and the lookup arithmetic;
+`training/explore.py` and `training/exploit.py` hold one regime each and return
+a `RolloutSpec` rather than mutating `cfg` in place; `train_navigate.py` is the
+composer plus the CLI. The four `--phase_a_*` / `--interleave_*` flags are gone,
+so `run_phase_a_sweep_evelina.sh` no longer runs and three env-var launchers
+(`run_navigate.sh`, `run_explore.sh`, `run_exploit.sh`, sharing
+`navigate_job.sh`) replace it. Validated the way this note asked for: four tiny
+fixed-seed runs captured before the change, three reproduced bit-for-bit
+afterwards, and the fourth differs only in the one intentional way
+(`test_schedule.py::test_a_warmup_before_an_anneal_deliberately_differs`).
+
+*Outstanding:* the same treatment for the other four trainers. A `PhaseSpec`
+(which Hopfield role per env, which heads frozen, which schedules, which update
+function) generalizes what `Stage` + the two regime modules now do for one of
+them; `training/loop.py` would run a list of them and the five entry points
+would become five specs behind one CLI. That is the point at which the CLIs
+would move under `training/` (see correction 10).
 
 **Phase 4c′ — batching the remaining evaluators.** Two of the three are done.
 `evaluate_exploration` is batched (2026-08-06) and `evaluate_union_coverage` no

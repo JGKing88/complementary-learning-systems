@@ -84,7 +84,8 @@ def test_train_navigate_end_to_end(sandbox, tiny_encoder):
           "--lambdas", "3", "4", "--Np", "40",
           "--size", "4", "--observation_size", "16",
           "--batch_envs", "2", "--steps_per_rollout", "8",
-          "--phase_a_updates", "2", "--envs_per_world", "1", "--num_worlds", "1",
+          "--schedule", "interleave:2",
+          "--envs_per_world", "1", "--num_worlds", "1",
           "--num_val_envs", "1", "--eval_every", "1000",
           "--device", "cpu", "--static-vectorhash",
           "--save_dir", str(save_dir)], env)
@@ -168,7 +169,7 @@ def navigate_checkpoint(sandbox, tiny_encoder):
               "--lambdas", "3", "4", "--Np", "40",
               "--size", "4", "--observation_size", "16",
               "--batch_envs", "2", "--steps_per_rollout", "8",
-              "--phase_a_updates", "2", "--envs_per_world", "1",
+              "--schedule", "interleave:2", "--envs_per_world", "1",
               "--num_worlds", "1", "--num_val_envs", "2",
               # eval_every 1: analysis.trajectories indexes its rows by update
               # number, so it skips navigate_final.pt and needs at least one
@@ -225,7 +226,7 @@ def test_ckpt_every_beats_eval_every_in_a_real_run(sandbox, tiny_encoder):
           "--lambdas", "3", "4", "--Np", "40",
           "--size", "4", "--observation_size", "16",
           "--batch_envs", "2", "--steps_per_rollout", "8",
-          "--phase_a_updates", "4", "--envs_per_world", "1",
+          "--schedule", "interleave:4", "--envs_per_world", "1",
           "--num_worlds", "1", "--num_val_envs", "2",
           "--eval_every", "4", "--ckpt_every", "1",
           "--n_val_trials", "1", "--val_distractors", "0", "--device", "cpu",
@@ -262,6 +263,57 @@ def test_navigate_writes_a_usable_manifest(navigate_checkpoint, tiny_encoder):
                      run_manifest.checkpoints_in(save_dir)}
     on_disk = {p.name for p in save_dir.glob("*_u*.pt")}
     assert from_manifest == on_disk, f"manifest {from_manifest} != disk {on_disk}"
+
+
+@pytest.mark.slow
+def test_resuming_inherits_the_parents_recipe(sandbox, tiny_encoder):
+    """--load_checkpoint carries the whole config, not just the weights.
+
+    The trap this guards: a parent trained with non-default reward shaping, a
+    child that re-states only its schedule, and every unmentioned flag silently
+    reverting to an argparse default. So the child here passes *nothing* but
+    --schedule and --save_dir, and has to come out with the parent's
+    goal_reward and wall_penalty -- while `size`, which it does pass, overrides.
+    """
+    import run_manifest
+
+    root, env = sandbox
+    parent_dir = root / "inherit_parent"
+    base = [
+        "hopfield_nav.train_navigate",
+        "--encoder_checkpoint", str(tiny_encoder),
+        "--lambdas", "3", "4", "--Np", "40",
+        "--size", "4", "--observation_size", "16",
+        "--batch_envs", "2", "--steps_per_rollout", "8",
+        "--envs_per_world", "1", "--num_worlds", "1", "--num_val_envs", "1",
+        "--eval_every", "1000", "--device", "cpu", "--static-vectorhash",
+    ]
+    _run(base + ["--schedule", "explore:2",
+                 "--goal_reward", "5.0", "--wall_penalty", "0.1",
+                 "--save_dir", str(parent_dir)], env)
+
+    child_dir = root / "inherit_child"
+    _run(["hopfield_nav.train_navigate",
+          "--encoder_checkpoint", str(tiny_encoder),
+          "--load_checkpoint", str(parent_dir / "navigate_final.pt"),
+          "--schedule", "exploit:2",
+          "--device", "cpu",
+          "--save_dir", str(child_dir)], env)
+
+    child = run_manifest.read(child_dir)["config"]
+    assert child["env"]["goal_reward"] == 5.0, "shaping reverted to the CLI default"
+    assert child["hopfield"]["wall_penalty"] == 0.1
+    assert child["env"]["size"] == 4                # architecture came along too
+    assert child["schedule"] == "exploit:2"         # but the schedule is the child's
+    # save_dir is the one field never inherited: reusing it would have the
+    # child overwrite its own parent.
+    assert child["save_dir"] == str(child_dir)
+
+    parent = run_manifest.read(parent_dir)["config"]
+    assert parent["schedule"] == "explore:2"
+    # The parent's own novelty_reward survived into its checkpoint, rather than
+    # being recorded as the 0.0 the loop parks it at between rollouts.
+    assert parent["hopfield"]["novelty_reward"] == pytest.approx(0.1)
 
 
 @pytest.mark.slow

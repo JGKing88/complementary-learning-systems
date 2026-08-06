@@ -4,12 +4,15 @@
 > `train_phase_b_only` is now **`train_store`**. Run directories, checkpoint
 > filenames and eval tags follow: `agent_ckpts/navigate_<run>/navigate_u{N}.pt`
 > and `navigate_final.pt`, `agent_ckpts/store_<run>/store_u{N}.pt` and
-> `store_final.pt`. The **flags are unchanged** — `--phase_a_updates`,
-> `--phase_a_lr`, `--phase_a_novelty_reward`, `--phase_b_updates`,
-> `--phase_b_lr` keep their names, because the 101 sweep variants pass them by
-> name and `PhasedConfigV3`'s fields are a checkpoint-compatibility surface.
+> `store_final.pt`. `train_store` keeps `--phase_b_updates` / `--phase_b_lr`.
 > The ~150 pre-rename run directories are untouched and still readable;
 > `RUN_KINDS` keeps their prefixes so `backfill_manifests` can parse them.
+>
+> **`train_navigate` took a schedule, 2026-08-06.** Its `--phase_a_*` and
+> `--interleave_*` flags are **gone**, replaced by `--schedule` (§4.2). The
+> 101 variants in `run_phase_a_sweep_evelina.sh` will not run as written; that
+> script is now a record of a completed sweep, not a launcher. Use
+> `run_navigate.sh` / `run_explore.sh` / `run_exploit.sh` instead.
 
 
 Written 2026-08-05 from the code on `main` (`959322f`). Every flag table below
@@ -71,7 +74,11 @@ unset CUDA_VISIBLE_DEVICES
 
 | Script | Launches | Partition / time | How you configure it |
 |---|---|---|---|
-| `hopfield_nav/run_phase_a_sweep_evelina.sh` | `hopfield_nav.train_navigate` | `pi_evelina9`, 7 d, 1 GPU, 100 G | `VARIANT=<name> SEED=<n> sbatch ...` — 101 named variants in a `case` block |
+| `hopfield_nav/run_navigate.sh` | `hopfield_nav.train_navigate` | `pi_evelina9`, 3 d, 1 GPU, 100 G | `SCHEDULE='…' SEED=<n> sbatch ...` — explore → interleave → exploit by default |
+| `hopfield_nav/run_explore.sh` | `hopfield_nav.train_navigate` | `pi_evelina9`, 1 d, 1 GPU, 100 G | same env vars; defaults to `explore:600` |
+| `hopfield_nav/run_exploit.sh` | `hopfield_nav.train_navigate` | `pi_evelina9`, 1 d, 1 GPU, 100 G | same env vars; defaults to `exploit:300`. `LOAD_CKPT=…` to continue a run |
+| `hopfield_nav/navigate_job.sh` | *(sourced, not submitted)* | — | the shared body of the three above; every env var is documented in its header |
+| `hopfield_nav/run_phase_a_sweep_evelina.sh` | `hopfield_nav.train_navigate` | `pi_evelina9`, 7 d, 1 GPU, 100 G | `VARIANT=<name> SEED=<n> sbatch ...` — 101 named variants in a `case` block. **No longer runs**: passes the removed `--phase_a_*` / `--interleave_*` flags. Kept as the record of the sweep |
 | `hopfield_nav/run_continuous.sh` | `hopfield_nav.train` | `mit_normal_gpu`, 2 h | edit flags in file — **currently broken**, passes `--gbook-only` |
 | `hopfield_nav/run_new_sweep.sh` | `hopfield_nav.train` ×4 | `pi_evelina9`, 2 d | edit `COMMON` in file — same `--gbook-only` breakage |
 | `hopfield_nav/pretrain_baseline_rnn.sh` | `hopfield_nav.train_rnn --mode mixed` | `mit_normal_gpu`, 2 h | edit flags in file |
@@ -414,33 +421,88 @@ Not exposed (PPO defaults from `PPOConfig`): `gamma=0.99`, `gae_lambda=0.95`,
 
 ### 4.2 `python -m hopfield_nav.train_navigate` — the active harness
 
-This is the script the 101-variant sweep drives. Structure
-(`train_navigate.py:54-393`):
+**Explore and exploit are regimes, not phases.** An exploit ("follow",
+"pre_stored") env starts with the goal already in its Hopfield; an explore
+("empty") env does not. Every update collects rollouts from both and pools them
+into **one PPO step**, so what the schedule controls is the *fraction of envs in
+the explore regime* on each update.
+
+Structure (`train_navigate.py`, with the regimes in `training/explore.py` and
+`training/exploit.py` and the grammar in `training/stages.py`):
 
 - Store head frozen for the entire run (`set_phase_freeze(..., freeze_store=True)`);
   `auto_nav_warmup`, `auto_store_warmup`, `store_bc_weight` are forced to 0 and
   `bce_detach_trunk` to False. So **nothing store-related trains here** — that
-  is Phase B's job.
-- Total updates = `warmup_explore_only_updates + phase_a_updates`. Warmup
-  updates are 100 % empty-regime.
+  is `train_store`'s job.
+- Total updates = the sum of the schedule's stages.
 - Each update splits `envs_per_world` into `n_emp = round(n_envs · frac)`
-  empty-regime envs and the rest pre-stored, where `frac` interpolates
-  `interleave_empty_fraction → interleave_empty_target` over
-  `interleave_anneal_updates`. **The first `n_pre` envs are the follow regime**,
-  the remainder explore.
-- Pre-stored env: Hopfield gets the goal encoding plus `U[min, max]` distractors
+  explore envs and the rest exploit, `frac` coming from the current stage.
+  **The first `n_pre` envs are the exploit regime**, the remainder explore.
+- Exploit env: Hopfield gets the goal encoding plus `U[min, max]` distractors
   drawn from outside the env's patch, stored in shuffled order (so the goal is
   not always first). `novelty_reward = 0`, `goals_active = True`,
-  `goal_in_memory_init = True`.
-- Empty env: Hopfield gets `U[min, max]` distractors and **no goal**.
+  `goal_in_memory_init = True`, ε = 0.
+- Explore env: Hopfield gets `U[min, max]` distractors and **no goal**.
   `novelty_reward = current_novelty`, `goals_active = not explore_goals_off`,
   optional fresh goal per rollout, ε-exploration applied here only.
-- Schedules: novelty anneal (linear to 0 over the whole budget), distractor
-  curriculum (max counts ramp to `*_max_end` over `distractor_curriculum_updates`),
-  and a programmatic log-σ anneal that writes `agent.movement_log_std` directly
-  between `log_std_anneal_start_update` and `log_std_anneal_end_update`.
-- Every `eval_every`: `do_eval` (nav-det + discovery + exploration [+ union])
-  with `max_steps = steps_per_rollout`, then a checkpoint `phase_a_u{u}.pt`.
+- One Adam optimizer spans the whole schedule — stages are segments of a single
+  training trajectory, so its moments carry across a stage boundary. A stage's
+  `lr=` retunes the existing param group in place.
+- Run-wide anneals, all keyed off the **global** update counter, not a
+  stage-local one: novelty anneal (linear to 0 over the whole budget),
+  ε anneal, distractor curriculum (max counts ramp to `*_max_end` over
+  `distractor_curriculum_updates`), and a programmatic log-σ anneal that writes
+  `agent.movement_log_std` directly between `log_std_anneal_start_update` and
+  `log_std_anneal_end_update`.
+- Every `eval_every`: `do_eval` (nav-det + discovery + exploration) with
+  `max_steps = steps_per_rollout`. Every `ckpt_every` (default: follow
+  `eval_every`): a checkpoint `navigate_u{u}.pt`.
+
+#### The schedule
+
+```
+--schedule "explore:200,novelty=0.3 ; interleave:800,empty_frac=1.0->0.5,anneal=50 ; exploit:100,lr=1e-4"
+```
+
+Stages separated by `;`; each is `<kind>:<updates>` plus optional
+`,key=value` overrides. Whitespace is ignored.
+
+| Kind | Meaning |
+|---|---|
+| `explore` | `empty_frac` pinned at 1.0 — every env starts without the goal in memory. |
+| `exploit` | `empty_frac` pinned at 0.0 — every env starts with it. |
+| `interleave` | A mix. Takes `empty_frac`; defaults to 0.5. |
+
+| Key | Meaning |
+|---|---|
+| `lr` | Adam lr for this stage. |
+| `empty_frac` | A number, or `start->end` to anneal linearly across the stage. `interleave` only — the other two kinds already imply theirs, and saying it there is an error. |
+| `anneal` | Updates from the **stage's** start to reach the end fraction, then hold. Defaults to the whole stage. Must not exceed it. |
+| `novelty`, `eps` | Novelty reward / ε for this stage. |
+| `dist_min`, `dist_max` | Distractor counts, exploit regime. |
+| `emp_dist_min`, `emp_dist_max` | Distractor counts, explore regime. |
+
+A stage value is an **absolute override**: `explore:200,novelty=0.3` means
+novelty is exactly 0.3 for those updates even if `--novelty_anneal` has scaled
+the run-wide default down. So a schedule reads without also reading the flags.
+
+Pure exploration is `--schedule "explore:600"`; pure following is
+`--schedule "exploit:300"`.
+
+**Translating the old flags.** `--warmup_explore_only_updates W
+--interleave_empty_fraction A --interleave_empty_target B
+--interleave_anneal_updates K --phase_a_updates N` becomes:
+
+```
+--schedule "explore:W ; interleave:N,empty_frac=A->B,anneal=K"
+```
+
+with `--phase_a_lr` → `--lr` and `--phase_a_novelty_reward` →
+`--novelty_reward`. One deliberate difference: the old anneal clock was global,
+so with `W > 0` it was already `W/K` of the way through when the first
+interleaved update ran. The stage-local clock starts at the top of the stage.
+Everything else is bit-identical — `hopfield_nav/tests/test_schedule.py` pins
+both the equivalence and the exception.
 
 <details>
 <summary><b>All 73 flags</b></summary>
@@ -458,15 +520,12 @@ Flags shared with `train.py` (`--encoder_checkpoint`, `--encoder_gain`,
 
 | Flag | Default | Effect |
 |---|---|---|
-| `--phase_a_updates` | `600` | Interleaved updates after the warmup. |
-| `--phase_a_lr` | `3e-4` | Adam lr for this phase (replaces `--lr`). |
-| `--phase_a_novelty_reward` | `0.1` | Novelty reward applied **only to empty-regime envs**. |
-| `--warmup_explore_only_updates` | `0` | Prefix of 100 %-empty updates. |
-| `--novelty_anneal` / `--no-` | `False` | Linear decay of novelty to 0 over the full budget. |
-| `--interleave_empty_fraction` | `0.5` | Initial fraction of envs in the empty (explore) regime. 1.0 = pure explore, 0.0 = pure follow. |
-| `--interleave_empty_target` | `None` | If set, anneal the fraction toward this value. |
-| `--interleave_anneal_updates` | `0` | Length of that anneal. |
-| `--randomize_goal_per_rollout` / `--no-` | `False` | New goal each rollout for empty-regime envs (breaks the "memorize this env's goal cell from its sensory fingerprint" shortcut). |
+| `--schedule` | *required* | The stage list. See above. Required unless `--load_checkpoint` carries one. |
+| `--lr` | `3e-4` | Adam lr; a stage's `lr=` overrides it. |
+| `--novelty_reward` | `0.1` | Novelty reward applied **only to explore-regime envs**. |
+| `--novelty_anneal` / `--no-` | `False` | Linear decay of novelty to 0 over the full budget. A stage's `novelty=` ignores it. |
+| `--load_checkpoint` | `None` | Start from this `.pt`. Its config becomes the **base** for the run: every setting is inherited except the flags actually on the command line, so a child reproduces its parent's recipe without re-listing it. `--save_dir` is never inherited. |
+| `--randomize_goal_per_rollout` / `--no-` | `False` | New goal each rollout for explore-regime envs (breaks the "memorize this env's goal cell from its sensory fingerprint" shortcut). |
 | `--goals_active` / `--no-` | `True` | Training envs emit no goal reward and never teleport when off. Eval envs are always built with `goals_active=True`. |
 | `--explore_goals_off` / `--no-` | `False` | Per-regime version of the above: goals off for empty-regime envs only. |
 | `--move_ent_coef` | `None` | Overrides `PPOConfig.ent_coef`. |
@@ -494,10 +553,28 @@ Different defaults vs `train.py`: `observation_size` 12, `movement_mode`/
 
 </details>
 
-**Sweep mechanics.** `run_phase_a_sweep_evelina.sh` picks `EXTRA` from a `case
-$VARIANT` block and appends it to a fixed base command, so a variant's flags
-*override* the base by appearing later on the command line. To read what any
-run actually was, `grep -A5 "  <variant>)" hopfield_nav/run_phase_a_sweep_evelina.sh`.
+**Launching.** Three sbatch scripts wrap this entry point, differing only in
+their default `SCHEDULE`: `run_explore.sh` (`explore:600`), `run_exploit.sh`
+(`exploit:300`), and `run_navigate.sh` (explore → interleave → exploit). Their
+shared body is `hopfield_nav/navigate_job.sh`, which documents every environment
+variable. All three are env-var driven:
+
+```bash
+SCHEDULE='explore:400 ; exploit:200' SEED=7 sbatch hopfield_nav/run_navigate.sh
+LOAD_CKPT=$CLS_RUNS/agent_ckpts/navigate_<run>/navigate_final.pt sbatch hopfield_nav/run_exploit.sh
+```
+
+Setting `LOAD_CKPT` changes what the launcher passes, not just what it adds: the
+architecture block is dropped and every optional knob goes unset, so the run
+really does inherit its parent rather than being silently overwritten by the
+launcher's own defaults.
+
+**Sweep mechanics (historical).** `run_phase_a_sweep_evelina.sh` picks `EXTRA`
+from a `case $VARIANT` block and appends it to a fixed base command, so a
+variant's flags *override* the base by appearing later on the command line. It
+passes the removed `--phase_a_*` / `--interleave_*` flags, so **it no longer
+runs**; it is kept as the record of what each of the 101 variants was. To read
+what a past run was, `grep -A5 "  <variant>)" hopfield_nav/run_phase_a_sweep_evelina.sh`.
 
 ### 4.3 `python -m hopfield_nav.train_phased` — the four-phase pipeline
 
@@ -792,8 +869,9 @@ rather than costs.
 5. `--lambdas` — must be identical in stage 2; also fixes the scaffold size `Πλ`.
 
 **Agent (stage 2)**
-6. `interleave_empty_fraction` (+ target/anneal) — the explore/follow mixture.
-   This is the single most-varied knob across the 101 sweep variants.
+6. `--schedule` — the explore/exploit mixture over time. Its predecessor
+   (`interleave_empty_fraction` + target/anneal) was the single most-varied
+   knob across the 101 sweep variants.
 7. `init_log_std` + `freeze_log_std` (+ the anneal window) — with a learnable
    σ and an entropy bonus, σ inflates and the policy navigates by sampling
    noise, which shows up as a large nav-stochastic vs nav-deterministic gap.
@@ -870,7 +948,7 @@ Traced to source; use these when comparing numbers across docs.
 |---|---|
 | `encoder_training.train` | `state_dict`, `model_config`, `train_config`, `y0s`, `x0s`, `sizes`, `gain`, (+`val_nav_acc`, `epoch` for best) |
 | `hopfield_nav.train` | `agent_state_dict`, `optimizer_state_dict`, `config` (=`asdict(TrainConfig)`), `update` |
-| `train_navigate` | `agent_state_dict`, `config`, `update` (per-eval) / no `update` (final) |
+| `train_navigate` | `agent_state_dict`, `config`, `update` (per `ckpt_every`) / no `update` (final). `config` carries `schedule`, and is snapshotted before the loop's temporary overrides so it records the run's settings rather than the scratch values the loop parks in `cfg` between rollouts — `--load_checkpoint` reads it back as the base config. |
 | `train_store` | `agent_state_dict`, `config`, `update` |
 | `train_phased` | `agent_state_dict`, `config`, `phased_config` |
 | `train_rnn` | `agent_state_dict`, `optimizer_state_dict`, `cfg`, `history`, `env_goals` |
