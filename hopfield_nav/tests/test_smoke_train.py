@@ -11,6 +11,7 @@ batch_envs=2, steps_per_rollout=8, 2 updates.
 """
 from __future__ import annotations
 
+import json
 import os
 import subprocess
 import sys
@@ -143,3 +144,132 @@ def test_outputs_land_under_cls_runs(sandbox, tiny_encoder):
             _os.environ.pop("CLS_RUNS", None)
         else:
             _os.environ["CLS_RUNS"] = old
+
+
+# ---------------------------------------------------------------------------
+# Downstream entry points
+# ---------------------------------------------------------------------------
+#
+# These four had no coverage at all. Phase 6 of the 2026-08 refactor moves every
+# module they import, and an import that goes stale surfaces only when the
+# script is run -- which, for the analysis scripts, may be weeks later. Each
+# test below is a wiring guard, not a behavioral one: it asserts the chain runs
+# end to end and produces its artifact.
+
+
+@pytest.fixture(scope="module")
+def phase_a_checkpoint(sandbox, tiny_encoder):
+    """A real checkpoint for the downstream entry points to consume."""
+    root, env = sandbox
+    save_dir = root / "downstream_ckpt"
+    if not sorted(save_dir.glob("*.pt")):
+        _run(["hopfield_nav.train_phase_a_only",
+              "--encoder_checkpoint", str(tiny_encoder),
+              "--lambdas", "3", "4", "--Np", "40",
+              "--size", "4", "--observation_size", "16",
+              "--batch_envs", "2", "--steps_per_rollout", "8",
+              "--phase_a_updates", "2", "--envs_per_world", "1",
+              "--num_worlds", "1", "--num_val_envs", "2",
+              # eval_every 1: the per-update checkpoint is written inside the
+              # eval branch, and visualize_trajectories only accepts files whose
+              # basename carries an update number -- it deliberately skips
+              # phase_a_only_final.pt. Kept cheap by n_val_trials 1.
+              "--eval_every", "1", "--n_val_trials", "1",
+              "--val_distractors", "0", "--device", "cpu",
+              "--static-vectorhash", "--save_dir", str(save_dir)], env)
+    ckpts = sorted(save_dir.glob("*.pt"))
+    assert ckpts, f"no checkpoint written to {save_dir}"
+    return save_dir, ckpts[-1]
+
+
+@pytest.mark.slow
+def test_eval_all_cli_end_to_end(sandbox, phase_a_checkpoint):
+    """eval_all's main(): checkpoint -> rebuilt eval world -> evaluators -> JSON.
+
+    Its helpers are covered by the goldens; this covers the CLI path that
+    stitches them together, including the config-from-checkpoint rebuild.
+    """
+    root, env = sandbox
+    _save_dir, ckpt = phase_a_checkpoint
+    out_json = root / "eval_all_out.json"
+    _run(["hopfield_nav.eval_all",
+          "--ckpt", str(ckpt), "--device", "cpu",
+          "--num_trials", "2", "--max_steps", "8",
+          "--n_distractors", "0",
+          "--repeat-trials", "0", "--skip-realistic", "--no-nav-stoch",
+          "--num-val-envs", "2",
+          "--output-json", str(out_json)], env)
+
+    assert out_json.exists(), "eval_all wrote no JSON"
+    payload = json.loads(out_json.read_text())
+    assert "navigation" in payload or "nav_det" in json.dumps(payload)
+
+
+@pytest.mark.slow
+def test_train_phase_b_only_end_to_end(sandbox, tiny_encoder, phase_a_checkpoint):
+    """Phase B resumes from a phase-A checkpoint and trains the store head."""
+    root, env = sandbox
+    _save_dir, ckpt = phase_a_checkpoint
+    proc = _run(["hopfield_nav.train_phase_b_only",
+                 "--load_checkpoint", str(ckpt),
+                 "--encoder_checkpoint", str(tiny_encoder),
+                 "--phase_b_updates", "2", "--steps_per_rollout", "8",
+                 "--device", "cpu", "--eval_every", "1000"], env)
+    assert proc.returncode == 0
+
+
+@pytest.mark.slow
+def test_visualize_trajectories_renders(sandbox, phase_a_checkpoint):
+    """The figure path: checkpoint dir -> rollouts -> PNG + PDF on disk.
+
+    Also exercises _resolve_encoder_path, which reads the encoder location out
+    of the checkpoint and has to find it after the storage migration.
+    """
+    root, env = sandbox
+    save_dir, _ckpt = phase_a_checkpoint
+    out_stem = root / "viz_smoke"
+    _run(["hopfield_nav.visualize_trajectories",
+          "--checkpoint_dir", str(save_dir),
+          "--mode", "combined", "--trials", "2",
+          "--explore_steps", "6", "--nav_steps", "6",
+          "--device", "cpu", "--out", str(out_stem)], env)
+    produced = list(root.glob("viz_smoke*"))
+    assert produced, f"no figure written; dir holds {[p.name for p in root.iterdir()]}"
+
+
+@pytest.mark.slow
+def test_agenthash_run_sequential_outer_loop():
+    """agenthash's outer protocol loop, in-process.
+
+    run_mini_episode is covered by test_protocols; the loop around it -- block
+    scheduling, history accumulation, the stored-at-goal counters -- was not.
+    """
+    import numpy as np
+    import torch
+    from hopfield_nav.env import make_env
+    from hopfield_nav.final_plotting.agenthash import run_sequential
+    from hopfield_nav.tests.fixtures import make_collector, make_stub_cfg
+
+    cfg = make_stub_cfg(movement_mode="discrete")
+    cfg.env.size = 4
+    cfg.env.goal_radius = 1.5
+    _c, agent, vh = make_collector(cfg, 8, seed=0)
+    vh.env_offsets = [(0, 0), (8, 0)]
+    envs = [make_env(cfg.env, "discrete", seed=300 + i) for i in range(2)]
+
+    torch.manual_seed(0)
+    np.random.seed(0)
+    trace, blocks, stored = run_sequential(
+        agent=agent, val_envs=envs, vectorhash=vh, val_idxs=[0, 1], cfg=cfg,
+        device=torch.device("cpu"), iters_per_block=3, max_steps=10, seed=5,
+        deterministic=True, oracle_store_at_goal=True,
+        oracle_lock_store_not_at_goal=True, lock_store_after_goal=False)
+
+    # 2 blocks x 3 iterations; block 0 evaluates env 0 only, block 1 both.
+    assert len(trace) == 6
+    assert blocks == [(0, 2, 0), (3, 5, 1)]
+    assert sorted(trace[0][2]) == [0]
+    assert sorted(trace[-1][2]) == [0, 1]
+    assert set(stored) == {0, 1}
+    # Non-vacuous: the oracle stores whenever the agent sits on the goal.
+    assert sum(stored.values()) > 0, "no store ever fired; fixture is vacuous"
