@@ -553,21 +553,31 @@ Different defaults vs `train.py`: `observation_size` 12, `movement_mode`/
 
 </details>
 
-**Launching.** Three sbatch scripts wrap this entry point, differing only in
-their default `SCHEDULE`: `run_explore.sh` (`explore:600`), `run_exploit.sh`
-(`exploit:300`), and `run_navigate.sh` (explore → interleave → exploit). Their
-shared body is `hopfield_nav/navigate_job.sh`, which documents every environment
-variable. All three are env-var driven:
+**Launching.** Three sbatch scripts wrap this entry point: `run_explore.sh`
+(`explore:600`), `run_exploit.sh` (`exploit:300`), and `run_navigate.sh`
+(explore → interleave → exploit). All three are env-var driven:
 
 ```bash
 SCHEDULE='explore:400 ; exploit:200' SEED=7 sbatch hopfield_nav/run_navigate.sh
 LOAD_CKPT=$CLS_RUNS/agent_ckpts/navigate_<run>/navigate_final.pt sbatch hopfield_nav/run_exploit.sh
 ```
 
-Setting `LOAD_CKPT` changes what the launcher passes, not just what it adds: the
-architecture block is dropped and every optional knob goes unset, so the run
-really does inherit its parent rather than being silently overwritten by the
-launcher's own defaults.
+Their shared body, `hopfield_nav/navigate_job.sh`, is a **pass-through, not a
+policy**: every flag above has an environment variable named after it in upper
+case, and *an unset variable is not passed at all*. One rule covers both cases —
+on a fresh run an unpassed flag falls back to the trainer's own argparse
+default, and under `LOAD_CKPT` it is inherited from the parent. Booleans take
+`1`/`0` and become `--flag` / `--no-flag`; lists take a space-separated string
+(`LAMBDAS="11 12 13"`). Only `SCHEDULE`, `ENCODER` and `DEVICE` are always
+passed. (`--union_cov_trials` is the one flag with no variable — it is
+deprecated and ignored.)
+
+`run_navigate.sh` **sets all 70 explicitly**, so it doubles as the full control
+panel: edit a value in the file, or override it from the environment, since
+each is written `X=${X:-value}`. They sit inside an `if [ -z "$LOAD_CKPT" ]`
+block, because on a resume spelling out a value would overwrite the parent with
+the launcher's defaults instead of inheriting them. `run_explore.sh` and
+`run_exploit.sh` stay minimal and set only the handful they mean to say.
 
 **Sweep mechanics (historical).** `run_phase_a_sweep_evelina.sh` picks `EXTRA`
 from a `case $VARIANT` block and appends it to a fixed base command, so a
