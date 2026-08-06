@@ -1,7 +1,7 @@
 """Plot comprehensive-eval val accuracies across a sweep.
 
 Usage:
-    python -m encoder_training.plot_sweep <sweep_dir>
+    python -m analysis.encoder_sweep <sweep_dir>
 
 Reads every <sweep_dir>/*/meta.json and result.json pair. Each run writes:
   - meta.json   {index, run_name, grid: {param: value, ...}}

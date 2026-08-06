@@ -1,7 +1,7 @@
 """Reading a training checkpoint back into a runnable world and agent.
 
 Every driver that re-opens a `.pt` -- the eval CLIs, `train_phase_b_only`,
-`visualize_trajectories`, the figure pipelines, `phase_decoding_v2` -- needs the
+`analysis.trajectories`, the figure pipelines, `analysis.phase_decoding` -- needs the
 same four steps: map legacy field names onto the current schema, rebuild the
 `TrainConfig` from the saved `asdict`, replay the val-env seed sequence, and
 construct a `NavAgent` of the width that config implies. Until this module those

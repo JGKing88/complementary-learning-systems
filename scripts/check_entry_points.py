@@ -12,6 +12,13 @@ An entry point is a module with an ``if __name__ == "__main__":`` guard, outside
 imports *and* argparse construction; three scripts once died at the latter with
 a `TypeError` on an unescaped `%` in a help string.
 
+The five ``analysis/schematics/make_*.py`` have no guard at all -- their bodies
+run at import -- so the guard test skipped them entirely, which is the worst
+case: figure scripts nobody runs for months are exactly what this exists to
+catch. They are executed in full instead, with ``CLS_RUNS`` pointed at a scratch
+directory so they write nowhere real. That is stronger coverage than `--help`,
+not weaker.
+
 Usage:
     python scripts/check_entry_points.py [--list]
 """
@@ -20,8 +27,10 @@ from __future__ import annotations
 import argparse
 import ast
 import os
+import shutil
 import subprocess
 import sys
+import tempfile
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SKIP_DIRS = {"__pycache__", ".ipynb_checkpoints", ".git", "notebooks", "docs"}
@@ -50,22 +59,29 @@ def has_main_guard(path: str) -> bool:
     return False
 
 
-def find_entry_points() -> list[str]:
-    """Module paths (dotted) of every non-test module with a __main__ guard."""
-    found: list[str] = []
+# Guard-less script directories: every module here runs its body on import, so
+# it is checked by running it rather than by `--help`.
+RUN_WHOLE = ("analysis/schematics",)
+
+
+def find_entry_points() -> list[tuple[str, bool]]:
+    """(dotted module, needs_full_run) for every non-test script."""
+    found: list[tuple[str, bool]] = []
     for dirpath, dirnames, filenames in os.walk(REPO_ROOT):
         dirnames[:] = [d for d in dirnames if d not in SKIP_DIRS]
         rel_dir = os.path.relpath(dirpath, REPO_ROOT)
         parts = [] if rel_dir == "." else rel_dir.split(os.sep)
         if SKIP_PARTS & set(parts):
             continue
+        guardless_dir = rel_dir.replace(os.sep, "/") in RUN_WHOLE
         for filename in filenames:
             if not filename.endswith(".py") or filename == "__init__.py":
                 continue
             path = os.path.join(dirpath, filename)
-            if not has_main_guard(path):
+            guarded = has_main_guard(path)
+            if not guarded and not guardless_dir:
                 continue
-            found.append(".".join(parts + [filename[:-3]]))
+            found.append((".".join(parts + [filename[:-3]]), not guarded))
     return sorted(found)
 
 
@@ -77,34 +93,42 @@ def main() -> int:
 
     modules = find_entry_points()
     if args.list:
-        for m in modules:
-            print(m)
+        for m, full in modules:
+            print(f"{m}{'  (run in full: no __main__ guard)' if full else ''}")
         print(f"\n{len(modules)} entry points")
         return 0
 
-    env = dict(os.environ, MPLBACKEND="Agg")
+    scratch = tempfile.mkdtemp(prefix="cls_entrypoint_check_")
+    env = dict(os.environ, MPLBACKEND="Agg", CLS_RUNS=scratch,
+               WANDB_MODE="disabled")
     failures: list[tuple[str, str]] = []
-    for module in modules:
+    for module, needs_full_run in modules:
+        argv = [sys.executable, "-m", module] + ([] if needs_full_run else ["--help"])
         proc = subprocess.run(
-            [sys.executable, "-m", module, "--help"],
+            argv,
             cwd=REPO_ROOT, env=env, capture_output=True, text=True, timeout=300,
         )
         # A module with no argparse exits non-zero on --help, or ignores it and
         # starts working. Either is fine -- what must not happen is a failure
         # during import, which shows up as a traceback naming an import error.
         blob = proc.stdout + proc.stderr
-        broken = (
-            "ModuleNotFoundError" in blob
-            or "ImportError" in blob
-            or "AttributeError: module" in blob
-            or ("Traceback" in blob and "argparse" not in blob and proc.returncode != 0
-                and "usage:" not in blob)
-        )
-        status = "BROKEN" if broken else "ok"
+        if needs_full_run:
+            # No argparse to hide behind: it either completed or it did not.
+            broken = proc.returncode != 0
+        else:
+            broken = (
+                "ModuleNotFoundError" in blob
+                or "ImportError" in blob
+                or "AttributeError: module" in blob
+                or ("Traceback" in blob and "argparse" not in blob and proc.returncode != 0
+                    and "usage:" not in blob)
+            )
+        status = "BROKEN" if broken else ("ran" if needs_full_run else "ok")
         if broken:
             failures.append((module, blob.strip().splitlines()[-1] if blob.strip() else "?"))
         print(f"  {status:<6} {module}", flush=True)
 
+    shutil.rmtree(scratch, ignore_errors=True)
     print(f"\n{len(modules)} entry points, {len(failures)} broken")
     for module, last in failures:
         print(f"  {module}: {last}")

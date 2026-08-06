@@ -11,7 +11,7 @@ env.obs_at(pos), and the wall segments are colored the same way. A correct
 implementation places each ray's endpoint on a wall segment whose color matches
 the ray color.
 
-Run:  python -m hopfield_nav.viz_sensory  [--size 8 --obs 60 --seed 0 --out path.png]
+Run:  python -m analysis.schematics.sensory_input  [--size 8 --obs 60 --seed 0 --out path.png]
 """
 from __future__ import annotations
 
@@ -25,6 +25,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.patches import Polygon, Rectangle
 
+from cls_paths import figures_dir
 from hopfield_nav.world.env import FOVEAL_HALF_ANGLE_DEG, GridEnv
 
 NEG_COLOR = "#222222"
@@ -134,8 +135,7 @@ def main():
     args = ap.parse_args()
 
     out = args.out or os.path.join(
-        os.path.dirname(os.path.abspath(__file__)),
-        "figures",
+        str(figures_dir(ensure=True) / "schematics"),
         f"sensory_input_size{args.size}_obs{args.obs}_seed{args.seed}.png",
     )
     os.makedirs(os.path.dirname(out), exist_ok=True)

@@ -85,7 +85,7 @@ files and remembering who imports which.
 
 **(c) Distractor sampling is written four times.**
 `eval._sample_distractor_goals` (used by all evaluators and
-`visualize_trajectories` and `phase_decoding_v2`), plus three inline
+`analysis.trajectories` and `analysis.phase_decoding`), plus three inline
 `while placed < n: rx, ry = randint...; if inside env patch: continue` loops in
 `train.py:279-286` and `train_phase_a_only.py:254-261` and `:286-294`. The
 training copies and the eval copy must agree or the "training distribution

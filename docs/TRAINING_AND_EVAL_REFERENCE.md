@@ -58,7 +58,7 @@ unset CUDA_VISIBLE_DEVICES
 | `hopfield_nav/run_new_sweep.sh` | `hopfield_nav.train` ×4 | `pi_evelina9`, 2 d | edit `COMMON` in file — same `--gbook-only` breakage |
 | `hopfield_nav/pretrain_baseline_rnn.sh` | `hopfield_nav.train_rnn --mode mixed` | `mit_normal_gpu`, 2 h | edit flags in file |
 | `hopfield_nav/run_eval_all.sh` | `hopfield_nav.eval_all` per ckpt | `pi_evelina9`, 12 h | `CKPTS` array + env vars — **currently broken**, passes `--gbook-only` |
-| `hopfield_nav/run_visualize_trajectories.sh` | `hopfield_nav.visualize_trajectories` | `pi_evelina9`, 30 m | edit variables at top |
+| `analysis/run_trajectories.sh` | `analysis.trajectories` | `pi_evelina9`, 30 m | edit variables at top |
 | `analysis/continual/run_agenthash.sh` | `prep_scaffold` → N× `agenthash` → `merge_histories` → `plotting` | `pi_evelina9`, 6 h, 32 CPU | edit variables at top |
 | `analysis/continual/run_baseline.sh` | N× `baseline` → `merge_histories` → `plotting` | `pi_evelina9`, 12 h, 32 CPU | edit variables at top |
 | `analysis/continual/just_plot.sh` | `plotting` only | `mit_normal`, 2 h | edit variables |
@@ -91,7 +91,7 @@ unset CUDA_VISIBLE_DEVICES
         │  frozen encoder + VectorHash scaffold + Hopfield + GRU policy, PPO or BC
         ▼
  (3) hopfield_nav.eval_all                  → JSON + PNG per checkpoint
-     hopfield_nav.visualize_trajectories    → trajectory grids
+     analysis.trajectories    → trajectory grids
         ▼
  (4) final_plotting.{prep_scaffold,agenthash,baseline,merge_histories,plotting}
      phase_decoding_v2.{exp1,exp2,plot}     → paper figures
@@ -211,7 +211,7 @@ validates that every `GRID` key exists in `BASE`, then submits one sbatch job pe
 Cartesian-product point. Each job trains, then evaluates with `--json`, greps
 the JSON line into `result.json`, and writes `meta.json`. Output tree:
 `encoder_training/sweeps/<name>/<NNN_key=value>/`. Plot with
-`python -m encoder_training.plot_sweep <sweep_dir>` (bar chart + CSV; a 1-D
+`python -m analysis.encoder_sweep <sweep_dir>` (bar chart + CSV; a 1-D
 curve for one swept key, a heatmap for two).
 
 ---
@@ -646,7 +646,7 @@ loads the agent, and runs whichever evaluators are enabled.
   `eval_all --ckpt <dir>/<name>_update{N}.pt --output-json` and compare the
   JSON. `eval_checkpoints`' pass gate (`nav_stoch ≥ 0.7`, `store_eff ≥ 0.7`,
   `coverage ≥ 0.45`) has no replacement and was not carried over.
-- `python -m hopfield_nav.visualize_trajectories --checkpoint_dir <dir>` —
+- `python -m analysis.trajectories --checkpoint_dir <dir>` —
   rows = checkpoints (files matching `*_u{N}.pt` or `*_update{N}.pt`; files
   without an update number are skipped), cols = trials, with a fixed
   (env, start, distractor) scenario per column. `--mode combined|explore_only|

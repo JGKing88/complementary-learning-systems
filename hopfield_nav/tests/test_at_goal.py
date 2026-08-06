@@ -19,7 +19,7 @@ Sites covered (see survey in conversation 2026-05-10):
     eval.py:346,431,446,551,569,757,907,1051   tuple[int,int]
     inspect_sequential.py:56          tuple
     inspect_trajectories.py:62        tuple
-    visualize_trajectories.py:169,180,222,277,334  tuple
+    analysis/trajectories.py:169,180,222,277,334  tuple
     probe_alignment.py:107            tuple
     phase_decoding/collect_trajectory.py:100   tuple
     phase_decoding/collect.py:135     tuple
@@ -693,7 +693,7 @@ class TestAtGoalEnvDispatch:
         assert at_goal(env) is False
 
     def test_continuous_grid_env_uses_continuous_pos_not_snap(self):
-        """Regression: the visualize_trajectories bug.
+        """Regression: the analysis/trajectories.py bug.
 
         Continuous pos (3.45, 4.45) snaps to (3, 4) (= goal) but L2 distance
         to (3, 4) is sqrt(0.405) ≈ 0.636 > 0.5. The OLD behavior (using

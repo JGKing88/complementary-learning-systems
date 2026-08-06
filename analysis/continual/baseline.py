@@ -23,7 +23,7 @@ import torch
 from hopfield_nav.policy.agent_rnn import RNNAgent, compute_rnn_input_dim
 from hopfield_nav.config import EnvConfig, RNNAgentConfig, RNNBCConfig, RNNTrainConfig, VectorHashConfig
 from hopfield_nav.world.env import GridEnv
-from hopfield_nav.train_rnn import build_envs, restore_arch_from_ckpt
+from hopfield_nav.training.rnn_setup import build_envs, restore_arch_from_ckpt
 from hopfield_nav.training.rnn_sequential import UpdateResult, run_sequential_blocks
 from hopfield_nav.utils import smooth_gbook
 from hopfield_nav.world.scaffold import VectorHash

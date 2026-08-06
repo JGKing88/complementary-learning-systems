@@ -171,7 +171,7 @@ def phase_a_checkpoint(sandbox, tiny_encoder):
               "--phase_a_updates", "2", "--envs_per_world", "1",
               "--num_worlds", "1", "--num_val_envs", "2",
               # eval_every 1: the per-update checkpoint is written inside the
-              # eval branch, and visualize_trajectories only accepts files whose
+              # eval branch, and analysis.trajectories only accepts files whose
               # basename carries an update number -- it deliberately skips
               # phase_a_only_final.pt. Kept cheap by n_val_trials 1.
               "--eval_every", "1", "--n_val_trials", "1",
@@ -228,7 +228,7 @@ def test_visualize_trajectories_renders(sandbox, phase_a_checkpoint):
     root, env = sandbox
     save_dir, _ckpt = phase_a_checkpoint
     out_stem = root / "viz_smoke"
-    _run(["hopfield_nav.visualize_trajectories",
+    _run(["analysis.trajectories",
           "--checkpoint_dir", str(save_dir),
           "--mode", "combined", "--trials", "2",
           "--explore_steps", "6", "--nav_steps", "6",

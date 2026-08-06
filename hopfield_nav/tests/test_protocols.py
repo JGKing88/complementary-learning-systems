@@ -216,7 +216,7 @@ def _rnn_agent(cfg):
 
 def test_rnn_block_schedule_and_boundaries():
     """One block per env; blocks tile the step range with inclusive ends."""
-    from hopfield_nav.train_rnn import build_envs
+    from hopfield_nav.training.rnn_setup import build_envs
     from hopfield_nav.training.rnn_sequential import run_sequential_blocks
 
     cfg = _rnn_cfg(n_envs=3)
@@ -237,7 +237,7 @@ def test_rnn_block_schedule_and_boundaries():
 
 def test_rnn_untrained_envs_are_not_evaluated():
     """Untrained envs would inject pre-training noise into the forgetting curve."""
-    from hopfield_nav.train_rnn import build_envs
+    from hopfield_nav.training.rnn_setup import build_envs
     from hopfield_nav.training.rnn_sequential import run_sequential_blocks
 
     cfg = _rnn_cfg(n_envs=3)
@@ -256,7 +256,8 @@ def test_both_rnn_drivers_run_the_same_loop():
     """train_rnn and the figure driver agree step-for-step on the block
     schedule, differing only in trial count and what they record."""
     from analysis.continual.baseline import run_sequential
-    from hopfield_nav.train_rnn import build_envs, train_sequential
+    from hopfield_nav.train_rnn import train_sequential
+    from hopfield_nav.training.rnn_setup import build_envs
 
     outs = {}
     for name, fn in (("train_rnn", train_sequential), ("baseline", run_sequential)):

@@ -33,12 +33,12 @@
 #   GOAL_RADIUS      override EnvConfig.goal_radius from ckpt (default: unset → use saved value)
 #
 # Examples:
-#   CHECKPOINT_DIR=checkpoint/phase_a_only_hopeful-haze-46 MODE=combined ./run_visualize_trajectories.sh
-#   CHECKPOINT_DIR=checkpoint/phase_a_only_hopeful-haze-46 MODE=explore_only TRIALS=8 ./run_visualize_trajectories.sh
-#   CHECKPOINT_DIR=checkpoint/phase_a_only_hopeful-haze-46 MODE=exploit_only N_DISTRACTORS=10 ./run_visualize_trajectories.sh
-#   CHECKPOINT_DIR=checkpoint/phase_a_only_hopeful-haze-46 FORCE_STORE=1 UPDATES=20,100,200 ./run_visualize_trajectories.sh
+#   CHECKPOINT_DIR=checkpoint/phase_a_only_hopeful-haze-46 MODE=combined ./run_trajectories.sh
+#   CHECKPOINT_DIR=checkpoint/phase_a_only_hopeful-haze-46 MODE=explore_only TRIALS=8 ./run_trajectories.sh
+#   CHECKPOINT_DIR=checkpoint/phase_a_only_hopeful-haze-46 MODE=exploit_only N_DISTRACTORS=10 ./run_trajectories.sh
+#   CHECKPOINT_DIR=checkpoint/phase_a_only_hopeful-haze-46 FORCE_STORE=1 UPDATES=20,100,200 ./run_trajectories.sh
 #   # Also works for PPO-style runs:
-#   CHECKPOINT_DIR=checkpoints/r2_r2a_low_ent MODE=combined ./run_visualize_trajectories.sh
+#   CHECKPOINT_DIR=checkpoints/r2_r2a_low_ent MODE=combined ./run_trajectories.sh
 
 set -euo pipefail
 
@@ -78,5 +78,5 @@ ARGS=(
 [ -n "${OUT:-}" ] && ARGS+=(--out "$OUT")
 [ -n "${GOAL_RADIUS:-}" ] && ARGS+=(--goal_radius "$GOAL_RADIUS")
 
-echo "=== visualize_trajectories  mode=$MODE  ckpt_dir=$CHECKPOINT_DIR ==="
-python -m hopfield_nav.visualize_trajectories "${ARGS[@]}"
+echo "=== trajectories  mode=$MODE  ckpt_dir=$CHECKPOINT_DIR ==="
+python -m analysis.trajectories "${ARGS[@]}"

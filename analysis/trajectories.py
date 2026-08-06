@@ -33,7 +33,7 @@ and ``phase_a_u200.pt`` style runs work). Files like ``phase_a_only_final.pt``
 that lack an update number are skipped.
 
 Usage:
-    python -m hopfield_nav.visualize_trajectories \\
+    python -m analysis.trajectories \\
         --checkpoint_dir checkpoint/phase_a_only_hopeful-haze-46 \\
         --mode combined --trials 6 \\
         --explore_steps 200 --nav_steps 100 \\

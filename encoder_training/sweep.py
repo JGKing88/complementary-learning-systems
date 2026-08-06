@@ -8,7 +8,7 @@ trains the encoder (writing encoder_best.pt into the run dir) and then runs
 a comprehensive nav eval, saving result.json per run.
 
 Plot aggregated results with:
-    python -m encoder_training.plot_sweep <sweep_dir>
+    python -m analysis.encoder_sweep <sweep_dir>
 """
 from __future__ import annotations
 

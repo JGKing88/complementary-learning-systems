@@ -6,7 +6,7 @@ downward. That direction is only worth having if something checks it, because
 the way it decays is invisible -- one convenient import, and the next person
 finds a cycle they cannot break without moving three files.
 
-Three rules:
+Five rules:
 
 1. **No upward imports at module scope.** A module may import from its own
    layer or below, never above. This is what stopped `rollout.collector`
@@ -22,17 +22,31 @@ Three rules:
    `analysis/scaffold_experiments/`.
 3. **No cross-module private imports.** `from x import _y` says the author of
    `x` did not mean `_y` to be depended on. Either it is public or it is not.
+4. **Figure code lives in `analysis/`.** A module-scope `import matplotlib`
+   outside `analysis/` means a figure generator is sitting in a library
+   package. Phase 6 initially left three there — `visualize_trajectories`,
+   `viz_sensory` and `encoder_training/plot_sweep` — because they were sorted
+   by "has a `__main__` guard" rather than by what they produce. This rule is
+   the reason that cannot recur.
+5. **Nothing imports a CLI.** The layer-7 modules are programs. When
+   `analysis/continual/baseline.py` imported `build_envs` out of `train_rnn`,
+   the figure pipeline depended on a training entry point while `train_rnn`
+   deferred an import back into `analysis.continual` — a mutual dependency that
+   rules 1–3 all permit, because 8 → 7 is downward and the 7 → 8 edge was
+   declared. Shared setup goes in `training/`, which is what
+   `training/rnn_setup.py` and `training/world_setup.py` are for.
 
 The layer numbers are the whole specification; a new package that is not in the
 table fails rule 1 loudly rather than being silently exempt.
 
-`tests/` is exempt from all three: a characterization test that pins
+`tests/` is exempt from all five: a characterization test that pins
 `env._at_goal_l2` is doing its job, and a test importing across layers is not a
 dependency anything ships.
 
-Each rule is mutation-verified: an upward import in `world/env.py`, an
-`encoder_training -> hopfield_nav` import, and a private import from a lower
-layer each fail exactly one of the three.
+Every rule is mutation-verified -- an upward import in `world/env.py`, an
+`encoder_training -> hopfield_nav` import, a private import from a lower layer,
+a module-scope matplotlib import in `train.py`, and an `analysis -> train_rnn`
+import each fail exactly the rule they should, and nothing else.
 """
 from __future__ import annotations
 
@@ -60,18 +74,18 @@ LAYERS: dict[str, int] = {
     "hopfield_nav.evaluation": 5,      # metrics, rnn, protocols, batched, checkpoint_io
     "hopfield_nav.training": 6,        # world_setup, rnn_sequential
 
-    # The CLIs. They wire the layers together and nothing may import them.
+    # The CLIs. They wire the layers together; rule 5 keeps them unimported.
     "hopfield_nav.train": 7,
     "hopfield_nav.train_phased": 7,
     "hopfield_nav.train_phase_a_only": 7,
     "hopfield_nav.train_phase_b_only": 7,
     "hopfield_nav.train_rnn": 7,
     "hopfield_nav.eval_all": 7,
-    "hopfield_nav.visualize_trajectories": 7,
-    "hopfield_nav.viz_sensory": 7,
 
     "analysis": 8,                     # figure + experiment pipelines
 }
+
+CLI_LAYER = 7
 
 # `hopfield_nav` itself is only the namespace package; a bare `import
 # hopfield_nav` carries no dependency.
@@ -83,6 +97,17 @@ SKIP_DIRS = {"__pycache__", ".ipynb_checkpoints", ".git", "docs", "tests"}
 # every entry here is a thing phase 6 was supposed to promote or inline. Add a
 # row only with a reason, and prefer fixing the import.
 PRIVATE_IMPORT_ALLOWLIST: set[tuple[str, str, str]] = set()
+
+# Packages exempt from rule 4 (figure code lives in analysis/).
+#
+# `cls` is the legacy research library phase 7 retires. Eight of its modules
+# import matplotlib at module scope, including `cls/eval/nav_eval.py`, which is
+# *live* -- `encoder_training/evaluate.py` imports it, so every encoder nav-eval
+# drags the figure stack in. Refactoring a package that is about to be deleted
+# is not worth it; absorbing those six live functions into `gridcode/` and
+# `encoder_training/nav_eval/` is phase 7's job, and this exemption goes away
+# with the package.
+FIGURE_RULE_EXEMPT = ("cls",)
 
 # (importer, target) pairs allowed to import upward *inside a function body*.
 # Each one is a deliberate inversion: the lower layer hands off to the higher
@@ -215,6 +240,59 @@ def test_encoder_training_never_imports_hopfield_nav():
                 violations.append(f"{path}:{lineno}  imports {target}")
     assert not violations, (
         "encoder_training reaches into hopfield_nav:\n  " + "\n  ".join(violations)
+    )
+
+
+def test_figure_code_lives_in_analysis():
+    """A module-scope matplotlib import outside `analysis/` is misplaced.
+
+    Lazy imports inside a plotting function are fine and are what the library
+    does: `eval_all` draws five optional figures that way, and `train_rnn`
+    defers its forgetting plot. What this catches is a *figure generator* filed
+    under a library package because it happened to have a `__main__` guard —
+    which is how `visualize_trajectories`, `viz_sensory` and
+    `encoder_training/plot_sweep` were left behind by the phase-6 move.
+    """
+    violations = []
+    for mod, path, tree in _iter_modules():
+        if mod.startswith("analysis"):
+            continue
+        if any(mod == e or mod.startswith(e + ".") for e in FIGURE_RULE_EXEMPT):
+            continue
+        for node in tree.body:
+            names = []
+            if isinstance(node, ast.Import):
+                names = [a.name for a in node.names]
+            elif isinstance(node, ast.ImportFrom):
+                names = [node.module or ""]
+            if any(n.split(".")[0] == "matplotlib" for n in names):
+                violations.append(f"{path}:{node.lineno}  imports matplotlib at module scope")
+    assert not violations, (
+        "figure generators outside analysis/ (move them, or make the import "
+        "lazy if the module is a library):\n  " + "\n  ".join(sorted(violations))
+    )
+
+
+def test_nothing_imports_a_cli():
+    """Layer-7 modules are programs; importing one couples you to a CLI.
+
+    Rules 1-3 do not catch this: a layer-8 module importing layer 7 is a
+    *downward* import and therefore legal. But it is how `analysis.continual`
+    and `hopfield_nav.train_rnn` ended up mutually dependent. Tests are exempt
+    (`SKIP_DIRS`), so `test_protocols.py` may still reach for
+    `train_rnn.train_sequential`.
+    """
+    clis = {m for m, layer in LAYERS.items() if layer == CLI_LAYER}
+    violations = []
+    for mod, path, tree in _iter_modules():
+        if mod in clis:
+            continue
+        for target, _names, lineno in _imports(mod, tree):
+            if target in clis or any(target.startswith(c + ".") for c in clis):
+                violations.append(f"{path}:{lineno}  {mod} imports the CLI {target}")
+    assert not violations, (
+        "modules importing a CLI (move the shared part into training/):\n  "
+        + "\n  ".join(sorted(violations))
     )
 
 

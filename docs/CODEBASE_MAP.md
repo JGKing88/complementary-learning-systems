@@ -13,8 +13,12 @@ wins and the disagreement is listed in [Known drift](#known-drift-and-landmines)
 > `rollout/rollout_rnn/signal/oracle_bfs` -> `rollout/{collector,rnn,signal,oracles}`,
 > `ppo/bc/bc_rnn` -> `updates/`, `eval/eval_rnn` -> `evaluation/{metrics,rnn}`,
 > `encoder.py` -> `encoder_io.py`, and `final_plotting`/`phase_decoding_v2`/`figures`
-> out to top-level `analysis/{continual,phase_decoding,schematics}`.
-> `hopfield_nav/tests/test_layering.py` now enforces the layer order.
+> out to top-level `analysis/{continual,phase_decoding,schematics}`. The three
+> figure generators that the first pass left behind followed:
+> `visualize_trajectories` -> `analysis/trajectories.py`, `viz_sensory` ->
+> `analysis/schematics/sensory_input.py`, `encoder_training/plot_sweep` ->
+> `analysis/encoder_sweep.py`. `hopfield_nav/tests/test_layering.py` enforces
+> the layer order and four other rules.
 
 Companion docs:
 - [TRAINING_AND_EVAL_REFERENCE.md](TRAINING_AND_EVAL_REFERENCE.md) — how every
@@ -74,14 +78,14 @@ is always loaded frozen (`hopfield_nav/encoder_io.py:50` `requires_grad_(False)`
 |---|---|---|---|
 | `cls/` | package | mostly legacy, narrowly live | Original VectorHash research library. Live code uses only a handful of functions (§5). |
 | `encoder_training/` | package | live | Encoder architecture, contrastive training, nav-eval, sweeps. |
-| `hopfield_nav/` | package | live | Layered since phase 6: `world/` (env, vec_env, scaffold, memory, episode), `policy/`, `rollout/`, `updates/`, `evaluation/`, `training/`, plus the seven CLIs at the top level. |
-| `analysis/` | package | live | Figure and experiment pipelines, moved out of `hopfield_nav` in phase 6: `continual/` (was `final_plotting`), `phase_decoding/` (was `phase_decoding_v2`), `schematics/` (was `figures`), `scaffold_experiments/` (was `encoder_training/experiments`). Nothing may import it — see `hopfield_nav/tests/test_layering.py`. |
+| `hopfield_nav/` | package | live | Layered since phase 6: `world/` (env, vec_env, scaffold, memory, episode), `policy/`, `rollout/`, `updates/`, `evaluation/`, `training/`, plus the six CLIs at the top level. |
+| `analysis/` | package | live | Figure and experiment pipelines, moved out of `hopfield_nav` in phase 6: `continual/` (was `final_plotting`), `phase_decoding/` (was `phase_decoding_v2`), `schematics/` (was `figures`), `scaffold_experiments/` (was `encoder_training/experiments`). Nothing may import it, and nothing outside it may import matplotlib at module scope — see `hopfield_nav/tests/test_layering.py`. |
 | `tests/` | tests | legacy | Only exercises `cls.*` (`GridWMEnv`, `cls.utils.GridUtils.VectorHash`, `cls.encoder`, `cls.hopfield`). Nothing here covers `hopfield_nav` or `encoder_training`. |
 | `hopfield_nav/tests/` | tests | live | The suite. Run it with `./run_tests.sh` (phase 0 added the runner and `[tool.pytest.ini_options]`). 312 passing as of phase 6, including golden regression fixtures, the at-goal contract spec, four entry-point smoke tests, and the layering test. |
 | ~~`notebooks/`~~ | — | archived | Moved to `$CLS_RUNS/archive/notebooks/` in phase 6 (52 MB of Nov 2025 – Apr 2026 exploration that predates `encoder_training/`). |
 | `docs/` | docs | live | `coordinate_conventions.md`, these three files, `REFACTOR_STATUS.md`, and `archive/` (the nine `hopfield_nav/*.md` experiment logs). |
 | `run.sh`, `sweep_cosine_width.py` | scripts | legacy | Root sbatch runner points at `sweep_cosine_width.py` (a `cls`-only cosine-width sweep). Phase 7 archives both. `launch_jupyter.sh` went with the notebooks. |
-| `scripts/` | scripts | live | `cls_env.sh` (shell counterpart of `cls_paths.py`), `migrate_outputs_to_pool.sh`, `check_entry_points.py`. |
+| `scripts/` | scripts | live | `cls_env.sh` (shell counterpart of `cls_paths.py`), `migrate_outputs_to_pool.sh`, `check_entry_points.py` (runs all 30 entry points; the five guard-less `analysis/schematics/make_*.py` are executed in full against a scratch `CLS_RUNS`). |
 | `checkpoint/`, `checkpoints/`, `checkpoint_rnn/`, `encoders/`, `wandb/`, `plots/`, `images/`, `npos_sweep/`, `displacement_plots/`, `smoke_pd2/`, `smoke_seq/` | outputs | symlinks | Moved to `$CLS_RUNS` in phase 1; what remains in the tree is a symlink under the old name so paths saved in old checkpoints keep resolving (§6). |
 
 Package installability: `pyproject.toml` declares only `cls` as a package
@@ -215,10 +219,10 @@ GRU state:
 decoder, Hopfield energy landscape, memory storage, store mechanism). Pure
 illustration; they do not read checkpoints.
 
-**`visualize_trajectories.py`** — a checkpoints × trials grid of actual
+**`analysis/trajectories.py`** — a checkpoints × trials grid of actual
 trajectories, in `combined` / `explore_only` / `exploit_only` mode.
 
-**`viz_sensory.py`** — visualizes the foveal sensory codebook.
+**`analysis/schematics/sensory_input.py`** — visualizes the foveal sensory codebook.
 
 ---
 
@@ -234,7 +238,7 @@ trajectories, in `combined` / `explore_only` / `exploit_only` mode.
 | `evaluate.py` | Thin wrapper that delegates to `cls.eval.nav_eval`. |
 | `evaluate_nav.py` | Standalone nav eval of a saved encoder checkpoint (16 flags, optional JSON line for sweeps). |
 | `sweep.py` | Cartesian-product SLURM sweep driver — **edit `BASE`/`GRID`/`EVAL`/`SLURM` dicts in the file**, then `python -m encoder_training.sweep [name]`. |
-| `plot_sweep.py` | Aggregates `meta.json` + `result.json` per run → bar chart, CSV, 1-D curve or 2-D heatmap. |
+| ~~`plot_sweep.py`~~ | Moved to `analysis/encoder_sweep.py` (it draws figures). Aggregates `meta.json` + `result.json` per run → bar chart, CSV, 1-D curve or 2-D heatmap. |
 | `save_untrained_encoder.py` | Writes a randomly-initialized encoder in the same checkpoint format (the untrained-encoder control). |
 | `trajectory.py`, `viz.py` | Exploratory single-trajectory rollouts and similarity/unique-radius plots. |
 | `experiments/encoder_scaffold.py` | Replaces VectorHash's random-projection place layer with a tap into the trained encoder (`p = encoder(g)` at hidden layer *k*), pseudo-inverse `Wgp`/`Wsp`/`Wps`, and compares grid recovery + observation bit-error against the canonical scaffold under observation noise. |

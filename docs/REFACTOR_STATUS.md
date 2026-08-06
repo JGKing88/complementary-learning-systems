@@ -58,27 +58,35 @@ hopfield_nav/
   training/    world_setup rnn_sequential
   tests/
   train.py train_phased.py train_phase_a_only.py train_phase_b_only.py
-  train_rnn.py eval_all.py visualize_trajectories.py viz_sensory.py
+  train_rnn.py eval_all.py                        <- the six CLIs
 analysis/
   continual/ phase_decoding/ schematics/ scaffold_experiments/
 encoder_training/
 cls/                                        legacy, retired in phase 7
 ```
 
-`hopfield_nav/tests/test_layering.py` enforces three rules by AST walk: no
-upward imports at module scope, `encoder_training` never imports
-`hopfield_nav`, and no `_`-prefixed name crosses a module boundary. `tests/` is
-exempt. A function-scoped upward import needs a row in
+`hopfield_nav/tests/test_layering.py` enforces five rules by AST walk: no
+upward imports at module scope; `encoder_training` never imports
+`hopfield_nav`; no `_`-prefixed name crosses a module boundary; no module-scope
+`import matplotlib` outside `analysis/` (that means a figure generator is filed
+in a library package); and nothing imports a CLI. `tests/` is exempt from all
+five, and `cls/` from the matplotlib rule until phase 7 deletes it. A function-scoped upward import needs a row in
 `DEFERRED_UPWARD_IMPORTS` (one entry: `train_rnn` → `analysis.continual.plotting`,
 so matplotlib is not an import-time dependency of every training job), and the
 test fails if that list goes stale. Two further tests fail if a new package has
 no layer, so the table cannot be dodged by adding a directory.
 
-**Invocation changed only for the analysis pipelines.** The seven CLIs are still
+**Invocation changed only for the analysis pipelines.** The six CLIs are still
 `python -m hopfield_nav.train_phase_a_only` etc.; every sbatch driver and
-`run_phase_a_sweep_evelina.sh`'s 101 variants are untouched. But
-`hopfield_nav.final_plotting.X` → `analysis.continual.X` and
-`hopfield_nav.phase_decoding_v2.X` → `analysis.phase_decoding.X`.
+`run_phase_a_sweep_evelina.sh`'s 101 variants are untouched. What moved:
+
+| was | is |
+|---|---|
+| `hopfield_nav.final_plotting.X` | `analysis.continual.X` |
+| `hopfield_nav.phase_decoding_v2.X` | `analysis.phase_decoding.X` |
+| `hopfield_nav.visualize_trajectories` | `analysis.trajectories` |
+| `hopfield_nav.viz_sensory` | `analysis.schematics.sensory_input` |
+| `encoder_training.plot_sweep` | `analysis.encoder_sweep` |
 
 ---
 
@@ -155,7 +163,7 @@ on these points.**
   gate; `eval_all --output-json` gives the same numbers, but nothing scores
   them. Re-add it as a small script over the JSON if you want it back.
 - **Phase A writes its numbered checkpoint inside the eval branch**, and
-  `visualize_trajectories` skips files whose basename lacks an update number.
+  `analysis.trajectories` skips files whose basename lacks an update number.
   At a large `--eval_every` only `phase_a_only_final.pt` exists, and the run
   cannot be visualized at all. Found by the smoke-test fixture; unrelated to
   the refactor and unfixed.
