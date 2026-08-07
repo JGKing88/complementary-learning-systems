@@ -110,6 +110,98 @@ def toroidal_gap(off_a, size_a: int, off_b, size_b: int, period: int) -> int:
     )
 
 
+def _lattice_pitch(domain: dom.PlaceDomain, size: int, Npos: int, margin: int,
+                   n_needed: int, period: int):
+    """The most generous lattice that still holds ``n_needed`` envs.
+
+    Starts at the tightest legal pitch (``size + margin``) and widens while the
+    lattice still fits what was asked for, so leftover room becomes spacing
+    rather than being wasted. Returns ``(pitch, xs, ys)`` or ``None``.
+    """
+    x_lo, y_lo, x_hi, y_hi = domain.bounds(size, Npos)
+    best = None
+    pitch = size + margin
+    while pitch <= max(x_hi - x_lo, y_hi - y_lo) + 1:
+        xs = _axis_slots(x_lo, x_hi, pitch, size, margin, period)
+        ys = _axis_slots(y_lo, y_hi, pitch, size, margin, period)
+        if len(xs) * len(ys) < n_needed:
+            break
+        best = (pitch, xs, ys)
+        pitch += 1
+    return best
+
+
+def _axis_slots(lo: int, hi: int, pitch: int, size: int, spacing: int,
+                period: int) -> list[int]:
+    """Lattice coordinates along one axis, with the wrap taken into account.
+
+    ``range(lo, hi+1, pitch)`` is not a valid lattice on a torus: when the
+    domain spans the period, the last slot is adjacent to the first. At
+    ``Npos=132, pitch=41`` the slots are 0/41/82/123, and 123 is **9** cells from
+    0, not 123 -- so the "lattice" silently violates its own spacing at exactly
+    one pair, which is enough to starve the placement loop. Drop trailing slots
+    until the seam clears.
+    """
+    vals = list(range(lo, hi + 1, pitch))
+    while len(vals) > 1 and axis_separation(
+            vals[-1], size, vals[0], size, period) < spacing:
+        vals.pop()
+    return vals
+
+
+def _lattice_places(
+    domain: dom.PlaceDomain, rng, n: int, *, size: int, Npos: int, period: int,
+    exclude, margin: int, self_margin: int,
+) -> list[tuple[int, int]] | None:
+    """Deterministic fallback for dense packings.
+
+    Rejection sampling finds a free spot easily when the region is mostly empty
+    and hardly ever when it is mostly full -- and "a packing exists" (which is
+    what the capacity preflight checks) is not the same as "uniform probing will
+    stumble onto one". At 15 envs in a 25-slot region the free area is a few
+    percent of the search space and 20k probes routinely miss.
+
+    So: lay down a lattice, shuffle the slots, and take the first ``n`` that
+    clear ``exclude``. Jitter within whatever slack the chosen pitch left, which
+    keeps offsets off a perfectly regular grid when there is room to spare and
+    degrades to an exact lattice when there is not. Same shape as the historical
+    ``spread_offsets``, which is what training placement has always looked like.
+    """
+    # The lattice has to satisfy whichever constraint binds: clearance from
+    # `exclude` (margin) and mutual clearance among the envs drawn here
+    # (self_margin) are separate parameters, and a lattice pitched for only one
+    # of them fails the other on nearly every slot.
+    spacing = max(int(margin), int(self_margin))
+    found = _lattice_pitch(domain, size, Npos, spacing, n, period)
+    if found is None:
+        return None
+    pitch, xs, ys = found
+    slack = max(0, (pitch - size - spacing) // 2)
+    slots = [(x, y) for x in xs for y in ys]
+    order = rng.permutation(len(slots))
+    placed: list[tuple[int, int]] = []
+    x_lo, y_lo, x_hi, y_hi = domain.bounds(size, Npos)
+    for idx in order:
+        if len(placed) >= n:
+            break
+        bx, by = slots[idx]
+        for _ in range(8):                      # a few jitter tries, then plain
+            jx = int(rng.randint(-slack, slack + 1)) if slack else 0
+            jy = int(rng.randint(-slack, slack + 1)) if slack else 0
+            cand = (min(max(bx + jx, x_lo), x_hi), min(max(by + jy, y_lo), y_hi))
+            if not domain.contains(cand, size, Npos):
+                continue
+            if any(toroidal_gap(cand, size, o, s, period) < margin
+                   for o, s in exclude):
+                continue
+            if any(toroidal_gap(cand, size, p, size, period) < self_margin
+                   for p in placed):
+                continue
+            placed.append(cand)
+            break
+    return placed if len(placed) == n else None
+
+
 def sample_places(
     domain: dom.PlaceDomain, rng, n: int, *, size: int, Npos: int, period: int,
     exclude: list[tuple[tuple[int, int], int]] = (), margin: int = 0,
@@ -132,12 +224,20 @@ def sample_places(
     while len(placed) < n:
         attempts += 1
         if attempts > max_attempts:
+            # Dense packing: probing is the wrong tool, lay a lattice instead.
+            fallback = _lattice_places(
+                domain, rng, n, size=size, Npos=Npos, period=period,
+                exclude=exclude, margin=margin, self_margin=self_margin)
+            if fallback is not None:
+                return fallback
             raise RuntimeError(
-                f"placed only {len(placed)}/{n} envs of size {size} in {domain!r} "
-                f"after {max_attempts} attempts (margin={margin}, "
-                f"self_margin={self_margin}, Npos={Npos}). Capacity estimate is "
-                f"{domain.capacity(size, margin, Npos)}. Raise Npos, enlarge the "
-                f"region, lower the margin, or ask for fewer envs."
+                f"could not place {n} envs of size {size} in {domain!r} "
+                f"(margin={margin}, self_margin={self_margin}, Npos={Npos}): "
+                f"{len(placed)} by rejection sampling in {max_attempts} "
+                f"attempts, and no lattice of that pitch fits either. Capacity "
+                f"estimate is "
+                f"{domain.capacity(size, max(margin, self_margin), Npos)}. Raise Npos, "
+                f"enlarge the region, lower the margin, or ask for fewer envs."
             )
         cand = domain.candidate(rng, size, Npos)
         if not domain.contains(cand, size, Npos):
@@ -356,14 +456,18 @@ def generate_split(
     val_seeds = domains.wall.sample(wall_rng, n_val, exclude=frozenset(train_seeds))
 
     place_rng = dom.trait_rng(seed, "place", role="split")
-    # Train envs are margin-separated from each other too -- see the preflight
-    # note above. Without a common basis the joint packing has no feasibility
-    # guarantee and the val draw can be starved by an unlucky train layout.
-    train_off = sample_places(domains.place, place_rng, n_train, size=size,
-                              Npos=Npos, period=period, self_margin=margin)
-    val_off = sample_places(
-        domains.place, place_rng, n_val, size=size, Npos=Npos, period=period,
-        exclude=[(o, size) for o in train_off], margin=margin, self_margin=0)
+    # One draw for train *and* val, split afterwards. Placing them in two calls
+    # -- train first, then val excluding train -- looks equivalent and is not:
+    # the train envs land wherever they like and can leave no legal slot for the
+    # val envs at all. At size 8, margin 20, Npos 132, each placed env blocks a
+    # 48x48 zone, so twelve of them cover 27648 cells of a 17424-cell scaffold.
+    # Drawing all of them against one another makes train<->val separation a
+    # property of the draw rather than something checked afterwards, and makes
+    # the capacity preflight exactly the right condition.
+    all_off = sample_places(domains.place, place_rng, n_train + n_val,
+                            size=size, Npos=Npos, period=period,
+                            self_margin=margin)
+    train_off, val_off = all_off[:n_train], all_off[n_train:]
 
     train_cells, val_cells = sorted(cells_train), sorted(cells_val)
     train_goals = [train_cells[i] for i in

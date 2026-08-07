@@ -429,3 +429,71 @@ def test_diagnostics_report_but_do_not_gate(field, env_cfg, domains):
     assert len(c["per_env_max"]) == len(a.base_val)
     assert -1.0 <= c["max"] <= 1.0
     assert a.diagnostics["min_place_gap"] >= a.margin
+
+
+# ---------------------------------------------------------------------------
+# Dense packing -- the case unit tests with room to spare kept missing
+# ---------------------------------------------------------------------------
+
+@pytest.fixture(scope="module")
+def wide_field():
+    """Npos=132, big enough that a margin can actually bind."""
+    vh = VectorHash(VectorHashConfig(lambdas=[11, 12], static_vectorhash=True))
+    vh.build_scaffold()
+    torch.manual_seed(0)
+    enc = torch.nn.Linear(vh.Ng, 16)
+    enc.eval()
+    vh.precompute_encoded_phi(enc, 0.25, device="cpu")
+    return vh
+
+
+def test_dense_packing_still_places_everything(wide_field):
+    """15 envs at margin 20 on Npos=132 -- most of the scaffold is excluded.
+
+    Every placed env blocks a (size + 2*margin)^2 zone, so twelve of them cover
+    27648 cells of a 17424-cell scaffold. Uniform rejection sampling cannot find
+    the remaining slots; the lattice fallback has to.
+    """
+    env_cfg = EnvConfig(size=8, observation_size=OBS)
+    domains = TraitDomains(dom.Anywhere(), dom.SeedRange(0, 10_000_000),
+                           dom.AnyCells(), dom.Sizes((8,)))
+    split = gen.generate_split(wide_field, env_cfg, domains, 12, 3,
+                               seed=42, margin=20)
+    assert len(split.train) == 12 and len(split.base_val) == 3
+    gen.verify_split(split, env_cfg)
+
+
+def test_lattice_slots_clear_the_torus_seam():
+    """A lattice on a torus must not let its last slot touch its first.
+
+    At Npos=132, pitch=41 the naive slots are 0/41/82/123 -- and 123 is 9 cells
+    from 0, not 123. That single wrapped pair silently violates the spacing the
+    lattice exists to guarantee.
+    """
+    naive = list(range(0, 125, 41))
+    assert naive == [0, 41, 82, 123]
+    assert gen.axis_separation(123, 8, 0, 8, 132) == 1      # the seam
+    slots = gen._axis_slots(0, 124, 41, size=8, spacing=20, period=132)
+    assert slots == [0, 41, 82]
+    for a in slots:
+        for b in slots:
+            if a != b:
+                assert gen.axis_separation(a, 8, b, 8, 132) >= 20
+
+
+def test_held_out_val_is_disjoint_on_every_trait(wide_field):
+    """The property the whole design exists for, stated once, at scale."""
+    env_cfg = EnvConfig(size=8, observation_size=OBS)
+    domains = TraitDomains(dom.Anywhere(), dom.SeedRange(0, 10_000_000),
+                           dom.AnyCells(), dom.Sizes((8,)))
+    split = gen.generate_split(wide_field, env_cfg, domains, 12, 3,
+                               seed=42, margin=20)
+    vs = gen.make_val_set(split, 5, {"place": "held_out", "wall": "held_out",
+                                     "goal": "held_out"}, seed=99)
+    assert not {v.wall_seed for v in vs} & split.used["wall"]
+    assert not {v.offset for v in vs} & split.used["place"]
+    assert not {v.goal for v in vs} & split.used["goal"]
+    for v in vs:
+        for o in split.used["place"]:
+            assert gen.toroidal_gap(v.offset, v.size, o, v.size,
+                                    split.period) >= split.margin
