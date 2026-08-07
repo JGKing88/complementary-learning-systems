@@ -109,7 +109,7 @@ def eval_checkpoint(
     torch.manual_seed(0)
     np.random.seed(0)
 
-    val_envs, vh, val_idxs = build_eval_world(cfg, encoder, str(device))
+    val_envs, vh, val_offsets = build_eval_world(cfg, encoder, str(device))
     agent = load_agent(cfg, ck["agent_state_dict"], embed_dim, device)
 
     results: dict = {
@@ -129,13 +129,13 @@ def eval_checkpoint(
         "num_val_envs": cfg.num_val_envs,
         "movement_mode": cfg.env.movement_mode,
         "lock_store_after_goal": bool(lock_store_after_goal),
-        "scaffold_layout": scaffold_layout_dict(cfg, vh, val_envs, val_idxs),
+        "scaffold_layout": scaffold_layout_dict(cfg, vh, val_envs, val_offsets),
     }
 
     print(f"  [nav_det]   num_trials={num_trials} max_steps={max_steps} "
           f"dist={n_distractors}", flush=True)
     nav_det = evaluate_navigation(
-        agent, val_envs, vh, val_idxs, cfg, device,
+        agent, val_envs, vh, val_offsets, cfg, device,
         num_trials=num_trials, max_steps=max_steps,
         n_distractors_list=n_distractors, deterministic=True,
     )
@@ -145,7 +145,7 @@ def eval_checkpoint(
         print(f"  [nav_stoch] num_trials={num_trials} max_steps={max_steps} "
               f"dist={n_distractors}", flush=True)
         nav_stoch = evaluate_navigation(
-            agent, val_envs, vh, val_idxs, cfg, device,
+            agent, val_envs, vh, val_offsets, cfg, device,
             num_trials=num_trials, max_steps=max_steps,
             n_distractors_list=n_distractors, deterministic=False,
         )
@@ -154,7 +154,7 @@ def eval_checkpoint(
     print(f"  [discovery] num_trials={num_trials} max_steps={max_steps} "
           f"dist={n_distractors}", flush=True)
     disc = evaluate_goal_discovery(
-        agent, val_envs, vh, val_idxs, cfg, device,
+        agent, val_envs, vh, val_offsets, cfg, device,
         num_trials=num_trials, max_steps=max_steps,
         n_distractors_list=n_distractors,
     )
@@ -163,7 +163,7 @@ def eval_checkpoint(
     print(f"  [explore]   num_trials={num_trials} max_steps={max_steps} "
           f"dist={n_distractors}", flush=True)
     expl = evaluate_exploration(
-        agent, val_envs, vh, val_idxs, cfg, device,
+        agent, val_envs, vh, val_offsets, cfg, device,
         num_trials=num_trials, max_steps=max_steps,
         n_distractors_list=n_distractors,
     )
@@ -173,7 +173,7 @@ def eval_checkpoint(
         print(f"  [realistic] steps_per_env={realistic_steps} "
               f"n_envs={cfg.num_val_envs}", flush=True)
         real = evaluate_realistic(
-            agent, val_envs, vh, val_idxs, cfg, device,
+            agent, val_envs, vh, val_offsets, cfg, device,
             steps_per_env=realistic_steps,
             seed=cfg.seed + realistic_seed_offset,
             deterministic=True,
@@ -198,7 +198,7 @@ def eval_checkpoint(
         print(f"  [repeat]    n_trials={repeat_trials} steps_per_env={repeat_steps} "
               f"n_envs={cfg.num_val_envs}", flush=True)
         rep = evaluate_repeat(
-            agent, val_envs, vh, val_idxs, cfg, device,
+            agent, val_envs, vh, val_offsets, cfg, device,
             n_trials=repeat_trials,
             steps_per_env=repeat_steps,
             seed=cfg.seed + repeat_seed_offset,
@@ -213,7 +213,7 @@ def eval_checkpoint(
         print(f"  [sequential] iters_per_block={seq_iters_per_block} "
               f"max_steps={seq_max_steps} n_envs={cfg.num_val_envs}", flush=True)
         seq = evaluate_sequential_episodes(
-            agent, val_envs, vh, val_idxs, cfg, device,
+            agent, val_envs, vh, val_offsets, cfg, device,
             iters_per_block=seq_iters_per_block,
             max_steps=seq_max_steps,
             seed=cfg.seed + seq_seed_offset,

@@ -31,7 +31,7 @@ from .training.rnn_sequential import UpdateResult, run_sequential_blocks
 from .training.rnn_setup import build_envs, restore_arch_from_ckpt
 from .utils import smooth_gbook
 from .world.vec_env import ContinuousVecEnv, VecEnv, make_vec
-from .world.scaffold import VectorHash
+from .world.scaffold import VectorHash, place_envs
 
 
 def _make_vec(env: GridEnv, batch: int, movement_mode: str,
@@ -200,11 +200,11 @@ def train(cfg: RNNTrainConfig) -> None:
     gbook_dim = 0
     if cfg.agent.input_grid_state:
         vh_cfg = VectorHashConfig(lambdas=list(cfg.lambdas), static_vectorhash=True)
-        vh = VectorHash(vh_cfg, size=cfg.env.size)
+        vh = VectorHash(vh_cfg)
         vh.build_scaffold()
-        vh.register_envs(envs, placement="spread")
+        env_offsets = place_envs(len(envs), cfg.env.size, vh.Npos,
+                                 np.random, placement="spread")
         sgb = smooth_gbook(vh.gbook, vh.lambdas, cfg.fwhm_ratio)
-        env_offsets = list(vh.env_offsets)
         gbook_dim = int(vh.Ng)
         print(f"grid_state on  Ng={gbook_dim}  Npos={vh.Npos}  "
               f"lambdas={vh.lambdas}  fwhm_ratio={cfg.fwhm_ratio}")

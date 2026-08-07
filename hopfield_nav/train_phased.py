@@ -43,7 +43,8 @@ from .policy.agent import NavAgent, compute_input_dim
 from .rollout.collector import RolloutCollector
 from .updates.ppo import ppo_update
 from .training.world_setup import (
-    do_eval, make_hops, set_phase_freeze, setup_world, store_params,
+    build_field, do_eval, make_hops, set_phase_freeze, setup_world,
+    store_params,
 )
 
 
@@ -65,10 +66,10 @@ def collect_one_update(
     """
     rollouts = []
     for w_idx, world in enumerate(worlds):
-        vh = world["vectorhash"]
+        vh = world.field
         collector = RolloutCollector(vh, cfg, embed_dim, device)
-        for local_idx, env in enumerate(world["envs"]):
-            env_offset = vh.env_offsets[world["env_indices"][local_idx]]
+        for local_idx, env in enumerate(world.envs):
+            env_offset = world.offsets[local_idx]
             hops = phase_hops(w_idx, local_idx)
             rollout = collector.collect_rollout(
                 env, agent, hops, h_rnn=None, env_offset=env_offset,
@@ -210,7 +211,7 @@ def run_ppo_phase(
         shared_per_env = {}
         for w_idx, world in enumerate(worlds):
             shared_per_env[w_idx] = make_hops(
-                hopfield_role, cfg, world["vectorhash"], world["envs"],
+                hopfield_role, cfg, world,
                 embed_dim, device, cfg.batch_envs,
             )
 
@@ -272,9 +273,15 @@ def train_phased(cfg: TrainConfig, pcfg: PhasedConfig) -> None:
     if cfg.hopfield.beta is None:
         cfg.hopfield.beta = float(encoder_gain)
 
-    worlds = [setup_world(cfg, encoder, embed_dim, rng, role="train")
+    # One scaffold field for the whole run. It is a pure function of
+    # (lambdas, Npos, fwhm_ratio, encoder), so the per-world copies this used
+    # to build were bit-identical -- and 12 GB each at Npos=1716.
+    field = build_field(cfg, encoder)
+    worlds = [setup_world(cfg, encoder, embed_dim, rng, role="train",
+                          field=field)
               for _ in range(cfg.num_worlds)]
-    eval_world = setup_world(cfg, encoder, embed_dim, rng, role="eval")
+    eval_world = setup_world(cfg, encoder, embed_dim, rng, role="eval",
+                             field=field)
 
     input_dim = compute_input_dim(cfg.agent, embed_dim, cfg.env.observation_size)
     print(f"Agent input_dim={input_dim} (enrichment: "

@@ -40,7 +40,7 @@ from hopfield_nav.evaluation.checkpoint_io import (
 )
 from .baseline import merge_iter_traces
 from hopfield import Hopfield
-from hopfield_nav.world.scaffold import VectorHash
+from hopfield_nav.world.scaffold import VectorHash, place_envs
 
 
 def _load_scaffold_cache(vh: VectorHash, cache_dir: str, cfg, *,
@@ -196,7 +196,7 @@ def run_sequential(
     agent: NavAgent,
     val_envs: list[GridEnv],
     vectorhash: VectorHash,
-    val_idxs: list[int],
+    env_offsets: list[tuple[int, int]],
     cfg,
     device: torch.device,
     iters_per_block: int,
@@ -239,7 +239,7 @@ def run_sequential(
             inner: dict[int, dict] = {}
             for j in range(i + 1):
                 env_j = val_envs[j]
-                env_offset_j = vectorhash.env_offsets[val_idxs[j]]
+                env_offset_j = env_offsets[j]
                 allow_store = (j == i)
                 reached, stg, ptg, sag, sog = mini_episode(
                     agent=agent, env=env_j, env_offset=env_offset_j,
@@ -380,13 +380,13 @@ def main() -> None:
 
     # Build the scaffold + encoded_Phi ONCE. Both depend only on
     # cfg.vectorhash.lambdas + the encoder, which are fixed across iters; only
-    # val_envs and vh.env_offsets need to vary per-iter. (In static_vectorhash
-    # mode, register_envs() just rewrites env_offsets — so re-registering on
-    # the same vh per iter is cheap and doesn't perturb gbook / encoded_Phi.)
+    # val_envs and their offsets need to vary per-iter. Offsets are no longer
+    # scaffold state, so re-placing per iter is a list rebuild and cannot
+    # perturb gbook / encoded_Phi at all.
     if args.scaffold_cache is not None and not cfg.vectorhash.static_vectorhash:
         raise RuntimeError(
             "--scaffold_cache requires --static_vectorhash (the cache only "
-            "stores encoded_Phi; non-static register_envs needs gbook too)"
+            "stores encoded_Phi; the non-static assoc fit needs gbook too)"
         )
 
     torch.manual_seed(0)
@@ -395,7 +395,7 @@ def main() -> None:
         # Cached path: skip the heavy scaffold build entirely. Works for both
         # env_seed-set (rebuild val_envs per iter) and env_seed-unset (rebuild
         # val_envs once via the build_eval_world draw order) flows.
-        vh = VectorHash(cfg.vectorhash, size=cfg.env.size)
+        vh = VectorHash(cfg.vectorhash)
         _load_scaffold_cache(vh, args.scaffold_cache, cfg, mmap=args.mmap)
         if args.env_seed is None:
             # Mirror build_eval_world's val_env construction (rng skip + draws).
@@ -407,20 +407,21 @@ def main() -> None:
                          seed=int(rng.randint(0, 10_000_000)))
                 for _ in range(cfg.num_val_envs)
             ]
-            vh.register_envs(val_envs, placement="spread")
+            offsets = place_envs(cfg.num_val_envs, cfg.env.size, vh.Npos,
+                                 np.random, placement="spread")
         else:
-            val_envs = []  # rebuilt per iter below
-        val_idxs = list(range(cfg.num_val_envs))
+            val_envs = []      # rebuilt per iter below
+            offsets = []       # ditto
     elif args.env_seed is None:
         # Legacy path: build_eval_world handles scaffold + envs together with
         # the ckpt's training-time seed conventions. Envs constant across iters.
-        val_envs, vh, val_idxs = build_eval_world(cfg, encoder, str(device))
+        val_envs, vh, offsets = build_eval_world(cfg, encoder, str(device))
     else:
-        vh = VectorHash(cfg.vectorhash, size=cfg.env.size)
+        vh = VectorHash(cfg.vectorhash)
         vh.build_scaffold()
         vh.precompute_encoded_phi(encoder, cfg.fwhm_ratio, device=str(device))
-        val_idxs = list(range(cfg.num_val_envs))
-        val_envs = []  # rebuilt per iter below
+        val_envs = []      # rebuilt per iter below
+        offsets = []       # ditto
 
     agent = load_agent(cfg, ck["agent_state_dict"], embed_dim, device)
 
@@ -470,9 +471,10 @@ def main() -> None:
                          seed=int(env_rng.randint(0, 10_000_000)))
                 for _ in range(cfg.num_val_envs)
             ]
-            # Re-register on the shared vh — in static_vectorhash mode this
-            # only rewrites vh.env_offsets, leaving gbook / encoded_Phi alone.
-            vh.register_envs(val_envs, placement="spread")
+            # Re-place on the shared field: offsets are a property of this
+            # env set, so nothing about gbook / encoded_Phi is touched.
+            offsets = place_envs(cfg.num_val_envs, cfg.env.size, vh.Npos,
+                                 np.random, placement="spread")
 
         if n_full_iters > 1:
             print(f"\n=== iter {k + 1}/{n_full_iters}  seed={seed_k}"
@@ -481,10 +483,10 @@ def main() -> None:
         if k == 0 or args.env_seed is not None:
             for i, env in enumerate(val_envs):
                 print(f"  env {i}: goal={env.goal_location}  "
-                      f"offset={vh.env_offsets[i]}")
+                      f"offset={offsets[i]}")
 
         trace, blocks, stored_at_goal_count = run_sequential(
-            agent=agent, val_envs=val_envs, vectorhash=vh, val_idxs=val_idxs,
+            agent=agent, val_envs=val_envs, vectorhash=vh, env_offsets=offsets,
             cfg=cfg, device=device,
             iters_per_block=args.iters_per_block,
             max_steps=args.max_steps,
@@ -498,7 +500,7 @@ def main() -> None:
         )
         iter_traces.append((trace, blocks))
         iter_env_goals.append([list(env.goal_location) for env in val_envs])
-        iter_env_offsets.append([list(vh.env_offsets[i]) for i in range(len(val_envs))])
+        iter_env_offsets.append([list(offsets[i]) for i in range(len(val_envs))])
         iter_stored_at_goal.append(
             {int(j): int(c) for j, c in stored_at_goal_count.items()}
         )

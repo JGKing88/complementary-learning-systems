@@ -26,7 +26,7 @@ from hopfield_nav.world.env import GridEnv
 from hopfield_nav.training.rnn_setup import build_envs, restore_arch_from_ckpt
 from hopfield_nav.training.rnn_sequential import UpdateResult, run_sequential_blocks
 from hopfield_nav.utils import smooth_gbook
-from hopfield_nav.world.scaffold import VectorHash
+from hopfield_nav.world.scaffold import VectorHash, place_envs
 
 
 def _to_emit_metrics(m: dict) -> dict:
@@ -279,11 +279,11 @@ def main() -> None:
         vh_Npos = 0
         if cfg.agent.input_grid_state:
             vh_cfg = VectorHashConfig(lambdas=list(cfg.lambdas), static_vectorhash=True)
-            vh = VectorHash(vh_cfg, size=cfg.env.size)
+            vh = VectorHash(vh_cfg)
             vh.build_scaffold()
-            vh.register_envs(envs, placement="spread")
+            env_offsets = place_envs(len(envs), cfg.env.size, vh.Npos,
+                                     np.random, placement="spread")
             sgb = smooth_gbook(vh.gbook, vh.lambdas, cfg.fwhm_ratio)
-            env_offsets = list(vh.env_offsets)
             gbook_dim = int(vh.Ng)
             vh_lambdas = list(vh.lambdas)
             vh_Npos = int(vh.Npos)

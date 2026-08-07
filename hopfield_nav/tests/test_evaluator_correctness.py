@@ -151,7 +151,7 @@ def test_exploration_metrics_match_the_records_they_are_built_from():
     n_trials, max_steps = 5, 12
     records: list[tuple] = []
     res = evaluate_exploration(
-        agent, envs, vh, [0, 1], cfg, DEVICE, num_trials=n_trials,
+        agent, envs, vh, vh.env_offsets, cfg, DEVICE, num_trials=n_trials,
         max_steps=max_steps, n_distractors_list=[0], per_trial=records)
     m = res[0]
 
@@ -224,7 +224,7 @@ def test_goal_discovery_credits_every_arrival_when_the_agent_always_stores():
     agent = ScriptedAgent(move=EAST, store=1.0); agent.eval()
     records: list[tuple] = []
     res = evaluate_goal_discovery(
-        agent, envs, vh, [0], cfg, DEVICE, num_trials=12, max_steps=20,
+        agent, envs, vh, vh.env_offsets, cfg, DEVICE, num_trials=12, max_steps=20,
         n_distractors_list=[0], per_trial=records)
 
     arrivals = sum(r[6] for r in records)
@@ -242,7 +242,7 @@ def test_goal_discovery_credits_nothing_when_the_agent_never_stores():
     agent = ScriptedAgent(move=EAST, store=0.0); agent.eval()
     records: list[tuple] = []
     res = evaluate_goal_discovery(
-        agent, envs, vh, [0], cfg, DEVICE, num_trials=12, max_steps=20,
+        agent, envs, vh, vh.env_offsets, cfg, DEVICE, num_trials=12, max_steps=20,
         n_distractors_list=[0], per_trial=records)
 
     assert sum(r[6] for r in records) > 0, "vacuous: no arrivals"
@@ -266,7 +266,7 @@ def test_goal_discovery_teleport_stops_an_arrival_every_step():
     max_steps = 20
     records: list[tuple] = []
     evaluate_goal_discovery(
-        agent, envs, vh, [0], cfg, DEVICE, num_trials=12, max_steps=max_steps,
+        agent, envs, vh, vh.env_offsets, cfg, DEVICE, num_trials=12, max_steps=max_steps,
         n_distractors_list=[0], per_trial=records)
 
     arrivals = [r[6] for r in records]

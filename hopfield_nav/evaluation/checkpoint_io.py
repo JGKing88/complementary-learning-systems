@@ -27,7 +27,7 @@ from ..config import (
     VectorHashConfig,
 )
 from ..world.env import make_env
-from ..world.scaffold import VectorHash
+from ..world.scaffold import VectorHash, fit_env_assoc, place_envs
 
 
 def coerce_legacy_cfg(cd: dict) -> dict:
@@ -86,12 +86,13 @@ def build_eval_world(cfg: TrainConfig, encoder, device: str):
                  seed=int(rng.randint(0, 10_000_000)))
         for _ in range(cfg.num_val_envs)
     ]
-    vh = VectorHash(cfg.vectorhash, size=size)
+    vh = VectorHash(cfg.vectorhash)
     vh.build_scaffold()
-    vh.register_envs(val_envs, placement="spread")
     vh.precompute_encoded_phi(encoder, cfg.fwhm_ratio, device=device)
-    val_idxs = list(range(cfg.num_val_envs))
-    return val_envs, vh, val_idxs
+    offsets = place_envs(cfg.num_val_envs, size, vh.Npos, np.random,
+                         placement="spread")
+    fit_env_assoc(vh, val_envs, offsets)
+    return val_envs, vh, offsets
 
 
 def load_agent(
@@ -126,7 +127,7 @@ def scaffold_layout_dict(
     cfg: TrainConfig,
     vh: VectorHash,
     val_envs: list,
-    val_idxs: list[int],
+    env_offsets: list[tuple[int, int]],
 ) -> dict:
     """Serializable layout: Npos×Npos grid indices, env footprints, goals.
 
@@ -137,7 +138,7 @@ def scaffold_layout_dict(
     prod_lambdas = int(np.prod(cfg.vectorhash.lambdas))
     envs_out: list[dict] = []
     for i in range(len(val_envs)):
-        off = vh.env_offsets[val_idxs[i]]
+        off = env_offsets[i]
         g = val_envs[i].goal_location
         ox, oy = int(off[0]), int(off[1])
         gl0, gl1 = int(g[0]), int(g[1])

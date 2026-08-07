@@ -255,7 +255,7 @@ def evaluate_navigation(
     agent: NavAgent,
     val_envs: list[GridEnv],
     vectorhash: VectorHash,
-    env_global_indices: list[int],
+    env_offsets: list[tuple[int, int]],
     cfg: TrainConfig,
     device: torch.device,
     num_trials: int = 32,
@@ -301,8 +301,7 @@ def evaluate_navigation(
         steps_sum = 0
 
         for local_idx, env in enumerate(val_envs):
-            global_idx = env_global_indices[local_idx]
-            env_offset = vectorhash.env_offsets[global_idx]
+            env_offset = env_offsets[local_idx]
             goal = env.goal_location
             goal_enc = goal_encoding(vectorhash, env_offset, goal)
 
@@ -372,7 +371,7 @@ def evaluate_goal_discovery(
     agent: NavAgent,
     val_envs: list[GridEnv],
     vectorhash: VectorHash,
-    env_global_indices: list[int],
+    env_offsets: list[tuple[int, int]],
     cfg: TrainConfig,
     device: torch.device,
     num_trials: int = 32,
@@ -439,8 +438,7 @@ def evaluate_goal_discovery(
         trial_store_events: list[int] = []
 
         for local_idx, env in enumerate(val_envs):
-            global_idx = env_global_indices[local_idx]
-            env_offset = vectorhash.env_offsets[global_idx]
+            env_offset = env_offsets[local_idx]
             goal = env.goal_location
 
             for _trial_idx in range(num_trials):
@@ -552,7 +550,7 @@ def evaluate_exploration(
     agent: NavAgent,
     val_envs: list[GridEnv],
     vectorhash: VectorHash,
-    env_global_indices: list[int],
+    env_offsets: list[tuple[int, int]],
     cfg: TrainConfig,
     device: torch.device,
     num_trials: int = 32,
@@ -623,8 +621,7 @@ def evaluate_exploration(
         per_env_redundancy: list[float] = []
 
         for local_idx, env in enumerate(val_envs):
-            global_idx = env_global_indices[local_idx]
-            env_offset = vectorhash.env_offsets[global_idx]
+            env_offset = env_offsets[local_idx]
             goal = env.goal_location
 
             # Setup draws from the caller's RNG in the original per-trial
@@ -699,7 +696,7 @@ def evaluate_realistic(
     agent: NavAgent,
     val_envs: list[GridEnv],
     vectorhash: VectorHash,
-    env_global_indices: list[int],
+    env_offsets: list[tuple[int, int]],
     cfg: TrainConfig,
     device: torch.device,
     steps_per_env: int = 1000,
@@ -827,7 +824,7 @@ def evaluate_realistic(
     drift: dict[int, list[tuple[int, dict]]] = {j: [] for j in range(N)}
 
     for i, env in enumerate(val_envs):
-        env_offset_i = vectorhash.env_offsets[env_global_indices[i]]
+        env_offset_i = env_offsets[i]
         prim = _run_phase(env, env_offset_i, allow_store=True, local_idx=i)
         primary[i] = prim
         drift[i].append((0, prim))
@@ -836,7 +833,7 @@ def evaluate_realistic(
 
         for j in range(i):
             env_j = val_envs[j]
-            env_offset_j = vectorhash.env_offsets[env_global_indices[j]]
+            env_offset_j = env_offsets[j]
             gap = i - j
             rm = _run_phase(env_j, env_offset_j, allow_store=False, local_idx=j)
             retest[(i, j)] = rm
@@ -884,7 +881,7 @@ def evaluate_repeat(
     agent: NavAgent,
     val_envs: list[GridEnv],
     vectorhash: VectorHash,
-    env_global_indices: list[int],
+    env_offsets: list[tuple[int, int]],
     cfg: TrainConfig,
     device: torch.device,
     n_trials: int = 5,
@@ -972,7 +969,7 @@ def evaluate_repeat(
     N = len(val_envs)
     trials: dict[int, list[dict]] = {i: [] for i in range(N)}
     for i, env in enumerate(val_envs):
-        env_offset = vectorhash.env_offsets[env_global_indices[i]]
+        env_offset = env_offsets[i]
         for t in range(n_trials):
             hopfield = Hopfield(embed_dim, beta=cfg.hopfield.beta, device=str(device))
             entry = _run_trial(env, env_offset, hopfield)
@@ -1001,7 +998,7 @@ def evaluate_sequential_episodes(
     agent: NavAgent,
     val_envs: list[GridEnv],
     vectorhash: VectorHash,
-    env_global_indices: list[int],
+    env_offsets: list[tuple[int, int]],
     cfg: TrainConfig,
     device: torch.device,
     iters_per_block: int = 50,
@@ -1060,8 +1057,6 @@ def evaluate_sequential_episodes(
     # eval exposes one --oracle-store-at-goal flag meaning both "force a store
     # at the goal" and "suppress stores anywhere else". agenthash splits those.
     # Passing the same value for both preserves the combined meaning exactly.
-    env_offsets = [vectorhash.env_offsets[env_global_indices[j]] for j in range(N)]
-
     boundaries: list[int] = []
 
     def _record_block(block: int, cur_iter: int) -> None:

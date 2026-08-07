@@ -378,7 +378,8 @@ def test_agenthash_run_sequential_outer_loop():
     torch.manual_seed(0)
     np.random.seed(0)
     trace, blocks, stored = run_sequential(
-        agent=agent, val_envs=envs, vectorhash=vh, val_idxs=[0, 1], cfg=cfg,
+        agent=agent, val_envs=envs, vectorhash=vh,
+        env_offsets=vh.env_offsets, cfg=cfg,
         device=torch.device("cpu"), iters_per_block=3, max_steps=10, seed=5,
         deterministic=True, oracle_store_at_goal=True,
         oracle_lock_store_not_at_goal=True, lock_store_after_goal=False)

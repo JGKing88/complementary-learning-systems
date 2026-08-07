@@ -20,7 +20,9 @@ from .config import (
 )
 from .encoder_io import load_encoder, validate_config
 from .world.env import make_env, warn_if_offcell_stores
-from .world.scaffold import VectorHash
+from .world.scaffold import (
+    VectorHash, fit_env_assoc, goal_encodings, place_envs,
+)
 from hopfield import Hopfield
 from .policy.agent import NavAgent, compute_input_dim
 from .rollout.collector import RolloutCollector
@@ -44,8 +46,9 @@ def setup_train_world(
     encoder_gain: float,
     embed_dim: int,
     rng: np.random.RandomState,
+    field: VectorHash,
 ) -> dict:
-    """Create training envs + VectorHash scaffold for one training world.
+    """Create training envs and place them in the shared scaffold field.
 
     Training worlds are fully independent of eval: their scaffold contains only
     their own train envs, and their template Hopfield (if any) preloads only
@@ -64,25 +67,22 @@ def setup_train_world(
         for _ in range(n_train)
     ]
 
-    vh = VectorHash(cfg.vectorhash, size=size)
-    vh.build_scaffold()
-    vh.register_envs(train_envs, placement="spread")
-    vh.precompute_encoded_phi(encoder, cfg.fwhm_ratio, device=cfg.device)
-
-    train_env_indices = list(range(n_train))
+    offsets = place_envs(n_train, size, field.Npos, np.random, placement="spread")
+    assoc = fit_env_assoc(field, train_envs, offsets)
 
     template_hop = None
     if cfg.hopfield.init_mode == "pre_stored":
         template_hop = Hopfield(embed_dim, beta=cfg.hopfield.beta, device=cfg.device)
-        for pattern in vh.get_goal_encodings(train_envs):
+        for pattern in goal_encodings(field, train_envs, offsets):
             template_hop.input_memory(torch.from_numpy(pattern).float())
         print(f"  train world {world_idx}: pre-stored {template_hop.num_memories} goal patterns")
 
     return {
         "train_envs": train_envs,
-        "vectorhash": vh,
+        "vectorhash": field,
+        "offsets": offsets,
+        "assoc": assoc,
         "template_hopfield": template_hop,
-        "train_env_indices": train_env_indices,
     }
 
 
@@ -92,8 +92,9 @@ def setup_eval_world(
     encoder_gain: float,
     embed_dim: int,
     rng: np.random.RandomState,
+    field: VectorHash,
 ) -> dict:
-    """Build a single dedicated eval world with its own VectorHash scaffold.
+    """Build a single dedicated eval world, placed in the shared field.
 
     Decoupled from num_worlds — this is built once at startup and reused for
     every eval pass. Contains num_val_envs val envs only (no train envs), so
@@ -109,17 +110,14 @@ def setup_eval_world(
         for _ in range(n_val)
     ]
 
-    vh = VectorHash(cfg.vectorhash, size=size)
-    vh.build_scaffold()
-    vh.register_envs(val_envs, placement="spread")
-    vh.precompute_encoded_phi(encoder, cfg.fwhm_ratio, device=cfg.device)
-
-    val_env_indices = list(range(n_val))
+    offsets = place_envs(n_val, size, field.Npos, np.random, placement="spread")
+    assoc = fit_env_assoc(field, val_envs, offsets)
 
     return {
         "val_envs": val_envs,
-        "vectorhash": vh,
-        "val_env_indices": val_env_indices,
+        "vectorhash": field,
+        "offsets": offsets,
+        "assoc": assoc,
     }
 
 
@@ -152,15 +150,24 @@ def train(cfg: TrainConfig) -> None:
         cfg.hopfield.beta = float(encoder_gain)
         print(f"  hopfield.beta defaulted to encoder_gain={encoder_gain}")
 
-    # Setup training worlds (train envs + per-world VectorHash scaffold)
+    # One scaffold field, shared by every train world and the eval world. It
+    # is a pure function of (lambdas, Npos, fwhm_ratio, encoder), so the
+    # per-world copies this used to build were bit-identical.
+    print("Building scaffold field")
+    field = VectorHash(cfg.vectorhash)
+    field.build_scaffold()
+    field.precompute_encoded_phi(encoder, cfg.fwhm_ratio, device=cfg.device)
+
     worlds = []
     for w in range(cfg.num_worlds):
         print(f"Setting up train world {w}")
-        worlds.append(setup_train_world(w, cfg, encoder, encoder_gain, embed_dim, rng))
+        worlds.append(setup_train_world(
+            w, cfg, encoder, encoder_gain, embed_dim, rng, field))
 
     # Setup a single dedicated eval world, built once and reused.
     print(f"Setting up eval world ({cfg.num_val_envs} val envs)")
-    eval_world = setup_eval_world(cfg, encoder, encoder_gain, embed_dim, rng)
+    eval_world = setup_eval_world(
+        cfg, encoder, encoder_gain, embed_dim, rng, field)
 
     # Create agent
     input_dim = compute_input_dim(cfg.agent, embed_dim, cfg.env.observation_size)
@@ -250,7 +257,9 @@ def train(cfg: TrainConfig) -> None:
                     )
                 for env in world["train_envs"]:
                     env.reset_goal()
-                vh.register_envs(world["train_envs"], placement="random")
+                world["offsets"] = place_envs(
+                    len(world["train_envs"]), cfg.env.size, vh.Npos,
+                    np.random, placement="random")
         all_rollouts = []
         for world in worlds:
             vh = world["vectorhash"]
@@ -258,8 +267,7 @@ def train(cfg: TrainConfig) -> None:
             collector = RolloutCollector(vh, cfg, embed_dim, device)
 
             for local_idx, env in enumerate(world["train_envs"]):
-                global_idx = world["train_env_indices"][local_idx]
-                env_offset = vh.env_offsets[global_idx]
+                env_offset = world["offsets"][local_idx]
 
                 # Fresh Hopfield instances per env: no cross-env contamination.
                 if cfg.hopfield.agent_can_store:
@@ -346,7 +354,7 @@ def train(cfg: TrainConfig) -> None:
         if cfg.eval_every > 0 and update % cfg.eval_every == 0 and eval_world["val_envs"]:
             val_envs = eval_world["val_envs"]
             val_vh = eval_world["vectorhash"]
-            val_idxs = eval_world["val_env_indices"]
+            val_idxs = eval_world["offsets"]
             dist_list = cfg.val_n_distractors_list
             n_trials = cfg.n_val_trials
 
@@ -418,7 +426,7 @@ def train(cfg: TrainConfig) -> None:
               f"{len(eval_world['val_envs'])} envs)")
         realistic = evaluate_realistic(
             agent, eval_world["val_envs"], eval_world["vectorhash"],
-            eval_world["val_env_indices"], cfg, device,
+            eval_world["offsets"], cfg, device,
             steps_per_env=cfg.realistic_steps_per_env,
             seed=cfg.seed + 1000,
             deterministic=True,

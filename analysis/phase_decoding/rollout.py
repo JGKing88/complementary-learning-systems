@@ -43,7 +43,7 @@ class EnvBundle:
     cfg: Any
     agent: NavAgent
     device: torch.device
-    val_idxs: list[int]
+    val_offsets: list[tuple[int, int]]
     encoder_path: str
     ckpt_path: str
 
@@ -51,7 +51,7 @@ class EnvBundle:
         return list(range(len(self.envs)))
 
     def scaffold(self) -> dict:
-        return scaffold_layout_dict(self.cfg, self.vh, self.envs, self.val_idxs)
+        return scaffold_layout_dict(self.cfg, self.vh, self.envs, self.val_offsets)
 
 
 def _quadrant(goal_local: tuple[int, int], env_size: int) -> int:
@@ -103,7 +103,7 @@ class RolloutEngine:
 
         print(f"[rollout] building val world (precomputing encoded_Phi over "
               "Npos² positions — slow on CPU, seconds on GPU)", flush=True)
-        val_envs, vh, val_idxs = build_eval_world(cfg, encoder, str(self.device))
+        val_envs, vh, val_offsets = build_eval_world(cfg, encoder, str(self.device))
         # Seed BEFORE NavAgent construction so the random init is reproducible.
         torch.manual_seed(self.random_init_seed)
         if self.random_agent:
@@ -122,7 +122,7 @@ class RolloutEngine:
 
         self.val_envs = val_envs
         self.vh = vh
-        self.val_idxs = val_idxs
+        self.val_offsets = val_offsets
         self.agent = agent
 
     def build_bundle(self) -> EnvBundle:
@@ -131,7 +131,7 @@ class RolloutEngine:
         goals_local: list[tuple[int, int]] = []
         quadrants: list[int] = []
         for i, env in enumerate(self.val_envs):
-            off = self.vh.env_offsets[self.val_idxs[i]]
+            off = self.val_offsets[i]
             g = env.goal_location
             offsets.append((int(off[0]), int(off[1])))
             goals_local.append((int(g[0]), int(g[1])))
@@ -146,7 +146,7 @@ class RolloutEngine:
             cfg=self.cfg,
             agent=self.agent,
             device=self.device,
-            val_idxs=self.val_idxs,
+            val_offsets=self.val_offsets,
             encoder_path=self.encoder_path,
             ckpt_path=self.ckpt_path,
         )

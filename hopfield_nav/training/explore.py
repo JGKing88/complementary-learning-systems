@@ -46,8 +46,8 @@ class ExploreRegime:
         # See ExploitRegime for why this is a per-run decision, not per-update.
         self.use_distractors = use_distractors
         self.pools = {
-            w_idx: make_hops("empty_shared", cfg, world["vectorhash"],
-                             world["envs"], embed_dim, device, cfg.batch_envs)
+            w_idx: make_hops("empty_shared", cfg, world,
+                             embed_dim, device, cfg.batch_envs)
             for w_idx, world in enumerate(worlds)
         }
 
@@ -65,7 +65,7 @@ class ExploreRegime:
     def spec(self, w_idx: int, world: dict, local_idx: int, env, env_offset,
              knobs: Knobs) -> RolloutSpec:
         if self.use_distractors:
-            hop = self._with_distractors(world["vectorhash"], env_offset, knobs)
+            hop = self._with_distractors(world.field, env_offset, knobs)
         else:
             hop = self.pools[w_idx][local_idx]
         return RolloutSpec(

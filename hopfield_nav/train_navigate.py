@@ -45,7 +45,9 @@ from .training.stages import (
     Knobs, ScheduleError, Stage, format_schedule, parse_schedule, resolve,
     stage_at, total_updates,
 )
-from .training.world_setup import do_eval, set_phase_freeze, setup_world
+from .training.world_setup import (
+    build_field, do_eval, set_phase_freeze, setup_world,
+)
 
 
 def _compute_epsilon(update: int, base: float, anneal: int) -> float:
@@ -241,10 +243,10 @@ def run_navigate(
 
         rollouts = []
         for w_idx, world in enumerate(worlds):
-            vh = world["vectorhash"]
+            vh = world.field
             collector = RolloutCollector(vh, cfg, embed_dim, device)
-            for local_idx, env in enumerate(world["envs"]):
-                env_offset = vh.env_offsets[world["env_indices"][local_idx]]
+            for local_idx, env in enumerate(world.envs):
+                env_offset = world.offsets[local_idx]
                 # Order: the first n_pre_now envs are exploit, the rest explore.
                 # The reward split logged below slices on the same boundary.
                 regime = (exploit_regime if local_idx < n_pre_now
@@ -369,7 +371,12 @@ def train_navigate(
     if cfg.hopfield.beta is None:
         cfg.hopfield.beta = float(encoder_gain)
 
-    worlds = [setup_world(cfg, encoder, embed_dim, rng, role="train")
+    # One scaffold field for the whole run. It is a pure function of
+    # (lambdas, Npos, fwhm_ratio, encoder), so the per-world copies this used
+    # to build were bit-identical -- and 12 GB each at Npos=1716.
+    field = build_field(cfg, encoder)
+    worlds = [setup_world(cfg, encoder, embed_dim, rng, role="train",
+                          field=field)
               for _ in range(cfg.num_worlds)]
     # Eval envs are always built with goals_active=True, so nav and discovery
     # have a goal event to measure. Training envs are not: each rollout sets
@@ -379,7 +386,8 @@ def train_navigate(
     # `train` or `train_phased`, which do still expose the flag.
     saved_goals_active = cfg.env.goals_active
     cfg.env.goals_active = True
-    eval_world = setup_world(cfg, encoder, embed_dim, rng, role="eval")
+    eval_world = setup_world(cfg, encoder, embed_dim, rng, role="eval",
+                             field=field)
     cfg.env.goals_active = saved_goals_active
 
     input_dim = compute_input_dim(cfg.agent, embed_dim, cfg.env.observation_size)

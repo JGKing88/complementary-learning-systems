@@ -382,13 +382,13 @@ def _rollout_exploit(
 
 
 def collect_trials(
-    agent, val_envs, vh, val_idxs, cfg, device, plans,
+    agent, val_envs, vh, val_offsets, cfg, device, plans,
     mode, n_distractors, explore_steps, nav_steps, force_store,
 ) -> list[dict]:
     trials = []
     for plan in plans:
         env = val_envs[plan.env_local_idx]
-        env_offset = vh.env_offsets[val_idxs[plan.env_local_idx]]
+        env_offset = val_offsets[plan.env_local_idx]
         if mode == "combined":
             t = _rollout_combined(
                 agent, env, env_offset, vh, cfg, device, plan,
@@ -720,7 +720,7 @@ def main():
 
     torch.manual_seed(0)
     np.random.seed(0)
-    val_envs, vh, val_idxs = build_eval_world(cfg, encoder, str(device))
+    val_envs, vh, val_offsets = build_eval_world(cfg, encoder, str(device))
 
     plans = make_trial_plans(args.trials, val_envs, args.seed)
 
@@ -736,7 +736,7 @@ def main():
         ck = torch.load(path, map_location=device, weights_only=False)
         agent = load_agent(cfg, ck["agent_state_dict"], embed_dim, device)
         trials = collect_trials(
-            agent, val_envs, vh, val_idxs, cfg, device, plans,
+            agent, val_envs, vh, val_offsets, cfg, device, plans,
             mode=args.mode, n_distractors=args.n_distractors,
             explore_steps=args.explore_steps, nav_steps=args.nav_steps,
             force_store=args.force_store,

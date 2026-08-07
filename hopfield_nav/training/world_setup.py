@@ -20,21 +20,40 @@ import torch
 
 from ..policy.agent import NavAgent
 from ..config import TrainConfig
-from ..world.env import GridEnv, make_env
+from ..world.env import make_env
 from ..evaluation.metrics import (
     evaluate_exploration, evaluate_goal_discovery, evaluate_navigation,
 )
 from hopfield import Hopfield
-from ..world.scaffold import VectorHash
+from ..world.scaffold import VectorHash, goal_encodings
+from ..world.world import World, build_world
 
 
 # ---------------------------------------------------------------------------
 # World setup (reused across phases)
 # ---------------------------------------------------------------------------
 
-def setup_world(cfg: TrainConfig, encoder, embed_dim, rng, role: str = "train"):
-    """Build envs + VectorHash scaffold. Same for train + eval worlds; role
-    just controls count (envs_per_world vs num_val_envs).
+def build_field(cfg: TrainConfig, encoder) -> VectorHash:
+    """The scaffold field, built once and shared by every world.
+
+    It is a pure function of ``(lambdas, Npos, fwhm_ratio, encoder)``, so the
+    per-world copies this used to make were bit-identical -- and 12 GB each at
+    ``Npos=1716, out_dim=1024``.
+    """
+    field = VectorHash(cfg.vectorhash)
+    field.build_scaffold()
+    field.precompute_encoded_phi(encoder, cfg.fwhm_ratio, device=cfg.device)
+    return field
+
+
+def setup_world(cfg: TrainConfig, encoder, embed_dim, rng, role: str = "train",
+                field: VectorHash | None = None) -> World:
+    """Build envs and place them in a scaffold. Same for train + eval worlds;
+    role just controls count (envs_per_world vs num_val_envs).
+
+    ``field=None`` builds one, which is what a single-world caller wants. Pass a
+    field to share it -- the train worlds and the eval world should always share
+    one.
     """
     n = cfg.envs_per_world if role == "train" else cfg.num_val_envs
     envs = [
@@ -42,18 +61,15 @@ def setup_world(cfg: TrainConfig, encoder, embed_dim, rng, role: str = "train"):
                  seed=int(rng.randint(0, 10_000_000)))
         for _ in range(n)
     ]
-    vh = VectorHash(cfg.vectorhash, size=cfg.env.size)
-    vh.build_scaffold()
-    vh.register_envs(envs, placement="spread")
-    vh.precompute_encoded_phi(encoder, cfg.fwhm_ratio, device=cfg.device)
-    return {"envs": envs, "vectorhash": vh, "env_indices": list(range(n))}
+    if field is None:
+        field = build_field(cfg, encoder)
+    return build_world(field, envs, placement="spread", size=cfg.env.size)
 
 
 def make_hops(
     role: str,
     cfg: TrainConfig,
-    vh: VectorHash,
-    envs: list[GridEnv],
+    world: World,
     embed_dim: int,
     device: torch.device,
     B: int,
@@ -69,14 +85,12 @@ def make_hops(
         and 4.
     Returns a list/Hopfield and a flag for whether this is per-env vs shared.
     """
+    envs = world.envs
     if role == "pre_stored_shared":
         per_env_templates = []
-        for env_idx, env in enumerate(envs):
+        for pattern in goal_encodings(world.field, envs, world.offsets):
             hop = Hopfield(embed_dim, beta=cfg.hopfield.beta, device=str(device))
-            offset = vh.env_offsets[env_idx]
-            gx = min(max(env.goal_location[0] + offset[0], 0), vh.Npos - 1)
-            gy = min(max(env.goal_location[1] + offset[1], 0), vh.Npos - 1)
-            hop.input_memory(torch.from_numpy(vh.encoded_Phi[gx, gy]).float())
+            hop.input_memory(torch.from_numpy(pattern).float())
             per_env_templates.append(hop)
         return per_env_templates  # one per env; shared across the B trajectories
     if role == "empty_shared":
@@ -141,11 +155,11 @@ def set_phase_freeze(agent: NavAgent, freeze_move: bool,
 # Eval wrapper used at phase boundaries
 # ---------------------------------------------------------------------------
 
-def do_eval(cfg, agent, eval_world, device, update_tag: str,
+def do_eval(cfg, agent, eval_world: World, device, update_tag: str,
             use_wandb: bool, max_steps: int = 200) -> None:
-    val_envs = eval_world["envs"]
-    val_vh = eval_world["vectorhash"]
-    val_idxs = eval_world["env_indices"]
+    val_envs = eval_world.envs
+    val_vh = eval_world.field
+    val_offsets = eval_world.offsets
     dist = cfg.val_n_distractors_list
     nt = cfg.n_val_trials
 
@@ -156,13 +170,13 @@ def do_eval(cfg, agent, eval_world, device, update_tag: str,
 
     t0 = time.time()
     nav = {} if expl_only else evaluate_navigation(
-        agent, val_envs, val_vh, val_idxs, cfg, device,
+        agent, val_envs, val_vh, val_offsets, cfg, device,
         num_trials=nt, max_steps=max_steps,
         n_distractors_list=dist, deterministic=True)
     disc = {} if expl_only else evaluate_goal_discovery(
-        agent, val_envs, val_vh, val_idxs, cfg, device,
+        agent, val_envs, val_vh, val_offsets, cfg, device,
         num_trials=nt, max_steps=max_steps, n_distractors_list=dist)
-    expl = evaluate_exploration(agent, val_envs, val_vh, val_idxs, cfg, device,
+    expl = evaluate_exploration(agent, val_envs, val_vh, val_offsets, cfg, device,
                                 num_trials=nt, max_steps=max_steps,
                                 n_distractors_list=dist)
     eval_s = time.time() - t0
@@ -188,6 +202,7 @@ def do_eval(cfg, agent, eval_world, device, update_tag: str,
 
 
 __all__ = [
-    "do_eval", "make_hops", "move_params", "rnn_params", "set_phase_freeze",
-    "set_requires_grad", "setup_world", "store_params", "value_params",
+    "build_field", "do_eval", "make_hops", "move_params", "rnn_params",
+    "set_phase_freeze", "set_requires_grad", "setup_world", "store_params",
+    "value_params",
 ]

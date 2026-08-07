@@ -246,7 +246,7 @@ def gen_evaluators() -> dict[str, np.ndarray]:
         torch.manual_seed(0)
         np.random.seed(0)
         records: list[tuple] = []
-        res = fn(agent, val_envs, vh, [0, 1], cfg, device,
+        res = fn(agent, val_envs, vh, vh.env_offsets, cfg, device,
                  num_trials=4, max_steps=20, n_distractors_list=[0, 2],
                  per_trial=records)
         # (n_trials, n_fields) integer records -- exactly comparable.
@@ -323,14 +323,14 @@ def gen_long_horizon_evaluators() -> dict[str, np.ndarray]:
         torch.manual_seed(0)
         np.random.seed(0)
         results[f"realistic_lock{lock}"] = ev.evaluate_realistic(
-            agent, envs, vh, [0, 1], cfg, torch.device("cpu"),
+            agent, envs, vh, vh.env_offsets, cfg, torch.device("cpu"),
             steps_per_env=120, seed=13, lock_store_after_goal=lock)
 
     cfg, agent, vh, envs = _world()
     torch.manual_seed(0)
     np.random.seed(0)
     results["repeat"] = ev.evaluate_repeat(
-        agent, envs, vh, [0, 1], cfg, torch.device("cpu"),
+        agent, envs, vh, vh.env_offsets, cfg, torch.device("cpu"),
         n_trials=3, steps_per_env=80, seed=21)
 
     # Guard against a silently vacuous fixture. If the agent never reaches the
@@ -351,7 +351,7 @@ def gen_long_horizon_evaluators() -> dict[str, np.ndarray]:
         torch.manual_seed(0)
         np.random.seed(0)
         results[f"sequential_oracle{oracle}"] = ev.evaluate_sequential_episodes(
-            agent, envs, vh, [0, 1, 2], cfg, torch.device("cpu"),
+            agent, envs, vh, vh.env_offsets, cfg, torch.device("cpu"),
             iters_per_block=6, max_steps=12, seed=7,
             oracle_store_at_goal=oracle)
 

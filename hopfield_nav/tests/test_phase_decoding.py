@@ -91,7 +91,7 @@ def _make_engine_and_bundle(n_envs: int = 4, seed: int = 0):
 
     val_envs = [GridEnv(size=ENV_SIZE, observation_size=12, seed=seed + i)
                 for i in range(n_envs)]
-    val_idxs = list(range(n_envs))
+    val_offsets = offsets
 
     input_dim = compute_input_dim(cfg.agent, EMBED_DIM, cfg.env.observation_size)
     agent = NavAgent(cfg.agent, input_dim).to("cpu")
@@ -105,7 +105,7 @@ def _make_engine_and_bundle(n_envs: int = 4, seed: int = 0):
     engine.cfg = cfg
     engine.val_envs = val_envs
     engine.vh = vh
-    engine.val_idxs = val_idxs
+    engine.val_offsets = val_offsets
     engine.agent = agent
     engine.num_arenas = n_envs
 

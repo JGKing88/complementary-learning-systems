@@ -141,7 +141,7 @@ def main() -> None:
 
         torch.manual_seed(0)
         np.random.seed(0)
-        vh = VectorHash(cfg.vectorhash, size=cfg.env.size)
+        vh = VectorHash(cfg.vectorhash)
         _log(f"[prep_scaffold] lambdas={vh.lambdas}  Ng={vh.Ng}  Npos={vh.Npos}")
         vh.build_scaffold()
         vh.precompute_encoded_phi(encoder, fwhm_ratio, device=str(device))

@@ -32,7 +32,7 @@ from .policy.agent import NavAgent, compute_input_dim
 from .rollout.collector import RolloutCollector
 from .updates.ppo import ppo_update
 from .training.world_setup import (
-    do_eval, make_hops, set_phase_freeze, setup_world,
+    build_field, do_eval, make_hops, set_phase_freeze, setup_world,
 )
 from .evaluation.checkpoint_io import cfg_from_checkpoint
 
@@ -73,10 +73,8 @@ def run_store(
     # rollout still routes attempted stores into the per-env Hopfield).
     pools = {}
     for w_idx, world in enumerate(worlds):
-        vh = world["vectorhash"]
-        envs = world["envs"]
         pools[w_idx] = make_hops(
-            "empty_shared", cfg, vh, envs, embed_dim, device, cfg.batch_envs,
+            "empty_shared", cfg, world, embed_dim, device, cfg.batch_envs,
         )
 
     n_envs = cfg.envs_per_world
@@ -84,10 +82,10 @@ def run_store(
     for update in range(1, n_updates + 1):
         rollouts = []
         for w_idx, world in enumerate(worlds):
-            vh = world["vectorhash"]
+            vh = world.field
             collector = RolloutCollector(vh, cfg, embed_dim, device)
-            for local_idx, env in enumerate(world["envs"]):
-                env_offset = vh.env_offsets[world["env_indices"][local_idx]]
+            for local_idx, env in enumerate(world.envs):
+                env_offset = world.offsets[local_idx]
                 hop = pools[w_idx][local_idx]
                 rollout = collector.collect_rollout(
                     env, agent, hop, h_rnn=None, env_offset=env_offset,
@@ -174,9 +172,15 @@ def train_store(args) -> None:
         cfg.hopfield.beta = float(encoder_gain)
 
     # Both train and eval worlds use goals_active=True for Phase B.
-    worlds = [setup_world(cfg, encoder, embed_dim, rng, role="train")
+    # One scaffold field for the whole run. It is a pure function of
+    # (lambdas, Npos, fwhm_ratio, encoder), so the per-world copies this used
+    # to build were bit-identical -- and 12 GB each at Npos=1716.
+    field = build_field(cfg, encoder)
+    worlds = [setup_world(cfg, encoder, embed_dim, rng, role="train",
+                          field=field)
               for _ in range(cfg.num_worlds)]
-    eval_world = setup_world(cfg, encoder, embed_dim, rng, role="eval")
+    eval_world = setup_world(cfg, encoder, embed_dim, rng, role="eval",
+                             field=field)
 
     input_dim = compute_input_dim(cfg.agent, embed_dim, cfg.env.observation_size)
     print(f"Agent input_dim={input_dim}", flush=True)

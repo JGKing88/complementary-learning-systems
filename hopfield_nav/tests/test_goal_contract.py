@@ -687,7 +687,7 @@ def test_goal_discovery_arrivals_are_never_consecutive():
     max_steps = 40
     records: list[tuple] = []
     evaluate_goal_discovery(
-        agent, envs, vh, list(range(len(envs))), cfg, torch.device("cpu"),
+        agent, envs, vh, vh.env_offsets, cfg, torch.device("cpu"),
         num_trials=24, max_steps=max_steps, n_distractors_list=[0],
         per_trial=records)
 
@@ -711,7 +711,7 @@ def test_goal_discovery_store_efficiency_is_per_arrival():
     cfg, agent, vh, envs = _discovery_world()
     records: list[tuple] = []
     res = evaluate_goal_discovery(
-        agent, envs, vh, list(range(len(envs))), cfg, torch.device("cpu"),
+        agent, envs, vh, vh.env_offsets, cfg, torch.device("cpu"),
         num_trials=24, max_steps=40, n_distractors_list=[0],
         per_trial=records)
 
@@ -856,7 +856,7 @@ def test_exploration_union_and_redundancy_are_consistent():
     n_trials = 6
     records: list[tuple] = []
     res = evaluate_exploration(
-        agent, envs, vh, list(range(len(envs))), cfg, torch.device("cpu"),
+        agent, envs, vh, vh.env_offsets, cfg, torch.device("cpu"),
         num_trials=n_trials, max_steps=20, n_distractors_list=[0],
         per_trial=records)
     m = res[0]
