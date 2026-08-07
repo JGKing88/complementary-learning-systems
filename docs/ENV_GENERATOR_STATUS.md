@@ -464,3 +464,135 @@ decorrelates. A sum of fixed cosines does not — it stays quasi-periodic and th
 never falls, which initially read as a bug in `derive_margin` and was not. Random
 Fourier features give `cos ≈ exp(-d²/2ℓ²)`, and the test now asserts that a longer
 correlation length yields a larger margin rather than pinning one number.
+
+---
+
+## Phase 3 — detailed plan
+
+**Goal.** Make a run's world *recorded* rather than *implied*: emit `world.json`,
+carry a pointer in the checkpoint, and let `train_navigate` optionally source its
+envs from the Phase-2 generator.
+
+**Acceptance gate.** 481 tests still pass, goldens byte-identical, plus new
+serialization tests. Goldens are unaffected by construction here — `gen_golden`
+builds its own envs and sets offsets explicitly, so it never touches
+`train_navigate`'s world setup.
+
+**This is the first phase where numbers legitimately move** — but only under the new
+flag. With `--env_generator` off, `setup_world` still calls
+`place_envs(..., np.random)` exactly as it does now, so a given `--seed` produces the
+same envs as Phase 1 and 2. With it on, placement comes from the generator's derived
+streams and the §1.4 reproducibility bug is fixed.
+
+### The design decision that shapes this phase
+
+**`world.json` is written on *both* paths, always.** The legacy path is perfectly
+expressible as a spec: its domains are just the permissive defaults
+(`Anywhere` / `AnyCells` / the full seed range) and its `resolved` lists are the
+offsets, goals and seeds it actually drew.
+
+That matters more than it sounds. §1.4's bug is that a checkpoint's val offsets are
+*unrecoverable* — `build_eval_world` replays the seed stream but placement came from
+global `np.random`, so every post-hoc eval scores a checkpoint on scaffold patches
+training never used. Recording the resolved specs fixes that for **every new run
+immediately**, whether or not anyone opts into declared domains. The flag then only
+controls whether the generator *chooses* the envs, not whether they are *recorded*.
+
+### Config surface — flat fields, string grammar
+
+Domains reach the config as compact strings, parsed at startup, mirroring how
+`schedule` already works (`stages.py` parses `"explore:100,novelty=0.1"`):
+
+```
+--env_generator / --no-env_generator     default OFF this phase
+--place_region   anywhere | rect:X0,Y0,W,H          default anywhere
+--goal_region    any | ring:W | interior:W | quadrant:Q   default any
+--wall_seeds     LO,HI                               default 0,100000000
+--place_margin   auto | N                            default auto (derive_margin)
+--goal_val_frac  F                                   default 0.2
+```
+
+Flat `TrainConfig` fields, not a nested dataclass. Two reasons: `asdict(cfg)` stays
+JSON-native (domain *objects* would not serialize), and it avoids touching
+`cfg_from_checkpoint`'s hand-written nested reconstruction, which is the riskiest
+function in the checkpoint path. Each flag gets a `CFG_FIELDS` entry
+(`train_navigate.py:443`) so `--load_checkpoint` inheritance works unchanged.
+
+### Step order
+
+**3.1 — `GridEnv.seed`.** Record the constructor's seed as an attribute. Needed to
+write a legacy-path env's `wall_seed` into `world.json`; today the seed is consumed
+and discarded. Consumes no RNG, so behavior-neutral.
+
+**3.2 — `world/spec.py`: `WorldSpec` + `spec_hash`.** Wraps a `GeneratedSplit` with
+scaffold identity and provenance:
+
+```json
+{"spec_version": 1,
+ "scaffold": {"lambdas": [...], "Npos": N, "fwhm_ratio": F,
+              "static_vectorhash": true,
+              "encoder": { ...run_manifest.encoder_identity()... }},
+ "generator": "declared" | "legacy",
+ "split":     { ...GeneratedSplit.to_json()... },
+ "spec_hash": "sha256 of the canonical split+scaffold JSON"}
+```
+
+`encoder_identity` (`run_manifest.py:127`) already yields path + sha256 + out_dim +
+lambdas + gain, so this reuses it rather than hashing anything itself.
+
+**3.3 — `world_setup.write_world_spec(save_dir, ...)`.** One helper, called by
+`train_navigate`. Kept in `training/` rather than inside the trainer so
+`train_phased` / `train_store` / `train` can adopt it later without a second copy.
+
+**3.4 — `train_navigate` wiring.** After `build_field`, branch:
+
+- `--env_generator`: parse domains, `generate_split(field, ...)` once for train +
+  base_val together, `build_envs`, then `build_world(field, envs, offsets=...)`.
+- else: today's `setup_world` calls, then derive `EnvSpec`s from the resulting
+  `World`s (now possible thanks to 3.1).
+
+Either way, write `world.json` next to `run.json` after `save_dir` resolves. In this
+phase the union never changes, so one write suffices; Phase 4 adds the rewrite at
+`ckpt_every` when refresh starts moving it.
+
+**3.5 — checkpoint payload.** Both `torch.save` sites
+(`train_navigate.py:336` periodic, `:429` final) gain a `world_spec` key holding
+domains + `spec_hash` + the `world.json` path — **not** the resolved union, which
+grows once refresh exists and would bloat every checkpoint. Safe against
+`cfg_from_checkpoint`, which only walks the `config` sub-dict.
+
+**3.6 — `checkpoint_io` loader + legacy fallback.**
+`load_eval_world(ckpt_or_dir, field, env_cfg, movement_mode)` prefers `world.json`
+and returns `(envs, offsets)` exactly as recorded. Missing → today's replay path with
+a printed warning naming what is approximate (the offsets, per §1.4). The 355
+existing run dirs keep working, and no new guarantee is claimed for them.
+
+### Tests
+
+Extend `tests/test_splits.py` (or a new `test_world_spec.py`):
+
+- `WorldSpec` JSON round-trip; `spec_hash` stable under key reordering and
+  changing under a real edit
+- write → read → rebuild yields identical `_wall_code` arrays, offsets and goals
+- the **legacy path** produces a valid, loadable `world.json` (this is the one that
+  proves §1.4 is fixed for ordinary runs)
+- missing `world.json` falls back and warns rather than raising
+- a short end-to-end `train_navigate` run with `--env_generator` writes a
+  `world.json` whose `train` and `base_val` satisfy `verify_split`
+
+### Risk register
+
+| Risk | Mitigation |
+|---|---|
+| Numbers move silently for existing launchers | `--env_generator` defaults OFF; the legacy path keeps drawing from `np.random` unchanged |
+| `asdict(cfg)` breaks on a non-serializable field | Domains are strings in the config; objects exist only after parsing |
+| `world.json` and the `.pt` disagree | `spec_hash` in both; loader compares and warns on mismatch |
+| Two sources of truth for offsets once specs exist | `World.offsets` stays the single runtime source; the spec is a record of it, asserted equal at write time |
+
+### Noticed, not fixed
+
+`cfg_from_checkpoint` reconstructs `env`/`vectorhash`/`hopfield`/`agent`/`ppo` but
+**not `bc`**, so `cfg.bc` comes back as a raw dict rather than a `BCConfig`
+(`checkpoint_io.py:58-68`). Dormant — nothing in the navigate path reads
+`cfg.bc.<field>` after a load, and it would crash loudly if it did. Left alone
+because it is unrelated to this work; worth its own one-line commit.
