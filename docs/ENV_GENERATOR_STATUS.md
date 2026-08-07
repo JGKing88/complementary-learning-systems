@@ -20,7 +20,7 @@ python -m hopfield_nav.tests.gen_golden --check       all goldens match
 | 0 | Branch; in-flight explore-min work committed and isolated | **done** |
 | 1 | Plumbing refactor, behavior-frozen | **done** — `8db2930` |
 | 2 | Generator, domains, separation | **done** — see outcome below |
-| 3 | Serialization + train wiring | not started |
+| 3 | Serialization + train wiring | **done** — `901e802` |
 | 4 | Per-trait refresh | not started |
 | 5 | Eval CLIs, mix-and-match | not started |
 | 6 | Size OOD | not started |
