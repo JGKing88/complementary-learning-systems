@@ -9,11 +9,13 @@ One entry point serves training, in-training validation and post-hoc validation:
 Separation, per trait (``docs/EVAL_SPLITS_DESIGN.md`` §2.5 and
 ``docs/ENV_GENERATOR_STATUS.md`` Phase 2):
 
-    place   Euclidean, edge-to-edge, **wrapped mod prod(lambdas)** and taken as
-            max-over-axes. The scaffold is a torus whenever Npos == prod(lambdas)
-            (the standing config), so x~0 and x~Npos-1 are the same coordinate and
-            a flat check would call the measured worst case -- (1715,987) vs
-            (4,989), cos +0.972 -- 1711 cells apart.
+    place   A **spacing** requirement: `margin` cells of empty scaffold between
+            every pair of env footprints -- train<->train, train<->val and
+            val<->val alike. Measured edge to edge (so it is independent of env
+            size), max-over-axes (two boxes are apart as soon as one axis
+            separates them), and wrapped mod prod(lambdas) because the scaffold
+            is a torus when Npos == prod(lambdas): a flat check calls
+            (1715,987) and (4,989) 1711 cells apart when they are 5.
     wall    seed disjointness, verified on the codebook, reported as a Hamming
             margin over *live* bits only (the South wall is never hit: the foveal
             cone is fixed North at +/-60 deg, so dy = cos(theta) >= 0.5 > 0).
@@ -589,9 +591,13 @@ def make_val_set(
             len(used_place), n_envs, replace=n_envs > len(used_place))]
     else:
         domain = d.place if pl == "held_out" else d.place.complement(split.margin)
+        # self_margin=margin, same as generate_split: the margin is spacing, and
+        # it applies to every pair. Envs drawn here must clear each other just as
+        # they clear training -- otherwise a val set could stack several envs on
+        # one patch of scaffold while still being correctly separated from train.
         offs = sample_places(
             domain, rng, n_envs, size=env_size, Npos=split.Npos,
-            period=split.period, self_margin=0,
+            period=split.period, self_margin=split.margin,
             exclude=[(o, env_size) for o in used_place], margin=split.margin)
 
     # --- goal ---------------------------------------------------------------

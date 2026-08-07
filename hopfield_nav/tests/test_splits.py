@@ -487,7 +487,7 @@ def test_held_out_val_is_disjoint_on_every_trait(wide_field):
     domains = TraitDomains(dom.Anywhere(), dom.SeedRange(0, 10_000_000),
                            dom.AnyCells(), dom.Sizes((8,)))
     split = gen.generate_split(wide_field, env_cfg, domains, 12, 3,
-                               seed=42, margin=20)
+                               seed=42, margin=12)
     vs = gen.make_val_set(split, 5, {"place": "held_out", "wall": "held_out",
                                      "goal": "held_out"}, seed=99)
     assert not {v.wall_seed for v in vs} & split.used["wall"]
@@ -496,4 +496,31 @@ def test_held_out_val_is_disjoint_on_every_trait(wide_field):
     for v in vs:
         for o in split.used["place"]:
             assert gen.toroidal_gap(v.offset, v.size, o, v.size,
+                                    split.period) >= split.margin
+
+
+def test_margin_spaces_every_pair(wide_field):
+    """Margin is spacing, and it applies to all three pair types.
+
+    train<->train, train<->val and val<->val all get the same clearance. The
+    generated set must not be able to stack envs on one patch of scaffold just
+    because they happen to be on the same side of the split.
+    """
+    env_cfg = EnvConfig(size=8, observation_size=OBS)
+    domains = TraitDomains(dom.Anywhere(), dom.SeedRange(0, 10_000_000),
+                           dom.AnyCells(), dom.Sizes((8,)))
+    split = gen.generate_split(wide_field, env_cfg, domains, 8, 4,
+                               seed=7, margin=12)
+    everything = split.train + split.base_val
+    for i, a in enumerate(everything):
+        for b in everything[i + 1:]:
+            assert gen.toroidal_gap(a.offset, a.size, b.offset, b.size,
+                                    split.period) >= split.margin
+
+    # ...and a set minted later is spaced internally too, not just from train.
+    vs = gen.make_val_set(split, 4, {"place": "held_out", "wall": "held_out",
+                                     "goal": "held_out"}, seed=3)
+    for i, a in enumerate(vs):
+        for b in vs[i + 1:]:
+            assert gen.toroidal_gap(a.offset, a.size, b.offset, b.size,
                                     split.period) >= split.margin
