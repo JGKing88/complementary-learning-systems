@@ -307,6 +307,11 @@ best case**, axis-aligned decorrelates ~3× slower, and two envs side by side ar
 axis-aligned. Derive on a **quantile, not the mean**: `mean<0.05` → d≈60,
 `p99<0.15` → d≈80, `p99<0.10` → never reached.
 
+**Decided: `p99 < 0.15`, giving margin ≈ 80 at the working config.** The tighter of
+the two candidates, chosen deliberately because the cosine check only reports
+(§2.7) — the margin is the whole guarantee, so it carries the tail as far as a
+coordinate rule can.
+
 Capacity is not the constraint at either candidate (`Npos=1716`, `size=20`, need 84):
 
 ```
@@ -333,9 +338,16 @@ generator-specific message).
 over normalized `encoded_Phi` rows of the two footprint sets. At the working config
 that is 80×400 = 32k vectors against 4×400 = 1600, `d=1024` — one matmul.
 
-**Whether this gates is an open question — see below.** Phase 2 implements it as a
-pure function returning the numbers, so either answer is a one-line change at the
-call site.
+**Decided: it never gates.** Generation is never rerun on the strength of a cosine
+value, so a split stays derivable from coordinates alone — no encoder in the loop,
+and re-deriving a split under a different encoder cannot change which envs it
+contains. Implemented as a pure function returning the numbers; the caller prints
+them and stores them under `separation.diagnostics`.
+
+The cost is accepted knowingly: at margin 80 a val env can still sit at cos ≈ 0.27
+to a train env, and an unlucky draw near the d=140 bump can reach ≈ 0.48. That shows
+up in the report rather than being silently fixed, which is the point — a number you
+can see beats a reroll you cannot.
 
 ### 2.8 Goal cells — two branches, one object
 
@@ -388,17 +400,17 @@ Phase 3 only has to serialize it.
 - goal branch: with `refresh_goal=True` train and val cell sets partition the grid
   and are disjoint; with `False`, val is the complement of what train drew
 
-### Open question for this phase
+### Decisions for this phase (settled 2026-08-07)
 
-**Should the cosine diagnostic gate placement, given the corrected measurement?**
-The decision so far is "report, never enforce", to keep the split reproducible from
-coordinates alone. But the re-measurement shows worst-case similarity does **not**
-fall with distance — at margin 80 a val env can still sit at cos +0.27 to a train
-env, and the d=140 bump reaches +0.48. Meanwhile Phase 3 records resolved offsets in
-`world.json` anyway, so rerolling a bad draw costs nothing in reproducibility: the
-split is reproducible *from the record* either way. Options: report only; reroll the
-offset when max cos exceeds a threshold and record the result; or hard-error and make
-the user change margin/region/seed.
+- **Cosine never gates** (§2.7). Report and store; do not reroll, do not error. A
+  split stays derivable from coordinates alone.
+- **Margin is `p99 < 0.15`** (§2.5), ≈ 80 at the working config — the tighter
+  candidate, since with no cosine gate the margin is the whole guarantee.
+
+Together these say: the placement rule is purely geometric and fully specified by
+the domain plus the margin, and the cosine numbers are evidence *about* a split
+rather than an input *to* it. The residual — max cos ≈ 0.27 at margin 80, ≈ 0.48 on
+an unlucky draw near the d=140 bump — is accepted and visible in the report.
 
 ### Risk register
 
