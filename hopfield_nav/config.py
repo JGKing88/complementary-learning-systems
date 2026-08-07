@@ -199,6 +199,22 @@ class TrainConfig:
     # Training
     n_updates: int = 1000
     eval_every: int = 50
+    # Which evaluators an in-training eval runs. "all" is the three-evaluator
+    # pass every phased trainer has always done. "expl" runs exploration only,
+    # for runs where navigation and goal-discovery are not merely uninteresting
+    # but undefined: under a pure-explore schedule with explore_goals_off the
+    # policy is never trained to reach or store a goal, so nav/disc measure
+    # nothing -- and they are two thirds of the eval cost, which on a short run
+    # is a large fraction of the whole run.
+    eval_scope: str = "all"                 # "all" | "expl"
+    # Step budget for in-training evals. None keeps the historical behavior of
+    # following steps_per_rollout. They need to come apart whenever rollout
+    # length is itself the variable: mean_coverage is cells / grid-cells, so a
+    # run trained on 100-step rollouts would report it over 100 steps and a
+    # 400-step run over 400, and the two numbers are not the same measurement.
+    # Pinning this makes coverage comparable across a rollout-length sweep --
+    # at the cost of an eval whose price no longer scales down with the run.
+    eval_max_steps: int | None = None
     # Checkpoint cadence for the phased trainers, independent of eval_every.
     # None = follow eval_every, which is what they did unconditionally until
     # 2026-08: the per-update save sat inside the eval branch, so raising

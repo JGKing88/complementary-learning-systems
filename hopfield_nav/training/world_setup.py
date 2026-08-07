@@ -14,6 +14,8 @@ distinguishes them.
 """
 from __future__ import annotations
 
+import time
+
 import torch
 
 from ..policy.agent import NavAgent
@@ -147,24 +149,38 @@ def do_eval(cfg, agent, eval_world, device, update_tag: str,
     dist = cfg.val_n_distractors_list
     nt = cfg.n_val_trials
 
-    nav = evaluate_navigation(agent, val_envs, val_vh, val_idxs, cfg, device,
-                              num_trials=nt, max_steps=max_steps,
-                              n_distractors_list=dist, deterministic=True)
-    disc = evaluate_goal_discovery(agent, val_envs, val_vh, val_idxs, cfg,
-                                   device, num_trials=nt, max_steps=max_steps,
-                                   n_distractors_list=dist)
+    # "expl" skips the two evaluators a pure-explore run cannot be scored on.
+    # They stay in the wandb log as empty dicts rather than as stale values, so
+    # a scope switch mid-project cannot be mistaken for a collapse in nav.
+    expl_only = getattr(cfg, "eval_scope", "all") == "expl"
+
+    t0 = time.time()
+    nav = {} if expl_only else evaluate_navigation(
+        agent, val_envs, val_vh, val_idxs, cfg, device,
+        num_trials=nt, max_steps=max_steps,
+        n_distractors_list=dist, deterministic=True)
+    disc = {} if expl_only else evaluate_goal_discovery(
+        agent, val_envs, val_vh, val_idxs, cfg, device,
+        num_trials=nt, max_steps=max_steps, n_distractors_list=dist)
     expl = evaluate_exploration(agent, val_envs, val_vh, val_idxs, cfg, device,
                                 num_trials=nt, max_steps=max_steps,
                                 n_distractors_list=dist)
-    print(f"  [{update_tag}] nav={nav}")
-    print(f"  [{update_tag}] disc={disc}")
+    eval_s = time.time() - t0
+    if not expl_only:
+        print(f"  [{update_tag}] nav={nav}")
+        print(f"  [{update_tag}] disc={disc}")
     print(f"  [{update_tag}] expl={expl}")
+    # Sizing a run needs the eval's own cost, not just the per-update total it
+    # is folded into -- see docs/EXPERIMENTS_SCHEDULE_REPRO.md on how badly a
+    # run can be mis-sized when that number has to be inferred after the fact.
+    print(f"  [{update_tag}] eval_seconds={eval_s:.1f} scope="
+          f"{'expl' if expl_only else 'all'}", flush=True)
     if use_wandb:
         import wandb
-        log = {}
+        log = {"eval/eval_seconds": eval_s}
         for n_d in dist:
-            for k, v in nav[n_d].items(): log[f"eval/nav_{n_d}/{k}"] = v
-            for k, v in disc[n_d].items(): log[f"eval/disc_{n_d}/{k}"] = v
+            for k, v in nav.get(n_d, {}).items(): log[f"eval/nav_{n_d}/{k}"] = v
+            for k, v in disc.get(n_d, {}).items(): log[f"eval/disc_{n_d}/{k}"] = v
             # union_coverage / redundancy now arrive inside expl.
             for k, v in expl[n_d].items(): log[f"eval/expl_{n_d}/{k}"] = v
         log["phase_tag"] = update_tag

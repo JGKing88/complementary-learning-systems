@@ -24,6 +24,7 @@ from __future__ import annotations
 import argparse
 import os
 import sys
+import time
 from dataclasses import asdict
 
 import numpy as np
@@ -159,6 +160,16 @@ def run_navigate(
     log_std_init_val = float(agent.movement_log_std.detach().mean().item()) \
         if hasattr(agent, "movement_log_std") else None
 
+    # None follows the rollout length, which is what every run did before
+    # `eval_max_steps` existed.
+    eval_max_steps = (cfg.eval_max_steps if cfg.eval_max_steps is not None
+                      else cfg.steps_per_rollout)
+
+    # Wall-clock per update, excluding eval. Sizing a run from checkpoint
+    # mtimes conflates the two and gets the answer wrong by the eval's share.
+    t_update_mark = time.time()
+    n_updates_timed = 0
+
     for update in range(1, n_updates_total + 1):
         stage, local_update = stage_at(stages, update)
 
@@ -290,19 +301,26 @@ def run_navigate(
             log["phase_name"] = "navigate"
             wandb.log(log)
 
+        n_updates_timed += 1
         if update == 1 or update % 10 == 0:
             log_std_mean = float(agent.movement_log_std.exp().mean().item())
+            s_per_update = (time.time() - t_update_mark) / max(n_updates_timed, 1)
             print(f"  u{update}({stage.kind}): "
                   f"mean_r={mean_r:.4f} (pre={_mr(pre_rs):.4f}, "
                   f"emp={_mr(emp_rs):.4f}) nov={knobs.novelty:.3f} "
-                  f"emp_frac={knobs.empty_frac:.3f} std={log_std_mean:.3f} | "
+                  f"emp_frac={knobs.empty_frac:.3f} std={log_std_mean:.3f} "
+                  f"s/u={s_per_update:.1f} | "
                   + " ".join(f"{k}={v:.3f}" for k, v in losses.items()),
                   flush=True)
+            t_update_mark, n_updates_timed = time.time(), 0
 
         if eval_world is not None and update % max(eval_every, 1) == 0:
             do_eval(cfg, agent, eval_world, device,
                     f"navigate_u{update}", use_wandb,
-                    max_steps=cfg.steps_per_rollout)
+                    max_steps=eval_max_steps)
+            # Eval time is reported by do_eval and must not be charged to the
+            # updates that follow it.
+            t_update_mark, n_updates_timed = time.time(), 0
 
         # Checkpointing on its own cadence. It used to sit inside the eval
         # branch above, which coupled two things with opposite costs: an eval
@@ -322,7 +340,7 @@ def run_navigate(
                 cfg.save_dir, f"navigate_u{update}.pt", update)
 
     do_eval(cfg, agent, eval_world, device, "after_navigate", use_wandb,
-            max_steps=cfg.steps_per_rollout)
+            max_steps=eval_max_steps)
 
     for k, v in saved.items():
         if k in ("auto_nav_warmup", "auto_store_warmup", "novelty_reward"):
@@ -476,6 +494,8 @@ CFG_FIELDS: dict[str, tuple[str, ...]] = {
     "batch_envs": ("batch_envs",),
     "steps_per_rollout": ("steps_per_rollout",),
     "eval_every": ("eval_every",),
+    "eval_scope": ("eval_scope",),
+    "eval_max_steps": ("eval_max_steps",),
     "ckpt_every": ("ckpt_every",),
     "save_dir": ("save_dir",),
     "seed": ("seed",),
@@ -655,6 +675,19 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--seed", type=int, default=0)
     p.add_argument("--device", type=str, default="cuda")
     p.add_argument("--eval_every", type=int, default=50)
+    p.add_argument("--eval_scope", type=str, default="all",
+                   choices=("all", "expl"),
+                   help="Which evaluators an in-training eval runs. 'all' is "
+                        "nav + goal-discovery + exploration. 'expl' is "
+                        "exploration only, for pure-explore schedules where "
+                        "the other two are undefined -- it removes about two "
+                        "thirds of the eval cost.")
+    p.add_argument("--eval_max_steps", type=int, default=None,
+                   help="Step budget for in-training evals. Default: follow "
+                        "--steps_per_rollout, which is what this did "
+                        "unconditionally before. Pin it when rollout length is "
+                        "the variable under test, so mean_coverage stays the "
+                        "same measurement across variants.")
     p.add_argument("--ckpt_every", type=int, default=None,
                    help="Checkpoint cadence, in updates. Default: follow "
                         "--eval_every, which is what this did unconditionally "

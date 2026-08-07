@@ -146,6 +146,8 @@ _arg  num_val_envs                    "${NUM_VAL_ENVS:-}"
 _arg  n_val_trials                    "${N_VAL_TRIALS:-}"
 _list val_distractors                 "${VAL_DISTRACTORS:-}"
 _arg  eval_every                      "${EVAL_EVERY:-}"
+_arg  eval_scope                      "${EVAL_SCOPE:-}"
+_arg  eval_max_steps                  "${EVAL_MAX_STEPS:-}"
 
 # --- Artifacts / logging ---------------------------------------------------
 _arg  ckpt_every                      "${CKPT_EVERY:-}"
