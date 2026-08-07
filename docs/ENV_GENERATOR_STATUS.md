@@ -19,7 +19,7 @@ python -m hopfield_nav.tests.gen_golden --check       all goldens match
 |---|---|---|
 | 0 | Branch; in-flight explore-min work committed and isolated | **done** |
 | 1 | Plumbing refactor, behavior-frozen | **done** — `8db2930` |
-| 2 | Generator, domains, separation | not started |
+| 2 | Generator, domains, separation | **done** — see outcome below |
 | 3 | Serialization + train wiring | not started |
 | 4 | Per-trait refresh | not started |
 | 5 | Eval CLIs, mix-and-match | not started |
@@ -420,3 +420,47 @@ an unlucky draw near the d=140 bump — is accepted and visible in the report.
 | Margin derived from one direction again | `derive_margin` samples the full ring; test asserts axis-aligned is the slow direction |
 | Rejection sampling loops forever on a tight region | Bounded attempts + capacity preflight with a specific error |
 | Generated envs silently reuse a train wall seed | Disjoint `SeedRange` by construction, plus an explicit assertion on codebooks |
+
+### Phase 2 outcome (2026-08-07)
+
+Gate met: **481 passed** (438 pre-existing + 43 new in `tests/test_splits.py`), all
+goldens byte-identical. Phase 2 added files and one method; nothing existing moved.
+
+Shipped: `world/domains.py`, `world/spec.py`, `world/generate.py`,
+`GridEnv.set_goal`, `tests/test_splits.py`.
+
+**`derive_margin` validated against the real encoder.** Run through a lazy
+`encoded_Phi` proxy (per-module phase tables + encoder, identical arithmetic to
+`precompute_encoded_phi`, no 12 GB allocation), it reproduces the hand measurement
+exactly:
+
+```
+derive_margin(quantile=0.99, threshold=0.15) = 80      <- the decided rule
+derive_margin(quantile=0.50, threshold=0.05) = 60      <- the looser candidate
+```
+
+**The dead South wall is now asserted, not assumed.** `live_wall_bits` measures
+`3*size` live bits at sizes 4, 6 and 8 — wall 2 contributes zero, walls N/E/W
+contribute all of theirs. Wall Hamming margins are reported over live bits only, so
+a quarter of the flips are no longer silent no-ops.
+
+**One design asymmetry worth naming.** Only two traits have a bounded universe and
+therefore a meaningful complement:
+
+| trait | universe | `ood` level |
+|---|---|---|
+| place | `[0, Npos)^2` | yes — `Rect.complement(margin)` |
+| goal | `[0, size)^2` | yes — `complement_for(domain, size)` |
+| wall | unbounded | **no** — novelty *is* `held_out` (a seed training never drew) |
+| size | unbounded above | **no** — named outright via `make_val_set(..., size=N)` |
+
+That is encoded as errors rather than left implicit: `Anywhere.complement()`,
+`AnyCells.complement()`, `SeedRange.complement()` and `Sizes.complement()` each raise
+with the knob to use instead. So "`--ood place` on a model trained everywhere" fails
+at the domain layer with an explanation, not as a silently empty sample.
+
+**Testing note.** The `derive_margin` fixture needs a field that genuinely
+decorrelates. A sum of fixed cosines does not — it stays quasi-periodic and the p99
+never falls, which initially read as a bug in `derive_margin` and was not. Random
+Fourier features give `cos ≈ exp(-d²/2ℓ²)`, and the test now asserts that a longer
+correlation length yields a larger margin rather than pinning one number.

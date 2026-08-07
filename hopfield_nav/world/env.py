@@ -232,6 +232,20 @@ class GridEnv:
         """Pick a new random goal."""
         self._goal = self._random_position(exclude=self._pos)
 
+    def set_goal(self, pos: tuple[int, int]) -> None:
+        """Place the goal at an externally-chosen cell.
+
+        Mirror of ``set_position``. The generator resolves goals from a declared
+        domain, so the env has to accept one rather than draw its own. Nothing
+        else is touched -- in particular the env's RNG is not consumed, so the
+        goal drawn in ``__init__`` simply becomes dead entropy and ``_wall_code``
+        stays bit-identical for a given seed.
+        """
+        x, y = int(pos[0]), int(pos[1])
+        if not (0 <= x < self.size and 0 <= y < self.size):
+            raise ValueError(f"goal {(x, y)} out of bounds for size {self.size}")
+        self._goal = (x, y)
+
     def reset_position(self) -> EnvState:
         """Teleport to a random position (goal stays fixed)."""
         return self.reset()
