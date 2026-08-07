@@ -18,7 +18,7 @@ python -m hopfield_nav.tests.gen_golden --check       all goldens match
 | Phase | What | Status |
 |---|---|---|
 | 0 | Branch; in-flight explore-min work committed and isolated | **done** |
-| 1 | Plumbing refactor, behavior-frozen | in progress |
+| 1 | Plumbing refactor, behavior-frozen | **done** — `8db2930` |
 | 2 | Generator, domains, separation | not started |
 | 3 | Serialization + train wiring | not started |
 | 4 | Per-trait refresh | not started |
@@ -149,6 +149,23 @@ unchanged, only how they reach the evaluator is.
 two distinct scaffold positions get identical codes in every module and the scaffold
 aliases outright. Unchecked anywhere today; `eval_all --Npos` can walk past it
 silently. Pure addition — no valid config is affected.
+
+### Phase 1 outcome (2026-08-07, `8db2930`)
+
+Gate met: **438 passed, all goldens byte-identical, 32/32 entry points import.**
+Field sharing verified by object identity — `num_worlds=2` plus the eval world now
+holds **one** `encoded_Phi`, not three.
+
+Two things worth carrying forward:
+
+- **`spread_offsets` jitter can collapse on a small scaffold.** At `Npos=12,
+  size=4, n=2` the per-axis jitter is ±0.8, which `int(round(...))` flattens, so two
+  independently-placed worlds land on identical offsets. Pre-existing (the goldens
+  confirm behavior did not change), harmless at the working `Npos=1716`, and exactly
+  what an explicit generator removes. Worth an assertion in Phase 2.
+- **Two pre-existing unused imports** surfaced while linting the diff and were left
+  alone: `train_store.py` imports five config dataclasses it never uses, and
+  `agenthash.py` imports `agent_step`. Not this phase's business.
 
 ### Risk register for this phase
 
