@@ -250,6 +250,16 @@ class TrainConfig:
     # `schedule` is the stage list; see hopfield_nav/training/stages.py for the
     # grammar. Everything below it is a run-wide default that a stage may
     # override.
+    # --- env generator (phase 3) ------------------------------------------
+    # Domains reach the config as compact strings so `asdict(cfg)` stays
+    # JSON-native and the checkpoint carries them intact -- same shape as
+    # `schedule` above. Parsed at startup by world/domains.py.
+    env_generator: bool = False             # draw envs from declared domains instead of the historical placement path
+    place_region: str = "anywhere"          # 'anywhere' | 'rect:X0,Y0,W,H'
+    goal_region: str = "any"                # 'any' | 'ring:W' | 'interior:W' | 'quadrant:Q'
+    wall_seeds: str = "0,10000000"          # 'LO,HI' -- the range training draws wall seeds from
+    place_margin: int | None = None         # edge-to-edge train/val clearance; None derives it from the scaffold's own cosine curve
+    goal_val_frac: float = 0.2              # share of goal cells reserved for validation when goals refresh
     schedule: str | None = None
     novelty_anneal: bool = False            # linearly scale novelty_reward -> 0 across the whole run
     epsilon_explore: float = 0.0            # per-step chance of a uniform-random move, explore regime only

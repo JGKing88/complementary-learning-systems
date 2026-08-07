@@ -46,7 +46,8 @@ from .training.stages import (
     stage_at, total_updates,
 )
 from .training.world_setup import (
-    build_field, do_eval, set_phase_freeze, setup_world,
+    build_field, do_eval, legacy_split, set_phase_freeze, setup_world,
+    setup_worlds_declared, write_world_spec,
 )
 
 
@@ -77,6 +78,7 @@ def run_navigate(
     eval_every: int,
     ckpt_every: int,
     dist_rng: np.random.RandomState | None = None,
+    ckpt_world: dict | None = None,
 ) -> None:
     """Walk the schedule, one pooled PPO update per step.
 
@@ -336,6 +338,7 @@ def run_navigate(
             torch.save({
                 "agent_state_dict": agent.state_dict(),
                 "config": ckpt_config,
+                "world_spec": ckpt_world,
                 "update": update,
             }, os.path.join(cfg.save_dir, f"navigate_u{update}.pt"))
             run_manifest.record_checkpoint(
@@ -375,20 +378,26 @@ def train_navigate(
     # (lambdas, Npos, fwhm_ratio, encoder), so the per-world copies this used
     # to build were bit-identical -- and 12 GB each at Npos=1716.
     field = build_field(cfg, encoder)
-    worlds = [setup_world(cfg, encoder, embed_dim, rng, role="train",
-                          field=field)
-              for _ in range(cfg.num_worlds)]
-    # Eval envs are always built with goals_active=True, so nav and discovery
-    # have a goal event to measure. Training envs are not: each rollout sets
-    # theirs from its regime, and under --explore_goals_off the explore ones
-    # run with no goal reward at all. `cfg.env.goals_active` reaching here as
-    # False means it was inherited from a --load_checkpoint parent written by
-    # `train` or `train_phased`, which do still expose the flag.
-    saved_goals_active = cfg.env.goals_active
-    cfg.env.goals_active = True
-    eval_world = setup_world(cfg, encoder, embed_dim, rng, role="eval",
-                             field=field)
-    cfg.env.goals_active = saved_goals_active
+    if cfg.env_generator:
+        worlds, eval_world, split = setup_worlds_declared(cfg, field)
+        world_kind = "declared"
+    else:
+        worlds = [setup_world(cfg, encoder, embed_dim, rng, role="train",
+                              field=field)
+                  for _ in range(cfg.num_worlds)]
+        # Eval envs are always built with goals_active=True, so nav and discovery
+        # have a goal event to measure. Training envs are not: each rollout sets
+        # theirs from its regime, and under --explore_goals_off the explore ones
+        # run with no goal reward at all. `cfg.env.goals_active` reaching here as
+        # False means it was inherited from a --load_checkpoint parent written by
+        # `train` or `train_phased`, which do still expose the flag.
+        saved_goals_active = cfg.env.goals_active
+        cfg.env.goals_active = True
+        eval_world = setup_world(cfg, encoder, embed_dim, rng, role="eval",
+                                 field=field)
+        cfg.env.goals_active = saved_goals_active
+        split = legacy_split(cfg, field, worlds, eval_world)
+        world_kind = "legacy"
 
     input_dim = compute_input_dim(cfg.agent, embed_dim, cfg.env.observation_size)
     print(f"Agent input_dim={input_dim} init_log_std={cfg.agent.init_log_std}",
@@ -418,17 +427,26 @@ def train_navigate(
         wandb_run=wandb.run if cfg.use_wandb else None,
     )
 
+    # Written on both paths: a run has to be able to say which envs it used,
+    # and the historical path could not (see docs/EVAL_SPLITS_DESIGN.md 1.4).
+    world_spec, world_json = write_world_spec(
+        cfg, field, split,
+        run_manifest.encoder_identity(cfg.encoder_checkpoint, enc_cfg, encoder_gain),
+        generator=world_kind)
+    ckpt_world = world_spec.summary(world_json)
+
     run_navigate(
         cfg, stages, worlds, agent, embed_dim, device,
         cfg.use_wandb, eval_world, cfg.eval_every,
         cfg.ckpt_every if cfg.ckpt_every is not None else cfg.eval_every,
-        dist_rng=rng,
+        dist_rng=rng, ckpt_world=ckpt_world,
     )
 
     os.makedirs(cfg.save_dir, exist_ok=True)
     torch.save({
         "agent_state_dict": agent.state_dict(),
         "config": asdict(cfg),
+        "world_spec": ckpt_world,
     }, os.path.join(cfg.save_dir, "navigate_final.pt"))
     run_manifest.record_checkpoint(cfg.save_dir, "navigate_final.pt")
     run_manifest.finish(cfg.save_dir)
@@ -510,6 +528,13 @@ CFG_FIELDS: dict[str, tuple[str, ...]] = {
     "device": ("device",),
     "use_wandb": ("use_wandb",),
     "wandb_project": ("wandb_project",),
+    # env generator
+    "env_generator": ("env_generator",),
+    "place_region": ("place_region",),
+    "goal_region": ("goal_region",),
+    "wall_seeds": ("wall_seeds",),
+    "place_margin": ("place_margin",),
+    "goal_val_frac": ("goal_val_frac",),
     # schedule
     "schedule": ("schedule",),
     "novelty_anneal": ("novelty_anneal",),
@@ -683,6 +708,29 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--seed", type=int, default=0)
     p.add_argument("--device", type=str, default="cuda")
     p.add_argument("--eval_every", type=int, default=50)
+    p.add_argument("--env_generator", action=argparse.BooleanOptionalAction,
+                   default=False,
+                   help="Draw envs from declared domains (world/generate.py) "
+                        "instead of the historical placement path. Off keeps "
+                        "today's envs for a given --seed; on fixes the "
+                        "offset-reproducibility bug and enforces train/val "
+                        "separation. world.json is written either way.")
+    p.add_argument("--place_region", type=str, default="anywhere",
+                   help="Where train envs may sit: 'anywhere' or "
+                        "'rect:X0,Y0,W,H'. Declaring a rect is what makes a "
+                        "place-OOD val set possible later -- its complement.")
+    p.add_argument("--goal_region", type=str, default="any",
+                   help="Which env-local cells may hold a goal: 'any', "
+                        "'ring:W', 'interior:W' or 'quadrant:Q'. Declaring a "
+                        "region is what makes a goal-OOD val set possible.")
+    p.add_argument("--wall_seeds", type=str, default="0,10000000",
+                   help="'LO,HI' range training draws wall seeds from.")
+    p.add_argument("--place_margin", type=int, default=None,
+                   help="Edge-to-edge train/val clearance in cells. Default "
+                        "derives it from the scaffold's own cosine-vs-distance "
+                        "curve (~80 at lambdas=11,12,13 fwhm=0.25).")
+    p.add_argument("--goal_val_frac", type=float, default=0.2,
+                   help="Share of goal cells reserved for validation.")
     p.add_argument("--eval_scope", type=str, default="all",
                    choices=("all", "expl"),
                    help="Which evaluators an in-training eval runs. 'all' is "

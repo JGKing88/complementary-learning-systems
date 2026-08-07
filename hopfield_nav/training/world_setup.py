@@ -14,8 +14,10 @@ distinguishes them.
 """
 from __future__ import annotations
 
+import dataclasses
 import time
 
+import numpy as np
 import torch
 
 from ..policy.agent import NavAgent
@@ -25,7 +27,10 @@ from ..evaluation.metrics import (
     evaluate_exploration, evaluate_goal_discovery, evaluate_navigation,
 )
 from hopfield import Hopfield
+from ..world import domains as dom
+from ..world import generate
 from ..world.scaffold import VectorHash, goal_encodings
+from ..world.spec import EnvSpec, GeneratedSplit, TraitDomains, WorldSpec
 from ..world.world import World, build_world
 
 
@@ -64,6 +69,110 @@ def setup_world(cfg: TrainConfig, encoder, embed_dim, rng, role: str = "train",
     if field is None:
         field = build_field(cfg, encoder)
     return build_world(field, envs, placement="spread", size=cfg.env.size)
+
+
+def setup_worlds_declared(cfg: TrainConfig, field: VectorHash):
+    """Train worlds + eval world drawn from declared domains.
+
+    One ``generate_split`` call covers every train env across all worlds plus the
+    validation set, so separation is enforced across the whole run at once rather
+    than per world. ``num_worlds`` then only chunks the result -- which is all it
+    has ever been, now that the scaffold field is shared.
+    """
+    domains = TraitDomains(
+        place=dom.parse_place(cfg.place_region),
+        wall=dom.parse_seed_range(cfg.wall_seeds),
+        goal=dom.parse_goal(cfg.goal_region),
+        size=dom.Sizes((int(cfg.env.size),)),
+    )
+    n_train = int(cfg.envs_per_world) * int(cfg.num_worlds)
+    split = generate.generate_split(
+        field, cfg.env, domains, n_train, int(cfg.num_val_envs),
+        seed=int(cfg.seed), margin=cfg.place_margin,
+        val_frac=float(cfg.goal_val_frac),
+    )
+
+    train_envs = generate.build_envs(split.train, cfg.env, cfg.agent.movement_mode)
+    per = int(cfg.envs_per_world)
+    worlds = [
+        build_world(field, train_envs[w * per:(w + 1) * per],
+                    offsets=[s.offset for s in split.train[w * per:(w + 1) * per]])
+        for w in range(int(cfg.num_worlds))
+    ]
+
+    # Eval envs are always built with goals_active=True, so nav and discovery
+    # have a goal event to measure -- same reason the legacy path toggles it.
+    eval_cfg = dataclasses.replace(cfg.env, goals_active=True)
+    val_envs = generate.build_envs(split.base_val, eval_cfg, cfg.agent.movement_mode)
+    eval_world = build_world(field, val_envs,
+                             offsets=[s.offset for s in split.base_val])
+    return worlds, eval_world, split
+
+
+def specs_from_world(world: World) -> list[EnvSpec]:
+    """Read a built world back out as resolved specs.
+
+    Possible because ``GridEnv`` now records its seed. This is what lets the
+    legacy placement path emit a truthful ``world.json`` without going through
+    the generator at all.
+    """
+    return [EnvSpec(wall_seed=int(env.seed), size=int(env.size),
+                    offset=(int(off[0]), int(off[1])), goal=tuple(env.goal_location))
+            for env, off in zip(world.envs, world.offsets)]
+
+
+def legacy_split(cfg: TrainConfig, field: VectorHash, worlds: list[World],
+                 eval_world: World) -> GeneratedSplit:
+    """Describe an unconstrained draw as a split, so it can still be recorded.
+
+    The domains are the permissive defaults, and ``margin=0`` is the honest
+    value: the legacy path enforced no separation whatsoever. What it *achieved*
+    lands in diagnostics, which is the interesting part -- it is the first time a
+    run says out loud how close its val envs came to its train envs.
+    """
+    size = int(cfg.env.size)
+    train_specs = [s for w in worlds for s in specs_from_world(w)]
+    val_specs = specs_from_world(eval_world)
+    all_cells = frozenset((x, y) for x in range(size) for y in range(size))
+    goals_train = frozenset(s.goal for s in train_specs)
+    split = GeneratedSplit(
+        domains=TraitDomains(
+            place=dom.Anywhere(), wall=dom.SeedRange(0, 10_000_000),
+            goal=dom.AnyCells(), size=dom.Sizes((size,))),
+        train=train_specs, base_val=val_specs,
+        goal_cells_train=goals_train, goal_cells_val=all_cells - goals_train,
+        margin=0, period=int(np.prod(field.lambdas)), Npos=int(field.Npos),
+    )
+    split.record_used(train_specs)
+    return split
+
+
+def write_world_spec(cfg: TrainConfig, field: VectorHash, split: GeneratedSplit,
+                     encoder_ident: dict, *, generator: str) -> tuple[WorldSpec, str]:
+    """Assemble and write ``world.json`` beside the run manifest.
+
+    Written on **both** paths. §1.4's bug is that a checkpoint's val offsets are
+    unrecoverable, so every post-hoc eval scores it on patches training never
+    used; recording the resolved specs fixes that for every new run, whether or
+    not the run opted into declared domains.
+    """
+    split.diagnostics = generate.split_diagnostics(field, cfg.env, split)
+    spec = WorldSpec(
+        scaffold={
+            "lambdas": list(field.lambdas), "Npos": int(field.Npos),
+            "fwhm_ratio": float(cfg.fwhm_ratio),
+            "static_vectorhash": bool(cfg.vectorhash.static_vectorhash),
+            "encoder": encoder_ident,
+        },
+        generator=generator, split=split,
+    )
+    path = spec.write(cfg.save_dir)
+    d = split.diagnostics
+    print(f"  world.json: generator={generator} margin={split.margin} "
+          f"min_place_gap={d.get('min_place_gap')} "
+          f"min_wall_hamming={d.get('min_wall_hamming')} "
+          f"max_cos={d.get('cosine', {}).get('max')}", flush=True)
+    return spec, path
 
 
 def make_hops(
@@ -202,7 +311,8 @@ def do_eval(cfg, agent, eval_world: World, device, update_tag: str,
 
 
 __all__ = [
-    "build_field", "do_eval", "make_hops", "move_params", "rnn_params",
-    "set_phase_freeze", "set_requires_grad", "setup_world", "store_params",
-    "value_params",
+    "build_field", "do_eval", "legacy_split", "make_hops", "move_params",
+    "rnn_params", "set_phase_freeze", "set_requires_grad", "setup_world",
+    "setup_worlds_declared", "specs_from_world", "store_params",
+    "value_params", "write_world_spec",
 ]

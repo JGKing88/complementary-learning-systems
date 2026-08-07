@@ -118,9 +118,14 @@ def sample_places(
     """``n`` offsets in ``domain``, clear of each other and of ``exclude``.
 
     ``exclude`` is ``[(offset, size), ...]`` already placed elsewhere -- the train
-    set, when drawing validation. ``self_margin=0`` means "must not overlap",
-    which is what the train set wants: two train envs near each other is coverage,
-    not leakage.
+    set, when drawing validation. ``self_margin=0`` means "must not overlap";
+    anything larger demands that much clearance between the envs drawn here.
+
+    Callers generally want ``self_margin == margin`` even for the train set. Not
+    because two train envs near each other leaks -- it does not -- but because
+    the *joint* packing needs a common basis: train envs placed with no clearance
+    can occupy every slot a margin-separated val env could use, and then this
+    loop exhausts its attempts on a problem that looked feasible.
     """
     placed: list[tuple[int, int]] = []
     attempts = 0
@@ -301,17 +306,25 @@ def generate_split(
             dom.stable_hash(seed, "margin")))
 
     # Preflight: fail with a specific knob rather than a rejection-sampling hang.
-    cap_val = domains.place.capacity(size, margin, Npos)
-    cap_all = domains.place.capacity(size, 0, Npos)
-    if cap_val < n_val:
+    #
+    # The bound has to be the *joint* one. An earlier version checked val and
+    # train separately -- capacity(margin) >= n_val and capacity(0) >= n_train +
+    # n_val -- and passed a configuration that then failed to place a single val
+    # env. Train envs placed with no mutual clearance can sit anywhere, including
+    # squarely on every slot a margin-separated val env could use, so their
+    # capacity at margin 0 says nothing about what is left for validation.
+    #
+    # Placing train envs on the same margin basis is what makes this sound, and
+    # it costs nothing: at the working config, margin 80 admits 289 envs against
+    # the 84 used. It also moves train placement *towards* what the historical
+    # spread-lattice did, not away from it.
+    cap = domains.place.capacity(size, margin, Npos)
+    if cap < n_train + n_val:
         raise ValueError(
-            f"place domain {domains.place!r} holds ~{cap_val} envs of size {size} "
-            f"at margin {margin}, need {n_val} validation envs. Raise Npos, "
-            f"enlarge the region, or lower the margin.")
-    if cap_all < n_train + n_val:
-        raise ValueError(
-            f"place domain {domains.place!r} holds ~{cap_all} non-overlapping "
-            f"envs of size {size}, need {n_train + n_val}.")
+            f"place domain {domains.place!r} holds ~{cap} envs of size {size} at "
+            f"margin {margin}, need {n_train} train + {n_val} val = "
+            f"{n_train + n_val}. Raise Npos, enlarge the region, lower the "
+            f"margin, or ask for fewer envs.")
 
     region = domains.goal.cells(size)
 
@@ -343,8 +356,11 @@ def generate_split(
     val_seeds = domains.wall.sample(wall_rng, n_val, exclude=frozenset(train_seeds))
 
     place_rng = dom.trait_rng(seed, "place", role="split")
+    # Train envs are margin-separated from each other too -- see the preflight
+    # note above. Without a common basis the joint packing has no feasibility
+    # guarantee and the val draw can be starved by an unlucky train layout.
     train_off = sample_places(domains.place, place_rng, n_train, size=size,
-                              Npos=Npos, period=period, self_margin=0)
+                              Npos=Npos, period=period, self_margin=margin)
     val_off = sample_places(
         domains.place, place_rng, n_val, size=size, Npos=Npos, period=period,
         exclude=[(o, size) for o in train_off], margin=margin, self_margin=0)

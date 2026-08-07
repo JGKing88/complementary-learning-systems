@@ -417,8 +417,73 @@ def from_json(d: dict):
     return _REGISTRY[kind](d)
 
 
+# ---------------------------------------------------------------------------
+# CLI grammar
+# ---------------------------------------------------------------------------
+#
+# Compact strings so a domain survives `asdict(cfg)` as JSON-native config and
+# reaches the checkpoint intact. Same shape as the `schedule` grammar in
+# `training/stages.py`, which parses "explore:100,novelty=0.1".
+
+def parse_place(text: str) -> PlaceDomain:
+    """``anywhere`` | ``rect:X0,Y0,W,H``"""
+    text = (text or "anywhere").strip()
+    if text == "anywhere":
+        return Anywhere()
+    head, _, rest = text.partition(":")
+    if head != "rect":
+        raise ValueError(
+            f"unknown place region {text!r}; expected 'anywhere' or "
+            f"'rect:X0,Y0,W,H'")
+    try:
+        x0, y0, w, h = (int(v) for v in rest.split(","))
+    except ValueError:
+        raise ValueError(
+            f"place region {text!r}: rect takes four integers, X0,Y0,W,H"
+        ) from None
+    if w <= 0 or h <= 0:
+        raise ValueError(f"place region {text!r}: width and height must be > 0")
+    return Rect(x0, y0, w, h)
+
+
+def parse_goal(text: str) -> GoalDomain:
+    """``any`` | ``ring:W`` | ``interior:W`` | ``quadrant:Q``"""
+    text = (text or "any").strip()
+    if text == "any":
+        return AnyCells()
+    head, _, rest = text.partition(":")
+    builders = {"ring": Ring, "interior": Interior, "quadrant": Quadrant}
+    if head not in builders:
+        raise ValueError(
+            f"unknown goal region {text!r}; expected 'any', 'ring:W', "
+            f"'interior:W' or 'quadrant:Q'")
+    try:
+        value = int(rest)
+    except ValueError:
+        raise ValueError(
+            f"goal region {text!r}: {head} takes one integer") from None
+    if head == "quadrant" and not 0 <= value <= 3:
+        raise ValueError(f"goal region {text!r}: quadrant index must be 0..3")
+    if head != "quadrant" and value < 1:
+        raise ValueError(f"goal region {text!r}: width must be >= 1")
+    return builders[head](value)
+
+
+def parse_seed_range(text: str) -> SeedRange:
+    """``LO,HI``"""
+    try:
+        lo, hi = (int(v) for v in (text or "").split(","))
+    except ValueError:
+        raise ValueError(
+            f"wall seed range {text!r}: expected 'LO,HI'") from None
+    if hi <= lo:
+        raise ValueError(f"wall seed range {text!r}: HI must exceed LO")
+    return SeedRange(lo, hi)
+
+
 __all__ = [
     "Anywhere", "AnyCells", "Cells", "GoalDomain", "Interior", "NotCells",
     "OutsideRect", "PlaceDomain", "Quadrant", "Rect", "Ring", "SeedRange",
-    "Sizes", "complement_for", "from_json", "stable_hash", "trait_rng",
+    "Sizes", "complement_for", "from_json", "parse_goal", "parse_place",
+    "parse_seed_range", "stable_hash", "trait_rng",
 ]

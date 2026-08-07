@@ -16,6 +16,7 @@ union of values each trait actually took. Phase 3 serializes it to
 """
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass, field as dc_field
 
 import numpy as np
@@ -146,6 +147,94 @@ class GeneratedSplit:
         return split
 
 
+@dataclass
+class WorldSpec:
+    """A run's world, recorded: which scaffold, which envs, how they were chosen.
+
+    This is what makes a world reproducible instead of replayable.
+    ``build_eval_world`` recovers a checkpoint's val wall codes and goals by
+    replaying the seed stream, but *not* their offsets -- placement drew from
+    global ``np.random``, whose state depended on everything built before it. So
+    every post-hoc eval has been scoring checkpoints on scaffold patches training
+    never used (§1.4, measured deltas up to 10 cells). Writing the resolved specs
+    fixes that outright.
+
+    ``generator`` says how the envs were chosen, not how they are stored:
+
+        "declared"  drawn by the Phase-2 generator from declared domains
+        "legacy"    drawn by the historical placement path; domains are the
+                    permissive defaults and `split.train` records what it drew
+
+    Both are equally reproducible from this file. The flag only tells you whether
+    the *domains* mean anything or are just describing an unconstrained draw.
+    """
+
+    scaffold: dict
+    generator: str
+    split: GeneratedSplit
+    spec_version: int = 1
+
+    def _payload(self) -> dict:
+        return {"spec_version": self.spec_version, "generator": self.generator,
+                "scaffold": self.scaffold, "split": self.split.to_json()}
+
+    def spec_hash(self) -> str:
+        """sha256 over the canonical payload -- key order cannot change it."""
+        import hashlib
+        blob = json.dumps(self._payload(), sort_keys=True, separators=(",", ":"))
+        return hashlib.sha256(blob.encode("utf-8")).hexdigest()
+
+    def to_json(self) -> dict:
+        return {**self._payload(), "spec_hash": self.spec_hash()}
+
+    @staticmethod
+    def from_json(d: dict) -> "WorldSpec":
+        spec = WorldSpec(scaffold=d["scaffold"], generator=d["generator"],
+                         split=GeneratedSplit.from_json(d["split"]),
+                         spec_version=int(d.get("spec_version", 1)))
+        recorded = d.get("spec_hash")
+        if recorded is not None and recorded != spec.spec_hash():
+            raise ValueError(
+                f"world spec hash mismatch: file says {recorded[:12]}..., "
+                f"contents hash to {spec.spec_hash()[:12]}.... The file was "
+                f"edited by hand or written by a different spec_version.")
+        return spec
+
+    def summary(self, path: str | None = None) -> dict:
+        """The small block that rides in a checkpoint.
+
+        Domains and the hash, never the resolved lists -- those grow with every
+        refresh tick once Phase 4 lands, and a checkpoint is written far more
+        often than a world changes.
+        """
+        return {"spec_version": self.spec_version, "generator": self.generator,
+                "spec_hash": self.spec_hash(),
+                "domains": self.split.domains.to_json(),
+                "world_json": path}
+
+    def write(self, save_dir) -> str:
+        import os
+        os.makedirs(save_dir, exist_ok=True)
+        path = os.path.join(str(save_dir), WORLD_SPEC_NAME)
+        tmp = path + ".tmp"
+        with open(tmp, "w") as f:
+            json.dump(self.to_json(), f, indent=2, sort_keys=True)
+        os.replace(tmp, path)
+        return path
+
+    @staticmethod
+    def read(path) -> "WorldSpec":
+        import os
+        p = str(path)
+        if os.path.isdir(p):
+            p = os.path.join(p, WORLD_SPEC_NAME)
+        with open(p) as f:
+            return WorldSpec.from_json(json.load(f))
+
+
+WORLD_SPEC_NAME = "world.json"
+
+
 def _jsonable(obj):
     """numpy scalars are not JSON-serializable; diagnostics are full of them."""
     if isinstance(obj, dict):
@@ -157,4 +246,5 @@ def _jsonable(obj):
     return obj
 
 
-__all__ = ["EnvSpec", "GeneratedSplit", "TraitDomains"]
+__all__ = ["WORLD_SPEC_NAME", "EnvSpec", "GeneratedSplit",
+           "TraitDomains", "WorldSpec"]

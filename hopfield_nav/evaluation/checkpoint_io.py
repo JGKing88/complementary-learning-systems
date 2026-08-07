@@ -19,6 +19,8 @@ here as a third clause.
 """
 from __future__ import annotations
 
+import os
+
 import numpy as np
 
 from ..policy.agent import NavAgent, compute_input_dim
@@ -27,7 +29,9 @@ from ..config import (
     VectorHashConfig,
 )
 from ..world.env import make_env
+from ..world.generate import build_envs
 from ..world.scaffold import VectorHash, fit_env_assoc, place_envs
+from ..world.spec import WORLD_SPEC_NAME, WorldSpec
 
 
 def coerce_legacy_cfg(cd: dict) -> dict:
@@ -69,13 +73,79 @@ def cfg_from_checkpoint(ck_cfg_dict: dict) -> TrainConfig:
     return cfg
 
 
-def build_eval_world(cfg: TrainConfig, encoder, device: str):
+def world_spec_for(path) -> WorldSpec | None:
+    """The recorded world for a checkpoint or run directory, if it has one.
+
+    ``path`` may be the run directory or any checkpoint inside it.
+    """
+    p = str(path)
+    run_dir = p if os.path.isdir(p) else os.path.dirname(p)
+    candidate = os.path.join(run_dir, WORLD_SPEC_NAME)
+    if not os.path.exists(candidate):
+        return None
+    return WorldSpec.read(candidate)
+
+
+def eval_world_from_spec(spec: WorldSpec, cfg: TrainConfig, encoder,
+                         device: str, *, which: str = "base_val"):
+    """Rebuild an env set exactly as recorded -- no RNG replay anywhere.
+
+    This is the point of `world.json`. The replay path below can recover a run's
+    val wall codes and goals but *not* their offsets, because placement drew from
+    global `np.random` whose state depended on everything built before it. Here
+    the offsets are read, not re-derived, so what you evaluate is what trained.
+    """
+    specs = getattr(spec.split, which)
+    field = VectorHash(cfg.vectorhash)
+    field.build_scaffold()
+    field.precompute_encoded_phi(encoder, cfg.fwhm_ratio, device=device)
+
+    recorded = spec.scaffold
+    if int(recorded.get("Npos", field.Npos)) != int(field.Npos):
+        raise ValueError(
+            f"world.json was written against Npos={recorded['Npos']} but this "
+            f"config builds Npos={field.Npos}; the offsets would index a "
+            f"different scaffold.")
+    enc_now = (encoder_identity_hint(cfg) or {}).get("sha256")
+    enc_then = (recorded.get("encoder") or {}).get("sha256")
+    if enc_now and enc_then and enc_now != enc_then:
+        print(f"  WARNING: world.json was written against encoder "
+              f"{enc_then[:12]}... but this run loads {enc_now[:12]}.... The "
+              f"envs are the same cells; their embeddings are not.", flush=True)
+
+    envs = build_envs(specs, cfg.env, cfg.agent.movement_mode)
+    offsets = [s.offset for s in specs]
+    return envs, field, offsets
+
+
+def encoder_identity_hint(cfg: TrainConfig) -> dict | None:
+    """sha256 of the encoder this config points at, if it is still on disk."""
+    try:
+        import run_manifest
+        return run_manifest.encoder_identity(cfg.encoder_checkpoint)
+    except Exception:
+        return None
+
+
+def build_eval_world(cfg: TrainConfig, encoder, device: str,
+                     spec: WorldSpec | None = None):
     """Rebuild the training-time eval world: same seeding + scaffold.
 
-    Training draws its train-env seeds first, then its val-env seeds, from one
-    `RandomState(cfg.seed)`. The skip loop below reproduces that order, so the
-    val envs here are the same envs the run was evaluated against.
+    With ``spec``, the env set is read from the record and is exact. Without it,
+    this replays the training-time seed stream: training draws its train-env
+    seeds first, then its val-env seeds, from one `RandomState(cfg.seed)`, and
+    the skip loop below reproduces that order. That recovers wall codes and
+    goals -- but **not offsets**, which came from global `np.random` (§1.4).
     """
+    if spec is not None:
+        return eval_world_from_spec(spec, cfg, encoder, device)
+    print(
+        "  NOTE: no world.json for this checkpoint, falling back to the RNG "
+        "replay. Wall codes and goals are exact; **env offsets are not** -- "
+        "placement drew from global np.random, so these are a fresh draw, not "
+        "the ones training evaluated against (measured deltas up to half an env "
+        "width). Re-run training on the current code to get a recorded world.",
+        flush=True)
     rng = np.random.RandomState(cfg.seed)
     size = cfg.env.size
     # Skip train-env seeds to keep val-env seeds aligned with training.
@@ -162,8 +232,10 @@ def scaffold_layout_dict(
 
 __all__ = [
     "build_eval_world",
+    "eval_world_from_spec",
     "cfg_from_checkpoint",
     "coerce_legacy_cfg",
     "load_agent",
     "scaffold_layout_dict",
+    "world_spec_for",
 ]

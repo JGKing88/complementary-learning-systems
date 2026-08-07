@@ -150,6 +150,10 @@ class GridEnv:
         self.goals_active = goals_active
         self.goal_reward = goal_reward
         self.goal_radius = goal_radius
+        # Kept so an env can say which seed built it. The wall code is a pure
+        # function of (seed, size), so this is what lets a world be *recorded*
+        # rather than replayed -- see docs/EVAL_SPLITS_DESIGN.md §1.4.
+        self.seed = seed
         self.rng = np.random.RandomState(seed)
 
         # Wall bar code: 4 walls (N, E, S, W), `size` ±1 segments each, one

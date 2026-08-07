@@ -271,9 +271,13 @@ disjoint as soon as they separate on *one* axis, and the ring measurement below 
 Chebyshev, so the two agree by construction. Wrapping mod `P` is always correct — it
 simply has no effect when `Npos` is well below the period.
 
-Train↔val uses the full margin. **Train↔train uses margin 0** (non-overlap only):
-training wants coverage of the scaffold, and two train envs sitting near each other
-is not leakage.
+Train↔val uses the full margin. **Train↔train uses the same margin** — corrected
+during implementation. The plan said margin 0 on the reasoning that two train envs
+near each other is coverage, not leakage. That reasoning is right and the conclusion
+was still wrong: the *joint* packing needs a common basis, or train envs placed with
+no clearance can occupy every slot a margin-separated val env could use. It costs
+nothing (margin 80 admits 289 envs against the 84 used) and moves train placement
+*towards* the historical spread-lattice, not away from it. See the Phase 3 outcome.
 
 **wall** — disjoint `SeedRange`s as the mechanism; assert no exact codebook
 collision; report min Hamming over **live bits only**. The South wall is structurally
@@ -596,3 +600,54 @@ Extend `tests/test_splits.py` (or a new `test_world_spec.py`):
 (`checkpoint_io.py:58-68`). Dormant — nothing in the navigate path reads
 `cfg.bc.<field>` after a load, and it would crash loudly if it did. Left alone
 because it is unrelated to this work; worth its own one-line commit.
+
+### Phase 3 outcome (2026-08-07)
+
+Gate met: **493 passed** (481 + 12 new in `tests/test_world_spec.py`), goldens
+byte-identical.
+
+Shipped: `WorldSpec` + `spec_hash` in `world/spec.py`; `setup_worlds_declared`,
+`specs_from_world`, `legacy_split`, `write_world_spec` in `training/world_setup.py`;
+`GridEnv.seed`; six CLI flags with `CFG_FIELDS` entries; `world_spec_for` /
+`eval_world_from_spec` and a warned fallback in `evaluation/checkpoint_io.py`.
+
+**`world.json` is written on both paths**, so §1.4 is fixed for every new run
+whether or not it opts into declared domains. `--env_generator` only controls
+whether the generator *chooses* the envs; the recording happens either way.
+
+**The legacy recording immediately earned its keep.** On the first end-to-end run
+(toy config, `Npos=12`, 2 train + 2 val) it reported:
+
+```
+world.json: generator=legacy margin=0 min_place_gap=-4 min_wall_hamming=2 max_cos=1.0
+  train: [(4, 1), (4, 8)]      val: [(4, 1), (4, 7)]
+```
+
+A val env at **the same offset** as a train env — `min_place_gap=-4`, `max_cos=1.0`.
+That is §1.3's overlap, surfaced automatically by an ordinary run instead of having
+to be found by an audit. Every new run now says out loud how close its val envs came
+to its train envs.
+
+**A bug the end-to-end run caught, in this phase's own code.** The Phase-2 capacity
+preflight checked train and val separately — `capacity(margin) >= n_val` and
+`capacity(0) >= n_train + n_val`. Both passed on a configuration that then failed to
+place a *single* val env. The check was unsound: train envs placed with no mutual
+clearance can sit on every margin-separated slot validation needs, so their capacity
+at margin 0 says nothing about what is left. Fixed by making the bound joint
+(`capacity(margin) >= n_train + n_val`) **and** placing train envs on the same margin
+basis. The preflight now names all four knobs:
+
+```
+ValueError: place domain Anywhere() holds ~4 envs of size 4 at margin 25, need
+4 train + 4 val = 8. Raise Npos, enlarge the region, lower the margin, or ask
+for fewer envs.
+```
+
+Worth noting the shape of the miss: the unit tests passed because they exercised
+`generate_split` at configurations with room to spare. It took a deliberately tight
+end-to-end run to find it. Phase 4's tests should include a tight-packing case.
+
+**Still deferred:** `train_phased`, `train_store` and `train` do not yet write a
+spec — the helpers live in `training/world_setup.py` precisely so they can adopt it
+without a second copy. And `cfg_from_checkpoint` still returns `cfg.bc` as a raw
+dict (`checkpoint_io.py:61-73`), noted in the Phase 3 plan and still unfixed.
