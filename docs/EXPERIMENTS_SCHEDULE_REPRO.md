@@ -253,6 +253,50 @@ Separately and more strongly: the translated CLI produces a `TrainConfig`
 **identical field-for-field** to the original checkpoint's, bar four fields all
 accounted for above.
 
+### `--freeze_log_std` was a no-op in both runs
+
+Found while reviewing this comparison, and it qualifies the result above.
+
+`set_phase_freeze(freeze_move=False, …)` calls
+`set_requires_grad(move_params(agent), True)`, and `move_params` returns
+`movement_mean.parameters() + [movement_log_std]`. So unfreezing the movement
+head re-enabled the gradient on `movement_log_std` and silently undid
+`--freeze_log_std`. Every caller that does not freeze movement hits it:
+`train_navigate` always, and `train_phased` phases 2-4. `train_store` escapes
+only because it freezes movement anyway.
+
+Both runs asked for `--freeze_log_std` with `init_log_std -1.8`, i.e. a σ
+pinned at 0.165. Neither got one:
+
+| | u1 | later |
+|---|---|---|
+| gentle-terrain-124 | 0.166 | **0.380** @ u390 |
+| run 1 (job 19798369) | 0.166 | **0.274** @ u230 |
+
+A genuinely frozen σ is flat at 0.166. The whole v18d39 lineage therefore
+trained with a *learnable* log_std while asking for a frozen one, and the
+target numbers this document is chasing were produced under that condition.
+
+The config cross-check could never have caught this: both sides recorded
+`freeze_log_std: true` and both ignored it. It is a code path, not a config
+difference — which is the general lesson, since a field-by-field config match
+says nothing about whether the code honours the field.
+
+**What it means for the verdict.** The reproduction is still a reproduction:
+the bug was present on both sides, symmetrically, so run 1 tracking the
+original remains evidence that the schedule system trains the way the old
+trainer did. But the fidelity depended on a bug shared by both, and that is a
+weaker statement than it first appears.
+
+**And it does not carry forward.** `set_phase_freeze` now honours
+`agent.cfg.freeze_log_std` (`training/world_setup.py`, covered by
+`tests/test_log_std_freeze.py`). Any run after that fix has a genuinely frozen
+σ and so will *not* reproduce gentle-terrain-124, whose σ reached 0.38. Run 1
+is the last comparison that can be made against this lineage on equal terms;
+anything later is comparing against a different algorithm. Whether frozen σ is
+*better* is an open question this campaign did not ask — it is a reason to
+re-baseline, not to expect the old numbers.
+
 ### What was *not* shown
 
 - **The target pair was never measured on the reproduction.** The run stopped at
@@ -263,6 +307,9 @@ accounted for above.
   original's own numbers as a control on the protocol — but was not executed.
   Running it on the two u240 checkpoints would close this in ~15 min.
 - **One seed.** Nothing here separates "the systems agree" from "seed 42 agrees".
+- **Nothing about frozen σ.** Both sides ran with an unintentionally learnable
+  `movement_log_std` (above), so this campaign says nothing about how the
+  config behaves as written.
 
 ### What would have been wrong to claim
 

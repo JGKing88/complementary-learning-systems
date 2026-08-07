@@ -120,6 +120,16 @@ def rnn_params(agent: NavAgent) -> list[torch.nn.Parameter]:
 def set_phase_freeze(agent: NavAgent, freeze_move: bool,
                      freeze_store: bool, freeze_value: bool, freeze_rnn: bool):
     set_requires_grad(move_params(agent), not freeze_move)
+    # `movement_log_std` is a movement parameter, so unfreezing the movement
+    # head re-enables its gradient and silently undoes `--freeze_log_std` --
+    # which every caller does, because no phase freezes movement. The flag was
+    # therefore a no-op on train_navigate: gentle-terrain-124's lineage ran
+    # with a *learnable* log_std despite asking for a frozen one, visible as
+    # std drifting 0.166 -> 0.294 over 250 updates. The agent's own config is
+    # the authority; a phase mask must not overrule it.
+    if getattr(agent.cfg, "freeze_log_std", False) \
+            and hasattr(agent, "movement_log_std"):
+        agent.movement_log_std.requires_grad = False
     set_requires_grad(store_params(agent), not freeze_store)
     set_requires_grad(value_params(agent), not freeze_value)
     set_requires_grad(rnn_params(agent), not freeze_rnn)
