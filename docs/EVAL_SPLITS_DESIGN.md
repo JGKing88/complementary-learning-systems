@@ -674,19 +674,38 @@ Settled 2026-08-07:
 - **Place margin is an edge-to-edge gap derived from the scaffold**, not a
   function of env size and not a constant. `encoded_Phi` is
   `(Npos, Npos, embed_dim)` — env size never enters it. Correlation length is
-  set by `lambdas` and `fwhm_ratio`, measured on the working encoder along the
-  worst-case diagonal:
+  set by `lambdas` and `fwhm_ratio`.
+
+  **Corrected 2026-08-07.** The first version of this bullet sampled *diagonal*
+  displacement and concluded ~50. Diagonal is the **best** case, not the worst —
+  two envs side by side are axis-aligned — and the mean hides the tail.
+  Re-measured over the full toroidal Chebyshev ring (all directions), working
+  encoder:
 
   ```
-  lam=[11,12,13] fwhm=0.25:  d=25 +0.385  d=40 +0.072  d=50 +0.007  d=80 -0.001
-  lam=[11,12,13] fwhm=0.50:  d=25 +0.346  d=40 +0.175  d=50 +0.144  d=80 +0.121
+     d     mean      p99      max     axis(d,0)  diag(d,d)
+    30   +0.396   +0.686   +0.824      +0.502     +0.241
+    50   +0.071   +0.355   +0.512      +0.137     +0.006
+    60   +0.012   +0.226   +0.440      +0.044     +0.000
+    80   -0.009   +0.143   +0.273      -0.011     -0.001
+   140   +0.005   +0.271   +0.481      +0.047     +0.027
+   200   -0.000   +0.079   +0.122      -0.004     -0.001
   ```
 
-  At `fwhm_ratio=0.25` the field decorrelates by ~50. At 0.5 it plateaus at
-  +0.12 and **never** decorrelates at any distance — a hardcoded 50 would
-  silently produce a non-split there. So: compute the curve once per scaffold at
-  generation time, take the smallest `d` with mean cos < 0.05, and raise if the
-  curve never crosses. Lands at 50 for the working config.
+  Three consequences. (1) Axis-aligned decorrelates ~3× slower than diagonal at
+  every gap, so a margin derived from one direction is not a margin. (2) **The
+  tail does not vanish with distance** — max is still +0.273 at d=80, and the
+  bump at d=140 is §1.6's long-range alias structure reappearing. No Euclidean
+  margin makes worst-case similarity small. (3) So derive on a **quantile, not
+  the mean**: `mean < 0.05` → d≈60, `p99 < 0.15` → d≈80, `p99 < 0.10` → never.
+
+  Still raise rather than clamp when the curve never crosses: at
+  `fwhm_ratio=0.5` the mean plateaus at +0.12 and no margin separates it, which
+  a hardcoded constant would hide.
+
+  The surviving tail is what the per-split cosine diagnostic (§2.7) is for, and
+  it is a stronger argument for that diagnostic than the original estimate
+  suggested — see the open question in `docs/ENV_GENERATOR_STATUS.md`.
 - **`val_frac` = 0.2** for the goal cell split.
 - **Size OOD ships as a uniform val size differing from train**, not mixed sizes
   within a set. Only the scalar is threaded; the ~6 sites in §2.9 still need

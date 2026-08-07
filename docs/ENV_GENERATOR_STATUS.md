@@ -186,3 +186,225 @@ python scripts/check_entry_points.py
 
 Plus a memory check: build with `num_worlds=2` and confirm one `encoded_Phi`
 allocation, not three.
+
+---
+
+## Phase 2 — detailed plan
+
+**Goal.** The env generator: declared per-trait domains, independent trait streams,
+separation checking, and the two entry points training and post-hoc eval both call.
+Library only — **nothing is wired into training in this phase.**
+
+**Acceptance gate.** New `hopfield_nav/tests/test_splits.py` passes; the existing 438
+tests still pass and `gen_golden --check` still matches. Phase 2 adds files and one
+method (`GridEnv.set_goal`); it must not perturb any existing path.
+
+### What Phase 1 left in place
+
+```python
+# world/scaffold.py
+VectorHash(cfg)                       # field: gbook, encoded_Phi, (non-static pbook/Wpg/Wgp)
+place_envs(n, size, Npos, rng, ...)   # -> list[tuple[int,int]]
+fit_env_assoc(field, envs, offsets)   # -> EnvAssoc | None
+goal_encodings(field, envs, offsets)
+
+# world/world.py
+World(envs, offsets, field, assoc)
+build_world(field, envs, *, offsets=None, ...)   # offsets= is the generator hook
+```
+
+`build_world(..., offsets=...)` already accepts explicit offsets, so Phase 2 needs no
+change to `world.py` — a generated `EnvSpec` list feeds straight in.
+
+### Module layout
+
+```
+world/domains.py     domain families, stable_hash, trait_rng
+world/spec.py        EnvSpec, TraitDomains, GeneratedSplit
+world/generate.py    margin, capacity, separation, diagnostics, generate_split, make_val_set
+world/env.py         + GridEnv.set_goal
+tests/test_splits.py
+```
+
+### 2.1 `GridEnv.set_goal`
+
+Mirror of the existing `set_position` (`env.py:218`). Construction stays
+`GridEnv(seed=wall_seed)` so `_wall_code` is bit-identical for a given seed; the
+constructor's own goal draw becomes dead entropy and is overwritten. Per-env size
+comes from `dataclasses.replace(env_cfg, size=spec.size)` — `make_env` reads
+`env_cfg.size`, so there is no need to widen its signature.
+
+### 2.2 Trait streams
+
+```python
+def stable_hash(*parts) -> int          # blake2b over a canonical string
+def trait_rng(run_seed, trait, tick) -> np.random.RandomState
+```
+
+**Not Python's `hash()`** — it is salted per process, so a run would not reproduce
+across invocations. Derived per `(trait, tick)` rather than advanced from one stream:
+that is what makes "refresh placement only, hold walls and goals" reproducible
+without replaying the others.
+
+### 2.3 Domains
+
+Each with `sample(rng, n, ...)`, `contains(v)`, `complement(...)`, `to_json` /
+`from_json`.
+
+| trait | family |
+|---|---|
+| place | `Anywhere` \| `Rect(x0,y0,w,h)` \| `Complement(inner, margin)` |
+| goal | `AnyCells` \| `Cells(frozenset)` \| `Ring(w)` \| `Interior(w)` \| `Quadrant(q)` |
+| wall | `SeedRange(lo, hi)` |
+| size | `Sizes([...])` |
+
+`Complement(Anywhere)` must raise — there is nothing outside it. That is the "asking
+for `--ood place` on a model that trained everywhere" error, caught at the domain
+layer rather than at the CLI.
+
+### 2.4 Separation
+
+**place — toroidal, edge-to-edge, max over axes.** Per axis, circular origin
+distance `dc = min(|Δ| mod P, P - |Δ| mod P)` with `P = prod(lambdas)`; gap on that
+axis is `dc - size`; separation is `max(gap_x, gap_y)`. Max, not min: two AABBs are
+disjoint as soon as they separate on *one* axis, and the ring measurement below is
+Chebyshev, so the two agree by construction. Wrapping mod `P` is always correct — it
+simply has no effect when `Npos` is well below the period.
+
+Train↔val uses the full margin. **Train↔train uses margin 0** (non-overlap only):
+training wants coverage of the scaffold, and two train envs sitting near each other
+is not leakage.
+
+**wall** — disjoint `SeedRange`s as the mechanism; assert no exact codebook
+collision; report min Hamming over **live bits only**. The South wall is structurally
+dead: `FOVEAL_HALF_ANGLE_DEG = 60.0`, so every ray has `dy = cos θ ≥ 0.5 > 0` and
+wall 2 can never be hit. That is 60 live bits of 80 at `size=20`. Derive `S` as dead
+structurally, but *measure* N/E/W by flipping each bit and diffing the codebook, and
+cache per `(size, observation_size)` — a bit-flip sweep is ~2 s at `size=20,
+observation_size=12`.
+
+**goal** — cell-set disjointness in env-local coordinates. **size** — set
+disjointness.
+
+### 2.5 Margin derivation — corrected
+
+`derive_margin(field, rng, *, quantile, threshold)`: sample position pairs at
+toroidal Chebyshev gap `d` **over all displacement directions**, return the smallest
+`d` clearing the threshold. Measured (working encoder, full ring):
+
+```
+   d     mean      p99      max     axis(d,0)  diag(d,d)
+  30   +0.396   +0.686   +0.824      +0.502     +0.241
+  50   +0.071   +0.355   +0.512      +0.137     +0.006
+  60   +0.012   +0.226   +0.440      +0.044     +0.000
+  80   -0.009   +0.143   +0.273      -0.011     -0.001
+ 140   +0.005   +0.271   +0.481      +0.047     +0.027
+ 200   -0.000   +0.079   +0.122      -0.004     -0.001
+```
+
+The roadmap's "~50" came from the diagonal curve and is wrong: **diagonal is the
+best case**, axis-aligned decorrelates ~3× slower, and two envs side by side are
+axis-aligned. Derive on a **quantile, not the mean**: `mean<0.05` → d≈60,
+`p99<0.15` → d≈80, `p99<0.10` → never reached.
+
+Capacity is not the constraint at either candidate (`Npos=1716`, `size=20`, need 84):
+
+```
+  margin  40: 29 per axis ->  841 envs
+  margin  60: 22 per axis ->  484 envs
+  margin  80: 17 per axis ->  289 envs
+```
+
+Raise rather than clamp when the curve never crosses — at `fwhm_ratio=0.5` the mean
+plateaus at +0.12 and no margin separates it.
+
+### 2.6 Capacity and preflight
+
+`place_capacity(domain, size, margin, Npos) = (floor((W - size)/(size+margin)) + 1)²`
+for a `Rect`, checked before sampling. Bounded rejection attempts, then an error
+naming the knob: raise `Npos`, enlarge the region, lower the margin, or ask for fewer
+envs. Also assert the Phase-1 `Npos <= prod(lambdas)` guard is satisfied (it is
+enforced in `VectorHash.__init__`, so this is a cheap re-check with a
+generator-specific message).
+
+### 2.7 Cosine diagnostic
+
+`cosine_report(field, offsets_a, size_a, offsets_b, size_b) -> {max, p99, frac>0.3}`
+over normalized `encoded_Phi` rows of the two footprint sets. At the working config
+that is 80×400 = 32k vectors against 4×400 = 1600, `d=1024` — one matmul.
+
+**Whether this gates is an open question — see below.** Phase 2 implements it as a
+pure function returning the numbers, so either answer is a one-line change at the
+call site.
+
+### 2.8 Goal cells — two branches, one object
+
+```python
+if refresh_goal:
+    S_train, S_val = split(region_cells, val_frac=0.2, rng)   # 320 / 80
+else:
+    S_train = drawn_train_goals                               # <= n_envs cells
+    S_val   = region_cells - S_train
+goal_domain_val = Cells(S_val)          # both branches land here
+```
+
+Both serialize as a plain `Cells([...])`, so post-hoc generation is branch-blind.
+Random scatter, not a region — keeps ring/interior free as a separately declarable
+OOD region.
+
+### 2.9 Entry points
+
+```python
+generate_split(field, env_cfg, domains, n_train, n_val, seed, *, refresh_goal)
+    -> GeneratedSplit(domains, train, base_val, goal_cells_train, goal_cells_val,
+                      margin, diagnostics)
+
+make_val_set(split, n_envs, levels, seed, ...) -> list[EnvSpec]
+    levels: {"place"|"wall"|"goal"|"size": "same" | "held_out" | "ood"}
+```
+
+`generate_split` draws train and base_val **together** so separation is enforced
+jointly rather than checked afterwards — sampling val without knowing train is what
+produces today's overlap. `generate_split` is the special case
+`levels = all held_out`.
+
+`GeneratedSplit` is the Phase-2 stand-in for the Phase-3 `world.json`: it carries
+domains + resolved lists + the per-trait union, so `make_val_set` is testable now and
+Phase 3 only has to serialize it.
+
+### 2.10 Tests (`tests/test_splits.py`)
+
+- `stable_hash` identical across separate processes (subprocess check — this is the
+  one that catches accidentally using `hash()`)
+- domain `sample` determinism given `(domain, seed)`; `complement(complement(d)) == d`;
+  `Complement(Anywhere)` raises
+- **structural**: the South wall contributes zero live bits at several sizes, and
+  N/E/W contribute all of theirs — the §1.7 claim, asserted rather than assumed
+- separation holds per trait between `train` and `base_val` for a range of seeds
+- toroidal gap: two envs straddling the `Npos` seam are correctly reported as near
+- capacity error fires with the right message when a `Rect` is too small
+- `EnvSpec` round-trip: build → serialize → rebuild gives identical `_wall_code`
+  **arrays**, offsets and goals (not just equal seeds)
+- goal branch: with `refresh_goal=True` train and val cell sets partition the grid
+  and are disjoint; with `False`, val is the complement of what train drew
+
+### Open question for this phase
+
+**Should the cosine diagnostic gate placement, given the corrected measurement?**
+The decision so far is "report, never enforce", to keep the split reproducible from
+coordinates alone. But the re-measurement shows worst-case similarity does **not**
+fall with distance — at margin 80 a val env can still sit at cos +0.27 to a train
+env, and the d=140 bump reaches +0.48. Meanwhile Phase 3 records resolved offsets in
+`world.json` anyway, so rerolling a bad draw costs nothing in reproducibility: the
+split is reproducible *from the record* either way. Options: report only; reroll the
+offset when max cos exceeds a threshold and record the result; or hard-error and make
+the user change margin/region/seed.
+
+### Risk register
+
+| Risk | Mitigation |
+|---|---|
+| `hash()` used instead of `stable_hash` | Cross-process test in the suite |
+| Margin derived from one direction again | `derive_margin` samples the full ring; test asserts axis-aligned is the slow direction |
+| Rejection sampling loops forever on a tight region | Bounded attempts + capacity preflight with a specific error |
+| Generated envs silently reuse a train wall seed | Disjoint `SeedRange` by construction, plus an explicit assertion on codebooks |
