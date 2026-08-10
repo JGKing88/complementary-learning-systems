@@ -114,6 +114,9 @@ class AgentConfig:
     movement_mode: str = "discrete"         # "discrete" (Categorical 4) | "continuous" (Gaussian 2)
     init_log_std: float = 0.0               # continuous policy: initial log std (default std=1.0)
     freeze_log_std: bool = False            # When True, movement_log_std is held at its initial value (no gradient). For Phase A: pin variance low so PPO loss directly pressures the policy mean instead of letting samples "hide" the mean.
+    # Recurrent trunk. Defaults reproduce the historical GRU exactly.
+    rnn_cell: str = "gru"                   # "gru" | "rnn" (vanilla Elman)
+    rnn_nonlinearity: str = "tanh"          # "tanh" | "relu" | "softplus"; rnn_cell="rnn" only
 
 
 @dataclass
@@ -290,6 +293,9 @@ class RNNAgentConfig:
     movement_mode: str = "discrete"         # "discrete" (Categorical 4) | "continuous" (Normal 2)
     init_log_std: float = 0.0               # continuous policy: initial log std
     freeze_log_std: bool = False
+    # Recurrent trunk; see AgentConfig for the same two knobs.
+    rnn_cell: str = "gru"                   # "gru" | "rnn" (vanilla Elman)
+    rnn_nonlinearity: str = "tanh"          # "tanh" | "relu" | "softplus"; rnn_cell="rnn" only
     # Optional auxiliary input channels (sensory codebook vector is always on).
     input_prev_action: bool = False
     input_prev_reward: bool = False

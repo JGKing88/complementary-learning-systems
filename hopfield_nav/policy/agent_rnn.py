@@ -10,6 +10,7 @@ import torch
 import torch.nn as nn
 from torch.distributions import Categorical, Normal
 
+from .recurrent import build_recurrent_core
 from ..config import RNNAgentConfig
 
 
@@ -39,12 +40,7 @@ class RNNAgent(nn.Module):
         super().__init__()
         self.cfg = cfg
 
-        self.rnn = nn.GRU(
-            input_dim, cfg.hidden_size,
-            num_layers=cfg.num_rnn_layers,
-            batch_first=True,
-            dropout=cfg.dropout if cfg.num_rnn_layers > 1 else 0.0,
-        )
+        self.rnn = build_recurrent_core(cfg, input_dim)
 
         if cfg.movement_mode == "discrete":
             self.movement_head = nn.Linear(cfg.hidden_size, 4)
