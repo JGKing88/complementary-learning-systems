@@ -339,7 +339,9 @@ progress signal. The verdict pass is still owed.
 | run | envs | batch | pool | @u300 | @u1000 | shape | wall-clock |
 |---|---|---|---|---|---|---|---|
 | `e1s42` | 1 | 16 | 16 | 0.111 | 0.152 | low, flat | ~9 m |
-| `e2s42` | 2 | 16 | 32 | 0.151 | **0.071** | peak @u125, collapse | 21 m |
+| `e2s42` | 2 | 16 | 32 | 0.151 | **0.071** | peak 0.215 @u125, collapse | 21 m |
+| `e2s43` | 2 | 16 | 32 | 0.230 | **0.137** | peak 0.264 @u475, collapse | 21 m |
+| `e2s44` | 2 | 16 | 32 | 0.103 | **0.076** | peak 0.168 @u700, drift down | 21 m |
 | `c2s42` | 2 | 640 | 1280 | 0.327 | **0.346** | plateau ~0.37 | 80 m |
 | `c1s42` | 1 | 1280 | 1280 | 0.191 | 0.151 | low, flat | 103 m |
 | **`e4s42`** | **4** | **16** | **64** | 0.363 | **0.504**, still climbing | **monotone** | **27 m** |
@@ -385,12 +387,36 @@ constraint**:
   `c4` (4 envs at pool 1280) is the outstanding test of whether the extra pool
   buys anything on top of `e4`'s 0.504.
 
-**An earlier draft of this section claimed a 32-trajectory pool is "unusable".
-That was wrong** — it generalized from `e2` alone. `e1` runs stably on a pool of
-*16*, and `e4` climbs cleanly to 0.504 on a pool of 64. Small pools are erratic
-rather than uniformly fatal, and `e2`'s collapse may be seed-specific; `e2s43`
-and `e2s44` are queued precisely because 2 envs was expected to be
-seed-dominated, and they will settle it.
+### The 2-env collapse is reproducible, and the `e*` ladder is non-monotonic
+
+All three seeds are in, and none of them is a fluke: `e2` ends at **0.071 /
+0.137 / 0.076, mean 0.095 ± 0.03**. The dramatic collapse is not universal, but
+the failure is:
+
+| seed | peak | after the peak |
+|---|---|---|
+| s42 | 0.215 @u125 | collapse to 0.07 |
+| s43 | 0.264 @u475 | collapse to 0.10, partial recovery, ends 0.137 |
+| s44 | 0.168 @u700 | no collapse — drifts down from a low peak |
+
+The two runs that climbed past ~0.21 both fell off; the one that never got
+there merely wandered. So the fragile regime is entered by *becoming competent*
+on a tiny pool, not by initialization luck.
+
+Two corrections to earlier drafts of this section follow.
+
+**"A 32-trajectory pool is unusable" was too strong**, and was written from
+`e2s42` alone. `e1` is stable on a pool of *16* and `e4` climbs cleanly to
+0.504 on 64, so pool size is not a monotone danger. The defensible claim is
+narrower: *at 2 envs and pool 32, a run that reaches ~0.2 destabilizes, 2 times
+out of 2*.
+
+**And the `e*` ladder is not monotone in `envs_per_world`** — 1 env ends at
+0.152, 2 envs at 0.095, 4 envs at 0.504. Adding the second env makes things
+*worse*. That is not a diversity effect; it is `e1` sitting stably below the
+fragile band while `e2` climbs into it. It is also a warning about the `e*`
+design generally: because it moves envs and pool together, its rungs are not
+comparable to each other, and only the `c*` rungs isolate diversity.
 
 ### `e2`'s collapse has two phases, and only the first was predicted
 
