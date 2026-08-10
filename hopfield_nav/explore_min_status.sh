@@ -1,13 +1,21 @@
 #!/bin/bash
 # One-line-per-eval view of the explore-min wave.
 #
-#   bash hopfield_nav/explore_min_status.sh
+#   bash hopfield_nav/explore_min_status.sh            # every eval of every job
+#   LAST=1 bash hopfield_nav/explore_min_status.sh     # only each job's latest
+#   ONLY="c2s42 e2s42" bash ...                        # just these variants
+#
+# LAST=1 exists because wave 2 is 13 jobs x 40 evals: the full view is 500+
+# rows, which is the right thing for reading one run's trajectory and the wrong
+# thing for answering "where is the ladder now".
 #
 # cov/union are read at the two eval distractor levels, so the gap between the
 # two columns IS the distractor-robustness number -- the thing that would
 # otherwise need a separate pass to see.
 
-cd /home/jackking/cls/hopfield_nav/logs || exit 1
+# Logs live under $CLS_RUNS and are shared by every checkout, so this resolves
+# the same place from a worktree as from the shared tree.
+cd "${REPO_DIR:-/home/jackking/cls}/hopfield_nav/logs" || exit 1
 
 printf "%-5s %-9s %-6s %7s %7s %7s %7s %6s %6s\n" \
        variant job update cov_d0 cov_d10 uni_d0 uni_d10 "d-gap" "s/u"
@@ -17,10 +25,16 @@ for f in slurm_explore_min_*.out; do
     job=${f#slurm_explore_min_}; job=${job%.out}
     variant=$(sed -n 's/^=== variant=\([a-z0-9]*\) .*/\1/p' "$f" | head -1)
     [ -n "$variant" ] || variant="?"
+    if [ -n "${ONLY:-}" ] && [[ " $ONLY " != *" $variant "* ]]; then
+        continue
+    fi
     # Last observed cost per update, excluding eval (the trainer prints it).
     spu=$(grep -o 's/u=[0-9.]*' "$f" | tail -1 | cut -d= -f2)
 
-    grep -n "\] expl=" "$f" | while IFS= read -r line; do
+    evals=$(grep -n "\] expl=" "$f")
+    [ -n "${LAST:-}" ] && evals=$(printf '%s\n' "$evals" | tail -1)
+    printf '%s\n' "$evals" | while IFS= read -r line; do
+        [ -n "$line" ] || continue
         tag=$(printf '%s' "$line" | sed -n 's/.*\[\([a-z_0-9]*\)\] expl=.*/\1/p')
         covs=$(printf '%s' "$line" | grep -o "'mean_coverage': [0-9.]*" \
                    | cut -d' ' -f2)

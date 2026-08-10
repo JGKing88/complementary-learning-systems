@@ -24,8 +24,14 @@ three runs at mean coverage **0.495–0.514 against v35's 0.507** — a tie on
 coverage — reached in **2.6 h instead of ~20 h**, with the distractor gap
 collapsed from 0.050 to ≈0.000. So the wins are cost and distractor
 robustness, not coverage. Reward shaping turned out not to be where the
-headroom was; rollout/env structure is. Wave 2 (the diversity ladder) is
-designed below and not yet submitted.
+headroom was; rollout/env structure is.
+
+**Status 2026-08-10.** Wave 2 — the diversity ladder — is **submitted**, from a
+branch off `main` carrying only wave 1's tooling (`1be48b4`), not the
+`env-generator` line. Thirteen jobs: `e1/e2×3/e4/e8/e16` and
+`c1/c2×3/c4/c8`, all `explore:1000`. Submitting it surfaced a second bug, in
+the launcher rather than the model — see below — which would have silently
+trained the wrong branch. Results below as they land.
 
 ---
 
@@ -80,8 +86,21 @@ Two consequences that are not obvious from the flag names:
 - **Cutting `batch_envs` does not save time.** d3 cut it 4× (16→4) and got
   *slower* — 48.8 s/u vs 30.8 — because the serial call count is unchanged and
   each call just underuses the GPU more. It saves data, not wall-clock.
-- **`batch_envs` is nearly free to raise**, and buys data per update and PPO
-  pool size without adding a single serial call.
+- **`batch_envs` is nearly free to raise** — *false above ~batch 16, corrected
+  2026-08-10.* It adds no serial call, but the calibration of ~1.9 ms per call
+  was taken at batch 16, where the GPU is idle enough that a bigger batch rides
+  along free. It does not hold at wave-2 sizes: `c2s42` (2 envs × batch 640)
+  and `e2s42` (2 envs × batch 16) issue the **same 400 serial calls per
+  update**, and run at **~4.8 s/u against ~0.9 s/u**. Same call count, 5×
+  the wall-clock. Past saturation the per-call cost scales with the batch, so
+  the honest cost model is
+
+  ```
+  wall-clock/update ≈ (envs_per_world × steps_per_rollout) × f(batch_envs)
+  ```
+
+  with `f` flat only while the GPU is underused. `batch_envs` buys pool size at
+  a real price; it is `envs_per_world` that is the cheap lever, not both.
 
 `eval_scope=expl` brought an eval pass down to **5.0 s**, so eval is no longer
 a meaningful share of anything and per-update cost is essentially all rollout
@@ -120,7 +139,29 @@ merely improving it. See results.
 
 ---
 
-## A bug this wave found
+## Two bugs this wave found
+
+### The launcher trained the wrong checkout (found 2026-08-10, wave 2)
+
+All three explore-min scripts hard-coded `cd /home/jackking/cls`, so a wave
+submitted from an agent worktree did not train that worktree — it trained
+whatever branch the *shared* checkout happened to be sitting on. Submitting
+wave 2 from a branch off `main` would in fact have run `env-generator`'s
+per-rollout Hopfield derivation and store-head objective freeze, and the
+resulting numbers would have been attributed to the diversity ladder.
+
+Nothing in the logs would have shown it, which is what let it survive wave 1
+unnoticed — wave 1 happened to be submitted from the shared checkout, so it is
+not affected, but only by luck.
+
+Fixed by having the submitter resolve its own repo root from `$BASH_SOURCE` and
+export it as `REPO_DIR`, which `sbatch` passes to every job; the batch scripts
+read it from the environment, the only channel available to them, since SLURM
+runs them from a node-local spool copy where `$BASH_SOURCE` is useless. Each
+job now prints `repo: <path> @ <sha>` at startup so the checkout and commit are
+in the experiment record rather than implied.
+
+### `--freeze_log_std` did nothing (found 2026-08-07, wave 1)
 
 `--freeze_log_std` was a **no-op on `train_navigate`** until 2026-08-07.
 `NavAgent.__init__` set `requires_grad=False`; then `train_navigate.py:90`
