@@ -169,6 +169,13 @@ submit e16   ENVS_PER_WORLD=16        SCHEDULE='explore:1000'
 # a single serial model call. c1 does 200 serial calls per update against s1's
 # 16000 for identical data. Pool size, env-steps/update and memory all match
 # s1 exactly; only the number of distinct envs moves.
+# e4L -- the winning config, run 3x longer. e4 finished 1000 updates at 0.504
+# and was STILL CLIMBING (u925 .473, u1000 .504), which is the same open end s1
+# had at u300. Since 4 envs matches 80 at a twentieth of the cost, the ceiling
+# of the cheap config is now the most valuable unknown in the study, and at
+# 1.6 s/u it costs ~1.6 GPU-hours to settle -- inside the wave's 2 h budget.
+submit e4L ENVS_PER_WORLD=4 SEED=42 SCHEDULE='explore:3000'
+
 for s in 42 43 44; do submit "c2s$s" ENVS_PER_WORLD=2 BATCH_ENVS=640 SEED=$s SCHEDULE='explore:1000'; done
 submit c1s42 ENVS_PER_WORLD=1 BATCH_ENVS=1280 SEED=42 SCHEDULE='explore:1000'
 submit c4s42 ENVS_PER_WORLD=4 BATCH_ENVS=320  SEED=42 SCHEDULE='explore:1000'
