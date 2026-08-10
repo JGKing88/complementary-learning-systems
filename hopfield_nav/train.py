@@ -25,6 +25,7 @@ from .world.scaffold import (
 )
 from hopfield import Hopfield
 from .policy.agent import NavAgent, compute_input_dim
+from .policy.recurrent import add_recurrent_args
 from .rollout.collector import RolloutCollector
 from .rollout.distractors import sample_distractors
 from .updates.ppo import ppo_update
@@ -544,6 +545,7 @@ def main():
     # Agent
     parser.add_argument("--hidden_size", type=int, default=128)
     parser.add_argument("--num_rnn_layers", type=int, default=1)
+    add_recurrent_args(parser)
     parser.add_argument("--hopfield_mode", type=str, default="discrete",
                         choices=["discrete", "continuous"])
     parser.add_argument("--input_encoded_state", action=argparse.BooleanOptionalAction, default=True)
@@ -675,6 +677,8 @@ def main():
             input_goal_in_memory=args.input_goal_in_memory,
             init_log_std=args.init_log_std,
             freeze_log_std=args.freeze_log_std,
+            rnn_cell=args.rnn_cell,
+            rnn_nonlinearity=args.rnn_nonlinearity,
         ),
         ppo=PPOConfig(
             lr=args.lr,

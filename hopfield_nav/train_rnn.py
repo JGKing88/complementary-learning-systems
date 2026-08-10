@@ -22,6 +22,7 @@ import torch
 from cls_paths import run_dir, run_name
 import run_manifest
 from .policy.agent_rnn import RNNAgent, compute_rnn_input_dim
+from .policy.recurrent import add_recurrent_args
 from .updates.bc_rnn import bc_rnn_update
 from .config import EnvConfig, RNNAgentConfig, RNNBCConfig, RNNTrainConfig, VectorHashConfig
 from .world.env import GridEnv, warn_if_offcell_stores
@@ -312,6 +313,7 @@ def main() -> None:
     p.add_argument("--hidden_size", type=int, default=128)
     p.add_argument("--num_rnn_layers", type=int, default=1)
     p.add_argument("--dropout", type=float, default=0.0)
+    add_recurrent_args(p)
     p.add_argument("--init_log_std", type=float, default=0.0)
     p.add_argument("--freeze_log_std", action="store_true")
     p.add_argument("--input_prev_action", action=argparse.BooleanOptionalAction, default=False)
@@ -364,6 +366,7 @@ def main() -> None:
             hidden_size=args.hidden_size, num_rnn_layers=args.num_rnn_layers,
             dropout=args.dropout, movement_mode=args.movement_mode,
             init_log_std=args.init_log_std, freeze_log_std=args.freeze_log_std,
+            rnn_cell=args.rnn_cell, rnn_nonlinearity=args.rnn_nonlinearity,
             input_prev_action=args.input_prev_action,
             input_prev_reward=args.input_prev_reward,
             input_grid_state=args.input_grid_state,

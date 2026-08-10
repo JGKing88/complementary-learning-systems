@@ -79,7 +79,7 @@ encoded_Phi (Npos, Npos, D)      unit-sphere embedding of every global position
         │     d_N = Φ[x, y+1] − Φ[x, y],  d_E = Φ[x+1, y] − Φ[x, y]
         │     q   = W_gs · (x̂ − x)        → 2-D (East, North) displacement
         ▼
-     policy input → NavAgent (GRU) → {move, store, value}
+     policy input → NavAgent (GRU | vanilla RNN) → {move, store, value}
         │
         └─ trained by PPO (hopfield_nav.ppo) or DAgger BC (hopfield_nav.bc)
 ```
@@ -131,7 +131,8 @@ directory, the conda env and 309 checkpoint paths all say so.
 | `world/scaffold.py` | 472 | `VectorHash`: builds `gbook` (+ optional place/sensory layers), places envs as non-overlapping patches in the `Npos × Npos` scaffold, precomputes `encoded_Phi`, and provides `get_encoded_state`, `gram_schmidt_projection`, `project_displacement`, `get_goal_encodings`. |
 | `world/memory.py` | 208 | `Hopfield` (Hebbian store, iterative tanh recall) plus batched free functions `recall_per_env_batch` / `recall_per_env_batch_trajectory` for per-env weight matrices. |
 | `encoder_io.py` | 78 | The one sanctioned edge out to `encoder_training`. Loads a frozen encoder checkpoint; tolerates three historical save formats; resolves the effective gain. `validate_config()` only checks that encoder `lambdas` match VectorHash `lambdas`. |
-| `policy/agent.py` | 192 | `NavAgent` = GRU trunk + movement head (Categorical(4) or Normal(2)) + Bernoulli store head + value head. `compute_input_dim()` derives the input width from `policy/channels.py`. |
+| `policy/agent.py` | 192 | `NavAgent` = recurrent trunk (`policy/recurrent.py`) + movement head (Categorical(4) or Normal(2)) + Bernoulli store head + value head. `compute_input_dim()` derives the input width from `policy/channels.py`. |
+| `policy/recurrent.py` | 175 | The trunk, built from config in one place for both agents. `--rnn_cell {gru,rnn}` × `--rnn_nonlinearity {tanh,relu,softplus}`; defaults reproduce the historical GRU exactly. `SoftplusRNN` subclasses `nn.RNN` so parameter names, init and `input_size`/`num_layers` are inherited — which is what lets a tanh checkpoint load into a softplus model, and what keeps every existing reader of `agent.rnn` working. Softplus loses cuDNN (Python recurrence; free at rollout, slower in the update) and gives a positive, unbounded state instead of a bounded zero-centred one. |
 | `policy/channels.py` | 152 | The policy-input layout, defined once (phase 4a): one ordered channel list, one function that builds the tensor, one that sums the widths. Channel order is a checkpoint-compatibility surface — new channels append. |
 | `rollout/signal.py` | — | One Hopfield recall → projection → direction implementation (phase 4b), shared by the collector and every evaluator. |
 | `rollout/types.py` | 21 | `RolloutBatch`: what a rollout produces. Consumed by both `ppo` and `bc`. |
@@ -151,7 +152,7 @@ directory, the conda env and 309 checkpoint paths all say so.
 | `hopfield_nav.train_phased` | 39 | Four sequential phases (store pretrain → follow → explore → compose). Also the **shared helper module** (`setup_world`, `make_hops`, `set_phase_freeze`, `do_eval`) imported by the two entry points below. | `checkpoint/phased_<run>/phased_final.pt` |
 | `hopfield_nav.train_navigate` | 70 | The **active** harness. Walks a `--schedule` of explore / exploit / interleave stages, pooling both regimes' rollouts into one PPO step per update, with novelty/revisit/wall/persistence shaping, ε-greedy, distractor curricula, log-std annealing. `--load_checkpoint` inherits the parent's whole config, overriding only the flags actually passed. | `agent_ckpts/navigate_<run>/navigate_u{N}.pt` |
 | `hopfield_nav.train_store` | 11 | Loads a Phase-A checkpoint, freezes everything but the store head, trains it with detached-trunk BCE. | `checkpoint/phase_b_only_<run>/phase_b_u{N}.pt` |
-| `hopfield_nav.train_rnn` | 37 | No-memory control baseline: GRU policy on raw sensory, BC against the BFS oracle, in `sequential` / `mixed` / `finetune` mode. | `checkpoint_rnn/<run>/final.pt` |
+| `hopfield_nav.train_rnn` | 37 | No-memory control baseline: recurrent policy on raw sensory, BC against the BFS oracle, in `sequential` / `mixed` / `finetune` mode. | `checkpoint_rnn/<run>/final.pt` |
 
 Supporting modules for the baseline: `policy/agent_rnn.py`, `rollout/rnn.py`,
 `updates/bc_rnn.py`, `evaluation/rnn.py`. They deliberately share nothing with the Hopfield
@@ -223,7 +224,7 @@ drivers (variables at the top of the file); `just_plot.sh` re-renders from an
 existing history.
 
 **`phase_decoding_v2/`** — representational analysis of the trained controller's
-GRU state:
+recurrent state:
 
 - Exp 1 (`exp1.py`): collect explore-vs-exploit trials over `num_arenas` arenas,
   then compute **parallelism score** (cosine between the exploit−explore

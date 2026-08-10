@@ -3,6 +3,36 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
+# The recurrent trunk's vocabulary. Here rather than beside the factory in
+# `policy/recurrent.py` because these are the legal values of two fields on
+# this module's dataclasses, and this module is a layer-0 leaf -- reaching up
+# into `policy` to validate its own fields would be the one import that stops
+# `config` being importable on its own.
+RNN_CELLS = ("gru", "rnn")
+RNN_NONLINEARITIES = ("tanh", "relu", "softplus")
+
+
+def validate_recurrent_core(cell: str, nonlinearity: str) -> None:
+    """Reject the combinations that would otherwise fail silently or late.
+
+    Called from `validate_train_config` for the CLIs that build a
+    `TrainConfig`, and again from `build_recurrent_core` so that an invalid
+    core is unconstructible whichever entry point asked for it -- `train_rnn`
+    builds an `RNNTrainConfig`, which no `validate_train_config` ever sees.
+    """
+    if cell not in RNN_CELLS:
+        raise ValueError(f"rnn_cell={cell!r} is not one of {RNN_CELLS}.")
+    if nonlinearity not in RNN_NONLINEARITIES:
+        raise ValueError(
+            f"rnn_nonlinearity={nonlinearity!r} is not one of "
+            f"{RNN_NONLINEARITIES}.")
+    if cell == "gru" and nonlinearity != "tanh":
+        raise ValueError(
+            f"rnn_cell='gru' has no selectable nonlinearity -- a GRU's gates "
+            f"are sigmoid and its candidate is tanh by construction, so "
+            f"rnn_nonlinearity={nonlinearity!r} would be silently ignored. "
+            f"Pass --rnn_cell rnn to choose a nonlinearity.")
+
 
 def validate_train_config(cfg: "TrainConfig") -> None:
     """Cross-field checks on a TrainConfig that the dataclass alone can't catch.
@@ -10,6 +40,8 @@ def validate_train_config(cfg: "TrainConfig") -> None:
     Raises ValueError on any silent-no-op combination so the user gets a clear
     failure instead of a quiet misconfiguration.
     """
+    validate_recurrent_core(cfg.agent.rnn_cell, cfg.agent.rnn_nonlinearity)
+
     h = cfg.hopfield
     if not h.agent_can_store and h.auto_store_warmup > 0:
         raise ValueError(

@@ -21,6 +21,7 @@ import numpy as np
 import torch
 
 from hopfield_nav.policy.agent_rnn import RNNAgent, compute_rnn_input_dim
+from hopfield_nav.policy.recurrent import add_recurrent_args
 from hopfield_nav.config import EnvConfig, RNNAgentConfig, RNNBCConfig, RNNTrainConfig, VectorHashConfig
 from hopfield_nav.world.env import GridEnv
 from hopfield_nav.training.rnn_setup import build_envs, restore_arch_from_ckpt
@@ -174,7 +175,9 @@ def main() -> None:
     p.add_argument("--hidden_size", type=int, default=128)
     p.add_argument("--num_rnn_layers", type=int, default=1)
     p.add_argument("--dropout", type=float, default=0.0,
-                   help="GRU dropout (only effective with num_rnn_layers > 1).")
+                   help="Inter-layer trunk dropout (only effective with "
+                        "num_rnn_layers > 1).")
+    add_recurrent_args(p)
     p.add_argument("--input_prev_action", action="store_true")
     p.add_argument("--input_prev_reward", action="store_true")
     p.add_argument("--input_grid_state", action="store_true",
@@ -217,6 +220,7 @@ def main() -> None:
         agent=RNNAgentConfig(
             hidden_size=args.hidden_size, num_rnn_layers=args.num_rnn_layers,
             dropout=args.dropout, movement_mode=args.movement_mode,
+            rnn_cell=args.rnn_cell, rnn_nonlinearity=args.rnn_nonlinearity,
             input_prev_action=args.input_prev_action,
             input_prev_reward=args.input_prev_reward,
             input_grid_state=args.input_grid_state,
@@ -345,6 +349,8 @@ def main() -> None:
                 "hidden_size": cfg.agent.hidden_size,
                 "num_rnn_layers": cfg.agent.num_rnn_layers,
                 "dropout": cfg.agent.dropout,
+                "rnn_cell": cfg.agent.rnn_cell,
+                "rnn_nonlinearity": cfg.agent.rnn_nonlinearity,
                 "input_prev_action": cfg.agent.input_prev_action,
                 "input_prev_reward": cfg.agent.input_prev_reward,
                 "input_grid_state": cfg.agent.input_grid_state,

@@ -117,7 +117,7 @@ unset CUDA_VISIBLE_DEVICES
         ▼
  (2) hopfield_nav.train_navigate        → $CLS_RUNS/agent_ckpts/navigate_<run>/navigate_u{N}.pt
      (or .train / .train_phased / .train_store / .train_rnn)
-        │  frozen encoder + VectorHash scaffold + Hopfield + GRU policy, PPO or BC
+        │  frozen encoder + VectorHash scaffold + Hopfield + recurrent policy, PPO or BC
         ▼
  (3) hopfield_nav.eval_all                  → JSON + PNG per checkpoint
      analysis.trajectories    → trajectory grids
@@ -358,8 +358,10 @@ exist in `HopfieldConfig` but are **not** exposed here (only in
 
 | Flag | Default | Effect |
 |---|---|---|
-| `--hidden_size` | `128` | GRU width. |
-| `--num_rnn_layers` | `1` | GRU depth (dropout only applies with >1 layer, and `dropout` is not on the CLI). |
+| `--hidden_size` | `128` | Trunk width. |
+| `--num_rnn_layers` | `1` | Trunk depth (dropout only applies with >1 layer, and `dropout` is not on the CLI). |
+| `--rnn_cell` | `gru` | Recurrent cell: `gru` (historical default) or `rnn` (vanilla Elman, ungated). |
+| `--rnn_nonlinearity` | `tanh` | Activation for `--rnn_cell rnn`. `tanh`/`relu` run on cuDNN; `softplus` is a Python recurrence and gives a strictly positive, unbounded state (idles at a `+0.693`/unit DC offset, so the heads see a shifted feature distribution — see `policy/recurrent.py`). Combining a non-`tanh` value with `--rnn_cell gru` is an error, not a silent no-op. |
 | `--hopfield_mode` | `discrete` | `discrete` ⇒ signal is a 4-way one-hot of the projected direction; `continuous` ⇒ the 2-D unit vector. |
 | `--input_encoded_state` / `--no-` | `True` | Feed the `D`-dim embedding of the current cell. |
 | `--input_hopfield_signal` / `--no-` | `True` | Feed the recall direction (4-d or 2-d). Turning this off makes `--hopfield-oracle` a no-op at eval (eval_all warns). |
@@ -689,7 +691,8 @@ its later steps are masked out of the loss.
 | `--updates_per_env` | `100` | sequential/finetune. |
 | `--n_updates` | `1000` | mixed only. |
 | `--size`, `--observation_size`, `--time_penalty`, `--movement_mode` | `8`, `60`, `0.01`, `continuous` | Env config. `--goal_radius` (0.5) is accepted but **not passed to the envs**. |
-| `--hidden_size`, `--num_rnn_layers`, `--dropout` | `128`, `1`, `0.0` | GRU. |
+| `--hidden_size`, `--num_rnn_layers`, `--dropout` | `128`, `1`, `0.0` | Trunk. |
+| `--rnn_cell`, `--rnn_nonlinearity` | `gru`, `tanh` | Recurrent cell; see the `train_navigate` table. Restored from the checkpoint in finetune mode, since the cell changes parameter shapes. |
 | `--init_log_std`, `--freeze_log_std` | `0.0`, off | Continuous head. |
 | `--input_prev_action`, `--input_prev_reward`, `--input_grid_state` | off | Extra input channels. `input_grid_state` appends the smoothed-gbook column at the agent's **global** scaffold position (requires building a VectorHash; adds `Σλ²` dims). |
 | `--fwhm_ratio`, `--lambdas` | `0.25`, `11 12` | Only used when `--input_grid_state`. Auto-restored from the checkpoint in finetune mode. |
@@ -841,7 +844,7 @@ CKPT=/path/to/ckpt.pt TRIALS_DIR=/path/to/exp1/trials sbatch analysis/phase_deco
 
 **Exp 1** (`exp1.py`, 19 flags): collect `n_starts` explore trials and
 `n_starts` exploit trials per arena over `num_arenas` arenas (distractor count
-`~U[n_dist_min, n_dist_max]`, cap `max_steps`), recording the GRU hidden state
+`~U[n_dist_min, n_dist_max]`, cap `max_steps`), recording the recurrent hidden state
 at every step; then for four split families compute per-fold **parallelism**
 (cosine between the exploit−explore centroid difference on train arenas and on
 test arenas) and **decodability** (balanced accuracy of L2 logistic regression

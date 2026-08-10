@@ -17,36 +17,48 @@ Everything downstream reaches the trunk through four contracts -- `input_size`,
 between a T-step call and T single-step calls carrying `h`. `SoftplusRNN`
 inherits from `nn.RNN` precisely so the first three come for free rather than
 being re-derived and drifting; the fourth is pinned by a test.
+
+The vocabulary (`RNN_CELLS`, `RNN_NONLINEARITIES`) and `validate_recurrent_core`
+live in `config.py`, not here: they are the legal values of two config fields,
+and `config` is a layer-0 leaf that cannot import upward to check its own.
 """
 from __future__ import annotations
+
+import argparse
 
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-CELLS = ("gru", "rnn")
-NONLINEARITIES = ("tanh", "relu", "softplus")
+from ..config import (
+    RNN_CELLS, RNN_NONLINEARITIES, validate_recurrent_core,
+)
 
 
-def validate_recurrent_core(cell: str, nonlinearity: str) -> None:
-    """Reject the combinations that would otherwise fail silently or late.
+def add_recurrent_args(parser: argparse.ArgumentParser) -> None:
+    """Declare `--rnn_cell` / `--rnn_nonlinearity` on a trainer's parser.
 
-    Called from `build_recurrent_core`, so an invalid core is unconstructible
-    whichever entry point asked for it -- `train_rnn` builds an
-    `RNNTrainConfig`, which no `validate_train_config` ever sees.
+    Four entry points build a policy trunk and all four need the same two
+    flags. Declaring them here rather than four times over keeps the flag
+    names, the choices and the help text pinned to the cells they select --
+    the alternative is four copies of this help string, which is how a
+    `--rnn_nonlinearity` that means one thing in `train_navigate` and another
+    in `train_rnn` would come about.
     """
-    if cell not in CELLS:
-        raise ValueError(
-            f"rnn_cell={cell!r} is not one of {CELLS}.")
-    if nonlinearity not in NONLINEARITIES:
-        raise ValueError(
-            f"rnn_nonlinearity={nonlinearity!r} is not one of {NONLINEARITIES}.")
-    if cell == "gru" and nonlinearity != "tanh":
-        raise ValueError(
-            f"rnn_cell='gru' has no selectable nonlinearity -- a GRU's gates "
-            f"are sigmoid and its candidate is tanh by construction, so "
-            f"rnn_nonlinearity={nonlinearity!r} would be silently ignored. "
-            f"Pass --rnn_cell rnn to choose a nonlinearity.")
+    g = parser.add_argument_group("recurrent trunk")
+    g.add_argument("--rnn_cell", choices=list(RNN_CELLS), default="gru",
+                   help="Recurrent cell for the policy trunk. 'gru' (default) "
+                        "is the historical trunk. 'rnn' is a vanilla Elman "
+                        "cell -- no gates, so it must carry state through the "
+                        "nonlinearity alone.")
+    g.add_argument("--rnn_nonlinearity", choices=list(RNN_NONLINEARITIES),
+                   default="tanh",
+                   help="Activation for --rnn_cell rnn (a GRU's are fixed, so "
+                        "combining this with 'gru' is an error rather than a "
+                        "silent no-op). 'tanh'/'relu' run on cuDNN; 'softplus' "
+                        "is a Python recurrence, and gives a strictly "
+                        "positive, unbounded state rather than a bounded "
+                        "zero-centred one.")
 
 
 class SoftplusRNN(nn.RNN):
@@ -64,6 +76,15 @@ class SoftplusRNN(nn.RNN):
     this is a Python loop over T -- the input projection is hoisted out of it
     (one matmul over the flattened sequence per layer), leaving a single
     (B, H) x (H, H) matmul per step.
+
+    That loop is less costly than it sounds, because a vanilla cell also does a
+    third of a GRU's work. Measured on CPU (B=64, H=128, fwd+bwd), against the
+    GRU it replaces: 0.4ms vs 2.2ms at T=1, 31ms vs 65ms at T=64, and 338ms vs
+    242ms at T=256 -- so it is *cheaper* than the GRU up to a few hundred steps
+    and only becomes a net cost beyond that. Against `nn.RNN` on cuDNN it is
+    always slower (3.5x at T=256). These are CPU numbers; on GPU the loop's
+    per-step launch overhead is the part that gets worse, so measure before
+    assuming this holds there.
 
     Note that softplus is unbounded above and strictly positive: unlike tanh
     there is no contraction toward zero, and h sits at a positive DC offset of

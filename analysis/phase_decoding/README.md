@@ -21,6 +21,33 @@ Two analyses on a trained Hopfield-nav controller's hidden state:
 Both metrics are averaged across folds within a split family for the bar height,
 SD across folds for the error bars.
 
+### Comparing across recurrent cells
+
+`decodability` standardizes `h` before fitting (`StandardScaler` on the train
+rows), so it is comparable between policies whose hidden states live on
+different scales. **`parallelism_score` does not.** It is a raw cosine between
+centroid differences: the difference cancels any constant offset, but not a
+per-feature rescaling, so the score is weighted toward whichever units happen
+to carry the most variance.
+
+That distinction only started to matter when the trunk became selectable
+(`--rnn_cell` / `--rnn_nonlinearity`, see `hopfield_nav/policy/recurrent.py`).
+Measured on this pipeline at `hidden_size=128`, the share of total variance
+sitting in the top 8 units is ~15% under `gru`/`tanh` and `rnn`/`tanh`, ~26%
+under `rnn`/`relu`, and ~36% under `rnn`/`softplus` — which also idles at a
+positive DC offset of `softplus(0) = 0.693` per unit and a hidden norm roughly
+8-12x the tanh cells'.
+
+So: decodability is comparable across cells; **parallelism is not**, without
+standardizing first. `parallelism_score` is deliberately left unnormalized
+rather than "fixed", because changing it would silently move every number in
+the existing `results/` tree. If you want the cross-cell comparison, standardize
+`h` at the pooling boundary on train-arena statistics, as an explicitly separate
+path.
+
+`hopfield_nav/tests/test_phase_decoding_cells.py` runs this pipeline end-to-end
+against all four cells.
+
 ## Splits
 
 - **LOO** — N folds, train on N−1 arenas, test on the held-out one.

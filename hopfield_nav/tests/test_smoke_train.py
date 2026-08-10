@@ -75,10 +75,18 @@ def test_save_untrained_encoder_is_loadable(tiny_encoder):
 
 
 @pytest.mark.slow
-def test_train_navigate_end_to_end(sandbox, tiny_encoder):
+@pytest.mark.parametrize("cell,nonlinearity", [
+    ("gru", "tanh"),
+    # The softplus trunk is the one whose failure mode is arithmetic rather
+    # than structural: the unit tests pin the recurrence, but only a real
+    # update loop shows whether an unbounded positive state stays finite once
+    # PPO is pushing on it.
+    ("rnn", "softplus"),
+], ids=["gru", "rnn-softplus"])
+def test_train_navigate_end_to_end(sandbox, tiny_encoder, cell, nonlinearity):
     """encoder -> scaffold -> rollouts -> PPO update -> checkpoint on disk."""
     root, env = sandbox
-    save_dir = root / "navigate_ckpt"
+    save_dir = root / f"navigate_ckpt_{cell}_{nonlinearity}"
     _run(["hopfield_nav.train_navigate",
           "--encoder_checkpoint", str(tiny_encoder),
           "--lambdas", "3", "4", "--Np", "40",
@@ -87,6 +95,7 @@ def test_train_navigate_end_to_end(sandbox, tiny_encoder):
           "--schedule", "interleave:2",
           "--envs_per_world", "1", "--num_worlds", "1",
           "--num_val_envs", "1", "--eval_every", "1000",
+          "--rnn_cell", cell, "--rnn_nonlinearity", nonlinearity,
           "--device", "cpu", "--static-vectorhash",
           "--save_dir", str(save_dir)], env)
 
@@ -97,6 +106,9 @@ def test_train_navigate_end_to_end(sandbox, tiny_encoder):
     assert "agent_state_dict" in ck
     for name, tensor in ck["agent_state_dict"].items():
         assert torch.isfinite(tensor).all(), f"non-finite parameter: {name}"
+    # The trunk the run actually built is recorded, so a resume rebuilds it.
+    assert ck["config"]["agent"]["rnn_cell"] == cell
+    assert ck["config"]["agent"]["rnn_nonlinearity"] == nonlinearity
 
 
 @pytest.mark.slow

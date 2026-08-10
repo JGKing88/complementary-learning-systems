@@ -36,6 +36,7 @@ from .config import TrainConfig, validate_train_config
 from .encoder_io import load_encoder, validate_config
 from .world.env import warn_if_offcell_stores
 from .policy.agent import NavAgent, compute_input_dim
+from .policy.recurrent import add_recurrent_args
 from .rollout.collector import RolloutCollector
 from .updates.ppo import ppo_update
 from .evaluation.checkpoint_io import cfg_from_checkpoint
@@ -496,6 +497,8 @@ CFG_FIELDS: dict[str, tuple[str, ...]] = {
     "freeze_log_std": ("agent.freeze_log_std",),
     "hidden_size": ("agent.hidden_size",),
     "num_rnn_layers": ("agent.num_rnn_layers",),
+    "rnn_cell": ("agent.rnn_cell",),
+    "rnn_nonlinearity": ("agent.rnn_nonlinearity",),
     # ppo
     "lr": ("ppo.lr",),
     "move_ent_coef": ("ppo.ent_coef",),
@@ -798,6 +801,7 @@ def build_parser() -> argparse.ArgumentParser:
                    help="RNN hidden dim.")
     p.add_argument("--num_rnn_layers", type=int, default=1,
                    help="Number of RNN layers.")
+    add_recurrent_args(p)
     p.add_argument("--goal_reward", type=float, default=1.0,
                    help="Reward at goal cell when goals_active. Bumping >1 "
                         "strengthens exploit PPO updates vs explore reward.")
