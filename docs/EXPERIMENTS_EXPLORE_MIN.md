@@ -31,7 +31,13 @@ branch off `main` carrying only wave 1's tooling (`1be48b4`), not the
 `env-generator` line. Thirteen jobs: `e1/e2×3/e4/e8/e16` and
 `c1/c2×3/c4/c8`, all `explore:1000`. Submitting it surfaced a second bug, in
 the launcher rather than the model — see below — which would have silently
-trained the wrong branch. Results below as they land.
+trained the wrong branch.
+
+**The result so far: 4 environments is enough.** `e4s42` reaches 0.504 and is
+still climbing at u1000, against s1's 0.517 on 80 envs — using 20× fewer
+env-steps per update, 20× fewer serial model calls, and **27 minutes** of
+wall-clock against s1's 2 h 40 m and v35's ~20 h. One and two envs are
+genuinely capped (~0.17, ~0.37); the step from 2 to 4 is a cliff.
 
 ---
 
@@ -328,35 +334,61 @@ drains two at a time; rungs are recorded here as they land.
 showed is biased high by ~0.02 and unreliable even for *ranking*. They are
 progress signal. The verdict pass is still owed.
 
-### The 2-env pair settles it: both effects are real, and they are separable
+### Headline: **four environments is enough**, and it is a cliff, not a slope
 
-| run | envs | batch | pool | peak | @u300 | @u1000 | shape |
+| run | envs | batch | pool | @u300 | @u1000 | shape | wall-clock |
 |---|---|---|---|---|---|---|---|
-| `e2s42` | 2 | 16 | 32 | 0.215 @u125 | 0.151 | **0.071** | rise, then collapse |
-| `c2s42` | 2 | 640 | 1280 | 0.402 @u600 | 0.327 | **0.346** | rise, then plateau |
-| *s1* | *80* | *16* | *1280* | — | *0.517, still climbing* | — | *monotone* |
+| `e1s42` | 1 | 16 | 16 | 0.111 | 0.152 | low, flat | ~9 m |
+| `e2s42` | 2 | 16 | 32 | 0.151 | **0.071** | peak @u125, collapse | 21 m |
+| `c2s42` | 2 | 640 | 1280 | 0.327 | **0.346** | plateau ~0.37 | 80 m |
+| `c1s42` | 1 | 1280 | 1280 | ~0.19 | *running* | low, flat | — |
+| **`e4s42`** | **4** | **16** | **64** | 0.363 | **0.504**, still climbing | **monotone** | **27 m** |
+| *s1* | *80* | *16* | *1280* | *0.517, still climbing* | — | *monotone* | *2 h 40* |
 
-This is the outcome the `c*` ladder was built to distinguish, and it lands on
-**both** of the branches that were held open, one per effect:
+`e4s42` reaches **0.504 at u1000 and is still rising** (u925 0.473, u1000 0.504),
+union 0.944, on a clean monotone curve with no instability anywhere — against
+s1's 0.517. That is v35-class coverage from **4 envs and a pool of 64**:
 
-**1. The pool was the collapse.** `e2` does not merely underperform — it peaks
-at u125 and falls to a third of its peak. Holding envs at 2 and buying the pool
-back to 1280 removes that entirely: `c2` is stable for all 1000 updates. A
-32-trajectory PPO batch is not a small gradient, it is an unusable one. Every
-`e*` rung at the low end is therefore measuring pool size more than diversity,
-which is exactly the confound the ladder was doubled for.
+- **20× fewer env-steps per update** — 12,800 against s1's 256,000.
+- **20× fewer serial model calls** — 800 against 16,000.
+- **27 minutes**, against s1's 2 h 40 m and v35's ~20 h.
 
-**2. Diversity is nevertheless a real floor.** With the pool bought back, `c2`
-still tops out around **0.37 ± 0.03** and stays there for 400 updates — u450
-0.392, u600 0.402, u750 0.361, u1000 0.346, drifting mildly *down* rather than
-up. s1 passed that band by u200 and was still climbing at 0.517 when it was
-cut. So 2 envs is **capped, not slow**: the distinction the 1000-update budget
-was bought to make, and it could not have been made at 300 updates, where `c2`
-reads 0.327 and merely looks behind.
+So the diversity floor is real but sits far lower than the ladder was built to
+find. Between 2 and 4 envs, held-out coverage roughly *doubles*; between 4 and
+80 it moves by less than the eval's own noise.
 
-The practical recipe from the cost model — "2 envs and a big `batch_envs`, 400
-serial calls instead of 16,000" — is therefore **not** available at full
-coverage. It buys a stable run at ~0.37, not a v35-class one.
+| envs | best observed | binding constraint |
+|---|---|---|
+| 1 | ~0.17 | diversity — `c1` (pool 1280) barely beats `e1` (pool 16) |
+| 2 | ~0.37 | diversity — `c2` plateaus 400 updates below s1 |
+| 4 | ≥0.504, climbing | **neither, yet** |
+| 80 | 0.517 | — |
+
+### What the 1- and 2-env rungs say about pool size
+
+The `c*` ladder was built to separate diversity from PPO-pool size, and the
+answer is that **pool only matters once diversity is not the binding
+constraint**:
+
+- **At 1 env it buys nothing.** `c1` (pool 1280) tracks ~0.17–0.19 against `e1`
+  (pool 16) at ~0.15. An 80× larger gradient batch moves coverage by about the
+  eval's noise, because one env caps the run long before the gradient does.
+- **At 2 envs it buys stability, not the ceiling.** `e2` collapses; `c2` with
+  the same two envs is stable for 1000 updates. But `c2` still tops out at
+  ~0.37 ± 0.03 — u450 0.392, u600 0.402, u750 0.361, u1000 0.346, drifting
+  mildly *down*. So 2 envs is **capped, not slow**, the distinction the
+  1000-update budget was bought to make and one that could not have been made
+  at u300, where `c2` reads 0.327 and merely looks behind.
+- **At 4 envs a pool of 64 is already sufficient**, which is the surprise.
+  `c4` (4 envs at pool 1280) is the outstanding test of whether the extra pool
+  buys anything on top of `e4`'s 0.504.
+
+**An earlier draft of this section claimed a 32-trajectory pool is "unusable".
+That was wrong** — it generalized from `e2` alone. `e1` runs stably on a pool of
+*16*, and `e4` climbs cleanly to 0.504 on a pool of 64. Small pools are erratic
+rather than uniformly fatal, and `e2`'s collapse may be seed-specific; `e2s43`
+and `e2s44` are queued precisely because 2 envs was expected to be
+seed-dominated, and they will settle it.
 
 ### `e2`'s collapse has two phases, and only the first was predicted
 
@@ -391,10 +423,19 @@ exploit even in a run that is falling apart.
 
 ### Still outstanding
 
-`c1/c4/c8`, `e1/e4/e8/e16`, and the `s43`/`s44` seeds at 2 envs. The open
-question is now narrow and quantitative: **where between 2 and 80 envs does the
-floor lift to s1's 0.517?** `c4` and `c8` are the informative rungs, since they
-hold the pool fixed and move only diversity.
+`c1` (running), `c4`, `c8`, `e8`, `e16`, and the `s43`/`s44` seeds at 2 envs.
+
+The open question has moved. It is no longer "where does the floor lift" —
+`e4` lifts it — but:
+
+1. **Is `e4`'s 0.504 a ceiling or just u1000?** It was still climbing when cut,
+   as s1 was at u300. A longer `e4` is now the cheapest available gain in the
+   whole study: 27 minutes bought 0.504.
+2. **Does `c4` beat `e4`?** If a pool of 1280 adds nothing at 4 envs, then
+   `batch_envs` is pure waste here and the minimal recipe is `e4` exactly.
+3. **Is `e2`'s collapse seed-specific?** `e2s43`/`e2s44` decide it.
+4. **Do 8 and 16 envs add anything measurable over 4?** If not, 4 envs is the
+   recommendation and `e8`/`e16` only bound it from above.
 
 ---
 
