@@ -126,6 +126,25 @@ def ppo_update(
     """
     pool = _pool_rollouts(rollouts, cfg.gamma, cfg.gae_lambda)
 
+    # Whether the store head's terms are allowed into the loss at all.
+    #
+    # `set_phase_freeze(freeze_store=True)` clears `requires_grad` on the store
+    # head's own weights, which stops *those* weights updating but not backprop
+    # from flowing through the frozen Linear into the shared RNN trunk. So a
+    # "frozen" store head still steered the trunk, every update, via store_loss
+    # and the store entropy bonus -- the whole of train_navigate ran that way,
+    # as did train_phased phases 2 and 3 (both default freeze_store=True).
+    # Freezing a head has to mean its objective is gone, not just that its own
+    # weights are pinned.
+    #
+    # Read off the agent rather than taken as an argument, for the same reason
+    # `freeze_log_std` is enforced against the agent's own config: a separately
+    # passed flag is a second source of truth that can drift out of step with
+    # the freeze it is supposed to describe.
+    store_head = getattr(agent, "store_head", None)
+    store_trainable = store_head is not None and any(
+        p.requires_grad for p in store_head.parameters())
+
     obs = pool["obs"]                   # (N, T, D)
     move_actions = pool["move_actions"] # (N, T) or (N, T, 2)
     store_actions = pool["store_actions"]
@@ -247,14 +266,23 @@ def ppo_update(
             else:
                 store_bc_loss = torch.zeros((), device=obs.device)
 
+            # The store terms are still computed above, because they are the
+            # diagnostics the run logs -- but a frozen store head contributes
+            # none of them to the gradient. All three go together: with the
+            # head frozen, the BCE can only reach the trunk (detached, it
+            # reaches nothing at all), which is the same trunk pollution.
             loss = (
                 move_loss
-                + store_loss
                 + cfg.vf_coef * value_loss
                 - cfg.ent_coef * move_ent
-                - cfg.store_ent_coef * store_ent
-                + effective_bc_weight * store_bc_loss
             )
+            if store_trainable:
+                loss = (
+                    loss
+                    + store_loss
+                    - cfg.store_ent_coef * store_ent
+                    + effective_bc_weight * store_bc_loss
+                )
 
             optimizer.zero_grad(set_to_none=True)
             loss.backward()
