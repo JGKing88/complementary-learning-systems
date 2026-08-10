@@ -341,7 +341,7 @@ progress signal. The verdict pass is still owed.
 | `e1s42` | 1 | 16 | 16 | 0.111 | 0.152 | low, flat | ~9 m |
 | `e2s42` | 2 | 16 | 32 | 0.151 | **0.071** | peak @u125, collapse | 21 m |
 | `c2s42` | 2 | 640 | 1280 | 0.327 | **0.346** | plateau ~0.37 | 80 m |
-| `c1s42` | 1 | 1280 | 1280 | ~0.19 | *running* | low, flat | — |
+| `c1s42` | 1 | 1280 | 1280 | 0.191 | 0.151 | low, flat | 103 m |
 | **`e4s42`** | **4** | **16** | **64** | 0.363 | **0.504**, still climbing | **monotone** | **27 m** |
 | *s1* | *80* | *16* | *1280* | *0.517, still climbing* | — | *monotone* | *2 h 40* |
 
@@ -370,9 +370,11 @@ The `c*` ladder was built to separate diversity from PPO-pool size, and the
 answer is that **pool only matters once diversity is not the binding
 constraint**:
 
-- **At 1 env it buys nothing.** `c1` (pool 1280) tracks ~0.17–0.19 against `e1`
-  (pool 16) at ~0.15. An 80× larger gradient batch moves coverage by about the
-  eval's noise, because one env caps the run long before the gradient does.
+- **At 1 env it buys nothing — exactly nothing.** `c1` finishes at **0.151**
+  and `e1` at **0.152**, on pools of 1280 and 16. An 80× larger gradient batch
+  produced a difference of 0.001, for 103 minutes of wall-clock against 9. One
+  env caps the run long before the gradient does. This is the cleanest null in
+  either wave.
 - **At 2 envs it buys stability, not the ceiling.** `e2` collapses; `c2` with
   the same two envs is stable for 1000 updates. But `c2` still tops out at
   ~0.37 ± 0.03 — u450 0.392, u600 0.402, u750 0.361, u1000 0.346, drifting
