@@ -23,7 +23,6 @@ from hopfield import Hopfield
 from ..config import TrainConfig
 from ..rollout.distractors import sample_distractors
 from .stages import Knobs, RolloutSpec
-from .world_setup import make_hops
 
 
 class ExploreRegime:
@@ -33,7 +32,7 @@ class ExploreRegime:
     are fixed, freshly built per rollout when distractors are resampled.
     """
 
-    def __init__(self, cfg: TrainConfig, worlds: list[dict], embed_dim: int,
+    def __init__(self, cfg: TrainConfig, embed_dim: int,
                  device: torch.device, dist_rng: np.random.RandomState, *,
                  goals_off: bool = False, randomize_goal: bool = False,
                  use_distractors: bool = False):
@@ -45,29 +44,30 @@ class ExploreRegime:
         self.randomize_goal = randomize_goal
         # See ExploitRegime for why this is a per-run decision, not per-update.
         self.use_distractors = use_distractors
-        self.pools = {
-            w_idx: make_hops("empty_shared", cfg, world,
-                             embed_dim, device, cfg.batch_envs)
-            for w_idx, world in enumerate(worlds)
-        }
 
-    def _with_distractors(self, vh, env_offset, knobs: Knobs) -> Hopfield:
+    def _build_hop(self, vh, env_offset, knobs: Knobs) -> Hopfield:
+        """The env's memory for this rollout: empty, plus any distractors.
+
+        Derived rather than pooled, for the same reason as `ExploitRegime` --
+        see its `_build_hop`. Nothing this regime stores depends on the env's
+        goal or offset, so a stale pool would be harmless here; deriving anyway
+        keeps one rule ("the memory is built from the env's current state")
+        instead of one rule and an exception.
+        """
         hop = Hopfield(self.embed_dim, beta=self.cfg.hopfield.beta,
                        device=str(self.device))
-        n_dist = int(self.dist_rng.randint(
-            knobs.emp_dist_min, knobs.emp_dist_max + 1))
-        if n_dist > 0:
-            for pat in sample_distractors(
-                    vh, env_offset, self.cfg.env.size, n_dist, self.dist_rng):
-                hop.input_memory(torch.from_numpy(pat).float())
+        if self.use_distractors:
+            n_dist = int(self.dist_rng.randint(
+                knobs.emp_dist_min, knobs.emp_dist_max + 1))
+            if n_dist > 0:
+                for pat in sample_distractors(
+                        vh, env_offset, self.cfg.env.size, n_dist, self.dist_rng):
+                    hop.input_memory(torch.from_numpy(pat).float())
         return hop
 
-    def spec(self, w_idx: int, world: dict, local_idx: int, env, env_offset,
+    def spec(self, w_idx: int, world, local_idx: int, env, env_offset,
              knobs: Knobs) -> RolloutSpec:
-        if self.use_distractors:
-            hop = self._with_distractors(world.field, env_offset, knobs)
-        else:
-            hop = self.pools[w_idx][local_idx]
+        hop = self._build_hop(world.field, env_offset, knobs)
         return RolloutSpec(
             hop=hop,
             novelty_reward=knobs.novelty,

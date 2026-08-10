@@ -125,9 +125,9 @@ def run_navigate(
                   f"{cfg.n_train_emp_distractors_max}] (no goal pattern)",
                   flush=True)
 
-    exploit_regime = ExploitRegime(cfg, worlds, embed_dim, device, dist_rng,
+    exploit_regime = ExploitRegime(cfg, embed_dim, device, dist_rng,
                                    use_distractors=use_distractors)
-    explore_regime = ExploreRegime(cfg, worlds, embed_dim, device, dist_rng,
+    explore_regime = ExploreRegime(cfg, embed_dim, device, dist_rng,
                                    goals_off=cfg.explore_goals_off,
                                    randomize_goal=cfg.randomize_goal_per_rollout,
                                    use_distractors=use_emp_distractors)

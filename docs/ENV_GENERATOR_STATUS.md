@@ -651,3 +651,42 @@ end-to-end run to find it. Phase 4's tests should include a tight-packing case.
 spec — the helpers live in `training/world_setup.py` precisely so they can adopt it
 without a second copy. And `cfg_from_checkpoint` still returns `cfg.bc` as a raw
 dict (`checkpoint_io.py:61-73`), noted in the Phase 3 plan and still unfixed.
+
+### Ahead of Phase 4: env memory is derived, not pooled (2026-08-07)
+
+Phase 4.2 in the roadmap called for an `ExploitRegime.rebuild_pools(worlds)` hook,
+called after any refresh tick touching place or goal. **That item is now obsolete** —
+the underlying problem is solved structurally instead.
+
+`ExploitRegime` cached one Hopfield per env at construction, holding
+`encoded_Phi[goal + offset]`. Both inputs are things a refresh moves, and a cached
+memory survives the move pointing at the old cell. The failure is worse than noise:
+the reward still fires at the *real* goal, so PPO receives a consistent signal that
+following the recall channel does not pay — training the agent to ignore the very
+thing the exploit regime exists to teach, with no error raised.
+
+Nor could it be dodged by refreshing only explore envs: regime assignment is by
+index against `n_pre_now`, which moves as `empty_frac` anneals, so an env that was
+refreshed while exploring becomes exploit later and is looked up in a pool built from
+its original state.
+
+`regime.spec()` now always constructs. Verified safe before changing:
+
+- **Nothing was ever written to the pooled objects.** `collector.py:79` sets
+  `shared_hopfield = not isinstance(hopfields, list)`, and the only `input_memory`
+  call in a rollout sits inside `if not shared_hopfield`. So rebuilding is
+  content-identical, not merely equivalent — no persisted state existed to lose.
+- **No RNG moves.** `Hopfield.__init__` and `input_memory` draw nothing, and the
+  distractor branch keeps its draws gated on `use_distractors` exactly as before, so
+  an unconstrained run consumes no distractor randomness. Pinned by a test.
+- **Nothing external held the pools** — only the two regime classes.
+- Cost: ~309 ms per update at 80 envs and `embed_dim=1024`, ~93 s over a 300-update
+  run, about 1.3% of a 2-hour budget.
+
+`train_phased` and `train_store` keep their own `make_hops` pools. Neither refreshes,
+so neither can go stale; left alone rather than widened into this change.
+
+The general lesson, worth keeping: the pool's docstring justified sharing as *"only
+sound because nothing writes to it."* The real condition is "nothing writes **and**
+nothing it depends on moves." Refresh breaks the second half, which nobody had
+written down.
