@@ -22,7 +22,17 @@
 # the data ladder.
 
 set -euo pipefail
-cd /home/jackking/cls
+
+# Submit the checkout this script lives in, not a fixed path -- an agent
+# worktree is a full copy on its own branch, and hard-coding /home/jackking/cls
+# would silently train whatever the shared checkout is checked out to. Unlike
+# the batch scripts, $BASH_SOURCE is trustworthy here: the submitter runs on the
+# login node, not from SLURM's node-local spool copy. Exported so `sbatch`
+# passes it to every job.
+REPO_DIR=${REPO_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}
+export REPO_DIR
+cd "$REPO_DIR"
+echo "submitting from $REPO_DIR ($(git rev-parse --short HEAD 2>/dev/null || echo '?'))" >&2
 
 # ONLY="e2s42 c2s42" submits just those. Without it every variant goes,
 # including ones already run -- the wave is a record of the whole design, not

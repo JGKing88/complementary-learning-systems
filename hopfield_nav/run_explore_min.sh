@@ -171,5 +171,10 @@ echo "    shaping: nov=$NOVELTY_REWARD scale=$NOVELTY_SCALE_REMAINING/\
 $NOVELTY_SCALE_CAP wall=$WALL_PENALTY pers=$PERSISTENCE_BONUS \
 revisit=$REVISIT_PENALTY eps=$EPSILON_EXPLORE/$EPSILON_ANNEAL_UPDATES"
 
-cd /home/jackking/cls
+# REPO_DIR comes from the submitter's environment (sbatch exports it by
+# default), so a wave submitted from an agent worktree trains that worktree's
+# code instead of whatever branch the shared checkout happens to be sitting on.
+# It cannot be derived here: SLURM copies this script to a node-local spool
+# directory, so $BASH_SOURCE points somewhere useless.
+cd "${REPO_DIR:-/home/jackking/cls}"
 source hopfield_nav/navigate_job.sh

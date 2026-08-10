@@ -33,7 +33,7 @@ module load miniforge/24.3.0-0
 module load cuda/13.0.1
 source activate cls
 unset CUDA_VISIBLE_DEVICES
-cd /home/jackking/cls
+cd "${REPO_DIR:-/home/jackking/cls}"   # see run_explore_min.sh; sbatch exports it
 source scripts/cls_env.sh
 
 OUT=${OUT:-$CLS_RESULTS/explore_min_verdict_$SLURM_JOB_ID}
