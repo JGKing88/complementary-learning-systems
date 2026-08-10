@@ -318,6 +318,86 @@ so it records only that a thorough sweep tends to cross it.
 
 ---
 
+## Results — wave 2, the diversity ladder (in progress, 2026-08-10)
+
+Thirteen jobs, all `explore:1000`, submitted from a branch off `main` at
+`1be48b4` + the launcher fix. The per-user cap is `gres/gpu=2`, so the ladder
+drains two at a time; rungs are recorded here as they land.
+
+**All numbers below are the 4-env × 16-trial in-training eval**, which wave 1
+showed is biased high by ~0.02 and unreliable even for *ranking*. They are
+progress signal. The verdict pass is still owed.
+
+### The 2-env pair settles it: both effects are real, and they are separable
+
+| run | envs | batch | pool | peak | @u300 | @u1000 | shape |
+|---|---|---|---|---|---|---|---|
+| `e2s42` | 2 | 16 | 32 | 0.215 @u125 | 0.151 | **0.071** | rise, then collapse |
+| `c2s42` | 2 | 640 | 1280 | 0.402 @u600 | 0.327 | **0.346** | rise, then plateau |
+| *s1* | *80* | *16* | *1280* | — | *0.517, still climbing* | — | *monotone* |
+
+This is the outcome the `c*` ladder was built to distinguish, and it lands on
+**both** of the branches that were held open, one per effect:
+
+**1. The pool was the collapse.** `e2` does not merely underperform — it peaks
+at u125 and falls to a third of its peak. Holding envs at 2 and buying the pool
+back to 1280 removes that entirely: `c2` is stable for all 1000 updates. A
+32-trajectory PPO batch is not a small gradient, it is an unusable one. Every
+`e*` rung at the low end is therefore measuring pool size more than diversity,
+which is exactly the confound the ladder was doubled for.
+
+**2. Diversity is nevertheless a real floor.** With the pool bought back, `c2`
+still tops out around **0.37 ± 0.03** and stays there for 400 updates — u450
+0.392, u600 0.402, u750 0.361, u1000 0.346, drifting mildly *down* rather than
+up. s1 passed that band by u200 and was still climbing at 0.517 when it was
+cut. So 2 envs is **capped, not slow**: the distinction the 1000-update budget
+was bought to make, and it could not have been made at 300 updates, where `c2`
+reads 0.327 and merely looks behind.
+
+The practical recipe from the cost model — "2 envs and a big `batch_envs`, 400
+serial calls instead of 16,000" — is therefore **not** available at full
+coverage. It buys a stable run at ~0.37, not a v35-class one.
+
+### `e2`'s collapse has two phases, and only the first was predicted
+
+The doc anticipated overfitting to the training envs' codebooks, diagnosed as
+held-out coverage falling while training `mean_r` rises. That happens, but only
+first:
+
+| window | held-out cov | training `mean_r` | reading |
+|---|---|---|---|
+| u125 → u300 | 0.215 → 0.151 | 0.128 → 0.181 | overfitting, as predicted |
+| u400 → u500 | 0.160 → 0.074 | 0.155 → **−0.021** | outright optimization collapse |
+
+The second phase is new and is not overfitting: training reward goes *negative*,
+below its own u1 value. The run does not memorize its two envs and stop
+generalizing — it stops optimizing at all. Worth separating, because
+overfitting argues for more envs and a collapse argues for a bigger batch, and
+here the bigger batch is what actually fixed it.
+
+### The distractor result survives at 2 envs
+
+The `n_dist` 0→10 gap stays within ±0.04 of zero across every eval of both
+runs, including `e2`'s collapse. Whatever the pool and diversity are doing,
+they do not touch the mechanism — with `explore_goals_off` there is no gradient
+by which chase behavior can form, so there is nothing for distractors to
+exploit even in a run that is falling apart.
+
+### Costs, measured
+
+`e2s42` ran 1000 updates in **20 m 49 s** (0.9 s/u). `c2s42` took ~80 min
+(4.6 s/u) for the same 1000 updates and the same env-steps — the 5× is the
+`batch_envs` cost correction above, not extra data.
+
+### Still outstanding
+
+`c1/c4/c8`, `e1/e4/e8/e16`, and the `s43`/`s44` seeds at 2 envs. The open
+question is now narrow and quantitative: **where between 2 and 80 envs does the
+floor lift to s1's 0.517?** `c4` and `c8` are the informative rungs, since they
+hold the pool fixed and move only diversity.
+
+---
+
 ## The plan: what to queue next, and why
 
 Everything below is cancelled-but-designed as of 2026-08-07. Submit with
