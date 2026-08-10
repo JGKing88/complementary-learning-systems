@@ -177,4 +177,5 @@ revisit=$REVISIT_PENALTY eps=$EPSILON_EXPLORE/$EPSILON_ANNEAL_UPDATES"
 # It cannot be derived here: SLURM copies this script to a node-local spool
 # directory, so $BASH_SOURCE points somewhere useless.
 cd "${REPO_DIR:-/home/jackking/cls}"
+echo "    repo: $PWD @ $(git rev-parse --short HEAD 2>/dev/null || echo '?')"
 source hopfield_nav/navigate_job.sh
