@@ -13,9 +13,149 @@ from ..config import EnvConfig
 
 CARDINAL_ACTIONS = [(0, 1), (1, 0), (0, -1), (-1, 0)]  # N, E, S, W
 
-# Forward foveal cone (fixed North for now): 120° total, centered on +y.
-# Rays are evenly spaced in angle; θ clockwise from North (sin θ, cos θ).
+# Forward foveal cone: 120° total, centered on the agent's heading. Rays are
+# evenly spaced in angle; θ is measured clockwise from forward.
 FOVEAL_HALF_ANGLE_DEG = 60.0
+
+# ---------------------------------------------------------------------------
+# Heading
+# ---------------------------------------------------------------------------
+# Heading is a single angle ψ, radians, measured **clockwise from North**, so
+# forward is (sin ψ, cos ψ). That is the same convention the ray angles already
+# use, and it is the whole reason this is cheap: rotating the cone to face ψ is
+# adding ψ to every ray angle. ψ = 0 is North, which is where the cone was
+# hard-wired before headings existed -- so a fixed-heading env and an egocentric
+# one see the same thing on step zero.
+#
+# Movement stays allocentric: actions are world-frame, and heading only ever
+# follows from where the agent actually went.
+
+# ψ for each entry of CARDINAL_ACTIONS. Discrete movement sets heading from this
+# table rather than through atan2, so ψ lands *exactly* on a multiple of π/2 and
+# `cardinal_index` below always resolves it -- which is what keeps discrete
+# rollouts on the precomputed-codebook path instead of ray-casting every step.
+CARDINAL_RADIANS = np.array([0.0, np.pi / 2, np.pi, -np.pi / 2], dtype=np.float64)
+
+_HEADING_VECTORS = np.array(CARDINAL_ACTIONS, dtype=np.float64)  # (4, 2)
+N_HEADINGS = len(CARDINAL_ACTIONS)
+
+
+def nearest_heading(disp):
+    """Index of the cardinal a displacement points along. ``-1`` if it is still.
+
+    A discrete cardinal step already *is* a heading, so this is exact there. A
+    continuous step is not, and resolves to the cardinal it is most aligned
+    with; exact diagonals tie to the lower index.
+
+    ``-1`` means "did not move, keep the heading you had". Pass the *realized*
+    (post-clip) displacement, not the requested action: that is what leaves the
+    view unchanged when a step is clipped by a wall, in both movement modes.
+
+    disp: (2,) -> Python int, or (N, 2) -> (N,) int64.
+    """
+    d = np.asarray(disp, dtype=np.float64)
+    single = d.ndim == 1
+    d = d.reshape(-1, 2)
+    idx = (d @ _HEADING_VECTORS.T).argmax(axis=1)
+    idx[np.linalg.norm(d, axis=1) < 1e-12] = -1
+    return int(idx[0]) if single else idx
+
+
+def cardinal_index(psi):
+    """Which cardinal ψ sits exactly on, or ``-1`` for anything in between.
+
+    ``k % 4`` *is* the ``CARDINAL_ACTIONS`` index: ψ=0 -> N=0, π/2 -> E=1,
+    π -> S=2, -π/2 -> W=3, and the modulo absorbs ``atan2``'s (-π, π] range.
+
+    Callers use this to decide whether an observation can be read straight out
+    of the precomputed cardinal codebook instead of being ray-cast.
+
+    psi: scalar -> Python int, or (N,) -> (N,) int64.
+    """
+    p = np.asarray(psi, dtype=np.float64)
+    single = p.ndim == 0
+    q = p.reshape(-1) / (np.pi / 2)
+    k = np.rint(q)
+    idx = np.where(np.abs(q - k) < 1e-12, k.astype(np.int64) % 4, -1)
+    return int(idx[0]) if single else idx
+
+
+def cone_offsets(n_rays: int) -> np.ndarray:
+    """Ray angles within the cone, relative to forward: (n_rays,).
+
+    Bin-centered: θ_i = -half + (i + 0.5) * (2*half / n_rays).
+    """
+    half = np.deg2rad(FOVEAL_HALF_ANGLE_DEG)
+    return -half + (np.arange(n_rays) + 0.5) * (2 * half / n_rays)
+
+
+def raycast_codes(wall_code: np.ndarray, size: int, xs, ys, psi,
+                  n_rays: int) -> np.ndarray:
+    """Foveal view from each (x, y) facing each ψ: ``(N, n_rays)`` of ±1 codes.
+
+    The vectorized form of the four plane intersections ``_raycast_segment_code``
+    does one ray at a time. Walls live at half-integer planes x=-0.5, x=size-0.5,
+    y=-0.5, y=size-0.5; wall order is 0=N, 1=E, 2=S, 3=W; segment k on each wall
+    is the unit interval centered on cell-index k.
+
+    Ties go to the earlier wall, matching the scalar version's ``t < best_t``
+    scan in N, E, S, W order (``argmin`` returns the first minimum). A ray that
+    hits nothing reads 0.0, as it did before -- unreachable from inside the box,
+    but the box is not re-derived here.
+
+    xs, ys, psi: (N,) broadcastable. Returns float32.
+    """
+    xs = np.atleast_1d(np.asarray(xs, dtype=np.float64))
+    ys = np.atleast_1d(np.asarray(ys, dtype=np.float64))
+    psi = np.atleast_1d(np.asarray(psi, dtype=np.float64))
+    xs, ys, psi = np.broadcast_arrays(xs, ys, psi)
+
+    # Rotating the cone to face ψ is adding ψ to every ray angle -- the one
+    # place the clockwise-from-North convention pays for itself.
+    angles = psi[:, None] + cone_offsets(n_rays)[None, :]        # (N, n_rays)
+    dx, dy = np.sin(angles), np.cos(angles)
+    cx, cy = xs[:, None], ys[:, None]
+
+    hi = size - 0.5
+    inf = np.inf
+
+    def _plane(num, den, keep):
+        """t along the ray to a plane, +inf where the ray cannot reach it.
+
+        ``num`` is per-position (N, 1) and ``den`` per-ray (N, n_rays), so the
+        result has to be allocated at the broadcast shape, not ``num``'s.
+        """
+        t = np.full(np.broadcast_shapes(num.shape, den.shape), inf,
+                    dtype=np.float64)
+        np.divide(num, den, out=t, where=keep)
+        t[~keep | (t < 0.0)] = inf
+        return t
+
+    # Each wall: distance to its plane, then the coordinate the ray hits it at.
+    t_n = _plane(hi - cy, dy, dy > 0.0)          # N: y = size-0.5
+    t_e = _plane(hi - cx, dx, dx > 0.0)          # E: x = size-0.5
+    t_s = _plane(-0.5 - cy, dy, dy < 0.0)        # S: y = -0.5
+    t_w = _plane(-0.5 - cx, dx, dx < 0.0)        # W: x = -0.5
+
+    hit_n = cx + t_n * dx
+    hit_e = cy + t_e * dy
+    hit_s = cx + t_s * dx
+    hit_w = cy + t_w * dy
+
+    # A plane the ray reaches outside the wall's extent is not a hit.
+    for t, h in ((t_n, hit_n), (t_e, hit_e), (t_s, hit_s), (t_w, hit_w)):
+        t[np.isfinite(t) & ((h < -0.5) | (h > hi))] = inf
+
+    ts = np.stack([t_n, t_e, t_s, t_w], axis=-1)          # (N, n_rays, 4)
+    hits = np.stack([hit_n, hit_e, hit_s, hit_w], axis=-1)
+    wall = ts.argmin(axis=-1)                             # first min == earlier wall
+
+    h = np.take_along_axis(hits, wall[..., None], axis=-1)[..., 0]
+    seg = np.clip(np.floor(np.where(np.isfinite(h), h, 0.0) + 0.5),
+                  0, size - 1).astype(np.int64)
+
+    codes = wall_code[wall, seg].astype(np.float32)
+    return np.where(np.isfinite(ts).any(axis=-1), codes, 0.0).astype(np.float32)
 
 
 def at_goal(env):
@@ -142,6 +282,7 @@ class GridEnv:
         goals_active: bool = True,
         goal_reward: float = 1.0,
         goal_radius: float = 0.5,
+        egocentric_heading: bool = True,
     ) -> None:
         self.size = size
         self.speed = speed
@@ -150,6 +291,10 @@ class GridEnv:
         self.goals_active = goals_active
         self.goal_reward = goal_reward
         self.goal_radius = goal_radius
+        # False pins every observation to ψ=0 (North), reproducing the fixed
+        # cone this env had before headings were wired up. Heading is still
+        # tracked either way -- it just isn't seen.
+        self.egocentric_heading = egocentric_heading
         # Kept so an env can say which seed built it. The wall code is a pure
         # function of (seed, size), so this is what lets a world be *recorded*
         # rather than replayed -- see docs/EVAL_SPLITS_DESIGN.md §1.4.
@@ -164,16 +309,24 @@ class GridEnv:
             [-1.0, 1.0], size=(4, size)
         ).astype(np.float32)
 
-        # Sensory codebook: per-cell foveal view (120° cone, heading=North).
-        # _codebook[x, y] is the vector the agent sees from cell (x, y):
-        # observation_size rays evenly spaced in the cone, each outputs the
-        # ±1 code of the wall segment it hits. No zeros (every ray hits a wall).
+        # Cardinal sensory codebook: _codebook[x, y, h] is the foveal view from
+        # cell (x, y) facing CARDINAL_ACTIONS[h] -- observation_size rays evenly
+        # spaced in the cone, each outputting the ±1 code of the wall segment it
+        # hits. No zeros (every ray hits a wall).
+        #
+        # This is NOT what the agent observes: heading is continuous, so a live
+        # observation is ray-cast at the current ψ (see `obs_at`). The table
+        # survives as the canonical per-cell artifact -- the scaffold's sbook
+        # (world/scaffold.py) and the generator's env-identity check
+        # (world/generate.py) are both defined on the four cardinal views -- and
+        # as the fast path whenever ψ happens to be exactly cardinal, which in
+        # discrete movement it always is.
         self._codebook = self._build_sensory_codebook(observation_size)
 
         # Pick random goal and start
         self._goal = self._random_position()
         self._pos = self._random_position(exclude=self._goal)
-        self._heading = (1, 0)
+        self._heading_rad = 0.0
 
     # ------------------------------------------------------------------
     # Properties
@@ -187,24 +340,66 @@ class GridEnv:
     def current_location(self) -> tuple[int, int]:
         return self._pos
 
+    @property
+    def heading(self) -> float:
+        """Facing, radians clockwise from North. Forward is (sin ψ, cos ψ)."""
+        return float(self._heading_rad)
+
+    @property
+    def heading_vector(self) -> tuple[float, float]:
+        """Facing as a unit (dx, dy)."""
+        return (float(np.sin(self._heading_rad)), float(np.cos(self._heading_rad)))
+
     # ------------------------------------------------------------------
     # Core API
     # ------------------------------------------------------------------
 
     def obs(self) -> np.ndarray:
-        """Current observation (observation_size,)."""
-        return self._codebook[self._pos[0], self._pos[1]].copy()
+        """Current observation (observation_size,), from where the agent faces."""
+        return self.obs_at(self.current_location)
 
-    def obs_at(self, pos: tuple[int, int]) -> np.ndarray:
-        return self._codebook[pos[0], pos[1]].copy()
+    def obs_at(self, pos: tuple[int, int], psi: float | None = None) -> np.ndarray:
+        """Foveal view from ``pos``, facing ``psi`` (default: the env's heading).
+
+        Reads the precomputed table when ψ is exactly cardinal and ray-casts
+        otherwise. The two agree by construction -- the table is built by the
+        same function -- so this is a speed choice, not a behavioral one, and it
+        keeps discrete rollouts on a pure array gather.
+        """
+        psi = self._obs_heading() if psi is None else float(psi)
+        k = cardinal_index(psi)
+        if k >= 0:
+            return self._codebook[pos[0], pos[1], k].copy()
+        return raycast_codes(self._wall_code, self.size, pos[0], pos[1], psi,
+                             self._observation_size)[0]
+
+    def omni_obs_at(self, pos: tuple[int, int]) -> np.ndarray:
+        """All four cardinal views from ``pos``, concatenated: (4*obs_size,).
+
+        The scaffold's stand-in for a heading-invariant observation -- see
+        ``world/scaffold.fit_env_assoc``, which explains why it is a patch.
+        """
+        return self._codebook[pos[0], pos[1]].reshape(-1).copy()
+
+    def omni_obs_all(self) -> np.ndarray:
+        """``omni_obs_at`` for every cell: (size, size, 4*obs_size)."""
+        return self._codebook.reshape(self.size, self.size, -1).copy()
+
+    def _obs_heading(self) -> float:
+        """The ψ observations are read at: the live heading, or North if fixed."""
+        return float(self._heading_rad) if self.egocentric_heading else 0.0
 
     def step(self, action: tuple[int, int]) -> EnvState:
         """Take a cardinal action (dx, dy).  Clips to grid bounds."""
         dx, dy = action[0] * self.speed, action[1] * self.speed
         nx = max(0, min(self.size - 1, self._pos[0] + dx))
         ny = max(0, min(self.size - 1, self._pos[1] + dy))
-        if (nx, ny) != self._pos:
-            self._heading = (np.sign(nx - self._pos[0]), np.sign(ny - self._pos[1]))
+        # Heading follows the *realized* displacement, so a step clipped by a
+        # wall leaves the agent facing where it already was. Cardinal moves take
+        # ψ from the table, keeping it exactly on a multiple of π/2.
+        k = nearest_heading((nx - self._pos[0], ny - self._pos[1]))
+        if k >= 0:
+            self._heading_rad = float(CARDINAL_RADIANS[k])
         self._pos = (nx, ny)
         return EnvState(self._pos, self._goal, self.obs(), self.reward())
 
@@ -216,7 +411,7 @@ class GridEnv:
     def reset(self) -> EnvState:
         """Reset position (keep goal fixed)."""
         self._pos = self._random_position(exclude=self._goal)
-        self._heading = (1, 0)
+        self._heading_rad = 0.0
         return EnvState(self._pos, self._goal, self.obs(), self.reward())
 
     def set_position(self, pos: tuple[int, int]) -> None:
@@ -230,7 +425,7 @@ class GridEnv:
         if not (0 <= x < self.size and 0 <= y < self.size):
             raise ValueError(f"position {(x, y)} out of bounds for size {self.size}")
         self._pos = (x, y)
-        self._heading = (1, 0)
+        self._heading_rad = 0.0
 
     def reset_goal(self) -> None:
         """Pick a new random goal."""
@@ -276,92 +471,38 @@ class GridEnv:
     # ------------------------------------------------------------------
 
     def _build_sensory_codebook(self, n_rays: int) -> np.ndarray:
-        """Precompute (size, size, n_rays) foveal view for every cell.
+        """Precompute the (size, size, 4, n_rays) foveal view for every cell.
 
-        Heading is fixed North (+y). Cone spans θ ∈ [-FOVEAL_HALF_ANGLE_DEG,
-        +FOVEAL_HALF_ANGLE_DEG] clockwise from North, with rays centered in
-        equal-angle bins. Each ray: trace from cell center (x, y) along
-        (sin θ, cos θ); intersect with the nearest in-range wall; read that
-        wall segment's ±1 code from ``self._wall_code``.
+        One slab per cardinal heading. The cone spans
+        θ ∈ [-FOVEAL_HALF_ANGLE_DEG, +FOVEAL_HALF_ANGLE_DEG] clockwise from
+        forward, rays centered in equal-angle bins. Each ray traces from the
+        cell center, intersects the nearest in-range wall, and reads that wall
+        segment's ±1 code from ``self._wall_code``.
         """
         size = self.size
-        half = np.deg2rad(FOVEAL_HALF_ANGLE_DEG)
-        # Bin-centered angles: θ_i = -half + (i + 0.5) * (2*half / n_rays).
-        angles = -half + (np.arange(n_rays) + 0.5) * (2 * half / n_rays)
-        sin_t = np.sin(angles).astype(np.float64)
-        cos_t = np.cos(angles).astype(np.float64)
-
-        codebook = np.zeros((size, size, n_rays), dtype=np.float32)
-        for cx in range(size):
-            for cy in range(size):
-                for i in range(n_rays):
-                    codebook[cx, cy, i] = self._raycast_segment_code(
-                        cx, cy, sin_t[i], cos_t[i]
-                    )
-        return codebook
-
-    def _raycast_segment_code(
-        self, cx: float, cy: float, dx: float, dy: float,
-    ) -> float:
-        """Cast a ray from (cx, cy) in direction (dx, dy) and return the ±1
-        code of the first wall segment hit.
-
-        Walls live at half-integer planes x=-0.5, x=size-0.5, y=-0.5, y=size-0.5.
-        Wall index order: 0=N, 1=E, 2=S, 3=W. Segment k on each wall is the
-        unit interval centered on cell-index k.
-        """
-        size = self.size
-        best_t = np.inf
-        best_wall = -1
-        best_seg = 0
-
-        # Wall 0 (N): y = size - 0.5
-        if dy > 0.0:
-            t = (size - 0.5 - cy) / dy
-            if 0.0 <= t < best_t:
-                x_hit = cx + t * dx
-                if -0.5 <= x_hit <= size - 0.5:
-                    best_t, best_wall = t, 0
-                    best_seg = int(np.clip(np.floor(x_hit + 0.5), 0, size - 1))
-        # Wall 1 (E): x = size - 0.5
-        if dx > 0.0:
-            t = (size - 0.5 - cx) / dx
-            if 0.0 <= t < best_t:
-                y_hit = cy + t * dy
-                if -0.5 <= y_hit <= size - 0.5:
-                    best_t, best_wall = t, 1
-                    best_seg = int(np.clip(np.floor(y_hit + 0.5), 0, size - 1))
-        # Wall 2 (S): y = -0.5
-        if dy < 0.0:
-            t = (-0.5 - cy) / dy
-            if 0.0 <= t < best_t:
-                x_hit = cx + t * dx
-                if -0.5 <= x_hit <= size - 0.5:
-                    best_t, best_wall = t, 2
-                    best_seg = int(np.clip(np.floor(x_hit + 0.5), 0, size - 1))
-        # Wall 3 (W): x = -0.5
-        if dx < 0.0:
-            t = (-0.5 - cx) / dx
-            if 0.0 <= t < best_t:
-                y_hit = cy + t * dy
-                if -0.5 <= y_hit <= size - 0.5:
-                    best_t, best_wall = t, 3
-                    best_seg = int(np.clip(np.floor(y_hit + 0.5), 0, size - 1))
-
-        if best_wall < 0:
-            return 0.0
-        return float(self._wall_code[best_wall, best_seg])
+        gx, gy = np.meshgrid(np.arange(size, dtype=np.float64),
+                             np.arange(size, dtype=np.float64), indexing="ij")
+        # Flattened as [x][y][heading], matching the reshape below.
+        xs = np.repeat(gx.ravel(), N_HEADINGS)
+        ys = np.repeat(gy.ravel(), N_HEADINGS)
+        psi = np.tile(CARDINAL_RADIANS, size * size)
+        codes = raycast_codes(self._wall_code, size, xs, ys, psi, n_rays)
+        return codes.reshape(size, size, N_HEADINGS, n_rays)
 
     def fully_explore_random(self) -> list[tuple[tuple[int, int], np.ndarray, tuple[int, int]]]:
         """Visit all positions with all 4 headings in random order.
 
-        Returns list of (position, obs, heading) tuples.
+        Returns list of (position, obs, heading) tuples. The four entries for a
+        cell are four genuinely different views -- before headings were wired
+        up they were four copies of the same North-facing one, which is why
+        callers that wanted one view per cell used to filter on ``heading``.
+        Use ``omni_obs_at`` for a single heading-free vector per cell instead.
         """
         items = []
         for x in range(self.size):
             for y in range(self.size):
-                for h in CARDINAL_ACTIONS:
-                    items.append(((x, y), self._codebook[x, y].copy(), h))
+                for h, a in enumerate(CARDINAL_ACTIONS):
+                    items.append(((x, y), self._codebook[x, y, h].copy(), a))
         self.rng.shuffle(items)
         return items
 
@@ -394,10 +535,6 @@ class ContinuousGridEnv(GridEnv):
         snapped = np.clip(np.round(self._continuous_pos), 0, self.size - 1).astype(int)
         return (int(snapped[0]), int(snapped[1]))
 
-    def obs(self) -> np.ndarray:
-        pos = self.current_location
-        return self._codebook[pos[0], pos[1]].copy()
-
     def step(self, action: np.ndarray) -> EnvState:
         """Continuous action (dx, dy) as float array."""
         a = np.asarray(action, dtype=np.float64)
@@ -409,10 +546,18 @@ class ContinuousGridEnv(GridEnv):
                 a = a * (self.max_action_norm / n)
             elif self.min_action_norm is not None and 1e-8 < n < self.min_action_norm:
                 a = a * (self.min_action_norm / n)
+        before = self._continuous_pos
         self._continuous_pos = np.clip(
             self._continuous_pos + a * self.scale,
             0, self.size - 1,
         )
+        # Heading is the direction actually travelled, so a step absorbed by the
+        # clip leaves the agent facing where it was. Continuous movement can face
+        # any angle, so ψ comes from atan2 rather than the cardinal table --
+        # atan2(dx, dy), in that argument order, is clockwise from North.
+        disp = self._continuous_pos - before
+        if float(np.linalg.norm(disp)) >= 1e-12:
+            self._heading_rad = float(np.arctan2(disp[0], disp[1]))
         self._pos = self.current_location
         return EnvState(self._pos, self._goal, self.obs(), self.reward())
 
@@ -455,6 +600,7 @@ def make_env(env_cfg: EnvConfig, movement_mode: str, seed: int) -> GridEnv:
             goals_active=env_cfg.goals_active,
             goal_reward=env_cfg.goal_reward,
             goal_radius=env_cfg.goal_radius,
+            egocentric_heading=env_cfg.egocentric_heading,
         )
     return GridEnv(
         size=env_cfg.size,
@@ -465,4 +611,5 @@ def make_env(env_cfg: EnvConfig, movement_mode: str, seed: int) -> GridEnv:
         goals_active=env_cfg.goals_active,
         goal_reward=env_cfg.goal_reward,
         goal_radius=env_cfg.goal_radius,
+        egocentric_heading=env_cfg.egocentric_heading,
     )

@@ -56,7 +56,12 @@ def ray_endpoint(cx: float, cy: float, sin_a: float, cos_a: float, size: int):
     return cx + t * sin_a, cy + t * cos_a
 
 
-def draw_room(ax, env: GridEnv, pos=None, draw_rays: bool = True):
+def draw_room(ax, env: GridEnv, pos=None, draw_rays: bool = True, psi: float = 0.0):
+    """Draw the room, and the foveal cone from ``pos`` facing ``psi`` radians.
+
+    ``psi`` is clockwise from North, matching the env: 0 is the North-facing
+    cone this schematic drew before headings could turn.
+    """
     size = env.size
     wall = env._wall_code  # (4, size): 0=N, 1=E, 2=S, 3=W
 
@@ -101,10 +106,12 @@ def draw_room(ax, env: GridEnv, pos=None, draw_rays: bool = True):
         return
 
     cx, cy = pos
-    obs = env.obs_at(pos)  # uses the codebook built by env's ray-cast
+    obs = env.obs_at(pos, psi)  # same ray-cast the env observes through
     n = obs.shape[0]
     half = np.deg2rad(FOVEAL_HALF_ANGLE_DEG)
-    angles = -half + (np.arange(n) + 0.5) * (2 * half / n)
+    # Facing psi rotates the whole cone: theta is clockwise from forward, so
+    # the world angle of each ray is just psi + theta.
+    angles = psi + (-half + (np.arange(n) + 0.5) * (2 * half / n))
     sin_a = np.sin(angles)
     cos_a = np.cos(angles)
 

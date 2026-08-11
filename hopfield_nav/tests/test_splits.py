@@ -148,15 +148,14 @@ def test_domain_json_round_trip():
 # ---------------------------------------------------------------------------
 
 @pytest.mark.parametrize("size", [4, 6, 8])
-def test_south_wall_is_perceptually_dead(size):
-    """No ray can ever hit wall 2.
+def test_south_wall_is_perceptually_dead_under_fixed_heading(size):
+    """With the cone pinned North, no ray can ever hit wall 2.
 
-    The foveal cone is fixed North at +/-60 deg, so every ray has
-    dy = cos(theta) >= 0.5 > 0. A Hamming distance over all 4*size bits would
-    therefore count size silent no-ops -- a quarter of the "identity" of an env
-    that nothing can observe.
+    Every ray has dy = cos(theta) >= 0.5 > 0 at +/-60 deg, so a Hamming distance
+    over all 4*size bits would count size silent no-ops -- a quarter of the
+    "identity" of an env that nothing can observe.
     """
-    live = np.array(gen.live_wall_bits(size, OBS), dtype=bool)
+    live = np.array(gen.live_wall_bits(size, OBS, False), dtype=bool)
     assert live.shape == (4, size)
     assert live[2].sum() == 0, "South wall should contribute no live bits"
     for w in (0, 1, 3):
@@ -164,10 +163,33 @@ def test_south_wall_is_perceptually_dead(size):
     assert live.sum() == 3 * size
 
 
+@pytest.mark.parametrize("size", [4, 6, 8])
+def test_egocentric_heading_makes_every_wall_live(size):
+    """Once the cone turns with the agent, the South wall is observable.
+
+    Env identity goes from 3*size bits to the full 4*size. That can only *raise*
+    the Hamming distance between two envs, so a split that was separated under
+    the fixed-heading count stays separated under this one -- which is why the
+    change needs no re-derivation of margins.
+    """
+    live = np.array(gen.live_wall_bits(size, OBS, True), dtype=bool)
+    assert live.shape == (4, size)
+    assert live.all(), f"dead bits under egocentric heading: {live}"
+    assert live.sum() == 4 * size
+
+    fixed = np.array(gen.live_wall_bits(size, OBS, False), dtype=bool)
+    assert (live >= fixed).all(), "egocentric must not kill a bit fixed could see"
+
+
 def test_wall_hamming_counts_live_bits_only():
-    d = gen.wall_hamming(1, 2, SIZE, OBS)
-    assert 0 <= d <= 3 * SIZE
-    assert gen.wall_hamming(7, 7, SIZE, OBS) == 0
+    for ego, cap in ((False, 3 * SIZE), (True, 4 * SIZE)):
+        d = gen.wall_hamming(1, 2, SIZE, OBS, ego)
+        assert 0 <= d <= cap
+        assert gen.wall_hamming(7, 7, SIZE, OBS, ego) == 0
+
+    # Turning the cone can only reveal differences, never hide them.
+    assert (gen.wall_hamming(1, 2, SIZE, OBS, True)
+            >= gen.wall_hamming(1, 2, SIZE, OBS, False))
 
 
 def test_wall_code_matches_what_the_env_builds():

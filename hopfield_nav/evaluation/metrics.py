@@ -166,8 +166,11 @@ def agent_step(
             [[1.0 if goal_in_memory else 0.0]], device=device),
     }
     if cfg.agent.input_sensory:
+        # env.obs() reads at the env's own heading; pos_tuple IS env's current
+        # cell, so this was the same call before headings existed and is the
+        # heading-correct one now.
         values["sensory"] = torch.from_numpy(
-            env.obs_at(pos_tuple)[None, :]).float().to(device)   # (1, obs_size)
+            env.obs()[None, :]).float().to(device)               # (1, obs_size)
     if (cfg.agent.input_hopfield_multistep
             and cfg.agent.hopfield_mode == "continuous"):
         # Project the recall trajectory at each requested iteration count.

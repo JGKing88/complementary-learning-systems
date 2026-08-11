@@ -38,6 +38,32 @@ convention.
 - `_simulate_move` adds `(dx, dy)` to `(x, y)`.
 - `goal_location` returns `(x, y)`.
 
+## Heading (`world/env.py`)
+
+Heading is a single angle **ψ, radians, clockwise from North**, so forward is
+`(sin ψ, cos ψ)`. This is the same convention the foveal ray angles use, which
+is what makes rotation cheap: a ray at cone offset θ points along `ψ + θ`, so
+facing a direction is *adding ψ to every ray angle* — no rotation matrix.
+
+- ψ = 0 is North. That is where the cone was hard-wired before headings existed,
+  so `egocentric_heading=False` (every view read at ψ=0) reproduces the old
+  behavior exactly.
+- ψ follows the **realized** displacement, never the requested action — a step
+  clipped by a wall leaves the agent facing where it was. Discrete movement
+  takes ψ from `CARDINAL_RADIANS` (exactly `k·π/2`); continuous movement uses
+  `atan2(dx, dy)`, arguments in that order.
+- `CARDINAL_RADIANS[k]` is the heading of `CARDINAL_ACTIONS[k]`: an agent that
+  steps action `k` ends up facing heading `k`. `cardinal_index(ψ)` inverts it,
+  returning `-1` for angles between the cardinals.
+
+`_codebook[x, y, h]` holds the four **cardinal** views. It is not what the agent
+observes — a live observation is ray-cast at the continuous ψ — but it is the
+canonical per-cell artifact for the scaffold's sbook and the generator's
+env-identity check, and it is the gather path whenever ψ is exactly cardinal.
+
+Movement stays **allocentric**: actions are world-frame, and sensory input is
+the only thing heading affects.
+
 ## VectorHash coordinate mapping
 
 `env_offset = (C_X, C_Y)`. Local position `(lx, ly)` maps to global grid

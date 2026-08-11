@@ -406,6 +406,9 @@ def main():
     p.add_argument("--allow_offcell_store",
                    action=argparse.BooleanOptionalAction, default=False,
                    help="Whether a store fired while at goal may write a cell other than the goal's. Only reachable at goal_radius > 0.5, where at_goal tests the float position but embeddings are read at the snapped cell. Default False: the goal cell's embedding is stored instead, so the pattern written is the one navigation will later recall. Pass --allow_offcell_store for the pre-2026-08 behavior.")
+    p.add_argument("--egocentric_heading",
+                   action=argparse.BooleanOptionalAction, default=True,
+                   help="Foveal cone turns with the agent: heading is a continuous angle following the direction it actually moved, so a cell looks different depending on how the agent arrived. Sensory input is the only thing heading affects. Pass --no-egocentric_heading to pin every view to North, reproducing pre-2026-08 runs.")
     p.add_argument("--hopfield_mode", default="continuous",
                    choices=["discrete", "continuous"])
     # Enrichment flags (phase 2 defaults: all ON)
@@ -459,7 +462,8 @@ def main():
         env=EnvConfig(size=args.size, observation_size=args.observation_size,
                       movement_mode=args.movement_mode,
                       goal_radius=args.goal_radius,
-                      allow_offcell_store=args.allow_offcell_store),
+                      allow_offcell_store=args.allow_offcell_store,
+                      egocentric_heading=args.egocentric_heading),
         vectorhash=VectorHashConfig(lambdas=args.lambdas, Np=args.Np,
                                     static_vectorhash=args.static_vectorhash),
         hopfield=HopfieldConfig(),

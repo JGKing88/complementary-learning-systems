@@ -87,6 +87,17 @@ class EnvConfig:
     # warns when that is combined with goal_radius > 0.5. At goal_radius <= 0.5
     # the two are identical -- every at-goal position snaps to the goal cell.
     allow_offcell_store: bool = False
+    # Whether the agent's foveal cone turns with it. True (default): heading is
+    # a continuous angle that follows the direction the agent actually moved,
+    # and the sensory vector is ray-cast at that angle -- so the same cell looks
+    # different depending on how the agent arrived. False pins every observation
+    # to North, which is what the cone was hard-wired to before headings were
+    # wired up, and reproduces every pre-2026-08 run bit-for-bit.
+    #
+    # Sensory input is the ONLY thing heading affects. Actions stay world-frame,
+    # the policy gets no extra channel, and the sensory channel keeps its width
+    # -- so this changes what the agent sees, never the shape of anything.
+    egocentric_heading: bool = True
 
 
 @dataclass

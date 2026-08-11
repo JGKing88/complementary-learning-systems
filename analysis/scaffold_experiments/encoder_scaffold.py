@@ -83,13 +83,23 @@ def _explore_envs(envs: list[GridEnv], offsets: list[tuple[int, int]]
                   ) -> tuple[np.ndarray, np.ndarray]:
     """Visit every cell in each env, returning global (locs, obs).
 
-    Heading-invariant: keep one heading per position.
+    One observation per position. Under egocentric heading a cell has no single
+    appearance, so that observation is the concatenation of its four cardinal
+    views -- the same stand-in ``world.scaffold.fit_env_assoc`` uses, and for
+    the same reason. A fixed-heading env keeps the plain North-facing view.
     """
     all_locs, all_obs = [], []
     for env, (cx, cy) in zip(envs, offsets):
+        # Any single heading dedups the four entries a cell contributes; East
+        # is what this filtered on before headings existed, kept so neither the
+        # pattern ordering nor the env RNG's consumption moves.
         pos_obs_head = [p for p in env.fully_explore_random() if p[2] == (1, 0)]
-        locs = np.array([p[0] for p in pos_obs_head])
-        obs = np.array([p[1] for p in pos_obs_head])
+        cells = [p[0] for p in pos_obs_head]
+        if getattr(env, "egocentric_heading", True):
+            obs = np.array([env.omni_obs_at(p) for p in cells])
+        else:
+            obs = np.array([env.obs_at(p, psi=0.0) for p in cells])
+        locs = np.array(cells)
         locs = locs.copy()
         locs[:, 0] += cx
         locs[:, 1] += cy

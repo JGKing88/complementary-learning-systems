@@ -17,8 +17,10 @@ Separation, per trait (``docs/EVAL_SPLITS_DESIGN.md`` §2.5 and
             is a torus when Npos == prod(lambdas): a flat check calls
             (1715,987) and (4,989) 1711 cells apart when they are 5.
     wall    seed disjointness, verified on the codebook, reported as a Hamming
-            margin over *live* bits only (the South wall is never hit: the foveal
-            cone is fixed North at +/-60 deg, so dy = cos(theta) >= 0.5 > 0).
+            margin over *live* bits only. Which bits are live depends on whether
+            the agent's cone can turn: under a fixed North cone the South wall
+            is never hit (dy = cos(theta) >= 0.5 > 0), leaving 3*size live bits;
+            under egocentric heading all 4*size are reachable.
     goal    env-local cell-set disjointness.
     size    set disjointness.
 
@@ -56,32 +58,43 @@ def wall_code_for(seed: int, size: int) -> np.ndarray:
 
 
 @lru_cache(maxsize=32)
-def live_wall_bits(size: int, observation_size: int) -> tuple:
+def live_wall_bits(size: int, observation_size: int,
+                   egocentric: bool = True) -> tuple:
     """Which of the 4*size wall bits any ray can actually see.
 
-    Flips each bit and diffs the resulting codebook. Wall 2 (South) comes back
-    entirely dead by construction -- every ray has ``dy = cos(theta) > 0`` under
-    a North-facing cone -- so effective env identity is 3*size bits, not 4*size,
-    and a Hamming distance over all 4*size would count a quarter silent no-ops.
+    Flips each bit and diffs the resulting codebook.
+
+    Under a **fixed** North-facing cone, wall 2 (South) comes back entirely dead
+    by construction -- every ray has ``dy = cos(theta) > 0`` -- so effective env
+    identity is 3*size bits, not 4*size, and a Hamming distance over all 4*size
+    would count a quarter silent no-ops.
+
+    Under **egocentric** heading the cone turns with the agent, so all four
+    walls are reachable and identity is the full 4*size bits. That only ever
+    *raises* the distance between two envs, so a split separated under the old
+    count stays separated under this one.
 
     Returned as a tuple of tuples so it is hashable/cacheable.
     """
     env = GridEnv(size=size, observation_size=observation_size, seed=0)
-    base = env._codebook.copy()
+    # A fixed-heading agent only ever sees the North slab; an egocentric one can
+    # reach all four, so identity is read off whichever the agent can observe.
+    view = (lambda cb: cb) if egocentric else (lambda cb: cb[:, :, 0, :])
+    base = view(env._codebook).copy()
     live = np.zeros((4, size), dtype=bool)
     for w in range(4):
         for k in range(size):
             env._wall_code[w, k] *= -1
             live[w, k] = not np.array_equal(
-                env._build_sensory_codebook(observation_size), base)
+                view(env._build_sensory_codebook(observation_size)), base)
             env._wall_code[w, k] *= -1
     return tuple(tuple(bool(v) for v in row) for row in live)
 
 
 def wall_hamming(seed_a: int, seed_b: int, size: int,
-                 observation_size: int) -> int:
+                 observation_size: int, egocentric: bool = True) -> int:
     """Hamming distance between two wall codes, over live bits only."""
-    live = np.array(live_wall_bits(size, observation_size), dtype=bool)
+    live = np.array(live_wall_bits(size, observation_size, egocentric), dtype=bool)
     a, b = wall_code_for(seed_a, size), wall_code_for(seed_b, size)
     return int(((a != b) & live).sum())
 
@@ -500,12 +513,14 @@ def generate_split(
 def split_diagnostics(field, env_cfg, split: GeneratedSplit) -> dict:
     """Numbers describing a split. Evidence about it, never an input to it."""
     obs = int(env_cfg.observation_size)
+    ego = bool(getattr(env_cfg, "egocentric_heading", True))
     size = split.train[0].size if split.train else 0
     gaps = [toroidal_gap(v.offset, v.size, t.offset, t.size, split.period)
             for v in split.base_val for t in split.train]
-    hams = [wall_hamming(v.wall_seed, t.wall_seed, size, obs)
+    hams = [wall_hamming(v.wall_seed, t.wall_seed, size, obs, ego)
             for v in split.base_val for t in split.train]
-    live = np.array(live_wall_bits(size, obs), dtype=bool) if size else np.zeros((4, 0), bool)
+    live = (np.array(live_wall_bits(size, obs, ego), dtype=bool) if size
+            else np.zeros((4, 0), bool))
     return {
         "margin": int(split.margin),
         "min_place_gap": int(min(gaps)) if gaps else None,

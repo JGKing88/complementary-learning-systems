@@ -475,6 +475,7 @@ CFG_FIELDS: dict[str, tuple[str, ...]] = {
     "goal_reward": ("env.goal_reward",),
     "goal_radius": ("env.goal_radius",),
     "allow_offcell_store": ("env.allow_offcell_store",),
+    "egocentric_heading": ("env.egocentric_heading",),
     "time_penalty": ("env.time_penalty",),
     "continuous_normalize": ("env.continuous_normalize",),
     "max_action_norm": ("env.max_action_norm",),
@@ -611,6 +612,13 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--encoder_checkpoint", required=True)
     p.add_argument("--size", type=int, default=8)
     p.add_argument("--observation_size", type=int, default=12)
+    p.add_argument("--egocentric_heading", action=argparse.BooleanOptionalAction,
+                   default=True,
+                   help="Foveal cone turns with the agent: heading is a "
+                        "continuous angle following the direction it actually "
+                        "moved, so a cell looks different depending on how the "
+                        "agent arrived. --no-egocentric_heading pins every view "
+                        "to North, reproducing pre-2026-08 runs.")
     p.add_argument("--movement_mode", default="continuous")
     p.add_argument("--hopfield_mode", default="continuous")
     p.add_argument("--input_prev_reward", action=argparse.BooleanOptionalAction, default=True)

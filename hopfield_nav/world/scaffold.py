@@ -38,6 +38,7 @@ from gridcode.codebook import gen_gbook_2d
 
 from ..config import VectorHashConfig
 from ..utils import gram_schmidt_2d_batch, smooth_gbook
+from .env import CARDINAL_ACTIONS
 
 if TYPE_CHECKING:
     from .env import GridEnv
@@ -489,6 +490,27 @@ def fit_env_assoc(
 
     Returns ``None`` under ``static_vectorhash`` -- there is no recall path in
     that mode, and the historical ``register_envs`` simply skipped this work.
+
+    **The observation this fits is not the one the agent sees.** Under
+    egocentric heading a cell has no single appearance -- the view rotates with
+    the agent, continuously -- so "one sbook column per position" is no longer
+    well defined, and one column per (position, heading) is unbounded. The patch
+    is to give each position the concatenation of its four *cardinal* views:
+
+        sbook[:, k] = concat(view(pos_k, N), view(pos_k, E),
+                             view(pos_k, S), view(pos_k, W))
+
+    which keeps ``Npatts`` at one per position and widens ``Ns`` to
+    ``4 * observation_size``. It is a stand-in, and worth being honest about:
+    the agent's real input is a *single* view of width ``observation_size`` at a
+    continuous angle, so this vector is not something it can ever observe in one
+    step. ``EnvAssoc.recall`` therefore takes the concatenation, not a live
+    observation -- see ``GridEnv.omni_obs_at``. Nothing on the navigation path
+    depends on this (the collector keys off positions, not observations); it is
+    the scaffold's own sensory<->place association.
+
+    A fixed-heading env keeps the historical North-only sbook, so that mode
+    reproduces its previous fit exactly.
     """
     if field.cfg.static_vectorhash:
         print("  fit_env_assoc: static_vectorhash — skipping Wsp/Wps and scaffold test")
@@ -498,12 +520,20 @@ def fit_env_assoc(
     all_obs: list[np.ndarray] = []
 
     for env_idx, env in enumerate(envs):
-        pos_obs_head = env.fully_explore_random()
-        # Heading-invariant: take one heading per position
-        pos_obs_head = [p for p in pos_obs_head if p[2] == (1, 0)]
+        # One entry per cell, in the env RNG's shuffled order. Any single
+        # heading dedups the four entries a cell contributes; East is the one
+        # the pre-heading code filtered on, and it is kept so that neither the
+        # pattern ordering nor the env RNG's consumption moves here.
+        pos_obs_head = [p for p in env.fully_explore_random()
+                        if p[2] == CARDINAL_ACTIONS[1]]
+        cells = [p[0] for p in pos_obs_head]
 
-        locs = np.array([p[0] for p in pos_obs_head])
-        obs = np.array([p[1] for p in pos_obs_head])
+        if getattr(env, "egocentric_heading", True):
+            obs = np.array([env.omni_obs_at(p) for p in cells])
+        else:
+            obs = np.array([env.obs_at(p, psi=0.0) for p in cells])
+
+        locs = np.array(cells)
         C_X, C_Y = offsets[env_idx]
         locs[:, 0] += C_X
         locs[:, 1] += C_Y

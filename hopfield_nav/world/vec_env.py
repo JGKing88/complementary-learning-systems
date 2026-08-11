@@ -11,9 +11,34 @@ from __future__ import annotations
 
 import numpy as np
 
-from .env import GridEnv, CARDINAL_ACTIONS, at_goal
+from .env import (
+    CARDINAL_RADIANS, CARDINAL_ACTIONS, GridEnv, at_goal, cardinal_index,
+    nearest_heading, raycast_codes,
+)
 from . import episode
 from .episode import GoalContract
+
+
+def _views(vec, pos: np.ndarray, psi: np.ndarray) -> np.ndarray:
+    """Foveal views for a batch of (cell, heading) pairs: (N, obs_size).
+
+    Gathers from the cardinal codebook when every ψ is exactly cardinal --
+    always true in discrete movement, and always true when the env's cone is
+    pinned North -- and ray-casts otherwise. The two paths agree by
+    construction (the codebook is built by the same function), so this is a
+    speed choice rather than a behavioral one.
+    """
+    k = cardinal_index(psi)
+    if k.size == 0 or (k >= 0).all():
+        return vec._codebook[pos[:, 0], pos[:, 1], k]
+    return raycast_codes(vec._wall_code, vec.size, pos[:, 0], pos[:, 1], psi,
+                         vec._obs_size)
+
+
+def _obs_psi(vec, indices: np.ndarray | None) -> np.ndarray:
+    """The ψ observations are read at: live headings, or North when fixed."""
+    psi = vec._heading_rad if indices is None else vec._heading_rad[indices]
+    return psi if vec.egocentric_heading else np.zeros_like(psi)
 
 
 class VecEnv:
@@ -29,16 +54,20 @@ class VecEnv:
         self.size = base_env.size
         self.speed = base_env.speed
         self._codebook = base_env._codebook  # shared
+        self._wall_code = base_env._wall_code  # shared; for off-cardinal casts
         self._goal = base_env._goal
         self._obs_size = base_env._observation_size
         self.time_penalty = base_env.time_penalty
         self.goals_active = getattr(base_env, "goals_active", True)
         self.goal_reward = getattr(base_env, "goal_reward", 1.0)
         self.goal_radius = getattr(base_env, "goal_radius", 0.5)
+        self.egocentric_heading = getattr(base_env, "egocentric_heading", True)
 
-        # Batched state: (B, 2) integer positions
+        # Batched state: (B, 2) integer positions, (B,) heading angles.
+        # Heading is radians clockwise from North; cardinal moves land it
+        # exactly on a multiple of π/2, so obs stays on the codebook gather.
         self._pos = np.zeros((batch_size, 2), dtype=np.int32)
-        self._heading = np.zeros((batch_size, 2), dtype=np.int32)
+        self._heading_rad = np.zeros(batch_size, dtype=np.float64)
         self._rng = np.random.RandomState(base_env.rng.randint(0, 2**31))
 
     # ------------------------------------------------------------------
@@ -55,7 +84,7 @@ class VecEnv:
                 if (x, y) != (gx, gy):
                     break
             self._pos[b] = [x, y]
-            self._heading[b] = [1, 0]
+            self._heading_rad[b] = 0.0
 
     def reset_indices(self, indices: np.ndarray) -> None:
         """Reset specific episodes to random positions (goal stays fixed)."""
@@ -67,20 +96,19 @@ class VecEnv:
                 if (x, y) != (gx, gy):
                     break
             self._pos[b] = [x, y]
-            self._heading[b] = [1, 0]
+            self._heading_rad[b] = 0.0
 
     # ------------------------------------------------------------------
     # Observe
     # ------------------------------------------------------------------
 
     def obs_batch(self, indices: np.ndarray | None = None) -> np.ndarray:
-        """Get observations for a batch of episodes.
+        """Observations from where each episode stands, facing where it faces.
 
         Returns (B, obs_size) or (len(indices), obs_size).
         """
-        if indices is None:
-            return self._codebook[self._pos[:, 0], self._pos[:, 1]]
-        return self._codebook[self._pos[indices, 0], self._pos[indices, 1]]
+        pos = self._pos if indices is None else self._pos[indices]
+        return _views(self, pos, _obs_psi(self, indices))
 
     def positions(self, indices: np.ndarray | None = None) -> np.ndarray:
         """Get current positions (B, 2) or (len(indices), 2)."""
@@ -100,7 +128,7 @@ class VecEnv:
         if pos.shape[0] != self.B:
             raise ValueError(f"expected {self.B} positions, got {pos.shape[0]}")
         self._pos[:] = pos
-        self._heading[:] = [1, 0]
+        self._heading_rad[:] = 0.0
 
     # ------------------------------------------------------------------
     # Step
@@ -142,6 +170,7 @@ class VecEnv:
         )
         rewards, goal_reached = res.rewards, res.at_goal
 
+        moved = np.zeros((n, 2), dtype=np.int64)
         for j, b in enumerate(indices):
             if not res.apply_move[j]:
                 continue  # movement ignored; teleport (if any) applied below
@@ -154,10 +183,17 @@ class VecEnv:
             nx = max(0, min(self.size - 1, self._pos[b, 0] + dx * self.speed))
             ny = max(0, min(self.size - 1, self._pos[b, 1] + dy * self.speed))
 
-            if (nx, ny) != (self._pos[b, 0], self._pos[b, 1]):
-                self._heading[b] = [np.sign(nx - self._pos[b, 0]),
-                                    np.sign(ny - self._pos[b, 1])]
+            moved[j] = (nx - self._pos[b, 0], ny - self._pos[b, 1])
             self._pos[b] = [nx, ny]
+
+        # Heading follows the *realized* displacement, so an episode whose step
+        # was clipped by a wall (or ignored at the goal) keeps facing where it
+        # was. Cardinal moves take ψ from the table, which keeps it exactly on a
+        # multiple of π/2 and so keeps obs on the codebook gather.
+        turned = nearest_heading(moved)
+        spun = turned >= 0
+        if spun.any():
+            self._heading_rad[indices[spun]] = CARDINAL_RADIANS[turned[spun]]
 
         # Relocate the envs the contract says to teleport.
         reached_b = indices[res.teleport]
@@ -205,12 +241,14 @@ class ContinuousVecEnv:
         self.B = batch_size
         self.size = base_env.size
         self._codebook = base_env._codebook
+        self._wall_code = base_env._wall_code  # shared; for off-cardinal casts
         self._goal = base_env._goal
         self._obs_size = base_env._observation_size
         self.time_penalty = base_env.time_penalty
         self.goals_active = getattr(base_env, "goals_active", True)
         self.goal_reward = getattr(base_env, "goal_reward", 1.0)
         self.goal_radius = getattr(base_env, "goal_radius", 0.5)
+        self.egocentric_heading = getattr(base_env, "egocentric_heading", True)
         self.scale = scale
         # When True, each (dx, dy) action is L2-normalized to a unit vector
         # before * scale, matching ContinuousGridEnv.step's behavior. Train and
@@ -223,6 +261,10 @@ class ContinuousVecEnv:
 
         self._pos_f = np.zeros((batch_size, 2), dtype=np.float64)
         self._pos = np.zeros((batch_size, 2), dtype=np.int32)
+        # Heading, radians clockwise from North. Continuous movement can face
+        # any angle, so unlike VecEnv this rarely lands on a cardinal and
+        # observations are genuinely ray-cast each step.
+        self._heading_rad = np.zeros(batch_size, dtype=np.float64)
         self._rng = np.random.RandomState(base_env.rng.randint(0, 2**31))
 
     def _update_snapped(self, indices: np.ndarray | None = None) -> None:
@@ -246,6 +288,7 @@ class ContinuousVecEnv:
                 if (x, y) != (gx, gy):
                     break
             self._pos_f[b] = [float(x), float(y)]
+            self._heading_rad[b] = 0.0
         self._update_snapped()
 
     def reset_indices(self, indices: np.ndarray) -> None:
@@ -257,6 +300,7 @@ class ContinuousVecEnv:
                 if (x, y) != (gx, gy):
                     break
             self._pos_f[b] = [float(x), float(y)]
+            self._heading_rad[b] = 0.0
         self._update_snapped(indices)
 
     # ------------------------------------------------------------------
@@ -275,6 +319,7 @@ class ContinuousVecEnv:
         if pos.shape[0] != self.B:
             raise ValueError(f"expected {self.B} positions, got {pos.shape[0]}")
         self._pos_f[:] = pos
+        self._heading_rad[:] = 0.0
         self._update_snapped()
 
     def positions_continuous(self, indices: np.ndarray | None = None) -> np.ndarray:
@@ -284,8 +329,9 @@ class ContinuousVecEnv:
         return self._pos_f[indices].copy()
 
     def obs_batch(self, indices: np.ndarray | None = None) -> np.ndarray:
+        """Views from the snapped cell, facing the continuous heading."""
         pos = self._pos if indices is None else self._pos[indices]
-        return self._codebook[pos[:, 0], pos[:, 1]]
+        return _views(self, pos, _obs_psi(self, indices))
 
     # ------------------------------------------------------------------
     # Step
@@ -354,13 +400,26 @@ class ContinuousVecEnv:
         )
         rewards, goal_reached = res.rewards, res.at_goal
 
+        moved = np.zeros((n, 2), dtype=np.float64)
         for j, b in enumerate(indices):
             if not res.apply_move[j]:
                 continue
+            before = self._pos_f[b].copy()
             self._pos_f[b] = np.clip(
                 self._pos_f[b] + actions[j] * self.scale,
                 0.0, float(self.size - 1),
             )
+            moved[j] = self._pos_f[b] - before
+
+        # Heading is the direction actually travelled -- a step absorbed by the
+        # clip leaves the agent facing where it was. Continuous movement can
+        # face any angle, so ψ is atan2 of the displacement rather than a
+        # cardinal; atan2(dx, dy), in that argument order, is clockwise from
+        # North, matching the ray convention.
+        spun = np.linalg.norm(moved, axis=1) >= 1e-12
+        if spun.any():
+            self._heading_rad[indices[spun]] = np.arctan2(
+                moved[spun, 0], moved[spun, 1])
 
         self._update_snapped(indices)
 

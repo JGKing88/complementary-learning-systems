@@ -319,7 +319,7 @@ class TestRolloutRewardShaping:
         # at the env goal — vec creates its own _pos, env._pos doesn't carry over.
         def force_at_goal(self):
             self._pos[:] = list(self._goal)
-            self._heading[:] = [1, 0]
+            self._heading_rad[:] = 0.0
 
         with patch.object(VecEnv, "reset_all", force_at_goal):
             rollout = collector.collect_rollout(

@@ -79,6 +79,7 @@ def build_envs(cfg: RNNTrainConfig, rng: np.random.RandomState) -> list[GridEnv]
             # the configured values.
             goal_reward=cfg.env.goal_reward,
             goal_radius=cfg.env.goal_radius,
+            egocentric_heading=cfg.env.egocentric_heading,
         ))
     return envs
 
