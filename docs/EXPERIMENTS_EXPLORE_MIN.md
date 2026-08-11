@@ -379,6 +379,7 @@ place by showing that the apparent spread was mostly eval noise.
 | `e4s42` | 4 | 16 | 64 | 0.467 | 0.504 @u1000 | **27 m** |
 | `c4s42` | 4 | 320 | 1280 | 0.467 | 0.531 @u325 | 87 m |
 | **`e8`** | **8** | **16** | **128** | **0.538** | **0.561** @u950 | **57 m** |
+| `c8s42` | 8 | 160 | 1280 | 0.492 | 0.539 @u650 | 125 m |
 | `e16` | 16 | 16 | 256 | 0.435 | 0.490 @u725 | 105 m |
 | *s1* | *80* | *16* | *1280* | *— (u300 only)* | *0.517 @u300* | *2 h 40* |
 
@@ -479,13 +480,24 @@ regularization.** 64 trajectories give a noisy gradient, the noise keeps the
 policy from settling into the four training codebooks, and the run climbs
 slower but does not turn over.
 
-So the effect of pool size is **non-monotone and depends on env count**:
+**`c8` confirms it, and shows diversity does not rescue the big pool.** At 8
+envs the pool-1280 run behaves exactly like `c4`: training reward climbing
+monotonically 0.230 → 0.336 (the same terminal value `c4` reached), held-out
+coverage peaking at **0.539 @u650** and then falling to a 0.492 plateau, while
+`e8` on a pool of 128 climbs past it to 0.538 with its maximum at u950. Four
+times the diversity only **delays the peak** — u325 at 4 envs, u650 at 8 — it
+does not remove the turnover. And note both `c4` and `c8` peak at ~0.53: the
+big pool reaches the same place and then gives it back.
 
-| envs | pool change | result |
-|---|---|---|
-| 1 | 16 → 1280 | **nothing** (0.152 → 0.151); diversity binds first |
-| 2 | 32 → 1280 | **large gain** (0.095 → 0.346); stability binds first |
-| 4 | 64 → 1280 | **no net gain** (both plateau 0.467); overfitting binds |
+So the effect of pool size is **non-monotone and depends on env count**, and
+the small pool wins by more as diversity grows:
+
+| envs | small pool | pool 1280 | result |
+|---|---|---|---|
+| 1 | 0.158 (pool 16) | 0.146 | **nothing** — diversity binds first |
+| 2 | 0.113 (pool 32) | 0.348 | **large gain** — stability binds first |
+| 4 | 0.467 (pool 64) | 0.467, peak 0.531 | **tie**, peak given back |
+| 8 | **0.538** (pool 128) | 0.492, peak 0.539 | **small pool wins** |
 
 There is no single "bigger pool is better". Two envs need pool to survive; four
 envs get nothing from it, and pay for it in wall-clock and in a peak they then
