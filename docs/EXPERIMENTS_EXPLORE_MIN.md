@@ -334,6 +334,37 @@ drains two at a time; rungs are recorded here as they land.
 showed is biased high by ~0.02 and unreliable even for *ranking*. They are
 progress signal. The verdict pass is still owed.
 
+### Read trailing means, not final evals
+
+This eval is noisy enough that a single reading is not a level, and it misled
+this document twice before the rule was adopted: `c2s43` reads **0.452** at
+u1000 with 0.315 / 0.322 / 0.387 immediately before it, and `e4`-vs-`c4` looks
+like 0.504-vs-0.447 on final evals but is a **tie at 0.467** on the last 200
+updates. Runs are therefore summarized by the mean of their last 8 evals.
+
+| run | envs | pool | final | **mean₈** | sd₈ | max | @max |
+|---|---|---|---|---|---|---|---|
+| `e4s42` | 4 | 64 | 0.504 | **0.467** | 0.022 | 0.504 | u1000 |
+| `c4s42` | 4 | 1280 | 0.447 | **0.467** | 0.013 | 0.531 | u325 |
+| `c2s43` | 2 | 1280 | 0.452 | 0.363 | 0.064 | 0.452 | u1000 |
+| `c2s42` | 2 | 1280 | 0.346 | 0.348 | 0.024 | 0.402 | u600 |
+| `c2s44` | 2 | 1280 | *running* | *0.319* | 0.022 | 0.354 | u375 |
+| `e1s42` | 1 | 16 | 0.152 | 0.158 | 0.011 | 0.189 | u775 |
+| `c1s42` | 1 | 1280 | 0.152 | 0.146 | 0.007 | 0.196 | u400 |
+| `e2s43` | 2 | 32 | 0.137 | 0.146 | 0.018 | 0.264 | u475 |
+| `e2s42` | 2 | 32 | 0.071 | 0.113 | 0.034 | 0.215 | u125 |
+| `e2s44` | 2 | 32 | 0.076 | 0.097 | 0.020 | 0.201 | u800 |
+
+Note `sd₈` as a stability read in its own right: `c4` 0.013 and `c1` 0.007 are
+settled, `c2s43` 0.064 and `e2s42` 0.034 are not. And note that s1/d3 cannot be
+compared on mean₈ at all — they ran only 300 updates, so their last 8 evals
+cover their climb rather than a plateau. Against them, use the verdict pass.
+
+**The 2-env seed spread is small, not large.** On finals it looks like 0.346 /
+0.452 / 0.296 — a 0.156 range. On mean₈ it is 0.348 / 0.363 / 0.319, a range of
+0.044. The 2-env level is ~0.34, and the design's three seeds earned their
+place by showing that the apparent spread was mostly eval noise.
+
 ### Headline: **four environments is enough**, and it is a cliff, not a slope
 
 | run | envs | batch | pool | @u300 | @u1000 | shape | wall-clock |
@@ -400,9 +431,17 @@ training envs, same seed, only the pool differs:
 | u1000 | 0.447 | **0.504**, still climbing |
 | wall-clock | 87 m (5.2 s/u) | **27 m** (1.6 s/u) |
 
+> **Read the trailing means, not the final evals.** On the last-8-eval average
+> `e4` and `c4` are **tied at 0.467**. The 0.504-vs-0.447 gap in the `u1000`
+> row is single-eval noise, and an earlier version of this section drew a
+> ranking from it that the data does not support. What differs between the two
+> is the *shape*, which is robust, and that is what the rest of this section is
+> about.
+
 `c4` learns far faster per update and **peaks at 0.531 — above s1's 0.517** —
-then degrades into a 0.41–0.51 oscillation. `e4` climbs monotonically past it.
-The training reward says which is which:
+then falls back to a 0.467 plateau. `e4` rises steadily to the same 0.467 and,
+unlike `c4`, has its maximum at the last eval — it is still climbing where `c4`
+has turned over. The training reward says which is which:
 
 | | training `mean_r` u150 → u900 | held-out coverage |
 |---|---|---|
@@ -422,19 +461,25 @@ So the effect of pool size is **non-monotone and depends on env count**:
 |---|---|---|
 | 1 | 16 → 1280 | **nothing** (0.152 → 0.151); diversity binds first |
 | 2 | 32 → 1280 | **large gain** (0.095 → 0.346); stability binds first |
-| 4 | 64 → 1280 | **net loss** by u1000 (0.504 → 0.447); overfitting binds |
+| 4 | 64 → 1280 | **no net gain** (both plateau 0.467); overfitting binds |
 
 There is no single "bigger pool is better". Two envs need pool to survive; four
-envs need the lack of it to generalize.
+envs get nothing from it, and pay for it in wall-clock and in a peak they then
+give back.
 
 The practical consequence is that the two cheapest configurations in the study
-are near-tied on wall-clock but differ in kind:
+land at the same plateau but differ in kind:
 
-- **`e4`, 27 min** → 0.504 monotone, no early stopping needed, still climbing.
-- **`c4` early-stopped at u325, ~28 min** → 0.531, the highest number either
-  wave has produced — but only if you stop, since it is worth 0.447 by u1000.
+- **`e4`, 27 min** → plateau 0.467, max 0.504 *at the final eval*, monotone, no
+  early stopping needed, still climbing when cut.
+- **`c4`, 87 min** → same 0.467 plateau, but reaches **0.531 at u325** on the
+  way. Early-stopped there it is ~28 min for the highest single number either
+  wave has produced; run to u1000 it gives that back.
 
-Both beat s1 (0.517 in 2 h 40 m) on cost and v35 (0.507 in ~20 h) enormously.
+Both are enormously cheaper than s1 (0.517 in 2 h 40 m) and v35 (0.507 in
+~20 h) for coverage in the same band — but all of these are 4×16 monitoring
+evals, and wave 1 showed those are biased ~0.02 high and unreliable for
+ranking. **The verdict pass decides it, not this table.**
 
 ### The 2-env collapse is reproducible, and the `e*` ladder is non-monotonic
 
