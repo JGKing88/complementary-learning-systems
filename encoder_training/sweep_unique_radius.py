@@ -124,16 +124,29 @@ def field_names(args) -> tuple[list[str], list[str]]:
 
     ref_cols = ["ref_index", "ref_x", "ref_y", "border_dist", "max_r", "n_cells",
                 "headline_trim", "r_headline", "saturated_headline",
-                "alias_ceiling", "exclusion_radius", "cos_floor"]
+                "alias_ceiling", "exclusion_radius", "cos_floor",
+                # anisotropy-tolerant radii -- the disc columns above collapse
+                # on any non-circular map, so rank on these
+                "r_alias", "saturated_alias", "far_ceiling", "alias_exclusion",
+                "n_rays", "r_monotone_min", "r_monotone_p25",
+                "r_monotone_median", "r_monotone_max"]
     for t in trims:
         ref_cols += [f"r_trim{t}", f"saturated_trim{t}"]
     ref_cols += [f"margin_r{R}" for R in margins]
     ref_cols += [f"r_at_cos{lvl}" for lvl in levels]
 
-    sum_cols = ["n_refs", "headline_trim", "r_min", "r_p25", "r_median",
-                "r_mean", "r_max", "r_std", "n_saturated"]
+    # r_min is the per-direction radius; disc_* are the isotropy-sensitive
+    # columns, retained for reference but not to be ranked on.
+    sum_cols = ["n_refs", "headline", "headline_trim", "r_min", "r_p25",
+                "r_median", "r_mean", "r_max", "r_std", "n_saturated",
+                "disc_min", "disc_median"]
     for t in trims:
         sum_cols += [f"r_min_trim{t}", f"r_median_trim{t}"]
+    sum_cols += ["alias_min", "alias_median", "alias_max",
+                 "mono_min", "mono_median", "mono_max",
+                 "mono_med_min", "mono_med_median", "mono_med_max",
+                 "far_ceiling_max", "far_ceiling_mean", "n_saturated_alias",
+                 "n_rays"]
     sum_cols += ["alias_ceiling_max", "alias_ceiling_mean"]
     for R in margins:
         sum_cols += [f"margin_r{R}_min", f"margin_r{R}_mean"]

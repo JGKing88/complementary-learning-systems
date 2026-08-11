@@ -65,6 +65,7 @@ from __future__ import annotations
 from typing import Iterable, Sequence
 
 import numpy as np
+from scipy.ndimage import map_coordinates
 
 DEFAULT_TRIMS: tuple[int, ...] = (0, 4, 16, 64)
 HEADLINE_TRIM: int = 16
@@ -138,6 +139,97 @@ def _first_failure(inner_min, outer_hi, max_r):
     return float(bad[0] - 1) if bad[0] > 0 else 0.0, False
 
 
+def rays_for(max_r: float, cap: int = 2048) -> int:
+    """Enough directions that neighbouring rays stay within a cell out to max_r.
+
+    Adjacent rays are ``2 r sin(pi/n)`` apart, so 72 rays are 8.7 cells apart at
+    r=100 and step straight over a narrow feature. Keeping that gap under one
+    cell needs ``n ~ 2 pi max_r``.
+    """
+    return int(min(cap, max(72, np.ceil(2.0 * np.pi * float(max_r)))))
+
+
+def monotone_radius_per_direction(
+    cos_map: np.ndarray,
+    i0: float,
+    i1: float,
+    *,
+    max_r: float,
+    n_rays: int | None = None,
+    dt: float = 1.0,
+) -> tuple[np.ndarray, np.ndarray]:
+    """How far similarity keeps strictly decreasing, per direction.
+
+    Along each ray a sample at distance t counts only while it exceeds every
+    similarity farther out *on that same ray*. Evaluating one direction at a
+    time is what makes this tolerant of anisotropy: an elliptical similarity
+    map is perfectly monotone along every ray, and only a comparison *across*
+    directions (see ``unique_radius``) is destroyed by it.
+
+    The flip side is that a ray only sees aliases it happens to pass through,
+    which is what ``alias_crossing_radius`` covers instead.
+
+    Vectorised: one ``map_coordinates`` call for every sample on every ray,
+    then a suffix maximum along each ray. Returns (thetas, radii); radii are
+    capped at ``max_r`` but the tail comparison uses the full ray to the edge.
+    """
+    n0, n1 = cos_map.shape
+    n_rays = rays_for(max_r) if n_rays is None else int(n_rays)
+    thetas = np.linspace(0.0, 2.0 * np.pi, n_rays, endpoint=False)
+
+    reach = float(np.hypot(max(i0, n0 - 1 - i0), max(i1, n1 - 1 - i1)))
+    ts = np.arange(0.0, reach + dt, dt)
+    c, s = np.cos(thetas)[:, None], np.sin(thetas)[:, None]
+    p0 = i0 + ts[None, :] * c
+    p1 = i1 + ts[None, :] * s
+
+    sims = map_coordinates(
+        cos_map.astype(np.float64), np.stack([p0.ravel(), p1.ravel()]),
+        order=1, mode="constant", cval=np.nan,
+    ).reshape(n_rays, len(ts))
+    # map_coordinates only yields cval strictly outside; mark the edge too
+    sims[(p0 < 0) | (p0 > n0 - 1) | (p1 < 0) | (p1 > n1 - 1)] = np.nan
+
+    # suffix max over each ray, skipping the out-of-grid tail (fmax drops NaN)
+    suffix = np.fmax.accumulate(sims[:, ::-1], axis=1)[:, ::-1]
+    beyond = np.full_like(sims, -np.inf)
+    beyond[:, :-1] = suffix[:, 1:]
+
+    limit = min(int(np.floor(max_r / dt)), len(ts) - 1)
+    ok = np.isfinite(sims[:, :limit + 1]) & (sims[:, :limit + 1] > beyond[:, :limit + 1])
+    ok[:, 0] = True                                   # the reference itself
+
+    failed = ~ok
+    any_fail = failed.any(axis=1)
+    first = np.where(any_fail, failed.argmax(axis=1), limit + 1)
+    return thetas, np.maximum(first - 1, 0).astype(float) * dt
+
+
+def alias_crossing_radius(
+    inner_min: np.ndarray,
+    ceiling: float,
+    max_r: float,
+) -> tuple[float, bool]:
+    """Largest r whose whole disc outscores everything past the exclusion radius.
+
+    The disc condition in ``unique_radius`` compares against the ring
+    *immediately* outside r, which forces the similarity level sets to be
+    circles -- a 1.25:1 ellipse collapses it to r=1 even when every ray is
+    monotone for hundreds of cells. Pushing the comparison set out past an
+    exclusion radius drops that requirement while keeping full alias
+    sensitivity: the annulus between r and the exclusion radius is left
+    unconstrained, so anisotropy there costs nothing.
+
+    ``inner_min`` is non-increasing, so no separate nesting check is needed.
+    """
+    limit = min(int(np.floor(max_r)), len(inner_min) - 1)
+    ok = inner_min[:limit + 1] > ceiling
+    bad = np.flatnonzero(~ok)
+    if bad.size == 0:
+        return float(limit), True
+    return float(bad[0] - 1) if bad[0] > 0 else 0.0, False
+
+
 def unique_radius(
     cos_map: np.ndarray,
     i0: float,
@@ -171,6 +263,9 @@ def unique_radius_report(
     exclusion_radius: int = 50,
     floor_radius: int = 200,
     max_r: float | None = None,
+    alias_exclusion: int | None = None,
+    n_rays: int | None = None,
+    with_rays: bool = True,
 ) -> dict:
     """Every unique-radius statistic for one reference, from a single sort.
 
@@ -190,6 +285,21 @@ def unique_radius_report(
         local width, robust where the radius is brittle.
     ``cos_floor``
         Mean similarity beyond ``floor_radius``: the background level.
+
+    Three radii are reported because they answer different questions and a real
+    encoder separates them widely:
+
+    ``r_trim{t}``
+        The disc condition -- everything inside r beats everything outside.
+        Strongest guarantee, but it requires near-circular level sets, so it
+        collapses on any anisotropic map however cleanly it decays.
+    ``r_monotone_{min,median,max}``
+        Per-direction strict decrease. Anisotropy-tolerant, but only sees
+        aliases lying on a sampled ray.
+    ``r_alias``
+        Whole disc beats everything past ``alias_exclusion``. Anisotropy-
+        tolerant *and* alias-sensitive; the closest thing here to "how far
+        before I could be confused with somewhere else".
     """
     trims = tuple(int(t) for t in trims)
     if headline_trim not in trims:
@@ -237,6 +347,26 @@ def unique_radius_report(
     fr = min(int(floor_radius), nbin - 1)
     tail = s_sorted[starts[fr]:]
     rep["cos_floor"] = float(tail.mean()) if tail.size else float("nan")
+
+    # --- anisotropy-tolerant radii ----------------------------------------
+    ax = min(int(alias_exclusion if alias_exclusion is not None else max_r),
+             nbin - 1)
+    far_ceiling = float(outer_hi[hj, ax])
+    r_alias, sat_alias = alias_crossing_radius(inner_min, far_ceiling, max_r)
+    rep["alias_exclusion"] = int(ax)
+    rep["far_ceiling"] = far_ceiling
+    rep["r_alias"] = r_alias
+    rep["saturated_alias"] = bool(sat_alias)
+
+    if with_rays:
+        nr = rays_for(max_r) if n_rays is None else int(n_rays)
+        _, radii = monotone_radius_per_direction(
+            cos_map, i0, i1, max_r=max_r, n_rays=nr)
+        rep["n_rays"] = nr
+        rep["r_monotone_min"] = float(radii.min())
+        rep["r_monotone_p25"] = float(np.percentile(radii, 25))
+        rep["r_monotone_median"] = float(np.median(radii))
+        rep["r_monotone_max"] = float(radii.max())
     return rep
 
 
@@ -245,6 +375,9 @@ __all__ = [
     "HEADLINE_TRIM",
     "DEFAULT_MARGIN_RADII",
     "DEFAULT_PROFILE_LEVELS",
+    "alias_crossing_radius",
+    "monotone_radius_per_direction",
+    "rays_for",
     "unique_radius",
     "unique_radius_report",
 ]

@@ -224,10 +224,20 @@ def summarize(
 
     ``r_min`` -- the worst of the sampled locations -- is the headline: the
     arena's guarantee is set by its weakest position, not its typical one.
+
+    The headline is the **per-direction** radius (``r_monotone_min``), not the
+    disc radius. The disc condition compares the worst cell inside r against
+    the best cell just outside it, and those lie in different directions, so it
+    silently demands circular level sets: a 1.25:1 ellipse drives it to 1 while
+    every ray stays monotone for hundreds of cells. Its columns are kept as
+    ``disc_*`` for reference but should not be ranked on.
     """
-    head = np.array([r[f"r_trim{headline_trim}"] for r in records], dtype=float)
+    key = "r_monotone_min" if "r_monotone_min" in records[0] \
+        else f"r_trim{headline_trim}"
+    head = np.array([r[key] for r in records], dtype=float)
     out = {
         "n_refs": len(records),
+        "headline": key,
         "headline_trim": int(headline_trim),
         "r_min": float(head.min()),
         "r_p25": float(np.percentile(head, 25)),
@@ -238,6 +248,9 @@ def summarize(
         "n_saturated": int(sum(r[f"saturated_trim{headline_trim}"]
                                for r in records)),
     }
+    disc = np.array([r[f"r_trim{headline_trim}"] for r in records], dtype=float)
+    out["disc_min"] = float(disc.min())
+    out["disc_median"] = float(np.median(disc))
     for t in trims:
         vals = np.array([r[f"r_trim{t}"] for r in records], dtype=float)
         out[f"r_min_trim{t}"] = float(vals.min())
@@ -246,6 +259,24 @@ def summarize(
     ceil = np.array([r["alias_ceiling"] for r in records], dtype=float)
     out["alias_ceiling_max"] = float(ceil.max())
     out["alias_ceiling_mean"] = float(ceil.mean())
+
+    # The anisotropy-tolerant radii. ``r_min`` above is the disc statistic and
+    # is destroyed by any departure from circular level sets, so these are the
+    # ones to rank on; see unique_radius.unique_radius_report.
+    for key, label in (("r_alias", "alias"), ("r_monotone_min", "mono"),
+                       ("r_monotone_median", "mono_med")):
+        if key not in records[0]:
+            continue
+        vals = np.array([r[key] for r in records], dtype=float)
+        out[f"{label}_min"] = float(vals.min())
+        out[f"{label}_median"] = float(np.median(vals))
+        out[f"{label}_max"] = float(vals.max())
+    if "far_ceiling" in records[0]:
+        far = np.array([r["far_ceiling"] for r in records], dtype=float)
+        out["far_ceiling_max"] = float(far.max())
+        out["far_ceiling_mean"] = float(far.mean())
+        out["n_saturated_alias"] = int(sum(r["saturated_alias"] for r in records))
+        out["n_rays"] = int(records[0].get("n_rays", 0))
 
     for R in margin_radii:
         vals = [r[f"margin_r{R}"] for r in records]

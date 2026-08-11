@@ -129,6 +129,98 @@ def test_headline_trim_is_added_when_absent_from_trims():
 
 
 # ---------------------------------------------------------------------------
+# Anisotropy: the failure mode that makes the disc radius the wrong headline
+# ---------------------------------------------------------------------------
+
+def _ellipse(sx, sy):
+    yy, xx = np.mgrid[0:SIZE, 0:SIZE]
+    return np.exp(-0.5 * (((xx - CENTRE) / sx) ** 2 + ((yy - CENTRE) / sy) ** 2))
+
+
+@pytest.mark.parametrize("sx,sy,disc_max", [(40, 32, 10), (40, 20, 5), (40, 10, 3)])
+def test_disc_radius_collapses_on_an_anisotropic_map(sx, sy, disc_max):
+    """Pins the defect, so nobody "fixes" the ellipse away later.
+
+    An elliptical bump is strictly decreasing along *every* ray out of its
+    centre, yet the disc condition compares the worst cell inside r against the
+    best cell outside r and those sit in different directions. A 1.25:1 ellipse
+    is enough to drive it to single digits.
+    """
+    r, _ = unique_radius(_ellipse(sx, sy), CENTRE, CENTRE, trim=16, max_r=100)
+    assert r <= disc_max
+
+
+@pytest.mark.parametrize("sx,sy", [(40, 40), (40, 32), (40, 20), (40, 10)])
+def test_monotone_radius_is_indifferent_to_anisotropy(sx, sy):
+    """Every direction of an ellipse is clean, so the per-direction radius
+    should run to the cap no matter how elongated it gets."""
+    from encoder_training.unique_radius import monotone_radius_per_direction
+
+    _, radii = monotone_radius_per_direction(
+        _ellipse(sx, sy), CENTRE, CENTRE, max_r=100)
+    assert radii.min() == 100.0
+
+
+@pytest.mark.parametrize("sx,sy", [(40, 40), (40, 20), (40, 10)],
+                         ids=["1:1", "2:1", "4:1"])
+def test_alias_crossing_radius_degrades_gracefully_not_catastrophically(sx, sy):
+    """It still shrinks with anisotropy — the worst direction genuinely does
+    reach the far-field level sooner — but smoothly, not to 1."""
+    rep = unique_radius_report(_ellipse(sx, sy), CENTRE, CENTRE, max_r=100,
+                               alias_exclusion=100)
+    disc, alias = rep["r_trim16"], rep["r_alias"]
+    assert alias >= disc
+    assert alias >= 20.0            # 4:1 still reports ~25, disc reports 1
+
+
+@pytest.mark.parametrize("level,expected", [(0.3, 61), (0.6, 39), (0.9, 17)])
+def test_alias_crossing_radius_tracks_the_alias_level(level, expected):
+    """With circular level sets all three radii should agree; this pins the
+    alias sensitivity that anisotropy tolerance must not cost us."""
+    m = _ellipse(40, 40)
+    m[60:100, 60:100] = level        # 1600 cells, well beyond any trim
+    rep = unique_radius_report(m, CENTRE, CENTRE, max_r=100, alias_exclusion=100)
+    assert rep["far_ceiling"] == pytest.approx(level, abs=1e-6)
+    assert rep["r_alias"] == pytest.approx(expected, abs=1.0)
+
+
+def test_alias_sensitivity_survives_anisotropy():
+    """The whole point: elongated *and* aliased must still track the alias."""
+    seen = []
+    for level in (0.3, 0.6, 0.9):
+        m = _ellipse(40, 10)
+        m[60:100, 60:100] = level
+        rep = unique_radius_report(m, CENTRE, CENTRE, max_r=100,
+                                   alias_exclusion=100)
+        assert rep["r_trim16"] <= 2.0          # disc is useless here
+        seen.append(rep["r_alias"])
+    assert seen[0] > seen[1] > seen[2]         # worse alias -> smaller radius
+
+
+def test_ray_count_scales_so_narrow_features_are_not_stepped_over():
+    """72 rays are 8.7 cells apart at r=100; a 3-cell alias hides between them.
+
+    ``rays_for`` keeps the gap under one cell, which is what lets the
+    per-direction radius be trusted as a minimum.
+    """
+    from encoder_training.unique_radius import monotone_radius_per_direction, rays_for
+    from encoder_training.viz import unique_radius_per_theta
+
+    m = _ellipse(40, 40)
+    yy, xx = np.mgrid[0:SIZE, 0:SIZE]
+    a = np.deg2rad(2.5)                        # deliberately between two rays
+    cx, cy = CENTRE + 50 * np.cos(a), CENTRE + 50 * np.sin(a)
+    m[np.sqrt((xx - cx) ** 2 + (yy - cy) ** 2) <= 1.5] = 0.999
+
+    _, coarse = unique_radius_per_theta(m, ref_x=CENTRE, ref_y=CENTRE, n_rays=72)
+    _, dense = monotone_radius_per_direction(m, CENTRE, CENTRE, max_r=100)
+
+    assert rays_for(100) >= 628
+    assert coarse.min() > 50.0                 # old estimator walks past it
+    assert dense.min() < 5.0                   # dense sampling sees it
+
+
+# ---------------------------------------------------------------------------
 # The evaluator's pure-numpy pieces (no torch, no checkpoints)
 # ---------------------------------------------------------------------------
 
@@ -223,18 +315,28 @@ def test_summarize_reports_the_worst_reference_as_the_headline():
     from encoder_training.eval_unique_radius import summarize
 
     records = []
-    for j, r in enumerate([12.0, 3.0, 40.0, 7.0]):
+    for j, (mono, disc) in enumerate([(12.0, 2.0), (3.0, 1.0),
+                                      (40.0, 5.0), (7.0, 1.0)]):
         records.append({
-            "r_trim0": r, "r_trim4": r, "r_trim16": r, "r_trim64": r,
-            "saturated_trim16": False, "alias_ceiling": 0.5 + 0.01 * j,
+            "r_trim0": disc, "r_trim4": disc, "r_trim16": disc,
+            "r_trim64": disc, "saturated_trim16": False,
+            "r_monotone_min": mono, "r_monotone_median": mono * 2,
+            "r_alias": mono * 0.8, "far_ceiling": 0.4, "n_rays": 629,
+            "saturated_alias": False,
+            "alias_ceiling": 0.5 + 0.01 * j,
             "margin_r5": 0.1, "margin_r10": 0.05, "margin_r25": -0.01,
             "margin_r50": -0.2, "r_at_cos0.9": 5.0, "r_at_cos0.5": 20.0,
             "r_at_cos0.1": 60.0, "cos_floor": -0.1,
         })
     out = summarize(records)
+
+    # the headline must be the per-direction radius, not the disc radius
+    assert out["headline"] == "r_monotone_min"
     assert out["r_min"] == 3.0
     assert out["r_max"] == 40.0
     assert out["r_median"] == pytest.approx(9.5)
+    assert out["disc_min"] == 1.0          # disc kept, but not the headline
     assert out["n_refs"] == 4
     assert out["n_saturated"] == 0
     assert out["alias_ceiling_max"] == pytest.approx(0.53)
+    assert out["alias_min"] == pytest.approx(2.4)
