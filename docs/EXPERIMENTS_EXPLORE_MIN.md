@@ -383,9 +383,58 @@ constraint**:
   mildly *down*. So 2 envs is **capped, not slow**, the distinction the
   1000-update budget was bought to make and one that could not have been made
   at u300, where `c2` reads 0.327 and merely looks behind.
-- **At 4 envs a pool of 64 is already sufficient**, which is the surprise.
-  `c4` (4 envs at pool 1280) is the outstanding test of whether the extra pool
-  buys anything on top of `e4`'s 0.504.
+- **At 4 envs the big pool actively hurts, by overfitting.** See below — this
+  is the wave's second real result.
+
+### At 4 envs, the large pool buys speed and then costs generalization
+
+`c4s42` (4 envs, pool 1280) against `e4s42` (4 envs, pool 64) — same four
+training envs, same seed, only the pool differs:
+
+| update | `c4` (pool 1280) | `e4` (pool 64) |
+|---|---|---|
+| u175 | 0.438 | 0.254 |
+| u325 | **0.531** ← peak | 0.374 |
+| u475 | 0.413 | 0.401 |
+| u700 | 0.507 | 0.443 |
+| u1000 | 0.447 | **0.504**, still climbing |
+| wall-clock | 87 m (5.2 s/u) | **27 m** (1.6 s/u) |
+
+`c4` learns far faster per update and **peaks at 0.531 — above s1's 0.517** —
+then degrades into a 0.41–0.51 oscillation. `e4` climbs monotonically past it.
+The training reward says which is which:
+
+| | training `mean_r` u150 → u900 | held-out coverage |
+|---|---|---|
+| `c4` | 0.226 → **0.336** (rising) | peaks u325, then **falls** |
+| `e4` | 0.092 → 0.271 (rising) | rises monotonically throughout |
+
+`c4` fits its four training envs harder than `e4` does and generalizes worse
+for it: rising train, falling held-out, the unambiguous overfitting signature —
+and the same one `e2` showed in its first phase. **`e4`'s small pool is doing
+regularization.** 64 trajectories give a noisy gradient, the noise keeps the
+policy from settling into the four training codebooks, and the run climbs
+slower but does not turn over.
+
+So the effect of pool size is **non-monotone and depends on env count**:
+
+| envs | pool change | result |
+|---|---|---|
+| 1 | 16 → 1280 | **nothing** (0.152 → 0.151); diversity binds first |
+| 2 | 32 → 1280 | **large gain** (0.095 → 0.346); stability binds first |
+| 4 | 64 → 1280 | **net loss** by u1000 (0.504 → 0.447); overfitting binds |
+
+There is no single "bigger pool is better". Two envs need pool to survive; four
+envs need the lack of it to generalize.
+
+The practical consequence is that the two cheapest configurations in the study
+are near-tied on wall-clock but differ in kind:
+
+- **`e4`, 27 min** → 0.504 monotone, no early stopping needed, still climbing.
+- **`c4` early-stopped at u325, ~28 min** → 0.531, the highest number either
+  wave has produced — but only if you stop, since it is worth 0.447 by u1000.
+
+Both beat s1 (0.517 in 2 h 40 m) on cost and v35 (0.507 in ~20 h) enormously.
 
 ### The 2-env collapse is reproducible, and the `e*` ladder is non-monotonic
 
@@ -459,11 +508,19 @@ The open question has moved. It is no longer "where does the floor lift" —
 1. **Is `e4`'s 0.504 a ceiling or just u1000?** It was still climbing when cut,
    as s1 was at u300. A longer `e4` is now the cheapest available gain in the
    whole study: 27 minutes bought 0.504.
-2. **Does `c4` beat `e4`?** If a pool of 1280 adds nothing at 4 envs, then
-   `batch_envs` is pure waste here and the minimal recipe is `e4` exactly.
-3. **Is `e2`'s collapse seed-specific?** `e2s43`/`e2s44` decide it.
+2. ~~**Does `c4` beat `e4`?**~~ **Answered: no, not by u1000** — it peaks
+   higher and sooner (0.531 @u325) but overfits and ends at 0.447. The minimal
+   recipe is `e4`; the *fastest-to-0.53* recipe is `c4` with early stopping.
+3. ~~**Is `e2`'s collapse seed-specific?**~~ **Answered: no**, 3 seeds, mean
+   0.095.
 4. **Do 8 and 16 envs add anything measurable over 4?** If not, 4 envs is the
-   recommendation and `e8`/`e16` only bound it from above.
+   recommendation and `e8`/`e16` only bound it from above. Now sharper given
+   the overfitting result: more envs should *reduce* `c4`-style overfitting, so
+   `c8` is the test of whether a large pool stops hurting once there is enough
+   diversity to absorb it.
+5. **Does `e4L` keep climbing?** It should, on the evidence — `e4` shows no
+   overfitting signature at all — which would make the 4-env ceiling higher
+   than anything measured so far.
 
 ---
 
