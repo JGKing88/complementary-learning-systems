@@ -33,21 +33,25 @@ branch off `main` carrying only wave 1's tooling (`1be48b4`), not the
 the launcher rather than the model — see below — which would have silently
 trained the wrong branch.
 
-**The result so far: a handful of environments is enough, and 80 is waste.**
-`e8` settles at **0.538 ± 0.015** in **57 minutes** — above s1's best single
-eval (0.517) and its verdict score (0.495), which cost 2 h 40 m on 80 envs, and
-above v35's 0.507 at ~20 h. `e4` reaches 0.467 in 27 minutes. One and two envs
-are genuinely crippled (0.15, 0.34); 4, 8 and 16 all land in 0.43–0.54 with no
-orderable trend on one seed each. Pool size is non-monotone in env count —
-essential at 2 envs, an overfitting liability at 4.
+**Wave 2 is complete and scored under the v35 protocol.** The winner is
+**`e16` — 16 envs, `batch_envs=16`, 1000 updates — at mean coverage 0.518**,
+the only run in either wave above v35's 0.507, level with wave 1's best
+(`d3`, 0.514), in **105 minutes** against `d3`'s 4 h 16 and v35's ~20 h.
+`e8` gets 0.495 in 57 m and `e4` 0.484 in 27 m.
 
-**But none of these configs is known to be stable.** `e4L` ran the 4-env recipe
-to 3000 updates and it collapses catastrophically at ~u1950, from 0.52 to 0.03
-in forty updates, after looking perfectly healthy for 1800. Collapse time
-scales with pool size (pool 32 → ~u450, pool 64 → ~u1950), so `e8`'s pool of
-128 is unfalsified rather than safe. Use these recipes with a bounded update
-budget and keep the checkpoint. All numbers here are the cheap monitoring eval;
-**the verdict pass is owed and decides.**
+Three structural results behind it: **diversity is monotone and unsaturated**
+(0.130 → 0.484 → 0.495 → 0.518 for 1/4/8/16 envs, no ceiling found);
+**PPO pool size is non-monotone in env count** — worth +0.30 at 2 envs and
+−0.05 to −0.08 at 4–8; and **the distractor gap is ≤0.010 in all 13 runs**
+against v35's 0.050, which is the wave's cleanest win.
+
+Two cautions that cost this document several retractions. **The cheap 4×16 eval
+is not merely biased, it is unreliable** — it errs −0.062 to +0.083 in both
+directions and inverted the ranking of the top three runs. And **no config here
+is known to be stable**: `e4L` ran the 4-env recipe to 3000 updates and it
+collapsed from 0.52 to 0.03 in forty updates at ~u1950 after 1800 healthy ones,
+with collapse time scaling by pool size. Use a bounded update budget and keep
+the checkpoint.
 
 ---
 
@@ -632,6 +636,78 @@ budget and checkpoint selection**, not trust:
   gracefully rather than catastrophically, that is a point in their favor that
   the coverage table alone does not show.
 
+### VERDICT — the strict protocol, and it reorders everything
+
+All 13 runs scored at u1000 under the v35 protocol (10 envs × 32 trials,
+`n_dist` {0,5,10}, 400 steps), job `20146120`. **These supersede every
+in-training number in this document.**
+
+| run | envs | pool | **verdict** | mean₈ said | error | wall-clock |
+|---|---|---|---|---|---|---|
+| **`e16`** | 16 | 256 | **0.518** | 0.435 | **+0.083** | **105 m** |
+| `e8` | 8 | 128 | 0.495 | 0.538 | −0.043 | 57 m |
+| `e4` | 4 | 64 | 0.484 | 0.467 | +0.017 | 27 m |
+| `c8s42` | 8 | 1280 | 0.444 | 0.492 | −0.048 | 125 m |
+| `c2s43` | 2 | 1280 | 0.438 | 0.363 | +0.075 | 80 m |
+| `c4s42` | 4 | 1280 | 0.405 | 0.467 | −0.062 | 87 m |
+| `c2s42` | 2 | 1280 | 0.354 | 0.348 | +0.006 | 80 m |
+| `c2s44` | 2 | 1280 | 0.333 | 0.297 | +0.036 | 80 m |
+| `c1s42` | 1 | 1280 | 0.131 | 0.146 | −0.015 | 103 m |
+| `e1s42` | 1 | 16 | 0.130 | 0.158 | −0.028 | 9 m |
+| `e2s43` | 2 | 32 | 0.105 | 0.146 | −0.041 | 21 m |
+| `e2s44` | 2 | 32 | 0.070 | 0.097 | −0.027 | 21 m |
+| `e2s42` | 2 | 32 | 0.058 | 0.113 | −0.055 | 21 m |
+| *v35* | *—* | *—* | *0.507* | — | — | *~20 h* |
+| *wave 1 `d3`* | *80* | *320* | *0.514* | — | — | *4 h 16* |
+| *wave 1 `s1`* | *80* | *1280* | *0.495* | — | — | *2 h 40* |
+
+**1. `e16` wins, at 0.518** — the only run in either wave above v35's 0.507,
+and level with wave 1's best (`d3`, 0.514) — in **105 minutes** against `d3`'s
+4 h 16 and v35's ~20 h. Union coverage 0.94–0.96, distractor gap −0.006.
+
+**2. The diversity curve is monotone after all**, and does not saturate:
+
+| envs | 1 | 2 | 4 | 8 | 16 |
+|---|---|---|---|---|---|
+| verdict (small pool) | 0.130 | 0.078 avg | 0.484 | 0.495 | **0.518** |
+
+The earlier conclusion that it "saturates by 4–8 and does not order above it"
+was an artifact of the cheap eval. It still rises at 16, and **no ceiling has
+been located** — 32 envs is untested and is the obvious wave-3 rung.
+
+**3. The pool result survives, and is the wave's most robust structural
+finding.** Small pool loses badly at 2 envs and wins clearly at 4 and 8:
+
+| envs | small pool | pool 1280 | winner |
+|---|---|---|---|
+| 1 | 0.130 | 0.131 | tie — nothing matters |
+| 2 | 0.078 | 0.375 | **big pool**, by 0.30 |
+| 4 | **0.484** | 0.405 | small, by 0.079 |
+| 8 | **0.495** | 0.444 | small, by 0.051 |
+
+**4. The distractor result is now proven across 13 runs.** Every single
+`0→10` gap is within **±0.010** of zero, against v35's 0.050 — including in the
+runs that collapsed to 0.058. This is the wave's cleanest and most reliable
+result, and the mechanism was predicted in advance.
+
+#### The cheap eval is not "biased high by 0.02". It is unreliable.
+
+Wave 1 characterized the 4-env × 16-trial estimate as optimistic by ~0.02.
+Across 13 runs it errs from **−0.062 to +0.083, in both directions**, and it
+**reverses the ranking of the top three**: in training `e8` (0.538) > `e4`
+(0.467) > `e16` (0.435); on the verdict `e16` (0.518) > `e8` (0.495) > `e4`
+(0.484), exactly inverted at the ends.
+
+Averaging over updates does not fix it — `mean₈` already averages 8 evals, and
+the error persists. That points at the **four validation environments** rather
+than trial noise: each config draws its own val set, so the error is a fixed
+per-run offset, and no amount of averaging over training time removes it.
+
+The operational rule this leaves: **the in-training eval is fit for watching a
+run's shape — climbing, plateauing, collapsing — and unfit for comparing two
+runs.** Every comparative claim needs the 10×32 pass. Wave 1 said as much and
+this document repeatedly ignored it while the ladder was landing.
+
 ### Verdict pass: the peaks do not survive, and peak-picking is a trap
 
 The first two strict-protocol results are in — the two big-pool peaks this
@@ -661,10 +737,26 @@ above. "Stop `c4` at u325 for 0.531" is not a recipe: the 0.531 is largely the
 selection, and what you actually get is 0.440. You cannot identify a peak from
 noisy in-training evals without paying for the search.
 
-The two effects can be separated cleanly, and the main verdict pass does it for
-free: it scores `c4` and `c8` at **u1000**, a checkpoint chosen by fiat rather
-than by argmax. The u1000 gap is then pure eval bias, and whatever the peak gap
-exceeds it by is the selection premium.
+The two effects separate cleanly against the u1000 scores, which were chosen by
+fiat rather than by argmax:
+
+| run | checkpoint | in-training | verdict | error | |
+|---|---|---|---|---|---|
+| `c4` | u1000 (fiat) | 0.467 | 0.405 | −0.062 | ← per-run eval offset |
+| `c4` | u325 (argmax) | 0.531 | 0.440 | −0.091 | ← offset + **0.029 selection** |
+| `c8` | u1000 (fiat) | 0.492 | 0.444 | −0.048 | ← per-run eval offset |
+| `c8` | u650 (argmax) | 0.539 | 0.475 | −0.064 | ← offset + **0.016 selection** |
+
+So the max-selection premium is **0.016–0.029** and the rest — the larger part —
+is the per-run eval offset described above.
+
+**This partly reinstates early stopping, at a third of its advertised value.**
+The peak checkpoints really are better than u1000: `c4` 0.440 vs 0.405, `c8`
+0.475 vs 0.444, a genuine **+0.031 to +0.035**. What is false is the size the
+cheap eval promised (0.531, 0.539) and the conclusion drawn from it. And it
+does not change the recommendation, because both early-stopped big-pool runs
+still verdict **below** `e4` (0.484), `e8` (0.495) and `e16` (0.518), which
+need no stopping rule at all.
 
 ### The distractor result survives at 2 envs
 
@@ -680,29 +772,37 @@ exploit even in a run that is falling apart.
 (4.6 s/u) for the same 1000 updates and the same env-steps — the 5× is the
 `batch_envs` cost correction above, not extra data.
 
-### Still outstanding
+### What wave 2 answered, and what it opened
 
-`c1` (running), `c4`, `c8`, `e8`, `e16`, and the `s43`/`s44` seeds at 2 envs.
+Answered:
 
-The open question has moved. It is no longer "where does the floor lift" —
-`e4` lifts it — but:
+1. **Where is the diversity floor?** Between 2 and 4 envs. One and two envs are
+   crippled (0.13, 0.08–0.44); four is 0.484.
+2. **Is there a ceiling?** Not found. 16 envs is still the best at 0.518.
+3. **Does pool substitute for diversity?** No. At 1 env an 80× pool moves
+   coverage by 0.001. It only rescues the 2-env instability.
+4. **Is `e2`'s collapse seed luck?** No — 3 seeds, verdict 0.058/0.105/0.070.
+5. **Does `c4` beat `e4`?** No: 0.405 against 0.484, and `c8` 0.444 against
+   `e8` 0.495. Above 2 envs the large pool is a liability.
+6. **Is `e4`'s climb a ceiling or just u1000?** Neither — it is a **transient**.
+   `e4L` collapses at ~u1950.
 
-1. **Is `e4`'s 0.504 a ceiling or just u1000?** It was still climbing when cut,
-   as s1 was at u300. A longer `e4` is now the cheapest available gain in the
-   whole study: 27 minutes bought 0.504.
-2. ~~**Does `c4` beat `e4`?**~~ **Answered: no, not by u1000** — it peaks
-   higher and sooner (0.531 @u325) but overfits and ends at 0.447. The minimal
-   recipe is `e4`; the *fastest-to-0.53* recipe is `c4` with early stopping.
-3. ~~**Is `e2`'s collapse seed-specific?**~~ **Answered: no**, 3 seeds, mean
-   0.095.
-4. **Do 8 and 16 envs add anything measurable over 4?** If not, 4 envs is the
-   recommendation and `e8`/`e16` only bound it from above. Now sharper given
-   the overfitting result: more envs should *reduce* `c4`-style overfitting, so
-   `c8` is the test of whether a large pool stops hurting once there is enough
-   diversity to absorb it.
-5. **Does `e4L` keep climbing?** It should, on the evidence — `e4` shows no
-   overfitting signature at all — which would make the 4-env ceiling higher
-   than anything measured so far.
+Opened:
+
+1. **32 and 64 envs.** The curve is monotone and unsaturated at 16, and the
+   cost is linear in envs, so somewhere between 16 and 80 the wall-clock
+   advantage over v35 disappears. Locating that crossover is wave 3's job.
+2. **Does `e16` collapse too?** Untested past u1000. Collapse time scales with
+   pool, and `e16`'s pool of 256 predicts a cliff somewhere past u4000. This
+   matters more than any coverage question: the recommended config has an
+   unmeasured failure horizon.
+3. **Seeds at the top of the ladder.** `e4`/`e8`/`e16` are one seed each and
+   span 0.484–0.518. That range is small enough that seeds could reorder them.
+4. **Why does PPO lose the trust region here?** `move_loss` spikes to 4× its
+   baseline with `value_loss` already elevated. A `ppo_clip_coef` or value-loss
+   ablation would say whether the collapse is avoidable rather than intrinsic
+   to small pools — and would make the cheap configs trustworthy rather than
+   merely fast.
 
 ---
 
