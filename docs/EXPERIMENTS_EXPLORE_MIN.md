@@ -783,6 +783,41 @@ does not change the recommendation, because both early-stopped big-pool runs
 still verdict **below** `e4` (0.484), `e8` (0.495) and `e16` (0.518), which
 need no stopping rule at all.
 
+### Scope: what "16 environments" actually varies
+
+`envs_per_world=16` reads as more variation than it delivers, and the ladder's
+claim should be stated against what actually differs. The envs are built once —
+`setup_world` (`training/world_setup.py:39`) is called a single time at
+`train_navigate.py:372`, and the update loop iterates that same list for all
+1000 updates. Nothing resamples: `refresh_envs_each_update` exists in
+`config.py:94` but is only wired into `train.py`, and **`train_navigate.py`
+never reads it**, so it is inert for this whole wave whatever it is set to.
+
+Each env is its own `make_env` with its own seed, but on an open 20×20 grid
+with no walls there is no layout to vary. Under `explore_goals_off=1` the goal
+is inert in every channel that matters:
+
+| channel | effect of the goal |
+|---|---|
+| reward | none — `goals_active=False` ⇒ `at_goal_mask` all-False |
+| teleport / step consumption | none — same gate |
+| agent inputs | none — only `goal_in_memory` carries it, and it is off |
+| Hopfield contents | none — explore rollouts hold distractors only |
+| **start sampling** | **real, and tiny** — `vec_env.py:49` draws starts `!= goal` |
+
+So the goal removes exactly one of 400 possible start cells, and is otherwise
+invisible. It is also fixed per env for the whole run
+(`randomize_goal_per_rollout` defaults False and no `e*`/`c*` run sets it, so
+`reset_goal` never fires).
+
+**What the ladder therefore measures is sensory-codebook diversity** — the envs
+differ by their offset into the VectorHash scaffold — plus a 0.25%
+perturbation of the start distribution. That is a real and load-bearing axis,
+and it is *not* evidence about robustness to varied geometry, obstacles, or
+goal placement, none of which this setup varies. `e16` should be read as
+"16 distinct codebooks", and generalizing it further needs an env generator
+that actually varies layout.
+
 ### Is the coverage uniform? Yes — and the perimeter basin is the collapse mode
 
 `mean_coverage` counts cells without locating them, and in this lineage those
