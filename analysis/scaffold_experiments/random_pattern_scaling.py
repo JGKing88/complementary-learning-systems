@@ -79,6 +79,25 @@ def real_sbook(npatts, observation_size, rng, size=8):
     return cols[rng.choice(len(cols), npatts, replace=False)].T
 
 
+def real_views_sbook(n_loc, k, observation_size, rng, size=8):
+    """``k`` real cardinal views for each of ``n_loc`` cells, grouped by cell.
+
+    Column order is cell-major -- cell 0's k views, then cell 1's -- matching
+    ``np.repeat`` on the target books.
+    """
+    need = -(-n_loc // (size * size))
+    cells = []
+    for i in range(need):
+        env = make_env(EnvConfig(size=size, observation_size=observation_size),
+                       "discrete", seed=1000 + i)
+        for x in range(size):
+            for y in range(size):
+                cells.append(env._codebook[x, y, :k])       # (k, obs)
+    cells = np.array(cells)
+    pick = rng.choice(len(cells), n_loc, replace=False)
+    return cells[pick].reshape(-1, observation_size).T      # (obs, n_loc*k)
+
+
 def recovery(field, sbook, pb, gb):
     """Fraction of patterns whose recall lands on the exact grid state."""
     npatts = sbook.shape[1]
@@ -86,6 +105,26 @@ def recovery(field, sbook, pb, gb):
                      pseudotrain_Wps(pb, sbook, npatts), Ns=sbook.shape[0])
     _, _, g = assoc.recall_batch(sbook.T)
     return float((g.T == gb).all(axis=0).mean())
+
+
+def many_to_one(field, ns, k, load, seed, real=False):
+    """``k`` distinct patterns per location, all targeting one grid state.
+
+    ``load`` counts *total* stored patterns against Ns, so a given load means
+    the same number of columns however they are grouped -- which is exactly the
+    comparison that says whether many-to-one costs anything beyond its pattern
+    count.
+    """
+    n_total = int(round(load * ns))
+    n_loc = max(1, n_total // k)
+    n_total = n_loc * k
+    rng = np.random.RandomState(seed + n_total + k)
+    pb, gb = targets(field, n_loc, rng)
+    pb = np.repeat(pb, k, axis=1)                           # cell-major
+    gb = np.repeat(gb, k, axis=1)
+    sbook = (real_views_sbook(n_loc, k, ns, rng) if real
+             else rng.choice([-1.0, 1.0], size=(ns, n_total)))
+    return n_loc, n_total, recovery(field, sbook, pb, gb)
 
 
 def main() -> int:
@@ -149,6 +188,38 @@ def main() -> int:
     print("\nCapacity tracks these, not Ns. Random patterns spend every dimension")
     print("they are given; ray-cast views spend a small fraction, so adding")
     print("sensory bits buys far less capacity than the random curve suggests.")
+
+    # Many-to-one: k distinct patterns per location, all pointing at the same
+    # grid state. The question is whether collapsing k views onto one target
+    # costs anything BEYOND the k-fold increase in stored patterns. Plotted
+    # against total load it should not: a pseudoinverse is an exact left inverse
+    # whenever the columns are independent, and it does not care that some of
+    # them share a target.
+    ns = ns_values[-1]
+    ks = [1, 2, 4, 8]
+    print(f"\nMany-to-one: k patterns per location, one grid state (Ns={ns})")
+    print("  random patterns, x-axis is TOTAL load = k * n_loc / Ns")
+    header = "  ".join(f"{'k=' + str(k):>6}" for k in ks)
+    # ~patts is the nominal total; each k rounds n_loc down to a whole number of
+    # locations, so its actual count can sit a few columns below this.
+    print(f"  {'load':>6} {'~patts':>6}   {header}")
+    print("  " + "-" * (16 + 8 * len(ks)))
+    for load in loads:
+        cells = [f"{many_to_one(field, ns, k, load, args.seed)[2]:6.1%}"
+                 for k in ks]
+        print(f"  {load:6.2f} {int(round(load * ns)):6d}   " + "  ".join(cells))
+
+    print("\n  Same, but real ray-cast views (k = 4 cardinal headings):")
+    print(f"  {'load':>6} {'n_loc':>6}   {'random k=4':>11}   {'real k=4':>9}")
+    print("  " + "-" * 40)
+    for load in loads:
+        n_loc, n_total, acc_r = many_to_one(field, ns, 4, load, args.seed)
+        _, _, acc_real = many_to_one(field, ns, 4, load, args.seed, real=True)
+        print(f"  {load:6.2f} {n_loc:6d}   {acc_r:10.1%}   {acc_real:8.1%}")
+
+    print("\nIf the k columns collapse onto one curve, many-to-one costs exactly")
+    print("its pattern count and nothing more -- the locations you can store")
+    print("drop by k, but the association itself is unbothered by the sharing.")
     return 0
 
 
