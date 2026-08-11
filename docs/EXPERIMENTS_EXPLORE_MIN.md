@@ -783,7 +783,46 @@ does not change the recommendation, because both early-stopped big-pool runs
 still verdict **below** `e4` (0.484), `e8` (0.495) and `e16` (0.518), which
 need no stopping rule at all.
 
-### What a live goal actually incentivizes (wave 3, `g16a`/`g16b`)
+### RESULT — the live goal does not help (wave 3, `g16a`/`g16b`)
+
+Both arms scored under the v35 protocol at u1000, against `e16`'s 0.518:
+
+| run | goal | in-training mean₈ | **verdict** | error | 0→10 gap |
+|---|---|---|---|---|---|
+| `e16` | off | 0.435 | **0.518** | +0.083 | −0.006 |
+| `g16b` | live, 1.0 | 0.493 | **0.464** | −0.029 | **0.001** |
+| `g16a` | live, 5.0 | 0.172 | **0.101** | −0.071 | **−0.002** |
+
+**The answer is no.** A weak live goal costs **0.054** against `explore_goals_off`,
+and a strong one destabilizes outright — `g16a` peaks at 0.394 by u225, drifts,
+then collapses at ~u875 with training reward going negative (0.179 → −0.008),
+the same PPO trust-region signature as `e4L` and the `e2` runs, plausibly
+hastened by +5 spikes inflating update magnitude.
+
+**Note the cheap eval inverted this too**, for the third time: it had `g16b`
+*beating* `e16` by 0.058, and the verdict has it losing by 0.054 — a swing of
+0.112 in the comparison. Nothing in this study should be ranked on the 4×16
+estimate; that lesson has now cost three retractions and is worth stating once
+more here.
+
+**What the theory got right.** The distractor gap came in at **0.001** and
+**−0.002** — no chase behavior formed, exactly as the corrected analysis below
+predicts. Because the agent cannot store during explore, a live goal never
+correlates the recall signal with anything worth reaching, so it does not
+re-open the gradient that gave v35 its 0.050 gap. **A live goal is safe for
+distractor robustness; it simply does not buy coverage.**
+
+**The best remaining explanation is the train/eval mismatch on the recurrent
+state**, risk 2 below. Teleports zero the RNN hidden state mid-rollout in
+training, so the policy is optimized to re-orient repeatedly from cold starts,
+while both evals run 400 uninterrupted steps and reward long coherent sweeps.
+That predicts a testable follow-up: a live goal with `reset_state=False` — the
+`OBSERVE` contract, which rewards the goal without teleporting — would keep the
+search incentive and the goal-location diversity while removing the state
+resets. `OBSERVE` already exists in `world/episode.py` and is what the
+coverage evaluators use, so this is a contract swap rather than new machinery.
+
+### Why a live goal was worth trying, and what it actually incentivizes
 
 Worth stating before the runs land, because the naive framing —
 "the goal might buy goal-seeking instead of coverage" — is **wrong**, and the
