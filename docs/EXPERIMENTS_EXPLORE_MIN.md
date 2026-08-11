@@ -33,11 +33,17 @@ branch off `main` carrying only wave 1's tooling (`1be48b4`), not the
 the launcher rather than the model — see below — which would have silently
 trained the wrong branch.
 
-**Wave 2 is complete and scored under the v35 protocol.** The winner is
-**`e16` — 16 envs, `batch_envs=16`, 1000 updates — at mean coverage 0.518**,
-the only run in either wave above v35's 0.507, level with wave 1's best
-(`d3`, 0.514), in **105 minutes** against `d3`'s 4 h 16 and v35's ~20 h.
-`e8` gets 0.495 in 57 m and `e4` 0.484 in 27 m.
+**Waves 2 and 3 are complete and scored under the v35 protocol.** The best
+configuration is **`w16` — 16 envs, `batch_envs=16`, `wall_penalty=0`,
+`explore_goals_off=1`, 1000 updates — at mean coverage 0.534** in **105
+minutes**, against wave 1's best (`d3`, 0.514) at 4 h 16 and v35's 0.507 at
+~20 h. It is also spatially uniform to within 1% (edge/centre 1.010, zero cold
+cells) with a distractor gap of 0.007. `e16` at `wall_penalty=0.1` gets 0.518,
+`e8` 0.495 in 57 m, `e4` 0.484 in 27 m.
+
+Wave 3 also settled the `goals_active` question: a live goal **does not help**
+— 0.464 at `goal_reward=1.0` and a collapse at 5.0 — though it is harmless to
+distractor robustness, for reasons the analysis below gets right.
 
 Three structural results behind it: **diversity is monotone and unsaturated**
 (0.130 → 0.484 → 0.495 → 0.518 for 1/4/8/16 envs, no ceiling found);
@@ -980,7 +986,47 @@ grid, but its ring profile has the same interior-rising shape as `e16` — it is
 uniformly thinner, not concentrated somewhere. Two envs buy a worse sweep
 everywhere rather than a good sweep of part of the grid.
 
-#### A quantified opportunity: the rim is undervisited
+#### CONFIRMED: `wall_penalty=0` lifts the rim, and is the study's best run
+
+`w16` — `e16` with `wall_penalty=0`, nothing else changed — is the first
+shaping knob in either wave to produce a real, mechanistically explained
+effect.
+
+| | edge (rings 0–1) | centre (rings 5+) | edge/centre | cold | **verdict** |
+|---|---|---|---|---|---|
+| `e16` (wall 0.1) | 0.440 | 0.588 | 0.748 | 1.8% | 0.518 |
+| **`w16`** (wall 0) | **0.562** | 0.556 | **1.010** | **0.0%** | **0.534** |
+
+**0.534 is the highest score in either wave** — above `e16`'s 0.518, wave 1's
+best (`d3`, 0.514) and v35's 0.507, in 105 minutes against `d3`'s 4 h 16 and
+v35's ~20 h. Distractor gap 0.007. Spatial occupancy is now **essentially
+exactly uniform**: edge/centre 1.010, not a single cold cell.
+
+The mechanism is confirmed end to end, which is rare here — the shaping axis
+produced nothing but nulls until this point. `wall_penalty=0.1` really was
+suppressing rim visitation; removing it lifts rings 0–1 by **+0.122** and
+flattens the occupancy map.
+
+**But the gain is about half what was predicted, and the shortfall is
+informative.** The +0.043 forecast assumed the interior would hold while the
+rim rose. It did not: the centre gives back **−0.032** as the rim gains
++0.122, so the net is **+0.021 at `n_dist=0`** and **+0.016 on the three-level
+mean**. Time spent at the wall is partly taken from the interior rather than
+being free. A prediction that was right in sign and mechanism and 2× off in
+magnitude is still the best-calibrated claim this document has made.
+
+**This also rehabilitates wave 1's `s2`.** That run tested the same knob at 80
+envs and was written off: "`wall_penalty` does not matter at this scale."
+Its verdict was **0.503 against `s1`'s 0.495** — +0.008, the same sign, dismissed
+as noise on a single pair. It was a real effect measured too imprecisely to
+see, which is what a mechanism plus a predicted effect size buys you over a
+bare A/B.
+
+Caveats: one seed, and +0.016 is small enough that seeds could move it.
+`w16`'s stability past u1000 is untested, and `e4` showed this lineage can
+look healthy for 1800 updates before collapsing.
+
+#### The original analysis: the rim is undervisited
 
 `e16`'s rings 0–1 are 144 of 400 cells sitting at occupancy 0.440 against an
 interior of 0.559. Lifting the rim to interior occupancy is worth
