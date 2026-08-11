@@ -33,12 +33,14 @@ branch off `main` carrying only wave 1's tooling (`1be48b4`), not the
 the launcher rather than the model — see below — which would have silently
 trained the wrong branch.
 
-**The result so far: 8 environments beats 80.** `e8` settles at **0.538 ±
-0.015** — above s1's best single eval (0.517) and its verdict score (0.495) —
-in **57 minutes** against s1's 2 h 40 m and v35's ~20 h. `e4` reaches 0.467 in
-27 minutes. One and two envs are genuinely crippled (0.15, 0.34). Pool size
-turns out to be non-monotone in env count, helping at 2 envs and overfitting at
-4. All of this is on the cheap monitoring eval; the verdict pass is owed.
+**The result so far: a handful of environments is enough, and 80 is waste.**
+`e8` settles at **0.538 ± 0.015** in **57 minutes** — above s1's best single
+eval (0.517) and its verdict score (0.495), which cost 2 h 40 m on 80 envs, and
+above v35's 0.507 at ~20 h. `e4` reaches 0.467 in 27 minutes. One and two envs
+are genuinely crippled (0.15, 0.34); 4, 8 and 16 all land in 0.43–0.54 with no
+orderable trend on one seed each. Pool size is non-monotone in env count —
+essential at 2 envs, an overfitting liability at 4. All of this is on the cheap
+monitoring eval; **the verdict pass is owed and decides.**
 
 ---
 
@@ -377,6 +379,7 @@ place by showing that the apparent spread was mostly eval noise.
 | `e4s42` | 4 | 16 | 64 | 0.467 | 0.504 @u1000 | **27 m** |
 | `c4s42` | 4 | 320 | 1280 | 0.467 | 0.531 @u325 | 87 m |
 | **`e8`** | **8** | **16** | **128** | **0.538** | **0.561** @u950 | **57 m** |
+| `e16` | 16 | 16 | 256 | 0.435 | 0.490 @u725 | 105 m |
 | *s1* | *80* | *16* | *1280* | *— (u300 only)* | *0.517 @u300* | *2 h 40* |
 
 `e8` settles at **0.538 ± 0.015** — a genuine plateau from u625 to u1000, not a
@@ -392,12 +395,23 @@ section concluded from `e4` alone:
 |---|---|---|
 | 1 | 0.15 | diversity — an 80× pool moves it by 0.001 |
 | 2 | 0.34 | diversity — `c2` plateaus; without pool, instability on top |
-| 4 | 0.467 | unclear; pool no longer helps, more envs still do |
-| **8** | **0.538** | **not yet found** |
+| 4 | 0.467 | unclear; pool no longer helps, more envs may |
+| **8** | **0.538** | — best observed |
+| 16 | 0.435 | — |
 | 80 | ≥0.517 at u300, never run to u1000 | — |
 
-Most of the gain is bought by the 2→4 step (0.34 → 0.467) and the rest by
-4→8 (0.467 → 0.538). One and two envs are genuinely crippled.
+**It saturates by 4–8 envs, and then stops being orderly.** The 2→4 step is
+worth 0.13 and is unambiguous. Past that, 4 / 8 / 16 land at 0.467 / 0.538 /
+0.435 — a 0.10 spread with no monotone trend, on **one seed each**. The 2-env
+seed triple showed a 0.066 spread on mean₈ at a *more* stable configuration, so
+a 0.10 gap between single runs is not enough to order 4, 8 and 16, and the
+claim that "8 is optimal" is not supported. `e16`'s trajectory also swings from
+0.203 to 0.490 mid-run, which is not the profile of a converged setting.
+
+What the ladder does support: **one and two envs are crippled, four or more is
+enough, and beyond eight you pay wall-clock (105 m at 16 envs against 57 m at
+8) for nothing visible.** Ordering the top of the ladder would need seeds, and
+that is the obvious wave-3 job.
 
 **A caveat this wave cannot remove.** s1 ran 300 updates and was still climbing
 when cut; `e8` ran 1000. So this is "cheap config run long beats expensive
