@@ -32,7 +32,7 @@ def _views(vec, pos: np.ndarray, psi: np.ndarray) -> np.ndarray:
     if k.size == 0 or (k >= 0).all():
         return vec._codebook[pos[:, 0], pos[:, 1], k]
     return raycast_codes(vec._wall_code, vec.size, pos[:, 0], pos[:, 1], psi,
-                         vec._obs_size)
+                         vec._obs_size, vec.wall_resolution)
 
 
 def _obs_psi(vec, indices: np.ndarray | None) -> np.ndarray:
@@ -62,6 +62,7 @@ class VecEnv:
         self.goal_reward = getattr(base_env, "goal_reward", 1.0)
         self.goal_radius = getattr(base_env, "goal_radius", 0.5)
         self.egocentric_heading = getattr(base_env, "egocentric_heading", True)
+        self.wall_resolution = getattr(base_env, "wall_resolution", 1)
 
         # Batched state: (B, 2) integer positions, (B,) heading angles.
         # Heading is radians clockwise from North; cardinal moves land it
@@ -249,6 +250,7 @@ class ContinuousVecEnv:
         self.goal_reward = getattr(base_env, "goal_reward", 1.0)
         self.goal_radius = getattr(base_env, "goal_radius", 0.5)
         self.egocentric_heading = getattr(base_env, "egocentric_heading", True)
+        self.wall_resolution = getattr(base_env, "wall_resolution", 1)
         self.scale = scale
         # When True, each (dx, dy) action is L2-normalized to a unit vector
         # before * scale, matching ContinuousGridEnv.step's behavior. Train and

@@ -48,19 +48,21 @@ _MAX_ATTEMPTS = 20_000
 # Wall codes and their live bits
 # ---------------------------------------------------------------------------
 
-def wall_code_for(seed: int, size: int) -> np.ndarray:
-    """The (4, size) +/-1 code ``GridEnv(seed=seed)`` builds.
+def wall_code_for(seed: int, size: int, resolution: int = 1) -> np.ndarray:
+    """The (4, size*resolution) +/-1 code ``GridEnv(seed=seed)`` builds.
 
     Reproduces ``env.py``'s first draw exactly: the wall code is the first thing
-    the env's RNG is used for, so this needs no env instance.
+    the env's RNG is used for, so this needs no env instance. ``resolution``
+    must match ``EnvConfig.wall_resolution`` or the draw will not agree.
     """
-    return np.random.RandomState(seed).choice([-1.0, 1.0], size=(4, size)).astype(np.float32)
+    return np.random.RandomState(seed).choice(
+        [-1.0, 1.0], size=(4, size * resolution)).astype(np.float32)
 
 
 @lru_cache(maxsize=32)
 def live_wall_bits(size: int, observation_size: int,
-                   egocentric: bool = True) -> tuple:
-    """Which of the 4*size wall bits any ray can actually see.
+                   egocentric: bool = True, resolution: int = 1) -> tuple:
+    """Which of the 4*size*resolution wall bits any ray can actually see.
 
     Flips each bit and diffs the resulting codebook.
 
@@ -74,16 +76,23 @@ def live_wall_bits(size: int, observation_size: int,
     *raises* the distance between two envs, so a split separated under the old
     count stays separated under this one.
 
+    At ``resolution`` > 1 a segment is a fraction of a cell, so more bits exist
+    and finitely many rays cannot land on all of them -- expect some to come
+    back dead simply for want of a ray, which is a true statement about what
+    this env can distinguish and is exactly what the Hamming margin should
+    count.
+
     Returned as a tuple of tuples so it is hashable/cacheable.
     """
-    env = GridEnv(size=size, observation_size=observation_size, seed=0)
+    env = GridEnv(size=size, observation_size=observation_size, seed=0,
+                  wall_resolution=resolution)
     # A fixed-heading agent only ever sees the North slab; an egocentric one can
     # reach all four, so identity is read off whichever the agent can observe.
     view = (lambda cb: cb) if egocentric else (lambda cb: cb[:, :, 0, :])
     base = view(env._codebook).copy()
-    live = np.zeros((4, size), dtype=bool)
+    live = np.zeros((4, size * resolution), dtype=bool)
     for w in range(4):
-        for k in range(size):
+        for k in range(size * resolution):
             env._wall_code[w, k] *= -1
             live[w, k] = not np.array_equal(
                 view(env._build_sensory_codebook(observation_size)), base)
@@ -91,11 +100,13 @@ def live_wall_bits(size: int, observation_size: int,
     return tuple(tuple(bool(v) for v in row) for row in live)
 
 
-def wall_hamming(seed_a: int, seed_b: int, size: int,
-                 observation_size: int, egocentric: bool = True) -> int:
+def wall_hamming(seed_a: int, seed_b: int, size: int, observation_size: int,
+                 egocentric: bool = True, resolution: int = 1) -> int:
     """Hamming distance between two wall codes, over live bits only."""
-    live = np.array(live_wall_bits(size, observation_size, egocentric), dtype=bool)
-    a, b = wall_code_for(seed_a, size), wall_code_for(seed_b, size)
+    live = np.array(live_wall_bits(size, observation_size, egocentric, resolution),
+                    dtype=bool)
+    a = wall_code_for(seed_a, size, resolution)
+    b = wall_code_for(seed_b, size, resolution)
     return int(((a != b) & live).sum())
 
 
@@ -514,12 +525,13 @@ def split_diagnostics(field, env_cfg, split: GeneratedSplit) -> dict:
     """Numbers describing a split. Evidence about it, never an input to it."""
     obs = int(env_cfg.observation_size)
     ego = bool(getattr(env_cfg, "egocentric_heading", True))
+    res = int(getattr(env_cfg, "wall_resolution", 1))
     size = split.train[0].size if split.train else 0
     gaps = [toroidal_gap(v.offset, v.size, t.offset, t.size, split.period)
             for v in split.base_val for t in split.train]
-    hams = [wall_hamming(v.wall_seed, t.wall_seed, size, obs, ego)
+    hams = [wall_hamming(v.wall_seed, t.wall_seed, size, obs, ego, res)
             for v in split.base_val for t in split.train]
-    live = (np.array(live_wall_bits(size, obs, ego), dtype=bool) if size
+    live = (np.array(live_wall_bits(size, obs, ego, res), dtype=bool) if size
             else np.zeros((4, 0), bool))
     return {
         "margin": int(split.margin),
@@ -534,6 +546,7 @@ def split_diagnostics(field, env_cfg, split: GeneratedSplit) -> dict:
 def verify_split(split: GeneratedSplit, env_cfg) -> None:
     """Assert the four separation properties. Cheap, and the point of all this."""
     size = split.train[0].size if split.train else 0
+    res = int(getattr(env_cfg, "wall_resolution", 1))
     for v in split.base_val:
         for t in split.train:
             gap = toroidal_gap(v.offset, v.size, t.offset, t.size, split.period)
@@ -545,8 +558,8 @@ def verify_split(split: GeneratedSplit, env_cfg) -> None:
     for v in split.base_val:
         if v.wall_seed in train_seeds:
             raise AssertionError(f"val env reuses train wall seed {v.wall_seed}")
-        if size and np.array_equal(wall_code_for(v.wall_seed, size),
-                                   wall_code_for(next(iter(train_seeds)), size)):
+        if size and np.array_equal(wall_code_for(v.wall_seed, size, res),
+                                   wall_code_for(next(iter(train_seeds)), size, res)):
             raise AssertionError("val wall code collides with a train wall code")
     train_goals = {t.goal for t in split.train}
     for v in split.base_val:

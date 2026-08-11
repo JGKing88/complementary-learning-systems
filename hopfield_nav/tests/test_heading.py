@@ -273,6 +273,70 @@ def test_egocentric_heading_reaches_env_and_vec(movement_mode):
         assert vec.egocentric_heading == value
 
 
+# ---------------------------------------------------------------------------
+# Wall resolution
+# ---------------------------------------------------------------------------
+
+def test_resolution_1_is_exactly_the_old_wall():
+    """The default must be bit-identical to a one-segment-per-cell wall.
+
+    `(h + 0.5) * 1` then floor is the same expression the coarse lookup was, so
+    this is an identity, not an approximation -- and it is what lets the flag
+    default on without touching any existing run.
+    """
+    a = GridEnv(size=6, observation_size=OBS, seed=4)
+    b = GridEnv(size=6, observation_size=OBS, seed=4, wall_resolution=1)
+    assert a._wall_code.shape == (4, 6)
+    assert np.array_equal(a._wall_code, b._wall_code)
+    assert np.array_equal(a._codebook, b._codebook)
+
+
+@pytest.mark.parametrize("res", [1, 2, 8])
+def test_wall_code_shape_and_generator_agreement(res):
+    """generate.wall_code_for reproduces the env's draw at any resolution.
+
+    The generator derives splits without building envs, so if these two ever
+    disagree the wall-Hamming margins describe a world nobody trains in.
+    """
+    from hopfield_nav.world import generate as gen
+    env = GridEnv(size=5, observation_size=OBS, seed=99, wall_resolution=res)
+    assert env._wall_code.shape == (4, 5 * res)
+    assert np.array_equal(env._wall_code, gen.wall_code_for(99, 5, res))
+
+
+def test_resolution_removes_observational_twins():
+    """The defect resolution exists to fix: cells that look bit-identical.
+
+    At one segment per cell every ray landing anywhere in a cell reads the same
+    value, so cells near the wall they face cannot be told apart. Subdividing
+    lets a stripe edge fall inside a cell, which is what separates them.
+    """
+    def twin_fraction(res):
+        env = GridEnv(size=8, observation_size=60, seed=5, wall_resolution=res)
+        V = env._codebook[:, :, 0, :].reshape(64, 60)
+        V = V / np.linalg.norm(V, axis=1, keepdims=True)
+        C = V @ V.T
+        np.fill_diagonal(C, -1.0)
+        return (C > 0.9999).any(axis=1).mean()
+
+    coarse, fine = twin_fraction(1), twin_fraction(8)
+    assert coarse > 0.0, "expected the coarse wall to alias; test env changed?"
+    assert fine < coarse, f"resolution did not help: {coarse} -> {fine}"
+
+
+def test_resolution_reaches_the_vec_envs():
+    """EnvConfig -> make_env -> VecEnv, the plumbing test_env_config pins."""
+    cfg = EnvConfig(size=6, observation_size=OBS, wall_resolution=4)
+    env = make_env(cfg, "discrete", seed=0)
+    assert env.wall_resolution == 4
+    assert VecEnv(env, batch_size=3).wall_resolution == 4
+
+
+def test_resolution_must_be_positive():
+    with pytest.raises(ValueError, match="wall_resolution"):
+        GridEnv(size=4, observation_size=OBS, seed=0, wall_resolution=0)
+
+
 def test_omni_obs_is_the_four_cardinal_views_concatenated():
     """The scaffold's stand-in -- see fit_env_assoc, which explains the patch."""
     env = GridEnv(size=5, observation_size=OBS, seed=2)

@@ -98,6 +98,23 @@ class EnvConfig:
     # the policy gets no extra channel, and the sensory channel keeps its width
     # -- so this changes what the agent sees, never the shape of anything.
     egocentric_heading: bool = True
+    # How many ±1 wall segments span one grid cell, so the wall code is
+    # (4, size * wall_resolution). 1 (default) is one segment per cell, which is
+    # what the walls have always been.
+    #
+    # Above 1 a stripe boundary can fall *inside* a cell instead of only on its
+    # edge, which is the only way a ray can report where within a cell it is
+    # looking from. At 1, every ray landing anywhere in a cell reads the same
+    # value, and that is measurably lossy: ~9-14% of cells then share a
+    # bit-identical observation with some other cell, which no amount of
+    # learning can undo. 8 drives that to ~0 and is roughly independent of env
+    # size -- a cone sees a fixed extent of wall, so this is a property of the
+    # sensor, not the room. See analysis/scaffold_experiments/.
+    #
+    # Changing this changes env identity, so a split's wall-Hamming margins are
+    # computed against it (world/generate.py) and checkpoints from a different
+    # value describe a different world.
+    wall_resolution: int = 1
 
 
 @dataclass

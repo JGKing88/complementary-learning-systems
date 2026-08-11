@@ -406,6 +406,8 @@ def main():
     p.add_argument("--allow_offcell_store",
                    action=argparse.BooleanOptionalAction, default=False,
                    help="Whether a store fired while at goal may write a cell other than the goal's. Only reachable at goal_radius > 0.5, where at_goal tests the float position but embeddings are read at the snapped cell. Default False: the goal cell's embedding is stored instead, so the pattern written is the one navigation will later recall. Pass --allow_offcell_store for the pre-2026-08 behavior.")
+    p.add_argument("--wall_resolution", type=int, default=1,
+                   help="How many +/-1 wall segments span one grid cell. 1 (default) is one segment per cell, the original coarse barcode. Above 1 a stripe edge can fall inside a cell, which is the only way a ray can report where within a cell it is looking from; at 1 roughly 9-14%% of cells share a bit-identical observation with another cell. 8 drives that to ~0. Changes env identity, so splits and checkpoints are tied to it.")
     p.add_argument("--egocentric_heading",
                    action=argparse.BooleanOptionalAction, default=True,
                    help="Foveal cone turns with the agent: heading is a continuous angle following the direction it actually moved, so a cell looks different depending on how the agent arrived. Sensory input is the only thing heading affects. Pass --no-egocentric_heading to pin every view to North, reproducing pre-2026-08 runs.")
@@ -463,7 +465,8 @@ def main():
                       movement_mode=args.movement_mode,
                       goal_radius=args.goal_radius,
                       allow_offcell_store=args.allow_offcell_store,
-                      egocentric_heading=args.egocentric_heading),
+                      egocentric_heading=args.egocentric_heading,
+                      wall_resolution=args.wall_resolution),
         vectorhash=VectorHashConfig(lambdas=args.lambdas, Np=args.Np,
                                     static_vectorhash=args.static_vectorhash),
         hopfield=HopfieldConfig(),

@@ -476,6 +476,7 @@ CFG_FIELDS: dict[str, tuple[str, ...]] = {
     "goal_radius": ("env.goal_radius",),
     "allow_offcell_store": ("env.allow_offcell_store",),
     "egocentric_heading": ("env.egocentric_heading",),
+    "wall_resolution": ("env.wall_resolution",),
     "time_penalty": ("env.time_penalty",),
     "continuous_normalize": ("env.continuous_normalize",),
     "max_action_norm": ("env.max_action_norm",),
@@ -619,6 +620,8 @@ def build_parser() -> argparse.ArgumentParser:
                         "moved, so a cell looks different depending on how the "
                         "agent arrived. --no-egocentric_heading pins every view "
                         "to North, reproducing pre-2026-08 runs.")
+    p.add_argument("--wall_resolution", type=int, default=1,
+                   help="How many +/-1 wall segments span one grid cell. 1 (default) is one segment per cell, the original coarse barcode. Above 1 a stripe edge can fall inside a cell, which is the only way a ray can report where within a cell it is looking from; at 1 roughly 9-14%% of cells share a bit-identical observation with another cell. 8 drives that to ~0. Changes env identity, so splits and checkpoints are tied to it.")
     p.add_argument("--movement_mode", default="continuous")
     p.add_argument("--hopfield_mode", default="continuous")
     p.add_argument("--input_prev_reward", action=argparse.BooleanOptionalAction, default=True)

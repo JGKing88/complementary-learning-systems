@@ -90,13 +90,19 @@ def cone_offsets(n_rays: int) -> np.ndarray:
 
 
 def raycast_codes(wall_code: np.ndarray, size: int, xs, ys, psi,
-                  n_rays: int) -> np.ndarray:
+                  n_rays: int, resolution: int = 1) -> np.ndarray:
     """Foveal view from each (x, y) facing each ψ: ``(N, n_rays)`` of ±1 codes.
 
     The vectorized form of the four plane intersections ``_raycast_segment_code``
     does one ray at a time. Walls live at half-integer planes x=-0.5, x=size-0.5,
-    y=-0.5, y=size-0.5; wall order is 0=N, 1=E, 2=S, 3=W; segment k on each wall
-    is the unit interval centered on cell-index k.
+    y=-0.5, y=size-0.5; wall order is 0=N, 1=E, 2=S, 3=W.
+
+    ``resolution`` is how many wall segments span one grid cell, so ``wall_code``
+    is ``(4, size * resolution)``. At 1 -- the default -- segment k is the unit
+    interval centered on cell-index k, which is what the walls were before this
+    was a parameter. Above 1, a segment boundary can fall *inside* a cell, which
+    is the point: it is what lets two positions within the same cell read
+    differently. See ``EnvConfig.wall_resolution``.
 
     Ties go to the earlier wall, matching the scalar version's ``t < best_t``
     scan in N, E, S, W order (``argmin`` returns the first minimum). A ray that
@@ -151,8 +157,11 @@ def raycast_codes(wall_code: np.ndarray, size: int, xs, ys, psi,
     wall = ts.argmin(axis=-1)                             # first min == earlier wall
 
     h = np.take_along_axis(hits, wall[..., None], axis=-1)[..., 0]
-    seg = np.clip(np.floor(np.where(np.isfinite(h), h, 0.0) + 0.5),
-                  0, size - 1).astype(np.int64)
+    # Scale the *continuous* hit coordinate before quantising. Quantising to a
+    # cell first and multiplying up would only replicate the coarse code, which
+    # is the whole thing resolution exists to avoid.
+    fine = (np.where(np.isfinite(h), h, 0.0) + 0.5) * resolution
+    seg = np.clip(np.floor(fine), 0, size * resolution - 1).astype(np.int64)
 
     codes = wall_code[wall, seg].astype(np.float32)
     return np.where(np.isfinite(ts).any(axis=-1), codes, 0.0).astype(np.float32)
@@ -283,8 +292,13 @@ class GridEnv:
         goal_reward: float = 1.0,
         goal_radius: float = 0.5,
         egocentric_heading: bool = True,
+        wall_resolution: int = 1,
     ) -> None:
         self.size = size
+        if int(wall_resolution) < 1:
+            raise ValueError(
+                f"wall_resolution must be >= 1, got {wall_resolution}")
+        self.wall_resolution = int(wall_resolution)
         self.speed = speed
         self._observation_size = observation_size
         self.time_penalty = time_penalty
@@ -301,12 +315,18 @@ class GridEnv:
         self.seed = seed
         self.rng = np.random.RandomState(seed)
 
-        # Wall bar code: 4 walls (N, E, S, W), `size` ±1 segments each, one
-        # segment per grid cell along the wall. Walls sit at half-integer
-        # boundaries (y=size-0.5 N, x=size-0.5 E, y=-0.5 S, x=-0.5 W); segment
-        # k on each wall is aligned with cell index k along that wall.
+        # Wall bar code: 4 walls (N, E, S, W), `size * wall_resolution` ±1
+        # segments each. Walls sit at half-integer boundaries (y=size-0.5 N,
+        # x=size-0.5 E, y=-0.5 S, x=-0.5 W).
+        #
+        # At wall_resolution=1 there is one segment per grid cell, aligned with
+        # cell index k along that wall -- the original coarse barcode. Above 1
+        # the segments subdivide each cell, so a stripe boundary can fall inside
+        # a cell rather than only on its edge. That is what gives a ray
+        # information about *where within* a cell it is looking from, which a
+        # cell-aligned code cannot carry at all.
         self._wall_code = self.rng.choice(
-            [-1.0, 1.0], size=(4, size)
+            [-1.0, 1.0], size=(4, size * self.wall_resolution)
         ).astype(np.float32)
 
         # Cardinal sensory codebook: _codebook[x, y, h] is the foveal view from
@@ -371,7 +391,7 @@ class GridEnv:
         if k >= 0:
             return self._codebook[pos[0], pos[1], k].copy()
         return raycast_codes(self._wall_code, self.size, pos[0], pos[1], psi,
-                             self._observation_size)[0]
+                             self._observation_size, self.wall_resolution)[0]
 
     def omni_obs_at(self, pos: tuple[int, int]) -> np.ndarray:
         """All four cardinal views from ``pos``, concatenated: (4*obs_size,).
@@ -486,7 +506,8 @@ class GridEnv:
         xs = np.repeat(gx.ravel(), N_HEADINGS)
         ys = np.repeat(gy.ravel(), N_HEADINGS)
         psi = np.tile(CARDINAL_RADIANS, size * size)
-        codes = raycast_codes(self._wall_code, size, xs, ys, psi, n_rays)
+        codes = raycast_codes(self._wall_code, size, xs, ys, psi, n_rays,
+                              self.wall_resolution)
         return codes.reshape(size, size, N_HEADINGS, n_rays)
 
     def fully_explore_random(self) -> list[tuple[tuple[int, int], np.ndarray, tuple[int, int]]]:
@@ -601,6 +622,7 @@ def make_env(env_cfg: EnvConfig, movement_mode: str, seed: int) -> GridEnv:
             goal_reward=env_cfg.goal_reward,
             goal_radius=env_cfg.goal_radius,
             egocentric_heading=env_cfg.egocentric_heading,
+            wall_resolution=env_cfg.wall_resolution,
         )
     return GridEnv(
         size=env_cfg.size,
@@ -612,4 +634,5 @@ def make_env(env_cfg: EnvConfig, movement_mode: str, seed: int) -> GridEnv:
         goal_reward=env_cfg.goal_reward,
         goal_radius=env_cfg.goal_radius,
         egocentric_heading=env_cfg.egocentric_heading,
+        wall_resolution=env_cfg.wall_resolution,
     )
