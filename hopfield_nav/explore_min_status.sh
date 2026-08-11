@@ -23,7 +23,9 @@ printf "%-5s %-9s %-6s %7s %7s %7s %7s %6s %6s\n" \
 for f in slurm_explore_min_*.out; do
     [ -e "$f" ] || continue
     job=${f#slurm_explore_min_}; job=${job%.out}
-    variant=$(sed -n 's/^=== variant=\([a-z0-9]*\) .*/\1/p' "$f" | head -1)
+    # [A-Za-z0-9]: variant names are not all lowercase (e4L), and a lowercase
+    # class silently matched nothing rather than erroring.
+    variant=$(sed -n 's/^=== variant=\([A-Za-z0-9]*\) .*/\1/p' "$f" | head -1)
     [ -n "$variant" ] || variant="?"
     if [ -n "${ONLY:-}" ] && [[ " $ONLY " != *" $variant "* ]]; then
         continue

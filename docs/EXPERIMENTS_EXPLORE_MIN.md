@@ -39,8 +39,15 @@ eval (0.517) and its verdict score (0.495), which cost 2 h 40 m on 80 envs, and
 above v35's 0.507 at ~20 h. `e4` reaches 0.467 in 27 minutes. One and two envs
 are genuinely crippled (0.15, 0.34); 4, 8 and 16 all land in 0.43–0.54 with no
 orderable trend on one seed each. Pool size is non-monotone in env count —
-essential at 2 envs, an overfitting liability at 4. All of this is on the cheap
-monitoring eval; **the verdict pass is owed and decides.**
+essential at 2 envs, an overfitting liability at 4.
+
+**But none of these configs is known to be stable.** `e4L` ran the 4-env recipe
+to 3000 updates and it collapses catastrophically at ~u1950, from 0.52 to 0.03
+in forty updates, after looking perfectly healthy for 1800. Collapse time
+scales with pool size (pool 32 → ~u450, pool 64 → ~u1950), so `e8`'s pool of
+128 is unfalsified rather than safe. Use these recipes with a bounded update
+budget and keep the checkpoint. All numbers here are the cheap monitoring eval;
+**the verdict pass is owed and decides.**
 
 ---
 
@@ -475,10 +482,14 @@ has turned over. The training reward says which is which:
 
 `c4` fits its four training envs harder than `e4` does and generalizes worse
 for it: rising train, falling held-out, the unambiguous overfitting signature —
-and the same one `e2` showed in its first phase. **`e4`'s small pool is doing
-regularization.** 64 trajectories give a noisy gradient, the noise keeps the
-policy from settling into the four training codebooks, and the run climbs
-slower but does not turn over.
+and the same one `e2` showed in its first phase.
+
+> **Retracted by `e4L`.** This section originally concluded that "`e4`'s small
+> pool is doing regularization" and "does not turn over". Running the same
+> config to 3000 updates shows it turns over hard at ~u1950 — see *The cheap
+> configs are living on borrowed time* below. The small pool does not prevent
+> the failure; it defers it past u1000, which is where this wave stopped
+> looking.
 
 **`c8` confirms it, and shows diversity does not rescue the big pool.** At 8
 envs the pool-1280 run behaves exactly like `c4`: training reward climbing
@@ -564,6 +575,61 @@ below its own u1 value. The run does not memorize its two envs and stop
 generalizing — it stops optimizing at all. Worth separating, because
 overfitting argues for more envs and a collapse argues for a bigger batch, and
 here the bigger batch is what actually fixed it.
+
+### The cheap configs are living on borrowed time
+
+`e4L` is `e4` run to 3000 updates instead of 1000, and it is the most important
+result in the wave because it invalidates the reading of every short run above.
+
+| update | 275 | 775 | 1275 | 1775 | **1800** | 1900 | 1950 | **1975** | 3000 |
+|---|---|---|---|---|---|---|---|---|---|
+| cov | .358 | .485 | .407 | .493 | **.523** | .426 | .151 | **.027** | .070 |
+
+It climbs to ~0.49, holds a 0.41–0.52 band from u775 to u1875 — reaching its
+best value of **0.523 at u1800**, above anything `e8` recorded — and then, over
+about **forty updates**, dies. Coverage .418 → .027 between u1925 and u1975,
+and it never recovers across the remaining 1000 updates.
+
+Training reward collapses with it, .168 → −.085 over the same window, so this
+is **not** overfitting — that would leave training reward high. `std` is pinned
+at 0.165 throughout, so it is not an entropy collapse either. The losses name
+it: `move_loss` spikes to 0.086 at u1950 against a ~0.02 baseline, with
+`value_loss` already elevated at 2.5–4.6 beforehand, and afterwards both fall
+to near zero as the policy degenerates into something that collects no novelty
+at all and is therefore trivial to value. A PPO update escaped the trust region
+and the clip did not contain it.
+
+**Collapse time scales with pool size**, which reframes every "stable" verdict
+in this document:
+
+| run | pool | collapses at |
+|---|---|---|
+| `e2s42` / `e2s43` | 32 | ~u450 / ~u500 |
+| `e4` | 64 | **~u1950** |
+| `e8` | 128 | not by u1000 — **never tested beyond** |
+| `c4` / `c8` | 1280 | not by u1000; only the overfitting decline |
+
+So the small pool was never regularizing. It was buying time, and `e4`'s clean
+monotone curve through u1000 was a window before a cliff. By the same scaling
+`e8` is a candidate to collapse somewhere around u4000, which no run has
+reached. **`e8`'s 0.538 is not known to be stable — only unfalsified at the one
+horizon it was run to.**
+
+The methodological lesson mirrors the one that justified 1000 updates over 300.
+That budget was bought to tell "slow" from "capped", and it did. It is not
+enough to tell **"stable" from "pre-collapse"**, and nothing short of running
+past the cliff can.
+
+The practical consequence is that the cheap recipes need a **bounded update
+budget and checkpoint selection**, not trust:
+
+- `e4` is excellent at u1000 and dead at u2000. Run it to ~u1000 and keep the
+  checkpoint.
+- `e8` at u1000 is the best settled number in the study, on the same terms.
+- The big-pool runs (`c4`, `c8`) never collapsed in 1000 updates. They plateau
+  lower and give back a peak, but if what you need is a config that degrades
+  gracefully rather than catastrophically, that is a point in their favor that
+  the coverage table alone does not show.
 
 ### The distractor result survives at 2 envs
 
