@@ -338,11 +338,18 @@ so it records only that a thorough sweep tends to cross it.
 
 ---
 
-## Results — wave 2, the diversity ladder (in progress, 2026-08-10)
+## Results — wave 2, the diversity ladder (complete, 2026-08-11)
 
-Thirteen jobs, all `explore:1000`, submitted from a branch off `main` at
-`1be48b4` + the launcher fix. The per-user cap is `gres/gpu=2`, so the ladder
-drains two at a time; rungs are recorded here as they land.
+Fourteen jobs — the 13-rung ladder at `explore:1000` plus `e4L` at
+`explore:3000` — submitted from a branch off `main` at `1be48b4` + the launcher
+fix, and all scored under the v35 protocol afterwards.
+
+> **Read [the VERDICT section](#verdict--the-strict-protocol-and-it-reorders-everything)
+> first.** Everything between here and there is the cheap in-training eval,
+> recorded as the ladder landed. That eval turned out to err by up to ±0.08 and
+> to *invert* the ranking of the top three runs, so the sections below are
+> preserved for their shape analysis — which is sound — and not for their
+> rankings, which the verdict replaces. Retractions are marked inline.
 
 **All numbers below are the 4-env × 16-trial in-training eval**, which wave 1
 showed is biased high by ~0.02 and unreliable even for *ranking*. They are
@@ -379,7 +386,12 @@ cover their climb rather than a plateau. Against them, use the verdict pass.
 0.066. The 2-env level is ~0.34, and the design's three seeds earned their
 place by showing that the apparent spread was mostly eval noise.
 
-### Headline: **eight environments beats eighty**, at a third of the wall-clock
+### In-training ladder (superseded — `e16` wins on the verdict, not `e8`)
+
+> Written as the rungs landed, on the cheap eval. Its ordering of `e4`/`e8`/
+> `e16` is **wrong**: the verdict has `e16` 0.518 > `e8` 0.495 > `e4` 0.484,
+> the reverse of the `e8` > `e4` > `e16` below. The *levels* for 1 and 2 envs,
+> and the shapes throughout, hold up.
 
 | run | envs | batch | pool | mean₈ | max | wall-clock |
 |---|---|---|---|---|---|---|
@@ -424,6 +436,13 @@ What the ladder does support: **one and two envs are crippled, four or more is
 enough, and beyond eight you pay wall-clock (105 m at 16 envs against 57 m at
 8) for nothing visible.** Ordering the top of the ladder would need seeds, and
 that is the obvious wave-3 job.
+
+> **Retracted by the verdict.** "Stops being orderly" and "beyond eight you pay
+> for nothing" are both artifacts of the cheap eval. On the 10×32 protocol the
+> ladder is *monotone* — 0.484 / 0.495 / 0.518 for 4/8/16 — and `e16` is the
+> wave's best run. The instinct to distrust a 0.10 gap between single seeds was
+> right; the specific ordering inferred from it was wrong, and in fact `e16`'s
+> apparent weakness was the largest single eval error in the wave (+0.083).
 
 **A caveat this wave cannot remove.** s1 ran 300 updates and was still climbing
 when cut; `e8` ran 1000. So this is "cheap config run long beats expensive
@@ -563,6 +582,12 @@ out of 2*.
 fragile band while `e2` climbs into it. It is also a warning about the `e*`
 design generally: because it moves envs and pool together, its rungs are not
 comparable to each other, and only the `c*` rungs isolate diversity.
+
+> **Confirmed by the verdict, at the bottom of the ladder only.** `e1` 0.130
+> against `e2`'s 0.058/0.105/0.070 — one env really does beat two. But the
+> *top* of the `e*` ladder is monotone on the verdict (0.484 / 0.495 / 0.518
+> for 4/8/16), so the "no orderable trend above 4 envs" conclusion drawn later
+> from these same in-training numbers does not survive.
 
 ### `e2`'s collapse has two phases, and only the first was predicted
 
