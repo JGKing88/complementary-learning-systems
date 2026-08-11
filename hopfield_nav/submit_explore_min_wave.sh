@@ -120,6 +120,46 @@ submit g1 WALL_PENALTY=0 EXPLORE_GOALS_OFF=0 RANDOMIZE_GOAL_PER_ROLLOUT=1
 submit g2 WALL_PENALTY=0 EXPLORE_GOALS_OFF=0 RANDOMIZE_GOAL_PER_ROLLOUT=1 \
           GOAL_REWARD=1.0
 
+# --- Wave 3: the two live questions, both at e16, the wave-2 winner ---------
+#
+# g1/g2 above are kept as the historical design but are NOT the right runs any
+# more, for two reasons. They sit at 80 envs and 300 updates, which wave 2
+# showed is the expensive end of a curve whose cheap end scores higher; and
+# they bundle WALL_PENALTY=0 with the goal change, which now confounds two
+# separate hypotheses rather than one. Each variant below is a SINGLE-variable
+# change from e16 (16 envs, batch 16, 1000 updates, verdict 0.518).
+
+# g16a/g16b  flip the goal live. Three effects at once, all plausibly good for
+#     coverage: goal LOCATION becomes a real diversity axis on top of the
+#     codebook (under goals_off it was worth one excluded start cell in 400);
+#     arrival TELEPORTS the agent to a random cell while the goal stays put
+#     (world/vec_env.py:60), i.e. a stream of random restarts inside the
+#     rollout; and randomize_goal_per_rollout stops "in env X walk to Y" being
+#     memorizable from the fixed sensory codebook.
+#
+#     Two strengths because the risk is the opposite of the hope: at +5 the
+#     goal can out-shout novelty and buy goal-seeking instead of coverage. The
+#     exploration eval scores an INERT goal with no teleport, so whatever is
+#     learned has to survive losing both.
+#
+#     Note this breaks the fixed-length property the shaping analysis rests on
+#     -- teleports zero the shaping mask -- so revisit_penalty stops being
+#     redundant with novelty here even with the remaining-scale off.
+submit g16a ENVS_PER_WORLD=16 SCHEDULE='explore:1000' \
+            EXPLORE_GOALS_OFF=0 RANDOMIZE_GOAL_PER_ROLLOUT=1
+submit g16b ENVS_PER_WORLD=16 SCHEDULE='explore:1000' \
+            EXPLORE_GOALS_OFF=0 RANDOMIZE_GOAL_PER_ROLLOUT=1 GOAL_REWARD=1.0
+
+# w16  wall_penalty=0, kept separate from the goal flip so the two do not
+#     confound. The uniformity pass measured e16's rim (rings 0-1, 144 of 400
+#     cells) at occupancy 0.440 against an interior 0.559; closing that gap is
+#     worth +0.043 coverage, 0.518 -> ~0.56. wall_penalty taxes standing at a
+#     wall and is the obvious suspect. Wave 1's s2 tested the same knob and
+#     found nothing, but at 80 envs and judged on an eval that errs +/-0.08 --
+#     this version has a mechanism and a predicted effect size, so a null here
+#     is informative (the rim deficit would be geometric, not shaped).
+submit w16 ENVS_PER_WORLD=16 SCHEDULE='explore:1000' WALL_PENALTY=0
+
 # --- Axis 3: how few DISTINCT training envs still generalize? ----------------
 #
 # The knob that actually dominates both cost and generalization, and the one
