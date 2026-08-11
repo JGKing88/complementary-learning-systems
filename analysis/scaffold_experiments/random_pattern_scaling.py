@@ -185,9 +185,13 @@ def main() -> int:
             soft[name] = float(s.sum() ** 2 / (s ** 2).sum())
         print(f"  {ns:5d} {soft['random']:9.1f} {soft['real']:9.1f}   "
               f"{soft['real'] / ns:8.2f}")
-    print("\nCapacity tracks these, not Ns. Random patterns spend every dimension")
-    print("they are given; ray-cast views spend a small fraction, so adding")
-    print("sensory bits buys far less capacity than the random curve suggests.")
+    print("\nRandom patterns spend every dimension they are given; ray-cast views")
+    print("spend a small fraction, so adding rays buys far less capacity than the")
+    print("random curve suggests -- more rays resample the same few wall segments.")
+    print("Soft rank explains that saturation WITHIN a fixed wall code. It is not")
+    print("the controlling variable across different ones: see wall_resolution.py,")
+    print("where a finer wall doubles recovery at matched soft rank by removing")
+    print("collisions between distant cells rather than by adding dimensions.")
 
     # Many-to-one: k distinct patterns per location, all pointing at the same
     # grid state. The question is whether collapsing k views onto one target
