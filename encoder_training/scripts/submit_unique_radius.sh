@@ -51,9 +51,18 @@ module load cuda/13.0.1
 source activate cls
 unset CUDA_VISIBLE_DEVICES
 
-# Repo root from this script's location, so the job runs against whichever
-# checkout or worktree it was submitted from rather than a hardcoded path.
-WORKDIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+# Repo root. NOT derived from ${BASH_SOURCE[0]}: slurm copies the batch script
+# into its spool directory before running it, so inside the job that path is
+# /var/spool/slurmd/... and walking up from it lands nowhere near the repo.
+# SLURM_SUBMIT_DIR is the directory sbatch was invoked from, which makes this
+# work from a worktree without hardcoding; override explicitly with
+#     WORKDIR=/path/to/repo sbatch submit_unique_radius.sh
+WORKDIR="${WORKDIR:-${SLURM_SUBMIT_DIR:-/orcd/home/002/jackking/cls}}"
+if [ ! -d "$WORKDIR/encoder_training" ]; then
+    echo "ERROR: WORKDIR=$WORKDIR is not a repo root (no encoder_training/)."
+    echo "       Submit from the repo root, or set WORKDIR explicitly."
+    exit 1
+fi
 cd "$WORKDIR"
 mkdir -p /home/jackking/cls/encoder_training/scripts/logs
 
