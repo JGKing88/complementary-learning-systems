@@ -803,43 +803,64 @@ put, so one 200-step rollout can pay out many times. The question the policy
 faces is not "how do I find it" but "how do I keep finding it", and those have
 different answers as soon as the goal's location can be remembered.
 
-Two memory channels decide it, and they behave differently:
+Two memory channels could carry the goal's location across a teleport. **In
+this codebase neither does:**
 
 | channel | survives a teleport? |
 |---|---|
-| RNN hidden state | **No** — `reset_state=True` zeroes it, along with `prev_reward`/`prev_action` |
-| Hopfield | **Yes** — never reset, and the contract sets `store_target_is_goal=True` |
+| RNN hidden state | **No** — `reset_state=True` zeroes it, with `prev_reward`/`prev_action` |
+| Hopfield | Not reset, but **the goal can never get into it during explore** |
 
-The store head fires in training rollouts (`collector.py:447,483` →
-`input_memory`), so the second channel is open: store the goal on first
-arrival, then after each teleport follow `hopfield_signal` back to it. **That
-converts a search problem into a fetch problem**, and fetching a known point
-beats searching for an unknown one by a wide margin. Coverage then drops out of
-the optimum as a side effect — not because seeking competes with covering, but
-because the agent stops having to seek.
+The second row is the one that matters and it is easy to get wrong. The store
+in `collector.py:483` is gated `if not shared_hopfield and in_explore`, and
+`ExploreRegime` builds its Hopfields with `make_hops("empty_shared", …)` — whose
+docstring reads *"one shared empty Hopfield per env. **No agent writes.**"* —
+while `_with_distractors` likewise returns a single `Hopfield`, not a list of
+B. So `shared_hopfield` is True, the gate is False, and **`input_memory` is
+never reached in an explore rollout.** Only the `"empty_per_env"` role, which
+the explore regime does not use, lets the agent write.
 
-**The cost that matters is not coverage, it is the distractor gap.** Homing on
-a recalled Hopfield point is the same operation as homing on a recalled
-*distractor*. That is the mechanism behind v35's 0.050 gap, and behind wave 2's
-≤0.010 across all 13 runs: `explore_goals_off` removes the chase gradient, so
-chase behavior has nothing to form from. Flipping the goal live re-opens
-exactly that gradient. `g16a`/`g16b` are therefore a bet that trades the wave's
-cleanest result for coverage, and **the `n_dist` 0→10 gap is the primary
-diagnostic on them, ahead of `mean_coverage`.**
+That is corroborated by every run's logs: `store_entropy` sits at exactly
+**0.693 = ln 2** from u1 to u1000 with `store_loss ≈ 0`. The head is inert
+because its output has no effect on anything, so it receives no gradient.
 
-It may simply not happen. `store_entropy` sits at **0.693 = ln 2** — maximum
-entropy, an untrained coin-flip head — in every explore-only run, so
-store-then-return has to be learned from scratch inside 1000 updates and may
-not form at all. If it does not, the live goal reduces to a stream of random
-restarts that decorrelates trajectories, which is the upside the variant was
-designed for. Both outcomes are informative; they are distinguished by the gap,
-not by the coverage.
+**So search cannot become fetch.** With no store and a zeroed RNN, the agent
+has no way to know where the goal was after a teleport; each segment is a fresh
+search from a random start for a goal it has no information about. The optimal
+policy for that *is* maximal coverage — seeking and covering are aligned, not
+competing, and the intuition that a live goal can only help coverage or leave
+it alone survives.
 
-**Note the uniformity tool cannot see this failure.** With
+It also means the **chase gradient still cannot form**: the recall signal is
+never correlated with the goal, so following it never pays, so distractor
+sensitivity should not reappear. The wave's cleanest result is not what is
+being wagered here.
+
+> An earlier version of this section claimed the opposite — that the store head
+> fires in explore, making store-then-return available and putting the
+> distractor gap at risk. That was a misreading of the `in_explore` gate, which
+> guards the *goal-in-memory bit* on the per-env path rather than enabling
+> stores. Corrected here.
+
+**What is actually at risk is smaller, and is why the pair exists:**
+
+1. **Reward-scale competition.** At `goal_reward=5.0` one arrival is worth ~17
+   novel cells at `novelty_reward=0.3`. That is a spiky term entering a
+   pool-normalized advantage — mostly added gradient variance rather than added
+   signal. `g16b` at 1.0 is the control, and this is now the pair's main
+   purpose rather than a secondary one.
+2. **Train/eval mismatch on the recurrent state.** Teleports zero the hidden
+   state mid-rollout, so training rewards a policy that re-orients from scratch
+   repeatedly, while the eval runs 400 uninterrupted steps and rewards long
+   coherent sweeps. A policy tuned for fast time-to-goal from a cold start is
+   not obviously the one that sweeps best over 400 steps.
+
+**Note the uniformity tool would not see a goal-concentration failure**, in the
+event one arises by some route not anticipated here. With
 `randomize_goal_per_rollout=1` each trial concentrates around a *different*
 goal, so per-trial concentration averages out to a flat occupancy map.
-`mean_coverage` and the distractor gap are the detectors here, not
-edge/centre or cold-cell fraction.
+`mean_coverage` and the distractor gap are the detectors, not edge/centre or
+cold-cell fraction.
 
 ### Scope: what "16 environments" actually varies
 
