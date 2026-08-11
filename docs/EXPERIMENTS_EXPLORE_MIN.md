@@ -520,8 +520,9 @@ land at the same plateau but differ in kind:
 - **`e4`, 27 min** → plateau 0.467, max 0.504 *at the final eval*, monotone, no
   early stopping needed, still climbing when cut.
 - **`c4`, 87 min** → same 0.467 plateau, but reaches **0.531 at u325** on the
-  way. Early-stopped there it is ~28 min for the highest single number either
-  wave has produced; run to u1000 it gives that back.
+  way. ~~Early-stopped there it is ~28 min for the highest single number either
+  wave has produced~~ — **withdrawn**: that checkpoint verdicts at **0.440**,
+  because 0.531 was the argmax of 40 noisy evals. See the verdict section.
 
 Both are enormously cheaper than s1 (0.517 in 2 h 40 m) and v35 (0.507 in
 ~20 h) for coverage in the same band — but all of these are 4×16 monitoring
@@ -630,6 +631,40 @@ budget and checkpoint selection**, not trust:
   lower and give back a peak, but if what you need is a config that degrades
   gracefully rather than catastrophically, that is a point in their favor that
   the coverage table alone does not show.
+
+### Verdict pass: the peaks do not survive, and peak-picking is a trap
+
+The first two strict-protocol results are in — the two big-pool peaks this
+document recommended early-stopping at:
+
+| checkpoint | in-training | **verdict (10×32, n_dist 0/5/10)** | gap |
+|---|---|---|---|
+| `c4` @u325 | 0.531 | **0.440** (.438/.434/.447) | −0.091 |
+| `c8` @u650 | 0.539 | **0.475** (.472/.475/.480) | −0.064 |
+| *v35* | — | *0.507* | — |
+
+**Both land below v35**, and the gap to the cheap eval is 0.064–0.091 — three
+to four times the 0.001–0.022 wave 1 measured on its three runs. Two effects
+are mixed together here and they are not the same thing:
+
+1. **Eval bias.** The 4-env × 16-trial estimate is optimistic, as wave 1 found.
+2. **Max-selection bias.** These two checkpoints were chosen by taking the
+   *argmax of 40 noisy evals*. Picking the largest of forty draws from a noisy
+   series overestimates by roughly the noise scale, and that is a property of
+   the selection, not of the policy.
+
+The wave-1 runs did not pay (2) — their verdict was run at a fixed u300 — which
+is very likely why their gap was small and these are large.
+
+**This retracts the early-stopping recommendation** made in the `c4` section
+above. "Stop `c4` at u325 for 0.531" is not a recipe: the 0.531 is largely the
+selection, and what you actually get is 0.440. You cannot identify a peak from
+noisy in-training evals without paying for the search.
+
+The two effects can be separated cleanly, and the main verdict pass does it for
+free: it scores `c4` and `c8` at **u1000**, a checkpoint chosen by fiat rather
+than by argmax. The u1000 gap is then pure eval bias, and whatever the peak gap
+exceeds it by is the selection premium.
 
 ### The distractor result survives at 2 envs
 
