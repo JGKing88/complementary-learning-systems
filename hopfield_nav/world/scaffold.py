@@ -511,6 +511,33 @@ def fit_env_assoc(
 
     A fixed-heading env keeps the historical North-only sbook, so that mode
     reproduces its previous fit exactly.
+
+    **Why not map the four views to one place code instead?** That is the
+    obvious alternative -- each cardinal view its own sbook column at the width
+    the agent actually observes, all four targeting the same p/g column, a
+    genuinely heading-invariant readout. It was measured, and it does not work:
+
+        size=8, Np=1600, 4 envs, obs=60      grid recovery
+          north-only baseline (Ns=60)             39.8%
+          four views -> one state  (Ns=60)         7.3%
+          concatenation            (Ns=240)       96.9%
+
+    Nor is it a question of width -- at Ns=240, the *same* input width the
+    concatenation gets, the shared-target fit still scores 12.5%. The obstruction
+    is that a cell's four views have mean pairwise cosine +0.028 while views of
+    *different* cells average +0.046: a cell's own views are no more alike than
+    two random cells'. The cone is 120 deg, so headings 90 deg apart share 30 deg
+    of arc and headings 180 deg apart share none -- opposite views have no ray in
+    common and are looks at different walls, not one place seen twice. Asking a
+    linear map to collapse them is asking it to annihilate 6 difference vectors
+    per cell in a <=240-dimensional input space, which is over-constrained by
+    roughly 6x, so the pseudoinverse averages and recovers nothing.
+
+    Concatenation works precisely because it never asks the map to *discard*
+    heading; it supplies every view at once, so heading is unambiguous rather
+    than marginalized. A single-view invariant readout would need a cone wider
+    than 180 deg (so any two headings overlap), an explicit heading input, or a
+    nonlinear encoder -- none of which this linear scaffold has.
     """
     if field.cfg.static_vectorhash:
         print("  fit_env_assoc: static_vectorhash — skipping Wsp/Wps and scaffold test")
