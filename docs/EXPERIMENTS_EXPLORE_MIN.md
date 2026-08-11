@@ -783,6 +783,64 @@ does not change the recommendation, because both early-stopped big-pool runs
 still verdict **below** `e4` (0.484), `e8` (0.495) and `e16` (0.518), which
 need no stopping rule at all.
 
+### What a live goal actually incentivizes (wave 3, `g16a`/`g16b`)
+
+Worth stating before the runs land, because the naive framing —
+"the goal might buy goal-seeking instead of coverage" — is **wrong**, and the
+real risk is somewhere else.
+
+**For a pure search problem the two objectives coincide.** With a uniformly
+random goal and no information about its location, the policy that maximizes
+the chance of finding it in T steps is the one that visits the most distinct
+cells. Seeking *is* covering. If that were the whole story, a live goal could
+only help coverage or leave it alone.
+
+It is not the whole story, because the reward does not stop at first discovery.
+`training_rollout` runs under `TRAINING = GoalContract()` — every default on:
+reward, `move_ignored`, `teleport`, `reset_state`. On arrival the **agent** is
+relocated to a random cell (`vec_env.py` `reset_indices`) and the goal stays
+put, so one 200-step rollout can pay out many times. The question the policy
+faces is not "how do I find it" but "how do I keep finding it", and those have
+different answers as soon as the goal's location can be remembered.
+
+Two memory channels decide it, and they behave differently:
+
+| channel | survives a teleport? |
+|---|---|
+| RNN hidden state | **No** — `reset_state=True` zeroes it, along with `prev_reward`/`prev_action` |
+| Hopfield | **Yes** — never reset, and the contract sets `store_target_is_goal=True` |
+
+The store head fires in training rollouts (`collector.py:447,483` →
+`input_memory`), so the second channel is open: store the goal on first
+arrival, then after each teleport follow `hopfield_signal` back to it. **That
+converts a search problem into a fetch problem**, and fetching a known point
+beats searching for an unknown one by a wide margin. Coverage then drops out of
+the optimum as a side effect — not because seeking competes with covering, but
+because the agent stops having to seek.
+
+**The cost that matters is not coverage, it is the distractor gap.** Homing on
+a recalled Hopfield point is the same operation as homing on a recalled
+*distractor*. That is the mechanism behind v35's 0.050 gap, and behind wave 2's
+≤0.010 across all 13 runs: `explore_goals_off` removes the chase gradient, so
+chase behavior has nothing to form from. Flipping the goal live re-opens
+exactly that gradient. `g16a`/`g16b` are therefore a bet that trades the wave's
+cleanest result for coverage, and **the `n_dist` 0→10 gap is the primary
+diagnostic on them, ahead of `mean_coverage`.**
+
+It may simply not happen. `store_entropy` sits at **0.693 = ln 2** — maximum
+entropy, an untrained coin-flip head — in every explore-only run, so
+store-then-return has to be learned from scratch inside 1000 updates and may
+not form at all. If it does not, the live goal reduces to a stream of random
+restarts that decorrelates trajectories, which is the upside the variant was
+designed for. Both outcomes are informative; they are distinguished by the gap,
+not by the coverage.
+
+**Note the uniformity tool cannot see this failure.** With
+`randomize_goal_per_rollout=1` each trial concentrates around a *different*
+goal, so per-trial concentration averages out to a flat occupancy map.
+`mean_coverage` and the distractor gap are the detectors here, not
+edge/centre or cold-cell fraction.
+
 ### Scope: what "16 environments" actually varies
 
 `envs_per_world=16` reads as more variation than it delivers, and the ladder's
