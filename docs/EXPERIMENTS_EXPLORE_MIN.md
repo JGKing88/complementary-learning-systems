@@ -783,6 +783,71 @@ does not change the recommendation, because both early-stopped big-pool runs
 still verdict **below** `e4` (0.484), `e8` (0.495) and `e16` (0.518), which
 need no stopping rule at all.
 
+### Is the coverage uniform? Yes — and the perimeter basin is the collapse mode
+
+`mean_coverage` counts cells without locating them, and in this lineage those
+come apart: the v36 perimeter-orbit basin is a policy that scores respectably
+by circling the rim. `hopfield_nav/explore_min_uniformity.py` re-runs the
+verdict's own trials and keeps the per-cell visit counts `evaluate_exploration`
+discards. Its mean occupancy reproduces `mean_coverage` to 5 decimals in all
+eight runs, so this is a decomposition of the scored number, not a second
+opinion on it.
+
+Occupancy by ring at `n_dist=0` — ring 0 is the 76-cell perimeter, ring 9 the
+4-cell centre:
+
+| ring | 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 |
+|---|---|---|---|---|---|---|---|---|---|---|
+| `e16` (0.516) | .440 | .440 | .508 | .557 | .567 | .573 | .601 | .606 | .585 | .554 |
+| `e8` (0.494) | .448 | .436 | .490 | .512 | .530 | .525 | .521 | .574 | .588 | .623 |
+| `c2s42` (0.352) | .343 | .324 | .313 | .319 | .346 | .380 | .413 | .450 | .489 | — |
+| `e2s42` (0.058) | **.114** | .048 | .039 | .041 | .041 | .041 | .048 | .051 | .063 | .061 |
+
+| run | cov | edge/centre | cold cells (<0.10) |
+|---|---|---|---|
+| `e16` | 0.516 | 0.748 | 1.8% |
+| `e8` | 0.494 | 0.812 | 0.0% |
+| `c2s42` | 0.352 | 0.791 | 29% |
+| `e2s42` | 0.058 | **1.701** | 88% |
+
+**The working policies sweep evenly and slightly favour the interior.** `e8`
+has *zero* cold cells; `e16` has 1.8%. Both rise smoothly from rim to centre,
+and both are essentially identical at `n_dist=10` (edge/centre 0.754 and 0.832)
+— so distractors do not distort the shape of the coverage any more than they
+distort its size.
+
+**The perimeter basin exists, but only in the collapsed run.** `e2s42` is the
+sole checkpoint with edge/centre above 1, at 1.70, and its profile is a spike:
+ring 0 is **2.4× ring 1** with ~0.04 everywhere else. So rim-hugging here is
+what a dead policy degenerates into, not a strategy a working one adopts, and
+the v36 concern does not apply to any of wave 2's real results.
+
+**The 2-env cap is not a spatial pathology either.** `c2s42` misses 29% of the
+grid, but its ring profile has the same interior-rising shape as `e16` — it is
+uniformly thinner, not concentrated somewhere. Two envs buy a worse sweep
+everywhere rather than a good sweep of part of the grid.
+
+#### A quantified opportunity: the rim is undervisited
+
+`e16`'s rings 0–1 are 144 of 400 cells sitting at occupancy 0.440 against an
+interior of 0.559. Lifting the rim to interior occupancy is worth
+**+0.043 coverage** — `e16` 0.518 → ~0.56, clear of v35's 0.507.
+
+The obvious suspect is `wall_penalty=0.1`, which taxes standing at a wall and
+is on in every wave-2 run. Wave 1 tested `WALL_PENALTY=0` (`s2`) and found
+nothing, but that was at 80 envs and judged on the cheap eval, which we now
+know errs by up to ±0.08. This is worth retesting at 16 envs, because unlike
+wave 1's version it comes with a mechanism and a predicted effect size — if
+`wall_penalty=0` does not move rim occupancy, the rim deficit is geometric and
+the +0.043 is not available.
+
+> Caveat on the entropy column, which is reported by the tool and deliberately
+> not used above: it normalizes occupancy into a distribution before measuring
+> spread, so it describes the *shape* of relative visitation and is nearly
+> blind to how much ground is covered. `e2s42` scores 0.962 against `c2s42`'s
+> 0.942 while covering six times less. **Cold-cell fraction and edge/centre are
+> the trustworthy statistics; entropy is not.**
+
 ### The distractor result survives at 2 envs
 
 The `n_dist` 0→10 gap stays within ±0.04 of zero across every eval of both
@@ -828,6 +893,11 @@ Opened:
    ablation would say whether the collapse is avoidable rather than intrinsic
    to small pools — and would make the cheap configs trustworthy rather than
    merely fast.
+5. **`wall_penalty=0` at 16 envs.** The uniformity pass shows `e16`'s rim
+   sitting 0.12 below its interior, worth **+0.043 coverage** if closed. This
+   is the one place in the study where a shaping knob has a measured mechanism
+   and a predicted effect size rather than a hunch, which is what wave 1's
+   null result on the same knob lacked.
 
 ---
 
