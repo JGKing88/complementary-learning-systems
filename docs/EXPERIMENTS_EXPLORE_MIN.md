@@ -33,11 +33,12 @@ branch off `main` carrying only wave 1's tooling (`1be48b4`), not the
 the launcher rather than the model — see below — which would have silently
 trained the wrong branch.
 
-**The result so far: 4 environments is enough.** `e4s42` reaches 0.504 and is
-still climbing at u1000, against s1's 0.517 on 80 envs — using 20× fewer
-env-steps per update, 20× fewer serial model calls, and **27 minutes** of
-wall-clock against s1's 2 h 40 m and v35's ~20 h. One and two envs are
-genuinely capped (~0.17, ~0.37); the step from 2 to 4 is a cliff.
+**The result so far: 8 environments beats 80.** `e8` settles at **0.538 ±
+0.015** — above s1's best single eval (0.517) and its verdict score (0.495) —
+in **57 minutes** against s1's 2 h 40 m and v35's ~20 h. `e4` reaches 0.467 in
+27 minutes. One and two envs are genuinely crippled (0.15, 0.34). Pool size
+turns out to be non-monotone in env count, helping at 2 envs and overfitting at
+4. All of this is on the cheap monitoring eval; the verdict pass is owed.
 
 ---
 
@@ -361,40 +362,49 @@ compared on mean₈ at all — they ran only 300 updates, so their last 8 evals
 cover their climb rather than a plateau. Against them, use the verdict pass.
 
 **The 2-env seed spread is small, not large.** On finals it looks like 0.346 /
-0.452 / 0.296 — a 0.156 range. On mean₈ it is 0.348 / 0.363 / 0.319, a range of
-0.044. The 2-env level is ~0.34, and the design's three seeds earned their
+0.452 / 0.301 — a 0.151 range. On mean₈ it is 0.348 / 0.363 / 0.297, a range of
+0.066. The 2-env level is ~0.34, and the design's three seeds earned their
 place by showing that the apparent spread was mostly eval noise.
 
-### Headline: **four environments is enough**, and it is a cliff, not a slope
+### Headline: **eight environments beats eighty**, at a third of the wall-clock
 
-| run | envs | batch | pool | @u300 | @u1000 | shape | wall-clock |
-|---|---|---|---|---|---|---|---|
-| `e1s42` | 1 | 16 | 16 | 0.111 | 0.152 | low, flat | ~9 m |
-| `e2s42` | 2 | 16 | 32 | 0.151 | **0.071** | peak 0.215 @u125, collapse | 21 m |
-| `e2s43` | 2 | 16 | 32 | 0.230 | **0.137** | peak 0.264 @u475, collapse | 21 m |
-| `e2s44` | 2 | 16 | 32 | 0.103 | **0.076** | peak 0.168 @u700, drift down | 21 m |
-| `c2s42` | 2 | 640 | 1280 | 0.327 | **0.346** | plateau ~0.37 | 80 m |
-| `c1s42` | 1 | 1280 | 1280 | 0.191 | 0.151 | low, flat | 103 m |
-| **`e4s42`** | **4** | **16** | **64** | 0.363 | **0.504**, still climbing | **monotone** | **27 m** |
-| *s1* | *80* | *16* | *1280* | *0.517, still climbing* | — | *monotone* | *2 h 40* |
+| run | envs | batch | pool | mean₈ | max | wall-clock |
+|---|---|---|---|---|---|---|
+| `e1s42` | 1 | 16 | 16 | 0.158 | 0.189 | ~9 m |
+| `c1s42` | 1 | 1280 | 1280 | 0.146 | 0.196 | 103 m |
+| `e2s42/43/44` | 2 | 16 | 32 | 0.113 / 0.146 / 0.097 | ≤0.264 | 21 m ea |
+| `c2s42/43/44` | 2 | 640 | 1280 | 0.348 / 0.363 / 0.297 | ≤0.452 | 80 m ea |
+| `e4s42` | 4 | 16 | 64 | 0.467 | 0.504 @u1000 | **27 m** |
+| `c4s42` | 4 | 320 | 1280 | 0.467 | 0.531 @u325 | 87 m |
+| **`e8`** | **8** | **16** | **128** | **0.538** | **0.561** @u950 | **57 m** |
+| *s1* | *80* | *16* | *1280* | *— (u300 only)* | *0.517 @u300* | *2 h 40* |
 
-`e4s42` reaches **0.504 at u1000 and is still rising** (u925 0.473, u1000 0.504),
-union 0.944, on a clean monotone curve with no instability anywhere — against
-s1's 0.517. That is v35-class coverage from **4 envs and a pool of 64**:
+`e8` settles at **0.538 ± 0.015** — a genuine plateau from u625 to u1000, not a
+spike — with union coverage 0.96–0.99 and the distractor gap at zero. It is the
+highest settled level either wave has produced, above s1's best single eval
+(0.517) and well above s1's verdict-protocol score (0.495), in **57 minutes
+against 2 h 40 m**.
 
-- **20× fewer env-steps per update** — 12,800 against s1's 256,000.
-- **20× fewer serial model calls** — 800 against 16,000.
-- **27 minutes**, against s1's 2 h 40 m and v35's ~20 h.
+So the diversity curve does *not* flatten at 4, as an earlier version of this
+section concluded from `e4` alone:
 
-So the diversity floor is real but sits far lower than the ladder was built to
-find. Between 2 and 4 envs, held-out coverage roughly *doubles*; between 4 and
-80 it moves by less than the eval's own noise.
-
-| envs | best observed | binding constraint |
+| envs | settled level | binding constraint |
 |---|---|---|
-| 1 | ~0.17 | diversity — `c1` (pool 1280) barely beats `e1` (pool 16) |
-| 2 | ~0.37 | diversity — `c2` plateaus 400 updates below s1 |
-| 4 | ≥0.504, climbing | **neither, yet** |
+| 1 | 0.15 | diversity — an 80× pool moves it by 0.001 |
+| 2 | 0.34 | diversity — `c2` plateaus; without pool, instability on top |
+| 4 | 0.467 | unclear; pool no longer helps, more envs still do |
+| **8** | **0.538** | **not yet found** |
+| 80 | ≥0.517 at u300, never run to u1000 | — |
+
+Most of the gain is bought by the 2→4 step (0.34 → 0.467) and the rest by
+4→8 (0.467 → 0.538). One and two envs are genuinely crippled.
+
+**A caveat this wave cannot remove.** s1 ran 300 updates and was still climbing
+when cut; `e8` ran 1000. So this is "cheap config run long beats expensive
+config run short" — a real and useful claim, since the wave's question is
+minimum cost — but it is *not* a ceiling comparison. Nobody has run 80 envs to
+u1000, which would cost ~8.7 h. At matched u300, 80 envs is still ahead
+(0.517 against `e8`'s ~0.42).
 | 80 | 0.517 | — |
 
 ### What the 1- and 2-env rungs say about pool size
