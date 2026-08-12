@@ -22,7 +22,7 @@ python -m hopfield_nav.tests.gen_golden --check       all goldens match
 | 2 | Generator, domains, separation | **done** — see outcome below |
 | 3 | Serialization + train wiring | **done** — `901e802` |
 | 4 | Per-trait refresh | **done** — see outcome below |
-| 5 | Eval CLIs, mix-and-match | not started |
+| 5 | Eval CLIs, mix-and-match | planned — see below |
 | 6 | Size OOD | not started |
 
 ---
@@ -1025,3 +1025,154 @@ complement untouched so `place='ood'` works indefinitely (and `held_out` still
 succeeded at tick 100, `|used|=3254`, with min gap 84 — the used offsets cluster
 rather than spreading); or use a coarser cadence. `place='same'` is unaffected
 either way.
+
+---
+
+## Phase 5 — detailed plan
+
+**Goal.** Make the split reachable from evaluation: point a CLI at a run's
+`world.json` and ask for any per-trait level combination, in one invocation.
+
+**Acceptance gate.** 683 tests pass, goldens byte-identical. Every existing
+`eval_all` command line keeps working and its output JSON keeps its current shape.
+
+### 5.0 The §1.4 bug is still live in every eval CLI — fix this first
+
+Phase 3 built `eval_world_from_spec` and taught `build_eval_world` to take a
+`spec`. **Nothing passes one.** All four call sites still call it with three
+arguments:
+
+```
+hopfield_nav/eval_all.py:112
+analysis/trajectories.py:723
+analysis/phase_decoding/rollout.py:106
+analysis/continual/agenthash.py:418
+```
+
+So every post-hoc evaluation still takes the RNG-replay branch, prints the "env
+offsets are not exact" warning, and scores checkpoints on scaffold patches
+training never used — measured deltas up to 10 cells, the whole reason
+`world.json` exists. Runs written since `901e802` have a truthful record sitting
+unread beside them.
+
+This is the highest-value item in the phase and it is nearly free. The fix has to
+be structural rather than four remembered edits, because a fifth call site would
+silently rejoin the legacy path: **`build_eval_world` gains a `ckpt_path`
+parameter and discovers the spec itself** via `world_spec_for`, which already
+accepts a checkpoint or a run directory. Callers pass the path they already hold.
+The legacy warning then fires only when a run genuinely has no record.
+
+Worth doing as its own commit, before any new surface: it changes what existing
+numbers mean, and that should not be tangled up with a feature.
+
+### 5.1 Level flags on `eval_all`
+
+```
+--split recorded                                  # base_val exactly as trained against
+--split place=same,wall=held_out,goal=held_out    # the memorization probe
+--split place=ood                                 # unspecified traits default to held_out
+```
+
+Repeatable. Same compact grammar as `--schedule` and `--place_region`, so it
+survives `asdict(cfg)` and reaches a results file as a string.
+
+**`recorded` is not the same as all-`held_out`, and the distinction is the point.**
+`recorded` replays the run's own validation envs. All-`held_out` mints *fresh*
+envs that are also disjoint from training. The first answers "how did this
+checkpoint do on its own val set", the second "does that generalize to another
+draw from the same rule". Both are wanted; a CLI that could only express one
+would quietly conflate them.
+
+**Multiple combos per invocation, not per process.** The scaffold is 12 GB at
+`Npos=1716` and the encoder load is not cheap; re-running the CLI per combo pays
+that per combo. So `eval_checkpoint` splits into
+
+```
+prepare(...)   -> cfg, encoder, field, agent, embed_dim      # once
+run_suite(...) -> the results dict for one env set           # per combo
+```
+
+with the combo loop between them. `build_field` is already the shared-field entry
+point Phase 1 created; this is the same move one layer up.
+
+**Output shape — nine readers, none of which may break.** `analysis/continual/
+baseline.py`, `analysis/continual/plotting.py`, `train.py`, `train_rnn.py`,
+`evaluation/rnn.py`, `tests/test_smoke_train.py` and three `run_*.sh` scripts all
+read today's top-level `nav_det` / `discovery` / `exploration` keys. So: the first
+combo's results stay at the top level exactly as now, and **every** combo also
+appears under `results["splits"][key]`. A single-combo run is then byte-compatible
+with today's output, and the combination × metric table is a view over `splits`.
+
+### 5.2 What a minted val set must assert about itself
+
+`make_val_set` does not currently run `verify_split` on its own output — noted as
+undone in Phases 3 and 4, and this is where it becomes load-bearing. Once a CLI
+mints an env set on request, the separation claim *is* the claim the eval is
+making, so it has to be checked and reported, not assumed:
+
+- run the pairwise checks on the minted set against `split.used`
+- put the achieved minimum place gap and wall Hamming into `results["splits"][key]`,
+  alongside the level combination, so a results file says what its envs were
+
+### 5.3 The two ways this fails, both of which need to say why
+
+**`place=held_out` after a refreshing run can be genuinely infeasible.** Measured
+in Phase 4: at the working config with `--refresh_place 1`, the used-place union
+exhausts the scaffold and minting fails at tick 20/30/32 for seeds 0–2. Today that
+surfaces as `sample_places`'s "could not place N envs ... raise Npos, enlarge the
+region, lower the margin" — none of which is the actual cause. It needs to name
+the union: *this run refreshed placements N times and used M offsets; there is no
+room left for a held-out set at margin K. Use `place=same`, or `place=ood` if a
+region was declared.*
+
+**`ood` on an undeclared trait** already raises with the right explanation from the
+domain layer (`Anywhere.complement()`, `SeedRange.complement()`). The CLI should
+let that propagate rather than wrapping it.
+
+### 5.4 Out of scope, deliberately
+
+**`--val_size` is Phase 6, and must error here rather than half-work.** Six sites
+read the global `cfg.env.size` where they need the val set's, and every one fails
+*silently*: `metrics.py:614` (`grid_size` → the denominator of `mean_coverage`),
+`metrics.py:323,449` and both regimes' distractor exclusion box, and
+`collector.py:192,352,366,541,566` (`visited_cells` shape and novelty). A val set
+at a different size would return plausible numbers computed against the wrong
+denominator. So Phase 5 accepts `size=same` only.
+
+### 5.5 Baselines on the same record
+
+`analysis/continual/baseline.py:270` builds envs through
+`training/rnn_setup.build_envs(cfg, rng)` and places them with
+`place_envs(..., np.random, ...)` — the same unrecorded global-RNG placement §1.4
+is about. Today it aligns with `agenthash` only through the hand-matched draw-order
+convention documented at `agenthash.py:325-333`; reading one `world.json` replaces
+that convention with a file.
+
+Goal and size splits apply to the baseline unchanged. **Place applies only when
+`input_grid_state=True`** — without it the baseline never sees the scaffold, so
+where its envs sit is not an axis it can generalize along.
+
+`agenthash`'s `--env_seed` stays, as the explicit baseline-matching path.
+
+### Tests
+
+- `build_eval_world` prefers a discovered spec over the replay, and the offsets it
+  returns equal the recorded ones — the §1.4 regression test
+- a run with no `world.json` still evaluates, and still warns
+- `recorded` reproduces `base_val` exactly; all-`held_out` does not, and is disjoint
+- each level combination lands under `results["splits"]` with its achieved gaps
+- a single-combo run's JSON is key-for-key what today's is
+- the field is built **once** across N combos (object identity)
+- `place=held_out` after refresh exhaustion names the union
+- `size` other than `same` errors and points at Phase 6
+
+### Risk register
+
+| Risk | Mitigation |
+|---|---|
+| 5.0 silently changes every downstream number | Its own commit, and it is a *fix* — the numbers were wrong before |
+| A fifth call site rejoins the legacy path | Discovery lives inside `build_eval_world`, not at the call sites |
+| Output shape breaks nine readers | First combo stays at top level; `splits` is additive |
+| 12 GB scaffold rebuilt per combo | `prepare` / `run_suite` split, pinned by an identity test |
+| Minted set is assumed separated rather than checked | 5.2 — verify and report the achieved gaps |
+| `--val_size` ships half-working | 5.4 — rejected outright, with the six sites named |
