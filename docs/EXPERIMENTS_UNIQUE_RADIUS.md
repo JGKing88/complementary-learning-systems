@@ -20,15 +20,17 @@ are the two ways to move it.
 **`run_20260422_185816/encoder_best.pt`** — `r_min = 16`, but see below: the
 sweeps have since beaten it.
 
-**Current best: `ur_loss_20260811/016_repel_weight=5_per_env_radius_frac=0.2_seed=43`
-— `r_min = 20`, `r_median = 25.5`, `alias_ceiling = 0.879`, `decay50 = 44.0`.**
+**Current best: `ur_loss2_repel_low/029_repel_weight=2_per_env_radius_frac=0.1_seed=44`
+— `r_min = 21`, `r_median = 28.5`, `alias_ceiling = 0.814`, `decay50 = 37.5`.**
+Tied on `r_min` by `011_repel_weight=0.5_..._seed=44` (21, alias 0.865), but the
+repel=2 run has the lower alias ceiling and comes from a far more stable cell.
 
 ```
 encoder_type mlp      lambdas 11,12,13     out_dim 1024
 hidden_dim 512        num_hidden_layers 4
 nenv 60               npos 100             (60 patches of 100×100 = 20.4% coverage)
-per_env_radius_frac 0.2                    ("near" = within 20 cells)
-loss mse_contrastive  attract_lambda 2.0   repel_weight 5.0   uniformity_lambda 0.0
+per_env_radius_frac 0.1                    ("near" = within 10 cells)
+loss mse_contrastive  attract_lambda 2.0   repel_weight 2.0   uniformity_lambda 0.0
 single_env_batch FALSE                     <-- the single most important setting
 epochs 1000  lr 1e-4  batch_size 8192  fwhm_ratio 0.25  gain 1.0→5.0
 ```
@@ -77,27 +79,41 @@ Raising it lowers the ceiling only marginally (0.903→0.884 across 40×) while
 shrinking the decay width fast (39→26). Over-repelling flattens the
 neighbourhood the radius is measuring.
 
-**Below 1.0, training goes unstable** (`ur_loss2_repel_low`, first 12 runs) —
-so the trend above must *not* be extrapolated:
+**Below 1.0 it does not keep improving — it gets erratic** (`ur_loss2_repel_low`,
+all 36 runs). Median `r_min` by cell:
 
-| repel | frac | seed 42 | seed 43 | seed 44 |
-|---|---|---|---|---|
-| 0.25 | 0.10 | 18 | 15 | **5** |
-| 0.25 | 0.15 | 10 | 10 | **1** |
-| 0.25 | 0.20 | 9 | 8 | **1** |
-| 0.50 | 0.10 | 14 | **0** | **0** |
+| repel ↓ / frac → | 0.10 | 0.15 | 0.20 |
+|---|---|---|---|
+| 0.25 | 15 | 10 | 8 |
+| 0.50 | 18 | 7 | 6 |
+| **1.00** | **18** | 13 | 11 |
+| **2.00** | 14 | **15** | 10 |
 
-The collapsed runs have alias ceilings of 0.993–0.9996 — near-total aliasing —
-while their decay widths are the *largest* seen (45–64). Seed 44 scored 18 at
-repel=1.0 in the previous sweep, so this is an interaction with weak
-repulsion, not a bad seed.
+and the seed spread within a cell, which is the real story:
 
-Reading: repulsion is what breaks the collapsed basin where everything looks
-alike. Too little and some seeds never escape it; too much and it flattens the
-neighbourhood. **The optimum sits near repel ≈ 1**, which was the edge of the
-first grid. Note the seed spread within a cell (0→14) is far wider here than
-the ~2 units seen at repel ≥ 1: this is instability, not noise, and it means a
-single run at low repel is uninformative.
+| repel | median within-cell spread (max−min) |
+|---|---|
+| 0.25 | **9.0** |
+| 0.50 | 4.0 |
+| 1.00 | **1.0** (at frac 0.10) |
+| 2.00 | 6.0 |
+
+At 0.25 the same cell yields 5 and 18; collapsed runs show alias ceilings of
+0.993–0.998 with the *widest* decay widths measured. So weak repulsion
+sometimes fails to break the basin where everything looks alike, rather than
+being uniformly bad — repel 0.5 also produced a joint-best 21.
+
+Reading: repulsion breaks the collapsed basin; too little and some seeds never
+escape it, too much and it flattens the neighbourhood. **repel ∈ [1, 2] is the
+reliable region**, with repel=1.0/frac=0.10 the most reproducible cell in any
+sweep so far (17/18/18, spread 1). I earlier called this a monotone
+"repel should go down" trend after seeing only the 1→40 side; it is a peak.
+
+### 2.2c `per_env_radius_frac` ≈ 0.10 is the strongest single setting
+
+Marginal median `r_min` over all 36 runs: **0.10 → 17.5**, 0.15 → 10.5,
+0.20 → 8.5. It beats 0.15/0.20 in every repel row. The first sweep put 0.05 at
+15 and 0.10 at 18, so 0.10 is a peak rather than an edge.
 
 ### 2.3 `repel_weight` and `per_env_radius_frac` trade off along a diagonal
 
@@ -154,9 +170,27 @@ evaluation points during training, which is optimistically biased.
 | `unique_radius_20260811_195333` | audit of 407 archived encoders | — | median r_min 1; best 16 (`run_20260422_185816`) |
 | `ur_loss_20260811` | repel [1,5,15,40] × frac [0.05,0.1,0.2] × 3 seeds | 36 | **best 20**; repel should go down; diagonal ridge |
 | `ur_seb_control` | single_env_batch [T,F] × 3 seeds | 6 | True 2/2/2, False 17/18/18 — §2.1 confirmed |
-| `ur_loss2_repel_low` | repel [0.25,0.5,1,2] × frac [0.10,0.15,0.20] × 3 seeds | 36 | *running* |
+| `ur_loss2_repel_low` | repel [0.25,0.5,1,2] × frac [0.10,0.15,0.20] × 3 seeds | 36 | **best 21**; repel is a peak not a slope; frac 0.10 dominates |
+| `ur_seb_C_pairs_vs_dynamics` | False batching; exclude_cross_env_pairs [F,T] × 3 seeds | 6 | *running* — the load-bearing control, see below |
 | `ur_seb_A_geometry` | True; npos_list [4×400, 2×600, 1×800] × repel [1,5] × 2 seeds | 12 | *running* |
 | `ur_seb_B_uniformity` | True; uniformity_lambda [0,0.1,0.5,2,8] × 2 seeds | 10 | *running* |
+
+### First: which half of `single_env_batch` actually matters (`ur_seb_C`)
+
+The flag changes two things at once, and §2.1 credits only the first:
+
+1. **Loss composition** — a one-env batch holds no cross-environment pairs, and
+   since `far` is just "not near", those pairs *are* the between-patch
+   repulsion. There is no dedicated term.
+2. **Optimisation dynamics** — each gradient step comes from one environment
+   (8192 of that env's 10,000 points, ~82%), cycling through envs. Closer to
+   alternating per-env full-batch descent than SGD over pooled data.
+
+`ur_seb_control` flipped both together. `exclude_cross_env_pairs` withholds only
+the pairs while keeping batches mixed, isolating (1). **Everything below
+presupposes the answer**: if it lands near 2, (1) is the cause and the two
+rescue attempts are aimed correctly; if near 18, the win was (2) and §2.1 is
+wrong about why.
 
 ### Rescuing `single_env_batch=True` — two hypotheses in flight
 
