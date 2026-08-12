@@ -42,7 +42,7 @@ from .updates.ppo import ppo_update
 from .evaluation.checkpoint_io import cfg_from_checkpoint
 from .training.explore import ExploreRegime
 from .training.exploit import ExploitRegime
-from .training.refresh import Cadence, Refresher
+from .training.refresh import Cadence, Refresher, format_preflight, preflight
 from .training.stages import (
     Knobs, ScheduleError, Stage, format_schedule, parse_schedule, resolve,
     stage_at, total_updates,
@@ -477,6 +477,17 @@ def train_navigate(
                            cfg.agent.movement_mode, int(cfg.seed))
                  if cadence else None)
 
+    # What a post-hoc held-out eval will still be able to ask for once this run
+    # has finished moving its envs around. The answer is fixed by the config, so
+    # it is knowable now and only observable at the end -- which is the whole
+    # reason to say it here. Reported and recorded; never a reason to refuse.
+    pre = None
+    if refresher is not None:
+        pre = preflight(split, cadence, total_updates(stages), cfg.env,
+                        cfg.agent.movement_mode, int(cfg.seed),
+                        n_val_envs=int(cfg.num_val_envs))
+        print(format_preflight(pre), flush=True)
+
     # Written on both paths: a run has to be able to say which envs it used,
     # and the historical path could not (see docs/EVAL_SPLITS_DESIGN.md 1.4).
     encoder_ident = run_manifest.encoder_identity(
@@ -486,7 +497,7 @@ def train_navigate(
         spec, path = write_world_spec(
             cfg, field, split, encoder_ident, generator=world_kind,
             extra=(None if refresher is None
-                   else {"refresh": refresher.report()}))
+                   else {"refresh": refresher.report(), "preflight": pre}))
         return spec.summary(path)
 
     ckpt_world = record_world()

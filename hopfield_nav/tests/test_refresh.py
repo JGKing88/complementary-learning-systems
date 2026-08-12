@@ -501,3 +501,197 @@ def test_the_report_says_whether_the_world_stood_still(field, env_cfg):
     assert rep["ticks"] == 4
     assert rep["counts"] == {"place": 2, "wall": 0, "goal": 4, "size": 0}
     assert rep["n_used"]["place"] >= len(split.train)
+
+
+# ---------------------------------------------------------------------------
+# The startup preflight
+# ---------------------------------------------------------------------------
+
+def test_draw_only_mode_records_without_building_anything(field, env_cfg):
+    """`worlds=None` draws and records; it must not touch envs or offsets.
+
+    This is what lets the preflight replay 300 ticks in a second -- the env
+    rebuild is the whole cost of a wall tick -- and, more to the point, what lets
+    it run `_draw` itself rather than a reimplementation that could drift.
+    """
+    split, worlds, _ = _setup(field, env_cfg, Cadence(place=1, wall=1))
+    before = [(e.seed, off) for w in worlds for e, off in zip(w.envs, w.offsets)]
+    dry = Refresher(Cadence(place=1, wall=1), split, None, env_cfg, "discrete", 0)
+    for tick in range(1, 4):
+        dry.maybe_refresh(tick)
+    assert len(split.used["place"]) > len(before)      # recorded
+    assert [(e.seed, off) for w in worlds
+            for e, off in zip(w.envs, w.offsets)] == before   # not applied
+
+
+def test_the_preflight_matches_what_the_run_actually_leaves(field, env_cfg):
+    """The prediction and the run must agree, because they share `_draw`.
+
+    A preflight that reimplemented the draw would be a second source of truth
+    for the thing it exists to check -- and would agree right up until someone
+    changed one of them.
+    """
+    from hopfield_nav.training.refresh import preflight
+    split, worlds, refresher = _setup(field, env_cfg, Cadence(place=1, wall=1),
+                                      n_train=6, n_val=3, seed=5)
+    rep = preflight(split, Cadence(place=1, wall=1), 5, env_cfg, "discrete", 5,
+                    n_val_envs=3)
+    for tick in range(1, 6):
+        refresher.maybe_refresh(tick)
+    assert rep["used_at_end"]["place"] == len(split.used["place"])
+    assert rep["used_at_end"]["wall"] == len(split.used["wall"])
+    assert rep["ticks"] == 5
+
+
+def test_the_preflight_leaves_the_real_split_alone(field, env_cfg):
+    """It simulates on a copy; a run must not train on the preflight's draws."""
+    from hopfield_nav.training.refresh import preflight
+    split, _, _ = _setup(field, env_cfg, Cadence(place=1), n_train=6, n_val=3)
+    before_train = list(split.train)
+    before_used = {k: set(v) for k, v in split.used.items()}
+    preflight(split, Cadence(place=1), 10, env_cfg, "discrete", 0, n_val_envs=3)
+    assert split.train == before_train
+    assert {k: set(v) for k, v in split.used.items()} == before_used
+
+
+def _run_and_preflight(field, env_cfg, seed, n, ticks=6):
+    from hopfield_nav.training.refresh import preflight
+    split, _, refresher = _setup(field, env_cfg, Cadence(place=1), n_train=8,
+                                 n_val=3, margin=12, seed=seed)
+    rep = preflight(split, Cadence(place=1), ticks, env_cfg, "discrete", seed,
+                    n_val_envs=n)
+    for tick in range(1, ticks + 1):
+        refresher.maybe_refresh(tick)
+    return split, rep
+
+
+def _val_seed_outcomes(split, n):
+    out = []
+    for val_seed in (1, 7, 42, 1234):
+        try:
+            out.append(len(gen.make_val_set(
+                split, n, {"place": "held_out", "wall": "held_out",
+                           "goal": "held_out"}, seed=val_seed)))
+        except RuntimeError:
+            out.append(-1)
+    return out
+
+
+@pytest.mark.parametrize("seed, n", [(s, n) for s in range(6) for n in (3, 4)])
+def test_an_ok_verdict_holds_for_whichever_val_seed_is_used_later(field, env_cfg,
+                                                                  seed, n):
+    """`ok` must survive the eval's own draw order, not just one lucky order.
+
+    Greedy packing depends on the order it sees candidates in, and
+    `make_val_set` shuffles with the *val* seed -- which the preflight cannot
+    know. A verdict taken from a single order over-promises: at seed 1 and seed 4
+    with n=4, one order reports room and `make_val_set` then fails for two of
+    four val seeds. Taking the worst of several orders is what closes that, and
+    these parameters are the ones where the two disagree.
+    """
+    split, rep = _run_and_preflight(field, env_cfg, seed, n)
+    if not rep["ok"]:
+        return                       # covered by the conservative-direction test
+    assert _val_seed_outcomes(split, n) == [n] * 4, (
+        f"preflight said {n} held-out place envs were available at seed {seed}, "
+        f"and make_val_set could not deliver for every val seed")
+
+
+@pytest.mark.parametrize("seed, n", [(1, 4), (4, 4)])
+def test_a_single_draw_order_would_have_said_yes(field, env_cfg, seed, n):
+    """The two configurations that make the multi-order check load-bearing.
+
+    Pinned explicitly so that dropping back to one order, or taking the best
+    instead of the worst, fails here rather than passing everywhere by slack.
+    """
+    import hopfield_nav.training.refresh as R
+    split, rep = _run_and_preflight(field, env_cfg, seed, n)
+    assert rep["ok"] is False, "the honest verdict at this boundary is 'no'"
+    assert -1 in _val_seed_outcomes(split, n), "expected a val seed to fail here"
+
+    orig = R._PREFLIGHT_ORDERS
+    try:
+        R._PREFLIGHT_ORDERS = 1
+        _, optimistic = _run_and_preflight(field, env_cfg, seed, n)
+    finally:
+        R._PREFLIGHT_ORDERS = orig
+    assert optimistic["ok"] is True, (
+        "this case no longer distinguishes one order from several; find another")
+
+
+def test_the_verdict_errs_toward_saying_no(field, env_cfg):
+    """Under-promising is the safe direction, and it does happen.
+
+    At seed 5, n=3 the worst of five orders finds no room while every val seed
+    tried actually succeeds. That is the intended failure direction: a spurious
+    warning costs a line of output, a spurious all-clear costs a re-run.
+    """
+    split, rep = _run_and_preflight(field, env_cfg, 5, 3)
+    assert rep["ok"] is False
+    assert _val_seed_outcomes(split, 3) == [3] * 4
+
+
+def test_a_shrinking_ceiling_is_reported_not_enforced(field, env_cfg):
+    """Records and proceeds. A run using only --split recorded is fine with a
+    tight union, and that is not the trainer's call to veto."""
+    from hopfield_nav.training.refresh import format_preflight, preflight
+    split, _, _ = _setup(field, env_cfg, Cadence(place=1), n_train=10, n_val=3,
+                         margin=12, seed=1)
+    tight = preflight(split, Cadence(place=1), 40, env_cfg, "discrete", 1,
+                      n_val_envs=99)               # more than any run can hold
+    assert tight["ok"] is False
+    msg = format_preflight(tight)
+    assert "WARNING" in msg and "the run continues" in msg
+    assert "base_val are unaffected" in msg
+
+    roomy = preflight(split, Cadence(place=1), 2, env_cfg, "discrete", 1,
+                      n_val_envs=1)
+    assert roomy["ok"] is True
+    assert "WARNING" not in format_preflight(roomy)
+
+
+def test_a_narrow_seed_range_shows_up_as_wall_headroom(field, env_cfg):
+    """Place is not the only trait a long refresh can exhaust.
+
+    40 seeds, 6 per tick: after 5 ticks 36 are spoken for and 4 are left, which
+    is not enough for a 5-env held-out wall set.
+    """
+    from hopfield_nav.training.refresh import format_preflight, preflight
+    narrow = TraitDomains(place=dom.Anywhere(), wall=dom.SeedRange(0, 40),
+                          goal=dom.AnyCells(), size=dom.Sizes((SIZE,)))
+    split, _, _ = _setup(field, env_cfg, Cadence(wall=1), n_train=6, n_val=2,
+                         margin=12, domains=narrow, seed=4)
+    rep = preflight(split, Cadence(wall=1), 5, env_cfg, "discrete", 4,
+                    n_val_envs=5)
+    assert rep["refresh_dies_at_update"] is None
+    assert rep["wall_seeds_left"] == 4 and rep["ok"] is False
+    assert "wall seeds unused" in format_preflight(rep)
+
+
+def test_a_domain_that_runs_dry_mid_run_is_named_before_the_run_starts(
+        field, env_cfg):
+    """The failure the preflight is most worth having.
+
+    A trait whose domain empties does not degrade -- it raises, hours in, at a
+    tick fixed before the run began. Catching the exception during the replay
+    turns four wasted hours into two seconds, and the tick it names is exact
+    because nothing about the draw depends on training.
+    """
+    from hopfield_nav.training.refresh import format_preflight, preflight
+    narrow = TraitDomains(place=dom.Anywhere(), wall=dom.SeedRange(0, 40),
+                          goal=dom.AnyCells(), size=dom.Sizes((SIZE,)))
+    split, _, refresher = _setup(field, env_cfg, Cadence(wall=1), n_train=6,
+                                 n_val=2, margin=12, domains=narrow, seed=4)
+    rep = preflight(split, Cadence(wall=1), 50, env_cfg, "discrete", 4,
+                    n_val_envs=2)
+    assert rep["refresh_dies_at_update"] == 6
+    assert "cannot yield" in rep["refresh_dies_of"]
+    assert rep["ok"] is False
+    msg = format_preflight(rep)
+    assert "will not finish" in msg and "update 6 of 50" in msg
+
+    # ...and the real run dies exactly there, which is what makes it predictable.
+    for tick in range(1, 6):
+        refresher.maybe_refresh(tick)
+    with pytest.raises(ValueError):
+        refresher.maybe_refresh(6)

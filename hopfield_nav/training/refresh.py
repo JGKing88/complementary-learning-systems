@@ -29,14 +29,22 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+import numpy as np
+
 from ..config import TrainConfig
 from ..world import domains as dom
+from ..world import generate
 from ..world.generate import build_envs, sample_places
 from ..world.scaffold import fit_env_assoc
 from ..world.spec import EnvSpec, GeneratedSplit
 from ..world.world import World
 
 TRAITS = ("place", "wall", "goal", "size")
+
+# Draw orders the preflight tries before believing a val set of the requested
+# size is reachable. Greedy packing is order-dependent and `make_val_set`
+# shuffles with the eval's own seed, so one order is not evidence.
+_PREFLIGHT_ORDERS = 5
 
 
 @dataclass(frozen=True)
@@ -102,7 +110,8 @@ class Refresher:
     """
 
     def __init__(self, cadence: Cadence, split: GeneratedSplit,
-                 worlds: list[World], env_cfg, movement_mode: str, seed: int):
+                 worlds: list[World] | None, env_cfg, movement_mode: str,
+                 seed: int):
         self.cadence = cadence
         self.split = split
         self.worlds = worlds
@@ -112,17 +121,24 @@ class Refresher:
         self.ticks = 0
         self.counts = {t: 0 for t in TRAITS}
 
-        # `split.train` is the flat, in-order truth for every train env across
-        # every world; `_apply` slices it back into worlds on that assumption.
-        # If the two ever disagree a refresh would write env i's traits onto env
-        # j -- silently, since both are legal envs.
-        live = [off for w in worlds for off in w.offsets]
-        if live != [s.offset for s in split.train]:
-            raise ValueError(
-                f"the worlds hold {len(live)} envs whose offsets do not match "
-                f"the {len(split.train)} recorded train specs, in order. "
-                "Refresh slices split.train back into worlds and would pair the "
-                "wrong env with the wrong spec.")
+        # ``worlds=None`` is *draw only*: the values are drawn and recorded, and
+        # nothing is built. That is what makes the preflight cheap and, more to
+        # the point, exact -- it runs `_draw`, the same function the run will,
+        # rather than a reimplementation that could drift from it. Skipping
+        # `_apply` also skips the env rebuild, which is the whole cost of a wall
+        # tick.
+        if worlds is not None:
+            # `split.train` is the flat, in-order truth for every train env
+            # across every world; `_apply` slices it back into worlds on that
+            # assumption. If the two ever disagree a refresh would write env i's
+            # traits onto env j -- silently, since both are legal envs.
+            live = [off for w in worlds for off in w.offsets]
+            if live != [s.offset for s in split.train]:
+                raise ValueError(
+                    f"the worlds hold {len(live)} envs whose offsets do not "
+                    f"match the {len(split.train)} recorded train specs, in "
+                    "order. Refresh slices split.train back into worlds and "
+                    "would pair the wrong env with the wrong spec.")
 
         if cadence.size and len(split.domains.size.values) < 2:
             raise ValueError(
@@ -246,6 +262,8 @@ class Refresher:
         wrote, so there is no path that moves an env without the move being in
         the union ``make_val_set`` excludes against.
         """
+        if self.worlds is None:              # draw-only; see __init__
+            return
         rebuild = bool({"wall", "size"} & set(traits))
         i = 0
         for world in self.worlds:
@@ -269,4 +287,125 @@ class Refresher:
                                             world.offsets)
 
 
-__all__ = ["Cadence", "Refresher", "TRAITS"]
+def preflight(split: GeneratedSplit, cadence: Cadence, n_updates: int,
+              env_cfg, movement_mode: str, seed: int, *,
+              n_val_envs: int) -> dict:
+    """What a post-hoc held-out validation set will still be able to ask for.
+
+    Refreshed values are a pure function of ``(seed, tick)`` and the declared
+    domains -- nothing training does enters -- so this does not *estimate* the
+    end-state union, it replays the exact ticks. Draw-only, so it costs about a
+    second for a 300-update run and builds no environments.
+
+    **It reports a ceiling, not a predicted failure.** An earlier reading of the
+    Phase 4 measurements had `place='held_out'` becoming infeasible after ~20-30
+    ticks; that was the rejection sampler failing to find the survivors, not
+    their absence (see the correction in ``docs/ENV_GENERATOR_STATUS.md``). What
+    actually happens is that the largest held-out place set a run can support
+    falls from ~187 envs to ~10 and then plateaus -- the last few offsets are
+    never consumed, because a tick draws from the ~2.9M positions clear of
+    ``base_val`` and hits one of them with probability ~1e-5.
+
+    That ceiling is decided at the start of the run and only visible at the end
+    of it, which is the reason to measure it here.
+    """
+    import copy
+
+    sim = copy.deepcopy(split)
+    runner = Refresher(cadence, sim, None, env_cfg, movement_mode, seed)
+    dies_at, dies_of = None, None
+    for tick in range(1, int(n_updates) + 1):
+        try:
+            runner.maybe_refresh(tick)
+        except Exception as exc:
+            # A domain that runs dry mid-run is a different failure from a
+            # shrinking eval ceiling: it kills the training run outright, hours
+            # in, at a tick that was decided before it started. Report the tick
+            # rather than letting the exception escape a diagnostic.
+            dies_at, dies_of = tick, f"{type(exc).__name__}: {exc}"
+            break
+
+    size = sim.train[0].size if sim.train else int(env_cfg.size)
+    used_place = [(o, size) for o in sorted(sim.used["place"])]
+    # The same two calls `make_val_set` makes -- `legal_offsets` then
+    # `greedy_pack` -- so the two cannot disagree about which offsets are legal
+    # or about the margin rule.
+    cand = generate.legal_offsets(used_place, sim.domains.place, size=size,
+                                  Npos=sim.Npos, period=sim.period,
+                                  margin=sim.margin)
+
+    # They *can* disagree about the count, because greedy packing depends on the
+    # order it sees candidates in and `make_val_set` shuffles with the eval's own
+    # seed. Measured: an estimate from one fixed order over-promises -- at the
+    # reported ceiling, make_val_set succeeded for one val seed and failed for
+    # two others. So take the worst of several orders, and cap the search at what
+    # was actually asked for: the question is "can a post-hoc eval get
+    # `n_val_envs`", not "what is the largest packing that exists", and the cap
+    # keeps the work bounded when the legal set still runs to ~10^6 offsets.
+    got = []
+    for k in range(_PREFLIGHT_ORDERS):
+        rng = np.random.RandomState(dom.stable_hash(seed, "preflight", k))
+        order = [cand[i] for i in rng.permutation(len(cand))]
+        got.append(len(generate.greedy_pack(
+            order, size=size, period=sim.period, self_margin=sim.margin,
+            limit=int(n_val_envs))))
+    available = min(got) if got else 0
+
+    wall_left = (sim.domains.wall.hi - sim.domains.wall.lo
+                 - len(sim.used["wall"]))
+    report = {
+        "n_updates": int(n_updates),
+        "ticks": runner.ticks,
+        "n_val_envs": int(n_val_envs),
+        "used_at_end": {t: len(sim.used.get(t, ())) for t in TRAITS},
+        "place_legal_offsets": len(cand),
+        # Worst over `_PREFLIGHT_ORDERS` draw orders, capped at n_val_envs.
+        "place_val_envs_available": int(available),
+        "wall_seeds_left": int(wall_left),
+        "goal_cells_held_out": len(sim.goal_cells_val),
+        "refresh_dies_at_update": dies_at,
+        "refresh_dies_of": dies_of,
+        "ok": (dies_at is None and available >= n_val_envs
+               and wall_left >= n_val_envs and len(sim.goal_cells_val) > 0),
+    }
+    return report
+
+
+def format_preflight(report: dict) -> str:
+    """One line if it is fine, and the specific shortfall if it is not."""
+    n = report["n_val_envs"]
+    head = (f"held-out eval headroom after {report['ticks']} refresh ticks: "
+            f"place {report['place_val_envs_available']}/{n} envs "
+            f"({report['place_legal_offsets']} legal offsets), "
+            f"wall {report['wall_seeds_left']} seeds, "
+            f"goal {report['goal_cells_held_out']} cells")
+    if report["refresh_dies_at_update"] is not None:
+        return (
+            f"  WARNING: **this run will not finish.** Refresh runs out of "
+            f"values at update {report['refresh_dies_at_update']} of "
+            f"{report['n_updates']} and raises:\n"
+            f"    {report['refresh_dies_of']}\n"
+            f"    Widen the domain that ran dry, or lower that trait's cadence. "
+            f"Nothing about this depends on training, so it will happen exactly "
+            f"there. Recorded in world.json; the run continues.")
+    if report["ok"]:
+        return f"  preflight: {head} — enough for --num_val_envs {n}."
+    short = []
+    if report["place_val_envs_available"] < n:
+        short.append(
+            f"place supports {report['place_val_envs_available']} val envs, "
+            f"not {n} — {report['used_at_end']['place']} offsets will be in use "
+            f"by the end, and a held-out env has to clear every one of them")
+    if report["wall_seeds_left"] < n:
+        short.append(f"only {report['wall_seeds_left']} wall seeds unused; "
+                     "widen --wall_seeds")
+    if not report["goal_cells_held_out"]:
+        short.append("no goal cells reserved; raise --goal_val_frac")
+    return (f"  WARNING: {head}.\n"
+            + "".join(f"    - {s}\n" for s in short)
+            + "    Training and its own base_val are unaffected — this only "
+              "limits a post-hoc --split with held_out. Recorded in world.json; "
+              "the run continues.")
+
+
+__all__ = ["Cadence", "Refresher", "TRAITS", "format_preflight", "preflight"]

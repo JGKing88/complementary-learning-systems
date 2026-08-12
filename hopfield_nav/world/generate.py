@@ -258,32 +258,51 @@ def _lattice_places(
     return placed if len(placed) == n else None
 
 
-def _masked_places(
-    domain: dom.PlaceDomain, rng, n: int, *, size: int, Npos: int, period: int,
-    exclude, margin: int, self_margin: int,
-) -> list[tuple[int, int]]:
-    """Draw from the resolved legal set rather than probing against ``exclude``.
+def legal_offsets(exclude, domain: dom.PlaceDomain, *, size: int, Npos: int,
+                  period: int, margin: int) -> list[tuple[int, int]]:
+    """Every offset in ``domain`` that clears ``exclude`` by ``margin``.
 
-    Two steps, because they answer different questions. ``legal_mask`` gives
-    *coverage* -- which offsets clear everything already placed. Packing ``n`` of
-    them that also clear each other is a second question with a different answer:
-    after 300 refresh ticks 12 legal offsets remain and no 10 of them are 80
-    apart. So the greedy pass below is not an optimization, it is the rest of the
-    predicate.
+    *Coverage* only. Packing several of these so they also clear each other is a
+    separate question with a different answer -- after 300 refresh ticks 12
+    offsets are legal and only 10 of them are mutually 80 apart -- so callers
+    follow this with ``greedy_pack``.
     """
     legal = legal_mask(exclude, size=size, Npos=Npos, period=period,
                        margin=margin)
     xs, ys = np.nonzero(legal)
-    cand = [(int(x), int(y)) for x, y in zip(xs, ys)
+    return [(int(x), int(y)) for x, y in zip(xs, ys)
             if domain.contains((int(x), int(y)), size, Npos)]
+
+
+def greedy_pack(cands, *, size: int, period: int, self_margin: int,
+                limit: int | None = None) -> list[tuple[int, int]]:
+    """Take candidates in the order given, keeping those still mutually clear.
+
+    A lower bound on the largest packing, not the maximum -- which is what both
+    callers want. ``_masked_places`` needs *a* legal set, and the preflight needs
+    a ceiling it will not later exceed. Shared so the preflight's prediction and
+    the eval's behaviour cannot come apart.
+    """
     placed: list[tuple[int, int]] = []
-    for idx in rng.permutation(len(cand)):
-        if len(placed) >= n:
+    for c in cands:
+        if limit is not None and len(placed) >= limit:
             break
-        c = cand[idx]
         if all(toroidal_gap(c, size, p, size, period) >= self_margin
                for p in placed):
             placed.append(c)
+    return placed
+
+
+def _masked_places(
+    domain: dom.PlaceDomain, rng, n: int, *, size: int, Npos: int, period: int,
+    exclude, margin: int, self_margin: int,
+) -> list[tuple[int, int]]:
+    """Draw from the resolved legal set rather than probing against ``exclude``."""
+    cand = legal_offsets(exclude, domain, size=size, Npos=Npos, period=period,
+                         margin=margin)
+    order = [cand[i] for i in rng.permutation(len(cand))]
+    placed = greedy_pack(order, size=size, period=period,
+                         self_margin=self_margin, limit=n)
     if len(placed) == n:
         return placed
     raise RuntimeError(
@@ -803,7 +822,7 @@ def make_val_set(
 
 __all__ = [
     "axis_separation", "build_envs", "cosine_report", "derive_margin",
-    "generate_split", "legal_mask", "live_wall_bits", "make_val_set",
-    "sample_places", "split_diagnostics", "toroidal_gap", "verify_split",
-    "wall_code_for", "wall_hamming",
+    "generate_split", "greedy_pack", "legal_mask", "legal_offsets",
+    "live_wall_bits", "make_val_set", "sample_places", "split_diagnostics",
+    "toroidal_gap", "verify_split", "wall_code_for", "wall_hamming",
 ]
