@@ -48,12 +48,15 @@ def _build_near_mask(
     coords: torch.Tensor,
     env_radius: torch.Tensor | None,
     local_radius: float,
-) -> torch.Tensor:
-    """Return [B, B] boolean mask of "near" pairs (excluding diagonal).
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """Return ([B, B] "near" mask excluding the diagonal, [B, B] same-env mask).
 
     If `env_radius` is given, each point's threshold is its own env's radius
     (works for both single-env and mixed batches). Otherwise uses the scalar
     `local_radius`. Radius <= 0 → "same env" used as the mask.
+
+    ``same_env`` is returned as well because the caller may need to exclude
+    cross-environment pairs from the *far* set; it is computed here anyway.
     """
     env_b = env_ids[idx]                                 # [B]
     same_env = env_b[:, None] == env_b[None, :]          # [B, B]
@@ -63,19 +66,19 @@ def _build_near_mask(
     if env_radius is not None:
         r_b = env_radius[env_b]                          # [B]
         if (r_b <= 0).all():
-            return same_env & ~eye
+            return same_env & ~eye, same_env
         # Pairs are only candidates when same_env, so r_b[i] == r_b[j];
         # broadcasting along rows is sufficient.
         r_thresh = r_b[:, None]                          # [B, 1]
     else:
         if local_radius <= 0:
-            return same_env & ~eye
+            return same_env & ~eye, same_env
         r_thresh = float(local_radius)
 
     Xb = coords[idx]
     diff = Xb[:, None, :] - Xb[None, :, :]
     dist = diff.square().sum(-1).sqrt()
-    return (dist < r_thresh) & same_env & ~eye
+    return (dist < r_thresh) & same_env & ~eye, same_env
 
 
 def train(cfg: TrainConfig) -> str:
@@ -168,14 +171,22 @@ def train(cfg: TrainConfig) -> str:
             zb = encoder(Phi_flat[idx], gain)
             K_pred = (zb @ zb.T).clamp(-1.0, 1.0)
 
-            near = _build_near_mask(idx, env_ids, coords, env_radius,
-                                    patch_cfg.local_radius)
+            near, same_env = _build_near_mask(idx, env_ids, coords, env_radius,
+                                              patch_cfg.local_radius)
 
             if cfg.loss.mode == "mse_contrastive":
+                # Withholding cross-environment pairs from the repel term
+                # reproduces what single_env_batch=True does to the *loss*,
+                # while leaving each gradient step drawn from many envs. The
+                # two differ, and only this separates them.
+                far = None
+                if cfg.loss.exclude_cross_env_pairs:
+                    far = ~near & same_env
                 loss = mse_attract_repel(
                     K_pred, near,
                     attract_lambda=cfg.loss.attract_lambda,
                     repel_weight=cfg.loss.repel_weight,
+                    far_mask=far,
                 )
             elif cfg.loss.mode == "cka":
                 B = K_pred.size(0)
@@ -338,6 +349,7 @@ def _build_cfg_from_args(args) -> TrainConfig:
         repel_weight=args.repel_weight,
         uniformity_lambda=args.uniformity_lambda,
         uniformity_anneal_epochs=args.uniformity_anneal_epochs,
+        exclude_cross_env_pairs=args.exclude_cross_env_pairs,
     )
     npos_list = None
     if args.npos_list:
@@ -399,6 +411,10 @@ def main():
     p.add_argument("--attract_lambda", type=float, default=2.0)
     p.add_argument("--repel_weight", type=float, default=5.0)
     p.add_argument("--uniformity_lambda", type=float, default=0.0)
+    p.add_argument("--exclude_cross_env_pairs", action="store_true",
+                   help="withhold cross-env pairs from the repel term; "
+                        "isolates that from single_env_batch's effect on "
+                        "which envs a gradient step sees")
     p.add_argument("--uniformity_anneal_epochs", type=int, default=25)
     # Training
     p.add_argument("--epochs", type=int, default=600)

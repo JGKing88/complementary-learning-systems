@@ -47,6 +47,14 @@ class LossConfig:
     uniformity_anneal_epochs: int = 25  # epochs to ramp uniformity from 0 to end
     centered: bool = True               # centered CKA (only used if mode="cka")
 
+    # Withhold cross-environment pairs from the repel term. There is no
+    # dedicated cross-env term: any pair that is not "near" is repelled, so in
+    # a mixed batch every cross-env pair is pushed toward cosine 0. Setting
+    # this reproduces what `single_env_batch=True` does to the *loss* while
+    # still drawing each gradient step from many environments — the two are
+    # confounded otherwise, and this is what separates them.
+    exclude_cross_env_pairs: bool = False
+
 
 @dataclass
 class PatchConfig:

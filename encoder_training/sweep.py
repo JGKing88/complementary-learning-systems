@@ -44,8 +44,8 @@ BASE = dict(
     # patches over few large ones.
     # Geometry, and the epochs that keep its step count at 60,000 -- see the
     # STEP COUNT block below GRID before changing either.
-    nenv=4,
-    npos=400,
+    nenv=60,
+    npos=100,
     # Explicit patch sizes; overrides nenv/npos. Putting this in GRID is how
     # patch count and patch size get varied *together* (the Cartesian product
     # cannot couple two keys), which is what holding coverage fixed requires.
@@ -61,7 +61,7 @@ BASE = dict(
     # nothing pushes distant places apart, and the alias ceiling sits at 0.98.
     # At False the repulsion term engages and it drops to 0.79. At fixed seed
     # and otherwise identical config that boolean alone is r_min 16 vs 2.
-    single_env_batch=True,
+    single_env_batch=False,
     # Loss
     loss_mode="mse_contrastive",      # mse_contrastive | cka
     attract_lambda=2.0,
@@ -72,8 +72,9 @@ BASE = dict(
     repel_weight=1.0,
     uniformity_lambda=0.0,
     uniformity_anneal_epochs=25,
+    exclude_cross_env_pairs=False,    # see the ur_seb_C block under GRID
     # Training (the winner's values)
-    epochs=15000,                     # nenv=4 -> 4 steps/epoch -> 60,000 steps
+    epochs=1000,                      # mixed batches: 73 steps/epoch
     lr=1e-4,
     batch_size=8192,
     seed=42,
@@ -92,7 +93,7 @@ BASE = dict(
     nav_num_hopfields=20,
     nav_n_starts=100,
     # Unique-radius eval (~15 s per call at lambdas 11,12,13)
-    ur_every=1500,                    # ~10 radius evals, matched to `epochs`
+    ur_every=100,                     # ~10 radius evals, matched to `epochs`
     ur_n_refs=20,
     ur_border=100,
     ur_seed=0,                        # fixed: every run scored at the same spots
@@ -125,7 +126,32 @@ BASE = dict(
 #
 # The range is wide because uniformity_lambda has never been anything but 0 in
 # any run in the archive.
+# ur_seb_C: single_env_batch=True changes TWO things. Which one matters?
+#
+#   (1) loss composition -- a one-env batch holds no cross-environment pairs,
+#       and since `far` is simply "not near", those pairs are what supplies
+#       between-patch repulsion. No cross-env pairs, no repulsion.
+#   (2) optimisation dynamics -- each gradient step is computed from a single
+#       environment (8192 of that env's 10,000 points, ~82%), with steps
+#       cycling through envs. That is closer to alternating per-env full-batch
+#       descent than to SGD over the pooled data.
+#
+# ur_seb_control flipped both together and cannot separate them. This grid
+# holds batching mixed (single_env_batch=False, so a step still sees many
+# envs) and withholds only the cross-env *pairs*, isolating (1).
+#
+#   exclude_cross_env_pairs=False -> the known False baseline, r_min ~18
+#   exclude_cross_env_pairs=True  -> mechanism (1) alone
+#
+# If True lands near 2, (1) is the cause and the geometry/uniformity attempts
+# are aimed correctly. If it lands near 18, the win was really (2) and the
+# story so far is wrong.
 GRID: dict[str, list] = {
+    "exclude_cross_env_pairs": [False, True],
+    "seed": [42, 43, 44],
+}
+
+_GRID_seb_A: dict[str, list] = {
     "repel_weight": [1.0, 5.0],
     "seed": [42, 43],
 }
@@ -242,7 +268,7 @@ SWEEP_BASE_DIR = str(sweeps_dir())
 WORKDIR = str(REPO_ROOT)
 
 # `store_true` flags on train.py — these take no value, just the flag name.
-_BOOL_FLAGS = {"single_env_batch", "shuffle"}
+_BOOL_FLAGS = {"single_env_batch", "shuffle", "exclude_cross_env_pairs"}
 
 
 def _fmt(v) -> str:

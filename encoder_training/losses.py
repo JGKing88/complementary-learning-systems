@@ -54,6 +54,7 @@ def mse_attract_repel(
     near_mask: torch.Tensor,
     attract_lambda: float = 2.0,
     repel_weight: float = 5.0,
+    far_mask: torch.Tensor | None = None,
 ) -> torch.Tensor:
     """Binary attract-repel MSE loss.
 
@@ -63,12 +64,20 @@ def mse_attract_repel(
                    entries push to 0. The diagonal is excluded from both.
         attract_lambda: weight on near-pair MSE.
         repel_weight: weight on far-pair MSE.
+        far_mask: optional [B, B] boolean naming exactly which pairs to repel.
+            Defaults to "everything not near", which in a mixed batch includes
+            every cross-environment pair — that is where cross-environment
+            repulsion comes from, rather than from any dedicated term. Pass a
+            narrower mask to withhold it.
+
+    Both terms are means over their own pair sets, so the attract:repel balance
+    does not shift when one set grows or shrinks.
     """
     B = K_pred.size(0)
     eye = torch.eye(B, dtype=torch.bool, device=K_pred.device)
 
     near = near_mask & ~eye
-    far = ~near_mask & ~eye
+    far = (~near_mask & ~eye) if far_mask is None else (far_mask & ~eye)
 
     if near.any():
         attract = ((K_pred[near] - 1.0) ** 2).mean()
