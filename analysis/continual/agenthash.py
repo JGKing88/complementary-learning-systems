@@ -415,7 +415,8 @@ def main() -> None:
     elif args.env_seed is None:
         # Legacy path: build_eval_world handles scaffold + envs together with
         # the ckpt's training-time seed conventions. Envs constant across iters.
-        val_envs, vh, offsets = build_eval_world(cfg, encoder, str(device))
+        val_envs, vh, offsets = build_eval_world(cfg, encoder, str(device),
+                                                 ckpt_path=args.ckpt)
     else:
         vh = VectorHash(cfg.vectorhash)
         vh.build_scaffold()

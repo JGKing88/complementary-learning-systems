@@ -147,15 +147,28 @@ def encoder_identity_hint(cfg: TrainConfig) -> dict | None:
 
 
 def build_eval_world(cfg: TrainConfig, encoder, device: str,
-                     spec: WorldSpec | None = None):
-    """Rebuild the training-time eval world: same seeding + scaffold.
+                     spec: WorldSpec | None = None, ckpt_path=None):
+    """Rebuild the eval world a checkpoint was trained against.
 
-    With ``spec``, the env set is read from the record and is exact. Without it,
-    this replays the training-time seed stream: training draws its train-env
-    seeds first, then its val-env seeds, from one `RandomState(cfg.seed)`, and
-    the skip loop below reproduces that order. That recovers wall codes and
-    goals -- but **not offsets**, which came from global `np.random` (§1.4).
+    Pass ``ckpt_path`` -- a checkpoint or its run directory -- and the recorded
+    world is found and used. That is the point of the parameter: between Phase 3
+    and now, every caller here passed three arguments, so every post-hoc
+    evaluation took the replay branch below and scored checkpoints on scaffold
+    patches training never used, while a truthful ``world.json`` sat unread
+    beside them. Discovery lives *here* rather than at the four call sites
+    precisely so a fifth cannot quietly rejoin the legacy path.
+
+    ``spec`` given explicitly wins, for callers evaluating one run's checkpoint
+    against another run's world.
+
+    With neither, this replays the training-time seed stream: training draws its
+    train-env seeds first, then its val-env seeds, from one
+    ``RandomState(cfg.seed)``, and the skip loop below reproduces that order.
+    That recovers wall codes and goals -- but **not offsets**, which came from
+    global ``np.random`` (§1.4). Only pre-Phase-3 runs land here.
     """
+    if spec is None and ckpt_path is not None:
+        spec = world_spec_for(ckpt_path)
     if spec is not None:
         return eval_world_from_spec(spec, cfg, encoder, device)
     print(

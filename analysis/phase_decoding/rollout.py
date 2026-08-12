@@ -103,7 +103,9 @@ class RolloutEngine:
 
         print(f"[rollout] building val world (precomputing encoded_Phi over "
               "Npos² positions — slow on CPU, seconds on GPU)", flush=True)
-        val_envs, vh, val_offsets = build_eval_world(cfg, encoder, str(self.device))
+        val_envs, vh, val_offsets = build_eval_world(cfg, encoder,
+                                                     str(self.device),
+                                                     ckpt_path=ckpt_path)
         # Seed BEFORE NavAgent construction so the random init is reproducible.
         torch.manual_seed(self.random_init_seed)
         if self.random_agent:

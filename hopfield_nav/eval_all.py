@@ -109,7 +109,8 @@ def eval_checkpoint(
     torch.manual_seed(0)
     np.random.seed(0)
 
-    val_envs, vh, val_offsets = build_eval_world(cfg, encoder, str(device))
+    val_envs, vh, val_offsets = build_eval_world(cfg, encoder, str(device),
+                                                 ckpt_path=ckpt_path)
     agent = load_agent(cfg, ck["agent_state_dict"], embed_dim, device)
 
     results: dict = {

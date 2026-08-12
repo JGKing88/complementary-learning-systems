@@ -720,7 +720,8 @@ def main():
 
     torch.manual_seed(0)
     np.random.seed(0)
-    val_envs, vh, val_offsets = build_eval_world(cfg, encoder, str(device))
+    val_envs, vh, val_offsets = build_eval_world(cfg, encoder, str(device),
+                                                 ckpt_path=args.checkpoint_dir)
 
     plans = make_trial_plans(args.trials, val_envs, args.seed)
 
