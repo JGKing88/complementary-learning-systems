@@ -31,6 +31,7 @@ import torch
 from cls_paths import encoders_dir
 from .config import (
     TrainConfig, EncoderModelConfig, LossConfig, PatchConfig, NavEvalConfig,
+    UniqueRadiusConfig,
 )
 from .data import (
     build_full_grid, sample_nonoverlapping_patches, extract_patches,
@@ -144,6 +145,8 @@ def train(cfg: TrainConfig) -> str:
                             for e in range(len(sizes))]
 
     best_val_nav = -1.0
+    best_r_min = -1.0
+    last_ur: dict = {}          # most recent unique-radius summary, for ckpts
     rng_nav = np.random.RandomState(cfg.seed)
 
     # --- Training loop ---
@@ -212,13 +215,60 @@ def train(cfg: TrainConfig) -> str:
                 best_val_nav = float(val_nav['accuracy'])
                 _save_ckpt(encoder, cfg, y0s, x0s, sizes, gain,
                            os.path.join(run_dir, "encoder_best.pt"),
-                           val_nav_acc=best_val_nav, epoch=ep)
+                           val_nav_acc=best_val_nav, epoch=ep,
+                           unique_radius=last_ur)
+
+        # --- Unique-radius eval ---
+        # Scored on the whole arena, not on patches, so it is the one signal
+        # here that reports what happens outside the training envs.
+        ur = cfg.unique_radius
+        if ur.enabled and ur.every > 0 and ep % ur.every == 0:
+            last_ur = _unique_radius_eval(encoder, cfg, gain)
+            if last_ur:
+                print(f"  Unique radius: r_min={last_ur['r_min']:.1f} | "
+                      f"median={last_ur['r_median']:.1f} | "
+                      f"alias={last_ur['alias_ceiling_max']:.3f}")
+                # With the nav eval off there is no other selection signal, so
+                # the radius picks encoder_best.pt. When both run, nav keeps
+                # that job and the radius is recorded but does not select --
+                # otherwise the two would fight over the same file.
+                if cfg.eval_every <= 0 and last_ur["r_min"] > best_r_min:
+                    best_r_min = float(last_ur["r_min"])
+                    _save_ckpt(encoder, cfg, y0s, x0s, sizes, gain,
+                               os.path.join(run_dir, "encoder_best.pt"),
+                               epoch=ep, unique_radius=last_ur)
 
     # --- Final save ---
+    if cfg.unique_radius.enabled and not last_ur:
+        last_ur = _unique_radius_eval(encoder, cfg, float(gains[-1]))
     _save_ckpt(encoder, cfg, y0s, x0s, sizes, float(gains[-1]),
-               os.path.join(run_dir, "encoder_final.pt"))
+               os.path.join(run_dir, "encoder_final.pt"),
+               unique_radius=last_ur)
     print(f"Done. Best val_nav: {best_val_nav:.3f}")
+    if last_ur:
+        print(f"      Unique radius r_min: {last_ur['r_min']:.1f}")
     return run_dir
+
+
+def _unique_radius_eval(encoder, cfg: TrainConfig, gain: float) -> dict:
+    """Summary row from ``evaluate_unique_radius``, or {} if it fails.
+
+    Imported lazily and guarded: this is a diagnostic, and a long training run
+    must not die at epoch 900 because a metric raised.
+    """
+    try:
+        from encoder_training.eval_unique_radius import evaluate_unique_radius
+        ur = cfg.unique_radius
+        _, summary = evaluate_unique_radius(
+            encoder, lambdas=cfg.model.lambdas, gain=gain,
+            n_refs=ur.n_refs, border=ur.border, seed=ur.seed,
+            device=cfg.device, batch_size=ur.batch_size,
+            fwhm_ratio=cfg.fwhm_ratio,
+        )
+        return summary
+    except Exception as exc:                       # noqa: BLE001 - diagnostic
+        print(f"  [unique-radius eval failed: {type(exc).__name__}: {exc}]")
+        return {}
 
 
 def _save_ckpt(encoder, cfg: TrainConfig, y0s, x0s, sizes, gain: float,
@@ -305,11 +355,17 @@ def _build_cfg_from_args(args) -> TrainConfig:
         num_hopfields=args.nav_num_hopfields,
         n_starts_per_env=args.nav_n_starts,
     )
+    ur = UniqueRadiusConfig(
+        enabled=not args.no_unique_radius,
+        every=args.ur_every, n_refs=args.ur_n_refs,
+        border=args.ur_border, seed=args.ur_seed,
+    )
     n_total = (sum(s * s for s in npos_list) if npos_list
                else args.nenv * args.npos * args.npos)
     batch_size = min(args.batch_size, n_total)
     return TrainConfig(
         model=model, loss=loss, patches=patches, nav_eval=nav,
+        unique_radius=ur,
         fwhm_ratio=args.fwhm_ratio, lr=args.lr, epochs=args.epochs,
         batch_size=batch_size, seed=args.seed, device=args.device,
         gain_start=args.gain_start, gain_end=args.gain_end,
@@ -363,7 +419,16 @@ def main():
     # Checkpointing
     p.add_argument("--save_dir", default=str(encoders_dir()))
     p.add_argument("--run_name", default="")
-    p.add_argument("--eval_every", type=int, default=50)
+    p.add_argument("--eval_every", type=int, default=50,
+                   help="epochs between Hopfield nav evals; 0 disables them")
+    # Unique radius. Independent of the nav eval: it is scored on the whole
+    # arena rather than on patches, and needs no Hopfield.
+    p.add_argument("--no_unique_radius", action="store_true")
+    p.add_argument("--ur_every", type=int, default=100)
+    p.add_argument("--ur_n_refs", type=int, default=20)
+    p.add_argument("--ur_border", type=int, default=100)
+    p.add_argument("--ur_seed", type=int, default=0,
+                   help="reference positions; keep fixed across a sweep")
 
     args = p.parse_args()
     cfg = _build_cfg_from_args(args)

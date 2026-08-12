@@ -27,61 +27,87 @@ from cls_paths import REPO_ROOT, sweeps_dir
 # Any value below can be overridden per-run by putting it in GRID.
 # ---------------------------------------------------------------------------
 BASE = dict(
-    # Model
+    # Model. hidden_dim is capped at 512; out_dim is independent of it and is
+    # the stronger lever anyway (corr with r_min +0.286 vs +0.227 across the
+    # 407-encoder audit), and hidden=512 has never been paired with out_dim
+    # above 256, so this corner is unexplored.
     encoder_type="mlp",               # mlp | cnn
     lambdas=[11, 12, 13],
-    out_dim=512,
-    hidden_dim=1024,
-    num_hidden_layers=4,
+    out_dim=1024,
+    hidden_dim=512,
+    num_hidden_layers=4,              # 4 beat 3 in the audit (max 16 vs 6)
     hidden_channels=128,              # cnn only
     num_conv_layers=3,                # cnn only
     kernel_size=5,                    # cnn only
-    # Patches
-    nenv=40,
+    # Patches. 60 x 100 is the winner's layout; coverage correlated +0.445
+    # with r_min while max patch size correlated -0.123, so prefer many small
+    # patches over few large ones.
+    nenv=60,
     npos=100,
     # npos_list="40,60,80,100,120",   # optional; overrides nenv/npos
     per_env_radius_frac=0.1,
     radius=10.0,
-    single_env_batch=True,
+    # THE finding of the audit. With single_env_batch=True every batch comes
+    # from one environment, so the loss never sees a cross-environment pair,
+    # nothing pushes distant places apart, and the alias ceiling sits at 0.98.
+    # At False the repulsion term engages and it drops to 0.79. At fixed seed
+    # and otherwise identical config that boolean alone is r_min 16 vs 2.
+    single_env_batch=False,
     # Loss
     loss_mode="mse_contrastive",      # mse_contrastive | cka
     attract_lambda=2.0,
     repel_weight=5.0,
     uniformity_lambda=0.0,
     uniformity_anneal_epochs=25,
-    # Training
-    epochs=400,
-    lr=2e-4,
-    batch_size=4096,
+    # Training (the winner's values)
+    epochs=1000,
+    lr=1e-4,
+    batch_size=8192,
     seed=42,
     fwhm_ratio=0.25,
     gain_start=1.0,
     gain_end=5.0,
     shuffle=False,
-    # Nav eval during training (lightweight)
-    eval_every=25,
+    # Hopfield nav eval: OFF. This sweep is scored on the unique radius alone,
+    # which needs no Hopfield and is measured over the whole arena rather than
+    # inside 20-cell patches. With eval_every=0 the radius also selects
+    # encoder_best.pt.
+    eval_every=0,
     nav_env_size=20,
     nav_n_train=5,
     nav_n_val=5,
     nav_num_hopfields=20,
     nav_n_starts=100,
+    # Unique-radius eval (~15 s per call at lambdas 11,12,13)
+    ur_every=100,
+    ur_n_refs=20,
+    ur_border=100,
+    ur_seed=0,                        # fixed: every run scored at the same spots
 )
 
 # ---------------------------------------------------------------------------
 # GRID — keys must appear in BASE. Sweeps are the Cartesian product.
 # Leave empty to launch a single run with BASE values.
 # ---------------------------------------------------------------------------
+# The radius is where the local decay curve crosses the far-field ceiling, so
+# the two axes below are the two halves of that: repel_weight sets how hard
+# cross-environment pairs are pushed apart (the ceiling), per_env_radius_frac
+# sets what counts as "near" (the decay width). Three seeds because the audit
+# could not separate a real effect from run-to-run spread at n=1.
 GRID: dict[str, list] = {
-    # "nenv": [20],
-    # "npos": [150, 200, 250],
-    "per_env_radius_frac": [0.05, 0.1, 0.15, 0.2, 0.25, 0.3],
-    # "out_dim": [512, 1024],
-    # "attract_lambda": [1.0, 2.0, 4.0],
-    # "lambdas": [[9, 10, 11], [11, 12, 13], [13, 14, 15]],
+    "repel_weight": [1.0, 5.0, 15.0, 40.0],
+    "per_env_radius_frac": [0.05, 0.1, 0.2],
+    "seed": [42, 43, 44],
+    # "out_dim": [256, 512, 1024],
+    # "attract_lambda": [1.0, 2.0, 5.0],
+    # "uniformity_lambda": [0.0, 0.1, 0.5],
+    # "single_env_batch": [True, False],   # confirm the audit's finding
 }
 
 # ---------------------------------------------------------------------------
-# Comprehensive post-train eval (flags for encoder_training.evaluate_nav)
+# Post-train Hopfield nav eval. UNUSED by the current sweep, which scores on
+# the unique radius only -- kept so an eval pass can be restored by putting
+# the evaluate_nav block back into the sbatch template below.
 # ---------------------------------------------------------------------------
 EVAL = dict(
     env_size=20,
@@ -103,8 +129,16 @@ EVAL = dict(
 # SLURM resources
 # ---------------------------------------------------------------------------
 SLURM = dict(
-    partition="pi_fiete",
-    time="12:00:00",
+    # Three partitions, all PreemptMode=OFF; slurm takes whichever frees first.
+    # NOT ou_bcs_low: it is preemptible and killed a smoke run mid-training.
+    # Short analysis jobs survive there, multi-hour training does not.
+    #   mit_normal_gpu  67 nodes, MaxTime 6h
+    #   ou_bcs_normal   21 nodes, MaxTime 1d
+    #   pi_fiete         1 node,  MaxTime 7d
+    # The 6h limit is what makes the 67-node partition eligible, and a run is
+    # ~45 min (2.5 s/epoch x 1000, plus ten 15 s radius evals).
+    partition="mit_normal_gpu,ou_bcs_normal,pi_fiete",
+    time="6:00:00",
     mem="64G",
     gres="gpu:a100:1",
     cpus_per_task=4,
@@ -204,8 +238,6 @@ def main():
     os.makedirs(os.path.join(sweep_dir, "slurm"), exist_ok=True)
 
     train_time = SLURM["time"]
-    include_train_flag = "--train_eval" if EVAL.get("include_train_eval") else ""
-    eval_flags = _build_eval_flags(EVAL)
 
     for i, combo in enumerate(combos):
         cfg = {**BASE, **dict(zip(keys, combo))}
@@ -245,18 +277,10 @@ python -u -m encoder_training.train {train_flags}
 RC=$?
 if [ $RC -ne 0 ]; then echo "TRAIN FAILED (rc=$RC)"; exit $RC; fi
 
-CKPT={run_dir}/encoder_best.pt
-[ -f "$CKPT" ] || CKPT={run_dir}/encoder_final.pt
-
-echo "=== eval: $CKPT ==="
-python -u -m encoder_training.evaluate_nav \\
-    --ckpt "$CKPT" {eval_flags} {include_train_flag} --json \\
-    > {run_dir}/eval.log 2>&1
-RC=$?
-if [ $RC -ne 0 ]; then echo "EVAL FAILED (rc=$RC)"; tail -30 {run_dir}/eval.log; exit $RC; fi
-
-grep '^JSON:' {run_dir}/eval.log | sed 's/^JSON: //' > {run_dir}/result.json
-echo "=== done: $(grep -o '\"accuracy\": [0-9.]*' {run_dir}/result.json | head -1) ==="
+# No Hopfield nav eval: this sweep is scored on the unique radius, which
+# train.py already logged during training and stored in both checkpoints.
+echo "=== done ==="
+grep 'Unique radius' {sweep_dir}/slurm/slurm-*_{i:03d}.out | tail -3
 """
         r = subprocess.run(["sbatch"], input=sbatch, text=True,
                            capture_output=True)
