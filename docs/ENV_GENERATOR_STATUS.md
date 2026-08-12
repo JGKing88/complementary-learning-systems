@@ -21,7 +21,7 @@ python -m hopfield_nav.tests.gen_golden --check       all goldens match
 | 1 | Plumbing refactor, behavior-frozen | **done** — `8db2930` |
 | 2 | Generator, domains, separation | **done** — see outcome below |
 | 3 | Serialization + train wiring | **done** — `901e802` |
-| 4 | Per-trait refresh | not started |
+| 4 | Per-trait refresh | planned — see below |
 | 5 | Eval CLIs, mix-and-match | not started |
 | 6 | Size OOD | not started |
 
@@ -690,3 +690,155 @@ The general lesson, worth keeping: the pool's docstring justified sharing as *"o
 sound because nothing writes to it."* The real condition is "nothing writes **and**
 nothing it depends on moves." Refresh breaks the second half, which nobody had
 written down.
+
+---
+
+## Phase 4 — detailed plan
+
+**Goal.** Per-trait refresh: re-draw an env's placement, wall pattern, goal or size
+on a cadence, from the **train** domain, with every value it ever takes recorded.
+
+**Acceptance gate.** 511 tests pass, goldens byte-identical. Refresh is off by
+default, so a run that does not ask for it is unchanged.
+
+### What the roadmap got wrong, and what replaced it
+
+The roadmap's **4.2 (exploit pool invalidation)** is **obsolete**. It called for a
+`rebuild_pools` hook after any tick touching place or goal, because
+`ExploitRegime` cached one Hopfield per env holding `encoded_Phi[goal + offset]`.
+Two changes since removed the problem rather than managing it:
+
+- `69d0e63` — memory is **derived per rollout**, never cached. A refresh cannot
+  produce a stale pattern because there is no pattern to go stale.
+- `36b59db` — `allow_store` is **declared**, so refresh no longer interacts with an
+  undeclared write path.
+
+So Phase 4 does not need a hook, a generation counter, or an invalidation rule.
+
+**The load-bearing item is now a different one.**
+
+### 4.1 The invariant that must not be got wrong
+
+**Every refresh tick must fold its new values into `split.used`.**
+
+`make_val_set` excludes against `split.used[trait]` — the union of everything
+training touched. If a tick re-draws a placement and does not call
+`split.record_used`, that offset silently drops out of the exclusion set, and a
+`held_out` validation env can later be placed exactly where training was. Nothing
+raises; the split just quietly stops meaning anything.
+
+This is the same shape as the bug 4.2 used to be, one level up: a cached fact that
+a refresh invalidates. The mitigation is the same in spirit — make it structural.
+The refresh step should return the new specs and the caller should have no way to
+apply them without recording them, rather than `record_used` being a second call
+that can be forgotten.
+
+### 4.2 Refresh requires `--env_generator`
+
+Without declared domains there is nothing to re-draw *from*: the legacy path has no
+place domain, no goal-cell partition, and no seed range. Setting any refresh cadence
+without `--env_generator` must be a startup error naming that, not a silent no-op.
+
+### 4.3 Config surface
+
+Four flat `int | None` fields on `TrainConfig`, matching the Phase-3 style
+(JSON-native, no nested dataclass, one `CFG_FIELDS` entry each):
+
+```
+--refresh_place N     re-draw train placements every N updates   (None = never)
+--refresh_wall  N     re-draw train wall seeds every N updates
+--refresh_goal  N     re-draw train goals every N updates
+--refresh_size  N     re-draw train sizes every N updates
+```
+
+**Validation is not fixed** stays true: only train envs refresh. `base_val` is drawn
+once and held. A validation set that moved under the model would make every
+in-training curve uninterpretable — you could not tell improvement from an easier
+draw.
+
+### 4.4 The refresh step
+
+At the top of the update loop (`train_navigate.py:196`), before the rollout loop.
+For each trait due on this tick, draw from `split.domains` using
+`trait_rng(cfg.seed, trait, tick=update)` — the derived stream, so changing one
+trait's cadence cannot move another trait's values.
+
+| trait | what it re-draws | cost |
+|---|---|---|
+| place | all train offsets jointly, excluding `base_val` at margin | **12 ms** / tick (84 envs, margin 80, Npos 1716) |
+| goal | a cell from `split.goal_cells_train`, via `env.set_goal` | negligible |
+| wall | a seed from the domain minus `used["wall"]`, then rebuild the env | **4.1 s** at `obs=12`, **10.2 s** at `obs=60`, 80 envs |
+| size | a size from the domain, then rebuild the env | as wall |
+
+Placement re-draws train against a fixed `base_val`, so the margin still holds in
+the direction that matters. `env.set_goal` already exists (Phase 2); `env.reset_goal`
+must **not** be used, because it draws uniformly over the whole grid and would walk
+straight out of the declared goal domain.
+
+### 4.5 `refresh_goal` must reach `generate_split`
+
+`setup_worlds_declared` never passes `refresh_goal`, so `generate_split`'s
+goal-partition branch has never run. With goal refresh on and the partition off,
+training consumes 80 fresh cells per update and exhausts all 400 in ~5 updates —
+after which no legal held-out goal exists and generation fails (or worse, has
+already silently overlapped).
+
+So: `setup_worlds_declared` passes `refresh_goal = cfg.refresh_goal is not None`,
+which switches the 80/20 up-front cap on. This is a bug-in-waiting that only becomes
+reachable in this phase.
+
+### 4.6 Vectorize `_build_sensory_codebook`
+
+The triple Python loop (`world/env.py`) is the whole cost of wall and size refresh.
+It vectorizes cleanly over cells × rays.
+
+**Gate on bit-identical output** against the loop version. Any drift changes every
+env's codebook and would invalidate the goldens, `wall_code_for`, and
+`live_wall_bits` simultaneously — and would do it silently, since a different-but-
+plausible codebook still trains.
+
+### 4.7 Delete `--randomize_goal_per_rollout`
+
+Per the decision to replace it outright. Removes `TrainConfig.
+randomize_goal_per_rollout`, `ExploreRegime.randomize_goal`, `RolloutSpec.
+reset_goal`, and the `env.reset_goal()` call at `train_navigate.py:286`.
+
+Cadence is equivalent (`train_navigate` runs one rollout per env per update, so
+per-rollout and per-update coincide). **Scope is not**: the old flag re-drew goals
+for explore-regime envs only; `--refresh_goal 1` is world-wide. Accepted — it
+changes the explore regime's behaviour, and the v35 lineage is already
+unreproducible from the `freeze_log_std` fix.
+
+### 4.8 `world.json` rewritten on the checkpoint cadence
+
+Phase 3 writes it once at startup, which was correct while nothing moved. Now the
+`used` union grows, so rewrite at each `ckpt_every` alongside the checkpoint. Size
+stays trivial: 300 ticks × 84 envs × 2 ints ≈ 200 KB.
+
+### Tests
+
+- **refresh off → byte-identical**: goldens, plus a short run against a no-refresh
+  baseline
+- **traits are independent**: refreshing `place` must leave goals and wall seeds
+  untouched across ticks — the derived-stream property, and the thing that makes
+  per-trait refresh meaningful at all
+- **the union accumulates**: after N ticks `len(used["place"]) > n_train`
+- **the invariant holds end to end**: mint a `held_out` val set *after* refresh and
+  assert it excludes everything in the union — this is the test that would have
+  caught a missing `record_used`
+- refreshed placements stay ≥ margin from `base_val`
+- goal refresh draws only from `goal_cells_train`
+- refresh without `--env_generator` errors
+- vectorized codebook bit-identical to the loop, at several sizes and ray counts
+- **a tight-packing case**, per the Phase 3 lesson: unit tests that all have room to
+  spare miss placement bugs
+
+### Risk register
+
+| Risk | Mitigation |
+|---|---|
+| A tick forgets `record_used`; val exclusion silently narrows | Make applying a refresh and recording it the same operation, not two calls |
+| Wall refresh dominates wall clock | Vectorize first; measure before promising every-update cadence |
+| Goal refresh exhausts the cell grid | 4.5 — `refresh_goal` switches on the up-front partition |
+| Refreshed placement drifts onto the val set | Re-draw excludes `base_val` at margin; assert per tick |
+| Vectorized codebook differs subtly | Bit-identity test; goldens as backstop |
