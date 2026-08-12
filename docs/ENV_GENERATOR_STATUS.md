@@ -23,7 +23,7 @@ python -m hopfield_nav.tests.gen_golden --check       all goldens match
 | 3 | Serialization + train wiring | **done** — `901e802` |
 | 4 | Per-trait refresh | **done** — see outcome below |
 | 5 | Eval CLIs, mix-and-match | **done** — see outcome below |
-| 6 | Size OOD | not started |
+| 6 | Size OOD | planned — see below |
 
 ---
 
@@ -1473,3 +1473,193 @@ split. Both were mutation-checked.
 
 - `train.py` / `train_phased.py` / `train_store.py` still do not write
   `world.json`. They are the remaining legacy trainers.
+
+---
+
+## Phase 6 — detailed plan
+
+**Goal.** Evaluate a checkpoint on validation envs of a size it never trained on:
+`--val_size N`, which Phase 5.4 currently refuses.
+
+**Acceptance gate.** 743 tests pass, goldens byte-identical, and `--val_size`
+equal to the training size returns *exactly* what `--split` returns today. That
+last one is the real gate: it says the size plumbing changed nothing for every
+run that does not use it.
+
+### 6.0 What is actually free, and what the roadmap over-counted
+
+**The architecture is genuinely free.** `channels.input_dim(cfg, embed_dim,
+sensory_dim)` sums channel widths over `embed_dim` and `sensory_dim`, and
+`sensory_dim` is the *ray count* (`observation_size`), not the grid width. A
+size-20 env feeds a size-8-trained agent an identically shaped observation.
+Confirmed by running one: `env.size=12` against `cfg.env.size=6` produced a
+12-dim observation and completed every evaluator without an error.
+
+**The roadmap's site list is wrong in both directions.** It named six; the eval
+path has **three**, and five of the six it listed are in `rollout/collector.py`,
+which **no evaluator uses** — the collector is training-only (`train_navigate`,
+`train`, `train_phased`, `train_store`). Those five matter for *training* at a
+new size, which this phase does not do. Meanwhile it missed the analysis drivers,
+which have five more.
+
+Most of `metrics.py` already reads `env.size` per env — `random_start` does so at
+lines 330, 455, 506, 761, 808, 916, 955. The global reads are the exception, not
+the rule.
+
+### 6.1 The sites that actually matter, and which fail silently
+
+| site | what it is | failure |
+|---|---|---|
+| `metrics.py:614` | `grid_size` → `total_positions`, the **denominator of `mean_coverage`** | **silent** |
+| `metrics.py:323, 449` | distractor exclusion box | **silent** — distractors can land inside a larger val env's own footprint |
+| `analysis/trajectories.py:316` | coverage denominator | **silent** |
+| `analysis/trajectories.py:168, 284, 339` | distractor exclusion box | **silent** |
+| `analysis/trajectories.py:764, 767` | plot grid extent | visual only |
+| `analysis/phase_decoding/rollout.py:138, 175` | quadrant split + distractors | **silent** |
+| `checkpoint_io.py:355` | `scaffold_layout_dict`'s recorded `env_size` | **silent** |
+
+Measured, not assumed: an `env.size=12` set evaluated under `cfg.env.size=6`
+reported `mean_coverage` against a denominator of 36 instead of 144 — **4× the
+truth**, no error. That is the number the whole phase exists to not get wrong.
+
+The fix is uniformly "read it from the env, not the config", and the envs already
+carry it (`EnvSpec.size` → `dataclasses.replace(env_cfg, size=s.size)` in
+`build_envs`). Coverage should be computed **per env** and then averaged, not
+against one global denominator — that is also what makes a mixed-size set
+meaningful later, without doing mixed sizes now.
+
+### 6.2 A bug in `make_val_set`, found while planning this
+
+`make_val_set` passes the excluded *train* envs to `sample_places` labelled with
+the **validation** size:
+
+```python
+exclude=[(o, env_size) for o in used_place]      # env_size is the VAL size
+```
+
+`used_place` holds training offsets, whose envs are the *training* size. The
+forbidden span is `[o - size - margin + 1, o + other_size + margin - 1]` —
+asymmetric in the two sizes — so mislabelling inflates the excluded region.
+Measured at `Npos=132`, train size 6, val size 20, margin 10: **6030 legal
+offsets instead of the true 8581**, a 30% over-exclusion. Invisible today only
+because every val set has so far been the training size, where the two labels
+coincide.
+
+The immediate fix is to label them with the train size. The deeper one is that
+`split.used["place"]` stores bare offsets while `used["size"]` stores a separate
+set, so the pairing is lost — if size refresh ever produces mixed train sizes,
+`used["place"]` has to become offset→size pairs. Worth doing now rather than
+leaving a second latent version of the same bug.
+
+### 6.3 Wall codes of different lengths are not comparable
+
+`wall_hamming` **raises** across sizes (`operands could not be broadcast
+together with shapes (4,8) (4,20)`), because a wall code is
+`(4, size * wall_resolution)`. This is loud rather than silent, which is
+fortunate, but three functions assume one size and would hit it:
+`split_diagnostics:682`, `verify_split:706`, `val_set_report:799`.
+
+There is no correct Hamming number to report here — the two codes do not live in
+the same space. So the honest treatment is: **across sizes, wall novelty is seed
+disjointness only**, the Hamming margin is reported as `None`, and the reason
+says so rather than the field being quietly absent.
+
+### 6.4 A larger val set needs scaffold room the split was never packed for
+
+`generate_split`'s capacity preflight is run at the *training* size. A bigger
+validation env forbids a much larger region, and the train envs already placed
+may leave nothing. Observed immediately: 2 envs of size 12 on an `Npos=35`
+scaffold holding 3 train envs of size 6 at margin 3 → **0 legal offsets**, and
+the error (correctly) blamed the exclusion set.
+
+That message is right but incomplete for this case. It should name the size
+change as a candidate cause, the way the Phase 4 size-refresh preflight does —
+the same numbers passed at the training size.
+
+### 6.5 Held-out goals get confined to the old arena
+
+`make_val_set` filters the goal pool to `c[0] < env_size and c[1] < env_size`.
+Every cell in `goal_cells_val` was drawn at the *training* size, so at a larger
+validation size the filter is a no-op and **goals never appear outside the
+original footprint** — the outer band of a size-20 arena would never hold a goal.
+
+Silent, and it would make "size OOD" quietly test something narrower than it
+claims. Three options, and the choice belongs in the plan rather than in code:
+
+1. **Rescale** the held-out cell set into the new arena — keeps the *rule*
+   (a ring stays a ring) but the specific cells are no longer held out.
+2. **Extend**: hold out the train-size cells, and treat every cell beyond the old
+   footprint as also legal. Goals reach the new region; disjointness survives.
+3. **Declare it**: require `goal=same` or an explicit region at a new size.
+
+**Recommendation: (2).** It is the only one where "held out" keeps meaning what
+it means elsewhere — disjoint from what training used — while letting the new
+geometry actually appear.
+
+### 6.6 The step-budget confound
+
+A bigger arena has more cells, so `mean_coverage` at a fixed `max_steps` must
+fall whether or not anything about the policy generalizes. Reporting one number
+would confound capability with budget.
+
+So report at **both** a fixed `max_steps` and one scaled by `size²` (the cell
+count, which is what coverage is a fraction of), and put both in the results
+under their own keys. Navigation is a different story — path length grows like
+`size`, not `size²` — so nav gets `size`-scaled budgets. Neither scaling is
+"correct"; the point is that a reader can see which claim survives which.
+
+### 6.7 CLI surface
+
+`--val_size N` on `eval_all`, replacing the Phase 5.4 refusal. It reaches
+`make_val_set(..., size=N)`, which already exists and is tested. Results are
+keyed by `(split, size)` so a size sweep is a column in the same table `--split`
+already produces.
+
+`analysis/trajectories.py` and `phase_decoding` take it too, once 6.1 lands —
+their reads are on the same list.
+
+### 6.8 Out of scope, and why
+
+- **Mixed sizes within one env set.** `generate_split._single_size` refuses them
+  and stays refusing. Uniform-val-size is the decided ship (roadmap), and it is
+  what keeps `sample_places`' single `size` parameter honest.
+- **Training at a new size.** That is `--refresh_size`, which Phase 4 built and
+  gated off pending a multi-value `Sizes` domain. It needs the five
+  `rollout/collector.py` sites, which this phase does not touch. Keeping them
+  apart is deliberate: an eval-side size change cannot corrupt a training run.
+
+### Build order
+
+1. **6.2** — the exclusion-size bug and the `used["place"]` pairing. It is a live
+   bug, independent of the feature, and everything else sits on top of it.
+2. **6.1** — read size from the env; per-env coverage denominators.
+3. **6.3 / 6.4** — the diagnostics and the placement message.
+4. **6.5** — the goal-cell decision.
+5. **6.6 / 6.7** — budgets and the CLI.
+
+### Tests
+
+- **`--val_size` equal to the training size is a no-op**: byte-identical results
+  to the same `--split` without it. The gate for the whole phase.
+- **the coverage denominator is the val set's**: a size-12 set under a size-6
+  config reports coverage against 144, and the pre-fix behaviour (36) fails it
+- distractors never land inside a val env's own footprint, at either size
+- `legal_offsets` with correctly-labelled excludes matches the ground-truth
+  predicate over the whole scaffold, at differing sizes (the 6030-vs-8581 case)
+- `wall_hamming` across sizes reports `None` and says why, rather than raising
+  from inside a diagnostic
+- a val size the scaffold cannot hold names the size change
+- held-out goals reach cells outside the training footprint (6.5, option 2)
+- the architecture claim, asserted rather than assumed: a size-N val set feeds
+  the same `input_dim` as the training size
+
+### Risk register
+
+| Risk | Mitigation |
+|---|---|
+| A size change silently rescales a metric | 6.1, and the equal-size no-op gate |
+| `used["place"]` keeps losing the size pairing | 6.2 fixes the representation, not just the call site |
+| Wall diagnostics raise from inside a report | 6.3 — report `None` with a reason |
+| Coverage read as capability when it is budget | 6.6 — both scalings, both reported |
+| "Size OOD" quietly tests only the old footprint | 6.5 — decided before code, option (2) |
+| Eval-side size work leaks into training | 6.8 — the collector sites stay untouched |
