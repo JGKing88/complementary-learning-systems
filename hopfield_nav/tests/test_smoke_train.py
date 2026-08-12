@@ -497,6 +497,27 @@ def test_train_resumes_a_navigate_checkpoint_with_no_flags_restated(
     assert "parent" in block["split"]["diagnostics"]
     assert ck["world_spec"]["spec_hash"] == block["spec_hash"]
 
+    # The child inherited its parent's world, which is what makes a later
+    # `--split held_out` mean "unseen by either stage" rather than "unseen by
+    # the last one". Two halves, and the CLI wiring is the only place both are
+    # visible at once: placed clear of the parent, and recording it.
+    parent_world = json.loads((out / "world_parent.json").read_text())
+    overlap = block["split"]["diagnostics"]["parent"]["overlap"]
+    margin = block["split"]["margin"]
+    assert overlap["min_place_gap_vs_parent"] >= margin, (
+        f"child train envs came within {overlap['min_place_gap_vs_parent']} of "
+        f"the parent's, below margin {margin} -- the inherited exclusion did "
+        f"not reach the placement")
+    assert overlap["n_wall_seeds_shared"] == 0
+    for trait in ("place", "wall", "goal", "size"):
+        p_used = {tuple(v) if isinstance(v, list) else v
+                  for v in parent_world["split"]["used"][trait]}
+        c_used = {tuple(v) if isinstance(v, list) else v
+                  for v in block["split"]["used"][trait]}
+        assert p_used <= c_used, (
+            f"world.json dropped the parent's used {trait}; a val set minted "
+            f"from this record would treat stage one's envs as unseen")
+
 
 def tiny_encoder_path(run_dir):
     """The encoder a fixture run was trained against, read back from its cfg."""
@@ -563,7 +584,9 @@ def test_train_store_records_both_its_world_and_its_parents(
     out = root / "store_both_worlds"
     _run(["hopfield_nav.train_store",
           "--load_checkpoint", str(ckpt),
-          "--encoder_checkpoint", str(tiny_encoder),
+          # The parent's own encoder, read back from its manifest: the fixture's
+          # scaffold is lambdas 3 4 5, and `tiny_encoder` is built for 3 4.
+          "--encoder_checkpoint", str(tiny_encoder_path(parent_dir)),
           "--phase_b_updates", "2", "--steps_per_rollout", "8",
           "--device", "cpu", "--eval_every", "1000", "--ckpt_every", "2",
           "--seed", "7", "--save_dir", str(out)], env)
@@ -683,7 +706,28 @@ def test_eval_all_output_keeps_its_shape_for_a_single_split(sandbox,
 
 
 @pytest.fixture(scope="module")
-def generator_checkpoint(sandbox, tiny_encoder):
+def roomy_encoder(sandbox):
+    """lambdas 3 4 5 -> Npos = 60, against `tiny_encoder`'s 3 4 -> 12.
+
+    Anything a *continuation* is built on needs the larger scaffold. Since
+    2026-08-12 a run resuming from `--load_checkpoint` places clear of every env
+    its parent trained on, and on a 12x12 torus two size-3 parent envs at margin
+    1 leave three mutually-clear slots where the child wants four -- so the
+    child fails to place, correctly and unhelpfully. The world has to be big
+    enough to hold two stages before it can test two stages.
+    """
+    root, env = sandbox
+    out = root / "roomy_encoder.pt"
+    _run(["encoder_training.save_untrained_encoder",
+          "--encoder-type", "mlp", "--out-dim", "8", "--hidden-dim", "32",
+          "--num-hidden-layers", "2", "--gain", "5.0",
+          "--lambdas", "3", "4", "5", "--out", str(out)], env)
+    assert out.exists()
+    return out
+
+
+@pytest.fixture(scope="module")
+def generator_checkpoint(sandbox, roomy_encoder):
     """A checkpoint with a `world.json`, so a split can actually be minted.
 
     `navigate_checkpoint` runs without `--env_generator` on purpose -- most of
@@ -694,8 +738,8 @@ def generator_checkpoint(sandbox, tiny_encoder):
     save_dir = root / "generator_ckpt"
     if not sorted(save_dir.glob("*.pt")):
         _run(["hopfield_nav.train_navigate",
-              "--encoder_checkpoint", str(tiny_encoder),
-              "--lambdas", "3", "4", "--Np", "40",
+              "--encoder_checkpoint", str(roomy_encoder),
+              "--lambdas", "3", "4", "5", "--Np", "40",
               "--size", "3", "--observation_size", "16",
               "--batch_envs", "2", "--steps_per_rollout", "8",
               "--schedule", "interleave:2", "--envs_per_world", "2",

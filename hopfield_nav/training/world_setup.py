@@ -71,13 +71,54 @@ def setup_world(cfg: TrainConfig, encoder, embed_dim, rng, role: str = "train",
     return build_world(field, envs, placement="spread", size=cfg.env.size)
 
 
-def setup_worlds_declared(cfg: TrainConfig, field: VectorHash):
+def inherited_used(parent_ckpt: str | None) -> dict | None:
+    """The ancestor's trait union, read from its ``world.json``.
+
+    What a run continuing from ``--load_checkpoint`` must place clear of, and
+    must record as part of its own union -- otherwise a validation set minted
+    later is disjoint from the *last* stage of training only.
+
+    One level up is enough: the parent absorbed its own parent's union when it
+    was written, so this is transitively the whole chain. A parent that predates
+    world recording returns ``None`` and says so, because "cannot exclude the
+    earlier stage" is exactly the thing that must not pass silently.
+    """
+    import json
+    import os
+
+    if not parent_ckpt:
+        return None
+    src_dir = (parent_ckpt if os.path.isdir(parent_ckpt)
+               else os.path.dirname(parent_ckpt))
+    src = os.path.join(src_dir, "world.json")
+    if not os.path.exists(src):
+        print(f"  NOTE: parent {parent_ckpt} has no world.json, so this run "
+              "cannot place clear of the envs it was trained on, and its own "
+              "record cannot name them. A later --split held_out will be "
+              "disjoint from THIS run's envs only. Re-run the parent on current "
+              "code to fix that.", flush=True)
+        return None
+    with open(src) as f:
+        parent = WorldSpec.from_json(json.load(f))
+    used = parent.split.used
+    print(f"  inheriting parent world from {src}: "
+          f"{len(used.get('place', ()))} placements, "
+          f"{len(used.get('wall', ()))} wall seeds, "
+          f"{len(used.get('goal', ()))} goal cells held against this run's draw",
+          flush=True)
+    return used
+
+
+def setup_worlds_declared(cfg: TrainConfig, field: VectorHash,
+                          inherited: dict | None = None):
     """Train worlds + eval world drawn from declared domains.
 
     One ``generate_split`` call covers every train env across all worlds plus the
     validation set, so separation is enforced across the whole run at once rather
     than per world. ``num_worlds`` then only chunks the result -- which is all it
     has ever been, now that the scaffold field is shared.
+
+    ``inherited`` is an ancestor's ``used`` union; see ``generate_split``.
     """
     domains = TraitDomains(
         place=dom.parse_place(cfg.place_region),
@@ -95,6 +136,7 @@ def setup_worlds_declared(cfg: TrainConfig, field: VectorHash):
         # cells per update and a size-8 arena's 64 cells are gone in a handful
         # of updates, leaving no legal held-out goal at all.
         refresh_goal=cfg.refresh_goal is not None,
+        inherited=inherited,
     )
 
     train_envs = generate.build_envs(split.train, cfg.env, cfg.agent.movement_mode)
@@ -127,7 +169,8 @@ def specs_from_world(world: World) -> list[EnvSpec]:
 
 
 def legacy_split(cfg: TrainConfig, field: VectorHash, worlds: list[World],
-                 eval_world: World) -> GeneratedSplit:
+                 eval_world: World,
+                 inherited: dict | None = None) -> GeneratedSplit:
     """Describe an unconstrained draw as a split, so it can still be recorded.
 
     The domains are the permissive defaults, and ``margin=0`` is the honest
@@ -149,6 +192,12 @@ def legacy_split(cfg: TrainConfig, field: VectorHash, worlds: list[World],
         margin=0, period=int(np.prod(field.lambdas)), Npos=int(field.Npos),
     )
     split.record_used(train_specs)
+    # The legacy path constrains nothing, so inheriting cannot make this run's
+    # placements avoid its parent's. Recording the union still matters: it is
+    # what a later `make_val_set` excludes against, and leaving the parent out
+    # would have the record understate what training saw.
+    if inherited:
+        split.absorb_used(inherited)
     return split
 
 
@@ -272,8 +321,12 @@ def setup_run_world(
     """
     from .refresh import Refresher, format_preflight, preflight as run_preflight
 
+    # Read before the draw, not after: a continuation has to place clear of what
+    # its parent trained on, and `RunWorld.record` fires far too late for that.
+    inherited = inherited_used(parent_ckpt)
+
     if cfg.env_generator:
-        worlds, eval_world, split = setup_worlds_declared(cfg, field)
+        worlds, eval_world, split = setup_worlds_declared(cfg, field, inherited)
         kind = "declared"
     else:
         worlds = [setup_world(cfg, encoder, embed_dim, rng, role="train",
@@ -288,7 +341,7 @@ def setup_run_world(
         eval_world = setup_world(cfg, encoder, embed_dim, rng, role="eval",
                                  field=field)
         cfg.env.goals_active = saved_goals_active
-        split = legacy_split(cfg, field, worlds, eval_world)
+        split = legacy_split(cfg, field, worlds, eval_world, inherited)
         kind = "legacy"
 
     refresher = pre = None
@@ -322,10 +375,18 @@ def world_overlap(parent: GeneratedSplit, child: GeneratedSplit,
 
     ``val_envs_identical`` is the one that matters: it answers "can I put these
     two curves on the same axes" outright.
+
+    Everything here reads the child's **own** ``train`` rather than its ``used``.
+    Since ``generate_split`` began absorbing an ancestor's union, ``child.used``
+    contains the parent's envs by construction -- so a union-vs-parent
+    comparison reports total overlap always, including a box against itself at
+    ``gap = -size``. That is a true statement about the union and a useless one
+    about this run: the question is what *this* run trains on.
     """
     p_val = [(v.wall_seed, v.size, v.offset, v.goal) for v in parent.base_val]
     c_val = [(v.wall_seed, v.size, v.offset, v.goal) for v in child.base_val]
-    p_boxes, c_boxes = parent.used_boxes(), child.used_boxes()
+    p_boxes = parent.used_boxes()
+    c_boxes = sorted({(t.offset, int(t.size)) for t in child.train})
     gaps = [generate.toroidal_gap(a, sa, b, sb, child.period)
             for a, sa in c_boxes for b, sb in p_boxes]
     sizes = {s for _, s in p_boxes} | {s for _, s in c_boxes}
@@ -333,13 +394,14 @@ def world_overlap(parent: GeneratedSplit, child: GeneratedSplit,
         "val_envs_identical": p_val == c_val,
         "n_val_envs_shared": len(set(p_val) & set(c_val)),
         "n_wall_seeds_shared": len(parent.used.get("wall", set())
-                                   & child.used.get("wall", set())),
+                                   & {t.wall_seed for t in child.train}),
         "n_goal_cells_shared": len(parent.used.get("goal", set())
-                                   & child.used.get("goal", set())),
+                                   & {t.goal for t in child.train}),
         "n_train_offsets_shared": len(parent.used_offsets()
-                                      & child.used_offsets()),
+                                      & {t.offset for t in child.train}),
         # Nearest approach between anything the parent placed and anything this
-        # run places. 0 means the two train sets overlap on the scaffold.
+        # run places. Below `margin` means the inherited exclusion did not hold;
+        # negative means the two train sets overlap on the scaffold.
         "min_place_gap_vs_parent": int(min(gaps)) if gaps else None,
         "sizes": sorted(int(s) for s in sizes),
     }
@@ -534,7 +596,8 @@ def do_eval(cfg, agent, eval_world: World, device, update_tag: str,
 
 
 __all__ = [
-    "build_field", "do_eval", "legacy_split", "make_hops", "move_params",
+    "build_field", "do_eval", "inherited_used", "legacy_split", "make_hops",
+    "move_params",
     "rnn_params", "set_phase_freeze", "set_requires_grad", "setup_world",
     "setup_worlds_declared", "specs_from_world", "store_params",
     "value_params", "write_world_spec",
