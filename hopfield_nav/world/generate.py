@@ -258,10 +258,101 @@ def _lattice_places(
     return placed if len(placed) == n else None
 
 
+def _masked_places(
+    domain: dom.PlaceDomain, rng, n: int, *, size: int, Npos: int, period: int,
+    exclude, margin: int, self_margin: int,
+) -> list[tuple[int, int]]:
+    """Draw from the resolved legal set rather than probing against ``exclude``.
+
+    Two steps, because they answer different questions. ``legal_mask`` gives
+    *coverage* -- which offsets clear everything already placed. Packing ``n`` of
+    them that also clear each other is a second question with a different answer:
+    after 300 refresh ticks 12 legal offsets remain and no 10 of them are 80
+    apart. So the greedy pass below is not an optimization, it is the rest of the
+    predicate.
+    """
+    legal = legal_mask(exclude, size=size, Npos=Npos, period=period,
+                       margin=margin)
+    xs, ys = np.nonzero(legal)
+    cand = [(int(x), int(y)) for x, y in zip(xs, ys)
+            if domain.contains((int(x), int(y)), size, Npos)]
+    placed: list[tuple[int, int]] = []
+    for idx in rng.permutation(len(cand)):
+        if len(placed) >= n:
+            break
+        c = cand[idx]
+        if all(toroidal_gap(c, size, p, size, period) >= self_margin
+               for p in placed):
+            placed.append(c)
+    if len(placed) == n:
+        return placed
+    raise RuntimeError(
+        f"could not place {n} envs of size {size} in {domain!r} at margin "
+        f"{margin}: {len(cand)} of {period * period} offsets are clear of the "
+        f"{len(exclude)} already in use, and only {len(placed)} of those are "
+        f"also {self_margin} apart from each other.\n"
+        f"  This is not a capacity problem -- the region holds about "
+        f"{domain.capacity(size, max(margin, self_margin), Npos)} envs. It is "
+        f"the exclusion set: everything those {len(exclude)} envs occupy is off "
+        f"limits, so raising Npos or lowering the margin will not help much.\n"
+        f"  If this is a validation draw against a run that refreshed its "
+        f"placements, the union grows every tick and eventually leaves no room. "
+        f"Use place='same', or place='ood' if the run declared a region."
+    )
+
+
+def _forbidden_span(o: int, size: int, other_size: int, margin: int) -> tuple:
+    """The wrapped interval of candidate offsets that ``o`` blocks on one axis.
+
+    From ``axis_separation``: with ``d = (o - cand) % period``, the separation is
+    ``min(d - size, period - d - other_size)``, so it clears ``margin`` exactly
+    when ``d >= size + margin`` **and** ``d <= period - other_size - margin``.
+    Both failure ranges are contiguous in ``cand`` and adjoin at ``d = 0``, so
+    together they are the single interval below, of length
+    ``size + other_size + 2*margin - 1``.
+    """
+    return (o - size - margin + 1, o + other_size + margin - 1)
+
+
+def legal_mask(exclude, *, size: int, Npos: int, period: int,
+               margin: int) -> np.ndarray:
+    """``(period, period)`` bool: offsets clearing every excluded env by ``margin``.
+
+    The same predicate as ``toroidal_gap(...) >= margin``, computed for the whole
+    scaffold at once instead of per candidate. Each excluded env forbids one
+    wrapped *rectangle* of candidate offsets (see ``_forbidden_span``), so the
+    union is a 2D difference array plus a cumsum: O(|exclude| + period^2) rather
+    than O(candidates x |exclude|).
+
+    That distinction stops being academic once ``exclude`` is the union of every
+    offset a refreshing run ever used. At 23,961 excludes, one *failing*
+    ``make_val_set`` takes 78 s by rejection sampling and ~70 ms here -- and 78 s
+    is what a user waits to be told "no" by an eval CLI.
+    """
+    diff = np.zeros((period + 1, period + 1), dtype=np.int32)
+
+    def spans(c: int, other: int) -> list[tuple[int, int]]:
+        lo, hi = _forbidden_span(c, size, other, margin)
+        if hi - lo + 1 >= period:               # blocks the whole axis
+            return [(0, period - 1)]
+        lo, hi = lo % period, hi % period
+        return [(lo, hi)] if lo <= hi else [(lo, period - 1), (0, hi)]
+
+    for (ox, oy), other in exclude:
+        for x0, x1 in spans(int(ox), int(other)):
+            for y0, y1 in spans(int(oy), int(other)):
+                diff[x0, y0] += 1
+                diff[x1 + 1, y0] -= 1
+                diff[x0, y1 + 1] -= 1
+                diff[x1 + 1, y1 + 1] += 1
+    return diff.cumsum(0).cumsum(1)[:period, :period] == 0
+
+
 def sample_places(
     domain: dom.PlaceDomain, rng, n: int, *, size: int, Npos: int, period: int,
     exclude: list[tuple[tuple[int, int], int]] = (), margin: int = 0,
     self_margin: int = 0, max_attempts: int = _MAX_ATTEMPTS,
+    use_mask: bool = False,
 ) -> list[tuple[int, int]]:
     """``n`` offsets in ``domain``, clear of each other and of ``exclude``.
 
@@ -274,7 +365,20 @@ def sample_places(
     the *joint* packing needs a common basis: train envs placed with no clearance
     can occupy every slot a margin-separated val env could use, and then this
     loop exhausts its attempts on a problem that looked feasible.
+
+    ``use_mask`` resolves ``exclude`` once via ``legal_mask`` and draws from what
+    is left, instead of re-testing every candidate against every excluded env.
+    **Opted into by the caller, deliberately not switched on a size threshold.**
+    A hidden ``len(exclude) > N`` rule would make a run's offsets depend on which
+    side of a magic number it landed; and the flat ~50 ms of building the mask is
+    the right trade for ``make_val_set`` (thousands of excludes, called once) and
+    the wrong one for ``Refresher`` (ten excludes, called every update -- 15 s
+    added to a 300-tick run against today's 3.9 ms).
     """
+    if use_mask:
+        return _masked_places(
+            domain, rng, n, size=size, Npos=Npos, period=period,
+            exclude=exclude, margin=margin, self_margin=self_margin)
     placed: list[tuple[int, int]] = []
     attempts = 0
     while len(placed) < n:
@@ -660,10 +764,14 @@ def make_val_set(
         # it applies to every pair. Envs drawn here must clear each other just as
         # they clear training -- otherwise a val set could stack several envs on
         # one patch of scaffold while still being correctly separated from train.
+        # use_mask: `used_place` is the union over every refresh tick, so it can
+        # reach tens of thousands. Probing against it candidate-by-candidate is
+        # 78 s to fail; resolving it once is ~70 ms.
         offs = sample_places(
             domain, rng, n_envs, size=env_size, Npos=split.Npos,
             period=split.period, self_margin=split.margin,
-            exclude=[(o, env_size) for o in used_place], margin=split.margin)
+            exclude=[(o, env_size) for o in used_place], margin=split.margin,
+            use_mask=True)
 
     # --- goal ---------------------------------------------------------------
     gl = levels.get("goal", "held_out")
@@ -695,7 +803,7 @@ def make_val_set(
 
 __all__ = [
     "axis_separation", "build_envs", "cosine_report", "derive_margin",
-    "generate_split", "live_wall_bits", "make_val_set", "sample_places",
-    "split_diagnostics", "toroidal_gap", "verify_split", "wall_code_for",
-    "wall_hamming",
+    "generate_split", "legal_mask", "live_wall_bits", "make_val_set",
+    "sample_places", "split_diagnostics", "toroidal_gap", "verify_split",
+    "wall_code_for", "wall_hamming",
 ]

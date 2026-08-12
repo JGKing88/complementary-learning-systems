@@ -1002,29 +1002,50 @@ otherwise obvious from any number the generator reports.
 
 ### A consequence of place refresh, measured
 
+> **Corrected 2026-08-12 (Phase 5).** This section first reported that
+> `place='held_out'` becomes *infeasible* after ~20–30 refresh ticks, on the
+> evidence that `make_val_set` raised. That was wrong: `make_val_set` was raising
+> because rejection sampling could not *find* the surviving offsets, not because
+> none existed. I had verified the legal-offset **count** by exhaustive scan and
+> then inferred infeasibility from the sampler's failure — the count was right,
+> the inference was not. With Phase 5's `legal_mask` the draw succeeds at every
+> tick tried, out to 2000. The corrected numbers are below.
+
 `--refresh_place 1` at the working config draws ~80 fresh offsets per tick and
 almost none repeat: 20 ticks give **1679 distinct** offsets. Each forbids a
-176×176 square on a 1716² torus, so the union grows until nothing legal is left:
+176×176 square of candidate offsets on a 1716² torus, so the legal set collapses
+fast — and then **stops**:
 
 ```
-tick  0   |used[place]| =   80    14912 legal offsets remain (8-cell scan)
-tick  4                  400      599
-tick  8                  720      180
+tick      |used[place]|     legal offsets     max packing     make_val_set(10)
+   0                80           944,117             187      ok
+   8               720            10,808              11      ok
+  24             1,999             2,463              10      ok
+ 100             8,070               101              10      ok
+ 300            23,961                12              10      ok
+1000            78,863                10              10      ok
+2000           155,254                10              10      ok
 ```
 
-Post-hoc `make_val_set(place='held_out')` then fails outright, at **tick 20, 30
-and 32** for seeds 0–2 (`|used|` 1680 / 2479 / 2639).
+Seeds 0–2 at 300 ticks: 12 / 24 / 17 legal, max packing **10** in all three.
 
-**In-training validation is unaffected** — `base_val` is drawn at generation and
-held, which is the whole reason it is held. What breaks is minting a *fresh*
-held-out place set afterwards, from roughly update 20–30 of a `--refresh_place 1`
-run.
+**It plateaus rather than exhausting**, and the reason is worth keeping. Once only
+a dozen offsets remain legal, a refresh tick — which draws from the ~2.9M
+positions merely clear of `base_val`, not clear of `used` — hits one of those
+dozen with probability ~10⁻⁵. So the survivors are never consumed. The legal set
+converges to a small fixed point instead of emptying.
 
-Two ways round it, both verified: declare a `Rect` for training, which leaves the
-complement untouched so `place='ood'` works indefinitely (and `held_out` still
-succeeded at tick 100, `|used|=3254`, with min gap 84 — the used offsets cluster
-rather than spreading); or use a coarser cadence. `place='same'` is unaffected
-either way.
+**In-training validation was never affected** either way: `base_val` is drawn at
+generation and held, which is the whole reason it is held.
+
+What is true, and is what the Phase 5 preflight should report, is that the
+**headroom collapses**: after a few hundred ticks the run supports a held-out
+place set of about 10 envs and no more. Asking for 11 would fail. That is a real
+constraint on `--num_val_envs` in a post-hoc eval, and it is invisible without
+being measured.
+
+`place='same'` is unaffected. `place='ood'` is unaffected and stays roomy when a
+`Rect` was declared, since the complement is never touched.
 
 ---
 
@@ -1162,9 +1183,16 @@ make a run's offsets depend on which side of a magic number it landed, and
 and `Refresher` does not, and the choice is visible where it is made.
 
 With the mask, the error can finally name the cause instead of suggesting capacity
-remedies for a problem that is not capacity (~400 slots for 90 envs): *12 legal
-offsets remain of 2.94M; you asked for 10 mutually separated at margin 80;
-training used 23,961 offsets across 300 refresh ticks.*
+remedies for a problem that is not capacity (~400 slots for 90 envs): *N legal
+offsets remain of 2.94M; only M of those are also `self_margin` apart; training
+used K offsets.*
+
+**The mask also corrected a Phase 4 finding.** `place='held_out'` after a
+refreshing run is **not** infeasible — see the correction note in the Phase 4
+outcome. The rejection sampler was failing to *find* the ~10 surviving offsets,
+at a hit rate of about 10⁻⁵ per probe, and I read that as their absence. The mask
+finds them every time, out to 2000 ticks. What is real is that the headroom
+collapses to ~10 envs, which is a constraint on `--num_val_envs`, not a failure.
 
 **`ood` on an undeclared trait** already raises with the right explanation from the
 domain layer (`Anywhere.complement()`, `SeedRange.complement()`). The CLI should
@@ -1177,21 +1205,28 @@ Npos, period, base_val, margin)` — nothing training does enters. So a prefligh
 does not *estimate* the end-state union, it **replays the exact ticks**: 1.15 s
 for 300.
 
-Feasibility is monotone in the union, so a binary search over tick prefixes finds
-the last update at which a held-out place set is still available. ~9 masks ≈
-0.7 s. **Total ≈ 2 s.**
+**What it reports is headroom, not a predicted failure.** The first version of
+this plan expected it to catch an outright exhaustion; with the mask, that does
+not happen (see the correction in the Phase 4 outcome — the legal set plateaus
+around 10 rather than emptying). What does happen is that the largest held-out
+place set a run can support falls from ~187 envs to ~10 over a few hundred ticks,
+and that ceiling is invisible unless measured. A post-hoc eval asking for more
+than it than would fail, at the end of a run, for a reason decided at the start.
 
-The mask answers *coverage*, not *packing* — at 300 ticks 12 offsets remain but no
-10 of them are mutually 80 apart — so the check is mask → greedy pack. Both the
-preflight and the eval run **that same code**, which is the only arrangement in
-which the prediction cannot disagree with what later happens.
+So: replay to the end of the schedule, compute the legal mask, greedily pack, and
+report the ceiling. Compare it against `cfg.num_val_envs`. ~2 s.
+
+The mask answers *coverage*, not *packing* — 12 legal offsets is not 12 usable
+envs — so the check is mask → greedy pack. Both the preflight and the eval run
+**that same code**, which is the only arrangement in which the prediction cannot
+disagree with what later happens.
 
 Decided:
 
 - **checks against `cfg.num_val_envs`**, the natural size of an eval set
 - **records and proceeds** — a warning plus a `preflight` block in `world.json`,
   not a raise. A run that only ever uses `--split recorded` is genuinely fine with
-  an exhausted union, and that is not the trainer's call to veto.
+  a tight union, and that is not the trainer's call to veto.
 
 ### 5.4 Out of scope, deliberately
 

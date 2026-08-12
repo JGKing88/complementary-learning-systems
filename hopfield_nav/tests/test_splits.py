@@ -584,3 +584,84 @@ def test_margin_spaces_every_pair(wide_field):
         for b in vs[i + 1:]:
             assert gen.toroidal_gap(a.offset, a.size, b.offset, b.size,
                                     split.period) >= split.margin
+
+
+# ---------------------------------------------------------------------------
+# The mask: a second implementation of the separation predicate
+# ---------------------------------------------------------------------------
+
+@pytest.mark.parametrize("period, size, margin", [
+    (35, 4, 5), (60, 6, 6), (60, 6, 0), (132, 8, 20), (132, 8, 12), (47, 3, 9),
+])
+def test_the_mask_agrees_with_the_predicate_it_replaces(period, size, margin):
+    """Cell for cell, over the whole scaffold. Not a spot check.
+
+    `legal_mask` is a rewrite of `toroidal_gap(...) >= margin` in closed form, so
+    a subtly wrong span would not error -- it would hand back offsets that
+    overlap what training used, which is the exact failure the split exists to
+    prevent. Includes offsets on the seam, where the forbidden interval wraps.
+    """
+    rng = np.random.RandomState(period)
+    exclude = [((int(rng.randint(0, period)), int(rng.randint(0, period))), size)
+               for _ in range(6)]
+    exclude += [((0, 0), size), ((period - 1, period - 2), size)]   # the seam
+    mask = gen.legal_mask(exclude, size=size, Npos=period, period=period,
+                          margin=margin)
+    assert mask.shape == (period, period)
+    truth = np.array([
+        [all(gen.toroidal_gap((x, y), size, o, s, period) >= margin
+             for o, s in exclude)
+         for y in range(period)]
+        for x in range(period)])
+    assert np.array_equal(mask, truth), (
+        f"mask and toroidal_gap disagree on "
+        f"{int((mask != truth).sum())} of {period * period} offsets")
+
+
+def test_the_mask_handles_a_differently_sized_excluded_env():
+    """The forbidden span is asymmetric when the two envs differ in size.
+
+    `axis_separation` subtracts the candidate's size on one side and the
+    excluded env's on the other, so assuming a square centred on the offset is
+    wrong the moment a val set is drawn at a size the train set did not use.
+    """
+    period, size = 60, 4
+    exclude = [((20, 20), 12)]
+    mask = gen.legal_mask(exclude, size=size, Npos=period, period=period,
+                          margin=3)
+    truth = np.array([
+        [gen.toroidal_gap((x, y), size, (20, 20), 12, period) >= 3
+         for y in range(period)] for x in range(period)])
+    assert np.array_equal(mask, truth)
+
+
+def test_masked_and_unmasked_sampling_both_obey_the_margin(wide_field):
+    """Two code paths, one contract. Neither may return a violating offset."""
+    domain = dom.Anywhere()
+    exclude = [((100, 100), 8), ((400, 700), 8), ((1000, 200), 8)]
+    for use_mask in (False, True):
+        offs = gen.sample_places(domain, np.random.RandomState(0), 5, size=8,
+                                 Npos=132, period=132, exclude=exclude,
+                                 margin=10, self_margin=10, use_mask=use_mask)
+        assert len(offs) == 5
+        for i, a in enumerate(offs):
+            for o, s in exclude:
+                assert gen.toroidal_gap(a, 8, o, s, 132) >= 10
+            for b in offs[i + 1:]:
+                assert gen.toroidal_gap(a, 8, b, 8, 132) >= 10
+
+
+def test_an_exhausted_exclusion_set_says_it_is_not_a_capacity_problem():
+    """The old message suggested raising Npos, which does not help here.
+
+    Capacity is fine -- the region holds hundreds. What is gone is the room
+    *between* what is already placed, and only the exclusion set can be blamed.
+    """
+    period = 60
+    # Blanket the scaffold: every offset is within margin of something.
+    exclude = [((x, y), 4) for x in range(0, period, 6)
+               for y in range(0, period, 6)]
+    with pytest.raises(RuntimeError, match="not a capacity problem"):
+        gen.sample_places(dom.Anywhere(), np.random.RandomState(0), 3, size=4,
+                          Npos=period, period=period, exclude=exclude,
+                          margin=6, self_margin=6, use_mask=True)
