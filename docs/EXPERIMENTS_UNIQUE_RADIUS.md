@@ -60,9 +60,11 @@ cross-environment repulsion the outcome is essentially forced.
 This also explains the archive: of 407 encoders, exactly one was trained with
 `False`, and it was the only one to score above 7.
 
-### 2.2 More repulsion is not better — `repel_weight` should go DOWN
+### 2.2 `repel_weight` has an optimum near 1.0 — too little is worse than too much
 
-Predicted wrong, measured right. Raising `repel_weight` 1→40 (`ur_loss_20260811`):
+Two sweeps, opposite directions, and the second corrects the first.
+
+**Above 1.0, less is better** (`ur_loss_20260811`, repel 1→40):
 
 | repel | median r_min | alias_ceiling | decay50 |
 |---|---|---|---|
@@ -71,9 +73,31 @@ Predicted wrong, measured right. Raising `repel_weight` 1→40 (`ur_loss_2026081
 | 15 | 14 | 0.906 | 28.0 |
 | 40 | 10 | 0.884 | 26.0 |
 
-It lowers the ceiling only marginally (0.903→0.884 across a 40× change) while
-shrinking the decay width fast (39→26). Net: the crossing point moves the wrong
-way. **Over-repelling flattens the neighbourhood the radius is measuring.**
+Raising it lowers the ceiling only marginally (0.903→0.884 across 40×) while
+shrinking the decay width fast (39→26). Over-repelling flattens the
+neighbourhood the radius is measuring.
+
+**Below 1.0, training goes unstable** (`ur_loss2_repel_low`, first 12 runs) —
+so the trend above must *not* be extrapolated:
+
+| repel | frac | seed 42 | seed 43 | seed 44 |
+|---|---|---|---|---|
+| 0.25 | 0.10 | 18 | 15 | **5** |
+| 0.25 | 0.15 | 10 | 10 | **1** |
+| 0.25 | 0.20 | 9 | 8 | **1** |
+| 0.50 | 0.10 | 14 | **0** | **0** |
+
+The collapsed runs have alias ceilings of 0.993–0.9996 — near-total aliasing —
+while their decay widths are the *largest* seen (45–64). Seed 44 scored 18 at
+repel=1.0 in the previous sweep, so this is an interaction with weak
+repulsion, not a bad seed.
+
+Reading: repulsion is what breaks the collapsed basin where everything looks
+alike. Too little and some seeds never escape it; too much and it flattens the
+neighbourhood. **The optimum sits near repel ≈ 1**, which was the edge of the
+first grid. Note the seed spread within a cell (0→14) is far wider here than
+the ~2 units seen at repel ≥ 1: this is instability, not noise, and it means a
+single run at low repel is uninformative.
 
 ### 2.3 `repel_weight` and `per_env_radius_frac` trade off along a diagonal
 
