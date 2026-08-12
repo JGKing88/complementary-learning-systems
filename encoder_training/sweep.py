@@ -42,8 +42,10 @@ BASE = dict(
     # Patches. 60 x 100 is the winner's layout; coverage correlated +0.445
     # with r_min while max patch size correlated -0.123, so prefer many small
     # patches over few large ones.
-    nenv=60,
-    npos=100,
+    # Geometry, and the epochs that keep its step count at 60,000 -- see the
+    # STEP COUNT block below GRID before changing either.
+    nenv=4,
+    npos=400,
     # Explicit patch sizes; overrides nenv/npos. Putting this in GRID is how
     # patch count and patch size get varied *together* (the Cartesian product
     # cannot couple two keys), which is what holding coverage fixed requires.
@@ -71,7 +73,7 @@ BASE = dict(
     uniformity_lambda=0.0,
     uniformity_anneal_epochs=25,
     # Training (the winner's values)
-    epochs=1000,
+    epochs=15000,                     # nenv=4 -> 4 steps/epoch -> 60,000 steps
     lr=1e-4,
     batch_size=8192,
     seed=42,
@@ -90,7 +92,7 @@ BASE = dict(
     nav_num_hopfields=20,
     nav_n_starts=100,
     # Unique-radius eval (~15 s per call at lambdas 11,12,13)
-    ur_every=100,
+    ur_every=1500,                    # ~10 radius evals, matched to `epochs`
     ur_n_refs=20,
     ur_border=100,
     ur_seed=0,                        # fixed: every run scored at the same spots
@@ -124,9 +126,42 @@ BASE = dict(
 # The range is wide because uniformity_lambda has never been anything but 0 in
 # any run in the archive.
 GRID: dict[str, list] = {
+    "repel_weight": [1.0, 5.0],
+    "seed": [42, 43],
+}
+
+# ur_seb_B (running): uniformity in the True regime.
+_GRID_seb_B: dict[str, list] = {
     "uniformity_lambda": [0.0, 0.1, 0.5, 2.0, 8.0],
     "seed": [42, 43],
 }
+
+# ---------------------------------------------------------------------------
+# STEP COUNT IS NOT COMPARABLE ACROSS GEOMETRIES -- read before touching nenv.
+#
+# single_env_batch_iterator yields exactly ONE batch per env, so with
+# single_env_batch=True the optimizer takes `nenv` steps per epoch. At 1000
+# epochs that is 60,000 steps for nenv=60 but only 1,000 for nenv=1. A patch-
+# size sweep at fixed `epochs` therefore compares a fully trained model against
+# one that took 1/60th as many steps, and the first attempt at ur_seb_A did
+# exactly that and had to be cancelled.
+#
+# `epochs` is set per launch instead, to hold total steps at 60,000:
+#     nenv=60 (100x100)  epochs  1000   ur_every  100    coverage 20.4%
+#     nenv=15 (200x200)  epochs  4000   ur_every  400    coverage 20.4%
+#     nenv= 4 (400x400)  epochs 15000   ur_every 1500     coverage 21.7%
+# Geometry is fixed within a launch, so nenv/npos go in BASE and the tags stay
+# readable -- no npos_list needed.
+#
+# Coverage is held near 20% because it correlated +0.445 with r_min. Note the
+# remaining tension: coverage = nenv * npos^2 and steps/epoch = nenv, so
+# holding coverage while varying npos forces nenv to move, which is why epochs
+# has to be rescaled rather than left alone.
+#
+# For the mixed-batch (False) case the iterator is a DataLoader over all
+# points, giving floor(600000/8192) = 73 batches/epoch -- so ur_seb_control
+# compared 73,000 steps against 60,000, a 22% gap, far too small to account for
+# its 2-vs-18 result. That comparison stands.
 
 # ur_seb_A (running): can single_env_batch=True be rescued by patch GEOMETRY?
 #
