@@ -214,7 +214,10 @@ class RunWorld:
     preflight: dict | None
     cfg: TrainConfig
     encoder_ident: dict
+    parent_ckpt: str | None = None
+    parent_world: dict | None = None
     extra: dict = dataclasses.field(default_factory=dict)
+    _parent_done: bool = False
 
     def record(self) -> dict:
         """Write ``world.json``; return the summary a checkpoint carries.
@@ -222,7 +225,17 @@ class RunWorld:
         Called again on the checkpoint cadence when the run refreshes, because
         ``split.used`` grows every tick and it is the union -- not the current
         ``train`` list -- that a later ``make_val_set`` excludes against.
+
+        A run with a parent records the parent's world too, on the first call.
+        Here rather than in ``setup_run_world`` because the copy has to land in
+        ``cfg.save_dir``, which no entry point has resolved that early.
         """
+        if self.parent_ckpt and not self._parent_done:
+            self._parent_done = True
+            self.parent_world = record_parent_world(
+                self.cfg, self.split, self.parent_ckpt, self.cfg.env)
+            if self.parent_world is not None:
+                self.extra["parent"] = self.parent_world
         extra = dict(self.extra)
         if self.refresher is not None:
             extra["refresh"] = self.refresher.report()
@@ -242,6 +255,7 @@ class RunWorld:
 def setup_run_world(
     cfg: TrainConfig, encoder, embed_dim, rng, field: VectorHash, *,
     cadence, n_updates: int, encoder_ident: dict, where: str,
+    parent_ckpt: str | None = None,
 ) -> RunWorld:
     """Draw a run's worlds, either way, plus everything that hangs off them.
 
@@ -290,7 +304,8 @@ def setup_run_world(
 
     return RunWorld(worlds=worlds, eval_world=eval_world, split=split,
                     field=field, kind=kind, refresher=refresher, preflight=pre,
-                    cfg=cfg, encoder_ident=encoder_ident)
+                    cfg=cfg, encoder_ident=encoder_ident,
+                    parent_ckpt=parent_ckpt)
 
 
 PARENT_SPEC_NAME = "world_parent.json"

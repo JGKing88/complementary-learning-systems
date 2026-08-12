@@ -352,6 +352,7 @@ Per update (`train.py:198-407`):
 | `--wall_penalty` | `0.0` | `−r` per step on a grid-edge cell. |
 | `--epsilon_explore` | `0.0` | Per-step probability of replacing the sampled action with a uniform random direction; log-prob is re-scored, and the step is masked out of the PPO move loss. |
 | `--epsilon_anneal_updates` | `0` | Linear decay of ε to 0 over N updates (0 = constant). |
+| `--load_checkpoint` | — | Resume from any `hopfield_nav` checkpoint, including one written by `train_navigate`. **The checkpoint's config is the base**; only flags you actually type override it, so an architecture you do not restate is inherited rather than silently replaced by this script's defaults (they differ on 8 of 17 agent fields, `movement_mode` among them). `--save_dir` is never inherited. Writes `world_parent.json` alongside `world.json`. |
 | `--refresh_envs_each_update` | off | Re-draw goals and re-place envs each update, randomly over the whole scaffold. Superseded by `--refresh_place` / `--refresh_goal`; refused alongside them. |
 | `--env_generator` / `--no-` | off | Draw envs from declared domains instead of the historical placement path. Off keeps today's envs for a given `--seed`; on fixes the offset-reproducibility bug and enforces train/val separation. **`world.json` is written either way.** |
 | `--place_region` | `anywhere` | `anywhere` or `rect:X0,Y0,W,H`. Declaring a rect is what makes a place-OOD val set possible later — its complement. |
@@ -689,6 +690,9 @@ run directory says it outright:
 |---|---|
 | `world.json` | Phase B's own world, as for every other trainer. This is what `--split` and every eval driver resolve. |
 | `world_parent.json` | A **verbatim** copy of Phase A's `world.json` — byte for byte, so its own `spec_hash` still verifies, and so this directory answers "what did the parent train on" after the parent has been moved or garbage-collected. |
+
+Since 2026-08-12 this is **every** trainer's behaviour, not `train_store`'s
+alone: any run with a `--load_checkpoint` parent records both worlds.
 
 `world.json`'s `diagnostics.parent` block records the parent's hash and how much
 of its world this run reuses: `val_envs_identical` (the one that answers "can

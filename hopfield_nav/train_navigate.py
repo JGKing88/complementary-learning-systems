@@ -430,7 +430,8 @@ def train_navigate(
         cfg.encoder_checkpoint, enc_cfg, encoder_gain)
     rw = setup_run_world(cfg, encoder, embed_dim, rng, field,
                          cadence=cadence, n_updates=total_updates(stages),
-                         encoder_ident=encoder_ident, where="train_navigate")
+                         encoder_ident=encoder_ident, where="train_navigate",
+                         parent_ckpt=load_checkpoint)
     worlds, eval_world, split = rw.worlds, rw.eval_world, rw.split
 
     input_dim = compute_input_dim(cfg.agent, embed_dim, cfg.env.observation_size)

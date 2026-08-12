@@ -79,17 +79,25 @@ def cfg_from_checkpoint(ck_cfg_dict: dict) -> TrainConfig:
     field added after a checkpoint was written reads as its default rather than
     failing the load.
     """
+    import dataclasses
+
     cd = coerce_legacy_cfg(dict(ck_cfg_dict))
-    env = EnvConfig(**cd["env"])
-    vh = VectorHashConfig(**cd["vectorhash"])
-    hop = HopfieldConfig(**cd["hopfield"])
-    ag = AgentConfig(**cd["agent"])
-    ppo = PPOConfig(**cd["ppo"])
-    cfg = TrainConfig(env=env, vectorhash=vh, hopfield=hop, agent=ag, ppo=ppo)
+    cfg = TrainConfig()
+    # Every nested block, found by type rather than named one by one. The named
+    # list this replaced covered five of the six and left `bc` a raw dict, so
+    # `cfg.bc.lr` raised on any config read back from a checkpoint -- invisible
+    # while nothing resumed a BC run. A seventh block cannot reintroduce it.
+    nested = {f.name for f in dataclasses.fields(cfg)
+              if dataclasses.is_dataclass(getattr(cfg, f.name))}
     for k, v in cd.items():
-        if k in {"env", "vectorhash", "hopfield", "agent", "ppo"}:
+        if not hasattr(cfg, k):
             continue
-        if hasattr(cfg, k):
+        if k in nested:
+            # Keys absent from the saved dict keep their dataclass defaults, so
+            # a field added after a checkpoint was written reads as its default
+            # rather than failing the load.
+            setattr(cfg, k, type(getattr(cfg, k))(**v))
+        else:
             setattr(cfg, k, v)
     return cfg
 

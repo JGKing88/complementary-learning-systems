@@ -33,8 +33,7 @@ from .rollout.collector import RolloutCollector
 from .updates.ppo import ppo_update
 from .training.refresh import Cadence
 from .training.world_setup import (
-    build_field, do_eval, make_hops, record_parent_world, set_phase_freeze,
-    setup_run_world,
+    build_field, do_eval, make_hops, set_phase_freeze, setup_run_world,
 )
 from .evaluation.checkpoint_io import cfg_from_checkpoint
 
@@ -205,7 +204,8 @@ def train_store(args) -> None:
     # than left to be discovered by whoever plots the two eval curves together.
     rw = setup_run_world(cfg, encoder, embed_dim, rng, field,
                          cadence=cadence, n_updates=args.phase_b_updates,
-                         encoder_ident=encoder_ident, where="train_store")
+                         encoder_ident=encoder_ident, where="train_store",
+                         parent_ckpt=args.load_checkpoint)
 
     input_dim = compute_input_dim(cfg.agent, embed_dim, cfg.env.observation_size)
     print(f"Agent input_dim={input_dim}", flush=True)
@@ -237,11 +237,8 @@ def train_store(args) -> None:
 
     # Both worlds on the record: this run's, and a verbatim copy of the one the
     # agent was trained on before it got here.
-    parent_world = record_parent_world(cfg, rw.split, args.load_checkpoint,
-                                       cfg.env)
-    if parent_world is not None:
-        rw.extra["parent"] = parent_world
     ckpt_world = rw.record()
+    parent_world = rw.parent_world
 
     run_store(
         cfg, agent, rw, embed_dim, device,

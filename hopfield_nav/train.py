@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import sys
 from dataclasses import asdict
 
 import numpy as np
@@ -32,6 +33,8 @@ from .evaluation.metrics import (
     evaluate_navigation, evaluate_goal_discovery, evaluate_exploration,
     evaluate_realistic,
 )
+from .evaluation.checkpoint_io import cfg_from_checkpoint
+from .training.cfg_args import explicit_dests, overlay_typed
 from .training.refresh import Cadence
 from .training.world_setup import build_field, setup_run_world
 
@@ -120,7 +123,8 @@ def train(cfg: TrainConfig) -> None:
         cfg.encoder_checkpoint, enc_cfg, encoder_gain)
     rw = setup_run_world(cfg, encoder, embed_dim, rng, field,
                          cadence=cadence, n_updates=cfg.n_updates,
-                         encoder_ident=encoder_ident, where="train")
+                         encoder_ident=encoder_ident, where="train",
+                         parent_ckpt=cfg.load_checkpoint)
     worlds, eval_world = rw.worlds, rw.eval_world
     templates = build_templates(cfg, worlds, embed_dim)
 
@@ -445,8 +449,12 @@ def train(cfg: TrainConfig) -> None:
 # CLI
 # ---------------------------------------------------------------------------
 
-def main():
-    parser = argparse.ArgumentParser(description="Train Hopfield navigation agent")
+def build_args():
+    # allow_abbrev=False: `explicit_dests` matches option strings
+    # literally, so an abbreviation would reach the Namespace while going
+    # unmatched there -- and then lose silently to the inherited value.
+    parser = argparse.ArgumentParser(
+        description="Train Hopfield navigation agent", allow_abbrev=False)
     # Encoder
     parser.add_argument("--encoder_checkpoint", type=str, required=True)
     parser.add_argument("--encoder_gain", type=float, default=None)
@@ -660,8 +668,17 @@ def main():
     parser.add_argument("--wandb_project", type=str, default="hopfield-nav")
 
     args = parser.parse_args()
+    return parser, args
 
-    cfg = TrainConfig(
+
+def config_from_args(args) -> TrainConfig:
+    """The config a command line asks for, with nothing inherited.
+
+    Pure keyword passing, by design: `overlay_typed` calls this a second time
+    with sentinels standing in for untyped flags, and a sentinel has to survive
+    the trip to say which config field each flag reaches.
+    """
+    return TrainConfig(
         env=EnvConfig(
             size=args.size, observation_size=args.observation_size,
             time_penalty=args.time_penalty, movement_mode=args.movement_mode,
@@ -760,6 +777,28 @@ def main():
         use_wandb=args.use_wandb,
         wandb_project=args.wandb_project,
     )
+
+
+def main():
+    parser, args = build_args()
+    if args.load_checkpoint:
+        # The parent's config is the base, and only the flags actually typed
+        # override it. Building from argv alone -- what this did until now --
+        # silently substituted train.py's dataclass defaults for the parent's
+        # architecture: 8 of 17 agent fields differ, movement_mode among them,
+        # which is a different policy head rather than a width mismatch. It
+        # failed loudly at load_state_dict, but only after the scaffold built.
+        ck = torch.load(args.load_checkpoint, map_location="cpu",
+                        weights_only=False)
+        cfg = cfg_from_checkpoint(ck["config"])
+        overlay_typed(cfg, args, explicit_dests(parser, sys.argv[1:]),
+                      config_from_args)
+        # Never inherited: that field holds where the parent wrote, and reusing
+        # it would have this run overwrite its own parent.
+        cfg.save_dir = args.save_dir
+        cfg.load_checkpoint = args.load_checkpoint
+    else:
+        cfg = config_from_args(args)
     train(cfg)
 
 

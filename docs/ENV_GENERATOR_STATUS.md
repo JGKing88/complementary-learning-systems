@@ -25,6 +25,7 @@ python -m hopfield_nav.tests.gen_golden --check       all goldens match
 | 5 | Eval CLIs, mix-and-match | **done** — see outcome below |
 | 6 | Size OOD | **done** — see outcome below |
 | 7 | `train` + `train_store` on the same record | **done** — see outcome below |
+| 8 | Cross-trainer resume; both worlds everywhere | **done** — see outcome below |
 
 ---
 
@@ -1955,3 +1956,90 @@ evaluates the expression, and reverting the fix fails it.
 ### Left undone
 
 `train_phased.py`. It has a third world-construction shape and was not in scope.
+
+
+---
+
+## Phase 8 — cross-trainer resume, and both worlds everywhere
+
+Prompted by a question rather than a plan: *can `train.py` resume a
+`train_navigate` checkpoint, and does it record both worlds?* Tested rather than
+reasoned about. Both answers were no.
+
+### `train.py` built its config from argv alone
+
+Every other entry point starts from the checkpoint's config and lets typed flags
+override it (`train_navigate`'s `CFG_FIELDS` + `_explicit_dests`, `train_store`'s
+`cfg_from_checkpoint`). `train.py` did not, so resuming substituted its own
+dataclass defaults for the parent's architecture. Measured on a real checkpoint:
+**8 of 17 agent fields differ**, including `movement_mode` — which selects a
+Gaussian rather than a discrete policy head, so it is not a width mismatch you
+can paper over:
+
+```
+Missing key(s):    movement_head.weight, movement_head.bias
+Unexpected key(s): movement_log_std, movement_mean.weight, movement_mean.bias
+size mismatch for rnn.weight_ih_l0: checkpoint [384, 22] vs model [384, 13]
+```
+
+It failed loudly at `load_state_dict`, which is the one mercy: nothing ever
+trained a differently-shaped agent silently.
+
+**The mapping is derived, not transcribed.** `train.py` builds its config in one
+nested constructor call, and that call already *is* the flag-to-field map.
+Hand-copying ninety entries into a table would rot the first time a flag was
+added. `training/cfg_args.overlay_typed` instead runs the constructor twice more
+with sentinels standing in for arguments:
+
+- all arguments sentinel → any leaf that is *not* a sentinel is a field argv
+  never feeds, so it inherits whole
+- untyped arguments sentinel → a non-sentinel leaf came from a flag actually
+  typed
+
+Both probes must agree before a leaf is overwritten. The first version used one
+probe and a test caught it clobbering `ppo.ent_coef` — a field `train.py`'s
+constructor never passes — with the dataclass default. That is the same bug one
+level down, and it would have silently reset a parent's `ppo_epochs`,
+`clip_coef` and `max_grad_norm` on every resume.
+
+`train.py`'s parser now sets `allow_abbrev=False`, as `train_navigate`'s does: an
+abbreviation parses fine while going unmatched by `explicit_dests`, and would
+then lose silently to the inherited value.
+
+### A latent crash in `cfg_from_checkpoint`
+
+It reconstructed five nested blocks by name and there are six, so `cfg.bc` came
+back a **raw dict** from every checkpoint ever written and `cfg.bc.lr` raised.
+Invisible while nothing resumed a BC run; `overlay_typed` walked into it
+immediately. Now found by type rather than named, so a seventh block cannot
+reintroduce it.
+
+### Both worlds, for every trainer
+
+`record_parent_world` moved into `RunWorld.record()`, fired lazily on the first
+call — it has to land in `cfg.save_dir`, which no entry point resolves before
+building its world. Any run with a `--load_checkpoint` parent now records both,
+rather than it being `train_store`'s privilege.
+
+Observed on the first cross-trainer resume: `min_place_gap_vs_parent = -2`. The
+child's train envs *overlap* the parent's on the scaffold — nothing constrains a
+child's placement against its parent's, only against its own validation set.
+Which may be fine for continuing an agent; the point is that it is now visible
+rather than inferred.
+
+### Also worth keeping
+
+Inheritance can produce an incoherent config the caller never typed. A parent
+trained with `--refresh_place 2` resumed under `--no-env_generator` inherits the
+cadence and loses the generator; the existing guard catches it at startup, by
+name, before the scaffold builds. That is inheritance and validation composing
+the way they should.
+
+### Verified
+
+- the original failing invocation, with **no** architecture flag restated: runs
+- typed flags still win, including one whose value equals `train.py`'s default
+  ("typed", not "differs from default" — the cheap implementation is wrong
+  exactly when a caller means to pin a value the parent changed)
+- one flag reaching two fields reaches both
+- three mutations, all caught

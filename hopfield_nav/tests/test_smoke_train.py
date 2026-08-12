@@ -451,6 +451,60 @@ def test_train_writes_a_world_on_both_paths(sandbox, tiny_encoder):
 
 
 @pytest.mark.slow
+def test_train_resumes_a_navigate_checkpoint_with_no_flags_restated(
+        sandbox, generator_checkpoint):
+    """Cross-trainer resume, which did not work at all until 2026-08-12.
+
+    `train.py` built its config from argv only, so every architecture flag had
+    to be restated by hand -- and 8 of 17 agent fields differ between a
+    `train_navigate` checkpoint and `train.py`'s defaults, `movement_mode` among
+    them, which is a different policy head rather than a width mismatch. The
+    invocation below is the one that used to die at `load_state_dict`.
+    """
+    import json
+
+    root, env = sandbox
+    parent_dir, ckpt = generator_checkpoint
+    out = root / "train_resume_navigate"
+    _run(["hopfield_nav.train",
+          "--load_checkpoint", str(ckpt),
+          "--encoder_checkpoint", str(tiny_encoder_path(parent_dir)),
+          "--n_updates", "1", "--eval_every", "100", "--save_every", "1",
+          "--device", "cpu", "--seed", "5", "--save_dir", str(out)], env)
+
+    ck = torch.load(out / "hopfield_nav_update1.pt", map_location="cpu",
+                    weights_only=False)
+    parent = torch.load(ckpt, map_location="cpu", weights_only=False)["config"]
+    child = ck["config"]
+
+    # Inherited, not defaulted. These are the fields whose train.py default
+    # differs from what train_navigate wrote.
+    from hopfield_nav.config import TrainConfig
+    d = TrainConfig()
+    for blk, field in (("agent", "movement_mode"), ("env", "movement_mode"),
+                       ("agent", "input_sensory"), ("agent", "hopfield_mode")):
+        assert child[blk][field] == parent[blk][field], (
+            f"{blk}.{field} was not inherited from the parent")
+    assert child["agent"]["movement_mode"] != d.agent.movement_mode, (
+        "the parent and train.py's default agree here, so this cannot show "
+        "inheritance happening")
+
+    # Both worlds recorded, which is now every trainer's behaviour and not
+    # train_store's privilege.
+    assert (out / "world.json").exists()
+    assert (out / "world_parent.json").exists()
+    block = json.loads((out / "world.json").read_text())
+    assert "parent" in block["split"]["diagnostics"]
+    assert ck["world_spec"]["spec_hash"] == block["spec_hash"]
+
+
+def tiny_encoder_path(run_dir):
+    """The encoder a fixture run was trained against, read back from its cfg."""
+    import json
+    return json.loads((run_dir / "run.json").read_text())["encoder"]["path"]
+
+
+@pytest.mark.slow
 def test_train_survives_its_own_eval_logging(sandbox, tiny_encoder):
     """The wandb path, which nothing drove -- so nothing caught it going dead.
 
