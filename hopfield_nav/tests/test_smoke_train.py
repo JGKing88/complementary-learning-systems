@@ -407,6 +407,141 @@ def test_train_store_end_to_end(sandbox, tiny_encoder, navigate_checkpoint):
 
 
 @pytest.mark.slow
+def test_train_writes_a_world_on_both_paths(sandbox, tiny_encoder):
+    """`train` could not say which envs it used until now.
+
+    Both paths write it -- the point of recording is not that a run opted into
+    declared domains, it is that a post-hoc eval can rebuild the envs a
+    checkpoint was actually scored against (docs/EVAL_SPLITS_DESIGN.md 1.4).
+    """
+    import json
+
+    root, env = sandbox
+    common = ["hopfield_nav.train",
+              "--encoder_checkpoint", str(tiny_encoder),
+              "--lambdas", "3", "4", "--Np", "40", "--size", "3",
+              "--observation_size", "16", "--batch_envs", "2",
+              "--steps_per_rollout", "8", "--envs_per_world", "2",
+              "--num_worlds", "1", "--num_val_envs", "2", "--n_updates", "2",
+              "--eval_every", "100", "--save_every", "2",
+              "--device", "cpu", "--static-vectorhash"]
+    seen = {}
+    for kind, extra in (("legacy", []),
+                        ("declared", ["--env_generator", "--place_margin", "1"])):
+        out = root / f"train_world_{kind}"
+        _run(common + extra + ["--save_dir", str(out)], env)
+        spec = json.loads((out / "world.json").read_text())
+        assert spec["generator"] == kind
+        assert len(spec["split"]["train"]) == 2
+        assert len(spec["split"]["base_val"]) == 2
+        seen[kind] = spec
+
+    # The declared path asserts separation; the legacy path only measures it.
+    # That difference is the reason `--env_generator` exists, so pin it rather
+    # than assume both records mean the same thing.
+    assert seen["declared"]["split"]["diagnostics"]["min_place_gap"] >= 1
+    assert seen["declared"]["split"]["margin"] == 1
+    assert seen["legacy"]["split"]["margin"] == 0
+
+    # And a checkpoint names the file, which is what makes a post-hoc eval
+    # resolve the right envs instead of replaying an RNG.
+    ck = torch.load(root / "train_world_declared" / "hopfield_nav_update2.pt",
+                    map_location="cpu", weights_only=False)
+    assert ck["world_spec"]["spec_hash"] == seen["declared"]["spec_hash"]
+
+
+@pytest.mark.slow
+def test_train_survives_its_own_eval_logging(sandbox, tiny_encoder):
+    """The wandb path, which nothing drove -- so nothing caught it going dead.
+
+    `train.py --use_wandb` raised `NameError: name 'union' is not defined` at its
+    first eval from 2026-08-06, when `evaluate_union_coverage` was absorbed into
+    `evaluate_exploration` and this logging line outlived its producer. Every run
+    with logging and evals both on -- which is how the script is normally run --
+    died there. `WANDB_MODE=disabled` still evaluates the expression, so this
+    reaches the bug without needing a wandb account.
+    """
+    root, env = sandbox
+    out = root / "train_wandb_eval"
+    _run(["hopfield_nav.train",
+          "--encoder_checkpoint", str(tiny_encoder),
+          "--lambdas", "3", "4", "--Np", "40", "--size", "3",
+          "--observation_size", "16", "--batch_envs", "2",
+          "--steps_per_rollout", "8", "--envs_per_world", "2",
+          "--num_worlds", "1", "--num_val_envs", "2", "--n_updates", "1",
+          "--eval_every", "1", "--n_val_trials", "1", "--save_every", "1",
+          "--device", "cpu", "--static-vectorhash", "--use_wandb",
+          "--save_dir", str(out)], env)
+    assert list(out.glob("*.pt")), "the run did not reach its first checkpoint"
+
+
+@pytest.mark.slow
+def test_train_refuses_both_refresh_mechanisms_at_once(sandbox, tiny_encoder):
+    """The old one re-places over the whole scaffold and records nothing, so it
+    undoes exactly what the new one guarantees. Silently letting both run would
+    leave world.json describing envs the run had stopped using."""
+    root, env = sandbox
+    proc = subprocess.run(
+        [sys.executable, "-m", "hopfield_nav.train",
+         "--encoder_checkpoint", str(tiny_encoder),
+         "--lambdas", "3", "4", "--size", "3", "--device", "cpu",
+         "--n_updates", "1", "--env_generator", "--refresh_place", "1",
+         "--refresh_envs_each_update", "--save_dir", str(root / "both")],
+        cwd=REPO_ROOT, env=env, capture_output=True, text=True, timeout=300)
+    assert proc.returncode != 0
+    assert "--refresh_place" in proc.stdout + proc.stderr
+    assert not list((root / "both").glob("*.pt")) if (root / "both").exists() else True
+
+
+@pytest.mark.slow
+def test_train_store_records_both_its_world_and_its_parents(
+        sandbox, tiny_encoder, generator_checkpoint):
+    """Phase B draws its own envs, so its eval numbers are not on the same axes
+    as Phase A's. The run directory says so, on its own, without needing the
+    parent to still exist: a verbatim copy of the parent's world.json plus an
+    overlap block, both reachable from the checkpoint.
+    """
+    import filecmp
+    import json
+
+    root, env = sandbox
+    parent_dir, ckpt = generator_checkpoint
+    out = root / "store_both_worlds"
+    _run(["hopfield_nav.train_store",
+          "--load_checkpoint", str(ckpt),
+          "--encoder_checkpoint", str(tiny_encoder),
+          "--phase_b_updates", "2", "--steps_per_rollout", "8",
+          "--device", "cpu", "--eval_every", "1000", "--ckpt_every", "2",
+          "--seed", "7", "--save_dir", str(out)], env)
+
+    # Verbatim, so the copy's own spec_hash still verifies. A re-serialized
+    # copy would be a different file claiming to be the parent's.
+    assert filecmp.cmp(parent_dir / "world.json", out / "world_parent.json",
+                       shallow=False)
+
+    child = json.loads((out / "world.json").read_text())
+    parent = json.loads((out / "world_parent.json").read_text())
+    block = child["split"]["diagnostics"]["parent"]
+    assert block["spec_hash"] == parent["spec_hash"]
+    assert block["checkpoint"] == str(ckpt)
+
+    # Phase B used --seed 7 against a parent trained at another seed, so the
+    # worlds differ -- and the record says so rather than leaving it to be
+    # discovered by whoever plots the two curves together.
+    overlap = block["overlap"]
+    assert overlap["val_envs_identical"] is False
+    assert overlap["min_place_gap_vs_parent"] is not None
+    assert child["split"]["base_val"] != parent["split"]["base_val"], (
+        "the two worlds are identical, so this test cannot show the difference "
+        "being recorded")
+
+    ck = torch.load(out / "store_final.pt", map_location="cpu",
+                    weights_only=False)
+    assert ck["world_spec"]["spec_hash"] == child["spec_hash"]
+    assert ck["parent_world_spec"]["spec_hash"] == parent["spec_hash"]
+
+
+@pytest.mark.slow
 def test_visualize_trajectories_renders(sandbox, navigate_checkpoint):
     """The figure path: checkpoint dir -> rollouts -> PNG + PDF on disk.
 

@@ -19,10 +19,8 @@ from .config import (
     AgentConfig, PPOConfig, BCConfig, validate_train_config,
 )
 from .encoder_io import load_encoder, validate_config
-from .world.env import make_env, warn_if_offcell_stores
-from .world.scaffold import (
-    VectorHash, fit_env_assoc, goal_encodings, place_envs,
-)
+from .world.env import warn_if_offcell_stores
+from .world.scaffold import goal_encodings, place_envs
 from hopfield import Hopfield
 from .policy.agent import NavAgent, compute_input_dim
 from .policy.recurrent import add_recurrent_args
@@ -34,92 +32,36 @@ from .evaluation.metrics import (
     evaluate_navigation, evaluate_goal_discovery, evaluate_exploration,
     evaluate_realistic,
 )
+from .training.refresh import Cadence
+from .training.world_setup import build_field, setup_run_world
 
 
 # ---------------------------------------------------------------------------
 # World setup
 # ---------------------------------------------------------------------------
 
-def setup_train_world(
-    world_idx: int,
-    cfg: TrainConfig,
-    encoder: torch.nn.Module,
-    encoder_gain: float,
-    embed_dim: int,
-    rng: np.random.RandomState,
-    field: VectorHash,
-) -> dict:
-    """Create training envs and place them in the shared scaffold field.
+def build_templates(cfg: TrainConfig, worlds, embed_dim: int) -> list:
+    """One pre-stored goal Hopfield per world, or ``None`` per world.
 
-    Training worlds are fully independent of eval: their scaffold contains only
-    their own train envs, and their template Hopfield (if any) preloads only
-    those train envs' goals.
+    Rebuilt after **every** refresh tick, not only at startup: the template
+    holds the goal *encodings*, which are a function of both the env-local goal
+    cell and the env's offset. A place, goal, wall or size tick changes one of
+    those, so a template carried over would have the agent begin each rollout
+    already remembering a goal that has moved -- a false memory, indistinguish-
+    able from a real one and silent in every metric.
     """
-    n_train = cfg.envs_per_world
-    size = cfg.env.size
-
-    # make_env forwards the whole EnvConfig. Constructing GridEnv by hand here
-    # used to drop goals_active, goal_reward and goal_radius, which VecEnv then
-    # read off the base env -- so --goal_radius was silently ignored during
-    # training while eval honored it (train_phased.setup_world always used
-    # make_env). See docs/REFACTOR_ASSESSMENT.md, phase 2.
-    train_envs = [
-        make_env(cfg.env, cfg.agent.movement_mode, seed=int(rng.randint(0, 10_000_000)))
-        for _ in range(n_train)
-    ]
-
-    offsets = place_envs(n_train, size, field.Npos, np.random, placement="spread")
-    assoc = fit_env_assoc(field, train_envs, offsets)
-
-    template_hop = None
-    if cfg.hopfield.init_mode == "pre_stored":
-        template_hop = Hopfield(embed_dim, beta=cfg.hopfield.beta, device=cfg.device)
-        for pattern in goal_encodings(field, train_envs, offsets):
-            template_hop.input_memory(torch.from_numpy(pattern).float())
-        print(f"  train world {world_idx}: pre-stored {template_hop.num_memories} goal patterns")
-
-    return {
-        "train_envs": train_envs,
-        "vectorhash": field,
-        "offsets": offsets,
-        "assoc": assoc,
-        "template_hopfield": template_hop,
-    }
-
-
-def setup_eval_world(
-    cfg: TrainConfig,
-    encoder: torch.nn.Module,
-    encoder_gain: float,
-    embed_dim: int,
-    rng: np.random.RandomState,
-    field: VectorHash,
-) -> dict:
-    """Build a single dedicated eval world, placed in the shared field.
-
-    Decoupled from num_worlds — this is built once at startup and reused for
-    every eval pass. Contains num_val_envs val envs only (no train envs), so
-    distractors sampled from this scaffold never accidentally coincide with
-    training-env regions.
-    """
-    n_val = cfg.num_val_envs
-    size = cfg.env.size
-
-    val_envs = [
-        make_env(cfg.env, cfg.agent.movement_mode,
-                 seed=int(rng.randint(0, 10_000_000)))
-        for _ in range(n_val)
-    ]
-
-    offsets = place_envs(n_val, size, field.Npos, np.random, placement="spread")
-    assoc = fit_env_assoc(field, val_envs, offsets)
-
-    return {
-        "val_envs": val_envs,
-        "vectorhash": field,
-        "offsets": offsets,
-        "assoc": assoc,
-    }
+    out = []
+    for w_idx, world in enumerate(worlds):
+        if cfg.hopfield.init_mode != "pre_stored":
+            out.append(None)
+            continue
+        hop = Hopfield(embed_dim, beta=cfg.hopfield.beta, device=cfg.device)
+        for pattern in goal_encodings(world.field, world.envs, world.offsets):
+            hop.input_memory(torch.from_numpy(pattern).float())
+        print(f"  train world {w_idx}: pre-stored {hop.num_memories} "
+              "goal patterns")
+        out.append(hop)
+    return out
 
 
 # ---------------------------------------------------------------------------
@@ -129,6 +71,20 @@ def setup_eval_world(
 def train(cfg: TrainConfig) -> None:
     validate_train_config(cfg)
     warn_if_offcell_stores(cfg.env, where="train")
+    # Before the encoder loads and the scaffold builds: a refresh cadence with
+    # no generator to draw from, or the two refresh mechanisms asked for at
+    # once, is worth knowing now rather than twenty minutes in.
+    cadence = Cadence.from_config(cfg)
+    if cadence and cfg.hopfield.refresh_envs_each_update:
+        raise SystemExit(
+            "  ERROR: --refresh_envs_each_update and the per-trait refresh "
+            "flags do the same job, and the old one undoes what the new one "
+            "guarantees. It re-places train envs with placement='random' over "
+            "the whole scaffold, so a refreshed env can land on the validation "
+            "region, and it never touches split.train -- so world.json would "
+            "describe envs the run had stopped using. Use --refresh_place / "
+            "--refresh_goal, which draw from the declared train domain clear "
+            "of the fixed val set, and record every draw.")
     device = torch.device(cfg.device if torch.cuda.is_available() else "cpu")
     torch.manual_seed(cfg.seed)
     np.random.seed(cfg.seed)
@@ -155,20 +111,18 @@ def train(cfg: TrainConfig) -> None:
     # is a pure function of (lambdas, Npos, fwhm_ratio, encoder), so the
     # per-world copies this used to build were bit-identical.
     print("Building scaffold field")
-    field = VectorHash(cfg.vectorhash)
-    field.build_scaffold()
-    field.precompute_encoded_phi(encoder, cfg.fwhm_ratio, device=cfg.device)
+    field = build_field(cfg, encoder)
 
-    worlds = []
-    for w in range(cfg.num_worlds):
-        print(f"Setting up train world {w}")
-        worlds.append(setup_train_world(
-            w, cfg, encoder, encoder_gain, embed_dim, rng, field))
-
-    # Setup a single dedicated eval world, built once and reused.
-    print(f"Setting up eval world ({cfg.num_val_envs} val envs)")
-    eval_world = setup_eval_world(
-        cfg, encoder, encoder_gain, embed_dim, rng, field)
+    # The world, its record and the refresher, through the same helper
+    # `train_navigate` and `train_store` use -- so all three agree about what a
+    # run writes down and none of them can record a world it is not training on.
+    encoder_ident = run_manifest.encoder_identity(
+        cfg.encoder_checkpoint, enc_cfg, encoder_gain)
+    rw = setup_run_world(cfg, encoder, embed_dim, rng, field,
+                         cadence=cadence, n_updates=cfg.n_updates,
+                         encoder_ident=encoder_ident, where="train")
+    worlds, eval_world = rw.worlds, rw.eval_world
+    templates = build_templates(cfg, worlds, embed_dim)
 
     # Create agent
     input_dim = compute_input_dim(cfg.agent, embed_dim, cfg.env.observation_size)
@@ -204,11 +158,14 @@ def train(cfg: TrainConfig) -> None:
 
     run_manifest.begin(
         cfg.save_dir, kind="train", name=sub, config=asdict(cfg),
-        encoder=run_manifest.encoder_identity(
-            cfg.encoder_checkpoint, enc_cfg, encoder_gain),
+        encoder=encoder_ident,
         parent=cfg.load_checkpoint,
         wandb_run=wandb.run if cfg.use_wandb else None,
     )
+
+    # Written on both paths: a run has to be able to say which envs it used,
+    # and the historical path could not (docs/EVAL_SPLITS_DESIGN.md 1.4).
+    ckpt_world = rw.record()
 
     # Distractor RNG for training: deterministic seeding lets the same distractor
     # patterns recur across updates, but with per-update offset so the agent can't
@@ -251,24 +208,31 @@ def train(cfg: TrainConfig) -> None:
         # same 20 goals for the entire run.
         if cfg.hopfield.refresh_envs_each_update:
             for world in worlds:
-                vh = world["vectorhash"]
-                if not vh.cfg.static_vectorhash:
+                if not world.field.cfg.static_vectorhash:
                     raise RuntimeError(
                         "refresh_envs_each_update requires --static-vectorhash"
                     )
-                for env in world["train_envs"]:
+                for env in world.envs:
                     env.reset_goal()
-                world["offsets"] = place_envs(
-                    len(world["train_envs"]), cfg.env.size, vh.Npos,
+                world.offsets = place_envs(
+                    len(world.envs), cfg.env.size, world.field.Npos,
                     np.random, placement="random")
+        # The per-trait refresh: draws from the declared train domain, clear of
+        # the fixed val envs, and records every draw into `split.used`. Mutually
+        # exclusive with the block above -- see the check in `train`.
+        if rw.refresh(update):
+            # Any tick moves a goal or the footprint holding it, so a template
+            # built from the old encodings is now a false memory.
+            templates = build_templates(cfg, worlds, embed_dim)
+
         all_rollouts = []
-        for world in worlds:
-            vh = world["vectorhash"]
-            template_hop = world["template_hopfield"]
+        for w_idx, world in enumerate(worlds):
+            vh = world.field
+            template_hop = templates[w_idx]
             collector = RolloutCollector(vh, cfg, embed_dim, device)
 
-            for local_idx, env in enumerate(world["train_envs"]):
-                env_offset = world["offsets"][local_idx]
+            for local_idx, env in enumerate(world.envs):
+                env_offset = world.offsets[local_idx]
 
                 # Fresh Hopfield instances per env: no cross-env contamination.
                 if cfg.hopfield.allow_store:
@@ -352,10 +316,10 @@ def train(cfg: TrainConfig) -> None:
 
         # Eval — single dedicated eval world, unified structure across all three
         # evals. Each trial gets a fresh Hopfield (no cross-val contamination).
-        if cfg.eval_every > 0 and update % cfg.eval_every == 0 and eval_world["val_envs"]:
-            val_envs = eval_world["val_envs"]
-            val_vh = eval_world["vectorhash"]
-            val_idxs = eval_world["offsets"]
+        if cfg.eval_every > 0 and update % cfg.eval_every == 0 and eval_world.envs:
+            val_envs = eval_world.envs
+            val_vh = eval_world.field
+            val_idxs = eval_world.offsets
             dist_list = cfg.val_n_distractors_list
             n_trials = cfg.n_val_trials
 
@@ -399,35 +363,49 @@ def train(cfg: TrainConfig) -> None:
                         log[f"eval/nav_stoch_{n_dist}/{k}"] = v
                     for k, v in disc[n_dist].items():
                         log[f"eval/disc_{n_dist}/{k}"] = v
+                    # `union_coverage` and `union_per_rollout` are keys of
+                    # `expl` and are logged by the loop above. A separate
+                    # `union` evaluator was absorbed into evaluate_exploration
+                    # on 2026-08-06 and this line outlived it, so every
+                    # `--use_wandb` run died with NameError at its first eval.
                     for k, v in expl[n_dist].items():
                         log[f"eval/expl_{n_dist}/{k}"] = v
-                    for k, v in union[n_dist].items():
-                        log[f"eval/union_{n_dist}/{k}"] = v
                 wandb.log(log, step=update)
 
         # Save
         if cfg.save_every > 0 and update % cfg.save_every == 0:
             os.makedirs(cfg.save_dir, exist_ok=True)
+            # A refreshing run's record grows with it: rewrite before saving so
+            # the checkpoint names the file as it stands.
+            if rw.refresher is not None:
+                ckpt_world = rw.record()
             torch.save({
                 "agent_state_dict": agent.state_dict(),
                 "optimizer_state_dict": optimizer.state_dict(),
                 "config": asdict(cfg),
                 "update": update,
+                "world_spec": ckpt_world,
             }, os.path.join(cfg.save_dir, f"hopfield_nav_update{update}.pt"))
             run_manifest.record_checkpoint(
                 cfg.save_dir, f"hopfield_nav_update{update}.pt", update)
 
     print("Training complete.")
 
+    # The union of everything training touched, as it ends up. `world.json` is
+    # rewritten on the checkpoint cadence, so without this the file would stop
+    # at the last saved update rather than at the last refresh tick.
+    if rw.refresher is not None:
+        rw.record()
+
     # Realistic end-of-training eval: one persistent Hopfield accumulating
     # memories across envs visited sequentially; retest prior envs after each
     # new visit with storing disabled to measure interference.
-    if cfg.realistic_steps_per_env > 0 and eval_world["val_envs"]:
+    if cfg.realistic_steps_per_env > 0 and eval_world.envs:
         print(f"Running realistic eval ({cfg.realistic_steps_per_env} steps/env, "
-              f"{len(eval_world['val_envs'])} envs)")
+              f"{len(eval_world.envs)} envs)")
         realistic = evaluate_realistic(
-            agent, eval_world["val_envs"], eval_world["vectorhash"],
-            eval_world["offsets"], cfg, device,
+            agent, eval_world.envs, eval_world.field,
+            eval_world.offsets, cfg, device,
             steps_per_env=cfg.realistic_steps_per_env,
             seed=cfg.seed + 1000,
             deterministic=True,
@@ -547,6 +525,47 @@ def main():
                         help="Per-step probability of replacing the sampled movement action with a uniform-random direction. The action is injected via the agent override path so log_prob is re-scored under the current policy (PPO ratio stays well-defined).")
     parser.add_argument("--epsilon_anneal_updates", type=int, default=0,
                         help="Linearly decay epsilon_explore from full→0 over this many updates (0 = no decay / constant).")
+    parser.add_argument("--env_generator", action=argparse.BooleanOptionalAction,
+                        default=False,
+                        help="Draw envs from declared domains (world/generate.py) "
+                             "instead of the historical placement path. Off keeps "
+                             "today's envs for a given --seed; on fixes the "
+                             "offset-reproducibility bug and enforces train/val "
+                             "separation. world.json is written either way.")
+    parser.add_argument("--place_region", type=str, default="anywhere",
+                        help="Where train envs may sit: 'anywhere' or "
+                             "'rect:X0,Y0,W,H'. Declaring a rect is what makes "
+                             "a place-OOD val set possible later -- its complement.")
+    parser.add_argument("--goal_region", type=str, default="any",
+                        help="Which env-local cells may hold a goal: 'any', "
+                             "'ring:W', 'interior:W' or 'quadrant:Q'.")
+    parser.add_argument("--wall_seeds", type=str, default="0,10000000",
+                        help="'LO,HI' range training draws wall seeds from.")
+    parser.add_argument("--place_margin", type=int, default=None,
+                        help="Edge-to-edge train/val clearance in cells. Default "
+                             "derives it from the scaffold's own cosine curve.")
+    parser.add_argument("--goal_val_frac", type=float, default=0.2,
+                        help="Share of goal cells reserved for validation.")
+    # Per-trait refresh. All require --env_generator, and all apply to the train
+    # set only -- a validation set that moved under the model would make every
+    # in-training curve unreadable. These supersede --refresh_envs_each_update,
+    # which re-placed randomly over the whole scaffold and recorded nothing.
+    parser.add_argument("--refresh_place", type=int, default=None,
+                        help="Re-draw train env placements every N updates, from "
+                             "--place_region and clear of the fixed val envs by "
+                             "the margin. Requires --env_generator.")
+    parser.add_argument("--refresh_wall", type=int, default=None,
+                        help="Re-draw train wall seeds every N updates, excluding "
+                             "every seed the run has already used. Rebuilds the "
+                             "envs, so it is the one expensive cadence.")
+    parser.add_argument("--refresh_goal", type=int, default=None,
+                        help="Re-draw train goals every N updates from the train "
+                             "share of --goal_region. Also caps the train goal "
+                             "cells at 1 - --goal_val_frac of the region up front.")
+    parser.add_argument("--refresh_size", type=int, default=None,
+                        help="Re-draw the train env size every N updates. Needs "
+                             "more than one declared size; nothing produces that "
+                             "yet, so this raises.")
     parser.add_argument("--refresh_envs_each_update", action="store_true",
                         help="Re-sample env_offsets at the start of every PPO update so each rollout buffer covers a different patch of the global scaffold. Reduces seed-lottery on scaffold position. PPO-correct because the buffer comes from a single policy.")
     # Agent
@@ -713,6 +732,16 @@ def main():
         fwhm_ratio=args.fwhm_ratio,
         num_worlds=args.num_worlds,
         envs_per_world=args.envs_per_world,
+        env_generator=args.env_generator,
+        place_region=args.place_region,
+        goal_region=args.goal_region,
+        wall_seeds=args.wall_seeds,
+        place_margin=args.place_margin,
+        goal_val_frac=args.goal_val_frac,
+        refresh_place=args.refresh_place,
+        refresh_wall=args.refresh_wall,
+        refresh_goal=args.refresh_goal,
+        refresh_size=args.refresh_size,
         num_val_envs=args.num_val_envs,
         n_val_trials=args.n_val_trials,
         val_n_distractors_list=args.val_distractors,

@@ -42,15 +42,13 @@ from .updates.ppo import ppo_update
 from .evaluation.checkpoint_io import cfg_from_checkpoint
 from .training.explore import ExploreRegime
 from .training.exploit import ExploitRegime
-from .training.refresh import Cadence, Refresher, format_preflight, preflight
+from .training.refresh import Cadence, Refresher
 from .training.stages import (
     Knobs, ScheduleError, Stage, format_schedule, parse_schedule, resolve,
     stage_at, total_updates,
 )
 from .training.world_setup import (
-    build_field, do_eval, legacy_split,
-    set_phase_freeze, setup_world, setup_worlds_declared,
-    write_world_spec,
+    build_field, do_eval, set_phase_freeze, setup_run_world,
 )
 
 
@@ -424,26 +422,16 @@ def train_navigate(
     # (lambdas, Npos, fwhm_ratio, encoder), so the per-world copies this used
     # to build were bit-identical -- and 12 GB each at Npos=1716.
     field = build_field(cfg, encoder)
-    if cfg.env_generator:
-        worlds, eval_world, split = setup_worlds_declared(cfg, field)
-        world_kind = "declared"
-    else:
-        worlds = [setup_world(cfg, encoder, embed_dim, rng, role="train",
-                              field=field)
-                  for _ in range(cfg.num_worlds)]
-        # Eval envs are always built with goals_active=True, so nav and discovery
-        # have a goal event to measure. Training envs are not: each rollout sets
-        # theirs from its regime, and under --explore_goals_off the explore ones
-        # run with no goal reward at all. `cfg.env.goals_active` reaching here as
-        # False means it was inherited from a --load_checkpoint parent written by
-        # `train` or `train_phased`, which do still expose the flag.
-        saved_goals_active = cfg.env.goals_active
-        cfg.env.goals_active = True
-        eval_world = setup_world(cfg, encoder, embed_dim, rng, role="eval",
-                                 field=field)
-        cfg.env.goals_active = saved_goals_active
-        split = legacy_split(cfg, field, worlds, eval_world)
-        world_kind = "legacy"
+    # The world, its record, and the refresher, in one place -- shared with
+    # `train` and `train_store` so the three cannot drift about what a run
+    # writes down. The preflight runs inside, and a cadence that would run the
+    # domains dry raises here, before the manifest exists or a single update.
+    encoder_ident = run_manifest.encoder_identity(
+        cfg.encoder_checkpoint, enc_cfg, encoder_gain)
+    rw = setup_run_world(cfg, encoder, embed_dim, rng, field,
+                         cadence=cadence, n_updates=total_updates(stages),
+                         encoder_ident=encoder_ident, where="train_navigate")
+    worlds, eval_world, split = rw.worlds, rw.eval_world, rw.split
 
     input_dim = compute_input_dim(cfg.agent, embed_dim, cfg.env.observation_size)
     print(f"Agent input_dim={input_dim} init_log_std={cfg.agent.init_log_std}",
@@ -467,45 +455,15 @@ def train_navigate(
 
     run_manifest.begin(
         cfg.save_dir, kind="navigate", name=sub, config=asdict(cfg),
-        encoder=run_manifest.encoder_identity(
-            cfg.encoder_checkpoint, enc_cfg, encoder_gain),
+        encoder=encoder_ident,
         parent=load_checkpoint,
         wandb_run=wandb.run if cfg.use_wandb else None,
     )
 
-    refresher = (Refresher(cadence, split, worlds, cfg.env,
-                           cfg.agent.movement_mode, int(cfg.seed))
-                 if cadence else None)
-
-    # What a post-hoc held-out eval will still be able to ask for once this run
-    # has finished moving its envs around. The answer is fixed by the config, so
-    # it is knowable now and only observable at the end -- which is the whole
-    # reason to say it here. Reported and recorded; never a reason to refuse.
-    pre = None
-    if refresher is not None:
-        pre = preflight(split, cadence, total_updates(stages), cfg.env,
-                        cfg.agent.movement_mode, int(cfg.seed),
-                        n_val_envs=int(cfg.num_val_envs))
-        if pre["refresh_dies_at_update"] is not None:
-            # A shrinking eval ceiling is recorded and the run proceeds; this is
-            # not that. The refresh will raise partway through, and the tick is
-            # decided before the run starts -- so the choice is between failing
-            # now and failing after hours of training that gets thrown away.
-            raise SystemExit(f"  ERROR: {format_preflight(pre)}")
-        print(format_preflight(pre), flush=True)
-
     # Written on both paths: a run has to be able to say which envs it used,
     # and the historical path could not (see docs/EVAL_SPLITS_DESIGN.md 1.4).
-    encoder_ident = run_manifest.encoder_identity(
-        cfg.encoder_checkpoint, enc_cfg, encoder_gain)
-
-    def record_world() -> dict:
-        spec, path = write_world_spec(
-            cfg, field, split, encoder_ident, generator=world_kind,
-            extra=(None if refresher is None
-                   else {"refresh": refresher.report(), "preflight": pre}))
-        return spec.summary(path)
-
+    refresher = rw.refresher
+    record_world = rw.record
     ckpt_world = record_world()
 
     run_navigate(

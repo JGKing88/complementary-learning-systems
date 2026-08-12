@@ -24,6 +24,7 @@ python -m hopfield_nav.tests.gen_golden --check       all goldens match
 | 4 | Per-trait refresh | **done** — see outcome below |
 | 5 | Eval CLIs, mix-and-match | **done** — see outcome below |
 | 6 | Size OOD | **done** — see outcome below |
+| 7 | `train` + `train_store` on the same record | **done** — see outcome below |
 
 ---
 
@@ -1840,11 +1841,117 @@ its own separation report and both step budgets. `analysis.trajectories
 
 ### Left undone
 
-- **`train.py` / `train_phased.py` / `train_store.py` still do not write
-  `world.json`** — carried over from Phase 5, unchanged here.
+- **`train_phased.py` still does not write `world.json`.** `train.py` and
+  `train_store.py` now do — see "Phase 7" below.
 - **Mixed sizes within one env set** stay refused (6.8). `evaluate_exploration`
   now computes coverage correctly if one ever arrives, but `_single_size` is
   still the gate and `make_val_set` still takes one `size`.
 - **Training at a new size** is still `--refresh_size`, still gated off. The five
   `rollout/collector.py` sites were not touched, deliberately: an eval-side size
   change cannot corrupt a training run.
+
+
+---
+
+## Phase 7 — `train` and `train_store` on the same record
+
+Not a planned phase; the remaining half of Phase 5's "left undone". `train.py`
+and `train_store.py` now build their worlds the way `train_navigate` does and
+write `world.json` on both paths.
+
+### One helper, because three copies is three chances to drift
+
+`setup_run_world` in `training/world_setup.py` does the five things every entry
+point needs: draw a split one of two ways, build a `Refresher` if a cadence was
+asked for, run the startup preflight, and hand back a `RunWorld` whose
+`.record()` writes the file and `.refresh(tick)` moves the envs.
+`train_navigate` adopted it too rather than keep a second implementation — the
+refresh smoke test asserts on `world.json`'s contents and is unchanged, which is
+what says the adoption was behaviour-preserving.
+
+The preflight now runs *before* `run_manifest.begin`, so a cadence that would
+run the domains dry no longer leaves an orphan manifest behind.
+
+### `train.py`
+
+Its worlds were **dicts** predating `World` (`train_envs` / `vectorhash` /
+`offsets` / `assoc` / `template_hopfield`). Migrating them was not cosmetic:
+`Refresher` mutates `world.offsets`, and a trainer reading `world["offsets"]`
+from a separate dict would have two views of one thing, silently diverging on
+the first refresh tick — the exact bug class this design exists to remove.
+
+**`--refresh_envs_each_update` and the per-trait flags are now mutually
+exclusive.** The old mechanism re-places with `placement="random"` over the whole
+scaffold, so a refreshed train env can land on the validation region, and it
+never touches `split.train` — so `world.json` would describe envs the run had
+stopped using. `EVAL_SPLITS_DESIGN.md` §refresh already said the new mechanism
+replaces it; this makes that structural.
+
+**A false-memory bug the refresh would have introduced.** Under
+`--hopfield_init pre_stored`, each world carries a template Hopfield built from
+its goal *encodings* — a function of both the goal cell and the env's offset.
+Any refresh tick changes one of those, so a template carried across a tick has
+the agent begin every rollout already remembering a goal that has moved:
+indistinguishable from a real memory, and silent in every metric.
+`build_templates` is called again after each tick.
+
+**What the legacy path admitted about itself.** The first `train.py` run to
+record its own world reported `min_place_gap=-3` — its train and val envs
+*overlap* on the scaffold. That is §1.3 measured on the entry point where it was
+first diagnosed, and it took writing the file to see it.
+
+### `train_store.py`, and both worlds
+
+Phase B is a continuation of the *agent*, not of the world: it draws its own
+envs from its own `--seed`, which is usually not the parent's. So its eval
+numbers are not on the same axes as Phase A's — which was true before and simply
+unrecorded.
+
+Rather than change that silently, the run says it:
+
+- `world.json` — Phase B's own world, the file every eval driver resolves.
+- `world_parent.json` — a **verbatim** copy of Phase A's, byte for byte, so its
+  own `spec_hash` still verifies and the directory answers "what did the parent
+  train on" after the parent is moved or collected.
+- `diagnostics.parent.overlap` — `val_envs_identical` (the one that answers "can
+  these curves share an axis"), shared wall seeds, shared goal cells, shared
+  train offsets, and `min_place_gap_vs_parent`; 0 there would mean the two train
+  sets overlap.
+- Checkpoints carry both, as `world_spec` and `parent_world_spec`.
+
+A parent written before world recording gets a printed note and no `parent`
+block — the older world is unrecoverable, which is a fact to state rather than
+an error.
+
+`train_store` also inherited the parent's refresh cadence and never applied it.
+It is now honoured, or refused at startup if there is no generator behind it.
+
+### A crash found on the way, unrelated to the feature
+
+`train.py --use_wandb` has been **dead** since 2026-08-06: the eval logging block
+iterates a `union` variable whose producer (`evaluate_union_coverage`) was
+absorbed into `evaluate_exploration` and deleted. Every run with wandb logging
+and evals on died at its first eval with `NameError: name 'union' is not
+defined`, exit 1 — reproduced before fixing. The numbers it wanted are keys of
+`expl` (`union_coverage`, `union_per_rollout`) and were already being logged two
+lines above, so the fix is deleting the dead reference.
+
+It survived four months because the wandb path is the one the test suite does
+not drive. It does now: `test_train_survives_its_own_eval_logging` runs
+`--use_wandb` with `--eval_every 1` under `WANDB_MODE=disabled`, which still
+evaluates the expression, and reverting the fix fails it.
+
+### Verified
+
+- both `train.py` paths end to end: `generator=legacy` and `generator=declared`
+- a refreshing `train.py` run: preflight, templates rebuilt per tick, 10 distinct
+  offsets recorded from 2 train envs over 4 ticks, `world.json` rewritten on the
+  save cadence
+- both refusals, exit 1 with zero checkpoints
+- a real Phase A → Phase B chain: `world_parent.json` byte-identical to the
+  parent's, hashes matching in the checkpoint, `val_envs_identical=False`
+- six mutations, all caught
+
+### Left undone
+
+`train_phased.py`. It has a third world-construction shape and was not in scope.

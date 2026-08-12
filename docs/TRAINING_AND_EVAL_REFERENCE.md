@@ -273,7 +273,10 @@ Per update (`train.py:198-407`):
 2. `epsilon_now = epsilon_explore × max(0, 1 − (u−1)/epsilon_anneal_updates)`.
 3. If `--refresh_envs_each_update`: every train env draws a new goal and the
    scaffold re-places all envs (`placement="random"`). Requires
-   `--static-vectorhash`, else `RuntimeError`.
+   `--static-vectorhash`, else `RuntimeError`. **Superseded** by the per-trait
+   refresh below, and refused alongside it: random re-placement over the whole
+   scaffold can drop a train env on the validation region, and it never updates
+   `split.train`, so `world.json` would describe envs the run had stopped using.
 4. For each (world, env): build the Hopfield set —
    - `agent_can_store=True` → a list of `batch_envs` Hopfields (clones of the
      pre-stored template if `--hopfield_init pre_stored`, else empty). Only in
@@ -292,7 +295,9 @@ Per update (`train.py:198-407`):
 8. Every `eval_every`: `eval_max = max(200, 5·size²)`, then `nav_det`,
    `nav_stoch`, `discovery`, `exploration`, and `union` (10 trials,
    `eval_max/2` steps).
-9. Every `save_every`: `$CLS_RUNS/agent_ckpts/<run>/hopfield_nav_update{u}.pt`.
+9. Every `save_every`: `$CLS_RUNS/agent_ckpts/<run>/hopfield_nav_update{u}.pt`,
+   carrying `world_spec`. A refreshing run rewrites `world.json` first, so the
+   checkpoint names the file as it stands.
 10. After training, `evaluate_realistic` if `realistic_steps_per_env > 0`.
 
 <details>
@@ -347,7 +352,14 @@ Per update (`train.py:198-407`):
 | `--wall_penalty` | `0.0` | `−r` per step on a grid-edge cell. |
 | `--epsilon_explore` | `0.0` | Per-step probability of replacing the sampled action with a uniform random direction; log-prob is re-scored, and the step is masked out of the PPO move loss. |
 | `--epsilon_anneal_updates` | `0` | Linear decay of ε to 0 over N updates (0 = constant). |
-| `--refresh_envs_each_update` | off | Re-draw goals and re-place envs each update. |
+| `--refresh_envs_each_update` | off | Re-draw goals and re-place envs each update, randomly over the whole scaffold. Superseded by `--refresh_place` / `--refresh_goal`; refused alongside them. |
+| `--env_generator` / `--no-` | off | Draw envs from declared domains instead of the historical placement path. Off keeps today's envs for a given `--seed`; on fixes the offset-reproducibility bug and enforces train/val separation. **`world.json` is written either way.** |
+| `--place_region` | `anywhere` | `anywhere` or `rect:X0,Y0,W,H`. Declaring a rect is what makes a place-OOD val set possible later — its complement. |
+| `--goal_region` | `any` | `any`, `ring:W`, `interior:W`, `quadrant:Q`. |
+| `--wall_seeds` | `0,10000000` | `LO,HI` range training draws wall seeds from. |
+| `--place_margin` | derived | Edge-to-edge train/val clearance, in cells. Default reads the scaffold's own cosine-vs-distance curve. |
+| `--goal_val_frac` | `0.2` | Share of goal cells reserved for validation. |
+| `--refresh_place` / `--refresh_wall` / `--refresh_goal` / `--refresh_size` | — | Re-draw that trait across the train set every N updates, from the declared domain and clear of the fixed val envs. Requires `--env_generator`. Every draw is recorded into `split.used`. |
 | `--explore_steps` | `None` | Two-phase rollout: stores + shaping are active only for the first N steps of each rollout. |
 
 Note: `persistence_bonus`, `novelty_scale_remaining` and `novelty_scale_cap`
@@ -667,6 +679,29 @@ RNN; the optimizer sees only the store head. Rollouts use `empty_shared`
 Hopfields, and `ppo_update` runs — but with everything else frozen, the only
 live gradients are the store surrogate and the store BCE.
 
+**Two worlds are recorded.** Phase B is a continuation of the *agent*, not of
+the world: it draws its own envs from its own `--seed`, which is usually not the
+parent's, so its eval numbers are **not on the same axes** as Phase A's. Rather
+than leave that to be discovered by whoever plots the two curves together, the
+run directory says it outright:
+
+| File | What |
+|---|---|
+| `world.json` | Phase B's own world, as for every other trainer. This is what `--split` and every eval driver resolve. |
+| `world_parent.json` | A **verbatim** copy of Phase A's `world.json` — byte for byte, so its own `spec_hash` still verifies, and so this directory answers "what did the parent train on" after the parent has been moved or garbage-collected. |
+
+`world.json`'s `diagnostics.parent` block records the parent's hash and how much
+of its world this run reuses: `val_envs_identical` (the one that answers "can
+these curves go on the same axes"), shared wall seeds, shared goal cells, shared
+train offsets, and `min_place_gap_vs_parent` — 0 would mean the two train sets
+overlap on the scaffold. Checkpoints carry both summaries as `world_spec` and
+`parent_world_spec`. A parent written before world recording gets a printed note
+and no `parent` block, rather than a silent absence.
+
+The refresh cadence inherited from the parent's config is now **applied** rather
+than silently dropped; a cadence with no generator behind it is refused at
+startup, as elsewhere.
+
 | Flag | Default | Effect |
 |---|---|---|
 | `--load_checkpoint` | required | Phase-A `.pt` to start from. |
@@ -677,7 +712,8 @@ live gradients are the store surrogate and the store BCE.
 | `--steps_per_rollout` | `None` | Override the checkpoint's value. |
 | `--eval_every` | `5` | Evaluation cadence. |
 | `--ckpt_every` | `None` | Checkpoint cadence (`store_u{u}.pt`). `None` = follow `--eval_every`, which is what it did unconditionally before 2026-08-06. |
-| `--seed` / `--device` / `--use_wandb` / `--wandb_project` | `42` / `cuda` / off / `hopfield-nav-phase-b` | |
+| `--seed` / `--device` / `--use_wandb` / `--wandb_project` | `42` / `cuda` / off / `hopfield-nav-phase-b` | `--seed` draws Phase B's own world; it is usually not the parent's seed. |
+| `--save_dir` | `<CLS_RUNS>/agent_ckpts/store_<run>` | Not inherited from the parent, which would have Phase B overwrite its own parent. |
 
 ### 4.5 What one rollout actually does
 
