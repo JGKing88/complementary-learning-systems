@@ -151,7 +151,8 @@ def run_navigate(
 
     explore_regime = ExploreRegime(cfg, embed_dim, device, dist_rng,
                                    goals_off=cfg.explore_goals_off,
-                                   use_distractors=use_emp_distractors)
+                                   use_distractors=use_emp_distractors,
+                                   ends_on_goal=cfg.explore_ends_on_goal)
 
     if refresher is not None:
         print(f"Env refresh: {refresher.cadence.describe()} (train envs only; "
@@ -298,6 +299,7 @@ def run_navigate(
                     h_rnn=None, env_offset=env_offset,
                     update_idx=update, aux_scale=1.0, epsilon_now=spec.epsilon,
                     goal_in_memory_init=spec.goal_in_memory_init,
+                    ends_on_goal=spec.ends_on_goal,
                 )
                 rollouts.append(rollout)
         cfg.hopfield.novelty_reward = 0.0
@@ -517,6 +519,7 @@ CFG_FIELDS: dict[str, tuple[str, ...]] = {
     "allow_offcell_store": ("env.allow_offcell_store",),
     "egocentric_heading": ("env.egocentric_heading",),
     "reset_state_on_teleport": ("env.reset_state_on_teleport",),
+    "explore_ends_on_goal": ("explore_ends_on_goal",),
     "wall_resolution": ("env.wall_resolution",),
     "time_penalty": ("env.time_penalty",),
     "continuous_normalize": ("env.continuous_normalize",),
@@ -658,6 +661,16 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--encoder_checkpoint", required=True)
     p.add_argument("--size", type=int, default=8)
     p.add_argument("--observation_size", type=int, default=12)
+    p.add_argument("--explore_ends_on_goal",
+                   action=argparse.BooleanOptionalAction, default=None,
+                   help="An explore rollout ends when the agent reaches "
+                        "the goal, instead of teleporting and continuing. "
+                        "Per trajectory: the other B-1 keep running. On by "
+                        "default since 2026-08-12. Vacuous under "
+                        "--explore_goals_off, where there is no goal event "
+                        "to end on. Note it truncates novelty accrual -- an "
+                        "agent that finds the goal early collects fewer "
+                        "coverage steps.")
     p.add_argument("--reset_state_on_teleport",
                    action=argparse.BooleanOptionalAction, default=None,
                    help="Zero the RNN hidden state and prev_reward / prev_action "

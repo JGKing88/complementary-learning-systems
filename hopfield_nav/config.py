@@ -358,6 +358,13 @@ class TrainConfig:
     epsilon_explore: float = 0.0            # per-step chance of a uniform-random move, explore regime only
     epsilon_anneal_updates: int = 0         # linearly scale epsilon_explore -> 0 over this many updates; 0 = constant
     explore_goals_off: bool = False         # explore-regime envs emit no goal reward and never teleport
+    # Explore rollouts end when the agent reaches the goal, instead of
+    # teleporting and continuing. Only meaningful when the goal is active --
+    # with --explore_goals_off there is no goal event to end on. Note this
+    # truncates novelty accrual: an agent that finds the goal early collects
+    # fewer coverage steps, which is the point if a found goal ends the
+    # episode and a confound if novelty is what you are measuring.
+    explore_ends_on_goal: bool = True
     n_train_distractors_min: int = 0        # non-goal patterns preloaded per exploit rollout
     n_train_distractors_max: int = 0
     n_train_emp_distractors_min: int = 0    # ditto per explore rollout (no goal among them)
