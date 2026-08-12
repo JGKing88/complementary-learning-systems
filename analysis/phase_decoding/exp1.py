@@ -95,6 +95,16 @@ def main() -> None:
     ap.add_argument("--trials_dir", default=None, type=str,
                     help="Path to an existing trials/ directory (from a prior "
                          "run). If given, skips collection.")
+    ap.add_argument("--split", type=str, default="recorded",
+                   help="Which validation arenas to decode from. 'recorded' "
+                        "(default) is the run's own base_val from world.json. "
+                        "Otherwise 'trait=level' pairs over place/wall/goal, "
+                        "levels same | held_out | ood; unnamed traits default "
+                        "to held_out. --split goal=ood asks whether phase is "
+                        "decodable in arenas whose goal region the run never "
+                        "trained on.")
+    ap.add_argument("--val_seed", type=int, default=0,
+                   help="Seed for minting a --split arena set.")
     ap.add_argument("--num_arenas", type=int, default=100)
     ap.add_argument("--n_starts", type=int, default=100,
                     help="Trials per condition per arena.")
@@ -154,6 +164,7 @@ def main() -> None:
             device=args.device, num_arenas=args.num_arenas,
             random_agent=args.random_agent,
             random_init_seed=args.random_init_seed,
+            split=args.split, val_seed=args.val_seed,
         )
         bundle = engine.build_bundle()
         by_q = {q: 0 for q in range(4)}

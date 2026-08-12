@@ -30,7 +30,9 @@ from ..config import (
     VectorHashConfig,
 )
 from ..world.env import make_env
-from ..world.generate import build_envs, make_val_set
+from ..world.generate import (
+    RECORDED, build_envs, levels_key, make_val_set, parse_levels,
+    val_set_report)
 from ..world.scaffold import VectorHash, fit_env_assoc, place_envs
 from ..world.spec import WORLD_SPEC_NAME, WorldSpec
 
@@ -146,6 +148,73 @@ def eval_specs(spec: WorldSpec, levels: dict | None, *, n_envs: int,
     if levels is None:
         return list(spec.split.base_val)
     return make_val_set(spec.split, n_envs, levels, seed, size=size)
+
+
+def eval_env_set(cfg: TrainConfig, encoder, device: str, *, ckpt_path,
+                 levels: dict | None = None, val_seed: int = 0,
+                 n_envs: int | None = None, spec: WorldSpec | None = None,
+                 field=None) -> dict:
+    """One evaluation env set at one split level: ``{key, envs, field, offsets,
+    report}``.
+
+    The single-set entry point every eval CLI shares, so "what does
+    ``--split place=ood`` mean" has one answer rather than one per driver.
+    ``eval_all`` loops it for the multi-combination table, passing ``spec`` and
+    ``field`` so the 12 GB scaffold is built once.
+
+    ``levels=None`` is the recorded ``base_val`` -- the envs this checkpoint was
+    actually scored against. Deliberately not a synonym for all-``held_out``,
+    which mints a fresh set that is also disjoint from training.
+    """
+    if spec is None:
+        spec = world_spec_for(ckpt_path)
+    if spec is None:
+        if levels is not None:
+            raise SystemExit(
+                f"--split needs a world.json, and {ckpt_path} has none: it was "
+                "written before runs recorded their envs. Minting a level needs "
+                "the declared domains and the union training used, and an RNG "
+                "replay recovers neither. Re-run training on the current code.")
+        envs, built, offsets = build_eval_world(cfg, encoder, device,
+                                                ckpt_path=ckpt_path)
+        return {"key": RECORDED, "envs": envs, "field": built,
+                "offsets": offsets, "report": {}}
+
+    if field is None:
+        field = eval_field(cfg, encoder, device, spec)
+    n = int(n_envs if n_envs is not None else cfg.num_val_envs)
+    specs = eval_specs(spec, levels, n_envs=n, seed=val_seed)
+    # A minted set's separation is the claim the evaluation is making, so it is
+    # measured and returned rather than assumed. Raises on a held_out/ood
+    # violation -- that would be a generator bug, and a number in a report is
+    # not a strong enough place to put one.
+    report = val_set_report(spec.split, specs, cfg.env, levels)
+    return {
+        "key": levels_key(levels),
+        "envs": build_envs(specs, cfg.env, cfg.agent.movement_mode),
+        "field": field,
+        "offsets": [s.offset for s in specs],
+        "report": report,
+    }
+
+
+def eval_world_for_split(cfg: TrainConfig, encoder, device: str, *, ckpt_path,
+                         split: str = RECORDED, val_seed: int = 0,
+                         n_envs: int | None = None):
+    """``(envs, field, offsets)`` for one ``--split`` string.
+
+    The drop-in for `build_eval_world` in a CLI that evaluates one env set.
+    """
+    es = eval_env_set(cfg, encoder, device, ckpt_path=ckpt_path,
+                      levels=parse_levels(split), val_seed=val_seed,
+                      n_envs=n_envs)
+    if es["key"] != RECORDED:
+        r = es["report"]
+        print(f"  split={es['key']}: {len(es['envs'])} envs, "
+              f"place_gap>={r.get('min_place_gap_vs_train')} "
+              f"(margin {r.get('margin')}), wall_hamming>="
+              f"{r.get('min_wall_hamming_vs_train')}", flush=True)
+    return es["envs"], es["field"], es["offsets"]
 
 
 def eval_world_from_spec(spec: WorldSpec, cfg: TrainConfig, encoder,
@@ -291,8 +360,10 @@ def scaffold_layout_dict(
 
 __all__ = [
     "build_eval_world",
+    "eval_env_set",
     "eval_field",
     "eval_specs",
+    "eval_world_for_split",
     "eval_world_from_spec",
     "cfg_from_checkpoint",
     "coerce_legacy_cfg",

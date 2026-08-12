@@ -52,37 +52,16 @@ def resolve_env_sets(cfg, encoder, device, spec, splits, *, ckpt_path,
     which an RNG replay can recover. Asking for a level then fails here, rather
     than silently evaluating something else.
     """
-    if spec is None:
-        if any(lv is not None for lv in splits):
-            raise SystemExit(
-                f"--split needs a world.json, and {ckpt_path} has none: it was "
-                "written before runs recorded their envs. Only the default "
-                f"'{gen.RECORDED}' works here, and even that falls back to an "
-                "RNG replay whose offsets are a fresh draw. Re-run training on "
-                "the current code to get a recorded world.")
-        envs, field, offsets = build_eval_world(cfg, encoder, str(device),
-                                                ckpt_path=ckpt_path)
-        return [{"key": gen.RECORDED, "envs": envs, "field": field,
-                 "offsets": offsets, "report": {}}]
-
-    field = checkpoint_io.eval_field(cfg, encoder, str(device), spec)
-    out = []
-    for levels in splits:
-        specs = checkpoint_io.eval_specs(spec, levels, n_envs=n_val_envs,
-                                         seed=val_seed)
-        # A minted set's separation is the claim this evaluation is making, so
-        # it gets measured and recorded rather than assumed. Raises on a
-        # held_out/ood violation -- that would be a generator bug, and a number
-        # in a report is not a strong enough place to put one.
-        report = gen.val_set_report(spec.split, specs, cfg.env, levels)
-        out.append({
-            "key": gen.levels_key(levels),
-            "envs": gen.build_envs(specs, cfg.env, cfg.agent.movement_mode),
-            "field": field,
-            "offsets": [s.offset for s in specs],
-            "report": report,
-        })
-    return out
+    # One shared field across every combination: `encoded_Phi` is 12 GB at
+    # Npos=1716, so a rebuild per combination would cost more than every
+    # evaluator put together. `eval_env_set` is the same call the single-set
+    # CLIs make, so "what does --split place=ood mean" has one answer.
+    field = (checkpoint_io.eval_field(cfg, encoder, str(device), spec)
+             if spec is not None else None)
+    return [checkpoint_io.eval_env_set(
+        cfg, encoder, str(device), ckpt_path=ckpt_path, levels=levels,
+        val_seed=val_seed, n_envs=n_val_envs, spec=spec, field=field)
+        for levels in splits]
 
 
 @torch.no_grad()

@@ -19,7 +19,7 @@ from hopfield_nav.world.env import at_goal
 from hopfield_nav.evaluation.metrics import agent_step, random_start
 from hopfield_nav.rollout.distractors import sample_distractors
 from hopfield_nav.evaluation.checkpoint_io import (
-    build_eval_world,
+    eval_world_for_split,
     cfg_from_checkpoint,
     load_agent,
     scaffold_layout_dict,
@@ -71,8 +71,15 @@ class RolloutEngine:
         num_arenas: int = 100,
         random_agent: bool = False,
         random_init_seed: int = 0,
+        split: str = "recorded",
+        val_seed: int = 0,
     ) -> None:
         self.ckpt_path = ckpt_path
+        # Which validation envs to decode from. Defaults to the run's own
+        # base_val, so every existing caller is unchanged; a level combination
+        # asks whether phase is decodable in arenas the run never trained on.
+        self.split = str(split)
+        self.val_seed = int(val_seed)
         self.num_arenas = int(num_arenas)
         self.random_agent = bool(random_agent)
         self.random_init_seed = int(random_init_seed)
@@ -103,9 +110,9 @@ class RolloutEngine:
 
         print(f"[rollout] building val world (precomputing encoded_Phi over "
               "Npos² positions — slow on CPU, seconds on GPU)", flush=True)
-        val_envs, vh, val_offsets = build_eval_world(cfg, encoder,
-                                                     str(self.device),
-                                                     ckpt_path=ckpt_path)
+        val_envs, vh, val_offsets = eval_world_for_split(
+            cfg, encoder, str(self.device), ckpt_path=ckpt_path,
+            split=self.split, val_seed=self.val_seed)
         # Seed BEFORE NavAgent construction so the random init is reproducible.
         torch.manual_seed(self.random_init_seed)
         if self.random_agent:

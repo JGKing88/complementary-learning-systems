@@ -185,3 +185,59 @@ def test_a_violated_held_out_claim_raises_rather_than_being_reported(spec):
         gen.val_set_report(spec.split, bad,
                            EnvConfig(size=SIZE, observation_size=OBS),
                            gen.parse_levels("wall=held_out"))
+
+
+# ---------------------------------------------------------------------------
+# Every driver, one answer
+# ---------------------------------------------------------------------------
+
+def test_every_eval_driver_can_be_asked_for_a_split():
+    """`--split place=ood` has to mean the same thing in all five.
+
+    Each driver used to build its own eval world, so a level would have meant
+    whatever that driver's copy of the logic did. They now share
+    `eval_env_set`, and this reads the source to keep it that way -- a driver
+    that grows a private path would still run, and would quietly answer a
+    different question.
+    """
+    import inspect
+    import hopfield_nav.eval_all as eval_all
+    from analysis import trajectories
+    from analysis.continual import agenthash
+    from analysis.phase_decoding import exp1, exp2, rollout
+
+    # The four single-set drivers go through the shared helper.
+    for mod in (trajectories, agenthash, rollout):
+        src = inspect.getsource(mod)
+        assert "eval_world_for_split(" in src, (
+            f"{mod.__name__} no longer resolves its env set through the shared "
+            "helper, so --split may mean something different there")
+
+    # ...and eval_all through the same underlying call, for its N-combination
+    # table.
+    assert "eval_env_set(" in inspect.getsource(eval_all)
+
+    # Every CLI that owns a RolloutEngine passes the flag through; a driver that
+    # forgets it silently decodes the recorded set while reporting a level.
+    for mod in (exp1, exp2):
+        src = inspect.getsource(mod)
+        assert '"--split"' in src and "split=args.split" in src, (
+            f"{mod.__name__} parses no --split, or does not forward it")
+
+
+def test_the_shared_helper_and_eval_all_agree_on_one_split(spec, enc):
+    """Same envs whichever entry point asked, so a trajectory figure and a
+    metrics table are describing the same arenas."""
+    from hopfield_nav.eval_all import resolve_env_sets
+
+    levels = gen.parse_levels("place=held_out,goal=ood")
+    via_table = resolve_env_sets(_cfg(), enc, torch.device("cpu"), spec,
+                                 [levels], ckpt_path="unused", val_seed=11,
+                                 n_val_envs=2)[0]
+    via_single = cio.eval_env_set(_cfg(), enc, "cpu", ckpt_path="unused",
+                                  levels=levels, val_seed=11, n_envs=2,
+                                  spec=spec)
+    assert via_table["key"] == via_single["key"]
+    assert via_table["offsets"] == via_single["offsets"]
+    assert ([e.seed for e in via_table["envs"]]
+            == [e.seed for e in via_single["envs"]])

@@ -62,7 +62,7 @@ from hopfield_nav.world.env import at_goal
 from hopfield_nav.evaluation.metrics import agent_step, random_start
 from hopfield_nav.rollout.distractors import goal_encoding, sample_distractors
 from hopfield_nav.evaluation.checkpoint_io import (
-    build_eval_world, cfg_from_checkpoint, load_agent,
+    cfg_from_checkpoint, eval_world_for_split, load_agent,
 )
 from hopfield import Hopfield
 
@@ -654,6 +654,16 @@ def _resolve_encoder_path(enc_path: str, checkpoint_dir: str) -> str:
 @torch.no_grad()
 def main():
     p = argparse.ArgumentParser()
+    p.add_argument("--split", type=str, default="recorded",
+                   help="Which validation envs to draw trajectories in. "
+                        "'recorded' (default) is the run's own base_val from "
+                        "world.json. Otherwise 'trait=level' pairs over "
+                        "place/wall/goal, levels same | held_out | ood; unnamed "
+                        "traits default to held_out. So --split goal=ood draws "
+                        "the same checkpoint navigating to goals in a region it "
+                        "never trained on.")
+    p.add_argument("--val_seed", type=int, default=0,
+                   help="Seed for minting a --split env set.")
     p.add_argument("--checkpoint_dir", required=True,
                    help="Directory containing hopfield_nav_update*.pt files.")
     p.add_argument("--mode", choices=MODES, default="combined")
@@ -720,8 +730,9 @@ def main():
 
     torch.manual_seed(0)
     np.random.seed(0)
-    val_envs, vh, val_offsets = build_eval_world(cfg, encoder, str(device),
-                                                 ckpt_path=args.checkpoint_dir)
+    val_envs, vh, val_offsets = eval_world_for_split(
+        cfg, encoder, str(device), ckpt_path=args.checkpoint_dir,
+        split=args.split, val_seed=args.val_seed)
 
     plans = make_trial_plans(args.trials, val_envs, args.seed)
 

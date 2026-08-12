@@ -302,13 +302,19 @@ def test_an_explicit_spec_beats_discovery(field, tmp_path):
     assert offsets == [s.offset for s in other.split.base_val]
 
 
-def test_every_eval_entry_point_passes_a_checkpoint_path():
+def test_no_eval_entry_point_resolves_a_world_without_the_record():
     """Discovery is only automatic if the call sites actually feed it.
 
-    The four here were each silently on the replay path for two phases. A fifth
-    landing in the same state is the failure mode this guards; it reads the
-    source because there is no runtime moment at which "nobody passed it" is
-    distinguishable from "this run has no record".
+    The four here were each silently on the replay path for two phases -- they
+    called `build_eval_world` with three arguments and got a fresh offset draw.
+    A fifth landing in the same state is the failure mode this guards, and it
+    reads the source because there is no runtime moment at which "nobody passed
+    it" is distinguishable from "this run has no record".
+
+    Three spellings are sanctioned, and all three go through `world_spec_for`:
+    `build_eval_world(..., ckpt_path=)`, and the `eval_world_for_split` /
+    `eval_env_set` helpers the split-aware drivers use. A bare
+    `build_eval_world(cfg, encoder, device)` is the shape that was wrong.
     """
     import inspect
     import hopfield_nav.eval_all as eval_all
@@ -332,10 +338,14 @@ def test_every_eval_entry_point_passes_a_checkpoint_path():
 
     for mod in (eval_all, trajectories, agenthash, rollout):
         src = inspect.getsource(mod)
-        calls = src.split("build_eval_world(")[1:]
-        assert calls, f"{mod.__name__} no longer calls build_eval_world"
-        for call in calls:
+        # Every bare build_eval_world call must name where the record lives.
+        for call in src.split("build_eval_world(")[1:]:
             head = _args(call)
             assert "ckpt_path=" in head or "spec=" in head, (
                 f"{mod.__name__} calls build_eval_world without a ckpt_path, so "
                 f"it silently evaluates on a fresh offset draw: ...{head}")
+        # ...and each driver resolves its world through one of the three.
+        assert any(f"{name}(" in src for name in
+                   ("build_eval_world", "eval_world_for_split", "eval_env_set")), (
+            f"{mod.__name__} resolves its eval world some other way, which means "
+            "it may not be reading the run's world.json at all")

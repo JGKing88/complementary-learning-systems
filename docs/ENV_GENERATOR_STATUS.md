@@ -1453,9 +1453,23 @@ different `Npos`.
 `encoded_Phi`, rather than denying the RNN stack a world record for lacking an
 encoder it never had.
 
+### `--split` everywhere, through one resolver
+
+`analysis/trajectories.py` and `analysis/phase_decoding` (`exp1`, `exp2`, and
+`RolloutEngine`) take `--split` too, so a trajectory grid can be drawn in arenas
+whose goal region the run never trained on, and phase decodability can be asked
+of held-out or OOD envs rather than only of the run's own validation set.
+
+All five drivers resolve their env set through **one** call —
+`checkpoint_io.eval_env_set`, reached directly by `eval_all` for its
+N-combination table and via `eval_world_for_split` by the four single-set
+drivers. That matters more than the flags: each used to build its own eval
+world, so a level would otherwise have meant whatever that driver's copy of the
+logic did. Two source-reading tests keep it that way — one that no driver
+resolves a world without the record, one that every driver still accepts a
+split. Both were mutation-checked.
+
 ### Left undone
 
 - `train.py` / `train_phased.py` / `train_store.py` still do not write
   `world.json`. They are the remaining legacy trainers.
-- `analysis/trajectories.py` and `analysis/phase_decoding` got 5.0 only — they
-  read the recorded world but take no `--split`.

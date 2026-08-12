@@ -36,8 +36,7 @@ from hopfield_nav.evaluation import protocols
 from hopfield_nav.world.env import make_env
 from hopfield_nav.evaluation.metrics import agent_step, random_start
 from hopfield_nav.evaluation.checkpoint_io import (
-    build_eval_world, cfg_from_checkpoint, eval_field, eval_specs,
-    load_agent, world_spec_for,
+    cfg_from_checkpoint, eval_world_for_split, load_agent,
 )
 from .baseline import merge_iter_traces
 from hopfield import Hopfield
@@ -424,27 +423,12 @@ def main() -> None:
             val_envs = []      # rebuilt per iter below
             offsets = []       # ditto
     elif args.env_seed is None:
-        # build_eval_world handles scaffold + envs together, preferring the
-        # recorded world.json and falling back to the ckpt's training-time seed
-        # conventions. Envs constant across iters.
-        if args.split != gen.RECORDED:
-            spec = world_spec_for(args.ckpt)
-            if spec is None:
-                raise SystemExit(
-                    f"--split needs a world.json and {args.ckpt} has none; it "
-                    "predates runs recording their envs.")
-            levels = gen.parse_levels(args.split)
-            specs = eval_specs(spec, levels, n_envs=cfg.num_val_envs,
-                               seed=args.val_seed)
-            gen.val_set_report(spec.split, specs, cfg.env, levels)
-            vh = eval_field(cfg, encoder, str(device), spec)
-            val_envs = gen.build_envs(specs, cfg.env, cfg.agent.movement_mode)
-            offsets = [s.offset for s in specs]
-            print(f"[agenthash] split={gen.levels_key(levels)}  "
-                  f"{len(val_envs)} envs minted from world.json")
-        else:
-            val_envs, vh, offsets = build_eval_world(cfg, encoder, str(device),
-                                                     ckpt_path=args.ckpt)
+        # The shared resolver: the recorded world.json when the run has one, a
+        # --split level minted from it, or the ckpt's training-time seed
+        # conventions for runs predating the record. Envs constant across iters.
+        val_envs, vh, offsets = eval_world_for_split(
+            cfg, encoder, str(device), ckpt_path=args.ckpt, split=args.split,
+            val_seed=args.val_seed)
     else:
         vh = VectorHash(cfg.vectorhash)
         vh.build_scaffold()
