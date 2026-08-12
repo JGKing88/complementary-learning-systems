@@ -314,10 +314,41 @@ def _masked_places(
         f"{domain.capacity(size, max(margin, self_margin), Npos)} envs. It is "
         f"the exclusion set: everything those {len(exclude)} envs occupy is off "
         f"limits, so raising Npos or lowering the margin will not help much.\n"
-        f"  If this is a validation draw against a run that refreshed its "
+        + _size_change_clause(domain, size, exclude, Npos=Npos, period=period,
+                              margin=margin, self_margin=self_margin, n=n)
+        + f"  If this is a validation draw against a run that refreshed its "
         f"placements, the union grows every tick and eventually leaves no room. "
         f"Use place='same', or place='ood' if the run declared a region."
     )
+
+
+def _size_change_clause(domain, size: int, exclude, *, Npos: int, period: int,
+                        margin: int, self_margin: int, n: int) -> str:
+    """Name the size change as a cause, when it is one.
+
+    The scaffold was packed at the training size, so a larger validation env can
+    find nothing left even though the same numbers passed during training -- and
+    the exclusion-set explanation above, while true, sends the reader looking at
+    the wrong knob. Measured rather than asserted: the same draw is re-resolved
+    at the size the excluded envs actually are, and the clause only appears if
+    that would in fact have succeeded.
+    """
+    other = {int(s) for _, s in exclude}
+    if not other or other == {int(size)}:
+        return ""
+    was = sorted(other)[-1]
+    cand = legal_offsets(exclude, domain, size=was, Npos=Npos, period=period,
+                         margin=margin)
+    fit = len(greedy_pack(cand, size=was, period=period,
+                          self_margin=self_margin, limit=n))
+    if fit < n:
+        return (f"  The size change is not the cause: at the excluded envs' own "
+                f"size {was} this draw fails too ({fit} of {n} placed).\n")
+    return (f"  **The size change is the cause.** These envs are size {size} but "
+            f"the scaffold was packed for size {was}, where this same draw "
+            f"succeeds ({len(cand)} legal offsets, {fit} of {n} placed). A "
+            f"bigger env forbids a wider region around every env already there. "
+            f"Lower --val_size, raise Npos, or lower the margin.\n")
 
 
 def _forbidden_span(o: int, size: int, other_size: int, margin: int) -> tuple:
@@ -682,14 +713,23 @@ def split_diagnostics(field, env_cfg, split: GeneratedSplit) -> dict:
     size = split.train[0].size if split.train else 0
     gaps = [toroidal_gap(v.offset, v.size, t.offset, t.size, split.period)
             for v in split.base_val for t in split.train]
-    hams = [wall_hamming(v.wall_seed, t.wall_seed, size, obs, ego, res)
-            for v in split.base_val for t in split.train]
+    # One size across both halves, or the Hamming distance is between codes of
+    # different shapes -- see the note in `val_set_report`. `generate_split`
+    # enforces this via `_single_size`; the guard is for a split reloaded from a
+    # world.json a later size refresh wrote.
+    one_size = {s.size for s in split.train} | {s.size for s in split.base_val}
+    hams = ([wall_hamming(v.wall_seed, t.wall_seed, size, obs, ego, res)
+             for v in split.base_val for t in split.train]
+            if len(one_size) <= 1 else [])
     live = (np.array(live_wall_bits(size, obs, ego, res), dtype=bool) if size
             else np.zeros((4, 0), bool))
     return {
         "margin": int(split.margin),
         "min_place_gap": int(min(gaps)) if gaps else None,
         "min_wall_hamming": int(min(hams)) if hams else None,
+        "wall_hamming_note": (None if len(one_size) <= 1 else
+                              f"mixed env sizes {sorted(one_size)}: wall codes "
+                              "are not comparable across sizes"),
         "live_wall_bits": int(live.sum()),
         "total_wall_bits": int(live.size),
         # The cosine diagnostic reads `encoded_Phi`, which only exists once an
@@ -713,11 +753,16 @@ def verify_split(split: GeneratedSplit, env_cfg) -> None:
                     f"val env at {v.offset} is {gap} cells from train env at "
                     f"{t.offset}, below margin {split.margin}")
     train_seeds = {t.wall_seed for t in split.train}
+    # The collision check needs both codes in one space; seed disjointness above
+    # does not, and is the whole of what wall novelty means across sizes (§6.3).
+    same_size = len({s.size for s in split.train}
+                    | {s.size for s in split.base_val}) <= 1
     for v in split.base_val:
         if v.wall_seed in train_seeds:
             raise AssertionError(f"val env reuses train wall seed {v.wall_seed}")
-        if size and np.array_equal(wall_code_for(v.wall_seed, size, res),
-                                   wall_code_for(next(iter(train_seeds)), size, res)):
+        if size and same_size and np.array_equal(
+                wall_code_for(v.wall_seed, size, res),
+                wall_code_for(next(iter(train_seeds)), size, res)):
             raise AssertionError("val wall code collides with a train wall code")
     train_goals = {t.goal for t in split.train}
     for v in split.base_val:
@@ -797,14 +842,29 @@ def val_set_report(split: GeneratedSplit, specs: list[EnvSpec], env_cfg,
     ego = bool(getattr(env_cfg, "egocentric_heading", True))
     res = int(getattr(env_cfg, "wall_resolution", 1))
     size = specs[0].size
-    used_place = split.used.get("place", set())
+    used_boxes = split.used_boxes()
     used_wall = split.used.get("wall", set())
     used_goal = split.used.get("goal", set())
 
-    gaps = [toroidal_gap(v.offset, v.size, o, size, split.period)
-            for v in specs for o in used_place]
-    hams = [wall_hamming(v.wall_seed, w, size, obs, ego, res)
-            for v in specs for w in used_wall] if size else []
+    # Each training box brings its own size: a gap is between two extents, and
+    # scoring them all at this set's size is the §6.2 mislabelling again.
+    gaps = [toroidal_gap(v.offset, v.size, o, s, split.period)
+            for v in specs for o, s in used_boxes]
+    # A wall code is (4, size * resolution), so codes at two sizes do not live in
+    # the same space -- `(a != b)` on them raises outright, and the size-20 draw
+    # for a seed is not an extension of its size-6 draw but an unrelated one.
+    # Computing both at *this* set's size does not raise, which is worse: it
+    # silently reports the distance to a wall the training env never had. Across
+    # sizes there is no honest number, so there is no number (§6.3).
+    train_sizes = {int(s) for s in split.used.get("size", ())}
+    comparable = bool(size) and train_sizes <= {int(size)}
+    hams = ([wall_hamming(v.wall_seed, w, size, obs, ego, res)
+             for v in specs for w in used_wall] if comparable else [])
+    ham_note = None if comparable else (
+        f"val size {size} differs from the training size(s) "
+        f"{sorted(train_sizes)}; wall codes at two sizes are different-shaped "
+        "draws with no correspondence, so novelty here is seed disjointness "
+        "only")
     pairs = [toroidal_gap(a.offset, a.size, b.offset, b.size, split.period)
              for i, a in enumerate(specs) for b in specs[i + 1:]]
     report = {
@@ -813,6 +873,7 @@ def val_set_report(split: GeneratedSplit, specs: list[EnvSpec], env_cfg,
         "min_place_gap_vs_train": int(min(gaps)) if gaps else None,
         "min_place_gap_within_set": int(min(pairs)) if pairs else None,
         "min_wall_hamming_vs_train": int(min(hams)) if hams else None,
+        "wall_hamming_note": ham_note,
         "n_wall_seeds_shared": len({v.wall_seed for v in specs} & set(used_wall)),
         "n_goal_cells_shared": len({v.goal for v in specs} & set(used_goal)),
         "margin": int(split.margin),
@@ -861,7 +922,8 @@ def make_val_set(
             f"training used sizes {sorted(split.used['size'])}; pass "
             "make_val_set(..., size=N) to say which one this set should use.")
     env_size = int(size if size is not None else next(iter(split.used["size"])))
-    used_place = sorted(split.used["place"])
+    used_boxes = split.used_boxes()
+    used_place = sorted(split.used_offsets())
     used_wall = sorted(split.used["wall"])
     used_goal = sorted(split.used["goal"])
 
@@ -888,13 +950,17 @@ def make_val_set(
         # it applies to every pair. Envs drawn here must clear each other just as
         # they clear training -- otherwise a val set could stack several envs on
         # one patch of scaffold while still being correctly separated from train.
-        # use_mask: `used_place` is the union over every refresh tick, so it can
+        # use_mask: `used_boxes` is the union over every refresh tick, so it can
         # reach tens of thousands. Probing against it candidate-by-candidate is
         # 78 s to fail; resolving it once is ~70 ms.
+        #
+        # `used_boxes`, not `[(o, env_size) for o in used_place]`: those envs are
+        # the *training* size, and labelling them with this set's size inflates
+        # the forbidden region whenever the two differ (§6.2).
         offs = sample_places(
             domain, rng, n_envs, size=env_size, Npos=split.Npos,
             period=split.period, self_margin=split.margin,
-            exclude=[(o, env_size) for o in used_place], margin=split.margin,
+            exclude=used_boxes, margin=split.margin,
             use_mask=True)
 
     # --- goal ---------------------------------------------------------------
@@ -903,8 +969,24 @@ def make_val_set(
     if gl == "same":
         pool = used_goal
     elif gl == "held_out":
-        pool = sorted(c for c in split.goal_cells_val
-                      if c[0] < env_size and c[1] < env_size)
+        # Every cell in `goal_cells_val` was drawn at the *training* size, so at
+        # a larger validation size this filter is a no-op and no goal ever
+        # appears outside the original footprint -- "size OOD" would quietly
+        # test something narrower than it claims (§6.5). The region beyond that
+        # footprint is held out by construction, since training could not reach
+        # it, so it joins the pool: held-out keeps meaning "disjoint from what
+        # training used", and the new geometry actually gets goals in it. Only
+        # cells the declared goal domain admits at this size are eligible -- a
+        # run that trained on a Ring gets the ring of the bigger arena, not its
+        # interior.
+        trained = max((int(s) for s in split.used.get("size", ())),
+                      default=env_size)
+        cells = {c for c in split.goal_cells_val
+                 if c[0] < env_size and c[1] < env_size}
+        if env_size > trained:
+            cells |= {c for c in d.goal.cells(env_size)
+                      if c[0] >= trained or c[1] >= trained}
+        pool = sorted(cells)
     else:
         pool = sorted(dom.complement_for(d.goal, env_size).cells(env_size))
     if not pool:

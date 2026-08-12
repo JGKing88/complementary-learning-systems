@@ -493,16 +493,81 @@ def test_eval_all_output_keeps_its_shape_for_a_single_split(sandbox,
     assert res["splits"]["recorded"]["nav_det"] == res["nav_det"]
 
 
-@pytest.mark.slow
-def test_val_size_is_refused_with_the_reason(sandbox, navigate_checkpoint):
-    """Six sites read the global env size where they need the val set's, and
-    every one fails silently. Half-shipping this would return plausible numbers
-    computed against the wrong arena."""
+@pytest.fixture(scope="module")
+def generator_checkpoint(sandbox, tiny_encoder):
+    """A checkpoint with a `world.json`, so a split can actually be minted.
+
+    `navigate_checkpoint` runs without `--env_generator` on purpose -- most of
+    the suite should keep exercising the path a run without a declared world
+    takes -- but `--split` and `--val_size` both need the recorded domains.
+    """
     root, env = sandbox
-    _save_dir, ckpt = navigate_checkpoint
+    save_dir = root / "generator_ckpt"
+    if not sorted(save_dir.glob("*.pt")):
+        _run(["hopfield_nav.train_navigate",
+              "--encoder_checkpoint", str(tiny_encoder),
+              "--lambdas", "3", "4", "--Np", "40",
+              "--size", "3", "--observation_size", "16",
+              "--batch_envs", "2", "--steps_per_rollout", "8",
+              "--schedule", "interleave:2", "--envs_per_world", "2",
+              "--num_worlds", "1", "--num_val_envs", "2",
+              "--eval_every", "100", "--ckpt_every", "2",
+              "--n_val_trials", "1", "--val_distractors", "0", "--device", "cpu",
+              "--static-vectorhash", "--env_generator", "--place_margin", "1",
+              "--save_dir", str(save_dir)], env)
+    ckpts = sorted(save_dir.glob("*.pt"))
+    assert ckpts, f"no checkpoint written to {save_dir}"
+    assert (save_dir / "world.json").exists()
+    return save_dir, ckpts[-1]
+
+
+@pytest.mark.slow
+def test_val_size_needs_a_minted_split(sandbox, generator_checkpoint):
+    """`recorded` is the fixed list of envs the run was scored against; there is
+    no size-N version of it. Ignoring the flag is the silent failure this whole
+    phase exists to end, so it is an error instead."""
+    root, env = sandbox
+    _save_dir, ckpt = generator_checkpoint
     proc = subprocess.run(
         [sys.executable, "-m", "hopfield_nav.eval_all", "--ckpt",
-         str(ckpt), "--device", "cpu", "--val_size", "12"],
+         str(ckpt), "--device", "cpu", "--val_size", "6"],
         cwd=REPO_ROOT, env=env, capture_output=True, text=True, timeout=300)
     assert proc.returncode != 0
-    assert "Phase 6" in proc.stdout + proc.stderr
+    assert "every --split is 'recorded'" in proc.stdout + proc.stderr
+
+
+@pytest.mark.slow
+def test_val_size_at_the_trained_size_returns_the_same_results(
+        sandbox, generator_checkpoint):
+    """The Phase 6 acceptance gate, at the CLI.
+
+    Every evaluator's numbers, for a `--val_size` equal to the size the run
+    trained at, must equal the ones the same `--split` produces without it. That
+    is what says the size plumbing changed nothing for the runs that do not use
+    it -- a claim no amount of unit testing inside the generator can make.
+    """
+    import json
+
+    root, env = sandbox
+    _save_dir, ckpt = generator_checkpoint
+    levels = "place=held_out,wall=held_out,goal=held_out"
+    base_args = ["hopfield_nav.eval_all", "--ckpt", str(ckpt),
+                 "--device", "cpu", "--num_trials", "1", "--max_steps", "4",
+                 "--skip-realistic", "--no-nav-stoch", "--split", levels]
+
+    plain = root / "size_noop_plain.json"
+    sized = root / "size_noop_sized.json"
+    _run(base_args + ["--output-json", str(plain)], env)
+    _run(base_args + ["--val_size", "3", "--output-json", str(sized)], env)
+
+    a, b = json.loads(plain.read_text()), json.loads(sized.read_text())
+    assert a["split"] == b["split"] == levels, (
+        "an equal --val_size decorated the key, so it was not a no-op")
+    for key in ("nav_det", "discovery", "exploration", "split_report",
+                "scaffold_layout", "splits"):
+        assert a[key] == b[key], f"--val_size at the trained size changed {key}"
+    # Non-vacuous: the run really did evaluate something.
+    assert a["exploration"]["0"]["mean_coverage"] > 0
+    # And the extra budget pass does not fire when there is nothing to scale.
+    assert "step_budget" not in a and "step_budget" not in b
+    assert "exploration_scaled" not in b

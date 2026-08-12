@@ -105,6 +105,10 @@ def main() -> None:
                         "trained on.")
     ap.add_argument("--val_seed", type=int, default=0,
                    help="Seed for minting a --split arena set.")
+    ap.add_argument("--val_size", type=int, default=None,
+                    help="Mint the arenas at this size -- the size-OOD "
+                         "axis. Needs a minted --split; equal to the "
+                         "training size it is a no-op.")
     ap.add_argument("--num_arenas", type=int, default=100)
     ap.add_argument("--n_starts", type=int, default=100,
                     help="Trials per condition per arena.")
@@ -165,6 +169,7 @@ def main() -> None:
             random_agent=args.random_agent,
             random_init_seed=args.random_init_seed,
             split=args.split, val_seed=args.val_seed,
+            val_size=args.val_size,
         )
         bundle = engine.build_bundle()
         by_q = {q: 0 for q in range(4)}

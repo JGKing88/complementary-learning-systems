@@ -185,11 +185,11 @@ def _panel(ax, field, cfg, seed, refresh_ticks):
     gap = _min_gap(split.train + split.base_val, period)
     cap = cfg["place"].capacity(cfg["size"], cfg["margin"], field.Npos)
     how = "lattice" if hits[0] else "rejection"
-    used = f"\n{len(split.used['place'])} distinct offsets used" if history else ""
+    used = f"\n{len(split.used_offsets())} distinct offsets used" if history else ""
     ax.set_title(f"seed {seed}  ·  min gap {gap}  ·  ~{cap} slots  ·  {how}"
                  f"{used}", fontsize=8)
     return dict(seed=seed, min_gap=gap, capacity=cap, how=how,
-                n_used=len(split.used["place"]))
+                n_used=len(split.used_offsets()))
 
 
 def main():

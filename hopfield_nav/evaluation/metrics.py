@@ -319,8 +319,11 @@ def evaluate_navigation(
                 hopfield = Hopfield(embed_dim, beta=cfg.hopfield.beta, device=str(device))
                 # Goal + distractors, shuffled so storage order is random.
                 patterns = [goal_enc]
+                # `env.size`, not `cfg.env.size`: the exclusion box is this
+                # arena's footprint, and a val set at a size the run never
+                # trained on would otherwise draw "distractors" from inside it.
                 patterns.extend(sample_distractors(
-                    vectorhash, env_offset, cfg.env.size, n_dist, rng,
+                    vectorhash, env_offset, env.size, n_dist, rng,
                 ))
                 rng.shuffle(patterns)
                 for pat in patterns:
@@ -446,7 +449,7 @@ def evaluate_goal_discovery(
 
             for _trial_idx in range(num_trials):
                 distractors = sample_distractors(
-                    vectorhash, env_offset, cfg.env.size, n_dist, rng,
+                    vectorhash, env_offset, env.size, n_dist, rng,
                 )
                 hopfield = Hopfield(embed_dim, beta=cfg.hopfield.beta, device=str(device))
                 for pat in distractors:
@@ -581,12 +584,12 @@ def evaluate_exploration(
 
     Metrics per distractor count. Only five are independent:
 
-      mean_coverage        cells one rollout visits, / grid cells
+      mean_coverage        cells one rollout visits, / that **env's** cells
       cells_per_step       the same quantity / max_steps -- a rescale of
                            mean_coverage, kept because it is invariant to grid
                            size where the other is invariant to step budget
       union_coverage       cells ALL rollouts in an env visit between them, /
-                           grid cells, then averaged over envs
+                           that env's cells, then averaged over envs
       union_per_rollout    union_coverage / num_trials -- a rescale
       redundancy           |union| / sum of per-trial counts, in [1/N, 1]. 1.0
                            means every rollout explored disjoint ground; 1/N
@@ -611,13 +614,16 @@ def evaluate_exploration(
 
     agent.eval()
     embed_dim = vectorhash.encoded_Phi.shape[2]
-    grid_size = cfg.env.size
-    total_positions = grid_size * grid_size
+    # Coverage is a fraction of *this env's* cells, and `env.size` below is the
+    # only place that is read. Taking it from the config is the §6.1 silent
+    # failure: a size-12 val set scored under a size-6 config reported coverage
+    # against 36 instead of 144 -- 4x the truth, no error.
     results: dict[int, dict[str, float]] = {}
 
     for n_dist in n_distractors_list:
         rng = np.random.RandomState(seed)
         trial_cells: list[int] = []
+        trial_denom: list[int] = []
         trial_found: list[bool] = []
         trial_steps_to_goal: list[int] = []
         per_env_union: list[float] = []
@@ -626,6 +632,8 @@ def evaluate_exploration(
         for local_idx, env in enumerate(val_envs):
             env_offset = env_offsets[local_idx]
             goal = env.goal_location
+            grid_size = int(env.size)
+            total_positions = grid_size * grid_size
 
             # Setup draws from the caller's RNG in the original per-trial
             # order, so the batched run sees the same worlds the sequential
@@ -657,6 +665,7 @@ def evaluate_exploration(
                 union |= cells
                 summed += len(cells)
                 trial_cells.append(len(cells))
+                trial_denom.append(total_positions)
                 trial_found.append(hit)
                 trial_steps_to_goal.append(s if s >= 0 else max_steps)
                 if per_trial is not None:
@@ -670,8 +679,20 @@ def evaluate_exploration(
         mean_cells = float(np.mean(trial_cells)) if trial_cells else 0.0
         union_cov = float(np.mean(per_env_union)) if per_env_union else 0.0
         reach_steps = [s for s, ok in zip(trial_steps_to_goal, trial_found) if ok]
+        # One denominator when every env is the same size -- which is the
+        # historical expression exactly, so a same-size run is unchanged to the
+        # last bit. A mixed-size set has no single denominator and averages the
+        # per-trial fractions instead.
+        denoms = set(trial_denom)
+        if len(denoms) == 1:
+            mean_cov = mean_cells / float(denoms.pop())
+        elif trial_cells:
+            mean_cov = float(np.mean(np.asarray(trial_cells, dtype=float)
+                                     / np.asarray(trial_denom, dtype=float)))
+        else:
+            mean_cov = 0.0
         results[n_dist] = {
-            "mean_coverage": mean_cells / total_positions,
+            "mean_coverage": mean_cov,
             "cells_per_step": mean_cells / max(max_steps, 1),
             "union_coverage": union_cov,
             "union_per_rollout": union_cov / max(num_trials, 1),

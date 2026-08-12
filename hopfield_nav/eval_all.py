@@ -36,8 +36,36 @@ from hopfield_nav.evaluation.metrics import (
 )
 
 
+def split_size_combos(splits, val_sizes) -> list[tuple]:
+    """``(levels, size)`` pairs, so a size sweep is a column in the same table.
+
+    ``recorded`` is paired with ``None`` and only ``None``: it is a fixed list
+    of envs, so there is no size of it to vary, and pairing it with a requested
+    size would either raise on an invocation that made sense or silently ignore
+    the flag. Minted levels take every requested size. Duplicates collapse --
+    two identical combinations would otherwise cost a full evaluation each and
+    then overwrite one another in ``results["splits"]``.
+    """
+    sizes = list(val_sizes) if val_sizes else [None]
+    out, seen = [], set()
+    for levels in splits:
+        for size in ([None] if levels is None else sizes):
+            key = (gen.levels_key(levels), size)
+            if key not in seen:
+                seen.add(key)
+                out.append((levels, size))
+    if val_sizes and all(s is None for _, s in out):
+        raise SystemExit(
+            f"--val_size {val_sizes} was passed but every --split is "
+            "'recorded', which is the fixed list of envs this checkpoint was "
+            "scored against -- there is no size-N version of it. Ask for a "
+            "level too, e.g. --split place=held_out,wall=held_out,goal=held_out.")
+    return out
+
+
 def resolve_env_sets(cfg, encoder, device, spec, splits, *, ckpt_path,
-                     val_seed: int, n_val_envs: int) -> list[dict]:
+                     val_seed: int, n_val_envs: int,
+                     val_sizes: list | None = None) -> list[dict]:
     """One env set per requested split, all on a single shared scaffold.
 
     ``splits`` is a list of level dicts, where ``None`` means the recorded
@@ -60,8 +88,9 @@ def resolve_env_sets(cfg, encoder, device, spec, splits, *, ckpt_path,
              if spec is not None else None)
     return [checkpoint_io.eval_env_set(
         cfg, encoder, str(device), ckpt_path=ckpt_path, levels=levels,
-        val_seed=val_seed, n_envs=n_val_envs, spec=spec, field=field)
-        for levels in splits]
+        val_seed=val_seed, n_envs=n_val_envs, spec=spec, field=field,
+        size=size)
+        for levels, size in split_size_combos(splits, val_sizes)]
 
 
 @torch.no_grad()
@@ -94,6 +123,8 @@ def eval_checkpoint(
     allow_offcell_store: bool | None = None,
     splits: list | None = None,
     val_seed: int = 0,
+    val_sizes: list | None = None,
+    scaled_budget: bool = True,
 ) -> dict:
     splits = [None] if splits is None else splits
     ck = torch.load(ckpt_path, map_location=device, weights_only=False)
@@ -149,7 +180,9 @@ def eval_checkpoint(
     spec = world_spec_for(ckpt_path)
     env_sets = resolve_env_sets(cfg, encoder, device, spec, splits,
                                 ckpt_path=ckpt_path, val_seed=val_seed,
-                                n_val_envs=cfg.num_val_envs)
+                                n_val_envs=cfg.num_val_envs,
+                                val_sizes=val_sizes)
+    trained_size = checkpoint_io.recorded_size(spec, cfg)
     agent = load_agent(cfg, ck["agent_state_dict"], embed_dim, device)
 
     meta: dict = {
@@ -170,6 +203,8 @@ def eval_checkpoint(
         "movement_mode": cfg.env.movement_mode,
         "lock_store_after_goal": bool(lock_store_after_goal),
         "world_spec_hash": spec.spec_hash() if spec is not None else None,
+        "trained_env_size": trained_size,
+        "val_sizes": val_sizes,
     }
 
     by_split: dict = {}
@@ -188,6 +223,7 @@ def eval_checkpoint(
             seq_ma_window=seq_ma_window, seq_seed_offset=seq_seed_offset,
             lock_store_after_goal=lock_store_after_goal,
             oracle_store_at_goal=oracle_store_at_goal,
+            trained_size=trained_size, scaled_budget=scaled_budget,
         )
 
     # The first combination stays at the top level, so every existing reader of
@@ -198,6 +234,31 @@ def eval_checkpoint(
     return {**meta, **first, "splits": by_split}
 
 
+def step_budget(val_envs, trained_size, max_steps: int) -> dict | None:
+    """Second step budgets for a val set whose arena is not the trained one.
+
+    ``None`` when the sizes match -- there is nothing to rescale, and running
+    the same evaluator twice at the same budget would only cost time and make a
+    same-size run differ from one without the flag.
+
+    Exploration scales with ``size**2`` because coverage is a fraction of the
+    cell count; navigation with ``size`` because path length grows linearly.
+    """
+    sizes = {int(e.size) for e in val_envs}
+    if trained_size is None or len(sizes) != 1:
+        return None
+    val = sizes.pop()
+    if val == int(trained_size):
+        return None
+    r = val / float(trained_size)
+    return {
+        "trained_size": int(trained_size), "val_size": int(val),
+        "fixed": int(max_steps),
+        "explore": max(1, int(round(max_steps * r * r))),
+        "nav": max(1, int(round(max_steps * r))),
+    }
+
+
 @torch.no_grad()
 def run_suite(
     cfg, agent, env_set: dict, device: torch.device, *,
@@ -206,7 +267,8 @@ def run_suite(
     realistic_seed_offset: int, repeat_trials: int, repeat_steps: int,
     repeat_seed_offset: int, seq_iters_per_block: int, seq_max_steps: int,
     seq_ma_window: int, seq_seed_offset: int, lock_store_after_goal: bool,
-    oracle_store_at_goal: bool,
+    oracle_store_at_goal: bool, trained_size: int | None = None,
+    scaled_budget: bool = True,
 ) -> dict:
     """Every evaluator, against one env set.
 
@@ -220,6 +282,13 @@ def run_suite(
         "split_report": env_set["report"],
         "scaffold_layout": scaffold_layout_dict(cfg, vh, val_envs, val_offsets),
     }
+    budget = step_budget(val_envs, trained_size, max_steps) if scaled_budget else None
+    if budget:
+        results["step_budget"] = budget
+        print(f"  [budget]    arena {budget['trained_size']} -> "
+              f"{budget['val_size']}; also running explore at "
+              f"max_steps={budget['explore']} (cells scale as size^2) and nav at "
+              f"{budget['nav']} (path length as size)", flush=True)
 
     print(f"  [nav_det]   num_trials={num_trials} max_steps={max_steps} "
           f"dist={n_distractors}", flush=True)
@@ -257,6 +326,26 @@ def run_suite(
         n_distractors_list=n_distractors,
     )
     results["exploration"] = expl
+
+    if budget:
+        # A bigger arena has more cells, so coverage at a fixed step budget must
+        # fall whether or not anything about the policy generalizes -- one
+        # number would confound capability with budget. Both scalings are here,
+        # neither is "correct", and the point is that a reader can see which
+        # claim survives which (§6.6).
+        print(f"  [explore*]  max_steps={budget['explore']} (size^2-scaled)",
+              flush=True)
+        results["exploration_scaled"] = evaluate_exploration(
+            agent, val_envs, vh, val_offsets, cfg, device,
+            num_trials=num_trials, max_steps=budget["explore"],
+            n_distractors_list=n_distractors,
+        )
+        print(f"  [nav_det*]  max_steps={budget['nav']} (size-scaled)", flush=True)
+        results["nav_det_scaled"] = evaluate_navigation(
+            agent, val_envs, vh, val_offsets, cfg, device,
+            num_trials=num_trials, max_steps=budget["nav"],
+            n_distractors_list=n_distractors, deterministic=True,
+        )
 
     if run_realistic and realistic_steps > 0:
         print(f"  [realistic] steps_per_env={realistic_steps} "
@@ -356,18 +445,20 @@ def print_split_table(results: dict, n_distractors: list[int]) -> None:
     print("\n=== splits ===")
     for d in n_distractors:
         print(f"  [dist={d}]")
-        print(f"    {'split':<40} {'nav_det':<34} {'exploration'}")
+        print(f"    {'split':<52} {'nav_det':<34} {'exploration'}")
         for key, res in splits.items():
-            print(f"    {key:<40} {_fmt_nav(res['nav_det'], d):<34} "
+            print(f"    {key:<52} {_fmt_nav(res['nav_det'], d):<34} "
                   f"{_fmt_expl(res['exploration'], d)}")
     print("  separation of each minted set, measured:")
     for key, res in splits.items():
         r = res.get("split_report") or {}
         if not r:
             continue
-        print(f"    {key:<40} place_gap>={r['min_place_gap_vs_train']} "
-              f"(margin {r['margin']})  wall_hamming>="
-              f"{r['min_wall_hamming_vs_train']}  "
+        ham = (f"wall_hamming>={r['min_wall_hamming_vs_train']}"
+               if r.get('wall_hamming_note') is None
+               else "wall_hamming n/a across sizes")
+        print(f"    {key:<52} place_gap>={r['min_place_gap_vs_train']} "
+              f"(margin {r['margin']})  {ham}  "
               f"shared_wall={r['n_wall_seeds_shared']} "
               f"shared_goal={r['n_goal_cells_shared']}")
 
@@ -941,12 +1032,21 @@ def main():
     p.add_argument("--val_seed", type=int, default=0,
                    help="Seed for minting split env sets. Changing it draws a "
                         "different set at the same levels.")
-    p.add_argument("--val_size", type=int, default=None,
-                   help="DEFERRED to Phase 6 and rejected if passed. Six sites "
-                        "read the global cfg.env.size where they need the val "
-                        "set's, and all six fail silently -- mean_coverage's "
-                        "denominator among them -- so a differing size returns "
-                        "plausible numbers computed against the wrong arena.")
+    p.add_argument("--val_size", type=int, action="append", default=None,
+                   help="Mint the validation envs at this arena size -- the "
+                        "size-OOD axis. **Repeatable**, and crossed with "
+                        "--split, so one run gives a size column in the same "
+                        "table. Needs a minted --split (there is no size-N "
+                        "version of the recorded set, which is paired with its "
+                        "own size and left alone). Equal to the training size "
+                        "it is a no-op, by construction.")
+    p.add_argument("--scaled-budget", dest="scaled_budget",
+                   action=argparse.BooleanOptionalAction, default=True,
+                   help="At a --val_size other than the trained one, also run "
+                        "explore at a size^2-scaled max_steps and nav at a "
+                        "size-scaled one, so coverage falling can be told apart "
+                        "from a bigger arena at the same budget. Doubles those "
+                        "two evaluators' cost.")
     p.add_argument("--num_trials", type=int, default=32)
     p.add_argument("--max_steps", type=int, default=200)
     p.add_argument("--n_distractors", type=int, nargs="+", default=[0])
@@ -999,15 +1099,6 @@ def main():
                         "when path ends with _realistic_drift.png)")
     args = p.parse_args()
 
-    if args.val_size is not None:
-        p.error(
-            "--val_size is not implemented and must not be faked. Six sites read "
-            "the global cfg.env.size where they need the validation set's -- "
-            "metrics.py:614 is mean_coverage's denominator, and "
-            "collector.py:192 is the visited_cells shape -- and none of them "
-            "raises when the two differ. A val set at another size would return "
-            "numbers that look fine and are computed against the wrong arena. "
-            "Size OOD is Phase 6.")
     try:
         splits = [gen.parse_levels(s) for s in (args.splits or [gen.RECORDED])]
     except ValueError as exc:
@@ -1062,6 +1153,8 @@ def main():
         allow_offcell_store=args.allow_offcell_store,
         splits=splits,
         val_seed=args.val_seed,
+        val_sizes=args.val_size,
+        scaled_budget=args.scaled_budget,
     )
     results["tag"] = tag
 

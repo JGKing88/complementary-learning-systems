@@ -351,7 +351,7 @@ def test_same_level_reuses_training_values(field, env_cfg, domains):
     split = gen.generate_split(field, env_cfg, domains, 6, 2, seed=4, margin=6)
     vs = gen.make_val_set(split, 4, {"place": "same", "wall": "same",
                                      "goal": "same"}, seed=9)
-    assert {v.offset for v in vs} <= split.used["place"]
+    assert {v.offset for v in vs} <= split.used_offsets()
     assert {v.wall_seed for v in vs} <= split.used["wall"]
     assert {v.goal for v in vs} <= split.used["goal"]
 
@@ -363,8 +363,8 @@ def test_held_out_level_avoids_everything_training_used(field, env_cfg, domains)
     for v in vs:
         assert v.wall_seed not in split.used["wall"]
         assert v.goal not in split.used["goal"]
-        for o in split.used["place"]:
-            assert gen.toroidal_gap(v.offset, v.size, o, v.size,
+        for o, s in split.used_boxes():
+            assert gen.toroidal_gap(v.offset, v.size, o, s,
                                     split.period) >= split.margin
 
 
@@ -374,7 +374,7 @@ def test_mix_and_match_is_per_trait(field, env_cfg, domains):
     vs = gen.make_val_set(split, 3, {"place": "same", "wall": "held_out",
                                      "goal": "held_out"}, seed=9)
     for v in vs:
-        assert v.offset in split.used["place"]
+        assert v.offset in split.used_offsets()
         assert v.wall_seed not in split.used["wall"]
         assert v.goal not in split.used["goal"]
 
@@ -551,11 +551,11 @@ def test_held_out_val_is_disjoint_on_every_trait(wide_field):
     vs = gen.make_val_set(split, 5, {"place": "held_out", "wall": "held_out",
                                      "goal": "held_out"}, seed=99)
     assert not {v.wall_seed for v in vs} & split.used["wall"]
-    assert not {v.offset for v in vs} & split.used["place"]
+    assert not {v.offset for v in vs} & split.used_offsets()
     assert not {v.goal for v in vs} & split.used["goal"]
     for v in vs:
-        for o in split.used["place"]:
-            assert gen.toroidal_gap(v.offset, v.size, o, v.size,
+        for o, s in split.used_boxes():
+            assert gen.toroidal_gap(v.offset, v.size, o, s,
                                     split.period) >= split.margin
 
 

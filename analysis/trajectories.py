@@ -165,7 +165,7 @@ def _rollout_combined(
                          Run until at_g (post-step) or ``nav_steps``.
     """
     hopfield = _build_hopfield_with_distractors(
-        vh, env_offset, cfg.env.size, n_distractors,
+        vh, env_offset, env.size, n_distractors,
         plan.distractor_seed, device, cfg.hopfield.beta,
     )
     env.set_position(plan.start)
@@ -281,7 +281,7 @@ def _rollout_explore(
     """Empty (+ distractor) Hopfield, goal_in_memory=False, run ``max_steps``
     without early termination — pure exploration."""
     hopfield = _build_hopfield_with_distractors(
-        vh, env_offset, cfg.env.size, n_distractors,
+        vh, env_offset, env.size, n_distractors,
         plan.distractor_seed, device, cfg.hopfield.beta,
     )
     env.set_position(plan.start)
@@ -313,7 +313,7 @@ def _rollout_explore(
         if at_goal(env):
             found = True
 
-    coverage = len(set(positions)) / float(cfg.env.size * cfg.env.size)
+    coverage = len(set(positions)) / float(env.size * env.size)
     return {
         "mode": "explore_only",
         "positions": positions,
@@ -336,7 +336,7 @@ def _rollout_exploit(
     goal = env.goal_location
     goal_enc = goal_encoding(vh, env_offset, goal)
     patterns = [goal_enc] + sample_distractors(
-        vh, env_offset, cfg.env.size, n_distractors, rng,
+        vh, env_offset, env.size, n_distractors, rng,
     )
     rng.shuffle(patterns)
     for pat in patterns:
@@ -664,6 +664,10 @@ def main():
                         "never trained on.")
     p.add_argument("--val_seed", type=int, default=0,
                    help="Seed for minting a --split env set.")
+    p.add_argument("--val_size", type=int, default=None,
+                   help="Mint the arenas at this size -- the size-OOD "
+                        "axis. Needs a minted --split; equal to the "
+                        "training size it is a no-op.")
     p.add_argument("--checkpoint_dir", required=True,
                    help="Directory containing hopfield_nav_update*.pt files.")
     p.add_argument("--mode", choices=MODES, default="combined")
@@ -732,7 +736,8 @@ def main():
     np.random.seed(0)
     val_envs, vh, val_offsets = eval_world_for_split(
         cfg, encoder, str(device), ckpt_path=args.checkpoint_dir,
-        split=args.split, val_seed=args.val_seed)
+        split=args.split, val_seed=args.val_seed,
+        size=args.val_size)
 
     plans = make_trial_plans(args.trials, val_envs, args.seed)
 
@@ -761,10 +766,14 @@ def main():
     base, ext = os.path.splitext(out_path)
     cont_path = f"{base}_continuous{ext}"
 
-    plot_grid(ckpt_results, args.mode, cfg.env.size, out_path,
+    # The plot extent is the arena being drawn, not the one the run trained on:
+    # under `--val_size` those differ, and a size-20 trajectory clipped to a
+    # size-8 axis would silently lose most of the path.
+    plot_size = max(int(e.size) for e in val_envs)
+    plot_grid(ckpt_results, args.mode, plot_size, out_path,
               pos_key="positions", goal_radius=float(cfg.env.goal_radius))
     print(f"Saved (snapped):    {out_path}")
-    plot_grid(ckpt_results, args.mode, cfg.env.size, cont_path,
+    plot_grid(ckpt_results, args.mode, plot_size, cont_path,
               pos_key="cont_positions", goal_radius=float(cfg.env.goal_radius))
     print(f"Saved (continuous): {cont_path}")
 

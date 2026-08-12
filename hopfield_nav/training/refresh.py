@@ -334,7 +334,9 @@ def preflight(split: GeneratedSplit, cadence: Cadence, n_updates: int,
             break
 
     size = sim.train[0].size if sim.train else int(env_cfg.size)
-    used_place = [(o, size) for o in sorted(sim.used["place"])]
+    # The boxes as recorded -- each with the size it was placed at, not this
+    # one relabelled onto all of them (§6.2).
+    used_place = sim.used_boxes()
     # The same two calls `make_val_set` makes -- `legal_offsets` then
     # `greedy_pack` -- so the two cannot disagree about which offsets are legal
     # or about the margin rule.

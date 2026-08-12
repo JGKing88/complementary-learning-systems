@@ -193,7 +193,8 @@ class ExploreExploitCollector:
         else:
             goal_in_memory_flag = False
 
-        self.engine.seed_distractors(hopfield, env_offset, n_distractors, rng)
+        self.engine.seed_distractors(hopfield, env_offset, n_distractors,
+                                     rng, env_size=env.size)
         env.set_position(random_start(env.size, goal, rng))
         out = self.engine.rollout(
             env, env_offset,

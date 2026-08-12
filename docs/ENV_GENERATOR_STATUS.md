@@ -23,7 +23,7 @@ python -m hopfield_nav.tests.gen_golden --check       all goldens match
 | 3 | Serialization + train wiring | **done** — `901e802` |
 | 4 | Per-trait refresh | **done** — see outcome below |
 | 5 | Eval CLIs, mix-and-match | **done** — see outcome below |
-| 6 | Size OOD | planned — see below |
+| 6 | Size OOD | **done** — see outcome below |
 
 ---
 
@@ -1663,3 +1663,188 @@ their reads are on the same list.
 | Coverage read as capability when it is budget | 6.6 — both scalings, both reported |
 | "Size OOD" quietly tests only the old footprint | 6.5 — decided before code, option (2) |
 | Eval-side size work leaks into training | 6.8 — the collector sites stay untouched |
+
+---
+
+## Phase 6 — outcome
+
+**769 tests pass** (743 before, +26 here), goldens byte-identical, 101 modules
+import. `--val_size N` ships on `eval_all`, `analysis/trajectories.py` and both
+`phase_decoding` drivers.
+
+The acceptance gate holds at both levels: `--val_size` equal to the trained size
+returns the same key, the same envs, the same report
+(`test_val_size_equal_to_the_trained_size_is_a_noop`) and — through the CLI, on
+a real checkpoint — the same `nav_det`, `discovery`, `exploration`,
+`split_report`, `scaffold_layout` and `splits`
+(`test_val_size_at_the_trained_size_returns_the_same_results`). That is what
+says the size plumbing changed nothing for every run that does not use it.
+
+### The plan was wrong about 6.3, in the direction that matters
+
+The plan said `wall_hamming` **raises** across sizes. The raise is real —
+`(4,6) != (4,20)` is a broadcast error — but **no code path reached it**.
+`val_set_report` passes a single `size` for both codes, so it computed the
+training seed's wall code *at the validation size* and reported a number:
+`min_wall_hamming_vs_train: 31` for a size-20 val set against a size-6 run. That
+is a distance to a wall the training env never had.
+
+Silent, not loud — the opposite of what the plan claimed, and worse. Also
+checked: a size-20 code is not an extension of the size-6 code for the same
+seed (`np.array_equal(a, b[:, :6])` is False), so there is no way to line them
+up either. The treatment is unchanged and now correct for the right reason:
+across sizes the margin is `None` and `wall_hamming_note` says why.
+
+### 6.2 — the bug, and the second copy of it
+
+Fixed at the call site *and* in the representation. `used["place"]` now holds
+`(offset, size)` boxes, with `used_boxes()` / `used_offsets()` for the two kinds
+of reader; `world.json` writes `[r, c, size]` triples and still loads the old
+`[r, c]` form by pairing it with the run's recorded size.
+
+Three call sites were passing the wrong size, not one: `make_val_set`'s
+`exclude`, `val_set_report`'s gap computation (it scored every training box at
+the *validation* size, so `min_place_gap_vs_train` was wrong across sizes too),
+and `refresh.preflight`.
+
+The sharpest measurement is now a test: four size-4 training envs at margin 3 on
+a 77-wide scaffold, minting two size-30 validation envs. With the boxes as
+recorded, 421 offsets are legal and both envs place. With the same boxes
+relabelled at the validation size, **zero** are legal. A val set that exists or
+does not, depending only on a label.
+
+(The plan's `Npos=132` figure — 6030 against a true 8581 — did not record which
+training offsets produced it. Re-measured at that scaffold with three boxes at
+`(10,10)`, `(60,90)`, `(120,30)`: 8998 legal with the correct labels, exactly
+matching the ground-truth predicate cell by cell, against 6443 mislabelled. The
+ratio is the same; the absolute numbers depend on where the training envs sat.)
+
+### 6.1 — and a mutation that survived
+
+Every eval-path site now reads `env.size`. But the first version of the fix kept
+*two* independent denominator expressions in `evaluate_exploration` — a
+`uniform` computed from `val_envs` for `mean_coverage`, and a `total_positions`
+computed per env for the union — and mutating the per-env one to `cfg.env.size`
+**was not caught**. Two sources that agree by construction hide each other.
+
+Collapsed to one: `total_positions` is computed per env, `mean_coverage` divides
+by `set(trial_denom)` when that has a single member. The uniform case is the
+same scalar expression it always was, which is what keeps the no-op gate exact
+rather than approximate.
+
+Ten mutations run, all caught: the exclusion relabelling, `used["place"]`
+losing its size, the coverage denominator, all three distractor-exclusion boxes,
+the cross-size Hamming, the confined goal pool, the split key, and the nav
+budget scaled as `size²`.
+
+### What is measured, not assumed
+
+- coverage really is `cells / val_size²` — the test drives `evaluate_exploration`
+  and compares against both denominators, so the 4× error fails it
+- distractors: a spy on `sample_distractors` pins the size **each of the three
+  evaluators passes**, since the sampler's guarantee is only as good as its
+  argument
+- the architecture claim: same observation width and same `input_dim` at size 4
+  and size 12, asserted rather than asserted-in-prose
+- `legal_offsets` against the ground-truth predicate over a whole 132² scaffold
+  at differing sizes: exact, and the mislabelled version is a strict subset
+  missing 2555 offsets
+
+### 6.4 — the message names the size change, and only when it is true
+
+`_size_change_clause` re-resolves the failed draw at the excluded envs' own size
+and fires only if that would have succeeded. Both branches are tested: size 40
+on the 77-wide scaffold gets "**The size change is the cause**" with the numbers
+(5034 legal at size 4, 2 of 2 placed); asking for 400 envs gets "the size change
+is not the cause" instead.
+
+### 6.5 — option (2), as recommended
+
+Held-out goals now draw from the recorded held-out cells *plus* every cell of
+the declared goal domain beyond the training footprint. Disjointness survives by
+construction — training could not reach those cells — and the outer band of a
+bigger arena actually gets goals. Tested over 24 seeds: at least one goal lands
+outside the training footprint, and dropping the extension makes that fail. A
+*smaller* val size is unchanged: no new region, and the filter is the whole rule.
+
+### 6.7 — the sweep is one table, found by running it
+
+The plan said results are keyed by `(split, size)` "so a size sweep is a column
+in the same table `--split` already produces". Written as a single global
+`--val_size`, they are not: the first end-to-end run applied one size to every
+`--split`, and two combinations collapsed onto one key with the second silently
+overwriting the first.
+
+`--val_size` is repeatable and crossed with `--split`. `recorded` is paired with
+its own size and kept out of the cross product — it is a fixed list of envs, so
+crossing it would make `--split recorded --split place=held_out --val_size 12`
+raise on an invocation that plainly makes sense. Duplicate combinations collapse
+rather than being evaluated twice and overwriting each other.
+
+One run, one table:
+
+```
+split                                                nav_det              exploration
+recorded                                             sr=0.00 ...          cov=0.16
+place=held_out,wall=held_out,goal=held_out           sr=0.00 ...          cov=0.16
+place=held_out,wall=held_out,goal=held_out,size=12   sr=0.00 ...          cov=0.02
+  ...
+place=held_out,wall=held_out,goal=held_out,size=12   place_gap>=5 (margin 2)  wall_hamming n/a across sizes
+```
+
+`--val_size 4` against a size-4 run is in there too — as the *undecorated* row,
+because it changed nothing.
+
+### A regression the change would have caused, caught before it shipped
+
+`WorldSpec.from_json` verified the recorded `spec_hash` by **re-rendering the
+object** and hashing that. So changing `used.place` from `[r, c]` to
+`[r, c, size]` made every `world.json` already on disk fail to load — with
+*"The file was edited by hand or written by a different spec_version."*
+Reproduced on a real file before fixing it.
+
+The hash answers "was this edited after it was written", which is a claim about
+the bytes. Re-rendering turns it into a claim about the current serializer, so
+*any* future format change breaks every existing file the same way. `from_json`
+now hashes the payload as read. Legacy files load; a hand-edited one is still
+caught (both tested, both mutation-verified). `spec_version` is 2 for new files.
+
+### 6.6 — both budgets
+
+`step_budget` returns `None` when the sizes match, so a same-size run is
+identical with or without `--scaled-budget`. When they differ, exploration also
+runs at a `size²`-scaled `max_steps` and navigation at a `size`-scaled one,
+under `exploration_scaled` / `nav_det_scaled`, with the numbers recorded in
+`results["step_budget"]`.
+
+Worth having: on the end-to-end run above, the size-12 set scores `cov=0.017` at
+the fixed budget and `cov=0.092` at the `size²`-scaled one, against `cov=0.16`
+at the trained size. Reading only the first would report a 9× collapse where most of
+the drop is the step budget.
+
+### Driven end to end, not only unit-tested
+
+A real generator checkpoint, one invocation:
+
+```
+--split recorded --split place=held_out,wall=held_out,goal=held_out \
+--val_size 4 --val_size 12
+```
+
+gives three rows — `recorded` at its own size, the size-4 draw as the
+*undecorated* held_out row (because it changed nothing), and `...,size=12` with
+its own separation report and both step budgets. `analysis.trajectories
+--val_size 12` renders at the size-12 extent and prints
+`wall_hamming n/a (val size 12 differs from the training size(s) [4]; ...)`.
+
+
+### Left undone
+
+- **`train.py` / `train_phased.py` / `train_store.py` still do not write
+  `world.json`** — carried over from Phase 5, unchanged here.
+- **Mixed sizes within one env set** stay refused (6.8). `evaluate_exploration`
+  now computes coverage correctly if one ever arrives, but `_single_size` is
+  still the gate and `make_val_set` still takes one `size`.
+- **Training at a new size** is still `--refresh_size`, still gated off. The five
+  `rollout/collector.py` sites were not touched, deliberately: an eval-side size
+  change cannot corrupt a training run.

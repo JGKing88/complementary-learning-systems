@@ -73,6 +73,7 @@ class RolloutEngine:
         random_init_seed: int = 0,
         split: str = "recorded",
         val_seed: int = 0,
+        val_size: int | None = None,
     ) -> None:
         self.ckpt_path = ckpt_path
         # Which validation envs to decode from. Defaults to the run's own
@@ -80,6 +81,7 @@ class RolloutEngine:
         # asks whether phase is decodable in arenas the run never trained on.
         self.split = str(split)
         self.val_seed = int(val_seed)
+        self.val_size = None if val_size is None else int(val_size)
         self.num_arenas = int(num_arenas)
         self.random_agent = bool(random_agent)
         self.random_init_seed = int(random_init_seed)
@@ -112,7 +114,7 @@ class RolloutEngine:
               "Npos² positions — slow on CPU, seconds on GPU)", flush=True)
         val_envs, vh, val_offsets = eval_world_for_split(
             cfg, encoder, str(self.device), ckpt_path=ckpt_path,
-            split=self.split, val_seed=self.val_seed)
+            split=self.split, val_seed=self.val_seed, size=self.val_size)
         # Seed BEFORE NavAgent construction so the random init is reproducible.
         torch.manual_seed(self.random_init_seed)
         if self.random_agent:
@@ -135,7 +137,20 @@ class RolloutEngine:
         self.agent = agent
 
     def build_bundle(self) -> EnvBundle:
-        env_size = int(self.cfg.env.size)
+        # Each env's own size, not the config's. The quadrant split is a
+        # statement about where the goal sits *in its arena*, so scoring a
+        # size-20 arena against a size-8 midpoint would put every goal in
+        # quadrant 3 -- silently, and the partition is what the decoding
+        # analysis conditions on.
+        sizes = {int(e.size) for e in self.val_envs}
+        if len(sizes) != 1:
+            # `EnvBundle.env_size` is one number and gets written into the
+            # output. Picking one of several would be a plausible wrong answer,
+            # which is the failure mode this whole axis exists to avoid.
+            raise ValueError(
+                f"mixed arena sizes {sorted(sizes)} in one env set; "
+                "EnvBundle records a single env_size and cannot describe them.")
+        env_size = int(next(iter(sizes)))
         offsets: list[tuple[int, int]] = []
         goals_local: list[tuple[int, int]] = []
         quadrants: list[int] = []
@@ -144,7 +159,7 @@ class RolloutEngine:
             g = env.goal_location
             offsets.append((int(off[0]), int(off[1])))
             goals_local.append((int(g[0]), int(g[1])))
-            quadrants.append(_quadrant(g, env_size))
+            quadrants.append(_quadrant(g, int(env.size)))
         return EnvBundle(
             envs=self.val_envs,
             offsets=offsets,
@@ -170,9 +185,12 @@ class RolloutEngine:
         env_offset: tuple[int, int],
         n_distractors: int,
         rng: np.random.RandomState,
+        env_size: int | None = None,
     ) -> None:
+        if env_size is None:
+            env_size = int(self.cfg.env.size)
         for pat in sample_distractors(
-            self.vh, env_offset, self.cfg.env.size, n_distractors, rng,
+            self.vh, env_offset, int(env_size), n_distractors, rng,
         ):
             hopfield.input_memory(torch.from_numpy(pat).float())
 
