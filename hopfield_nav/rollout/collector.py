@@ -140,7 +140,9 @@ class RolloutCollector:
         # inherited from whichever env class was constructed. When goals_active
         # is False the env reports no at-goal rows at all, so the contract has
         # nothing to act on and behavior is unchanged.
-        goal_contract = episode.contract_for("training_rollout")
+        goal_contract = episode.contract_for(
+            "training_rollout",
+            reset_state=cfg.env.reset_state_on_teleport)
 
         # Determine input dimensions for signal
         signal_dim = channels.signal_width(cfg.agent)
@@ -605,19 +607,30 @@ class RolloutCollector:
                 else:
                     prev_action_t = result["move_action"].float()
 
-                # Reset state for teleported episodes
+                # The teleport itself always invalidates the cached
+                # Gram-Schmidt basis -- that is about the agent's *position*
+                # being stale, not about its recurrence, so it happens whatever
+                # C5 says.
                 if goal_reached.any():
-                    # Cached Gram-Schmidt basis is stale at the new (teleported)
-                    # position; force-recompute next step for these envs.
                     invalidated_envs |= goal_reached
-                    reached_idx = torch.from_numpy(
-                        np.where(goal_reached)[0]).to(self.device)
+
+                # Zeroing the recurrent state is C5, and it is the contract's
+                # call, not this loop's. Deriving the mask here from
+                # `goal_reached` was a second copy of the rule that happened to
+                # agree with `TRAINING` -- and would have silently ignored
+                # --reset_state_on_teleport.
+                reset = episode.reset_rows(goal_reached, goal_contract)
+                if reset.any():
+                    reset_idx = torch.from_numpy(np.where(reset)[0]).to(
+                        self.device)
                     if h_rnn is not None:
-                        h_rnn[:, reached_idx, :] = 0.0
-                    # Enrichment buffers also reset: the post-teleport agent
-                    # has no valid "previous step" in its new episode segment.
-                    prev_reward_t[reached_idx] = 0.0
-                    prev_action_t[reached_idx] = 0.0
+                        h_rnn[:, reset_idx, :] = 0.0
+                    # Enrichment buffers go with it: a post-teleport agent whose
+                    # hidden state was cleared has no valid "previous step"
+                    # either. Carrying one while the recurrence restarts would
+                    # be a state neither regime produces.
+                    prev_reward_t[reset_idx] = 0.0
+                    prev_action_t[reset_idx] = 0.0
 
             # Bootstrap value at truncation
             pos_final = vec.positions()

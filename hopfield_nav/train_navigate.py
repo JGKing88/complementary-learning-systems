@@ -516,6 +516,7 @@ CFG_FIELDS: dict[str, tuple[str, ...]] = {
     "goal_radius": ("env.goal_radius",),
     "allow_offcell_store": ("env.allow_offcell_store",),
     "egocentric_heading": ("env.egocentric_heading",),
+    "reset_state_on_teleport": ("env.reset_state_on_teleport",),
     "wall_resolution": ("env.wall_resolution",),
     "time_penalty": ("env.time_penalty",),
     "continuous_normalize": ("env.continuous_normalize",),
@@ -657,6 +658,15 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--encoder_checkpoint", required=True)
     p.add_argument("--size", type=int, default=8)
     p.add_argument("--observation_size", type=int, default=12)
+    p.add_argument("--reset_state_on_teleport",
+                   action=argparse.BooleanOptionalAction, default=None,
+                   help="Zero the RNN hidden state and prev_reward / prev_action "
+                    "when the agent teleports after reaching the goal (C5 of the "
+                    "at-goal contract, world/episode.py). Default off since "
+                    "2026-08-12: recurrence spans the whole rollout rather than "
+                    "restarting at each goal. Applies to training and evaluation "
+                    "together -- an answer that differed between them would make "
+                    "the two incomparable.")
     p.add_argument("--egocentric_heading", action=argparse.BooleanOptionalAction,
                    default=True,
                    help="Foveal cone turns with the agent: heading is a "

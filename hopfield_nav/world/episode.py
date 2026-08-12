@@ -109,20 +109,48 @@ SITE_CONTRACTS: dict[str, GoalContract] = {
 }
 
 
-def contract_for(site: str) -> GoalContract:
+def contract_for(site: str, *, reset_state: bool | None = None) -> GoalContract:
     """The declared contract for a call site. Unknown sites are an error.
 
     Call this instead of hardcoding a contract, so that adding an at-goal site
     forces an entry in the table above rather than an implicit choice.
+
+    ``reset_state`` overrides C5 for sites that teleport -- the run-level
+    ``EnvConfig.reset_state_on_teleport`` switch. It is one knob rather than one
+    per site because it is a claim about what the agent's recurrence *means*
+    across an episode boundary, and an answer that differed between training and
+    evaluation would make the two incomparable. Sites that never teleport are
+    unaffected: C5 is unreachable there, and forcing it on would violate the
+    invariant that there is nothing to reset without a teleport.
     """
     try:
-        return SITE_CONTRACTS[site]
+        contract = SITE_CONTRACTS[site]
     except KeyError:
         raise KeyError(
             f"no at-goal contract declared for {site!r}. Add a row to "
             f"world/episode.SITE_CONTRACTS and to the table in "
             f"tests/test_goal_contract.py, with a justification."
         ) from None
+    if reset_state is not None and contract.teleport:
+        contract = replace(contract, reset_state=bool(reset_state))
+    return contract
+
+
+def reset_rows(at_goal_mask, contract: GoalContract) -> np.ndarray:
+    """Rows whose recurrent state this contract resets.
+
+    The same rule ``resolve_at_goal`` applies, exposed on its own for callers
+    that already stepped the environment and hold only the pre-step mask.
+    Sharing it is the point: a caller deriving ``at_goal & teleport &
+    reset_state`` for itself is a second copy of the contract that can drift
+    from this one, which is exactly what this module exists to prevent.
+    """
+    return _reset_mask(np.asarray(at_goal_mask, dtype=bool).reshape(-1),
+                       contract)
+
+
+def _reset_mask(at_goal_mask: np.ndarray, contract: GoalContract) -> np.ndarray:
+    return at_goal_mask & contract.teleport & contract.reset_state
 
 
 def contract_from_goals_active(goals_active: bool) -> GoalContract:
@@ -174,7 +202,7 @@ def resolve_at_goal(
     # the row is actually at the goal.
     ignored = at_goal_mask & contract.move_ignored
     teleport = at_goal_mask & contract.teleport
-    reset = teleport & contract.reset_state
+    reset = _reset_mask(at_goal_mask, contract)
 
     return AtGoalResolution(
         rewards=rewards,
@@ -223,6 +251,7 @@ __all__ = [
     "TRAINING",
     "contract_for",
     "require_single_env_support",
+    "reset_rows",
     "contract_from_goals_active",
     "resolve_at_goal",
     "with_overrides",

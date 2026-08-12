@@ -73,6 +73,14 @@ class EnvConfig:
     # when continuous_normalize=False.
     min_action_norm: float | None = None
     goals_active: bool = True               # When False: no +1 goal reward, no teleport on goal-reach. For pure-explore Phase A.
+    # C5 of the at-goal contract (world/episode.py). False -- the default
+    # since 2026-08-12 -- carries the RNN hidden state and prev_reward /
+    # prev_action across a post-goal teleport, so recurrence spans the
+    # whole rollout rather than restarting at each goal. True restores the
+    # historical behaviour of zeroing them. One switch for training and
+    # evaluation both: an answer that differed between them would make the
+    # two incomparable.
+    reset_state_on_teleport: bool = False
     goal_reward: float = 1.0                # +reward at goal cell when goals_active. Bumping >1 strengthens follow PPO updates vs explore reward signals (novelty + revisit).
     goal_radius: float = 0.5                # Euclidean radius around goal that counts as "at goal". Default 0.5 reproduces snap-equality on integer-snapped positions. Larger values fuzz the goal region; e.g. 1.0 includes 4-connected neighbor cells.
     # What a store writes when the agent is at goal but standing on a different

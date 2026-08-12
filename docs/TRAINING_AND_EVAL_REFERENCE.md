@@ -324,6 +324,7 @@ Per update (`train.py:198-407`):
 | `--time_penalty` | `0.01` | Per-step reward `−time_penalty` when not at goal. |
 | `--movement_mode` | `discrete` | `discrete` → Categorical(4) + `VecEnv`; `continuous` → Normal(2) + `ContinuousVecEnv`. Sets both `EnvConfig` and `AgentConfig`. |
 | `--goal_radius` | `0.5` | At-goal L2 threshold. **Only affects eval envs** — training envs in this script don't receive it (see CODEBASE_MAP §8 item 2). |
+| `--reset_state_on_teleport` / `--no-` | **off** | Zero the RNN hidden state and `prev_reward` / `prev_action` when the agent teleports after reaching the goal — C5 of the at-goal contract (`world/episode.py`). **Off by default since 2026-08-12**, so recurrence spans the whole rollout rather than restarting at each goal; pass the flag to restore the historical behaviour. One switch for training and evaluation both — an answer that differed between them would make the two incomparable. Present on all four trainers. |
 
 **Hopfield / memory**
 

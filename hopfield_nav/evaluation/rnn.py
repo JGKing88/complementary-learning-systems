@@ -42,6 +42,7 @@ def evaluate_nav_one_env(
     continuous_normalize: bool = False,
     sgb: np.ndarray | None = None,
     env_offset: tuple[int, int] | None = None,
+    reset_state_on_teleport: bool = False,
 ) -> dict[str, float]:
     """Run n_trials parallel trials from random starts.
 
@@ -108,9 +109,11 @@ def evaluate_nav_one_env(
         rewards, goal_reached, _ = vec.step_batch(student_action)
         returns += rewards
 
-        # Reset RNN h on teleport so trials that already succeeded don't
-        # carry stale memory into their next (wasted) steps.
-        if h is not None and goal_reached.any():
+        # C5 of the at-goal contract, under `--reset_state_on_teleport`. Every
+        # trial's record is frozen at its first hit, so this changes no reported
+        # number here -- but it must follow the same switch as training, or the
+        # RNN stack would evaluate a recurrence the trainer never produced.
+        if reset_state_on_teleport and h is not None and goal_reached.any():
             reset_mask = torch.from_numpy(goal_reached).to(device)
             h = h * (~reset_mask).view(1, -1, 1).float()
 
@@ -142,6 +145,7 @@ def evaluate_nav_all(
     continuous_normalize: bool = False,
     sgb: np.ndarray | None = None,
     env_offsets: list[tuple[int, int]] | None = None,
+    reset_state_on_teleport: bool = False,
 ) -> dict[int, dict[str, float]]:
     """Eval the same agent on each env. Returns {env_idx: metrics}.
 
@@ -156,5 +160,6 @@ def evaluate_nav_all(
             continuous_normalize=continuous_normalize,
             sgb=sgb,
             env_offset=env_offsets[i] if env_offsets is not None else None,
+            reset_state_on_teleport=reset_state_on_teleport,
         )
     return out
