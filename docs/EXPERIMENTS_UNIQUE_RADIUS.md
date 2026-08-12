@@ -131,3 +131,30 @@ evaluation points during training, which is optimistically biased.
 | `ur_loss_20260811` | repel [1,5,15,40] × frac [0.05,0.1,0.2] × 3 seeds | 36 | **best 20**; repel should go down; diagonal ridge |
 | `ur_seb_control` | single_env_batch [T,F] × 3 seeds | 6 | True 2/2/2, False 17/18/18 — §2.1 confirmed |
 | `ur_loss2_repel_low` | repel [0.25,0.5,1,2] × frac [0.10,0.15,0.20] × 3 seeds | 36 | *running* |
+| `ur_seb_A_geometry` | True; npos_list [4×400, 2×600, 1×800] × repel [1,5] × 2 seeds | 12 | *running* |
+| `ur_seb_B_uniformity` | True; uniformity_lambda [0,0.1,0.5,2,8] × 2 seeds | 10 | *running* |
+
+### Rescuing `single_env_batch=True` — two hypotheses in flight
+
+**A, geometry.** Under True the only repulsion left is between far pairs
+*inside* one patch, so the distance over which codes get separated is bounded
+by the patch side — 100 cells against a 1716-cell arena. Growing the patch
+should extend that reach; at one arena-sized env, True and False coincide by
+construction. Coverage held near 20% and the near-radius pinned at a fixed 10
+cells, so neither confounds patch size. Baselines to beat: 60×100 → 2,
+15×200 → 2.
+
+**B, uniformity.** `uniformity_loss` is `logsumexp(-t‖zi−zj‖²)` over the batch —
+a repulsion that never asks which environment a pair came from, so unlike the
+far-pair term it does not need mixed batches to bite. It is the natural
+substitute for what True removes, and `uniformity_lambda` has been 0 in every
+run in the archive.
+
+The high-dimensional fact that makes B promising, and that I initially got
+backwards: **3M codes spread near-uniformly in 1024 dimensions have a maximum
+pairwise cosine of ~0.164** (measured; the sqrt(2 ln N / D) estimate gives
+0.171). Spread means near-*orthogonality* at this width, not overlap — 3M
+points cannot cover a 1024-sphere. So uniformity pushing codes apart should
+drive the alias ceiling *down*, potentially far below the 0.988 True produces.
+The contrary intuition ("both patches cover the sphere, so they collide") is a
+2-D/3-D picture that does not survive at D=1024.

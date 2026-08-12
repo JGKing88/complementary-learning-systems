@@ -108,7 +108,27 @@ BASE = dict(
 # ur_loss2: push repel BELOW 1.0, where ur_loss_20260811's trend pointed, and
 # fill the 0.10-0.20 radius_frac gap. The best cell there (repel 1.0,
 # radius_frac 0.10 -> 18) sat on the grid edge, so the optimum may be outside.
-# ur_seb_A: can single_env_batch=True be rescued by patch GEOMETRY?
+# ur_seb_B: can single_env_batch=True be rescued by UNIFORMITY?
+#
+# uniformity_loss is logsumexp(-t*||zi-zj||^2) over the batch -- a repulsion
+# that never asks which environment a pair came from, so unlike the far-pair
+# term it does not need mixed batches to bite. That makes it the natural
+# substitute for the cross-environment repulsion True removes.
+#
+# Note the high-dimensional fact that makes this promising: 3M codes spread
+# near-uniformly in 1024 dimensions have a maximum pairwise cosine of ~0.16
+# (measured), against the 0.988 alias ceiling True currently produces. Spread
+# means near-orthogonality here, not overlap -- 3M points cannot cover a
+# 1024-sphere.
+#
+# The range is wide because uniformity_lambda has never been anything but 0 in
+# any run in the archive.
+GRID: dict[str, list] = {
+    "uniformity_lambda": [0.0, 0.1, 0.5, 2.0, 8.0],
+    "seed": [42, 43],
+}
+
+# ur_seb_A (running): can single_env_batch=True be rescued by patch GEOMETRY?
 #
 # Under True the only repulsion left is between far pairs *within* one patch,
 # so the distance over which the code is pushed apart is bounded by the patch
@@ -125,7 +145,7 @@ BASE = dict(
 # repel_weight is included because within-patch repulsion is now the *only*
 # repulsion, so its optimum need not match the False regime's (where it wanted
 # to go down).
-GRID: dict[str, list] = {
+_GRID_seb_A: dict[str, list] = {
     "npos_list": ["400,400,400,400", "600,600", "800"],
     "repel_weight": [1.0, 5.0],
     "seed": [42, 43],
