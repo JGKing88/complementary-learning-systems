@@ -728,6 +728,15 @@ its later steps are masked out of the loss.
 | `--batch_envs`, `--steps_per_rollout` | `16`, `64` | Rollout shape. |
 | `--eval_every`, `--n_eval_trials`, `--eval_max_steps` | `25`, `32`, `64` | Console-log cadence and eval budget. |
 | `--seed`, `--device`, `--save_dir`, `--load_checkpoint` | `0`, `cuda`, `checkpoint_rnn/<run>`, `None` | |
+| `--env_generator` / `--no-` | `False` | Draw envs from declared domains and record them, as `train_navigate` does, instead of the historical placement path. Requires `--input_grid_state` (without a scaffold there are no offsets to declare a region for) and an explicit `--place_margin` (deriving one reads the scaffold's cosine-vs-distance curve, which needs an encoder this stack does not have). |
+| `--place_region`, `--goal_region`, `--wall_seeds`, `--place_margin`, `--goal_val_frac`, `--n_val_envs` | `anywhere`, `any`, `0,10000000`, `None`, `0.2`, `2` | Same meanings as the `train_navigate` table above. |
+
+Both this and `analysis/continual/baseline.py` write a **`world.json`** beside
+their output, on both paths — the same file and reader `train_navigate` uses.
+That is what lets a baseline run and an agent-hash run be handed one record,
+rather than being matched through the draw-order convention documented at
+`agenthash.py:325-333`. Placement previously drew from global `np.random` here
+too, so which offsets a baseline used was unrecoverable afterwards.
 | `--use_wandb`, `--wandb_project` | off, `hopfield-nav-rnn` | |
 | `--plot_smooth_window` | `1` | Rolling mean for the two auto-generated plots. |
 
@@ -743,9 +752,19 @@ Artifacts: `final.pt` (weights, optimizer, cfg, full history, env goals),
 Reconstructs the training config from the checkpoint, rebuilds the eval world,
 loads the agent, and runs whichever evaluators are enabled.
 
+**The eval world comes from the run's `world.json` when it has one** (found from
+`--ckpt`). Until 2026-08 nothing passed the record through, so every evaluation
+replayed the training seed stream — which recovers wall codes and goals but
+*not* offsets, because placement drew from global `np.random`. Runs written
+before Phase 3 have no record and still take that path, with a warning; their
+offsets are a fresh draw, not the ones training evaluated against.
+
 | Flag | Default | Effect |
 |---|---|---|
 | `--ckpt` | required | Any `hopfield_nav` agent checkpoint. |
+| `--split` | `recorded` | Which validation envs to evaluate on. **Repeatable** — each extra one reuses the same scaffold, so several combinations cost one build. `recorded` is the run's own `base_val`, read from `world.json` exactly as trained against. Otherwise `trait=level` pairs over `place`/`wall`/`goal`, levels `same` \| `held_out` \| `ood`; unnamed traits default to `held_out`. Needs a `world.json` for anything but `recorded`. |
+| `--val_seed` | `0` | Seed for minting split env sets; changing it draws a different set at the same levels. |
+| `--val_size` | — | **Rejected.** Six sites read the global `cfg.env.size` where they need the val set's (`metrics.py:614` is `mean_coverage`'s denominator) and every one fails silently. Size OOD is Phase 6. |
 | `--encoder` | ckpt's path | Override the encoder. |
 | `--device` | `cuda` | |
 | `--tag` | basename of ckpt | Label in printed output and JSON. |

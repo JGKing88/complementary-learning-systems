@@ -426,6 +426,17 @@ class RNNTrainConfig:
     plot_smooth_window: int = 1             # rolling-mean window for forgetting/steps_to_goal plots; 1 = no smoothing
     fwhm_ratio: float = 0.25                # spatial smoothing for gbook lookup (only used when input_grid_state)
     lambdas: list[int] = field(default_factory=lambda: [11, 12])  # VectorHash module periods (only used when input_grid_state)
+    # The same declared-domain surface TrainConfig has, so a baseline run and an
+    # agent-hash run can be handed one world.json instead of being matched by a
+    # draw-order convention. `place_margin` has no default here: deriving one
+    # needs an encoder, and this stack has none.
+    env_generator: bool = False
+    place_region: str = "anywhere"
+    goal_region: str = "any"
+    wall_seeds: str = "0,10000000"
+    place_margin: int | None = None
+    goal_val_frac: float = 0.2
+    n_val_envs: int = 2                     # held-out envs recorded alongside the train set
 
 
 @dataclass

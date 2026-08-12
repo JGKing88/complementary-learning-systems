@@ -29,7 +29,9 @@ from .world.env import GridEnv, warn_if_offcell_stores
 from .evaluation.rnn import evaluate_nav_all
 from .rollout.rnn import collect_rollout_rnn
 from .training.rnn_sequential import UpdateResult, run_sequential_blocks
-from .training.rnn_setup import build_envs, restore_arch_from_ckpt
+from .training.rnn_setup import (
+    build_envs_from_config, restore_arch_from_ckpt, rnn_world,
+    write_rnn_world_spec)
 from .utils import smooth_gbook
 from .world.vec_env import ContinuousVecEnv, VecEnv, make_vec
 from .world.scaffold import VectorHash, place_envs
@@ -181,34 +183,35 @@ def train(cfg: RNNTrainConfig) -> None:
     np.random.seed(cfg.seed)
     rng = np.random.RandomState(cfg.seed)
 
-    envs = build_envs(cfg, rng)
-    print(f"Built {len(envs)} envs (size={cfg.env.size}, "
-          f"obs_dim={cfg.env.observation_size})")
-    for i, env in enumerate(envs):
-        print(f"  env {i}: goal={env.goal_location}")
-
     # Pre-load checkpoint (if any) so we can auto-restore architecture-
     # affecting fields BEFORE building VectorHash + agent (input_dim depends
     # on Ng = sum lambdas^2; head shape depends on movement_mode; etc.).
+    # The world is built after this too, because `input_grid_state` and
+    # `lambdas` decide whether there is a scaffold to place in at all. The
+    # restore consumes no randomness, so the legacy draw is unchanged by the
+    # reorder.
     ckpt = None
     if cfg.load_checkpoint:
         print(f"Loading checkpoint from {cfg.load_checkpoint}")
         ckpt = torch.load(cfg.load_checkpoint, map_location=device, weights_only=False)
         restore_arch_from_ckpt(cfg, ckpt)
 
+    envs, env_offsets, world_split, vh, world_kind = rnn_world(
+        cfg, rng, want_offsets=bool(cfg.agent.input_grid_state))
+    print(f"Built {len(envs)} envs (size={cfg.env.size}, "
+          f"obs_dim={cfg.env.observation_size}, world={world_kind})")
+    for i, env in enumerate(envs):
+        print(f"  env {i}: goal={env.goal_location}")
+
     sgb = None
-    env_offsets: list[tuple[int, int]] | None = None
     gbook_dim = 0
     if cfg.agent.input_grid_state:
-        vh_cfg = VectorHashConfig(lambdas=list(cfg.lambdas), static_vectorhash=True)
-        vh = VectorHash(vh_cfg)
-        vh.build_scaffold()
-        env_offsets = place_envs(len(envs), cfg.env.size, vh.Npos,
-                                 np.random, placement="spread")
         sgb = smooth_gbook(vh.gbook, vh.lambdas, cfg.fwhm_ratio)
         gbook_dim = int(vh.Ng)
         print(f"grid_state on  Ng={gbook_dim}  Npos={vh.Npos}  "
               f"lambdas={vh.lambdas}  fwhm_ratio={cfg.fwhm_ratio}")
+        for i, off in enumerate(env_offsets):
+            print(f"  env {i}: offset={off}")
 
     input_dim = compute_rnn_input_dim(cfg.agent, cfg.env.observation_size, gbook_dim)
     print(f"RNN input_dim={input_dim} (sensory={cfg.env.observation_size}, "
@@ -236,6 +239,10 @@ def train(cfg: RNNTrainConfig) -> None:
         sub = os.path.basename(str(cfg.save_dir).rstrip("/"))
     os.makedirs(cfg.save_dir, exist_ok=True)
     print(f"save_dir={cfg.save_dir}")
+    # Written on both paths, same file and same reader as train_navigate: a run
+    # has to be able to say which envs it used.
+    write_rnn_world_spec(cfg, world_split, vh, generator=world_kind,
+                         save_dir=cfg.save_dir)
 
     # The RNN baseline has no encoder: it reads sensory input straight from the
     # env codebook, which is the point of the comparison.
@@ -309,6 +316,28 @@ def main() -> None:
     p.add_argument("--allow_offcell_store",
                    action=argparse.BooleanOptionalAction, default=False,
                    help="Whether a store fired while at goal may write a cell other than the goal's. Only reachable at goal_radius > 0.5, where at_goal tests the float position but embeddings are read at the snapped cell. Default False: the goal cell's embedding is stored instead, so the pattern written is the one navigation will later recall. Pass --allow_offcell_store for the pre-2026-08 behavior.")
+    # The declared-domain surface, matching train_navigate so a baseline and an
+    # agent-hash run can be handed the same world.json.
+    p.add_argument("--env_generator", action=argparse.BooleanOptionalAction,
+                   default=False,
+                   help="Draw envs from declared domains and record them, "
+                        "instead of the historical placement path. Needs "
+                        "--input_grid_state and an explicit --place_margin.")
+    p.add_argument("--place_region", type=str, default="anywhere",
+                   help="'anywhere' or 'rect:X0,Y0,W,H'.")
+    p.add_argument("--goal_region", type=str, default="any",
+                   help="'any', 'ring:W', 'interior:W' or 'quadrant:Q'.")
+    p.add_argument("--wall_seeds", type=str, default="0,10000000",
+                   help="'LO,HI' range wall seeds are drawn from.")
+    p.add_argument("--place_margin", type=int, default=None,
+                   help="Edge-to-edge clearance between every pair of envs. "
+                        "Required with --env_generator: deriving one needs an "
+                        "encoder and this stack has none.")
+    p.add_argument("--goal_val_frac", type=float, default=0.2,
+                   help="Share of goal cells reserved for validation.")
+    p.add_argument("--n_val_envs", type=int, default=2,
+                   help="Held-out envs recorded in world.json alongside the "
+                        "train set.")
     # Agent
     p.add_argument("--hidden_size", type=int, default=128)
     p.add_argument("--num_rnn_layers", type=int, default=1)
@@ -386,6 +415,13 @@ def main() -> None:
         eval_every=args.eval_every,
         n_eval_trials=args.n_eval_trials,
         eval_max_steps=args.eval_max_steps,
+        env_generator=args.env_generator,
+        place_region=args.place_region,
+        goal_region=args.goal_region,
+        wall_seeds=args.wall_seeds,
+        place_margin=args.place_margin,
+        goal_val_frac=args.goal_val_frac,
+        n_val_envs=args.n_val_envs,
         seed=args.seed,
         device=args.device,
         save_dir=args.save_dir,

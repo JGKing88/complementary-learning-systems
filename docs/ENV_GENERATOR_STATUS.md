@@ -22,7 +22,7 @@ python -m hopfield_nav.tests.gen_golden --check       all goldens match
 | 2 | Generator, domains, separation | **done** — see outcome below |
 | 3 | Serialization + train wiring | **done** — `901e802` |
 | 4 | Per-trait refresh | **done** — see outcome below |
-| 5 | Eval CLIs, mix-and-match | planned — see below |
+| 5 | Eval CLIs, mix-and-match | **done** — see outcome below |
 | 6 | Size OOD | not started |
 
 ---
@@ -1338,3 +1338,116 @@ different about what existing numbers mean.
 | The mask disagrees with the predicate it replaces | Equivalence test against the scan path, not just a spot check |
 | Preflight predicts something the eval then contradicts | They run the same code; pinned by a test |
 | Renaming `build_envs` breaks an unnoticed importer | Grep before, full import sweep after |
+
+---
+
+## Phase 5 — outcome
+
+Four commits, in the order the plan set: `a9b6c6a` spec discovery, `47a019c` the
+mask, `d20bf83` the preflight, and this one for `--split` and RNN parity.
+
+### 5.0 — the bug that was already there
+
+All four eval CLIs called `build_eval_world` with three arguments, so every
+post-hoc evaluation since Phase 3 took the RNG replay and scored checkpoints on
+scaffold patches training never used, while a truthful `world.json` sat unread
+beside them. `build_eval_world` now takes `ckpt_path` and finds the record
+itself — discovery lives there rather than at the call sites so a fifth cannot
+quietly rejoin the legacy path. Since "nobody passed it" and "this run has no
+record" are indistinguishable at runtime, a test reads the source of all four.
+
+### 5.3 — `sample_places` could not answer the question at the size it was asked
+
+One *failing* `make_val_set` at 23,961 excludes took **78 s**, because each
+candidate was tested against every excluded env in Python. That is what a user
+waited to be told "no" by `eval_all --split place=held_out`.
+
+Clearance is closed-form: an excluded env blocks candidate offsets over the
+wrapped interval `[o - size - margin + 1, o + other_size + margin - 1]` per axis
+— one rectangle, **asymmetric** when the two envs differ in size. `legal_mask`
+paints them into a 2D difference array and cumsums: **~50–77 ms at any
+`|exclude|`**, exact against `toroidal_gap` on every cell of every scaffold
+tried. Opted into by the caller, not switched on a size threshold — `Refresher`
+calls this every tick with ten excludes, where a flat 50 ms would add 15 s to a
+300-tick run, and a hidden threshold would make a run's offsets depend on which
+side of a magic number it landed.
+
+**This corrected a Phase 4 finding** — see the correction note there.
+`place=held_out` is not infeasible after refresh; the sampler could not find the
+~10 survivors at a hit rate near 10⁻⁵.
+
+### 5.3b — the preflight
+
+Replays the exact ticks (they are a pure function of seed and tick), **1.4 s**
+for a 300-update run, draw-only so no envs are built. Reports a *ceiling*, and
+records it in `world.json` under `diagnostics.preflight`; never refuses.
+
+Two things it got wrong first, both found by measuring:
+
+- **Greedy packing is order-dependent** and `make_val_set` shuffles with the
+  *val* seed, which the preflight cannot know. A verdict from one fixed order
+  over-promised: at seeds 1 and 4 with `n=4`, one order reported room and
+  `make_val_set` then failed for two of four val seeds. It now takes the worst
+  of five orders, capped at `n_val_envs`. It errs toward *no* — a spurious
+  warning costs a line, a spurious all-clear costs a re-run.
+- **A domain that runs dry is a different failure.** It raises, hours in, at a
+  tick decided before the run started. The replay catches that and names the
+  update. *Open question:* this currently warns and proceeds per the
+  record-and-proceed decision, but a run guaranteed to crash at update 240 is
+  arguably worth refusing outright.
+
+### 5.1 / 5.2 — `--split`
+
+```
+--split recorded                                  # the run's own base_val
+--split place=same,wall=same,goal=same            # the memorization probe
+--split place=ood                                 # unnamed traits -> held_out
+```
+
+Repeatable; `eval_checkpoint` splits into the env-independent half and
+`run_suite`, so **one scaffold serves every combination** (pinned by an identity
+test — at `Npos=1716` a rebuild per combination would cost more than every
+evaluator put together).
+
+`recorded` is deliberately not a synonym for all-`held_out`: the first asks how
+a checkpoint did on the set it was scored against, the second whether that
+survives another draw from the same rule.
+
+Output stays compatible for the nine readers of this file: the first combination
+sits at the top level exactly as before, `splits` is additive. Each minted set's
+separation is **measured** into `split_report` — and a violated `held_out` claim
+raises, because a number in a report is not a strong enough place for a
+generator bug.
+
+`--val_size` is rejected outright with the six silently-failing sites named.
+
+### 5.5 — `train_rnn` and the RNN baseline on the same record
+
+Both now call one `rnn_world`, take the same six declared-domain flags, and
+write the same `world.json`. So a baseline run and an agent-hash run can be
+handed one record instead of being talked into agreement by the draw-order
+convention at `agenthash.py:325-333` — a comment, enforced by nothing.
+
+The `build_envs` collision is resolved rather than shadowed:
+`rnn_setup.build_envs_from_config` draws envs from a config,
+`world.generate.build_envs` rebuilds them from a record.
+
+Two limits, refused rather than faked:
+
+- **`--env_generator` needs `--input_grid_state`.** Without grid state the RNN
+  never sees the scaffold, so its envs' offsets are unobservable to it and a
+  place split is a distinction it cannot make.
+- **`--place_margin` must be explicit.** `derive_margin` reads the scaffold's
+  cosine-vs-distance curve, which needs an encoder; this stack has none, and a
+  borrowed constant would be wrong at a different `Npos`.
+
+`split_diagnostics` now reports an empty `cosine` block when the field has no
+`encoded_Phi`, rather than denying the RNN stack a world record for lacking an
+encoder it never had.
+
+### Left undone
+
+- `train.py` / `train_phased.py` / `train_store.py` still do not write
+  `world.json`. They are the remaining legacy trainers.
+- `analysis/trajectories.py` and `analysis/phase_decoding` got 5.0 only — they
+  read the recorded world but take no `--split`.

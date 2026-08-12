@@ -692,7 +692,12 @@ def split_diagnostics(field, env_cfg, split: GeneratedSplit) -> dict:
         "min_wall_hamming": int(min(hams)) if hams else None,
         "live_wall_bits": int(live.sum()),
         "total_wall_bits": int(live.size),
-        "cosine": cosine_report(field, split.train, split.base_val),
+        # The cosine diagnostic reads `encoded_Phi`, which only exists once an
+        # encoder has been run over the scaffold. The RNN baseline has no
+        # encoder at all, so it gets the geometric diagnostics and honestly
+        # reports no embedding ones rather than being denied a world record.
+        "cosine": (cosine_report(field, split.train, split.base_val)
+                   if getattr(field, "encoded_Phi", None) is not None else {}),
     }
 
 
@@ -727,6 +732,106 @@ def verify_split(split: GeneratedSplit, env_cfg) -> None:
 # ---------------------------------------------------------------------------
 
 _LEVELS = ("same", "held_out", "ood")
+SPLIT_TRAITS = ("place", "wall", "goal")
+RECORDED = "recorded"
+
+
+def parse_levels(text: str) -> dict | None:
+    """``recorded`` -> ``None``; ``place=same,goal=ood`` -> a full level dict.
+
+    ``None`` means *the run's own validation envs*, read from the record. That is
+    a different question from all-``held_out``, which mints a fresh set also
+    disjoint from training: the first asks how a checkpoint did on the set it was
+    scored against, the second whether that generalizes to another draw from the
+    same rule. Collapsing them would make a whole class of result unaskable, so
+    the grammar keeps them distinct and ``recorded`` is the default.
+
+    Traits left out default to ``held_out`` -- the base-validation meaning -- so
+    ``--split place=same`` reads as "training's placements, everything else
+    fresh", which is the memorization probe it looks like.
+    """
+    text = (text or RECORDED).strip()
+    if text == RECORDED:
+        return None
+    levels = {t: "held_out" for t in SPLIT_TRAITS}
+    for part in text.split(","):
+        key, _, value = part.strip().partition("=")
+        if not value:
+            raise ValueError(
+                f"split {text!r}: expected 'trait=level' pairs, got {part!r}. "
+                f"Traits are {SPLIT_TRAITS}; levels are {_LEVELS}; or the whole "
+                f"split may be '{RECORDED}'.")
+        if key not in SPLIT_TRAITS:
+            raise ValueError(
+                f"split {text!r}: unknown trait {key!r}, expected one of "
+                f"{SPLIT_TRAITS}. Size is not a level -- it has no bounded "
+                f"universe to hold out; name it outright with --val_size.")
+        if value not in _LEVELS:
+            raise ValueError(
+                f"split {text!r}: unknown level {value!r} for {key}, expected "
+                f"one of {_LEVELS}.")
+        levels[key] = value
+    return levels
+
+
+def levels_key(levels: dict | None) -> str:
+    """The canonical name of a level combination, stable across orderings."""
+    if levels is None:
+        return RECORDED
+    return ",".join(f"{t}={levels[t]}" for t in SPLIT_TRAITS)
+
+
+def val_set_report(split: GeneratedSplit, specs: list[EnvSpec], env_cfg,
+                   levels: dict | None) -> dict:
+    """What a minted validation set actually achieved, measured not assumed.
+
+    Once a CLI mints an env set on request, its separation *is* the claim the
+    evaluation is making, so it gets checked and written into the results rather
+    than trusted. The `held_out` and `ood` levels also get asserted outright: a
+    violation there is a generator bug, and a number in a report is not a strong
+    enough place to put it.
+    """
+    if not specs:
+        return {}
+    obs = int(env_cfg.observation_size)
+    ego = bool(getattr(env_cfg, "egocentric_heading", True))
+    res = int(getattr(env_cfg, "wall_resolution", 1))
+    size = specs[0].size
+    used_place = split.used.get("place", set())
+    used_wall = split.used.get("wall", set())
+    used_goal = split.used.get("goal", set())
+
+    gaps = [toroidal_gap(v.offset, v.size, o, size, split.period)
+            for v in specs for o in used_place]
+    hams = [wall_hamming(v.wall_seed, w, size, obs, ego, res)
+            for v in specs for w in used_wall] if size else []
+    pairs = [toroidal_gap(a.offset, a.size, b.offset, b.size, split.period)
+             for i, a in enumerate(specs) for b in specs[i + 1:]]
+    report = {
+        "n_envs": len(specs),
+        "levels": levels_key(levels),
+        "min_place_gap_vs_train": int(min(gaps)) if gaps else None,
+        "min_place_gap_within_set": int(min(pairs)) if pairs else None,
+        "min_wall_hamming_vs_train": int(min(hams)) if hams else None,
+        "n_wall_seeds_shared": len({v.wall_seed for v in specs} & set(used_wall)),
+        "n_goal_cells_shared": len({v.goal for v in specs} & set(used_goal)),
+        "margin": int(split.margin),
+    }
+    if levels is None:
+        return report
+    if levels["place"] in ("held_out", "ood") and gaps and min(gaps) < split.margin:
+        raise AssertionError(
+            f"place={levels['place']} produced an env {min(gaps)} cells from one "
+            f"training used, below margin {split.margin}")
+    if levels["wall"] != "same" and report["n_wall_seeds_shared"]:
+        raise AssertionError(
+            f"wall={levels['wall']} reused {report['n_wall_seeds_shared']} "
+            "training wall seeds")
+    if levels["goal"] != "same" and report["n_goal_cells_shared"]:
+        raise AssertionError(
+            f"goal={levels['goal']} reused {report['n_goal_cells_shared']} "
+            "training goal cells")
+    return report
 
 
 def make_val_set(
@@ -821,8 +926,10 @@ def make_val_set(
 
 
 __all__ = [
-    "axis_separation", "build_envs", "cosine_report", "derive_margin",
-    "generate_split", "greedy_pack", "legal_mask", "legal_offsets",
-    "live_wall_bits", "make_val_set", "sample_places", "split_diagnostics",
-    "toroidal_gap", "verify_split", "wall_code_for", "wall_hamming",
+    "RECORDED", "SPLIT_TRAITS", "axis_separation", "build_envs",
+    "cosine_report", "derive_margin", "generate_split", "greedy_pack",
+    "legal_mask", "legal_offsets", "levels_key", "live_wall_bits",
+    "make_val_set", "parse_levels", "sample_places", "split_diagnostics",
+    "toroidal_gap", "val_set_report", "verify_split", "wall_code_for",
+    "wall_hamming",
 ]

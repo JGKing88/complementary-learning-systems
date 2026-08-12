@@ -462,3 +462,47 @@ def test_agenthash_run_sequential_outer_loop():
     assert set(stored) == {0, 1}
     # Non-vacuous: the oracle stores whenever the agent sits on the goal.
     assert sum(stored.values()) > 0, "no store ever fired; fixture is vacuous"
+
+
+@pytest.mark.slow
+def test_eval_all_output_keeps_its_shape_for_a_single_split(sandbox,
+                                                           navigate_checkpoint):
+    """Nine readers consume this file's top-level keys.
+
+    `analysis.continual.plotting`, `train.py`, `train_rnn.py`,
+    `evaluation/rnn.py`, three `run_*.sh` scripts and this suite all index
+    `nav_det` / `discovery` / `exploration` directly. Splits are additive: the
+    first combination stays at the top level, so a one-split run is what it
+    always was.
+    """
+    import json
+
+    root, env = sandbox
+    _save_dir, ckpt = navigate_checkpoint
+    out = root / "eval_shape.json"
+    _run(["hopfield_nav.eval_all", "--ckpt", str(ckpt),
+          "--device", "cpu", "--num_trials", "1", "--max_steps", "4",
+          "--skip-realistic", "--no-nav-stoch",
+          "--output-json", str(out)], env)
+    res = json.loads(out.read_text())
+    for key in ("ckpt_path", "encoder_path", "Npos", "movement_mode",
+                "num_val_envs", "nav_det", "discovery", "exploration",
+                "scaffold_layout", "tag"):
+        assert key in res, f"eval_all output lost the top-level key {key!r}"
+    assert set(res["splits"]) == {"recorded"}
+    assert res["splits"]["recorded"]["nav_det"] == res["nav_det"]
+
+
+@pytest.mark.slow
+def test_val_size_is_refused_with_the_reason(sandbox, navigate_checkpoint):
+    """Six sites read the global env size where they need the val set's, and
+    every one fails silently. Half-shipping this would return plausible numbers
+    computed against the wrong arena."""
+    root, env = sandbox
+    _save_dir, ckpt = navigate_checkpoint
+    proc = subprocess.run(
+        [sys.executable, "-m", "hopfield_nav.eval_all", "--ckpt",
+         str(ckpt), "--device", "cpu", "--val_size", "12"],
+        cwd=REPO_ROOT, env=env, capture_output=True, text=True, timeout=300)
+    assert proc.returncode != 0
+    assert "Phase 6" in proc.stdout + proc.stderr

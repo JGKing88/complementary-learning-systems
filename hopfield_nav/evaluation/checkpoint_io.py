@@ -30,7 +30,7 @@ from ..config import (
     VectorHashConfig,
 )
 from ..world.env import make_env
-from ..world.generate import build_envs
+from ..world.generate import build_envs, make_val_set
 from ..world.scaffold import VectorHash, fit_env_assoc, place_envs
 from ..world.spec import WORLD_SPEC_NAME, WorldSpec
 
@@ -105,19 +105,20 @@ def world_spec_for(path) -> WorldSpec | None:
     return WorldSpec.read(candidate)
 
 
-def eval_world_from_spec(spec: WorldSpec, cfg: TrainConfig, encoder,
-                         device: str, *, which: str = "base_val"):
-    """Rebuild an env set exactly as recorded -- no RNG replay anywhere.
+def eval_field(cfg: TrainConfig, encoder, device: str,
+               spec: WorldSpec | None = None) -> VectorHash:
+    """The scaffold, built once, and checked against the record.
 
-    This is the point of `world.json`. The replay path below can recover a run's
-    val wall codes and goals but *not* their offsets, because placement drew from
-    global `np.random` whose state depended on everything built before it. Here
-    the offsets are read, not re-derived, so what you evaluate is what trained.
+    Separate from the env sets because it is the expensive half -- `encoded_Phi`
+    is 12 GB at `Npos=1716` -- and because several validation sets at different
+    split levels all index into the *same* field. Rebuilding it per level would
+    dominate a mix-and-match evaluation entirely.
     """
-    specs = getattr(spec.split, which)
     field = VectorHash(cfg.vectorhash)
     field.build_scaffold()
     field.precompute_encoded_phi(encoder, cfg.fwhm_ratio, device=device)
+    if spec is None:
+        return field
 
     recorded = spec.scaffold
     if int(recorded.get("Npos", field.Npos)) != int(field.Npos):
@@ -131,7 +132,33 @@ def eval_world_from_spec(spec: WorldSpec, cfg: TrainConfig, encoder,
         print(f"  WARNING: world.json was written against encoder "
               f"{enc_then[:12]}... but this run loads {enc_now[:12]}.... The "
               f"envs are the same cells; their embeddings are not.", flush=True)
+    return field
 
+
+def eval_specs(spec: WorldSpec, levels: dict | None, *, n_envs: int,
+               seed: int, size: int | None = None):
+    """The env specs one split level combination asks for.
+
+    ``levels=None`` returns the recorded ``base_val`` verbatim -- the envs the
+    run was actually scored against, offsets and all. Any other level mints a
+    fresh set from the recorded domains and the union of what training used.
+    """
+    if levels is None:
+        return list(spec.split.base_val)
+    return make_val_set(spec.split, n_envs, levels, seed, size=size)
+
+
+def eval_world_from_spec(spec: WorldSpec, cfg: TrainConfig, encoder,
+                         device: str, *, which: str = "base_val"):
+    """Rebuild an env set exactly as recorded -- no RNG replay anywhere.
+
+    This is the point of `world.json`. The replay path below can recover a run's
+    val wall codes and goals but *not* their offsets, because placement drew from
+    global `np.random` whose state depended on everything built before it. Here
+    the offsets are read, not re-derived, so what you evaluate is what trained.
+    """
+    specs = getattr(spec.split, which)
+    field = eval_field(cfg, encoder, device, spec)
     envs = build_envs(specs, cfg.env, cfg.agent.movement_mode)
     offsets = [s.offset for s in specs]
     return envs, field, offsets
@@ -264,6 +291,8 @@ def scaffold_layout_dict(
 
 __all__ = [
     "build_eval_world",
+    "eval_field",
+    "eval_specs",
     "eval_world_from_spec",
     "cfg_from_checkpoint",
     "coerce_legacy_cfg",

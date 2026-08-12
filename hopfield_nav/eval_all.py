@@ -23,14 +23,66 @@ import numpy as np
 import torch
 
 from hopfield_nav.encoder_io import load_encoder
+from hopfield_nav.world import generate as gen
 from hopfield_nav.world.env import warn_if_offcell_stores
+from hopfield_nav.evaluation import checkpoint_io
 from hopfield_nav.evaluation.checkpoint_io import (
     build_eval_world, cfg_from_checkpoint, load_agent, scaffold_layout_dict,
+    world_spec_for,
 )
 from hopfield_nav.evaluation.metrics import (
     evaluate_navigation, evaluate_goal_discovery, evaluate_exploration,
     evaluate_realistic, evaluate_repeat, evaluate_sequential_episodes,
 )
+
+
+def resolve_env_sets(cfg, encoder, device, spec, splits, *, ckpt_path,
+                     val_seed: int, n_val_envs: int) -> list[dict]:
+    """One env set per requested split, all on a single shared scaffold.
+
+    ``splits`` is a list of level dicts, where ``None`` means the recorded
+    ``base_val`` -- the envs this checkpoint was actually scored against. That is
+    deliberately not the same as all-``held_out``, which mints a fresh set also
+    disjoint from training: the first asks how the checkpoint did on its own
+    validation set, the second whether that survives another draw from the same
+    rule.
+
+    Without a ``world.json`` only the recorded level exists, because minting
+    needs the declared domains and the union of what training used -- neither of
+    which an RNG replay can recover. Asking for a level then fails here, rather
+    than silently evaluating something else.
+    """
+    if spec is None:
+        if any(lv is not None for lv in splits):
+            raise SystemExit(
+                f"--split needs a world.json, and {ckpt_path} has none: it was "
+                "written before runs recorded their envs. Only the default "
+                f"'{gen.RECORDED}' works here, and even that falls back to an "
+                "RNG replay whose offsets are a fresh draw. Re-run training on "
+                "the current code to get a recorded world.")
+        envs, field, offsets = build_eval_world(cfg, encoder, str(device),
+                                                ckpt_path=ckpt_path)
+        return [{"key": gen.RECORDED, "envs": envs, "field": field,
+                 "offsets": offsets, "report": {}}]
+
+    field = checkpoint_io.eval_field(cfg, encoder, str(device), spec)
+    out = []
+    for levels in splits:
+        specs = checkpoint_io.eval_specs(spec, levels, n_envs=n_val_envs,
+                                         seed=val_seed)
+        # A minted set's separation is the claim this evaluation is making, so
+        # it gets measured and recorded rather than assumed. Raises on a
+        # held_out/ood violation -- that would be a generator bug, and a number
+        # in a report is not a strong enough place to put one.
+        report = gen.val_set_report(spec.split, specs, cfg.env, levels)
+        out.append({
+            "key": gen.levels_key(levels),
+            "envs": gen.build_envs(specs, cfg.env, cfg.agent.movement_mode),
+            "field": field,
+            "offsets": [s.offset for s in specs],
+            "report": report,
+        })
+    return out
 
 
 @torch.no_grad()
@@ -61,7 +113,10 @@ def eval_checkpoint(
     oracle_store_at_goal: bool = False,
     goal_radius: float | None = None,
     allow_offcell_store: bool | None = None,
+    splits: list | None = None,
+    val_seed: int = 0,
 ) -> dict:
+    splits = [None] if splits is None else splits
     ck = torch.load(ckpt_path, map_location=device, weights_only=False)
     cfg = cfg_from_checkpoint(ck["config"])
     if hopfield_oracle is not None:
@@ -109,11 +164,16 @@ def eval_checkpoint(
     torch.manual_seed(0)
     np.random.seed(0)
 
-    val_envs, vh, val_offsets = build_eval_world(cfg, encoder, str(device),
-                                                 ckpt_path=ckpt_path)
+    # The env sets, one per requested split level combination. The scaffold is
+    # built once and shared: `encoded_Phi` is 12 GB at Npos=1716, so rebuilding
+    # it per combination would dominate the whole evaluation.
+    spec = world_spec_for(ckpt_path)
+    env_sets = resolve_env_sets(cfg, encoder, device, spec, splits,
+                                ckpt_path=ckpt_path, val_seed=val_seed,
+                                n_val_envs=cfg.num_val_envs)
     agent = load_agent(cfg, ck["agent_state_dict"], embed_dim, device)
 
-    results: dict = {
+    meta: dict = {
         "ckpt_path": ckpt_path,
         "encoder_path": encoder_path,
         "Npos": npos_effective,
@@ -130,6 +190,55 @@ def eval_checkpoint(
         "num_val_envs": cfg.num_val_envs,
         "movement_mode": cfg.env.movement_mode,
         "lock_store_after_goal": bool(lock_store_after_goal),
+        "world_spec_hash": spec.spec_hash() if spec is not None else None,
+    }
+
+    by_split: dict = {}
+    for es in env_sets:
+        if len(env_sets) > 1:
+            print(f"\n>>> split: {es['key']}", flush=True)
+        by_split[es["key"]] = run_suite(
+            cfg, agent, es, device,
+            num_trials=num_trials, max_steps=max_steps,
+            n_distractors=n_distractors, run_nav_stoch=run_nav_stoch,
+            run_realistic=run_realistic, realistic_steps=realistic_steps,
+            realistic_seed_offset=realistic_seed_offset,
+            repeat_trials=repeat_trials, repeat_steps=repeat_steps,
+            repeat_seed_offset=repeat_seed_offset,
+            seq_iters_per_block=seq_iters_per_block, seq_max_steps=seq_max_steps,
+            seq_ma_window=seq_ma_window, seq_seed_offset=seq_seed_offset,
+            lock_store_after_goal=lock_store_after_goal,
+            oracle_store_at_goal=oracle_store_at_goal,
+        )
+
+    # The first combination stays at the top level, so every existing reader of
+    # this file -- nine of them, from `analysis.continual.plotting` to the
+    # `run_*.sh` scripts -- sees exactly the shape it always has. `splits` is
+    # purely additive, and a single-combination run is byte-compatible.
+    first = by_split[env_sets[0]["key"]]
+    return {**meta, **first, "splits": by_split}
+
+
+@torch.no_grad()
+def run_suite(
+    cfg, agent, env_set: dict, device: torch.device, *,
+    num_trials: int, max_steps: int, n_distractors: list[int],
+    run_nav_stoch: bool, run_realistic: bool, realistic_steps: int,
+    realistic_seed_offset: int, repeat_trials: int, repeat_steps: int,
+    repeat_seed_offset: int, seq_iters_per_block: int, seq_max_steps: int,
+    seq_ma_window: int, seq_seed_offset: int, lock_store_after_goal: bool,
+    oracle_store_at_goal: bool,
+) -> dict:
+    """Every evaluator, against one env set.
+
+    Split out from `eval_checkpoint` so the expensive, env-independent half --
+    checkpoint, encoder, scaffold, agent -- happens once while this runs per
+    split level combination.
+    """
+    val_envs, vh, val_offsets = env_set["envs"], env_set["field"], env_set["offsets"]
+    results: dict = {
+        "split": env_set["key"],
+        "split_report": env_set["report"],
         "scaffold_layout": scaffold_layout_dict(cfg, vh, val_envs, val_offsets),
     }
 
@@ -256,10 +365,39 @@ def _fmt_expl(res: dict, dist: int) -> str:
             f"steps={m['mean_steps_to_goal']:.1f}")
 
 
+def print_split_table(results: dict, n_distractors: list[int]) -> None:
+    """Combination x metric, which is the shape the comparison actually has.
+
+    Only when more than one split ran -- a single-combination invocation reads
+    the same as it always did.
+    """
+    splits = results.get("splits") or {}
+    if len(splits) < 2:
+        return
+    print("\n=== splits ===")
+    for d in n_distractors:
+        print(f"  [dist={d}]")
+        print(f"    {'split':<40} {'nav_det':<34} {'exploration'}")
+        for key, res in splits.items():
+            print(f"    {key:<40} {_fmt_nav(res['nav_det'], d):<34} "
+                  f"{_fmt_expl(res['exploration'], d)}")
+    print("  separation of each minted set, measured:")
+    for key, res in splits.items():
+        r = res.get("split_report") or {}
+        if not r:
+            continue
+        print(f"    {key:<40} place_gap>={r['min_place_gap_vs_train']} "
+              f"(margin {r['margin']})  wall_hamming>="
+              f"{r['min_wall_hamming_vs_train']}  "
+              f"shared_wall={r['n_wall_seeds_shared']} "
+              f"shared_goal={r['n_goal_cells_shared']}")
+
+
 def print_summary(tag: str, results: dict, n_distractors: list[int]) -> None:
     print(f"\n=== {tag} ===")
     print(f"  ckpt={results['ckpt_path']}")
     print(f"  mode={results['movement_mode']} num_val_envs={results['num_val_envs']}")
+    print(f"  split={results.get('split', gen.RECORDED)}")
     for d in n_distractors:
         print(f"  [dist={d}]")
         print(f"    nav_det    : {_fmt_nav(results['nav_det'], d)}")
@@ -808,6 +946,28 @@ def main():
     )
 
     # Nav/discovery/exploration eval params
+    p.add_argument("--split", action="append", default=None, dest="splits",
+                   help="Which validation envs to evaluate on; repeatable, and "
+                        "each extra one reuses the same scaffold. 'recorded' "
+                        "(default) is the run's own base_val, read from "
+                        "world.json exactly as trained against. Otherwise give "
+                        "'trait=level' pairs over place/wall/goal, with levels "
+                        "same | held_out | ood; unnamed traits default to "
+                        "held_out. e.g. --split recorded --split place=same "
+                        "--split place=ood. Note 'recorded' and "
+                        "'place=held_out,wall=held_out,goal=held_out' are "
+                        "different questions: the first is the set this "
+                        "checkpoint was scored on, the second a fresh draw from "
+                        "the same rule.")
+    p.add_argument("--val_seed", type=int, default=0,
+                   help="Seed for minting split env sets. Changing it draws a "
+                        "different set at the same levels.")
+    p.add_argument("--val_size", type=int, default=None,
+                   help="DEFERRED to Phase 6 and rejected if passed. Six sites "
+                        "read the global cfg.env.size where they need the val "
+                        "set's, and all six fail silently -- mean_coverage's "
+                        "denominator among them -- so a differing size returns "
+                        "plausible numbers computed against the wrong arena.")
     p.add_argument("--num_trials", type=int, default=32)
     p.add_argument("--max_steps", type=int, default=200)
     p.add_argument("--n_distractors", type=int, nargs="+", default=[0])
@@ -860,6 +1020,20 @@ def main():
                         "when path ends with _realistic_drift.png)")
     args = p.parse_args()
 
+    if args.val_size is not None:
+        p.error(
+            "--val_size is not implemented and must not be faked. Six sites read "
+            "the global cfg.env.size where they need the validation set's -- "
+            "metrics.py:614 is mean_coverage's denominator, and "
+            "collector.py:192 is the visited_cells shape -- and none of them "
+            "raises when the two differ. A val set at another size would return "
+            "numbers that look fine and are computed against the wrong arena. "
+            "Size OOD is Phase 6.")
+    try:
+        splits = [gen.parse_levels(s) for s in (args.splits or [gen.RECORDED])]
+    except ValueError as exc:
+        p.error(str(exc))
+
     device = torch.device(args.device if torch.cuda.is_available()
                           else "cpu")
     tag = args.tag or os.path.basename(args.ckpt)
@@ -907,10 +1081,13 @@ def main():
         oracle_store_at_goal=args.oracle_store_at_goal,
         goal_radius=args.goal_radius,
         allow_offcell_store=args.allow_offcell_store,
+        splits=splits,
+        val_seed=args.val_seed,
     )
     results["tag"] = tag
 
     print_summary(tag, results, args.n_distractors)
+    print_split_table(results, args.n_distractors)
 
     if args.output_json:
         os.makedirs(os.path.dirname(args.output_json) or ".", exist_ok=True)
