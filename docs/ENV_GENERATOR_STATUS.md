@@ -966,3 +966,62 @@ hand, so the code is exercised rather than speculative.
 - `train_phased` / `train_store` / `train.py` still do not write `world.json`,
   and do not refresh. Unchanged from Phase 3.
 - `make_val_set` still does not run `verify_split` on its own output.
+
+### Looking at a generated world
+
+`analysis/world_layout.py` renders a split on the full scaffold — train and
+validation footprints, and the square each env forbids to every other offset.
+Placement is a pure function of coordinates, so it skips `encoded_Phi` entirely
+and runs in about a second.
+
+```bash
+python -m analysis.world_layout --seeds 0 1 2
+python -m analysis.world_layout --configs working rect --refresh 20
+```
+
+Two things the drawing has to get right, and both are easy to get wrong. The
+forbidden zone is a **square around the offset** of side `2*(size + margin)`, not
+the footprint dilated by the margin — separation is `max` over axes, so B is
+illegal exactly when it is close on *both*. And the halos **wrap**: drawn flat
+they would show clearance that is not there, which is the same mistake that makes
+`(1715, 987)` and `(4, 989)` look 1711 cells apart when they are 5.
+
+What it shows at `lambdas=[11,12,13]`:
+
+| config | placed by | min gap achieved |
+|---|---|---|
+| anywhere, size 8, margin 80, 90 envs | rejection | 80 — the margin binds exactly |
+| rect:200,200,700,700, 48 envs | **lattice** | 81–83 |
+| anywhere, margin 40, 220 envs | rejection | 40 |
+| anywhere, size 20, margin 80, 70 envs | rejection | 80–81 |
+
+The `rect` row is visibly a regular grid: 48 envs into ~64 slots is 75%
+occupancy, which is where rejection sampling gives up and `_lattice_places`
+takes over. That is the regime the seam bug above lived in, and it is not
+otherwise obvious from any number the generator reports.
+
+### A consequence of place refresh, measured
+
+`--refresh_place 1` at the working config draws ~80 fresh offsets per tick and
+almost none repeat: 20 ticks give **1679 distinct** offsets. Each forbids a
+176×176 square on a 1716² torus, so the union grows until nothing legal is left:
+
+```
+tick  0   |used[place]| =   80    14912 legal offsets remain (8-cell scan)
+tick  4                  400      599
+tick  8                  720      180
+```
+
+Post-hoc `make_val_set(place='held_out')` then fails outright, at **tick 20, 30
+and 32** for seeds 0–2 (`|used|` 1680 / 2479 / 2639).
+
+**In-training validation is unaffected** — `base_val` is drawn at generation and
+held, which is the whole reason it is held. What breaks is minting a *fresh*
+held-out place set afterwards, from roughly update 20–30 of a `--refresh_place 1`
+run.
+
+Two ways round it, both verified: declare a `Rect` for training, which leaves the
+complement untouched so `place='ood'` works indefinitely (and `held_out` still
+succeeded at tick 100, `|used|=3254`, with min gap 84 — the used offsets cluster
+rather than spreading); or use a coarser cadence. `place='same'` is unaffected
+either way.
