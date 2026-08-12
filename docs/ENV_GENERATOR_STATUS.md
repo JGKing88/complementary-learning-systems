@@ -1114,20 +1114,84 @@ making, so it has to be checked and reported, not assumed:
 - put the achieved minimum place gap and wall Hamming into `results["splits"][key]`,
   alongside the level combination, so a results file says what its envs were
 
-### 5.3 The two ways this fails, both of which need to say why
+### 5.3 `sample_places` cannot answer this question at the size it is now asked
 
-**`place=held_out` after a refreshing run can be genuinely infeasible.** Measured
-in Phase 4: at the working config with `--refresh_place 1`, the used-place union
-exhausts the scaffold and minting fails at tick 20/30/32 for seeds 0–2. Today that
-surfaces as `sample_places`'s "could not place N envs ... raise Npos, enlarge the
-region, lower the margin" — none of which is the actual cause. It needs to name
-the union: *this run refreshed placements N times and used M offsets; there is no
-room left for a held-out set at margin K. Use `place=same`, or `place=ood` if a
-region was declared.*
+`exclude` is the set of already-placed envs a draw must clear. Three callers, and
+the sizes are the story:
+
+| caller | `exclude` | size |
+|---|---|---|
+| `generate_split` | nothing — train and val are one draw, separated by `self_margin` | 0 |
+| `Refresher._draw` | the fixed `base_val` footprints | 10 |
+| `make_val_set`, `place=held_out`/`ood` | `split.used["place"]`, every offset training ever held | 80 → **23,961** |
+
+The inner loop is `any(toroidal_gap(cand, size, o, s, period) < margin for o, s in
+exclude)`, so a candidate costs O(|exclude|) in Python and `_lattice_places`
+repeats that per slot per jitter attempt. **Measured: one failing
+`make_val_set` at 23,961 excludes takes 78 s.** That is not a preflight problem —
+it is what a user waits to be told "no" by `eval_all --split place=held_out`.
+
+**The fix: a mask path, opted into by the caller.** Clearance is a purely
+geometric predicate, so the legal set can be computed once instead of re-tested
+per candidate. `toroidal_gap(cand, size, o, s, P) >= m` fails on an axis exactly
+when `cand` lies in the wrapped interval
+
+```
+[ o - size - m + 1 ,  o + s + m - 1 ]          length size + s + 2m - 1
+```
+
+so each excluded env forbids one wrapped **rectangle** of candidate offsets. Paint
+them into a 2D difference array, 2D cumsum, `legal = (coverage == 0)`. Draw from
+`flatnonzero(legal)`, filter through `domain.contains` so `OutsideRect` keeps
+working, and enforce `self_margin` incrementally among the few being drawn.
+
+Measured **~50–77 ms at any `|exclude|`**, and exact — 0 mismatches against
+`toroidal_gap` across 300 sampled cells at four tick counts.
+
+```
+ticks=  0   |used|=    80    legal offsets = 944,117
+ticks=  8   |used|=   720                     10,808
+ticks= 24   |used|= 1,999                      2,463
+ticks=300   |used|=23,961                         12
+```
+
+**Opted into, not threshold-triggered.** A hidden `len(exclude) > N` switch would
+make a run's offsets depend on which side of a magic number it landed, and
+`Refresher` calls this every tick with 10 excludes — a flat 50 ms there would add
+15 s to a 300-tick run against today's 3.9 ms. So `make_val_set` asks for the mask
+and `Refresher` does not, and the choice is visible where it is made.
+
+With the mask, the error can finally name the cause instead of suggesting capacity
+remedies for a problem that is not capacity (~400 slots for 90 envs): *12 legal
+offsets remain of 2.94M; you asked for 10 mutually separated at margin 80;
+training used 23,961 offsets across 300 refresh ticks.*
 
 **`ood` on an undeclared trait** already raises with the right explanation from the
 domain layer (`Anywhere.complement()`, `SeedRange.complement()`). The CLI should
 let that propagate rather than wrapping it.
+
+### 5.3b The startup preflight
+
+Refreshed placements are a pure function of `(seed, tick, place domain, size,
+Npos, period, base_val, margin)` — nothing training does enters. So a preflight
+does not *estimate* the end-state union, it **replays the exact ticks**: 1.15 s
+for 300.
+
+Feasibility is monotone in the union, so a binary search over tick prefixes finds
+the last update at which a held-out place set is still available. ~9 masks ≈
+0.7 s. **Total ≈ 2 s.**
+
+The mask answers *coverage*, not *packing* — at 300 ticks 12 offsets remain but no
+10 of them are mutually 80 apart — so the check is mask → greedy pack. Both the
+preflight and the eval run **that same code**, which is the only arrangement in
+which the prediction cannot disagree with what later happens.
+
+Decided:
+
+- **checks against `cfg.num_val_envs`**, the natural size of an eval set
+- **records and proceeds** — a warning plus a `preflight` block in `world.json`,
+  not a raise. A run that only ever uses `--split recorded` is genuinely fine with
+  an exhausted union, and that is not the trainer's call to veto.
 
 ### 5.4 Out of scope, deliberately
 
@@ -1139,20 +1203,72 @@ read the global `cfg.env.size` where they need the val set's, and every one fail
 at a different size would return plausible numbers computed against the wrong
 denominator. So Phase 5 accepts `size=same` only.
 
-### 5.5 Baselines on the same record
+### 5.4 Out of scope, deliberately
 
-`analysis/continual/baseline.py:270` builds envs through
-`training/rnn_setup.build_envs(cfg, rng)` and places them with
-`place_envs(..., np.random, ...)` — the same unrecorded global-RNG placement §1.4
-is about. Today it aligns with `agenthash` only through the hand-matched draw-order
-convention documented at `agenthash.py:325-333`; reading one `world.json` replaces
-that convention with a file.
+**`--val_size` is Phase 6, and must error here rather than half-work.** Six sites
+read the global `cfg.env.size` where they need the val set's, and every one fails
+*silently*: `metrics.py:614` (`grid_size` → the denominator of `mean_coverage`),
+`metrics.py:323,449` and both regimes' distractor exclusion box, and
+`collector.py:192,352,366,541,566` (`visited_cells` shape and novelty). A val set
+at a different size would return plausible numbers computed against the wrong
+denominator. So Phase 5 accepts `size=same` only.
 
-Goal and size splits apply to the baseline unchanged. **Place applies only when
-`input_grid_state=True`** — without it the baseline never sees the scaffold, so
-where its envs sit is not an axis it can generalize along.
+### 5.5 `train_rnn` and the RNN baseline build envs the same way — parity
 
-`agenthash`'s `--env_seed` stays, as the explicit baseline-matching path.
+Everything in Phases 1–4 landed on `train_navigate` alone:
+
+| entry point | envs from | writes `world.json` |
+|---|---|---|
+| `train_navigate.py` | **generator** or legacy | **yes**, both paths |
+| `train.py` / `train_phased.py` / `train_store.py` | legacy | no |
+| `train_rnn.py` | `rnn_setup.build_envs` + `place_envs(np.random)` | no |
+| `analysis/continual/baseline.py` | same | no |
+
+`train_rnn.py:183` draws seeds from `RandomState(cfg.seed)` and, when
+`input_grid_state=True`, places with `place_envs(..., np.random, "spread")` at
+line 207 — the unrecorded global-RNG placement §1.4 is about. `baseline.py:270`
+does the same. So today the baseline aligns with `agenthash` only through the
+hand-matched draw-order convention documented at `agenthash.py:325-333`.
+
+**Decided: both move onto the same generator path as `train_navigate`**, so a
+baseline and an agent-hash run can be given the same declared world rather than
+being talked into agreement. That means:
+
+- `RNNTrainConfig` gains the same six generator fields `TrainConfig` has
+  (`env_generator`, `place_region`, `goal_region`, `wall_seeds`, `place_margin`,
+  `goal_val_frac`), as flat JSON-native values
+- both call `generate_split` / `build_envs` and write `world.json`, on both the
+  declared and legacy paths, exactly as `train_navigate` does
+- **the `build_envs` name collision gets resolved, not shadowed.**
+  `training/rnn_setup.build_envs(cfg, rng)` and
+  `world/generate.build_envs(specs, env_cfg, mode)` are unrelated functions with
+  one name, and `train_rnn.py:32` imports the first. The config-driven one becomes
+  `rnn_setup.build_envs_from_config`; the spec-driven one keeps the name, since it
+  is the one everything is converging on.
+
+Two honest limits. The RNN stack builds a scaffold only under
+`input_grid_state=True`, so **place is an axis it can generalize along only
+then** — without grid state its envs' offsets are unobservable to it, and a
+place split is a distinction it cannot see. And `RNNTrainConfig` has no encoder,
+so `derive_margin` is unavailable there: `place_margin` must be given explicitly
+or default to the same value the agent run used.
+
+`agenthash`'s `--env_seed` stays, as the explicit baseline-matching path for runs
+that predate this.
+
+### Build order
+
+Each of the first three is its own commit, because each changes something
+different about what existing numbers mean.
+
+1. **5.0** — spec discovery inside `build_eval_world`. Fixes the live §1.4 bug at
+   four call sites at once.
+2. **5.3** — the mask path and the error message. Must precede the preflight, or
+   the preflight is either a heuristic or 12 minutes.
+3. **5.3b** — the preflight, sharing 5.3's code.
+4. **5.1 / 5.2** — `--split` on `eval_all`, the `prepare` / `run_suite` cut,
+   `results["splits"]`, verify-and-report.
+5. **5.5** — `agenthash --split`, then `train_rnn` / `baseline` parity.
 
 ### Tests
 
@@ -1165,6 +1281,14 @@ where its envs sit is not an axis it can generalize along.
 - the field is built **once** across N combos (object identity)
 - `place=held_out` after refresh exhaustion names the union
 - `size` other than `same` errors and points at Phase 6
+- **the mask agrees with the scan** — same legality verdict on every cell, over
+  several sizes, margins and periods, including the torus seam and mixed excluded
+  sizes. This is the one that matters: the mask is a rewrite of the predicate, and
+  a subtly wrong one would silently pass envs that overlap what training used
+- the preflight's verdict equals what `make_val_set` actually does at that tick —
+  same code, asserted rather than assumed
+- `train_rnn` / `baseline` write a `world.json` whose specs rebuild their envs
+  bit-identically
 
 ### Risk register
 
@@ -1176,3 +1300,6 @@ where its envs sit is not an axis it can generalize along.
 | 12 GB scaffold rebuilt per combo | `prepare` / `run_suite` split, pinned by an identity test |
 | Minted set is assumed separated rather than checked | 5.2 — verify and report the achieved gaps |
 | `--val_size` ships half-working | 5.4 — rejected outright, with the six sites named |
+| The mask disagrees with the predicate it replaces | Equivalence test against the scan path, not just a spot check |
+| Preflight predicts something the eval then contradicts | They run the same code; pinned by a test |
+| Renaming `build_envs` breaks an unnoticed importer | Grep before, full import sweep after |
