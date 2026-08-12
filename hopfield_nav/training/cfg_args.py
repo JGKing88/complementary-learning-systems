@@ -96,4 +96,48 @@ def _walk(base, reached, chosen, typed_cfg) -> None:
             setattr(base, f.name, getattr(typed_cfg, f.name))
 
 
-__all__ = ["explicit_dests", "overlay_typed", "set_path"]
+def settle_encoder(cfg, parent_cfg: dict | None, error) -> None:
+    """Check the encoder a run ends up with, having inherited or been told.
+
+    ``--encoder_checkpoint`` used to be ``required=True`` on all three trainers,
+    including `train_store`, which cannot run without ``--load_checkpoint`` at
+    all -- so the parent's config always named one and the flag was pure
+    restatement. That contradicts what ``overlay_typed`` exists to guarantee:
+    a flag you do not type is inherited, not re-defaulted.
+
+    Two things left to say once it is optional:
+
+    ``error``   a fresh run still has to name one, and the message should say so
+                rather than let ``load_encoder(None)`` fail somewhere downstream.
+                Takes the entry point's own ``parser.error`` so the usage text
+                that prints is the right one.
+    ``warning`` a *swap* is now the only reason to type the flag on a resume,
+                and it is the one case worth a word. The scaffold's
+                ``encoded_Phi`` is a pure function of the encoder, so a different
+                one leaves the recorded offsets pointing at the same cells with
+                different embeddings -- and the agent's weights were trained
+                against the old ones. ``validate_config`` checks lambdas, gain
+                and fwhm, none of which distinguish two encoders that agree on
+                all three.
+
+    Compared by path, so two spellings of one file warn about nothing. That is
+    the safe direction to be wrong in: a missed warning, not a false one.
+    """
+    if not cfg.encoder_checkpoint:
+        error(
+            "--encoder_checkpoint is required for a fresh run. It is optional "
+            "only with --load_checkpoint, which inherits the parent's."
+            if not parent_cfg else
+            "--encoder_checkpoint is required: the checkpoint passed to "
+            "--load_checkpoint does not name one either.")
+        return                                  # unreachable; parser.error exits
+    was = (parent_cfg or {}).get("encoder_checkpoint")
+    if was and str(was) != str(cfg.encoder_checkpoint):
+        print(f"  WARNING: this run loads encoder {cfg.encoder_checkpoint} but "
+              f"its parent trained against {was}. The scaffold's embeddings are "
+              f"a pure function of the encoder, so the loaded weights will see "
+              f"a different encoded_Phi at the same cells. Omit "
+              f"--encoder_checkpoint to inherit the parent's.", flush=True)
+
+
+__all__ = ["explicit_dests", "overlay_typed", "set_path", "settle_encoder"]

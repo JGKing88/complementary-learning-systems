@@ -148,6 +148,87 @@ def test_a_boolean_optional_no_flag_counts_as_typed():
     assert explicit_dests(p, []) == set()
 
 
+# ---------------------------------------------------------------------------
+# settle_encoder: inherit it, or say why not
+# ---------------------------------------------------------------------------
+
+def _settled(cfg_encoder, parent_encoder):
+    """Run `settle_encoder` and return (errors, warnings)."""
+    import io
+    import contextlib
+
+    from hopfield_nav.training.cfg_args import settle_encoder
+
+    cfg = TrainConfig(encoder_checkpoint=cfg_encoder)
+    parent = (None if parent_encoder is None
+              else {"encoder_checkpoint": parent_encoder})
+    errs = []
+    buf = io.StringIO()
+    with contextlib.redirect_stdout(buf):
+        settle_encoder(cfg, parent, errs.append)
+    return errs, buf.getvalue()
+
+
+def test_a_resumed_run_inherits_its_parents_encoder_silently():
+    """The point. `--encoder_checkpoint` was `required=True` on all three
+    trainers, including `train_store`, which cannot run without a parent at
+    all -- so the flag was pure restatement of something already inherited."""
+    errs, out = _settled("enc_a.pt", "enc_a.pt")
+    assert errs == []
+    assert out == "", f"inheriting the parent's encoder said something: {out!r}"
+
+
+def test_a_fresh_run_with_no_encoder_is_an_error_not_a_late_crash():
+    errs, _ = _settled("", None)
+    assert len(errs) == 1 and "--encoder_checkpoint is required" in errs[0]
+    assert "fresh run" in errs[0]
+
+
+def test_a_parent_that_names_no_encoder_says_which_one_is_missing():
+    """Different cause, different message: restating the flag fixes this one
+    and nothing about the parent will."""
+    errs, _ = _settled("", "")
+    assert len(errs) == 1 and "--load_checkpoint does not name one" in errs[0]
+
+
+def test_swapping_the_encoder_on_a_resume_warns():
+    """The only reason left to type the flag on a resume, and the one case
+    worth a word: encoded_Phi is a pure function of the encoder, so the loaded
+    weights would meet different embeddings at the same cells."""
+    errs, out = _settled("enc_b.pt", "enc_a.pt")
+    assert errs == []
+    assert "WARNING" in out and "enc_a.pt" in out and "enc_b.pt" in out
+
+
+def test_a_fresh_run_that_names_an_encoder_is_not_warned_at():
+    errs, out = _settled("enc_a.pt", None)
+    assert errs == [] and out == ""
+
+
+def test_train_store_no_longer_demands_the_flag_it_always_inherits():
+    """`train_store` requires --load_checkpoint, so its --encoder_checkpoint was
+    redundant by construction. Checked on the parser rather than by running it:
+    what changed is that the flag stopped being mandatory."""
+    import argparse
+
+    from hopfield_nav import train, train_navigate
+
+    p = train_navigate.build_parser()
+    act = next(a for a in p._actions if a.dest == "encoder_checkpoint")
+    assert act.required is False and act.default is None
+
+    # train.py builds its parser inside build_args, so check by behaviour: a
+    # resume with no encoder flag must parse rather than exit.
+    import sys
+    old = sys.argv
+    try:
+        sys.argv = ["train", "--load_checkpoint", "x.pt"]
+        _parser, args = train.build_args()
+        assert args.encoder_checkpoint is None
+    finally:
+        sys.argv = old
+
+
 def test_train_py_forbids_abbreviations():
     """`explicit_dests` matches option strings literally, so an abbreviation
     would parse fine and then silently lose to the inherited value. Both parsers

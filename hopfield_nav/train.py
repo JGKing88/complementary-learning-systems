@@ -34,7 +34,7 @@ from .evaluation.metrics import (
     evaluate_realistic,
 )
 from .evaluation.checkpoint_io import cfg_from_checkpoint
-from .training.cfg_args import explicit_dests, overlay_typed
+from .training.cfg_args import explicit_dests, overlay_typed, settle_encoder
 from .training.refresh import Cadence
 from .training.world_setup import build_field, setup_run_world
 
@@ -456,7 +456,11 @@ def build_args():
     parser = argparse.ArgumentParser(
         description="Train Hopfield navigation agent", allow_abbrev=False)
     # Encoder
-    parser.add_argument("--encoder_checkpoint", type=str, required=True)
+    parser.add_argument("--encoder_checkpoint", type=str, default=None,
+                        help="Required for a fresh run. Optional with "
+                             "--load_checkpoint, which inherits the parent's -- "
+                             "pass it only to deliberately swap encoders, which "
+                             "warns.")
     parser.add_argument("--encoder_gain", type=float, default=None)
     parser.add_argument("--fwhm_ratio", type=float, default=0.25)
     # Env
@@ -791,6 +795,7 @@ def config_from_args(args) -> TrainConfig:
 
 def main():
     parser, args = build_args()
+    parent_cfg = None
     if args.load_checkpoint:
         # The parent's config is the base, and only the flags actually typed
         # override it. Building from argv alone -- what this did until now --
@@ -800,7 +805,8 @@ def main():
         # failed loudly at load_state_dict, but only after the scaffold built.
         ck = torch.load(args.load_checkpoint, map_location="cpu",
                         weights_only=False)
-        cfg = cfg_from_checkpoint(ck["config"])
+        parent_cfg = ck["config"]
+        cfg = cfg_from_checkpoint(parent_cfg)
         overlay_typed(cfg, args, explicit_dests(parser, sys.argv[1:]),
                       config_from_args)
         # Never inherited: that field holds where the parent wrote, and reusing
@@ -809,6 +815,7 @@ def main():
         cfg.load_checkpoint = args.load_checkpoint
     else:
         cfg = config_from_args(args)
+    settle_encoder(cfg, parent_cfg, parser.error)
     train(cfg)
 
 

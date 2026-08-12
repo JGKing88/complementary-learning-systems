@@ -466,9 +466,12 @@ def test_train_resumes_a_navigate_checkpoint_with_no_flags_restated(
     root, env = sandbox
     parent_dir, ckpt = generator_checkpoint
     out = root / "train_resume_navigate"
+    # No --encoder_checkpoint either, as of 2026-08-12: it was `required=True`
+    # while `--load_checkpoint` already inherits one, so this test's own name was
+    # a slight lie. `tiny_encoder_path` stays live in the train_store test below,
+    # which covers the other branch -- typed, same value, no warning.
     _run(["hopfield_nav.train",
           "--load_checkpoint", str(ckpt),
-          "--encoder_checkpoint", str(tiny_encoder_path(parent_dir)),
           "--n_updates", "1", "--eval_every", "100", "--save_every", "1",
           "--device", "cpu", "--seed", "5", "--save_dir", str(out)], env)
 
@@ -488,6 +491,12 @@ def test_train_resumes_a_navigate_checkpoint_with_no_flags_restated(
     assert child["agent"]["movement_mode"] != d.agent.movement_mode, (
         "the parent and train.py's default agree here, so this cannot show "
         "inheritance happening")
+    # The encoder among them, since the flag stopped being mandatory. Nothing
+    # above would notice: `load_encoder(None)` fails, but only after the child
+    # has already been built from an inherited config that looks fine.
+    assert child["encoder_checkpoint"] == parent["encoder_checkpoint"], (
+        "the encoder was not inherited; this run trained against a different "
+        "scaffold embedding than the weights it loaded")
 
     # Both worlds recorded, which is now every trainer's behaviour and not
     # train_store's privilege.
@@ -517,6 +526,35 @@ def test_train_resumes_a_navigate_checkpoint_with_no_flags_restated(
         assert p_used <= c_used, (
             f"world.json dropped the parent's used {trait}; a val set minted "
             f"from this record would treat stage one's envs as unseen")
+
+
+@pytest.mark.slow
+@pytest.mark.parametrize("module,extra", [
+    ("hopfield_nav.train", []),
+    ("hopfield_nav.train_navigate", ["--schedule", "explore:1"]),
+])
+def test_a_fresh_run_with_no_encoder_fails_at_the_command_line(
+        sandbox, module, extra):
+    """Making `--encoder_checkpoint` optional must not make it forgettable.
+
+    Inheritance on the resume path works through `overlay_typed` whether or not
+    anything checks -- an untyped flag simply leaves the parent's value standing
+    -- so `settle_encoder`'s call site is load-bearing *only* here and on the
+    swap warning. Dropping it from `train.py` passed every other test in this
+    suite, which is why this one exists.
+
+    Without it a fresh run reaches `load_encoder(None)` after the config is
+    assembled, which on a real world means the 12 GB scaffold has already begun.
+    """
+    _root, env = sandbox
+    proc = subprocess.run(
+        [sys.executable, "-m", module, "--device", "cpu", *extra],
+        cwd=REPO_ROOT, env=env, capture_output=True, text=True, timeout=120)
+    assert proc.returncode != 0, "a run with no encoder at all was accepted"
+    out = proc.stdout + proc.stderr
+    assert "--encoder_checkpoint is required" in out, out[-2000:]
+    assert "--load_checkpoint" in out, (
+        "the error does not mention the flag that makes it optional")
 
 
 def tiny_encoder_path(run_dir):

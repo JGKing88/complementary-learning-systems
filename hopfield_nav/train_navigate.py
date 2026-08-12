@@ -40,6 +40,7 @@ from .policy.recurrent import add_recurrent_args
 from .rollout.collector import RolloutCollector
 from .updates.ppo import ppo_update
 from .evaluation.checkpoint_io import cfg_from_checkpoint
+from .training.cfg_args import settle_encoder
 from .training.explore import ExploreRegime
 from .training.exploit import ExploitRegime
 from .training.refresh import Cadence, Refresher
@@ -658,7 +659,10 @@ def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         description="Navigation training over an explore/exploit schedule",
         allow_abbrev=False)
-    p.add_argument("--encoder_checkpoint", required=True)
+    p.add_argument("--encoder_checkpoint", default=None,
+                   help="Required for a fresh run. Optional with "
+                        "--load_checkpoint, which inherits the parent's -- pass "
+                        "it only to deliberately swap encoders, which warns.")
     p.add_argument("--size", type=int, default=8)
     p.add_argument("--observation_size", type=int, default=12)
     p.add_argument("--explore_ends_on_goal",
@@ -969,10 +973,12 @@ def main():
               f"({args.n_val_trials}), not over {args.union_cov_trials}.",
               flush=True)
 
+    parent_cfg = None
     if args.load_checkpoint is not None:
         ck = torch.load(args.load_checkpoint, map_location="cpu",
                         weights_only=False)
-        cfg = cfg_from_checkpoint(ck["config"])
+        parent_cfg = ck["config"]
+        cfg = cfg_from_checkpoint(parent_cfg)
         apply_args(cfg, args, explicit)
         # Never inherited: that field holds where the parent wrote, and reusing
         # it would have this run overwrite its own parent.
@@ -980,6 +986,7 @@ def main():
     else:
         cfg = TrainConfig()
         apply_args(cfg, args, set(CFG_FIELDS))
+    settle_encoder(cfg, parent_cfg, p.error)
 
     if cfg.schedule is None:
         p.error("--schedule is required. It is a list of stages separated by "

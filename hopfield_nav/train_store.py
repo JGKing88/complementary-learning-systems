@@ -31,6 +31,7 @@ from .encoder_io import load_encoder, validate_config
 from .policy.agent import NavAgent, compute_input_dim
 from .rollout.collector import RolloutCollector
 from .updates.ppo import ppo_update
+from .training.cfg_args import settle_encoder
 from .training.refresh import Cadence
 from .training.world_setup import (
     build_field, do_eval, make_hops, set_phase_freeze, setup_run_world,
@@ -160,7 +161,10 @@ def train_store(args) -> None:
     cfg.ppo.bce_detach_trunk = True
     cfg.ppo.bce_pos_weight_cap = args.bce_pos_weight_cap
     cfg.ppo.ent_coef = 0.0
-    cfg.encoder_checkpoint = args.encoder_checkpoint
+    # Only when typed: an unconditional assignment would write None over the
+    # parent's, which is the whole failure `settle_encoder` exists to name.
+    if args.encoder_checkpoint:
+        cfg.encoder_checkpoint = args.encoder_checkpoint
     cfg.seed = args.seed
     cfg.device = args.device
     cfg.use_wandb = args.use_wandb
@@ -172,6 +176,11 @@ def train_store(args) -> None:
     # Not inherited from the Phase A checkpoint: that field holds where Phase A
     # wrote, and reusing it would have Phase B overwrite its own parent.
     cfg.save_dir = args.save_dir
+
+    def _die(msg):                    # no parser in scope; same exit either way
+        raise SystemExit(f"  ERROR [train_store]: {msg}")
+
+    settle_encoder(cfg, ck["config"], _die)
 
     validate_train_config(cfg)
     # The parent's config comes with whatever refresh cadence Phase A used. Its
@@ -273,7 +282,11 @@ def main():
     p = argparse.ArgumentParser(description="Phase-B-only store-head pretrain")
     p.add_argument("--load_checkpoint", required=True,
                    help="Phase A checkpoint to start from")
-    p.add_argument("--encoder_checkpoint", required=True)
+    p.add_argument("--encoder_checkpoint", default=None,
+                   help="Optional: --load_checkpoint is required here, so the "
+                        "parent's config always names one and this is pure "
+                        "restatement. Pass it only to deliberately swap "
+                        "encoders, which warns.")
     p.add_argument("--phase_b_updates", type=int, default=50)
     p.add_argument("--phase_b_lr", type=float, default=3e-4)
     p.add_argument("--bce_pos_weight_cap", type=float, default=5.0,
