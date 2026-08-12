@@ -56,7 +56,11 @@ BASE = dict(
     # Loss
     loss_mode="mse_contrastive",      # mse_contrastive | cka
     attract_lambda=2.0,
-    repel_weight=5.0,
+    # 1.0, not the old default 5.0: in ur_loss_20260811 raising repel lowered
+    # the alias ceiling only slightly (0.903 -> 0.884 from 1 to 40) while
+    # shrinking the decay width much faster (39 -> 26), so median r_min fell
+    # 15 -> 10. Over-repelling flattens the neighbourhood being preserved.
+    repel_weight=1.0,
     uniformity_lambda=0.0,
     uniformity_anneal_epochs=25,
     # Training (the winner's values)
@@ -94,14 +98,21 @@ BASE = dict(
 # cross-environment pairs are pushed apart (the ceiling), per_env_radius_frac
 # sets what counts as "near" (the decay width). Three seeds because the audit
 # could not separate a real effect from run-to-run spread at n=1.
+# CONTROL for the audit's central claim. That claim rests on one run versus
+# five twins -- suggestive, but n=1, and ur_loss_20260811 could not test it
+# because every cell of that grid already sat at False. This varies only the
+# boolean, at the best-median cell (repel 1.0, radius_frac 0.10, which gave
+# 18/17/18 across seeds), so the False arm doubles as a reproducibility check.
 GRID: dict[str, list] = {
-    "repel_weight": [1.0, 5.0, 15.0, 40.0],
-    "per_env_radius_frac": [0.05, 0.1, 0.2],
+    "single_env_batch": [True, False],
     "seed": [42, 43, 44],
+    # --- ur_loss_20260811 (done): repel down, not up; ridge runs diagonally
+    # "repel_weight": [1.0, 5.0, 15.0, 40.0],
+    # "per_env_radius_frac": [0.05, 0.1, 0.2],
+    # --- not yet explored
     # "out_dim": [256, 512, 1024],
     # "attract_lambda": [1.0, 2.0, 5.0],
     # "uniformity_lambda": [0.0, 0.1, 0.5],
-    # "single_env_batch": [True, False],   # confirm the audit's finding
 }
 
 # ---------------------------------------------------------------------------
