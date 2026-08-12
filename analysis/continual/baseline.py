@@ -178,8 +178,11 @@ def main() -> None:
     p.add_argument("--env_generator", action=argparse.BooleanOptionalAction,
                    default=False,
                    help="Draw envs from declared domains and record them, "
-                        "instead of the historical placement path. Needs "
-                        "--input_grid_state and an explicit --place_margin.")
+                        "instead of the historical placement path. Builds a "
+                        "scaffold for placement whether or not the agent "
+                        "observes one, so the offsets are recorded either way "
+                        "and an agent-hash run can be pointed at the same "
+                        "world.json. Needs an explicit --place_margin.")
     p.add_argument("--place_region", type=str, default="anywhere",
                    help="'anywhere' or 'rect:X0,Y0,W,H'.")
     p.add_argument("--goal_region", type=str, default="any",
@@ -299,8 +302,7 @@ def main() -> None:
         np.random.seed(seed_k)
         rng = np.random.RandomState(seed_k)
 
-        envs, env_offsets, world_split, vh, world_kind = rnn_world(
-            cfg, rng, want_offsets=bool(cfg.agent.input_grid_state))
+        envs, env_offsets, world_split, vh, world_kind = rnn_world(cfg, rng)
         if n_iters > 1:
             print(f"\n=== iter {k + 1}/{n_iters}  seed={seed_k} ===")
         print(f"[baseline] built {len(envs)} envs  size={cfg.env.size}  "

@@ -196,12 +196,12 @@ def train(cfg: RNNTrainConfig) -> None:
         ckpt = torch.load(cfg.load_checkpoint, map_location=device, weights_only=False)
         restore_arch_from_ckpt(cfg, ckpt)
 
-    envs, env_offsets, world_split, vh, world_kind = rnn_world(
-        cfg, rng, want_offsets=bool(cfg.agent.input_grid_state))
+    envs, env_offsets, world_split, vh, world_kind = rnn_world(cfg, rng)
     print(f"Built {len(envs)} envs (size={cfg.env.size}, "
           f"obs_dim={cfg.env.observation_size}, world={world_kind})")
     for i, env in enumerate(envs):
-        print(f"  env {i}: goal={env.goal_location}")
+        print(f"  env {i}: goal={env.goal_location}"
+              + (f" offset={env_offsets[i]}" if env_offsets else ""))
 
     sgb = None
     gbook_dim = 0
@@ -210,8 +210,12 @@ def train(cfg: RNNTrainConfig) -> None:
         gbook_dim = int(vh.Ng)
         print(f"grid_state on  Ng={gbook_dim}  Npos={vh.Npos}  "
               f"lambdas={vh.lambdas}  fwhm_ratio={cfg.fwhm_ratio}")
-        for i, off in enumerate(env_offsets):
-            print(f"  env {i}: offset={off}")
+    elif env_offsets:
+        # Placed but unobserved: the scaffold was built for the generator, and
+        # the offsets are part of the world's identity even though this agent
+        # cannot see them. An agent-hash run on the same world.json can.
+        print(f"grid_state off — envs are placed and recorded on the "
+              f"Npos={vh.Npos} scaffold, but the agent does not observe it")
 
     input_dim = compute_rnn_input_dim(cfg.agent, cfg.env.observation_size, gbook_dim)
     print(f"RNN input_dim={input_dim} (sensory={cfg.env.observation_size}, "
@@ -321,8 +325,11 @@ def main() -> None:
     p.add_argument("--env_generator", action=argparse.BooleanOptionalAction,
                    default=False,
                    help="Draw envs from declared domains and record them, "
-                        "instead of the historical placement path. Needs "
-                        "--input_grid_state and an explicit --place_margin.")
+                        "instead of the historical placement path. Builds a "
+                        "scaffold for placement whether or not the agent "
+                        "observes one, so the offsets are recorded either way "
+                        "and an agent-hash run can be pointed at the same "
+                        "world.json. Needs an explicit --place_margin.")
     p.add_argument("--place_region", type=str, default="anywhere",
                    help="'anywhere' or 'rect:X0,Y0,W,H'.")
     p.add_argument("--goal_region", type=str, default="any",

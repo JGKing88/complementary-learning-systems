@@ -688,10 +688,34 @@ def test_a_domain_that_runs_dry_mid_run_is_named_before_the_run_starts(
     assert "cannot yield" in rep["refresh_dies_of"]
     assert rep["ok"] is False
     msg = format_preflight(rep)
-    assert "will not finish" in msg and "update 6 of 50" in msg
+    assert "cannot finish" in msg and "update 6 of 50" in msg
 
     # ...and the real run dies exactly there, which is what makes it predictable.
     for tick in range(1, 6):
         refresher.maybe_refresh(tick)
     with pytest.raises(ValueError):
         refresher.maybe_refresh(6)
+
+
+def test_a_run_that_cannot_finish_is_refused_at_startup(field, env_cfg,
+                                                        monkeypatch, tmp_path):
+    """The one preflight outcome that is not advisory.
+
+    A shrinking eval ceiling is recorded and the run proceeds -- a run that only
+    ever evaluates on `--split recorded` is fine with a tight union. A domain
+    that runs dry is different: the refresh raises partway through, at a tick
+    fixed before the run started, so the choice is between failing now and
+    failing after hours of training that gets thrown away.
+    """
+    from hopfield_nav.training.refresh import format_preflight, preflight
+    narrow = TraitDomains(place=dom.Anywhere(), wall=dom.SeedRange(0, 40),
+                          goal=dom.AnyCells(), size=dom.Sizes((SIZE,)))
+    split, _, _ = _setup(field, env_cfg, Cadence(wall=1), n_train=6, n_val=2,
+                         margin=12, domains=narrow, seed=4)
+    rep = preflight(split, Cadence(wall=1), 50, env_cfg, "discrete", 4,
+                    n_val_envs=2)
+    assert rep["refresh_dies_at_update"] is not None
+    msg = format_preflight(rep)
+    assert "the run continues" not in msg, (
+        "this outcome is fatal; the message must not offer reassurance")
+    assert "cannot finish" in msg

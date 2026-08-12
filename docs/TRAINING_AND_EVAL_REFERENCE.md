@@ -577,6 +577,23 @@ in-training curve unreadable. Every refreshed value is folded into the union
 recorded in `world.json`, which is what a later held-out val set excludes
 against; the file is rewritten on the `--ckpt_every` cadence.
 
+**A refreshing run gets a startup preflight.** Refreshed values are a pure
+function of `(seed, tick)` and the declared domains — nothing training does
+enters — so it replays the exact ticks (≈1.4 s for 300 updates, building no
+envs) and reports what a post-hoc held-out eval will still be able to ask for,
+into stdout and `world.json`'s `diagnostics.preflight`. Two outcomes, and only
+one is fatal:
+
+- **A shrinking ceiling is recorded and the run proceeds.** The largest held-out
+  place set a run can support falls as the used-offset union grows — at the
+  working config with `--refresh_place 1`, from ~187 envs to ~10. That limits a
+  later `--split place=held_out --num_val_envs N`, and nothing else; a run that
+  only ever uses `--split recorded` is unaffected.
+- **A domain that runs dry is refused at startup.** If a trait's domain empties
+  mid-run — a narrow `--wall_seeds` against a fast `--refresh_wall`, say — the
+  refresh *raises*, hours in, at a tick already decided. The preflight names the
+  update and the run does not start.
+
 Different defaults vs `train.py`: `observation_size` 12, `movement_mode`/
 `hopfield_mode` `continuous`, `input_sensory`/`input_prev_action`/
 `input_prev_reward`/`input_hopfield_raw` **on**, `input_encoded_state` **off**,
@@ -728,7 +745,7 @@ its later steps are masked out of the loss.
 | `--batch_envs`, `--steps_per_rollout` | `16`, `64` | Rollout shape. |
 | `--eval_every`, `--n_eval_trials`, `--eval_max_steps` | `25`, `32`, `64` | Console-log cadence and eval budget. |
 | `--seed`, `--device`, `--save_dir`, `--load_checkpoint` | `0`, `cuda`, `checkpoint_rnn/<run>`, `None` | |
-| `--env_generator` / `--no-` | `False` | Draw envs from declared domains and record them, as `train_navigate` does, instead of the historical placement path. Requires `--input_grid_state` (without a scaffold there are no offsets to declare a region for) and an explicit `--place_margin` (deriving one reads the scaffold's cosine-vs-distance curve, which needs an encoder this stack does not have). |
+| `--env_generator` / `--no-` | `False` | Draw envs from declared domains and record them, as `train_navigate` does, instead of the historical placement path. Builds a scaffold for placement **whether or not the agent observes one** — under `--no-input_grid_state` the RNN never sees where its envs sit, but the offsets are still part of the world's identity and an agent-hash run on the same `world.json` does see them. The same config draws the same envs at the same offsets either way. Needs an explicit `--place_margin`: deriving one reads the scaffold's cosine-vs-distance curve, which needs an encoder this stack does not have. |
 | `--place_region`, `--goal_region`, `--wall_seeds`, `--place_margin`, `--goal_val_frac`, `--n_val_envs` | `anywhere`, `any`, `0,10000000`, `None`, `0.2`, `2` | Same meanings as the `train_navigate` table above. |
 
 Both this and `analysis/continual/baseline.py` write a **`world.json`** beside

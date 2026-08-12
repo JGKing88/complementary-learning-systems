@@ -100,8 +100,7 @@ __all__ = ["build_envs_from_config", "restore_arch_from_ckpt",
 # The declared-domain path, shared with train_navigate
 # ---------------------------------------------------------------------------
 
-def rnn_world(cfg: RNNTrainConfig, rng: np.random.RandomState, *,
-              want_offsets: bool):
+def rnn_world(cfg: RNNTrainConfig, rng: np.random.RandomState):
     """Envs, offsets and the split describing them, for the RNN stack.
 
     Two paths, the same two `train_navigate` has. With ``cfg.env_generator`` the
@@ -112,11 +111,17 @@ def rnn_world(cfg: RNNTrainConfig, rng: np.random.RandomState, *,
     instead of being talked into agreement by a draw-order convention
     (``analysis/continual/agenthash.py:325-333``).
 
-    ``want_offsets`` is ``cfg.agent.input_grid_state``. Without grid state the
-    RNN never sees the scaffold, so where its envs sit is not an axis it can
-    generalize along -- there is nothing to place, and ``offsets`` comes back
-    ``None``. Place splits are meaningless for such a run, and saying so here is
-    better than recording coordinates nothing consumed.
+    **The scaffold exists for the generator, not only for the agent.** Under
+    ``input_grid_state=False`` the RNN never observes where its envs sit -- but
+    the placement is still part of the world's identity, and the run still has
+    to be able to say what it used. An agent-hash run pointed at the same
+    ``world.json`` *does* observe those offsets, and the split's separation
+    guarantees are stated in scaffold coordinates either way. So the generator
+    builds a scaffold whenever it is asked to, and the offsets are recorded
+    whether or not this particular agent can see them.
+
+    Only the *legacy* path is conditional: it places envs only under grid state,
+    because that is what it historically did and its draw must not move.
 
     Returns ``(envs, offsets | None, split, field | None, generator)``.
     """
@@ -127,18 +132,21 @@ def rnn_world(cfg: RNNTrainConfig, rng: np.random.RandomState, *,
     from ..config import VectorHashConfig
 
     size = int(cfg.env.size)
+    declared = bool(getattr(cfg, "env_generator", False))
+    grid_state = bool(cfg.agent.input_grid_state)
     field = None
-    if want_offsets:
+    if declared or grid_state:
         # `build_scaffold` only; `precompute_encoded_phi` needs an encoder and
-        # this stack has none. Placement reads Npos and lambdas, nothing else.
+        # this stack has none. Placement reads Npos and lambdas, nothing else,
+        # and the build is well under a second.
         field = VectorHash(VectorHashConfig(lambdas=list(cfg.lambdas),
                                             static_vectorhash=True))
         field.build_scaffold()
 
-    if not getattr(cfg, "env_generator", False):
+    if not declared:
         envs = build_envs_from_config(cfg, rng)
         offsets = (place_envs(len(envs), size, field.Npos, np.random,
-                              placement="spread") if want_offsets else None)
+                              placement="spread") if grid_state else None)
         specs = [EnvSpec(int(e.seed), size,
                          tuple(offsets[i]) if offsets else (0, 0),
                          tuple(e.goal_location)) for i, e in enumerate(envs)]
@@ -150,17 +158,11 @@ def rnn_world(cfg: RNNTrainConfig, rng: np.random.RandomState, *,
                                  goal=dom.AnyCells(), size=dom.Sizes((size,))),
             train=specs, base_val=[], goal_cells_train=goals,
             goal_cells_val=all_cells - goals, margin=0,
-            period=int(np.prod(cfg.lambdas)) if want_offsets else 0,
-            Npos=int(field.Npos) if want_offsets else 0)
+            period=int(np.prod(cfg.lambdas)) if grid_state else 0,
+            Npos=int(field.Npos) if grid_state else 0)
         split.record_used(specs)
         return envs, offsets, split, field, "legacy"
 
-    if not want_offsets:
-        raise SystemExit(
-            "--env_generator on the RNN stack needs --input_grid_state. Without "
-            "it the agent never sees the scaffold, so there are no offsets to "
-            "declare a place region for and nothing a place split could mean. "
-            "Drop --env_generator to draw walls and goals the historical way.")
     if cfg.place_margin is None:
         raise SystemExit(
             "--env_generator needs an explicit --place_margin here. The agent "

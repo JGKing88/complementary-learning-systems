@@ -486,6 +486,12 @@ def train_navigate(
         pre = preflight(split, cadence, total_updates(stages), cfg.env,
                         cfg.agent.movement_mode, int(cfg.seed),
                         n_val_envs=int(cfg.num_val_envs))
+        if pre["refresh_dies_at_update"] is not None:
+            # A shrinking eval ceiling is recorded and the run proceeds; this is
+            # not that. The refresh will raise partway through, and the tick is
+            # decided before the run starts -- so the choice is between failing
+            # now and failing after hours of training that gets thrown away.
+            raise SystemExit(f"  ERROR: {format_preflight(pre)}")
         print(format_preflight(pre), flush=True)
 
     # Written on both paths: a run has to be able to say which envs it used,

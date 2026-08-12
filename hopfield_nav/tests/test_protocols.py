@@ -302,8 +302,7 @@ def test_both_rnn_drivers_build_the_same_world():
     made = []
     for _ in range(2):
         cfg = _rnn_gen_cfg()
-        envs, offsets, split, field, kind = rnn_world(
-            cfg, np.random.RandomState(cfg.seed), want_offsets=True)
+        envs, offsets, split, field, kind = rnn_world(cfg, np.random.RandomState(cfg.seed))
         made.append((kind, [e.seed for e in envs], offsets,
                      [s.goal for s in split.train]))
     assert made[0] == made[1]
@@ -317,8 +316,7 @@ def test_the_generated_rnn_world_records_its_offsets():
     from hopfield_nav.training.rnn_setup import rnn_world
 
     cfg = _rnn_gen_cfg()
-    envs, offsets, split, field, _ = rnn_world(
-        cfg, np.random.RandomState(cfg.seed), want_offsets=True)
+    envs, offsets, split, field, _ = rnn_world(cfg, np.random.RandomState(cfg.seed))
     assert offsets == [s.offset for s in split.train]
     assert len(split.base_val) == cfg.n_val_envs
     assert split.margin == cfg.place_margin
@@ -335,8 +333,7 @@ def test_the_legacy_rnn_path_is_still_describable():
     from hopfield_nav.training.rnn_setup import rnn_world
 
     cfg = _rnn_gen_cfg(env_generator=False)
-    envs, offsets, split, field, kind = rnn_world(
-        cfg, np.random.RandomState(cfg.seed), want_offsets=True)
+    envs, offsets, split, field, kind = rnn_world(cfg, np.random.RandomState(cfg.seed))
     assert kind == "legacy" and split.margin == 0
     assert [s.wall_seed for s in split.train] == [e.seed for e in envs]
     assert [s.goal for s in split.train] == [e.goal_location for e in envs]
@@ -351,8 +348,7 @@ def test_a_generated_rnn_world_round_trips_through_disk(tmp_path):
     from hopfield_nav.world.spec import WorldSpec
 
     cfg = _rnn_gen_cfg()
-    envs, offsets, split, field, kind = rnn_world(
-        cfg, np.random.RandomState(cfg.seed), want_offsets=True)
+    envs, offsets, split, field, kind = rnn_world(cfg, np.random.RandomState(cfg.seed))
     write_rnn_world_spec(cfg, split, field, generator=kind, save_dir=tmp_path)
 
     back = WorldSpec.read(tmp_path)
@@ -367,15 +363,42 @@ def test_a_generated_rnn_world_round_trips_through_disk(tmp_path):
     assert back.split.diagnostics["min_place_gap"] >= split.margin
 
 
-def test_the_generator_refuses_where_place_would_be_meaningless():
-    """Without grid state the RNN never sees the scaffold, so its envs' offsets
-    are unobservable to it and a place split is a distinction it cannot make."""
+def test_the_scaffold_is_built_for_the_generator_not_only_for_the_agent():
+    """Placement is recorded even when the agent cannot observe it.
+
+    Under `input_grid_state=False` the RNN never sees where its envs sit -- but
+    the placement is still part of the world's identity, and an agent-hash run
+    pointed at the same world.json *does* observe those offsets. Refusing to
+    generate here would mean the two stacks could not share a world at all.
+    """
     from hopfield_nav.training.rnn_setup import rnn_world
+    from hopfield_nav.world import generate as gen
 
     cfg = _rnn_gen_cfg()
     cfg.agent.input_grid_state = False
-    with pytest.raises(SystemExit, match="needs --input_grid_state"):
-        rnn_world(cfg, np.random.RandomState(0), want_offsets=False)
+    envs, offsets, split, field, kind = rnn_world(cfg, np.random.RandomState(0))
+    assert kind == "declared"
+    assert field is not None, "the generator needs a coordinate system"
+    assert offsets == [s.offset for s in split.train]
+    for i, a in enumerate(split.train + split.base_val):
+        for b in (split.train + split.base_val)[i + 1:]:
+            assert gen.toroidal_gap(a.offset, a.size, b.offset, b.size,
+                                    split.period) >= split.margin
+
+
+def test_grid_state_does_not_change_which_envs_the_generator_draws():
+    """The declared world is a property of the config, not of what the agent
+    happens to observe -- otherwise two stacks could not be given the same one."""
+    from hopfield_nav.training.rnn_setup import rnn_world
+
+    made = []
+    for grid in (True, False):
+        cfg = _rnn_gen_cfg()
+        cfg.agent.input_grid_state = grid
+        envs, offsets, split, _, _ = rnn_world(cfg, np.random.RandomState(cfg.seed))
+        made.append(([e.seed for e in envs], offsets,
+                     [s.goal for s in split.train]))
+    assert made[0] == made[1]
 
 
 def test_the_generator_will_not_invent_a_margin():
@@ -386,4 +409,4 @@ def test_the_generator_will_not_invent_a_margin():
 
     cfg = _rnn_gen_cfg(place_margin=None)
     with pytest.raises(SystemExit, match="explicit --place_margin"):
-        rnn_world(cfg, np.random.RandomState(0), want_offsets=True)
+        rnn_world(cfg, np.random.RandomState(0))

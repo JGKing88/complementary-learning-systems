@@ -297,7 +297,15 @@ def preflight(split: GeneratedSplit, cadence: Cadence, n_updates: int,
     end-state union, it replays the exact ticks. Draw-only, so it costs about a
     second for a 300-update run and builds no environments.
 
-    **It reports a ceiling, not a predicted failure.** An earlier reading of the
+    Two outcomes, and they are not the same kind of thing. A *shrinking eval
+    ceiling* is recorded and the run proceeds -- a run that only ever evaluates
+    on ``--split recorded`` is fine with a tight union, and that is not the
+    trainer's call to veto. A domain that *runs dry* is different: the run will
+    raise partway through, hours in, at a tick fixed before it started. The
+    caller raises on that one, because a warning is only useful to someone
+    watching stdout at second two.
+
+    **The ceiling is a ceiling, not a predicted failure.** An earlier reading of the
     Phase 4 measurements had `place='held_out'` becoming infeasible after ~20-30
     ticks; that was the rejection sampler failing to find the survivors, not
     their absence (see the correction in ``docs/ENV_GENERATOR_STATUS.md``). What
@@ -381,13 +389,12 @@ def format_preflight(report: dict) -> str:
             f"goal {report['goal_cells_held_out']} cells")
     if report["refresh_dies_at_update"] is not None:
         return (
-            f"  WARNING: **this run will not finish.** Refresh runs out of "
-            f"values at update {report['refresh_dies_at_update']} of "
-            f"{report['n_updates']} and raises:\n"
-            f"    {report['refresh_dies_of']}\n"
-            f"    Widen the domain that ran dry, or lower that trait's cadence. "
-            f"Nothing about this depends on training, so it will happen exactly "
-            f"there. Recorded in world.json; the run continues.")
+            f"this run cannot finish: refresh runs out of values at update "
+            f"{report['refresh_dies_at_update']} of {report['n_updates']} and "
+            f"raises\n    {report['refresh_dies_of']}\n"
+            f"  Nothing about the draw depends on training, so it will happen "
+            f"exactly there. Widen the domain that ran dry, or lower that "
+            f"trait's cadence.")
     if report["ok"]:
         return f"  preflight: {head} — enough for --num_val_envs {n}."
     short = []

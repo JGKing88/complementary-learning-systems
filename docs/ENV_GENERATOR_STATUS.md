@@ -1390,11 +1390,13 @@ Two things it got wrong first, both found by measuring:
   `make_val_set` then failed for two of four val seeds. It now takes the worst
   of five orders, capped at `n_val_envs`. It errs toward *no* — a spurious
   warning costs a line, a spurious all-clear costs a re-run.
-- **A domain that runs dry is a different failure.** It raises, hours in, at a
-  tick decided before the run started. The replay catches that and names the
-  update. *Open question:* this currently warns and proceeds per the
-  record-and-proceed decision, but a run guaranteed to crash at update 240 is
-  arguably worth refusing outright.
+- **A domain that runs dry is a different failure, and the only fatal one.** It
+  raises partway through, hours in, at a tick decided before the run started, so
+  the replay catches it and `train_navigate` **refuses at startup**. A shrinking
+  eval ceiling is still recorded-and-proceed — a run that only ever evaluates on
+  `--split recorded` is fine with a tight union, and that is not the trainer's
+  call to veto. These are not the same kind of thing, and only one of them is
+  worth stopping for.
 
 ### 5.1 / 5.2 — `--split`
 
@@ -1432,14 +1434,20 @@ The `build_envs` collision is resolved rather than shadowed:
 `rnn_setup.build_envs_from_config` draws envs from a config,
 `world.generate.build_envs` rebuilds them from a record.
 
-Two limits, refused rather than faked:
+**The scaffold is built for the generator, not only for the agent.** Under
+`input_grid_state=False` the RNN never observes where its envs sit — but the
+placement is still part of the world's identity, an agent-hash run on the same
+`world.json` *does* observe it, and the separation guarantees are stated in
+scaffold coordinates either way. So `--env_generator` builds a scaffold whenever
+asked and records the offsets regardless. Verified: the same config with grid
+state on and off draws the **same** envs at the **same** offsets — the declared
+world is a property of the config, not of what the agent happens to see. Only
+the *legacy* path stays conditional, because its historical draw must not move.
 
-- **`--env_generator` needs `--input_grid_state`.** Without grid state the RNN
-  never sees the scaffold, so its envs' offsets are unobservable to it and a
-  place split is a distinction it cannot make.
-- **`--place_margin` must be explicit.** `derive_margin` reads the scaffold's
-  cosine-vs-distance curve, which needs an encoder; this stack has none, and a
-  borrowed constant would be wrong at a different `Npos`.
+One limit, refused rather than faked: **`--place_margin` must be explicit.**
+`derive_margin` reads the scaffold's cosine-vs-distance curve, which needs an
+encoder; this stack has none, and a borrowed constant would be wrong at a
+different `Npos`.
 
 `split_diagnostics` now reports an empty `cosine` block when the field has no
 `encoded_Phi`, rather than denying the RNN stack a world record for lacking an
