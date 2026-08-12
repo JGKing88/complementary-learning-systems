@@ -337,12 +337,19 @@ class TrainConfig:
     wall_seeds: str = "0,10000000"          # 'LO,HI' -- the range training draws wall seeds from
     place_margin: int | None = None         # edge-to-edge train/val clearance; None derives it from the scaffold's own cosine curve
     goal_val_frac: float = 0.2              # share of goal cells reserved for validation when goals refresh
+    # Per-trait train-env refresh, in updates; None = never. Each trait draws
+    # from its declared domain on its own derived stream, so one cadence cannot
+    # move another trait's values. Requires env_generator -- the legacy path
+    # declares no domains to re-draw from. Validation never refreshes.
+    refresh_place: int | None = None
+    refresh_wall: int | None = None
+    refresh_goal: int | None = None
+    refresh_size: int | None = None
     schedule: str | None = None
     novelty_anneal: bool = False            # linearly scale novelty_reward -> 0 across the whole run
     epsilon_explore: float = 0.0            # per-step chance of a uniform-random move, explore regime only
     epsilon_anneal_updates: int = 0         # linearly scale epsilon_explore -> 0 over this many updates; 0 = constant
     explore_goals_off: bool = False         # explore-regime envs emit no goal reward and never teleport
-    randomize_goal_per_rollout: bool = False  # re-draw the goal each explore rollout, breaking the memorization shortcut
     n_train_distractors_min: int = 0        # non-goal patterns preloaded per exploit rollout
     n_train_distractors_max: int = 0
     n_train_emp_distractors_min: int = 0    # ditto per explore rollout (no goal among them)

@@ -251,6 +251,64 @@ def test_ckpt_every_beats_eval_every_in_a_real_run(sandbox, tiny_encoder):
 
 
 @pytest.mark.slow
+def test_env_refresh_end_to_end(sandbox, tiny_encoder):
+    """A real refreshing run, through the CLI, and the record it leaves behind.
+
+    The unit tests drive `Refresher` directly; this is the only thing that
+    checks the wiring -- that the flags reach a cadence, the cadence reaches the
+    update loop, and `world.json` gets rewritten on the checkpoint cadence with
+    the union grown rather than the startup draw frozen. A run that refreshed
+    but recorded only its first draw would look identical from every angle
+    except this file.
+    """
+    import json
+
+    root, env = sandbox
+    save_dir = root / "refresh_ckpt"
+    _run(["hopfield_nav.train_navigate",
+          "--encoder_checkpoint", str(tiny_encoder),
+          "--lambdas", "3", "4", "--Np", "40",
+          "--size", "3", "--observation_size", "16",
+          "--batch_envs", "2", "--steps_per_rollout", "8",
+          "--schedule", "interleave:4", "--envs_per_world", "2",
+          "--num_worlds", "1", "--num_val_envs", "1",
+          "--eval_every", "100", "--ckpt_every", "2",
+          "--n_val_trials", "1", "--val_distractors", "0", "--device", "cpu",
+          "--static-vectorhash", "--env_generator", "--place_margin", "1",
+          "--refresh_place", "1", "--refresh_goal", "1", "--refresh_wall", "2",
+          "--save_dir", str(save_dir)], env)
+
+    spec = json.loads((save_dir / "world.json").read_text())
+    split = spec["split"]
+    n_train = len(split["train"])
+    rep = split["diagnostics"]["refresh"]
+    assert rep["cadence"] == {"place": 1, "wall": 2, "goal": 1, "size": None}
+    assert rep["ticks"] == 4 and rep["counts"]["wall"] == 2
+    # 4 updates x 2 envs of fresh wall seeds, plus the startup draw.
+    assert len(split["used"]["wall"]) == n_train * 3, (
+        "the used union did not grow with the refresh ticks -- a later "
+        "held_out val set would treat training's own walls as unseen")
+    # Validation is drawn once and held: an eval curve is only readable if the
+    # thing being evaluated on stood still.
+    assert len(split["base_val"]) == 1
+
+
+@pytest.mark.slow
+def test_refresh_without_the_generator_fails_fast(sandbox, tiny_encoder):
+    """And says which flag is missing, before the 12 GB scaffold gets built."""
+    root, env = sandbox
+    proc = subprocess.run(
+        [sys.executable, "-m", "hopfield_nav.train_navigate",
+         "--encoder_checkpoint", str(tiny_encoder),
+         "--lambdas", "3", "4", "--size", "3", "--schedule", "explore:1",
+         "--device", "cpu", "--refresh_place", "1",
+         "--save_dir", str(root / "no_generator")],
+        cwd=REPO_ROOT, env=env, capture_output=True, text=True, timeout=300)
+    assert proc.returncode != 0
+    assert "needs --env_generator" in proc.stdout + proc.stderr
+
+
+@pytest.mark.slow
 def test_navigate_writes_a_usable_manifest(navigate_checkpoint, tiny_encoder):
     """A real training run leaves a manifest that identifies it.
 

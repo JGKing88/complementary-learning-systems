@@ -503,6 +503,44 @@ def test_lattice_slots_clear_the_torus_seam():
                 assert gen.axis_separation(a, 8, b, 8, 132) >= 20
 
 
+def test_lattice_jitter_room_is_bounded_by_the_wrap_gap():
+    """Slack comes from the slots, not from the pitch -- they differ at the seam.
+
+    `_axis_slots` drops trailing slots until the wrap clears, so the survivors
+    are not evenly spaced: at Npos=15, pitch=10, the slots [0, 10] are 7 apart
+    going up and **2** apart going round. Pitch-based slack licensed a jitter of
+    2, which closes the wrap gap to 1.
+    """
+    assert gen._axis_slots(0, 12, 10, size=3, spacing=2, period=15) == [0, 10]
+    # Going up: 10 - 0 - 3 = 7. Going round: 15 - 10 + 0 - 3 = 2, which binds.
+    assert gen._axis_slack([0, 10], size=3, spacing=2, period=15, pitch=10) == 0
+    # A straight run with real room still gets some.
+    assert gen._axis_slack([0, 20, 40], size=3, spacing=2, period=200,
+                           pitch=20) == 7
+
+
+def test_lattice_places_everything_it_has_slots_for(wide_field):
+    """A jittered env must not squeeze out a slot the lattice was counting on.
+
+    Four slots, four envs, two fixed obstacles that all four clear. The jitter
+    moved the first placements off-lattice, they blocked a later slot, and the
+    fallback returned None -- reported as "no lattice of that pitch fits" when
+    one plainly did. Only reachable with a non-empty `exclude`, which is to say
+    only from a refresh: `generate_split` draws train and val in one call with
+    nothing pre-placed.
+    """
+    obstacles = [((5, 5), 3), ((5, 10), 3)]
+    placed = gen._lattice_places(
+        dom.Anywhere(), np.random.RandomState(0), 4, size=3, Npos=15,
+        period=15, exclude=obstacles, margin=2, self_margin=2)
+    assert placed is not None and len(placed) == 4
+    for i, a in enumerate(placed):
+        for off, s in obstacles:
+            assert gen.toroidal_gap(a, 3, off, s, 15) >= 2
+        for b in placed[i + 1:]:
+            assert gen.toroidal_gap(a, 3, b, 3, 15) >= 2
+
+
 def test_held_out_val_is_disjoint_on_every_trait(wide_field):
     """The property the whole design exists for, stated once, at scale."""
     env_cfg = EnvConfig(size=8, observation_size=OBS)

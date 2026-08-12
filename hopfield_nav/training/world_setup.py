@@ -90,6 +90,11 @@ def setup_worlds_declared(cfg: TrainConfig, field: VectorHash):
         field, cfg.env, domains, n_train, int(cfg.num_val_envs),
         seed=int(cfg.seed), margin=cfg.place_margin,
         val_frac=float(cfg.goal_val_frac),
+        # Goal refresh consumes fresh cells every tick, so the train share has
+        # to be capped up front. Without this, `n_train` envs claim `n_train`
+        # cells per update and a size-8 arena's 64 cells are gone in a handful
+        # of updates, leaving no legal held-out goal at all.
+        refresh_goal=cfg.refresh_goal is not None,
     )
 
     train_envs = generate.build_envs(split.train, cfg.env, cfg.agent.movement_mode)
@@ -148,15 +153,28 @@ def legacy_split(cfg: TrainConfig, field: VectorHash, worlds: list[World],
 
 
 def write_world_spec(cfg: TrainConfig, field: VectorHash, split: GeneratedSplit,
-                     encoder_ident: dict, *, generator: str) -> tuple[WorldSpec, str]:
+                     encoder_ident: dict, *, generator: str,
+                     extra: dict | None = None) -> tuple[WorldSpec, str]:
     """Assemble and write ``world.json`` beside the run manifest.
 
     Written on **both** paths. §1.4's bug is that a checkpoint's val offsets are
     unrecoverable, so every post-hoc eval scores it on patches training never
     used; recording the resolved specs fixes that for every new run, whether or
     not the run opted into declared domains.
+
+    Rewritten on the checkpoint cadence when a run refreshes its envs, because
+    ``split.used`` grows with every tick and it is the union -- not the current
+    ``train`` list -- that a later ``make_val_set`` excludes against. The file is
+    replaced atomically, so the latest checkpoint always matches it; an earlier
+    checkpoint's recorded ``spec_hash`` describes a prefix that is no longer on
+    disk. ``base_val`` never moves, so every *evaluation* use is unaffected.
+
+    ``extra`` merges into diagnostics -- the refresh report, so the file can say
+    whether the world stood still.
     """
     split.diagnostics = generate.split_diagnostics(field, cfg.env, split)
+    if extra:
+        split.diagnostics.update(extra)
     spec = WorldSpec(
         scaffold={
             "lambdas": list(field.lambdas), "Npos": int(field.Npos),

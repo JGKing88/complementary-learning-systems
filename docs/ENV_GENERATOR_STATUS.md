@@ -21,7 +21,7 @@ python -m hopfield_nav.tests.gen_golden --check       all goldens match
 | 1 | Plumbing refactor, behavior-frozen | **done** — `8db2930` |
 | 2 | Generator, domains, separation | **done** — see outcome below |
 | 3 | Serialization + train wiring | **done** — `901e802` |
-| 4 | Per-trait refresh | planned — see below |
+| 4 | Per-trait refresh | **done** — see outcome below |
 | 5 | Eval CLIs, mix-and-match | not started |
 | 6 | Size OOD | not started |
 
@@ -842,3 +842,127 @@ stays trivial: 300 ticks × 84 envs × 2 ints ≈ 200 KB.
 | Goal refresh exhausts the cell grid | 4.5 — `refresh_goal` switches on the up-front partition |
 | Refreshed placement drifts onto the val set | Re-draw excludes `base_val` at margin; assert per tick |
 | Vectorized codebook differs subtly | Bit-identity test; goldens as backstop |
+
+---
+
+## Phase 4 — outcome
+
+`hopfield_nav/training/refresh.py`, wired into `train_navigate`. 678 tests pass
+(was 651); goldens byte-identical. Refresh is off by default and a run that does
+not ask for it takes the same code path it always did.
+
+```
+--refresh_place N   re-draw train placements every N updates   (None = never)
+--refresh_wall  N   re-draw train wall seeds every N updates
+--refresh_goal  N   re-draw train goals every N updates
+--refresh_size  N   re-draw the train env size every N updates
+```
+
+All four require `--env_generator` and are checked before the encoder loads.
+Only the train set moves; `base_val` is drawn once and held.
+
+### The invariant, made structural
+
+`_draw` writes `split.train` **and** calls `record_used`; `_apply` takes no
+arguments and reads `split.train`. So the only thing appliable is what was
+recorded, and "apply a refresh nobody recorded" has no spelling. `maybe_refresh`
+is the only public entry.
+
+The test that guards it (`test_the_union_is_what_a_later_val_set_avoids`) had to
+be rewritten once: the first version compared a `held_out` val set against
+`split.used`, which is circular — dropping `record_used` makes the union
+*smaller*, so the val set trivially clears it while sitting exactly where
+training just was. It now accumulates what the **live worlds** held on each tick
+and compares against that. Six mutations were run against the final suite (drop
+`record_used`; place ignores `base_val`; size does not drag place+goal; goal
+draws from the whole domain instead of the partition; apply skips offsets; wall
+reuses old seeds) and each is caught.
+
+The wall-exclusion mutation initially was **not** caught: at the default 10M-wide
+seed range two ticks never collide by chance. It needed a test on a 30-wide
+range, where a reissued seed actually stops the union growing.
+
+### Two things only reachable in this phase
+
+**`refresh_goal` now reaches `generate_split`.** `setup_worlds_declared` never
+passed it, so the 80/20 goal partition had never executed. With goal refresh on
+and the partition off, `n_train` envs consume `n_train` fresh cells per update
+and a size-8 arena's 64 are gone in eight updates.
+
+**`--randomize_goal_per_rollout` is deleted**, replaced by `--refresh_goal N`.
+Cadence is equivalent (one rollout per env per update); scope is not — the old
+flag was explore-regime only and drew uniformly over the arena, so it could land
+on a cell reserved for validation. Two recorded runs used it, so
+`coerce_legacy_cfg` warns on load rather than dropping it silently (an unknown
+top-level key is ignored by `cfg_from_checkpoint`, so it would otherwise vanish).
+
+### A placement bug the refresh exposed
+
+`sample_places` failed on the first real refresh with *"no lattice of that pitch
+fits either"* when one plainly did. Two causes in `_lattice_places`, both only
+reachable with a **non-empty `exclude`** — which is to say only from a refresh,
+since `generate_split` draws train and val in one call with nothing pre-placed:
+
+1. **Jitter slack came from the pitch.** `_axis_slots` drops trailing slots until
+   the wrap clears, so the survivors are not evenly spaced: at `Npos=15,
+   pitch=10` the slots `[0, 10]` are 7 apart going up and **2** apart going
+   round. Pitch-based slack licensed a jitter of 2, which closed the wrap gap to
+   1 — and the jittered env then blocked a *later* lattice slot. Four slots, four
+   envs, one lost. Fixed by `_axis_slack`, which reads the actual slot gaps
+   including the wrap. Same seam that bit `_axis_slots` in Phase 3.
+2. **No fallback to the bare slot.** Eight jitter tries, and if all eight hit
+   `exclude` the slot was abandoned even though it was legal. Now the ninth
+   attempt is the unjittered slot.
+
+Verified: 559 lattice configurations across `Npos ∈ {60,132,264,1716}`,
+`size ∈ {3,6,8,20}`, `margin ∈ {0,2,6,12,20,80}` — **0 separation violations**, 5
+configurations that used to fail now succeed, 0 regressions. The change alters
+which offsets the *lattice* returns, but that path is reached in 2 of 15 joint
+draws and never at the working config (`Npos=1716, margin=80, 94 envs`), where
+rejection sampling always succeeds. `sample_places` is on-branch code that has
+never produced a recorded run, and the legacy `place_envs` path does not use it.
+
+### Costs, re-measured — the plan's figures were wrong
+
+| trait | plan said | measured (80 envs, `Npos=1716`) |
+|---|---|---|
+| place | 12 ms | **3.9 ms** |
+| goal | negligible | **0.3 ms** |
+| wall | 4.1 s @ obs=12, 10.2 s @ obs=60 | **56 ms** @ obs=12, **129 ms** @ obs=60 |
+
+**Plan item 4.6 (vectorize `_build_sensory_codebook`) was already done** — `47cc228`
+rewrote it as a single `raycast_codes` call over cells × headings. It is not a
+triple Python loop and has not been one since before the Phase 4 plan was
+written. Wall refresh is 30–80× cheaper than the plan assumed, so every cadence
+including `1` is affordable and no bit-identity gate was needed.
+
+`split_diagnostics` — the whole cost of a `world.json` rewrite — is **0.31 s**, so
+rewriting on `ckpt_every` is free.
+
+### Size refresh
+
+Implemented, including the coupling: a new size drags **place and goal** with it,
+because offsets were spaced for the old footprint and a goal cell can fall
+outside the new arena outright. It refuses at startup when fewer than two sizes
+are declared, which is every configuration today — nothing produces a multi-value
+`Sizes` domain yet (that is Phase 6). Tested by building the multi-size split by
+hand, so the code is exercised rather than speculative.
+
+### Other changes
+
+- `world.json` is rewritten on the checkpoint cadence when a run refreshes, and
+  once more at the end. The `used` union grows; `base_val` never moves, so every
+  *evaluation* use of the file is unaffected. An earlier checkpoint's recorded
+  `spec_hash` describes a prefix no longer on disk — the latest always matches.
+- `split.diagnostics["refresh"]` records the cadence, tick and per-trait counts,
+  so the file can say whether the world stood still.
+- `make_val_set` now refuses `size=None` when training used more than one size,
+  instead of picking one by set-iteration order.
+- Both regimes read `env.size` rather than `cfg.env.size` when sampling
+  distractors — the latter goes stale under size refresh.
+
+### Left undone
+
+- `train_phased` / `train_store` / `train.py` still do not write `world.json`,
+  and do not refresh. Unchanged from Phase 3.
+- `make_val_set` still does not run `verify_split` on its own output.

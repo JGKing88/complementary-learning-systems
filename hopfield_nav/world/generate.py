@@ -175,6 +175,26 @@ def _axis_slots(lo: int, hi: int, pitch: int, size: int, spacing: int,
     return vals
 
 
+def _axis_slack(vals: list[int], size: int, spacing: int, period: int,
+                pitch: int) -> int:
+    """How far a slot on this axis may be jittered without closing a gap.
+
+    Read off the slots the lattice actually got, not off the pitch. The two
+    disagree at the seam: slots ``[0, 10]`` on a period of 15 are 7 apart going
+    up and **2** apart going round, so pitch-based slack licenses a jitter that
+    drops the wrap gap below the spacing. The cost is not a near-miss -- the
+    jittered env then blocks a later lattice slot, and a packing the lattice
+    provably had room for comes back as "no lattice of that pitch fits".
+
+    Halved because both neighbours can jitter toward each other.
+    """
+    if len(vals) < 2:
+        return max(0, (pitch - size - spacing) // 2)
+    gaps = [b - a - size for a, b in zip(vals, vals[1:])]
+    gaps.append(period - vals[-1] + vals[0] - size)      # the wrap
+    return max(0, (min(gaps) - spacing) // 2)
+
+
 def _lattice_places(
     domain: dom.PlaceDomain, rng, n: int, *, size: int, Npos: int, period: int,
     exclude, margin: int, self_margin: int,
@@ -202,7 +222,8 @@ def _lattice_places(
     if found is None:
         return None
     pitch, xs, ys = found
-    slack = max(0, (pitch - size - spacing) // 2)
+    slack_x = _axis_slack(xs, size, spacing, period, pitch)
+    slack_y = _axis_slack(ys, size, spacing, period, pitch)
     slots = [(x, y) for x in xs for y in ys]
     order = rng.permutation(len(slots))
     placed: list[tuple[int, int]] = []
@@ -211,9 +232,18 @@ def _lattice_places(
         if len(placed) >= n:
             break
         bx, by = slots[idx]
-        for _ in range(8):                      # a few jitter tries, then plain
-            jx = int(rng.randint(-slack, slack + 1)) if slack else 0
-            jy = int(rng.randint(-slack, slack + 1)) if slack else 0
+        # A few jitter tries, then the bare slot. That last attempt is what
+        # makes the fallback honour its own contract: the lattice is chosen
+        # because its slots are known to clear each other, but a jittered
+        # candidate has no such guarantee against `exclude` -- envs placed by an
+        # earlier draw and therefore off this lattice. Without it, eight unlucky
+        # jitters abandon a slot that was legal all along, and a tight packing
+        # fails with "no lattice of that pitch fits" when one plainly did. Only
+        # reachable once something places against a non-empty `exclude`, which
+        # is every per-trait refresh (training/refresh.py).
+        for k in range(9):
+            jx = int(rng.randint(-slack_x, slack_x + 1)) if slack_x and k < 8 else 0
+            jy = int(rng.randint(-slack_y, slack_y + 1)) if slack_y and k < 8 else 0
             cand = (min(max(bx + jx, x_lo), x_hi), min(max(by + jy, y_lo), y_hi))
             if not domain.contains(cand, size, Npos):
                 continue
@@ -595,6 +625,13 @@ def make_val_set(
         if lvl not in _LEVELS:
             raise ValueError(f"{trait}: unknown level {lvl!r}, expected {_LEVELS}")
     d = split.domains
+    if size is None and len(split.used["size"]) > 1:
+        # Reachable once size refresh exists: `used["size"]` is a set, so
+        # picking one arbitrarily would make the val env size depend on set
+        # iteration order rather than on anything the caller asked for.
+        raise ValueError(
+            f"training used sizes {sorted(split.used['size'])}; pass "
+            "make_val_set(..., size=N) to say which one this set should use.")
     env_size = int(size if size is not None else next(iter(split.used["size"])))
     used_place = sorted(split.used["place"])
     used_wall = sorted(split.used["wall"])

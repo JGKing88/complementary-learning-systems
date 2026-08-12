@@ -150,6 +150,31 @@ def test_agent_can_store_is_coerced_to_allow_store():
     assert cfg.hopfield.allow_store is False
 
 
+def test_a_deleted_randomize_goal_flag_is_reported_not_dropped(capsys):
+    """Two recorded runs set it, and its removal changes what they would do.
+
+    Unlike the renames above this one cannot be mapped: `--refresh_goal` draws
+    from the declared train partition rather than uniformly over the arena, and
+    it demands `--env_generator`, which those runs never had. An unknown
+    top-level key is silently ignored by `cfg_from_checkpoint`, so without this
+    the behavior would vanish from a resumed run with nothing said.
+    """
+    from dataclasses import asdict
+    from hopfield_nav.config import TrainConfig
+    from hopfield_nav.evaluation.checkpoint_io import cfg_from_checkpoint
+
+    saved = asdict(TrainConfig())
+    saved["randomize_goal_per_rollout"] = True
+    cfg = cfg_from_checkpoint(saved)
+    assert not hasattr(cfg, "randomize_goal_per_rollout")
+    assert "--refresh_goal" in capsys.readouterr().out
+
+    # A run that had it off has nothing to report.
+    saved["randomize_goal_per_rollout"] = False
+    cfg_from_checkpoint(saved)
+    assert "refresh_goal" not in capsys.readouterr().out
+
+
 def test_a_current_checkpoint_still_round_trips():
     from dataclasses import asdict
     from hopfield_nav.config import TrainConfig

@@ -42,6 +42,7 @@ from .updates.ppo import ppo_update
 from .evaluation.checkpoint_io import cfg_from_checkpoint
 from .training.explore import ExploreRegime
 from .training.exploit import ExploitRegime
+from .training.refresh import Cadence, Refresher
 from .training.stages import (
     Knobs, ScheduleError, Stage, format_schedule, parse_schedule, resolve,
     stage_at, total_updates,
@@ -81,6 +82,8 @@ def run_navigate(
     ckpt_every: int,
     dist_rng: np.random.RandomState | None = None,
     ckpt_world: dict | None = None,
+    refresher: Refresher | None = None,
+    record_world=None,
 ) -> None:
     """Walk the schedule, one pooled PPO update per step.
 
@@ -88,6 +91,11 @@ def run_navigate(
     novelty / ε / distractor counts and the three global anneals (novelty,
     ε, movement_log_std) that are keyed off the global update counter rather
     than a stage-local one.
+
+    `refresher`, when given, re-draws some of each train env's traits on its own
+    cadence; `record_world` rewrites `world.json` so the growing union of values
+    training has used stays on disk. Both are None for a run whose envs are
+    fixed, which is every run before 2026-08.
     """
     n_updates_total = total_updates(stages)
     print(f"\n=== navigate: {format_schedule(stages)} "
@@ -145,8 +153,11 @@ def run_navigate(
 
     explore_regime = ExploreRegime(cfg, embed_dim, device, dist_rng,
                                    goals_off=cfg.explore_goals_off,
-                                   randomize_goal=cfg.randomize_goal_per_rollout,
                                    use_distractors=use_emp_distractors)
+
+    if refresher is not None:
+        print(f"Env refresh: {refresher.cadence.describe()} (train envs only; "
+              f"the validation set is drawn once and held)", flush=True)
 
     n_envs = cfg.envs_per_world
 
@@ -196,6 +207,12 @@ def run_navigate(
 
     for update in range(1, n_updates_total + 1):
         stage, local_update = stage_at(stages, update)
+
+        # Before the rollouts, so this update trains on the envs it records.
+        # Every value drawn here is folded into `split.used` by the refresher
+        # itself -- see training/refresh.py for why that cannot be a second,
+        # forgettable call.
+        refreshed = () if refresher is None else refresher.maybe_refresh(update)
 
         # log_std anneal: programmatically interpolate the parameter from its
         # init value to the target value across [start, end] update window.
@@ -278,13 +295,6 @@ def run_navigate(
                 # the env, so the regime's choice has to be written into both.
                 cfg.hopfield.novelty_reward = spec.novelty_reward
                 env.goals_active = spec.goals_active
-                # Fresh goal each rollout breaks the memorization shortcut: each
-                # env has a fixed sensory codebook, so without this the agent
-                # learns "in env X go to position Y" from the fingerprint alone
-                # and coverage caps out. Explore regime only -- a new goal would
-                # invalidate an exploit env's pre-stored pattern.
-                if spec.reset_goal:
-                    env.reset_goal()
                 rollout = collector.collect_rollout(
                     env, agent, spec.hop, allow_store=spec.allow_store,
                     h_rnn=None, env_offset=env_offset,
@@ -323,6 +333,9 @@ def run_navigate(
             log["train/current_lr"] = knobs.lr
             log["train/stage_kind"] = stage.kind
             log["train/stage_local_update"] = local_update
+            if refresher is not None:
+                for trait in refresher.counts:
+                    log[f"train/refresh_{trait}"] = int(trait in refreshed)
             log["phase_name"] = "navigate"
             wandb.log(log)
 
@@ -335,7 +348,8 @@ def run_navigate(
                   f"emp={_mr(emp_rs):.4f}) nov={knobs.novelty:.3f} "
                   f"emp_frac={knobs.empty_frac:.3f} std={log_std_mean:.3f} "
                   f"s/u={s_per_update:.1f} | "
-                  + " ".join(f"{k}={v:.3f}" for k, v in losses.items()),
+                  + " ".join(f"{k}={v:.3f}" for k, v in losses.items())
+                  + (f" | refresh={','.join(refreshed)}" if refreshed else ""),
                   flush=True)
             t_update_mark, n_updates_timed = time.time(), 0
 
@@ -355,6 +369,13 @@ def run_navigate(
         # checkpoint each -- had nothing to draw. `--ckpt_every` defaults to
         # `--eval_every`, so an existing command line is unchanged.
         if update % max(ckpt_every, 1) == 0:
+            # Rewrite `world.json` first, so the summary this checkpoint carries
+            # names the file as it now stands. The `used` union grows with every
+            # refresh tick, and it is what a later `make_val_set` excludes
+            # against -- a record written only at startup would let a held-out
+            # val env be placed exactly where training later moved.
+            if record_world is not None:
+                ckpt_world = record_world()
             os.makedirs(cfg.save_dir, exist_ok=True)
             torch.save({
                 "agent_state_dict": agent.state_dict(),
@@ -382,6 +403,10 @@ def train_navigate(
 ) -> None:
     validate_train_config(cfg)
     warn_if_offcell_stores(cfg.env, where="train_navigate")
+    # Before the encoder loads and the 12 GB scaffold builds: a refresh cadence
+    # without --env_generator has nowhere to draw from, and finding that out
+    # twenty minutes in is not the same as finding it out now.
+    cadence = Cadence.from_config(cfg)
     device = torch.device(cfg.device if torch.cuda.is_available() else "cpu")
     torch.manual_seed(cfg.seed)
     np.random.seed(cfg.seed)
@@ -448,20 +473,39 @@ def train_navigate(
         wandb_run=wandb.run if cfg.use_wandb else None,
     )
 
+    refresher = (Refresher(cadence, split, worlds, cfg.env,
+                           cfg.agent.movement_mode, int(cfg.seed))
+                 if cadence else None)
+
     # Written on both paths: a run has to be able to say which envs it used,
     # and the historical path could not (see docs/EVAL_SPLITS_DESIGN.md 1.4).
-    world_spec, world_json = write_world_spec(
-        cfg, field, split,
-        run_manifest.encoder_identity(cfg.encoder_checkpoint, enc_cfg, encoder_gain),
-        generator=world_kind)
-    ckpt_world = world_spec.summary(world_json)
+    encoder_ident = run_manifest.encoder_identity(
+        cfg.encoder_checkpoint, enc_cfg, encoder_gain)
+
+    def record_world() -> dict:
+        spec, path = write_world_spec(
+            cfg, field, split, encoder_ident, generator=world_kind,
+            extra=(None if refresher is None
+                   else {"refresh": refresher.report()}))
+        return spec.summary(path)
+
+    ckpt_world = record_world()
 
     run_navigate(
         cfg, stages, worlds, agent, embed_dim, device,
         cfg.use_wandb, eval_world, cfg.eval_every,
         cfg.ckpt_every if cfg.ckpt_every is not None else cfg.eval_every,
-        dist_rng=rng, ckpt_world=ckpt_world,
+        dist_rng=rng, ckpt_world=ckpt_world, refresher=refresher,
+        # A run whose envs never move needs no rewrite: the startup record
+        # already describes them for the whole run.
+        record_world=(record_world if refresher is not None else None),
     )
+
+    # `run_navigate` rewrote the record on its own cadence, into its own local;
+    # take a final one so navigate_final.pt names the file as it ends up, with
+    # the complete union of everything training touched.
+    if refresher is not None:
+        ckpt_world = record_world()
 
     os.makedirs(cfg.save_dir, exist_ok=True)
     torch.save({
@@ -561,13 +605,16 @@ CFG_FIELDS: dict[str, tuple[str, ...]] = {
     "wall_seeds": ("wall_seeds",),
     "place_margin": ("place_margin",),
     "goal_val_frac": ("goal_val_frac",),
+    "refresh_place": ("refresh_place",),
+    "refresh_wall": ("refresh_wall",),
+    "refresh_goal": ("refresh_goal",),
+    "refresh_size": ("refresh_size",),
     # schedule
     "schedule": ("schedule",),
     "novelty_anneal": ("novelty_anneal",),
     "epsilon_explore": ("epsilon_explore",),
     "epsilon_anneal_updates": ("epsilon_anneal_updates",),
     "explore_goals_off": ("explore_goals_off",),
-    "randomize_goal_per_rollout": ("randomize_goal_per_rollout",),
     "n_train_distractors_min": ("n_train_distractors_min",),
     "n_train_distractors_max": ("n_train_distractors_max",),
     "n_train_emp_distractors_min": ("n_train_emp_distractors_min",),
@@ -689,10 +736,6 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--novelty_anneal", action=argparse.BooleanOptionalAction, default=False,
                    help="Linearly scale --novelty_reward to 0 across the whole "
                         "schedule. A stage's 'novelty=' ignores this.")
-    p.add_argument("--randomize_goal_per_rollout",
-                   action=argparse.BooleanOptionalAction, default=False,
-                   help="Re-pick goal each rollout to break memorization "
-                        "shortcut. Only applies to explore-regime envs.")
     p.add_argument("--epsilon_explore", type=float, default=0.0,
                    help="Per-step probability of replacing the policy's "
                         "movement with a uniform-random direction (explore-"
@@ -766,6 +809,29 @@ def build_parser() -> argparse.ArgumentParser:
                         "curve (~80 at lambdas=11,12,13 fwhm=0.25).")
     p.add_argument("--goal_val_frac", type=float, default=0.2,
                    help="Share of goal cells reserved for validation.")
+    # Per-trait refresh. All four require --env_generator; all four apply to the
+    # train set only, because a validation set that moved under the model would
+    # make every in-training curve unreadable.
+    p.add_argument("--refresh_place", type=int, default=None,
+                   help="Re-draw train env placements every N updates, from "
+                        "--place_region and clear of the fixed val envs by the "
+                        "margin. Omit to place once and hold. Requires "
+                        "--env_generator.")
+    p.add_argument("--refresh_wall", type=int, default=None,
+                   help="Re-draw train wall seeds every N updates, excluding "
+                        "every seed the run has already used. Rebuilds the "
+                        "envs, so it is the one expensive cadence.")
+    p.add_argument("--refresh_goal", type=int, default=None,
+                   help="Re-draw train goals every N updates from the train "
+                        "share of --goal_region. Replaces "
+                        "--randomize_goal_per_rollout, which drew uniformly "
+                        "over the arena and so could land on a cell reserved "
+                        "for validation. Setting this also caps the train goal "
+                        "cells at 1 - --goal_val_frac of the region up front.")
+    p.add_argument("--refresh_size", type=int, default=None,
+                   help="Re-draw the train env size every N updates. Needs "
+                        "more than one declared size, which nothing produces "
+                        "yet (Phase 6), so this currently errors at startup.")
     p.add_argument("--freeze_store", action=argparse.BooleanOptionalAction,
                    default=True,
                    help="Pin the store head. True (default) also drops its "

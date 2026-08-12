@@ -12,10 +12,11 @@ remembering who imported which.
 
 Checkpoints are dicts keyed by `config.py`'s dataclass *field names*, and 309
 agent run directories are only readable through them. That is why
-`coerce_legacy_cfg` exists at all: it carries the two renames that have happened
-so far (`val_envs_per_world` -> `num_val_envs`, `gbook_only` ->
-`static_vectorhash`) rather than renaming the fields. Any future rename lands
-here as a third clause.
+`coerce_legacy_cfg` exists at all: it carries every rename and removal the
+dataclasses have absorbed -- `val_envs_per_world` -> `num_val_envs`,
+`gbook_only` -> `static_vectorhash`, `agent_can_store` -> `allow_store`, and
+the outright removal of `randomize_goal_per_rollout` -- rather than keeping the
+old fields. Any future one lands here as another clause.
 """
 from __future__ import annotations
 
@@ -54,6 +55,18 @@ def coerce_legacy_cfg(cd: dict) -> dict:
     hop = cd.get("hopfield")
     if isinstance(hop, dict) and "agent_can_store" in hop and "allow_store" not in hop:
         hop["allow_store"] = hop.pop("agent_can_store")
+    # randomize_goal_per_rollout -> --refresh_goal. Not a rename: the old flag
+    # drew uniformly over the arena for explore-regime envs only, the new one
+    # draws world-wide from the declared train cell partition. An unknown
+    # top-level key is dropped silently by cfg_from_checkpoint, so a resumed run
+    # would lose the behavior without saying so -- hence the warning rather than
+    # a mapping, which would also demand --env_generator the parent never had.
+    if cd.pop("randomize_goal_per_rollout", False):
+        print("  WARNING: this checkpoint was written with "
+              "--randomize_goal_per_rollout, which no longer exists. Its "
+              "replacement is --refresh_goal N (with --env_generator); the "
+              "resumed run holds its goals fixed unless you pass it.",
+              flush=True)
     return cd
 
 

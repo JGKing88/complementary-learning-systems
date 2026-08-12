@@ -102,7 +102,6 @@ class RolloutSpec:
     allow_store: bool           # may the agent's store action write to `hop`?
     novelty_reward: float
     goals_active: bool
-    reset_goal: bool
     epsilon: float
     goal_in_memory_init: bool
 

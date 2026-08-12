@@ -531,7 +531,6 @@ Flags shared with `train.py` (`--encoder_checkpoint`, `--encoder_gain`,
 | `--novelty_reward` | `0.1` | Novelty reward applied **only to explore-regime envs**. |
 | `--novelty_anneal` / `--no-` | `False` | Linear decay of novelty to 0 over the full budget. A stage's `novelty=` ignores it. |
 | `--load_checkpoint` | `None` | Start from this `.pt`. Its config becomes the **base** for the run: every setting is inherited except the flags actually on the command line, so a child reproduces its parent's recipe without re-listing it. `--save_dir` is never inherited. |
-| `--randomize_goal_per_rollout` / `--no-` | `False` | New goal each rollout for explore-regime envs (breaks the "memorize this env's goal cell from its sensory fingerprint" shortcut). |
 | `--explore_goals_off` / `--no-` | `False` | Explore-regime envs emit no goal reward and never teleport on goal-reach; exploit-regime envs are unaffected. Forces explore to be paid purely by novelty / revisit / wall / time. Eval envs are always built with `goals_active=True` regardless. |
 | `--move_ent_coef` | `None` | Overrides `PPOConfig.ent_coef`. |
 | `--ppo_clip_coef` | `None` | Overrides `PPOConfig.clip_coef` (0.2). |
@@ -549,6 +548,34 @@ Flags shared with `train.py` (`--encoder_checkpoint`, `--encoder_gain`,
 | `--max_action_norm`, `--min_action_norm` | `None` | Clamp/boost action L2 (only when `continuous_normalize` is False). |
 | `--input_hopfield_multistep` | `[]` | e.g. `1 2 3` — project the recall at each of those iteration counts and pass each as an extra 2-D input (continuous mode only). |
 | `--union_cov_trials` | `0` | If >0, `do_eval` also runs union-coverage with this many rollouts per env. |
+
+**The env generator and per-trait refresh.** An environment is four independent
+traits — wall pattern, env-local goal cell, scaffold placement, size — and the
+generator declares a domain for each, then draws train and validation together so
+separation is a property of the draw rather than something checked afterwards.
+Full rationale in `docs/EVAL_SPLITS_DESIGN.md`; status and per-phase outcomes in
+`docs/ENV_GENERATOR_STATUS.md`.
+
+| Flag | Default | Effect |
+|---|---|---|
+| `--env_generator` / `--no-` | `False` | Draw envs from declared domains instead of the historical placement path. Off keeps today's envs for a given `--seed`; on fixes the offset-reproducibility bug (§1.4) and enforces train/val separation. `world.json` is written either way. |
+| `--place_region` | `anywhere` | Where train envs may sit: `anywhere` or `rect:X0,Y0,W,H`. Declaring a rect is what makes a place-OOD val set possible later — it is the complement. |
+| `--goal_region` | `any` | Which env-local cells may hold a goal: `any`, `ring:W`, `interior:W`, `quadrant:Q`. Declaring a region is what makes a goal-OOD val set possible. |
+| `--wall_seeds` | `0,10000000` | `LO,HI` range training draws wall seeds from. |
+| `--place_margin` | `None` | Edge-to-edge clearance between **every** pair of envs — train↔train, train↔val, val↔val. Measured on the torus, max over axes. `None` derives it from the scaffold's own cosine-vs-distance curve (≈80 at `lambdas=11,12,13`, `fwhm=0.25`). |
+| `--goal_val_frac` | `0.2` | Share of goal cells reserved for validation. Only binds when `--refresh_goal` is set. |
+| `--refresh_place` | `None` | Re-draw train placements every N updates, clear of the fixed val envs by the margin. |
+| `--refresh_wall` | `None` | Re-draw train wall seeds every N updates, excluding every seed the run has already used. Rebuilds the envs — 56 ms at `observation_size` 12, 129 ms at 60, for 80 envs. |
+| `--refresh_goal` | `None` | Re-draw train goals every N updates from the train share of `--goal_region`. Replaces the old `--randomize_goal_per_rollout`, which drew uniformly over the arena and so could land on a cell reserved for validation. Setting it also caps the train goal cells at `1 - --goal_val_frac` of the region up front, without which the arena is exhausted in a few updates. |
+| `--refresh_size` | `None` | Re-draw the train env size every N updates. Needs more than one declared size, which nothing produces yet, so this currently errors at startup. |
+
+All four `--refresh_*` require `--env_generator` — the legacy path declares no
+domains to re-draw from — and each is a cadence in updates, firing when
+`update % N == 0`. **Only the train set refreshes**: `base_val` is drawn once and
+held, because a validation set that moved under the model would make every
+in-training curve unreadable. Every refreshed value is folded into the union
+recorded in `world.json`, which is what a later held-out val set excludes
+against; the file is rewritten on the `--ckpt_every` cadence.
 
 Different defaults vs `train.py`: `observation_size` 12, `movement_mode`/
 `hopfield_mode` `continuous`, `input_sensory`/`input_prev_action`/
