@@ -48,6 +48,12 @@ def coerce_legacy_cfg(cd: dict) -> dict:
     vh = cd.get("vectorhash")
     if isinstance(vh, dict) and "gbook_only" in vh and "static_vectorhash" not in vh:
         vh["static_vectorhash"] = vh.pop("gbook_only")
+    # agent_can_store -> allow_store. Without this every checkpoint written
+    # before 2026-08 raises on load: cfg_from_checkpoint does
+    # HopfieldConfig(**cd["hopfield"]), and an unknown key is a TypeError.
+    hop = cd.get("hopfield")
+    if isinstance(hop, dict) and "agent_can_store" in hop and "allow_store" not in hop:
+        hop["allow_store"] = hop.pop("agent_can_store")
     return cd
 
 

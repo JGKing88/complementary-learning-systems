@@ -99,6 +99,7 @@ class RolloutSpec:
     one place in the composer.
     """
     hop: Any                    # a hopfield.Hopfield
+    allow_store: bool           # may the agent's store action write to `hop`?
     novelty_reward: float
     goals_active: bool
     reset_goal: bool

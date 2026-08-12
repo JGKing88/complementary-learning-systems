@@ -129,3 +129,35 @@ def test_load_agent_without_a_state_dict_keeps_the_fresh_init():
     c = load_agent(cfg, None, 8, device)
     assert not torch.equal(c.state_dict()["rnn.weight_ih_l0"],
                            a.state_dict()["rnn.weight_ih_l0"])
+
+
+def test_agent_can_store_is_coerced_to_allow_store():
+    """Every checkpoint written before 2026-08 carries the old field name.
+
+    `cfg_from_checkpoint` builds `HopfieldConfig(**cd["hopfield"])`, so an
+    unrecognised key is a TypeError, not a warning -- without the coercion the
+    rename would make all 355 recorded run dirs unloadable.
+    """
+    from dataclasses import asdict
+    from hopfield_nav.config import TrainConfig
+    from hopfield_nav.evaluation.checkpoint_io import cfg_from_checkpoint
+
+    saved = asdict(TrainConfig())
+    saved["hopfield"]["agent_can_store"] = False
+    del saved["hopfield"]["allow_store"]
+
+    cfg = cfg_from_checkpoint(saved)
+    assert cfg.hopfield.allow_store is False
+
+
+def test_a_current_checkpoint_still_round_trips():
+    from dataclasses import asdict
+    from hopfield_nav.config import TrainConfig
+    from hopfield_nav.evaluation.checkpoint_io import cfg_from_checkpoint
+
+    cfg = TrainConfig()
+    cfg.hopfield.allow_store = False
+    cfg.freeze_store = False
+    back = cfg_from_checkpoint(asdict(cfg))
+    assert back.hopfield.allow_store is False
+    assert back.freeze_store is False

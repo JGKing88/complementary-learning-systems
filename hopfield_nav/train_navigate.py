@@ -47,8 +47,9 @@ from .training.stages import (
     stage_at, total_updates,
 )
 from .training.world_setup import (
-    build_field, do_eval, legacy_split, set_phase_freeze, setup_world,
-    setup_worlds_declared, write_world_spec,
+    build_field, do_eval, legacy_split,
+    set_phase_freeze, setup_world, setup_worlds_declared,
+    write_world_spec,
 )
 
 
@@ -92,7 +93,7 @@ def run_navigate(
     print(f"\n=== navigate: {format_schedule(stages)} "
           f"({n_updates_total} updates) ===", flush=True)
 
-    set_phase_freeze(agent, freeze_move=False, freeze_store=True,
+    set_phase_freeze(agent, freeze_move=False, freeze_store=cfg.freeze_store,
                      freeze_value=False, freeze_rnn=False)
     trainable = [p for p in agent.parameters() if p.requires_grad]
     optimizer = torch.optim.Adam(trainable, lr=cfg.ppo.lr)
@@ -128,6 +129,20 @@ def run_navigate(
 
     exploit_regime = ExploitRegime(cfg, embed_dim, device, dist_rng,
                                    use_distractors=use_distractors)
+    if (not cfg.freeze_store
+            and not ExploitRegime.allows_store
+            and not ExploreRegime.allows_store
+            and cfg.hopfield.store_cost == 0
+            and cfg.hopfield.store_bonus == 0
+            and cfg.ppo.store_bc_weight == 0):
+        print(
+            "  WARNING: --no-freeze_store, but neither regime allows stores and "
+            "there is no store_cost, store_bonus or store_bc_weight. The store "
+            "head would take policy-gradient updates from an action with no "
+            "consequence -- noise into the store logits and, through the shared "
+            "trunk, into movement. Give the action a consequence or leave the "
+            "head frozen.", flush=True)
+
     explore_regime = ExploreRegime(cfg, embed_dim, device, dist_rng,
                                    goals_off=cfg.explore_goals_off,
                                    randomize_goal=cfg.randomize_goal_per_rollout,
@@ -174,6 +189,10 @@ def run_navigate(
     # mtimes conflates the two and gets the answer wrong by the eval's share.
     t_update_mark = time.time()
     n_updates_timed = 0
+
+    # Whether the store action writes / learns / pays is decided by three
+    # unrelated mechanisms in three files; say so once, from the first spec
+    # actually built rather than from a flag that could drift from it.
 
     for update in range(1, n_updates_total + 1):
         stage, local_update = stage_at(stages, update)
@@ -267,7 +286,8 @@ def run_navigate(
                 if spec.reset_goal:
                     env.reset_goal()
                 rollout = collector.collect_rollout(
-                    env, agent, spec.hop, h_rnn=None, env_offset=env_offset,
+                    env, agent, spec.hop, allow_store=spec.allow_store,
+                    h_rnn=None, env_offset=env_offset,
                     update_idx=update, aux_scale=1.0, epsilon_now=spec.epsilon,
                     goal_in_memory_init=spec.goal_in_memory_init,
                 )
@@ -526,6 +546,7 @@ CFG_FIELDS: dict[str, tuple[str, ...]] = {
     "steps_per_rollout": ("steps_per_rollout",),
     "eval_every": ("eval_every",),
     "eval_scope": ("eval_scope",),
+    "freeze_store": ("freeze_store",),
     "eval_max_steps": ("eval_max_steps",),
     "ckpt_every": ("ckpt_every",),
     "save_dir": ("save_dir",),
@@ -745,6 +766,14 @@ def build_parser() -> argparse.ArgumentParser:
                         "curve (~80 at lambdas=11,12,13 fwhm=0.25).")
     p.add_argument("--goal_val_frac", type=float, default=0.2,
                    help="Share of goal cells reserved for validation.")
+    p.add_argument("--freeze_store", action=argparse.BooleanOptionalAction,
+                   default=True,
+                   help="Pin the store head. True (default) also drops its "
+                        "entire objective from the PPO loss, so a frozen head "
+                        "cannot steer the shared trunk either. Pass "
+                        "--no-freeze_store to train it -- but give the store "
+                        "action a consequence first (see --allow_store paths), "
+                        "or it learns from pure noise.")
     p.add_argument("--eval_scope", type=str, default="all",
                    choices=("all", "expl"),
                    help="Which evaluators an in-training eval runs. 'all' is "

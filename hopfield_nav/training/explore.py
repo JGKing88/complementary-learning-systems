@@ -32,6 +32,10 @@ class ExploreRegime:
     are fixed, freshly built per rollout when distractors are resampled.
     """
 
+    # Declared here rather than implied by the type of `hop`: this regime
+    # never writes, and that is a decision, not a consequence.
+    allows_store = False
+
     def __init__(self, cfg: TrainConfig, embed_dim: int,
                  device: torch.device, dist_rng: np.random.RandomState, *,
                  goals_off: bool = False, randomize_goal: bool = False,
@@ -70,6 +74,9 @@ class ExploreRegime:
         hop = self._build_hop(world.field, env_offset, knobs)
         return RolloutSpec(
             hop=hop,
+            # This regime is scored on coverage, not on remembering anything, and
+            # `hop` is one object shared by all B trajectories.
+            allow_store=self.allows_store,
             novelty_reward=knobs.novelty,
             goals_active=not self.goals_off,
             reset_goal=self.randomize_goal,

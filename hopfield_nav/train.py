@@ -271,7 +271,7 @@ def train(cfg: TrainConfig) -> None:
                 env_offset = world["offsets"][local_idx]
 
                 # Fresh Hopfield instances per env: no cross-env contamination.
-                if cfg.hopfield.agent_can_store:
+                if cfg.hopfield.allow_store:
                     if template_hop is not None:
                         hops = [template_hop.clone() for _ in range(B)]
                     else:
@@ -284,7 +284,7 @@ def train(cfg: TrainConfig) -> None:
                 # Optionally preload N distractor patterns into each per-env Hopfield
                 # so training distribution matches eval (where `evaluate_goal_discovery`
                 # pre-populates distractors at n_distractors > 0). Only meaningful
-                # when we have a per-env hops list (agent_can_store=True).
+                # when we have a per-env hops list (allow_store=True).
                 use_variable = cfg.hopfield.n_train_distractors_max > 0
                 use_fixed = cfg.hopfield.n_train_distractors > 0
                 if (use_variable or use_fixed) and isinstance(hops, list):
@@ -301,7 +301,7 @@ def train(cfg: TrainConfig) -> None:
                             hops[b].input_memory(torch.from_numpy(pat).float())
 
                 rollout = collector.collect_rollout(
-                    env, agent, hops, h_rnn=None, env_offset=env_offset,
+                    env, agent, hops, allow_store=cfg.hopfield.allow_store, h_rnn=None, env_offset=env_offset,
                     update_idx=update, aux_scale=aux_scale,
                     epsilon_now=epsilon_now,
                 )
@@ -516,7 +516,9 @@ def main():
     parser.add_argument("--hopfield_steps", type=int, default=1)
     parser.add_argument("--hopfield_init", type=str, default="empty",
                         choices=["empty", "pre_stored"])
-    parser.add_argument("--agent_can_store", action=argparse.BooleanOptionalAction, default=True)
+    parser.add_argument("--allow_store", action=argparse.BooleanOptionalAction, default=True,
+                        help="May the agent's store action write to the Hopfield. "
+                             "Named --agent_can_store until 2026-08.")
     parser.add_argument("--store_cost", type=float, default=0.0,
                         help="Reward penalty per store action (metabolic cost)")
     parser.add_argument("--store_bonus", type=float, default=0.0,
@@ -656,7 +658,7 @@ def main():
         hopfield=HopfieldConfig(
             beta=args.hopfield_beta, alpha=args.hopfield_alpha,
             steps=args.hopfield_steps, init_mode=args.hopfield_init,
-            agent_can_store=args.agent_can_store,
+            allow_store=args.allow_store,
             store_cost=args.store_cost,
             store_bonus=args.store_bonus,
             auto_store_warmup=args.auto_store_warmup,

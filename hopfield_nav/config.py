@@ -43,12 +43,11 @@ def validate_train_config(cfg: "TrainConfig") -> None:
     validate_recurrent_core(cfg.agent.rnn_cell, cfg.agent.rnn_nonlinearity)
 
     h = cfg.hopfield
-    if not h.agent_can_store and h.auto_store_warmup > 0:
+    if not h.allow_store and h.auto_store_warmup > 0:
         raise ValueError(
-            "auto_store_warmup > 0 has no effect when agent_can_store is False: "
-            "the rollout uses a single shared Hopfield in that mode and skips "
-            "the auto-store path entirely. Set agent_can_store=True or "
-            "auto_store_warmup=0."
+            "auto_store_warmup > 0 has no effect when allow_store is False: "
+            "auto-store forces a *write*, and writes are off. Set "
+            "allow_store=True or auto_store_warmup=0."
         )
 
 
@@ -134,7 +133,15 @@ class HopfieldConfig:
     alpha: float = 1.0
     steps: int = 1
     init_mode: str = "empty"                # "empty" | "pre_stored"
-    agent_can_store: bool = True
+    # May the agent's store action write to the Hopfield? Read by `train.py`,
+    # which passes it to `collect_rollout(allow_store=...)`. The other
+    # trainers decide per rollout instead: `train_navigate` off the regime's
+    # RolloutSpec, `train_phased` off its phase role.
+    #
+    # Named `agent_can_store` until 2026-08. The old name was read by exactly
+    # one trainer while looking global, so it read as a live switch that did
+    # nothing in three of four entry points.
+    allow_store: bool = True
     store_cost: float = 0.0               # reward penalty per store action
     store_bonus: float = 0.0              # reward bonus for storing at goal
     auto_store_warmup: int = 0            # updates during which at-goal forces a store regardless of agent action
@@ -317,6 +324,13 @@ class TrainConfig:
     # Domains reach the config as compact strings so `asdict(cfg)` stays
     # JSON-native and the checkpoint carries them intact -- same shape as
     # `schedule` above. Parsed at startup by world/domains.py.
+    # Whether the store head learns. False lets it train; True pins it and --
+    # via `store_trainable` in updates/ppo.py -- drops its entire objective
+    # from the loss, so a frozen head cannot steer the shared trunk either.
+    # On TrainConfig rather than as a bare argument to `set_phase_freeze` so
+    # that `asdict(cfg)` records it: before this, a checkpoint could not say
+    # whether its store head had been learning.
+    freeze_store: bool = True
     env_generator: bool = False             # draw envs from declared domains instead of the historical placement path
     place_region: str = "anywhere"          # 'anywhere' | 'rect:X0,Y0,W,H'
     goal_region: str = "any"                # 'any' | 'ring:W' | 'interior:W' | 'quadrant:Q'

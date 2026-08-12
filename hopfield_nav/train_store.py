@@ -88,7 +88,8 @@ def run_store(
                 env_offset = world.offsets[local_idx]
                 hop = pools[w_idx][local_idx]
                 rollout = collector.collect_rollout(
-                    env, agent, hop, h_rnn=None, env_offset=env_offset,
+                    env, agent, hop, allow_store=False,
+                    h_rnn=None, env_offset=env_offset,
                     update_idx=update, aux_scale=1.0, epsilon_now=0.0,
                 )
                 rollouts.append(rollout)
