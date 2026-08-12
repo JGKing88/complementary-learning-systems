@@ -44,15 +44,22 @@ BASE = dict(
     # patches over few large ones.
     nenv=60,
     npos=100,
-    # npos_list="40,60,80,100,120",   # optional; overrides nenv/npos
-    per_env_radius_frac=0.1,
+    # Explicit patch sizes; overrides nenv/npos. Putting this in GRID is how
+    # patch count and patch size get varied *together* (the Cartesian product
+    # cannot couple two keys), which is what holding coverage fixed requires.
+    npos_list="",                     # "" → use nenv/npos above
+    # Fixed 10-cell "near" rather than a fraction of the patch side. With a
+    # fraction, growing the patch would grow the near-radius too and the two
+    # effects could not be told apart; 10 cells is what 60x100 at frac=0.1
+    # used, so the True baseline (r_min 2) is directly comparable.
+    per_env_radius_frac=0.0,          # 0 → use the fixed `radius` below
     radius=10.0,
     # THE finding of the audit. With single_env_batch=True every batch comes
     # from one environment, so the loss never sees a cross-environment pair,
     # nothing pushes distant places apart, and the alias ceiling sits at 0.98.
     # At False the repulsion term engages and it drops to 0.79. At fixed seed
     # and otherwise identical config that boolean alone is r_min 16 vs 2.
-    single_env_batch=False,
+    single_env_batch=True,
     # Loss
     loss_mode="mse_contrastive",      # mse_contrastive | cka
     attract_lambda=2.0,
@@ -98,21 +105,42 @@ BASE = dict(
 # cross-environment pairs are pushed apart (the ceiling), per_env_radius_frac
 # sets what counts as "near" (the decay width). Three seeds because the audit
 # could not separate a real effect from run-to-run spread at n=1.
-# CONTROL for the audit's central claim. That claim rests on one run versus
-# five twins -- suggestive, but n=1, and ur_loss_20260811 could not test it
-# because every cell of that grid already sat at False. This varies only the
-# boolean, at the best-median cell (repel 1.0, radius_frac 0.10, which gave
-# 18/17/18 across seeds), so the False arm doubles as a reproducibility check.
+# ur_loss2: push repel BELOW 1.0, where ur_loss_20260811's trend pointed, and
+# fill the 0.10-0.20 radius_frac gap. The best cell there (repel 1.0,
+# radius_frac 0.10 -> 18) sat on the grid edge, so the optimum may be outside.
+# ur_seb_A: can single_env_batch=True be rescued by patch GEOMETRY?
+#
+# Under True the only repulsion left is between far pairs *within* one patch,
+# so the distance over which the code is pushed apart is bounded by the patch
+# side. At 100 cells that is far smaller than the 1716-cell arena and the alias
+# ceiling pins at 0.988. Growing the patch should extend that reach; in the
+# limit of a single arena-sized env, True and False coincide by construction.
+#
+# Coverage is held near 20% (the archive's best) so this isolates granularity
+# from coverage, which the audit found correlated +0.445 with r_min:
+#     4 x 400  = 21.7%     2 x 600 = 24.5%     1 x 800 = 21.7%
+# Known already, so not re-run: 60 x 100 -> r_min 2 (ur_seb_control),
+# 15 x 200 -> r_min 2 (archive run_20260422_142233).
+#
+# repel_weight is included because within-patch repulsion is now the *only*
+# repulsion, so its optimum need not match the False regime's (where it wanted
+# to go down).
 GRID: dict[str, list] = {
-    "single_env_batch": [True, False],
-    "seed": [42, 43, 44],
-    # --- ur_loss_20260811 (done): repel down, not up; ridge runs diagonally
-    # "repel_weight": [1.0, 5.0, 15.0, 40.0],
-    # "per_env_radius_frac": [0.05, 0.1, 0.2],
-    # --- not yet explored
+    "npos_list": ["400,400,400,400", "600,600", "800"],
+    "repel_weight": [1.0, 5.0],
+    "seed": [42, 43],
+    # --- the False-regime axes, held fixed here ---
+    # "repel_weight": [0.25, 0.5, 1.0, 2.0],
+    # "per_env_radius_frac": [0.10, 0.15, 0.20],
+    # --- done ---
+    # ur_loss_20260811: repel [1,5,15,40] x frac [0.05,0.1,0.2] -- repel down,
+    #   not up; ridge runs diagonally; best 20 at repel 5 / frac 0.2 / seed 43
+    # ur_seb_control: single_env_batch [True,False] x 3 seeds -- True pins at
+    #   r_min 2 and alias 0.988 on every seed; False reaches 18
+    # --- not yet explored ---
+    # "uniformity_lambda": [0.0, 0.1, 0.5, 2.0],   # the True-regime hypothesis
     # "out_dim": [256, 512, 1024],
     # "attract_lambda": [1.0, 2.0, 5.0],
-    # "uniformity_lambda": [0.0, 0.1, 0.5],
 }
 
 # ---------------------------------------------------------------------------
@@ -176,6 +204,8 @@ def _build_train_flags(cfg: dict) -> str:
         if k in _BOOL_FLAGS:
             if v:
                 parts.append(f"--{k}")
+        elif v == "":
+            continue          # empty string → omit, fall back to train.py default
         else:
             parts.append(f"--{k} {_fmt(v)}")
     return " ".join(parts)
