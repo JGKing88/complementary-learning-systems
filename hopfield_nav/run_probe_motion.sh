@@ -2,9 +2,9 @@
 #SBATCH --job-name=hnav-motion
 #SBATCH --time=0-02:00:00
 #SBATCH --ntasks=1
-#SBATCH --cpus-per-task=32
+#SBATCH --cpus-per-task=8
 #SBATCH --partition=mit_normal
-#SBATCH --mem=150G
+#SBATCH --mem=80G
 #SBATCH --output=/orcd/pool/003/jackking/cls_runs/logs/motion_%j.out
 
 # Locate a trained explore policy on the memoryless-coverage table: measure its

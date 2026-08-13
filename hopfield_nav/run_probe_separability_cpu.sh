@@ -2,9 +2,9 @@
 #SBATCH --job-name=hnav-probe-cpu
 #SBATCH --time=0-03:00:00
 #SBATCH --ntasks=1
-#SBATCH --cpus-per-task=32
+#SBATCH --cpus-per-task=8
 #SBATCH --partition=mit_normal
-#SBATCH --mem=150G
+#SBATCH --mem=80G
 #SBATCH --output=/orcd/pool/003/jackking/cls_runs/logs/probe_cpu_%j.out
 
 # CPU build of the same probe. It runs on `mit_normal` rather than
