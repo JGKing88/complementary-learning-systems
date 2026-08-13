@@ -486,6 +486,31 @@ WAVES: dict[str, dict] = {
         },
         "seed": [42, 43],
     },
+    # W14 -- uniformity in the winning configuration.
+    #
+    # The headline (r_min 19/22) uses `rate_lambda` for the ceiling, but that
+    # was chosen when uniformity still looked like §3 said it was. It is not:
+    # at lambda 1.0 it reaches an alias ceiling of 0.876 against rate0.3's
+    # 0.919, with the decay held at 20.5, and scores r_min 8 -- level with the
+    # coding rate and with a *lower* ceiling. Since the ceiling is the factor
+    # that matters here, uniformity may go further in the same slot, and it is
+    # the term the brief singled out. Same geometry and radius as the winner so
+    # only the spread term differs.
+    "w14_unif_combo": {
+        "arm": {
+            "top_f0.15_unif1":   dict(npos_list=SIZE_MIXES["mixtop"],
+                                      per_env_radius_frac=0.15,
+                                      uniformity_lambda=1.0),
+            "top_f0.15_unif3":   dict(npos_list=SIZE_MIXES["mixtop"],
+                                      per_env_radius_frac=0.15,
+                                      uniformity_lambda=3.0),
+            "top_f0.15_unif1_rate0.3": dict(npos_list=SIZE_MIXES["mixtop"],
+                                            per_env_radius_frac=0.15,
+                                            uniformity_lambda=1.0,
+                                            rate_lambda=0.3),
+        },
+        "seed": [42, 43],
+    },
 }
 
 
