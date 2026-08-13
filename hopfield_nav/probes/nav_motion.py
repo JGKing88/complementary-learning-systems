@@ -57,6 +57,14 @@ class NavRecorder:
         self.align_q: list[np.ndarray] = []
         self.closest = np.full(n, np.inf)
         self.start_dist = np.full(n, np.nan)
+        # Per-trial sums, so the same statistics can be re-read over only the
+        # trials that succeeded. A failure burns the whole step budget while a
+        # success spends ~20 steps, so pooling every live step lets a handful
+        # of failures supply a third of the sample and drag both means down.
+        self.trial_steps = np.zeros(n)
+        self.trial_stride = np.zeros(n)
+        self.trial_align_goal = np.zeros(n)
+        self.trial_align_q = np.zeros(n)
 
     def __call__(self, step, pos_before, actions, q, active, pos_after) -> None:
         if step == 0:
@@ -73,9 +81,17 @@ class NavRecorder:
         moved = (pos_after - pos_before)[active]
         want = (self.goal - pos_before)[active]
         a = actions[active]
-        self.stride.append(np.linalg.norm(moved, axis=1))
-        self.align_goal.append(_cos(moved, want))
-        self.align_q.append(_cos(a, q[active]))
+        stride = np.linalg.norm(moved, axis=1)
+        ag = _cos(moved, want)
+        aq = _cos(a, q[active])
+        self.stride.append(stride)
+        self.align_goal.append(ag)
+        self.align_q.append(aq)
+        rows = np.flatnonzero(active)
+        self.trial_steps[rows] += 1.0
+        self.trial_stride[rows] += stride
+        self.trial_align_goal[rows] += ag
+        self.trial_align_q[rows] += aq
 
     def summary(self) -> dict:
         return {
@@ -134,6 +150,7 @@ def main() -> None:
 
     rng = np.random.RandomState(args.seed)
     steps_all, closest_fail, start_all, stats = [], [], [], []
+    per_trial = {k: [] for k in ("steps", "stride", "align_goal", "align_q")}
     for env, offset in zip(world.envs, world.offsets):
         goal = tuple(int(c) for c in env.goal_location)
         hops, starts = [], []
@@ -159,6 +176,10 @@ def main() -> None:
         steps_all.extend(steps)
         start_all.extend(rec.start_dist.tolist())
         stats.append(rec.summary())
+        per_trial["steps"].append(rec.trial_steps)
+        per_trial["stride"].append(rec.trial_stride)
+        per_trial["align_goal"].append(rec.trial_align_goal)
+        per_trial["align_q"].append(rec.trial_align_q)
         closest_fail.extend(float(c) for s, c in zip(steps, rec.closest)
                             if s < 0)
 
@@ -170,6 +191,26 @@ def main() -> None:
     mean_start = float(np.mean(start_all))
     predicted = mean_start / max(stride * align_goal, 1e-9)
     measured = float(steps_arr[ok].mean()) if ok.any() else float("nan")
+
+    # The same three statistics over the successful trials only, against the
+    # start distance of those same trials -- the comparison `mean_steps` is
+    # actually made of, since `mean_steps` averages successes alone.
+    tsteps = np.concatenate(per_trial["steps"])
+    start_arr = np.asarray(start_all, dtype=float)
+    succ = {}
+    if ok.any() and tsteps[ok].sum() > 0:
+        denom = float(tsteps[ok].sum())
+        s_stride = float(np.concatenate(per_trial["stride"])[ok].sum()) / denom
+        s_ag = float(np.concatenate(per_trial["align_goal"])[ok].sum()) / denom
+        s_aq = float(np.concatenate(per_trial["align_q"])[ok].sum()) / denom
+        s_start = float(start_arr[ok].mean())
+        s_pred = s_start / max(s_stride * s_ag, 1e-9)
+        succ = {
+            "succ_stride": s_stride, "succ_align_goal": s_ag,
+            "succ_align_q": s_aq, "succ_mean_start_dist": s_start,
+            "succ_predicted_steps": s_pred,
+            "succ_measured_over_predicted": measured / s_pred if s_pred else None,
+        }
 
     out = {
         "ckpt": args.ckpt, "n_dist": args.n_dist,
@@ -186,12 +227,22 @@ def main() -> None:
             float(np.mean(np.asarray(closest_fail)
                           <= 2 * cfg.env.goal_radius))
             if closest_fail else None),
+        "goal_radius": float(cfg.env.goal_radius),
+        **succ,
     }
     print(json.dumps(out, indent=2))
     print(f"\nsuccess {out['success_rate']:.3f}  steps {measured:.1f}  "
           f"(predicted {predicted:.1f} from stride {stride:.2f} x "
           f"align {align_goal:.2f} over {mean_start:.1f} cells)")
     print(f"  align to q = {align_q:.2f}")
+    if succ:
+        print(f"  successes only: predicted {succ['succ_predicted_steps']:.1f} "
+              f"from stride {succ['succ_stride']:.2f} x align "
+              f"{succ['succ_align_goal']:.2f} over "
+              f"{succ['succ_mean_start_dist']:.1f} cells, "
+              f"measured/predicted "
+              f"{succ['succ_measured_over_predicted']:.2f}, "
+              f"align to q = {succ['succ_align_q']:.2f}")
     if closest_fail:
         print(f"  {out['n_fail']} failures, closest approach median "
               f"{out['fail_closest_median']:.2f} cells "

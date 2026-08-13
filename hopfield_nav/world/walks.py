@@ -16,6 +16,34 @@ from __future__ import annotations
 import numpy as np
 
 
+def simulate(pos_f: np.ndarray, size: int, steps: int, direction_fn,
+             rng: np.random.RandomState) -> tuple[np.ndarray, np.ndarray]:
+    """Run B walkers and return `(covered fraction, positions)`.
+
+    Positions are `(B, steps + 1, 2)` continuous, including the start. They are
+    what lets a trajectory be *classified* rather than only scored -- a random
+    walk, a circle, a wall-hug and a boustrophedon can all land on the same
+    coverage number and are not the same behaviour.
+    """
+    B = pos_f.shape[0]
+    visited = np.zeros((B, size, size), dtype=bool)
+    idx = np.arange(B)
+    out = np.empty((B, steps + 1, 2), dtype=np.float64)
+    out[:, 0] = pos_f
+    snapped = np.clip(np.rint(pos_f).astype(int), 0, size - 1)
+    visited[idx, snapped[:, 0], snapped[:, 1]] = True
+    blocked = np.zeros(B, dtype=bool)
+    for t in range(steps):
+        before = pos_f.copy()
+        pos_f = np.clip(pos_f + direction_fn(t, blocked, pos_f), 0.0,
+                        float(size - 1))
+        blocked = np.linalg.norm(pos_f - before, axis=1) < 1e-9
+        snapped = np.clip(np.rint(pos_f).astype(int), 0, size - 1)
+        visited[idx, snapped[:, 0], snapped[:, 1]] = True
+        out[:, t + 1] = pos_f
+    return visited.reshape(B, -1).sum(1) / float(size * size), out
+
+
 def simulate_coverage(pos_f: np.ndarray, size: int, steps: int,
                       direction_fn, rng: np.random.RandomState) -> np.ndarray:
     """Run B walkers for `steps` and return each one's covered-cell fraction.
@@ -29,20 +57,7 @@ def simulate_coverage(pos_f: np.ndarray, size: int, steps: int,
     1.00, which reads as "the strategy does not work" rather than "the
     simulator did not tell it where it was".
     """
-    B = pos_f.shape[0]
-    visited = np.zeros((B, size, size), dtype=bool)
-    idx = np.arange(B)
-    snapped = np.clip(np.rint(pos_f).astype(int), 0, size - 1)
-    visited[idx, snapped[:, 0], snapped[:, 1]] = True
-    blocked = np.zeros(B, dtype=bool)
-    for _t in range(steps):
-        before = pos_f.copy()
-        pos_f = np.clip(pos_f + direction_fn(_t, blocked, pos_f), 0.0,
-                        float(size - 1))
-        blocked = np.linalg.norm(pos_f - before, axis=1) < 1e-9
-        snapped = np.clip(np.rint(pos_f).astype(int), 0, size - 1)
-        visited[idx, snapped[:, 0], snapped[:, 1]] = True
-    return visited.reshape(B, -1).sum(1) / float(size * size)
+    return simulate(pos_f, size, steps, direction_fn, rng)[0]
 
 
 def random_starts(B: int, size: int, rng: np.random.RandomState) -> np.ndarray:
