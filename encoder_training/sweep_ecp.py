@@ -418,6 +418,44 @@ WAVES: dict[str, dict] = {
         },
         "seed": [42, 43],
     },
+    # W11 -- the radius fraction is still climbing at the top of w9's bracket.
+    #
+    # On `mixtop` with rate_lambda=0.3: 0.10 -> r_min 16, 16; 0.15 -> 19, 22.
+    # The second of those matches the best encoder ever trained *with* the
+    # cross-environment pairs (21) on every column -- alias 0.813 against 0.814,
+    # decay50 42 against 37.5. So the bracket has to go further up, and where it
+    # turns is the answer to how good this regime gets.
+    #
+    # Two reasons to expect a turn not far above: without the rate term 0.15
+    # already scores *worse* than 0.10 (6.5 against 8.5), so the rate term is
+    # what makes the larger radius survivable; and on `mix2` the 0.3 fraction
+    # fell to 6.5 even with rate. The third seed goes on the leaders, because
+    # §2.6 puts config effects at about twice seed noise and two seeds have been
+    # carrying every claim here.
+    "w11_radius_top": {
+        "arm": {
+            "top_f0.20_rate0.3": dict(npos_list=SIZE_MIXES["mixtop"],
+                                      per_env_radius_frac=0.20, rate_lambda=0.3),
+            "top_f0.25_rate0.3": dict(npos_list=SIZE_MIXES["mixtop"],
+                                      per_env_radius_frac=0.25, rate_lambda=0.3),
+            "top_f0.15_rate0.5": dict(npos_list=SIZE_MIXES["mixtop"],
+                                      per_env_radius_frac=0.15, rate_lambda=0.5),
+            "top_f0.20_rate0.5": dict(npos_list=SIZE_MIXES["mixtop"],
+                                      per_env_radius_frac=0.20, rate_lambda=0.5),
+        },
+        "seed": [42, 43],
+    },
+    # W12 -- a third seed on the leaders, and the same two settings on a mix
+    # with more coverage. Nothing new is varied: this is the confirmation pass.
+    "w12_confirm": {
+        "arm": {
+            "top_f0.15_rate0.3": dict(npos_list=SIZE_MIXES["mixtop"],
+                                      per_env_radius_frac=0.15, rate_lambda=0.3),
+            "top_f0.10_rate0.3": dict(npos_list=SIZE_MIXES["mixtop"],
+                                      per_env_radius_frac=0.10, rate_lambda=0.3),
+        },
+        "seed": [44, 45],
+    },
 }
 
 
