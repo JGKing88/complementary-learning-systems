@@ -617,6 +617,36 @@ handle (§4.5).
 
 `r_pred` is §4.4b's law and is within one cell on all eleven rows.
 
+#### Uniformity works here, and §3's test of it was confounded
+
+§3 swept `uniformity_lambda` over {0, 0.1, 0.5, 2, 8} and concluded the term
+fails — at 0.1 it scored `r_min` 2 with an alias ceiling of 0.979. The same λ
+here:
+
+| arm | r_min | r_median | alias max | alias mean | decay50 |
+|---|---|---|---|---|---|
+| `unif0.1` | 6 | 13 | 0.936 | **0.798** | 23 |
+| `none` (binary baseline) | 6, 3 | 9, 5.5 | 0.946, 0.982 | 0.880, 0.939 | 21 |
+| `rate0.3` | 7, 9 | 12 | 0.907–0.919 | 0.756–0.807 | 22.75 |
+
+It lowers the ceiling with the decay untouched — the same behaviour as the
+coding-rate term and nearly as strong.
+
+**What changed is the batching, not the term.** §3 ran its uniformity sweep
+under `single_env_batch=True`, where a batch holds a single patch. Uniformity
+then has *no cross-patch pairs in the batch to push apart*: it can only act on
+within-patch pairs, which the far term already covers, so its `logsumexp`
+concentrates on the near pairs and fights `attract` — which is exactly the
+collapse §3 recorded. Under `exclude_cross_env_pairs=True` the batches stay
+mixed, only the *pairs* are withheld from the repel term, and the same term
+finally has the collapsed cross-patch pairs available.
+
+So §3's "uniformity is an indiscriminate repulsion and it fights hardest
+precisely where local structure is needed" describes a confounded setup rather
+than the term. The confound is the same one §3 itself identified in `ur_seb_C` —
+`single_env_batch` changes both the loss composition and what a batch contains
+— applied to the rescue attempt instead of to the baseline.
+
 #### The ceiling half of §3's deficit is solved
 
 Medians over both seeds, with the unconstrained regime for scale:
