@@ -251,6 +251,52 @@ export VAL_DISTRACTORS="0 10"
 export EPSILON_EXPLORE=0
 EOF
         ;;
+    # === wave 2: long explore =============================================
+    # The finding that redirects this half: the only policy in the lineage that
+    # beats a matched random walk (e4L, excess +0.20, coverage 0.616) got there
+    # at ~u1800 with the SAME shaping as everything else. The structured,
+    # wall-avoiding sweep is a late behaviour, and every run that stopped near
+    # u1000 stopped before it.
+    #
+    # So the shape to run is the cheap one, for a long time. e4L's own shape --
+    # a handful of envs at batch 16 -- costs `envs x steps` serial calls per
+    # update, which at 8 envs is 1,600 against X1's 16,000. That is what buys
+    # 3000 updates inside a 6 h wall.
+    L1) cat <<'EOF'
+export ENVS_PER_WORLD=8
+export BATCH_ENVS=16
+export STEPS_PER_ROLLOUT=200
+export SCHEDULE="explore:3000"
+export EVAL_EVERY=100
+export VAL_DISTRACTORS="0 10"
+EOF
+        ;;
+    # L2 matches e4L exactly on env count, to check that its result reproduces
+    # on the new encoder and sensory resolution before anything is built on it.
+    L2) cat <<'EOF'
+export ENVS_PER_WORLD=4
+export BATCH_ENVS=16
+export STEPS_PER_ROLLOUT=200
+export SCHEDULE="explore:3000"
+export EVAL_EVERY=100
+export VAL_DISTRACTORS="0 10"
+EOF
+        ;;
+    # L3 is L1 with the learning rate dropped for the second half. e4L reached
+    # 0.616 at u1800 and 0.027 by u2025 -- value_loss climbing 0.66 -> 4.6, then
+    # reward collapsing to the value of an agent pinned against a wall, with
+    # move_loss at zero and no gradient out. A late LR cut is the cheapest guard
+    # the schedule grammar already expresses, and it costs nothing if the
+    # collapse was going to be avoided anyway.
+    L3) cat <<'EOF'
+export ENVS_PER_WORLD=8
+export BATCH_ENVS=16
+export STEPS_PER_ROLLOUT=200
+export SCHEDULE="explore:1500 ; explore:1500,lr=1e-4"
+export EVAL_EVERY=100
+export VAL_DISTRACTORS="0 10"
+EOF
+        ;;
     *)  echo "ee_env: unknown variant '$1'" >&2; return 1 ;;
     esac
 }
