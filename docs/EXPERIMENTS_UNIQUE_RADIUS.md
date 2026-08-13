@@ -360,7 +360,14 @@ maximum barely at all, which is exactly the shape of `r_median` rising 3 → 7
 while `r_min` stays at 3. `r_min` is a worst case over 20 references, so one bad
 reference holds it down however much the typical one improves.
 
-### 4.1b What the cross-environment pairs were actually buying: rank
+### 4.1b Rank tracks the radius — but does not cause it
+
+> **Read with §4.4.** The ordering below is real and reproduces across every
+> encoder measured, and it is what motivated the rank terms. It is also
+> *observational*: §4.4 forces rank up by two different routes and the radius
+> does not follow. Kept as written because the terms it motivated turned out to
+> matter for a different reason — they are the only thing that moves the alias
+> ceiling, which is the other factor in §4.4b's law.
 
 The same tool reports the code's effective dimensionality — the participation
 ratio `(tr C)² / ‖C‖_F²` of its covariance over 20,000 random arena positions.
@@ -391,6 +398,9 @@ This restates §3's conclusion in a way that suggests what to do. §3 said
 cross-environment repulsion is the only *selective* repulsion available. The
 measurement says what selectivity was worth: rank. And rank can be asked for
 directly, by a term that never mentions an environment.
+
+That reasoning is what produced `coding_rate_loss`, and the term earned its
+place — but not for the reason given here. See §4.4.
 
 ### 4.2 The two levers, restated
 
