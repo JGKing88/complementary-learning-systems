@@ -288,6 +288,12 @@ in the mixed-batch regime.
 
 # 4. How good can `exclude_cross_env_pairs=True` get?
 
+**Best so far: `r_min` 14** (`w2_spread/006_graded50_seed=42`), against 2–3 for
+the same setup with the loss unchanged, 9 for the best §3 rescue attempt (which
+used 400-cell patches, outside this brief) and 21 unconstrained. The lever is
+the distance-graded pair target, §4.4 — *not* the rank terms, and not any of
+the substitutes §3 tried.
+
 §3 asked whether the True regime could be *rescued* and answered no. This asks
 the different question of how far it can be *pushed*, under a fixed brief:
 
@@ -413,9 +419,12 @@ ways to move it and the True regime has only ever tried one.
 
 | wave | grid | runs | result |
 |---|---|---|---|
-| `w1_geometry` | 5 size mixes × near-radius {fixed 10, 0.1·side} × 2 seeds | 20 | *running* |
-| `w2_spread` | none, graded σ {10,25,50}, uniformity {0.1,1}, VICReg, rate {0.3,3} × 2 seeds | 18 | *running* |
-| `w3_radius` | near radius {2,3,5,10,20,40} at `mix2` × 2 seeds | 12 | *running* |
+| `w1_geometry` | 5 size mixes × near-radius {fixed 10, 0.1·side} × 2 seeds | 20 | partial — §4.5; mix beats uniform, radius acts on the decay |
+| `w2_spread` | none, graded σ {10,25,50}, uniformity {0.1,1}, VICReg, rate {0.3,3} × 2 seeds | 18 | partial — §4.4; **graded σ=50 → r_min 14** |
+| `w3_radius` | near radius {2,3,5,10,20,40} at `mix2` × 2 seeds | 10 | *running* (radius=10 dropped: identical to a `w1` cell) |
+| `w4_coverage` | 9.5% … 52.6% coverage × 3 seeds | 15 | queued — justified by §4.6 |
+| `w5_input_rank` | fwhm {0.1,0.25,0.5} × hidden_dim {512,1024} × 2 seeds | 12 | queued |
+| `w6_graded_wide` | σ {50,75,100,150}, plus σ {75,150} at 52.6% coverage × 2 seeds | 12 | *running* |
 
 `w3_radius` tests a prediction that falls straight out of §4.1b. Effective
 dimensionality tracks how many distinguishable places a patch holds,
@@ -448,7 +457,82 @@ the within-patch repulsion reaches. At a **fraction of the side** the patches
 is pushed toward depending on absolute position. That is the missing ingredient,
 if it works; it is also a way to make the task incoherent, if it does not.
 
-### 4.4 Infrastructure notes
+### 4.4 The decay is the lever, and rank is not (`w2_spread`)
+
+A distance-graded target at σ=50 reaches **`r_min` 14** where the identical
+config with binary targets reaches 5 — one flag, same geometry, same seed.
+
+| arm | r_min | r_median | alias ceiling | eff. dims |
+|---|---|---|---|---|
+| `none` (binary near=1/far=0) | 5 | 8 | 0.954 | 104 |
+| `graded10` | 3 | 4 | 0.949 | **272** |
+| `graded25` | 3 | 8 | 0.990 | 56 |
+| **`graded50`** | **14** | **21** | 0.955 | **26** |
+
+The alias ceiling does not move (0.955 against 0.954). What moves is where the
+decay crosses it: at σ=50 the target similarity at r=14 is 0.96, just clear of
+the 0.955 ceiling, so the radius lands there almost by construction. This is
+§4.2's second lever, and it is much the larger of the two.
+
+**This falsifies rank as the cause of the radius.** §4.1b's ordering was
+observational, and forcing rank up does not bring the radius with it:
+`graded10` reached 272 effective dimensions — *above* the unconstrained
+regime's 202 — and still scored `r_min` 3, while `graded50` scored 14 at 26
+dimensions, below the baseline. Rank continues to predict the *mean* alias
+ceiling well; it is simply not what gates the headline. The three rank terms
+(uniformity, VICReg, coding rate) are still in the wave and are now a test of a
+weaker claim: whether lowering the mean ceiling helps once the decay is right.
+
+**The win is partly the metric, and should be reported as such.** A wide decay
+trades near-field resolution for range: `r_at_cos0.9` is ~23 cells at σ=50
+against ~7 at the baseline, so everything within 23 cells is at cosine 0.9 or
+better and is correspondingly hard to tell apart. This is legitimate on the
+metric's own terms — "a similarity of at least `inner_min` means you are within
+r cells" is exactly what a broad monotone decay certifies — and the
+unconstrained best is also broad (decay50 37.5). But σ buys some of the number
+rather than a strictly better code, so `r_at_cos0.9` belongs in every table.
+
+### 4.5 Geometry (`w1_geometry`, partial)
+
+Provisional, read from `encoder_best` while later cells still run:
+
+| geometry | near radius | r_min | r_median | decay50 | alias mean |
+|---|---|---|---|---|---|
+| `u100` (60×100) | 10 | 3, 2 | 3, 2 | 17–18 | 0.974, 0.988 |
+| `u200` (15×200) | 10 | 4, 5 | 8.5, 7.5 | 22 | 0.888, 0.912 |
+| `u200` (15×200) | 20 (0.1·side) | 6, 7 | 14.5, 11.5 | 35 | 0.876, 0.923 |
+| `mix2` (9×200 + 24×100) | 10 | 6 | 8 | 21 | 0.895 |
+
+Two things. The mix beats uniform 200 at the same coverage and radius (6 against
+4–5), so mixing sizes is not merely a constraint to satisfy. And the near radius
+is behaving as a *decay* knob, not the rank knob §4.1b suggested — 20 beats 10
+at 200-cell patches by widening decay50 from 22 to 35 while leaving the alias
+ceiling alone, the same mechanism as `graded_sigma`. `w3_radius` brackets it
+from 2 to 40.
+
+At `u100`, `per_env_radius_frac=0.1` *is* a 10-cell radius, so those two cells
+duplicate the fixed-radius ones — and reproduce them to six decimals, which
+doubles as the determinism check on the `--lazy_codes` path against the §3 runs.
+
+### 4.6 Which references hold `r_min` down
+
+`r_min` is the worst of 20 references, and §4.1b showed the mean alias ceiling
+falling steadily with rank (0.988 → 0.65) while the max barely moved
+(0.989 → 0.86). So the question is *which* reference is bad.
+`alias_structure --ref_vs_patch` scores each reference against its distance to
+the nearest training patch. On the 15×200 encoder:
+
+    corr(patch_dist, r_monotone) = -0.471
+    corr(patch_dist, alias_ceiling) = +0.410
+
+References inside a patch score 6–9; those 100–380 cells from any patch score
+3–4. The references holding the headline down are the ones training never
+reached — which is the one thing coverage fixes, and is why `w4_coverage` is
+worth running. On the 60×100 encoder the correlation is a weaker −0.24, but
+every reference there sits at `r_monotone` 3, so the metric has no room to show
+a difference.
+
+### 4.7 Infrastructure notes
 
 * `data.build_patch_codes` builds each patch's codes directly instead of slicing
   the 10.2 GB full codebook, dropping a run's host memory from ~20 GB to ~1 GB
