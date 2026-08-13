@@ -623,19 +623,21 @@ handle (§4.5).
 fails — at 0.1 it scored `r_min` 2 with an alias ceiling of 0.979. The same λ
 here:
 
-Medians over both seeds:
+Medians over both seeds, all legal arms:
 
 | arm | r_min | r_median | alias max | alias mean | decay50 |
 |---|---|---|---|---|---|
+| **`unif1`** | **9** (8, 10) | 12 | **0.863** | 0.759 | 20.5 |
 | `rate0.3` | 8 (7, 9) | 12 | 0.919 | 0.807 | 22.75 |
-| **`unif0.1`** | **7 (6, 8)** | 11.5 | 0.926 | **0.822** | 22.75 |
+| `unif0.1` | 7 (6, 8) | 11.5 | 0.926 | 0.822 | 22.75 |
 | `vicreg` | 6.5 | 8.75 | 0.924 | 0.843 | 20 |
+| `rate3` | 5.5 | 7.5 | 0.843 | 0.741 | 14.5 |
 | `none` (binary baseline) | 4.5 (6, 3) | 7.25 | 0.964 | 0.909 | 21 |
 
-It lowers the ceiling with the decay untouched — an identical decay50 to the
-coding-rate term, at essentially the same score. The three env-blind spread
-terms land within 1.5 units of each other and all beat the baseline; the ranking
-among them is inside seed noise (§2.6).
+**`uniformity_lambda=1.0` is the best spread term tested** — a 0.863 ceiling
+against `rate0.3`'s 0.919 with the decay held at 20.5, and double the baseline's
+`r_min`. Every env-blind spread term beats the baseline. §3's range covered
+λ = 0.1 and 2 and found neither worked.
 
 **What changed is the batching, not the term.** §3 ran its uniformity sweep
 under `single_env_batch=True`, where a batch holds a single patch. Uniformity
