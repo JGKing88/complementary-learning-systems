@@ -64,8 +64,12 @@ SIZE_MIXES: dict[str, str] = {
     "mixwide": _mix((200, 6), (150, 7), (100, 11),
                     (60, 18), (30, 36)),        # 605k, 20.5%,  78 envs
     # --- coverage variants of the best mix (used in later waves) ----------
-    "mix2_hi": _mix((200, 15), (100, 40)),      # 1.00M, 34.0%, 55 envs
+    # Rejection sampling was measured to place these at seeds 42/43; it starts
+    # failing around 65%, so ~53% is the usable ceiling for sizes <= 200.
     "mix2_lo": _mix((200, 4), (100, 12)),       # 280k,  9.5%,  16 envs
+    "mix2_hi": _mix((200, 15), (100, 40)),      # 1.00M, 34.0%, 55 envs
+    "mix3_45": _mix((200, 20), (150, 20), (100, 30)),   # 1.55M, 52.6%, 70 envs
+    "mixsmall": _mix((200, 12), (100, 40), (50, 200)),  # 1.38M, 46.9%, 252 envs
 }
 
 
@@ -193,6 +197,36 @@ WAVES: dict[str, dict] = {
     # ways and the bracket is wide enough to find the turn.
     "w3_radius": {
         "radius": [2.0, 3.0, 5.0, 10.0, 20.0, 40.0],
+        "seed": [42, 43],
+    },
+    # W4 -- coverage, the one geometry axis the audit liked (+0.445 with r_min)
+    # that no wave here has moved. Two mechanisms point the same way: more of
+    # the arena seen is less of it extrapolated to, and more places is more
+    # rank. Step-matched, so the extra points buy epochs' worth of gradient
+    # rather than more of them.
+    "w4_coverage": {
+        "npos_list": {k: SIZE_MIXES[k] for k in
+                      ("mix2_lo", "mix2", "mix2_hi", "mix3_45", "mixsmall")},
+        "seed": [42, 43, 44],
+    },
+    # W5 -- rank from the input side and from capacity.
+    #
+    # The raw smoothed code has a participation ratio of 42.7 out of its 434
+    # dimensions, so the *input* is itself low-rank and no linear map can beat
+    # that. Every dimension past the 43rd in a trained code is a nonlinear
+    # conjunction of module phases that the network had to build -- which is
+    # why reaching 202 is hard, and why two knobs that have never been moved
+    # here are worth a wave:
+    #
+    #   fwhm_ratio  smoothing is what correlates neighbouring phases, so a
+    #               sharper bump raises the input's own rank. It also narrows
+    #               the near-field, which is the opposing effect.
+    #   hidden_dim  the conjunctions have to fit somewhere; 512 has never been
+    #               raised in any wave, and out_dim is not the binding limit
+    #               (the collapsed codes use 24-59 of 1024).
+    "w5_input_rank": {
+        "fwhm_ratio": [0.1, 0.25, 0.5],
+        "hidden_dim": [512, 1024],
         "seed": [42, 43],
     },
 }
