@@ -211,6 +211,93 @@ def spiral_walk(B: int, size: int, steps: int, stride: float,
     return simulate_coverage(pos, size, steps, fn, rng)
 
 
+def family_positions(name: str, B: int, size: int, steps: int, stride: float,
+                     turn_sigma: float, rng: np.random.RandomState,
+                     exec_sigma: float = 0.2) -> np.ndarray:
+    """`(B, steps+1, 2)` trajectories from a named reference family.
+
+    The point of running the references through the *same* simulator as the
+    policy is that a trajectory statistic then means the same thing on both
+    sides. Comparing a policy's turn distribution against an analytic
+    expectation instead would fold the arena's clipping walls into the
+    difference, and clipping is most of what makes these numbers unusual.
+    """
+    pos = random_starts(B, size, rng)
+    if name == "diffusive":
+        def fn(_t, _b, _p):
+            return unit_vectors(rng.uniform(0, 2 * np.pi, B)) * stride
+    elif name in ("correlated", "wall_aware"):
+        theta = rng.uniform(0, 2 * np.pi, B)
+        lo, hi = 1.5, size - 1 - 1.5
+        aware = name == "wall_aware"
+
+        def fn(_t, blocked, p):
+            nonlocal theta
+            if aware:
+                nxt = p + unit_vectors(theta) * stride
+                bad = ((nxt[:, 0] < lo) | (nxt[:, 0] > hi)
+                       | (nxt[:, 1] < lo) | (nxt[:, 1] > hi) | blocked)
+                if bad.any():
+                    to_mid = (size - 1) / 2.0 - p[bad]
+                    theta[bad] = (np.arctan2(to_mid[:, 1], to_mid[:, 0])
+                                  + rng.normal(0.0, 0.8, int(bad.sum())))
+            elif blocked.any():
+                theta[blocked] = rng.uniform(0, 2 * np.pi, int(blocked.sum()))
+            theta = theta + rng.normal(0.0, turn_sigma, B)
+            return unit_vectors(theta) * stride
+    elif name == "spiral":
+        path = ring_path(size)
+        n = len(path)
+        cursor = rng.randint(0, n, size=B)
+        pos = path[cursor].copy()
+
+        def fn(_t, _b, p):
+            nonlocal cursor
+            cursor = (cursor + 1) % n
+            want = path[cursor] - p
+            nrm = np.linalg.norm(want, axis=1, keepdims=True).clip(1e-9)
+            return want / nrm * stride + rng.normal(0.0, exec_sigma, (B, 2))
+    elif name == "lawnmower":
+        # Column-major serpentine at one cell per step: the "zipper".
+        order = []
+        for x in range(size):
+            ys = range(size) if x % 2 == 0 else range(size - 1, -1, -1)
+            order.extend((x, y) for y in ys)
+        path = np.array(order, dtype=np.float64)
+        n = len(path)
+        cursor = rng.randint(0, n, size=B)
+        pos = path[cursor].copy()
+
+        def fn(_t, _b, p):
+            nonlocal cursor
+            cursor = (cursor + 1) % n
+            want = path[cursor] - p
+            nrm = np.linalg.norm(want, axis=1, keepdims=True).clip(1e-9)
+            return want / nrm * stride + rng.normal(0.0, exec_sigma, (B, 2))
+    elif name == "perimeter":
+        # Ride the boundary: the failure mode wall_penalty was added to break.
+        def fn(_t, _b, p):
+            c = (size - 1) / 2.0
+            radial = p - c
+            tang = np.stack([-radial[:, 1], radial[:, 0]], axis=1)
+            nrm = np.linalg.norm(tang, axis=1, keepdims=True).clip(1e-9)
+            out = tang / nrm
+            # Push outward until near the wall, then just circulate.
+            r = np.linalg.norm(radial, axis=1, keepdims=True).clip(1e-9)
+            out = out + 0.4 * (radial / r) * (r < (size / 2 - 1.5))
+            return out / np.linalg.norm(out, axis=1, keepdims=True) * stride
+    elif name == "stuck":
+        def fn(_t, _b, _p):
+            return rng.normal(0.0, 0.05, (B, 2))
+    else:
+        raise ValueError(f"unknown family {name!r}")
+    return simulate(pos, size, steps, fn, rng)[1]
+
+
+REFERENCE_FAMILIES = ("stuck", "diffusive", "correlated", "wall_aware",
+                      "perimeter", "spiral", "lawnmower")
+
+
 def lawnmower_coverage(size: int, steps: int) -> float:
     """The ideal boustrophedon sweep: one fresh cell per step.
 
@@ -221,7 +308,8 @@ def lawnmower_coverage(size: int, steps: int) -> float:
 
 
 __all__ = [
-    "bounce_walk", "correlated_walk", "diffusive_walk", "lawnmower_coverage",
-    "random_starts", "ring_path", "simulate_coverage", "spiral_walk",
-    "unit_vectors", "wall_aware_walk",
+    "REFERENCE_FAMILIES", "bounce_walk", "correlated_walk", "diffusive_walk",
+    "family_positions", "lawnmower_coverage", "random_starts", "ring_path",
+    "simulate", "simulate_coverage", "spiral_walk", "unit_vectors",
+    "wall_aware_walk",
 ]

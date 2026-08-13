@@ -83,6 +83,27 @@ def test_reacting_to_the_wall_is_worth_a_lot_and_needs_no_memory():
         assert aware < 0.60, (stride, turn, aware)
 
 
+def test_the_pattern_classifier_recognizes_every_family():
+    """Self-recognition, from a different seed than the references were built
+    on. A classifier that cannot identify a trajectory it generated itself
+    cannot be trusted to identify a policy's, and "the policy looks like a
+    random walk" is a conclusion worth being sure of.
+    """
+    from hopfield_nav.probes.motion_pattern import classify, features
+    from hopfield_nav.world.walks import REFERENCE_FAMILIES, family_positions
+
+    stride, turn = 1.15, 0.40
+    refs = {
+        n: features(family_positions(n, 128, SIZE, STEPS, stride, turn,
+                                     np.random.RandomState(0)), SIZE)
+        for n in REFERENCE_FAMILIES
+    }
+    for n in REFERENCE_FAMILIES:
+        q = features(family_positions(n, 128, SIZE, STEPS, stride, turn,
+                                      np.random.RandomState(7)), SIZE)
+        assert classify(q, refs)[0][0] == n, (n, classify(q, refs)[:3])
+
+
 def test_a_blocked_step_is_lost():
     """The env clips rather than reflecting, which is why straight-line motion
     scores badly here and why a collapsed policy can sit against a wall
