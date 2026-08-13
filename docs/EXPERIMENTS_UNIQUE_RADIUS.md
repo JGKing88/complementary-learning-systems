@@ -514,17 +514,38 @@ seed is still running:
 | *`graded10` (out of scope)* | *3, 2* | *3.5, 2.9* | *0.949, 0.965* | *0.870, 0.919* | *12* | *5* |
 
 **Every legal spread term moves the ceiling and only the ceiling.** `rate0.3`,
-`vicreg` and the baseline all sit at decay50 20–22.5; what separates them is the
-alias ceiling, 0.907 / 0.914–0.934 / 0.946–0.982, and `r_min` follows it in
-order. The excluded `graded*` rows are the mirror image — ceiling pinned near
-0.956, decay50 taken to 60. Two clean, separable factors, one of which now has
-only the near radius as a legal handle (§4.5).
+`vicreg` and the baseline all sit at decay50 20–22.75; what separates them is
+the alias ceiling, and `r_min` follows it in order. The excluded `graded*` rows
+are the mirror image — ceiling pinned near 0.956, decay50 taken to 60. Two
+clean, separable factors, one of which now has only the near radius as a legal
+handle (§4.5).
 
 `r_pred` is §4.4b's law and is within one cell on all eleven rows.
 
-For scale on the ceiling column: the unconstrained regime reaches 0.84–0.86, so
-`rate0.3`'s 0.907 closes roughly half the gap between the untreated True regime
-(0.95–0.98) and the encoders that keep their cross-environment pairs.
+#### The ceiling half of §3's deficit is solved
+
+Medians over both seeds, with the unconstrained regime for scale:
+
+| arm | r_min | alias max | alias mean | decay50 | res90 |
+|---|---|---|---|---|---|
+| `rate0.3` | **8** | 0.919 | 0.807 | 22.75 | 9 |
+| `vicreg` | 6.5 | 0.924 | 0.843 | 20 | 8 |
+| `rate3` | 5.5 | **0.843** | **0.741** | **14.5** | 5 |
+| `none` (binary baseline) | 4.5 | 0.964 | 0.909 | 21 | 8.75 |
+| *unconstrained (§2.1)* | *18–21* | *0.844–0.864* | *0.63–0.66* | *38–40* | *15* |
+
+`rate_lambda=3` reaches an alias ceiling of **0.843** — what encoders reach when
+they *keep* their cross-environment pairs. So a term that never asks which
+environment a pair came from closes that half of the gap completely, which is a
+direct answer to §3's "cross-environment repulsion is the only selective
+repulsion available": it is not, for the ceiling.
+
+What `rate3` cannot do is hold the decay — 14.5 against 38–40 — and that is now
+the entire remaining deficit. The arithmetic is closable on paper: at a 0.843
+ceiling, `r_min` 20 needs decay50 ≈ 40, and `u200` at a 0.1·side radius already
+produces 35 (§4.5). Both ingredients exist separately. Whether they compose is
+what `w9` and `w10` ask, and the risk is visible in the table — `rate0.3` left
+the decay alone (22.75 against a baseline 21) while `rate3` halved it.
 
 **This falsifies rank as the cause of the radius.** §4.1b's ordering was
 observational, and forcing rank up does not bring the radius with it. Three

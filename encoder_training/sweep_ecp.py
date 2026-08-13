@@ -378,6 +378,31 @@ WAVES: dict[str, dict] = {
         },
         "seed": [42, 43],
     },
+    # W10 -- how much rate can the decay carry?
+    #
+    # w2 finished with the ceiling half of the problem SOLVED and the decay half
+    # untouched. rate_lambda=3 reaches an alias ceiling of 0.843, which is what
+    # encoders that keep their cross-environment pairs reach (0.844-0.864) -- so
+    # a term that never asks about environments can close that gap completely.
+    # What it cannot do is hold the decay: decay50 14.5 against 38-40, and that
+    # is the whole remaining deficit.
+    #
+    # The two ingredients exist separately. At the ceiling rate3 reaches, r_min
+    # ~20 needs res90 ~16; rate3 has 5, but u200 at 0.1 of the side has 14. So
+    # the question is where along rate_lambda the decay starts being spent, and
+    # whether a larger radius pays for it. 0.3 left the decay alone (22.75
+    # against a baseline 21) and 3 halved it; this brackets between.
+    "w10_rate_strength": {
+        "arm": {
+            "top_f0.10_rate1": dict(npos_list=SIZE_MIXES["mixtop"],
+                                    per_env_radius_frac=0.10, rate_lambda=1.0),
+            "top_f0.15_rate1": dict(npos_list=SIZE_MIXES["mixtop"],
+                                    per_env_radius_frac=0.15, rate_lambda=1.0),
+            "top_f0.15_rate3": dict(npos_list=SIZE_MIXES["mixtop"],
+                                    per_env_radius_frac=0.15, rate_lambda=3.0),
+        },
+        "seed": [42, 43],
+    },
 }
 
 
