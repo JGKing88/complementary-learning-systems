@@ -162,6 +162,53 @@ def lattice_score(peaks: list[dict], periods=(11, 12, 13, 132, 143, 156)) -> dic
     return out
 
 
+def ref_vs_patch(encoder, ckpt, lambdas, gain, *, n_refs: int, seed: int,
+                 device: str, fwhm_ratio: float) -> None:
+    """Is the reference that sets ``r_min`` the one farthest from a training patch?
+
+    ``r_min`` is the worst of 20 references, so it moves only when the *worst*
+    one improves — and across the encoders measured so far the mean alias
+    ceiling falls steadily with rank while the max barely does. That makes the
+    identity of the bad reference the thing to know. If bad references are the
+    ones the training patches never got near, coverage is the lever; if they are
+    scattered, it is not, and the coverage wave is not worth its GPU hours.
+    """
+    from encoder_training.eval_unique_radius import evaluate_unique_radius
+
+    y0s, x0s, sizes = ckpt.get("y0s"), ckpt.get("x0s"), ckpt.get("sizes")
+    if not y0s:
+        print("\n[no patch layout stored in checkpoint; skipping ref-vs-patch]")
+        return
+    records, _ = evaluate_unique_radius(
+        encoder, lambdas=lambdas, gain=gain, n_refs=n_refs, border=100,
+        seed=seed, device=device, fwhm_ratio=fwhm_ratio)
+
+    rows = []
+    for rec in records:
+        rx, ry = rec["ref_x"], rec["ref_y"]
+        # 0 inside a patch, else the L-infinity gap to the nearest one; the
+        # patches are axis-aligned squares, so that is the natural distance.
+        best = min(max(y0 - rx, 0, rx - (y0 + s - 1)) +
+                   max(x0 - ry, 0, ry - (x0 + s - 1))
+                   for y0, x0, s in zip(y0s, x0s, sizes))
+        rows.append((rec["r_monotone_min"], rec["alias_ceiling"], best))
+
+    rows.sort()
+    print("\nper-reference radius vs distance to the nearest training patch:")
+    print("   r_mono  alias   patch_dist")
+    for r, a, d in rows:
+        print(f"   {r:6.1f}  {a:.3f}  {d:>6}")
+    r_arr = np.array([r for r, _, _ in rows], dtype=float)
+    d_arr = np.array([d for _, _, d in rows], dtype=float)
+    a_arr = np.array([a for _, a, _ in rows], dtype=float)
+    if d_arr.std() > 0:
+        print(f"   corr(patch_dist, r_mono) = "
+              f"{np.corrcoef(d_arr, r_arr)[0, 1]:+.3f}   "
+              f"corr(patch_dist, alias) = {np.corrcoef(d_arr, a_arr)[0, 1]:+.3f}")
+    else:
+        print("   every reference is inside a patch; distance says nothing here")
+
+
 def report(name: str, encoder, lambdas, gain, *, n_refs: int, seed: int,
            device: str, fwhm_ratio: float, batch_size: int,
            n_code: int = 20000) -> None:
@@ -227,6 +274,12 @@ def main() -> None:
     p.add_argument("--gain", type=float, default=5.0)
     p.add_argument("--fwhm_ratio", type=float, default=0.25)
     p.add_argument("--n_refs", type=int, default=5)
+    p.add_argument("--ref_vs_patch", action="store_true",
+                   help="per-reference radius against distance to the nearest "
+                        "training patch -- says whether coverage is the lever "
+                        "for the worst reference, which is what r_min reports")
+    p.add_argument("--ur_refs", type=int, default=20,
+                   help="references for --ref_vs_patch; 20 matches the metric")
     p.add_argument("--seed", type=int, default=0)
     p.add_argument("--init_seed", type=int, default=42)
     p.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")
@@ -261,6 +314,10 @@ def main() -> None:
         report(str(path), encoder, lam, float(ckpt["gain"]),
                n_refs=args.n_refs, seed=args.seed, device=args.device,
                fwhm_ratio=fwhm, batch_size=args.batch_size)
+        if args.ref_vs_patch:
+            ref_vs_patch(encoder, ckpt, lam, float(ckpt["gain"]),
+                         n_refs=args.ur_refs, seed=args.seed,
+                         device=args.device, fwhm_ratio=fwhm)
 
 
 if __name__ == "__main__":
