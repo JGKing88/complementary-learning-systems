@@ -601,23 +601,36 @@ holds is the real question, since a σ that large leaves almost no within-patch
 pair asking for separation. The rank terms matter again here, not for `r_min`
 directly but as the only way to buy the left-hand column.
 
-### 4.5 Geometry (`w1_geometry`, partial)
+### 4.5 Geometry (`w1_geometry`) — size and radius carry it, mixing does not (yet)
 
-Provisional, read from `encoder_best` while later cells still run:
+`encoder_final`, both seeds where the cell is complete:
 
-| geometry | near radius | r_min | r_median | decay50 | alias mean |
-|---|---|---|---|---|---|
-| `u100` (60×100) | 10 | 3, 2 | 3, 2 | 17–18 | 0.974, 0.988 |
-| `u200` (15×200) | 10 | 4, 5 | 8.5, 7.5 | 22 | 0.888, 0.912 |
-| `u200` (15×200) | 20 (0.1·side) | 6, 7 | 14.5, 11.5 | 35 | 0.876, 0.923 |
-| `mix2` (9×200 + 24×100) | 10 | 6 | 8 | 21 | 0.895 |
+| geometry | near radius | r_min | median | spread | decay50 | alias max |
+|---|---|---|---|---|---|---|
+| `u200` (15×200) | 0.1·side = 20 | 6, 7 | **6.5** | 1 | 35 | 0.973 |
+| `mix2` (9×200+24×100) | 0.1·side | 5, — | 5.0 | — | 31 | 0.984 |
+| `mix2` | fixed 10 | 6, **3** | 4.5 | **3** | 21 | 0.964 |
+| `u200` | fixed 10 | 4, 5 | 4.5 | 1 | 22 | 0.964 |
+| `u100` (60×100) | either | 3, 2 | 2.5 | 1 | 17.5 | 0.984 |
+| `mix5` (93 patches, 200→50) | fixed 10 | *2 at ep 568* | — | — | — | 0.989 |
 
-Two things. The mix beats uniform 200 at the same coverage and radius (6 against
-4–5), so mixing sizes is not merely a constraint to satisfy. And the near radius
-is behaving as a *decay* knob, not the rank knob §4.1b suggested — 20 beats 10
-at 200-cell patches by widening decay50 from 22 to 35 while leaving the alias
-ceiling alone, the same mechanism as `graded_sigma`. `w3_radius` brackets it
-from 2 to 40.
+**The near radius is a decay knob, and it is the axis that pays.** At 15×200,
+going from 10 cells to 20 takes decay50 from 22 to 35 and `r_min` from 4.5 to
+6.5, with the alias ceiling essentially unmoved (0.964 → 0.973). That is the
+same mechanism `graded_sigma` used, through a knob the brief allows, and it is
+the reverse of what §4.1b predicted — the radius is not acting on rank here.
+`w3_radius` brackets it 2 → 40 and `w8` crosses it with the ceiling term.
+
+**Patch size pays too**: 200-cell patches beat 100-cell ones, 4.5 against 2.5,
+consistent with within-patch repulsion reaching further.
+
+**Mixing sizes has not yet shown a gain over uniform 200.** At a fixed radius
+the two tie at 4.5, and `mix2`'s seed spread is 3 against `u200`'s 1; at the
+larger radius `u200` is ahead so far. And *many* sizes is actively bad — `mix5`,
+93 patches with a tail down to 50 cells, sits at `r_min` 2 with a 0.989 ceiling,
+which is the `u100` failure: a 50-cell patch's repulsion reaches 70 cells and
+the far field never hears about it. If mixing helps at all it will be
+big-heavy, which is what `mixbig` tests.
 
 At `u100`, `per_env_radius_frac=0.1` *is* a 10-cell radius, so those two cells
 duplicate the fixed-radius ones — and reproduce them to six decimals, which
