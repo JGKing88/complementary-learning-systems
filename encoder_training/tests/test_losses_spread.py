@@ -34,6 +34,35 @@ def test_uniformity_mask_changes_the_value():
     assert masked < full - 1e-6
 
 
+def test_uniformity_masked_fill_matches_the_gather():
+    """The fast path must equal the gather it replaced, masked and unmasked.
+
+    ``uniformity_loss`` fills the excluded pairs with -inf instead of compacting
+    the kept ones, because the gather copied the whole 8192x8192 matrix to drop
+    a diagonal and cost 2.7x the step time. Same value, so the arms stay
+    comparable to anything scored before the change.
+    """
+    def gather_version(z, t, pair_mask=None):
+        z = torch.nn.functional.normalize(z, dim=-1)
+        B = z.size(0)
+        dist2 = (2.0 - 2.0 * (z @ z.t())).clamp_min(0.0)
+        mask = ~torch.eye(B, dtype=torch.bool)
+        if pair_mask is not None:
+            mask = mask & pair_mask
+        d = dist2[mask]
+        return torch.logsumexp(-t * d, dim=0) - torch.log(
+            torch.tensor(float(d.numel())))
+
+    z = _unit(96, 24, seed=3)
+    for t in (0.25, 2.0):
+        assert torch.allclose(uniformity_loss(z, t=t), gather_version(z, t),
+                              atol=1e-6)
+    m = torch.rand(96, 96) > 0.5
+    m = m & m.t()
+    assert torch.allclose(uniformity_loss(z, t=2.0, pair_mask=m),
+                          gather_version(z, 2.0, m), atol=1e-6)
+
+
 def test_uniformity_rewards_spread():
     """Spread-out codes must score lower than collapsed ones."""
     d = 32

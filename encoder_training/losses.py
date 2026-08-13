@@ -56,11 +56,16 @@ def uniformity_loss(z: torch.Tensor, t: float = 2.0,
     mask = ~torch.eye(B, dtype=torch.bool, device=z.device)
     if pair_mask is not None:
         mask = mask & pair_mask
-    if not mask.any():
+    n = mask.sum()
+    if n == 0:
         return z.new_zeros(())
-    d = dist2[mask]
-    return torch.logsumexp(-t * d, dim=0) - torch.log(
-        torch.tensor(d.numel(), device=z.device, dtype=z.dtype))
+    # Masked-fill rather than `dist2[mask]`. The gather compacts ~67M elements
+    # at B=8192 and, with the default mask being just "not the diagonal", it
+    # copies essentially the whole matrix to drop 8192 entries -- which cost
+    # 2.7x the step time and would have truncated every uniformity run at the
+    # wall clock. Filling with -inf contributes exp(-inf)=0 to the sum instead.
+    neg = (-t * dist2).masked_fill(~mask, float("-inf"))
+    return torch.logsumexp(neg.reshape(-1), dim=0) - torch.log(n.to(z.dtype))
 
 
 def vicreg_terms(z: torch.Tensor, gamma: float = 1.0,

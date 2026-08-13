@@ -395,6 +395,10 @@ def main() -> None:
     p.add_argument("--runs-per-job", type=int, default=RUNS_PER_JOB,
                    help="training runs sharing one GPU (throughput lever: the "
                         "partition is GPU-limited and a run uses ~6%% of one)")
+    p.add_argument("--only", default=None,
+                   help="resubmit just the runs whose name contains this. For "
+                        "relaunching the few cells of a wave that died or were "
+                        "fixed, without disturbing the ones still running.")
     p.add_argument("--dry-run", action="store_true")
     args = p.parse_args()
 
@@ -415,6 +419,10 @@ def main() -> None:
         sys.exit(f"unknown wave {args.wave!r}; have {list(WAVES)}")
 
     runs = build_runs(WAVES[args.wave])
+    if args.only:
+        runs = [(n, c) for n, c in runs if args.only in n]
+        if not runs:
+            sys.exit(f"--only {args.only!r} matched no run in {args.wave}")
     sweep_name = args.name or args.wave
     sweep_dir = os.path.join(str(sweeps_dir()), sweep_name)
     print(f"Wave {args.wave}: {len(runs)} runs  →  {sweep_dir}")
