@@ -170,6 +170,32 @@ export LOG_STD_ANNEAL_TARGET=-1.8
 EOF
         ;;
 
+    # P6 raises the time penalty, which §3l identifies as the pressure that is
+    # missing. Navigation's 22 steps decompose into stride 0.65 and aim 0.68 --
+    # a straight path, just slow and 49 degrees off a signal accurate to 4 --
+    # and at TIME_PENALTY 0.05 against GOAL_REWARD 5.0 a 22-step approach costs
+    # 1.1 against a prize of 5.0. Arriving sooner is barely worth anything.
+    #
+    # 0.2 makes that 4.4 against 5.0, i.e. roughly half the value of the goal
+    # is at stake in how fast it is reached. Also carries P5's reset, since
+    # otherwise this run would be testing two things and the divergence would
+    # mask the result.
+    P6) cat <<'EOF'
+export ENVS_PER_WORLD=16
+export BATCH_ENVS=16
+export STEPS_PER_ROLLOUT=200
+export SCHEDULE="exploit:1200"
+export EVAL_EVERY=50
+export VAL_DISTRACTORS="0 10"
+export RESET_STATE_ON_TELEPORT=1
+export TIME_PENALTY=0.2
+export INIT_LOG_STD=-0.5
+export LOG_STD_ANNEAL_START_UPDATE=50
+export LOG_STD_ANNEAL_END_UPDATE=400
+export LOG_STD_ANNEAL_TARGET=-1.8
+EOF
+        ;;
+
     # === wave 2: composition =============================================
     # All at X2's shape. Every one logs `adv_share`, so the pooled-normalizer
     # reweighting is measured per update rather than assumed.
