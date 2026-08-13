@@ -288,11 +288,11 @@ in the mixed-batch regime.
 
 # 4. How good can `exclude_cross_env_pairs=True` get?
 
-**Best so far: `r_min` 14** (`w2_spread/006_graded50_seed=42`), against 2–3 for
-the same setup with the loss unchanged, 9 for the best §3 rescue attempt (which
-used 400-cell patches, outside this brief) and 21 unconstrained. The lever is
-the distance-graded pair target, §4.4 — *not* the rank terms, and not any of
-the substitutes §3 tried.
+**Best so far: `r_min` 13** (`w2_spread/006_graded50_seed=42`, peaking at 14 on
+the retained checkpoint), against 2–3 for the same setup with the loss
+unchanged, 9 for the best §3 rescue attempt (which used 400-cell patches,
+outside this brief) and 21 unconstrained. The lever is the distance-graded pair
+target, §4.4 — *not* the rank terms, and not any of the substitutes §3 tried.
 
 §3 asked whether the True regime could be *rescued* and answered no. This asks
 the different question of how far it can be *pushed*, under a fixed brief:
@@ -459,15 +459,18 @@ if it works; it is also a way to make the task incoherent, if it does not.
 
 ### 4.4 The decay is the lever, and rank is not (`w2_spread`)
 
-A distance-graded target at σ=50 reaches **`r_min` 14** where the identical
-config with binary targets reaches 5 — one flag, same geometry, same seed.
+A distance-graded target at σ=50 reaches **`r_min` 13** where the identical
+config with binary targets reaches 6 — one flag, same geometry, same seed.
+(Numbers below are one seed each and the second seeds are still running; the
+σ=50 arm's other seed was at `r_min` 0 as of epoch 212, so this cell's seed
+spread is not yet known and may be large.)
 
 | arm | r_min | r_median | alias ceiling | eff. dims |
 |---|---|---|---|---|
-| `none` (binary near=1/far=0) | 5 | 8 | 0.954 | 104 |
-| `graded10` | 3 | 4 | 0.949 | **272** |
-| `graded25` | 3 | 8 | 0.990 | 56 |
-| **`graded50`** | **14** | **21** | 0.955 | **26** |
+| `none` (binary near=1/far=0) | 6 | 8 | 0.947 | 105 |
+| `graded10` | 3 | 4 | 0.950 | **293** |
+| `graded25` | 3 | 10 | 0.985 | 68 |
+| **`graded50`** | **13** | **21** | 0.956 | **27** |
 
 The alias ceiling does not move (0.955 against 0.954). What moves is where the
 decay crosses it: at σ=50 the target similarity at r=14 is 0.96, just clear of
