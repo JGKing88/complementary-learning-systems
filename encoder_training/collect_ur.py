@@ -32,7 +32,9 @@ import numpy as np
 import pandas as pd
 import torch
 
-COLS = ["sweep", "run", "ckpt", "r_min", "r_median", "r_max",
+from encoder_training.radius_law import predict
+
+COLS = ["sweep", "run", "ckpt", "r_min", "r_pred", "r_median", "r_max",
         "alias_ceiling_max", "alias_ceiling_mean", "r_at_cos0.5_median",
         "r_at_cos0.9_median", "mono_med_median", "epoch"]
 
@@ -72,8 +74,16 @@ def rows_for(run_dir: Path, sweep: str) -> list[dict]:
             continue
         ur = ck.get("unique_radius") or {}
         tc = ck.get("train_config") or {}
+        # The law's decomposition, alongside the measurement. r_min is a worst
+        # case over 20 references and jumps in whole cells; r_pred moves
+        # continuously with the two factors that produce it, so it separates
+        # arms that r_min ties -- and a large gap between them is itself the
+        # signal that the profile has stopped being Gaussian.
+        r_pred = predict(ur.get("r_at_cos0.5_median") or float("nan"),
+                         ur.get("alias_ceiling_max") or float("nan"),
+                         ur.get("r_at_cos0.9_median"))
         row = {"sweep": sweep, "run": run_dir.name, "ckpt": stem,
-               "epoch": ck.get("epoch", ""),
+               "epoch": ck.get("epoch", ""), "r_pred": round(r_pred, 1),
                "sizes": ",".join(str(s) for s in sorted(set(ck.get("sizes", [])))),
                "n_env": len(ck.get("sizes", [])),
                "coverage": round(sum(s * s for s in ck.get("sizes", [])) / 1716 ** 2, 4)
@@ -141,10 +151,16 @@ def group_report(df: pd.DataFrame, by: list[str]) -> pd.DataFrame:
         r_min_med=("r_min", "median"),
         r_min_max=("r_min", "max"),
         r_min_spread=("r_min", lambda s: float(np.nanmax(s) - np.nanmin(s))),
+        r_pred_med=("r_pred", "median"),
         r_median_med=("r_median", "median"),
         alias_max=("alias_ceiling_max", "median"),
         alias_mean=("alias_ceiling_mean", "median"),
         decay50=("r_at_cos0.5_median", "median"),
+        # The resolution the decay was bought with: how far similarity stays
+        # above 0.9, i.e. how large a neighbourhood is indistinguishable. A
+        # wide decay raises r_min and this together, so a table without it
+        # reads as a free win.
+        res90=("r_at_cos0.9_median", "median"),
     )
     return agg.sort_values("r_min_med", ascending=False).round(3)
 

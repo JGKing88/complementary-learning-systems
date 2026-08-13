@@ -43,19 +43,50 @@ import torch
 import cls_paths
 
 FWHM_TO_SIGMA = 1.0 / math.sqrt(2.0 * math.log(2.0))     # decay50 -> sigma
+LN10_9 = math.log(1.0 / 0.9)
+GAUSSIAN_SHAPE = math.sqrt(LN10_9 / math.log(2.0))       # r_at_cos0.9 / decay50
 
 
-def predict(decay50: float, alias_ceiling: float) -> float:
-    """Radius where a Gaussian of the given half-width meets the ceiling."""
-    if not (0.0 < alias_ceiling < 1.0) or not decay50 or decay50 != decay50:
+def predict(decay50: float, alias_ceiling: float,
+            r_at_cos90: float | None = None) -> float:
+    """Radius where the decay profile meets the alias ceiling.
+
+    Anchored on ``r_at_cos0.9`` when it is available, and on ``decay50``
+    otherwise. The Gaussian assumption is only being used to extrapolate from a
+    measured level of the profile out to the ceiling, and the ceiling sits
+    around 0.95 — so anchoring at 0.9 asks the assumption to hold over a short
+    stretch, while anchoring at 0.5 asks it to hold over the whole profile.
+
+    That costs nothing when the profile is Gaussian, which it usually is:
+    across 240 checkpoints the median ``r_at_cos0.9 / decay50`` is 0.389
+    against the Gaussian 0.390. It matters for the ~8% that are not — the
+    over-repelled arms have decay50 near 20 and ``r_at_cos0.9`` of 1, a sharp
+    spike on a long tail. There the 0.5 anchor lands within 3 cells 53% of the
+    time and the 0.9 anchor 89%.
+    """
+    if not (0.0 < alias_ceiling < 1.0):
         return float("nan")
-    sigma = decay50 * FWHM_TO_SIGMA
-    return sigma * math.sqrt(2.0 * math.log(1.0 / alias_ceiling))
+    lnC = math.log(1.0 / alias_ceiling)
+    if r_at_cos90 is not None and r_at_cos90 == r_at_cos90 and r_at_cos90 > 0:
+        return r_at_cos90 * math.sqrt(lnC / LN10_9)
+    if not decay50 or decay50 != decay50:
+        return float("nan")
+    return decay50 * FWHM_TO_SIGMA * math.sqrt(2.0 * lnC)
 
 
 def required_decay50(target_r: float, alias_ceiling: float) -> float:
     """The decay width a given ceiling needs in order to reach ``target_r``."""
     return target_r / (FWHM_TO_SIGMA * math.sqrt(2.0 * math.log(1.0 / alias_ceiling)))
+
+
+def gaussianity(decay50: float, r_at_cos90: float) -> float:
+    """``r_at_cos0.9 / decay50``, which is 0.390 for a Gaussian profile.
+
+    The law extrapolates a shape, so this says whether there is a shape to
+    extrapolate. Across 240 checkpoints the median is 0.389; the outliers are
+    the over-repelled arms, whose profile is a one-cell spike on a long tail.
+    """
+    return r_at_cos90 / decay50 if decay50 else float("nan")
 
 
 def collect(sweeps: list[Path]) -> pd.DataFrame:
@@ -74,15 +105,20 @@ def collect(sweeps: list[Path]) -> pd.DataFrame:
                     continue
                 ur = c.get("unique_radius") or {}
                 d50 = ur.get("r_at_cos0.5_median")
+                d90 = ur.get("r_at_cos0.9_median")
                 C = ur.get("alias_ceiling_max")
                 if not ur or not d50 or C is None:
                     continue
-                r_pred = predict(float(d50), float(C))
+                r_pred = predict(float(d50), float(C), d90)
                 if r_pred != r_pred:
                     continue
                 rows.append({
                     "sweep": d.name, "run": run.name[:40], "ckpt": stem[8:],
                     "r_min": ur["r_min"], "decay50": float(d50),
+                    "res90": d90,
+                    # 0.390 for a Gaussian; far from it means the profile is a
+                    # spike on a tail and the extrapolation is on thin ice.
+                    "shape": round(d90 / float(d50), 3) if d90 else float("nan"),
                     "alias": round(float(C), 4), "r_pred": round(r_pred, 1),
                     "err": round(r_pred - ur["r_min"], 1),
                 })
