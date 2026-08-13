@@ -33,5 +33,5 @@ source scripts/cls_env.sh
 python -u -m hopfield_nav.probes.policy_motion \
     --ckpt "$CKPT" --n_envs "$N_ENVS" --trials "$TRIALS" \
     --max_steps "$MAX_STEPS" --n_dist "$N_DIST" --device cpu \
-    --split "${SPLIT:-val}" \
+    --split "${SPLIT:-val}" --seed "${SEED_OVERRIDE:-42}" \
     ${OUT:+--output_json "$OUT"}
