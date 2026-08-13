@@ -567,6 +567,50 @@ export NOVELTY_REWARD=0.075
 export LOAD_CKPT=/orcd/pool/003/jackking/cls_runs/agent_ckpts/navigate_ee_P2_20351854/navigate_u175.pt
 EOF
         ;;
+    # W9 is the first explore variant aimed at a MEASURED failure rather than a
+    # guessed one. `motion_pattern` on W6 u900: perimeter_frac 0.463 against a
+    # wall-aware walk's 0.040, with turn_bias 0.010 (no circling), msd_slope
+    # 1.000 (no confinement) and blocked_frac 0.02 (no bumping). The policy
+    # simply runs along the edge -- 46% of its steps in the 19% of cells that
+    # form the boundary, on a loop of 76 cells whose reference coverage is
+    # 0.202.
+    #
+    # wall_penalty is already exactly the right knob: config.py:160 applies it
+    # per step the agent OCCUPIES an edge cell, and its comment names the
+    # "perimeter-walk basin". The W series has only ever tried 0, 0.1 and 0.3.
+    # At W6's 0.3 against NOVELTY_REWARD 0.3 a *fresh* edge cell is exactly
+    # break-even, which is why 0.3 improved coverage without evicting the
+    # policy. 0.6 makes a fresh edge cell net -0.3 and a revisited one -0.6.
+    #
+    # If it over-corrects the policy abandons the 1-cell border and caps at
+    # 324/400 = 0.81, still double the best coverage measured, so the downside
+    # is bounded and the upside is the whole deficit.
+    W9) cat <<'EOF'
+export ENVS_PER_WORLD=8
+export BATCH_ENVS=16
+export STEPS_PER_ROLLOUT=200
+export SCHEDULE="explore:3000"
+export EVAL_EVERY=100
+export VAL_DISTRACTORS="0 10"
+export WALL_PENALTY=0.6
+EOF
+        ;;
+    # C9: C8's clean ratio fix, but from P5 u200 (1.000 / 16.4 steps) instead of
+    # P2 u175 (0.975 / 22.7). Parent quality bounds everything downstream of it,
+    # and P5 is a strictly better exploiter reached in fewer updates. Runs
+    # alongside C8 so parent and ratio are separable: C8-vs-C4 isolates the
+    # ratio, C9-vs-C8 isolates the parent.
+    C9) cat <<'EOF'
+export ENVS_PER_WORLD=8
+export BATCH_ENVS=16
+export STEPS_PER_ROLLOUT=200
+export SCHEDULE="interleave:2500,empty_frac=0->0.5,anneal=500"
+export EVAL_EVERY=100
+export VAL_DISTRACTORS="0 10"
+export NOVELTY_REWARD=0.075
+export LOAD_CKPT=/orcd/pool/003/jackking/cls_runs/agent_ckpts/navigate_ee_P5_20363067/navigate_u200.pt
+EOF
+        ;;
     # W8: train at the horizon the metric is measured at. Everything so far
     # trains on 200-step rollouts and is scored on 400-step ones, so a cycle
     # longer than the training rollout costs nothing during training and
