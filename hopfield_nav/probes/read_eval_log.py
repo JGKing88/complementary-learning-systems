@@ -62,6 +62,31 @@ def parse_log(path: str) -> list[dict]:
     return out
 
 
+# The three the project is scored on: coverage up, success up, steps down.
+SCORE_METRICS = ("mean_coverage", "success_rate", "mean_steps")
+
+
+def _join(records: list[dict], kinds: tuple[str, ...]) -> list[dict]:
+    """Merge one evaluator's records into another's on (tag, n_dist).
+
+    An eval pass writes one line per evaluator, and the three scored metrics
+    live in two of them. Joining on the tag rather than on the update number
+    keeps the end-of-run `after_navigate` pass, which has no update at all.
+    """
+    merged: dict[tuple, dict] = {}
+    for r in records:
+        if r["kind"] not in kinds:
+            continue
+        key = (r["run"], r["tag"], r["n_dist"])
+        merged.setdefault(key, {"run": r["run"], "tag": r["tag"],
+                                "update": r["update"], "n_dist": r["n_dist"],
+                                "kind": "score"})
+        for k, v in r.items():
+            if k not in ("run", "tag", "update", "n_dist", "kind"):
+                merged[key][k] = v
+    return list(merged.values())
+
+
 def _fmt(v) -> str:
     if v is None:
         return "-"
@@ -76,7 +101,8 @@ def main() -> None:
         formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--logs", nargs="+", required=True,
                    help="log files or globs")
-    p.add_argument("--kind", default="expl", choices=("expl", "nav", "disc"))
+    p.add_argument("--kind", default="expl",
+                   choices=("expl", "nav", "disc", "score"))
     p.add_argument("--metrics", nargs="*", default=None,
                    help="default: a per-evaluator set, see DEFAULT_METRICS")
     p.add_argument("--at", default="last", choices=("last", "all"))
@@ -89,12 +115,19 @@ def main() -> None:
     for pattern in args.logs:
         paths.extend(sorted(glob.glob(pattern)) or [pattern])
 
-    metrics = args.metrics or DEFAULT_METRICS[args.kind]
+    # "score" is the three numbers this project is judged on, side by side.
+    # They come from two different evaluators, so the rows have to be joined on
+    # (run, update, n_dist) rather than read off one.
+    scoring = args.kind == "score"
+    kinds = ("expl", "nav") if scoring else (args.kind,)
+    metrics = args.metrics or (
+        SCORE_METRICS if scoring else DEFAULT_METRICS[args.kind])
     label_re = re.compile(args.label) if args.label else None
 
     rows = []
     for path in paths:
-        recs = [r for r in parse_log(path) if r["kind"] == args.kind]
+        recs = _join(parse_log(path), kinds) if scoring else [
+            r for r in parse_log(path) if r["kind"] == args.kind]
         if not recs:
             continue
         if args.at == "last":
