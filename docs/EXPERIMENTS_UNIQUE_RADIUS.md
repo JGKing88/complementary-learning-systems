@@ -824,6 +824,24 @@ worth running. On the 60×100 encoder the correlation is a weaker −0.24, but
 every reference there sits at `r_monotone` 3, so the metric has no room to show
 a difference.
 
+### 4.5e The radius fraction peaks at 0.15 (`w11`)
+
+On `mixtop` with `rate_lambda=0.3`, medians over two seeds:
+
+| radius fraction | r_min | r_median | alias max |
+|---|---|---|---|
+| 0.10 | 16 (16, 16) | 21.5 | 0.85–0.87 |
+| **0.15** | **20.5** (19, 22) | 29 | 0.81 |
+| 0.20 | 17.5 (17, 18) | **32** | 0.79–0.92 |
+| 0.25 | 15 (15, 15) | 28 | 0.86–0.95 |
+
+A clean inverted-U. Note that 0.20 has the *higher* `r_median` and the lower
+`r_min`: past the peak the encoder keeps getting better at its typical
+reference and starts getting worse at its worst one, which is the same
+divergence §4.5b found at a fixed radius of 40 and the reason §4.4b's law
+tracks `r_median`. On this metric the peak is where the references stop
+agreeing, not where the decay stops widening.
+
 ### 4.8 The 20-reference `r_min` is unstable, and it flatters §1–§3
 
 Every run in §1–§4 is scored at the same 20 reference positions (`ur_seed=0`),
