@@ -496,7 +496,11 @@ def main() -> None:
 
     per_job = max(1, args.runs_per_job)
     groups = [runs[k:k + per_job] for k in range(0, len(runs), per_job)]
-    for g, group in enumerate(groups):
+    for _pos, group in enumerate(groups):
+        # Name the job after the first run's own index, not its position in the
+        # submitted list -- under --only those differ, and a job called g0 that
+        # is really run 008 makes every squeue-to-directory mapping wrong.
+        g = int(group[0][0].split("_", 1)[0])
         # Runs share the GPU. Each writes its own log; the job's own stdout only
         # carries the launcher's bookkeeping, so a crashed run is still
         # attributable to its run directory rather than to a merged stream.
