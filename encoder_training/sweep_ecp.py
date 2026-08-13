@@ -443,6 +443,11 @@ def main() -> None:
     p.add_argument("--runs-per-job", type=int, default=RUNS_PER_JOB,
                    help="training runs sharing one GPU (throughput lever: the "
                         "partition is GPU-limited and a run uses ~6%% of one)")
+    p.add_argument("--time", default=SLURM["time"],
+                   help="wall clock. The default suits an arm at ~17 "
+                        "epochs/min; uniformity runs at ~11 and needs more. A "
+                        "running job's limit cannot be raised, so it has to be "
+                        "right at submission.")
     p.add_argument("--only", default=None,
                    help="resubmit just the runs whose name contains this. For "
                         "relaunching the few cells of a wave that died or were "
@@ -516,7 +521,7 @@ def main() -> None:
         names = " ".join(n for n, _ in group)
         sbatch = f"""#!/bin/bash -l
 #SBATCH --job-name={sweep_name}_g{g}
-#SBATCH --time={SLURM["time"]}
+#SBATCH --time={args.time}
 #SBATCH --cpus-per-task={SLURM["cpus_per_task"]}
 #SBATCH --ntasks=1
 #SBATCH --gres={SLURM["gres"]}
