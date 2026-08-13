@@ -500,26 +500,31 @@ config with binary targets reaches 6 — one flag, same geometry, same seed.
 σ=50 arm's other seed was at `r_min` 0 as of epoch 212, so this cell's seed
 spread is not yet known and may be large.)
 
-Two arms beat the baseline, by opposite routes, and each moves exactly one
-factor of §4.4b's law. `encoder_final`, one seed per row where the second is
-still running:
+The arms separate into two families, and each family moves exactly one factor
+of §4.4b's law. `encoder_final` throughout; a single value means the second
+seed is still running:
 
-| arm | r_min (both seeds) | r_pred | r_median | alias max | alias mean | decay50 | res90 |
-|---|---|---|---|---|---|---|---|
-| **`graded50`** | **13, 11** | 14.4, 13.8 | 21, 19 | 0.956, 0.959 | 0.891, 0.907 | **60, 59** | 22 |
-| **`rate0.3`** | **9**, — | 8.7 | 11.5 | **0.907** | **0.821** | 22.5 | 9.0 |
-| `none` (binary) | 6, 3 | 6.2, 3.7 | 9, 5.5 | 0.946, 0.982 | 0.880, 0.939 | 21 | 8.5, 9 |
-| `graded25` | 4, 3 | 5.5, 4.6 | 10, 7 | 0.978, 0.985 | 0.898, 0.935 | 29.5, 30 | 12 |
-| `graded10` | 3, 2 | 3.5, 2.9 | 4, 4 | 0.949, 0.965 | 0.870, 0.919 | 12 | 5 |
+| arm | r_min (both seeds) | r_pred | alias max | alias mean | decay50 | res90 |
+|---|---|---|---|---|---|---|
+| **`rate0.3`** | **9**, — | 8.7 | **0.907** | **0.821** | 22.5 | 9.0 |
+| `vicreg` | 6, 7 | 6.4, 7.4 | 0.934, 0.914 | 0.840, 0.847 | 20 | 8 |
+| `none` (binary baseline) | 6, 3 | 6.2, 3.7 | 0.946, 0.982 | 0.880, 0.939 | 21 | 8.5, 9 |
+| *`graded50` (out of scope)* | *13, 11* | *14.4, 13.8* | *0.956, 0.959* | *0.891, 0.907* | ***60, 59*** | *22* |
+| *`graded25` (out of scope)* | *4, 3* | *5.5, 4.6* | *0.978, 0.985* | *0.898, 0.935* | *29.5* | *12* |
+| *`graded10` (out of scope)* | *3, 2* | *3.5, 2.9* | *0.949, 0.965* | *0.870, 0.919* | *12* | *5* |
 
-`graded50` leaves the ceiling roughly where the baseline had it (0.956 against
-0.946) and takes the decay from 21 to **60**. `rate0.3` does the reverse: it
-leaves the decay at 22.5 and takes the ceiling to **0.907**, the lowest any run
-in this regime has reached, against 0.84–0.86 for the unconstrained best. Two
-orthogonal knobs, one per factor — which is what makes their product worth
-testing (`w7`), and the law predicts ~33 for σ=75 at that ceiling.
+**Every legal spread term moves the ceiling and only the ceiling.** `rate0.3`,
+`vicreg` and the baseline all sit at decay50 20–22.5; what separates them is the
+alias ceiling, 0.907 / 0.914–0.934 / 0.946–0.982, and `r_min` follows it in
+order. The excluded `graded*` rows are the mirror image — ceiling pinned near
+0.956, decay50 taken to 60. Two clean, separable factors, one of which now has
+only the near radius as a legal handle (§4.5).
 
-The `r_pred` column is §4.4b's formula, within a cell on every row.
+`r_pred` is §4.4b's law and is within one cell on all eleven rows.
+
+For scale on the ceiling column: the unconstrained regime reaches 0.84–0.86, so
+`rate0.3`'s 0.907 closes roughly half the gap between the untreated True regime
+(0.95–0.98) and the encoders that keep their cross-environment pairs.
 
 **This falsifies rank as the cause of the radius.** §4.1b's ordering was
 observational, and forcing rank up does not bring the radius with it. Three
