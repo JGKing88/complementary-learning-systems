@@ -93,6 +93,9 @@ SIZE_MIXES: dict[str, str] = {
     "mixtop_hi":  _mix((200, 20), (150, 10), (100, 10)),   # 1.13M, 38.2%, 40 envs
     "mixtop_max": _mix((200, 26), (150, 14), (100, 14)),   # 1.50M, 50.8%, 54 envs
     "mixtop_xl":  _mix((200, 32), (150, 16), (100, 16)),   # 1.80M, 61.1%, 64 envs
+    # 70% is where rejection sampling gives out for this shape: 77.8% failed at
+    # both seeds, as did a 73% variant with a heavier small tail.
+    "mixtop_xxl": _mix((200, 37), (150, 18), (100, 18)),   # 2.06M, 70.1%, 73 envs
     "mix2_lo": _mix((200, 4), (100, 12)),       # 280k,  9.5%,  16 envs
     "mix2_hi": _mix((200, 15), (100, 40)),      # 1.00M, 34.0%, 55 envs
     "mix3_45": _mix((200, 20), (150, 20), (100, 30)),   # 1.55M, 52.6%, 70 envs
@@ -510,6 +513,36 @@ WAVES: dict[str, dict] = {
                                             rate_lambda=0.3),
         },
         "seed": [42, 43],
+    },
+    # W15 -- the top of the coverage axis, plus the seeds the claim needs.
+    #
+    # Coverage turned out to be the strongest lever in the campaign: at a fixed
+    # geometry shape and the winning radius and rate, 22.9% -> 38.2% -> 50.8%
+    # takes r_min from a 14-22 band to 22-27, with the alias ceiling falling to
+    # 0.68 -- below the 0.814 of the best encoder trained *with* the
+    # cross-environment pairs. It is also the axis §4.6 predicted, from the
+    # -0.47 correlation between a reference's distance to the nearest patch and
+    # its radius.
+    #
+    # 70% is the packing ceiling for this shape (77.8% failed at both seeds), so
+    # this is the last step on the axis. Seeds 44/45 go on the leaders because
+    # two seeds were not enough for the last headline (§4.9) and will not be
+    # enough for this one.
+    "w15_coverage_top2": {
+        "arm": {
+            "cov70": dict(npos_list=SIZE_MIXES["mixtop_xxl"],
+                          per_env_radius_frac=0.15, rate_lambda=0.3),
+        },
+        "seed": [42, 43, 44, 45],
+    },
+    "w16_coverage_seeds": {
+        "arm": {
+            "cov51": dict(npos_list=SIZE_MIXES["mixtop_max"],
+                          per_env_radius_frac=0.15, rate_lambda=0.3),
+            "cov61": dict(npos_list=SIZE_MIXES["mixtop_xl"],
+                          per_env_radius_frac=0.15, rate_lambda=0.3),
+        },
+        "seed": [44, 45],
     },
 }
 
