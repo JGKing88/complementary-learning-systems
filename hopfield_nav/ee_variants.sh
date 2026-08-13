@@ -595,6 +595,30 @@ export VAL_DISTRACTORS="0 10"
 export WALL_PENALTY=0.6
 EOF
         ;;
+    # W10 is to W9 what C8 was to C7, and for the same reason.
+    #
+    # W9 raised WALL_PENALTY 0.3 -> 0.6 to make a fresh edge cell net-negative.
+    # It made training worse, not just the metric: mean_r fell monotonically
+    # -0.10 -> -0.51 over 100 updates and coverage was 0.030 at u100 against
+    # W6's 0.053. A penalty that large dominates the return, so the advantage
+    # signal is almost entirely "was I on an edge" and the novelty differences
+    # that are supposed to steer exploration are drowned out.
+    #
+    # W10 gets the identical sign flip from the other side: keep WALL_PENALTY
+    # at W6's 0.3 and halve NOVELTY_REWARD to 0.15. A fresh edge cell is then
+    # +0.15 - 0.3 = -0.15 instead of break-even, with the rewards getting
+    # SMALLER rather than larger. Same arithmetic, no value-scale blowup.
+    W10) cat <<'EOF'
+export ENVS_PER_WORLD=8
+export BATCH_ENVS=16
+export STEPS_PER_ROLLOUT=200
+export SCHEDULE="explore:3000"
+export EVAL_EVERY=100
+export VAL_DISTRACTORS="0 10"
+export WALL_PENALTY=0.3
+export NOVELTY_REWARD=0.15
+EOF
+        ;;
     # C9: C8's clean ratio fix, but from P5 u200 (1.000 / 16.4 steps) instead of
     # P2 u175 (0.975 / 22.7). Parent quality bounds everything downstream of it,
     # and P5 is a strictly better exploiter reached in fewer updates. Runs
