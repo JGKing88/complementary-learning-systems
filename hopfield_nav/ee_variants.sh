@@ -120,6 +120,31 @@ export LOG_STD_ANNEAL_TARGET=-1.8
 EOF
         ;;
 
+    # P4 is P3 with the learning rate cut. P3 diverged -- value_loss 6.9 ->
+    # 5069 between u50 and u90, nav 1.000/28.9 -> 0.925/70.0 -- and §3i
+    # attributes it to `reset_state_on_teleport=False` removing what had been
+    # an accidental regularizer: an exploit rollout teleports every ~29 steps,
+    # and zeroing the recurrent state there kept it from running the full 200
+    # through a recurrence whose spectral radius training drives to ~4.2.
+    #
+    # LR is the allowed knob that acts on the cause: it slows the growth of the
+    # recurrent weights doing the expanding. If it does not hold, halve
+    # STEPS_PER_ROLLOUT, which halves the window the state has to grow in.
+    P4) cat <<'EOF'
+export ENVS_PER_WORLD=16
+export BATCH_ENVS=16
+export STEPS_PER_ROLLOUT=200
+export SCHEDULE="exploit:1200"
+export EVAL_EVERY=50
+export VAL_DISTRACTORS="0 10"
+export LR=1e-4
+export INIT_LOG_STD=-0.5
+export LOG_STD_ANNEAL_START_UPDATE=50
+export LOG_STD_ANNEAL_END_UPDATE=400
+export LOG_STD_ANNEAL_TARGET=-1.8
+EOF
+        ;;
+
     # === wave 2: composition =============================================
     # All at X2's shape. Every one logs `adv_share`, so the pooled-normalizer
     # reweighting is measured per update rather than assumed.
