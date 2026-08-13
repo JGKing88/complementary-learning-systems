@@ -51,8 +51,11 @@ def grid_of(run_dir: Path) -> dict:
     except json.JSONDecodeError:
         return {}
     # sweep_ecp writes the whole resolved config; the varying keys are found by
-    # differencing across runs, which main() does once it has them all.
-    return cfg.get("config", cfg.get("grid", {}))
+    # differencing across runs, which main() does once it has them all. Newer
+    # runs also record the grid *labels*, which beat any reconstruction.
+    grid = dict(cfg.get("config", cfg.get("grid", {})))
+    grid.update(cfg.get("labels", {}))
+    return grid
 
 
 def rows_for(run_dir: Path, sweep: str) -> list[dict]:
@@ -88,6 +91,28 @@ def rows_for(run_dir: Path, sweep: str) -> list[dict]:
             row[k] = tc.get(k)
         out.append(row)
     return out
+
+
+def short_value(key: str, value) -> str:
+    """A group label a person can read.
+
+    A patch mix is a 93-entry comma string; used verbatim it makes the grouped
+    table wider than the terminal and hides the very comparison it is for. The
+    driver's own names are the right labels, so look the value up there first
+    and fall back to a shape summary for mixes defined elsewhere.
+    """
+    if key != "npos_list" or not isinstance(value, str) or len(value) < 24:
+        return str(value)
+    try:
+        from encoder_training.sweep_ecp import SIZE_MIXES
+        for name, spec in SIZE_MIXES.items():
+            if spec == value:
+                return name
+    except ImportError:
+        pass
+    sizes = [int(s) for s in value.split(",")]
+    uniq = sorted(set(sizes), reverse=True)
+    return f"{len(sizes)}x{'/'.join(str(u) for u in uniq)}"
 
 
 def varying_keys(grids: list[dict]) -> list[str]:
@@ -152,7 +177,7 @@ def main() -> None:
     grids = [r["_grid"] for r in rows]
     axes = [k for k in varying_keys(grids) if k not in ("run_name", "index")]
     for k in axes:
-        df[k] = [str(g.get(k)) for g in grids]
+        df[k] = [short_value(k, g.get(k)) for g in grids]
     df = df.drop(columns=["_grid"])
 
     kind = "best" if args.best_only else args.ckpt

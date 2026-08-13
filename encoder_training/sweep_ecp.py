@@ -272,6 +272,8 @@ def _fmt(v) -> str:
 def _train_flags(cfg: dict) -> str:
     parts = []
     for k, v in cfg.items():
+        if k.startswith("_"):
+            continue          # bookkeeping for meta.json, not a train.py flag
         if k in _BOOL_FLAGS:
             if v:
                 parts.append(f"--{k}")
@@ -299,13 +301,14 @@ def build_runs(wave: dict) -> list[tuple[str, dict]]:
     runs = []
     for i, combo in enumerate(itertools.product(*axes)):
         cfg = dict(BASE)
-        labels = []
+        labels, label_map = [], {}
         for k, (lab, val) in zip(keys, combo):
             if k == "arm":
                 cfg["arm"] = val
             else:
                 cfg[k] = val
             labels.append(f"{k}={lab}" if k != "arm" else lab)
+            label_map[k] = lab
         cfg = _flatten(cfg)
 
         # Step-match: mixed batches take floor(N / batch_size) steps an epoch,
@@ -315,6 +318,7 @@ def build_runs(wave: dict) -> list[tuple[str, dict]]:
         steps_per_epoch = max(1, n_pts // cfg["batch_size"])
         cfg["epochs"] = max(100, round(TARGET_STEPS / steps_per_epoch / 50) * 50)
         cfg["ur_every"] = max(10, cfg["epochs"] // 10)
+        cfg["_labels"] = label_map
         runs.append((f"{i:03d}_" + "_".join(labels), cfg))
     return runs
 
@@ -364,7 +368,12 @@ def main() -> None:
         os.makedirs(run_dir, exist_ok=True)
         with open(os.path.join(run_dir, "meta.json"), "w") as f:
             json.dump({"index": i, "run_name": run_name, "wave": args.wave,
-                       "config": cfg}, f, indent=2, default=str)
+                       # The grid labels, not only the resolved values: a patch
+                       # mix resolves to a 93-entry string that no grouped table
+                       # can display.
+                       "labels": cfg.get("_labels", {}),
+                       "config": {k: v for k, v in cfg.items()
+                                  if k != "_labels"}}, f, indent=2, default=str)
 
     per_job = max(1, args.runs_per_job)
     groups = [runs[k:k + per_job] for k in range(0, len(runs), per_job)]
