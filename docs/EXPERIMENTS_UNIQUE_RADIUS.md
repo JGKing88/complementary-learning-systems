@@ -479,13 +479,13 @@ Two arms beat the baseline, by opposite routes, and each moves exactly one
 factor of §4.4b's law. `encoder_final`, one seed per row where the second is
 still running:
 
-| arm | r_min | r_pred | r_median | alias max | alias mean | decay50 | res90 |
+| arm | r_min (both seeds) | r_pred | r_median | alias max | alias mean | decay50 | res90 |
 |---|---|---|---|---|---|---|---|
-| **`graded50`** | **13** | 14.4 | 21 | 0.956 | 0.891 | **60.0** | 22.0 |
-| **`rate0.3`** | **9** | 8.7 | 11.5 | **0.907** | **0.821** | 22.5 | 9.0 |
-| `none` (binary) | 6, 3 | 6.2, 3.7 | 9, 5.5 | 0.946, 0.982 | 0.88, 0.94 | 21.0 | 8.5 |
-| `graded25` | 4 | 5.5 | 10 | 0.978 | 0.898 | 29.5 | 12.0 |
-| `graded10` | 3, 2 | 3.5, 2.9 | 4 | 0.949, 0.965 | 0.87, 0.92 | 12.0 | 5.0 |
+| **`graded50`** | **13, 11** | 14.4, 13.8 | 21, 19 | 0.956, 0.959 | 0.891, 0.907 | **60, 59** | 22 |
+| **`rate0.3`** | **9**, — | 8.7 | 11.5 | **0.907** | **0.821** | 22.5 | 9.0 |
+| `none` (binary) | 6, 3 | 6.2, 3.7 | 9, 5.5 | 0.946, 0.982 | 0.880, 0.939 | 21 | 8.5, 9 |
+| `graded25` | 4, 3 | 5.5, 4.6 | 10, 7 | 0.978, 0.985 | 0.898, 0.935 | 29.5, 30 | 12 |
+| `graded10` | 3, 2 | 3.5, 2.9 | 4, 4 | 0.949, 0.965 | 0.870, 0.919 | 12 | 5 |
 
 `graded50` leaves the ceiling roughly where the baseline had it (0.956 against
 0.946) and takes the decay from 21 to **60**. `rate0.3` does the reverse: it
