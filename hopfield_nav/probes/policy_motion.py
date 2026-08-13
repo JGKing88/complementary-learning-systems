@@ -38,7 +38,7 @@ from ..evaluation.batched import batched_exploration_trials
 from ..evaluation.checkpoint_io import cfg_from_checkpoint
 from ..policy.agent import NavAgent, compute_input_dim
 from ..rollout.distractors import sample_distractors
-from ..training.world_setup import build_field
+from ..training.world_setup import build_field, replay_env_seeds
 from ..world.env import make_env
 from ..world.world import build_world
 from ..world.walks import (
@@ -133,43 +133,6 @@ def wall_aware_baseline(stats: dict, size: int, steps: int, trials: int,
         np.random.RandomState(seed)).mean())
 
 
-def _env_seeds(cfg: TrainConfig, split: str, n_envs: int,
-               seed: int) -> tuple[list[int], int]:
-    """The env seeds a run used, for the requested split.
-
-    This has to replay `setup_run_world`'s stream rather than start a fresh
-    one, and getting it wrong is not a small error: a fresh
-    `RandomState(cfg.seed)` reproduces the run's **training** envs exactly,
-    because that is the first thing the trainer draws. Scoring a policy on the
-    envs it trained on is not a coverage measurement, and it silently reads as
-    a good one.
-
-    Legacy placement draws `num_worlds * envs_per_world` train env seeds and
-    then `num_val_envs` validation seeds from one `RandomState(cfg.seed)`, one
-    `randint` per env -- `build_world`'s placement draws come from the
-    `np.random` module, not this stream, so they do not shift it.
-
-    Runs new enough to have written `world.json` record their resolved specs
-    and should be read from that instead; none of the checkpoints this was
-    built for have one.
-    """
-    n_train = int(cfg.num_worlds) * int(cfg.envs_per_world)
-    if split == "fresh":
-        r = np.random.RandomState(seed + 9973)
-        return [int(r.randint(0, 10_000_000)) for _ in range(n_envs)], 0
-    r = np.random.RandomState(int(cfg.seed))
-    train = [int(r.randint(0, 10_000_000)) for _ in range(n_train)]
-    if split == "train":
-        return train[:n_envs], 0
-    val = [int(r.randint(0, 10_000_000)) for _ in range(int(cfg.num_val_envs))]
-    if n_envs > len(val):
-        raise ValueError(
-            f"--n_envs {n_envs} exceeds the run's {len(val)} validation envs; "
-            f"pass --split fresh to draw new ones, knowing they are neither "
-            f"the run's train nor its val set")
-    return val[:n_envs], n_train
-
-
 def main() -> None:
     p = argparse.ArgumentParser(
         description=__doc__,
@@ -228,9 +191,9 @@ def main() -> None:
     # `build_world`'s default rng is the np.random MODULE, so env placement is
     # global state; seed it or two probe runs draw different scaffold patches.
     np.random.seed(args.seed)
-    env_seeds, n_used = _env_seeds(cfg, args.split, args.n_envs, args.seed)
-    print(f"  scoring on {args.split} envs: seeds {env_seeds} "
-          f"(replayed past {n_used} train draws)", flush=True)
+    env_seeds = replay_env_seeds(cfg, args.split, args.n_envs, args.seed)
+    print(f"  scoring on {args.split} envs: seeds {env_seeds}",
+          flush=True)
     envs = [make_env(cfg.env, cfg.agent.movement_mode, seed=s)
             for s in env_seeds]
     rng = np.random.RandomState(args.seed + 1)

@@ -62,8 +62,17 @@ def batched_navigation_trials(
     max_steps: int,
     deterministic: bool = True,
     action_temperature: float = 1.0,
+    on_step=None,
 ) -> list[int]:
     """Run one navigation trial per entry of ``hopfields``, in parallel.
+
+    ``on_step(step, pos_before, actions, q, active)`` is called after each step
+    when given. It exists so a diagnostic can decompose ``mean_steps`` into the
+    two things that set it -- how far the policy moves per step, and how well
+    that movement lines up with the recall direction it is being handed -- on
+    the exact path the evaluator scores. ``q`` is the projected displacement
+    the policy saw, and ``active`` marks the rows that were still running, so a
+    frozen trial does not enter the statistics.
 
     Each trial starts at its own position with its own preloaded Hopfield, and
     finishes the first step after which it stands on the goal. Finished trials
@@ -167,8 +176,15 @@ def batched_navigation_trials(
         active_idx = np.nonzero(active)[0]
         if active_idx.size == 0:
             break
+        pos_before = (vec._pos_f.copy() if hasattr(vec, "_pos_f")
+                      else positions.astype(float))
         vec.step_batch(actions[active_idx], indices=active_idx,
                        contract=contract)
+        if on_step is not None:
+            pos_after = (vec._pos_f.copy() if hasattr(vec, "_pos_f")
+                         else vec.positions().astype(float))
+            on_step(step, pos_before, np.asarray(actions, dtype=float),
+                    np.asarray(q, dtype=float), active.copy(), pos_after)
 
         reached = at_goal(vec)
         for b in active_idx:

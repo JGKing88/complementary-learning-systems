@@ -71,6 +71,51 @@ def setup_world(cfg: TrainConfig, encoder, embed_dim, rng, role: str = "train",
     return build_world(field, envs, placement="spread", size=cfg.env.size)
 
 
+def replay_env_seeds(cfg: TrainConfig, split: str, n_envs: int,
+                     fresh_seed: int = 0) -> list[int]:
+    """The env seeds a finished run used, for the requested split.
+
+    The inverse of the draw `setup_run_world` performs on the legacy path, and
+    the only correct way for an offline analysis to rebuild a run's envs when
+    it predates `world.json`. Getting it wrong is not a small error: a fresh
+    `RandomState(cfg.seed)` reproduces the run's **training** envs exactly,
+    because those are the first thing that stream is asked for. Scoring a
+    policy on the envs it trained on is not a held-out measurement, and it
+    reads as a flattering one.
+
+    The draw is `num_worlds * envs_per_world` train seeds and then
+    `num_val_envs` validation seeds from one `RandomState(cfg.seed)`, one
+    `randint` per env. `build_world`'s placement draws come from the
+    `np.random` module rather than this stream, so they do not shift it.
+
+    `split="fresh"` gives envs from neither set, for asking what a policy does
+    on generic arenas rather than on either of a particular run's.
+
+    Runs new enough to have written `world.json` record their resolved specs;
+    prefer `evaluation.checkpoint_io.world_spec_for` for those.
+    """
+    if split == "fresh":
+        rng = np.random.RandomState(fresh_seed + 9973)
+        return [int(rng.randint(0, 10_000_000)) for _ in range(n_envs)]
+
+    rng = np.random.RandomState(int(cfg.seed))
+    n_train = int(cfg.num_worlds) * int(cfg.envs_per_world)
+    train = [int(rng.randint(0, 10_000_000)) for _ in range(n_train)]
+    if split == "train":
+        if n_envs > len(train):
+            raise ValueError(
+                f"asked for {n_envs} train envs; the run had {len(train)}")
+        return train[:n_envs]
+    val = [int(rng.randint(0, 10_000_000))
+           for _ in range(int(cfg.num_val_envs))]
+    if n_envs > len(val):
+        raise ValueError(
+            f"--n_envs {n_envs} exceeds the run's {len(val)} validation envs; "
+            f"pass --split fresh to draw new ones, knowing they are neither "
+            f"the run's train nor its val set")
+    return val[:n_envs]
+
+
 def inherited_used(parent_ckpt: str | None) -> dict | None:
     """The ancestor's trait union, read from its ``world.json``.
 
