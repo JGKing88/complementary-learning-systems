@@ -195,6 +195,9 @@ WAVES: dict[str, dict] = {
     # generalizes, so shrinking the radius narrows the decay, and the radius is
     # the crossing of the decay and the ceiling. The two effects pull opposite
     # ways and the bracket is wide enough to find the turn.
+    # radius=10 is bit-for-bit w1's mix2/per_env_radius_frac=0 cell (checked by
+    # diffing the two meta.json), so those two runs were cancelled rather than
+    # re-run; take that row from w1.
     "w3_radius": {
         "radius": [2.0, 3.0, 5.0, 10.0, 20.0, 40.0],
         "seed": [42, 43],
