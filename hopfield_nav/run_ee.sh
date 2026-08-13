@@ -56,6 +56,20 @@ GOAL_RADIUS=${GOAL_RADIUS:-1.0}
 CONTINUOUS_NORMALIZE=${CONTINUOUS_NORMALIZE:-0}
 ALLOW_OFFCELL_STORE=${ALLOW_OFFCELL_STORE:-0}
 
+# 4b. Pinned by request, and spelled out rather than left to a default.
+#     All three already had these values here, but two of them only because
+#     the trainer's default happened to agree -- and a default is exactly what
+#     changes underneath a run. `reset_state_on_teleport` is the one that has
+#     already moved: it did not exist before 2026-08-12, when the behaviour was
+#     unconditionally to zero the recurrent state, i.e. True.
+#
+#     EXPLORE_ENDS_ON_GOAL is vacuous while EXPLORE_GOALS_OFF=1 -- there is no
+#     goal event for an explore rollout to end on -- but it bites the moment
+#     the explore goal reward is switched on, which is a knob in play.
+EGOCENTRIC_HEADING=${EGOCENTRIC_HEADING:-1}
+EXPLORE_ENDS_ON_GOAL=${EXPLORE_ENDS_ON_GOAL:-1}
+RESET_STATE_ON_TELEPORT=${RESET_STATE_ON_TELEPORT:-0}
+
 # 5. Eval is the verdict protocol, run in-training. The explore-min wave found
 #    its cheap 4-env x 16-trial monitor biased coverage high by ~0.02 and, worse,
 #    mis-RANKED its own variants against the strict pass. Iterating on a biased

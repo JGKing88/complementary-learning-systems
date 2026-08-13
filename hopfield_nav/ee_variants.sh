@@ -94,6 +94,32 @@ export LOG_STD_ANNEAL_TARGET=-1.8
 EOF
         ;;
 
+    # P3 is P2's recipe under the pinned contract flags, and is the exploit run
+    # that counts. P1/P2 launched before `main` was merged, on code where a
+    # goal-teleport unconditionally zeroed the recurrent state -- i.e.
+    # reset_state_on_teleport=True, which is not what this line runs. Their
+    # eval numbers are unaffected (a nav trial ends at the goal, so no teleport
+    # happens inside one), so what they establish still stands: the sigma
+    # anneal beats a pinned narrow sigma on speed, reaching 0.975 success at
+    # 22.7 steps against P1's 1.000 at 41.5.
+    #
+    # 16 envs rather than P2's 20: diversity is what makes structure transfer
+    # (3f), and serial calls are envs x steps, so this is 3,200 an update
+    # against 4,000 and buys a longer run.
+    P3) cat <<'EOF'
+export ENVS_PER_WORLD=16
+export BATCH_ENVS=16
+export STEPS_PER_ROLLOUT=200
+export SCHEDULE="exploit:1200"
+export EVAL_EVERY=50
+export VAL_DISTRACTORS="0 10"
+export INIT_LOG_STD=-0.5
+export LOG_STD_ANNEAL_START_UPDATE=50
+export LOG_STD_ANNEAL_END_UPDATE=400
+export LOG_STD_ANNEAL_TARGET=-1.8
+EOF
+        ;;
+
     # === wave 2: composition =============================================
     # All at X2's shape. Every one logs `adv_share`, so the pooled-normalizer
     # reweighting is measured per update rather than assumed.

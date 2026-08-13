@@ -107,6 +107,44 @@ def bounce_walk(B: int, size: int, steps: int, stride: float,
     return simulate_coverage(pos, size, steps, fn, rng)
 
 
+def wall_aware_walk(B: int, size: int, steps: int, stride: float,
+                    turn_sigma: float, rng: np.random.RandomState,
+                    margin: float = 1.5) -> np.ndarray:
+    """A correlated walk that turns *before* it hits the wall.
+
+    Still memoryless -- it knows nothing about where it has been -- but it uses
+    the one thing the foveal cone reports directly: how close the wall ahead
+    is. When the next step would land within `margin` of the boundary the
+    heading is redrawn to point back inside.
+
+    This is the control that `correlated_walk` is not. A policy can beat a
+    plain correlated walk purely by not wasting steps on the wall, which is
+    reactive and needs no memory at all; the gap that survives *this* baseline
+    is the part that does. Reporting only the plain-walk excess conflates the
+    two, and they call for completely different next steps.
+    """
+    pos = random_starts(B, size, rng)
+    theta = rng.uniform(0, 2 * np.pi, B)
+    lo, hi = margin, size - 1 - margin
+
+    def fn(_t, blocked, p):
+        nonlocal theta
+        step = unit_vectors(theta) * stride
+        nxt = p + step
+        bad = ((nxt[:, 0] < lo) | (nxt[:, 0] > hi)
+               | (nxt[:, 1] < lo) | (nxt[:, 1] > hi) | blocked)
+        if bad.any():
+            # Point back toward the middle, plus a wide jitter so this is a
+            # turn rather than a deterministic bounce off the centre.
+            to_mid = (size - 1) / 2.0 - p[bad]
+            theta[bad] = (np.arctan2(to_mid[:, 1], to_mid[:, 0])
+                          + rng.normal(0.0, 0.8, int(bad.sum())))
+        theta = theta + rng.normal(0.0, turn_sigma, B)
+        return unit_vectors(theta) * stride
+
+    return simulate_coverage(pos, size, steps, fn, rng)
+
+
 def ring_path(size: int) -> np.ndarray:
     """Cells of an inward spiral: the perimeter, then the next ring, inward.
 
@@ -170,5 +208,5 @@ def lawnmower_coverage(size: int, steps: int) -> float:
 __all__ = [
     "bounce_walk", "correlated_walk", "diffusive_walk", "lawnmower_coverage",
     "random_starts", "ring_path", "simulate_coverage", "spiral_walk",
-    "unit_vectors",
+    "unit_vectors", "wall_aware_walk",
 ]

@@ -42,7 +42,7 @@ from ..training.world_setup import build_field
 from ..world.env import make_env
 from ..world.world import build_world
 from ..world.walks import (
-    random_starts, simulate_coverage, unit_vectors,
+    random_starts, simulate_coverage, unit_vectors, wall_aware_walk,
 )
 
 
@@ -116,6 +116,21 @@ def matched_walk_coverage(stats: dict, size: int, steps: int, trials: int,
         return unit_vectors(theta) * stride
 
     return float(simulate_coverage(pos, size, steps, fn, rng).mean())
+
+
+def wall_aware_baseline(stats: dict, size: int, steps: int, trials: int,
+                        seed: int = 0) -> float:
+    """The same walk, but turning before it hits the wall.
+
+    Still memoryless. The gap between this and the plain matched walk is what
+    *reactive* wall handling is worth; the gap between the policy and this is
+    what is left for memory to explain. Without it, a policy that merely learns
+    "turn when the cone shows a wall" reads as though it had learned to
+    remember where it has been.
+    """
+    return float(wall_aware_walk(
+        trials, size, steps, stats["stride_mean"], stats["turn_sigma"],
+        np.random.RandomState(seed)).mean())
 
 
 def _env_seeds(cfg: TrainConfig, split: str, n_envs: int,
@@ -251,18 +266,28 @@ def main() -> None:
 
     stats = rec.summary()
     measured = float(np.mean(covs))
-    matched = matched_walk_coverage(stats, int(cfg.env.size), args.max_steps,
-                                    max(len(covs), 128), seed=args.seed)
+    n_sim = max(len(covs), 128)
+    size = int(cfg.env.size)
+    matched = matched_walk_coverage(stats, size, args.max_steps, n_sim,
+                                    seed=args.seed)
+    wall_aware = wall_aware_baseline(stats, size, args.max_steps, n_sim,
+                                     seed=args.seed)
     out = {
         "ckpt": args.ckpt,
         "measured_coverage": measured,
         "matched_walk_coverage": matched,
+        "wall_aware_walk_coverage": wall_aware,
         "excess_over_matched_walk": measured - matched,
+        # The part no memoryless walker explains, including one that reacts to
+        # the wall ahead -- which the foveal cone reports directly, so it is
+        # the baseline a policy can reach without remembering anything.
+        "excess_over_wall_aware": measured - wall_aware,
         **stats,
     }
     print(json.dumps(out, indent=2))
-    print(f"\nmeasured {measured:.3f}   matched-walk {matched:.3f}   "
-          f"excess {measured - matched:+.3f}")
+    print(f"\nmeasured {measured:.3f}   matched-walk {matched:.3f} "
+          f"(excess {measured - matched:+.3f})   wall-aware {wall_aware:.3f} "
+          f"(excess {measured - wall_aware:+.3f})")
     print(f"  (stride {stats['stride_mean']:.2f}, turn_sigma "
           f"{stats['turn_sigma']:.2f} rad, blocked {stats['blocked_frac']:.1%} "
           f"of steps)")
