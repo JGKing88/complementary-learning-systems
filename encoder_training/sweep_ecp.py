@@ -87,6 +87,12 @@ SIZE_MIXES: dict[str, str] = {
     # field never hears about it. This keeps the size mixing the brief asks for
     # while putting 71% of the area in 200-cell patches.
     "mixtop": _mix((200, 12), (150, 6), (100, 6)),      # 675k, 22.9%, 24 envs
+    # The same shape at more coverage -- same three sizes, same ~71% of the
+    # area at 200 cells, only more of the arena covered. All placed at seeds
+    # 42/43/44; rejection sampling holds to 61% for this shape.
+    "mixtop_hi":  _mix((200, 20), (150, 10), (100, 10)),   # 1.13M, 38.2%, 40 envs
+    "mixtop_max": _mix((200, 26), (150, 14), (100, 14)),   # 1.50M, 50.8%, 54 envs
+    "mixtop_xl":  _mix((200, 32), (150, 16), (100, 16)),   # 1.80M, 61.1%, 64 envs
     "mix2_lo": _mix((200, 4), (100, 12)),       # 280k,  9.5%,  16 envs
     "mix2_hi": _mix((200, 15), (100, 40)),      # 1.00M, 34.0%, 55 envs
     "mix3_45": _mix((200, 20), (150, 20), (100, 30)),   # 1.55M, 52.6%, 70 envs
@@ -455,6 +461,30 @@ WAVES: dict[str, dict] = {
                                       per_env_radius_frac=0.10, rate_lambda=0.3),
         },
         "seed": [44, 45],
+    },
+    # W13 -- coverage, on the winning config rather than on the bare baseline.
+    #
+    # This replaces w4, which swept coverage over mixes chosen before any of the
+    # loss work and would have measured it against an encoder scoring 4. The
+    # axis is worth keeping because §4.6 gives it a mechanism aimed at exactly
+    # what `r_min` reports: the metric is the worst of 20 references, the worst
+    # ones are those no training patch got near (corr -0.47 between a
+    # reference's distance to the nearest patch and its radius), and coverage is
+    # the only thing that fixes those.
+    #
+    # Same three sizes and the same ~71% of area at 200 cells throughout, so
+    # coverage is the only thing moving. Step-matched, so the extra points buy
+    # fewer epochs of more-varied gradient rather than more gradient.
+    "w13_coverage_top": {
+        "arm": {
+            "cov38": dict(npos_list=SIZE_MIXES["mixtop_hi"],
+                          per_env_radius_frac=0.15, rate_lambda=0.3),
+            "cov51": dict(npos_list=SIZE_MIXES["mixtop_max"],
+                          per_env_radius_frac=0.15, rate_lambda=0.3),
+            "cov61": dict(npos_list=SIZE_MIXES["mixtop_xl"],
+                          per_env_radius_frac=0.15, rate_lambda=0.3),
+        },
+        "seed": [42, 43],
     },
 }
 
