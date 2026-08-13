@@ -503,6 +503,43 @@ export VAL_DISTRACTORS="0 10"
 export MAX_ACTION_NORM=2.0
 EOF
         ;;
+    # C6 / C7: the warm starts C3/C4 were supposed to be. The comment above C3
+    # said "they need a parent: pass LOAD_CKPT" and then no launch ever set it,
+    # so C4 ran cold -- exploit-first by schedule only, reaching 41.6 steps
+    # where its intended parent P2 was already at 22.7. These export LOAD_CKPT
+    # themselves so the pack cannot forget it again.
+    #
+    # C6 is C4's schedule with P2 actually loaded: explore ramps into a policy
+    # that already follows q. C4's own u400 reading is why this is the run to
+    # make -- 22.5 steps on the 27% of trials it succeeds, i.e. the follow is
+    # intact and sharp and simply is not being engaged (§3r).
+    C6) cat <<'EOF'
+export ENVS_PER_WORLD=8
+export BATCH_ENVS=16
+export STEPS_PER_ROLLOUT=200
+export SCHEDULE="interleave:2500,empty_frac=0->0.5,anneal=500"
+export EVAL_EVERY=100
+export VAL_DISTRACTORS="0 10"
+export LOAD_CKPT=/orcd/pool/003/jackking/cls_runs/agent_ckpts/navigate_ee_P2_20351854/navigate_u175.pt
+EOF
+        ;;
+    # C7 = C6 with the regime balance corrected. At the defaults a 200-step
+    # explore rollout that finds 40 new cells earns 0.3*40 = 12 against
+    # GOAL_REWARD=5 for arriving, and §3p says pooled normalization leaves only
+    # that ratio meaningful -- so the gate closing is the reward working as
+    # specified, not a failure to learn. 20.0 puts arrival back above a good
+    # explore rollout without touching novelty, which is what keeps coverage.
+    C7) cat <<'EOF'
+export ENVS_PER_WORLD=8
+export BATCH_ENVS=16
+export STEPS_PER_ROLLOUT=200
+export SCHEDULE="interleave:2500,empty_frac=0->0.5,anneal=500"
+export EVAL_EVERY=100
+export VAL_DISTRACTORS="0 10"
+export GOAL_REWARD=20.0
+export LOAD_CKPT=/orcd/pool/003/jackking/cls_runs/agent_ckpts/navigate_ee_P2_20351854/navigate_u175.pt
+EOF
+        ;;
     *)  echo "ee_env: unknown variant '$1'" >&2; return 1 ;;
     esac
 }
