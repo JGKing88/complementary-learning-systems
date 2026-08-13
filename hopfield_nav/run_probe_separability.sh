@@ -9,7 +9,7 @@
 #SBATCH --output=/orcd/pool/003/jackking/cls_runs/logs/probe_sep_%j.out
 
 # Measure whether "the recalled pattern belongs to my env" is readable off the
-# policy's own input channels. See hopfield_nav/diagnostics/hopfield_separability.py.
+# policy's own input channels. See hopfield_nav/probes/hopfield_separability.py.
 #
 #   sbatch hopfield_nav/run_probe_separability.sh
 
@@ -25,7 +25,7 @@ unset CUDA_VISIBLE_DEVICES
 cd "$REPO"
 source scripts/cls_env.sh
 
-python -u -m hopfield_nav.diagnostics.hopfield_separability \
+python -u -m hopfield_nav.probes.hopfield_separability \
     --encoder "$ENCODER" \
     --size 20 --observation_size 60 --wall_resolution 4 --goal_radius 1.0 \
     --lambdas 11 12 13 --Np 400 --fwhm_ratio 0.25 \

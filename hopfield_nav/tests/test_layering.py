@@ -98,7 +98,7 @@ LAYERS: dict[str, int] = {
     # trainers -- they wire world + rollout + evaluation together and are only
     # ever run with `python -m`, never imported -- so they take the CLI layer
     # and rule 5 keeps them that way.
-    "hopfield_nav.diagnostics": 7,
+    "hopfield_nav.probes": 7,
 
     "analysis": 8,                     # figure + experiment pipelines
 }
