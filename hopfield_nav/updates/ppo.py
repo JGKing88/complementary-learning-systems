@@ -98,6 +98,54 @@ def _pool_rollouts(
     }
 
 
+def advantage_scale_by_group(
+    rollouts: list[RolloutBatch],
+    groups: list[str],
+    gamma: float,
+    gae_lambda: float,
+) -> dict[str, float]:
+    """Per-group advantage scale, *before* the pooled normalization.
+
+    Advantages are normalized once over the whole pooled buffer, so when a
+    single update mixes regimes the divisor is common to all of them. Each
+    group's share of the resulting gradient is therefore set by its own raw
+    advantage magnitude relative to that common divisor -- not by how many
+    rollouts it contributed.
+
+    That is easy to get badly wrong without noticing. An exploit rollout's
+    reward is dominated by a `goal_reward`-sized spike; an explore rollout's by
+    a novelty bonus a factor of ten or more smaller. Pool them and the shared
+    std is set almost entirely by the exploit rows, which divides the explore
+    rows' gradient by the ratio -- a silent, schedule-dependent reweighting of
+    two objectives that the flag list makes look independent.
+
+    Returns `{group: raw std}` plus `pooled` and, per group, `share`: the
+    factor its gradient is scaled by relative to what it would have received
+    had that group been normalized on its own. `share` of 1.0 means the group
+    is unaffected by the mixing; 0.2 means its objective is being run at a
+    fifth strength.
+    """
+    if len(groups) != len(rollouts):
+        raise ValueError(
+            f"got {len(groups)} group labels for {len(rollouts)} rollouts")
+    per_rollout = [
+        compute_gae(r.rewards, r.values, r.bootstrap_value, gamma, gae_lambda,
+                    alive=r.alive_mask)[0]
+        for r in rollouts
+    ]
+    pooled = torch.cat(per_rollout, dim=0)
+    pooled_std = float(pooled.std().clamp_min(1e-8).item())
+    out: dict[str, float] = {"pooled": pooled_std}
+    for name in sorted(set(groups)):
+        sel = [a for a, g in zip(per_rollout, groups) if g == name]
+        if not sel:
+            continue
+        std = float(torch.cat(sel, dim=0).std().clamp_min(1e-8).item())
+        out[f"{name}_std"] = std
+        out[f"{name}_share"] = std / pooled_std
+    return out
+
+
 def ppo_update(
     agent: nn.Module,
     rollouts: list[RolloutBatch],

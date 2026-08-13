@@ -38,7 +38,7 @@ from .world.env import warn_if_offcell_stores
 from .policy.agent import NavAgent, compute_input_dim
 from .policy.recurrent import add_recurrent_args
 from .rollout.collector import RolloutCollector
-from .updates.ppo import ppo_update
+from .updates.ppo import advantage_scale_by_group, ppo_update
 from .evaluation.checkpoint_io import cfg_from_checkpoint
 from .training.explore import ExploreRegime
 from .training.exploit import ExploitRegime
@@ -279,6 +279,11 @@ def run_navigate(
         n_pre_now = n_envs - n_emp_now
 
         rollouts = []
+        # One label per rollout, in the order they are appended. The reward
+        # split below slices on `n_pre_now` instead, which only agrees with
+        # this when `num_worlds == 1`; this list is what the advantage-scale
+        # diagnostic uses, and it is right either way.
+        regime_labels: list[str] = []
         for w_idx, world in enumerate(worlds):
             vh = world.field
             collector = RolloutCollector(vh, cfg, embed_dim, device)
@@ -286,8 +291,9 @@ def run_navigate(
                 env_offset = world.offsets[local_idx]
                 # Order: the first n_pre_now envs are exploit, the rest explore.
                 # The reward split logged below slices on the same boundary.
-                regime = (exploit_regime if local_idx < n_pre_now
-                          else explore_regime)
+                is_pre = local_idx < n_pre_now
+                regime = exploit_regime if is_pre else explore_regime
+                regime_labels.append("pre" if is_pre else "emp")
                 spec = regime.spec(w_idx, world, local_idx, env, env_offset, knobs)
                 # The collector reads novelty off cfg and the goal reward off
                 # the env, so the regime's choice has to be written into both.
@@ -301,6 +307,15 @@ def run_navigate(
                 )
                 rollouts.append(rollout)
         cfg.hopfield.novelty_reward = 0.0
+
+        # Only meaningful when an update actually mixes regimes: with one
+        # regime the pooled divisor IS that regime's own, and every share is 1
+        # by construction. Costs one extra GAE pass over the pool.
+        adv_scale = (
+            advantage_scale_by_group(rollouts, regime_labels,
+                                     cfg.ppo.gamma, cfg.ppo.gae_lambda)
+            if 0 < n_pre_now < n_envs else {}
+        )
 
         agent.train()
         losses = ppo_update(agent, rollouts, cfg.ppo, optimizer, aux_scale=1.0)
@@ -331,6 +346,8 @@ def run_navigate(
             log["train/current_lr"] = knobs.lr
             log["train/stage_kind"] = stage.kind
             log["train/stage_local_update"] = local_update
+            for k, v in adv_scale.items():
+                log[f"train/adv_{k}"] = v
             if refresher is not None:
                 for trait in refresher.counts:
                     log[f"train/refresh_{trait}"] = int(trait in refreshed)
@@ -347,6 +364,8 @@ def run_navigate(
                   f"emp_frac={knobs.empty_frac:.3f} std={log_std_mean:.3f} "
                   f"s/u={s_per_update:.1f} | "
                   + " ".join(f"{k}={v:.3f}" for k, v in losses.items())
+                  + (f" | adv_share pre={adv_scale['pre_share']:.2f} "
+                     f"emp={adv_scale['emp_share']:.2f}" if adv_scale else "")
                   + (f" | refresh={','.join(refreshed)}" if refreshed else ""),
                   flush=True)
             t_update_mark, n_updates_timed = time.time(), 0
