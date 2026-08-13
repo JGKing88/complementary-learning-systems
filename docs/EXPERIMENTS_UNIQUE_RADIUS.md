@@ -295,21 +295,28 @@ in the mixed-batch regime.
 
 # 4. How good can `exclude_cross_env_pairs=True` get?
 
-**Best so far: `r_min` 19 and 22**
-(`w9_best_combo/00{6,7}_top_f0.15_rate0.3`), against 2–3 for this regime
-untreated and 9 for the best §3 rescue attempt (which used 400-cell patches,
-outside this brief). **The best encoder ever trained *with* the
-cross-environment pairs scores 21.**
+**Best config: `mixtop` + radius 0.15·side + `rate_lambda=0.3` — `r_min` 14, 16,
+19, 22 over four seeds (median 17.5).** Against 2–3 for this regime untreated
+and 9 for the best §3 rescue attempt (which used 400-cell patches, outside this
+brief). **The best encoder ever trained *with* the cross-environment pairs
+scores 21** at the same 20 references, and 9/15 when re-scored at 100 (§4.8).
 
 | | best unconstrained (§1) | best under the constraint |
 |---|---|---|
 | config | `repel=2, frac=0.1`, 60×100 | `mixtop`, radius 0.15·side, `rate_lambda=0.3` |
 | cross-env pairs | kept | **withheld** |
-| `r_min`, 20 refs | 21 | **22** (other seed 19) |
-| **`r_min`, 100 refs** | **9 / 15** | **16 / 15** |
+| `r_min`, 20 refs | 21 *(1 seed)* | **17.5 median, 14–22** *(4 seeds)* |
+| `r_min`, 100 refs | 9 / 15 | 16 / 15 and 13 / 13 |
 | `r_median`, 100 refs | 28.5 / 29 | 28 / 29 |
-| alias ceiling | 0.814 | 0.813 |
-| decay50 | 37.5 | 42.0 |
+| `r_median`, 20 refs | 28.5 | 26.0–29.5 *(4 seeds)* |
+| alias ceiling | 0.814 | 0.81–0.92 |
+| decay50 | 37.5 | 37.5–42.0 |
+
+**Seed spread is 8 on the headline cell** (19, 22, 16, 14), so the claim is
+"matches", not "beats". The first pair of seeds reached a 0.81 ceiling and the
+second pair 0.89–0.92, and `r_min` follows. §2.6 says three seeds is a floor for
+this metric; two were carrying this result until `w12`. `r_median` is far
+steadier across the same four runs, 26.0 to 29.5.
 
 Not merely the same score — the same *profile*, column by column, and on the
 100-reference re-score (§4.8) the constrained encoder is ahead on one draw and
