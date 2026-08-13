@@ -255,10 +255,29 @@ def main() -> None:
         refs[name] = features(rp, size)
 
     ranked = classify(pol, refs)
+
+    # How far a family sits from ITSELF, regenerated on another seed. Without
+    # this the ranking is unfalsifiable: something is always nearest, and a
+    # policy that resembles nothing here would still be reported as "closest
+    # to X". Anything much beyond this scale means no family matches and the
+    # raw features are the only thing worth reading.
+    self_d = []
+    for name in REFERENCE_FAMILIES:
+        q = features(family_positions(name, 256, size, args.max_steps, stride,
+                                      turn_sigma,
+                                      np.random.RandomState(args.seed + 1000)),
+                     size)
+        self_d.append(dict(classify(q, refs))[name])
+    typical_self = float(np.median(self_d))
+    quality = ranked[0][1] / max(typical_self, 1e-9)
+
     out = {"ckpt": args.ckpt, "coverage": float(np.mean(covs)),
            "stride": stride, "turn_sigma": turn_sigma,
            "policy": pol, "references": refs,
-           "ranking": [{"family": n, "distance": d} for n, d in ranked]}
+           "ranking": [{"family": n, "distance": d} for n, d in ranked],
+           "typical_self_distance": typical_self,
+           "match_quality": float(quality),
+           "matches_a_family": bool(quality < 3.0)}
 
     hdr = f"{'':<14}" + "".join(f"{f[:12]:>13}" for f in FEATURES)
     print(f"\nstride {stride:.2f}, turn_sigma {turn_sigma:.2f}, "
@@ -271,6 +290,13 @@ def main() -> None:
     print("\nnearest reference families (standardized distance):")
     for name, d in ranked[:3]:
         print(f"   {name:<12} {d:.2f}")
+    print(f"\na family sits {typical_self:.2f} from itself on another seed; "
+          f"this policy is {ranked[0][1]:.2f} from its nearest.")
+    if out["matches_a_family"]:
+        print(f"  -> it behaves like: {ranked[0][0].upper()}")
+    else:
+        print("  -> NO reference family matches. Read the feature row: the "
+              "policy is doing something none of these describe.")
     if args.output_json:
         with open(args.output_json, "w") as f:
             json.dump(out, f, indent=2)
