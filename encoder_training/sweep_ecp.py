@@ -257,6 +257,29 @@ WAVES: dict[str, dict] = {
         },
         "seed": [42, 43],
     },
+    # W7 -- the two factors of the law at once.
+    #
+    #     r_pred = decay50 * sqrt(ln(1/C) / ln 2)
+    #
+    # graded_sigma owns decay50 and leaves C alone (§4.4); the rank terms own C
+    # and, on the evidence of w2, leave the decay alone -- rate_lambda=0.3 had
+    # the ceiling at 0.943 by epoch 114 where the binary baseline was at 0.988.
+    # Neither reaches 21 by itself at these sigmas. Together the law says they
+    # should: sigma=75 gives decay50 ~88, and 88 * sqrt(ln(1/0.90)/ln 2) = 34.
+    #
+    # If the product does not follow the law here, the law is where the mistake
+    # is, and that is worth as much as the encoder.
+    "w7_decay_x_ceiling": {
+        "arm": {
+            "s50_rate1":   dict(graded_sigma=50.0, rate_lambda=1.0),
+            "s75_rate1":   dict(graded_sigma=75.0, rate_lambda=1.0),
+            "s50_vicreg":  dict(graded_sigma=50.0, var_lambda=1.0, cov_lambda=0.1),
+            "s75_vicreg":  dict(graded_sigma=75.0, var_lambda=1.0, cov_lambda=0.1),
+            "s75_rate1_cov45": dict(graded_sigma=75.0, rate_lambda=1.0,
+                                    npos_list=SIZE_MIXES["mix3_45"]),
+        },
+        "seed": [42, 43],
+    },
 }
 
 
