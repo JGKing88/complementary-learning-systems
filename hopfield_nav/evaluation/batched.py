@@ -193,8 +193,17 @@ def batched_exploration_trials(
     max_steps: int,
     deterministic: bool = True,
     action_temperature: float = 1.0,
+    on_step=None,
 ) -> tuple[list[set], list[bool], list[int]]:
     """Run one exploration trial per entry of ``hopfields``, in parallel.
+
+    ``on_step(step, pos_before, actions, pos_after)`` is called after each step
+    when given, with float arrays. It exists so a diagnostic can measure the
+    policy's *movement statistics* -- stride, turn angle, how often a step is
+    absorbed by the wall clip -- on the exact path the evaluator scores, rather
+    than on a reimplementation of it that could quietly differ in any of the
+    input channels assembled below. It reads state and returns nothing; a
+    caller that mutates through it is on its own.
 
     Each trial holds its own Hopfield -- distractors only, never the goal --
     starts at its own position, and walks for exactly ``max_steps``. No store
@@ -311,8 +320,18 @@ def batched_exploration_trials(
             prev_action_t = result["move_action"].float().view(B, -1)
         prev_reward_t = torch.from_numpy(current_reward).to(device).unsqueeze(1)
 
+        # The continuous position, not the snapped one: a step shorter than a
+        # cell moves the agent without changing `positions()`, and stride is
+        # exactly what the diagnostic is after.
+        pos_before = (vec._pos_f.copy() if hasattr(vec, "_pos_f")
+                      else positions.astype(float))
         # Every trial steps, every step: nothing terminates early.
         vec.step_batch(actions, contract=contract)
+        if on_step is not None:
+            pos_after = (vec._pos_f.copy() if hasattr(vec, "_pos_f")
+                         else vec.positions().astype(float))
+            on_step(step, pos_before, np.asarray(actions, dtype=float),
+                    pos_after)
 
         reached = at_goal(vec)
         for b, p in enumerate(vec.positions()):

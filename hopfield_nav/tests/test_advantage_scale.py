@@ -2,10 +2,14 @@
 
 PPO here normalizes advantages once over the whole pooled buffer. When one
 update mixes an exploit regime -- whose reward is a `goal_reward`-sized spike --
-with an explore regime paid in novelty an order of magnitude smaller, the shared
-divisor is set by the exploit rows and the explore objective silently runs at a
-fraction of its strength. These tests pin that the diagnostic reports the
-fraction, and that it reads 1.0 when there is nothing to hide.
+with an explore regime paid in novelty, the shared divisor belongs to neither,
+and each objective silently runs at a fraction of its own strength.
+
+The fraction is not a one-way effect, which is the part worth pinning: a large
+`goal_reward` attenuates the explore objective, a small one attenuates the
+exploit objective, and somewhere between them the mixing is neutral. That is
+what makes `goal_reward` a schedule knob and not just a reward knob, and it is
+why the trainer logs the shares per update rather than assuming a value.
 """
 from __future__ import annotations
 
@@ -47,6 +51,15 @@ def _dense(B: int, T: int, scale: float, seed: int = 0) -> torch.Tensor:
     return -0.05 + scale * torch.randint(0, 2, (B, T), generator=g).float()
 
 
+def _mixed(amplitude: float) -> dict[str, float]:
+    """Four exploit-shaped rollouts against four explore-shaped ones."""
+    pre = [_rollout(_spiky(8, 64, amplitude=amplitude, period=20))
+           for _ in range(4)]
+    emp = [_rollout(_dense(8, 64, 0.3, seed=i)) for i in range(4)]
+    return advantage_scale_by_group(pre + emp, ["pre"] * 4 + ["emp"] * 4,
+                                    GAMMA, LAM)
+
+
 def test_a_single_group_is_never_rescaled():
     rollouts = [_rollout(_dense(4, 32, 0.3, seed=i)) for i in range(3)]
     out = advantage_scale_by_group(rollouts, ["emp"] * 3, GAMMA, LAM)
@@ -55,32 +68,34 @@ def test_a_single_group_is_never_rescaled():
     assert out["emp_std"] == out["pooled"]
 
 
-def test_a_large_goal_reward_shrinks_the_explore_gradient():
-    """The mechanism, at the reward scales this project actually runs."""
-    pre = [_rollout(_spiky(8, 64, amplitude=5.0, period=20)) for _ in range(4)]
-    emp = [_rollout(_dense(8, 64, 0.3, seed=i)) for i in range(4)]
-    out = advantage_scale_by_group(pre + emp, ["pre"] * 4 + ["emp"] * 4,
-                                   GAMMA, LAM)
-    # The spiky group dominates the shared divisor, so it keeps most of its
-    # gradient while the dense group loses most of its.
-    assert out["pre_share"] > 0.9
-    assert out["emp_share"] < 0.2
-    assert out["pre_std"] > 5 * out["emp_std"]
+def test_a_large_goal_reward_attenuates_the_explore_objective():
+    """v35 ran goal_reward=5 against a novelty of 0.3. This is that ratio."""
+    big, moderate = _mixed(5.0), _mixed(1.0)
+    assert big["pre_std"] > 2 * big["emp_std"]
+    # The explore rows keep less of their gradient the louder exploit gets.
+    assert big["emp_share"] < moderate["emp_share"]
+    assert big["emp_share"] < 0.5
 
 
-def test_matched_reward_scales_restore_a_fair_split():
-    """Shrinking goal_reward is what makes the two objectives comparable.
+def test_a_small_goal_reward_attenuates_the_exploit_objective():
+    """The same effect with the roles swapped, which is the part that makes
+    this a balance rather than a ceiling."""
+    tiny, moderate = _mixed(0.05), _mixed(2.0)
+    assert tiny["pre_share"] < moderate["pre_share"]
+    assert tiny["pre_share"] < 0.5
 
-    Same schedule, same rollout counts -- only the spike amplitude changes,
-    and both groups come back to within a factor of ~2 of an even split. This
-    is why `goal_reward` is a schedule knob and not just a reward knob.
+
+def test_some_amplitude_makes_the_mixing_neutral():
+    """Between the two failure directions, both objectives run at full weight.
+
+    The value here is a property of these synthetic reward scales, not a
+    recommendation for `goal_reward` -- the real scales depend on how often the
+    policy actually reaches a goal, which is why the trainer measures this per
+    update instead of assuming it.
     """
-    pre = [_rollout(_spiky(8, 64, amplitude=0.5, period=20)) for _ in range(4)]
-    emp = [_rollout(_dense(8, 64, 0.3, seed=i)) for i in range(4)]
-    out = advantage_scale_by_group(pre + emp, ["pre"] * 4 + ["emp"] * 4,
-                                   GAMMA, LAM)
-    assert 0.4 < out["emp_share"] < 1.6
-    assert 0.4 < out["pre_share"] < 1.6
+    out = _mixed(2.0)
+    assert 0.8 < out["pre_share"] < 1.2
+    assert 0.8 < out["emp_share"] < 1.2
 
 
 def test_labels_must_cover_every_rollout():
