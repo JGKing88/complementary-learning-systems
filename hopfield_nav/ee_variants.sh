@@ -595,6 +595,28 @@ export VAL_DISTRACTORS="0 10"
 export WALL_PENALTY=0.6
 EOF
         ;;
+    # C10 = the best components, and the run §3ac says to make.
+    #
+    # The composition grid so far varied the reward from parent P2 (C4 control,
+    # C7, C8) and then varied the parent once, at C8's reward (C9). The reward
+    # interventions all lost to the control; the parent swap was worth 4x in
+    # success. The cell nobody has run is the winning reward with the winning
+    # parent: C4's recipe, unchanged, from P5 u200 (1.000 / speed 0.759)
+    # instead of P2 u175 (0.975 / 0.655).
+    #
+    # C10-vs-C4 is therefore a clean single-variable test of the parent on the
+    # best-known reward, and C10-vs-C9 a clean test of the reward on the best-
+    # known parent. If §3ac is right this is the strongest composite available.
+    C10) cat <<'EOF'
+export ENVS_PER_WORLD=8
+export BATCH_ENVS=16
+export STEPS_PER_ROLLOUT=200
+export SCHEDULE="interleave:2500,empty_frac=0->0.5,anneal=500"
+export EVAL_EVERY=100
+export VAL_DISTRACTORS="0 10"
+export LOAD_CKPT=/orcd/pool/003/jackking/cls_runs/agent_ckpts/navigate_ee_P5_20363067/navigate_u200.pt
+EOF
+        ;;
     # W10 is to W9 what C8 was to C7, and for the same reason.
     #
     # W9 raised WALL_PENALTY 0.3 -> 0.6 to make a fresh edge cell net-negative.
