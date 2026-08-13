@@ -273,7 +273,10 @@ Per update (`train.py:198-407`):
 2. `epsilon_now = epsilon_explore × max(0, 1 − (u−1)/epsilon_anneal_updates)`.
 3. If `--refresh_envs_each_update`: every train env draws a new goal and the
    scaffold re-places all envs (`placement="random"`). Requires
-   `--static-vectorhash`, else `RuntimeError`.
+   `--static-vectorhash`, else `RuntimeError`. **Superseded** by the per-trait
+   refresh below, and refused alongside it: random re-placement over the whole
+   scaffold can drop a train env on the validation region, and it never updates
+   `split.train`, so `world.json` would describe envs the run had stopped using.
 4. For each (world, env): build the Hopfield set —
    - `agent_can_store=True` → a list of `batch_envs` Hopfields (clones of the
      pre-stored template if `--hopfield_init pre_stored`, else empty). Only in
@@ -292,7 +295,9 @@ Per update (`train.py:198-407`):
 8. Every `eval_every`: `eval_max = max(200, 5·size²)`, then `nav_det`,
    `nav_stoch`, `discovery`, `exploration`, and `union` (10 trials,
    `eval_max/2` steps).
-9. Every `save_every`: `$CLS_RUNS/agent_ckpts/<run>/hopfield_nav_update{u}.pt`.
+9. Every `save_every`: `$CLS_RUNS/agent_ckpts/<run>/hopfield_nav_update{u}.pt`,
+   carrying `world_spec`. A refreshing run rewrites `world.json` first, so the
+   checkpoint names the file as it stands.
 10. After training, `evaluate_realistic` if `realistic_steps_per_env > 0`.
 
 <details>
@@ -347,7 +352,14 @@ Per update (`train.py:198-407`):
 | `--wall_penalty` | `0.0` | `−r` per step on a grid-edge cell. |
 | `--epsilon_explore` | `0.0` | Per-step probability of replacing the sampled action with a uniform random direction; log-prob is re-scored, and the step is masked out of the PPO move loss. |
 | `--epsilon_anneal_updates` | `0` | Linear decay of ε to 0 over N updates (0 = constant). |
-| `--refresh_envs_each_update` | off | Re-draw goals and re-place envs each update. |
+| `--refresh_envs_each_update` | off | Re-draw goals and re-place envs each update, randomly over the whole scaffold. Superseded by `--refresh_place` / `--refresh_goal`; refused alongside them. |
+| `--env_generator` / `--no-` | off | Draw envs from declared domains instead of the historical placement path. Off keeps today's envs for a given `--seed`; on fixes the offset-reproducibility bug and enforces train/val separation. **`world.json` is written either way.** |
+| `--place_region` | `anywhere` | `anywhere` or `rect:X0,Y0,W,H`. Declaring a rect is what makes a place-OOD val set possible later — its complement. |
+| `--goal_region` | `any` | `any`, `ring:W`, `interior:W`, `quadrant:Q`. |
+| `--wall_seeds` | `0,10000000` | `LO,HI` range training draws wall seeds from. |
+| `--place_margin` | derived | Edge-to-edge train/val clearance, in cells. Default reads the scaffold's own cosine-vs-distance curve. |
+| `--goal_val_frac` | `0.2` | Share of goal cells reserved for validation. |
+| `--refresh_place` / `--refresh_wall` / `--refresh_goal` / `--refresh_size` | — | Re-draw that trait across the train set every N updates, from the declared domain and clear of the fixed val envs. Requires `--env_generator`. Every draw is recorded into `split.used`. |
 | `--explore_steps` | `None` | Two-phase rollout: stores + shaping are active only for the first N steps of each rollout. |
 
 Note: `persistence_bonus`, `novelty_scale_remaining` and `novelty_scale_cap`
@@ -531,7 +543,6 @@ Flags shared with `train.py` (`--encoder_checkpoint`, `--encoder_gain`,
 | `--novelty_reward` | `0.1` | Novelty reward applied **only to explore-regime envs**. |
 | `--novelty_anneal` / `--no-` | `False` | Linear decay of novelty to 0 over the full budget. A stage's `novelty=` ignores it. |
 | `--load_checkpoint` | `None` | Start from this `.pt`. Its config becomes the **base** for the run: every setting is inherited except the flags actually on the command line, so a child reproduces its parent's recipe without re-listing it. `--save_dir` is never inherited. |
-| `--randomize_goal_per_rollout` / `--no-` | `False` | New goal each rollout for explore-regime envs (breaks the "memorize this env's goal cell from its sensory fingerprint" shortcut). |
 | `--explore_goals_off` / `--no-` | `False` | Explore-regime envs emit no goal reward and never teleport on goal-reach; exploit-regime envs are unaffected. Forces explore to be paid purely by novelty / revisit / wall / time. Eval envs are always built with `goals_active=True` regardless. |
 | `--move_ent_coef` | `None` | Overrides `PPOConfig.ent_coef`. |
 | `--ppo_clip_coef` | `None` | Overrides `PPOConfig.clip_coef` (0.2). |
@@ -549,6 +560,51 @@ Flags shared with `train.py` (`--encoder_checkpoint`, `--encoder_gain`,
 | `--max_action_norm`, `--min_action_norm` | `None` | Clamp/boost action L2 (only when `continuous_normalize` is False). |
 | `--input_hopfield_multistep` | `[]` | e.g. `1 2 3` — project the recall at each of those iteration counts and pass each as an extra 2-D input (continuous mode only). |
 | `--union_cov_trials` | `0` | If >0, `do_eval` also runs union-coverage with this many rollouts per env. |
+
+**The env generator and per-trait refresh.** An environment is four independent
+traits — wall pattern, env-local goal cell, scaffold placement, size — and the
+generator declares a domain for each, then draws train and validation together so
+separation is a property of the draw rather than something checked afterwards.
+Full rationale in `docs/EVAL_SPLITS_DESIGN.md`; status and per-phase outcomes in
+`docs/ENV_GENERATOR_STATUS.md`.
+
+| Flag | Default | Effect |
+|---|---|---|
+| `--env_generator` / `--no-` | `False` | Draw envs from declared domains instead of the historical placement path. Off keeps today's envs for a given `--seed`; on fixes the offset-reproducibility bug (§1.4) and enforces train/val separation. `world.json` is written either way. |
+| `--place_region` | `anywhere` | Where train envs may sit: `anywhere` or `rect:X0,Y0,W,H`. Declaring a rect is what makes a place-OOD val set possible later — it is the complement. |
+| `--goal_region` | `any` | Which env-local cells may hold a goal: `any`, `ring:W`, `interior:W`, `quadrant:Q`. Declaring a region is what makes a goal-OOD val set possible. |
+| `--wall_seeds` | `0,10000000` | `LO,HI` range training draws wall seeds from. |
+| `--place_margin` | `None` | Edge-to-edge clearance between **every** pair of envs — train↔train, train↔val, val↔val. Measured on the torus, max over axes. `None` derives it from the scaffold's own cosine-vs-distance curve (≈80 at `lambdas=11,12,13`, `fwhm=0.25`). |
+| `--goal_val_frac` | `0.2` | Share of goal cells reserved for validation. Only binds when `--refresh_goal` is set. |
+| `--refresh_place` | `None` | Re-draw train placements every N updates, clear of the fixed val envs by the margin. |
+| `--refresh_wall` | `None` | Re-draw train wall seeds every N updates, excluding every seed the run has already used. Rebuilds the envs — 56 ms at `observation_size` 12, 129 ms at 60, for 80 envs. |
+| `--refresh_goal` | `None` | Re-draw train goals every N updates from the train share of `--goal_region`. Replaces the old `--randomize_goal_per_rollout`, which drew uniformly over the arena and so could land on a cell reserved for validation. Setting it also caps the train goal cells at `1 - --goal_val_frac` of the region up front, without which the arena is exhausted in a few updates. |
+| `--refresh_size` | `None` | Re-draw the train env size every N updates. Needs more than one declared size, which nothing produces yet, so this currently errors at startup. |
+
+All four `--refresh_*` require `--env_generator` — the legacy path declares no
+domains to re-draw from — and each is a cadence in updates, firing when
+`update % N == 0`. **Only the train set refreshes**: `base_val` is drawn once and
+held, because a validation set that moved under the model would make every
+in-training curve unreadable. Every refreshed value is folded into the union
+recorded in `world.json`, which is what a later held-out val set excludes
+against; the file is rewritten on the `--ckpt_every` cadence.
+
+**A refreshing run gets a startup preflight.** Refreshed values are a pure
+function of `(seed, tick)` and the declared domains — nothing training does
+enters — so it replays the exact ticks (≈1.4 s for 300 updates, building no
+envs) and reports what a post-hoc held-out eval will still be able to ask for,
+into stdout and `world.json`'s `diagnostics.preflight`. Two outcomes, and only
+one is fatal:
+
+- **A shrinking ceiling is recorded and the run proceeds.** The largest held-out
+  place set a run can support falls as the used-offset union grows — at the
+  working config with `--refresh_place 1`, from ~187 envs to ~10. That limits a
+  later `--split place=held_out --num_val_envs N`, and nothing else; a run that
+  only ever uses `--split recorded` is unaffected.
+- **A domain that runs dry is refused at startup.** If a trait's domain empties
+  mid-run — a narrow `--wall_seeds` against a fast `--refresh_wall`, say — the
+  refresh *raises*, hours in, at a tick already decided. The preflight names the
+  update and the run does not start.
 
 Different defaults vs `train.py`: `observation_size` 12, `movement_mode`/
 `hopfield_mode` `continuous`, `input_sensory`/`input_prev_action`/
@@ -623,6 +679,29 @@ RNN; the optimizer sees only the store head. Rollouts use `empty_shared`
 Hopfields, and `ppo_update` runs — but with everything else frozen, the only
 live gradients are the store surrogate and the store BCE.
 
+**Two worlds are recorded.** Phase B is a continuation of the *agent*, not of
+the world: it draws its own envs from its own `--seed`, which is usually not the
+parent's, so its eval numbers are **not on the same axes** as Phase A's. Rather
+than leave that to be discovered by whoever plots the two curves together, the
+run directory says it outright:
+
+| File | What |
+|---|---|
+| `world.json` | Phase B's own world, as for every other trainer. This is what `--split` and every eval driver resolve. |
+| `world_parent.json` | A **verbatim** copy of Phase A's `world.json` — byte for byte, so its own `spec_hash` still verifies, and so this directory answers "what did the parent train on" after the parent has been moved or garbage-collected. |
+
+`world.json`'s `diagnostics.parent` block records the parent's hash and how much
+of its world this run reuses: `val_envs_identical` (the one that answers "can
+these curves go on the same axes"), shared wall seeds, shared goal cells, shared
+train offsets, and `min_place_gap_vs_parent` — 0 would mean the two train sets
+overlap on the scaffold. Checkpoints carry both summaries as `world_spec` and
+`parent_world_spec`. A parent written before world recording gets a printed note
+and no `parent` block, rather than a silent absence.
+
+The refresh cadence inherited from the parent's config is now **applied** rather
+than silently dropped; a cadence with no generator behind it is refused at
+startup, as elsewhere.
+
 | Flag | Default | Effect |
 |---|---|---|
 | `--load_checkpoint` | required | Phase-A `.pt` to start from. |
@@ -633,7 +712,8 @@ live gradients are the store surrogate and the store BCE.
 | `--steps_per_rollout` | `None` | Override the checkpoint's value. |
 | `--eval_every` | `5` | Evaluation cadence. |
 | `--ckpt_every` | `None` | Checkpoint cadence (`store_u{u}.pt`). `None` = follow `--eval_every`, which is what it did unconditionally before 2026-08-06. |
-| `--seed` / `--device` / `--use_wandb` / `--wandb_project` | `42` / `cuda` / off / `hopfield-nav-phase-b` | |
+| `--seed` / `--device` / `--use_wandb` / `--wandb_project` | `42` / `cuda` / off / `hopfield-nav-phase-b` | `--seed` draws Phase B's own world; it is usually not the parent's seed. |
+| `--save_dir` | `<CLS_RUNS>/agent_ckpts/store_<run>` | Not inherited from the parent, which would have Phase B overwrite its own parent. |
 
 ### 4.5 What one rollout actually does
 
@@ -701,6 +781,15 @@ its later steps are masked out of the loss.
 | `--batch_envs`, `--steps_per_rollout` | `16`, `64` | Rollout shape. |
 | `--eval_every`, `--n_eval_trials`, `--eval_max_steps` | `25`, `32`, `64` | Console-log cadence and eval budget. |
 | `--seed`, `--device`, `--save_dir`, `--load_checkpoint` | `0`, `cuda`, `checkpoint_rnn/<run>`, `None` | |
+| `--env_generator` / `--no-` | `False` | Draw envs from declared domains and record them, as `train_navigate` does, instead of the historical placement path. Builds a scaffold for placement **whether or not the agent observes one** — under `--no-input_grid_state` the RNN never sees where its envs sit, but the offsets are still part of the world's identity and an agent-hash run on the same `world.json` does see them. The same config draws the same envs at the same offsets either way. Needs an explicit `--place_margin`: deriving one reads the scaffold's cosine-vs-distance curve, which needs an encoder this stack does not have. |
+| `--place_region`, `--goal_region`, `--wall_seeds`, `--place_margin`, `--goal_val_frac`, `--n_val_envs` | `anywhere`, `any`, `0,10000000`, `None`, `0.2`, `2` | Same meanings as the `train_navigate` table above. |
+
+Both this and `analysis/continual/baseline.py` write a **`world.json`** beside
+their output, on both paths — the same file and reader `train_navigate` uses.
+That is what lets a baseline run and an agent-hash run be handed one record,
+rather than being matched through the draw-order convention documented at
+`agenthash.py:325-333`. Placement previously drew from global `np.random` here
+too, so which offsets a baseline used was unrecoverable afterwards.
 | `--use_wandb`, `--wandb_project` | off, `hopfield-nav-rnn` | |
 | `--plot_smooth_window` | `1` | Rolling mean for the two auto-generated plots. |
 
@@ -716,9 +805,20 @@ Artifacts: `final.pt` (weights, optimizer, cfg, full history, env goals),
 Reconstructs the training config from the checkpoint, rebuilds the eval world,
 loads the agent, and runs whichever evaluators are enabled.
 
+**The eval world comes from the run's `world.json` when it has one** (found from
+`--ckpt`). Until 2026-08 nothing passed the record through, so every evaluation
+replayed the training seed stream — which recovers wall codes and goals but
+*not* offsets, because placement drew from global `np.random`. Runs written
+before Phase 3 have no record and still take that path, with a warning; their
+offsets are a fresh draw, not the ones training evaluated against.
+
 | Flag | Default | Effect |
 |---|---|---|
 | `--ckpt` | required | Any `hopfield_nav` agent checkpoint. |
+| `--split` | `recorded` | Which validation envs to evaluate on. **Repeatable** — each extra one reuses the same scaffold, so several combinations cost one build. `recorded` is the run's own `base_val`, read from `world.json` exactly as trained against. Otherwise `trait=level` pairs over `place`/`wall`/`goal`, levels `same` \| `held_out` \| `ood`; unnamed traits default to `held_out`. Needs a `world.json` for anything but `recorded`. |
+| `--val_seed` | `0` | Seed for minting split env sets; changing it draws a different set at the same levels. |
+| `--val_size` | ckpt | Mint the validation envs at this arena size — the size-OOD axis. **Repeatable**, and crossed with `--split`, so one run gives a size column in the same table. `recorded` is paired with its own size and left out of the cross product; passing `--val_size` when every `--split` is `recorded` is an error rather than a no-op. Equal to the trained size it is a no-op and the results are byte-identical to the same `--split` without it; differing, it appends `,size=N` to the split key. Wall novelty across sizes is seed disjointness only — the Hamming margin is reported as `null` with a reason, because wall codes of two sizes are different-shaped draws. |
+| `--scaled-budget` / `--no-` | on | At a `--val_size` other than the trained one, also run exploration at a `size²`-scaled `max_steps` and navigation at a `size`-scaled one, under `exploration_scaled` / `nav_det_scaled`. A bigger arena has more cells, so coverage at a fixed budget must fall whether or not anything generalizes; reporting one number would confound capability with budget. Doubles those two evaluators' cost. |
 | `--encoder` | ckpt's path | Override the encoder. |
 | `--device` | `cuda` | |
 | `--tag` | basename of ckpt | Label in printed output and JSON. |

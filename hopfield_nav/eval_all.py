@@ -23,14 +23,74 @@ import numpy as np
 import torch
 
 from hopfield_nav.encoder_io import load_encoder
+from hopfield_nav.world import generate as gen
 from hopfield_nav.world.env import warn_if_offcell_stores
+from hopfield_nav.evaluation import checkpoint_io
 from hopfield_nav.evaluation.checkpoint_io import (
     build_eval_world, cfg_from_checkpoint, load_agent, scaffold_layout_dict,
+    world_spec_for,
 )
 from hopfield_nav.evaluation.metrics import (
     evaluate_navigation, evaluate_goal_discovery, evaluate_exploration,
     evaluate_realistic, evaluate_repeat, evaluate_sequential_episodes,
 )
+
+
+def split_size_combos(splits, val_sizes) -> list[tuple]:
+    """``(levels, size)`` pairs, so a size sweep is a column in the same table.
+
+    ``recorded`` is paired with ``None`` and only ``None``: it is a fixed list
+    of envs, so there is no size of it to vary, and pairing it with a requested
+    size would either raise on an invocation that made sense or silently ignore
+    the flag. Minted levels take every requested size. Duplicates collapse --
+    two identical combinations would otherwise cost a full evaluation each and
+    then overwrite one another in ``results["splits"]``.
+    """
+    sizes = list(val_sizes) if val_sizes else [None]
+    out, seen = [], set()
+    for levels in splits:
+        for size in ([None] if levels is None else sizes):
+            key = (gen.levels_key(levels), size)
+            if key not in seen:
+                seen.add(key)
+                out.append((levels, size))
+    if val_sizes and all(s is None for _, s in out):
+        raise SystemExit(
+            f"--val_size {val_sizes} was passed but every --split is "
+            "'recorded', which is the fixed list of envs this checkpoint was "
+            "scored against -- there is no size-N version of it. Ask for a "
+            "level too, e.g. --split place=held_out,wall=held_out,goal=held_out.")
+    return out
+
+
+def resolve_env_sets(cfg, encoder, device, spec, splits, *, ckpt_path,
+                     val_seed: int, n_val_envs: int,
+                     val_sizes: list | None = None) -> list[dict]:
+    """One env set per requested split, all on a single shared scaffold.
+
+    ``splits`` is a list of level dicts, where ``None`` means the recorded
+    ``base_val`` -- the envs this checkpoint was actually scored against. That is
+    deliberately not the same as all-``held_out``, which mints a fresh set also
+    disjoint from training: the first asks how the checkpoint did on its own
+    validation set, the second whether that survives another draw from the same
+    rule.
+
+    Without a ``world.json`` only the recorded level exists, because minting
+    needs the declared domains and the union of what training used -- neither of
+    which an RNG replay can recover. Asking for a level then fails here, rather
+    than silently evaluating something else.
+    """
+    # One shared field across every combination: `encoded_Phi` is 12 GB at
+    # Npos=1716, so a rebuild per combination would cost more than every
+    # evaluator put together. `eval_env_set` is the same call the single-set
+    # CLIs make, so "what does --split place=ood mean" has one answer.
+    field = (checkpoint_io.eval_field(cfg, encoder, str(device), spec)
+             if spec is not None else None)
+    return [checkpoint_io.eval_env_set(
+        cfg, encoder, str(device), ckpt_path=ckpt_path, levels=levels,
+        val_seed=val_seed, n_envs=n_val_envs, spec=spec, field=field,
+        size=size)
+        for levels, size in split_size_combos(splits, val_sizes)]
 
 
 @torch.no_grad()
@@ -61,7 +121,12 @@ def eval_checkpoint(
     oracle_store_at_goal: bool = False,
     goal_radius: float | None = None,
     allow_offcell_store: bool | None = None,
+    splits: list | None = None,
+    val_seed: int = 0,
+    val_sizes: list | None = None,
+    scaled_budget: bool = True,
 ) -> dict:
+    splits = [None] if splits is None else splits
     ck = torch.load(ckpt_path, map_location=device, weights_only=False)
     cfg = cfg_from_checkpoint(ck["config"])
     if hopfield_oracle is not None:
@@ -109,10 +174,18 @@ def eval_checkpoint(
     torch.manual_seed(0)
     np.random.seed(0)
 
-    val_envs, vh, val_offsets = build_eval_world(cfg, encoder, str(device))
+    # The env sets, one per requested split level combination. The scaffold is
+    # built once and shared: `encoded_Phi` is 12 GB at Npos=1716, so rebuilding
+    # it per combination would dominate the whole evaluation.
+    spec = world_spec_for(ckpt_path)
+    env_sets = resolve_env_sets(cfg, encoder, device, spec, splits,
+                                ckpt_path=ckpt_path, val_seed=val_seed,
+                                n_val_envs=cfg.num_val_envs,
+                                val_sizes=val_sizes)
+    trained_size = checkpoint_io.recorded_size(spec, cfg)
     agent = load_agent(cfg, ck["agent_state_dict"], embed_dim, device)
 
-    results: dict = {
+    meta: dict = {
         "ckpt_path": ckpt_path,
         "encoder_path": encoder_path,
         "Npos": npos_effective,
@@ -129,8 +202,93 @@ def eval_checkpoint(
         "num_val_envs": cfg.num_val_envs,
         "movement_mode": cfg.env.movement_mode,
         "lock_store_after_goal": bool(lock_store_after_goal),
+        "world_spec_hash": spec.spec_hash() if spec is not None else None,
+        "trained_env_size": trained_size,
+        "val_sizes": val_sizes,
+    }
+
+    by_split: dict = {}
+    for es in env_sets:
+        if len(env_sets) > 1:
+            print(f"\n>>> split: {es['key']}", flush=True)
+        by_split[es["key"]] = run_suite(
+            cfg, agent, es, device,
+            num_trials=num_trials, max_steps=max_steps,
+            n_distractors=n_distractors, run_nav_stoch=run_nav_stoch,
+            run_realistic=run_realistic, realistic_steps=realistic_steps,
+            realistic_seed_offset=realistic_seed_offset,
+            repeat_trials=repeat_trials, repeat_steps=repeat_steps,
+            repeat_seed_offset=repeat_seed_offset,
+            seq_iters_per_block=seq_iters_per_block, seq_max_steps=seq_max_steps,
+            seq_ma_window=seq_ma_window, seq_seed_offset=seq_seed_offset,
+            lock_store_after_goal=lock_store_after_goal,
+            oracle_store_at_goal=oracle_store_at_goal,
+            trained_size=trained_size, scaled_budget=scaled_budget,
+        )
+
+    # The first combination stays at the top level, so every existing reader of
+    # this file -- nine of them, from `analysis.continual.plotting` to the
+    # `run_*.sh` scripts -- sees exactly the shape it always has. `splits` is
+    # purely additive, and a single-combination run is byte-compatible.
+    first = by_split[env_sets[0]["key"]]
+    return {**meta, **first, "splits": by_split}
+
+
+def step_budget(val_envs, trained_size, max_steps: int) -> dict | None:
+    """Second step budgets for a val set whose arena is not the trained one.
+
+    ``None`` when the sizes match -- there is nothing to rescale, and running
+    the same evaluator twice at the same budget would only cost time and make a
+    same-size run differ from one without the flag.
+
+    Exploration scales with ``size**2`` because coverage is a fraction of the
+    cell count; navigation with ``size`` because path length grows linearly.
+    """
+    sizes = {int(e.size) for e in val_envs}
+    if trained_size is None or len(sizes) != 1:
+        return None
+    val = sizes.pop()
+    if val == int(trained_size):
+        return None
+    r = val / float(trained_size)
+    return {
+        "trained_size": int(trained_size), "val_size": int(val),
+        "fixed": int(max_steps),
+        "explore": max(1, int(round(max_steps * r * r))),
+        "nav": max(1, int(round(max_steps * r))),
+    }
+
+
+@torch.no_grad()
+def run_suite(
+    cfg, agent, env_set: dict, device: torch.device, *,
+    num_trials: int, max_steps: int, n_distractors: list[int],
+    run_nav_stoch: bool, run_realistic: bool, realistic_steps: int,
+    realistic_seed_offset: int, repeat_trials: int, repeat_steps: int,
+    repeat_seed_offset: int, seq_iters_per_block: int, seq_max_steps: int,
+    seq_ma_window: int, seq_seed_offset: int, lock_store_after_goal: bool,
+    oracle_store_at_goal: bool, trained_size: int | None = None,
+    scaled_budget: bool = True,
+) -> dict:
+    """Every evaluator, against one env set.
+
+    Split out from `eval_checkpoint` so the expensive, env-independent half --
+    checkpoint, encoder, scaffold, agent -- happens once while this runs per
+    split level combination.
+    """
+    val_envs, vh, val_offsets = env_set["envs"], env_set["field"], env_set["offsets"]
+    results: dict = {
+        "split": env_set["key"],
+        "split_report": env_set["report"],
         "scaffold_layout": scaffold_layout_dict(cfg, vh, val_envs, val_offsets),
     }
+    budget = step_budget(val_envs, trained_size, max_steps) if scaled_budget else None
+    if budget:
+        results["step_budget"] = budget
+        print(f"  [budget]    arena {budget['trained_size']} -> "
+              f"{budget['val_size']}; also running explore at "
+              f"max_steps={budget['explore']} (cells scale as size^2) and nav at "
+              f"{budget['nav']} (path length as size)", flush=True)
 
     print(f"  [nav_det]   num_trials={num_trials} max_steps={max_steps} "
           f"dist={n_distractors}", flush=True)
@@ -168,6 +326,26 @@ def eval_checkpoint(
         n_distractors_list=n_distractors,
     )
     results["exploration"] = expl
+
+    if budget:
+        # A bigger arena has more cells, so coverage at a fixed step budget must
+        # fall whether or not anything about the policy generalizes -- one
+        # number would confound capability with budget. Both scalings are here,
+        # neither is "correct", and the point is that a reader can see which
+        # claim survives which (§6.6).
+        print(f"  [explore*]  max_steps={budget['explore']} (size^2-scaled)",
+              flush=True)
+        results["exploration_scaled"] = evaluate_exploration(
+            agent, val_envs, vh, val_offsets, cfg, device,
+            num_trials=num_trials, max_steps=budget["explore"],
+            n_distractors_list=n_distractors,
+        )
+        print(f"  [nav_det*]  max_steps={budget['nav']} (size-scaled)", flush=True)
+        results["nav_det_scaled"] = evaluate_navigation(
+            agent, val_envs, vh, val_offsets, cfg, device,
+            num_trials=num_trials, max_steps=budget["nav"],
+            n_distractors_list=n_distractors, deterministic=True,
+        )
 
     if run_realistic and realistic_steps > 0:
         print(f"  [realistic] steps_per_env={realistic_steps} "
@@ -255,10 +433,41 @@ def _fmt_expl(res: dict, dist: int) -> str:
             f"steps={m['mean_steps_to_goal']:.1f}")
 
 
+def print_split_table(results: dict, n_distractors: list[int]) -> None:
+    """Combination x metric, which is the shape the comparison actually has.
+
+    Only when more than one split ran -- a single-combination invocation reads
+    the same as it always did.
+    """
+    splits = results.get("splits") or {}
+    if len(splits) < 2:
+        return
+    print("\n=== splits ===")
+    for d in n_distractors:
+        print(f"  [dist={d}]")
+        print(f"    {'split':<52} {'nav_det':<34} {'exploration'}")
+        for key, res in splits.items():
+            print(f"    {key:<52} {_fmt_nav(res['nav_det'], d):<34} "
+                  f"{_fmt_expl(res['exploration'], d)}")
+    print("  separation of each minted set, measured:")
+    for key, res in splits.items():
+        r = res.get("split_report") or {}
+        if not r:
+            continue
+        ham = (f"wall_hamming>={r['min_wall_hamming_vs_train']}"
+               if r.get('wall_hamming_note') is None
+               else "wall_hamming n/a across sizes")
+        print(f"    {key:<52} place_gap>={r['min_place_gap_vs_train']} "
+              f"(margin {r['margin']})  {ham}  "
+              f"shared_wall={r['n_wall_seeds_shared']} "
+              f"shared_goal={r['n_goal_cells_shared']}")
+
+
 def print_summary(tag: str, results: dict, n_distractors: list[int]) -> None:
     print(f"\n=== {tag} ===")
     print(f"  ckpt={results['ckpt_path']}")
     print(f"  mode={results['movement_mode']} num_val_envs={results['num_val_envs']}")
+    print(f"  split={results.get('split', gen.RECORDED)}")
     for d in n_distractors:
         print(f"  [dist={d}]")
         print(f"    nav_det    : {_fmt_nav(results['nav_det'], d)}")
@@ -807,6 +1016,37 @@ def main():
     )
 
     # Nav/discovery/exploration eval params
+    p.add_argument("--split", action="append", default=None, dest="splits",
+                   help="Which validation envs to evaluate on; repeatable, and "
+                        "each extra one reuses the same scaffold. 'recorded' "
+                        "(default) is the run's own base_val, read from "
+                        "world.json exactly as trained against. Otherwise give "
+                        "'trait=level' pairs over place/wall/goal, with levels "
+                        "same | held_out | ood; unnamed traits default to "
+                        "held_out. e.g. --split recorded --split place=same "
+                        "--split place=ood. Note 'recorded' and "
+                        "'place=held_out,wall=held_out,goal=held_out' are "
+                        "different questions: the first is the set this "
+                        "checkpoint was scored on, the second a fresh draw from "
+                        "the same rule.")
+    p.add_argument("--val_seed", type=int, default=0,
+                   help="Seed for minting split env sets. Changing it draws a "
+                        "different set at the same levels.")
+    p.add_argument("--val_size", type=int, action="append", default=None,
+                   help="Mint the validation envs at this arena size -- the "
+                        "size-OOD axis. **Repeatable**, and crossed with "
+                        "--split, so one run gives a size column in the same "
+                        "table. Needs a minted --split (there is no size-N "
+                        "version of the recorded set, which is paired with its "
+                        "own size and left alone). Equal to the training size "
+                        "it is a no-op, by construction.")
+    p.add_argument("--scaled-budget", dest="scaled_budget",
+                   action=argparse.BooleanOptionalAction, default=True,
+                   help="At a --val_size other than the trained one, also run "
+                        "explore at a size^2-scaled max_steps and nav at a "
+                        "size-scaled one, so coverage falling can be told apart "
+                        "from a bigger arena at the same budget. Doubles those "
+                        "two evaluators' cost.")
     p.add_argument("--num_trials", type=int, default=32)
     p.add_argument("--max_steps", type=int, default=200)
     p.add_argument("--n_distractors", type=int, nargs="+", default=[0])
@@ -859,6 +1099,11 @@ def main():
                         "when path ends with _realistic_drift.png)")
     args = p.parse_args()
 
+    try:
+        splits = [gen.parse_levels(s) for s in (args.splits or [gen.RECORDED])]
+    except ValueError as exc:
+        p.error(str(exc))
+
     device = torch.device(args.device if torch.cuda.is_available()
                           else "cpu")
     tag = args.tag or os.path.basename(args.ckpt)
@@ -906,10 +1151,15 @@ def main():
         oracle_store_at_goal=args.oracle_store_at_goal,
         goal_radius=args.goal_radius,
         allow_offcell_store=args.allow_offcell_store,
+        splits=splits,
+        val_seed=args.val_seed,
+        val_sizes=args.val_size,
+        scaled_budget=args.scaled_budget,
     )
     results["tag"] = tag
 
     print_summary(tag, results, args.n_distractors)
+    print_split_table(results, args.n_distractors)
 
     if args.output_json:
         os.makedirs(os.path.dirname(args.output_json) or ".", exist_ok=True)

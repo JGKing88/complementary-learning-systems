@@ -253,16 +253,16 @@ class TestConfigValidation:
         cfg = self._base_cfg()
         validate_train_config(cfg)  # should not raise
 
-    def test_agent_can_store_false_with_warmup_raises(self):
+    def test_allow_store_false_with_warmup_raises(self):
         cfg = self._base_cfg()
-        cfg.hopfield.agent_can_store = False
+        cfg.hopfield.allow_store = False
         cfg.hopfield.auto_store_warmup = 5
         with pytest.raises(ValueError, match="auto_store_warmup"):
             validate_train_config(cfg)
 
-    def test_agent_can_store_false_warmup_zero_passes(self):
+    def test_allow_store_false_warmup_zero_passes(self):
         cfg = self._base_cfg()
-        cfg.hopfield.agent_can_store = False
+        cfg.hopfield.allow_store = False
         cfg.hopfield.auto_store_warmup = 0
         validate_train_config(cfg)  # should not raise
 
@@ -323,7 +323,7 @@ class TestRolloutRewardShaping:
 
         with patch.object(VecEnv, "reset_all", force_at_goal):
             rollout = collector.collect_rollout(
-                env, agent, hops, env_offset=(2, 2), update_idx=1,
+                env, agent, hops, allow_store=True, env_offset=(2, 2), update_idx=1,
             )
         # B=4, T=1; every trajectory's pre-step state was at-goal, so rewards
         # should be exactly goal_reward (1.0). Without the fix, the post-step
@@ -345,7 +345,7 @@ class TestRolloutRewardShaping:
         # Goal is far from typical start so most steps are explore.
         env._goal = (5, 5)
         hops = [Hopfield(8, beta=1.0, device="cpu") for _ in range(cfg.batch_envs)]
-        rollout = collector.collect_rollout(env, agent, hops,
+        rollout = collector.collect_rollout(env, agent, hops, allow_store=True,
                                             env_offset=(2, 2), update_idx=1)
         # At least one step must include the novelty bonus (reward > -time_penalty).
         rew = rollout.rewards.cpu().numpy()
@@ -370,7 +370,7 @@ class TestRolloutRewardShaping:
         ):
             # Stage start at (1, 0): one step N → (1, 1) is interior, no penalty.
             env._pos = (1, 0)
-            rollout = collector.collect_rollout(env, agent, hops, env_offset=(0, 0),
+            rollout = collector.collect_rollout(env, agent, hops, allow_store=True, env_offset=(0, 0),
                                                 update_idx=1)
         # The first step starts at (1,0) which is itself perimeter (y=0). With
         # action N, post-step is (1,1) = interior. wall_penalty should NOT fire.
@@ -452,7 +452,7 @@ class TestRolloutGoalInMemoryGate:
         # non-goal cells but never at goal (we never reach it). The bit should
         # remain False through the rollout.
         with patch.object(agent, "get_action_and_value", wraps=force_store):
-            rollout = collector.collect_rollout(env, agent, hops,
+            rollout = collector.collect_rollout(env, agent, hops, allow_store=True,
                                                 env_offset=(0, 0), update_idx=1)
         # Hopfield content: stores during explore (t<2), nothing after. The
         # number of stored memories should equal the count of effective_store
@@ -475,7 +475,7 @@ class TestRolloutOverrideCompose:
         hops = [Hopfield(8, beta=1.0, device="cpu") for _ in range(4)]
         # Just ensure rollout runs without error and log_probs are finite.
         torch.manual_seed(0)
-        rollout = collector.collect_rollout(env, agent, hops,
+        rollout = collector.collect_rollout(env, agent, hops, allow_store=True,
                                             env_offset=(0, 0), update_idx=1,
                                             epsilon_now=1.0)
         assert torch.isfinite(rollout.move_log_probs).all()
@@ -498,7 +498,7 @@ class TestRolloutOverrideCompose:
             h.input_memory(torch.randn(8))
         # Roll once and just confirm it runs without breaking the log_prob.
         torch.manual_seed(0)
-        rollout = collector.collect_rollout(env, agent, hops,
+        rollout = collector.collect_rollout(env, agent, hops, allow_store=True,
                                             env_offset=(0, 0), update_idx=1,
                                             epsilon_now=1.0)
         assert torch.isfinite(rollout.move_log_probs).all()

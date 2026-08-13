@@ -80,7 +80,7 @@ def make_stub_cfg(
     epsilon_explore: float = 0.0,
     auto_nav_warmup: int = 0,
     input_goal_in_memory: bool = False,
-    agent_can_store: bool = True,
+    allow_store: bool = True,
     continuous_normalize: bool = False,
     # Observation-channel knobs -- the axis the golden fixtures sweep.
     input_encoded_state: bool = False,
@@ -109,7 +109,7 @@ def make_stub_cfg(
         vectorhash=VectorHashConfig(),
         hopfield=HopfieldConfig(
             beta=1.0, alpha=1.0, steps=1,
-            agent_can_store=agent_can_store,
+            allow_store=allow_store,
             novelty_reward=novelty_reward,
             revisit_penalty=revisit_penalty,
             wall_penalty=wall_penalty,

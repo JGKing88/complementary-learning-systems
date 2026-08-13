@@ -251,6 +251,64 @@ def test_ckpt_every_beats_eval_every_in_a_real_run(sandbox, tiny_encoder):
 
 
 @pytest.mark.slow
+def test_env_refresh_end_to_end(sandbox, tiny_encoder):
+    """A real refreshing run, through the CLI, and the record it leaves behind.
+
+    The unit tests drive `Refresher` directly; this is the only thing that
+    checks the wiring -- that the flags reach a cadence, the cadence reaches the
+    update loop, and `world.json` gets rewritten on the checkpoint cadence with
+    the union grown rather than the startup draw frozen. A run that refreshed
+    but recorded only its first draw would look identical from every angle
+    except this file.
+    """
+    import json
+
+    root, env = sandbox
+    save_dir = root / "refresh_ckpt"
+    _run(["hopfield_nav.train_navigate",
+          "--encoder_checkpoint", str(tiny_encoder),
+          "--lambdas", "3", "4", "--Np", "40",
+          "--size", "3", "--observation_size", "16",
+          "--batch_envs", "2", "--steps_per_rollout", "8",
+          "--schedule", "interleave:4", "--envs_per_world", "2",
+          "--num_worlds", "1", "--num_val_envs", "1",
+          "--eval_every", "100", "--ckpt_every", "2",
+          "--n_val_trials", "1", "--val_distractors", "0", "--device", "cpu",
+          "--static-vectorhash", "--env_generator", "--place_margin", "1",
+          "--refresh_place", "1", "--refresh_goal", "1", "--refresh_wall", "2",
+          "--save_dir", str(save_dir)], env)
+
+    spec = json.loads((save_dir / "world.json").read_text())
+    split = spec["split"]
+    n_train = len(split["train"])
+    rep = split["diagnostics"]["refresh"]
+    assert rep["cadence"] == {"place": 1, "wall": 2, "goal": 1, "size": None}
+    assert rep["ticks"] == 4 and rep["counts"]["wall"] == 2
+    # 4 updates x 2 envs of fresh wall seeds, plus the startup draw.
+    assert len(split["used"]["wall"]) == n_train * 3, (
+        "the used union did not grow with the refresh ticks -- a later "
+        "held_out val set would treat training's own walls as unseen")
+    # Validation is drawn once and held: an eval curve is only readable if the
+    # thing being evaluated on stood still.
+    assert len(split["base_val"]) == 1
+
+
+@pytest.mark.slow
+def test_refresh_without_the_generator_fails_fast(sandbox, tiny_encoder):
+    """And says which flag is missing, before the 12 GB scaffold gets built."""
+    root, env = sandbox
+    proc = subprocess.run(
+        [sys.executable, "-m", "hopfield_nav.train_navigate",
+         "--encoder_checkpoint", str(tiny_encoder),
+         "--lambdas", "3", "4", "--size", "3", "--schedule", "explore:1",
+         "--device", "cpu", "--refresh_place", "1",
+         "--save_dir", str(root / "no_generator")],
+        cwd=REPO_ROOT, env=env, capture_output=True, text=True, timeout=300)
+    assert proc.returncode != 0
+    assert "needs --env_generator" in proc.stdout + proc.stderr
+
+
+@pytest.mark.slow
 def test_navigate_writes_a_usable_manifest(navigate_checkpoint, tiny_encoder):
     """A real training run leaves a manifest that identifies it.
 
@@ -349,6 +407,141 @@ def test_train_store_end_to_end(sandbox, tiny_encoder, navigate_checkpoint):
 
 
 @pytest.mark.slow
+def test_train_writes_a_world_on_both_paths(sandbox, tiny_encoder):
+    """`train` could not say which envs it used until now.
+
+    Both paths write it -- the point of recording is not that a run opted into
+    declared domains, it is that a post-hoc eval can rebuild the envs a
+    checkpoint was actually scored against (docs/EVAL_SPLITS_DESIGN.md 1.4).
+    """
+    import json
+
+    root, env = sandbox
+    common = ["hopfield_nav.train",
+              "--encoder_checkpoint", str(tiny_encoder),
+              "--lambdas", "3", "4", "--Np", "40", "--size", "3",
+              "--observation_size", "16", "--batch_envs", "2",
+              "--steps_per_rollout", "8", "--envs_per_world", "2",
+              "--num_worlds", "1", "--num_val_envs", "2", "--n_updates", "2",
+              "--eval_every", "100", "--save_every", "2",
+              "--device", "cpu", "--static-vectorhash"]
+    seen = {}
+    for kind, extra in (("legacy", []),
+                        ("declared", ["--env_generator", "--place_margin", "1"])):
+        out = root / f"train_world_{kind}"
+        _run(common + extra + ["--save_dir", str(out)], env)
+        spec = json.loads((out / "world.json").read_text())
+        assert spec["generator"] == kind
+        assert len(spec["split"]["train"]) == 2
+        assert len(spec["split"]["base_val"]) == 2
+        seen[kind] = spec
+
+    # The declared path asserts separation; the legacy path only measures it.
+    # That difference is the reason `--env_generator` exists, so pin it rather
+    # than assume both records mean the same thing.
+    assert seen["declared"]["split"]["diagnostics"]["min_place_gap"] >= 1
+    assert seen["declared"]["split"]["margin"] == 1
+    assert seen["legacy"]["split"]["margin"] == 0
+
+    # And a checkpoint names the file, which is what makes a post-hoc eval
+    # resolve the right envs instead of replaying an RNG.
+    ck = torch.load(root / "train_world_declared" / "hopfield_nav_update2.pt",
+                    map_location="cpu", weights_only=False)
+    assert ck["world_spec"]["spec_hash"] == seen["declared"]["spec_hash"]
+
+
+@pytest.mark.slow
+def test_train_survives_its_own_eval_logging(sandbox, tiny_encoder):
+    """The wandb path, which nothing drove -- so nothing caught it going dead.
+
+    `train.py --use_wandb` raised `NameError: name 'union' is not defined` at its
+    first eval from 2026-08-06, when `evaluate_union_coverage` was absorbed into
+    `evaluate_exploration` and this logging line outlived its producer. Every run
+    with logging and evals both on -- which is how the script is normally run --
+    died there. `WANDB_MODE=disabled` still evaluates the expression, so this
+    reaches the bug without needing a wandb account.
+    """
+    root, env = sandbox
+    out = root / "train_wandb_eval"
+    _run(["hopfield_nav.train",
+          "--encoder_checkpoint", str(tiny_encoder),
+          "--lambdas", "3", "4", "--Np", "40", "--size", "3",
+          "--observation_size", "16", "--batch_envs", "2",
+          "--steps_per_rollout", "8", "--envs_per_world", "2",
+          "--num_worlds", "1", "--num_val_envs", "2", "--n_updates", "1",
+          "--eval_every", "1", "--n_val_trials", "1", "--save_every", "1",
+          "--device", "cpu", "--static-vectorhash", "--use_wandb",
+          "--save_dir", str(out)], env)
+    assert list(out.glob("*.pt")), "the run did not reach its first checkpoint"
+
+
+@pytest.mark.slow
+def test_train_refuses_both_refresh_mechanisms_at_once(sandbox, tiny_encoder):
+    """The old one re-places over the whole scaffold and records nothing, so it
+    undoes exactly what the new one guarantees. Silently letting both run would
+    leave world.json describing envs the run had stopped using."""
+    root, env = sandbox
+    proc = subprocess.run(
+        [sys.executable, "-m", "hopfield_nav.train",
+         "--encoder_checkpoint", str(tiny_encoder),
+         "--lambdas", "3", "4", "--size", "3", "--device", "cpu",
+         "--n_updates", "1", "--env_generator", "--refresh_place", "1",
+         "--refresh_envs_each_update", "--save_dir", str(root / "both")],
+        cwd=REPO_ROOT, env=env, capture_output=True, text=True, timeout=300)
+    assert proc.returncode != 0
+    assert "--refresh_place" in proc.stdout + proc.stderr
+    assert not list((root / "both").glob("*.pt")) if (root / "both").exists() else True
+
+
+@pytest.mark.slow
+def test_train_store_records_both_its_world_and_its_parents(
+        sandbox, tiny_encoder, generator_checkpoint):
+    """Phase B draws its own envs, so its eval numbers are not on the same axes
+    as Phase A's. The run directory says so, on its own, without needing the
+    parent to still exist: a verbatim copy of the parent's world.json plus an
+    overlap block, both reachable from the checkpoint.
+    """
+    import filecmp
+    import json
+
+    root, env = sandbox
+    parent_dir, ckpt = generator_checkpoint
+    out = root / "store_both_worlds"
+    _run(["hopfield_nav.train_store",
+          "--load_checkpoint", str(ckpt),
+          "--encoder_checkpoint", str(tiny_encoder),
+          "--phase_b_updates", "2", "--steps_per_rollout", "8",
+          "--device", "cpu", "--eval_every", "1000", "--ckpt_every", "2",
+          "--seed", "7", "--save_dir", str(out)], env)
+
+    # Verbatim, so the copy's own spec_hash still verifies. A re-serialized
+    # copy would be a different file claiming to be the parent's.
+    assert filecmp.cmp(parent_dir / "world.json", out / "world_parent.json",
+                       shallow=False)
+
+    child = json.loads((out / "world.json").read_text())
+    parent = json.loads((out / "world_parent.json").read_text())
+    block = child["split"]["diagnostics"]["parent"]
+    assert block["spec_hash"] == parent["spec_hash"]
+    assert block["checkpoint"] == str(ckpt)
+
+    # Phase B used --seed 7 against a parent trained at another seed, so the
+    # worlds differ -- and the record says so rather than leaving it to be
+    # discovered by whoever plots the two curves together.
+    overlap = block["overlap"]
+    assert overlap["val_envs_identical"] is False
+    assert overlap["min_place_gap_vs_parent"] is not None
+    assert child["split"]["base_val"] != parent["split"]["base_val"], (
+        "the two worlds are identical, so this test cannot show the difference "
+        "being recorded")
+
+    ck = torch.load(out / "store_final.pt", map_location="cpu",
+                    weights_only=False)
+    assert ck["world_spec"]["spec_hash"] == child["spec_hash"]
+    assert ck["parent_world_spec"]["spec_hash"] == parent["spec_hash"]
+
+
+@pytest.mark.slow
 def test_visualize_trajectories_renders(sandbox, navigate_checkpoint):
     """The figure path: checkpoint dir -> rollouts -> PNG + PDF on disk.
 
@@ -404,3 +597,112 @@ def test_agenthash_run_sequential_outer_loop():
     assert set(stored) == {0, 1}
     # Non-vacuous: the oracle stores whenever the agent sits on the goal.
     assert sum(stored.values()) > 0, "no store ever fired; fixture is vacuous"
+
+
+@pytest.mark.slow
+def test_eval_all_output_keeps_its_shape_for_a_single_split(sandbox,
+                                                           navigate_checkpoint):
+    """Nine readers consume this file's top-level keys.
+
+    `analysis.continual.plotting`, `train.py`, `train_rnn.py`,
+    `evaluation/rnn.py`, three `run_*.sh` scripts and this suite all index
+    `nav_det` / `discovery` / `exploration` directly. Splits are additive: the
+    first combination stays at the top level, so a one-split run is what it
+    always was.
+    """
+    import json
+
+    root, env = sandbox
+    _save_dir, ckpt = navigate_checkpoint
+    out = root / "eval_shape.json"
+    _run(["hopfield_nav.eval_all", "--ckpt", str(ckpt),
+          "--device", "cpu", "--num_trials", "1", "--max_steps", "4",
+          "--skip-realistic", "--no-nav-stoch",
+          "--output-json", str(out)], env)
+    res = json.loads(out.read_text())
+    for key in ("ckpt_path", "encoder_path", "Npos", "movement_mode",
+                "num_val_envs", "nav_det", "discovery", "exploration",
+                "scaffold_layout", "tag"):
+        assert key in res, f"eval_all output lost the top-level key {key!r}"
+    assert set(res["splits"]) == {"recorded"}
+    assert res["splits"]["recorded"]["nav_det"] == res["nav_det"]
+
+
+@pytest.fixture(scope="module")
+def generator_checkpoint(sandbox, tiny_encoder):
+    """A checkpoint with a `world.json`, so a split can actually be minted.
+
+    `navigate_checkpoint` runs without `--env_generator` on purpose -- most of
+    the suite should keep exercising the path a run without a declared world
+    takes -- but `--split` and `--val_size` both need the recorded domains.
+    """
+    root, env = sandbox
+    save_dir = root / "generator_ckpt"
+    if not sorted(save_dir.glob("*.pt")):
+        _run(["hopfield_nav.train_navigate",
+              "--encoder_checkpoint", str(tiny_encoder),
+              "--lambdas", "3", "4", "--Np", "40",
+              "--size", "3", "--observation_size", "16",
+              "--batch_envs", "2", "--steps_per_rollout", "8",
+              "--schedule", "interleave:2", "--envs_per_world", "2",
+              "--num_worlds", "1", "--num_val_envs", "2",
+              "--eval_every", "100", "--ckpt_every", "2",
+              "--n_val_trials", "1", "--val_distractors", "0", "--device", "cpu",
+              "--static-vectorhash", "--env_generator", "--place_margin", "1",
+              "--save_dir", str(save_dir)], env)
+    ckpts = sorted(save_dir.glob("*.pt"))
+    assert ckpts, f"no checkpoint written to {save_dir}"
+    assert (save_dir / "world.json").exists()
+    return save_dir, ckpts[-1]
+
+
+@pytest.mark.slow
+def test_val_size_needs_a_minted_split(sandbox, generator_checkpoint):
+    """`recorded` is the fixed list of envs the run was scored against; there is
+    no size-N version of it. Ignoring the flag is the silent failure this whole
+    phase exists to end, so it is an error instead."""
+    root, env = sandbox
+    _save_dir, ckpt = generator_checkpoint
+    proc = subprocess.run(
+        [sys.executable, "-m", "hopfield_nav.eval_all", "--ckpt",
+         str(ckpt), "--device", "cpu", "--val_size", "6"],
+        cwd=REPO_ROOT, env=env, capture_output=True, text=True, timeout=300)
+    assert proc.returncode != 0
+    assert "every --split is 'recorded'" in proc.stdout + proc.stderr
+
+
+@pytest.mark.slow
+def test_val_size_at_the_trained_size_returns_the_same_results(
+        sandbox, generator_checkpoint):
+    """The Phase 6 acceptance gate, at the CLI.
+
+    Every evaluator's numbers, for a `--val_size` equal to the size the run
+    trained at, must equal the ones the same `--split` produces without it. That
+    is what says the size plumbing changed nothing for the runs that do not use
+    it -- a claim no amount of unit testing inside the generator can make.
+    """
+    import json
+
+    root, env = sandbox
+    _save_dir, ckpt = generator_checkpoint
+    levels = "place=held_out,wall=held_out,goal=held_out"
+    base_args = ["hopfield_nav.eval_all", "--ckpt", str(ckpt),
+                 "--device", "cpu", "--num_trials", "1", "--max_steps", "4",
+                 "--skip-realistic", "--no-nav-stoch", "--split", levels]
+
+    plain = root / "size_noop_plain.json"
+    sized = root / "size_noop_sized.json"
+    _run(base_args + ["--output-json", str(plain)], env)
+    _run(base_args + ["--val_size", "3", "--output-json", str(sized)], env)
+
+    a, b = json.loads(plain.read_text()), json.loads(sized.read_text())
+    assert a["split"] == b["split"] == levels, (
+        "an equal --val_size decorated the key, so it was not a no-op")
+    for key in ("nav_det", "discovery", "exploration", "split_report",
+                "scaffold_layout", "splits"):
+        assert a[key] == b[key], f"--val_size at the trained size changed {key}"
+    # Non-vacuous: the run really did evaluate something.
+    assert a["exploration"]["0"]["mean_coverage"] > 0
+    # And the extra budget pass does not fire when there is nothing to scale.
+    assert "step_budget" not in a and "step_budget" not in b
+    assert "exploration_scaled" not in b

@@ -3,9 +3,14 @@
 The agent has nothing useful to recall, so coverage is the job and novelty is
 what pays for it. Optionally the goal reward is switched off entirely
 (`goals_off`), which makes the regime purely about covering ground rather than
-stumbling onto the goal; optionally the goal is re-drawn each rollout
-(`randomize_goal`), which breaks the memorization shortcut where a fixed sensory
-codebook lets the agent learn "in env X, go to position Y" without exploring.
+stumbling onto the goal.
+
+Re-drawing the goal to break the memorization shortcut -- where a fixed sensory
+codebook lets the agent learn "in env X, go to position Y" without exploring --
+used to live here as `randomize_goal`. It is now `--refresh_goal`
+(`training/refresh.py`), which draws from the declared train cell partition
+rather than uniformly over the arena, so a refreshed goal cannot land on a cell
+reserved for validation.
 
 Epsilon-greedy is applied here and only here -- see `exploit.py` for why.
 
@@ -32,20 +37,22 @@ class ExploreRegime:
     are fixed, freshly built per rollout when distractors are resampled.
     """
 
+    # Declared here rather than implied by the type of `hop`: this regime
+    # never writes, and that is a decision, not a consequence.
+    allows_store = False
+
     def __init__(self, cfg: TrainConfig, embed_dim: int,
                  device: torch.device, dist_rng: np.random.RandomState, *,
-                 goals_off: bool = False, randomize_goal: bool = False,
-                 use_distractors: bool = False):
+                 goals_off: bool = False, use_distractors: bool = False):
         self.cfg = cfg
         self.embed_dim = embed_dim
         self.device = device
         self.dist_rng = dist_rng
         self.goals_off = goals_off
-        self.randomize_goal = randomize_goal
         # See ExploitRegime for why this is a per-run decision, not per-update.
         self.use_distractors = use_distractors
 
-    def _build_hop(self, vh, env_offset, knobs: Knobs) -> Hopfield:
+    def _build_hop(self, vh, env, env_offset, knobs: Knobs) -> Hopfield:
         """The env's memory for this rollout: empty, plus any distractors.
 
         Derived rather than pooled, for the same reason as `ExploitRegime` --
@@ -60,19 +67,22 @@ class ExploreRegime:
             n_dist = int(self.dist_rng.randint(
                 knobs.emp_dist_min, knobs.emp_dist_max + 1))
             if n_dist > 0:
+                # `env.size`, not `cfg.env.size`: see ExploitRegime.
                 for pat in sample_distractors(
-                        vh, env_offset, self.cfg.env.size, n_dist, self.dist_rng):
+                        vh, env_offset, env.size, n_dist, self.dist_rng):
                     hop.input_memory(torch.from_numpy(pat).float())
         return hop
 
     def spec(self, w_idx: int, world, local_idx: int, env, env_offset,
              knobs: Knobs) -> RolloutSpec:
-        hop = self._build_hop(world.field, env_offset, knobs)
+        hop = self._build_hop(world.field, env, env_offset, knobs)
         return RolloutSpec(
             hop=hop,
+            # This regime is scored on coverage, not on remembering anything, and
+            # `hop` is one object shared by all B trajectories.
+            allow_store=self.allows_store,
             novelty_reward=knobs.novelty,
             goals_active=not self.goals_off,
-            reset_goal=self.randomize_goal,
             epsilon=knobs.eps,
             goal_in_memory_init=False,
         )

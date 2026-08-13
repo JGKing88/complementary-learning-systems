@@ -129,3 +129,60 @@ def test_load_agent_without_a_state_dict_keeps_the_fresh_init():
     c = load_agent(cfg, None, 8, device)
     assert not torch.equal(c.state_dict()["rnn.weight_ih_l0"],
                            a.state_dict()["rnn.weight_ih_l0"])
+
+
+def test_agent_can_store_is_coerced_to_allow_store():
+    """Every checkpoint written before 2026-08 carries the old field name.
+
+    `cfg_from_checkpoint` builds `HopfieldConfig(**cd["hopfield"])`, so an
+    unrecognised key is a TypeError, not a warning -- without the coercion the
+    rename would make all 355 recorded run dirs unloadable.
+    """
+    from dataclasses import asdict
+    from hopfield_nav.config import TrainConfig
+    from hopfield_nav.evaluation.checkpoint_io import cfg_from_checkpoint
+
+    saved = asdict(TrainConfig())
+    saved["hopfield"]["agent_can_store"] = False
+    del saved["hopfield"]["allow_store"]
+
+    cfg = cfg_from_checkpoint(saved)
+    assert cfg.hopfield.allow_store is False
+
+
+def test_a_deleted_randomize_goal_flag_is_reported_not_dropped(capsys):
+    """Two recorded runs set it, and its removal changes what they would do.
+
+    Unlike the renames above this one cannot be mapped: `--refresh_goal` draws
+    from the declared train partition rather than uniformly over the arena, and
+    it demands `--env_generator`, which those runs never had. An unknown
+    top-level key is silently ignored by `cfg_from_checkpoint`, so without this
+    the behavior would vanish from a resumed run with nothing said.
+    """
+    from dataclasses import asdict
+    from hopfield_nav.config import TrainConfig
+    from hopfield_nav.evaluation.checkpoint_io import cfg_from_checkpoint
+
+    saved = asdict(TrainConfig())
+    saved["randomize_goal_per_rollout"] = True
+    cfg = cfg_from_checkpoint(saved)
+    assert not hasattr(cfg, "randomize_goal_per_rollout")
+    assert "--refresh_goal" in capsys.readouterr().out
+
+    # A run that had it off has nothing to report.
+    saved["randomize_goal_per_rollout"] = False
+    cfg_from_checkpoint(saved)
+    assert "refresh_goal" not in capsys.readouterr().out
+
+
+def test_a_current_checkpoint_still_round_trips():
+    from dataclasses import asdict
+    from hopfield_nav.config import TrainConfig
+    from hopfield_nav.evaluation.checkpoint_io import cfg_from_checkpoint
+
+    cfg = TrainConfig()
+    cfg.hopfield.allow_store = False
+    cfg.freeze_store = False
+    back = cfg_from_checkpoint(asdict(cfg))
+    assert back.hopfield.allow_store is False
+    assert back.freeze_store is False

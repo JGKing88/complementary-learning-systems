@@ -351,7 +351,7 @@ def test_same_level_reuses_training_values(field, env_cfg, domains):
     split = gen.generate_split(field, env_cfg, domains, 6, 2, seed=4, margin=6)
     vs = gen.make_val_set(split, 4, {"place": "same", "wall": "same",
                                      "goal": "same"}, seed=9)
-    assert {v.offset for v in vs} <= split.used["place"]
+    assert {v.offset for v in vs} <= split.used_offsets()
     assert {v.wall_seed for v in vs} <= split.used["wall"]
     assert {v.goal for v in vs} <= split.used["goal"]
 
@@ -363,8 +363,8 @@ def test_held_out_level_avoids_everything_training_used(field, env_cfg, domains)
     for v in vs:
         assert v.wall_seed not in split.used["wall"]
         assert v.goal not in split.used["goal"]
-        for o in split.used["place"]:
-            assert gen.toroidal_gap(v.offset, v.size, o, v.size,
+        for o, s in split.used_boxes():
+            assert gen.toroidal_gap(v.offset, v.size, o, s,
                                     split.period) >= split.margin
 
 
@@ -374,7 +374,7 @@ def test_mix_and_match_is_per_trait(field, env_cfg, domains):
     vs = gen.make_val_set(split, 3, {"place": "same", "wall": "held_out",
                                      "goal": "held_out"}, seed=9)
     for v in vs:
-        assert v.offset in split.used["place"]
+        assert v.offset in split.used_offsets()
         assert v.wall_seed not in split.used["wall"]
         assert v.goal not in split.used["goal"]
 
@@ -503,6 +503,44 @@ def test_lattice_slots_clear_the_torus_seam():
                 assert gen.axis_separation(a, 8, b, 8, 132) >= 20
 
 
+def test_lattice_jitter_room_is_bounded_by_the_wrap_gap():
+    """Slack comes from the slots, not from the pitch -- they differ at the seam.
+
+    `_axis_slots` drops trailing slots until the wrap clears, so the survivors
+    are not evenly spaced: at Npos=15, pitch=10, the slots [0, 10] are 7 apart
+    going up and **2** apart going round. Pitch-based slack licensed a jitter of
+    2, which closes the wrap gap to 1.
+    """
+    assert gen._axis_slots(0, 12, 10, size=3, spacing=2, period=15) == [0, 10]
+    # Going up: 10 - 0 - 3 = 7. Going round: 15 - 10 + 0 - 3 = 2, which binds.
+    assert gen._axis_slack([0, 10], size=3, spacing=2, period=15, pitch=10) == 0
+    # A straight run with real room still gets some.
+    assert gen._axis_slack([0, 20, 40], size=3, spacing=2, period=200,
+                           pitch=20) == 7
+
+
+def test_lattice_places_everything_it_has_slots_for(wide_field):
+    """A jittered env must not squeeze out a slot the lattice was counting on.
+
+    Four slots, four envs, two fixed obstacles that all four clear. The jitter
+    moved the first placements off-lattice, they blocked a later slot, and the
+    fallback returned None -- reported as "no lattice of that pitch fits" when
+    one plainly did. Only reachable with a non-empty `exclude`, which is to say
+    only from a refresh: `generate_split` draws train and val in one call with
+    nothing pre-placed.
+    """
+    obstacles = [((5, 5), 3), ((5, 10), 3)]
+    placed = gen._lattice_places(
+        dom.Anywhere(), np.random.RandomState(0), 4, size=3, Npos=15,
+        period=15, exclude=obstacles, margin=2, self_margin=2)
+    assert placed is not None and len(placed) == 4
+    for i, a in enumerate(placed):
+        for off, s in obstacles:
+            assert gen.toroidal_gap(a, 3, off, s, 15) >= 2
+        for b in placed[i + 1:]:
+            assert gen.toroidal_gap(a, 3, b, 3, 15) >= 2
+
+
 def test_held_out_val_is_disjoint_on_every_trait(wide_field):
     """The property the whole design exists for, stated once, at scale."""
     env_cfg = EnvConfig(size=8, observation_size=OBS)
@@ -513,11 +551,11 @@ def test_held_out_val_is_disjoint_on_every_trait(wide_field):
     vs = gen.make_val_set(split, 5, {"place": "held_out", "wall": "held_out",
                                      "goal": "held_out"}, seed=99)
     assert not {v.wall_seed for v in vs} & split.used["wall"]
-    assert not {v.offset for v in vs} & split.used["place"]
+    assert not {v.offset for v in vs} & split.used_offsets()
     assert not {v.goal for v in vs} & split.used["goal"]
     for v in vs:
-        for o in split.used["place"]:
-            assert gen.toroidal_gap(v.offset, v.size, o, v.size,
+        for o, s in split.used_boxes():
+            assert gen.toroidal_gap(v.offset, v.size, o, s,
                                     split.period) >= split.margin
 
 
@@ -546,3 +584,84 @@ def test_margin_spaces_every_pair(wide_field):
         for b in vs[i + 1:]:
             assert gen.toroidal_gap(a.offset, a.size, b.offset, b.size,
                                     split.period) >= split.margin
+
+
+# ---------------------------------------------------------------------------
+# The mask: a second implementation of the separation predicate
+# ---------------------------------------------------------------------------
+
+@pytest.mark.parametrize("period, size, margin", [
+    (35, 4, 5), (60, 6, 6), (60, 6, 0), (132, 8, 20), (132, 8, 12), (47, 3, 9),
+])
+def test_the_mask_agrees_with_the_predicate_it_replaces(period, size, margin):
+    """Cell for cell, over the whole scaffold. Not a spot check.
+
+    `legal_mask` is a rewrite of `toroidal_gap(...) >= margin` in closed form, so
+    a subtly wrong span would not error -- it would hand back offsets that
+    overlap what training used, which is the exact failure the split exists to
+    prevent. Includes offsets on the seam, where the forbidden interval wraps.
+    """
+    rng = np.random.RandomState(period)
+    exclude = [((int(rng.randint(0, period)), int(rng.randint(0, period))), size)
+               for _ in range(6)]
+    exclude += [((0, 0), size), ((period - 1, period - 2), size)]   # the seam
+    mask = gen.legal_mask(exclude, size=size, Npos=period, period=period,
+                          margin=margin)
+    assert mask.shape == (period, period)
+    truth = np.array([
+        [all(gen.toroidal_gap((x, y), size, o, s, period) >= margin
+             for o, s in exclude)
+         for y in range(period)]
+        for x in range(period)])
+    assert np.array_equal(mask, truth), (
+        f"mask and toroidal_gap disagree on "
+        f"{int((mask != truth).sum())} of {period * period} offsets")
+
+
+def test_the_mask_handles_a_differently_sized_excluded_env():
+    """The forbidden span is asymmetric when the two envs differ in size.
+
+    `axis_separation` subtracts the candidate's size on one side and the
+    excluded env's on the other, so assuming a square centred on the offset is
+    wrong the moment a val set is drawn at a size the train set did not use.
+    """
+    period, size = 60, 4
+    exclude = [((20, 20), 12)]
+    mask = gen.legal_mask(exclude, size=size, Npos=period, period=period,
+                          margin=3)
+    truth = np.array([
+        [gen.toroidal_gap((x, y), size, (20, 20), 12, period) >= 3
+         for y in range(period)] for x in range(period)])
+    assert np.array_equal(mask, truth)
+
+
+def test_masked_and_unmasked_sampling_both_obey_the_margin(wide_field):
+    """Two code paths, one contract. Neither may return a violating offset."""
+    domain = dom.Anywhere()
+    exclude = [((100, 100), 8), ((400, 700), 8), ((1000, 200), 8)]
+    for use_mask in (False, True):
+        offs = gen.sample_places(domain, np.random.RandomState(0), 5, size=8,
+                                 Npos=132, period=132, exclude=exclude,
+                                 margin=10, self_margin=10, use_mask=use_mask)
+        assert len(offs) == 5
+        for i, a in enumerate(offs):
+            for o, s in exclude:
+                assert gen.toroidal_gap(a, 8, o, s, 132) >= 10
+            for b in offs[i + 1:]:
+                assert gen.toroidal_gap(a, 8, b, 8, 132) >= 10
+
+
+def test_an_exhausted_exclusion_set_says_it_is_not_a_capacity_problem():
+    """The old message suggested raising Npos, which does not help here.
+
+    Capacity is fine -- the region holds hundreds. What is gone is the room
+    *between* what is already placed, and only the exclusion set can be blamed.
+    """
+    period = 60
+    # Blanket the scaffold: every offset is within margin of something.
+    exclude = [((x, y), 4) for x in range(0, period, 6)
+               for y in range(0, period, 6)]
+    with pytest.raises(RuntimeError, match="not a capacity problem"):
+        gen.sample_places(dom.Anywhere(), np.random.RandomState(0), 3, size=4,
+                          Npos=period, period=period, exclude=exclude,
+                          margin=6, self_margin=6, use_mask=True)

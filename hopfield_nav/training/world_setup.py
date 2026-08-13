@@ -90,6 +90,11 @@ def setup_worlds_declared(cfg: TrainConfig, field: VectorHash):
         field, cfg.env, domains, n_train, int(cfg.num_val_envs),
         seed=int(cfg.seed), margin=cfg.place_margin,
         val_frac=float(cfg.goal_val_frac),
+        # Goal refresh consumes fresh cells every tick, so the train share has
+        # to be capped up front. Without this, `n_train` envs claim `n_train`
+        # cells per update and a size-8 arena's 64 cells are gone in a handful
+        # of updates, leaving no legal held-out goal at all.
+        refresh_goal=cfg.refresh_goal is not None,
     )
 
     train_envs = generate.build_envs(split.train, cfg.env, cfg.agent.movement_mode)
@@ -148,15 +153,28 @@ def legacy_split(cfg: TrainConfig, field: VectorHash, worlds: list[World],
 
 
 def write_world_spec(cfg: TrainConfig, field: VectorHash, split: GeneratedSplit,
-                     encoder_ident: dict, *, generator: str) -> tuple[WorldSpec, str]:
+                     encoder_ident: dict, *, generator: str,
+                     extra: dict | None = None) -> tuple[WorldSpec, str]:
     """Assemble and write ``world.json`` beside the run manifest.
 
     Written on **both** paths. §1.4's bug is that a checkpoint's val offsets are
     unrecoverable, so every post-hoc eval scores it on patches training never
     used; recording the resolved specs fixes that for every new run, whether or
     not the run opted into declared domains.
+
+    Rewritten on the checkpoint cadence when a run refreshes its envs, because
+    ``split.used`` grows with every tick and it is the union -- not the current
+    ``train`` list -- that a later ``make_val_set`` excludes against. The file is
+    replaced atomically, so the latest checkpoint always matches it; an earlier
+    checkpoint's recorded ``spec_hash`` describes a prefix that is no longer on
+    disk. ``base_val`` never moves, so every *evaluation* use is unaffected.
+
+    ``extra`` merges into diagnostics -- the refresh report, so the file can say
+    whether the world stood still.
     """
     split.diagnostics = generate.split_diagnostics(field, cfg.env, split)
+    if extra:
+        split.diagnostics.update(extra)
     spec = WorldSpec(
         scaffold={
             "lambdas": list(field.lambdas), "Npos": int(field.Npos),
@@ -173,6 +191,196 @@ def write_world_spec(cfg: TrainConfig, field: VectorHash, split: GeneratedSplit,
           f"min_wall_hamming={d.get('min_wall_hamming')} "
           f"max_cos={d.get('cosine', {}).get('max')}", flush=True)
     return spec, path
+
+
+@dataclasses.dataclass
+class RunWorld:
+    """A run's worlds, the record of them, and the thing that moves them.
+
+    All four entry points need the same five steps: draw a split one of two
+    ways, build a refresher if a cadence was asked for, say up front what a
+    post-hoc eval will still be able to ask for, write ``world.json``, and
+    rewrite it as the union grows. Three copies of that is three chances for a
+    trainer to record a world it is not actually training on -- which is the
+    failure this whole design exists to make unrepresentable.
+    """
+
+    worlds: list[World]
+    eval_world: World
+    split: GeneratedSplit
+    field: VectorHash
+    kind: str                        # "declared" | "legacy"
+    refresher: object | None         # training.refresh.Refresher
+    preflight: dict | None
+    cfg: TrainConfig
+    encoder_ident: dict
+    extra: dict = dataclasses.field(default_factory=dict)
+
+    def record(self) -> dict:
+        """Write ``world.json``; return the summary a checkpoint carries.
+
+        Called again on the checkpoint cadence when the run refreshes, because
+        ``split.used`` grows every tick and it is the union -- not the current
+        ``train`` list -- that a later ``make_val_set`` excludes against.
+        """
+        extra = dict(self.extra)
+        if self.refresher is not None:
+            extra["refresh"] = self.refresher.report()
+            extra["preflight"] = self.preflight
+        spec, path = write_world_spec(
+            self.cfg, self.field, self.split, self.encoder_ident,
+            generator=self.kind, extra=extra or None)
+        return spec.summary(path)
+
+    def refresh(self, tick: int) -> tuple[str, ...]:
+        """Refresh whatever is due, or nothing when the run has no cadence."""
+        if self.refresher is None:
+            return ()
+        return self.refresher.maybe_refresh(tick)
+
+
+def setup_run_world(
+    cfg: TrainConfig, encoder, embed_dim, rng, field: VectorHash, *,
+    cadence, n_updates: int, encoder_ident: dict, where: str,
+) -> RunWorld:
+    """Draw a run's worlds, either way, plus everything that hangs off them.
+
+    A falsy ``cadence`` means no refresher and no preflight: a run whose envs
+    never move needs neither and pays for neither, and its startup record
+    describes it for the whole run.
+
+    Raises when the cadence would kill the run partway through. A *shrinking
+    eval ceiling* is recorded and the run proceeds -- a run that only ever
+    evaluates on ``--split recorded`` is fine with a tight union, and that is
+    not the trainer's call to veto. A domain that *runs dry* is different: the
+    run raises hours in, at a tick fixed before it started, so the choice is
+    between failing now and throwing away the training in between.
+    """
+    from .refresh import Refresher, format_preflight, preflight as run_preflight
+
+    if cfg.env_generator:
+        worlds, eval_world, split = setup_worlds_declared(cfg, field)
+        kind = "declared"
+    else:
+        worlds = [setup_world(cfg, encoder, embed_dim, rng, role="train",
+                              field=field)
+                  for _ in range(cfg.num_worlds)]
+        # Eval envs are always built with goals_active=True, so nav and
+        # discovery have a goal event to measure. Training envs are left as the
+        # caller set them: under an explore regime they may run with no goal
+        # reward at all.
+        saved_goals_active = cfg.env.goals_active
+        cfg.env.goals_active = True
+        eval_world = setup_world(cfg, encoder, embed_dim, rng, role="eval",
+                                 field=field)
+        cfg.env.goals_active = saved_goals_active
+        split = legacy_split(cfg, field, worlds, eval_world)
+        kind = "legacy"
+
+    refresher = pre = None
+    if cadence:
+        refresher = Refresher(cadence, split, worlds, cfg.env,
+                              cfg.agent.movement_mode, int(cfg.seed))
+        pre = run_preflight(split, cadence, int(n_updates), cfg.env,
+                            cfg.agent.movement_mode, int(cfg.seed),
+                            n_val_envs=int(cfg.num_val_envs))
+        if pre["refresh_dies_at_update"] is not None:
+            raise SystemExit(f"  ERROR [{where}]: {format_preflight(pre)}")
+        print(format_preflight(pre), flush=True)
+
+    return RunWorld(worlds=worlds, eval_world=eval_world, split=split,
+                    field=field, kind=kind, refresher=refresher, preflight=pre,
+                    cfg=cfg, encoder_ident=encoder_ident)
+
+
+PARENT_SPEC_NAME = "world_parent.json"
+
+
+def world_overlap(parent: GeneratedSplit, child: GeneratedSplit,
+                  env_cfg) -> dict:
+    """How much of the parent's world this run's world reuses.
+
+    A continuation that draws its own envs is training and evaluating somewhere
+    else, so its eval curve does not join onto its parent's. That is a fact
+    about the two worlds and it is cheap to state, which is better than leaving
+    a reader to diff two files and conclude it themselves.
+
+    ``val_envs_identical`` is the one that matters: it answers "can I put these
+    two curves on the same axes" outright.
+    """
+    p_val = [(v.wall_seed, v.size, v.offset, v.goal) for v in parent.base_val]
+    c_val = [(v.wall_seed, v.size, v.offset, v.goal) for v in child.base_val]
+    p_boxes, c_boxes = parent.used_boxes(), child.used_boxes()
+    gaps = [generate.toroidal_gap(a, sa, b, sb, child.period)
+            for a, sa in c_boxes for b, sb in p_boxes]
+    sizes = {s for _, s in p_boxes} | {s for _, s in c_boxes}
+    return {
+        "val_envs_identical": p_val == c_val,
+        "n_val_envs_shared": len(set(p_val) & set(c_val)),
+        "n_wall_seeds_shared": len(parent.used.get("wall", set())
+                                   & child.used.get("wall", set())),
+        "n_goal_cells_shared": len(parent.used.get("goal", set())
+                                   & child.used.get("goal", set())),
+        "n_train_offsets_shared": len(parent.used_offsets()
+                                      & child.used_offsets()),
+        # Nearest approach between anything the parent placed and anything this
+        # run places. 0 means the two train sets overlap on the scaffold.
+        "min_place_gap_vs_parent": int(min(gaps)) if gaps else None,
+        "sizes": sorted(int(s) for s in sizes),
+    }
+
+
+def record_parent_world(cfg: TrainConfig, split: GeneratedSplit,
+                        parent_ckpt: str | None, env_cfg) -> dict | None:
+    """Copy the parent run's ``world.json`` beside this run's, and compare.
+
+    Verbatim, byte for byte: the file carries its own ``spec_hash``, and a
+    re-serialized copy would be a different file claiming to be the parent's.
+    Copying rather than pointing means this run directory answers "what did the
+    parent train on" on its own, after the parent has been moved or collected.
+
+    ``None`` when there is no parent or the parent predates world recording --
+    which is not an error, just the older world being unrecoverable.
+    """
+    import json
+    import os
+    import shutil
+
+    if not parent_ckpt:
+        return None
+    src_dir = (parent_ckpt if os.path.isdir(parent_ckpt)
+               else os.path.dirname(parent_ckpt))
+    src = os.path.join(src_dir, "world.json")
+    if not os.path.exists(src):
+        print(f"  NOTE: parent {parent_ckpt} has no world.json, so this run "
+              "cannot record what it trained on. Only the child world is "
+              "described. Re-run the parent on current code to fix that.",
+              flush=True)
+        return None
+
+    os.makedirs(cfg.save_dir, exist_ok=True)
+    dst = os.path.join(str(cfg.save_dir), PARENT_SPEC_NAME)
+    shutil.copyfile(src, dst)
+    with open(dst) as f:
+        parent = WorldSpec.from_json(json.load(f))     # verifies the copy
+    overlap = world_overlap(parent.split, split, env_cfg)
+    print(f"  {PARENT_SPEC_NAME}: parent world copied from {src}; "
+          f"val_envs_identical={overlap['val_envs_identical']} "
+          f"shared_walls={overlap['n_wall_seeds_shared']} "
+          f"min_place_gap_vs_parent={overlap['min_place_gap_vs_parent']}",
+          flush=True)
+    if not overlap["val_envs_identical"]:
+        print("  NOTE: this run drew its own validation envs, so its eval "
+              "numbers are not on the same axes as the parent's. Both worlds "
+              f"are recorded ({PARENT_SPEC_NAME} and world.json) so the "
+              "comparison can at least be made knowingly.", flush=True)
+    return {
+        "checkpoint": str(parent_ckpt),
+        "world_json": dst,
+        "spec_hash": parent.spec_hash(),
+        "generator": parent.generator,
+        "overlap": overlap,
+    }
 
 
 def make_hops(

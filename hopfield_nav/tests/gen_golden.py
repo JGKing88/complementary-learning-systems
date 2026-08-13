@@ -128,7 +128,7 @@ def gen_observations() -> dict[str, np.ndarray]:
 
             torch.manual_seed(0)
             np.random.seed(0)
-            batch = collector.collect_rollout(env, rec, hops, update_idx=1)
+            batch = collector.collect_rollout(env, rec, hops, allow_store=True, update_idx=1)
 
             # (B, T, D): the main-loop site, one row per step.
             out[f"obs__{tag}"] = batch.obs.cpu().numpy()

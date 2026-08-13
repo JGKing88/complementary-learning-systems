@@ -12,7 +12,7 @@ Four phases run sequentially from a single agent init:
   Phase 2 — follow pretrain: Hopfield pre-loaded with the goal each episode.
             Store head frozen. auto_nav_warmup teacher-forces correct
             direction for the first N phase-2 updates, then PPO takes over.
-  Phase 3 — explore pretrain: empty Hopfield, agent_can_store=False so memory
+  Phase 3 — explore pretrain: empty Hopfield, allow_store=False so memory
             stays empty. Move head learns a systematic walk from enriched
             input alone. Store head frozen.
   Phase 4 — compose: all heads unfrozen, small permanent BCE with detached
@@ -60,9 +60,13 @@ def collect_one_update(
     embed_dim: int,
     device: torch.device,
     phase_update_idx: int,
+    allow_store: bool,
 ) -> list:
     """Collect a RolloutBatch from every (world, env) using the phase's
     hopfield setup. phase_hops is a dict keyed by (world_idx, env_local_idx).
+
+    ``allow_store`` must agree with what ``phase_hops`` returns: writes need one
+    Hopfield per trajectory, so only the ``empty_per_env`` role can permit them.
     """
     rollouts = []
     for w_idx, world in enumerate(worlds):
@@ -72,7 +76,8 @@ def collect_one_update(
             env_offset = world.offsets[local_idx]
             hops = phase_hops(w_idx, local_idx)
             rollout = collector.collect_rollout(
-                env, agent, hops, h_rnn=None, env_offset=env_offset,
+                env, agent, hops, allow_store=allow_store,
+                h_rnn=None, env_offset=env_offset,
                 update_idx=phase_update_idx, aux_scale=1.0,
             )
             rollouts.append(rollout)
@@ -105,14 +110,15 @@ def run_phase1(cfg: TrainConfig, pcfg: PhasedConfig, worlds, agent,
     cfg.hopfield.init_mode = "empty"
 
     def phase_hops(w_idx, local_idx):
-        # Per-env Hopfields so auto_store_warmup writes are visible (rollout
-        # skips per-env writes when shared_hopfield=True).
+        # Per-env Hopfields so auto_store_warmup writes are visible: writing
+        # needs one memory per trajectory, hence allow_store=True below.
         return [Hopfield(embed_dim, beta=cfg.hopfield.beta, device=str(device))
                 for _ in range(cfg.batch_envs)]
 
     for update in range(1, pcfg.phase1_updates + 1):
         rollouts = collect_one_update(cfg, worlds, agent, phase_hops,
-                                      embed_dim, device, update)
+                                      embed_dim, device, update,
+                                      allow_store=True)
         # Pool obs + labels across rollouts
         obs = torch.cat([r.obs for r in rollouts], dim=0)       # (N, T, D)
         goal = torch.cat([r.goal_reached for r in rollouts], dim=0)  # (N, T)
@@ -222,9 +228,14 @@ def run_ppo_phase(
         return [Hopfield(embed_dim, beta=cfg.hopfield.beta, device=str(device))
                 for _ in range(cfg.batch_envs)]
 
+    # Only the per-env role hands out one memory per trajectory, so only it can
+    # permit writes; the two shared roles hand out a single object.
+    allow_store = hopfield_role == "empty_per_env"
+
     for update in range(1, n_updates + 1):
         rollouts = collect_one_update(cfg, worlds, agent, phase_hops,
-                                      embed_dim, device, update)
+                                      embed_dim, device, update,
+                                      allow_store=allow_store)
         agent.train()
         losses = ppo_update(agent, rollouts, cfg.ppo, optimizer, aux_scale=1.0)
 

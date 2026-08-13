@@ -7,7 +7,8 @@ training CLI. That is an analysis module depending on an entry point, and with
 way it formed a mutual dependency: legal under the layering rules, since 8 -> 7
 is downward and the 7 -> 8 edge is declared, but a cycle nonetheless.
 
-Neither function is CLI plumbing. `build_envs` makes one `GridEnv` per seed;
+Neither function is CLI plumbing. `build_envs_from_config` makes one `GridEnv`
+per seed;
 `restore_arch_from_ckpt` replays a checkpoint's architecture fields over a
 freshly parsed config. This is the RNN baseline's counterpart to
 `training/world_setup.py`, which took the same treatment out of `train_phased`.
@@ -60,8 +61,15 @@ def restore_arch_from_ckpt(cfg: RNNTrainConfig, ckpt: dict) -> None:
     _restore(cfg, "fwhm_ratio", saved.get("fwhm_ratio"), "fwhm_ratio")
 
 
-def build_envs(cfg: RNNTrainConfig, rng: np.random.RandomState) -> list[GridEnv]:
-    """One GridEnv per seed; each gets its own codebook + goal."""
+def build_envs_from_config(cfg: RNNTrainConfig,
+                           rng: np.random.RandomState) -> list[GridEnv]:
+    """One GridEnv per seed; each gets its own codebook + goal.
+
+    Named apart from ``world.generate.build_envs``, which realizes resolved
+    ``EnvSpec``s. The two took the same name and did unrelated things -- one
+    draws envs from a config, the other rebuilds envs from a record -- which is
+    exactly the collision to avoid while moving this stack onto the generator.
+    """
     envs: list[GridEnv] = []
     for _ in range(cfg.n_envs):
         seed = int(rng.randint(0, 10_000_000))
@@ -84,4 +92,119 @@ def build_envs(cfg: RNNTrainConfig, rng: np.random.RandomState) -> list[GridEnv]
         ))
     return envs
 
-__all__ = ["build_envs", "restore_arch_from_ckpt"]
+__all__ = ["build_envs_from_config", "restore_arch_from_ckpt",
+           "rnn_world", "write_rnn_world_spec"]
+
+
+# ---------------------------------------------------------------------------
+# The declared-domain path, shared with train_navigate
+# ---------------------------------------------------------------------------
+
+def rnn_world(cfg: RNNTrainConfig, rng: np.random.RandomState):
+    """Envs, offsets and the split describing them, for the RNN stack.
+
+    Two paths, the same two `train_navigate` has. With ``cfg.env_generator`` the
+    envs come from declared domains and their offsets are *recorded*; without
+    it, the historical draw runs and is described after the fact. Either way a
+    ``GeneratedSplit`` comes back, so both can write a ``world.json`` and a
+    baseline run and an agent-hash run can be handed the same declared world
+    instead of being talked into agreement by a draw-order convention
+    (``analysis/continual/agenthash.py:325-333``).
+
+    **The scaffold exists for the generator, not only for the agent.** Under
+    ``input_grid_state=False`` the RNN never observes where its envs sit -- but
+    the placement is still part of the world's identity, and the run still has
+    to be able to say what it used. An agent-hash run pointed at the same
+    ``world.json`` *does* observe those offsets, and the split's separation
+    guarantees are stated in scaffold coordinates either way. So the generator
+    builds a scaffold whenever it is asked to, and the offsets are recorded
+    whether or not this particular agent can see them.
+
+    Only the *legacy* path is conditional: it places envs only under grid state,
+    because that is what it historically did and its draw must not move.
+
+    Returns ``(envs, offsets | None, split, field | None, generator)``.
+    """
+    from ..world import domains as dom
+    from ..world import generate as gen
+    from ..world.scaffold import VectorHash, place_envs
+    from ..world.spec import EnvSpec, GeneratedSplit, TraitDomains
+    from ..config import VectorHashConfig
+
+    size = int(cfg.env.size)
+    declared = bool(getattr(cfg, "env_generator", False))
+    grid_state = bool(cfg.agent.input_grid_state)
+    field = None
+    if declared or grid_state:
+        # `build_scaffold` only; `precompute_encoded_phi` needs an encoder and
+        # this stack has none. Placement reads Npos and lambdas, nothing else,
+        # and the build is well under a second.
+        field = VectorHash(VectorHashConfig(lambdas=list(cfg.lambdas),
+                                            static_vectorhash=True))
+        field.build_scaffold()
+
+    if not declared:
+        envs = build_envs_from_config(cfg, rng)
+        offsets = (place_envs(len(envs), size, field.Npos, np.random,
+                              placement="spread") if grid_state else None)
+        specs = [EnvSpec(int(e.seed), size,
+                         tuple(offsets[i]) if offsets else (0, 0),
+                         tuple(e.goal_location)) for i, e in enumerate(envs)]
+        all_cells = frozenset((x, y) for x in range(size) for y in range(size))
+        goals = frozenset(s.goal for s in specs)
+        split = GeneratedSplit(
+            domains=TraitDomains(place=dom.Anywhere(),
+                                 wall=dom.SeedRange(0, 10_000_000),
+                                 goal=dom.AnyCells(), size=dom.Sizes((size,))),
+            train=specs, base_val=[], goal_cells_train=goals,
+            goal_cells_val=all_cells - goals, margin=0,
+            period=int(np.prod(cfg.lambdas)) if grid_state else 0,
+            Npos=int(field.Npos) if grid_state else 0)
+        split.record_used(specs)
+        return envs, offsets, split, field, "legacy"
+
+    if cfg.place_margin is None:
+        raise SystemExit(
+            "--env_generator needs an explicit --place_margin here. The agent "
+            "stack derives one from its scaffold's cosine-vs-distance curve, "
+            "which needs an encoder; this stack has none, and a borrowed "
+            f"constant would be wrong at lambdas={list(cfg.lambdas)} "
+            f"(Npos={field.Npos}) anyway.")
+
+    domains = TraitDomains(place=dom.parse_place(cfg.place_region),
+                           wall=dom.parse_seed_range(cfg.wall_seeds),
+                           goal=dom.parse_goal(cfg.goal_region),
+                           size=dom.Sizes((size,)))
+    split = gen.generate_split(
+        field, cfg.env, domains, int(cfg.n_envs), int(cfg.n_val_envs),
+        seed=int(cfg.seed), margin=int(cfg.place_margin),
+        val_frac=float(cfg.goal_val_frac), diagnostics=False)
+    envs = gen.build_envs(split.train, cfg.env, "discrete")
+    return envs, [s.offset for s in split.train], split, field, "declared"
+
+
+def write_rnn_world_spec(cfg: RNNTrainConfig, split, field, *, generator: str,
+                         save_dir) -> str | None:
+    """Record the RNN stack's world beside its checkpoints.
+
+    Same file and same reader as `train_navigate`'s, which is the point: an
+    agent-hash run and a baseline run become comparable by pointing at one
+    record rather than by matching draw orders.
+    """
+    from ..world import generate as gen
+    from ..world.spec import WorldSpec
+
+    if save_dir is None:
+        return None
+    split.diagnostics = gen.split_diagnostics(field, cfg.env, split) if field \
+        else {}
+    spec = WorldSpec(
+        scaffold={"lambdas": list(field.lambdas) if field else [],
+                  "Npos": int(field.Npos) if field else 0,
+                  "fwhm_ratio": float(cfg.fwhm_ratio),
+                  "static_vectorhash": True, "encoder": None},
+        generator=generator, split=split)
+    path = spec.write(save_dir)
+    print(f"  world.json: generator={generator} margin={split.margin} "
+          f"n_envs={len(split.train)}", flush=True)
+    return path

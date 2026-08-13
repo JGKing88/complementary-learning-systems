@@ -17,6 +17,7 @@ union of values each trait actually took. Phase 3 serializes it to
 from __future__ import annotations
 
 import json
+import warnings
 from dataclasses import dataclass, field as dc_field
 
 import numpy as np
@@ -76,6 +77,40 @@ class TraitDomains:
         )
 
 
+def _hash_payload(payload: dict) -> str:
+    """sha256 over the canonical JSON -- key order cannot change it."""
+    import hashlib
+    blob = json.dumps(payload, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(blob.encode("utf-8")).hexdigest()
+
+
+def _boxes_from_json(entries, sizes) -> set:
+    """Read ``used["place"]`` from either the box form or the pre-Phase-6 one.
+
+    ``[r, c, size]`` is self-describing. ``[r, c]`` is not, so it is paired with
+    the run's recorded size -- unambiguous for every world.json written before
+    this, since size refresh has never shipped a mixed-size run. If one somehow
+    exists, the largest size is the only safe guess: it over-excludes rather than
+    placing a validation env on top of a training one.
+    """
+    out, seen = set(), sorted(int(s) for s in sizes)
+    for e in entries:
+        if len(e) == 3:
+            out.add(((int(e[0]), int(e[1])), int(e[2])))
+            continue
+        if not seen:
+            raise ValueError(
+                "world.json records used places as [r, c] with no used size to "
+                "pair them with; the file cannot say how large those envs were.")
+        if len(seen) > 1:
+            warnings.warn(
+                f"world.json records used places as [r, c] but {len(seen)} "
+                f"sizes {seen}; assuming the largest ({seen[-1]}), which "
+                "over-excludes rather than risking an overlap.", stacklevel=3)
+        out.add(((int(e[0]), int(e[1])), seen[-1]))
+    return out
+
+
 @dataclass
 class GeneratedSplit:
     """Train + base-val env sets, the domains behind them, and what was used.
@@ -98,10 +133,30 @@ class GeneratedSplit:
 
     def record_used(self, specs: list[EnvSpec]) -> None:
         """Fold ``specs`` into the per-trait union."""
-        self.used.setdefault("place", set()).update(s.offset for s in specs)
+        self.used.setdefault("place", set()).update(
+            (s.offset, int(s.size)) for s in specs)
         self.used.setdefault("wall", set()).update(s.wall_seed for s in specs)
         self.used.setdefault("goal", set()).update(s.goal for s in specs)
         self.used.setdefault("size", set()).update(s.size for s in specs)
+
+    def used_boxes(self) -> list[tuple[tuple[int, int], int]]:
+        """Every ``(offset, size)`` training ever placed, sorted.
+
+        A place value is not an offset: it is a *box*, and the region it forbids
+        depends on its own size as well as the candidate's (``_forbidden_span``
+        is asymmetric in the two). Storing bare offsets and re-labelling them at
+        the call site with whatever size was convenient is the §6.2 bug. Its
+        sharpest form, which is now a test: four size-4 envs at margin 3 on a
+        77-wide scaffold leave 421 legal offsets for a size-30 validation env,
+        and **zero** if those same four are relabelled at size 30. So the
+        pairing lives here, once, and callers that only want coordinates ask
+        for ``used_offsets``.
+        """
+        return sorted(self.used.get("place", ()))
+
+    def used_offsets(self) -> set[tuple[int, int]]:
+        """Just the coordinates, for readers with no use for the extent."""
+        return {o for o, _ in self.used.get("place", ())}
 
     def to_json(self) -> dict:
         return {
@@ -116,8 +171,10 @@ class GeneratedSplit:
             "train": [s.to_json() for s in self.train],
             "base_val": [s.to_json() for s in self.base_val],
             "used": {
-                "place": sorted([int(o[0]), int(o[1])]
-                                for o in self.used.get("place", ())),
+                # [r, c, size] -- see `used_boxes`. Files written before Phase 6
+                # carry [r, c]; `from_json` pairs those with the recorded size.
+                "place": sorted([int(o[0]), int(o[1]), int(s)]
+                                for o, s in self.used.get("place", ())),
                 "wall": sorted(int(s) for s in self.used.get("wall", ())),
                 "goal": sorted([int(c[0]), int(c[1])]
                                for c in self.used.get("goal", ())),
@@ -139,7 +196,7 @@ class GeneratedSplit:
         )
         u = d.get("used", {})
         split.used = {
-            "place": {tuple(o) for o in u.get("place", ())},
+            "place": _boxes_from_json(u.get("place", ()), u.get("size", ())),
             "wall": set(u.get("wall", ())),
             "goal": {tuple(c) for c in u.get("goal", ())},
             "size": set(u.get("size", ())),
@@ -172,7 +229,9 @@ class WorldSpec:
     scaffold: dict
     generator: str
     split: GeneratedSplit
-    spec_version: int = 1
+    # 2 since Phase 6: ``used.place`` entries gained their size (``[r, c, size]``
+    # rather than ``[r, c]``). Version 1 files load unchanged -- see `from_json`.
+    spec_version: int = 2
 
     def _payload(self) -> dict:
         return {"spec_version": self.spec_version, "generator": self.generator,
@@ -180,25 +239,32 @@ class WorldSpec:
 
     def spec_hash(self) -> str:
         """sha256 over the canonical payload -- key order cannot change it."""
-        import hashlib
-        blob = json.dumps(self._payload(), sort_keys=True, separators=(",", ":"))
-        return hashlib.sha256(blob.encode("utf-8")).hexdigest()
+        return _hash_payload(self._payload())
 
     def to_json(self) -> dict:
         return {**self._payload(), "spec_hash": self.spec_hash()}
 
     @staticmethod
     def from_json(d: dict) -> "WorldSpec":
-        spec = WorldSpec(scaffold=d["scaffold"], generator=d["generator"],
+        # Hash the file's own payload rather than a re-render of the object.
+        # The hash answers "was this edited by hand", which is a claim about the
+        # bytes -- and re-rendering makes it a claim about the current
+        # serializer instead, so *any* format change invalidates every file
+        # already on disk. Phase 6 changed one field's shape and would have
+        # rejected every world.json ever written, with a message blaming the
+        # user for editing it.
+        recorded = d.get("spec_hash")
+        if recorded is not None:
+            actual = _hash_payload({k: v for k, v in d.items()
+                                    if k != "spec_hash"})
+            if recorded != actual:
+                raise ValueError(
+                    f"world spec hash mismatch: file says {recorded[:12]}..., "
+                    f"contents hash to {actual[:12]}.... The file was edited "
+                    f"after it was written.")
+        return WorldSpec(scaffold=d["scaffold"], generator=d["generator"],
                          split=GeneratedSplit.from_json(d["split"]),
                          spec_version=int(d.get("spec_version", 1)))
-        recorded = d.get("spec_hash")
-        if recorded is not None and recorded != spec.spec_hash():
-            raise ValueError(
-                f"world spec hash mismatch: file says {recorded[:12]}..., "
-                f"contents hash to {spec.spec_hash()[:12]}.... The file was "
-                f"edited by hand or written by a different spec_version.")
-        return spec
 
     def summary(self, path: str | None = None) -> dict:
         """The small block that rides in a checkpoint.

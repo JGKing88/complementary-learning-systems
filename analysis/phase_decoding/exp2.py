@@ -52,6 +52,20 @@ def main() -> None:
     ap.add_argument("--trials_dir", default=None, type=str,
                     help="Existing exp1 trials/ dir to reuse for Part 1. If "
                          "omitted, collects fresh trials with the params below.")
+    ap.add_argument("--split", type=str, default="recorded",
+                   help="Which validation arenas to decode from. 'recorded' "
+                        "(default) is the run's own base_val from world.json. "
+                        "Otherwise 'trait=level' pairs over place/wall/goal, "
+                        "levels same | held_out | ood; unnamed traits default "
+                        "to held_out. --split goal=ood asks whether phase is "
+                        "decodable in arenas whose goal region the run never "
+                        "trained on.")
+    ap.add_argument("--val_seed", type=int, default=0,
+                   help="Seed for minting a --split arena set.")
+    ap.add_argument("--val_size", type=int, default=None,
+                    help="Mint the arenas at this size -- the size-OOD "
+                         "axis. Needs a minted --split; equal to the "
+                         "training size it is a no-op.")
     ap.add_argument("--num_arenas", type=int, default=100)
     ap.add_argument("--n_starts", type=int, default=50,
                     help="If collecting fresh trials for Part 1.")
@@ -91,6 +105,8 @@ def main() -> None:
         device=args.device, num_arenas=args.num_arenas,
         random_agent=args.random_agent,
         random_init_seed=args.random_init_seed,
+        split=args.split, val_seed=args.val_seed,
+        val_size=args.val_size,
     )
     bundle = engine.build_bundle()
 

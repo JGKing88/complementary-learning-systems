@@ -24,7 +24,9 @@ from hopfield_nav.policy.agent_rnn import RNNAgent, compute_rnn_input_dim
 from hopfield_nav.policy.recurrent import add_recurrent_args
 from hopfield_nav.config import EnvConfig, RNNAgentConfig, RNNBCConfig, RNNTrainConfig, VectorHashConfig
 from hopfield_nav.world.env import GridEnv
-from hopfield_nav.training.rnn_setup import build_envs, restore_arch_from_ckpt
+from hopfield_nav.training.rnn_setup import (
+    build_envs_from_config, restore_arch_from_ckpt, rnn_world,
+    write_rnn_world_spec)
 from hopfield_nav.training.rnn_sequential import UpdateResult, run_sequential_blocks
 from hopfield_nav.utils import smooth_gbook
 from hopfield_nav.world.scaffold import VectorHash, place_envs
@@ -171,6 +173,31 @@ def main() -> None:
                    help="Euclidean radius around goal that counts as 'at goal'. "
                         "Default 0.5 reproduces snap-equality on integer-snapped "
                         "positions; larger values fuzz the goal region.")
+    # The declared-domain surface, matching train_navigate so a baseline and an
+    # agent-hash run can be handed the same world.json.
+    p.add_argument("--env_generator", action=argparse.BooleanOptionalAction,
+                   default=False,
+                   help="Draw envs from declared domains and record them, "
+                        "instead of the historical placement path. Builds a "
+                        "scaffold for placement whether or not the agent "
+                        "observes one, so the offsets are recorded either way "
+                        "and an agent-hash run can be pointed at the same "
+                        "world.json. Needs an explicit --place_margin.")
+    p.add_argument("--place_region", type=str, default="anywhere",
+                   help="'anywhere' or 'rect:X0,Y0,W,H'.")
+    p.add_argument("--goal_region", type=str, default="any",
+                   help="'any', 'ring:W', 'interior:W' or 'quadrant:Q'.")
+    p.add_argument("--wall_seeds", type=str, default="0,10000000",
+                   help="'LO,HI' range wall seeds are drawn from.")
+    p.add_argument("--place_margin", type=int, default=None,
+                   help="Edge-to-edge clearance between every pair of envs. "
+                        "Required with --env_generator: deriving one needs an "
+                        "encoder and this stack has none.")
+    p.add_argument("--goal_val_frac", type=float, default=0.2,
+                   help="Share of goal cells reserved for validation.")
+    p.add_argument("--n_val_envs", type=int, default=2,
+                   help="Held-out envs recorded in world.json alongside the "
+                        "train set.")
     # Agent
     p.add_argument("--hidden_size", type=int, default=128)
     p.add_argument("--num_rnn_layers", type=int, default=1)
@@ -240,6 +267,13 @@ def main() -> None:
         eval_every=1,
         seed=args.seed,
         device=args.device,
+        env_generator=args.env_generator,
+        place_region=args.place_region,
+        goal_region=args.goal_region,
+        wall_seeds=args.wall_seeds,
+        place_margin=args.place_margin,
+        goal_val_frac=args.goal_val_frac,
+        n_val_envs=args.n_val_envs,
     )
 
     device = torch.device(cfg.device if torch.cuda.is_available() else "cpu")
@@ -268,25 +302,19 @@ def main() -> None:
         np.random.seed(seed_k)
         rng = np.random.RandomState(seed_k)
 
-        envs = build_envs(cfg, rng)
+        envs, env_offsets, world_split, vh, world_kind = rnn_world(cfg, rng)
         if n_iters > 1:
             print(f"\n=== iter {k + 1}/{n_iters}  seed={seed_k} ===")
         print(f"[baseline] built {len(envs)} envs  size={cfg.env.size}  "
-              f"obs_dim={cfg.env.observation_size}")
+              f"obs_dim={cfg.env.observation_size}  world={world_kind}")
         for i, env in enumerate(envs):
             print(f"  env {i}: goal={env.goal_location}")
 
         sgb = None
-        env_offsets: list[tuple[int, int]] | None = None
         gbook_dim = 0
         vh_lambdas: list[int] = []
         vh_Npos = 0
         if cfg.agent.input_grid_state:
-            vh_cfg = VectorHashConfig(lambdas=list(cfg.lambdas), static_vectorhash=True)
-            vh = VectorHash(vh_cfg)
-            vh.build_scaffold()
-            env_offsets = place_envs(len(envs), cfg.env.size, vh.Npos,
-                                     np.random, placement="spread")
             sgb = smooth_gbook(vh.gbook, vh.lambdas, cfg.fwhm_ratio)
             gbook_dim = int(vh.Ng)
             vh_lambdas = list(vh.lambdas)
@@ -295,6 +323,12 @@ def main() -> None:
                   f"lambdas={vh_lambdas}  fwhm_ratio={cfg.fwhm_ratio}")
             for i, off in enumerate(env_offsets):
                 print(f"  env {i}: offset={off}")
+        # Only the first iteration's world is recorded: `--num_full_iters` re-runs
+        # the whole protocol at seed+k, so there is no single world to describe,
+        # and writing k of them under one name would describe none of them.
+        if k == 0:
+            write_rnn_world_spec(cfg, world_split, vh, generator=world_kind,
+                                 save_dir=os.path.dirname(os.path.abspath(args.out)))
 
         input_dim = compute_rnn_input_dim(cfg.agent, cfg.env.observation_size, gbook_dim)
         if k == 0:

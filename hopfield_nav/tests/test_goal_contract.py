@@ -616,7 +616,7 @@ def _rollout_with_goal_contact(*, goals_active: bool = True):
             for _ in range(cfg.batch_envs)]
     torch.manual_seed(0)
     np.random.seed(0)
-    return collector.collect_rollout(env, agent, hops, update_idx=1)
+    return collector.collect_rollout(env, agent, hops, allow_store=True, update_idx=1)
 
 
 def test_at_goal_steps_are_masked_out_of_move_loss():

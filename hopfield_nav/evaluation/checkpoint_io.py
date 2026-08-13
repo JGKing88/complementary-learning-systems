@@ -12,10 +12,11 @@ remembering who imported which.
 
 Checkpoints are dicts keyed by `config.py`'s dataclass *field names*, and 309
 agent run directories are only readable through them. That is why
-`coerce_legacy_cfg` exists at all: it carries the two renames that have happened
-so far (`val_envs_per_world` -> `num_val_envs`, `gbook_only` ->
-`static_vectorhash`) rather than renaming the fields. Any future rename lands
-here as a third clause.
+`coerce_legacy_cfg` exists at all: it carries every rename and removal the
+dataclasses have absorbed -- `val_envs_per_world` -> `num_val_envs`,
+`gbook_only` -> `static_vectorhash`, `agent_can_store` -> `allow_store`, and
+the outright removal of `randomize_goal_per_rollout` -- rather than keeping the
+old fields. Any future one lands here as another clause.
 """
 from __future__ import annotations
 
@@ -29,7 +30,9 @@ from ..config import (
     VectorHashConfig,
 )
 from ..world.env import make_env
-from ..world.generate import build_envs
+from ..world.generate import (
+    RECORDED, build_envs, levels_key, make_val_set, parse_levels,
+    val_set_report)
 from ..world.scaffold import VectorHash, fit_env_assoc, place_envs
 from ..world.spec import WORLD_SPEC_NAME, WorldSpec
 
@@ -48,6 +51,24 @@ def coerce_legacy_cfg(cd: dict) -> dict:
     vh = cd.get("vectorhash")
     if isinstance(vh, dict) and "gbook_only" in vh and "static_vectorhash" not in vh:
         vh["static_vectorhash"] = vh.pop("gbook_only")
+    # agent_can_store -> allow_store. Without this every checkpoint written
+    # before 2026-08 raises on load: cfg_from_checkpoint does
+    # HopfieldConfig(**cd["hopfield"]), and an unknown key is a TypeError.
+    hop = cd.get("hopfield")
+    if isinstance(hop, dict) and "agent_can_store" in hop and "allow_store" not in hop:
+        hop["allow_store"] = hop.pop("agent_can_store")
+    # randomize_goal_per_rollout -> --refresh_goal. Not a rename: the old flag
+    # drew uniformly over the arena for explore-regime envs only, the new one
+    # draws world-wide from the declared train cell partition. An unknown
+    # top-level key is dropped silently by cfg_from_checkpoint, so a resumed run
+    # would lose the behavior without saying so -- hence the warning rather than
+    # a mapping, which would also demand --env_generator the parent never had.
+    if cd.pop("randomize_goal_per_rollout", False):
+        print("  WARNING: this checkpoint was written with "
+              "--randomize_goal_per_rollout, which no longer exists. Its "
+              "replacement is --refresh_goal N (with --env_generator); the "
+              "resumed run holds its goals fixed unless you pass it.",
+              flush=True)
     return cd
 
 
@@ -86,19 +107,20 @@ def world_spec_for(path) -> WorldSpec | None:
     return WorldSpec.read(candidate)
 
 
-def eval_world_from_spec(spec: WorldSpec, cfg: TrainConfig, encoder,
-                         device: str, *, which: str = "base_val"):
-    """Rebuild an env set exactly as recorded -- no RNG replay anywhere.
+def eval_field(cfg: TrainConfig, encoder, device: str,
+               spec: WorldSpec | None = None) -> VectorHash:
+    """The scaffold, built once, and checked against the record.
 
-    This is the point of `world.json`. The replay path below can recover a run's
-    val wall codes and goals but *not* their offsets, because placement drew from
-    global `np.random` whose state depended on everything built before it. Here
-    the offsets are read, not re-derived, so what you evaluate is what trained.
+    Separate from the env sets because it is the expensive half -- `encoded_Phi`
+    is 12 GB at `Npos=1716` -- and because several validation sets at different
+    split levels all index into the *same* field. Rebuilding it per level would
+    dominate a mix-and-match evaluation entirely.
     """
-    specs = getattr(spec.split, which)
     field = VectorHash(cfg.vectorhash)
     field.build_scaffold()
     field.precompute_encoded_phi(encoder, cfg.fwhm_ratio, device=device)
+    if spec is None:
+        return field
 
     recorded = spec.scaffold
     if int(recorded.get("Npos", field.Npos)) != int(field.Npos):
@@ -112,7 +134,130 @@ def eval_world_from_spec(spec: WorldSpec, cfg: TrainConfig, encoder,
         print(f"  WARNING: world.json was written against encoder "
               f"{enc_then[:12]}... but this run loads {enc_now[:12]}.... The "
               f"envs are the same cells; their embeddings are not.", flush=True)
+    return field
 
+
+def eval_specs(spec: WorldSpec, levels: dict | None, *, n_envs: int,
+               seed: int, size: int | None = None):
+    """The env specs one split level combination asks for.
+
+    ``levels=None`` returns the recorded ``base_val`` verbatim -- the envs the
+    run was actually scored against, offsets and all. Any other level mints a
+    fresh set from the recorded domains and the union of what training used.
+    """
+    if levels is None:
+        return list(spec.split.base_val)
+    return make_val_set(spec.split, n_envs, levels, seed, size=size)
+
+
+def recorded_size(spec: WorldSpec | None, cfg: TrainConfig | None = None):
+    """The env size a run actually trained at, or ``None`` if it used several."""
+    sizes = {int(s) for s in spec.split.used.get("size", ())} if spec else set()
+    if len(sizes) == 1:
+        return int(sizes.pop())
+    if not sizes and cfg is not None:
+        return int(cfg.env.size)
+    return None
+
+
+def eval_env_set(cfg: TrainConfig, encoder, device: str, *, ckpt_path,
+                 levels: dict | None = None, val_seed: int = 0,
+                 n_envs: int | None = None, spec: WorldSpec | None = None,
+                 field=None, size: int | None = None) -> dict:
+    """One evaluation env set at one split level: ``{key, envs, field, offsets,
+    report}``.
+
+    ``size`` mints the set at an arena size the run never trained on -- the
+    size-OOD axis. It applies only to a minted level: the recorded ``base_val``
+    is a fixed list of envs and has whatever size it was built at.
+
+    The single-set entry point every eval CLI shares, so "what does
+    ``--split place=ood`` mean" has one answer rather than one per driver.
+    ``eval_all`` loops it for the multi-combination table, passing ``spec`` and
+    ``field`` so the 12 GB scaffold is built once.
+
+    ``levels=None`` is the recorded ``base_val`` -- the envs this checkpoint was
+    actually scored against. Deliberately not a synonym for all-``held_out``,
+    which mints a fresh set that is also disjoint from training.
+    """
+    if spec is None:
+        spec = world_spec_for(ckpt_path)
+    if size is not None and levels is None:
+        raise SystemExit(
+            f"--val_size {size} needs a minted split. 'recorded' is the fixed "
+            "list of envs this checkpoint was scored against, at the size they "
+            "were built; there is no size-N version of it. Ask for a level too, "
+            "e.g. --split place=held_out,wall=held_out,goal=held_out.")
+    if spec is None:
+        if levels is not None:
+            raise SystemExit(
+                f"--split needs a world.json, and {ckpt_path} has none: it was "
+                "written before runs recorded their envs. Minting a level needs "
+                "the declared domains and the union training used, and an RNG "
+                "replay recovers neither. Re-run training on the current code.")
+        envs, built, offsets = build_eval_world(cfg, encoder, device,
+                                                ckpt_path=ckpt_path)
+        return {"key": RECORDED, "envs": envs, "field": built,
+                "offsets": offsets, "report": {}}
+
+    if field is None:
+        field = eval_field(cfg, encoder, device, spec)
+    n = int(n_envs if n_envs is not None else cfg.num_val_envs)
+    specs = eval_specs(spec, levels, n_envs=n, seed=val_seed, size=size)
+    # A minted set's separation is the claim the evaluation is making, so it is
+    # measured and returned rather than assumed. Raises on a held_out/ood
+    # violation -- that would be a generator bug, and a number in a report is
+    # not a strong enough place to put one.
+    report = val_set_report(spec.split, specs, cfg.env, levels)
+    # The key names what differs about this set. A `--val_size` equal to the
+    # training size differs in nothing, so it does not decorate the key and the
+    # results are the ones the same `--split` alone produces -- the whole
+    # size-plumbing no-op gate rests on that.
+    trained = recorded_size(spec, cfg)
+    key = levels_key(levels)
+    if size is not None and trained is not None and int(size) != trained:
+        key = f"{key},size={int(size)}"
+    return {
+        "key": key,
+        "envs": build_envs(specs, cfg.env, cfg.agent.movement_mode),
+        "field": field,
+        "offsets": [s.offset for s in specs],
+        "report": report,
+    }
+
+
+def eval_world_for_split(cfg: TrainConfig, encoder, device: str, *, ckpt_path,
+                         split: str = RECORDED, val_seed: int = 0,
+                         n_envs: int | None = None, size: int | None = None):
+    """``(envs, field, offsets)`` for one ``--split`` string.
+
+    The drop-in for `build_eval_world` in a CLI that evaluates one env set.
+    """
+    es = eval_env_set(cfg, encoder, device, ckpt_path=ckpt_path,
+                      levels=parse_levels(split), val_seed=val_seed,
+                      n_envs=n_envs, size=size)
+    if es["key"] != RECORDED:
+        r = es["report"]
+        note = r.get("wall_hamming_note")
+        ham = (f"wall_hamming>={r.get('min_wall_hamming_vs_train')}"
+               if note is None else f"wall_hamming n/a ({note})")
+        print(f"  split={es['key']}: {len(es['envs'])} envs, "
+              f"place_gap>={r.get('min_place_gap_vs_train')} "
+              f"(margin {r.get('margin')}), {ham}", flush=True)
+    return es["envs"], es["field"], es["offsets"]
+
+
+def eval_world_from_spec(spec: WorldSpec, cfg: TrainConfig, encoder,
+                         device: str, *, which: str = "base_val"):
+    """Rebuild an env set exactly as recorded -- no RNG replay anywhere.
+
+    This is the point of `world.json`. The replay path below can recover a run's
+    val wall codes and goals but *not* their offsets, because placement drew from
+    global `np.random` whose state depended on everything built before it. Here
+    the offsets are read, not re-derived, so what you evaluate is what trained.
+    """
+    specs = getattr(spec.split, which)
+    field = eval_field(cfg, encoder, device, spec)
     envs = build_envs(specs, cfg.env, cfg.agent.movement_mode)
     offsets = [s.offset for s in specs]
     return envs, field, offsets
@@ -128,15 +273,28 @@ def encoder_identity_hint(cfg: TrainConfig) -> dict | None:
 
 
 def build_eval_world(cfg: TrainConfig, encoder, device: str,
-                     spec: WorldSpec | None = None):
-    """Rebuild the training-time eval world: same seeding + scaffold.
+                     spec: WorldSpec | None = None, ckpt_path=None):
+    """Rebuild the eval world a checkpoint was trained against.
 
-    With ``spec``, the env set is read from the record and is exact. Without it,
-    this replays the training-time seed stream: training draws its train-env
-    seeds first, then its val-env seeds, from one `RandomState(cfg.seed)`, and
-    the skip loop below reproduces that order. That recovers wall codes and
-    goals -- but **not offsets**, which came from global `np.random` (§1.4).
+    Pass ``ckpt_path`` -- a checkpoint or its run directory -- and the recorded
+    world is found and used. That is the point of the parameter: between Phase 3
+    and now, every caller here passed three arguments, so every post-hoc
+    evaluation took the replay branch below and scored checkpoints on scaffold
+    patches training never used, while a truthful ``world.json`` sat unread
+    beside them. Discovery lives *here* rather than at the four call sites
+    precisely so a fifth cannot quietly rejoin the legacy path.
+
+    ``spec`` given explicitly wins, for callers evaluating one run's checkpoint
+    against another run's world.
+
+    With neither, this replays the training-time seed stream: training draws its
+    train-env seeds first, then its val-env seeds, from one
+    ``RandomState(cfg.seed)``, and the skip loop below reproduces that order.
+    That recovers wall codes and goals -- but **not offsets**, which came from
+    global ``np.random`` (§1.4). Only pre-Phase-3 runs land here.
     """
+    if spec is None and ckpt_path is not None:
+        spec = world_spec_for(ckpt_path)
     if spec is not None:
         return eval_world_from_spec(spec, cfg, encoder, device)
     print(
@@ -215,16 +373,21 @@ def scaffold_layout_dict(
         envs_out.append({
             "idx": i,
             "offset": [ox, oy],
+            "size": int(val_envs[i].size),
             "goal_local": [gl0, gl1],
             "goal_global": [gl0 + ox, gl1 + oy],
         })
+    sizes = {e["size"] for e in envs_out}
     return {
         "Npos": int(vh.Npos),
         "Npos_config": cfg.vectorhash.Npos,
         "prod_lambdas": prod_lambdas,
         "lambdas": list(cfg.vectorhash.lambdas),
         "static_vectorhash": bool(cfg.vectorhash.static_vectorhash),
-        "env_size": int(cfg.env.size),
+        # The size these envs actually are, which `--val_size` can make differ
+        # from the config's. `None` when the set is mixed -- each env carries
+        # its own, and there is no single number to report.
+        "env_size": (int(next(iter(sizes))) if len(sizes) == 1 else None),
         "placement": "spread",
         "envs": envs_out,
     }
@@ -232,10 +395,15 @@ def scaffold_layout_dict(
 
 __all__ = [
     "build_eval_world",
+    "eval_env_set",
+    "eval_field",
+    "eval_specs",
+    "eval_world_for_split",
     "eval_world_from_spec",
     "cfg_from_checkpoint",
     "coerce_legacy_cfg",
     "load_agent",
+    "recorded_size",
     "scaffold_layout_dict",
     "world_spec_for",
 ]

@@ -128,7 +128,8 @@ class TwoEpisodeTrajectoryCollector:
         rng: np.random.RandomState,
     ) -> dict | None:
         hopfield = self.engine.make_hopfield()
-        self.engine.seed_distractors(hopfield, env_offset, n_distractors, rng)
+        self.engine.seed_distractors(hopfield, env_offset, n_distractors,
+                                     rng, env_size=env.size)
 
         goal = env.goal_location
         env.set_position(random_start(env.size, goal, rng))

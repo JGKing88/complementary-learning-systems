@@ -216,11 +216,11 @@ def _rnn_agent(cfg):
 
 def test_rnn_block_schedule_and_boundaries():
     """One block per env; blocks tile the step range with inclusive ends."""
-    from hopfield_nav.training.rnn_setup import build_envs
+    from hopfield_nav.training.rnn_setup import build_envs_from_config
     from hopfield_nav.training.rnn_sequential import run_sequential_blocks
 
     cfg = _rnn_cfg(n_envs=3)
-    envs = build_envs(cfg, np.random.RandomState(0))
+    envs = build_envs_from_config(cfg, np.random.RandomState(0))
     agent, opt = _rnn_agent(cfg)
     seen = []
     blocks = run_sequential_blocks(
@@ -237,11 +237,11 @@ def test_rnn_block_schedule_and_boundaries():
 
 def test_rnn_untrained_envs_are_not_evaluated():
     """Untrained envs would inject pre-training noise into the forgetting curve."""
-    from hopfield_nav.training.rnn_setup import build_envs
+    from hopfield_nav.training.rnn_setup import build_envs_from_config
     from hopfield_nav.training.rnn_sequential import run_sequential_blocks
 
     cfg = _rnn_cfg(n_envs=3)
-    envs = build_envs(cfg, np.random.RandomState(0))
+    envs = build_envs_from_config(cfg, np.random.RandomState(0))
     agent, opt = _rnn_agent(cfg)
     seen = []
     run_sequential_blocks(
@@ -257,15 +257,156 @@ def test_both_rnn_drivers_run_the_same_loop():
     schedule, differing only in trial count and what they record."""
     from analysis.continual.baseline import run_sequential
     from hopfield_nav.train_rnn import train_sequential
-    from hopfield_nav.training.rnn_setup import build_envs
+    from hopfield_nav.training.rnn_setup import build_envs_from_config
 
     outs = {}
     for name, fn in (("train_rnn", train_sequential), ("baseline", run_sequential)):
         cfg = _rnn_cfg()
-        envs = build_envs(cfg, np.random.RandomState(0))
+        envs = build_envs_from_config(cfg, np.random.RandomState(0))
         agent, opt = _rnn_agent(cfg)
         torch.manual_seed(0)
         np.random.seed(0)
         res = fn(cfg, agent, opt, envs, torch.device("cpu"))
         outs[name] = res["blocks"] if isinstance(res, dict) else res[1]
     assert outs["train_rnn"] == outs["baseline"] == [(1, 3, 0), (4, 6, 1)]
+
+
+# ---------------------------------------------------------------------------
+# The RNN stack on the same world record as train_navigate (Phase 5.5)
+# ---------------------------------------------------------------------------
+
+def _rnn_gen_cfg(**over):
+    cfg = _rnn_cfg(n_envs=3)
+    cfg.lambdas = [5, 7]                 # Npos = 35
+    cfg.env.size = 4
+    cfg.agent.input_grid_state = True
+    cfg.env_generator = True
+    cfg.place_margin = 3
+    cfg.n_val_envs = 2
+    for k, v in over.items():
+        setattr(cfg, k, v)
+    return cfg
+
+
+def test_both_rnn_drivers_build_the_same_world():
+    """The point of moving this stack onto the generator.
+
+    Before, `analysis.continual.baseline` and `train_rnn` agreed with
+    `agenthash` only through the hand-matched draw-order convention documented
+    at agenthash.py:325-333 -- a comment, enforced by nothing. Now they call one
+    function and can be pointed at one record, so agreement is a property rather
+    than a convention.
+    """
+    from hopfield_nav.training.rnn_setup import rnn_world
+
+    made = []
+    for _ in range(2):
+        cfg = _rnn_gen_cfg()
+        envs, offsets, split, field, kind = rnn_world(cfg, np.random.RandomState(cfg.seed))
+        made.append((kind, [e.seed for e in envs], offsets,
+                     [s.goal for s in split.train]))
+    assert made[0] == made[1]
+    assert made[0][0] == "declared"
+
+
+def test_the_generated_rnn_world_records_its_offsets():
+    """The §1.4 bug, in this stack: `place_envs(..., np.random, ...)` drew from
+    a global stream whose state depended on everything built before it, so the
+    offsets a baseline used were unrecoverable afterwards."""
+    from hopfield_nav.training.rnn_setup import rnn_world
+
+    cfg = _rnn_gen_cfg()
+    envs, offsets, split, field, _ = rnn_world(cfg, np.random.RandomState(cfg.seed))
+    assert offsets == [s.offset for s in split.train]
+    assert len(split.base_val) == cfg.n_val_envs
+    assert split.margin == cfg.place_margin
+    from hopfield_nav.world import generate as gen
+    for i, a in enumerate(split.train + split.base_val):
+        for b in (split.train + split.base_val)[i + 1:]:
+            assert gen.toroidal_gap(a.offset, a.size, b.offset, b.size,
+                                    split.period) >= split.margin
+
+
+def test_the_legacy_rnn_path_is_still_describable():
+    """Off by default, and an unconstrained draw still gets recorded -- which is
+    the first time this stack could say what envs it used at all."""
+    from hopfield_nav.training.rnn_setup import rnn_world
+
+    cfg = _rnn_gen_cfg(env_generator=False)
+    envs, offsets, split, field, kind = rnn_world(cfg, np.random.RandomState(cfg.seed))
+    assert kind == "legacy" and split.margin == 0
+    assert [s.wall_seed for s in split.train] == [e.seed for e in envs]
+    assert [s.goal for s in split.train] == [e.goal_location for e in envs]
+    assert offsets == [s.offset for s in split.train]
+
+
+def test_a_generated_rnn_world_round_trips_through_disk(tmp_path):
+    """Same file and same reader as train_navigate's, which is what makes a
+    baseline and an agent-hash run comparable."""
+    from hopfield_nav.training.rnn_setup import rnn_world, write_rnn_world_spec
+    from hopfield_nav.world import generate as gen
+    from hopfield_nav.world.spec import WorldSpec
+
+    cfg = _rnn_gen_cfg()
+    envs, offsets, split, field, kind = rnn_world(cfg, np.random.RandomState(cfg.seed))
+    write_rnn_world_spec(cfg, split, field, generator=kind, save_dir=tmp_path)
+
+    back = WorldSpec.read(tmp_path)
+    assert back.split.train == split.train
+    rebuilt = gen.build_envs(back.split.train, cfg.env, "discrete")
+    for a, b in zip(envs, rebuilt):
+        assert np.array_equal(a._wall_code, b._wall_code)
+        assert a.goal_location == b.goal_location
+    # No encoder in this stack, so the embedding diagnostic is empty rather than
+    # invented -- and the geometric ones are still there.
+    assert back.split.diagnostics["cosine"] == {}
+    assert back.split.diagnostics["min_place_gap"] >= split.margin
+
+
+def test_the_scaffold_is_built_for_the_generator_not_only_for_the_agent():
+    """Placement is recorded even when the agent cannot observe it.
+
+    Under `input_grid_state=False` the RNN never sees where its envs sit -- but
+    the placement is still part of the world's identity, and an agent-hash run
+    pointed at the same world.json *does* observe those offsets. Refusing to
+    generate here would mean the two stacks could not share a world at all.
+    """
+    from hopfield_nav.training.rnn_setup import rnn_world
+    from hopfield_nav.world import generate as gen
+
+    cfg = _rnn_gen_cfg()
+    cfg.agent.input_grid_state = False
+    envs, offsets, split, field, kind = rnn_world(cfg, np.random.RandomState(0))
+    assert kind == "declared"
+    assert field is not None, "the generator needs a coordinate system"
+    assert offsets == [s.offset for s in split.train]
+    for i, a in enumerate(split.train + split.base_val):
+        for b in (split.train + split.base_val)[i + 1:]:
+            assert gen.toroidal_gap(a.offset, a.size, b.offset, b.size,
+                                    split.period) >= split.margin
+
+
+def test_grid_state_does_not_change_which_envs_the_generator_draws():
+    """The declared world is a property of the config, not of what the agent
+    happens to observe -- otherwise two stacks could not be given the same one."""
+    from hopfield_nav.training.rnn_setup import rnn_world
+
+    made = []
+    for grid in (True, False):
+        cfg = _rnn_gen_cfg()
+        cfg.agent.input_grid_state = grid
+        envs, offsets, split, _, _ = rnn_world(cfg, np.random.RandomState(cfg.seed))
+        made.append(([e.seed for e in envs], offsets,
+                     [s.goal for s in split.train]))
+    assert made[0] == made[1]
+
+
+def test_the_generator_will_not_invent_a_margin():
+    """`derive_margin` reads the scaffold's cosine-vs-distance curve, which
+    needs an encoder. This stack has none, and a borrowed constant would be
+    wrong at a different Npos."""
+    from hopfield_nav.training.rnn_setup import rnn_world
+
+    cfg = _rnn_gen_cfg(place_margin=None)
+    with pytest.raises(SystemExit, match="explicit --place_margin"):
+        rnn_world(cfg, np.random.RandomState(0))

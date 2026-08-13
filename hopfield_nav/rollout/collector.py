@@ -53,6 +53,8 @@ class RolloutCollector:
         env: GridEnv,
         agent: NavAgent,
         hopfields: list[Hopfield] | Hopfield,
+        *,
+        allow_store: bool,
         h_rnn: torch.Tensor | None = None,
         env_offset: tuple[int, int] = (0, 0),
         update_idx: int = 0,
@@ -66,6 +68,12 @@ class RolloutCollector:
             env: The base environment (VecEnv created internally).
             agent: Policy network (eval mode).
             hopfields: List of B Hopfield instances, or single shared instance.
+            allow_store: May the agent's store action write to memory? Required,
+                with no default, so every caller states its intent. Until 2026-08
+                this was inferred from `isinstance(hopfields, list)`, which made
+                the type of the object silently carry a policy decision -- and
+                made `train_navigate`'s store head inert for reasons no single
+                file recorded.
             h_rnn: Initial RNN hidden state or None.
             env_offset: (C_X, C_Y) global offset for this env in the VectorHash grid.
             update_idx: Current training update (1-indexed). Used for auto_store_warmup gating.
@@ -76,9 +84,18 @@ class RolloutCollector:
         """
         cfg = self.cfg
         B, T = self.B, self.T
+        # `shared_hopfield` keeps only its structural job: whether to index
+        # `hopfields[b]` or use one object for the whole batch. Whether a write
+        # is *permitted* is `allow_store`, declared by the caller.
         shared_hopfield = not isinstance(hopfields, list)
+        if allow_store and shared_hopfield:
+            raise ValueError(
+                "allow_store=True needs one Hopfield per trajectory: with a "
+                "single shared instance all B trajectories would write into the "
+                "same memory and contaminate each other. Pass a list of B."
+            )
         auto_store_active = (
-            not shared_hopfield
+            allow_store                     # auto-store forces a *write*
             and cfg.hopfield.auto_store_warmup > 0
             and update_idx <= cfg.hopfield.auto_store_warmup
         )
@@ -460,7 +477,7 @@ class RolloutCollector:
                 # bit cannot flip True during the exploit phase, when the
                 # input_memory() call below is suppressed (otherwise the bit
                 # would claim "goal in memory" without actually storing it).
-                if not shared_hopfield and in_explore:
+                if allow_store and in_explore:
                     agent_goal_store_fired |= (effective_store & at_goal_mask)
                     # With goal_radius > 0.5 the at-goal ball can extend onto
                     # neighbouring cells, so `embeddings[b]` is not necessarily

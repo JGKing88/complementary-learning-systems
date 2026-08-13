@@ -125,3 +125,38 @@ def test_no_randomness_is_drawn_when_distractors_are_off(regime_cls, knob):
     for _ in range(5):
         regime.spec(0, world, 0, env, (0, 0), _knobs(**{f"{knob}_max": 3}))
     assert rng.get_state()[2] == before, "distractor RNG advanced unexpectedly"
+
+
+# ---------------------------------------------------------------------------
+# allow_store: the decision is declared, not inferred from a type
+# ---------------------------------------------------------------------------
+
+def test_both_regimes_declare_that_they_do_not_store():
+    """train_navigate's curriculum is explore + follow; neither writes memory.
+
+    Declared at class level so it is one readable line rather than a consequence
+    of which type of object the regime happened to construct.
+    """
+    assert ExploitRegime.allows_store is False
+    assert ExploreRegime.allows_store is False
+    cfg, vh, env, world = _world()
+    for cls in (ExploitRegime, ExploreRegime):
+        regime = cls(cfg, EMBED, DEVICE, np.random.RandomState(0))
+        assert regime.spec(0, world, 0, env, (0, 0), _knobs()).allow_store is False
+
+
+def test_writing_into_a_shared_hopfield_is_refused():
+    """allow_store needs one memory per trajectory, or the batch contaminates.
+
+    A single shared instance with writes enabled would have all B trajectories
+    storing into the same memory. Previously unrepresentable only because the
+    collector inferred `allow_store` from the type; now it is a real error.
+    """
+    from hopfield_nav.rollout.collector import RolloutCollector
+    from hopfield_nav.tests.fixtures import make_collector
+    cfg = make_stub_cfg(movement_mode="discrete")
+    collector, agent, vh = make_collector(cfg, EMBED, seed=0)
+    env = make_env(cfg.env, "discrete", seed=0)
+    shared = Hopfield(EMBED, beta=1.0, device="cpu")
+    with pytest.raises(ValueError, match="one Hopfield per trajectory"):
+        collector.collect_rollout(env, agent, shared, allow_store=True)

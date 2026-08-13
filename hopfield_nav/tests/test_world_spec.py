@@ -237,3 +237,115 @@ def test_npos_mismatch_is_refused(field, tmp_path):
                      split=_split(field))
     with pytest.raises(ValueError, match="different scaffold"):
         cio.build_eval_world(cfg, enc, "cpu", spec=spec)
+
+
+# ---------------------------------------------------------------------------
+# Discovery -- the §1.4 regression
+# ---------------------------------------------------------------------------
+
+def test_a_recorded_world_is_found_from_the_checkpoint_path(field, tmp_path,
+                                                            capsys):
+    """The bug this parameter exists for.
+
+    Between Phase 3 and Phase 5 every caller passed three arguments, so a run
+    with a truthful world.json beside it still took the RNG replay -- and the
+    replay cannot recover offsets, which is the whole point of the file. Nothing
+    failed; the numbers were just computed against envs training never used.
+    """
+    cfg = _cfg(tmp_path)
+    torch.manual_seed(0)
+    enc = torch.nn.Linear(int(np.sum(np.square(LAMBDAS))), 8)
+    enc.eval()
+    spec = WorldSpec(scaffold={"Npos": field.Npos}, generator="declared",
+                     split=_split(field))
+    spec.write(tmp_path)
+    ckpt = tmp_path / "navigate_u1.pt"
+    ckpt.write_bytes(b"")
+
+    envs, vh, offsets = cio.build_eval_world(cfg, enc, "cpu", ckpt_path=ckpt)
+    assert offsets == [s.offset for s in spec.split.base_val]
+    assert [e.seed for e in envs] == [s.wall_seed for s in spec.split.base_val]
+    assert "no world.json" not in capsys.readouterr().out
+
+    # ...and the run directory works as well as a checkpoint inside it.
+    _, _, from_dir = cio.build_eval_world(cfg, enc, "cpu", ckpt_path=tmp_path)
+    assert from_dir == offsets
+
+
+def test_the_replay_still_runs_and_still_warns(field, tmp_path, capsys):
+    """A pre-Phase-3 run has no record; it must still evaluate, and still say so."""
+    cfg = _cfg(tmp_path)
+    torch.manual_seed(0)
+    enc = torch.nn.Linear(int(np.sum(np.square(LAMBDAS))), 8)
+    enc.eval()
+    ckpt = tmp_path / "navigate_u1.pt"
+    ckpt.write_bytes(b"")
+    envs, vh, offsets = cio.build_eval_world(cfg, enc, "cpu", ckpt_path=ckpt)
+    assert len(envs) == cfg.num_val_envs == len(offsets)
+    assert "no world.json" in capsys.readouterr().out
+
+
+def test_an_explicit_spec_beats_discovery(field, tmp_path):
+    """For evaluating one run's checkpoint against another run's world."""
+    cfg = _cfg(tmp_path)
+    torch.manual_seed(0)
+    enc = torch.nn.Linear(int(np.sum(np.square(LAMBDAS))), 8)
+    enc.eval()
+    WorldSpec(scaffold={"Npos": field.Npos}, generator="declared",
+              split=_split(field, seed=0)).write(tmp_path)
+    other = WorldSpec(scaffold={"Npos": field.Npos}, generator="declared",
+                      split=_split(field, seed=9))
+    ckpt = tmp_path / "navigate_u1.pt"
+    ckpt.write_bytes(b"")
+    _, _, offsets = cio.build_eval_world(cfg, enc, "cpu", spec=other,
+                                         ckpt_path=ckpt)
+    assert offsets == [s.offset for s in other.split.base_val]
+
+
+def test_no_eval_entry_point_resolves_a_world_without_the_record():
+    """Discovery is only automatic if the call sites actually feed it.
+
+    The four here were each silently on the replay path for two phases -- they
+    called `build_eval_world` with three arguments and got a fresh offset draw.
+    A fifth landing in the same state is the failure mode this guards, and it
+    reads the source because there is no runtime moment at which "nobody passed
+    it" is distinguishable from "this run has no record".
+
+    Three spellings are sanctioned, and all three go through `world_spec_for`:
+    `build_eval_world(..., ckpt_path=)`, and the `eval_world_for_split` /
+    `eval_env_set` helpers the split-aware drivers use. A bare
+    `build_eval_world(cfg, encoder, device)` is the shape that was wrong.
+    """
+    import inspect
+    import hopfield_nav.eval_all as eval_all
+    from analysis import trajectories
+    from analysis.continual import agenthash
+    from analysis.phase_decoding import rollout
+
+    def _args(text: str) -> str:
+        """The call's argument list, to its *balanced* close paren.
+
+        Naive `.index(")")` stops inside `str(device)`, which every one of these
+        calls contains -- and the test then fails on correct code.
+        """
+        depth, out = 1, []
+        for ch in text:
+            depth += (ch == "(") - (ch == ")")
+            if depth == 0:
+                break
+            out.append(ch)
+        return "".join(out)
+
+    for mod in (eval_all, trajectories, agenthash, rollout):
+        src = inspect.getsource(mod)
+        # Every bare build_eval_world call must name where the record lives.
+        for call in src.split("build_eval_world(")[1:]:
+            head = _args(call)
+            assert "ckpt_path=" in head or "spec=" in head, (
+                f"{mod.__name__} calls build_eval_world without a ckpt_path, so "
+                f"it silently evaluates on a fresh offset draw: ...{head}")
+        # ...and each driver resolves its world through one of the three.
+        assert any(f"{name}(" in src for name in
+                   ("build_eval_world", "eval_world_for_split", "eval_env_set")), (
+            f"{mod.__name__} resolves its eval world some other way, which means "
+            "it may not be reading the run's world.json at all")

@@ -31,8 +31,10 @@ from .encoder_io import load_encoder, validate_config
 from .policy.agent import NavAgent, compute_input_dim
 from .rollout.collector import RolloutCollector
 from .updates.ppo import ppo_update
+from .training.refresh import Cadence
 from .training.world_setup import (
-    build_field, do_eval, make_hops, set_phase_freeze, setup_world,
+    build_field, do_eval, make_hops, record_parent_world, set_phase_freeze,
+    setup_run_world,
 )
 from .evaluation.checkpoint_io import cfg_from_checkpoint
 
@@ -40,8 +42,7 @@ from .evaluation.checkpoint_io import cfg_from_checkpoint
 def run_store(
     cfg: TrainConfig,
     agent: NavAgent,
-    worlds: list[dict],
-    eval_world: dict,
+    rw,
     embed_dim: int,
     device: torch.device,
     n_updates: int,
@@ -49,6 +50,8 @@ def run_store(
     ckpt_every: int,
     lr: float,
     use_wandb: bool,
+    ckpt_world: dict | None = None,
+    parent_world: dict | None = None,
 ) -> None:
     """Phase B: trunk + move + value frozen, store head trains on BCE.
 
@@ -69,8 +72,15 @@ def run_store(
           f"(store head only)", flush=True)
     optimizer = torch.optim.Adam(trainable, lr=lr)
 
+    worlds, eval_world = rw.worlds, rw.eval_world
+    if rw.refresher is not None:
+        print(f"Env refresh: {rw.refresher.cadence.describe()} (train envs "
+              "only; the validation set is drawn once and held)", flush=True)
+
     # Per-env empty Hopfield pools (store head fires regardless; the
     # rollout still routes attempted stores into the per-env Hopfield).
+    # Refresh-safe: these are empty and index-aligned, and a refresh never
+    # changes how many envs a world holds.
     pools = {}
     for w_idx, world in enumerate(worlds):
         pools[w_idx] = make_hops(
@@ -80,6 +90,7 @@ def run_store(
     n_envs = cfg.envs_per_world
 
     for update in range(1, n_updates + 1):
+        rw.refresh(update)
         rollouts = []
         for w_idx, world in enumerate(worlds):
             vh = world.field
@@ -88,7 +99,8 @@ def run_store(
                 env_offset = world.offsets[local_idx]
                 hop = pools[w_idx][local_idx]
                 rollout = collector.collect_rollout(
-                    env, agent, hop, h_rnn=None, env_offset=env_offset,
+                    env, agent, hop, allow_store=False,
+                    h_rnn=None, env_offset=env_offset,
                     update_idx=update, aux_scale=1.0, epsilon_now=0.0,
                 )
                 rollouts.append(rollout)
@@ -119,10 +131,14 @@ def run_store(
         # Separate cadence -- see the same block in train_navigate for why.
         if update % max(ckpt_every, 1) == 0:
             os.makedirs(cfg.save_dir, exist_ok=True)
+            if rw.refresher is not None:
+                ckpt_world = rw.record()
             torch.save({
                 "agent_state_dict": agent.state_dict(),
                 "config": asdict(cfg),
                 "update": update,
+                "world_spec": ckpt_world,
+                "parent_world_spec": parent_world,
             }, os.path.join(cfg.save_dir, f"store_u{update}.pt"))
             run_manifest.record_checkpoint(
                 cfg.save_dir, f"store_u{update}.pt", update)
@@ -159,6 +175,11 @@ def train_store(args) -> None:
     cfg.save_dir = args.save_dir
 
     validate_train_config(cfg)
+    # The parent's config comes with whatever refresh cadence Phase A used. Its
+    # loop never applied it, so an inherited cadence was silently dropped;
+    # resolving it here means it is either honoured or refused, and refused
+    # before the encoder loads and the scaffold builds.
+    cadence = Cadence.from_config(cfg)
     torch.manual_seed(cfg.seed)
     np.random.seed(cfg.seed)
     rng = np.random.RandomState(cfg.seed)
@@ -176,11 +197,15 @@ def train_store(args) -> None:
     # (lambdas, Npos, fwhm_ratio, encoder), so the per-world copies this used
     # to build were bit-identical -- and 12 GB each at Npos=1716.
     field = build_field(cfg, encoder)
-    worlds = [setup_world(cfg, encoder, embed_dim, rng, role="train",
-                          field=field)
-              for _ in range(cfg.num_worlds)]
-    eval_world = setup_world(cfg, encoder, embed_dim, rng, role="eval",
-                             field=field)
+    encoder_ident = run_manifest.encoder_identity(
+        cfg.encoder_checkpoint, enc_cfg, encoder_gain)
+    # Phase B draws its own envs, from its own --seed. It is a continuation of
+    # the agent, not of the world -- see `record_parent_world`, which copies the
+    # parent's record next to this one so the difference is on the record rather
+    # than left to be discovered by whoever plots the two eval curves together.
+    rw = setup_run_world(cfg, encoder, embed_dim, rng, field,
+                         cadence=cadence, n_updates=args.phase_b_updates,
+                         encoder_ident=encoder_ident, where="train_store")
 
     input_dim = compute_input_dim(cfg.agent, embed_dim, cfg.env.observation_size)
     print(f"Agent input_dim={input_dim}", flush=True)
@@ -205,26 +230,38 @@ def train_store(args) -> None:
 
     run_manifest.begin(
         cfg.save_dir, kind="store", name=sub, config=asdict(cfg),
-        encoder=run_manifest.encoder_identity(
-            cfg.encoder_checkpoint, enc_cfg, encoder_gain),
+        encoder=encoder_ident,
         parent=args.load_checkpoint,
         wandb_run=wandb.run if cfg.use_wandb else None,
     )
 
+    # Both worlds on the record: this run's, and a verbatim copy of the one the
+    # agent was trained on before it got here.
+    parent_world = record_parent_world(cfg, rw.split, args.load_checkpoint,
+                                       cfg.env)
+    if parent_world is not None:
+        rw.extra["parent"] = parent_world
+    ckpt_world = rw.record()
+
     run_store(
-        cfg, agent, worlds, eval_world, embed_dim, device,
+        cfg, agent, rw, embed_dim, device,
         n_updates=args.phase_b_updates,
         eval_every=cfg.eval_every,
         ckpt_every=(cfg.ckpt_every if cfg.ckpt_every is not None
                     else cfg.eval_every),
         lr=args.phase_b_lr,
         use_wandb=cfg.use_wandb,
+        ckpt_world=ckpt_world, parent_world=parent_world,
     )
+    if rw.refresher is not None:
+        ckpt_world = rw.record()
 
     os.makedirs(cfg.save_dir, exist_ok=True)
     torch.save({
         "agent_state_dict": agent.state_dict(),
         "config": asdict(cfg),
+        "world_spec": ckpt_world,
+        "parent_world_spec": parent_world,
     }, os.path.join(cfg.save_dir, "store_final.pt"))
     run_manifest.record_checkpoint(cfg.save_dir, "store_final.pt")
     run_manifest.finish(cfg.save_dir)
