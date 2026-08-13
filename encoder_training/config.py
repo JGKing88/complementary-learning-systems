@@ -47,6 +47,14 @@ class LossConfig:
     uniformity_anneal_epochs: int = 25  # epochs to ramp uniformity from 0 to end
     centered: bool = True               # centered CKA (only used if mode="cka")
 
+    # Withhold cross-environment pairs from the repel term. There is no
+    # dedicated cross-env term: any pair that is not "near" is repelled, so in
+    # a mixed batch every cross-env pair is pushed toward cosine 0. Setting
+    # this reproduces what `single_env_batch=True` does to the *loss* while
+    # still drawing each gradient step from many environments — the two are
+    # confounded otherwise, and this is what separates them.
+    exclude_cross_env_pairs: bool = False
+
 
 @dataclass
 class PatchConfig:
@@ -86,12 +94,31 @@ class NavEvalConfig:
 
 
 @dataclass
+class UniqueRadiusConfig:
+    """Unique-coding-radius eval (encoder_training.eval_unique_radius).
+
+    Scored on the full Npos x Npos arena rather than on patches, so unlike the
+    nav eval it says how far a position stays identifiable *globally*. Costs
+    roughly 15 s at lambdas (11,12,13), which is why ``every`` defaults to a
+    multiple of the nav eval rather than every epoch.
+    """
+    enabled: bool = True
+    every: int = 100                    # epochs between evals (0 = off)
+    n_refs: int = 20
+    border: int = 100                   # keep refs this far from any edge
+    seed: int = 0                       # shared across runs: paired comparison
+    batch_size: int = 16384
+
+
+@dataclass
 class TrainConfig:
     """Full training configuration."""
     model: EncoderModelConfig = field(default_factory=EncoderModelConfig)
     loss: LossConfig = field(default_factory=LossConfig)
     patches: PatchConfig = field(default_factory=PatchConfig)
     nav_eval: NavEvalConfig = field(default_factory=NavEvalConfig)
+    unique_radius: UniqueRadiusConfig = field(
+        default_factory=UniqueRadiusConfig)
 
     fwhm_ratio: float = 0.25            # Gaussian smoothing of grid codes
 

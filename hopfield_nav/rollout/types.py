@@ -28,6 +28,11 @@ class RolloutBatch:
     bootstrap_value: torch.Tensor   # (B,) — value at truncation point
     goal_reached: torch.Tensor           # (B, T) float 0/1 — BC label for store head
     explore_mask: torch.Tensor      # (B, T) float 0/1 — 1 during explore phase (store-eligible steps)
+    # (B, T) float 0/1 -- 1 while row b's episode was still running. None
+    # means every row ran the whole rollout, which is every run that does
+    # not end episodes on goal-reach; that path keeps the old arithmetic
+    # exactly rather than multiplying by a mask of ones.
+    alive_mask: torch.Tensor | None = None
     policy_action_mask: torch.Tensor | None = None  # (B, T) float 0/1 — 1 where executed action came from policy sample, 0 where ε / auto-nav override replaced it. ε actions are env-exploration only and including them in the PPO surrogate explodes ratios under narrow std (the action lies far from the policy mean → log_prob is large negative → tiny mean drift → huge ratio).
     # DAgger teacher labels — populated only in training_mode == "bc". All
     # None in PPO mode; PPO update ignores these fields entirely.

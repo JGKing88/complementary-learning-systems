@@ -40,6 +40,7 @@ from .policy.recurrent import add_recurrent_args
 from .rollout.collector import RolloutCollector
 from .updates.ppo import advantage_scale_by_group, ppo_update
 from .evaluation.checkpoint_io import cfg_from_checkpoint
+from .training.cfg_args import settle_encoder
 from .training.explore import ExploreRegime
 from .training.exploit import ExploitRegime
 from .training.refresh import Cadence, Refresher
@@ -151,7 +152,8 @@ def run_navigate(
 
     explore_regime = ExploreRegime(cfg, embed_dim, device, dist_rng,
                                    goals_off=cfg.explore_goals_off,
-                                   use_distractors=use_emp_distractors)
+                                   use_distractors=use_emp_distractors,
+                                   ends_on_goal=cfg.explore_ends_on_goal)
 
     if refresher is not None:
         print(f"Env refresh: {refresher.cadence.describe()} (train envs only; "
@@ -304,6 +306,7 @@ def run_navigate(
                     h_rnn=None, env_offset=env_offset,
                     update_idx=update, aux_scale=1.0, epsilon_now=spec.epsilon,
                     goal_in_memory_init=spec.goal_in_memory_init,
+                    ends_on_goal=spec.ends_on_goal,
                 )
                 rollouts.append(rollout)
         cfg.hopfield.novelty_reward = 0.0
@@ -449,7 +452,8 @@ def train_navigate(
         cfg.encoder_checkpoint, enc_cfg, encoder_gain)
     rw = setup_run_world(cfg, encoder, embed_dim, rng, field,
                          cadence=cadence, n_updates=total_updates(stages),
-                         encoder_ident=encoder_ident, where="train_navigate")
+                         encoder_ident=encoder_ident, where="train_navigate",
+                         parent_ckpt=load_checkpoint)
     worlds, eval_world, split = rw.worlds, rw.eval_world, rw.split
 
     input_dim = compute_input_dim(cfg.agent, embed_dim, cfg.env.observation_size)
@@ -534,6 +538,8 @@ CFG_FIELDS: dict[str, tuple[str, ...]] = {
     "goal_radius": ("env.goal_radius",),
     "allow_offcell_store": ("env.allow_offcell_store",),
     "egocentric_heading": ("env.egocentric_heading",),
+    "reset_state_on_teleport": ("env.reset_state_on_teleport",),
+    "explore_ends_on_goal": ("explore_ends_on_goal",),
     "wall_resolution": ("env.wall_resolution",),
     "time_penalty": ("env.time_penalty",),
     "continuous_normalize": ("env.continuous_normalize",),
@@ -672,9 +678,31 @@ def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         description="Navigation training over an explore/exploit schedule",
         allow_abbrev=False)
-    p.add_argument("--encoder_checkpoint", required=True)
+    p.add_argument("--encoder_checkpoint", default=None,
+                   help="Required for a fresh run. Optional with "
+                        "--load_checkpoint, which inherits the parent's -- pass "
+                        "it only to deliberately swap encoders, which warns.")
     p.add_argument("--size", type=int, default=8)
     p.add_argument("--observation_size", type=int, default=12)
+    p.add_argument("--explore_ends_on_goal",
+                   action=argparse.BooleanOptionalAction, default=None,
+                   help="An explore rollout ends when the agent reaches "
+                        "the goal, instead of teleporting and continuing. "
+                        "Per trajectory: the other B-1 keep running. On by "
+                        "default since 2026-08-12. Vacuous under "
+                        "--explore_goals_off, where there is no goal event "
+                        "to end on. Note it truncates novelty accrual -- an "
+                        "agent that finds the goal early collects fewer "
+                        "coverage steps.")
+    p.add_argument("--reset_state_on_teleport",
+                   action=argparse.BooleanOptionalAction, default=None,
+                   help="Zero the RNN hidden state and prev_reward / prev_action "
+                    "when the agent teleports after reaching the goal (C5 of the "
+                    "at-goal contract, world/episode.py). Default off since "
+                    "2026-08-12: recurrence spans the whole rollout rather than "
+                    "restarting at each goal. Applies to training and evaluation "
+                    "together -- an answer that differed between them would make "
+                    "the two incomparable.")
     p.add_argument("--egocentric_heading", action=argparse.BooleanOptionalAction,
                    default=True,
                    help="Foveal cone turns with the agent: heading is a "
@@ -968,10 +996,12 @@ def main():
               f"({args.n_val_trials}), not over {args.union_cov_trials}.",
               flush=True)
 
+    parent_cfg = None
     if args.load_checkpoint is not None:
         ck = torch.load(args.load_checkpoint, map_location="cpu",
                         weights_only=False)
-        cfg = cfg_from_checkpoint(ck["config"])
+        parent_cfg = ck["config"]
+        cfg = cfg_from_checkpoint(parent_cfg)
         apply_args(cfg, args, explicit)
         # Never inherited: that field holds where the parent wrote, and reusing
         # it would have this run overwrite its own parent.
@@ -979,6 +1009,7 @@ def main():
     else:
         cfg = TrainConfig()
         apply_args(cfg, args, set(CFG_FIELDS))
+    settle_encoder(cfg, parent_cfg, p.error)
 
     if cfg.schedule is None:
         p.error("--schedule is required. It is a list of stages separated by "

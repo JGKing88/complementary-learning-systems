@@ -414,6 +414,15 @@ def main():
                    help="Euclidean radius around goal that counts as 'at goal'. "
                         "Default 0.5 reproduces snap-equality on integer-snapped "
                         "positions; larger values fuzz the goal region.")
+    p.add_argument("--reset_state_on_teleport",
+                   action=argparse.BooleanOptionalAction, default=False,
+                   help="Zero the RNN hidden state and prev_reward / prev_action "
+                    "when the agent teleports after reaching the goal (C5 of the "
+                    "at-goal contract, world/episode.py). Default off since "
+                    "2026-08-12: recurrence spans the whole rollout rather than "
+                    "restarting at each goal. Applies to training and evaluation "
+                    "together -- an answer that differed between them would make "
+                    "the two incomparable.")
     p.add_argument("--allow_offcell_store",
                    action=argparse.BooleanOptionalAction, default=False,
                    help="Whether a store fired while at goal may write a cell other than the goal's. Only reachable at goal_radius > 0.5, where at_goal tests the float position but embeddings are read at the snapped cell. Default False: the goal cell's embedding is stored instead, so the pattern written is the one navigation will later recall. Pass --allow_offcell_store for the pre-2026-08 behavior.")
@@ -477,7 +486,8 @@ def main():
                       goal_radius=args.goal_radius,
                       allow_offcell_store=args.allow_offcell_store,
                       egocentric_heading=args.egocentric_heading,
-                      wall_resolution=args.wall_resolution),
+                      wall_resolution=args.wall_resolution,
+                      reset_state_on_teleport=args.reset_state_on_teleport),
         vectorhash=VectorHashConfig(lambdas=args.lambdas, Np=args.Np,
                                     static_vectorhash=args.static_vectorhash),
         hopfield=HopfieldConfig(),

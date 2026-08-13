@@ -29,10 +29,20 @@ def compute_gae(
     bootstrap_value: torch.Tensor,
     gamma: float,
     lam: float,
+    alive: torch.Tensor | None = None,
 ) -> tuple[torch.Tensor, torch.Tensor]:
     """Compute GAE advantages and returns.
 
-    No terminal states within a rollout — only truncation at the end.
+    ``alive`` is (B, T) 1/0: whether row b's episode was still running at step
+    t. ``None`` means every row runs the whole rollout, which is the historical
+    case -- truncation at the end and no terminal state inside -- and takes the
+    identical arithmetic.
+
+    A row that ends inside the rollout is **terminal**, not truncated: there is
+    no future return past a reached goal, so the bootstrap must be cut there.
+    Carrying ``gamma * V(next)`` across that boundary is the silent version of
+    this bug -- the value head learns that reward keeps flowing after the
+    episode is over, and nothing in the loss curve says so.
 
     rewards, values: (B, T).  bootstrap_value: (B,).
     Returns (advantages, returns) both (B, T).
@@ -43,12 +53,35 @@ def compute_gae(
     last_value = bootstrap_value
 
     for t in reversed(range(T)):
-        delta = rewards[:, t] + gamma * last_value - values[:, t]
-        last_adv = delta + gamma * lam * last_adv
+        if alive is None:
+            # 1 where the return continues past t: always, bar truncation,
+            # which `bootstrap_value` already accounts for.
+            cont = 1.0
+        elif t + 1 < T:
+            # The episode continues past t exactly when t+1 was also alive.
+            cont = alive[:, t + 1]
+        else:
+            # At the horizon the bootstrap applies only to rows still running.
+            #
+            # No test distinguishes this from `cont = 1.0`, and none can: a row
+            # dead at T-1 has its advantage masked to zero below, and cannot
+            # propagate backwards either, because the step before it reads
+            # `alive[:, T-1] == 0`. Kept because it states the intent where a
+            # reader looks for it -- but it is belt to the braces, not the
+            # thing holding this up.
+            cont = alive[:, t]
+        delta = rewards[:, t] + gamma * last_value * cont - values[:, t]
+        last_adv = delta + gamma * lam * cont * last_adv
         advantages[:, t] = last_adv
         last_value = values[:, t]
 
     returns = advantages + values
+    if alive is not None:
+        # Steps after a row finished are not transitions; leaving their
+        # advantages nonzero would let the loss mask be the only thing standing
+        # between them and the gradient.
+        advantages = advantages * alive
+        returns = returns * alive
     return advantages, returns
 
 
@@ -71,9 +104,18 @@ def _pool_rollouts(
     """
     advs, rets = [], []
     for r in rollouts:
-        a, g = compute_gae(r.rewards, r.values, r.bootstrap_value, gamma, gae_lambda)
+        a, g = compute_gae(r.rewards, r.values, r.bootstrap_value, gamma,
+                           gae_lambda, alive=r.alive_mask)
         advs.append(a)
         rets.append(g)
+
+    # None unless some rollout actually ended an episode early. A pool with no
+    # terminations takes the historical code path rather than multiplying by a
+    # mask of ones, so runs that do not use the feature are untouched.
+    any_alive = any(r.alive_mask is not None for r in rollouts)
+    alive = (torch.cat([r.alive_mask if r.alive_mask is not None
+                        else torch.ones_like(r.explore_mask)
+                        for r in rollouts], dim=0) if any_alive else None)
 
     # Per-rollout policy_action_mask is optional; default all-ones (every
     # step counts toward move_loss). All rollouts in a pool should agree on
@@ -84,15 +126,23 @@ def _pool_rollouts(
             pol_masks.append(r.policy_action_mask)
         else:
             pol_masks.append(torch.ones_like(r.explore_mask))
+    # Folding `alive` into the two existing masks is what keeps the store and
+    # move surrogates from scoring steps that never happened.
+    explore_mask = torch.cat([r.explore_mask for r in rollouts], dim=0)
+    pol_mask = torch.cat(pol_masks, dim=0)
+    if alive is not None:
+        explore_mask = explore_mask * alive
+        pol_mask = pol_mask * alive
     return {
+        "alive_mask": alive,
         "obs": torch.cat([r.obs for r in rollouts], dim=0),
         "move_actions": torch.cat([r.move_actions for r in rollouts], dim=0),
         "store_actions": torch.cat([r.store_actions for r in rollouts], dim=0),
         "old_move_lp": torch.cat([r.move_log_probs for r in rollouts], dim=0),
         "old_store_lp": torch.cat([r.store_log_probs for r in rollouts], dim=0),
         "goal_reached": torch.cat([r.goal_reached for r in rollouts], dim=0),
-        "explore_mask": torch.cat([r.explore_mask for r in rollouts], dim=0),
-        "policy_action_mask": torch.cat(pol_masks, dim=0),
+        "explore_mask": explore_mask,
+        "policy_action_mask": pol_mask,
         "advantages": torch.cat(advs, dim=0),
         "returns": torch.cat(rets, dim=0),
     }
@@ -201,6 +251,7 @@ def ppo_update(
     goal_reached = pool["goal_reached"]
     explore_mask = pool["explore_mask"]
     policy_action_mask = pool["policy_action_mask"]
+    alive_mask = pool["alive_mask"]
     advantages = pool["advantages"]
     returns = pool["returns"]
 
@@ -241,6 +292,7 @@ def ppo_update(
             mb_goal = goal_reached[idx]
             mb_mask = explore_mask[idx]
             mb_pol_mask = policy_action_mask[idx]
+            mb_alive = None if alive_mask is None else alive_mask[idx]
 
             # Return features so detached-trunk BCE has access (below). When
             # bce_detach_trunk=False the features tensor is unused — PyTorch
@@ -275,14 +327,22 @@ def ppo_update(
             mask_sum = mb_mask.sum().clamp_min(1.0)
             store_loss = (-torch.min(surr1_s, surr2_s) * mb_mask).sum() / mask_sum
 
-            # Value loss
-            value_loss = ((mb_ret - new_values) ** 2).mean()
-
-            # Entropy — move is always causal, store only during explore phase.
+            # Value loss. Steps after a row's episode ended are not states the
+            # value head should be fit to -- the agent was frozen there and the
+            # return is defined to be zero, so regressing onto them teaches it
+            # that finishing is worth nothing.
+            sq_err = (mb_ret - new_values) ** 2
             move_entropy = move_dist.entropy()
             if move_entropy.dim() > 2:
                 move_entropy = move_entropy.sum(-1)
-            move_ent = move_entropy.mean()
+            if mb_alive is None:
+                # No row ended early: the historical reduction, unchanged.
+                value_loss = sq_err.mean()
+                move_ent = move_entropy.mean()
+            else:
+                alive_sum = mb_alive.sum().clamp_min(1.0)
+                value_loss = (sq_err * mb_alive).sum() / alive_sum
+                move_ent = (move_entropy * mb_alive).sum() / alive_sum
             store_ent = (store_dist.entropy() * mb_mask).sum() / mask_sum
 
             # Auxiliary BCE loss on store head: directly teach "fire store at

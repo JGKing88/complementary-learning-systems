@@ -93,6 +93,7 @@ def run_sequential_blocks(
                 sgb=sgb,
                 env_offsets=(env_offsets[: i + 1]
                              if env_offsets is not None else None),
+                reset_state_on_teleport=cfg.env.reset_state_on_teleport,
             )
             if on_update is not None:
                 on_update(UpdateResult(

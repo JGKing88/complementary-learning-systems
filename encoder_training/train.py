@@ -31,6 +31,7 @@ import torch
 from cls_paths import encoders_dir
 from .config import (
     TrainConfig, EncoderModelConfig, LossConfig, PatchConfig, NavEvalConfig,
+    UniqueRadiusConfig,
 )
 from .data import (
     build_full_grid, sample_nonoverlapping_patches, extract_patches,
@@ -47,12 +48,15 @@ def _build_near_mask(
     coords: torch.Tensor,
     env_radius: torch.Tensor | None,
     local_radius: float,
-) -> torch.Tensor:
-    """Return [B, B] boolean mask of "near" pairs (excluding diagonal).
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """Return ([B, B] "near" mask excluding the diagonal, [B, B] same-env mask).
 
     If `env_radius` is given, each point's threshold is its own env's radius
     (works for both single-env and mixed batches). Otherwise uses the scalar
     `local_radius`. Radius <= 0 → "same env" used as the mask.
+
+    ``same_env`` is returned as well because the caller may need to exclude
+    cross-environment pairs from the *far* set; it is computed here anyway.
     """
     env_b = env_ids[idx]                                 # [B]
     same_env = env_b[:, None] == env_b[None, :]          # [B, B]
@@ -62,19 +66,19 @@ def _build_near_mask(
     if env_radius is not None:
         r_b = env_radius[env_b]                          # [B]
         if (r_b <= 0).all():
-            return same_env & ~eye
+            return same_env & ~eye, same_env
         # Pairs are only candidates when same_env, so r_b[i] == r_b[j];
         # broadcasting along rows is sufficient.
         r_thresh = r_b[:, None]                          # [B, 1]
     else:
         if local_radius <= 0:
-            return same_env & ~eye
+            return same_env & ~eye, same_env
         r_thresh = float(local_radius)
 
     Xb = coords[idx]
     diff = Xb[:, None, :] - Xb[None, :, :]
     dist = diff.square().sum(-1).sqrt()
-    return (dist < r_thresh) & same_env & ~eye
+    return (dist < r_thresh) & same_env & ~eye, same_env
 
 
 def train(cfg: TrainConfig) -> str:
@@ -144,6 +148,8 @@ def train(cfg: TrainConfig) -> str:
                             for e in range(len(sizes))]
 
     best_val_nav = -1.0
+    best_r_min = -1.0
+    last_ur: dict = {}          # most recent unique-radius summary, for ckpts
     rng_nav = np.random.RandomState(cfg.seed)
 
     # --- Training loop ---
@@ -165,14 +171,22 @@ def train(cfg: TrainConfig) -> str:
             zb = encoder(Phi_flat[idx], gain)
             K_pred = (zb @ zb.T).clamp(-1.0, 1.0)
 
-            near = _build_near_mask(idx, env_ids, coords, env_radius,
-                                    patch_cfg.local_radius)
+            near, same_env = _build_near_mask(idx, env_ids, coords, env_radius,
+                                              patch_cfg.local_radius)
 
             if cfg.loss.mode == "mse_contrastive":
+                # Withholding cross-environment pairs from the repel term
+                # reproduces what single_env_batch=True does to the *loss*,
+                # while leaving each gradient step drawn from many envs. The
+                # two differ, and only this separates them.
+                far = None
+                if cfg.loss.exclude_cross_env_pairs:
+                    far = ~near & same_env
                 loss = mse_attract_repel(
                     K_pred, near,
                     attract_lambda=cfg.loss.attract_lambda,
                     repel_weight=cfg.loss.repel_weight,
+                    far_mask=far,
                 )
             elif cfg.loss.mode == "cka":
                 B = K_pred.size(0)
@@ -212,13 +226,60 @@ def train(cfg: TrainConfig) -> str:
                 best_val_nav = float(val_nav['accuracy'])
                 _save_ckpt(encoder, cfg, y0s, x0s, sizes, gain,
                            os.path.join(run_dir, "encoder_best.pt"),
-                           val_nav_acc=best_val_nav, epoch=ep)
+                           val_nav_acc=best_val_nav, epoch=ep,
+                           unique_radius=last_ur)
+
+        # --- Unique-radius eval ---
+        # Scored on the whole arena, not on patches, so it is the one signal
+        # here that reports what happens outside the training envs.
+        ur = cfg.unique_radius
+        if ur.enabled and ur.every > 0 and ep % ur.every == 0:
+            last_ur = _unique_radius_eval(encoder, cfg, gain)
+            if last_ur:
+                print(f"  Unique radius: r_min={last_ur['r_min']:.1f} | "
+                      f"median={last_ur['r_median']:.1f} | "
+                      f"alias={last_ur['alias_ceiling_max']:.3f}")
+                # With the nav eval off there is no other selection signal, so
+                # the radius picks encoder_best.pt. When both run, nav keeps
+                # that job and the radius is recorded but does not select --
+                # otherwise the two would fight over the same file.
+                if cfg.eval_every <= 0 and last_ur["r_min"] > best_r_min:
+                    best_r_min = float(last_ur["r_min"])
+                    _save_ckpt(encoder, cfg, y0s, x0s, sizes, gain,
+                               os.path.join(run_dir, "encoder_best.pt"),
+                               epoch=ep, unique_radius=last_ur)
 
     # --- Final save ---
+    if cfg.unique_radius.enabled and not last_ur:
+        last_ur = _unique_radius_eval(encoder, cfg, float(gains[-1]))
     _save_ckpt(encoder, cfg, y0s, x0s, sizes, float(gains[-1]),
-               os.path.join(run_dir, "encoder_final.pt"))
+               os.path.join(run_dir, "encoder_final.pt"),
+               unique_radius=last_ur)
     print(f"Done. Best val_nav: {best_val_nav:.3f}")
+    if last_ur:
+        print(f"      Unique radius r_min: {last_ur['r_min']:.1f}")
     return run_dir
+
+
+def _unique_radius_eval(encoder, cfg: TrainConfig, gain: float) -> dict:
+    """Summary row from ``evaluate_unique_radius``, or {} if it fails.
+
+    Imported lazily and guarded: this is a diagnostic, and a long training run
+    must not die at epoch 900 because a metric raised.
+    """
+    try:
+        from encoder_training.eval_unique_radius import evaluate_unique_radius
+        ur = cfg.unique_radius
+        _, summary = evaluate_unique_radius(
+            encoder, lambdas=cfg.model.lambdas, gain=gain,
+            n_refs=ur.n_refs, border=ur.border, seed=ur.seed,
+            device=cfg.device, batch_size=ur.batch_size,
+            fwhm_ratio=cfg.fwhm_ratio,
+        )
+        return summary
+    except Exception as exc:                       # noqa: BLE001 - diagnostic
+        print(f"  [unique-radius eval failed: {type(exc).__name__}: {exc}]")
+        return {}
 
 
 def _save_ckpt(encoder, cfg: TrainConfig, y0s, x0s, sizes, gain: float,
@@ -288,6 +349,7 @@ def _build_cfg_from_args(args) -> TrainConfig:
         repel_weight=args.repel_weight,
         uniformity_lambda=args.uniformity_lambda,
         uniformity_anneal_epochs=args.uniformity_anneal_epochs,
+        exclude_cross_env_pairs=args.exclude_cross_env_pairs,
     )
     npos_list = None
     if args.npos_list:
@@ -305,11 +367,17 @@ def _build_cfg_from_args(args) -> TrainConfig:
         num_hopfields=args.nav_num_hopfields,
         n_starts_per_env=args.nav_n_starts,
     )
+    ur = UniqueRadiusConfig(
+        enabled=not args.no_unique_radius,
+        every=args.ur_every, n_refs=args.ur_n_refs,
+        border=args.ur_border, seed=args.ur_seed,
+    )
     n_total = (sum(s * s for s in npos_list) if npos_list
                else args.nenv * args.npos * args.npos)
     batch_size = min(args.batch_size, n_total)
     return TrainConfig(
         model=model, loss=loss, patches=patches, nav_eval=nav,
+        unique_radius=ur,
         fwhm_ratio=args.fwhm_ratio, lr=args.lr, epochs=args.epochs,
         batch_size=batch_size, seed=args.seed, device=args.device,
         gain_start=args.gain_start, gain_end=args.gain_end,
@@ -343,6 +411,10 @@ def main():
     p.add_argument("--attract_lambda", type=float, default=2.0)
     p.add_argument("--repel_weight", type=float, default=5.0)
     p.add_argument("--uniformity_lambda", type=float, default=0.0)
+    p.add_argument("--exclude_cross_env_pairs", action="store_true",
+                   help="withhold cross-env pairs from the repel term; "
+                        "isolates that from single_env_batch's effect on "
+                        "which envs a gradient step sees")
     p.add_argument("--uniformity_anneal_epochs", type=int, default=25)
     # Training
     p.add_argument("--epochs", type=int, default=600)
@@ -363,7 +435,16 @@ def main():
     # Checkpointing
     p.add_argument("--save_dir", default=str(encoders_dir()))
     p.add_argument("--run_name", default="")
-    p.add_argument("--eval_every", type=int, default=50)
+    p.add_argument("--eval_every", type=int, default=50,
+                   help="epochs between Hopfield nav evals; 0 disables them")
+    # Unique radius. Independent of the nav eval: it is scored on the whole
+    # arena rather than on patches, and needs no Hopfield.
+    p.add_argument("--no_unique_radius", action="store_true")
+    p.add_argument("--ur_every", type=int, default=100)
+    p.add_argument("--ur_n_refs", type=int, default=20)
+    p.add_argument("--ur_border", type=int, default=100)
+    p.add_argument("--ur_seed", type=int, default=0,
+                   help="reference positions; keep fixed across a sweep")
 
     args = p.parse_args()
     cfg = _build_cfg_from_args(args)

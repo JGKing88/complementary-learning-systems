@@ -73,6 +73,14 @@ class EnvConfig:
     # when continuous_normalize=False.
     min_action_norm: float | None = None
     goals_active: bool = True               # When False: no +1 goal reward, no teleport on goal-reach. For pure-explore Phase A.
+    # C5 of the at-goal contract (world/episode.py). False -- the default
+    # since 2026-08-12 -- carries the RNN hidden state and prev_reward /
+    # prev_action across a post-goal teleport, so recurrence spans the
+    # whole rollout rather than restarting at each goal. True restores the
+    # historical behaviour of zeroing them. One switch for training and
+    # evaluation both: an answer that differed between them would make the
+    # two incomparable.
+    reset_state_on_teleport: bool = False
     goal_reward: float = 1.0                # +reward at goal cell when goals_active. Bumping >1 strengthens follow PPO updates vs explore reward signals (novelty + revisit).
     goal_radius: float = 0.5                # Euclidean radius around goal that counts as "at goal". Default 0.5 reproduces snap-equality on integer-snapped positions. Larger values fuzz the goal region; e.g. 1.0 includes 4-connected neighbor cells.
     # What a store writes when the agent is at goal but standing on a different
@@ -350,6 +358,13 @@ class TrainConfig:
     epsilon_explore: float = 0.0            # per-step chance of a uniform-random move, explore regime only
     epsilon_anneal_updates: int = 0         # linearly scale epsilon_explore -> 0 over this many updates; 0 = constant
     explore_goals_off: bool = False         # explore-regime envs emit no goal reward and never teleport
+    # Explore rollouts end when the agent reaches the goal, instead of
+    # teleporting and continuing. Only meaningful when the goal is active --
+    # with --explore_goals_off there is no goal event to end on. Note this
+    # truncates novelty accrual: an agent that finds the goal early collects
+    # fewer coverage steps, which is the point if a found goal ends the
+    # episode and a confound if novelty is what you are measuring.
+    explore_ends_on_goal: bool = True
     n_train_distractors_min: int = 0        # non-goal patterns preloaded per exploit rollout
     n_train_distractors_max: int = 0
     n_train_emp_distractors_min: int = 0    # ditto per explore rollout (no goal among them)

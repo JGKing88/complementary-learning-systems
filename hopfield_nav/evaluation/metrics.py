@@ -432,7 +432,9 @@ def evaluate_goal_discovery(
     # The full training contract, applied by hand below the way
     # evaluate_realistic does -- GridEnv.step implements neither C3 nor C4, so
     # this site cannot go through require_single_env_support.
-    contract = episode.contract_for("evaluate_goal_discovery")
+    contract = episode.contract_for(
+        "evaluate_goal_discovery",
+        reset_state=cfg.env.reset_state_on_teleport)
     results: dict[int, dict[str, float]] = {}
 
     for n_dist in n_distractors_list:
@@ -760,7 +762,8 @@ def evaluate_realistic(
     rng = np.random.RandomState(seed)
     # Declared, not inherited: this evaluator measures reach intervals against
     # the training distribution, so it takes the training contract at the goal.
-    contract = episode.contract_for("evaluate_realistic")
+    contract = episode.contract_for(
+        "evaluate_realistic", reset_state=cfg.env.reset_state_on_teleport)
     # Per-env: has this val env's goal ever been written into the (shared) Hopfield?
     shared_goal_stored: dict[int, bool] = {i: False for i in range(len(val_envs))}
 
@@ -926,7 +929,8 @@ def evaluate_repeat(
     agent.eval()
     embed_dim = vectorhash.encoded_Phi.shape[2]
     rng = np.random.RandomState(seed)
-    contract = episode.contract_for("evaluate_repeat")
+    contract = episode.contract_for(
+        "evaluate_repeat", reset_state=cfg.env.reset_state_on_teleport)
 
     def _run_trial(
         env: GridEnv,

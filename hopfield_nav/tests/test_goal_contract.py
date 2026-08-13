@@ -49,6 +49,8 @@ adopting the training contract would move published numbers.
 """
 from __future__ import annotations
 
+import re
+
 from dataclasses import dataclass
 
 import numpy as np
@@ -561,8 +563,13 @@ def test_phase5_every_site_calls_contract_for():
     assert not unreadable, (
         f"source paths are stale -- these files moved: {unreadable}"
     )
+    # Matched as "the site name is the first argument to a contract_for call"
+    # rather than as one literal string, so that adding a keyword -- e.g.
+    # reset_state= for C5 -- does not read as the declaration disappearing.
     missing = [site for site, path in sources.items()
-               if f'contract_for("{site}")' not in path.read_text()]
+               if not re.search(
+                   r"contract_for\(\s*\n?\s*[\"']" + re.escape(site) + r"[\"']",
+                   path.read_text())]
     assert not missing, f"sites not declaring their contract: {missing}"
 
 
@@ -594,7 +601,7 @@ def test_phase5_declared_contract_reaches_the_training_stepper():
     import inspect
     from hopfield_nav.rollout.collector import RolloutCollector
     src = inspect.getsource(RolloutCollector.collect_rollout)
-    assert 'contract_for("training_rollout")' in src
+    assert re.search(r'contract_for\(\s*\n?\s*"training_rollout"', src)
     assert "contract=goal_contract" in src
 
 

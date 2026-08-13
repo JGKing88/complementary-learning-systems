@@ -1,10 +1,15 @@
 """Visualization helpers for trained encoders.
 
-- encode_grid_np: full-grid embedding (wraps encoder_training.nav_eval.encode_full_grid)
-- plot_similarity_heatmap: cosine similarity of a ref point vs the full grid
+- similarity_map / plot_similarity_heatmap: cosine similarity of a ref point
+  vs the full grid. Grids come from encoder_training.nav_eval.encode_full_grid,
+  which returns ``[gx, gy]`` — transpose it to the ``[y, x]`` order used here,
+  or the polar plot's angles come out mirrored about the 45° line (the radii
+  themselves survive the transpose, since it only relabels θ).
 - unique_radius_per_theta / plot_unique_radius_polar: how far you can walk
   in each direction before the similarity becomes non-monotonic (same
   method as vector_hash_playground.ipynb).
+
+Pinned by hopfield_nav/tests/test_unique_radius.py.
 """
 from __future__ import annotations
 
@@ -26,6 +31,21 @@ def compute_unique_radius(xs_1d: np.ndarray, ref_ix: int,
                           similarity: np.ndarray) -> float:
     """Farthest distance along a 1D line from ref_ix at which similarity is
     strictly greater than all farther values.
+
+    A sample qualifies only if it beats the max over its whole remaining tail,
+    so the accepted run is both strictly decreasing *and* dominant over
+    everything past it: one distant near-duplicate of the reference truncates
+    the radius however clean the local neighbourhood is. That tail clause is
+    what makes this a *unique* radius rather than a local peak width.
+
+    The comparison is strict, so exactly tied neighbours end the walk. On a
+    quantised similarity map (binary or low-precision encoders) plateaus are
+    the norm and the radius collapses toward 0 — check for ties before reading
+    a small value as a sharp code.
+
+    ``similarity[ref_ix]`` is never inspected; the walk starts one sample out.
+    The result is meaningful only where the reference is the local maximum,
+    which true cosine self-similarity guarantees.
 
     When both flanks exist (interior reference on the 1D sample line), returns
     min(left, right). If the reference sits at an end of the sampled segment
@@ -72,10 +92,21 @@ def unique_radius_per_theta(
 ) -> Tuple[np.ndarray, np.ndarray]:
     """For each direction θ, compute the unique radius along that ray.
 
-    Uses only the outward half-line in direction θ (positive t along
-    ``(cos θ, sin θ)``). The opposite direction is a different θ and is
-    computed separately — we do **not** take ``min(left, right)`` on the same
-    undirected line, which would force 180° symmetry in the polar plot.
+    ``cos_map`` is indexed ``[y, x]``. Uses only the outward half-line in
+    direction θ (positive t along ``(cos θ, sin θ)``). The opposite direction
+    is a different θ and is computed separately — we do **not** take
+    ``min(left, right)`` on the same undirected line, which would force 180°
+    symmetry in the polar plot. (The archived 2D original did, so its
+    ``unique_radius_2d_cm`` column is a different statistic from this one.)
+
+    Widths are in cells of true Euclidean distance, quantised to ``dt``, and
+    are **censored by the grid boundary**: a ray that leaves the array before
+    monotonicity breaks reports the distance to the edge, so its value is a
+    lower bound. On a well-behaved map most rays are censored, and min-over-θ
+    then measures the reference's distance to the nearest wall rather than
+    anything about the code. Keep the reference central, and prefer the median
+    over the min — the min is a single unlucky ray and is the first thing
+    sensor noise destroys.
 
     Returns (thetas, widths) arrays of length n_rays.
     """
