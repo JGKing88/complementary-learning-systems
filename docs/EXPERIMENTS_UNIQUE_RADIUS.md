@@ -465,26 +465,52 @@ config with binary targets reaches 6 — one flag, same geometry, same seed.
 σ=50 arm's other seed was at `r_min` 0 as of epoch 212, so this cell's seed
 spread is not yet known and may be large.)
 
-| arm | r_min | r_median | alias ceiling | eff. dims |
-|---|---|---|---|---|
-| `none` (binary near=1/far=0) | 6 | 8 | 0.947 | 105 |
-| `graded10` | 3 | 4 | 0.950 | **293** |
-| `graded25` | 3 | 10 | 0.985 | 68 |
-| **`graded50`** | **13** | **21** | 0.956 | **27** |
+Two arms beat the baseline, by opposite routes, and each moves exactly one
+factor of §4.4b's law. `encoder_final`, one seed per row where the second is
+still running:
 
-The alias ceiling does not move (0.955 against 0.954). What moves is where the
-decay crosses it: at σ=50 the target similarity at r=14 is 0.96, just clear of
-the 0.955 ceiling, so the radius lands there almost by construction. This is
-§4.2's second lever, and it is much the larger of the two.
+| arm | r_min | r_pred | r_median | alias max | alias mean | decay50 | res90 |
+|---|---|---|---|---|---|---|---|
+| **`graded50`** | **13** | 14.4 | 21 | 0.956 | 0.891 | **60.0** | 22.0 |
+| **`rate0.3`** | **9** | 8.7 | 11.5 | **0.907** | **0.821** | 22.5 | 9.0 |
+| `none` (binary) | 6, 3 | 6.2, 3.7 | 9, 5.5 | 0.946, 0.982 | 0.88, 0.94 | 21.0 | 8.5 |
+| `graded25` | 4 | 5.5 | 10 | 0.978 | 0.898 | 29.5 | 12.0 |
+| `graded10` | 3, 2 | 3.5, 2.9 | 4 | 0.949, 0.965 | 0.87, 0.92 | 12.0 | 5.0 |
+
+`graded50` leaves the ceiling roughly where the baseline had it (0.956 against
+0.946) and takes the decay from 21 to **60**. `rate0.3` does the reverse: it
+leaves the decay at 22.5 and takes the ceiling to **0.907**, the lowest any run
+in this regime has reached, against 0.84–0.86 for the unconstrained best. Two
+orthogonal knobs, one per factor — which is what makes their product worth
+testing (`w7`), and the law predicts ~33 for σ=75 at that ceiling.
+
+The `r_pred` column is §4.4b's formula, within a cell on every row.
 
 **This falsifies rank as the cause of the radius.** §4.1b's ordering was
-observational, and forcing rank up does not bring the radius with it:
-`graded10` reached 272 effective dimensions — *above* the unconstrained
-regime's 202 — and still scored `r_min` 3, while `graded50` scored 14 at 26
-dimensions, below the baseline. Rank continues to predict the *mean* alias
-ceiling well; it is simply not what gates the headline. The three rank terms
-(uniformity, VICReg, coding rate) are still in the wave and are now a test of a
-weaker claim: whether lowering the mean ceiling helps once the decay is right.
+observational, and forcing rank up does not bring the radius with it. Three
+independent demonstrations:
+
+| run | eff. dims | r_min |
+|---|---|---|
+| `graded10` | **293** | 3 |
+| `w3_radius/radius=2` | **412** | 1 |
+| `graded50` | **27** | **13** |
+| *(unconstrained reference)* | *202* | *18–21* |
+
+`graded10` and a 2-cell near radius both exceed the unconstrained regime's 202
+effective dimensions and score near zero, while the best encoder in the section
+uses 27. Rank continues to predict the *mean* alias ceiling well and it is a
+useful diagnostic; it is simply not what gates the headline.
+
+**A second thing I got wrong, in the other direction.** Read at epoch 100, the
+strong spread terms looked like §3's collapse — `vicreg` and `rate3` both at
+`r_median` 0, the profile not even locally monotone — and I concluded that
+being pair-free does not protect a spread term from fighting `attract`. By
+epoch 400 both had recovered (`vicreg` to `r_min` 4–5, `rate3` to 4). The
+`r_median` 0 was a training transient: these terms take longer to grow a
+neighbourhood, they do not prevent one. **Arms are only comparable at matched,
+late epochs**, which is also the lesson behind quoting `graded50` at 14 from a
+mid-run selected checkpoint when it finished at 13.
 
 **The win is partly the metric, and should be reported as such.** A wide decay
 trades near-field resolution for range: `r_at_cos0.9` is ~23 cells at σ=50
