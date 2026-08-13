@@ -168,12 +168,14 @@ evaluation points during training, which is optimistically biased.
 | sweep | grid | runs | result |
 |---|---|---|---|
 | `unique_radius_20260811_195333` | audit of 407 archived encoders | — | median r_min 1; best 16 (`run_20260422_185816`) |
-| `ur_loss_20260811` | repel [1,5,15,40] × frac [0.05,0.1,0.2] × 3 seeds | 36 | **best 20**; repel should go down; diagonal ridge |
+| `ur_loss_20260811` | repel [1,5,15,40] × frac [0.05,0.1,0.2] × 3 seeds | 36 | best 20; repel 1→40 declines (one side of a peak — see §2.2) |
 | `ur_seb_control` | single_env_batch [T,F] × 3 seeds | 6 | True 2/2/2, False 17/18/18 — §2.1 confirmed |
 | `ur_loss2_repel_low` | repel [0.25,0.5,1,2] × frac [0.10,0.15,0.20] × 3 seeds | 36 | **best 21**; repel is a peak not a slope; frac 0.10 dominates |
 | `ur_seb_C_pairs_vs_dynamics` | False batching; exclude_cross_env_pairs [F,T] × 3 seeds | 6 | *running* — the load-bearing control, see below |
-| `ur_seb_A_geometry` | True; npos_list [4×400, 2×600, 1×800] × repel [1,5] × 2 seeds | 12 | *running* |
-| `ur_seb_B_uniformity` | True; uniformity_lambda [0,0.1,0.5,2,8] × 2 seeds | 10 | *running* |
+| `ur_seb_A_geometry` | True; npos_list [4×400, 2×600, 1×800] × repel × 2 seeds | 12 | **cancelled** — step count not matched across geometries |
+| `ur_seb_A2_npos200` | True; 15×200 step-matched, repel [1,5] × 2 seeds | 4 | **no rescue** — r_min 3,3,3,4 |
+| `ur_seb_A3_npos400` | True; 4×400 step-matched, repel [1,5] × 2 seeds | 4 | *running* |
+| `ur_seb_B_uniformity` | True; uniformity_lambda [0,0.1,0.5,2,8] × 2 seeds | 10 | **no rescue** — ceiling falls to 0.806, decay dies to 1 |
 
 ### First: which half of `single_env_batch` actually matters (`ur_seb_C`)
 
@@ -202,17 +204,44 @@ construction. Coverage held near 20% and the near-radius pinned at a fixed 10
 cells, so neither confounds patch size. Baselines to beat: 60×100 → 2,
 15×200 → 2.
 
-**B, uniformity.** `uniformity_loss` is `logsumexp(-t‖zi−zj‖²)` over the batch —
-a repulsion that never asks which environment a pair came from, so unlike the
-far-pair term it does not need mixed batches to bite. It is the natural
-substitute for what True removes, and `uniformity_lambda` has been 0 in every
-run in the archive.
+**B, uniformity — RESULT: lowers the ceiling as predicted, and still fails.**
 
-The high-dimensional fact that makes B promising, and that I initially got
-backwards: **3M codes spread near-uniformly in 1024 dimensions have a maximum
-pairwise cosine of ~0.164** (measured; the sqrt(2 ln N / D) estimate gives
-0.171). Spread means near-*orthogonality* at this width, not overlap — 3M
-points cannot cover a 1024-sphere. So uniformity pushing codes apart should
-drive the alias ceiling *down*, potentially far below the 0.988 True produces.
-The contrary intuition ("both patches cover the sphere, so they collide") is a
-2-D/3-D picture that does not survive at D=1024.
+`uniformity_loss` is `logsumexp(-t‖zi−zj‖²)` over the batch — a repulsion that
+never asks which environment a pair came from, so unlike the far-pair term it
+does not need mixed batches to bite.
+
+| `uniformity_lambda` | r_min | alias_ceiling | decay50 |
+|---|---|---|---|
+| 0.0 | 2 | 0.988 | 18 |
+| 0.1 | 2 | 0.979 | 16 |
+| 0.5 | 1.5 | 0.932 | 11 |
+| 2.0 | **0** | 0.912 | 2 |
+| 8.0 | **0** | **0.806** | 1 |
+
+The ceiling falls monotonically 0.988 → 0.806, confirming the high-dimensional
+argument: 3M codes spread near-uniformly in 1024 dimensions have a maximum
+pairwise cosine of ~0.164 (measured), so spreading means near-*orthogonality*,
+not overlap. But the decay width collapses faster still, 18 → 1, and the radius
+dies with it.
+
+**Why**: `logsumexp(-t·d²)` is dominated by its smallest `d`, so the gradient
+concentrates on the *closest* pairs in the batch — exactly the pairs `attract`
+is trying to hold at cosine 1. Uniformity is an indiscriminate repulsion and it
+fights hardest precisely where local structure is needed.
+
+That is the same failure mode as `repel_weight=40` (§2.2): both flatten the
+neighbourhood. It also isolates what makes cross-environment repulsion special
+— it is **selective**, acting only on pairs that are already distant, so it
+lowers the ceiling without touching the decay. No other knob tried so far has
+that property.
+
+Two of my claims about this were wrong and in opposite directions: the original
+dismissal ("spreading makes patches overlap more") is refuted by the ceiling
+falling, and the correction ("this could be transformative") is refuted by the
+decay collapsing. The mechanism was a third thing.
+
+**A2, patch size 200 — RESULT: no rescue.** 15×200 at 20.4% coverage and
+step-matched (4000 epochs × 15 = 60,000 steps): r_min 3, 3, 3, 4 with alias
+0.963–0.989. Marginally above the 60×100 baseline of 2, nowhere near the 18 of
+the mixed-batch regime. Bigger patches extend the reach of within-patch
+repulsion a little, as predicted, but not nearly enough.
