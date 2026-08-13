@@ -196,6 +196,34 @@ export LOG_STD_ANNEAL_TARGET=-1.8
 EOF
         ;;
 
+    # === wave 3: explore, aimed at straight-run length ====================
+    # W7 raises persistence_bonus, and the motion probes are what license it.
+    # The gap between the best historical explore policy and the best of mine
+    # is not stride, wall collisions or turn bias -- it is how far they go
+    # before turning:
+    #
+    #     e8  u975  coverage 0.557  straight_run 10.77  turn_sigma 0.37
+    #     L2  u1400 coverage 0.398  straight_run  1.58  turn_sigma 1.39
+    #
+    # L2 has already learned wall avoidance (blocked 34.8% -> 5.6% between u800
+    # and u1400) so straightness is no longer the trap it is for a policy that
+    # runs into walls -- which is the condition §3d said made persistence
+    # ambiguous. With that condition met, the ambiguity resolves.
+    #
+    # Built on L5's shape rather than L1's because 16 envs is the better
+    # baseline (0.296 at u300 against L1's 0.137), so this is one knob from the
+    # best explore run rather than from the control.
+    W7) cat <<'EOF'
+export ENVS_PER_WORLD=16
+export BATCH_ENVS=16
+export STEPS_PER_ROLLOUT=200
+export SCHEDULE="explore:1500"
+export EVAL_EVERY=100
+export VAL_DISTRACTORS="0 10"
+export PERSISTENCE_BONUS=0.2
+EOF
+        ;;
+
     # === wave 2: composition =============================================
     # All at X2's shape. Every one logs `adv_share`, so the pooled-normalizer
     # reweighting is measured per update rather than assumed.
