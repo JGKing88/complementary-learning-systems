@@ -155,6 +155,13 @@ def main() -> None:
                    help="Override what the checkpoint says. Default: the "
                         "checkpoint's value, or False when its config predates "
                         "the field -- see the note in main().")
+    p.add_argument("--stochastic", action="store_true",
+                   help="Sample actions instead of taking the mean. The "
+                        "coverage metric evaluates deterministically, and a "
+                        "deterministic reactive policy in a static arena has "
+                        "to cycle -- this measures how much of the "
+                        "below-random coverage that accounts for. It changes "
+                        "the probe, never the eval protocol.")
     p.add_argument("--output_json", default=None)
     args = p.parse_args()
 
@@ -224,7 +231,8 @@ def main() -> None:
         visited, _found, _s = batched_exploration_trials(
             agent=agent, env=env, env_offset=offset, vectorhash=field,
             hopfields=hops, cfg=cfg, device=device, starts=starts,
-            max_steps=args.max_steps, deterministic=True, on_step=rec)
+            max_steps=args.max_steps, deterministic=not args.stochastic,
+            on_step=rec)
         covs.extend(len(v) / float(env.size * env.size) for v in visited)
 
     stats = rec.summary()
