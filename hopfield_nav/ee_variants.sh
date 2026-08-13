@@ -331,6 +331,31 @@ export EVAL_EVERY=100
 export VAL_DISTRACTORS="0 10"
 EOF
         ;;
+    # === staged, NOT launched: needs a knob outside the agreed list ========
+    # M1 caps the action's L2 norm. Everything else here stays on the list;
+    # this one does not, so it is defined and left unrun until asked for.
+    #
+    # The case for it is §3f's collapse: the run that destroyed the best
+    # explore policy in this lineage did so through a runaway in the policy
+    # MEAN -- commanded stride 1.17 -> 2.87 with the turn width tightening to
+    # 0.13, ending with 80% of steps deleted by the wall clip and the agent
+    # earning exactly the reward of standing still. freeze_log_std cannot
+    # prevent it, because it pins the noise and the runaway is in the mean.
+    #
+    # 2.0 is chosen to be inert for every healthy policy measured here (stride
+    # 0.3-1.3) and to sit below the 2.87 the collapsed one reached. It is not
+    # continuous_normalize, which was ruled out: that fixes stride at a
+    # constant, this only clips the top.
+    M1) cat <<'EOF'
+export ENVS_PER_WORLD=8
+export BATCH_ENVS=16
+export STEPS_PER_ROLLOUT=200
+export SCHEDULE="explore:3000"
+export EVAL_EVERY=100
+export VAL_DISTRACTORS="0 10"
+export MAX_ACTION_NORM=2.0
+EOF
+        ;;
     *)  echo "ee_env: unknown variant '$1'" >&2; return 1 ;;
     esac
 }
