@@ -101,6 +101,11 @@ BASE = dict(
     var_lambda=0.0,
     cov_lambda=0.0,
     var_gamma=1.0,
+    rate_lambda=0.0,
+    rate_eps=0.5,
+    # Both stay 0 in every wave from here. graded_sigma is out of scope (it
+    # fits a target kernel, which is the family loss_mode=cka was excluded
+    # for); input_far_tau is the labelled loophole.
     graded_sigma=0.0,
     input_far_tau=-1.0,
     exclude_cross_env_pairs=True,     # THE constraint
@@ -232,6 +237,20 @@ WAVES: dict[str, dict] = {
         "hidden_dim": [512, 1024],
         "seed": [42, 43],
     },
+    # W6 and W7 -- RETIRED, CANCELLED BEFORE THEY RAN. Both are built on
+    # graded_sigma, which is out of scope: fitting the full pairwise kernel to
+    # a target kernel is the family loss_mode=cka was excluded for. Kept so the
+    # log says what was planned and why it stopped; do not relaunch.
+    #
+    # What survives the exclusion is the *decomposition* they were designed
+    # around, since §4.4b's law does not care where the decay comes from. The
+    # legal way to widen it is the near radius, which is the original binary
+    # contrastive knob and was already swept in §2.2c -- just never above 0.2 of
+    # the patch side. w1 shows it working: at 15x200, going from a 10-cell
+    # radius to a 20-cell one took decay50 from 22 to 35 and r_min from 4.5 to
+    # 6.5 with the alias ceiling unchanged. That is the same mechanism
+    # graded_sigma used, reached through a knob the brief allows. See w3 and w8.
+    #
     # W6 -- follow the decay. W2 put graded_sigma=50 at r_min 14 against a
     # baseline of 5, with the alias ceiling *unmoved* (0.955 against 0.954) and
     # a participation ratio of 26 -- lower than the baseline's 104. So the win
@@ -289,6 +308,35 @@ WAVES: dict[str, dict] = {
             "s75_rate1":    dict(graded_sigma=75.0, rate_lambda=1.0),
             "s75_rate0.3_cov45": dict(graded_sigma=75.0, rate_lambda=0.3,
                                       npos_list=SIZE_MIXES["mix3_45"]),
+        },
+        "seed": [42, 43],
+    },
+    # W8 -- the two factors of §4.4b's law, both through knobs the brief allows.
+    # This is w7's question with the excluded knob swapped out.
+    #
+    #   the decay   <- the near radius. w1: at 15x200, 10 -> 20 cells took
+    #                  decay50 22 -> 35 and r_min 4.5 -> 6.5, ceiling unmoved.
+    #                  w3 brackets it alone; here it is crossed.
+    #   the ceiling <- rate_lambda. w2: 0.3 took the ceiling from the baseline's
+    #                  0.946 to 0.907, the lowest reached in this regime, with
+    #                  decay50 unchanged and r_min 4.5 -> 9.
+    #
+    # Radii are set as a fraction of the patch side rather than in cells, so a
+    # 200 patch and a 100 patch each get a radius in proportion -- the fixed-vs-
+    # fractional axis in w1 came out in favour of fractional at the larger
+    # patches (r_min 6.5 against 4.5), which is the mixed-size case that matters
+    # here. 0.2 of a 200 patch is 40 cells, the top of w3's bracket.
+    "w8_rate_x_radius": {
+        # No bare f0.1 arm: that cell is w1's mix2/per_env_radius_frac=0.1 and
+        # is already running there.
+        "arm": {
+            "f0.2":            dict(per_env_radius_frac=0.20),
+            "f0.3":            dict(per_env_radius_frac=0.30),
+            "f0.1_rate0.3":    dict(per_env_radius_frac=0.10, rate_lambda=0.3),
+            "f0.2_rate0.3":    dict(per_env_radius_frac=0.20, rate_lambda=0.3),
+            "f0.3_rate0.3":    dict(per_env_radius_frac=0.30, rate_lambda=0.3),
+            "f0.2_rate0.3_big": dict(per_env_radius_frac=0.20, rate_lambda=0.3,
+                                     npos_list=SIZE_MIXES["mixbig"]),
         },
         "seed": [42, 43],
     },

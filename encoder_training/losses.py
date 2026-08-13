@@ -74,10 +74,17 @@ def vicreg_terms(z: torch.Tensor, gamma: float = 1.0,
 
     Spread terms that are *pair-free*: both are statistics of the batch's
     second moment and neither looks at any individual pair, so unlike
-    ``uniformity_loss`` they cannot concentrate their gradient on the closest
-    pairs and fight ``attract``. What they prevent is dimensional collapse — a
-    code that spends its 1024 outputs on a handful of effective directions can
-    only distinguish a handful of places.
+    ``uniformity_loss`` neither can concentrate its gradient on the closest
+    pair. What they prevent is dimensional collapse — a code that spends its
+    1024 outputs on a handful of effective directions can only distinguish a
+    handful of places.
+
+    Being pair-free does not, however, keep them off the neighbourhood. At
+    ``var_lambda=1, cov_lambda=0.1`` the profile sits at r_median 0 for the
+    first few hundred epochs before recovering. It raises the strength at which
+    the damage starts, and nothing more. Measured alongside
+    ``coding_rate_loss``, which reaches a lower alias ceiling at a strength that
+    never disturbs the decay — prefer that one.
 
     ``z`` is unit-norm, so a coordinate's natural scale is ``1/sqrt(D)``, not 1;
     it is rescaled by ``sqrt(D)`` here so that ``gamma=1`` asks for "each
@@ -120,13 +127,22 @@ def participation_ratio(z: torch.Tensor) -> torch.Tensor:
 def coding_rate_loss(z: torch.Tensor, eps: float = 0.5) -> torch.Tensor:
     """Negative log-det coding rate: ``-1/(2D) logdet(I + D/(B eps^2) Z^T Z)``.
 
-    The MCR^2 rate term. Like the VICReg pair, it is a statistic of the batch's
-    second moment and never looks at a pair, so it cannot fight ``attract`` on
-    the close pairs the way ``uniformity_loss`` does. Unlike the VICReg pair it
-    rewards *spectrum* rather than per-coordinate variance: logdet is maximised
-    by an even eigenvalue distribution, which is exactly the deficit measured —
-    the collapsed codes have every coordinate alive (``live_frac`` 1.0) and
-    still occupy a fraction of the available directions.
+    The MCR^2 rate term. Like the VICReg pair it is a statistic of the batch's
+    second moment and never looks at an individual pair; unlike the VICReg pair
+    it rewards *spectrum* rather than per-coordinate variance, since logdet is
+    maximised by an even eigenvalue distribution.
+
+    What it is for, empirically: it is the one term measured to move the alias
+    ceiling without touching the decay width. At ``rate_lambda=0.3`` it took the
+    ceiling from the binary baseline's 0.946 to 0.907 — the lowest reached under
+    ``exclude_cross_env_pairs`` — with decay50 unchanged at 22.5, and r_min 4.5
+    to 9.
+
+    Being pair-free does NOT keep it off the neighbourhood, which I first
+    assumed and then measured otherwise: at ``rate_lambda=3`` the profile spends
+    hundreds of epochs with r_median 0. Pair-free only raises the strength at
+    which the damage starts. Strength is the whole thing; 0.3 is the tested
+    value.
 
     Normalised by D so the scale does not move when ``out_dim`` does.
     """

@@ -70,11 +70,15 @@ class LossConfig:
     # Distance-graded pair target: target = exp(-d^2 / (2 sigma^2)) instead of
     # the binary 1-on-near / 0-on-far. 0 keeps the binary targets.
     #
-    # The binary target asks for a *plateau* at cosine 1 inside the radius, and
-    # the unique radius is a strictly-decreasing test, so a perfectly satisfied
-    # binary target scores zero. What is actually being measured is the residual
-    # slope the network fails to flatten. Naming the slope directly is the
-    # obvious thing nobody has tried.
+    # OUT OF SCOPE for the §4 campaign, by instruction, and left here only so
+    # the runs already in the log can be reproduced. Handing the network the
+    # whole desired similarity matrix is what `mode="cka"` does -- that fits a
+    # kernel by centered alignment and this fits one by MSE, but both replace
+    # the contrastive near/far split with a target kernel, and the brief
+    # excludes that family. It worked (r_min 13/11 against a binary baseline of
+    # 6/3, see docs/EXPERIMENTS_UNIQUE_RADIUS.md §4.4) which is exactly why the
+    # exclusion has to be written down next to the knob rather than only in the
+    # log.
     graded_sigma: float = 0.0
 
     # LOOPHOLE, label it as one. Repel pairs whose *input* grid codes are
