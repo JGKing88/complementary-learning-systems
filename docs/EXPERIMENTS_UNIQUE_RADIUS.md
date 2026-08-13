@@ -828,12 +828,15 @@ a difference.
 
 On `mixtop` with `rate_lambda=0.3`, medians over two seeds:
 
-| radius fraction | r_min | r_median | alias max |
-|---|---|---|---|
-| 0.10 | 16 (16, 16) | 21.5 | 0.85–0.87 |
-| **0.15** | **20.5** (19, 22) | 29 | 0.81 |
-| 0.20 | 17.5 (17, 18) | **32** | 0.79–0.92 |
-| 0.25 | 15 (15, 15) | 28 | 0.86–0.95 |
+| radius fraction | `rate0.3` | `rate0.5` | r_median | alias max |
+|---|---|---|---|---|
+| 0.10 | 16 (16, 16) | — | 21.5 | 0.85–0.87 |
+| **0.15** | **20.5** (19, 22) | 16.5 (16, 17) | 29 | 0.81 |
+| 0.20 | 17.5 (17, 18) | 17 (15, 19) | **32** | 0.79–0.92 |
+| 0.25 | 15 (15, 15) | — | 28 | 0.86–0.95 |
+
+An optimum in both directions on both axes: 0.15 beats 0.10 and 0.20 at fixed
+`rate_lambda`, and 0.3 beats 0.5 at fixed radius.
 
 A clean inverted-U. Note that 0.20 has the *higher* `r_median` and the lower
 `r_min`: past the peak the encoder keeps getting better at its typical
