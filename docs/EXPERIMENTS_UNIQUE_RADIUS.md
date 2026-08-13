@@ -288,11 +288,14 @@ in the mixed-batch regime.
 
 # 4. How good can `exclude_cross_env_pairs=True` get?
 
-**Best so far: `r_min` 9** (`w2_spread/015_rate0.3_seed=43`), against 2–3 for
-the same geometry with the loss unchanged, 9 for the best §3 rescue attempt
-(which used 400-cell patches, outside this brief) and 21 unconstrained. The
-lever is `rate_lambda`, which lowers the alias ceiling to 0.907 — the lowest
-reached in this regime — and leaves the decay alone.
+**Best so far: `r_min` 10** (`w8_rate_x_radius/004_f0.1_rate0.3_seed=42`),
+against 2–3 for this geometry with the loss unchanged, 9 for the best §3 rescue
+attempt (which used 400-cell patches, outside this brief) and 21 unconstrained.
+
+It is the product of the two factors in §4.4b, each supplied by a different
+knob: a near radius of 0.1·patch-side for the decay (§4.5b) and
+`rate_lambda=0.3` for the alias ceiling (§4.4). Neither disturbs the other's
+factor. Cells crossing that with a big-heavy size mix are still running.
 
 > **`graded_sigma` reached 13/11 and is excluded.** A distance-graded pair
 > target replaces the contrastive near/far split with a target *kernel*, which
@@ -483,6 +486,31 @@ median decay and a max ceiling, so it predicts the typical reference and not the
 worst one — and those diverge exactly when the radius is pushed past its
 optimum. Read `r_pred` as a prediction of `r_median`; the gap between them is
 itself the signal that the references have stopped agreeing.
+
+### 4.5d The two factors compose (`w8`, `w9`)
+
+The point of §4.4b was that the radius is a product, so the two knobs should
+multiply. They do. `encoder_final`, single seeds where noted:
+
+| config | r_min | decay50 | alias max | which factor it supplies |
+|---|---|---|---|---|
+| radius 0.1·side alone, `mix2` | 5, 4 | 31 | 0.984 | decay |
+| `rate0.3` alone, radius 10 | 7, 9 | 22.75 | 0.919 | ceiling |
+| **both**, `w8/f0.1_rate0.3` | **10** | **32** | **0.904** | both |
+| *unconstrained (§2.1)* | *18–21* | *38–40* | *0.844–0.864* | |
+
+Neither knob disturbed the other's factor: adding `rate0.3` left decay50 at
+31→32, and widening the radius left the ceiling at 0.919→0.904. `alias_mean`
+reaches 0.726, against 0.63–0.66 unconstrained.
+
+**And a big-heavy mix finally beats uniform.** `mixtop` — 12×200 + 6×150 +
+6×100, three sizes with 71% of the area at 200 cells — reaches `r_min` 8 and 9
+at radius 0.1·side with no spread term at all, against `u200`'s 6.5 and `mix2`'s
+4.5–5 at the same setting. That is the first evidence in the campaign that
+mixing sizes helps, and it is consistent with why `mix5` failed: adding scale
+variety is only free while every patch is still large enough for its repulsion
+to reach. A 50-cell patch reaches 70 cells and the far field never hears it; a
+150-cell patch reaches 212.
 
 ### 4.5c Notes on the original motivation for `w3_radius`
 
