@@ -269,14 +269,26 @@ WAVES: dict[str, dict] = {
     #
     # If the product does not follow the law here, the law is where the mistake
     # is, and that is worth as much as the encoder.
+    #
+    # STRENGTH IS THE WHOLE THING, and the first submission of this wave had it
+    # wrong. Matched at epoch 100 against the binary baseline (r_min 2, ceiling
+    # 0.988):
+    #     rate_lambda=0.3   r_min 2, ceiling 0.944   <- ceiling bought for free
+    #     vicreg 1.0/0.1    r_min 0, ceiling 0.915
+    #     rate_lambda=3     r_min 0, ceiling 0.896
+    # r_median 0 means the profile is not even locally monotone, so the strong
+    # settings are §3's failure mode exactly. Being pair-free is not enough to
+    # keep a spread term off the neighbourhood -- it only raises the strength at
+    # which the damage starts. So the grid brackets 0.1 to 1.0 rather than
+    # sitting on 1.0, and vicreg is dropped at the strength that killed it.
     "w7_decay_x_ceiling": {
         "arm": {
-            "s50_rate1":   dict(graded_sigma=50.0, rate_lambda=1.0),
-            "s75_rate1":   dict(graded_sigma=75.0, rate_lambda=1.0),
-            "s50_vicreg":  dict(graded_sigma=50.0, var_lambda=1.0, cov_lambda=0.1),
-            "s75_vicreg":  dict(graded_sigma=75.0, var_lambda=1.0, cov_lambda=0.1),
-            "s75_rate1_cov45": dict(graded_sigma=75.0, rate_lambda=1.0,
-                                    npos_list=SIZE_MIXES["mix3_45"]),
+            "s50_rate0.3":  dict(graded_sigma=50.0, rate_lambda=0.3),
+            "s75_rate0.1":  dict(graded_sigma=75.0, rate_lambda=0.1),
+            "s75_rate0.3":  dict(graded_sigma=75.0, rate_lambda=0.3),
+            "s75_rate1":    dict(graded_sigma=75.0, rate_lambda=1.0),
+            "s75_rate0.3_cov45": dict(graded_sigma=75.0, rate_lambda=0.3,
+                                      npos_list=SIZE_MIXES["mix3_45"]),
         },
         "seed": [42, 43],
     },
