@@ -758,14 +758,17 @@ directly but as the only way to buy the left-hand column.
 
 `encoder_final`, both seeds where the cell is complete:
 
-| geometry | near radius | r_min | median | spread | decay50 | alias max |
-|---|---|---|---|---|---|---|
-| `u200` (15×200) | 0.1·side = 20 | 6, 7 | **6.5** | 1 | 35 | 0.973 |
-| `mix2` (9×200+24×100) | 0.1·side | 5, — | 5.0 | — | 31 | 0.984 |
-| `mix2` | fixed 10 | 6, **3** | 4.5 | **3** | 21 | 0.964 |
-| `u200` | fixed 10 | 4, 5 | 4.5 | 1 | 22 | 0.964 |
-| `u100` (60×100) | either | 3, 2 | 2.5 | 1 | 17.5 | 0.984 |
-| `mix5` (93 patches, 200→50) | fixed 10 | *2 at ep 568* | — | — | — | 0.989 |
+| geometry | near radius | r_min median | spread | decay50 | alias max |
+|---|---|---|---|---|---|
+| **`u200`** (15×200) | 0.1·side = 20 | **6.5** | 1 | 35 | 0.973 |
+| `mix2` (9×200+24×100) | 0.1·side | 4.5 | 1 | 29.75 | 0.974 |
+| `mix2` | fixed 10 | 4.5 | **3** | 21 | 0.964 |
+| `u200` | fixed 10 | 4.5 | 1 | 22 | 0.964 |
+| `mixbig` (41 envs, 200→50) | 0.1·side | 4.0 | — | 30.5 | 0.976 |
+| `mix5` (93 envs, 200→50) | fixed 10 | 3.0 | 0 | 19.5 | 0.980 |
+| `mixbig` | fixed 10 | 3.0 | 0 | 21 | 0.974 |
+| `mix5` | 0.1·side | 3.0 | 0 | 18.75 | 0.980 |
+| `u100` (60×100) | either | 2.5 | 1 | 17.5 | 0.984 |
 
 **The near radius is a decay knob, and it is the axis that pays.** At 15×200,
 going from 10 cells to 20 takes decay50 from 22 to 35 and `r_min` from 4.5 to
@@ -777,13 +780,23 @@ the reverse of what §4.1b predicted — the radius is not acting on rank here.
 **Patch size pays too**: 200-cell patches beat 100-cell ones, 4.5 against 2.5,
 consistent with within-patch repulsion reaching further.
 
-**Mixing sizes has not yet shown a gain over uniform 200.** At a fixed radius
-the two tie at 4.5, and `mix2`'s seed spread is 3 against `u200`'s 1; at the
-larger radius `u200` is ahead so far. And *many* sizes is actively bad — `mix5`,
-93 patches with a tail down to 50 cells, sits at `r_min` 2 with a 0.989 ceiling,
-which is the `u100` failure: a 50-cell patch's repulsion reaches 70 cells and
-the far field never hears about it. If mixing helps at all it will be
-big-heavy, which is what `mixbig` tests.
+**With no spread term, uniform 200 beats every mix.** `u200` at a 0.1·side
+radius is the best cell in the wave at 6.5, and every mixed geometry is at 4.5
+or below. `mixbig` — which was supposed to be the big-heavy option — comes in
+at 3.0–4.0, *below* `mix2`.
+
+What separates the mixes is the smallest patch they contain, not the mixing:
+`mixbig` and `mix5` both carry a tail of 50–70 cell patches and both sit at 3.0.
+A 50-cell patch's repulsion reaches 70 cells and the far field never hears about
+it, so those patches contribute attract pairs and no reach — the `u100` failure,
+diluted.
+
+**Mixing only pays once a spread term is lowering the ceiling** (§4.5d):
+`mixtop`, which stops at 100 cells, gives 16 against `u200`'s 13 at identical
+settings *with* `rate0.3`, while here without one it is the uniform set that
+leads. So the working rule is narrow: a mix helps if every patch is large enough
+for its repulsion to reach **and** something else is handling the ceiling;
+otherwise prefer uniform 200.
 
 At `u100`, `per_env_radius_frac=0.1` *is* a 10-cell radius, so those two cells
 duplicate the fixed-radius ones — and reproduce them to six decimals, which
