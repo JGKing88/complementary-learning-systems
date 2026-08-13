@@ -288,11 +288,22 @@ in the mixed-batch regime.
 
 # 4. How good can `exclude_cross_env_pairs=True` get?
 
-**Best so far: `r_min` 13** (`w2_spread/006_graded50_seed=42`, peaking at 14 on
-the retained checkpoint), against 2–3 for the same setup with the loss
-unchanged, 9 for the best §3 rescue attempt (which used 400-cell patches,
-outside this brief) and 21 unconstrained. The lever is the distance-graded pair
-target, §4.4 — *not* the rank terms, and not any of the substitutes §3 tried.
+**Best so far: `r_min` 9** (`w2_spread/015_rate0.3_seed=43`), against 2–3 for
+the same geometry with the loss unchanged, 9 for the best §3 rescue attempt
+(which used 400-cell patches, outside this brief) and 21 unconstrained. The
+lever is `rate_lambda`, which lowers the alias ceiling to 0.907 — the lowest
+reached in this regime — and leaves the decay alone.
+
+> **`graded_sigma` reached 13/11 and is excluded.** A distance-graded pair
+> target replaces the contrastive near/far split with a target *kernel*, which
+> is the family `loss_mode=cka` was excluded for — the fit is by MSE rather than
+> by centered alignment, but it is the same move. §4.4 keeps the result because
+> a knob that works and is out of scope needs to be on the record, not
+> rediscovered; nothing downstream of it counts toward the headline, and `w6`
+> and `w7` were cancelled before they ran.
+>
+> What survives is the *decomposition*, §4.4b: the radius is the decay times
+> the ceiling, and the decay has a legal knob — the near radius, §4.5.
 
 §3 asked whether the True regime could be *rescued* and answered no. This asks
 the different question of how far it can be *pushed*, under a fixed brief:
@@ -407,6 +418,13 @@ place — but not for the reason given here. See §4.4.
 `r_min` is where the decay curve crosses the alias ceiling, so there are two
 ways to move it and the True regime has only ever tried one.
 
+* **Widen the decay.** The legal knob is the **near radius**: it is the
+  threshold in the original binary contrastive loss, swept in §2.2c but never
+  above 0.2 of the patch side. §4.5 measures it working — at 15×200, 10 → 20
+  cells takes decay50 from 22 to 35 and `r_min` from 4.5 to 6.5 with the
+  ceiling unmoved. `w3_radius` brackets it from 2 to 40 and `w8` crosses it
+  with the ceiling term. (`graded_sigma` moves the same factor much harder but
+  is out of scope; see the section header.)
 * **Lower the ceiling.** Needs a term that reaches ~800 cells. Within-patch
   repulsion reaches 283 at the largest patch allowed here, so the only legal
   candidates are the batch-wide spread terms — and §4.1b says what they should
@@ -418,35 +436,36 @@ ways to move it and the True regime has only ever tried one.
   but it asks for per-coordinate variance, which these codes already have;
   `coding_rate_loss` (MCR², `-½·logdet(I + D/(Bε²)·ZᵀZ)`) is pair-free *and*
   spectral, so on the diagnosis it is the one aimed at the measured deficit.
-* **Widen the decay.** Untried. The binary target asks for a *plateau* at cosine
-  1 inside the radius, and the radius test is a strictly-*decreasing* one — a
-  perfectly satisfied binary target scores zero, and what the metric actually
-  reads is the residual slope the network failed to flatten. Naming the slope
-  outright is what `graded_sigma` does: the pair target becomes
-  `exp(-d²/2σ²)` instead of 1-or-0.
+  Why the decay is worth widening at all: the binary target asks for a
+  *plateau* at cosine 1 inside the radius, and the radius test is a
+  strictly-*decreasing* one, so a perfectly satisfied binary target would score
+  zero. What the metric actually reads is the residual slope the network failed
+  to flatten — and the near radius sets how far that slope extends.
 
 ### 4.3 Sweep log
 
 | wave | grid | runs | result |
 |---|---|---|---|
 | `w1_geometry` | 5 size mixes × near-radius {fixed 10, 0.1·side} × 2 seeds | 20 | partial — §4.5; mix beats uniform, radius acts on the decay |
-| `w2_spread` | none, graded σ {10,25,50}, uniformity {0.1,1}, VICReg, rate {0.3,3} × 2 seeds | 18 | partial — §4.4; **graded σ=50 → r_min 14** |
+| `w2_spread` | none, graded σ {10,25,50}, uniformity {0.1,1}, VICReg, rate {0.3,3} × 2 seeds | 18 | partial — §4.4; **`rate0.3` → r_min 9** (graded rows out of scope) |
 | `w3_radius` | near radius {2,3,5,10,20,40} at `mix2` × 2 seeds | 10 | *running* (radius=10 dropped: identical to a `w1` cell) |
 | `w4_coverage` | 9.5% … 52.6% coverage × 3 seeds | 15 | queued — justified by §4.6 |
 | `w5_input_rank` | fwhm {0.1,0.25,0.5} × hidden_dim {512,1024} × 2 seeds | 12 | queued |
-| `w6_graded_wide` | σ {50,75,100,150}, plus σ {75,150} at 52.6% coverage × 2 seeds | 12 | *running* |
+| ~~`w6_graded_wide`~~ | σ {50…150} × coverage | 12 | **cancelled before running** — `graded_sigma` out of scope |
+| ~~`w7_decay_x_ceiling`~~ | σ × `rate_lambda` | 10 | **cancelled before running** — same reason |
+| `w8_rate_x_radius` | radius frac {0.2, 0.3} and {0.1,0.2,0.3}×`rate0.3`, + one at `mixbig` × 2 seeds | 12 | *running* — `w7`'s question with the legal decay knob |
 
-`w3_radius` tests a prediction that falls straight out of §4.1b. Effective
-dimensionality tracks how many distinguishable places a patch holds,
-`(side/radius)²` — 100 places → 24–59 dims, 400 → 117, the unconstrained
-regime's ~1900 → 202. Shrinking the near radius is then the one way to buy rank
-that costs nothing and asks nothing about environments, so under this
-constraint the radius should want to be *far* smaller than the 10 the
-unconstrained regime settled on. That is the reverse of §2.2c, because a
-different quantity is binding. Against it: `r_min` is roughly how far the
-trained notion of "near" generalizes, so a smaller radius also narrows the
-decay, and the radius is the crossing of the two. The bracket spans 2 to 40 to
-find the turn.
+`w3_radius` was launched to test a prediction from §4.1b — that a *smaller*
+radius buys rank and should therefore win — and the prediction is already dead.
+`radius=2` reached 412 effective dimensions, twice the unconstrained regime's
+202, and scored `r_min` 1 against the baseline's 4.5.
+
+The wave is now the more important one for the opposite reason. With
+`graded_sigma` out of scope the near radius is the **only** legal knob on the
+decay, which §4.4b makes one of the two factors in the radius, and §2.2c never
+took it above 0.2 of the patch side. The bracket runs to 40 cells, which is 0.2
+of a 200-cell patch and 0.4 of a 100-cell one, and `w8` crosses it with the
+ceiling term.
 
 Size mixes, all ≤200 a side and all held near 20% coverage so the axis is
 granularity rather than area:
@@ -468,6 +487,12 @@ is pushed toward depending on absolute position. That is the missing ingredient,
 if it works; it is also a way to make the task incoherent, if it does not.
 
 ### 4.4 The decay is the lever, and rank is not (`w2_spread`)
+
+> The `graded*` rows below are **out of scope** — see the note in the section
+> header. They are kept because they are what identified the decay as the
+> lever, and because a knob that works needs to be recorded as excluded rather
+> than left to be rediscovered. The `rate0.3` row and the baseline are the ones
+> that count.
 
 A distance-graded target at σ=50 reaches **`r_min` 13** where the identical
 config with binary targets reaches 6 — one flag, same geometry, same seed.
