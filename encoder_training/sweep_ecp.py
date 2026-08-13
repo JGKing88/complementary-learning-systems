@@ -1,6 +1,21 @@
 #!/usr/bin/env python3
 """Sweeps for the ``exclude_cross_env_pairs=True`` campaign.
 
+READ A CELL ONLY WHEN IT HAS FINISHED. Three separate conclusions in this
+campaign were drawn from mid-run evaluations and all three were wrong, in the
+same direction each time:
+
+    vicreg, rate3     r_median 0 at epoch 100  ->  r_min 5-7 at epoch 1000
+    graded, seed 43   r_min 0 at epoch 212     ->  r_min 11 at epoch 1000
+    radius 40         alias 1.000 at ep 230    ->  alias 0.986, r_median 12.5
+
+The bias is systematic, not bad luck. A large near radius or a strong spread
+term starts slower, so any comparison at a fixed early epoch penalises exactly
+the arms that need the most training, and reads their slow start as collapse.
+``collect_ur --ckpt final`` is the honest view; ``peek``-style mid-run reads are
+for spotting crashes and nothing else.
+
+
     python -m encoder_training.sweep_ecp <wave> [--dry-run] [--name NAME]
     python -m encoder_training.sweep_ecp --list
 
