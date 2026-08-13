@@ -282,13 +282,22 @@ def summarize(out: dict) -> dict:
                 "auc_mag1": _auc(col(p, "mag1"), col(neg, "mag1")),
                 "auc_cos_1_last": _auc(col(p, "cos_1_last"),
                                        col(neg, "cos_1_last")),
-                "auc_follow_dmag": _auc(-fin(neg, "follow_dmag"),
-                                        -fin(p, "follow_dmag")),
+                # A real target CLOSES as you step toward it, so the
+                # discriminating score is -d||q||: more positive = more like a
+                # goal. Both samples are negated, and the positive class goes
+                # first, or the number comes out as its own complement.
+                "auc_follow_dmag": _auc(-fin(p, "follow_dmag"),
+                                        -fin(neg, "follow_dmag")),
                 "auc_follow_cos": _auc(fin(p, "follow_cos"),
                                        fin(neg, "follow_cos")),
                 "mag1_ratio_median": float(
                     np.median(col(p, "mag1")) / max(
                         float(np.median(col(neg, "mag1"))), 1e-12)),
+                # The closed-loop cue as the one bit a policy would actually
+                # act on -- "did stepping along q bring me closer?" -- rather
+                # than as a ranking over a continuous score.
+                "closes_pos": float((fin(p, "follow_dmag") < 0).mean()),
+                "closes_neg": float((fin(neg, "follow_dmag") < 0).mean()),
             }
             # Per-env spread. Env PLACEMENT moves these a lot -- a distractor
             # drawn uniformly from a 1716x1716 scaffold lands at a distance
