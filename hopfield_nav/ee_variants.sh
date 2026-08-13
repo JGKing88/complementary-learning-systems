@@ -503,16 +503,18 @@ export VAL_DISTRACTORS="0 10"
 export MAX_ACTION_NORM=2.0
 EOF
         ;;
-    # C6 / C7: the warm starts C3/C4 were supposed to be. The comment above C3
-    # said "they need a parent: pass LOAD_CKPT" and then no launch ever set it,
-    # so C4 ran cold -- exploit-first by schedule only, reaching 41.6 steps
-    # where its intended parent P2 was already at 22.7. These export LOAD_CKPT
-    # themselves so the pack cannot forget it again.
+    # C6 IS A DUPLICATE OF C4 -- DO NOT RUN IT AGAIN.
     #
-    # C6 is C4's schedule with P2 actually loaded: explore ramps into a policy
-    # that already follows q. C4's own u400 reading is why this is the run to
-    # make -- 22.5 steps on the 27% of trials it succeeds, i.e. the follow is
-    # intact and sharp and simply is not being engaged (§3r).
+    # I read the C3 comment above ("they need a parent: pass LOAD_CKPT"), found
+    # no LOAD_CKPT in run_ee.sh, and concluded C4 had run cold. It had not:
+    # C4's launch set LOAD_CKPT in its environment and its log carries the same
+    # "Loaded agent state from .../P2/navigate_u175.pt" line C6's does. Same
+    # parent, same config, same seed, so the two runs are bit-identical --
+    # verified, 11/11 tensors equal at u100 and evals matching to 16 digits.
+    # Kept only so the name is not silently reused.
+    #
+    # The lesson: check the run's own log for what it loaded before inferring
+    # from the launcher what it must have done.
     C6) cat <<'EOF'
 export ENVS_PER_WORLD=8
 export BATCH_ENVS=16
@@ -538,6 +540,27 @@ export EVAL_EVERY=100
 export VAL_DISTRACTORS="0 10"
 export GOAL_REWARD=20.0
 export LOAD_CKPT=/orcd/pool/003/jackking/cls_runs/agent_ckpts/navigate_ee_P2_20351854/navigate_u175.pt
+EOF
+        ;;
+    # W8: train at the horizon the metric is measured at. Everything so far
+    # trains on 200-step rollouts and is scored on 400-step ones, so a cycle
+    # longer than the training rollout costs nothing during training and
+    # everything at eval -- and §3w says a cycle is exactly what the policy
+    # settles into. The one existing 400-step run supports it: L4 reached 0.291
+    # at u400 where W6, same 8-env shape at 200 steps, was at 0.220.
+    #
+    # W6's WALL_PENALTY=0.3 is kept because it is the best explore shaping
+    # measured (§3t), so this is W6's recipe at the eval's own horizon. Serial
+    # cost doubles to 3,200 calls/update; the peak is what matters, not the
+    # update count, and §3x says the peak arrives and then leaves.
+    W8) cat <<'EOF'
+export ENVS_PER_WORLD=8
+export BATCH_ENVS=16
+export STEPS_PER_ROLLOUT=400
+export SCHEDULE="explore:3000"
+export EVAL_EVERY=100
+export VAL_DISTRACTORS="0 10"
+export WALL_PENALTY=0.3
 EOF
         ;;
     *)  echo "ee_env: unknown variant '$1'" >&2; return 1 ;;
