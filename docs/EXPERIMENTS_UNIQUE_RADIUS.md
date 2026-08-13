@@ -492,6 +492,46 @@ r cells" is exactly what a broad monotone decay certifies — and the
 unconstrained best is also broad (decay50 37.5). But σ buys some of the number
 rather than a strictly better code, so `r_at_cos0.9` belongs in every table.
 
+### 4.4b The radius is a two-parameter formula, to within a cell
+
+§4.2 said `r_min` is where the decay crosses the ceiling. Treating the radial
+profile as Gaussian makes that quantitative. With
+`decay50 = σ·√(2 ln 2)` (the reported `r_at_cos0.5_median`), the profile
+`exp(-d²/2σ²)` reaches the alias ceiling `C` at
+
+```
+r_pred = decay50 · sqrt( ln(1/C) / ln 2 )
+```
+
+Checked over every checkpoint in the sweeps directory that recorded both
+columns — 119 encoders spanning the mixed-batch regime, the single-env regime,
+the uniformity and geometry rescue attempts of §3, and the graded runs — this
+predicts the measured `r_min` at **corr +0.86, median absolute error 1.0 cell,
+82% within 3** (`python -m encoder_training.radius_law`).
+
+That is worth more than any single result here, for two reasons.
+
+**It explains §3 in one line.** Every substitute tried there moved one factor at
+the other's expense. Uniformity took the ceiling from 0.988 to 0.806 — a factor
+1.9 gain on `√(ln 1/C)` — while collapsing decay50 from 18 to 1, a factor 18
+loss. `repel_weight=40` did the same thing more mildly. The graded target is the
+first knob found that moves the decay and leaves the ceiling alone.
+
+**It turns the rest of the campaign into design rather than search.**
+`radius_law --target R` inverts it. To match the unconstrained best of 21:
+
+| if the alias ceiling is | the decay50 needed is | i.e. σ ≈ |
+|---|---|---|
+| 0.98 | 123 | 105 |
+| 0.955 (what σ=50 gave) | 81.5 | 69 |
+| 0.90 | 53.9 | 46 |
+| 0.86 (the unconstrained value) | 45.0 | 38 |
+
+So `w6`'s σ=75 should reach ~22 *if* the ceiling holds at 0.955 — and whether it
+holds is the real question, since a σ that large leaves almost no within-patch
+pair asking for separation. The rank terms matter again here, not for `r_min`
+directly but as the only way to buy the left-hand column.
+
 ### 4.5 Geometry (`w1_geometry`, partial)
 
 Provisional, read from `encoder_best` while later cells still run:
