@@ -297,6 +297,19 @@ export EVAL_EVERY=100
 export VAL_DISTRACTORS="0 10"
 EOF
         ;;
+    # L4 carries wave 1's horizon question into the cheap shape: rollouts as
+    # long as the 400-step eval, so the back half of an eval rollout is not a
+    # horizon the policy was never optimized at. Serial calls are envs x steps,
+    # so this costs twice L1 per update and gets half the updates.
+    L4) cat <<'EOF'
+export ENVS_PER_WORLD=8
+export BATCH_ENVS=16
+export STEPS_PER_ROLLOUT=400
+export SCHEDULE="explore:1500"
+export EVAL_EVERY=100
+export VAL_DISTRACTORS="0 10"
+EOF
+        ;;
     *)  echo "ee_env: unknown variant '$1'" >&2; return 1 ;;
     esac
 }
