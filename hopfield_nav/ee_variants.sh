@@ -145,6 +145,31 @@ export LOG_STD_ANNEAL_TARGET=-1.8
 EOF
         ;;
 
+    # P5 is P3 with reset_state_on_teleport back ON, which needs the standing
+    # permission to depart from the pinned value and is used only because §3i
+    # identified that setting as the cause of P3's divergence. It is the
+    # control that isolates it: P4 changes LR and holds the flag, P5 changes
+    # the flag and holds LR, so between them the mechanism is either confirmed
+    # or it is not.
+    #
+    # If P5 is stable and P4 is not, the reset is doing the work and the pinned
+    # value is genuinely incompatible with an expanding ReLU recurrence over a
+    # 200-step rollout. If both are stable, LR was enough and the pin stands.
+    P5) cat <<'EOF'
+export ENVS_PER_WORLD=16
+export BATCH_ENVS=16
+export STEPS_PER_ROLLOUT=200
+export SCHEDULE="exploit:1200"
+export EVAL_EVERY=50
+export VAL_DISTRACTORS="0 10"
+export RESET_STATE_ON_TELEPORT=1
+export INIT_LOG_STD=-0.5
+export LOG_STD_ANNEAL_START_UPDATE=50
+export LOG_STD_ANNEAL_END_UPDATE=400
+export LOG_STD_ANNEAL_TARGET=-1.8
+EOF
+        ;;
+
     # === wave 2: composition =============================================
     # All at X2's shape. Every one logs `adv_share`, so the pooled-normalizer
     # reweighting is measured per update rather than assumed.
