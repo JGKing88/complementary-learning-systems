@@ -354,6 +354,38 @@ maximum barely at all, which is exactly the shape of `r_median` rising 3 → 7
 while `r_min` stays at 3. `r_min` is a worst case over 20 references, so one bad
 reference holds it down however much the typical one improves.
 
+### 4.1b What the cross-environment pairs were actually buying: rank
+
+The same tool reports the code's effective dimensionality — the participation
+ratio `(tr C)² / ‖C‖_F²` of its covariance over 20,000 random arena positions.
+It orders the encoders exactly as the radius does:
+
+| encoder | eff. dims (of 1024) | alias median | r_min |
+|---|---|---|---|
+| `exclude_cross_env_pairs=True`, seed 43 | **24** | 0.981 | 2 |
+| `exclude_cross_env_pairs=True`, seed 42 | **59** | 0.952 | 3 |
+| `single_env_batch=True`, 15×200 | **117** | 0.783 | 3 |
+| `exclude_cross_env_pairs=False`, seed 42 | **202** | 0.407 | 18 |
+| `exclude_cross_env_pairs=False`, seed 44 | **202** | 0.538 | 18 |
+| *(raw smoothed code, 434 dims)* | *43* | *0.953* | *—* |
+
+`live_frac` is 1.000 in every row: no coordinate has gone dead. The collapse is
+in the *spectrum*, not the coordinates — which is why 1024 outputs buys nothing
+and why a variance penalty is the wrong instrument.
+
+**Why the pairs supply rank.** Inside a patch the code only has to separate the
+places that patch contains, and every patch may reuse the same directions — so
+the within-patch objective is satisfied by a code of rank ≈ the number of
+distinguishable places in one patch. Cross-environment pairs demand instead that
+all 600k training points be mutually near-orthogonal, and *that* costs rank.
+Both unconstrained runs landing on 202.3 and 202.4 looks like a fixed point of
+the objective rather than a coincidence.
+
+This restates §3's conclusion in a way that suggests what to do. §3 said
+cross-environment repulsion is the only *selective* repulsion available. The
+measurement says what selectivity was worth: rank. And rank can be asked for
+directly, by a term that never mentions an environment.
+
 ### 4.2 The two levers, restated
 
 `r_min` is where the decay curve crosses the alias ceiling, so there are two
@@ -361,7 +393,15 @@ ways to move it and the True regime has only ever tried one.
 
 * **Lower the ceiling.** Needs a term that reaches ~800 cells. Within-patch
   repulsion reaches 283 at the largest patch allowed here, so the only legal
-  candidates are the batch-wide spread terms.
+  candidates are the batch-wide spread terms — and §4.1b says what they should
+  ask for. Three are in flight, differing in how they can misfire:
+  `uniformity_loss` is the only one that acts on an individual collapsed pair,
+  but its `logsumexp` is dominated by the smallest distance and those are the
+  pairs `attract` holds at cosine 1 (§3's diagnosis, unchanged); VICReg's
+  variance/covariance pair is pair-free and so cannot fight `attract` at all,
+  but it asks for per-coordinate variance, which these codes already have;
+  `coding_rate_loss` (MCR², `-½·logdet(I + D/(Bε²)·ZᵀZ)`) is pair-free *and*
+  spectral, so on the diagnosis it is the one aimed at the measured deficit.
 * **Widen the decay.** Untried. The binary target asks for a *plateau* at cosine
   1 inside the radius, and the radius test is a strictly-*decreasing* one — a
   perfectly satisfied binary target scores zero, and what the metric actually
@@ -374,7 +414,20 @@ ways to move it and the True regime has only ever tried one.
 | wave | grid | runs | result |
 |---|---|---|---|
 | `w1_geometry` | 5 size mixes × near-radius {fixed 10, 0.1·side} × 2 seeds | 20 | *running* |
-| `w2_spread` | graded σ {10,25,50}, uniformity {0.1, 1, 0.1@t0.25}, VICReg {×1, ×5}, none × 2 seeds | 18 | *running* |
+| `w2_spread` | none, graded σ {10,25,50}, uniformity {0.1,1}, VICReg, rate {0.3,3} × 2 seeds | 18 | *running* |
+| `w3_radius` | near radius {2,3,5,10,20,40} at `mix2` × 2 seeds | 12 | *running* |
+
+`w3_radius` tests a prediction that falls straight out of §4.1b. Effective
+dimensionality tracks how many distinguishable places a patch holds,
+`(side/radius)²` — 100 places → 24–59 dims, 400 → 117, the unconstrained
+regime's ~1900 → 202. Shrinking the near radius is then the one way to buy rank
+that costs nothing and asks nothing about environments, so under this
+constraint the radius should want to be *far* smaller than the 10 the
+unconstrained regime settled on. That is the reverse of §2.2c, because a
+different quantity is binding. Against it: `r_min` is roughly how far the
+trained notion of "near" generalizes, so a smaller radius also narrows the
+decay, and the radius is the crossing of the two. The bracket spans 2 to 40 to
+find the turn.
 
 Size mixes, all ≤200 a side and all held near 20% coverage so the axis is
 granularity rather than area:

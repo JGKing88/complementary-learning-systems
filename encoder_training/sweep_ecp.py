@@ -174,6 +174,27 @@ WAVES: dict[str, dict] = {
         },
         "seed": [42, 43],
     },
+    # W3 -- the near radius, as a *rank* knob rather than a locality knob.
+    #
+    # The measured effective dimensionality goes with how many distinguishable
+    # places a patch contains, which is (side / radius)^2:
+    #     60x100, radius 10 ->  100 places -> 24-59 dims
+    #     15x200, radius 10 ->  400 places -> 117 dims
+    #     the unconstrained regime, ~1900  -> 202 dims
+    # Sublinear, but the direction is unambiguous, and shrinking the radius is
+    # the one way to raise that count that costs nothing and asks nothing about
+    # environments. So the prediction is that under this constraint the radius
+    # wants to be far smaller than the 10 the unconstrained regime settled on --
+    # the reverse of §2.2c, because a different quantity is binding.
+    #
+    # Against it: r_min is roughly how far the trained notion of "near"
+    # generalizes, so shrinking the radius narrows the decay, and the radius is
+    # the crossing of the decay and the ceiling. The two effects pull opposite
+    # ways and the bracket is wide enough to find the turn.
+    "w3_radius": {
+        "radius": [2.0, 3.0, 5.0, 10.0, 20.0, 40.0],
+        "seed": [42, 43],
+    },
 }
 
 
