@@ -169,6 +169,14 @@ def main() -> None:
         cfg.hopfield.beta = float(gain)
 
     field = build_field(cfg, encoder)
+    # `build_world`'s default rng is the np.random MODULE, so env placement is
+    # global state. Without this, two probe runs draw different scaffold
+    # patches and their coverages are not comparable -- which matters here,
+    # because measured coverage varies by ~0.1 across env draws (e4L reads
+    # 0.616 on this probe's envs against the 0.514 its own eval recorded on
+    # its own). `excess_over_matched_walk` is the quantity to compare across
+    # checkpoints; raw coverage is only comparable within one env set.
+    np.random.seed(args.seed)
     rng = np.random.RandomState(args.seed)
     envs = [make_env(cfg.env, cfg.agent.movement_mode,
                      seed=int(rng.randint(0, 10_000_000)))
