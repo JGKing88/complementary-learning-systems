@@ -131,6 +131,11 @@ def main() -> None:
     p.add_argument("--n_dist", type=int, default=10)
     p.add_argument("--seed", type=int, default=42)
     p.add_argument("--device", default="cuda")
+    p.add_argument("--egocentric_heading",
+                   action=argparse.BooleanOptionalAction, default=None,
+                   help="Override what the checkpoint says. Default: the "
+                        "checkpoint's value, or False when its config predates "
+                        "the field -- see the note in main().")
     p.add_argument("--output_json", default=None)
     args = p.parse_args()
 
@@ -138,6 +143,25 @@ def main() -> None:
     ck = torch.load(args.ckpt, map_location="cpu", weights_only=False)
     cfg: TrainConfig = cfg_from_checkpoint(ck["config"])
     cfg.device = str(device)
+
+    # A field added after a checkpoint was written reads back as its *current*
+    # default, which for `egocentric_heading` is the wrong answer in the one
+    # way that matters: the default is True, and a checkpoint predating the
+    # field was necessarily trained with the cone pinned North. Scoring it at
+    # True feeds the policy a sensory channel it has never seen -- and sensory
+    # is its only localizing input, so the result is not a degraded version of
+    # its behaviour, it is a different policy.
+    #
+    # Measured on explore-min's e4L: 0.147 coverage under the inherited
+    # default against the 0.514 its own eval recorded. That is a 3.5x error
+    # that looks exactly like a real finding.
+    if args.egocentric_heading is not None:
+        cfg.env.egocentric_heading = args.egocentric_heading
+    elif "egocentric_heading" not in ck["config"].get("env", {}):
+        cfg.env.egocentric_heading = False
+        print("  NOTE: this checkpoint's config predates egocentric_heading, "
+              "so it was trained with the foveal cone pinned North. Scoring it "
+              "that way; pass --egocentric_heading to override.", flush=True)
     enc_path = args.encoder or cfg.encoder_checkpoint
     encoder, enc_cfg, gain = load_encoder(enc_path, str(device), cfg.encoder_gain)
     cfg.encoder_gain = gain

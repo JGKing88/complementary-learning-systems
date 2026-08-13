@@ -218,6 +218,39 @@ export WALL_PENALTY=0
 export PERSISTENCE_BONUS=0
 EOF
         ;;
+    # W4 / W5 cut epsilon-greedy, which the motion probe turned into a first-
+    # order concern. The override injects a **unit-magnitude** random step,
+    # while the policy's own stride at this stage is ~0.25 cells. So at eps=0.4
+    # the agent's training-time motion is dominated by steps it did not choose
+    # and is not trained on -- they are masked out of the move loss -- while
+    # the novelty they earn still flows into the value function and the
+    # advantages. Eval then runs the policy alone, at a quarter of the stride
+    # that produced the training reward.
+    #
+    # The risk in cutting it is the opposite one: eps is also what gets a
+    # near-stationary policy off its starting cell early on. W4 keeps a little,
+    # W5 removes it, and the pair brackets that.
+    W4) cat <<'EOF'
+export ENVS_PER_WORLD=20
+export BATCH_ENVS=64
+export STEPS_PER_ROLLOUT=200
+export SCHEDULE="explore:1100"
+export EVAL_EVERY=50
+export VAL_DISTRACTORS="0 10"
+export EPSILON_EXPLORE=0.1
+export EPSILON_ANNEAL_UPDATES=200
+EOF
+        ;;
+    W5) cat <<'EOF'
+export ENVS_PER_WORLD=20
+export BATCH_ENVS=64
+export STEPS_PER_ROLLOUT=200
+export SCHEDULE="explore:1100"
+export EVAL_EVERY=50
+export VAL_DISTRACTORS="0 10"
+export EPSILON_EXPLORE=0
+EOF
+        ;;
     *)  echo "ee_env: unknown variant '$1'" >&2; return 1 ;;
     esac
 }
