@@ -288,14 +288,40 @@ in the mixed-batch regime.
 
 # 4. How good can `exclude_cross_env_pairs=True` get?
 
-**Best so far: `r_min` 10** (`w8_rate_x_radius/004_f0.1_rate0.3_seed=42`),
-against 2–3 for this geometry with the loss unchanged, 9 for the best §3 rescue
-attempt (which used 400-cell patches, outside this brief) and 21 unconstrained.
+**Best so far: `r_min` 19 and 22**
+(`w9_best_combo/00{6,7}_top_f0.15_rate0.3`), against 2–3 for this regime
+untreated and 9 for the best §3 rescue attempt (which used 400-cell patches,
+outside this brief). **The best encoder ever trained *with* the
+cross-environment pairs scores 21.**
 
-It is the product of the two factors in §4.4b, each supplied by a different
-knob: a near radius of 0.1·patch-side for the decay (§4.5b) and
-`rate_lambda=0.3` for the alias ceiling (§4.4). Neither disturbs the other's
-factor. Cells crossing that with a big-heavy size mix are still running.
+| | best unconstrained (§1) | best under the constraint |
+|---|---|---|
+| config | `repel=2, frac=0.1`, 60×100 | `mixtop`, radius 0.15·side, `rate_lambda=0.3` |
+| cross-env pairs | kept | **withheld** |
+| `r_min` | 21 | **22** (other seed 19) |
+| `r_median` | 28.5 | 29.5 |
+| alias ceiling | 0.814 | 0.813 |
+| decay50 | 37.5 | 42.0 |
+
+Not merely the same score — the same *profile*, column by column. Three knobs
+do it, none of which ever asks which environment a pair came from:
+
+1. `rate_lambda=0.3` — the MCR² coding rate, which owns the alias ceiling
+   (§4.4) and takes it from 0.96 to 0.81;
+2. a near radius of **0.15·patch-side**, which owns the decay (§4.5b) and takes
+   decay50 from 21 to 42;
+3. a **big-heavy size mix** (`mixtop`: 12×200 + 6×150 + 6×100), worth ~3 units
+   over uniform 200 at matched settings (§4.5d).
+
+**This overturns §3.** That section concluded that cross-environment repulsion
+is the only *selective* repulsion available and that the True regime's ~16-unit
+cost is not recoverable. It is recoverable, and the reason §3 missed it is
+§4.4b: every substitute it tried moved one factor of a product at the other's
+expense, and no wave had varied the two independently.
+
+*Still to confirm: seeds 44/45 (`w12`), whether the radius fraction turns above
+0.15 (`w11`), and a re-score at 100 references and a second reference seed —
+every run in this campaign shares the same 20.*
 
 > **`graded_sigma` reached 13/11 and is excluded.** A distance-graded pair
 > target replaces the contrastive near/far split with a target *kernel*, which
