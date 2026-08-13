@@ -180,6 +180,44 @@ export VAL_DISTRACTORS="0 10"
 export PERSISTENCE_BONUS=0
 EOF
         ;;
+    # W2 removes wall_penalty, for a reason that only shows up once the
+    # memoryless ceiling is known. Beating 0.56 needs a *stateful* strategy,
+    # and the cheapest one available here is an inward spiral: walk the
+    # perimeter, step in, walk the next ring. It needs almost no memory -- a
+    # ring index and the distance to the wall ahead, which the foveal cone
+    # reports directly -- and at stride 1 it covers all 400 cells in 400 steps.
+    #
+    # wall_penalty exists to break the "perimeter-orbit" basin, where an agent
+    # racks up coverage by riding the edge. But an inward spiral *starts* with
+    # exactly that, so the penalty taxes the one high-coverage strategy this
+    # policy could plausibly learn. explore-min tested wall=0 and saw nothing
+    # (0.510 against 0.517) -- with 12 rays at wall_resolution 1, where the
+    # agent could not localize well enough to run a spiral anyway. That is no
+    # longer true (§2), which is what makes this worth retesting.
+    W2) cat <<'EOF'
+export ENVS_PER_WORLD=20
+export BATCH_ENVS=64
+export STEPS_PER_ROLLOUT=200
+export SCHEDULE="explore:1100"
+export EVAL_EVERY=50
+export VAL_DISTRACTORS="0 10"
+export WALL_PENALTY=0
+EOF
+        ;;
+    # W3 drops both, i.e. novelty and the time penalty alone. If a stateful
+    # strategy is being suppressed by the shaping rather than not found, this
+    # is the configuration with nothing in its way.
+    W3) cat <<'EOF'
+export ENVS_PER_WORLD=20
+export BATCH_ENVS=64
+export STEPS_PER_ROLLOUT=200
+export SCHEDULE="explore:1100"
+export EVAL_EVERY=50
+export VAL_DISTRACTORS="0 10"
+export WALL_PENALTY=0
+export PERSISTENCE_BONUS=0
+EOF
+        ;;
     *)  echo "ee_env: unknown variant '$1'" >&2; return 1 ;;
     esac
 }

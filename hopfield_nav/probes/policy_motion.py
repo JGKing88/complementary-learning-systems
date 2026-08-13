@@ -108,7 +108,7 @@ def matched_walk_coverage(stats: dict, size: int, steps: int, trials: int,
     theta = rng.uniform(0, 2 * np.pi, trials)
     stride, sigma = stats["stride_mean"], stats["turn_sigma"]
 
-    def fn(t, blocked):
+    def fn(t, blocked, _pos):
         nonlocal theta
         theta = theta + rng.normal(0.0, sigma, trials)
         if blocked.any():

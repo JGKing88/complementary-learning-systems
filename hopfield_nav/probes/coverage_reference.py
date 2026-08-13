@@ -21,6 +21,7 @@ import numpy as np
 
 from ..world.walks import (
     bounce_walk, correlated_walk, diffusive_walk, lawnmower_coverage,
+    spiral_walk,
 )
 
 
@@ -35,6 +36,8 @@ def main() -> None:
                    default=[1.0, 2.0, 3.0, 4.0, 6.0])
     p.add_argument("--turn_sigmas", type=float, nargs="+",
                    default=[0.1, 0.4, 0.8, 1.6, 3.0])
+    p.add_argument("--exec_sigmas", type=float, nargs="+",
+                   default=[0.0, 0.2, 0.5, 1.0])
     p.add_argument("--seed", type=int, default=0)
     args = p.parse_args()
 
@@ -56,6 +59,15 @@ def main() -> None:
                                              args.steps, s, ts, rng))
     row("bounce (straight)",
         lambda s: bounce_walk(args.trials, args.size, args.steps, s, rng))
+
+    # Everything above is memoryless. The spiral is not: it is the cheapest
+    # STATEFUL strategy available here, and the rows say how accurately it
+    # would have to be executed to be worth learning.
+    print()
+    for es in args.exec_sigmas:
+        row(f"spiral, exec noise {es:g}",
+            lambda s, es=es: spiral_walk(args.trials, args.size, args.steps,
+                                         s, es, rng))
     print(f"\n{'lawnmower (ideal)':<24} "
           f"{lawnmower_coverage(args.size, args.steps):.3f}"
           f"   <- upper bound at this step budget")

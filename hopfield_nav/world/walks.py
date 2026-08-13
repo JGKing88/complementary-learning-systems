@@ -20,8 +20,14 @@ def simulate_coverage(pos_f: np.ndarray, size: int, steps: int,
                       direction_fn, rng: np.random.RandomState) -> np.ndarray:
     """Run B walkers for `steps` and return each one's covered-cell fraction.
 
-    `direction_fn(t, blocked)` returns the (B, 2) displacement for step t;
-    `blocked` says which walkers had their previous step absorbed by the clip.
+    `direction_fn(t, blocked, pos)` returns the (B, 2) displacement for step t.
+    `blocked` says which walkers had their previous step absorbed by the clip,
+    and `pos` is the current continuous position -- passed rather than closed
+    over, because this function owns the position and a closure over the
+    caller's copy silently reads the *initial* one forever. That is not a
+    hypothetical: it made the closed-loop spiral below score 0.24 instead of
+    1.00, which reads as "the strategy does not work" rather than "the
+    simulator did not tell it where it was".
     """
     B = pos_f.shape[0]
     visited = np.zeros((B, size, size), dtype=bool)
@@ -31,7 +37,7 @@ def simulate_coverage(pos_f: np.ndarray, size: int, steps: int,
     blocked = np.zeros(B, dtype=bool)
     for _t in range(steps):
         before = pos_f.copy()
-        pos_f = np.clip(pos_f + direction_fn(_t, blocked), 0.0,
+        pos_f = np.clip(pos_f + direction_fn(_t, blocked, pos_f), 0.0,
                         float(size - 1))
         blocked = np.linalg.norm(pos_f - before, axis=1) < 1e-9
         snapped = np.clip(np.rint(pos_f).astype(int), 0, size - 1)
@@ -65,7 +71,7 @@ def correlated_walk(B: int, size: int, steps: int, stride: float,
     pos = random_starts(B, size, rng)
     theta = rng.uniform(0, 2 * np.pi, B)
 
-    def fn(_t, blocked):
+    def fn(_t, blocked, _pos):
         nonlocal theta
         theta = theta + rng.normal(0.0, turn_sigma, B)
         if blocked.any():
@@ -80,7 +86,7 @@ def diffusive_walk(B: int, size: int, steps: int, stride: float,
     """Direction redrawn uniformly every step."""
     pos = random_starts(B, size, rng)
 
-    def fn(_t, _blocked):
+    def fn(_t, _blocked, _pos):
         return unit_vectors(rng.uniform(0, 2 * np.pi, B)) * stride
 
     return simulate_coverage(pos, size, steps, fn, rng)
@@ -92,11 +98,62 @@ def bounce_walk(B: int, size: int, steps: int, stride: float,
     pos = random_starts(B, size, rng)
     theta = rng.uniform(0, 2 * np.pi, B)
 
-    def fn(_t, blocked):
+    def fn(_t, blocked, _pos):
         nonlocal theta
         if blocked.any():
             theta[blocked] = rng.uniform(0, 2 * np.pi, int(blocked.sum()))
         return unit_vectors(theta) * stride
+
+    return simulate_coverage(pos, size, steps, fn, rng)
+
+
+def ring_path(size: int) -> np.ndarray:
+    """Cells of an inward spiral: the perimeter, then the next ring, inward.
+
+    Every cell of the arena appears exactly once, so the path is a complete
+    sweep of length `size * size`. It is the cheapest *stateful* strategy this
+    policy could plausibly run: it needs a ring index and the distance to the
+    wall ahead, and the foveal cone reports the latter directly.
+    """
+    cells: list[tuple[int, int]] = []
+    for k in range((size + 1) // 2):
+        lo, hi = k, size - 1 - k
+        if lo == hi:
+            cells.append((lo, lo))
+            continue
+        cells += [(lo, y) for y in range(lo, hi)]
+        cells += [(x, hi) for x in range(lo, hi)]
+        cells += [(hi, y) for y in range(hi, lo, -1)]
+        cells += [(x, lo) for x in range(hi, lo, -1)]
+    return np.array(cells, dtype=np.float64)
+
+
+def spiral_walk(B: int, size: int, steps: int, stride: float,
+                exec_sigma: float, rng: np.random.RandomState) -> np.ndarray:
+    """The inward spiral, executed imperfectly.
+
+    Closed-loop: each step aims from where the walker actually *is* toward the
+    next cell of the plan, at `stride`, plus per-component noise of width
+    `exec_sigma`. So this answers the question a policy designer needs -- how
+    accurately would the strategy have to be executed for it to beat the
+    memoryless ceiling -- rather than merely restating that a perfect sweep
+    covers everything.
+
+    Walkers start at different phases of the path, so they do not all trace one
+    trajectory.
+    """
+    path = ring_path(size)
+    n = len(path)
+    phase = rng.randint(0, n, size=B)
+    pos = path[phase].copy()
+    cursor = phase.copy()
+
+    def fn(_t, _blocked, pos):
+        nonlocal cursor
+        cursor = (cursor + 1) % n
+        want = path[cursor] - pos
+        norm = np.linalg.norm(want, axis=1, keepdims=True).clip(1e-9)
+        return want / norm * stride + rng.normal(0.0, exec_sigma, (B, 2))
 
     return simulate_coverage(pos, size, steps, fn, rng)
 
@@ -112,5 +169,6 @@ def lawnmower_coverage(size: int, steps: int) -> float:
 
 __all__ = [
     "bounce_walk", "correlated_walk", "diffusive_walk", "lawnmower_coverage",
-    "random_starts", "simulate_coverage", "unit_vectors",
+    "random_starts", "ring_path", "simulate_coverage", "spiral_walk",
+    "unit_vectors",
 ]
