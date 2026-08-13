@@ -524,10 +524,17 @@ WAVES: dict[str, dict] = {
     # -0.47 correlation between a reference's distance to the nearest patch and
     # its radius.
     #
-    # 70% is the packing ceiling for this shape (77.8% failed at both seeds), so
-    # this is the last step on the axis. Seeds 44/45 go on the leaders because
-    # two seeds were not enough for the last headline (§4.9) and will not be
-    # enough for this one.
+    # COVERAGE CEILING, corrected after launch: **61.1%**, not 70%. The 70% mix
+    # places at seeds 42 and 43 and fails at 44 and 45 -- identically with
+    # twenty times the rejection budget, because above ~60% the constraint is
+    # geometric rather than one of attempts: once the 200-cell squares are
+    # scattered there is no 150-cell gap left anywhere. The reachable coverage
+    # therefore depends on the seed, and this wave was launched having checked
+    # only two of the four it uses. Its 70% arm survives at seeds 42/43 and is
+    # reported as a 2-seed cell; 61.1% is the last step with four.
+    #
+    # Seeds 44/45 go on the leaders because two seeds were not enough for the
+    # last headline (§4.9) and will not be enough for this one.
     "w15_coverage_top2": {
         "arm": {
             "cov70": dict(npos_list=SIZE_MIXES["mixtop_xxl"],

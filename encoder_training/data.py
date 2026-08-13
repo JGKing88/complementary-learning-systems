@@ -52,7 +52,7 @@ def sample_nonoverlapping_patches(
     H: int, W: int,
     npos: int | list[int],
     nenv: int | None = None,
-    max_attempts: int = 1000,
+    max_attempts: int = 20_000,
 ) -> Tuple[List[int], List[int], List[int]]:
     """Sample non-overlapping square patches via rejection sampling.
 
@@ -60,8 +60,24 @@ def sample_nonoverlapping_patches(
         H, W: grid bounds.
         npos: either an int (all patches that size) or a list of sizes.
         nenv: number of patches (required if npos is int; ignored otherwise).
+        max_attempts: rejections tolerated, ``nenv * max_attempts`` in total
+            across the whole layout — the budget is shared, not per patch, so
+            the last patches spend what the earlier ones left.
 
     Returns (y0s, x0s, sizes) as parallel lists of length nenv.
+
+    Raised from 1000 for headroom, but note what it does *not* buy: above about
+    60% coverage the binding constraint is geometric, not the budget. A 65%
+    layout of 200/150/100 patches fails at seed 44 with "Could only place
+    49/68" and fails identically with twenty times the attempts, because once
+    the large squares are scattered at random there is no 150-cell gap left
+    anywhere. Placing largest-first (as every caller here does) delays that but
+    does not avoid it, and no amount of rejection helps a layout that needs
+    backtracking or a tiling.
+
+    The practical consequence is that **the reachable coverage depends on the
+    seed**, so a mix must be placement-checked at every seed a sweep will use.
+    Checking two and launching four is how ``w15`` lost half its cells.
     """
     if isinstance(npos, int):
         assert nenv is not None, "nenv required when npos is an int"
