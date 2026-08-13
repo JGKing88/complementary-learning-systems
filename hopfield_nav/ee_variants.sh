@@ -104,11 +104,11 @@ EOF
     # bonus, they share one divisor, and the ratio decides how much of each
     # objective actually reaches the weights.
     C1) cat <<'EOF'
-export ENVS_PER_WORLD=20
-export BATCH_ENVS=64
+export ENVS_PER_WORLD=8
+export BATCH_ENVS=16
 export STEPS_PER_ROLLOUT=200
-export SCHEDULE="interleave:700,empty_frac=0.5"
-export EVAL_EVERY=50
+export SCHEDULE="interleave:2500,empty_frac=0.5"
+export EVAL_EVERY=100
 export VAL_DISTRACTORS="0 10"
 EOF
         ;;
@@ -118,11 +118,11 @@ EOF
     # matters, so this is not "caring less about the goal" -- it is declining
     # to run the explore objective at a fraction of its strength.
     C2) cat <<'EOF'
-export ENVS_PER_WORLD=20
-export BATCH_ENVS=64
+export ENVS_PER_WORLD=8
+export BATCH_ENVS=16
 export STEPS_PER_ROLLOUT=200
-export SCHEDULE="interleave:700,empty_frac=0.5"
-export EVAL_EVERY=50
+export SCHEDULE="interleave:2500,empty_frac=0.5"
+export EVAL_EVERY=100
 export VAL_DISTRACTORS="0 10"
 EOF
         ;;
@@ -132,20 +132,20 @@ EOF
     # exploit-first policy has one -- P1's coverage of 0.035 is that readout
     # being linear in ||q|| -- and has to learn to suppress it.
     C3) cat <<'EOF'
-export ENVS_PER_WORLD=20
-export BATCH_ENVS=64
+export ENVS_PER_WORLD=8
+export BATCH_ENVS=16
 export STEPS_PER_ROLLOUT=200
-export SCHEDULE="interleave:700,empty_frac=1.0->0.5,anneal=200"
-export EVAL_EVERY=50
+export SCHEDULE="interleave:2500,empty_frac=1.0->0.5,anneal=500"
+export EVAL_EVERY=100
 export VAL_DISTRACTORS="0 10"
 EOF
         ;;
     C4) cat <<'EOF'
-export ENVS_PER_WORLD=20
-export BATCH_ENVS=64
+export ENVS_PER_WORLD=8
+export BATCH_ENVS=16
 export STEPS_PER_ROLLOUT=200
-export SCHEDULE="interleave:700,empty_frac=0->0.5,anneal=200"
-export EVAL_EVERY=50
+export SCHEDULE="interleave:2500,empty_frac=0->0.5,anneal=500"
+export EVAL_EVERY=100
 export VAL_DISTRACTORS="0 10"
 EOF
         ;;
@@ -154,11 +154,11 @@ EOF
     # cheapest way to find out -- at the risk of each block undoing the last,
     # which the eval curve shows as a sawtooth.
     C5) cat <<'EOF'
-export ENVS_PER_WORLD=20
-export BATCH_ENVS=64
+export ENVS_PER_WORLD=8
+export BATCH_ENVS=16
 export STEPS_PER_ROLLOUT=200
-export SCHEDULE="explore:100 ; exploit:100 ; explore:100 ; exploit:100 ; explore:100 ; exploit:100 ; explore:100"
-export EVAL_EVERY=50
+export SCHEDULE="explore:200 ; exploit:200 ; explore:200 ; exploit:200 ; explore:200 ; exploit:200 ; explore:200 ; exploit:200 ; explore:200 ; exploit:200 ; explore:200 ; exploit:200 ; explore:200"
+export EVAL_EVERY=100
 export VAL_DISTRACTORS="0 10"
 EOF
         ;;
