@@ -94,6 +94,47 @@ def sample_nonoverlapping_patches(
     return y0s, x0s, sizes
 
 
+def build_patch_codes(
+    lambdas: list[int],
+    y0s: List[int],
+    x0s: List[int],
+    sizes: List[int],
+    device: torch.device,
+    fwhm_ratio: float = 0.25,
+) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    """``extract_patches`` without ever building the full codebook.
+
+    ``build_full_grid`` materialises ``(Ng, Npos, Npos)`` float64 — 10.2 GB at
+    lambdas (11, 12, 13) — and training then keeps only the ~20% of it that
+    falls inside a patch. Since the code is one-hot per module and the smoothed
+    block is a separable wrapped-Gaussian bump, each patch can be built
+    directly, which drops the run's peak host memory from ~20 GB to ~1 GB.
+
+    That is the difference between one training run per node and several, which
+    is the binding constraint when the partition is full. Verified against the
+    full-codebook path in ``tests/test_lazy_patch_codes.py``.
+    """
+    from encoder_training.eval_unique_radius import grid_code_batch
+
+    all_phi, all_coords, all_env = [], [], []
+    for i, s in enumerate(sizes):
+        ys, xs = torch.meshgrid(
+            torch.arange(y0s[i], y0s[i] + s),
+            torch.arange(x0s[i], x0s[i] + s), indexing="ij")
+        ys, xs = ys.reshape(-1), xs.reshape(-1)
+        # grid_code_batch's first argument indexes the first spatial axis of
+        # the codebook, which is the one extract_patches slices with y0.
+        all_phi.append(torch.from_numpy(
+            grid_code_batch(lambdas, ys.numpy(), xs.numpy(), fwhm_ratio)))
+        all_coords.append(torch.stack([ys.float(), xs.float()], dim=-1))
+        all_env.append(torch.full((s * s,), i, dtype=torch.long))
+    return (
+        torch.cat(all_phi).to(device),
+        torch.cat(all_coords).to(device),
+        torch.cat(all_env).to(device),
+    )
+
+
 def extract_patches(
     Phi_full: torch.Tensor,
     y0s: List[int],

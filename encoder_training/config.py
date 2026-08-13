@@ -45,7 +45,44 @@ class LossConfig:
     repel_weight: float = 5.0           # weight on far-pair MSE (target 0)
     uniformity_lambda: float = 0.0      # uniformity regularizer weight (end value)
     uniformity_anneal_epochs: int = 25  # epochs to ramp uniformity from 0 to end
+    uniformity_t: float = 2.0           # temperature in logsumexp(-t * d^2)
+    # Which pairs the uniformity term acts on.
+    #   "all"     — every off-diagonal pair. Asks nothing about environments,
+    #               so it is the only spread term still available when the
+    #               cross-environment pairs are withheld. Also the reason it
+    #               fights `attract`: logsumexp is dominated by the closest
+    #               pairs, which are the near pairs.
+    #   "nonnear" — drops the near pairs. Cheap and effective, but "not near"
+    #               includes every cross-environment pair, so this quietly
+    #               restores the supervision `exclude_cross_env_pairs` removed.
+    #               Report it as a loophole, not as a result under the flag.
+    uniformity_scope: str = "all"       # "all" | "nonnear"
     centered: bool = True               # centered CKA (only used if mode="cka")
+
+    # VICReg-style spread. Both are batch statistics rather than pair terms, so
+    # they cannot concentrate on the closest pairs the way uniformity does.
+    var_lambda: float = 0.0             # hinge on per-coordinate std
+    cov_lambda: float = 0.0             # off-diagonal covariance penalty
+    var_gamma: float = 1.0              # std target, in units of 1/sqrt(out_dim)
+    rate_lambda: float = 0.0            # MCR^2 log-det coding rate
+    rate_eps: float = 0.5
+
+    # Distance-graded pair target: target = exp(-d^2 / (2 sigma^2)) instead of
+    # the binary 1-on-near / 0-on-far. 0 keeps the binary targets.
+    #
+    # The binary target asks for a *plateau* at cosine 1 inside the radius, and
+    # the unique radius is a strictly-decreasing test, so a perfectly satisfied
+    # binary target scores zero. What is actually being measured is the residual
+    # slope the network fails to flatten. Naming the slope directly is the
+    # obvious thing nobody has tried.
+    graded_sigma: float = 0.0
+
+    # LOOPHOLE, label it as one. Repel pairs whose *input* grid codes are
+    # dissimilar, regardless of environment. Env-blind and available to an agent
+    # that only ever sees observations — but the smoothed code decorrelates
+    # within ~5 cells, so "input-dissimilar" is very nearly "far apart
+    # anywhere", and that puts the cross-environment repulsion back in.
+    input_far_tau: float = -1.0         # <0 → off
 
     # Withhold cross-environment pairs from the repel term. There is no
     # dedicated cross-env term: any pair that is not "near" is repelled, so in
@@ -137,6 +174,16 @@ class TrainConfig:
 
     # Input perturbation (ablation): randomly permute grid codes across positions
     shuffle_inputs: bool = False
+
+    # Build each patch's codes directly instead of slicing the full codebook.
+    # Same values (tests/test_lazy_patch_codes.py) at ~1 GB instead of ~20 GB of
+    # host memory, which is what lets several runs share a node. Only possible
+    # when the Hopfield nav eval is off, since that eval needs the full grid.
+    # The two builders group the Gaussian factors differently, so the codes
+    # agree to float32 rounding rather than bit-for-bit: within a wave every run
+    # takes the same path, but a seed-for-seed replay of an older run needs this
+    # off.
+    lazy_codes: bool = False
 
     # Checkpointing
     save_dir: str = str(encoders_dir())

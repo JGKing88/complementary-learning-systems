@@ -283,3 +283,127 @@ reach far enough (patch size).
 
 Best achieved under True: **r_min 9** (4×400, repel 1.0, seed 43), against 21
 in the mixed-batch regime.
+
+---
+
+# 4. How good can `exclude_cross_env_pairs=True` get?
+
+§3 asked whether the True regime could be *rescued* and answered no. This asks
+the different question of how far it can be *pushed*, under a fixed brief:
+
+* `exclude_cross_env_pairs=True` throughout — the constraint, not a variable;
+* no patch larger than **200** cells a side;
+* patch sizes **mixed**, not uniform;
+* `loss_mode=cka` excluded;
+* every other knob free.
+
+Driver: `encoder_training.sweep_ecp` (named size mixes, step-matched epochs,
+`ou_bcs_normal` only). Read a wave back with
+`python -m encoder_training.collect_ur <sweep_dir>`, which reads the summary
+each run already stored in its checkpoint rather than re-scoring on a GPU.
+
+### 4.0 What "under the constraint" is taken to mean
+
+The flag governs the *repel* mask. Taken literally it can be satisfied while
+putting the same supervision back through another term, so the campaign is
+split and the two halves are never mixed in a headline:
+
+* **Legal** — anything that never asks which environment a pair came from:
+  geometry, the near radius, loss weights, distance-graded targets, batch-wide
+  spread terms (`uniformity_loss` over *all* pairs, VICReg variance/covariance),
+  architecture, optimisation.
+* **Loophole, labelled as such** — `uniformity_scope=nonnear` and
+  `input_far_tau`. "Not near" is defined with `same_env`, so it contains every
+  cross-environment pair; and the smoothed code decorrelates within ~5 cells, so
+  "input-dissimilar" is very nearly "far apart anywhere". Both restore the
+  withheld signal. They are run to bound the gap, never to claim it closed.
+
+### 4.1 Diagnosis first: where the aliases actually are
+
+`encoder_training.alias_structure` reports *where* the far-field peaks sit, and
+how many dimensions the code still uses, rather than only how high the ceiling
+is. Three results reframe the problem.
+
+**The raw grid code is not a free ceiling.** The smoothed code's own alias
+ceiling is **0.953**, at offsets that are multiples of 143 (= 11·13) and 156
+(= 12·13) — two modules exactly aligned, the third off by one phase, which the
+smoothing then makes nearly identical. Its similarity also decays to 0.02 by
+r=5. So the input is *both* aliased and too sharp: an encoder has to widen the
+neighbourhood *and* suppress aliases the input already has. Nothing is
+inherited.
+
+**An untrained encoder is fully collapsed** — cos = 1.000 arena-wide at gain 5.
+There is no "don't destroy the input" strategy to fall back on.
+
+**The True regime's failure is not grid periodicity.** Its worst peaks sit at
+offsets ≈ 786–930 with residues (5, 6, 6) mod (11, 12, 13) — *maximally*
+misaligned in every module. Those are the two most dissimilar inputs the arena
+contains, and the encoder maps them to cosine 0.98. The failure is that the
+encoder is collapsing near-orthogonal inputs, not that the code repeats.
+
+| encoder | r_min | alias peaks (top-12 over 5 refs) | decay50 |
+|---|---|---|---|
+| raw smoothed code | — | max 0.953, at ±143 / ±780 | ~2 |
+| untrained, gain 5 | — | 1.000 everywhere | ∞ |
+| `exclude_cross_env_pairs=True`, 60×100 | 3 | max 0.983, **median 0.955** | 17 |
+| `single_env_batch=True`, 15×200 | 3 | max 0.979, **median 0.783** | 21.5 |
+| `exclude_cross_env_pairs=False`, 60×100 | 18 | max 0.610, median 0.445 | 38.5 |
+
+The 200-cell patches move the *median* peak a long way (0.955 → 0.783) and the
+maximum barely at all, which is exactly the shape of `r_median` rising 3 → 7
+while `r_min` stays at 3. `r_min` is a worst case over 20 references, so one bad
+reference holds it down however much the typical one improves.
+
+### 4.2 The two levers, restated
+
+`r_min` is where the decay curve crosses the alias ceiling, so there are two
+ways to move it and the True regime has only ever tried one.
+
+* **Lower the ceiling.** Needs a term that reaches ~800 cells. Within-patch
+  repulsion reaches 283 at the largest patch allowed here, so the only legal
+  candidates are the batch-wide spread terms.
+* **Widen the decay.** Untried. The binary target asks for a *plateau* at cosine
+  1 inside the radius, and the radius test is a strictly-*decreasing* one — a
+  perfectly satisfied binary target scores zero, and what the metric actually
+  reads is the residual slope the network failed to flatten. Naming the slope
+  outright is what `graded_sigma` does: the pair target becomes
+  `exp(-d²/2σ²)` instead of 1-or-0.
+
+### 4.3 Sweep log
+
+| wave | grid | runs | result |
+|---|---|---|---|
+| `w1_geometry` | 5 size mixes × near-radius {fixed 10, 0.1·side} × 2 seeds | 20 | *running* |
+| `w2_spread` | graded σ {10,25,50}, uniformity {0.1, 1, 0.1@t0.25}, VICReg {×1, ×5}, none × 2 seeds | 18 | *running* |
+
+Size mixes, all ≤200 a side and all held near 20% coverage so the axis is
+granularity rather than area:
+
+| mix | envs | sizes | coverage |
+|---|---|---|---|
+| `u100` | 60 | 100 | 20.4% |
+| `u200` | 15 | 200 | 20.4% |
+| `mix2` | 33 | 200, 100 | 20.4% |
+| `mix5` | 93 | 200, 140, 100, 70, 50 | 20.2% |
+| `mixbig` | 41 | 200, 140, 100, 70, 50 | 20.6% |
+
+The near-radius axis is the one with two opposed predictions. At a **fixed** 10
+cells every patch teaches the same notion of "near" and size varies only how far
+the within-patch repulsion reaches. At a **fraction of the side** the patches
+*disagree* about what "near" means — 5 cells in a 50-patch against 20 in a
+200-patch — and no translation-invariant code can satisfy both, so the encoder
+is pushed toward depending on absolute position. That is the missing ingredient,
+if it works; it is also a way to make the task incoherent, if it does not.
+
+### 4.4 Infrastructure notes
+
+* `data.build_patch_codes` builds each patch's codes directly instead of slicing
+  the 10.2 GB full codebook, dropping a run's host memory from ~20 GB to ~1 GB
+  (`--lazy_codes`, verified against the old path in
+  `tests/test_lazy_patch_codes.py`). The two group the Gaussian factors
+  differently, so codes agree to float32 rounding rather than bit-for-bit — fine
+  within a wave, but a seed-for-seed replay of a §2/§3 run needs it off.
+* With that, `sweep_ecp` packs four runs onto one GPU. A run at batch 8192 keeps
+  an A100 about 6% busy (the step is bound by kernel launches and mask
+  construction, not arithmetic) and `ou_bcs_normal` is GPU-limited, so runs per
+  GPU is the throughput lever, not jobs.
