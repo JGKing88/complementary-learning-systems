@@ -66,6 +66,12 @@ SIZE_MIXES: dict[str, str] = {
     # --- coverage variants of the best mix (used in later waves) ----------
     # Rejection sampling was measured to place these at seeds 42/43; it starts
     # failing around 65%, so ~53% is the usable ceiling for sizes <= 200.
+    # Big-heavy three-scale mix. mix5 said many small patches are actively bad
+    # -- 93 patches with a tail down to 50 cells scored r_min 2 at a 0.989
+    # ceiling, because a 50-cell patch's repulsion reaches 70 cells and the far
+    # field never hears about it. This keeps the size mixing the brief asks for
+    # while putting 71% of the area in 200-cell patches.
+    "mixtop": _mix((200, 12), (150, 6), (100, 6)),      # 675k, 22.9%, 24 envs
     "mix2_lo": _mix((200, 4), (100, 12)),       # 280k,  9.5%,  16 envs
     "mix2_hi": _mix((200, 15), (100, 40)),      # 1.00M, 34.0%, 55 envs
     "mix3_45": _mix((200, 20), (150, 20), (100, 30)),   # 1.55M, 52.6%, 70 envs
@@ -337,6 +343,38 @@ WAVES: dict[str, dict] = {
             "f0.3_rate0.3":    dict(per_env_radius_frac=0.30, rate_lambda=0.3),
             "f0.2_rate0.3_big": dict(per_env_radius_frac=0.20, rate_lambda=0.3,
                                      npos_list=SIZE_MIXES["mixbig"]),
+        },
+        "seed": [42, 43],
+    },
+    # W9 -- the combination, with both axes corrected by what w3 and w8 found.
+    #
+    # THE RADIUS TURNS EARLIER THAN w8 ASSUMED. Its 0.2 arm collapsed outright,
+    # alias ceiling 0.999-1.000 and r_min 0, and w3's fixed-40 did the same:
+    # once the radius is that large almost every within-patch pair counts as
+    # near, nothing is left to repel, and the code goes uniform. w1 puts the
+    # working value at 0.1 of the side, so this brackets 0.10 to 0.15 rather
+    # than 0.2 to 0.3.
+    #
+    # THE MIX HAS TO BE BIG-HEAVY. mix5 (93 patches, tail to 50 cells) scored
+    # r_min 2, worse than uniform 200; mix2 ties uniform 200 and is noisier.
+    # `mixtop` keeps three sizes but puts 71% of the area at 200.
+    #
+    # rate_lambda crossed in because it owns the other factor of the law and is
+    # the only thing that has moved it: 0.946 -> 0.907 at r_min 4.5 -> 7/9.
+    "w9_best_combo": {
+        "arm": {
+            "top_f0.10":        dict(npos_list=SIZE_MIXES["mixtop"],
+                                     per_env_radius_frac=0.10),
+            "top_f0.15":        dict(npos_list=SIZE_MIXES["mixtop"],
+                                     per_env_radius_frac=0.15),
+            "top_f0.10_rate0.3": dict(npos_list=SIZE_MIXES["mixtop"],
+                                      per_env_radius_frac=0.10, rate_lambda=0.3),
+            "top_f0.15_rate0.3": dict(npos_list=SIZE_MIXES["mixtop"],
+                                      per_env_radius_frac=0.15, rate_lambda=0.3),
+            # Uniform 200 with the same treatment: the reference that says
+            # whether mixing sizes is buying anything at all.
+            "u200_f0.10_rate0.3": dict(npos_list=SIZE_MIXES["u200"],
+                                       per_env_radius_frac=0.10, rate_lambda=0.3),
         },
         "seed": [42, 43],
     },
