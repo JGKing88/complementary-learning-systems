@@ -17,6 +17,16 @@ the uniformity and geometry rescue attempts, and the graded-target runs — the
 prediction correlates +0.86 with the measured ``r_min`` at a median absolute
 error of one cell.
 
+It predicts ``r_median`` more faithfully than ``r_min``. Both inputs are
+whole-encoder summaries — a median decay width and a max alias ceiling — so what
+comes out describes the typical reference, while ``r_min`` is the worst of
+twenty. They agree while the references agree with each other, and part company
+when they do not: at a near radius of 40 the decay is the widest in the
+campaign and ``r_median`` is 15, but one reference sits at 5 and that is what
+``r_min`` reports. **A large gap between ``r_pred`` and ``r_min`` is therefore a
+reading in its own right** — it says the arena has stopped being uniform, not
+that the formula has failed.
+
 Why it is worth having rather than just measuring: it says the two levers
 multiply, so a wave can be *designed* instead of searched. It also explains §3
 in one line. Every substitute tried there moved one factor at the other's

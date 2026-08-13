@@ -455,6 +455,37 @@ ways to move it and the True regime has only ever tried one.
 | ~~`w7_decay_x_ceiling`~~ | σ × `rate_lambda` | 10 | **cancelled before running** — same reason |
 | `w8_rate_x_radius` | radius frac {0.2, 0.3} and {0.1,0.2,0.3}×`rate0.3`, + one at `mixbig` × 2 seeds | 12 | *running* — `w7`'s question with the legal decay knob |
 
+### 4.5b The near radius is a clean decay knob, and it peaks at 20 (`w3_radius`)
+
+`encoder_final` on `mix2`; the radius-10 row is `w1`'s identical cell.
+
+| near radius | r_min | r_pred | r_median | decay50 | res90 | alias max |
+|---|---|---|---|---|---|---|
+| 2 | 0, 0 | 1.4 | 1.5 | 7.0 | 3.0 | 0.979 |
+| 3 | 1, 1 | 1.6 | 2.0 | 9.25 | 4.0 | 0.983 |
+| 5 | 2, 1 | 2.6 | 3.5 | 13.0 | 5.0 | 0.975 |
+| 10 | 6, 3 | 5.0 | 7.25 | 21.0 | 8.75 | 0.964 |
+| **20** | **7** | 7.1 | 14.0 | 34.5 | 13.5 | 0.971 |
+| 40 | 5 | *10.9* | 15.0 | **54.5** | 21.0 | 0.972 |
+
+`decay50` tracks the radius almost exactly linearly — ≈1.3× it, across a
+twentyfold range — while the alias ceiling stays within 0.964–0.983. So the
+radius is an isolated handle on one factor of §4.4b, which is what makes it the
+legal substitute for `graded_sigma`. The optimum is **20**, at `r_min` 7 against
+10's 4.5.
+
+**Where the law breaks, and how.** Radius 40 produces the widest decay in the
+campaign — 54.5, past the unconstrained regime's 38–40 — and `r_min` *falls* to
+5 while `r_pred` says 10.9. The shape check passes (res90/decay50 = 0.385,
+Gaussian), so this is not the profile. It is that the spread *across reference
+positions* blows up: `r_median` is 15 against `r_min` 5. The law is built from a
+median decay and a max ceiling, so it predicts the typical reference and not the
+worst one — and those diverge exactly when the radius is pushed past its
+optimum. Read `r_pred` as a prediction of `r_median`; the gap between them is
+itself the signal that the references have stopped agreeing.
+
+### 4.5c Notes on the original motivation for `w3_radius`
+
 `w3_radius` was launched to test a prediction from §4.1b — that a *smaller*
 radius buys rank and should therefore win — and the prediction is already dead.
 `radius=2` reached 412 effective dimensions, twice the unconstrained regime's
