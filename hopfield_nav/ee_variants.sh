@@ -297,6 +297,27 @@ export EVAL_EVERY=100
 export VAL_DISTRACTORS="0 10"
 EOF
         ;;
+    # W6 raises wall_penalty instead of removing it, which is the opposite of
+    # W2 and now the better-supported bet. §3f measured the cost of wall
+    # collisions at ~0.30 coverage: e8 loses 38% of its steps to the clip, e4L
+    # 0.07%, at identical shaping. A fully blocked step always lands the agent
+    # on an edge cell, so wall_penalty does charge for it -- evidently not hard
+    # enough to fix it inside 975 updates at 0.1 against a novelty of 0.3.
+    # Raising it to parity is the direct test.
+    #
+    # W2 (wall_penalty=0) stays as the other bracket. Its motivation -- that
+    # the penalty taxes the perimeter leg of a spiral -- is weakened by this,
+    # but not refuted: the perimeter still has to be visited.
+    W6) cat <<'EOF'
+export ENVS_PER_WORLD=8
+export BATCH_ENVS=16
+export STEPS_PER_ROLLOUT=200
+export SCHEDULE="explore:3000"
+export EVAL_EVERY=100
+export VAL_DISTRACTORS="0 10"
+export WALL_PENALTY=0.3
+EOF
+        ;;
     # L4 carries wave 1's horizon question into the cheap shape: rollouts as
     # long as the 400-step eval, so the back half of an eval rollout is not a
     # horizon the policy was never optimized at. Serial calls are envs x steps,
