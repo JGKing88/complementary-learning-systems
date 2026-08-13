@@ -583,7 +583,14 @@ a difference.
   `tests/test_lazy_patch_codes.py`). The two group the Gaussian factors
   differently, so codes agree to float32 rounding rather than bit-for-bit — fine
   within a wave, but a seed-for-seed replay of a §2/§3 run needs it off.
-* With that, `sweep_ecp` packs four runs onto one GPU. A run at batch 8192 keeps
-  an A100 about 6% busy (the step is bound by kernel launches and mask
-  construction, not arithmetic) and `ou_bcs_normal` is GPU-limited, so runs per
-  GPU is the throughput lever, not jobs.
+* **Packing runs onto one GPU does not work, measured.** Four runs sharing an
+  A100 each ran at 5.0 epochs/min against 20 solo — exactly 4× slower, no gain.
+  The step is bandwidth-bound on the 8192² pair masks, not launch-bound, and
+  bandwidth is the shared resource. `RUNS_PER_JOB` stays 1.
+* **The throughput ceiling is a QOS cap, not the partition.** Pending jobs sit
+  at `Reason=QOSMaxGRESPerUser` once 16 are running, so queueing more waves
+  buys nothing and only the *order* matters. `scontrol update jobid=N nice=…`
+  on the pending jobs of a wave is how to reorder; everything still runs.
+* What did help before hitting that cap: asking for 1.5 h and 16 GB rather than
+  12 h and 80 G, which lets backfill drop a run into a gap. That took the
+  concurrent count from 2–3 to 16.
