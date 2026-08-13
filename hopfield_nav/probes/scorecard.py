@@ -38,10 +38,12 @@ def candidates(paths, n_dist):
         for upd, r in by_update.items():
             cov, suc, stp = (r.get("mean_coverage"), r.get("success_rate"),
                              r.get("mean_steps"))
+            spd = r.get("mean_speed")
             if None in (cov, suc, stp):
                 continue
             out.append({"run": name, "update": upd, "mean_coverage": cov,
-                        "success_rate": suc, "mean_steps": stp})
+                        "success_rate": suc, "mean_steps": stp,
+                        "mean_speed": spd if spd is not None else float("nan")})
     return out
 
 
@@ -76,12 +78,20 @@ def main():
 
     print(f"{len(cands)} evaluated checkpoints at n_dist={a.n_dist}; "
           f"{len(front)} on the Pareto front\n")
-    print(f"{'run':<22}{'update':>7}{'coverage':>10}{'success':>9}{'steps':>9}")
+    print(f"{'run':<22}{'update':>7}{'coverage':>10}{'success':>9}{'steps':>9}"
+          f"{'speed':>8}")
     for c in show:
         star = " *" if c in front else "  "
+        # `mean_steps` averages successes only (metrics.py:350), so a policy
+        # that only solves nearby goals reports a flattering number. Flag it
+        # rather than silently ranking on it -- see §3ab.
+        warn = " <- steps unreliable, low success" if c["success_rate"] < 0.9 else ""
         print(f"{star}{c['run']:<20}{c['update']:>7}{c['mean_coverage']:>10.3f}"
-              f"{c['success_rate']:>9.3f}{c['mean_steps']:>9.1f}")
+              f"{c['success_rate']:>9.3f}{c['mean_steps']:>9.1f}"
+              f"{c['mean_speed']:>8.3f}{warn}")
     print("\n* = Pareto-optimal: nothing else beats it on all three at once.")
+    print("mean_speed = mean(start_dist / steps), the distance-normalized "
+          "efficiency; prefer it to mean_steps when success_rate differs.")
 
 
 if __name__ == "__main__":
