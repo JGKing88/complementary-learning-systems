@@ -171,10 +171,10 @@ evaluation points during training, which is optimistically biased.
 | `ur_loss_20260811` | repel [1,5,15,40] × frac [0.05,0.1,0.2] × 3 seeds | 36 | best 20; repel 1→40 declines (one side of a peak — see §2.2) |
 | `ur_seb_control` | single_env_batch [T,F] × 3 seeds | 6 | True 2/2/2, False 17/18/18 — §2.1 confirmed |
 | `ur_loss2_repel_low` | repel [0.25,0.5,1,2] × frac [0.10,0.15,0.20] × 3 seeds | 36 | **best 21**; repel is a peak not a slope; frac 0.10 dominates |
-| `ur_seb_C_pairs_vs_dynamics` | False batching; exclude_cross_env_pairs [F,T] × 3 seeds | 6 | *running* — the load-bearing control, see below |
+| `ur_seb_C_pairs_vs_dynamics` | False batching; exclude_cross_env_pairs [F,T] × 3 seeds | 6 | **pairs, not dynamics** — 18/18/17 vs 3/3/2 |
 | `ur_seb_A_geometry` | True; npos_list [4×400, 2×600, 1×800] × repel × 2 seeds | 12 | **cancelled** — step count not matched across geometries |
 | `ur_seb_A2_npos200` | True; 15×200 step-matched, repel [1,5] × 2 seeds | 4 | **no rescue** — r_min 3,3,3,4 |
-| `ur_seb_A3_npos400` | True; 4×400 step-matched, repel [1,5] × 2 seeds | 4 | *running* |
+| `ur_seb_A3_npos400` | True; 4×400 step-matched, repel [1,5] × 2 seeds | 4 | partial — best 9, high seed spread |
 | `ur_seb_B_uniformity` | True; uniformity_lambda [0,0.1,0.5,2,8] × 2 seeds | 10 | **no rescue** — ceiling falls to 0.806, decay dies to 1 |
 
 ### First: which half of `single_env_batch` actually matters (`ur_seb_C`)
@@ -189,10 +189,22 @@ The flag changes two things at once, and §2.1 credits only the first:
    alternating per-env full-batch descent than SGD over pooled data.
 
 `ur_seb_control` flipped both together. `exclude_cross_env_pairs` withholds only
-the pairs while keeping batches mixed, isolating (1). **Everything below
-presupposes the answer**: if it lands near 2, (1) is the cause and the two
-rescue attempts are aimed correctly; if near 18, the win was (2) and §2.1 is
-wrong about why.
+the pairs while keeping batches mixed (73 steps/epoch, each step still drawn
+from many envs), isolating (1).
+
+**RESULT — mechanism (1). Dynamics contribute essentially nothing.**
+
+| `exclude_cross_env_pairs` | r_min | alias_ceiling | decay50 |
+|---|---|---|---|
+| False (normal mixed) | 18, 18, 17 | 0.844–0.903 | 38.5–40.5 |
+| True (pairs withheld) | **3, 3, 2** | 0.978–0.989 | 17–18 |
+| *(`single_env_batch=True`, for reference)* | *2, 2, 2* | *0.988* | *18* |
+
+Withholding the pairs alone reproduces the `single_env_batch=True` result on
+every column — radius, ceiling and decay all land on top of it. So the whole
+16-unit effect is loss composition; how many environments a gradient step sees
+does not matter. §2.1 is confirmed, and the two rescue attempts below were
+aimed at the right mechanism.
 
 ### Rescuing `single_env_batch=True` — two hypotheses in flight
 
@@ -240,8 +252,34 @@ dismissal ("spreading makes patches overlap more") is refuted by the ceiling
 falling, and the correction ("this could be transformative") is refuted by the
 decay collapsing. The mechanism was a third thing.
 
-**A2, patch size 200 — RESULT: no rescue.** 15×200 at 20.4% coverage and
-step-matched (4000 epochs × 15 = 60,000 steps): r_min 3, 3, 3, 4 with alias
-0.963–0.989. Marginally above the 60×100 baseline of 2, nowhere near the 18 of
-the mixed-batch regime. Bigger patches extend the reach of within-patch
-repulsion a little, as predicted, but not nearly enough.
+**A, patch size — RESULT: a real but insufficient effect, and unstable.**
+All step-matched at 60,000 steps and ~20% coverage:
+
+| geometry | r_min (per seed) | alias_ceiling | decay50 |
+|---|---|---|---|
+| 60×100 (baseline) | 2, 2, 2 | 0.988 | 18 |
+| 15×200 | 3, 3, 3, 4 | 0.963–0.989 | 16–21.5 |
+| 4×400 | 3, 3, 6, **9** | 0.957–0.981 | 19–28.5 |
+
+The direction is right — the reach of within-patch repulsion does grow with the
+patch, and 4×400 more than quadruples the baseline. But it is still half the
+mixed-batch 18, and the seed spread at 4×400 is large (3 → 9 at the same
+repel), which is what §2.5's warning about lumpy patch placement predicted:
+with only 4 patches, *where* they land varies a lot between seeds.
+
+Extrapolating, closing the gap would need patches approaching arena size — at
+which point there is one environment, `single_env_batch` is vacuous, and
+nothing has been rescued so much as sidestepped.
+
+### Conclusion for the True regime
+
+`single_env_batch=True` costs ~16 radius units and neither substitute recovers
+it. The reason is now sharp: cross-environment repulsion is the only
+**selective** repulsion available — it acts solely on pairs that are already
+distant, lowering the alias ceiling without touching the decay width. Every
+alternative tried is indiscriminate and pays for a lower ceiling with a
+collapsed neighbourhood (uniformity, `repel_weight=40`) or simply does not
+reach far enough (patch size).
+
+Best achieved under True: **r_min 9** (4×400, repel 1.0, seed 43), against 21
+in the mixed-batch regime.
