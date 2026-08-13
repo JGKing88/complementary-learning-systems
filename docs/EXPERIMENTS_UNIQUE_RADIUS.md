@@ -295,11 +295,19 @@ in the mixed-batch regime.
 
 # 4. How good can `exclude_cross_env_pairs=True` get?
 
-**Best config: `mixtop` + radius 0.15·side + `rate_lambda=0.3` — `r_min` 14, 16,
-19, 22 over four seeds (median 17.5).** Against 2–3 for this regime untreated
-and 9 for the best §3 rescue attempt (which used 400-cell patches, outside this
-brief). **The best encoder ever trained *with* the cross-environment pairs
-scores 21** at the same 20 references, and 9/15 when re-scored at 100 (§4.8).
+**Best config: `mixtop_max` (50.8% coverage, 26×200 + 14×150 + 14×100) + near
+radius 0.15·side + `rate_lambda=0.3` — `r_min` 26, 27, 30, 31 over four seeds
+(median 28.5), `r_median` 42.8, alias ceiling 0.671.**
+
+Against 2–3 for this regime untreated, 9 for the best §3 rescue attempt (which
+used 400-cell patches, outside this brief), and **21 for the best encoder ever
+trained *with* the cross-environment pairs** — which also has a worse ceiling
+(0.814) and a narrower decay (37.5), and drops to 9/15 when re-scored at 100
+references (§4.8).
+
+Four knobs, none of which ever asks which environment a pair came from:
+coverage (§4.6b, the largest), the near radius (§4.5b/§4.5e), an env-blind
+spread term (§4.4), and a big-heavy size mix (§4.5d).
 
 | | best unconstrained (§1) | best under the constraint |
 |---|---|---|
@@ -861,26 +869,29 @@ only thing that fixes those. Holding the mix *shape* fixed — same three sizes,
 same ~71% of area at 200 cells — and moving only coverage, at the winning radius
 and `rate_lambda`:
 
-| coverage | r_min | seed spread | r_median | alias max | alias mean | decay50 |
-|---|---|---|---|---|---|---|
-| 22.9% (`mixtop`) | 17.5 (14–22, 4 seeds) | **8** | 26–29.5 | 0.81–0.92 | 0.62–0.92 | 37–42 |
-| 38.2% | 23.5 | 3 | 37.25 | 0.767 | 0.523 | 41.0 |
-| 50.8% | 26.5 | 1 | 40.25 | 0.743 | 0.492 | 42.25 |
-| **61.1%** | **30.0** | **0** | **43.75** | **0.670** | **0.444** | 42.0 |
-| *best unconstrained (§1)* | *21* | — | *28.5* | *0.814* | *~0.63* | *37.5* |
+| coverage | n | r_min by seed | median | spread | r_median | alias max | alias mean | decay50 |
+|---|---|---|---|---|---|---|---|---|
+| 22.9% (`mixtop`) | 4 | 19, 22, 16, 14 | 17.5 | 8 | 27.5 | 0.853 | 0.607 | 40.8 |
+| 38.2% | 2 | 25, 22 | 23.5 | 3 | 37.2 | 0.767 | 0.523 | 41.0 |
+| **50.8%** | 4 | 26, 27, 31, 30 | **28.5** | **5** | 42.8 | 0.671 | 0.468 | 42.0 |
+| 61.1% | 4 | 30, 30, **0**, 27 | 28.5 | **30** | 44.2 | 0.670 | 0.432 | 42.0 |
+| 70.1% | 2 | 23, 16 | 19.5 | 7 | 44.2 | 0.608 | 0.450 | 42.0 |
+| *best unconstrained (§1)* | 1 | 21 | 21 | — | 28.5 | 0.814 | ~0.63 | 37.5 |
 
-Monotone on every column. And the seed spread **falls to zero** — both 61.1%
-runs land on exactly 30, which matters given how much of this campaign has been
-spent discovering that two seeds are not enough (§4.9).
+**The stable columns are monotone in coverage; `r_min` is not.** `r_median`
+runs 27.5 → 37.2 → 42.8 → 44.2 and the alias ceiling 0.853 → 0.767 → 0.671 →
+0.608, both cleanly, and both pass the unconstrained encoder's values by 38%
+coverage. `r_min` peaks somewhere around 50–61% and is erratic throughout —
+including a **0** at 61.1% seed 44, whose `r_median` of 46 is the best in the
+campaign. One reference out of twenty ruins it, which is §4.8 again.
 
-Note where the gain comes from: decay50 is flat at 41–42 across the whole
-sweep, so coverage is buying the *ceiling* (0.767 → 0.670, mean 0.523 → 0.444)
-and nothing else. That is §4.4b's other factor, and the mechanism is §4.6's —
-more of the arena inside a patch is less of it extrapolated to.
+decay50 is flat at 41–42 across the whole sweep, so coverage buys the *ceiling*
+and nothing else — §4.4b's other factor, by §4.6's mechanism: more of the arena
+inside a patch is less of it extrapolated to.
 
-At 61.1% the constrained encoder is ahead of the unconstrained benchmark on
-every column: `r_min` 30 against 21, ceiling 0.670 against 0.814, mean 0.444
-against ~0.63, at a comparable decay.
+**The defensible choice is 50.8%**: median 28.5, spread 5, every seed above the
+unconstrained 21. 61.1% ties the median and risks a zero; 70.1% is worse on two
+seeds and cannot be placed at four (§4.7).
 
 ### 4.8 The 20-reference `r_min` is unstable, and it flatters §1–§3
 
