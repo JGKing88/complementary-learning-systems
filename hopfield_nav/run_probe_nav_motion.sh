@@ -1,10 +1,14 @@
 #!/bin/bash -l
 #SBATCH --job-name=hnav-navmotion
-#SBATCH --time=0-02:00:00
+# The probe itself runs in ~2 min; the short wall clock is what lets it
+# backfill into a busy partition instead of queueing behind the training wave.
+# The memory is not negotiable, though -- building the scaffold field peaks
+# well above 32G, which OOM-kills before the first trial.
+#SBATCH --time=0-00:30:00
 #SBATCH --ntasks=1
-#SBATCH --cpus-per-task=8
+#SBATCH --cpus-per-task=4
 #SBATCH --partition=mit_normal
-#SBATCH --mem=80G
+#SBATCH --mem=100G
 #SBATCH --output=/orcd/pool/003/jackking/cls_runs/logs/navmotion_%j.out
 
 # Decompose nav `mean_steps` and `success_rate` on the real evaluation path:
