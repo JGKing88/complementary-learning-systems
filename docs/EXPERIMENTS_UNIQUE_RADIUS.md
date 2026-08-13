@@ -852,6 +852,36 @@ divergence §4.5b found at a fixed radius of 40 and the reason §4.4b's law
 tracks `r_median`. On this metric the peak is where the references stop
 agreeing, not where the decay stops widening.
 
+### 4.6b Coverage is the strongest lever, and it removes the seed noise (`w13`)
+
+§4.6 predicted this from the −0.47 correlation between a reference's distance
+to the nearest training patch and its radius: `r_min` is the worst of 20
+references, the worst are the ones training never reached, and coverage is the
+only thing that fixes those. Holding the mix *shape* fixed — same three sizes,
+same ~71% of area at 200 cells — and moving only coverage, at the winning radius
+and `rate_lambda`:
+
+| coverage | r_min | seed spread | r_median | alias max | alias mean | decay50 |
+|---|---|---|---|---|---|---|
+| 22.9% (`mixtop`) | 17.5 (14–22, 4 seeds) | **8** | 26–29.5 | 0.81–0.92 | 0.62–0.92 | 37–42 |
+| 38.2% | 23.5 | 3 | 37.25 | 0.767 | 0.523 | 41.0 |
+| 50.8% | 26.5 | 1 | 40.25 | 0.743 | 0.492 | 42.25 |
+| **61.1%** | **30.0** | **0** | **43.75** | **0.670** | **0.444** | 42.0 |
+| *best unconstrained (§1)* | *21* | — | *28.5* | *0.814* | *~0.63* | *37.5* |
+
+Monotone on every column. And the seed spread **falls to zero** — both 61.1%
+runs land on exactly 30, which matters given how much of this campaign has been
+spent discovering that two seeds are not enough (§4.9).
+
+Note where the gain comes from: decay50 is flat at 41–42 across the whole
+sweep, so coverage is buying the *ceiling* (0.767 → 0.670, mean 0.523 → 0.444)
+and nothing else. That is §4.4b's other factor, and the mechanism is §4.6's —
+more of the arena inside a patch is less of it extrapolated to.
+
+At 61.1% the constrained encoder is ahead of the unconstrained benchmark on
+every column: `r_min` 30 against 21, ceiling 0.670 against 0.814, mean 0.444
+against ~0.63, at a comparable decay.
+
 ### 4.8 The 20-reference `r_min` is unstable, and it flatters §1–§3
 
 Every run in §1–§4 is scored at the same 20 reference positions (`ur_seed=0`),
