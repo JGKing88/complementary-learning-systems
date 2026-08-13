@@ -154,7 +154,14 @@ noise. Median within-config spread across seeds is 2.0 `r_min` units against a
 3.68 spread of config medians — config effects are ~2× seed noise, so **three
 seeds is a floor, not a nicety.**
 
-### 2.7 Caveat: `r_min` compresses
+### 2.7 Caveat: `r_min` compresses — and see §4.8, it is also unstable
+
+> **§4.8 supersedes part of this.** Every number in §1–§3 comes from the same
+> 20 reference positions. Re-scored at 100, §1's best encoder falls from
+> `r_min` 21 to **9** on one draw and 15 on another. The rankings here are
+> broadly intact but the absolute values are an upper bound on a noisy
+> statistic. `r_median` is the stable companion.
+
 
 88% of the archive sat at `r_min ≤ 3`, so `r_min` identifies a winner but does
 not rank a field of similar encoders. Use `r_median`, `alias_ceiling` and
@@ -298,13 +305,16 @@ cross-environment pairs scores 21.**
 |---|---|---|
 | config | `repel=2, frac=0.1`, 60×100 | `mixtop`, radius 0.15·side, `rate_lambda=0.3` |
 | cross-env pairs | kept | **withheld** |
-| `r_min` | 21 | **22** (other seed 19) |
-| `r_median` | 28.5 | 29.5 |
+| `r_min`, 20 refs | 21 | **22** (other seed 19) |
+| **`r_min`, 100 refs** | **9 / 15** | **16 / 15** |
+| `r_median`, 100 refs | 28.5 / 29 | 28 / 29 |
 | alias ceiling | 0.814 | 0.813 |
 | decay50 | 37.5 | 42.0 |
 
-Not merely the same score — the same *profile*, column by column. Three knobs
-do it, none of which ever asks which environment a pair came from:
+Not merely the same score — the same *profile*, column by column, and on the
+100-reference re-score (§4.8) the constrained encoder is ahead on one draw and
+level on the other. Three knobs do it, none of which ever asks which
+environment a pair came from:
 
 1. `rate_lambda=0.3` — the MCR² coding rate, which owns the alias ceiling
    (§4.4) and takes it from 0.96 to 0.81;
@@ -759,6 +769,38 @@ reached — which is the one thing coverage fixes, and is why `w4_coverage` is
 worth running. On the 60×100 encoder the correlation is a weaker −0.24, but
 every reference there sits at `r_monotone` 3, so the metric has no room to show
 a difference.
+
+### 4.8 The 20-reference `r_min` is unstable, and it flatters §1–§3
+
+Every run in §1–§4 is scored at the same 20 reference positions (`ur_seed=0`),
+so a headline could be an artefact of which points were drawn. Re-scoring the
+leaders at **100** references, and at a second reference seed, says it partly
+is:
+
+| encoder | 20 refs | 100 refs, seed 0 | 100 refs, seed 1 | `r_median` (100) |
+|---|---|---|---|---|
+| `top_f0.15_rate0.3` s42 | 19 | **16** | **15** | 28–29 |
+| `top_f0.15_rate0.3` s43 | 22 | 13 | 13 | 27.5–29 |
+| `top_f0.10_rate0.3` | 16 | 12 | 11 | 22–23 |
+| best unconstrained (§1) | 21 | **9** | 15 | 28.5–29 |
+| untreated True baseline | 3 | 2 | 2 | 3 |
+
+**The §1 benchmark of 21 falls to 9 on one draw and 15 on the other.** `r_min`
+is a minimum over references, so it can only fall as references are added — but
+falling by 12 says the 21 rested on a favourable sample, and *every* headline in
+§1–§3 rests on the same 20 points. Treat those numbers as an upper bound on a
+noisy statistic, not as measurements. `r_median` is the stable companion: it
+barely moves between 20 and 100 references for any encoder here.
+
+The constrained encoders move much less (19 → 16, 15), which is a result in its
+own right: they are more uniform across the arena, so the worst reference is
+closer to the typical one. That is also why the comparison survives the harder
+test and improves on it.
+
+Reproduce with::
+
+    python -m encoder_training.sweep_unique_radius --encoders-dir <sweeps> \
+        --pattern '<run>/encoder_final.pt' --n-refs 100 --seed {0,1}
 
 ### 4.7 Infrastructure notes
 
