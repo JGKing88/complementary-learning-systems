@@ -318,6 +318,23 @@ export VAL_DISTRACTORS="0 10"
 export WALL_PENALTY=0.3
 EOF
         ;;
+    # L5 goes UP the diversity ladder, trading updates for envs at fixed
+    # wall-clock. The reason is measured: on training envs e4L (4) and e8 (8)
+    # learn the same amount of structure, +0.21 and +0.24 excess, but on
+    # held-out envs e4L keeps 0.076 and e8 keeps 0.170. Diversity buys
+    # *transfer* of the structure, not the structure itself -- and 8 is not
+    # obviously the top of that curve. Serial calls are envs x steps, so 16
+    # envs costs twice L1 per update and gets half the updates; whether that
+    # trade is still favourable is the question.
+    L5) cat <<'EOF'
+export ENVS_PER_WORLD=16
+export BATCH_ENVS=16
+export STEPS_PER_ROLLOUT=200
+export SCHEDULE="explore:1500"
+export EVAL_EVERY=100
+export VAL_DISTRACTORS="0 10"
+EOF
+        ;;
     # L4 carries wave 1's horizon question into the cheap shape: rollouts as
     # long as the 400-step eval, so the back half of an eval rollout is not a
     # horizon the policy was never optimized at. Serial calls are envs x steps,
