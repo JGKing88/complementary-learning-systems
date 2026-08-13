@@ -232,6 +232,31 @@ WAVES: dict[str, dict] = {
         "hidden_dim": [512, 1024],
         "seed": [42, 43],
     },
+    # W6 -- follow the decay. W2 put graded_sigma=50 at r_min 14 against a
+    # baseline of 5, with the alias ceiling *unmoved* (0.955 against 0.954) and
+    # a participation ratio of 26 -- lower than the baseline's 104. So the win
+    # is the decay crossing the ceiling later, exactly the §4.2 mechanism, and
+    # it is not rank: graded_sigma=10 reached a participation ratio of 272,
+    # higher than the unconstrained regime's 202, and still scored r_min 3.
+    #
+    # Two things to establish. Where sigma turns: the bracket stopped at its own
+    # top end, and the patch is only 200 wide, so a sigma that large leaves
+    # almost no within-patch pair asking for separation and the ceiling should
+    # eventually give. And whether coverage compounds: the ref-vs-patch
+    # diagnostic put corr(distance to nearest patch, radius) at -0.47 on the
+    # 200-patch encoder, so the references holding r_min down are the ones the
+    # patches never reached, which is the one thing coverage fixes.
+    "w6_graded_wide": {
+        "arm": {
+            "s50":        dict(graded_sigma=50.0),
+            "s75":        dict(graded_sigma=75.0),
+            "s100":       dict(graded_sigma=100.0),
+            "s150":       dict(graded_sigma=150.0),
+            "s75_cov45":  dict(graded_sigma=75.0, npos_list=SIZE_MIXES["mix3_45"]),
+            "s150_cov45": dict(graded_sigma=150.0, npos_list=SIZE_MIXES["mix3_45"]),
+        },
+        "seed": [42, 43],
+    },
 }
 
 
