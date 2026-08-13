@@ -617,6 +617,29 @@ export VAL_DISTRACTORS="0 10"
 export LOAD_CKPT=/orcd/pool/003/jackking/cls_runs/agent_ckpts/navigate_ee_P5_20363067/navigate_u200.pt
 EOF
         ;;
+    # C11 = best parent x best explore shaping, the cell the grid never reached.
+    #
+    # C9/C10 varied the reward from P5 with the default WALL_PENALTY of 0.1,
+    # because they were designed before the perimeter basin was measured. W10
+    # then established that WALL_PENALTY 0.3 with NOVELTY_REWARD 0.15 -- a fresh
+    # edge cell at -0.15 rather than break-even -- is the best explore recipe in
+    # the line (0.411 at u1000, past W6's 0.388 peak and level with L2's 0.419).
+    #
+    # No composite has ever used it. C11 is C9's schedule and parent with W10's
+    # shaping, so the explore half of the composite trains under the recipe that
+    # actually works on the explore axis instead of the default.
+    C11) cat <<'EOF'
+export ENVS_PER_WORLD=8
+export BATCH_ENVS=16
+export STEPS_PER_ROLLOUT=200
+export SCHEDULE="interleave:2500,empty_frac=0->0.5,anneal=500"
+export EVAL_EVERY=100
+export VAL_DISTRACTORS="0 10"
+export WALL_PENALTY=0.3
+export NOVELTY_REWARD=0.15
+export LOAD_CKPT=/orcd/pool/003/jackking/cls_runs/agent_ckpts/navigate_ee_P5_20363067/navigate_u200.pt
+EOF
+        ;;
     # W10 is to W9 what C8 was to C7, and for the same reason.
     #
     # W9 raised WALL_PENALTY 0.3 -> 0.6 to make a fresh edge cell net-negative.
