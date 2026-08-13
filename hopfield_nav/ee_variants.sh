@@ -171,11 +171,11 @@ EOF
     # something turns it. v35 and the whole explore-min wave ran it at 0.05.
     # Identical to X2 otherwise.
     W1) cat <<'EOF'
-export ENVS_PER_WORLD=20
-export BATCH_ENVS=64
+export ENVS_PER_WORLD=8
+export BATCH_ENVS=16
 export STEPS_PER_ROLLOUT=200
-export SCHEDULE="explore:1100"
-export EVAL_EVERY=50
+export SCHEDULE="explore:3000"
+export EVAL_EVERY=100
 export VAL_DISTRACTORS="0 10"
 export PERSISTENCE_BONUS=0
 EOF
@@ -195,11 +195,11 @@ EOF
     # agent could not localize well enough to run a spiral anyway. That is no
     # longer true (§2), which is what makes this worth retesting.
     W2) cat <<'EOF'
-export ENVS_PER_WORLD=20
-export BATCH_ENVS=64
+export ENVS_PER_WORLD=8
+export BATCH_ENVS=16
 export STEPS_PER_ROLLOUT=200
-export SCHEDULE="explore:1100"
-export EVAL_EVERY=50
+export SCHEDULE="explore:3000"
+export EVAL_EVERY=100
 export VAL_DISTRACTORS="0 10"
 export WALL_PENALTY=0
 EOF
@@ -208,11 +208,11 @@ EOF
     # strategy is being suppressed by the shaping rather than not found, this
     # is the configuration with nothing in its way.
     W3) cat <<'EOF'
-export ENVS_PER_WORLD=20
-export BATCH_ENVS=64
+export ENVS_PER_WORLD=8
+export BATCH_ENVS=16
 export STEPS_PER_ROLLOUT=200
-export SCHEDULE="explore:1100"
-export EVAL_EVERY=50
+export SCHEDULE="explore:3000"
+export EVAL_EVERY=100
 export VAL_DISTRACTORS="0 10"
 export WALL_PENALTY=0
 export PERSISTENCE_BONUS=0
@@ -231,22 +231,22 @@ EOF
     # near-stationary policy off its starting cell early on. W4 keeps a little,
     # W5 removes it, and the pair brackets that.
     W4) cat <<'EOF'
-export ENVS_PER_WORLD=20
-export BATCH_ENVS=64
+export ENVS_PER_WORLD=8
+export BATCH_ENVS=16
 export STEPS_PER_ROLLOUT=200
-export SCHEDULE="explore:1100"
-export EVAL_EVERY=50
+export SCHEDULE="explore:3000"
+export EVAL_EVERY=100
 export VAL_DISTRACTORS="0 10"
 export EPSILON_EXPLORE=0.1
 export EPSILON_ANNEAL_UPDATES=200
 EOF
         ;;
     W5) cat <<'EOF'
-export ENVS_PER_WORLD=20
-export BATCH_ENVS=64
+export ENVS_PER_WORLD=8
+export BATCH_ENVS=16
 export STEPS_PER_ROLLOUT=200
-export SCHEDULE="explore:1100"
-export EVAL_EVERY=50
+export SCHEDULE="explore:3000"
+export EVAL_EVERY=100
 export VAL_DISTRACTORS="0 10"
 export EPSILON_EXPLORE=0
 EOF
