@@ -542,6 +542,31 @@ export GOAL_REWARD=20.0
 export LOAD_CKPT=/orcd/pool/003/jackking/cls_runs/agent_ckpts/navigate_ee_P2_20351854/navigate_u175.pt
 EOF
         ;;
+    # C8 is the clean version of C7, and the reason C7 is not clean.
+    #
+    # §3s says only the RATIO of arrival to a rollout of novelty matters, and
+    # C7 changes it by raising GOAL_REWARD 5 -> 20. But advantages are
+    # pool-normalized while the VALUE LOSS is not: 4x the reward is ~16x the
+    # value loss, and C7 duly runs at value_loss 100-120 against C4's ~20, on a
+    # trunk shared with the policy head. So C7 varies the ratio and the value
+    # gradient's share of the trunk at once, and if it comes out worse -- as at
+    # u100, 0.409/83.8 against C4's 0.991/65.4 -- the two cannot be separated.
+    #
+    # C8 moves the same ratio the other way: NOVELTY_REWARD 0.3 -> 0.075, so a
+    # 40-new-cell rollout earns 3 against GOAL_REWARD's unchanged 5. Identical
+    # 4x shift in the quantity §3s names, with rewards getting SMALLER, so
+    # value targets shrink instead of exploding.
+    C8) cat <<'EOF'
+export ENVS_PER_WORLD=8
+export BATCH_ENVS=16
+export STEPS_PER_ROLLOUT=200
+export SCHEDULE="interleave:2500,empty_frac=0->0.5,anneal=500"
+export EVAL_EVERY=100
+export VAL_DISTRACTORS="0 10"
+export NOVELTY_REWARD=0.075
+export LOAD_CKPT=/orcd/pool/003/jackking/cls_runs/agent_ckpts/navigate_ee_P2_20351854/navigate_u175.pt
+EOF
+        ;;
     # W8: train at the horizon the metric is measured at. Everything so far
     # trains on 200-step rollouts and is scored on 400-step ones, so a cycle
     # longer than the training rollout costs nothing during training and
