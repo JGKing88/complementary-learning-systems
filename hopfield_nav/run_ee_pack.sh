@@ -45,13 +45,15 @@ declare -a PIDS=() NAMES=()
 for V in $PACK; do
     LOG="$CLS_LOGS/ee_${V}_${SLURM_JOB_ID:-local}.out"
     echo "  $V -> $LOG"
-    # The variant's own knobs, then the launcher. `env` rather than exporting
-    # into this shell: two variants in one pack must not inherit each other's
-    # overrides, and an exported INIT_LOG_STD from the first would silently
-    # become the second's default.
-    # shellcheck disable=SC2046
-    env $(ee_env "$V") VARIANT="$V" REPO="$REPO" \
-        bash hopfield_nav/run_ee.sh > "$LOG" 2>&1 &
+    # The variant's own knobs, then the launcher, inside a subshell: two
+    # variants in one pack must not inherit each other's overrides, and an
+    # exported INIT_LOG_STD from the first would silently become the second's
+    # default. `eval` rather than `env $(...)` because two variants carry
+    # values with spaces in them, which an unquoted substitution would split.
+    (
+        eval "$(ee_env "$V")"
+        VARIANT="$V" REPO="$REPO" bash hopfield_nav/run_ee.sh
+    ) > "$LOG" 2>&1 &
     PIDS+=($!)
     NAMES+=("$V")
     # Stagger the starts: every run builds the same 12 GB encoded_Phi at
