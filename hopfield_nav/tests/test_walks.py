@@ -11,7 +11,7 @@ import numpy as np
 
 from hopfield_nav.world.walks import (
     correlated_walk, diffusive_walk, lawnmower_coverage, ring_path,
-    simulate_coverage, spiral_walk,
+    simulate_coverage, spiral_walk, wall_aware_walk,
 )
 
 SIZE, STEPS, TRIALS = 20, 400, 256
@@ -62,6 +62,25 @@ def test_a_stateful_sweep_clears_that_ceiling_without_precision():
     # Half a cell of noise per step, three times the policy's own sigma, and
     # it still clears the memoryless ceiling.
     assert sloppy > 0.60, sloppy
+
+
+def test_reacting_to_the_wall_is_worth_a_lot_and_needs_no_memory():
+    """The control that keeps `excess` honest.
+
+    A policy can beat a plain correlated walk purely by turning before it hits
+    the wall -- which the foveal cone reports directly, so it needs no memory
+    at all. If that is worth a large fraction of the observed excess, then
+    reporting excess over the plain walk alone would credit reactive behaviour
+    as though it were spatial memory, and those call for different next steps.
+    """
+    for stride, turn in ((1.15, 0.37), (1.5, 0.46)):
+        plain = correlated_walk(TRIALS, SIZE, STEPS, stride, turn,
+                                _rng()).mean()
+        aware = wall_aware_walk(TRIALS, SIZE, STEPS, stride, turn,
+                                _rng()).mean()
+        assert aware > plain + 0.05, (stride, turn, plain, aware)
+        # Still memoryless, so it must not reach the stateful regime.
+        assert aware < 0.60, (stride, turn, aware)
 
 
 def test_a_blocked_step_is_lost():
