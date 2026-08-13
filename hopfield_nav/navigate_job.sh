@@ -84,11 +84,17 @@ _bool continuous_normalize            "${CONTINUOUS_NORMALIZE:-}"
 _arg  max_action_norm                 "${MAX_ACTION_NORM:-}"
 _arg  min_action_norm                 "${MIN_ACTION_NORM:-}"
 _bool allow_offcell_store             "${ALLOW_OFFCELL_STORE:-}"
+_arg  wall_resolution                 "${WALL_RESOLUTION:-}"
+_bool egocentric_heading              "${EGOCENTRIC_HEADING:-}"
+_bool explore_ends_on_goal            "${EXPLORE_ENDS_ON_GOAL:-}"
+_bool reset_state_on_teleport         "${RESET_STATE_ON_TELEPORT:-}"
 
 # --- Agent -----------------------------------------------------------------
 _arg  hopfield_mode                   "${HOPFIELD_MODE:-}"
 _arg  hidden_size                     "${HIDDEN_SIZE:-}"
 _arg  num_rnn_layers                  "${NUM_RNN_LAYERS:-}"
+_arg  rnn_cell                        "${RNN_CELL:-}"
+_arg  rnn_nonlinearity                "${RNN_NONLINEARITY:-}"
 _arg  init_log_std                    "${INIT_LOG_STD:-}"
 _bool freeze_log_std                  "${FREEZE_LOG_STD:-}"
 _bool input_prev_reward               "${INPUT_PREV_REWARD:-}"
@@ -141,6 +147,19 @@ _arg  num_worlds                      "${NUM_WORLDS:-}"
 _arg  envs_per_world                  "${ENVS_PER_WORLD:-}"
 _arg  seed                            "${SEED:-}"
 
+# --- env generator / per-trait refresh -------------------------------------
+# All four refresh cadences require --env_generator; the legacy placement path
+# declares no domains to re-draw from and raises at startup if asked.
+_bool env_generator                   "${ENV_GENERATOR:-}"
+_arg  place_region                    "${PLACE_REGION:-}"
+_arg  goal_region                     "${GOAL_REGION:-}"
+_arg  wall_seeds                      "${WALL_SEEDS:-}"
+_arg  place_margin                    "${PLACE_MARGIN:-}"
+_arg  goal_val_frac                   "${GOAL_VAL_FRAC:-}"
+_arg  refresh_place                   "${REFRESH_PLACE:-}"
+_arg  refresh_wall                    "${REFRESH_WALL:-}"
+_arg  refresh_goal                    "${REFRESH_GOAL:-}"
+
 # --- Eval ------------------------------------------------------------------
 _arg  num_val_envs                    "${NUM_VAL_ENVS:-}"
 _arg  n_val_trials                    "${N_VAL_TRIALS:-}"
@@ -165,6 +184,19 @@ if [ -n "${LOAD_CKPT:-}" ]; then
     echo "    (config inherited from it; only the flags set above override)"
 else
     echo "    fresh init, encoder=$ENCODER"
+fi
+
+# DRY_RUN=1 prints the command and stops. The point is to check a launcher's
+# flag table without paying for a scaffold build: every mistake this catches --
+# a knob spelled differently from its flag, a flag the trainer does not declare,
+# a boolean passed as a value -- otherwise surfaces ten minutes into a job, or,
+# worse, not at all when an unknown variable expands to nothing and the trainer
+# quietly uses its own default instead of the one the launcher meant to set.
+if [ "${DRY_RUN:-0}" != "0" ]; then
+    printf 'python -u -m hopfield_nav.train_navigate'
+    printf ' %q' "${ARGS[@]}" ${EXTRA:-}
+    printf '\n'
+    exit 0
 fi
 
 # EXTRA is unquoted on purpose: it is a flag string, not one argument.

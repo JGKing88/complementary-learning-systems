@@ -816,12 +816,16 @@ def build_parser() -> argparse.ArgumentParser:
                         "action a consequence first (see --allow_store paths), "
                         "or it learns from pure noise.")
     p.add_argument("--eval_scope", type=str, default="all",
-                   choices=("all", "expl"),
+                   choices=("all", "expl", "nav_expl"),
                    help="Which evaluators an in-training eval runs. 'all' is "
                         "nav + goal-discovery + exploration. 'expl' is "
                         "exploration only, for pure-explore schedules where "
-                        "the other two are undefined -- it removes about two "
-                        "thirds of the eval cost.")
+                        "the other two are undefined. 'nav_expl' drops only "
+                        "goal-discovery: it is the sole unbatched evaluator "
+                        "(B=1 per trial), so at 10 envs x 32 trials x 3 "
+                        "distractor levels x 400 steps it costs ~10 min "
+                        "against ~50 s for the other two together -- and it "
+                        "scores the store head, which this trainer freezes.")
     p.add_argument("--eval_max_steps", type=int, default=None,
                    help="Step budget for in-training evals. Default: follow "
                         "--steps_per_rollout, which is what this did "

@@ -480,32 +480,44 @@ def do_eval(cfg, agent, eval_world: World, device, update_tag: str,
     dist = cfg.val_n_distractors_list
     nt = cfg.n_val_trials
 
-    # "expl" skips the two evaluators a pure-explore run cannot be scored on.
-    # They stay in the wandb log as empty dicts rather than as stale values, so
-    # a scope switch mid-project cannot be mistaken for a collapse in nav.
-    expl_only = getattr(cfg, "eval_scope", "all") == "expl"
+    # Which evaluators this scope asks for. A skipped one stays in the wandb log
+    # as an empty dict rather than as a stale value, so a scope switch mid-project
+    # cannot be mistaken for a collapse in nav.
+    #
+    # "nav_expl" exists because `evaluate_goal_discovery` is the only one of the
+    # three that is not batched -- it steps one trial at a time at B=1, so its
+    # cost is envs x trials x distractor-levels x max_steps *serial* model
+    # calls, two orders of magnitude more than the other two put together (at
+    # 10 x 32 x 3 x 400 that is ~10 minutes against ~50 seconds). It measures
+    # the store head, which `train_navigate` freezes and never trains, so a run
+    # scored on coverage and navigation is paying that for a constant.
+    scope = getattr(cfg, "eval_scope", "all")
+    run_nav = scope in ("all", "nav_expl")
+    run_disc = scope == "all"
 
     t0 = time.time()
-    nav = {} if expl_only else evaluate_navigation(
+    nav = evaluate_navigation(
         agent, val_envs, val_vh, val_offsets, cfg, device,
         num_trials=nt, max_steps=max_steps,
-        n_distractors_list=dist, deterministic=True)
-    disc = {} if expl_only else evaluate_goal_discovery(
+        n_distractors_list=dist, deterministic=True) if run_nav else {}
+    disc = evaluate_goal_discovery(
         agent, val_envs, val_vh, val_offsets, cfg, device,
-        num_trials=nt, max_steps=max_steps, n_distractors_list=dist)
+        num_trials=nt, max_steps=max_steps,
+        n_distractors_list=dist) if run_disc else {}
     expl = evaluate_exploration(agent, val_envs, val_vh, val_offsets, cfg, device,
                                 num_trials=nt, max_steps=max_steps,
                                 n_distractors_list=dist)
     eval_s = time.time() - t0
-    if not expl_only:
+    if run_nav:
         print(f"  [{update_tag}] nav={nav}")
+    if run_disc:
         print(f"  [{update_tag}] disc={disc}")
     print(f"  [{update_tag}] expl={expl}")
     # Sizing a run needs the eval's own cost, not just the per-update total it
     # is folded into -- see docs/EXPERIMENTS_SCHEDULE_REPRO.md on how badly a
     # run can be mis-sized when that number has to be inferred after the fact.
-    print(f"  [{update_tag}] eval_seconds={eval_s:.1f} scope="
-          f"{'expl' if expl_only else 'all'}", flush=True)
+    print(f"  [{update_tag}] eval_seconds={eval_s:.1f} scope={scope}",
+          flush=True)
     if use_wandb:
         import wandb
         log = {"eval/eval_seconds": eval_s}

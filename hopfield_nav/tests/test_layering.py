@@ -94,6 +94,11 @@ LAYERS: dict[str, int] = {
     "hopfield_nav.train_store": 7,
     "hopfield_nav.train_rnn": 7,
     "hopfield_nav.eval_all": 7,
+    # Offline probes of the inputs a run depends on. Entry points like the
+    # trainers -- they wire world + rollout + evaluation together and are only
+    # ever run with `python -m`, never imported -- so they take the CLI layer
+    # and rule 5 keeps them that way.
+    "hopfield_nav.diagnostics": 7,
 
     "analysis": 8,                     # figure + experiment pipelines
 }
