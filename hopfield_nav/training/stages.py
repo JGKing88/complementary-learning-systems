@@ -104,6 +104,9 @@ class RolloutSpec:
     goals_active: bool
     epsilon: float
     goal_in_memory_init: bool
+    # Reaching the goal ends this trajectory rather than teleporting it to a
+    # fresh start. Per-row: the rollout keeps running for the rows still going.
+    ends_on_goal: bool = False
 
 
 # ---------------------------------------------------------------------------

@@ -601,14 +601,51 @@ def generate_split(
     field, env_cfg, domains: TraitDomains, n_train: int, n_val: int, seed: int,
     *, refresh_goal: bool = False, margin: int | None = None,
     val_frac: float = 0.2, diagnostics: bool = True,
+    inherited: dict | None = None,
 ) -> GeneratedSplit:
     """Draw the train and base-validation env sets together.
 
     Together, not one after the other: sampling validation without knowing the
     train set is exactly what produces today's overlap (§1.3 -- 10/10 val envs
     overlapped a train footprint at the dataclass defaults).
+
+    ``inherited`` is an ancestor run's ``used`` union, for a run continuing from
+    ``--load_checkpoint``. Those envs are as much "what training saw" as the ones
+    drawn here, so they are excluded on all three separable traits and folded
+    into this split's own union. Without it a two-stage curriculum's second
+    stage places wherever it likes -- measured at ``min_place_gap_vs_parent =
+    -2``, i.e. overlapping its parent's train envs -- and a later ``held_out``
+    validation set is disjoint from stage two only, silently reusing stage one's
+    wall seeds and goal cells.
+
+    The three traits are inherited on purpose-built terms rather than uniformly:
+
+        place   this run's envs are drawn *clear* of the ancestor's, by the
+                margin. Not about the eval at all -- two overlapping footprints
+                index the same ``encoded_Phi`` cells, so they are literally the
+                same territory however the split is later read.
+        wall    excluded from this run's draw too. Free, at a 10M-wide default
+                range, and it makes "stage two trains somewhere new" true rather
+                than merely likely.
+        goal    **not** excluded from this run's draw -- only from
+                ``goal_cells_val``. The universe is ``size**2`` cells, so forcing
+                disjointness would starve an 8x8 arena after a couple of stages
+                for no gain: a repeated goal cell at a new offset behind new
+                walls is a new env, and holding the cell out of *validation* is
+                the whole of what the evaluation needs.
+
+    ``None`` (the default) is an exact no-op: every branch below reduces to what
+    it did before, including the RNG each trait consumes.
     """
     size = _single_size(domains)
+    inh = inherited or {}
+    # Boxes, not offsets: what an env forbids depends on its own extent as well
+    # as the candidate's (`_forbidden_span` is asymmetric in the two).
+    inh_boxes = sorted(inh.get("place", ()))
+    inh_wall = frozenset(inh.get("wall", ()))
+    # A parent at another size may have used cells this arena does not have.
+    inh_goal = frozenset(c for c in inh.get("goal", ())
+                         if c[0] < size and c[1] < size)
     Npos, period = field.Npos, int(np.prod(field.lambdas))
 
     if margin is None:
@@ -653,17 +690,29 @@ def generate_split(
         idx = goal_rng.choice(len(ordered), size=n_train, replace=len(ordered) < n_train)
         cells_train = frozenset(ordered[i] for i in idx)
         cells_val = frozenset(region) - cells_train
+    # An ancestor's goal cells belong on the train side however the partition
+    # above fell out: `goal_cells_val` is what a later `held_out` draws from, and
+    # a cell some earlier stage put a goal on is not held out from the model.
+    # Applied to both branches, and a no-op when `inh_goal` is empty -- note
+    # `region - cells_val` reproduces each branch's own `cells_train` exactly.
+    if inh_goal:
+        cells_val = cells_val - inh_goal
+        cells_train = frozenset(region) - cells_val
     if not cells_val:
         raise ValueError(
             "no goal cells left for validation: training claims every cell in "
-            f"{domains.goal!r} at size {size}. Shrink n_train, widen the goal "
+            f"{domains.goal!r} at size {size}"
+            + (f" (including {len(inh_goal)} inherited from a parent run)"
+               if inh_goal else "")
+            + ". Shrink n_train, widen the goal "
             "region, or enable refresh_goal (which caps the train set at "
             f"{1 - val_frac:.0%} of the region).")
 
     # --- traits -------------------------------------------------------------
     wall_rng = dom.trait_rng(seed, "wall", role="split")
-    train_seeds = domains.wall.sample(wall_rng, n_train)
-    val_seeds = domains.wall.sample(wall_rng, n_val, exclude=frozenset(train_seeds))
+    train_seeds = domains.wall.sample(wall_rng, n_train, exclude=inh_wall)
+    val_seeds = domains.wall.sample(
+        wall_rng, n_val, exclude=frozenset(train_seeds) | inh_wall)
 
     place_rng = dom.trait_rng(seed, "place", role="split")
     # One draw for train *and* val, split afterwards. Placing them in two calls
@@ -674,9 +723,35 @@ def generate_split(
     # Drawing all of them against one another makes train<->val separation a
     # property of the draw rather than something checked afterwards, and makes
     # the capacity preflight exactly the right condition.
-    all_off = sample_places(domains.place, place_rng, n_train + n_val,
-                            size=size, Npos=Npos, period=period,
-                            self_margin=margin)
+    #
+    # `use_mask` only when there is something to exclude: it resolves the legal
+    # set once instead of probing candidate-by-candidate, which is the right
+    # trade against an ancestor union (a refreshing parent can contribute tens of
+    # thousands of boxes) and the wrong one against nothing at all -- and it is a
+    # different draw, so gating on `inh_boxes` keeps a parentless run
+    # bit-identical to every run before this.
+    try:
+        all_off = sample_places(domains.place, place_rng, n_train + n_val,
+                                size=size, Npos=Npos, period=period,
+                                self_margin=margin, exclude=inh_boxes,
+                                margin=margin if inh_boxes else 0,
+                                use_mask=bool(inh_boxes))
+    except RuntimeError as exc:
+        if not inh_boxes:
+            raise
+        # `sample_places` cannot know where its exclusion set came from, and
+        # "the N already in use" reads as this run's own envs. Naming the parent
+        # is the difference between a knob to turn and a mystery: the scaffold
+        # held these counts perfectly well one stage ago.
+        raise RuntimeError(
+            f"{exc}\n"
+            f"  **These {len(inh_boxes)} excluded envs are inherited from the "
+            f"parent run**, not drawn here -- a continuation places clear of "
+            f"everything its ancestors trained on, so the same counts that fit "
+            f"at stage one need more room at stage two. Raise Npos, lower "
+            f"--place_margin, ask for fewer envs in this stage, or drop "
+            f"--load_checkpoint if the two stages may share scaffold."
+        ) from None
     train_off, val_off = all_off[:n_train], all_off[n_train:]
 
     train_cells, val_cells = sorted(cells_train), sorted(cells_val)
@@ -698,6 +773,11 @@ def generate_split(
         margin=int(margin), period=period, Npos=Npos,
     )
     split.record_used(train)
+    # The union this run's `world.json` records, and therefore what a later
+    # `make_val_set` excludes against. Absorbed after `record_used` so the
+    # ancestor's values are in `used` but never in `train` -- this run did not
+    # train on them, an earlier one did.
+    split.absorb_used(inh)
 
     if diagnostics:
         split.diagnostics = split_diagnostics(field, env_cfg, split)
@@ -742,17 +822,26 @@ def split_diagnostics(field, env_cfg, split: GeneratedSplit) -> dict:
 
 
 def verify_split(split: GeneratedSplit, env_cfg) -> None:
-    """Assert the four separation properties. Cheap, and the point of all this."""
+    """Assert the four separation properties. Cheap, and the point of all this.
+
+    Checked against ``used`` rather than ``train``, which is a strict
+    generalization: ``record_used(train)`` always runs first, so the two agree
+    exactly for a run with no ancestor. For a run continuing from a checkpoint,
+    ``used`` also holds the parent's envs -- and separation from *those* is the
+    whole claim a two-stage curriculum's validation set is making.
+    """
     size = split.train[0].size if split.train else 0
     res = int(getattr(env_cfg, "wall_resolution", 1))
     for v in split.base_val:
-        for t in split.train:
-            gap = toroidal_gap(v.offset, v.size, t.offset, t.size, split.period)
+        for o, s in split.used_boxes():
+            gap = toroidal_gap(v.offset, v.size, o, s, split.period)
             if gap < split.margin:
                 raise AssertionError(
-                    f"val env at {v.offset} is {gap} cells from train env at "
-                    f"{t.offset}, below margin {split.margin}")
-    train_seeds = {t.wall_seed for t in split.train}
+                    f"val env at {v.offset} is {gap} cells from an env "
+                    f"training used at {o} (size {s}), below margin "
+                    f"{split.margin}")
+    train_seeds = set(split.used.get("wall", ())) or {t.wall_seed
+                                                      for t in split.train}
     # The collision check needs both codes in one space; seed disjointness above
     # does not, and is the whole of what wall novelty means across sizes (§6.3).
     same_size = len({s.size for s in split.train}
@@ -764,7 +853,7 @@ def verify_split(split: GeneratedSplit, env_cfg) -> None:
                 wall_code_for(v.wall_seed, size, res),
                 wall_code_for(next(iter(train_seeds)), size, res)):
             raise AssertionError("val wall code collides with a train wall code")
-    train_goals = {t.goal for t in split.train}
+    train_goals = set(split.used.get("goal", ())) or {t.goal for t in split.train}
     for v in split.base_val:
         if v.goal in train_goals:
             raise AssertionError(

@@ -451,6 +451,119 @@ def test_train_writes_a_world_on_both_paths(sandbox, tiny_encoder):
 
 
 @pytest.mark.slow
+def test_train_resumes_a_navigate_checkpoint_with_no_flags_restated(
+        sandbox, generator_checkpoint):
+    """Cross-trainer resume, which did not work at all until 2026-08-12.
+
+    `train.py` built its config from argv only, so every architecture flag had
+    to be restated by hand -- and 8 of 17 agent fields differ between a
+    `train_navigate` checkpoint and `train.py`'s defaults, `movement_mode` among
+    them, which is a different policy head rather than a width mismatch. The
+    invocation below is the one that used to die at `load_state_dict`.
+    """
+    import json
+
+    root, env = sandbox
+    parent_dir, ckpt = generator_checkpoint
+    out = root / "train_resume_navigate"
+    # No --encoder_checkpoint either, as of 2026-08-12: it was `required=True`
+    # while `--load_checkpoint` already inherits one, so this test's own name was
+    # a slight lie. `tiny_encoder_path` stays live in the train_store test below,
+    # which covers the other branch -- typed, same value, no warning.
+    _run(["hopfield_nav.train",
+          "--load_checkpoint", str(ckpt),
+          "--n_updates", "1", "--eval_every", "100", "--save_every", "1",
+          "--device", "cpu", "--seed", "5", "--save_dir", str(out)], env)
+
+    ck = torch.load(out / "hopfield_nav_update1.pt", map_location="cpu",
+                    weights_only=False)
+    parent = torch.load(ckpt, map_location="cpu", weights_only=False)["config"]
+    child = ck["config"]
+
+    # Inherited, not defaulted. These are the fields whose train.py default
+    # differs from what train_navigate wrote.
+    from hopfield_nav.config import TrainConfig
+    d = TrainConfig()
+    for blk, field in (("agent", "movement_mode"), ("env", "movement_mode"),
+                       ("agent", "input_sensory"), ("agent", "hopfield_mode")):
+        assert child[blk][field] == parent[blk][field], (
+            f"{blk}.{field} was not inherited from the parent")
+    assert child["agent"]["movement_mode"] != d.agent.movement_mode, (
+        "the parent and train.py's default agree here, so this cannot show "
+        "inheritance happening")
+    # The encoder among them, since the flag stopped being mandatory. Nothing
+    # above would notice: `load_encoder(None)` fails, but only after the child
+    # has already been built from an inherited config that looks fine.
+    assert child["encoder_checkpoint"] == parent["encoder_checkpoint"], (
+        "the encoder was not inherited; this run trained against a different "
+        "scaffold embedding than the weights it loaded")
+
+    # Both worlds recorded, which is now every trainer's behaviour and not
+    # train_store's privilege.
+    assert (out / "world.json").exists()
+    assert (out / "world_parent.json").exists()
+    block = json.loads((out / "world.json").read_text())
+    assert "parent" in block["split"]["diagnostics"]
+    assert ck["world_spec"]["spec_hash"] == block["spec_hash"]
+
+    # The child inherited its parent's world, which is what makes a later
+    # `--split held_out` mean "unseen by either stage" rather than "unseen by
+    # the last one". Two halves, and the CLI wiring is the only place both are
+    # visible at once: placed clear of the parent, and recording it.
+    parent_world = json.loads((out / "world_parent.json").read_text())
+    overlap = block["split"]["diagnostics"]["parent"]["overlap"]
+    margin = block["split"]["margin"]
+    assert overlap["min_place_gap_vs_parent"] >= margin, (
+        f"child train envs came within {overlap['min_place_gap_vs_parent']} of "
+        f"the parent's, below margin {margin} -- the inherited exclusion did "
+        f"not reach the placement")
+    assert overlap["n_wall_seeds_shared"] == 0
+    for trait in ("place", "wall", "goal", "size"):
+        p_used = {tuple(v) if isinstance(v, list) else v
+                  for v in parent_world["split"]["used"][trait]}
+        c_used = {tuple(v) if isinstance(v, list) else v
+                  for v in block["split"]["used"][trait]}
+        assert p_used <= c_used, (
+            f"world.json dropped the parent's used {trait}; a val set minted "
+            f"from this record would treat stage one's envs as unseen")
+
+
+@pytest.mark.slow
+@pytest.mark.parametrize("module,extra", [
+    ("hopfield_nav.train", []),
+    ("hopfield_nav.train_navigate", ["--schedule", "explore:1"]),
+])
+def test_a_fresh_run_with_no_encoder_fails_at_the_command_line(
+        sandbox, module, extra):
+    """Making `--encoder_checkpoint` optional must not make it forgettable.
+
+    Inheritance on the resume path works through `overlay_typed` whether or not
+    anything checks -- an untyped flag simply leaves the parent's value standing
+    -- so `settle_encoder`'s call site is load-bearing *only* here and on the
+    swap warning. Dropping it from `train.py` passed every other test in this
+    suite, which is why this one exists.
+
+    Without it a fresh run reaches `load_encoder(None)` after the config is
+    assembled, which on a real world means the 12 GB scaffold has already begun.
+    """
+    _root, env = sandbox
+    proc = subprocess.run(
+        [sys.executable, "-m", module, "--device", "cpu", *extra],
+        cwd=REPO_ROOT, env=env, capture_output=True, text=True, timeout=120)
+    assert proc.returncode != 0, "a run with no encoder at all was accepted"
+    out = proc.stdout + proc.stderr
+    assert "--encoder_checkpoint is required" in out, out[-2000:]
+    assert "--load_checkpoint" in out, (
+        "the error does not mention the flag that makes it optional")
+
+
+def tiny_encoder_path(run_dir):
+    """The encoder a fixture run was trained against, read back from its cfg."""
+    import json
+    return json.loads((run_dir / "run.json").read_text())["encoder"]["path"]
+
+
+@pytest.mark.slow
 def test_train_survives_its_own_eval_logging(sandbox, tiny_encoder):
     """The wandb path, which nothing drove -- so nothing caught it going dead.
 
@@ -509,7 +622,9 @@ def test_train_store_records_both_its_world_and_its_parents(
     out = root / "store_both_worlds"
     _run(["hopfield_nav.train_store",
           "--load_checkpoint", str(ckpt),
-          "--encoder_checkpoint", str(tiny_encoder),
+          # The parent's own encoder, read back from its manifest: the fixture's
+          # scaffold is lambdas 3 4 5, and `tiny_encoder` is built for 3 4.
+          "--encoder_checkpoint", str(tiny_encoder_path(parent_dir)),
           "--phase_b_updates", "2", "--steps_per_rollout", "8",
           "--device", "cpu", "--eval_every", "1000", "--ckpt_every", "2",
           "--seed", "7", "--save_dir", str(out)], env)
@@ -629,7 +744,28 @@ def test_eval_all_output_keeps_its_shape_for_a_single_split(sandbox,
 
 
 @pytest.fixture(scope="module")
-def generator_checkpoint(sandbox, tiny_encoder):
+def roomy_encoder(sandbox):
+    """lambdas 3 4 5 -> Npos = 60, against `tiny_encoder`'s 3 4 -> 12.
+
+    Anything a *continuation* is built on needs the larger scaffold. Since
+    2026-08-12 a run resuming from `--load_checkpoint` places clear of every env
+    its parent trained on, and on a 12x12 torus two size-3 parent envs at margin
+    1 leave three mutually-clear slots where the child wants four -- so the
+    child fails to place, correctly and unhelpfully. The world has to be big
+    enough to hold two stages before it can test two stages.
+    """
+    root, env = sandbox
+    out = root / "roomy_encoder.pt"
+    _run(["encoder_training.save_untrained_encoder",
+          "--encoder-type", "mlp", "--out-dim", "8", "--hidden-dim", "32",
+          "--num-hidden-layers", "2", "--gain", "5.0",
+          "--lambdas", "3", "4", "5", "--out", str(out)], env)
+    assert out.exists()
+    return out
+
+
+@pytest.fixture(scope="module")
+def generator_checkpoint(sandbox, roomy_encoder):
     """A checkpoint with a `world.json`, so a split can actually be minted.
 
     `navigate_checkpoint` runs without `--env_generator` on purpose -- most of
@@ -640,8 +776,8 @@ def generator_checkpoint(sandbox, tiny_encoder):
     save_dir = root / "generator_ckpt"
     if not sorted(save_dir.glob("*.pt")):
         _run(["hopfield_nav.train_navigate",
-              "--encoder_checkpoint", str(tiny_encoder),
-              "--lambdas", "3", "4", "--Np", "40",
+              "--encoder_checkpoint", str(roomy_encoder),
+              "--lambdas", "3", "4", "5", "--Np", "40",
               "--size", "3", "--observation_size", "16",
               "--batch_envs", "2", "--steps_per_rollout", "8",
               "--schedule", "interleave:2", "--envs_per_world", "2",

@@ -43,12 +43,14 @@ class ExploreRegime:
 
     def __init__(self, cfg: TrainConfig, embed_dim: int,
                  device: torch.device, dist_rng: np.random.RandomState, *,
-                 goals_off: bool = False, use_distractors: bool = False):
+                 goals_off: bool = False, use_distractors: bool = False,
+                 ends_on_goal: bool = True):
         self.cfg = cfg
         self.embed_dim = embed_dim
         self.device = device
         self.dist_rng = dist_rng
         self.goals_off = goals_off
+        self.ends_on_goal = ends_on_goal
         # See ExploitRegime for why this is a per-run decision, not per-update.
         self.use_distractors = use_distractors
 
@@ -85,6 +87,10 @@ class ExploreRegime:
             goals_active=not self.goals_off,
             epsilon=knobs.eps,
             goal_in_memory_init=False,
+            # A found goal ends the episode here rather than teleporting the
+            # agent onward. Vacuous under `goals_off`, where there is no goal
+            # event to end on.
+            ends_on_goal=(not self.goals_off) and self.ends_on_goal,
         )
 
 

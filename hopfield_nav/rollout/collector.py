@@ -61,6 +61,7 @@ class RolloutCollector:
         aux_scale: float = 1.0,
         epsilon_now: float = 0.0,
         goal_in_memory_init: bool = False,
+        ends_on_goal: bool = False,
     ) -> RolloutBatch:
         """Collect one rollout of T steps across B parallel episodes in one env.
 
@@ -140,7 +141,24 @@ class RolloutCollector:
         # inherited from whichever env class was constructed. When goals_active
         # is False the env reports no at-goal rows at all, so the contract has
         # nothing to act on and behavior is unchanged.
-        goal_contract = episode.contract_for("training_rollout")
+        goal_contract = episode.contract_for(
+            "training_rollout",
+            reset_state=cfg.env.reset_state_on_teleport)
+        if ends_on_goal:
+            # Reaching the goal ends the trajectory, so there is nothing to
+            # teleport to and no next segment whose state would need clearing.
+            # Stating it here keeps the contract the single description of what
+            # an at-goal step does.
+            goal_contract = episode.with_overrides(
+                goal_contract, teleport=False, reset_state=False)
+
+        # Per-row episode end. A row that reaches the goal is frozen for the
+        # rest of the rollout: not stepped, not teleported, and masked out of
+        # every loss. Per row rather than per rollout because B trajectories
+        # share one env and one codebook -- they finish at different steps, and
+        # cutting the whole rollout at the first arrival would throw away the
+        # others' remaining experience.
+        done = np.zeros(B, dtype=bool)
 
         # Determine input dimensions for signal
         signal_dim = channels.signal_width(cfg.agent)
@@ -176,6 +194,10 @@ class RolloutCollector:
         # exploration, not policy gradient signal, and including them blows
         # up the importance ratio under narrow / unfrozen std.
         all_policy_action_mask = torch.ones(B, T, device=self.device)
+        # 1 while row b's episode was still running. Only populated under
+        # `ends_on_goal`; left None otherwise so PPO keeps its old reduction
+        # rather than multiplying by a mask of ones.
+        all_alive_mask = torch.ones(B, T, device=self.device)
 
         # Novelty bonus: track per-rollout visited cells (B, size, size) bool.
         # +novelty_reward on first visit during the explore phase; revisits get 0.
@@ -505,8 +527,32 @@ class RolloutCollector:
                 else:
                     actions = result["move_action"].cpu().numpy()
 
-                rewards, goal_reached, _ = vec.step_batch(
-                    actions, contract=goal_contract)
+                # Recorded before `done` is updated, so the at-goal step
+                # itself is alive: it is the terminal transition and carries
+                # the goal reward the agent has to learn from.
+                all_alive_mask[:, t] = torch.from_numpy(
+                    (~done).astype(np.float32)).to(self.device)
+
+                if ends_on_goal and done.any():
+                    # Frozen rows are not stepped at all -- no move, no reward,
+                    # no teleport. Stepping them and masking afterwards would
+                    # still advance the env, and the next rollout's novelty and
+                    # position would silently depend on it.
+                    live = np.where(~done)[0]
+                    rewards = np.zeros(B, dtype=np.float32)
+                    goal_reached = np.zeros(B, dtype=bool)
+                    if len(live) > 0:
+                        r_live, g_live, _ = vec.step_batch(
+                            actions[live], indices=live, contract=goal_contract)
+                        rewards[live] = r_live
+                        goal_reached[live] = g_live
+                else:
+                    rewards, goal_reached, _ = vec.step_batch(
+                        actions, contract=goal_contract)
+
+                if ends_on_goal:
+                    # After this step, whoever was at the goal is finished.
+                    done = done | goal_reached
 
                 # Store cost: metabolic penalty on the agent's own store action.
                 if cfg.hopfield.store_cost > 0 and in_explore:
@@ -605,19 +651,30 @@ class RolloutCollector:
                 else:
                     prev_action_t = result["move_action"].float()
 
-                # Reset state for teleported episodes
+                # The teleport itself always invalidates the cached
+                # Gram-Schmidt basis -- that is about the agent's *position*
+                # being stale, not about its recurrence, so it happens whatever
+                # C5 says.
                 if goal_reached.any():
-                    # Cached Gram-Schmidt basis is stale at the new (teleported)
-                    # position; force-recompute next step for these envs.
                     invalidated_envs |= goal_reached
-                    reached_idx = torch.from_numpy(
-                        np.where(goal_reached)[0]).to(self.device)
+
+                # Zeroing the recurrent state is C5, and it is the contract's
+                # call, not this loop's. Deriving the mask here from
+                # `goal_reached` was a second copy of the rule that happened to
+                # agree with `TRAINING` -- and would have silently ignored
+                # --reset_state_on_teleport.
+                reset = episode.reset_rows(goal_reached, goal_contract)
+                if reset.any():
+                    reset_idx = torch.from_numpy(np.where(reset)[0]).to(
+                        self.device)
                     if h_rnn is not None:
-                        h_rnn[:, reached_idx, :] = 0.0
-                    # Enrichment buffers also reset: the post-teleport agent
-                    # has no valid "previous step" in its new episode segment.
-                    prev_reward_t[reached_idx] = 0.0
-                    prev_action_t[reached_idx] = 0.0
+                        h_rnn[:, reset_idx, :] = 0.0
+                    # Enrichment buffers go with it: a post-teleport agent whose
+                    # hidden state was cleared has no valid "previous step"
+                    # either. Carrying one while the recurrence restarts would
+                    # be a state neither regime produces.
+                    prev_reward_t[reset_idx] = 0.0
+                    prev_action_t[reset_idx] = 0.0
 
             # Bootstrap value at truncation
             pos_final = vec.positions()
@@ -671,6 +728,14 @@ class RolloutCollector:
             ).unsqueeze(1)
             _, _, bootstrap_val, _ = agent(final_input, h_rnn)
             bootstrap_value = bootstrap_val.squeeze(1)
+            if ends_on_goal and done.any():
+                # A row that already finished has no future to bootstrap: its
+                # episode ended at the goal, so the return past that point is
+                # zero, not V(wherever it happens to be frozen). `compute_gae`
+                # also cuts the tail via `alive`; zeroing here means the two
+                # cannot disagree about what a finished row is worth.
+                bootstrap_value = bootstrap_value * torch.from_numpy(
+                    (~done).astype(np.float32)).to(self.device)
 
         return RolloutBatch(
             obs=all_obs,
@@ -684,6 +749,7 @@ class RolloutCollector:
             goal_reached=all_goal_reached,
             explore_mask=all_explore_mask,
             policy_action_mask=all_policy_action_mask,
+            alive_mask=all_alive_mask if ends_on_goal else None,
             trust_hop_mask=trust_hop_mask if collect_teacher else None,
             teacher_move_action=teacher_move if collect_teacher else None,
             teacher_store_action=teacher_store if collect_teacher else None,

@@ -139,6 +139,23 @@ class GeneratedSplit:
         self.used.setdefault("goal", set()).update(s.goal for s in specs)
         self.used.setdefault("size", set()).update(s.size for s in specs)
 
+    def absorb_used(self, other: dict) -> None:
+        """Fold another run's ``used`` union into this one.
+
+        For a run continuing from ``--load_checkpoint``: the parent's envs are
+        as much "what training saw" as this run's own, so a later ``held_out``
+        validation set has to be disjoint from both. Recording the union *here*
+        rather than teaching every evaluator to walk the checkpoint chain means
+        ``world.json`` answers the question on its own -- and transitively, since
+        the parent's file already absorbed *its* parent's.
+
+        Only the four trait unions merge. ``train``, ``base_val`` and the goal
+        cell partition stay this run's own: they say what this run trained and
+        evaluated on, which is a different question from what any run ever used.
+        """
+        for trait in ("place", "wall", "goal", "size"):
+            self.used.setdefault(trait, set()).update(other.get(trait, ()))
+
     def used_boxes(self) -> list[tuple[tuple[int, int], int]]:
         """Every ``(offset, size)`` training ever placed, sorted.
 
