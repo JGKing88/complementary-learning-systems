@@ -875,12 +875,35 @@ has before anything is tuned to fix it.
   `chase_q ≈ 0` in both: neither policy chases the distractor recall. The
   explore half of the disambiguation is not a problem.
 
+- **u50, and σ is confirmed as the dominant lever.** At a matched u50:
+  `w1_sig` (σ=0.30, ε=0.1) **0.0839** against `w1_eps01` (σ=0.165, ε=0.1)
+  0.0468 and `w1_base` (σ=0.165, ε=0.4) 0.0398. **2.1× the baseline and 1.8×
+  the ε change alone**, from one knob, exactly as the magnitude analysis
+  predicts: ε is masked out of the movement surrogate, so σ is the only
+  channel through which the policy learns its own step size.
+
+  Acted on: **`w1_c20` cancelled at u130 to free a slot for `w1_sig2` (σ=0.50).**
+  The ladder asks "do 20 envs match 80?" *on the ε=0.4, σ=0.165 config that
+  `w1_sig` has now superseded*, and a cost saving measured on a recipe about to
+  be abandoned answers nothing — the ladder gets re-run on the winning recipe.
+  Its partial curve (0.0723 at u100) is kept in the table as a data point, not
+  as an answer to Q1. **Q1 is therefore deferred, not answered, by wave 1.**
+
 - **THE BINDING CONSTRAINT AT u75 IS STEP MAGNITUDE, NOT STRATEGY.** Both
   policies are at |a| ≈ 0.18–0.25 against the coverage optimum of 1.0 (§3.1).
   At |a| = m < 1 the agent needs 1/m steps to leave a cell, so `cells_per_step`
-  is capped at roughly **m** no matter how good the trajectory is — 0.18 and
-  0.25 here — and the observed 0.084 / 0.133 are about half of even that. **No
-  amount of shaping or schedule can beat this cap; only a larger |a| can.**
+  is capped at roughly **m** no matter how good the trajectory is. Simulated
+  exactly (§3.1, magnitude sweep): a perfect billiard gets `cells_per_step` of
+  0.179 / 0.284 / 0.507 / 0.790 at |a| = 0.15 / 0.25 / 0.5 / 1.0. **No amount
+  of shaping or schedule can beat this cap; only a larger |a| can.**
+
+  `behavior_probe` now reports **`strategy_efficiency`** = observed
+  `cells_per_step` ÷ the billiard reference *at the same magnitude*, which
+  splits the two failures apart. At u75: `w1_base` 0.084 against a 0.21 ceiling
+  = **40%**, `w1_eps01` 0.133 against 0.285 = **47%**. So magnitude explains
+  most of the shortfall and there is a further ~2× path-quality gap on top.
+  Both must close to reach the 0.352 target: at 47% efficiency and |a| = 1.0 a
+  policy would land at coverage 0.185, not 0.35.
 
   This promotes `INIT_LOG_STD` from "exploration temperature" to *the* knob:
   ε is masked out of the movement surrogate, so σ is the only channel through
