@@ -1263,7 +1263,35 @@ untrained far field. That reframes the remaining steps:
 * it means the radius fraction has to be swept *upward*, not narrowly around
   0.15 as §5.4 planned, because decay50 now needs raising rather than holding.
 
-`w19_lowcov_loss` is rewritten accordingly: radius ∈ {0.10, 0.25, 0.40} and
-rate ∈ {1, 3, 10} as two separate axes rather than the planned cross, since
-§4.5d measured the two factors as composing, plus one `fwhm_ratio=0.5` arm.
-14 runs, which fits the 16-GPU cap in a single batch.
+### 5.6d Which factor to spend the runs on — the law says the ceiling, by a lot
+
+Both factors fell, but they are not equally worth chasing. `r_min = res90 ·
+sqrt(ln(1/C) / ln(1/0.9))` depends on the ceiling through `sqrt(ln(1/C))`,
+which is brutally sensitive as `C → 1` and nearly flat away from it. From the
+measured 10% cell (res90 14.5, C 0.985, `r_min` 5.5), moving one factor at a
+time:
+
+| fix the ceiling, res90 untouched | | fix the decay, C untouched | |
+|---|---|---|---|
+| C = 0.95 | `r_min` 10.1 | res90 = 25 (decay50 64) | `r_min` 9.5 |
+| C = 0.90 | `r_min` 14.5 | res90 = 40 (decay50 103) | `r_min` 15.1 |
+| C = 0.80 | `r_min` 21.1 | res90 = 50 (decay50 129) | `r_min` 18.9 |
+| C = 0.671 (§4's) | **`r_min` 28.2** | — | — |
+
+**The ceiling alone can recover the entire §4 result at 10% coverage**, with the
+decay left exactly where it is. The decay cannot get halfway there even at
+values no run in this campaign has ever produced — the best decay50 ever
+measured is 42, and the table above needs 103 to match what C = 0.90 gives for
+free. So the honest reading of §5.6c is not "both factors fell, fix both"; it is
+**the ceiling is the whole game at low coverage**, and the decay is a rounding
+error by comparison.
+
+`w19_lowcov_loss` is allocated that way: six arms on the spread term (`rate` 1,
+3, 10; `uniformity` 1, 3; and `unif1+rate0.3`), two on the radius fraction
+(0.25, 0.40), one on `fwhm_ratio`. 18 runs.
+
+Note this puts **uniformity back in a regime where §4 measured it winning.**
+§4.4 found uniformity beating the coding rate on the ceiling at a *narrow*
+radius (0.863 against 0.919) and losing at the wide one that eventually won —
+so the final config used `rate`. Low coverage is ceiling-limited, which is the
+half of that trade where uniformity was ahead.

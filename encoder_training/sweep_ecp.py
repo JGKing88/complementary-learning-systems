@@ -541,38 +541,53 @@ WAVES: dict[str, dict] = {
     # 42 -> 23-37 when the coverage sweep above 23% had left it flat. So both
     # need re-tuning, and the bracket has to widen upward on both.
     #
-    # Swept as two separate axes rather than the 4x3 cross, because §4.5d
-    # measured the factors as composing: the radius fraction moves res90 and
-    # the spread term moves the ceiling, and the joint cell was predicted by the
-    # product. 14 runs fit the 16-GPU cap in one batch; the cross would not.
+    # Swept as separate axes rather than a cross, because §4.5d measured the
+    # factors as composing: the radius fraction moves res90, the spread term
+    # moves the ceiling, and the joint cell was predicted by the product.
     #
-    #   radius  0.10 -> 0.40. §4.5e peaked at 0.15 at 22.9% coverage and §4.5b
-    #           found the absolute radius peaking at 20 and failing by 40, so
-    #           0.40 (= 80 cells on a 200 patch) is deliberately past where the
-    #           campaign expects it to break -- decay50 has fallen and this is
-    #           the knob that raises it.
-    #   rate    up to 10. With cross-env pairs excluded, a far-apart pair is
-    #           separated by the within-env repel if it shares a patch and by
-    #           the env-blind spread term if not. Going 50.8% -> 10% removes
-    #           most of what the first can reach, so the second is carrying far
-    #           more of the far field than when 0.3 won.
+    # THE RUNS ARE ALLOCATED BY LEVERAGE, WHICH IS NOT EVEN. The ceiling enters
+    # the law as sqrt(ln(1/C)), which is brutally sensitive as C approaches 1.
+    # From the measured 10% cell (res90 14.5, C 0.985, r_min 5.5):
+    #
+    #     fix the ceiling alone, res90 untouched     fix the decay alone, C untouched
+    #       C 0.95 -> r_min 10.1                       res90 25 -> r_min  9.5
+    #       C 0.90 -> r_min 14.5                       res90 40 -> r_min 15.1
+    #       C 0.80 -> r_min 21.1                       res90 50 -> r_min 18.9
+    #       C 0.671 (§4's) -> r_min 28.2               (res90 50 means decay50 129)
+    #
+    # The ceiling alone can recover the entire §4 result. The decay cannot get
+    # halfway there even at values no run has ever produced. So the spread term
+    # gets six arms and the radius two.
+    #
+    #   rate 1/3/10  with cross-env pairs excluded, a far-apart pair is
+    #                separated by the within-env repel if it shares a patch and
+    #                by the env-blind spread term if not. 50.8% -> 10% removes
+    #                most of what the first can reach.
+    #   unif 1/3     the user's hypothesis, and §4.4 measured it beating rate on
+    #                the ceiling at a *narrow* radius (0.863 vs 0.919) while
+    #                losing at the wide one. This is a ceiling-limited regime
+    #                now, which is the half of that trade where it won.
+    #   f 0.25/0.40  §4.5e peaked at 0.15 at 22.9%; 0.40 is 80 cells on a 200
+    #                patch, deliberately past where §4.5b expects it to break.
+    #   fwhm 0.5     never moved in any wave (w5 was cancelled before it ran),
+    #                and the one knob acting on how smoothly the *input* varies
+    #                in space, which is what the far field is extrapolating from.
     #
     # Set `npos_list` from whichever geometry w17 picks before launching.
     "w19_lowcov_loss": {
         "arm": {
-            **{f"f{f:g}": dict(npos_list=SIZE_MIXES["lo_mixtop"],
-                               per_env_radius_frac=f, rate_lambda=0.3)
-               for f in (0.10, 0.25, 0.40)},
             **{f"rate{r:g}": dict(npos_list=SIZE_MIXES["lo_mixtop"],
                                   per_env_radius_frac=0.15, rate_lambda=r)
                for r in (1.0, 3.0, 10.0)},
-            # fwhm_ratio has never been moved in any wave -- w5 was cancelled
-            # before it ran. It belongs here now for a reason §4 did not have:
-            # at 10% coverage most references sit outside every patch, so the
-            # metric is reading extrapolation, and how smoothly the *input*
-            # varies in space is the one knob that acts directly on that. A
-            # wider bump also widens the near field, which is the same
-            # direction decay50 needs.
+            **{f"unif{u:g}": dict(npos_list=SIZE_MIXES["lo_mixtop"],
+                                  per_env_radius_frac=0.15, uniformity_lambda=u)
+               for u in (1.0, 3.0)},
+            "unif1_rate0.3": dict(npos_list=SIZE_MIXES["lo_mixtop"],
+                                  per_env_radius_frac=0.15,
+                                  uniformity_lambda=1.0, rate_lambda=0.3),
+            **{f"f{f:g}": dict(npos_list=SIZE_MIXES["lo_mixtop"],
+                               per_env_radius_frac=f, rate_lambda=0.3)
+               for f in (0.25, 0.40)},
             "fwhm0.5": dict(npos_list=SIZE_MIXES["lo_mixtop"],
                             per_env_radius_frac=0.15, rate_lambda=0.3,
                             fwhm_ratio=0.5),
