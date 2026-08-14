@@ -301,9 +301,15 @@ radius 0.15·side + `rate_lambda=0.3` — `r_min` 26, 27, 30, 31 over four seeds
 
 Against 2–3 for this regime untreated, 9 for the best §3 rescue attempt (which
 used 400-cell patches, outside this brief), and **21 for the best encoder ever
-trained *with* the cross-environment pairs** — which also has a worse ceiling
-(0.814) and a narrower decay (37.5), and drops to 9/15 when re-scored at 100
-references (§4.8).
+trained *with* the cross-environment pairs**.
+
+**On the honest test — 100 references, two reference draws, nothing selected
+against them (§4.8b) — it is 24 / 23 against the unconstrained encoder's
+9 / 15**, with `r_median` 43–45 against 28.5, decay50 42 against 36, and an
+alias ceiling of 0.74–0.79 against 0.825. Roughly double, on every column.
+
+Checkpoints: `w13_coverage_top/00{2,3}_cov51_seed=4{2,3}` and
+`w16_coverage_seeds/00{0,1}_cov51_seed=4{4,5}`.
 
 Four knobs, none of which ever asks which environment a pair came from:
 coverage (§4.6b, the largest), the near radius (§4.5b/§4.5e), an env-blind
@@ -649,10 +655,26 @@ Medians over both seeds, all legal arms:
 | `rate3` | 5.5 | 7.5 | 0.843 | 0.741 | 14.5 |
 | `none` (binary baseline) | 4.5 (6, 3) | 7.25 | 0.964 | 0.909 | 21 |
 
-**`uniformity_lambda=1.0` is the best spread term tested** — a 0.863 ceiling
-against `rate0.3`'s 0.919 with the decay held at 20.5, and double the baseline's
-`r_min`. Every env-blind spread term beats the baseline. §3's range covered
-λ = 0.1 and 2 and found neither worked.
+**`uniformity_lambda=1.0` is the best spread term at this radius** — a 0.863
+ceiling against `rate0.3`'s 0.919 with the decay held at 20.5, and double the
+baseline's `r_min`. Every env-blind spread term beats the baseline. §3's range
+covered λ = 0.1 and 2 and found neither worked.
+
+**The ranking flips at the wider radius, though** (`w14`, `mixtop` at
+0.15·side, where the final config lives):
+
+| spread term | r_min | r_median | alias max | decay50 |
+|---|---|---|---|---|
+| `rate0.3` | **17.5** (14–22) | 27.5 | 0.853 | 40.8 |
+| `unif1` + `rate0.3` | 13.5 | 23.0 | 0.873 | 36.75 |
+| `unif1` | 12.5 | 26.25 | 0.876 | 39.5 |
+| `unif3` | 3.5 | 6.25 | 0.888 | 32.75 |
+
+Uniformity holds its ceiling advantage nowhere near as well once the radius is
+wide, and combining the two terms is worse than the coding rate alone. So the
+final config uses `rate_lambda`; uniformity is a close second at a 10-cell
+radius and a clear second at 0.15·side. Both are legal, both work, and §3's
+verdict on uniformity is wrong either way.
 
 **What changed is the batching, not the term.** §3 ran its uniformity sweep
 under `single_env_batch=True`, where a batch holds a single patch. Uniformity
@@ -924,6 +946,34 @@ Reproduce with::
 
     python -m encoder_training.sweep_unique_radius --encoders-dir <sweeps> \
         --pattern '<run>/encoder_final.pt' --n-refs 100 --seed {0,1}
+
+#### 4.8b The final comparison, on references nothing was selected against
+
+Every seed of the two best coverage cells, the unconstrained benchmark and the
+untreated baseline, scored together at 100 references and two reference seeds:
+
+| encoder | r_min (s0 / s1) | r_median | alias | decay50 |
+|---|---|---|---|---|
+| `cov51` seed 42 | 22 / 23 | 43 | 0.792 | 42 |
+| `cov51` seed 43 | 24 / 27 | 45 | 0.735 | 42 |
+| `cov51` seed 44 | 24 / **4** | 43 | 0.756 | 42 |
+| `cov51` seed 45 | 28 / 23 | 44 | 0.751 | 43 |
+| `cov61` seed 42 | 32 / **5** | 47 | 0.666 | 42 |
+| `cov61` seed 43 | 23 / 21 | 45 | 0.667 | 42.5 |
+| `cov61` seed 44 | **0 / 2** | 47 | 0.690 | 43 |
+| `cov61` seed 45 | 25 / 29 | 46 | 0.627 | 43 |
+| **best unconstrained (§1)** | **9 / 15** | **28.5** | **0.825** | **36** |
+| untreated True baseline | 2 / 2 | 3 | 0.977 | 17 |
+
+**`cov51` median `r_min` is 24 (s0) and 23 (s1) against the unconstrained
+encoder's 9 and 15** — roughly double, on references neither was tuned for. The
+stable columns are not close: `r_median` 43–45 against 28.5, decay50 42 against
+36, ceiling 0.74–0.79 against 0.825.
+
+The occasional 4 and 5 are the metric, not the encoder: those runs have
+`r_median` 43 and 47 and differ from their siblings by one reference out of a
+hundred. `cov61` seed 44 is the exception — 0/2 at `r_median` 47 is a genuine
+localised failure, and it is why §4.6b recommends 50.8% over 61.1%.
 
 ### 4.7 Infrastructure notes
 
