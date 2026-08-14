@@ -19,7 +19,9 @@ import argparse
 import glob
 import os
 
-from hopfield_nav.probes.read_eval_log import parse_log
+# From training/, not from the sibling probe: probes/ is the CLI layer and
+# test_layering rule 5 forbids a probe importing a probe.
+from ..training.eval_log import parse_log
 
 
 def candidates(paths, n_dist):

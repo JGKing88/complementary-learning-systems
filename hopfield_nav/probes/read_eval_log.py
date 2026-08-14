@@ -20,13 +20,12 @@ table. `--at all` gives the whole curve.
 from __future__ import annotations
 
 import argparse
-import ast
 import glob
 import os
-import re
 
-LINE = re.compile(r"\[(?P<tag>[^\]]+)\]\s+(?P<kind>nav|disc|expl)=(?P<body>\{.*\})\s*$")
-UPDATE = re.compile(r"u(\d+)$")
+# Shared with `scorecard`; lives in training/ because probes/ is the CLI
+# layer and a probe may not import a probe (test_layering rule 5).
+from ..training.eval_log import parse_log
 
 # Which metrics are worth a column, per evaluator, in the order they are shown.
 DEFAULT_METRICS = {
@@ -34,32 +33,6 @@ DEFAULT_METRICS = {
     "nav": ("success_rate", "mean_steps", "mean_speed"),
     "disc": ("store_success_rate", "store_efficiency"),
 }
-
-
-def parse_log(path: str) -> list[dict]:
-    """One record per (eval, evaluator, distractor count)."""
-    out: list[dict] = []
-    with open(path, errors="replace") as f:
-        for line in f:
-            m = LINE.search(line)
-            if not m:
-                continue
-            try:
-                body = ast.literal_eval(m.group("body"))
-            except (ValueError, SyntaxError):
-                continue
-            tag = m.group("tag")
-            um = UPDATE.search(tag)
-            update = int(um.group(1)) if um else None
-            for n_dist, metrics in body.items():
-                if not isinstance(metrics, dict):
-                    continue
-                out.append({
-                    "run": os.path.basename(path),
-                    "tag": tag, "update": update,
-                    "kind": m.group("kind"), "n_dist": n_dist, **metrics,
-                })
-    return out
 
 
 # The three the project is scored on: coverage up, success up, steps down.
