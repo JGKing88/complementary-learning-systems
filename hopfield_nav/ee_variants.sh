@@ -828,6 +828,32 @@ export NOVELTY_REWARD=0.15
 export LOAD_CKPT=/orcd/pool/003/jackking/cls_runs/agent_ckpts/navigate_ee_P5_20363067/navigate_u200.pt
 EOF
         ;;
+    # C16: asymmetric blocks, designed off C15's numbers rather than guessed.
+    #
+    # C15 measured two things that make its 150/150 split wasteful. Coverage
+    # ACCUMULATES across explore blocks (0.072 -> 0.108 -> 0.191 at successive
+    # block ends) while success is fully RECOVERED by 75 updates of exploit
+    # (0.166 -> 0.984, and later 0.097 -> 0.991). So an exploit block only needs
+    # to be ~75 updates, and every update beyond that is spent decaying the
+    # coverage the explore block just built.
+    #
+    # 300/75 spends 80% of updates accumulating coverage and 20% restoring
+    # navigation. EVAL_EVERY=75 puts an eval exactly on each block boundary,
+    # which is where the good checkpoints live: C15's best all-three points are
+    # the ones taken right after an exploit block, when success is back but
+    # coverage has not yet decayed.
+    C16) cat <<'EOF'
+export ENVS_PER_WORLD=8
+export BATCH_ENVS=16
+export STEPS_PER_ROLLOUT=200
+export SCHEDULE="explore:300 ; exploit:75 ; explore:300 ; exploit:75 ; explore:300 ; exploit:75 ; explore:300 ; exploit:75 ; explore:300 ; exploit:75 ; explore:300 ; exploit:75"
+export EVAL_EVERY=75
+export VAL_DISTRACTORS="0 10"
+export WALL_PENALTY=0.3
+export NOVELTY_REWARD=0.15
+export LOAD_CKPT=/orcd/pool/003/jackking/cls_runs/agent_ckpts/navigate_ee_P5_20363067/navigate_u200.pt
+EOF
+        ;;
     # W10 is to W9 what C8 was to C7, and for the same reason.
     #
     # W9 raised WALL_PENALTY 0.3 -> 0.6 to make a fresh edge cell net-negative.
