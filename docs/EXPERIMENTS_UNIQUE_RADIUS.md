@@ -1214,7 +1214,7 @@ every seed, nothing overlaps, the hole shrinks, unknown modes are rejected, and
 — the one that matters for continuity — the `random` path returns bit-identical
 layouts, since every number in §1–§4 came from it.
 
-### 5.6c The prediction was wrong, and the law was right (PARTIAL — 3/10 cells)
+### 5.6c The prediction was wrong, and the law was right
 
 First finished cells of `w17`, all `encoder_final`:
 
@@ -1343,3 +1343,48 @@ seed spread. §5.6b showed it halves the worst hole, so if the hole were the
 mechanism the effect would be large and obvious. `w18` is already running and
 will settle it either way; the value of the arm is now that it tests the
 mechanism, not that it is expected to win.
+
+### 5.6f Step 1 complete: at 10% coverage, geometry is spent
+
+All ten `w17` cells, `encoder_final`, two seeds each:
+
+| arm | `r_min` med | spread | `r_median` | alias max | alias mean | decay50 | res90 |
+|---|---|---|---|---|---|---|---|
+| `lo_mixtop` 5×200+3×150+3×100 | **6.5** | 3 | **15.25** | 0.971 | 0.824 | 34.50 | 13.00 |
+| `lo_many` 29×100 | 6.0 | 0 | 9.25 | 0.956 | 0.841 | 22.75 | 9.00 |
+| `lo_tail` +70-cell tail | 5.0 | 2 | 12.25 | 0.968 | 0.810 | 32.25 | 11.50 |
+| `lo_mix2` 4×200+12×100 | 5.0 | 0 | 11.25 | 0.971 | 0.833 | 31.75 | 10.75 |
+| `lo_big` 7×200 | 4.5 | 3 | 12.50 | 0.970 | 0.862 | 38.25 | 14.50 |
+| *§4 winner, 50.8%* | *28.5* | *8* | *43–45* | *0.671* | | *42* | *~16.3* |
+
+**Every geometry lands in `r_min` 4.5–6.5 with a ceiling of 0.956–0.971.** From
+7 large patches to 29 small ones — a 4× range in patch count and the whole
+size-mix question §4.5 spent a wave on — the answer does not move. Against §4,
+where geometry and coverage were the two biggest levers found, that is the
+surprise: at 10% coverage **geometry is spent**, and the ceiling is pinned near
+0.97 no matter how the patches are arranged.
+
+The internal evidence for §5.6d is stronger than the argument was. Across these
+five arms decay50 ranges 22.75 → 38.25, a 68% spread, and `r_min` moves the
+*wrong way* over it: `lo_big` has the best decay50 in the wave (38.25, nearly
+§4's 42) and the worst `r_min` (4.5), because its alias mean is the worst
+(0.862). A factor that varies by 68% while contributing nothing is not the
+binding one.
+
+§4's geometry findings do survive, but only in the factor that no longer pays.
+"Bigger patches beat smaller" still holds in decay50 (`lo_big` 38.25 against
+`lo_many` 22.75, exactly ordered by patch size, since the near radius is a
+fraction of the side). And the 70-cell tail §4.5 found harmful is again the
+second-worst arm. Both are real; neither reaches `r_min` any more.
+
+`lo_mixtop` is carried into step 2 on `r_median` — 15.25 against 12.5, 12.25,
+11.25, 9.25, the one column that separates the arms cleanly, and the one §5.5
+says to rank on when `r_min` is inside the noise (spreads here are 0–3 on
+values of 4.5–6.5).
+
+**Where this leaves the question.** §5.2 predicted 10–13 and the anchor gives
+4.5–6.5. Nothing about the *training set* recovers it: coverage is fixed at 10%
+by the brief, patch size is capped at 200, and every arrangement of those has
+now been tried. If 10% coverage is to do better it has to come from the loss,
+which is what `w19` is for — and by §5.6d it has to come specifically from the
+ceiling, which no geometry moved below 0.956.
