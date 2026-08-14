@@ -343,16 +343,14 @@ def _weights(path):
                       weights_only=False)["agent_state_dict"]
 
 
-@pytest.mark.slow
-def test_continued_run_matches_uninterrupted(sandbox, tiny_encoder):
-    """The whole feature, in one assertion.
+@pytest.fixture(scope="module")
+def continued(sandbox, tiny_encoder):
+    """An uninterrupted 4-update run, and one interrupted at u2 and continued.
 
-    Anything a continuation fails to carry -- Adam's moments, either global RNG
-    stream, the distractor stream, a single env's own stream, the refresher's
-    tick history, the update counter the anneals key off -- moves these weights.
+    A fixture rather than the first test's leftovers, so the tests below run in
+    any order and under any `-k`.
     """
     root, env = sandbox
-
     _must(_run(_navigate_args(tiny_encoder, "interleave:4", root / "ref"), env),
           "reference run")
     _must(_run(_navigate_args(tiny_encoder, "interleave:2", root / "seg"), env),
@@ -360,6 +358,18 @@ def test_continued_run_matches_uninterrupted(sandbox, tiny_encoder):
     _must(_run(["hopfield_nav.train_navigate",
                 "--continue_from", str(root / "seg" / resume_io.RESUME_FILE),
                 "--schedule", "interleave:4"], env), "continuation")
+    return root, env
+
+
+@pytest.mark.slow
+def test_continued_run_matches_uninterrupted(continued):
+    """The whole feature, in one assertion.
+
+    Anything a continuation fails to carry -- Adam's moments, either global RNG
+    stream, the distractor stream, a single env's own stream, the refresher's
+    tick history, the update counter the anneals key off -- moves these weights.
+    """
+    root, env = continued
 
     for u in (3, 4):
         ref = _weights(root / "ref" / f"navigate_u{u}.pt")
@@ -372,11 +382,10 @@ def test_continued_run_matches_uninterrupted(sandbox, tiny_encoder):
 
 
 @pytest.mark.slow
-def test_continuation_continues_the_same_run_dir_and_manifest(sandbox,
-                                                              tiny_encoder):
+def test_continuation_continues_the_same_run_dir_and_manifest(continued):
     """One run in two segments, not two runs -- `created` and the checkpoint
     list survive, and `segments` records where the second picked up."""
-    root, env = sandbox
+    root, env = continued
     manifest = json.loads((root / "seg" / "run.json").read_text())
 
     assert manifest["segments"], "continuation left no segment record"
@@ -387,8 +396,8 @@ def test_continuation_continues_the_same_run_dir_and_manifest(sandbox,
 
 
 @pytest.mark.slow
-def test_continue_refuses_a_config_override(sandbox, tiny_encoder):
-    root, env = sandbox
+def test_continue_refuses_a_config_override(continued):
+    root, env = continued
     proc = _run(["hopfield_nav.train_navigate",
                  "--continue_from", str(root / "seg" / resume_io.RESUME_FILE),
                  "--schedule", "interleave:4",
@@ -398,10 +407,9 @@ def test_continue_refuses_a_config_override(sandbox, tiny_encoder):
 
 
 @pytest.mark.slow
-def test_continue_refuses_a_schedule_that_rewrites_the_past(sandbox,
-                                                            tiny_encoder):
+def test_continue_refuses_a_schedule_that_rewrites_the_past(continued):
     """`explore` for updates the run already ran as `interleave`."""
-    root, env = sandbox
+    root, env = continued
     proc = _run(["hopfield_nav.train_navigate",
                  "--continue_from", str(root / "seg" / resume_io.RESUME_FILE),
                  "--schedule", "explore:2 ; interleave:2"], env)
@@ -410,8 +418,8 @@ def test_continue_refuses_a_schedule_that_rewrites_the_past(sandbox,
 
 
 @pytest.mark.slow
-def test_continue_refuses_a_shorter_schedule(sandbox, tiny_encoder):
-    root, env = sandbox
+def test_continue_refuses_a_shorter_schedule(continued):
+    root, env = continued
     proc = _run(["hopfield_nav.train_navigate",
                  "--continue_from", str(root / "seg" / resume_io.RESUME_FILE),
                  "--schedule", "interleave:1"], env)
@@ -420,9 +428,8 @@ def test_continue_refuses_a_shorter_schedule(sandbox, tiny_encoder):
 
 
 @pytest.mark.slow
-def test_continue_and_load_checkpoint_are_mutually_exclusive(sandbox,
-                                                             tiny_encoder):
-    root, env = sandbox
+def test_continue_and_load_checkpoint_are_mutually_exclusive(continued):
+    root, env = continued
     proc = _run(["hopfield_nav.train_navigate",
                  "--continue_from", str(root / "seg" / resume_io.RESUME_FILE),
                  "--load_checkpoint", str(root / "seg" / "navigate_u1.pt"),
@@ -432,9 +439,9 @@ def test_continue_and_load_checkpoint_are_mutually_exclusive(sandbox,
 
 
 @pytest.mark.slow
-def test_fork_says_when_it_drops_adam(sandbox, tiny_encoder):
+def test_fork_says_when_it_drops_adam(continued):
     """train.py forking a navigate checkpoint gets fresh moments -- out loud."""
-    root, env = sandbox
+    root, env = continued
     proc = _must(_run(["hopfield_nav.train",
                        "--load_checkpoint", str(root / "seg" / "navigate_u1.pt"),
                        "--n_updates", "1", "--save_every", "1",
@@ -444,12 +451,90 @@ def test_fork_says_when_it_drops_adam(sandbox, tiny_encoder):
     assert "no optimizer_state_dict" in proc.stdout
 
 
+def _train_args(enc, n_updates, save_dir):
+    return ["hopfield_nav.train",
+            "--encoder_checkpoint", str(enc), "--lambdas", "3", "4", "--Np", "40",
+            "--size", "4", "--observation_size", "16",
+            "--batch_envs", "2", "--steps_per_rollout", "8",
+            "--envs_per_world", "1", "--num_worlds", "1", "--num_val_envs", "1",
+            "--eval_every", "1000", "--save_every", "1",
+            "--n_updates", str(n_updates), "--device", "cpu",
+            "--static-vectorhash", "--save_dir", str(save_dir)]
+
+
 @pytest.mark.slow
-def test_periodic_checkpoints_stay_free_of_optimizer_state(sandbox,
-                                                           tiny_encoder):
+def test_train_py_continuation_matches_uninterrupted(sandbox, tiny_encoder):
+    """The same guarantee for train.py, whose loop has the same shape.
+
+    Worth its own test rather than trusting the shared helper: train.py owns its
+    distractor stream and builds its optimizer over *every* parameter rather
+    than the trainable subset, so it exercises a different slice of the
+    contract than train_navigate does.
+    """
+    root, env = sandbox
+
+    _must(_run(_train_args(tiny_encoder, 4, root / "tref"), env), "train ref")
+    _must(_run(_train_args(tiny_encoder, 2, root / "tseg"), env), "train seg A")
+    _must(_run(["hopfield_nav.train",
+                "--continue_from", str(root / "tseg" / resume_io.RESUME_FILE),
+                "--n_updates", "4"], env), "train continuation")
+
+    for u in (3, 4):
+        ref = _weights(root / "tref" / f"hopfield_nav_update{u}.pt")
+        got = _weights(root / "tseg" / f"hopfield_nav_update{u}.pt")
+        for k in ref:
+            assert torch.equal(ref[k], got[k]), f"u{u} parameter {k} diverged"
+
+
+@pytest.fixture(scope="module")
+def store_continued(continued, tiny_encoder):
+    """A Phase B run interrupted at u2 and continued, off a navigate parent."""
+    root, env = continued
+    out = root / "storeseg"
+
+    _must(_run(["hopfield_nav.train_store",
+                "--load_checkpoint", str(root / "seg" / "navigate_u2.pt"),
+                "--encoder_checkpoint", str(tiny_encoder),
+                "--phase_b_updates", "2", "--steps_per_rollout", "8",
+                "--ckpt_every", "1", "--device", "cpu", "--eval_every", "1000",
+                "--save_dir", str(out)], env), "phase B segment A")
+    assert (out / resume_io.RESUME_FILE).exists()
+
+    # Lengthened on the way in: --phase_b_updates is the one knob a Phase B
+    # continuation may move, and without it a run interrupted at its own last
+    # update would have nothing left to do.
+    _must(_run(["hopfield_nav.train_store",
+                "--continue_from", str(out / resume_io.RESUME_FILE),
+                "--phase_b_updates", "4"], env), "phase B continuation")
+    return root, env
+
+
+@pytest.mark.slow
+def test_train_store_continuation_runs_and_keeps_the_run_dir(store_continued):
+    """Phase B continues into its own run directory from its own resume point."""
+    root, _ = store_continued
+    manifest = json.loads((root / "storeseg" / "run.json").read_text())
+    assert manifest["segments"][-1]["resumed_at_update"] == 2
+    # The second segment really ran: u3 and u4 only exist if it did.
+    assert (root / "storeseg" / "store_u4.pt").exists()
+
+
+@pytest.mark.slow
+def test_train_store_refuses_both_entry_flags(store_continued):
+    root, env = store_continued
+    proc = _run(["hopfield_nav.train_store",
+                 "--load_checkpoint", str(root / "seg" / "navigate_u2.pt"),
+                 "--continue_from", str(root / "storeseg" / resume_io.RESUME_FILE),
+                 "--device", "cpu"], env)
+    assert proc.returncode != 0
+    assert "exactly one of" in proc.stderr
+
+
+@pytest.mark.slow
+def test_periodic_checkpoints_stay_free_of_optimizer_state(continued):
     """The reason the resume point is its own file: Adam doubles the bytes and
     eval/analysis read these."""
-    root, _ = sandbox
+    root, _ = continued
     ck = torch.load(root / "seg" / "navigate_u2.pt", map_location="cpu",
                     weights_only=False)
     assert "optimizer_state_dict" not in ck

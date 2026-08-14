@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import sys
 from dataclasses import asdict
 
 import numpy as np
@@ -31,7 +32,7 @@ from .encoder_io import load_encoder, validate_config
 from .policy.agent import NavAgent, compute_input_dim
 from .rollout.collector import RolloutCollector
 from .updates.ppo import ppo_update
-from .training.cfg_args import settle_encoder
+from .training.cfg_args import explicit_dests, settle_encoder
 from .training.refresh import Cadence
 from .training import resume as resume_io
 from .training.world_setup import (
@@ -272,8 +273,22 @@ def train_store(args) -> None:
     start_update = int(resume_ck["update"]) if resume_ck is not None else 0
     parent_ckpt = (resume_ck.get("parent") if resume_ck is not None
                    else args.load_checkpoint)
-    n_updates = (int(resume_ck["config"].get("n_updates") or args.phase_b_updates)
-                 if resume_ck is not None else args.phase_b_updates)
+    if resume_ck is None:
+        n_updates = args.phase_b_updates
+    else:
+        # The originally-planned length, unless --phase_b_updates was retyped to
+        # lengthen it -- the one knob a Phase B continuation may move, and the
+        # reason it is on the allow-list in `main`.
+        n_updates = int(resume_ck["config"].get("n_updates")
+                        or args.phase_b_updates)
+        if "phase_b_updates" in getattr(args, "_explicit", ()):
+            if args.phase_b_updates < start_update:
+                _die(f"--continue_from: the resume point is at u{start_update}, "
+                     f"so --phase_b_updates {args.phase_b_updates} is already "
+                     "behind it. A continuation cannot be shorter than what "
+                     "has run.")
+            n_updates = args.phase_b_updates
+        cfg.n_updates = n_updates
 
     rw = setup_run_world(cfg, encoder, embed_dim, rng, field,
                          cadence=cadence, n_updates=n_updates,
@@ -409,6 +424,17 @@ def main():
                 "from a Phase A checkpoint) or --continue_from (pick an "
                 "interrupted Phase B run back up). They are different "
                 "operations; see hopfield_nav/training/resume.py.")
+
+    # Which flags were actually typed, as against left at their defaults. A
+    # continuation's config comes from the resume point, so anything else typed
+    # would be silently discarded -- which is the failure mode this whole change
+    # exists to remove, not one to reintroduce here.
+    args._explicit = explicit_dests(p, sys.argv[1:])
+    if args.continue_from:
+        resume_io.reject_overrides(
+            args._explicit,
+            allowed={"continue_from", "device", "phase_b_updates"},
+            flag="--continue_from")
 
     train_store(args)
 
