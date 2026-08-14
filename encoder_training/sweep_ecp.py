@@ -484,6 +484,11 @@ WAVES: dict[str, dict] = {
     # tenth of the coverage; lo_big and lo_many bracket it with uniform sets at
     # either end. Loss settings are §4's winner untouched, so this isolates
     # coverage. See docs/EXPERIMENTS_UNIQUE_RADIUS.md §5.4 for the rest.
+    #
+    # All five §5.3 geometries run here rather than the three the plan asked
+    # for: the queue was empty and the cap is 16 GPUs, so 10 runs cost the same
+    # wall clock as 6 and step 2 then tunes on a geometry that was measured
+    # rather than assumed. mix2_lo is §5.3's `lo_mix2` (4x200+12x100).
     "w17_lowcov_anchor": {
         "arm": {
             "lo_mixtop": dict(npos_list=SIZE_MIXES["lo_mixtop"],
@@ -492,6 +497,39 @@ WAVES: dict[str, dict] = {
                               per_env_radius_frac=0.15, rate_lambda=0.3),
             "lo_many":   dict(npos_list=SIZE_MIXES["lo_many"],
                               per_env_radius_frac=0.15, rate_lambda=0.3),
+            "lo_mix2":   dict(npos_list=SIZE_MIXES["mix2_lo"],
+                              per_env_radius_frac=0.15, rate_lambda=0.3),
+            "lo_tail":   dict(npos_list=SIZE_MIXES["lo_tail"],
+                              per_env_radius_frac=0.15, rate_lambda=0.3),
+        },
+        "seed": [42, 43],
+    },
+    # W18 -- §5 step 3, brought forward. Does *where* the patches sit matter?
+    #
+    # Ran early because w17 left 6 of the 16 GPU slots idle and the random
+    # counterparts are already w17's 000/001 and 004/005 -- same loss settings,
+    # same seeds, so these four cells are a paired A/B for one flag.
+    #
+    # The mechanism is measured, not assumed. Max distance from an arena point
+    # to the nearest patch, over seeds 42-45:
+    #
+    #     mix          random   stratified
+    #     lo_mixtop      839       461
+    #     lo_many        475       279
+    #     mixtop_max     192       188      <- 50.8%, §4's winner
+    #
+    # §4.6 put that distance at -0.47 with a reference's radius, so there is
+    # room for it to matter at 10% and none at 50%. Prediction on the record:
+    # stratified wins on r_min and on the alias ceiling, and leaves decay50
+    # alone -- decay50 was flat across the entire coverage sweep.
+    "w18_placement": {
+        "arm": {
+            "lo_mixtop_strat": dict(npos_list=SIZE_MIXES["lo_mixtop"],
+                                    per_env_radius_frac=0.15, rate_lambda=0.3,
+                                    patch_placement="stratified"),
+            "lo_many_strat":   dict(npos_list=SIZE_MIXES["lo_many"],
+                                    per_env_radius_frac=0.15, rate_lambda=0.3,
+                                    patch_placement="stratified"),
         },
         "seed": [42, 43],
     },

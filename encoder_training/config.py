@@ -106,6 +106,12 @@ class PatchConfig:
     # Alternative: explicit list of patch sizes (overrides nenv & npos).
     npos_list: list[int] | None = None
 
+    # Where the patches sit. "random" is uniform rejection sampling and is what
+    # everything through §4 used; "stratified" is a jittered lattice, one patch
+    # per cell of a coarse grid. Only expected to matter at low coverage, where
+    # the holes rejection sampling leaves are large (§5.4 step 3).
+    patch_placement: str = "random"
+
     # Radius defining "near" within each env:
     #   - If `per_env_radius_frac > 0`: radius = frac * env_size (per env).
     #   - Else: `local_radius` is used (fixed across envs). 0 → full same-env.

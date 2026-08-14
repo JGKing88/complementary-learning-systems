@@ -997,10 +997,10 @@ localised failure, and it is why §4.6b recommends 50.8% over 61.1%.
 
 ---
 
-# 5. NEXT: how good can it get at **10% coverage**?
+# 5. How good can it get at **10% coverage**?
 
-**Status: planned, nothing launched.** §4 is finished; this is the next
-question and this section is written to be picked up cold.
+**Status: running.** Step 1 (`w17_lowcov_anchor`, 10 runs) and step 3
+(`w18_placement`, 4 runs) are on the cluster. Running log in §5.6.
 
 ## 5.1 The goal
 
@@ -1114,19 +1114,20 @@ finding: at a 10-cell radius `uniformity_lambda=1.0` beat `rate0.3`, and at
 0.15·side it lost — so if the radius optimum moves down here, re-test uniformity
 in the winning slot too.
 
-**Step 3 — placement, the new idea (8 runs).** At 10% coverage the *arrangement*
-of patches should matter, and it is the one thing §4 never varied. Random
-rejection sampling leaves holes; a **jittered lattice** (partition the arena into
-a coarse grid, place one patch per cell at a random offset within it) minimises
-the worst-case distance from an arena point to the nearest patch, which is
-exactly the quantity §4.6 correlated with `r_min` at −0.47. Needs a new sampler
-alongside `sample_nonoverlapping_patches` — keep the signature and add
-`--patch_placement {random,stratified}` so the comparison is one flag. Test on
-`lo_mixtop` at the step-2 optimum, 4 seeds each.
+**Step 3 — placement, the new idea (4 runs, *brought forward*).** At 10%
+coverage the *arrangement* of patches should matter, and it is the one thing §4
+never varied. Random rejection sampling leaves holes; a **jittered lattice**
+(partition the arena into a coarse grid, place one patch per cell at a random
+offset within it) bounds the worst-case distance from an arena point to the
+nearest patch, which is exactly the quantity §4.6 correlated with `r_min` at
+−0.47. Built as `--patch_placement {random,stratified}` (§5.6b), so the
+comparison is one flag. Run early, at §4's loss settings rather than step 2's
+optimum, because step 1 left 6 of the 16 GPU slots idle and w17's `lo_mixtop`
+and `lo_many` cells are already the paired random controls.
 
-*Prediction worth recording before it runs:* stratified should beat random by
-more at 10% than it would at 50%, and the gap should show up in `r_min` and the
-alias ceiling while leaving decay50 alone.
+*Prediction, recorded before it runs:* stratified should beat random by more at
+10% than it would at 50%, and the gap should show up in `r_min` and the alias
+ceiling while leaving decay50 alone.
 
 **Step 4 — overfitting (6 runs).** `weight_decay ∈ {1e-4, 1e-3, 1e-2}` × 2 seeds
 at the step-3 best. Cheap, never explored, and this is the first regime where it
@@ -1153,3 +1154,62 @@ two `ur_seed`s against the §4 50.8% winner and the untreated baseline
   `radius_law.py` (the two-factor law and its `--target` inverse),
   `alias_structure.py` (`--ref_vs_patch` is the diagnostic that motivated
   step 3).
+
+## 5.6 Running log
+
+### 5.6a Step 1 launched, widened to all five geometries (`w17_lowcov_anchor`)
+
+10 runs, `lo_mixtop` / `lo_big` / `lo_many` / `lo_mix2` / `lo_tail` × seeds
+42, 43, all at §4's winning loss settings (`per_env_radius_frac=0.15`,
+`rate_lambda=0.3`) so this isolates coverage. §5.4 asked for three geometries;
+the queue was empty and the cap is 16 GPUs, so ten runs cost the same wall clock
+as six and step 2 can then tune on a geometry that was measured rather than
+assumed.
+
+Throughput on the first cell: ~46 epochs/min, so 2050 epochs is ~45 min — the
+§5.3 wall-clock worry does not bite, but the wave went out at `--time 2:00:00`
+anyway because a running job's limit cannot be raised.
+
+### 5.6b Placement: the holes are real at 10% and absent at 50%
+
+`--patch_placement stratified` added to `data.sample_nonoverlapping_patches`,
+threaded through `PatchConfig` and `train.py`. Two regimes, because a patch can
+be larger than its share of the arena:
+
+* **sparse** — some grid of ≥ `nenv` cells has cells the largest patch fits in.
+  One patch per cell, offset to stay wholly inside. *Placement cannot fail and
+  no rejection is needed*: the gap between neighbouring cells does the work
+  rejection sampling has to search for. All five §5.3 mixes are here.
+* **dense** — no such grid. Finest grid whose cells still fit the largest
+  patch, patches dealt round-robin largest-first, rejection *within* a cell.
+  Cross-cell collisions remain impossible, so the search stays local.
+
+The mechanism is measured, not assumed. Distance from an arena point to the
+nearest training patch, mean over seeds 42–45, on a 6-cell lattice:
+
+| mix | coverage | max (rand → strat) | p95 | mean |
+|---|---|---|---|---|
+| `lo_big` 7×200 | 9.5% | 882 → **802** | 594 → 568 | 227 → 190 |
+| `lo_mixtop` | 10.1% | 839 → **461** | 565 → 300 | 198 → 128 |
+| `lo_mix2` | 9.5% | 672 → **343** | 420 → 236 | 154 → 107 |
+| `lo_many` 29×100 | 9.9% | 475 → **279** | 268 → 167 | 101 → 76 |
+| `lo_tail` | 10.5% | 604 → **401** | 354 → 254 | 126 → 104 |
+| `mixtop_max` (§4 winner) | 50.8% | 192 → **188** | 66 → 64 | 15 → 15 |
+
+Two things fall out before any GPU time is spent. At 10% stratifying roughly
+halves the worst hole. At 50.8% it changes nothing (192 → 188) — random
+sampling has already left nowhere far from a patch, and the worst hole there is
+*smaller than the best hole any 10% layout achieves*. That is the control the
+step-3 claim needs, and it explains why §4 never had to think about placement.
+
+`lo_big` is the exception: 7 patches on a 3×3 grid still leaves 802, because
+with so few patches the grid is too coarse for the jitter to matter. If
+placement turns out to help, it will help the mixes, not the sparse control.
+
+Launched as `w18_placement`: `lo_mixtop` and `lo_many`, stratified, seeds 42/43,
+at §4's loss settings — paired one-flag A/Bs against `w17` 000/001 and 004/005.
+
+Tests in `encoder_training/tests/test_patch_placement.py`: every mix places at
+every seed, nothing overlaps, the hole shrinks, unknown modes are rejected, and
+— the one that matters for continuity — the `random` path returns bit-identical
+layouts, since every number in §1–§4 came from it.

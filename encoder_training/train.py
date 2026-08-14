@@ -115,8 +115,10 @@ def train(cfg: TrainConfig) -> str:
     npos_arg = patch_cfg.npos_list if patch_cfg.npos_list else patch_cfg.npos
     nenv_arg = None if patch_cfg.npos_list else patch_cfg.nenv
     y0s, x0s, sizes = sample_nonoverlapping_patches(
-        full_Npos, full_Npos, npos_arg, nenv_arg)
+        full_Npos, full_Npos, npos_arg, nenv_arg,
+        placement=patch_cfg.patch_placement)
     print(f"Patches: {len(sizes)} envs, sizes {sorted(set(sizes))}"
+          + f"  [{patch_cfg.patch_placement} placement]"
           + ("  [lazy codes]" if lazy else ""))
 
     if lazy:
@@ -418,6 +420,7 @@ def _build_cfg_from_args(args) -> TrainConfig:
         per_env_radius_frac=args.per_env_radius_frac,
         local_radius=args.radius,
         single_env_batch=args.single_env_batch,
+        patch_placement=args.patch_placement,
     )
     nav = NavEvalConfig(
         env_size=args.nav_env_size,
@@ -465,6 +468,10 @@ def main():
     p.add_argument("--radius", type=float, default=10.0)
     p.add_argument("--per_env_radius_frac", type=float, default=0.0)
     p.add_argument("--single_env_batch", action="store_true")
+    p.add_argument("--patch_placement", default="random",
+                   choices=["random", "stratified"],
+                   help="where patches sit: uniform rejection sampling, or a "
+                        "jittered lattice (one per coarse-grid cell)")
     # Loss
     p.add_argument("--loss_mode", default="mse_contrastive",
                    choices=["mse_contrastive", "cka"])
