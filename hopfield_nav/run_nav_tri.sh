@@ -318,6 +318,24 @@ case "$VARIANT" in
     INIT_LOG_STD=-1.8
     EVAL_SCOPE=navexpl; EVAL_EVERY=25; CKPT_EVERY=25
     ;;
+  # What the shaping LEAK costs navigation. wall_penalty, persistence_bonus and
+  # revisit_penalty are read off cfg rather than off the regime (P0.3.1), so
+  # they apply to exploit rollouts too -- and wave 3's combined runs will carry
+  # them, because the explore half needs them. w2_x_sig2 zeroes them to get a
+  # clean exploit ceiling; this one keeps v35's values, so the pair prices the
+  # leak instead of leaving it as an unmeasured difference between the exploit
+  # arm and the combined arm.
+  #
+  # Expected small: at exploit's reward scale (+5 per goal, ~20 goals a
+  # rollout) wall_penalty is worth about -3.8 and persistence about +10, i.e.
+  # the leak should if anything HELP nav, since a beeline is a straight line.
+  w2_x_shaped)
+    SCHEDULE=${SCHEDULE:-'exploit:600'}
+    ENVS_PER_WORLD=20; BATCH_ENVS=64
+    INIT_LOG_STD=-0.7
+    EVAL_SCOPE=navexpl; EVAL_EVERY=25; CKPT_EVERY=25
+    ;;
+
   # Exploit is a far easier objective than explore -- dense +5, a readout at
   # cos 0.99 up to 3 distractors -- so if it is optimization-limited rather
   # than signal-limited this is the cheapest fix. Promoted over a clip sweep
