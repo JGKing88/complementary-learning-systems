@@ -165,6 +165,45 @@ class Refresher:
             self.counts[t] += 1
         return traits
 
+    def fast_forward(self, through_tick: int) -> int:
+        """Replay every tick up to ``through_tick``, then apply the result once.
+
+        A resume rebuilds its worlds from ``(seed, config)``, which reproduces
+        the run's *first* update rather than its Nth. Without this the second
+        segment of a resumed run would train on the envs the first segment
+        started with, silently undoing every refresh that happened in between --
+        the same class of bug as the frozen goals v22 fixed, and just as quiet.
+
+        The ticks cannot be skipped to the last one. The wall draw excludes
+        ``split.used``, so tick N's seeds depend on every tick before it. They
+        can be *replayed* exactly: each draw is a pure function of
+        ``(seed, trait, tick)`` and the accumulated union, and nothing training
+        does enters -- the same property `preflight` relies on to be exact
+        rather than an estimate.
+
+        Only the draws are replayed. ``_apply`` rebuilds envs and refits
+        ``assoc``, and every intermediate world it would build is overwritten by
+        the next tick, so it runs once at the end over the union of the traits
+        that came due. That union is what makes one apply equivalent to N: a run
+        whose last tick was goals-only still needs the rebuild its earlier wall
+        tick asked for. Costs about a second for a 300-update run.
+        """
+        if through_tick <= 0:
+            return 0
+        seen: set[str] = set()
+        for tick in range(1, through_tick + 1):
+            due = self.cadence.due(tick)
+            if not due:
+                continue
+            traits = self._draw(due, tick)
+            self.ticks += 1
+            for t in traits:
+                self.counts[t] += 1
+            seen |= set(traits)
+        if seen:
+            self._apply(tuple(t for t in TRAITS if t in seen))
+        return self.ticks
+
     def report(self) -> dict:
         """What refreshed, how often, and how far the used union has grown."""
         return {

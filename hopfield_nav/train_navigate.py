@@ -44,6 +44,7 @@ from .training.cfg_args import settle_encoder
 from .training.explore import ExploreRegime
 from .training.exploit import ExploitRegime
 from .training.refresh import Cadence, Refresher
+from .training import resume as resume_io
 from .training.stages import (
     Knobs, ScheduleError, Stage, format_schedule, parse_schedule, resolve,
     stage_at, total_updates,
@@ -83,6 +84,8 @@ def run_navigate(
     ckpt_world: dict | None = None,
     refresher: Refresher | None = None,
     record_world=None,
+    start_update: int = 0,
+    resume_state: dict | None = None,
 ) -> None:
     """Walk the schedule, one pooled PPO update per step.
 
@@ -95,10 +98,17 @@ def run_navigate(
     cadence; `record_world` rewrites `world.json` so the growing union of values
     training has used stays on disk. Both are None for a run whose envs are
     fixed, which is every run before 2026-08.
+
+    `start_update` is the last update a resumed run completed, so the loop picks
+    up at the next one. It is not merely where the counter starts: five separate
+    schedules below are keyed off the global update number, and every one of
+    them would otherwise re-run its opening from a mid-run policy.
     """
     n_updates_total = total_updates(stages)
     print(f"\n=== navigate: {format_schedule(stages)} "
-          f"({n_updates_total} updates) ===", flush=True)
+          f"({n_updates_total} updates"
+          + (f", resuming at u{start_update + 1}" if start_update else "")
+          + ") ===", flush=True)
 
     set_phase_freeze(agent, freeze_move=False, freeze_store=cfg.freeze_store,
                      freeze_value=False, freeze_rnn=False)
@@ -108,6 +118,16 @@ def run_navigate(
     # trajectory, so Adam's moments carry across a boundary. A stage-level `lr`
     # retunes the existing group instead of building a new optimizer.
     current_lr = cfg.ppo.lr
+
+    # After the freeze, because the freeze is what decides which parameters Adam
+    # owns and therefore what shape its state has to be.
+    if resume_state is not None:
+        resume_io.restore_optimizer(
+            optimizer, resume_state["optimizer_state_dict"],
+            source=resume_state["_path"])
+        resume_io.restore_rng(resume_state.get("rng"))
+        print(f"Restored optimizer moments and RNG streams from "
+              f"{resume_state['_path']}", flush=True)
 
     # Distractors are a property of the run, not of an update -- see
     # ExploitRegime for why the count reaching 0 must not change the code path.
@@ -205,7 +225,7 @@ def run_navigate(
     # unrelated mechanisms in three files; say so once, from the first spec
     # actually built rather than from a flag that could drift from it.
 
-    for update in range(1, n_updates_total + 1):
+    for update in range(start_update + 1, n_updates_total + 1):
         stage, local_update = stage_at(stages, update)
 
         # Before the rollouts, so this update trains on the envs it records.
@@ -386,6 +406,11 @@ def run_navigate(
             }, os.path.join(cfg.save_dir, f"navigate_u{update}.pt"))
             run_manifest.record_checkpoint(
                 cfg.save_dir, f"navigate_u{update}.pt", update)
+            # The rolling resume point, beside the fork point rather than inside
+            # it -- see training/resume.py for why the two are separate files.
+            resume_io.save(cfg.save_dir, kind="navigate", agent=agent,
+                           optimizer=optimizer, update=update,
+                           config=ckpt_config, world_spec=ckpt_world)
 
     do_eval(cfg, agent, eval_world, device, "after_navigate", use_wandb,
             max_steps=eval_max_steps)
@@ -401,7 +426,13 @@ def train_navigate(
     cfg: TrainConfig,
     stages: list[Stage],
     load_checkpoint: str | None = None,
+    resume_ck: dict | None = None,
 ) -> None:
+    """Run the schedule. `load_checkpoint` forks a parent; `resume_ck` continues.
+
+    Exactly one of the two, or neither. See `training/resume.py` for why they
+    are different operations rather than two spellings of one.
+    """
     validate_train_config(cfg)
     warn_if_offcell_stores(cfg.env, where="train_navigate")
     # Before the encoder loads and the 12 GB scaffold builds: a refresh cadence

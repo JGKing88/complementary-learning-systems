@@ -225,6 +225,52 @@ def begin(
         _warn(f"writing manifest in {run_dir}", exc)
 
 
+def resume(
+    run_dir: str | os.PathLike[str],
+    *,
+    update: int,
+    config: dict[str, Any] | None = None,
+    wandb_run: Any = None,
+) -> None:
+    """Re-open a killed run's manifest for a continuing segment.
+
+    Deliberately not `begin`. That writes a fresh record, which for a resume
+    would drop the checkpoint list the run is still adding to and reset
+    `created` so a run appears to have started at its last interruption -- the
+    two fields you would use to reconstruct what a multi-segment run actually
+    did. A resume is one run in several segments, and `segments` is what says
+    so: each entry names the update it picked up from and the SLURM job that
+    ran it, so a run spread over four wall-clock windows is still one run.
+    """
+    try:
+        data = read(run_dir)
+        if data is None:
+            return
+        segments = list(data.get("segments", []))
+        segments.append({
+            "resumed_at_update": int(update),
+            "started": datetime.now().isoformat(timespec="seconds"),
+            "slurm_job_id": os.environ.get("SLURM_JOB_ID"),
+            "argv": list(sys.argv),
+            "git": _git_state(),
+        })
+        data["segments"] = segments
+        data["status"] = STATUS_RUNNING
+        data["finished"] = None
+        if config is not None:
+            data["config"] = config
+        if wandb_run is not None:
+            data["wandb"] = {
+                "id": getattr(wandb_run, "id", None),
+                "name": getattr(wandb_run, "name", None),
+                "project": getattr(wandb_run, "project", None),
+                "url": getattr(wandb_run, "url", None),
+            }
+        write(run_dir, data)
+    except Exception as exc:
+        _warn(f"resuming manifest in {run_dir}", exc)
+
+
 def record_checkpoint(run_dir: str | os.PathLike[str], filename: str,
                       update: int | None = None) -> None:
     """Append one checkpoint to the manifest's list.
