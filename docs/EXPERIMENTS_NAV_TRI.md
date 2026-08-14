@@ -1410,11 +1410,27 @@ zero reach the policy only through the un-normalized value loss.
 | σ=0.50 | 0.238 | 0.298 | 0.344 | 0.323 | 0.354 | 0.356 | **0.375** | — | — |
 
 **Both pass the 0.352 practical target**, and σ=0.50 does it in ~700 updates
-against σ=0.30's ~1000 — consistent with the σ ranking throughout. Against the
-§3.1 ladder, **0.375 sits at the perfect-information billiard line
-(0.366–0.387)** and above the noisy-billiard reference the sensory cone was
-priced at. What remains above it — the lawnmower at 0.478 — P0.9 showed is
-unreachable without decodable position.
+against σ=0.30's ~1000 — consistent with the σ ranking throughout.
+
+**Final numbers** (`w2_e_long` ran its full 1500; `w2_e_long2` hit the
+wall-clock limit at u1150, which the checkpoint cadence makes a normal ending
+rather than a loss):
+
+| run | σ | cov d=0 | cov d=10 | cells/step |
+|---|---|---|---|---|
+| `w2_e_long` | 0.30 | 0.3738 | 0.3751 | 0.748 |
+| **`w2_e_long2`** | **0.50** | **0.3845** | **0.3842** | **0.769** |
+
+Two things to read off:
+
+- **0.769 cells/step is 97% of the perfect-information billiard's 0.790.**
+  Against the §3.1 ladder the policy is at the billiard ceiling, not
+  approaching it. What lies above — the lawnmower at 0.478 coverage — P0.9
+  showed is unreachable without decodable position, so this is close to the
+  practical maximum for this observation set.
+- **Coverage at ten distractors EQUALS coverage at zero** (0.3842 vs 0.3845;
+  0.3751 vs 0.3738, i.e. d=10 marginally *higher* in one). The explore-side
+  distractor problem is not merely reduced, it is gone.
 
 For scale: the v35 recipe reached **0.121 in the 190 updates it ran**, and the
 explore-min wave's best was ~0.51 *at 400 eval steps*, i.e. ~0.28 at this
