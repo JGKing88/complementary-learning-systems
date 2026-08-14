@@ -70,6 +70,8 @@ def main() -> None:
                    help="update indices for the curve table; default = every "
                         "index that all matched runs share")
     p.add_argument("--logdir", default=LOGDIR)
+    p.add_argument("--max_cols", type=int, default=12,
+                   help="subsample the curve to at most this many columns")
     args = p.parse_args()
 
     runs = []
@@ -89,11 +91,18 @@ def main() -> None:
     if args.at:
         cols = args.at
     else:
-        shared = None
-        for r in runs:
-            us = {u for u in r["evals"] if u > 0}
-            shared = us if shared is None else (shared & us)
-        cols = sorted(shared or [])
+        # Union, not intersection. Variants deliberately eval on different
+        # cadences -- the cheap-per-update ladder rungs run 5x the updates and
+        # would otherwise force a 100-wide table -- so an intersection is
+        # routinely EMPTY and silently prints nothing. A gap is shown as an
+        # em dash, which is honest; a missing column is not.
+        allu = sorted({u for r in runs for u in r["evals"] if u > 0})
+        if len(allu) > args.max_cols:
+            step = len(allu) / float(args.max_cols)
+            allu = [allu[min(len(allu) - 1, int(i * step))]
+                    for i in range(args.max_cols)]
+            allu = sorted(set(allu))
+        cols = allu
     print("#### coverage curve — `mean_coverage` at `n_dist=0`\n")
     print("| variant | " + " | ".join(f"u{c}" for c in cols) + " | s/u | last |")
     print("|---" * (len(cols) + 3) + "|")
