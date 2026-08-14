@@ -1900,11 +1900,44 @@ rather than continuing to tune A."* Reporting it plainly.
   0.223), while nav stays mediocre. So it is **not** "seeing both regimes"
   that matters — it is seeing them **in the same PPO update**.
 
-**Arm B is a genuine single model for all three metrics**: coverage 0.198,
-`success_rate` 1.000, `mean_steps` 12.6. But it is not yet good enough —
-0.198 coverage against the explore-only 0.385 means **the combined model pays
-about half its coverage** for navigation. That residual interference is what
-wave 4 attacks.
+**Arm B is a genuine single model for all three metrics.** Scored under the §5
+verdict protocol — 10 val envs × 32 trials, `n_dist` ∈ {0, 5, 10}, 200 steps,
+deterministic — **not** the monitoring eval:
+
+| `n_dist` | coverage | `success_rate` | `mean_steps` | mean \|a\| |
+|---|---|---|---|---|
+| 0 | **0.1899** | **1.000** | **13.57** | 1.60 |
+| 5 | 0.1790 | 0.927 | 17.03 | 1.13 |
+| 10 | 0.1719 | 0.833 | 20.08 | 0.96 |
+
+The in-training estimate (0.198 / 12.6) was optimistic by about the ~0.02 the
+explore-min wave warned of, so the protocol earned its keep again.
+
+**The residual interference has the same signature as arm A's collapse, one
+order of magnitude down.** Across the distractor levels:
+
+| | d=0 | d=5 | d=10 |
+|---|---|---|---|
+| `chase_q` | 0.000 | 0.083 | **0.109** |
+| `edge_frac` | 0.247 | 0.308 | **0.341** |
+| `clip_frac` | 0.159 | 0.214 | **0.235** |
+| coverage | 0.190 | 0.179 | 0.172 |
+
+So arm B **does** chase the recall signal when distractors are present, and it
+pays for it by ending up on walls — `edge_frac` 0.34 against uniform's 0.19,
+`clip_frac` 0.235. It is the arm-A mechanism at a survivable amplitude rather
+than a different phenomenon. **Wave 4 targets exactly this**, which is a
+better-aimed intervention than "reduce interference" in the abstract.
+
+Two more things the verdict shows:
+
+- **Navigation is nearly straight-line.** `path_efficiency` 0.993 at d=0 with
+  `q_accuracy` 0.987 — when the signal is clean the agent tracks it almost
+  perfectly. The degradation at d=5/10 follows `q_accuracy` (0.868, and
+  `follow_q` 0.16), i.e. it is largely the **readout** degrading, which P0.7
+  already showed happens at ten distractors.
+- **Coverage 0.190 against the explore-only 0.385**: the combined model still
+  pays about half its coverage for navigation.
 
 **The failure mode to watch for is interference, not either metric alone.** A
 model that scores 0.35 coverage and `mean_steps` 30, or 10.5 steps and 0.10
