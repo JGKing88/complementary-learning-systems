@@ -207,9 +207,12 @@ case "$VARIANT" in
     SCHEDULE=${SCHEDULE:-'explore:450'}
     EPSILON_EXPLORE=0.1; LR=1e-3
     ;;
-  # PPO's clip bounds how far the mean can move per update. At clip=0.15 and a
-  # mean that must travel 0.8 cells, the ceiling on the ascent is the clip, not
-  # the gradient.
+  # DEMOTED, kept for completeness. The clip permits a mean shift of about
+  # 0.15*sigma per gradient step = ~0.025 cells/update at sigma=0.165, and the
+  # measured ascent is 0.0012 cells/update -- twenty times below it. So the
+  # magnitude ascent is gradient-limited, not clip-limited, and raising the
+  # clip lifts a ceiling nothing is touching. Run w1_lr instead: it scales the
+  # step directly and has the same ~20x of headroom. See docs §3.4.1.
   w1_clip)
     SCHEDULE=${SCHEDULE:-'explore:450'}
     EPSILON_EXPLORE=0.1; PPO_CLIP_COEF=0.3

@@ -390,6 +390,32 @@ learnable σ from collapsing. Recorded as a prediction to verify (§4, T3).
 
 ---
 
+### 3.4.1 Why σ moves the magnitude, and whether the clip is in the way
+
+The policy has to move its mean step from 0.086 cells to ~1.0 (P0.6). Three
+things govern how fast, and only two of them turn out to matter.
+
+**σ, through credit assignment, not through gradient size.** For a Gaussian,
+`∇_μ log π = (a − μ)/σ²`, so *smaller* σ gives a **larger** per-sample
+gradient — the opposite of the observed effect. What σ actually buys is the
+*range of magnitudes the policy ever samples*: at σ=0.165 around a mean of
+0.09, the policy never executes a step longer than ~0.6, so it has no evidence
+that 1.0 is better and must crawl. At σ=0.50 the sampled steps span the whole
+useful range in one update. This is exploration in **action space**, and it is
+why `w1_sig` doubles `w1_eps01` at u50.
+
+**The PPO clip, which is NOT binding.** For a mean shift δ, the ratio is
+`exp((a−μ)δ/σ² − δ²/2σ²)`, so on a typical sample `log ratio ≈ δ/σ` and
+`clip_coef = 0.15` permits `δ ≲ 0.15 σ` per gradient step — about **0.025
+cells/update** at σ=0.165. The *measured* rate is 0.086 → 0.178 over 75
+updates = **0.0012 cells/update**, twenty times below the clip ceiling.
+
+> **So the ascent is gradient-limited, not clip-limited**, and
+> `PPO_CLIP_COEF` is demoted: raising it lifts a ceiling nothing is touching.
+> `LR` is promoted by the same arithmetic — it scales δ directly and has ~20×
+> of headroom before the clip engages. That is the reasoning behind `w1_lr`
+> and against `w1_clip`, and it is arithmetic rather than a guess.
+
 ### 3.5 Which knobs are provably inert, and when
 
 Pooled advantage normalization (`updates/ppo.py:210-214`) removes any constant
