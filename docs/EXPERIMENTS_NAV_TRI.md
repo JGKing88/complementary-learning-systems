@@ -34,9 +34,8 @@ Resume checklist, in order:
 - [ ] Re-run `signal_separability` at the **real Npos=1716** — P0.7's numbers
       are from a validation-grade Npos=300 scaffold. Job queued on `pi_fiete`.
 - [ ] Behaviour-probe every wave-1 checkpoint at u450 and fill the §6 table.
-- [ ] **Temporal** separability probe (P0.7): if `|q|` cannot say "the goal is
-      in memory" at a single step, can its trajectory over ~10 steps? This
-      gates the whole combined-model plan and should be answered before wave 3.
+- [ ] Re-run `temporal_separability` at the real Npos=1716 (P0.8 is Npos=300).
+      Job queued on `pi_fiete`.
 - [ ] Regime assignment is **positional**, not random: `train_navigate.py:335`
       makes the first `n_pre` envs exploit and the rest explore, so at a fixed
       `empty_frac` the *same* envs are always in the same regime, all run. That
@@ -331,6 +330,7 @@ Therefore:
 | behaviour-class coverage baselines, noise pricing, oracle `mean_steps` | `analysis/nav_tri/coverage_baselines.py` | §3.1–3.3. Pure geometry, no GPU, seconds. |
 | what a checkpoint actually *does* — behaviour class, failure mode, and the readout-vs-policy split | `analysis/nav_tri/behavior_probe.py` | P0.6. Instrumented copy of the two eval protocols. |
 | is "goal in memory" decidable from the observation? | `analysis/nav_tri/signal_separability.py` | P0.7. No policy involved — a property of encoder + scaffold + Hopfield. |
+| how many steps of `q` does it take to decide? (ideal-observer AUC vs T) | `analysis/nav_tri/temporal_separability.py` | P0.8. Bounds what any architecture could extract. |
 | launcher for the two probes | `hopfield_nav/run_nav_tri_probe.sh` | `PROBE=signal\|behavior CKPTS="…" sbatch …` |
 | training launcher | `hopfield_nav/run_nav_tri.sh` | `VARIANT=<name> sbatch …`; variants in the `case` block |
 | queue + latest metric per run | `hopfield_nav/nav_tri_status.sh` | pulled, not pushed |
@@ -478,14 +478,47 @@ Two readings, pulling in opposite directions:
 **Why this matters for the whole plan.** Jack's framing is that one policy can
 do both jobs only if the observation says which regime it is in. P0.7 says
 there is **no single-timestep magnitude cue**. It does not say the problem is
-undecidable — a *temporal* cue remains available (a genuine in-env goal gives a
-`q` that stays pointed at one fixed point and shrinks as the agent approaches;
-a distractor's does neither), and integrating over time is exactly what the RNN
-is for. But it means the combined phase (§ wave 3+) cannot be assumed to work
-just because the raw magnitude is in the input, and a *temporal* separability
-probe is the thing to run before designing it. **Recheck at Npos=1716 before
-relying on any of this**: at Npos=300 distractors are drawn from a far smaller
-exclusion region, so their interference is not the interference training sees.
+undecidable — see P0.8, which was written to answer exactly that. **Recheck at
+Npos=1716 before relying on any of this**: at Npos=300 distractors are drawn
+from a far smaller exclusion region, so their interference is not the
+interference training sees.
+
+**P0.8 — the cue is temporal, and it only appears if the agent ACTS on the
+signal.** `analysis/nav_tri/temporal_separability.py` puts an ideal-observer
+bound on the question: extract features from the first *T* values of `q` along
+a trajectory (magnitude statistics, direction persistence, the scatter of the
+implied targets `x_t + q_t`, and the slope of `|q|` in time), fit a logistic
+regression, report held-out AUC. No policy is trained, so this is an upper
+bound on what **any** architecture could extract. `n_dist=3`, Npos=300
+(validation-grade):
+
+| trajectory | T=1 | T=2 | T=5 | T=10 |
+|---|---|---|---|---|
+| **walk** — uniform random steps, i.e. deciding *while exploring* | 0.569 | 0.724 | 0.715 | 0.759 |
+| **follow** — steps along `q`, i.e. probing the signal | 0.675 | 0.816 | 0.889 | **0.933** |
+
+The mechanism is the one predicted: a real in-env goal is a **fixed point**, so
+walking toward it makes `|q|` shrink and the implied targets `x_t + q_t`
+cluster; a distractor is not, so neither happens. Passive observation gets to
+≈0.76 and stalls. **Acting on the signal is what makes it decidable**, and ten
+steps of following buys AUC 0.93 — 5% of a 200-step episode.
+
+Three consequences for how the waves are ordered, and they are not what the
+plan in §1 assumes:
+
+1. **The optimal policy is probe-and-verify**, not classify-then-act: take a
+   few steps along `q`, watch whether it converges, then commit or abandon.
+   That is a behaviour a recurrent policy can represent, and it is *cheap*.
+2. **A pure-explore phase trains the exact wrong prior.** Under
+   `explore_goals_off` with distractors in memory, following `q` earns nothing
+   and costs steps, so explore training converges on "never follow `q`" — which
+   destroys the only behaviour that makes the regimes separable. The longer the
+   pure-explore phase, the more the combined phase has to unlearn.
+3. So the ordering Jack flagged as a guess — explore to convergence, then
+   anneal exploit in — is the one this predicts will struggle, and
+   **interleaving from early on** is the favoured alternative. Wave 3 runs the
+   requested order first anyway (it is cheap to test and the prediction may be
+   wrong), but with the interleaved arm beside it rather than after it.
 
 ---
 

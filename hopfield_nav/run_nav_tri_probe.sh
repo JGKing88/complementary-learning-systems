@@ -48,6 +48,12 @@ for ck in $CKPTS; do
             --ckpt "$ck" --n_distractors $NDIST \
             --cells "${CELLS:-200}" ${ENVS:+--envs $ENVS} \
             --json "$OUTDIR/signal_${tag}.json"
+    elif [ "$PROBE" = temporal ]; then
+        python -u -m analysis.nav_tri.temporal_separability \
+            --ckpt "$ck" --n_distractors $NDIST \
+            --steps "${TSTEPS:-20}" --sets "${SETS:-8}" --traj "${TRAJ:-32}" \
+            ${ENVS:+--envs $ENVS} \
+            --json "$OUTDIR/temporal_${tag}.json"
     else
         python -u -m analysis.nav_tri.behavior_probe \
             --ckpt "$ck" --mode $MODE --n_distractors $NDIST \
