@@ -1400,6 +1400,36 @@ zero reach the policy only through the un-normalized value loss.
   0.735 → 0.9 — predicts coverage **0.356**, i.e. the 0.352 target, and there
   are 1300 updates left on this arm alone. σ=0.50 is running ahead of it.
 
+#### CONCLUSION — wave 2, explore arm. Target exceeded.
+
+`mean_coverage` at `n_dist=0`:
+
+| update | 100 | 200 | 300 | 400 | 500 | 600 | 700 | 1000 | 1100 |
+|---|---|---|---|---|---|---|---|---|---|
+| σ=0.30 | 0.166 | 0.244 | 0.278 | 0.306 | 0.334 | 0.350 | 0.321 | **0.374** | 0.374 |
+| σ=0.50 | 0.238 | 0.298 | 0.344 | 0.323 | 0.354 | 0.356 | **0.375** | — | — |
+
+**Both pass the 0.352 practical target**, and σ=0.50 does it in ~700 updates
+against σ=0.30's ~1000 — consistent with the σ ranking throughout. Against the
+§3.1 ladder, **0.375 sits at the perfect-information billiard line
+(0.366–0.387)** and above the noisy-billiard reference the sensory cone was
+priced at. What remains above it — the lawnmower at 0.478 — P0.9 showed is
+unreachable without decodable position.
+
+For scale: the v35 recipe reached **0.121 in the 190 updates it ran**, and the
+explore-min wave's best was ~0.51 *at 400 eval steps*, i.e. ~0.28 at this
+protocol's 200. **0.375 is the best coverage this lineage has produced.**
+
+So both halves are solved separately:
+
+| metric | best | target | status |
+|---|---|---|---|
+| coverage | **0.375** | 0.352 | **exceeded** |
+| `success_rate` | **1.000** | ≥0.98 | met |
+| `mean_steps` | **12.1** | ~10.1 | 1.2× the readout limit |
+
+Wave 3 — whether *one* model can hold all three — is now the whole question.
+
 #### A train/eval mismatch the exploit arm exposed
 
 Recorded separately because it is a property of the **trainer**, not of this
