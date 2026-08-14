@@ -259,35 +259,52 @@ case "$VARIANT" in
   # scale -- and pooled advantage normalization removes scales. GOAL_REWARD
   # and TIME_PENALTY therefore only reach the policy through the *value* loss,
   # which is not normalized. See §3.5.
+  # Rollout shape: 20 envs x 64 batch, NOT wave 1's 80 x 16. Same PPO pool of
+  # 1280 trajectories and the same env-steps per update, a quarter of the
+  # serial model calls. w1_c20 ran that shape against w1_base and was 26%
+  # AHEAD at a matched u100 while costing half the wall-clock per update, so
+  # taking it here is acting on evidence rather than saving time blindly.
+  # Diversity matters less for exploit anyway: "follow the recall signal" is
+  # an env-independent skill, where coverage is not.
+  #
+  # sigma is the axis, because wave 1 found it dominant for explore AND the
+  # exploit regime hardcodes epsilon to 0 (exploit.py:93) -- so sigma is the
+  # ONLY exploration the policy has here, not merely the best one. The three
+  # values bracket it; -1.2 is the default because wave 1 shows -1.8 is too
+  # tight and -0.7 is not yet scored.
   w2_x_base)
-    SCHEDULE=${SCHEDULE:-'exploit:400'}
-    WALL_PENALTY=0; PERSISTENCE_BONUS=0; REVISIT_PENALTY=0
-    EVAL_SCOPE=navexpl; EVAL_EVERY=20; CKPT_EVERY=20
-    ;;
-  # Straightness is the one shaping term whose sign is plausibly positive for
-  # navigation -- a beeline IS a straight line -- so it is worth one ticket
-  # even though it was a leak rather than a choice in the v35 lineage.
-  w2_x_pers)
-    SCHEDULE=${SCHEDULE:-'exploit:400'}
-    WALL_PENALTY=0; PERSISTENCE_BONUS=0.05; REVISIT_PENALTY=0
-    EVAL_SCOPE=navexpl; EVAL_EVERY=20; CKPT_EVERY=20
-    ;;
-  # The policy has to learn its own step magnitude (P0.6: it starts at 0.086
-  # and the optimum is 1.0), and sigma is the channel it learns that through,
-  # because epsilon is off in the exploit regime by construction
-  # (exploit.py:93). So init_log_std is a first-class exploit knob, not just
-  # an explore one.
-  w2_x_sig)
-    SCHEDULE=${SCHEDULE:-'exploit:400'}
+    SCHEDULE=${SCHEDULE:-'exploit:600'}
+    ENVS_PER_WORLD=20; BATCH_ENVS=64
     WALL_PENALTY=0; PERSISTENCE_BONUS=0; REVISIT_PENALTY=0
     INIT_LOG_STD=-1.2
-    EVAL_SCOPE=navexpl; EVAL_EVERY=20; CKPT_EVERY=20
+    EVAL_SCOPE=navexpl; EVAL_EVERY=25; CKPT_EVERY=25
     ;;
-  w2_x_lr)
-    SCHEDULE=${SCHEDULE:-'exploit:400'}
+  w2_x_sig2)
+    SCHEDULE=${SCHEDULE:-'exploit:600'}
+    ENVS_PER_WORLD=20; BATCH_ENVS=64
     WALL_PENALTY=0; PERSISTENCE_BONUS=0; REVISIT_PENALTY=0
-    LR=1e-3
-    EVAL_SCOPE=navexpl; EVAL_EVERY=20; CKPT_EVERY=20
+    INIT_LOG_STD=-0.7
+    EVAL_SCOPE=navexpl; EVAL_EVERY=25; CKPT_EVERY=25
+    ;;
+  # v35's sigma, to bracket the axis from below and to say what the historical
+  # recipe would have scored on mean_steps under this protocol.
+  w2_x_siglo)
+    SCHEDULE=${SCHEDULE:-'exploit:600'}
+    ENVS_PER_WORLD=20; BATCH_ENVS=64
+    WALL_PENALTY=0; PERSISTENCE_BONUS=0; REVISIT_PENALTY=0
+    INIT_LOG_STD=-1.8
+    EVAL_SCOPE=navexpl; EVAL_EVERY=25; CKPT_EVERY=25
+    ;;
+  # Exploit is a far easier objective than explore -- dense +5, a readout at
+  # cos 0.99 up to 3 distractors -- so if it is optimization-limited rather
+  # than signal-limited this is the cheapest fix. Promoted over a clip sweep
+  # by the arithmetic in docs §3.4.1.
+  w2_x_lr)
+    SCHEDULE=${SCHEDULE:-'exploit:600'}
+    ENVS_PER_WORLD=20; BATCH_ENVS=64
+    WALL_PENALTY=0; PERSISTENCE_BONUS=0; REVISIT_PENALTY=0
+    INIT_LOG_STD=-1.2; LR=1e-3
+    EVAL_SCOPE=navexpl; EVAL_EVERY=25; CKPT_EVERY=25
     ;;
 
   # NOTE: a `w2_wallres1` variant was designed here and deliberately dropped.

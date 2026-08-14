@@ -1025,12 +1025,28 @@ against a readout measured at cos 0.99.
 `revisit_penalty` leak into exploit rollouts (P0.3.1), so a baseline that left
 them on would measure the leak rather than goal-following.
 
+**Rollout shape is 20 envs × 64 batch, not wave 1's 80 × 16** — same PPO pool
+and env-steps, a quarter of the serial calls, half the wall-clock per update.
+Taken on evidence: `w1_c20` ran exactly that shape and was 26% *ahead* of
+`w1_base` at a matched u100. Diversity also matters less here — "follow the
+recall signal" is an env-independent skill, where coverage is not.
+
+**σ is the axis**, because wave 1 found it dominant for explore *and* the
+exploit regime hardcodes ε=0 (`exploit.py:93`), so σ is the **only**
+exploration a nav policy has, not merely the best one.
+
 | variant | change | why |
 |---|---|---|
-| `w2_x_base` | shaping all 0 | the clean control: goal reward only |
-| `w2_x_pers` | `PERSISTENCE_BONUS=0.05` | the one leaked term whose sign is plausibly *positive* for nav — a beeline is a straight line |
-| `w2_x_sig` | `INIT_LOG_STD` −1.8 → −1.2 | ε is hardcoded 0 in the exploit regime (`exploit.py:93`), so σ is the **only** channel through which the policy can learn its step magnitude, and P0.6 says it starts 12× too small |
-| `w2_x_lr` | `LR` 3e-4 → 1e-3 | exploit is a much easier objective than explore (dense +5, near-perfect signal); if it is optimization-limited, this is the cheapest fix |
+| `w2_x_base` | σ=0.30, shaping all 0 | the control: goal reward only, at the σ wave 1 favours |
+| `w2_x_sig2` | σ=0.50 | brackets σ from above |
+| `w2_x_siglo` | σ=0.165 | v35's value — brackets from below, and says what the historical recipe scores on `mean_steps` under this protocol |
+| `w2_x_lr` | `LR` 3e-4 → 1e-3 | exploit is far easier than explore (dense +5, readout at cos 0.99 up to 3 distractors); if it is optimization- rather than signal-limited, this is the cheapest fix. Promoted over a clip sweep by §3.4.1 |
+
+`PERSISTENCE_BONUS` was going to take a ticket here — a beeline is a straight
+line, so its sign is plausibly positive for nav. **Dropped**: §3.4.1 shows the
+term is `m²/(m²+σ²)` signal, i.e. ~40% noise at σ=0.30 while the step is still
+small, so it would be measured in the regime where it cannot work. It belongs
+in a later wave, after magnitude is solved.
 
 **Every result is read as the triple (`success_rate`, `mean_steps`, mean |a|)**
 and placed against §3.3.1's table using the `q_accuracy` the behaviour probe
