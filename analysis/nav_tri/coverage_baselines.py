@@ -291,8 +291,13 @@ def main() -> None:
             _rollout(_run_and_tumble(rng, n, p), n=n, steps=steps, size=size,
                      mag=1.0, eps=0.0, sigma_a=0.0, rng=rng))
 
+    # Includes the sub-cell magnitudes a partly-trained policy actually has.
+    # At |a| = m < 1 the agent needs 1/m steps to leave a cell, so cells/step
+    # cannot exceed ~m however good the trajectory is -- which is why a run
+    # sitting at |a| = 0.25 is magnitude-limited, not strategy-limited, and no
+    # shaping or schedule can move it.
     print("\n--- step magnitude (billiard) ---")
-    for mag in (0.5, 0.75, 1.0, 1.5, 2.0, 3.0):
+    for mag in (0.15, 0.25, 0.5, 0.75, 1.0, 1.5, 2.0, 3.0):
         run(f"billiard |a|={mag}",
             _rollout(_persistent(rng, n, 0.0), n=n, steps=steps, size=size,
                      mag=mag, eps=0.0, sigma_a=0.0, rng=rng, reflect=True))
