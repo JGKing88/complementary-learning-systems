@@ -1318,6 +1318,38 @@ zero reach the policy only through the un-normalized value loss.
   control for 20-env runs — insurance that only pays out if those runs plateau,
   and can be bought then. Bracketing σ is on the critical path now.
 
+- **σ=0.50 confirmed at a second matched point, and the v35 control retired.**
+
+  | update | `w1_base` σ=0.165 (80 envs) | `w2_e_long` σ=0.30 | `w2_e_long2` σ=0.50 |
+  |---|---|---|---|
+  | u50 | 0.0398 | 0.0729 | **0.1364** |
+  | u100 | 0.0574 | 0.1660 | **0.2383** |
+  | u150 | 0.0949 | 0.2103 | — |
+  | u175 | 0.1206 | — | — |
+  | u200 | — | 0.2441 | — |
+
+  σ=0.50 reaches at **u100** what σ=0.30 needs **u200** for, and what the v35
+  recipe does not reach at all in the 190 updates it ran. **`w1_base`
+  cancelled at u190**, its curve recorded above as the v35 reference: the
+  headline comparison is *already* won by 4× at matched updates, and refining
+  it to u450 would buy precision on a question that is settled while the
+  **exploit half of Jack's goal remains entirely untested**. The freed slot
+  goes to `w2_x_sig2`, the first exploit run.
+
+  The claim this leaves is the stronger form anyway: **our recipe at u100
+  (0.238) beats the v35 recipe's best in 190 updates (0.121) by 2×, in half
+  the updates and at a third of the wall-clock per update.**
+
+#### Live notes — wave 2, exploit arm
+
+- **Config validated before committing GPU-hours.** `smoke_x` (4 updates,
+  4 envs, CPU) confirms `nav=` metrics appear, `eval_scope=navexpl` skips
+  goal-discovery as intended, and an eval costs 3.6 s. It also reproduced the
+  documented trap in the wild: after 4 updates the policy reaches nothing and
+  the log reads `'mean_steps': 0.0` with `'total_successes': 0` — **0.0, not
+  NaN**, exactly as §P0.3.4 warns. Any automated ranking on `mean_steps` alone
+  would put a totally failed policy first.
+
 ### Wave 3 — combining the two (pre-registered; fires after waves 1–2)
 
 **Written before any wave-1 or wave-2 result is in**, so the decision rules
