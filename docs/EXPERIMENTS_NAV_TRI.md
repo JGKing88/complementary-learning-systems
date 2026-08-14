@@ -48,8 +48,20 @@ See §3.4's verdict and the wave-1 live notes.
       (`PROBE=behavior CKPTS="…" sbatch hopfield_nav/run_nav_tri_probe_cpu.sh`)
       and record `step_mag_mean` + `strategy_efficiency` beside every coverage
       number — a coverage figure without them cannot be diagnosed.
+- [ ] **Smoke the exploit config before committing 6 h to it.** Nothing on the
+      exploit side has been run yet — every exploit number in this document is
+      simulation (§3.3.1) or readout probe (P0.7). One
+      `SCHEDULE='exploit:6' EVAL_SCOPE=navexpl` run first, to confirm the nav
+      metrics actually appear and `navexpl` behaves, then launch the wave.
 - [ ] Launch wave 2 (exploit) at the σ wave 1 selects; variants already in the
       launcher.
+- [ ] **Caveat on the σ result: `w1_sig` ran on `pi_fiete` (a100) while
+      `w1_eps01` ran on `mit_normal_gpu` (l40s)**, so that comparison is
+      confounded with node — different float rounding acts like a different
+      seed. The 1.8× effect is far larger than that could plausibly produce,
+      and the u50 behaviour probe checks the *mechanism* (does σ actually
+      enlarge `step_mag_mean`?) which is node-independent. `w2_e_long` vs
+      `w2_e_long2` will give a clean same-node, same-shape σ comparison.
 - [ ] **Q1 (cost/diversity) is DEFERRED, not answered** — `w1_c20` was
       cancelled to free a slot. Re-run the 20-envs-×-64-batch ladder on the
       winning recipe. Its partial curve was *26% ahead* of 80 envs at u100, so
