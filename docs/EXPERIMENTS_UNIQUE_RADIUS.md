@@ -1295,3 +1295,51 @@ Note this puts **uniformity back in a regime where §4 measured it winning.**
 radius (0.863 against 0.919) and losing at the wide one that eventually won —
 so the final config used `rate`. Low coverage is ceiling-limited, which is the
 half of that trade where uniformity was ahead.
+
+### 5.6e Being trained on does not save a reference — and that demotes placement
+
+`alias_structure --ref_vs_patch --ur_refs 100`, on three 10% encoders and §4's
+50.8% winner. The reference positions are identical across all four (same
+lambdas, `n_refs`, border and seed), so only the patch layout differs.
+
+| encoder | inside a patch | median patch dist | max | `r_mono` inside | outside |
+|---|---|---|---|---|---|
+| `cov51` (50.8%) | 60/100 | 0 | 104 | 44.3 | 40.7 |
+| `lo_mixtop` (10.1%) | 15/100 | 114 | 627 | 18.1 | 10.8 |
+| `lo_big` (9.5%) | 14/100 | 190 | 627 | 18.3 | 12.7 |
+| `lo_many` (9.9%) | 8/100 | 74 | 352 | 14.0 | 10.8 |
+
+Half of §5.6c holds: exposure collapses, 60 references inside a patch down to
+8–15. The other half — the inference that the metric is therefore reporting
+*extrapolation into the holes* — does not survive the measurement.
+
+**A reference sitting inside a training patch at 10% coverage (18.1) does far
+worse than a reference outside every training patch at 50.8% (40.7).** Being
+trained on is worth about 7 radius units; having a well-covered arena is worth
+about 25. So the damage is not localised to the holes at all — it lands on
+well-trained positions just as hard.
+
+The mechanism this points at: `r_min` for a reference is killed by whatever
+*other* position aliases to it, and that partner is drawn from the 90% of the
+arena training never touched. A reference can have perfect local structure and
+still score 3 because something 600 cells away collides with it. Coverage does
+not work by teaching each reference its own neighbourhood; it works by leaving
+fewer untrained positions available to alias against everything.
+
+That is a second, independent line to the same place as §5.6d — the ceiling is
+the lever — and this time it arrives by a different measurement.
+
+**It also argues against the step-3 placement idea, so, before `w18` reports:**
+the correlation placement is supposed to exploit is *weaker* here than the −0.47
+§4.6 found at 22.9% — `corr(patch_dist, r_mono)` is −0.31, −0.32, −0.14, i.e.
+about 10% of the variance. And the reference that actually sets `r_min` is not
+the far one: it sits at patch distance 254 (rank 80/100) for `lo_mixtop` but at
+**5** (rank 15/100) for `lo_big`. Evening out the holes addresses a weak and
+inconsistent predictor.
+
+Revised step-3 prediction, replacing the one in §5.4: stratified placement
+should produce **little or no gain** — call it under 2 radius units, inside the
+seed spread. §5.6b showed it halves the worst hole, so if the hole were the
+mechanism the effect would be large and obvious. `w18` is already running and
+will settle it either way; the value of the arm is now that it tests the
+mechanism, not that it is expected to win.
