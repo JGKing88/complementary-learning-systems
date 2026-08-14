@@ -428,6 +428,31 @@ cost, against σ's ~2× effect on explore learning speed. `success_rate` stays
 > `freeze_log_std=1` the combined model has exactly one value to pick, and this
 > says picking it for explore costs the exploit metric almost nothing.
 
+**The one real cost of a large σ: it destroys the `persistence_bonus` signal
+while the step is still small.** That term is `cos(a_t, a_{t−1})` on the
+*executed* actions (`collector.py:620-638`). With mean magnitude `m` and
+per-component noise σ, two consecutive executions of the *same* intended
+direction have expected cosine ≈ `m² / (m² + σ²)`:
+
+| | σ=0.165 | σ=0.30 | σ=0.50 |
+|---|---|---|---|
+| at m = 0.25 (where the runs are now) | 0.70 | 0.41 | **0.20** |
+| at m = 1.0 (the target) | 0.97 | 0.92 | 0.80 |
+
+So at σ=0.50 and today's step size the straightness reward is ~80% noise, and
+it recovers to ~80% signal only once the magnitude reaches 1. Two consequences:
+
+- **Shaping straightness and raising σ fight each other early and stop fighting
+  late.** That is a strong argument for the `w1_siganneal` variant — buy the
+  magnitude ascent with a large σ, then decay it so the straightness term
+  becomes readable — and it predicts that `PERSISTENCE_BONUS` is worth
+  revisiting *after* magnitude is solved, not before. (Wave 1's `w1_pers` was
+  therefore mistimed, which is a better reason to have deprioritized it than
+  the one originally given.)
+- It also means the ~45% `strategy_efficiency` measured at u75 is not
+  necessarily a hard limit: the deterministic policy's own straightness is only
+  0.47–0.57, and the term meant to fix that is currently being drowned.
+
 ### 3.5 Which knobs are provably inert, and when
 
 Pooled advantage normalization (`updates/ppo.py:210-214`) removes any constant
