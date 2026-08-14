@@ -1451,17 +1451,47 @@ anything measured so far. This is the over-fitting risk flagged when Q1 adopted
 20 envs — and the control that would have caught it (`w1_sig2` at 80 envs) is
 the run cancelled to free a slot, which was a mistake worth naming.
 
-**σ=0.165 settles most of it: explore and exploit want DIFFERENT σ, for a
-reason that generalizes.** At matched u100:
+> ### CORRECTION — the section below was written at u100 and is wrong
+>
+> It read "σ=0.165 is 2× better on the honest metric, **and it does not
+> degrade**", and concluded that exploit needs a permanently smaller σ. The
+> full curves refute the strong form. `mean_steps_all`, d=0:
+>
+> | update | σ=0.50 | σ=0.165 |
+> |---|---|---|
+> | u25 | 43 | 120 |
+> | u100 | 77 | **54** |
+> | u175 | 86 | **29** |
+> | u250 | 27 | **23** |
+> | u350 | 112 | **24** |
+> | u600 | **12.1** | *(running)* |
+>
+> **Both oscillate violently** — σ=0.165 dips to 107 at u200, σ=0.50 swings
+> between 159 and 17 — and because the eval seed is fixed at 42, that is real
+> model movement, not sampling noise. So "σ=0.50 degrades" was **a phase of an
+> oscillation mistaken for a trend**, read off three consecutive points.
+> σ=0.50 went on to reach **`mean_steps` 12.1 at `success_rate` 1.000**, the
+> best exploit number of the project and near the 10.1 reference.
+>
+> What survives: σ=0.165 is **more stable** and better at every matched update
+> through u350. What does not: that σ=0.50 fails, or that exploit needs a
+> permanently small σ. **The matched-endpoint comparison is still owed** —
+> σ=0.165 reaches u600 around 13:45.
+>
+> The lesson is the one this document keeps re-learning: **three points are not
+> a trend when the underlying series oscillates**, and I had the fixed eval
+> seed available to tell me the oscillation was real.
+
+At u100 the comparison read:
 
 | σ | `success_rate` | `mean_steps` | **`mean_steps_all`** |
 |---|---|---|---|
 | 0.50 (`w2_x_sig2`) | 0.667 | 62.0 | **~112** |
 | **0.165 (`w2_x_siglo`)** | **0.979** | 51.1 | **54.2** |
 
-**2× better on the honest metric**, and it does not degrade. So σ is the
-driver — but the mechanism is not overshoot (magnitude *shrank*). It is the
-**density of the reward**:
+The **reward-density** argument below still stands as an account of why the
+large-σ run is *less stable* — it is the reason its behaviour policy can earn
+reward while its mean wanders — but not as a reason it cannot win:
 
 > Explore pays **every step** — novelty fires on each new cell — so a large σ
 > is cheap: every noisy step still returns a graded signal, and the noise buys
