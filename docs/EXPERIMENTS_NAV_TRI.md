@@ -255,6 +255,49 @@ Start and goal are both drawn uniformly on the 20×20 grid, so:
 So **`mean_steps ≈ 9.5` is the floor** and anything near ~10–12 is excellent.
 The v35 lineage's reference point was 22.9 — about 2.4× the floor.
 
+#### 3.3.1 `success_rate` is nearly uninformative here — and the reference table
+
+`analysis/nav_tri/exploit_reference.py` simulates a policy that does nothing but
+follow a direction of a given cosine accuracy, at a given step magnitude, under
+the real nav protocol (open arena, ends on arrival, `goal_radius=1`, 200-step
+budget, action σ = 0.165).
+
+```bash
+$HOME/.conda/envs/cls/bin/python -m analysis.nav_tri.exploit_reference
+```
+
+**`success_rate` is 1.000 in every single row** — including cos-accuracy 0.50,
+i.e. a direction wrong by 60° on average. In an obstacle-free 20×20 arena with
+200 steps, essentially any goalward drift arrives. This confirms Jack's warning
+in the strongest possible form: **success rate cannot distinguish a good
+navigator from a bad one in this setup, and should be read as a sanity check
+only.** `mean_steps` carries the entire exploit signal.
+
+`mean_steps`, successes only, as `metrics.py:351-354` computes it:
+
+| cos(q, goal) | \|a\|=0.75 | \|a\|=1.0 | \|a\|=1.5 | \|a\|=2.0 |
+|---|---|---|---|---|
+| 1.00 (oracle) | 13.2 | **10.0** | 6.8 | 5.3 |
+| 0.99 | 13.3 | **10.1** | 6.9 | 5.4 |
+| 0.95 | 14.0 | 10.6 | 7.3 | 5.9 |
+| 0.90 | 14.9 | 11.4 | 7.9 | 6.5 |
+| 0.82 | 16.6 | **12.7** | 9.0 | 7.5 |
+| 0.70 | 19.8 | 15.3 | 11.0 | 9.3 |
+| 0.50 | 28.6 | **22.4** | 16.4 | 14.2 |
+
+**How to use this table.** Run `behavior_probe.py` on a checkpoint, read off its
+`q_accuracy` and `step_mag_mean`, and look up the row. At or near the reference
+⇒ the policy already follows the signal as well as the signal permits, and nav
+tuning is pointless because the *readout* is the limit. Well above it ⇒ the
+policy is failing to follow a signal that is demonstrably there, which is an
+optimization problem worth fixing.
+
+Applied to the numbers already in hand: P0.7 measured the readout at cos **0.99**
+(no distractors) and **0.82** (ten), so the reachable `mean_steps` at unit steps
+is **10.1–12.7**. The v35 lineage's reference point of 22.9 sits on the
+cos ≈ 0.50 row — i.e. roughly **2× more steps than its readout permitted**. That
+gap is the exploit headroom, and it is a policy gap, not a readout gap.
+
 **`mean_steps` is gameable and must always be reported with step magnitude.**
 `continuous_normalize=False` leaves `|a|` free, and at `|a| = 2` the oracle
 figure drops to 4.75 without the policy having got any better at navigating.
@@ -331,6 +374,7 @@ Therefore:
 | what a checkpoint actually *does* — behaviour class, failure mode, and the readout-vs-policy split | `analysis/nav_tri/behavior_probe.py` | P0.6. Instrumented copy of the two eval protocols. |
 | is "goal in memory" decidable from the observation? | `analysis/nav_tri/signal_separability.py` | P0.7. No policy involved — a property of encoder + scaffold + Hopfield. |
 | how many steps of `q` does it take to decide? (ideal-observer AUC vs T) | `analysis/nav_tri/temporal_separability.py` | P0.8. Bounds what any architecture could extract. |
+| what nav numbers a perfect follower of a given-accuracy signal gets | `analysis/nav_tri/exploit_reference.py` | §3.3.1. Turns `q_accuracy` into a predicted `mean_steps`, so a checkpoint's nav gap is diagnosable as readout vs policy. |
 | launcher for the two probes | `hopfield_nav/run_nav_tri_probe.sh` | `PROBE=signal\|behavior CKPTS="…" sbatch …` |
 | training launcher | `hopfield_nav/run_nav_tri.sh` | `VARIANT=<name> sbatch …`; variants in the `case` block |
 | queue + latest metric per run | `hopfield_nav/nav_tri_status.sh` | pulled, not pushed |
