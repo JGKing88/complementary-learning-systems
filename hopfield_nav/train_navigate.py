@@ -83,6 +83,7 @@ def run_navigate(
     ckpt_world: dict | None = None,
     refresher: Refresher | None = None,
     record_world=None,
+    optimizer_state: dict | None = None,
 ) -> None:
     """Walk the schedule, one pooled PPO update per step.
 
@@ -107,6 +108,20 @@ def run_navigate(
     # One optimizer for the whole run: stages are segments of a single training
     # trajectory, so Adam's moments carry across a boundary. A stage-level `lr`
     # retunes the existing group instead of building a new optimizer.
+    #
+    # The same argument applies across a `--load_checkpoint` boundary, and until
+    # now it was silently violated: checkpoints stored only `agent_state_dict`,
+    # so a resumed run began with zero first/second moments. Adam's first step
+    # is then ~lr per parameter regardless of the gradient, which is fine for a
+    # lightly-trained parent and destructive for a converged one. That is the
+    # difference between P5 (200 updates, warm-starts fine) and W10 (2,100
+    # updates, produced a NaN policy mean in five of six warm starts) -- and
+    # C12 died at u2 while still doing pure explore, i.e. on the objective its
+    # parent had just spent 3,000 updates on, which rules out the regime switch
+    # and points here.
+    if optimizer_state is not None:
+        optimizer.load_state_dict(optimizer_state)
+        print("Restored optimizer state from checkpoint", flush=True)
     current_lr = cfg.ppo.lr
 
     # Distractors are a property of the run, not of an update -- see
@@ -399,6 +414,9 @@ def run_navigate(
             os.makedirs(cfg.save_dir, exist_ok=True)
             torch.save({
                 "agent_state_dict": agent.state_dict(),
+                # Adam's moments, so a `--load_checkpoint` continuation resumes
+                # the same optimisation trajectory instead of restarting it.
+                "optimizer_state_dict": optimizer.state_dict(),
                 "config": ckpt_config,
                 "world_spec": ckpt_world,
                 "update": update,
@@ -461,10 +479,20 @@ def train_navigate(
           flush=True)
     agent = NavAgent(cfg.agent, input_dim).to(device)
 
+    optimizer_state = None
     if load_checkpoint is not None:
         ck = torch.load(load_checkpoint, map_location=device, weights_only=False)
         agent.load_state_dict(ck["agent_state_dict"])
+        # Absent in checkpoints written before this was added; those resume with
+        # a fresh Adam, which is what made warm starts from a converged parent
+        # unstable. Warn rather than fail, so old checkpoints stay loadable.
+        optimizer_state = ck.get("optimizer_state_dict")
         print(f"Loaded agent state from {load_checkpoint}", flush=True)
+        if optimizer_state is None:
+            print("  WARNING: no optimizer_state_dict in this checkpoint; "
+                  "Adam restarts from zero moments and the first steps will be "
+                  "large. Expect instability from a well-converged parent.",
+                  flush=True)
 
     if cfg.use_wandb:
         import wandb
@@ -497,6 +525,7 @@ def train_navigate(
         # A run whose envs never move needs no rewrite: the startup record
         # already describes them for the whole run.
         record_world=(record_world if refresher is not None else None),
+        optimizer_state=optimizer_state,
     )
 
     # `run_navigate` rewrote the record on its own cadence, into its own local;

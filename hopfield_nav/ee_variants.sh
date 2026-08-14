@@ -732,6 +732,57 @@ EOF
     # value head.
     #
     # C13 carries MAX_ACTION_NORM because warm-starting W10 NaNs without it.
+    # C18: the brief's full ordering -- explore, then exploit, then anneal the
+    # two together -- as one from-scratch schedule.
+    #
+    # C17 stops after the exploit block. C18 continues into an interleave that
+    # keeps exploit at 25%%, which is the fraction C14 showed preserves
+    # navigation (success >=0.83 for six evals past its anneal, 1.000 at the
+    # update where the 50%% runs had collapsed). So this is the brief's three
+    # steps in order, in a single optimizer trajectory, with no reload anywhere.
+    #
+    # Everything before this in the C-series warm-started, which is how the
+    # composition results got tangled up with the missing optimizer state. This
+    # is the version that is not.
+    C18) cat <<'EOF'
+export ENVS_PER_WORLD=8
+export BATCH_ENVS=16
+export STEPS_PER_ROLLOUT=200
+export SCHEDULE="explore:2500 ; exploit:150 ; interleave:600,empty_frac=0.75"
+export EVAL_EVERY=75
+export VAL_DISTRACTORS="0 10"
+export WALL_PENALTY=0.3
+export NOVELTY_REWARD=0.15
+EOF
+        ;;
+    # C17: the brief's ordering as ONE run, so there is no warm start at all.
+    #
+    # The reason explore-first kept failing was never the ordering: it was that
+    # `--load_checkpoint` restored weights without Adam's moments, so a
+    # converged parent took enormous first steps (five of six W10 warm starts
+    # NaN'd; C12 died at u2 while still doing pure explore). Checkpoints now
+    # carry `optimizer_state_dict`, but the cleaner fix is not to reload at all:
+    # `run_navigate` already keeps ONE optimizer across stage boundaries, so
+    # `explore:2500 ; exploit:150` is the same experiment inside a single
+    # trajectory.
+    #
+    # 2,500 explore updates is where W10 reached 0.515 coverage. 150 exploit
+    # updates is sized from C15: 75 restored `success_rate` 0.166 -> 0.984 after
+    # a 150-update explore block, and coverage decays ~37%% per 75 updates of
+    # exploit -- so from 0.515 the landing zone is ~0.32 coverage at ~1.0
+    # success, which would beat every composite in this log by 2x on coverage.
+    # EVAL_EVERY=75 samples the transition twice.
+    C17) cat <<'EOF'
+export ENVS_PER_WORLD=8
+export BATCH_ENVS=16
+export STEPS_PER_ROLLOUT=200
+export SCHEDULE="explore:2500 ; exploit:150"
+export EVAL_EVERY=75
+export VAL_DISTRACTORS="0 10"
+export WALL_PENALTY=0.3
+export NOVELTY_REWARD=0.15
+EOF
+        ;;
     # C13c: the 75%-explore test from a LESS CONVERGED explorer.
     #
     # C12/C12b/C13/C13b all NaN'd continuing from W10 u2100, and LR and the
