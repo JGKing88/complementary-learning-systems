@@ -120,6 +120,7 @@ _arg  wall_penalty                    "${WALL_PENALTY:-}"
 _arg  persistence_bonus               "${PERSISTENCE_BONUS:-}"
 
 # --- Explore-regime behavior -----------------------------------------------
+_arg  regime_assignment               "${REGIME_ASSIGNMENT:-}"
 _bool explore_goals_off               "${EXPLORE_GOALS_OFF:-}"
 _bool explore_ends_on_goal            "${EXPLORE_ENDS_ON_GOAL:-}"
 _bool randomize_goal_per_rollout      "${RANDOMIZE_GOAL_PER_ROLLOUT:-}"

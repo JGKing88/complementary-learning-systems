@@ -36,12 +36,13 @@ Resume checklist, in order:
 - [ ] Re-run `temporal_separability` at the real Npos=1716 (P0.8 is Npos=300
       and is therefore an *under*estimate). Queued on `mit_normal` (CPU).
 - [ ] Behaviour-probe every wave-1 checkpoint at u450 and fill the §6 table.
-- [ ] Regime assignment is **positional**, not random: `train_navigate.py:335`
-      makes the first `n_pre` envs exploit and the rest explore, so at a fixed
-      `empty_frac` the *same* envs are always in the same regime, all run. That
-      lets the policy memorize "env 7 ⇒ beeline to (x,y)" from the fixed
-      sensory codebook instead of using the Hopfield. Held-out eval catches it,
-      but it wastes exploit data. Consider randomizing per update in wave 3.
+- [x] Regime assignment was **positional**, so at a fixed `empty_frac` the same
+      envs were always exploit and the policy could gate on env identity rather
+      than on the recall signal. **Fixed**: `--regime_assignment shuffle`
+      (default stays `index` so older configs still mean what they meant).
+      Wave 3 uses `shuffle`. Also fixed a latent logging bug it exposed — the
+      pre/emp reward split sliced a world-major list and so mixed regimes
+      whenever `num_worlds > 1`.
 
 **Scheduler facts that shape how waves are launched:**
 
@@ -901,3 +902,59 @@ exploit-tuning arm before it gets a combination arm.
 
 Not swept, per §3.5: `GOAL_REWARD` and `TIME_PENALTY`, which with shaping at
 zero reach the policy only through the un-normalized value loss.
+
+---
+
+### Wave 3 — combining the two (pre-registered; fires after waves 1–2)
+
+**Written before any wave-1 or wave-2 result is in**, so the decision rules
+cannot be fitted to the outcome. Everything here runs with
+`--regime_assignment shuffle` (see §0) and the shaping and noise settings that
+waves 1–2 select.
+
+The four orderings Jack named, as schedules:
+
+| arm | schedule | warm start |
+|---|---|---|
+| **A** *(the requested order)* | `interleave:450,empty_frac=1.0->0.5,anneal=150` | best wave-1 explore checkpoint |
+| **B** *(interleave throughout)* | `interleave:450,empty_frac=0.5` | fresh |
+| **C** *(blocked, never interleaved)* | `explore:225 ; exploit:225` | fresh |
+| **D** *(exploit first)* | `interleave:450,empty_frac=0.0->0.5,anneal=150` | best wave-2 exploit checkpoint |
+
+A and D warm-start via `--load_checkpoint`, which is what makes "anneal the
+other regime in" cheap: the first phase has already been paid for by waves 1–2,
+so each arm costs one 450-update run rather than two.
+
+**The prediction, and why.** P0.8 says the regime is decidable at AUC ≈0.9 from
+`|q|` alone at ≤3 distractors, but only ≈0.72–0.79 at ten unless the agent
+*probes* — takes a few steps along `q` and watches whether it converges. Under
+`explore_goals_off`, probing earns nothing and costs coverage, so a long
+pure-explore phase actively trains it away.
+
+- **A** therefore starts from a policy that has learned to ignore the recall
+  channel and must unlearn it. Predicted: works at low distractor counts, and
+  the d=10 nav numbers lag.
+- **B** never trains the wrong prior, and an interleaved rollout is the only
+  setting where probing has positive expected value — half the envs pay off.
+  **Predicted best on the composite.**
+- **C** is the control that isolates "interleaving matters" from "seeing both
+  regimes matters": it sees both, never together.
+- **D** brackets A from the other side.
+
+**Decision rule, stated now.** Score all four on the §5 verdict protocol and
+compare the triple (coverage, `mean_steps` at d=0, `mean_steps` at d=10) against
+the reference lines. If B ≥ A on the composite, **the requested ordering is
+refuted and interleaving becomes the recipe**; report that plainly rather than
+continuing to tune A. If A ≥ B, the ordering stands and the P0.8 concern was
+priced too high. If C matches both, then interleaving *per se* is irrelevant and
+only regime exposure matters — the cheapest outcome, and the one that would let
+waves 1 and 2 simply be concatenated.
+
+**The failure mode to watch for is interference, not either metric alone.** A
+model that scores 0.35 coverage and `mean_steps` 30, or 10.5 steps and 0.10
+coverage, has not combined anything. `analysis/nav_tri/behavior_probe.py`
+diagnoses which: `chase_q` in explore mode should stay near 0 (the policy
+ignores phantom recalls) while `follow_q` in nav mode should be high (it
+follows real ones). A model that fails by chasing distractors while exploring
+shows high `chase_q`; one that fails by ignoring the goal shows low `follow_q`
+with high `q_accuracy`.
