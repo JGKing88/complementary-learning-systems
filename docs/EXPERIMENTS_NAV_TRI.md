@@ -540,8 +540,30 @@ PPO pool (trajectories)  = envs_per_world × batch_envs
 SERIAL model calls / upd = envs_per_world × steps_per_rollout      <-- wall-clock
 ```
 
-Measured previously on an l40s: 80 envs × 200 steps = 16,000 serial calls =
-**30.8 s/update** (~1.9 ms/call). So a 6-hour run at 80 envs is ≈700 updates.
+**Solved, from two measurements at different `envs_per_world` on an l40s** under
+this project's settings (`observation_size=60`, `wall_resolution=4`, RNN/ReLU,
+`hidden_size=1024`, pool held at 1280):
+
+| shape | serial calls/update | measured s/update |
+|---|---|---|
+| 80 envs × 16 batch | 16,000 | **37.0** |
+| 20 envs × 64 batch | 4,000 | **13.8** |
+
+Two points, two unknowns:
+
+```
+s_per_update  =  1.93 ms x (envs_per_world x steps_per_rollout)  +  6.1 s
+                 \___ rollout collection ___/                       \_ PPO _/
+```
+
+The 1.93 ms/call reproduces the explore-min wave's independent estimate. **The
+6.1 s PPO term does not shrink with `envs_per_world`** — the pool is held
+constant by construction — so it is a hard floor: even at one env an update
+costs ~6.5 s, and the most the ladder can ever buy is **5.7×**, of which 20
+envs already captures 2.7×.
+
+Sizing follows directly. A 6-hour budget is ≈**450 updates at 80 envs** and
+≈**1,560 at 20**.
 
 Therefore:
 
