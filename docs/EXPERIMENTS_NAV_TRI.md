@@ -949,8 +949,14 @@ has before anything is tuned to fix it.
   The ladder asks "do 20 envs match 80?" *on the ε=0.4, σ=0.165 config that
   `w1_sig` has now superseded*, and a cost saving measured on a recipe about to
   be abandoned answers nothing — the ladder gets re-run on the winning recipe.
-  Its partial curve (0.0723 at u100) is kept in the table as a data point, not
-  as an answer to Q1. **Q1 is therefore deferred, not answered, by wave 1.**
+  **Q1 is therefore deferred, not answered, by wave 1** — but the partial curve
+  is encouraging rather than neutral: at a matched u100, `w1_c20` (20 envs)
+  reads **0.0723 against `w1_base`'s (80 envs) 0.0574**, the two differing in
+  nothing but `envs_per_world` × `batch_envs` at a held pool. So 20 envs was
+  **26% ahead per update while costing half the wall-clock per update**, i.e.
+  the question to re-ask on the winning recipe is not "does it match?" but "how
+  much better is it?". One seed, one comparison point — but the sign is the
+  useful one, and it makes the re-run a priority rather than a formality.
 
 - **THE BINDING CONSTRAINT AT u75 IS STEP MAGNITUDE, NOT STRATEGY.** Both
   policies are at |a| ≈ 0.18–0.25 against the coverage optimum of 1.0 (§3.1).
