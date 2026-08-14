@@ -663,6 +663,31 @@ WAVES: dict[str, dict] = {
         },
         "seed": [44, 45, 46, 47],
     },
+    # W23 -- §5 step 4, the last item of the plan. Overfitting.
+    #
+    # The prior is weak: encoder_best and encoder_final are near-identical in
+    # every w17 cell (5/5, 9/8, 6/6, 6/6) and the best epochs scatter 820-1680,
+    # so there is no early peak to find. And §5.6l says the binding factor is
+    # res90, which is set by pairwise structure rather than by capacity.
+    #
+    # Run anyway, because §5.4 listed it and an argued-away step is not a tested
+    # one. At four seeds rather than the planned two: §5.6k showed the seed
+    # spread here is 3-5 units, so a two-seed read could not distinguish a real
+    # effect from noise either way.
+    #
+    # It is the one regime where overfitting is a priori plausible -- 297k
+    # training points, 1.5M parameters and ~73,000 steps means each point is
+    # seen ~2000 times against ~380 at 50.8% coverage -- and weight_decay has
+    # sat at 1e-4 untouched through both campaigns.
+    "w23_weight_decay": {
+        "arm": {
+            f"wd{w:g}": dict(npos_list=SIZE_MIXES["lo_mixtop"],
+                             per_env_radius_frac=0.15, rate_lambda=0.3,
+                             weight_decay=w)
+            for w in (1e-3, 1e-2)
+        },
+        "seed": [44, 45, 46, 47],
+    },
     # W13 -- coverage, on the winning config rather than on the bare baseline.
     #
     # This replaces w4, which swept coverage over mixes chosen before any of the
