@@ -11,31 +11,55 @@ wave, and it is the only section that goes stale on purpose.
 
 | | |
 |---|---|
-| **Branch / worktree** | `nav-tri-metric` at `.claude/worktrees/nav-tri-metric` |
-| **Wave in flight** | **Wave 1** (6 runs, submitted 2026-08-14) — §6 |
+| **Branch / worktree** | `nav-tri-metric` at `.claude/worktrees/nav-tri-metric` (pushed) |
+| **Wave in flight** | **Wave 1** — 4 runs live: `w1_base`, `w1_eps01`, `w1_sig`, `w1_sig2` |
 | **wandb project** | `train_navigate` |
 | **Launcher** | `hopfield_nav/run_nav_tri.sh` (`VARIANT=<name> sbatch …`) |
-| **Status helper** | `bash hopfield_nav/nav_tri_status.sh` |
+| **Status** | `bash hopfield_nav/nav_tri_status.sh` |
+| **Results tables** | `python -m analysis.nav_tri.collect_results --prefix w1` |
 | **Env python** | `$HOME/.conda/envs/cls/bin/python` (login node has no `python`) |
 
 Resume checklist, in order:
 
 1. `bash hopfield_nav/nav_tri_status.sh` — what is queued, running, finished.
-2. Read §6 for the wave in flight: its hypothesis, its variant table, and the
+2. `python -m analysis.nav_tri.collect_results --prefix w1` — the curves, with
+   the reference lines printed underneath.
+3. Read §6 for the wave in flight: its hypothesis, its variant table, and the
    rule stated *in advance* for what each outcome would mean.
-3. Fill the results table in that wave's section. Then write the "Conclusions"
-   subsection — hypothesis confirmed / refuted / underpowered — before
-   designing anything new.
-4. Design the next wave in §6 with hypothesis and decision rule written down
+4. Fill that wave's results table, then write its "Conclusions" —
+   confirmed / refuted / underpowered — **before** designing anything new.
+5. Design the next wave in §6 with hypothesis and decision rule written down
    *before* submitting.
 
-**Open items carried forward** (things known to be owed, in priority order):
+### The single most important finding so far
 
-- [x] `signal_separability` at the real Npos=1716 — **done, and it overturned
-      the Npos=300 result.** See the CORRECTION in P0.7.
-- [ ] Re-run `temporal_separability` at the real Npos=1716 (P0.8 is Npos=300
-      and is therefore an *under*estimate). Queued on `mit_normal` (CPU).
-- [ ] Behaviour-probe every wave-1 checkpoint at u450 and fill the §6 table.
+**The explore metric is step-magnitude-limited, and `INIT_LOG_STD` is the knob
+that moves it.** The policy starts at mean |a| = 0.086 against an optimum of
+1.0, and `cells_per_step` is capped near |a| however good the trajectory is. ε
+cannot fix it — ε steps are masked out of the PPO movement surrogate, so they
+move the agent without teaching it to move. σ is the only channel. Measured
+1.8× coverage from σ alone at matched u50, 2.1× against the full v35 config.
+See §3.4's verdict and the wave-1 live notes.
+
+**Open items carried forward** (priority order):
+
+- [ ] Fill the wave-1 results table at u450 and write its Conclusions.
+- [ ] Behaviour-probe the wave-1 finals
+      (`PROBE=behavior CKPTS="…" sbatch hopfield_nav/run_nav_tri_probe_cpu.sh`)
+      and record `step_mag_mean` + `strategy_efficiency` beside every coverage
+      number — a coverage figure without them cannot be diagnosed.
+- [ ] Launch wave 2 (exploit) at the σ wave 1 selects; variants already in the
+      launcher.
+- [ ] **Q1 (cost/diversity) is DEFERRED, not answered** — `w1_c20` was
+      cancelled to free a slot. Re-run the 20-envs-×-64-batch ladder on the
+      winning recipe. Its partial curve was *26% ahead* of 80 envs at u100, so
+      this is a likely win, not a formality. Wave 2 already adopts that shape.
+- [ ] Cross-check `behavior_probe` against `hopfield_nav.eval_all`
+      (`EVAL_ALL=1 … run_nav_tri_verdict.sh`) before any probe number is quoted
+      as a verdict — the probe reimplements the eval protocols.
+- [x] `signal_separability` at the real Npos=1716 — done; **overturned twice**,
+      see the two CORRECTIONs in P0.7. Read at ≥8 distractor draws only.
+- [x] `temporal_separability` at the real Npos — done, see P0.8.
 - [x] Regime assignment was **positional**, so at a fixed `empty_frac` the same
       envs were always exploit and the policy could gate on env identity rather
       than on the recall signal. **Fixed**: `--regime_assignment shuffle`
