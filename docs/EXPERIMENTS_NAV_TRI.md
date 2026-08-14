@@ -551,6 +551,13 @@ them.
 | `TIME_PENALTY` | explore regime with `explore_goals_off` | the rollout is fixed-length with no teleport, so `−time_penalty` is the same constant every step and cancels. |
 | `GOAL_REWARD` | explore regime with `explore_goals_off` | no goal event exists (`vec_env.py:397-398` forces the mask to zeros). |
 | `GOAL_REWARD`, `TIME_PENALTY` | exploit regime **with shaping at zero** | reward becomes `−t + (g+t)·1{goal}`; the constant cancels and `(g+t)` is a pure scale. They survive only through the **value** loss, which is not normalized — so they act as an implicit `vf_coef`, not as a preference. |
+
+> **`GOAL_REWARD` is emphatically NOT inert in an interleaved run**, and the
+> table above nearly hid that. Both regimes' rollouts go into **one** pooled
+> normalization, so `goal_reward` sets the *ratio* between an explore rollout's
+> smooth ~0.23/step novelty and an exploit rollout's +5.0 spikes — i.e. which
+> regime's gradient survives normalization. It is inert *within* a regime and
+> decisive *between* them. See the wave-3 collapse.
 | `REVISIT_PENALTY` | explore, `NOVELTY_SCALE_REMAINING=0`, fixed-length rollout | `n·1{new} − c·1{old} = (n+c)·1{new} − c`; exactly redundant with novelty. Non-degenerate once the remaining-scale is on (novelty state-dependent, penalty flat) or the goal is live (rollouts stop being equal-length). |
 | `NOVELTY_SCALE_CAP` | 200-step rollouts | the scale is `size²/remaining`, and 200 steps can leave at most ~200 of 400 cells unvisited, so it never exceeds ~2 and a cap of 10 never binds. |
 
@@ -1773,6 +1780,51 @@ waves 1 and 2 simply be concatenated.
   exploit, `--load_checkpoint` drops the Adam moments, and the objective it was
   optimizing changed. Whether it *recovers* while nav improves is the actual
   question.
+
+- **ARM A COLLAPSES WHEN THE ANNEAL COMPLETES. This is the interference the
+  wave was designed to detect.**
+
+  | arm A | u50 | u150 | u250 | u350 | **u400** |
+  |---|---|---|---|---|---|
+  | coverage | 0.367 | 0.312 | 0.333 | 0.326 | **0.068** |
+
+  and at u400 nav reads **0.948 / 26.2 / 35.3**. It held coverage in the
+  0.30–0.37 band for 350 updates while `empty_frac` annealed 1.0 → 0.56, then
+  **lost 80% of it in one 50-update step** as the fraction reached 0.50. A
+  cliff, not a decline — and it bought navigation with it. **The model traded
+  the explore metric for the exploit one**, which is exactly the failure the
+  pre-registration named.
+
+  Standings at their latest evals:
+
+  | arm | coverage | nav d=0 (sr / steps / **all**) | reading |
+  |---|---|---|---|
+  | **A** explore-first | **0.068** | 0.948 / 26.2 / **35.3** | nav bought at the cost of coverage |
+  | **B** interleaved | 0.128 | 0.958 / 31.3 / **38.4** | both, but both weak |
+  | **C** blocked | **0.312** | 0.583 / 86.5 / **133.8** | still in its explore phase; nav not yet trained |
+
+- **The likely mechanism, and it points at a knob on Jack's list.** PPO
+  normalizes advantages **once over the pooled buffer**
+  (`updates/ppo.py:210-214`), and the two regimes contribute rewards of very
+  different *shape*:
+
+  > An explore rollout earns ~0.23/step, smoothly, from novelty. An exploit
+  > rollout earns −0.05/step punctuated by **+5.0** spikes at each goal. After
+  > GAE, the exploit rollouts' advantages are far larger in magnitude, so when
+  > the two are pooled and normalized together **the exploit gradient dominates
+  > and the explore signal is scaled toward zero.**
+
+  That predicts the cliff: as `empty_frac` falls, exploit rollouts take a
+  growing share of the pool until they dominate the normalization outright, at
+  which point explore stops being trained at all.
+
+  **`GOAL_REWARD` is the knob** (v35's 5.0 against novelty's 0.3), and it is on
+  the list. §3.5 records it as *inert* in explore-only and exploit-only runs —
+  a constant offset and a pure scale respectively — but **in an interleaved
+  run it is neither**: it sets the ratio between two regimes sharing one
+  normalization, which is exactly the quantity that decides which one the
+  gradient serves. That is a case §3.5 did not cover, and it is now the
+  leading candidate for wave 4.
 
 **The failure mode to watch for is interference, not either metric alone.** A
 model that scores 0.35 coverage and `mean_steps` 30, or 10.5 steps and 0.10
