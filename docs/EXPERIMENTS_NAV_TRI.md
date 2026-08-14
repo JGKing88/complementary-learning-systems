@@ -1433,6 +1433,34 @@ and a u75 behaviour probe separate them:
 - warm-state dependence ⇒ magnitude will look reasonable and σ=0.165 will
   degrade the same way.
 
+**Overshoot is refuted.** The u75 probe reads `step_mag_mean` **0.233**, *down*
+from u25's 0.324 — it shrank rather than growing past 1. Meanwhile `follow_q`
+collapsed **0.702 → 0.316** while `q_accuracy` held at **0.982**: the policy is
+un-learning to follow a signal that is still nearly perfect.
+
+**But that leaves two live explanations, not one, and the second is of my own
+making.**
+
+| hypothesis | mechanism | why it fits |
+|---|---|---|
+| **warm-state** | training carries the RNN state across the post-goal teleport, so ~3 of 4 trained reaches are warm; eval is always cold | training reward stable while cold-start eval degrades |
+| **over-fitting to 20 envs** | with fixed goals and a fixed sensory codebook, "in env *k* go to cell *(x,y)*" is memorizable — ~8,000 (observation → action) pairs across 20 envs, well within a 1024-unit RNN. The policy then does not *need* `q` | `follow_q` collapsing while training reward holds and **held-out** eval degrades |
+
+Both predict exactly what was observed, and they are **not** distinguished by
+anything measured so far. This is the over-fitting risk flagged when Q1 adopted
+20 envs — and the control that would have caught it (`w1_sig2` at 80 envs) is
+the run cancelled to free a slot, which was a mistake worth naming.
+
+**The `warmcold` probe separates them**, because it runs on the **held-out**
+eval envs:
+
+- warm ≫ cold there ⇒ **warm-state dependence**; fix is
+  `--reset_state_on_teleport true`, which touches only training (nav eval ends
+  on arrival and never teleports).
+- warm ≈ cold there ⇒ the degradation is env-related, i.e. **over-fitting**;
+  fix is more envs, or `--refresh_goal` — which Jack permits with a good
+  reason, and "the policy memorised the goals" is one.
+
 #### Live notes — wave 2, exploit arm
 
 - **Config validated before committing GPU-hours.** `smoke_x` (4 updates,
