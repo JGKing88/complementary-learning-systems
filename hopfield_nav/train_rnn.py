@@ -228,9 +228,19 @@ def train(cfg: RNNTrainConfig) -> None:
 
     if ckpt is not None:
         agent.load_state_dict(ckpt["agent_state_dict"])
-        if "optimizer_state_dict" in ckpt and cfg.mode != "finetune":
+        if cfg.mode == "finetune":
+            print("  Adam moments start fresh (mode=finetune).")
+        elif "optimizer_state_dict" in ckpt:
             # Preserve optimizer momentum unless we're finetuning (fresh moments).
             optimizer.load_state_dict(ckpt["optimizer_state_dict"])
+            print("  Adam moments carried over from the checkpoint.")
+        else:
+            # Two different reasons to end up with fresh moments -- the mode
+            # asked for it, or the parent simply had none to give -- and until
+            # now both printed nothing at all.
+            print("  NOTE: this checkpoint carries no optimizer_state_dict, so "
+                  "Adam's moments start fresh despite mode="
+                  f"{cfg.mode!r}.")
 
     wandb_run = None
     if cfg.use_wandb:

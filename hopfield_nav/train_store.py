@@ -33,6 +33,7 @@ from .rollout.collector import RolloutCollector
 from .updates.ppo import ppo_update
 from .training.cfg_args import settle_encoder
 from .training.refresh import Cadence
+from .training import resume as resume_io
 from .training.world_setup import (
     build_field, do_eval, make_hops, set_phase_freeze, setup_run_world,
 )
@@ -52,6 +53,9 @@ def run_store(
     use_wandb: bool,
     ckpt_world: dict | None = None,
     parent_world: dict | None = None,
+    start_update: int = 0,
+    resume_state: dict | None = None,
+    parent_ckpt: str | None = None,
 ) -> None:
     """Phase B: trunk + move + value frozen, store head trains on BCE.
 
@@ -62,8 +66,9 @@ def run_store(
       - ppo.bce_pos_weight_cap = 5 (or whatever cap chosen)
       - ppo.ent_coef = 0  (don't push log_std around)
     """
-    print(f"\n=== Phase B: store-head pretrain, {n_updates} updates ===",
-          flush=True)
+    print(f"\n=== Phase B: store-head pretrain, {n_updates} updates"
+          + (f", resuming at u{start_update + 1}" if start_update else "")
+          + " ===", flush=True)
 
     set_phase_freeze(agent, freeze_move=True, freeze_store=False,
                      freeze_value=True, freeze_rnn=True)
@@ -71,6 +76,21 @@ def run_store(
     print(f"Trainable params: {sum(p.numel() for p in trainable)} "
           f"(store head only)", flush=True)
     optimizer = torch.optim.Adam(trainable, lr=lr)
+
+    # After the freeze, which is what decides the shape of Adam's state. Phase B
+    # freezes everything but the store head, so a continuation whose freeze
+    # flags moved would be caught here rather than inside the first step().
+    if resume_state is not None:
+        resume_io.restore_optimizer(
+            optimizer, resume_state["optimizer_state_dict"],
+            source=resume_state["_path"])
+        print(f"Restored optimizer moments from {resume_state['_path']}",
+              flush=True)
+
+    wandb_id = None
+    if use_wandb:
+        import wandb
+        wandb_id = getattr(wandb.run, "id", None)
 
     worlds, eval_world = rw.worlds, rw.eval_world
     if rw.refresher is not None:
@@ -89,7 +109,16 @@ def run_store(
 
     n_envs = cfg.envs_per_world
 
-    for update in range(1, n_updates + 1):
+    # Last thing before the loop: the saved streams stand at the end of an
+    # update, so anything drawing between here and the first rollout would put
+    # the continuation permanently out of step. See training/resume.py.
+    if resume_state is not None:
+        resume_io.restore_rng(resume_state.get("rng"))
+        resume_io.restore_env_rng(resume_state.get("env_rng"), worlds, eval_world)
+        print(f"Restored RNG streams (global, per-env); continuing at "
+              f"u{start_update + 1}", flush=True)
+
+    for update in range(start_update + 1, n_updates + 1):
         rw.refresh(update)
         rollouts = []
         for w_idx, world in enumerate(worlds):
@@ -142,6 +171,16 @@ def run_store(
             }, os.path.join(cfg.save_dir, f"store_u{update}.pt"))
             run_manifest.record_checkpoint(
                 cfg.save_dir, f"store_u{update}.pt", update)
+            # The rolling continuation point, beside the fork point rather than
+            # inside it -- see training/resume.py.
+            resume_io.save(cfg.save_dir, kind="store", agent=agent,
+                           optimizer=optimizer, update=update,
+                           config=asdict(cfg), world_spec=ckpt_world,
+                           extra={"parent": parent_ckpt,
+                                  "wandb_id": wandb_id,
+                                  "parent_world_spec": parent_world,
+                                  "env_rng": resume_io.env_rng_states(
+                                      worlds, eval_world)})
 
     do_eval(cfg, agent, eval_world, device, "after_store", use_wandb,
             max_steps=cfg.steps_per_rollout)
@@ -150,37 +189,54 @@ def run_store(
 def train_store(args) -> None:
     device = torch.device(args.device if torch.cuda.is_available() else "cpu")
 
-    # Load Phase A checkpoint and reconstruct its config.
-    print(f"Loading Phase A checkpoint: {args.load_checkpoint}", flush=True)
-    ck = torch.load(args.load_checkpoint, map_location=device, weights_only=False)
-    cfg = cfg_from_checkpoint(ck["config"])
-
-    # Phase B overrides on top of Phase A's cfg.
-    cfg.env.goals_active = True               # need at-goal labels
-    cfg.ppo.store_bc_weight = 1.0
-    cfg.ppo.bce_detach_trunk = True
-    cfg.ppo.bce_pos_weight_cap = args.bce_pos_weight_cap
-    cfg.ppo.ent_coef = 0.0
-    # Only when typed: an unconditional assignment would write None over the
-    # parent's, which is the whole failure `settle_encoder` exists to name.
-    if args.encoder_checkpoint:
-        cfg.encoder_checkpoint = args.encoder_checkpoint
-    cfg.seed = args.seed
-    cfg.device = args.device
-    cfg.use_wandb = args.use_wandb
-    cfg.wandb_project = args.wandb_project
-    cfg.eval_every = args.eval_every
-    cfg.ckpt_every = args.ckpt_every
-    if args.steps_per_rollout is not None:
-        cfg.steps_per_rollout = args.steps_per_rollout
-    # Not inherited from the Phase A checkpoint: that field holds where Phase A
-    # wrote, and reusing it would have Phase B overwrite its own parent.
-    cfg.save_dir = args.save_dir
-
     def _die(msg):                    # no parser in scope; same exit either way
         raise SystemExit(f"  ERROR [train_store]: {msg}")
 
-    settle_encoder(cfg, ck["config"], _die)
+    resume_ck = None
+    if getattr(args, "continue_from", None):
+        # A continuation takes its whole config from the resume point, Phase B
+        # overrides included -- they were already applied when it was written,
+        # and re-deriving them from `args` here would let a retyped
+        # --bce_pos_weight_cap change an objective the run has already trained
+        # under.
+        print(f"Continuing Phase B from {args.continue_from}", flush=True)
+        resume_ck = resume_io.load(args.continue_from, device, kind="store")
+        resume_ck["_path"] = args.continue_from
+        cfg = cfg_from_checkpoint(resume_ck["config"])
+        ck = None
+    else:
+        # Load Phase A checkpoint and reconstruct its config.
+        print(f"Loading Phase A checkpoint: {args.load_checkpoint}", flush=True)
+        ck = torch.load(args.load_checkpoint, map_location=device,
+                        weights_only=False)
+        cfg = cfg_from_checkpoint(ck["config"])
+
+        # Phase B overrides on top of Phase A's cfg.
+        cfg.env.goals_active = True               # need at-goal labels
+        cfg.ppo.store_bc_weight = 1.0
+        cfg.ppo.bce_detach_trunk = True
+        cfg.ppo.bce_pos_weight_cap = args.bce_pos_weight_cap
+        cfg.ppo.ent_coef = 0.0
+        # Only when typed: an unconditional assignment would write None over the
+        # parent's, which is the whole failure `settle_encoder` exists to name.
+        if args.encoder_checkpoint:
+            cfg.encoder_checkpoint = args.encoder_checkpoint
+        cfg.seed = args.seed
+        cfg.device = args.device
+        cfg.use_wandb = args.use_wandb
+        cfg.wandb_project = args.wandb_project
+        cfg.eval_every = args.eval_every
+        cfg.ckpt_every = args.ckpt_every
+        if args.steps_per_rollout is not None:
+            cfg.steps_per_rollout = args.steps_per_rollout
+        # Recorded on cfg, not just held in `args`: it is what a continuation
+        # reads back to know how long the run it is continuing was meant to be.
+        cfg.n_updates = args.phase_b_updates
+        # Not inherited from the Phase A checkpoint: that field holds where
+        # Phase A wrote, and reusing it would have Phase B overwrite its parent.
+        cfg.save_dir = args.save_dir
+
+        settle_encoder(cfg, ck["config"], _die)
 
     validate_train_config(cfg)
     # The parent's config comes with whatever refresh cadence Phase A used. Its
@@ -211,25 +267,44 @@ def train_store(args) -> None:
     # the agent, not of the world -- see `record_parent_world`, which copies the
     # parent's record next to this one so the difference is on the record rather
     # than left to be discovered by whoever plots the two eval curves together.
+    # A continuation is the same Phase B run, so its world is drawn against the
+    # *original* Phase A parent rather than against the resume point.
+    start_update = int(resume_ck["update"]) if resume_ck is not None else 0
+    parent_ckpt = (resume_ck.get("parent") if resume_ck is not None
+                   else args.load_checkpoint)
+    n_updates = (int(resume_ck["config"].get("n_updates") or args.phase_b_updates)
+                 if resume_ck is not None else args.phase_b_updates)
+
     rw = setup_run_world(cfg, encoder, embed_dim, rng, field,
-                         cadence=cadence, n_updates=args.phase_b_updates,
+                         cadence=cadence, n_updates=n_updates,
                          encoder_ident=encoder_ident, where="train_store",
-                         parent_ckpt=args.load_checkpoint)
+                         parent_ckpt=parent_ckpt)
+
+    # The worlds are as of update 1; walk them to where the interruption was.
+    if resume_ck is not None and rw.refresher is not None:
+        ticks = rw.refresher.fast_forward(start_update)
+        print(f"Refresher fast-forwarded through u{start_update}: "
+              f"{ticks} tick(s) replayed", flush=True)
 
     input_dim = compute_input_dim(cfg.agent, embed_dim, cfg.env.observation_size)
     print(f"Agent input_dim={input_dim}", flush=True)
     agent = NavAgent(cfg.agent, input_dim).to(device)
-    agent.load_state_dict(ck["agent_state_dict"])
-    print(f"Loaded agent state from {args.load_checkpoint}", flush=True)
+    if resume_ck is not None:
+        agent.load_state_dict(resume_ck["agent_state_dict"])
+        print(f"Continuing from u{start_update}", flush=True)
+    else:
+        agent.load_state_dict(ck["agent_state_dict"])
+        print(f"Loaded agent state from {args.load_checkpoint}", flush=True)
 
     if cfg.use_wandb:
         import wandb
+        wandb_id = resume_ck.get("wandb_id") if resume_ck is not None else None
         wandb.init(project=cfg.wandb_project, config={
             **asdict(cfg),
-            "phase_b_updates": args.phase_b_updates,
+            "phase_b_updates": n_updates,
             "phase_b_lr": args.phase_b_lr,
-            "load_checkpoint": args.load_checkpoint,
-        })
+            "load_checkpoint": parent_ckpt,
+        }, **({"id": wandb_id, "resume": "allow"} if wandb_id else {}))
 
     if cfg.save_dir is None:
         sub = run_name(*((wandb.run.name, wandb.run.id) if cfg.use_wandb else ()))
@@ -237,12 +312,17 @@ def train_store(args) -> None:
     else:
         sub = os.path.basename(str(cfg.save_dir).rstrip("/"))
 
-    run_manifest.begin(
-        cfg.save_dir, kind="store", name=sub, config=asdict(cfg),
-        encoder=encoder_ident,
-        parent=args.load_checkpoint,
-        wandb_run=wandb.run if cfg.use_wandb else None,
-    )
+    if resume_ck is not None:
+        run_manifest.resume(
+            cfg.save_dir, update=start_update, config=asdict(cfg),
+            wandb_run=wandb.run if cfg.use_wandb else None)
+    else:
+        run_manifest.begin(
+            cfg.save_dir, kind="store", name=sub, config=asdict(cfg),
+            encoder=encoder_ident,
+            parent=args.load_checkpoint,
+            wandb_run=wandb.run if cfg.use_wandb else None,
+        )
 
     # Both worlds on the record: this run's, and a verbatim copy of the one the
     # agent was trained on before it got here.
@@ -251,13 +331,15 @@ def train_store(args) -> None:
 
     run_store(
         cfg, agent, rw, embed_dim, device,
-        n_updates=args.phase_b_updates,
+        n_updates=n_updates,
         eval_every=cfg.eval_every,
         ckpt_every=(cfg.ckpt_every if cfg.ckpt_every is not None
                     else cfg.eval_every),
         lr=args.phase_b_lr,
         use_wandb=cfg.use_wandb,
         ckpt_world=ckpt_world, parent_world=parent_world,
+        start_update=start_update, resume_state=resume_ck,
+        parent_ckpt=parent_ckpt,
     )
     if rw.refresher is not None:
         ckpt_world = rw.record()
@@ -280,8 +362,20 @@ def train_store(args) -> None:
 
 def main():
     p = argparse.ArgumentParser(description="Phase-B-only store-head pretrain")
-    p.add_argument("--load_checkpoint", required=True,
-                   help="Phase A checkpoint to start from")
+    # Not `required=True` any more: --continue_from supplies the agent instead,
+    # and requiring both would make a continuation restate the Phase A parent it
+    # already carries. Exactly one is required, checked below.
+    p.add_argument("--load_checkpoint", default=None,
+                   help="FORK: Phase A checkpoint to start Phase B from. Adam's "
+                        "moments are not inherited (Phase A never writes any).")
+    p.add_argument("--continue_from", default=None,
+                   help="CONTINUE an interrupted Phase B run from its "
+                        f"{resume_io.RESUME_FILE} (pass the file or its run "
+                        "directory). "
+                        "Optimizer moments, RNG streams and the update counter "
+                        "come back, and output continues into the same "
+                        "--save_dir. Config comes from the resume point, so the "
+                        "Phase B knobs are not re-read from the command line.")
     p.add_argument("--encoder_checkpoint", default=None,
                    help="Optional: --load_checkpoint is required here, so the "
                         "parent's config always names one and this is pure "
@@ -309,6 +403,12 @@ def main():
     p.add_argument("--use_wandb", action="store_true")
     p.add_argument("--wandb_project", type=str, default="hopfield-nav-phase-b")
     args = p.parse_args()
+
+    if bool(args.load_checkpoint) == bool(args.continue_from):
+        p.error("pass exactly one of --load_checkpoint (fork a new Phase B run "
+                "from a Phase A checkpoint) or --continue_from (pick an "
+                "interrupted Phase B run back up). They are different "
+                "operations; see hopfield_nav/training/resume.py.")
 
     train_store(args)
 

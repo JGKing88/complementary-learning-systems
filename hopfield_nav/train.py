@@ -36,6 +36,7 @@ from .evaluation.metrics import (
 from .evaluation.checkpoint_io import cfg_from_checkpoint
 from .training.cfg_args import explicit_dests, overlay_typed, settle_encoder
 from .training.refresh import Cadence
+from .training import resume as resume_io
 from .training.world_setup import build_field, setup_run_world
 
 
@@ -71,7 +72,7 @@ def build_templates(cfg: TrainConfig, worlds, embed_dim: int) -> list:
 # Main training loop
 # ---------------------------------------------------------------------------
 
-def train(cfg: TrainConfig) -> None:
+def train(cfg: TrainConfig, resume_ck: dict | None = None) -> None:
     validate_train_config(cfg)
     warn_if_offcell_stores(cfg.env, where="train")
     # Before the encoder loads and the scaffold builds: a refresh cadence with
@@ -121,11 +122,22 @@ def train(cfg: TrainConfig) -> None:
     # run writes down and none of them can record a world it is not training on.
     encoder_ident = run_manifest.encoder_identity(
         cfg.encoder_checkpoint, enc_cfg, encoder_gain)
+    # A continuation is the same run, so it draws its world against the
+    # *original* parent rather than against the resume point.
+    start_update = int(resume_ck["update"]) if resume_ck is not None else 0
+    parent_ckpt = (resume_ck.get("parent") if resume_ck is not None
+                   else cfg.load_checkpoint)
     rw = setup_run_world(cfg, encoder, embed_dim, rng, field,
                          cadence=cadence, n_updates=cfg.n_updates,
                          encoder_ident=encoder_ident, where="train",
-                         parent_ckpt=cfg.load_checkpoint)
+                         parent_ckpt=parent_ckpt)
     worlds, eval_world = rw.worlds, rw.eval_world
+
+    # The worlds above are as of update 1; walk them to the interruption.
+    if resume_ck is not None and rw.refresher is not None:
+        ticks = rw.refresher.fast_forward(start_update)
+        print(f"Refresher fast-forwarded through u{start_update}: "
+              f"{ticks} tick(s) replayed")
     templates = build_templates(cfg, worlds, embed_dim)
 
     # Create agent
@@ -148,11 +160,34 @@ def train(cfg: TrainConfig) -> None:
             # making CLI --bc_lr / --ppo lr a silent no-op when resuming.
             for g in optimizer.param_groups:
                 g["lr"] = optim_lr
+        else:
+            # Said out loud, because the parent's *kind* decides this and
+            # nothing on the command line shows it: train_navigate,
+            # train_store and train_phased checkpoints carry no optimizer
+            # state at all, so forking one silently starts Adam from zero
+            # while a train.py parent would not have. Neither is wrong -- a
+            # fork is expected to be retuned -- but which one happened should
+            # not have to be inferred from the filename.
+            print("  NOTE: this checkpoint carries no optimizer_state_dict "
+                  "(train_navigate / train_store / train_phased never write "
+                  "one), so Adam's moments start fresh. To continue a run "
+                  "rather than fork it, use that script's --continue_from.")
         print(f"  loaded (from update {ckpt.get('update', '?')})")
+    elif resume_ck is not None:
+        agent.load_state_dict(resume_ck["agent_state_dict"])
+        resume_io.restore_optimizer(optimizer,
+                                    resume_ck["optimizer_state_dict"],
+                                    source=resume_ck["_path"])
+        print(f"Continuing {resume_ck['_path']} from u{start_update}: "
+              "weights and Adam moments restored")
 
     if cfg.use_wandb:
         import wandb
-        wandb.init(project=cfg.wandb_project, config=asdict(cfg))
+        # Same run, same wandb run -- a continuation that opened a second one
+        # would split one training curve across two charts.
+        wandb_id = resume_ck.get("wandb_id") if resume_ck is not None else None
+        wandb.init(project=cfg.wandb_project, config=asdict(cfg),
+                   **({"id": wandb_id, "resume": "allow"} if wandb_id else {}))
 
     if cfg.save_dir is None:
         sub = run_name(*((wandb.run.name, wandb.run.id) if cfg.use_wandb else ()))
@@ -160,12 +195,17 @@ def train(cfg: TrainConfig) -> None:
     else:
         sub = os.path.basename(str(cfg.save_dir).rstrip("/"))
 
-    run_manifest.begin(
-        cfg.save_dir, kind="train", name=sub, config=asdict(cfg),
-        encoder=encoder_ident,
-        parent=cfg.load_checkpoint,
-        wandb_run=wandb.run if cfg.use_wandb else None,
-    )
+    if resume_ck is not None:
+        run_manifest.resume(
+            cfg.save_dir, update=start_update, config=asdict(cfg),
+            wandb_run=wandb.run if cfg.use_wandb else None)
+    else:
+        run_manifest.begin(
+            cfg.save_dir, kind="train", name=sub, config=asdict(cfg),
+            encoder=encoder_ident,
+            parent=cfg.load_checkpoint,
+            wandb_run=wandb.run if cfg.use_wandb else None,
+        )
 
     # Written on both paths: a run has to be able to say which envs it used,
     # and the historical path could not (docs/EVAL_SPLITS_DESIGN.md 1.4).
@@ -176,9 +216,19 @@ def train(cfg: TrainConfig) -> None:
     # memorize a fixed distractor set.
     dist_rng = np.random.RandomState(cfg.seed + 7919)
 
+    # Last thing before the loop, deliberately: the saved streams stand at the
+    # end of an update, so anything drawing between here and the first rollout
+    # puts the continuation permanently out of step. See training/resume.py.
+    if resume_ck is not None:
+        resume_io.restore_rng(resume_ck.get("rng"))
+        if resume_ck.get("dist_rng") is not None:
+            dist_rng.set_state(resume_ck["dist_rng"])
+        resume_io.restore_env_rng(resume_ck.get("env_rng"), worlds, eval_world)
+
     # Training loop
-    print(f"Starting training: {cfg.n_updates} updates")
-    for update in range(1, cfg.n_updates + 1):
+    print(f"Starting training: {cfg.n_updates} updates"
+          + (f", resuming at u{start_update + 1}" if start_update else ""))
+    for update in range(start_update + 1, cfg.n_updates + 1):
         all_losses: dict[str, float] = {}
         total_reward = 0.0
         total_goal_steps = 0     # per-step at-goal indicator summed across rollouts
@@ -392,6 +442,19 @@ def train(cfg: TrainConfig) -> None:
             }, os.path.join(cfg.save_dir, f"hopfield_nav_update{update}.pt"))
             run_manifest.record_checkpoint(
                 cfg.save_dir, f"hopfield_nav_update{update}.pt", update)
+            # The rolling continuation point. train.py's periodic checkpoints
+            # already carry optimizer state, but not the update counter's
+            # meaning, the RNG streams or the per-env streams -- so forking one
+            # still restarts the run, and only this file can continue it.
+            resume_io.save(cfg.save_dir, kind="train", agent=agent,
+                           optimizer=optimizer, update=update,
+                           config=asdict(cfg), world_spec=ckpt_world,
+                           extra={"parent": parent_ckpt,
+                                  "wandb_id": (wandb.run.id if cfg.use_wandb
+                                               else None),
+                                  "dist_rng": dist_rng.get_state(),
+                                  "env_rng": resume_io.env_rng_states(
+                                      worlds, eval_world)})
 
     print("Training complete.")
 
@@ -675,7 +738,20 @@ def build_args():
     )
     # Checkpoint loading
     parser.add_argument("--load_checkpoint", type=str, default=None,
-                        help="Path to agent checkpoint to load (for curriculum / fine-tuning)")
+                        help="FORK a new run from this checkpoint (curriculum / "
+                             "fine-tuning). Its config is the base and typed "
+                             "flags override it. Adam's moments come too when "
+                             "the parent has them -- train_navigate and "
+                             "train_store parents do not, and it says so.")
+    parser.add_argument("--continue_from", type=str, default=None,
+                        help=f"CONTINUE this run from a "
+                             f"{resume_io.RESUME_FILE} written by an earlier "
+                             "segment (the file or its run directory). Restores "
+                             "optimizer moments, RNG streams, the update "
+                             "counter and the refresher's tick history, and "
+                             "continues into the same --save_dir and wandb run. "
+                             "Config comes from the resume point; only --device "
+                             "and --n_updates may be given alongside.")
     # Wandb
     parser.add_argument("--use_wandb", action="store_true")
     parser.add_argument("--wandb_project", type=str, default="hopfield-nav")
@@ -796,7 +872,35 @@ def config_from_args(args) -> TrainConfig:
 def main():
     parser, args = build_args()
     parent_cfg = None
-    if args.load_checkpoint:
+    resume_ck = None
+    if args.continue_from and args.load_checkpoint:
+        parser.error("--continue_from and --load_checkpoint are different "
+                     "operations and cannot be combined. --load_checkpoint "
+                     "forks a new run from a parent's weights; --continue_from "
+                     "picks this run's own trajectory back up. Pass one.")
+
+    if args.continue_from:
+        explicit = explicit_dests(parser, sys.argv[1:])
+        resume_io.reject_overrides(
+            explicit, allowed={"continue_from", "device", "n_updates"},
+            flag="--continue_from")
+        resume_ck = resume_io.load(args.continue_from, "cpu", kind="train")
+        resume_ck["_path"] = args.continue_from
+        cfg = cfg_from_checkpoint(resume_ck["config"])
+        if "device" in explicit:
+            cfg.device = args.device
+        if "n_updates" in explicit:
+            # The one knob a continuation may move: a run that turned out too
+            # short is lengthened here. Shortening past what already ran would
+            # leave the loop with nothing to do and is refused.
+            if args.n_updates < int(resume_ck["update"]):
+                parser.error(
+                    f"--continue_from: the resume point is at update "
+                    f"{resume_ck['update']}, so --n_updates {args.n_updates} "
+                    "is already behind it. A continuation cannot be shorter "
+                    "than what has run.")
+            cfg.n_updates = args.n_updates
+    elif args.load_checkpoint:
         # The parent's config is the base, and only the flags actually typed
         # override it. Building from argv alone -- what this did until now --
         # silently substituted train.py's dataclass defaults for the parent's
@@ -816,7 +920,7 @@ def main():
     else:
         cfg = config_from_args(args)
     settle_encoder(cfg, parent_cfg, parser.error)
-    train(cfg)
+    train(cfg, resume_ck=resume_ck)
 
 
 if __name__ == "__main__":

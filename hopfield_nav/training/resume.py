@@ -37,8 +37,8 @@ Only a resume needs any of this, and only the newest point is resumable, so it
 lives in one rolling file rather than in every periodic checkpoint. Adam doubles
 the parameter bytes -- a 12.9 MB navigate checkpoint would become ~39 MB, times
 the dozens a run writes -- and the periodic checkpoints exist to be read by eval
-and analysis, which never want optimizer state. ``resume_latest.pt`` is rewritten
-on the checkpoint cadence and is the only file that grows.
+and analysis, which never want optimizer state. ``<save_dir>/resume/latest.pt``
+is rewritten on the checkpoint cadence and is the only file that grows.
 """
 from __future__ import annotations
 
@@ -48,7 +48,18 @@ from typing import Any
 import numpy as np
 import torch
 
-RESUME_FILE = "resume_latest.pt"
+# In a subdirectory, not beside the checkpoints, because three separate readers
+# treat "every *.pt in a run directory" as "every checkpoint of that run":
+# `run_manifest.checkpoints_in`'s legacy fallback, `scripts/gc_runs.py` and
+# `scripts/backfill_manifests.py`. A resume point is not a checkpoint -- it holds
+# optimizer state no evaluator wants and is the largest file in the directory,
+# which is exactly what `backfill_manifests` sorts on. Caught by an existing
+# test: `sorted(save_dir.glob("*.pt"))[-1]` started returning the resume point,
+# and train.py duly tried to load navigate's frozen-subset Adam state into an
+# optimizer over every parameter.
+RESUME_SUBDIR = "resume"
+RESUME_NAME = "latest.pt"
+RESUME_FILE = os.path.join(RESUME_SUBDIR, RESUME_NAME)
 
 # Bumped when a field's *meaning* changes, not when one is added -- `load` names
 # the mismatch, which is the only reason the file carries a version at all.
@@ -165,7 +176,8 @@ def save(save_dir: str, *, kind: str, agent, optimizer, update: int,
     is atomic within a directory on POSIX, so a kill mid-write leaves the
     previous point intact and loses one cadence tick rather than the run.
     """
-    os.makedirs(save_dir, exist_ok=True)
+    out_dir = os.path.join(save_dir, RESUME_SUBDIR)
+    os.makedirs(out_dir, exist_ok=True)
     payload: dict[str, Any] = {
         "resume_schema": SCHEMA,
         "kind": kind,
@@ -178,7 +190,7 @@ def save(save_dir: str, *, kind: str, agent, optimizer, update: int,
     }
     if extra:
         payload.update(extra)
-    final = os.path.join(save_dir, RESUME_FILE)
+    final = os.path.join(out_dir, RESUME_NAME)
     tmp = final + ".tmp"
     torch.save(payload, tmp)
     os.replace(tmp, final)
@@ -192,7 +204,15 @@ def save(save_dir: str, *, kind: str, agent, optimizer, update: int,
 def load(path: str, device, *, kind: str) -> dict[str, Any]:
     """Read a resume point, failing with the reason rather than a ``KeyError``."""
     if os.path.isdir(path):
-        path = os.path.join(path, RESUME_FILE)
+        # Accept the run directory, the resume subdirectory, or the file --
+        # whichever the caller has to hand at 3am.
+        for candidate in (os.path.join(path, RESUME_FILE),
+                          os.path.join(path, RESUME_NAME)):
+            if os.path.exists(candidate):
+                path = candidate
+                break
+        else:
+            path = os.path.join(path, RESUME_FILE)
     if not os.path.exists(path):
         raise SystemExit(
             f"--continue_from: no resume point at {path}.\n"
