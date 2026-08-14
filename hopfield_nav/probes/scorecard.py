@@ -31,7 +31,10 @@ def candidates(paths, n_dist):
             continue
         by_update = {}
         for r in rows:
-            if r.get("n_dist") != n_dist:
+            # A run's final `[after_navigate]` eval has no update number; it
+            # duplicates the last numbered eval, so dropping it loses nothing
+            # and keeps `update` an int for sorting and formatting.
+            if r.get("n_dist") != n_dist or r.get("update") is None:
                 continue
             by_update.setdefault(r["update"], {}).update(r)
         name = os.path.basename(p).replace("ee_", "").replace(".out", "")
