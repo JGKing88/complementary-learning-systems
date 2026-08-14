@@ -139,6 +139,29 @@ case "$VARIANT" in
     ENVS_PER_WORLD=20; BATCH_ENVS=64
     EVAL_EVERY=12; CKPT_EVERY=12; NUM_VAL_ENVS=2; N_VAL_TRIALS=8
     ;;
+  # Everything wave 3 needs that has never been run together: a warm start via
+  # LOAD_CKPT, an interleave schedule with an annealing empty_frac, shuffled
+  # regime assignment, and eval_scope=navexpl so the nav metrics appear.
+  # Deliberately tiny -- 4 envs x 4 batch x 20 steps is 80 serial calls per
+  # update, so the scaffold build dominates and this runs on CPU.
+  #   LOAD_CKPT=/path/to/navigate_u450.pt VARIANT=smoke_w3 sbatch ...
+  smoke_w3)
+    SCHEDULE=${SCHEDULE:-'interleave:4,empty_frac=1.0->0.5,anneal=2'}
+    ENVS_PER_WORLD=4; BATCH_ENVS=4; STEPS_PER_ROLLOUT=20
+    REGIME_ASSIGNMENT=shuffle
+    EVAL_SCOPE=navexpl; EVAL_EVERY=4; CKPT_EVERY=4
+    NUM_VAL_ENVS=2; N_VAL_TRIALS=4; EVAL_MAX_STEPS=20
+    ;;
+  # Same, but exploit-only: the wave-2 config in miniature, to confirm the nav
+  # metrics appear before six hours are committed to it.
+  smoke_x)
+    SCHEDULE=${SCHEDULE:-'exploit:4'}
+    ENVS_PER_WORLD=4; BATCH_ENVS=8; STEPS_PER_ROLLOUT=40
+    WALL_PENALTY=0; PERSISTENCE_BONUS=0; REVISIT_PENALTY=0
+    INIT_LOG_STD=-1.2
+    EVAL_SCOPE=navexpl; EVAL_EVERY=4; CKPT_EVERY=4
+    NUM_VAL_ENVS=2; N_VAL_TRIALS=8; EVAL_MAX_STEPS=40
+    ;;
 
   # === WAVE 1 -- baseline, the cost/diversity ladder, and the noise regime ==
   #

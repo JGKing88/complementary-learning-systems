@@ -1092,6 +1092,38 @@ has before anything is tuned to fix it.
   roughly 8 s of the 38 at this rollout shape, and it is a floor on how cheap
   any variant can get.
 
+- **u50 σ-ladder probe — the node confound is resolved, and σ acts *purely*
+  through magnitude.** All three checkpoints probed in one process, matched
+  update, explore mode, `n_dist=0`:
+
+  | | `w1_base` ε.4/σ.165 | `w1_eps01` ε.1/σ.165 | `w1_sig` ε.1/**σ.30** |
+  |---|---|---|---|
+  | **`step_mag_mean`** | 0.143 | 0.175 | **0.344** |
+  | **`strategy_efficiency`** | 0.447 | 0.418 | 0.486 |
+  | `straightness` | 0.442 | 0.460 | 0.575 |
+  | `abs_turn_mean` (rad) | 0.994 | 0.962 | 0.794 |
+  | `run_len_mean` (steps) | 1.59 | 1.69 | 2.07 |
+  | `cells_per_step` | 0.079 | 0.089 | **0.181** |
+
+  1. **Confound resolved.** `w1_sig` ran on a different node than the other
+     two, so its score alone could not separate σ from a seed-like rounding
+     difference. It doubles the *learned step magnitude*, 0.175 → 0.344, and no
+     amount of float rounding does that. The mechanism is σ.
+  2. **σ is a pure magnitude effect.** `strategy_efficiency` — coverage divided
+     by what a perfect billiard gets *at that same magnitude* — is **0.42–0.49
+     for all three**, essentially flat. So the entire 2× coverage gain is the
+     magnitude gain and none of it is better pathing. That is a cleaner
+     decomposition than expected and it says the two problems are separable:
+     σ fixes one and does nothing to the other.
+  3. **The remaining gap has a name: the policy turns far too often.**
+     `run_len_mean` is 1.6–2.1 steps against the ~4 that §3.1's run-and-tumble
+     sweep puts at the coverage optimum, and `abs_turn_mean` of 0.79–0.99 rad
+     is much nearer a uniform random walk's π/2 than a billiard's 0. Closing
+     it is worth ~2× on top of whatever magnitude delivers — and the term that
+     rewards it, `persistence_bonus`, is precisely the one §3.4.1 shows is
+     drowned while σ is large and the step is small. **This is the case for the
+     σ anneal, now made from measurement rather than from algebra.**
+
 - **u100–u110, and the wave is cut short deliberately.** Standings at a matched
   u100: `w1_base` 0.0574, `w1_c20` 0.0723, `w1_eps01` 0.0807, and `w1_sig`
   already 0.0839 **at u50**. The ordering is settled and the mechanism is
