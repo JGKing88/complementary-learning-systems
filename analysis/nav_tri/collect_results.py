@@ -55,10 +55,20 @@ def _parse(path):
                 tag, kind, body = m.groups()
                 u = _UPDATE.search(tag)
                 key = int(u.group(1)) if u else -1      # -1 = after_navigate
+                # The logged dicts are python reprs, so a NaN metric prints as
+                # a bare `nan` -- which `ast.literal_eval` rejects. That
+                # happens whenever no trial found the goal, i.e. exactly on the
+                # early evals of a run that is not yet exploring, so silently
+                # dropping them would delete the start of every curve.
+                # -> None, not float('nan'): literal_eval rejects a Call node
+                # too, and None flows through the formatters as an em dash.
+                # Word-bounded so a key containing the letters is untouched.
+                clean = re.sub(r"\b(nan|inf)\b", "None", body)
                 try:
-                    evals.setdefault(key, {})[kind] = ast.literal_eval(body)
-                except (ValueError, SyntaxError):
-                    pass
+                    evals.setdefault(key, {})[kind] = ast.literal_eval(clean)
+                except (ValueError, SyntaxError) as exc:
+                    print(f"  WARNING: unparseable {kind} eval at {tag} "
+                          f"in {os.path.basename(path)}: {exc}")
     return variant, evals, spu, last_u
 
 
