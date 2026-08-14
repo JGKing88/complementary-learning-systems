@@ -1485,15 +1485,49 @@ first one found.** It cannot be resolved by picking one σ, which retires the
    was pre-registered — and it is recorded here as a revision of that
    prediction, not as a retrofit after seeing the result.
 
-**The `warmcold` probe still separates the remaining two**, because it runs on
-the **held-out** eval envs:
+**RESOLVED — and it is neither of those two.** The `warmcold` probe, on
+held-out eval envs, under the training contract:
 
-- warm ≫ cold there ⇒ **warm-state dependence**; fix is
-  `--reset_state_on_teleport true`, which touches only training (nav eval ends
-  on arrival and never teleports).
-- warm ≈ cold there ⇒ the degradation is env-related, i.e. **over-fitting**;
-  fix is more envs, or `--refresh_goal` — which Jack permits with a good
-  reason, and "the policy memorised the goals" is one.
+| checkpoint | cold first reach | warm later reaches | speedup |
+|---|---|---|---|
+| u25 | 43.6 | 37.0 | **1.20×** |
+| u75 | 60.1 | 43.2 | **1.29×** |
+
+Warm-state dependence is **real but small**, and — decisively — **both** cold
+*and* warm degraded between u25 and u75 (43.6 → 60.1 and 37.0 → 43.2). A
+mismatch that only affects cold starts cannot explain a degradation that hits
+warm ones too. Over-fitting is out for the same reason `w2_x_siglo` is: at
+σ=0.165 the *same* 20 envs and the *same* fixed goals produce **no degradation
+at all** (success 0.979 at u100).
+
+**One explanation covers every observation, and it is the σ story from a
+different angle:**
+
+> With `freeze_log_std=1`, the **behaviour** policy is `N(μ, σ)` and the
+> **scored** policy is `μ` alone. Training reward measures the former, eval
+> measures the latter. When σ is large *and* reward is sparse, the behaviour
+> policy collects its reward largely **through the noise** — so the training
+> metric stays healthy while μ itself is only weakly constrained, and drifts.
+
+Every observation follows: training reward stable while eval degrades ✓;
+`follow_q` and `step_mag_mean`, both measured on μ, collapsing ✓; overshoot
+absent because μ *shrank* ✓; σ=0.165 immune ✓; warm speedup small and not the
+driver ✓.
+
+**Consequences.**
+
+- **`--reset_state_on_teleport` stays at `false`.** The gap it would close is
+  1.2–1.3× and is not what is breaking these runs. Jack's bar of "a very very
+  good reason" is not met, and the honest thing is to say so rather than take
+  the change because it was available. Recorded as a *measured* 20–29%
+  train/eval mismatch that remains, and would be worth revisiting only if
+  something later depends on it.
+- **The exploit recipe is σ=0.165**, and the explore recipe is σ=0.50. The
+  conflict is real and quantified from both sides.
+- **A general caution for this trainer:** with a frozen σ, *training reward is
+  a measure of the behaviour policy and eval is a measure of the mean*, and the
+  two come apart as σ grows — fastest where reward is sparse. `mean_r` rising
+  is therefore **not** evidence that a run is healthy.
 
 #### Live notes — wave 2, exploit arm
 
