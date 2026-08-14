@@ -798,6 +798,36 @@ export NOVELTY_REWARD=0.15
 export LOAD_CKPT=/orcd/pool/003/jackking/cls_runs/agent_ckpts/navigate_ee_P5_20363067/navigate_u200.pt
 EOF
         ;;
+    # C15: blocked alternation, the one structurally different option left.
+    #
+    # Every composite here interleaves the two regimes WITHIN an update, so each
+    # gradient is a mixture and the pooled advantage normalisation puts both on
+    # one scale. C13/C14 showed the mixture fraction only trades which half
+    # survives; C12 showed the ordering does not matter. Blocking is the
+    # remaining shape: each block gets undiluted gradients for one regime.
+    #
+    # The obvious failure mode is that each block undoes the last, which is what
+    # a sawtooth in the eval curve would show -- and that is itself the answer,
+    # because it would mean the two regimes are not merely competing for
+    # gradient share but actively overwriting each other. 150-update blocks are
+    # short enough to alternate 8 times inside one allocation and long enough
+    # that each block can move its own metric (W10 moved coverage 0.05 -> 0.18
+    # in its first 400).
+    #
+    # Parent P5 and W10's shaping, i.e. the best components, so a failure here
+    # is about the blocking rather than the ingredients.
+    C15) cat <<'EOF'
+export ENVS_PER_WORLD=8
+export BATCH_ENVS=16
+export STEPS_PER_ROLLOUT=200
+export SCHEDULE="explore:150 ; exploit:150 ; explore:150 ; exploit:150 ; explore:150 ; exploit:150 ; explore:150 ; exploit:150 ; explore:150 ; exploit:150 ; explore:150 ; exploit:150 ; explore:150 ; exploit:150 ; explore:150 ; exploit:150"
+export EVAL_EVERY=75
+export VAL_DISTRACTORS="0 10"
+export WALL_PENALTY=0.3
+export NOVELTY_REWARD=0.15
+export LOAD_CKPT=/orcd/pool/003/jackking/cls_runs/agent_ckpts/navigate_ee_P5_20363067/navigate_u200.pt
+EOF
+        ;;
     # W10 is to W9 what C8 was to C7, and for the same reason.
     #
     # W9 raised WALL_PENALTY 0.3 -> 0.6 to make a fresh edge cell net-negative.
