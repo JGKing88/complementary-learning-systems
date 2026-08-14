@@ -82,6 +82,9 @@ def main() -> None:
     p.add_argument("--logdir", default=LOGDIR)
     p.add_argument("--max_cols", type=int, default=12,
                    help="subsample the curve to at most this many columns")
+    p.add_argument("--max_steps", type=int, default=200,
+                   help="eval step budget, used to charge failed nav trials "
+                        "when deriving mean_steps_all")
     args = p.parse_args()
 
     runs = []
@@ -128,7 +131,7 @@ def main() -> None:
     # --- final -------------------------------------------------------------
     print("\n#### last eval of each run\n")
     print("| variant | update | cov d0 | cov d10 | cells/step d0 "
-          "| nav d0 (sr / steps) | nav d10 (sr / steps) |")
+          "| nav d0 (sr / steps / **all**) | nav d10 (sr / steps / **all**) |")
     print("|---|---|---|---|---|---|---|")
     for r in sorted(runs, key=lambda r: r["variant"]):
         u = max(r["evals"]) if -1 not in r["evals"] else -1
@@ -141,11 +144,31 @@ def main() -> None:
             return f"{v:.4f}" if isinstance(v, (int, float)) else "—"
 
         def _n(nd):
+            """success_rate / mean_steps / mean_steps_all.
+
+            The third is derived and is the honest one. `mean_steps` is over
+            SUCCESSFUL trials only (metrics.py:351-354), so a policy that
+            succeeds less can post a better mean_steps purely by dropping its
+            hard trials out of the average -- which is not hypothetical: the
+            first exploit run went 0.969/38.0 at u25 to 0.510/28.4 at u50,
+            reading as an improvement while actually regressing.
+
+            Charging each failure at the step budget gives
+                (successes * mean_steps + failures * max_steps) / trials
+            which turns that pair into 43 -> 112, i.e. the truth.
+            """
             d = nav.get(nd, nav.get(str(nd), {}))
             if not d:
                 return "—"
-            return f"{d.get('success_rate', float('nan')):.3f} / " \
-                   f"{d.get('mean_steps', float('nan')):.1f}"
+            sr = d.get("success_rate", float("nan"))
+            ms = d.get("mean_steps", float("nan"))
+            tot = d.get("total_trials") or 0
+            suc = d.get("total_successes") or 0
+            if tot and isinstance(ms, (int, float)):
+                allv = (suc * ms + (tot - suc) * args.max_steps) / tot
+            else:
+                allv = float("nan")
+            return f"{sr:.3f} / {ms:.1f} / **{allv:.1f}**"
         label = "final" if u == -1 else f"u{u}"
         print(f"| `{r['variant']}` | {label} | {_e(0,'mean_coverage')} "
               f"| {_e(10,'mean_coverage')} | {_e(0,'cells_per_step')} "
