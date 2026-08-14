@@ -1388,3 +1388,45 @@ by the brief, patch size is capped at 200, and every arrangement of those has
 now been tried. If 10% coverage is to do better it has to come from the loss,
 which is what `w19` is for — and by §5.6d it has to come specifically from the
 ceiling, which no geometry moved below 0.956.
+
+### 5.6g Step 3 answered: placement does what it was supposed to, and it is not enough
+
+`w18` against the matching `w17` cells — same loss settings, same seeds, one
+flag apart:
+
+| geometry | placement | `r_min` med | spread | `r_median` | alias max | decay50 |
+|---|---|---|---|---|---|---|
+| `lo_mixtop` | random | 6.5 | 3 | 15.25 | 0.971 | 34.50 |
+| `lo_mixtop` | **stratified** | **7.5** | 1 | 12.25 | 0.961 | 34.00 |
+| `lo_many` | random | 6.0 | 0 | 9.25 | 0.956 | 22.75 |
+| `lo_many` | **stratified** | **6.0** | 0 | 10.25 | 0.932 | 23.50 |
+
+**+1.0 and +0.0.** The revised §5.6e prediction — under 2 radius units, inside
+the seed spread — is confirmed; on `lo_mixtop` the gain is smaller than the
+random arm's own seed spread of 3, and `r_median` moves the other way.
+
+Worth separating the two predictions, because they scored differently:
+
+* §5.4's original claim was that the gain would show up in `r_min` and the alias
+  ceiling and leave decay50 alone. **Directionally that is exactly what
+  happened** — the ceiling improves in both geometries (0.971 → 0.961, 0.956 →
+  0.932) and decay50 does not move (34.50 → 34.00, 22.75 → 23.50).
+* The magnitude was wrong, and §5.6e caught it before the runs landed.
+
+So this is a clean falsification of the *hole* mechanism rather than of the
+sampler. §5.6b measured stratifying as halving the worst hole — 839 → 461 on
+`lo_mixtop`, 475 → 279 on `lo_many`. If the distance to the nearest patch were
+what set `r_min`, halving it would have been unmissable. It bought one unit and
+zero. §5.6e's reading — that a reference is killed by an aliasing partner drawn
+from the untrained 90%, not by its own distance to a patch — survives a test
+that could have refuted it.
+
+It also puts a number on how little the ceiling can be moved from the data side:
+the best any placement of any geometry achieves is **0.932**, and §5.6d's table
+needs 0.85 or below before the ceiling starts paying properly.
+
+Two smaller things worth keeping. Stratifying cuts the seed spread from 3 to 1,
+which is what you would expect once the layout stops being random — useful if a
+later wave needs to resolve small differences. And it is not adopted as the
+default: it costs `r_median` on `lo_mixtop` (15.25 → 12.25), which is the column
+§5.6f ranked the geometries on.
