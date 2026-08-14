@@ -253,6 +253,31 @@ def _explore_stats(rec, size, goal):
     mag = np.linalg.norm(act, axis=-1)                  # (T, B)
     straight, ok_s = _cos(act[1:], act[:-1])
 
+    # Turn statistics, which name the behaviour class in a way `straightness`
+    # cannot. A cosine is unsigned, so a policy that circles at a constant rate
+    # and one that jitters symmetrically can score the same.
+    #
+    #   signed_turn_mean  ~0 for any unbiased walk; large and one-signed is a
+    #                     CIRCLER, which covers an annulus and nothing else.
+    #   abs_turn_mean     0 = ballistic, pi/2 = uniform random walk.
+    #   run_len_mean      mean length of a run of near-straight steps. This is
+    #                     1/p_turn for a run-and-tumble, and §3.1 puts the
+    #                     coverage optimum at ~4 steps.
+    ang = np.arctan2(act[..., 1], act[..., 0])
+    dth = np.arctan2(np.sin(ang[1:] - ang[:-1]), np.cos(ang[1:] - ang[:-1]))
+    moving = (mag[1:] > 1e-6) & (mag[:-1] > 1e-6)
+    straight_step = moving & (np.abs(dth) < np.pi / 6)
+    runs = []
+    for b in range(straight_step.shape[1]):
+        n = 0
+        for t in range(straight_step.shape[0]):
+            if straight_step[t, b]:
+                n += 1
+            else:
+                runs.append(n + 1)
+                n = 0
+        runs.append(n + 1)
+
     xs, ys = cell[..., 0], cell[..., 1]
     edge = (xs == 0) | (xs == size - 1) | (ys == 0) | (ys == size - 1)
 
@@ -292,6 +317,9 @@ def _explore_stats(rec, size, goal):
         "step_mag_p10": float(np.percentile(mag, 10)),
         "step_mag_p90": float(np.percentile(mag, 90)),
         "straightness": float(straight[ok_s].mean()) if ok_s.any() else 0.0,
+        "signed_turn_mean": float(dth[moving].mean()) if moving.any() else 0.0,
+        "abs_turn_mean": float(np.abs(dth[moving]).mean()) if moving.any() else 0.0,
+        "run_len_mean": float(np.mean(runs)) if runs else 0.0,
         "edge_frac": float(edge.mean()),
         "clip_frac": float(clipped.mean()),
         "revisit_frac": float(revisit.mean()),
