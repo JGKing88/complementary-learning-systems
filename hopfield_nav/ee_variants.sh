@@ -732,6 +732,28 @@ EOF
     # value head.
     #
     # C13 carries MAX_ACTION_NORM because warm-starting W10 NaNs without it.
+    # C13c: the 75%-explore test from a LESS CONVERGED explorer.
+    #
+    # C12/C12b/C13/C13b all NaN'd continuing from W10 u2100, and LR and the
+    # action clip only move when it happens. The suspect is the recurrence's
+    # spectral radius after 2,100 updates, so the fix is a parent that has had
+    # fewer of them: W10 u1400 scores 0.437 (against u2100's 0.515) and is 700
+    # updates younger. Trading 0.078 of parent coverage for a run that survives
+    # is worth it, because the 75% case is otherwise unanswerable.
+    C13c) cat <<'EOF'
+export ENVS_PER_WORLD=8
+export BATCH_ENVS=16
+export STEPS_PER_ROLLOUT=200
+export SCHEDULE="interleave:2500,empty_frac=1.0->0.75,anneal=500"
+export EVAL_EVERY=100
+export VAL_DISTRACTORS="0 10"
+export WALL_PENALTY=0.3
+export NOVELTY_REWARD=0.15
+export LR=1e-4
+export MAX_ACTION_NORM=2.0
+export LOAD_CKPT=/orcd/pool/003/jackking/cls_runs/agent_ckpts/navigate_ee_W10_20372559/navigate_u1400.pt
+EOF
+        ;;
     # C13b: C13 at LR 3e-5. C13 NaN'd at 1e-4 *with* MAX_ACTION_NORM, while
     # C12c -- same LR, same clip, only a different final empty_frac -- ran past
     # u1200. So warm-starting W10 is fragile rather than fixed by any one knob,
