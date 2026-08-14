@@ -852,6 +852,44 @@ has before anything is tuned to fix it.
 
 #### Live notes — wave 1 (to be folded into Conclusions)
 
+- **u75, behaviour probe on both checkpoints — Q2 answered mechanistically, and
+  a bigger finding underneath it.** `analysis/nav_tri/behavior_probe.py`,
+  explore mode, matched update index:
+
+  | | `w1_base` (ε=0.4) | `w1_eps01` (ε=0.1) |
+  |---|---|---|
+  | `mean_coverage` | 0.0418 | **0.0666** |
+  | **`step_mag_mean`** | 0.178 | **0.251** |
+  | `straightness` | 0.472 | **0.575** |
+  | `edge_frac` | 0.288 | 0.200 |
+  | `clip_frac` | 0.157 | 0.104 |
+  | `revisit_frac` | 0.916 | 0.867 |
+  | `chase_q` (d=10) | −0.022 | — |
+
+  Lower ε gives a **41% larger step**, a straighter path, less time on the
+  perimeter and less wall-clipping. That is the predicted mechanism showing up
+  in the behaviour and not merely in the score: at ε=0.1 nine steps in ten
+  produce policy gradient instead of six, and the policy's own heading estimate
+  survives (Q2, mechanisms 1 and 2).
+
+  `chase_q ≈ 0` in both: neither policy chases the distractor recall. The
+  explore half of the disambiguation is not a problem.
+
+- **THE BINDING CONSTRAINT AT u75 IS STEP MAGNITUDE, NOT STRATEGY.** Both
+  policies are at |a| ≈ 0.18–0.25 against the coverage optimum of 1.0 (§3.1).
+  At |a| = m < 1 the agent needs 1/m steps to leave a cell, so `cells_per_step`
+  is capped at roughly **m** no matter how good the trajectory is — 0.18 and
+  0.25 here — and the observed 0.084 / 0.133 are about half of even that. **No
+  amount of shaping or schedule can beat this cap; only a larger |a| can.**
+
+  This promotes `INIT_LOG_STD` from "exploration temperature" to *the* knob:
+  ε is masked out of the movement surrogate, so σ is the only channel through
+  which the policy can learn its own magnitude (P0.6). Acted on immediately —
+  `w1_sig2` (σ = 0.50, ε = 0.1) queued, displacing `w1_c8`, whose cost question
+  `w1_c20` largely answers. Magnitude is growing on its own (0.086 at u6 →
+  0.25 at u75 for `w1_eps01`), so it may resolve by u450; the question is the
+  *rate*, and σ sets it.
+
 - **u25, and the sign is right on Q2.** `w1_eps01` reads `mean_coverage` 0.0428
   against `w1_base`'s 0.0297, while `w1_base` has the *higher* training reward
   (`mean_r` −0.0018 vs −0.0396). That is P0.6 exactly: ε moves the agent, which
