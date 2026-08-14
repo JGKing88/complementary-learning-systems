@@ -503,9 +503,15 @@ exploit metric. Priced with `exploit_reference.py --sigma 0.5`: at cos 0.99 and
 cost, against σ's ~2× effect on explore learning speed. `success_rate` stays
 1.000 throughout.
 
-> One σ can therefore serve both regimes, which matters for wave 3: with
-> `freeze_log_std=1` the combined model has exactly one value to pick, and this
-> says picking it for explore costs the exploit metric almost nothing.
+> **SUPERSEDED — see the wave-2 exploit notes in §6.** This simulates a
+> *perfect* follower, which walks straight in and stops. A learning policy has
+> a **terminal-approach** problem the simulation cannot express: as it nears
+> the goal `|q| → 0`, the recall direction becomes noise-dominated, and σ=0.50
+> is ~0.5 cells of jitter against a `goal_radius` of 1.0 — so it overshoots and
+> orbits. Measured on the first exploit run, `success_rate` fell 0.969 → 0.510
+> between u25 and u50 as |a| grew. **The 5% figure below is a lower bound that
+> does not bind; do not use it to justify one shared σ.** The σ *anneal* is the
+> resolution, and is a requirement rather than a refinement.
 
 **The one real cost of a large σ: it destroys the `persistence_bonus` signal
 while the step is still small.** That term is `cos(a_t, a_{t−1})` on the
@@ -1403,6 +1409,59 @@ zero reach the policy only through the un-normalized value loss.
   the log reads `'mean_steps': 0.0` with `'total_successes': 0` — **0.0, not
   NaN**, exactly as §P0.3.4 warns. Any automated ranking on `mean_steps` alone
   would put a totally failed policy first.
+
+- **The trap fired for real on the second eval, and it is why `mean_steps_all`
+  now exists.**
+
+  | update | `success_rate` | `mean_steps` | **`mean_steps_all`** |
+  |---|---|---|---|
+  | u25 | 0.969 | 38.0 | **43** |
+  | u50 | 0.510 | 28.4 | **112** |
+
+  Read on `mean_steps` alone that is a 25% improvement; it is a large
+  regression, with the mean taken over an easier surviving half.
+  `collect_results` now derives and bolds
+  `(successes·mean_steps + failures·max_steps) / trials`, so the tooling
+  enforces what P0.3.4 previously only warned about.
+
+- **u25 behaviour probe — the exploit gap is a POLICY gap, and its failure mode
+  is TERMINAL.**
+
+  | | d=0 | d=10 |
+  |---|---|---|
+  | `success_rate` | 1.000 | 0.771 |
+  | `q_accuracy` *(is the signal right?)* | **0.983** | 0.892 |
+  | `follow_q` *(does the policy follow it?)* | **0.702** | 0.445 |
+  | `align_true` — successes / failures | 0.697 / — | 0.712 / **0.125** |
+  | `step_mag_mean` | 0.324 | 0.229 |
+  | `final_dist_fail` | — | **2.81** |
+  | `fail_frac_at_edge` | 0.000 | 0.029 |
+
+  1. **The readout is not the limit.** `q_accuracy` 0.98 against `follow_q`
+     0.70 — the signal is nearly perfect and the policy follows it at cos 0.70.
+     Via §3.3.1, cos 0.70 at |a| = 1 is `mean_steps` 15.3; at the actual
+     |a| = 0.32 that predicts ~47 against the observed 39.3. **The whole of the
+     exploit gap is magnitude plus follow-accuracy, both policy-side.**
+  2. **Failures do not get lost — they get close and cannot close.**
+     `final_dist_fail` is **2.8 cells** with only 2.9% of failure time at an
+     edge, so this is not the corner trap. `align_true` splits 0.712 for
+     successes against **0.125** for failures: near the goal the agent stops
+     moving goalward at all.
+  3. **The mechanism, and it corrects an earlier conclusion of mine.** As the
+     agent approaches, `|q| → 0` and the recall *direction* becomes
+     noise-dominated — while σ=0.50 adds ~0.5 cells of jitter against a
+     `goal_radius` of 1.0. So the terminal approach is exactly where a large σ
+     hurts, and it explains the u50 collapse: as |a| grew the policy began
+     overshooting and orbiting.
+
+     **§3.4.1's "a large σ is nearly free for the exploit metric" is wrong as
+     stated.** That figure came from `exploit_reference.py`, which simulates a
+     *perfect* follower and therefore has no terminal-approach problem at all.
+     The real cost is not the 5% it predicted. **`w2_x_siglo` (σ=0.165) is now
+     running to measure it**, and the practical consequence is that **the σ
+     anneal is not a refinement but a requirement** for the combined model:
+     large σ early for the magnitude ascent, small σ late for terminal
+     precision.
 
 ### Wave 3 — combining the two (pre-registered; fires after waves 1–2)
 
