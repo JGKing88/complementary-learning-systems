@@ -341,6 +341,25 @@ learnable σ from collapsing. Recorded as a prediction to verify (§4, T3).
 
 ---
 
+### 3.5 Which knobs are provably inert, and when
+
+Pooled advantage normalization (`updates/ppo.py:210-214`) removes any constant
+offset and any overall scale from the reward. That makes several entries on the
+knob list dead in specific regimes, and it is cheaper to know that than to sweep
+them.
+
+| knob | inert when | why |
+|---|---|---|
+| `MOVE_ENT_COEF` | `FREEZE_LOG_STD=1` | Gaussian entropy is `Σ log σ + const`; freezing σ makes the whole term a constant with zero gradient. Verified numerically (P0.4). |
+| `TIME_PENALTY` | explore regime with `explore_goals_off` | the rollout is fixed-length with no teleport, so `−time_penalty` is the same constant every step and cancels. |
+| `GOAL_REWARD` | explore regime with `explore_goals_off` | no goal event exists (`vec_env.py:397-398` forces the mask to zeros). |
+| `GOAL_REWARD`, `TIME_PENALTY` | exploit regime **with shaping at zero** | reward becomes `−t + (g+t)·1{goal}`; the constant cancels and `(g+t)` is a pure scale. They survive only through the **value** loss, which is not normalized — so they act as an implicit `vf_coef`, not as a preference. |
+| `REVISIT_PENALTY` | explore, `NOVELTY_SCALE_REMAINING=0`, fixed-length rollout | `n·1{new} − c·1{old} = (n+c)·1{new} − c`; exactly redundant with novelty. Non-degenerate once the remaining-scale is on (novelty state-dependent, penalty flat) or the goal is live (rollouts stop being equal-length). |
+| `NOVELTY_SCALE_CAP` | 200-step rollouts | the scale is `size²/remaining`, and 200 steps can leave at most ~200 of 400 cells unvisited, so it never exceeds ~2 and a cap of 10 never binds. |
+
+Only **ratios** among the surviving shaping terms matter, never their common
+scale.
+
 ## 4. Cost model, and how runs are sized
 
 From `docs/EXPERIMENTS_EXPLORE_MIN.md`, re-derived against
@@ -652,6 +671,63 @@ has before anything is tuned to fix it.
 | `w1_sig` | | | | | |
 | `w1_pers` | | | | | |
 
+#### Live notes — wave 1 (to be folded into Conclusions)
+
+- **u25, and the sign is right on Q2.** `w1_eps01` reads `mean_coverage` 0.0428
+  against `w1_base`'s 0.0297, while `w1_base` has the *higher* training reward
+  (`mean_r` −0.0018 vs −0.0396). That is P0.6 exactly: ε moves the agent, which
+  inflates the novelty the rollout collects, but eval scores the **deterministic
+  mean policy**, and ε-steps are masked out of the movement surrogate — so the
+  reward ε buys never becomes a policy that moves. Far too early to conclude at
+  u25 of 450; recorded because it is a prediction landing, not a result.
+- **`pi_fiete` is ~1.6× slower than `mit_normal_gpu` here**, node contention not
+  hardware: `w1_sig` runs 58.4 s/u on node3807's a100 against `w1_base`'s
+  36.9 s/u on an l40s. **Never compare `s/u` across partitions**, and expect
+  `pi_fiete` runs to reach ~u370 rather than u450 in six hours. Comparisons in
+  the results table are therefore taken at a **matched update index**, not at
+  each run's end.
+- **The ladder is ~2× cheaper per update, not 4×.** `w1_c20` runs 19.2 s/u
+  against 38.3 for 80 envs — but on the *contended* node, so ~12 s/u
+  like-for-like, i.e. ≈3×. The serial-call count fell 4×, so the shortfall is
+  the PPO step, which does not scale with `envs_per_world` (the pool is held
+  constant by construction). **The cost model in §4 undercounts PPO**: it is
+  roughly 8 s of the 38 at this rollout shape, and it is a floor on how cheap
+  any variant can get.
+
 #### Conclusions — wave 1
 
 *(pending)*
+
+---
+
+### Wave 2 — the exploit ceiling (designed, fires as slots free)
+
+Independent of wave 1 — a different regime and a different metric — so it does
+not wait on it. `SCHEDULE='exploit:400'`, `EVAL_SCOPE=all`, eval every 20.
+
+**The question.** §3.3.1 says the readout supports `mean_steps` of **10.1**
+(no distractors) to **12.7** (ten) at unit steps, and that `success_rate` is
+1.000 for any policy with even a weak goalward drift. So the only question
+worth asking is: **how far above the reference row does a trained policy sit,
+and why?** The v35 lineage sat at 22.9, the cos ≈ 0.50 row — a 2× policy gap
+against a readout measured at cos 0.99.
+
+**Shaping is zeroed, not inherited.** `wall_penalty`, `persistence_bonus` and
+`revisit_penalty` leak into exploit rollouts (P0.3.1), so a baseline that left
+them on would measure the leak rather than goal-following.
+
+| variant | change | why |
+|---|---|---|
+| `w2_x_base` | shaping all 0 | the clean control: goal reward only |
+| `w2_x_pers` | `PERSISTENCE_BONUS=0.05` | the one leaked term whose sign is plausibly *positive* for nav — a beeline is a straight line |
+| `w2_x_sig` | `INIT_LOG_STD` −1.8 → −1.2 | ε is hardcoded 0 in the exploit regime (`exploit.py:93`), so σ is the **only** channel through which the policy can learn its step magnitude, and P0.6 says it starts 12× too small |
+| `w2_x_lr` | `LR` 3e-4 → 1e-3 | exploit is a much easier objective than explore (dense +5, near-perfect signal); if it is optimization-limited, this is the cheapest fix |
+
+**Every result is read as the triple (`success_rate`, `mean_steps`, mean |a|)**
+and placed against §3.3.1's table using the `q_accuracy` the behaviour probe
+measures for that same checkpoint. Decision rule: at the reference ⇒ the readout
+is the limit and exploit is done; well above ⇒ a policy gap, and wave 3 gets an
+exploit-tuning arm before it gets a combination arm.
+
+Not swept, per §3.5: `GOAL_REWARD` and `TIME_PENALTY`, which with shaping at
+zero reach the policy only through the un-normalized value loss.

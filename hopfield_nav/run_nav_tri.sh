@@ -190,6 +190,56 @@ case "$VARIANT" in
     PERSISTENCE_BONUS=0.15
     ;;
 
+  # === WAVE 2 -- the exploit ceiling ======================================
+  #
+  # Independent of wave 1: a different regime, a different metric. The point
+  # is how close mean_steps gets to the reference table in §3.3.1 -- 10.1 at
+  # the cos 0.99 the readout achieves with no distractors, 12.7 at the cos
+  # 0.82 it achieves with ten -- NOT success_rate, which that table shows is
+  # 1.000 even for a policy whose direction is wrong by 60 degrees.
+  #
+  # Shaping is zeroed rather than inherited. wall_penalty, persistence_bonus
+  # and revisit_penalty are read off cfg, not off the regime, so they apply to
+  # exploit rollouts too (P0.3.1); leaving them on would make this baseline a
+  # measurement of the leak rather than of following the goal signal.
+  #
+  # Note two knobs are inert here and are NOT swept: with shaping at zero the
+  # per-step reward is `-time_penalty + (goal_reward + time_penalty)*1{goal}`,
+  # whose constant cancels in the advantage and whose remainder is a pure
+  # scale -- and pooled advantage normalization removes scales. GOAL_REWARD
+  # and TIME_PENALTY therefore only reach the policy through the *value* loss,
+  # which is not normalized. See §3.5.
+  w2_x_base)
+    SCHEDULE=${SCHEDULE:-'exploit:400'}
+    WALL_PENALTY=0; PERSISTENCE_BONUS=0; REVISIT_PENALTY=0
+    EVAL_SCOPE=all; EVAL_EVERY=20; CKPT_EVERY=20
+    ;;
+  # Straightness is the one shaping term whose sign is plausibly positive for
+  # navigation -- a beeline IS a straight line -- so it is worth one ticket
+  # even though it was a leak rather than a choice in the v35 lineage.
+  w2_x_pers)
+    SCHEDULE=${SCHEDULE:-'exploit:400'}
+    WALL_PENALTY=0; PERSISTENCE_BONUS=0.05; REVISIT_PENALTY=0
+    EVAL_SCOPE=all; EVAL_EVERY=20; CKPT_EVERY=20
+    ;;
+  # The policy has to learn its own step magnitude (P0.6: it starts at 0.086
+  # and the optimum is 1.0), and sigma is the channel it learns that through,
+  # because epsilon is off in the exploit regime by construction
+  # (exploit.py:93). So init_log_std is a first-class exploit knob, not just
+  # an explore one.
+  w2_x_sig)
+    SCHEDULE=${SCHEDULE:-'exploit:400'}
+    WALL_PENALTY=0; PERSISTENCE_BONUS=0; REVISIT_PENALTY=0
+    INIT_LOG_STD=-1.2
+    EVAL_SCOPE=all; EVAL_EVERY=20; CKPT_EVERY=20
+    ;;
+  w2_x_lr)
+    SCHEDULE=${SCHEDULE:-'exploit:400'}
+    WALL_PENALTY=0; PERSISTENCE_BONUS=0; REVISIT_PENALTY=0
+    LR=1e-3
+    EVAL_SCOPE=all; EVAL_EVERY=20; CKPT_EVERY=20
+    ;;
+
   *)
     echo "ERROR: unknown VARIANT=$VARIANT" >&2; exit 1 ;;
 esac
