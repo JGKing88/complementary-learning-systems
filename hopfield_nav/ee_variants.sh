@@ -664,6 +664,31 @@ export NOVELTY_REWARD=0.15
 export LOAD_CKPT=/orcd/pool/003/jackking/cls_runs/agent_ckpts/navigate_ee_W10_20372559/navigate_u2100.pt
 EOF
         ;;
+    # C12b: C12 at a third the learning rate.
+    #
+    # C12 produced a NaN policy mean within two updates. The checkpoint itself
+    # is sound -- W10 u2100 scores 0.515 on 640 CPU trials, so the forward pass
+    # is fine over 400 steps -- which puts the blowup in the optimiser step, not
+    # the weights. A ReLU Elman recurrence trained 2,100 updates has a large
+    # spectral radius (P3 measured ~4.2 on this architecture), and the first
+    # gradient under a changed reward structure is where that bites.
+    #
+    # LR 3e-4 -> 1e-4 is the standard first remedy and the only change; if it
+    # NaNs again the next lever is MAX_ACTION_NORM, which the brief allows and
+    # which clips the runaway directly rather than slowing everything down.
+    C12b) cat <<'EOF'
+export ENVS_PER_WORLD=8
+export BATCH_ENVS=16
+export STEPS_PER_ROLLOUT=200
+export SCHEDULE="interleave:2500,empty_frac=1.0->0.5,anneal=500"
+export EVAL_EVERY=100
+export VAL_DISTRACTORS="0 10"
+export WALL_PENALTY=0.3
+export NOVELTY_REWARD=0.15
+export LR=1e-4
+export LOAD_CKPT=/orcd/pool/003/jackking/cls_runs/agent_ckpts/navigate_ee_W10_20372559/navigate_u2100.pt
+EOF
+        ;;
     # W10 is to W9 what C8 was to C7, and for the same reason.
     #
     # W9 raised WALL_PENALTY 0.3 -> 0.6 to make a fresh edge cell net-negative.
