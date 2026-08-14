@@ -1451,8 +1451,42 @@ anything measured so far. This is the over-fitting risk flagged when Q1 adopted
 20 envs — and the control that would have caught it (`w1_sig2` at 80 envs) is
 the run cancelled to free a slot, which was a mistake worth naming.
 
-**The `warmcold` probe separates them**, because it runs on the **held-out**
-eval envs:
+**σ=0.165 settles most of it: explore and exploit want DIFFERENT σ, for a
+reason that generalizes.** At matched u100:
+
+| σ | `success_rate` | `mean_steps` | **`mean_steps_all`** |
+|---|---|---|---|
+| 0.50 (`w2_x_sig2`) | 0.667 | 62.0 | **~112** |
+| **0.165 (`w2_x_siglo`)** | **0.979** | 51.1 | **54.2** |
+
+**2× better on the honest metric**, and it does not degrade. So σ is the
+driver — but the mechanism is not overshoot (magnitude *shrank*). It is the
+**density of the reward**:
+
+> Explore pays **every step** — novelty fires on each new cell — so a large σ
+> is cheap: every noisy step still returns a graded signal, and the noise buys
+> the action-space coverage that teaches magnitude.
+>
+> Exploit pays **only at the goal**, roughly 4 times in 200 steps. With mean
+> |a| = 0.23 against σ = 0.50 the *executed* trajectory is mostly noise, so the
+> reaches that earn reward are largely luck, and the gradient credits the mean
+> only weakly. Cutting σ brings the behaviour back to the policy being scored.
+
+**This is a genuine explore/exploit conflict on a single parameter, and the
+first one found.** It cannot be resolved by picking one σ, which retires the
+"one σ serves both" idea for good. Two consequences for wave 3:
+
+1. **The σ anneal becomes structural, not cosmetic**: high σ while coverage is
+   being learned, low σ once goal-following is what matters.
+2. **It aligns with arm A.** An `empty_frac 1.0 → 0.5` schedule moves the run
+   from explore-dominated to exploit-inclusive exactly as a σ anneal moves
+   σ from high to low. The requested ordering and the σ schedule are the *same*
+   curriculum, which is an argument for arm A that did not exist when wave 3
+   was pre-registered — and it is recorded here as a revision of that
+   prediction, not as a retrofit after seeing the result.
+
+**The `warmcold` probe still separates the remaining two**, because it runs on
+the **held-out** eval envs:
 
 - warm ≫ cold there ⇒ **warm-state dependence**; fix is
   `--reset_state_on_teleport true`, which touches only training (nav eval ends
