@@ -52,6 +52,14 @@ Resume checklist, in order:
   partitions and its memory runs near full** (988 G of 1023 G allocated at
   submit time), so jobs pend on memory rather than GPUs. Hence the 64 G request
   and the `precompute_encoded_phi` fix.
+- **CPU training is not viable, tested and dropped.** The workload is B=16 rows
+  through a small RNN, which uses a GPU poorly, so `mit_normal`'s 3000 cores
+  looked like a way past the 4-GPU ceiling. Measured: 32 cores took ~15 min
+  just to build `encoded_Phi` (≈3.5 min on a GPU) and had not finished a single
+  update at 23 min, against 38 s/update on an l40s. Killed. **The probes,
+  however, run fine on CPU and should go there by default** — they need one
+  encoder pass and then small matmuls, and `run_nav_tri_probe_cpu.sh` starts
+  immediately instead of queueing six hours behind a training run.
 - Runs are sized to be checkpoint-safe: `CKPT_EVERY` is set so a job killed at
   the wall-clock limit still leaves a usable series. A TIMEOUT is a normal
   outcome here, not a failure.
