@@ -1546,3 +1546,42 @@ coverage did not move it there.
 
 `fwhm_ratio=0.5` is a null (5.5 against 6.5), which retires the last knob no
 wave had ever moved.
+
+### 5.6j Why the wall is where it is: the aliases live where no loss term looks
+
+§5.6e *inferred* that the position aliasing to a reference is an untrained one.
+`alias_structure --alias_partner` measures it — top 5 far-field peaks for each
+of 40 references, asking whether each peak lands inside a training patch:
+
+| encoder | arena covered | peaks inside a patch | **enrichment** | mean cos inside | outside |
+|---|---|---|---|---|---|
+| `lo_mixtop` 10.1% | 10.1% | 9/200 = 4.5% | **0.45×** | 0.754 | **0.802** |
+| `rate10` 10.1% | 10.1% | 5/200 = 2.5% | **0.25×** | 0.402 | **0.613** |
+| `cov51` 50.8% | 50.8% | 66/200 = 33.0% | 0.65× | 0.406 | 0.420 |
+
+Three things, and together they close the section.
+
+**1. The loss cleans up exactly what it can see.** Enrichment is below 1 in
+every encoder — aliasing partners are *depleted* inside training patches
+relative to chance. The contrastive term works. It works only where it looks.
+
+**2. At 10% coverage, 95.5% of the aliases are somewhere no loss term has ever
+evaluated** — and those are the worse ones: mean cosine 0.802 outside against
+0.754 inside. At 50.8% the two are level (0.420 against 0.406), because there
+the untrained region is small enough that being outside it is not special.
+
+**3. Strengthening the spread term makes the imbalance worse, not better.**
+`rate10` drives enrichment from 0.45× to 0.25×: it scrubs the visible aliases
+harder while the invisible ones stay. That is §5.6h's wall seen from the other
+side — the only way a batch-level spread term can touch an untrained position is
+by compressing *everything*, which is why the ceiling fell from 0.985 to 0.833
+and took res90 down with it.
+
+**So `r_min ≈ 7` at 10% coverage is structural, not a tuning failure.** Every
+spread term available — `uniformity`, `vicreg`, `coding_rate` — is computed on
+the encodings of the batch, and the batch contains training points only. The 90%
+of the arena that holds 95% of the damaging aliases never enters any term in the
+loss, at any strength, under any of the knobs §5 swept. That is why steps 1, 2
+and 3 each returned the same 5–8 from completely different directions: geometry
+(§5.6f), the spread term (§5.6h) and placement (§5.6g) were all working on the
+10% that was never the problem.
