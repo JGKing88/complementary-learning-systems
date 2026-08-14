@@ -248,6 +248,22 @@ case "$VARIANT" in
     EVAL_SCOPE=all; EVAL_EVERY=20; CKPT_EVERY=20
     ;;
 
+  # What does the instructed wall_resolution=4 cost? P0.9 measures wall-distance
+  # decodability from the sensory cone at R^2 0.45 / 0.27 / 0.17 for resolution
+  # 1 / 4 / 8: raising it makes the observation a finer HASH of position, which
+  # buys cell-uniqueness (its documented purpose) at the cost of the smooth
+  # geometry a reactive wall-turn needs -- and cell-uniqueness is not something
+  # a policy can exploit in a held-out env anyway.
+  #
+  # wall_resolution=4 is an explicit instruction (docs §1.2), so it stays the
+  # default everywhere. This ONE variant measures the price, as an explore run
+  # so it is read against w1_base rather than against the exploit arm.
+  w2_wallres1)
+    SCHEDULE=${SCHEDULE:-'explore:450'}
+    WALL_RESOLUTION=1
+    EPSILON_EXPLORE=0.1
+    ;;
+
   *)
     echo "ERROR: unknown VARIANT=$VARIANT" >&2; exit 1 ;;
 esac

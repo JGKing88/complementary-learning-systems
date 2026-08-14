@@ -219,9 +219,14 @@ drives into a boundary and the clip eats the rest of the episode. So
 is exactly the `PERSISTENCE_BONUS` × `WALL_PENALTY` pair.
 
 **Billiard is the realistic near-term target**, because it is *reactive*: it
-needs only "am I about to hit a wall", which the ray-cast cone reports
-directly. The lawnmower needs to know where it has already been — much harder
-without a `prev_action` channel.
+needs only "am I about to hit a wall". The lawnmower needs to know where it has
+already been.
+
+> P0.9 later made this quantitative and turned it from a guess into a ceiling:
+> wall proximity is decodable from the sensory cone at R² ≈ 0.27, absolute
+> position at R² ≤ 0.13. **The lawnmower line is not reachable in a held-out
+> env; 0.387 is the practical ceiling**, and the ray-cast cone reports wall
+> distance only *implicitly*, not "directly" as this paragraph first assumed.
 
 ### 3.2 What each noise source costs coverage
 
@@ -398,6 +403,7 @@ Therefore:
 | is "goal in memory" decidable from the observation? | `analysis/nav_tri/signal_separability.py` | P0.7. No policy involved — a property of encoder + scaffold + Hopfield. |
 | how many steps of `q` does it take to decide? (ideal-observer AUC vs T) | `analysis/nav_tri/temporal_separability.py` | P0.8. Bounds what any architecture could extract. |
 | what nav numbers a perfect follower of a given-accuracy signal gets | `analysis/nav_tri/exploit_reference.py` | §3.3.1. Turns `q_accuracy` into a predicted `mean_steps`, so a checkpoint's nav gap is diagnosable as readout vs policy. |
+| what is decodable from the 60-ray sensory cone at all | `analysis/nav_tri/sensory_decodability.py` | P0.9. Pure sensor property; no encoder, no scaffold, seconds. |
 | probe launcher, **CPU — prefer this one** | `hopfield_nav/run_nav_tri_probe_cpu.sh` | `PROBE=signal\|temporal\|behavior CKPTS="…" sbatch …`. The probes need no GPU: the only heavy step is one encoder pass to build `encoded_Phi`. Both GPU partitions cap concurrency at 2 and training holds those for six hours, while `mit_normal` has 3000 cores — so this runs immediately instead of waiting out a training run. |
 | probe launcher, GPU | `hopfield_nav/run_nav_tri_probe.sh` | same interface; only worth it when a GPU slot is genuinely idle |
 | training launcher | `hopfield_nav/run_nav_tri.sh` | `VARIANT=<name> sbatch …`; variants in the `case` block |
@@ -536,49 +542,93 @@ not move. Two consequences, and the second is the important one:
   `w1_eps01`, and it reframes `INIT_LOG_STD` from "exploration temperature" to
   "the channel through which the policy learns its own step size".
 
-**P0.7 — the readout is near-perfect AND `|q|` separates the regimes in one
-step.** `analysis/nav_tri/signal_separability.py`, no policy involved. Per env,
-sampling cells and comparing memory with the goal present against the same
-distractors without it. **Npos=1716, the real scaffold:**
+**P0.7 — the readout is excellent at few distractors and degrades sharply by
+ten.** `analysis/nav_tri/signal_separability.py`, no policy involved. Per env,
+sampling 400 cells and comparing memory with the goal present against the same
+distractors without it. **Npos=1716 (the real scaffold), 8 envs = 8 independent
+distractor draws. This table is the authoritative one — see the two corrections
+below it.**
 
 | `n_dist` | `q_goal_mean` | `q_dist_mean` | `dir_acc_goal` = cos(q, goal−cell) | `recall_is_goal_frac` | **`AUC(\|q\|)`** |
 |---|---|---|---|---|---|
-| 0 | 0.256 | 0 | 0.990 | 1.00 | — |
-| 1 | 0.255 | 0.054 | 0.995 | 1.00 | **0.965** |
-| 3 | 0.261 | 0.089 | 0.995 | 1.00 | 0.898 |
-| 5 | 0.260 | 0.065 | 0.988 | 1.00 | 0.936 |
-| 10 | 0.256 | 0.052 | 0.991 | 1.00 | **0.956** |
+| 0 | 0.255 | 0.000 | **0.992** | 1.00 | — |
+| 1 | 0.269 | 0.056 | **0.994** | 1.00 | 0.955 |
+| 3 | 0.252 | 0.062 | **0.994** | 1.00 | 0.936 |
+| 5 | 0.259 | 0.120 | 0.972 | 1.00 | 0.836 |
+| 10 | 0.218 | 0.170 | **0.696** | 1.00 | **0.619** |
 
-Three readings, and all three are good news:
+- **Up to ~3 distractors the readout is essentially perfect** (cos 0.99) and the
+  regime is separable from `|q|` alone (AUC 0.94–0.96). Via §3.3.1 that is
+  `mean_steps` ≈ 10.1 at unit steps — the oracle row.
+- **By 10 distractors both collapse**: direction accuracy 0.70, separability
+  0.62. Via §3.3.1 the reachable `mean_steps` at d=10 is ≈**15.3**, not 10.1.
+  So **the exploit target is distractor-dependent and must be quoted per
+  level**, and a run scored only at d=0 will look better than it is.
+- **`recall_is_goal_frac` stays 1.00 throughout, and that metric is a trap.**
+  The attractor is always nearer the goal pattern than to any distractor, yet
+  the *direction* still degrades — because recall is
+  `normalize(tanh(β W x))`, a soft mixture over all stored patterns, not a
+  verbatim retrieval. It lands closest to the goal while being pulled off it.
+  **`dir_acc_goal` is the metric that matters; the margin is not.**
+- `--input_hopfield_raw 1` is what puts the separating quantity in the
+  observation at all — the normalized signal discards `|q|`. Jack's instruction
+  to use the raw signal is load-bearing.
 
-- **The recall is right, and distractors barely touch it.** The attractor lands
-  nearer the goal pattern than any distractor in **100%** of sampled cells, and
-  `q` points at the goal with cos **0.99 at every distractor count**, including
-  ten. So a policy that simply followed `q` would navigate almost optimally.
-  **Any nav failure is therefore a policy failure, not a readout failure** —
-  which is the decomposition the probe was built to make. Combined with
-  §3.3.1 this pins the exploit target at **`mean_steps` ≈ 10.1 at |a| = 1,
-  at every distractor level**.
-- **`|q|` says whether the goal is in memory**, at AUC 0.90–0.97 from a
-  *single* step. The magnitude ratio is ~5:1 (0.256 present vs ~0.05 absent).
-  `--input_hopfield_raw 1` puts exactly this in the observation, which is what
-  makes Jack's instruction to use the raw signal load-bearing rather than
-  cosmetic: the normalized signal throws away the one channel that carries the
-  regime.
-- **This is the encoder doing its job.** `ur_loss2_repel_low/029` was trained at
-  `repel_weight=2` — cross-env repulsion — so patterns from outside this env's
-  footprint are pushed apart in embedding space and their recall has almost no
-  component in the local tangent plane. The distractor problem is largely
-  solved upstream of the policy.
+> **CORRECTION 1 (superseded).** A first version of this section, on a shrunken
+> **Npos=300** scaffold, reported `AUC(|q|)` 0.35–0.49 and "no single-step cue".
+> That was an artifact of the small scaffold: the exclusion region distractors
+> are drawn from is ~30× smaller there, so they sit close enough to interfere.
+>
+> **CORRECTION 2 (superseded).** A second version, at the real Npos but with
+> **2 envs = 2 distractor draws**, reported `dir_acc_goal` 0.99 and `AUC(|q|)`
+> 0.90–0.97 at *every* level, and concluded the distractor problem was "solved
+> upstream by the `repel_weight=2` encoder". **That was a two-sample fluke.**
+> At 8 draws the degradation with distractor count is clear and monotonic.
+>
+> **The lesson, recorded because it cost two wrong conclusions: the number of
+> independent distractor draws dominates the variance of every number in this
+> table.** Never read it at fewer than ~8. The independent `walk` column of P0.8
+> (16 draws) agreed with the 8-draw figure (0.714 vs 0.619 at d=10) and
+> disagreed with the 2-draw one (0.956), which is what exposed the fluke —
+> cross-checking two probes that measure the same quantity by different routes
+> is what caught this, and is worth keeping up.
 
-> **CORRECTION.** An earlier version of this section, measured on a shrunken
-> **Npos=300** scaffold, reported `AUC(|q|)` of 0.35–0.49 and concluded there was
-> *no* single-step magnitude cue, and `dir_acc_goal` falling to 0.82 at ten
-> distractors. **Both were artifacts of the small scaffold** — at Npos=300 the
-> exclusion region distractors are drawn from is ~30× smaller, so they sit close
-> enough to the env to interfere. The caveat attached to those numbers at the
-> time was the right one; this is what re-running under it was for. Anything
-> elsewhere that reads "|q| does not separate" is superseded here.
+**P0.9 — the agent cannot tell where it is, and only weakly whether a wall is
+near.** `analysis/nav_tri/sensory_decodability.py`. Needs no encoder or
+scaffold: this is a property of the sensor. Decode a target from one 60-ray
+observation at a random (position, heading), R² on held out 30%, decoder fit
+*per env* (so this is the generous within-env case):
+
+| `wall_resolution` | dist-to-wall: ridge / MLP / **autocorr** | pos_x | pos_y | heading |
+|---|---|---|---|---|
+| 1 | −0.01 / 0.30 / **0.45** | 0.13 | 0.07 | 0.16 |
+| **4** *(instructed)* | −0.01 / 0.21 / **0.27** | 0.03 | 0.06 | 0.05 |
+| 8 | −0.01 / 0.07 / **0.17** | 0.02 | 0.02 | 0.06 |
+
+The "autocorr" decoder is a ridge on lag-*k* ray agreement plus the sign-change
+rate — the one route that is **codebook-independent** and therefore usable in a
+held-out env: how fast the pattern varies across the cone is geometry, not
+code. Standing near a wall, adjacent rays land on adjacent segments and agree;
+standing far, they land on distant segments and are independent.
+
+- **Absolute position is not decodable** — R² ≤ 0.13 by any decoder at any
+  resolution. The wall code is random ±1 per segment, so the observation is a
+  *hash* of position, not a smooth function of it: unique (which is what
+  `wall_resolution` was raised to achieve) but not invertible by anything that
+  generalizes. **A lawnmower sweep needs to know where it has been, so the
+  lawnmower line (coverage 0.478) is out of reach in a held-out env, and the
+  billiard line (0.387) is the real practical ceiling.**
+- **Wall proximity is present but weak** (R² 0.27 at the instructed resolution).
+  Enough for a reactive turn, plausibly — and the RNN can integrate across
+  steps, which this single-observation probe does not credit.
+- **`wall_resolution` trades cell-uniqueness against smooth geometry, and 4 is
+  on the wrong side of that trade for this task.** Raising it makes the hash
+  finer, which is why every column *falls* with resolution. Its documented
+  purpose (`config.py:110-124`) is to stop distinct cells sharing a
+  bit-identical observation — which serves env identity, a thing the policy
+  cannot exploit in held-out envs anyway. Flagged rather than changed: it is an
+  explicit instruction (§1.2). **One variant at `wall_resolution=1` rides along
+  in wave 2 to measure what the instruction costs.**
 
 **P0.8 — the cue is temporal, and it only appears if the agent ACTS on the
 signal.** `analysis/nav_tri/temporal_separability.py` puts an ideal-observer
