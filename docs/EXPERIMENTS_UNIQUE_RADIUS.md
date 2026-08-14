@@ -1275,6 +1275,13 @@ untrained far field. That reframes the remaining steps:
 
 ### 5.6d Which factor to spend the runs on — the law says the ceiling, by a lot
 
+> **Superseded — do not act on this section.** The arithmetic is right and the
+> conclusion is wrong: it prices each factor with the other held fixed, and the
+> spread term moves both. §5.6h has the measured exchange rate and §5.6l the
+> endpoint — the ceiling is fully reachable at 10% coverage and buys nothing.
+> Kept because the reasoning it records is the reason `w19` was built the way it
+> was.
+
 Both factors fell, but they are not equally worth chasing. `r_min = res90 ·
 sqrt(ln(1/C) / ln(1/0.9))` depends on the ceiling through `sqrt(ln(1/C))`,
 which is brutally sensitive as `C → 1` and nearly flat away from it. From the
