@@ -410,6 +410,45 @@ case "$VARIANT" in
     EVAL_EVERY=50; CKPT_EVERY=50
     ;;
 
+  # === WAVE 3 -- combining explore and exploit ============================
+  #
+  # The four orderings Jack named. Pre-registered in docs §6 WITH the decision
+  # rule, before any of them ran, so the reading cannot be fitted to the
+  # outcome.
+  #
+  # Common to all four: regime_assignment=shuffle, so an env's identity carries
+  # no information about its regime and the policy must gate on the recall
+  # signal rather than on the codebook (see the flag's help). EVAL_SCOPE=navexpl
+  # so both halves of the scorecard are measured every eval. 1200 updates at
+  # 20 envs is ~4.2 h.
+  #
+  # A and D warm-start with LOAD_CKPT=<path>. Note --load_checkpoint DROPS the
+  # Adam moments by design, so expect a short dip after the start that is not
+  # interference.
+  #
+  #   LOAD_CKPT=.../navigate_u600.pt VARIANT=w3_A sbatch hopfield_nav/run_nav_tri.sh
+  w3_A|w3_B|w3_C|w3_D)
+    ENVS_PER_WORLD=20; BATCH_ENVS=64
+    EPSILON_EXPLORE=0.1; INIT_LOG_STD=-0.7
+    REGIME_ASSIGNMENT=shuffle
+    EVAL_SCOPE=navexpl; EVAL_EVERY=50; CKPT_EVERY=50
+    case "$VARIANT" in
+      # A: the requested order -- explore first, anneal exploit in. Warm-started
+      #    from an explore checkpoint, which is what makes it one run.
+      w3_A) SCHEDULE=${SCHEDULE:-'interleave:1200,empty_frac=1.0->0.5,anneal=400'} ;;
+      # B: interleaved throughout. The favoured alternative: it never trains the
+      #    "ignore the recall channel" prior that a pure-explore phase installs,
+      #    and an interleaved rollout is the only setting where probing the
+      #    signal has positive expected value.
+      w3_B) SCHEDULE=${SCHEDULE:-'interleave:1200,empty_frac=0.5'} ;;
+      # C: blocked, never interleaved. Separates "interleaving matters" from
+      #    "seeing both regimes matters" -- it sees both, never together.
+      w3_C) SCHEDULE=${SCHEDULE:-'explore:600 ; exploit:600'} ;;
+      # D: exploit first, anneal explore in. Brackets A from the other side.
+      w3_D) SCHEDULE=${SCHEDULE:-'interleave:1200,empty_frac=0.0->0.5,anneal=400'} ;;
+    esac
+    ;;
+
   *)
     echo "ERROR: unknown VARIANT=$VARIANT" >&2; exit 1 ;;
 esac
