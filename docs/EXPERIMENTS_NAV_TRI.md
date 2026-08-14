@@ -386,7 +386,38 @@ not on the mean.** So:
 
 This is a genuine interaction and the reason the three are flagged together:
 `MOVE_ENT_COEF` is meaningless except as the counter-pressure that stops a
-learnable σ from collapsing. Recorded as a prediction to verify (§4, T3).
+learnable σ from collapsing.
+
+> **Verified.** The smoke run printed `move_entropy = -0.762` at
+> `init_log_std = -1.8`, which is exactly `2(½log 2πe + log σ)` — entropy is a
+> function of σ alone, so under `FREEZE_LOG_STD=1` it is a constant with zero
+> gradient. **Every run in the v35 lineage that set both was sweeping a dead
+> knob.** All runs here keep `MOVE_ENT_COEF` at v35's 0.005 and simply do not
+> treat it as an axis.
+
+#### Verdict on these three, after wave 1
+
+`INIT_LOG_STD` turned out to be **the single most important knob in the whole
+explore problem**, and for a reason that is not "exploration temperature":
+
+- The policy starts at mean |a| = 0.086 and needs ~1.0 (P0.6), and
+  `cells_per_step` is capped near |a| whatever the trajectory looks like. So
+  the explore metric is *magnitude-limited* long before it is strategy-limited.
+- ε cannot fix that, because ε steps are masked out of the movement surrogate —
+  they move the agent without teaching it to move. **σ is the only channel
+  through which the policy learns its own step size.**
+- Measured: at a matched u50, σ=0.30 gives coverage 0.0839 against σ=0.165's
+  0.0468 at the same ε — **1.8× from one knob**, and 2.1× against the full v35
+  configuration.
+- And it is nearly free on the other side of the ledger: σ=0.50 costs 5% of
+  `mean_steps` (§3.4.1), so one σ serves both regimes.
+
+`FREEZE_LOG_STD` stays at 1 throughout. Learnable σ collapses once returns go
+positive, which would end the magnitude ascent exactly when it is paying off;
+and with the freeze genuinely working only since 2026-08-07, a pinned σ is also
+the configuration whose behaviour is now predictable. The `w1_siganneal` variant
+is the principled middle: a *scheduled* σ, high while the magnitude climbs and
+low once the straightness term becomes readable (§3.4.1).
 
 ---
 
