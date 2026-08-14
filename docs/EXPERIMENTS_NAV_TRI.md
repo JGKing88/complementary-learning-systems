@@ -12,8 +12,19 @@ wave, and it is the only section that goes stale on purpose.
 | | |
 |---|---|
 | **Branch / worktree** | `nav-tri-metric` at `.claude/worktrees/nav-tri-metric` (pushed) |
-| **Runs live** | `w1_base` (v35 control, 80 envs) · `w1_sig2` (over-fit control, 80 envs, σ=0.50) · `w2_e_long` (σ=0.30, 20 envs, 1500 u) · `w2_e_long2` (σ=0.50, 20 envs, 1500 u) |
-| **Wave state** | Wave 1 **complete in substance** (all four questions answered; see its Conclusions). Wave 2's *explore* arm is running; its *exploit* arm is smoked but not launched. |
+| **Runs live** | `w2_e_long` (σ=0.30) · `w2_e_long2` (σ=0.50) · `w2_e_long3` (σ=1.0, the bracket) · `w2_x_sig2` (first exploit) — all 20 envs × 64 batch |
+| **Wave state** | Wave 1 **complete**, all four questions answered (see its Conclusions). Wave 2 explore + exploit both running. Wave 3 designed and pre-registered, not launched. |
+| **Best so far** | coverage **0.280** (`w2_e_long`, u250) against a 0.352 target and the v35 recipe's 0.121 at u175 |
+
+**The recipe that currently wins**, for anyone picking this up cold:
+
+```
+20 envs × 64 batch × 200 steps   (pool 1280; 12.6 s/update)
+EPSILON_EXPLORE=0.1              (not v35's 0.4)
+INIT_LOG_STD=-0.7  (σ≈0.50)      (not v35's -1.8; this is the big one)
+FREEZE_LOG_STD=1
+everything else as v35 / §1.2
+```
 | **wandb project** | `train_navigate` |
 | **Launcher** | `hopfield_nav/run_nav_tri.sh` (`VARIANT=<name> sbatch …`) |
 | **Status** | `bash hopfield_nav/nav_tri_status.sh` |
