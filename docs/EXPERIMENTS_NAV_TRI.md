@@ -1867,6 +1867,45 @@ waves 1 and 2 simply be concatenated.
   gradient serves. That is a case §3.5 did not cover, and it is now the
   leading candidate for wave 4.
 
+#### CONCLUSION — wave 3. Interleaving wins; the requested ordering is refuted.
+
+The pre-registered rule was: *"If B ≥ A on the composite, the requested
+ordering is refuted and interleaving becomes the recipe; report that plainly
+rather than continuing to tune A."* Reporting it plainly.
+
+| arm | ordering | coverage | nav d=0 (sr / steps / **all**) | nav d=10 **all** |
+|---|---|---|---|---|
+| **A** | explore-first, anneal exploit in *(requested)* | 0.068 | 0.948 / 26.2 / 35.3 | 63.4 |
+| **B** | **interleaved throughout** | **0.198** | **1.000 / 12.6 / 12.6** | **32.5** |
+| **C** | blocked, never interleaved | 0.223 ↓ | 0.906 / 27.6 / 43.8 | 64.2 |
+| **D** | exploit-first, anneal explore in | 0.062 | 0.990 / 10.2 / 12.2 | 46.4 |
+
+**B beats A on *both* metrics at once** — 2.9× the coverage and 2.8× better
+`mean_steps_all` — and it is the only arm that holds both. So:
+
+- **The requested explore-first ordering is refuted.** It reaches good
+  navigation and destroys coverage doing it (§ the corner-trap diagnosis
+  above). The prediction registered before the wave — that a pure-explore
+  phase installs a prior the combined phase must unlearn — is what happened,
+  though by a sharper mechanism than "unlearning": exploit training installs
+  *persistent q-following*, which in an explore rollout drives the agent into
+  a wall.
+- **D is the mirror image and confirms the reading.** Exploit-first gives the
+  best navigation of any arm (10.2 steps) and the worst coverage (0.062).
+  Whichever regime a run starts in, it keeps that skill and loses the other.
+  **Only simultaneous exposure holds both.**
+- **C separates the two candidate explanations.** It sees both regimes but
+  never together, and it behaves like A: coverage climbs to 0.351 during its
+  explore block then *falls* through the exploit block (0.351 → 0.278 →
+  0.223), while nav stays mediocre. So it is **not** "seeing both regimes"
+  that matters — it is seeing them **in the same PPO update**.
+
+**Arm B is a genuine single model for all three metrics**: coverage 0.198,
+`success_rate` 1.000, `mean_steps` 12.6. But it is not yet good enough —
+0.198 coverage against the explore-only 0.385 means **the combined model pays
+about half its coverage** for navigation. That residual interference is what
+wave 4 attacks.
+
 **The failure mode to watch for is interference, not either metric alone.** A
 model that scores 0.35 coverage and `mean_steps` 30, or 10.5 steps and 0.10
 coverage, has not combined anything. `analysis/nav_tri/behavior_probe.py`
