@@ -1007,8 +1007,8 @@ localised failure, and it is why §4.6b recommends 50.8% over 61.1%.
 # 5. How good can it get at **10% coverage**?
 
 **Status: answered — §5.7.** `r_min` ≈ 5 at 100 references (≈ 7 at 20), against
-§4's 24 at 50.8% coverage, using §4's configuration unchanged. 54 runs across
-six waves found nothing that improved on it, and §5.6l says why: at 10% coverage
+§4's 24 at 50.8% coverage, using §4's configuration unchanged. 60 runs across
+seven waves found nothing that improved on it, and §5.6l says why: at 10% coverage
 the alias ceiling is fully reachable and worth nothing, because the only legal
 way to reach it costs exactly what it gains. Running log in §5.6.
 
@@ -1666,6 +1666,29 @@ code globally, and it pays for every unit of ceiling in decay at slightly worse
 than par (§5.6h). That is why the ceiling is reachable and useless, and it is
 the cleanest statement of what the constraint costs at low coverage.
 
+### 5.6m Step 4: weight decay is a null, as predicted
+
+The last item of §5.4, run rather than argued away. Four seeds (44–47), against
+the baseline's cells at the same four seeds.
+
+| `weight_decay` | n | `r_min` med | spread | `r_median` | alias max | decay50 |
+|---|---|---|---|---|---|---|
+| 1e-4 (baseline) | 4 | 7.0 | 2 | 13.75 | 0.970 | 34.5 |
+| 1e-3 | 4 | 6.5 | 3 | 12.0 | 0.971 | 32.25 |
+| 1e-2 | 4 | 6.5 | 3 | 12.5 | 0.969 | 33.25 |
+
+**A 100× change in weight decay moves `r_min` by 0.5 units**, well inside the
+spread of 3, and leaves the ceiling and decay untouched. The prior was against
+it — `encoder_best` and `encoder_final` are near-identical in every `w17` cell
+and the best epochs scatter 820–1680, so there was no early peak to find — and
+§5.6l puts the binding factor in res90, which is set by pairwise structure
+rather than capacity. Both held.
+
+Worth having anyway: 10% coverage is the one regime in either campaign where
+overfitting was a priori plausible (each training point is seen ~2000 times
+against ~380 at 50.8%), and `weight_decay` had sat at 1e-4 untouched throughout.
+It is now tested rather than assumed.
+
 ## 5.7 The answer
 
 **At ~10% coverage, under `exclude_cross_env_pairs=True` with patches capped at
@@ -1713,12 +1736,13 @@ epochs 2050, step-matched to ~73,000 optimizer steps
 Checkpoints: `w17_lowcov_anchor/00{0,1}_lo_mixtop_seed=4{2,3}` and
 `w22_base_seeds/00{0,1,2,3}_rand_rate0.3_seed=4{4,5,6,7}`.
 
-**Nothing found in 54 runs improved on it.** Five geometries (§5.6f), stratified
-placement (§5.6g), the spread term over 30× in strength and two families
-(§5.6h, §5.6i), the radius fraction up to 0.4, and `fwhm_ratio` — all neutral or
-worse, and at six seeds the two that had looked promising at two seeds were
-neither (§5.6k). The seed spread is 3–5 radius units; every configuration
-difference measured is 0–1.
+**Nothing found in 60 runs across seven waves improved on it.** Five geometries
+(§5.6f), stratified placement (§5.6g), the spread term over 30× in strength and
+two families (§5.6h, §5.6i), the radius fraction up to 0.4, `fwhm_ratio`, and
+weight decay over 100× (§5.6m) — all neutral or worse, and at six seeds the two
+that had looked promising at two seeds were neither (§5.6k). The seed spread is
+3–5 radius units; every configuration difference measured is 0–1. Every step of
+§5.4 was run, including the two the evidence had already argued against.
 
 ### Why — the short version
 
