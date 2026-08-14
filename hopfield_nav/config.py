@@ -354,6 +354,13 @@ class TrainConfig:
     refresh_goal: int | None = None
     refresh_size: int | None = None
     schedule: str | None = None
+    # Which envs take the exploit regime on an update, given how many do.
+    # "index" (default, and what every run before 2026-08-14 did) takes the
+    # first n_pre in order, so at a fixed empty_frac an env keeps its regime
+    # for the whole run -- letting the policy gate on env identity rather than
+    # on the recall signal, which does not transfer to a held-out env.
+    # "shuffle" re-draws the assignment every update.
+    regime_assignment: str = "index"    # "index" | "shuffle"
     novelty_anneal: bool = False            # linearly scale novelty_reward -> 0 across the whole run
     epsilon_explore: float = 0.0            # per-step chance of a uniform-random move, explore regime only
     epsilon_anneal_updates: int = 0         # linearly scale epsilon_explore -> 0 over this many updates; 0 = constant

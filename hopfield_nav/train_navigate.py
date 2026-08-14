@@ -324,16 +324,36 @@ def run_navigate(
         n_emp_now = int(round(n_envs * knobs.empty_frac))
         n_pre_now = n_envs - n_emp_now
 
+        # WHICH envs are exploit, as opposed to how many. Positionally, the
+        # count alone decides: the first `n_pre_now` are exploit every update,
+        # so at a fixed `empty_frac` a given env is in the same regime for the
+        # whole run. That is a memorization channel -- the policy can learn
+        # "this env's walls mean the recall signal is trustworthy" and gate on
+        # env identity instead of on the signal, which is exactly the skill the
+        # interleaved schedule exists to teach, and which does not transfer to
+        # a held-out env.
+        #
+        # `shuffle` re-draws the assignment every update from the run's own RNG,
+        # so an env is exploit on some updates and explore on others and its
+        # identity carries no information about its regime. `index` is the
+        # historical behaviour and stays the default, because every run before
+        # 2026-08-14 was trained under it.
+        if cfg.regime_assignment == "shuffle":
+            is_pre = np.zeros(n_envs, dtype=bool)
+            is_pre[np.random.permutation(n_envs)[:n_pre_now]] = True
+        else:
+            is_pre = np.arange(n_envs) < n_pre_now
+
         rollouts = []
+        pre_flags: list[bool] = []
         for w_idx, world in enumerate(worlds):
             vh = world.field
             collector = RolloutCollector(vh, cfg, embed_dim, device)
             for local_idx, env in enumerate(world.envs):
                 env_offset = world.offsets[local_idx]
-                # Order: the first n_pre_now envs are exploit, the rest explore.
-                # The reward split logged below slices on the same boundary.
-                regime = (exploit_regime if local_idx < n_pre_now
+                regime = (exploit_regime if is_pre[local_idx]
                           else explore_regime)
+                pre_flags.append(bool(is_pre[local_idx]))
                 spec = regime.spec(w_idx, world, local_idx, env, env_offset, knobs)
                 # The collector reads novelty off cfg and the goal reward off
                 # the env, so the regime's choice has to be written into both.
@@ -354,11 +374,12 @@ def run_navigate(
 
         mean_r = sum(r.rewards.sum().item() for r in rollouts) / max(
             sum(r.rewards.numel() for r in rollouts), 1)
-        if n_pre_now > 0:
-            pre_rs = rollouts[:n_pre_now * len(worlds)]
-            emp_rs = rollouts[n_pre_now * len(worlds):]
-        else:
-            pre_rs, emp_rs = [], rollouts
+        # Split by the flag recorded per rollout, not by a slice. The slice was
+        # only ever correct for `index` assignment AND num_worlds == 1 -- the
+        # rollout list is world-major, so `rollouts[:n_pre * n_worlds]` mixed
+        # regimes as soon as there was more than one world.
+        pre_rs = [r for r, pre in zip(rollouts, pre_flags) if pre]
+        emp_rs = [r for r, pre in zip(rollouts, pre_flags) if not pre]
         def _mr(rs):
             if not rs:
                 return 0.0
@@ -692,6 +713,7 @@ CFG_FIELDS: dict[str, tuple[str, ...]] = {
     "refresh_size": ("refresh_size",),
     # schedule
     "schedule": ("schedule",),
+    "regime_assignment": ("regime_assignment",),
     "novelty_anneal": ("novelty_anneal",),
     "epsilon_explore": ("epsilon_explore",),
     "epsilon_anneal_updates": ("epsilon_anneal_updates",),
@@ -1069,6 +1091,15 @@ def build_parser() -> argparse.ArgumentParser:
                         "the new value.")
     p.add_argument("--log_std_anneal_target", type=float, default=None,
                    help="Target log_std at end of anneal. e.g. -1.4 → σ≈0.247.")
+    p.add_argument("--regime_assignment", choices=("index", "shuffle"),
+                   default=None,
+                   help="Which envs take the exploit regime, given how many do."
+                        " 'index' (default) takes the first n_pre in order, so"
+                        " at a fixed empty_frac an env keeps its regime for the"
+                        " whole run and the policy can gate on env identity"
+                        " instead of on the recall signal -- a shortcut that"
+                        " does not transfer to a held-out env. 'shuffle'"
+                        " re-draws the assignment every update.")
     p.add_argument("--ppo_clip_coef", type=float, default=None,
                    help="Override PPOConfig.clip_coef (default 0.2). Lower "
                         "values (0.1-0.15) limit policy update size, helping "
