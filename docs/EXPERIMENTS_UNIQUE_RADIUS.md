@@ -1613,4 +1613,130 @@ reached about the two survivors as well.
 
 `w22` adds seeds 44–47 to the baseline itself, so the headline comparison is six
 against six rather than six against two — the mistake this section exists to
-correct.
+correct. With that in, the baseline is the **best** of the four and has the
+tightest spread:
+
+| config | n | `r_min` med | spread | `r_median` | the cells |
+|---|---|---|---|---|---|
+| **`rand_rate0.3` — §4's config, untouched** | 6 | **7.0** | **3** | 13.75 | 5, 8, 5, 7, 7, 7 |
+| `strat_rate0.3` | 6 | 6.5 | 5 | 14.25 | 7, 8, 6, 6, 3, 8 |
+| `rand_rate1` | 6 | 5.5 | 5 | 11.50 | 5, 9, 4, 5, 7, 6 |
+| `strat_rate1` | 4 | 4.5 | 4 | 12.25 | 4, 5, 3, 7 |
+
+### 5.6l The ceiling is reachable at 10% coverage, and reaching it buys nothing
+
+The out-of-brief diagnostic (`w21`, §5.6k header caveat applies — these are not
+10%-coverage encoders and are not an answer to the brief). The spread term is
+given extra positions from the whole arena; no pair term ever sees them.
+
+| | `r_min` | `r_median` | **alias mean** | **alias max** | **res90** | decay50 |
+|---|---|---|---|---|---|---|
+| 10% baseline | 7.0 | 13.75 | 0.847 | 0.970 | 13.0 | 34.5 |
+| 10% + arena spread ×0.5 | 6.0 | 21.75 | 0.564 | 0.856 | 8.75 | 24.75 |
+| 10% + arena spread ×2 | 6.0 | 19.75 | **0.502** | **0.768** | **6.50** | 19.75 |
+| **§4's 50.8% winner** | **26.5** | 40.25 | **0.492** | **0.743** | **17.00** | 42.25 |
+
+**The arena-spread diagnostic reproduces the 50.8% encoder's ceiling almost
+exactly** — mean 0.502 against 0.492, max 0.768 against 0.743 — at a fifth of
+the coverage. And it scores `r_min` 6 against 26.5. The entire remaining gap is
+res90: **6.50 against 17.00**.
+
+So the ceiling was never the binding constraint at 10% coverage. §5.6d argued it
+was the whole game; §5.6h found the two factors coupled; this is the endpoint of
+that correction. You can have the 50.8% encoder's ceiling at 10% coverage, and
+it is worth nothing, because the only available way to get it is to compress the
+code and compression is exactly what the decay is.
+
+**What coverage actually buys is the decay, and it buys the ceiling for free.**
+The 50.8% encoder has both — decay50 42, ceiling 0.743 — without any strong
+spread term at all (`rate_lambda` 0.3). Its aliases are suppressed by having
+five times as many pairwise constraints, which costs the local structure
+nothing. An env-blind spread term can only suppress aliases by shrinking the
+code globally, and it pays for every unit of ceiling in decay at slightly worse
+than par (§5.6h). That is why the ceiling is reachable and useless, and it is
+the cleanest statement of what the constraint costs at low coverage.
+
+## 5.7 The answer
+
+**At ~10% coverage, under `exclude_cross_env_pairs=True` with patches capped at
+200 and sizes mixed, the encoder reaches `r_min` ≈ 7** — median of six seeds,
+`encoder_final`, spread 3 (cells 5, 8, 5, 7, 7, 7).
+
+**The winning configuration is §4's, unchanged.** Only the patch set differs,
+because the coverage target demands it:
+
+```
+npos_list            5x200 + 3x150 + 3x100     (lo_mixtop, 10.1%, 11 envs)
+per_env_radius_frac  0.15
+rate_lambda          0.3                       (MCR^2 coding rate)
+patch_placement      random
+exclude_cross_env_pairs, single_env_batch=False, lazy_codes
+out_dim 1024  hidden_dim 512  num_hidden_layers 4
+lr 1e-4  batch_size 8192  fwhm_ratio 0.25  gain 1.0->5.0
+epochs 2050, step-matched to ~73,000 optimizer steps
+```
+
+Checkpoints: `w17_lowcov_anchor/00{0,1}_lo_mixtop_seed=4{2,3}` and
+`w22_base_seeds/00{0,1,2,3}_rand_rate0.3_seed=4{4,5,6,7}`.
+
+**Nothing found in 54 runs improved on it.** Five geometries (§5.6f), stratified
+placement (§5.6g), the spread term over 30× in strength and two families
+(§5.6h, §5.6i), the radius fraction up to 0.4, and `fwhm_ratio` — all neutral or
+worse, and at six seeds the two that had looked promising at two seeds were
+neither (§5.6k). The seed spread is 3–5 radius units; every configuration
+difference measured is 0–1.
+
+### Why — the short version
+
+`r_min` factorises as `res90 · sqrt(ln(1/C)/ln(1/0.9))` (§4.4b). Cutting
+coverage 50.8% → 10% costs both factors: the ceiling `C` goes 0.671 → 0.97 and
+res90 goes 17 → 13. §5.2 predicted only the first, on the grounds that decay50
+had been flat across the whole coverage sweep — it is flat down to 22.9% and
+then falls (§5.6c).
+
+The two factors are not independently controllable, which is what makes 10%
+hard. Every legal spread term acts on the encodings of the batch, so it can only
+suppress a far-field alias by shrinking the code as a whole — buying ceiling at
+slightly worse than par in decay (§5.6h). Drive `rate_lambda` from 0.3 to 10 and
+the ceiling falls 0.985 → 0.833 exactly as asked, while res90 falls 14.5 → 3.0
+and `r_min` gets *worse*.
+
+Coverage does not work that way. The 50.8% encoder gets ceiling **and** decay,
+with `rate_lambda` at 0.3, because five times as many pairwise constraints
+suppress aliases at no cost to local structure. The decisive measurement is
+§5.6l: hand the spread term the whole arena and the 10% encoder reproduces the
+50.8% encoder's ceiling almost exactly (mean 0.502 vs 0.492, max 0.768 vs 0.743)
+— and still scores `r_min` 6, because res90 is 6.5 against 17. **The ceiling is
+reachable at 10% coverage and worth nothing; what coverage really buys is the
+decay.**
+
+### What was learned that outlives the question
+
+* **A domain boundary on §4.4b's law** (§5.6i). It holds while
+  `per_env_radius_frac ≤ 0.2` — where all 410 validating checkpoints sat. Past
+  that the code goes anisotropic, every median input improves while the worst
+  direction collapses, and the law fails *optimistically*: at `frac=0.4` it
+  predicts 10.6 against a measured 0.5. `mono_med` vs `r_median` is the check.
+* **Where the aliases live** (§5.6j). Alias peaks are *depleted* inside training
+  patches in every encoder measured — the contrastive term does clean up what it
+  can see. At 10% it sees almost none: 4.5% of peaks fall inside a patch against
+  10.1% coverage, and the outside ones are the stronger (cos 0.802 vs 0.754).
+* **Uniformity's advantage is a narrow-radius phenomenon** (§5.6i). It ties the
+  coding rate at `unif1` and collapses harder at `unif3`. §4.4 saw it win at a
+  10-cell radius and lose at the wide one; low coverage does not move it back.
+* **Placement can be made much better and it does not matter** (§5.6b, §5.6g).
+  A jittered lattice halves the worst hole (839 → 461 cells) and buys +1 and 0
+  radius units, inside the seed spread. That is a clean falsification of the
+  hole mechanism, since if distance-to-patch set `r_min` the effect would have
+  been unmissable.
+* **Two seeds is not a result** — demonstrated for the fifth and sixth times in
+  this campaign (§5.6k).
+
+### If the question is reopened
+
+The bound is on the *pairwise* structure, not on data volume — §5.6l gave the
+loss unlimited far-field samples through the spread term and `r_min` did not
+move. Anything that would help has to create pairwise separation between
+positions in different patches, which is what the constraint withholds. Inside
+the brief there is no such term, and §5 is the evidence for that rather than a
+list of things left untried.
