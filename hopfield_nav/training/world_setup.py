@@ -558,31 +558,43 @@ def do_eval(cfg, agent, eval_world: World, device, update_tag: str,
     nt = cfg.n_val_trials
 
     # "expl" skips the two evaluators a pure-explore run cannot be scored on.
-    # They stay in the wandb log as empty dicts rather than as stale values, so
-    # a scope switch mid-project cannot be mistaken for a collapse in nav.
-    expl_only = getattr(cfg, "eval_scope", "all") == "expl"
+    # "navexpl" skips only goal discovery: it is the sole evaluator that
+    # measures the STORE head, and every run under `train_navigate` keeps that
+    # head frozen (`--freeze_store` defaults True and the trainer drops its
+    # objective from the loss entirely), so it reports a constant. It is also
+    # the only unbatched evaluator -- one `agent_step` per trial per step --
+    # which at 6 envs x 16 trials x 2 distractor levels x 200 steps is ~73 s,
+    # against ~5 s for the other two together.
+    # Skipped evaluators stay in the wandb log as empty dicts rather than as
+    # stale values, so a scope switch mid-project cannot be mistaken for a
+    # collapse in nav.
+    scope = getattr(cfg, "eval_scope", "all")
+    expl_only = scope == "expl"
+    run_disc = scope == "all"
 
     t0 = time.time()
     nav = {} if expl_only else evaluate_navigation(
         agent, val_envs, val_vh, val_offsets, cfg, device,
         num_trials=nt, max_steps=max_steps,
         n_distractors_list=dist, deterministic=True)
-    disc = {} if expl_only else evaluate_goal_discovery(
+    disc = evaluate_goal_discovery(
         agent, val_envs, val_vh, val_offsets, cfg, device,
-        num_trials=nt, max_steps=max_steps, n_distractors_list=dist)
+        num_trials=nt, max_steps=max_steps,
+        n_distractors_list=dist) if run_disc else {}
     expl = evaluate_exploration(agent, val_envs, val_vh, val_offsets, cfg, device,
                                 num_trials=nt, max_steps=max_steps,
                                 n_distractors_list=dist)
     eval_s = time.time() - t0
     if not expl_only:
         print(f"  [{update_tag}] nav={nav}")
+    if run_disc:
         print(f"  [{update_tag}] disc={disc}")
     print(f"  [{update_tag}] expl={expl}")
     # Sizing a run needs the eval's own cost, not just the per-update total it
     # is folded into -- see docs/EXPERIMENTS_SCHEDULE_REPRO.md on how badly a
     # run can be mis-sized when that number has to be inferred after the fact.
-    print(f"  [{update_tag}] eval_seconds={eval_s:.1f} scope="
-          f"{'expl' if expl_only else 'all'}", flush=True)
+    print(f"  [{update_tag}] eval_seconds={eval_s:.1f} scope={scope}",
+          flush=True)
     if use_wandb:
         import wandb
         log = {"eval/eval_seconds": eval_s}

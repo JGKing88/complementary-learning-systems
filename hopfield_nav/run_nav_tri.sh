@@ -220,7 +220,7 @@ case "$VARIANT" in
   w2_x_base)
     SCHEDULE=${SCHEDULE:-'exploit:400'}
     WALL_PENALTY=0; PERSISTENCE_BONUS=0; REVISIT_PENALTY=0
-    EVAL_SCOPE=all; EVAL_EVERY=20; CKPT_EVERY=20
+    EVAL_SCOPE=navexpl; EVAL_EVERY=20; CKPT_EVERY=20
     ;;
   # Straightness is the one shaping term whose sign is plausibly positive for
   # navigation -- a beeline IS a straight line -- so it is worth one ticket
@@ -228,7 +228,7 @@ case "$VARIANT" in
   w2_x_pers)
     SCHEDULE=${SCHEDULE:-'exploit:400'}
     WALL_PENALTY=0; PERSISTENCE_BONUS=0.05; REVISIT_PENALTY=0
-    EVAL_SCOPE=all; EVAL_EVERY=20; CKPT_EVERY=20
+    EVAL_SCOPE=navexpl; EVAL_EVERY=20; CKPT_EVERY=20
     ;;
   # The policy has to learn its own step magnitude (P0.6: it starts at 0.086
   # and the optimum is 1.0), and sigma is the channel it learns that through,
@@ -239,13 +239,13 @@ case "$VARIANT" in
     SCHEDULE=${SCHEDULE:-'exploit:400'}
     WALL_PENALTY=0; PERSISTENCE_BONUS=0; REVISIT_PENALTY=0
     INIT_LOG_STD=-1.2
-    EVAL_SCOPE=all; EVAL_EVERY=20; CKPT_EVERY=20
+    EVAL_SCOPE=navexpl; EVAL_EVERY=20; CKPT_EVERY=20
     ;;
   w2_x_lr)
     SCHEDULE=${SCHEDULE:-'exploit:400'}
     WALL_PENALTY=0; PERSISTENCE_BONUS=0; REVISIT_PENALTY=0
     LR=1e-3
-    EVAL_SCOPE=all; EVAL_EVERY=20; CKPT_EVERY=20
+    EVAL_SCOPE=navexpl; EVAL_EVERY=20; CKPT_EVERY=20
     ;;
 
   # NOTE: a `w2_wallres1` variant was designed here and deliberately dropped.

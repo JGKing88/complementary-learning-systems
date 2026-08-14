@@ -966,12 +966,15 @@ def build_parser() -> argparse.ArgumentParser:
                         "action a consequence first (see --allow_store paths), "
                         "or it learns from pure noise.")
     p.add_argument("--eval_scope", type=str, default="all",
-                   choices=("all", "expl"),
+                   choices=("all", "navexpl", "expl"),
                    help="Which evaluators an in-training eval runs. 'all' is "
-                        "nav + goal-discovery + exploration. 'expl' is "
-                        "exploration only, for pure-explore schedules where "
-                        "the other two are undefined -- it removes about two "
-                        "thirds of the eval cost.")
+                        "nav + goal-discovery + exploration. 'navexpl' drops "
+                        "goal discovery, which is the only evaluator that "
+                        "measures the store head -- a head this trainer never "
+                        "trains -- and the only unbatched one, so it costs "
+                        "~73 s against ~5 s for the other two together. "
+                        "'expl' is exploration only, for pure-explore "
+                        "schedules where the other two are undefined.")
     p.add_argument("--eval_max_steps", type=int, default=None,
                    help="Step budget for in-training evals. Default: follow "
                         "--steps_per_rollout, which is what this did "
