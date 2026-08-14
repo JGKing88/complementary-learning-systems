@@ -330,7 +330,14 @@ def _nav_stats(rec, size, goal, starts):
 
 def main() -> None:
     p = argparse.ArgumentParser(description=__doc__)
-    p.add_argument("--ckpt", required=True)
+    p.add_argument("--ckpt", required=True, nargs="+",
+                   help="One or more checkpoints. Several are probed in ONE "
+                        "process so the scaffold is built once -- encoded_Phi "
+                        "is 12 GB and takes ~15 min to build on CPU, which "
+                        "otherwise dominates a multi-checkpoint comparison. "
+                        "All of them must share a world (same encoder, "
+                        "lambdas, Npos, fwhm, size, wall_resolution); that is "
+                        "checked, not assumed.")
     p.add_argument("--mode", nargs="+", default=["explore", "nav"],
                    choices=["explore", "nav"])
     p.add_argument("--n_distractors", type=int, nargs="+", default=[0, 10])
@@ -351,14 +358,36 @@ def main() -> None:
     args = p.parse_args()
 
     device = torch.device(args.device if torch.cuda.is_available() else "cpu")
-    ck = torch.load(args.ckpt, map_location="cpu", weights_only=False)
-    cfg = cfg_from_checkpoint(ck["config"])
+    cks = [torch.load(c, map_location="cpu", weights_only=False)
+           for c in args.ckpt]
+    cfg = cfg_from_checkpoint(cks[0]["config"])
     if args.envs is not None:
         cfg.num_val_envs = args.envs
+    # Before the --npos override, or the check would compare an overridden Npos
+    # against the other checkpoints' real one and reject every pair.
+    #
+    # The world is shared across checkpoints, so anything that would change it
+    # has to agree. Checked rather than assumed: silently scoring checkpoint B
+    # against checkpoint A's world is the failure mode this whole shortcut
+    # invites, and it produces plausible numbers.
+    _WORLD_KEYS = ("encoder_checkpoint", "fwhm_ratio")
+    for path, other in zip(args.ckpt[1:], cks[1:]):
+        o = cfg_from_checkpoint(other["config"])
+        mismatch = [k for k in _WORLD_KEYS if getattr(o, k) != getattr(cfg, k)]
+        mismatch += [f"vectorhash.{k}" for k in ("lambdas", "Npos")
+                     if getattr(o.vectorhash, k) != getattr(cfg.vectorhash, k)]
+        mismatch += [f"env.{k}" for k in ("size", "wall_resolution", "goal_radius")
+                     if getattr(o.env, k) != getattr(cfg.env, k)]
+        if mismatch:
+            raise SystemExit(
+                f"{path} does not share a world with {args.ckpt[0]}: "
+                f"{', '.join(mismatch)} differ. Probe them separately.")
+
     if args.npos is not None:
         print(f"  WARNING: --npos {args.npos} overrides the checkpoint's "
               f"scaffold. Tool-validation mode; numbers are not comparable.")
         cfg.vectorhash.Npos = args.npos
+
     encoder, enc_cfg, gain = load_encoder(cfg.encoder_checkpoint, str(device))
     if cfg.hopfield.beta is None:
         cfg.hopfield.beta = float(gain)
@@ -370,19 +399,30 @@ def main() -> None:
     # is the right guard. Validation mode takes the RNG-replay branch instead.
     envs, vh, offsets = build_eval_world(
         cfg, encoder, str(device),
-        ckpt_path=(None if args.npos is not None else args.ckpt))
-    agent = load_agent(cfg, ck["agent_state_dict"], embed_dim, device)
+        ckpt_path=(None if args.npos is not None else args.ckpt[0]))
     _nav_stats._radius = cfg.env.goal_radius
 
-    print(f"ckpt      : {args.ckpt}")
     print(f"envs      : {len(envs)}  trials/env: {args.trials}  "
           f"steps: {args.max_steps}  goal_radius: {cfg.env.goal_radius}")
     print(f"trunk     : {cfg.agent.rnn_cell}/{cfg.agent.rnn_nonlinearity} "
-          f"h={cfg.agent.hidden_size}  init_log_std={cfg.agent.init_log_std} "
-          f"freeze={cfg.agent.freeze_log_std}")
+          f"h={cfg.agent.hidden_size}")
 
-    out: dict = {"ckpt": args.ckpt, "max_steps": args.max_steps, "results": {}}
+    all_out = {}
+    for path, ck in zip(args.ckpt, cks):
+        agent = load_agent(cfg, ck["agent_state_dict"], embed_dim, device)
+        print(f"\n================ {path} ================")
+        all_out[path] = _probe_one(
+            args, cfg, agent, envs, vh, offsets, embed_dim, device)
 
+    if args.json:
+        with open(args.json, "w") as fh:
+            json.dump({"max_steps": args.max_steps, "by_ckpt": all_out},
+                      fh, indent=2)
+        print(f"\nwrote {args.json}")
+
+
+def _probe_one(args, cfg, agent, envs, vh, offsets, embed_dim, device):
+    out: dict = {}
     for mode in args.mode:
         for n_d in args.n_distractors:
             rng = np.random.RandomState(args.seed)
@@ -416,15 +456,11 @@ def main() -> None:
                     else _explore_stats(rec, env.size, goal))
             agg = {k: float(np.nanmean([e[k] for e in per_env]))
                    for k in per_env[0]}
-            out["results"][f"{mode}_d{n_d}"] = agg
+            out[f"{mode}_d{n_d}"] = agg
             print(f"\n--- {mode}  n_dist={n_d} ---")
             for k, v in agg.items():
                 print(f"  {k:<26s} {v:.4f}")
-
-    if args.json:
-        with open(args.json, "w") as fh:
-            json.dump(out, fh, indent=2)
-        print(f"\nwrote {args.json}")
+    return out
 
 
 if __name__ == "__main__":

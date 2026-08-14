@@ -37,6 +37,23 @@ cd "$REPO"
 source scripts/cls_env.sh
 mkdir -p "$OUTDIR"
 
+# `behavior` takes every checkpoint in ONE process: encoded_Phi is 12 GB and
+# takes ~15 min to build on CPU, so rebuilding it per checkpoint dominates a
+# multi-checkpoint comparison. The other two read one checkpoint only for its
+# config and world, so there is nothing to amortize.
+if [ "$PROBE" = behavior ]; then
+    first=$(echo $CKPTS | awk '{print $1}')
+    tag=$(basename "$(dirname "$first")")_$(basename "$first" .pt)
+    echo ""
+    echo "################ behavior :: $(echo $CKPTS | wc -w) ckpt(s) (cpu) ###########"
+    python -u -m analysis.nav_tri.behavior_probe \
+        --ckpt $CKPTS --device cpu --mode ${MODE:-"explore nav"} \
+        --n_distractors $NDIST --trials "${TRIALS:-32}" \
+        --max_steps "${MAX_STEPS:-200}" ${ENVS:+--envs $ENVS} \
+        --json "$OUTDIR/behavior_${TAG:-$tag}.json"
+    exit 0
+fi
+
 for ck in $CKPTS; do
     tag=$(basename "$(dirname "$ck")")_$(basename "$ck" .pt)
     echo ""
@@ -53,12 +70,6 @@ for ck in $CKPTS; do
             --steps "${TSTEPS:-20}" --sets "${SETS:-8}" --traj "${TRAJ:-32}" \
             ${ENVS:+--envs $ENVS} \
             --json "$OUTDIR/temporal_${tag}.json" ;;
-      behavior)
-        python -u -m analysis.nav_tri.behavior_probe \
-            --ckpt "$ck" --device cpu --mode ${MODE:-"explore nav"} \
-            --n_distractors $NDIST --trials "${TRIALS:-32}" \
-            --max_steps "${MAX_STEPS:-200}" ${ENVS:+--envs $ENVS} \
-            --json "$OUTDIR/${tag}.json" ;;
       *) echo "unknown PROBE=$PROBE" >&2; exit 1 ;;
     esac
 done
