@@ -1430,3 +1430,48 @@ which is what you would expect once the layout stops being random — useful if 
 later wave needs to resolve small differences. And it is not adopted as the
 default: it costs `r_median` on `lo_mixtop` (15.25 → 12.25), which is the column
 §5.6f ranked the geometries on.
+
+### 5.6h The ceiling *is* movable — and §5.6d was wrong about what that buys
+
+The `rate` axis of `w19`, with the `w17` cells at `rate=0.3` for reference. All
+`encoder_final`, `lo_mixtop`, same seeds:
+
+| `rate_lambda` | seed | `r_min` | `r_pred` | alias max | **res90** | decay50 |
+|---|---|---|---|---|---|---|
+| 0.3 | 42 | 5.0 | 5.4 | 0.985 | 14.5 | 37.5 |
+| 0.3 | 43 | 8.0 | 7.5 | 0.956 | 11.5 | 31.5 |
+| 1 | 42 | 5.0 | 6.3 | 0.969 | 11.5 | 31.0 |
+| 1 | 43 | **9.0** | 9.2 | 0.915 | 10.0 | 28.5 |
+| 3 | 43 | 5.0 | 6.2 | 0.848 | 5.0 | 20.0 |
+| 10 | 42 | 4.0 | 4.0 | **0.833** | 3.0 | 14.5 |
+
+**The spread term moves the ceiling exactly as asked** — 0.985 → 0.833,
+monotone in `rate_lambda`, straight through the 0.85 that §5.6d said was where
+it starts paying, and far past the 0.932 floor placement could reach.
+
+**And `r_min` does not improve. It falls.** Because res90 falls with it, just as
+fast: 14.5 → 3.0 over the same sweep.
+
+**§5.6d's table is arithmetically right and was the wrong guide to action.** It
+computed what each factor buys *with the other held fixed*, and the two are not
+independent — the spread term is the same knob for both. Priced as an exchange
+rate over `rate` 0.3 → 10: the ceiling factor `sqrt(ln(1/C)/ln(1/0.9))` improves
+3.5× while res90 falls 4.8×. That is slightly worse than a wash, which is why
+`r_pred` sits between 4.0 and 9.2 across the whole axis and never escapes it.
+
+This is the same trade §4.4 named — "the decay is the lever" — read at a
+coverage where the decay is the thing being spent to buy the ceiling. The
+mistake was mine and it was in the inference, not the measurement: a one-factor-
+at-a-time sensitivity table says nothing about a knob that moves both factors.
+
+Note also that `rate=1` produced the wave's best cell so far (`r_min` 9.0, alias
+0.915, seed 43) and its worst-matched partner (5.0, 0.969, seed 42) — a spread
+of 4 within one arm. Nothing on this axis is resolvable at two seeds; the
+conclusion above rests on the *monotone* march of the ceiling and res90, both of
+which are clean across all six cells, not on any single `r_min`.
+
+What remains open is whether **uniformity** pays a better exchange rate than the
+coding rate does. That is the live part of the user's original hypothesis and it
+is what the six remaining `w19` arms test — §4.4 measured uniformity beating
+`rate` on the ceiling at a narrow radius, and this is a regime where the price
+of the ceiling in decay is exactly what matters.
