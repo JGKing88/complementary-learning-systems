@@ -195,6 +195,99 @@ def _rollout(*, agent, env, env_offset, vectorhash, hopfields, cfg, device,
 # ---------------------------------------------------------------------------
 
 
+@torch.no_grad()
+def _warm_vs_cold(*, agent, env, env_offset, vectorhash, hopfields, cfg,
+                  device, starts, max_steps):
+    """Steps-to-goal for the FIRST reach vs every later reach in one rollout.
+
+    Isolates the one asymmetry between how exploit is trained and how it is
+    scored. Training rollouts teleport on arrival and, with
+    `reset_state_on_teleport=False`, carry the RNN state across it -- so the
+    agent's second and later goals are approached from a *warm* hidden state.
+    Navigation eval always measures a *cold* start, and it measures only one
+    goal. If the policy has learned to lean on the warm state, reaches 2+ will
+    be much faster than reach 1 **for the same policy in the same rollout**,
+    which no difference of env, seed or protocol can explain away.
+
+    Uses the TRAINING contract, so this is the training distribution exactly.
+    """
+    B = len(hopfields)
+    contract = episode.contract_for(
+        "training_rollout", reset_state=cfg.env.reset_state_on_teleport)
+    vec = make_vec(env, B, cfg.agent.movement_mode, cfg.env.continuous_scale,
+                   continuous_normalize=cfg.env.continuous_normalize,
+                   reset=False)
+    vec.set_positions(starts)
+
+    input_specs = channels.channel_specs(
+        cfg.agent, vectorhash.encoded_Phi.shape[2], cfg.env.observation_size)
+    prev_action_dim = channels.prev_action_width(cfg.agent)
+    h_rnn = None
+    prev_reward_t = torch.zeros(B, 1, device=device)
+    prev_action_t = torch.zeros(B, prev_action_dim, device=device)
+
+    last_reach = np.zeros(B, dtype=np.int64)      # step index of the last goal
+    first_gap, later_gaps = [], []
+
+    for step in range(max_steps):
+        positions = vec.positions()
+        at_g = at_goal(vec)
+        current_reward = (
+            np.where(at_g, cfg.env.goal_reward, -cfg.env.time_penalty)
+            if vec.goals_active
+            else np.full(B, -cfg.env.time_penalty, dtype=np.float32)
+        ).astype(np.float32)
+        embeddings_np = vectorhash.get_encoded_state(positions, env_offset)
+        embeddings = torch.from_numpy(embeddings_np).float().to(device)
+
+        sig_t, q, _m, _W = signal_ops.hopfield_signal_at(
+            vectorhash, cfg, embeddings_np, embeddings, positions,
+            env_offset, hopfields, False, device, embeddings.shape[1])
+        hop_signal = (torch.from_numpy(np.asarray(q, np.float32)).to(device)
+                      if cfg.agent.input_hopfield_raw else sig_t)
+
+        values = {
+            "current_reward": torch.from_numpy(current_reward).to(device).unsqueeze(1),
+            "prev_reward": prev_reward_t,
+            "encoded_state": embeddings,
+            "hopfield_signal": hop_signal,
+            "prev_action": prev_action_t,
+            "goal_in_memory": torch.ones(B, 1, device=device),
+        }
+        if cfg.agent.input_sensory:
+            values["sensory"] = torch.from_numpy(vec.obs_batch()).float().to(device)
+        if cfg.agent.input_hopfield_multistep:
+            W = vectorhash.gram_schmidt_projection(positions, env_offset)
+            for s, q_s in signal_ops.multistep_q(
+                    vectorhash, cfg, embeddings_np, embeddings, hopfields,
+                    False, W, cfg.agent.input_hopfield_multistep,
+                    embeddings.shape[1], device).items():
+                values[channels.multistep_name(s)] = torch.from_numpy(
+                    np.asarray(q_s, np.float32)).to(device)
+
+        rnn_input = channels.build_policy_input(
+            input_specs, values, batch_size=B).unsqueeze(1)
+        result = agent.get_action_and_value(rnn_input, h_rnn, deterministic=True)
+        h_rnn = result["h_next"]
+        actions = result["move_action"].cpu().numpy().reshape(B, -1)
+        prev_action_t = result["move_action"].float().view(B, -1)
+        prev_reward_t = torch.from_numpy(current_reward).to(device).unsqueeze(1)
+
+        _r, reached, _p = vec.step_batch(actions, contract=contract)
+        for b in np.nonzero(reached)[0]:
+            gap = step + 1 - last_reach[b]
+            (first_gap if last_reach[b] == 0 else later_gaps).append(gap)
+            last_reach[b] = step + 1
+
+    return {
+        "cold_first_reach_steps": float(np.mean(first_gap)) if first_gap else float("nan"),
+        "warm_later_reach_steps": float(np.mean(later_gaps)) if later_gaps else float("nan"),
+        "n_cold": len(first_gap), "n_warm": len(later_gaps),
+        "warm_speedup": (float(np.mean(first_gap) / np.mean(later_gaps))
+                         if first_gap and later_gaps else float("nan")),
+    }
+
+
 def _cos(a, b, eps=1e-8):
     na = np.linalg.norm(a, axis=-1)
     nb = np.linalg.norm(b, axis=-1)
@@ -402,7 +495,7 @@ def main() -> None:
                         "lambdas, Npos, fwhm, size, wall_resolution); that is "
                         "checked, not assumed.")
     p.add_argument("--mode", nargs="+", default=["explore", "nav"],
-                   choices=["explore", "nav"])
+                   choices=["explore", "nav", "warmcold"])
     p.add_argument("--n_distractors", type=int, nargs="+", default=[0, 10])
     p.add_argument("--trials", type=int, default=32)
     p.add_argument("--envs", type=int, default=None,
@@ -497,17 +590,24 @@ def _probe_one(args, cfg, agent, envs, vh, offsets, embed_dim, device):
                 for _ in range(args.trials):
                     hop = Hopfield(embed_dim, beta=cfg.hopfield.beta,
                                    device=str(device))
-                    pats = ([goal_encoding(vh, off, goal)] if mode == "nav"
+                    goal_in_mem = mode in ("nav", "warmcold")
+                    pats = ([goal_encoding(vh, off, goal)] if goal_in_mem
                             else [])
                     if n_d > 0:
                         pats.extend(sample_distractors(vh, off, env.size,
                                                        n_d, rng))
-                    if mode == "nav":
+                    if goal_in_mem:
                         rng.shuffle(pats)
                     for pat in pats:
                         hop.input_memory(torch.from_numpy(pat).float())
                     hops.append(hop)
                     starts.append(random_start(env.size, goal, rng))
+                if mode == "warmcold":
+                    per_env.append(_warm_vs_cold(
+                        agent=agent, env=env, env_offset=off, vectorhash=vh,
+                        hopfields=hops, cfg=cfg, device=device, starts=starts,
+                        max_steps=args.max_steps))
+                    continue
                 rec = _rollout(
                     agent=agent, env=env, env_offset=off, vectorhash=vh,
                     hopfields=hops, cfg=cfg, device=device, starts=starts,
