@@ -594,6 +594,30 @@ WAVES: dict[str, dict] = {
         },
         "seed": [42, 43],
     },
+    # W20 -- §5 step 5. Confirmation at four fresh seeds.
+    #
+    # Steps 1-3 left three candidates inside each other's noise: the w17
+    # baseline (r_min 6.5, spread 3), w18's stratified placement (7.5, spread
+    # 1) and w19's rate1 (7.0, spread 4). Two seeds cannot separate those --
+    # §4.9 and §4.6b both had two-seed orderings that four seeds reversed -- so
+    # this runs seeds 44-47, which no cell in §5 has used, and pools them with
+    # the 42/43 cells already on disk for a six-seed read.
+    #
+    # `strat_rate1` is the untested corner: the two ingredients that each gained
+    # about a unit came from different waves and have never been combined.
+    "w20_lowcov_confirm": {
+        "arm": {
+            "strat_rate0.3": dict(npos_list=SIZE_MIXES["lo_mixtop"],
+                                  per_env_radius_frac=0.15, rate_lambda=0.3,
+                                  patch_placement="stratified"),
+            "rand_rate1":    dict(npos_list=SIZE_MIXES["lo_mixtop"],
+                                  per_env_radius_frac=0.15, rate_lambda=1.0),
+            "strat_rate1":   dict(npos_list=SIZE_MIXES["lo_mixtop"],
+                                  per_env_radius_frac=0.15, rate_lambda=1.0,
+                                  patch_placement="stratified"),
+        },
+        "seed": [44, 45, 46, 47],
+    },
     # W13 -- coverage, on the winning config rather than on the bare baseline.
     #
     # This replaces w4, which swept coverage over mixes chosen before any of the

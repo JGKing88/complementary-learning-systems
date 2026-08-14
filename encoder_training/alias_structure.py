@@ -209,6 +209,62 @@ def ref_vs_patch(encoder, ckpt, lambdas, gain, *, n_refs: int, seed: int,
         print("   every reference is inside a patch; distance says nothing here")
 
 
+def alias_partner(encoder, ckpt, lambdas, gain, *, n_refs: int, seed: int,
+                  device: str, fwhm_ratio: float, batch_size: int,
+                  n_peaks: int = 5) -> None:
+    """Is the position that aliases to a reference trained on, or is it not?
+
+    §5.6e inferred, from the fact that being inside a training patch barely
+    helps a reference, that what kills ``r_min`` is an aliasing *partner* drawn
+    from the untrained part of the arena. That was an inference from a null
+    result; this measures the partner directly.
+
+    It decides something concrete. Every spread term available here —
+    ``uniformity``, ``vicreg``, ``coding_rate`` — acts on the encodings of the
+    batch, and the batch holds training points only. If the partners are
+    untrained positions then no term in the loss has ever seen them, and no
+    amount of tuning the spread strength can address them (which is what §5.6h
+    found happening). If instead the partners are inside training patches, the
+    loss *can* reach them and the failure is one of optimisation, not coverage.
+    """
+    y0s, x0s, sizes = ckpt.get("y0s"), ckpt.get("x0s"), ckpt.get("sizes")
+    if not y0s:
+        print("\n[no patch layout stored in checkpoint; skipping alias-partner]")
+        return
+
+    inside_mask = np.zeros((npos_for(lambdas),) * 2, dtype=bool)
+    for y0, x0, s in zip(y0s, x0s, sizes):
+        inside_mask[y0:y0 + s, x0:x0 + s] = True
+    covered = inside_mask.mean()
+
+    refs = sample_references(lambdas, n_refs, border=100, seed=seed)
+    maps = cosine_maps(encoder, lambdas, gain, refs, device, batch_size,
+                       fwhm_ratio)
+
+    n_in = n_tot = 0
+    cos_in, cos_out = [], []
+    for cos_map, ref in zip(maps, refs):
+        for pk in peak_offsets(cos_map, tuple(ref), n_peaks=n_peaks):
+            y, x = int(ref[0] + pk["dy"]), int(ref[1] + pk["dx"])
+            if inside_mask[y, x]:
+                n_in += 1
+                cos_in.append(pk["cos"])
+            else:
+                cos_out.append(pk["cos"])
+            n_tot += 1
+
+    print(f"\nalias partners: where do the top-{n_peaks} far-field peaks live?")
+    print(f"   arena covered by training patches : {covered:6.1%}")
+    print(f"   peaks landing inside a patch      : {n_in}/{n_tot} "
+          f"({n_in / max(n_tot, 1):6.1%})")
+    print(f"   enrichment over chance            : "
+          f"{(n_in / max(n_tot, 1)) / max(covered, 1e-9):6.2f}x")
+    if cos_in:
+        print(f"   mean cos, partner inside patch    : {np.mean(cos_in):.3f}")
+    if cos_out:
+        print(f"   mean cos, partner outside         : {np.mean(cos_out):.3f}")
+
+
 def report(name: str, encoder, lambdas, gain, *, n_refs: int, seed: int,
            device: str, fwhm_ratio: float, batch_size: int,
            n_code: int = 20000) -> None:
@@ -280,6 +336,12 @@ def main() -> None:
                         "for the worst reference, which is what r_min reports")
     p.add_argument("--ur_refs", type=int, default=20,
                    help="references for --ref_vs_patch; 20 matches the metric")
+    p.add_argument("--alias_partner", action="store_true",
+                   help="do the far-field peaks that alias to a reference sit "
+                        "inside a training patch or outside it -- says whether "
+                        "the loss can reach them at all")
+    p.add_argument("--partner_refs", type=int, default=40,
+                   help="references for --alias_partner")
     p.add_argument("--seed", type=int, default=0)
     p.add_argument("--init_seed", type=int, default=42)
     p.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")
@@ -318,6 +380,11 @@ def main() -> None:
             ref_vs_patch(encoder, ckpt, lam, float(ckpt["gain"]),
                          n_refs=args.ur_refs, seed=args.seed,
                          device=args.device, fwhm_ratio=fwhm)
+        if args.alias_partner:
+            alias_partner(encoder, ckpt, lam, float(ckpt["gain"]),
+                          n_refs=args.partner_refs, seed=args.seed,
+                          device=args.device, fwhm_ratio=fwhm,
+                          batch_size=args.batch_size)
 
 
 if __name__ == "__main__":
