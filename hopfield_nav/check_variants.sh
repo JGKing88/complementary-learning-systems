@@ -36,9 +36,11 @@ for v in $VARIANTS; do
     sched=$(echo "$out" | grep -m1 'schedule   :' | sed 's/.*: //')
     shape=$(echo "$out" | grep -m1 'rollout    :' | sed 's/.*: //')
     noise=$(echo "$out" | grep -m1 'noise      :' | sed 's/.*: //')
+    shaping=$(echo "$out" | grep -m1 'shaping    :' | sed 's/.*: //')
     if [ -z "$sched" ]; then
         echo "FAIL $v: no schedule echoed"; echo "$out" | tail -3; fail=1; continue
     fi
-    printf '%-14s %-46s %s\n                %s\n' "$v" "$sched" "$shape" "$noise"
+    printf '%-14s %-46s %s\n                %s\n                %s\n' \
+           "$v" "$sched" "$shape" "$noise" "$shaping"
 done
 exit $fail

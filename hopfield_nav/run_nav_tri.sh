@@ -449,6 +449,40 @@ case "$VARIANT" in
     esac
     ;;
 
+  # === WAVE 4 -- rebalancing the two regimes inside one PPO update =========
+  #
+  # Wave 3 arm A collapsed into the corner trap: exploit training teaches
+  # "follow q persistently", which in an explore rollout with distractors
+  # points at far-away cells, so the agent drives into a wall and clips.
+  # Measured at u400: edge_frac 0.82, clip_frac 0.65, coverage 0.074.
+  #
+  # Two knobs address it and both are on Jack's list.
+  #
+  # GOAL_REWARD is the ratio between the regimes inside ONE pooled advantage
+  # normalization (docs §3.5): explore earns ~0.23/step smoothly, exploit earns
+  # -0.05/step with +5.0 spikes, so after GAE the exploit advantages dominate
+  # and the explore signal is scaled toward zero. Reward std scales with
+  # goal_reward, so 5.0 -> 2.0 or 1.0 brings them within a factor of ~1 of each
+  # other. Two values because the balance point is estimated, not known: at 1.0
+  # the arithmetic suggests exploit may become the UNDER-weighted one.
+  #
+  # WALL_PENALTY is the term that specifically defends the behaviour exploit
+  # destroys. At v35's 0.1 against a +5.0 goal it cannot; 0.3 is the same ratio
+  # to a 1.0 goal that 1.5 would be to a 5.0 one.
+  w4_gr2|w4_gr1|w4_wall|w4_both)
+    SCHEDULE=${SCHEDULE:-'interleave:1200,empty_frac=0.5'}
+    ENVS_PER_WORLD=20; BATCH_ENVS=64
+    EPSILON_EXPLORE=0.1; INIT_LOG_STD=-0.7
+    REGIME_ASSIGNMENT=shuffle
+    EVAL_SCOPE=navexpl; EVAL_EVERY=50; CKPT_EVERY=50
+    case "$VARIANT" in
+      w4_gr2)  GOAL_REWARD=2.0 ;;
+      w4_gr1)  GOAL_REWARD=1.0 ;;
+      w4_wall) WALL_PENALTY=0.3 ;;
+      w4_both) GOAL_REWARD=1.0; WALL_PENALTY=0.3 ;;
+    esac
+    ;;
+
   *)
     echo "ERROR: unknown VARIANT=$VARIANT" >&2; exit 1 ;;
 esac
@@ -461,8 +495,12 @@ echo "    rollout    : ${ENVS_PER_WORLD} envs x ${BATCH_ENVS} batch x ${STEPS_PE
 echo "                 pool=$((ENVS_PER_WORLD * BATCH_ENVS)) trajectories, \
 $((ENVS_PER_WORLD * BATCH_ENVS * STEPS_PER_ROLLOUT)) env-steps/update, \
 $((ENVS_PER_WORLD * STEPS_PER_ROLLOUT)) serial calls/update"
+# goal_reward is echoed with the shaping, not with the env, because from wave 3
+# on it is a shaping knob: inside one pooled advantage normalization it sets the
+# ratio between the explore and exploit regimes. See docs §3.5.
 echo "    shaping    : nov=$NOVELTY_REWARD scale=$NOVELTY_SCALE_REMAINING/$NOVELTY_SCALE_CAP \
-wall=$WALL_PENALTY pers=$PERSISTENCE_BONUS revisit=$REVISIT_PENALTY"
+wall=$WALL_PENALTY pers=$PERSISTENCE_BONUS revisit=$REVISIT_PENALTY \
+goal=$GOAL_REWARD time=$TIME_PENALTY"
 echo "    noise      : eps=$EPSILON_EXPLORE/$EPSILON_ANNEAL_UPDATES \
 init_log_std=$INIT_LOG_STD freeze=$FREEZE_LOG_STD ent=$MOVE_ENT_COEF"
 echo "    trunk      : $RNN_CELL/$RNN_NONLINEARITY h=$HIDDEN_SIZE"
