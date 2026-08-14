@@ -1006,8 +1006,11 @@ localised failure, and it is why §4.6b recommends 50.8% over 61.1%.
 
 # 5. How good can it get at **10% coverage**?
 
-**Status: running.** Step 1 (`w17_lowcov_anchor`, 10 runs) and step 3
-(`w18_placement`, 4 runs) are on the cluster. Running log in §5.6.
+**Status: answered — §5.7.** `r_min` ≈ 5 at 100 references (≈ 7 at 20), against
+§4's 24 at 50.8% coverage, using §4's configuration unchanged. 54 runs across
+six waves found nothing that improved on it, and §5.6l says why: at 10% coverage
+the alias ceiling is fully reachable and worth nothing, because the only legal
+way to reach it costs exactly what it gains. Running log in §5.6.
 
 ## 5.1 The goal
 
@@ -1659,8 +1662,32 @@ the cleanest statement of what the constraint costs at low coverage.
 ## 5.7 The answer
 
 **At ~10% coverage, under `exclude_cross_env_pairs=True` with patches capped at
-200 and sizes mixed, the encoder reaches `r_min` ≈ 7** — median of six seeds,
-`encoder_final`, spread 3 (cells 5, 8, 5, 7, 7, 7).
+200 and sizes mixed, the encoder reaches `r_min` ≈ 7 at 20 references and ≈ 5 at
+100** — median of six seeds, `encoder_final`, spread 3 (20-reference cells 5, 8,
+5, 7, 7, 7).
+
+Both numbers are given because §4.8 showed the 20-reference `r_min` is unstable
+to the draw and flatters. Re-scored at 100 references on two independent
+reference seeds, against §4's 50.8% winner and the out-of-brief diagnostic:
+
+| encoder | `r_min` draw 0 | draw 1 | `r_median` | alias max | alias mean | decay50 |
+|---|---|---|---|---|---|---|
+| §4's 50.8% winner, seed 43 | 24 | 27 | 45 / 42 | 0.735 | 0.462 | 42.0 |
+| §4's 50.8% winner, seed 42 | 22 | 23 | 43 / 43 | 0.792 | 0.480 | 42.0 |
+| *arena-spread ×2, seed 43 (out of brief)* | *8* | *6* | *21.5* | *0.747* | *0.460* | *21.5* |
+| **10% answer, best of six seeds** | **7** | **6** | 14.0 | 0.971 | 0.835 | 34.0 |
+| 10% answer, remaining seeds | 6, 5, 5, 4, 3 | 6, 6, 5, 4, 3 | 10–15 | 0.966–0.989 | 0.83–0.87 | 33–36 |
+| *arena-spread ×2, seed 42 (out of brief)* | *2* | *3* | *10* | *0.839* | *0.581* | *16.0* |
+
+**So the defensible headline is `r_min` ≈ 5 at 10% coverage against ≈ 24 at
+50.8%.** Unlike §4.8's case the two draws agree closely — every cell moves by at
+most 2 — so the 100-reference number is stable even though it sits below the
+20-reference one, which is the expected direction for a worst-of-N statistic.
+
+The 100-reference scoring also confirms §5.6l on references none of the encoders
+was selected against: the arena-spread diagnostic's alias mean (0.460, 0.581)
+brackets §4's 50.8% winner (0.462, 0.480) while its decay50 is 16–21.5 against
+42 — the same ceiling, half the decay, a quarter of the radius.
 
 **The winning configuration is §4's, unchanged.** Only the patch set differs,
 because the coverage target demands it:
