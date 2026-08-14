@@ -1058,9 +1058,34 @@ has before anything is tuned to fix it.
   roughly 8 s of the 38 at this rollout shape, and it is a floor on how cheap
   any variant can get.
 
+- **u100–u110, and the wave is cut short deliberately.** Standings at a matched
+  u100: `w1_base` 0.0574, `w1_c20` 0.0723, `w1_eps01` 0.0807, and `w1_sig`
+  already 0.0839 **at u50**. The ordering is settled and the mechanism is
+  understood, while the curves are still climbing roughly linearly — so the
+  runs are **update-limited, not recipe-limited**, and their remaining hours
+  buy a more precise ranking of a recipe that is already being superseded.
+
+  So: **`w1_eps01` cancelled at u110** and the freed (fast) slot given to
+  `w2_e_long` — the same noise regime at 20 envs × 64 batch, 1500 updates
+  instead of 450. What is kept and why:
+
+  | run | kept? | why |
+  |---|---|---|
+  | `w1_base` | **yes, to the end** | the v35 control. Without an endpoint there is no "we beat the baseline by X at matched updates". |
+  | `w1_sig` (σ=0.30) | yes | carries the σ axis to u450 at 80 envs |
+  | `w1_sig2` (σ=0.50) | yes | ditto, and brackets σ from above |
+  | `w1_eps01` (σ=0.165) | **no** | the ε question is answered by score *and* by the u75 behaviour probe; its σ=0.165 rung is duplicated by `w1_base` at the same σ |
+
+  A side benefit worth naming: `w1_sig`/`w1_sig2` at 80 envs against
+  `w2_e_long`/`w2_e_long2` at 20 envs, **at matched σ**, re-answers the
+  deferred Q1 (cost vs diversity) as a by-product rather than as a separate
+  wave.
+
 #### Conclusions — wave 1
 
-*(pending)*
+*(pending — but the three that already look safe: ε=0.4 is over-bought, σ is
+the dominant lever, and the explore metric is magnitude-limited before it is
+strategy-limited. Not final until the u450 table and the behaviour probes.)*
 
 ---
 
