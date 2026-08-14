@@ -84,6 +84,9 @@ _bool continuous_normalize            "${CONTINUOUS_NORMALIZE:-}"
 _arg  max_action_norm                 "${MAX_ACTION_NORM:-}"
 _arg  min_action_norm                 "${MIN_ACTION_NORM:-}"
 _bool allow_offcell_store             "${ALLOW_OFFCELL_STORE:-}"
+_arg  wall_resolution                 "${WALL_RESOLUTION:-}"
+_bool egocentric_heading              "${EGOCENTRIC_HEADING:-}"
+_bool reset_state_on_teleport         "${RESET_STATE_ON_TELEPORT:-}"
 
 # --- Agent -----------------------------------------------------------------
 _arg  hopfield_mode                   "${HOPFIELD_MODE:-}"
@@ -99,6 +102,8 @@ _bool input_sensory                   "${INPUT_SENSORY:-}"
 _bool input_encoded_state             "${INPUT_ENCODED_STATE:-}"
 _bool input_goal_in_memory            "${INPUT_GOAL_IN_MEMORY:-}"
 _list input_hopfield_multistep        "${INPUT_HOPFIELD_MULTISTEP:-}"
+_arg  rnn_cell                        "${RNN_CELL:-}"
+_arg  rnn_nonlinearity                "${RNN_NONLINEARITY:-}"
 
 # --- Optimization ----------------------------------------------------------
 _arg  lr                              "${LR:-}"
@@ -116,6 +121,7 @@ _arg  persistence_bonus               "${PERSISTENCE_BONUS:-}"
 
 # --- Explore-regime behavior -----------------------------------------------
 _bool explore_goals_off               "${EXPLORE_GOALS_OFF:-}"
+_bool explore_ends_on_goal            "${EXPLORE_ENDS_ON_GOAL:-}"
 _bool randomize_goal_per_rollout      "${RANDOMIZE_GOAL_PER_ROLLOUT:-}"
 _arg  epsilon_explore                 "${EPSILON_EXPLORE:-}"
 _arg  epsilon_anneal_updates          "${EPSILON_ANNEAL_UPDATES:-}"
