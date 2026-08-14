@@ -636,9 +636,21 @@ not on it. Each is a one-line change if Jack wants it.
   by standing instruction (§1.2). Flagged because if coverage plateaus around
   the billiard line (0.387) rather than climbing toward the lawnmower line
   (0.478), **that is the reason**, and no amount of shaping will fix it.
-- **Randomizing which envs get which regime.** `train_navigate.py:335` assigns
-  regimes positionally, so at a fixed `empty_frac` the same envs are always
-  exploit. See the open item in §0.
+- **Randomizing which envs get which regime.** *(Done — see §0.)*
+- **`--rnn_cell gru` instead of `rnn`/`relu`.** Flagged because the measured
+  strategy gap is specifically a *state-holding* failure and a vanilla Elman
+  cell is the architecture least equipped for it. To travel in a straight line
+  with no `prev_action` channel, the policy must re-emit the same world-frame
+  vector for several consecutive steps, i.e. hold a heading in the hidden state
+  while the sensory cone underneath it changes every step. An ungated ReLU
+  recurrence has nothing protecting that state from the input; a GRU's update
+  gate is exactly the mechanism for it. Measured: `run_len_mean` 1.6–2.1 steps
+  against the ~4 that is optimal, across every variant and unchanged by σ.
+  **Not acted on — `rnn`/`relu` is an explicit instruction (§1.2)**, and the
+  within-instruction remedies (σ anneal so `persistence_bonus` becomes
+  readable; raising `PERSISTENCE_BONUS` once the magnitude is solved) are
+  untried. Recorded so that if run length stays near 2 after both, the
+  architecture is the honest explanation and not a tuning failure.
 
 ## 5. Evaluation protocol used here
 
