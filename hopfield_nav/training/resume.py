@@ -1,7 +1,14 @@
 """Continuing an interrupted run, as against forking a new one from its weights.
 
-``--load_checkpoint`` and ``--resume`` are different operations, and this module
-exists so the two cannot quietly become one.
+``--load_checkpoint`` and ``--continue_from`` are different operations, and this
+module exists so the two cannot quietly become one.
+
+A note on the word, because this repo has used it both ways. The commits and
+help text call ``--load_checkpoint`` "resume", and it is not one: it starts a new
+run that happens to inherit weights and config. What follows calls that a
+**fork**, reserves **continue** for picking one trajectory back up, and names the
+new flag ``--continue_from`` rather than ``--resume`` so that no command line has
+to be read twice to tell which is meant.
 
 A **fork** takes a parent's weights and config as a starting point and expects to
 be retuned on the way in: the sweeps that use it change reward shape, epsilon and
@@ -94,6 +101,55 @@ def restore_rng(state: dict[str, Any] | None) -> None:
               flush=True)
 
 
+def env_rng_states(worlds, eval_world=None) -> dict[str, list]:
+    """Every env's own RNG stream, in the order `_apply` slices them.
+
+    `GridEnv` seeds a `RandomState` at construction and draws from it on each
+    reset -- the agent's start cell, and the goal where an env re-rolls one. It
+    therefore advances once per rollout and is as much a part of the training
+    trajectory as the global streams are. A continuation rebuilds its envs from
+    the world spec, which restarts every one of those streams at the spawn
+    sequence it used on update 1.
+
+    Not a theoretical concern: with the global torch and numpy streams, the
+    optimizer moments, the weights, the config and the world spec all verified
+    identical at the resume point, this alone moved the weights by 4e-3 on the
+    first continued update.
+    """
+    return {
+        "train": [e.rng.get_state() for w in worlds for e in w.envs],
+        "eval": ([e.rng.get_state() for e in eval_world.envs]
+                 if eval_world is not None else []),
+    }
+
+
+def restore_env_rng(state: dict[str, list] | None, worlds,
+                    eval_world=None) -> None:
+    """Put each env's stream back. Must run *after* any refresher fast-forward,
+    which rebuilds env objects and would otherwise discard what was restored."""
+    if not state:
+        return
+
+    def _apply(saved, envs, what):
+        if not saved:
+            return
+        if len(saved) != len(envs):
+            # Not fatal: training continues, it just stops being bit-identical.
+            # Silence would be worse -- this is the one piece of resume state
+            # whose loss is invisible in the logs.
+            print(f"  NOTE: resume point holds {len(saved)} {what}-env RNG "
+                  f"states but this run built {len(envs)}; those streams start "
+                  "fresh and the continuation will not be bit-identical to an "
+                  "uninterrupted run.", flush=True)
+            return
+        for env, s in zip(envs, saved):
+            env.rng.set_state(s)
+
+    _apply(state.get("train"), [e for w in worlds for e in w.envs], "train")
+    if eval_world is not None:
+        _apply(state.get("eval"), eval_world.envs, "eval")
+
+
 # ---------------------------------------------------------------------------
 # Write
 # ---------------------------------------------------------------------------
@@ -139,7 +195,7 @@ def load(path: str, device, *, kind: str) -> dict[str, Any]:
         path = os.path.join(path, RESUME_FILE)
     if not os.path.exists(path):
         raise SystemExit(
-            f"--resume: no resume point at {path}.\n"
+            f"--continue_from: no resume point at {path}.\n"
             f"  A run writes {RESUME_FILE} on its checkpoint cadence, so one "
             "that died before its first checkpoint has none and has to start "
             "over.\n"
@@ -151,16 +207,16 @@ def load(path: str, device, *, kind: str) -> dict[str, Any]:
     missing = [k for k in _REQUIRED if k not in ck]
     if missing:
         raise SystemExit(
-            f"--resume: {path} is missing {', '.join(missing)}.\n"
+            f"--continue_from: {path} is missing {', '.join(missing)}.\n"
             "  Resume points were introduced on 2026-08-14; anything written "
             "before that can be forked with --load_checkpoint but not resumed.")
     if ck.get("resume_schema") != SCHEMA:
         raise SystemExit(
-            f"--resume: {path} is schema {ck.get('resume_schema')!r}, this "
+            f"--continue_from: {path} is schema {ck.get('resume_schema')!r}, this "
             f"build reads {SCHEMA}. Fork it with --load_checkpoint instead.")
     if ck["kind"] != kind:
         raise SystemExit(
-            f"--resume: {path} was written by `{ck['kind']}`, but this is "
+            f"--continue_from: {path} was written by `{ck['kind']}`, but this is "
             f"`{kind}`. Resume with the script that wrote it.")
     return ck
 
@@ -180,7 +236,7 @@ def restore_optimizer(optimizer, state: dict[str, Any], *, source: str) -> None:
     if mismatch is not None:
         pos, saved_shape, live_shape = mismatch
         raise SystemExit(
-            f"--resume: {source} holds optimizer state whose parameter {pos} "
+            f"--continue_from: {source} holds optimizer state whose parameter {pos} "
             f"has shape {saved_shape}, but this run's is {live_shape}.\n"
             "  The architecture moved since the save (hidden_size, "
             "movement_mode, an input channel). A resume continues one "
@@ -190,7 +246,7 @@ def restore_optimizer(optimizer, state: dict[str, Any], *, source: str) -> None:
         optimizer.load_state_dict(state)
     except (ValueError, KeyError) as exc:
         raise SystemExit(
-            f"--resume: {source} holds optimizer state for a different number "
+            f"--continue_from: {source} holds optimizer state for a different number "
             f"of trainable parameters.\n  ({exc})\n"
             "  The freeze flags moved since the save; --freeze_store and "
             "--freeze_log_std each change which parameters Adam owns. A resume "
@@ -220,7 +276,7 @@ def _first_shape_mismatch(optimizer, state: dict[str, Any]):
 # CLI guard
 # ---------------------------------------------------------------------------
 
-def reject_overrides(explicit, *, allowed, flag: str = "--resume") -> None:
+def reject_overrides(explicit, *, allowed, flag: str = "--continue_from") -> None:
     """A resume continues a run; it does not get to re-specify it.
 
     Silently ignoring a typed ``--goal_reward`` would be the same class of bug

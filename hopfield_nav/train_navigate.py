@@ -86,6 +86,7 @@ def run_navigate(
     record_world=None,
     start_update: int = 0,
     resume_state: dict | None = None,
+    parent_ckpt: str | None = None,
 ) -> None:
     """Walk the schedule, one pooled PPO update per step.
 
@@ -120,14 +121,22 @@ def run_navigate(
     current_lr = cfg.ppo.lr
 
     # After the freeze, because the freeze is what decides which parameters Adam
-    # owns and therefore what shape its state has to be.
+    # owns and therefore what shape its state has to be. The RNG is *not*
+    # restored here -- see just above the loop for why it has to be last.
     if resume_state is not None:
         resume_io.restore_optimizer(
             optimizer, resume_state["optimizer_state_dict"],
             source=resume_state["_path"])
-        resume_io.restore_rng(resume_state.get("rng"))
-        print(f"Restored optimizer moments and RNG streams from "
-              f"{resume_state['_path']}", flush=True)
+        print(f"Restored optimizer moments from {resume_state['_path']}",
+              flush=True)
+
+    # Captured once: the resume points written below have to name the wandb run
+    # they belong to, so a continuation can reattach to it rather than opening
+    # a second one.
+    wandb_id = None
+    if use_wandb:
+        import wandb
+        wandb_id = getattr(wandb.run, "id", None)
 
     # Distractors are a property of the run, not of an update -- see
     # ExploitRegime for why the count reaching 0 must not change the code path.
@@ -224,6 +233,21 @@ def run_navigate(
     # Whether the store action writes / learns / pays is decided by three
     # unrelated mechanisms in three files; say so once, from the first spec
     # actually built rather than from a flag that could drift from it.
+
+    # Last thing before the first update, and deliberately so. The saved state
+    # is the stream as it stood at the *end* of an update, so every draw between
+    # here and the loop is one the original run made before its first update,
+    # not after its last -- restoring any earlier lets the setup below consume
+    # from the restored stream and puts the continuation a few draws out of step
+    # forever. Measured: restoring above the ExploreRegime constructor diverged
+    # the weights at 8e-3 by the second continued update.
+    if resume_state is not None:
+        resume_io.restore_rng(resume_state.get("rng"))
+        if dist_rng is not None and resume_state.get("dist_rng") is not None:
+            dist_rng.set_state(resume_state["dist_rng"])
+        resume_io.restore_env_rng(resume_state.get("env_rng"), worlds, eval_world)
+        print(f"Restored RNG streams (global, distractor, per-env); "
+              f"continuing at u{start_update + 1}", flush=True)
 
     for update in range(start_update + 1, n_updates_total + 1):
         stage, local_update = stage_at(stages, update)
@@ -408,9 +432,20 @@ def run_navigate(
                 cfg.save_dir, f"navigate_u{update}.pt", update)
             # The rolling resume point, beside the fork point rather than inside
             # it -- see training/resume.py for why the two are separate files.
+            # `parent` rides along so a continuation of a continuation still
+            # draws its world against the original ancestor's exclusion union.
             resume_io.save(cfg.save_dir, kind="navigate", agent=agent,
                            optimizer=optimizer, update=update,
-                           config=ckpt_config, world_spec=ckpt_world)
+                           config=ckpt_config, world_spec=ckpt_world,
+                           extra={"parent": parent_ckpt,
+                                  "wandb_id": wandb_id,
+                                  # Its own stream, advanced once per distractor
+                                  # draw, so it is not covered by the global
+                                  # numpy state and has to be carried too.
+                                  "dist_rng": (dist_rng.get_state()
+                                               if dist_rng is not None else None),
+                                  "env_rng": resume_io.env_rng_states(
+                                      worlds, eval_world)})
 
     do_eval(cfg, agent, eval_world, device, "after_navigate", use_wandb,
             max_steps=eval_max_steps)
@@ -462,11 +497,28 @@ def train_navigate(
     # domains dry raises here, before the manifest exists or a single update.
     encoder_ident = run_manifest.encoder_identity(
         cfg.encoder_checkpoint, enc_cfg, encoder_gain)
+    # A continuation is the same run, so it inherits the *original* run's
+    # parent -- not None, or `generate_split` would draw without the ancestor's
+    # exclusion union and hand the second segment a different world than the
+    # first trained on.
+    start_update = int(resume_ck["update"]) if resume_ck is not None else 0
+    parent_ckpt = (resume_ck.get("parent") if resume_ck is not None
+                   else load_checkpoint)
+
     rw = setup_run_world(cfg, encoder, embed_dim, rng, field,
                          cadence=cadence, n_updates=total_updates(stages),
                          encoder_ident=encoder_ident, where="train_navigate",
-                         parent_ckpt=load_checkpoint)
+                         parent_ckpt=parent_ckpt)
     worlds, eval_world, split = rw.worlds, rw.eval_world, rw.split
+
+    # The worlds above are the run's envs as of update 1. Walk the refresher's
+    # ticks forward to where the interruption happened, or the second segment
+    # trains on envs the first one had already moved on from.
+    if resume_ck is not None and rw.refresher is not None:
+        ticks = rw.refresher.fast_forward(start_update)
+        print(f"Refresher fast-forwarded through u{start_update}: {ticks} tick(s) "
+              f"replayed, used union now "
+              f"{rw.refresher.report()['n_used']}", flush=True)
 
     input_dim = compute_input_dim(cfg.agent, embed_dim, cfg.env.observation_size)
     print(f"Agent input_dim={input_dim} init_log_std={cfg.agent.init_log_std}",
@@ -477,10 +529,18 @@ def train_navigate(
         ck = torch.load(load_checkpoint, map_location=device, weights_only=False)
         agent.load_state_dict(ck["agent_state_dict"])
         print(f"Loaded agent state from {load_checkpoint}", flush=True)
+    elif resume_ck is not None:
+        agent.load_state_dict(resume_ck["agent_state_dict"])
+        print(f"Continuing {resume_ck['_path']} from u{start_update}", flush=True)
 
     if cfg.use_wandb:
         import wandb
-        wandb.init(project=cfg.wandb_project, config=asdict(cfg))
+        # Same run, same wandb run: a continuation that opened a second one
+        # would split a single training curve across two charts and restate its
+        # x-axis from 0.
+        wandb_id = resume_ck.get("wandb_id") if resume_ck is not None else None
+        wandb.init(project=cfg.wandb_project, config=asdict(cfg),
+                   **({"id": wandb_id, "resume": "allow"} if wandb_id else {}))
 
     if cfg.save_dir is None:
         sub = run_name(*((wandb.run.name, wandb.run.id) if cfg.use_wandb else ()))
@@ -488,12 +548,19 @@ def train_navigate(
     else:
         sub = os.path.basename(str(cfg.save_dir).rstrip("/"))
 
-    run_manifest.begin(
-        cfg.save_dir, kind="navigate", name=sub, config=asdict(cfg),
-        encoder=encoder_ident,
-        parent=load_checkpoint,
-        wandb_run=wandb.run if cfg.use_wandb else None,
-    )
+    if resume_ck is not None:
+        # Not `begin`: that would drop the checkpoint list this run is still
+        # adding to and restate `created` as the moment it was interrupted.
+        run_manifest.resume(
+            cfg.save_dir, update=start_update, config=asdict(cfg),
+            wandb_run=wandb.run if cfg.use_wandb else None)
+    else:
+        run_manifest.begin(
+            cfg.save_dir, kind="navigate", name=sub, config=asdict(cfg),
+            encoder=encoder_ident,
+            parent=load_checkpoint,
+            wandb_run=wandb.run if cfg.use_wandb else None,
+        )
 
     # Written on both paths: a run has to be able to say which envs it used,
     # and the historical path could not (see docs/EVAL_SPLITS_DESIGN.md 1.4).
@@ -509,6 +576,8 @@ def train_navigate(
         # A run whose envs never move needs no rewrite: the startup record
         # already describes them for the whole run.
         record_world=(record_world if refresher is not None else None),
+        start_update=start_update, resume_state=resume_ck,
+        parent_ckpt=parent_ckpt,
     )
 
     # `run_navigate` rewrote the record on its own cadence, into its own local;
@@ -903,11 +972,26 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--fwhm_ratio", type=float, default=0.25)
     p.add_argument("--encoder_gain", type=float, default=None)
     p.add_argument("--load_checkpoint", type=str, default=None,
-                   help="Checkpoint to start from. Its config becomes the base "
-                        "for this run -- every setting is inherited except the "
-                        "flags you pass explicitly, so a child reproduces its "
-                        "parent's recipe without re-listing it. --save_dir is "
-                        "never inherited.")
+                   help="FORK a new run from this checkpoint's weights. Its "
+                        "config becomes the base -- every setting is inherited "
+                        "except the flags you pass explicitly, so a child "
+                        "reproduces its parent's recipe without re-listing it. "
+                        "--save_dir is never inherited. Adam's moments are NOT "
+                        "inherited: a fork is expected to be retuned, and "
+                        "moments from a different objective are stale. To pick "
+                        "an interrupted run back up instead, use "
+                        "--continue_from.")
+    p.add_argument("--continue_from", type=str, default=None,
+                   help="CONTINUE this run's own trajectory from a "
+                        f"{resume_io.RESUME_FILE} written by an earlier "
+                        "segment (pass the file or its run directory). Unlike "
+                        "--load_checkpoint this is the same run: optimizer "
+                        "moments, RNG streams, the global update counter and "
+                        "the env refresher's tick history all come back, and "
+                        "output continues into the same --save_dir and wandb "
+                        "run. Its config is taken from the resume point, so no "
+                        "other flag may be given except --device and a "
+                        "--schedule that lengthens the original.")
     p.add_argument("--explore_goals_off", action=argparse.BooleanOptionalAction,
                    default=False,
                    help="If True, disable goals_active for explore-regime envs "
@@ -1004,8 +1088,31 @@ def main():
               f"({args.n_val_trials}), not over {args.union_cov_trials}.",
               flush=True)
 
+    if args.continue_from is not None and args.load_checkpoint is not None:
+        p.error("--continue_from and --load_checkpoint are different "
+                "operations and cannot be combined. --load_checkpoint forks a "
+                "new run from a parent's weights; --continue_from picks this "
+                "run's own trajectory back up. Pass one.")
+
     parent_cfg = None
-    if args.load_checkpoint is not None:
+    resume_ck = None
+    if args.continue_from is not None:
+        # The config comes from the resume point in full, so nothing here reads
+        # `args` except the handful of flags below that describe *this segment*
+        # rather than the run. `reject_overrides` is what stops a typed
+        # --goal_reward from being quietly discarded.
+        resume_io.reject_overrides(
+            explicit, allowed=_CONTINUE_ALLOWED, flag="--continue_from")
+        resume_ck = resume_io.load(args.continue_from, "cpu", kind="navigate")
+        resume_ck["_path"] = args.continue_from
+        cfg = cfg_from_checkpoint(resume_ck["config"])
+        if "device" in explicit:
+            cfg.device = args.device
+        if "schedule" in explicit:
+            # Checked against the original below: lengthening is allowed,
+            # rewriting an update that already ran is not.
+            cfg.schedule = args.schedule
+    elif args.load_checkpoint is not None:
         ck = torch.load(args.load_checkpoint, map_location="cpu",
                         weights_only=False)
         parent_cfg = ck["config"]
@@ -1036,7 +1143,89 @@ def main():
     cfg.schedule = format_schedule(stages)
     cfg.n_updates = total_updates(stages)
 
-    train_navigate(cfg, stages, load_checkpoint=args.load_checkpoint)
+    if resume_ck is not None:
+        _check_schedule_extends(resume_ck, stages, cfg, p.error)
+
+    train_navigate(cfg, stages, load_checkpoint=args.load_checkpoint,
+                   resume_ck=resume_ck)
+
+
+# The flags that describe *this segment* rather than the run, and so may be
+# typed alongside --continue_from. Everything else comes from the resume point:
+# a continuation that silently accepted --goal_reward would be the same class of
+# bug as an optimizer dropped without a word.
+_CONTINUE_ALLOWED = frozenset({"continue_from", "device", "schedule"})
+
+
+# Sentinel defaults for the schedule comparison below. `resolve` overwrites a
+# field only where the stage sets one, so a knob that reads back as the sentinel
+# is inherited from cfg -- identical on both sides, since a continuation's cfg
+# comes from the resume point.
+_PROBE = Knobs(lr=-1.0, empty_frac=-1.0, novelty=-1.0, eps=-1.0,
+               dist_min=-1, dist_max=-1, emp_dist_min=-1, emp_dist_max=-1)
+
+
+def _check_schedule_extends(resume_ck: dict, stages: list[Stage],
+                            cfg: TrainConfig, fail) -> None:
+    """A continuation may lengthen its schedule; it may not rewrite its past.
+
+    Lengthening is the reason to retype `--schedule` at all: a run that hit the
+    wall at u320 of 500 is continued by asking for the same 500, and one whose
+    schedule turned out too short is continued by asking for more. What must not
+    change is any update the first segment already ran, because those updates
+    are in the weights already and a schedule disagreeing with them describes a
+    run that never happened.
+
+    Compared by *resolved knobs* rather than by stage identity, because the two
+    come apart in both directions. `interleave:2` -> `interleave:4` at a flat
+    empty_frac changes no past update, and rejecting it would refuse the most
+    ordinary continuation there is. But `empty_frac=1.0->0.5` with no explicit
+    `anneal=` spans the stage, so the same lengthening rescales the anneal and
+    every past update silently moves -- which comparing the stage's *length*
+    would catch and comparing its *kind* would not.
+
+    `novelty_anneal` is checked separately: it is keyed off the run total rather
+    than off any stage, so lengthening the schedule moves it even when every
+    stage resolves identically.
+    """
+    start_update = int(resume_ck["update"])
+    old_schedule = resume_ck["config"].get("schedule")
+    if not old_schedule:
+        return
+    old_stages = parse_schedule(old_schedule)
+    new_total, old_total = total_updates(stages), total_updates(old_stages)
+
+    if new_total < start_update:
+        fail(f"--continue_from: the resume point is at u{start_update}, but "
+             f"--schedule '{format_schedule(stages)}' runs only {new_total} "
+             "updates. A continuation cannot be shorter than what has already "
+             "run.")
+
+    if cfg.novelty_anneal and new_total != old_total and start_update > 0:
+        fail(f"--continue_from: --novelty_anneal scales novelty by "
+             f"1-(u-1)/n_updates, so changing the run total from {old_total} to "
+             f"{new_total} changes the novelty every one of the {start_update} "
+             "updates already run was trained with. Continue at the original "
+             "length, or fork with --load_checkpoint.")
+
+    for u in range(1, start_update + 1):
+        old_stage, old_local = stage_at(old_stages, u)
+        new_stage, new_local = stage_at(stages, u)
+        if old_stage.kind != new_stage.kind:
+            fail(f"--continue_from: --schedule '{format_schedule(stages)}' puts "
+                 f"u{u} in a '{new_stage.kind}' stage, but the run it continues "
+                 f"ran it as '{old_stage.kind}' (was '{old_schedule}').")
+        if resolve(old_stage, old_local, _PROBE) != resolve(new_stage, new_local,
+                                                            _PROBE):
+            fail(f"--continue_from: --schedule '{format_schedule(stages)}' "
+                 f"changes the knobs u{u} already ran with (was "
+                 f"'{old_schedule}'):\n"
+                 f"    was {resolve(old_stage, old_local, _PROBE)}\n"
+                 f"    now {resolve(new_stage, new_local, _PROBE)}\n"
+                 "  A continuation may add updates to the end of a schedule but "
+                 "cannot change one that has already run. To train the same "
+                 "weights under a different schedule, fork with "
+                 "--load_checkpoint.")
 
 
 if __name__ == "__main__":
