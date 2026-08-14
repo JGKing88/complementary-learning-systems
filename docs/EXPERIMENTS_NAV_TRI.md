@@ -62,10 +62,10 @@ See §3.4's verdict and the wave-1 live notes.
       and the u50 behaviour probe checks the *mechanism* (does σ actually
       enlarge `step_mag_mean`?) which is node-independent. `w2_e_long` vs
       `w2_e_long2` will give a clean same-node, same-shape σ comparison.
-- [ ] **Q1 (cost/diversity) is DEFERRED, not answered** — `w1_c20` was
-      cancelled to free a slot. Re-run the 20-envs-×-64-batch ladder on the
-      winning recipe. Its partial curve was *26% ahead* of 80 envs at u100, so
-      this is a likely win, not a formality. Wave 2 already adopts that shape.
+- [x] **Q1 (cost/diversity) — answered.** 20 envs ≈ 80 envs *per update*
+      (within ±15%, sign flips between the two comparisons) and 2.9× cheaper
+      per update, so it wins outright per GPU-hour. All long runs use 20 × 64.
+      `w1_sig2` stays at 80 envs as the over-fitting control.
 - [ ] Cross-check `behavior_probe` against `hopfield_nav.eval_all`
       (`EVAL_ALL=1 … run_nav_tri_verdict.sh`) before any probe number is quoted
       as a verdict — the probe reimplements the eval protocols.
@@ -1158,6 +1158,28 @@ has before anything is tuned to fix it.
   `w2_e_long`/`w2_e_long2` at 20 envs, **at matched σ**, re-answers the
   deferred Q1 (cost vs diversity) as a by-product rather than as a separate
   wave.
+
+- **Q1 (cost vs diversity), answered as a by-product.** Two comparisons at a
+  held PPO pool of 1280, differing only in `envs_per_world` × `batch_envs`:
+
+  | comparison | 80 envs | 20 envs | at |
+  |---|---|---|---|
+  | σ=0.165, ε=0.4 | `w1_base` 0.0574 | `w1_c20` **0.0723** | u100 |
+  | σ=0.30, ε=0.1 | `w1_sig` **0.0839** | `w2_e_long` 0.0729 | u50 |
+
+  The sign flips between them, so the honest reading is **20 envs ≈ 80 envs per
+  update, within ±15%** — and per *GPU-hour* 20 envs wins outright, because the
+  cost model puts it at 2.9× more updates for the same wall-clock. **Every
+  long run from here uses 20 × 64.** The residual risk is over-fitting to 20
+  codebooks over 1500 updates, which held-out eval would show as a plateau or
+  decline while an 80-env run kept climbing — `w1_sig2` is kept running at 80
+  envs precisely as that control.
+
+- **The wave is rebalanced again, on the same principle.** The long 20-env runs
+  are what produce a *model*; the 80-env runs are controls, and two suffice.
+  `w1_sig` cancelled at u70 (its σ=0.30 is carried further and cheaper by
+  `w2_e_long`); the slot goes to `w2_e_long2`, σ=0.50 at 20 envs. Surviving
+  80-env runs: `w1_base` (v35 control) and `w1_sig2` (diversity control).
 
 #### Conclusions — wave 1
 
