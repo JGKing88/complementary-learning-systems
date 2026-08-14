@@ -315,6 +315,42 @@ case "$VARIANT" in
   # decoder does: 0.361 vs 0.352 coverage, a gap of 0.009. Not worth a run.
   # Kept as a comment so the question is not re-opened from the R^2 table alone.
 
+  # --- wave 2, explore arm: the same recipe, but update-limited no longer ---
+  #
+  # Wave 1 at 80 envs runs 450 updates in six hours and its curve is still
+  # climbing roughly linearly there -- extrapolating w1_eps01's late slope puts
+  # u450 near 0.26 against a 0.352 target, i.e. the run is update-limited, not
+  # recipe-limited. At 20 envs x 64 batch the same PPO pool costs half the
+  # wall-clock per update (and w1_c20 was 26% AHEAD per update at that shape),
+  # so six hours buys ~1500 updates instead of 450.
+  #
+  # These carry wave 1's winning noise regime and differ only in sigma, which
+  # is the axis wave 1 identified.
+  w2_e_long)
+    SCHEDULE=${SCHEDULE:-'explore:1500'}
+    ENVS_PER_WORLD=20; BATCH_ENVS=64
+    EPSILON_EXPLORE=0.1; INIT_LOG_STD=-1.2
+    EVAL_EVERY=50; CKPT_EVERY=50
+    ;;
+  w2_e_long2)
+    SCHEDULE=${SCHEDULE:-'explore:1500'}
+    ENVS_PER_WORLD=20; BATCH_ENVS=64
+    EPSILON_EXPLORE=0.1; INIT_LOG_STD=-0.7
+    EVAL_EVERY=50; CKPT_EVERY=50
+    ;;
+  # The sigma anneal at the long horizon: high while the magnitude climbs, low
+  # once it is solved and the straightness term becomes readable (docs §3.4.1).
+  # Only meaningful over a run long enough to have two phases.
+  w2_e_anneal)
+    SCHEDULE=${SCHEDULE:-'explore:1500'}
+    ENVS_PER_WORLD=20; BATCH_ENVS=64
+    EPSILON_EXPLORE=0.1; INIT_LOG_STD=-0.7
+    LOG_STD_ANNEAL_START_UPDATE=400
+    LOG_STD_ANNEAL_END_UPDATE=900
+    LOG_STD_ANNEAL_TARGET=-1.8
+    EVAL_EVERY=50; CKPT_EVERY=50
+    ;;
+
   *)
     echo "ERROR: unknown VARIANT=$VARIANT" >&2; exit 1 ;;
 esac
