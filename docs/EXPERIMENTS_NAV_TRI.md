@@ -778,11 +778,31 @@ failure shows up as a train/eval gap rather than being invisible.
   envs is capped" are indistinguishable at a fixed update count and mean
   opposite things. All three still report at u450 for the fixed-update read.
 
-**Q2 — is ε=0.4 worth its price?** It discards 40% of the movement gradient
-(P0.3) and makes the sampled trajectory 16% worse at coverage than the mean
-being scored (§3.2), while the metric is computed on the deterministic policy.
-Against that, it is the only mechanism that produces a *large* re-orientation,
-and at σ=0.165 the policy's own noise is ~9.5° of heading jitter per step.
+**Q2 — is ε=0.4 worth its price?** Three separate mechanisms say it is
+expensive, and they are independent of each other:
+
+1. **It discards 40% of the movement gradient.** ε steps are masked out of the
+   PPO surrogate (P0.3.2), so four in ten steps teach the policy nothing about
+   what to do.
+2. **It corrupts the policy's estimate of its own heading.** The input set has
+   **no `prev_action` channel**, so the only way the policy knows which way it
+   is currently travelling is that *it chose* the action — the RNN's hidden
+   state carries the intention forward. An ε step replaces the executed action
+   without telling the policy, so after it the internal heading is wrong, and
+   the only way back is the sensory cone, which P0.9 decodes heading from at
+   R² ≈ 0.05. **Going straight is exactly the behaviour this breaks**, and
+   going straight is the defining feature of every good rung on the §3.1
+   ladder.
+3. **It corrupts `persistence_bonus`.** That term is
+   `cos(a_t, a_{t−1})` on the *executed* actions (`collector.py:620-638`), so
+   at ε=0.4 roughly 64% of consecutive pairs contain at least one random
+   vector, and the straightness reward the shaping is paying for is mostly
+   noise credited to a policy that did not produce it.
+
+Against all that, ε is the only mechanism producing a *large* re-orientation,
+and at σ=0.165 the policy's own noise is ~9.5° of heading jitter per step — and
+P0.6 showed ε is also what supplies most of the early *motion*, since its
+actions are unit-length while the policy's start at 0.086.
 
 - *Decision rule.* `w1_eps01` > `w1_base` → ε was over-bought; carry 0.1
   forward. `w1_eps01` < `w1_base` → the large re-orientations are doing real
