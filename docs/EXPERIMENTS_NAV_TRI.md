@@ -1400,18 +1400,31 @@ cannot be fitted to the outcome. Everything here runs with
 `--regime_assignment shuffle` (see §0) and the shaping and noise settings that
 waves 1–2 select.
 
-The four orderings Jack named, as schedules:
+The four orderings Jack named, as schedules. **Re-sized for 20 envs × 64 batch**
+(the shape Q1 selected): 12.6 s/update, so 1200 updates is ~4.2 h and fits the
+6-hour limit with room for the eval overhead.
 
 | arm | schedule | warm start |
 |---|---|---|
-| **A** *(the requested order)* | `interleave:450,empty_frac=1.0->0.5,anneal=150` | best wave-1 explore checkpoint |
-| **B** *(interleave throughout)* | `interleave:450,empty_frac=0.5` | fresh |
-| **C** *(blocked, never interleaved)* | `explore:225 ; exploit:225` | fresh |
-| **D** *(exploit first)* | `interleave:450,empty_frac=0.0->0.5,anneal=150` | best wave-2 exploit checkpoint |
+| **A** *(the requested order)* | `interleave:1200,empty_frac=1.0->0.5,anneal=400` | best explore checkpoint |
+| **B** *(interleave throughout)* | `interleave:1200,empty_frac=0.5` | fresh |
+| **C** *(blocked, never interleaved)* | `explore:600 ; exploit:600` | fresh |
+| **D** *(exploit first)* | `interleave:1200,empty_frac=0.0->0.5,anneal=400` | best exploit checkpoint |
+
+All run `--regime_assignment shuffle` and `EVAL_SCOPE=navexpl`.
 
 A and D warm-start via `--load_checkpoint`, which is what makes "anneal the
-other regime in" cheap: the first phase has already been paid for by waves 1–2,
-so each arm costs one 450-update run rather than two.
+other regime in" cheap: the first phase is already paid for, so each arm costs
+one run rather than two. **`--load_checkpoint` drops the Adam moments by
+design** (memory `project_hopfield_nav_continue`), which is acceptable here —
+the objective changes at the boundary, so stale moments would be wrong anyway —
+but it means arm A's curve will dip for a few updates before recovering, and
+that dip must not be read as interference.
+
+**Warm-start from an intermediate checkpoint, not the final one.** The explore
+arms run to u1500 but their curve is well above the target by ~u400; taking a
+u600 checkpoint lets wave 3 start hours earlier at a small cost in explore
+quality, and the *combination* question is what wave 3 is for.
 
 **The prediction, and why.** P0.8 says the regime is decidable at AUC ≈0.9 from
 `|q|` alone at ≤3 distractors, but only ≈0.72–0.79 at ten unless the agent
