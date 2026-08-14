@@ -649,6 +649,20 @@ WAVES: dict[str, dict] = {
         },
         "seed": [42, 43],
     },
+    # W22 -- the baseline at the same seed count as everything it is compared to.
+    #
+    # w20 put strat_rate0.3 and rand_rate1 on six seeds each and both collapsed
+    # to the two-seed baseline. But that baseline is still n=2, and comparing a
+    # six-seed median against a two-seed one is the mistake this campaign has
+    # now made four times. These are seeds 44-47 of the plain §4 config at 10%
+    # coverage, so the headline comparison is six against six.
+    "w22_base_seeds": {
+        "arm": {
+            "rand_rate0.3": dict(npos_list=SIZE_MIXES["lo_mixtop"],
+                                 per_env_radius_frac=0.15, rate_lambda=0.3),
+        },
+        "seed": [44, 45, 46, 47],
+    },
     # W13 -- coverage, on the winning config rather than on the bare baseline.
     #
     # This replaces w4, which swept coverage over mixes chosen before any of the

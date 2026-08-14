@@ -1585,3 +1585,32 @@ loss, at any strength, under any of the knobs §5 swept. That is why steps 1, 2
 and 3 each returned the same 5–8 from completely different directions: geometry
 (§5.6f), the spread term (§5.6h) and placement (§5.6g) were all working on the
 10% that was never the problem.
+
+### 5.6k Six seeds erase every effect §5 measured
+
+`w20` re-ran the leading configs at seeds 44–47, which no earlier §5 cell had
+used, and pooled them with 42/43. `encoder_final` throughout.
+
+| config | n | `r_min` med | spread | `r_median` | alias | the cells |
+|---|---|---|---|---|---|---|
+| `rand_rate0.3` (§4's config) | 2 | 6.5 | 3 | 15.25 | 0.971 | 5, 8 |
+| `strat_rate0.3` | 6 | **6.5** | 5 | 14.25 | 0.968 | 7, 8, 6, 6, 3, 8 |
+| `rand_rate1` | 6 | 5.5 | 5 | 11.50 | 0.950 | 5, 9, 4, 5, 7, 6 |
+| `strat_rate1` | 4 | 4.5 | 4 | 12.25 | 0.952 | 4, 5, 3, 7 |
+
+**Placement's +1 (§5.6g) and `rate1`'s +0.5 (§5.6h) both disappear.** Stratified
+placement read 7.5 with a spread of 1 on seeds 42/43; on six it reads 6.5 with a
+spread of 5, exactly the baseline. Its apparent variance reduction was an
+artefact of that pair too. Combining the two supposed gains (`strat_rate1`) is
+the worst config of the four.
+
+This is §5.5's rule earning its place a fourth time, and it is worth stating in
+the strongest form the data supports: **at 10% coverage the seed spread is 4–5
+radius units and every configuration difference §5 found is 0–1 units.** The
+knobs are not merely weak here, they are smaller than the noise — the same
+conclusion §5.6f reached about geometry and §5.6h about the spread term, now
+reached about the two survivors as well.
+
+`w22` adds seeds 44–47 to the baseline itself, so the headline comparison is six
+against six rather than six against two — the mistake this section exists to
+correct.
