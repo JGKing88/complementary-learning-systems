@@ -640,6 +640,30 @@ export NOVELTY_REWARD=0.15
 export LOAD_CKPT=/orcd/pool/003/jackking/cls_runs/agent_ckpts/navigate_ee_P5_20363067/navigate_u200.pt
 EOF
         ;;
+    # C12 is the brief's own ordering -- explore first, then anneal exploit in --
+    # finally run with an explorer worth starting from.
+    #
+    # C3 was defined for this in wave 2 and never launched, because at the time
+    # the best explorer was 0.39 and falling. Every composite since has gone the
+    # other way: exploit parent, explore ramped in. Now that W10 u2100 covers
+    # 0.515 -- above the memoryless ceiling -- the reverse ordering has a parent
+    # that is actually good at the half the composites never learn.
+    #
+    # `empty_frac=1.0->0.5` starts at pure explore and anneals exploit up to an
+    # even split, the mirror of C9/C10/C11's `0->0.5`. Shaping is W10's, so the
+    # explore half keeps the recipe that produced the parent.
+    C12) cat <<'EOF'
+export ENVS_PER_WORLD=8
+export BATCH_ENVS=16
+export STEPS_PER_ROLLOUT=200
+export SCHEDULE="interleave:2500,empty_frac=1.0->0.5,anneal=500"
+export EVAL_EVERY=100
+export VAL_DISTRACTORS="0 10"
+export WALL_PENALTY=0.3
+export NOVELTY_REWARD=0.15
+export LOAD_CKPT=/orcd/pool/003/jackking/cls_runs/agent_ckpts/navigate_ee_W10_20372559/navigate_u2100.pt
+EOF
+        ;;
     # W10 is to W9 what C8 was to C7, and for the same reason.
     #
     # W9 raised WALL_PENALTY 0.3 -> 0.6 to make a fresh edge cell net-negative.
