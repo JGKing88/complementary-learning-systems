@@ -994,3 +994,162 @@ localised failure, and it is why §4.6b recommends 50.8% over 61.1%.
 * What did help before hitting that cap: asking for 1.5 h and 16 GB rather than
   12 h and 80 G, which lets backfill drop a run into a gap. That took the
   concurrent count from 2–3 to 16.
+
+---
+
+# 5. NEXT: how good can it get at **10% coverage**?
+
+**Status: planned, nothing launched.** §4 is finished; this is the next
+question and this section is written to be picked up cold.
+
+## 5.1 The goal
+
+§4 found coverage to be the strongest lever it had, and its answer used
+**50.8%** of the arena. That is a lot of the world to have visited. The question
+now is how much of §4's result survives when the training set is cut to **~10%
+coverage**, with everything else about the brief unchanged.
+
+Everything from §4.0 still binds:
+
+* `exclude_cross_env_pairs=True` throughout — the constraint, not a variable;
+* no patch larger than **200** cells a side;
+* patch sizes **mixed**, not uniform;
+* `loss_mode=cka` excluded, and so is `graded_sigma` (§4.4 note — it fits a
+  target kernel, which is the same family);
+* every other knob free.
+
+Legal/loophole split is unchanged: a term may not consult which environment a
+pair came from. `uniformity_scope=nonnear` and `input_far_tau` remain the
+labelled loopholes.
+
+## 5.2 Where §4 leaves this
+
+The §4 winner, for reference — this is the config to start from:
+
+```
+npos_list            26x200 + 14x150 + 14x100     (mixtop_max, 50.8%, 54 envs)
+per_env_radius_frac  0.15
+rate_lambda          0.3                          (MCR^2 coding rate)
+exclude_cross_env_pairs, single_env_batch=False, lazy_codes
+out_dim 1024  hidden_dim 512  num_hidden_layers 4
+lr 1e-4  batch_size 8192  fwhm_ratio 0.25  gain 1.0->5.0
+epochs step-matched to ~73,000 optimizer steps
+```
+scoring `r_min` 26, 27, 30, 31 over four seeds; 24/23 at 100 references.
+
+**What the coverage sweep (§4.6b) predicts for 10%.** Extrapolating the
+measured curve downward:
+
+| coverage | 61.1% | 50.8% | 38.2% | 22.9% | **10%** |
+|---|---|---|---|---|---|
+| `r_min` median | 28.5 | 28.5 | 23.5 | 17.5 | **~10–13?** |
+| alias ceiling | 0.670 | 0.671 | 0.767 | 0.853 | **~0.90?** |
+| decay50 | 42 | 42 | 41 | 40.8 | ~40 |
+
+decay50 was *flat* across the whole coverage sweep, so the prediction is that
+10% costs the **ceiling** and only the ceiling — which by §4.4b's law
+`r_min = r_at_cos0.9 · sqrt(ln(1/C)/ln(1/0.9))` is worth roughly a factor
+`sqrt(ln(1/0.90)/ln(1/0.671)) = 0.51`, i.e. about half. **If the answer comes in
+far below ~13, something other than the ceiling has broken and that is the
+finding.**
+
+**Why 10% is a different problem, not just a smaller one.** §4.6 measured
+`corr(distance from a reference to the nearest training patch, its radius) =
+−0.47`: the references that hold `r_min` down are the ones training never
+reached. At 50.8% coverage almost every reference is near a patch. At 10% almost
+none are, so the task stops being "learn the within-patch structure" and becomes
+"extrapolate it to the 90% never seen". Two consequences worth expecting:
+
+1. **Where the patches sit should start to matter as much as how big they are.**
+   Placement is currently uniform-random rejection sampling
+   (`data.sample_nonoverlapping_patches`), which at 10% leaves large holes. See
+   §5.4 step 3.
+2. **Overfitting becomes plausible for the first time.** 280k training points,
+   1.5M parameters, and ~73,000 steps means each point is seen ~2000 times
+   against ~380 at 50.8%. `weight_decay` has been at 1e-4 and untouched all
+   campaign.
+
+## 5.3 Geometries, placement-checked
+
+All ≤200 cells, all mixed except the two controls, all verified to place at
+seeds 42/43/44/45 (the §4.7 lesson: check every seed a wave will use). Epochs
+are step-matched by the driver, so all of these run ~73,000 steps.
+
+| name | spec | envs | coverage | area at 200 | steps/ep | epochs |
+|---|---|---|---|---|---|---|
+| `lo_big` | 7×200 | 7 | 9.5% | 100% | 34 | 2150 |
+| `lo_mixtop` | 5×200 + 3×150 + 3×100 | 11 | 10.1% | 67% | 36 | 2050 |
+| `lo_mix2` | 4×200 + 12×100 | 16 | 9.5% | 57% | 34 | 2150 |
+| `lo_many` | 29×100 | 29 | 9.9% | 0% | 35 | 2100 |
+| `lo_tail` | 3×200 + 4×150 + 6×100 + 8×70 | 21 | 10.5% | 39% | 37 | 1950 |
+
+`lo_mixtop` keeps §4's winning *shape* (three sizes, ~⅔ of the area at 200) at
+a tenth of the coverage, so it is the natural anchor. `lo_big` and `lo_many` are
+the uniform controls at either end. `lo_tail` carries the 70-cell tail that
+§4.5 found actively harmful — included to check that finding still holds when
+patches are scarce, since the reasoning there ("a 70-cell patch reaches 99 cells
+and the far field never hears it") may change when *nothing* reaches the far
+field.
+
+**Watch the wall clock.** 2150 epochs is 2.4× any run in §4. Total steps match,
+so time should too (~60–90 min), but per-epoch overhead is now paid 2150 times.
+Check `eta.sh`-style projections on the first cell and pass `--time` if needed —
+a running job's limit cannot be raised (§4.7).
+
+## 5.4 First steps, in order
+
+**Step 1 — anchor (6 runs).** `lo_mixtop` with §4's winning loss settings
+(`per_env_radius_frac=0.15`, `rate_lambda=0.3`), 3 seeds; plus `lo_big` and
+`lo_many` at 1 seed each as the uniform brackets. This says how much of §4
+survives the cut and whether the ~10–13 prediction holds.
+
+```
+python -m encoder_training.sweep_ecp w17_lowcov_anchor
+```
+
+**Step 2 — re-tune the two factors at the new coverage (12 runs).** Their optima
+were found at 22.9% and need not hold. `per_env_radius_frac ∈ {0.10, 0.15,
+0.20}` × `rate_lambda ∈ {0.3, 1.0}` × 2 seeds on `lo_mixtop`. Note §4.4's other
+finding: at a 10-cell radius `uniformity_lambda=1.0` beat `rate0.3`, and at
+0.15·side it lost — so if the radius optimum moves down here, re-test uniformity
+in the winning slot too.
+
+**Step 3 — placement, the new idea (8 runs).** At 10% coverage the *arrangement*
+of patches should matter, and it is the one thing §4 never varied. Random
+rejection sampling leaves holes; a **jittered lattice** (partition the arena into
+a coarse grid, place one patch per cell at a random offset within it) minimises
+the worst-case distance from an arena point to the nearest patch, which is
+exactly the quantity §4.6 correlated with `r_min` at −0.47. Needs a new sampler
+alongside `sample_nonoverlapping_patches` — keep the signature and add
+`--patch_placement {random,stratified}` so the comparison is one flag. Test on
+`lo_mixtop` at the step-2 optimum, 4 seeds each.
+
+*Prediction worth recording before it runs:* stratified should beat random by
+more at 10% than it would at 50%, and the gap should show up in `r_min` and the
+alias ceiling while leaving decay50 alone.
+
+**Step 4 — overfitting (6 runs).** `weight_decay ∈ {1e-4, 1e-3, 1e-2}` × 2 seeds
+at the step-3 best. Cheap, never explored, and this is the first regime where it
+should bite. If it does, also try fewer total steps.
+
+**Step 5 — confirm.** 4 seeds on the leader, then re-score at 100 references and
+two `ur_seed`s against the §4 50.8% winner and the untreated baseline
+(`sweep_unique_radius --n-refs 100 --seed {0,1}`). §4.8: the 20-reference
+`r_min` is unstable to the draw and no claim should rest on it.
+
+## 5.5 Method notes that cost time in §4
+
+* **Read only finished cells.** Four conclusions in §4 were drawn from mid-run
+  evaluations and all four were wrong the same way — large-radius and
+  strong-spread arms start slowest, so any fixed-epoch comparison reads their
+  slow start as collapse. `collect_ur --ckpt final` is the honest view.
+* **Two seeds is not enough**, repeatedly demonstrated (§4.9, §4.6b). Budget 4
+  on anything that will be quoted.
+* **Placement-check every seed** a wave will use, not the first two (§4.7).
+* Rank on `r_median` and the alias ceiling when `r_min` is noisy; they moved
+  monotonically through the whole coverage sweep while `r_min` did not.
+* Tooling: `sweep_ecp.py` (waves, named mixes, step-matched epochs,
+  `--only`/`--time`), `collect_ur.py` (grouped read, `--ckpt final`),
+  `radius_law.py` (the two-factor law and its `--target` inverse),
+  `alias_structure.py` (`--ref_vs_patch` is the diagnostic that motivated
+  step 3).

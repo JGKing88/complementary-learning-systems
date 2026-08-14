@@ -97,6 +97,13 @@ SIZE_MIXES: dict[str, str] = {
     # both seeds, as did a 73% variant with a heavier small tail.
     "mixtop_xxl": _mix((200, 37), (150, 18), (100, 18)),   # 2.06M, 70.1%, 73 envs
     "mix2_lo": _mix((200, 4), (100, 12)),       # 280k,  9.5%,  16 envs
+    # --- the ~10% coverage set for §5. All placement-checked at seeds
+    # 42/43/44/45. Step-matching gives these ~2000 epochs, 2.4x anything in §4
+    # at the same 73k steps, so check the wall clock on the first cell.
+    "lo_big":    _mix((200, 7)),                          #  9.5%,  7 envs
+    "lo_mixtop": _mix((200, 5), (150, 3), (100, 3)),      # 10.1%, 11 envs
+    "lo_many":   _mix((100, 29)),                         #  9.9%, 29 envs
+    "lo_tail":   _mix((200, 3), (150, 4), (100, 6), (70, 8)),   # 10.5%, 21 envs
     "mix2_hi": _mix((200, 15), (100, 40)),      # 1.00M, 34.0%, 55 envs
     "mix3_45": _mix((200, 20), (150, 20), (100, 30)),   # 1.55M, 52.6%, 70 envs
     "mixsmall": _mix((200, 12), (100, 40), (50, 200)),  # 1.38M, 46.9%, 252 envs
@@ -464,6 +471,29 @@ WAVES: dict[str, dict] = {
                                       per_env_radius_frac=0.10, rate_lambda=0.3),
         },
         "seed": [44, 45],
+    },
+    # W17 -- §5 step 1. How much of §4 survives a cut to ~10% coverage?
+    #
+    # §4's answer used 50.8% of the arena. The coverage sweep (§4.6b) was
+    # monotone and left decay50 flat, so the prediction is that 10% costs the
+    # ceiling and only the ceiling -- worth about a factor 0.5 by §4.4b's law,
+    # i.e. r_min around 10-13. Coming in far below that means something other
+    # than the ceiling broke, which is the more interesting outcome.
+    #
+    # lo_mixtop keeps §4's winning shape (three sizes, ~2/3 of area at 200) at a
+    # tenth of the coverage; lo_big and lo_many bracket it with uniform sets at
+    # either end. Loss settings are §4's winner untouched, so this isolates
+    # coverage. See docs/EXPERIMENTS_UNIQUE_RADIUS.md §5.4 for the rest.
+    "w17_lowcov_anchor": {
+        "arm": {
+            "lo_mixtop": dict(npos_list=SIZE_MIXES["lo_mixtop"],
+                              per_env_radius_frac=0.15, rate_lambda=0.3),
+            "lo_big":    dict(npos_list=SIZE_MIXES["lo_big"],
+                              per_env_radius_frac=0.15, rate_lambda=0.3),
+            "lo_many":   dict(npos_list=SIZE_MIXES["lo_many"],
+                              per_env_radius_frac=0.15, rate_lambda=0.3),
+        },
+        "seed": [42, 43],
     },
     # W13 -- coverage, on the winning config rather than on the bare baseline.
     #
