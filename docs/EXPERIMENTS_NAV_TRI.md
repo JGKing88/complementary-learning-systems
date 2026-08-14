@@ -1400,6 +1400,39 @@ zero reach the policy only through the un-normalized value loss.
   0.735 → 0.9 — predicts coverage **0.356**, i.e. the 0.352 target, and there
   are 1300 updates left on this arm alone. σ=0.50 is running ahead of it.
 
+#### A train/eval mismatch the exploit arm exposed
+
+Recorded separately because it is a property of the **trainer**, not of this
+wave, and it affects every exploit and interleaved run.
+
+`w2_x_sig2`'s *training* reward rises monotonically (`mean_r` −0.044 at u1 →
++0.043 at u80) while its *eval* nav degrades (`mean_steps_all` 43 at u25 → 113
+at u75). Training and evaluation are not measuring the same task:
+
+| | training rollout | nav eval |
+|---|---|---|
+| on reaching the goal | **teleport and continue** | **episode ends** |
+| RNN state after a goal | **carried** (`reset_state_on_teleport=False`) | n/a |
+| goals per episode | ~4 in 200 steps | exactly 1 |
+| state at the measured reach | warm for ~3 of 4 | **always cold** |
+
+So training optimizes "reach many goals in a long rollout, mostly from a warm
+hidden state", and eval scores "reach one goal from a cold start". Only about
+one reach in four is trained under the condition that is scored, and a policy
+that exploits the warm state is rewarded for it.
+
+**This is the first concrete reason to consider
+`--reset_state_on_teleport true`**, which Jack's instructions permit only with
+"a very very good reason". It is not yet good enough: the divergence has a
+competing explanation — the policy overshooting the goal radius as |a| grows,
+which is the σ story — and those imply different fixes. `w2_x_siglo` (σ=0.165)
+and a u75 behaviour probe separate them:
+
+- overshoot ⇒ `step_mag_mean` will have grown well past 1 by u75, and σ=0.165
+  will not degrade;
+- warm-state dependence ⇒ magnitude will look reasonable and σ=0.165 will
+  degrade the same way.
+
 #### Live notes — wave 2, exploit arm
 
 - **Config validated before committing GPU-hours.** `smoke_x` (4 updates,
