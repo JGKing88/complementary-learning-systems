@@ -1736,6 +1736,28 @@ priced too high. If C matches both, then interleaving *per se* is irrelevant and
 only regime exposure matters — the cheapest outcome, and the one that would let
 waves 1 and 2 simply be concatenated.
 
+#### Live notes — wave 3
+
+- **A structural asymmetry between the arms that the pre-registration missed.**
+  At `empty_frac=0.5` only **half** the rollouts are explore, so an
+  interleaved-throughout arm accumulates coverage at roughly half the rate of a
+  pure-explore run. Arm A front-loads that phase and arrives with it already
+  paid for; arm B has to earn it at half speed *while also* learning to
+  navigate. Visible immediately — A at u150 has coverage **0.312** (carried
+  down from the 0.375 it was warm-started with), B at u250 has **0.062**.
+
+  This is not a result, it is a **handicap in the comparison**, and it was not
+  accounted for when the arms were designed. B is not slower at *combining*; it
+  is slower at the explore half because it is given half as much of it. The
+  fair reading of A vs B is therefore at **equal explore exposure**, not equal
+  updates — or simply at the end, once both have had enough of each.
+
+- Arm A's coverage fell 0.375 → 0.312 across the switch. Expected, and it is
+  the sum of three things, none of which is interference: half the envs are now
+  exploit, `--load_checkpoint` drops the Adam moments, and the objective it was
+  optimizing changed. Whether it *recovers* while nav improves is the actual
+  question.
+
 **The failure mode to watch for is interference, not either metric alone.** A
 model that scores 0.35 coverage and `mean_steps` 30, or 10.5 steps and 0.10
 coverage, has not combined anything. `analysis/nav_tri/behavior_probe.py`
