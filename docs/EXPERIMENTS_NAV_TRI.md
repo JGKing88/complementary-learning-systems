@@ -31,11 +31,11 @@ Resume checklist, in order:
 
 **Open items carried forward** (things known to be owed, in priority order):
 
-- [ ] Re-run `signal_separability` at the **real Npos=1716** — P0.7's numbers
-      are from a validation-grade Npos=300 scaffold. Job queued on `pi_fiete`.
+- [x] `signal_separability` at the real Npos=1716 — **done, and it overturned
+      the Npos=300 result.** See the CORRECTION in P0.7.
+- [ ] Re-run `temporal_separability` at the real Npos=1716 (P0.8 is Npos=300
+      and is therefore an *under*estimate). Queued on `mit_normal` (CPU).
 - [ ] Behaviour-probe every wave-1 checkpoint at u450 and fill the §6 table.
-- [ ] Re-run `temporal_separability` at the real Npos=1716 (P0.8 is Npos=300).
-      Job queued on `pi_fiete`.
 - [ ] Regime assignment is **positional**, not random: `train_navigate.py:335`
       makes the first `n_pre` envs exploit and the rest explore, so at a fixed
       `empty_frac` the *same* envs are always in the same regime, all run. That
@@ -292,11 +292,15 @@ tuning is pointless because the *readout* is the limit. Well above it ⇒ the
 policy is failing to follow a signal that is demonstrably there, which is an
 optimization problem worth fixing.
 
-Applied to the numbers already in hand: P0.7 measured the readout at cos **0.99**
-(no distractors) and **0.82** (ten), so the reachable `mean_steps` at unit steps
-is **10.1–12.7**. The v35 lineage's reference point of 22.9 sits on the
-cos ≈ 0.50 row — i.e. roughly **2× more steps than its readout permitted**. That
-gap is the exploit headroom, and it is a policy gap, not a readout gap.
+Applied to the numbers already in hand: P0.7 measures the readout at cos **0.99
+at every distractor count, 0 through 10**, so the reachable `mean_steps` at unit
+steps is **≈10.1 regardless of distractors** — the same row as an oracle. The
+v35 lineage's reference point of 22.9 sits on the cos ≈ 0.50 row, i.e. roughly
+**2× more steps than its readout permitted**. That gap is the exploit headroom,
+and it is entirely a policy gap.
+
+**Target for this line of work: `mean_steps` ≤ 12 at mean |a| ≈ 1**, with
+`success_rate` ≥ 0.98 as a sanity check rather than an achievement.
 
 **`mean_steps` is gameable and must always be reported with step magnitude.**
 `continuous_normalize=False` leaves `|a|` free, and at `|a| = 2` the oracle
@@ -394,7 +398,8 @@ Therefore:
 | is "goal in memory" decidable from the observation? | `analysis/nav_tri/signal_separability.py` | P0.7. No policy involved — a property of encoder + scaffold + Hopfield. |
 | how many steps of `q` does it take to decide? (ideal-observer AUC vs T) | `analysis/nav_tri/temporal_separability.py` | P0.8. Bounds what any architecture could extract. |
 | what nav numbers a perfect follower of a given-accuracy signal gets | `analysis/nav_tri/exploit_reference.py` | §3.3.1. Turns `q_accuracy` into a predicted `mean_steps`, so a checkpoint's nav gap is diagnosable as readout vs policy. |
-| launcher for the two probes | `hopfield_nav/run_nav_tri_probe.sh` | `PROBE=signal\|behavior CKPTS="…" sbatch …` |
+| probe launcher, **CPU — prefer this one** | `hopfield_nav/run_nav_tri_probe_cpu.sh` | `PROBE=signal\|temporal\|behavior CKPTS="…" sbatch …`. The probes need no GPU: the only heavy step is one encoder pass to build `encoded_Phi`. Both GPU partitions cap concurrency at 2 and training holds those for six hours, while `mit_normal` has 3000 cores — so this runs immediately instead of waiting out a training run. |
+| probe launcher, GPU | `hopfield_nav/run_nav_tri_probe.sh` | same interface; only worth it when a GPU slot is genuinely idle |
 | training launcher | `hopfield_nav/run_nav_tri.sh` | `VARIANT=<name> sbatch …`; variants in the `case` block |
 | queue + latest metric per run | `hopfield_nav/nav_tri_status.sh` | pulled, not pushed |
 | one line per job that leaves the queue | `hopfield_nav/nav_tri_watch.sh` | for `Monitor`; deliberately silent per-update |
@@ -413,6 +418,29 @@ index a different scaffold.
 | `world/scaffold.py`: `precompute_encoded_phi` writes into a preallocated array instead of `concatenate`-ing a list of parts, and frees `sgb`/`flat` early | peak RSS was **44.5 GB for a 12 GB answer**, which on a memory-contended node is the difference between scheduling and queueing. Bit-identical output; the 67 golden/signal/smoke tests pass unchanged. |
 
 ---
+
+### 4.1 Things outside the knob list that would matter — flagged, not used
+
+Recorded rather than acted on, because §1.1 is an explicit list and these are
+not on it. Each is a one-line change if Jack wants it.
+
+- **`--min_action_norm 1.0`** would fix the immobility of P0.6 outright: the env
+  scales any sub-threshold action up to unit length, so the policy would move a
+  full cell from update 1 and would only have to learn *direction*. As it
+  stands, a large part of the explore run is spent learning magnitude — a
+  scalar — through a noisy policy gradient. This is the single largest
+  intervention available and it is one flag. It does change the action space,
+  and it caps the "take bigger steps" route to a low `mean_steps` (§3.3), which
+  is arguably a *feature* given that route games the metric.
+- **`--input_prev_action`** would let the RNN path-integrate its own
+  displacement, which is what a lawnmower sweep needs and what the current input
+  set cannot support (§2.4). Deliberately not proposed: the input set is frozen
+  by standing instruction (§1.2). Flagged because if coverage plateaus around
+  the billiard line (0.387) rather than climbing toward the lawnmower line
+  (0.478), **that is the reason**, and no amount of shaping will fix it.
+- **Randomizing which envs get which regime.** `train_navigate.py:335` assigns
+  regimes positionally, so at a fixed `empty_frac` the same envs are always
+  exploit. See the open item in §0.
 
 ## 5. Evaluation protocol used here
 
@@ -508,43 +536,49 @@ not move. Two consequences, and the second is the important one:
   `w1_eps01`, and it reframes `INIT_LOG_STD` from "exploration temperature" to
   "the channel through which the policy learns its own step size".
 
-**P0.7 — the Hopfield readout is excellent; the magnitude discriminant is
-not.** `analysis/nav_tri/signal_separability.py`, no policy involved.
-**Measured on a shrunken Npos=300 scaffold — validation-grade, awaiting the
-real Npos=1716 run.** Per env, sampling cells and comparing memory with the
-goal present against the same distractors without it:
+**P0.7 — the readout is near-perfect AND `|q|` separates the regimes in one
+step.** `analysis/nav_tri/signal_separability.py`, no policy involved. Per env,
+sampling cells and comparing memory with the goal present against the same
+distractors without it. **Npos=1716, the real scaffold:**
 
-| `n_dist` | `dir_acc_goal` = cos(q, goal−cell) | `recall_is_goal_frac` | `AUC(\|q\|)` |
-|---|---|---|---|
-| 0 | 0.989 | 1.00 | — |
-| 3 | 0.952 | 1.00 | 0.35 |
-| 10 | 0.824 | 1.00 | 0.49 |
+| `n_dist` | `q_goal_mean` | `q_dist_mean` | `dir_acc_goal` = cos(q, goal−cell) | `recall_is_goal_frac` | **`AUC(\|q\|)`** |
+|---|---|---|---|---|---|
+| 0 | 0.256 | 0 | 0.990 | 1.00 | — |
+| 1 | 0.255 | 0.054 | 0.995 | 1.00 | **0.965** |
+| 3 | 0.261 | 0.089 | 0.995 | 1.00 | 0.898 |
+| 5 | 0.260 | 0.065 | 0.988 | 1.00 | 0.936 |
+| 10 | 0.256 | 0.052 | 0.991 | 1.00 | **0.956** |
 
-Two readings, pulling in opposite directions:
+Three readings, and all three are good news:
 
-- **The recall is right.** The attractor lands nearer the goal pattern than any
-  distractor in **100%** of sampled cells, and `q` points at the goal with
-  cos 0.99 / 0.95 / 0.82. So when the goal is in memory, a policy that simply
-  followed `q` would navigate almost optimally. **Any nav failure is therefore
-  a policy failure, not a readout failure** — which is the decomposition the
-  probe was built to make.
-- **`|q|` does not say whether the goal is in memory.** AUC 0.35–0.49 against
-  0.5 = chance. My a-priori argument (§ the docstring's `sqrt(2/D) ≈ 0.044`
-  ratio) is **wrong**, and worth recording as wrong: recall is
-  `normalize(tanh(β W x))` at β=5, a soft mixture pulled toward the current
-  state, not a verbatim stored pattern. `q_dist_mean` is 0.22–0.26 against
-  `q_goal_mean` 0.20–0.22 — comparable, and if anything the goal-present case
-  is *smaller*, because converging onto a nearby attractor is a shorter
-  displacement than drifting toward a far one. `--input_hopfield_multistep`
-  does not rescue it either (AUC 0.30–0.55 at step 3).
+- **The recall is right, and distractors barely touch it.** The attractor lands
+  nearer the goal pattern than any distractor in **100%** of sampled cells, and
+  `q` points at the goal with cos **0.99 at every distractor count**, including
+  ten. So a policy that simply followed `q` would navigate almost optimally.
+  **Any nav failure is therefore a policy failure, not a readout failure** —
+  which is the decomposition the probe was built to make. Combined with
+  §3.3.1 this pins the exploit target at **`mean_steps` ≈ 10.1 at |a| = 1,
+  at every distractor level**.
+- **`|q|` says whether the goal is in memory**, at AUC 0.90–0.97 from a
+  *single* step. The magnitude ratio is ~5:1 (0.256 present vs ~0.05 absent).
+  `--input_hopfield_raw 1` puts exactly this in the observation, which is what
+  makes Jack's instruction to use the raw signal load-bearing rather than
+  cosmetic: the normalized signal throws away the one channel that carries the
+  regime.
+- **This is the encoder doing its job.** `ur_loss2_repel_low/029` was trained at
+  `repel_weight=2` — cross-env repulsion — so patterns from outside this env's
+  footprint are pushed apart in embedding space and their recall has almost no
+  component in the local tangent plane. The distractor problem is largely
+  solved upstream of the policy.
 
-**Why this matters for the whole plan.** Jack's framing is that one policy can
-do both jobs only if the observation says which regime it is in. P0.7 says
-there is **no single-timestep magnitude cue**. It does not say the problem is
-undecidable — see P0.8, which was written to answer exactly that. **Recheck at
-Npos=1716 before relying on any of this**: at Npos=300 distractors are drawn
-from a far smaller exclusion region, so their interference is not the
-interference training sees.
+> **CORRECTION.** An earlier version of this section, measured on a shrunken
+> **Npos=300** scaffold, reported `AUC(|q|)` of 0.35–0.49 and concluded there was
+> *no* single-step magnitude cue, and `dir_acc_goal` falling to 0.82 at ten
+> distractors. **Both were artifacts of the small scaffold** — at Npos=300 the
+> exclusion region distractors are drawn from is ~30× smaller, so they sit close
+> enough to the env to interfere. The caveat attached to those numbers at the
+> time was the right one; this is what re-running under it was for. Anything
+> elsewhere that reads "|q| does not separate" is superseded here.
 
 **P0.8 — the cue is temporal, and it only appears if the agent ACTS on the
 signal.** `analysis/nav_tri/temporal_separability.py` puts an ideal-observer
@@ -566,22 +600,30 @@ cluster; a distractor is not, so neither happens. Passive observation gets to
 ≈0.76 and stalls. **Acting on the signal is what makes it decidable**, and ten
 steps of following buys AUC 0.93 — 5% of a 200-step episode.
 
-Three consequences for how the waves are ordered, and they are not what the
-plan in §1 assumes:
+**Status of P0.8 after the P0.7 correction.** These numbers are the Npos=300
+ones, and P0.7 shows that scaffold *understates* separability badly — so the
+real-scaffold temporal AUCs will be higher at every T, and the T=1 column in
+particular should now read ≈0.95 rather than 0.57, matching P0.7's single-step
+`AUC(|q|)`. The real-Npos run is queued. What survives the correction, and what
+does not:
 
-1. **The optimal policy is probe-and-verify**, not classify-then-act: take a
-   few steps along `q`, watch whether it converges, then commit or abandon.
-   That is a behaviour a recurrent policy can represent, and it is *cheap*.
-2. **A pure-explore phase trains the exact wrong prior.** Under
-   `explore_goals_off` with distractors in memory, following `q` earns nothing
-   and costs steps, so explore training converges on "never follow `q`" — which
-   destroys the only behaviour that makes the regimes separable. The longer the
-   pure-explore phase, the more the combined phase has to unlearn.
-3. So the ordering Jack flagged as a guess — explore to convergence, then
-   anneal exploit in — is the one this predicts will struggle, and
-   **interleaving from early on** is the favoured alternative. Wave 3 runs the
-   requested order first anyway (it is cheap to test and the prediction may be
-   wrong), but with the interleaved arm beside it rather than after it.
+- **Does not survive as a necessity:** the claim that the agent *must* probe to
+  decide. With `AUC(|q|) ≈ 0.95` at a single step, a threshold on the raw
+  magnitude is enough, and the regimes are cleanly separated in input space —
+  `|q|` ≈ 0.26 with the goal in memory against ≈0.05 without. That is a much
+  easier learning problem than probe-and-verify, and it is good news for the
+  single-model goal.
+- **Survives as a mechanism:** following `q` still *sharpens* the evidence
+  (0.68 → 0.93 over ten steps at Npos=300), because a real goal is a fixed point
+  and a phantom is not. So probing remains available as a fallback where the
+  single-step cue is ambiguous.
+- **Survives as a risk to the ordering:** under `explore_goals_off` with
+  distractors, following `q` earns nothing and costs steps, so a long
+  pure-explore phase still converges on "ignore the recall channel entirely".
+  The policy would then have to relearn to attend to a channel it had been
+  trained to suppress. **Wave 3 therefore keeps an interleaved arm beside the
+  requested explore-first arm** — cheaper than discovering it late — but the
+  prior on explore-first working is now considerably better than it was.
 
 ---
 

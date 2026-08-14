@@ -179,6 +179,14 @@ case "$VARIANT" in
     SCHEDULE=${SCHEDULE:-'explore:450'}
     EPSILON_EXPLORE=0.1; INIT_LOG_STD=-1.2
     ;;
+  # A harder push on the same axis, for round 2. sigma=0.50 is 6x the policy's
+  # initial mean magnitude of 0.086, so the sampled steps span the range the
+  # policy has to learn to occupy; §3.2 prices the coverage cost of that much
+  # noise at ~0.03, and eval scores the mean anyway.
+  w1_sig2)
+    SCHEDULE=${SCHEDULE:-'explore:450'}
+    EPSILON_EXPLORE=0.1; INIT_LOG_STD=-0.7
+    ;;
 
   # Shaping. A billiard -- straight lines, turn at the wall -- is the reachable
   # target behaviour (cov 0.387 vs a random walk's 0.178), and persistence_bonus
