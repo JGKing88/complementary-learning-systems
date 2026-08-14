@@ -533,6 +533,52 @@ WAVES: dict[str, dict] = {
         },
         "seed": [42, 43],
     },
+    # W19 -- §5 step 2. Re-tune the two factors of the law at 10% coverage.
+    #
+    # Written after w17's first cells, which is why it is not the grid §5.4
+    # planned. Both factors of §4.4b's law collapsed at 10%, not just the
+    # ceiling the plan predicted (§5.6c): alias 0.671 -> 0.96-0.99, and decay50
+    # 42 -> 23-37 when the coverage sweep above 23% had left it flat. So both
+    # need re-tuning, and the bracket has to widen upward on both.
+    #
+    # Swept as two separate axes rather than the 4x3 cross, because §4.5d
+    # measured the factors as composing: the radius fraction moves res90 and
+    # the spread term moves the ceiling, and the joint cell was predicted by the
+    # product. 14 runs fit the 16-GPU cap in one batch; the cross would not.
+    #
+    #   radius  0.10 -> 0.40. §4.5e peaked at 0.15 at 22.9% coverage and §4.5b
+    #           found the absolute radius peaking at 20 and failing by 40, so
+    #           0.40 (= 80 cells on a 200 patch) is deliberately past where the
+    #           campaign expects it to break -- decay50 has fallen and this is
+    #           the knob that raises it.
+    #   rate    up to 10. With cross-env pairs excluded, a far-apart pair is
+    #           separated by the within-env repel if it shares a patch and by
+    #           the env-blind spread term if not. Going 50.8% -> 10% removes
+    #           most of what the first can reach, so the second is carrying far
+    #           more of the far field than when 0.3 won.
+    #
+    # Set `npos_list` from whichever geometry w17 picks before launching.
+    "w19_lowcov_loss": {
+        "arm": {
+            **{f"f{f:g}": dict(npos_list=SIZE_MIXES["lo_mixtop"],
+                               per_env_radius_frac=f, rate_lambda=0.3)
+               for f in (0.10, 0.25, 0.40)},
+            **{f"rate{r:g}": dict(npos_list=SIZE_MIXES["lo_mixtop"],
+                                  per_env_radius_frac=0.15, rate_lambda=r)
+               for r in (1.0, 3.0, 10.0)},
+            # fwhm_ratio has never been moved in any wave -- w5 was cancelled
+            # before it ran. It belongs here now for a reason §4 did not have:
+            # at 10% coverage most references sit outside every patch, so the
+            # metric is reading extrapolation, and how smoothly the *input*
+            # varies in space is the one knob that acts directly on that. A
+            # wider bump also widens the near field, which is the same
+            # direction decay50 needs.
+            "fwhm0.5": dict(npos_list=SIZE_MIXES["lo_mixtop"],
+                            per_env_radius_frac=0.15, rate_lambda=0.3,
+                            fwhm_ratio=0.5),
+        },
+        "seed": [42, 43],
+    },
     # W13 -- coverage, on the winning config rather than on the bare baseline.
     #
     # This replaces w4, which swept coverage over mixes chosen before any of the

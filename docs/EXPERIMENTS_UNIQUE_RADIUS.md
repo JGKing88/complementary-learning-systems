@@ -1213,3 +1213,57 @@ Tests in `encoder_training/tests/test_patch_placement.py`: every mix places at
 every seed, nothing overlaps, the hole shrinks, unknown modes are rejected, and
 — the one that matters for continuity — the `random` path returns bit-identical
 layouts, since every number in §1–§4 came from it.
+
+### 5.6c The prediction was wrong, and the law was right (PARTIAL — 3/10 cells)
+
+First finished cells of `w17`, all `encoder_final`:
+
+| run | `r_min` | **`r_pred`** | `r_median` | alias | decay50 | res90 |
+|---|---|---|---|---|---|---|
+| `lo_mixtop` s42 | 5.0 | **5.4** | 15.5 | 0.985 | 37.5 | 14.5 |
+| `lo_mixtop` s43 | 8.0 | **7.5** | 15.0 | 0.956 | 31.5 | 11.5 |
+| `lo_many` s42 | 6.0 | **5.9** | 9.5 | 0.956 | 23.0 | 9.0 |
+| *§4 winner, 50.8%* | *28.5* | | *43–45* | *0.671* | *42* | *~16.3* |
+
+**§5.2 predicted `r_min` 10–13 and got 5–8.** It also said, in advance, that
+coming in far below 13 would mean something other than the ceiling had broken.
+It had. Two things to separate:
+
+**The law transferred.** `r_pred` is within 0.5 of `r_min` on all three cells —
+a regime with a fifth of the coverage the law was fitted on, and it still
+predicts to half a cell. §4.4b holds up as the right description.
+
+**The prediction failed because both of its inputs moved, and §5.2 asserted one
+of them would not.** The claim was that decay50 was flat across the coverage
+sweep, so 10% would cost the ceiling alone. Flat is what it looked like from
+61.1% → 22.9% (42, 42, 41, 40.8). Below that it falls off:
+
+| coverage | 61.1% | 50.8% | 38.2% | 22.9% | **10.1%** |
+|---|---|---|---|---|---|
+| alias ceiling | 0.670 | 0.671 | 0.767 | 0.853 | **0.956–0.985** |
+| decay50 | 42 | 42 | 41 | 40.8 | **31.5–37.5** |
+
+Extrapolating a flat curve past the end of its data is exactly the mistake §4
+kept making in the time domain (reading unfinished runs); this is the same
+mistake in the coverage domain. The ceiling also degraded faster than the
+log-linear guess — 0.985, not the 0.90 that would have been on trend.
+
+**Why both moved, and what it changes.** At 50.8% roughly half the metric's
+references sit inside a training patch; at 10% almost none do. So below some
+coverage the metric stops reporting how well the encoder learned the structure
+it was shown and starts reporting how well it *extrapolates* — and both factors
+of the law degrade together, because both are being read off the same
+untrained far field. That reframes the remaining steps:
+
+* it raises the stakes on **placement** (§5.6b, already running) — the holes are
+  no longer a detail of the training set, they are most of what is measured;
+* it puts **`fwhm_ratio`** into step 2. It has never been moved in any wave
+  (w5 was cancelled before it ran) and it is the one knob that acts directly on
+  how smoothly the input varies in space, which is what extrapolation rides on;
+* it means the radius fraction has to be swept *upward*, not narrowly around
+  0.15 as §5.4 planned, because decay50 now needs raising rather than holding.
+
+`w19_lowcov_loss` is rewritten accordingly: radius ∈ {0.10, 0.25, 0.40} and
+rate ∈ {1, 3, 10} as two separate axes rather than the planned cross, since
+§4.5d measured the two factors as composing, plus one `fwhm_ratio=0.5` arm.
+14 runs, which fits the 16-GPU cap in a single batch.
