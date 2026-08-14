@@ -264,6 +264,53 @@ All four Hopfield entry points share the same startup sequence:
 5. Build `NavAgent` with `input_dim = compute_input_dim(cfg.agent, embed_dim,
    observation_size)`.
 
+### 4.0 Forking a run vs continuing one
+
+Two different operations, and the docs below use "resume" loosely for the first,
+so it is worth pinning here. `hopfield_nav/training/resume.py` is the code.
+
+| | `--load_checkpoint` (**fork**) | `--continue_from` (**continue**) |
+|---|---|---|
+| what it is | a *new* run that inherits weights and config | the *same* run, picked back up |
+| agent weights | restored | restored |
+| config | parent's, overridden by flags you type | the resume point's; other flags are **refused** |
+| Adam moments | **not** restored (except a `train.py` parent, which has them) | restored |
+| update counter | restarts at 1 | continues |
+| torch / numpy / distractor RNG | fresh | restored |
+| per-env `GridEnv.rng` | fresh | restored |
+| env refresher ticks | none | replayed to the interruption |
+| output | a new `--save_dir` and wandb run | the same `--save_dir` and wandb run |
+
+Fresh moments on a fork are deliberate, not an oversight: forks exist to be
+retuned — the sweeps change reward shape, epsilon and clip coefficient on the way
+in — and Adam's second moments estimate the gradient scale *of the objective that
+produced them*. Under a changed objective they are stale.
+
+A continuation is what a SLURM wall-clock kill needs. Runs write
+`<save_dir>/resume/latest.pt` on the checkpoint cadence, rewritten in place and
+atomically; it is in a subdirectory because several readers take "every `*.pt` in
+a run dir" to mean "every checkpoint". The periodic checkpoints deliberately
+carry no optimizer state, so they are fork points only.
+
+```bash
+# hit the 6h wall at u320 of 500 — pick it back up
+python -m hopfield_nav.train_navigate \
+    --continue_from $CLS_RUNS/agent_ckpts/navigate_<run>/resume/latest.pt \
+    --schedule 'explore:200 ; interleave:300'      # the original, or longer
+```
+
+A continuation may lengthen its schedule but not rewrite an update that already
+ran; the check compares *resolved knobs* per past update, so `interleave:2 →
+interleave:4` at a flat `empty_frac` is fine while the same change under
+`empty_frac=1.0->0.5` with no explicit `anneal=` is refused, because that
+rescales the anneal across updates already trained. `--novelty_anneal` blocks any
+change to the run total for the same reason.
+
+Available on `train_navigate`, `train` (`--n_updates` may lengthen) and
+`train_store` (`--phase_b_updates` may lengthen). Not on `train_rnn`, whose
+sequential mode iterates (env-block, update) pairs rather than a single counter,
+nor on `train_phased`, which has no `--load_checkpoint` either.
+
 ### 4.1 `python -m hopfield_nav.train` — single-phase PPO or BC
 
 Per update (`train.py:198-407`):
@@ -431,7 +478,7 @@ Not exposed (PPO defaults from `PPOConfig`): `gamma=0.99`, `gae_lambda=0.95`,
 | `--ckpt_every` | `None` | Updates between checkpoints. `None` = follow `--eval_every`. Before 2026-08-06 the save sat inside the eval branch, so a large `--eval_every` also thinned the checkpoint series `analysis.trajectories` draws its rows from. |
 | `--save_every` | `100` | Updates between checkpoints. |
 | `--save_dir` | `None` | Defaults to `$CLS_RUNS/agent_ckpts/<wandb name or timestamp>`. |
-| `--load_checkpoint` | `None` | Resume/fine-tune; also restores the optimizer state but forces the CLI lr onto every param group. |
+| `--load_checkpoint` | `None` | FORK. Restores the optimizer state too *when the parent has any* — a `train_navigate`/`train_store`/`train_phased` parent does not, and it now says so — forcing the CLI lr onto every param group. To pick this run back up instead, see 4.0. |
 | `--seed` | `0` | torch + numpy + env seeds. |
 | `--device` | `cuda` | |
 | `--use_wandb` | off | |
@@ -544,7 +591,8 @@ Flags shared with `train.py` (`--encoder_checkpoint`, `--encoder_gain`,
 | `--lr` | `3e-4` | Adam lr; a stage's `lr=` overrides it. |
 | `--novelty_reward` | `0.1` | Novelty reward applied **only to explore-regime envs**. |
 | `--novelty_anneal` / `--no-` | `False` | Linear decay of novelty to 0 over the full budget. A stage's `novelty=` ignores it. |
-| `--load_checkpoint` | `None` | Start from this `.pt`. Its config becomes the **base** for the run: every setting is inherited except the flags actually on the command line, so a child reproduces its parent's recipe without re-listing it. `--save_dir` is never inherited. |
+| `--load_checkpoint` | `None` | FORK from this `.pt`. Its config becomes the **base** for the run: every setting is inherited except the flags actually on the command line, so a child reproduces its parent's recipe without re-listing it. `--save_dir` is never inherited. Adam's moments are not. |
+| `--continue_from` | `None` | CONTINUE this run from a `resume/latest.pt`. Optimizer moments, RNG streams, the update counter and the refresher's tick history all come back; output continues into the same `--save_dir` and wandb run. Config comes from the resume point — only `--device` and a lengthening `--schedule` may accompany it. See 4.0. |
 | `--explore_goals_off` / `--no-` | `False` | Explore-regime envs emit no goal reward and never teleport on goal-reach; exploit-regime envs are unaffected. Forces explore to be paid purely by novelty / revisit / wall / time. Eval envs are always built with `goals_active=True` regardless. |
 | `--move_ent_coef` | `None` | Overrides `PPOConfig.ent_coef`. |
 | `--ppo_clip_coef` | `None` | Overrides `PPOConfig.clip_coef` (0.2). |
@@ -709,7 +757,8 @@ startup, as elsewhere.
 
 | Flag | Default | Effect |
 |---|---|---|
-| `--load_checkpoint` | required | Phase-A `.pt` to start from. |
+| `--load_checkpoint` | — | Phase-A `.pt` to FORK from. Exactly one of this and `--continue_from`. |
+| `--continue_from` | — | CONTINUE an interrupted Phase B run from its `resume/latest.pt`. `--phase_b_updates` may lengthen it; nothing else may be typed. See 4.0. |
 | `--encoder_checkpoint` | required | Encoder path (not taken from the ckpt). |
 | `--phase_b_updates` | `50` | |
 | `--phase_b_lr` | `3e-4` | Adam lr on the store head. |
