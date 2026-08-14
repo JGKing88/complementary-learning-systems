@@ -600,30 +600,49 @@ cluster; a distractor is not, so neither happens. Passive observation gets to
 ≈0.76 and stalls. **Acting on the signal is what makes it decidable**, and ten
 steps of following buys AUC 0.93 — 5% of a 200-step episode.
 
-**Status of P0.8 after the P0.7 correction.** These numbers are the Npos=300
-ones, and P0.7 shows that scaffold *understates* separability badly — so the
-real-scaffold temporal AUCs will be higher at every T, and the T=1 column in
-particular should now read ≈0.95 rather than 0.57, matching P0.7's single-step
-`AUC(|q|)`. The real-Npos run is queued. What survives the correction, and what
-does not:
+#### P0.8 at the real scaffold — the finding sharpens
 
-- **Does not survive as a necessity:** the claim that the agent *must* probe to
-  decide. With `AUC(|q|) ≈ 0.95` at a single step, a threshold on the raw
-  magnitude is enough, and the regimes are cleanly separated in input space —
-  `|q|` ≈ 0.26 with the goal in memory against ≈0.05 without. That is a much
-  easier learning problem than probe-and-verify, and it is good news for the
-  single-model goal.
-- **Survives as a mechanism:** following `q` still *sharpens* the evidence
-  (0.68 → 0.93 over ten steps at Npos=300), because a real goal is a fixed point
-  and a phantom is not. So probing remains available as a fallback where the
-  single-step cue is ambiguous.
-- **Survives as a risk to the ordering:** under `explore_goals_off` with
-  distractors, following `q` earns nothing and costs steps, so a long
-  pure-explore phase still converges on "ignore the recall channel entirely".
-  The policy would then have to relearn to attend to a channel it had been
-  trained to suppress. **Wave 3 therefore keeps an interleaved arm beside the
-  requested explore-first arm** — cheaper than discovering it late — but the
-  prior on explore-first working is now considerably better than it was.
+Re-run at Npos=1716, 8 memory draws × 32 trajectories per env per condition:
+
+| mode | `n_dist` | T=1 | T=2 | T=5 | T=10 | T=20 |
+|---|---|---|---|---|---|---|
+| walk | 0 | 1.000 | 1.000 | 1.000 | 1.000 | 1.000 |
+| walk | 3 | 0.876 | 0.894 | 0.888 | 0.888 | 0.891 |
+| walk | 10 | 0.714 | 0.776 | 0.793 | 0.779 | 0.731 |
+| **follow** | 3 | 0.735 | 0.813 | 0.928 | 0.966 | **0.995** |
+| **follow** | 10 | 0.817 | 0.865 | 0.969 | 0.981 | **0.982** |
+
+(`n_dist=0` is 1.000 by construction: the goal-absent memory is *empty*, so
+`q` is identically zero.)
+
+**Passive observation plateaus; acting does not.** Watching while you walk gets
+to ≈0.89 at three distractors and ≈0.78 at ten, and **stays there** — twenty
+steps of passive evidence is worth no more than two. Following the signal
+climbs monotonically to **0.98–0.995**. The mechanism is the one predicted: a
+real in-env goal is a fixed point, so moving toward it shrinks `|q|` and
+clusters the implied targets `x_t + q_t`, while a phantom does neither — and
+that evidence only exists if the agent moves along `q`.
+
+So the single-step cue of P0.7 is real but **not sufficient on its own at high
+distractor counts**, and the probe-and-verify behaviour is what closes the gap
+from ~0.78 to ~0.98. Ten steps of probing costs 5% of a 200-step episode.
+
+> Note the two probes disagree at `n_dist=10`: P0.7's `AUC(|q|)` reads 0.956
+> where this reads 0.714 for the same quantity at T=1. P0.7 drew distractors
+> **once per env over 2 envs**, i.e. two draws total, while this draws 8 per
+> env — so P0.7's figure is thin and this one is the more trustworthy of the
+> two. A re-run of P0.7 at 8 envs is in flight to settle it; until it lands,
+> **read the single-step separability as ≈0.7–0.9, not ≈0.95**.
+
+**Consequences for the ordering.** The risk to explore-first is *not* removed by
+P0.7's correction:
+
+- Under `explore_goals_off` with distractors, following `q` earns nothing and
+  costs steps, so a long pure-explore phase trains the policy to ignore the
+  recall channel — and, worse, to never *probe* it. Probing is precisely the
+  behaviour that carries separability from 0.78 to 0.98.
+- **Wave 3 therefore keeps an interleaved arm beside the requested
+  explore-first arm**, rather than running it only if explore-first fails.
 
 ---
 
