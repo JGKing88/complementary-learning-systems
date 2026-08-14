@@ -1451,6 +1451,32 @@ anything measured so far. This is the over-fitting risk flagged when Q1 adopted
 20 envs — and the control that would have caught it (`w1_sig2` at 80 envs) is
 the run cancelled to free a slot, which was a mistake worth naming.
 
+> ### CONCLUSION — wave 2, exploit arm. σ=0.50 wins, and there is no conflict.
+>
+> Both runs finished 600 updates. At the matched endpoint:
+>
+> | σ | d=0 success / `mean_steps` | d=10 success / steps / **all** |
+> |---|---|---|
+> | **0.50** | 1.000 / **12.1** | 0.906 / 18.9 / **35.9** |
+> | 0.165 | 1.000 / 19.6 | 0.833 / 24.2 / **53.5** |
+>
+> **σ=0.50 is 1.6× better at d=0 and 1.5× better at d=10.** Against §3.3.1's
+> references — 10.1 at cos 0.99 and 15.3 at cos 0.70 — **the exploit half is
+> essentially solved**: 12.1 steps at `success_rate` 1.000 is 1.2× the
+> readout-limited optimum, and the v35 lineage's reference point was 22.9.
+>
+> **So there is no explore/exploit conflict on σ.** The claim of one, two
+> corrections below, was itself an artifact of reading an oscillating series at
+> u100. σ=0.50 is simply right for both regimes, which is what the original
+> simulation said before three intermediate readings talked me out of it.
+>
+> **The one durable finding here is about the metric, not the knob:** the
+> exploit eval oscillates enormously during training — `mean_steps_all` swings
+> between 17 and 159 for σ=0.50 and between 22 and 107 for σ=0.165, with a
+> *fixed* eval seed, so it is real model movement. **No exploit conclusion is
+> safe before ~500 updates**, and the two corrections below are both what
+> happens when one is drawn at 100.
+>
 > ### CORRECTION — the section below was written at u100 and is wrong
 >
 > It read "σ=0.165 is 2× better on the honest metric, **and it does not
