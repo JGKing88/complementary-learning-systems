@@ -218,6 +218,37 @@ drives into a boundary and the clip eats the rest of the episode. So
 "persistence" is only valuable when paired with wall-triggered turning — which
 is exactly the `PERSISTENCE_BONUS` × `WALL_PENALTY` pair.
 
+#### The ladder the agent can actually stand on
+
+The rungs above assume perfect information. Two more, added once P0.9 measured
+what the sensory cone supplies, are the ones to score against:
+
+| policy | `mean_coverage` | cells/step |
+|---|---|---|
+| ceiling | 0.5025 | 1.000 |
+| lawnmower — **needs position, and P0.9 says that is not decodable** | 0.478 | 0.955 |
+| billiard, perfect wall knowledge | 0.366 | 0.732 |
+| billiard, wall distance at R²=0.45 (`wall_resolution=1`) | 0.361 | 0.722 |
+| **billiard, wall distance at R²=0.27 (`wall_resolution=4`, instructed)** | **0.352** | **0.704** |
+| billiard, R²=0.17 (`wall_resolution=8`) | 0.349 | 0.699 |
+| **run-and-tumble, no wall sensing at all, `p_turn ≈ 0.25`** | **0.274** | 0.548 |
+| uniform random walk | 0.178 | 0.356 |
+
+Three things follow, and they set the targets for every explore wave:
+
+1. **The practical target is ≈0.35**, not 0.387 and certainly not 0.478.
+2. **Wall sensing is worth +0.076 coverage (+28%)** over turning at random —
+   real, and the largest single behavioural gain available.
+3. **`wall_resolution` barely matters**: 1 vs 4 is 0.361 vs 0.352, a gap of
+   0.009, because the behaviour saturates long before the decoder does. P0.9
+   showed the *decodability* differs by a lot (R² 0.45 vs 0.27); this shows it
+   does not cash out. **So the instructed `wall_resolution=4` is fine and is
+   not worth a variant.**
+4. A memoryless run-and-tumble at `p_turn ≈ 0.25` — hold a heading for ~4
+   steps, then re-orient, with no sensing whatsoever — already reaches 0.274.
+   That is the floor a competent policy must clear, and it needs no state at
+   all beyond the heading the env supplies for free.
+
 **Billiard is the realistic near-term target**, because it is *reactive*: it
 needs only "am I about to hit a wall". The lawnmower needs to know where it has
 already been.
@@ -618,17 +649,25 @@ standing far, they land on distant segments and are independent.
   generalizes. **A lawnmower sweep needs to know where it has been, so the
   lawnmower line (coverage 0.478) is out of reach in a held-out env, and the
   billiard line (0.387) is the real practical ceiling.**
-- **Wall proximity is present but weak** (R² 0.27 at the instructed resolution).
-  Enough for a reactive turn, plausibly — and the RNN can integrate across
-  steps, which this single-observation probe does not credit.
-- **`wall_resolution` trades cell-uniqueness against smooth geometry, and 4 is
-  on the wrong side of that trade for this task.** Raising it makes the hash
-  finer, which is why every column *falls* with resolution. Its documented
-  purpose (`config.py:110-124`) is to stop distinct cells sharing a
-  bit-identical observation — which serves env identity, a thing the policy
-  cannot exploit in held-out envs anyway. Flagged rather than changed: it is an
-  explicit instruction (§1.2). **One variant at `wall_resolution=1` rides along
-  in wave 2 to measure what the instruction costs.**
+- **Wall proximity is present but weak** (R² 0.27 at the instructed resolution),
+  and only through the codebook-independent autocorrelation route. Enough for a
+  reactive turn — see below — and the RNN can integrate across steps, which
+  this single-observation probe does not credit.
+- **`wall_resolution` trades cell-uniqueness against smooth geometry**, which is
+  why every column *falls* as it rises: a finer hash is more unique and less
+  invertible. Its documented purpose (`config.py:110-124`) is to stop distinct
+  cells sharing a bit-identical observation, which serves env identity — a thing
+  the policy cannot exploit in a held-out env anyway.
+
+  > **But it does not cash out, so the instruction is fine.** Feeding these R²
+  > values into the noisy-billiard simulation in §3.1 gives coverage 0.361 at
+  > `wall_resolution=1` against **0.352 at the instructed 4** — a gap of 0.009,
+  > because the behaviour saturates long before the decoder does. An earlier
+  > version of this section proposed a `w2_wallres1` variant to measure the
+  > cost of the instruction; **that variant was dropped**, because simulating
+  > it first showed there is no cost worth a GPU-hour. What the same simulation
+  > *does* show is that having wall sensing at all is worth +0.076 coverage
+  > over turning at random, so the weak-but-nonzero R² is doing real work.
 
 **P0.8 — the cue is temporal, and it only appears if the agent ACTS on the
 signal.** `analysis/nav_tri/temporal_separability.py` puts an ideal-observer

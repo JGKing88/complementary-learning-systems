@@ -121,6 +121,85 @@ def _persistent(rng, n, sigma):
     return lambda theta, t: theta + rng.normal(0.0, sigma, size=n)
 
 
+def _noisy_billiard_track(*, n, steps, size, mag, r2, rng, thresh=1.5):
+    """A billiard that must *sense* the wall, at a given decoding quality.
+
+    The plain `billiard` reflects with perfect knowledge of the boundary, which
+    the agent does not have: P0.9 measures wall-distance decodability from the
+    60-ray cone at R² ≈ 0.27 at the instructed `wall_resolution=4`. This turns
+    that R² into a behaviour, so the coverage ladder has a rung that the agent
+    could actually stand on.
+
+    The estimate is `d_true + N(0, sigma)`, and `sigma` is set so that the
+    estimator's own R² against `d_true` is the requested one:
+
+        R² = Var(d) / (Var(d) + sigma²)   =>   sigma² = Var(d) (1 - R²) / R²
+
+    NOT `sigma² = (1 - R²) Var(d)`, which is the natural-looking form and is
+    wrong: it bottoms out at R² = 0.5 as the requested R² goes to zero, because
+    `d_true` is still inside the estimate. Getting that wrong made an earlier
+    version of this function report that coverage was insensitive to wall
+    sensing all the way down to "R² = 0", when the worst case it actually
+    simulated was R² = 0.5.
+
+    The policy turns to a fresh heading when its *estimate* of the distance
+    ahead drops below `thresh` -- so it turns early when it overestimates the
+    danger and drives into the wall when it underestimates.
+    """
+    pos = rng.uniform(0, size - 1, size=(n, 2))
+    theta = rng.uniform(-np.pi, np.pi, size=n)
+    track = np.empty((n, steps + 1, 2), dtype=np.int64)
+    track[:, 0] = _snap(pos, size)
+
+    # Var of distance-to-nearest-wall under a uniform position, for the noise
+    # scale. Sampled rather than derived: it is one line either way.
+    s = rng.uniform(0, size - 1, size=(20000, 2))
+    d_all = np.minimum(s, (size - 1) - s).min(1)
+    sigma = (np.inf if r2 <= 0
+             else np.sqrt(d_all.var() * (1.0 - r2) / r2))
+
+    for t in range(steps):
+        step = np.stack([np.cos(theta), np.sin(theta)], axis=1) * mag
+        # True distance to the boundary along the current heading.
+        with np.errstate(divide="ignore", invalid="ignore"):
+            tx = np.where(step[:, 0] > 0, (size - 1 - pos[:, 0]) / step[:, 0],
+                          np.where(step[:, 0] < 0, -pos[:, 0] / step[:, 0], np.inf))
+            ty = np.where(step[:, 1] > 0, (size - 1 - pos[:, 1]) / step[:, 1],
+                          np.where(step[:, 1] < 0, -pos[:, 1] / step[:, 1], np.inf))
+        d_true = np.minimum(tx, ty) * mag
+        d_est = (rng.normal(d_all.mean(), d_all.std(), size=n)
+                 if not np.isfinite(sigma)
+                 else d_true + rng.normal(0.0, sigma, size=n))
+        turn = d_est < thresh
+        if turn.any():
+            theta[turn] = rng.uniform(-np.pi, np.pi, size=int(turn.sum()))
+            step[turn] = np.stack([np.cos(theta[turn]),
+                                   np.sin(theta[turn])], axis=1) * mag
+        pos = np.clip(pos + step, 0.0, float(size - 1))
+        track[:, t + 1] = _snap(pos, size)
+    return track
+
+
+def _run_and_tumble(rng, n, p_turn):
+    """Hold the heading; with probability `p_turn` per step, resample it.
+
+    The memoryless behaviour that the noisy-billiard result points at: coverage
+    turned out to be insensitive to *what* triggers a turn (R²=0.27 and R²=0.0
+    score the same) and sensitive only to *how often* one happens. Run-and-tumble
+    is that statistic in its purest form -- straight runs of mean length
+    `1/p_turn`, separated by a full re-orientation -- and unlike a heading that
+    diffuses continuously it needs no state at all beyond the current heading,
+    which the env supplies for free by pointing the sensory cone.
+    """
+    def fn(theta, t):
+        turn = rng.random(n) < p_turn
+        if turn.any():
+            theta = theta.copy()
+            theta[turn] = rng.uniform(-np.pi, np.pi, size=int(turn.sum()))
+        return theta
+    return fn
+
+
 def _serpentine_track(*, n, steps, size, rng):
     """The lawnmower: the ceiling, run as a track so it scores identically.
 
@@ -198,6 +277,19 @@ def main() -> None:
     run("uniform random walk",
         _rollout(_uniform(rng, n), n=n, steps=steps, size=size,
                  mag=1.0, eps=0.0, sigma_a=0.0, rng=rng))
+
+    print("\n--- billiard that must SENSE the wall (P0.9: R^2 ~ 0.27 at "
+          "wall_resolution=4) ---")
+    for r2 in (1.0, 0.45, 0.27, 0.17, 0.0):
+        run(f"noisy billiard, wall-distance R^2={r2}",
+            _noisy_billiard_track(n=n, steps=steps, size=size, mag=1.0,
+                                  r2=r2, rng=rng))
+
+    print("\n--- run-and-tumble: the memoryless optimum, by turn rate ---")
+    for p in (0.02, 0.05, 0.1, 0.15, 0.2, 0.3, 0.5, 1.0):
+        run(f"run-and-tumble p_turn={p} (mean run {1/p:.0f} steps)",
+            _rollout(_run_and_tumble(rng, n, p), n=n, steps=steps, size=size,
+                     mag=1.0, eps=0.0, sigma_a=0.0, rng=rng))
 
     print("\n--- step magnitude (billiard) ---")
     for mag in (0.5, 0.75, 1.0, 1.5, 2.0, 3.0):
