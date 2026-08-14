@@ -753,6 +753,13 @@ rather than a strictly better code, so `r_at_cos0.9` belongs in every table.
 
 ### 4.4b The radius is a two-parameter formula, to within a cell
 
+> **Domain (added in §5.6i):** this holds while `per_env_radius_frac ≤ 0.2`,
+> which is where all 410 validating checkpoints sat. Past that the code goes
+> anisotropic — every median input to the formula improves while the worst
+> direction collapses — and the formula fails *optimistically*: at
+> `frac = 0.4` it predicts 10.6 against a measured 0.5. Check `mono_med`
+> against `r_median` first; when they diverge, do not quote the law.
+
 §4.2 said `r_min` is where the decay crosses the ceiling. Treating the radial
 profile as Gaussian makes that quantitative. With
 `decay50 = σ·√(2 ln 2)` (the reported `r_at_cos0.5_median`), the profile
@@ -1475,3 +1482,67 @@ coding rate does. That is the live part of the user's original hypothesis and it
 is what the six remaining `w19` arms test — §4.4 measured uniformity beating
 `rate` on the ceiling at a narrow radius, and this is a regime where the price
 of the ceiling in decay is exactly what matters.
+
+### 5.6i Step 2 complete — and the law has a domain boundary the campaign never hit
+
+All of `w19`, `encoder_final`, `lo_mixtop`, two seeds each, ranked on `r_min`.
+`mono_med` is the *median-over-directions* monotone length; `r_min` and
+`r_median` are built from the *worst* direction per reference.
+
+| arm | `r_min` med | `r_median` | alias max | decay50 | res90 | **mono_med** | `r_pred` |
+|---|---|---|---|---|---|---|---|
+| *`w18` stratified* | *7.5* | *12.25* | *0.961* | *34.0* | *12.75* | | *7.8* |
+| `rate1` | **7.0** | 13.25 | 0.942 | 29.75 | 10.75 | 48–56 | 7.75 |
+| *`w17` baseline `rate0.3`* | *6.5* | *15.25* | *0.971* | *34.5* | *13.0* | *56–57* | *6.45* |
+| `fwhm0.5` | 5.5 | 14.00 | 0.979 | 38.0 | 13.75 | 58 | 6.15 |
+| `unif1` | 5.0 | 11.75 | 0.964 | 33.75 | 11.75 | | 6.90 |
+| `rate10` | 4.0 | 6.50 | 0.830 | 15.25 | 2.50 | 29 | 3.35 |
+| `rate3` | 3.5 | 9.25 | 0.877 | 21.0 | 5.00 | 39 | 5.55 |
+| `f0.25` | 2.0 | 8.75 | 0.986 | **53.0** | **17.5** | **58–68** | 6.55 |
+| `unif3` | 1.0 | 2.00 | 0.914 | 27.0 | 3.00 | | 2.80 |
+| `f0.4` | 0.5 | 2.50 | 0.980 | **73.75** | **24.75** | 7–10 | **10.60** |
+
+**Nothing in step 2 beat the step-1 baseline.** `rate1` ties it within noise and
+every other arm is worse. The 10% answer is not sitting in the loss knobs.
+
+**Correction to what I said while these were landing.** I wrote that raising the
+radius fraction "doesn't buy decay at all, it destroys everything". The first
+half is wrong. `f0.4` produced **decay50 73.75 and res90 24.75 — both campaign
+records by a wide margin**, against §4's best of 42 and ~16.3. The radius is a
+powerful handle on the decay, exactly as §4.5b said. What it does not do is turn
+that into `r_min`.
+
+**Why, and it is a boundary on §4.4b's law.** Look at `f0.25`: decay50 53
+(baseline 37.5), res90 17.5 (13.0), and `mono_med` 58–68 against the baseline's
+56–57. By every *median* measure it is the best code in the wave. Its `r_min` is
+2.0 and its `r_median` 8.75, both far below baseline. A wider attract radius
+makes the typical direction better and the **worst** direction much worse — it
+buys breadth anisotropically.
+
+That is precisely the case the law cannot see. `r_min = res90 ·
+sqrt(ln(1/C)/ln(1/0.9))` predicts a worst-over-directions quantity from two
+medians, which is sound only while the code is close to isotropic. §4.4b
+validated it on 410 checkpoints at median error 1.2 cells — all of them at
+`per_env_radius_frac ≤ 0.2`. Push past that and it fails in the one direction
+that matters: `f0.4` has `r_pred` **10.60** against a measured `r_min` of
+**0.5**, the largest residual anywhere in this campaign, and it fails
+*optimistically*.
+
+So the law needs a stated domain, and this is it: **valid while the near radius
+is at most ~0.2 of the patch side; beyond that its inputs improve while its
+output collapses.** `mono_med` against `r_median` is the cheap check — when they
+diverge, the code has gone anisotropic and the law should not be quoted.
+
+**Uniformity, the user's hypothesis, tested at last.** `unif1` ≈ `rate1` on the
+ceiling (0.964 against 0.942) with a slightly worse `r_min` (5.0 against 7.0),
+and `unif3` collapses harder than `rate3` — `r_median` 2.0 at alias 0.914, where
+`rate3` held `r_median` 9.25 at a *better* alias of 0.877. So at this radius the
+coding rate pays a strictly better exchange rate, and uniformity's win in §4.4
+does not carry over. That is consistent rather than contradictory: §4.4 found
+uniformity ahead at a *10-cell* radius and behind at the wide one, and
+`per_env_radius_frac=0.15` on 100–200 cell patches is 15–30 cells — the wide
+regime. Uniformity's advantage is real and it lives at narrow radii; low
+coverage did not move it there.
+
+`fwhm_ratio=0.5` is a null (5.5 against 6.5), which retires the last knob no
+wave had ever moved.

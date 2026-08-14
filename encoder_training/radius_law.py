@@ -27,6 +27,18 @@ campaign and ``r_median`` is 15, but one reference sits at 5 and that is what
 reading in its own right** — it says the arena has stopped being uniform, not
 that the formula has failed.
 
+DOMAIN (§5.6i). The paragraph above is right about the mechanism and was too
+relaxed about the consequence. Every checkpoint that validated this formula sat
+at ``per_env_radius_frac <= 0.2``; past that the failure is not a wide error
+bar but a systematic, *optimistic* one, because a wide attract radius improves
+the typical direction while ruining the worst. At frac 0.25 the code has the
+best decay50 (53) and the best median monotone length (58-68) of its wave and
+an ``r_min`` of 2; at frac 0.4 it predicts 10.6 against a measured 0.5, the
+largest residual in the campaign. The cheap check is ``mono_med`` (median over
+directions) against ``r_median`` (median over references of the *worst*
+direction): while they track, the code is roughly isotropic and the formula
+applies; when they diverge, it does not.
+
 Why it is worth having rather than just measuring: it says the two levers
 multiply, so a wave can be *designed* instead of searched. It also explains §3
 in one line. Every substitute tried there moved one factor at the other's
