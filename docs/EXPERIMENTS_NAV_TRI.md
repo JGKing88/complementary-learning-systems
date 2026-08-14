@@ -12,7 +12,8 @@ wave, and it is the only section that goes stale on purpose.
 | | |
 |---|---|
 | **Branch / worktree** | `nav-tri-metric` at `.claude/worktrees/nav-tri-metric` (pushed) |
-| **Wave in flight** | **Wave 1** — 4 runs live: `w1_base`, `w1_eps01`, `w1_sig`, `w1_sig2` |
+| **Runs live** | `w1_base` (v35 control, 80 envs) · `w1_sig2` (over-fit control, 80 envs, σ=0.50) · `w2_e_long` (σ=0.30, 20 envs, 1500 u) · `w2_e_long2` (σ=0.50, 20 envs, 1500 u) |
+| **Wave state** | Wave 1 **complete in substance** (all four questions answered; see its Conclusions). Wave 2's *explore* arm is running; its *exploit* arm is smoked but not launched. |
 | **wandb project** | `train_navigate` |
 | **Launcher** | `hopfield_nav/run_nav_tri.sh` (`VARIANT=<name> sbatch …`) |
 | **Status** | `bash hopfield_nav/nav_tri_status.sh` |
@@ -1183,9 +1184,55 @@ has before anything is tuned to fix it.
 
 #### Conclusions — wave 1
 
-*(pending — but the three that already look safe: ε=0.4 is over-bought, σ is
-the dominant lever, and the explore metric is magnitude-limited before it is
-strategy-limited. Not final until the u450 table and the behaviour probes.)*
+All four questions answered. The wave was **cut short on purpose** once each
+was settled — three runs were cancelled mid-flight and their slots reassigned,
+which is recorded above with the reasoning for each. Numbers below are
+in-training evals at matched update indices, i.e. **monitoring-grade**; none
+has been through the §5 verdict protocol yet.
+
+**Q1 — diversity or gradient batch? → Neither is binding; take the cheap
+shape.** 20 envs × 64 batch matches 80 × 16 per update to within ±15% (the
+sign flips between the two comparisons available) at 2.9× less wall-clock per
+update. **Adopted for every long run.** `w1_sig2` continues at 80 envs as the
+over-fitting control.
+
+**Q2 — is ε=0.4 worth its price? → No, decisively.** ε=0.1 beat ε=0.4 at every
+matched update (0.081 vs 0.057 at u100), and the u75 behaviour probe showed
+*why*: a 41% larger step, a straighter path, less wall-clipping. Three
+independent mechanisms were identified in advance and all point the same way —
+ε discards 40% of the movement gradient, corrupts the policy's estimate of its
+own heading (there is no `prev_action` channel, so the RNN only knows its
+heading because it chose it), and reduces `persistence_bonus` to mostly noise.
+A fourth appeared unbidden: at ε=0.4 the *training reward is flat while eval
+coverage climbs*, so ε also destroys `mean_r` as a progress signal.
+
+**Q3 — can σ buy the same exploration more cheaply? → σ is not a substitute
+for ε, it is a bigger lever than ε.** σ=0.30 gave 2.1× the baseline's coverage
+at matched u50 from one knob; σ=0.50 leads again at u25. The probe shows it
+acts **purely through step magnitude** (0.175 → 0.344) with
+`strategy_efficiency` flat at 0.42–0.49 — so magnitude and path quality are
+*separable* problems and σ solves exactly one of them. Priced on the other
+side: σ=0.50 costs 5% of `mean_steps`, so one σ can serve both regimes.
+
+**Q4 — does straightness need paying for directly? → Untested, and
+deliberately so.** `w1_pers` was cancelled before it ran. The reason improved
+during the wave: not merely "shaping showed nothing before", but that
+`persistence_bonus` carries `m²/(m²+σ²)` signal, which at the wave's actual
+step sizes is ~20–40% — it would have been measured in the one regime where it
+cannot work. It is now the *primary* candidate for the next wave, because Q3
+localized the remaining gap to exactly what it rewards.
+
+**The finding that outranks all four**, and which the wave was not designed to
+look for: **the explore metric is step-magnitude-limited before it is
+strategy-limited.** `cells_per_step` is capped near |a|, the policy starts at
+|a| = 0.086 against an optimum of 1.0, and no shaping or schedule can lift
+that cap. Everything Q2 and Q3 measured is downstream of it.
+
+**Where it leaves the target.** Best in-training coverage so far is **0.124 at
+u75** (`w1_sig`), against `w1_base`'s 0.043 at the same update — **2.9× the
+v35 recipe** — with a practical target of 0.352 and 1400 updates still to run
+on the long arms. The two gaps that remain are quantified and separable:
+magnitude (|a| 0.34 → 1.0) and turn rate (run length 2.1 → ~4).
 
 ---
 
