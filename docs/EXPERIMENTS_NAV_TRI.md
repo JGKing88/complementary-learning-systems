@@ -1286,6 +1286,38 @@ zero reach the policy only through the un-normalized value loss.
 
 ---
 
+#### Live notes — wave 2, explore arm
+
+- **The recipe works, and the σ trend is monotone.** At matched updates,
+  20 envs × 64 batch, ε=0.1:
+
+  | run | σ | u50 | u100 |
+  |---|---|---|---|
+  | `w1_base` *(v35 recipe, 80 envs)* | 0.165 | 0.0398 | 0.0574 |
+  | `w2_e_long` | 0.30 | 0.0729 | **0.1660** |
+  | `w2_e_long2` | 0.50 | **0.1364** | — |
+
+  `w2_e_long` at u100 is **2.9× the v35 recipe at the same update**, and
+  `w2_e_long2` is **1.9× `w2_e_long`** at u50 — the latter being the *clean*
+  σ comparison (same rollout shape, same partition), which retires the node
+  confound noted in §0 rather than merely arguing around it.
+
+- **Bracketing σ from above, because monotone-so-far is not monotone.** 0.165 <
+  0.30 < 0.50 at every point measured; the next question is where it turns.
+  `w2_e_long3` runs **σ=1.0**, which samples |a| out to ~3 around a mean near
+  0.3 and is plausibly past the point where the advantage signal is swamped.
+
+  It is **explore-only, and that is what makes a fixed σ=1.0 a fair test**:
+  §3.3.1 prices σ=1.0 at 12.74 `mean_steps` against σ=0.50's 10.49 and
+  σ=0.165's 10.00 — a **27% exploit cost, against 5% for σ=0.50** — so σ=1.0
+  could never be carried into a combined model un-annealed. What this run can
+  settle is only whether the *explore* metric still wants more, and that is
+  worth knowing before choosing the anneal's starting point.
+
+- `w1_sig2` cancelled at u40 to free the slot. Its job was the over-fitting
+  control for 20-env runs — insurance that only pays out if those runs plateau,
+  and can be bought then. Bracketing σ is on the critical path now.
+
 ### Wave 3 — combining the two (pre-registered; fires after waves 1–2)
 
 **Written before any wave-1 or wave-2 result is in**, so the decision rules

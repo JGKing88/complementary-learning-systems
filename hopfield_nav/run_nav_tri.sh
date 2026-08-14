@@ -361,6 +361,24 @@ case "$VARIANT" in
     EPSILON_EXPLORE=0.1; INIT_LOG_STD=-0.7
     EVAL_EVERY=50; CKPT_EVERY=50
     ;;
+  # Brackets sigma from ABOVE. The trend is monotone so far -- 0.165 < 0.30 <
+  # 0.50 at every matched update -- and "more is better" must not be assumed
+  # past the last point measured. sigma=1.0 samples |a| out to ~3 around a mean
+  # near 0.3, so it is plausibly past the point where the advantage signal is
+  # swamped; this is the run that finds out.
+  #
+  # Explore-only, which is what makes a FIXED sigma=1.0 a fair test: it costs
+  # 27% of mean_steps on the exploit side (12.74 vs 10.0 at |a|=1, against
+  # sigma=0.50's 5%), so it could never be carried into a combined model
+  # un-annealed. What it can settle is whether the explore metric still wants
+  # more.
+  w2_e_long3)
+    SCHEDULE=${SCHEDULE:-'explore:1500'}
+    ENVS_PER_WORLD=20; BATCH_ENVS=64
+    EPSILON_EXPLORE=0.1; INIT_LOG_STD=0.0
+    EVAL_EVERY=50; CKPT_EVERY=50
+    ;;
+
   # The sigma anneal at the long horizon: high while the magnitude climbs, low
   # once it is solved and the straightness term becomes readable (docs §3.4.1).
   # Only meaningful over a run long enough to have two phases.
