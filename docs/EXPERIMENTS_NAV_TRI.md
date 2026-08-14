@@ -416,6 +416,18 @@ updates = **0.0012 cells/update**, twenty times below the clip ceiling.
 > of headroom before the clip engages. That is the reasoning behind `w1_lr`
 > and against `w1_clip`, and it is arithmetic rather than a guess.
 
+**And a large σ is nearly free for the exploit metric, so there is no
+trade-off to manage.** The obvious worry is that σ good for explore is too
+blunt for navigation — a jittery path is a longer path, and `mean_steps` is the
+exploit metric. Priced with `exploit_reference.py --sigma 0.5`: at cos 0.99 and
+|a| = 1, `mean_steps` is **10.61 at σ=0.50 against 10.11 at σ=0.165** — a 5%
+cost, against σ's ~2× effect on explore learning speed. `success_rate` stays
+1.000 throughout.
+
+> One σ can therefore serve both regimes, which matters for wave 3: with
+> `freeze_log_std=1` the combined model has exactly one value to pick, and this
+> says picking it for explore costs the exploit metric almost nothing.
+
 ### 3.5 Which knobs are provably inert, and when
 
 Pooled advantage normalization (`updates/ppo.py:210-214`) removes any constant
