@@ -188,6 +188,45 @@ case "$VARIANT" in
     EPSILON_EXPLORE=0.1; INIT_LOG_STD=-0.7
     ;;
 
+  # --- round 2, all on the step-magnitude axis the u75 probe identified -----
+  #
+  # The policy has to move its mean |a| from 0.086 to ~1.0, and until it does,
+  # cells_per_step is capped near |a| however good the trajectory is. These are
+  # the three ways to make that scalar move faster. NOT included, and why:
+  #
+  #   REVISIT_PENALTY -- looks like a direct penalty on failing to leave the
+  #     cell, which is exactly the failure. It is not. With 1[old] = 1 - 1[new],
+  #     n*1[new]*scale - c*1[old] = 1[new]*(n*scale + c) - c, and the constant
+  #     cancels under pooled advantage normalization. So it only reweights
+  #     novelty slightly flatter in `scale`; it creates no new gradient against
+  #     immobility. (It IS non-degenerate with novelty_scale_remaining on --
+  #     just not in the way that would help here.)
+  #   PERSISTENCE_BONUS -- a cosine, hence scale-invariant. Says nothing about
+  #     magnitude at all.
+  w1_lr)
+    SCHEDULE=${SCHEDULE:-'explore:450'}
+    EPSILON_EXPLORE=0.1; LR=1e-3
+    ;;
+  # PPO's clip bounds how far the mean can move per update. At clip=0.15 and a
+  # mean that must travel 0.8 cells, the ceiling on the ascent is the clip, not
+  # the gradient.
+  w1_clip)
+    SCHEDULE=${SCHEDULE:-'explore:450'}
+    EPSILON_EXPLORE=0.1; PPO_CLIP_COEF=0.3
+    ;;
+  # Anneal sigma down after it has done its job. A large sigma buys the
+  # magnitude ascent (P0.6) but then permanently blurs the policy; the anneal
+  # gets the ascent early and a sharp policy late, which neither fixed value
+  # can. Uses --log_std_anneal_*, i.e. the composition of the two knobs on
+  # Jack's list rather than a new one.
+  w1_siganneal)
+    SCHEDULE=${SCHEDULE:-'explore:450'}
+    EPSILON_EXPLORE=0.1; INIT_LOG_STD=-0.7
+    LOG_STD_ANNEAL_START_UPDATE=150
+    LOG_STD_ANNEAL_END_UPDATE=350
+    LOG_STD_ANNEAL_TARGET=-1.8
+    ;;
+
   # Shaping. A billiard -- straight lines, turn at the wall -- is the reachable
   # target behaviour (cov 0.387 vs a random walk's 0.178), and persistence_bonus
   # is the only term that rewards its defining feature. At v35's ratio the
