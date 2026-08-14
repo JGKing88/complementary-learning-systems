@@ -1443,6 +1443,47 @@ For scale: the v35 recipe reached **0.121 in the 190 updates it ran**, and the
 explore-min wave's best was ~0.51 *at 400 eval steps*, i.e. ~0.28 at this
 protocol's 200. **0.375 is the best coverage this lineage has produced.**
 
+#### What the best explorer actually DOES
+
+Jack asked directly: random walk, zipper, circles, wall-hugging? **None of
+them.** `behavior_probe` on `w2_e_long2` u1150, explore mode:
+
+| metric | d=0 | d=10 | reads as |
+|---|---|---|---|
+| `mean_coverage` | 0.3809 | 0.3811 | — |
+| `cells_per_step` | 0.762 | 0.762 | — |
+| **`strategy_efficiency`** | **1.061** | 1.057 | *exceeds* the billiard reference |
+| **`step_mag_mean`** | **1.951** | 1.957 | ~2-cell steps, **not** the 1.0 predicted |
+| `straightness` | 0.848 | 0.851 | near-ballistic (0.62 at u200) |
+| `abs_turn_mean` | 0.427 rad | 0.422 | ≈24° per step |
+| `run_len_mean` | 3.59 | 3.67 | ≈ the ~4-step optimum of §3.1 |
+| `revisit_frac` | 0.238 | 0.238 | was 0.506 at u200 |
+| `edge_frac` | 0.157 | 0.158 | **below** uniform's 0.19 |
+| `clip_frac` | 0.064 | 0.064 | rarely drives into a wall |
+| `chase_q` | 0.000 | 0.020 | ignores the recall channel |
+
+**The behaviour class is ballistic sweeping with structured turns**: long
+straight runs of ~3.6 steps at ~2 cells per step, turning *before* the wall
+rather than clipping into it, never orbiting the perimeter, and completely
+ignoring a recall signal that is not its goal. Every failure mode this lineage
+has recorded — perimeter orbit, corner trap, distractor chasing, random walk —
+is absent.
+
+Two things worth pulling out:
+
+- **`strategy_efficiency` 1.06 > 1**, i.e. the policy beats the specular
+  billiard *at its own step magnitude*. That is not impossible and is not a
+  bug in the metric: a specular billiard in a square box falls into periodic
+  orbits for many launch angles and re-treads them, which the reference
+  inherits and the policy avoids. The reference is a good bar, not a ceiling.
+- **It chose |a| ≈ 1.95, where §3.1's magnitude sweep says 1.0 is optimal**
+  (0.790 cells/step against 0.740 at |a| = 2). So the policy is at a *slightly
+  wrong* magnitude and more than compensates with better pathing. **This
+  invalidates reading `mean_steps` against the |a| = 1 row of §3.3.1** — at
+  |a| ≈ 2 the oracle is **4.75 steps, not 10.0** — so every nav number must be
+  read against the magnitude the policy actually has. The probe reports it for
+  exactly this reason.
+
 So both halves are solved separately:
 
 | metric | best | target | status |
