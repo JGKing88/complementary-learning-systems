@@ -715,6 +715,49 @@ export MAX_ACTION_NORM=2.0
 export LOAD_CKPT=/orcd/pool/003/jackking/cls_runs/agent_ckpts/navigate_ee_W10_20372559/navigate_u2100.pt
 EOF
         ;;
+    # C13 / C14 test the fraction, which is what the C12 result blames.
+    #
+    # Every composite here anneals the second regime to an even 50/50 split, and
+    # the damage lands exactly as that split is reached: C12c's coverage holds
+    # 0.53 at empty_frac 0.7 and collapses to 0.04 by 0.5, while the
+    # exploit-parent runs lose navigation over the same stretch in mirror image.
+    # Nothing has ever tried stopping short of even.
+    #
+    # C13 keeps the explorer dominant: W10 parent, exploit annealed to **25%**
+    # (empty_frac 1.0 -> 0.75). C14 is the mirror: P5 parent, explore annealed to
+    # 25% (empty_frac 0 -> 0.25). If the fraction is the mechanism, each should
+    # retain most of its parent's strength while gaining some of the other half;
+    # if they collapse anyway, the ordering-independent damage is not about how
+    # much of the second regime there is, and the next suspect is the shared
+    # value head.
+    #
+    # C13 carries MAX_ACTION_NORM because warm-starting W10 NaNs without it.
+    C13) cat <<'EOF'
+export ENVS_PER_WORLD=8
+export BATCH_ENVS=16
+export STEPS_PER_ROLLOUT=200
+export SCHEDULE="interleave:2500,empty_frac=1.0->0.75,anneal=500"
+export EVAL_EVERY=100
+export VAL_DISTRACTORS="0 10"
+export WALL_PENALTY=0.3
+export NOVELTY_REWARD=0.15
+export LR=1e-4
+export MAX_ACTION_NORM=2.0
+export LOAD_CKPT=/orcd/pool/003/jackking/cls_runs/agent_ckpts/navigate_ee_W10_20372559/navigate_u2100.pt
+EOF
+        ;;
+    C14) cat <<'EOF'
+export ENVS_PER_WORLD=8
+export BATCH_ENVS=16
+export STEPS_PER_ROLLOUT=200
+export SCHEDULE="interleave:2500,empty_frac=0->0.25,anneal=500"
+export EVAL_EVERY=100
+export VAL_DISTRACTORS="0 10"
+export WALL_PENALTY=0.3
+export NOVELTY_REWARD=0.15
+export LOAD_CKPT=/orcd/pool/003/jackking/cls_runs/agent_ckpts/navigate_ee_P5_20363067/navigate_u200.pt
+EOF
+        ;;
     # W10 is to W9 what C8 was to C7, and for the same reason.
     #
     # W9 raised WALL_PENALTY 0.3 -> 0.6 to make a fresh edge cell net-negative.
