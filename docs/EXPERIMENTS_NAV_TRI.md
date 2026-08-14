@@ -1340,6 +1340,49 @@ zero reach the policy only through the un-normalized value loss.
   (0.238) beats the v35 recipe's best in 190 updates (0.121) by 2×, in half
   the updates and at a third of the wall-clock per update.**
 
+- **σ bracketed from above: σ=1.0 is past the peak.** At matched u50 —
+  σ=0.165 → 0.0398, σ=0.30 → 0.0729, σ=0.50 → **0.1364**, σ=1.0 → **0.0503**.
+  A clean inverted-U with **σ=0.50 at the maximum**. Worth the run: the trend
+  was monotone at every point previously measured, and extrapolating it would
+  have cost 2.7×. (One point; σ=0.30 also trailed at u25 before overtaking, so
+  confirmation at u100 before acting.)
+
+- **u200 behaviour probe on `w2_e_long` — the magnitude problem is nearly
+  solved, and the distractor problem is solved outright.**
+
+  | metric | u50 (σ=0.30) | **u200 (σ=0.30)** | optimum |
+  |---|---|---|---|
+  | `step_mag_mean` | 0.344 | **0.796** | 1.0 |
+  | `strategy_efficiency` | 0.486 | **0.735** | 1.0 |
+  | `cells_per_step` | 0.181 | 0.494 | 0.79 |
+  | `straightness` | 0.575 | 0.623 | 1.0 |
+  | `run_len_mean` | 2.07 | 2.09 | — |
+  | `revisit_frac` | — | 0.506 | — |
+  | `edge_frac` | — | 0.167 | 0.19 = uniform |
+  | `chase_q` (d=10) | — | −0.016 | 0 |
+
+  1. **|a| has gone 0.086 → 0.796.** The magnitude ceiling that dominated wave 1
+     is nearly gone, which retires the concern that no shaping could ever bite.
+  2. **Strategy improved too, 0.49 → 0.735** — and *not* by lengthening runs:
+     `run_len_mean` is unchanged at ~2.1. The agent is beating a run-and-tumble
+     of its own turn rate (which would give ~0.44 cells/step at |a| = 0.8
+     against its 0.494), so its turns are **structured, not random** — it has
+     learned something billiard-like, turning where turning pays.
+  3. **`edge_frac` 0.167 is *below* the 0.19 a uniform occupancy gives**, and
+     `clip_frac` is 0.086. **The perimeter-orbit basin and the corner trap —
+     the two failure modes this lineage has repeatedly fallen into — are both
+     absent.** `wall_penalty` at v35's 0.1 is doing its job and needs no change.
+  4. **The explore-side distractor problem is solved.** `chase_q ≈ 0` and
+     coverage at ten distractors (0.2477) is *identical* to coverage at zero
+     (0.2468). The policy simply ignores a recall that is not its goal, which
+     is exactly the half of Jack's disambiguation that explore is responsible
+     for.
+
+  **Where that leaves the target.** Multiplying the two remaining gaps —
+  |a| 0.796 → 1.0 (billiard reference 0.672 → 0.79) and efficiency
+  0.735 → 0.9 — predicts coverage **0.356**, i.e. the 0.352 target, and there
+  are 1300 updates left on this arm alone. σ=0.50 is running ahead of it.
+
 #### Live notes — wave 2, exploit arm
 
 - **Config validated before committing GPU-hours.** `smoke_x` (4 updates,
