@@ -689,6 +689,32 @@ export LR=1e-4
 export LOAD_CKPT=/orcd/pool/003/jackking/cls_runs/agent_ckpts/navigate_ee_W10_20372559/navigate_u2100.pt
 EOF
         ;;
+    # C12c: C12b plus the action-norm clip, which is what the NaN actually needs.
+    #
+    # C12 NaN'd within two updates at LR 3e-4. C12b at 1e-4 survived to u100 --
+    # and its u100 eval is the best composite in the log, coverage 0.531 with
+    # success 0.703 -- then NaN'd anyway. So the learning rate delays the blowup
+    # rather than preventing it, which says the problem is the magnitude the
+    # policy mean reaches, not the size of the step toward it.
+    #
+    # MAX_ACTION_NORM=2.0 clips exactly that. The brief left it inert but
+    # explicitly permitted changing it, and 2.0 was chosen in M1 to be inert for
+    # every healthy policy measured here (stride 0.3-1.3) while sitting below
+    # the 2.87 a collapsed one reached -- so it should bind only on the runaway.
+    C12c) cat <<'EOF'
+export ENVS_PER_WORLD=8
+export BATCH_ENVS=16
+export STEPS_PER_ROLLOUT=200
+export SCHEDULE="interleave:2500,empty_frac=1.0->0.5,anneal=500"
+export EVAL_EVERY=100
+export VAL_DISTRACTORS="0 10"
+export WALL_PENALTY=0.3
+export NOVELTY_REWARD=0.15
+export LR=1e-4
+export MAX_ACTION_NORM=2.0
+export LOAD_CKPT=/orcd/pool/003/jackking/cls_runs/agent_ckpts/navigate_ee_W10_20372559/navigate_u2100.pt
+EOF
+        ;;
     # W10 is to W9 what C8 was to C7, and for the same reason.
     #
     # W9 raised WALL_PENALTY 0.3 -> 0.6 to make a fresh edge cell net-negative.
