@@ -732,6 +732,24 @@ EOF
     # value head.
     #
     # C13 carries MAX_ACTION_NORM because warm-starting W10 NaNs without it.
+    # C13b: C13 at LR 3e-5. C13 NaN'd at 1e-4 *with* MAX_ACTION_NORM, while
+    # C12c -- same LR, same clip, only a different final empty_frac -- ran past
+    # u1200. So warm-starting W10 is fragile rather than fixed by any one knob,
+    # and this is the last cheap lever before giving up on that parent.
+    C13b) cat <<'EOF'
+export ENVS_PER_WORLD=8
+export BATCH_ENVS=16
+export STEPS_PER_ROLLOUT=200
+export SCHEDULE="interleave:2500,empty_frac=1.0->0.75,anneal=500"
+export EVAL_EVERY=100
+export VAL_DISTRACTORS="0 10"
+export WALL_PENALTY=0.3
+export NOVELTY_REWARD=0.15
+export LR=3e-5
+export MAX_ACTION_NORM=2.0
+export LOAD_CKPT=/orcd/pool/003/jackking/cls_runs/agent_ckpts/navigate_ee_W10_20372559/navigate_u2100.pt
+EOF
+        ;;
     C13) cat <<'EOF'
 export ENVS_PER_WORLD=8
 export BATCH_ENVS=16
