@@ -112,6 +112,19 @@ class PatchConfig:
     # the holes rejection sampling leaves are large (§5.4 step 3).
     patch_placement: str = "random"
 
+    # OUT OF BRIEF -- DIAGNOSTIC ONLY, NEVER PART OF A HEADLINE (§5.6k).
+    #
+    # Fraction of batch_size in extra positions drawn uniformly from the *whole
+    # arena* each step, fed to the spread terms only -- never to attract, repel
+    # or any pair term. It exists to size one number: §5.6j measured 95.5% of
+    # the aliases that set r_min living in arena the loss never evaluates, and
+    # this is what those aliases would cost if the loss could see them.
+    #
+    # It plainly violates the coverage constraint: at frac > 0 the encoder is
+    # evaluated everywhere, so the run is not a 10%-coverage run. Report it as
+    # a bound on the mechanism, never as an encoder that met the brief.
+    spread_arena_frac: float = 0.0
+
     # Radius defining "near" within each env:
     #   - If `per_env_radius_frac > 0`: radius = frac * env_size (per env).
     #   - Else: `local_radius` is used (fixed across envs). 0 → full same-env.

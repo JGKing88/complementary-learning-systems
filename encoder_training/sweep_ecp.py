@@ -618,6 +618,37 @@ WAVES: dict[str, dict] = {
         },
         "seed": [44, 45, 46, 47],
     },
+    # W21 -- OUT OF BRIEF. DIAGNOSTIC ONLY. NOT AN ANSWER TO THE QUESTION.
+    #
+    # These runs let the spread term evaluate positions drawn from the whole
+    # arena, so the encoder is no longer a 10%-coverage encoder and none of
+    # these cells may be quoted as one. They exist to size a single number.
+    #
+    # §5.6j measured where the aliases that set r_min actually live: at 10%
+    # coverage only 4.5% of them fall inside a training patch against 10.1%
+    # coverage, so 95.5% sit in arena that no term in the loss ever evaluates --
+    # every spread term here is computed on batch encodings and the batch is
+    # training points only. That makes r_min ~7 look structural rather than
+    # mistuned, and steps 1-3 all returning 5-8 from unrelated directions is
+    # consistent with it.
+    #
+    # "Looks structural" is not a measurement. This is: give the spread term the
+    # far field and nothing else -- no pair supervision, no attract, no repel,
+    # the pair terms still see only the 10% -- and read how much of the gap to
+    # §4's 28.5 comes back. A large jump says the wall is the loss's blindness.
+    # A small one says 10% of the arena genuinely lacks the information, and the
+    # answer to the brief is close to final.
+    "w21_arena_spread": {
+        "arm": {
+            "frac0.5": dict(npos_list=SIZE_MIXES["lo_mixtop"],
+                            per_env_radius_frac=0.15, rate_lambda=0.3,
+                            spread_arena_frac=0.5),
+            "frac2":   dict(npos_list=SIZE_MIXES["lo_mixtop"],
+                            per_env_radius_frac=0.15, rate_lambda=0.3,
+                            spread_arena_frac=2.0),
+        },
+        "seed": [42, 43],
+    },
     # W13 -- coverage, on the winning config rather than on the bare baseline.
     #
     # This replaces w4, which swept coverage over mixes chosen before any of the

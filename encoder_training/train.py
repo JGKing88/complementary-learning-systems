@@ -43,6 +43,7 @@ from .losses import (
 )
 from .models import create_encoder
 from .evaluate import encode_grid, run_nav_eval
+from .eval_unique_radius import grid_code_batch
 
 
 def _build_near_mask(
@@ -231,20 +232,39 @@ def train(cfg: TrainConfig) -> str:
             else:
                 raise ValueError(f"Unknown loss mode: {cfg.loss.mode}")
 
+            # OUT OF BRIEF, diagnostic only (§5.6k, PatchConfig.spread_arena_frac).
+            # The spread terms see these extra whole-arena positions; no pair
+            # term ever does, so `near`/`same_env` stay the batch's own.
+            z_spread = zb
+            if patch_cfg.spread_arena_frac > 0:
+                n_extra = int(round(patch_cfg.spread_arena_frac * len(idx)))
+                # Argument order mirrors build_patch_codes: the first argument
+                # indexes the first spatial axis, whatever the parameter is
+                # called. Both are uniform here, but the two paths must agree.
+                r_ys = np.random.randint(0, full_Npos, size=n_extra)
+                r_xs = np.random.randint(0, full_Npos, size=n_extra)
+                phi_extra = torch.as_tensor(
+                    grid_code_batch(cfg.model.lambdas, r_ys, r_xs,
+                                    cfg.fwhm_ratio),
+                    device=device, dtype=Phi_flat.dtype)
+                z_spread = torch.cat([zb, encoder(phi_extra, gain)], dim=0)
+
             extra = 0.0
             if unif_lam > 0:
                 pair_mask = ~near if cfg.loss.uniformity_scope == "nonnear" \
                     else None
+                if pair_mask is not None and z_spread is not zb:
+                    pair_mask = None    # the mask is batch-shaped; scope drops
                 u = unif_lam * uniformity_loss(
-                    zb, t=cfg.loss.uniformity_t, pair_mask=pair_mask)
+                    z_spread, t=cfg.loss.uniformity_t, pair_mask=pair_mask)
                 loss, extra = loss + u, extra + float(u.item())
             if cfg.loss.var_lambda > 0 or cfg.loss.cov_lambda > 0:
-                var_l, cov_l = vicreg_terms(zb, gamma=cfg.loss.var_gamma)
+                var_l, cov_l = vicreg_terms(z_spread, gamma=cfg.loss.var_gamma)
                 v = cfg.loss.var_lambda * var_l + cfg.loss.cov_lambda * cov_l
                 loss, extra = loss + v, extra + float(v.item())
             if cfg.loss.rate_lambda > 0:
                 r = cfg.loss.rate_lambda * coding_rate_loss(
-                    zb, eps=cfg.loss.rate_eps)
+                    z_spread, eps=cfg.loss.rate_eps)
                 loss, extra = loss + r, extra + float(r.item())
             running_extra += extra
             # The quantity that separates the regimes; see losses.
@@ -421,6 +441,7 @@ def _build_cfg_from_args(args) -> TrainConfig:
         local_radius=args.radius,
         single_env_batch=args.single_env_batch,
         patch_placement=args.patch_placement,
+        spread_arena_frac=args.spread_arena_frac,
     )
     nav = NavEvalConfig(
         env_size=args.nav_env_size,
@@ -472,6 +493,11 @@ def main():
                    choices=["random", "stratified"],
                    help="where patches sit: uniform rejection sampling, or a "
                         "jittered lattice (one per coarse-grid cell)")
+    p.add_argument("--spread_arena_frac", type=float, default=0.0,
+                   help="OUT OF BRIEF, DIAGNOSTIC ONLY (§5.6k): extra positions "
+                        "from the whole arena, as a fraction of batch_size, fed "
+                        "to the spread terms only. Breaks the coverage "
+                        "constraint by construction -- never a headline number")
     # Loss
     p.add_argument("--loss_mode", default="mse_contrastive",
                    choices=["mse_contrastive", "cka"])
