@@ -828,6 +828,30 @@ export NOVELTY_REWARD=0.15
 export LOAD_CKPT=/orcd/pool/003/jackking/cls_runs/agent_ckpts/navigate_ee_P5_20363067/navigate_u200.pt
 EOF
         ;;
+    # C15b: C15 plus MAX_ACTION_NORM, because C15 and C16 both collapsed.
+    #
+    # Both blocked runs died the same way around u1300 / u500: mean_r fell to
+    # -0.27 against a 0.3 wall penalty (~90% edge occupancy), coverage to 0.012,
+    # and `mean_speed` rose to 1.2-1.9. That is a runaway action norm -- steps so
+    # large the agent is clipped into a corner and stays there, the same terminal
+    # state as W9 reached by a different route. Neither run set MAX_ACTION_NORM.
+    #
+    # The good checkpoints (u825: 0.125/1.000/46.5; u1200: 0.163/0.839/42.4) all
+    # predate the collapse, so blocking works until the norm runs away. 2.0 is
+    # the same clip that let C12c survive 1,700 updates.
+    C15b) cat <<'EOF'
+export ENVS_PER_WORLD=8
+export BATCH_ENVS=16
+export STEPS_PER_ROLLOUT=200
+export SCHEDULE="explore:150 ; exploit:150 ; explore:150 ; exploit:150 ; explore:150 ; exploit:150 ; explore:150 ; exploit:150 ; explore:150 ; exploit:150 ; explore:150 ; exploit:150 ; explore:150 ; exploit:150 ; explore:150 ; exploit:150"
+export EVAL_EVERY=75
+export VAL_DISTRACTORS="0 10"
+export WALL_PENALTY=0.3
+export NOVELTY_REWARD=0.15
+export MAX_ACTION_NORM=2.0
+export LOAD_CKPT=/orcd/pool/003/jackking/cls_runs/agent_ckpts/navigate_ee_P5_20363067/navigate_u200.pt
+EOF
+        ;;
     # C16: asymmetric blocks, designed off C15's numbers rather than guessed.
     #
     # C15 measured two things that make its 150/150 split wasteful. Coverage
