@@ -557,6 +557,23 @@ case "$VARIANT" in
     EVAL_SCOPE=navexpl; EVAL_EVERY=50; CKPT_EVERY=50
     ;;
 
+  # PERSISTENCE_BONUS, now that it can finally work. §3.4.1 showed the term
+  # carries m^2/(m^2 + sigma^2) of signal, which at wave 1's |a| ~ 0.25 and
+  # sigma 0.5 was ~20% noise-dominated garbage -- the reason w1_pers was
+  # dropped. The combined model has learned |a| ~ 2, where the same expression
+  # gives 4/(4+0.25) = **94% signal**. So the knob that was untestable in wave 1
+  # is well-conditioned now, and it is the one term that should help BOTH
+  # metrics: straighter runs raise coverage, and a beeline to the goal is a
+  # straight line.
+  w6_pers)
+    SCHEDULE=${SCHEDULE:-'interleave:1200,empty_frac=0.5'}
+    ENVS_PER_WORLD=20; BATCH_ENVS=64
+    EPSILON_EXPLORE=0.1; INIT_LOG_STD=-0.7; GOAL_REWARD=2.0
+    PERSISTENCE_BONUS=0.20
+    REGIME_ASSIGNMENT=shuffle
+    EVAL_SCOPE=navexpl; EVAL_EVERY=50; CKPT_EVERY=50
+    ;;
+
   *)
     echo "ERROR: unknown VARIANT=$VARIANT" >&2; exit 1 ;;
 esac

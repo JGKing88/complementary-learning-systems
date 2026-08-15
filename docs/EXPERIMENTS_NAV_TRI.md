@@ -2183,3 +2183,36 @@ document that is a *comparison* stands; everything that is a *value* should be
 read with a ±10% band and a checkpoint index that is seed-specific. That is
 also why selection goes through `joint_curve` on each run's own curve rather
 than by taking a fixed update number.
+
+#### Results — wave 6
+
+**Capacity does not reduce the interference.** `w6_h2048` (hidden 1024 → 2048,
+everything else the wave-4 winner) peaks at joint **1.582**, against the
+1024-unit run's **1.717 at the same u800** and 1.897 at its own best. Doubling
+the trunk made it slightly *worse*.
+
+That is a useful negative: **the explore/exploit conflict is not a
+representational bottleneck.** Two tasks that merely needed more room would
+have improved. It is structural in the shared objective — the pooled advantage
+normalization and the opposed behaviours (turn at the wall vs drive at a
+point) — which is consistent with everything else this wave has measured, and
+it rules out "make the network bigger" as a direction.
+
+Incidentally: **`hidden_size` is nearly free** — 13.6 s/update at 2048 against
+12.5 at 1024. The RNN is not the bottleneck; the scaffold lookups and env
+stepping are (§4's cost model). So the negative result is not a
+budget artefact.
+
+**`PERSISTENCE_BONUS` is now well-conditioned, and it is the one term that
+should help both metrics.** §3.4.1 showed it carries `m²/(m²+σ²)` of signal:
+
+| | `m` (mean \|a\|) | σ | signal |
+|---|---|---|---|
+| wave 1, when `w1_pers` was dropped | 0.25 | 0.50 | **20%** |
+| the combined model now | ~2.0 | 0.50 | **94%** |
+
+So the knob that was untestable in wave 1 — and was dropped for exactly that
+reason — is well-conditioned now that the policy has learned a large step.
+And it is the only shaping term whose sign should be positive for *both*
+halves: straighter runs raise coverage, and a beeline to the goal is a
+straight line. `w6_pers` (0.05 → 0.20) is running.
