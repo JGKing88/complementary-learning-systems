@@ -2390,3 +2390,30 @@ its wall-clock limit should be continued rather than concluded.
 
 Extended again to u3600, and the u1850/u1950 checkpoints sent for strict
 verification.
+
+#### `PERSISTENCE_BONUS` bracketed — 0.20 is an interior optimum
+
+`w6_pers2` at 0.40, best joint **0.922** against 0.20's 2.261:
+
+| update | coverage | `success_rate` | `mean_steps` |
+|---|---|---|---|
+| u950 | 0.326 | **0.385** | 21.1 |
+| u1050 | 0.304 | **0.438** | 55.0 |
+| u1150 | 0.311 | **0.698** | 41.0 |
+
+Coverage stays high — 0.31, as good as anything — while **navigation
+collapses**. That is the variance-amplifier mechanism pushed past its useful
+range: at 0.40 the policy commits to a heading so strongly that it will not
+turn toward the goal, so it sweeps beautifully and never arrives.
+
+| `PERSISTENCE_BONUS` | 0.05 (v35) | **0.20** | 0.40 |
+|---|---|---|---|
+| best joint | ~1.9 | **2.261** | 0.922 |
+
+**That is the third interior optimum this project has found by bracketing
+rather than extrapolating** — σ at 0.50 (0.165 < 0.30 < **0.50** > 1.0),
+`goal_reward` at 2.0 (1.0 < **2.0** > 3.0 > 5.0), and now `persistence_bonus`
+at 0.20. Every one of the three was still improving at the previous point
+tested, so a monotone reading would have pushed each past its peak — and in
+σ's case that cost 2.7× when it was tried. **Bracket every knob; none of them
+has turned out to be monotone.**
