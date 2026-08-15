@@ -2164,3 +2164,22 @@ u800's **0.101**, and its `edge_frac` 0.50 against 0.36. The later checkpoint
 has drifted back toward distractor-chasing and wall-hugging — the wave-3
 failure mode reappearing late — so **u800 is the one to take**, and the reason
 is a diagnostic the score alone would not have shown.
+
+#### Replication — what survives a second seed
+
+`w5_seed43` finished (timed out at u1130, which the checkpoint cadence makes a
+normal ending). Best joint score **1.716** at u500, against seed 42's **1.897**
+at u900.
+
+| claim | replicates? |
+|---|---|
+| `goal_reward=2.0` beats v35's 5.0 | **yes** — 1.716 and 1.897 against 1.231, a gap far larger than the seed spread |
+| interleaving beats explore-first | **yes** — both seeds hold coverage *and* nav; arm A held neither |
+| the peak score is ≈1.9 | **no** — ±10% between seeds |
+| the best checkpoint is at u900 | **no** — u500 on the other seed |
+
+**So the rankings replicate and the exact numbers do not.** Everything in this
+document that is a *comparison* stands; everything that is a *value* should be
+read with a ±10% band and a checkpoint index that is seed-specific. That is
+also why selection goes through `joint_curve` on each run's own curve rather
+than by taking a fixed update number.
