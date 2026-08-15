@@ -2359,3 +2359,34 @@ the policy's inability to tell an in-env goal from a decoy at ten
 distractors**, which P0.7 traced to the *readout*: `dir_acc` falls 0.99 → 0.70
 and `AUC(|q|)` 0.96 → 0.62 between one distractor and ten. That is upstream of
 anything on the knob list.
+
+#### The extension changes the picture — training length was the binding constraint
+
+`w6_pers` was still improving when its six hours ran out, so it was continued
+with `--continue_from` (optimizer moments and all three RNG streams restored;
+see `run_nav_tri_continue.sh` for why that is the right operation here). It ran
+u1201→u2400 and **kept getting better**:
+
+| update | coverage | `success_rate` | `mean_steps` | joint |
+|---|---|---|---|---|
+| u1200 *(where it had stopped)* | 0.279 | 1.000 | 7.7 | 2.017 |
+| u1700 | 0.304 | 1.000 | 6.9 | 2.240 |
+| **u1850** | **0.333** | **1.000** | **7.2** | **2.261** |
+| u1950 | 0.349 | 0.990 | 7.1 | 2.005 |
+| u2350 | 0.306 | 0.990 | 6.3 | 2.005 |
+
+**u1850 reaches 86% of the explore specialist's coverage (0.333 vs 0.385)
+while beating the exploit specialist's `mean_steps` (7.2 vs 12.1)** — a
+combined model close to matching both specialists at once, where wave 3's best
+gave up half its coverage.
+
+**So the frontier that waves 4–6 kept sliding along was partly an artefact of
+stopping at 1200 updates.** Persistence did move it outward; it just needed
+longer to show it, because the straighter policy it produces takes time to
+convert into coverage. The general lesson — and it is one this document has
+now paid for twice, first with the exploit oscillation — is that **these runs
+should be read at 2000+ updates, not 1200**, and that a run still climbing at
+its wall-clock limit should be continued rather than concluded.
+
+Extended again to u3600, and the u1850/u1950 checkpoints sent for strict
+verification.
