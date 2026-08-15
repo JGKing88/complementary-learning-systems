@@ -565,13 +565,21 @@ case "$VARIANT" in
   # is well-conditioned now, and it is the one term that should help BOTH
   # metrics: straighter runs raise coverage, and a beeline to the goal is a
   # straight line.
-  w6_pers)
+  w6_pers|w6_pers2)
     SCHEDULE=${SCHEDULE:-'interleave:1200,empty_frac=0.5'}
     ENVS_PER_WORLD=20; BATCH_ENVS=64
     EPSILON_EXPLORE=0.1; INIT_LOG_STD=-0.7; GOAL_REWARD=2.0
-    PERSISTENCE_BONUS=0.20
     REGIME_ASSIGNMENT=shuffle
     EVAL_SCOPE=navexpl; EVAL_EVERY=50; CKPT_EVERY=50
+    # 0.20 was the first knob to move the frontier OUTWARD -- +22% coverage at
+    # unchanged mean_steps -- so bracket it from above, the same discipline
+    # that located sigma at 0.50 and goal_reward at 2.0. Both of those turned
+    # out to be interior optima, and assuming monotonicity would have cost
+    # 2.7x on the first one.
+    case "$VARIANT" in
+      w6_pers)  PERSISTENCE_BONUS=0.20 ;;
+      w6_pers2) PERSISTENCE_BONUS=0.40 ;;
+    esac
     ;;
 
   *)
