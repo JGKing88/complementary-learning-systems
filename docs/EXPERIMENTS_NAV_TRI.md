@@ -1742,6 +1742,55 @@ driver ✓.
      large σ early for the magnitude ascent, small σ late for terminal
      precision.
 
+### Wave 4 — rebalancing the regimes inside one PPO update
+
+Designed from the wave-3 collapse diagnosis: exploit training installs
+persistent q-following, which in an explore rollout with distractors drives the
+agent into a wall. Two knobs, both on Jack's list.
+
+| variant | change | best joint score |
+|---|---|---|
+| `w4_both` | `GOAL_REWARD` 5→1, `WALL_PENALTY` 0.1→0.3 | **2.085** (u650) |
+| `w4_gr2` | `GOAL_REWARD` 5→2 | 1.897 (u900) |
+| `w4_wall` | `WALL_PENALTY` 0.1→0.3 only | coverage 0.086 — worst |
+
+("Joint score" is `analysis/nav_tri/joint_curve.py`: `coverage/0.385 +
+10.0/mean_steps_all`, so 1.0 per term is *matching a specialist* and 2.0 is a
+combined model that gave up nothing.)
+
+**`GOAL_REWARD` is the lever; `WALL_PENALTY` alone actively hurts.** Raising the
+wall penalty without touching the goal reward drops coverage to 0.086 — worse
+than doing nothing — because the perimeter is 19% of the arena and *must* be
+visited, so pricing it out caps coverage directly. That tension was flagged
+when the reward structure was first analysed (§3.1) and is now measured.
+
+#### Strict verdict, and the result is MIXED
+
+`w4_both` u650 against wave 3's best (arm B), both under the §5 protocol:
+
+| `n_dist` | coverage `w4_both` / B | `mean_steps` `w4_both` / B | `chase_q` `w4_both` / B |
+|---|---|---|---|
+| 0 | **0.220** / 0.190 | **6.80** / 13.57 | 0.000 / 0.000 |
+| 5 | 0.142 / **0.179** | **12.64** / 17.03 | **0.152** / 0.083 |
+| 10 | 0.135 / **0.172** | **17.34** / 20.08 | **0.188** / 0.109 |
+
+Averaged over the three levels the composite favours `w4_both` (1.125 against
+0.891), and at d=0 it is far ahead — `mean_steps` **halved**. But **it is worse
+on coverage at d=5 and d=10**, and `chase_q` roughly *doubled*.
+
+**A hypothesis this raises, which was not in the wave-4 design.** A large
+`goal_reward` may do two jobs, not one: it tilts the regime balance *and* it is
+what makes following the **right** q worth discriminating. Weaken it and the
+policy learns a sloppier, less selective q-following — good enough with a clean
+signal (d=0), worse when it must reject decoys (d=5/10). If that is right the
+optimum is **intermediate**, which is what `w4_gr2` at `goal_reward=2.0`
+happens to test; its strict verdict is running.
+
+**Honest reading for now: wave 4 bought a large improvement in the clean case
+and a small regression in the distractor cases.** Whether it is a net win
+depends on how the three levels should be weighted, which is Jack's call, not
+a fact about the runs.
+
 ### Wave 3 — combining the two (pre-registered; fires after waves 1–2)
 
 **Written before any wave-1 or wave-2 result is in**, so the decision rules
