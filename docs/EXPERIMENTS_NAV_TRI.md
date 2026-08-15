@@ -2290,3 +2290,36 @@ reason — is well-conditioned now that the policy has learned a large step.
 And it is the only shaping term whose sign should be positive for *both*
 halves: straighter runs raise coverage, and a beeline to the goal is a
 straight line. `w6_pers` (0.05 → 0.20) is running.
+
+#### The frontier, as of wave 6 — three defensible models
+
+All strict protocol (10 val envs × 32 trials, deterministic, 200 steps).
+`all` = `mean_steps_all`, failures charged at the 200-step budget.
+
+| model | | d=0 | d=5 | d=10 |
+|---|---|---|---|---|
+| **`w4_gr2` u900** — LR 3e-4, `empty_frac` 0.5 | coverage | 0.228 | 0.181 | 0.174 |
+| | `mean_steps` / all | **7.8** / **8.7** | **9.3** / 24.2 | **11.1** / 45.5 |
+| **`w5_frac70` u800** — `empty_frac` 0.7 | coverage | **0.256** | **0.240** | **0.223** |
+| | `mean_steps` / all | 10.8 / 14.8 | 15.8 / 26.3 | 21.2 / 47.3 |
+| **`w6_lr1` u1150** — LR 1e-4 | coverage | 0.227 | 0.206 | 0.190 |
+| | `mean_steps` / all | 10.2 / 11.2 | 12.5 / 29.1 | 14.6 / **39.7** |
+
+**Which to take depends on the weighting, and that is Jack's call:**
+
+| | take | because |
+|---|---|---|
+| steps-to-goal weighted | `w4_gr2` u900 | 7.8 steps at d=0, faster than the exploit *specialist*'s 12.1 |
+| coverage weighted | `w5_frac70` u800 | 0.256 / 0.240 / 0.223 — the best coverage at every level, and 58% of the explore specialist even at ten distractors |
+| **robustness weighted** | **`w6_lr1` u1150** | degrades least across distractor levels, best d=10 `mean_steps_all` (39.7), and its run does **not** collapse late — so the checkpoint choice is not load-bearing |
+
+On the equal-weight composite all three sit within 6% (1.098 / 1.045 / 1.036),
+which is what "frontier" means: **six waves of tuning moved the model a long
+way from v35 but have not found a knob that moves this frontier outward.** The
+one candidate left untested is `PERSISTENCE_BONUS` at a step size where it is
+finally well-conditioned (`w6_pers`, running).
+
+**`w6_lr1` u1150 is the recommendation absent other information**, because the
+robustness argument is the only one that does not depend on a weighting: it is
+the model whose *worst* distractor level is best, and the only one whose run
+you can stop anywhere near the end and still get.
