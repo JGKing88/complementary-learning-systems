@@ -2092,3 +2092,40 @@ verdict rather than the data budget.
 `w5_seed43` is a **replication check, not a tuning run**: it either reproduces
 the wave-4 ranking or it does not, and if it does not then every wave-4
 conclusion drops to "one seed, unreplicated" and must be reported that way.
+
+#### Results — wave 5, and the `goal_reward` bracket closed
+
+**`empty_frac = 0.7` is a win by the rule stated in advance.** In-training
+joint curve, `w5_frac70`:
+
+| update | coverage | `success_rate` | `mean_steps` |
+|---|---|---|---|
+| u800 *(best joint)* | **0.284** | 1.000 | **10.3** |
+| u1150 | 0.295 | 1.000 | 11.6 |
+| u1200 | **0.306** | 1.000 | 12.9 |
+
+The rule was: *a win if coverage rises **and** `mean_steps` stays under the
+exploit specialist's 12.1.* At u800 both hold — coverage 0.284 against
+`w4_gr2`'s 0.228, `mean_steps` 10.3 — so **the navigation surplus really was
+spendable**, and spending it is worth about +25% coverage. u1200 pushes
+coverage to 0.306 but `mean_steps` to 12.9, which is past the bar: the frontier
+between the two metrics is visible inside a single run.
+
+**The `goal_reward` optimum is now bracketed on both sides.** Best joint score
+per arm (in-training, `empty_frac=0.5`):
+
+| `goal_reward` | 1.0 | **2.0** | 3.0 | 5.0 (v35) |
+|---|---|---|---|---|
+| best joint score | 2.085\* | **1.897** | 1.426 | 1.231 |
+
+\* the 1.0 arm's in-training score flatters it; under the strict protocol it
+loses to 2.0 at d=5 and d=10 (see wave 4's verdict), which is why 2.0 is the
+selection and not 1.0. The point of `w4_gr3` was to rule out the other side,
+and it does: 3.0 is clearly worse than 2.0.
+
+**The seed replicate holds the ranking, not the value.** `w5_seed43` (seed 43,
+otherwise the wave-4 winner) reaches a best joint of **1.716** against seed
+42's 1.897 — a gap well inside these runs' own oscillation, and both far above
+`goal_reward=5.0`'s 1.231. **So "2.0 beats 5.0" replicates; "2.0 scores 1.897"
+does not, and should not be quoted as if it would.** That is the distinction
+this document has had to make twice before, bought properly this time.
