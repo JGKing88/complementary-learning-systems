@@ -1786,10 +1786,38 @@ signal (d=0), worse when it must reject decoys (d=5/10). If that is right the
 optimum is **intermediate**, which is what `w4_gr2` at `goal_reward=2.0`
 happens to test; its strict verdict is running.
 
-**Honest reading for now: wave 4 bought a large improvement in the clean case
-and a small regression in the distractor cases.** Whether it is a net win
-depends on how the three levels should be weighted, which is Jack's call, not
-a fact about the runs.
+#### RESOLVED — `goal_reward = 2.0` wins, and the hypothesis was right
+
+`w4_gr2` u900, strict protocol, against the other two:
+
+| model | coverage d0 / d5 / d10 | `mean_steps` d0 / d5 / d10 | success d0 / d5 / d10 |
+|---|---|---|---|
+| arm B, `goal=5.0` | 0.190 / 0.179 / 0.172 | 13.6 / 17.0 / 20.1 | 1.000 / 0.927 / 0.833 |
+| `w4_both`, `goal=1.0` | 0.220 / 0.142 / 0.135 | 6.8 / 12.6 / 17.3 | 1.000 / 0.927 / 0.859 |
+| **`w4_gr2`, `goal=2.0`** | **0.228 / 0.181 / 0.174** | **7.8 / 9.3 / 11.1** | 0.995 / 0.922 / 0.818 |
+
+**`goal_reward=2.0` dominates the v35 value on every one of the nine numbers**,
+and beats `goal_reward=1.0` at d=5 and d=10 on both metrics. The
+sloppy-discrimination cost predicted for a too-small goal reward is real and
+shows up exactly where predicted — with decoys present, not with a clean
+signal.
+
+The clearest way to see it is the *uniformity* of `mean_steps` across
+distractor levels:
+
+| `goal_reward` | d=0 → d=10 |
+|---|---|
+| 5.0 | 13.6 → 20.1 |
+| 1.0 | 6.8 → **17.3** |
+| **2.0** | 7.8 → **11.1** |
+
+At 2.0 the model degrades gracefully; at 1.0 it falls apart when it has to
+reject decoys, and at 5.0 it is slow everywhere.
+
+**`w4_gr3` (`goal_reward=3.0`) is running to bracket the winner from above**,
+so the optimum is located rather than assumed from a three-point comparison
+whose middle value happened to win. `w4_wall` cancelled at u650 — coverage
+0.086, the worst of any arm; **`WALL_PENALTY` alone is refuted.**
 
 ### Wave 3 — combining the two (pre-registered; fires after waves 1–2)
 

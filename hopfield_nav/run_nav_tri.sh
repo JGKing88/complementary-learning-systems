@@ -469,13 +469,18 @@ case "$VARIANT" in
   # WALL_PENALTY is the term that specifically defends the behaviour exploit
   # destroys. At v35's 0.1 against a +5.0 goal it cannot; 0.3 is the same ratio
   # to a 1.0 goal that 1.5 would be to a 5.0 one.
-  w4_gr2|w4_gr1|w4_wall|w4_both)
+  w4_gr3|w4_gr2|w4_gr1|w4_wall|w4_both)
     SCHEDULE=${SCHEDULE:-'interleave:1200,empty_frac=0.5'}
     ENVS_PER_WORLD=20; BATCH_ENVS=64
     EPSILON_EXPLORE=0.1; INIT_LOG_STD=-0.7
     REGIME_ASSIGNMENT=shuffle
     EVAL_SCOPE=navexpl; EVAL_EVERY=50; CKPT_EVERY=50
     case "$VARIANT" in
+      # 2.0 won the strict verdict over both 1.0 and v35's 5.0, dominating the
+      # 5.0 arm on every metric and beating 1.0 at d=5/10. 3.0 brackets the
+      # winner from above, so the optimum is located rather than assumed from
+      # a three-point comparison whose middle happened to win.
+      w4_gr3)  GOAL_REWARD=3.0 ;;
       w4_gr2)  GOAL_REWARD=2.0 ;;
       w4_gr1)  GOAL_REWARD=1.0 ;;
       w4_wall) WALL_PENALTY=0.3 ;;
