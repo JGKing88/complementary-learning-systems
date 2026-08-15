@@ -517,6 +517,46 @@ case "$VARIANT" in
     EVAL_SCOPE=navexpl; EVAL_EVERY=50; CKPT_EVERY=50
     ;;
 
+  # === WAVE 6 -- move the frontier OUT, not along it =======================
+  #
+  # Wave 5 showed empty_frac slides the model along a coverage/steps frontier:
+  # +28% coverage costs -41% steps. Every knob tried so far does that. What is
+  # wanted now is something that improves BOTH, i.e. reduces the interference
+  # rather than re-allocating it.
+  #
+  # Both arms hold the wave-4 winner fixed (empty_frac=0.5, goal_reward=2.0)
+  # and change one thing, so a frontier shift is attributable.
+  #
+  # NOT tried, and why: raising NOVELTY_REWARD is the same lever as lowering
+  # GOAL_REWARD -- only the ratio enters the pooled normalization, and
+  # goal/novelty = 2.0/0.3 = 6.7 is already the measured optimum (1.0/0.3 =
+  # 3.3 and 5.0/0.3 = 16.7 both scored worse). Raising novelty to 0.6 at
+  # goal=2.0 reproduces the 3.3 ratio that already lost.
+  w6_h2048)
+    # Capacity. Two tasks sharing one network interfere in proportion to how
+    # much they must share; the classical remedy is more of it. hidden_size is
+    # on Jack's list and has not been touched -- every run so far is v35's
+    # 1024. Fewer updates because the RNN matmul is 4x and PPO's backward with
+    # it, so ~800 is what fits six hours.
+    SCHEDULE=${SCHEDULE:-'interleave:800,empty_frac=0.5'}
+    ENVS_PER_WORLD=20; BATCH_ENVS=64; HIDDEN_SIZE=2048
+    EPSILON_EXPLORE=0.1; INIT_LOG_STD=-0.7; GOAL_REWARD=2.0
+    REGIME_ASSIGNMENT=shuffle
+    EVAL_SCOPE=navexpl; EVAL_EVERY=50; CKPT_EVERY=50
+    ;;
+  w6_lr1)
+    # Stability. Every interleaved run oscillates hard and then degrades --
+    # w4_gr2 reads coverage 0.228 at u900 and 0.054 at u1000 -- so the best
+    # checkpoint is mid-run and the end is wasted. A smaller step should damp
+    # that. Note §3.4.1 showed the magnitude ascent is gradient- rather than
+    # clip-limited, so LR genuinely moves the update size here.
+    SCHEDULE=${SCHEDULE:-'interleave:1200,empty_frac=0.5'}
+    ENVS_PER_WORLD=20; BATCH_ENVS=64; LR=1e-4
+    EPSILON_EXPLORE=0.1; INIT_LOG_STD=-0.7; GOAL_REWARD=2.0
+    REGIME_ASSIGNMENT=shuffle
+    EVAL_SCOPE=navexpl; EVAL_EVERY=50; CKPT_EVERY=50
+    ;;
+
   *)
     echo "ERROR: unknown VARIANT=$VARIANT" >&2; exit 1 ;;
 esac
