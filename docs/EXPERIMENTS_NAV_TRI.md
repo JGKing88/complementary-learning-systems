@@ -2323,3 +2323,39 @@ finally well-conditioned (`w6_pers`, running).
 robustness argument is the only one that does not depend on a weighting: it is
 the model whose *worst* distractor level is best, and the only one whose run
 you can stop anywhere near the end and still get.
+
+#### CORRECTION and mechanism — `PERSISTENCE_BONUS` is a variance amplifier
+
+The claim one section above — "persistence moves the frontier outward" — is
+**true at d=0 only**. Strict verdict on `w6_pers` u1200:
+
+| | d=0 | d=5 | d=10 |
+|---|---|---|---|
+| coverage | **0.268** | 0.162 | 0.137 |
+| `mean_steps` | 8.5 | 10.5 | 16.5 |
+| `run_len_mean` | **4.52** | 3.54 | 3.44 |
+| `straightness` | 0.862 | 0.846 | 0.831 |
+| **`chase_q`** | 0.000 | **0.342** | **0.417** |
+| `clip_frac` | 0.112 | 0.386 | **0.451** |
+
+**At d=0 it reaches the target behaviour exactly** — `run_len_mean` 4.52
+against §3.1's ~4-step optimum, `straightness` 0.86 — and posts the best d=0
+coverage of any model. **At d=5/10 its `chase_q` is the highest of any model
+measured (0.42) and it clips into walls 45% of the time.**
+
+**The mechanism: `persistence_bonus` rewards committing to a direction, so it
+amplifies whatever direction the policy has picked.** When the policy is
+sweeping, it sweeps straighter and covers more. When it is chasing a
+distractor, it commits harder to the chase and drives further into the wall.
+It is a **variance amplifier, not a pure win**, and that is why the same knob
+gives the best d=0 coverage and the worst distractor robustness.
+
+**What this says about the remaining gap.** Every attempt to push the frontier
+now runs into the same wall: `chase_q` at d>0. `goal_reward=1.0` raised it,
+persistence raises it, and the only thing that has ever lowered it is *more
+explore share* (`w5_frac70`, `chase_q` 0.08/0.10). **The binding constraint on
+the combined model is no longer the balance between the two objectives — it is
+the policy's inability to tell an in-env goal from a decoy at ten
+distractors**, which P0.7 traced to the *readout*: `dir_acc` falls 0.99 → 0.70
+and `AUC(|q|)` 0.96 → 0.62 between one distractor and ten. That is upstream of
+anything on the knob list.
