@@ -488,6 +488,35 @@ case "$VARIANT" in
     esac
     ;;
 
+  # === WAVE 5 -- spend the navigation surplus on coverage ==================
+  #
+  # The combined model is now LOPSIDED in a way that is exploitable. Against
+  # the specialists: mean_steps 7.8 beats the exploit-only run's 12.1, while
+  # coverage 0.228 is well short of the explore-only 0.385. Navigation has
+  # surplus and coverage has deficit, so shift the rollout mix toward explore.
+  #
+  # empty_frac is the direct knob: 0.5 means half the envs explore each update,
+  # and wave 3 showed coverage learning scales with that share. 0.7 gives the
+  # explore half 40% more data per update at the cost of 40% of the exploit
+  # half -- affordable exactly because nav is over target.
+  w5_frac70)
+    SCHEDULE=${SCHEDULE:-'interleave:1200,empty_frac=0.7'}
+    ENVS_PER_WORLD=20; BATCH_ENVS=64
+    EPSILON_EXPLORE=0.1; INIT_LOG_STD=-0.7; GOAL_REWARD=2.0
+    REGIME_ASSIGNMENT=shuffle
+    EVAL_SCOPE=navexpl; EVAL_EVERY=50; CKPT_EVERY=50
+    ;;
+  # The winner replicated on a second seed. Every number in wave 4 rests on
+  # seed 42, and the runs oscillate enough that a single seed cannot separate
+  # "goal_reward=2.0 is better" from "that run got a good draw".
+  w5_seed43)
+    SCHEDULE=${SCHEDULE:-'interleave:1200,empty_frac=0.5'}
+    ENVS_PER_WORLD=20; BATCH_ENVS=64
+    EPSILON_EXPLORE=0.1; INIT_LOG_STD=-0.7; GOAL_REWARD=2.0
+    REGIME_ASSIGNMENT=shuffle; SEED=43
+    EVAL_SCOPE=navexpl; EVAL_EVERY=50; CKPT_EVERY=50
+    ;;
+
   *)
     echo "ERROR: unknown VARIANT=$VARIANT" >&2; exit 1 ;;
 esac
