@@ -12,24 +12,58 @@ wave, and it is the only section that goes stale on purpose.
 | | |
 |---|---|
 | **Branch / worktree** | `nav-tri-metric` at `.claude/worktrees/nav-tri-metric` (pushed) |
-| **Runs live** | `w2_e_long` (σ=0.30) · `w2_e_long2` (σ=0.50) · `w2_e_long3` (σ=1.0, the bracket) · `w2_x_sig2` (first exploit) — all 20 envs × 64 batch |
-| **Wave state** | Wave 1 **complete**, all four questions answered (see its Conclusions). Wave 2 explore + exploit both running. Wave 3 designed and pre-registered, not launched. |
-| **Best so far** | coverage **0.280** (`w2_e_long`, u250) against a 0.352 target and the v35 recipe's 0.121 at u175 |
+| **Wave state** | Waves 1–4 complete. `w4_gr3` (the `goal_reward=3.0` bracket) running. |
+| **Best single model** | `w4_gr2` **u900** — `agent_ckpts/navigate_navtri_w4_gr2_s42_20455404/navigate_u900.pt` |
+| **wandb project** | `train_navigate` |
+| **Launcher** | `hopfield_nav/run_nav_tri.sh` (`VARIANT=<name> sbatch …`); `bash hopfield_nav/check_variants.sh` dry-runs them all |
+| **Status** | `bash hopfield_nav/nav_tri_status.sh` |
+| **Results tables** | `python -m analysis.nav_tri.collect_results --prefix w4` |
+| **Pick a checkpoint** | `python -m analysis.nav_tri.joint_curve <jobid>` |
+| **Env python** | `$HOME/.conda/envs/cls/bin/python` (login node has no `python`) |
 
-**The recipe that currently wins**, for anyone picking this up cold:
+### The answer
+
+One model, **strict** protocol (10 val envs × 32 trials, deterministic,
+200 steps) — not the monitoring eval:
+
+| `n_dist` | coverage | `success_rate` | `mean_steps` |
+|---|---|---|---|
+| 0 | **0.228** | 0.995 | **7.8** |
+| 5 | 0.181 | 0.922 | 9.3 |
+| 10 | 0.174 | 0.818 | 11.1 |
+
+against a v35 recipe that reached coverage **0.121**, and a lineage reference
+`mean_steps` of **22.9**.
 
 ```
-20 envs × 64 batch × 200 steps   (pool 1280; 12.6 s/update)
-EPSILON_EXPLORE=0.1              (not v35's 0.4)
-INIT_LOG_STD=-0.7  (σ≈0.50)      (not v35's -1.8; this is the big one)
+SCHEDULE='interleave:1200,empty_frac=0.5'   # NOT explore-then-exploit; see wave 3
+--regime_assignment shuffle
+20 envs x 64 batch x 200 steps              # pool 1280; 12.6 s/update
+EPSILON_EXPLORE=0.1                         # not v35's 0.4
+INIT_LOG_STD=-0.7   (sigma ~ 0.50)          # not v35's -1.8; the single biggest knob
 FREEZE_LOG_STD=1
+GOAL_REWARD=2.0                             # not v35's 5.0; sets the regime balance
 everything else as v35 / §1.2
 ```
-| **wandb project** | `train_navigate` |
-| **Launcher** | `hopfield_nav/run_nav_tri.sh` (`VARIANT=<name> sbatch …`) |
-| **Status** | `bash hopfield_nav/nav_tri_status.sh` |
-| **Results tables** | `python -m analysis.nav_tri.collect_results --prefix w1` |
-| **Env python** | `$HOME/.conda/envs/cls/bin/python` (login node has no `python`) |
+
+**Take the best *joint* checkpoint, not the final one.** Every interleaved run
+peaks mid-run and then degrades — `w4_gr2` reads coverage 0.228 at u900 and
+0.054 at u1000; `w4_both` 0.255 at u650 and 0.095 at u1050. Selection is by
+`joint_curve.py`, which scores coverage and `mean_steps_all` together per
+update. That is early stopping on a held-out metric, and it is load-bearing:
+taking the final checkpoint throws away most of the result.
+
+**What a single model costs**, against the specialists trained for one metric:
+
+| | coverage | `mean_steps` d=0 |
+|---|---|---|
+| explore-only best | **0.385** | — |
+| exploit-only best | — | 12.1 |
+| **combined** (`w4_gr2`) | 0.228 | **7.8** |
+
+It gives up ~40% of coverage and is *faster* than the exploit specialist — the
+latter because interleaved training pushed |a| to ≈2.9, so it covers ground
+per step that a unit-step oracle cannot.
 
 Resume checklist, in order:
 
