@@ -1776,83 +1776,6 @@ driver ✓.
      large σ early for the magnitude ascent, small σ late for terminal
      precision.
 
-### Wave 4 — rebalancing the regimes inside one PPO update
-
-Designed from the wave-3 collapse diagnosis: exploit training installs
-persistent q-following, which in an explore rollout with distractors drives the
-agent into a wall. Two knobs, both on Jack's list.
-
-| variant | change | best joint score |
-|---|---|---|
-| `w4_both` | `GOAL_REWARD` 5→1, `WALL_PENALTY` 0.1→0.3 | **2.085** (u650) |
-| `w4_gr2` | `GOAL_REWARD` 5→2 | 1.897 (u900) |
-| `w4_wall` | `WALL_PENALTY` 0.1→0.3 only | coverage 0.086 — worst |
-
-("Joint score" is `analysis/nav_tri/joint_curve.py`: `coverage/0.385 +
-10.0/mean_steps_all`, so 1.0 per term is *matching a specialist* and 2.0 is a
-combined model that gave up nothing.)
-
-**`GOAL_REWARD` is the lever; `WALL_PENALTY` alone actively hurts.** Raising the
-wall penalty without touching the goal reward drops coverage to 0.086 — worse
-than doing nothing — because the perimeter is 19% of the arena and *must* be
-visited, so pricing it out caps coverage directly. That tension was flagged
-when the reward structure was first analysed (§3.1) and is now measured.
-
-#### Strict verdict, and the result is MIXED
-
-`w4_both` u650 against wave 3's best (arm B), both under the §5 protocol:
-
-| `n_dist` | coverage `w4_both` / B | `mean_steps` `w4_both` / B | `chase_q` `w4_both` / B |
-|---|---|---|---|
-| 0 | **0.220** / 0.190 | **6.80** / 13.57 | 0.000 / 0.000 |
-| 5 | 0.142 / **0.179** | **12.64** / 17.03 | **0.152** / 0.083 |
-| 10 | 0.135 / **0.172** | **17.34** / 20.08 | **0.188** / 0.109 |
-
-Averaged over the three levels the composite favours `w4_both` (1.125 against
-0.891), and at d=0 it is far ahead — `mean_steps` **halved**. But **it is worse
-on coverage at d=5 and d=10**, and `chase_q` roughly *doubled*.
-
-**A hypothesis this raises, which was not in the wave-4 design.** A large
-`goal_reward` may do two jobs, not one: it tilts the regime balance *and* it is
-what makes following the **right** q worth discriminating. Weaken it and the
-policy learns a sloppier, less selective q-following — good enough with a clean
-signal (d=0), worse when it must reject decoys (d=5/10). If that is right the
-optimum is **intermediate**, which is what `w4_gr2` at `goal_reward=2.0`
-happens to test; its strict verdict is running.
-
-#### RESOLVED — `goal_reward = 2.0` wins, and the hypothesis was right
-
-`w4_gr2` u900, strict protocol, against the other two:
-
-| model | coverage d0 / d5 / d10 | `mean_steps` d0 / d5 / d10 | success d0 / d5 / d10 |
-|---|---|---|---|
-| arm B, `goal=5.0` | 0.190 / 0.179 / 0.172 | 13.6 / 17.0 / 20.1 | 1.000 / 0.927 / 0.833 |
-| `w4_both`, `goal=1.0` | 0.220 / 0.142 / 0.135 | 6.8 / 12.6 / 17.3 | 1.000 / 0.927 / 0.859 |
-| **`w4_gr2`, `goal=2.0`** | **0.228 / 0.181 / 0.174** | **7.8 / 9.3 / 11.1** | 0.995 / 0.922 / 0.818 |
-
-**`goal_reward=2.0` dominates the v35 value on every one of the nine numbers**,
-and beats `goal_reward=1.0` at d=5 and d=10 on both metrics. The
-sloppy-discrimination cost predicted for a too-small goal reward is real and
-shows up exactly where predicted — with decoys present, not with a clean
-signal.
-
-The clearest way to see it is the *uniformity* of `mean_steps` across
-distractor levels:
-
-| `goal_reward` | d=0 → d=10 |
-|---|---|
-| 5.0 | 13.6 → 20.1 |
-| 1.0 | 6.8 → **17.3** |
-| **2.0** | 7.8 → **11.1** |
-
-At 2.0 the model degrades gracefully; at 1.0 it falls apart when it has to
-reject decoys, and at 5.0 it is slow everywhere.
-
-**`w4_gr3` (`goal_reward=3.0`) is running to bracket the winner from above**,
-so the optimum is located rather than assumed from a three-point comparison
-whose middle value happened to win. `w4_wall` cancelled at u650 — coverage
-0.086, the worst of any arm; **`WALL_PENALTY` alone is refuted.**
-
 ### Wave 3 — combining the two (pre-registered; fires after waves 1–2)
 
 **Written before any wave-1 or wave-2 result is in**, so the decision rules
@@ -2058,3 +1981,114 @@ ignores phantom recalls) while `follow_q` in nav mode should be high (it
 follows real ones). A model that fails by chasing distractors while exploring
 shows high `chase_q`; one that fails by ignoring the goal shows low `follow_q`
 with high `q_accuracy`.
+
+### Wave 4 — rebalancing the regimes inside one PPO update
+
+Designed from the wave-3 collapse diagnosis: exploit training installs
+persistent q-following, which in an explore rollout with distractors drives the
+agent into a wall. Two knobs, both on Jack's list.
+
+| variant | change | best joint score |
+|---|---|---|
+| `w4_both` | `GOAL_REWARD` 5→1, `WALL_PENALTY` 0.1→0.3 | **2.085** (u650) |
+| `w4_gr2` | `GOAL_REWARD` 5→2 | 1.897 (u900) |
+| `w4_wall` | `WALL_PENALTY` 0.1→0.3 only | coverage 0.086 — worst |
+
+("Joint score" is `analysis/nav_tri/joint_curve.py`: `coverage/0.385 +
+10.0/mean_steps_all`, so 1.0 per term is *matching a specialist* and 2.0 is a
+combined model that gave up nothing.)
+
+**`GOAL_REWARD` is the lever; `WALL_PENALTY` alone actively hurts.** Raising the
+wall penalty without touching the goal reward drops coverage to 0.086 — worse
+than doing nothing — because the perimeter is 19% of the arena and *must* be
+visited, so pricing it out caps coverage directly. That tension was flagged
+when the reward structure was first analysed (§3.1) and is now measured.
+
+#### Strict verdict, and the result is MIXED
+
+`w4_both` u650 against wave 3's best (arm B), both under the §5 protocol:
+
+| `n_dist` | coverage `w4_both` / B | `mean_steps` `w4_both` / B | `chase_q` `w4_both` / B |
+|---|---|---|---|
+| 0 | **0.220** / 0.190 | **6.80** / 13.57 | 0.000 / 0.000 |
+| 5 | 0.142 / **0.179** | **12.64** / 17.03 | **0.152** / 0.083 |
+| 10 | 0.135 / **0.172** | **17.34** / 20.08 | **0.188** / 0.109 |
+
+Averaged over the three levels the composite favours `w4_both` (1.125 against
+0.891), and at d=0 it is far ahead — `mean_steps` **halved**. But **it is worse
+on coverage at d=5 and d=10**, and `chase_q` roughly *doubled*.
+
+**A hypothesis this raises, which was not in the wave-4 design.** A large
+`goal_reward` may do two jobs, not one: it tilts the regime balance *and* it is
+what makes following the **right** q worth discriminating. Weaken it and the
+policy learns a sloppier, less selective q-following — good enough with a clean
+signal (d=0), worse when it must reject decoys (d=5/10). If that is right the
+optimum is **intermediate**, which is what `w4_gr2` at `goal_reward=2.0`
+happens to test; its strict verdict is running.
+
+#### RESOLVED — `goal_reward = 2.0` wins, and the hypothesis was right
+
+`w4_gr2` u900, strict protocol, against the other two:
+
+| model | coverage d0 / d5 / d10 | `mean_steps` d0 / d5 / d10 | success d0 / d5 / d10 |
+|---|---|---|---|
+| arm B, `goal=5.0` | 0.190 / 0.179 / 0.172 | 13.6 / 17.0 / 20.1 | 1.000 / 0.927 / 0.833 |
+| `w4_both`, `goal=1.0` | 0.220 / 0.142 / 0.135 | 6.8 / 12.6 / 17.3 | 1.000 / 0.927 / 0.859 |
+| **`w4_gr2`, `goal=2.0`** | **0.228 / 0.181 / 0.174** | **7.8 / 9.3 / 11.1** | 0.995 / 0.922 / 0.818 |
+
+**`goal_reward=2.0` dominates the v35 value on every one of the nine numbers**,
+and beats `goal_reward=1.0` at d=5 and d=10 on both metrics. The
+sloppy-discrimination cost predicted for a too-small goal reward is real and
+shows up exactly where predicted — with decoys present, not with a clean
+signal.
+
+The clearest way to see it is the *uniformity* of `mean_steps` across
+distractor levels:
+
+| `goal_reward` | d=0 → d=10 |
+|---|---|
+| 5.0 | 13.6 → 20.1 |
+| 1.0 | 6.8 → **17.3** |
+| **2.0** | 7.8 → **11.1** |
+
+At 2.0 the model degrades gracefully; at 1.0 it falls apart when it has to
+reject decoys, and at 5.0 it is slow everywhere.
+
+**`w4_gr3` (`goal_reward=3.0`) is running to bracket the winner from above**,
+so the optimum is located rather than assumed from a three-point comparison
+whose middle value happened to win. `w4_wall` cancelled at u650 — coverage
+0.086, the worst of any arm; **`WALL_PENALTY` alone is refuted.**
+
+---
+
+### Wave 5 — spend the navigation surplus on coverage, and replicate
+
+Submitted 2026-08-14, running. Designed from the shape of wave 4's result
+rather than from a fresh hypothesis: **the combined model is lopsided in an
+exploitable direction.**
+
+| | coverage | `mean_steps` d=0 |
+|---|---|---|
+| explore-only specialist | 0.385 | — |
+| exploit-only specialist | — | 12.1 |
+| combined (`w4_gr2` u900) | **0.228** | **7.8** |
+
+Navigation is *past* its specialist; coverage is 41% short of its. So the
+rollout mix should move toward explore.
+
+| variant | change | why |
+|---|---|---|
+| `w5_frac70` | `empty_frac` 0.5 → 0.7 | the direct knob. Wave 3 established coverage learning scales with the explore share; this buys the explore half 40% more data per update, paid for out of an exploit half that is already over target. |
+| `w5_seed43` | seed 42 → 43, else the wave-4 winner | every wave-4 number rests on one seed, and these runs oscillate enough that one seed cannot separate "goal_reward=2.0 is better" from "that run drew well" — a distinction this document has already had to make twice. |
+
+**Decision rule, stated in advance.** `w5_frac70` is a win if coverage rises
+*and* `mean_steps` stays under the exploit specialist's 12.1 — i.e. if the
+surplus really was spendable. If `mean_steps` goes past 12.1, 0.7 is too far
+and the frontier is between 0.5 and 0.7. If coverage does *not* rise, then
+coverage in the combined setting is limited by something other than explore
+share, and the next suspect is the `chase_q` interference measured in §wave 4's
+verdict rather than the data budget.
+
+`w5_seed43` is a **replication check, not a tuning run**: it either reproduces
+the wave-4 ranking or it does not, and if it does not then every wave-4
+conclusion drops to "one seed, unreplicated" and must be reported that way.
