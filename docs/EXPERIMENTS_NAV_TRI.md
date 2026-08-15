@@ -2129,3 +2129,38 @@ otherwise the wave-4 winner) reaches a best joint of **1.716** against seed
 `goal_reward=5.0`'s 1.231. **So "2.0 beats 5.0" replicates; "2.0 scores 1.897"
 does not, and should not be quoted as if it would.** That is the distinction
 this document has had to make twice before, bought properly this time.
+
+#### Strict verdict — wave 5, and the frontier
+
+`w5_frac70` under the §5 protocol, against the previous best:
+
+| model | coverage d0 / d5 / d10 | `mean_steps` d0 / d5 / d10 | success d0 |
+|---|---|---|---|
+| `w4_gr2` u900 — `empty_frac=0.5` | 0.228 / 0.181 / 0.174 | **7.8 / 9.3 / 11.1** | 0.995 |
+| `w5_frac70` u800 — `empty_frac=0.7` | **0.256 / 0.240 / 0.223** | 10.8 / 15.8 / 21.2 | 0.979 |
+| `w5_frac70` u1200 | 0.253 / 0.229 / 0.209 | 12.0 / 15.6 / 18.3 | 1.000 |
+
+**`empty_frac` moves the model along a frontier rather than up it.** 0.5 → 0.7
+buys **+13 / +32 / +28%** coverage and pays **−28 / −41 / −48%** on
+`mean_steps`. That is exactly what shifting the rollout mix *should* do, and
+the cleanness of the exchange is evidence the mechanism is understood rather
+than stumbled into.
+
+**So there is no single "best" — there are two defensible models**, and which
+one is right depends on how coverage trades against steps, which is Jack's
+call:
+
+| | pick if |
+|---|---|
+| **`w4_gr2` u900** | steps-to-goal matters most. Wins 2 of the 3 stated metrics, `mean_steps` 7.8 *beats* the exploit specialist's 12.1. |
+| **`w5_frac70` u800** | coverage matters most. 0.256 is **67% of the explore specialist's 0.385**, against `w4_gr2`'s 59%, and its `mean_steps` is still under the exploit specialist. |
+
+On the equal-weight composite of `joint_curve` they are within 5% (1.098
+against 1.045), i.e. genuinely on a frontier rather than one dominating.
+
+**Checkpoint choice inside `w5_frac70` matters too**: u800 and u1200 have
+nearly the same coverage, but u1200's `chase_q` at d=10 is **0.238** against
+u800's **0.101**, and its `edge_frac` 0.50 against 0.36. The later checkpoint
+has drifted back toward distractor-chasing and wall-hugging — the wave-3
+failure mode reappearing late — so **u800 is the one to take**, and the reason
+is a diagnostic the score alone would not have shown.
