@@ -77,6 +77,80 @@ Resume checklist, in order:
 5. Design the next wave in §6 with hypothesis and decision rule written down
    *before* submitting.
 
+### Findings, compact
+
+Everything below is measured on this branch and traced to a wave in §6. Ordered
+by how much it would change someone else's run.
+
+**About the knobs**
+
+1. **`INIT_LOG_STD` is the biggest lever in the explore problem, and not for
+   the usual reason.** ε steps are masked out of the PPO movement surrogate, so
+   σ is the *only* channel through which the policy learns its own **step
+   magnitude** — and `cells_per_step` is capped near |a|, which starts at
+   0.086 against an optimum of 1.0. σ = **0.50** is the measured peak
+   (0.165 < 0.30 < 0.50 > 1.0), worth ~2× coverage at matched updates.
+2. **`GOAL_REWARD` is inert within a regime and decisive between them.** A
+   constant offset in explore, a pure scale in exploit — but in an interleaved
+   run it sets the ratio between two regimes sharing **one** pooled advantage
+   normalization. **2.0** beats v35's 5.0 on all nine strict-protocol numbers,
+   and beats 1.0, which is too weak to teach *selective* q-following.
+3. **`MOVE_ENT_COEF` is a provable no-op under `FREEZE_LOG_STD=1`** — Gaussian
+   entropy depends on σ alone. The whole v35 lineage swept a dead knob.
+4. **ε = 0.4 is over-bought; 0.1 is better** on every measure, by three
+   independent mechanisms (§ wave 1 Q2).
+5. **`WALL_PENALTY` must not be raised.** The perimeter is 19% of the arena and
+   *must* be visited; pricing it out caps coverage directly (0.086, the worst
+   of any arm).
+6. **`PERSISTENCE_BONUS` is conditional on step size**, carrying
+   `m²/(m²+σ²)` of signal — 20% noise-dominated at wave 1's |a| = 0.25, 94%
+   signal at the combined model's |a| ≈ 2. A knob can be untestable early and
+   well-conditioned later.
+
+**About the setup**
+
+7. **The arena has no interior obstacles**, so coverage over 200 steps is
+   capped at **0.5025**, the practical target is ~0.35, and ideal `mean_steps`
+   is ~10 at unit steps. Every number here is scored against that ladder.
+8. **`success_rate` is uninformative** — 1.000 even for a policy whose
+   direction is wrong by 60°. `mean_steps` carries the exploit signal, and
+   reads **0.0, not NaN**, at zero successes.
+9. **20 envs × 64 batch ≈ 80 × 16 per update at 2.9× less wall-clock.** Cost is
+   `1.93 ms × envs × steps + 6.1 s`; the PPO term does not shrink, so the
+   ladder can buy at most 5.7×.
+10. **`hidden_size` is nearly free** (13.6 vs 12.5 s/update at 2048 vs 1024) —
+    and doubling it does **not** reduce explore/exploit interference.
+
+**About combining the two**
+
+11. **Interleave in the *same PPO update*.** Explore-first collapses (coverage
+    0.068), exploit-first mirrors it (coverage 0.062), and blocked — which sees
+    both regimes but never together — behaves like explore-first. Only
+    simultaneous exposure holds both.
+12. **The collapse mechanism is the corner trap by way of distractor-chasing**:
+    exploit installs persistent q-following, which in an explore rollout points
+    at distractors, so the agent drives into a wall (`edge_frac` 0.82,
+    `clip_frac` 0.65).
+13. **`empty_frac` moves along a coverage/steps frontier, not up it** — 0.5→0.7
+    buys +28% coverage for −41% steps. Nothing found so far moves it outward.
+14. **Take the best *joint* checkpoint, not the final one**, via
+    `joint_curve.py`. Every interleaved run peaks mid-run and degrades; **LR
+    1e-4 fixes that** at a small cost in peak.
+
+**About reading the numbers**
+
+15. **Rankings replicate across seeds; values do not** (±10%, and the best
+    checkpoint index moves u500↔u900).
+16. **The exploit eval oscillates enormously** — `mean_steps_all` between 17
+    and 159 with a *fixed* eval seed, i.e. real model movement. **No exploit
+    conclusion is safe before ~500 updates**; two corrections in this document
+    came from ignoring that.
+17. **`mean_r` rising is not evidence a run is healthy**: it measures the
+    behaviour policy `N(μ,σ)` while eval measures `μ`, and the two come apart
+    as σ grows, fastest where reward is sparse.
+18. **Signal-separability numbers need ≥8 independent distractor draws.** Two
+    draws produced two different wrong conclusions.
+
 ### The single most important finding so far
 
 **The explore metric is step-magnitude-limited, and `INIT_LOG_STD` is the knob
