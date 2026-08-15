@@ -1,12 +1,7 @@
 #!/bin/bash
 # Block until a probe job's log says it finished N checkpoints (or died.)
 #   bash hopfield_nav/wait_probe.sh <jobid> [n_expected]
-# Probe jobs and verdict jobs write to different log names; take whichever
-# exists rather than making the caller remember which kind it launched.
-D=/orcd/pool/003/jackking/cls_runs/logs
-L=$D/nav_tri_probec_${1}.out
-[ -f "$L" ] || L=$D/nav_tri_verdict_${1}.out
-[ -f "$L" ] || L=$D/nav_tri_probe_${1}.out
+L=/orcd/pool/003/jackking/cls_runs/logs/nav_tri_probec_${1}.out
 N=${2:-1}
 while true; do
     if [ -f "$L" ]; then
