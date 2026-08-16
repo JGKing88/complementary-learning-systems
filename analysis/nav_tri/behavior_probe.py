@@ -57,6 +57,7 @@ import numpy as np
 import torch
 
 from hopfield import Hopfield
+from analysis.nav_tri.coverage_baselines import billiard_cells_per_step
 from hopfield_nav.encoder_io import load_encoder
 from hopfield_nav.evaluation.checkpoint_io import (
     build_eval_world, cfg_from_checkpoint, load_agent,
@@ -297,33 +298,6 @@ def _cos(a, b, eps=1e-8):
     return c, ok
 
 
-_BILLIARD_CACHE: dict = {}
-
-
-def _billiard_cells_per_step(mag, size, steps):
-    """`cells_per_step` a perfect billiard gets at this step magnitude.
-
-    The denominator of `strategy_efficiency`. Coverage factorizes: at |a| = m
-    below 1 the agent needs 1/m steps to leave a cell, so `cells_per_step`
-    cannot exceed ~m however good the trajectory is. Dividing the observed
-    value by this reference separates "the agent moves too slowly" from "the
-    agent moves badly" -- two failures with completely different fixes, which
-    the raw coverage number conflates.
-
-    Simulated rather than tabulated so it tracks `size` and `steps`.
-    """
-    key = (round(float(mag), 3), size, steps)
-    if key not in _BILLIARD_CACHE:
-        from .coverage_baselines import _coverage, _persistent, _rollout
-        rng = np.random.default_rng(0)
-        track = _rollout(_persistent(rng, 64, 0.0), n=64, steps=steps,
-                         size=size, mag=max(float(mag), 1e-6), eps=0.0,
-                         sigma_a=0.0, rng=rng, reflect=True)
-        cov, _ = _coverage(track, size)
-        _BILLIARD_CACHE[key] = cov * size * size / steps
-    return _BILLIARD_CACHE[key]
-
-
 def _explore_stats(rec, size, goal):
     """(T, B, ...) trajectory arrays -> the behaviour-class diagnostics."""
     cell = rec["cell"]                        # (T, B, 2)
@@ -393,7 +367,7 @@ def _explore_stats(rec, size, goal):
 
     centre = (size - 1) / 2.0
     cps = float(np.mean(covs) * size * size / T)
-    ref = _billiard_cells_per_step(mag.mean(), size, T)
+    ref = billiard_cells_per_step(mag.mean(), size, T)
     return {
         "mean_coverage": float(np.mean(covs)),
         "cells_per_step": cps,

@@ -200,6 +200,33 @@ def _run_and_tumble(rng, n, p_turn):
     return fn
 
 
+_BILLIARD_CACHE: dict = {}
+
+
+def billiard_cells_per_step(mag: float, size: int, steps: int,
+                            trials: int = 64) -> float:
+    """`cells_per_step` a perfect billiard achieves at this step magnitude.
+
+    Public because `behavior_probe.strategy_efficiency` divides an observed
+    `cells_per_step` by it, to separate "the agent moves too slowly" from "the
+    agent moves badly" -- two failures with different fixes that a raw coverage
+    number conflates. It lives here rather than there because this module owns
+    the scripted-policy simulation, and duplicating the rollout would let the
+    reference drift from the ladder it is a rung of.
+
+    Cached per (magnitude, size, steps): the probe calls it once per env.
+    """
+    key = (round(float(mag), 3), size, steps, trials)
+    if key not in _BILLIARD_CACHE:
+        rng = np.random.default_rng(0)
+        track = _rollout(_persistent(rng, trials, 0.0), n=trials, steps=steps,
+                         size=size, mag=max(float(mag), 1e-6), eps=0.0,
+                         sigma_a=0.0, rng=rng, reflect=True)
+        cov, _ = _coverage(track, size)
+        _BILLIARD_CACHE[key] = cov * size * size / steps
+    return _BILLIARD_CACHE[key]
+
+
 def _serpentine_track(*, n, steps, size, rng):
     """The lawnmower: the ceiling, run as a track so it scores identically.
 
