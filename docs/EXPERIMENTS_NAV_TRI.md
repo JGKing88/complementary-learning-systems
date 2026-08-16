@@ -23,59 +23,43 @@ wave, and it is the only section that goes stale on purpose.
 
 ### The answer
 
-One model, **strict** protocol (10 val envs × 32 trials, deterministic,
-200 steps) — not the monitoring eval:
+**One model, all three metrics.** `w6_pers` **u1950** —
+`agent_ckpts/navigate_navtri_w6_pers_s42_20499183/navigate_u1950.pt`.
+Strict protocol: 10 held-out val envs x 32 trials, deterministic, 200 steps.
 
-| `n_dist` | coverage | `success_rate` | `mean_steps` |
-|---|---|---|---|
-| 0 | **0.228** | 0.995 | **7.8** |
-| 5 | 0.181 | 0.922 | 9.3 |
-| 10 | 0.174 | 0.818 | 11.1 |
+| `n_dist` | coverage | `success_rate` | `mean_steps` | mean \|a\| |
+|---|---|---|---|---|
+| 0 | **0.315** | 0.984 | **7.6** | 3.49 |
+| 5 | **0.273** | 0.927 | 10.7 | 2.40 |
+| 10 | **0.252** | 0.849 | 16.5 | 2.01 |
 
-against a v35 recipe that reached coverage **0.121**, and a lineage reference
-`mean_steps` of **22.9**.
+**Against the specialists and the baseline:**
+
+| | coverage d=0 | `mean_steps` d=0 |
+|---|---|---|
+| v35 recipe (where this started) | 0.121 | 22.9 *(lineage reference)* |
+| explore-only specialist | 0.385 | — |
+| exploit-only specialist | — | 12.1 |
+| **this model** | **0.315** = 82% of the specialist | **7.6** = *better* than the specialist |
+
+**The recipe:**
 
 ```
-SCHEDULE='interleave:1200,empty_frac=0.5'   # NOT explore-then-exploit; see wave 3
---regime_assignment shuffle
+SCHEDULE='interleave:2000,empty_frac=0.5'   # NOT explore-then-exploit; wave 3 refuted that
+--regime_assignment shuffle                 # new flag, so env identity cannot predict regime
 20 envs x 64 batch x 200 steps              # pool 1280; 12.6 s/update
-EPSILON_EXPLORE=0.1                         # not v35's 0.4
-INIT_LOG_STD=-0.7   (sigma ~ 0.50)          # not v35's -1.8; the single biggest knob
+EPSILON_EXPLORE=0.1                         # v35: 0.4
+INIT_LOG_STD=-0.7   (sigma ~ 0.50)          # v35: -1.8
 FREEZE_LOG_STD=1
-GOAL_REWARD=2.0                             # not v35's 5.0; sets the regime balance
+GOAL_REWARD=2.0                             # v35: 5.0
+PERSISTENCE_BONUS=0.20                      # v35: 0.05
 everything else as v35 / §1.2
 ```
 
-**Take the best *joint* checkpoint, not the final one.** Every interleaved run
-peaks mid-run and then degrades — `w4_gr2` reads coverage 0.228 at u900 and
-0.054 at u1000; `w4_both` 0.255 at u650 and 0.095 at u1050. Selection is by
-`joint_curve.py`, which scores coverage and `mean_steps_all` together per
-update. That is early stopping on a held-out metric, and it is load-bearing:
-taking the final checkpoint throws away most of the result.
-
-**What a single model costs**, against the specialists trained for one metric:
-
-| | coverage | `mean_steps` d=0 |
-|---|---|---|
-| explore-only best | **0.385** | — |
-| exploit-only best | — | 12.1 |
-| **combined** (`w4_gr2`) | 0.228 | **7.8** |
-
-It gives up ~40% of coverage and is *faster* than the exploit specialist — the
-latter because interleaved training pushed |a| to ≈2.9, so it covers ground
-per step that a unit-step oracle cannot.
-
-Resume checklist, in order:
-
-1. `bash hopfield_nav/nav_tri_status.sh` — what is queued, running, finished.
-2. `python -m analysis.nav_tri.collect_results --prefix w1` — the curves, with
-   the reference lines printed underneath.
-3. Read §6 for the wave in flight: its hypothesis, its variant table, and the
-   rule stated *in advance* for what each outcome would mean.
-4. Fill that wave's results table, then write its "Conclusions" —
-   confirmed / refuted / underpowered — **before** designing anything new.
-5. Design the next wave in §6 with hypothesis and decision rule written down
-   *before* submitting.
+Each of the four changed knobs is an **interior optimum**, bracketed on both
+sides (§ findings 1, 2, 6). Run to **~u2000** — 1200 is too short and past
+~2400 it plateaus and oscillates — and select the checkpoint with
+`joint_curve.py` rather than taking the last one.
 
 ### Findings, compact
 
@@ -2417,3 +2401,44 @@ at 0.20. Every one of the three was still improving at the previous point
 tested, so a monotone reading would have pushed each past its peak — and in
 σ's case that cost 2.7× when it was tried. **Bracket every knob; none of them
 has turned out to be monotone.**
+
+#### FINAL — `w6_pers` u1950, and where the extension left the frontier
+
+Strict verdict on both extended checkpoints:
+
+| ckpt | | d=0 | d=5 | d=10 | composite |
+|---|---|---|---|---|---|
+| **u1950** | coverage | **0.315** | **0.273** | **0.252** | **1.254** |
+| | `success` / `mean_steps` | 0.984 / **7.6** | 0.927 / 10.7 | 0.849 / 16.5 | |
+| u1850 | coverage | 0.286 | 0.241 | 0.219 | 1.255 |
+| | `success` / `mean_steps` | **1.000** / 8.5 | 0.932 / 10.6 | 0.849 / 18.4 | |
+
+**u1950 is the model to take** (u1850 is its equal on the composite and has a
+perfect d=0 success rate, so either is defensible; u1950 wins on coverage at
+every level).
+
+**It dominates everything earlier.** Against the two models that defined the
+frontier three sections ago:
+
+| | vs `w5_frac70` u800 (coverage-favouring) | vs `w4_gr2` u900 (steps-favouring) |
+|---|---|---|
+| coverage | **better at all three levels** (0.315/0.273/0.252 vs 0.256/0.240/0.223) | **better at all three** (vs 0.228/0.181/0.174) |
+| `mean_steps` | **better at all three** (7.6/10.7/16.5 vs 10.8/15.8/21.2) | better at d=0, worse at d=5/10 |
+| composite | 1.254 vs 1.045 | 1.254 vs 1.096 |
+
+So the "frontier" of waves 4–6 **was moved outward** in the end — by
+`persistence_bonus` at 0.20 *plus* enough training to convert it. The earlier
+frontier reading was correct for 1200-update runs and wrong as a statement
+about the problem.
+
+**Further training does not help.** The run was extended again to u3550: best
+joint 2.065 at u2850 against u1850's 2.261, with heavy oscillation and no
+trend. **The useful range is ~u1800–2000**; 1200 is too short and past ~2400
+is wasted.
+
+**What still binds, and it is not on the knob list.** `chase_q` remains
+0.16–0.24 at d=5/10 even in the best model, and coverage still falls
+0.315 → 0.252 across distractor levels. P0.7 traced that to the **readout**:
+`dir_acc` 0.99 → 0.70 and `AUC(|q|)` 0.96 → 0.62 between one distractor and
+ten. **The next real gain is an encoder whose cross-env repulsion holds up at
+ten distractors, not another policy hyper-parameter.**
