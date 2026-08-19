@@ -713,6 +713,28 @@ WAVES: dict[str, dict] = {
         },
         "seed": [44, 45, 46, 47],
     },
+    # W25 -- how small can hidden_dim go, on top of the out_dim cut?
+    #
+    # Run at out_dim=64 rather than 1024, because w24 found 1024 -> 64 free
+    # (r_min 7.0 -> 6.0, inside a spread of 2-3) and the user's question is the
+    # compounded one. The confound that buys is real and cheap to resolve: if an
+    # arm degrades here it could be the width or the interaction with the
+    # narrower head, so the survivor gets re-checked at out_dim=1024 before any
+    # claim is made about width alone.
+    #
+    # hidden_dim has been 512 with 4 layers throughout both campaigns -- about
+    # 1.04M parameters, of which the three 512x512 blocks are 786k. 32 is below
+    # the 108-112 participation ratio the code actually occupies, so it should
+    # bind even if nothing above it does.
+    "w25_hidden_dim": {
+        "arm": {
+            f"hd{h}": dict(npos_list=SIZE_MIXES["lo_mixtop"],
+                           per_env_radius_frac=0.15, rate_lambda=0.3,
+                           out_dim=64, hidden_dim=h)
+            for h in (256, 128, 64, 32)
+        },
+        "seed": [44, 45, 46, 47],
+    },
     # W13 -- coverage, on the winning config rather than on the bare baseline.
     #
     # This replaces w4, which swept coverage over mixes chosen before any of the
