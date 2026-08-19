@@ -688,6 +688,31 @@ WAVES: dict[str, dict] = {
         },
         "seed": [44, 45, 46, 47],
     },
+    # W24 -- how small can out_dim go?
+    #
+    # It has been 1024 since before §1 and has never been swept here. The code
+    # does not use it: the participation ratio at the last epoch is 108-112 on
+    # every one of the six baseline seeds, out of 1024 available, and §4.1b
+    # already found rank tracking the radius without causing it. So the question
+    # is where the over-provisioning stops being free, not whether it exists.
+    #
+    # Seeds 44-47 deliberately, because w22_base_seeds ran the same config at
+    # out_dim 1024 on exactly those seeds -- that wave IS the control arm and no
+    # extra runs are needed for it. Four seeds because §5.6k measured the spread
+    # here at 3-5 units, which two seeds cannot see past.
+    #
+    # 434 is the input dimension (11^2 + 12^2 + 13^2), so 512 is the last arm
+    # that is not a compression of the input and 32 is well under the measured
+    # participation ratio.
+    "w24_out_dim": {
+        "arm": {
+            f"od{d}": dict(npos_list=SIZE_MIXES["lo_mixtop"],
+                           per_env_radius_frac=0.15, rate_lambda=0.3,
+                           out_dim=d)
+            for d in (512, 256, 128, 64, 32)
+        },
+        "seed": [44, 45, 46, 47],
+    },
     # W13 -- coverage, on the winning config rather than on the bare baseline.
     #
     # This replaces w4, which swept coverage over mixes chosen before any of the
