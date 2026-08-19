@@ -735,6 +735,36 @@ WAVES: dict[str, dict] = {
         },
         "seed": [44, 45, 46, 47],
     },
+    # W26 -- the first §5 lead with a mechanism pointing up, plus the confound.
+    #
+    # w25 found hd128 with decay50 47.5 and res90 18.0 -- both better than §4's
+    # 50.8% COVERAGE winner (42.25, 17.0) and the best in either campaign. That
+    # matters because §5.6l identified the decay as the binding factor at 10%
+    # coverage while every knob tried until now moved the ceiling instead.
+    #
+    # Narrowing the net and adding a spread term therefore push opposite
+    # factors: hd128's ceiling is *worse* than the baseline's (0.984 vs 0.970),
+    # which is the whole reason its r_min stops at 7. If rate can take that to
+    # ~0.90 while the narrow width holds decay near 40, the law gives r_min ~15
+    # rather than ~7. That is a real prediction and these arms test it.
+    #
+    # hd128_od1024 is the confound w25 owed: its hidden_dim was cut on an
+    # already-cut head, so the decay gain could be width or interaction. This
+    # separates them.
+    "w26_narrow_spread": {
+        "arm": {
+            "hd128_rate1": dict(npos_list=SIZE_MIXES["lo_mixtop"],
+                                per_env_radius_frac=0.15, rate_lambda=1.0,
+                                out_dim=64, hidden_dim=128),
+            "hd128_rate3": dict(npos_list=SIZE_MIXES["lo_mixtop"],
+                                per_env_radius_frac=0.15, rate_lambda=3.0,
+                                out_dim=64, hidden_dim=128),
+            "hd128_od1024": dict(npos_list=SIZE_MIXES["lo_mixtop"],
+                                 per_env_radius_frac=0.15, rate_lambda=0.3,
+                                 out_dim=1024, hidden_dim=128),
+        },
+        "seed": [44, 45, 46, 47],
+    },
     # W13 -- coverage, on the winning config rather than on the bare baseline.
     #
     # This replaces w4, which swept coverage over mixes chosen before any of the
