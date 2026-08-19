@@ -806,6 +806,44 @@ WAVES: dict[str, dict] = {
         },
         "seed": [48, 49, 50, 51],
     },
+    # W29 -- hd256 at the same eight seeds as the other two, since it now leads.
+    #
+    # At 20 references over seeds 44-51, hd128_od1024 is {5,7,11,10,7,0,8,0} --
+    # median 7.0 with two zeros -- against the baseline's {5,7,7,7,6,4,5,4},
+    # median 5.5 with none. hd256_od1024 is {7,8,8,9} at four seeds: the best
+    # median in §5 and no zero, but it has had half the exposure of the arms it
+    # is being compared with, and this campaign has reversed a four-seed reading
+    # more than once. Seeds 48-51 make it eight against eight against eight.
+    "w29_hd256_seeds": {
+        "arm": {
+            "hd256_od1024": dict(npos_list=SIZE_MIXES["lo_mixtop"],
+                                 per_env_radius_frac=0.15, rate_lambda=0.3,
+                                 out_dim=1024, hidden_dim=256),
+        },
+        "seed": [48, 49, 50, 51],
+    },
+    # W30 -- both cuts at once, at the points each is free alone.
+    #
+    # 100 references, two draws, put out_dim free to 256 (5.5 against the
+    # baseline's 5.25) and hidden_dim better at 256 than at its 512 default
+    # (7.0/7.5 against 5.0/5.5). The combined config is the actual answer to
+    # "lower out_dim, then lower hidden_dim", and it cannot be inferred from the
+    # two axes: hd128 at out_dim=64 scored 0 at every seed while each of those
+    # cuts was tolerable on its own. So it gets measured.
+    #
+    # od256 also drops the parameter count that matters -- with hidden_dim 256
+    # the head is 256x256 rather than 256x1024.
+    "w30_both_cuts": {
+        "arm": {
+            "hd256_od256": dict(npos_list=SIZE_MIXES["lo_mixtop"],
+                                per_env_radius_frac=0.15, rate_lambda=0.3,
+                                out_dim=256, hidden_dim=256),
+            "hd256_od512": dict(npos_list=SIZE_MIXES["lo_mixtop"],
+                                per_env_radius_frac=0.15, rate_lambda=0.3,
+                                out_dim=512, hidden_dim=256),
+        },
+        "seed": [44, 45, 46, 47],
+    },
     # W13 -- coverage, on the winning config rather than on the bare baseline.
     #
     # This replaces w4, which swept coverage over mixes chosen before any of the
