@@ -1691,6 +1691,12 @@ It is now tested rather than assumed.
 
 ## 5.7 The answer
 
+> **Superseded on one axis by §5.8.** Everything below is the best *loss and
+> geometry* configuration and still stands as that. But `hidden_dim` had never
+> been swept in either campaign, and cutting it 512 → 256 takes `r_min` from
+> 4.5 to **7.0** at 100 references over eight seeds. The architecture line in
+> the config block below should read `hidden_dim 256`.
+
 **At ~10% coverage, under `exclude_cross_env_pairs=True` with patches capped at
 200 and sizes mixed, the encoder reaches `r_min` ≈ 7 at 20 references and ≈ 5 at
 100** — median of six seeds, `encoder_final`, spread 3 (20-reference cells 5, 8,
@@ -1798,3 +1804,108 @@ move. Anything that would help has to create pairwise separation between
 positions in different patches, which is what the constraint withholds. Inside
 the brief there is no such term, and §5 is the evidence for that rather than a
 list of things left untried.
+
+## 5.8 Capacity: `out_dim` is free to cut, `hidden_dim` is worth cutting
+
+The question was how far `out_dim` and then `hidden_dim` can come down. They
+answer differently: one is slack, the other was mis-set.
+
+**Headline, and it beats §5.7.** Eight seeds per config, 100 references, two
+draws — 16 cells each, on references none of the encoders was selected against:
+
+| config | `r_min` med | min | **zeros** | `r_median` | alias | **decay50** |
+|---|---|---|---|---|---|---|
+| **`hidden_dim=256`, `out_dim=1024`** | **7.0** | 2.0 | **0/16** | 17.0 | 0.984 | 42.5 |
+| `hidden_dim=128`, `out_dim=1024` | 6.0 | 0.0 | **5/16** | **21.0** | 0.985 | **48.0** |
+| §5.7's config (`hidden_dim=512`) | 4.5 | 2.0 | 0/16 | 13.0 | 0.980 | 35.0 |
+
+**`hidden_dim` 512 → 256 raises `r_min` from 4.5 to 7.0** and costs nothing
+else. §5.7's answer stands as the best *loss and geometry* configuration; this
+is a better *architecture* for it, and it was never swept in either campaign.
+
+### 5.8a `out_dim`: free to 256, and that is all it is
+
+At `hidden_dim=512`, 100 references, two draws:
+
+| `out_dim` | 1024 | 512 | 256 | 128 | 64 | 32 |
+|---|---|---|---|---|---|---|
+| `r_min` | 5.25 | 5.5 | **5.5** | 4.5 | 3.75 | 3.75 |
+
+Free down to **256** — a 4× cut for nothing — marginal at 128, and ~1.5 units
+from 64 down. It buys no radius at any setting; it only stops costing.
+
+The motivation was sound and the conclusion is smaller than it looked. The
+participation ratio at the final epoch is 108–112 on every one of the six
+baseline seeds, out of 1024, so the head is ~9× over-provisioned. Cutting the
+slack is free, and 256 is where the slack ends.
+
+**Two wrong readings on the way, both from the 20-reference metric.** At 20
+references every arm from 1024 to 64 looked identical and I reported 1024 → 64
+as free; at 100 it costs 1.5 units. The correction that followed was also wrong
+in the other direction — it was anchored on `od64`, the only arm re-scored at
+the time, and missed that the middle of the axis is genuinely free. Only
+scoring the whole axis at 100 references settled it. §4.8 keeps being right.
+
+### 5.8b `hidden_dim`: 256 is better than the 512 it has always been
+
+At `out_dim=1024`, 20 references, four seeds:
+
+| `hidden_dim` | 512 | 256 | 128 | 64 | 32 |
+|---|---|---|---|---|---|
+| `r_min` med | 7.0 | **8.0** | 8.5 | 0.0 | 0.0 |
+| spread | 2 | **2** | 6 | 3 | 0 |
+| decay50 | 34.5 | 41.5 | **47.0** | 46.5 | 38.0 |
+| alias mean | 0.847 | **0.847** | 0.890 | 0.920 | 1.000 |
+
+64 breaks the tail and 32 collapses outright (alias 1.000 — the encoder learns
+nothing), so the floor is between 128 and 64 at either head width.
+
+**Why narrowing helps, when nothing else in §5 did.** It raises `decay50` —
+34.5 → 41.5 at 256, → 47.0 at 128 — and §5.6l identified the decay as the
+*binding* factor at 10% coverage, while every other knob in §5 moved the
+ceiling instead. `hd256` takes that gain at **no ceiling cost at all** (alias
+mean 0.847, identical to baseline). `hd128` pays 0.847 → 0.890 for a larger
+one, which is the likely reason its tail is fragile.
+
+`hd128` is the instructive failure. It has the best `r_median` (21.0) and the
+best decay50 (48.0) of anything in the campaign — better than §4's *50.8%
+coverage* winner manages — and **5 zeros in 16 cells**, against none for
+`hd256` or the baseline. On a worst-of-N metric that is disqualifying, and the
+lesson is that the bulk of the distribution and the tail come apart here: the
+config with the best typical reference is not the config to use.
+
+### 5.8c The confound that decided `w25`, and why the sweep was re-run
+
+`hidden_dim` was first swept at `out_dim=64` — the compounded question — with
+the confound flagged in the wave comment before it ran. It mattered completely:
+
+| `hidden_dim=128` at | `r_min` @20 refs | `r_min` @100 refs |
+|---|---|---|
+| `out_dim=64` | {7, 0, 10, 7} | **0.0 at every seed, both draws** |
+| `out_dim=1024` | {5, 7, 11, 10} | 6.0 |
+
+Same width, opposite verdicts — the narrow *head* did the damage, not the
+narrow *trunk*. Had the confound not been resolved, `w25` would have recorded
+"`hidden_dim` 128 is fine" from the 20-reference read of a config that scores
+zero everywhere on the honest one.
+
+The 20-reference instability also cut the other way here, which is new. §4.8's
+case was more references *lowering* a flattering score; this is more references
+*finding* a failure that 20 kept missing. `hd128@od64` seed 45 had `r_min` 0
+with p25 = 13.8 — one blown reference among nineteen good ones — and I read
+that as sampling noise. It was not: at 100 references every seed has one.
+
+### 5.8d What did not work
+
+* **Both cuts together** (`w30`). `hd256` at `out_dim` 256 and 512 read 7.0 and
+  6.5 at 20 references against 8.0 at `out_dim=1024` — and `od512` scoring
+  *below* `od256` is non-monotone, which is the tell that these differences are
+  inside the noise. Cutting `out_dim` alongside `hidden_dim` buys nothing that
+  cutting `hidden_dim` alone does not.
+* **Narrow + spread term** (`w26`), and this one had a prediction attached.
+  Since narrowing buys decay and the spread term buys ceiling, the law says
+  combining them should compose: ceiling 0.984 → ~0.90 at decay ~40 would give
+  `r_min` ~15. Instead `hd128+rate1` and `hd128+rate3` both gave **`r_min` 0 at
+  all four seeds**, with `rate3` medians collapsing to 1.5–3.0. The two factors
+  do not compose across these knobs; the narrow net is fragile and any extra
+  pressure blows the tail. Recorded because the prediction was explicit.
