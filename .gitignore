@@ -78,3 +78,8 @@ slurm-*.out
 
 # Agent worktrees: full repo copies, checked out under the repo root.
 .claude/worktrees/
+
+# NFS silly-rename artefacts. NFS renames a still-open file to .nfsXXXX when
+# it is deleted, so editing a script while a background job has it open leaves
+# one behind -- and `git add -A` will happily commit it.
+.nfs*
