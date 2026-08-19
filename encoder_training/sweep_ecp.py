@@ -765,6 +765,24 @@ WAVES: dict[str, dict] = {
         },
         "seed": [44, 45, 46, 47],
     },
+    # W27 -- hidden_dim on its own, at the full out_dim=1024 head.
+    #
+    # w25 swept hidden_dim at out_dim=64 and the confound it flagged turned out
+    # to matter enormously. hd128 scored r_min 0 at all four seeds at 100
+    # references with the cut head, and 8.5 (median of 5, 7, 11, 10) with the
+    # full one -- the same width, opposite verdicts. So the width sweep the
+    # question actually asked for is this one, not w25.
+    #
+    # hd128_od1024 is already done in w26; these are the rest of the axis.
+    "w27_hidden_dim_full": {
+        "arm": {
+            f"hd{h}_od1024": dict(npos_list=SIZE_MIXES["lo_mixtop"],
+                                  per_env_radius_frac=0.15, rate_lambda=0.3,
+                                  out_dim=1024, hidden_dim=h)
+            for h in (256, 64, 32)
+        },
+        "seed": [44, 45, 46, 47],
+    },
     # W13 -- coverage, on the winning config rather than on the bare baseline.
     #
     # This replaces w4, which swept coverage over mixes chosen before any of the
