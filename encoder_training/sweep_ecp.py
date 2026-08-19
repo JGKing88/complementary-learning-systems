@@ -783,6 +783,29 @@ WAVES: dict[str, dict] = {
         },
         "seed": [44, 45, 46, 47],
     },
+    # W28 -- four more seeds on the one §5 config that beats §4's, and on the
+    # baseline it has to beat, so the comparison stays eight against eight.
+    #
+    # At 100 references and two draws, hd128_od1024 reads 8.0 and 6.0 against the
+    # baseline's 5.0 and 5.5, with r_median 22.4 against 13.4 and decay50 47
+    # against 34.6 -- the decay being the factor §5.6l identified as binding, and
+    # 47 being higher than §4's 50.8% COVERAGE winner manages.
+    #
+    # The thing to pin down is the tail. Seven of its eight (seed x draw) cells
+    # are 5-10; one is 0, from a single blown reference with p25 still 15. The
+    # baseline has no zero in eight. Whether that is a rare accident or a
+    # standing risk decides whether this is the new answer or a curiosity, and
+    # four seeds cannot tell. Seeds 48-51 have been used by nothing.
+    "w28_narrow_seeds": {
+        "arm": {
+            "hd128_od1024": dict(npos_list=SIZE_MIXES["lo_mixtop"],
+                                 per_env_radius_frac=0.15, rate_lambda=0.3,
+                                 out_dim=1024, hidden_dim=128),
+            "base": dict(npos_list=SIZE_MIXES["lo_mixtop"],
+                         per_env_radius_frac=0.15, rate_lambda=0.3),
+        },
+        "seed": [48, 49, 50, 51],
+    },
     # W13 -- coverage, on the winning config rather than on the bare baseline.
     #
     # This replaces w4, which swept coverage over mixes chosen before any of the
