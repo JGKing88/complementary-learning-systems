@@ -15,6 +15,205 @@ are the two ways to move it.
 
 ---
 
+# 0. Summary
+
+Everything here is **100-reference, two independent reference draws,
+`encoder_final`** unless marked. The 20-reference `r_min` has been overturned
+four times in this campaign and is not used for a headline (§4.8, §5.8c).
+
+## 0.1 Headline encoders by constraint level
+
+| level | `r_min` | `r_median` | alias | decay50 | params |
+|---|---|---|---|---|---|
+| **0.** no constraint, 20.4% cov | 9 / 15 | 28.5 | 0.83–0.86 | 36 | 1.54M |
+| *0b.* constraint, untreated, 20.4% cov | 2 / 2 | 3 | 0.977 | 17 | 1.54M |
+| **1.** constraint, 50.8% cov | **23** | 42.5 | 0.74 | 42 | 1.54M |
+| **2.** constraint, 10% cov | 4.5 | 13.0 | 0.980 | 35 | 1.54M |
+| **3.** constraint, 10% cov, `hidden_dim` 256 | **7.0** | 17.0 | 0.984 | 42.5 | **572k** |
+| *3b.* as 3, `out_dim` 256 as well | 6.0 | 17.0 | 0.984 | 40 | **375k** |
+
+**Level 0** — `sweeps/ur_loss2_repel_low/029_repel_weight=2_per_env_radius_frac=0.1_seed=44/encoder_best.pt`.
+`out_dim` 1024, `hidden_dim` 512, 4 layers; 60×100 patches; `per_env_radius_frac`
+0.1; `attract_lambda` 2.0, `repel_weight` 2.0; no spread term;
+`single_env_batch=False`; lr 1e-4, batch 8192, `fwhm_ratio` 0.25, gain 1→5.
+**This is `encoder_best` and so is selected on `r_min`** — it scored 21 at 20
+references and 9–15 at 100. Every other row is `encoder_final`, unselected.
+
+**Level 0b** — `sweeps/ur_seb_C_pairs_vs_dynamics/003_exclude_cross_env_pairs=True_seed=42`.
+The controlled cost of the constraint: same geometry as level 0, nothing done
+about it, 7–13 radius units lost.
+
+**Level 1** — `sweeps/w13_coverage_top/00{2,3}_cov51_seed=4{2,3}` and
+`sweeps/w16_coverage_seeds/00{0,1}_cov51_seed=4{4,5}`. Per-seed 22, 24, 24, 28 /
+23, 27, 4, 23. `mixtop_max` = 26×200 + 14×150 + 14×100 (54 envs, 50.8%);
+`per_env_radius_frac` 0.15; **`rate_lambda` 0.3**; `repel_weight` 1.0;
+`lazy_codes`; epochs step-matched to ~73,000 optimizer steps.
+**This beats level 0**, though at more coverage, so it is not a matched
+comparison — what it shows is that the constraint does not cap the radius.
+
+**Level 2** — `sweeps/w17_lowcov_anchor/00{0,1}_lo_mixtop_seed=4{2,3}`,
+`sweeps/w22_base_seeds/00{0..3}`, `sweeps/w28_narrow_seeds/00{4..7}_base_*`.
+Level 1's config with `lo_mixtop` = 5×200 + 3×150 + 3×100 (11 envs, 10.1%),
+2050 epochs. 16 cells, no zeros.
+
+**Level 3** — `sweeps/w27_hidden_dim_full/00{0..3}_hd256_od1024_seed=4{4..7}`
+and `sweeps/w29_hd256_seeds/00{0..3}_hd256_od1024_seed=4{8,9},5{0,1}`. Level 2
+with `hidden_dim` 256. **2.7× smaller and 56% better.** 16 cells, no zeros.
+Level 3b is `sweeps/w30_both_cuts/00{0..3}_hd256_od256_seed=4{4..7}`: a unit
+worse in the median, a better worst cell (5.0 against 2.0), a quarter of the
+parameters.
+
+`hidden_dim=128` deserves a mention as the instructive failure: the best
+`r_median` (21.0) and decay50 (48.0) of anything in either campaign — better
+than the 50.8% encoder — and **5 zeros in 16 cells**. The bulk of the
+distribution and the tail come apart, and a worst-of-N metric takes the tail.
+
+## 0.2 What is known about the parameters
+
+Measured, not inferred. Nulls are listed because they cost runs too.
+
+* `single_env_batch=False` is worth ~16 units on its own (§2.1).
+* `repel_weight` has an interior optimum near 1–2; below ~0.5 training is
+  unstable (§2.2).
+* `per_env_radius_frac` peaks at **0.10–0.15**. 0.25 and 0.40 are progressively
+  catastrophic (`r_min` 2.0, 0.5) — a wide attract radius turns most
+  within-patch pairs into attract pairs (§5.6i).
+* `rate_lambda` optimum is **0.3**. Stronger moves the ceiling exactly as asked
+  (0.985 → 0.833 at 10) and drags res90 down with it (14.5 → 3.0), slightly
+  worse than par, so `r_min` gets *worse* (§5.6h).
+* **Uniformity beats the coding rate on the ceiling at a narrow (~10-cell)
+  radius and loses at a wide one** (§4.4, §5.6i). Radius-dependent, not
+  coverage-dependent.
+* **Coverage is the strongest lever**: 10% → 50.8% takes `r_min` 4.5 → 23.
+* Bigger patches beat smaller at fixed coverage; 50–70 cell tails are actively
+  harmful (§4.5).
+* **At 10% coverage geometry is spent** — five layouts from 7×200 to 29×100 all
+  give 4.5–6.5 with the ceiling pinned near 0.97 (§5.6f).
+* Reachable coverage is seed-dependent and geometrically limited; rejection
+  sampling fails above ~61–65% for 200-cell patches at any attempt budget.
+* `out_dim` is **free to 256**, marginal at 128, ~1.5 units from 64 down, and
+  buys nothing at any setting. Participation ratio is 108–112 of 1024 (§5.8a).
+* `hidden_dim` **512 → 256 is a real gain** (4.5 → 7.0). 64 breaks the tail at
+  any `out_dim`; 32 collapses entirely, alias 1.000 (§5.8b).
+* Narrowing works because it raises **decay50**, the factor that binds at 10%
+  coverage, where every spread term moves the ceiling instead.
+* **Nulls:** `weight_decay` over 100× (§5.6m); `fwhm_ratio` 0.25 → 0.5 (§5.6i);
+  stratified placement, +1 and 0 units despite halving the worst hole from 839
+  to 461 cells (§5.6g); narrow net + stronger spread term, `r_min` **0 at every
+  seed of both arms** against a predicted ~15 (§5.8d).
+* **The law**: `r_min ≈ res90 · sqrt(ln(1/C)/ln(1/0.9))`, median error 1.2 cells
+  over 410 checkpoints — **valid only while `per_env_radius_frac ≤ 0.2`**, past
+  which it fails *optimistically* (§4.4b, §5.6i).
+* **Why 10% is hard**, measured: only 4.5% of alias peaks fall inside a training
+  patch against 10.1% coverage, so 95.5% of the damaging aliases sit where no
+  loss term evaluates. Handing the spread term the whole arena reproduces the
+  50.8% encoder's ceiling exactly and still scores 6, because res90 is 6.5
+  against 17. **The ceiling is reachable at 10% and worth nothing; coverage buys
+  the decay** (§5.6j, §5.6l).
+* **Method**: seed spread is 3–5 units at 10% coverage and 8 at 50.8%, as large
+  as most effects. Two seeds is never enough and four has reversed twice. The
+  20-reference `r_min` is unstable in *both* directions — it flatters (21 → 9)
+  and it hides failures (`hd128@od64` read {7,0,10,7} at 20 and 0 at every seed
+  at 100).
+
+## 0.3 Code added by this campaign
+
+Diff since `2dfceff` (the commit that opened it): ~4,500 lines.
+
+**The regularizer the winning configs use** — `losses.coding_rate_loss`,
+exposed as `--rate_lambda`. See §0.4.
+
+**Other new loss code** (`encoder_training/losses.py`): `vicreg_terms`
+(variance hinge + off-diagonal covariance), `participation_ratio`, a
+`pair_mask` argument and `masked_fill` rewrite of `uniformity_loss` (the
+original gather cost 2.7× step time and would have hit the wall clock), and an
+optional per-pair `target` in `mse_attract_repel`.
+
+**New modules**
+
+| file | purpose |
+|---|---|
+| `sweep_ecp.py` | campaign driver: named patch mixes, step-matched epochs, all 30 waves retained so a result traces to its grid |
+| `collect_ur.py` | reads UR summaries off checkpoints with no GPU; groups on grid axes; prints the law beside the measurement |
+| `radius_law.py` | the two-factor law, its `--target` inverse, a Gaussianity check |
+| `alias_structure.py` | alias peak/lattice diagnostics, `--ref_vs_patch`, `--alias_partner` |
+
+**Modified**: `data.py` — `build_patch_codes` (builds patch codes directly
+rather than slicing a 10.2 GB codebook, ~20 GB → ~1 GB host, which is what lets
+runs share a node), `--patch_placement {random,stratified}` with a
+jittered-lattice sampler, `max_attempts` 1000 → 20,000. `train.py` — near-mask
+returns `(near, same_env, dist)`, the spread-term block, per-epoch `pr=`/
+`spread=` logging, and the new CLI flags. `config.py` — the new `LossConfig`
+and `PatchConfig` fields.
+
+**Fenced off, marked out-of-scope at their definitions**: `graded_sigma` (a
+distance-graded pair target, rejected as equivalent to CKA; code retained,
+unused since) and `spread_arena_frac` (the diagnostic that lets the spread term
+see the whole arena — it breaks the coverage constraint by construction and is
+never a headline).
+
+**Tests**: 21 across `test_losses_spread.py`, `test_lazy_patch_codes.py`,
+`test_rank_terms.py`, `test_patch_placement.py`, `test_spread_arena.py`. Two
+caught real bugs before they cost GPU time; the `random` placement path is
+asserted bit-identical because every number in §1–§4 came from it.
+
+## 0.4 The coding-rate regularizer, in full
+
+```python
+def coding_rate_loss(z, eps=0.5):          # z: (B, D), L2-normalised rows
+    B, D = z.shape
+    scale = D / (B * eps * eps)
+    gram  = torch.eye(D) + scale * (z.T @ z)
+    return -torch.linalg.cholesky(gram).diagonal().log().sum() / D
+```
+
+which computes `-1/D · logdet(I + D/(B·eps²) · ZᵀZ)`, the MCR² *rate*
+term.
+
+**What the quantity means.** `ZᵀZ / B` is the covariance of the batch's
+encodings. `logdet(I + c·Σ)` is, up to constants, the number of bits needed to
+transmit the batch to precision `eps` — the *coding rate* of the code. A code
+squashed into a few directions is cheap to describe; a code filling its space
+is expensive. Minimising the negative rate therefore **maximises how many bits
+the representation occupies**, i.e. pushes the batch to fill its space rather
+than collapse.
+
+**Why logdet and not variance.** `logdet` is the sum of `log(1 + c·λᵢ)` over
+the eigenvalues of the covariance. Logs punish small eigenvalues hard and
+reward large ones barely, so the sum is maximised when the eigenvalues are
+*equal*. Variance-based terms (VICReg's hinge) maximise `Σλᵢ`, which one huge
+direction satisfies as well as many even ones. The rate term rewards
+**spectrum**, not magnitude: it wants the code isotropic.
+
+**Why it is legal here.** The constraint of this campaign is that no term may
+consult which environment a pair came from. The rate term never forms a pair at
+all — it is a statistic of the batch's second moment. It reaches the far field
+by acting on the whole batch's shape, which is also the reason it cannot fix a
+specific colliding pair (§5.6j).
+
+**What `eps` does.** It is the precision the rate is measured to, and it sets
+where the log turns over. `scale = D/(B·eps²)` multiplies the covariance, so
+small `eps` makes even tiny eigenvalues land in the log's linear region and get
+pushed hard; large `eps` makes the term ignore all but the dominant directions.
+0.5 is the value used throughout and was never swept — a genuine gap.
+
+**Why normalise by `D`.** Without it the term's magnitude grows with `out_dim`,
+so `rate_lambda` would have to be retuned every time the head width changed.
+Dividing by `D` keeps `rate_lambda=0.3` meaning the same thing at `out_dim` 64
+and 1024, which is what let §5.8's capacity sweep vary the head without
+confounding the loss.
+
+**What it does empirically, and the mistake worth recording.** It is the one
+term measured to move the alias ceiling without touching the decay width *at
+low strength*: at `rate_lambda=0.3` the ceiling went 0.946 → 0.907 with decay50
+unchanged at 22.5 and `r_min` 4.5 → 9. I assumed being pair-free would keep it
+off the local neighbourhood entirely. That is false — at `rate_lambda=3` the
+profile spends hundreds of epochs at `r_median` 0, and by 10 the decay is
+destroyed (res90 14.5 → 3.0). Pair-free only raises the strength at which the
+damage starts. **Strength is the whole thing, and 0.3 is the tested value.**
+
+---
+
 ## 1. Best encoder so far
 
 **`run_20260422_185816/encoder_best.pt`** — `r_min = 16`, but see below: the
