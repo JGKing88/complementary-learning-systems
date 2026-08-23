@@ -916,6 +916,38 @@ WAVES: dict[str, dict] = {
         },
         "seed": [42, 43],
     },
+    # W33 -- §6 step 2. Push the absolute radius, which w32 showed was the
+    # binding knob and not patch size.
+    #
+    # w32, 20 references, two seeds, hd256/od1024 throughout:
+    #
+    #     geometry   frac 0.15   abs radius 20
+    #     sm100        7.0          8.5
+    #     sm50         3.5          9.0
+    #     sm20         1.0          3.0
+    #     smmix        5.0           -
+    #
+    # sm50 nearly tripled and both sm50 and sm100 at radius 20 beat the
+    # lo_mixtop incumbent (7.5-8.0). The fractional radius was starving the
+    # small geometries: frac 0.15 is 7.5 cells on a 50-cell patch, against the
+    # ~20 §4.5b measured as the absolute optimum. Reading a size verdict off
+    # frac 0.15 would have concluded "small patches fail", which is the wrong
+    # answer to the question that was asked.
+    #
+    # 20 was the edge of w32's grid, not an optimum. §4.5b found 40 failing on
+    # 200-cell patches, but these patches are smaller and the ceiling on a
+    # useful radius is the patch diagonal -- 71 cells at sm50, 141 at sm100 --
+    # so the two geometries should turn over at different places. sm20 is
+    # dropped: its diagonal is 28 and radius 20 already covers most of it.
+    "w33_radius_push": {
+        "arm": {
+            f"{g}_r{r}": dict(npos_list=SIZE_MIXES[g],
+                              per_env_radius_frac=0.0, radius=float(r),
+                              rate_lambda=0.3, out_dim=1024, hidden_dim=256)
+            for g in ("sm100", "sm50") for r in (25, 30, 40)
+        },
+        "seed": [42, 43],
+    },
     # W13 -- coverage, on the winning config rather than on the bare baseline.
     #
     # This replaces w4, which swept coverage over mixes chosen before any of the
