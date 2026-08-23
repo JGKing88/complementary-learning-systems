@@ -948,6 +948,36 @@ WAVES: dict[str, dict] = {
         },
         "seed": [42, 43],
     },
+    # W34 -- §6 step 3. Six seeds on the three arms that tie at the top.
+    #
+    # The w33 radius curve, two seeds per cell:
+    #
+    #     radius     frac 0.15    20     25     30     40
+    #     sm50          3.5      9.0    8.5    6.5    5.0
+    #     sm100         7.0      8.5    7.5    5.5    5.0
+    #
+    # 20 peaks both, which is where §4.5b put the absolute optimum on 200-cell
+    # patches -- so the near-radius optimum is ~20 cells and does not scale with
+    # patch size, and `per_env_radius_frac` was the wrong parameterisation the
+    # whole time.
+    #
+    # sm50_r20 (9.0), sm50_r25 (8.5) and sm100_r20 (8.5) are inside each other's
+    # spread at two seeds, and this campaign has reversed two-seed orderings
+    # repeatedly. Seeds 44-47 take all three to six, pooled with 42/43.
+    "w34_small_confirm": {
+        "arm": {
+            "sm50_r20":  dict(npos_list=SIZE_MIXES["sm50"],
+                              per_env_radius_frac=0.0, radius=20.0,
+                              rate_lambda=0.3, out_dim=1024, hidden_dim=256),
+            "sm50_r25":  dict(npos_list=SIZE_MIXES["sm50"],
+                              per_env_radius_frac=0.0, radius=25.0,
+                              rate_lambda=0.3, out_dim=1024, hidden_dim=256),
+            "sm100_r20": dict(npos_list=SIZE_MIXES["sm100"],
+                              per_env_radius_frac=0.0, radius=20.0,
+                              rate_lambda=0.3, out_dim=1024, hidden_dim=256),
+        },
+        "seed": [44, 45, 46, 47],
+    },
     # W13 -- coverage, on the winning config rather than on the bare baseline.
     #
     # This replaces w4, which swept coverage over mixes chosen before any of the
