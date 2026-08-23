@@ -104,6 +104,19 @@ SIZE_MIXES: dict[str, str] = {
     "lo_mixtop": _mix((200, 5), (150, 3), (100, 3)),      # 10.1%, 11 envs
     "lo_many":   _mix((100, 29)),                         #  9.9%, 29 envs
     "lo_tail":   _mix((200, 3), (150, 4), (100, 6), (70, 8)),   # 10.5%, 21 envs
+    # --- the 20-100 cell set at ~10% coverage (§6). All placed at seeds 42/43
+    # in well under a second. Steps/epoch ~35 and epochs ~2100, i.e. the same
+    # wall clock as the lo_* set. What differs is reach: a 50-cell patch's
+    # diagonal is 71 cells and a 20-cell patch's is 28, against lo_mixtop's 283
+    # -- and the incumbent's decay50 is 34.5, so below about 50 cells the loss
+    # never sees a pair as far apart as the decay it is being asked to produce.
+    "sm100": _mix((100, 29)),                             #  9.8%,  29 envs
+    "sm70":  _mix((70, 60)),                              # 10.0%,  60 envs
+    "sm50":  _mix((50, 118)),                             # 10.0%, 118 envs
+    "sm30":  _mix((30, 327)),                             # 10.0%, 327 envs
+    "sm20":  _mix((20, 736)),                             # 10.0%, 736 envs
+    "smmix": _mix((100, 15), (70, 15), (50, 20), (30, 25)),   # 10.1%, 75 envs
+    "smlo":  _mix((100, 8), (70, 20), (50, 30), (30, 45)),    # 10.0%, 103 envs
     "mix2_hi": _mix((200, 15), (100, 40)),      # 1.00M, 34.0%, 55 envs
     "mix3_45": _mix((200, 20), (150, 20), (100, 30)),   # 1.55M, 52.6%, 70 envs
     "mixsmall": _mix((200, 12), (100, 40), (50, 200)),  # 1.38M, 46.9%, 252 envs
@@ -871,6 +884,37 @@ WAVES: dict[str, dict] = {
                                   per_env_radius_frac=0.10, rate_lambda=0.3),
         },
         "seed": [42, 43, 44, 45],
+    },
+    # W32 -- §6 step 1. Small environments (20-100 cells) at the same ~10%
+    # coverage, on the hd256/od1024 architecture §5.8 settled on.
+    #
+    # Geometry is crossed with the near radius rather than swept at the
+    # incumbent's frac 0.15, because frac 0.15 was tuned on 100-200 cell patches
+    # and applying it here would confound patch size with a badly scaled radius.
+    # That is the same mistake the uniformity-vs-rate comparison made (§0.4
+    # note, w31), and it is avoidable for the cost of one extra axis.
+    #
+    # The hypothesis the cross tests: §4.5b put the *absolute* radius optimum at
+    # ~20 cells and §4.5e put the *fractional* one at 0.15 of a 100-200 cell
+    # side, which is 15-30 cells -- the same window. If the invariant is
+    # absolute, then a fixed radius should beat the fraction by more the smaller
+    # the patches get, and 20-cell patches cannot reach it at all (their whole
+    # diagonal is 28).
+    #
+    # per_env_radius_frac=0 makes `radius` absolute for every env.
+    "w32_small_geom": {
+        "arm": {
+            **{f"{g}_f0.15": dict(npos_list=SIZE_MIXES[g],
+                                  per_env_radius_frac=0.15, rate_lambda=0.3,
+                                  out_dim=1024, hidden_dim=256)
+               for g in ("sm100", "sm50", "sm20", "smmix")},
+            **{f"{g}_r20": dict(npos_list=SIZE_MIXES[g],
+                                per_env_radius_frac=0.0, radius=20.0,
+                                rate_lambda=0.3,
+                                out_dim=1024, hidden_dim=256)
+               for g in ("sm100", "sm50", "sm20", "smmix")},
+        },
+        "seed": [42, 43],
     },
     # W13 -- coverage, on the winning config rather than on the bare baseline.
     #
