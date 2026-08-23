@@ -1897,11 +1897,22 @@ that as sampling noise. It was not: at 100 references every seed has one.
 
 ### 5.8d What did not work
 
-* **Both cuts together** (`w30`). `hd256` at `out_dim` 256 and 512 read 7.0 and
-  6.5 at 20 references against 8.0 at `out_dim=1024` — and `od512` scoring
-  *below* `od256` is non-monotone, which is the tell that these differences are
-  inside the noise. Cutting `out_dim` alongside `hidden_dim` buys nothing that
-  cutting `hidden_dim` alone does not.
+* **Both cuts together** (`w30`) — cheap, and it costs about a unit. At 100
+  references, four seeds, two draws:
+
+  | config | params | `r_min` med | min | zeros | `r_median` | decay50 |
+  |---|---|---|---|---|---|---|
+  | `hd256`, `od1024` | 572k | **7.0** | 2.0 | 0/16 | 17.00 | 42.5 |
+  | `hd256`, `od512` | 440k | 6.0 | 5.0 | 0/8 | 17.25 | 40.75 |
+  | `hd256`, `od256` | **375k** | 6.0 | **5.0** | 0/8 | 17.00 | 40.0 |
+  | baseline `hd512`, `od1024` | 1536k | 4.5 | 2.0 | 0/16 | 13.00 | 35.0 |
+
+  So cutting `out_dim` alongside `hidden_dim` costs ~1 unit of median but still
+  sits 1.5 above the baseline at **a quarter of the parameters**, and its worst
+  cell is *better* (5.0 against 2.0). If parameter count matters, `hd256`/`od256`
+  is the pick; if only `r_min` matters, keep `out_dim` at 1024. The 20-reference
+  read of this arm was non-monotone (`od512` below `od256`), which was the tell
+  that it needed the honest metric before anything was said about it.
 * **Narrow + spread term** (`w26`), and this one had a prediction attached.
   Since narrowing buys decay and the spread term buys ceiling, the law says
   combining them should compose: ceiling 0.984 → ~0.90 at decay ~40 would give
