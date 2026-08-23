@@ -185,10 +185,22 @@ reward large ones barely, so the sum is maximised when the eigenvalues are
 direction satisfies as well as many even ones. The rate term rewards
 **spectrum**, not magnitude: it wants the code isotropic.
 
-**Why it is legal here.** The constraint of this campaign is that no term may
-consult which environment a pair came from. The rate term never forms a pair at
-all — it is a statistic of the batch's second moment. It reaches the far field
-by acting on the whole batch's shape, which is also the reason it cannot fix a
+**Why it is legal here.** Stated carefully, because the short version of this
+rule contradicts itself. The constraint *is* `exclude_cross_env_pairs`, and that
+flag reads `same_env` — it is itself a mask on environment identity. So the rule
+cannot be "no term looks at environment labels". It is directional (§4.0):
+
+> environment identity may be used to **withhold** supervision, which is the
+> constraint being imposed; it may not be used to **apply** supervision, which
+> would hand back the signal the constraint removes.
+
+`far = ~near & same_env` narrows the repel term to within-environment pairs. A
+remediation that used `same_env` the other way — to push cross-environment pairs
+apart — would restore exactly what was withheld and would not be a result.
+
+The rate term sidesteps the question entirely: it **never forms a pair at all**,
+being a statistic of the batch's second moment. It reaches the far field by
+acting on the whole batch's shape, which is also precisely why it cannot fix a
 specific colliding pair (§5.6j).
 
 **What `eps` does.** It is the precision the rate is measured to, and it sets
@@ -582,7 +594,22 @@ each run already stored in its checkpoint rather than re-scoring on a GPU.
 
 The flag governs the *repel* mask. Taken literally it can be satisfied while
 putting the same supervision back through another term, so the campaign is
-split and the two halves are never mixed in a headline:
+split and the two halves are never mixed in a headline.
+
+**The rule is directional, and has to be.** `exclude_cross_env_pairs` builds
+`far = ~near & same_env`, so the constraint is itself a mask on environment
+identity — "no term may look at environment labels" would forbid the constraint
+along with everything else. What is actually forbidden is using that identity in
+the opposite direction:
+
+| | uses `same_env` | verdict |
+|---|---|---|
+| the constraint | to **withhold** repulsion from cross-env pairs | this *is* the imposition |
+| a remediation | to **apply** repulsion to cross-env pairs | hands back what was withheld |
+| a remediation | not at all | legal |
+
+The asymmetry is the point: withholding is the experiment, applying would undo
+it. Everything below is classified on that basis.
 
 * **Legal** — anything that never asks which environment a pair came from:
   geometry, the near radius, loss weights, distance-graded targets, batch-wide
@@ -1227,9 +1254,10 @@ Everything from §4.0 still binds:
   target kernel, which is the same family);
 * every other knob free.
 
-Legal/loophole split is unchanged: a term may not consult which environment a
-pair came from. `uniformity_scope=nonnear` and `input_far_tau` remain the
-labelled loopholes.
+Legal/loophole split is unchanged (§4.0): a term may not use environment
+identity to *apply* repulsion. The constraint itself uses it to *withhold* —
+that is the asymmetry the rule turns on. `uniformity_scope=nonnear` and
+`input_far_tau` remain the labelled loopholes.
 
 ## 5.2 Where §4 leaves this
 
