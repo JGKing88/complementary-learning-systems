@@ -203,6 +203,21 @@ def main() -> None:
             "q_dist_mean": float(cat["q_dist"].mean()) if n_d else 0.0,
             "q_dist_p90": float(np.percentile(cat["q_dist"], 90)) if n_d else 0.0,
             "dir_acc_goal": float(cat["dir_goal"].mean()),
+            # The MEAN cosine is ambiguous and was over-read once already:
+            # 0.70 is equally consistent with "every cell is ~46 degrees
+            # off" and with "70% of cells are near-perfect and 30% are
+            # essentially random". Those say different things about whether
+            # navigation is uniformly degraded or degraded in a subset of
+            # the arena, so report the distribution, not just its mean.
+            "dir_acc_p10": float(np.percentile(cat["dir_goal"], 10)),
+            "dir_acc_p25": float(np.percentile(cat["dir_goal"], 25)),
+            "dir_acc_median": float(np.median(cat["dir_goal"])),
+            "dir_acc_p75": float(np.percentile(cat["dir_goal"], 75)),
+            "dir_acc_p90": float(np.percentile(cat["dir_goal"], 90)),
+            # cos < 0.5 is worse than 60 degrees off, i.e. the step makes
+            # little progress toward the goal. cos < 0 is actively away.
+            "dir_acc_frac_below_0.5": float((cat["dir_goal"] < 0.5).mean()),
+            "dir_acc_frac_negative": float((cat["dir_goal"] < 0.0).mean()),
             "recall_margin": float(cat["margin"].mean()) if cat["margin"].size else float("nan"),
             "recall_is_goal_frac": float((cat["margin"] > 0).mean()) if cat["margin"].size else float("nan"),
             "auc_qmag": _auc(cat["q_goal"], cat["q_dist"]) if n_d else float("nan"),

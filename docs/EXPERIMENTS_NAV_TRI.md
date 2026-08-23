@@ -2438,7 +2438,57 @@ is wasted.
 
 **What still binds, and it is not on the knob list.** `chase_q` remains
 0.16–0.24 at d=5/10 even in the best model, and coverage still falls
-0.315 → 0.252 across distractor levels. P0.7 traced that to the **readout**:
-`dir_acc` 0.99 → 0.70 and `AUC(|q|)` 0.96 → 0.62 between one distractor and
-ten. **The next real gain is an encoder whose cross-env repulsion holds up at
-ten distractors, not another policy hyper-parameter.**
+0.315 → 0.252 across distractor levels.
+
+> **CORRECTION.** An earlier version of this paragraph said `chase_q` is high
+> "because the readout degrades there (`dir_acc` 0.99 → 0.70)". **That is a
+> category error, and Jack caught it.** `dir_acc` is measured on the
+> **goal-present** memory; `chase_q` is measured on the **goal-absent** memory,
+> where no goal exists and `dir_acc` is not even defined. Readout *accuracy*
+> cannot explain a failure to *ignore* the readout.
+>
+> **The actual driver is separability, not accuracy.** The two ‖q‖
+> distributions converge as distractors are added:
+>
+> | `n_dist` | ‖q‖ goal-present | ‖q‖ goal-absent | ratio | `AUC(‖q‖)` |
+> |---|---|---|---|---|
+> | 1 | 0.269 | 0.056 | **4.8×** | 0.955 |
+> | 3 | 0.252 | 0.062 | 4.1× | 0.936 |
+> | 5 | 0.259 | 0.120 | 2.2× | 0.836 |
+> | 10 | 0.218 | 0.170 | **1.28×** | 0.619 |
+>
+> More stored patterns make the recall a mixture of more of them, so the
+> **decoy-only** signal grows — 0.056 → 0.170 — until it is indistinguishable
+> from a real goal. A policy gating on that magnitude then follows decoys. All
+> of that lives inside the goal-absent condition, which is where `chase_q` is
+> measured.
+>
+> So there are **two distinct readout deficiencies with different victims**:
+>
+> | deficiency | measured by | breaks |
+> |---|---|---|
+> | separability collapse | `AUC(‖q‖)` 0.96 → 0.62 | the **explore** half — decoys look like goals, so the policy chases (`chase_q`) |
+> | direction error | `dir_acc` 0.99 → 0.70 | the **exploit** half — following a signal that points ~46° wrong (`mean_steps`) |
+>
+> The conclusion below survives, but on the first row, not the second.
+
+**The next real gain is an encoder whose cross-env repulsion holds up at ten
+distractors, not another policy hyper-parameter** — specifically one that keeps
+the goal-absent ‖q‖ *small* as patterns accumulate, which is the separability
+axis, and separately one that keeps the recall direction clean, which is the
+accuracy axis.
+
+**Two limits on even the corrected claim**, worth stating because the
+correction was only found by being challenged:
+
+1. `n_dist` is a single axis. Separability, decoy magnitude and direction error
+   all move along it together, so the overlap story matches quantitatively but
+   is not *isolated* from other things that grow with distractor count.
+   `hopfield_nav/run_nav_tri_gating.sh` addresses this directly — a 2×2
+   crossover that forces ‖q‖ to a chosen value while leaving direction alone,
+   so magnitude and memory contents can be varied independently.
+2. `dir_acc` 0.696 is a **mean cosine over cells**, equally consistent with
+   "every cell ~46° off" and with "70% of cells near-perfect, 30% random".
+   Those imply different things about whether exploiting is uniformly hard or
+   hard in a subset of the arena. `signal_separability` now reports the
+   percentiles and the fraction below cos 0.5.

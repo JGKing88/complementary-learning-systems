@@ -78,7 +78,8 @@ from hopfield_nav.world.vec_env import make_vec
 
 @torch.no_grad()
 def _rollout(*, agent, env, env_offset, vectorhash, hopfields, cfg, device,
-             starts, max_steps, ends_on_arrival, goal_in_memory):
+             starts, max_steps, ends_on_arrival, goal_in_memory,
+             q_rescale=None):
     """One trial per Hopfield, in parallel, recording everything.
 
     Mirrors `evaluation/batched.py` step for step -- same channel assembly,
@@ -127,6 +128,7 @@ def _rollout(*, agent, env, env_offset, vectorhash, hopfields, cfg, device,
                 vectorhash, cfg, embeddings_np, embeddings, positions,
                 env_offset, hopfields, False, device, embeddings.shape[1])
             q_np = np.asarray(q, dtype=np.float32)
+            q_np = _rescale_q(q_np, q_rescale).astype(np.float32)
             if (cfg.agent.input_hopfield_raw
                     and cfg.agent.hopfield_mode != "discrete"):
                 hop_signal = torch.from_numpy(q_np).to(device)
@@ -156,7 +158,8 @@ def _rollout(*, agent, env, env_offset, vectorhash, hopfields, cfg, device,
                 device)
             for s, q_s in msq.items():
                 values[channels.multistep_name(s)] = torch.from_numpy(
-                    np.asarray(q_s, dtype=np.float32)).to(device)
+                    _rescale_q(np.asarray(q_s, dtype=np.float32),
+                               q_rescale).astype(np.float32)).to(device)
 
         rnn_input = channels.build_policy_input(
             input_specs, values, batch_size=B).unsqueeze(1)
@@ -287,6 +290,32 @@ def _warm_vs_cold(*, agent, env, env_offset, vectorhash, hopfields, cfg,
         "warm_speedup": (float(np.mean(first_gap) / np.mean(later_gaps))
                          if first_gap and later_gaps else float("nan")),
     }
+
+
+def _rescale_q(q, target):
+    """Set ||q|| to `target`, preserving direction. `None` leaves it alone.
+
+    The intervention behind the gating experiment. The hypothesis is that the
+    policy decides whether to follow the recall by its MAGNITUDE -- goal-present
+    ||q|| is ~0.22 and decoy-only ~0.17 at ten distractors, ~0.27 against ~0.06
+    at one -- rather than by anything about the memory's contents. Correlational
+    evidence cannot separate those, because in normal rollouts magnitude and
+    contents move together.
+
+    Rescaling breaks them apart: feed a DECOY direction at goal-strength, or a
+    GOAL direction at decoy-strength, and see which one the behaviour follows.
+    Direction is untouched, so `follow_q` / `chase_q` -- both cosines -- measure
+    the same thing before and after.
+
+    Applied to the multistep channels with the same factor, not independently:
+    they are the same recall iterated, so scaling them apart would create an
+    input combination the policy has never seen for a different reason than the
+    one under test.
+    """
+    if target is None:
+        return q
+    n = np.linalg.norm(q, axis=-1, keepdims=True)
+    return np.where(n > 1e-8, q * (target / np.maximum(n, 1e-8)), q)
 
 
 def _cos(a, b, eps=1e-8):
@@ -478,6 +507,14 @@ def main() -> None:
     p.add_argument("--seed", type=int, default=42)
     p.add_argument("--device", default="cuda")
     p.add_argument("--json", default=None)
+    p.add_argument("--q_rescale", type=float, default=None,
+                   help="Force ||q|| to this value before the policy sees it, "
+                        "preserving direction (multistep channels scaled the "
+                        "same way). The controlled test of whether the policy "
+                        "gates on magnitude: run nav mode at the decoy-level "
+                        "norm and explore mode at the goal-level norm, and see "
+                        "whether following tracks the magnitude or the memory "
+                        "contents. Off by default.")
     p.add_argument("--npos", type=int, default=None,
                    help="Shrink the scaffold. encoded_Phi is Npos^2 x 1024, "
                         "i.e. 12 GB at the real 1716 -- unusable without a GPU "
@@ -587,7 +624,8 @@ def _probe_one(args, cfg, agent, envs, vh, offsets, embed_dim, device):
                     hopfields=hops, cfg=cfg, device=device, starts=starts,
                     max_steps=args.max_steps,
                     ends_on_arrival=(mode == "nav"),
-                    goal_in_memory=(mode == "nav"))
+                    goal_in_memory=(mode == "nav"),
+                    q_rescale=args.q_rescale)
                 per_env.append(
                     _nav_stats(rec, env.size, goal, starts) if mode == "nav"
                     else _explore_stats(rec, env.size, goal))
