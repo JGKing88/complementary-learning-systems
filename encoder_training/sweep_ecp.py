@@ -844,6 +844,34 @@ WAVES: dict[str, dict] = {
         },
         "seed": [44, 45, 46, 47],
     },
+    # W31 -- uniformity at the winning geometry, at its own preferred radius.
+    #
+    # The campaign settled on rate_lambda, and the grounds are narrower than
+    # that makes it sound. Uniformity beat rate on the ceiling at a 10-cell
+    # radius (0.863 against 0.919, r_min 9 against 8) and lost at 0.15*side
+    # (12.5 against 17.5). Every uniformity arm ever run sits at one of those
+    # two settings -- absolute radius 10 on mix2, or frac 0.15 on mixtop and
+    # lo_mixtop. It has never been run at mixtop_max, the geometry the best
+    # encoder in the campaign uses, and never at frac 0.10 anywhere.
+    #
+    # That matters because frac 0.15 was itself chosen with rate (§4.5e). Tuning
+    # the radius for one spread term and then comparing terms at that radius is
+    # not a fair comparison, and the direction of the bias is known: uniformity
+    # wants the radius narrower than rate does. This runs the joint cell.
+    #
+    # f0.10_rate0.3 is the control -- the narrower radius with the incumbent
+    # term -- so a win for unif1 at f0.10 cannot be the radius alone.
+    "w31_unif_at_best": {
+        "arm": {
+            "f0.10_unif1": dict(npos_list=SIZE_MIXES["mixtop_max"],
+                                per_env_radius_frac=0.10, uniformity_lambda=1.0),
+            "f0.15_unif1": dict(npos_list=SIZE_MIXES["mixtop_max"],
+                                per_env_radius_frac=0.15, uniformity_lambda=1.0),
+            "f0.10_rate0.3": dict(npos_list=SIZE_MIXES["mixtop_max"],
+                                  per_env_radius_frac=0.10, rate_lambda=0.3),
+        },
+        "seed": [42, 43, 44, 45],
+    },
     # W13 -- coverage, on the winning config rather than on the bare baseline.
     #
     # This replaces w4, which swept coverage over mixes chosen before any of the
