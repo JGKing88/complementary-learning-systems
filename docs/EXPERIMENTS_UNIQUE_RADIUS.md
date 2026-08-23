@@ -81,9 +81,13 @@ Measured, not inferred. Nulls are listed because they cost runs too.
 * `rate_lambda` optimum is **0.3**. Stronger moves the ceiling exactly as asked
   (0.985 → 0.833 at 10) and drags res90 down with it (14.5 → 3.0), slightly
   worse than par, so `r_min` gets *worse* (§5.6h).
-* **Uniformity beats the coding rate on the ceiling at a narrow (~10-cell)
-  radius and loses at a wide one** (§4.4, §5.6i). Radius-dependent, not
-  coverage-dependent.
+* **Uniformity vs the coding rate is coverage-dependent, and rate wins where it
+  matters** (§4.4, §4.4c, §5.6i). Uniformity beat rate on the ceiling at a
+  10-cell radius at 20.4% coverage, lost on it at 22.9%, and beats it again at
+  50.8% (**0.674 against 0.743**, the best ceiling measured there). It never
+  converts, because it pays for the ceiling in decay. Tested fairly at the
+  winning geometry — including at its own supposedly preferred narrower radius,
+  which turns out to hurt *both* terms equally — rate leads 26.5 to 24.0.
 * **Coverage is the strongest lever**: 10% → 50.8% takes `r_min` 4.5 → 23.
 * Bigger patches beat smaller at fixed coverage; 50–70 cell tails are actively
   harmful (§4.5).
@@ -1023,6 +1027,42 @@ So `w6`'s σ=75 should reach ~22 *if* the ceiling holds at 0.955 — and whether
 holds is the real question, since a σ that large leaves almost no within-patch
 pair asking for separation. The rank terms matter again here, not for `r_min`
 directly but as the only way to buy the left-hand column.
+
+### 4.4c Uniformity, tested fairly at the winning geometry (`w31`)
+
+The choice of `rate_lambda` over `uniformity_lambda` rested on a comparison at
+`frac=0.15` — a radius chosen by sweeping *with rate* (§4.5e). Since §4.4
+measured uniformity preferring a narrower radius than rate, comparing the two
+at rate's optimum is biased by construction. Uniformity had also never been run
+at `mixtop_max` (50.8%), the geometry the best encoder in the campaign uses, nor
+at `frac=0.10` anywhere. This closes both gaps. Four seeds, `encoder_final`:
+
+| arm | `r_min` med | spread | `r_median` | alias max | alias mean | decay50 |
+|---|---|---|---|---|---|---|
+| **`f0.15_rate0.3`** (§4 winner) | **26.5** | 1 | 40.25 | 0.743 | 0.492 | **42.25** |
+| `f0.15_unif1` | 24.0 | 6 | 40.00 | **0.674** | 0.472 | 40.5 |
+| `f0.10_rate0.3` | 22.0 | 5 | 30.25 | 0.701 | 0.517 | 33.0 |
+| `f0.10_unif1` | 19.5 | 5 | 30.75 | 0.725 | 0.505 | 31.5 |
+
+**The motivating hypothesis is falsified.** Uniformity does *not* want a
+narrower radius at this coverage — narrowing costs it 4.5 units (24.0 → 19.5),
+just as it costs rate 4.5 (26.5 → 22.0). Both terms prefer 0.15, and the radius
+optimum is a property of the geometry rather than of the spread term. So the
+original comparison was not rigged after all, and `rate` keeps the config.
+
+**But uniformity's ceiling advantage is real and coverage-dependent**, which is
+new. At `frac=0.15` it reaches **alias 0.674 against rate's 0.743** — the best
+ceiling measured at this coverage. Compare `w14` at 22.9% coverage, where
+uniformity's ceiling was *worse* than rate's (0.876 against 0.853). The sign
+flips between 22.9% and 50.8%, so the two terms' ranking on the ceiling depends
+on coverage, not only on radius as §4.4 concluded.
+
+It does not convert, because uniformity pays for that ceiling in decay (40.5
+against 42.25) and, by §4.4b, `r_min` is the product. The margin is 2.5 units
+inside spreads of 1 and 6, so the honest statement is that **rate is ahead at
+the winning geometry and the gap is not large.** Anyone reviving uniformity
+should start from its ceiling, which is genuinely better here, and find a way
+to stop it costing the decay.
 
 ### 4.5 Geometry (`w1_geometry`) — size and radius carry it, mixing does not (yet)
 
