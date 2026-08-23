@@ -451,6 +451,30 @@ def _nav_stats(rec, size, goal, starts):
     succ_mask = np.broadcast_to(succ[None, :], (T, B))
     fail_mask = ~succ_mask
 
+    # follow_q and align_true by STEP INDEX. The aggregate averages over the
+    # whole trajectory including the opening steps, when the RNN starts from a
+    # zero hidden state and has seen one observation. With mean_steps ~ 7, two
+    # or three badly-aimed opening steps drag the mean down a lot, so a low
+    # aggregate is consistent with either "never follows well" or "follows well
+    # once settled". These separate the two. Rows that have already reached the
+    # goal are frozen out by `live`, so late bins are over the trials still
+    # running -- i.e. the slow ones, which is worth remembering when reading a
+    # late bin as "it got better".
+    def _by_step(arr, ok):
+        out = {}
+        for t in list(range(6)) + [("6plus", slice(6, None))]:
+            if isinstance(t, tuple):
+                key, sl = t
+            else:
+                key, sl = f"t{t}", slice(t, t + 1)
+            sel = ok[sl] & live[sl]
+            out[key] = float(arr[sl][sel].mean()) if sel.any() else float("nan")
+            out[key + "_n"] = int(sel.sum())
+        return out
+
+    follow_by_step = _by_step(follow, ok_f)
+    align_by_step = _by_step(align, ok_a)
+
     start_d = np.linalg.norm(
         np.asarray(starts, dtype=np.float64) - g[None, :], axis=-1)
     final_d = np.linalg.norm(rec["final_pos_f"] - g[None, :], axis=-1)
@@ -473,6 +497,12 @@ def _nav_stats(rec, size, goal, starts):
         "align_true_success": m(align, ok_a, succ_mask),
         "align_true_fail": m(align, ok_a, fail_mask),
         "follow_q": m(follow, ok_f, np.ones_like(succ_mask)),
+        **{f"follow_q_{k}": v for k, v in follow_by_step.items()
+           if not k.endswith("_n")},
+        **{f"align_true_{k}": v for k, v in align_by_step.items()
+           if not k.endswith("_n")},
+        **{f"n_steps_{k[:-2]}": v for k, v in follow_by_step.items()
+           if k.endswith("_n")},
         "follow_q_fail": m(follow, ok_f, fail_mask),
         "q_accuracy": m(qacc, ok_q, np.ones_like(succ_mask)),
         "q_accuracy_fail": m(qacc, ok_q, fail_mask),
