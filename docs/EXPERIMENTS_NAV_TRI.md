@@ -134,6 +134,46 @@ by how much it would change someone else's run.
     as σ grows, fastest where reward is sparse.
 18. **Signal-separability numbers need ≥8 independent distractor draws.** Two
     draws produced two different wrong conclusions.
+19. **No `dir_acc` number is interpretable without naming its eval world.** Two
+    worlds, same encoder and same probe, gave 1.8% and 23.3% of cells below
+    cos 0.5 at ten distractors — a 13× swing that eight envs does not average
+    out. This applies retroactively to every P0.7 figure here (§6.7.1).
+
+**About what actually fails** — *the most important thing in this section*
+
+20. **There are two distinct exploit failure modes, and which one a model has
+    is set by whether it also trained on explore.** They cost about the same
+    at ten distractors (success 0.828 exploit-only vs 0.849 combined), so a
+    success rate cannot tell them apart. `follow_q_fail` and `q_accuracy_fail`
+    can, and they point in opposite directions:
+
+    | at d=10, on **failed** trials | combined | exploit-only |
+    |---|---|---|
+    | `follow_q_fail` — did it follow `q`? | **0.011** | **0.311** |
+    | `q_accuracy_fail` — was `q` worth following? | **0.437** | **0.179** |
+    | `final_dist_fail` | 9.4 | 5.6 |
+    | `fail_frac_at_edge` | 0.389 | 0.289 |
+
+    - **Mode A — trusting a broken readout** (exploit-only). Following stays
+      high on failures; the readout on exactly those trials is garbage. The
+      agent walks faithfully into a phantom and stops there, one distractor's
+      distance out. This is **encoder-limited**: no policy change fixes it.
+    - **Mode B — ignoring a usable readout** (combined). Following is *zero*
+      on failures while `q_accuracy` on those same trials is 0.437. The agent
+      ends far away, against a wall 39% of the time — explore behaviour running
+      inside a nav episode. This is **regime-detection-limited**, and is a
+      policy problem.
+
+21. **Explore training does not add exploit failures — it converts mode A into
+    mode B at roughly constant cost.** Which means the ~15% the combined model
+    still misses at d=10 is *not* the encoder's fault, and is the one lead left
+    that a policy fix could take. §6.6 concluded the opposite; it was right
+    about the other 85% and wrong about this slice.
+22. **A `mean_steps` gain is not necessarily better goal-following — check
+    stride first.** Explore training triples step magnitude (3.47 vs 1.16) and
+    *lowers* the productive fraction of motion (`path_efficiency/step_mag`:
+    0.39 vs 0.91). The combined model is the sloppier navigator and still wins
+    `mean_steps` outright, on stride alone.
 
 ### The single most important finding so far
 
@@ -144,6 +184,19 @@ cannot fix it — ε steps are masked out of the PPO movement surrogate, so they
 move the agent without teaching it to move. σ is the only channel. Measured
 1.8× coverage from σ alone at matched u50, 2.1× against the full v35 config.
 See §3.4's verdict and the wave-1 live notes.
+
+That is the most important finding about *making the numbers go up*. The most
+important finding about *why they stop* is finding 20 — the two failure modes.
+They are worth restating because a whole section of this document (§6.6) was
+written under the assumption there was only one:
+
+> **The exploit-only model fails by following a readout that is wrong. The
+> combined model fails by not following a readout that is right.**
+
+Same cost, opposite cause, and only the second one is fixable from the policy
+side. Diagnose with `follow_q_fail` and `q_accuracy_fail` together — either
+alone is ambiguous, and `success_rate` cannot see the difference at all. Both
+come out of `analysis/nav_tri/behavior_probe.py --mode nav`.
 
 **Open items carried forward** (priority order):
 
