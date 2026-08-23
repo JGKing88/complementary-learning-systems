@@ -147,6 +147,25 @@ See §3.4's verdict and the wave-1 live notes.
 
 **Open items carried forward** (priority order):
 
+- [ ] **Read `w7_x_matched` (job 21033482) and finish §6.7.** The confounded
+      version of the comparison is already in — exploit failures are NOT
+      inherited from explore training, but the failure *mode* flips from
+      "trusts a broken readout" to "ignores a usable one". The matched control
+      removes the goal_reward / persistence / eps / training-length confounds.
+      Probe it with `--mode nav` at d=0/5/10 and compare `follow_q_fail` and
+      `q_accuracy_fail`, not the aggregate `follow_q`.
+- [ ] **Every `dir_acc` number in P0.7 needs its world stated** — §6.7.1 found
+      a 13× between-world swing in the broken-cell fraction at d=10 (1.8% vs
+      23.3%). Re-run `signal_separability` over many worlds and report a
+      distribution before quoting any of it again.
+- [ ] Read the `--q_scale` dose response (job 21032524) — does following rise
+      with the multiplier in both regimes? Flat means the policy reads the
+      *dynamics* of ‖q‖, not its level. Supersedes `run_nav_tri_gating.sh`,
+      whose clamp destroyed the dynamics and gave two contradictory arms.
+- [ ] **The 15% regime-detection gap is the one policy-side lead left.** §6.7:
+      on the combined model's failed nav trials at d=10 the readout is usable
+      (`q_accuracy_fail` 0.437) and following is zero. Not encoder-limited.
+
 - [ ] Fill the wave-1 results table at u450 and write its Conclusions.
 - [ ] Behaviour-probe the wave-1 finals
       (`PROBE=behavior CKPTS="…" sbatch hopfield_nav/run_nav_tri_probe_cpu.sh`)
@@ -2492,3 +2511,121 @@ correction was only found by being challenged:
    Those imply different things about whether exploiting is uniformly hard or
    hard in a subset of the arena. `signal_separability` now reports the
    percentiles and the fraction below cos 0.5.
+
+---
+
+### 6.7 Wave 7 — is the exploit failure *caused* by explore training?
+
+Jack's question, and a good one, because everything up to here measured the
+combined model against itself. The combined model's nav failures are bimodal:
+it locks onto `q` within about three steps and arrives, or it never locks on
+and wanders with `follow_q ≈ 0.01`. That second mode looks exactly like a
+policy stuck in explore, which invites the reading that explore training is
+what breaks exploit. The alternative is that ten distractors break the readout
+and any model trained on this task fails there, combined or not.
+
+**Comparison run.** The exploit-only specialist `w2_x_sig2` (final, `exploit:600`)
+got the same per-step probe as the combined model `w6_pers` u1950 — 8 envs ×
+32 trials, deterministic, 200 steps, identical eval world.
+
+`C` = combined (`w6_pers` u1950), `X` = exploit-only (`w2_x_sig2` final):
+
+| | C d0 | X d0 | C d5 | X d5 | C d10 | X d10 |
+|---|---|---|---|---|---|---|
+| success_rate | 0.984 | 1.000 | 0.911 | 0.896 | **0.849** | **0.828** |
+| mean_steps | **7.6** | **12.7** | **10.3** | **17.1** | **15.7** | **19.7** |
+| path_efficiency | 1.36 | 1.06 | 1.24 | 0.87 | 1.25 | 0.91 |
+| step_mag_mean | 3.47 | 1.16 | 2.32 | 0.71 | 1.94 | 0.70 |
+| q_accuracy | 0.989 | 0.984 | 0.855 | 0.732 | 0.654 | 0.558 |
+| q_accuracy_fail | 0.997 | — | 0.829 | 0.560 | **0.437** | **0.179** |
+| follow_q | 0.520 | 0.618 | 0.253 | 0.347 | 0.170 | 0.398 |
+| follow_q_t0 | **0.046** | **0.568** | 0.064 | 0.469 | 0.086 | 0.537 |
+| follow_q_t2 | 0.929 | 0.868 | 0.908 | 0.835 | 0.907 | 0.881 |
+| follow_q_6plus | 0.646 | 0.509 | 0.216 | 0.281 | 0.082 | 0.349 |
+| follow_q_fail | −0.213 | — | −0.042 | 0.192 | **0.011** | **0.311** |
+| final_dist_fail | 11.7 | — | 11.2 | 5.66 | **9.4** | **5.6** |
+| fail_frac_at_edge | 0.128 | 0.000 | 0.251 | 0.226 | 0.389 | 0.289 |
+
+**Answer: the failures are not inherited from explore training.** The
+exploit-only specialist fails at essentially the same rate — 0.828 against
+0.849 at ten distractors — while taking 25% longer to arrive when it does.
+Explore training does not cost exploit performance here; on this comparison it
+buys it.
+
+But the two models fail for **opposite reasons**, and that is the part worth
+keeping:
+
+- **The specialist fails by trusting a broken readout.** Its failed trials
+  still follow `q` (`follow_q_fail` 0.19 at d=5, 0.31 at d=10) and the readout
+  on exactly those trials is garbage (`q_accuracy_fail` 0.179 at d=10). It
+  walks faithfully into a phantom and stops there — `final_dist_fail` 5.6, a
+  distractor's distance away, not a wander.
+- **The combined model fails by ignoring a usable one.** Its failed trials have
+  `follow_q_fail ≈ 0.01`, i.e. no following at all, while `q_accuracy_fail` on
+  those same trials is **0.437** — a signal it could have used. It ends 9.4
+  away and 39% of the time against a wall. That is explore behaviour running in
+  a nav episode.
+
+So explore training converts *readout failures* into *regime-detection
+failures*, at roughly constant total cost. That reframes the remaining 15%:
+they are not blocked by the encoder, they are trials where a usable signal was
+available and the policy did not switch. **This is the one place where a policy
+fix, not an encoder fix, is still on the table** — everything in §6.6 argued
+the opposite, and it was right about the other 85%.
+
+**Two mechanistic findings fall out of the same table.**
+
+1. **Explore training buys stride, not straightness.** `step_mag_mean` is 3.47
+   for the combined model against 1.16 for the specialist at d=0. Dividing
+   `path_efficiency` by it gives the fraction of motion that is productive:
+   0.39 for combined, 0.91 for the specialist. The specialist is a far
+   *straighter* navigator; the combined model is a sloppy one with a stride
+   three times longer, and stride wins on `mean_steps` by enough to more than
+   cover the sloppiness. Worth remembering before reading a `mean_steps`
+   improvement as better goal-following — it may be a longer step.
+2. **Regime detection costs one to two steps.** `follow_q_t0` is 0.57 for the
+   specialist and 0.046 for the combined model; both are at ~0.9 by t2. The
+   specialist knows it is navigating before the episode starts, because it has
+   never done anything else. The combined model has to infer it, and spends
+   about one step doing so. On a 7.6-step trajectory that is real but small,
+   and it is the honest price of one policy doing two jobs.
+
+**Confounds, and the control that removes them.** `w2_x_sig2` differs from the
+combined model in more than explore exposure: `goal_reward` 5.0 vs 2.0,
+`persistence` 0 vs 0.20, `eps` 0.4 vs 0.1, and 600 updates vs 1950. Training
+length in particular has already fooled this line of work once (§6.5). So
+`w7_x_matched` was launched alongside — `exploit:1600`, 20 × 64 × 200,
+`GOAL_REWARD=2.0`, `PERSISTENCE_BONUS=0.20`, `INIT_LOG_STD=-0.7`,
+`EPSILON_EXPLORE=0.1`, `REGIME_ASSIGNMENT=shuffle`, seed 42 — identical to the
+combined recipe except `empty_frac` 0.0 instead of 0.5. Its per-step probe is
+the clean version of this table.
+
+Note that the confounds mostly bias *toward* the specialist on the metrics
+where it loses: more goal reward and a longer `mean_steps` budget should make
+it a better navigator, not a worse one. The 600-vs-1950 update gap is the one
+that cuts the other way, and is the reason the matched control matters.
+
+#### 6.7.1 Caveat that undercuts an earlier number: between-world variance
+
+Running the `dir_acc` percentile breakdown on a second eval world exposed a
+problem with how §6.6 states the direction-error result.
+
+| world | `dir_acc` mean @ d=10 | p10 | frac below cos 0.5 |
+|---|---|---|---|
+| `w6_pers` eval world | 0.9595 | 0.923 | **1.8%** |
+| smoke-checkpoint world | 0.696 | 0.028 | **23.3%** |
+
+Same encoder, same distractor count, same probe — a **13× difference in the
+broken-cell fraction** between two draws of the world. Eight envs does not
+average this out.
+
+So neither "a small concentrated tail" nor "~46° off everywhere" is the
+finding. The finding is that **readout quality at ten distractors is
+world-dependent to a degree that swamps the between-condition effects this
+document has been comparing**, and any `dir_acc` number quoted without its
+world is not interpretable. §6.6's `0.99 → 0.70` line is one world's draw.
+
+Practical consequence for anything downstream: `signal_separability` should be
+run over many worlds and reported as a distribution, not a mean over eight.
+That is not a small correction — it applies retroactively to every P0.7 number
+in this document.
