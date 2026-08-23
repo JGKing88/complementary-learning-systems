@@ -31,6 +31,16 @@ four times in this campaign and is not used for a headline (§4.8, §5.8c).
 | **2.** constraint, 10% cov | 4.5 | 13.0 | 0.980 | 35 | 1.54M |
 | **3.** constraint, 10% cov, `hidden_dim` 256 | **7.0** | 17.0 | 0.984 | 42.5 | **572k** |
 | *3b.* as 3, `out_dim` 256 as well | 6.0 | 17.0 | 0.984 | 40 | **375k** |
+| **4.** as 3, 29×100 envs, radius 20 | **7.5** | 13.0 | 0.964 | 31 | 572k |
+
+**Level 4** (§6) — `sweeps/w32_small_geom/00{8,9}_sm100_r20_seed=4{2,3}` and
+`sweeps/w34_small_confirm/00{8..11}_sm100_r20_seed=4{4..7}`. Level 3 with
+29×100-cell environments and an **absolute** near radius of 20 instead of
+`frac=0.15`. The median is inside level 3's noise; what it actually wins on is
+the lower tail — its worst of 12 cells is 5 against level 3's 2, and `sm50` at
+the same radius never went below 6 in 12. See §6.4: it beats level 3 while being
+worse on *both* factors of the law, by being more consistent across references,
+which the law cannot see.
 
 **Level 0** — `sweeps/ur_loss2_repel_low/029_repel_weight=2_per_env_radius_frac=0.1_seed=44/encoder_best.pt`.
 `out_dim` 1024, `hidden_dim` 512, 4 layers; 60×100 patches; `per_env_radius_frac`
@@ -75,9 +85,16 @@ Measured, not inferred. Nulls are listed because they cost runs too.
 * `single_env_batch=False` is worth ~16 units on its own (§2.1).
 * `repel_weight` has an interior optimum near 1–2; below ~0.5 training is
   unstable (§2.2).
-* `per_env_radius_frac` peaks at **0.10–0.15**. 0.25 and 0.40 are progressively
-  catastrophic (`r_min` 2.0, 0.5) — a wide attract radius turns most
-  within-patch pairs into attract pairs (§5.6i).
+* **The near radius wants ~20 cells absolute, and does not scale with patch
+  size** (§6.2). `per_env_radius_frac` peaks at 0.10–0.15 only because 0.15 of a
+  100–200 cell side *is* 15–30 cells; on 50-cell patches the same fraction gives
+  7.5 and costs two thirds of the radius (3.5 against 9.0). Radius 20 peaks
+  50-cell and 100-cell geometries alike, and §4.5b measured the same 20 on
+  200-cell patches. Prefer `radius` over `per_env_radius_frac`.
+* Too wide is still bad: `frac` 0.25 and 0.40 on 200-cell patches (50 and 80
+  cells) give `r_min` 2.0 and 0.5, and radius 30–40 costs the small geometries
+  too. The failure is anisotropy — the median improves while the worst
+  direction collapses (§5.6i, §6.2).
 * `rate_lambda` optimum is **0.3**. Stronger moves the ceiling exactly as asked
   (0.985 → 0.833 at 10) and drags res90 down with it (14.5 → 3.0), slightly
   worse than par, so `r_min` gets *worse* (§5.6h).
@@ -2187,3 +2204,121 @@ that as sampling noise. It was not: at 100 references every seed has one.
   all four seeds**, with `rate3` medians collapsing to 1.5–3.0. The two factors
   do not compose across these knobs; the narrow net is fragile and any extra
   pressure blows the tail. Recorded because the prediction was explicit.
+
+# 6. Small environments (20–100 cells) at 10% coverage
+
+Same brief as §5 — `exclude_cross_env_pairs=True`, ~10% coverage, mixed sizes,
+no cka, no `graded_sigma` — on §5.8's `hidden_dim=256` / `out_dim=1024`
+architecture, with patch sizes moved down to the 20–100 band.
+
+## 6.1 The answer
+
+**Small environments match the 100–200 cell config on the median and are
+substantially more reliable at the bottom.** 100 references, two draws,
+`encoder_final`, six seeds per small-env arm and eight for the incumbent:
+
+| config | cells, sorted | median | p25 | **min** | `r_median` | alias | decay50 |
+|---|---|---|---|---|---|---|---|
+| **`sm100`, radius 20** | 5 6 7 7 7 7 8 8 8 8 8 9 | **7.5** | **7.0** | 5 | 13.00 | 0.964 | 31.0 |
+| `sm50`, radius 20 | 6 6 6 6 7 7 7 7 8 8 8 9 | 7.0 | 6.0 | **6** | 13.25 | 0.933 | 25.25 |
+| §5.8 incumbent (100–200) | **2 2 3** 5 5 5 6 7 7 7 7 7 7 8 8 9 | 7.0 | 5.0 | **2** | 17.00 | 0.984 | 42.5 |
+
+The medians are inside each other's noise (7.5 against 7.0). The **lower tail is
+not**: the incumbent produced cells at 2, 2 and 3, while `sm100_r20`'s worst of
+twelve is 5 and `sm50_r20` never went below 6. Cells at or above 6: 63% for the
+incumbent, 92% for `sm100_r20`, **100%** for `sm50_r20`.
+
+For a worst-of-N metric that is the more useful property, and it is the one
+place in this campaign where a config has beaten another on *consistency across
+references* rather than on either factor of §4.4b's law.
+
+**Winning config** — `sweeps/w32_small_geom/00{8,9}_sm100_r20_seed=4{2,3}` and
+`sweeps/w34_small_confirm/00{8..11}_sm100_r20_seed=4{4..7}`:
+
+```
+npos_list            29x100                    (sm100, 9.8%, 29 envs)
+per_env_radius_frac  0.0                       <-- absolute, not fractional
+radius               20.0
+rate_lambda          0.3
+out_dim 1024  hidden_dim 256  num_hidden_layers 4      (572k params)
+exclude_cross_env_pairs, single_env_batch=False, lazy_codes
+lr 1e-4  batch_size 8192  fwhm_ratio 0.25  gain 1.0->5.0
+epochs 2100, step-matched to ~73,000 optimizer steps
+```
+
+## 6.2 The near radius is ~20 cells absolute, and does not scale with patch size
+
+This is the finding that made the rest possible, and it corrects a
+parameterisation used since §2.
+
+`per_env_radius_frac` sets the near radius as a fraction of the patch side. On
+100–200 cell patches `frac=0.15` gives 15–30 cells. On a 50-cell patch it gives
+**7.5**, and on a 20-cell patch **3**. Crossing geometry against radius (`w32`,
+`w33`, two seeds):
+
+| radius | `sm100` (29×100) | `sm50` (118×50) |
+|---|---|---|
+| `frac=0.15` | 7.0 *(=15 cells)* | 3.5 *(=7.5 cells)* |
+| **absolute 20** | **8.5** | **9.0** |
+| absolute 25 | 7.5 | 8.5 |
+| absolute 30 | 5.5 | 6.5 |
+| absolute 40 | 5.0 | 5.0 |
+
+**20 peaks both geometries**, and §4.5b independently measured 20 as the
+absolute optimum on 200-cell patches. So the optimum is ~20 cells wherever it
+has been looked for, across patch sizes from 50 to 200, and the fractional
+parameterisation only ever worked because 0.15 of a 100–200 cell side lands in
+the same window.
+
+`sm50` nearly tripled on the fix (3.5 → 9.0). **Reading a size verdict off
+`frac=0.15` alone would have concluded "small patches fail"** — which is the
+wrong answer, and is what crossing the two axes was there to prevent. It is the
+same trap as the uniformity comparison in §4.4c, caught in the same session.
+
+Above 20 the failure has §5.6i's signature: `sm100` at radius 30 and 40 has the
+*better* `r_median` (15.0, 13.25 against radius 20's 12.25) and the worse
+`r_min` — a wide attract radius improving the typical direction while ruining
+the worst.
+
+## 6.3 Size, and why 20 cells cannot work
+
+At `frac=0.15`, and then at the corrected radius (two seeds):
+
+| geometry | envs | `frac=0.15` | radius 20 | patch diagonal |
+|---|---|---|---|---|
+| `sm100` 29×100 | 29 | 7.0 | **8.5** | 141 |
+| `smmix` 15×100+15×70+20×50+25×30 | 75 | 5.0 | 7.5 | 141 |
+| `sm50` 118×50 | 118 | 3.5 | **9.0** | 71 |
+| `sm20` 736×20 | 736 | 1.0 | 2.5 | **28** |
+
+`sm20` improves 3× on the radius fix and still finishes last by a wide margin,
+which the reach argument predicts: its patch diagonal is 28 cells, so no radius
+setting can make the loss observe a pair farther apart than that, against a
+decay50 the good configs put at 25–42. **Below about 50 cells the environment is
+smaller than the structure being asked for.**
+
+The mixed geometry sits between its components rather than beating them, which
+is §4.5's finding again — a small tail drags a mix toward the small end.
+
+## 6.4 Why it works, which is not the mechanism §5 found
+
+`sm100_r20` beats the incumbent on `r_min` while being **worse on both inputs to
+§4.4b's law** — decay50 31.0 against 42.5, ceiling 0.964 against 0.984 (barely
+better). Under the law it should lose. It wins on the part the law cannot see.
+
+The law predicts a worst-over-references quantity from two medians, so it is
+blind to how *evenly* the code is distributed across references. That is exactly
+where the small-env configs gain: 118 environments make each batch far more
+diverse than 11 do, and the resulting code is more uniform across the arena even
+though its typical reference is worse. `r_min` takes the worst reference, so
+uniformity across references buys more than a better median does.
+
+Two independent signs of the same thing: the seed spread at 20 references is 2
+for `sm100_r20` against 4 for the incumbent, and the 100-reference lower tail is
+5–6 against 2. Both say consistency, not typical quality.
+
+This is also the opposite trade from §5.8. Narrowing `hidden_dim` bought decay
+at a ceiling cost; shrinking the environments buys ceiling and consistency at a
+decay cost. They are different levers and it is not obvious they compose —
+`sm100_r20` already uses `hidden_dim=256`, so the composition that exists here
+is with the *narrow* net, and the wide-net version was never run.
