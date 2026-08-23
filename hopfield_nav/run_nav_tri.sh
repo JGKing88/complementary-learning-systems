@@ -582,6 +582,31 @@ case "$VARIANT" in
     esac
     ;;
 
+  # === WAVE 7 -- is the exploit failure CAUSED by explore training? =========
+  #
+  # The combined model's nav failures are bimodal: it locks onto q within ~3
+  # steps and arrives, or never locks on and wanders with follow_q ~ 0.01. The
+  # question is whether that is a cost of sharing the policy with explore, or
+  # just what this readout does at ten distractors.
+  #
+  # The exploit-only specialist (w2_x_sig2) is the obvious comparison but is
+  # confounded three ways: goal_reward 5.0 vs 2.0, persistence 0 vs 0.20, and
+  # 600 updates vs ~1950. w7_x_matched removes all three, leaving explore
+  # exposure -- empty_frac 0.0 against the combined model's 0.5 -- as the only
+  # difference. Same shaping, same sigma, same schedule length, same seed.
+  #
+  # Read with the per-step follow_q bins, not the aggregate: if the specialist
+  # shows the SAME bimodal signature and the same late-bin collapse at d=10,
+  # the failure is intrinsic to the task and explore training is exonerated.
+  w7_x_matched)
+    SCHEDULE=${SCHEDULE:-'exploit:2000'}
+    ENVS_PER_WORLD=20; BATCH_ENVS=64
+    EPSILON_EXPLORE=0.1; INIT_LOG_STD=-0.7; GOAL_REWARD=2.0
+    PERSISTENCE_BONUS=0.20
+    REGIME_ASSIGNMENT=shuffle
+    EVAL_SCOPE=navexpl; EVAL_EVERY=50; CKPT_EVERY=50
+    ;;
+
   *)
     echo "ERROR: unknown VARIANT=$VARIANT" >&2; exit 1 ;;
 esac

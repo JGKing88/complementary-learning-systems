@@ -79,7 +79,7 @@ from hopfield_nav.world.vec_env import make_vec
 @torch.no_grad()
 def _rollout(*, agent, env, env_offset, vectorhash, hopfields, cfg, device,
              starts, max_steps, ends_on_arrival, goal_in_memory,
-             q_rescale=None):
+             q_rescale=None, q_scale=None):
     """One trial per Hopfield, in parallel, recording everything.
 
     Mirrors `evaluation/batched.py` step for step -- same channel assembly,
@@ -128,7 +128,7 @@ def _rollout(*, agent, env, env_offset, vectorhash, hopfields, cfg, device,
                 vectorhash, cfg, embeddings_np, embeddings, positions,
                 env_offset, hopfields, False, device, embeddings.shape[1])
             q_np = np.asarray(q, dtype=np.float32)
-            q_np = _rescale_q(q_np, q_rescale).astype(np.float32)
+            q_np = _rescale_q(q_np, q_rescale, q_scale).astype(np.float32)
             if (cfg.agent.input_hopfield_raw
                     and cfg.agent.hopfield_mode != "discrete"):
                 hop_signal = torch.from_numpy(q_np).to(device)
@@ -159,7 +159,7 @@ def _rollout(*, agent, env, env_offset, vectorhash, hopfields, cfg, device,
             for s, q_s in msq.items():
                 values[channels.multistep_name(s)] = torch.from_numpy(
                     _rescale_q(np.asarray(q_s, dtype=np.float32),
-                               q_rescale).astype(np.float32)).to(device)
+                               q_rescale, q_scale).astype(np.float32)).to(device)
 
         rnn_input = channels.build_policy_input(
             input_specs, values, batch_size=B).unsqueeze(1)
@@ -292,8 +292,20 @@ def _warm_vs_cold(*, agent, env, env_offset, vectorhash, hopfields, cfg,
     }
 
 
-def _rescale_q(q, target):
-    """Set ||q|| to `target`, preserving direction. `None` leaves it alone.
+def _rescale_q(q, target, factor=None):
+    """Set ||q|| to `target` (or multiply it by `factor`), preserving direction.
+
+    **`factor` is the sound version and `target` has a confound.** Clamping
+    ||q|| to a constant also destroys its variation WITHIN a trajectory -- and
+    P0.8 showed that variation is the informative cue: approaching a real goal
+    makes ||q|| shrink, approaching a phantom does not. So `target` moves the
+    level and deletes the dynamics at the same time, and a behaviour change
+    under it cannot be attributed to either. `factor` shifts the level while
+    leaving the shape of ||q||(t) intact, which is the intervention the
+    magnitude-gating hypothesis actually calls for.
+
+    `target` is kept because the first crossover used it and its result is
+    recorded; new work should use `factor`.
 
     The intervention behind the gating experiment. The hypothesis is that the
     policy decides whether to follow the recall by its MAGNITUDE -- goal-present
@@ -312,6 +324,8 @@ def _rescale_q(q, target):
     input combination the policy has never seen for a different reason than the
     one under test.
     """
+    if factor is not None:
+        return q * factor
     if target is None:
         return q
     n = np.linalg.norm(q, axis=-1, keepdims=True)
@@ -545,6 +559,13 @@ def main() -> None:
                         "norm and explore mode at the goal-level norm, and see "
                         "whether following tracks the magnitude or the memory "
                         "contents. Off by default.")
+    p.add_argument("--q_scale", type=float, default=None,
+                   help="MULTIPLY ||q|| by this factor before the policy sees "
+                        "it, preserving both direction and the shape of "
+                        "||q||(t). The sound form of the magnitude "
+                        "intervention -- unlike --q_rescale it does not also "
+                        "destroy the within-trajectory dynamics that P0.8 "
+                        "identified as the real cue.")
     p.add_argument("--npos", type=int, default=None,
                    help="Shrink the scaffold. encoded_Phi is Npos^2 x 1024, "
                         "i.e. 12 GB at the real 1716 -- unusable without a GPU "
@@ -655,7 +676,8 @@ def _probe_one(args, cfg, agent, envs, vh, offsets, embed_dim, device):
                     max_steps=args.max_steps,
                     ends_on_arrival=(mode == "nav"),
                     goal_in_memory=(mode == "nav"),
-                    q_rescale=args.q_rescale)
+                    q_rescale=args.q_rescale,
+                    q_scale=args.q_scale)
                 per_env.append(
                     _nav_stats(rec, env.size, goal, starts) if mode == "nav"
                     else _explore_stats(rec, env.size, goal))
