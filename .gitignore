@@ -11,6 +11,7 @@ checkpoint
 checkpoint_rnn
 plots
 images
+results
 npos_sweep
 displacement_plots
 smoke_pd2

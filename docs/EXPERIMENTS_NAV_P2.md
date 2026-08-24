@@ -325,30 +325,53 @@ geometry, and `|q|` separability.
 
 Two findings came out of drawing the data that the summary table had hidden.
 
-**1. The bad readout is a halo around the goal, and has nothing to do with
-walls.** Conditioning `dir_cos` on distance-to-goal, the median sits at 0.98-1.0
-everywhere, but the **10th percentile collapses to 0.37 within about two cells
-of the goal** and has recovered by five. Against distance-to-wall it is flat --
-no degradation at all. The arena maps show the same thing directly: a pale halo
-centred on the goal in every env that has one.
+**1. CORRECTED — direction error is governed by recall fidelity, not by
+geometry.** The first version of this section said the bad readout was "a halo
+around the goal" and explained it as a one-cell displacement projecting to
+mostly noise. Jack asked what that meant. It does not mean anything: a *short*
+displacement is the case where the tangent-plane linearization is at its
+**best**, not its worst, so the stated mechanism was backwards. Working it out
+properly:
 
-The geometry is unsurprising in hindsight -- `q` is the tangent-plane
-projection of the displacement to the recalled pattern, and when that
-displacement is a cell or two long the projection is mostly noise -- but it
-matters for two reasons:
+| `cos_goal` (how close the settled state is to the exact goal pattern) | share of cells | % with `dir_cos` < 0.5 |
+|---|---|---|
+| ≥ 0.99 | 50.1% | **0.01%** |
+| 0.90 – 0.99 | 49.1% | 2.87% |
+| 0.50 – 0.90 | 0.8% | 21.8% |
 
-  * **It is a negative result for the readout half of H-wall** (§7.4). `q` is
-    not worse near walls, so failures piling up at walls are not explained by a
-    worse readout there. What remains of H-wall is its actual claim -- the
-    commanded-versus-realized displacement mismatch -- which is untouched by
-    this and still worth testing.
-  * **It predicts a specific failure mode for P4**: the final approach, not the
-    long-range heading. With `goal_radius` 1.0 and a step floor of 0.5, a
-    policy must land inside one cell of the goal using a direction signal that
-    is unreliable inside two. That is a mechanism for stalling or oscillating
-    *at* the goal, which is exactly the "walks into a phantom and stops" pattern
-    phase 1 saw but could not distinguish from a stall. §8's oscillation and
-    give-up statistics are the ones that will tell them apart.
+**99.7% of all bad-direction cells have `cos_goal` < 0.99.** When the Hopfield
+settles exactly on the stored pattern the direction is essentially never wrong.
+The failure is imperfect recall — the settled state is a slight admixture of
+other patterns — and nothing else.
+
+Distance enters only as a **lever arm**. `‖q‖` scales with distance to the goal
+(median 0.041 at one cell, 0.393 beyond twelve), so a *fixed* amount of recall
+error turns into a *larger angular* error when the true displacement is short.
+That is why the failure rate is 11.7% within 1.5 cells of the goal against
+0.44% beyond twelve. Holding `‖q‖` fixed and varying distance shows the same
+thing from the other side: what predicts a bad direction is `‖q‖` *disagreeing*
+with the true distance, in either direction, not the distance itself.
+
+**And the halo was overstated.** The near-goal rings have a much higher failure
+*rate* but contain few cells: **only 24.8% of all sub-0.5 cells lie within 2.5
+cells of the goal**, and the ring from 5 to 8 cells contributes more (23.9%)
+than any other. So "the bad readout is a halo around the goal" is wrong as a
+description of where the failures are; the correct statement is that the rate is
+highest there while the mass is spread over the arena.
+
+What survives from the original claim is the wall half, which was measured
+rather than reasoned: **`dir_cos` is flat against distance-to-wall**, so `q` is
+not degraded near boundaries. That remains a negative result for the readout
+half of H-wall (§7.4).
+
+**A prediction this hands to P3.** If direction error is governed by recall
+fidelity, then the agent has an *observable* proxy for it. `cos_goal` is not
+available to the policy, but a pattern that has settled exactly is a **fixed
+point of the recall map** and one sitting at cos 0.94 is not — which is exactly
+what the group-C statistic `c1 = ‖recall(x) − recall²(x)‖` measures, and the
+multistep iterates are already computed and already fed to the policy. So `c1`
+should predict `dir_cos`, giving the policy a per-step confidence signal on its
+own readout. That is a sharp, cheap test and it should be run early in P3.
 
 **2. A wrong lock is not a random direction.** The decomposition CDF shows all
 three groups hugging cos 1.0; a randomly-directed `q` would trace the diagonal
