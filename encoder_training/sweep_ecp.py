@@ -1051,6 +1051,38 @@ WAVES: dict[str, dict] = {
         },
         "seed": [42, 43],
     },
+    # W37 -- the control §6.1's headline is missing, and it may overturn it.
+    #
+    # §6.1 compared small-env configs at absolute radius 20 against the §5.8
+    # incumbent at frac 0.15. §6.2 then established that radius 20 beats the
+    # fraction at every patch size tested. So the comparison confounds geometry
+    # with radius, and "small environments beat big ones" may be nothing more
+    # than "radius 20 beats frac 0.15". lo_mixtop has never been run at radius
+    # 20.
+    #
+    # w35 is what forces the issue. §6.4 explained sm100's win as more
+    # environments giving a more diverse batch and a more consistent code, and
+    # w35 falsifies that: at matched radius 20, r_min tracks patch reach and not
+    # env count, in the opposite direction to the explanation --
+    #
+    #     sm100   29 envs, holes 475, diagonal 141   9.0
+    #     sm70    60 envs, holes 353, diagonal  99   7.5
+    #     sm50   118 envs, holes 248, diagonal  71   7.5
+    #
+    # If bigger patches are simply better at a fixed radius, lo_mixtop at radius
+    # 20 should beat sm100, and §6's headline is a radius result wearing a
+    # geometry costume. Six seeds, matching sm100_r20's exposure.
+    "w37_lo_mixtop_r20": {
+        "arm": {
+            "lo_mixtop_r20": dict(npos_list=SIZE_MIXES["lo_mixtop"],
+                                  per_env_radius_frac=0.0, radius=20.0,
+                                  rate_lambda=0.3, out_dim=1024, hidden_dim=256),
+            "lo_big_r20": dict(npos_list=SIZE_MIXES["lo_big"],
+                               per_env_radius_frac=0.0, radius=20.0,
+                               rate_lambda=0.3, out_dim=1024, hidden_dim=256),
+        },
+        "seed": [42, 43, 44, 45, 46, 47],
+    },
     # W13 -- coverage, on the winning config rather than on the bare baseline.
     #
     # This replaces w4, which swept coverage over mixes chosen before any of the
