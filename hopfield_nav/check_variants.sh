@@ -11,7 +11,12 @@
 
 set -u
 HERE=$(cd "$(dirname "$0")" && pwd)
-SCRIPT="$HERE/run_nav_tri.sh"
+# Overridable: phase 2 has its own launcher, and pointing this at the wrong
+# file makes it report "case arm did not match" for a variant that is perfectly
+# fine -- a false negative that sent one debugging session after a grep bug
+# that did not exist.
+#   SCRIPT=hopfield_nav/run_nav_p2.sh bash hopfield_nav/check_variants.sh p4_tp15
+SCRIPT="${SCRIPT:-$HERE/run_nav_tri.sh}"
 
 if [ $# -gt 0 ]; then
     VARIANTS="$*"

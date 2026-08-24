@@ -179,6 +179,33 @@ case "$VARIANT" in
     esac
     ;;
 
+  # === P4b -- is TIME_PENALTY holding the speed down? ======================
+  #
+  # At u850 the exploit arm runs at mean_speed 1.50 against a permitted 2.0, and
+  # 91% of the ideal mean_steps FOR ITS OWN SPEED -- so the remaining gap is
+  # speed, not path quality. The incentive to hurry is time_penalty against
+  # goal_reward: at 0.05 vs 2.0 the agent is indifferent between arriving and
+  # taking 40 extra steps, which is enormous slack when a trial takes 7. Raising
+  # the penalty tightens that to 20 steps at 0.10 and 13 at 0.15.
+  #
+  # The risk is give-up behaviour on distant starts: if expected steps exceed the
+  # indifference point the agent would rather not try. Mean start distance is
+  # 10.85, about 7 steps at speed 1.5, so 0.10 is comfortable and 0.15 is the
+  # aggressive end. Watch success_rate, not just mean_steps -- a mean_steps win
+  # bought by abandoning the far starts is not a win.
+  p4_tp10|p4_tp15)
+    SCHEDULE=${SCHEDULE:-'exploit:2000'}
+    ENVS_PER_WORLD=20; BATCH_ENVS=64
+    EPSILON_EXPLORE=0.1; INIT_LOG_STD=-0.7; GOAL_REWARD=2.0
+    PERSISTENCE_BONUS=0.20
+    REGIME_ASSIGNMENT=shuffle
+    EVAL_SCOPE=navexpl; EVAL_EVERY=50; CKPT_EVERY=50
+    case "$VARIANT" in
+      p4_tp10) TIME_PENALTY=0.10 ;;
+      p4_tp15) TIME_PENALTY=0.15 ;;
+    esac
+    ;;
+
   # === P5 -- the explore ceiling, as calibration ==========================
   #
   # Not a search. Phase 1 already showed explore saturates the reactive line
