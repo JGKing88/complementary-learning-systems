@@ -19,7 +19,32 @@ mismatch that must be fixed first.
 | **Branch / worktree** | `nav-tri-metric` at `.claude/worktrees/nav-tri-metric` |
 | **Predecessor** | `docs/EXPERIMENTS_NAV_TRI.md` — read its §0 findings 1–22 |
 | **Open decisions** | §11 — four forks put to Jack; spec assumes the recommended default in each |
-| **Still running from phase 1** | `w7_x_matched` (job 21033482), `--q_scale` dose response (21032524) |
+| **Running** | P4 exploit ceiling `p4_x` / `p4_x_s12`, P5 explore calibration `p5_e` |
+| **Done** | §4 blocking fixes, P1 (§5) with figures, and the recall-mechanism thread §5.3-5.7 |
+
+**Open items** (priority order):
+
+- [ ] **Read P4/P5 when they land** and fill §8/§9. P4 at u450 was already at
+      `mean_steps` 10.09 (d=0) / 14.10 (d=10) with `mean_speed` 1.25, so the
+      relevant ideal is ~7.9 steps rather than 4.9 — speed is the larger lever.
+- [ ] **Test the modern-Hopfield substitution BOTH ways before adopting it**
+      (§5.7). It gives exact retrieval of the continuous patterns — all 11 as
+      fixed points, a cos-0.70 cue restored to 1.0000, no spurious states —
+      which should collapse the direction-error tail. But the explore side
+      depends on `|q|` being *small* when only distractors are stored, and that
+      separability currently comes from the recall being a blurry blend. A sharp
+      retrieval could give a confident `q` pointing at a phantom and drive
+      `chase_q` up, which is the phase-1 corner-trap mechanism. Run
+      `q_failure_map` with the modern update and compare `dir_cos` **and**
+      goal-present/goal-absent `|q|` separability. Not a recommendation until
+      both are measured.
+- [ ] **Fix `hopfield/core.py`'s docstring** — "clean memory attractors converge
+      in 1-2 steps; diffuse landscapes wander" is false (§5.4).
+- [ ] **P2 and P3 not started.** P3 is the critical path for P6, and §5.3-5.7
+      changed what its group-C statistics mean.
+- [ ] `signal_separability` draws **one** distractor set per (env, count).
+      Raise it — that single fact produced the 23.3% that misdirected §6.7.1 of
+      the phase-1 doc (§5.2.1).
 
 **Workstream order.** P1/P2/P3 are analysis and run concurrently — none needs a
 trained model. P4/P5 are single training runs that can start as soon as §4
@@ -201,22 +226,24 @@ moves from 0.378 toward 0.50.
 
 ---
 
-## 4. Blocking fixes — land these before any run
+## 4. Blocking fixes — ALL LANDED 2026-08-24
 
-- [ ] **B1. `make_vec` must forward the action-norm bounds.** Add
+18 new tests in `hopfield_nav/tests/test_action_norm_bounds.py`; the 213-test env suite passes; a smoke run confirms `input_dim` 74 with both prev-action channels live and `cells_per_step` starting at 0.347 where phase 1's untrained policy sat near 0.05.
+
+- [x] **B1. `make_vec` must forward the action-norm bounds.** Add
       `min_action_norm` / `max_action_norm` parameters, pass them into
       `ContinuousVecEnv`, and update all five call sites to read
       `cfg.env.min_action_norm` / `cfg.env.max_action_norm`. Regression test:
       build a vec env from a config with bounds set, step it with an action of
       norm 5, assert the realized displacement has norm 2.
-- [ ] **B2. Assert train/eval agreement.** A test that walks one config through
+- [x] **B2. Assert train/eval agreement.** A test that walks one config through
       both `make_env` and `make_vec` and asserts the movement bounds match.
       This class of bug has now appeared once; the test is what stops it
       recurring silently.
-- [ ] **B3. Phase-2 launcher block** — `MIN_ACTION_NORM=0.5`,
+- [x] **B3. Phase-2 launcher block** — `MIN_ACTION_NORM=0.5`,
       `MAX_ACTION_NORM=2.0`, `INPUT_PREV_ACTION=1`, plus pass-throughs. The
       phase-1 launcher pins `INPUT_PREV_ACTION=0`.
-- [ ] **B4. Decide `prev_action` semantics** — §11 Q1. The collector currently
+- [x] **B4. Decide `prev_action` semantics** — §11 Q1. The collector currently
       feeds `result["move_action"]`, the *committed* action
       (`rollout/collector.py:652`), which differs from the realized displacement
       whenever the norm clamp or the arena clip bites.
@@ -683,6 +710,69 @@ patterns. Making this an attractor network would require binarizing the stored
 patterns (or an architecture whose fixed points are not corners, e.g. a modern
 softmax Hopfield, whose fixed points *are* the stored patterns by construction).
 That is a real design fork, but it is a different network, not a hyper-parameter.
+
+### 5.7 The network is not broken — it is mismatched. And there is a drop-in fix.
+
+Jack: "so classical continuous Hopfield networks just don't work?" No. Three
+conditions on the same 11 patterns (`analysis/nav_p2/architecture_test.py`):
+
+| | beta | stored is a fixed pt | # attractors | corrupted 0.70 restored to |
+|---|---|---|---|---|
+| **B.** classical + continuous *(current setup)* | 1e5 | 0.086 | 1 | 0.086 |
+| | 1e7 | 0.226 | 21 | 0.148 |
+| **A.** classical + **binarized** patterns | 1e5 | **1.0000** | **11** | **1.0000** |
+| | 1e6 | 1.0000 | 34 | 1.0000 |
+| **C.** **modern** / dense assoc. + continuous | 8 | **1.0000** | **11** | **1.0000** |
+| | 512 | 1.0000 | 11 | 1.0000 |
+
+**The classical model works exactly as designed.** Binarize the patterns and
+raise the gain and it retrieves perfectly: all 11 stored patterns become fixed
+points, a cue corrupted to cos 0.70 is restored to cos 1.0000, and pushing the
+gain higher produces 34 then 47 attractors — the spurious mixture states
+classical theory predicts, and the ones Jack expected to see. Nothing is broken.
+
+**The mismatch is the pattern type.** A saturating elementwise nonlinearity has
+its fixed points at hypercube corners; classical Hopfield works because its
+stored patterns *are* corners. This project stores continuous encoder outputs,
+which are not, so they can never be fixed points of that dynamics at any gain.
+Capacity is not involved — 0.138·D = 141 here against 11 patterns stored.
+
+*(Caveat, flagged before the run: binarizing is not a perfectly controlled
+change. It also decorrelates — max overlap drops 0.4447 → 0.2910 — and moves
+each pattern substantially, median cos(ξ, sign ξ) = 0.7996. So A demonstrates
+that the architecture retrieves binary patterns, not that binarizing *these*
+patterns would preserve what the encoder encodes.)*
+
+**And there is a drop-in that handles the continuous patterns exactly.** The
+modern / dense associative memory update `ξ ← Xᵀ softmax(β X ξ)` gives all 11
+patterns as exact fixed points from `beta = 8` upward, restores a cos-0.70 cue
+to 1.0000, and finds **exactly 11 attractors and no spurious ones** even at
+`beta = 512`. Its fixed points are the stored patterns by construction, which
+is precisely the property the classical net cannot have here.
+
+#### What this would and would not buy the project — do not assume it is a win
+
+Tempting conclusion: swap in a modern Hopfield and the readout becomes exact.
+P1 found direction error is governed almost entirely by recall fidelity (§5.2),
+so exact recall should drive `dir_cos` to ~1 and the sub-0.5 tail to ~0.
+
+**But the explore side may get worse, and that is not a detail.** The whole
+explore/exploit discrimination rests on `|q|` being *small* when only
+distractors are stored (§5.5, ratio 2.3-4.7). That separability currently comes
+from the recall being a **blurry blend** in the goal-absent case. A sharp
+modern Hopfield would retrieve the nearest distractor *exactly and confidently*
+— which could produce a large, clean `q` pointing at a phantom, and drive
+`chase_q` up. Phase 1 established that persistent q-following during explore is
+exactly what causes the corner-trap collapse.
+
+So this is a **real design fork, not a free upgrade**, and it is measurable with
+tooling that already exists: run `q_failure_map` with the modern update
+substituted and compare both the `dir_cos` distribution *and* the goal-present /
+goal-absent `|q|` separability. Both numbers have to improve, or at least the
+second must not collapse, before it is worth changing the network the whole
+project is built on.
+
+Recorded as an open item, not a recommendation.
 
 ---
 
