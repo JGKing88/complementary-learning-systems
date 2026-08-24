@@ -111,10 +111,11 @@ elif [ "$PROBE" = turnstats ]; then
     # Needs the scaffold and a GPU, unlike every other probe here:
     #   PROBE=turnstats CKPT=<explore ckpt> sbatch --gres=gpu:1 \
     #       --partition=pi_evelina9 hopfield_nav/run_nav_p2_disp.sh
+    # TAG keeps one checkpoint's result from overwriting another's.
     python -u -m analysis.nav_p2.policy_turn_stats \
         --ckpt "$CKPT" --device cuda \
         --trials "${TRIALS:-16}" --max_steps "${MAX_STEPS:-200}" \
-        --json "$OUT/disp_turnstats.json"
+        --json "$OUT/disp_turnstats${TAG:+_$TAG}.json"
 elif [ "$PROBE" = adapt ]; then
     python -u -m analysis.nav_p2.displacement_adaptation \
         --train_envs 48 --test_envs "${TEST_ENVS}" \

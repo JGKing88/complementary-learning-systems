@@ -1524,9 +1524,26 @@ Four things, in the order they would change a conclusion.
    would have understated the sensory channel by 4×. Its `persistence_bonus
    0.20` / `epsilon_explore 0.1` are shared by **every** variant block in
    `run_nav_p2.sh`, so it is representative of the lineage rather than an
-   outlier in it. What it does not cover is one checkpoint's worth of
-   generality: the same measurement is owed for the interleaved P6 agent, and
-   for anything run at the launcher's unused `0.05` / `0.4` fallbacks.
+   outlier in it.
+
+   An attempt to bracket the axis with a second checkpoint **failed, and the
+   failure is worth recording**. Running the same probe on the P4 *exploit*
+   specialist (`p4_x` u1200) in the explore regime returns a degenerate row —
+   median `|Δψ|` 0.0° with p90 180.0°, because **45.5% of its steps do not move
+   at all** and a still step carries the previous heading forward. Its median
+   step norm is 0.50, the `MIN_ACTION_NORM` floor. That is not a
+   low-persistence walk to compare against; it is a policy operating far
+   outside the regime it was trained for, with an empty memory and nothing to
+   navigate toward. The `frac_still` diagnostic is what made it visible rather
+   than letting "median turn 0.0°" read as perfect persistence. **A real
+   bracket still needs an explore-schedule policy trained at a different
+   persistence, which does not exist yet**, and the same measurement is owed
+   for the interleaved P6 agent.
+
+   (The 45.5%-still figure is a finding for P4/P6 in its own right: the exploit
+   specialist has no explore behaviour to fall back on when memory is empty. It
+   stands still at the minimum step norm. Anything that interleaves the two
+   regimes inherits that.)
 2. **How much more a non-linear decoder gets in the ego framing.** §6.5's table
    is ridge. In the same framing at 128 training envs, a 2-layer MLP reaches
    **0.610 / 9.4°** where ridge reaches 0.387 and heading alone 0.282 — so the
