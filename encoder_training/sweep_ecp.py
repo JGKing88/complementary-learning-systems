@@ -1129,6 +1129,76 @@ WAVES: dict[str, dict] = {
         },
         "seed": [42, 43, 44, 45],
     },
+    # W39 -- test §6.6's mechanism: is ~30 envs about within-env pair supply?
+    #
+    # §6.6 found the optimum tracks environment count (~30) rather than patch
+    # size, and offered a candidate mechanism it did not test: under the
+    # constraint only within-env pairs are repellable, and a batch of B points
+    # over n envs holds about B^2/(2n) of them. Few envs means more usable
+    # pairs; many envs means more distinct locations. ~30 would be the balance.
+    #
+    # batch_size moves pair supply without touching geometry, which is what
+    # makes it the right probe. Pairs per step, B^2/(2n):
+    #
+    #                B=4096    B=8192    B=16384
+    #   sm100 n=29    289k     1.16M      4.63M
+    #   sm50  n=118    71k      284k      1.14M
+    #
+    # Two cells are matched on pair supply across different geometries, and
+    # that is the sharp prediction:
+    #
+    #   sm100 @ 4096  (289k) should score like sm50 @ 8192  (284k) -> ~7.5
+    #   sm50  @ 16384 (1.14M) should score like sm100 @ 8192 (1.16M) -> ~9.0
+    #
+    # If instead each geometry keeps its own score across batch sizes, pair
+    # supply is not the mechanism and §6.6's candidate is dead.
+    #
+    # The interaction is the robust read even if the point predictions miss:
+    # both arms get the same batch change, so the "bigger batch trains better"
+    # confound is common to both and cancels. sm50 is pair-starved and sm100 is
+    # not, so sm50 should gain more.
+    #
+    # B=16384 costs ~4x per step (the pair matrix is O(B^2)) at the same 73k
+    # steps, so those cells want a long limit.
+    "w39_batch_pairs": {
+        "arm": {
+            f"{g}_b{b}": dict(npos_list=SIZE_MIXES[g],
+                              per_env_radius_frac=0.0, radius=20.0,
+                              rate_lambda=0.3, out_dim=1024, hidden_dim=256,
+                              batch_size=b)
+            for g in ("sm100", "sm50") for b in (4096, 16384)
+        },
+        "seed": [42, 43, 44, 45],
+    },
+    # W40 -- how good can it get with a final gain of 100?
+    #
+    # Asked for directly, and it is well posed now that §0.2 has measured what
+    # the gain actually does. At gain 5 the tanh never leaves its linear region
+    # -- median |g*net(x)| = 0.053, no coordinate past 0.8 -- so the ramp is
+    # nearly inert and the code is continuous. At gain 100 the same
+    # pre-activations give |g*net(x)| ~ 1.06 at the median and ~6.7 at p99, so
+    # the code genuinely saturates and becomes quasi-binary. This is the first
+    # setting in the campaign where the output nonlinearity does anything.
+    #
+    # Two things could go wrong and both are worth seeing. Saturation kills the
+    # local gradient (tanh' = 1 - tanh^2), while the gain multiplies it, so the
+    # product may either stall or blow up. And a binary code changes what cosine
+    # means: for +-1 codes cos = 1 - 2*hamming/D, so the loss is now shaping a
+    # Hamming geometry rather than a continuous one.
+    #
+    # 20 and 50 are included so the answer is a curve rather than a point --
+    # whether 100 sits on a trend or off a cliff is most of what is worth
+    # knowing. Baseline gain 5 already has six seeds on this exact config.
+    "w40_gain": {
+        "arm": {
+            f"gain{g:g}": dict(npos_list=SIZE_MIXES["sm100"],
+                               per_env_radius_frac=0.0, radius=20.0,
+                               rate_lambda=0.3, out_dim=1024, hidden_dim=256,
+                               gain_end=float(g))
+            for g in (20, 50, 100)
+        },
+        "seed": [42, 43, 44, 45],
+    },
     # W13 -- coverage, on the winning config rather than on the bare baseline.
     #
     # This replaces w4, which swept coverage over mixes chosen before any of the
