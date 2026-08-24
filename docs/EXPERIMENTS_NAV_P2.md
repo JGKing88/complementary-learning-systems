@@ -1867,8 +1867,18 @@ becomes whether the policy *uses* the right channel, which is a P6 question.
 `analysis/nav_p2/ideal_observer.py` generates the evidence, `..._fit.py` fits
 it, `..._score.py` applies the result to trained policies, and
 `io_features.py` holds the cue statistics in one implementation all three
-import. Launcher `hopfield_nav/run_nav_p3_io.sh`; outputs under
-`results/nav_p2/io_*`.
+import. Launcher `hopfield_nav/run_nav_p3_io.sh`. Every table below is
+reproducible from `results/nav_p2/`:
+
+| file | what it holds |
+|---|---|
+| `io_probe.npz`, `io_probe_gen.log` | the 7-probe feature tensor and its anchor / group-D controls |
+| `io_prober.npz`, `io_prober_fit.log` | the 16-probe parametric sweep (§7.8) |
+| `io_probe_fit.log`, `io_probe_main.json` | per-statistic and ideal-observer tables (§7.5, §7.7) |
+| `io_ablation_walls.log` | the cue ablation and the wall conditioning (§7.7, §7.10) |
+| `io_single_full.log` | the full single-feature ranking at ten distractors |
+| `io_trust30deg.log`, `io_trustpresent_pooled.log` | the two Q_trust sensitivity arms |
+| `io_agents_score.log`, `io_agents2_agents.npz` | the trained-policy pass (§7.9) |
 
 **The grid.** 48 freshly drawn envs × 7 distractor levels {0,1,2,3,5,7,10} × 8
 distractor draws × 2 regimes × 2 start cells × 7 probe policies =
