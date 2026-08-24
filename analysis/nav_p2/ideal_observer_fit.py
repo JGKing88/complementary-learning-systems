@@ -188,6 +188,7 @@ class Data:
         self.wall = z["wall_dist"]
         self.clip = z["clip_any"]
         self.trust_thresh = float(z["trust_thresh"])
+        self.dir_cos = z["dir_cos"] if "dir_cos" in z.files else None
         # X with the oracle channels appended, so a column list can address
         # either. Built once; the arrays are already in memory.
         self.Xall = np.concatenate([self.X, self.Xo], axis=2)
@@ -278,12 +279,17 @@ def run_single(D: Data, args):
             print(f"\n  --- Q_{target}, n_dist = {lvl} ---")
             print(f"  {'feature':<16} " + " ".join(
                 f"t={D.ck[i]:<7}" for i in ti_list))
+            # Sliced once per t rather than once per (feature, t): the slice
+            # copies the whole tensor, and doing it inside the feature loop
+            # made this section cost more than every classifier fit combined.
+            sl = {}
+            for ti in ti_list:
+                sl[ti] = D.slice(target, ti, level=lvl, probe=args.probe)
             rows = []
             for name in D.allfeat:
                 cells = []
                 for ti in ti_list:
-                    X, y, env, _ = D.slice(target, ti, level=lvl,
-                                           probe=args.probe)
+                    X, y, env, _ = sl[ti]
                     if len(y) == 0 or y.sum() in (0, len(y)):
                         cells.append(float("nan")); continue
                     per = []
@@ -525,10 +531,24 @@ def main() -> None:
     p.add_argument("--ablation_t", type=int, nargs="+", default=[1, 8, 64])
     p.add_argument("--folds", type=int, default=6)
     p.add_argument("--top", type=int, default=14)
+    p.add_argument("--trust_thresh", type=float, default=None,
+                   help="recompute Q_trust from the saved dir_cos at this "
+                        "threshold, for the sensitivity check")
     p.add_argument("--json_out", default=None)
     args = p.parse_args()
 
     D = Data(args.npz)
+    if args.trust_thresh is not None:
+        # Q_trust is a threshold on `dir_cos`, and `dir_cos` is saved, so the
+        # threshold can be moved without regenerating anything. At the default
+        # 0.5 the positive class is 97% of the goal-present rows, thin enough
+        # that a sensitivity check on a stricter threshold is worth the two
+        # lines it costs.
+        if D.dir_cos is None:
+            raise SystemExit("this npz predates the saved dir_cos array")
+        D.y["trust"] = (D.dir_cos >= args.trust_thresh).astype(np.int8)
+        D.trust_thresh = args.trust_thresh
+        print(f"  Q_trust threshold overridden to cos >= {args.trust_thresh}")
     print(f"loaded {args.npz}")
     print(f"  {D.X.shape[1]:,} rows x {len(D.ck)} checkpoints, "
           f"{len(np.unique(D.env))} envs, probes {D.probes}, "

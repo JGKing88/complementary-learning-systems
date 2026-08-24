@@ -38,7 +38,7 @@ import time
 import numpy as np
 import torch
 
-from analysis.nav_p2.ideal_observer_fit import Data, auc
+from analysis.nav_p2.ideal_observer_fit import Data, auc, cv_auc
 from analysis.nav_p2.io_features import (
     FEATURES, POLICY_GROUPS, StepFeatures, all_cells, cell_tables,
     chart_basis, fit_obs_decoder, frame_self_test,
@@ -181,6 +181,7 @@ def main() -> None:
     p.add_argument("--targets", nargs="+", default=["ep", "trust"])
     p.add_argument("--t_show", type=int, nargs="+", default=[1, 2, 4, 8, 16, 32, 64])
     p.add_argument("--deterministic", action="store_true")
+    p.add_argument("--folds", type=int, default=6)
     p.add_argument("--obs_ridge", type=float, default=1e-3)
     p.add_argument("--chart_k", type=int, default=64)
     p.add_argument("--seed", type=int, default=101,
@@ -291,7 +292,7 @@ def main() -> None:
                         key = (t + 1, n_d)
                         a = acc.setdefault(key, dict(X=[], ep=[], trust=[],
                                                      step=[], v=[], vt=[],
-                                                     env=[], plen=[]))
+                                                     env=[], plen=[], gd=[]))
                         a["X"].append(f.copy())
                         a["ep"].append(reg_ar.copy())
                         a["trust"].append((dcv >= D.trust_thresh).astype(int))
@@ -300,6 +301,7 @@ def main() -> None:
                         a["vt"].append(v & np.isfinite(dcv))
                         a["env"].append(np.full(B, ei))
                         a["plen"].append(sf.path_len.copy())
+                        a["gd"].append(goal_dist[c].copy())
                     sf.act(Aa[t], Dsp[t])
             if (ei + 1) % 4 == 0 or ei + 1 == len(envs):
                 el = time.time() - t0
@@ -307,34 +309,64 @@ def main() -> None:
                       flush=True)
 
         print(f"\n  === {tag}")
+        print("  Three numbers per cell, and all three are needed:")
+        print("    frozen -- the probe-fitted classifier applied as-is. Low "
+              "here means EITHER the behaviour destroys the signal OR the "
+              "trajectory is off the distribution the classifier was fitted "
+              "on; frozen alone cannot tell those apart.")
+        print("    refit  -- the same feature set refitted on the agent's own "
+              "rows, cross-validated over held-out envs. This is whether the "
+              "information is THERE in the agent's trajectory.")
+        print("    probe  -- billiard at the same (level, t), for reference.")
         for target in args.targets:
-            print(f"  --- Q_{target}: agent AUC against the frozen probe "
-                  f"classifier (fit on probe={args.fit_probe})")
-            print(f"  {'n_d':>4} " + " ".join(f"t={c:<7}" for c in ckpts)
-                  + "   (valid rows at each t)")
+            print(f"\n  --- Q_{target}")
+            print(f"  {'n_d':>4} {'arm':>7} " + " ".join(f"t={c:<6}" for c in ckpts))
             for n_d in args.n_distractors:
-                cells_out, ns = [], []
+                froz, refit, ref, ns, gds = [], [], [], [], []
                 for c in ckpts:
                     key = (c, n_d)
+                    ti = list(D.ck).index(c)
                     if key not in acc:
-                        cells_out.append(float("nan")); ns.append(0); continue
+                        for L in (froz, refit, ref):
+                            L.append(float("nan"))
+                        ns.append(0); gds.append(float("nan")); continue
                     a = acc[key]
                     X = np.concatenate(a["X"])
                     y = np.concatenate(a[target])
                     v = np.concatenate(a["vt" if target == "trust" else "v"])
-                    ti = list(D.ck).index(c)
-                    sc = _fit_frozen(D, args.fit_probe, n_d, target, ti, cols)
-                    if sc is None or v.sum() < 20 or y[v].sum() in (0,
-                                                                    int(v.sum())):
-                        cells_out.append(float("nan")); ns.append(int(v.sum()))
-                        continue
-                    cells_out.append(auc(y[v], sc(X[v])))
+                    env_a = np.concatenate(a["env"])
+                    gd = np.concatenate(a["gd"])
                     ns.append(int(v.sum()))
-                srow = " ".join(
-                    ("    --  " if not np.isfinite(x) else f"{x:>7.3f} ")
-                    for x in cells_out)
-                print(f"  {n_d:>4} {srow}   " + " ".join(str(n) for n in ns))
-                rows[(tag, target, n_d)] = cells_out
+                    gds.append(float(gd[v].mean()) if v.any() else float("nan"))
+                    if v.sum() < 40 or y[v].sum() in (0, int(v.sum())):
+                        for L in (froz, refit, ref):
+                            L.append(float("nan"))
+                        continue
+                    sc = _fit_frozen(D, args.fit_probe, n_d, target, ti, cols)
+                    froz.append(auc(y[v], sc(X[v])) if sc else float("nan"))
+                    r, _ = cv_auc(X[v], y[v], env_a[v], cols,
+                                  n_folds=args.folds, model="gbt")
+                    refit.append(r)
+                    Xp, yp, envp, _ = D.slice(target, ti, level=n_d,
+                                              probe=args.fit_probe)
+                    rp, _ = cv_auc(Xp, yp, envp, cols, n_folds=args.folds,
+                                   model="gbt")
+                    ref.append(rp)
+
+                def _row(name, vals):
+                    return (f"  {n_d:>4} {name:>7} " + " ".join(
+                        ("   --   " if not np.isfinite(x) else f"{x:>7.3f} ")
+                        for x in vals))
+                print(_row("frozen", froz))
+                print(_row("refit", refit))
+                print(_row("probe", ref))
+                print(f"  {n_d:>4} {'rows':>7} " + " ".join(
+                    f"{n:>7d} " for n in ns))
+                print(f"  {n_d:>4} {'meanD':>7} " + " ".join(
+                    f"{g:>7.2f} " for g in gds)
+                    + "   <- mean distance to goal on the scored steps")
+                rows[(tag, target, n_d)] = froz
+                rows[(tag + "|refit", target, n_d)] = refit
     if args.out:
         os.makedirs(os.path.dirname(os.path.abspath(args.out)) or ".",
                     exist_ok=True)
