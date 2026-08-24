@@ -386,6 +386,94 @@ population of catastrophically misdirected `q` at ten distractors at all.** The
 whole tail below cos 0.5 is 1.6% of cells, spread across all three lock
 categories rather than concentrated in the wrong-lock ones.
 
+### 5.2.1 CORRECTION — the 23.3% was draw variance, not a bad world
+
+Both phase-1 worlds were re-measured with this tool, replaying their recorded
+placements rather than drawing fresh ones:
+
+| world | phase-1 value | re-measured here | envs | draws/env |
+|---|---|---|---|---|
+| `w6_pers` ("world A") | 1.8% | **1.31%** | 6 | 8 |
+| smoke ("world B") | **23.3%** | **1.03%** | 2 | 8 |
+
+Same scaffold (Npos 1716), same encoder, same beta, same recorded world loaded
+from `world.json`. The only methodological difference is that
+`signal_separability` draws **one** distractor set per (env, count) — two draws
+total across its two envs — while this draws eight per env.
+
+**So 23.3% was a two-draw fluke, and the "13x between-world variance" in
+`EXPERIMENTS_NAV_TRI` §6.7.1 attributed it to the wrong axis.** Recorded
+placement is not systematically worse than fresh either: `w6_pers` at 1.31%
+sits inside the fresh-world distribution (pooled 1.43-1.88%, per-env median
+0.41-0.94%).
+
+Between-world variance *is* real — the per-env spread at ten distractors runs
+from ~0 to 12% across 192 environments — but it is several times smaller than
+the number that was used to argue for it. Phase-1 finding 19 should read: **no
+`dir_acc` number is interpretable without its world *and its draw count*, and
+the draw count is the larger term.** That is phase-1 finding 18 again, which
+had already been established after two earlier wrong conclusions from
+two-draw measurements; this is the third time.
+
+### 5.3 The recall does not converge — it drifts. Two corrections.
+
+Jack asked whether a spurious fixed point is still a fixed point. It is, and
+that broke the argument in §5.2's closing prediction, so the question was
+tested rather than argued (`analysis/nav_p2/recall_convergence.py`, 25,600
+cells x 12 recall steps at ten distractors).
+
+**The answer is neither branch that question offered.** Iterating the recall
+does not converge on anything within twelve steps — it walks steadily *away*
+from the goal pattern. For the cleanest cells (cos ≥ 0.99 after one step):
+
+| recall steps | cos to goal | `dir_cos` | % `dir_cos` < 0.5 |
+|---|---|---|---|
+| 1 | 0.995 | 0.998 | **0.00%** |
+| 3 | 0.959 | 0.996 | 0.22% |
+| 5 | 0.899 | 0.995 | 0.62% |
+| 8 | 0.801 | 0.990 | 1.75% |
+| 12 | 0.615 | 0.982 | **5.54%** |
+
+Pooled over all cells, direction quality goes from **1.46% bad at one step to
+12.27% bad at twelve**, and 100% of the imperfect-after-one-step cells are
+still moving at step 12 (step residual 0.04-0.08, never settling).
+
+**Correction 1 — the group-C rationale in §7.2 is wrong.** That section
+justified `c1 = ‖recall(x) − recall²(x)‖` as a spurious-state detector on the
+grounds that "a genuinely stored pattern is a fixed point of the recall map; a
+spurious mixture is not." Both halves are false here. This is a **classical
+Hebbian Hopfield with tanh** (`X ← normalize(tanh(β W X))`), where mixture
+states *are* genuine attractors — Jack's point — and in this operating regime
+nothing reaches a fixed point anyway, the good cells included.
+
+What `c1` actually measures is **drift rate**. It is not worthless: the residual
+after one step is 0.148 for the imperfect group against 0.099 for the clean
+one, so it does carry signal. But the reason is not the one given, and the
+statistic should be described as what it is. §7.2 group C is amended
+accordingly, and its "if `c1` separates at a single step the probing question
+dissolves" line no longer follows from anything.
+
+**Correction 2 — the system is not being used as an attractor network.**
+`hopfield/core.py` documents `recall_batch_trajectory` as letting the policy
+see convergence dynamics: *"clean memory attractors converge in 1-2 steps;
+diffuse landscapes wander."* Measured here, that is false — nothing converges
+and more iteration is monotonically worse. The Hopfield is functioning as a
+**one-shot associative map**, and the trainer's `steps=1` is not a default that
+was never tuned but very close to optimal.
+
+Consequence for the policy's inputs: `--input_hopfield_multistep 1 2 3` feeds
+`q` computed at three recall depths, and depths 2 and 3 are *degraded* states,
+not better-converged ones. That is not necessarily useless — the rate at which
+a recall degrades could still discriminate goal-present from goal-absent, which
+is a question for P3 — but the channel is not delivering what its name and
+docstring claim, and no design decision should rest on that reading again.
+
+**A cheap thing to test in P4**: nothing here suggests `steps=1` should change,
+but the finding is that the readout is best at the *first* step and degrades
+monotonically. Worth confirming `steps=1` beats `steps=2` end-to-end before the
+exploit ceiling is called, since it is a one-token change and the analysis says
+it should matter.
+
 ---
 
 ## 6. P2 — is relative displacement decodable from sensory input?
@@ -479,13 +567,21 @@ strongest static cue*
 | `c1` | `‖recall(x) − recall²(x)‖` |
 | `c2` | `cos(q^{(1)}, q^{(3)})` — do multistep recalls agree? |
 
-A genuinely stored pattern is a **fixed point** of the recall map; a spurious
-mixture is not. This is the classic spurious-state detector, it needs no
-movement at all, and `--input_hopfield_multistep 1 2 3` already computes the
-iterates — so the policy is *already being fed the raw material* and it costs
-nothing to measure. **If `c1` separates well at a single step, regime detection
-needs no probing and Jack's probing-behaviour question largely dissolves.**
-Worth knowing early either way.
+**CORRECTED — see §5.3.** This group was justified as a spurious-state
+detector: a stored pattern is a fixed point of the recall map, a mixture is
+not. Both halves are false here. The network is a classical Hebbian Hopfield
+with tanh, where mixture states *are* genuine attractors, and in this operating
+regime nothing reaches a fixed point at all — iterating walks steadily away
+from the goal pattern, and pooled direction quality degrades from 1.46% bad at
+one step to 12.27% at twelve.
+
+`c1` and `c2` therefore measure **drift rate**, not spuriousness. That still
+carries signal — the one-step residual is 0.148 for imperfect-fidelity cells
+against 0.099 for clean ones — and it is still free, since the iterates are
+already computed and already fed to the policy. So keep both statistics in the
+feature set and let the ablation price them, but do not expect them to separate
+"the answer is right" from "the answer is a blend", and drop the earlier claim
+that a single-step separation would dissolve the probing question.
 
 **D. Sensory consistency** *(Jack's third cue)*
 

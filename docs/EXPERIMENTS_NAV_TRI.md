@@ -134,10 +134,14 @@ by how much it would change someone else's run.
     as σ grows, fastest where reward is sparse.
 18. **Signal-separability numbers need ≥8 independent distractor draws.** Two
     draws produced two different wrong conclusions.
-19. **No `dir_acc` number is interpretable without naming its eval world.** Two
-    worlds, same encoder and same probe, gave 1.8% and 23.3% of cells below
-    cos 0.5 at ten distractors — a 13× swing that eight envs does not average
-    out. This applies retroactively to every P0.7 figure here (§6.7.1).
+19. **CORRECTED — no `dir_acc` number is interpretable without its world *and
+    its draw count*, and the draw count is the larger term.** This finding
+    originally read "without naming its eval world", on the strength of two
+    worlds giving 1.8% and 23.3%. Re-measuring both recorded worlds at eight
+    distractor draws instead of one gives **1.31%** and **1.03%** — the 23.3%
+    was a two-draw fluke, not a bad world (`EXPERIMENTS_NAV_P2` §5.2.1).
+    Between-world variance is real but several times smaller: ~0 to 12% across
+    192 envs. This is finding 18 for the third time.
 
 **About what actually fails** — *the most important thing in this section*
 
