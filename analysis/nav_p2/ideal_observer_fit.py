@@ -217,7 +217,7 @@ class Data:
             m &= self.level == level
         elif exclude_zero:
             m &= self.level != 0
-        if probe is not None:
+        if probe is not None and probe != "all":
             m &= self.probe == self.probes.index(probe)
         if regime is not None:
             m &= self.regime == regime

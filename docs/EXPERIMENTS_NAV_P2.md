@@ -1862,6 +1862,561 @@ events. If the commanded version degrades near walls and the realized one does
 not, the mechanism is confirmed and the fix is already shipped — the question
 becomes whether the policy *uses* the right channel, which is a P6 question.
 
+### 7.5 RESULT — the bound, and the answer to the gating question
+
+`analysis/nav_p2/ideal_observer.py` generates the evidence, `..._fit.py` fits
+it, `..._score.py` applies the result to trained policies, and
+`io_features.py` holds the cue statistics in one implementation all three
+import. Launcher `hopfield_nav/run_nav_p3_io.sh`; outputs under
+`results/nav_p2/io_*`.
+
+**The grid.** 48 freshly drawn envs × 7 distractor levels {0,1,2,3,5,7,10} × 8
+distractor draws × 2 regimes × 2 start cells × 7 probe policies =
+**75,264 episodes of 64 steps**, features saved at twelve values of *steps
+observed*. A second run adds a 16-probe parametric sweep (§7.8). Every
+classifier is cross-validated over **held-out envs**, six folds of eight:
+splitting rows at random would let it memorise a wall code and report an AUC no
+policy in a new arena could realise.
+
+**The instrument was checked before it was read.** Four checks, all of which
+had to pass:
+
+| check | result | what it rules out |
+|---|---|---|
+| frame self-test | oracle `cos(q, goal−x)` **0.9952**, axis-swapped **−0.3220** | `gram_schmidt_2d_batch` is handed `d_forward` first and returns it *second*; if `q` and the realized displacement were in transposed frames, `a3` and `b2` would be noise and nothing else here would say so |
+| analytic anchor (§7.3 item 0) | reproduces §5.8 at every level, below | a broken readout reading as a weak signal |
+| label permutation | 0.472 – 0.549 across every headline cell | leakage across the fold boundary |
+| constant features | **0.500** exactly | a tie-handling bug in the AUC itself |
+
+The last one was not free. Out-of-fold scores must be pooled by *average* rank:
+each fold's model carries its own intercept, so raw scores are not comparable
+across folds, and a naive rank normalisation breaks ties in row order — which is
+grouped by regime. The constant-feature control read 0.518 until ties were
+averaged. It is the leakage detector, so it has to be exact.
+
+**The anchor reproduces §5.8 across every level**, which is the point of it:
+
+| `n_dist` | median `‖q‖` goal-present | goal-absent | ratio |
+|---|---|---|---|
+| 0 | 0.3135 | 0.0000 | — (degenerate) |
+| 1 | 0.3127 | 0.0488 | 6.41 |
+| 2 | 0.3128 | 0.0518 | 6.04 |
+| 3 | 0.3117 | 0.0581 | 5.36 |
+| 5 | 0.3100 | 0.0701 | 4.43 |
+| 7 | 0.3080 | 0.0782 | 3.94 |
+| 10 | 0.3011 | 0.0857 | 3.51 |
+
+§5.8 measured 0.3006 and 0.0670 and predicted the second at
+`√(2/D)·√2 = 0.0625`. Both land, and the goal-absent value grows with the
+number of distractors exactly as a maximum over more unrelated directions
+should.
+
+#### The base rates settle most of it before any classifier runs
+
+Q_trust asks whether following `q` right now is a good idea. Its *prior*,
+measured on `billiard` trajectories pooled over all twelve step counts, with
+steps standing inside `goal_radius` excluded in **both** regimes so the mask
+cannot carry the label:
+
+| `n_dist` | regime | `P(cos ≥ 0.5)` | `P(cos ≥ 0.866)` (30°) | `P(cos ≥ 0.966)` (15°) | median `cos` |
+|---|---|---|---|---|---|
+| 1 | goal present | 0.9985 | 0.9943 | 0.9564 | 0.9970 |
+| 1 | goal absent | 0.3150 | 0.1521 | 0.0791 | −0.0485 |
+| 3 | goal present | 0.9980 | 0.9933 | 0.9427 | 0.9966 |
+| 3 | goal absent | 0.3204 | 0.1500 | 0.0758 | −0.0576 |
+| **10** | **goal present** | **0.9855** | **0.9620** | **0.8827** | **0.9957** |
+| **10** | **goal absent** | **0.3196** | **0.1653** | **0.0798** | **−0.0220** |
+
+The goal-absent row is a control that came out perfect. For a *uniformly*
+directed 2-D vector the three probabilities are 1/3, 1/6 and 0.083; the measured
+values are 0.320, 0.165 and 0.080, with a median cosine of −0.02. **A recall
+that locked onto a foreign pattern is directionally indistinguishable from
+noise** — which is what §5.8's dimensionality argument predicts and what makes
+the goal-absent rows readable against a known floor.
+
+The goal-present row is the one that matters for P6. **At ten distractors, with
+the goal in memory, `q` points within 30° of it on 96.2% of steps and within
+15° on 88.3%.** The median is 5.3° of error.
+
+#### The ideal-observer AUC
+
+Full policy-visible feature set — groups A ∪ B ∪ C, 21 statistics, every one a
+function of `q` at the three recall depths already fed to the policy plus
+`prev_action` and `prev_displacement`, both policy inputs since §4 B3.
+Gradient-boosted trees on `billiard` trajectories, six-fold CV over held-out
+envs; the per-env column is the median over the 48 envs with [p10, p90].
+
+**Q_trust** (`cos(q, goal − x) ≥ 0.5`):
+
+| `n_dist` | t=1 | t=2 | t=4 | t=8 | t=16 | t=32 | t=64 | chance | per-env at t=64 |
+|---|---|---|---|---|---|---|---|---|---|
+| 1 | 0.861 | 0.860 | 0.873 | 0.869 | 0.898 | 0.896 | 0.899 | 0.545 | 0.936 [0.833, 0.985] |
+| 3 | 0.824 | 0.837 | 0.862 | 0.877 | 0.887 | 0.905 | 0.889 | 0.483 | 0.893 [0.810, 0.959] |
+| 7 | 0.753 | 0.798 | 0.848 | 0.869 | 0.883 | 0.881 | 0.891 | 0.491 | 0.893 [0.822, 0.952] |
+| **10** | **0.760** | 0.799 | 0.855 | 0.858 | 0.874 | 0.886 | **0.884** | 0.525 | 0.885 [0.783, 0.958] |
+
+**Q_ep** (is anything from this env in memory at all):
+
+| `n_dist` | t=1 | t=2 | t=4 | t=8 | t=16 | t=32 | t=64 | chance | per-env at t=64 |
+|---|---|---|---|---|---|---|---|---|---|
+| 1 | 0.983 | 0.987 | 0.991 | 0.994 | 0.994 | 0.999 | 1.000 | 0.508 | 1.000 [0.999, 1.000] |
+| 3 | 0.939 | 0.968 | 0.986 | 0.993 | 0.995 | 0.998 | 0.998 | 0.512 | 1.000 [0.996, 1.000] |
+| 7 | 0.863 | 0.937 | 0.979 | 0.983 | 0.990 | 0.996 | 0.998 | 0.513 | 1.000 [0.995, 1.000] |
+| **10** | **0.872** | 0.938 | 0.979 | 0.985 | 0.989 | 0.990 | **0.996** | 0.501 | 1.000 [0.973, 1.000] |
+
+Logistic regression tracks the trees closely for Q_trust (0.788 → 0.874 at ten
+distractors) and lags them mid-episode for Q_ep (0.887 at t=4 against 0.979),
+so Q_ep's cue is mildly non-linear — consistent with §7.7, where the working
+statistic is a running *order statistic* of `‖q‖`.
+
+**The ceiling control earns its place at t = 1 and nowhere else.** Adding the
+two *D-dimensional* recall statistics — `‖r¹ − r²‖` and `cos(r¹, r³)` before
+the tangent projection, an input channel that could be fed but is not — lifts
+Q_ep at ten distractors from 0.872 to **0.937** at a single step, and from
+0.979 to 0.981 at four steps. By t = 8 the gap is gone. So the 2-D projection
+does throw away something real, and what it throws away is worth about
+**0.065 of AUC on the first step only**; a couple of steps of motion recovers
+it for free.
+
+A sensitivity check at a stricter Q_trust threshold (`cos ≥ 0.866`, which
+brings the pooled positive class to 57%) gives 0.872 → 0.926 at three
+distractors and 0.805 → 0.917 at ten. The headline is not an artefact of a
+97%-positive class.
+
+**Q_trust restricted to goal-present episodes** — the version that speaks
+directly to mode B, since during exploit the goal *is* in memory — reads 0.98
+at t=1 and 0.95 at t=64 at ten distractors. It should not be quoted as a
+headline, and the reason is the label-permutation control beside it, which
+ranges from 0.46 to 0.67: with `P(y) = 0.97`, 768 rows contain about 20
+negatives and the AUC is not estimable at that class balance. What *is* solid
+there is the base rate, which needs no classifier.
+
+**The degenerate condition, reported separately** as §7.3 item 1 requires. At
+`n_dist = 0` the goal-absent memory is empty, `q = 0` exactly, and Q_ep is
+separable at AUC **1.000** at every step count — for a reason that has nothing
+to do with the signal being measured. Q_trust has no negative rows there at all
+(`dir_cos` is undefined when `q = 0`), which is why `valid_trust` is a separate
+mask from `valid`: one shared mask would have deleted every negative row of the
+degenerate condition and left a one-class problem reading as a perfect AUC.
+
+#### The gating answer
+
+**Mode B is a learning problem, not an information problem.** Three independent
+numbers say so, and they do not depend on each other:
+
+1. **The prior alone almost answers it.** When the goal is in memory at ten
+   distractors, `q` points within 30° of it on **96.2%** of steps. A policy that
+   ignores `q` is not being cautious about a signal it cannot verify; it is
+   declining a signal that is right 24 times in 25.
+2. **When it *is* worth not following, that is detectable.** An ideal observer
+   on the policy's own inputs separates the unusable steps at AUC **0.76 after a
+   single step** and **0.88 after eight**, against a label-permuted control at
+   0.52. The warning is available from the inputs the policy already receives.
+3. **The regime question is more available still.** Q_ep is **0.87** from one
+   step and **0.99** from four, at ten distractors, with per-env p10 of 0.973 at
+   t=64 — so this is not a mean hiding a bad tail.
+
+So P6 may treat mode-B failures as failures of credit assignment, of
+exploration in policy space, or of representation — not as a policy correctly
+reporting an absence of evidence. **The one caveat is §7.9, and it is
+specific**: a regime detector *fitted on exploration data* will invert on a
+successful exploiter, so the gating signal has to be built from statistics that
+survive the agent's own approach to the goal.
+
+### 7.6 Q_step is Q_ep, and can be retired
+
+§7.1 kept `Q_step` — is the current recall the goal rather than a foreign
+pattern — as a separate target. Measured, it is not one:
+
+| `n_dist` | `P(lock = goal ǀ goal present)` | `P(lock = goal ǀ goal absent)` |
+|---|---|---|
+| 1 | 0.999 | 0.000 |
+| 3 | 0.999 | 0.000 |
+| 7 | 0.992 | 0.000 |
+| 10 | 0.989 | 0.000 |
+
+The goal-absent column is **identically zero**, trivially, since the goal is not
+stored; the goal-present column is 0.989 at ten distractors, which is §5.1's
+lock rate seen from the other side. So `Q_step` and `Q_ep` disagree on 1.1% of
+rows at the hardest level, and every table computed for the two is the same
+table to three decimals. It is reported for completeness and should not be
+carried into P6 as a third question.
+
+### 7.7 Which cue carries the discrimination — and Jack's sharpened cue does not
+
+Question 3 restated. Single-feature AUC, per-env median over 48 envs,
+`billiard`, ten distractors; sign-corrected, so a cue that predicts the negative
+class still scores above 0.5.
+
+| cue | statistic | Q_ep t=1 | t=8 | t=64 | Q_trust t=1 | t=64 |
+|---|---|---|---|---|---|---|
+| **D** | `d1_chart` — recall's residual from this env's pattern subspace | **1.000** | **1.000** | **1.000** | 0.876 | 0.867 |
+| **D** | `d1_valid1` — its decoded-observation validity | **1.000** | **1.000** | **1.000** | 0.879 | 0.883 |
+| *oracle* | `cos_goal` — not policy-visible | 1.000 | 1.000 | 1.000 | 0.910 | 0.892 |
+| **A** | `a6_q_max` — running max of `‖q‖` | 0.887 | 0.898 | **0.963** | 0.792 | **0.848** |
+| **A** | `a5_q_mean` — running mean of `‖q‖` | 0.887 | 0.887 | 0.958 | 0.792 | 0.848 |
+| **A** | `a5_q_std` — running s.d. of `‖q‖` | 0.594 | 0.738 | 0.949 | 0.587 | 0.841 |
+| **A** | `a1_qnorm` — `‖q‖` itself | 0.887 | 0.881 | 0.881 | 0.792 | 0.807 |
+| **B** | `b3_drift_mean` — mean drift of the allocentric goal estimate | 0.500 | 0.725 | 0.906 | 0.500 | 0.803 |
+| **B** | `b1_cos_mean` — mean `cos(q_t, q_{t−1})` | 0.500 | 0.820 | 0.854 | 0.500 | 0.780 |
+| *oracle* | `o_c1D` — `‖r¹ − r²‖`, unprojected | 0.781 | 0.750 | 0.762 | 0.708 | 0.674 |
+| **C** | `c1_q12_rel` — `‖q¹ − q²‖ / ‖q¹‖` | 0.701 | 0.703 | 0.713 | 0.719 | 0.633 |
+| **C** | `c2_cos13` — `cos(q¹, q³)` | 0.664 | 0.643 | 0.682 | 0.606 | 0.612 |
+| **B** | `b2_spread` — allocentric spread, **realized** | 0.500 | 0.680 | 0.587 | 0.500 | 0.584 |
+| **A** | `a3_resid` — **self-motion residual, realized** | 0.500 | 0.570 | 0.568 | 0.500 | 0.572 |
+| **A'** | `x_a3_cmd` — the same from the commanded action | 0.500 | 0.570 | 0.564 | 0.500 | 0.577 |
+| **D** | `d2_clip` — `‖a − d‖`, the wall diagnostic | 0.500 | 0.531 | 0.531 | 0.500 | 0.533 |
+
+Three things fall out of that table.
+
+**1. The discrimination is `‖q‖`, and extra steps help by sampling more of it —
+not by generating motion evidence.** `‖q‖` alone scores 0.887 at one step and
+still 0.881 at sixty-four; the *running maximum* over the episode climbs to
+0.963 and the *running standard deviation* from 0.594 to 0.949. Those are order
+statistics over the cells visited, and the mechanism is §5.8's: with the goal
+stored, `‖q‖` scales with distance to it, so over an episode it takes a wide
+range of values with a large maximum, while with only foreign patterns it is a
+small number with little structure whatever you do. §7.8 tests this directly —
+`still`, which visits essentially one cell, saturates at Q_ep 0.945 while
+`billiard`, which sweeps the arena, reaches 0.997.
+
+**2. Jack's sharpened cue `a3` is worth about seven points of AUC over chance on
+a passively-moving agent, and that is all — but `b2` is a different story, and
+the pooled number above hides it.** `a3`, how much `‖q‖` *should* have shrunk if
+the target were fixed, reaches **0.568** for Q_ep and **0.572** for Q_trust at
+ten distractors, and the commanded-action version is the same to three decimals.
+§7.8 shows why: on a billiard trajectory the projection of the step onto `q̂` is
+small and sign-varying, so the test has no power.
+
+`b2`, the allocentric spread, reads 0.680 at t = 8 and 0.587 at t = 64 in the
+table above, which looks like the same verdict. **It is not — that pooled number
+is an average over two populations that behave completely differently, and the
+wall conditioning in §7.10 separates them.** Split on whether the episode has
+met an arena clip, at ten distractors and t = 8, `n` = 847 clean and 686
+clipped:
+
+| statistic | no clip yet | has clipped |
+|---|---|---|
+| `b2_spread` — allocentric spread | **1.000** | 0.611 |
+| `b3_drift_mean` — drift of the same estimate | **1.000** | 0.674 |
+| `b4_dev` — current deviation from the running mean | **1.000** | 0.619 |
+| `a6_q_max` — running max of `‖q‖` | 0.943 | 0.894 |
+| `a1_qnorm` — `‖q‖` | 0.892 | 0.871 |
+
+**On a billiard episode that has not yet touched a wall, the allocentric spread
+is a perfect regime detector by eight steps.** That is the cue working exactly
+as §7.2 argued it should: with the goal stored, `ĝ = Σd + q` is a *constant*, so
+its variance is zero; with a foreign pattern it wanders. Group A is the more
+*robust* cue — 0.87 to 0.94 either way — but group B is the sharper one when the
+arena lets it work. The pooled decay from 0.764 at t = 4 to 0.587 at t = 64 is
+not the statistic degrading; it is the clean population disappearing, since by
+t = 64 every billiard episode has met a wall (`n` = 0 in the no-clip column).
+This is the third time in this phase that a mean over a mixture told the
+opposite of the truth.
+
+**3. Group D — Jack's sensory-consistency cue — is perfect, and is not
+available.** Both group-D fingerprints separate the regimes at AUC **1.000** at
+every distractor level and every step count including t = 1. That deserves its
+controls stated plainly:
+
+| control | value |
+|---|---|
+| decoded-observation magnitude on real observations | 1.000 (a saturated ±1 barcode) |
+| the same on held-out in-env cells | 0.31 |
+| the same on distractor patterns | **30.6** |
+| chart residual on in-env cells | 0.43 |
+| chart residual on distractor patterns | **0.90** |
+
+The decoder does not *shrink* on a foreign pattern, it **extrapolates**, by a
+factor of a hundred, because the pattern lies outside the span it was fitted on.
+So `d1` does not measure "does the recall predict the observation I am seeing";
+it measures **"could this env's chart have produced the recalled pattern at
+all"**, and because the env's 400 patterns occupy a low-dimensional subspace of
+D = 1024 while a scaffold cell from elsewhere does not, that question has a
+yes/no answer. §7.1 predicted group D would be "a fingerprint check rather than
+a graded signal", and it is exactly that — but the fingerprint is perfect, not
+weak.
+
+**This is the one genuinely missing input channel P3 found, and its cost should
+be stated with it.** The decoder is fitted *inside the env*: the wall code is a
+fresh random draw per arena (`world/env.py:329`), so nothing learned in one env
+transfers, and the agent is not handed this. It is not fantasy either — §6.3
+measured a within-env nearest-neighbour table saturating the displacement
+ceiling, 0.943 against 0.945 — but acquiring it is a representation-learning
+problem, not a flag that can be switched on. What P3 establishes is the value of
+doing so: an exact regime signal from the first step, against 0.87 for the best
+thing the policy currently sees.
+
+#### The ablation, including the two variants §7.3 item 3 insisted on
+
+GBT, held-out-env CV, `billiard`. §7.2 predicted A and C would be largely
+redundant and that a leave-one-out alone would report both as worthless. It was
+right, and the leave-one-in column is what shows it:
+
+Q_trust, ten distractors, t = 8 (`n` = 1533):
+
+| feature set | AUC | Δ vs A∪B∪C |
+|---|---|---|
+| A alone | 0.854 | −0.005 |
+| B alone | 0.837 | −0.021 |
+| C alone | 0.753 | −0.106 |
+| D alone | 0.878 | +0.020 |
+| **A∪B∪C (policy)** | **0.858** | 0.000 |
+| A∪B∪C∪D | 0.883 | +0.025 |
+| A∪B (drop C) | **0.869** | **+0.011** |
+| A∪C (drop B) | 0.845 | −0.013 |
+| B∪C (drop A) | 0.843 | −0.016 |
+| B alone (drop A∪C) | 0.837 | −0.021 |
+
+Every leave-one-out is within 0.02 of the full set, which taken alone would say
+no cue matters. Leave-one-in says otherwise: **A alone recovers 99% of the full
+set, B alone 98%, and A ∪ C jointly contribute only 0.021 over B alone.** The
+three groups are three views of one quantity. Q_ep at three distractors is the
+same story more starkly — A alone 0.987, B alone 0.982, full set 0.993 at t = 8,
+and at t = 1 group B is *exactly* 0.500 because every one of its statistics
+needs a previous step.
+
+**Recall depth does not earn its input channel (§7.3 item 3b).** Group C is
+precisely the depth-2 and depth-3 derived statistics, so `A∪B (drop C)` is the
+depth-{1}-only classifier. It scores **0.869 against 0.858** for depth-{1,2,3}
+at ten distractors and t = 8, **0.888 against 0.884** at t = 64, and 0.763
+against 0.760 at t = 1. Depth {1} is *never worse* and is usually slightly
+better — the extra depths add variance without adding information, which is
+what §5.3–5.4 predicted once the dynamics was known to be power iteration away
+from the answer. The honest qualification: this ablates *my four summaries* of
+the depth channel, and the policy receives `q²` and `q³` as raw 2-D vectors, so
+it could in principle use them some other way. But there is no evidence here
+that it should, and `--input_hopfield_multistep 1` is now the defensible
+default.
+
+### 7.8 What probing behaviour buys, and the surprise
+
+Seven scripted probes plus a sixteen-point parametric sweep over
+`a ∝ α·q̂ + β·q̂⊥ + γ·ĥ` (`results/nav_p2/io_prober.npz`), all over identical
+memories and identical per-cell tables, so the comparison is of behaviour and of
+nothing else. GBT on the policy-visible set, ten distractors.
+
+**Q_trust** — the question probing actually affects:
+
+| probe | (α, β, γ) | t=1 | t=2 | t=4 | t=8 | t=16 | t=64 | steps→0.95 | path / net at t=64 |
+|---|---|---|---|---|---|---|---|---|---|
+| `still` (oscillate in place) | — | 0.761 | 0.829 | 0.835 | 0.836 | 0.834 | 0.829 | never | 63.0 / 1.0 |
+| `random` | — | 0.760 | 0.815 | 0.846 | 0.851 | 0.848 | 0.852 | never | 60.9 / 5.9 |
+| `billiard` | — | 0.750 | 0.812 | 0.844 | 0.864 | 0.878 | 0.889 | never | 61.5 / 11.7 |
+| `straight` | (0,0,1) | 0.751 | 0.788 | 0.838 | 0.853 | 0.896 | 0.894 | never | 15.5 / 13.9 |
+| `perp_q` | (0,1,0) | 0.734 | 0.795 | 0.856 | 0.871 | 0.886 | 0.884 | never | 28.8 / 11.7 |
+| `anti_q` | (−1,0,0) | 0.761 | 0.834 | 0.878 | 0.863 | 0.860 | 0.878 | never | 19.0 / 10.2 |
+| **`along_q`** | **(1,0,0)** | 0.729 | 0.844 | 0.917 | **0.945** | 0.973 | **0.986** | **9.1** | 38.0 / 10.3 |
+| `along_q` + persist | (1,0,1) | 0.741 | 0.830 | 0.891 | 0.939 | 0.984 | **0.993** | 10.0 | 38.2 / 11.0 |
+| `along_q` + ½ perp | (1,0.5,0) | 0.763 | 0.848 | 0.900 | 0.944 | 0.973 | 0.981 | **9.7** | 39.0 / 10.9 |
+| 2 `along_q` + perp | (2,1,0) | 0.768 | 0.854 | 0.908 | 0.945 | 0.970 | 0.982 | **9.4** | 38.3 / 10.7 |
+| ½ `along_q` + perp | (0.5,1,0) | 0.760 | 0.843 | 0.882 | 0.915 | 0.941 | 0.938 | 23.2 | 37.2 / 11.1 |
+| `−along_q` + perp | (−1,1,0) | 0.750 | 0.827 | 0.864 | 0.864 | 0.850 | 0.836 | never | 20.4 / 12.1 |
+
+**The answer to "what probing behaviour buys information fastest" is: walk along
+`q`.** It is the only family that reaches AUC 0.95 at all — at t ≈ 9, against
+*never* for every probe that does not follow `q` — and it is also the best per
+unit of distance travelled: **0.069** of AUC-above-chance per cell of path at
+t = 8, against 0.054 for billiard, 0.052 for random and 0.048 for `still`. It
+wins on both axes at once, which is not the usual shape of such a trade, and it
+travels *less* far than billiard because following a converging signal curves
+the path.
+
+The sweep also says what the weights need to be. Everything with α ≥ 1 lands
+between 9 and 14 steps to 0.95 whatever β and γ are; α = 0.5 needs 23 steps;
+α ≤ 0 never gets there. **The `along_q` component is the whole effect and the
+other two are cosmetic** — which is a useful negative for anyone designing a
+probing bonus.
+
+**Two of the spec's expectations are refuted here.**
+
+*`perp_q` was predicted to be the best probe for group B on a parallax argument,
+and it buys nothing* — 0.884 at t = 64 against billiard's 0.889 and `still`'s
+0.829. Maximum parallax is the wrong idea because the discriminating quantity is
+not a triangulation; it is whether the target you are converging on is really
+there.
+
+*`still` was expected to be the information floor, and it is, but not by much*:
+0.829 against billiard's 0.889 after sixty-four steps. An agent that never moves
+still gets to 0.83 on `‖q‖` alone. The gap between standing still and the best
+passive exploration is six points; the gap between the best passive exploration
+and walking along `q` is **ten points**, and it is the only one that closes the
+problem.
+
+**And this is where Jack's first cue is vindicated in its proper form.** §7.7
+found `a3` — "`‖q‖` should shrink by exactly your projection onto `q̂`" — almost
+worthless on a billiard trajectory. The reason is now plain: on a billiard
+trajectory the projection of the step onto `q̂` is small and sign-varying, so the
+test has no power. Walk *along* `q` and the same test is the whole story. The
+measured consequence is stark: following `q` for 64 steps in the goal-absent
+regime drives `P(direction is good)` from its chance value of 0.33 down to
+**0.06**, while in the goal-present regime 37% of trials have reached the goal
+outright and been excluded. **The cue was right; it needed the behaviour that
+makes it testable.**
+
+**For Q_ep, probing is nearly irrelevant**, and that is worth stating because it
+is the regime question P6 cares about. Every probe crosses AUC 0.95 within 2–3
+steps at ten distractors: `billiard` at 2.7, `along_q` at 2.3, `anti_q` at 2.1,
+`random` at 3.3. The one exception is `still`, which saturates at **0.945** and
+never crosses — the direct confirmation of §7.7's claim that the extra
+information in later steps is *more cells sampled*, not motion evidence. An
+agent that moves at all, in any direction, knows within three steps whether
+anything from this env is in its memory.
+
+**One artefact to flag, because it looks like a result.** `anti_q`'s goal-absent
+trust rate *rises* to 0.695 by t = 64, which reads as "running away from a
+phantom improves your direction". It does not: walking along `−q` until you hit
+a boundary leaves you at a wall with `q` pointing inward, and the goal is in the
+interior, so `cos(q, goal − x)` is mechanically high. It is arena geometry, not
+memory — and it is why `anti_q`'s AUC does not rise with it.
+
+### 7.9 The trained agents' own trajectories — the agent is collecting it
+
+§7.3 item 5. Four policies scored on a fresh 32-env world drawn with a seed
+disjoint from the probe world, so no env is shared between fitting and scoring;
+8 draws × 2 starts × 4 distractor levels × 2 regimes, `goals_active = False` in
+both regimes so that episode *length* cannot become a function of the label.
+
+Each cell carries three numbers and all three are needed. **frozen** is the
+probe-fitted classifier applied as-is. **refit** is the same feature set
+refitted on the agent's own rows with held-out-env CV — whether the information
+is *there*. **probe** is `billiard` at the same (level, `t`).
+
+`navigate_navp2_p4_x_s42_21102411/navigate_u1250.pt`, the P4 exploit
+specialist (still training; see §7.11), at **ten distractors**:
+
+| target | arm | t=1 | t=2 | t=4 | t=8 | t=16 | t=32 | t=64 |
+|---|---|---|---|---|---|---|---|---|
+| Q_ep | frozen | 0.857 | 0.802 | 0.582 | 0.574 | 0.494 | 0.391 | **0.208** |
+| Q_ep | **refit** | 0.841 | 0.934 | 0.969 | 0.985 | 0.994 | 0.995 | **0.998** |
+| Q_ep | probe (billiard) | 0.872 | 0.938 | 0.979 | 0.985 | 0.989 | 0.990 | 0.996 |
+| Q_trust | frozen | 0.743 | 0.693 | 0.496 | 0.575 | 0.358 | 0.259 | **0.114** |
+| Q_trust | **refit** | 0.728 | 0.785 | 0.850 | 0.917 | 0.969 | 0.982 | **0.983** |
+| Q_trust | probe (billiard) | 0.760 | 0.799 | 0.855 | 0.858 | 0.874 | 0.886 | 0.884 |
+
+Two results, and the first would have been reported wrongly without the second.
+
+**1. The frozen classifier does not merely lose power on the agent's own
+trajectories — it inverts.** Q_ep goes 0.857 → 0.208 and Q_trust 0.743 → 0.114,
+which are confident *wrong* answers, not shrugs. The mechanism is that the
+exploit policy succeeds: §5.2 established that `‖q‖` scales with distance to the
+goal — median 0.041 at one cell against 0.393 beyond twelve — so `‖q‖` next to
+the goal is **smaller than the goal-absent value of 0.086**. An agent that walks
+to the goal spends its episode in the one region of the arena where the current
+value of the regime cue is not merely weak but reversed, and a classifier fitted
+on arena-sweeping trajectories reads that as "no goal in memory".
+
+**2. The information is nevertheless all there — the agent is collecting it.**
+Refitted on the agent's own rows, Q_ep reaches **0.998** and Q_trust **0.983**,
+both at or above the billiard reference (0.996 and 0.884). Q_trust is *better*
+than billiard by a full ten points, and §7.8 says why: the exploit policy
+follows `q`, so it is executing the `along_q` probe as a side effect of
+exploiting, and `along_q` is the behaviour that reaches 0.986.
+
+**So Jack's "is the agent collecting the information it needs" question has a
+clean answer: yes, and by accident.** The exploit policy's own behaviour is the
+optimal probing behaviour. What it is not doing is *using* the result — which is
+mode B, and §7.5 already said that is a learning problem.
+
+**The consequence for P6 is concrete.** A gate or auxiliary head trained on
+exploration rollouts will invert on a successful exploiter. Any regime signal
+must be built from statistics that survive the approach to the goal — the
+running maximum `a6_q_max` and the running standard deviation `a5_q_std` do,
+because they remember the large `‖q‖` from early in the episode; the current
+`a1_qnorm` does not. That is a specific, testable design constraint and it is
+the main thing §7 hands forward.
+
+*(The second P4 seed, `..._s12_s42_21102413/navigate_u1300.pt`, shows the same
+shape more weakly: frozen Q_ep 0.857 → 0.488 rather than → 0.208, consistent
+with a policy that exploits less reliably and therefore spends less of its
+episode next to the goal.)*
+
+### 7.10 The channel ablation at walls (§7.3 item 6) — H-wall's last half
+
+The surviving half of H-wall was a comparison, not a hypothesis: compute `a3`
+and `b2` from the commanded action and from the realized displacement, and see
+whether the commanded version degrades where the arena clip bites.
+
+**The channel comparison is a null, and a clean one.** On billiard trajectories
+at ten distractors and t = 8, single-feature AUC, per-env median:
+
+| condition | `a3` realized | `a3` commanded | `b2` realized | `b2` commanded | n |
+|---|---|---|---|---|---|
+| no clip yet | 0.630 | 0.630 | **1.000** | **1.000** | 847 |
+| has clipped | 0.647 | 0.623 | 0.611 | 0.592 | 686 |
+| `wall_dist ≤ 1` | 0.629 | 0.636 | 0.673 | 0.745 | 465 |
+| `wall_dist ≥ 4` | 0.667 | 0.667 | 0.800 | 0.800 | 564 |
+
+On unclipped episodes the two channels are *identical by construction* — with no
+clip the commanded action **is** the realized displacement — and both are
+perfect. On clipped episodes the realized version is better by 0.02 for both
+statistics, which is the sign H-wall predicted and about a tenth of the size it
+needed to matter. In the near-wall split the *commanded* version is mildly
+**better** (0.745 against 0.673), the opposite sign, on ~10 rows per env: read
+that as noise, not as a reversal.
+
+**But the wall does destroy the cue, by a mechanism H-wall did not name.** `b2`
+goes from **1.000 to 0.611** the moment an episode has met a clip, and the
+commanded/realized distinction explains none of that gap. What explains it is
+that `b2` needs *net displacement*: `ĝ = Σd + q` is constant when the goal is
+stored and drifts in proportion to how far you have moved when it is not, so an
+episode pinned against a boundary loses the drift that made the two regimes
+distinguishable. **The arena clip attacks the cue by suppressing motion, not by
+corrupting the channel.**
+
+That reframes rather than revives H-wall. The original claim was that
+`prev_action` carried the wrong quantity and that near a wall the agent's best
+regime cue was therefore corrupted "in the direction of declaring a real goal a
+phantom". The channel half is refuted: §4 B4's fix is correct, costs nothing,
+and buys 0.02. The consequence half survives in a different form: a wall really
+does cost the sharpest regime cue almost all of its power, and no input channel
+can fix that because the missing ingredient is displacement. What can fix it is
+*behaviour* — §7.8's `along_q` generates net displacement by construction, and
+the exploit policy already does it (§7.9).
+
+The wall diagnostic itself, `d2_clip = ‖a − d‖`, sits at **0.531 flat in `t`** —
+an excellent detector of walls that carries essentially nothing about whether
+the goal is in memory, which is exactly what it should do.
+
+**H-wall's readout half stays dead** (§5.2: `dir_cos` flat against
+distance-to-wall), and phase 1's wall failures are still not a readout problem.
+
+### 7.11 What P3 did not resolve
+
+- **The learned prober is parametric, not trained.** §7.3 item 4's fullest
+  option was a learned prober; what ran is a sixteen-point search over
+  `α·q̂ + β·q̂⊥ + γ·ĥ`, a policy search over a three-parameter family rather
+  than an RL agent. The family contains all four named probes as corners and has
+  a clear interior optimum (α dominant), so a trained prober would have to beat
+  `along_q` by finding something outside a linear combination of the three
+  available directions. That is possible and untested.
+- **`Q_trust ǀ goal-present` is not estimable at this class balance.** With
+  98.6% positives at ten distractors on billiard trajectories, the negative
+  class is a few dozen rows and its permutation control ranges 0.46 – 0.67.
+  A real number there needs a stratified design or a much larger draw, and it is
+  the number a mode-B claim would most like to cite directly.
+- **Group D's acquisition cost is unmeasured.** The in-env pattern decoder is
+  worth AUC 1.000 against 0.87 — the largest single effect in §7 — and nothing
+  here says how much in-env experience is needed to fit one well enough to keep
+  that. §6.3's within-env nearest-neighbour table used all 400 cells.
+- **The agent-trajectory result is on policies that were still training.** The
+  P4 checkpoints are `u1250` and `u1300` of runs that had not converged and P5
+  is at `u850`. The inversion is mechanistic and should survive, but the
+  magnitudes will move.
+- **The probe study fixes `‖a‖ = 1`.** Every probe walks one cell per step, so
+  the comparison is fair between probes but says nothing about step size, which
+  §2.1's bounds make a live knob. Since §7.10 shows the group-B cue is a
+  function of *net displacement*, step size is the obvious next axis and is
+  untested.
+- **`b2`'s perfect score is on a shrinking population.** By t = 64 no billiard
+  episode is still unclipped, so "the cue is perfect at eight steps on clean
+  episodes" is a statement about the 55% of episodes that have not yet met a
+  wall in a 20x20 arena at one cell per step. Whether a policy can arrange to
+  stay in that population, and what it costs in coverage, is a P6 question.
+- **Everything is at `steps = 1`**, which §5.4 established is the only setting
+  that retrieves. The depth-{1,2,3} channel is answered as a contribution to a
+  classifier (§7.7), not as a claim about what other recall depths would do.
+
 ---
 
 ## 8. P4 — exploit specialist to its ceiling
