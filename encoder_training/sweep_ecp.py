@@ -117,6 +117,10 @@ SIZE_MIXES: dict[str, str] = {
     "sm20":  _mix((20, 736)),                             # 10.0%, 736 envs
     "smmix": _mix((100, 15), (70, 15), (50, 20), (30, 25)),   # 10.1%, 75 envs
     "smlo":  _mix((100, 8), (70, 20), (50, 30), (30, 45)),    # 10.0%, 103 envs
+    # Mix that stays above the ~50-cell reach floor §6.3 found, unlike smmix,
+    # whose 30-cell tail sits under it. 62 envs, max hole 340 against sm100's
+    # 475 -- the point being more of the arena's extent for the same cells.
+    "smmid": _mix((100, 12), (70, 20), (50, 30)),         # 10.0%,  62 envs
     "mix2_hi": _mix((200, 15), (100, 40)),      # 1.00M, 34.0%, 55 envs
     "mix3_45": _mix((200, 20), (150, 20), (100, 30)),   # 1.55M, 52.6%, 70 envs
     "mixsmall": _mix((200, 12), (100, 40), (50, 200)),  # 1.38M, 46.9%, 252 envs
@@ -977,6 +981,75 @@ WAVES: dict[str, dict] = {
                               rate_lambda=0.3, out_dim=1024, hidden_dim=256),
         },
         "seed": [44, 45, 46, 47],
+    },
+    # W35 -- §6 step 4a. More, smaller environments, staying above the floor.
+    #
+    # At fixed coverage, more and smaller patches cover more of the arena's
+    # *extent*. Measured, max distance from an arena point to the nearest patch
+    # over seeds 42-45:
+    #
+    #     lo_mixtop (11 envs)  839      <- the §5 config
+    #     sm100     (29 envs)  475      <- the current best
+    #     sm70      (60 envs)  353
+    #     smmid     (62 envs)  340
+    #     sm50     (118 envs)  248
+    #
+    # sm100 already halved lo_mixtop's holes, which is plausibly part of §6.4's
+    # consistency gain. But sm50 has the smallest holes and scores worst of the
+    # three, so hole size does not decide it alone -- reach competes, and §6.3
+    # put the floor near 50 cells where a patch's diagonal stops covering the
+    # decay being asked for.
+    #
+    # sm70 is what the two constraints leave: 25% smaller holes than sm100 and
+    # a 99-cell diagonal on every patch. smmid tests whether mixing adds
+    # anything on top, with its smallest patch at 50 rather than smmix's 30 --
+    # smmix scored 7.5 and its 30-cell tail was under the floor.
+    #
+    # Note the law does not predict a gain here: sm70 should land near res90 11
+    # and ceiling 0.94, i.e. r_pred ~8.4 against sm100's 8.2. If it wins it will
+    # be on consistency across references, the §6.4 mechanism the law is blind
+    # to, which is exactly what smaller holes should buy.
+    "w35_small_spread": {
+        "arm": {
+            "sm70_r20":  dict(npos_list=SIZE_MIXES["sm70"],
+                              per_env_radius_frac=0.0, radius=20.0,
+                              rate_lambda=0.3, out_dim=1024, hidden_dim=256),
+            "smmid_r20": dict(npos_list=SIZE_MIXES["smmid"],
+                              per_env_radius_frac=0.0, radius=20.0,
+                              rate_lambda=0.3, out_dim=1024, hidden_dim=256),
+        },
+        "seed": [42, 43, 44, 45],
+    },
+    # W36 -- §6 step 4b. The two loss knobs never swept in this regime.
+    #
+    # repel_weight has been 1.0 since §2.2 found its optimum at 33-60 envs, and
+    # has not been touched through §5 or §6. The pair sets are means, so the
+    # attract:repel balance does not shift with set size -- but what the attract
+    # term is being *asked* for does: an absolute radius of 20 on a 100-cell
+    # patch makes 12.6% of within-env pairs attract pairs, against 7% for
+    # lo_mixtop's radius 30 on 200 cells. Nearly twice the code is being pulled
+    # to cosine 1, which is a reason the 2:1 balance need not still be right.
+    #
+    # rate_lambda 0.3 was tuned at 11 envs. sm100's ceiling (0.952) is worse
+    # than sm50's (0.933) because 29 environments make a less diverse batch than
+    # 118, so the spread term has more to do here than it did there. §5.6h found
+    # rate>0.3 trading ceiling for decay at worse than par, but that was at 11
+    # envs and is worth one arm at 29.
+    "w36_sm100_loss": {
+        "arm": {
+            "repel2": dict(npos_list=SIZE_MIXES["sm100"],
+                           per_env_radius_frac=0.0, radius=20.0,
+                           rate_lambda=0.3, repel_weight=2.0,
+                           out_dim=1024, hidden_dim=256),
+            "repel4": dict(npos_list=SIZE_MIXES["sm100"],
+                           per_env_radius_frac=0.0, radius=20.0,
+                           rate_lambda=0.3, repel_weight=4.0,
+                           out_dim=1024, hidden_dim=256),
+            "rate1":  dict(npos_list=SIZE_MIXES["sm100"],
+                           per_env_radius_frac=0.0, radius=20.0,
+                           rate_lambda=1.0, out_dim=1024, hidden_dim=256),
+        },
+        "seed": [42, 43],
     },
     # W13 -- coverage, on the winning config rather than on the bare baseline.
     #
