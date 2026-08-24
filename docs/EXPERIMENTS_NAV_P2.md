@@ -2272,7 +2272,7 @@ memory — and it is why `anti_q`'s AUC does not rise with it.
 
 ### 7.9 The trained agents' own trajectories — the agent is collecting it
 
-§7.3 item 5. Four policies scored on a fresh 32-env world drawn with a seed
+§7.3 item 5. Three trained policies scored on a fresh 32-env world drawn with a seed
 disjoint from the probe world, so no env is shared between fitting and scoring;
 8 draws × 2 starts × 4 distractor levels × 2 regimes, `goals_active = False` in
 both regimes so that episode *length* cannot become a function of the label.
@@ -2294,7 +2294,8 @@ specialist (still training; see §7.11), at **ten distractors**:
 | Q_trust | **refit** | 0.728 | 0.785 | 0.850 | 0.917 | 0.969 | 0.982 | **0.983** |
 | Q_trust | probe (billiard) | 0.760 | 0.799 | 0.855 | 0.858 | 0.874 | 0.886 | 0.884 |
 
-Two results, and the first would have been reported wrongly without the second.
+Three results, and the first would have been reported wrongly without the
+other two.
 
 **1. The frozen classifier does not merely lose power on the agent's own
 trajectories — it inverts.** Q_ep goes 0.857 → 0.208 and Q_trust 0.743 → 0.114,
@@ -2326,9 +2327,33 @@ because they remember the large `‖q‖` from early in the episode; the current
 `a1_qnorm` does not. That is a specific, testable design constraint and it is
 the main thing §7 hands forward.
 
-*(The second P4 seed, `..._s12_s42_21102413/navigate_u1300.pt`, shows the same
-shape more weakly: frozen Q_ep 0.857 → 0.488 rather than → 0.208, consistent
-with a policy that exploits less reliably and therefore spends less of its
+**3. The explore specialist is the control that makes the reading airtight.**
+`navigate_navp2_p5_e_s42_21102414/navigate_u850.pt` at ten distractors:
+
+| target | arm | t=1 | t=4 | t=8 | t=16 | t=64 |
+|---|---|---|---|---|---|---|
+| Q_ep | frozen | 0.857 | 0.785 | 0.867 | 0.863 | **0.904** |
+| Q_ep | refit | 0.841 | 0.953 | 0.976 | 0.987 | 0.997 |
+| Q_trust | frozen | 0.743 | 0.498 | 0.568 | 0.629 | 0.585 |
+| Q_trust | **refit** | 0.728 | 0.796 | 0.843 | 0.853 | **0.838** |
+
+Its mean distance to the goal stays at 10.1 – 11.6 for the whole episode
+(against the exploiter's 7.6 – 9.1) and **not one of its 1024 rows is masked**,
+because it never arrives. Consequently the frozen classifier does *not* invert
+on it: 0.904 at t = 64 for Q_ep, against the exploiter's 0.208. That confirms
+the inversion is caused by approaching the goal and nothing else.
+
+And on the target that probing affects, the explore specialist collects
+**less** information than the exploiter and less than a billiard: Q_trust refit
+**0.838** against the exploiter's 0.983 and billiard's 0.884. It moves, but not
+along `q`. **The behaviour that gathers the most evidence about whether the
+memory is real is the behaviour that acts on the memory** — which is a
+convenient fact for P6 and an inconvenient one for any design that separates
+"verify" from "exploit" into different phases.
+
+*(The second P4 seed, `..._s12_s42_21102413/navigate_u1300.pt`, sits between:
+frozen Q_ep 0.857 → 0.488 rather than → 0.208, refit 0.995, Q_trust refit
+0.975 — a policy that exploits less reliably and therefore spends less of its
 episode next to the goal.)*
 
 ### 7.10 The channel ablation at walls (§7.3 item 6) — H-wall's last half
