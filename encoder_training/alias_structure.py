@@ -93,10 +93,19 @@ def code_stats(encoder, lambdas, gain, *, n: int, device: str,
     """How many dimensions the code actually uses, over ``n`` random positions.
 
     The alias offsets say the two most *dissimilar* inputs in the arena land on
-    nearly the same output. With a saturated tanh, cosine 0.98 over 1024 units
-    means barely ten of them disagree — so the natural reading is that almost
-    every unit has gone constant and the code lives in a handful of directions.
-    That is a claim about the code, not about any pair, and this measures it:
+    nearly the same output, so the natural reading is that most units have gone
+    constant and the code lives in a handful of directions. That is a claim
+    about the code, not about any pair, and this measures it.
+
+    NOTE, measured: the tanh is **not** saturated in any encoder here. The
+    median ``|gain * net(x)|`` is 0.053 and no coordinate exceeds 0.8, so
+    ``tanh`` is acting as an identity map and the code is continuous, not
+    binary. An earlier version of this docstring assumed saturation and an
+    earlier ``frac_saturated`` measured it *after* normalisation, where the
+    rescaling by ``1/||z||`` made an unsaturated code look 34% saturated. Both
+    are corrected. The consequence is that the ``gain`` ramp is close to inert:
+    ``normalize(tanh(g*z))`` at g=1 and g=5 differ by cosine 0.9996 on the §6
+    best encoder, since normalisation cancels a scalar and tanh is linear here.
 
     ``live_frac``
         fraction of coordinates whose std across positions clears 10% of the
@@ -124,11 +133,35 @@ def code_stats(encoder, lambdas, gain, *, n: int, device: str,
         "pr": pr,
         "std_max": float(std.max()),
         "std_median": float(std.median()),
-        # A saturated tanh makes the code binary; how binary says whether the
-        # gain schedule, rather than the loss, is what flattened it.
-        "frac_saturated": float((z.abs() * (z.shape[1] ** 0.5) > 0.95)
-                                .float().mean()),
+        # Concentration relative to an isotropic code, which is what the
+        # post-normalisation quantity actually measures: 1.0 for a code with
+        # every coordinate at 1/sqrt(D), lower as the mass concentrates.
+        # It is NOT tanh saturation -- see the note in the docstring.
+        "frac_above_isotropic": float((z.abs() * (z.shape[1] ** 0.5) > 0.95)
+                                      .float().mean()),
+        # Tanh saturation, measured where it exists: before normalisation.
+        # Reads ~0.000 on every encoder in this campaign.
+        "frac_saturated_pre": _tanh_saturation(encoder, lambdas, gain, xs, ys,
+                                               device, fwhm_ratio),
     }
+
+
+def _tanh_saturation(encoder, lambdas, gain, xs, ys, device, fwhm_ratio,
+                     thresh: float = 0.95) -> float:
+    """Fraction of coordinates the output tanh has actually saturated.
+
+    Has to be read before ``F.normalize``, which divides by ``||z||`` and so
+    rescales an unsaturated code up to look saturated.
+    """
+    from encoder_training.eval_unique_radius import grid_code_batch
+    net = getattr(encoder, "net", None)
+    if net is None or getattr(encoder, "output_nonlinearity", "") != "tanh":
+        return float("nan")
+    phi = torch.as_tensor(grid_code_batch(lambdas, ys, xs, fwhm_ratio),
+                          device=device)
+    with torch.no_grad():
+        pre = torch.tanh(gain * net(phi))
+    return float((pre.abs() > thresh).float().mean())
 
 
 def radial_profile(cos_map: np.ndarray, ref: tuple[int, int],
@@ -295,7 +328,8 @@ def report(name: str, encoder, lambdas, gain, *, n_refs: int, seed: int,
     print(f"\ncode: out_dim={cs['out_dim']}  live_frac={cs['live_frac']:.3f}  "
           f"participation_ratio={cs['pr']:.1f}  "
           f"std max/median={cs['std_max']:.4f}/{cs['std_median']:.4f}  "
-          f"saturated={cs['frac_saturated']:.3f}")
+          f"above_isotropic={cs['frac_above_isotropic']:.3f}  "
+          f"tanh_saturated={cs['frac_saturated_pre']:.3f}")
 
     prof = radial_profile(maps[0], tuple(refs[0]))
     print("\nshell-mean cosine vs radius (ref 0):")

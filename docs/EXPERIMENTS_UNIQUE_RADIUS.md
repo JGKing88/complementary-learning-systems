@@ -145,6 +145,19 @@ Measured, not inferred. Nulls are listed because they cost runs too.
   reproduces the 50.8% encoder's ceiling exactly and still scores 6, because
   res90 is 6.5 against 17. **The ceiling is reachable at 10% and worth nothing;
   coverage buys the decay** (§5.6l).
+* **The tanh never saturates, so the `gain` ramp is close to inert.** The
+  encoder is `z = tanh(g·net(x))` then `z = z/‖z‖`. Measured on the §6 best:
+  median `|g·net(x)|` = **0.053**, and **no** coordinate exceeds 0.8, so tanh is
+  acting as an identity map and the code is continuous, not binary. Since
+  normalisation cancels a scalar, `normalize(tanh(g·z))` at g=1 and g=5 agree to
+  cosine **0.9996** (`cov51`: 0.9796). The 1.0→5.0 ramp in every config since §1
+  is therefore doing almost nothing — not *exactly* nothing, a minority of
+  coordinates reach the nonlinear region and shift some pairwise similarities by
+  up to 0.16–0.49, but the "gain progressively binarises the code" framing is
+  wrong. `alias_structure.code_stats` reported `frac_saturated` 0.34 because it
+  thresholded *after* normalisation, which rescales an unsaturated code up; it
+  now reports `frac_above_isotropic` (the concentration measure it was actually
+  computing) and `frac_saturated_pre` (~0.000, the real thing).
 * **Method**: seed spread is 3–5 units at 10% coverage and 8 at 50.8%, as large
   as most effects. Two seeds is never enough and four has reversed twice. The
   20-reference `r_min` is unstable in *both* directions — it flatters (21 → 9)
