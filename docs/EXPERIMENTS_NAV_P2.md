@@ -20,7 +20,7 @@ mismatch that must be fixed first.
 | **Predecessor** | `docs/EXPERIMENTS_NAV_TRI.md` — read its §0 findings 1–22 |
 | **Open decisions** | §11 — four forks put to Jack; spec assumes the recommended default in each |
 | **Running** | P4 exploit ceiling `p4_x` / `p4_x_s12`, P5 explore calibration `p5_e` |
-| **Done** | §4 blocking fixes, P1 (§5) with figures, and the recall-mechanism thread §5.3-5.7 |
+| **Done** | §4 blocking fixes, P1 (§5) with figures, the recall-mechanism thread §5.3-5.9, and **P2 (§6)** |
 
 **Open items** (priority order):
 
@@ -40,8 +40,21 @@ mismatch that must be fixed first.
       both are measured.
 - [ ] **Fix `hopfield/core.py`'s docstring** — "clean memory attractors converge
       in 1-2 steps; diffuse landscapes wander" is false (§5.4).
-- [ ] **P2 and P3 not started.** P3 is the critical path for P6, and §5.3-5.7
-      changed what its group-C statistics mean.
+- [x] **P2 done (§6).** The cross-env geometry *is* learnable — up to R² 0.658
+      at 19.8° with both cones pinned North — but **at the agent's own headings
+      the cones add two to three hundredths of R² over what its own motion
+      already tells it, and nothing in direction**; adaptation buys nothing at
+      any `k` up to 256. And the question stopped gating the ceiling when §4's
+      B3 turned on `input_prev_displacement`, which hands the agent **exact**
+      self-motion (integration error 2.3e-14). Three things carry forward:
+      **P5's explore target is set by what the policy does with
+      `prev_displacement`, not by the cone**; `WALL_RESOLUTION` is a measured
+      trade-off (4 → 1 is worth 4× the cross-env geometry and costs in-env
+      uniqueness); and a **range** sensor over the same rays decodes at 0.869
+      where the ±1 code gets 0.132, which is the number Jack's
+      "structure the input differently?" question was waiting on.
+- [ ] **P3 not started.** It is the critical path for P6, and §5.3-5.7 changed
+      what its group-C statistics mean.
 - [ ] `signal_separability` draws **one** distractor set per (env, count).
       Raise it — that single fact produced the 23.3% that misdirected §6.7.1 of
       the phase-1 doc (§5.2.1).
@@ -210,7 +223,7 @@ Full list in `EXPERIMENTS_NAV_TRI.md` §0. The ones that bind here:
 |---|---|---|
 | coverage hard ceiling, 200 steps | 0.5025 | one new cell per step |
 | coverage billiard ceiling, `‖a‖ ∈ [0.5,2]` | **0.378** at `‖a‖ ≈ 1.25` | §2.1 |
-| coverage lawnmower ceiling | → 0.5025 | needs position knowledge — **P2 decides if this reopens** |
+| coverage lawnmower ceiling | → 0.5025 | needs position knowledge — **§6: reopened, but by `prev_displacement`, not by the cone** |
 | mean start distance | 10.85 | phase 1 probe |
 | ideal `mean_steps` at `‖a‖ = 2` | **4.9** | (10.85 − goal_radius) / 2 |
 | ideal `mean_steps` at `‖a‖ = 1` | 9.8 | same |
@@ -223,6 +236,12 @@ cone at only R² ≤ 0.13 and called 0.387 the practical ceiling. **Jack's quest
 different and probably much easier quantity.** If it decodes well, the agent can
 path-integrate from sensory, the lawnmower line reopens, and the explore target
 moves from 0.378 toward 0.50.
+
+**Answered in §6, and not the way this table expected.** Relative displacement
+is *not* decodable in a held-out env — but the question stopped deciding the
+ceiling when §4's B3 turned on `input_prev_displacement`, which hands the agent
+exact self-motion. The lawnmower line is open on information grounds; whether
+P5 reaches it is a policy-capacity question.
 
 ---
 
@@ -958,34 +977,506 @@ strongest statement this phase could make about the architecture.
 *new* env, given two sensory observations, can the vector between them be
 decoded? And does a little experience in the new env help?
 
-**Why it matters.** §3.1: it decides whether the explore ceiling is billiard
-(0.378) or lawnmower (→0.50). It also gives a **`q`-independent check on
-self-motion**, which §7.4's wall hypothesis needs.
+Measured in `analysis/nav_p2/displacement_decodability.py` (cross-env transfer,
+six framings, all controls) and `analysis/nav_p2/displacement_adaptation.py`
+(k-shot in a new env, plus the two measurements that explain the result).
+Launcher `hopfield_nav/run_nav_p2_disp.sh`, six probes. No encoder, no
+scaffold, no GPU — like P0.9 this is a property of the sensor. 64 training envs
+and **48 held-out test envs** unless stated, and every number below is a median
+over the test envs with [p10, p90] where it is quoted.
 
-**Method.** Train `f(s_1, s_2) → Δpos` on envs 1..N, test on held-out envs.
+### 6.1 RESULT — the geometry does transfer, the agent cannot use it, and the ceiling question it was written to settle has already been answered elsewhere
 
-- Architectures: ridge on `[s1, s2, s1−s2, s1⊙s2]`; a 2-layer MLP. The gap
-  between them says whether the structure is linear in the cone.
-- Report R² and angular error, broken out by `‖Δpos‖`, by distance-to-wall, and
-  by absolute position — a decoder that only works in the middle of the arena is
-  a different result from one that works everywhere.
-- Controls: same-env train/test (upper bound), shuffled pairs (chance).
+Three findings, and the answer to Jack's question is the conjunction of the
+first two rather than either alone.
 
-**Adaptation to a new env**, `k ∈ {0, 4, 16, 64, 256}` steps:
+**1. The shared geometry is real and does transfer — in a canonical
+orientation.** With both cones pinned facing North, a framing with no heading
+anywhere, a decoder trained on other envs works on held-out ones, and works
+better the more favourable the configuration: **R² 0.13 at 51° of median
+angular error** at the launcher's own settings (`wall_resolution=4`, 64 envs,
+ridge or MLP), rising to **R² 0.658 at 19.8°** with the coarsest wall code, 128
+training envs and a 2-layer MLP — against a chance level of 89.9° and a
+snap-oracle ceiling of 0.945 / 8.6°. So the answer to "can the geometric
+structure be learned across environments" is **yes**, and §6.3–6.4 say what
+carries it and what suppresses it.
 
-- *supervised anchors* — `k` labelled `(s, pos)` pairs. Unrealistic; an upper
-  bound on what adaptation could buy.
-- *self-motion self-supervision* — a trajectory of `(s_t, a_t)` with unknown
-  absolute position. **This is the realistic one**: the agent knows its own
-  displacement, so it can fit the local `s → pos` structure with no labels. It
-  is what an actual explore rollout provides for free.
+**2. At the agent's own headings, the cones add nothing.** That is the finding
+that decides the question, and it survives every attempt made here to pose it
+generously. With no heading supplied the decoders are at chance (R² ≤ 0.001,
+89–90°). With heading supplied they appear to do well — and the `side-only`
+control shows that is the heading talking: pooled over lags, heading alone
+scores 0.233 / 27.4° and `ridge/spec`, `ridge/xcorr`, `ridge/bilin` and
+`mlp/raw` score 0.233, 0.237, 0.229 and 0.240, every one within 0.007 of it,
+with every shuffled control equal to its unshuffled twin. In the best-posed
+version (§6.5 — cones aligned by `Δψ`, answer in the agent's own frame, the
+coarse wall code) the cones buy **+0.027 of R² over their own shuffled control
+under a random walk**, rising to +0.173 if the walk is made near-ballistic —
+and at *every* level of persistence they make the **direction** estimate worse
+than heading alone. Whatever they carry is a magnitude correction to a
+displacement the agent is already handed exactly. The structure exists; the
+agent is not in a position from which it can be read.
 
-**Decision rule.** If held-out-env angular error is small at `‖Δpos‖ ≈ 1–2`, the
-agent can path-integrate from sensory, the lawnmower ceiling reopens, and P5's
-target rises. If it needs adaptation, report how many steps — that is a direct
-statement about how much of an episode must be spent localizing. If it fails
-even with 256 anchors, the sensory representation is the bottleneck and Jack's
-"should we structure sensory input differently?" becomes the live question.
+**3. The premise moved under phase 2's own §4 fixes.** P2 was written to decide
+whether the explore ceiling is billiard (0.378) or lawnmower (→0.50), on the
+reasoning that lawnmower needs to know where the agent has already been and
+that sensory decoding was the only route to it. That was true in phase 1, where
+`INPUT_PREV_ACTION=0` and `input_prev_displacement` defaulted off, so the agent
+had no self-motion channel at all. **§4's B3 turned both on.**
+`prev_displacement` is `ContinuousVecEnv._last_displacement` read straight off
+the env (`rollout/collector.py:659`) — the realized post-clip move, exactly.
+Integrating it over 200 steps × 4000 episodes reproduces position relative to
+the start to **2.3 × 10⁻¹⁴**.
+
+So the agent is already handed, exactly and for free, the quantity P2 asked
+whether it could decode. **The lawnmower ceiling is not gated on sensory
+decodability. It is gated on whether the policy can hold and use a position it
+is already being given** — a capacity question for P5/P6, not a sensory one.
+
+One caveat, with a number. Position-relative-to-start is exact from step 1;
+position in the *arena frame* is not, and the `_serpentine_track` baseline that
+defines the lawnmower line assumes the arena bounds (it walks to a corner and
+sweeps columns of exactly `size−1`). Those bounds come from wall contacts,
+which are directly observable because a clipped step makes `prev_action` and
+`prev_displacement` differ — which is precisely why §11 Q1 decided to feed
+both. Under random actions 12.0% of steps are clipped, two non-parallel walls
+are touched in 80.7% of episodes at a median of **79 steps** (p10 20, p90 165),
+and all four in only **1.9%**. The frame is cheap to half-pin and expensive to
+pin completely, which argues for a sweep the agent runs in its own frame and
+repairs on contact rather than a planned boustrophedon.
+
+### 6.2 The heading is the answer, so supplying it is a leak, not a control
+
+The spec asked for a "free-heading, headings supplied" arm as the realistic
+case. It cannot be run that way at lag 1, and the reason is structural rather
+than incidental: heading is not an independent variable in this env.
+`ContinuousVecEnv` sets `ψ = atan2(dx, dy)` of the *realized displacement*
+(`world/vec_env.py:461`). At lag 1 the heading at the second observation **is**
+the direction of the displacement being decoded.
+
+This was measured rather than reasoned about, by adding a `side-only` arm that
+sees the heading terms and nothing from the cones. In the `ego` framing at lag
+1 it reaches **R² 0.875 at 1.3° of median angular error** — better than every
+sensory arm anywhere in this study. The sensory arm sitting beside it scored
+0.861 / 2.4°, i.e. *worse*, and its shuffled control — `s2` permuted, the
+pairing destroyed — scored 0.862 / 2.3°, i.e. identical. Without that control
+this section would have reported a 2.4° angular error as its headline.
+
+Pooled over all four lags the same thing holds and is easier to read: the leak
+is 0.233 / 27.4°, and `ridge/spec`, `ridge/xcorr`, `ridge/bilin` and `mlp/raw`
+land at 0.233, 0.237, 0.229 and 0.240 — every one of them within 0.007 of
+heading-only, and every shuffled control equal to its unshuffled twin to three
+decimals. **Under uniform turns the two cones add nothing whatsoever to what
+the agent's own heading already tells it**, at any lag.
+
+So: **lag 1 is interpretable only in the `fixed` framing**, where no heading
+enters anywhere. From lag 2 the headings stop determining the cumulative
+displacement and the supplied-heading framings become real measurements — but
+the leak does not vanish, it decays (0.875 → 0.432 → 0.213 → 0.103 across lags
+1, 2, 4, 8), so the `side-only` row is printed per lag and every claim below is
+made against it.
+
+### 6.3 What can cross an env boundary at all, and the number it gets
+
+The wall code is a fresh random ±1 draw per env (`world/env.py:329`), so the
+map position → cone is a different hash in every arena and nothing read off the
+raw pattern can transfer. The spec's own feature set makes the point: ridge on
+`[s1, s2, s1−s2, s1⊙s2]` scores **−0.000 / 89.5°, exactly chance**, at every
+resolution and in every framing.
+
+What *can* transfer is the second-order agreement structure.
+`E[s1[i]·s2[j]] = 1` when ray *i* of view 1 and ray *j* of view 2 land on the
+same wall segment and 0 otherwise, whatever the codebook is — so `s1 s2ᵀ` is a
+codebook-independent geometric measurement, and it is the only channel a
+cross-env decoder has. Two features were built on it: `xcorr`, the
+shift-invariant projection (per-ray products plus cross-correlation over ±24
+ray lags), and `bilin`, the full 60×60 outer product.
+
+`fixed` framing, `wall_resolution=4` (the launcher default), 48 held-out envs:
+
+| decoder | R² [p10, p90] | median ang. err [p10, p90] | <45° |
+|---|---|---|---|
+| snap-oracle **CEILING** | 0.945 [0.944, 0.946] | 8.6 [8.5, 8.8] | 91.5% |
+| NN table, in-env, all 400 cells | 0.943 [0.822, 0.946] | 8.6 [8.5, 8.9] | 91.3% |
+| mlp/raw | 0.132 [0.094, 0.184] | 51.3 [47.2, 55.6] | 45.3% |
+| mlp/bilin | 0.122 [0.053, 0.206] | 47.8 [41.3, 55.0] | 47.8% |
+| ridge/bilin | 0.091 [0.059, 0.130] | 55.1 [50.0, 61.0] | 43.0% |
+| ridge/xcorr | 0.084 [0.056, 0.107] | 56.9 [52.3, 62.9] | 41.5% |
+| same-env ridge/xcorr | 0.088 [0.053, 0.132] | 59.1 [52.8, 67.5] | 39.9% |
+| ridge/spec (the spec's features) | −0.000 [−0.002, 0.001] | 89.5 [85.7, 93.0] | 25.7% |
+| shuffled control (bilin) | 0.001 [−0.000, 0.002] | 86.0 [84.1, 87.8] | 26.5% |
+| constant **CHANCE** | −0.000 [−0.001, −0.000] | 89.9 [88.5, 91.8] | 24.9% |
+
+The gap between ridge and the MLP is small here (0.09 → 0.13) — but do not read
+that as "the structure is linear". At this resolution there is barely any
+structure for either to find; where there *is* (§6.4, resolution 1 with 128
+training envs) the MLP reaches 0.658 against ridge's 0.392, and the gap is the
+larger part of the result. The honest reading of this table is that at
+`wall_resolution=4` the cross-env signal is close to the floor for every
+decoder tried.
+
+The two rows at the top are the important ones. **A nearest-neighbour table
+over all 400 cells of the env in question saturates the ceiling**, 0.943
+against 0.945. Within an env the pair of cones does determine the displacement,
+essentially perfectly. So this is not a claim that the information is missing
+from two glimpses. It is a claim about *transfer*: the part of the map that is
+env-specific is a random hash and cannot be learned once and reused, and at this
+resolution the part that is shared geometry carries R² ~0.1.
+
+Note also that the same-env linear decoder (0.088) is no better than the
+cross-env one (0.084). A linear decoder gets nothing from being told which env
+it is in — all it can use is the shared geometry either way — which is a second,
+independent statement of the same fact.
+
+### 6.4 `wall_resolution` is the knob that decides how much geometry survives
+
+`fixed` framing, best cross-env arm, 48 held-out envs, over the `WALL_RESOLUTION`
+values the launcher can take (default 4):
+
+| wall_res | ridge/xcorr | ridge/bilin | shuffled control | in-env NN table | snap ceiling |
+|---|---|---|---|---|---|
+| 1 | 0.359 / 30.7° | **0.387 / 28.6°** | 0.007 / 76.0° | 0.242 | 0.945 / 8.6° |
+| 2 | 0.190 / 41.7° | 0.210 / 39.4° | 0.003 / 83.5° | 0.563 | 0.945 / 8.7° |
+| 4 (default) | 0.084 / 56.9° | 0.091 / 55.1° | 0.001 / 86.0° | 0.943 | 0.945 / 8.6° |
+| 8 | 0.040 / 70.0° | 0.039 / 67.0° | 0.005 / 85.4° | **0.945** | 0.945 / 8.7° |
+
+**Monotone across the whole range, and worth a factor of ten from 8 to 1.**
+The mechanism is spatial frequency: at `wall_resolution=1` a segment is a whole
+cell, so adjacent rays land on the same or neighbouring segments and the cone
+has runs whose shift under translation is readable; at 8 a segment is an eighth
+of a cell and every ray lands on its own, so the cone is a fine hash and the
+shift is not. The in-env table moves the opposite way over the same range
+(0.242 at resolution 1, 0.945 at 8), which is the same trade-off seen from the
+other side: a finer code is a better fingerprint and a worse ruler.
+
+This is a live trade-off rather than a free win. `wall_resolution=4` exists so
+that two positions inside one cell read differently (`world/env.py:100-106`),
+which is what the continuous movement mode needs for the *encoder*. What it
+costs is the cross-env geometry, and P2 is the first measurement of that cost.
+
+Pushed to the most favourable configuration the sensor allows — resolution 1,
+**128** training envs, and a 2-layer MLP instead of ridge — the `fixed` framing
+reaches **R² 0.658 [0.617, 0.708] at 19.8°** (0.650 / 16.6° for the MLP on
+bilinear features), against the 0.945 / 8.6° ceiling. At one step it is 0.584 /
+19.4° against a lag-1 ceiling of 0.803 / 13.9°. That is a real decoder, not a
+trace: three quarters of the way to the ceiling in R², and it is what justifies
+calling the cross-env geometry *learnable* in §6.1. The three levers that get
+it there — coarser code, more training envs, a nonlinear decoder — are all
+things this project can change. What none of them touches is §6.5.
+
+### 6.5 Free heading destroys it, and two separate things are doing the damage
+
+With the cones at the poses actually occupied and no heading supplied (`free`),
+every decoder at every resolution sits at chance: R² ≤ 0.001, median angular
+error 89–90°. Two candidate explanations, and they had to be separated.
+
+**(a) The decoder is not being told enough to answer in world frame.** Posing
+this correctly took two attempts and the first one is worth recording. The
+`derot` framing re-indexes view 2's cone by `Δψ` so ray *i* of both views looks
+along the same world bearing — the operation an agent that knows its own
+heading would perform. Its sign is invisible in the downstream score, so a
+self-test pins it: two views from the same cell at different headings must
+agree exactly after alignment, and it reports **1.000 for the correct sign and
+0.516 — chance for ±1 — for the flipped one**. The first implementation had the
+sign backwards; the guard now runs at the top of every job. But de-rotation
+alone still scored near chance, and the reason is that the framing was
+ill-posed: after alignment the features are expressed relative to view 1's
+bearing, `ψ1` is never supplied, and the target was still in world frame. The
+decoder was being asked to rotate by an angle it had not been given.
+
+`derot_ego` fixes it — same alignment, target in view 1's frame, which is also
+what an agent chaining its own displacements would compute. Even at 128
+training envs and with an MLP, the ill-posed `derot` reaches only 0.029;
+`derot_ego` is the version worth reading.
+
+And there is a second trap in it, which the control rows catch. In the
+egocentric frame the target is not isotropic — the agent moves forward by
+construction — so the baselines are strong: heading alone reaches 27.4° under
+uniform turns, and under a persistent walk even the *constant* predictor gets
+into the twenties. **An angular error in an ego-frame framing means nothing on
+its own.** The quantity to read is each decoder's increment over *its own
+shuffled control*, which keeps the heading terms and destroys only the pairing:
+
+`derot_ego`, resolution 1, 48 training envs, 32 held-out test envs, pooled over
+lags 1–8. "cones add" is `ridge/bilin` minus its own shuffled control:
+
+| per-step turn sd | median &#124;Δψ&#124; | shared rays | disjoint | constant | heading only | ridge/bilin | its shuffled | **cones add** |
+|---|---|---|---|---|---|---|---|---|
+| uniform | 91.2° | 14 / 60 | 34.9% | 87.6° | 0.235 / 27.4° | 0.260 / 27.3° | 0.233 / 28.2° | **+0.027** |
+| 45° | 30.6° | 45 / 60 | 8.8% | 43.1° | 0.280 / 15.6° | 0.309 / 17.2° | 0.273 / 15.1° | **+0.036** |
+| 20° | 11.5° | 54 / 60 | 7.1% | 20.2° | 0.281 / 6.8° | 0.387 / 11.0° | 0.279 / 8.9° | **+0.108** |
+| 10° | 5.0° | 57 / 60 | 5.3% | 10.8° | 0.248 / 3.5° | 0.438 / 7.8° | 0.265 / 6.0° | **+0.173** |
+
+Three things to read off it, and the first is not what I expected.
+
+**The cones do contribute, and the contribution grows steeply with overlap.**
+The increment goes +0.027 → +0.036 → +0.108 → +0.173 as the disjoint fraction
+falls from 35% to 5%, and in the bottom row the cones nearly *double* the R²
+over heading alone (0.438 against 0.248). So §6.5(b) is a large real effect, not
+a plausible story — a straighter walk genuinely does make the two glimpses
+mutually informative.
+
+**But all of it goes into magnitude, not direction.** In every row the sensory
+arm's median angular error is worse than its own shuffled control's, and worse
+again than heading-only: at turn sd 10°, 7.8° against 6.0° against **3.5°**.
+Adding the real pairing to the ridge buys R² by fixing the length of the vector
+and costs accuracy on its angle. Path integration needs the angle, and the agent
+already has both exactly from `prev_displacement`.
+
+**And the regime where the cones help is not obviously the agent's.** A per-step
+turn sd of 10° is a near-straight line; the uniform-turn row is the neutral
+reference and it is the one where the increment is +0.027. `PERSISTENCE_BONUS`
+pushes toward the bottom of the table and `EPSILON_EXPLORE=0.4` pushes toward
+the top. **What a trained phase-2 explore policy's turn distribution actually
+is was not measured here** — see §6.10.
+
+**(b) The cones frequently do not see the same world.** The aperture is 120°
+and heading is the direction of travel, so two consecutive views point wherever
+two consecutive actions pointed. Under uniform random actions the median
+`|Δψ|` between consecutive steps is **91.6°**, the median number of rays the
+two views share is **14 of 60**, and **35.0% of consecutive pairs see
+completely disjoint parts of the world** — for a third of the pairs there is no
+shared world in the two observations at all, so nothing can relate them.
+
+That is a fact about the aperture and the movement model, not about the code,
+and it is separable from (a) because walk persistence moves it. The policy is
+paid to go straight (`PERSISTENCE_BONUS=0.05`), so a uniform random walk is the
+pessimistic end of this axis and the table above sweeps across it.
+
+**So (a) and (b) are both real, and the sweep separates them.** Under a random
+walk the two cones are usually not looking at the same world and contribute
+almost nothing. Turn persistence up until they are, and they contribute a lot —
+but what they contribute is a magnitude correction to a displacement the agent
+is already handed exactly, while making its direction estimate worse. That is a
+sharper result than "the sensor is uninformative", and it is only visible
+because the shuffled control keeps the heading terms.
+
+And the range sensor of §6.7 shows the damage is not the ±1 code's doing. That
+sensor decodes at 0.869 / 11.1° in the `fixed` framing, near the 0.945 ceiling.
+Under free heading it drops to **0.035 / 81.7°**. A sensor that is otherwise
+almost at the ceiling loses about 95% of its R² the moment the heading is free.
+**Whatever is destroying the free-heading case is not the hash, because it
+destroys an un-hashed sensor just as thoroughly.**
+
+### 6.6 Experience in the new env buys nothing, and one table says why
+
+`k ∈ {0, 4, 16, 64, 256}` steps of experience in the held-out env, 24 test
+envs, `fixed` framing (the favourable one), `wall_resolution=4`:
+
+| decoder | k=0 | k=4 | k=16 | k=64 | k=256 |
+|---|---|---|---|---|---|
+| cross-env only | 0.086 / 57.0 | — | — | — | — |
+| NN table (label-free) | — | −0.50 / 90.0 | −1.40 / 90.0 | −5.65 / 90.0 | −12.91 / 77.3 |
+| self-sup ridge | — | — | −0.001 / 84.4 | −0.001 / 83.4 | −0.188 / 81.1 |
+| cross-env + self-sup | — | — | 0.059 / 63.9 | 0.064 / 60.3 | 0.023 / 65.9 |
+
+(R² / median angular error in degrees. The `k=0` row is an independent refit of
+the §6.3 `ridge/xcorr` decoder on 48 training envs rather than 64, and it lands
+at 0.086 / 57.0 against 0.084 / 56.9 — a reproducibility check across separate
+jobs that is worth having.) **256 steps — more than a full explore episode —
+leaves the decoder no better than zero steps.** In the `free` framing every cell
+is at chance. So the answer to "and maybe with some experience in the new env"
+is: no, and there is no number of steps that changes it.
+
+The NN row's flat 90.0° is not a coincidence: those are collapses, where the
+table returns the same entry for both queries and the predicted displacement is
+exactly zero. Dropping such samples is the obvious implementation and it
+silently flatters the decoder — they are scored 90°, exactly uninformative, and
+`frac_zero_pred` reports the rate. The first version of this study dropped them
+and crashed on an all-zero arm, which is how the problem was found.
+
+Two remarks on how the arms are posed. First, the spec separated *supervised
+anchors* (an unrealistic upper bound) from *self-motion self-supervision* (the
+realistic regime). For decoding a **displacement** they are the same
+computation: an anchor table keyed by absolute position and the same table
+keyed by position-relative-to-the-trajectory-start differ by a constant, and a
+difference of two matched entries cancels it. The unrealistic upper bound is
+reachable with no labels at all — and it is the row that fails hardest. Second,
+ridge is the wrong in-env decoder, which is why §6.3 reports the table: within a
+single env a linear fit gets 0.088 while the full 400-cell table gets 0.943.
+
+Why `k` anchors do not help is one table — median cosine between cones at ψ=0,
+by grid distance:
+
+| sensor | wall_res | same cell | d=1 | d≤2 | d≤3 | d≤5 | d≤8 | d≤13 | d>13 | **p99.75 far** |
+|---|---|---|---|---|---|---|---|---|---|---|
+| code | 1 | 1.000 | 0.283 | 0.150 | 0.050 | 0.033 | 0.033 | 0.000 | 0.000 | **0.550** |
+| code | 2 | 1.000 | 0.133 | 0.117 | 0.067 | 0.033 | 0.033 | 0.000 | 0.000 | **0.433** |
+| code | 4 | 1.000 | 0.100 | 0.017 | 0.033 | 0.033 | 0.017 | 0.000 | 0.000 | **0.400** |
+| code | 8 | 1.000 | 0.067 | 0.033 | 0.017 | 0.017 | 0.000 | 0.000 | 0.000 | **0.367** |
+| range | any | 1.000 | 0.990 | 0.972 | 0.933 | 0.826 | 0.544 | −0.123 | −0.647 | **1.000** |
+
+The `same cell` column reads exactly 1.000 by construction and is there as the
+guard that the quantity is what it claims to be. The last column is the bar a
+true match has to clear: with ~400 candidate cells the best wrong one sits at
+the p99.75 of the far-pair similarity.
+
+**The ±1 cone carries no locality.** At `wall_resolution=4` a cell one step away
+sits at 0.100 while the best distractor sits at 0.400, so the neighbour of a
+stored view essentially never wins the argmax — and coarsening the code does not
+fix it, because the distractor bar falls just as fast. A stored view therefore
+localizes the agent only when it is standing on **exactly** the cell it was
+stored from. "Experience in a new env" means the cells you have literally
+occupied, not the region you have explored, and that is why the table decoder
+gets *worse* with more anchors: more entries means the wrong match is drawn from
+a wider spread of positions, so the error grows.
+
+The range sensor is the control that shows this is the code's doing and not the
+cone's: its similarity decays *smoothly* — 0.990 at one cell, still 0.826 at
+five. Yet its table also fails (best 0.001 / 90.0° at k=4), for the opposite
+reason given in §6.7: ranges alias, so its p99.75-far similarity is **1.000**
+and a wrong cell ties the right one exactly. One sensor has no locality, the
+other has no uniqueness, and a table needs both.
+
+Put that next to §5.8. The **encoder** holds `ξ(p)·ξ(goal)` at 0.9993 within 1.5
+cells and 0.75 corner to corner — a tight, smooth chart of the arena. The **raw
+cone it is built from** is at 0.100 one cell away. Whatever generalizes in this
+system is manufactured by the encoder; none of it is present in the sensor.
+
+### 6.7 The geometry is there — the ±1 hash is what removes it
+
+Every arm was re-run on a **range** sensor: the same 60 rays, the same cone,
+the same plane intersections, returning the distance to the wall instead of the
+±1 code of the segment hit (`raycast_range`). That is the lidar this env does
+not have, and it bounds what restructuring the sensory input could buy.
+
+`fixed` framing, `wall_resolution=4`, 48 held-out envs:
+
+| decoder | ±1 code | range |
+|---|---|---|
+| snap-oracle **CEILING** | 0.945 / 8.6° | 0.945 / 8.6° |
+| mlp/raw | 0.132 / 51.3° | **0.869 / 11.1°** |
+| ridge/bilin | 0.091 / 55.1° | 0.712 / 19.5° |
+| ridge/spec (the spec's features) | −0.000 / 89.5° | 0.775 / 15.7° |
+| shuffled control | 0.001 / 86.0° | 0.018 / 83.0° |
+
+At one step (lag 1, `‖Δpos‖` 1.19) the range sensor reaches 0.749 / 16.4°
+against a lag-1 ceiling of 0.802 / 14.0°. **The geometry a cross-env decoder
+needs is fully present in the cone; the ±1 hash is what removes it** — a factor
+of six in R² and a factor of five in angular error, on identical rays.
+
+Two details worth carrying. First, even `[s1, s2, s1−s2, s1⊙s2]` — the spec's
+own feature set, which is *exactly chance* on codes — reaches 0.775 on ranges.
+Nothing clever is required once the signal is not hashed; the elaborate
+codebook-independent features exist only because the code needed them. Second,
+the range sensor's in-env table is *worse* than its own regression (0.398, with
+17.2% of its predictions exactly zero, against 0.712 for ridge) because ranges
+**alias**: two cells the same distance from the wall the cone faces, both clear
+of the side walls, produce identical profiles. Smoothness and injectivity pull
+against each other, and the ±1 code sits at the injective end. That is the real
+design tension behind `wall_resolution`, stated as a measurement rather than a
+preference.
+
+The two sensors also fail in opposite halves of the arena. The code decodes
+best nearest the wall the cone faces (§6.8); the range sensor decodes best
+furthest from it (0.946 in the two `y_lo` quadrants against 0.79 in the two
+`y_hi`), which is what a profile with more dynamic range at distance would
+predict. Neither is a defect — they are different measurements of the same
+geometry.
+
+### 6.8 Where the surviving signal lives
+
+Breakdowns of the best cross-env arm, `fixed` framing at resolution 1 (the
+configuration where there is enough signal to break down at all):
+
+| decoder | xlo_ylo | xlo_yhi | xhi_ylo | xhi_yhi |
+|---|---|---|---|---|
+| ridge/bilin, 64 envs | 0.324 / 33.3° | 0.451 / 25.1° | 0.319 / 33.6° | 0.442 / 25.3° |
+| mlp/raw, 128 envs | 0.646 / 21.6° | 0.670 / 18.2° | 0.639 / 21.7° | 0.664 / 18.2° |
+
+The cone faces North, so the two `y_hi` quadrants are the half of the arena
+nearer the wall it is looking at, and they decode better — a nearer wall
+subtends more of the cone per unit of translation. The effect is large for the
+linear decoder (0.45 against 0.32) and mostly flattens for the MLP with twice
+the training envs (0.67 against 0.64). **The anisotropy is a property of the
+weak decoder, not of the observation**, which is a useful thing to know before
+reading anything into a spatial breakdown of a marginal signal.
+
+The distance-to-nearest-wall breakdown runs the other way — 0.267 / 37.7° at
+0.5–1.5 rising monotonically to 0.512 / 22.5° at 7.5–10 — and the two are not in
+conflict. `d_wall` is the distance to the *nearest* wall in any direction while
+the cone is directional, so its near bin mixes cells facing a close wall with
+cells backed against one and looking down the length of the arena. **The
+quadrant split is the interpretable one; `d_wall` is confounded for a
+directional sensor**, and it is reported here only so the confound is on the
+record rather than quietly informing a conclusion.
+
+### 6.9 Decision
+
+**The explore target stays at billiard 0.378 on sensory grounds, and moves for a
+different reason.**
+
+- **Does relative displacement decode well enough in a held-out env that the
+  lawnmower ceiling reopens?** No. It decodes *somewhere* — up to R² 0.658 at
+  19.8° with both cones pinned North, a coarse code and 128 training envs, so
+  the cross-env geometry is genuinely learnable. But at the agent's own
+  headings the cones add two to three hundredths of R² over what its own motion
+  already tells it and nothing at all in direction, and at the launcher's own
+  settings even the pinned-North number is only R² 0.13 at 51°. Nothing here
+  supports path integration from sensory.
+- **How many steps of adaptation would it need?** None works. 256 steps of
+  experience in the new env leaves it where zero steps left it, and the locality
+  table says why: a stored cone identifies the cell it was stored from and
+  nothing within one step of it.
+- **But the lawnmower ceiling is not blocked**, because §4's B3 already hands
+  the agent exact self-motion. The information a lawnmower needs is present in
+  the observation from step 1. **P5's target should therefore be set by what the
+  policy can do with `prev_displacement`, not by what can be read off the cone**
+  — and if P5 plateaus at billiard, the diagnosis is recurrent capacity or
+  reward shape, not the sensor.
+- **Jack's follow-up question — "should we structure sensory input differently?"
+  — is live, and now has a number.** A range sensor over the same 60 rays, the
+  same cone and the same geometry decodes displacement in a held-out env at
+  **R² 0.869 / 11.1°** against a ceiling of 0.945 / 8.6° — six times the R² of
+  the ±1 code on identical rays. The geometry is in the cone; the hash is what
+  removes it. `WALL_RESOLUTION` is the same lever from the other end, worth a
+  factor of 4 between 4 and 1. Neither change is free: the code is injective
+  where the range profile aliases, and `wall_resolution=4` is there so that two
+  positions inside one cell read differently.
+- **The one thing no sensor change fixes** is §6.5. With a 120° aperture and
+  heading locked to the direction of travel, 35% of consecutive glimpse pairs
+  are disjoint under random actions; straightening the walk fixes that and the
+  cones then add a lot of R² — but all of it is magnitude, and at every level of
+  persistence they make the *direction* estimate worse than heading alone.
+  Direction is the part path integration needs, and the part the agent already
+  has. If visual odometry is ever wanted here, the aperture or the heading
+  coupling has to change, not the code.
+
+**What this hands the other workstreams.** §7.4's wall hypothesis asked for a
+`q`-independent check on self-motion: `prev_displacement` is exactly that, and
+it is exact — and §7.2's `d2` statistic, specified as "P2's sensory-decoded
+displacement vs the commanded action", should be replaced by
+`prev_action − prev_displacement`, which is the same diagnostic computed exactly
+instead of estimated. And §6.6's locality table is a constraint on any future
+proposal to use stored sensory views as a place memory: they are usable as an
+exact match and as nothing else.
+
+### 6.10 What P2 did not resolve
+
+Three things, in the order they would change a conclusion.
+
+1. **The trained policy's turn distribution.** §6.5's sweep shows the cones'
+   contribution rising from +0.027 to +0.173 as the per-step turn sd falls from
+   uniform to 10°, so *where the actual explore policy sits on that axis
+   decides how much of this matters*. `PERSISTENCE_BONUS=0.05` pushes it
+   straight and `EPSILON_EXPLORE=0.4` pushes it random, and the two were not
+   weighed against each other here. Measuring it needs one rollout of a trained
+   phase-2 explore policy and a histogram of `|Δψ|` — cheap, and it should be
+   done before any decision that rests on §6.5.
+2. **The decoder class.** `bilin` spans the complete second-order agreement
+   statistic, which is the codebook-independent sufficient statistic for the
+   *expected* cross-view structure, and the MLP adds nonlinearity on top of it.
+   Higher-order codebook-independent structure exists in principle and was not
+   exhausted; an end-to-end recurrent decoder over a whole trajectory is a
+   different and strictly larger hypothesis class than anything run here. The
+   in-env table result (0.943, saturating the ceiling) shows the information is
+   present within an env, so the ceiling on transfer is not obviously tight.
+3. **Whether a range sensor would survive contact with the rest of the system.**
+   §6.7 measures only displacement decoding. The ±1 code was chosen to make
+   nearby cells *distinguishable*, which is what the encoder and the Hopfield
+   store need, and the range profile aliases badly (p99.75 far-pair similarity
+   **1.000**). Swapping the sensor would have to be re-scored against
+   `unique_radius`, not against this section.
 
 ---
 
@@ -1091,10 +1582,16 @@ question — it followed from the spurious-state framing, which is gone.
 | | statistic |
 |---|---|
 | `d1` | residual between the observation predicted by the recalled pattern and the actual observation |
-| `d2` | mismatch between P2's sensory-decoded displacement and the commanded action |
+| `d2` | mismatch between the **realized** displacement and the commanded action |
 
 `d1` needs a `pattern → obs` decoder, fitted offline; it is a property of the
-scaffold, not the agent. `d2` falls out of P2 and is the wall diagnostic.
+scaffold, not the agent. `d2` was specified as "P2's sensory-decoded
+displacement vs the commanded action" and **§6 replaces it with something
+strictly better**: there is no usable sensory-decoded displacement, but
+`prev_displacement` carries the realized move exactly, so `d2` is
+`prev_action − prev_displacement`, which is non-zero exactly when the arena
+clipped the step. That is the wall diagnostic, it is exact rather than
+estimated, and both channels are already fed (§4 B3).
 
 ### 7.3 The analysis
 
@@ -1267,9 +1764,14 @@ Three reasons not to skip the run:
    ceiling cannot rest on a number of uncertain provenance.
 2. **The step bounds move the ceiling** (§2.1) and re-scale the whole coverage
    axis. Phase-1 coverage numbers are not comparable to phase-2 ones.
-3. **P2 may reopen the ceiling entirely** (§3.1). If relative displacement
-   decodes, the target moves from 0.378 toward 0.50 and "at ceiling" means
-   something different.
+3. **P2 has reported (§6) and it does change the target — for a different
+   reason than expected.** Relative displacement does *not* decode from the
+   cone, but `input_prev_displacement` hands the agent exact self-motion, so
+   the information a lawnmower needs is present from step 1 and the 0.50 line
+   is open on information grounds. **P5 is therefore a test of whether the
+   policy can use a position it is already being given**, and a plateau at
+   0.378 is a capacity or shaping result, not a sensory one. Expect 0.36–0.38;
+   read anything above it as evidence the recurrence is integrating.
 
 So P5 runs as a **calibration and reference run, not a search**: one arm at the
 σ P4 selects, bounds on, `--input_prev_action`, long enough to plateau. Expect
@@ -1360,7 +1862,12 @@ is not a policy failure at all and the phase-1 conclusion in §3 item 1 needs
 revising.
 
 **Also flagged, not blocking.** Jack asked "if not, should we structure sensory
-input differently?" — that is downstream of P2. If relative displacement does not
-decode from the current 60-ray cone, the input-representation question becomes
-live, and it is a bigger change than any knob in this document. Deferred until
-P2 reports.
+input differently?" — that was deferred until P2 reported. **It has (§6.7), and
+the question is now live with a number.** Displacement does not decode from the
+±1 cone, but it decodes at R² 0.869 / 11.1° from the *same 60 rays returning
+range instead of a code* — against a ceiling of 0.945 / 8.6°. The geometry is in
+the cone; the hash removes it. `WALL_RESOLUTION` is the same lever from the
+other end and is a one-line change (4 → 1 is worth 4× the cross-env signal).
+Neither is free: the ±1 code is injective where the range profile aliases, and
+`wall_resolution=4` exists so two positions inside one cell read differently.
+And neither helps the free-heading case (§6.5), which is the one that binds.
