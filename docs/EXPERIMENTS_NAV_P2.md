@@ -1885,7 +1885,7 @@ had to pass:
 |---|---|---|
 | frame self-test | oracle `cos(q, goal−x)` **0.9952**, axis-swapped **−0.3220** | `gram_schmidt_2d_batch` is handed `d_forward` first and returns it *second*; if `q` and the realized displacement were in transposed frames, `a3` and `b2` would be noise and nothing else here would say so |
 | analytic anchor (§7.3 item 0) | reproduces §5.8 at every level, below | a broken readout reading as a weak signal |
-| label permutation | 0.472 – 0.549 across every headline cell | leakage across the fold boundary |
+| label permutation | **0.452 – 0.549** over all 126 estimable headline cells | leakage across the fold boundary |
 | constant features | **0.500** exactly | a tie-handling bug in the AUC itself |
 
 The last one was not free. Out-of-fold scores must be pooled by *average* rank:
@@ -1984,12 +1984,15 @@ distractors and 0.805 → 0.917 at ten. The headline is not an artefact of a
 97%-positive class.
 
 **Q_trust restricted to goal-present episodes** — the version that speaks
-directly to mode B, since during exploit the goal *is* in memory — reads 0.98
-at t=1 and 0.95 at t=64 at ten distractors. It should not be quoted as a
-headline, and the reason is the label-permutation control beside it, which
-ranges from 0.46 to 0.67: with `P(y) = 0.97`, 768 rows contain about 20
-negatives and the AUC is not estimable at that class balance. What *is* solid
-there is the base rate, which needs no classifier.
+directly to mode B, since during exploit the goal *is* in memory — reads 0.978
+at t = 1 and 0.953 at t = 64 at ten distractors. **It should not be quoted as a
+headline**, and the reason is the label-permutation control printed beside it,
+which on those same cells ranges from **0.535 to 0.728** rather than sitting at
+0.500: with `P(y) = 0.983`, 768 rows contain about 13 negatives, and the AUC is
+not estimable at that class balance. This is the one place in §7 where a
+control failed, and the number it guards is the one a mode-B claim would most
+like to cite. What *is* solid there is the base rate above, which needs no
+classifier at all.
 
 **The degenerate condition, reported separately** as §7.3 item 1 requires. At
 `n_dist = 0` the goal-absent memory is empty, `q = 0` exactly, and Q_ep is
@@ -2042,7 +2045,7 @@ rows at the hardest level, and every table computed for the two is the same
 table to three decimals. It is reported for completeness and should not be
 carried into P6 as a third question.
 
-### 7.7 Which cue carries the discrimination — and Jack's sharpened cue does not
+### 7.7 Which cue carries the discrimination — `‖q‖` always, `b2` when the arena allows
 
 Question 3 restated. Single-feature AUC, per-env median over 48 envs,
 `billiard`, ten distractors; sign-corrected, so a cue that predicts the negative
@@ -2062,7 +2065,7 @@ class still scores above 0.5.
 | *oracle* | `o_c1D` — `‖r¹ − r²‖`, unprojected | 0.781 | 0.750 | 0.762 | 0.708 | 0.674 |
 | **C** | `c1_q12_rel` — `‖q¹ − q²‖ / ‖q¹‖` | 0.701 | 0.703 | 0.713 | 0.719 | 0.633 |
 | **C** | `c2_cos13` — `cos(q¹, q³)` | 0.664 | 0.643 | 0.682 | 0.606 | 0.612 |
-| **B** | `b2_spread` — allocentric spread, **realized** | 0.500 | 0.680 | 0.587 | 0.500 | 0.584 |
+| **B** | `b2_spread` — allocentric spread, **realized** *(see point 2 — this row is a mixture)* | 0.500 | 0.680 | 0.587 | 0.500 | 0.584 |
 | **A** | `a3_resid` — **self-motion residual, realized** | 0.500 | 0.570 | 0.568 | 0.500 | 0.572 |
 | **A'** | `x_a3_cmd` — the same from the commanded action | 0.500 | 0.570 | 0.564 | 0.500 | 0.577 |
 | **D** | `d2_clip` — `‖a − d‖`, the wall diagnostic | 0.500 | 0.531 | 0.531 | 0.500 | 0.533 |
@@ -2078,7 +2081,8 @@ stored, `‖q‖` scales with distance to it, so over an episode it takes a wide
 range of values with a large maximum, while with only foreign patterns it is a
 small number with little structure whatever you do. §7.8 tests this directly —
 `still`, which visits essentially one cell, saturates at Q_ep 0.945 while
-`billiard`, which sweeps the arena, reaches 0.997.
+`billiard`, which sweeps the arena, reaches 0.997. `‖q‖` is the cue that is
+*always* available; point 2 finds a sharper one that is not.
 
 **2. Jack's sharpened cue `a3` is worth about seven points of AUC over chance on
 a passively-moving agent, and that is all — but `b2` is a different story, and
@@ -2111,8 +2115,8 @@ its variance is zero; with a foreign pattern it wanders. Group A is the more
 arena lets it work. The pooled decay from 0.764 at t = 4 to 0.587 at t = 64 is
 not the statistic degrading; it is the clean population disappearing, since by
 t = 64 every billiard episode has met a wall (`n` = 0 in the no-clip column).
-This is the third time in this phase that a mean over a mixture told the
-opposite of the truth.
+It is the same failure mode as §5.1's eight-env mean and §5.2.1's two-draw
+fluke, on a new axis: a mean over a mixture told the opposite of the truth.
 
 **3. Group D — Jack's sensory-consistency cue — is perfect, and is not
 available.** Both group-D fingerprints separate the regimes at AUC **1.000** at
@@ -2416,10 +2420,11 @@ distance-to-wall), and phase 1's wall failures are still not a readout problem.
   `along_q` by finding something outside a linear combination of the three
   available directions. That is possible and untested.
 - **`Q_trust ǀ goal-present` is not estimable at this class balance.** With
-  98.6% positives at ten distractors on billiard trajectories, the negative
-  class is a few dozen rows and its permutation control ranges 0.46 – 0.67.
-  A real number there needs a stratified design or a much larger draw, and it is
-  the number a mode-B claim would most like to cite directly.
+  98.3% positives at ten distractors on billiard trajectories the negative class
+  is about 13 rows, and its label-permutation control comes back at 0.535 –
+  0.728 instead of 0.500 — the control failing, not the estimate merely being
+  noisy. A real number needs a stratified design or a much larger draw, and it
+  is the number a mode-B claim would most like to cite directly.
 - **Group D's acquisition cost is unmeasured.** The in-env pattern decoder is
   worth AUC 1.000 against 0.87 — the largest single effect in §7 — and nothing
   here says how much in-env experience is needed to fit one well enough to keep
