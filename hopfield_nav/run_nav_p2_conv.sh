@@ -24,7 +24,10 @@ cd "$REPO"
 source scripts/cls_env.sh
 
 PROBE=${PROBE:-convergence}
-if [ "$PROBE" = arch ]; then
+if [ "$PROBE" = why ]; then
+    python -u -m analysis.nav_p2.why_it_works \
+        --ckpt "$CKPT" --device cuda --n_distractors "${NDIST:-10}"
+elif [ "$PROBE" = arch ]; then
     python -u -m analysis.nav_p2.architecture_test \
         --ckpt "$CKPT" --device cuda --n_distractors "${NDIST:-10}"
 elif [ "$PROBE" = gain ]; then

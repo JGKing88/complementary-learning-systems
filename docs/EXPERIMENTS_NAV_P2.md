@@ -774,6 +774,81 @@ project is built on.
 
 Recorded as an open item, not a recommendation.
 
+### 5.8 Why the system works at all — measured
+
+Everything in §5.3-5.7 reduces the recall to a single product,
+`W x = (1/D) Σ_k ξ_k (ξ_k · x)`: a sum of stored patterns weighted by their
+similarity to where the agent stands. So the whole pipeline rests on one
+property of the **encoder** — that same-env similarity beats cross-env
+similarity by enough that one product returns the goal. Measured
+(`analysis/nav_p2/why_it_works.py`, 8 envs x 4 draws x 400 cells):
+
+**1. The signal — `ξ(p) · ξ(goal)` within an env**
+
+| grid distance | 0-1.5 | 3-5 | 5-8 | 8-12 | 12-20 | 20-30 |
+|---|---|---|---|---|---|---|
+| median | 0.9993 | 0.9936 | 0.9832 | 0.9573 | 0.8869 | 0.7534 |
+
+The encoder maps an entire environment into a **tight cone**: even corner to
+corner, similarity is 0.75.
+
+**2. The cross-talk — similarity to patterns from other envs**
+
+median **−0.0002**, p90 0.044, p99 0.273, **max 0.9823**
+
+Typically *orthogonal*, which is what the repulsion objective was trained to do.
+But the tail is heavy and that is where the whole story lives (below).
+
+**3. The margin that makes one product enough** — `ξ·ξ_goal − max_k ξ·ξ_k`:
+median **0.862**, p10 0.641, and a distractor out-weighs the goal in only
+**0.26%** of cases. That number is the retrieval failure rate, and it matches
+P1's independently-measured lock failures (0.15% distractor + 0.78% mixture).
+
+**4. After the tangent projection** — median `|q|` to the goal **0.3006**, to
+the nearest distractor **0.0670**, a **4.49x** separation. And the prediction:
+a displacement to another env's pattern is an unrelated direction in D
+dimensions, so it keeps `√(2/D) = 0.0442` of its norm, and `‖ξ_d − ξ_x‖ ≈ √2`,
+giving 0.0625 against the measured 0.0670. **The explore/exploit magnitude
+separation is a dimensionality effect and is quantitatively predicted.**
+
+#### The account
+
+The system does **two separate jobs, and the encoder does both**:
+
+1. **Retrieval.** Same-env similarity ~0.99 against cross-env ~0 means the goal
+   term dominates the weighted sum, so one product returns the goal pattern.
+2. **Geometry.** Retrieval says *which* pattern, not *where*. The tangent
+   projection `q = W_xᵀ(ξ_g − ξ_x)` recovers the grid displacement, because the
+   encoder is a smooth chart of the arena.
+
+**This is why attractor dynamics was never needed.** Basins exist to complete a
+*corrupted* cue. The cue here is `ξ_x`, a clean embedding of the agent's actual
+position — not a noisy copy of anything. The question is "which stored pattern
+is most like where I am, and where is it relative to me", which is a
+nearest-neighbour lookup plus relative geometry, and a correlation matrix
+answers it in one product. Iterating adds nothing because there is no corruption
+to remove; it re-applies `W` and amplifies whatever is most shared across all
+patterns, which is the top eigenvector and carries no information about which
+pattern was cued.
+
+#### The one thing that fails, and it is not diffuse
+
+Cross-talk has median −0.0002 but **max 0.9823**. The failures are not general
+interference — they are **rare near-collisions**, where a distractor drawn from
+somewhere else in the scaffold encodes almost identically to an in-env position.
+p99 is 0.273 while the max is 0.982: an extremely heavy tail on an otherwise
+clean distribution.
+
+That explains the whole failure structure measured in P1 — 0.26% of cells where
+a distractor out-weighs the goal, against 99%+ clean retrieval — and it makes
+the target precise. **The mean is already perfect; only the worst case hurts.**
+Improving retrieval means suppressing the tail of the cross-env similarity
+distribution, not lowering its average.
+
+That is exactly the objective the `ur_loss2_repel` encoder sweeps were built
+around — and it retroactively justifies scoring those sweeps by **worst-case
+coding radius** rather than a mean, which is how they were already being read.
+
 ---
 
 ## 6. P2 — is relative displacement decodable from sensory input?
