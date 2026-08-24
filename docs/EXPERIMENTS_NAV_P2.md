@@ -1486,7 +1486,7 @@ exact match and as nothing else.
 
 ### 6.10 What P2 did not resolve
 
-Three things, in the order they would change a conclusion.
+Four things, in the order they would change a conclusion.
 
 1. ~~The trained policy's turn distribution.~~ **Measured after the fact and
    folded into §6.5** — `analysis/nav_p2/policy_turn_stats.py`, one rollout of
@@ -1497,7 +1497,17 @@ Three things, in the order they would change a conclusion.
    record that the sweep alone would have understated the sensory channel by
    4×. What remains unmeasured is the same distribution for a policy trained
    under §6.5's own conclusions, and for the interleaved P6 agent.
-2. **The decoder class.** `bilin` spans the complete second-order agreement
+2. **How much more a non-linear decoder gets in the ego framing.** §6.5's table
+   is ridge. In the same framing at 128 training envs, a 2-layer MLP reaches
+   **0.610 / 9.4°** where ridge reaches 0.387 and heading alone 0.282 — so the
+   cones' contribution is materially larger for a non-linear decoder, and the
+   +0.108 in the table is a floor. Attributing it needs an MLP shuffled control
+   rather than the ridge's, because a non-linear decoder can also exploit the
+   *heading* terms better; `fit_mlp(..., shuffle=True)` is implemented and
+   prints as `shuf/mlp-<kind>`, and the run is the `best` probe. The direction
+   conclusion does not depend on it: the MLP's 9.4° is still worse than
+   heading-only's 6.8°.
+3. **The decoder class more broadly.** `bilin` spans the complete second-order
    statistic, which is the codebook-independent sufficient statistic for the
    *expected* cross-view structure, and the MLP adds nonlinearity on top of it.
    Higher-order codebook-independent structure exists in principle and was not
@@ -1505,7 +1515,7 @@ Three things, in the order they would change a conclusion.
    different and strictly larger hypothesis class than anything run here. The
    in-env table result (0.943, saturating the ceiling) shows the information is
    present within an env, so the ceiling on transfer is not obviously tight.
-3. **Whether a range sensor would survive contact with the rest of the system.**
+4. **Whether a range sensor would survive contact with the rest of the system.**
    §6.7 measures only displacement decoding. The ±1 code was chosen to make
    nearby cells *distinguishable*, which is what the encoder and the Hopfield
    store need, and the range profile aliases badly (p99.75 far-pair similarity
