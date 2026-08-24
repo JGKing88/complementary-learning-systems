@@ -23,7 +23,14 @@ export MKL_NUM_THREADS="${SLURM_CPUS_PER_TASK:-8}"
 cd "$REPO"
 source scripts/cls_env.sh
 
-python -u -m analysis.nav_p2.recall_convergence \
-    --ckpt "$CKPT" --device cuda \
-    --envs "${ENVS:-16}" --draws "${DRAWS:-4}" \
-    --n_distractors "${NDIST:-10}" --steps "${STEPS:-12}"
+PROBE=${PROBE:-convergence}
+if [ "$PROBE" = dynamics ]; then
+    python -u -m analysis.nav_p2.recall_dynamics \
+        --ckpt "$CKPT" --device cuda \
+        --n_distractors "${NDIST:-10}" --steps "${STEPS:-4000}"
+else
+    python -u -m analysis.nav_p2.recall_convergence \
+        --ckpt "$CKPT" --device cuda \
+        --envs "${ENVS:-16}" --draws "${DRAWS:-4}" \
+        --n_distractors "${NDIST:-10}" --steps "${STEPS:-12}"
+fi

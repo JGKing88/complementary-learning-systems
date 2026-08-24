@@ -422,9 +422,11 @@ that broke the argument in §5.2's closing prediction, so the question was
 tested rather than argued (`analysis/nav_p2/recall_convergence.py`, 25,600
 cells x 12 recall steps at ten distractors).
 
-**The answer is neither branch that question offered.** Iterating the recall
-does not converge on anything within twelve steps — it walks steadily *away*
-from the goal pattern. For the cleanest cells (cos ≥ 0.99 after one step):
+**The answer is neither branch that question offered** — but the first reading
+of it, "the recall never reaches a fixed point", was also wrong, and §5.4
+corrects it. It converges fine; twelve steps was simply the transient. What the
+twelve-step window shows is that iterating walks steadily *away* from the goal
+pattern. For the cleanest cells (cos ≥ 0.99 after one step):
 
 | recall steps | cos to goal | `dir_cos` | % `dir_cos` < 0.5 |
 |---|---|---|---|
@@ -454,6 +456,7 @@ accordingly, and its "if `c1` separates at a single step the probing question
 dissolves" line no longer follows from anything.
 
 **Correction 2 — the system is not being used as an attractor network.**
+(Understated: §5.4 shows it is not an attractor network *at all*.)
 `hopfield/core.py` documents `recall_batch_trajectory` as letting the policy
 see convergence dynamics: *"clean memory attractors converge in 1-2 steps;
 diffuse landscapes wander."* Measured here, that is false — nothing converges
@@ -473,6 +476,94 @@ but the finding is that the readout is best at the *first* step and degrades
 monotonically. Worth confirming `steps=1` beats `steps=2` end-to-end before the
 exploit ceiling is called, since it is a one-token change and the analysis says
 it should matter.
+
+### 5.4 It is a linear associative memory. The tanh is inert and beta is a no-op.
+
+Jack pushed back on §5.3: a symmetric-weight Hopfield has an energy function, so
+it has to settle. He is right, and "the recall never reaches a fixed point" was
+the wrong conclusion from a twelve-step window. Four checks
+(`analysis/nav_p2/recall_dynamics.py`), each able to falsify the explanation:
+
+**1. The tanh is numerically inert.** `Hopfield` sets `scale = 1/D` with
+`D = 1024`, so for a cue near a stored pattern `‖W x‖ ≈ 1/D`. Measured, the tanh
+argument `|β W x|` has median **9.97e-05** and max 7.68e-04, where tanh needs an
+argument of order 1 to bend. The largest relative deviation of `tanh(u)` from
+`u` over the whole batch is **2.3e-07**.
+
+**2. Removing the nonlinearity changes nothing.** Median
+`cos(with tanh, without tanh)` after twelve steps is **1.00000000**.
+
+**3. It converges — to the wrong thing.**
+
+| step | cos to goal | cos to top eigenvector of W | residual |
+|---|---|---|---|
+| 1 | 0.991 | 0.086 | 3.6e-01 |
+| 5 | 0.829 | 0.202 | 6.7e-02 |
+| 12 | 0.673 | 0.583 | 8.1e-02 |
+| 50 | 0.066 | **1.0000** | 3.2e-04 |
+| 200 | 0.064 | 1.0000 | **5.5e-08** |
+| 4000 | 0.064 | 1.0000 | 5.5e-08 |
+
+Settled by ~50 steps and numerically exact by 200. The fixed point is the
+**leading eigenvector of `W`**, which sits at cos 0.064 to the goal — very
+nearly orthogonal to the thing being recalled.
+
+**4. The spectrum predicts the rate.** `λ₂/λ₁ = 0.838`, i.e. a 10× error
+reduction every 13 steps — so the twelve-step window sampled precisely the
+transient and saw a monotone drift with no settling. Nothing mysterious.
+
+#### What this actually means
+
+`X ← normalize(tanh(β W X))` with the tanh in its linear region is
+`X ← normalize(W X)`, which is **power iteration**. So this is a **linear
+associative memory**, not a Hopfield attractor network: there are no basins, no
+nonlinear attractors, and the classical spurious-state theory Jack invoked does
+not describe it. There is exactly one fixed point that matters and it is junk.
+
+The retrieval happens entirely in the **first** application: `W x` is a matched
+filter, `≈ (1/D) ξ_goal (ξ_goalᵀ x)` plus cross-terms from the other stored
+patterns. Every subsequent step is power iteration toward the leading
+eigenvector, i.e. toward the direction most shared among the stored patterns —
+a blend. That is why the readout degrades monotonically with recall depth
+(§5.3), why `steps=1` is optimal, and why it is not merely optimal but the only
+setting that retrieves anything.
+
+#### `hopfield.beta` is a no-op
+
+This follows rigorously from check 1. With `tanh(u) = u` to seven digits,
+
+    normalize(tanh(β W x)) = normalize(β W x) = normalize(W x)
+
+for any `β > 0` — the scalar cancels in the normalization. So `cfg.hopfield.beta`,
+which the trainer sets from the encoder's recorded gain, **has no effect on
+anything** in this configuration. It would only start to matter at `β` of order
+`10⁴`, where the pre-activation reaches tanh's knee.
+
+That is the third dead knob this project has found (phase-1 finding 3,
+`MOVE_ENT_COEF` under `FREEZE_LOG_STD`; and `--freeze_log_std` itself, which did
+nothing on `train_navigate` for the whole v35 lineage). **Any future claim that
+a Hopfield hyper-parameter matters should be checked against this** before a
+sweep is spent on it.
+
+#### Consequences to carry forward
+
+1. **Do not describe this system as an attractor network** in write-ups. It is a
+   linear matched filter, and the difference is not cosmetic — it determines
+   which theory applies.
+2. **`hopfield/core.py`'s docstring is wrong** and should be fixed: it says
+   "clean memory attractors converge in 1-2 steps; diffuse landscapes wander."
+   Everything converges, to the same useless place, at a rate set by `λ₂/λ₁`.
+3. **The multistep channel is a decay-rate probe, not a convergence probe.**
+   `--input_hopfield_multistep 1 2 3` samples the transient. How fast a cue
+   rotates toward the leading eigenvector depends on how much of it lies along
+   the stored pattern versus the shared blend — so it may still discriminate
+   goal-present from goal-absent. P3 should test that on its merits rather than
+   on the convergence story, which is now known to be false.
+4. **A real lever exists where a dead one was assumed.** If the nonlinearity is
+   wanted — genuine attractor behaviour, with basins that could actually clean
+   up a noisy cue — it needs `scale` or `β` raised by ~3-4 orders of magnitude.
+   Whether that helps is untested and is a legitimate experiment; what is not
+   legitimate is assuming the current network does it.
 
 ---
 
