@@ -565,6 +565,63 @@ sweep is spent on it.
    Whether that helps is untested and is a legitimate experiment; what is not
    legitimate is assuming the current network does it.
 
+### 5.5 Why "linear associative memory" and not "attractor network"
+
+Jack asked why the label. A linear map on the sphere has attractors too, so
+"it is linear" settles nothing. The criterion that matters for *memory* is
+whether each stored pattern is a **stable fixed point with a basin around it**
+— that is what lets the dynamics clean up a corrupted cue, and a net storing 11
+patterns should have at least 11 such states. Three tests
+(`analysis/nav_p2/attractor_test.py`), none of which uses the word "linear":
+
+**1. The stored patterns are not fixed points.** Start *exactly* at a stored
+pattern and iterate:
+
+| steps | 1 | 2 | 5 | 20 | 50 | 200 |
+|---|---|---|---|---|---|---|
+| cos to its own starting pattern | 0.994 | 0.977 | 0.838 | 0.168 | 0.154 | 0.154 |
+
+A stable fixed point would hold at 1.0000. These leave immediately.
+
+**2. But one step *does* complete a corrupted pattern — very well.** Starting
+from a stored pattern corrupted to cos 0.70:
+
+| steps | 0 | **1** | 2 | 3 | 5 | 20 | 200 |
+|---|---|---|---|---|---|---|---|
+| cos to the clean pattern | 0.700 | **0.987** | 0.956 | 0.897 | 0.838 | 0.186 | 0.154 |
+
+**0.70 → 0.987 in a single application**, then monotone decay. This is the
+result that makes the label meaningful rather than pejorative: the
+associative-memory function works, and works well. It just happens *in the
+matched filter*, not in a relaxation.
+
+**3. Eleven patterns, one attractor.** 512 random starts, 400 steps: **one**
+distinct limit (up to sign), at `|cos|` 1.000000 to the top eigenvector of `W`.
+
+#### The answer
+
+Not "it has no attractors" — it has exactly one. The point is that **the
+attractor is not a memory**, and the memories are not attractors. Every stored
+pattern is a saddle: with symmetric `W`, each eigenvector is a fixed point but
+only the largest is stable, so any perturbation grows along the dominant
+direction. Retrieval therefore cannot live in the dynamics, and it doesn't —
+it lives entirely in `W x = (1/D) Σ_k ξ_k (ξ_kᵀ x)`, a correlation between the
+cue and every stored pattern. That is the textbook linear associative memory
+(Anderson / Kohonen correlation-matrix memory), where retrieval quality is set
+by **cross-talk between stored patterns** rather than by basin geometry.
+
+The distinction is load-bearing, not semantic. It predicts, correctly, that
+iteration cannot improve a retrieval (§5.3, §5.4), that `steps=1` is the only
+setting that retrieves anything, and that the way to improve recall is to
+reduce cross-talk between stored patterns — which is an **encoder** property,
+the same axis phase 1's `ur_loss2_repel` sweep was already pushing on.
+
+**One measured number sharpens that last point.** The max absolute overlap
+between the 11 stored patterns here is **0.4447** — nowhere near orthogonal. In
+a correlation-matrix memory that is exactly what limits retrieval, and it is
+why the top eigenvector still sits at `|cos|` 0.83 to the nearest stored
+pattern. Cross-talk, not capacity or dynamics, is the binding constraint.
+
 ---
 
 ## 6. P2 — is relative displacement decodable from sensory input?
