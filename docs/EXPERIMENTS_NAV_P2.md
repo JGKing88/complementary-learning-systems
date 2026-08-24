@@ -899,11 +899,31 @@ whether basins exist.
 
 #### What this does and does not settle
 
-It settles the mechanism completely. Combined with §5.4–5.6: the current network
-is linear because the patterns are stored at unit norm, making `W x ~ 1/D` and
-the tanh argument ~1e-4. Pre-saturating the patterns *and* storing them at their
-natural (±1) scale puts the loop gain above threshold and produces exactly the
-attractor memory classical theory describes — 11 patterns, stable, with basins.
+It settles the mechanism, but a caveat Jack caught matters for stating it
+correctly. An earlier version of this section said the network is linear
+"because the patterns are stored at unit norm, making `W x ~ 1/D`". That picks
+one arbitrary half of a product and calls it the cause. `W = (1/D) Σ p pᵀ`, so
+storing `λp` instead of `p` scales `W` by `λ²`, and `β·W` is **invariant** under
+`(p → λp, β → β/λ²)` — exactly, since zeroing the diagonal commutes with the
+scaling. Unit-norm and natural-norm storage are the *same dynamics at rescaled
+β*. There is one quantity, the loop gain `β·S/D`, and two knobs that set it.
+
+**And fixing the loop gain buys nothing on its own**, which §5.6 had already
+measured: sweeping β from 5 to 1e6 on the raw continuous patterns never took
+stability above 0.226. Raising the loop gain converts decay-to-zero into a
+nonzero fixed point; it does not make a continuous vector into a corner.
+
+So there are **two independent conditions**, and they were being conflated:
+
+| condition | knob | compensable | what it buys |
+|---|---|---|---|
+| loop gain `β·S/D > 1` | β *or* storage norm — the same knob twice | yes, by either | a nonzero fixed point instead of decay to zero |
+| stored pattern near a corner | storage gain `g` only | **no** | that the fixed point is *your memory* |
+
+The current system fails the first (β = 5 at unit norm), which is why it is a
+linear matched filter. But it would still fail the second even with the first
+repaired, which is exactly why §5.6's β sweep failed. Only pre-saturating the
+patterns satisfies the second, and that is what this section measures.
 
 **But it does not follow that this should be adopted, and the reason is §5.8.**
 The encoder does *two* jobs here: retrieval (same-env similarity ≈ 0.99 vs
