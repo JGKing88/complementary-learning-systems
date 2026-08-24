@@ -980,7 +980,7 @@ decoded? And does a little experience in the new env help?
 Measured in `analysis/nav_p2/displacement_decodability.py` (cross-env transfer,
 six framings, all controls) and `analysis/nav_p2/displacement_adaptation.py`
 (k-shot in a new env, plus the two measurements that explain the result).
-Launcher `hopfield_nav/run_nav_p2_disp.sh`, six probes. No encoder, no
+Launcher `hopfield_nav/run_nav_p2_disp.sh`, seven probes. No encoder, no
 scaffold, no GPU — like P0.9 this is a property of the sensor. 64 training envs
 and **48 held-out test envs** unless stated, and every number below is a median
 over the test envs with [p10, p90] where it is quoted.
@@ -1410,10 +1410,12 @@ different reason.**
   lawnmower ceiling reopens?** No. It decodes *somewhere* — up to R² 0.658 at
   19.8° with both cones pinned North, a coarse code and 128 training envs, so
   the cross-env geometry is genuinely learnable. But at the agent's own
-  headings the cones add two to three hundredths of R² over what its own motion
-  already tells it and nothing at all in direction, and at the launcher's own
-  settings even the pinned-North number is only R² 0.13 at 51°. Nothing here
-  supports path integration from sensory.
+  headings the cones add +0.027 of R² over their own shuffled control under a
+  random walk — and at every level of walk persistence, including the ones
+  where they add far more, they make the **direction** estimate worse than the
+  agent's own heading does. At the launcher's own settings even the
+  pinned-North number is only R² 0.13 at 51°. Nothing here supports path
+  integration from sensory.
 - **How many steps of adaptation would it need?** None works. 256 steps of
   experience in the new env leaves it where zero steps left it, and the locality
   table says why: a stored cone identifies the cell it was stored from and

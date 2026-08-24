@@ -15,12 +15,17 @@
 # a CPU job. `--cpus-per-task 16` is for the BLAS in the 3648-feature bilinear
 # ridge, which is the only expensive arm.
 #
-#   PROBE=main  sbatch hopfield_nav/run_nav_p2_disp.sh   # all five framings
-#   PROBE=res   sbatch hopfield_nav/run_nav_p2_disp.sh   # wall_resolution sweep
-#   PROBE=sens  sbatch hopfield_nav/run_nav_p2_disp.sh   # range sensor
-#   PROBE=turn  sbatch hopfield_nav/run_nav_p2_disp.sh   # walk persistence
-#   PROBE=best  sbatch hopfield_nav/run_nav_p2_disp.sh   # most favourable case
-#   PROBE=adapt sbatch hopfield_nav/run_nav_p2_disp.sh   # k-shot in a new env
+#   PROBE=main    sbatch hopfield_nav/run_nav_p2_disp.sh # all framings, res 4
+#   PROBE=res     sbatch hopfield_nav/run_nav_p2_disp.sh # wall_resolution sweep
+#   PROBE=sens    sbatch hopfield_nav/run_nav_p2_disp.sh # range sensor
+#   PROBE=turn    sbatch hopfield_nav/run_nav_p2_disp.sh # walk persistence
+#   PROBE=egoturn sbatch hopfield_nav/run_nav_p2_disp.sh # persistence x ego framing
+#   PROBE=best    sbatch hopfield_nav/run_nav_p2_disp.sh # most favourable case
+#   PROBE=adapt   sbatch hopfield_nav/run_nav_p2_disp.sh # k-shot in a new env
+#
+# `egoturn` and `best` are the two that decide the question: `derot_ego` is the
+# only framing in which it is well posed, and every row there must be read
+# against `side-only LEAK` and against the arm's own shuffled control.
 
 set -euo pipefail
 REPO=${REPO:-/orcd/home/002/jackking/cls/.claude/worktrees/nav-tri-metric}

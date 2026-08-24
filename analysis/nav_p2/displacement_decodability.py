@@ -638,12 +638,20 @@ def spread(rows, key):
 
 
 def fit_mlp(train_envs, framing, kind, *, hidden=512, epochs=30, lr=1e-3,
-            device="cpu", seed=0, batch=1024, verbose=False):
+            device="cpu", seed=0, batch=1024, verbose=False, shuffle=False):
+    """`shuffle` permutes s2 in training, breaking the pairing.
+
+    The MLP needs its own shuffled control, not the ridge's. In the ego-frame
+    framings the side information is most of the signal and a non-linear
+    decoder can exploit it better than a linear one, so reading an MLP arm
+    against a *ridge* shuffled control overstates what the cones contribute.
+    """
     import torch
 
     torch.manual_seed(seed)
+    srng = np.random.default_rng(seed + 991) if shuffle else None
     Xs, ys = [], []
-    for X, y in _chunks(train_envs, framing, kind):
+    for X, y in _chunks(train_envs, framing, kind, shuffle_rng=srng):
         Xs.append(X)
         ys.append(y.astype(np.float32))
     X = np.concatenate(Xs)
@@ -900,6 +908,13 @@ def main() -> None:
                     add(f"mlp/{kind}",
                         evaluate(te, framing,
                                  lambda d, f, n=net, m=nrm, k=kind:
+                                 predict_mlp(d, f, k, n, m, device=args.device)))
+                    nets, nrms = fit_mlp(tr, framing, kind, device=args.device,
+                                         epochs=args.mlp_epochs, seed=args.seed,
+                                         shuffle=True)
+                    add(f"  shuf/mlp-{kind}",
+                        evaluate(te, framing,
+                                 lambda d, f, n=nets, m=nrms, k=kind:
                                  predict_mlp(d, f, k, n, m, device=args.device)))
                     print(f"  fitted mlp/{kind} ({time.time() - t0:.0f}s)")
 
