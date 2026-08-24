@@ -849,6 +849,87 @@ That is exactly the objective the `ur_loss2_repel` encoder sweeps were built
 around — and it retroactively justifies scoring those sweeps by **worst-case
 coding radius** rather than a mean, which is how they were already being read.
 
+### 5.9 Storing tanh(g·ξ): where the memories DO become fixed points
+
+Jack's experiment: apply the nonlinearity **before** storage, `p = tanh(g·ξ)`,
+and find the gain and capacity at which those stored patterns are fixed points
+(`analysis/nav_p2/stored_gain_capacity.py`). It works, and the phase boundary is
+sharp.
+
+**Median cos(iterate(p), p)** — ≥ 0.99 means the stored patterns are fixed
+points. Patterns drawn from random scaffold positions, D = 1024, dynamics gain
+swept per cell (below):
+
+| storage gain g | M=5 | 11 | 25 | 50 | 100 | 141 | 200 | 400 |
+|---|---|---|---|---|---|---|---|---|
+| 1 | 0.530 | 0.333 | 0.242 | 0.097 | 0.110 | 0.055 | 0.054 | 0.058 |
+| 10 | 0.499 | 0.461 | 0.289 | 0.076 | 0.099 | 0.053 | 0.054 | 0.057 |
+| 30 | 0.941 | 0.885 | 0.747 | 0.050 | 0.100 | 0.047 | 0.059 | 0.057 |
+| **100** | **0.990** | **0.986** | **0.976** | **0.923** | 0.118 | 0.054 | 0.057 | 0.060 |
+| **300** | **0.997** | **0.996** | **0.993** | **0.986** | 0.161 | 0.059 | 0.062 | 0.063 |
+| **1000** | **0.999** | **0.998** | **0.997** | **0.996** | 0.336 | 0.062 | 0.064 | 0.062 |
+
+**Turn-on gain is g ≈ 100**, marginal at 30, absent at ≤ 10. At g = 100 the
+patterns are 83% saturated and sit at cos 0.954 to their own binarization.
+
+**Capacity is between 50 and 100 patterns** — M = 50 holds at every gain ≥ 100,
+M = 100 fails everywhere. That is below the classical 0.138·D = 141, which is
+the expected penalty for correlated patterns: §5.8 measured cross-similarity
+with median ≈ 0 but a heavy tail (p99 0.27, max 0.98), and near-collisions cost
+capacity disproportionately.
+
+**Basins come with the fixed points.** Table B — a cue corrupted to cos 0.70 —
+reproduces table A cell for cell (0.990/0.986/0.976/0.923 at g=100). Wherever
+the patterns are stable they are also *recoverable*, so these are real basins
+and not just marginal stability.
+
+**The dynamics gain needs only to clear its own threshold.** With
+`p = tanh(g·ξ)` of squared norm `S`, `W p ≈ (S/D) p`, so the loop gain is
+`β·S/D` and a nonzero fixed point requires `β > D/S` — 1024 at g=1, ~1.3 at
+g=100. In the working cells the winning multiple of that threshold is only
+**2–5×**. *(The first run of this sweep used a single β = 1.0, which sits below
+threshold in every cell, and reported that nothing worked anywhere. The
+threshold is a function of the storage gain, so a fixed β cannot test this
+grid.)*
+
+**Per-step normalization does not change the picture** — the same run with the
+codebase's `normalize_each` gives the same boundary (g ≈ 100–300, M ≤ 50),
+confirming §5.6: normalization decides what the degenerate attractor is, not
+whether basins exist.
+
+#### What this does and does not settle
+
+It settles the mechanism completely. Combined with §5.4–5.6: the current network
+is linear because the patterns are stored at unit norm, making `W x ~ 1/D` and
+the tanh argument ~1e-4. Pre-saturating the patterns *and* storing them at their
+natural (±1) scale puts the loop gain above threshold and produces exactly the
+attractor memory classical theory describes — 11 patterns, stable, with basins.
+
+**But it does not follow that this should be adopted, and the reason is §5.8.**
+The encoder does *two* jobs here: retrieval (same-env similarity ≈ 0.99 vs
+cross-env ≈ 0) and **geometry** (`q = W_xᵀ(ξ_g − ξ_x)` recovers the grid
+displacement because the encoding is a smooth chart). At g = 100 the stored
+pattern is at cos 0.954 to its own binarization — most of the continuous
+structure is gone. Retrieval would become exact; whether the *tangent
+projection* still decodes direction from a saturated pattern is an entirely
+separate question, and it is the one that matters, because direction is what the
+policy actually consumes.
+
+There is also an interface problem this raises. If the stored patterns are
+`tanh(g·ξ)` but the cue is the raw `ξ_x`, then the recall returns
+`tanh(g·ξ_goal)` and `q = W_xᵀ(tanh(g·ξ_g) − ξ_x)` mixes a saturated vector with
+an unsaturated one — not obviously a meaningful displacement. A coherent version
+would tanh the cue as well and re-derive the tangent basis in the saturated
+space, which is a different geometry, not a parameter change.
+
+**Next test, cheap and decisive**: run `q_failure_map` with `tanh(g·ξ)` storage
+and matched cueing at g ∈ {30, 100, 300}, and read `dir_cos` and the
+goal-present/goal-absent `|q|` separation. If direction survives saturation, the
+attractor regime is genuinely available and brings exact retrieval with it. If
+it does not, then the linear matched filter is not a limitation of this design
+but the only regime in which the geometry survives — which would be the
+strongest statement this phase could make about the architecture.
+
 ---
 
 ## 6. P2 — is relative displacement decodable from sensory input?

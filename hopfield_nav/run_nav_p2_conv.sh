@@ -24,7 +24,10 @@ cd "$REPO"
 source scripts/cls_env.sh
 
 PROBE=${PROBE:-convergence}
-if [ "$PROBE" = why ]; then
+if [ "$PROBE" = storedgain ]; then
+    python -u -m analysis.nav_p2.stored_gain_capacity \
+        --ckpt "$CKPT" --device cuda --beta "${BETA:-1.0}" ${NORM:+--normalize}
+elif [ "$PROBE" = why ]; then
     python -u -m analysis.nav_p2.why_it_works \
         --ckpt "$CKPT" --device cuda --n_distractors "${NDIST:-10}"
 elif [ "$PROBE" = arch ]; then
