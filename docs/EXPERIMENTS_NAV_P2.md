@@ -557,37 +557,45 @@ updates of an increase in exploit weight.
 
 ---
 
-## 11. Open decisions
+## 11. Decisions — resolved 2026-08-24
 
-Four forks put to Jack. The spec above assumes the recommended default in each;
-answers change parameters, not structure.
+Four forks put to Jack; all four answered. Recorded here because each one
+changes what the code does, not just what the spec says.
 
-- **Q1. `prev_action` semantics** — committed action, realized displacement, or
-  both channels? *Recommended: both.* §7.4: `a3` and `b2`, the two sharpest
-  regime cues, need realized displacement, and the difference is exactly at
-  walls, where 39% of mode-B failures occur.
-- **Q2. May an auxiliary head be trained on the ground-truth "goal is in this
-  env's memory" bit** — as a *supervised target only*, never as a policy input?
-  Jack banned `goal_stored_in_memory` as an input and that ban stands. As a
-  target it is different in kind: the policy must still infer the regime at test
-  time, and the head is a training signal for exactly the mode-B failure. It is
-  adjacent enough to the ban to ask rather than assume. *Recommended: at minimum
-  allow it as a frozen analysis probe (not in the loss), which measures how much
-  regime information the hidden state already carries.*
-- **Q3. Probe-policy scope for P3** — scripted menu only; scripted plus scoring
-  the trained agents' own trajectories; or additionally a *learned* prober
-  trained to maximize classifier log-likelihood. *Recommended: the middle one* —
-  the scripted menu answers the question and scoring the agent's own
-  trajectories is the P6 metric, both cheap. A learned prober is a stretch goal
-  that says whether a smarter probe exists than the ones we thought of.
-- **Q4. Which interleave arms to prioritize** — (a) fixed `empty_frac` with
-  shuffled assignment, phase 1's best, as the baseline; (b) a **distractor
-  curriculum**, ramping 0 → 10, since P3 will show the regime signal is easy at
-  d=0 and hard at d=10 and phase 1 always trained at the hard end; (c) the
-  auxiliary regime head, pending Q2; (d) **ideal-observer-gated** — only
-  introduce distractor levels where P3 says the signal exists at all.
-  *Recommended: (a) as baseline plus (b), with (c) if Q2 allows.* (d) is elegant
-  but reduces to (b) with extra machinery unless P3 finds a sharp threshold.
+- **Q1. `prev_action` semantics → BOTH channels.** The policy gets the
+  committed action *and* the realized displacement as separate inputs. The
+  committed action alone leaves H-wall (§7.4) untestable from the policy side;
+  the realized displacement alone throws away the fact that a clip *happened*,
+  which is itself information — a clip means a wall is there. Two extra input
+  dimensions. See B4.
+- **Q2. Auxiliary regime head → analysis probe only, NOT in the loss.** Fit a
+  frozen probe on the policy's hidden state to measure how much regime
+  information it already carries, outside the objective. The ground-truth
+  "goal is in this env's memory" bit never enters training, as an input or a
+  target. So regime detection stays fully emergent and P3's ideal-observer AUC
+  is the only ceiling we get — which makes P3 load-bearing rather than merely
+  informative.
+- **Q3. Probe scope → scripted menu, agents' own trajectories, AND a learned
+  prober.** The fullest option. The scripted menu answers "what movement buys
+  information fastest"; scoring the trained agents' trajectories with the
+  frozen classifier is P6's "is it collecting what it needs" metric; and the
+  learned prober — a small policy trained to maximize the classifier's
+  log-likelihood — says whether a better probe exists than the seven we thought
+  of. If the learned prober beats every scripted probe by a wide margin, that
+  is itself a finding: the information is there but not in a form any simple
+  heuristic extracts.
+- **Q4. Interleave arms → baseline plus distractor curriculum.** (a) fixed
+  `empty_frac` with shuffled assignment, re-run under the new bounds, as the
+  reference; (b) a curriculum ramping distractors 0 → 10. Not the auxiliary
+  head (excluded by Q2) and not the ideal-observer-gated variant.
+
+**Consequence of Q2 worth stating plainly.** With no supervised regime signal,
+the only lever on mode B is what the reward and the curriculum make learnable.
+That raises the stakes on P3: if the ideal-observer AUC is high and the trained
+agent's own trajectories score far below it, the gap is a *learning* failure
+and the curriculum (Q4b) is the intended fix. If the AUC itself is low, mode B
+is not a policy failure at all and the phase-1 conclusion in §3 item 1 needs
+revising.
 
 **Also flagged, not blocking.** Jack asked "if not, should we structure sensory
 input differently?" — that is downstream of P2. If relative displacement does not

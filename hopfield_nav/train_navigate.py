@@ -656,6 +656,7 @@ CFG_FIELDS: dict[str, tuple[str, ...]] = {
     "input_encoded_state": ("agent.input_encoded_state",),
     "input_hopfield_signal": ("agent.input_hopfield_signal",),
     "input_prev_action": ("agent.input_prev_action",),
+    "input_prev_displacement": ("agent.input_prev_displacement",),
     "input_prev_reward": ("agent.input_prev_reward",),
     "input_hopfield_raw": ("agent.input_hopfield_raw",),
     "input_hopfield_multistep": ("agent.input_hopfield_multistep",),
@@ -819,6 +820,15 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--hopfield_mode", default="continuous")
     p.add_argument("--input_prev_reward", action=argparse.BooleanOptionalAction, default=True)
     p.add_argument("--input_prev_action", action=argparse.BooleanOptionalAction, default=True)
+    p.add_argument("--input_prev_displacement",
+                   action=argparse.BooleanOptionalAction, default=False,
+                   help="Feed the REALIZED displacement of the previous step "
+                        "as a separate 2-D channel. Not redundant with "
+                        "--input_prev_action: the norm clamp and the arena "
+                        "clip both make the executed move differ from the "
+                        "commanded one, and the regime cues that compare a "
+                        "change in q against distance travelled need the "
+                        "executed one. Continuous movement only.")
     p.add_argument("--input_hopfield_raw", action=argparse.BooleanOptionalAction, default=True)
     p.add_argument("--input_hopfield_multistep", type=int, nargs="*", default=[],
                    help="If non-empty, project recall at these Hopfield iteration counts and pass each as 2-D extra input. Continuous mode only. e.g. --input_hopfield_multistep 1 2 3")

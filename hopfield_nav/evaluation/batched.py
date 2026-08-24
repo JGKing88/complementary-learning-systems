@@ -93,6 +93,7 @@ def batched_navigation_trials(
     h_rnn = None
     prev_reward_t = torch.zeros(B, 1, device=device)
     prev_action_t = torch.zeros(B, prev_action_dim, device=device)
+    prev_disp_t = torch.zeros(B, 2, device=device)
     steps_to_goal = [-1] * B
     active = np.ones(B, dtype=bool)
 
@@ -126,6 +127,7 @@ def batched_navigation_trials(
             "encoded_state": embeddings,
             "hopfield_signal": hop_signal,
             "prev_action": prev_action_t,
+            "prev_displacement": prev_disp_t,
             # Navigation preloads the goal into every trial's Hopfield, so the
             # bit is True from step zero -- matching agent_step's hardcoded
             # goal_in_memory=True on this path.
@@ -167,8 +169,13 @@ def batched_navigation_trials(
         active_idx = np.nonzero(active)[0]
         if active_idx.size == 0:
             break
+        # After the step, so it is the displacement the env actually
+        # produced -- not the action, which the norm clamp and the
+        # arena clip both alter.
         vec.step_batch(actions[active_idx], indices=active_idx,
                        contract=contract)
+        prev_disp_t = torch.from_numpy(
+            vec.last_displacement()).float().to(device)
 
         reached = at_goal(vec)
         for b in active_idx:
@@ -231,6 +238,7 @@ def batched_exploration_trials(
     h_rnn = None
     prev_reward_t = torch.zeros(B, 1, device=device)
     prev_action_t = torch.zeros(B, prev_action_dim, device=device)
+    prev_disp_t = torch.zeros(B, 2, device=device)
 
     visited: list[set] = [{tuple(p)} for p in vec.positions()]
     found = [False] * B
@@ -276,6 +284,7 @@ def batched_exploration_trials(
             "encoded_state": embeddings,
             "hopfield_signal": hop_signal,
             "prev_action": prev_action_t,
+            "prev_displacement": prev_disp_t,
             # No goal is ever written to these Hopfields, so the bit is False
             # for the whole trial.
             "goal_in_memory": torch.zeros(B, 1, device=device),
@@ -312,7 +321,12 @@ def batched_exploration_trials(
         prev_reward_t = torch.from_numpy(current_reward).to(device).unsqueeze(1)
 
         # Every trial steps, every step: nothing terminates early.
+        # After the step, so it is the displacement the env actually
+        # produced -- not the action, which the norm clamp and the
+        # arena clip both alter.
         vec.step_batch(actions, contract=contract)
+        prev_disp_t = torch.from_numpy(
+            vec.last_displacement()).float().to(device)
 
         reached = at_goal(vec)
         for b, p in enumerate(vec.positions()):

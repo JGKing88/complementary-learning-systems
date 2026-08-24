@@ -162,6 +162,11 @@ def agent_step(
         "encoded_state": embeddings,
         "hopfield_signal": hop_signal,
         "prev_action": prev_action,
+        # Single-env counterpart of VecEnv.last_displacement(); the env records
+        # it on every step. Zero before the first move.
+        "prev_displacement": torch.from_numpy(
+            np.asarray(getattr(env, "_last_displacement", np.zeros(2)),
+                       dtype=np.float32)).view(1, 2).to(device),
         "goal_in_memory": torch.tensor(
             [[1.0 if goal_in_memory else 0.0]], device=device),
     }

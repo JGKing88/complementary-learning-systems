@@ -104,6 +104,7 @@ def _rollout(*, agent, env, env_offset, vectorhash, hopfields, cfg, device,
     h_rnn = None
     prev_reward_t = torch.zeros(B, 1, device=device)
     prev_action_t = torch.zeros(B, prev_action_dim, device=device)
+    prev_disp_t = torch.zeros(B, 2, device=device)
     steps_to_goal = np.full(B, -1, dtype=np.int64)
     active = np.ones(B, dtype=bool)
 
@@ -143,6 +144,7 @@ def _rollout(*, agent, env, env_offset, vectorhash, hopfields, cfg, device,
             "encoded_state": embeddings,
             "hopfield_signal": hop_signal,
             "prev_action": prev_action_t,
+            "prev_displacement": prev_disp_t,
             "goal_in_memory": (torch.ones if goal_in_memory else torch.zeros)(
                 B, 1, device=device),
         }
@@ -179,7 +181,12 @@ def _rollout(*, agent, env, env_offset, vectorhash, hopfields, cfg, device,
         idx = np.nonzero(active)[0] if ends_on_arrival else np.arange(B)
         if idx.size == 0:
             break
+        # After the step, so it is the displacement the env actually
+        # produced -- not the action, which the norm clamp and the
+        # arena clip both alter.
         vec.step_batch(actions[idx], indices=idx, contract=contract)
+        prev_disp_t = torch.from_numpy(
+            vec.last_displacement()).float().to(device)
 
         if ends_on_arrival:
             reached = at_goal(vec)
@@ -229,6 +236,7 @@ def _warm_vs_cold(*, agent, env, env_offset, vectorhash, hopfields, cfg,
     h_rnn = None
     prev_reward_t = torch.zeros(B, 1, device=device)
     prev_action_t = torch.zeros(B, prev_action_dim, device=device)
+    prev_disp_t = torch.zeros(B, 2, device=device)
 
     last_reach = np.zeros(B, dtype=np.int64)      # step index of the last goal
     first_gap, later_gaps = [], []
@@ -256,6 +264,7 @@ def _warm_vs_cold(*, agent, env, env_offset, vectorhash, hopfields, cfg,
             "encoded_state": embeddings,
             "hopfield_signal": hop_signal,
             "prev_action": prev_action_t,
+            "prev_displacement": prev_disp_t,
             "goal_in_memory": torch.ones(B, 1, device=device),
         }
         if cfg.agent.input_sensory:
@@ -277,7 +286,12 @@ def _warm_vs_cold(*, agent, env, env_offset, vectorhash, hopfields, cfg,
         prev_action_t = result["move_action"].float().view(B, -1)
         prev_reward_t = torch.from_numpy(current_reward).to(device).unsqueeze(1)
 
+        # After the step, so it is the displacement the env actually
+        # produced -- not the action, which the norm clamp and the
+        # arena clip both alter.
         _r, reached, _p = vec.step_batch(actions, contract=contract)
+        prev_disp_t = torch.from_numpy(
+            vec.last_displacement()).float().to(device)
         for b in np.nonzero(reached)[0]:
             gap = step + 1 - last_reach[b]
             (first_gap if last_reach[b] == 0 else later_gaps).append(gap)

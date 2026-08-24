@@ -179,6 +179,13 @@ class AgentConfig:
     input_encoded_state: bool = True
     input_hopfield_signal: bool = True
     input_prev_action: bool = False
+    # The REALIZED displacement of the previous step, as a separate 2-D
+    # channel. Not redundant with input_prev_action: the two differ
+    # whenever the norm clamp or the arena clip bites, and the difference
+    # is itself information (a clip means a wall is there). The regime
+    # cues in EXPERIMENTS_NAV_P2 §7.2 need the realized one. Continuous
+    # movement only.
+    input_prev_displacement: bool = False
     input_prev_reward: bool = False         # Phase-2 enrichment: add prev step's reward as input channel
     input_sensory: bool = False
     input_hopfield_raw: bool = False        # Phase-2 enrichment: feed raw (unnormalized) q in continuous mode
@@ -406,6 +413,13 @@ class RNNAgentConfig:
     rnn_nonlinearity: str = "tanh"          # "tanh" | "relu" | "softplus"; rnn_cell="rnn" only
     # Optional auxiliary input channels (sensory codebook vector is always on).
     input_prev_action: bool = False
+    # The REALIZED displacement of the previous step, as a separate 2-D
+    # channel. Not redundant with input_prev_action: the two differ
+    # whenever the norm clamp or the arena clip bites, and the difference
+    # is itself information (a clip means a wall is there). The regime
+    # cues in EXPERIMENTS_NAV_P2 §7.2 need the realized one. Continuous
+    # movement only.
+    input_prev_displacement: bool = False
     input_prev_reward: bool = False
     input_grid_state: bool = False          # current (x, y) cell normalized to [0, 1]^2
 

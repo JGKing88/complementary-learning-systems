@@ -577,6 +577,7 @@ class ContinuousGridEnv(GridEnv):
         # any angle, so ψ comes from atan2 rather than the cardinal table --
         # atan2(dx, dy), in that argument order, is clockwise from North.
         disp = self._continuous_pos - before
+        self._last_displacement = disp.copy()
         if float(np.linalg.norm(disp)) >= 1e-12:
             self._heading_rad = float(np.arctan2(disp[0], disp[1]))
         self._pos = self.current_location

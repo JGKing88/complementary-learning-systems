@@ -174,6 +174,9 @@ class RolloutCollector:
         # reset to zero for envs that just teleported (post-goal-reach).
         prev_reward_t = torch.zeros(B, 1, device=self.device)
         prev_action_t = torch.zeros(B, prev_action_dim, device=self.device)
+        # The displacement the env actually produced, which is not the action:
+        # the norm clamp rescales it and the arena clip truncates it at a wall.
+        prev_disp_t = torch.zeros(B, 2, device=self.device)
 
         # Buffers
         all_obs = torch.zeros(B, T, agent.rnn.input_size, device=self.device)
@@ -430,6 +433,7 @@ class RolloutCollector:
                     "encoded_state": embeddings,
                     "hopfield_signal": sig_for_rnn,
                     "prev_action": prev_action_t,
+                    "prev_displacement": prev_disp_t,
                     "goal_in_memory": torch.from_numpy(
                         agent_goal_store_fired.astype(np.float32)
                     ).to(self.device).unsqueeze(-1),
@@ -650,6 +654,10 @@ class RolloutCollector:
                     ).float()
                 else:
                     prev_action_t = result["move_action"].float()
+                # Read off the env rather than recomputed here, so training and
+                # every eval path agree by construction.
+                prev_disp_t = torch.from_numpy(
+                    vec.last_displacement()).float().to(self.device)
 
                 # The teleport itself always invalidates the cached
                 # Gram-Schmidt basis -- that is about the agent's *position*
@@ -712,6 +720,7 @@ class RolloutCollector:
                 "encoded_state": emb_final,
                 "hopfield_signal": sig_for_rnn_final,
                 "prev_action": prev_action_t,
+                "prev_displacement": prev_disp_t,
                 "goal_in_memory": torch.from_numpy(
                     agent_goal_store_fired.astype(np.float32)
                 ).to(self.device).unsqueeze(-1),

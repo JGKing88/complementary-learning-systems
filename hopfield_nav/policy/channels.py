@@ -78,6 +78,8 @@ def channel_specs(
             specs.append(ChannelSpec(multistep_name(step), 2))
     if cfg.input_prev_action:
         specs.append(ChannelSpec("prev_action", prev_action_width(cfg)))
+    if getattr(cfg, "input_prev_displacement", False):
+        specs.append(ChannelSpec("prev_displacement", 2))
     if cfg.input_sensory:
         specs.append(ChannelSpec("sensory", sensory_dim))
     if cfg.input_goal_in_memory:
