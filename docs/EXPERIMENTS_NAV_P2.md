@@ -1234,16 +1234,21 @@ disjoint fraction than any synthetic walk in the table, because the policy also
 avoids the wall clips that snap a random walker's heading. It sits at the
 `20°` row, at the favourable end.
 
-**Read that row as a bound, not as "the" answer.** The checkpoint measured was
-trained with `--persistence_bonus 0.20` — **4× the launcher's documented 0.05**
-— and with `--epsilon_explore 0.1 --epsilon_anneal_updates 200`, so by u700 the
-ε-greedy noise has annealed away entirely; the eval rollout adds none of its
-own either. Both facts push the same way. **14.6° is therefore the most
-persistent end of what a phase-2 explore policy plausibly does, not a neutral
-estimate of it.** A policy trained at the launcher defaults (`persistence 0.05`,
-`ε 0.4`) would sit further up the table, and how far was not measured. What this
-establishes is that the favourable rows are *reachable* by a real trained
-policy — not that every phase-2 policy lives there.
+**How representative is that row?** The checkpoint runs
+`--persistence_bonus 0.20` and `--epsilon_explore 0.1 --epsilon_anneal_updates
+200`, which looks at first like an unusually straight-walking configuration —
+`run_nav_p2.sh` documents `0.05` and `0.4`. It is not: **every variant block in
+that launcher sets exactly `PERSISTENCE_BONUS=0.20` and `EPSILON_EXPLORE=0.1`**
+(lines 171–236), and the `0.05` / `0.4` at the top are fallbacks no variant
+uses. All five P4 runs and the P5 run share those values. So 14.6° is
+representative of the phase-2 lineage as actually launched, not an outlier
+within it — and since ε anneals over 200 updates, any phase-2 policy past u200
+has none of it left, as this one at u700 does not.
+
+The caveat that remains is narrower than it first looked: this is one
+checkpoint, from the explore schedule, at one update. It is not a statement
+about a policy someone deliberately runs at the unused `0.05` / `0.4`
+fallbacks, nor about the interleaved P6 agent, which does not exist yet.
 
 (Two more details from the same run: the median step norm is **2.00**, so the
 policy saturates `MAX_ACTION_NORM` on essentially every step; and the smoothness
@@ -1267,12 +1272,12 @@ Adding the real pairing to the ridge buys R² by fixing the length of the vector
 and costs accuracy on its angle. Path integration needs the angle, and the agent
 already has both exactly from `prev_displacement`.
 
-**And the regime where the cones help is reachable by a real policy.** This is
-the part that turned around when the last row was measured. `PERSISTENCE_BONUS`
-pushes toward the bottom of the table and `EPSILON_EXPLORE` pushes toward the
-top, and it was not obvious which wins; for the `p5_e` checkpoint — which is
-tuned toward persistence and has annealed its ε to zero — persistence wins
-comfortably, and its operating point is the `20°` row where the cones add
+**And the regime where the cones help is the one the phase-2 runs are in.**
+This is the part that turned around when the last row was measured.
+`PERSISTENCE_BONUS` pushes toward the bottom of the table and `EPSILON_EXPLORE`
+pushes toward the top, and it was not obvious which wins; at the values every
+phase-2 variant actually sets, persistence wins comfortably, and the operating
+point is the `20°` row where the cones add
 **+0.108**, about 38% on top of what heading alone supplies, rather than the
 `uniform` row's +0.027. **So the two cones are not a negligible channel for the
 agent that exists.** They are a *magnitude* channel: their direction estimate is
@@ -1516,13 +1521,12 @@ Four things, in the order they would change a conclusion.
    moved the answer: that policy turns a median of 14.6° per step with 0.1% of
    its consecutive view pairs disjoint, so it sits at the *favourable* end of
    the sweep, where the cones add +0.108 rather than +0.027 — the sweep alone
-   would have understated the sensory channel by 4×. **What it does not settle
-   is where a policy at the launcher's own knobs sits.** `p5_e` trains with
-   `persistence_bonus 0.20` against the launcher's 0.05 and with an
-   `epsilon_explore` that has fully annealed by u700, both of which bias it
-   toward straight walking; one rollout of a `persistence 0.05 / ε 0.4` policy
-   would bracket the axis properly, and the same measurement is owed for the
-   interleaved P6 agent.
+   would have understated the sensory channel by 4×. Its `persistence_bonus
+   0.20` / `epsilon_explore 0.1` are shared by **every** variant block in
+   `run_nav_p2.sh`, so it is representative of the lineage rather than an
+   outlier in it. What it does not cover is one checkpoint's worth of
+   generality: the same measurement is owed for the interleaved P6 agent, and
+   for anything run at the launcher's unused `0.05` / `0.4` fallbacks.
 2. **How much more a non-linear decoder gets in the ego framing.** §6.5's table
    is ridge. In the same framing at 128 training envs, a 2-layer MLP reaches
    **0.610 / 9.4°** where ridge reaches 0.387 and heading alone 0.282 — so the
