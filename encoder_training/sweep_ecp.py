@@ -1199,6 +1199,53 @@ WAVES: dict[str, dict] = {
         },
         "seed": [42, 43, 44, 45],
     },
+    # W41 -- how good can gain 100 get, once its knobs are re-tuned?
+    #
+    # w40 gave the curve on the §6 best config: gain 5 -> 9.0, 20 -> 7.5,
+    # 50 -> 7.0, 100 -> 6.0. Monotone and shallow, no cliff.
+    #
+    # Measured saturation says where the cost comes from. Fraction of
+    # coordinates past |tanh| 0.95: gain 5 -> 0.000, gain 20 -> 0.425,
+    # gain 100 -> 0.522. Binarisation arrives between 5 and 20, which is exactly
+    # where the drop happens; past that more gain costs little. So the price is
+    # being binary, not the size of the gain, and re-tuning has to help the
+    # binary code rather than avoid saturation.
+    #
+    # The network partly self-compensates -- at gain 100 it shrinks |net(x)| to
+    # 0.0195 to hold |g*net| near 2 -- and rank survives (pr ~120), so this is
+    # not collapse.
+    #
+    #   sm50_b4096  transfer the w39 leader. sm50 at batch 4096 scored 10.0 at
+    #               gain 5, the best 10%-coverage cell in the campaign, and the
+    #               gain interaction with geometry is untested.
+    #   lr          the gradient through a saturated tanh is (1-tanh^2)*g, so
+    #               52% of units get almost none while the rest get ~g times
+    #               more. That bimodality is an argument for trying both
+    #               directions, not just smaller.
+    #   rate1       cosine on a binary code is 1 - 2*hamming/D, so the spread
+    #               term is shaping a Hamming geometry now; its 0.3 optimum was
+    #               tuned on a continuous one.
+    "w41_gain100_tune": {
+        "arm": {
+            "sm50_b4096": dict(npos_list=SIZE_MIXES["sm50"], batch_size=4096,
+                               per_env_radius_frac=0.0, radius=20.0,
+                               rate_lambda=0.3, out_dim=1024, hidden_dim=256,
+                               gain_end=100.0),
+            "lr3e-5": dict(npos_list=SIZE_MIXES["sm100"], lr=3e-5,
+                           per_env_radius_frac=0.0, radius=20.0,
+                           rate_lambda=0.3, out_dim=1024, hidden_dim=256,
+                           gain_end=100.0),
+            "lr3e-4": dict(npos_list=SIZE_MIXES["sm100"], lr=3e-4,
+                           per_env_radius_frac=0.0, radius=20.0,
+                           rate_lambda=0.3, out_dim=1024, hidden_dim=256,
+                           gain_end=100.0),
+            "rate1": dict(npos_list=SIZE_MIXES["sm100"],
+                          per_env_radius_frac=0.0, radius=20.0,
+                          rate_lambda=1.0, out_dim=1024, hidden_dim=256,
+                          gain_end=100.0),
+        },
+        "seed": [42, 43, 44, 45],
+    },
     # W13 -- coverage, on the winning config rather than on the bare baseline.
     #
     # This replaces w4, which swept coverage over mixes chosen before any of the
