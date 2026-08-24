@@ -43,10 +43,11 @@ mismatch that must be fixed first.
 - [x] **P2 done (§6).** The cross-env geometry *is* learnable — up to R² 0.658
       at 19.8° with both cones pinned North — and at the agent's own headings,
       at the walk persistence the `p5_e` explore checkpoint was **measured** to
-      have, the cones add +0.108 over their own shuffled control. But **all of it
-      is magnitude: at every persistence level the sensory arm's direction
-      estimate is worse than the agent's own heading (11.0° vs 6.8°)**, and
-      direction is what path integration needs. Adaptation buys nothing at
+      have, the best decoder adds +0.203 over its own shuffled control. But on
+      **direction**, which is what path integration needs, the cones help only
+      from four steps on, and at one step are far worse than the agent's own
+      heading (7.9° vs 1.5°) — **and four steps on is exactly where integrating
+      `prev_displacement` is already exact**. Adaptation buys nothing at
       any `k` up to 256. And the question stopped gating the ceiling when §4's
       B3 turned on `input_prev_displacement`, which hands the agent **exact**
       self-motion (integration error 2.3e-14). Three things carry forward:
@@ -1014,13 +1015,15 @@ scores 0.233 / 27.4° and `ridge/spec`, `ridge/xcorr`, `ridge/bilin` and
 with every shuffled control equal to its unshuffled twin. In the best-posed
 version (§6.5 — cones aligned by `Δψ`, answer in the agent's own frame, the
 coarse wall code) they do better: at the persistence the `p5_e` explore
-checkpoint **was measured to walk with**, the cones add **+0.108 of R² over
-their own shuffled control**, about 38% on top of heading alone. But at
-*every* level of persistence they make the **direction** estimate worse than
-heading alone (11.0° against 6.8°). What they carry is a magnitude correction
-to a displacement the agent is already handed exactly, and direction is the
-part path integration needs. The structure exists and the agent can partly see
-it; it is not the part that would buy anything.
+checkpoint **was measured to walk with**, the best decoder adds **+0.203 of R²
+over its own shuffled control**, nearly doubling what heading alone supplies.
+But the **direction** estimate — the part path integration needs — splits by
+lag, and splits the wrong way for this project. At **one step** the cones make
+it much worse (7.9° against heading-only's 1.5°), because at one step the
+heading *is* the displacement direction. Only from four steps on do they
+improve it — and over four or eight steps the agent's own integration of
+`prev_displacement` is exact anyway. **There is no lag at which the cones
+supply a direction the agent does not already have more precisely.**
 
 **3. The premise moved under phase 2's own §4 fixes.** P2 was written to decide
 whether the explore ceiling is billiard (0.378) or lawnmower (→0.50), on the
@@ -1255,8 +1258,8 @@ policy saturates `MAX_ACTION_NORM` on essentially every step; and the smoothness
 is local — by lag 8 the median `|Δψ|` is 122.7° and 57.9% of pairs are disjoint,
 so the policy is locally ballistic and globally not.)
 
-So the row that matters for this checkpoint is `20°`, not `uniform`. Three
-things to read off the table, and the first is not what I expected.
+So the row that matters for this checkpoint is `20°`, not `uniform`. Four
+things to read off it, and the first is not what I expected.
 
 **The cones do contribute, and the contribution grows steeply with overlap.**
 The increment goes +0.027 → +0.036 → +0.108 → +0.173 as the disjoint fraction
@@ -1265,24 +1268,55 @@ over heading alone (0.438 against 0.248). So §6.5(b) is a large real effect, no
 a plausible story — a straighter walk genuinely does make the two glimpses
 mutually informative.
 
-**But all of it goes into magnitude, not direction.** In every row the sensory
-arm's median angular error is worse than its own shuffled control's, and worse
-again than heading-only: at turn sd 10°, 7.8° against 6.0° against **3.5°**.
-Adding the real pairing to the ridge buys R² by fixing the length of the vector
-and costs accuracy on its angle. Path integration needs the angle, and the agent
-already has both exactly from `prev_displacement`.
+**A non-linear decoder roughly doubles the increment, and needs its own
+control to say so.** The table above is ridge on 48 training envs. Running the
+same framing on **128** with a 2-layer MLP, and an MLP fit on shuffled pairs
+beside it (the ridge rows are repeated at 128 envs so the comparison is
+like-for-like; they move by 0.003 against the 48-env table, which is the
+sample-size effect):
 
-**And the regime where the cones help is the one the phase-2 runs are in.**
-This is the part that turned around when the last row was measured.
-`PERSISTENCE_BONUS` pushes toward the bottom of the table and `EPSILON_EXPLORE`
-pushes toward the top, and it was not obvious which wins; at the values every
-phase-2 variant actually sets, persistence wins comfortably, and the operating
-point is the `20°` row where the cones add
-**+0.108**, about 38% on top of what heading alone supplies, rather than the
-`uniform` row's +0.027. **So the two cones are not a negligible channel for the
-agent that exists.** They are a *magnitude* channel: their direction estimate is
-still worse than the heading's (11.0° against 6.8°), which is what decides the
-question.
+| turn sd | arm | R² | its shuffled | **cones add** | ang. err | heading-only ang. |
+|---|---|---|---|---|---|---|
+| uniform | ridge/bilin | 0.265 | 0.236 | +0.029 | 26.9° | 27.5° |
+| uniform | **mlp/raw** | 0.332 | 0.238 | **+0.094** | 26.5° | 27.5° |
+| 20° | ridge/bilin | 0.395 | 0.290 | +0.105 | 10.5° | 6.8° |
+| 20° | **mlp/raw** | 0.610 | 0.407 | **+0.203** | 9.4° | 6.8° |
+
+So the +0.108 in the table above is a floor: the best decoder tried gets
+**+0.203** at the operating point. The MLP control was worth building rather
+than borrowing the ridge's, and the numbers say why — `shuf/mlp-raw` reaches
+**0.407** where the ridge's shuffled control sits at 0.290 and heading-only at
+0.282. A non-linear decoder reads the heading terms far better than a linear
+one. Scoring `mlp/raw`'s 0.610 against the ridge's control would have claimed
++0.32 and overstated the cones by 58%.
+
+**Where the increment goes depends on the lag, and the split is the finding.**
+Not "all magnitude", which is what the ridge-only view suggested. Per-lag
+angular error for `mlp/raw` against its own shuffled control and against
+heading-only, at the operating point:
+
+| | lag 1 | lag 2 | lag 4 | lag 8 |
+|---|---|---|---|---|
+| `‖Δpos‖` median | 0.95 | 2.02 | 4.01 | 7.45 |
+| mlp/raw | 7.9° | 7.9° | 9.4° | **15.0°** |
+| its shuffled | 5.6° | 6.8° | 9.8° | 17.4° |
+| heading only | **1.5°** | 4.8° | 9.6° | 19.5° |
+
+**At one step the cones make the direction estimate worse — much worse — and
+from four steps on they make it better.** Both hold under uniform turns too
+(lag 1: 11.4° against heading-only's 1.4°; lag 8: 42.9° against 58.2°). The
+mechanism is not subtle: at lag 1 the heading *is* the displacement direction,
+so nothing can beat it and the cones only add noise; by lag 8 the heading is
+one step's worth of a cumulative move and stops determining it, so the cones
+have something to contribute.
+
+**And that is exactly the wrong way round for this project.** The regime where
+the cones help on direction — multi-step displacement — is the regime where the
+agent's own integration is *exact and free*, because summing `prev_displacement`
+over eight steps is as accurate as over one (§6.1: 2.3e-14 over two hundred).
+The regime where sensory would have to substitute, a single step, is the one
+where it is worst. There is no lag at which the cones supply a direction the
+agent does not already have more precisely.
 
 **(b) The cones frequently do not see the same world.** The aperture is 120°
 and heading is the direction of travel, so two consecutive views point wherever
@@ -1465,12 +1499,14 @@ different reason.**
   19.8° with both cones pinned North, a coarse code and 128 training envs, so
   the cross-env geometry is genuinely learnable. At the agent's own headings,
   and at the walk persistence the `p5_e` explore checkpoint was *measured* to
-  have, the cones add +0.108 of R² over their own shuffled control — real, but
-  entirely magnitude: at every persistence they make the **direction** estimate
-  worse than the agent's own heading does (11.0° against 6.8°). Direction is
-  what path integration needs. At the launcher's own `wall_resolution` even the
-  pinned-North number is only R² 0.13 at 51°. Nothing here supports path
-  integration from sensory.
+  have, the best decoder adds +0.203 of R² over its own shuffled control — a
+  real channel, not a trace. But on **direction**, which is what path
+  integration needs, it helps only at four steps and beyond, and at one step it
+  is far worse than the agent's own heading (7.9° against 1.5°). Four steps and
+  beyond is exactly where integrating `prev_displacement` is already exact, so
+  there is no lag at which the cones supply a direction the agent lacks. At the
+  launcher's own `wall_resolution` even the pinned-North number is only R² 0.13
+  at 51°. Nothing here supports path integration from sensory.
 - **How many steps of adaptation would it need?** None works. 256 steps of
   experience in the new env leaves it where zero steps left it, and the locality
   table says why: a stored cone identifies the cell it was stored from and
@@ -1494,13 +1530,13 @@ different reason.**
   heading locked to the direction of travel, 35% of consecutive glimpse pairs
   are disjoint under random actions — but the `p5_e` explore checkpoint is
   persistent enough that only **0.1%** of its pairs are, so the aperture need
-  not bind. What binds instead is that the information the overlapping cones
-  carry is magnitude, not direction: at every persistence level the sensory arm
-  is worse than heading alone on angle. Direction is the part path integration
-  needs and the part the agent already has exactly. If visual odometry is ever
-  wanted here, the thing to change is the heading coupling — a cone that always
-  points along the direction of travel can only ever report on where the agent
-  is going, not on where it is.
+  not bind. What binds instead is the **heading coupling**. Because ψ is
+  `atan2` of the realized displacement, at one step the heading already *is* the
+  answer's direction and the cones cannot improve on it; by the time they can
+  (four steps and beyond) the agent's own integration is exact. A cone pinned to
+  the direction of travel can only ever report on where the agent is going, not
+  on where it is. That is the thing to change if visual odometry is ever wanted
+  here — not the code, and not the aperture.
 
 **What this hands the other workstreams.** §7.4's wall hypothesis asked for a
 `q`-independent check on self-motion: `prev_displacement` is exactly that, and
@@ -1544,16 +1580,15 @@ Four things, in the order they would change a conclusion.
    specialist has no explore behaviour to fall back on when memory is empty. It
    stands still at the minimum step norm. Anything that interleaves the two
    regimes inherits that.)
-2. **How much more a non-linear decoder gets in the ego framing.** §6.5's table
-   is ridge. In the same framing at 128 training envs, a 2-layer MLP reaches
-   **0.610 / 9.4°** where ridge reaches 0.387 and heading alone 0.282 — so the
-   cones' contribution is materially larger for a non-linear decoder, and the
-   +0.108 in the table is a floor. Attributing it needs an MLP shuffled control
-   rather than the ridge's, because a non-linear decoder can also exploit the
-   *heading* terms better; `fit_mlp(..., shuffle=True)` is implemented and
-   prints as `shuf/mlp-<kind>`, and the run is the `best` probe. The direction
-   conclusion does not depend on it: the MLP's 9.4° is still worse than
-   heading-only's 6.8°.
+2. ~~How much more a non-linear decoder gets in the ego framing.~~ **Resolved
+   and folded into §6.5.** The MLP nearly doubles the ridge increment (+0.203
+   against +0.105 at the operating point), and building it its own shuffled
+   control rather than borrowing the ridge's mattered: `shuf/mlp-raw` reaches
+   0.407 where the ridge's control sits at 0.290, because a non-linear decoder
+   reads the *heading* terms much better too. Borrowing would have claimed
+   +0.32 and overstated the cones by 58%. It also overturned the ridge-only
+   reading that the increment was "all magnitude" — it is magnitude at one step
+   and direction from four steps on, which is §6.5's sharpest result.
 3. **The decoder class more broadly.** `bilin` spans the complete second-order
    statistic, which is the codebook-independent sufficient statistic for the
    *expected* cross-view structure, and the MLP adds nonlinearity on top of it.
