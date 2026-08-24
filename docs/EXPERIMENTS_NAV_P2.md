@@ -41,9 +41,12 @@ mismatch that must be fixed first.
 - [ ] **Fix `hopfield/core.py`'s docstring** — "clean memory attractors converge
       in 1-2 steps; diffuse landscapes wander" is false (§5.4).
 - [x] **P2 done (§6).** The cross-env geometry *is* learnable — up to R² 0.658
-      at 19.8° with both cones pinned North — but **at the agent's own headings
-      the cones add two to three hundredths of R² over what its own motion
-      already tells it, and nothing in direction**; adaptation buys nothing at
+      at 19.8° with both cones pinned North — and at the agent's own headings,
+      at the walk persistence the explore policy was **measured** to have, the
+      cones add +0.108 of R² over their own shuffled control. But **all of it
+      is magnitude: at every persistence level the sensory arm's direction
+      estimate is worse than the agent's own heading (11.0° vs 6.8°)**, and
+      direction is what path integration needs. Adaptation buys nothing at
       any `k` up to 256. And the question stopped gating the ceiling when §4's
       B3 turned on `input_prev_displacement`, which hands the agent **exact**
       self-motion (integration error 2.3e-14). Three things carry forward:
@@ -1010,12 +1013,14 @@ scores 0.233 / 27.4° and `ridge/spec`, `ridge/xcorr`, `ridge/bilin` and
 `mlp/raw` score 0.233, 0.237, 0.229 and 0.240, every one within 0.007 of it,
 with every shuffled control equal to its unshuffled twin. In the best-posed
 version (§6.5 — cones aligned by `Δψ`, answer in the agent's own frame, the
-coarse wall code) the cones buy **+0.027 of R² over their own shuffled control
-under a random walk**, rising to +0.173 if the walk is made near-ballistic —
-and at *every* level of persistence they make the **direction** estimate worse
-than heading alone. Whatever they carry is a magnitude correction to a
-displacement the agent is already handed exactly. The structure exists; the
-agent is not in a position from which it can be read.
+coarse wall code) they do better: at the persistence the **trained policy
+actually walks with**, measured rather than assumed, the cones add **+0.108 of
+R² over their own shuffled control**, about 38% on top of heading alone. But at
+*every* level of persistence they make the **direction** estimate worse than
+heading alone (11.0° against 6.8°). What they carry is a magnitude correction
+to a displacement the agent is already handed exactly, and direction is the
+part path integration needs. The structure exists and the agent can partly see
+it; it is not the part that would buy anything.
 
 **3. The premise moved under phase 2's own §4 fixes.** P2 was written to decide
 whether the explore ceiling is billiard (0.378) or lawnmower (→0.50), on the
@@ -1206,8 +1211,27 @@ lags 1–8. "cones add" is `ridge/bilin` minus its own shuffled control:
 | 45° | 30.6° | 45 / 60 | 8.8% | 43.1° | 0.280 / 15.6° | 0.309 / 17.2° | 0.273 / 15.1° | **+0.036** |
 | 20° | 11.5° | 54 / 60 | 7.1% | 20.2° | 0.281 / 6.8° | 0.387 / 11.0° | 0.279 / 8.9° | **+0.108** |
 | 10° | 5.0° | 57 / 60 | 5.3% | 10.8° | 0.248 / 3.5° | 0.438 / 7.8° | 0.265 / 6.0° | **+0.173** |
+| **trained policy** | **14.6°** | **53 / 60** | **0.1%** | — | — | — | — | — |
 
-Three things to read off it, and the first is not what I expected.
+**The last row is measured, not swept** (`analysis/nav_p2/policy_turn_stats.py`,
+the phase-2 explore checkpoint `p5_e` at u700, 6 envs × 16 trials × 200 steps,
+19 008 consecutive pairs). It rolls the trained policy out, takes the realized
+displacements, and computes exactly the quantities the table is indexed by. The
+answer settles which row of the sweep the project is actually standing on: the
+policy turns a **median of 14.6°** per step, its two consecutive cones share
+**53 of 60 rays**, and **0.1%** of consecutive pairs are disjoint — a lower
+disjoint fraction than any synthetic walk in the table, because the policy also
+avoids the wall clips that snap a random walker's heading. It sits at the
+`20°` row, at the favourable end.
+
+(Two details from the same run worth recording: this checkpoint trains with
+`persistence_bonus 0.2`, not the launcher's 0.05, and its median step norm is
+**2.00** — it saturates `MAX_ACTION_NORM` on essentially every step. And the
+smoothness is local: by lag 8 the median `|Δψ|` is 122.7° and 57.9% of pairs
+are disjoint, so the policy is locally ballistic and globally not.)
+
+So the row that matters is `20°`, not `uniform`. Three things to read off the
+table, and the first is not what I expected.
 
 **The cones do contribute, and the contribution grows steeply with overlap.**
 The increment goes +0.027 → +0.036 → +0.108 → +0.173 as the disjoint fraction
@@ -1223,12 +1247,15 @@ Adding the real pairing to the ridge buys R² by fixing the length of the vector
 and costs accuracy on its angle. Path integration needs the angle, and the agent
 already has both exactly from `prev_displacement`.
 
-**And the regime where the cones help is not obviously the agent's.** A per-step
-turn sd of 10° is a near-straight line; the uniform-turn row is the neutral
-reference and it is the one where the increment is +0.027. `PERSISTENCE_BONUS`
-pushes toward the bottom of the table and `EPSILON_EXPLORE=0.4` pushes toward
-the top. **What a trained phase-2 explore policy's turn distribution actually
-is was not measured here** — see §6.10.
+**And the regime where the cones help IS the agent's.** This is the part that
+turned around when the last row was measured. `PERSISTENCE_BONUS` pushes toward
+the bottom of the table and `EPSILON_EXPLORE=0.4` pushes toward the top, and it
+was not obvious which wins; measured, persistence wins comfortably. So the
+project's operating point is the `20°` row, where the cones add **+0.108** —
+about 38% on top of what heading alone supplies — and not the `uniform` row's
++0.027. **The two cones are not a negligible channel for the agent that exists.
+They are a magnitude channel**, and their direction estimate is still worse
+than the heading's (11.0° against 6.8°).
 
 **(b) The cones frequently do not see the same world.** The aperture is 120°
 and heading is the direction of travel, so two consecutive views point wherever
@@ -1409,11 +1436,12 @@ different reason.**
 - **Does relative displacement decode well enough in a held-out env that the
   lawnmower ceiling reopens?** No. It decodes *somewhere* — up to R² 0.658 at
   19.8° with both cones pinned North, a coarse code and 128 training envs, so
-  the cross-env geometry is genuinely learnable. But at the agent's own
-  headings the cones add +0.027 of R² over their own shuffled control under a
-  random walk — and at every level of walk persistence, including the ones
-  where they add far more, they make the **direction** estimate worse than the
-  agent's own heading does. At the launcher's own settings even the
+  the cross-env geometry is genuinely learnable. At the agent's own headings,
+  and at the walk persistence the trained explore policy was *measured* to
+  have, the cones add +0.108 of R² over their own shuffled control — real, but
+  entirely magnitude: at every persistence they make the **direction** estimate
+  worse than the agent's own heading does (11.0° against 6.8°). Direction is
+  what path integration needs. At the launcher's own `wall_resolution` even the
   pinned-North number is only R² 0.13 at 51°. Nothing here supports path
   integration from sensory.
 - **How many steps of adaptation would it need?** None works. 256 steps of
@@ -1437,12 +1465,15 @@ different reason.**
   positions inside one cell read differently.
 - **The one thing no sensor change fixes** is §6.5. With a 120° aperture and
   heading locked to the direction of travel, 35% of consecutive glimpse pairs
-  are disjoint under random actions; straightening the walk fixes that and the
-  cones then add a lot of R² — but all of it is magnitude, and at every level of
-  persistence they make the *direction* estimate worse than heading alone.
-  Direction is the part path integration needs, and the part the agent already
-  has. If visual odometry is ever wanted here, the aperture or the heading
-  coupling has to change, not the code.
+  are disjoint under random actions — but the trained policy is persistent
+  enough that only **0.1%** of its pairs are, so the aperture is *not* what
+  binds in practice. What binds is that the information the overlapping cones
+  carry is magnitude, not direction: at every persistence level the sensory arm
+  is worse than heading alone on angle. Direction is the part path integration
+  needs and the part the agent already has exactly. If visual odometry is ever
+  wanted here, the thing to change is the heading coupling — a cone that always
+  points along the direction of travel can only ever report on where the agent
+  is going, not on where it is.
 
 **What this hands the other workstreams.** §7.4's wall hypothesis asked for a
 `q`-independent check on self-motion: `prev_displacement` is exactly that, and
@@ -1457,14 +1488,15 @@ exact match and as nothing else.
 
 Three things, in the order they would change a conclusion.
 
-1. **The trained policy's turn distribution.** §6.5's sweep shows the cones'
-   contribution rising from +0.027 to +0.173 as the per-step turn sd falls from
-   uniform to 10°, so *where the actual explore policy sits on that axis
-   decides how much of this matters*. `PERSISTENCE_BONUS=0.05` pushes it
-   straight and `EPSILON_EXPLORE=0.4` pushes it random, and the two were not
-   weighed against each other here. Measuring it needs one rollout of a trained
-   phase-2 explore policy and a histogram of `|Δψ|` — cheap, and it should be
-   done before any decision that rests on §6.5.
+1. ~~The trained policy's turn distribution.~~ **Measured after the fact and
+   folded into §6.5** — `analysis/nav_p2/policy_turn_stats.py`, one rollout of
+   the `p5_e` explore checkpoint. It was the largest open item on this list and
+   it moved the answer: the policy turns a median of 14.6° per step and 0.1% of
+   its consecutive view pairs are disjoint, so it sits at the *favourable* end
+   of the sweep, where the cones add +0.108 rather than +0.027. Left here as a
+   record that the sweep alone would have understated the sensory channel by
+   4×. What remains unmeasured is the same distribution for a policy trained
+   under §6.5's own conclusions, and for the interleaved P6 agent.
 2. **The decoder class.** `bilin` spans the complete second-order agreement
    statistic, which is the codebook-independent sufficient statistic for the
    *expected* cross-view structure, and the MLP adds nonlinearity on top of it.
