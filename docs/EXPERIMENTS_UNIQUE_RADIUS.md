@@ -2355,3 +2355,102 @@ at a ceiling cost; shrinking the environments buys ceiling and consistency at a
 decay cost. They are different levers and it is not obvious they compose —
 `sm100_r20` already uses `hidden_dim=256`, so the composition that exists here
 is with the *narrow* net, and the wide-net version was never run.
+
+# 7. Equivariance: why patch training can cohere globally, and where it fails
+
+§5 and §6 had no account of how training on patches could produce similarity
+structure across an arena the loss never spans. The setup supplies one, and it
+had never been used.
+
+## 7.1 The symmetry, verified
+
+`Φ(x + a) = P_a Φ(x)` **exactly**. The grid code is a one-hot of
+`(x mod 11, x mod 12, x mod 13)` per axis, smoothed by a convolution on the
+torus; translation cyclically permutes each module's index and smoothing
+commutes with it. Checked in `tests/test_equivariance.py`: the raw code's
+cos-at-fixed-offset has std **< 1e-5** across the arena, and translation is a
+permutation of the code.
+
+The group is ℤ₁₁×ℤ₁₂×ℤ₁₃ per axis — order 1716² — and it acts **transitively**.
+*The whole arena is a single orbit.*
+
+If the encoder were equivariant, `f(P_a Φ) = ρ(a) f(Φ)` with ρ orthogonal, then
+transitivity gives `z(x) = ρ(x) z₀`, and because the group is abelian
+
+```
+cos(z(x), z(y)) = cos(z₀, ρ(y−x) z₀) = k(y − x)
+```
+
+Similarity would be **a function of the offset alone**: every reference
+identical, one patch determining the kernel everywhere, `r_min = r_median`, and
+patch training no obstacle at all. A generic MLP has no such bias and must learn
+it, so the interesting quantity is how far short it falls.
+
+## 7.2 The residual, measured
+
+`encoder_training/equivariance.py` samples pairs `(x, x+δ)` from many absolute
+positions at fixed δ and reports the spread of their cosine. Zero spread =
+equivariant. Standard deviation, axis-aligned offsets:
+
+| δ | `sm100_r20` | `sm50_r20` | `lo_mixtop` hd256 | `cov51` (50.8%) |
+|---|---|---|---|---|
+| 2 | **0.0011** | 0.0015 | 0.0036 | 0.0011 |
+| 10 | **0.0231** | 0.0275 | 0.0366 | 0.0172 |
+| 20 | **0.0702** | 0.0705 | 0.0955 | 0.0587 |
+| 50 | 0.1161 | 0.0890 | 0.1527 | 0.1358 |
+| 141 | 0.2532 | 0.1795 | 0.3054 | **0.0788** |
+| 283 | 0.1525 | 0.0690 | 0.1450 | **0.0305** |
+
+**Prediction 3 confirmed.** `sm100_r20` is uniformly more equivariant than the
+`lo_mixtop` config it beat — at *every* offset, by 1.4–3×. That is the missing
+explanation for §6.4: `sm100` wins on `r_min` while losing on **both** factors of
+§4.4b's law (decay50 31 against 41.5, ceiling barely better), and the law is
+blind to it because the law models `k(δ)` and this is the failure of similarity
+to be a function of δ at all.
+
+**Prediction 2 not established.** The residual was supposed to track the
+`r_median − r_min` gap. `cov51` has the *lowest* residual at large δ and the
+*largest* absolute gap (43 against 23). In relative terms the ordering is closer
+but still not clean. Recorded as unsupported rather than quietly dropped.
+
+## 7.3 The far field is a lattice, not a fog
+
+**Prediction 1 was wrong in an informative way.** The residual does not simply
+grow past each encoder's patch diagonal. It **peaks sharply at δ ≈ 141 per
+axis** for every encoder, regardless of whether that encoder's diagonal is 71,
+141 or 283 — and the same peak appears in the diagonal direction at (141, 141):
+
+| encoder | mean cos at δ=141 | pairs with both ends in ONE patch |
+|---|---|---|
+| `sm100_r20` | **0.394** | 1.1% |
+| `lo_mixtop` hd256 | 0.282 | 2.4% |
+| `sm50_r20` | 0.264 | 0.8% |
+| `cov51` (50.8%) | **0.028** | **26.6%** |
+
+143 = 11 × 13 is a module-pair period. So the far-field damage is not a diffuse
+failure of extrapolation — it is **a lattice of specific offsets where two of
+the three modules realign**, which is what `alias_structure`'s residue analysis
+was built to detect and this makes quantitative.
+
+**And it resolves §5.6j to the offset where it matters.** `cov51` has 11–24×
+more repellable pairs at δ=141 than any other encoder and ~10× less alias there.
+Coverage does not improve the far field in general; it supplies within-env pairs
+*at the specific offsets where the modules realign*, and those get repelled.
+Note the correlation across the other three is not monotone (`sm50` has fewer
+such pairs than `sm100` and less alias), so the claim is the `cov51` contrast,
+not a fitted relationship.
+
+## 7.4 What this predicts
+
+* **An encoder equivariant by construction should get global coherence free.**
+  `r_min` would equal `r_median`, from any patch layout, at any coverage.
+  Untested, and a bigger change than any knob in §4–§6.
+* **The constraint's cost is now sharply stated.** Under equivariance,
+  cross-env pairs are redundant except at offsets no patch spans. Since the
+  damage concentrates at δ ≈ 141, a patch whose diagonal exceeds 141 can in
+  principle learn to suppress it from within-env pairs alone — which is why
+  200-cell patches at high coverage (`cov51`) manage it and 100-cell patches
+  (`sm100`, diagonal 141, right at the boundary) do not.
+* **A targeted test exists**: patches sized to straddle 143 exactly, versus
+  patches just under it. The theory says the boundary matters more than the
+  size, which no geometry in §6 was designed to separate.
