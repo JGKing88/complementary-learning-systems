@@ -125,12 +125,20 @@ Measured, not inferred. Nulls are listed because they cost runs too.
 * **The law**: `r_min ≈ res90 · sqrt(ln(1/C)/ln(1/0.9))`, median error 1.2 cells
   over 410 checkpoints — **valid only while `per_env_radius_frac ≤ 0.2`**, past
   which it fails *optimistically* (§4.4b, §5.6i).
-* **Why 10% is hard**, measured: only 4.5% of alias peaks fall inside a training
-  patch against 10.1% coverage, so 95.5% of the damaging aliases sit where no
-  loss term evaluates. Handing the spread term the whole arena reproduces the
-  50.8% encoder's ceiling exactly and still scores 6, because res90 is 6.5
-  against 17. **The ceiling is reachable at 10% and worth nothing; coverage buys
-  the decay** (§5.6j, §5.6l).
+* **Why 10% is hard**, measured — *two* exclusions, and 10% coverage clears
+  neither (§5.6j):
+  - **Pair terms.** Under the constraint the repel term is `~near & same_env`,
+    so it can only ever penalise an alias whose two positions sit in the *same*
+    patch. At 10% that is **0 of 200** measured alias pairs; at 50.8% it is
+    **29 of 200**. This is the mechanical account of the ceiling gap (0.970
+    against 0.743) and is what coverage actually buys.
+  - **Spread terms.** They form no pair, but are computed on batch encodings,
+    and the batch is training points only — so the 90% of the arena holding
+    95% of the aliases never enters them at any strength.
+* Lifting only the second (hand the spread term the whole arena, out of brief)
+  reproduces the 50.8% encoder's ceiling exactly and still scores 6, because
+  res90 is 6.5 against 17. **The ceiling is reachable at 10% and worth nothing;
+  coverage buys the decay** (§5.6l).
 * **Method**: seed spread is 3–5 units at 10% coverage and 8 at 50.8%, as large
   as most effects. Two seeds is never enough and four has reversed twice. The
   20-reference `r_min` is unstable in *both* directions — it flatters (21 → 9)
@@ -1847,17 +1855,32 @@ wave had ever moved.
 `alias_structure --alias_partner` measures it — top 5 far-field peaks for each
 of 40 references, asking whether each peak lands inside a training patch:
 
-| encoder | arena covered | peaks inside a patch | **enrichment** | mean cos inside | outside |
-|---|---|---|---|---|---|
-| `lo_mixtop` 10.1% | 10.1% | 9/200 = 4.5% | **0.45×** | 0.754 | **0.802** |
-| `rate10` 10.1% | 10.1% | 5/200 = 2.5% | **0.25×** | 0.402 | **0.613** |
-| `cov51` 50.8% | 50.8% | 66/200 = 33.0% | 0.65× | 0.406 | 0.420 |
+| encoder | covered | refs in a patch | peaks in a patch | **enrichment** | **pair in ONE patch** | cos in | cos out |
+|---|---|---|---|---|---|---|---|
+| `lo_mixtop` 10.1% | 10.1% | 5/40 | 9/200 = 4.5% | **0.45×** | **0/200 = 0.0%** | 0.754 | **0.802** |
+| `rate10` 10.1% | 10.1% | — | 5/200 = 2.5% | **0.25×** | — | 0.402 | **0.613** |
+| `cov51` 50.8% | 50.8% | 21/40 | 66/200 = 33.0% | 0.65× | **29/200 = 14.5%** | 0.406 | 0.420 |
 
-Three things, and together they close the section.
+**The last column is the one that matters, and it was added after this section
+was first written and got the mechanism wrong.** Under
+`exclude_cross_env_pairs` the repel term is `~near & same_env`, so a
+(reference, alias-partner) pair enters the loss *only if both positions sit in
+the same patch*. The reference is an arbitrary arena position and the partner
+is far away by construction, so that is a demanding conjunction — and at 10%
+coverage it is satisfied **zero times out of 200**.
 
-**1. The loss cleans up exactly what it can see.** Enrichment is below 1 in
-every encoder — aliasing partners are *depleted* inside training patches
-relative to chance. The contrastive term works. It works only where it looks.
+**1. What coverage buys is alias pairs the repel term can reach — 0% to 14.5%.**
+At 10% no measured alias pair has ever been penalised by any pair term. At 50.8%
+about one in seven has. That is a direct, mechanical account of the ceiling
+difference (0.970 against 0.743) and it does not appeal to anything indirect.
+
+*The original text here claimed "the loss cleans up exactly what it can see",
+reading the sub-chance enrichment as the contrastive term suppressing the
+aliases inside patches. That cannot be right: at 10% the term never touched a
+single one of them. The enrichment is real and its cause is **not established**
+— the remaining candidates are the attract term's local smoothing making
+trained positions part of an organised manifold, and the spread term acting on
+batch points, which are trained points. They have not been distinguished.*
 
 **2. At 10% coverage, 95.5% of the aliases are somewhere no loss term has ever
 evaluated** — and those are the worse ones: mean cosine 0.802 outside against
@@ -1865,20 +1888,30 @@ evaluated** — and those are the worse ones: mean cosine 0.802 outside against
 the untrained region is small enough that being outside it is not special.
 
 **3. Strengthening the spread term makes the imbalance worse, not better.**
-`rate10` drives enrichment from 0.45× to 0.25×: it scrubs the visible aliases
+`rate10` drives enrichment from 0.45× to 0.25×: it scrubs whatever it reaches
 harder while the invisible ones stay. That is §5.6h's wall seen from the other
 side — the only way a batch-level spread term can touch an untrained position is
 by compressing *everything*, which is why the ceiling fell from 0.985 to 0.833
 and took res90 down with it.
 
-**So `r_min ≈ 7` at 10% coverage is structural, not a tuning failure.** Every
-spread term available — `uniformity`, `vicreg`, `coding_rate` — is computed on
-the encodings of the batch, and the batch contains training points only. The 90%
-of the arena that holds 95% of the damaging aliases never enters any term in the
-loss, at any strength, under any of the knobs §5 swept. That is why steps 1, 2
-and 3 each returned the same 5–8 from completely different directions: geometry
-(§5.6f), the spread term (§5.6h) and placement (§5.6g) were all working on the
-10% that was never the problem.
+**So `r_min ≈ 7` at 10% coverage is structural, not a tuning failure**, and the
+same-patch column says why in one line: **no alias pair is reachable at all.**
+Two separate exclusions have to be cleared and 10% coverage clears neither.
+
+* The *pair* terms could in principle repel an alias, but only within one patch
+  — and 0/200 measured pairs qualified. Coverage is what fixes this: at 50.8%
+  it is 14.5%.
+* The *spread* terms have no pair to exclude, but they are computed on the
+  encodings of the batch, and the batch contains training points only. The 90%
+  of the arena holding 95% of the aliases never enters them at any strength.
+
+That is why steps 1, 2 and 3 each returned the same 5–8 from completely
+different directions: geometry (§5.6f), the spread term (§5.6h) and placement
+(§5.6g) were all working on the 10% that was never the problem.
+
+It also predicts §5.6l before the fact. Handing the spread term the whole arena
+lifts the second exclusion and not the first — the pair terms still see only the
+10% — so it should fix the ceiling and not the radius. It does exactly that.
 
 ### 5.6k Six seeds erase every effect §5 measured
 

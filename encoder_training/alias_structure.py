@@ -232,33 +232,48 @@ def alias_partner(encoder, ckpt, lambdas, gain, *, n_refs: int, seed: int,
         print("\n[no patch layout stored in checkpoint; skipping alias-partner]")
         return
 
-    inside_mask = np.zeros((npos_for(lambdas),) * 2, dtype=bool)
-    for y0, x0, s in zip(y0s, x0s, sizes):
-        inside_mask[y0:y0 + s, x0:x0 + s] = True
+    # env_id per cell, -1 outside every patch. The *pair* question needs the
+    # identity, not just membership: under exclude_cross_env_pairs the repel
+    # term is `~near & same_env`, so a (reference, alias-partner) pair enters
+    # the loss only if both sit in the SAME patch.
+    env_id = np.full((npos_for(lambdas),) * 2, -1, dtype=np.int32)
+    for i, (y0, x0, s) in enumerate(zip(y0s, x0s, sizes)):
+        env_id[y0:y0 + s, x0:x0 + s] = i
+    inside_mask = env_id >= 0
     covered = inside_mask.mean()
 
     refs = sample_references(lambdas, n_refs, border=100, seed=seed)
     maps = cosine_maps(encoder, lambdas, gain, refs, device, batch_size,
                        fwhm_ratio)
 
-    n_in = n_tot = 0
+    n_in = n_tot = n_ref_in = n_same_env = 0
     cos_in, cos_out = [], []
     for cos_map, ref in zip(maps, refs):
+        ref_env = int(env_id[int(ref[0]), int(ref[1])])
+        n_ref_in += ref_env >= 0
         for pk in peak_offsets(cos_map, tuple(ref), n_peaks=n_peaks):
             y, x = int(ref[0] + pk["dy"]), int(ref[1] + pk["dx"])
-            if inside_mask[y, x]:
+            pk_env = int(env_id[y, x])
+            if pk_env >= 0:
                 n_in += 1
                 cos_in.append(pk["cos"])
             else:
                 cos_out.append(pk["cos"])
+            if ref_env >= 0 and pk_env == ref_env:
+                n_same_env += 1
             n_tot += 1
 
     print(f"\nalias partners: where do the top-{n_peaks} far-field peaks live?")
     print(f"   arena covered by training patches : {covered:6.1%}")
+    print(f"   references inside a patch         : {n_ref_in}/{len(refs)}")
     print(f"   peaks landing inside a patch      : {n_in}/{n_tot} "
           f"({n_in / max(n_tot, 1):6.1%})")
     print(f"   enrichment over chance            : "
           f"{(n_in / max(n_tot, 1)) / max(covered, 1e-9):6.2f}x")
+    # The one that says whether the repel term could ever have acted on this
+    # pair. Under exclude_cross_env_pairs, only same-patch pairs are repelled.
+    print(f"   pairs in the SAME patch (repelled): {n_same_env}/{n_tot} "
+          f"({n_same_env / max(n_tot, 1):6.2%})")
     if cos_in:
         print(f"   mean cos, partner inside patch    : {np.mean(cos_in):.3f}")
     if cos_out:
