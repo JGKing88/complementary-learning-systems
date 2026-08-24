@@ -24,7 +24,10 @@ cd "$REPO"
 source scripts/cls_env.sh
 
 PROBE=${PROBE:-convergence}
-if [ "$PROBE" = attractor ]; then
+if [ "$PROBE" = gain ]; then
+    python -u -m analysis.nav_p2.gain_sweep \
+        --ckpt "$CKPT" --device cuda --n_distractors "${NDIST:-10}"
+elif [ "$PROBE" = attractor ]; then
     python -u -m analysis.nav_p2.attractor_test \
         --ckpt "$CKPT" --device cuda --n_distractors "${NDIST:-10}"
 elif [ "$PROBE" = dynamics ]; then

@@ -622,6 +622,68 @@ a correlation-matrix memory that is exactly what limits retrieval, and it is
 why the top eigenvector still sits at `|cos|` 0.83 to the nearest stored
 pattern. Cross-talk, not capacity or dynamics, is the binding constraint.
 
+### 5.6 Why no basins at all — gain, not normalization, and then a second reason
+
+Jack asked whether the normalization is what kills the basins. Swept `beta` over
+six orders of magnitude with normalization on and off
+(`analysis/nav_p2/gain_sweep.py`), 11 stored patterns, D=1024:
+
+| beta | median \|beta·Wx\| | stored is a fixed pt? | # attractors from 256 starts | corrupted cue restored to |
+|---|---|---|---|---|
+| **5** (trainer) | 1.1e-04 | 0.154 | **1** | 0.154 |
+| 500 | 1.1e-02 | 0.154 | 1 | 0.154 |
+| 5,000 | 1.1e-01 | 0.150 | 1 | 0.150 |
+| 20,000 | 4.4e-01 | 0.107 | 1 | 0.107 |
+| 100,000 | 2.2e+00 | 0.086 | 1 | 0.086 |
+| 1,000,000 | 2.2e+01 | 0.185 | **8** | 0.244 |
+
+**Not the normalization.** With normalization still on, raising the gain does
+eventually produce multiple attractors — 8 of them at `beta = 1e6`, where the
+pre-activation finally reaches 22 and the tanh genuinely saturates. So
+normalization does not prevent basins. What it does is decide *what the
+degenerate attractor is* when there are none: with it, the top eigenvector;
+without it, the state decays to the **origin**, since `λ₁ = 1.4e-3 < 1`. That
+collapse is visible in the `normalize=False` rows below the transition.
+
+*(A measurement fault worth recording: the first version of this script reported
+"61 attractors" in exactly those collapsed rows. `F.normalize` maps zero to
+zero, so every pair of dead states has cosine 0 and each start counted as its
+own attractor — an artifact that reads as a rich landscape when it is the
+precise opposite. The script now detects the collapse and says so.)*
+
+**But there is a second reason, and it is the more fundamental one.** Look at
+the "stored is a fixed pt" column: it **never approaches 1.0 at any gain**. Even
+at `beta = 1e6` with the tanh deeply saturated it is 0.185, and the attractors
+that do appear sit at `|cos|` 0.66 from the nearest stored pattern. Raising the
+gain creates basins — but **not around the memories**.
+
+The reason is that a saturating `tanh` puts its fixed points at the corners of
+the hypercube, `±1` in every coordinate. That is what makes classical Hopfield
+work: the stored patterns *are* binary, so they *are* corners. Here the stored
+patterns are **continuous encoder outputs**, which are not at corners, so
+saturation necessarily moves them somewhere else. A continuous vector cannot be
+a fixed point of a saturating elementwise nonlinearity unless it happens
+already to be saturated.
+
+**So there is no gain at which this becomes an attractor memory for its own
+patterns.** Low gain gives one attractor and no basins; high gain gives basins
+at hypercube corners that are not the stored patterns. The matched-filter regime
+is not a suboptimal choice among available regimes — for continuous-valued
+stored patterns it is the only regime in which retrieval works at all, which is
+consistent with one step restoring a cos-0.70 cue to 0.987 (§5.5) while every
+iterated regime fails.
+
+Cross-talk compounds it: max overlap between the stored patterns is 0.4447, so
+even binary patterns at this correlation would not retrieve cleanly.
+
+**Consequence.** The earlier suggestion (§5.4, point 4) that raising `scale` or
+`beta` by 3-4 orders of magnitude is "a legitimate experiment" is **withdrawn**
+— it is now measured, and it does not give attractor retrieval of these
+patterns. Making this an attractor network would require binarizing the stored
+patterns (or an architecture whose fixed points are not corners, e.g. a modern
+softmax Hopfield, whose fixed points *are* the stored patterns by construction).
+That is a real design fork, but it is a different network, not a hyper-parameter.
+
 ---
 
 ## 6. P2 — is relative displacement decodable from sensory input?
