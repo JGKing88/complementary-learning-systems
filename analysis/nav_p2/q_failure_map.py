@@ -133,6 +133,13 @@ def main() -> None:
                         "than a lock onto either the goal or a distractor")
     p.add_argument("--device", default="cuda")
     p.add_argument("--out", required=True, help="destination .npz")
+    p.add_argument("--recorded_world", action="store_true",
+                   help="Replay the checkpoint's recorded eval world instead of "
+                        "drawing a fresh one. That world has however many envs "
+                        "training was configured for -- 6 for the phase-1 runs "
+                        "-- so it silently caps --envs, which is the opposite "
+                        "of what this module is for. Use it only to compare "
+                        "against a specific trained model's own world.")
     p.add_argument("--npos", type=int, default=None,
                    help="Shrink the scaffold for tool validation only. It "
                         "changes the very geometry this module measures -- the "
@@ -155,9 +162,17 @@ def main() -> None:
     embed_dim = enc_cfg.out_dim
     torch.manual_seed(args.seed)
     np.random.seed(args.seed)
+    # Default to a FRESH world. The recorded one carries whatever env count
+    # training used -- 6 for every phase-1 run -- and replaying it silently
+    # caps --envs at that, which would reduce this module to the eight-env mean
+    # whose failure is the reason it exists. A fresh draw re-samples env
+    # placement, which is exactly the axis being measured.
+    replay = args.recorded_world and args.npos is None
     envs, vh, offsets = build_eval_world(
-        cfg, encoder, str(device),
-        ckpt_path=(None if args.npos is not None else args.ckpt))
+        cfg, encoder, str(device), ckpt_path=(args.ckpt if replay else None))
+    if len(envs) != args.envs:
+        print(f"  NOTE: asked for {args.envs} envs, world has {len(envs)}"
+              + ("  (recorded world governs)" if replay else ""))
 
     size = envs[0].size
     cells = _all_cells(size)

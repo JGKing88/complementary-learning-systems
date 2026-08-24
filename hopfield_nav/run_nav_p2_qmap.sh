@@ -25,7 +25,7 @@ set -euo pipefail
 
 REPO=${REPO:-/orcd/home/002/jackking/cls/.claude/worktrees/nav-tri-metric}
 SEED=${SEED:-0}
-ENVS=${ENVS:-32}
+ENVS=${ENVS:-64}
 DRAWS=${DRAWS:-8}
 CKPT=${CKPT:-/orcd/pool/003/jackking/cls_runs/agent_ckpts/navigate_navtri_w6_pers_s42_20499183/navigate_u1950.pt}
 OUT=${OUT:-/orcd/pool/003/jackking/cls_runs/results/nav_p2}
