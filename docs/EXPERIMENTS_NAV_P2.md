@@ -994,16 +994,29 @@ even with 256 anchors, the sensory representation is the bottleneck and Jack's
 The centrepiece, and the one that bounds mode B. Jack's three candidate cues are
 groups (A), (B) and (D) below; group (C) is an addition.
 
-### 7.1 Two questions, both worth answering
+### 7.1 Three questions — REVISED after §5
 
 - **Q_ep, episode-level** — does memory contain a pattern stored in *this* env?
   This is what "explore vs exploit" means to the agent.
 - **Q_step, step-level** — is the *current* recall `recall(x_t)` the goal rather
-  than a foreign pattern? Even inside an exploit episode, some positions fall in
-  a distractor's basin.
+  than a foreign pattern?
+- **Q_trust, step-level — ADDED, and the one that matters most.** Is this
+  recall's *direction* reliable right now?
 
-Q_step is the operational one: mode B is a per-step failure to follow a usable
-recall. Q_ep is the regime question. Measure both.
+**Why Q_trust was added.** The spec originally had only the first two, on the
+reasoning that mode B is a per-step failure to follow a usable recall. But §5.2
+measured what actually determines usability, and it is neither of them: cells
+whose recall sits at `cos_goal ≥ 0.99` have a **0.01%** rate of bad direction,
+and **99.7%** of all bad-direction cells fall below that threshold. Direction is
+the only thing the policy consumes, so "should I follow `q` right now" is the
+operational question, and it is *not* the same as "is this the goal" — §5.2 also
+found that a recall which locked on the wrong pattern still usually points
+roughly the right way.
+
+`cos_goal` is available as a ground-truth label at analysis time and is not
+available to the policy, so it is a clean supervised target. Q_trust is the
+headline; Q_ep and Q_step stay as secondary targets because the regime question
+is what P6 needs.
 
 ### 7.2 Candidate statistics — all functions of what the policy can see
 
@@ -1051,13 +1064,27 @@ regime nothing reaches a fixed point at all — iterating walks steadily away
 from the goal pattern, and pooled direction quality degrades from 1.46% bad at
 one step to 12.27% at twelve.
 
-`c1` and `c2` therefore measure **drift rate**, not spuriousness. That still
-carries signal — the one-step residual is 0.148 for imperfect-fidelity cells
-against 0.099 for clean ones — and it is still free, since the iterates are
-already computed and already fed to the policy. So keep both statistics in the
-feature set and let the ablation price them, but do not expect them to separate
-"the answer is right" from "the answer is a blend", and drop the earlier claim
-that a single-step separation would dissolve the probing question.
+`c1` and `c2` therefore measure **drift rate**, not spuriousness. Re-derived
+from the linear theory rather than from attractor folklore: `recall(x) ∝ W x`,
+`W` has an eigen-decomposition, and iterating amplifies the top eigenvector at a
+rate set by how the cue's energy is distributed over that spectrum. So the
+residual is a measure of the cue's **spectral concentration on the stored set** —
+how cleanly it picks out one pattern rather than sitting in a region several
+patterns share.
+
+That is genuinely informative, and it is measured: the one-step residual is
+**0.148** for imperfect-fidelity cells against **0.099** for clean ones. It is
+also free, since the iterates are already computed and already fed to the
+policy. So both statistics stay in the feature set.
+
+**But note the consequence for the ablation.** Spectral concentration on the
+stored set is closely related to `‖q‖`, which is group A. **A and C are probably
+substantially redundant**, and a leave-one-out ablation would report both as
+contributing nothing when in fact they carry the same real signal twice. §7.3
+item 3 handles this with leave-one-in and a joint A∪C drop.
+
+Drop the earlier claim that a single-step separation would dissolve the probing
+question — it followed from the spurious-state framing, which is gone.
 
 **D. Sensory consistency** *(Jack's third cue)*
 
@@ -1071,10 +1098,25 @@ scaffold, not the agent. `d2` falls out of P2 and is the wall diagnostic.
 
 ### 7.3 The analysis
 
-1. **Per-statistic separability** — AUC for Q_ep and Q_step as a function of
+0. **Sanity anchor, wired in before anything else.** §5.8 predicts the
+   goal-absent `‖q‖` analytically: an unrelated direction in D dimensions keeps
+   `√(2/D) = 0.0442` of its norm under the tangent projection, and with a
+   displacement norm of ≈ √2 that gives **0.0625** against a measured 0.0670,
+   with goal-present at 0.3006. So group A's separability has an *expected*
+   value derivable from first principles. **If the measured AUC comes in far
+   below what that separation implies, the measurement is wrong, not the
+   signal.** Three instrumentation faults in §5 produced confident wrong answers
+   before being caught; this check is cheap and goes in first.
+1. **Per-statistic separability** — AUC for all three targets as a function of
    distractor count {0,1,2,3,5,7,10} and steps observed
    `t ∈ {1,2,4,8,16,32,64}`, reported as a **distribution over envs and seeds**,
    per finding 19.
+
+   **`n_dist = 0` is degenerate and must not be pooled into a headline.** With
+   no distractors the goal-absent memory is *empty*, so `q = 0` exactly — a
+   perfect cue, for a trivial reason that has nothing to do with the signal
+   being measured. It is a real condition (training samples 0–10), so report it,
+   but separately.
 2. **The ideal-observer bound** — a classifier (logistic regression, plus
    gradient-boosted trees for the nonlinear ceiling) on the full feature vector,
    cross-validated across *held-out envs*. Yields `AUC(t, n_dist)`. **This is
@@ -1084,6 +1126,22 @@ scaffold, not the agent. `d2` falls out of P2 and is the wall diagnostic.
 3. **Feature ablation** — drop each of A/B/C/D; the AUC loss is that group's
    unique contribution. Answers which cue actually carries the discrimination,
    which is Jack's question 3 restated.
+
+   **Expect A and C to be redundant, and design for it.** §5.4 showed the
+   dynamics is linear power iteration, so group C measures how fast a cue
+   rotates toward the top eigenvector — which is a function of its spectral
+   concentration on the stored set, and that is closely related to `‖q‖` in
+   group A. A leave-one-out ablation reports *unique* contribution and will show
+   both as near-zero if they carry the same information. **Also run the
+   leave-one-in (each group alone) and the A∪C joint drop**, or genuine signal
+   will be hidden by its own duplication.
+3b. **Does recall depth earn its input channel?** `--input_hopfield_multistep
+   1 2 3` feeds `q` at three depths, and §5.3–5.4 established that depths 2 and
+   3 are strictly *degraded* states rather than better-converged ones, sampling
+   the transient of a power iteration. The decay *rate* may still discriminate,
+   but that is now a claim to test rather than assume: compare the classifier
+   with depths {1} against {1,2,3}. **If depth adds nothing, that is a policy
+   input channel that can be removed** — a real result, not a null one.
 4. **Probing behaviour** — the same classifier, but on trajectories generated by
    fixed probe policies:
 
@@ -1104,13 +1162,22 @@ scaffold, not the agent. `d2` falls out of P2 and is the wall diagnostic.
 5. **Score the trained agents' own trajectories** with the frozen classifier.
    This *is* Jack's "is the agent collecting the information it needs" metric
    for P6, and it costs one extra evaluation pass.
-6. **Wall interaction** — condition everything on distance-to-wall and on
-   whether the step was clipped. See §7.4.
+6. **Wall interaction — RE-SCOPED.** The original plan was to condition
+   everything on distance-to-wall to test H-wall. Half of that is already
+   answered and was answered negatively: §5.2 measured `dir_cos` as **flat**
+   against distance-to-wall, so the readout is *not* degraded near boundaries.
+   What survives is narrower and sharper — a **channel ablation**. Compute the
+   self-motion residual `a3` and the allocentric spread `b2` twice, once from
+   the *commanded* action and once from the *realized* displacement, and compare
+   their separability near walls and clips. Both are policy inputs now
+   (§4 B4), so this is a concrete comparison between two available signals
+   rather than a hypothesis about `q`. See §7.4.
 
 **Deliverables.** `AUC(t)` curves per cue per distractor level with per-env
-bands; a steps-to-0.95 table per probe; the ablation table; and a single
-headline number — the ideal-observer AUC at the distractor levels we train on,
-which every mode-B claim in P6 gets measured against.
+bands; a steps-to-0.95 table per probe; the ablation table including the
+leave-one-in and A∪C variants; the depth-{1} vs depth-{1,2,3} comparison; and a
+single headline number — the **Q_trust** ideal-observer AUC at the distractor
+levels we train on, which every mode-B claim in P6 gets measured against.
 
 ### 7.4 A hypothesis this analysis is built to test — H-wall
 
@@ -1123,10 +1190,22 @@ actually moved.
 
 **So near a wall the agent's best regime cue is corrupted, in the direction of
 declaring a real goal a phantom.** Phase 1 measured `fail_frac_at_edge = 0.389`
-for the combined model — 39% of its mode-B failures end against a wall, which is
-what this predicts. Test: ideal-observer AUC conditioned on distance-to-wall and
-on clip events, with and without realized displacement in the feature set. If it
-holds, §11 Q1 is not a preference — it is the fix.
+for the combined model — 39% of its mode-B failures end against a wall.
+
+**Status after §5 — half refuted, half sharpened.** The readout half is dead:
+`dir_cos` is flat against distance-to-wall (§5.2), so `q` is not degraded near
+boundaries and the wall failures are not explained by a worse signal there.
+Phase 1's own matched control also removed the explore-leakage reading — an
+exploit-only model that has never explored fails at walls *more* often (0.472
+against 0.389), so walls are hard for any policy here.
+
+What survives is the displacement half, and it is now a clean comparison rather
+than a hypothesis, because both signals are policy inputs (§4 B4): compute `a3`
+and `b2` from the **commanded action** and from the **realized displacement**,
+and compare their separability conditioned on distance-to-wall and on clip
+events. If the commanded version degrades near walls and the realized one does
+not, the mechanism is confirmed and the fix is already shipped — the question
+becomes whether the policy *uses* the right channel, which is a P6 question.
 
 ---
 
