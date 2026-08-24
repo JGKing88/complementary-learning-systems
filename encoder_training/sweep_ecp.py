@@ -1083,6 +1083,52 @@ WAVES: dict[str, dict] = {
         },
         "seed": [42, 43, 44, 45, 46, 47],
     },
+    # W38 -- separate patch size from environment count, by varying coverage.
+    #
+    # §6.5 found an interior optimum at 100-cell patches / 29 environments and
+    # could not tell which. At fixed coverage the two are exactly
+    # anti-correlated: n = c*A/s^2. The way out is matched-coverage rows at
+    # SEVERAL coverages, because the two hypotheses then name different winners
+    # everywhere except at 10%, where they coincide -- which is why the 10% row
+    # alone was uninformative.
+    #
+    #     coverage    if SIZE drives it    if COUNT drives it
+    #       5%         (100, 15)            (70, 30)
+    #      10%         (100, 29)            (100, 29)     <- the coincidence
+    #      20%         (100, 59)            (140, 30)
+    #
+    # Coverage is matched to within 0.1pp inside each row, which matters because
+    # coverage is the strongest lever in the campaign (§4.6b) and a 0.7pp gap
+    # would bias the contrast it is meant to isolate.
+    #
+    # Radius is absolute 20 everywhere. §6.2 is what makes this experiment
+    # possible: the radius optimum does not scale with patch size, so sizes can
+    # be compared at one radius without reintroducing the fraction confound that
+    # §6.1 fell into.
+    #
+    # The 10% row already exists -- sm50, sm70, sm100 from w32/w34/w35 -- so
+    # only 140x15 is added there. Four seeds; the 5% row runs 4300 epochs at the
+    # same 73k steps, so it wants the longer time limit.
+    "w38_size_vs_count": {
+        "arm": {
+            name: dict(npos_list=_mix((size, count)),
+                       per_env_radius_frac=0.0, radius=20.0,
+                       rate_lambda=0.3, out_dim=1024, hidden_dim=256)
+            for name, (size, count) in {
+                # ~5%: size hypothesis picks s100, count hypothesis picks s70
+                "c05_s50":  (50, 59),
+                "c05_s70":  (70, 30),
+                "c05_s100": (100, 15),
+                # ~10%: completes the row; the other three already exist
+                "c10_s140": (140, 15),
+                # ~20%: size hypothesis picks s100, count hypothesis picks s140
+                "c20_s70":  (70, 120),
+                "c20_s100": (100, 59),
+                "c20_s140": (140, 30),
+            }.items()
+        },
+        "seed": [42, 43, 44, 45],
+    },
     # W13 -- coverage, on the winning config rather than on the bare baseline.
     #
     # This replaces w4, which swept coverage over mixes chosen before any of the
