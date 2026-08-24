@@ -43,10 +43,10 @@ mismatch that must be fixed first.
 - [x] **P2 done (§6).** The cross-env geometry *is* learnable — up to R² 0.658
       at 19.8° with both cones pinned North — and at the agent's own headings,
       at the walk persistence the `p5_e` explore checkpoint was **measured** to
-      have, the best decoder adds +0.203 over its own shuffled control. But on
+      have, the best decoder adds +0.254 over its own shuffled control. But on
       **direction**, which is what path integration needs, the cones help only
       from four steps on, and at one step are far worse than the agent's own
-      heading (7.9° vs 1.5°) — **and four steps on is exactly where integrating
+      heading (8.0° vs 1.5°) — **and four steps on is exactly where integrating
       `prev_displacement` is already exact**. Adaptation buys nothing at
       any `k` up to 256. And the question stopped gating the ceiling when §4's
       B3 turned on `input_prev_displacement`, which hands the agent **exact**
@@ -1017,11 +1017,11 @@ scores 0.233 / 27.4° and `ridge/spec`, `ridge/xcorr`, `ridge/bilin` and
 with every shuffled control equal to its unshuffled twin. In the best-posed
 version (§6.5 — cones aligned by `Δψ`, answer in the agent's own frame, the
 coarse wall code) they do better: at the persistence the `p5_e` explore
-checkpoint **was measured to walk with**, the best decoder adds **+0.203 of R²
+checkpoint **was measured to walk with**, the best decoder adds **+0.254 of R²
 over its own shuffled control**, nearly doubling what heading alone supplies.
 But the **direction** estimate — the part path integration needs — splits by
 lag, and splits the wrong way for this project. At **one step** the cones make
-it much worse (7.9° against heading-only's 1.5°), because at one step the
+it much worse (8.0° against heading-only's 1.5°), because at one step the
 heading *is* the displacement direction. Only from four steps on do they
 improve it — and over four or eight steps the agent's own integration of
 `prev_displacement` is exact anyway. **There is no lag at which the cones
@@ -1277,40 +1277,56 @@ beside it (the ridge rows are repeated at 128 envs so the comparison is
 like-for-like; they move by 0.003 against the 48-env table, which is the
 sample-size effect):
 
-| turn sd | arm | R² | its shuffled | **cones add** | ang. err | heading-only ang. |
-|---|---|---|---|---|---|---|
-| uniform | ridge/bilin | 0.265 | 0.236 | +0.029 | 26.9° | 27.5° |
-| uniform | **mlp/raw** | 0.332 | 0.238 | **+0.094** | 26.5° | 27.5° |
-| 20° | ridge/bilin | 0.395 | 0.290 | +0.105 | 10.5° | 6.8° |
-| 20° | **mlp/raw** | 0.610 | 0.407 | **+0.203** | 9.4° | 6.8° |
+| turn sd | framing | arm | R² | its shuffled | **cones add** | ang. err | heading-only |
+|---|---|---|---|---|---|---|---|
+| uniform | `derot_ego` | ridge/bilin | 0.265 | 0.236 | +0.029 | 26.9° | 27.5° |
+| uniform | `derot_ego` | mlp/raw | 0.332 | 0.238 | **+0.094** | 26.5° | 27.5° |
+| uniform | `ego` | mlp/raw | 0.324 | 0.238 | +0.086 | 29.4° | 27.5° |
+| 20° | `derot_ego` | ridge/bilin | 0.395 | 0.290 | +0.105 | 10.5° | 6.8° |
+| 20° | `derot_ego` | mlp/raw | 0.610 | 0.407 | +0.203 | 9.4° | 6.8° |
+| 20° | **`ego`** | **mlp/raw** | **0.656** | 0.402 | **+0.254** | 9.7° | 6.8° |
 
 So the +0.108 in the table above is a floor: the best decoder tried gets
-**+0.203** at the operating point. The MLP control was worth building rather
+**+0.254** at the operating point. The MLP control was worth building rather
 than borrowing the ridge's, and the numbers say why — `shuf/mlp-raw` reaches
-**0.407** where the ridge's shuffled control sits at 0.290 and heading-only at
+**0.402** where the ridge's shuffled control sits at 0.290 and heading-only at
 0.282. A non-linear decoder reads the heading terms far better than a linear
-one. Scoring `mlp/raw`'s 0.610 against the ridge's control would have claimed
-+0.32 and overstated the cones by 58%.
+one. Scoring `mlp/raw`'s 0.656 against the ridge's control would have claimed
++0.37 and overstated the cones by nearly half.
+
+**And my hand-built de-rotation turned out to be unnecessary, and at the
+operating point harmful.** `ego` differs from `derot_ego` only in *not*
+re-indexing view 2's cone by `Δψ` — both are handed `Δψ` as a feature. Aligning
+helps under uniform turns (+0.094 against +0.086) and *costs* at the operating
+point (+0.203 against +0.254), because shifting by `round(Δψ / ray)` zero-fills
+the wedge with no counterpart and discards it; when `Δψ` is small there is
+little to gain and real information to lose. **A non-linear decoder handed `Δψ`
+learns the rotation better than an explicit shift applies it.** The framing was
+worth building — it is what proved the earlier world-frame `derot` was
+ill-posed rather than uninformative (§6.5a) — but the headline number should
+come from `ego`.
 
 **Where the increment goes depends on the lag, and the split is the finding.**
 Not "all magnitude", which is what the ridge-only view suggested. Per-lag
-angular error for `mlp/raw` against its own shuffled control and against
-heading-only, at the operating point:
+angular error for the best arm (`ego` / `mlp/raw`) against its own shuffled
+control and against heading-only, at the operating point:
 
 | | lag 1 | lag 2 | lag 4 | lag 8 |
 |---|---|---|---|---|
 | `‖Δpos‖` median | 0.95 | 2.02 | 4.01 | 7.45 |
-| mlp/raw | 7.9° | 7.9° | 9.4° | **15.0°** |
-| its shuffled | 5.6° | 6.8° | 9.8° | 17.4° |
+| mlp/raw | 8.0° | 8.4° | 10.1° | **13.5°** |
+| its shuffled | 5.1° | 6.6° | 9.9° | 17.8° |
 | heading only | **1.5°** | 4.8° | 9.6° | 19.5° |
 
 **At one step the cones make the direction estimate worse — much worse — and
-from four steps on they make it better.** Both hold under uniform turns too
-(lag 1: 11.4° against heading-only's 1.4°; lag 8: 42.9° against 58.2°). The
-mechanism is not subtle: at lag 1 the heading *is* the displacement direction,
-so nothing can beat it and the cones only add noise; by lag 8 the heading is
-one step's worth of a cumulative move and stops determining it, so the cones
-have something to contribute.
+from four steps on they make it better.** The same split holds for
+`derot_ego` (8.0° → 15.0° against heading-only's 1.5° → 19.5°) and under
+uniform turns (lag 1: 11.4° against 1.4°; lag 8: 42.9° against 58.2°), so it is
+not an artifact of one framing or one persistence. The mechanism is not subtle:
+at lag 1 the heading *is* the displacement direction, so nothing can beat it and
+the cones only add noise; by lag 8 the heading is one step's worth of a
+cumulative move and stops determining it, so the cones have something to
+contribute.
 
 **And that is exactly the wrong way round for this project.** The regime where
 the cones help on direction — multi-step displacement — is the regime where the
@@ -1501,10 +1517,10 @@ different reason.**
   19.8° with both cones pinned North, a coarse code and 128 training envs, so
   the cross-env geometry is genuinely learnable. At the agent's own headings,
   and at the walk persistence the `p5_e` explore checkpoint was *measured* to
-  have, the best decoder adds +0.203 of R² over its own shuffled control — a
+  have, the best decoder adds +0.254 of R² over its own shuffled control — a
   real channel, not a trace. But on **direction**, which is what path
   integration needs, it helps only at four steps and beyond, and at one step it
-  is far worse than the agent's own heading (7.9° against 1.5°). Four steps and
+  is far worse than the agent's own heading (8.0° against 1.5°). Four steps and
   beyond is exactly where integrating `prev_displacement` is already exact, so
   there is no lag at which the cones supply a direction the agent lacks. At the
   launcher's own `wall_resolution` even the pinned-North number is only R² 0.13
@@ -1583,12 +1599,15 @@ Four things, in the order they would change a conclusion.
    stands still at the minimum step norm. Anything that interleaves the two
    regimes inherits that.)
 2. ~~How much more a non-linear decoder gets in the ego framing.~~ **Resolved
-   and folded into §6.5.** The MLP nearly doubles the ridge increment (+0.203
-   against +0.105 at the operating point), and building it its own shuffled
-   control rather than borrowing the ridge's mattered: `shuf/mlp-raw` reaches
-   0.407 where the ridge's control sits at 0.290, because a non-linear decoder
-   reads the *heading* terms much better too. Borrowing would have claimed
-   +0.32 and overstated the cones by 58%. It also overturned the ridge-only
+   and folded into §6.5.** The MLP more than doubles the ridge increment
+   (+0.254 against +0.105 at the operating point), and building it its own
+   shuffled control rather than borrowing the ridge's mattered: `shuf/mlp-raw`
+   reaches 0.402 where the ridge's control sits at 0.290, because a non-linear
+   decoder reads the *heading* terms much better too. Borrowing would have
+   claimed +0.37 and overstated the cones by nearly half. The same run also
+   showed the explicit de-rotation to be unnecessary — a non-linear decoder
+   handed `Δψ` learns the rotation better than the hand-built shift applies it.
+   It also overturned the ridge-only
    reading that the increment was "all magnitude" — it is magnitude at one step
    and direction from four steps on, which is §6.5's sharpest result.
 3. **The decoder class more broadly.** `bilin` spans the complete second-order
