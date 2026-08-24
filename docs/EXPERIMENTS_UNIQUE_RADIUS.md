@@ -93,10 +93,16 @@ Measured, not inferred. Nulls are listed because they cost runs too.
   200-cell patches. Prefer `radius` over `per_env_radius_frac`. The fix is worth
   up to +4 on starved geometries and **nothing** on 100–200 cell ones, whose
   fraction already landed near 20 (§6.5).
-* **Patch size has an interior optimum at ~100 cells** at matched radius 20
-  (§6.5): 200 → 5.5, 100–200 mix → 7.0, **100 → 9.0**, 70 → 7.5, 50 → 7.5. At
-  fixed coverage this is inseparable from "29 environments is optimal" — size
-  and count are perfectly anti-correlated and nothing here distinguishes them.
+* **Patch size has an interior optimum at ~100 cells** at matched radius 20 and
+  10% coverage (§6.5): 200 → 5.5, 100–200 mix → 7.0, **100 → 9.0**, 70 → 7.5,
+  50 → 7.5.
+* **…but the invariant is the environment count, ~30, not the size** (§6.6).
+  Varying coverage separates them: the ~30-env arm is top or joint-top at 5%,
+  10% and 20% coverage, at sizes 70, 100 and 140 respectively, and four
+  same-size comparisons across coverages all peak at ~30. Effects are 0.5–1.5
+  units against seed spreads of 1–5, so it is consistent rather than strong, and
+  size still has a secondary effect. **To extrapolate: choose the size that
+  gives ~30 environments at your coverage**, rather than fixing size at 100.
 * Too wide is still bad: `frac` 0.25 and 0.40 on 200-cell patches (50 and 80
   cells) give `r_min` 2.0 and 0.5, and radius 30–40 costs the small geometries
   too. The failure is anisotropy — the median improves while the worst
@@ -2521,3 +2527,60 @@ extent 200) are the *worst* here. Spanning does buy less alias at that specific
 offset — `lo_mixtop` 0.282 against `sm100` 0.394 — but it buys neither the
 overall ceiling (0.974 against 0.952) nor `r_min`. The lattice is real; it is
 not what sets the size optimum.
+
+## 6.6 Size or count? Varying coverage says **count**, at about 30
+
+§6.5 could not tell "100-cell patches are optimal" from "29 environments are
+optimal" because `n = c·A/s²` ties them at fixed coverage. `w38` breaks the tie
+with matched-coverage rows at three coverages, where the two hypotheses name
+different winners. Radius is absolute 20 throughout (§6.2), so sizes are
+comparable at one setting. 28 runs, 4 seeds per cell, `encoder_final`:
+
+| coverage | size | envs | `r_min` | spread | | size | envs | `r_min` | | size | envs | `r_min` |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| **~5%** | 50 | 59 | 4.5 | 2 | | 70 | **30** | **4.5** | | 100 | 15 | 4.0 |
+| **~10%** | 50 | 118 | 7.5 | 3 | | 100 | **29** | **9.0** | | 140 | 15 | 8.5 |
+| **~20%** | 70 | 120 | 10.5 | 1 | | 100 | 59 | 11.0 | | 140 | **30** | **11.5** |
+
+*(the ~10% row also has 70/60 envs at 7.5)*
+
+**The ~30-environment arm is top or joint-top in every row**, at sizes 70, 100
+and 140 respectively. The size at the optimum doubles across the rows; the count
+does not move. The prediction table from the wave comment resolves to the count
+column.
+
+The stronger evidence is same-size comparisons *across* rows, which hold size
+fixed and vary count — the thing no single-coverage experiment can do:
+
+| fixed size | counts tested | best |
+|---|---|---|
+| 100 | 15, **29**, 59 | 29 |
+| 70 | **30**, 60, 120 | 30 |
+| 140 | 15, **30** | 30 |
+| 50 | **59**, 118 | 59 (no ~30 cell exists; 30×50 is 2.5% coverage) |
+
+Four independent comparisons, all pointing at ~30.
+
+**Honest size of the effect.** Differences within a row are 0.5–1.5 units
+against seed spreads of 1–5, so this is a weak-but-consistent pattern rather
+than a strong one. The 5% row in particular is flat (4.5, 4.5, 4.0) and
+discriminates nothing on its own; the case rests on the same-size column above
+and on the ranking being consistent across all three rows. Size is not
+irrelevant either — at ~30 envs the best size is 100, above 70 and 140 — so the
+reading is *count is the better descriptor, size a secondary one*, not that size
+does nothing.
+
+**Candidate mechanism, not measured.** Under `exclude_cross_env_pairs` roughly
+`1/n` of the batch's pairs are within-env and therefore usable by the repel
+term: 6.7% at 15 envs, 3.3% at 30, 1.7% at 59, 0.8% at 120. Fewer environments
+means more usable pairs, which favours few; more environments means more
+distinct locations sampled, which favours many. An optimum near 30 is what a
+trade-off between those two would look like. This is a hypothesis with an
+obvious test — vary `batch_size`, which moves pair availability without moving
+the geometry — and it has not been run.
+
+**Practical consequence.** At 10% coverage the recommendation is unchanged,
+since 29 envs *is* 100-cell patches. What changes is how to extrapolate:
+**pick the patch size that gives ~30 environments at whatever coverage you
+have** — 70 cells at 5%, 100 at 10%, 140 at 20% — rather than fixing the size
+at 100.
