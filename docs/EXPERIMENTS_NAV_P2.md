@@ -1538,6 +1538,17 @@ groups (A), (B) and (D) below; group (C) is an addition.
 - **Q_trust, step-level — ADDED, and the one that matters most.** Is this
   recall's *direction* reliable right now?
 
+**Note from P2 (§6) — group B is stronger than this spec assumed.** The
+allocentric spread `b2` accumulates `Σd`, and the original worry was drift. P2
+measured it: integrating `input_prev_displacement` over 200 steps × 4000
+episodes reproduces position to **2.3e-14**. So `b2` is drift-free by
+construction, not approximately — the policy is handed an exact position and the
+question is only whether it uses it. Conversely **group D is weaker than
+assumed**: P2 found a stored cone identifies only the cell it came from
+(similarity 0.100 at one cell against 0.400 for the best of ~400 wrong cells),
+so any observation-prediction residual (`d1`) will be a fingerprint check rather
+than a graded signal. Weight the ablation's expectations accordingly.
+
 **Why Q_trust was added.** The spec originally had only the first two, on the
 reasoning that mode B is a per-step failure to follow a usable recall. But §5.2
 measured what actually determines usability, and it is neither of them: cells
