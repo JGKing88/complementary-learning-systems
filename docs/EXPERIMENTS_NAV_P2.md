@@ -1169,6 +1169,16 @@ calling the cross-env geometry *learnable* in §6.1. The three levers that get
 it there — coarser code, more training envs, a nonlinear decoder — are all
 things this project can change. What none of them touches is §6.5.
 
+Two things make that number trustworthy rather than a lucky fit. A separate job
+reran the same configuration and got **0.657 / 19.7°** against 0.658 / 19.8° —
+independent processes, independent env draws, same answer. And the MLP's *own*
+shuffled control — an MLP fit with the pairing destroyed — sits at **0.019 /
+80.7°**, so essentially none of the 0.657 is coming from anything but the two
+cones. (It is not exactly zero, and should not be: `s1` alone weakly constrains
+`Δpos`, because a cell near a wall cannot be followed by a step into it. That
+boundary effect is precisely why the shuffled control, not the constant
+predictor, is the baseline these increments are quoted against.)
+
 ### 6.5 Free heading destroys it, and two separate things are doing the damage
 
 With the cones at the poses actually occupied and no heading supplied (`free`),
