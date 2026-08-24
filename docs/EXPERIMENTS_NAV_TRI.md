@@ -169,11 +169,19 @@ by how much it would change someone else's run.
     still misses at d=10 is *not* the encoder's fault, and is the one lead left
     that a policy fix could take. §6.6 concluded the opposite; it was right
     about the other 85% and wrong about this slice.
-22. **A `mean_steps` gain is not necessarily better goal-following — check
-    stride first.** Explore training triples step magnitude (3.47 vs 1.16) and
-    *lowers* the productive fraction of motion (`path_efficiency/step_mag`:
-    0.39 vs 0.91). The combined model is the sloppier navigator and still wins
-    `mean_steps` outright, on stride alone.
+22. ~~**A `mean_steps` gain is not necessarily better goal-following — check
+    stride first.**~~ **CORRECTED by the matched control (§6.7.2).** The stride
+    gap was an artifact of the unmatched comparison: `w2_x_sig2` ran at
+    `step_mag` 0.70 because of its own config and training length, not because
+    exploit-only training produces short steps. The matched control runs at
+    1.81 against the combined model's 1.94 — no stride advantage at all. The
+    caution that a `mean_steps` gain can be stride rather than following is
+    still worth keeping; the specific claim that it *was* here is wrong.
+23. **Explore training helps exploit at zero distractors and hurts at ten**
+    (§6.7.2). Against the matched control, `mean_steps` goes 7.6 vs 10.2 at
+    d=0, 10.3 vs 10.4 at d=5, and 15.7 vs 12.7 at d=10 — a clean crossover at
+    matched stride. Neither "explore training is free" nor "explore training
+    costs exploit" is right on its own.
 
 ### The single most important finding so far
 
@@ -2682,3 +2690,55 @@ Practical consequence for anything downstream: `signal_separability` should be
 run over many worlds and reported as a distribution, not a mean over eight.
 That is not a small correction — it applies retroactively to every P0.7 number
 in this document.
+
+#### 6.7.2 The matched control — what survives and what does not
+
+`w7_x_matched` u1550: `exploit:1600`, 20 x 64 x 200, `GOAL_REWARD=2.0`,
+`PERSISTENCE_BONUS=0.20`, `INIT_LOG_STD=-0.7`, `EPSILON_EXPLORE=0.1`, seed 42 —
+identical to the combined recipe except `empty_frac` 0.0 instead of 0.5. This
+is the comparison §6.7 said it needed. `C` = combined `w6_pers` u1950,
+`X'` = the matched control:
+
+| at d=10 | C | X' | X (confounded) |
+|---|---|---|---|
+| success_rate | 0.849 | 0.833 | 0.828 |
+| mean_steps | 15.7 | **12.7** | 19.7 |
+| step_mag_mean | 1.94 | **1.81** | 0.70 |
+| `follow_q_fail` | **0.011** | **0.348** | 0.311 |
+| `q_accuracy_fail` | **0.437** | **0.268** | 0.179 |
+| final_dist_fail | 9.4 | 7.15 | 5.6 |
+| fail_frac_at_edge | 0.389 | **0.472** | 0.289 |
+
+**The two failure modes survive the matched comparison, and that is the main
+thing.** With goal reward, persistence, epsilon and training length all
+equalized, the exploit-only model still follows `q` on its failures
+(`follow_q_fail` 0.348 against the combined model's 0.011) and its failures
+still have the worse readout (`q_accuracy_fail` 0.268 against 0.437). Mode A
+versus mode B is not an artifact of the confounds — findings 20 and 21 stand.
+
+**Two things in §6.7 do not survive.**
+
+1. **The stride explanation was wrong** (finding 22, now corrected). The old
+   specialist's `step_mag` of 0.70 was its own config, not a property of
+   exploit-only training; matched, it runs at 1.81 against 1.94. So "the
+   combined model wins `mean_steps` on stride alone" had no basis.
+2. **What replaces it is more interesting: a crossover.** `mean_steps` is 7.6
+   vs 10.2 at d=0, 10.3 vs 10.4 at d=5, and 15.7 vs 12.7 at d=10. **Explore
+   training helps exploit when there are no distractors and hurts when there
+   are many** — which fits the mode-B story exactly. With no distractors there
+   is no regime ambiguity to pay for and the broader competence is free; at ten
+   the ambiguity is the cost.
+3. **Wall-ending is not explore leakage.** §6.7 read `fail_frac_at_edge` 0.389
+   as the combined model's explore behaviour showing through. The matched
+   exploit-only model, which has never explored, sits at **0.472** — higher.
+   Both models pile failures at walls, so the wall is a property of the *task*,
+   not of explore exposure. That strengthens H-wall in
+   `EXPERIMENTS_NAV_P2` §7.4 — near a boundary the realized and commanded
+   displacements diverge, corrupting the regime cue for any policy — and
+   removes the explore-leakage gloss.
+
+**Read alongside `EXPERIMENTS_NAV_P2` §5.1**, which measured the readout
+directly and found it locks onto the goal 99% of the time at ten distractors
+with a 15-degree mean error. Two results that both point the same way: the
+encoder is in better shape than §6.6 concluded, and the remaining exploit gap
+is not mostly a readout problem.

@@ -275,6 +275,48 @@ running P1 first. Feed the measured distribution through
 `analysis/nav_tri/exploit_reference.py` to turn it into a predicted
 `mean_steps`, and treat P4 as the test of that prediction.
 
+### 5.1 RESULT — the readout is good, and phase 1's headline about it was one world
+
+Three scaffold seeds x 64 fresh envs x 8 distractor draws x all 400 cells, at
+the real Npos=1716. At ten distractors, the three seeds agree closely:
+
+| seed | lock=goal | lock=distractor | lock=mixture | `dir_cos` given lock=goal | frac `dir_cos`<0.5 |
+|---|---|---|---|---|---|
+| 0 | 0.9944 | 0.0021 | 0.0034 | 0.9653 | 0.0144 |
+| 1 | 0.9912 | 0.0004 | 0.0084 | 0.9619 | 0.0188 |
+| 2 | 0.9865 | 0.0020 | 0.0114 | 0.9644 | 0.0143 |
+
+**The Hopfield locks onto the goal at ten distractors 98.7-99.4% of the time,
+and locks onto a distractor 0.04-0.2% of the time.** Jack's question -- how
+often does `q` point at a known distractor instead of the goal -- has the answer
+*almost never*. What little failure there is at ten distractors is mostly the
+third category, a spurious mixture belonging to no stored pattern (0.3-1.1%).
+
+And when it does lock on the goal, `dir_cos` is 0.962-0.965, a mean error of
+about 15 degrees, essentially flat from d=1 to d=10.
+
+**This overturns the phase-1 statement that the encoder points ~46 degrees
+wrong at ten distractors.** That came from a mean `dir_acc` of 0.696 on a single
+eval world of 8 envs. The per-env spread here shows why: the median env has
+0.4-0.9% of cells below cos 0.5, and the worst has 9.8-12.0%. Worlds like the
+one phase 1 measured exist; they are the tail, not the typical case, and an
+8-env mean cannot tell which one it drew. Finding 19 said no `dir_acc` number is
+interpretable without its world -- this is that, quantified.
+
+Separability degrades as expected but less than phase 1 reported: the
+goal-present / goal-absent `|q|` ratio falls 4.66 -> 2.42 from one distractor to
+ten, against phase 1's 4.8 -> 1.28.
+
+**Consequence for the whole phase.** §3 item 1 inherited phase 1's conclusion
+that mode A -- trusting a broken readout -- is encoder-limited and the dominant
+constraint. If `q` locks correctly 99% of the time and points within 15 degrees
+when it does, **mode A cannot be what caps exploit.** Either the failures are
+concentrated in the small bad tail, in which case P4 should reach close to the
+ideal 4.9 steps on most trials and fail hard on a few, or they are not
+readout failures at all. P4 is now a sharper test than it was designed to be:
+the readout has been measured, so a shortfall against `exploit_reference`'s
+prediction cannot be blamed on the encoder.
+
 ---
 
 ## 6. P2 — is relative displacement decodable from sensory input?
