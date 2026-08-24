@@ -64,11 +64,22 @@ def auc(y: np.ndarray, s: np.ndarray) -> float:
     n1, n0 = int(y.sum()), int((~y).sum())
     if n1 == 0 or n0 == 0:
         return float("nan")
-    r = np.empty(len(s), dtype=np.float64)
+    r = _avg_rank(s)
+    return float((r[y].sum() - n1 * (n1 + 1) / 2.0) / (n1 * n0))
+
+
+def _avg_rank(s: np.ndarray) -> np.ndarray:
+    """1-based ranks, ties averaged.
+
+    Tie handling is not a nicety here. Without it a constant score gets an
+    arbitrary strict ordering, and because rows arrive grouped by regime that
+    ordering correlates with the label -- the constant-feature control then
+    reads 0.518 instead of 0.500 and the leakage detector is itself leaking.
+    """
     order = np.argsort(s, kind="mergesort")
-    sv = s[order]
-    r[order] = np.arange(1, len(s) + 1, dtype=np.float64)
-    # Average ranks within ties, or a constant score scores 1.0 rather than 0.5.
+    sv = np.asarray(s)[order]
+    r = np.empty(len(sv), dtype=np.float64)
+    r[order] = np.arange(1, len(sv) + 1, dtype=np.float64)
     i = 0
     while i < len(sv):
         j = i
@@ -77,7 +88,7 @@ def auc(y: np.ndarray, s: np.ndarray) -> float:
         if j > i:
             r[order[i:j + 1]] = (i + j + 2) / 2.0
         i = j + 1
-    return float((r[y].sum() - n1 * (n1 + 1) / 2.0) / (n1 * n0))
+    return r
 
 
 def _fmt(x, w=6, p=3):
@@ -96,8 +107,9 @@ def _fit_predict(Xtr, ytr, Xte, model):
     Ztr = np.clip(Ztr, -8, 8); Zte = np.clip(Zte, -8, 8)
     if model == "gbt":
         from sklearn.ensemble import HistGradientBoostingClassifier
-        m = HistGradientBoostingClassifier(max_iter=150, learning_rate=0.1,
+        m = HistGradientBoostingClassifier(max_iter=80, learning_rate=0.12,
                                            max_leaf_nodes=15,
+                                           early_stopping=False,
                                            l2_regularization=1.0,
                                            random_state=0)
         m.fit(Ztr, ytr)
@@ -139,9 +151,7 @@ def cv_auc(X, y, env, cols, n_folds=6, model="lr", rng=None, permute=False):
         # pooling them lets a difference in fold class-balance masquerade as
         # signal -- visible as a constant-feature control that reads 0.496
         # instead of exactly 0.500.
-        r = np.empty(len(s))
-        r[np.argsort(s, kind="mergesort")] = np.arange(len(s))
-        scores[te] = (r + 0.5) / len(s) if len(s) > 1 else 0.5
+        scores[te] = _avg_rank(s) / (len(s) + 1.0) if len(s) > 1 else 0.5
     ok = np.isfinite(scores)
     pooled = auc(yy[ok], scores[ok])
     per = []

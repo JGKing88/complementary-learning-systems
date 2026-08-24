@@ -41,7 +41,12 @@ if [ "$PROBE" = fit ]; then
         --folds "${FOLDS:-6}" \
         --json_out "$OUTDIR/io_${TAG}_main.json" \
         ${DO:+--do $DO} \
-        ${TARGETS:+--targets $TARGETS}
+        ${TARGETS:+--targets $TARGETS} \
+        ${LEVELS:+--levels $LEVELS} \
+        ${ABL_LEVELS:+--ablation_levels $ABL_LEVELS} \
+        ${PROBE_LEVELS:+--probe_levels $PROBE_LEVELS} \
+        ${T_SHOW:+--t_show $T_SHOW} \
+        ${ABL_T:+--ablation_t $ABL_T}
 elif [ "$PROBE" = score ]; then
     python -u -m analysis.nav_p2.ideal_observer_score \
         --npz "$NPZ" \

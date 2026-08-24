@@ -158,8 +158,8 @@ def _fit_frozen(D: Data, probe: str, level, target, ti, cols):
     Xc = X[:, cols]
     mu, sd = Xc.mean(0), Xc.std(0)
     sd = np.where(sd > 1e-9, sd, 1.0)
-    m = HistGradientBoostingClassifier(max_iter=150, learning_rate=0.1,
-                                       max_leaf_nodes=15,
+    m = HistGradientBoostingClassifier(max_iter=80, learning_rate=0.12,
+                                       max_leaf_nodes=15, early_stopping=False,
                                        l2_regularization=1.0, random_state=0)
     m.fit(np.clip((Xc - mu) / sd, -8, 8), y)
     return lambda Z: m.predict_proba(

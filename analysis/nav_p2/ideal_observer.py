@@ -116,15 +116,26 @@ def probe_step(probe: str, q_hat: np.ndarray, theta: np.ndarray, mag: float,
     # q-relative probes. Where q is exactly zero (empty memory) there is no
     # direction to be relative to, so those rows keep their heading -- the
     # honest fallback, and it stops the probe silently becoming `still`.
+    hd = np.stack([np.cos(theta), np.sin(theta)], 1)
     nz = np.linalg.norm(q_hat, axis=1) > 1e-8
-    base = np.where(nz[:, None], q_hat,
-                    np.stack([np.cos(theta), np.sin(theta)], 1))
+    base = np.where(nz[:, None], q_hat, hd)
+    perp = np.stack([-base[:, 1], base[:, 0]], 1)
     if probe == "along_q":
         d = base
     elif probe == "anti_q":
         d = -base
     elif probe == "perp_q":
-        d = np.stack([-base[:, 1], base[:, 0]], 1)
+        d = perp
+    elif probe.startswith("mix"):
+        # `mix_<along>_<perp>_<persist>` -- the parametric family the three
+        # named probes above are corners of. §7.3 item 4's learned prober is a
+        # search over these three weights: it asks whether any *combination* of
+        # following q, circling it and persisting beats the menu, without
+        # pretending a two-minute RL run would be a better answer.
+        wa, wp, wh = (float(v) for v in probe.split("_")[1:4])
+        d = wa * base + wp * perp + wh * hd
+        z = np.linalg.norm(d, axis=1) < 1e-8
+        d = np.where(z[:, None], hd, d)
     else:
         raise ValueError(probe)
     d = d / np.maximum(np.linalg.norm(d, axis=1, keepdims=True), _EPS)
