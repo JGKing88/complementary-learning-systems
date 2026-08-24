@@ -982,12 +982,14 @@ strongest statement this phase could make about the architecture.
 decoded? And does a little experience in the new env help?
 
 Measured in `analysis/nav_p2/displacement_decodability.py` (cross-env transfer,
-six framings, all controls) and `analysis/nav_p2/displacement_adaptation.py`
-(k-shot in a new env, plus the two measurements that explain the result).
-Launcher `hopfield_nav/run_nav_p2_disp.sh`, seven probes. No encoder, no
-scaffold, no GPU — like P0.9 this is a property of the sensor. 64 training envs
-and **48 held-out test envs** unless stated, and every number below is a median
-over the test envs with [p10, p90] where it is quoted.
+six framings, all controls), `analysis/nav_p2/displacement_adaptation.py`
+(k-shot in a new env, plus the two measurements that explain the result) and
+`analysis/nav_p2/policy_turn_stats.py` (where the trained policy actually sits
+on §6.5's axis — the only one of the three that needs the scaffold and a GPU).
+Launcher `hopfield_nav/run_nav_p2_disp.sh`, seven probes. Otherwise no encoder,
+no scaffold, no GPU: like P0.9 this is a property of the sensor. 64 training
+envs and **48 held-out test envs** unless stated, and every number below is a
+median over the test envs with [p10, p90] where it is quoted.
 
 ### 6.1 RESULT — the geometry does transfer, the agent cannot use it, and the ceiling question it was written to settle has already been answered elsewhere
 
