@@ -405,8 +405,11 @@ def _explore_stats(rec, size, goal):
     xs, ys = cell[..., 0], cell[..., 1]
     edge = (xs == 0) | (xs == size - 1) | (ys == 0) | (ys == size - 1)
 
-    # Realized displacement vs. requested: the boundary clip is the only thing
-    # that can shorten it, so this is the corner-trap fraction.
+    # Realized displacement vs. requested. This USED to be a pure corner-trap
+    # fraction, when the boundary clip was the only thing that could shorten a
+    # step. Phase 2's --max_action_norm also shortens it, and a policy sitting
+    # past the clamp reads clip_frac = 1.000 with no wall involved -- so read
+    # this together with realized_mag_mean before calling it a corner trap.
     realized = np.linalg.norm(pos_f[1:] - pos_f[:-1], axis=-1)
     want = mag[:-1]
     clipped = realized < 0.9 * np.maximum(want, 1e-8)
@@ -424,7 +427,16 @@ def _explore_stats(rec, size, goal):
 
     centre = (size - 1) / 2.0
     cps = float(np.mean(covs) * size * size / T)
-    ref = billiard_cells_per_step(mag.mean(), size, T)
+    # Billiard reference at the magnitude the agent ACTUALLY MOVES, not the one
+    # it commands. Phase 2 added --min/--max_action_norm, and a policy that has
+    # drifted past the clamp commands |a| ~ 8 while moving exactly 2.0 every
+    # step. Referencing the commanded magnitude then divides by billiard's score
+    # for 8-cell strides -- which is terrible, because 8-cell strides skip most
+    # of the arena -- and reports a strategy_efficiency near 4.0 for a policy
+    # that is merely at the speed limit. The realized displacement is what the
+    # coverage came from, so it is what the reference has to match.
+    realized_mag = float(realized.mean())
+    ref = billiard_cells_per_step(realized_mag, size, T)
     return {
         "mean_coverage": float(np.mean(covs)),
         "cells_per_step": cps,
@@ -434,6 +446,8 @@ def _explore_stats(rec, size, goal):
         # step_mag_mean means the magnitude is the problem, not the path.
         "strategy_efficiency": cps / max(ref, 1e-8),
         "billiard_ref_cells_per_step": ref,
+        # Both magnitudes, because their ratio is the clamp's bite.
+        "realized_mag_mean": realized_mag,
         "union_coverage": float(union),
         **{k: float(v) for k, v in curve.items()},
         "step_mag_mean": float(mag.mean()),
