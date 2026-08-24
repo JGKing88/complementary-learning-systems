@@ -90,7 +90,13 @@ Measured, not inferred. Nulls are listed because they cost runs too.
   100–200 cell side *is* 15–30 cells; on 50-cell patches the same fraction gives
   7.5 and costs two thirds of the radius (3.5 against 9.0). Radius 20 peaks
   50-cell and 100-cell geometries alike, and §4.5b measured the same 20 on
-  200-cell patches. Prefer `radius` over `per_env_radius_frac`.
+  200-cell patches. Prefer `radius` over `per_env_radius_frac`. The fix is worth
+  up to +4 on starved geometries and **nothing** on 100–200 cell ones, whose
+  fraction already landed near 20 (§6.5).
+* **Patch size has an interior optimum at ~100 cells** at matched radius 20
+  (§6.5): 200 → 5.5, 100–200 mix → 7.0, **100 → 9.0**, 70 → 7.5, 50 → 7.5. At
+  fixed coverage this is inseparable from "29 environments is optimal" — size
+  and count are perfectly anti-correlated and nothing here distinguishes them.
 * Too wide is still bad: `frac` 0.25 and 0.40 on 200-cell patches (50 and 80
   cells) give `r_min` 2.0 and 0.5, and radius 30–40 costs the small geometries
   too. The failure is anisotropy — the median improves while the worst
@@ -2447,10 +2453,58 @@ not a fitted relationship.
   Untested, and a bigger change than any knob in §4–§6.
 * **The constraint's cost is now sharply stated.** Under equivariance,
   cross-env pairs are redundant except at offsets no patch spans. Since the
-  damage concentrates at δ ≈ 141, a patch whose diagonal exceeds 141 can in
-  principle learn to suppress it from within-env pairs alone — which is why
-  200-cell patches at high coverage (`cov51`) manage it and 100-cell patches
-  (`sm100`, diagonal 141, right at the boundary) do not.
-* **A targeted test exists**: patches sized to straddle 143 exactly, versus
-  patches just under it. The theory says the boundary matters more than the
-  size, which no geometry in §6 was designed to separate.
+  damage concentrates at δ ≈ 143, a patch whose extent exceeds it can in
+  principle suppress it from within-env pairs alone.
+* ~~**A targeted test exists**: patches sized to straddle 143, versus patches
+  just under it. The theory says the boundary matters more than the size.~~
+  **NOT SUPPORTED — see §6.5.** `w37` ran the geometries that straddle 143
+  (200-cell patches, axis extent 200) against ones that do not (100-cell, axis
+  extent 100) at matched radius, and the straddling ones are *worse*: `lo_big`
+  5.5 and `lo_mixtop` 7.0 against `sm100`'s 9.0. Spanning the alias offset does
+  buy less alias *at that offset* — §7.3's table has `lo_mixtop` at 0.282
+  against `sm100`'s 0.394 — but it does not buy `r_min`, and the overall
+  ceiling goes the other way (0.974 against 0.952). Whatever sets the optimum
+  at 100 cells, it is not the 143 boundary.
+
+## 6.5 The control §6.1 was missing: geometry survives it
+
+§6.1 compared small-env configs at absolute radius 20 against the §5.8
+incumbent at `frac=0.15`, and §6.2 then found radius 20 beating the fraction at
+every size. That confounds geometry with radius, so "small environments beat big
+ones" might have been nothing but "radius 20 beats `frac=0.15`". `w37` runs the
+missing cell. Six seeds each, `encoder_final`, 20 references:
+
+| geometry | patch | envs | `r_min` | spread | `r_median` | alias | decay50 |
+|---|---|---|---|---|---|---|---|
+| `lo_big` | 200 | 7 | 5.5 | 3 | 12.75 | 0.978 | 35.25 |
+| `lo_mixtop` | 100–200 | 11 | 7.0 | 3 | 15.25 | 0.974 | 35.50 |
+| **`sm100`** | 100 | 29 | **9.0** | **2** | 13.00 | 0.952 | 30.75 |
+| `sm70` | 70 | 60 | 7.5 | 2 | 12.25 | 0.946 | ~30 |
+| `sm50` | 50 | 118 | 7.5 | 3 | 13.75 | 0.933 | 25.25 |
+
+**The headline survives.** At matched radius 20, `sm100` beats `lo_mixtop` by 2
+units. And **the radius fix is worth nothing to the big geometry** — `lo_mixtop`
+reads 7.0 at radius 20 against 7.5 at `frac=0.15`, unchanged. That is exactly
+what §6.2 predicts: `frac=0.15` on 100–200 cell patches already gives 15–30
+cells, so it was already near the optimum of 20 and had nothing to gain. The
+fix only ever rescued geometries whose fraction landed far below 20 (`sm50`:
+7.5 cells → 20, worth +4).
+
+So the two effects are separable after all, and both are real:
+
+* **radius** — worth up to +4, entirely on geometries the fraction was starving;
+* **geometry** — worth +2 at matched radius, an interior optimum at 100 cells.
+
+**A caveat on what "geometry" means here.** At fixed 10% coverage, patch size
+and environment count are perfectly anti-correlated — 200 cells forces 7 envs,
+100 forces 29, 50 forces 118. "The optimum is 100-cell patches" and "the optimum
+is 29 environments" are the same statement measured two ways, and nothing in §6
+separates them. Doing so requires varying coverage, which the brief fixes.
+
+**And it kills §7.4's boundary conjecture.** §7.3 found the alias lattice at
+δ ≈ 143 = 11×13, and §7.4 suggested patches whose extent spans it could suppress
+it from within-env pairs alone. The geometries that span it (200-cell, axis
+extent 200) are the *worst* here. Spanning does buy less alias at that specific
+offset — `lo_mixtop` 0.282 against `sm100` 0.394 — but it buys neither the
+overall ceiling (0.974 against 0.952) nor `r_min`. The lattice is real; it is
+not what sets the size optimum.
