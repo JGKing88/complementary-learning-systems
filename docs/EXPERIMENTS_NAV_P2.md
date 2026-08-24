@@ -317,6 +317,52 @@ readout failures at all. P4 is now a sharper test than it was designed to be:
 the readout has been measured, so a shortfall against `exploit_reference`'s
 prediction cannot be blamed on the encoder.
 
+### 5.2 Figures, and two things only the figures showed
+
+`analysis/nav_p2/q_failure_plots.py` -> `results/nav_p2/figs/`. Six figures:
+lock outcome, between-world spread, the lock decomposition, arena maps,
+geometry, and `|q|` separability.
+
+Two findings came out of drawing the data that the summary table had hidden.
+
+**1. The bad readout is a halo around the goal, and has nothing to do with
+walls.** Conditioning `dir_cos` on distance-to-goal, the median sits at 0.98-1.0
+everywhere, but the **10th percentile collapses to 0.37 within about two cells
+of the goal** and has recovered by five. Against distance-to-wall it is flat --
+no degradation at all. The arena maps show the same thing directly: a pale halo
+centred on the goal in every env that has one.
+
+The geometry is unsurprising in hindsight -- `q` is the tangent-plane
+projection of the displacement to the recalled pattern, and when that
+displacement is a cell or two long the projection is mostly noise -- but it
+matters for two reasons:
+
+  * **It is a negative result for the readout half of H-wall** (§7.4). `q` is
+    not worse near walls, so failures piling up at walls are not explained by a
+    worse readout there. What remains of H-wall is its actual claim -- the
+    commanded-versus-realized displacement mismatch -- which is untouched by
+    this and still worth testing.
+  * **It predicts a specific failure mode for P4**: the final approach, not the
+    long-range heading. With `goal_radius` 1.0 and a step floor of 0.5, a
+    policy must land inside one cell of the goal using a direction signal that
+    is unreliable inside two. That is a mechanism for stalling or oscillating
+    *at* the goal, which is exactly the "walks into a phantom and stops" pattern
+    phase 1 saw but could not distinguish from a stall. §8's oscillation and
+    give-up statistics are the ones that will tell them apart.
+
+**2. A wrong lock is not a random direction.** The decomposition CDF shows all
+three groups hugging cos 1.0; a randomly-directed `q` would trace the diagonal
+and none of them does. Cells classified as "spurious mixture" are mostly recalls
+that sit near the goal pattern without reaching the 0.9 threshold, so they still
+carry most of the direction. Even the 938 genuinely distractor-locked cells are
+mostly still pointed roughly goalward.
+
+So the `lock_thresh` of 0.9 is doing more work than the label suggests, and the
+honest statement is stronger than the one §5.1 made: **there is no sizeable
+population of catastrophically misdirected `q` at ten distractors at all.** The
+whole tail below cos 0.5 is 1.6% of cells, spread across all three lock
+categories rather than concentrated in the wrong-lock ones.
+
 ---
 
 ## 6. P2 — is relative displacement decodable from sensory input?

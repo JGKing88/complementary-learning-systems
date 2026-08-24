@@ -38,8 +38,16 @@ cd "$REPO"
 source scripts/cls_env.sh
 mkdir -p "$OUT"
 
+# EXTRA carries one-off flags, notably --recorded_world for replaying a
+# specific trained model's own eval world instead of drawing fresh ones. TAG
+# keeps such a run from overwriting a seed of the main series, which are the
+# only files the plots glob.
+EXTRA=${EXTRA:-}
+TAG=${TAG:-seed${SEED}}
+
 python -u -m analysis.nav_p2.q_failure_map \
     --ckpt "$CKPT" --device cuda \
     --envs "$ENVS" --draws "$DRAWS" --seed "$SEED" \
     --n_distractors 0 1 2 3 4 5 6 7 8 9 10 \
-    --out "$OUT/qmap_seed${SEED}.npz"
+    ${EXTRA} \
+    --out "$OUT/qmap_${TAG}.npz"
