@@ -151,7 +151,12 @@ Measured, not inferred. Nulls are listed because they cost runs too.
   any `out_dim`; 32 collapses entirely, alias 1.000 (§5.8b).
 * Narrowing works because it raises **decay50**, the factor that binds at 10%
   coverage, where every spread term moves the ceiling instead.
-* **Nulls:** `weight_decay` over 100× (§5.6m); `fwhm_ratio` 0.25 → 0.5 (§5.6i);
+* **`fwhm_ratio` 0.25 and 0.5 are equivalent at the right radius** (9.0 vs 9.5,
+  inside spread), and **0.125 is genuinely worse** (6.0) — too little smoothing
+  leaves neighbouring positions with near-disjoint codes and no local structure
+  to learn (§6.9). §5.6i's "fwhm 0.5 is a null" was measured at the radius tuned
+  for 0.25 and under-read it.
+* **Nulls:** `weight_decay` over 100× (§5.6m);
   stratified placement, +1 and 0 units despite halving the worst hole from 839
   to 461 cells (§5.6g); narrow net + stronger spread term, `r_min` **0 at every
   seed of both arms** against a predicted ~15 (§5.8d).
@@ -205,16 +210,17 @@ patch count, placement, the near radius, and batch size.
    worked because 0.15 of a 100–200 cell side lands in that window; on 50-cell
    patches it gives 7.5 and costs two thirds of the radius. **Use `radius`, not
    `per_env_radius_frac`** (§6.2).
-   **Scope, and it is narrower than "20 is optimal" sounds.** The invariance is
-   established across patch size (50–200), coverage (10–22.9%) and both
-   parameterisations — but every one of those runs had `fwhm_ratio=0.25`,
-   `lambdas=(11,12,13)`, `attract_lambda=2.0` and `repel_weight=1.0`. The
-   suspicious one is `fwhm_ratio`: it sets the input's spatial correlation
-   length (FWHM per module = `fwhm_ratio·λ` ≈ 3 cells here), so radius 20 is
-   ~6× that, and a scale set as a multiple of the input's own scale should move
-   when that scale does. The single `fwhm` test on record (§5.6i, 0.5 → null)
-   was run at `frac=0.15`, i.e. at the radius tuned for `fwhm=0.25` — the same
-   confound §6.1 fell into. **§6.9 crosses the two.**
+   **Why it is absolute: it is bracketed by the grid periods λ = 11, 12, 13**
+   (§6.9). Radius 10 < min λ means no near pair spans a full phase cycle of any
+   module, and it fails at every smoothing; radius 20 > max λ means every near
+   pair spans all three, and it wins at every smoothing; radius 40 fails to the
+   plateau (§5.6i). λ is absolute, which is why the radius is.
+   **Tested against the obvious confound and survived.** The claim rested on
+   runs that all had `fwhm_ratio=0.25`, so `w43` crossed `fwhm ∈ {0.125, 0.5}`
+   with `radius ∈ {10, 20, 40}`. Radius 20 peaks at every `fwhm` — the optimum
+   does *not* track the input's correlation length (§6.9). Still untested:
+   `lambdas` were never varied, and the bracket hypothesis predicts the optimum
+   moves with them.
 3. **Patch size and count have a joint interior optimum that depends on batch.**
    At batch 8192 the invariant is ~30 environments, whatever the coverage —
    70 cells at 5%, 100 at 10%, 140 at 20% (§6.6). At batch 4096 the optimum
@@ -2775,3 +2781,51 @@ the four, 5–7 across all eight cells.
 An earlier version of this section reported 7.0 for the winning arm and a cost
 of 1.5 units. That was computed on 7 of its 8 cells, the last seed having
 finished after the scoring job started; the full arm is 6.5.
+
+## 6.9 The radius optimum is set by the grid periods, not the input smoothing
+
+§0.3 claimed the near radius wants ~20 cells absolute. Challenged on scope: the
+claim rested on runs that all had `fwhm_ratio=0.25`, and `fwhm_ratio` sets the
+input's own spatial scale (FWHM per module = `fwhm_ratio·λ`, ≈3 cells here), so
+a radius defined at ~6× that ought to move when it moves. `w43` crosses them.
+`r_min`, four seeds per cell, `sm100` at 10% coverage:
+
+| `fwhm_ratio` | FWHM | radius 10 | **radius 20** | radius 40 |
+|---|---|---|---|---|
+| 0.125 | ~1.5 | 1.0 | **6.0** | 1.5 |
+| 0.25 | ~3 | — | **9.0** | 5.0 |
+| 0.5 | ~6 | 3.5 | **9.5** | 3.0 |
+
+*(fwhm 0.25 from `w32`/`w33`, which also has radius 15, 25 and 30, peaking at 20;
+`fwhm0.5_r40` has 3 of 4 cells)*
+
+**Radius 20 peaks at every `fwhm`.** The prediction — that the optimum tracks
+the input correlation length, so 0.125 would peak near 10 and 0.5 near 40 — is
+falsified in both directions. The radius optimum is *robust* to the input's
+spatial scale, so §0.3's claim survives a test designed to break it.
+
+**And that points at what does set it.** The grid periods are λ = 11, 12, 13,
+and the two failing radii sit either side of them:
+
+* **radius 10 < min λ = 11.** No "near" pair spans a full phase cycle of *any*
+  module, so the attract term never sees the wrap. It is bad at every `fwhm`.
+* **radius 20 > max λ = 13.** Every near pair spans a full cycle of all three
+  modules.
+* **radius 40** is bounded by the plateau failure §5.6i identified — a wide
+  attract radius makes the profile broad but non-monotone, ruining the worst
+  direction while flattering the median. Visible here too: `fwhm0.5_r40` has the
+  *best* decay50 in the wave (38.0) and `r_min` 3.0.
+
+So the near radius appears to be bracketed below by the largest grid period and
+above by the plateau, which is why it is absolute — **λ is absolute**, and does
+not scale with patch size or with smoothing. Stated as a hypothesis, since
+λ was never varied: this predicts the optimum moves with λ, and nothing here
+tests that.
+
+**A second result, and a correction.** `fwhm=0.5` at radius 20 gives 9.5 against
+`fwhm=0.25`'s 9.0 — a tie within spreads of 3 and 2, not a win, but decidedly
+not the *null* §5.6i reported. That null was measured at `frac=0.15`, the radius
+tuned for `fwhm=0.25`, so it under-read a knob that is merely neutral rather
+than harmful. **`fwhm=0.125` is genuinely worse** (6.0), with alias 0.959 and
+`r_median` 7.0 — too little smoothing leaves neighbouring positions with
+near-disjoint codes and there is no local structure to learn.
