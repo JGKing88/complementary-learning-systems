@@ -7,6 +7,7 @@ from torch.distributions import Categorical, Bernoulli, Normal
 
 from . import channels
 from .recurrent import build_recurrent_core
+from .action_head import build_log_std, movement_std, squash_mean
 from ..config import AgentConfig
 
 
@@ -31,9 +32,12 @@ class NavAgent(nn.Module):
         value: scalar value estimate
     """
 
-    def __init__(self, cfg: AgentConfig, input_dim: int) -> None:
+    def __init__(self, cfg: AgentConfig, input_dim: int,
+                 action_bounds: tuple[float, float] | None = None) -> None:
         super().__init__()
         self.cfg = cfg
+        # (min, max) action norm from the ENV config; see agent_rnn.
+        self.action_bounds = action_bounds
 
         self.rnn = build_recurrent_core(cfg, input_dim)
 
@@ -45,9 +49,18 @@ class NavAgent(nn.Module):
             # Init log_std negative so std < 1: deterministic eval (action = mean)
             # is meaningful. With zero-init, training entropy bonus drives std up
             # to 2-3 per dim, making the policy reliant on sampling noise for motion.
-            self.movement_log_std = nn.Parameter(torch.full((2,), cfg.init_log_std))
-            if cfg.freeze_log_std:
-                self.movement_log_std.requires_grad = False
+            log_std, log_std_head = build_log_std(cfg, cfg.hidden_size)
+            if log_std is not None:
+                self.movement_log_std = nn.Parameter(log_std)
+                self.movement_log_std.requires_grad = log_std.requires_grad
+                self.movement_log_std_head = None
+            else:
+                self.movement_log_std = None
+                self.movement_log_std_head = log_std_head
+            if getattr(cfg, "action_squash", False) and action_bounds is None:
+                raise ValueError(
+                    "action_squash needs the env's min/max_action_norm passed "
+                    "as action_bounds; without them there is no range")
 
         # Store head (binary)
         self.store_head = nn.Linear(cfg.hidden_size, 1)
@@ -80,7 +93,10 @@ class NavAgent(nn.Module):
             move_dist = Categorical(logits=logits)
         else:
             mean = self.movement_mean(features)  # (B, T, 2)
-            std = self.movement_log_std.exp().expand_as(mean)
+            if getattr(self.cfg, "action_squash", False):
+                mean = squash_mean(mean, *self.action_bounds)
+            std = movement_std(self.cfg, features, mean,
+                               self.movement_log_std, self.movement_log_std_head)
             move_dist = Normal(mean, std)
 
         # Store distribution

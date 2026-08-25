@@ -49,6 +49,7 @@ from .training.stages import (
     Knobs, ScheduleError, Stage, format_schedule, parse_schedule, resolve,
     stage_at, total_updates,
 )
+from .policy.action_head import action_bounds_from
 from .training.world_setup import (
     build_field, do_eval, set_phase_freeze, setup_run_world,
 )
@@ -544,7 +545,8 @@ def train_navigate(
     input_dim = compute_input_dim(cfg.agent, embed_dim, cfg.env.observation_size)
     print(f"Agent input_dim={input_dim} init_log_std={cfg.agent.init_log_std}",
           flush=True)
-    agent = NavAgent(cfg.agent, input_dim).to(device)
+    agent = NavAgent(cfg.agent, input_dim,
+                     action_bounds=action_bounds_from(cfg.env)).to(device)
 
     if load_checkpoint is not None:
         ck = torch.load(load_checkpoint, map_location=device, weights_only=False)
@@ -657,6 +659,10 @@ CFG_FIELDS: dict[str, tuple[str, ...]] = {
     "input_hopfield_signal": ("agent.input_hopfield_signal",),
     "input_prev_action": ("agent.input_prev_action",),
     "input_prev_displacement": ("agent.input_prev_displacement",),
+    "action_squash": ("agent.action_squash",),
+    "state_dependent_std": ("agent.state_dependent_std",),
+    "log_std_min": ("agent.log_std_min",),
+    "log_std_max": ("agent.log_std_max",),
     "input_prev_reward": ("agent.input_prev_reward",),
     "input_hopfield_raw": ("agent.input_hopfield_raw",),
     "input_hopfield_multistep": ("agent.input_hopfield_multistep",),
@@ -820,6 +826,19 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--hopfield_mode", default="continuous")
     p.add_argument("--input_prev_reward", action=argparse.BooleanOptionalAction, default=True)
     p.add_argument("--input_prev_action", action=argparse.BooleanOptionalAction, default=True)
+    p.add_argument("--action_squash", action=argparse.BooleanOptionalAction,
+                   default=False,
+                   help="Radial tanh on the policy MEAN, mapping ||mu|| into "
+                        "[min_action_norm, max_action_norm]. Squashing the mean "
+                        "rather than the sample keeps the distribution Gaussian, "
+                        "so no log-prob Jacobian is needed. Fixes the unbounded "
+                        "||mu|| drift a hard env clamp permits.")
+    p.add_argument("--state_dependent_std", action=argparse.BooleanOptionalAction,
+                   default=False,
+                   help="Per-state log_std head instead of one global parameter. "
+                        "Initialized to reproduce the global-sigma policy exactly.")
+    p.add_argument("--log_std_min", type=float, default=-2.5)
+    p.add_argument("--log_std_max", type=float, default=0.5)
     p.add_argument("--input_prev_displacement",
                    action=argparse.BooleanOptionalAction, default=False,
                    help="Feed the REALIZED displacement of the previous step "

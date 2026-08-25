@@ -11,6 +11,7 @@ import torch.nn as nn
 from torch.distributions import Categorical, Normal
 
 from .recurrent import build_recurrent_core
+from .action_head import build_log_std, movement_std, squash_mean
 from ..config import RNNAgentConfig
 
 
@@ -36,9 +37,14 @@ def compute_rnn_input_dim(
 class RNNAgent(nn.Module):
     """GRU + single linear move head. forward(x, h) -> (move_dist, h_next)."""
 
-    def __init__(self, cfg: RNNAgentConfig, input_dim: int) -> None:
+    def __init__(self, cfg: RNNAgentConfig, input_dim: int,
+                 action_bounds: tuple[float, float] | None = None) -> None:
         super().__init__()
         self.cfg = cfg
+        # (min, max) action norm from the ENV config, passed in rather than
+        # mirrored onto the agent config so the two cannot drift apart. Only
+        # needed when cfg.action_squash is on.
+        self.action_bounds = action_bounds
 
         self.rnn = build_recurrent_core(cfg, input_dim)
 
@@ -46,9 +52,18 @@ class RNNAgent(nn.Module):
             self.movement_head = nn.Linear(cfg.hidden_size, 4)
         else:
             self.movement_mean = nn.Linear(cfg.hidden_size, 2)
-            self.movement_log_std = nn.Parameter(torch.full((2,), cfg.init_log_std))
-            if cfg.freeze_log_std:
-                self.movement_log_std.requires_grad = False
+            log_std, log_std_head = build_log_std(cfg, cfg.hidden_size)
+            if log_std is not None:
+                self.movement_log_std = nn.Parameter(log_std)
+                self.movement_log_std.requires_grad = log_std.requires_grad
+                self.movement_log_std_head = None
+            else:
+                self.movement_log_std = None
+                self.movement_log_std_head = log_std_head
+            if getattr(cfg, "action_squash", False) and action_bounds is None:
+                raise ValueError(
+                    "action_squash needs the env's min/max_action_norm passed "
+                    "as action_bounds; without them there is no range")
 
     def forward(
         self,
@@ -65,7 +80,10 @@ class RNNAgent(nn.Module):
             move_dist = Categorical(logits=logits)
         else:
             mean = self.movement_mean(features)
-            std = self.movement_log_std.exp().expand_as(mean)
+            if getattr(self.cfg, "action_squash", False):
+                mean = squash_mean(mean, *self.action_bounds)
+            std = movement_std(self.cfg, features, mean,
+                               self.movement_log_std, self.movement_log_std_head)
             move_dist = Normal(mean, std)
         return move_dist, h_next
 

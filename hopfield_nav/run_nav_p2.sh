@@ -89,6 +89,10 @@ INPUT_PREV_ACTION=${INPUT_PREV_ACTION:-1}
 # need the realized one -- which is exactly where mode-B failures pile up
 # (H-wall). The difference is itself information: a clip means a wall.
 INPUT_PREV_DISPLACEMENT=${INPUT_PREV_DISPLACEMENT:-1}
+# Off by default: phase 2's P1-P5 all ran with the hard env clamp, and
+# turning these on silently would make new runs incomparable to them.
+ACTION_SQUASH=${ACTION_SQUASH:-0}
+STATE_DEPENDENT_STD=${STATE_DEPENDENT_STD:-0}
 INPUT_HOPFIELD_SIGNAL=${INPUT_HOPFIELD_SIGNAL:-1}
 INPUT_SENSORY=${INPUT_SENSORY:-1}
 INPUT_ENCODED_STATE=${INPUT_ENCODED_STATE:-0}
@@ -220,6 +224,57 @@ case "$VARIANT" in
     EPSILON_EXPLORE=0.1; INIT_LOG_STD=-0.7; GOAL_REWARD=2.0
     PERSISTENCE_BONUS=0.20
     EVAL_SCOPE=expl; EVAL_EVERY=50; CKPT_EVERY=50
+    ;;
+
+  # === P9 -- the action parameterization =================================
+  #
+  # Section 8.2 measured that every P4 arm commands ||mu|| far past the 2.0 cap
+  # (2.19 to 4.91) and that the sigma bracket therefore varied clamp depth
+  # rather than exploration -- nominal sigma spanned 3.0x while the effective
+  # angular noise sigma/||mu|| spanned only 1.33x. Section 9.1 measured the
+  # explore arm at ||mu|| = 8.18 against a realized 1.98.
+  #
+  # Two changes, and a third arm so they can be attributed:
+  #
+  #   p9_sq     radial tanh on the policy MEAN
+  #   p9_sq_std the same, plus a per-state log_std head
+  #
+  # sigma-only is deliberately NOT run. It is predicted to be neutered by the
+  # same ||mu|| compensation that flattened the sigma bracket, so a null result
+  # there could not distinguish "does not help" from "could not act".
+  #
+  # Read from the new per-update mu_norm / sigma / ang_noise logs, not from the
+  # end metrics. The pass/fail is whether the sigma head takes over the
+  # state-dependent modulation: if it stays flat while ||mu|| does the
+  # modulating, the residual 4x magnitude channel still binds and the answer is
+  # a polar parameterization.
+  p9_sq|p9_sq_std)
+    SCHEDULE=${SCHEDULE:-'exploit:2000'}
+    ENVS_PER_WORLD=20; BATCH_ENVS=64
+    EPSILON_EXPLORE=0.1; INIT_LOG_STD=-0.7; GOAL_REWARD=2.0
+    PERSISTENCE_BONUS=0.20
+    REGIME_ASSIGNMENT=shuffle
+    ACTION_SQUASH=1
+    EVAL_SCOPE=navexpl; EVAL_EVERY=50; CKPT_EVERY=50
+    case "$VARIANT" in
+      p9_sq_std) STATE_DEPENDENT_STD=1; FREEZE_LOG_STD=0 ;;
+    esac
+    ;;
+
+  # Explore-side counterparts. Section 9.1's clamp pathology was measured on
+  # p5_e, so the explore arm is where the coverage prediction can be checked:
+  # billiard peaks at ||a|| ~ 1.25 and the clamped policy sits at 1.98, so a
+  # policy free to choose its magnitude should land nearer the optimum.
+  p9_e_sq|p9_e_sq_std)
+    SCHEDULE=${SCHEDULE:-'explore:1500'}
+    ENVS_PER_WORLD=20; BATCH_ENVS=64
+    EPSILON_EXPLORE=0.1; INIT_LOG_STD=-0.7; GOAL_REWARD=2.0
+    PERSISTENCE_BONUS=0.20
+    ACTION_SQUASH=1
+    EVAL_SCOPE=expl; EVAL_EVERY=50; CKPT_EVERY=50
+    case "$VARIANT" in
+      p9_e_sq_std) STATE_DEPENDENT_STD=1; FREEZE_LOG_STD=0 ;;
+    esac
     ;;
 
   # === P6 -- interleaved ==================================================

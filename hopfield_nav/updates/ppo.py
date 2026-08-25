@@ -224,6 +224,8 @@ def ppo_update(
     total_value_loss = 0.0
     total_move_ent = 0.0
     total_store_ent = 0.0
+    total_mu_norm = total_sigma = total_ang = 0.0
+    n_diag = 0
     total_store_bc = 0.0
     n_steps = 0
 
@@ -284,6 +286,24 @@ def ppo_update(
             # return is defined to be zero, so regressing onto them teaches it
             # that finishing is worth nothing.
             sq_err = (mb_ret - new_values) ** 2
+            # Action-parameterization diagnostics. ||mu|| and sigma are what
+            # the phase-2 section 8.2 pathology lives in -- the commanded
+            # magnitude drifted to 8.18 against a cap of 2.0, collapsing the
+            # effective angular noise sigma/||mu||, and it was found only by
+            # probing saved checkpoints long afterwards. Logged per update so
+            # the next one is visible while it happens.
+            if hasattr(move_dist, "mean") and move_dist.mean.dim() >= 2 \
+                    and move_dist.mean.shape[-1] == 2:
+                with torch.no_grad():
+                    _mu = move_dist.mean.norm(dim=-1)
+                    _sd = move_dist.stddev.mean(-1)
+                    total_mu_norm += float(_mu.mean())
+                    total_sigma += float(_sd.mean())
+                    # The ratio is the quantity that actually governs
+                    # directional exploration, so take its mean rather than
+                    # the ratio of the means.
+                    total_ang += float((_sd / _mu.clamp_min(1e-8)).mean())
+                    n_diag += 1
             move_entropy = move_dist.entropy()
             if move_entropy.dim() > 2:
                 move_entropy = move_entropy.sum(-1)
@@ -358,7 +378,11 @@ def ppo_update(
             n_steps += 1
 
     denom = max(n_steps, 1)
+    d_diag = max(n_diag, 1)
     return {
+        "mu_norm": total_mu_norm / d_diag,
+        "sigma": total_sigma / d_diag,
+        "ang_noise": total_ang / d_diag,
         "move_loss": total_move_loss / denom,
         "store_loss": total_store_loss / denom,
         "value_loss": total_value_loss / denom,

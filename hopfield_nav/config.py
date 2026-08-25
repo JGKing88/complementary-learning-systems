@@ -196,6 +196,29 @@ class AgentConfig:
     movement_mode: str = "discrete"         # "discrete" (Categorical 4) | "continuous" (Gaussian 2)
     init_log_std: float = 0.0               # continuous policy: initial log std (default std=1.0)
     freeze_log_std: bool = False            # When True, movement_log_std is held at its initial value (no gradient). For Phase A: pin variance low so PPO loss directly pressures the policy mean instead of letting samples "hide" the mean.
+    # --- action parameterization (phase 2 section 8.2) ----------------------
+    # Radial tanh squash on the policy MEAN: ||mu|| is mapped smoothly into
+    # [min_action_norm, max_action_norm] instead of being hard-clamped by the
+    # env. Squashing the mean rather than the sample keeps the distribution
+    # Gaussian, so no Jacobian correction is needed anywhere.
+    #
+    # Why: with the hard clamp the gradient on ||mu|| past the cap is zero in
+    # one direction only, so the commanded magnitude drifts unboundedly -- it
+    # was measured at 8.18 against a cap of 2.0. That collapses the effective
+    # angular noise sigma/||mu|| to ~3.5 degrees, and nothing in the objective
+    # can see it because Gaussian entropy depends on sigma alone.
+    action_squash: bool = False
+    # A per-state log_std head instead of one global parameter. All four
+    # phase-2 arms modulate their angular noise ~2x between zero and ten
+    # distractors, and with a global sigma the ONLY channel for that is
+    # ||mu|| -- so the policy buys state-dependent exploration by paying in
+    # speed. This gives it a proper channel.
+    state_dependent_std: bool = False
+    # Range the log_std head is clamped to. A state-dependent sigma can
+    # collapse SELECTIVELY -- to zero exactly where exploitation pays, near
+    # the goal -- which is harder to notice than a global collapse.
+    log_std_min: float = -2.5
+    log_std_max: float = 0.5
     # Recurrent trunk. Defaults reproduce the historical GRU exactly.
     rnn_cell: str = "gru"                   # "gru" | "rnn" (vanilla Elman)
     rnn_nonlinearity: str = "tanh"          # "tanh" | "relu" | "softplus"; rnn_cell="rnn" only
@@ -408,6 +431,10 @@ class RNNAgentConfig:
     movement_mode: str = "discrete"         # "discrete" (Categorical 4) | "continuous" (Normal 2)
     init_log_std: float = 0.0               # continuous policy: initial log std
     freeze_log_std: bool = False
+    action_squash: bool = False              # radial tanh on ||mu||; see the other copy
+    state_dependent_std: bool = False        # per-state log_std head
+    log_std_min: float = -2.5
+    log_std_max: float = 0.5
     # Recurrent trunk; see AgentConfig for the same two knobs.
     rnn_cell: str = "gru"                   # "gru" | "rnn" (vanilla Elman)
     rnn_nonlinearity: str = "tanh"          # "tanh" | "relu" | "softplus"; rnn_cell="rnn" only
