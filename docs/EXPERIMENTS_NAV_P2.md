@@ -2553,16 +2553,13 @@ Phase 2 reaches **6.25 / 8.01** — roughly **38% fewer steps at both distractor
 levels, with higher success**. Bounded step size plus the two `prev_action`
 channels account for it; no shaping knob was touched.
 
-**σ trades speed for reliability, and there is no single optimum.** Success at
-ten distractors rises monotonically as σ falls (0.885 → 0.917 → 0.927) while
-speed falls with it (1.50 → 1.45 → 1.31) and `mean_steps` gets worse. **This
-partly refutes §2.2's prediction.** That section argued the σ optimum should
-move *down* now that `min_action_norm` removes σ's magnitude role, leaving it as
-pure angular noise which exploit does not want. Lower σ does buy accuracy — the
-success column is exactly that — but it also slows the policy down, because σ is
-still the only channel through which the policy explores its own action
-magnitude, and less exploration means it finds the speed limit later. The
-prediction was right about the mechanism and wrong to expect a single winner.
+**σ appears to trade speed for reliability** — success at ten distractors rises
+monotonically as σ falls (0.885 → 0.917 → 0.927) while speed falls with it
+(1.50 → 1.45 → 1.31) and `mean_steps` gets worse. **The description holds; the
+mechanism given here was wrong, and §8.2 replaces it.** This paragraph
+originally explained the trend as σ buying accuracy at the cost of the
+exploration needed to find the speed limit. Measuring the commanded magnitude
+showed that is not what separates the arms.
 
 **The time-penalty hypothesis is confirmed, and it buys steps by giving up
 success.** `p4_tp15` posts the best `mean_steps` at ten distractors (8.01) and
@@ -2583,6 +2580,65 @@ rerun at lower LR would settle it.
 permitted 2.0. At their own speed they are close to the ideal
 `(10.85 − 1) / 1.5 ≈ 6.6`; at the cap the ideal would be 4.9. So the residual is
 still speed, and §9.1 explains why the policy cannot find it.
+
+### 8.2 CORRECTION — the σ bracket was a clamp-depth bracket
+
+Probing all four arms for the **commanded** magnitude `‖μ‖`, against `σ =
+exp(init_log_std)`, gives the effective angular noise `σ/‖μ‖` — the quantity
+that actually governs directional exploration for a Gaussian policy on a
+displacement:
+
+| arm | σ | time pen. | ‖μ‖ @ d=0 | ang @ d=0 | ‖μ‖ @ d=10 | ang @ d=10 |
+|---|---|---|---|---|---|---|
+| `p4_x` | 0.497 | 0.05 | 4.91 | 5.8° | 2.19 | **13.0°** |
+| `p4_s12` | 0.301 | 0.05 | 2.83 | 6.1° | 1.31 | **13.1°** |
+| `p4_s18` | 0.165 | 0.05 | 2.19 | 4.3° | 0.96 | **9.9°** |
+| `p4_tp15` | 0.497 | **0.15** | 3.71 | 7.7° | 1.48 | **19.2°** |
+
+**Every arm saturates the clamp at zero distractors** — `‖μ‖` from 2.19 to 4.91
+against a cap of 2.0. This is not an outlier, it is what this policy class does
+here, and §9.1's clamp pathology is therefore not explore-specific. An earlier
+reading of these runs inferred from `mean_speed ≈ 1.5` that exploit sat *inside*
+the bound; that was the realized magnitude, and assuming the commanded one
+matched it was the error.
+
+**The policy compensates for σ by scaling `‖μ‖`, partially.** At fixed time
+penalty, nominal σ spans **3.0×** while the effective angular noise spans only
+**1.33×**. So most of what σ changed was the commanded magnitude, not the
+exploration — which means the bracket did not vary what it was named after.
+
+*(A stronger claim was made first, from two arms, that compensation was exact —
+`p4_x` and `p4_s12` agree to 13.0° against 13.1°. Four arms show it is not. The
+place it breaks is informative: `p4_s18` would need `‖μ‖ ≈ 0.73` to match and
+sits at 0.96, against a `min_action_norm` of 0.5. The policy compensates until
+the floor stops it, which is why the lowest-σ arm is the one that genuinely got
+less angular noise.)*
+
+**The time penalty moves angular noise more than σ does.** `p4_tp15` has
+identical σ to `p4_x` and lands at 19.2° against 13.0°. So neither bracket was
+a clean manipulation: the σ arms mostly varied clamp depth, and the
+time-penalty arms substantially varied exploration.
+
+**So the corrected mechanism for §8.1's trend is:** σ sets `‖μ‖`, `‖μ‖` sets how
+deep into the clamp the policy sits, and clamp depth sets speed. A policy
+commanding 4.91 against a 2.0 cap runs at the limit on nearly every step and
+cannot modulate; one commanding 2.19 still has room to vary. That is what
+separates the arms, not exploration.
+
+**One further observation, consistent across all four arms:** angular noise
+roughly doubles from zero to ten distractors (5.8° → 13.0°, 6.1° → 13.1°,
+4.3° → 9.9°, 7.7° → 19.2°). The policy widens its directional exploration when
+the readout is less trustworthy — sensible behaviour, and what P3's Q_trust
+framing predicts. But with σ fixed globally the *only* channel available for it
+is `‖μ‖`, so the policy buys its state-dependent exploration by paying in speed.
+**That is the argument for a state-dependent σ head**, and it is independent of
+the clamp question.
+
+**Scope.** One checkpoint per arm in one probe world. The `‖μ‖` values are large
+and consistent; the arm *rankings* built on them are not — the probe world makes
+`p4_s12` best on `mean_steps` at ten distractors where the trainer's eval
+favoured `p4_tp15`. Rankings need more worlds before they are quoted, per
+findings 18 and 19.
 
 ### 9.1 RESULT — the explore ceiling, and a clamp pathology
 
