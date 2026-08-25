@@ -1246,6 +1246,43 @@ WAVES: dict[str, dict] = {
         },
         "seed": [42, 43, 44, 45],
     },
+    # W42 -- push the two things w39/w41 found, and combine them.
+    #
+    # w41: at gain 100, lr 3e-4 recovers r_min from 6.0 to 8.0, within a unit of
+    # gain 5's 9.0, while lr 3e-5 gives 5.0. Higher wins, which is what the
+    # saturation argument predicts -- a saturated tanh passes almost no gradient
+    # (1 - tanh^2 -> 0) so the units that are stuck need a bigger step. 3e-4 was
+    # the edge of that grid, so 1e-3 is the obvious next point.
+    #
+    # w39: sm50 at batch 4096 scores 10.0, the best 10%-coverage cell in the
+    # campaign. The two winners have never been combined.
+    #
+    # b2048 extends the batch trend downward. For sm50 the batch moves the alias
+    # ceiling monotonically -- 0.885 / 0.919 / 0.939 at 4096 / 8192 / 16384 --
+    # with res90 pinned at 10.0, and sm100 shows no batch effect at all. Neither
+    # pair supply (§6.6's candidate, falsified by these same runs) nor
+    # overfitting (no early-peak: best-epoch fractions 0.70-0.90, best-final
+    # gaps ~0) explains that, so the trend is worth mapping before theorising.
+    "w42_push": {
+        "arm": {
+            "g100_lr1e-3": dict(npos_list=SIZE_MIXES["sm100"], lr=1e-3,
+                                per_env_radius_frac=0.0, radius=20.0,
+                                rate_lambda=0.3, out_dim=1024, hidden_dim=256,
+                                gain_end=100.0),
+            "g100_sm50b4096_lr3e-4": dict(npos_list=SIZE_MIXES["sm50"],
+                                          batch_size=4096, lr=3e-4,
+                                          per_env_radius_frac=0.0, radius=20.0,
+                                          rate_lambda=0.3, out_dim=1024,
+                                          hidden_dim=256, gain_end=100.0),
+            "sm50_b2048": dict(npos_list=SIZE_MIXES["sm50"], batch_size=2048,
+                               per_env_radius_frac=0.0, radius=20.0,
+                               rate_lambda=0.3, out_dim=1024, hidden_dim=256),
+            "sm100_b2048": dict(npos_list=SIZE_MIXES["sm100"], batch_size=2048,
+                                per_env_radius_frac=0.0, radius=20.0,
+                                rate_lambda=0.3, out_dim=1024, hidden_dim=256),
+        },
+        "seed": [42, 43, 44, 45],
+    },
     # W13 -- coverage, on the winning config rather than on the bare baseline.
     #
     # This replaces w4, which swept coverage over mixes chosen before any of the
