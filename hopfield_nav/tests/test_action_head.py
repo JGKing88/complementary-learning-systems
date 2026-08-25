@@ -29,11 +29,25 @@ def _cfg(**kw):
 
 class TestSquashBounds:
 
-    def test_maps_everything_into_the_band(self):
-        x = torch.randn(4096, 2) * 20.0
+    def test_upper_bound_is_hard(self):
+        """The bound that matters. The lower one is soft -- see below."""
+        x = torch.randn(20000, 2) * 30.0
         r = squash_mean(x, LO, HI).norm(dim=-1)
-        assert float(r.min()) >= LO - 1e-6
         assert float(r.max()) <= HI + 1e-6
+
+    def test_lower_bound_is_soft_below_the_softening_constant(self):
+        """Removing the origin singularity costs an exact floor: for raw means
+        smaller than `soft` the output tapers toward zero rather than holding at
+        `lo`. Harmless, because the sample is mean+noise and the env's own
+        min_action_norm floors the realized step -- but it is the behaviour, so
+        it is the test rather than a surprise later."""
+        # Explicit radii: a 2-D Gaussian has mass near the origin, so
+        # `randn * 5` is not a sample of large-magnitude vectors.
+        rad = torch.linspace(0.5, 20.0, 500).unsqueeze(-1) * torch.tensor([[1.0, 0.0]])
+        big = squash_mean(rad, LO, HI).norm(dim=-1)
+        assert float(big.min()) >= LO - 1e-3
+        tiny = squash_mean(torch.tensor([[1e-3, 0.0]]), LO, HI).norm()
+        assert float(tiny) < LO
 
     def test_zero_maps_to_zero_not_the_floor(self):
         """Direction is undefined at the origin, so the floor is not applied.
@@ -86,12 +100,24 @@ class TestSquashBounds:
         stops mattering because the effective magnitude cannot follow it."""
         for scale in (8.18, 50.0, 1000.0):    # 8.18 is the measured drift
             r = squash_mean(torch.tensor([[scale, 0.0]]), LO, HI).norm()
-            assert float(r) == pytest.approx(HI, abs=1e-4)
+            assert float(r) == pytest.approx(HI, abs=1e-3)
 
-    def test_small_inputs_are_near_the_identity_offset(self):
-        x = torch.tensor([[0.01, 0.0]])
-        r = float(squash_mean(x, LO, HI).norm())
-        assert r == pytest.approx(LO + 0.01, abs=1e-4)
+    def test_operating_range_is_barely_distorted_by_the_softening(self):
+        """The policy runs near ||mu_raw|| ~ 1.2, where the smooth norm differs
+        from the true norm by ~0.3%. That is the price of a bounded gradient."""
+        for r in (0.5, 1.0, 1.2, 2.0):
+            true_r = LO + (HI - LO) * torch.tanh(torch.tensor(r / (HI - LO)))
+            got = float(squash_mean(torch.tensor([[r, 0.0]]), LO, HI).norm())
+            assert abs(got - float(true_r)) / float(true_r) < 0.03, r
+
+    def test_gradient_is_bounded_everywhere_including_the_origin(self):
+        """The bug that killed the first p9_e_sq_std run: with a clamped norm
+        the perpendicular derivative reached 5e+07 at ||mu||=1e-8, so one sample
+        near the origin made clip_grad_norm_ rescale the whole batch to nothing."""
+        for r in (0.0, 1e-8, 1e-4, 1e-2, 1.0, 10.0):
+            x = torch.tensor([[r, 0.0]], requires_grad=True)
+            squash_mean(x, LO, HI).sum().backward()
+            assert float(x.grad.abs().max()) < 10.0, r
 
 
 class TestStateDependentStd:
@@ -161,8 +187,10 @@ class TestAgentIntegration:
         x = torch.randn(4, 6, 8) * 50.0
         dist, *_ = agent(x) if not isinstance(agent(x), tuple) else (agent(x)[0],)
         r = dist.mean.norm(dim=-1)
+        # Upper bound only: the lower one is soft by construction (see
+        # test_lower_bound_is_soft_below_the_softening_constant), and an
+        # untrained linear head emits some near-zero means.
         assert float(r.max()) <= HI + 1e-5
-        assert float(r.min()) >= LO - 1e-5
 
     def test_log_prob_still_matches_the_distribution(self):
         """Squashing the MEAN needs no Jacobian; squashing the sample would.

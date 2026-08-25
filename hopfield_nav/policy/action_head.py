@@ -39,7 +39,7 @@ import torch.nn as nn
 
 
 def squash_mean(mean: torch.Tensor, lo: float, hi: float,
-                eps: float = 1e-8) -> torch.Tensor:
+                soft: float = 0.1) -> torch.Tensor:
     """Map ``||mean||`` smoothly into ``[lo, hi]``, preserving direction.
 
     ``r = lo + (hi - lo) * tanh(r_raw / (hi - lo))`` -- monotone, equal to
@@ -66,9 +66,22 @@ def squash_mean(mean: torch.Tensor, lo: float, hi: float,
     env's own ``min_action_norm`` floors it.
     """
     span = hi - lo
-    r_raw = mean.norm(dim=-1, keepdim=True)
+    # SOFTENED norm, not `norm().clamp_min(eps)`. The radial map is singular at
+    # the origin: its perpendicular derivative goes as lo/||mu||, which measured
+    # 5e+01 at 1e-2, 5e+05 at 1e-6 and 5e+07 at 1e-8. A clamp caps how bad that
+    # gets without removing it, and one sample near the origin then injects a
+    # gradient of that order -- after which clip_grad_norm_ rescales the WHOLE
+    # batch by its reciprocal, zeroing every other parameter's update. That is
+    # what killed the first p9_e_sq_std run at u120, with mu_norm sitting at a
+    # healthy 1.225.
+    #
+    # sqrt(||mu||^2 + soft^2) is smooth everywhere and bounds the derivative at
+    # lo/soft = 5. The cost is a distortion that matters only where direction is
+    # meaningless anyway: 0.5% at ||mu|| = 1, ~2% at 0.5, and the policy operates
+    # near 1.2.
+    r_raw = (mean.pow(2).sum(-1, keepdim=True) + soft * soft).sqrt()
     r = lo + span * torch.tanh(r_raw / span)
-    return mean * (r / r_raw.clamp_min(eps))
+    return mean * (r / r_raw)
 
 
 def build_log_std(cfg, hidden_size: int):
