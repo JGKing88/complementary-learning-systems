@@ -2794,10 +2794,10 @@ a radius defined at ~6× that ought to move when it moves. `w43` crosses them.
 |---|---|---|---|---|
 | 0.125 | ~1.5 | 1.0 | **6.0** | 1.5 |
 | 0.25 | ~3 | — | **9.0** | 5.0 |
-| 0.5 | ~6 | 3.5 | **9.5** | 3.0 |
+| 0.5 | ~6 | 3.5 | **9.5** | 3.5 |
 
 *(fwhm 0.25 from `w32`/`w33`, which also has radius 15, 25 and 30, peaking at 20;
-`fwhm0.5_r40` has 3 of 4 cells)*
+all `w43` cells complete, 4 seeds each)*
 
 **Radius 20 peaks at every `fwhm`.** The prediction — that the optimum tracks
 the input correlation length, so 0.125 would peak near 10 and 0.5 near 40 — is
@@ -2813,8 +2813,11 @@ and the two failing radii sit either side of them:
   modules.
 * **radius 40** is bounded by the plateau failure §5.6i identified — a wide
   attract radius makes the profile broad but non-monotone, ruining the worst
-  direction while flattering the median. Visible here too: `fwhm0.5_r40` has the
-  *best* decay50 in the wave (38.0) and `r_min` 3.0.
+  direction while flattering the median. Visible twice here: `fwhm0.125_r40` has
+  the best decay50 of the whole grid (43.0) and `r_min` **1.5**, and
+  `fwhm0.5_r40` has 37.25 and `r_min` 3.5. Both also carry the largest law
+  residuals in the wave (`r_pred` 4.3 and 11.0 against those measurements),
+  which is §5.6i's domain boundary showing up again.
 
 So the near radius appears to be bracketed below by the largest grid period and
 above by the plateau, which is why it is absolute — **λ is absolute**, and does
@@ -2829,3 +2832,95 @@ tuned for `fwhm=0.25`, so it under-read a knob that is merely neutral rather
 than harmful. **`fwhm=0.125` is genuinely worse** (6.0), with alias 0.959 and
 `r_median` 7.0 — too little smoothing leaves neighbouring positions with
 near-disjoint codes and there is no local structure to learn.
+
+# 8. Open questions
+
+Ranked by how much answering them would change the picture, not by cost. Each is
+motivated by something §4–§7 established, not by a knob that happens to be
+unswept.
+
+## 8.1 Would an equivariant architecture dissolve most of this?
+
+§7 established that the input carries an **exact** ℤ₁₁×ℤ₁₂×ℤ₁₃ symmetry per
+axis, acting **transitively** — the arena is one orbit. An equivariant encoder
+therefore has `cos(z(x), z(y)) = k(y−x)`: every reference identical,
+`r_min = r_median`, and *one patch determines the kernel everywhere*. The whole
+campaign has been fighting an MLP's failure to learn a symmetry the input has
+exactly, and no wave has tried building it in.
+
+It makes a decomposable prediction, which is what makes it worth doing:
+
+* equivariance should fix **consistency** — `r_min` → `r_median`, currently
+  8.5 → 15.25, so ~+7 for free;
+* it should **not** fix **reach** — a patch still exhibits only offsets up to
+  its diagonal, so `k(δ)` beyond that stays unconstrained.
+
+That would split the problem into two independent halves for the first time.
+Implementation: group convolution over the phase torus (circular convolution
+within each module's λ×λ block, weights tied across shifts). Note both `tanh`
+and `F.normalize` already commute with the group action, so the equivariance
+break is entirely in the learned linear layers.
+
+## 8.2 What is the achievable bound at a given coverage?
+
+Coverage dominates and §5.6j says why — at 10% coverage **0 of 200** measured
+alias pairs are reachable by the repel term, against 29 of 200 at 50.8%. But
+there is no *bound*, so we cannot tell whether 8.5 is near-optimal or far off.
+
+The tractable version, given §7: for an equivariant model `k(δ)` is pinned only
+at offsets the patches exhibit, which is a disc of radius `s√2`. Computing the
+best monotone `k` consistent with those constraints and with the alias lattice
+would be an actual bound rather than another sweep.
+
+## 8.3 Why does batch size interact with environment count?
+
+The one empirical hole in an otherwise mechanistic account, and worth 2.5 units
+(§6.7). Four mechanisms have died: pair supply, overfitting, monotone batch, and
+a monotone ceiling trend. The signature is specific — it acts on the **alias
+ceiling**, only for many-environment geometries, with an interior optimum at
+different batches per geometry.
+
+One candidate not yet tested: the spread term is a *batch statistic*, so with
+many environments the batch's environment composition varies more from step to
+step at small `B`. That is a noise-in-the-regulariser story, and fixing the
+per-batch environment mixture would test it directly.
+
+## 8.4 Is `r_min` the right objective?
+
+§7 showed `r_min = r_median` only under equivariance — the gap **is** the
+residual. So `r_min` conflates how good the typical code is with how uniform it
+is across the arena, and the campaign has repeatedly found configs that win one
+and lose the other (`hd128`: best `r_median` in the campaign, 5 zeros in 16
+cells).
+
+If the downstream agent does gradient ascent on similarity to a remembered goal
+code, it needs monotonicity *along the path it takes*, which is closer to
+"median with a floor" than to worst-of-N. Worth deciding deliberately rather
+than inheriting — and it would change which of the campaign's configs is best.
+
+## 8.5 Does the alias lattice constrain grid-code design?
+
+§7.3 found the far-field damage concentrated where module *pairs* realign. The
+first alias sits at `λ₁λ₂`, and since the arena is `λ₁λ₂λ₃`, that is always
+**arena / λ_max** — so three near-equal moduli is already near-optimal and
+(11, 12, 13) is a good choice.
+
+But with **four** modules the first alias arrives much earlier (≈ arena^½) while
+being *weaker*, since two of four agreeing leaves two differing. That
+onset-versus-strength trade is a property of the **input code**, not the
+encoder, and it is a lever no wave in this campaign touched. §6.9's bracket
+hypothesis also predicts the near-radius optimum moves with λ, which the same
+experiment would test.
+
+## 8.6 What does the constraint actually cost, properly tuned?
+
+The founding question, still open in its clean form. What exists:
+
+* untreated, matched geometry: **2** constrained against **9–15** unconstrained;
+* remediated, but at higher coverage: **23** constrained against **9–15** —
+  confounded, since those differ in coverage as well as in the constraint.
+
+The matched-geometry, **both-sides-tuned** comparison was never run, so "how
+much does withholding cross-environment pairs really cost" has no number. Every
+unconstrained encoder in this repository predates the loss and geometry work of
+§4–§6, so the constrained side has had far more tuning than the control.
