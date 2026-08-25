@@ -2841,6 +2841,15 @@ unswept.
 
 ## 8.1 Would an equivariant architecture dissolve most of this?
 
+> **ANSWERED — see §9.** The structural claim holds exactly (spread 0.0 across
+> references, `alias_max` = `alias_mean`), and the prediction below is **wrong**.
+> Trained on patches the equivariant model reaches `r_min` 6.0 / `r_median` 7.0
+> — it closed the gap by dragging `r_median` down from 15, not by lifting
+> `r_min`. The same architecture with analytic amplitudes reaches 18, so the
+> class is fine and the *objective* is the binding constraint: a step target on
+> [0, patch diagonal] forces high frequencies, and those ring where the loss
+> cannot see.
+
 §7 established that the input carries an **exact** ℤ₁₁×ℤ₁₂×ℤ₁₃ symmetry per
 axis, acting **transitively** — the arena is one orbit. An equivariant encoder
 therefore has `cos(z(x), z(y)) = k(y−x)`: every reference identical,
@@ -2924,3 +2933,126 @@ The matched-geometry, **both-sides-tuned** comparison was never run, so "how
 much does withholding cross-environment pairs really cost" has no number. Every
 unconstrained encoder in this repository predates the loss and geometry work of
 §4–§6, so the constrained side has had far more tuning than the control.
+
+# 9. Equivariance, tested (§8.1 resolved)
+
+§8.1 asked whether an exactly equivariant architecture would dissolve most of
+this, and predicted a specific, decomposable outcome: it should lift `r_min` to
+`r_median` — about +7, from 8.5 to ~15 — and **no further**, since a patch still
+only exhibits offsets up to its diagonal.
+
+**The structural half is confirmed. The prediction is wrong.**
+
+## 9.1 What was built
+
+`encoder_training/equivariant.py`. The group is abelian, so its irreps are
+one-dimensional characters and an equivariant code is forced to be a stack of
+
+```
+χ(x) = exp( 2πi · ( p₁·x/11 + p₂·x/12 + p₃·x/13 ) )
+```
+
+with learnable amplitudes and nothing else — an equivariant linear map must
+commute with ρ, and for distinct characters that leaves only a per-character
+scale and a phase, and the phase cancels in the inner product. The characters
+are a fixed function of Φ: module *m*'s block is a smoothed one-hot at
+`x mod λ`, so its 2D DFT coefficient at `(p,q)` has modulus set by the smoothing
+and phase exactly the character; multiplying one per module gives a character of
+the full group with position-independent modulus.
+
+**729 learnable amplitudes against the MLP's 571,904.** No pointwise
+nonlinearity — `tanh` does not commute with a rotation of the `(Re, Im)` pair a
+character contributes, so including it would break the very property being
+tested.
+
+## 9.2 The premise holds, twice over
+
+Untrained, with amplitudes set analytically to a Gaussian of width σ:
+
+| σ | 10 | 20 | 25 | 40 | 60 |
+|---|---|---|---|---|---|
+| `r_min` | 4.0 | 5.0 | 6.0 | 9.0 | **18.0** |
+| `r_median` | 4.0 | 5.0 | 6.0 | 9.0 | 18.0 |
+| spread over 40 refs | **0.0** | **0.0** | **0.0** | **0.0** | 1.0 |
+
+And trained (below), `alias_max` equals `alias_mean` to three decimals — every
+reference has not just the same radius but the same ceiling. Both are what
+`cos(z(x), z(y)) = k(y − x)` requires. (σ=60's spread of 1.0 is binning: its
+profile is so flat that the half-height crossing falls between measurement bins
+for a few references.)
+
+Note the second number: **`r_min` 18 with no training at all**, against 8.5 for
+the MLP. The equivariant class contains codes far better than the campaign's
+search ever found.
+
+## 9.3 Trained on patches, it is worse than the MLP
+
+Sampling is §6.7's best and unchanged — `sm50`, batch 4096, radius 20, ~10%
+coverage, constraint on. Four seeds per arm:
+
+| arm | `r_min` | `r_median` | spread | alias | decay50 |
+|---|---|---|---|---|---|
+| `rate 0.3`, lr 1e-3 **and** 1e-2 | 6.0 | 7.0 | **0.0** | 0.922 | 22 |
+| `rate 0`, lr 1e-3 **and** 1e-2 | 1.0 | 1.0 | **0.0** | 0.994 | 23 |
+| *MLP, same sampling (20 refs)* | *10.0* | *15.0* | *3* | *0.885* | *26* |
+| *analytic, same architecture* | *18.0* | *18.0* | *0.0* | — | — |
+
+Learning rate makes no difference at all — a 729-parameter kernel fit converges
+to the same place from either. **Equivariance did close the `r_min`/`r_median`
+gap, but by dragging `r_median` down from 15 to 7, not by pulling `r_min` up.**
+
+## 9.4 Why: the loss asks a band-limited kernel to fit a step
+
+The learned amplitudes are the model's entire state, so the solution can be read
+directly. Mass by frequency band, and the resulting kernel:
+
+| | DC | mass \|m\|≤15 | mass \|m\|>50 | k(20) | k(30) | k(71) | k(156) |
+|---|---|---|---|---|---|---|---|
+| trained, rate 0.3 | 0.000 | 0.127 | **0.113** | 0.305 | −0.03 | **0.552** | **0.381** |
+| trained, rate 0 | 0.001 | 0.001 | 0.000 | 0.479 | 0.115 | **0.793** | **0.704** |
+| analytic σ=60 | 0.114 | **0.998** | 0.000 | 0.977 | 0.952 | 0.825 | 0.634 |
+
+The pair terms only ever see offsets up to the patch diagonal — **71 cells** for
+`sm50`. On that window the loss demands a *step*: attract wants `k ≈ 1` inside
+radius 20, repel wants `k ≈ 0` from 20 to 71. Fitting a sharp step needs high
+frequencies, and the trained model duly puts **11% of its mass above |m| = 50**.
+
+But every high-frequency character revives at its own period, and those periods
+land **beyond 71, where the loss is blind**. The result is ringing: `k` returns
+to 0.55 at δ=71 and 0.38 at δ=156 — and 156 = 12×13, 132 = 11×12, the same
+module-pair lattice §7.3 found in the trained MLPs.
+
+The analytic solution does the opposite, putting 99.8% of its mass below
+|m| = 15: a wide, smooth kernel with no step and no ringing. **The patch loss
+would score that solution badly** — its repel pairs at δ=30 would sit at
+k = 0.95 against a target of 0.
+
+**So the binding constraint is the objective, not the architecture.** The
+attract/repel target is a step function; a band-limited kernel cannot fit a step
+without ringing; and the ringing lands exactly where the loss cannot see it.
+
+## 9.5 Two corrections to what was predicted
+
+* **`rate_lambda` is essential here, and the §8.1-era reasoning for expecting
+  the opposite was wrong.** The prediction was that the coding rate prefers flat
+  amplitudes, i.e. a delta-like kernel, and so would fight the attract term.
+  That is true about what `rate` prefers and irrelevant: without it the model
+  rings itself to `r_min` 1.0. `rate` is the only term with any view of the
+  far field, since it is the only one not restricted to within-patch pairs.
+* **`rate=0` does not collapse to DC**, which was the first reading of its
+  alias of 0.994. Its DC share is 0.001. It collapses to a *mid-frequency comb*
+  with k(71) = 0.79 — ringing, not a constant code.
+
+## 9.6 What this leaves
+
+Equivariance is confirmed as a structural guarantee and is a **net loss in
+practice** under the current objective. That reframes §8.2's bound question and
+sharpens it: the interesting quantity is no longer "what can be learned from
+offsets ≤ s√2" but "what monotone kernel is *consistent* with a step target on
+[0, s√2] plus no ringing beyond it" — and the analytic σ=60 code proves the
+feasible set is non-empty and reaches at least 18.
+
+It also says something about the MLP that was not visible before. Its
+non-equivariance was not purely a defect: by letting each reference have its own
+profile it reached `r_median` 15 where a single shared kernel, fit by this loss,
+manages 7. The inconsistency was buying local quality.
