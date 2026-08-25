@@ -2532,6 +2532,120 @@ So P5 runs as a **calibration and reference run, not a search**: one arm at the
 settings, with `strategy_efficiency` beside it so "the agent moves too slowly"
 and "the agent moves badly" stay separable.
 
+### 8.1 RESULT — the exploit ceiling, and what moved it
+
+Five arms, all run to the six-hour wall (~u1500) except `p4_tp10`, which
+diverged. Selection is the lowest `mean_steps` at ten distractors **subject to
+success ≥ 0.85**, because the two trade off and the time-penalty bracket was
+designed to risk exactly that trade (`analysis/nav_p2/p4_summary.py`):
+
+| arm | σ | time pen. | u | succ@0 | steps@0 | succ@10 | steps@10 | speed@10 |
+|---|---|---|---|---|---|---|---|---|
+| `p4_x` | 0.50 | 0.05 | 1500 | 1.000 | **6.25** | 0.885 | 9.29 | 1.50 |
+| `p4_s12` | 0.30 | 0.05 | 1150 | 1.000 | 6.84 | 0.917 | 9.27 | 1.45 |
+| `p4_s18` | 0.165 | 0.05 | 900 | 1.000 | 7.70 | **0.927** | 9.60 | 1.31 |
+| `p4_tp10` | 0.50 | 0.10 | 450 | 1.000 | 8.49 | 0.948 | 9.31 | 1.40 |
+| `p4_tp15` | 0.50 | 0.15 | 800 | 1.000 | 6.66 | 0.875 | **8.01** | **1.52** |
+
+**Against phase 1 this is a large gain.** The matched exploit-only control under
+unbounded steps reached 10.16 at d=0 and 12.70 at d=10 with success 0.833.
+Phase 2 reaches **6.25 / 8.01** — roughly **38% fewer steps at both distractor
+levels, with higher success**. Bounded step size plus the two `prev_action`
+channels account for it; no shaping knob was touched.
+
+**σ trades speed for reliability, and there is no single optimum.** Success at
+ten distractors rises monotonically as σ falls (0.885 → 0.917 → 0.927) while
+speed falls with it (1.50 → 1.45 → 1.31) and `mean_steps` gets worse. **This
+partly refutes §2.2's prediction.** That section argued the σ optimum should
+move *down* now that `min_action_norm` removes σ's magnitude role, leaving it as
+pure angular noise which exploit does not want. Lower σ does buy accuracy — the
+success column is exactly that — but it also slows the policy down, because σ is
+still the only channel through which the policy explores its own action
+magnitude, and less exploration means it finds the speed limit later. The
+prediction was right about the mechanism and wrong to expect a single winner.
+
+**The time-penalty hypothesis is confirmed, and it buys steps by giving up
+success.** `p4_tp15` posts the best `mean_steps` at ten distractors (8.01) and
+the highest speed (1.52), which is the predicted effect: at `time_penalty` 0.05
+against `goal_reward` 2.0 the agent is indifferent between arriving and taking
+forty extra steps, and tightening that to thirteen makes it hurry. But its
+success is the lowest of the five (0.875). **That is the give-up failure the
+arm was launched to watch for, and it happened** — a `mean_steps` win taken over
+the near starts that were kept. Recorded as a real trade, not a win.
+
+**`p4_tp10` diverged** at ~u1200 with a NaN policy mean
+(`Expected parameter loc ... to satisfy Real()`). Its last valid eval had the
+best success of any arm (0.948) at u450, so the intermediate penalty may be the
+sweet spot, but a diverged run cannot support that and it is not claimed. A
+rerun at lower LR would settle it.
+
+**Where the remaining gap is.** The best arms run at speed ~1.5 against a
+permitted 2.0. At their own speed they are close to the ideal
+`(10.85 − 1) / 1.5 ≈ 6.6`; at the cap the ideal would be 4.9. So the residual is
+still speed, and §9.1 explains why the policy cannot find it.
+
+### 9.1 RESULT — the explore ceiling, and a clamp pathology
+
+`p5_e` converged and held: coverage **0.379–0.400** from u600 to u1000, after
+oscillating between 0.21 and 0.39 before that. Behaviour probe at u850
+(`analysis/nav_tri/behavior_probe.py`, 8 envs × 32 trials):
+
+| | |
+|---|---|
+| `mean_coverage` | 0.390 |
+| `cells_per_step` | 0.781 |
+| `realized_mag_mean` | **1.98** |
+| billiard reference at 1.98 | 0.702 |
+| **`strategy_efficiency`** | **1.113** |
+| `straightness` | 0.945 |
+| `edge_frac` | 0.121 (uniform is 0.19) |
+| `chase_q` | ≈ 0.000 |
+
+**The explore policy beats a perfect billiard by 11% at its own speed.** That
+matters because billiard is the *reactive* ceiling — it needs only "am I about
+to hit a wall" — so exceeding it means the policy is using something more. P2
+identified what: `input_prev_displacement` hands it an exact position
+(integration error 2.3e-14). On the billiard → lawnmower scale (0.351 → 0.5025)
+it is about a quarter of the way.
+
+`chase_q ≈ 0` confirms the explore-side distractor problem stays solved, as in
+phase 1.
+
+#### The clamp traps the policy at the speed limit
+
+The same probe shows the policy **commands** `‖a‖ = 8.18` while **realizing**
+1.98 — it saturates `max_action_norm` on 100% of steps. Beyond the clamp the
+gradient with respect to magnitude is exactly zero, so nothing pulls it back.
+
+**And 2.0 is not the coverage optimum.** Billiard peaks at `‖a‖ ≈ 1.25` (0.378)
+and falls to 0.351 at 2.0 (§2.1). At its measured 1.11 efficiency a policy
+choosing 1.25 would reach roughly **0.42** rather than 0.390. So the hard clamp
+is *costing* explore coverage by parking the policy in a zero-gradient region at
+the boundary.
+
+The mechanism is clean and worth stating because it generalizes: novelty reward
+pushes `‖μ‖` up early, it overshoots the clamp, the magnitude gradient vanishes,
+and the novelty signal that would have located the interior optimum never
+reaches the parameter again.
+
+**`max_action_norm` is not changed** — the [0.5, 2] band is fixed by
+instruction. Recorded as a design note for a later phase: a **soft** bound
+(a tanh-squash on the magnitude, with the log-prob correction) preserves
+gradient everywhere and would let novelty find the interior optimum, which a
+hard clamp structurally cannot.
+
+#### An instrumentation fault this exposed
+
+The first probe reported `strategy_efficiency` **3.97**, which would have meant
+the policy covers four times what a perfect billiard manages. It does not.
+`step_mag_mean` is the *commanded* magnitude, so the billiard reference was
+being taken at 8.18 — where billiard scores terribly because eight-cell strides
+skip most of the arena — and dividing by a deliberately bad reference
+manufactured a spectacular number. The metric predates phase 2 and silently
+assumed commanded equals realized, which was true until `max_action_norm`
+existed. It now references the realized displacement and reports both, so the
+clamp's bite is visible rather than inferred.
+
 ---
 
 ## 10. P6 — interleaved
