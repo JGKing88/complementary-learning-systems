@@ -191,12 +191,66 @@ Measured, not inferred. Nulls are listed because they cost runs too.
   and it hides failures (`hd128@od64` read {7,0,10,7} at 20 and 0 at every seed
   at 100).
 
-## 0.3 Code added by this campaign
+## 0.3 What we know about sampling
+
+How the training set is drawn, in one place. "Sampling" = coverage, patch size,
+patch count, placement, the near radius, and batch size.
+
+**The rank of the levers.**
+
+1. **Coverage dominates everything.** 10% → 50.8% takes `r_min` 4.5 → 23. No
+   other sampling knob moves it by more than ~2 (§4.6b, §6).
+2. **The near radius is ~20 cells, absolute.** It does *not* scale with patch
+   size. `per_env_radius_frac=0.15` only ever worked because 0.15 of a 100–200
+   cell side lands in that window; on 50-cell patches it gives 7.5 and costs two
+   thirds of the radius. **Use `radius`, not `per_env_radius_frac`** (§6.2).
+3. **Patch size and count have a joint interior optimum that depends on batch.**
+   At batch 8192 the invariant is ~30 environments, whatever the coverage —
+   70 cells at 5%, 100 at 10%, 140 at 20% (§6.6). At batch 4096 the optimum
+   moves to 118 environments of 50 cells (§6.7). Size and count cannot be
+   separated at fixed coverage (`n = c·A/s²`); varying coverage separates them.
+4. **Batch size is a real sampling lever with an interior optimum per
+   geometry** — 4096 for 118 small environments, 8192+ for 29 larger ones. It
+   acts on the alias ceiling, and only for the many-environment geometry
+   (§6.7).
+
+**Hard limits.**
+
+* **Patches below ~50 cells are unusable.** A patch's diagonal bounds the
+  largest offset the loss ever observes; at 20 cells that is 28, against a
+  decay50 of 25–42. `sm20` caps at `r_min` 2.5 no matter the radius (§6.3).
+* **Patches above ~100 cells are worse**, at matched radius: 200-cell → 5.5,
+  100-cell → 9.0 (§6.5).
+* **Reachable coverage is seed-dependent and geometric, not a budget.**
+  Rejection sampling fails above ~61–65% for 200-cell patches at any attempt
+  count. Placement-check every seed a wave will use (§4.7).
+
+**Nulls — things that look like they should matter and do not.**
+
+* **Placement.** A jittered lattice halves the worst hole (839 → 461 cells) and
+  buys +1 and 0 radius units. Clean falsification of the hole mechanism (§5.6g).
+* **Mixing patch sizes.** Mixes land between their components rather than
+  beating them, and a tail below the ~50-cell floor drags the whole mix down
+  (§4.5, §6.3).
+
+**What sampling cannot fix, and why.** Under the constraint the repel term only
+sees pairs *inside one patch*. At 10% coverage **0 of 200** measured alias pairs
+qualify; at 50.8% it is 29 of 200. That is what coverage actually buys, and it
+is why geometry, placement and batch all returned the same 5–8 at 10% — they
+were rearranging the 10% that was never the problem (§5.6j, §5.6l).
+
+**The methodological trap, stated once.** Radius interacts with size, and batch
+interacts with count. Sweeping one at the other's tuned value silently measures
+the wrong thing — §6.1 compared geometries at `frac=0.15` and concluded "small
+patches fail", which the matched-radius control reversed (§6.5). Compare
+sampling knobs on a grid, not a line.
+
+## 0.4 Code added by this campaign
 
 Diff since `2dfceff` (the commit that opened it): ~4,500 lines.
 
 **The regularizer the winning configs use** — `losses.coding_rate_loss`,
-exposed as `--rate_lambda`. See §0.4.
+exposed as `--rate_lambda`. See §0.5.
 
 **Other new loss code** (`encoder_training/losses.py`): `vicreg_terms`
 (variance hinge + off-diagonal covariance), `participation_ratio`, a
@@ -232,7 +286,7 @@ never a headline).
 caught real bugs before they cost GPU time; the `random` placement path is
 asserted bit-identical because every number in §1–§4 came from it.
 
-## 0.4 The coding-rate regularizer, in full
+## 0.5 The coding-rate regularizer, in full
 
 ```python
 def coding_rate_loss(z, eps=0.5):          # z: (B, D), L2-normalised rows
