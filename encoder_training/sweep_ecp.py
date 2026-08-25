@@ -1283,6 +1283,42 @@ WAVES: dict[str, dict] = {
         },
         "seed": [42, 43, 44, 45],
     },
+    # W43 -- §6.9. Does the radius optimum track the input's correlation length?
+    #
+    # §6.2 says the near radius wants ~20 cells and does not scale with patch
+    # size, established across sizes 50-200, coverages 10-22.9%, and both
+    # parameterisations. But every one of those runs had fwhm_ratio=0.25, and
+    # that is the knob setting the input's own spatial scale: FWHM per module is
+    # fwhm_ratio * lambda, so ~3 cells at lambda 11-13. Radius 20 is about 6x
+    # that. A scale defined as a multiple of the input's scale should move when
+    # the input's scale moves, so "20 absolute" is almost certainly conditional.
+    #
+    # The one fwhm test on record (§5.6i, 0.5 -> null) was run at frac 0.15 --
+    # the radius tuned for fwhm 0.25 -- which is exactly the confound §6.1 fell
+    # into and §0.3 warns about. This crosses them properly.
+    #
+    # Prediction, recorded before running: if the optimum tracks FWHM, then
+    #
+    #     fwhm 0.125 (FWHM ~1.5)  ->  best radius ~10
+    #     fwhm 0.25  (FWHM ~3)    ->  best radius ~20   [already measured]
+    #     fwhm 0.5   (FWHM ~6)    ->  best radius ~40
+    #
+    # If instead 20 wins at every fwhm, the radius is set by something else --
+    # the arena, the lambdas, or the decay the metric is asking for -- and the
+    # §0.3 claim can be stated unconditionally.
+    #
+    # fwhm 0.25 is not re-run: w32/w33 already have sm100 at radius 15, 20, 25,
+    # 30 and 40, peaking at 20.
+    "w43_fwhm_x_radius": {
+        "arm": {
+            f"fwhm{f:g}_r{r}": dict(npos_list=SIZE_MIXES["sm100"],
+                                    per_env_radius_frac=0.0, radius=float(r),
+                                    rate_lambda=0.3, out_dim=1024,
+                                    hidden_dim=256, fwhm_ratio=f)
+            for f in (0.125, 0.5) for r in (10, 20, 40)
+        },
+        "seed": [42, 43, 44, 45],
+    },
     # W13 -- coverage, on the winning config rather than on the bare baseline.
     #
     # This replaces w4, which swept coverage over mixes chosen before any of the

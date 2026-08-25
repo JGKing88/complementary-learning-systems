@@ -200,10 +200,21 @@ patch count, placement, the near radius, and batch size.
 
 1. **Coverage dominates everything.** 10% → 50.8% takes `r_min` 4.5 → 23. No
    other sampling knob moves it by more than ~2 (§4.6b, §6).
-2. **The near radius is ~20 cells, absolute.** It does *not* scale with patch
-   size. `per_env_radius_frac=0.15` only ever worked because 0.15 of a 100–200
-   cell side lands in that window; on 50-cell patches it gives 7.5 and costs two
-   thirds of the radius. **Use `radius`, not `per_env_radius_frac`** (§6.2).
+2. **The near radius is ~20 cells, absolute — with respect to patch geometry.**
+   It does *not* scale with patch size. `per_env_radius_frac=0.15` only ever
+   worked because 0.15 of a 100–200 cell side lands in that window; on 50-cell
+   patches it gives 7.5 and costs two thirds of the radius. **Use `radius`, not
+   `per_env_radius_frac`** (§6.2).
+   **Scope, and it is narrower than "20 is optimal" sounds.** The invariance is
+   established across patch size (50–200), coverage (10–22.9%) and both
+   parameterisations — but every one of those runs had `fwhm_ratio=0.25`,
+   `lambdas=(11,12,13)`, `attract_lambda=2.0` and `repel_weight=1.0`. The
+   suspicious one is `fwhm_ratio`: it sets the input's spatial correlation
+   length (FWHM per module = `fwhm_ratio·λ` ≈ 3 cells here), so radius 20 is
+   ~6× that, and a scale set as a multiple of the input's own scale should move
+   when that scale does. The single `fwhm` test on record (§5.6i, 0.5 → null)
+   was run at `frac=0.15`, i.e. at the radius tuned for `fwhm=0.25` — the same
+   confound §6.1 fell into. **§6.9 crosses the two.**
 3. **Patch size and count have a joint interior optimum that depends on batch.**
    At batch 8192 the invariant is ~30 environments, whatever the coverage —
    70 cells at 5%, 100 at 10%, 140 at 20% (§6.6). At batch 4096 the optimum
