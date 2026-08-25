@@ -2702,6 +2702,59 @@ assumed commanded equals realized, which was true until `max_action_norm`
 existed. It now references the realized displacement and reports both, so the
 clamp's bite is visible rather than inferred.
 
+### 9.2 CORRECTION — the clamp was not why the policy sat at the cap
+
+§9.1 argued that the hard clamp *cost* explore coverage by parking the policy in
+a zero-gradient region at the boundary, and predicted that a policy free to
+choose its magnitude would move toward billiard's `‖a‖ ≈ 1.25` optimum and reach
+roughly 0.42. Both halves are wrong.
+
+Four arms with the radial tanh squash on the mean (§ P9), which bounds `‖μ‖`
+smoothly with live gradient everywhere:
+
+| arm | `mu_norm` | `sigma` | `ang_noise` | coverage |
+|---|---|---|---|---|
+| `p5_e` — hard clamp | **8.18** commanded, 1.98 realized | 0.497 | ~0.06 | 0.379–0.400 |
+| `p9_e_sq` — soft bound | **1.98** | 0.497 | 0.251 | 0.372–0.376 |
+| `p9_e_sq_std` — soft + state σ | **1.97** | 0.311–0.319 | 0.158–0.162 | 0.367–0.386 |
+
+**The policy chooses ~1.98 with full gradient available.** It was never trapped;
+it prefers the maximum. So the clamp did not cause the speed choice, and
+removing the dead zone does not change it.
+
+The prediction rested on an assumption that was never tested: that the policy's
+measured strategy efficiency of 1.11 would *hold* at a different magnitude. That
+efficiency is measured against billiard, and this policy already **beats**
+billiard by 11% — so there was no reason its own optimum should sit where
+billiard's does. Extrapolating one policy's efficiency across magnitudes is not
+a prediction, it is an assumption wearing one.
+
+**What the change did achieve, and it is not nothing:**
+
+1. **`‖μ‖` is bounded.** 1.97–1.98 against a commanded 8.18, so the
+   commanded/realized gap is closed. That removes the confound §8.2 found in
+   *both* phase-2 brackets — future manipulations of σ or the time penalty will
+   vary what they are named after.
+2. **σ is a live knob for the first time.** The state arms moved it 0.497 →
+   ~0.31 and the resulting angular noise genuinely differs between arms (0.251
+   against 0.158–0.162), where §8.2 showed a 3× nominal σ range collapsing to
+   1.33× effective.
+3. **Performance is unchanged.** Coverage 0.367–0.386 against 0.379–0.400;
+   exploit similar. So this is a **measurement fix, not a capability gain**, and
+   should be described as one.
+
+#### What is still unanswered, and why the diagnostic cannot answer it
+
+The stated pass/fail was whether the σ head **takes over the state-dependent
+modulation** that §8.2 found the policy performing through `‖μ‖`. The per-update
+`sigma` is a **batch mean**, and a batch mean cannot distinguish "learned a lower
+global σ" from "learned a σ that varies with state". The instrument answers a
+different question from the one it was built for.
+
+Answering it needs σ measured *conditioned on distractor count* — the axis along
+which §8.2 measured the angular noise doubling. Until then, the honest statement
+is that σ is now movable and has moved, not that it has become state-dependent.
+
 ---
 
 ## 10. P6 — interleaved
