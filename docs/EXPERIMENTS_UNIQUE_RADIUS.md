@@ -32,6 +32,16 @@ four times in this campaign and is not used for a headline (§4.8, §5.8c).
 | **3.** constraint, 10% cov, `hidden_dim` 256 | **7.0** | 17.0 | 0.984 | 42.5 | **572k** |
 | *3b.* as 3, `out_dim` 256 as well | 6.0 | 17.0 | 0.984 | 40 | **375k** |
 | **4.** as 3, 29×100 envs, radius 20 | **7.5** | 13.0 | 0.964 | 31 | 572k |
+| **5.** as 4, 118×50 envs, batch 4096 | **8.5** | 15.3 | 0.884 | 26 | 572k |
+| *5b.* as 5, final gain 100, lr 3e-4 | *7.0* | 13.5 | 0.878 | 25 | 572k |
+
+**Level 5** (§6.7) — `sweeps/w39_batch_pairs/0{08..11}_sm50_b4096_seed=4{2..5}`.
+Level 4 with **118 environments of 50 cells** and **batch 4096**. Best config at
+10% coverage: median 8.5 and a floor of 7.0 against level 4's 7.5 and 5.0, and
+the only 20-reference leader in the campaign that did not shrink on re-scoring.
+**Level 5b** (§6.8) is the same with final gain 100 and `lr 3e-4` —
+`sweeps/w42_push/00{4..7}_g100_sm50b4096_lr3e-4_seed=4{2..5}` — the answer to
+"how good with gain 100", costing ~1.5 units.
 
 **Level 4** (§6) — `sweeps/w32_small_geom/00{8,9}_sm100_r20_seed=4{2,3}` and
 `sweeps/w34_small_confirm/00{8..11}_sm100_r20_seed=4{4..7}`. Level 3 with
@@ -96,7 +106,18 @@ Measured, not inferred. Nulls are listed because they cost runs too.
 * **Patch size has an interior optimum at ~100 cells** at matched radius 20 and
   10% coverage (§6.5): 200 → 5.5, 100–200 mix → 7.0, **100 → 9.0**, 70 → 7.5,
   50 → 7.5.
-* **…but the invariant is the environment count, ~30, not the size** (§6.6).
+* **`batch_size` is a real lever and interacts with geometry** (§6.7). Each
+  geometry has an *interior* optimum at a different batch: 118×50-cell envs peak
+  at **4096** (`r_min` 10.0, against 7.5 at 8192), 29×100-cell envs at 8192+.
+  For the many-env geometry the alias ceiling tracks it (0.913 / **0.885** /
+  0.919 / 0.939) with res90 pinned; for the few-env one the ceiling is flat.
+  **No mechanism established — four have failed**: pair supply, overfitting,
+  monotone batch, and a monotone ceiling trend that was an artefact of three
+  data points.
+* **…but the invariant is the environment count, ~30, not the size** (§6.6) —
+  **and only at batch 8192**, where it was measured. At 4096 the 118-env
+  geometry wins outright (§6.7), so read the extrapolation rule as
+  batch-conditional.
   Varying coverage separates them: the ~30-env arm is top or joint-top at 5%,
   10% and 20% coverage, at sizes 70, 100 and 140 respectively, and four
   same-size comparisons across coverages all peak at ~30. Effects are 0.5–1.5
@@ -2584,3 +2605,100 @@ since 29 envs *is* 100-cell patches. What changes is how to extrapolate:
 **pick the patch size that gives ~30 environments at whatever coverage you
 have** — 70 cells at 5%, 100 at 10%, 140 at 20% — rather than fixing the size
 at 100.
+
+## 6.7 Batch size, and the death of the pair-supply mechanism
+
+§6.6 proposed that ~30 environments is optimal because under the constraint only
+within-env pairs are repellable, and a batch of B over n envs holds about
+`B²/(2n)` of them — few envs giving more usable pairs, many giving more distinct
+locations. `w39` and `w42` test it by moving `batch_size`, which changes supply
+without touching geometry. It is wrong.
+
+`r_min`, 20 references, 4 seeds per cell, radius 20 and `hd256/od1024`
+throughout:
+
+| batch | 2048 | 4096 | 8192 | 16384 |
+|---|---|---|---|---|
+| `sm50` (118 envs) | 6.0 | **10.0** | 7.5 | 7.5 |
+| `sm100` (29 envs) | 7.0 | 8.0 | **9.0** | 9.0 |
+
+**The matched-supply predictions fail.** `sm50` at 16384 (1.14M pairs) was meant
+to score like `sm100` at 8192 (1.16M) and gives 7.5 against 9.0. And the
+lowest-supply cell in the whole design — `sm50` at 4096, 71k pairs — is the best
+one. Supply does not order the results in either direction.
+
+**Overfitting is not it either.** Best-epoch fractions are 0.70–0.90 and
+best−final gaps ~0 at every batch size, so nothing peaks early and decays. That
+was the natural second guess, since at matched steps a smaller batch also means
+fewer passes over the data (~1015 against ~2030 for `sm50` at 4096 vs 8192).
+
+**What is actually there.** Each geometry has an *interior* batch optimum, and
+they sit at different batches: 4096 for the 118-environment geometry, 8192+ for
+the 29-environment one. For `sm50` the alias ceiling tracks it — 0.913, **0.885**,
+0.919, 0.939 across the four batches, minimised where `r_min` peaks — while
+res90 stays pinned at 10.0. For `sm100` the ceiling is flat near 0.95 throughout.
+So batch acts on the ceiling, only for the many-environment geometry, and
+non-monotonically. **No mechanism is offered; four have now failed** (pair
+supply, overfitting, monotone-batch, and a monotone ceiling trend that was an
+artefact of having only three batch points).
+
+**The practical result is a new best at 10% coverage.** `sm50` at batch 4096,
+scored at 100 references on two draws:
+
+| config | cells | median | min | `r_median` | alias | decay50 |
+|---|---|---|---|---|---|---|
+| **`sm50` × 118, batch 4096** | 8 | **8.5** | **7.0** | 15.25 | 0.884 | 26.0 |
+| `sm100` × 29, batch 8192 (§6.5 best) | 12 | 7.5 | 5.0 | 13.00 | 0.964 | 31.0 |
+
+Better median and a better floor. It is also the first 20-reference leader in
+this campaign that did **not** shrink on re-scoring.
+
+**And it qualifies §6.6.** "~30 environments" was measured entirely at batch
+8192. At batch 4096 the 118-environment geometry wins outright, so the optimal
+environment count depends on batch size — which no §6 wave varied. The §6.6
+extrapolation rule should be read as holding at batch 8192, not universally.
+
+## 6.8 Final gain 100: the code goes binary, and costs ~1.5 units
+
+Asked for directly. It is a meaningful setting only because §0.2 established
+that at gain 5 the tanh never leaves its linear region, so the ramp is nearly
+inert. At gain 100 it is not.
+
+**Saturation, measured** (fraction of coordinates past |tanh| 0.95, before
+normalisation):
+
+| final gain | 5 | 20 | 100 |
+|---|---|---|---|
+| saturated | **0.000** | 0.425 | 0.522 |
+| `r_min` (untuned) | 9.0 | 7.5 | 6.0 |
+| participation ratio | 105.6 | 130.6 | 120.6 |
+
+Binarisation arrives between gain 5 and 20 — exactly where the drop happens —
+and further gain costs little after that. **The price is being binary, not the
+size of the gain.** The network partly self-compensates, shrinking `|net(x)|`
+from 0.075 at gain 20 to 0.0195 at gain 100 to hold `|g·net|` near 2, and rank
+survives at pr ~120, so this is not collapse.
+
+**Tuning recovers most of it, and the direction is up.** At gain 100 on the §6
+geometry: lr 3e-5 → 5.0, lr 1e-4 (default) → 6.0, **lr 3e-4 → 8.0**. Higher wins
+and lower loses, which is what saturation predicts — a saturated tanh passes
+almost no gradient (`tanh' = 1 − tanh²`), so the stuck units need bigger steps.
+`rate_lambda=1.0` was a null at 5.0, so the Hamming-geometry argument for
+re-tuning the spread term did not pay.
+
+**The answer, at 100 references and two draws:**
+
+| gain-100 config | cells | median | min | alias |
+|---|---|---|---|---|
+| **`sm50`×118 @ batch 4096, lr 3e-4** | 7 | **7.0** | 5.0 | 0.878 |
+| `sm100` @ 8192, lr 3e-4 | 8 | 5.5 | **0.0** | 0.912 |
+| `sm100` @ 8192, lr 1e-4 (untuned) | 8 | 5.0 | 4.0 | 0.936 |
+| *gain 5 best, for reference* | *8* | *8.5* | *7.0* | *0.884* |
+
+**Final gain 100 costs about 1.5 units once tuned** — 7.0 against 8.5 — rather
+than the 3 the untuned curve suggested.
+
+Note the 20-reference metric tied the top two arms at 8.0 each and hid that the
+`sm100` version has a reference that collapses to 0. Combining the two winners
+did help; it took 100 references to see it. (The combined arm has 7 of 8 cells
+here — its last seed finished after the scoring job started.)
