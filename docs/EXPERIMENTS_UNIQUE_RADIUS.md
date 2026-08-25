@@ -33,7 +33,7 @@ four times in this campaign and is not used for a headline (§4.8, §5.8c).
 | *3b.* as 3, `out_dim` 256 as well | 6.0 | 17.0 | 0.984 | 40 | **375k** |
 | **4.** as 3, 29×100 envs, radius 20 | **7.5** | 13.0 | 0.964 | 31 | 572k |
 | **5.** as 4, 118×50 envs, batch 4096 | **8.5** | 15.3 | 0.884 | 26 | 572k |
-| *5b.* as 5, final gain 100, lr 3e-4 | *7.0* | 13.5 | 0.878 | 25 | 572k |
+| *5b.* as 5, final gain 100, lr 3e-4 | *6.5* | 13.8 | 0.879 | 25 | 572k |
 
 **Level 5** (§6.7) — `sweeps/w39_batch_pairs/0{08..11}_sm50_b4096_seed=4{2..5}`.
 Level 4 with **118 environments of 50 cells** and **batch 4096**. Best config at
@@ -41,7 +41,7 @@ Level 4 with **118 environments of 50 cells** and **batch 4096**. Best config at
 the only 20-reference leader in the campaign that did not shrink on re-scoring.
 **Level 5b** (§6.8) is the same with final gain 100 and `lr 3e-4` —
 `sweeps/w42_push/00{4..7}_g100_sm50b4096_lr3e-4_seed=4{2..5}` — the answer to
-"how good with gain 100", costing ~1.5 units.
+"how good with gain 100", costing ~2 units.
 
 **Level 4** (§6) — `sweeps/w32_small_geom/00{8,9}_sm100_r20_seed=4{2,3}` and
 `sweeps/w34_small_confirm/00{8..11}_sm100_r20_seed=4{4..7}`. Level 3 with
@@ -2658,7 +2658,7 @@ this campaign that did **not** shrink on re-scoring.
 environment count depends on batch size — which no §6 wave varied. The §6.6
 extrapolation rule should be read as holding at batch 8192, not universally.
 
-## 6.8 Final gain 100: the code goes binary, and costs ~1.5 units
+## 6.8 Final gain 100: the code goes binary, and costs ~2 units
 
 Asked for directly. It is a meaningful setting only because §0.2 established
 that at gain 5 the tanh never leaves its linear region, so the ramp is nearly
@@ -2688,17 +2688,25 @@ re-tuning the spread term did not pay.
 
 **The answer, at 100 references and two draws:**
 
-| gain-100 config | cells | median | min | alias |
-|---|---|---|---|---|
-| **`sm50`×118 @ batch 4096, lr 3e-4** | 7 | **7.0** | 5.0 | 0.878 |
-| `sm100` @ 8192, lr 3e-4 | 8 | 5.5 | **0.0** | 0.912 |
-| `sm100` @ 8192, lr 1e-4 (untuned) | 8 | 5.0 | 4.0 | 0.936 |
-| *gain 5 best, for reference* | *8* | *8.5* | *7.0* | *0.884* |
+| gain-100 config | cells | median | min | cells, sorted | alias |
+|---|---|---|---|---|---|
+| **`sm50`×118 @ 4096, lr 3e-4** | 8 | **6.5** | 5.0 | 5 5 6 6 7 7 7 7 | 0.879 |
+| `sm100` @ 8192, lr 3e-4 | 8 | 5.5 | **0.0** | — | 0.912 |
+| `sm100` @ 8192, lr 1e-3 | 8 | 5.5 | **0.0** | 0 2 4 5 6 6 6 7 | 0.920 |
+| `sm100` @ 8192, lr 1e-4 (untuned) | 8 | 5.0 | 4.0 | — | 0.936 |
+| *gain 5 best, for reference* | *8* | *8.5* | *7.0* | *7 7 8 8 9 9 10 10* | *0.884* |
 
-**Final gain 100 costs about 1.5 units once tuned** — 7.0 against 8.5 — rather
-than the 3 the untuned curve suggested.
+**Final gain 100 costs about 2 units once tuned** — 6.5 against 8.5 — rather
+than the 3 the untuned curve suggested. The winning arm is also the tightest of
+the four, 5–7 across all eight cells.
 
-Note the 20-reference metric tied the top two arms at 8.0 each and hid that the
-`sm100` version has a reference that collapses to 0. Combining the two winners
-did help; it took 100 references to see it. (The combined arm has 7 of 8 cells
-here — its last seed finished after the scoring job started.)
+**Two 20-reference illusions in this one wave**, both caught only by re-scoring:
+
+* the top two arms *tied* at 8.0 on 20 references, and 100 showed the `sm100`
+  one has a reference collapsing to 0 while the combined one does not;
+* `lr 1e-3` read **8.5** on 20 references — nominally the best gain-100 arm —
+  and reads 5.5 with a zero and a two on 100. lr 3e-4 is the setting.
+
+An earlier version of this section reported 7.0 for the winning arm and a cost
+of 1.5 units. That was computed on 7 of its 8 cells, the last seed having
+finished after the scoring job started; the full arm is 6.5.
