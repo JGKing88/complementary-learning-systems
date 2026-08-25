@@ -414,6 +414,7 @@ def _build_cfg_from_args(args) -> TrainConfig:
         hidden_channels=args.hidden_channels,
         num_conv_layers=args.num_conv_layers, kernel_size=args.kernel_size,
         gain=args.gain_end,
+        char_p_max=args.char_p_max, char_m_max=args.char_m_max,
     )
     loss = LossConfig(
         mode=args.loss_mode,
@@ -474,7 +475,13 @@ def _build_cfg_from_args(args) -> TrainConfig:
 def main():
     p = argparse.ArgumentParser(description="Binary-method encoder training")
     # Model
-    p.add_argument("--encoder_type", default="mlp", choices=["mlp", "cnn"])
+    p.add_argument("--encoder_type", default="mlp",
+                   choices=["mlp", "cnn", "equivariant"])
+    p.add_argument("--char_p_max", type=int, default=2,
+                   help="equivariant: per-module integer frequency bound")
+    p.add_argument("--char_m_max", type=int, default=120,
+                   help="equivariant: bound on induced position frequency, in "
+                        "units of 1/prod(lambdas)")
     p.add_argument("--lambdas", type=int, nargs="+", default=[11, 12, 13])
     p.add_argument("--out_dim", type=int, default=256)
     p.add_argument("--hidden_dim", type=int, default=1024)

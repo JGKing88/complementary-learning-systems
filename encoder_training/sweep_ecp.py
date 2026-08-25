@@ -1319,6 +1319,43 @@ WAVES: dict[str, dict] = {
         },
         "seed": [42, 43, 44, 45],
     },
+    # W44 -- §8.1. Train the equivariant encoder's amplitudes on patches.
+    #
+    # The structural half is already settled: an exactly equivariant code gives
+    # r_min = r_median with spread 0.0 across 40 references, and analytic
+    # amplitudes reach r_min 18 with no training at all. What is open is the
+    # other half -- can the campaign's contrastive loss FIND good amplitudes
+    # when it only ever sees pairs inside a patch, offsets up to s*sqrt(2)?
+    #
+    # Sampling is the §6.7 best: sm50 (118 x 50 cells, ~10% coverage), absolute
+    # radius 20, batch 4096, exclude_cross_env_pairs. Nothing here is out of
+    # brief -- the model class changed, not the data.
+    #
+    # out_dim, hidden_dim and gain do not apply: the character table fixes the
+    # output size, and any pointwise nonlinearity would break equivariance. The
+    # only capacity knob is how many characters are admitted, and p_max=2 gives
+    # 729 learnable amplitudes against the MLP's 571,904.
+    #
+    # lr is swept because 1e-4 was tuned for a 572k-parameter network and this
+    # has 729 parameters in log-amplitude space, where the loss is close to a
+    # kernel fit.
+    #
+    # Prediction on rate_lambda, recorded before running: it should HURT here.
+    # The characters are near-orthogonal across positions, so the batch
+    # covariance is roughly diag(a_k^2) and the coding rate is maximised by
+    # flat amplitudes -- which is a delta-like kernel, exactly what the attract
+    # term is trying to widen. rate 0 should beat rate 0.3.
+    "w44_equivariant": {
+        "arm": {
+            f"lr{lr:g}_rate{r:g}": dict(
+                npos_list=SIZE_MIXES["sm50"], batch_size=4096,
+                per_env_radius_frac=0.0, radius=20.0,
+                encoder_type="equivariant", char_p_max=2, char_m_max=120,
+                lr=lr, rate_lambda=r)
+            for lr in (1e-3, 1e-2) for r in (0.0, 0.3)
+        },
+        "seed": [42, 43, 44, 45],
+    },
     # W13 -- coverage, on the winning config rather than on the bare baseline.
     #
     # This replaces w4, which swept coverage over mixes chosen before any of the

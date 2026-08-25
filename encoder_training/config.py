@@ -9,7 +9,7 @@ from cls_paths import encoders_dir
 @dataclass
 class EncoderModelConfig:
     """Architecture config for the grid cell encoder."""
-    encoder_type: str = "mlp"           # "mlp" or "cnn"
+    encoder_type: str = "mlp"           # "mlp", "cnn" or "equivariant"
     lambdas: list[int] = field(default_factory=lambda: [11, 12, 13])
     out_dim: int = 256
     nonlinearity: str = "gelu"
@@ -22,6 +22,14 @@ class EncoderModelConfig:
     hidden_channels: int = 128
     num_conv_layers: int = 3
     kernel_size: int = 5
+    # equivariant-specific (§8.1). The character table fixes out_dim, so
+    # `out_dim`, `hidden_dim` and `gain` do not apply -- the only capacity knobs
+    # are how many characters are admitted. char_p_max bounds each module's
+    # integer frequency; char_m_max bounds the induced position frequency in
+    # units of 1/prod(lambdas). Learnable parameters = (number of characters)^2,
+    # and out_dim is twice that.
+    char_p_max: int = 2
+    char_m_max: int = 120
 
     @property
     def in_dim(self) -> int:
