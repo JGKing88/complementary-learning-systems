@@ -218,8 +218,12 @@ def run_navigate(
         cfg.log_std_anneal_target is not None
         and cfg.log_std_anneal_end_update > cfg.log_std_anneal_start_update
     )
-    log_std_init_val = float(agent.movement_log_std.detach().mean().item()) \
-        if hasattr(agent, "movement_log_std") else None
+    # `getattr(..., None) is not None`, not `hasattr`: under
+    # state_dependent_std the attribute exists and holds None, so hasattr is
+    # True and the .detach() below dies.
+    log_std_init_val = (
+        float(agent.movement_log_std.detach().mean().item())
+        if getattr(agent, "movement_log_std", None) is not None else None)
 
     # None follows the rollout length, which is what every run did before
     # `eval_max_steps` existed.
@@ -272,7 +276,12 @@ def run_navigate(
             new_log_std = log_std_init_val + t_ls * (
                 cfg.log_std_anneal_target - log_std_init_val)
             with torch.no_grad():
-                agent.movement_log_std.data.fill_(new_log_std)
+                # No global parameter to anneal under a state-dependent head;
+                # the schedule would have to become a bias offset, which is a
+                # separate design question. Left unapplied rather than
+                # half-applied.
+                if getattr(agent, "movement_log_std", None) is not None:
+                    agent.movement_log_std.data.fill_(new_log_std)
 
         # Anneal novelty if requested.
         if cfg.novelty_anneal:
@@ -408,7 +417,13 @@ def run_navigate(
 
         n_updates_timed += 1
         if update == 1 or update % 10 == 0:
-            log_std_mean = float(agent.movement_log_std.exp().mean().item())
+            # Under a state-dependent head there is no single sigma to print;
+            # the per-update `sigma` in the PPO stats is the realized one, so
+            # fall back to it rather than inventing a number here.
+            log_std_mean = (
+                float(agent.movement_log_std.exp().mean().item())
+                if getattr(agent, "movement_log_std", None) is not None
+                else float(losses.get("sigma", float("nan"))))
             s_per_update = (time.time() - t_update_mark) / max(n_updates_timed, 1)
             print(f"  u{update}({stage.kind}): "
                   f"mean_r={mean_r:.4f} (pre={_mr(pre_rs):.4f}, "

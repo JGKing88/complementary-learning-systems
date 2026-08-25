@@ -510,9 +510,22 @@ def set_requires_grad(params, flag: bool):
 
 
 def move_params(agent: NavAgent) -> list[torch.nn.Parameter]:
+    """Every parameter of the movement head, under either std parameterization.
+
+    `movement_log_std` is None when `state_dependent_std` is on -- the spread is
+    a `movement_log_std_head` linear layer instead -- so this cannot assume the
+    global parameter exists. Returning a None here reached
+    `set_requires_grad` and died on `NoneType.requires_grad_`.
+    """
     if agent.cfg.movement_mode == "discrete":
         return list(agent.movement_head.parameters())
-    return list(agent.movement_mean.parameters()) + [agent.movement_log_std]
+    params = list(agent.movement_mean.parameters())
+    if getattr(agent, "movement_log_std", None) is not None:
+        params.append(agent.movement_log_std)
+    head = getattr(agent, "movement_log_std_head", None)
+    if head is not None:
+        params.extend(head.parameters())
+    return params
 
 
 def store_params(agent: NavAgent) -> list[torch.nn.Parameter]:
@@ -538,7 +551,7 @@ def set_phase_freeze(agent: NavAgent, freeze_move: bool,
     # std drifting 0.166 -> 0.294 over 250 updates. The agent's own config is
     # the authority; a phase mask must not overrule it.
     if getattr(agent.cfg, "freeze_log_std", False) \
-            and hasattr(agent, "movement_log_std"):
+            and getattr(agent, "movement_log_std", None) is not None:
         agent.movement_log_std.requires_grad = False
     set_requires_grad(store_params(agent), not freeze_store)
     set_requires_grad(value_params(agent), not freeze_value)
