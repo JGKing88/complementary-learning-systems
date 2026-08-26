@@ -3406,10 +3406,30 @@ directly."*
 | polar learned u300 | 0.003 | **−0.001** | 0.993 | 0.464 |
 | Cartesian `p9_sq_std` u900 | 0.835 | **0.843** | 0.987 | 1.256 |
 
-`follow_q ≈ align_true` in **every** case — marginally exceeding it each time.
-The policy follows `q` exactly as well as it moves goalward at all. **There is
-no checkpoint here where a usable readout is ignored**, so mode B is not
-occurring and should not have been named.
+`follow_q ≈ align_true` in every case at n_dist=0 — but **that equality proves
+nothing**, and citing it as evidence was a second error. The three metrics are
+the three pairwise cosines among the action `a`, the recall `q`, and the true
+goal direction `g`: `follow_q` = cos(a,q), `align_true` = cos(a,g),
+`q_accuracy` = cos(q,g). When `q_accuracy` ≈ 0.99, `q` sits 8.5° from `g`, so
+`follow_q` and `align_true` are *forced* to be nearly equal no matter what the
+policy does. The comparison is only informative where `q` and `g` diverge.
+
+**At n_dist=10 they diverge, and the answer is unambiguous:**
+
+| frozen arm, n_dist=10 | all trials | failed trials |
+|---|---|---|
+| `q_accuracy` | 0.711 | **0.097** |
+| `follow_q` | **0.427** | **0.373** |
+| `align_true` | 0.279 | **−0.182** |
+
+`follow_q` (0.427) **exceeds** `align_true` (0.279): the action tracks `q` more
+closely than it tracks the true goal. The policy is using the readout.
+
+And on failures it followed `q` faithfully (0.373) while `q` pointed ~84° wrong
+(0.097), and therefore moved *away* from the goal (−0.182). **That is mode A —
+trusting a broken readout — which is ENCODER-limited.** The original section
+named mode B, i.e. the opposite mode. This model's residual ~10% failure at ten
+distractors is the recall's fault, not the policy's.
 
 The u300 learned arm is not ignoring `q`: `align_true` is also ≈0, i.e. it is
 not moving toward the goal either. It is a bad policy in a transient dip
