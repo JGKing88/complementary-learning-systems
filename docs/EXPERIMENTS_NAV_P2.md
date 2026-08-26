@@ -3235,10 +3235,16 @@ Everything in §9.4's u50 exploit reading is wrong. Full trajectories:
 
 | at its best | success | mean_steps | κ | ang noise |
 |---|---|---|---|---|
-| learned speed (u250) | 0.990 | 27.2 | — | — |
+| learned speed (u250) | 0.990 | 27.2 | ≈13 | 16.4° |
 | **frozen speed (u300)** | **1.000** | **19.6** | 37.8 | 9.7° |
 
-**The frozen arm wins on both metrics.** It was slower to start, not broken.
+**CAVEAT on that table — it compares two peaks, which is the thing this
+project's notes warn against.** At u300 the learned arm fell to **0.698**, so its
+full series is 0.677 / 0.844 / 0.969 / 0.979 / 0.990 / 0.698 against the frozen
+arm's 0.031 / 0.208 / 0.896 / 0.510 / 0.906 / 1.000. Both swing by 30+ points
+between consecutive evals and **neither has converged**. The defensible claim is
+that both reach ≥0.99 at their peaks and the frozen arm was slower to start, not
+that it "wins on both metrics".
 
 Three claims to retract, all made from a single early eval point:
 
@@ -3313,17 +3319,29 @@ and instead raises noise everywhere — mean 16.37° at n_dist=0 against 17.27°
 | 10 | 10.17° | 10.07° | 1.01° |
 
 Flat at every level, at a much sharper operating point overall (9.8° against the
-learned arm's 16.4°). Two candidate explanations, neither tested:
+learned arm's 16.4°).
 
-1. **Joint widening.** In the learned arm the *speed spread* also rises near the
-   goal (`sigma_d0_2` 0.338 against `sigma_d8plus` 0.305). The near-goal
-   response may be a coordinated widening of both channels, and removing one
-   suppresses the whole behaviour.
-2. **No room.** At κ ≈ 37 the policy is already so sharp that a 1.3× modulation
-   is a much smaller absolute change than at κ ≈ 13.
+##### RESOLVED — it is sharpness, not the frozen speed
 
-Distinguishing them is a real follow-up: freeze speed at 1.0 but with a lower
-`log_kappa_max`, and see whether the gradient reappears when sharpness is capped.
+The learned-speed arm regressed to κ ≈ 32 by u300, which is a
+**sharpness-matched control against the frozen arm with speed still free**.
+Probed (21311943):
+
+| checkpoint | κ (mean ang) | speed | gradient d0–2 → d8+ |
+|---|---|---|---|
+| learned u250 | ≈13 (16.4°) | free | **1.35×** |
+| learned u300 | ≈32 (11.2°) | free | **1.15×** |
+| frozen u300 | ≈38 (9.8°) | pinned | **1.03×** |
+
+Monotone in sharpness, and the learned arm at matched κ behaves like the frozen
+arm. **The gradient decays as the policy sharpens, regardless of whether speed
+is free.** The "joint widening" hypothesis — that pinning speed suppresses a
+coordinated widening of both channels — is unsupported and should be dropped.
+
+That also qualifies §9.6's headline: κ is state-dependent on proximity **while
+the policy is still relatively broad**, and the modulation shrinks as it
+converges. It is a property of the training regime, not a fixed property of the
+parameterization.
 
 | n_dist | 0 | 1 | 3 | 5 | 10 |
 |---|---|---|---|---|---|
@@ -3370,6 +3388,43 @@ Two follow-ups, both now motivated by evidence:
 - **What governs `follow_q`.** It is the larger effect (0.558 → 0.427, and
   0.407 → 0.392 in the learned arm) and nothing in the action parameterization
   addresses it. It is where the policy encodes confidence in the readout.
+
+---
+
+### 9.7 THE RESULT THAT MATTERS MOST — these models barely follow the readout
+
+Reading the probes for what the policy is *using*, not just how it is spread:
+
+| checkpoint | success | `q_accuracy` | `follow_q` |
+|---|---|---|---|
+| `p10_pol` u250 | 0.990 | 0.988 | **0.407** |
+| `p10_pol_v1` u300 | 1.000 | 0.989 | **0.558** |
+| `p10_pol` u300 | 0.698 | **0.993** | **−0.001** |
+
+The third row is **mode B in its purest form** (`project_nav_tri_failure_modes`:
+ignoring a usable readout, policy-limited rather than encoder-limited). Between
+u250 and u300 the learned-speed arm **abandoned the Hopfield readout entirely** —
+`follow_q` went to zero while `q_accuracy` stayed at 0.993, i.e. a near-perfect
+signal left completely on the table — and success fell 0.990 → 0.698 with
+`mean_steps` rising to 46.3.
+
+**But the first two rows are the uncomfortable part.** Even the *good*
+checkpoints follow `q` only weakly — 0.407 and 0.558 against readouts accurate
+to 0.99. **Both polar exploit arms reach high success while largely not using
+the memory.** They are navigating by something else: systematic search, wall
+following, whatever the trunk has learned from the sensory and prev-action
+channels.
+
+That reframes the headline. "1.000 success in 19.6 steps" is a strong
+*navigator* and not obviously a strong *memory-follower*, and this project is
+about the latter. A success rate that can be achieved without the readout is not
+measuring the readout.
+
+**This is not polar's doing** — it is a property of these runs that the polar
+probe made visible, and §9.3's Cartesian arms should be re-read the same way
+(their `follow_q` was 0.843 at n_dist=0, i.e. *substantially higher*). If that
+comparison holds up, polar improved the action parameterization while making the
+memory-following worse, and that trade is the thing to investigate next.
 
 ---
 
