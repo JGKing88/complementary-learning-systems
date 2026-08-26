@@ -3198,6 +3198,99 @@ retreats from saturation — is falsified: at 100× the default it moves
 **Why `out_dim` matters at all here.** 256 / 1024 / 2048 / 4096 read 7.0 / 6.5 /
 7.0 / 8.0 at 100 references — a real but shallow effect on an axis §5.8a found
 free at gain 5, with no mechanism established once grain was ruled out.
+## 6.11 Three hypotheses from a step back
+
+After §6.10 settled gain 100, three hypotheses were framed from the mechanism
+rather than from unswept knobs. One died on a code read, one is a clean null,
+and one found an 8× error in a value that has stood since §1.
+
+### 6.11a Dead before it ran: the attract neighbourhood is a disc
+
+`r_min` is a worst-*direction* metric, and §6.10j left anisotropy as the
+standing explanation for the law's one-signed over-prediction. An obvious way
+to manufacture anisotropy would be to define "near" on a box — if pairs were
+selected by `|dx| ≤ r and |dy| ≤ r`, the attract term would teach square level
+sets and the metric would be charged for the diagonal, where the corner sits at
+`r√2`. It is `dist = diff.square().sum(-1).sqrt()` in `_build_near_mask`, i.e.
+Euclidean, and the mask is `dist < r_thresh`. A disc. Hypothesis closed at the
+cost of reading one function.
+
+### 6.11b `TARGET_STEPS` = 73,000 was always enough
+
+The step count has been 73,000 since §1 and was never varied — every wave
+step-*matches* to it, which makes arms comparable and makes the level itself
+invisible. Three things suggested it was short: best-epoch fractions of
+0.70–0.90 with best−final gaps ~0 (runs ending while still improving); `lr`
+wanting to go *up* at gain 100; and the law's one-signed 2–3 cell
+over-prediction, which under-training would reproduce exactly.
+
+`w51` breaks the step match deliberately. On the §6.10h config, 20 references,
+four seeds:
+
+| steps | 73,000 (1×) | 146,000 (2×) | 219,000 (3×) |
+|---|---|---|---|
+| `r_min` | **11.0** | 9.5 | **11.0** |
+| `r_median` | 16.8 | 16.5 | 18.1 |
+| alias | 0.879 | 0.857 | 0.845 |
+
+**A null, and non-monotone, which is what noise looks like across three budget
+levels.** `r_median` drifts up slightly, so the extra compute does something —
+just nothing a worst-of-N metric can use. Every §1–§6 result stands at its own
+compute, and under-training is eliminated as the law's error term, leaving
+§6.10j's anisotropy without a competitor.
+
+### 6.11c `attract_lambda` has been 8× too low since §1
+
+**The hypothesis was right about the knob and backwards about the sign.**
+`mse_attract_repel` pulls every pair inside radius 20 to cosine 1 — a step
+target — while `r_min` measures strict decrease, so a model that fitted the
+attract term perfectly would be flat to 20 and score 0. The encoder scores well
+by *failing* to fit what it is asked. That argued for weakening attract. It is
+wrong: res90 is 10 against a radius of 20, so the network never approaches the
+plateau, and what the attract term actually does is hold the near field **up**.
+
+At gain 100 on the §6.10h config, 20 references, four seeds:
+
+| `attract_lambda` | 0.5 | 1.0 | 2.0 (since §1) | 4.0 | 8.0 | **16.0** |
+|---|---|---|---|---|---|---|
+| `r_min` | 5.5 | 9.0 | 11.0 | 11.5 | 11.0 | **12.0** |
+| `r_median` | 9.2 | 12.8 | 16.8 | 17.8 | 17.0 | **19.5** |
+| alias | 0.874 | 0.877 | 0.879 | 0.871 | 0.885 | 0.879 |
+
+**The ceiling does not move across a 32× range.** Every other knob in this
+campaign trades the ceiling against res90; this one does not, and §6.10c says
+why it can be free — the repel term only ever sees within-patch pairs (≤ ~71
+cells, and the constraint removes the cross-env ones), while the aliases that
+set `r_min` sit at 792 and 924 and belong entirely to the spread term.
+Repulsion is doing local work, and raising attract against a fixed
+`repel_weight` of 1.0 is largely a way of removing it.
+
+`r_median` is the trustworthy column here — it climbs monotonically bar the
+`att8` point, while `r_min` scatters by ±1 between neighbouring settings. An
+earlier reading of this table called the knee at 4.0 on the strength of `att8`
+dipping; four seeds at 16.0 show that dip was noise.
+
+### 6.11d It does not transfer to gain 5 either, for the same reason
+
+`attract_lambda` 4.0 at gain 5, at gain 5's own optimum spread setting, 20
+references:
+
+| at gain 5 | `r_min` | alias |
+|---|---|---|
+| `attract` 2.0 (§6.7 baseline) | **10.0** | 0.885 |
+| `attract` 4.0 | 6.0–7.0 | 0.904–0.944 |
+
+It breaks the ceiling, which is exactly how `rate_eps` 1.0 failed at gain 5
+(§6.10i). That makes three knobs — `rate_eps`, `rate_lambda`, `attract_lambda`
+— that win at gain 100, lose at gain 5, and lose *by the same mechanism*.
+
+**The unified statement.** Every one of them changes how much spread pressure
+the loss puts on the code. A high gain supplies spread pressure of its own, so
+at gain 100 each term can be relaxed in proportion to what the gain contributes;
+at gain 5 nothing supplies it and the far field collapses the moment any of them
+is relaxed. §6.10i's substitution account is not specific to the coding-rate
+term — it covers the attract:repel balance too, and predicts the same for any
+term that spreads.
 # 8. Open questions
 
 Ranked by how much answering them would change the picture, not by cost. Each is

@@ -1741,6 +1741,165 @@ WAVES: dict[str, dict] = {
         },
         "seed": [42, 43, 44, 45],
     },
+    # W51 -- was 73,000 steps ever enough?
+    #
+    # TARGET_STEPS has been 73,000 since §1 and has never been varied in the
+    # entire campaign. Every wave step-MATCHES to it, which makes arms
+    # comparable and makes the level itself invisible. Three things say it may
+    # be short:
+    #
+    #   * best-epoch fractions run 0.70-0.90 with best-final gaps ~0 (§6.7), so
+    #     nothing peaks early and decays -- the runs end while still improving.
+    #   * lr 3e-4 beats 1e-4 at gain 100 (§6.8) and 5e-4 is level with it. A
+    #     model that wants a bigger step is usually a model that has not taken
+    #     enough of them.
+    #   * §4.4b's law over-predicts every gain-100 arm by 2-3 cells, one-signed.
+    #     Under-training would look exactly like that: res90 and the ceiling are
+    #     both reached before the worst DIRECTION is cleaned up.
+    #
+    # This is the one wave that deliberately breaks the step match, so it is
+    # not comparable to anything else in §4-§6 on equal compute -- which is the
+    # point. If 3x buys nothing, 73,000 is settled for the whole campaign and
+    # that is worth knowing on its own.
+    "w51_steps": {
+        "arm": {
+            name: {**dict(npos_list=SIZE_MIXES["sm50"], batch_size=4096,
+                          lr=3e-4, per_env_radius_frac=0.0, radius=20.0,
+                          rate_lambda=0.5, rate_eps=1.0, out_dim=1024,
+                          hidden_dim=256, gain_end=100.0), **over}
+            for name, over in (
+                ("steps2x", dict(_step_scale=2.0)),
+                ("steps3x", dict(_step_scale=3.0)),
+            )
+        },
+        "seed": [42, 43, 44, 45],
+    },
+    # W52 -- the attract term asks for a plateau; the metric measures a slope.
+    #
+    # `mse_attract_repel` pulls EVERY pair inside radius 20 to cosine 1 and
+    # pushes everything else to 0. That target is a step function, and `r_min`
+    # is the length over which cosine STRICTLY DECREASES. A model that fitted
+    # the attract term perfectly would be flat out to 20 and score r_min 0.
+    # The measured profile is nothing like it -- res90 10, decay50 26 -- so the
+    # encoder scores well precisely by FAILING to fit the target it is given.
+    #
+    # The graded target that would fix this properly is `graded_sigma`, which
+    # is out of scope (it fits a target kernel, the family cka was excluded
+    # for). But the balance between the plateau demand and the push away from
+    # it is `attract_lambda`, and that has been 2.0 since §1 and has NEVER been
+    # swept -- not in one arm of §1-§6. It was inherited, not chosen, and never
+    # chosen for THIS metric.
+    #
+    # Prediction: weakening attract raises res90 and r_min, until it is too
+    # weak to hold the near field together at all -- the same knee shape the
+    # spread term turned out to have (§6.10g). 4.0 is included because an
+    # untested axis deserves both directions.
+    #
+    # fwhm is here because it sets the INPUT code's own far ceiling, measured
+    # directly: 0.9533 at fwhm 0.25 and 0.9878 at 0.5, since a wider bump means
+    # a one-cell module offset costs less. Less smoothing lowers the ceiling
+    # the encoder has to beat and costs res90 -- the same trade again. §6.9
+    # priced it at the OLD spread setting and found 0.5 a tie and 0.125 bad;
+    # eps 1.0 has since bought res90 back, which may be exactly the room a
+    # smaller fwhm needs.
+    "w52_attract_fwhm": {
+        "arm": {
+            name: {**dict(npos_list=SIZE_MIXES["sm50"], batch_size=4096,
+                          lr=3e-4, per_env_radius_frac=0.0, radius=20.0,
+                          rate_lambda=0.5, rate_eps=1.0, out_dim=1024,
+                          hidden_dim=256, gain_end=100.0), **over}
+            for name, over in (
+                ("att0.5",   dict(attract_lambda=0.5)),
+                ("att1",     dict(attract_lambda=1.0)),
+                ("att4",     dict(attract_lambda=4.0)),
+                ("fwhm0.15", dict(fwhm_ratio=0.15)),
+                ("fwhm0.5",  dict(fwhm_ratio=0.5)),
+            )
+        },
+        "seed": [42, 43, 44, 45],
+    },
+    # W53 -- find attract_lambda's knee, and test whether it transfers.
+    #
+    # w52: 0.5 / 1.0 / 2.0 / 4.0 -> r_min 5.5 / 9.0 / 11.0 / 11.5 and r_median
+    # 9.0 / 13.0 / 16.8 / 17.9. Monotone THROUGH the incumbent, and 4.0 is the
+    # tightest arm measured (11 11 12 12). So 2.0 -- the value in every
+    # headline config since §1, never swept in any arm -- is below its own
+    # optimum. The gap between 2.0 and 4.0 is small, so the knee is near, and
+    # an unlocated knee is half a result.
+    #
+    # The prediction that motivated w52 was WRONG in its direction: the attract
+    # term asks for a plateau, so weakening it was supposed to let a decreasing
+    # profile emerge. Weakening it collapses the near field instead (res90 with
+    # it), because at res90 10 against radius 20 the network never approaches
+    # the plateau -- attract is what HOLDS THE NEAR FIELD UP. It is another
+    # res90 knob, not a shape knob, which is what every knob in §6.10 turned
+    # out to be.
+    #
+    #   att8 / att16   where does holding the near field up start costing the
+    #                  ceiling? Every other axis in this campaign has a knee.
+    #   g5_att4        the transfer test. rate_eps 1.0 won at gain 100 and LOST
+    #                  three units at gain 5 (§6.10i), so "it won at gain 100"
+    #                  is not evidence about anywhere else. attract_lambda sits
+    #                  in every §1-§6 config, so this one matters far beyond
+    #                  the gain-100 brief.
+    "w53_attract_knee": {
+        "arm": {
+            "att8":  dict(npos_list=SIZE_MIXES["sm50"], batch_size=4096,
+                          lr=3e-4, per_env_radius_frac=0.0, radius=20.0,
+                          rate_lambda=0.5, rate_eps=1.0, out_dim=1024,
+                          hidden_dim=256, gain_end=100.0, attract_lambda=8.0),
+            "att16": dict(npos_list=SIZE_MIXES["sm50"], batch_size=4096,
+                          lr=3e-4, per_env_radius_frac=0.0, radius=20.0,
+                          rate_lambda=0.5, rate_eps=1.0, out_dim=1024,
+                          hidden_dim=256, gain_end=100.0, attract_lambda=16.0),
+            # gain 5, at ITS optimum spread setting, with attract moved
+            "g5_att4": dict(npos_list=SIZE_MIXES["sm50"], batch_size=4096,
+                            lr=1e-4, per_env_radius_frac=0.0, radius=20.0,
+                            rate_lambda=0.3, out_dim=1024, hidden_dim=256,
+                            gain_end=5.0, attract_lambda=4.0),
+        },
+        "seed": [42, 43, 44, 45],
+    },
+    # W54 -- how far up does attract go, and is it really the RATIO?
+    #
+    # attract_lambda, never swept in §1-§6, is monotone from 0.5 to 16 with the
+    # alias ceiling FLAT across the whole 32x range:
+    #
+    #   attract   0.5    1.0    2.0    4.0    8.0    16.0
+    #   r_min     5.5    9.0   11.0   11.5   11.0   12.0
+    #   r_median  9.2   12.8   16.8   17.8   17.0   19.5
+    #   alias    .874   .877   .879   .871   .885   .879
+    #
+    # Unlike every other knob in this campaign it is not trading against the
+    # far field. §6.10 explains why it can be free: the repel term only ever
+    # sees within-patch pairs (<= ~71 cells) because the constraint masks the
+    # cross-env ones, while the aliases that set r_min sit at 792 and 924 and
+    # belong entirely to the spread term. So repulsion is doing local work that
+    # may not be worth its weight, and raising attract with repel_weight fixed
+    # at 1.0 is mostly a way of REMOVING it.
+    #
+    #   att32 / att64  where it saturates. r_median 19.5 is already the highest
+    #                  in the campaign and the ceiling has not moved.
+    #   rep0.25        the mechanism test. attract 2.0 with repel 0.25 is the
+    #                  same 8:1 ratio as att8 with repel 1.0. If it scores like
+    #                  att8, the ratio is what matters and the finding is
+    #                  "repulsion is over-weighted". If it does not, the
+    #                  absolute scale matters too -- which it might, since both
+    #                  weights are relative to the spread term.
+    "w54_attract_far": {
+        "arm": {
+            name: {**dict(npos_list=SIZE_MIXES["sm50"], batch_size=4096,
+                          lr=3e-4, per_env_radius_frac=0.0, radius=20.0,
+                          rate_lambda=0.5, rate_eps=1.0, out_dim=1024,
+                          hidden_dim=256, gain_end=100.0), **over}
+            for name, over in (
+                ("att32",   dict(attract_lambda=32.0)),
+                ("att64",   dict(attract_lambda=64.0)),
+                ("rep0.25", dict(attract_lambda=2.0, repel_weight=0.25)),
+            )
+        },
+        "seed": [42, 43, 44, 45],
+    },
 }
 
 
@@ -1826,9 +1985,13 @@ def build_runs(wave: dict) -> list[tuple[str, dict]]:
         # Step-match: mixed batches take floor(N / batch_size) steps an epoch,
         # so a geometry that moves coverage moves the step count. Hold steps,
         # not epochs. ur_every keeps ~10 radius evals per run either way.
+        # `_step_scale` deliberately BREAKS the step match, for the one wave
+        # that asks whether 73,000 steps was ever enough. Underscore-prefixed,
+        # so it never reaches the CLI.
         n_pts = mix_points(cfg["npos_list"])
         steps_per_epoch = max(1, n_pts // cfg["batch_size"])
-        cfg["epochs"] = max(100, round(TARGET_STEPS / steps_per_epoch / 50) * 50)
+        target = TARGET_STEPS * float(cfg.pop("_step_scale", 1.0))
+        cfg["epochs"] = max(100, round(target / steps_per_epoch / 50) * 50)
         cfg["ur_every"] = max(10, cfg["epochs"] // 10)
         cfg["_labels"] = label_map
         runs.append((f"{i:03d}_" + "_".join(labels), cfg))
