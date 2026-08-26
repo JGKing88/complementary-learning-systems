@@ -2755,6 +2755,68 @@ Answering it needs σ measured *conditioned on distractor count* — the axis al
 which §8.2 measured the angular noise doubling. Until then, the honest statement
 is that σ is now movable and has moved, not that it has become state-dependent.
 
+### 9.3 RESULT — the sigma head learned a lower constant, not a state-dependent one
+
+§9.2 recorded that the pass/fail could not be read from the training logs,
+because the per-update `sigma` is a batch mean. Measured properly
+(`behavior_probe --mode nav`, sigma binned on both axes, 8 envs x 32 trials),
+against the global-sigma arm as a control whose sigma is constant by
+construction:
+
+| n_dist | state σ | state ‖μ‖ | state ang | ctrl σ | ctrl ‖μ‖ | ctrl ang |
+|---|---|---|---|---|---|---|
+| 0 | 0.2938 | 1.595 | 10.6° | 0.4966 | 1.584 | 18.0° |
+| 3 | 0.3042 | 1.419 | 12.3° | 0.4966 | 1.408 | 20.2° |
+| 10 | 0.3190 | 1.307 | 14.0° | 0.4966 | 1.284 | 22.2° |
+
+**Axis 1 — distractor count. σ is state-dependent, and the head displaced
+nothing.** σ rises 1.086× from zero to ten distractors, which is real
+state-dependence in the predicted direction. But the control settles it: `‖μ‖`
+modulates **1.234× without the head and 1.220× with it**. The policy performs
+the same magnitude modulation either way, and the head merely **added** its
+1.086× on top.
+
+*(An earlier reading of the state arm alone reported this as "σ takes over 29%
+of the modulation, `‖μ‖` does 71%". That share-of-total framing is wrong and the
+control is what shows it: a share implies displacement, and none occurred. The
+correct statement is additive, not fractional.)*
+
+**Axis 2 — distance to the goal. σ is flat, and the prediction fails.** Within
+each distractor level σ varies by ~3% across distance bins with no trend — at
+d=0 it reads 0.2857 / 0.2799 / 0.2770 / 0.2855 from nearest to farthest, and at
+d=10 it is *slightly lower* near the goal (0.303) than far (0.312). Meanwhile
+angular noise rises sharply toward the goal in **both** arms — 13.7° → 8.6°
+near-to-far in the state arm, 26.6° → 14.4° in the control.
+
+§9.1's prediction was that a sigma tracking readout trustworthiness should
+**rise** within two cells of the goal, where P1 measured the readout collapsing
+(10th percentile of `cos(q, goal)` → 0.37). It does not. The near-goal increase
+in angular noise is achieved **entirely by slowing down**, identically in an arm
+that has no sigma head at all.
+
+That is a sharper negative than a flat result would have been. The head *can*
+condition on state — it does so for distractor count — but does not use
+proximity, even though proximity is where the readout actually degrades and the
+information is present in its inputs.
+
+**What the head actually did.** Its dominant effect is a **1.69× lower global
+sigma** (0.294 against the control's 0.497), which roughly halves angular noise
+everywhere. So a head introduced to make exploration state-dependent mostly
+learned a better constant.
+
+#### Consequence
+
+The residual magnitude channel flagged in `action_head.py` — that `σ/‖μ‖` can
+still vary 4× over `‖μ‖ ∈ [0.5, 2]`, which exceeds the 2.2× modulation the
+policy exhibits — **binds**. The policy keeps using it in preference to the
+channel provided. Bounding the mean was necessary to make σ meaningful, and it
+was not sufficient to make σ the channel the policy reaches for.
+
+That is the case for the polar parameterization, now on evidence rather than on
+principle: magnitude and heading as separate distributions, so directional
+exploration cannot be bought by changing speed. Recorded as the next design
+step, not run.
+
 ---
 
 ## 10. P6 — interleaved
