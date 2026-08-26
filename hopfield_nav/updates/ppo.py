@@ -224,7 +224,7 @@ def ppo_update(
     total_value_loss = 0.0
     total_move_ent = 0.0
     total_store_ent = 0.0
-    total_mu_norm = total_sigma = total_ang = total_kappa = 0.0
+    total_mu_norm = total_sigma = total_ang = total_kappa = total_dir = 0.0
     n_diag = n_kappa = 0
     total_store_bc = 0.0
     n_steps = 0
@@ -308,6 +308,7 @@ def ppo_update(
                 total_sigma += _d["sigma"]
                 total_ang += _d["ang_noise"]
                 total_kappa += _d["kappa"]
+                total_dir += _d.get("dir_norm", float("nan"))
                 n_kappa += 1
                 n_diag += 1
             elif hasattr(move_dist, "mean") and move_dist.mean.dim() >= 2 \
@@ -414,4 +415,10 @@ def ppo_update(
     # a genuinely broken run gets caught. Absent is the unambiguous option.
     if n_kappa:
         stats["kappa"] = total_kappa / n_kappa
+        # The direction head's magnitude: a gauge freedom nothing in the
+        # objective pressures. Logged because the softening only BOUNDS what
+        # happens when it decays -- it does not stop it decaying, and a run
+        # whose heading has gone near-uniform should say so while it happens
+        # rather than in a post-mortem.
+        stats["dir_norm"] = total_dir / n_kappa
     return stats
