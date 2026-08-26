@@ -297,6 +297,70 @@ class TestPPODynamics:
         assert abs(float(final)) < 0.5, f"heading stalled at {float(final):.3f} rad"
 
 
+class TestUpdateSurvivesNonFiniteSamples:
+    """Both P10 arms died in update 2 with EVERY entry of the heading NaN.
+
+    The mechanism is generic to this PPO loop but polar is what made it live:
+    a von Mises whose kappa reaches its ceiling can put ~2*kappa between two
+    log-probs, and exp() of that is `inf` in float32. `inf` then meets a zero
+    mask -- and `inf * 0` is NaN, so the mask that exists to REMOVE the
+    offending steps is what converted them into a NaN. `clip_grad_norm_` then
+    scaled by `max_norm / inf` = 0, writing NaN into the parameters for good.
+    """
+
+    def test_an_overflowing_ratio_on_a_masked_step_stays_finite(self):
+        agent = _agent()
+        B, T = 6, 8
+        obs = torch.randn(B, T, 8)
+        with torch.no_grad():
+            md, sd, values, _ = agent(obs)
+            a = md.sample()
+            st = sd.sample()
+            lp = md.log_prob(a).sum(-1)
+        # One masked step whose stored log-prob is absurd -- exactly what an
+        # epsilon action re-scored under a sharp policy looks like.
+        lp = lp.clone()
+        lp[0, 0] = -1e4
+        mask = torch.ones(B, T)
+        mask[0, 0] = 0.0
+        batch = RolloutBatch(
+            obs=obs, move_actions=a, store_actions=st, move_log_probs=lp,
+            store_log_probs=sd.log_prob(st), values=values,
+            rewards=torch.randn(B, T) * 0.1, bootstrap_value=torch.zeros(B),
+            goal_reached=torch.zeros(B, T), explore_mask=torch.ones(B, T),
+            policy_action_mask=mask)
+        stats = ppo_update(agent, [batch], PPOConfig(ppo_epochs=1,
+                                                     n_minibatches=1),
+                           torch.optim.Adam(agent.parameters(), lr=1e-3))
+        assert math.isfinite(stats["move_loss"])
+        for n, p in agent.named_parameters():
+            assert torch.isfinite(p).all(), n
+
+    def test_a_nonfinite_gradient_skips_the_step_instead_of_poisoning_it(self):
+        agent = _agent()
+        before = {n: p.detach().clone() for n, p in agent.named_parameters()}
+        B, T = 6, 8
+        obs = torch.randn(B, T, 8)
+        with torch.no_grad():
+            md, sd, values, _ = agent(obs)
+            a, st = md.sample(), sd.sample()
+            lp = md.log_prob(a).sum(-1)
+        rew = torch.randn(B, T) * 0.1
+        rew[0, 0] = float("inf")            # -> inf return -> inf value loss
+        batch = RolloutBatch(
+            obs=obs, move_actions=a, store_actions=st, move_log_probs=lp,
+            store_log_probs=sd.log_prob(st), values=values, rewards=rew,
+            bootstrap_value=torch.zeros(B), goal_reached=torch.zeros(B, T),
+            explore_mask=torch.ones(B, T))
+        stats = ppo_update(agent, [batch], PPOConfig(ppo_epochs=1,
+                                                     n_minibatches=1),
+                           torch.optim.Adam(agent.parameters(), lr=1e-3))
+        assert stats["nonfinite_steps"] >= 1.0
+        for n, p in agent.named_parameters():
+            assert torch.isfinite(p).all(), n
+            assert torch.allclose(p.detach(), before[n]), f"{n} was stepped"
+
+
 def _run_ppo(agent, epochs=1):
     B, T = 6, 8
     obs = torch.randn(B, T, 8)

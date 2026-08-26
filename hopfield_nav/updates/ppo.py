@@ -228,6 +228,8 @@ def ppo_update(
     n_diag = n_kappa = 0
     total_store_bc = 0.0
     n_steps = 0
+    n_nonfinite = 0
+    reported_nonfinite = False
 
     for _ in range(cfg.ppo_epochs):
         perm = torch.randperm(N, device=obs.device)
@@ -265,14 +267,31 @@ def ppo_update(
                 # same axis -- takes this path too. An isinstance check would
                 # have silently left the polar ratio one factor short.
                 new_move_lp = new_move_lp.sum(-1)
-            ratio_move = torch.exp(new_move_lp - mb_old_move_lp)
+            # CLAMPED before exp. The comment below already notes that ε /
+            # auto-nav steps explode the ratio; under a von Mises whose kappa
+            # can reach its ceiling the log-prob gap between two policies can
+            # reach ~2*kappa, and exp() of that is `inf` in float32. An `inf`
+            # then meets `* mb_pol_mask` and `inf * 0` is NaN -- so the mask
+            # that exists to REMOVE those steps is what converts them into a
+            # NaN that poisons every parameter at once. exp(20) = 4.9e8, far
+            # past anything clip_coef admits, so this changes no healthy step.
+            log_ratio_move = (new_move_lp - mb_old_move_lp).clamp(-20.0, 20.0)
+            ratio_move = torch.exp(log_ratio_move)
             surr1 = ratio_move * mb_adv
             surr2 = torch.clamp(ratio_move, 1 - cfg.clip_coef, 1 + cfg.clip_coef) * mb_adv
             # Mask ε / auto-nav steps out of move_loss — those actions did
             # not come from the policy sample, so including them in the PPO
             # surrogate explodes the importance ratio under narrow std.
+            #
+            # `torch.where`, not `* mask`: multiplication propagates a
+            # non-finite value through a zero, selection does not. The mask is
+            # applied to exactly the steps whose surrogate is most likely to be
+            # non-finite, which is the worst possible place for that
+            # distinction to be wrong.
             pol_mask_sum = mb_pol_mask.sum().clamp_min(1.0)
-            move_loss = (-torch.min(surr1, surr2) * mb_pol_mask).sum() / pol_mask_sum
+            _surr = -torch.min(surr1, surr2)
+            move_loss = torch.where(mb_pol_mask > 0, _surr,
+                                    torch.zeros_like(_surr)).sum() / pol_mask_sum
 
             # Store policy loss — masked by explore_mask: during exploit the
             # store action is inert (rollout ignores it, no store_cost/
@@ -280,11 +299,14 @@ def ppo_update(
             # zero causal signal for the store head. Including them just pumps
             # variance into the store logits and the shared RNN trunk.
             new_store_lp = store_dist.log_prob(mb_store_act)
-            ratio_store = torch.exp(new_store_lp - mb_old_store_lp)
+            ratio_store = torch.exp(
+                (new_store_lp - mb_old_store_lp).clamp(-20.0, 20.0))
             surr1_s = ratio_store * mb_adv
             surr2_s = torch.clamp(ratio_store, 1 - cfg.clip_coef, 1 + cfg.clip_coef) * mb_adv
             mask_sum = mb_mask.sum().clamp_min(1.0)
-            store_loss = (-torch.min(surr1_s, surr2_s) * mb_mask).sum() / mask_sum
+            _surr_s = -torch.min(surr1_s, surr2_s)
+            store_loss = torch.where(mb_mask > 0, _surr_s,
+                                     torch.zeros_like(_surr_s)).sum() / mask_sum
 
             # Value loss. Steps after a row's episode ended are not states the
             # value head should be fit to -- the agent was frozen there and the
@@ -331,10 +353,20 @@ def ppo_update(
                 value_loss = sq_err.mean()
                 move_ent = move_entropy.mean()
             else:
+                # `where` rather than `* mb_alive`, for the reason given at
+                # move_loss: dead steps are exactly where a stale observation
+                # could make these non-finite, and a zero multiplier does not
+                # remove a non-finite value, it spreads it.
                 alive_sum = mb_alive.sum().clamp_min(1.0)
-                value_loss = (sq_err * mb_alive).sum() / alive_sum
-                move_ent = (move_entropy * mb_alive).sum() / alive_sum
-            store_ent = (store_dist.entropy() * mb_mask).sum() / mask_sum
+                keep = mb_alive > 0
+                value_loss = torch.where(
+                    keep, sq_err, torch.zeros_like(sq_err)).sum() / alive_sum
+                move_ent = torch.where(
+                    keep, move_entropy,
+                    torch.zeros_like(move_entropy)).sum() / alive_sum
+            _sent = store_dist.entropy()
+            store_ent = torch.where(mb_mask > 0, _sent,
+                                    torch.zeros_like(_sent)).sum() / mask_sum
 
             # Auxiliary BCE loss on store head: directly teach "fire store at
             # goal". Only applied where the store action is eligible (explore
@@ -385,8 +417,38 @@ def ppo_update(
 
             optimizer.zero_grad(set_to_none=True)
             loss.backward()
-            nn.utils.clip_grad_norm_(agent.parameters(), cfg.max_grad_norm)
-            optimizer.step()
+            total_norm = nn.utils.clip_grad_norm_(agent.parameters(),
+                                                  cfg.max_grad_norm)
+            # SKIP the step on a non-finite gradient rather than taking it.
+            #
+            # `clip_grad_norm_` scales every gradient by
+            # `max_norm / (total_norm + 1e-6)`; when total_norm is inf that
+            # factor is 0, and `inf * 0` is NaN -- so one bad sample does not
+            # merely dominate the update, it writes NaN into a parameter
+            # permanently, and every subsequent forward is NaN. That is how
+            # both P10 arms died in update 2 with EVERY entry of the heading
+            # NaN at once. One skipped minibatch costs nothing; a poisoned
+            # parameter costs the run.
+            if torch.isfinite(total_norm):
+                optimizer.step()
+            else:
+                n_nonfinite += 1
+                optimizer.zero_grad(set_to_none=True)
+                if not reported_nonfinite:
+                    # Named once per update, not per minibatch. Dying with no
+                    # information about WHICH term went bad is what made the
+                    # first two P10 crashes cost a full diagnosis; this makes
+                    # the next occurrence say so itself.
+                    reported_nonfinite = True
+                    with torch.no_grad():
+                        print("  [ppo] non-finite gradient, step skipped: "
+                              f"ratio_max={float(ratio_move.max()):.3e} "
+                              f"logratio_max={float(log_ratio_move.abs().max()):.3f} "
+                              f"adv_absmax={float(mb_adv.abs().max()):.3e} "
+                              f"move_loss={float(move_loss):.4g} "
+                              f"value_loss={float(value_loss):.4g} "
+                              f"move_ent={float(move_ent):.4g} "
+                              f"store_loss={float(store_loss):.4g}", flush=True)
 
             total_move_loss += move_loss.item()
             total_store_loss += store_loss.item()
@@ -408,6 +470,10 @@ def ppo_update(
         "move_entropy": total_move_ent / denom,
         "store_entropy": total_store_ent / denom,
         "store_bc_loss": total_store_bc / denom,
+        # Minibatches whose gradient was non-finite and therefore skipped. A
+        # persistent nonzero here is a real problem being survived, not solved
+        # -- it belongs in the log where it can be seen, not swallowed.
+        "nonfinite_steps": float(n_nonfinite),
     }
     # Emitted only under the polar head, where kappa exists. Not 0.0 (which
     # would plot as a real measurement) and not NaN either: every per-update
