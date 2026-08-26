@@ -3144,11 +3144,16 @@ same 2.5 units, the gap §6.8 measured would be intact and w45–w49 would have
 merely moved both ends of it. `w50` runs that control, same geometry, same
 seeds, 20 references:
 
-| at gain 5 | `r_min` | alias ceiling |
-|---|---|---|
-| `rate_eps` 0.5, `rate` 0.3 (§6.7 baseline) | **10.0** | 0.885 |
-| `rate_eps` 1.0, `rate` 0.3 | 7.0 | 0.908–0.967 |
-| `rate_eps` 1.0, `rate` 0.5 | 8.0 | 0.913–0.971 |
+| at gain 5 | cells | `r_min` | alias ceiling |
+|---|---|---|---|
+| `rate_eps` 0.5, `rate` 0.3 (§6.7 baseline) | — | **10.0** | 0.885 |
+| `rate_eps` 1.0, `rate` 0.5 | 4 8 8 10 | 8.0 | 0.913 |
+| `rate_eps` 1.0, `rate` 0.3 | 5 7 7 8 | 7.0 | 0.941 |
+
+Four seeds each, and the ordering is the reverse of gain 100's: there, `rate`
+0.5 beat 0.3 at `eps` 1.0 because the ceiling had margin to spend; here both
+lose to the incumbent and the one that loses less is the one that spreads
+*more*.
 
 **It does not transfer — it actively hurts**, and the alias column says why.
 At gain 5 the ceiling breaks at `eps` 1.0 (0.91–0.97); at gain 100 the same
