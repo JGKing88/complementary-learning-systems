@@ -571,6 +571,40 @@ class TestStateDict:
 
 class TestNumericalEdges:
 
+    def test_vonmises_log_prob_gradient_is_finite_at_the_kappa_floor(self):
+        """The actual cause of the P10 crashes, pinned at its source.
+
+        `VonMises.log_prob`'s gradient w.r.t. concentration is NaN for
+        kappa < 1e-5 while the forward stays finite: torch's
+        `_log_modified_bessel_fn` evaluates both branches and selects with
+        `torch.where`, the large-kappa branch computes `3.75/x` which overflows
+        for tiny x, and `where`'s backward does `inf * 0`. A 1e-6 floor sat
+        squarely in that region.
+        """
+        from torch.distributions import VonMises
+        for kappa in (1e-6, 3e-6):          # the region that must stay excluded
+            c = torch.tensor([kappa], requires_grad=True)
+            VonMises(torch.zeros(1), c).log_prob(torch.tensor([1.0])).backward()
+            assert not torch.isfinite(c.grad).all(), (
+                f"torch fixed VonMises at kappa={kappa}; the 1e-2 floor may be "
+                "loosened, but re-measure before doing so")
+        for kappa in (1e-2, 1e-1, 1.0):     # the floor and above must be safe
+            c = torch.tensor([kappa], requires_grad=True)
+            VonMises(torch.zeros(1), c).log_prob(torch.tensor([1.0])).backward()
+            assert torch.isfinite(c.grad).all(), kappa
+
+    def test_head_parameter_gradients_are_finite_when_kappa_is_floored(self):
+        """The gap the original suite had: it checked the gradient w.r.t. the
+        DIRECTION INPUT as ||v|| shrank, and the head parameters only at
+        ||v|| ~ 1 where kappa is nowhere near its floor. The crash needed both
+        at once -- a floored kappa AND a backward reaching log_kappa_head."""
+        for vn in (0.0, 1e-9, 1e-4, 1e-3, 2e-3, 0.01):
+            head = _head()
+            d = head(torch.zeros(4, 16), torch.full((4, 2), vn))
+            d.log_prob(torch.full((4, 2), 0.7)).sum().backward()
+            for n, p in head.named_parameters():
+                assert p.grad is None or torch.isfinite(p.grad).all(), (vn, n)
+
     @pytest.mark.parametrize("log_kappa", [-1.0, 0.0, 1.85, 3.4, 5.0])
     def test_entropy_and_circular_sd_are_finite_across_the_clamp(self, log_kappa):
         k = torch.tensor(math.exp(log_kappa))

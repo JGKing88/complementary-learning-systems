@@ -391,14 +391,25 @@ class PolarHead(nn.Module):
         # The TRUE ||v||, reassembled for logging only. This is the gauge; the
         # softening bounds what happens when it decays but does not prevent it.
         dir_norm = (sq.detach().sqrt() * vmax.detach().squeeze(-1))
-        # clamp_min because kappa = 0 IS the uniform distribution on the circle
-        # -- the correct limit for a zero direction vector -- but torch's
-        # VonMises rejects a zero concentration outright. 1e-6 is uniform to
-        # every digit that matters, and is deliberately far enough below the
-        # smallest kappa the shrink can produce outside the degenerate guard
-        # (2.5e-3) that the floor never binds while atan2 is still live.
+        # THE FLOOR IS 1e-2, AND THAT IS NOT AN ARBITRARY SMALL NUMBER.
+        #
+        # kappa = 0 is the uniform distribution on the circle -- the correct
+        # limit for a zero direction vector -- but torch's VonMises rejects a
+        # zero concentration, so some floor is required. It cannot be tiny:
+        # `VonMises.log_prob`'s gradient w.r.t. concentration is **NaN for
+        # kappa < 1e-5**, with a perfectly finite forward. torch's
+        # `_log_modified_bessel_fn` evaluates BOTH branches and selects with
+        # `torch.where`; the large-kappa branch computes `3.75/x`, which
+        # overflows for tiny x, and `where`'s backward then does `inf * 0`.
+        #
+        # A 1e-6 floor put kappa exactly in that region and is what produced
+        # the P10 crashes: non-finite gradients on log_kappa_head and
+        # movement_mean with every loss finite, spreading to the RNN through
+        # `features`. 1e-2 keeps three orders of magnitude of margin and is
+        # still uniform for any purpose here -- circular sd 186.5 degrees, a
+        # 2% density modulation between the modal and antimodal directions.
         kappa = (self._read(self.log_kappa_head, self.log_kappa, features).clamp(
-            self.log_kappa_min, self.log_kappa_max).exp() * shrink).clamp_min(1e-6)
+            self.log_kappa_min, self.log_kappa_max).exp() * shrink).clamp_min(1e-2)
         if self.speed_const is not None:
             return PolarMove(theta, kappa, lo=self.lo, hi=self.hi,
                              speed_const=self.speed_const, dir_norm=dir_norm)
