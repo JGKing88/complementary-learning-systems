@@ -19,7 +19,7 @@ mismatch that must be fixed first.
 | **Branch / worktree** | `nav-tri-metric` at `.claude/worktrees/nav-tri-metric` |
 | **Predecessor** | `docs/EXPERIMENTS_NAV_TRI.md` — read its §0 findings 1–22 |
 | **Open decisions** | §11 — four forks put to Jack; spec assumes the recommended default in each |
-| **Running** | **P10 polar (§9.4)** — `p10_pol` 21295699 / `p10_pol_v1` 21295703 on `pi_fiete` (7 d); `p10_e_pol` 21295996 / `p10_e_pol_v1` 21295997 on `ou_bcs_normal` (24 h cap — resume with `--continue_from` if 1500 updates do not fit) |
+| **Running** | **P10 polar (§9.4)** — `p10_pol` 21297873 / `p10_pol_v1` 21297875 on `pi_fiete` (7 d); `p10_e_pol` 21295996 / `p10_e_pol_v1` 21295997 queued on `ou_bcs_normal` (24 h cap — resume with `--continue_from` if 1500 updates do not fit). First launch died in update 2; cause and fix in §9.4. |
 | **Done** | §4 blocking fixes, P1 (§5) with figures, the recall-mechanism thread §5.3-5.9, and **P2 (§6)** |
 
 **Open items** (priority order):
@@ -2940,6 +2940,65 @@ everything the policy does must go through kappa.
 Read with `analysis/nav_tri/behavior_probe.py`, which now records κ per step
 and reports circular sd in the same `ang_*` columns, binned by distractor count
 and distance to goal exactly as §9.3 was.
+
+#### The first launch died in update 2 — and the cause was not polar
+
+Both exploit arms (21295699, 21295703) completed **exactly update 1** and
+crashed in update 2 with *every* entry of the heading NaN. Recorded because the
+first hypothesis was wrong in an instructive way.
+
+**The learned-speed and the frozen-speed arm died identically**, which rules out
+the Beta — the frozen arm has no speed factor at all. Ruled out by direct
+measurement, not by argument:
+
+| suspect | test | result |
+|---|---|---|
+| Beta sampler degenerate draws | 5.1M draws at the real per-update volume | 0 exact-0, 0 exact-1, 0 NaN |
+| Beta `log_prob` overflow | ‖a‖ from 0 to 1e6, α down to 0.1 | finite everywhere |
+| `vm_entropy` gradient | κ from 1e-6 to 148 | finite everywhere |
+| polar backward | ‖v‖ from 0 to 1, through *both* `log_prob` and `entropy` | finite, bounded |
+
+The fault is in the PPO loop around them, and it is **generic — polar only made
+a latent hazard live**:
+
+1. `exp()` of a log-ratio. A von Mises at its κ ceiling can put ~2κ ≈ 296
+   between two log-probs; `exp(296)` is `inf` in float32. A Gaussian's
+   quadratic form is gentler, which is why this never fired before.
+2. **`inf * 0` is NaN.** The masked reductions used `* mask`, and the masked
+   steps are exactly the ε / auto-nav ones whose ratio the existing comment in
+   `ppo.py` already says explodes. The mask that exists to *remove* those steps
+   is what converted them into a NaN.
+3. `clip_grad_norm_` scales by `max_norm / (total_norm + 1e-6)`. With
+   `total_norm = inf` that factor is 0, and `inf * 0` is NaN — so one bad
+   sample did not merely dominate the update, it wrote NaN into a parameter
+   **permanently**.
+
+Fixed in `ppo.py`: clamp the log-ratio before `exp` (`exp(20)` = 4.9e8, far past
+anything `clip_coef` admits, so no healthy step changes); `torch.where` instead
+of `* mask` in every masked reduction, because selection does not propagate a
+non-finite through a zero; and **skip the optimizer step when the returned grad
+norm is non-finite** rather than taking it. Verified numerically identical on
+the healthy path against the pre-fix reproduction.
+
+It also now prints which term went bad, once per update, and counts survivals
+as `nonfinite_steps` in the log — a problem being survived should be visible,
+not swallowed. **If `nonfinite_steps` is persistently nonzero, that is a real
+problem being tolerated and wants its own diagnosis.**
+
+**Still unproven:** the exact triggering sample. A synthetic reproduction at the
+real shapes (320×200, ε-greedy overrides, realistic episode termination) did
+*not* reproduce it in 8 updates, so the trigger needs the real observations.
+The diagnostic exists so the next occurrence names itself rather than costing
+another full pass.
+
+**Watch alongside it:** the polar entropy is ~1/3 the Cartesian value at
+matched noise (H(vonMises)+H(Beta) ≈ 0.49 against a Gaussian's 1.45), so
+`MOVE_ENT_COEF=0.005` — tuned for Cartesian — may under-regularize here. The
+synthetic run showed κ climbing 6.1 → 13.6 in 8 updates with entropy collapsing
+0.51 → 0.08. If κ pins near its ceiling early, raise `ent_coef` rather than
+lowering `log_kappa_max`; a sharp κ is also what makes hazard 1 above live.
+
+Relaunched as 21297873 / 21297875.
 
 ---
 
