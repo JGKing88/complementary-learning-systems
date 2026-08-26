@@ -19,7 +19,7 @@ mismatch that must be fixed first.
 | **Branch / worktree** | `nav-tri-metric` at `.claude/worktrees/nav-tri-metric` |
 | **Predecessor** | `docs/EXPERIMENTS_NAV_TRI.md` — read its §0 findings 1–22 |
 | **Open decisions** | §11 — four forks put to Jack; spec assumes the recommended default in each |
-| **Running** | **P10 polar (§9.4)** — `p10_pol` 21295699, `p10_pol_v1` 21295703, `p10_e_pol` 21295704, `p10_e_pol_v1` 21295705, all `pi_fiete` |
+| **Running** | **P10 polar (§9.4)** — `p10_pol` 21295699 / `p10_pol_v1` 21295703 on `pi_fiete` (7 d); `p10_e_pol` 21295996 / `p10_e_pol_v1` 21295997 on `ou_bcs_normal` (24 h cap — resume with `--continue_from` if 1500 updates do not fit) |
 | **Done** | §4 blocking fixes, P1 (§5) with figures, the recall-mechanism thread §5.3-5.9, and **P2 (§6)** |
 
 **Open items** (priority order):
@@ -2820,10 +2820,11 @@ exploration cannot be bought by changing speed.
 
 ### 9.4 P10 — the polar action parameterization
 
-**Launched 2026-08-26.** Four arms on `pi_fiete`: `p10_pol` (21295699),
-`p10_pol_v1` (21295703), `p10_e_pol` (21295704), `p10_e_pol_v1` (21295705).
-Code in `hopfield_nav/policy/polar_head.py`; 42 tests in
-`tests/test_polar_head.py`.
+**Launched 2026-08-26.** Exploit arms `p10_pol` (21295699) and `p10_pol_v1`
+(21295703) on `pi_fiete`; explore arms `p10_e_pol` (21295996) and
+`p10_e_pol_v1` (21295997) on `ou_bcs_normal`, moved there because pi_fiete's
+group GRES quota had them pending behind the exploit pair. Code in
+`hopfield_nav/policy/polar_head.py`; 42 tests in `tests/test_polar_head.py`.
 
 #### The parameterization
 
