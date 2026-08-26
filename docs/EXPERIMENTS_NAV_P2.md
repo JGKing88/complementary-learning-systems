@@ -3456,12 +3456,36 @@ If it does not, §9.7's first two rows are simply an early-training reading.
 
 ---
 
-**The methodological point, which cost real GPU time twice in one session.**
-Both exploit arms and both explore arms are strongly non-monotonic —
-`p10_pol_v1` alone runs 0.896 → 0.510 → 0.906 → 1.000 across consecutive evals.
-Any comparison drawn from one eval point in this project is noise. The prior
-existed (`project_hopfield_nav_explore_exploit`, the peak-calling trap) and was
-not applied. **Nothing here is comparable before ~u300.**
+**THE METHODOLOGICAL POINT — four reversals in one session, all the same error.**
+
+| # | claim, from N eval points | what happened |
+|---|---|---|
+| 1 | "freezing speed helps explore" (N=1, u50) | gone by u150 |
+| 2 | "the frozen explore arm collapsed" (N=1, u150) | transient |
+| 3 | "freezing speed costs 22× on exploit — premature convergence" (N=1, u50) | reached **1.000** by u300 |
+| 4 | "the frozen explore arm is genuinely collapsing" (N=3 declining, + falling train reward, u200) | recovered to **0.311** at u300 |
+
+Reversal 4 is the instructive one: **three consecutive declining evals AND a
+falling training reward was still not enough.** The series reads
+0.207 → 0.274 → 0.125 → 0.072 → 0.311.
+
+Two GPU jobs (`p10_pol_v1_e20/_e50`) were launched on reversal 3's wrong
+diagnosis and cancelled.
+
+Operating rule for this project, stated so it can be checked rather than
+remembered: **no directional claim from fewer than four eval points spanning
+≥200 updates.** Report the series, not the latest value. The prior existed
+(`project_hopfield_nav_explore_exploit`, the peak-calling trap) and restating it
+was not enough — every one of these was made after writing that warning down.
+
+Current standing (both arms healthy, neither converged):
+
+| arm | update | metric |
+|---|---|---|
+| `p10_e_pol` learned | u550 | cov 0.378, **cps 0.755** (billiard 0.775) |
+| `p10_e_pol_v1` frozen | u300 | cov 0.311, cps 0.621 |
+| `p10_pol` learned | u300 | success 0.698 (peak 0.990 at u250) |
+| `p10_pol_v1` frozen | u300 | success 1.000 |
 
 ---
 
