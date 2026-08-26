@@ -3106,6 +3106,7 @@ tested; the brief is gain 100 and three waves are already queued.
 | config | cells, sorted | median | floor | `r_median` | res90 | alias |
 |---|---|---|---|---|---|---|
 | **gain 100, `eps` 1.0 / `rate` 0.5** | 7 8 9 9 9 9 10 10 | **9.0** | **7** | 16.8 | 10.0 | 0.886 |
+| gain 100, `eps` 1.0 / `rate` 0.3 | 5 7 8 9 9 9 9 9 | 9.0 | 5 | 16.0 | 10.0 | 0.877 |
 | gain 100, `eps` 0.7 | 6 7 9 9 9 9 9 10 | 9.0 | 6 | 16.0 | 10.0 | 0.865 |
 | gain 100, `eps` 1.0 + `wd`/`od2048` | — | 8.0 | 6 | 13.8–14.5 | 9–10 | 0.89 |
 | *gain 5 best (§6.7), for reference* | *7 7 8 8 9 9 10 10* | *8.5* | *7* | *15.25* | — | *0.884* |
@@ -3175,9 +3176,10 @@ environments of 50 cells, a saturating output nonlinearity is free.
 ### 6.10j What is still unexplained
 
 **The law over-predicts at gain 100.** Carrying res90 and the ceiling through
-§4.4b for all twelve gain-100 arms gives a median residual of **2.1 cells**
-against the 1.2 §4.4b reported over 410 mostly-gain-5 checkpoints, and the
-errors are one-signed: every arm underperforms its own res90-and-ceiling.
+§4.4b gives a median residual of **2.1 cells** over the twelve `w47`–`w49` arms
+and **3.4** over the thirteen `w45`/`w46` arms, against the 1.2 §4.4b reported
+over 410 mostly-gain-5 checkpoints. The errors are one-signed: every arm
+underperforms its own res90-and-ceiling.
 
 The residual has a candidate. §4.4b's law assumes circular level sets — it
 combines a radial decay rate with a scalar ceiling and has no term for
