@@ -417,8 +417,18 @@ def ppo_update(
 
             optimizer.zero_grad(set_to_none=True)
             loss.backward()
-            total_norm = nn.utils.clip_grad_norm_(agent.parameters(),
-                                                  cfg.max_grad_norm)
+            # Computed WITHOUT mutating, because `clip_grad_norm_` scales every
+            # gradient in place by `max_norm / (total_norm + 1e-6)` -- and when
+            # total_norm is NaN that factor is NaN, so it smears NaN across
+            # every parameter and destroys the evidence of which one was
+            # actually bad. The first parameter-level report came back with the
+            # four RNN tensors named and NOTHING finite anywhere, which is that
+            # smearing, not a finding. Third time in this debug that a
+            # diagnostic ran after the step that erased what it was reading.
+            _grads = [p.grad for p in agent.parameters() if p.grad is not None]
+            total_norm = torch.norm(
+                torch.stack([g.norm() for g in _grads])) if _grads else \
+                torch.zeros((), device=obs.device)
             # SKIP the step on a non-finite gradient rather than taking it.
             #
             # `clip_grad_norm_` scales every gradient by
@@ -430,6 +440,7 @@ def ppo_update(
             # NaN at once. One skipped minibatch costs nothing; a poisoned
             # parameter costs the run.
             if torch.isfinite(total_norm):
+                nn.utils.clip_grad_norm_(agent.parameters(), cfg.max_grad_norm)
                 optimizer.step()
             else:
                 n_nonfinite += 1
@@ -453,6 +464,11 @@ def ppo_update(
                         # ratio and points at gradient amplification. Naming
                         # the parameter separates "the 200-step RNN backward
                         # exploded" from "the polar head emitted it".
+                        # The count matters as much as the names: "4 of 4 RNN
+                        # tensors" and "4 of 12 parameters" mean different
+                        # things, and a truncated list cannot tell them apart.
+                        n_par = sum(1 for _, p in agent.named_parameters()
+                                    if p.grad is not None)
                         bad = [n for n, p in agent.named_parameters()
                                if p.grad is not None
                                and not torch.isfinite(p.grad).all()]
@@ -468,8 +484,9 @@ def ppo_update(
                               f"move_loss={float(move_loss):.4g} "
                               f"value_loss={float(value_loss):.4g} "
                               f"move_ent={float(move_ent):.4g} "
-                              f"| nonfinite_params={bad[:4]} "
-                              f"| largest_finite={[(n, f'{v:.3e}') for v, n in big]}",
+                              f"| nonfinite {len(bad)}/{n_par}: {bad[:4]} "
+                              f"| largest_finite="
+                              f"{[(n, f'{v:.3e}') for v, n in big]}",
                               flush=True)
                 optimizer.zero_grad(set_to_none=True)
 

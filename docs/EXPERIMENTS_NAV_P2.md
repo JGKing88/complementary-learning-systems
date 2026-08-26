@@ -2991,6 +2991,41 @@ real shapes (320×200, ε-greedy overrides, realistic episode termination) did
 The diagnostic exists so the next occurrence names itself rather than costing
 another full pass.
 
+##### CORRECTION — those three mechanisms are not the cause
+
+The diagnostic fired on the very next launch and **refutes all three as the
+explanation here.** They are real hazards and stay closed; they are not this.
+
+Four reports across three arms, every one with the forward entirely clean:
+
+| arm | ratio_max | logratio_max | adv_absmax | move_loss | value_loss |
+|---|---|---|---|---|---|
+| exploit, learned | 11.5 | 3.44 | 8.38 | 0.060 | 0.294 |
+| exploit, frozen | 11.1 | 6.79 | 7.89 | 0.058 | 0.288 |
+| explore, frozen | 1.006 | **0.006** | 6.84 | −0.014 | 2.21 |
+| explore, learned | 13.0 | 2.57 | 5.40 | 0.019 | 6.04 |
+
+No ratio anywhere near the ±20 clamp, no non-finite forward value, and no loss
+term consistently large. The third row is decisive on its own: `logratio_max =
+0.006` is *no policy change at all*, and it still produced a non-finite
+gradient. **The overflow is created inside the backward, not carried in from
+the forward.** So the fixes bought survival and information, not the diagnosis.
+
+A second self-inflicted delay is recorded because it is the kind that repeats:
+the first parameter-level report came back `nonfinite_params=[]
+largest_finite=[]` — *both* empty, which reads as "no gradients anywhere". The
+diagnostic was inspecting `.grad` after `optimizer.zero_grad(set_to_none=True)`
+had already nulled it. A diagnostic placed after the cleanup it is diagnosing
+reports nothing and looks like a finding.
+
+**It is a rare transient, and the runs outgrow it.** Both explore arms passed
+u10 learning normally (`mean_r` rising, `nonfinite_steps = 0` at the eval
+points, one event each), and `dir_norm` grows on its own — 0.106 → 0.238 and
+0.254 — i.e. the direction head moves *away* from the small-`‖v‖` region where
+the heading gradient peaks. That is consistent with the leading hypothesis (a
+large heading gradient at small `‖v‖`, amplified by the 200-step vanilla-ReLU
+RNN backward) without yet confirming it. Awaiting the parameter name.
+
 **Watch alongside it:** the polar entropy is ~1/3 the Cartesian value at
 matched noise (H(vonMises)+H(Beta) ≈ 0.49 against a Gaussian's 1.45), so
 `MOVE_ENT_COEF=0.005` — tuned for Cartesian — may under-regularize here. The
