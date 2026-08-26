@@ -17,6 +17,12 @@
 # 12-hour limit -- so a probe that would wait six hours for a GPU it barely
 # uses runs here immediately instead.
 #
+# 2026-08-26: that stopped being true. mit_normal was quoting a ~24 h queue
+# ("Priority") while ou_bcs_normal had fully idle 192-core nodes, and four P10
+# probes had to be moved by hand. CHECK BEFORE SUBMITTING -- `squeue --start`
+# gives the estimate -- and override rather than wait:
+#   ... sbatch --partition=ou_bcs_normal --time=4:00:00 <this script>
+#
 #   PROBE=signal   CKPTS=... sbatch hopfield_nav/run_nav_tri_probe_cpu.sh
 #   PROBE=temporal CKPTS=... sbatch hopfield_nav/run_nav_tri_probe_cpu.sh
 
