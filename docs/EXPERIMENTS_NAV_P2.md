@@ -3391,7 +3391,55 @@ Two follow-ups, both now motivated by evidence:
 
 ---
 
-### 9.7 THE RESULT THAT MATTERS MOST — these models barely follow the readout
+### 9.7 RETRACTED — `follow_q` was read against the wrong baseline
+
+**This section originally claimed these models "barely follow the readout" and
+that one had fallen into mode B. Both claims are wrong.** They came from
+comparing `follow_q` against 1.0. The correct baseline is `align_true`, the
+policy's alignment with the TRUE goal direction — that is the only comparison
+that separates *"does not use the readout"* from *"does not move very
+directly."*
+
+| checkpoint | `align_true` | `follow_q` | `q_accuracy` | `path_efficiency` |
+|---|---|---|---|---|
+| polar frozen u300 | 0.548 | **0.558** | 0.989 | 0.557 |
+| polar learned u300 | 0.003 | **−0.001** | 0.993 | 0.464 |
+| Cartesian `p9_sq_std` u900 | 0.835 | **0.843** | 0.987 | 1.256 |
+
+`follow_q ≈ align_true` in **every** case — marginally exceeding it each time.
+The policy follows `q` exactly as well as it moves goalward at all. **There is
+no checkpoint here where a usable readout is ignored**, so mode B is not
+occurring and should not have been named.
+
+The u300 learned arm is not ignoring `q`: `align_true` is also ≈0, i.e. it is
+not moving toward the goal either. It is a bad policy in a transient dip
+(success 0.698, one of the oscillation's low points), reaching the goal by
+covering ground — 46 steps × 1.59 = 73 cells of path in a 400-cell arena.
+
+**The arithmetic that should have caught this immediately.** 1.000 success at
+15–20 steps from ~10.8 cells out, at 1 cell/step, is a directed trajectory;
+blind search of a 400-cell arena cannot do it. Directness 0.55 × 20.6 steps
+≈ 11 cells of progress ≈ the 9.95 required. The numbers were always consistent
+with full use of `q`; only the baseline was wrong.
+
+#### What the data actually shows — a path-quality gap, not a memory gap
+
+The Cartesian arm is far more **direct** (`align_true` 0.835) than the polar
+frozen arm (0.548): 1.60× optimal path length against 2.07×. Both use `q`
+fully. That is a real difference and still confounded by budget (u900 vs u300)
+and speed (1.98 vs 1.00) — the matched-budget probe remains the test.
+
+**The open question worth asking** is therefore not "why does the policy ignore
+`q`" but **"why is the path only 55% direct when `q` is 98.9% accurate?"** The
+per-step breakdown says alignment is *learned within an episode*: `follow_q` by
+step index runs 0.373 / 0.514 / 0.581 / 0.671 / 0.732 / 0.770, with
+`align_true` tracking it at every index. The policy starts poorly aligned after
+a teleport and improves over ~6 steps. That transient, not readout neglect, is
+where the path length is going.
+
+---
+
+#### (superseded) original section text follows
 
 Reading the probes for what the policy is *using*, not just how it is spread:
 
