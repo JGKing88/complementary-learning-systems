@@ -3024,7 +3024,7 @@ points, one event each), and `dir_norm` grows on its own — 0.106 → 0.238 and
 0.254 — i.e. the direction head moves *away* from the small-`‖v‖` region where
 the heading gradient peaks.
 
-##### ROOT CAUSE — the heading path squared a number the RNN can make enormous
+##### THE PATH — confirmed by the parameter-level report
 
 Pinned, not inferred, once the report read the gradients *before*
 `clip_grad_norm_` overwrote them. Both arms name the identical set:
@@ -3040,30 +3040,57 @@ is unambiguous: **the von Mises path**. `movement_mean` feeds `atan2`;
 the value head are untouched; the RNN is downstream contamination via
 `features`.
 
-`direction` comes off a vanilla ReLU RNN unrolled 200 steps, whose activations
-can grow like `‖W_hh‖^200`, so `‖v‖` is enormous for a few samples — and every
-form of the shrink computation **squares** it, which overflows float32 past
-`‖v‖ ≈ 1.8e19`. θ is scale-invariant, so the **forward stays perfectly finite**
-(an ordinary angle; shrink → 1). That is precisely why all four reports showed
-clean losses — one at `logratio_max = 0.006`, no policy change at all — with
-only the backward non-finite, and why the three ratio-side mechanisms fixed
-earlier were real hazards but not this.
+At this point I guessed the *mechanism* from the confirmed *path* and got it
+wrong, which is recorded because the guess was plausible and cost a launch:
+`direction` comes off a vanilla ReLU RNN unrolled 200 steps, activations can
+grow like `‖W_hh‖^200`, and every form of the shrink computation squares `‖v‖`,
+which overflows float32 past ≈1.8e19. That rewrite (divide out the max-abs
+component first, so no unnormalized square exists; θ unchanged because atan2 is
+scale-invariant, shrink rewritten as `sq_n/(sq_n + (s/vmax)²)`) is a **real
+hazard on the far side of the range and stays**. It did not fix the crash, and
+the next launch said so immediately.
 
-Fixed by dividing out the max-abs component first, making every squared
-quantity O(1). Mathematically identical — θ unchanged (atan2 is
-scale-invariant), and shrink rewritten as the equivalent
-`sq_n / (sq_n + (s/vmax)²)`, which contains no unnormalized square. Verified
-finite with θ exactly constant across `‖v‖` from 0 to 3e38.
+##### ROOT CAUSE — the κ floor sat inside torch's VonMises NaN region
+
+`torch.distributions.VonMises.log_prob` has a **NaN gradient with respect to
+concentration for κ < 1e-5**, while its forward stays perfectly finite.
+`_log_modified_bessel_fn` evaluates *both* branches and selects with
+`torch.where`; the large-κ branch computes `3.75/x`, which overflows for tiny
+x, and `where`'s backward then does `inf * 0`.
+
+| κ | 1e-8 | 1e-7 | 1e-6 | 3e-6 | 1e-5 | 1e-4 | 1e-3 | 1e-2 |
+|---|---|---|---|---|---|---|---|---|
+| `dlogp/dκ` | NaN | NaN | NaN | NaN | ok | ok | ok | ok |
+
+**The floor was 1e-6**, chosen as "uniform to every digit that matters", and it
+landed squarely inside that region. Samples with a tiny direction vector
+floored κ, `log_prob`'s backward produced NaN on `log_kappa_head` and
+`movement_mean`, and `clip_grad_norm_` spread it. It accounts for every
+observation: finite losses at `logratio_max` of 0.006 and 0.047 (no policy
+movement at all), non-finite gradients confined to the von Mises path, the
+Beta path and value head clean, both arms naming the identical set, and the RNN
+as downstream contamination.
+
+Floor is now **1e-2** — three orders of magnitude of margin, still uniform for
+any purpose here (circular sd 186.5°, a 2% density modulation between the modal
+and antimodal directions).
+
+**Verified:** zero non-finite events on all four arms after the fix, and the
+exploit arms — which had died at update 2 without exception across five
+launches — ran past u30 clean and learning (`mean_r` 0.087 → 0.107).
 
 Degeneracy became a **magnitude** test tied to `dir_soft` rather than an
 exact-zero test: an exact-zero test reopened the κ-floor band — where the floor
 binds while `atan2` is still live, breaking the `‖v‖²` proportionality the bound
 rests on — at exactly 1000 for `‖v‖ = 1e-9`.
 
-**Why the tests missed it:** the gradient sweep ran `‖v‖` from 0 to 1, entirely
-on the side of the operating point where nothing overflows. The failure is on
-the *other* side, and a 200-step ReLU recurrence is what puts samples there.
-Now pinned by a test sweeping to 3e38.
+**Why the tests missed it:** the suite checked the gradient w.r.t. the
+*direction input* as `‖v‖` shrank, and the *head parameters* only at `‖v‖ ≈ 1`,
+where κ is nowhere near its floor. The crash needed both at once — a floored κ
+**and** a backward reaching `log_kappa_head`. Two tests now cover it: one at
+the source, which asserts the NaN region still exists so a future torch fix
+gets the floor revisited deliberately rather than silently, and one sweeping
+`‖v‖` through the degenerate region while checking head parameters.
 
 **Method note.** Three separate times a diagnostic read state after the step
 that destroyed it — `zero_grad(set_to_none=True)`, then `clip_grad_norm_`
@@ -3072,12 +3099,23 @@ parameter), then a `bad[:4]` truncation that could not distinguish "4 of 4 RNN
 tensors" from "4 of 14 parameters". Each produced an empty or uniform result
 that read as a finding. Instrumentation has an ordering contract too.
 
-**Watch alongside it:** the polar entropy is ~1/3 the Cartesian value at
-matched noise (H(vonMises)+H(Beta) ≈ 0.49 against a Gaussian's 1.45), so
-`MOVE_ENT_COEF=0.005` — tuned for Cartesian — may under-regularize here. The
-synthetic run showed κ climbing 6.1 → 13.6 in 8 updates with entropy collapsing
-0.51 → 0.08. If κ pins near its ceiling early, raise `ent_coef` rather than
-lowering `log_kappa_max`; a sharp κ is also what makes hazard 1 above live.
+**Watch alongside it — and it is already happening.** The polar entropy is ~1/3
+the Cartesian value at matched noise (H(vonMises)+H(Beta) ≈ 0.49 against a
+Gaussian's 1.45), so `MOVE_ENT_COEF=0.005` — tuned for Cartesian — has less
+purchase here. **The frozen-speed arm has it worst: with no speed factor its
+entropy is the heading term alone, i.e. half the regularized quantity.**
+
+Observed on the fixed code, `p10_pol_v1` at u40: κ 4.5 → **18.3**,
+`move_entropy` → **−0.001**, angular noise 31° → 14°. Not yet a failure — 18.3
+is well below the 148 ceiling, and a sharp heading is what exploit wants — but
+the trajectory is a collapse, not a settle.
+
+If κ pins near its ceiling, **raise `ent_coef` rather than lowering
+`log_kappa_max`**: the ceiling is a bound on the symptom, the coefficient acts
+on the cause. Note the two arms are not comparable on `ent_coef` as it stands,
+because the frozen arm's entropy is missing a term the learned arm has; a
+follow-up wanting them matched should scale `ent_coef` on the frozen arm rather
+than assume 0.005 means the same thing in both.
 
 Exploit arms relaunched with the fix as **21299767 / 21299771**. The two
 explore arms (21295996 / 21295997) were **left running** rather than restarted:
