@@ -541,6 +541,33 @@ def _nav_stats(rec, size, goal, starts):
     succ_mask = np.broadcast_to(succ[None, :], (T, B))
     fail_mask = ~succ_mask
 
+    # q_accuracy BY DISTANCE TO GOAL -- the reconciliation with P1.
+    #
+    # The aggregate is trajectory-averaged, and EVERY trajectory ends within a
+    # cell or two of the goal, where `to_goal` shrinks toward zero and the angle
+    # between two short vectors is dominated by noise. P1 measured the readout
+    # over all 400 cells uniformly and found lock=goal 98.7-99.4% with dir_cos
+    # 0.963 at ten distractors, i.e. an expected mean near 0.95; the trajectory
+    # mean reads 0.711. P1 also flagged a mean dir_acc of 0.696 as the
+    # artifact behind a retracted "encoder points 46 degrees wrong" headline,
+    # which is uncomfortably close.
+    #
+    # If the far bins recover ~0.95 and only the near ones are low, the low
+    # aggregate is GEOMETRY, not recall failure -- and any mode-A diagnosis
+    # drawn from the aggregate (or from q_accuracy_fail) is unsafe.
+    gdist = np.linalg.norm(to_goal, axis=-1)
+    dist_stats = {}
+    for lab, lo, hi in (("d0_2", 0.0, 2.0), ("d2_4", 2.0, 4.0),
+                        ("d4_8", 4.0, 8.0), ("d8plus", 8.0, 1e9)):
+        band = live & (gdist >= lo) & (gdist < hi)
+        for name, arr, ok in (("q_accuracy", qacc, ok_q),
+                              ("follow_q", follow, ok_f),
+                              ("align_true", align, ok_a)):
+            sel = ok & band
+            dist_stats[f"{name}_{lab}"] = (
+                float(arr[sel].mean()) if sel.sum() >= 20 else float("nan"))
+        dist_stats[f"n_steps_{lab}"] = float(band.sum())
+
     # follow_q and align_true by STEP INDEX. The aggregate averages over the
     # whole trajectory including the opening steps, when the RNN starts from a
     # zero hidden state and has seen one observation. With mean_steps ~ 7, two
@@ -638,6 +665,7 @@ def _nav_stats(rec, size, goal, starts):
         "follow_q_fail": m(follow, ok_f, fail_mask),
         "q_accuracy": m(qacc, ok_q, np.ones_like(succ_mask)),
         "q_accuracy_fail": m(qacc, ok_q, fail_mask),
+        **dist_stats,
         "final_dist_fail": float(final_d[~succ].mean()) if (~succ).any() else float("nan"),
         "fail_frac_at_edge": float(
             (((cell[..., 0] == 0) | (cell[..., 0] == size - 1)
