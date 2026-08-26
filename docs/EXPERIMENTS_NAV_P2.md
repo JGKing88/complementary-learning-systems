@@ -3512,7 +3512,65 @@ reverses, and reversals average per-step alignment toward zero. **Testable and
 cheap: freeze speed at the 0.5 floor and see whether near-goal alignment
 improves further**, trading transit steps for terminal precision.
 
-#### 9.7.4 OPEN — the probe and P1 disagree about the readout
+#### 9.7.5 RESOLVED at u900 — no polar deficit, and the P1 "gap" is not a gap
+
+**The matched-budget comparison, which was the whole open question:**
+
+| checkpoint (all u900) | `follow_q` | `q_accuracy` | success | steps | speed |
+|---|---|---|---|---|---|
+| Cartesian `p9_sq_std` | 0.843 | 0.987 | 1.000 | 8.05 | 1.98 |
+| **polar frozen** | **0.819** | 0.989 | 1.000 | 13.4 | 1.00 |
+| polar learned | 0.656 | 0.989 | 1.000 | 10.5 | 1.83 |
+
+**The polar "memory-following deficit" was training budget, nothing else.** At
+matched u900 the frozen arm reads 0.819 against 0.843 — equal for practical
+purposes. `follow_q` in that arm climbed **0.558 → 0.819** between u300 and
+u900. Every claim in the earlier drafts of §9.7 about polar degrading
+memory-following is dead, and the confound flagged when the comparison was
+first made is exactly what it turned out to be.
+
+**And the P1 discrepancy dissolves.** `q_accuracy` at n_dist=10, *same six envs,
+same encoder*, four policies:
+
+| frozen u300 | learned u300 | frozen u900 | learned u900 |
+|---|---|---|---|
+| 0.711 | 0.716 | 0.599 | **0.509** |
+
+Four values for one underlying readout. **The probe's `q_accuracy` is a property
+of the TRAJECTORY, not of the memory** — it is the readout quality where a
+particular policy happened to go. P1 samples all 400 cells uniformly and answers
+"how good is the readout" (~0.95 at ten distractors); the probe answers "how
+good was it along this rollout". Neither is wrong; they are different questions,
+and several messages were spent hunting a bug that does not exist.
+
+The direction is consistent: the frozen arm follows `q` more (0.74–0.82 against
+0.52–0.66) and *sees* better `q_accuracy` along its path. A policy that tracks
+the readout reaches the goal directly and spends few steps anywhere bad; one
+that does not wanders into exactly those regions. **Trajectory `q_accuracy` is
+partly an OUTCOME of policy quality, not an input to it.**
+
+**Consequence for the mode-A call in §9.7.2.** `q_accuracy_fail` being low on
+failed trials is partly circular — failed trials are by construction the ones
+that wandered. The divergence test (`follow_q` > `align_true`) survives, because
+it is a within-step comparison of two directions at the same state. But
+"the readout is bad, therefore encoder-limited" needs **P1-style uniform
+sampling** to support it, not the trajectory number. Mode A is indicated, not
+established.
+
+#### 9.7.6 CORRECTION — sharpness does not explain the near-goal gradient
+
+§9.6 concluded the near-goal κ gradient decays monotonically with policy
+sharpness (1.35× at κ≈13, 1.15× at κ≈32, 1.03× at κ≈38). **At u900 the frozen
+arm is at κ≈93 — far sharper — and its gradient is back to 1.24×**
+(7.67° near against 6.20° far), with the learned arm at 1.52°/1.52×. Sharper,
+larger gradient. The trend is refuted.
+
+What the u300 frozen checkpoint actually was is a mid-training state where the
+gradient happened to be absent. Three points drawn from two different arms at
+one moment each were read as a mechanism; they were never a series. Same error
+as the four eval-point reversals, in a different metric.
+
+#### 9.7.4 (superseded by 9.7.5) OPEN — the probe and P1 disagree about the readout
 
 P1's uniform-grid measurement at ten distractors: lock=goal 98.7–99.4%,
 `dir_cos` 0.963 given lock, i.e. an expected mean near **0.95**. The probe reads
