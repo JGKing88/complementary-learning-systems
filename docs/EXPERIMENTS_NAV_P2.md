@@ -3391,7 +3391,16 @@ Two follow-ups, both now motivated by evidence:
 
 ---
 
-### 9.7 RETRACTED — `follow_q` was read against the wrong baseline
+### 9.7 `follow_q` needs a baseline — and mode A survives the correction
+
+**Reading order, because this section reversed twice.** The original text called
+mode A from the aggregate `follow_q`; that reasoning was invalid (see the
+baseline argument below) and was retracted. The retraction then proposed that
+the low `q_accuracy` was near-goal geometric degeneracy — **that hypothesis is
+also dead**, refuted by the distance-binned probe in §9.7.1. The mode-A
+conclusion is re-established in §9.7.2 on the divergence test, which is the only
+comparison that can support it. Net: the original call was right, none of the
+original reasoning was.
 
 **This section originally claimed these models "barely follow the readout" and
 that one had fallen into mode B. Both claims are wrong.** They came from
@@ -3441,6 +3450,84 @@ covering ground — 46 steps × 1.59 = 73 cells of path in a 400-cell arena.
 blind search of a 400-cell arena cannot do it. Directness 0.55 × 20.6 steps
 ≈ 11 cells of progress ≈ the 9.95 required. The numbers were always consistent
 with full use of `q`; only the baseline was wrong.
+
+#### 9.7.1 The distance-binned probe — geometry hypothesis refuted
+
+`q_accuracy` by distance to goal, frozen arm (probe 21324515):
+
+| n_dist | d0–2 | d2–4 | d4–8 | d8+ |
+|---|---|---|---|---|
+| 0 | **0.976** | 0.989 | 0.992 | 0.992 |
+| 1 | 0.958 | 0.984 | 0.991 | 0.992 |
+| 5 | 0.892 | 0.932 | **0.751** | 0.883 |
+| 10 | 0.756 | 0.845 | 0.722 | 0.734 |
+
+**The readout is excellent right up to the goal at low distractor counts —
+0.976 in the nearest bin at n_dist=0.** So the near-goal geometric degeneracy
+proposed in the retraction does not exist. Degradation is driven by
+*distractors*, and at n_dist=10 it is spread roughly uniformly across distance
+(0.72–0.85), not concentrated anywhere.
+
+#### 9.7.2 Mode A, on the divergence test
+
+Where `q` and `g` diverge, `follow_q` **exceeds** `align_true` — the policy
+tracks the readout more closely than the truth, and is misdirected when the
+readout is wrong:
+
+| | q_accuracy | follow_q | align_true |
+|---|---|---|---|
+| n_dist=5, d4–8 | 0.751 | **0.460** | 0.299 |
+| n_dist=10, d4–8 | 0.722 | **0.485** | 0.244 |
+| n_dist=10, d8+ | 0.734 | **0.570** | 0.452 |
+
+That is mode A — trusting a broken readout — **encoder-limited**. The residual
+~10% failure at ten distractors is the recall's fault, not the policy's.
+
+The nearest bin inverts: at n_dist=10, d0–2 has `follow_q` 0.187 **below**
+`align_true` 0.292. Near the goal the policy stops following `q` and is better
+aligned with the truth than with the readout — a distinct regime, see 9.7.3.
+
+#### 9.7.3 The terminal approach is the largest policy-side inefficiency
+
+Alignment by distance, both arms at n_dist=0, both at 1.000 success:
+
+| bin | `q_accuracy` | frozen `align_true` | learned `align_true` |
+|---|---|---|---|
+| d8+ | 0.99 | **0.817** | 0.710 |
+| d4–8 | 0.99 | **0.524** | 0.287 |
+| d2–4 | 0.99 | **0.419** | 0.271 |
+| d0–2 | 0.97 | **0.449** | 0.218 |
+
+`q` is 97–99% accurate at every distance and **both** policies stop tracking it
+over the final two cells. That is where the path length goes: ~11 cells of
+journey taken in 15–20 steps.
+
+**Frozen speed is exonerated — it is better at every bin**, roughly double the
+learned arm's alignment in the mid-range. It wins `mean_steps` (15.4 vs 18.7)
+on *directness*, with half the stride, which is the opposite of the phase-1
+pattern where stride bought `mean_steps` at the cost of productive motion.
+
+Likely mechanism: a 1.85-cell step against a 1.0-cell goal radius overshoots and
+reverses, and reversals average per-step alignment toward zero. **Testable and
+cheap: freeze speed at the 0.5 floor and see whether near-goal alignment
+improves further**, trading transit steps for terminal precision.
+
+#### 9.7.4 OPEN — the probe and P1 disagree about the readout
+
+P1's uniform-grid measurement at ten distractors: lock=goal 98.7–99.4%,
+`dir_cos` 0.963 given lock, i.e. an expected mean near **0.95**. The probe reads
+**0.711**, uniformly across distance bins. They agree at n_dist=0 (0.989 vs
+~0.99), so the probe is not broken, and it is not geometry.
+
+Remaining candidates: trajectories visit systematically harder cells than
+uniform sampling does (near walls, say), or the two measurements condition on
+the recall differently — P1 reports `dir_cos` **given lock=goal** plus a
+separate lock rate, the probe reports an unconditional cosine.
+
+**The test:** have the probe record P1's decomposition — lock target, lock rate,
+`dir_cos` given lock — along the trajectory. That splits the 0.711 into "locks
+less often here" versus "points worse when locked", and either answer resolves
+it. Until then neither number should be quoted as *the* readout accuracy.
 
 #### What the data actually shows — a path-quality gap, not a memory gap
 
