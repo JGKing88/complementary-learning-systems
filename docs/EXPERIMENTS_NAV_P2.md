@@ -3177,6 +3177,33 @@ pressure recovers success, the failure is κ runaway and freezing speed is
 survivable with retuning. If it does not, freezing speed is itself the cost, and
 the hedging story above is the explanation.
 
+#### The dissociation — freezing speed helps explore and wrecks exploit
+
+All four arms at u50, which is the strongest structure in the data so far:
+
+| arm | metric | value | κ | ang noise |
+|---|---|---|---|---|
+| `p10_e_pol` explore, learned | cov / cps | 0.163 / 0.326 | 3.99 | 31.7° |
+| `p10_e_pol_v1` explore, frozen | cov / cps | **0.207 / 0.414** | 5.46 | 26.4° |
+| `p10_pol` exploit, learned | success | **0.677** | 7.01 | 22.9° |
+| `p10_pol_v1` exploit, frozen | success | **0.031** | **23.16** | 13.1° |
+
+Freezing speed is **better** for explore and **catastrophic** for exploit — and
+the frozen *explore* arm's κ is a healthy 5.46, no runaway whatsoever. So
+pinning the speed does not by itself drive κ up; it does so **only in exploit**.
+
+That is evidence *for* the hedging hypothesis, not against it: the mechanism
+predicts the pathology exactly where there is a target to overshoot. Explore has
+no goal, so slowing down buys nothing, so removing the option costs nothing and
+κ stays put. Exploit has a goal, overshoot is costly, the hedge is gone, and κ
+runs.
+
+The explore side also has a cleaner reading than "speed 1.0 beats 1.5": the
+frozen arm's headings are *sharper* (26.4° against 31.7°), and a sharper heading
+means a straighter trajectory, which is what covers new cells. Worth separating
+those two before crediting the speed — the free arm chose 1.5 AND a blunter
+heading, and only one of those is the speed's doing.
+
 ---
 
 ## 10. P6 — interleaved
