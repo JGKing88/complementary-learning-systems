@@ -20,7 +20,7 @@ between consecutive steps, median shared cone rays, and the fraction of
 consecutive view pairs that are completely disjoint. The output is one row to
 drop into that table.
 
-Reuses `analysis.nav_tri.behavior_probe._rollout` rather than reimplementing
+Reuses `analysis.nav_tri.behavior_probe.rollout` rather than reimplementing
 the channel assembly: it already mirrors `evaluation/batched.py` step for step,
 and a second rollout path is exactly how the train/eval mismatches this project
 has already paid for get introduced.
@@ -36,7 +36,7 @@ import numpy as np
 import torch
 
 from analysis.nav_p2.displacement_decodability import FOVEAL_HALF_ANGLE_DEG
-from analysis.nav_tri.behavior_probe import _rollout
+from analysis.nav_tri.behavior_probe import rollout
 from hopfield_nav.encoder_io import load_encoder
 from hopfield_nav.evaluation.checkpoint_io import (
     build_eval_world, cfg_from_checkpoint, load_agent,
@@ -130,7 +130,7 @@ def main() -> None:
                 hop.input_memory(torch.from_numpy(pat).float())
             hops.append(hop)
             starts.append(random_start(env.size, env.goal_location, rng))
-        rec = _rollout(agent=agent, env=env, env_offset=offsets[i],
+        rec = rollout(agent=agent, env=env, env_offset=offsets[i],
                        vectorhash=vh, hopfields=hops, cfg=cfg, device=device,
                        starts=starts, max_steps=args.max_steps,
                        ends_on_arrival=False, goal_in_memory=False)

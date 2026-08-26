@@ -8,6 +8,7 @@ from torch.distributions import Categorical, Bernoulli, Normal
 from . import channels
 from .recurrent import build_recurrent_core
 from .action_head import build_log_std, movement_std, squash_mean
+from .polar_head import PolarHead
 from ..config import AgentConfig
 
 
@@ -45,22 +46,37 @@ class NavAgent(nn.Module):
         if cfg.movement_mode == "discrete":
             self.movement_head = nn.Linear(cfg.hidden_size, 4)
         else:
+            # Under polar this Linear is the DIRECTION head: its output is read
+            # as a 2-vector and atan2-ed to an allocentric heading, so a
+            # checkpoint forked into a polar run keeps its learned direction.
             self.movement_mean = nn.Linear(cfg.hidden_size, 2)
-            # Init log_std negative so std < 1: deterministic eval (action = mean)
-            # is meaningful. With zero-init, training entropy bonus drives std up
-            # to 2-3 per dim, making the policy reliant on sampling noise for motion.
-            log_std, log_std_head = build_log_std(cfg, cfg.hidden_size)
-            if log_std is not None:
-                self.movement_log_std = nn.Parameter(log_std)
-                self.movement_log_std.requires_grad = log_std.requires_grad
-                self.movement_log_std_head = None
+            if getattr(cfg, "action_polar", False):
+                if action_bounds is None:
+                    raise ValueError(
+                        "action_polar needs the env's min/max_action_norm "
+                        "passed as action_bounds; the speed Beta is defined "
+                        "on that interval")
+                # Left absent rather than set to None: under polar there is no
+                # Gaussian sigma at all, and a stale key would let a Cartesian
+                # checkpoint load into a polar agent without complaint.
+                self.polar_head = PolarHead(cfg, cfg.hidden_size, *action_bounds)
             else:
-                self.movement_log_std = None
-                self.movement_log_std_head = log_std_head
-            if getattr(cfg, "action_squash", False) and action_bounds is None:
-                raise ValueError(
-                    "action_squash needs the env's min/max_action_norm passed "
-                    "as action_bounds; without them there is no range")
+                self.polar_head = None
+                # Init log_std negative so std < 1: deterministic eval (action = mean)
+                # is meaningful. With zero-init, training entropy bonus drives std up
+                # to 2-3 per dim, making the policy reliant on sampling noise for motion.
+                log_std, log_std_head = build_log_std(cfg, cfg.hidden_size)
+                if log_std is not None:
+                    self.movement_log_std = nn.Parameter(log_std)
+                    self.movement_log_std.requires_grad = log_std.requires_grad
+                    self.movement_log_std_head = None
+                else:
+                    self.movement_log_std = None
+                    self.movement_log_std_head = log_std_head
+                if getattr(cfg, "action_squash", False) and action_bounds is None:
+                    raise ValueError(
+                        "action_squash needs the env's min/max_action_norm passed "
+                        "as action_bounds; without them there is no range")
 
         # Store head (binary)
         self.store_head = nn.Linear(cfg.hidden_size, 1)
@@ -91,6 +107,11 @@ class NavAgent(nn.Module):
         if self.cfg.movement_mode == "discrete":
             logits = self.movement_head(features)  # (B, T, 4)
             move_dist = Categorical(logits=logits)
+        elif self.polar_head is not None:
+            # movement_mean's output is a DIRECTION here; its magnitude is
+            # discarded by atan2, so the speed range is enforced by the Beta
+            # rather than by any squash.
+            move_dist = self.polar_head(features, self.movement_mean(features))
         else:
             mean = self.movement_mean(features)  # (B, T, 2)
             if getattr(self.cfg, "action_squash", False):
@@ -150,9 +171,14 @@ class NavAgent(nn.Module):
         # Continuous-only — discrete movement uses categorical, no σ to scale.
         if (action_temperature != 1.0
                 and self.cfg.movement_mode == "continuous"):
-            scaled_std = move_dist.scale * float(action_temperature)
-            scaled_std = scaled_std.clamp_min(1e-8)
-            move_dist = Normal(move_dist.mean, scaled_std)
+            if isinstance(move_dist, Normal):
+                scaled_std = move_dist.scale * float(action_temperature)
+                scaled_std = scaled_std.clamp_min(1e-8)
+                move_dist = Normal(move_dist.mean, scaled_std)
+            else:
+                # Polar: sigma has no single counterpart, so both spreads are
+                # scaled by t (kappa -> kappa/t^2, (nu+1) -> (nu+1)/t^2).
+                move_dist = move_dist.with_temperature(float(action_temperature))
 
         if deterministic:
             if self.cfg.movement_mode == "discrete":
@@ -188,6 +214,13 @@ class NavAgent(nn.Module):
         return {
             "move_mean": move_dist.mean.detach() if hasattr(move_dist, "mean") else None,
             "move_std": move_dist.stddev.detach() if hasattr(move_dist, "stddev") else None,
+            # Polar only. The probe cannot derive directional spread from
+            # move_std the Cartesian way: under polar `stddev` is (radial,
+            # tangential) and sigma/||mu|| is not the circular sd. Handing it
+            # kappa directly is what keeps the ang_* columns meaning the same
+            # thing across both parameterizations.
+            "move_kappa": (move_dist.kappa.detach()
+                           if hasattr(move_dist, "kappa") else None),
             "move_action": move_action.squeeze(1),           # (B,) or (B, 2)
             "store_action": store_action.squeeze(1),          # (B,)
             "move_log_prob": move_log_prob.squeeze(1),        # (B,)

@@ -224,8 +224,8 @@ def ppo_update(
     total_value_loss = 0.0
     total_move_ent = 0.0
     total_store_ent = 0.0
-    total_mu_norm = total_sigma = total_ang = 0.0
-    n_diag = 0
+    total_mu_norm = total_sigma = total_ang = total_kappa = 0.0
+    n_diag = n_kappa = 0
     total_store_bc = 0.0
     n_steps = 0
 
@@ -258,7 +258,12 @@ def ppo_update(
 
             # Movement policy loss
             new_move_lp = move_dist.log_prob(mb_move_act)
-            if isinstance(move_dist, Normal):  # continuous: sum over action dims
+            if new_move_lp.dim() > mb_old_move_lp.dim():
+                # Continuous: sum over the action's factor axis. Duck-typed on
+                # the shape rather than `isinstance(move_dist, Normal)`, so the
+                # polar head -- whose log_prob returns [heading, speed] on that
+                # same axis -- takes this path too. An isinstance check would
+                # have silently left the polar ratio one factor short.
                 new_move_lp = new_move_lp.sum(-1)
             ratio_move = torch.exp(new_move_lp - mb_old_move_lp)
             surr1 = ratio_move * mb_adv
@@ -292,7 +297,20 @@ def ppo_update(
             # effective angular noise sigma/||mu||, and it was found only by
             # probing saved checkpoints long afterwards. Logged per update so
             # the next one is visible while it happens.
-            if hasattr(move_dist, "mean") and move_dist.mean.dim() >= 2 \
+            if hasattr(move_dist, "diag"):
+                # Polar. The columns are deliberately the same three names:
+                # mean speed <-> ||mu||, speed sd <-> radial noise, circular sd
+                # <-> sigma/||mu||. Calibrated so section 9.3's 10.56 deg reads
+                # as 10.66 deg here, i.e. the two parameterizations plot on one
+                # axis rather than needing separate panels.
+                _d = move_dist.diag()
+                total_mu_norm += _d["mu_norm"]
+                total_sigma += _d["sigma"]
+                total_ang += _d["ang_noise"]
+                total_kappa += _d["kappa"]
+                n_kappa += 1
+                n_diag += 1
+            elif hasattr(move_dist, "mean") and move_dist.mean.dim() >= 2 \
                     and move_dist.mean.shape[-1] == 2:
                 with torch.no_grad():
                     _mu = move_dist.mean.norm(dim=-1)
@@ -379,7 +397,7 @@ def ppo_update(
 
     denom = max(n_steps, 1)
     d_diag = max(n_diag, 1)
-    return {
+    stats = {
         "mu_norm": total_mu_norm / d_diag,
         "sigma": total_sigma / d_diag,
         "ang_noise": total_ang / d_diag,
@@ -390,3 +408,10 @@ def ppo_update(
         "store_entropy": total_store_ent / denom,
         "store_bc_loss": total_store_bc / denom,
     }
+    # Emitted only under the polar head, where kappa exists. Not 0.0 (which
+    # would plot as a real measurement) and not NaN either: every per-update
+    # field is asserted finite by test_smoke_train, and that invariant is how
+    # a genuinely broken run gets caught. Absent is the unambiguous option.
+    if n_kappa:
+        stats["kappa"] = total_kappa / n_kappa
+    return stats

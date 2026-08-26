@@ -219,6 +219,48 @@ class AgentConfig:
     # the goal -- which is harder to notice than a global collapse.
     log_std_min: float = -2.5
     log_std_max: float = 0.5
+    # --- polar action parameterization (phase 2 section 10) ----------------
+    # Heading and speed as SEPARATE distributions instead of one isotropic
+    # Cartesian Gaussian, so directional exploration cannot be bought by
+    # changing speed. Section 9.3 measured the sigma head displacing nothing:
+    # ||mu|| modulated 1.234x without it and 1.220x with it, so the magnitude
+    # channel was doing the exploration work regardless. See polar_head.py.
+    #
+    # Under this flag `state_dependent_std` and `freeze_log_std` govern kappa
+    # and nu -- which ARE the spreads here -- rather than a Gaussian sigma.
+    # The speed MEAN stays learnable either way.
+    action_polar: bool = False
+    # kappa = 6.34 matches the Cartesian init (sigma = exp(-0.7)) at mid-speed
+    # 1.25: both give ~23.8 degrees of directional noise.
+    init_log_kappa: float = 1.85
+    # [-1, 5] -> kappa in [0.37, 148] -> circular sd from 106 down to 4.7 deg.
+    log_kappa_min: float = -1.0
+    log_kappa_max: float = 5.0
+    init_speed_mu: float = 0.5              # NORMALIZED: 0.5 -> speed 1.25, the billiard peak
+    init_speed_nu: float = 3.0              # -> speed sd 0.375
+    # nu >= 2 forbids a U-shaped speed density for EVERY mu (a U-shape needs
+    # nu < min(1/mu, 1/(1-mu)) <= 2), which is what lets nu be a single
+    # freezable scalar with no coupled restriction on mu.
+    speed_nu_min: float = 2.0
+    speed_nu_max: float = 200.0
+    speed_mu_eps: float = 0.05              # keeps mu off the boundary where Beta's gradient blows up
+    # The direction head's MAGNITUDE is a gauge freedom -- atan2 is
+    # scale-invariant, so nothing pressures ||v|| and it random-walks, while
+    # the heading gradient goes as kappa/||v||. Softening it makes a short
+    # direction vector mean a LOW concentration rather than an exploding
+    # gradient. Measured: at ||v||=0.24 one sample in 48 hit an importance
+    # ratio of 2.34 after a single 1e-3 step without this.
+    #
+    # 0.01, not 0.05: this is meant to be a BACKSTOP, not a live participant.
+    # The real 1024-unit trunk emits ||v|| ~ 0.071 at init, where 0.05 cut
+    # kappa by a third (6.36 -> 4.25, i.e. 23.8 -> 29.9 degrees) and silently
+    # broke the calibration against the p9 arms. 0.01 costs 1% there, less as
+    # ||v|| grows, and still caps the gradient at ~318 against unbounded.
+    dir_soft: float = 0.01
+    # Constant speed in GRID CELLS, or None to learn it. Set, the speed factor
+    # is deleted outright rather than driven to a degenerate limit -- see
+    # PolarMove. Not expressible under the Cartesian head at any parameter.
+    freeze_speed: float | None = None
     # Recurrent trunk. Defaults reproduce the historical GRU exactly.
     rnn_cell: str = "gru"                   # "gru" | "rnn" (vanilla Elman)
     rnn_nonlinearity: str = "tanh"          # "tanh" | "relu" | "softplus"; rnn_cell="rnn" only
@@ -435,6 +477,18 @@ class RNNAgentConfig:
     state_dependent_std: bool = False        # per-state log_std head
     log_std_min: float = -2.5
     log_std_max: float = 0.5
+    # Polar action parameterization; see AgentConfig for the same block.
+    action_polar: bool = False
+    init_log_kappa: float = 1.85
+    log_kappa_min: float = -1.0
+    log_kappa_max: float = 5.0
+    init_speed_mu: float = 0.5
+    init_speed_nu: float = 3.0
+    speed_nu_min: float = 2.0
+    speed_nu_max: float = 200.0
+    speed_mu_eps: float = 0.05
+    dir_soft: float = 0.01
+    freeze_speed: float | None = None
     # Recurrent trunk; see AgentConfig for the same two knobs.
     rnn_cell: str = "gru"                   # "gru" | "rnn" (vanilla Elman)
     rnn_nonlinearity: str = "tanh"          # "tanh" | "relu" | "softplus"; rnn_cell="rnn" only

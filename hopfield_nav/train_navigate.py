@@ -678,6 +678,17 @@ CFG_FIELDS: dict[str, tuple[str, ...]] = {
     "state_dependent_std": ("agent.state_dependent_std",),
     "log_std_min": ("agent.log_std_min",),
     "log_std_max": ("agent.log_std_max",),
+    "action_polar": ("agent.action_polar",),
+    "init_log_kappa": ("agent.init_log_kappa",),
+    "log_kappa_min": ("agent.log_kappa_min",),
+    "log_kappa_max": ("agent.log_kappa_max",),
+    "init_speed_mu": ("agent.init_speed_mu",),
+    "init_speed_nu": ("agent.init_speed_nu",),
+    "speed_nu_min": ("agent.speed_nu_min",),
+    "speed_nu_max": ("agent.speed_nu_max",),
+    "speed_mu_eps": ("agent.speed_mu_eps",),
+    "dir_soft": ("agent.dir_soft",),
+    "freeze_speed": ("agent.freeze_speed",),
     "input_prev_reward": ("agent.input_prev_reward",),
     "input_hopfield_raw": ("agent.input_hopfield_raw",),
     "input_hopfield_multistep": ("agent.input_hopfield_multistep",),
@@ -854,6 +865,47 @@ def build_parser() -> argparse.ArgumentParser:
                         "Initialized to reproduce the global-sigma policy exactly.")
     p.add_argument("--log_std_min", type=float, default=-2.5)
     p.add_argument("--log_std_max", type=float, default=0.5)
+    p.add_argument("--action_polar", action=argparse.BooleanOptionalAction,
+                   default=False,
+                   help="Heading x speed as SEPARATE distributions -- "
+                        "VonMises(theta, kappa) on the allocentric heading and "
+                        "a Beta on speed over [min,max]_action_norm -- instead "
+                        "of one isotropic Cartesian Gaussian. Decouples "
+                        "directional exploration from speed, which sigma/||mu|| "
+                        "cannot. Under this flag --state_dependent_std and "
+                        "--freeze_log_std govern kappa and nu; the speed mean "
+                        "stays learnable.")
+    p.add_argument("--init_log_kappa", type=float, default=1.85,
+                   help="kappa=6.34, matching the Cartesian init sigma=exp(-0.7) "
+                        "at mid-speed 1.25 (~23.8 deg of directional noise).")
+    p.add_argument("--log_kappa_min", type=float, default=-1.0)
+    p.add_argument("--log_kappa_max", type=float, default=5.0,
+                   help="[-1, 5] -> circular sd from 106 deg down to 4.7 deg.")
+    p.add_argument("--init_speed_mu", type=float, default=0.5,
+                   help="NORMALIZED mean speed in (0,1); 0.5 -> 1.25 cells, "
+                        "the measured billiard-coverage peak.")
+    p.add_argument("--init_speed_nu", type=float, default=3.0,
+                   help="Beta concentration; 3.0 -> speed sd 0.375.")
+    p.add_argument("--speed_nu_min", type=float, default=2.0,
+                   help="Floor forbidding a U-shaped speed density for every "
+                        "mu (a U-shape needs nu < min(1/mu, 1/(1-mu)) <= 2). "
+                        "One constant, so nu stays a single freezable scalar.")
+    p.add_argument("--speed_nu_max", type=float, default=200.0)
+    p.add_argument("--speed_mu_eps", type=float, default=0.05)
+    p.add_argument("--dir_soft", type=float, default=0.05,
+                   help="Softens the direction head's magnitude, which is a "
+                        "gauge freedom (atan2 is scale-invariant) whose decay "
+                        "would send the heading gradient to infinity. A short "
+                        "direction vector becomes a LOW concentration instead. "
+                        "Watch the dir_norm column: sustained values near this "
+                        "mean the heading is being held near-uniform.")
+    p.add_argument("--freeze_speed", type=float, default=None,
+                   help="Hold speed constant at this many GRID CELLS and drop "
+                        "the speed factor entirely (not a degenerate limit: "
+                        "its log-prob and entropy slots are exactly zero). "
+                        "All exploration becomes directional. Requires "
+                        "--action_polar; inexpressible under the Cartesian "
+                        "head at any parameter setting.")
     p.add_argument("--input_prev_displacement",
                    action=argparse.BooleanOptionalAction, default=False,
                    help="Feed the REALIZED displacement of the previous step "

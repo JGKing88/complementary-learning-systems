@@ -525,6 +525,13 @@ def move_params(agent: NavAgent) -> list[torch.nn.Parameter]:
     head = getattr(agent, "movement_log_std_head", None)
     if head is not None:
         params.extend(head.parameters())
+    # Polar: kappa / speed-mu / speed-nu, as global Parameters or per-state
+    # Linears. Omitting them here would make set_phase_freeze silently leave
+    # the whole spread parameterization frozen -- the same class of bug as the
+    # `[None]` this function was already fixed for.
+    polar = getattr(agent, "polar_head", None)
+    if polar is not None:
+        params.extend(polar.parameters())
     return params
 
 
@@ -553,6 +560,16 @@ def set_phase_freeze(agent: NavAgent, freeze_move: bool,
     if getattr(agent.cfg, "freeze_log_std", False) \
             and getattr(agent, "movement_log_std", None) is not None:
         agent.movement_log_std.requires_grad = False
+    # Same re-enforcement for polar. `freeze_log_std` means "freeze the
+    # spread", and under polar the spreads are kappa and nu -- the speed MEAN
+    # stays learnable, which is the case (alpha, beta) could not express and
+    # the reason for the (mu, nu) parameterization. Missing this would
+    # reproduce the v35-lineage bug in a new place.
+    polar = getattr(agent, "polar_head", None)
+    if polar is not None and getattr(agent.cfg, "freeze_log_std", False):
+        for p in (polar.log_kappa, polar.speed_nu):
+            if p is not None:
+                p.requires_grad = False
     set_requires_grad(store_params(agent), not freeze_store)
     set_requires_grad(value_params(agent), not freeze_value)
     set_requires_grad(rnn_params(agent), not freeze_rnn)

@@ -12,6 +12,7 @@ from torch.distributions import Categorical, Normal
 
 from .recurrent import build_recurrent_core
 from .action_head import build_log_std, movement_std, squash_mean
+from .polar_head import PolarHead
 from ..config import RNNAgentConfig
 
 
@@ -51,19 +52,29 @@ class RNNAgent(nn.Module):
         if cfg.movement_mode == "discrete":
             self.movement_head = nn.Linear(cfg.hidden_size, 4)
         else:
+            # Under polar this is the DIRECTION head; see agent.py.
             self.movement_mean = nn.Linear(cfg.hidden_size, 2)
-            log_std, log_std_head = build_log_std(cfg, cfg.hidden_size)
-            if log_std is not None:
-                self.movement_log_std = nn.Parameter(log_std)
-                self.movement_log_std.requires_grad = log_std.requires_grad
-                self.movement_log_std_head = None
+            if getattr(cfg, "action_polar", False):
+                if action_bounds is None:
+                    raise ValueError(
+                        "action_polar needs the env's min/max_action_norm "
+                        "passed as action_bounds; the speed Beta is defined "
+                        "on that interval")
+                self.polar_head = PolarHead(cfg, cfg.hidden_size, *action_bounds)
             else:
-                self.movement_log_std = None
-                self.movement_log_std_head = log_std_head
-            if getattr(cfg, "action_squash", False) and action_bounds is None:
-                raise ValueError(
-                    "action_squash needs the env's min/max_action_norm passed "
-                    "as action_bounds; without them there is no range")
+                self.polar_head = None
+                log_std, log_std_head = build_log_std(cfg, cfg.hidden_size)
+                if log_std is not None:
+                    self.movement_log_std = nn.Parameter(log_std)
+                    self.movement_log_std.requires_grad = log_std.requires_grad
+                    self.movement_log_std_head = None
+                else:
+                    self.movement_log_std = None
+                    self.movement_log_std_head = log_std_head
+                if getattr(cfg, "action_squash", False) and action_bounds is None:
+                    raise ValueError(
+                        "action_squash needs the env's min/max_action_norm passed "
+                        "as action_bounds; without them there is no range")
 
     def forward(
         self,
@@ -78,6 +89,8 @@ class RNNAgent(nn.Module):
         if self.cfg.movement_mode == "discrete":
             logits = self.movement_head(features)
             move_dist = Categorical(logits=logits)
+        elif self.polar_head is not None:
+            move_dist = self.polar_head(features, self.movement_mean(features))
         else:
             mean = self.movement_mean(features)
             if getattr(self.cfg, "action_squash", False):

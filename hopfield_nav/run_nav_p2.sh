@@ -93,6 +93,15 @@ INPUT_PREV_DISPLACEMENT=${INPUT_PREV_DISPLACEMENT:-1}
 # turning these on silently would make new runs incomparable to them.
 ACTION_SQUASH=${ACTION_SQUASH:-0}
 STATE_DEPENDENT_STD=${STATE_DEPENDENT_STD:-0}
+# Polar (P10). Off by default for the same reason as the two above. Note
+# INIT_LOG_STD is INERT under ACTION_POLAR=1 -- there is no Gaussian sigma --
+# and INIT_LOG_KAPPA=1.85 is the value that reproduces INIT_LOG_STD=-0.7's
+# 0.497 sigma at mid-speed 1.25, so a polar arm starts with the same ~23.8 deg
+# of directional noise as the p9 arm it is compared against.
+ACTION_POLAR=${ACTION_POLAR:-0}
+INIT_LOG_KAPPA=${INIT_LOG_KAPPA:-1.85}
+INIT_SPEED_MU=${INIT_SPEED_MU:-0.5}
+INIT_SPEED_NU=${INIT_SPEED_NU:-3.0}
 INPUT_HOPFIELD_SIGNAL=${INPUT_HOPFIELD_SIGNAL:-1}
 INPUT_SENSORY=${INPUT_SENSORY:-1}
 INPUT_ENCODED_STATE=${INPUT_ENCODED_STATE:-0}
@@ -293,6 +302,80 @@ case "$VARIANT" in
     EVAL_SCOPE=navexpl; EVAL_EVERY=50; CKPT_EVERY=50
     ;;
 
+  # === P10 -- the polar action parameterization ===========================
+  #
+  # Section 9.3's control settled it: the state-dependent sigma head DISPLACED
+  # NOTHING. ||mu|| modulated 1.234x on distractor count WITHOUT the head and
+  # 1.220x with it, while sigma itself moved 1.086x and was flat against
+  # distance to goal -- the one place P1 shows the readout actually collapses.
+  # The policy kept buying directional exploration with speed because
+  # sigma/||mu|| still varies 4x over [0.5, 2], wider than the 2.2x modulation
+  # it exhibits. Bounding the mean was necessary and not sufficient.
+  #
+  # Polar removes the channel rather than competing with it: heading and speed
+  # are separate factors, so neither can pay for the other.
+  #
+  #   p10_pol      exploit, learned speed
+  #   p10_pol_v1   exploit, speed frozen at 1.0
+  #   p10_e_pol    explore, learned speed
+  #   p10_e_pol_v1 explore, speed frozen at 1.0
+  #
+  # All four run STATE_DEPENDENT_STD=1: under polar that makes kappa and nu
+  # per-state heads, and whether KAPPA picks up the state-dependence sigma
+  # refused to is the whole question. Controls already exist -- p9_sq and
+  # p9_sq_std complete the 2x2 -- so no new control arm is needed.
+  #
+  # THE FALSIFIER: if ||mu|| (logged as mu_norm = mean speed) still modulates
+  # ~1.23x across distractor levels with heading noise fully decoupled, then
+  # that modulation was a genuine speed policy all along, the residual-channel
+  # story is wrong, and section 9.3's conclusion needs retracting. The frozen
+  # arms are the sharp version of the same test: with speed constant by
+  # construction, everything the policy does must go through kappa.
+  #
+  # Read dir_norm too. It is the direction head's magnitude, a gauge freedom
+  # (atan2 is scale-invariant) that nothing in the objective pressures; if it
+  # decays toward dir_soft the heading is being held near-uniform.
+  p10_pol|p10_pol_v1)
+    SCHEDULE=${SCHEDULE:-'exploit:2000'}
+    ENVS_PER_WORLD=20; BATCH_ENVS=64
+    EPSILON_EXPLORE=0.1; GOAL_REWARD=2.0
+    PERSISTENCE_BONUS=0.20
+    REGIME_ASSIGNMENT=shuffle
+    ACTION_POLAR=1; STATE_DEPENDENT_STD=1; FREEZE_LOG_STD=0
+    EVAL_SCOPE=navexpl; EVAL_EVERY=50; CKPT_EVERY=50
+    case "$VARIANT" in
+      # 1.0 sits at the LOW edge of the measured billiard plateau (peak ~1.25,
+      # band 1.0-1.5), and makes ||a|| a unit so displacements and
+      # q-magnitudes are directly comparable. Jack's pick.
+      p10_pol_v1) FREEZE_SPEED=1.0 ;;
+    esac
+    ;;
+
+  p10_e_pol|p10_e_pol_v1)
+    SCHEDULE=${SCHEDULE:-'explore:1500'}
+    ENVS_PER_WORLD=20; BATCH_ENVS=64
+    EPSILON_EXPLORE=0.1; GOAL_REWARD=2.0
+    PERSISTENCE_BONUS=0.20
+    ACTION_POLAR=1; STATE_DEPENDENT_STD=1; FREEZE_LOG_STD=0
+    EVAL_SCOPE=expl; EVAL_EVERY=50; CKPT_EVERY=50
+    case "$VARIANT" in
+      p10_e_pol_v1) FREEZE_SPEED=1.0 ;;
+    esac
+    ;;
+
+  # Polar smoke: the unit tests never touch the rollout collector, the channel
+  # assembly, the evaluators or checkpoint round-tripping.
+  p10_smoke|p10_smoke_v1)
+    SCHEDULE=${SCHEDULE:-'exploit:4'}
+    ENVS_PER_WORLD=4; BATCH_ENVS=8; STEPS_PER_ROLLOUT=40
+    ACTION_POLAR=1; STATE_DEPENDENT_STD=1; FREEZE_LOG_STD=0
+    EVAL_SCOPE=navexpl; EVAL_EVERY=4; CKPT_EVERY=4
+    NUM_VAL_ENVS=2; N_VAL_TRIALS=8; EVAL_MAX_STEPS=40
+    case "$VARIANT" in
+      p10_smoke_v1) FREEZE_SPEED=1.0 ;;
+    esac
+    ;;
+
   *)
     echo "ERROR: unknown VARIANT=$VARIANT" >&2; exit 1 ;;
 esac
@@ -315,6 +398,13 @@ echo "    noise      : eps=$EPSILON_EXPLORE/$EPSILON_ANNEAL_UPDATES \
 init_log_std=$INIT_LOG_STD freeze=$FREEZE_LOG_STD ent=$MOVE_ENT_COEF"
 echo "    trunk      : $RNN_CELL/$RNN_NONLINEARITY h=$HIDDEN_SIZE"
 echo "    movement   : |a| in [$MIN_ACTION_NORM, $MAX_ACTION_NORM] prev_action=$INPUT_PREV_ACTION prev_disp=$INPUT_PREV_DISPLACEMENT"
+if [ "${ACTION_POLAR:-0}" = "1" ]; then
+  echo "    action     : POLAR  init_log_kappa=$INIT_LOG_KAPPA (kappa=6.36, ~23.8 deg) \
+speed=${FREEZE_SPEED:-learned mu0=$INIT_SPEED_MU nu0=$INIT_SPEED_NU} \
+state_dep=$STATE_DEPENDENT_STD  [init_log_std is INERT]"
+else
+  echo "    action     : cartesian  squash=$ACTION_SQUASH state_dep=$STATE_DEPENDENT_STD"
+fi
 
 cd "$REPO"
 source hopfield_nav/navigate_job.sh

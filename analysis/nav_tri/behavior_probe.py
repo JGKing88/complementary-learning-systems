@@ -85,10 +85,24 @@ from hopfield_nav.world.vec_env import make_vec
 # movement_log_std" -- run those as separate jobs rather than one list.
 
 
+def _circular_sd_np(kappa):
+    """Circular sd of a von Mises in RADIANS, ``sqrt(-2 ln(I1/I0))``.
+
+    Duplicated from ``policy/polar_head.py`` in numpy rather than imported,
+    because everything else in this module works on numpy arrays already and
+    the alternative is a torch round-trip per step. Calibrated so a Cartesian
+    arm's ``sigma/||mu||`` and a polar arm's kappa land in the same column:
+    section 9.3's 10.56 degrees is kappa 29.4, which reads back as 10.66.
+    """
+    from scipy.special import i0e, i1e
+    r_bar = np.clip(i1e(kappa) / i0e(kappa), 1e-7, 1.0 - 1e-7)
+    return np.sqrt(-2.0 * np.log(r_bar))
+
+
 @torch.no_grad()
-def _rollout(*, agent, env, env_offset, vectorhash, hopfields, cfg, device,
-             starts, max_steps, ends_on_arrival, goal_in_memory,
-             q_rescale=None, q_scale=None):
+def rollout(*, agent, env, env_offset, vectorhash, hopfields, cfg, device,
+            starts, max_steps, ends_on_arrival, goal_in_memory,
+            q_rescale=None, q_scale=None):
     """One trial per Hopfield, in parallel, recording everything.
 
     Mirrors `evaluation/batched.py` step for step -- same channel assembly,
@@ -118,7 +132,7 @@ def _rollout(*, agent, env, env_offset, vectorhash, hopfields, cfg, device,
     active = np.ones(B, dtype=bool)
 
     rec = {k: [] for k in ("pos_f", "cell", "action", "q", "at_goal",
-                           "alive", "sigma", "mu_norm")}
+                           "alive", "sigma", "mu_norm", "circ_sd")}
 
     for step in range(max_steps):
         positions = vec.positions()
@@ -193,8 +207,22 @@ def _rollout(*, agent, env, env_offset, vectorhash, hopfields, cfg, device,
         # elsewhere is where a hand-rolled version silently differs.
         _ms = result.get("move_std")
         _mm = result.get("move_mean")
+        _mk = result.get("move_kappa")
         if _ms is not None and _mm is not None:
-            rec["sigma"].append(_ms.cpu().numpy().reshape(B, -1).mean(-1))
+            sd = _ms.cpu().numpy().reshape(B, -1)
+            if _mk is None:
+                rec["sigma"].append(sd.mean(-1))
+            else:
+                # Polar: stddev is (radial, tangential), so a mean over the two
+                # would blend the speed spread with the directional one. Column
+                # 0 is the speed sd, which is what `sigma` means in the polar
+                # diag() convention and so stays comparable to the Cartesian
+                # radial noise.
+                rec["sigma"].append(sd[:, 0])
+                rec["circ_sd"].append(
+                    _circular_sd_np(_mk.cpu().numpy().reshape(B)))
+            # Under polar this is the MEAN SPEED, which is exactly the
+            # quantity ||mu|| stood for in the Cartesian arms.
             rec["mu_norm"].append(
                 np.linalg.norm(_mm.cpu().numpy().reshape(B, -1), axis=-1))
 
@@ -564,8 +592,19 @@ def _nav_stats(rec, size, goal, starts):
         m0 = np.asarray(rec["alive"], dtype=bool)
         T = min(sg.shape[0], gd.shape[0], m0.shape[0])
         sg, mn, gd, m0 = sg[:T], mn[:T], gd[:T], m0[:T]
+        # Polar: directional spread is the von Mises circular sd, NOT
+        # sigma/||mu||. Recorded per step rather than derived, so the ang_*
+        # columns mean the same thing in both parameterizations -- which is
+        # what lets a polar run and the section 9.3 table share one axis.
+        cs = np.asarray(rec["circ_sd"])[:T] if np.asarray(
+            rec.get("circ_sd", [])).size else None
+        ang = np.degrees(cs) if cs is not None else np.degrees(
+            sg / np.maximum(mn, 1e-8))
+
         sig_stats["sigma_mean"] = float(sg[m0].mean()) if m0.any() else float("nan")
         sig_stats["mu_norm_mean"] = float(mn[m0].mean()) if m0.any() else float("nan")
+        if cs is not None:
+            sig_stats["ang_mean"] = float(ang[m0].mean()) if m0.any() else float("nan")
         for lab, lo, hi in (("d0_2", 0.0, 2.0), ("d2_4", 2.0, 4.0),
                             ("d4_8", 4.0, 8.0), ("d8plus", 8.0, 1e9)):
             k = m0 & (gd >= lo) & (gd < hi)
@@ -574,8 +613,7 @@ def _nav_stats(rec, size, goal, starts):
                 sig_stats[f"ang_{lab}"] = float("nan")
                 continue
             sig_stats[f"sigma_{lab}"] = float(np.median(sg[k]))
-            sig_stats[f"ang_{lab}"] = float(np.degrees(
-                np.median(sg[k] / np.maximum(mn[k], 1e-8))))
+            sig_stats[f"ang_{lab}"] = float(np.median(ang[k]))
 
     return {
         **sig_stats,
@@ -750,7 +788,7 @@ def _probe_one(args, cfg, agent, envs, vh, offsets, embed_dim, device):
                         hopfields=hops, cfg=cfg, device=device, starts=starts,
                         max_steps=args.max_steps))
                     continue
-                rec = _rollout(
+                rec = rollout(
                     agent=agent, env=env, env_offset=off, vectorhash=vh,
                     hopfields=hops, cfg=cfg, device=device, starts=starts,
                     max_steps=args.max_steps,
