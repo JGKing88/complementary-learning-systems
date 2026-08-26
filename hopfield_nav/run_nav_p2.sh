@@ -351,6 +351,42 @@ case "$VARIANT" in
     esac
     ;;
 
+  # --- P10b: is the frozen arm's failure kappa runaway, or speed 1.0? -------
+  #
+  # At u50 the frozen-speed exploit arm sits at success 0.031 against the
+  # learned-speed arm's 0.677 -- a 22x gap -- with kappa at 23.2 against 7.0
+  # and angular noise 13.1 deg against 22.9. It sharpened its heading hard
+  # around a direction it had not learned.
+  #
+  # Speed 1.0 alone does not explain it: at 1.0 the ideal mean_steps over a
+  # ~10.8-cell start distance is ~10 against 200 available, so the cap on
+  # SPEED cannot drive success to 3%. Premature convergence can.
+  #
+  # The likely coupling, and the reason it is worth one job to test: in the
+  # learned arm a bad heading can be hedged by SLOWING DOWN -- a shorter step
+  # overshoots less. With speed pinned that hedge is gone, heading errors cost
+  # more, and PPO's only remaining lever is to sharpen kappa, which removes
+  # the exploration that would have found the right heading. If that is right,
+  # speed and heading are independent in the PARAMETERIZATION but not in their
+  # effect on the task, which is a P10 result rather than a nuisance.
+  #
+  # Bracketed rather than guessed at a single value: 4x and 10x the 0.005 that
+  # the learned arm is stable at.
+  p10_pol_v1_e20|p10_pol_v1_e50)
+    SCHEDULE=${SCHEDULE:-'exploit:2000'}
+    ENVS_PER_WORLD=20; BATCH_ENVS=64
+    EPSILON_EXPLORE=0.1; GOAL_REWARD=2.0
+    PERSISTENCE_BONUS=0.20
+    REGIME_ASSIGNMENT=shuffle
+    ACTION_POLAR=1; STATE_DEPENDENT_STD=1; FREEZE_LOG_STD=0
+    FREEZE_SPEED=1.0
+    EVAL_SCOPE=navexpl; EVAL_EVERY=50; CKPT_EVERY=50
+    case "$VARIANT" in
+      p10_pol_v1_e20) MOVE_ENT_COEF=0.02 ;;
+      p10_pol_v1_e50) MOVE_ENT_COEF=0.05 ;;
+    esac
+    ;;
+
   p10_e_pol|p10_e_pol_v1)
     SCHEDULE=${SCHEDULE:-'explore:1500'}
     ENVS_PER_WORLD=20; BATCH_ENVS=64
