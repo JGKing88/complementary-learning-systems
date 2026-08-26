@@ -441,6 +441,22 @@ def ppo_update(
                     # the next occurrence say so itself.
                     reported_nonfinite = True
                     with torch.no_grad():
+                        # WHICH PARAMETER, not just which loss. The first
+                        # report showed every loss term finite and small
+                        # (ratio_max 11.5, all losses < 1), so the non-finite
+                        # value is created inside the BACKWARD, not carried in
+                        # from the forward -- which rules out an overflowing
+                        # ratio and points at gradient amplification. Naming
+                        # the parameter separates "the 200-step RNN backward
+                        # exploded" from "the polar head emitted it".
+                        bad = [n for n, p in agent.named_parameters()
+                               if p.grad is not None
+                               and not torch.isfinite(p.grad).all()]
+                        big = sorted(
+                            ((float(p.grad.abs().max()), n)
+                             for n, p in agent.named_parameters()
+                             if p.grad is not None and torch.isfinite(p.grad).all()),
+                            reverse=True)[:3]
                         print("  [ppo] non-finite gradient, step skipped: "
                               f"ratio_max={float(ratio_move.max()):.3e} "
                               f"logratio_max={float(log_ratio_move.abs().max()):.3f} "
@@ -448,7 +464,9 @@ def ppo_update(
                               f"move_loss={float(move_loss):.4g} "
                               f"value_loss={float(value_loss):.4g} "
                               f"move_ent={float(move_ent):.4g} "
-                              f"store_loss={float(store_loss):.4g}", flush=True)
+                              f"| nonfinite_params={bad[:4]} "
+                              f"| largest_finite={[(n, f'{v:.3e}') for v, n in big]}",
+                              flush=True)
 
             total_move_loss += move_loss.item()
             total_store_loss += store_loss.item()
