@@ -1442,6 +1442,305 @@ WAVES: dict[str, dict] = {
         },
         "seed": [44, 45],
     },
+    # W45 -- how good can gain 100 get? Knobs picked for where saturation
+    # changes what they DO, not for being unswept.
+    #
+    # Leader after §6.8: sm50 x 118 at batch 4096, lr 3e-4, r_min 6.5 at 100
+    # references against gain 5's 8.5. Only lr and geometry have been tuned
+    # there. Every arm below is a single-knob delta from that leader.
+    #
+    # The mechanism to beat. At gain 100, 52% of coordinates sit past |tanh|
+    # 0.95, so the map x -> z is close to piecewise constant: it changes only
+    # where some coordinate's pre-activation crosses zero. The monotone test is
+    # STRICT (`sims > beyond` in monotone_radius_per_direction), so a ray dies
+    # the first time two samples land on the same value. A staircase code fails
+    # that test on flat treads, with no alias involved. Three arms attack the
+    # tread width and two ask whether the §6 optima moved.
+    #
+    #   od256 / od2048  the tread count. Cosine on a binarised code takes D+1
+    #                   values, so grain ~ 2/D. §5.8a found out_dim free to cut
+    #                   1024 -> 256 at gain 5, where the code is continuous and
+    #                   D buys nothing. If grain is what gain 100 costs, the
+    #                   SAME cut should now hurt and the doubling should pay --
+    #                   a differential prediction, not a rerun.
+    #   wd1e-2          weight decay was a null at gain 5 (§5.6m) for a reason
+    #                   that stops applying: L2 normalisation removes scale, so
+    #                   shrinking the weights of a LINEAR tanh does nothing.
+    #                   Under saturation scale sets how deep into the flat
+    #                   region each unit sits, so wd becomes a live knob on the
+    #                   fraction binarised. The net already self-compensates in
+    #                   this direction (|net| 0.075 -> 0.0195 from gain 20 to
+    #                   100); this asks whether pushing further helps.
+    #   lr5e-4          3e-4 -> 8.0 and 1e-3 -> 5.5 (with a zero) at 100 refs.
+    #                   The optimum is inside that bracket and untested.
+    #   b8192           §6.7: the batch optimum is interior and moves with
+    #                   geometry -- 4096 for sm50, 8192+ for sm100. Gain 100
+    #                   changes the loss surface (half the units pass almost no
+    #                   gradient), so the optimum has no reason to stay put.
+    #   fwhm0.5         §6.9 measured 9.5 against 9.0 at gain 5 -- a tie. A
+    #                   smoother input means neighbouring positions have more
+    #                   overlapping codes, which is exactly what a staircase
+    #                   needs to break a tread, so the tie may not survive here.
+    "w45_g100_knobs": {
+        "arm": {
+            name: {**dict(npos_list=SIZE_MIXES["sm50"], batch_size=4096,
+                          lr=3e-4, per_env_radius_frac=0.0, radius=20.0,
+                          rate_lambda=0.3, out_dim=1024, hidden_dim=256,
+                          gain_end=100.0), **over}
+            for name, over in (
+                ("od256",   dict(out_dim=256)),
+                ("od2048",  dict(out_dim=2048)),
+                ("wd1e-2",  dict(weight_decay=1e-2)),
+                ("lr5e-4",  dict(lr=5e-4)),
+                ("b8192",   dict(batch_size=8192)),
+                ("fwhm0.5", dict(fwhm_ratio=0.5)),
+            )
+        },
+        "seed": [42, 43, 44, 45],
+    },
+    # W46 -- the spread term, because the diagnostics say it is the only thing
+    # that can move r_min.
+    #
+    # Two measurements redirected this wave.
+    #
+    # 1. Nothing local is broken. Over ~15,000 failing rays per checkpoint, the
+    #    fraction whose beating sample lies within 40 cells is 0.0% -- at gain
+    #    100 and at gain 5. The near profile is monotone in every direction far
+    #    past where r_min dies. So attract_lambda, fwhm smoothing and out_dim
+    #    grain cannot be the lever, and od256 duly scored a null.
+    #
+    # 2. The ray that sets r_min dies against a far peak at d ~787-796 or
+    #    ~923-929, every reference, both gains. Those are 792 = 6*132 and
+    #    924 = 7*132. Computed directly on the INPUT code, its far field has a
+    #    degenerate top family at cos 0.952-0.953:
+    #
+    #        143 = 11*13     module 12 off by -1
+    #        780 = 5*156     module 11 off by -1
+    #        792 = 6*132     module 13 off by -1
+    #        924 = 7*132     module 13 off by +1
+    #        936 = 6*156     module 11 off by +1
+    #       1573 = 11*143    module 12 off by +1
+    #
+    #    i.e. exactly the offsets where two modules realign and the third is one
+    #    cell out -- the closest the code comes to repeating short of its full
+    #    1716 period. §7.3 named 132/143/156; the ones that actually bite are
+    #    the higher multiples that bring the third module to +-1.
+    #
+    # The consequence is the point. Patches are <= 50 cells, so the largest
+    # separation any pair term can see is ~71 -- every one of those offsets is
+    # unreachable by attract OR repel, and the constraint makes that worse by
+    # masking cross-env pairs. The far ceiling is set by the ONE env-blind term
+    # in the loss. Encoders reach 0.879 against the input code's own 0.953, so
+    # the spread term is already doing this work; the question is whether it is
+    # being asked hard enough. rate_lambda has only ever been 0.3 (tuned on a
+    # continuous code at gain 5) and 1.0 (at the untuned lr, a null).
+    #
+    #   rate0.1/1/3  how hard. Up should lower the ceiling until it starts
+    #                costing res90, which is the other factor of §4.4b's law.
+    #   eps0.25/1.0  WHICH directions. rate_eps has never been swept at all. In
+    #                coding_rate_loss the gram is I + (D/(B*eps^2)) z'z, so eps
+    #                sets the resolution at which a direction counts as already
+    #                spread: smaller eps keeps pushing directions that larger
+    #                eps has stopped caring about. lambda changes the strength,
+    #                eps changes the target set.
+    #
+    #   wd1e-2/3e-2  w45 confirmed the prediction that weight decay stops being
+    #                inert once the tanh saturates: 9/9/9/7, median 9.0 against
+    #                the leader's 8.0, with the ceiling down to 0.861. It is the
+    #                best single knob found at gain 100 so far. wd1e-2 here is
+    #                the COMBINATION with lr 5e-4 (w45 ran it at 3e-4), and
+    #                wd3e-2 asks whether the knob has more in it.
+    #
+    # Base is w45's lr 5e-4, which read 8.5 against the leader's 8.0 with a
+    # better ceiling (0.859 vs 0.879) -- consistent with the mechanism above.
+    # Every arm that helped so far helped BY lowering the ceiling, which is the
+    # mechanism predicting itself.
+    "w46_g100_spread": {
+        "arm": {
+            name: {**dict(npos_list=SIZE_MIXES["sm50"], batch_size=4096,
+                          lr=5e-4, per_env_radius_frac=0.0, radius=20.0,
+                          rate_lambda=0.3, out_dim=1024, hidden_dim=256,
+                          gain_end=100.0), **over}
+            for name, over in (
+                ("rate1",    dict(rate_lambda=1.0)),
+                ("rate3",    dict(rate_lambda=3.0)),
+                ("eps0.25",  dict(rate_eps=0.25)),
+                ("eps1.0",   dict(rate_eps=1.0)),
+                ("wd1e-2",   dict(weight_decay=1e-2)),
+                ("wd3e-2",   dict(weight_decay=3e-2)),
+            )
+        },
+        "seed": [42, 43, 44, 45],
+    },
+    # W47 -- the ceiling is only buyable by things that are NOT loss terms.
+    #
+    # w46 priced the spread term along its own axis, at gain 100, 20 refs:
+    #
+    #   rate_lambda   0.3      1.0      3.0
+    #   alias         0.879    0.839    0.780
+    #   r_median      13.0     8.5      4.0
+    #   r_min         8.0      5.0      1.0
+    #
+    # It buys the ceiling monotonically and exactly as designed. Through
+    # §4.4b's law the ceiling factor gains 39% over that range while r_min
+    # loses 87%, so the near field pays about three times what the ceiling
+    # returns. rate_eps 0.25 lands on the same curve from the other knob
+    # (0.844 / 10.0 / 6.0). The spread term is at or past its optimum at 0.3.
+    #
+    # There is a reason a loss term cannot do better. Patches are <= 50 cells,
+    # so no pair term sees a separation beyond ~71, while the aliases that set
+    # r_min sit at 792 and 924. A spread term can only reach the far field
+    # by squeezing the whole representation, and it pays for that in the near
+    # field it CAN see. The two knobs that lowered the ceiling without that
+    # bill are not loss terms at all:
+    #
+    #   out_dim   256 / 1024 / 2048  ->  alias 0.911 / 0.879 / 0.848,
+    #             r_min 8.0 / 8.0 / 9.0. Monotone in the ceiling across the
+    #             whole range, though §5.8a found the same axis free at gain 5.
+    #             More room to push aliases apart, not finer grain -- the grain
+    #             hypothesis was measured and falsified (quantum 0.00009 at
+    #             both gains; allowing ties changes r_min by exactly zero).
+    #   wd1e-2    alias 0.861 at r_median 14.5, the best ceiling-per-near-field
+    #             trade in either wave. NOT de-saturation: measured, it moves
+    #             frac_sat 0.467 -> 0.459 and |g*net| 2.71 -> 2.66, i.e. not at
+    #             all. The self-compensation of §6.8 is a strong attractor.
+    #
+    #   od4096          does the out_dim trend continue or turn over? It has to
+    #                   turn over eventually -- the ceiling cannot go below what
+    #                   the input code supports -- and where it does is the
+    #                   useful number.
+    #   od2048_wd       the two non-loss levers together. §5.8d's warning is
+    #                   live: `both cuts together` cost a unit when each was
+    #                   free alone, so a combination is a test, not a freebie.
+    #   od2048_wd_lr    all three, including w45's lr 5e-4.
+    "w47_g100_capacity": {
+        "arm": {
+            name: {**dict(npos_list=SIZE_MIXES["sm50"], batch_size=4096,
+                          lr=3e-4, per_env_radius_frac=0.0, radius=20.0,
+                          rate_lambda=0.3, out_dim=1024, hidden_dim=256,
+                          gain_end=100.0), **over}
+            for name, over in (
+                ("od4096",       dict(out_dim=4096)),
+                ("od2048_wd",    dict(out_dim=2048, weight_decay=1e-2)),
+                ("od2048_wd_lr", dict(out_dim=2048, weight_decay=1e-2,
+                                      lr=5e-4)),
+            )
+        },
+        "seed": [42, 43, 44, 45],
+    },
+    # W48 -- is the spread term worth anything at all at gain 100?
+    #
+    # w46 was built to ask whether the spread term was being asked hard ENOUGH.
+    # Strengthening it (rate_lambda 1/3, rate_eps 0.25) is a clear loss, which
+    # was the expected half. The unexpected half is the other end: rate_eps 1.0
+    # -- which flattens the log-det and so pushes LESS -- read r_min 11.0 at
+    # r_median 16.5, the best gain-100 cell of the campaign, and left the
+    # ceiling where it was (0.883 against 0.879).
+    #
+    #   rate_eps        0.25     0.5      1.0
+    #   alias           0.844    0.879    0.883
+    #   r_median        10.0     13.0     16.5
+    #   r_min            6.0      8.0     11.0
+    #
+    # If weakening costs no ceiling and returns near field, the term is not
+    # buying its keep at gain 100, and the incumbent 0.3/0.5 is on the wrong
+    # side of its own optimum. rate0 is the limit of that and settles it.
+    #
+    # Caveat on record: eps1.0 is ONE seed. This wave is sized to replicate it
+    # (its own 4 seeds finish in w46) while testing the limit in parallel,
+    # rather than waiting a run-length to start.
+    #
+    #   rate0        no spread term at all. §4 established 0.3 > 0 at gain 5,
+    #                on a continuous code; that is exactly the kind of transfer
+    #                §6.10 has now broken three times.
+    #   eps2.0       continues the weakening axis past 1.0. Distinct from rate0
+    #                because the term still shapes, just at a resolution where
+    #                almost every direction already counts as spread.
+    #   eps1_wd      eps1.0 with the other two non-loss winners. If the spread
+    #   eps1_od2048  term was suppressing the near field, these should compound
+    #                rather than collide -- they act on different factors of
+    #                §4.4b's law.
+    "w48_g100_nospread": {
+        "arm": {
+            name: {**dict(npos_list=SIZE_MIXES["sm50"], batch_size=4096,
+                          lr=3e-4, per_env_radius_frac=0.0, radius=20.0,
+                          rate_lambda=0.3, out_dim=1024, hidden_dim=256,
+                          gain_end=100.0), **over}
+            for name, over in (
+                ("rate0",       dict(rate_lambda=0.0)),
+                ("eps2.0",      dict(rate_eps=2.0)),
+                ("eps1_wd",     dict(rate_eps=1.0, weight_decay=1e-2)),
+                ("eps1_od2048", dict(rate_eps=1.0, out_dim=2048)),
+            )
+        },
+        "seed": [42, 43, 44, 45],
+    },
+    # W49 -- resolve the knee. w48 bracketed the optimum on both sides:
+    #
+    #   rate_eps      0.25    0.5     1.0     2.0     none (rate0)
+    #   alias         0.869   0.879   0.880   0.946   0.990
+    #   r_min          5.5     8.0    10.5     6.0     2.0
+    #
+    # The ceiling is FLAT from 0.25 to 1.0 and breaks upward past it. So the
+    # spread term's only real job -- keeping the far field off 1.0 -- is
+    # satisfied anywhere in that range, and inside it r_min is set purely by
+    # res90, which improves as the term is weakened. The optimum is where the
+    # ceiling is about to let go, and 1.0 is the last measured point before it
+    # does. 0.5, the value every §4-§6 headline used, sits a factor of two
+    # inside the safe margin and pays ~2.5 units of radius for the caution.
+    #
+    #   eps0.7 / eps1.4  bisect the peak. 1.4 is the more informative of the
+    #                    two: if the ceiling is still ~0.88 there, the knee is
+    #                    sharper than the 1.0-to-2.0 gap can resolve and the
+    #                    optimum is further out than measured.
+    #   eps1_rate0.5     eps and rate_lambda are not the same knob -- eps sets
+    #   eps1_rate0.15    the resolution at which a direction counts as spread
+    #                    (inside the log-det), rate_lambda the weight (outside
+    #                    it). At eps 1.0 the ceiling has margin again, so
+    #                    trading a little of it back via the weight may buy
+    #                    res90 that eps alone cannot.
+    "w49_g100_knee": {
+        "arm": {
+            name: {**dict(npos_list=SIZE_MIXES["sm50"], batch_size=4096,
+                          lr=3e-4, per_env_radius_frac=0.0, radius=20.0,
+                          rate_lambda=0.3, out_dim=1024, hidden_dim=256,
+                          gain_end=100.0), **over}
+            for name, over in (
+                ("eps0.7",       dict(rate_eps=0.7)),
+                ("eps1.4",       dict(rate_eps=1.4)),
+                ("eps1_rate0.5", dict(rate_eps=1.0, rate_lambda=0.5)),
+                ("eps1_rate.15", dict(rate_eps=1.0, rate_lambda=0.15)),
+            )
+        },
+        "seed": [42, 43, 44, 45],
+    },
+    # W50 -- the control that decides how w45-w49 get written down.
+    #
+    # At 100 references, two draws, the retuned gain-100 config reaches r_min
+    # 9.0 with a floor of 7 against the §6.8 leader's 6.5 / 5, and §6.7's best
+    # GAIN 5 config scores 8.5 / 7. Read naively that says gain 100 is free.
+    #
+    # It is not a fair comparison. Every §4-§6 config, the gain-5 one included,
+    # was tuned at rate_eps 0.5 -- the knob was never swept at any gain. If
+    # gain 5 also gains ~2.5 units from eps 1.0, the gap §6.8 measured is
+    # intact and all w45-w49 did was move both ends of it.
+    #
+    # So: the winning spread setting, at gain 5, same geometry, same seeds.
+    # Two arms because eps and rate_lambda were tuned jointly at gain 100 and
+    # the joint setting may not be the one that transfers.
+    "w50_g5_control": {
+        "arm": {
+            name: {**dict(npos_list=SIZE_MIXES["sm50"], batch_size=4096,
+                          lr=1e-4, per_env_radius_frac=0.0, radius=20.0,
+                          rate_lambda=0.3, out_dim=1024, hidden_dim=256,
+                          gain_end=5.0), **over}
+            for name, over in (
+                ("g5_eps1",       dict(rate_eps=1.0)),
+                ("g5_eps1_rate.5", dict(rate_eps=1.0, rate_lambda=0.5)),
+            )
+        },
+        "seed": [42, 43, 44, 45],
+    },
 }
 
 

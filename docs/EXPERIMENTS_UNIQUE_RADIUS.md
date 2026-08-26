@@ -33,15 +33,23 @@ four times in this campaign and is not used for a headline (§4.8, §5.8c).
 | *3b.* as 3, `out_dim` 256 as well | 6.0 | 17.0 | 0.984 | 40 | **375k** |
 | **4.** as 3, 29×100 envs, radius 20 | **7.5** | 13.0 | 0.964 | 31 | 572k |
 | **5.** as 4, 118×50 envs, batch 4096 | **8.5** | 15.3 | 0.884 | 26 | 572k |
-| *5b.* as 5, final gain 100, lr 3e-4 | *6.5* | 13.8 | 0.879 | 25 | 572k |
+| *5b.* as 5, final gain 100, gain-5 spread setting | *6.5* | 13.8 | 0.879 | 25 | 572k |
+| **6.** as 5, final gain 100, `rate_eps` 1.0 / `rate` 0.5 | **9.0** | 16.8 | 0.886 | — | 572k |
 
 **Level 5** (§6.7) — `sweeps/w39_batch_pairs/0{08..11}_sm50_b4096_seed=4{2..5}`.
 Level 4 with **118 environments of 50 cells** and **batch 4096**. Best config at
 10% coverage: median 8.5 and a floor of 7.0 against level 4's 7.5 and 5.0, and
 the only 20-reference leader in the campaign that did not shrink on re-scoring.
-**Level 5b** (§6.8) is the same with final gain 100 and `lr 3e-4` —
-`sweeps/w42_push/00{4..7}_g100_sm50b4096_lr3e-4_seed=4{2..5}` — the answer to
-"how good with gain 100", costing ~2 units.
+
+**Level 6** (§6.10h) —
+`sweeps/w49_g100_knee/0{08..11}_eps1_rate0.5_seed=4{2..5}`. Level 5 with **final
+gain 100** and the spread term retuned to `rate_eps` 1.0, `rate_lambda` 0.5.
+Median **9.0** with a floor of **7**, no cell below 7 in eight — level with
+level 5 on both, and the tightest arm in the campaign. **Level 5b** (§6.8) is
+the same gain with level 5's spread setting, and its ~2-unit deficit is the cost
+of that transfer, not of the gain: `rate_eps` 1.0 *hurts* at gain 5 (10.0 → 7.0,
+ceiling 0.885 → 0.91–0.97), because a high gain does part of the spread term's
+job and lets it be relaxed. See §6.10i.
 
 **Level 4** (§6) — `sweeps/w32_small_geom/00{8,9}_sm100_r20_seed=4{2,3}` and
 `sweeps/w34_small_confirm/00{8..11}_sm100_r20_seed=4{4..7}`. Level 3 with
@@ -190,6 +198,21 @@ Measured, not inferred. Nulls are listed because they cost runs too.
   thresholded *after* normalisation, which rescales an unsaturated code up; it
   now reports `frac_above_isotropic` (the concentration measure it was actually
   computing) and `frac_saturated_pre` (~0.000, the real thing).
+* **At gain 100 the tanh does compress, and it still is not binary** (§6.10a).
+  `frac_saturated_pre` reaches 0.47 and `|g·net|` sits near 2.7, but the cosine
+  *grain* — the gap between adjacent distinct cosine values in the near field —
+  is **0.00009 at gain 100 and 0.00009 at gain 5**, twenty times finer than the
+  2/D a binary code would allow. Recomputing `r_min` with ties forgiven changes
+  it by exactly zero at both gains. `tanh(2) = 0.964` counts as saturated at a
+  0.95 threshold while still varying smoothly with position, so the 0.47 never
+  meant what §6.8 took it to mean. The `od256` head reaches the same score from
+  `|g·net| = 0.77`, i.e. **unsaturated at gain 100**, which settles it
+  independently.
+* **What a high gain actually does is spread the code**, and that substitutes
+  for the coding-rate term (§6.10i). At gain 100 the term wants `rate_eps` 1.0;
+  at gain 5 that same setting breaks the alias ceiling (0.885 → 0.91–0.97) and
+  costs 3 units. Set correctly for its gain, **final gain 100 is free** — 9.0
+  with a floor of 7, against gain 5's 8.5 and 7.
 * **Method**: seed spread is 3–5 units at 10% coverage and 8 at 50.8%, as large
   as most effects. Two seeds is never enough and four has reversed twice. The
   20-reference `r_min` is unstable in *both* directions — it flatters (21 → 9)
@@ -2833,6 +2856,341 @@ than harmful. **`fwhm=0.125` is genuinely worse** (6.0), with alias 0.959 and
 `r_median` 7.0 — too little smoothing leaves neighbouring positions with
 near-disjoint codes and there is no local structure to learn.
 
+## 6.10 Gain 100, part 2: what the deficit actually is
+
+§6.8 reported gain 100 at `r_min` 6.5 against gain 5's 8.5 and attributed it to
+the code "going binary". Four diagnostics say that description is wrong in
+every part, and locating the real cause changed which knobs were worth running.
+
+### 6.10a The code does not go binary in any sense the metric can see
+
+The monotone test is **strict** — `sims > beyond` in
+`monotone_radius_per_direction` — so a ray dies the first time two samples fail
+to differ. A binarised code quantises cosine to multiples of `2/D`, which at
+`out_dim=1024` is 0.002, and ties would then kill rays with no alias involved.
+That would have made `out_dim` the lever. Measured over 12 references and 1250
+rays each:
+
+| | cosine quantum | worst failure margin | tie fraction | `r_min` | `r_min` forgiving one quantum |
+|---|---|---|---|---|---|
+| gain 100 | 0.00009 | −0.029 | 1.4% | 8.0 | **8.0** |
+| gain 5 | 0.00009 | −0.029 | 1.2% | 12.0 | **12.0** |
+
+**The grain is identical at both gains, and 20× finer than a binary code
+allows.** `tanh(2) = 0.964` counts as saturated at the 0.95 threshold §6.8 used
+while still varying smoothly with position, so the 52% figure never meant what
+it was taken to mean.
+
+The last column is the decisive one: recomputing the whole metric with failures
+inside one quantum forgiven changes `r_min` by **exactly zero** at both gains.
+The margins on the specific rays that set `r_min` run 0.0002–0.012, i.e. 2 to
+130 quanta, so a few are close — but forgiving them still moves nothing,
+because the next ray is waiting behind them.
+
+`od256` then scored a null (8.0, against the leader's 8.0) exactly as this
+predicts, which is the grain hypothesis's last chance failing.
+
+### 6.10b Nothing local is broken either
+
+For every ray that fails, the diagnostic records where the sample that beat it
+actually sits. Over ~15,000 failing rays per checkpoint:
+
+| beating sample at | 0–40 | 40–100 | 100–125 | 125–165 | 165+ |
+|---|---|---|---|---|---|
+| gain 100 | **0.0%** | 9.2% | 7.2% | 24.5% | 59.1% |
+| gain 5 | **0.0%** | 11.4% | 9.0% | 25.3% | 54.3% |
+
+**No ray, at either gain, is beaten by anything within 40 cells.** The near
+profile is monotone in every direction far past where `r_min` dies. That
+retires attract strength, input smoothing and output grain as candidate levers
+in one measurement — and `fwhm0.5` duly moved nothing (8.5 against 8.0, ceiling
+unchanged at 0.884).
+
+### 6.10c What kills the worst ray: 792 and 924, and they are in the input
+
+The ray that sets `r_min` dies against a peak at `d ≈ 787–796` or `≈ 923–929`,
+for every reference at both gains. Those are 792 = 6·132 and 924 = 7·132.
+Computing the **input** grid code's own autocorrelation gives a degenerate top
+family at cos 0.952–0.953 (`fwhm_ratio` 0.25, along an axis):
+
+| δ | factorisation | aligned modules | third module |
+|---|---|---|---|
+| 143 | 11·13 | 11, 13 | 12 off by −1 |
+| 780 | 5·156 | 12, 13 | 11 off by −1 |
+| **792** | **6·132** | **11, 12** | **13 off by −1** |
+| **924** | **7·132** | **11, 12** | **13 off by +1** |
+| 936 | 6·156 | 12, 13 | 11 off by +1 |
+| 1573 | 11·143 | 11, 13 | 12 off by +1 |
+
+These are the offsets where **two modules realign exactly and the third is one
+cell out** — the closest the code comes to repeating short of its full 1716
+period. §7.3 named the pair products 132/143/156; the ones that actually bite
+are the higher multiples that walk the third module to ±1. The input's own far
+ceiling is 0.9533, and trained encoders reach 0.879, so this is not an
+inherited floor — but it is where the fight is.
+
+**And no pairwise term can reach it.** Patches are ≤50 cells, so the largest
+separation attract or repel ever sees is ~71, and the constraint removes
+cross-env pairs on top of that. Every offset in the table is invisible to both.
+This is §5.6j's "the aliases live where no loss term looks", now with the
+offsets identified and their arithmetic explained.
+
+### 6.10d The spread term buys the ceiling, at about 3× its value
+
+The one env-blind term is the only one that touches the far field, so the
+obvious move is to ask it for more. Priced along its own axis at gain 100, 20
+references, 3–4 seeds:
+
+| `rate_lambda` | 0.3 | 1.0 | 3.0 | `rate_eps` 0.25 |
+|---|---|---|---|---|
+| alias ceiling | 0.879 | 0.839 | **0.780** | 0.844 |
+| `r_median` | 13.0 | 9.5 | 4.0 | 10.0 |
+| `r_min` | **8.0** | 4.5 | 1.0 | 6.0 |
+
+It works exactly as designed and it is still a losing trade. Through §4.4b's
+law the ceiling factor `sqrt(ln(1/C)/ln(1/0.9))` improves 1.106 → 1.536 across
+that range, a 39% gain, while `r_min` falls 87%. `rate_eps 0.25` — a different
+knob, reaching the push through the log-det's resolution rather than its weight
+— lands on the same curve, which is what makes this a property of the term
+rather than of a parameterisation.
+
+**The reason is structural, not a tuning failure.** A spread term reaches the
+far field only by squeezing the whole representation, and it pays for that in
+the near field, which is the part it can see. `rate_lambda` 0.3 is at or past
+its optimum and there is nothing more in it.
+
+### 6.10e What does work is not in the loss at all
+
+Two knobs lowered the ceiling without the near-field bill. 20 references, four
+seeds, sorted cells:
+
+| arm | cells | median | alias | `r_median` |
+|---|---|---|---|---|
+| `od2048` | 8 9 9 9 | **9.0** | **0.848** | 13.8 |
+| `wd1e-2` | 7 9 9 9 | **9.0** | 0.861 | **14.5** |
+| `lr5e-4` | 6 8 9 10 | 8.5 | 0.859 | 14.2 |
+| `fwhm0.5` | 8 8 9 10 | 8.5 | 0.884 | 13.0 |
+| `od256` | 7 8 8 9 | 8.0 | 0.911 | 12.0 |
+| leader, lr 3e-4 | — | 8.0 | 0.879 | 13.0 |
+
+**`out_dim` moves the ceiling monotonically** — 0.911 / 0.879 / 0.848 at 256 /
+1024 / 2048 — on an axis §5.8a found *free* at gain 5. Not through grain, which
+§6.10a killed; the reading left is that more coordinates give more room to push
+aliases apart, and that this only starts mattering once the ceiling is binding.
+
+**Weight decay was predicted to become live, and did.** At gain 5 it is
+provably near-inert: L2 normalisation removes scale, so decaying the weights of
+a tanh operating in its linear region changes nothing, and §5.6m measured that
+null. Under saturation, scale sets how deep each unit sits in the flat region,
+so the argument stops applying. It scored 9.0 with the best ceiling-per-near-
+field trade in either wave.
+
+**But not by the mechanism proposed.** The natural reading — that `wd` is
+partly retreating from gain 100 — is wrong, measured:
+
+| | frac_sat | \|net\| | \|g·net\| | w_rms |
+|---|---|---|---|---|
+| leader | 0.467 | 0.0271 | 2.71 | 0.0682 |
+| `wd1e-2` | 0.459 | 0.0266 | 2.66 | 0.0636 |
+| `od256` | **0.064** | 0.0077 | **0.77** | 0.0711 |
+| gain 5 | 0.040 | 0.1091 | 0.55 | 0.0648 |
+
+Weight decay at **100× the default** moves the weight norm 7% and saturation
+not at all. §6.8's self-compensation is a strong attractor: the network holds
+`|g·net| ≈ 2.7` and will not be pushed off it. What `wd` is doing instead is
+not established.
+
+**`od256` does not saturate at all** — `|g·net| = 0.77`, 6% past threshold, at
+gain 100 — and scores the same 8.0 as the 47%-saturated leader. Saturation is
+not forced by the gain; it is a property of the wide head. Two configs in
+opposite regimes, one score, which is a third independent reason to stop
+treating binarisation as the mechanism.
+
+### 6.10f What the deficit is: gain 100 costs res90, not the ceiling
+
+With grain, local roughness and the ceiling all excluded — the ceiling is 0.879
+at gain 100 against 0.884 at gain 5, i.e. the same — the remaining factor of
+§4.4b's law is the near profile's own width. Sampling the cosine on rings
+around 12 references, 1250 directions each:
+
+| at r=10 | mean cos | angular sd | sd / (1 − mean) |
+|---|---|---|---|
+| gain 5, two seeds | **0.894 / 0.889** | 0.0129 / 0.0138 | 0.392 / 0.399 |
+| gain 100, two seeds | 0.856 / 0.876 | 0.0289 / 0.0176 | 0.628 / 0.445 |
+| `wd1e-2` at gain 100 | 0.859 | 0.0247 | 0.549 |
+| `od256` at gain 100 | 0.891 | 0.0176 | 0.508 |
+
+**The mean column is the one that ranks the arms.** Interpolating res90 from
+the r=5 and r=10 rings and running it through the law at C = 0.879:
+
+| | res90 | `r_min` predicted | `r_min` measured |
+|---|---|---|---|
+| gain 5, s42 / s43 | 9.6 / 9.3 | 10.6 / 10.3 | 12 / 10 |
+| gain 100, s42 / s43 | 7.8 / 8.7 | 8.6 / 9.6 | 8 / 9 |
+| `wd1e-2` at gain 100 | 7.9 | 8.7 | 9 |
+
+A steeper nonlinearity sharpens the code: neighbouring positions become more
+distinguishable, cosine falls faster with distance, and a sharper kernel
+crosses an unchanged alias ceiling sooner. **Gain 100 buys near-field
+resolution it cannot use and pays for it in the radius.**
+
+**This unifies §6.10d.** Ranked by how hard the code is spread, `r_median` runs
+4.0 / 9.5 / 10.0 / 13.0 / 16.5 for `rate3` / `rate1` / `eps0.25` / incumbent /
+`eps1.0` — monotone across two different knobs. The spread axis *is* a res90
+axis; the ceiling was never the currency it appeared to be in §6.10d, which
+priced the trade correctly but named the wrong factor as the thing being
+bought.
+
+**Anisotropy is real but secondary.** Gain 100 does have 1.3–2.2× the angular
+spread at r ≤ 20, and it survives normalising for the faster decay, so §7.2's
+equivariance residual is genuinely larger. But it is seed-variable (0.628
+against 0.445 at matched settings) and does not order the arms, while res90
+does. An earlier version of this section led with anisotropy on the strength of
+the per-reference lists below; that was the weaker of the two available
+explanations.
+
+| | worst ray, per reference | typical ray |
+|---|---|---|
+| gain 5 | 12 12 13 13 13 15 15 16 16 16 17 20 | 47 |
+| gain 100 | 8 10 10 11 12 12 12 13 13 15 17 21 | **51** |
+
+### 6.10g The prediction, and its falsification
+
+Recorded before `w48` returned: if the spread axis is the res90 axis and gain
+100's deficit is res90, then **`rate_lambda=0` should be the best gain-100 arm**
+and `rate_eps 2.0` should fall between `eps1.0` and it.
+
+**Wrong.** `rate0` scores `r_min` 3.0 and 1.0 with alias ceilings of **0.985
+and 0.994** — the far field collapses outright without the term. The spread
+axis is not monotone. It is an interior optimum whose two ends fail for
+opposite reasons:
+
+| | `rate0` | incumbent | `eps1.0` | `eps0.25` | `rate1` | `rate3` |
+|---|---|---|---|---|---|---|
+| spread strength | none | — | weak | strong | strong | strongest |
+| alias ceiling | **0.99** | 0.879 | 0.880 | 0.869 | 0.831 | 0.798 |
+| `r_median` | 3.0 | 13.0 | **16.2** | 10.5 | 9.5 | 3.8 |
+| `r_min` | 2.0 | 8.0 | **10.5** | 5.5 | 4.5 | 1.0 |
+
+Below the knee the ceiling runs away — at C = 0.99 the law's ceiling factor is
+0.31, so no amount of res90 can rescue the radius. Above it, extra strength
+buys a ceiling that is already good enough and costs res90 to do so.
+`eps_1.0` sits near the knee.
+
+**So the ceiling is essential but threshold-like, and both readings in §6.10d
+and §6.10f were half right.** §6.10d treated the ceiling as the currency, which
+holds only below the knee. §6.10f replaced it with res90, which holds only
+above the knee — and it looked compelling precisely because every arm then in
+hand was above it, making the ceiling appear flat or even anti-correlated with
+the score. The correct statement is that the spread term has one job, keeping
+the ceiling off 1.0, and the incumbent 0.3/0.5 does that job with margin to
+spare that it pays for in near-field width.
+
+The §4 comparison this campaign inherited (0 / 0.3 / 1.0 at gain 5) sampled one
+point below the knee and two above it, which is why 0.3 won and why nothing in
+it revealed that the interesting region is between 0.3 and 0.
+
+**A question this raises outside the gain-100 brief.** The coding-rate term is
+the machinery this campaign added, and §4 adopted it on a comparison of 0 / 0.3
+/ 1.0 at gain 5. `rate_eps` was never swept at all, at any gain — the weakening
+that `eps1.0` achieves has no counterpart in §4's grid, which only ever moved
+the term's *weight*. If the term's optimum is as far to the weak side at gain 5
+as it is here, every §4–§6 headline was tuned on the wrong side of it. Not
+tested; the brief is gain 100 and three waves are already queued.
+
+### 6.10h The answer: gain 100 costs nothing, once the spread term is retuned
+
+**100 references, two draws, eight cells per arm**, `encoder_final`, all on the
+§6.7 geometry (`sm50` × 118 at batch 4096):
+
+| config | cells, sorted | median | floor | `r_median` | res90 | alias |
+|---|---|---|---|---|---|---|
+| **gain 100, `eps` 1.0 / `rate` 0.5** | 7 8 9 9 9 9 10 10 | **9.0** | **7** | 16.8 | 10.0 | 0.886 |
+| gain 100, `eps` 0.7 | 6 7 9 9 9 9 9 10 | 9.0 | 6 | 16.0 | 10.0 | 0.865 |
+| gain 100, `eps` 1.0 + `wd`/`od2048` | — | 8.0 | 6 | 13.8–14.5 | 9–10 | 0.89 |
+| *gain 5 best (§6.7), for reference* | *7 7 8 8 9 9 10 10* | *8.5* | *7* | *15.25* | — | *0.884* |
+| gain 100 leader (§6.8) | 5 5 6 6 7 7 7 7 | 6.5 | 5 | 13.8 | 9.0 | 0.879 |
+| gain 100, `eps` 1.4 / 2.0 / `rate` 0.15 | — | 6.0 | 5 | 9–10.5 | 9.5–10 | 0.93–0.95 |
+| gain 100, `rate` 0 | 1 1 2 3 | 1.5 | 1 | 3.0 | 10.0 | 0.992 |
+
+The §6.8 leader re-scores at exactly 6.5, reproducing its published number, so
+the draws are commensurable. **The retuned gain-100 config reaches 9.0 with a
+floor of 7 — level with the best gain-5 config in the campaign on both the
+median and the floor**, and it is the tightest arm anywhere in §4–§6: no cell
+below 7 in eight.
+
+**Winning config** — `sweeps/w49_g100_knee/0{08,09,10,11}_eps1_rate0.5_seed=4{2..5}`:
+
+```
+npos_list            118x50                    (sm50, 10.0%, 118 envs)
+per_env_radius_frac  0.0
+radius               20.0
+rate_lambda          0.5     rate_eps  1.0     <-- the two that changed
+out_dim 1024  hidden_dim 256  num_hidden_layers 4
+exclude_cross_env_pairs, single_env_batch=False, lazy_codes
+lr 3e-4  batch_size 4096  weight_decay 1e-4  fwhm_ratio 0.25
+gain 1.0 -> 100.0
+epochs 1000, step-matched to ~73,000 optimizer steps
+```
+
+Two knobs differ from §6.8's leader, and both are in the spread term.
+
+### 6.10i Why it is not free elsewhere: gain substitutes for the spread term
+
+The obvious objection to "gain 100 matches gain 5" is that the gain-5 config
+was never given the retuned spread setting — every §4–§6 config used
+`rate_eps` 0.5, and the knob was never swept at any gain. If gain 5 gained the
+same 2.5 units, the gap §6.8 measured would be intact and w45–w49 would have
+merely moved both ends of it. `w50` runs that control, same geometry, same
+seeds, 20 references:
+
+| at gain 5 | `r_min` | alias ceiling |
+|---|---|---|
+| `rate_eps` 0.5, `rate` 0.3 (§6.7 baseline) | **10.0** | 0.885 |
+| `rate_eps` 1.0, `rate` 0.3 | 7.0 | 0.908–0.967 |
+| `rate_eps` 1.0, `rate` 0.5 | 8.0 | 0.913–0.971 |
+
+**It does not transfer — it actively hurts**, and the alias column says why.
+At gain 5 the ceiling breaks at `eps` 1.0 (0.91–0.97); at gain 100 the same
+setting holds it at 0.88. So the knee sits in a different place at each gain,
+and the comparison in §6.10h is legitimate: each config at its own optimum.
+
+**The mechanism is substitution.** A high gain and the coding-rate term both
+push toward a more spread-out code. With gain 100 supplying part of that
+pressure, the explicit term can be relaxed to `eps` 1.0 without the far field
+collapsing — and relaxing it returns the res90 that the gain was costing. At
+gain 5 nothing supplies that pressure, so the term must carry the full load and
+`eps` 0.5 is correct.
+
+This is what §6.8 actually measured. **Its "final gain 100 costs about 2 units"
+was the cost of importing a gain-5 hyperparameter into a gain-100 model, not a
+cost of the gain.** Under the constraint, at 10% coverage, with mixed
+environments of 50 cells, a saturating output nonlinearity is free.
+
+### 6.10j What is still unexplained
+
+**The law over-predicts at gain 100.** Carrying res90 and the ceiling through
+§4.4b for all twelve gain-100 arms gives a median residual of **2.1 cells**
+against the 1.2 §4.4b reported over 410 mostly-gain-5 checkpoints, and the
+errors are one-signed: every arm underperforms its own res90-and-ceiling.
+
+The residual has a candidate. §4.4b's law assumes circular level sets — it
+combines a radial decay rate with a scalar ceiling and has no term for
+direction — while §6.10f measured gain 100 at 1.3–2.2× the angular spread of
+gain 5. So the anisotropy that §6.10f demoted from *the* mechanism appears to
+be exactly the law's error term: **res90 sets what the radius could be, the
+ceiling sets where it must stop, and anisotropy is the shortfall between them.**
+Not tested directly; it would need the law refitted with an anisotropy term
+across both gains, which no wave here provides.
+
+**What `weight_decay` does is unknown.** It moves `r_min` 8.0 → 9.0 at gain 100
+and is a measured null at gain 5 (§5.6m). The natural mechanism — that it
+retreats from saturation — is falsified: at 100× the default it moves
+`frac_sat` 0.467 → 0.459 and `|g·net|` 2.71 → 2.66. No replacement is offered.
+
+**Why `out_dim` matters at all here.** 256 / 1024 / 2048 / 4096 read 7.0 / 6.5 /
+7.0 / 8.0 at 100 references — a real but shallow effect on an axis §5.8a found
+free at gain 5, with no mechanism established once grain was ruled out.
 # 8. Open questions
 
 Ranked by how much answering them would change the picture, not by cost. Each is
