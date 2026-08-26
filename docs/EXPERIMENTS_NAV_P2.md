@@ -3420,11 +3420,26 @@ That reframes the headline. "1.000 success in 19.6 steps" is a strong
 about the latter. A success rate that can be achieved without the readout is not
 measuring the readout.
 
-**This is not polar's doing** — it is a property of these runs that the polar
-probe made visible, and §9.3's Cartesian arms should be re-read the same way
-(their `follow_q` was 0.843 at n_dist=0, i.e. *substantially higher*). If that
-comparison holds up, polar improved the action parameterization while making the
-memory-following worse, and that trade is the thing to investigate next.
+**Whether this is polar's doing is NOT yet established.** §9.3's Cartesian
+`p9_sq_std` arm reads `follow_q = 0.843` at n_dist=0 against polar's 0.407 and
+0.558 — and `mean_steps` 8.05 against 19.6 and 27.2.
+
+But that comparison is **not currently fair**, on two counts, and should not be
+cited until it is:
+
+1. **Training budget.** `p9_sq_std` was probed at **u900**; these polar arms at
+   **u250–u300**, i.e. roughly a third of the training. `follow_q` may simply
+   develop late.
+2. **Speed.** `p9_sq_std` ran at a realized ‖a‖ ≈ 1.98 (commanded 8.18, clamped),
+   so its 8.05 steps is ~1.46× its own ideal; the frozen polar arm at speed 1.0
+   has an ideal of ~10.8 and took 19.6, i.e. ~1.81×. Normalizing shrinks the gap
+   substantially without closing it.
+
+**The right test is a matched-budget probe** — re-probe both polar exploit arms
+at u900 and compare `follow_q` against `p9_sq_std` at the same update. If the
+gap survives that, polar improved the action parameterization while degrading
+memory-following, and that trade is the most important open question in phase 2.
+If it does not, §9.7's first two rows are simply an early-training reading.
 
 ---
 
