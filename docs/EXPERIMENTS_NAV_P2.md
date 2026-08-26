@@ -3258,6 +3258,61 @@ Three claims to retract, all made from a single early eval point:
 freezing-itself and are **cancelled**: the premise is refuted, and more entropy
 pressure would blunt exactly the κ that is producing the result.
 
+### 9.6 THE P10 ANSWER — the policy does not want state-dependent noise
+
+Behaviour probe on `p10_pol_v1` u300 (frozen speed, the 1.000-success
+checkpoint). This is the **unconfounded** version of §9.3's question: the κ head
+is per-state, the magnitude channel does not exist, and the readout genuinely
+degrades. If the policy wanted state-dependent exploration, κ is the only way to
+express it and nothing competes.
+
+| n_dist | 0 | 1 | 3 | 5 | 10 |
+|---|---|---|---|---|---|
+| directional noise (circ sd) | 9.83° | 9.88° | 9.85° | 9.99° | **10.12°** |
+| success | 1.000 | 0.995 | 0.984 | 0.964 | 0.901 |
+| `q_accuracy` | 0.989 | 0.984 | 0.958 | 0.833 | **0.711** |
+| `follow_q` | 0.558 | 0.506 | 0.499 | 0.443 | 0.427 |
+| `mean_steps` | 20.6 | 23.0 | 22.9 | 23.3 | 26.8 |
+
+**κ modulates 1.029× across 0→10 — LESS than σ's 1.086× in §9.3**, with the
+magnitude channel removed entirely. Giving the policy a clean, uncontested
+directional-noise channel made it use that channel *less*, not more.
+
+**And flat against distance to goal at every distractor level** — d0–2 through
+d8+ spans 2–3% with no trend, at every one of the five levels. §9.1's prediction
+(σ should RISE near the goal, where P1 shows the readout collapsing) now fails
+under a parameterization built specifically to let it succeed.
+
+#### The reframing — the adaptation is real, it is just not in the spread
+
+`q_accuracy` falls 0.989 → 0.711 as distractors rise, and `follow_q` falls
+0.558 → 0.427 with it. **The policy does adapt to a degrading readout — by
+trusting it less.** That is state-dependent behaviour of exactly the kind §9.1
+sought, expressed through the policy **mean** rather than its spread.
+
+(Not a claim about rate: follow_q falls 0.765× against q_accuracy's 0.719× over
+the full range, but faster than it at n_dist=5 and slower at 10. It tracks the
+readout; it does not provably outpace it.)
+
+So "be more uncertain where the readout is bad" and "rely on the readout less
+where it is bad" are both valid responses to the same information, and this
+policy picks the second — under a σ head (§9.3), under a κ head, and with the
+magnitude channel gone. §9.3's conclusion that σ "learned a better constant"
+was right about the behaviour and wrong about the cause: the magnitude channel
+was not out-competing the spread channel. **A constant spread is what the
+policy wants.**
+
+#### Consequence for the polar case
+
+The polar parameterization is still the right change — it is what made this
+answerable, it removed a 4× confound, and the frozen-speed arm it enables is the
+best exploit model in phase 2 (§9.5). But the motivation recorded in §9.3 — that
+a decoupled channel would be *taken up* — is now measured and false. A follow-up
+should stop trying to make the spread state-dependent and look at what governs
+`follow_q`, which is where the policy actually encodes its confidence.
+
+---
+
 **The methodological point, which cost real GPU time twice in one session.**
 Both exploit arms and both explore arms are strongly non-monotonic —
 `p10_pol_v1` alone runs 0.896 → 0.510 → 0.906 → 1.000 across consecutive evals.
