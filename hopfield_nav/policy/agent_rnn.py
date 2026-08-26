@@ -113,6 +113,8 @@ class RNNAgent(nn.Module):
             move_log_prob = move_log_prob.sum(-1)
 
         return {
+            "move_mean": move_dist.mean.detach() if hasattr(move_dist, "mean") else None,
+            "move_std": move_dist.stddev.detach() if hasattr(move_dist, "stddev") else None,
             "move_action": move_action.squeeze(1),
             "move_log_prob": move_log_prob.squeeze(1),
             "h_next": h_next,

@@ -76,6 +76,15 @@ from hopfield_nav.world.vec_env import make_vec
 # ---------------------------------------------------------------------------
 
 
+# NOTE on passing several checkpoints at once: the world and the agent are
+# built ONCE from the first checkpoint's config and each set of weights is
+# loaded into it, which is what makes the 12 GB scaffold build worth amortizing.
+# It also means every checkpoint in the list must share an ARCHITECTURE. Mixing
+# a `state_dependent_std` run with a global-sigma one fails with
+# "Missing key(s) movement_log_std_head.weight / Unexpected key(s)
+# movement_log_std" -- run those as separate jobs rather than one list.
+
+
 @torch.no_grad()
 def _rollout(*, agent, env, env_offset, vectorhash, hopfields, cfg, device,
              starts, max_steps, ends_on_arrival, goal_in_memory,
@@ -108,7 +117,8 @@ def _rollout(*, agent, env, env_offset, vectorhash, hopfields, cfg, device,
     steps_to_goal = np.full(B, -1, dtype=np.int64)
     active = np.ones(B, dtype=bool)
 
-    rec = {k: [] for k in ("pos_f", "cell", "action", "q", "at_goal", "alive")}
+    rec = {k: [] for k in ("pos_f", "cell", "action", "q", "at_goal",
+                           "alive", "sigma", "mu_norm")}
 
     for step in range(max_steps):
         positions = vec.positions()
@@ -177,6 +187,16 @@ def _rollout(*, agent, env, env_offset, vectorhash, hopfields, cfg, device,
         rec["q"].append(q_np.copy())
         rec["at_goal"].append(at_g.copy())
         rec["alive"].append(active.copy())
+        # The policy's own spread and commanded magnitude. Recorded here rather
+        # than recomputed later because sigma under a state-dependent head is a
+        # function of the exact inputs the policy saw -- reconstructing them
+        # elsewhere is where a hand-rolled version silently differs.
+        _ms = result.get("move_std")
+        _mm = result.get("move_mean")
+        if _ms is not None and _mm is not None:
+            rec["sigma"].append(_ms.cpu().numpy().reshape(B, -1).mean(-1))
+            rec["mu_norm"].append(
+                np.linalg.norm(_mm.cpu().numpy().reshape(B, -1), axis=-1))
 
         idx = np.nonzero(active)[0] if ends_on_arrival else np.arange(B)
         if idx.size == 0:
@@ -526,7 +546,39 @@ def _nav_stats(rec, size, goal, starts):
     opt = np.maximum(0.0, start_d - float(getattr(_nav_stats, "_radius", 1.0)))
     eff = (opt[succ] / np.maximum(stg[succ], 1)) if succ.any() else np.array([])
 
+    # --- policy spread, conditioned on distance to the goal ----------------
+    # The pass/fail for the P9 state-dependent sigma head. The per-update
+    # `sigma` in the training log is a BATCH MEAN and so cannot distinguish a
+    # lower global sigma from one that varies with state (EXPERIMENTS_NAV_P2
+    # section 9.2). Distance to the goal is the sharper axis because there is a
+    # prior prediction: P1 measured the readout degrading sharply within about
+    # two cells of the goal, so a sigma that tracks how trustworthy the readout
+    # is should RISE there. In a global-sigma run these are constant by
+    # construction, which is what makes that run a usable control.
+    sig_stats = {}
+    if rec.get("sigma") is not None and np.asarray(rec["sigma"]).size:
+        sg = np.asarray(rec["sigma"])                       # (T, B)
+        mn = np.asarray(rec["mu_norm"])                     # (T, B)
+        gd = np.linalg.norm(
+            rec["cell"].astype(float) - np.asarray(goal, dtype=float), axis=-1)
+        m0 = np.asarray(rec["alive"], dtype=bool)
+        T = min(sg.shape[0], gd.shape[0], m0.shape[0])
+        sg, mn, gd, m0 = sg[:T], mn[:T], gd[:T], m0[:T]
+        sig_stats["sigma_mean"] = float(sg[m0].mean()) if m0.any() else float("nan")
+        sig_stats["mu_norm_mean"] = float(mn[m0].mean()) if m0.any() else float("nan")
+        for lab, lo, hi in (("d0_2", 0.0, 2.0), ("d2_4", 2.0, 4.0),
+                            ("d4_8", 4.0, 8.0), ("d8plus", 8.0, 1e9)):
+            k = m0 & (gd >= lo) & (gd < hi)
+            if k.sum() < 20:
+                sig_stats[f"sigma_{lab}"] = float("nan")
+                sig_stats[f"ang_{lab}"] = float("nan")
+                continue
+            sig_stats[f"sigma_{lab}"] = float(np.median(sg[k]))
+            sig_stats[f"ang_{lab}"] = float(np.degrees(
+                np.median(sg[k] / np.maximum(mn[k], 1e-8))))
+
     return {
+        **sig_stats,
         "success_rate": float(succ.mean()),
         "mean_steps": float(stg[succ].mean()) if succ.any() else float("nan"),
         "median_steps": float(np.median(stg[succ])) if succ.any() else float("nan"),

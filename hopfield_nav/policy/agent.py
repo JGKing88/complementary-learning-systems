@@ -186,6 +186,8 @@ class NavAgent(nn.Module):
         store_log_prob = store_dist.log_prob(store_action)
 
         return {
+            "move_mean": move_dist.mean.detach() if hasattr(move_dist, "mean") else None,
+            "move_std": move_dist.stddev.detach() if hasattr(move_dist, "stddev") else None,
             "move_action": move_action.squeeze(1),           # (B,) or (B, 2)
             "store_action": store_action.squeeze(1),          # (B,)
             "move_log_prob": move_log_prob.squeeze(1),        # (B,)
