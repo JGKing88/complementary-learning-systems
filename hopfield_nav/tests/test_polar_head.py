@@ -262,6 +262,41 @@ class TestPPODynamics:
         # dir_soft retune but tight enough to fail if the softening is lost.
         assert worst < 500.0, worst
 
+    def test_survives_a_direction_vector_large_enough_to_overflow_its_square(self):
+        """What actually killed the first four P10 launches.
+
+        `direction` comes off a vanilla ReLU RNN unrolled 200 steps, whose
+        activations can grow like ||W_hh||^200, and every form of this
+        computation SQUARES it -- ||v|| past ~1.8e19 overflows float32. theta
+        is scale-invariant, so the FORWARD stayed perfectly finite (all four
+        crash reports showed clean losses, one with logratio_max = 0.006, i.e.
+        no policy change at all) while the BACKWARD went non-finite. The
+        parameter-level report pinned it: `movement_mean` and `log_kappa_head`
+        non-finite -- the two consumers of this -- with the Beta speed path and
+        the value head untouched, 8 of 14 in the learned arm and 8 of 10 in the
+        frozen one.
+
+        The old suite could not have caught this: it swept ||v|| from 0 to 1.
+        """
+        head = _head()
+        feat = torch.zeros(1, 16)
+        ref = None
+        for mag in (1.0, 1e3, 1e10, 1e19, 1e25, 3e38):
+            v = torch.tensor([[mag * 0.6, mag * 0.8]], requires_grad=True)
+            d = head(feat, v)
+            d.log_prob(torch.tensor([[0.0, 1.0]])).sum().backward()
+            assert torch.isfinite(d.kappa).all(), mag
+            assert torch.isfinite(d.theta).all(), mag
+            assert torch.isfinite(v.grad).all(), mag
+            # Scale-invariance is the property that makes the forward look
+            # healthy, so it must hold exactly or the fix has changed meaning.
+            if ref is None:
+                ref = float(d.theta)
+            assert float(d.theta) == pytest.approx(ref, abs=1e-6), mag
+            # A huge direction vector means a CONFIDENT heading, so the shrink
+            # must have saturated rather than collapsed.
+            assert float(d.kappa) == pytest.approx(6.36, rel=0.01), mag
+
     def test_dir_soft_barely_touches_kappa_where_the_policy_operates(self):
         """The softening must be a BACKSTOP, not a live participant. It was
         0.05 until the first smoke run showed the real 1024-unit trunk emits

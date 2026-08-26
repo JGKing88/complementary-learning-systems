@@ -342,31 +342,55 @@ class PolarHead(nn.Module):
         # For ||v|| >> dir_soft the shrink factor is 1 to within 0.1%, so the
         # decoupling is untouched in the operating regime -- the coupling
         # exists only in the degenerate corner where it should.
-        sq = direction.pow(2).sum(-1)
-        # SQUARED shrink, ||v||^2/(||v||^2 + s^2), not ||v||/sqrt(||v||^2+s^2):
-        # the latter needs ||v||, whose gradient at the origin is 0/0 = NaN.
-        # This form is rational in sq and therefore smooth everywhere, and it
-        # shrinks slightly harder in the small-||v|| region we want damped.
-        shrink = sq / (sq + self.dir_soft ** 2)
+        # SCALE-FREE. `direction` comes off a vanilla ReLU RNN unrolled 200
+        # steps, whose activations can grow like ||W_hh||^200, so ||v|| can be
+        # enormous for a few samples -- and every form of this computation
+        # SQUARES it. theta is scale-invariant so the forward stays perfectly
+        # finite (atan2 of a huge vector is an ordinary angle, and shrink -> 1),
+        # which is exactly why all four crash reports showed a clean forward
+        # with a non-finite BACKWARD, and why the non-finite parameters were
+        # movement_mean and log_kappa_head -- the two that consume this -- with
+        # the Beta speed path and the value head untouched.
+        #
+        # Dividing by the max-abs component first makes every squared quantity
+        # O(1). Mathematically identical: theta is unchanged because atan2 is
+        # scale-invariant, and shrink is rewritten in the equivalent ratio form
+        #     ||v||^2 / (||v||^2 + s^2)  ==  sq_n / (sq_n + (s/vmax)^2)
+        # which needs no unnormalized square anywhere.
+        vmax = direction.abs().amax(-1, keepdim=True).clamp_min(1e-20)
+        vn = direction / vmax
+        sq = vn.pow(2).sum(-1)                       # in [0, 2], cannot overflow
+        # (s/vmax)^2 -> 0 for a huge ||v|| (shrink -> 1) and blows up for a tiny
+        # one (shrink -> 0), both of which are the intended limits.
+        soft_rel = (self.dir_soft / vmax.squeeze(-1)).pow(2)
+        shrink = sq / (sq + soft_rel)
         # atan2 is likewise undefined at the origin with a NaN gradient. An
         # exactly-zero direction is measure-zero but not impossible, and one
         # NaN reaching clip_grad_norm_ zeroes the entire batch's update. The
         # replacement is a CONSTANT, so autograd routes zero gradient through
         # those entries -- the honest answer where the heading is undefined --
         # and `shrink` has already driven their concentration to uniform.
-        # The threshold is 1e-6 in sq (||v|| = 1e-3), NOT machine epsilon. The
-        # bound below rests on kappa_eff shrinking as ||v||^2 while the atan2
-        # gain grows as 1/||v||; the kappa FLOOR breaks that proportionality,
-        # so any band where the floor binds but atan2 is still live reopens the
-        # divergence -- measured at 1000 with a 1e-3 floor and a machine-eps
-        # threshold. Floor and threshold are chosen together so no such band
-        # exists: below ||v|| = 1e-3 the constant branch takes over, and above
-        # it kappa_eff >= 2.5e-3 keeps the floor slack.
-        safe = torch.where((sq < 1e-6).unsqueeze(-1),
-                           direction.new_tensor([1.0, 0.0]).expand_as(direction),
-                           direction)
+        # Degeneracy is a MAGNITUDE test, not an exact-zero test. The bound on
+        # the heading gradient rests on kappa_eff shrinking as ||v||^2 while the
+        # atan2 gain grows as 1/||v||; the kappa floor breaks that
+        # proportionality, so any band where the floor binds while atan2 is
+        # still live reopens the divergence -- measured at exactly 1000 with an
+        # exact-zero test and ||v|| = 1e-9.
+        #
+        # A tenth of dir_soft is the natural threshold: there kappa_eff is
+        # already ~1e-4 of nominal, so the heading is meaningless anyway, and
+        # tying it to dir_soft rather than to a bare constant keeps the two
+        # from being retuned apart. atan2 is undefined at the origin with a NaN
+        # gradient; the replacement is a CONSTANT, so autograd routes zero
+        # gradient through those entries, which is the honest answer where the
+        # heading is undefined.
+        degenerate = (vmax.squeeze(-1) < 0.1 * self.dir_soft).unsqueeze(-1)
+        safe = torch.where(degenerate,
+                           vn.new_tensor([1.0, 0.0]).expand_as(vn), vn)
         theta = torch.atan2(safe[..., 1], safe[..., 0])
-        dir_norm = sq.detach().sqrt()
+        # The TRUE ||v||, reassembled for logging only. This is the gauge; the
+        # softening bounds what happens when it decays but does not prevent it.
+        dir_norm = (sq.detach().sqrt() * vmax.detach().squeeze(-1))
         # clamp_min because kappa = 0 IS the uniform distribution on the circle
         # -- the correct limit for a zero direction vector -- but torch's
         # VonMises rejects a zero concentration outright. 1e-6 is uniform to
