@@ -3137,7 +3137,7 @@ read, but noted because it is the first datapoint on what freezing speed costs:
 the free arm picked 1.478, inside the measured billiard band, and leads on
 coverage.
 
-#### u50 EXPLOIT — freezing speed costs 22× in success, and why
+#### u50 EXPLOIT — a reading that did not survive; see the reversal below
 
 | arm | success | speed | κ | ang noise | `dir_norm` |
 |---|---|---|---|---|---|
@@ -3221,6 +3221,49 @@ either explore arm is decided before ~u200.
 **cps 0.75 at u250** against the billiard reference of **0.775**, at speed 1.732
 and κ 19.7. Near-billiard efficiency. The u300 value of 0.710 is inside eval
 noise of that, so this is not a peak call.
+
+---
+
+### 9.5 REVERSAL — freezing speed to 1 WINS on exploit
+
+Everything in §9.4's u50 exploit reading is wrong. Full trajectories:
+
+| arm | u50 | u100 | u150 | u200 | u250 | u300 |
+|---|---|---|---|---|---|---|
+| `p10_pol` learned speed | 0.677 | 0.844 | 0.969 | 0.979 | 0.990 | |
+| `p10_pol_v1` **speed ≡ 1** | 0.031 | 0.208 | 0.896 | 0.510 | 0.906 | **1.000** |
+
+| at its best | success | mean_steps | κ | ang noise |
+|---|---|---|---|---|
+| learned speed (u250) | 0.990 | 27.2 | — | — |
+| **frozen speed (u300)** | **1.000** | **19.6** | 37.8 | 9.7° |
+
+**The frozen arm wins on both metrics.** It was slower to start, not broken.
+
+Three claims to retract, all made from a single early eval point:
+
+1. *"Freezing speed costs 22× in success."* It costs a slower start. By u300 it
+   is ahead on success **and** takes 28% fewer steps.
+2. *"κ ran to 23 while success sat at 3% — premature convergence."* Backwards.
+   κ kept climbing to 37.8 and success went to **1.000**. The sharpening was the
+   policy **learning to point accurately**, which is precisely what produces the
+   straighter, shorter paths. A rising κ is the signature of success here, not
+   of collapse.
+3. *The hedging hypothesis* — that pinning speed removes the option of slowing
+   down to hedge a bad heading, leaving κ as the only lever. It predicted a
+   failure that did not occur. It may still describe the early transient, but it
+   is not load-bearing for anything and should not be cited.
+
+`p10_pol_v1_e20` / `_e50` were launched to discriminate κ-runaway from
+freezing-itself and are **cancelled**: the premise is refuted, and more entropy
+pressure would blunt exactly the κ that is producing the result.
+
+**The methodological point, which cost real GPU time twice in one session.**
+Both exploit arms and both explore arms are strongly non-monotonic —
+`p10_pol_v1` alone runs 0.896 → 0.510 → 0.906 → 1.000 across consecutive evals.
+Any comparison drawn from one eval point in this project is noise. The prior
+existed (`project_hopfield_nav_explore_exploit`, the peak-calling trap) and was
+not applied. **Nothing here is comparable before ~u300.**
 
 ---
 
