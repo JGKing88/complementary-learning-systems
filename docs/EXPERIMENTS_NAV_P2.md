@@ -3258,13 +3258,72 @@ Three claims to retract, all made from a single early eval point:
 freezing-itself and are **cancelled**: the premise is refuted, and more entropy
 pressure would blunt exactly the κ that is producing the result.
 
-### 9.6 THE P10 ANSWER — the policy does not want state-dependent noise
+### 9.6 THE P10 ANSWER — the falsifier resolves, and κ does what σ would not
 
-Behaviour probe on `p10_pol_v1` u300 (frozen speed, the 1.000-success
-checkpoint). This is the **unconfounded** version of §9.3's question: the κ head
-is per-state, the magnitude channel does not exist, and the readout genuinely
-degrades. If the policy wanted state-dependent exploration, κ is the only way to
-express it and nothing competes.
+Behaviour probes on both exploit checkpoints: `p10_pol_v1` u300 (frozen speed,
+1.000 success) and `p10_pol` u250 (learned speed, 0.990).
+
+**Read the learned-speed arm first.** An earlier revision of this section
+concluded, from the frozen arm alone, that "a constant spread is what the policy
+wants". That is **wrong** — the learned-speed arm shows a clean proximity
+gradient in κ. The frozen arm is the special case, not the general one, and
+generalizing from it was the same one-arm error as §9.5's.
+
+#### The falsifier — resolved, and the §9.3 story survives
+
+| across n_dist 0→10 | §9.3 Cartesian | P10 polar |
+|---|---|---|
+| mean magnitude / speed | **1.234×** | **1.018×** |
+| spread (σ → κ) | 1.086× | 1.067× |
+
+§9.4 set the falsifier as: *if mean speed still modulates ≈1.23× with heading
+noise decoupled, the residual-channel story is wrong and §9.3 needs retracting.*
+It modulates **1.018×**. The channel closed. The policy **was** buying
+directional variation with speed, and given a proper channel it stopped.
+
+#### κ does what σ refused to — on the axis that matters
+
+Directional noise by distance to goal, learned-speed arm:
+
+| n_dist | d0–2 | d2–4 | d4–8 | d8+ | ratio |
+|---|---|---|---|---|---|
+| 0 | **18.82°** | 17.31° | 16.05° | **13.98°** | **1.35×** |
+| 1 | 18.68° | 17.14° | 15.88° | 13.75° | 1.36× |
+| 3 | 18.77° | 17.13° | 16.09° | 14.12° | 1.33× |
+| 5 | 18.65° | 17.27° | 16.49° | 14.35° | 1.30× |
+| 10 | 18.06° | 17.69° | 17.25° | 17.24° | 1.05× |
+
+Monotone, ~1.34×, reproduced at four distractor levels: **more directional
+noise near the goal**. That is §9.1's prediction — the one §9.3 measured as flat
+for σ and called a sharp negative — now satisfied. And it cannot be §9.3's
+artifact: there the near-goal angular rise was `σ/‖μ‖` and came entirely from
+slowing down, whereas this is the circular sd computed from κ directly, with
+mean speed flat at 1.37–1.40 throughout.
+
+**It collapses at n_dist=10** (1.05×), where `q_accuracy` is 0.613. With the
+readout globally untrustworthy the policy stops treating near-goal as special
+and instead raises noise everywhere — mean 16.37° at n_dist=0 against 17.27° at
+10. Selective caution gives way to uniform caution.
+
+#### The frozen-speed arm has NO gradient — and that is the open question
+
+| n_dist | d0–2 | d8+ | ratio |
+|---|---|---|---|
+| 0 | 10.06° | 9.74° | 1.03× |
+| 10 | 10.17° | 10.07° | 1.01° |
+
+Flat at every level, at a much sharper operating point overall (9.8° against the
+learned arm's 16.4°). Two candidate explanations, neither tested:
+
+1. **Joint widening.** In the learned arm the *speed spread* also rises near the
+   goal (`sigma_d0_2` 0.338 against `sigma_d8plus` 0.305). The near-goal
+   response may be a coordinated widening of both channels, and removing one
+   suppresses the whole behaviour.
+2. **No room.** At κ ≈ 37 the policy is already so sharp that a 1.3× modulation
+   is a much smaller absolute change than at κ ≈ 13.
+
+Distinguishing them is a real follow-up: freeze speed at 1.0 but with a lower
+`log_kappa_max`, and see whether the gradient reappears when sharpness is capped.
 
 | n_dist | 0 | 1 | 3 | 5 | 10 |
 |---|---|---|---|---|---|
@@ -3274,16 +3333,11 @@ express it and nothing competes.
 | `follow_q` | 0.558 | 0.506 | 0.499 | 0.443 | 0.427 |
 | `mean_steps` | 20.6 | 23.0 | 22.9 | 23.3 | 26.8 |
 
-**κ modulates 1.029× across 0→10 — LESS than σ's 1.086× in §9.3**, with the
-magnitude channel removed entirely. Giving the policy a clean, uncontested
-directional-noise channel made it use that channel *less*, not more.
+κ modulates 1.029× across 0→10 here — flat, on both axes. Taken alone this
+looked like "the policy does not want state-dependent noise"; the learned-speed
+arm above shows that conclusion does not generalize.
 
-**And flat against distance to goal at every distractor level** — d0–2 through
-d8+ spans 2–3% with no trend, at every one of the five levels. §9.1's prediction
-(σ should RISE near the goal, where P1 shows the readout collapsing) now fails
-under a parameterization built specifically to let it succeed.
-
-#### The reframing — the adaptation is real, it is just not in the spread
+#### A second adaptation, present in both arms — reliance, not spread
 
 `q_accuracy` falls 0.989 → 0.711 as distractors rise, and `follow_q` falls
 0.558 → 0.427 with it. **The policy does adapt to a degrading readout — by
@@ -3294,22 +3348,28 @@ sought, expressed through the policy **mean** rather than its spread.
 the full range, but faster than it at n_dist=5 and slower at 10. It tracks the
 readout; it does not provably outpace it.)
 
-So "be more uncertain where the readout is bad" and "rely on the readout less
+"Be more uncertain where the readout is bad" and "rely on the readout less
 where it is bad" are both valid responses to the same information, and this
-policy picks the second — under a σ head (§9.3), under a κ head, and with the
-magnitude channel gone. §9.3's conclusion that σ "learned a better constant"
-was right about the behaviour and wrong about the cause: the magnitude channel
-was not out-competing the spread channel. **A constant spread is what the
-policy wants.**
+policy does **both**: κ near the goal (learned-speed arm) and `follow_q` against
+distractor count (both arms). §9.1 looked only for the first, which is why §9.3
+read as a flat negative.
 
 #### Consequence for the polar case
 
-The polar parameterization is still the right change — it is what made this
-answerable, it removed a 4× confound, and the frozen-speed arm it enables is the
-best exploit model in phase 2 (§9.5). But the motivation recorded in §9.3 — that
-a decoupled channel would be *taken up* — is now measured and false. A follow-up
-should stop trying to make the spread state-dependent and look at what governs
-`follow_q`, which is where the policy actually encodes its confidence.
+The polar parameterization is vindicated on its own terms. It closed the
+magnitude channel (1.234× → 1.018×), and with that channel closed the spread
+channel **is** used state-dependently on the axis P1 says matters — which is
+exactly the mechanism §9.3 predicted and could not demonstrate. It also enables
+the frozen-speed arm, the best exploit model in phase 2 (§9.5).
+
+Two follow-ups, both now motivated by evidence:
+
+- **Why the frozen arm has no gradient** — the `log_kappa_max` test above. It
+  matters because P6 will want one model doing both regimes, and freezing speed
+  is the right exploit choice and the wrong explore one (§9.5).
+- **What governs `follow_q`.** It is the larger effect (0.558 → 0.427, and
+  0.407 → 0.392 in the learned arm) and nothing in the action parameterization
+  addresses it. It is where the policy encodes confidence in the readout.
 
 ---
 
