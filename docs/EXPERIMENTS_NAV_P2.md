@@ -3401,6 +3401,19 @@ Reading the probes for what the policy is *using*, not just how it is spread:
 | `p10_pol_v1` u300 | 1.000 | 0.989 | **0.558** |
 | `p10_pol` u300 | 0.698 | **0.993** | **−0.001** |
 
+The third row holds at **every** distractor level, so it is not one condition:
+`follow_q` = −0.001 / −0.031 / −0.018 / −0.021 / +0.015 for n_dist 0→10, against
+`q_accuracy` 0.993 → 0.813. The same probe also puts mean speed at 1.5864–1.5911,
+a **1.003×** modulation — the decoupling of §9.6 holds even more tightly at u300
+than the 1.018× measured at u250.
+
+A tempting inference to avoid: *"a policy ignoring q should be insensitive to
+distractors, since distractors only corrupt q."* The data does **not** support
+it. Success falls 0.698 → 0.641 (×0.918) here, against ×0.901 for the frozen arm
+at `follow_q` ≈ 0.5 and ×0.922 for the learned arm at u250 at `follow_q` ≈ 0.41.
+All three degrade about equally with distractors regardless of how much they use
+`q`, which is itself worth explaining and is not explained here.
+
 The third row is **mode B in its purest form** (`project_nav_tri_failure_modes`:
 ignoring a usable readout, policy-limited rather than encoder-limited). Between
 u250 and u300 the learned-speed arm **abandoned the Hopfield readout entirely** —
