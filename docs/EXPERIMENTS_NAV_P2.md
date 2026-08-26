@@ -3204,6 +3204,24 @@ means a straighter trajectory, which is what covers new cells. Worth separating
 those two before crediting the speed — the free arm chose 1.5 AND a blunter
 heading, and only one of those is the speed's doing.
 
+**And the u50 explore ordering does not survive.** Full trajectories:
+
+| arm | u50 | u100 | u150 | u200 | u250 | u300 |
+|---|---|---|---|---|---|---|
+| `p10_e_pol` learned | 0.163 | **0.126** | 0.333 | 0.373 | 0.375 | 0.355 |
+| `p10_e_pol_v1` frozen | 0.207 | 0.274 | **0.125** | | | |
+
+Both arms take a **dip and recover** — the learned one at u100, the frozen one
+at u150. Reading the frozen arm's 0.125 as a collapse was the peak-calling trap
+from `project_hopfield_nav_explore_exploit` in reverse; training reward climbed
+straight through it (0.287 → 0.330 → 0.335), which was the tell. Nothing in
+either explore arm is decided before ~u200.
+
+**Where the explore side actually stands:** `p10_e_pol` reaches
+**cps 0.75 at u250** against the billiard reference of **0.775**, at speed 1.732
+and κ 19.7. Near-billiard efficiency. The u300 value of 0.710 is inside eval
+noise of that, so this is not a peak call.
+
 ---
 
 ## 10. P6 — interleaved
