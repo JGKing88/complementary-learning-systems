@@ -3480,12 +3480,26 @@ was not enough — every one of these was made after writing that warning down.
 
 Current standing (both arms healthy, neither converged):
 
+`p10_pol_v1` (frozen speed, exploit) through u550 — the series, per the rule
+above:
+
+| u | 50 | 100 | 150 | 200 | 250 | 300 | 350 | 400 | 450 | 500 | 550 |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| success | .03 | .21 | .90 | .51 | .91 | 1.00 | .49 | .99 | 1.00 | 1.00 | .98 |
+| steps | 10 | 48 | 66 | 47 | 34 | 19.6 | 43 | 16.0 | 16.3 | **15.4** | 35 |
+
+**Its level is ~1.000 success at 15–16 steps** (u400–500), not the 19.6 quoted
+earlier from the single u300 point — the series is better than the point.
+Against an ideal of ~10.8 steps at speed 1.0 that is **1.43× optimal**. The
+dips at u200/u350/u550 are the oscillation, not a trend; κ meanwhile climbs
+25.8 → 39.4 → 33.3 → 40.7 → 77.7, itself non-monotone.
+
 | arm | update | metric |
 |---|---|---|
 | `p10_e_pol` learned | u550 | cov 0.378, **cps 0.755** (billiard 0.775) |
 | `p10_e_pol_v1` frozen | u300 | cov 0.311, cps 0.621 |
 | `p10_pol` learned | u300 | success 0.698 (peak 0.990 at u250) |
-| `p10_pol_v1` frozen | u300 | success 1.000 |
+| `p10_pol_v1` frozen | u400–500 | **success ~1.000 at 15–16 steps** |
 
 ---
 
