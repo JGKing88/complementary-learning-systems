@@ -433,7 +433,11 @@ def ppo_update(
                 optimizer.step()
             else:
                 n_nonfinite += 1
-                optimizer.zero_grad(set_to_none=True)
+                # Report BEFORE clearing. `zero_grad(set_to_none=True)` sets
+                # every .grad to None, so inspecting after it reported empty
+                # lists for both the non-finite and the finite parameters --
+                # which reads as "no gradients anywhere" rather than as "the
+                # diagnostic looked too late".
                 if not reported_nonfinite:
                     # Named once per update, not per minibatch. Dying with no
                     # information about WHICH term went bad is what made the
@@ -467,6 +471,7 @@ def ppo_update(
                               f"| nonfinite_params={bad[:4]} "
                               f"| largest_finite={[(n, f'{v:.3e}') for v, n in big]}",
                               flush=True)
+                optimizer.zero_grad(set_to_none=True)
 
             total_move_loss += move_loss.item()
             total_store_loss += store_loss.item()
