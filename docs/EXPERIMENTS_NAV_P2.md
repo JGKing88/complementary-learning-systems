@@ -3137,6 +3137,46 @@ read, but noted because it is the first datapoint on what freezing speed costs:
 the free arm picked 1.478, inside the measured billiard band, and leads on
 coverage.
 
+#### u50 EXPLOIT — freezing speed costs 22× in success, and why
+
+| arm | success | speed | κ | ang noise | `dir_norm` |
+|---|---|---|---|---|---|
+| `p10_pol` (learned speed) | **0.677** | 1.413 | 7.01 | 22.9° | 0.338 |
+| `p10_pol_v1` (speed ≡ 1) | **0.031** | 1.000 | **23.16** | 13.1° | 0.548 |
+
+*(The `mean_steps` column reads backwards — 42.0 against 10.0 — because
+`mean_steps` is computed over SUCCESSES ONLY, so the frozen arm's 10.0 is a
+biased sample of its 3% easiest trials. The mean_steps trap, again.)*
+
+Speed 1.0 alone cannot explain 3%: at speed 1 the ideal `mean_steps` over a
+~10.8-cell start distance is ~10 against 200 available, so capping speed caps
+*efficiency*, not reachability. **Premature convergence can** — κ ran to 23
+while success sat at 3%, i.e. the policy sharpened its heading hard around a
+direction it had not learned.
+
+**Hypothesis for why freezing speed CAUSES that.** In the learned arm a bad
+heading can be hedged by slowing down: a shorter step overshoots less. With
+speed pinned that hedge is gone, heading errors cost more, and PPO's only
+remaining lever is to sharpen κ — which removes the very exploration that would
+have found the right heading. If it holds, **speed and heading are independent
+in the parameterization but not in their effect on the task**, which is a P10
+result rather than a nuisance.
+
+A wrong intermediate reading is recorded because it was tempting: `move_entropy
+= −0.001` looked like an entropy collapse, but von Mises differential entropy on
+the circle is `0.5·log(2πe/κ)`, which crosses zero at κ = 2πe ≈ 17.1. A negative
+value means κ > 17, not that exploration stopped. Separately, "the frozen arm
+has less entropy to regularize" was also wrong: the bonus gradient w.r.t. κ is
+`−ent_coef · dH_vm/dκ` in *both* arms, and the Beta term is additive in the
+speed parameters, contributing nothing to κ's gradient.
+
+**P10b — the decisive test.** `p10_pol_v1_e20` (21302000) and `p10_pol_v1_e50`
+(21302001): identical frozen-speed exploit arms at `MOVE_ENT_COEF` 0.02 and
+0.05, i.e. 4× and 10× the 0.005 the learned arm is stable at. If more entropy
+pressure recovers success, the failure is κ runaway and freezing speed is
+survivable with retuning. If it does not, freezing speed is itself the cost, and
+the hedging story above is the explanation.
+
 ---
 
 ## 10. P6 — interleaved
