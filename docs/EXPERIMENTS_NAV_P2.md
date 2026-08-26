@@ -3022,9 +3022,55 @@ reports nothing and looks like a finding.
 u10 learning normally (`mean_r` rising, `nonfinite_steps = 0` at the eval
 points, one event each), and `dir_norm` grows on its own — 0.106 → 0.238 and
 0.254 — i.e. the direction head moves *away* from the small-`‖v‖` region where
-the heading gradient peaks. That is consistent with the leading hypothesis (a
-large heading gradient at small `‖v‖`, amplified by the 200-step vanilla-ReLU
-RNN backward) without yet confirming it. Awaiting the parameter name.
+the heading gradient peaks.
+
+##### ROOT CAUSE — the heading path squared a number the RNN can make enormous
+
+Pinned, not inferred, once the report read the gradients *before*
+`clip_grad_norm_` overwrote them. Both arms name the identical set:
+
+| arm | non-finite | which | finite |
+|---|---|---|---|
+| exploit, learned speed | **8 / 14** | `rnn`×4, `movement_mean`×2, `log_kappa_head`×2 | `value_head`×2, Beta speed×4 |
+| exploit, frozen speed | **8 / 10** | the same eight | `value_head`×2 |
+
+The frozen arm has four fewer parameters and the *same* non-finite set, so this
+is unambiguous: **the von Mises path**. `movement_mean` feeds `atan2`;
+`log_kappa_head` feeds κ through the same `shrink(‖v‖)`; the Beta speed path and
+the value head are untouched; the RNN is downstream contamination via
+`features`.
+
+`direction` comes off a vanilla ReLU RNN unrolled 200 steps, whose activations
+can grow like `‖W_hh‖^200`, so `‖v‖` is enormous for a few samples — and every
+form of the shrink computation **squares** it, which overflows float32 past
+`‖v‖ ≈ 1.8e19`. θ is scale-invariant, so the **forward stays perfectly finite**
+(an ordinary angle; shrink → 1). That is precisely why all four reports showed
+clean losses — one at `logratio_max = 0.006`, no policy change at all — with
+only the backward non-finite, and why the three ratio-side mechanisms fixed
+earlier were real hazards but not this.
+
+Fixed by dividing out the max-abs component first, making every squared
+quantity O(1). Mathematically identical — θ unchanged (atan2 is
+scale-invariant), and shrink rewritten as the equivalent
+`sq_n / (sq_n + (s/vmax)²)`, which contains no unnormalized square. Verified
+finite with θ exactly constant across `‖v‖` from 0 to 3e38.
+
+Degeneracy became a **magnitude** test tied to `dir_soft` rather than an
+exact-zero test: an exact-zero test reopened the κ-floor band — where the floor
+binds while `atan2` is still live, breaking the `‖v‖²` proportionality the bound
+rests on — at exactly 1000 for `‖v‖ = 1e-9`.
+
+**Why the tests missed it:** the gradient sweep ran `‖v‖` from 0 to 1, entirely
+on the side of the operating point where nothing overflows. The failure is on
+the *other* side, and a 200-step ReLU recurrence is what puts samples there.
+Now pinned by a test sweeping to 3e38.
+
+**Method note.** Three separate times a diagnostic read state after the step
+that destroyed it — `zero_grad(set_to_none=True)`, then `clip_grad_norm_`
+(which rescales in place, and with a NaN norm smears NaN over *every*
+parameter), then a `bad[:4]` truncation that could not distinguish "4 of 4 RNN
+tensors" from "4 of 14 parameters". Each produced an empty or uniform result
+that read as a finding. Instrumentation has an ordering contract too.
 
 **Watch alongside it:** the polar entropy is ~1/3 the Cartesian value at
 matched noise (H(vonMises)+H(Beta) ≈ 0.49 against a Gaussian's 1.45), so
@@ -3033,7 +3079,25 @@ synthetic run showed κ climbing 6.1 → 13.6 in 8 updates with entropy collapsi
 0.51 → 0.08. If κ pins near its ceiling early, raise `ent_coef` rather than
 lowering `log_kappa_max`; a sharp κ is also what makes hazard 1 above live.
 
-Relaunched as 21297873 / 21297875.
+Exploit arms relaunched with the fix as **21299767 / 21299771**. The two
+explore arms (21295996 / 21295997) were **left running** rather than restarted:
+they already carry the skip-on-non-finite guard, report `nonfinite_steps = 0`
+at every eval, and were 50 updates in. The only code they lack is the overflow
+rewrite, which is algebraically identity-preserving, so the arms stay
+comparable — the explore pair simply skips a rare minibatch where the exploit
+pair no longer needs to.
+
+#### First eval, u50 (early — 1500/2000 updates to go)
+
+| arm | coverage | cells/step | speed | κ | ang noise |
+|---|---|---|---|---|---|
+| `p10_e_pol` (learned speed) | 0.193 | 0.386 | **1.478** | 4.70 | 28.8° |
+| `p10_e_pol_v1` (speed ≡ 1) | 0.161 | 0.321 | 1.000 | 3.25 | 39.0° |
+
+Reference ladder: 0.36 = uniform random walk, 0.775 = billiard. Too early to
+read, but noted because it is the first datapoint on what freezing speed costs:
+the free arm picked 1.478, inside the measured billiard band, and leads on
+coverage.
 
 ---
 
