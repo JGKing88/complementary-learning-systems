@@ -35,11 +35,22 @@ four times in this campaign and is not used for a headline (§4.8, §5.8c).
 | **5.** as 4, 118×50 envs, batch 4096 | **8.5** | 15.3 | 0.884 | 26 | 572k |
 | *5b.* as 5, final gain 100, gain-5 spread setting | *6.5* | 13.8 | 0.879 | 25 | 572k |
 | **6.** as 5, final gain 100, `rate_eps` 1.0 / `rate` 0.5 | **9.0** | 16.8 | 0.886 | — | 572k |
+| **7.** as 6, `attract_lambda` 16 | **9.0** (floor **9**) | 20.0 | 0.881 | — | 572k |
 
 **Level 5** (§6.7) — `sweeps/w39_batch_pairs/0{08..11}_sm50_b4096_seed=4{2..5}`.
 Level 4 with **118 environments of 50 cells** and **batch 4096**. Best config at
 10% coverage: median 8.5 and a floor of 7.0 against level 4's 7.5 and 5.0, and
 the only 20-reference leader in the campaign that did not shrink on re-scoring.
+
+**Level 7** (§6.11e) —
+`sweeps/w53_attract_knee/00{4..7}_att16_seed=4{2..5}`. Level 6 with
+`attract_lambda` **16** instead of the 2.0 that has been in every config since
+§1 and was swept in zero arms before `w52`. Same median, and the **floor rises
+from 7 to 9** — cells 9 9 9 9 9 10 10 11, the tightest distribution in §4–§6.
+On a worst-of-N metric the floor is the result. §6.11f is the reason it stops
+there: res90 nearly doubles from level 5 to level 7 and `r_min` does not move,
+because the shortfall against §4.4b's law grows with it. **Anisotropy, not
+either factor of the law, is what binds at 10% coverage.**
 
 **Level 6** (§6.10h) —
 `sweeps/w49_g100_knee/0{08..11}_eps1_rate0.5_seed=4{2..5}`. Level 5 with **final
@@ -3239,7 +3250,7 @@ just nothing a worst-of-N metric can use. Every §1–§6 result stands at its o
 compute, and under-training is eliminated as the law's error term, leaving
 §6.10j's anisotropy without a competitor.
 
-### 6.11c `attract_lambda` has been 8× too low since §1
+### 6.11c `attract_lambda` moves `r_median` a long way and `r_min` barely at all
 
 **The hypothesis was right about the knob and backwards about the sign.**
 `mse_attract_repel` pulls every pair inside radius 20 to cosine 1 — a step
@@ -3251,24 +3262,40 @@ plateau, and what the attract term actually does is hold the near field **up**.
 
 At gain 100 on the §6.10h config, 20 references, four seeds:
 
-| `attract_lambda` | 0.5 | 1.0 | 2.0 (since §1) | 4.0 | 8.0 | **16.0** |
-|---|---|---|---|---|---|---|
-| `r_min` | 5.5 | 9.0 | 11.0 | 11.5 | 11.0 | **12.0** |
-| `r_median` | 9.2 | 12.8 | 16.8 | 17.8 | 17.0 | **19.5** |
-| alias | 0.874 | 0.877 | 0.879 | 0.871 | 0.885 | 0.879 |
+Four seeds per cell, 20 references:
 
-**The ceiling does not move across a 32× range.** Every other knob in this
+| `attract_lambda` | 0.5 | 1.0 | 2.0 (since §1) | 4.0 | 8.0 | 16 | **32** | 64 |
+|---|---|---|---|---|---|---|---|---|
+| `r_min` | 5.5 | 9.0 | 11.0 | 11.5 | 11.0 | 12.0 | **13.0** | 11.5 |
+| `r_median` | 9.2 | 12.8 | 16.8 | 17.8 | 17.0 | 19.5 | 21.2 | 21.5 |
+| alias | 0.874 | 0.877 | 0.879 | 0.871 | 0.885 | 0.879 | 0.880 | 0.888 |
+
+**Two curves, different shapes.** `r_median` climbs monotonically across a 64×
+range, 9.2 → 21.5, and flattens only at the top. `r_min` rises steeply to 2.0,
+drifts up through a noisy middle, **peaks at 13.0 at attract 32**, and falls
+back at 64. So there is a genuine optimum and it sits **16× above the value
+that has been in every headline config since §1** — worth about +2 units at 20
+references, pending the honest metric.
+
+**The ceiling does not move across the whole range.** Every other knob in this
 campaign trades the ceiling against res90; this one does not, and §6.10c says
 why it can be free — the repel term only ever sees within-patch pairs (≤ ~71
 cells, and the constraint removes the cross-env ones), while the aliases that
 set `r_min` sit at 792 and 924 and belong entirely to the spread term.
-Repulsion is doing local work, and raising attract against a fixed
-`repel_weight` of 1.0 is largely a way of removing it.
 
-`r_median` is the trustworthy column here — it climbs monotonically bar the
-`att8` point, while `r_min` scatters by ±1 between neighbouring settings. An
-earlier reading of this table called the knee at 4.0 on the strength of `att8`
-dipping; four seeds at 16.0 show that dip was noise.
+**What the widening gap says.** `r_median − r_min` goes from 5.8 at the
+incumbent to 8.2 at 32 and 10.0 at 64. Strengthening the near field lifts the
+typical reference roughly twice as fast as it lifts the worst one. That is
+§6.10j's anisotropy showing up as a growing drag on `r_min` — the worst
+reference is partly limited by something near-field strength does not touch,
+and this is the clearest measurement of it in the campaign.
+
+**It is the ratio, and `repel_weight` is the better knob.** `attract` 2.0 with
+`repel_weight` 0.25 is the same 8:1 balance as `att8` at repel 1.0, and matches
+it on both radii — but with a **much better ceiling, 0.833 against 0.885**.
+Raising attract inflates the whole attract–repel loss against the *additive*
+spread term and so weakens it; lowering repel leaves that balance untouched.
+Same ratio, same near field, better far field.
 
 ### 6.11d It does not transfer to gain 5 either, for the same reason
 
@@ -3291,6 +3318,76 @@ at gain 5 nothing supplies it and the far field collapses the moment any of them
 is relaxed. §6.10i's substitution account is not specific to the coding-rate
 term — it covers the attract:repel balance too, and predicts the same for any
 term that spreads.
+### 6.11e At 100 references: `attract_lambda` 16 lifts the floor from 7 to 9
+
+100 references, two draws, eight cells per arm, with both controls scored on
+the same reference sets:
+
+| arm | cells, sorted | median | **floor** | `r_median` | res90 | alias | law says |
+|---|---|---|---|---|---|---|---|
+| **`att16`** | 9 9 9 9 9 10 10 11 | **9.0** | **9** | 20.0 | 14.0 | 0.881 | 15.3 |
+| `att4` | 8 9 9 9 9 9 10 11 | 9.0 | 8 | 18.0 | 11.0 | 0.877 | 12.3 |
+| `att32` | 7 8 8 9 9 10 10 11 | 9.0 | 7 | 21.8 | 15.2 | 0.888 | 16.2 |
+| `fwhm0.5` | 7 7 8 9 9 10 10 10 | 9.0 | 7 | 16.2 | 10.0 | 0.884 | 10.8 |
+| *`eps1_rate0.5` (§6.10h)* | *7 8 9 9 9 9 10 10* | *9.0* | *7* | *16.8* | *10.0* | *0.886* | *10.7* |
+| `att8` | 6 6 8 8 9 9 9 10 | 8.5 | 6 | 17.2 | 12.0 | 0.886 | 12.9 |
+| `rep0.25` | 5 7 7 8 8 9 9 10 | 8.0 | 5 | 21.0 | 11.0 | 0.859 | 13.2 |
+| `steps2x` / `steps3x` | — | 8.0 / 7.5 | 7 / 6 | 17.5 / 18.0 | 10.0 | 0.87 | 11.4 |
+| `att64` | 1 3 6 6 8 8 10 11 | 7.0 | **1** | 23.0 | 17.0 | 0.899 | 17.1 |
+| *§6.8 leader* | *5 5 6 6 7 7 7 7* | *6.5* | *5* | *13.8* | *9.0* | *0.879* | *9.9* |
+| `g5_att4` | 4 5 5 5 5 6 6 6 | 5.0 | 4 | 10.0 | 10.0 | 0.937 | 7.9 |
+
+**Five arms tie at median 9.0 and separate entirely on the floor.** `att16`
+returns **9 9 9 9 9 10 10 11** — a floor of 9, two clear of the §6.10h champion
+and four clear of the §6.8 leader, and the tightest distribution measured
+anywhere in §4–§6. On a worst-of-N metric that is the whole result.
+
+**And the 20-reference read picked the wrong arm.** At 20 references `att32`
+led on 13.0 against `att16`'s 12.0; at 100 they tie on the median and `att32`'s
+floor is 7 against `att16`'s 9. That is the campaign's standard trap
+(§4.8, §6.8) catching one more arm.
+
+**New best config** — `sweeps/w53_attract_knee/00{4..7}_att16_seed=4{2..5}`:
+
+```
+npos_list            118x50                    (sm50, 10.0%, 118 envs)
+per_env_radius_frac  0.0        radius  20.0
+attract_lambda       16.0       repel_weight  1.0     <-- 8x the §1 value
+rate_lambda          0.5        rate_eps      1.0
+out_dim 1024  hidden_dim 256  num_hidden_layers 4     (572k params)
+lr 3e-4  batch_size 4096  weight_decay 1e-4  fwhm_ratio 0.25
+gain 1.0 -> 100.0     epochs 1000 (~73,000 steps)
+```
+
+### 6.11f The real ceiling on this problem is anisotropy, and it scales with res90
+
+The law column above is the finding. Carrying each arm's own res90 and ceiling
+through §4.4b:
+
+| `attract_lambda` | 2.0 | 4 | 8 | 16 | 32 | 64 |
+|---|---|---|---|---|---|---|
+| res90 | 10.0 | 11.0 | 12.0 | 14.0 | 15.2 | 17.0 |
+| law predicts | 10.7 | 12.3 | 12.9 | 15.3 | 16.2 | 17.1 |
+| `r_min` measured | 9.0 | 9.0 | 8.5 | **9.0** | 9.0 | 7.0 |
+| **shortfall** | **1.7** | **3.3** | **4.4** | **6.3** | **7.2** | **10.1** |
+
+**res90 nearly doubles across the range and `r_min` does not move.** Every unit
+of near-field width bought by the attract term is absorbed by the shortfall.
+The alias ceiling is flat throughout (0.877–0.899), so this is not the far
+field; §6.11b eliminated under-training; §6.10a eliminated grain. What is left
+is §6.10f's measurement that the level sets are not circular, and the law has
+no term for direction.
+
+**So the binding constraint at 10% coverage is neither factor of the law.** It
+is the gap between the average direction and the worst one, `r_min` sits near
+9–10 no matter how wide the average profile gets, and no knob in `train.py`
+addresses it. `att16` wins not by beating that cap but by reaching it at every
+reference at once — a floor of 9 against a median of 9.
+
+`att64` is the same fact from the other side: res90 17.0, `r_median` 23.0, the
+widest near field in the campaign, and a floor of **1**. Pushed far enough, the
+attract term makes the typical direction excellent and one direction somewhere
+catastrophic.
 # 8. Open questions
 
 Ranked by how much answering them would change the picture, not by cost. Each is
@@ -3514,3 +3611,116 @@ It also says something about the MLP that was not visible before. Its
 non-equivariance was not purely a defect: by letting each reference have its own
 profile it reached `r_median` 15 where a single shared kernel, fit by this loss,
 manages 7. The inconsistency was buying local quality.
+
+# 10. Where to go next, and what is holding the score down
+
+Written after §6.11 closed the knob search. §8's open questions were framed
+before §6.10–§6.11 identified what actually binds; these supersede them.
+
+## 10.1 The one thing that would move the number
+
+**Everything now runs into anisotropy.** §6.11f is the measurement: across
+`attract_lambda` 2 → 64, res90 goes 10.0 → 17.0 and `r_min` stays at 9. The
+shortfall against §4.4b's law grows 1.7 → 10.1 cells in lockstep with res90.
+The alias ceiling is flat throughout, under-training is excluded (§6.11b),
+grain is excluded (§6.10a). What remains is that the level sets are not
+circular and the metric takes a minimum over directions.
+
+Three routes, in order of how much they would change the picture.
+
+**(a) Put anisotropy in the objective.** No term in `train.py` mentions
+direction. `mse_attract_repel` sees a scalar distance and a scalar target;
+two pairs at the same distance in different directions are indistinguishable
+to it, so nothing ever penalises an elliptical solution. A term that penalised
+the *variance of cosine across directions at matched distance* would attack the
+binding constraint directly — and unlike a graded target it does not specify
+what the kernel should be, only that it should be the same in every direction.
+That distinction matters, because it is why this is not the `graded_sigma` /
+CKA family the campaign excluded: isotropy is a symmetry constraint, not a
+target kernel.
+
+**(b) Refit the law with a direction term.** §4.4b's law is
+`r_min ≈ res90·sqrt(ln(1/C)/ln(1/0.9))` and it now over-predicts by up to 10
+cells, one-signed, in a way that tracks res90. A third factor fitted across
+both gains and the whole `attract_lambda` sweep would turn the shortfall from
+an anomaly into a predictor, and §6.10f already has the measurement it needs
+(angular sd at matched radius). Cheap: no new training, only re-analysis of
+checkpoints that exist.
+
+**(c) Ask where the anisotropy comes from.** Two candidates, both testable
+without new machinery. The alias lattice is a *lattice*, so its level sets have
+the symmetry of the module products rather than a circle, and the worst ray
+should point along lattice directions — checkable by correlating each
+reference's worst-ray angle against the arena axes across many checkpoints. The
+other is patch geometry: patches are axis-aligned squares, so the *distribution
+of training separations* is itself anisotropic (a 50-cell patch supplies pairs
+at separation 70 on the diagonal and 50 on the axis). Rotating or randomising
+patch orientation would separate the two, and `patch_placement` already exists
+as the hook.
+
+## 10.2 Smaller things worth doing
+
+* **`repel_weight`, properly.** `rep0.25` matched `att8` on both radii with a
+  **much better alias ceiling (0.859 against 0.886)** but a worse floor (5 vs 6)
+  at 100 references. It was one point in one wave, chosen as a mechanism probe
+  rather than tuned. The axis has only ever been sampled at 1.0, 2.0 and 4.0
+  (§2.2, gain 5, different geometry), and the direction that helps is *down*.
+* **The `attract_lambda` optimum at gain 5.** §6.11d shows 4.0 hurts at gain 5,
+  but that was one point. Given 2.0 was never chosen for this metric at any
+  gain, the gain-5 optimum could be anywhere below 2.0 — the untested half.
+* **`rate_eps` at gain 5.** Same gap in the other direction: the knob was never
+  swept at any gain, and §6.10i only establishes that *1.0* is wrong there.
+* **Two draws is not enough for a floor.** `att16`'s floor of 9 rests on 8
+  cells. The floor is now the headline number and it is the least stable
+  statistic in the report; four draws would cost nothing but time.
+
+## 10.3 The constraints that are actually binding
+
+Listed by how much loosening each would buy, with the evidence.
+
+**1. 10% coverage — buys res90, and is the largest single lever.** §5.6l:
+handing the spread term the whole arena reproduces the 50.8% encoder's ceiling
+exactly and still scores 6, because res90 is 6.5 against 17. Coverage is what
+buys the decay, and the campaign's own best-ever encoder (§4, level 1) scored
+`r_min` **23** at 50.8% coverage against 9 here. **This is a factor of 2.5, and
+nothing else in the campaign comes close.** If any constraint is negotiable,
+this is the one to negotiate.
+
+**2. Patch size ≤ 200 cells — decides which aliases the loss can see.** The
+offsets that set `r_min` are 792 and 924, with 143 the nearest of the family
+(§6.10c). A 50-cell patch supplies separations up to ~71, a 200-cell patch up
+to ~283. So at ≤200 the loss can *just* reach 143 and can never reach 792.
+Every pairwise term is structurally blind to the thing that actually limits the
+score, and only the env-blind spread term has any purchase on it. Raising the
+cap to ~1000 would let a pairwise term see the whole alias family for the first
+time.
+
+**3. `exclude_cross_env_pairs` — costs about 14 units, measured.** §4: 23 with
+the constraint at 50.8% coverage against 21 for an unconstrained baseline at
+20.4%, and 9/15 unconstrained against 2/2 constrained-untreated at matched
+coverage (§0.1, levels 0 and 0b). It is the point of the campaign, so this is
+a statement of the price rather than a proposal.
+
+**4. λ = (11, 12, 13) — sets the alias family, and was never varied.** The
+offsets 143 / 780 / 792 / 924 / 936 / 1573 are *arithmetic*: they are where two
+modules realign and the third is one cell out, and the input code's own far
+ceiling of 0.9533 follows from three modules and a ~3-cell bump. Both numbers
+are properties of λ alone. §6.9 flagged this as its untested prediction and it
+is still untested, because changing λ changes the arena size (1716 for these)
+and so re-bases coverage, geometry and radius all at once. That confound is why
+it did not happen here, not a judgement that it does not matter — of everything
+on this list it is the deepest, since it changes what the far field *contains*
+rather than how well the encoder copes with it.
+
+**5. The worst-of-N metric itself.** `r_min` is a minimum over ~100 references
+of a minimum over 1250 directions, and §6.11f shows it is now limited by the
+gap between that and the average. `r_median` responds cleanly to knobs that
+`r_min` ignores — it reached 23.0 in `att64` while `r_min` fell to 1. If the
+downstream use (Hopfield recall) tolerates a small fraction of bad positions,
+a p5 or p10 quantile would be a better target and a far less noisy one. If it
+does not, `r_min` is right and §10.1(a) is the way forward.
+
+**What is NOT binding.** Compute (§6.11b: 3× steps is a null), capacity
+(§5.8a and §6.10e: `out_dim` free from 256 to 4096, `hidden_dim` wants 256),
+and the tanh nonlinearity (§6.10i: gain 100 is free once retuned). Three
+things that looked like limits and are not.
