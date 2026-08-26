@@ -19,7 +19,7 @@ mismatch that must be fixed first.
 | **Branch / worktree** | `nav-tri-metric` at `.claude/worktrees/nav-tri-metric` |
 | **Predecessor** | `docs/EXPERIMENTS_NAV_TRI.md` — read its §0 findings 1–22 |
 | **Open decisions** | §11 — four forks put to Jack; spec assumes the recommended default in each |
-| **Running** | P4 exploit ceiling `p4_x` / `p4_x_s12`, P5 explore calibration `p5_e` |
+| **Running** | **P10 polar (§9.4)** — `p10_pol` 21295699, `p10_pol_v1` 21295703, `p10_e_pol` 21295704, `p10_e_pol_v1` 21295705, all `pi_fiete` |
 | **Done** | §4 blocking fixes, P1 (§5) with figures, the recall-mechanism thread §5.3-5.9, and **P2 (§6)** |
 
 **Open items** (priority order):
@@ -2814,8 +2814,131 @@ was not sufficient to make σ the channel the policy reaches for.
 
 That is the case for the polar parameterization, now on evidence rather than on
 principle: magnitude and heading as separate distributions, so directional
-exploration cannot be bought by changing speed. Recorded as the next design
-step, not run.
+exploration cannot be bought by changing speed.
+
+---
+
+### 9.4 P10 — the polar action parameterization
+
+**Launched 2026-08-26.** Four arms on `pi_fiete`: `p10_pol` (21295699),
+`p10_pol_v1` (21295703), `p10_e_pol` (21295704), `p10_e_pol_v1` (21295705).
+Code in `hopfield_nav/policy/polar_head.py`; 42 tests in
+`tests/test_polar_head.py`.
+
+#### The parameterization
+
+```
+theta ~ VonMises(theta_bar, kappa)          allocentric world-frame heading
+r     ~ lo + (hi-lo) * Beta(mu*nu, (1-mu)*nu)
+a     = r * (cos theta, sin theta)
+```
+
+Four heads off the same trunk: **two means and two spreads**. The heading mean
+is the *existing* `movement_mean` Linear read as a direction and `atan2`-ed, so
+a checkpoint forked into a polar run keeps its learned direction.
+
+**Allocentric, not egocentric**, because `q = W_x(recall(x) - x)` is itself a
+world-frame displacement — the heading the policy is matching is world-frame.
+An egocentric turn would make it re-derive `target - previous heading` from
+information it already has, and the frame would drift whenever the env clamp
+made the realized heading differ from the commanded one.
+
+**`(mu, nu)`, not `(alpha, beta)`.** Identical family; this is only how alpha
+and beta are computed. The reason is freezability: in `(alpha, beta)` there is
+no spread parameter to freeze, because holding alpha fixed and learning beta
+moves the mean *and* the spread. `--freeze_log_std` has been load-bearing here
+and already spent the whole v35 lineage silently doing nothing (§ memory
+`project_hopfield_nav_log_std_freeze_bug`), so a freeze has to be a
+`requires_grad` flag on one named scalar. `nu >= 2` forbids a U-shaped speed
+density for **every** mu — a U-shape needs `nu < min(1/mu, 1/(1-mu)) <= 2` — so
+one constant floor buys unimodality with no coupled restriction on mu.
+
+**`--freeze_speed 1.0` deletes the speed factor** rather than taking a
+degenerate limit: its log-prob and entropy slots are exactly zero. A
+zero-variance Normal or infinite-concentration Beta would give `+inf` and
+`-inf`. Inexpressible under the Cartesian head at any parameter setting, which
+is itself an argument for polar.
+
+#### PPO correctness
+
+`log_prob` is taken on `(theta, u)` and **omits** both the polar→Cartesian
+Jacobian `-log r` and the affine rescale `-log span`. Each depends only on the
+sampled action, never on a parameter, so both cancel exactly in the importance
+ratio — verified in `test_omitted_jacobians_cancel_in_the_ratio` against a
+reference that carries them explicitly.
+
+Entropy is `H(VonMises) + H(Beta)`: the **polar** entropy, not the Cartesian
+one, which differs by `E[log r]` — precisely the term that would let an entropy
+bonus buy directional randomness with speed. The Beta's entropy does depend on
+mu, but *symmetrically* about mid-speed, so it cannot be increased by going
+faster. (A log-normal speed would have been worse: its entropy carries a bare
+`+m`, monotone in the mean. That is why it was rejected.)
+
+#### Two bugs found by measuring, not by reading
+
+**1. `atan2` hides a gauge freedom.** The importance-ratio spread is *entirely*
+the heading factor — measured max `|Δ log p|` of 0.283 against the speed
+factor's 0.005. `atan2` has gain `kappa/‖v‖`, and `‖v‖` is unpressured by
+anything in the objective (theta is scale-invariant), so it random-walks toward
+the singularity. Measured gain: 26 at `‖v‖=0.24`, 636 at 0.01, 6360 at 0.001,
+unbounded at 0. **Same shape as what killed the first `p9_e_sq_std` run at
+u120.** Fixed by shrinking kappa as `‖v‖²/(‖v‖²+s²)`, which makes a short
+direction vector mean a *low concentration* — bounded, and the correct limit.
+
+**2. `dir_soft = 0.05` was an active participant, not a backstop.** The first
+smoke run showed the real 1024-unit trunk emits `‖v‖ ≈ 0.071` at init, where
+0.05 cut kappa from 6.36 to 4.25 — 23.8° of directional noise silently became
+29.9°, breaking the calibration against the p9 arms. Retuned to **0.01**: 1%
+distortion there, less as `‖v‖` grows, gradient still capped at ~318.
+
+| `dir_soft` | κ_eff at ‖v‖=0.071 | circ sd | peak ‖∂logp/∂v‖ |
+|---|---|---|---|
+| 0.05 | 4.251 | 29.9° | 63.6 |
+| 0.02 | 5.892 | 24.8° | 159 |
+| **0.01** | **6.236** | **24.0°** | **318** |
+| 0.005 | 6.328 | 23.8° | 636 |
+
+The softening **bounds** the decay; it does not prevent it. Hence `dir_norm` in
+the per-update log — watch it.
+
+#### Calibration: both parameterizations share one axis
+
+Deliberate, so §9.3's table and the P10 runs plot together:
+
+| column | Cartesian | polar |
+|---|---|---|
+| `mu_norm` | `‖μ‖` | mean speed |
+| `sigma` | radial noise | speed sd |
+| `ang_noise` | `σ/‖μ‖` | von Mises circular sd |
+| `kappa` | — (absent, not 0 or NaN) | κ |
+| `dir_norm` | — | `‖v‖`, the gauge |
+
+`init_log_kappa = 1.85` (κ = 6.34) is the value reproducing `init_log_std=-0.7`'s
+σ = 0.497 at mid-speed 1.25 — both ≈ 23.8°, so a polar arm starts with the same
+directional exploration as the p9 arm it is compared against. And §9.3's
+measured 10.56° of `σ/‖μ‖` is κ = 29.4, which reads back as **10.66°** — the two
+conventions agree to ~1%.
+
+#### The prediction, and what would falsify it
+
+All four arms run `STATE_DEPENDENT_STD=1`, which under polar makes kappa and nu
+per-state heads. Controls already exist — `p9_sq` and `p9_sq_std` complete the
+2×2 — so no new control arm is needed.
+
+**Predicted:** kappa picks up the state-dependence sigma refused to — lower at
+high distractor count *and* near the goal, where P1 shows the readout
+collapsing — while mean-speed modulation across distractor levels falls below
+the control's 1.234×.
+
+**Falsifier:** if mean speed still modulates ≈1.23× with heading noise fully
+decoupled, that modulation was a genuine speed policy all along, the
+residual-channel story is wrong, and §9.3's conclusion needs retracting. The
+`_v1` arms are the sharp version: with speed constant by construction,
+everything the policy does must go through kappa.
+
+Read with `analysis/nav_tri/behavior_probe.py`, which now records κ per step
+and reports circular sd in the same `ang_*` columns, binned by distractor count
+and distance to goal exactly as §9.3 was.
 
 ---
 
