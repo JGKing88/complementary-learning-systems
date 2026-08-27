@@ -270,7 +270,7 @@ svg .ax {{ stroke: var(--axis); }}
 svg .gl {{ stroke: var(--grid); }}
 svg .chance {{ stroke: var(--muted); stroke-dasharray: 3 3; }}
 svg .hit {{ fill: transparent; }}
-svg .cell:hover {{ stroke: var(--ink); stroke-width: 1.5; }}
+svg .cell:hover, svg [data-c]:hover {{ stroke: var(--ink); stroke-width: 1.5; }}
 .footer {{ margin-top: 46px; padding-top: 14px;
   border-top: 1px solid var(--border); color: var(--muted); font-size: 12px; }}
 """

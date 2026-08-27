@@ -42,6 +42,16 @@ def _fmt(v, nd=2) -> str:
     return f"{v:.{nd}f}"
 
 
+def _n(v: float) -> str:
+    """Shortest faithful number for an SVG coordinate.
+
+    A trailing ".0" on every coordinate is a few hundred kilobytes across a
+    page of heatmaps, and nothing reads it.
+    """
+    r = round(v, 1)
+    return str(int(r)) if r == int(r) else f"{r:.1f}"
+
+
 def _nice_ticks(lo: float, hi: float, n: int = 5) -> list[float]:
     if not (math.isfinite(lo) and math.isfinite(hi)) or hi <= lo:
         return [lo, hi]
@@ -282,6 +292,89 @@ def _table_from_series(x, series, xlabel, n_per_bin) -> str:
 # Heatmap
 # ---------------------------------------------------------------------------
 
+# Above this many cells a heatmap is drawn as colour-bucketed run-length paths
+# with a coarse hit grid, rather than one <rect> per cell. See _run_length_cells.
+LARGE_MAP_CELLS = 4000
+_BUCKETS = 24
+_HIT_BLOCKS = 24
+
+
+def _run_length_cells(matrix, nx, ny, cell, ml, mt, vmin, vmax, kind):
+    """One path per colour bucket, horizontal runs merged.
+
+    Quantising to `_BUCKETS` levels is what makes runs long enough to be worth
+    merging; the eye cannot resolve more steps than that on a 3-pixel cell, and
+    the colourbar is continuous either way.
+    """
+    span = max(vmax - vmin, 1e-12)
+    paths: dict[int, list[str]] = {}
+    for j in range(ny):
+        yy = mt + (ny - 1 - j) * cell
+        i = 0
+        while i < nx:
+            v = matrix[i][j]
+            b = None if v is None else min(
+                int((v - vmin) / span * _BUCKETS), _BUCKETS - 1)
+            run = 1
+            while i + run < nx:
+                v2 = matrix[i + run][j]
+                b2 = None if v2 is None else min(
+                    int((v2 - vmin) / span * _BUCKETS), _BUCKETS - 1)
+                if b2 != b:
+                    break
+                run += 1
+            if b is not None:
+                xx = ml + i * cell
+                w = run * cell
+                paths.setdefault(b, []).append(
+                    f"M{xx:.1f} {yy:.1f}h{w:.1f}v{cell:.1f}h{-w:.1f}z")
+            i += run
+
+    out = []
+    for b, segs in sorted(paths.items()):
+        t = (b + 0.5) / _BUCKETS
+        col = diverging(2 * t - 1) if kind == "diverging" else sequential(t)
+        out.append(f'<path d="{"".join(segs)}" fill="{col}"/>')
+    return out
+
+
+def _hit_grid(matrix, counts, nx, ny, cell, ml, mt):
+    """Transparent blocks carrying the mean of what they cover.
+
+    A 3-pixel cell is not a hoverable target, so the hit target is a block --
+    which is also what keeps the interaction rule ("the hit target is bigger
+    than the mark") true rather than nominally satisfied.
+    """
+    bx = max(1, nx // _HIT_BLOCKS)
+    by = max(1, ny // _HIT_BLOCKS)
+    out = []
+    for i0 in range(0, nx, bx):
+        for j0 in range(0, ny, by):
+            vals, ns = [], 0
+            for i in range(i0, min(i0 + bx, nx)):
+                for j in range(j0, min(j0 + by, ny)):
+                    v = matrix[i][j]
+                    if v is not None:
+                        vals.append(v)
+                        if counts:
+                            ns += counts[i][j]
+            if not vals:
+                continue
+            j1 = min(j0 + by, ny)
+            xx = ml + i0 * cell
+            yy = mt + (ny - 1 - (j1 - 1)) * cell
+            mean = sum(vals) / len(vals)
+            tip = (f"x {i0}-{min(i0 + bx, nx) - 1}, y {j0}-{j1 - 1}: "
+                   f"{mean:.1f}" + (f" (n={ns})" if ns else ""))
+            out.append(
+                f'<rect class="hit" x="{xx:.1f}" y="{yy:.1f}" '
+                f'width="{(min(i0 + bx, nx) - i0) * cell:.1f}" '
+                f'height="{(j1 - j0) * cell:.1f}" '
+                f'data-tip="{_esc(tip)}"/>')
+    return out
+
+
+
 def heatmap(
     matrix: list[list[float | None]],
     *,
@@ -335,15 +428,21 @@ def heatmap(
         o.append(f'<text x="{ml}" y="13" font-size="12" '
                  f'font-weight="600">{_esc(title)}</text>')
 
-    for i in range(nx):
-        for j in range(ny):
-            v = matrix[i][j]
-            xx = ml + i * cell
-            yy = mt + (ny - 1 - j) * cell
-            o.append(
-                f'<rect class="cell" x="{xx:.1f}" y="{yy:.1f}" '
-                f'width="{cell:.1f}" height="{cell:.1f}" fill="{color(v)}" '
-                f'data-c="{i},{j}"/>')
+    big = nx * ny > LARGE_MAP_CELLS
+    if not big:
+        for i in range(nx):
+            for j in range(ny):
+                v = matrix[i][j]
+                xx = ml + i * cell
+                yy = mt + (ny - 1 - j) * cell
+                o.append(
+                    f'<rect x="{_n(xx)}" y="{_n(yy)}" width="{_n(cell)}" '
+                    f'height="{_n(cell)}" fill="{color(v)}" '
+                    f'data-c="{i},{j}"/>')
+    else:
+        o.extend(_run_length_cells(matrix, nx, ny, cell, ml, mt, vmin, vmax,
+                                   kind))
+        o.extend(_hit_grid(matrix, counts, nx, ny, cell, ml, mt))
 
     if mark is not None:
         mi, mj = mark
@@ -395,7 +494,8 @@ def heatmap(
     # 8-bins-per-cell sub-cell map that is 25 600 cells, where the difference
     # is megabytes of redundant text in a file that has to stay emailable.
     payload = {
-        "type": "grid", "id": cid, "v": matrix, "n": counts,
+        "type": "grid", "id": cid,
+        "v": None if big else matrix, "n": None if big else counts,
         "unit": unit, "x0": x_origin, "y0": y_origin,
     }
     return (f'<figure class="chartbox" style="margin:0">{"".join(o)}'
