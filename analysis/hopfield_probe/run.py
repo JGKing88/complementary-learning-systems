@@ -80,6 +80,25 @@ def build_parser() -> argparse.ArgumentParser:
     g.add_argument("--n_cont_annulus", type=int, default=None)
     g.add_argument("--seed", type=int, default=0)
     g.add_argument("--device", default="cpu")
+
+    d = p.add_argument_group("recall dynamics")
+    d.add_argument("--beta", type=float, default=None,
+                   help="Hopfield beta. Default: the encoder's gain, which is "
+                        "what production does (train_navigate.py:488). Per "
+                        "coordinate (Wz)_i ~ D^-1.5, so saturating the recall "
+                        "needs beta ~ 3e4 at D=1024 -- and that is the "
+                        "difference between a linear matched filter whose "
+                        "readout decays with steps and a memory that holds.")
+    d.add_argument("--hopfield_scale", type=float, default=None,
+                   help="storage scale. Default 1/D. Equivalent to --beta by "
+                        "(p -> lambda p, beta -> beta/lambda^2); only the "
+                        "product beta*scale*D reaches the tanh.")
+    d.add_argument("--encoder_gain", type=float, default=None,
+                   help="override the encoder's own gain at inference. Shapes "
+                        "the PATTERN (how near a hypercube corner), which is a "
+                        "different job from --beta. Changes every embedding, "
+                        "so a policy trained on the checkpoint's own gain no "
+                        "longer applies.")
     return p
 
 
@@ -98,6 +117,10 @@ def config_from_args(args) -> ProbeConfig:
             kw[name] = val
     kw["seed"] = args.seed
     kw["device"] = args.device
+    if args.beta is not None:
+        kw["beta_override"] = args.beta
+    if args.hopfield_scale is not None:
+        kw["hopfield_scale"] = args.hopfield_scale
 
     cfg = ProbeConfig(**kw)
     # Sec 2.3: the world is pinned at the largest K so placement is identical
@@ -131,6 +154,20 @@ def main(argv: list[str] | None = None) -> int:
             ckpt, device=cfg.device, fwhm_override=args.fwhm_override,
             fwhm_fallback=args.fwhm_fallback)
         header["label"] = label
+        if args.encoder_gain is not None:
+            encoder.gain = float(args.encoder_gain)
+            gain = float(args.encoder_gain)
+            header["gain"] = gain
+            header["gain_was_overridden"] = True
+        # The recall regime belongs in the provenance bar: two runs of the same
+        # encoder at different beta are not the same measurement.
+        header["beta"] = (float(cfg.beta_override)
+                          if cfg.beta_override is not None else float(gain))
+        # Saturation threshold: per coordinate (Wz)_i ~ D^-1.5, so the tanh
+        # argument is beta * D^-1.5 and it bends around beta ~ D^1.5.
+        embed_dim = int(mcfg.out_dim)
+        header["recall_regime"] = (
+            "saturated" if header["beta"] >= embed_dim ** 1.5 else "linear")
 
         if list(mcfg.lambdas) != list(getattr(cfg, "lambdas", mcfg.lambdas)):
             pass  # lambdas come from the encoder; nothing to reconcile
