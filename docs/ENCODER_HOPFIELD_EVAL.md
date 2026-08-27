@@ -371,19 +371,40 @@ vector. One number that says "the dynamics have one attractor, not `K`".
 > own final L2 normalisation is part of why: it fixes `S = 1` no matter how
 > saturated the pre-activation was.
 >
-> **The untrained encoder inverts the story and is the informative cell.** Its
-> patterns *are* near-perfect fixed points (0.999) while being *less*
-> saturated than L7's. That is cross-talk, not corner-ness: an untrained
-> encoder's far-apart cells are near-orthogonal, so each pattern is nearly its
-> own eigenvector, while a trained encoder's smooth chart plus its alias tail
-> (`alias_ceiling_max` 0.88) makes them correlated. It agrees with §5.8's own
-> conclusion — **cross-talk is the binding constraint** — and it is a warning
-> about the metric: being a fixed point is not the same as being a *useful*
-> memory, since the untrained encoder scores 22.6% acc45 and a basin of `none`.
+> **The untrained encoder's 0.999 is vacuous — it has collapsed.** Its
+> "patterns" are one vector stored 25 times, so `W` is rank-1 along that
+> direction and every pattern *is* the top eigenvector:
 >
-> Caveat: 25 patterns, one seed, one draw. §5.7 used random `ξ`, so its
-> patterns were uncorrelated by construction and these are not. Treat the table
-> as a reason the `--rescue` sweep is aimed wrong, not as a capacity result.
+> | encoder | pairwise cos, mean | max | effective rank | cos(p, top eigvec) |
+> |---|---|---|---|---|
+> | v35 | 0.0050 | 0.264 | 23.99 / 25 | 0.105 |
+> | L7-s42 | 0.0270 | 0.524 | 21.51 / 25 | 0.172 |
+> | untrained | **0.9986** | 0.9994 | **1.00** | **0.9993** |
+>
+> So the trained encoders are the near-orthogonal ones, and v35 — the better
+> performer — carries **less** cross-talk than L7 (0.005 vs 0.027, worst pair
+> 0.26 vs 0.52). That ordering matches §5.8's conclusion that cross-talk is the
+> binding constraint; the untrained row does not demonstrate it, it just
+> demonstrates collapse.
+>
+> What the untrained row *is* good for is a warning about the metric:
+> **"is a fixed point" is maximised by a degenerate memory.** Any attractor
+> claim has to be read next to a rank or pairwise-cosine check, which is why
+> Test A reports `mean_pairwise_cos` beside `frac_self_consistent` rather than
+> the fixed-point number alone.
+>
+> It also explains the control split cleanly. The untrained encoder scores
+> oracle 89.5° but **local oracle 8.5°**, which looks contradictory under
+> collapse until you separate global from local: its far-pair distance is
+> 0.053 against the trained encoders' 1.39, while a one-cell step is 0.022 —
+> a ratio of 0.41, with the two axis directions still separable
+> (`cos(dN, dE) = 0.097`). The map is squashed into a tiny ball *globally*
+> while keeping a well-defined Jacobian *locally*, which is exactly a readout
+> that works at one cell and carries no information at range.
+>
+> Caveat: 25 patterns, one seed, one draw. §5.7 used random `ξ`, uncorrelated
+> by construction, and these are not. Treat the tables as a reason the
+> `--rescue` sweep is aimed wrong, not as a capacity result.
 
 **Off by default.** Everything else in this document evaluates the encoder at
 the production operating point. This mode asks a different question — whether

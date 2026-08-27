@@ -241,10 +241,13 @@ def run_rescue(
     why -- it pins ``S = 1`` however saturated the pre-activation was.
 
     So read a positive result here as a reason to re-check ``nav_p2``, not as a
-    new operating point. And note the trap the untrained encoder exposes: its
-    patterns *are* near-perfect fixed points (0.999) while scoring 22.6% acc45
-    and a basin of ``none``. Being a fixed point is not being a useful memory;
-    cross-talk, not corner-ness, is what binds.
+    new operating point. And read it beside a rank check: the untrained encoder
+    scores a near-perfect 0.999 on the fixed-point test purely because it has
+    **collapsed** -- pairwise cos 0.9986, effective rank 1.00 of 25, every
+    pattern at cos 0.999 to the top eigenvector. One vector stored 25 times is
+    trivially made of fixed points. That is why Sec 3.1's success criterion is
+    ``frac_self_consistent`` **and** ``mean_pairwise_cos``: either alone is
+    maximised by a degenerate memory.
 
     Only the **product** ``beta * scale`` reaches the argument of the ``tanh``
     -- ``beta * W`` is invariant under ``(p -> lambda p, beta -> beta/lambda^2)``
