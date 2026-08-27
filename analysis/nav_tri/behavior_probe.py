@@ -60,8 +60,9 @@ from hopfield import Hopfield
 from analysis.nav_tri.coverage_baselines import billiard_cells_per_step
 from hopfield_nav.encoder_io import load_encoder
 from hopfield_nav.evaluation.checkpoint_io import (
-    build_eval_world, cfg_from_checkpoint, load_agent,
+    build_eval_world, cfg_from_checkpoint, eval_env_set, load_agent,
 )
+from hopfield_nav.world import generate as gen
 from hopfield_nav.evaluation.metrics import random_start
 from hopfield_nav.policy import channels
 from hopfield_nav.rollout import signal as signal_ops
@@ -690,6 +691,17 @@ def main() -> None:
     p.add_argument("--mode", nargs="+", default=["explore", "nav"],
                    choices=["explore", "nav", "warmcold"])
     p.add_argument("--n_distractors", type=int, nargs="+", default=[0, 10])
+    p.add_argument("--split", default="recorded",
+                   help="Which validation envs to probe. 'recorded' (default) "
+                        "is the run's own base_val -- the set it was scored "
+                        "against every eval, never trained on but not fresh. "
+                        "Otherwise 'trait=level' pairs over place/wall/goal at "
+                        "same|held_out|ood, unnamed traits defaulting to "
+                        "held_out, e.g. --split place=held_out. Same grammar "
+                        "and same minting path as eval_all's --split.")
+    p.add_argument("--val_seed", type=int, default=0,
+                   help="Seed for minting a split env set; changing it draws a "
+                        "different set at the same levels.")
     p.add_argument("--trials", type=int, default=32)
     p.add_argument("--envs", type=int, default=None,
                    help="val envs to use; default = the checkpoint's own count")
@@ -758,14 +770,34 @@ def main() -> None:
     embed_dim = enc_cfg.out_dim
     torch.manual_seed(0)
     np.random.seed(0)
-    # A shrunken scaffold cannot use the recorded world -- the offsets in
-    # world.json index the real Npos and eval_field rejects the mismatch, which
-    # is the right guard. Validation mode takes the RNG-replay branch instead.
-    envs, vh, offsets = build_eval_world(
-        cfg, encoder, str(device),
-        ckpt_path=(None if args.npos is not None else args.ckpt[0]))
+    levels = gen.parse_levels(args.split)
+    if levels is not None and args.npos is not None:
+        raise SystemExit(
+            "--split needs the recorded world.json to mint from, and --npos "
+            "builds a shrunken scaffold that cannot use it. Pick one.")
+    if levels is None:
+        # A shrunken scaffold cannot use the recorded world -- the offsets in
+        # world.json index the real Npos and eval_field rejects the mismatch,
+        # which is the right guard. Validation mode takes the RNG-replay branch.
+        envs, vh, offsets = build_eval_world(
+            cfg, encoder, str(device),
+            ckpt_path=(None if args.npos is not None else args.ckpt[0]))
+    else:
+        # Same entry point every eval CLI uses, so `--split place=ood` means one
+        # thing project-wide rather than one thing per driver.
+        es = eval_env_set(
+            cfg, encoder, str(device), ckpt_path=args.ckpt[0], levels=levels,
+            val_seed=args.val_seed, n_envs=cfg.num_val_envs)
+        envs, vh, offsets = es["envs"], es["field"], es["offsets"]
     _nav_stats._radius = cfg.env.goal_radius
 
+    # Printed because it is the difference between "how did this checkpoint do
+    # on the set it was scored against all run" and "does that survive a fresh
+    # draw" -- two numbers that look identical in a table and answer different
+    # questions. Every behaviour probe before 2026-08-27 was `recorded` and did
+    # not say so.
+    print(f"split     : {args.split}"
+          f"{' (the run OWN validation envs, not a fresh draw)' if levels is None else ' (minted fresh)'}")
     print(f"envs      : {len(envs)}  trials/env: {args.trials}  "
           f"steps: {args.max_steps}  goal_radius: {cfg.env.goal_radius}")
     print(f"trunk     : {cfg.agent.rnn_cell}/{cfg.agent.rnn_nonlinearity} "
