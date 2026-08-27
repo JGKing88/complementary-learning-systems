@@ -14,6 +14,8 @@ import sys
 sys.path.insert(0, "/orcd/home/002/jackking/cls/.claude/worktrees/"
                    "encoder-hopfield-eval-spec")
 
+import os
+
 import numpy as np
 import torch
 
@@ -25,10 +27,15 @@ from analysis.hopfield_probe.harness import (
 from analysis.hopfield_probe.qfield import GridAcc, cell_q_field
 
 R = "/orcd/pool/003/jackking/cls_runs"
-PATH = f"{R}/sweeps/w53_attract_knee/004_att16_seed=42/encoder_final.pt"
-GAINS = [100.0, 300.0, 1000.0, 3000.0, 10000.0]
+PATH = os.environ.get(
+    "PROBE_CKPT",
+    f"{R}/sweeps/w53_attract_knee/004_att16_seed=42/encoder_final.pt")
+GAINS = [float(g) for g in os.environ.get(
+    "PROBE_GAINS", "100,300,1000,3000,10000").split(",")]
+FWHM_FALLBACK = os.environ.get("PROBE_FWHM")
 
-enc, cfg_m, gain0, fwhm, _ = load_probe_encoder(PATH)
+enc, cfg_m, gain0, fwhm, _ = load_probe_encoder(
+    PATH, fwhm_fallback=float(FWHM_FALLBACK) if FWHM_FALLBACK else None)
 cfg = ProbeConfig(Npos=1716, env_size=20, n_worlds=3, n_envs_per_world=5,
                   k_values=(5,), steps=(1,), n_alias=2000, n_score_envs=3,
                   n_cont_samples=1, n_cont_annulus=0)
@@ -52,7 +59,7 @@ def cos_bin(z):
                          / (np.linalg.norm(z, axis=1) * np.linalg.norm(b, axis=1))))
 
 
-print(f"L7-s42, trained gain {gain0:.0f}, pre-activation RMS ~0.021")
+print(f"{PATH.split('/')[-2]}, trained gain {gain0:.4g}")
 print(f"{'infer gain':>11s} {'gain*RMS':>9s} {'cos_bin':>8s} "
       f"{'fixed pt':>9s} {'B |err|':>9s} {'acc45':>8s}")
 print("-" * 60)
