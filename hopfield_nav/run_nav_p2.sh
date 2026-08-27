@@ -351,6 +351,66 @@ case "$VARIANT" in
     esac
     ;;
 
+  # === P11 -- why does convergence take 550 updates? =======================
+  #
+  # `p10_pol_v1` reaches 1.000 success and holds it for 29 straight evals, but
+  # only after swinging 0.03 / 0.21 / 0.90 / 0.51 / 0.91 / 1.00 / 0.49 through
+  # its first 550 updates. Three single-factor arms against that run as the
+  # control -- identical in every other respect, so each answers one question.
+  #
+  #   p11_cur  distractor curriculum, max 0 -> 10 over 400 updates
+  #   p11_tp   time_penalty 0.05 -> 0.02
+  #   p11_eps  epsilon 0.1/200 -> 0.3/600
+  #
+  # NOT run as a factorial: three arms crossed is eight runs to attribute a
+  # first-500-update effect, and the control already exists.
+  #
+  # Ranked by how well motivated they are, which is also how much to believe a
+  # null from each:
+  #
+  # 1. CURRICULUM. The strongest signal in the p10 data is that success at ZERO
+  #    distractors locks at u600 and never wavers, while success at TEN
+  #    oscillates 0.90-0.98 for the remaining 1400 updates and is still doing so
+  #    at u2000. That is two problems, one solved and one never solved. The
+  #    probe puts trajectory q_accuracy at 0.45-0.60 at ten distractors against
+  #    0.99 at zero, so roughly half of all training episodes teach from a
+  #    direction signal near a coin flip, with no cue telling the policy which
+  #    kind of episode it is in. Prediction: the chaotic phase shortens AND the
+  #    ten-distractor band tightens, because the policy learns to trust `q`
+  #    before being asked to handle a `q` it cannot trust.
+  #
+  # 2. TIME_PENALTY. 0.05 x 200 steps = -10 for any failure against +1.4 for a
+  #    12-step success. Early on every episode fails and collects ~-10, so
+  #    advantages are noise until the first successes appear -- the
+  #    plateau-then-breakthrough-then-collapse shape. Only time_penalty moves,
+  #    not goal_reward: under pooled advantage normalization only their RATIO
+  #    matters, so varying both would be one confounded knob (see the shaping
+  #    degeneracy note).
+  #
+  # 3. EPSILON. Weakest, and a null here means least: epsilon actions are masked
+  #    out of the PPO surrogate by policy_action_mask, so they change which
+  #    states are visited, never the gradient. Worth one arm because it is the
+  #    knob that governs whether the goal gets found at all early on.
+  p11_cur|p11_tp|p11_eps)
+    SCHEDULE=${SCHEDULE:-'exploit:2000'}
+    ENVS_PER_WORLD=20; BATCH_ENVS=64
+    EPSILON_EXPLORE=0.1; GOAL_REWARD=2.0
+    PERSISTENCE_BONUS=0.20
+    REGIME_ASSIGNMENT=shuffle
+    ACTION_POLAR=1; STATE_DEPENDENT_STD=1; FREEZE_LOG_STD=0
+    FREEZE_SPEED=1.0
+    EVAL_SCOPE=navexpl; EVAL_EVERY=50; CKPT_EVERY=50
+    case "$VARIANT" in
+      # max ramps FROM n_train_distractors_max TO _max_end, so the start value
+      # is the one that has to be 0.
+      p11_cur) N_TRAIN_DISTRACTORS_MAX=0; N_TRAIN_DISTRACTORS_MAX_END=10
+               N_TRAIN_EMP_DISTRACTORS_MAX=0; N_TRAIN_EMP_DISTRACTORS_MAX_END=10
+               DISTRACTOR_CURRICULUM_UPDATES=400 ;;
+      p11_tp)  TIME_PENALTY=0.02 ;;
+      p11_eps) EPSILON_EXPLORE=0.3; EPSILON_ANNEAL_UPDATES=600 ;;
+    esac
+    ;;
+
   # --- P10b: is the frozen arm's failure kappa runaway, or speed 1.0? -------
   #
   # At u50 the frozen-speed exploit arm sits at success 0.031 against the
