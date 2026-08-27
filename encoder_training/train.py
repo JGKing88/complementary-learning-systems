@@ -34,12 +34,16 @@ from .config import (
     UniqueRadiusConfig,
 )
 from .data import (
-    build_full_grid, sample_nonoverlapping_patches, extract_patches,
-    mixed_batch_iterator, single_env_batch_iterator,
+    build_full_grid, build_patch_codes, sample_nonoverlapping_patches,
+    extract_patches, mixed_batch_iterator, single_env_batch_iterator,
 )
-from .losses import cka_loss, uniformity_loss, mse_attract_repel
+from .losses import (
+    cka_loss, coding_rate_loss, mse_attract_repel, participation_ratio,
+    uniformity_loss, vicreg_terms,
+)
 from .models import create_encoder
 from .evaluate import encode_grid, run_nav_eval
+from .eval_unique_radius import grid_code_batch
 
 
 def _build_near_mask(
@@ -48,15 +52,17 @@ def _build_near_mask(
     coords: torch.Tensor,
     env_radius: torch.Tensor | None,
     local_radius: float,
-) -> tuple[torch.Tensor, torch.Tensor]:
-    """Return ([B, B] "near" mask excluding the diagonal, [B, B] same-env mask).
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor | None]:
+    """Return ([B, B] "near" mask excluding the diagonal, same-env mask, dist).
 
     If `env_radius` is given, each point's threshold is its own env's radius
     (works for both single-env and mixed batches). Otherwise uses the scalar
-    `local_radius`. Radius <= 0 → "same env" used as the mask.
+    `local_radius`. Radius <= 0 → "same env" used as the mask, and no distance
+    matrix is needed, so ``dist`` comes back None.
 
     ``same_env`` is returned as well because the caller may need to exclude
-    cross-environment pairs from the *far* set; it is computed here anyway.
+    cross-environment pairs from the *far* set; it is computed here anyway, as
+    is ``dist``, which a distance-graded target needs.
     """
     env_b = env_ids[idx]                                 # [B]
     same_env = env_b[:, None] == env_b[None, :]          # [B, B]
@@ -66,19 +72,19 @@ def _build_near_mask(
     if env_radius is not None:
         r_b = env_radius[env_b]                          # [B]
         if (r_b <= 0).all():
-            return same_env & ~eye, same_env
+            return same_env & ~eye, same_env, None
         # Pairs are only candidates when same_env, so r_b[i] == r_b[j];
         # broadcasting along rows is sufficient.
         r_thresh = r_b[:, None]                          # [B, 1]
     else:
         if local_radius <= 0:
-            return same_env & ~eye, same_env
+            return same_env & ~eye, same_env, None
         r_thresh = float(local_radius)
 
     Xb = coords[idx]
     diff = Xb[:, None, :] - Xb[None, :, :]
     dist = diff.square().sum(-1).sqrt()
-    return (dist < r_thresh) & same_env & ~eye, same_env
+    return (dist < r_thresh) & same_env & ~eye, same_env, dist
 
 
 def train(cfg: TrainConfig) -> str:
@@ -97,15 +103,31 @@ def train(cfg: TrainConfig) -> str:
     print(f"Run dir: {run_dir}")
 
     # --- Build full grid and sample patches ---
-    Phi_full, full_Npos = build_full_grid(cfg.model.lambdas, cfg.fwhm_ratio)
+    # The lazy path skips the 10.2 GB codebook and builds each patch directly.
+    # It needs the full grid only for the Hopfield nav eval, so it is available
+    # exactly when that eval is off. Neither builder touches the torch RNG, so
+    # the patch placement is the same either way.
+    lazy = cfg.lazy_codes and cfg.eval_every <= 0
+    full_Npos = int(np.prod(cfg.model.lambdas))
+    Phi_full = None
+    if not lazy:
+        Phi_full, full_Npos = build_full_grid(cfg.model.lambdas, cfg.fwhm_ratio)
     patch_cfg = cfg.patches
     npos_arg = patch_cfg.npos_list if patch_cfg.npos_list else patch_cfg.npos
     nenv_arg = None if patch_cfg.npos_list else patch_cfg.nenv
     y0s, x0s, sizes = sample_nonoverlapping_patches(
-        full_Npos, full_Npos, npos_arg, nenv_arg)
-    print(f"Patches: {len(sizes)} envs, sizes {sorted(set(sizes))}")
+        full_Npos, full_Npos, npos_arg, nenv_arg,
+        placement=patch_cfg.patch_placement)
+    print(f"Patches: {len(sizes)} envs, sizes {sorted(set(sizes))}"
+          + f"  [{patch_cfg.patch_placement} placement]"
+          + ("  [lazy codes]" if lazy else ""))
 
-    Phi_flat, coords, env_ids = extract_patches(Phi_full, y0s, x0s, sizes, device)
+    if lazy:
+        Phi_flat, coords, env_ids = build_patch_codes(
+            cfg.model.lambdas, y0s, x0s, sizes, device, cfg.fwhm_ratio)
+    else:
+        Phi_flat, coords, env_ids = extract_patches(
+            Phi_full, y0s, x0s, sizes, device)
     N = Phi_flat.shape[0]
     print(f"Total points N={N} ({N / (full_Npos**2) * 100:.2f}% of grid)")
 
@@ -164,6 +186,8 @@ def train(cfg: TrainConfig) -> str:
 
         encoder.train()
         running = 0.0
+        running_extra = 0.0        # the spread terms alone, to see if they dominate
+        epoch_pr = float("nan")
         n_batches = 0
 
         for idx in batch_iter:
@@ -171,8 +195,8 @@ def train(cfg: TrainConfig) -> str:
             zb = encoder(Phi_flat[idx], gain)
             K_pred = (zb @ zb.T).clamp(-1.0, 1.0)
 
-            near, same_env = _build_near_mask(idx, env_ids, coords, env_radius,
-                                              patch_cfg.local_radius)
+            near, same_env, dist = _build_near_mask(
+                idx, env_ids, coords, env_radius, patch_cfg.local_radius)
 
             if cfg.loss.mode == "mse_contrastive":
                 # Withholding cross-environment pairs from the repel term
@@ -182,11 +206,22 @@ def train(cfg: TrainConfig) -> str:
                 far = None
                 if cfg.loss.exclude_cross_env_pairs:
                     far = ~near & same_env
+                if cfg.loss.input_far_tau >= 0:
+                    # Loophole arm: env-blind, but restores long-range
+                    # repulsion. Recorded as such -- see LossConfig.
+                    phi = torch.nn.functional.normalize(Phi_flat[idx], dim=-1)
+                    k_in = phi @ phi.T
+                    far = (k_in < cfg.loss.input_far_tau) & ~near
+                target = None
+                if cfg.loss.graded_sigma > 0 and dist is not None:
+                    s = cfg.loss.graded_sigma
+                    target = torch.exp(-dist.square() / (2.0 * s * s))
                 loss = mse_attract_repel(
                     K_pred, near,
                     attract_lambda=cfg.loss.attract_lambda,
                     repel_weight=cfg.loss.repel_weight,
                     far_mask=far,
+                    target=target,
                 )
             elif cfg.loss.mode == "cka":
                 B = K_pred.size(0)
@@ -197,8 +232,44 @@ def train(cfg: TrainConfig) -> str:
             else:
                 raise ValueError(f"Unknown loss mode: {cfg.loss.mode}")
 
+            # OUT OF BRIEF, diagnostic only (§5.6k, PatchConfig.spread_arena_frac).
+            # The spread terms see these extra whole-arena positions; no pair
+            # term ever does, so `near`/`same_env` stay the batch's own.
+            z_spread = zb
+            if patch_cfg.spread_arena_frac > 0:
+                n_extra = int(round(patch_cfg.spread_arena_frac * len(idx)))
+                # Argument order mirrors build_patch_codes: the first argument
+                # indexes the first spatial axis, whatever the parameter is
+                # called. Both are uniform here, but the two paths must agree.
+                r_ys = np.random.randint(0, full_Npos, size=n_extra)
+                r_xs = np.random.randint(0, full_Npos, size=n_extra)
+                phi_extra = torch.as_tensor(
+                    grid_code_batch(cfg.model.lambdas, r_ys, r_xs,
+                                    cfg.fwhm_ratio),
+                    device=device, dtype=Phi_flat.dtype)
+                z_spread = torch.cat([zb, encoder(phi_extra, gain)], dim=0)
+
+            extra = 0.0
             if unif_lam > 0:
-                loss = loss + unif_lam * uniformity_loss(zb)
+                pair_mask = ~near if cfg.loss.uniformity_scope == "nonnear" \
+                    else None
+                if pair_mask is not None and z_spread is not zb:
+                    pair_mask = None    # the mask is batch-shaped; scope drops
+                u = unif_lam * uniformity_loss(
+                    z_spread, t=cfg.loss.uniformity_t, pair_mask=pair_mask)
+                loss, extra = loss + u, extra + float(u.item())
+            if cfg.loss.var_lambda > 0 or cfg.loss.cov_lambda > 0:
+                var_l, cov_l = vicreg_terms(z_spread, gamma=cfg.loss.var_gamma)
+                v = cfg.loss.var_lambda * var_l + cfg.loss.cov_lambda * cov_l
+                loss, extra = loss + v, extra + float(v.item())
+            if cfg.loss.rate_lambda > 0:
+                r = cfg.loss.rate_lambda * coding_rate_loss(
+                    z_spread, eps=cfg.loss.rate_eps)
+                loss, extra = loss + r, extra + float(r.item())
+            running_extra += extra
+            # The quantity that separates the regimes; see losses.
+            if n_batches == 0:
+                epoch_pr = float(participation_ratio(zb.detach()).item())
 
             optimizer.zero_grad(set_to_none=True)
             loss.backward()
@@ -210,8 +281,9 @@ def train(cfg: TrainConfig) -> str:
             n_batches += 1
 
         avg_loss = running / max(n_batches, 1)
-        print(f"Epoch {ep:3d} | loss={avg_loss:.4f} | gain={gain:.2f} "
-              f"| unif_lam={unif_lam:.4f}")
+        avg_extra = running_extra / max(n_batches, 1)
+        print(f"Epoch {ep:3d} | loss={avg_loss:.4f} | spread={avg_extra:+.4f} "
+              f"| pr={epoch_pr:6.1f} | gain={gain:.2f} | unif_lam={unif_lam:.4f}")
 
         # --- Nav eval ---
         if cfg.eval_every > 0 and ep % cfg.eval_every == 0:
@@ -342,6 +414,7 @@ def _build_cfg_from_args(args) -> TrainConfig:
         hidden_channels=args.hidden_channels,
         num_conv_layers=args.num_conv_layers, kernel_size=args.kernel_size,
         gain=args.gain_end,
+        char_p_max=args.char_p_max, char_m_max=args.char_m_max,
     )
     loss = LossConfig(
         mode=args.loss_mode,
@@ -349,7 +422,16 @@ def _build_cfg_from_args(args) -> TrainConfig:
         repel_weight=args.repel_weight,
         uniformity_lambda=args.uniformity_lambda,
         uniformity_anneal_epochs=args.uniformity_anneal_epochs,
+        uniformity_t=args.uniformity_t,
+        uniformity_scope=args.uniformity_scope,
         exclude_cross_env_pairs=args.exclude_cross_env_pairs,
+        var_lambda=args.var_lambda,
+        cov_lambda=args.cov_lambda,
+        var_gamma=args.var_gamma,
+        rate_lambda=args.rate_lambda,
+        rate_eps=args.rate_eps,
+        graded_sigma=args.graded_sigma,
+        input_far_tau=args.input_far_tau,
     )
     npos_list = None
     if args.npos_list:
@@ -359,6 +441,8 @@ def _build_cfg_from_args(args) -> TrainConfig:
         per_env_radius_frac=args.per_env_radius_frac,
         local_radius=args.radius,
         single_env_batch=args.single_env_batch,
+        patch_placement=args.patch_placement,
+        spread_arena_frac=args.spread_arena_frac,
     )
     nav = NavEvalConfig(
         env_size=args.nav_env_size,
@@ -378,10 +462,11 @@ def _build_cfg_from_args(args) -> TrainConfig:
     return TrainConfig(
         model=model, loss=loss, patches=patches, nav_eval=nav,
         unique_radius=ur,
-        fwhm_ratio=args.fwhm_ratio, lr=args.lr, epochs=args.epochs,
+        fwhm_ratio=args.fwhm_ratio, lr=args.lr, weight_decay=args.weight_decay,
+        epochs=args.epochs,
         batch_size=batch_size, seed=args.seed, device=args.device,
         gain_start=args.gain_start, gain_end=args.gain_end,
-        shuffle_inputs=args.shuffle,
+        shuffle_inputs=args.shuffle, lazy_codes=args.lazy_codes,
         save_dir=args.save_dir, run_name=args.run_name,
         eval_every=args.eval_every,
     )
@@ -390,7 +475,13 @@ def _build_cfg_from_args(args) -> TrainConfig:
 def main():
     p = argparse.ArgumentParser(description="Binary-method encoder training")
     # Model
-    p.add_argument("--encoder_type", default="mlp", choices=["mlp", "cnn"])
+    p.add_argument("--encoder_type", default="mlp",
+                   choices=["mlp", "cnn", "equivariant"])
+    p.add_argument("--char_p_max", type=int, default=2,
+                   help="equivariant: per-module integer frequency bound")
+    p.add_argument("--char_m_max", type=int, default=120,
+                   help="equivariant: bound on induced position frequency, in "
+                        "units of 1/prod(lambdas)")
     p.add_argument("--lambdas", type=int, nargs="+", default=[11, 12, 13])
     p.add_argument("--out_dim", type=int, default=256)
     p.add_argument("--hidden_dim", type=int, default=1024)
@@ -405,6 +496,15 @@ def main():
     p.add_argument("--radius", type=float, default=10.0)
     p.add_argument("--per_env_radius_frac", type=float, default=0.0)
     p.add_argument("--single_env_batch", action="store_true")
+    p.add_argument("--patch_placement", default="random",
+                   choices=["random", "stratified"],
+                   help="where patches sit: uniform rejection sampling, or a "
+                        "jittered lattice (one per coarse-grid cell)")
+    p.add_argument("--spread_arena_frac", type=float, default=0.0,
+                   help="OUT OF BRIEF, DIAGNOSTIC ONLY (§5.6k): extra positions "
+                        "from the whole arena, as a fraction of batch_size, fed "
+                        "to the spread terms only. Breaks the coverage "
+                        "constraint by construction -- never a headline number")
     # Loss
     p.add_argument("--loss_mode", default="mse_contrastive",
                    choices=["mse_contrastive", "cka"])
@@ -416,9 +516,31 @@ def main():
                         "isolates that from single_env_batch's effect on "
                         "which envs a gradient step sees")
     p.add_argument("--uniformity_anneal_epochs", type=int, default=25)
+    p.add_argument("--uniformity_t", type=float, default=2.0)
+    p.add_argument("--uniformity_scope", default="all",
+                   choices=["all", "nonnear"],
+                   help="'nonnear' drops the near pairs -- but 'not near' "
+                        "includes every cross-env pair, so it restores the "
+                        "supervision exclude_cross_env_pairs removes")
+    p.add_argument("--var_lambda", type=float, default=0.0,
+                   help="VICReg variance hinge; pair-free spread")
+    p.add_argument("--cov_lambda", type=float, default=0.0,
+                   help="VICReg off-diagonal covariance penalty")
+    p.add_argument("--var_gamma", type=float, default=1.0)
+    p.add_argument("--rate_lambda", type=float, default=0.0,
+                   help="MCR^2 log-det coding rate; rewards an even covariance "
+                        "spectrum, which is the deficit the collapsed codes have")
+    p.add_argument("--rate_eps", type=float, default=0.5)
+    p.add_argument("--graded_sigma", type=float, default=0.0,
+                   help="distance-graded pair target exp(-d^2/2s^2); "
+                        "0 keeps the binary near=1/far=0 targets")
+    p.add_argument("--input_far_tau", type=float, default=-1.0,
+                   help="LOOPHOLE: repel pairs whose input grid codes have "
+                        "cosine below this, ignoring env labels")
     # Training
     p.add_argument("--epochs", type=int, default=600)
     p.add_argument("--lr", type=float, default=2.48e-4)
+    p.add_argument("--weight_decay", type=float, default=1e-4)
     p.add_argument("--batch_size", type=int, default=4096)
     p.add_argument("--seed", type=int, default=42)
     p.add_argument("--device", default="cuda")
@@ -426,6 +548,9 @@ def main():
     p.add_argument("--gain_start", type=float, default=1.0)
     p.add_argument("--gain_end", type=float, default=5.0)
     p.add_argument("--shuffle", action="store_true")
+    p.add_argument("--lazy_codes", action="store_true",
+                   help="build patch codes directly (~1 GB instead of ~20 GB); "
+                        "ignored unless --eval_every 0")
     # Nav eval
     p.add_argument("--nav_env_size", type=int, default=20)
     p.add_argument("--nav_n_train", type=int, default=5)

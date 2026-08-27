@@ -112,12 +112,19 @@ def grid_code_batch(lambdas: Sequence[int], xs: np.ndarray, ys: np.ndarray,
     return out
 
 
-def _embed(encoder, lambdas, xs, ys, gain, device, fwhm_ratio) -> torch.Tensor:
+def embed(encoder, lambdas, xs, ys, gain, device, fwhm_ratio) -> torch.Tensor:
     codes = torch.from_numpy(
         grid_code_batch(lambdas, xs, ys, fwhm_ratio)).to(device)
     with torch.no_grad():
         z = encoder(codes, gain=gain)
     return torch.nn.functional.normalize(z.float(), dim=1, eps=1e-12)
+
+
+# Back-compat: this was `_embed` until the layering test caught
+# alias_structure importing it across module boundaries. Kept so any
+# out-of-tree caller of the private name keeps working; new code should use
+# `embed`, which is exported.
+_embed = embed
 
 
 def cosine_maps(
@@ -137,13 +144,13 @@ def cosine_maps(
     was_training = encoder.training
     encoder.eval()
     try:
-        z_ref = _embed(encoder, lambdas, refs[:, 0], refs[:, 1], gain, device,
+        z_ref = embed(encoder, lambdas, refs[:, 0], refs[:, 1], gain, device,
                        fwhm_ratio)
         cos = np.empty((len(refs), total), dtype=np.float32)
         for start in range(0, total, batch_size):
             stop = min(start + batch_size, total)
             idx = np.arange(start, stop)
-            z = _embed(encoder, lambdas, idx // Npos, idx % Npos, gain, device,
+            z = embed(encoder, lambdas, idx // Npos, idx % Npos, gain, device,
                        fwhm_ratio)
             cos[:, start:stop] = (z @ z_ref.T).T.cpu().numpy()
     finally:
@@ -295,6 +302,7 @@ __all__ = [
     "npos_for",
     "sample_references",
     "grid_code_batch",
+    "embed",
     "cosine_maps",
     "evaluate_unique_radius",
     "summarize",

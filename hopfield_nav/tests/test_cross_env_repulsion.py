@@ -35,7 +35,7 @@ def _batch(n_per_env=4, n_env=3, spacing=100.0):
 
 def test_near_is_within_radius_and_same_env():
     idx, env_ids, coords = _batch()
-    near, same_env = _build_near_mask(idx, env_ids, coords, None, local_radius=2.0)
+    near, same_env, _ = _build_near_mask(idx, env_ids, coords, None, local_radius=2.0)
 
     # points 0 and 1 are 1 cell apart in env 0
     assert near[0, 1] and near[1, 0]
@@ -53,7 +53,7 @@ def test_cross_env_pairs_are_repelled_by_default():
     This is the mechanism single_env_batch=True removes, so it must be pinned.
     """
     idx, env_ids, coords = _batch()
-    near, _ = _build_near_mask(idx, env_ids, coords, None, local_radius=2.0)
+    near, _, _ = _build_near_mask(idx, env_ids, coords, None, local_radius=2.0)
 
     # a batch where every cross-env pair is maximally aliased (cos 1) but all
     # near pairs are already perfect: any loss must come from the cross-env
@@ -72,7 +72,7 @@ def test_cross_env_pairs_are_repelled_by_default():
 def test_excluding_cross_env_pairs_stops_penalising_them():
     """With the narrower far mask the identical batch is now loss-free."""
     idx, env_ids, coords = _batch()
-    near, same_env = _build_near_mask(idx, env_ids, coords, None, local_radius=2.0)
+    near, same_env, _ = _build_near_mask(idx, env_ids, coords, None, local_radius=2.0)
 
     B = len(idx)
     K = torch.zeros(B, B)
@@ -95,7 +95,7 @@ def test_exclusion_leaves_within_env_repulsion_intact():
     ``test_far_mask_never_includes_the_diagonal`` pins.
     """
     idx, env_ids, coords = _batch()
-    near, same_env = _build_near_mask(idx, env_ids, coords, None, local_radius=2.0)
+    near, same_env, _ = _build_near_mask(idx, env_ids, coords, None, local_radius=2.0)
     far = ~near & same_env
 
     # 0 and 3 are same env and beyond the radius, so they must still be in far
@@ -107,7 +107,7 @@ def test_exclusion_leaves_within_env_repulsion_intact():
 def test_far_mask_never_includes_the_diagonal():
     """A self-pair has cosine 1 by construction; repelling it is meaningless."""
     idx, env_ids, coords = _batch()
-    near, same_env = _build_near_mask(idx, env_ids, coords, None, local_radius=2.0)
+    near, same_env, _ = _build_near_mask(idx, env_ids, coords, None, local_radius=2.0)
 
     B = len(idx)
     K = torch.eye(B)
@@ -127,7 +127,7 @@ def test_single_env_batch_has_no_cross_env_pairs_to_repel():
     pairs and not to the batching.
     """
     idx, env_ids, coords = _batch(n_per_env=6, n_env=1)
-    near, same_env = _build_near_mask(idx, env_ids, coords, None, local_radius=2.0)
+    near, same_env, _ = _build_near_mask(idx, env_ids, coords, None, local_radius=2.0)
 
     B = len(idx)
     K = torch.rand(B, B).clamp(-1.0, 1.0)
@@ -139,19 +139,31 @@ def test_single_env_batch_has_no_cross_env_pairs_to_repel():
     assert default == pytest.approx(float(excluded), abs=1e-6)
 
 
-def test_build_near_mask_returns_a_pair():
-    """Guards the signature change: callers unpack two masks now."""
+def test_build_near_mask_returns_a_triple():
+    """Guards the signature: two masks and the pairwise distances.
+
+    The third element was added when the loss gained a distance-graded target,
+    which needs the distances the mask was built from rather than recomputing
+    them. It is None on the radius<=0 path, where no distance matrix is built
+    -- see test_zero_radius_still_returns_both_masks.
+    """
     idx, env_ids, coords = _batch()
     out = _build_near_mask(idx, env_ids, coords, None, local_radius=2.0)
-    assert isinstance(out, tuple) and len(out) == 2
-    assert all(t.dtype == torch.bool for t in out)
+    assert isinstance(out, tuple) and len(out) == 3
+    near, same_env, dist = out
+    assert near.dtype == torch.bool and same_env.dtype == torch.bool
+    assert dist is not None and dist.dtype.is_floating_point
+    assert dist.shape == near.shape
 
 
 def test_zero_radius_still_returns_both_masks():
     """The radius<=0 early-return path must not drop the same_env mask."""
     idx, env_ids, coords = _batch()
-    near, same_env = _build_near_mask(idx, env_ids, coords, None, local_radius=0.0)
+    near, same_env, dist = _build_near_mask(idx, env_ids, coords, None,
+                                            local_radius=0.0)
     assert near.shape == same_env.shape
     assert not near.diagonal().any()
     # radius<=0 means "same env" is the near set
     assert near[0, 1] and not near[0, 4]
+    # and no distance matrix is needed on this path, so none is built
+    assert dist is None

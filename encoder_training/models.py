@@ -156,6 +156,17 @@ def create_encoder(cfg: EncoderModelConfig, device: str | None = None) -> GridEn
             out_dim=cfg.out_dim, nonlinearity=cfg.nonlinearity,
             output_nonlinearity=cfg.output_nonlinearity, gain=cfg.gain,
         )
+    elif cfg.encoder_type == "equivariant":
+        # §8.1. Exactly translation-equivariant by construction, so
+        # cos(z(x), z(y)) depends only on the offset and r_min == r_median.
+        # out_dim/hidden_dim/gain are ignored: the character table determines
+        # the output size, and any pointwise nonlinearity would break the
+        # equivariance (tanh does not commute with a rotation of the
+        # (Re, Im) pair a character contributes).
+        from encoder_training.equivariant import EquivariantCharacterEncoder
+        enc = EquivariantCharacterEncoder(
+            lambdas=cfg.lambdas, p_max=cfg.char_p_max, m_max=cfg.char_m_max,
+        )
     else:
         raise ValueError(f"Unknown encoder_type: {cfg.encoder_type}")
     if device is not None:

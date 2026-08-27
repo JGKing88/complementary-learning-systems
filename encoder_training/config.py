@@ -9,7 +9,7 @@ from cls_paths import encoders_dir
 @dataclass
 class EncoderModelConfig:
     """Architecture config for the grid cell encoder."""
-    encoder_type: str = "mlp"           # "mlp" or "cnn"
+    encoder_type: str = "mlp"           # "mlp", "cnn" or "equivariant"
     lambdas: list[int] = field(default_factory=lambda: [11, 12, 13])
     out_dim: int = 256
     nonlinearity: str = "gelu"
@@ -22,6 +22,14 @@ class EncoderModelConfig:
     hidden_channels: int = 128
     num_conv_layers: int = 3
     kernel_size: int = 5
+    # equivariant-specific (§8.1). The character table fixes out_dim, so
+    # `out_dim`, `hidden_dim` and `gain` do not apply -- the only capacity knobs
+    # are how many characters are admitted. char_p_max bounds each module's
+    # integer frequency; char_m_max bounds the induced position frequency in
+    # units of 1/prod(lambdas). Learnable parameters = (number of characters)^2,
+    # and out_dim is twice that.
+    char_p_max: int = 2
+    char_m_max: int = 120
 
     @property
     def in_dim(self) -> int:
@@ -45,7 +53,48 @@ class LossConfig:
     repel_weight: float = 5.0           # weight on far-pair MSE (target 0)
     uniformity_lambda: float = 0.0      # uniformity regularizer weight (end value)
     uniformity_anneal_epochs: int = 25  # epochs to ramp uniformity from 0 to end
+    uniformity_t: float = 2.0           # temperature in logsumexp(-t * d^2)
+    # Which pairs the uniformity term acts on.
+    #   "all"     — every off-diagonal pair. Asks nothing about environments,
+    #               so it is the only spread term still available when the
+    #               cross-environment pairs are withheld. Also the reason it
+    #               fights `attract`: logsumexp is dominated by the closest
+    #               pairs, which are the near pairs.
+    #   "nonnear" — drops the near pairs. Cheap and effective, but "not near"
+    #               includes every cross-environment pair, so this quietly
+    #               restores the supervision `exclude_cross_env_pairs` removed.
+    #               Report it as a loophole, not as a result under the flag.
+    uniformity_scope: str = "all"       # "all" | "nonnear"
     centered: bool = True               # centered CKA (only used if mode="cka")
+
+    # VICReg-style spread. Both are batch statistics rather than pair terms, so
+    # they cannot concentrate on the closest pairs the way uniformity does.
+    var_lambda: float = 0.0             # hinge on per-coordinate std
+    cov_lambda: float = 0.0             # off-diagonal covariance penalty
+    var_gamma: float = 1.0              # std target, in units of 1/sqrt(out_dim)
+    rate_lambda: float = 0.0            # MCR^2 log-det coding rate
+    rate_eps: float = 0.5
+
+    # Distance-graded pair target: target = exp(-d^2 / (2 sigma^2)) instead of
+    # the binary 1-on-near / 0-on-far. 0 keeps the binary targets.
+    #
+    # OUT OF SCOPE for the §4 campaign, by instruction, and left here only so
+    # the runs already in the log can be reproduced. Handing the network the
+    # whole desired similarity matrix is what `mode="cka"` does -- that fits a
+    # kernel by centered alignment and this fits one by MSE, but both replace
+    # the contrastive near/far split with a target kernel, and the brief
+    # excludes that family. It worked (r_min 13/11 against a binary baseline of
+    # 6/3, see docs/EXPERIMENTS_UNIQUE_RADIUS.md §4.4) which is exactly why the
+    # exclusion has to be written down next to the knob rather than only in the
+    # log.
+    graded_sigma: float = 0.0
+
+    # LOOPHOLE, label it as one. Repel pairs whose *input* grid codes are
+    # dissimilar, regardless of environment. Env-blind and available to an agent
+    # that only ever sees observations — but the smoothed code decorrelates
+    # within ~5 cells, so "input-dissimilar" is very nearly "far apart
+    # anywhere", and that puts the cross-environment repulsion back in.
+    input_far_tau: float = -1.0         # <0 → off
 
     # Withhold cross-environment pairs from the repel term. There is no
     # dedicated cross-env term: any pair that is not "near" is repelled, so in
@@ -64,6 +113,25 @@ class PatchConfig:
     npos: int = 100
     # Alternative: explicit list of patch sizes (overrides nenv & npos).
     npos_list: list[int] | None = None
+
+    # Where the patches sit. "random" is uniform rejection sampling and is what
+    # everything through §4 used; "stratified" is a jittered lattice, one patch
+    # per cell of a coarse grid. Only expected to matter at low coverage, where
+    # the holes rejection sampling leaves are large (§5.4 step 3).
+    patch_placement: str = "random"
+
+    # OUT OF BRIEF -- DIAGNOSTIC ONLY, NEVER PART OF A HEADLINE (§5.6k).
+    #
+    # Fraction of batch_size in extra positions drawn uniformly from the *whole
+    # arena* each step, fed to the spread terms only -- never to attract, repel
+    # or any pair term. It exists to size one number: §5.6j measured 95.5% of
+    # the aliases that set r_min living in arena the loss never evaluates, and
+    # this is what those aliases would cost if the loss could see them.
+    #
+    # It plainly violates the coverage constraint: at frac > 0 the encoder is
+    # evaluated everywhere, so the run is not a 10%-coverage run. Report it as
+    # a bound on the mechanism, never as an encoder that met the brief.
+    spread_arena_frac: float = 0.0
 
     # Radius defining "near" within each env:
     #   - If `per_env_radius_frac > 0`: radius = frac * env_size (per env).
@@ -137,6 +205,16 @@ class TrainConfig:
 
     # Input perturbation (ablation): randomly permute grid codes across positions
     shuffle_inputs: bool = False
+
+    # Build each patch's codes directly instead of slicing the full codebook.
+    # Same values (tests/test_lazy_patch_codes.py) at ~1 GB instead of ~20 GB of
+    # host memory, which is what lets several runs share a node. Only possible
+    # when the Hopfield nav eval is off, since that eval needs the full grid.
+    # The two builders group the Gaussian factors differently, so the codes
+    # agree to float32 rounding rather than bit-for-bit: within a wave every run
+    # takes the same path, but a seed-for-seed replay of an older run needs this
+    # off.
+    lazy_codes: bool = False
 
     # Checkpointing
     save_dir: str = str(encoders_dir())
