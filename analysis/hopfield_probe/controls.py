@@ -217,22 +217,34 @@ def run_rescue(
 ) -> dict:
     """Sec 3.1a -- can *any* setting give attractor behaviour? Off by default.
 
-    **The headline answer is already known, and it is no.**
-    ``docs/EXPERIMENTS_NAV_P2.md`` Sec 5.4-5.5 (unmerged ``nav-tri-metric``
-    branch, ``analysis/nav_p2/gain_sweep.py``) swept ``beta`` over six orders of
-    magnitude: one attractor everywhere up to 1e5, and although 1e6 finally
-    saturates the tanh into 8 attractors, **the stored patterns are not fixed
-    points at any gain** -- max cos-to-self 0.185 -- and those attractors sit at
-    |cos| 0.66 from the nearest stored pattern. A saturating tanh puts fixed
-    points at hypercube corners; classical Hopfield works because its patterns
-    *are* corners, and these are continuous encoder outputs. Attractor
-    retrieval needs binarised patterns or a modern softmax Hopfield -- a
-    different network, not a hyper-parameter.
+    **This sweep is aimed at the compensable knob, and cannot succeed alone.**
+    ``docs/EXPERIMENTS_NAV_P2.md`` Sec 5.6-5.7 (unmerged ``nav-tri-metric``)
+    separates two conditions that are easy to conflate:
 
-    What this sweep is still for: re-verifying that on an encoder the earlier
-    one never saw. The transition depends on pattern norms and overlaps, which
-    are encoder properties, so a positive result here is a reason to re-check
-    ``nav_p2``'s conclusion rather than a new operating point.
+    * **loop gain** ``beta*S/D > 1`` -- set by ``beta`` *or* the storage norm,
+      which are the same knob twice. Buys a nonzero fixed point instead of
+      decay to zero. This is what the grid below moves.
+    * **near-corner patterns** -- set by the *storage/encoder* gain ``g`` only,
+      and not compensable by the first. Buys that the fixed point is *your*
+      memory. Sharp turn-on at ``g ~ 100``.
+
+    Sweeping ``beta`` alone was measured to 1e6 and fails, because it repairs
+    the first and never touches the second. Pre-saturating the patterns does
+    work inside this architecture -- Sec 5.7 gets cos-to-self 0.990 at M=5
+    through 0.923 at M=50, with real basins -- but that is the **encoder's**
+    gain, which this harness does not set.
+
+    Measured on the live encoders, gain 100 gets most of the way and not all:
+    L7-s42 sits at cos 0.895 to its own binarisation and 64% saturated against
+    Sec 5.7's 0.954 / 83%, and its patterns are not fixed points at any
+    ``(scale, beta)`` here. The encoder's final L2 normalisation is part of
+    why -- it pins ``S = 1`` however saturated the pre-activation was.
+
+    So read a positive result here as a reason to re-check ``nav_p2``, not as a
+    new operating point. And note the trap the untrained encoder exposes: its
+    patterns *are* near-perfect fixed points (0.999) while scoring 22.6% acc45
+    and a basin of ``none``. Being a fixed point is not being a useful memory;
+    cross-talk, not corner-ness, is what binds.
 
     Only the **product** ``beta * scale`` reaches the argument of the ``tanh``
     -- ``beta * W`` is invariant under ``(p -> lambda p, beta -> beta/lambda^2)``

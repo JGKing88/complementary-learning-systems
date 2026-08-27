@@ -328,29 +328,62 @@ vector. One number that says "the dynamics have one attractor, not `K`".
 
 ### 3.1a Rescue mode — can *any* setting give attractor behaviour?
 
-> **This question has already been answered, and the answer is no.**
-> `docs/EXPERIMENTS_NAV_P2.md` §5.4–5.5 on the unmerged `nav-tri-metric` branch
-> swept `beta` over **six orders of magnitude** with normalisation on and off
-> (`analysis/nav_p2/gain_sweep.py`), 11 stored patterns, D=1024. Every setting
-> up to `beta = 1e5` gives **one** attractor. At `beta = 1e6` the
-> pre-activation finally reaches 22, the tanh genuinely saturates, and 8
-> attractors appear — but **the stored patterns are not fixed points at any
-> gain** (max cos-to-self 0.185, even deeply saturated), and those high-gain
-> attractors sit at |cos| 0.66 from the nearest stored pattern.
+> **Mostly answered already, and the sweep below is aimed at the wrong knob.**
+> `docs/EXPERIMENTS_NAV_P2.md` §5.6–5.7 (unmerged `nav-tri-metric`) settled
+> this, and it turns on **two independent conditions** that are easy to
+> conflate:
 >
-> The reason is structural, not a tuning failure: a saturating tanh puts fixed
-> points at hypercube *corners*, and classical Hopfield works because its
-> patterns **are** binary corners. These are continuous encoder outputs, so
-> saturation necessarily moves them. Getting attractor retrieval needs
-> binarised patterns or an architecture whose fixed points are the stored
-> patterns by construction (modern softmax Hopfield) — **a different network,
-> not a hyper-parameter.**
+> | condition | knob | compensable | what it buys |
+> |---|---|---|---|
+> | loop gain `β·S/D > 1` | `β` *or* storage norm — the same knob twice | yes, by either | a nonzero fixed point instead of decay to zero |
+> | stored pattern near a hypercube **corner** | storage gain `g` only | **no** | that the fixed point is *your memory* |
 >
-> So the `--rescue` sweep below is *not* a way to discover a better setting.
-> It survives for one narrower job: re-verifying the claim on an encoder the
-> earlier sweep never saw, since the transition depends on the pattern norms
-> and overlaps, which are encoder properties. Read a positive result here as a
-> reason to re-check `nav_p2`'s conclusion, not as a new operating point.
+> Sweeping `β` alone fails, and §5.6 measured that to `β = 1e6`: it repairs the
+> first condition and never touches the second. But **pre-saturating the
+> patterns does work, inside this architecture** — §5.7 stores `p = tanh(g·ξ)`
+> and finds a sharp turn-on at **`g ≈ 100`** (marginal at 30, absent ≤ 10),
+> with stored patterns at median cos-to-self 0.990 (M=5) through 0.923 (M=50),
+> and real basins: a cue corrupted to cos 0.70 recovers to the same values.
+> Capacity lands between 50 and 100 patterns. Per-step normalisation does not
+> change the boundary.
+>
+> So the sweep below is aimed at `scale` and `β` — the *compensable* condition
+> — and cannot produce attractors on its own. The knob that matters is the
+> **encoder's** gain, which is not this harness's to set.
+
+> **Measured here on the real encoders, and gain 100 is not sufficient in the
+> live stack.** The L7 encoders run at gain 100 and compute
+> `z = normalize(tanh(gain · net(x)))`, which is structurally §5.7's
+> `p = tanh(g·ξ)` — so the corner condition might already be met in
+> production. It is not, quite (25 patterns from random scaffold cells,
+> D = 1024):
+>
+> | encoder | cos to own binarisation | coords > half-max | fixed point? |
+> |---|---|---|---|
+> | v35 (gain 3.70) | 0.812 | 14% | 0.279 |
+> | **L7-s42 (gain 100)** | **0.895** | **64%** | **0.199** |
+> | untrained (gain 5) | 0.862 | 37% | **0.999** |
+> | *§5.7 target at g=100* | *0.954* | *83%* | *0.976* |
+>
+> Gain 100 moves L7 most of the way to the corner — 64% saturated against
+> v35's 14% — but short of §5.7's 83%, and its patterns are **not** fixed
+> points at any `(scale, β)` in `{1/D, 1} × {1, 3, 10, gain}`. The encoder's
+> own final L2 normalisation is part of why: it fixes `S = 1` no matter how
+> saturated the pre-activation was.
+>
+> **The untrained encoder inverts the story and is the informative cell.** Its
+> patterns *are* near-perfect fixed points (0.999) while being *less*
+> saturated than L7's. That is cross-talk, not corner-ness: an untrained
+> encoder's far-apart cells are near-orthogonal, so each pattern is nearly its
+> own eigenvector, while a trained encoder's smooth chart plus its alias tail
+> (`alias_ceiling_max` 0.88) makes them correlated. It agrees with §5.8's own
+> conclusion — **cross-talk is the binding constraint** — and it is a warning
+> about the metric: being a fixed point is not the same as being a *useful*
+> memory, since the untrained encoder scores 22.6% acc45 and a basin of `none`.
+>
+> Caveat: 25 patterns, one seed, one draw. §5.7 used random `ξ`, so its
+> patterns were uncorrelated by construction and these are not. Treat the table
+> as a reason the `--rescue` sweep is aimed wrong, not as a capacity result.
 
 **Off by default.** Everything else in this document evaluates the encoder at
 the production operating point. This mode asks a different question — whether
