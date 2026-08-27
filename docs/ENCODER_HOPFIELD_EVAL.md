@@ -33,7 +33,7 @@ So the object under test is the map
 (grid position p, memory contents M, recall steps s)  ->  q(p; M, s) in R^2
 ```
 
-and the three tests below take it apart in the order the errors compound:
+and the four tests below take it apart in the order the errors compound:
 
 - **Test A** — is the stored goal a fixed point of the Hopfield dynamics at
   all, and over what real-space disc does a cue relax to it?
@@ -42,6 +42,8 @@ and the three tests below take it apart in the order the errors compound:
 - **Test C** — the same question at *continuous* positions, which reach
   `encoded_Phi` only through the env's `round()` snap. Test B is the floor;
   C − B is the cost of the snap alone.
+- **Test D** — follow the field. Angle error is local; whether the trajectories
+  it induces actually arrive is global, and B and C cannot see it.
 
 Test C is deliberately not folded into B. The point of running both is to
 avoid quoting one number that mixes associative-memory error with
@@ -166,16 +168,44 @@ across envs, never a single env's number.
 ### 2.3 Memory loading — what "number of stored goals" means
 
 Three constructions are defensible and they are **not** the same experiment.
-The harness supports all three behind one flag; §9 asks which is the headline.
+The harness supports all three behind one flag. **`multi_env_goals` is the
+headline** (decided 2026-08-27); the other two are secondary and run on request.
 
 | mode | contents of `W` | what it models |
 |---|---|---|
-| `goal+distractors` | this env's goal, plus `K−1` patterns drawn from cells **outside** this env's footprint, via `rollout/distractors.py:24` | production. Matches `n_train_distractors` and `--val_distractors`. |
-| `multi_env_goals` | one goal from each of `K` different envs, each at its own offset; score the one belonging to the test env | continual / many-rooms capacity |
+| **`multi_env_goals`** (headline) | one goal from each of `K` different envs, each at its own scaffold offset | continual / many-rooms capacity: `K` real goals competing, which is the question "how many goals can this encoder hold at once" actually asks |
+| `goal+distractors` | this env's goal, plus `K−1` patterns drawn from arbitrary cells **outside** its footprint, via `rollout/distractors.py:23` | production as it is scored today. Matches `n_train_distractors` and `--val_distractors`. |
 | `same_env_goals` | `K` goals inside the **same** env footprint | worst-case interference — the patterns are maximally similar |
+
+**What one draw is, under `multi_env_goals`.** A *world* is `K` envs placed in
+one scaffold by `place_envs` (`scaffold.py:145`, `placement="spread"`), each
+with its own wall seed, local goal and offset. One Hopfield holds all `K` goal
+patterns. Then **every one of the `K` envs is scored in turn as the test env**,
+against the same `W` — one world yields `K` measurements, not one, which is
+what makes `K = 50` affordable. The reported unit is still the env; the world
+is the sampling unit for the `W` it sits in.
+
+This makes the `K` axis do two things at once, and the doc has to be honest
+about it: raising `K` raises the memory load *and* packs the envs closer
+together in the scaffold, because `place_envs` spreads a fixed `Npos` over more
+of them. Those are separable and should be separated — hold `n_envs_per_world`
+at the largest `K` and store only the first `K` goals, so the *placement* is
+identical across the sweep and only the *load* moves. Report the mean
+env-to-env offset distance per `K` either way, so a reader can see whether the
+two were successfully decoupled.
+
+Under this mode, "distractor" throughout §3–§5 means **another env's goal**,
+not an arbitrary off-footprint cell — a strictly harder and more meaningful
+confusion, since those are the patterns the system is actually being asked to
+keep apart.
 
 Storage order is shuffled per trial (as `metrics.py:320` does), because
 `zero_diag` makes `W` order-dependent in a small but real way.
+
+`K = 1` is the degenerate-but-important case: one memory, no interference, so
+it isolates the encoder+projection geometry with the Hopfield still in the
+loop. It should very nearly reproduce the oracle control of §6.1, and a gap
+between them at `K = 1` is a bug in one of the two.
 
 ### 2.4 What is held fixed
 
@@ -256,8 +286,16 @@ Report, per `(K, steps)`:
   the goal. Anisotropy is a known live issue in this scaffold
   (`EXPERIMENTS_UNIQUE_RADIUS.md` §6.11f), and a radius averaged over
   directions can hide a direction where it is 0.
-- **`spurious(d)`** — of the misses, what fraction landed on a *distractor*
-  vs. on neither (a mixture). Different failures, different fixes.
+- **`spurious(d)`** — of the misses, what fraction landed on **another env's
+  goal** vs. on neither (a mixture). Different failures, different fixes: the
+  first is a discrimination failure between two real memories, the second is
+  the dynamics collapsing to an eigenvector that is nobody's memory.
+- **`confusion(j)`** — for the misses that landed on another env's goal, which
+  one. Under `multi_env_goals` this is a `K × K` matrix per world, and its
+  structure is the point: if confusions concentrate on the envs whose scaffold
+  offsets are nearest, the failure is scaffold aliasing and more encoder
+  capacity will not fix it; if they are uniform, it is memory interference and
+  it will.
 
 **Figures:** per-`(K, steps)`, a `size × size` map of `retrieved(c)` (goal /
 each distractor / mixture, categorical colour) with the goal marked; and one
@@ -425,21 +463,40 @@ revisiting.
 
 ---
 
-## 7. Optional Test D — does the field actually flow to the goal?
+## 7. Test D — does the field actually flow to the goal?
 
-Angle error per cell is a local statistic; navigation is a global property of
-the vector field. Cheap end-to-end summary, no policy involved: from each
-starting cell, repeatedly step along `q` (unit step, greedy) for
-`max_steps = 4·size` and record whether the trajectory reaches the goal.
+In scope (decided 2026-08-27). Angle error per cell is a local statistic;
+navigation is a global property of the vector field, and §4 cannot see it. A
+field with 30° mean error and one sink in the wrong corner is a very different
+object from one with 30° mean error and no spurious sinks.
 
-Reports `reach_rate` overall and as a function of start distance, plus the
-locations of **sinks that are not the goal** (cells where the field converges
-elsewhere) and **limit cycles**. A field with 30° mean error and one sink in
-the wrong corner is a very different object from one with 30° mean error and no
-spurious sinks, and §4 cannot distinguish them.
+No policy, no encoder calls beyond what §4 already computed: from each starting
+cell, repeatedly step along `q̂` for `max_steps = 4·size` and record whether the
+trajectory enters the goal's L2 ball. Two variants, because they answer
+different questions:
 
-This is optional in the sense that §3–§5 stand without it, and it should be
-skipped if the goal is a fast encoder-ranking metric.
+- **discrete** — step to the neighbour picked by `classify_direction_batch`
+  (`utils.py:35`), clipped at walls. This is literally what a perfect discrete
+  agent would do.
+- **continuous** — step `continuous_scale · q̂` from a float position, snapping
+  for lookup exactly as §5 does. This is what a perfect *continuous* agent
+  would do, and it can stall in ways the discrete one cannot.
+
+Reported per `(K, steps)`:
+
+- **`reach_rate`** overall and vs. start distance.
+- **`mean_steps`** to reach, over successes only — and the success count
+  beside it, always. Per `project_nav_tri_failure_modes`, `mean_steps` computed
+  over a shrinking success set is a trap: a field that only succeeds from
+  nearby will post an excellent `mean_steps`.
+- **spurious sinks** — cells the field converges to that are not the goal,
+  with their basin sizes. A map of these per env is the most directly
+  actionable figure in the document.
+- **limit cycles** — detected by state repetition (discrete) or by
+  non-decreasing distance over a window (continuous).
+
+Because it consumes the `q` field §4 already built, Test D costs essentially
+nothing on top and runs by default.
 
 ---
 
@@ -453,7 +510,7 @@ analysis/hopfield_probe/
     attractor.py     # Test A
     qfield.py        # Tests B and C (one implementation, two position sources)
     controls.py      # Sec 6
-    flow.py          # Test D (optional)
+    flow.py          # Test D -- greedy flow over the q field built by qfield.py
     plot.py          # every figure
     run.py           # CLI: python -m analysis.hopfield_probe.run --ckpt ...
     tests/
@@ -469,31 +526,44 @@ recomputation, in the shape `analysis/encoder_sweep.py` already reads.
 
 ---
 
-## 9. Parameters to decide
+## 9. Parameters
 
-Proposed defaults follow `run_repro_v35.sh`, which is the live operating point.
-Marked **?** are the ones that change the design rather than just the cost.
+Settled 2026-08-27 unless marked **open**. Defaults follow `run_repro_v35.sh`,
+which is the live operating point. `$CLS_RUNS` is
+`/orcd/pool/003/jackking/cls_runs` (`scripts/cls_env.sh`).
 
-| # | parameter | proposed | note |
+| # | parameter | value | note |
 |---|---|---|---|
-| 1 | encoder checkpoint(s) | `encoders/run_20260422_185816/encoder_best.pt` + best level-7 `w53_attract_knee` | **?** one, or a ranking sweep |
+| 1 | encoders | `$CLS_RUNS/encoders/run_20260422_185816/encoder_best.pt` (v35 lineage); `$CLS_RUNS/sweeps/w53_attract_knee/00{4,5,6,7}_att16_seed=4{2,3,4,5}/encoder_final.pt` (level 7); `$CLS_RUNS/encoders/untrained_mlp.pt` (floor) | level 7 is 4 seeds — run all 4, report the spread, do not pick one |
 | 2 | `lambdas` / `Npos` | `[11,12,13]` / 1716 | v35 |
 | 3 | `fwhm_ratio` | 0.25 | v35 |
-| 4 | `gain` | checkpoint's | |
+| 4 | `gain` | checkpoint's | recorded in every result header (§2.5) |
 | 5 | env `size` | 20 | v35 |
-| 6 | `K` (stored patterns) | `[1, 2, 3, 5, 10, 20, 50]` | **?** upper end |
-| 7 | memory mode | `goal+distractors` | **?** §2.3 |
-| 8 | `n_envs` per config | 50 | **?** cost driver |
-| 9 | `steps` sweep `S` | `[1, 2, 3, 5, 10, 15]` in A, B and C | production feeds 1,2,3 to the policy |
-| 10 | `beta` | `= gain`; plus `use_tanh=False` control | §6.5 |
-| 11 | `alpha` | 1.0 | pinned |
-| 12 | `tau` (Test A) | argmax primary; `{0.5,0.7,0.9}` reported | §3.2 |
-| 13 | continuous samples/env | 200k uniform + 50k annulus at `d<3` | **?** — free, given the cost note in §5 |
-| 14 | continuous heatmap resolution | 8 bins/cell | |
-| 15 | continuous-phase encoding variant | not built | **?** §5 aside |
-| 16 | Test D | build it? | **?** §7 |
-| 17 | seeds | 3 | across-env spread is the bigger term |
+| 6 | `K` (stored goals) | `[1, 2, 3, 5, 10, 20, 50]` | goes past production's 0–10 so the capacity knee is inside the plot |
+| 7 | memory mode | `multi_env_goals` | §2.3. `goal+distractors` secondary, on request |
+| 8 | `n_envs_per_world` | 50, fixed at max `K` | §2.3 — keeps placement constant while load varies |
+| 9 | worlds (draws) | 50 | so `K=50` gives 2500 env measurements, `K=1` gives 50 |
+| 10 | `steps` sweep `S` | `[1, 2, 3, 5, 10, 15]` in A, B, C, D | production feeds 1,2,3 to the policy |
+| 11 | `beta` | `= gain`; plus `use_tanh=False` control | §6.5 |
+| 12 | `alpha` | 1.0 | pinned |
+| 13 | `tau` (Test A) | argmax primary; `{0.5,0.7,0.9}` reported | §3.2 |
+| 14 | continuous samples/env | 200k uniform + 50k annulus at `d<3` | free, given the cost note in §5 |
+| 15 | continuous heatmap resolution | 8 bins/cell | |
+| 16 | Test D | in scope, runs by default | §7 |
+| 17 | seeds | 3 | across-world spread is the bigger term |
 | 18 | goal-radius exclusion | report both | §5 |
+| 19 | continuous-phase encoding variant | **open** — not built | §5 aside. Decide after seeing `excess(d)`; that curve is what says whether it is worth building |
+
+### 9.1 Cost
+
+The dominant term is Test B: `worlds × K × size² × |S|` recalls =
+`50 × 50 × 400 × 6` = 6M, batched, at `D = 1024`. That is a few minutes of
+GPU matmul, not a job. Test C adds nothing (§5 cost note), Test A is
+`worlds × K × size²`, Test D is pure numpy on an already-computed field. The
+real cost is `encode_positions`: `worlds × K × (size+1)²` encoder forward
+passes = ~1.1M, which is one batched pass. **The whole suite is one node-hour
+per encoder, not a sweep** — which is the argument for running all 4 level-7
+seeds rather than picking one.
 
 ---
 
