@@ -370,7 +370,17 @@ between **50 and 100**.
 4. The correlation penalty on (b). Overlap is measured (`alias_ceiling` 0.88)
    but its effect on capacity is not derived.
 
-## 8. Reproducing
+## 8. Where things live
+
+Raw result JSON, permanent:
+`$CLS_RESULTS/hopfield_probe/20260827/` — ten arms plus a `README.md` naming
+each. `report.build <dir>` regenerates a page from any of them; nothing is
+recomputed, so restyling costs no recall.
+
+The derivation in §7 is also written up as a standalone page, source at
+`analysis/hopfield_probe/report/analysis_page.html`.
+
+## 9. Reproducing
 
     ./analysis/hopfield_probe/run_probe.sh                      # Sec 1
     ... --beta 1e6                                              # Sec 2
