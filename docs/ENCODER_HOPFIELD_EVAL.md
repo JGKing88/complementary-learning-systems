@@ -76,6 +76,24 @@ L2-normalises after, so every embedding is a unit vector and `gain` controls
 saturation, not scale. Both cues and stored patterns are therefore on the unit
 sphere; there is no cue/memory scale mismatch to worry about.
 
+**`fwhm_ratio` and `gain` are properties of the encoder, not of this harness.**
+Both are inherited from the checkpoint and neither is ever passed on the
+command line. `gain` already resolves this way in production
+(`encoder_io.load_encoder`: top-level `ckpt["gain"]` wins, then `cfg.gain`).
+`fwhm_ratio` does **not**: it lives in `ckpt["train_config"]["fwhm_ratio"]`,
+which `EncoderModelConfig` filters out, and `train_navigate.py:972` supplies it
+from a CLI default of 0.25 instead.
+
+> **Landmine, verified 2026-08-27.** `encoder_io.validate_config` takes
+> `encoder_gain` and `fwhm_ratio` as arguments and **checks neither** — its
+> body compares `lambdas` and nothing else. So an encoder trained at one
+> smoothing width can be evaluated at another with no error and no warning,
+> and the resulting embeddings are simply not the ones the encoder was fitted
+> to. This harness must read `fwhm_ratio` from the checkpoint and **hard-error
+> if it is absent** rather than falling back to 0.25. `untrained_mlp.pt` has no
+> `train_config` at all, so it is the one checkpoint that needs an explicit
+> override — passed loudly, recorded in the result header, never defaulted.
+
 **1.2 Storage.** `Hopfield.input_memory` (`hopfield/core.py:43`) normalises the
 pattern, does `W += (1/D) z zᵀ`, then **zeroes the diagonal**. With `K`
 patterns, `W = (1/D)(Σ_k z_k z_kᵀ − diag(Σ_k z_k ⊙ z_k))`.
@@ -214,23 +232,41 @@ run; everything else varies. Two encoders are only ever compared at an
 identical scaffold, env draw, and RNG seed — the env lottery is larger than
 most encoder differences.
 
-### 2.5 The alias floor, recorded once per (encoder, env)
+### 2.5 Encoder header — copied, not recomputed
 
-Every cosine threshold in §3 is meaningless without knowing what cosine two
-*unrelated* cells already score. Report, per env:
+An earlier draft proposed measuring an "alias floor" here to calibrate a cosine
+threshold `tau`. **That rationale is gone**: §3.2 no longer uses a threshold, so
+there is nothing to calibrate, and the harness computes no floor of its own.
 
-- `cos_floor` — mean and 99th-percentile cosine between the goal pattern and a
-  few thousand cells far outside the env footprint. This is
-  `unique_radius`'s `alias_ceiling` measured on the patterns this harness
-  actually stores, and it is the number `tau` has to clear.
-- `output_nonlinearity` and `gain` from the checkpoint config. A `sigmoid`
-  head puts every embedding in the positive orthant, which lifts `cos_floor`
-  toward 1 and compresses every discrimination in this document. It is a
-  property of the checkpoint, not of the test, and must appear in the header of
-  every result file rather than being discovered afterwards.
-- `diag_frac` — `‖diag(W)‖ / ‖W‖` before it is zeroed. `zero_diag` removes a
-  term that is large exactly when the embedding is sparse, so this says how
-  much of the self-recall signal storage throws away.
+What survives is a header block, and it is *copied out of the checkpoint*
+rather than measured — the L7 checkpoints already carry a full
+`ckpt["unique_radius"]` dict from `encoder_training.eval_unique_radius`:
+
+- `alias_ceiling_max` / `cos_floor_mean` — the highest and the mean cosine
+  between far-apart cells. For the L7 encoders these are **0.88 and 0.02**:
+  cells are near-orthogonal *on average* while some far pair still scores 0.88.
+  Under §3.2's new definition — nearest **cell**, not nearest stored goal —
+  that gap is the whole mechanism behind a large `retrieved_dist`, which is why
+  it stays in the header even though `tau` is gone.
+- `r_min` / `r_median`, `n_refs`, `headline` — so a reader can put this run's
+  numbers next to the encoder's coding radius without opening another file.
+- `gain`, `fwhm_ratio`, `output_nonlinearity`, `out_dim`, param count.
+
+Checkpoints without a stored `unique_radius` (v35, untrained) leave those
+fields null rather than triggering a recomputation. This harness does not
+re-derive another module's metric.
+
+Two things it *does* measure once per (encoder, world), because nothing else
+records them:
+
+- `diag_frac` — `‖diag(Σ_k z_k z_kᵀ)‖ / ‖Σ_k z_k z_kᵀ‖` before `zero_diag`
+  removes it. That term is large exactly when the embedding is sparse, so this
+  says how much of the self-recall signal storage throws away.
+- `tanh_arg` — the distribution of `β·(W x)` over real cues. This is the
+  number §1.3's linearity claim rests on, and it is not the same for every
+  encoder: v35 runs at `β = 3.70` and the L7 encoders at `β = 100`, a 27×
+  difference that lands them in potentially different regimes of the same
+  `tanh`. Measure it; do not assume it.
 
 ---
 
@@ -256,55 +292,127 @@ the mean cosine between the recall endpoints of *different* cues. If §1.3 is
 right this rises toward 1 as `steps` grows: every cue landing on the same
 vector. One number that says "the dynamics have one attractor, not `K`".
 
+### 3.1a Rescue mode — can *any* setting give attractor behaviour?
+
+**Off by default.** Everything else in this document evaluates the encoder at
+the production operating point. This mode asks a different question — whether
+the Hopfield layer is fixable at all — and its results say nothing about
+encoder quality, so it must never be mixed into the headline tables. Enabled
+with `--rescue`, run on one encoder and a small `K` grid, reported in its own
+file.
+
+The grid, in rough order of expected leverage:
+
+| knob | production | rescue values | why it might matter |
+|---|---|---|---|
+| `Hopfield.scale` | `1/num_units` | `1`, `1/√D`, `1/K` | **the main suspect.** `scale` is what makes `‖W x‖ ~ 10⁻³` and therefore what makes `tanh` inert. Raising it is the one change that puts the nonlinearity into its working range at all. |
+| `beta` | `= gain` (3.7 or 100) | `1, 10, 10², 10³, 10⁴` | the other half of the same product. Sweep jointly with `scale` — only `β·scale` matters, so sweep the product and say so. |
+| `zero_diag` | `True` | `False` | the diagonal is the self-reinforcing term; removing it is what stops a stored pattern being a fixed point of the linear map. Cheapest single thing to try. |
+| `alpha` | 1.0 | `0.1, 0.3, 0.5` | damped updates. Cannot create attractors the map does not have, but changes whether iteration finds them. |
+| `normalize_each` | `True` | `False` | normalisation is what turns the iteration into power iteration. Without it the dynamics can converge on magnitude, not just direction. |
+| `steps` | 1 | up to 100 | with the above changed, "converged" may mean something different. |
+
+The success criterion is Test A's own `frac_self_consistent` and
+`mean_pairwise_cos` at `steps = 50`: **`frac_self_consistent ≈ 1` with
+`mean_pairwise_cos` low** is genuine per-goal attractor behaviour and would be
+a real result. High `mean_pairwise_cos` at any setting is the collapse of §1.3
+and means the knob did not help.
+
+If a setting does work, it does not automatically become the default: §3.2 and
+§4 have to be re-run under it to check the *basin* and the *direction field*
+survived, since a memory can be a perfect fixed point with a basin of radius
+zero, which would be worse for navigation than what we have.
+
 ### 3.2 Real-space basin radius
 
 This is the number the test is actually for. The cue is not a noised goal
 vector — it is the embedding of **another cell**, which is what makes the
 radius live in real space.
 
-For the test env's goal `g` (local coords), for every local cell `c`:
+**Retrieval is decided against every cell, not against the stored goals.**
+Asking "is the recall nearer the goal than any *other stored goal*" is far too
+easy — with `K = 3` that is a 3-way choice. The question that matters is
+whether the recall lands nearer the goal cell than **any other cell in the
+world**, which is what makes it a position readout rather than a memory index.
+So `retrieved` is an argmax over a cell bank, and it returns a *cell*, not a
+memory index:
 
 ```
-x0        = encode(c + offset)
-x_final   = recall(x0, steps, beta, alpha)
-retrieved(c) = argmax_k cos(x_final, z_k)          # which memory did it land on
-hit(c)       = (retrieved(c) == goal index) and cos(x_final, z_goal) >= tau
-d(c)         = || c - g ||_2                        # cells
+x0            = encode(c + offset)
+x_final       = recall(x0, steps, beta, alpha)
+retrieved(c)  = argmax_{u in CELLBANK} cos(x_final, encode(u))     # a CELL
+cos_goal(c)   = cos(x_final, z_goal)                               # reported directly
+exact_hit(c)  = (retrieved(c) == goal cell)                        # no tau
+retr_dist(c)  = || retrieved(c) - g ||_2      when retrieved is in the test env
+d(c)          = || c - g ||_2
 ```
+
+**`CELLBANK`** is every cell of all `K` env footprints in the world
+(`K · size²` = 20 000 cells at `K = 50, size = 20`), plus `n_alias = 20 000`
+uniformly-drawn scaffold cells to catch far aliases — the `alias_ceiling_max`
+of 0.88 in §2.5 says those exist. It is deliberately *not* all 2.94M scaffold
+cells: that is a 400 × 2.94M × 1024 matmul per env and it would dominate the
+whole suite's cost for a tail that a random sample already estimates. The bank
+is fixed per world, so the cosines are one batched matmul.
+
+`tau` is gone from the primary path. `exact_hit` is a threshold-free predicate
+and replaces it everywhere; the `cos_goal` distribution is reported outright so
+that anyone who wants a threshold can pick one after the fact.
+
+**`retr_dist` is only a distance when the retrieved cell is in the test env.**
+When recall lands in another env's footprint or on an alias cell, real-space
+distance to `g` is not a meaningful quantity — those are different rooms. Those
+cases are counted in their own categories (`retrieved_env`, `retrieved_alias`),
+never folded into a distance average. This is the main place a careless
+implementation would manufacture a reassuring number.
 
 Report, per `(K, steps)`:
 
-- **`r_all`** — largest `r` such that **every** cell with `d ≤ r` is a hit.
-  Stop at the first failing radius, not the last passing one; the condition is
-  not monotone in `r`. This mirrors the convention `unique_radius` already
-  uses (`encoder_training/unique_radius.py`) so the two are readable together.
-- **`r_95`** — largest `r` such that ≥95% of cells within it are hits.
-  `r_all` has cliff behaviour and two encoders can both report 0.
-- **`hit_rate(d)`** — the full curve, which is what actually gets plotted.
-  Reporting only a threshold crossing throws away the shape.
-- **`r_by_direction`** — `r_all` restricted to each of 8 angular sectors from
-  the goal. Anisotropy is a known live issue in this scaffold
+- **`cos_goal(d)`** — mean and the 10/50/90 percentiles of `cos(x_final,
+  z_goal)` against distance-to-goal. Reported as a first-class curve, not as
+  an input to something else: it is the continuous quantity underneath every
+  binary predicate here, and it degrades smoothly where `exact_hit` cliffs.
+- **`exact_hit(d)`** — fraction of cells at distance `d` whose recall retrieves
+  the goal cell exactly. This replaces the old `hit(d)`.
+- **`retr_dist(d)`** — mean and 90th percentile of how far, in cells, the
+  retrieved cell sits from the goal. `exact_hit` says whether it was right;
+  this says how wrong it was when it was not, which is the difference between
+  a readout that is noisy and one that is lost.
+- **`r_exact_all` / `r_exact_95`** — the radii below, computed on `exact_hit`.
+
+  - `r_exact_all` — largest `r` such that **every** cell with `d ≤ r` is an
+    exact hit. Stop at the first failing radius, not the last passing one; the
+    condition is not monotone in `r`. This mirrors the convention
+    `unique_radius` already uses (`encoder_training/unique_radius.py`) so the
+    two are readable together.
+  - `r_exact_95` — largest `r` such that ≥95% of cells within it are exact
+    hits. `r_exact_all` has cliff behaviour and two encoders can both report 0.
+- **`r_by_direction`** — `r_exact_all` restricted to each of 8 angular sectors
+  from the goal. Anisotropy is a known live issue in this scaffold
   (`EXPERIMENTS_UNIQUE_RADIUS.md` §6.11f), and a radius averaged over
   directions can hide a direction where it is 0.
-- **`spurious(d)`** — of the misses, what fraction landed on **another env's
-  goal** vs. on neither (a mixture). Different failures, different fixes: the
-  first is a discrimination failure between two real memories, the second is
-  the dynamics collapsing to an eigenvector that is nobody's memory.
-- **`confusion(j)`** — for the misses that landed on another env's goal, which
-  one. Under `multi_env_goals` this is a `K × K` matrix per world, and its
-  structure is the point: if confusions concentrate on the envs whose scaffold
-  offsets are nearest, the failure is scaffold aliasing and more encoder
-  capacity will not fix it; if they are uniform, it is memory interference and
-  it will.
+- **`outcome(d)`** — the full categorical breakdown at each distance, which
+  is where a miss actually gets diagnosed. Five mutually exclusive outcomes:
 
-**Figures:** per-`(K, steps)`, a `size × size` map of `retrieved(c)` (goal /
-each distractor / mixture, categorical colour) with the goal marked; and one
-`hit_rate` vs. `d` line per `K` on shared axes, one panel per `steps`.
+  | outcome | meaning | what it implicates |
+  |---|---|---|
+  | `exact` | retrieved cell **is** the goal cell | — |
+  | `near` | retrieved cell is in the test env, `retr_dist ≤ 2` | readout is noisy but positional |
+  | `far_same_env` | in the test env, `retr_dist > 2` | local decay too flat |
+  | `other_env` | inside another env's footprint | memory interference between rooms |
+  | `alias` | an off-footprint scaffold cell | the `alias_ceiling` tail of §2.5 |
 
-**Note on `tau`.** A cosine threshold is a free parameter and will be argued
-about. Mitigation: report `r` as a function of `tau` for
-`tau ∈ {0.5, 0.7, 0.9}`, and treat the pure `argmax_k` (nearest-memory,
-threshold-free) version as the primary.
+  Splitting `near` from `far_same_env` is the point of having `retr_dist` at
+  all: a readout that is consistently one cell off is a usable direction
+  signal, and one that lands across the room is not, and both were a single
+  "miss" under the old definition.
+- **`confusion(j)`** — for `other_env` outcomes, *which* env. Under
+  `multi_env_goals` this is a `K × K` matrix per world, and its structure is
+  the point: if confusions concentrate on the envs whose scaffold offsets are
+  nearest, the failure is scaffold aliasing and more encoder capacity will not
+  fix it; if they are uniform, it is memory interference and it will.
+
+**Figures:** see `ENCODER_HOPFIELD_EVAL_VIZ.md` §4 (`test_a.html`).
 
 ---
 
@@ -330,9 +438,25 @@ does in production (§1.4) — including the single cached basis.
 
 Reported per cell, and aggregated, **for each `s` separately**:
 
-- **`|err|` mean and median per cell** → the heatmap. One `size × size` panel
-  per `(K, s)`, diverging colormap on signed `err` and a sequential one on
-  `|err|`; goal marked; chance (90°) pinned on the colourbar.
+- **`|err|` mean and median per cell** → the heatmap. **In goal-relative
+  coordinates**, not env coordinates: the goal moves from env to env, so a
+  `size × size` map indexed by absolute cell has a different goal in every
+  sample and averaging it is meaningless. Re-index every cell by its offset
+  from that env's goal, `(c − g)`, giving a `(2·size−1)²` = 39×39 grid centred
+  on the goal, and accumulate across all envs and worlds into that. The goal
+  sits at the centre by construction and the map is directly interpretable as
+  "how wrong is `q` when the goal is `Δ` away". One panel per `(K, s)`,
+  diverging colormap on signed `err`, sequential on `|err|`, chance (90°)
+  pinned on the colourbar.
+
+  Two companions, because the goal-relative view deliberately destroys two
+  things worth seeing:
+  - **env-absolute map**, aggregated across envs and ignoring goal position.
+    Answers a different question — is `q` worse near walls and in corners? —
+    which goal-relative coordinates average away.
+  - **one single-env panel** at a representative env, in absolute coordinates
+    with its actual goal marked, as a sanity anchor. Aggregates hide
+    structure; one raw example is what catches a harness bug.
 - **`|err|` vs. distance-to-goal** — mean, median, and IQR band, binned in
   1-cell bins. This is the curve that decides whether the field is usable.
 - **`acc_45(d)`** — fraction of cells with `|err| < 45°`, i.e. the correct
@@ -413,13 +537,15 @@ sub-cell resolution (proposed 8 bins/cell), which makes the snap-cell structure
 visible directly — the field is piecewise constant within a cell by
 construction, and the plot should show that.
 
-**Goal radius.** `run_repro_v35.sh` runs `GOAL_RADIUS=1.0`, so the agent counts
-as at-goal anywhere in an L2 ball of radius 1 — a region where `err_geom` is
-already enormous. Report `excess` and `|err|_C` both including and excluding
-the at-goal ball: error inside a region the agent never has to navigate out of
-is not a cost, and averaging it in makes every encoder look worse than it is.
+**No goal-radius masking.** An earlier draft proposed excluding an L2 ball of
+`goal_radius` from the near-goal aggregates. That was wrong and is removed:
+`goal_radius` is a reward-shaping knob on the training config that can be
+changed between runs, and nothing about an encoder's quality may depend on the
+current value of one. The near-goal region is reported in full, in fine bins,
+with `n` per bin — anyone comparing against a particular training config can
+mask afterwards from the raw arrays.
 
-> **Aside worth deciding on (§9, Q6).** The snap error is an artifact of the
+> **Aside worth deciding on (§9, #19).** The snap error is an artifact of the
 > codebook being defined only at integer positions. Grid phase is
 > `x mod λ`, which is perfectly well defined for real `x`, and `smooth_gbook`
 > already places a Gaussian bump at a phase — so a *continuous-phase* encoding
@@ -433,14 +559,47 @@ is not a cost, and averaging it in makes every encoder look worse than it is.
 Without these, none of §3–§5 is attributable.
 
 **6.1 Oracle `q` (no Hopfield).** Replace `recall(z_c)` with `z_goal` exactly —
-this is `oracle_signal_at` (`rollout/signal.py:152`). Run the full Test B and
-Test C pipeline on it. The resulting error is **pure encoder + projection
-geometry**, with the associative memory removed. It has no `K` and no `steps`
-axis, so it is a single horizontal line under every curve in §4 and §5. Every
-number should be quoted against it; `|err|_hopfield − |err|_oracle` is the
-Hopfield's own contribution, and if the oracle is already bad, the encoder is
-the problem and no amount of Hopfield tuning will help. *This is the single
-most load-bearing control in the document.*
+this is `oracle_signal_at` (`rollout/signal.py:152`). It has no `K` and no
+`steps` axis.
+
+> **It is a ceiling, not a ground truth.** The objection is correct and worth
+> stating in the doc: `z_goal − z_c` is a *large* displacement in embedding
+> space, and `W` is a **local** tangent frame built from two one-cell neighbour
+> displacements (§1.5). Projecting a far displacement onto a local frame is a
+> first-order approximation on a curved manifold, and it degrades with
+> distance for reasons that have nothing to do with the encoder's quality. So
+> oracle `q` will look bad at range, and that is not a bug.
+>
+> It is still the right control, *because* the Hopfield path has exactly the
+> same pathology: `recall(z_c)` is approximately `z_goal`, so `recalled − z_c`
+> is the same large displacement through the same local frame. The oracle is
+> therefore "what `q` would be if recall were perfect, under the projection we
+> actually use" — the best achievable, not the truth. `|err|_hopfield −
+> |err|_oracle` isolates recall error from projection error precisely because
+> the projection error is common to both.
+
+**6.1b Local oracle — is the basis itself sound?** The control §6.1 cannot be,
+and the one the objection above actually motivates. Use a **one-cell**
+displacement: the neighbour cell `c'` one step along the straight line toward
+the goal, `q_local = W @ (encode(c') − encode(c))`, and score it against the
+bearing to `c'`. This exercises the Gram–Schmidt frame at exactly the scale it
+was constructed at, so it separates two things §6.1 confounds:
+
+- `q_local` accurate, oracle `q` bad at range → the basis is fine and the
+  embedding manifold is curved. The readout is intrinsically local, and the
+  fix is a policy that takes short steps, not a better encoder.
+- `q_local` already bad → the basis is broken at its own scale, and every
+  number in §4 and §5 inherits that. This would be the most consequential
+  single finding available from the whole suite.
+
+Run `q_local` at every cell, report it as an `|err|` vs. distance curve like
+any other, and it costs two encoder lookups per cell.
+
+**Where the controls appear.** In the summary table for every configuration,
+and as reference lines on the *aggregate* curves — `|err|` vs. distance, and
+`acc_45` vs. `steps`. **Not** on every heatmap and not in every panel: that
+would double the figure count for a line that does not vary within a panel.
+The viz doc (`ENCODER_HOPFIELD_EVAL_VIZ.md`) fixes exactly where they show up.
 
 **6.2 Gram–Schmidt order swap.** Rerun §4 with `d_rgt` as `e1` instead of
 `d_fwd`. A large difference means the reported angles are substantially an
@@ -511,10 +670,16 @@ analysis/hopfield_probe/
     qfield.py        # Tests B and C (one implementation, two position sources)
     controls.py      # Sec 6
     flow.py          # Test D -- greedy flow over the q field built by qfield.py
-    plot.py          # every figure
+    report/          # figures + HTML pages. See ENCODER_HOPFIELD_EVAL_VIZ.md
     run.py           # CLI: python -m analysis.hopfield_probe.run --ckpt ...
     tests/
 ```
+
+**The reporting layer is specified separately**, in
+`docs/ENCODER_HOPFIELD_EVAL_VIZ.md`, and depends on this document only through
+the result JSON. Nothing in `attractor.py` / `qfield.py` / `flow.py` may import
+from `report/`: the tests must be runnable headless on a compute node, and the
+pages regenerable from saved results without recomputing anything.
 
 Tests B and C are **one implementation**. C differs only in where positions
 come from and what `theta_true` is measured from; forking them guarantees they
@@ -535,24 +700,26 @@ which is the live operating point. `$CLS_RUNS` is
 | # | parameter | value | note |
 |---|---|---|---|
 | 1 | encoders | `$CLS_RUNS/encoders/run_20260422_185816/encoder_best.pt` (v35 lineage); `$CLS_RUNS/sweeps/w53_attract_knee/00{4,5,6,7}_att16_seed=4{2,3,4,5}/encoder_final.pt` (level 7); `$CLS_RUNS/encoders/untrained_mlp.pt` (floor) | level 7 is 4 seeds — run all 4, report the spread, do not pick one |
-| 2 | `lambdas` / `Npos` | `[11,12,13]` / 1716 | v35 |
-| 3 | `fwhm_ratio` | 0.25 | v35 |
-| 4 | `gain` | checkpoint's | recorded in every result header (§2.5) |
+| 2 | `lambdas` / `Npos` | **inherited** (`[11,12,13]`) / 1716 | `lambdas` is a model field and `validate_config` does check it |
+| 3 | `fwhm_ratio` | **inherited from `ckpt["train_config"]`** (0.25 for all four); hard-error if absent | §1.1. Never a CLI default. `untrained_mlp.pt` has no `train_config` and needs an explicit, recorded override |
+| 4 | `gain` | **inherited** — v35 **3.6987**, L7 **100.0**, untrained 5.0 | §2.5. Note v35's `encoder_best.pt` was saved mid-anneal at epoch 675/1000, so its gain is 3.70, not the 5.0 in its model config |
 | 5 | env `size` | 20 | v35 |
 | 6 | `K` (stored goals) | `[1, 2, 3, 5, 10, 20, 50]` | goes past production's 0–10 so the capacity knee is inside the plot |
 | 7 | memory mode | `multi_env_goals` | §2.3. `goal+distractors` secondary, on request |
 | 8 | `n_envs_per_world` | 50, fixed at max `K` | §2.3 — keeps placement constant while load varies |
 | 9 | worlds (draws) | 50 | so `K=50` gives 2500 env measurements, `K=1` gives 50 |
 | 10 | `steps` sweep `S` | `[1, 2, 3, 5, 10, 15]` in A, B, C, D | production feeds 1,2,3 to the policy |
-| 11 | `beta` | `= gain`; plus `use_tanh=False` control | §6.5 |
+| 11 | `beta` | **inherited from the checkpoint** (`= gain`: 3.70 for v35, 100 for L7); `use_tanh=False` control | §6.5. Never a CLI value |
 | 12 | `alpha` | 1.0 | pinned |
-| 13 | `tau` (Test A) | argmax primary; `{0.5,0.7,0.9}` reported | §3.2 |
-| 14 | continuous samples/env | 200k uniform + 50k annulus at `d<3` | free, given the cost note in §5 |
-| 15 | continuous heatmap resolution | 8 bins/cell | |
-| 16 | Test D | in scope, runs by default | §7 |
-| 17 | seeds | 3 | across-world spread is the bigger term |
-| 18 | goal-radius exclusion | report both | §5 |
-| 19 | continuous-phase encoding variant | **open** — not built | §5 aside. Decide after seeing `excess(d)`; that curve is what says whether it is worth building |
+| 13 | `tau` | **removed.** `exact_hit` is threshold-free | §3.2 |
+| 14 | `CELLBANK` for retrieval | all `K` footprints + 20k random scaffold cells | §3.2 |
+| 15 | continuous samples/env | 200k uniform + 50k annulus at `d<3` | free, given the cost note in §5 |
+| 16 | continuous heatmap resolution | 8 bins/cell | |
+| 17 | §4 heatmap coordinates | goal-relative (39×39), + env-absolute + one single-env panel | §4 |
+| 18 | Test D | in scope, runs by default | §7 |
+| 19 | Test A rescue mode | **off by default**, `--rescue` | §3.1a |
+| 20 | seeds | 3 | across-world spread is the bigger term |
+| 21 | continuous-phase encoding variant | **open** — not built | §5 aside. Decide after seeing `excess(d)`; that curve is what says whether it is worth building |
 
 ### 9.1 Cost
 
@@ -569,23 +736,32 @@ seeds rather than picking one.
 
 ## 10. Traps
 
-1. **Do not precompute `encoded_Phi`.** 12 GB, and unnecessary (§2.1).
-2. **`q` is `(East, North) = (Δx, Δy)`.** A transpose here silently mirrors
+1. **`fwhm_ratio` is not validated by the thing that looks like it validates
+   it.** `encoder_io.validate_config` accepts `fwhm_ratio` and `encoder_gain`
+   and checks neither — only `lambdas`. Read both from the checkpoint, assert
+   them into the result header, and never accept a CLI default (§1.1).
+2. **Do not precompute `encoded_Phi`.** 12 GB, and unnecessary (§2.1).
+3. **`q` is `(East, North) = (Δx, Δy)`.** A transpose here silently mirrors
    every angle and the aggregates still look plausible. Unit-test against a
    hand-built case where the goal is due East.
-3. **The Gram–Schmidt basis is clipped to `[1, Npos−2]`** and reads neighbours
+4. **`retr_dist` is undefined outside the test env** (§3.2). Averaging a
+   real-space distance over retrievals that landed in another room manufactures
+   a small, reassuring, meaningless number. Keep the categories separate.
+5. **§4 heatmaps must be goal-relative.** The goal moves between envs, so an
+   env-absolute per-cell average is a different quantity in every sample (§4).
+6. **The Gram–Schmidt basis is clipped to `[1, Npos−2]`** and reads neighbours
    that may lie *outside* the env footprint. That is production behaviour and
    must be kept, but it means envs placed near the scaffold edge are a distinct
    population — record the offset with every result.
-4. **Storage order matters** because `zero_diag` makes `W` order-dependent.
+7. **Storage order matters** because `zero_diag` makes `W` order-dependent.
    Shuffle it, and average over the shuffle.
-5. **Sign flips are real** (§3.1). Never take `|cos|`.
-6. **`c = g` is degenerate** in Tests B and C. Handle it explicitly (§4).
-7. **Distance bins are not uniform-mass.** In Test C, uniform-area sampling
+8. **Sign flips are real** (§3.1). Never take `|cos|`.
+9. **`c = g` is degenerate** in Tests B and C. Handle it explicitly (§4).
+10. **Distance bins are not uniform-mass.** In Test C, uniform-area sampling
    gives `∝ d` samples per bin, so the near-goal bins — the ones the whole test
    is about — are the noisiest. Hence the annulus refinement, and report `n`
    per bin on every curve.
-8. **The basis is cached across the recall trajectory** in production
+11. **The basis is cached across the recall trajectory** in production
    (§1.4). Recomputing it per step would make the harness's multistep numbers
    describe a system that does not exist.
-9. **Never compare across env draws.** Two encoders, one env list, one seed.
+12. **Never compare across env draws.** Two encoders, one env list, one seed.
