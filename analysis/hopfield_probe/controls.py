@@ -212,6 +212,38 @@ def _empty_memory_q(
 # 3.1a rescue
 # ---------------------------------------------------------------------------
 
+
+# Sec 5.7 Table B corrupts a cue to this cosine and asks whether recall pulls it
+# back. 0.70 is far enough out that an identity map cannot fake a recovery.
+CORRUPT_COS = 0.70
+
+
+def _recovery(mem, cfg, rng: np.random.RandomState) -> float:
+    """Median cos-to-original after recalling a cue corrupted to CORRUPT_COS.
+
+    The corruption is a random orthogonal perturbation rather than noise on the
+    raw vector, so the starting cosine is exactly CORRUPT_COS for every pattern
+    and cells are comparable across the grid.
+    """
+    from .harness import recall_trajectory
+
+    Z = mem.Z
+    if Z.shape[0] == 0:
+        return float("nan")
+    Zn = Z / np.linalg.norm(Z, axis=1, keepdims=True).clip(1e-12)
+    noise = rng.randn(*Zn.shape)
+    noise -= (np.sum(noise * Zn, axis=1, keepdims=True)) * Zn      # orthogonal
+    noise /= np.linalg.norm(noise, axis=1, keepdims=True).clip(1e-12)
+    cues = CORRUPT_COS * Zn + np.sqrt(1 - CORRUPT_COS ** 2) * noise
+    cues = (cues / np.linalg.norm(cues, axis=1, keepdims=True)
+            ).astype(np.float32)
+
+    s_last = max(cfg.steps)
+    out = recall_trajectory(mem, cues, (s_last,), cfg)[s_last]
+    out = out / np.linalg.norm(out, axis=1, keepdims=True).clip(1e-12)
+    return float(np.median(np.sum(out * Zn, axis=1)))
+
+
 def run_rescue(
     field: Field, worlds: list[World], cfg: ProbeConfig, *, progress=None,
 ) -> dict:
@@ -257,8 +289,15 @@ def run_rescue(
 
     dim = field.embed_dim
     scales = [1.0 / dim, 1.0 / np.sqrt(dim), 1.0]
-    betas = [1.0, 10.0, 100.0, 1000.0, 10000.0]
+    # The encoder's own gain is in the grid because production sets
+    # beta = encoder_gain: without it the sweep shows the alternatives without
+    # showing what they are alternatives to. D^1.5 is the saturation threshold
+    # (the tanh argument is beta * D^-1.5 at unit-norm storage), so it is the
+    # one value the argument says should matter.
+    betas = sorted({1.0, 10.0, 100.0, 1000.0, 10000.0,
+                    float(field.gain), float(dim ** 1.5)})
     long_steps = tuple(sorted(set(cfg.steps) | {25, 50}))
+    prod_scale = 1.0 / dim
 
     rows = []
     ks = [k for k in cfg.k_values if k <= 10] or [cfg.k_values[0]]
@@ -274,7 +313,7 @@ def run_rescue(
                         steps=long_steps,
                     )
                     for k in ks:
-                        fsc, mpc = [], []
+                        fsc, mpc, rec = [], [], []
                         for w in use_worlds:
                             rng = np.random.RandomState(w.seed * 5 + k)
                             mem = build_memory(field, w, k, sub, rng)
@@ -282,6 +321,7 @@ def run_rescue(
                             last = fp[str(long_steps[-1])]
                             fsc.append(last["frac_self_consistent"])
                             mpc.append(last["mean_pairwise_cos"])
+                            rec.append(_recovery(mem, sub, rng))
                         rows.append({
                             "zero_diag": zero_diag, "alpha": alpha,
                             "scale": float(scale), "beta": float(beta),
@@ -289,6 +329,18 @@ def run_rescue(
                             "steps": int(long_steps[-1]),
                             "frac_self_consistent": float(np.mean(fsc)),
                             "mean_pairwise_cos": float(np.nanmean(mpc)),
+                            # Sec 5.7 Table B: a cue corrupted to cos 0.70,
+                            # recalled. Above 0.70 the dynamics pulled it back.
+                            "recovery": float(np.mean(rec)),
+                            # The anchor: what the live stack actually runs.
+                            "is_production": bool(
+                                zero_diag and alpha == 1.0
+                                and abs(scale - prod_scale) < 1e-12
+                                and abs(beta - float(field.gain)) < 1e-9),
+                            # Tanh argument per coordinate. Below ~1 the recall
+                            # is a linear matched filter whatever else is set.
+                            "tanh_arg": float(beta * scale * dim
+                                              / np.sqrt(dim)),
                         })
                     if progress:
                         progress(
@@ -298,11 +350,27 @@ def run_rescue(
     # Success is BOTH: patterns stay on themselves AND different cues do not
     # collapse onto one vector. Either alone is meaningless -- a single global
     # attractor scores a perfect frac_self_consistent at K=1.
+    # K=1 is excluded, not counted as a pass. With one stored pattern
+    # frac_self_consistent is trivially 1.0 (argmax over a single candidate)
+    # and mean_pairwise_cos is undefined, so every K=1 cell would "succeed"
+    # vacuously -- 166 of 378 in the first run of this sweep, which is exactly
+    # the degenerate-metric trap Sec 3.1a warns about. A claim of attractor
+    # behaviour needs at least two memories to be about anything.
     good = [r for r in rows
-            if r["frac_self_consistent"] > 0.95
-            and (not np.isfinite(r["mean_pairwise_cos"])
-                 or r["mean_pairwise_cos"] < 0.5)]
+            if r["k"] > 1
+            and r["frac_self_consistent"] > 0.95
+            and np.isfinite(r["mean_pairwise_cos"])
+            and r["mean_pairwise_cos"] < 0.5
+            # Third condition, and the one that separates a basin from an
+            # identity map: a corrupted cue has to come back.
+            and r["recovery"] > CORRUPT_COS + 0.1]
+    prod = [r for r in rows if r["is_production"]]
     return {"rows": rows, "n_success": len(good),
+            "corrupt_cos": CORRUPT_COS,
+            "production": prod,
+            "betas": [float(b) for b in betas],
+            "scales": [float(s_) for s_ in scales],
+            "embed_dim": int(dim),
             "success": sorted(good, key=lambda r: -r["frac_self_consistent"])[:20],
             "note": "Not the production operating point. Not encoder-quality "
                     "numbers. A setting that works here still has to re-run "
