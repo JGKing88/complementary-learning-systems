@@ -391,7 +391,12 @@ case "$VARIANT" in
   #    out of the PPO surrogate by policy_action_mask, so they change which
   #    states are visited, never the gradient. Worth one arm because it is the
   #    knob that governs whether the goal gets found at all early on.
-  p11_cur|p11_tp|p11_eps)
+  # p11_cur_tp crosses the two arms that are actually well motivated. It is the
+  # one combination worth paying for: if either alone shortens the chaotic
+  # phase, the cross says whether they address the same bottleneck (no further
+  # gain) or different ones (additive). The epsilon arm is not crossed -- a
+  # knob that cannot touch the gradient does not earn a cell.
+  p11_cur|p11_tp|p11_eps|p11_cur_tp)
     SCHEDULE=${SCHEDULE:-'exploit:2000'}
     ENVS_PER_WORLD=20; BATCH_ENVS=64
     EPSILON_EXPLORE=0.1; GOAL_REWARD=2.0
@@ -408,6 +413,11 @@ case "$VARIANT" in
                DISTRACTOR_CURRICULUM_UPDATES=400 ;;
       p11_tp)  TIME_PENALTY=0.02 ;;
       p11_eps) EPSILON_EXPLORE=0.3; EPSILON_ANNEAL_UPDATES=600 ;;
+      p11_cur_tp)
+               N_TRAIN_DISTRACTORS_MAX=0; N_TRAIN_DISTRACTORS_MAX_END=10
+               N_TRAIN_EMP_DISTRACTORS_MAX=0; N_TRAIN_EMP_DISTRACTORS_MAX_END=10
+               DISTRACTOR_CURRICULUM_UPDATES=400
+               TIME_PENALTY=0.02 ;;
     esac
     ;;
 
