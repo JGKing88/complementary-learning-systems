@@ -112,6 +112,41 @@ def ref_k(res: dict) -> str:
     return str(kk[len(kk) // 2])
 
 
+
+# ---------------------------------------------------------------------------
+# One page, every encoder
+# ---------------------------------------------------------------------------
+
+def label_of(res: dict) -> str:
+    return str(res["header"].get("label", "encoder"))
+
+
+def multi_page(title: str, active: str, results: list[dict], src: str,
+               body_fn) -> str:
+    """Stack one body per encoder behind ``data-encoder``.
+
+    Duplicating the heading and lede per encoder costs nothing visible -- only
+    one encoder's block is displayed at a time -- and it keeps every page
+    builder a pure function of one result, which is what makes them testable.
+    """
+    heads = "".join(
+        f'<span class="enc-hdr" data-encoder="{esc(label_of(r))}">'
+        f'{run_header(r["header"])}</span>' for r in results)
+    bodies = "".join(
+        f'<div data-encoder="{esc(label_of(r))}">{body_fn(r)}</div>'
+        for r in results)
+    return shell(title, active, heads, encoder_filter(results) + bodies, src)
+
+
+def encoder_filter(results: list[dict]) -> str:
+    """The encoder selector. Omitted for a single-encoder run, where a
+    one-option control is chrome that does nothing."""
+    if len(results) < 2:
+        return ""
+    return filter_row([("encoder", "encoder",
+                        [(label_of(r), label_of(r)) for r in results])])
+
+
 # ---------------------------------------------------------------------------
 # Pages
 # ---------------------------------------------------------------------------
@@ -238,7 +273,7 @@ def _kv_extra(results: list[dict]) -> str:
     return f'<span class="kv">also <b>{names}</b></span>'
 
 
-def page_test_a(res: dict, src: str) -> str:
+def _body_test_a(res: dict) -> str:
     A = res["test_a"]
     kk, ss = ks(res), steps(res)
     rs = ss[0]
@@ -295,7 +330,7 @@ def page_test_a(res: dict, src: str) -> str:
             width=430, height=250)))
 
     map_html = ""
-    for m in A["k"][ref_k(res)].get("maps", [])[:2]:
+    for m in A["k"][ref_k(res)].get("maps", [])[:1]:
         size = m["size"]
         rd = [[None] * size for _ in range(size)]
         oc = [[0] * size for _ in range(size)]
@@ -391,11 +426,10 @@ what makes this a position readout rather than a K-way choice.</p>
 <div class="grid2">{card("", polar)}{card("", polar_min)}</div>
 {conf_html}
 """
-    return shell("Hopfield probe · Test A", "test_a.html",
-                 run_header(res["header"]), body, src)
+    return body
 
 
-def page_test_b(res: dict, src: str) -> str:
+def _body_test_b(res: dict) -> str:
     BC = res["test_bc"]
     kk, ss = ks(res), steps(res)
     ch = res["test_bc"]["chance"]
@@ -448,23 +482,24 @@ def page_test_b(res: dict, src: str) -> str:
             mark=(size - 1, size - 1), counts=m["n"], cell=6,
             x_origin=-(size - 1), y_origin=-(size - 1),
             xlabel="dx to goal", ylabel="dy to goal")))
-    maps_abs = []
-    for s in ss:
-        m = grid(rk, s)["map_goal_relative_abs"]
-        size = (len(m["mean"]) + 1) // 2
-        maps_abs.append((f"steps = {s}", heatmap(
-            m["mean"], kind="sequential", unit="deg",
-            mark=(size - 1, size - 1), counts=m["n"], cell=6,
-            x_origin=-(size - 1), y_origin=-(size - 1))))
-    env_abs = []
-    for s in ss:
-        m = grid(rk, s)["map_env_absolute_abs"]
-        env_abs.append((f"steps = {s}", heatmap(
-            m["mean"], kind="sequential", unit="deg", counts=m["n"], cell=9,
-            xlabel="x", ylabel="y")))
+    # These two are drawn at the reference step only. The steps axis belongs
+    # to the signed map above, where watching the field degrade is the point;
+    # |err| restates that map's magnitude, and "is q worse near walls" is a
+    # property of the encoder rather than of the step count.
+    s0 = ss[0]
+    m = grid(rk, s0)["map_goal_relative_abs"]
+    size = (len(m["mean"]) + 1) // 2
+    maps_abs = [(f"steps = {s0}", heatmap(
+        m["mean"], kind="sequential", unit="deg",
+        mark=(size - 1, size - 1), counts=m["n"], cell=6,
+        x_origin=-(size - 1), y_origin=-(size - 1)))]
+    m = grid(rk, s0)["map_env_absolute_abs"]
+    env_abs = [(f"steps = {s0}", heatmap(
+        m["mean"], kind="sequential", unit="deg", counts=m["n"], cell=9,
+        xlabel="x", ylabel="y"))]
 
     ex = ""
-    for m in BC["k"][rk].get("example_maps", [])[:2]:
+    for m in BC["k"][rk].get("example_maps", [])[:1]:
         size = m["size"]
         grid2 = [[m["signed_err_deg"][i * size + j] for j in range(size)]
                  for i in range(size)]
@@ -543,11 +578,10 @@ true bearing to the goal. This is the floor Test C is measured against.</p>
            "North axis is that asymmetry showing up.")}
 </div>
 """
-    return shell("Hopfield probe · Test B", "test_b.html",
-                 run_header(res["header"]), body, src)
+    return body
 
 
-def page_test_c(res: dict, src: str) -> str:
+def _body_test_c(res: dict) -> str:
     BC = res["test_bc"]
     kk, ss = ks(res), steps(res)
     ch = BC["chance"]
@@ -642,11 +676,10 @@ reward-shaping knob that can change between training runs, and no encoder
 metric may depend on the current value of one; the near-goal region is reported
 in full with its per-bin n.</p>
 """
-    return shell("Hopfield probe · Test C", "test_c.html",
-                 run_header(res["header"]), body, src)
+    return body
 
 
-def page_test_d(res: dict, src: str) -> str:
+def _body_test_d(res: dict) -> str:
     D = res["test_d"]
     BC = res.get("test_bc", {})
     kk, ss = ks(res), steps(res)
@@ -734,11 +767,10 @@ that only succeeds from nearby posts an excellent one.</p>
 <h2>3 &middot; Sink inventory</h2>
 {card("", inv)}
 """
-    return shell("Hopfield probe · Test D", "test_d.html",
-                 run_header(res["header"]), body, src)
+    return body
 
 
-def page_controls(res: dict, src: str) -> str:
+def _body_controls(res: dict) -> str:
     C = res["controls"]
     ref = C["reference"]
 
@@ -841,11 +873,10 @@ catch.</p>
 <h2>4 &middot; Is the tanh doing anything?</h2>
 {hist_html}
 """
-    return shell("Hopfield probe · controls", "controls.html",
-                 run_header(res["header"]), body, src)
+    return body
 
 
-def page_rescue(res: dict, src: str) -> str:
+def _body_rescue(res: dict) -> str:
     R = res["rescue"]
     rows = R["rows"]
     by_bs: dict[float, dict] = {}
@@ -898,8 +929,7 @@ scores a perfect self-consistency at K=1.</p>
 <h2>Settings that worked</h2>
 {card("", succ)}
 """
-    return shell("Hopfield probe · rescue", "rescue.html",
-                 run_header(res["header"]), body, src)
+    return body
 
 
 # ---------------------------------------------------------------------------
@@ -925,18 +955,22 @@ def build(result_dir: Path, out_dir: Path | None = None) -> Path:
     src = str(result_dir)
     primary = results[0]
 
+    def have(key):
+        return [r for r in results if key in r]
+
     pages = {"index.html": page_index(results, src)}
-    if "test_a" in primary:
-        pages["test_a.html"] = page_test_a(primary, src)
-    if "test_bc" in primary:
-        pages["test_b.html"] = page_test_b(primary, src)
-        pages["test_c.html"] = page_test_c(primary, src)
-    if "test_d" in primary:
-        pages["test_d.html"] = page_test_d(primary, src)
-    if "controls" in primary:
-        pages["controls.html"] = page_controls(primary, src)
-    if "rescue" in primary:
-        pages["rescue.html"] = page_rescue(primary, src)
+    for key, fname, title, fn in (
+        ("test_a", "test_a.html", "Hopfield probe · Test A", _body_test_a),
+        ("test_bc", "test_b.html", "Hopfield probe · Test B", _body_test_b),
+        ("test_bc", "test_c.html", "Hopfield probe · Test C", _body_test_c),
+        ("test_d", "test_d.html", "Hopfield probe · Test D", _body_test_d),
+        ("controls", "controls.html", "Hopfield probe · controls",
+         _body_controls),
+        ("rescue", "rescue.html", "Hopfield probe · rescue", _body_rescue),
+    ):
+        rs = have(key)
+        if rs:
+            pages[fname] = multi_page(title, fname, rs, src, fn)
 
     for name, html_text in pages.items():
         (out_dir / name).write_text(html_text)
@@ -949,13 +983,30 @@ def build(result_dir: Path, out_dir: Path | None = None) -> Path:
     for name, html_text in pages.items():
         sid = name.replace(".html", "")
         label = dict((f, n) for f, n in _TAB_NAMES).get(name, sid)
-        sections.append((sid, label, _body_of(html_text)))
-    hdr = run_header(primary["header"], _kv_extra(results))
+        # The encoder selector is page-level furniture; stacked sections would
+        # otherwise carry one identical copy each.
+        sections.append((sid, label, _strip_encoder_filter(_body_of(html_text))))
+    # Per-encoder headers, so the provenance bar tracks the selection instead
+    # of always reading the first encoder's gain and fwhm.
+    hdr = "".join(
+        f'<span class="enc-hdr" data-encoder="{esc(label_of(r))}">'
+        f'{run_header(r["header"])}</span>' for r in results)
+    body_prefix = encoder_filter(results)
+    stacked = [(sid, lbl, (body_prefix + inner) if i == 0 else inner)
+               for i, (sid, lbl, inner) in enumerate(sections)]
     (out_dir / "report.html").write_text(
-        single_page("Hopfield probe", hdr, sections, src))
+        single_page("Hopfield probe", hdr, stacked, src))
     (out_dir / "report.fragment.html").write_text(
-        single_page("Hopfield probe", hdr, sections, src, fragment=True))
+        single_page("Hopfield probe", hdr, stacked, src, fragment=True))
     return out_dir
+
+
+def _strip_encoder_filter(body: str) -> str:
+    """Remove a page-level encoder selector from a stacked section."""
+    import re as _re
+    return _re.sub(
+        r'<div class="filters"><label>encoder <select data-key="encoder">'
+        r'.*?</select></label></div>', "", body, flags=_re.S)
 
 
 _TAB_NAMES = [

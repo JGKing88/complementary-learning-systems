@@ -294,7 +294,13 @@ def _table_from_series(x, series, xlabel, n_per_bin) -> str:
 
 # Above this many cells a heatmap is drawn as colour-bucketed run-length paths
 # with a coarse hit grid, rather than one <rect> per cell. See _run_length_cells.
-LARGE_MAP_CELLS = 4000
+#
+# 1200 puts the 39x39 goal-relative map on the batched path. Its hover
+# granularity becomes 2x2 cells, which is the right trade: that map is pooled
+# over every world and env, so a single goal-relative offset is not a thing a
+# reader needs to isolate, and per-cell rects cost ~4 MB across the step facets
+# and four encoders.
+LARGE_MAP_CELLS = 1200
 _BUCKETS = 24
 _HIT_BLOCKS = 24
 
@@ -345,8 +351,10 @@ def _hit_grid(matrix, counts, nx, ny, cell, ml, mt):
     which is also what keeps the interaction rule ("the hit target is bigger
     than the mark") true rather than nominally satisfied.
     """
-    bx = max(1, nx // _HIT_BLOCKS)
-    by = max(1, ny // _HIT_BLOCKS)
+    # Ceiling: dividing *into* at most _HIT_BLOCKS blocks per axis. Floor
+    # division gave a 39-wide map 39 blocks, i.e. no coarsening and no saving.
+    bx = max(1, -(-nx // _HIT_BLOCKS))
+    by = max(1, -(-ny // _HIT_BLOCKS))
     out = []
     for i0 in range(0, nx, bx):
         for j0 in range(0, ny, by):

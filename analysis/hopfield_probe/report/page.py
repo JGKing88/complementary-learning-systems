@@ -192,9 +192,11 @@ JS = r"""
       var key = sel.getAttribute('data-key');
       var val = sel.value;
       document.querySelectorAll('[data-' + key + ']').forEach(function (el) {
-        el.style.display =
-          (val === '*' || el.getAttribute('data-' + key) === val)
-            ? '' : 'none';
+        // A class, not inline display: clearing `style.display` would return
+        // the element to its tag default, not to what the stylesheet set --
+        // which flattens the flex header and the grid cards.
+        el.classList.toggle('filtered-out',
+          !(val === '*' || el.getAttribute('data-' + key) === val));
       });
     }
     sel.addEventListener('change', apply);

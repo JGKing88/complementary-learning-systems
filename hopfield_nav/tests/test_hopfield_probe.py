@@ -495,3 +495,54 @@ def test_suite_runs_and_the_report_builds(tmp_path):
     assert targets
     for t in targets:
         assert f'id="{t}"' in frag, f"tab #{t} has no section"
+
+
+@pytest.mark.slow
+def test_every_page_carries_every_encoder(tmp_path):
+    """A comparison run must not render one encoder everywhere but the index.
+
+    The test pages were built from ``results[0]`` alone, so a four-encoder run
+    showed only the first outside the overview -- which is what the viz spec's
+    encoder filter exists to prevent, and is invisible unless something counts
+    the blocks.
+    """
+    from analysis.hopfield_probe.harness import write_json
+    from analysis.hopfield_probe.report.build import build
+
+    _vh, field, npos = _tiny(lambdas=(4, 5), fwhm=0.25, out_dim=16)
+    cfg = ProbeConfig(Npos=npos, env_size=4, n_worlds=1, n_envs_per_world=3,
+                      k_values=(1, 3), steps=(1, 2), n_alias=20,
+                      n_cont_samples=200, n_cont_annulus=50, cos_chunk=64)
+    cfg.validate()
+    worlds = sample_worlds(cfg)
+
+    from analysis.hopfield_probe.attractor import run_test_a
+    from analysis.hopfield_probe.qfield import run_tests_bc
+    payload = {"config": cfg.to_json(),
+               "test_a": run_test_a(field, worlds, cfg),
+               "test_bc": run_tests_bc(field, worlds, cfg)}
+    labels = ["alpha", "beta-2", "gamma"]
+    for lab in labels:
+        write_json(tmp_path / f"{lab}.json",
+                   {**payload,
+                    "header": {"label": lab, "gain": 2.0, "fwhm_ratio": 0.25,
+                               "out_dim": 16, "n_params": 1, "lambdas": [4, 5],
+                               "unique_radius": None}})
+    out = build(tmp_path)
+
+    for name in ("test_a.html", "test_b.html", "test_c.html"):
+        text = (out / name).read_text()
+        for lab in labels:
+            assert f'<div data-encoder="{lab}"' in text, f"{name}: no {lab}"
+            assert f'data-encoder="{lab}"' in text
+        opts = re.findall(r'data-key="encoder">(.*?)</select>', text, re.S)
+        assert opts, f"{name}: no encoder selector"
+        for lab in labels:
+            assert f'value="{lab}"' in opts[0]
+
+    # The one-file variant: one selector, and a header per encoder so the
+    # provenance bar tracks the selection.
+    frag = (out / "report.fragment.html").read_text()
+    assert len(re.findall(r'data-key="encoder"', frag)) == 1
+    for lab in labels:
+        assert f'<span class="enc-hdr" data-encoder="{lab}"' in frag
