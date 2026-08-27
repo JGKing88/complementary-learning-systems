@@ -217,15 +217,26 @@ def run_rescue(
 ) -> dict:
     """Sec 3.1a -- can *any* setting give attractor behaviour? Off by default.
 
-    These are not the production operating point and these numbers are not
-    encoder-quality numbers. They answer a different question: whether the
-    Hopfield layer is fixable at all.
+    **The headline answer is already known, and it is no.**
+    ``docs/EXPERIMENTS_NAV_P2.md`` Sec 5.4-5.5 (unmerged ``nav-tri-metric``
+    branch, ``analysis/nav_p2/gain_sweep.py``) swept ``beta`` over six orders of
+    magnitude: one attractor everywhere up to 1e5, and although 1e6 finally
+    saturates the tanh into 8 attractors, **the stored patterns are not fixed
+    points at any gain** -- max cos-to-self 0.185 -- and those attractors sit at
+    |cos| 0.66 from the nearest stored pattern. A saturating tanh puts fixed
+    points at hypercube corners; classical Hopfield works because its patterns
+    *are* corners, and these are continuous encoder outputs. Attractor
+    retrieval needs binarised patterns or a modern softmax Hopfield -- a
+    different network, not a hyper-parameter.
 
-    ``scale`` is the main suspect, not ``beta``. ``scale`` is what makes
-    ``||W x|| ~ 1e-3`` and therefore what makes the ``tanh`` inert, so raising
-    it is the one change that puts the nonlinearity into its working range.
-    Only the **product** ``beta * scale`` matters to the argument of the
-    ``tanh``, so the sweep is reported against that product.
+    What this sweep is still for: re-verifying that on an encoder the earlier
+    one never saw. The transition depends on pattern norms and overlaps, which
+    are encoder properties, so a positive result here is a reason to re-check
+    ``nav_p2``'s conclusion rather than a new operating point.
+
+    Only the **product** ``beta * scale`` reaches the argument of the ``tanh``
+    -- ``beta * W`` is invariant under ``(p -> lambda p, beta -> beta/lambda^2)``
+    -- so the sweep is reported against that product rather than either knob.
     """
     from .attractor import fixed_point_probe
 

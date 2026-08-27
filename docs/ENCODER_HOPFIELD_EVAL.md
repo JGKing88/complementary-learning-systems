@@ -309,12 +309,48 @@ Swept over `steps ∈ {1, 2, 3, 5, 15}`. The headline is
 **`frac_self_consistent(K, steps)`** = fraction of stored patterns whose recall
 stays nearest to themselves.
 
+> **It is weaker than it looks — read `residual_mean` beside it.**
+> `frac_self_consistent` is an argmax over the stored set, so it stays at 1.0
+> while *every* pattern decays together: the ranking survives long after the
+> vectors have left. At production scale it reads 1.000 through `steps=5` and
+> 0.90 at 15, while `residual_mean` over the same range goes 0.006 → 0.269.
+> The residual is the honest number.
+>
+> `EXPERIMENTS_NAV_P2.md` §5.4 (unmerged `nav-tri-metric`) measured cos-to-self
+> directly and found it decaying 0.994 → 0.154 by step 20: **stored patterns
+> are not fixed points at all**. A high `frac_self_consistent` here does not
+> contradict that and must not be quoted as if it did.
+
 **Collapse diagnostic.** Alongside it, report `mean_pairwise_cos(K, steps)` —
 the mean cosine between the recall endpoints of *different* cues. If §1.3 is
 right this rises toward 1 as `steps` grows: every cue landing on the same
 vector. One number that says "the dynamics have one attractor, not `K`".
 
 ### 3.1a Rescue mode — can *any* setting give attractor behaviour?
+
+> **This question has already been answered, and the answer is no.**
+> `docs/EXPERIMENTS_NAV_P2.md` §5.4–5.5 on the unmerged `nav-tri-metric` branch
+> swept `beta` over **six orders of magnitude** with normalisation on and off
+> (`analysis/nav_p2/gain_sweep.py`), 11 stored patterns, D=1024. Every setting
+> up to `beta = 1e5` gives **one** attractor. At `beta = 1e6` the
+> pre-activation finally reaches 22, the tanh genuinely saturates, and 8
+> attractors appear — but **the stored patterns are not fixed points at any
+> gain** (max cos-to-self 0.185, even deeply saturated), and those high-gain
+> attractors sit at |cos| 0.66 from the nearest stored pattern.
+>
+> The reason is structural, not a tuning failure: a saturating tanh puts fixed
+> points at hypercube *corners*, and classical Hopfield works because its
+> patterns **are** binary corners. These are continuous encoder outputs, so
+> saturation necessarily moves them. Getting attractor retrieval needs
+> binarised patterns or an architecture whose fixed points are the stored
+> patterns by construction (modern softmax Hopfield) — **a different network,
+> not a hyper-parameter.**
+>
+> So the `--rescue` sweep below is *not* a way to discover a better setting.
+> It survives for one narrower job: re-verifying the claim on an encoder the
+> earlier sweep never saw, since the transition depends on the pattern norms
+> and overlaps, which are encoder properties. Read a positive result here as a
+> reason to re-check `nav_p2`'s conclusion, not as a new operating point.
 
 **Off by default.** Everything else in this document evaluates the encoder at
 the production operating point. This mode asks a different question — whether
