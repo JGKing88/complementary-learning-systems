@@ -419,10 +419,57 @@ vector. One number that says "the dynamics have one attractor, not `K`".
 > one. `ProbeConfig.beta_override` already does this; nothing in the training
 > stack does.
 >
-> Caveats: one encoder, one seed, 25 patterns, 3 worlds. `β = 1e6` is far
-> outside anything tested end-to-end. And an inference-time gain change alters
-> every embedding a trained policy was fitted to, so "gain 300 is better" is a
-> statement about the *encoder*, not a free win for an existing checkpoint.
+> ### "But a saturated recall returns a corner, not the stored pattern"
+>
+> Correct, and it is the right objection: at saturation
+> `normalize(tanh(β·Wx)) → sign(Wx)/√D`, and the stored pattern is only cos
+> 0.960 from its own binarisation. The residual has norm ≈ 0.28 against a
+> one-cell displacement of 0.037 — **7× larger than the signal it would
+> corrupt.** It should wreck the readout.
+>
+> It does not, because `q` is not the displacement; it is the displacement
+> *projected onto a 2-D local basis*, and the residual is nearly orthogonal to
+> that plane (`contamination_check.py`, one step):
+>
+> | `β` | cos(recall, `z_goal`) | \|signal\| in plane | \|contam\| in plane | ratio | q vs oracle q |
+> |---|---|---|---|---|---|
+> | 300 | 0.981 | 0.2395 | 0.0224 | 0.094 | 4.85° |
+> | 100 000 | 0.985 | 0.2395 | 0.0275 | 0.115 | 4.24° |
+> | 1 000 000 | 0.967 | 0.2395 | 0.0290 | 0.121 | 4.44° |
+>
+> A 0.28-norm residual in 1024-D projects onto a 2-D plane at ~`√(2/D)·0.28`
+> ≈ 0.012; measured 0.029, so mostly-but-not-entirely orthogonal. The cost is
+> **~4.5° of q rotation — and the same 4.5° is already there at β=300**, where
+> it comes from cross-talk rather than binarisation. Raising β does not make
+> the recalled pattern meaningfully worse *for the readout*.
+>
+> ### The payoff, and the catch that nearly cancelled it
+>
+> At **one** step β barely matters — acc45 is 99.6% from β=300 to 1e6 — and
+> production takes one step. So on its own, "raise β" changes nothing anyone
+> can spend. The value is entirely in what it does to the *steps* axis
+> (`steps_beta_check.py`, acc45 %):
+>
+> | | s=1 | s=2 | s=3 | s=5 | s=10 | s=20 |
+> |---|---|---|---|---|---|---|
+> | gain 100, β 100 *(production)* | 96.8 | 94.3 | 91.8 | 87.2 | 81.0 | 67.3 |
+> | gain 300, β 300 *(linear)* | 99.6 | 97.6 | 96.4 | 93.8 | 89.3 | 75.4 |
+> | **gain 300, β 1e6** *(saturated)* | **99.6** | **99.5** | **99.5** | **99.5** | **99.5** | **99.5** |
+>
+> **Saturating the recall stops the decay dead.** Flat to 20 steps, against a
+> fall to 67–75% in the linear regime. So §4's headline — *the readout degrades
+> monotonically with recall depth* — and `nav_p2` §5.4's version of it are
+> properties of the **linear regime only**, not of this architecture. The
+> memory starts actually holding what was stored.
+>
+> That also rehabilitates the multistep channels: at β=1e6 the `s = 1, 2, 3`
+> inputs are 99.5% each — redundant, but no longer *degraded copies*.
+>
+> Caveats: one encoder, one seed, 25 patterns, 3 worlds, K=5. `β = 1e6` is far
+> outside anything tested end-to-end. An inference-time gain change alters every
+> embedding a trained policy was fitted to, so none of this is a drop-in for an
+> existing checkpoint — it is a statement about the encoder and the recall
+> dynamics, and the next step is a training run, not a config edit.
 >
 > **The untrained encoder's 0.999 is vacuous — it has collapsed.** Its
 > "patterns" are one vector stored 25 times, so `W` is rank-1 along that
