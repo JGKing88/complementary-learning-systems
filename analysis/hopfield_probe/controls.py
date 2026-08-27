@@ -337,10 +337,18 @@ def run_rescue(
                                 zero_diag and alpha == 1.0
                                 and abs(scale - prod_scale) < 1e-12
                                 and abs(beta - float(field.gain)) < 1e-9),
-                            # Tanh argument per coordinate. Below ~1 the recall
-                            # is a linear matched filter whatever else is set.
-                            "tanh_arg": float(beta * scale * dim
-                                              / np.sqrt(dim)),
+                            # Two honest coordinates. ||W x|| ~ scale for
+                            # unit-norm patterns, so the recall term's norm
+                            # relative to a unit cue is beta*scale (nav_p2's
+                            # loop gain), and the PER-COORDINATE tanh argument
+                            # is that over sqrt(D). The regime boundary is
+                            # tanh_u ~ 1, i.e. beta*scale ~ sqrt(D).
+                            "loop_gain": float(beta * scale),
+                            "tanh_u": float(beta * scale / np.sqrt(dim)),
+                            # Kept for continuity with the 2026-08-27 tables,
+                            # which reported this under the wrong name: it is
+                            # D * tanh_u, not the tanh argument.
+                            "sweep_coord": float(beta * scale * np.sqrt(dim)),
                         })
                     if progress:
                         progress(

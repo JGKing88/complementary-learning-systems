@@ -19,7 +19,7 @@ moved one:
 
 | condition | knob | production | what it buys |
 |---|---|---|---|
-| loop gain / saturation | `β` *or* storage `scale` (same knob twice) | `tanh_arg` 0.12–3.1 | a nonzero fixed point instead of decay |
+| loop gain / saturation | `β` *or* storage `scale` (same knob twice) | `β·s` 0.004–0.10, tanh arg `u` 1e-4–3e-3 | a nonzero fixed point instead of decay |
 | patterns near a hypercube corner | encoder `gain` only | cos-to-binarisation 0.81–0.90 | that the fixed point is *your* memory |
 
 Raising `β` alone is a **net loss** (§2). Raising both together works, unevenly
@@ -31,7 +31,7 @@ Raising `β` alone is a **net loss** (§2). Raising both together works, unevenl
 **and** saturate `β` alongside it. Not "use gain 300", not "raise β" alone, and
 **not** the rescue sweep's `alpha` optimum on its own — alpha is a time
 constant that only means anything once the loop gain makes the recall term
-comparable to the cue (§4.2–4.3).
+comparable to the cue (§4.2–4.3, §7).
 
 **Best measured setting: v35 at gain 100 with β=1e6** (§3.1) — acc45 100.0% at
 every step count from 1 to 15, retrieval 97.5%, reach 99.6%, for 1.2° of mean
@@ -127,11 +127,11 @@ a cue corrupted to cos 0.70; **below 0.70 means recall made it worse.**
 
 **Production anchor** — degrades cues, worse with load:
 
-| encoder | `tanh_arg` | K=3 | K=5 | K=10 |
+| encoder | loop gain `β·s` | tanh arg `u` | K=3 | K=5 | K=10 |
 |---|---|---|---|---|
-| v35 | 0.116 | +0.698 | +0.543 | **+0.269** |
-| L7-s42 | 3.12 | +0.718 | +0.443 | **+0.218** |
-| L7-s43 | 3.12 | +0.700 | +0.436 | **+0.222** |
+| v35 | 0.0036 | 1.1e-4 | +0.698 | +0.543 | **+0.269** |
+| L7-s42 | 0.098 | 3.1e-3 | +0.718 | +0.443 | **+0.218** |
+| L7-s43 | 0.098 | 3.1e-3 | +0.700 | +0.436 | **+0.222** |
 
 **Best passing cell** — holds to K=10:
 
@@ -142,12 +142,19 @@ a cue corrupted to cos 0.70; **below 0.70 means recall made it worse.**
 | L7-s43 | 10 / α0.1 / +0.971 | 10 / α0.1 / +0.962 | 1 / α0.5 / **+0.939** |
 | untrained | none passed | none passed | none passed |
 
-Recovery pooled by `tanh_arg` peaks in the **1–10** band for all three trained
-encoders (0.72–0.76) and falls at both ends. Two routes reach it —
-`β=100, scale=1/D` and `β=1, scale=1/√D` — which is the
+Recovery pooled by the sweep coordinate `β·s·√D` peaks in its **1–10** band
+for all three trained encoders (0.72–0.76) and falls at both ends. Two routes
+reach it — `β=100, scale=1/D` and `β=1, scale=1/√D` — which is the
 `(p → λp, β → β/λ²)` invariance showing up in the data.
 
-**The L7 pair is already inside the optimal `tanh_arg` band at β=gain=100**, so
+> **Units, corrected.** These tables originally called `β·s·√D` the "tanh
+> argument". It is **D times** the per-coordinate argument `u = β·s/√D`, so the
+> 1–10 band is `u` = 1e-3 to 1e-2 — firmly **linear**, not partial saturation
+> as the name implied (§7). The coordinate is monotonic in `β·s` so every
+> ranking here stands; only the regime label was wrong. Later runs emit
+> `loop_gain` and `tanh_u` instead.
+
+**The L7 pair is already inside the optimal band at β=gain=100**, so
 on this test their binding knob looks like `alpha`, not the loop gain — a
 different knob from the one this campaign spent most of its time on.
 
@@ -172,7 +179,7 @@ recovery, never one.
 
 ### 4.2 Rescue's optimum does not transfer — alpha 0.5 on the full suite
 
-§4 said the L7 pair's binding knob is `alpha`, since their `tanh_arg` is
+§4 said the L7 pair's binding knob is `alpha`, since their loop gain is
 already in the optimal band. Tested directly — L7-s42, `alpha=0.5`, nothing
 else changed:
 
@@ -210,7 +217,7 @@ three-part criterion missed. The lesson is not a fourth criterion: it is that
 **rescue's cue distribution is unrepresentative of the task, so its optima are
 hypotheses to test on the full suite, never recommendations.**
 
-## 4.3 The alpha sweep — a time constant, not a destroyer
+### 4.3 The alpha sweep — a time constant, not a destroyer
 
 §4.2 said `alpha=0.5` "annihilates retrieval". Wrong, and the trajectory probe
 (§6) is what showed it. Sweeping alpha on L7-s42, `exact_hit` by step at K=5:
@@ -245,10 +252,10 @@ at `√D` = 32 and outweighs the cue 32:1, so alpha only becomes a real
 integration knob there.
 
 **Alpha and loop gain are not independent.** That is why the rescue sweep's
-alpha optimum always came paired with `tanh_arg` 1–10, and why lifting alpha
+alpha optimum always came paired with a higher loop gain, and why lifting alpha
 out of that pairing (§4) was meaningless.
 
-## 4.4 β sets step-invariance and nothing else
+### 4.4 β sets step-invariance and nothing else
 
 v35 at gain 300, β swept over three decades:
 
@@ -310,7 +317,60 @@ gone, it has not happened yet.
 `ProbeConfig.trajectory_steps` (default 15) runs it on `n_map_worlds`, since it
 costs one bank retrieval per step.
 
-## 7. Reproducing
+## 7. When is it an attractor network? The analysis
+
+Clean in both limits, not in the middle. `regime_check.py` checks the algebra
+against the measurements.
+
+**The regime parameter.** For unit-norm patterns `W = s(ZᵀZ − diag)` and
+`‖Wx‖ ≈ s` for a cue with support in the memory subspace, so per *coordinate*
+the tanh argument is
+
+    u = β·s/√D          transition at u ≈ 1, i.e. β·s ≈ √D
+
+At production's `s = 1/D` that is **β ≈ D^1.5 = 32 768**. The linear-regime
+prediction `‖tanh(βWx)‖ ≈ β·s` and the saturated cap `√D` match measurement to
+three significant figures:
+
+| | `u` | predicted | measured |
+|---|---|---|---|
+| v35 production | 1.1e-4 | 0.0033 | 0.0034 |
+| L7 production | 3.1e-3 | 0.0879 | 0.0881 |
+| v35 g100+β1e6 | 30.5 | 32.0 (`= √D`) | 31.96 |
+
+**Linear limit, `u ≪ 1`.** `x ← normalize(Wx)` is power iteration: the only
+fixed points are eigenvectors of `W`, and only the leading one is stable.
+Stored patterns are **saddles**. There is exactly one attractor and it is not a
+memory. Production sits here, at `u` = 1e-4 to 3e-3.
+
+**Saturated limit, `u ≫ 1`.** `x ← sign(Wx)/√D`, so a stored `z₁` is a fixed
+point iff both:
+
+- **(a)** `z₁` is itself a corner, `z₁ = sign(z₁)/√D` — an *encoder* property,
+  measured as cos-to-binarisation;
+- **(b)** `sign(Wz₁) = sign(z₁)` — a *capacity* property. For corner patterns
+  `Wz₁ = s[(1 − K/D)z₁ + Σ_{k≠1} c_k z_k]`, and a coordinate flips when the
+  cross-term beats the self-term there. Union-bounding over `D` coordinates
+  gives capacity ≈ **D/(2 ln D) = 74** at D=1024.
+
+That is the two-condition structure of §0 *derived* rather than observed, and
+(b) predicts a number it was not fitted to: `nav_p2` §5.7 measured capacity
+between **50 and 100**.
+
+**What the analysis does not cover.**
+
+1. The intermediate regime `u ≈ 1`. No clean treatment; partial saturation.
+2. **The continuous cell bank.** Retrieval is scored against non-corner cell
+   embeddings, so a binarised recall is far from *all* of them. This is what
+   collapsed `exact_hit` in §2 while the dynamics behaved exactly as predicted,
+   and the fixed-point analysis says nothing about it. It is the single largest
+   gap between "is an attractor network" and "is a useful position readout".
+3. The angular cost of raising encoder gain (§3.1) — that is the geometry of
+   the encoder's chart, not the Hopfield.
+4. The correlation penalty on (b). Overlap is measured (`alias_ceiling` 0.88)
+   but its effect on capacity is not derived.
+
+## 8. Reproducing
 
     ./analysis/hopfield_probe/run_probe.sh                      # Sec 1
     ... --beta 1e6                                              # Sec 2
@@ -323,4 +383,6 @@ costs one bank retrieval per step.
 Per-encoder diagnostics: `gain_gap_check.py`, `gain_probe_check.py`
 (`PROBE_CKPT` / `PROBE_GAINS`), `gain_crosstalk_check.py`, `crosstalk_check.py`,
 `localchart_check.py`, `contamination_check.py`, `steps_beta_check.py`,
-`decouple_check.py`, `corner_check.py`, `delta_scale_check.py`.
+`decouple_check.py`, `corner_check.py`, `delta_scale_check.py`,
+`traj_compare_check.py`, `regime_check.py` (Sec 7's algebra vs
+measurement).
