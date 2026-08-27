@@ -225,6 +225,21 @@ def run_navigate(
         float(agent.movement_log_std.detach().mean().item())
         if getattr(agent, "movement_log_std", None) is not None else None)
 
+    # A knob that is accepted, echoed and then silently discarded is the most
+    # expensive kind of bug this project has: `--freeze_log_std` did nothing on
+    # this trainer for the whole v35 lineage, and `--epsilon_explore 0.3` on an
+    # exploit-only schedule burned a run producing numbers bit-identical to its
+    # control. Epsilon reaches the ROLLOUT only through the explore regime --
+    # `exploit.py` hard-zeros it, because with the goal already in memory a
+    # random action is a wasted step rather than exploration.
+    if cfg.epsilon_explore > 0 and not any(
+            s.kind in ("explore", "interleave") for s in stages):
+        print(f"  WARNING: --epsilon_explore {cfg.epsilon_explore} is INERT for "
+              f"this schedule. Epsilon applies to explore rollouts only, and "
+              f"this run has none ({', '.join(s.kind for s in stages)}). The "
+              f"value will be ignored -- do not read it as an active knob.",
+              flush=True)
+
     # None follows the rollout length, which is what every run did before
     # `eval_max_steps` existed.
     eval_max_steps = (cfg.eval_max_steps if cfg.eval_max_steps is not None
