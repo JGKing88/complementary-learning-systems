@@ -1,12 +1,34 @@
 # Evaluating an encoder through its Hopfield readout
 
-Status: **spec**, 2026-08-27. Nothing here is implemented yet. This document
-fixes what gets measured, on what code path, with what conventions, and what
-the numbers are allowed to be compared against. Proposed code lands in
-`analysis/hopfield_probe/` (see §8) — `analysis/` because it needs both
-`encoder_training` and `hopfield_nav.world`, and `encoder_training` cannot
-import upward without a cycle (`hopfield_nav/encoder_io.py` already imports
-`encoder_training.models`).
+Status: **implemented**, 2026-08-27. This document fixes what gets measured,
+on what code path, with what conventions, and what the numbers are allowed to
+be compared against. The code is `analysis/hopfield_probe/` (§8) — `analysis/`
+because it needs both `encoder_training` and `hopfield_nav.world`, and
+`encoder_training` cannot import upward without a cycle
+(`hopfield_nav/encoder_io.py` already imports `encoder_training.models`).
+
+    ./analysis/hopfield_probe/run_probe.sh          # Sec 9 defaults
+    SCALE=fast ./analysis/hopfield_probe/run_probe.sh
+
+Tests are `hopfield_nav/tests/test_hopfield_probe.py` — under `hopfield_nav`
+rather than beside the package because `pyproject.toml` points pytest at
+`hopfield_nav/tests` only, and a test the gate does not run is not a gate.
+
+**Three things the implementation changed, and why.** They are corrections to
+this document, not deviations from it.
+
+1. **Test D's goal is absorbing.** Modelling arrival as the goal being a fixed
+   point of the field is wrong: the goal cell's own near-zero `q` classifies to
+   some cardinal and steps the agent straight back off it, so nothing is ever
+   terminal there and `reach_rate` collapses to ~0.03 no matter how good the
+   field is. An agent that arrives stops. See §7.
+2. **`wrap_to_pi` is `[-pi, pi)`**, not the `(-pi, pi]` §4 and §5 claimed. Only
+   the antipodal case can tell them apart and every aggregate takes `abs`, but
+   a sign-of-error plot would notice.
+3. **`--fwhm_fallback`, not `--fwhm_override`,** is the flag for
+   `untrained_mlp.pt` (§1.1). A fallback fills in only where the checkpoint
+   carries nothing, so one flag can cover a batch that mixes it with real
+   encoders without silently masking their stored values.
 
 ---
 

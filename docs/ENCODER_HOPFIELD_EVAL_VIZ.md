@@ -1,13 +1,21 @@
 # Encoder-Hopfield eval — reporting layer
 
-Status: **spec**, 2026-08-27. Companion to `ENCODER_HOPFIELD_EVAL.md`, which
-defines *what is measured*. This document defines *what the reader sees*, and
-it is deliberately separable: it depends on the test layer only through the
+Status: **implemented**, 2026-08-27. Companion to `ENCODER_HOPFIELD_EVAL.md`,
+which defines *what is measured*. This document defines *what the reader sees*,
+and it is deliberately separable: it depends on the test layer only through the
 result JSON, and the test layer never imports from it.
 
 The output is a set of **static, self-contained HTML pages** — one per test,
 plus an index — generated from saved results. No server, no build step, no
 network at render time.
+
+    python -m analysis.hopfield_probe.report.build RESULTDIR
+
+**One change the implementation made.** Heatmap cells carry `data-c="i,j"` and
+the values ride in the chart's JSON payload, formatted in JS on hover, rather
+than a `data-tip` string per rect. Same tooltip and same `n`; at the sub-cell
+map's 25 600 cells the string-per-rect form was megabytes of redundant text in
+a file whose whole point is being one thing you can email.
 
 ---
 
@@ -17,12 +25,17 @@ network at render time.
 analysis/hopfield_probe/
     report/
         __init__.py
-        schema.py      # the result-JSON contract, one dataclass per test
-        figures.py     # every chart, as inline SVG strings
-        page.py        # HTML assembly: cards, grids, stat tiles, tables
         theme.py       # the palette and chrome tokens of Sec 1, in one place
+        figures.py     # every chart, as inline SVG strings
+        page.py        # HTML shell, the interaction layer, cards and tiles
         build.py       # CLI: python -m analysis.hopfield_probe.report.build RESULTDIR
 ```
+
+The planned `schema.py` was not built. The result JSON is produced by
+`stats.py`'s accumulators, which already have exactly one `to_json` per
+quantity, so a second set of dataclasses restating the same shape would be a
+copy to keep in sync rather than a contract. `build.py` reads the JSON
+defensively instead — a missing test simply drops its page.
 
 Four rules, and they are what make the split worth having:
 
