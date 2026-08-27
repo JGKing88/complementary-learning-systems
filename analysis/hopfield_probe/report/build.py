@@ -19,7 +19,7 @@ from .figures import (
     stacked_bars, stat_tile, table,
 )
 from .page import (
-    banner, card, esc, facets, filter_row, run_header, shell,
+    banner, card, esc, facets, filter_row, run_header, shell, single_page,
 )
 from .theme import CATEGORICAL, ordinal_colors
 
@@ -926,7 +926,44 @@ def build(result_dir: Path, out_dir: Path | None = None) -> Path:
 
     for name, html_text in pages.items():
         (out_dir / name).write_text(html_text)
+
+    # One file with everything, tabs becoming in-page anchors. The multi-page
+    # set stays the default -- test_c alone is large enough that stacking it
+    # with the rest is a slower first paint -- but a single file is what
+    # travels, and it is what a host with its own document skeleton can take.
+    sections = []
+    for name, html_text in pages.items():
+        sid = name.replace(".html", "")
+        label = dict((f, n) for f, n in _TAB_NAMES).get(name, sid)
+        sections.append((sid, label, _body_of(html_text)))
+    hdr = run_header(primary["header"], _kv_extra(results))
+    (out_dir / "report.html").write_text(
+        single_page("Hopfield probe", hdr, sections, src))
+    (out_dir / "report.fragment.html").write_text(
+        single_page("Hopfield probe", hdr, sections, src, fragment=True))
     return out_dir
+
+
+_TAB_NAMES = [
+    ("index.html", "Overview"), ("test_a.html", "A · attractor"),
+    ("test_b.html", "B · q on grid"), ("test_c.html", "C · continuous"),
+    ("test_d.html", "D · flow"), ("controls.html", "Controls"),
+    ("rescue.html", "Rescue"),
+]
+
+
+def _body_of(page: str) -> str:
+    """The content of a rendered page, without its shell.
+
+    Cheaper and less brittle than threading a `fragment` flag through every
+    page builder: the pages are generated here, so the markers are known
+    exactly rather than parsed out of arbitrary HTML.
+    """
+    start = page.find('<div class="wrap">')
+    end = page.rfind('<div class="footer">')
+    if start < 0 or end < 0:
+        return page
+    return page[start + len('<div class="wrap">'):end]
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -937,7 +974,9 @@ def main(argv: list[str] | None = None) -> int:
     out = build(Path(a.result_dir), Path(a.out) if a.out else None)
     print(f"pages: {out}")
     for f in sorted(out.glob("*.html")):
-        print(f"  {f}")
+        print(f"  {f}  ({f.stat().st_size // 1024} KB)")
+    print(f"\nopen: {out / 'index.html'}")
+    print(f"one file: {out / 'report.html'}")
     return 0
 
 

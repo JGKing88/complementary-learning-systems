@@ -445,6 +445,27 @@ def test_suite_runs_and_the_report_builds(tmp_path):
         bad = re.findall(r'=\"[^\"]*\b(?:NaN|nan|None|undefined)\b[^\"]*\"',
                          text)
         assert not bad, f"{name}: {bad[:3]}"
-        # Every SVG must parse, or a browser will silently drop the rest.
-        for svg in re.findall(r"<svg\\b.*?</svg>", text, re.S):
+        # Every SVG must parse, or a browser silently drops the rest of it.
+        svgs = re.findall(r"<svg\b.*?</svg>", text, re.S)
+        assert svgs, f"{name} has no parseable <svg>"
+        for svg in svgs:
             ET.fromstring(svg)
+
+    # The one-file variants: a whole document, and a body-only fragment for a
+    # host that supplies its own skeleton. Both must stay self-contained -- a
+    # fragment that dropped its <style> would render unthemed.
+    whole = (out / "report.html").read_text()
+    frag = (out / "report.fragment.html").read_text()
+    assert whole.startswith("<!doctype html>")
+    assert not frag.lstrip().startswith("<!doctype")
+    for f in (whole, frag):
+        assert "<style>" in f and "<script>" in f
+        assert 'id="tip"' in f
+        assert "<link" not in f and 'src="http' not in f   # no external asset
+    # Tabs become in-page anchors, and every anchor has a section to land on.
+    nav = re.findall(r'<nav class="tabs">(.*?)</nav>', frag, re.S)
+    assert nav, "single page has no tab nav"
+    targets = re.findall(r'href="#([^"]+)"', nav[0])
+    assert targets
+    for t in targets:
+        assert f'id="{t}"' in frag, f"tab #{t} has no section"
