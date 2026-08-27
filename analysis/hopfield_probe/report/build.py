@@ -43,8 +43,8 @@ def centers(edges: list[float]) -> list[float]:
 
 
 def ks(res: dict) -> list[str]:
-    return sorted(res["config"]["k_values"], key=int) and \
-        [str(k) for k in res["config"]["k_values"]]
+    """K values as strings, in ascending order -- the ordinal ramp's order."""
+    return [str(k) for k in sorted(res["config"]["k_values"], key=int)]
 
 
 def steps(res: dict) -> list[str]:

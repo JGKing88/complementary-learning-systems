@@ -96,7 +96,7 @@ JS = r"""
             px = d.ml + (xv - x0) / Math.max(x1 - x0, 1e-9) * d.iw;
           }
           var dd = Math.abs(px - sx);
-          if (dd < bd) { bd = dd; best = i; px_best = px; }
+          if (dd < bd) { bd = dd; best = i; }
         }
         return best;
       }
@@ -131,6 +131,46 @@ JS = r"""
         var b = svg.getBoundingClientRect(); show(b.left + 20, b.top + 20);
       });
       svg.addEventListener('blur', hide);
+    } else if (d.type === 'grid') {
+      svg.querySelectorAll('[data-c]').forEach(function (el) {
+        el.addEventListener('pointermove', function (ev) {
+          var ij = el.getAttribute('data-c').split(',');
+          var i = +ij[0], j = +ij[1];
+          var v = d.v[i] ? d.v[i][j] : null;
+          var n = (d.n && d.n[i]) ? d.n[i][j] : null;
+          tip.textContent = '';
+          var head = document.createElement('div');
+          head.className = 'th';
+          head.textContent = '(' + (d.x0 + i) + ', ' + (d.y0 + j) + ')';
+          tip.appendChild(head);
+          var row = document.createElement('div'); row.className = 'tr';
+          var lab = document.createElement('span');
+          lab.textContent = d.unit || 'value';
+          var val = document.createElement('span'); val.className = 'tv';
+          val.textContent = (v === null || v === undefined)
+            ? 'no samples' : fmt(v);
+          row.appendChild(lab); row.appendChild(val); tip.appendChild(row);
+          if (n) {
+            var r2 = document.createElement('div'); r2.className = 'tr';
+            var l2 = document.createElement('span'); l2.textContent = 'n';
+            var v2 = document.createElement('span'); v2.className = 'tv';
+            v2.textContent = String(n);
+            r2.appendChild(l2); r2.appendChild(v2); tip.appendChild(r2);
+          }
+          show(ev.clientX, ev.clientY);
+        });
+        el.addEventListener('pointerleave', hide);
+      });
+      svg.querySelectorAll('[data-tip]').forEach(function (el) {
+        el.addEventListener('pointermove', function (ev) {
+          tip.textContent = '';
+          var r = document.createElement('div');
+          r.textContent = el.getAttribute('data-tip');
+          tip.appendChild(r);
+          show(ev.clientX, ev.clientY);
+        });
+        el.addEventListener('pointerleave', hide);
+      });
     } else {
       svg.querySelectorAll('[data-tip]').forEach(function (el) {
         el.addEventListener('pointermove', function (ev) {

@@ -340,11 +340,10 @@ def heatmap(
             v = matrix[i][j]
             xx = ml + i * cell
             yy = mt + (ny - 1 - j) * cell
-            n = counts[i][j] if counts else None
             o.append(
                 f'<rect class="cell" x="{xx:.1f}" y="{yy:.1f}" '
                 f'width="{cell:.1f}" height="{cell:.1f}" fill="{color(v)}" '
-                f'data-tip="{_esc(_cell_tip(i, j, v, n, unit, x_origin, y_origin))}"/>')
+                f'data-c="{i},{j}"/>')
 
     if mark is not None:
         mi, mj = mark
@@ -391,15 +390,17 @@ def heatmap(
                  f'transform="rotate(-90)" text-anchor="middle">'
                  f'{_esc(ylabel)}</text>')
     o.append("</svg>")
+    # The cell values ride in the payload and the tooltip is formatted in JS
+    # from `data-c`, rather than a `data-tip` string per rect. At the spec's
+    # 8-bins-per-cell sub-cell map that is 25 600 cells, where the difference
+    # is megabytes of redundant text in a file that has to stay emailable.
+    payload = {
+        "type": "grid", "id": cid, "v": matrix, "n": counts,
+        "unit": unit, "x0": x_origin, "y0": y_origin,
+    }
     return (f'<figure class="chartbox" style="margin:0">{"".join(o)}'
             f'<script type="application/json" class="chartdata">'
-            f'{json.dumps({"type": "cells", "id": cid})}</script></figure>')
-
-
-def _cell_tip(i, j, v, n, unit, x0, y0) -> str:
-    pos = f"({_fmt(x0 + i)}, {_fmt(y0 + j)})"
-    val = "no samples" if v is None else f"{_fmt(v)} {unit}".strip()
-    return f"{pos} — {val}" + (f" (n={n})" if n else "")
+            f'{json.dumps(payload)}</script></figure>')
 
 
 # ---------------------------------------------------------------------------
