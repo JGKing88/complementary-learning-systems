@@ -421,6 +421,47 @@ case "$VARIANT" in
     esac
     ;;
 
+  # === P12 -- variable speed WITHOUT fast speed ============================
+  #
+  # The existing pair confounds two things. `p10_pol_v1` is pinned at exactly
+  # 1.0; `p10_pol` may range over [0.5, 2] and learns ~1.8. So "learned beats
+  # frozen on steps" could mean the policy benefits from CHOOSING its speed, or
+  # merely from being allowed to go FAST. Nothing sits in between.
+  #
+  # These bound the speed at [0.5, 1.0]: the policy still chooses, but can never
+  # exceed the frozen arm's fixed value. Reading against both existing arms:
+  #
+  #   beats p10_pol_v1  ->  the choosing is what helps
+  #   matches it        ->  the magnitude was the whole story
+  #
+  # Jack's call, and it deliberately narrows the [0.5, 2] band fixed earlier in
+  # this file -- for these two arms only.
+  #
+  # p12_lo_curtp additionally carries the P11 curriculum + time_penalty
+  # treatment, so if that combination turns out to matter it is not confined to
+  # the wide-speed setting.
+  #
+  # EPSILON_EXPLORE stays 0.1 for exact config parity with p10_pol even though
+  # it is provably inert on an exploit-only schedule -- the trainer now prints a
+  # warning saying so, which is the honest record rather than a silent 0.
+  p12_lo|p12_lo_curtp)
+    SCHEDULE=${SCHEDULE:-'exploit:2000'}
+    ENVS_PER_WORLD=20; BATCH_ENVS=64
+    EPSILON_EXPLORE=0.1; GOAL_REWARD=2.0
+    PERSISTENCE_BONUS=0.20
+    REGIME_ASSIGNMENT=shuffle
+    ACTION_POLAR=1; STATE_DEPENDENT_STD=1; FREEZE_LOG_STD=0
+    MAX_ACTION_NORM=1.0
+    EVAL_SCOPE=navexpl; EVAL_EVERY=50; CKPT_EVERY=50
+    case "$VARIANT" in
+      p12_lo_curtp)
+        N_TRAIN_DISTRACTORS_MAX=0; N_TRAIN_DISTRACTORS_MAX_END=10
+        N_TRAIN_EMP_DISTRACTORS_MAX=0; N_TRAIN_EMP_DISTRACTORS_MAX_END=10
+        DISTRACTOR_CURRICULUM_UPDATES=400
+        TIME_PENALTY=0.02 ;;
+    esac
+    ;;
+
   # --- P10b: is the frozen arm's failure kappa runaway, or speed 1.0? -------
   #
   # At u50 the frozen-speed exploit arm sits at success 0.031 against the
