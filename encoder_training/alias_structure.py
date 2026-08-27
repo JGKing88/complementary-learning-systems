@@ -115,12 +115,12 @@ def code_stats(encoder, lambdas, gain, *, n: int, device: str,
         eigenvalues: the effective number of dimensions, 1 at full collapse and
         ``out_dim`` for an isotropic code.
     """
-    from encoder_training.eval_unique_radius import _embed
+    from encoder_training.eval_unique_radius import embed
     rng = np.random.default_rng(seed)
     Npos = npos_for(lambdas)
     xs = rng.integers(0, Npos, n)
     ys = rng.integers(0, Npos, n)
-    z = _embed(encoder, lambdas, xs, ys, gain, device, fwhm_ratio).float()
+    z = embed(encoder, lambdas, xs, ys, gain, device, fwhm_ratio).float()
 
     std = z.std(dim=0)
     live = float((std > 0.1 * std.max()).float().mean())
