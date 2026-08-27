@@ -15,12 +15,14 @@ mismatch that must be fixed first.
 
 | | |
 |---|---|
-| **Status** | Spec written. Nothing launched. §4 fixes are blocking. |
+| **Status** | **P10 polar landed (§9.4–9.8).** Two of four arms finished; the exploit-frozen model is the phase-2 best. |
 | **Branch / worktree** | `nav-tri-metric` at `.claude/worktrees/nav-tri-metric` |
 | **Predecessor** | `docs/EXPERIMENTS_NAV_TRI.md` — read its §0 findings 1–22 |
 | **Open decisions** | §11 — four forks put to Jack; spec assumes the recommended default in each |
-| **Running** | **P10 polar (§9.4)** — `p10_pol` 21297873 / `p10_pol_v1` 21297875 on `pi_fiete` (7 d); `p10_e_pol` 21295996 / `p10_e_pol_v1` 21295997 queued on `ou_bcs_normal` (24 h cap — resume with `--continue_from` if 1500 updates do not fit). First launch died in update 2; cause and fix in §9.4. |
-| **Done** | §4 blocking fixes, P1 (§5) with figures, the recall-mechanism thread §5.3-5.9, and **P2 (§6)** |
+| **Running** | `p10_pol` 21300385 (learned exploit, ~u1800/2000, `pi_fiete`); `p10_e_pol_v1` 21300391 (frozen explore, ~u900/1500, `ou_bcs_normal`) |
+| **Finished** | **`p10_pol_v1` 21300389** — 2000/2000, **1.000 success @ 10.95 steps (1.10× optimal)**, the phase-2 best exploit model. **`p10_e_pol` 21300390** — 1500/1500, **cps 0.75** against a billiard ceiling of 0.775. |
+| **Done** | §4 blocking fixes, P1 (§5) with figures, the recall-mechanism thread §5.3-5.9, **P2 (§6)**, and **P10 (§9.4–9.8)** |
+| **⚠ Read before quoting any §9.6–9.8 number** | Every behavioural number there is on the **`recorded`** split — the run's own `base_val`, never trained on but the set it was scored against at every eval, and the only set the probe could build until 2026-08-27. It is **not** a fresh draw. `--split` now exists on the probe; nothing has been re-run with it. |
 
 **Open items** (priority order):
 
@@ -3713,6 +3715,94 @@ dips at u200/u350/u550 are the oscillation, not a trend; κ meanwhile climbs
 | `p10_e_pol_v1` frozen | u300 | cov 0.311, cps 0.621 |
 | `p10_pol` learned | u300 | success 0.698 (peak 0.990 at u250) |
 | `p10_pol_v1` frozen | u400–500 | **success ~1.000 at 15–16 steps** |
+
+---
+
+### 9.8 FINAL — the delivered models
+
+Both completed arms ran to their scheduled ends cleanly.
+
+#### `p10_pol_v1` — exploit, speed frozen at 1.0 — **2000/2000**
+
+Final eval, 96 trials per level:
+
+| | success | mean_steps | vs optimum |
+|---|---|---|---|
+| 0 distractors | **1.000** (96/96) | **10.95** | **1.10×** |
+| 10 distractors | 0.958 (92/96) | 13.64 | 1.37× |
+
+Still improving at the end — last four evals 11.60 / 11.47 / 11.30 / 10.95 —
+so 2000 updates did not exhaust it. **The phase-2 best exploit model.** For
+contrast the Cartesian `p9_sq_std` took 8.05 steps but at speed 1.98, i.e.
+1.60× its own optimum against this one's 1.10×.
+
+Behaviour probe on the final checkpoint (21365319):
+
+| n_dist | q_accuracy | follow_q | align_true | success | steps |
+|---|---|---|---|---|---|
+| 0 | 0.989 | **0.911** | 0.908 | 1.000 | 11.68 |
+| 1 | 0.927 | 0.852 | 0.824 | 0.990 | 11.33 |
+| 3 | 0.833 | 0.803 | 0.678 | 0.969 | 11.82 |
+| 5 | 0.725 | 0.697 | 0.502 | 0.948 | 11.98 |
+| 10 | **0.450** | **0.630** | 0.257 | 0.901 | 17.42 |
+
+**`follow_q` 0.911 EXCEEDS the Cartesian baseline's 0.843.** The polar model
+follows the readout *better*, not worse — §9.7's original worry is not merely
+retracted but inverted. The arm's own progression is 0.558 (u300) → 0.819
+(u900) → **0.911** (u2000): it was always a training-budget reading.
+
+At ten distractors `follow_q` (0.630) **exceeds** `q_accuracy` (0.450) — more
+committed to the readout than the readout deserves, with `align_true`
+collapsing to 0.257 as a direct result. The sharpest mode-A evidence in the
+dataset. Steps are flat at ~11.3–12.0 through *five* distractors and only break
+at ten, so the model is effectively distractor-immune up to five.
+
+**Note the two success numbers disagree**: the training eval says 0.958 at ten
+distractors (92/96), the probe says 0.901 (192 trials). Same checkpoint, same
+envs, both `deterministic=True`, comparable start distances — the difference is
+which starts were drawn and how many. They are ~1.9 sd apart (p≈0.06). The
+honest statement is **0.90–0.96, bracketed**, with the probe's the more precise.
+They are independent estimates and were quoted interchangeably at first, which
+they should not have been.
+
+#### `p10_e_pol` — explore, learned speed — **1500/1500**
+
+Final five evals: cps 0.758 / 0.776 / 0.711 / 0.769 / 0.721 → **~0.75, coverage
+~0.37**. Against the ladder (0.36 uniform random walk, 0.775 billiard, 0.955
+lawnmower) this is **at the billiard ceiling**. The next rung is a different
+behaviour class — systematic sweeping, which needs remembering where it has
+been — not something more of this objective reaches.
+
+#### 9.8.1 CORRECTION — the near-goal κ gradient GROWS with training
+
+§9.6 said it decays with policy sharpness; §9.7.6 already flagged that as
+refuted. The final checkpoint settles the direction:
+
+| checkpoint | κ | d0–2 | d8+ | ratio |
+|---|---|---|---|---|
+| u300 | ≈38 | 10.06° | 9.74° | 1.03× |
+| u900 | ≈93 | 7.67° | 6.20° | 1.24× |
+| **u2000** | — | **7.76°** | **4.71°** | **1.65×** |
+
+Same arm, monotone across 1700 updates. **The policy LEARNS to be more
+directionally uncertain near the goal** — 7.8° there against 4.7° far out. That
+is §9.1's prediction satisfied, and it explains why every "sharpness suppresses
+it" story failed: u300 was simply too early. The far-field 4.7° says the policy
+is extremely committed when it knows where it is going and deliberately hedges
+on final approach — a strategy, not the pathology read into it earlier.
+
+#### 9.8.2 The caveat that applies to all of §9.6–9.8
+
+**Everything above is measured on the `recorded` split** — the run's own
+`base_val`, which it was scored against at every eval. Never trained on, but not
+a fresh draw, and the probe could not build anything else until `--split` was
+added on 2026-08-27. Nothing here has been re-run on a minted set.
+
+Before any of these numbers are treated as the models' performance rather than
+their validation-set performance, re-probe with
+`--split place=held_out` (which sets all three traits to `held_out`). The
+grammar and minting path are shared with `eval_all`, so the two are directly
+comparable.
 
 ---
 
