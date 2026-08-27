@@ -128,7 +128,7 @@ a cue corrupted to cos 0.70; **below 0.70 means recall made it worse.**
 **Production anchor** — degrades cues, worse with load:
 
 | encoder | loop gain `β·s` | tanh arg `u` | K=3 | K=5 | K=10 |
-|---|---|---|---|---|
+|---|---|---|---|---|---|
 | v35 | 0.0036 | 1.1e-4 | +0.698 | +0.543 | **+0.269** |
 | L7-s42 | 0.098 | 3.1e-3 | +0.718 | +0.443 | **+0.218** |
 | L7-s43 | 0.098 | 3.1e-3 | +0.700 | +0.436 | **+0.222** |
