@@ -27,7 +27,7 @@ from .encode import Field
 from .harness import (
     CellBank, Memory, NEAR_CELLS, OUTCOMES, ProbeConfig, World,
     build_cell_bank, build_memory, env_offset_distances, local_cells,
-    recall_trajectory, tanh_argument,
+    recall_trajectory, scored_envs, tanh_argument,
 )
 from .stats import BinnedStat, CategoryByDist, Scalars
 
@@ -224,11 +224,7 @@ def run_test_a(
             if len(tanh_pool) < 8:
                 tanh_pool.append(tanh_argument(mem, mem.Z, cfg))
 
-            # multi_env_goals scores every env in the world against one W --
-            # K measurements from one world, which is what makes K=50 cheap.
-            # The other modes define a single test env, so they score one.
-            test_envs = (list(range(k)) if cfg.memory_mode == "multi_env_goals"
-                         else [0])
+            test_envs = scored_envs(cfg, k)
 
             cues = np.concatenate([
                 field.encode(cells[:, 0] + w.specs[e].offset[0],

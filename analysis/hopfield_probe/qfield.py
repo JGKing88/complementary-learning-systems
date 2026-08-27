@@ -28,7 +28,8 @@ import numpy as np
 
 from .encode import Field
 from .harness import (
-    Memory, ProbeConfig, World, build_memory, local_cells, recall_trajectory,
+    Memory, ProbeConfig, World, build_memory, local_cells,
+    recall_trajectory, scored_envs,
 )
 from .stats import (
     BinnedStat, Map2D, Scalars, continuous_dist_edges, wrap_to_pi,
@@ -318,8 +319,7 @@ def run_tests_bc(
 
         for w in worlds:
             rng = np.random.RandomState(w.seed * 17 + k)
-            test_envs = (list(range(k)) if cfg.memory_mode == "multi_env_goals"
-                         else [0])
+            test_envs = scored_envs(cfg, k)
             mem = build_memory(field, w, k, cfg, rng)
 
             for j, e in enumerate(test_envs):

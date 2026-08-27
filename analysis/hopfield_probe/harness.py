@@ -203,6 +203,12 @@ class ProbeConfig:
     # memory
     memory_mode: str = "multi_env_goals"
     k_values: tuple[int, ...] = (1, 2, 3, 5, 10, 20, 50)
+    # How many of a world's envs are scored against its W. Capping this is what
+    # keeps the K axis a *load* axis: scoring all K would make the measured
+    # population grow with K, so a K-to-K comparison would confound "more
+    # memories" with "a different, larger set of envs". At or above this value
+    # the population is identical at every K and sample size comes from worlds.
+    n_score_envs: int = 5
 
     # hopfield
     steps: tuple[int, ...] = (1, 2, 3, 5, 10, 15)
@@ -307,6 +313,18 @@ def sample_worlds(cfg: ProbeConfig) -> list[World]:
         )
         worlds.append(World(index=w, seed=seed, specs=specs))
     return worlds
+
+
+def scored_envs(cfg: "ProbeConfig", k: int) -> list[int]:
+    """Which envs of a world are measured at load ``k``.
+
+    ``multi_env_goals`` scores a fixed prefix, capped by ``n_score_envs`` --
+    see the field's comment. The other modes define a single test env by
+    construction, so they score one.
+    """
+    if cfg.memory_mode != "multi_env_goals":
+        return [0]
+    return list(range(min(k, cfg.n_score_envs)))
 
 
 def env_offset_distances(world: World, k: int) -> np.ndarray:
@@ -563,5 +581,5 @@ __all__ = [
     "CellBank", "Memory", "MEMORY_MODES", "OUTCOMES", "ProbeConfig", "World",
     "build_cell_bank", "build_memory", "encoder_header", "env_offset_distances",
     "load_probe_encoder", "local_cells", "recall_trajectory", "sample_worlds",
-    "tanh_argument", "write_json",
+    "scored_envs", "tanh_argument", "write_json",
 ]

@@ -217,7 +217,7 @@ def run_test_d(
     field, worlds: list[World], cfg: ProbeConfig, *, progress=None,
 ) -> dict:
     """Test D over every world, ``K`` and step count."""
-    from .harness import build_memory
+    from .harness import build_memory, scored_envs
     from .qfield import cell_q_field
 
     size = cfg.env_size
@@ -239,8 +239,7 @@ def run_test_d(
         for w in worlds:
             rng = np.random.RandomState(w.seed * 13 + k)
             mem = build_memory(field, w, k, cfg, rng)
-            test_envs = (list(range(k)) if cfg.memory_mode == "multi_env_goals"
-                         else [0])
+            test_envs = scored_envs(cfg, k)
             for j, e in enumerate(test_envs):
                 qf, _c, _b = cell_q_field(field, w, e, mem, cfg)
                 goal = w.specs[e].goal

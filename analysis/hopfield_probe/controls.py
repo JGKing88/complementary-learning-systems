@@ -22,7 +22,9 @@ from __future__ import annotations
 import numpy as np
 
 from .encode import Field
-from .harness import ProbeConfig, World, build_memory, local_cells
+from .harness import (
+    ProbeConfig, World, build_memory, local_cells, scored_envs,
+)
 from .qfield import GridAcc, bearing, cell_q_field, project_q, q_error
 from .stats import Scalars, wrap_to_pi
 
@@ -109,8 +111,7 @@ def run_controls(
 
     for w in worlds:
         rng = np.random.RandomState(w.seed * 7 + 1)
-        test_envs = ([0] if cfg.memory_mode != "multi_env_goals"
-                     else list(range(min(k_ref, cfg.n_map_envs + 2))))
+        test_envs = scored_envs(cfg, k_ref)
         mem = build_memory(field, w, k_ref, cfg, rng)
 
         # use_tanh is read at recall, not at storage, so the same memory

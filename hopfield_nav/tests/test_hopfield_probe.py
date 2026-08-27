@@ -338,6 +338,32 @@ def test_world_is_pinned_at_max_k_so_placement_does_not_move_with_load():
     assert [s.to_json() for s in w.specs] == [s.to_json() for s in again.specs]
 
 
+def test_scored_env_population_is_capped_so_k_is_a_load_axis():
+    """Scoring all K envs would make the K axis change *which* envs are
+    measured, not just how many memories compete.
+
+    The populations would be nested and growing, so a K-to-K comparison would
+    not be like-for-like -- which is enough, at these envs' spread, to make
+    exact_hit rise from K=5 to K=10, backwards and entirely an artifact. Above
+    ``n_score_envs`` the measured set is identical at every K.
+    """
+    from analysis.hopfield_probe.harness import scored_envs
+
+    cfg = ProbeConfig(n_envs_per_world=50, n_score_envs=5,
+                      k_values=(1, 3, 5, 10, 50), env_size=4, Npos=36)
+    assert scored_envs(cfg, 1) == [0]
+    assert scored_envs(cfg, 3) == [0, 1, 2]
+    # Constant from n_score_envs upward -- the same envs, more memories.
+    for k in (5, 10, 50):
+        assert scored_envs(cfg, k) == [0, 1, 2, 3, 4]
+
+    # The other modes define a single test env by construction.
+    for mode in ("goal+distractors", "same_env_goals"):
+        other = ProbeConfig(memory_mode=mode, n_envs_per_world=50,
+                            k_values=(5,), env_size=4, Npos=36)
+        assert scored_envs(other, 5) == [0]
+
+
 def test_config_rejects_k_larger_than_the_world():
     cfg = ProbeConfig(n_envs_per_world=4, k_values=(2, 8), env_size=4,
                       Npos=36)
