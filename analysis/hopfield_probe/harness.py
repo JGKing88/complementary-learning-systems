@@ -239,6 +239,10 @@ class ProbeConfig:
     n_map_worlds: int = 1
     n_map_envs: int = 2
 
+    # How many recall steps the real-space trajectory probe decodes. 0 disables
+    # it. Costs one bank retrieval per step, so it runs on n_map_worlds only.
+    trajectory_steps: int = 15
+
     # execution
     device: str = "cpu"
     chunk: int = 4096

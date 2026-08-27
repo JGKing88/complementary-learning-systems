@@ -181,6 +181,52 @@ def classify_outcomes(
     return out, dist
 
 
+def trajectory_probe(
+    field: Field, world: World, env: int, mem: Memory, bank: CellBank,
+    cfg: ProbeConfig, max_steps: int = 15,
+) -> dict:
+    """How far, in cells, each application of the recall map moves the state.
+
+    Returns per-step means over every cell of the env. ``u_0`` is the cue's own
+    cell -- a cue is a cell embedding, so the bank argmax returns it -- which
+    makes ``step_dist[1]`` the distance the *first* application travels. That
+    one matters most: production takes exactly one step.
+    """
+    size = cfg.env_size
+    cells = local_cells(size)
+    goal = np.array(world.specs[env].goal)
+    offset = world.specs[env].offset
+
+    cues = field.encode(cells[:, 0] + offset[0], cells[:, 1] + offset[1])
+    snaps = tuple(range(1, max_steps + 1))
+    traj = recall_trajectory(mem, cues, snaps, cfg)
+
+    prev = cells.astype(float)                      # u_0 = the cue's own cell
+    start_dist = np.sqrt(((cells - goal) ** 2).sum(1).astype(float))
+    out = {"steps": list(snaps), "step_dist": [], "goal_dist": [],
+           "in_env": [], "start_dist_mean": float(start_dist.mean())}
+
+    for s_i in snaps:
+        idx, _ = retrieve(traj[s_i], bank, cfg)
+        r_env, r_x, r_y = bank.decode(idx)
+        here = np.stack([r_x, r_y], axis=1).astype(float)
+        same = r_env == env
+
+        # A step that leaves the env has no real-space length -- the two cells
+        # are in different rooms -- so it is counted in `in_env` and excluded
+        # from the distances rather than contributing a fictitious number.
+        d_step = np.sqrt(((here - prev) ** 2).sum(1))
+        d_goal = np.sqrt(((here - goal) ** 2).sum(1))
+        out["step_dist"].append(float(np.mean(d_step[same]))
+                                if same.any() else float("nan"))
+        out["goal_dist"].append(float(np.mean(d_goal[same]))
+                                if same.any() else float("nan"))
+        out["in_env"].append(float(same.mean()))
+        prev = np.where(same[:, None], here, prev)
+
+    return out
+
+
 # ---------------------------------------------------------------------------
 # Driver
 # ---------------------------------------------------------------------------
@@ -211,6 +257,7 @@ def run_test_a(
         fixed_pool: dict[str, list[dict]] = {str(s): [] for s in cfg.steps}
         diag_fracs: list[float] = []
         maps: list[dict] = []
+        traj_probe: list[dict] = []
 
         for w in worlds:
             rng = np.random.RandomState(w.seed * 31 + k)
@@ -285,6 +332,13 @@ def run_test_a(
                 A["scalars"].add("r_exact_95", float(np.mean(w_r95)))
                 A["scalars"].add("exact_frac", float(np.mean(w_frac)))
 
+            if w.index < cfg.n_map_worlds and cfg.trajectory_steps > 0:
+                traj_probe.append({
+                    "world": w.index, "env": test_envs[0],
+                    **trajectory_probe(field, w, test_envs[0], mem, bank, cfg,
+                                       max_steps=cfg.trajectory_steps),
+                })
+
             if progress:
                 progress(f"A  k={k:>3} world={w.index}")
 
@@ -306,6 +360,7 @@ def run_test_a(
                 env_offset_distances(worlds[0], k).tolist()
                 if worlds else []),
             "maps": maps,
+            "trajectory": traj_probe,
         }
 
     if tanh_pool:

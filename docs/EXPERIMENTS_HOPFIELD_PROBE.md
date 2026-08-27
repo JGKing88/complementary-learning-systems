@@ -29,8 +29,9 @@ Raising `β` alone is a **net loss** (§2). Raising both together works, unevenl
 **The rule that survived:** raise inference gain until cos-to-binarisation
 ≈ 0.96 — encoder-specific in gain (v35 ~100, L7 ~300), universal in `cos_bin` —
 **and** saturate `β` alongside it. Not "use gain 300", not "raise β" alone, and
-**not** the rescue sweep's `alpha` optimum, which does not transfer to the task
-at all (§4.2).
+**not** the rescue sweep's `alpha` optimum on its own — alpha is a time
+constant that only means anything once the loop gain makes the recall term
+comparable to the cue (§4.2–4.3).
 
 **Best measured setting: v35 at gain 100 with β=1e6** (§3.1) — acc45 100.0% at
 every step count from 1 to 15, retrieval 97.5%, reach 99.6%, for 1.2° of mean
@@ -150,9 +151,11 @@ encoders (0.72–0.76) and falls at both ends. Two routes reach it —
 on this test their binding knob looks like `alpha`, not the loop gain — a
 different knob from the one this campaign spent most of its time on.
 
-> **Tested, and it does not hold.** §4.2 runs the full suite at `alpha=0.5` and
-> retrieval collapses to 0.2%. Read this section's optima as hypotheses about
-> *this test*, not as settings.
+> **Tested, and it does not transfer.** §4.2 runs the full suite at
+> `alpha=0.5`: `exact_hit` reads 0.2% at s=1. §4.3 then shows why that is a
+> *delay* rather than damage, and why alpha and the loop gain cannot be moved
+> independently. Read this section's optima as hypotheses about *this test*,
+> not as settings.
 
 ### 4.1 The untrained control earns its place
 
@@ -180,8 +183,12 @@ else changed:
 | both (g300+sat) | **10.32°** | **99.7%** | **72.6%** | **13.85** | **80.7%** | **99.6%** |
 
 Alpha 0.5 delivers what rescue promised on the steps axis (76.5→93.9%) and
-leaves direction untouched — and **annihilates retrieval**: `exact_hit`
-57.8→0.2%, basin 11.03→**zero**.
+leaves direction untouched — and drops `exact_hit` 57.8→0.2% with basin
+11.03→**zero** *at s=1*.
+
+> **Overstated, corrected in §4.3.** That is not annihilation, it is delay:
+> alpha moves the retrieval peak from s=1 to s=5 or later. Reading a slow
+> process at the one step production happens to use made it look broken.
 
 **The flaw is in the rescue test, not in alpha.** With `alpha=0.5` the update
 keeps half the *cue*, so the endpoint is a blend of cue and memory. The two
@@ -203,6 +210,66 @@ three-part criterion missed. The lesson is not a fourth criterion: it is that
 **rescue's cue distribution is unrepresentative of the task, so its optima are
 hypotheses to test on the full suite, never recommendations.**
 
+## 4.3 The alpha sweep — a time constant, not a destroyer
+
+§4.2 said `alpha=0.5` "annihilates retrieval". Wrong, and the trajectory probe
+(§6) is what showed it. Sweeping alpha on L7-s42, `exact_hit` by step at K=5:
+
+| alpha | s=1 | s=2 | s=3 | s=5 | s=10 | s=15 |
+|---|---|---|---|---|---|---|
+| **1.0** (production) | **57.8** | 42.1 | 34.1 | 24.2 | 9.0 | 6.5 |
+| 0.9 | 0.7 | 2.8 | 7.4 | **28.3** | 25.4 | 17.3 |
+| 0.75 | 0.3 | 0.4 | 1.1 | 2.8 | 17.5 | **28.3** |
+| 0.5 | 0.2 | 0.3 | 0.3 | 0.4 | 1.5 | 3.2 *(still climbing)* |
+
+Alpha moves the retrieval **peak later** — s=1 → s=5 → s=15 → past 15 — and
+roughly halves it. Reading it at s=1 alone, which is where production lives,
+makes a slow process look like a broken one. Still not a win, but the reason
+matters: it is a time constant, not damage.
+
+**Why the cliff is at alpha=1.0 exactly.** In
+`x ← (1−α)x + α·tanh(β·Wx)` the retained-cue term has norm `(1−α)`, and the
+recall term has norm `≈ β/D` in the linear regime (`delta_scale_check.py`):
+
+| | β/D | measured ‖recall‖ | (1−α) at which the cue ties |
+|---|---|---|---|
+| v35 production | 0.0036 | 0.0034 | 0.0034 |
+| L7-s42 production | 0.0977 | 0.0881 | 0.081 |
+| v35 g100+β1e6 | *saturated* | **31.96** (= √D) | 0.97 |
+
+So at production the recall signal is **0.3–9% of the cue** — which is just the
+loop gain `β·S/D` restated, with `S=1` from unit-norm storage and `β` three
+orders below `D=1024`. Any `(1−α)` above that swamps the memory with the cue,
+which is why alpha 0.9 already fell off. Saturated, the recall term is capped
+at `√D` = 32 and outweighs the cue 32:1, so alpha only becomes a real
+integration knob there.
+
+**Alpha and loop gain are not independent.** That is why the rescue sweep's
+alpha optimum always came paired with `tanh_arg` 1–10, and why lifting alpha
+out of that pairing (§4) was meaningless.
+
+## 4.4 β sets step-invariance and nothing else
+
+v35 at gain 300, β swept over three decades:
+
+| arm | \|err\| | acc45 | exact | basin | acc45 @ s=15 |
+|---|---|---|---|---|---|
+| g300, β1e3 | 19.57 | 93.8% | 100.0% | 21.62 | 79.4% |
+| g300, β1e4 | 19.54 | 93.8% | 100.0% | 21.62 | 83.3% |
+| g300, β1e6 | 19.15 | 95.1% | 100.0% | 21.62 | **95.0%** |
+| **g100, β1e6** | **10.03** | **100.0%** | 97.5% | 20.20 | **100.0%** |
+
+A 1000× change in β leaves `|err|` (19.57→19.15), `exact_hit` (100.0%) and
+basin (21.62) **untouched**, and moves only `acc45 @ s=15` (79.4→95.0%).
+Changing gain 300→100 at fixed β moves `|err|` 19.15→10.03.
+
+- **encoder gain** sets angular error *and* retrieval
+- **β** sets step-invariance *and nothing else*
+
+Retrieval at s=1 depends on where a single application lands, which the
+patterns decide; step-invariance needs the dynamics to have a fixed point,
+which needs saturation.
+
 ## 5. Caveats
 
 - One scaffold, one seed per encoder, `K ≤ 20`. The two L7 seeds already
@@ -214,16 +281,46 @@ hypotheses to test on the full suite, never recommendations.**
 - §4's grid never varies encoder gain, so it cannot see §3's regime at all. The
   two sections answer different questions and their optima are not comparable.
 
-## 6. Reproducing
+## 6. Real-space trajectory — retrieval is a jump, not a walk
+
+`attractor.trajectory_probe` decodes **every step** of the recall trajectory to
+its nearest cell and measures the motion in cells. Nothing else in A–D does
+this: A decodes only the endpoint, B measures `q`'s angle, D follows the `q`
+field with an agent rather than following the recall. Mean distance from the
+goal, K=5, start ≈ 8.2 cells:
+
+| arm | s1 | s2 | s3 | s5 | s8 |
+|---|---|---|---|---|---|
+| v35 production | **0.00** | 0.00 | 0.35 | 0.60 | 1.00 |
+| v35 g100+β1e6 | **0.00** | 0.00 | 0.00 | 0.00 | **0.00** |
+| L7 production | 0.01 | 0.29 | 0.46 | 1.00 | 1.75 |
+| L7 alpha 0.9 | **6.01** | 3.08 | 1.66 | 0.60 | 0.67 |
+| L7 g300+β1e6 | 0.35 | 0.50 | 0.50 | 0.50 | 0.50 |
+
+**The first application travels ~10 cells and lands on the goal.** Retrieval is
+a one-step jump. Production then *drifts away* — 0.00 → 1.00 by s=8 — which is
+the matched-filter decay of §0 made concrete in real space. The saturated arm
+lands and **stays at 0.00**: a fixed point, visible as a distance rather than
+inferred from a cosine.
+
+And alpha 0.9 turns the jump into a walk — 6 cells out after one application,
+arriving around s=5. That is §4.3's correction in one row: the retrieval is not
+gone, it has not happened yet.
+
+`ProbeConfig.trajectory_steps` (default 15) runs it on `n_map_worlds`, since it
+costs one bank retrieval per step.
+
+## 7. Reproducing
 
     ./analysis/hopfield_probe/run_probe.sh                      # Sec 1
     ... --beta 1e6                                              # Sec 2
     ... --beta 1e6 --encoder_gain 300                           # Sec 3
     ... --beta 1e6 --encoder_gain 100                           # Sec 3.1
     ... --rescue --skip a --skip bc --skip d --skip controls    # Sec 4
-    ... --alpha 0.5                                             # Sec 4.2
+    ... --alpha 0.5 / 0.75 / 0.9                                # Sec 4.2-4.3
+    ... --encoder_gain 300 --beta 1e3 / 1e4 / 1e6               # Sec 4.4
 
 Per-encoder diagnostics: `gain_gap_check.py`, `gain_probe_check.py`
 (`PROBE_CKPT` / `PROBE_GAINS`), `gain_crosstalk_check.py`, `crosstalk_check.py`,
 `localchart_check.py`, `contamination_check.py`, `steps_beta_check.py`,
-`decouple_check.py`, `corner_check.py`.
+`decouple_check.py`, `corner_check.py`, `delta_scale_check.py`.
