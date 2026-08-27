@@ -351,25 +351,78 @@ vector. One number that says "the dynamics have one attractor, not `K`".
 > — and cannot produce attractors on its own. The knob that matters is the
 > **encoder's** gain, which is not this harness's to set.
 
-> **Measured here on the real encoders, and gain 100 is not sufficient in the
-> live stack.** The L7 encoders run at gain 100 and compute
-> `z = normalize(tanh(gain · net(x)))`, which is structurally §5.7's
-> `p = tanh(g·ξ)` — so the corner condition might already be met in
-> production. It is not, quite (25 patterns from random scaffold cells,
-> D = 1024):
+> ### The gain-100 discrepancy, resolved
 >
-> | encoder | cos to own binarisation | coords > half-max | fixed point? |
-> |---|---|---|---|
-> | v35 (gain 3.70) | 0.812 | 14% | 0.279 |
-> | **L7-s42 (gain 100)** | **0.895** | **64%** | **0.199** |
-> | untrained (gain 5) | 0.862 | 37% | **0.999** |
-> | *§5.7 target at g=100* | *0.954* | *83%* | *0.976* |
+> §5.7's `g = 100` and the L7 encoder's `gain = 100` are **not the same
+> number**, and that is the whole discrepancy. Saturation is set by
+> `gain × pre-activation`, and the learned pre-activations are tiny
+> (`gain_gap_check.py`):
 >
-> Gain 100 moves L7 most of the way to the corner — 64% saturated against
-> v35's 14% — but short of §5.7's 83%, and its patterns are **not** fixed
-> points at any `(scale, β)` in `{1/D, 1} × {1, 3, 10, gain}`. The encoder's
-> own final L2 normalisation is part of why: it fixes `S = 1` no matter how
-> saturated the pre-activation was.
+> | encoder | gain | pre-act RMS | gain × RMS | cos to binarisation |
+> |---|---|---|---|---|
+> | v35 | 3.70 | 0.0575 | 0.21 | 0.814 |
+> | L7-s42 | 100 | 0.0213 | **2.1** | 0.895 |
+> | *§5.7's `ξ`* | *100* | *1.0 (unit normal)* | ***100*** | *0.954* |
+>
+> §5.7 delivers a tanh argument of ~100; L7 delivers ~2.1, a **47× gap** at the
+> same nominal gain. Worse, **the encoder compensates during training**: L7 was
+> *trained* at gain 100 and learned pre-activations 2.7× *smaller* than v35's,
+> so a 27× nominal gain increase bought only 10× of effective argument. Raising
+> the training gain does not buy corners.
+>
+> **Raising gain at inference does.** Overriding it on the trained L7
+> (`gain_probe_check.py`, 3 worlds × 3 envs, K=5):
+>
+> | inference gain | gain × RMS | cos to binarisation | fixed pt | `\|err\|` | acc45 |
+> |---|---|---|---|---|---|
+> | 100 (production) | 2.1 | 0.899 | 0.171 | 12.4° | 96.8% |
+> | **300** | 6.4 | **0.960** | 0.188 | **10.4°** | **99.6%** |
+> | 1000 | 21 | 0.988 | 0.210 | 14.6° | 98.4% |
+> | 3000 | 64 | 0.996 | 0.205 | 30.9° | 76.9% |
+> | 10000 | 212 | 0.999 | 0.151 | 51.5° | 54.0% |
+>
+> The corner arrives at **gain ≈ 300** — and the patterns are *still* not fixed
+> points, at any of them. That is the second half of the puzzle, and it is not
+> the corner condition failing.
+>
+> **The recall never saturates, because `β` is tied to the encoder gain.** Per
+> *coordinate* `(W z)_i ~ D^{-3/2}`, so saturating the recall needs
+> `β ~ 3 × 10⁴` — while the `q` readout is already collapsing by gain 3000.
+> One number cannot do both jobs, and production sets
+> `cfg.hopfield.beta = encoder_gain` (`train_navigate.py:488`), which is
+> exactly the conflation. The evidence it is only the loop gain missing:
+> `sign(W z) = sign(z)` for **99.8%** of coordinates at high gain, so a
+> saturated step *would* return the corner.
+>
+> **Decoupled, it works** (`decouple_check.py`, encoder gain 300, `β` swept):
+>
+> | `β` | `β·\|Wz\|_i` | fixed pt | pairwise cos | `\|err\|` | acc45 |
+> |---|---|---|---|---|---|
+> | 300 | 0.01 | 0.352 | 0.013 | 10.4° | 99.6% |
+> | 30 000 | 0.98 | 0.385 | 0.059 | 10.2° | 99.6% |
+> | 100 000 | 3.3 | **0.589** | 0.072 | 9.8° | **99.7%** |
+> | 1 000 000 | 33 | **0.836** | 0.055 | 9.8° | 99.6% |
+>
+> Fixed-point cosine climbs 0.35 → 0.84 while **pairwise cosine stays ~0.055**
+> — different cues land in different places, so these are per-goal fixed points
+> and not the single collapsed attractor of §5.6. Still short of §5.7's 0.976,
+> but the direction is unambiguous.
+>
+> **And this answers the question §5.7 left open.** It asked whether "the
+> tangent projection still decodes direction from a saturated pattern — the
+> question that matters, because direction is what the agent uses." At
+> cos-to-binarisation 0.960 with a fully saturated recall, **acc45 is 99.6% and
+> `|err|` is 9.8°** — better than production's 96.8% / 12.4%. Direction
+> survives saturation.
+>
+> So the lever is **decoupling `β` from the encoder gain**, not raising either
+> one. `ProbeConfig.beta_override` already does this; nothing in the training
+> stack does.
+>
+> Caveats: one encoder, one seed, 25 patterns, 3 worlds. `β = 1e6` is far
+> outside anything tested end-to-end. And an inference-time gain change alters
+> every embedding a trained policy was fitted to, so "gain 300 is better" is a
+> statement about the *encoder*, not a free win for an existing checkpoint.
 >
 > **The untrained encoder's 0.999 is vacuous — it has collapsed.** Its
 > "patterns" are one vector stored 25 times, so `W` is rank-1 along that
