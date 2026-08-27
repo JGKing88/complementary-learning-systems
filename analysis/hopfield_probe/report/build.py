@@ -89,6 +89,20 @@ def num(v, nd=2) -> str:
     return "--" if v is None else f"{v:.{nd}f}"
 
 
+def radius(v, nd=2) -> str:
+    """A basin radius, with ``first_failure_radius``'s sentinel spelled out.
+
+    ``-1`` means the condition failed at ``r=0`` -- the goal cell does not even
+    retrieve itself -- which is a categorically different statement from "the
+    radius is small", and printing it as ``-1.00 cells`` reads as neither.
+    """
+    if v is None:
+        return "--"
+    if v < 0:
+        return "none"
+    return f"{v:.{nd}f}"
+
+
 def ref_k(res: dict) -> str:
     """The K a headline quotes: production runs 0-10 distractors, so 5."""
     kk = [int(k) for k in ks(res)]
@@ -139,7 +153,7 @@ def page_index(results: list[dict], src: str) -> str:
 
     tiles = []
     for label, fn, fmt, sub in (
-        ("Basin radius", basin, lambda v: num(v, 2),
+        ("Basin radius", basin, lambda v: radius(v, 2),
          f"cells, r_exact_95 at K={rk}, s={rs}"),
         ("Direction accuracy", acc, pct, "acc45 vs. 25% chance"),
         ("Snap cost", snap, lambda v: deg(v, 2),
@@ -186,7 +200,7 @@ def page_index(results: list[dict], src: str) -> str:
                 d = r.get("test_d", {}).get("k", {}).get(k, {}).get(s, {})
                 rows.append([
                     name, k, s,
-                    num(scal(a, "r_exact_95"), 2),
+                    radius(scal(a, "r_exact_95"), 2),
                     pct(scal(a, "exact_frac")),
                     deg(scal(b.get("grid", {}), "abs_err_mean")),
                     pct(scal(b.get("grid", {}), "acc45")),
