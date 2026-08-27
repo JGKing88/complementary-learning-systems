@@ -282,6 +282,8 @@ def run_header(header: dict, extra: str = "") -> str:
         _kv("params", f'{(header.get("n_params") or 0) / 1e6:.2f}M'),
         _kv("&lambda;", ",".join(str(v) for v in header.get("lambdas", []))),
     ]
+    if header.get("alpha") is not None and header["alpha"] != 1.0:
+        bits.append(_kv("&alpha;", _num(header["alpha"])))
     if header.get("beta") is not None:
         regime = header.get("recall_regime", "")
         bits.append(_kv("recall &beta;",

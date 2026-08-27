@@ -28,8 +28,13 @@ Raising `β` alone is a **net loss** (§2). Raising both together works, unevenl
 
 **The rule that survived:** raise inference gain until cos-to-binarisation
 ≈ 0.96 — encoder-specific in gain (v35 ~100, L7 ~300), universal in `cos_bin` —
-then put the loop gain in the `tanh_arg` 1–10 band. Not "use gain 300", and not
-"raise β".
+**and** saturate `β` alongside it. Not "use gain 300", not "raise β" alone, and
+**not** the rescue sweep's `alpha` optimum, which does not transfer to the task
+at all (§4.2).
+
+**Best measured setting: v35 at gain 100 with β=1e6** (§3.1) — acc45 100.0% at
+every step count from 1 to 15, retrieval 97.5%, reach 99.6%, for 1.2° of mean
+angular error against production.
 
 ---
 
@@ -88,6 +93,31 @@ in the set. But it is not uniform:
   at ~100 (cos_bin 0.968, `|err|` 7.5°, acc45 100.0%) against 300's 0.989 /
   14.0° / 98.4%.
 
+### 3.1 v35 at its *own* optimal gain — the best result in the campaign
+
+§3 used gain 300 for all four encoders. That is L7's optimum; v35's is ~100
+(`gain_probe_check.py`). Re-run at gain 100 with β=1e6:
+
+| v35, K=5 | \|err\| | acc45 | exact | basin | reach | acc45 @ s=15 |
+|---|---|---|---|---|---|---|
+| production (g3.7) | **8.81°** | 99.4% | 74.3% | 14.15 | 87.2% | 86.2% |
+| g300 + sat | 19.15° | 95.1% | 100.0% | 21.62 | 97.4% | 95.0% |
+| **g100 + sat** | 10.03° | **100.0%** | **97.5%** | **20.20** | **99.6%** | **100.0%** |
+
+The 19° in §3 was the wrong gain, not an intrinsic trade — 9° of angular error
+bought nothing. At gain 100: **acc45 is 100.0% at every step count from 1 to
+15**, retrieval 74.3→97.5%, basin 14.15→20.20, reach 87.2→**99.6%**.
+
+The only regression against production is mean `|err|`, 8.81→10.03°. Note
+`acc45` *rises* (99.4→100.0%), so production has ~0.6% of cells beyond 45° and
+this has none: the mean is slightly worse while the tail is gone. Strictly
+better-behaved distribution.
+
+**One config change buys near-perfect retrieval, +6 cells of basin, +12 points
+of reach and complete step-invariance, for 1.2° of mean angular error.** It
+changes every embedding, so it needs a training run rather than a config edit,
+and it is one encoder at one seed.
+
 ## 4. Rescue sweep — real basins exist, and production is nowhere near them
 
 504 cells per encoder: `zero_diag` × `alpha` × `scale` × `β`, with each
@@ -116,9 +146,13 @@ encoders (0.72–0.76) and falls at both ends. Two routes reach it —
 `β=100, scale=1/D` and `β=1, scale=1/√D` — which is the
 `(p → λp, β → β/λ²)` invariance showing up in the data.
 
-**The L7 pair is already inside the optimal `tanh_arg` band at β=gain=100.**
-Their problem is not the loop gain; it is `alpha=1`. That is a different knob
-from the one this campaign spent most of its time on.
+**The L7 pair is already inside the optimal `tanh_arg` band at β=gain=100**, so
+on this test their binding knob looks like `alpha`, not the loop gain — a
+different knob from the one this campaign spent most of its time on.
+
+> **Tested, and it does not hold.** §4.2 runs the full suite at `alpha=0.5` and
+> retrieval collapses to 0.2%. Read this section's optima as hypotheses about
+> *this test*, not as settings.
 
 ### 4.1 The untrained control earns its place
 
@@ -132,6 +166,42 @@ This is the third time in this campaign a single attractor statistic was
 maximised by a degenerate memory — after collapse and after stasis — and it is
 why the criterion is all three of self-consistency, pairwise cosine and
 recovery, never one.
+
+### 4.2 Rescue's optimum does not transfer — alpha 0.5 on the full suite
+
+§4 said the L7 pair's binding knob is `alpha`, since their `tanh_arg` is
+already in the optimal band. Tested directly — L7-s42, `alpha=0.5`, nothing
+else changed:
+
+| L7-s42, K=5 | \|err\| | acc45 | exact | basin | reach | acc45 @ s=15 |
+|---|---|---|---|---|---|---|
+| production | 11.81° | 97.0% | 57.8% | 11.03 | 78.4% | 76.5% |
+| **alpha 0.5** | 11.75° | 97.1% | **0.2%** | **0.00** | 77.9% | 93.9% |
+| both (g300+sat) | **10.32°** | **99.7%** | **72.6%** | **13.85** | **80.7%** | **99.6%** |
+
+Alpha 0.5 delivers what rescue promised on the steps axis (76.5→93.9%) and
+leaves direction untouched — and **annihilates retrieval**: `exact_hit`
+57.8→0.2%, basin 11.03→**zero**.
+
+**The flaw is in the rescue test, not in alpha.** With `alpha=0.5` the update
+keeps half the *cue*, so the endpoint is a blend of cue and memory. The two
+tests start from different places:
+
+- rescue's cue is the goal pattern corrupted to cos 0.70 — already nearly
+  right, so damping refines it toward the goal and recovery reads 0.97;
+- the task's cue is a *different cell's* embedding, far from the goal, so
+  damping keeps the state near where it started and retrieval returns the cue's
+  own cell.
+
+Rescue measures **cleanup of a nearly-correct cue**; navigation needs
+**retrieval from an arbitrary position**. Damping helps the first and destroys
+the second, and the recovery guard cannot see it because from cos 0.70 the
+state genuinely does improve.
+
+This is the fourth degenerate route in this campaign and the first the
+three-part criterion missed. The lesson is not a fourth criterion: it is that
+**rescue's cue distribution is unrepresentative of the task, so its optima are
+hypotheses to test on the full suite, never recommendations.**
 
 ## 5. Caveats
 
@@ -149,7 +219,9 @@ recovery, never one.
     ./analysis/hopfield_probe/run_probe.sh                      # Sec 1
     ... --beta 1e6                                              # Sec 2
     ... --beta 1e6 --encoder_gain 300                           # Sec 3
+    ... --beta 1e6 --encoder_gain 100                           # Sec 3.1
     ... --rescue --skip a --skip bc --skip d --skip controls    # Sec 4
+    ... --alpha 0.5                                             # Sec 4.2
 
 Per-encoder diagnostics: `gain_gap_check.py`, `gain_probe_check.py`
 (`PROBE_CKPT` / `PROBE_GAINS`), `gain_crosstalk_check.py`, `crosstalk_check.py`,

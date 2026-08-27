@@ -89,6 +89,12 @@ def build_parser() -> argparse.ArgumentParser:
                         "needs beta ~ 3e4 at D=1024 -- and that is the "
                         "difference between a linear matched filter whose "
                         "readout decays with steps and a memory that holds.")
+    d.add_argument("--alpha", type=float, default=None,
+                   help="recall update rate: x <- (1-a)x + a*tanh(b*Wx). "
+                        "Production is 1.0. The rescue sweep wants 0.1-0.5 -- "
+                        "damping is what lets a cue settle toward a memory "
+                        "instead of overshooting past it, and for the L7 "
+                        "encoders it is the binding knob, not beta.")
     d.add_argument("--hopfield_scale", type=float, default=None,
                    help="storage scale. Default 1/D. Equivalent to --beta by "
                         "(p -> lambda p, beta -> beta/lambda^2); only the "
@@ -121,6 +127,8 @@ def config_from_args(args) -> ProbeConfig:
         kw["beta_override"] = args.beta
     if args.hopfield_scale is not None:
         kw["hopfield_scale"] = args.hopfield_scale
+    if args.alpha is not None:
+        kw["alpha"] = args.alpha
 
     cfg = ProbeConfig(**kw)
     # Sec 2.3: the world is pinned at the largest K so placement is identical
@@ -166,6 +174,7 @@ def main(argv: list[str] | None = None) -> int:
         # Saturation threshold: per coordinate (Wz)_i ~ D^-1.5, so the tanh
         # argument is beta * D^-1.5 and it bends around beta ~ D^1.5.
         embed_dim = int(mcfg.out_dim)
+        header["alpha"] = float(cfg.alpha)
         header["recall_regime"] = (
             "saturated" if header["beta"] >= embed_dim ** 1.5 else "linear")
 
