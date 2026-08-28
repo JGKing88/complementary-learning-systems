@@ -19,7 +19,8 @@ mismatch that must be fixed first.
 | **Branch / worktree** | `nav-tri-metric` at `.claude/worktrees/nav-tri-metric` |
 | **Predecessor** | `docs/EXPERIMENTS_NAV_TRI.md` — read its §0 findings 1–22 |
 | **Open decisions** | §11 — four forks put to Jack; spec assumes the recommended default in each |
-| **Running** | `p10_pol` 21300385 (learned exploit, ~u1800/2000, `pi_fiete`); `p10_e_pol_v1` 21300391 (frozen explore, ~u900/1500, `ou_bcs_normal`) |
+| **Running** | Nothing. All eight P10/P11/P12 runs finished their full schedules. |
+| **Charts** | One published page per run — `p10_pol_v1` [3bc9ad4e](https://claude.ai/code/artifact/3bc9ad4e-0655-43ca-b870-0516f4487bdc) · `p10_pol` [388023ce](https://claude.ai/code/artifact/388023ce-a725-4253-a53b-c9979a77baf2) · `p10_e_pol` [00bd7fd3](https://claude.ai/code/artifact/00bd7fd3-bb60-4e22-a968-c62822c5cdb3) · `p10_e_pol_v1` [8fd3ecf0](https://claude.ai/code/artifact/8fd3ecf0-c429-40d6-bde6-008ca25b5a40) · `p11_cur` [4de8dfa7](https://claude.ai/code/artifact/4de8dfa7-9403-43c8-b4f9-b14669ae603e) · `p11_tp` [4dbbe6e9](https://claude.ai/code/artifact/4dbbe6e9-c8e3-41fb-9b38-36a1443bf420) · `p11_cur_tp` [6c3a0503](https://claude.ai/code/artifact/6c3a0503-dba1-405a-a90c-d33c491ee5b2) · `p12_lo` [6b09232a](https://claude.ai/code/artifact/6b09232a-bcd2-4609-9c1d-97d9757d0f5a) · `p12_lo_curtp` [835846df](https://claude.ai/code/artifact/835846df-d30d-46f7-b979-3fe41fdfff7e) |
 | **Finished** | **`p10_pol_v1` 21300389** — 2000/2000, **1.000 success @ 10.95 steps (1.10× optimal)**, the phase-2 best exploit model. **`p10_e_pol` 21300390** — 1500/1500, **cps 0.75** against a billiard ceiling of 0.775. |
 | **Done** | §4 blocking fixes, P1 (§5) with figures, the recall-mechanism thread §5.3-5.9, **P2 (§6)**, and **P10 (§9.4–9.8)** |
 | **⚠ Read before quoting any §9.6–9.8 number** | Every behavioural number there is on the **`recorded`** split — the run's own `base_val`, never trained on but the set it was scored against at every eval, and the only set the probe could build until 2026-08-27. It is **not** a fresh draw. `--split` now exists on the probe; nothing has been re-run with it. |
@@ -3803,6 +3804,79 @@ their validation-set performance, re-probe with
 `--split place=held_out` (which sets all three traits to `held_out`). The
 grammar and minting path are shared with `eval_all`, so the two are directly
 comparable.
+
+---
+
+### 9.9 P11 / P12 — why 550 updates, and what "learned speed" was worth
+
+Eight runs, all 2000/2000 (explore arms 1500/1500), all against `p10_pol_v1`.
+Write-ups are published as charts; links in §0.
+
+#### P11 — three shaping knobs on the convergence question
+
+Stability reported as two threshold-free facts: the update at which a run first
+reaches 0.85 success, and the minimum it touches afterward. (An earlier draft
+counted "collapses below 0.55" and applied it inconsistently — the control's
+count swept in pre-breakthrough updates while the treatments' did not, which
+flattered the treatments.)
+
+| arm | first ≥0.85 | min after | locks | final steps | final @ 10 |
+|---|---|---|---|---|---|
+| control `p10_pol_v1` | u150 | 0.490 | u600 | 10.95 | 0.958 |
+| **`p11_cur`** curriculum | u300 | **0.979** | **u400** | 11.40 | 0.948 |
+| `p11_tp` time_penalty 0.02 | **u100** | 0.365 | u500 | 11.58 | 0.875 |
+| `p11_cur_tp` both | u200 | 0.646 | u450 | 12.09 | 0.958 |
+
+**None of these knobs changes what the policy becomes** — all four finish
+within 10.95–12.09 steps. They change only how turbulently it gets there.
+
+- **Curriculum wins on stability outright.** Never falls below 0.979 after its
+  breakthrough, against the control's 0.490. Costs a later start (u300 vs u150).
+- **Cheaper failure is the largest single-knob effect and the wrong one.**
+  24× more success at u50 (0.760 against 0.031) — but at 59 steps per goal
+  against the control's 10. It is stumbling onto targets inside a 200-step
+  budget, not steering. It then has the *worst* stability of the four. **Early
+  goal discovery is not the convergence bottleneck.**
+- **The cross is intermediate, not additive**, on both stability measures, and
+  worst of all four on final efficiency. Two knobs pushing the same quantity in
+  opposite directions.
+
+`p11_eps` is a **no-op** and was cancelled: `exploit.py` hard-codes
+`epsilon=0.0`, so `--epsilon_explore` on an exploit-only schedule is accepted,
+echoed and discarded. It produced numbers bit-identical to the control. This
+also retracts a claim made earlier in the analysis — ε-annealing was cited as a
+possible contributor to the u150–u250 swings, and **there was never any ε in
+any exploit run in this phase**. The trainer now warns at startup.
+
+#### P12 — the control P10 needed and did not have
+
+`p10_pol_v1` is pinned at 1.0; `p10_pol` may range over [0.5, 2] and learns
+~1.8. Nothing sat in between, so "learned beats frozen" confounded *choosing* a
+speed with *being allowed to go fast*.
+
+| speed setting | chooses | final steps | directness | min after 0.85 |
+|---|---|---|---|---|
+| pinned at 1.0 | — | 10.95 | 1.043× | 0.490 |
+| **learned [0.5, 1.0]** | 0.94 | 11.79 | 1.081× | **0.844** |
+| learned [0.5, 1.0] + treatments | 0.975 | 11.25 | 1.042× | 0.646 |
+| learned [0.5, 2.0] | ~1.8 | **7.17** | 1.076× | 0.490 |
+
+**Choosing does not buy steps.** Capped at 1.0 the policy takes 11.79 steps
+against the pinned arm's 10.95 — slightly worse. Every setting walks a path
+within 4–8% of the straight line. **Step count tracks the speed cap**, and
+§9.5's headline (7.17 against 10.95) was permission to move 80% faster, not a
+better navigator.
+
+**Choosing does buy stability, unpredicted.** Same cap, same everything else,
+and the minimum after breakthrough is 0.844 against 0.490. A candidate reading:
+an adjustable step size gives PPO a low-risk way to absorb a bad update, where a
+pinned policy can only change heading. Suggested by this run, not tested by it.
+
+**Consequence for §9.5.** The frozen-vs-learned framing used throughout P10 was
+measuring the bound, not the freedom, and freezing is just the degenerate case
+of a tight bound. The genuine frozen-speed findings that survive are: it costs
+nothing on explore (§9.8), and it is not the cause of the near-goal κ gradient
+(§9.7.6).
 
 ---
 
