@@ -4174,3 +4174,88 @@ distinguishing them needs the v2 intervention.
 signal is weak" is withdrawn. It does not. Widening the heading distribution
 near the goal under interference is now a live policy-side lever, not something
 already solved — alongside the encoder work §12.6 points at.
+
+---
+
+## 13. P14 — interventions: the causal test
+
+Spec `docs/EXPLOIT_DIAGNOSTIC.md` §7. Jobs 21618482 (frozen arms) / 21618483
+(learned speed), six runs at u2000, 10 distractors, six arms each, 155 baseline
+failures. Report: https://claude.ai/code/artifact/790509c2-253b-423e-a46d-e039ac004665
+
+§12 is conditioned on a failure having happened, so it is correlational
+throughout. These re-roll the same episode with one factor changed. **Pairing is
+exact** — `deterministic=True` actions, fixed starts, RNG re-seeded per arm;
+verified by two independent baseline runs producing bit-identical rows — so a
+flip is an effect, not a sample, and no matched-baseline machinery is needed.
+
+### 13.1 Results
+
+| arm | rescued / 155 | broken |
+|---|---|---|
+| `A_clean` — goal-only memory everywhere | **155 (100%)** | 0 |
+| `B_oracle` — true bearing, magnitude kept | **155 (100%)** | 0 |
+| `C_far` — goal-only memory beyond 2 cells | 139 (90%) | 1 |
+| `C_near` — goal-only memory within 2 cells | 57 (37%) | 0 |
+| `D_placebo` — fixed random rotation | 16 (10%) | **709** |
+
+**The control passes emphatically.** `D_placebo` holds magnitude, smoothness and
+within-episode consistency fixed and changes only the target: success falls from
+~0.87 to ~0.26. So `B_oracle`'s gain is goal-specificity, not "any consistent
+signal". Broken episodes end a median 6–7 cells out with `clip_frac` 0.95 and
+`q_acc` −0.45 — driving confidently into a wall, which is what a fixed wrong
+bearing predicts.
+
+### 13.2 The symptom taxonomy is causally validated
+
+Share of each baseline symptom rescued, pooled:
+
+| symptom | n | `C_near` | `C_far` |
+|---|---|---|---|
+| straddled | 42 | **98%** | 100% |
+| approached_left | 28 | 36% | 89% |
+| blocked | 46 | **0%** | 78% |
+| timeout_converging | 21 | 24% | 86% |
+| never_approached | 18 | 6% | 100% |
+
+`C_near` rescues 98% of straddles and **0% of blocked**. The spatial arms were
+defined by a distance gate and the symptoms by the shape of `d(t)`, with no
+knowledge of each other — the agreement is a check, not a construction. A
+near-band fix repairs exactly the near-band symptom.
+
+### 13.3 The damage is done on the approach, not at the doorstep
+
+| rescued by | n | share |
+|---|---|---|
+| both arms | 57 | 37% |
+| `C_near` only | **0** | **0%** |
+| `C_far` only | 82 | 53% |
+| neither — needs clean everywhere | 16 | 10% |
+
+**Zero episodes are rescued only by `C_near`**, so the rescue is strictly
+nested: everything a clean near-goal readout saves, a clean approach readout
+also saves, plus 82 more. Arrive in good shape and you get in even with a
+degraded terminal readout; a clean terminal readout cannot save an episode that
+never arrives. The near-goal `q_accuracy` collapse (0.634, §12.4) is real but
+**secondary** — it accounts for the 10% that need clean everywhere.
+
+### 13.4 What this settles, and what it does not
+
+Settled: contamination is causally sufficient AND necessary for every failure
+measured — 155/155 rescued, 0 broken — and the policy genuinely uses the
+direction of `q`, since scrambling it is catastrophic. §12.2's attribution
+survives the test that could have falsified it.
+
+**Not news, and §12 overstated it.** Distractors here are **memory-only**:
+`sample_distractors` draws encoded patterns from grid positions *outside* the
+test env, never physical obstacles. So `A_clean` reproduces the
+`n_distractors=0` condition, which already scores 192/192 — its recovery to
+1.000 is close to a consistency check. What it adds is pairing: the
+observational `d=0` vs `d=10` comparison is unpaired, because drawing
+distractors consumes RNG and shifts every start. The load-bearing arms are
+`C` and `D`.
+
+Still open: `B_oracle` and `A_clean` both saturate at 1.000, so they cannot be
+separated — whether a clean *decode* would beat a clean *memory* is untestable
+at this difficulty. It needs a harder regime (more distractors, or a smaller
+capture radius) where neither saturates.

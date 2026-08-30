@@ -103,8 +103,28 @@ def _circular_sd_np(kappa):
 @torch.no_grad()
 def rollout(*, agent, env, env_offset, vectorhash, hopfields, cfg, device,
             starts, max_steps, ends_on_arrival, goal_in_memory,
-            q_rescale=None, q_scale=None):
+            q_rescale=None, q_scale=None,
+            signal_hopfields=None, signal_mask_fn=None, q_transform=None):
     """One trial per Hopfield, in parallel, recording everything.
+
+    The three intervention hooks are no-ops unless passed, so the observational
+    path is byte-identical to what it was. They exist because every conclusion
+    in EXPLOIT_DIAGNOSTIC is conditioned on a failure having happened, which
+    makes it correlational; re-rolling the same episode with one factor changed
+    is what makes it causal.
+
+    ``signal_hopfields``  compute the recall from a DIFFERENT memory (e.g. one
+                          holding only the goal) while the agent navigates the
+                          same world. On-distribution -- it is exactly what the
+                          model sees at n_distractors=0.
+    ``signal_mask_fn``    ``pos_f -> (B,) bool``; where True the alternate
+                          memory is used, elsewhere the real one. Gates the
+                          swap in space, e.g. only within two cells of goal.
+    ``q_transform``       ``(q, pos_f) -> q``; rewrites the recalled direction.
+
+    All three apply to EVERY channel carrying the recall, not just the obvious
+    one: with ``input_hopfield_multistep=[1,2,3]`` the policy reads four copies
+    of it, and intervening on one leaves the other three contradicting it.
 
     Mirrors `evaluation/batched.py` step for step -- same channel assembly,
     same contract, same freeze-on-arrival -- and additionally keeps the arrays
@@ -148,12 +168,31 @@ def rollout(*, agent, env, env_offset, vectorhash, hopfields, cfg, device,
         embeddings_np = vectorhash.get_encoded_state(positions, env_offset)
         embeddings = torch.from_numpy(embeddings_np).float().to(device)
 
+        # Where the alternate memory applies this step. Computed once and
+        # reused for the multistep channels, so the four copies of the recall
+        # the policy reads can never disagree about which world they came from.
+        swap = None
+        if signal_hopfields is not None:
+            swap = (np.asarray(signal_mask_fn(pos_f), dtype=bool)
+                    if signal_mask_fn is not None else np.ones(B, dtype=bool))
+
         q_np = np.zeros((B, 2), dtype=np.float32)
         if cfg.agent.input_hopfield_signal:
             sig_t, q, _mask, _W = signal_ops.hopfield_signal_at(
                 vectorhash, cfg, embeddings_np, embeddings, positions,
                 env_offset, hopfields, False, device, embeddings.shape[1])
             q_np = np.asarray(q, dtype=np.float32)
+            if swap is not None:
+                sig2, q2, _m2, _W2 = signal_ops.hopfield_signal_at(
+                    vectorhash, cfg, embeddings_np, embeddings, positions,
+                    env_offset, signal_hopfields, False, device,
+                    embeddings.shape[1])
+                q_np = np.where(swap[:, None],
+                                np.asarray(q2, dtype=np.float32), q_np)
+                sig_t = torch.where(
+                    torch.from_numpy(swap).to(device).unsqueeze(1), sig2, sig_t)
+            if q_transform is not None:
+                q_np = np.asarray(q_transform(q_np, pos_f), dtype=np.float32)
             q_np = _rescale_q(q_np, q_rescale, q_scale).astype(np.float32)
             if (cfg.agent.input_hopfield_raw
                     and cfg.agent.hopfield_mode != "discrete"):
@@ -183,10 +222,23 @@ def rollout(*, agent, env, env_offset, vectorhash, hopfields, cfg, device,
                 vectorhash, cfg, embeddings_np, embeddings, hopfields, False,
                 W, cfg.agent.input_hopfield_multistep, embeddings.shape[1],
                 device)
+            if swap is not None:
+                msq2 = signal_ops.multistep_q(
+                    vectorhash, cfg, embeddings_np, embeddings,
+                    signal_hopfields, False, W,
+                    cfg.agent.input_hopfield_multistep, embeddings.shape[1],
+                    device)
+                msq = {s: np.where(swap[:, None],
+                                   np.asarray(msq2[s], dtype=np.float32),
+                                   np.asarray(v, dtype=np.float32))
+                       for s, v in msq.items()}
             for s, q_s in msq.items():
+                q_s = np.asarray(q_s, dtype=np.float32)
+                if q_transform is not None:
+                    q_s = np.asarray(q_transform(q_s, pos_f), dtype=np.float32)
                 values[channels.multistep_name(s)] = torch.from_numpy(
-                    _rescale_q(np.asarray(q_s, dtype=np.float32),
-                               q_rescale, q_scale).astype(np.float32)).to(device)
+                    _rescale_q(q_s, q_rescale, q_scale).astype(np.float32)
+                ).to(device)
 
         rnn_input = channels.build_policy_input(
             input_specs, values, batch_size=B).unsqueeze(1)
