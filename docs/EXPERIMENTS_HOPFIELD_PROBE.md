@@ -52,9 +52,28 @@ Controls at K=5: oracle 7.2°, local oracle 6.9°, Gram-Schmidt swap 5.9°,
 `use_tanh=False` identical to production, `tanh |arg|` max 3.7e-4. The basis is
 sound and the recall is linear.
 
-`unique_radius` does **not** rank encoders the way `q` accuracy does — v35 leads
-every probe metric with the worse published `r_min` — but it has 8× the
-parameters, so capacity is an unresolved confound.
+On this pair `unique_radius` and `q` accuracy **agree**. v35 has the better
+radius — `r_min` **16**, named as the best of the 407-checkpoint audit in
+`EXPERIMENTS_UNIQUE_RADIUS.md` §1 — and it also leads every probe metric:
+
+| | `r_min` | \|err\| | acc45 | exact | reach | pairwise cos |
+|---|---|---|---|---|---|---|
+| v35 | **16** | **8.81°** | **99.4%** | **74.3%** | **87.2%** | **0.005** |
+| L7-s42 | 9.0 | 11.81° | 97.0% | 57.8% | 78.4% | 0.027 |
+
+> **This reverses an earlier claim in this document.** It previously read
+> "`unique_radius` does *not* rank encoders the way `q` accuracy does — v35
+> leads every probe metric with the worse published `r_min`." That was
+> unsupported: v35's checkpoint carries no stored `unique_radius`, and rather
+> than look the number up I inferred a worse radius from v35 predating the
+> campaign. The doc had 16 on record the whole time.
+
+Two encoders is not a trend, and they differ on more than radius: v35 has 8×
+the parameters and **5× lower cross-talk** (worst pair 0.264 vs 0.524). Since
+it leads on radius *and* orthogonality, this cannot separate which one the
+readout is actually reading — and §4/§7 argue the binding constraint is
+cross-talk, which enters `unique_radius` only through the alias ceiling.
+A param-matched pair that differs on one of the two would settle it.
 
 ## 2. β alone — a net loss
 
