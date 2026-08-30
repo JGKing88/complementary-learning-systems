@@ -4066,10 +4066,11 @@ flips the interpretation. This is the §9.7 trap in its sharpest form yet.
 
 On *successes* — so not a failure artifact — `q_accuracy` by distance runs
 0.634 (d ∈ [1,2)) → 0.832 → 0.929 → 0.953 → 0.986 → 0.991 → 0.993. The readout
-is near-perfect far out and degrades sharply inside two cells. The policy
-appears to know: heading circular sd widens from 0.095 far out to 0.155 near
-the goal. On failures it is uniformly wide (0.18–0.22) and does *not* widen near
-the goal.
+is near-perfect far out and degrades sharply inside two cells. Heading circular
+sd widens over the same range, 0.095 far out to 0.155 near the goal.
+
+**That is NOT the policy knowing the readout is unreliable — retracted, see
+§12.7.** The widening happens just as much with no distractors at all.
 
 `explained_frac = 1.000` throughout, so the linear-recall decomposition
 describes what the network actually computed and the margin numbers are safe to
@@ -4094,12 +4095,82 @@ P11/P12 knobs moves the endpoint.
 
 ### 12.6 What this points at
 
-The fix indicated is **encoder/memory separation at 10 distractors**, not policy
-training and not a config change. The policy already follows the signal it is
-given and already widens its heading distribution where the signal is weak. Two
-things worth doing next, in order:
+The main lever is **encoder/memory separation at 10 distractors** — the policy
+does follow the signal it is given, and no config change fixes a contaminated
+recall.
+
+But there is a **second, policy-side lever**, which an earlier draft of this
+section wrongly closed off: the heading spread does *not* widen where the
+readout breaks (§12.7.1). Inside two cells the readout falls to 73% of its
+clean accuracy and the spread response is 1.06 — nil. Making the policy widen
+there is a live option, not something already solved.
+
+Things worth doing next, in order:
 
 1. **The v2 intervention** — splice the true direction in place of `q` and
    re-roll. If success recovers, mode A is proven rather than inferred. This is
    the single highest-value follow-up and is already specified.
 2. **Re-probe on a minted split.** Every number here is `recorded`.
+
+### 12.7 Retraction — the policy does not widen because it distrusts the readout
+
+§12.4 first read the near-goal rise in heading spread as calibration: the
+readout degrades inside two cells, the spread widens there, so the policy
+"knows". **That is wrong**, and the zero-distractor cells already in the same
+run falsify it.
+
+At 0 distractors the readout never degrades — `q_accuracy` is 0.970 at d<2
+against 0.992 far out, a near/far ratio of 0.99 — and the policy **still**
+widens near the goal in every one of the six runs:
+
+| run | near/far spread, d=0 | near/far spread, d=10 |
+|---|---|---|
+| p10_pol_v1 | 1.47 | 1.61 |
+| p11_cur | 1.87 | 2.30 |
+| p11_tp | 2.40 | 2.42 |
+| p11_cur_tp | 1.94 | 1.92 |
+| p12_lo | 1.82 | 1.98 |
+| p12_lo_curtp | 1.78 | 2.37 |
+
+The near-goal widening is a function of DISTANCE, not of signal quality. The
+confound §12.4 missed is that on a direct trajectory distance is collinear with
+time-in-episode, and the whole effect survives with the signal held perfect.
+
+### 12.7.1 What survives: a confidence signal that is silent where it matters
+
+Comparing the same model against itself at the same distance, 10 distractors
+over 0, mean across the six runs:
+
+| d ≥ | 1 | 2 | 3 | 4 | 5 | 7 | 9 | 13 |
+|---|---|---|---|---|---|---|---|---|
+| spread ratio | **1.06** | 1.37 | 1.57 | **1.63** | 1.41 | 1.13 | 1.08 | 0.99 |
+| q_accuracy ratio | **0.73** | 0.85 | 0.90 | 0.92 | 0.97 | 1.00 | 1.00 | 1.00 |
+
+The policy *does* widen under distractors — so a confidence signal exists — but
+the two rows are **anti-aligned at the near bin**. Where the readout is most
+degraded (inside two cells, down to 73% of its clean accuracy) the spread
+response is essentially nil at 1.06. The response peaks at d∈[3,5), where the
+readout has barely moved.
+
+So the confidence signal goes silent in exactly the band where the readout
+breaks — and that is the band where failures happen (§12.3: 37% of failures
+reach inside R+1).
+
+Two controls, both of which strengthen the result rather than weaken it:
+
+- **Start distance is matched**: 10.95 at d=0 against 10.68–10.89 at d=10, so
+  the comparison is not confounded by geometry.
+- **d=10 successes take MORE steps** (e.g. p11_tp 17.6 vs 12.0). If that extra
+  dithering is spent near the goal it should have manufactured elevation in the
+  near bin; the ratio is 1.06 regardless.
+
+**Alternative not ruled out.** κ is computed from the trunk's direction-vector
+norm (`polar_head.PolarHead.forward`), so the mid-range elevation could be
+passive magnitude propagation — ‖q‖ falls under interference and κ follows —
+rather than a learned calibration. Behaviourally the conclusion is the same;
+distinguishing them needs the v2 intervention.
+
+**Consequence for §12.6.** The read that "the policy already widens where the
+signal is weak" is withdrawn. It does not. Widening the heading distribution
+near the goal under interference is now a live policy-side lever, not something
+already solved — alongside the encoder work §12.6 points at.
