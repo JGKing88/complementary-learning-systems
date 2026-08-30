@@ -42,6 +42,13 @@ retrieval hardest, from 57.8% to 38.8%.
 every step count from 1 to 15, retrieval 97.5%, reach 99.6%, for 1.2° of mean
 angular error against production.
 
+**And the reach objective decomposes** (§10). Continuous reach is per-environment
+and nearly binary: a goal dies when **one** co-stored competitor crosses cos
+≈ 0.25, that competitor sits ~370 cells away, and at K=1 no encoder loses a
+single environment. `r_min` cannot see any of it — six candidates share
+`r_min` 12.0 while their far-field alias rate spans seven-fold — and the rate
+of distant pairs above 0.25 predicts measured reach at **ρ = −0.92**.
+
 ---
 
 ## 1. Production baseline
@@ -472,3 +479,166 @@ Per-encoder diagnostics: `gain_gap_check.py`, `gain_probe_check.py`
 `decouple_check.py`, `corner_check.py`, `delta_scale_check.py`,
 `traj_compare_check.py`, `regime_check.py` (Sec 7's algebra vs
 measurement).
+
+Sec 10's measurements: `dead_goal_check.py` (per-env reach, dead fraction vs K),
+`dead_overlap_check.py` (which goal dies, and why not distance),
+`dead_threshold_check.py` (where the overlap line sits),
+`alias_lattice_check.py` (the module-realignment falsification),
+`gain_tradeoff_check.py` (alias rate against res90),
+`nav_screen_check.py` (the pool screen), `nav_screen_validate.py`
+(the screen against measured reach).
+
+## 10. What sets continuous reach — the synthesis
+
+Written 2026-08-30, stepping back from the arms above to ask what would make a
+**10% coverage, `exclude_cross_env_pairs=True`** encoder best on *continuous*
+reach. Re-analysis of the archived arms plus new measurements over the encoder
+pool. Nothing here needed a new probe run.
+
+> **The `reach` column in §1–§4.5 is the discrete rate.** The continuous one is
+> the stated objective and it differs — usually higher, because sub-cell steps
+> escape sinks a cardinal classifier falls into, but *lower* at the top
+> (`v35 g100+β1e6`: 0.996 discrete, 0.974 continuous).
+
+### 10.1 Reach is per-environment and nearly binary
+
+`Scalars` keeps one value per scored environment, so the distribution is
+recoverable from the archive. It is a mixture, not a spread:
+
+| arm, K=5 | mean | envs at ≥0.95 | envs <0.5 | worst |
+|---|---|---|---|---|
+| v35 g100+β1e6 | 0.974 | 90% | **0%** | 0.56 |
+| production v35 | 0.867 | 80% | 12% | 0.003 |
+| production att16-s42 | 0.806 | 72% | 20% | 0.003 |
+| att32-s42 | 0.631 | 53% | 40% | 0.003 |
+| β1e6 alone, att16-s42 | 0.525 | 38% | 47% | 0.003 |
+
+Reach against **start distance is flat** — att16-s42 scores 0.83 from cells
+adjacent to the goal and 0.77 from 21 cells away. So the failures are not
+accumulated error and not a last-half-cell precision problem: in a fifth of
+environments the goal is unreachable *from the cell next to it*.
+
+### 10.2 Every failure is interference between stored goals
+
+At **K=1 the dead fraction is 0.00 for every arm**, including the worst.
+It then climbs with load (`dead_goal_check.py`, fraction with reach <0.5):
+
+| arm | K=1 | K=3 | K=5 | K=10 | K=20 |
+|---|---|---|---|---|---|
+| att16-s42 | 0.00 | 0.33 | 0.35 | 0.40 | 0.70 |
+| att32-s42 | 0.00 | 0.33 | 0.55 | 0.55 | 0.70 |
+| v35 | 0.00 | 0.25 | 0.15 | 0.10 | 0.35 |
+| att16-s42 g300+β1e6 | 0.00 | 0.42 | 0.20 | 0.20 | 0.45 |
+| **v35 g100+β1e6** | 0.00 | **0.00** | **0.00** | **0.00** | 0.05 |
+
+Saturation does not reduce the failure rate, it **removes the mode** up to
+K=10 — which is condition (b) of §7 paying off.
+
+### 10.3 A goal dies when one co-stored competitor crosses cos ≈ 0.25
+
+`multi_env_goals` stores the first K goals of a world, so the competitors are
+computable from the checkpoint. Worst overlap separates dead from live at
+**AUC 0.83–1.00** (`dead_overlap_check.py`), and a single threshold
+misclassifies 0–2 of 20 (`dead_threshold_check.py`, best split 0.18–0.36):
+
+| encoder | max_cos, dead | live | min_sep, dead | live | AUC |
+|---|---|---|---|---|---|
+| att16-s42 | 0.327 | 0.090 | 383 | 350 | 0.96 |
+| att16-s43 | 0.362 | 0.067 | 371 | 354 | 0.89 |
+| att32-s42 | 0.325 | 0.103 | 365 | 358 | 0.83 |
+| att32-s43 | 0.386 | 0.077 | 371 | 354 | 1.00 |
+
+**Real-space separation predicts nothing** — 383 against 350, and the wrong
+sign. The killer sits ~370 cells away: far-field aliasing, hundreds of cells
+outside any coding radius. It is one competitor and not an average, which is
+§4.5's argmax-versus-mean split again.
+
+> **Falsified: the killers are not on the module lattice.** The obvious story —
+> aliases where a grid module realigns exactly — looks strong in the 20 probe
+> pairs and dies at scale. Of 3,861 far pairs, 42% of the high-overlap ones
+> have an exact module alignment against a **40% base rate**
+> (`alias_lattice_check.py`). That is evidence against λ being the visible
+> lever, contrary to `EXPERIMENTS_UNIQUE_RADIUS.md` §10.3 item 4.
+
+### 10.4 `r_min` is priced for a different problem
+
+Six constrained candidates carry the **same stored `r_min` of 12.0** while
+their far-field alias rate spans seven-fold. And the campaign's last axis moved
+the wrong way on purpose: `attract_lambda` 8 → 64 buys res90 12 → 18, exactly
+what §4.4b's law rewards, and pays alias rate 0.0123 → 0.0610.
+
+Inference gain is the same trade on a fixed checkpoint
+(`gain_tradeoff_check.py`) — att16-s42, gain 1 → 1000: far-field alias rate
+0.111 → 0.0094 (12×), res90 22 → 8.
+
+**So `r_min` and continuous reach pull in opposite directions along both of the
+axes that have been swept most recently.** `r_min` prices res90 and the alias
+ceiling as comparable factors; navigation reads the ceiling almost alone,
+because the Gram-Schmidt basis only needs one-cell neighbours.
+
+### 10.5 A screen that costs seconds
+
+If dead goals are goals with a competitor above ~0.25, the rate of *distant*
+pairs above that line should predict reach. Against the arms where reach was
+measured — nine encoder × setting combinations, two encoder families, gain 3.7
+to 300, β 100 to 1e6 — **Spearman = −0.917, p = 0.0005**
+(`nav_screen_validate.py`). The threshold came from §10.3, not from this fit.
+
+Over the pool (`nav_screen_check.py`, seed 42, res90 as the local guard):
+
+| encoder | `r_min` | far>.25 @100 | res90 | far>.25 @300 | res90 |
+|---|---|---|---|---|---|
+| *v35 (out of brief)* | — | *0.0036* | *8* | *0.0031* | *6* |
+| *w21 arena-spread ×2 (out of brief)* | *5.0* | *0.0009* | *3* | *0.0009* | *3* |
+| L5 `sm50_b4096` | 12.0 | 0.0043 | 6 | 0.0042 | 5 |
+| **L6 `eps1_rate0.5`** | 12.0 | 0.0088 | 10 | **0.0057** | **8** |
+| w54 `rep0.25` | 12.0 | 0.0106 | 12 | 0.0083 | 9 |
+| w53 `att8` | 12.0 | 0.0123 | 12 | 0.0094 | 10 |
+| **L7 `att16` (headline)** | 12.0 | **0.0170** | 14 | 0.0125 | 11 |
+| w54 `att32` | 12.0 | 0.0269 | 16 | 0.0170 | 12 |
+| w54 `att64` | 12.0 | 0.0610 | 18 | 0.0388 | 13 |
+
+The ranking is unchanged at any threshold from 0.15 to 0.35.
+
+### 10.6 What to do
+
+1. **Select on the alias rate, not `r_min`**, with a res90 floor. Free, and it
+   ranks a pool where `r_min` is constant.
+2. **Best available legal encoder: Level 6 at inference gain 300**, with
+   saturated β. `w49_g100_knee/008_eps1_rate0.5` lands at (0.0057, res90 8) —
+   the only constrained arm inside v35's box, and v35 there measured **zero
+   dead goals through K=10** and 0.974 continuous reach. Running the probe on
+   it is the one experiment that would confirm all of §10.
+3. **Reverse the last two waves.** `attract_lambda` down (8 beats 16 beats 32
+   beats 64; 4/2/1 untested), `repel_weight` down (`rep0.25` already beats
+   `att16`, and `EXPERIMENTS_UNIQUE_RADIUS.md` §10.2 flagged the axis).
+4. **Re-open §5.6l — its verdict was priced in `r_min`.** The arena-spread
+   diagnostic scores **0.0009**, the best measured anywhere, four times better
+   than v35. It was dismissed because `r_min` stayed at 6, all of the gap being
+   res90. It is out of brief (the spread term sees positions outside the
+   patches), so treat it as the bracket — and if res90 6 is survivable, the job
+   becomes reaching that ceiling legally.
+5. **Settle the res90 floor.** Direction is fine at res90 8, 11 and 14 and
+   collapses (10.0° → 19.2°) at 6 — four points from two encoders, and
+   everything above is bounded by it. A gain sweep with the full probe at each
+   step replaces it with a curve.
+6. **Consider not storing K goals at once.** Outside the encoder: at K=1 every
+   encoder solves every environment, and the memory currently holds goals from
+   environments the agent is not in. Whether the memory can be scoped to the
+   current environment is a question about the task, but it is the largest
+   single effect in this section.
+
+### 10.7 What this rests on
+
+- The 0.25 line is 20 goals per encoder across four encoders; the *ranking* is
+  threshold-insensitive but the number is soft.
+- The res90 = 8 floor is four data points. §10.6 item 5 exists for this.
+- **v35 is a target, not a candidate**: 20.4% coverage, 60 patches,
+  `hidden_dim` 1024, 4.64M params, no cross-env constraint. It shows the box is
+  reachable, not that it is reachable under the brief.
+- One scaffold, one seed per screened arm, K ≤ 20. The dead-goal joins use the
+  four worlds serialised into the archive, so n = 20 per encoder there.
+- Raising inference gain changes every embedding: none of this is a config edit
+  for a trained policy.
+
+Page: https://claude.ai/code/artifact/d65ad39b-eb99-4ae3-808c-52223bec874a
