@@ -3970,3 +3970,136 @@ other end and is a one-line change (4 → 1 is worth 4× the cross-env signal).
 Neither is free: the ±1 code is injective where the range profile aliases, and
 `wall_resolution=4` exists so two positions inside one cell read differently.
 And neither helps the free-heading case (§6.5), which is the one that binds.
+
+---
+
+## 12. P13 — per-episode failure forensics
+
+Method spec: `docs/EXPLOIT_DIAGNOSTIC.md`. Tool: `analysis/nav_tri/exploit_diag.py`
+(rollouts → per-episode table → `derive()`) and `analysis/nav_tri/exploit_report.py`
+(table → HTML). Launcher: `hopfield_nav/run_exploit_diag.sh`. Report:
+https://claude.ai/code/artifact/790509c2-253b-423e-a46d-e039ac004665
+
+Motivation: §9's numbers come from `behavior_probe`, which pools every step of
+every episode behind a fail mask. `follow_q_fail = 0.43` reads the same whether
+every failure was mildly bad or half were catastrophic, and the mixture is what
+decides what to fix. This labels each failure on two independent axes —
+**symptom** (what the trajectory did, from `d(t)` alone) and **cause** (which
+link of memory → readout → policy → execution broke, from the cosines against a
+distance-matched success baseline).
+
+Runs: nine cells at 10 distractors and nine at 0, `recorded` split, 32 trials ×
+6 envs = 192 episodes each, 3456 episodes total. Jobs 21616671 / 21616672 /
+21616673. **Checkpoints must be grouped by action head** — the agent is built
+once from the first config, so `freeze_speed` and `min/max_action_norm` have to
+agree. The eight P2 runs are three incompatible groups, and the tool now
+refuses a mixed list rather than silently reading a [0.5, 1] policy as [0.5, 2].
+
+### 12.1 Failures exist only under memory competition
+
+Every checkpoint is **192/192 at zero distractors**. All 213 failures across the
+nine 10-distractor cells. Success at 10 sits at 0.849–0.917 with no arm
+separating: p10_pol_v1 0.875, p11_cur 0.870, p11_tp 0.875, p11_cur_tp 0.854,
+p12_lo 0.870, p12_lo_curtp 0.849.
+
+### 12.2 The dominant cause is recall contamination, not decode failure
+
+Pooled over the four frozen-speed arms (101 failures):
+
+| symptom | ro_memory | ro_decode | policy | execution | row |
+|---|---|---|---|---|---|
+| straddled | 13 | 5 | 7 | 0 | 25 |
+| approached_left | 7 | 0 | 7 | 6 | 20 |
+| blocked | 30 | 0 | 1 | 0 | 31 |
+| timeout_converging | 10 | 0 | 4 | 0 | 14 |
+| never_approached | 1 | 0 | 10 | 0 | 11 |
+| **total** | **61** | **5** | **29** | **6** | **101** |
+
+**The goal pattern wins the recall competition on 101/101 failures and 667/667
+successes.** It never loses. What separates a failure is the *level*: margin
+median 0.60 against 0.93 for successes at the same distance, distributions that
+barely overlap (success p10 0.836 ≈ failure p90 0.834). The recall is a blend
+the goal merely dominates, and the contamination rotates the direction.
+
+This corrected a real error in the tool. The first version split
+`readout_memory` from `readout_decode` on an absolute floor (`margin < 0.02`),
+which asks "did a distractor win" — the answer is never — and so labelled
+~65/101 as decode errors. Switching to a **matched deficit** flipped it to 61
+memory / 5 decode. The whole tool is built on matched baselines and this was the
+one place an absolute cutoff survived; the doc now records why.
+
+Symptom and cause are genuinely independent, which is the case for both axes:
+**`blocked` is 30/31 contamination** (the agent drives into geometry because the
+recalled heading is wrong) while **`never_approached` is 10/11 policy**. Pooled
+cosines average those together.
+
+### 12.3 Near-goal failure is a heading problem, not a geometry problem
+
+Threshold-free, pooled over the frozen arms (n=101, R=1.0):
+
+- 37% reached inside R+1 — touched the doorstep and did not enter
+- 54% reached inside R+2
+- 36% never got within R+3
+
+Of the 37 that touched the doorstep, **5 had clip_frac > 0.5 and the median was
+0.000** — no wall contact. So the near-goal failure is heading error, as §2 of
+the spec predicted; it is not the step-length straddle, which the geometry at
+R=1.0 mostly forbids (the ball is twice the minimum step).
+
+`clip_frac` is strongly bimodal — 50 episodes below 0.1, 37 above 0.9, four in
+between — so the 0.5 cut for `blocked` sits in an empty gap rather than through
+a mode.
+
+**Caveat, and the threshold machinery caught it.** The *leading* symptom is not
+stable across the (band width, dwell) grid for three of four arms; `straddled`
+ranges 3–9 depending on the setting. The near-goal claim above is stated in
+threshold-free terms for that reason. "Straddled is the modal failure" is not a
+claim this data supports.
+
+### 12.4 Mode A, and the readout degrades near the goal
+
+Pooled at 10 distractors for p10_pol_v1: `follow_q_fail` 0.435 against
+`align_true_fail` **−0.176**. The policy follows the readout faithfully and the
+readout points the wrong way — the agent moves *away* from the goal on average.
+Read alone, 0.435 looks like a mediocre policy; the matched baseline is what
+flips the interpretation. This is the §9.7 trap in its sharpest form yet.
+
+On *successes* — so not a failure artifact — `q_accuracy` by distance runs
+0.634 (d ∈ [1,2)) → 0.832 → 0.929 → 0.953 → 0.986 → 0.991 → 0.993. The readout
+is near-perfect far out and degrades sharply inside two cells. The policy
+appears to know: heading circular sd widens from 0.095 far out to 0.155 near
+the goal. On failures it is uniformly wide (0.18–0.22) and does *not* widen near
+the goal.
+
+`explained_frac = 1.000` throughout, so the linear-recall decomposition
+describes what the network actually computed and the margin numbers are safe to
+read.
+
+### 12.5 Training does not change what the model fails at
+
+`p11_cur` at 10 distractors, u500 → u2000 (4 points; series, not a fit):
+
+| update | success | fails | straddled | blocked | ro_memory | policy |
+|---|---|---|---|---|---|---|
+| 500 | 0.917 | 16 | 3 | 7 | 11 | 3 |
+| 1000 | 0.885 | 22 | 4 | 8 | 16 | 5 |
+| 1500 | 0.896 | 20 | 3 | 8 | 15 | 5 |
+| 2000 | 0.870 | 25 | 7 | 8 | 18 | 4 |
+
+The success spread is 0.047 against a binomial SE of 0.023 at n=192 — about two
+SE, and non-monotonic. **No directional claim.** As a fraction of failures the
+mixture is flat (ro_memory 0.69 / 0.73 / 0.75 / 0.72), so 1500 further updates
+change neither how often nor why it fails. Consistent with §9.9: none of the
+P11/P12 knobs moves the endpoint.
+
+### 12.6 What this points at
+
+The fix indicated is **encoder/memory separation at 10 distractors**, not policy
+training and not a config change. The policy already follows the signal it is
+given and already widens its heading distribution where the signal is weak. Two
+things worth doing next, in order:
+
+1. **The v2 intervention** — splice the true direction in place of `q` and
+   re-roll. If success recovers, mode A is proven rather than inferred. This is
+   the single highest-value follow-up and is already specified.
+2. **Re-probe on a minted split.** Every number here is `recorded`.

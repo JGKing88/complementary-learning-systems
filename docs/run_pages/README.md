@@ -41,3 +41,21 @@ place rather than creating a second copy.
 **All numbers are on the `recorded` split** — each run's own six validation
 environments. Never trained on, but the set it was scored against at every eval,
 not a fresh draw. See EXPERIMENTS_NAV_P2 §9.8.2.
+
+## P13 — exploit failure forensics
+
+| file | contents | published |
+|---|---|---|
+| `exploit_failures.html` | 18 cells: 6 runs at u2000 plus a p11_cur training sweep, at 0 and 10 distractors | [790509c2](https://claude.ai/code/artifact/790509c2-253b-423e-a46d-e039ac004665) |
+
+**Unlike every page above, this one is regenerable.** It is rendered from the
+episode JSON under `$CLS_RUNS/results/exploit_diag/` by
+`analysis/nav_tri/exploit_report.py`, which does no statistics of its own — so
+correcting a number means re-running `exploit_diag.py`, not editing an array.
+The three source JSONs are `frozen_arms`, `learned_lo` and `p11cur_training`
+(jobs 21616671 / 21616672 / 21616673); they were merged into one page by a
+throwaway script that concatenates `groups` and drops the duplicate p11_cur
+u2000 cell.
+
+Method: `docs/EXPLOIT_DIAGNOSTIC.md`. Findings: EXPERIMENTS_NAV_P2 §12.
+All numbers are on the `recorded` split.
