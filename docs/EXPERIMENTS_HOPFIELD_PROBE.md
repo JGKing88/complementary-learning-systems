@@ -33,6 +33,11 @@ Raising `β` alone is a **net loss** (§2). Raising both together works, unevenl
 constant that only means anything once the loop gain makes the recall term
 comparable to the cue (§4.2–4.3, §7).
 
+**Cross-talk, not coding radius, is what the readout reads** (§4.5). At
+identical architecture and seed, `attract_lambda` 16→32 leaves `r_min` flat,
+raises worst-pair overlap 0.578→0.699, and loses on every probe metric —
+retrieval hardest, from 57.8% to 38.8%.
+
 **Best measured setting: v35 at gain 100 with β=1e6** (§3.1) — acc45 100.0% at
 every step count from 1 to 15, retrieval 97.5%, reach 99.6%, for 1.2° of mean
 angular error against production.
@@ -73,7 +78,8 @@ the parameters and **5× lower cross-talk** (worst pair 0.264 vs 0.524). Since
 it leads on radius *and* orthogonality, this cannot separate which one the
 readout is actually reading — and §4/§7 argue the binding constraint is
 cross-talk, which enters `unique_radius` only through the alias ceiling.
-A param-matched pair that differs on one of the two would settle it.
+A param-matched pair that differs on one of the two would settle it —
+**§4.5 is that pair**, and the answer is cross-talk.
 
 ## 2. β alone — a net loss
 
@@ -295,6 +301,57 @@ Changing gain 300→100 at fixed β moves `|err|` 19.15→10.03.
 Retrieval at s=1 depends on where a single application lands, which the
 patterns decide; step-invariance needs the dynamics to have a fixed point,
 which needs saturation.
+
+## 4.5 attract_lambda 16 vs 32 — cross-talk is the binding variable
+
+`w54_attract_far` extends level 7's `attract_lambda` from 16 to 32. It has 12
+finished encoders and appears nowhere in `EXPERIMENTS_UNIQUE_RADIUS.md`.
+Architecture is identical to att16 — λ [11,12,13], out 1024, hidden 256, 0.572M
+params, gain 100, fwhm 0.25 — so paired by seed, `attract_lambda` is the **only**
+thing that differs. That is the controlled comparison the v35/L7 pair could not
+be (§1).
+
+| | \|err\| | acc45 | exact | basin | reach | acc45 @ s=15 |
+|---|---|---|---|---|---|---|
+| att16-s42 | **11.81°** | **97.0%** | **57.8%** | **11.03** | **78.4%** | **76.5%** |
+| att32-s42 | 15.00° | 94.2% | **38.8%** | **6.35** | **58.0%** | 62.9% |
+| att16-s43 | **11.84°** | **96.9%** | 60.9% | 11.35 | 76.9% | 77.2% |
+| att32-s43 | 14.63° | 94.7% | 58.8% | 11.25 | 73.9% | 72.0% |
+
+**att32 is worse on every metric on both seeds**, and the radius gain that
+motivated it evaporates when paired: `r_min` 12→12 and 15→14. The 4-seed median
+advantage quoted from the stored metrics (13 vs 12) came from seeds 44/45; seed
+variance within att16 (12 to 15) is larger than the arm difference.
+
+### The two failure modes read different statistics of cross-talk
+
+Direction degrades on both seeds, retrieval only on s42 — which looks like noise
+until sorted by **worst-pair** overlap rather than mean:
+
+| | mean pairwise | worst pair | \|err\| | exact |
+|---|---|---|---|---|
+| att16-s43 | 0.0188 | 0.440 | 11.84° | 60.9% |
+| att16-s42 | 0.0275 | 0.578 | 11.81° | 57.8% |
+| att32-s43 | 0.0337 | 0.575 | 14.63° | 58.8% |
+| att32-s42 | 0.0387 | **0.699** | 15.00° | **38.8%** |
+
+`exact_hit` is monotone in the **worst pair** with a cliff past ≈0.6;
+`|err|` is monotone in the **mean**. That is what §7's two conditions predict:
+retrieval is an argmax, so it fails when the single worst competitor beats the
+self term in condition (b); direction is an average, so it tracks average
+interference. s43 survives because its worst pair stays under the cliff even
+though its mean rose 79%.
+
+**So cross-talk, not coding radius, is what the readout reads.** §1 could not
+separate them because v35 led on both. Here radius is flat and cross-talk is
+41% worse, and every probe metric follows cross-talk.
+
+Practical: **`attract_lambda` 16 → 32 is a regression for navigation** even
+where `r_min` calls it flat or better. The arm worth trying instead is
+`w54_attract_far`'s `rep0.25`, whose alias ceiling (0.833) is the lowest in
+w53/w54 — the direction that lowers the worst pair.
+
+Raw: `$CLS_RESULTS/hopfield_probe/20260827/att16_vs_att32/`.
 
 ## 5. Caveats
 
