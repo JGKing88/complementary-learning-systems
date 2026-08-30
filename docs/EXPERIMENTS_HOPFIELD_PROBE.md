@@ -486,7 +486,8 @@ Sec 10's measurements: `dead_goal_check.py` (per-env reach, dead fraction vs K),
 `alias_lattice_check.py` (the module-realignment falsification),
 `gain_tradeoff_check.py` (alias rate against res90),
 `nav_screen_check.py` (the pool screen), `nav_screen_validate.py`
-(the screen against measured reach).
+(the screen against measured reach), `load_curve_check.py`
+(dead fraction against load, on a constant env set).
 
 ## 10. What sets continuous reach — the synthesis
 
@@ -520,19 +521,48 @@ environments the goal is unreachable *from the cell next to it*.
 
 ### 10.2 Every failure is interference between stored goals
 
-At **K=1 the dead fraction is 0.00 for every arm**, including the worst.
-It then climbs with load (`dead_goal_check.py`, fraction with reach <0.5):
+At **K=1 the dead fraction is 0.00 for every arm**, including the worst. It
+then climbs with load — but the load axis needs care, because `scored_envs`
+measures `min(K, n_score_envs)` environments, so K=1 and K=3 score a *smaller
+env set* than K≥5. That is the same population-grows-with-K confound
+`n_score_envs` was added to kill on the retrieval axis, and it reaches the K<5
+columns anyway. Fixed by selecting a constant env subset at every K
+(`load_curve_check.py`; all 8 worlds, since this needs reach values only):
 
-| arm | K=1 | K=3 | K=5 | K=10 | K=20 |
+| dead fraction, envs 0–2, n=24 | K=1 | K=3 | K=5 | K=10 | K=20 |
 |---|---|---|---|---|---|
-| att16-s42 | 0.00 | 0.33 | 0.35 | 0.40 | 0.70 |
-| att32-s42 | 0.00 | 0.33 | 0.55 | 0.55 | 0.70 |
-| v35 | 0.00 | 0.25 | 0.15 | 0.10 | 0.35 |
-| att16-s42 g300+β1e6 | 0.00 | 0.42 | 0.20 | 0.20 | 0.45 |
-| **v35 g100+β1e6** | 0.00 | **0.00** | **0.00** | **0.00** | 0.05 |
+| **v35 g100+β1e6** | 0.00 | **0.00** | **0.00** | **0.00** | **0.00** |
+| v35 g300+β1e6 | 0.00 | 0.04 | 0.04 | 0.04 | 0.00 |
+| v35 production | 0.00 | 0.12 | 0.17 | 0.12 | 0.33 |
+| att16-s42 g300+β1e6 | 0.00 | 0.21 | 0.17 | 0.17 | 0.42 |
+| att16-s42 production | 0.00 | 0.17 | 0.25 | 0.29 | 0.75 |
+| att16-s43 production | 0.00 | 0.17 | 0.25 | 0.33 | 0.71 |
+| att32-s42 production | 0.00 | 0.21 | 0.46 | 0.42 | 0.75 |
+| att16-s42, β1e6 alone | 0.50 | 0.50 | 0.54 | 0.58 | 0.71 |
 
-Saturation does not reduce the failure rate, it **removes the mode** up to
-K=10 — which is condition (b) of §7 paying off.
+**The encoder changes the slope, not the intercept.** Every arm starts at 0.00
+and they diverge, so this is a per-competitor probability that differs by
+encoder rather than a fixed penalty. Inverting `P(dead) = 1 − (1−p)^(K−1)`:
+
+| implied per-competitor `p` | K=5 | K=10 | K=20 |
+|---|---|---|---|
+| v35 g100+β1e6 | <0.01 | <0.01 | <0.01 |
+| v35 g300+β1e6 | 0.011 | 0.005 | <0.01 |
+| v35 production | 0.045 | 0.015 | 0.021 |
+| att16-s42 g300+β1e6 | 0.045 | 0.020 | 0.028 |
+| att16-s42 production | 0.069 | 0.038 | 0.070 |
+| att32-s42 production | 0.142 | 0.058 | 0.070 |
+
+`p` spans about seven-fold, it is roughly K-stable within an arm, and it tracks
+the far-field alias rate of §10.5 at a **ratio of 1.6–3.0** across every arm —
+which is what identifies the screen as measuring exactly this quantity. (The
+ratio exceeds 1 because "dead" is reach <0.5, which catches partial collapse
+as well as outright aliasing.)
+
+So the two factors are **`p` from the encoder and K in the exponent**.
+Saturation does not merely lower the rate: `v35 g100+β1e6` is **flat at 0.00
+across the whole range to K=20** — condition (b) of §7 paying off, and the
+capacity bound `D/(2 ln D) = 74` says that should hold well past 20.
 
 ### 10.3 A goal dies when one co-stored competitor crosses cos ≈ 0.25
 
@@ -622,11 +652,13 @@ The ranking is unchanged at any threshold from 0.15 to 0.35.
    collapses (10.0° → 19.2°) at 6 — four points from two encoders, and
    everything above is bounded by it. A gain sweep with the full probe at each
    step replaces it with a curve.
-6. **Consider not storing K goals at once.** Outside the encoder: at K=1 every
-   encoder solves every environment, and the memory currently holds goals from
-   environments the agent is not in. Whether the memory can be scoped to the
-   current environment is a question about the task, but it is the largest
-   single effect in this section.
+6. **Scoping the memory to the current environment is a fallback, not a
+   lever.** At K=1 every encoder solves every environment, so it would work —
+   but §10.2 shows the encoder route already gets there without it: the good
+   arm is flat at 0.00 through K=20. K sets the exponent, the encoder sets the
+   base, and only one of the two is free of cost. Worth keeping in mind if a
+   configuration turns out to need loads far beyond 20, where §7's capacity
+   bound of 74 starts to bind.
 
 ### 10.7 What this rests on
 
@@ -636,8 +668,10 @@ The ranking is unchanged at any threshold from 0.15 to 0.35.
 - **v35 is a target, not a candidate**: 20.4% coverage, 60 patches,
   `hidden_dim` 1024, 4.64M params, no cross-env constraint. It shows the box is
   reachable, not that it is reachable under the brief.
-- One scaffold, one seed per screened arm, K ≤ 20. The dead-goal joins use the
-  four worlds serialised into the archive, so n = 20 per encoder there.
+- One scaffold, one seed per screened arm, K ≤ 20. The dead-goal *joins* need
+  goal positions, so they use the four worlds serialised into the archive
+  (n = 20 per encoder); the load curves need only reach values and use all
+  eight (n = 24).
 - Raising inference gain changes every embedding: none of this is a config edit
   for a trained policy.
 
