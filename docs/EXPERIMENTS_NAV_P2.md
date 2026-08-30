@@ -4302,3 +4302,45 @@ Still open: `B_oracle` and `A_clean` both saturate at 1.000, so they cannot be
 separated — whether a clean *decode* would beat a clean *memory* is untestable
 at this difficulty. It needs a harder regime (more distractors, or a smaller
 capture radius) where neither saturates.
+
+### 13.5 What an approach failure actually looks like
+
+§13.3 says the damage is done on the approach but not what the agent *does*.
+Taking the 82 failures rescued by `C_far` and not by `C_near` — the ones whose
+damage is upstream of the doorstep — and splitting them on wall contact:
+
+| | n | closest approach gained | clip | `t_min` frac |
+|---|---|---|---|---|
+| pressed into geometry (`clip > 0.5`) | 41 (50%) | 2.3 cells | 0.95 | **0.04** |
+| moving freely (`clip <= 0.5`) | 41 (50%) | 5.2 cells | 0.00 | 0.40 |
+
+**It is an even split between two quite different behaviours.**
+
+*Pinned.* Half set off, meet geometry almost immediately — closest approach at
+**4% into the episode** — and grind against it for the remaining 190-odd steps.
+They never get closer than they were at the start. This is the `blocked` class
+(44% of the group), and it was visible in the first wave: §12.3 already
+reported `clip_frac` as strongly bimodal with `blocked` sitting at 0.96.
+
+*Wandering.* The other half never touch anything. They move freely for the full
+horizon with zero clipping and still end up only ~5 cells closer than they
+started, closest approach 40% of the way in and drifting after. **All 41 of
+them travel a path longer than 20× their net progress.** This half was *not*
+characterised in the first wave — it was distributed across
+`never_approached` / `timeout_converging` / `approached_left`, which name the
+shape of `d(t)` but say nothing about how the agent moved.
+
+Two facts that hold across every failure class: **every failure runs the full
+200 steps** — none terminates early — and median path efficiency is 0.04. The
+agent is moving the entire time and getting nowhere.
+
+**What is still not measured.** "Wandering" here means *moves freely, covers a
+lot of ground, nets almost nothing*. That is consistent with circling, with
+oscillating back and forth, and with committing to a wrong bearing and
+returning; this data cannot separate them. `straightness` (mean cosine between
+consecutive actions) would — smooth circling is near +1, oscillation is
+negative — and it already exists in `_explore_stats` but is not recorded on the
+nav path. That is the cheap next measurement.
+
+Note `path` is `speed x n_live`, exact for the frozen-speed runs and
+approximate for the P12 arms where speed is learned.
