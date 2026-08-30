@@ -4306,41 +4306,69 @@ capture radius) where neither saturates.
 ### 13.5 What an approach failure actually looks like
 
 §13.3 says the damage is done on the approach but not what the agent *does*.
-Taking the 82 failures rescued by `C_far` and not by `C_near` — the ones whose
-damage is upstream of the doorstep — and splitting them on wall contact:
+The **motion axis** (spec §2.1) answers it: `straightness` is the mean cosine
+between consecutive realised displacements, `edge_frac` the share of steps on a
+perimeter cell, `wander` the path travelled per cell of ground gained.
 
-| | n | closest approach gained | clip | `t_min` frac |
+**Failures come in exactly two motions and nothing else.** Pooled over 155
+baseline failures on six runs:
+
+| motion | n | share | straightness | edge | path/gain | d_min |
+|---|---|---|---|---|---|---|
+| `pinned` | 61 | 39% | +0.59 | **0.94** | 10 | 4.00 |
+| `looping` | 94 | 61% | +0.70 | **0.00** | 23 | 1.87 |
+
+Zero `committed`, zero `meandering`, zero `oscillating`. The two classes
+separate cleanly on wall contact (0.94 against 0.00) and on how close they get
+(4.0 cells against 1.9).
+
+So: **two fifths are driven into the perimeter and held there; three fifths
+orbit.** The orbiting ones hold a consistent turn — straightness +0.70 — and
+travel 23 cells of path per cell of ground gained. It is a smooth circle, not a
+random walk and not an oscillation.
+
+**There are no interior obstacles in this world.** The arena is an open box and
+the only thing that shortens a step is the boundary clip, so `pinned` means
+held against the *perimeter*. That is the same basin the explore work found.
+
+### 13.5.1 The motion axis carries information the symptom axis did not
+
+| | straddled | approached_left | blocked | timeout_conv | never_appr |
+|---|---|---|---|---|---|
+| `pinned` | 7 | 8 | 46 | 0 | 0 |
+| `looping` | 35 | 20 | 0 | 21 | 18 |
+
+`blocked` is 100% `pinned` **by construction** — both rules test
+`clip_frac > 0.5` — so that cell is not evidence. The informative rows are the
+others: `never_approached` and `timeout_converging` are **100% looping**, and
+`straddled` is 35/42. Those three symptoms described the shape of `d(t)` and
+carried no information about the motion; they are all orbits.
+
+Split by which spatial arm rescues them:
+
+| | n | motion | edge | d_min |
 |---|---|---|---|---|
-| pressed into geometry (`clip > 0.5`) | 41 (50%) | 2.3 cells | 0.95 | **0.04** |
-| moving freely (`clip <= 0.5`) | 41 (50%) | 5.2 cells | 0.00 | 0.40 |
+| far-only (approach damage) | 82 | looping 41 / pinned 41 | 0.74 | 4.00 |
+| both arms | 57 | looping 50 / pinned 7 | 0.01 | 1.41 |
+| neither | 16 | pinned 13 / looping 3 | 0.93 | 6.32 |
 
-**It is an even split between two quite different behaviours.**
+The episodes a near-goal fix can also save are orbits at the doorstep — 1.41
+cells out, zero wall contact. The ones no partial fix saves are pinned far out
+at 6.3 cells with edge 0.93.
 
-*Pinned.* Half set off, meet geometry almost immediately — closest approach at
-**4% into the episode** — and grind against it for the remaining 190-odd steps.
-They never get closer than they were at the start. This is the `blocked` class
-(44% of the group), and it was visible in the first wave: §12.3 already
-reported `clip_frac` as strongly bimodal with `blocked` sitting at 0.96.
+### 13.5.2 The placebo is a positive control for the classifier
 
-*Wandering.* The other half never touch anything. They move freely for the full
-horizon with zero clipping and still end up only ~5 cells closer than they
-started, closest approach 40% of the way in and drifting after. **All 41 of
-them travel a path longer than 20× their net progress.** This half was *not*
-characterised in the first wave — it was distributed across
-`never_approached` / `timeout_converging` / `approached_left`, which name the
-shape of `d(t)` but say nothing about how the agent moved.
+`D_placebo` gives the agent a fixed random bearing, so mechanically it should
+drive straight and hit the perimeter. It does: over 848 failures,
+`pinned` 651 / `committed` 170 / `looping` 27, straightness **+0.96**, edge
+**0.95**.
 
-Two facts that hold across every failure class: **every failure runs the full
-200 steps** — none terminates early — and median path efficiency is 0.04. The
-agent is moving the entire time and getting nowhere.
+**`committed` appears only under the placebo** — never once in a real failure.
+So the classifier can detect straight-line motion when it is there, and the
+finding that no real failure is a confident drive in a wrong direction is a
+measurement rather than a gap in the labels.
 
-**What is still not measured.** "Wandering" here means *moves freely, covers a
-lot of ground, nets almost nothing*. That is consistent with circling, with
-oscillating back and forth, and with committing to a wrong bearing and
-returning; this data cannot separate them. `straightness` (mean cosine between
-consecutive actions) would — smooth circling is near +1, oscillation is
-negative — and it already exists in `_explore_stats` but is not recorded on the
-nav path. That is the cheap next measurement.
-
-Note `path` is `speed x n_live`, exact for the frozen-speed runs and
-approximate for the P12 arms where speed is learned.
+Note the observational cells in §12 predate this axis and carry no motion
+fields; the intervention `baseline` arms cover the same six runs at ten
+distractors, which is where every failure is. The `p11_cur` training sweep has
+not been re-run with motion.
