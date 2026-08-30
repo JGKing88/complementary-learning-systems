@@ -1,0 +1,152 @@
+<title>Pinned at the Cap</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&family=Spectral:ital,wght@0,400;0,600;1,400&display=swap">
+<style>
+:root{--ground:#fbfbfd;--surface:#f2f3f7;--raised:#fff;--ink:#15171c;--ink-soft:#3d434f;--muted:#6a7183;
+--rule:#dde0e8;--rule-soft:#e9ebf1;--new:#a8560a;--new-fill:rgba(168,86,10,.10);--ctl:#7b8296;
+--alt:#0d6b64;--floor:#8a90a0;--band-a:rgba(168,86,10,.055);--band-b:rgba(90,100,125,.05)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+--ground:#0e1014;--surface:#171a20;--raised:#1c2027;--ink:#e9ebf1;--ink-soft:#c2c7d3;--muted:#8b93a5;
+--rule:#2b303a;--rule-soft:#232830;--new:#eda13f;--new-fill:rgba(237,161,63,.14);--ctl:#79839a;
+--alt:#3fc9bb;--floor:#767e92;--band-a:rgba(237,161,63,.06);--band-b:rgba(140,150,175,.06)}}
+:root[data-theme="dark"]{--ground:#0e1014;--surface:#171a20;--raised:#1c2027;--ink:#e9ebf1;--ink-soft:#c2c7d3;
+--muted:#8b93a5;--rule:#2b303a;--rule-soft:#232830;--new:#eda13f;--new-fill:rgba(237,161,63,.14);--ctl:#79839a;
+--alt:#3fc9bb;--floor:#767e92;--band-a:rgba(237,161,63,.06);--band-b:rgba(140,150,175,.06)}
+*{box-sizing:border-box}
+body{background:var(--ground);color:var(--ink);font-family:"IBM Plex Sans",system-ui,sans-serif;line-height:1.55;margin:0;padding:clamp(1.5rem,4vw,3.5rem) 1.25rem 5rem;-webkit-font-smoothing:antialiased}
+.wrap{max-width:1080px;margin:0 auto;display:flex;flex-direction:column;gap:clamp(2rem,4vw,3rem)}
+.eyebrow{font-family:"IBM Plex Mono",monospace;font-size:.72rem;letter-spacing:.14em;text-transform:uppercase;color:var(--muted);margin:0 0 .7rem}
+h1{font-family:Spectral,Georgia,serif;font-weight:600;font-size:clamp(2rem,5vw,3.1rem);line-height:1.08;letter-spacing:-.015em;margin:0 0 .6rem;text-wrap:balance}
+.standfirst{font-family:Spectral,Georgia,serif;font-style:italic;font-size:clamp(1.05rem,2.1vw,1.3rem);color:var(--ink-soft);max-width:62ch;margin:0}
+.meta{display:flex;flex-wrap:wrap;gap:.4rem 1.4rem;margin-top:1.4rem;font-family:"IBM Plex Mono",monospace;font-size:.76rem;color:var(--muted)}
+.meta b{color:var(--ink-soft);font-weight:500}
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(158px,1fr));gap:1px;background:var(--rule);border:1px solid var(--rule);border-radius:3px;overflow:hidden}
+.stat{background:var(--raised);padding:1.15rem 1.2rem}
+.stat .k{font-family:"IBM Plex Mono",monospace;font-size:.68rem;letter-spacing:.09em;text-transform:uppercase;color:var(--muted);margin-bottom:.5rem}
+.stat .v{font-family:"IBM Plex Mono",monospace;font-size:1.72rem;font-weight:500;line-height:1;font-variant-numeric:tabular-nums;letter-spacing:-.02em}
+.stat .n{font-size:.78rem;color:var(--muted);margin-top:.45rem}
+.stat.hi .v{color:var(--new)}
+section h2{font-family:Spectral,Georgia,serif;font-weight:600;font-size:1.42rem;margin:0 0 .3rem;letter-spacing:-.01em}
+section .sub{color:var(--muted);font-size:.9rem;margin:0 0 1.1rem;max-width:64ch}
+.chart{background:var(--raised);border:1px solid var(--rule);border-radius:3px;padding:1.1rem .9rem .6rem;overflow-x:auto}
+.chart svg{display:block;width:100%;height:auto;min-width:520px}
+.legend{display:flex;flex-wrap:wrap;gap:1.3rem;margin:.9rem 0 0;padding:0 .35rem;font-family:"IBM Plex Mono",monospace;font-size:.74rem;color:var(--muted)}
+.legend i{display:inline-block;width:15px;height:2px;vertical-align:middle;margin-right:.45rem}
+.legend .dash{height:0;border-top:1.5px dashed var(--floor)}
+.tw{overflow-x:auto;border:1px solid var(--rule);border-radius:3px;background:var(--raised)}
+table{width:100%;border-collapse:collapse;font-family:"IBM Plex Mono",monospace;font-size:.8rem;font-variant-numeric:tabular-nums}
+th,td{padding:.62rem .85rem;text-align:right;border-bottom:1px solid var(--rule-soft);white-space:nowrap}
+th{font-size:.68rem;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);font-weight:500;background:var(--surface)}
+th:first-child,td:first-child{text-align:left}
+tbody tr:last-child td{border-bottom:none}
+tbody tr.hl td{background:var(--new-fill);font-weight:600}
+.note{border-left:2px solid var(--rule);padding:.15rem 0 .15rem 1.15rem;color:var(--ink-soft);font-size:.92rem;max-width:66ch}
+.note+.note{margin-top:1rem}
+.note b{color:var(--ink)}
+code{font-family:"IBM Plex Mono",monospace;font-size:.86em;background:var(--surface);padding:.1rem .34rem;border-radius:2px}
+footer{border-top:1px solid var(--rule);padding-top:1.4rem;color:var(--muted);font-size:.82rem;max-width:70ch}
+</style>
+
+<div class="wrap">
+<header>
+  <p class="eyebrow">Phase 2 · P12 · run 21382761</p>
+  <h1>Pinned at the Cap</h1>
+  <p class="standfirst">Let the policy choose its step size, but never above one grid cell. It chooses 0.975 — and finishes indistinguishable from the run that had the choice taken away entirely.</p>
+  <div class="meta">
+    <span><b>variant</b> p12_lo_curtp</span>
+    <span><b>speed</b> learned on [0.5, 1.0]</span>
+    <span><b>curriculum</b> ON — distractor max 0→10 over 400 updates</span>
+    <span><b>time_penalty</b> 0.02</span>
+    <span><b>schedule</b> exploit 2000/2000</span>
+  </div>
+</header>
+
+<div class="stats">
+  <div class="stat hi"><div class="k">Success · 0 dist</div><div class="v">1.000</div><div class="n">96 of 96 trials</div></div>
+  <div class="stat"><div class="k">Success · 10 dist</div><div class="v">0.938</div><div class="n">90 of 96 · frozen: 0.958</div></div>
+  <div class="stat"><div class="k">Final steps</div><div class="v">11.25</div><div class="n">frozen at 1.0: 10.95</div></div>
+  <div class="stat hi"><div class="k">Chosen speed</div><div class="v">0.975</div><div class="n">of a permitted 1.0</div></div>
+  <div class="stat"><div class="k">Path directness</div><div class="v">1.042×</div><div class="n">frozen at 1.0: 1.043×</div></div>
+</div>
+
+<section>
+  <h2>The speed it chose</h2>
+  <p class="sub">Commanded step magnitude against its permitted ceiling. It rises from 0.783 and settles at 0.975 by u400, then does not move for the remaining 1600 updates. Given a range, this policy takes almost all of it.</p>
+  <div class="chart" id="c-spd"></div>
+  <div class="legend"><span><i style="background:var(--new)"></i>commanded ‖a‖</span><span><i style="background:var(--alt)"></i>realized (after wall clipping)</span><span><i class="dash"></i>permitted cap (1.0)</span></div>
+</section>
+
+<section>
+  <h2>Success rate</h2>
+  <p class="sub">Reaches 0.85 at u250, dips once to 0.885 at u450, and holds 1.000 from u500 onward — thirty-one consecutive evals.</p>
+  <div class="chart" id="c-succ"></div>
+  <div class="legend"><span><i style="background:var(--new)"></i>0 distractors</span><span><i style="background:var(--ctl)"></i>frozen-at-1.0 control</span></div>
+</section>
+
+<section>
+  <h2>Mean steps to goal</h2>
+  <p class="sub">Successes only. Converges to ~11.5 and stays, which is where the frozen arm also lands. The early points below 12 come from a handful of lucky starts at 1–4% success and should be ignored.</p>
+  <div class="chart" id="c-steps"></div>
+  <div class="legend"><span><i style="background:var(--new)"></i>cur + tp, capped at 1.0</span><span><i style="background:var(--ctl)"></i>frozen at 1.0</span><span><i class="dash"></i>optimal (9.95)</span></div>
+</section>
+
+<section>
+  <h2>Checkpoints</h2>
+  <div class="tw"><table>
+    <thead><tr><th>Update</th><th>Succ · 0</th><th>Steps · 0</th><th>Commanded ‖a‖</th><th>Realized ‖a‖</th></tr></thead>
+    <tbody id="tbody"></tbody>
+  </table></div>
+</section>
+
+<section>
+  <p class="note"><b>Freedom to choose a speed is worth nothing if the policy just picks the maximum.</b> Across three settings the pattern is the same: permitted [0.5, 2.0] it picks ~1.8; permitted [0.5, 1.0] it picks 0.975; pinned at 1.0 it has no choice and performs identically to the capped-at-1.0 case. <b>Step count tracks the cap, not the freedom.</b></p>
+  <p class="note"><b>This deflates the headline P10 comparison.</b> The learned-speed arm reaching the goal in 7.17 steps against the frozen arm's 10.95 looked like evidence that choosing speed helps. It was permission to move 80% faster. The two arms walk paths of near-identical directness (1.08× and 1.04× of the straight line) — one simply covers it in longer strides.</p>
+  <p class="note"><b>Caveat: this arm is not the clean test.</b> It also carries the curriculum and the reduced time penalty, so it answers "capped speed plus both treatments" rather than "capped speed alone". The uncontaminated version, <code>p12_lo</code>, is still running and reads 13.1 steps at u1050 — tracking this arm closely.</p>
+  <p class="note"><b>Read on the recorded split</b> — the run's own six validation environments, not a fresh draw.</p>
+</section>
+
+<footer>
+  Polar action head with speed from a Beta on [0.5, 1.0] rather than [0.5, 2.0]; plus <code>n_train_distractors_max</code> 0→10 over 400 updates and <code>time_penalty</code> 0.02. Seed 42. Directness is the 9.95-cell optimum over steps × realized speed. Full record in <code>docs/EXPERIMENTS_NAV_P2.md</code> §9.4–9.8.
+</footer>
+</div>
+
+<script>
+const U=Array.from({length:40},(_,i)=>(i+1)*50);
+const S0=[.04167,.01042,.03125,.26042,.88542,.97917,.98958,1,.88542,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1];
+const T0=[6.25,11.0,4.0,81.16,43.89,33.24,27.17,27.07,25.64,18.58,15.79,14.52,15.67,14.52,12.80,12.16,12.49,13.30,13.26,12.68,12.01,12.24,11.40,13.00,12.01,13.55,12.30,11.92,11.43,11.41,11.89,11.96,11.99,11.80,11.48,12.49,11.68,11.80,12.36,11.25];
+const V0=[.797,.464,.894,.284,.366,.492,.530,.542,.599,.718,.741,.793,.785,.784,.863,.878,.863,.839,.842,.858,.892,.902,.922,.831,.889,.830,.862,.879,.919,.918,.889,.874,.879,.880,.905,.846,.885,.875,.854,.922];
+const UK=[50,200,400,600,800,1000,1200,1400,1600,1800,2000];
+const MU=[.783,.850,.957,.971,.962,.947,.968,.973,.975,.975,.975];
+const CS0=[.03125,.20833,.89583,.51042,.90625,1,.48958,.98958,1,1,.97917,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1];
+const CT0=[10,47.6,66.4,46.65,33.67,19.57,42.62,16.04,16.28,15.41,35.02,12.76,13.2,12.76,13.68,12.41,12.39,13.31,11.45,12.11,12.65,12.1,14.46,11.25,11.69,11.98,11.56,12.1,11.46,11.21,11.52,11.35,11.67,11.68,11.2,11.99,11.6,11.47,11.3,10.95];
+
+const W=980,H=290,M={t:16,r:16,b:34,l:52};
+function mk(el,series,yMin,yMax,ticks,fmt,floor,bands){
+  const px=u=>M.l+(u-50)/1950*(W-M.l-M.r);
+  const py=v=>M.t+(1-(v-yMin)/(yMax-yMin))*(H-M.t-M.b);
+  let s=`<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="training curve">`;
+  for(const b of(bands||[]))s+=`<rect x="${px(b[0])}" y="${M.t}" width="${px(b[1])-px(b[0])}" height="${H-M.t-M.b}" fill="var(--${b[2]})"/>`;
+  for(const t of ticks){
+    s+=`<line x1="${M.l}" y1="${py(t)}" x2="${W-M.r}" y2="${py(t)}" stroke="var(--rule-soft)"/>`;
+    s+=`<text x="${M.l-10}" y="${py(t)+4}" text-anchor="end" font-family="IBM Plex Mono" font-size="11" fill="var(--muted)">${fmt(t)}</text>`;}
+  if(floor!==undefined)s+=`<line x1="${M.l}" y1="${py(floor)}" x2="${W-M.r}" y2="${py(floor)}" stroke="var(--floor)" stroke-width="1.4" stroke-dasharray="5 4"/>`;
+  for(const u of[500,1000,1500,2000]){
+    s+=`<line x1="${px(u)}" y1="${M.t}" x2="${px(u)}" y2="${H-M.b}" stroke="var(--rule-soft)"/>`;
+    s+=`<text x="${px(u)}" y="${H-M.b+20}" text-anchor="middle" font-family="IBM Plex Mono" font-size="11" fill="var(--muted)">u${u}</text>`;}
+  s+=`<line x1="${M.l}" y1="${H-M.b}" x2="${W-M.r}" y2="${H-M.b}" stroke="var(--rule)"/>`;
+  for(const{data,color,x,w}of series){
+    const X=x||U;
+    s+=`<path d="${data.map((v,i)=>`${i?'L':'M'}${px(X[i]).toFixed(1)},${py(v).toFixed(1)}`).join('')}" fill="none" stroke="var(--${color})" stroke-width="${w||2}" stroke-linejoin="round" stroke-linecap="round" opacity="${w?.7:1}"/>`;
+    s+=`<circle cx="${px(X[X.length-1])}" cy="${py(data[data.length-1])}" r="3.4" fill="var(--${color})"/>`;}
+  document.getElementById(el).innerHTML=s+'</svg>';
+}
+mk('c-spd',[{data:MU,color:'new',x:UK},{data:V0,color:'alt',w:1.5}],.2,1.06,[.25,.5,.75,1],v=>v.toFixed(2),1);
+mk('c-succ',[{data:CS0,color:'ctl',w:1.5},{data:S0,color:'new'}],0,1.04,[0,.25,.5,.75,1],v=>v.toFixed(2),undefined,[[50,500,'band-a'],[500,2000,'band-b']]);
+mk('c-steps',[{data:CT0,color:'ctl',w:1.5},{data:T0,color:'new'}],0,85,[0,25,50,75],v=>v,9.95,[[50,500,'band-a'],[500,2000,'band-b']]);
+
+const rows=[[0,0],[3,1],[7,2],[11,3],[15,4],[23,6],[31,8],[39,10]];
+document.getElementById('tbody').innerHTML=rows.map(([i,j])=>
+  `<tr${i===39?' class="hl"':''}><td>u${U[i]}</td><td>${S0[i].toFixed(3)}</td><td>${T0[i].toFixed(2)}</td>`+
+  `<td>${MU[j].toFixed(3)}</td><td>${V0[i].toFixed(3)}</td></tr>`).join('');
+</script>

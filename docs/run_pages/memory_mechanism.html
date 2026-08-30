@@ -1,0 +1,437 @@
+<title>What Kind of Memory Is This</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700&family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;1,8..60,400&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>
+  :root {
+    --ground:#f6f8fa; --card:#ffffff; --ink:#0e141c; --ink-2:#55606e;
+    --ink-3:#8593a5; --accent:#2a78d6; --flag:#c2521f; --good:#1b7a4b;
+    --rule:#dfe5ec; --hi:#eef4fc;
+    --sans:"Archivo","Helvetica Neue",Arial,sans-serif;
+    --serif:"Source Serif 4",Georgia,"Times New Roman",serif;
+    --mono:"JetBrains Mono","SF Mono",Menlo,Consolas,monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --ground:#0f141b; --card:#171d26; --ink:#eaeff5; --ink-2:#a3aebd;
+      --ink-3:#6d7a8b; --accent:#4a92e8; --flag:#e5763f; --good:#4cb583;
+      --rule:#262f3b; --hi:#1b2431;
+    }
+  }
+  :root[data-theme="dark"] {
+    --ground:#0f141b; --card:#171d26; --ink:#eaeff5; --ink-2:#a3aebd;
+    --ink-3:#6d7a8b; --accent:#4a92e8; --flag:#e5763f; --good:#4cb583;
+    --rule:#262f3b; --hi:#1b2431;
+  }
+  body { background:var(--ground); color:var(--ink); font-family:var(--serif);
+         font-size:17px; line-height:1.65; margin:0; padding:0 20px 96px;
+         -webkit-font-smoothing:antialiased; }
+  .wrap { max-width:1080px; margin:0 auto; }
+  .col { max-width:68ch; }
+  header { padding:76px 0 0; }
+  .eyebrow { font-family:var(--mono); font-size:12px; letter-spacing:.13em;
+             text-transform:uppercase; color:var(--accent); margin:0 0 18px; }
+  h1 { font-family:var(--sans); font-weight:700; font-size:clamp(38px,6vw,58px);
+       line-height:1.03; letter-spacing:-.022em; margin:0 0 22px; text-wrap:balance; }
+  .standfirst { font-size:20px; line-height:1.55; color:var(--ink-2); margin:0; }
+  .standfirst b { color:var(--ink); font-weight:600; }
+  .statrow { display:grid; grid-template-columns:repeat(auto-fit,minmax(190px,1fr));
+             gap:1px; background:var(--rule); border:1px solid var(--rule);
+             border-radius:3px; overflow:hidden; margin:48px 0 0; }
+  .stat { background:var(--card); padding:22px 20px 20px; }
+  .stat-v { font-family:var(--sans); font-weight:600; font-size:30px;
+            letter-spacing:-.02em; font-variant-numeric:tabular-nums; line-height:1.1; }
+  .stat-l { font-size:14.5px; color:var(--ink); margin-top:6px; }
+  .stat-s { font-family:var(--mono); font-size:11.5px; color:var(--ink-3); margin-top:4px; }
+  section { margin-top:66px; }
+  h2 { font-family:var(--sans); font-weight:600; font-size:27px;
+       letter-spacing:-.015em; margin:0 0 18px; text-wrap:balance; }
+  h2.num::before { content:attr(data-n); font-family:var(--mono); font-size:13px;
+                   color:var(--accent); display:block; margin-bottom:6px;
+                   letter-spacing:.1em; font-weight:500; }
+  h3 { font-family:var(--sans); font-weight:600; font-size:18px;
+       letter-spacing:-.01em; margin:34px 0 10px; }
+  h4 { font-family:var(--sans); font-weight:600; font-size:15.5px; margin:0 0 8px; }
+  p { margin:0 0 16px; }
+  ol.claims { padding-left:22px; margin:0; }
+  ol.claims li { margin-bottom:12px; }
+  ul { padding-left:22px; }
+  ul li { margin-bottom:7px; }
+  .m, code { font-family:var(--mono); font-size:.87em;
+             background:color-mix(in srgb, var(--accent) 9%, transparent);
+             padding:1px 5px; border-radius:3px; }
+  pre { background:var(--card); border:1px solid var(--rule); border-radius:3px;
+        padding:14px 16px; overflow-x:auto; margin:0 0 18px; }
+  pre code { background:none; padding:0; font-size:14px; line-height:1.7; }
+  .scroll { overflow-x:auto; margin:0 0 18px; }
+  table { border-collapse:collapse; width:100%; font-size:15px;
+          font-variant-numeric:tabular-nums; }
+  th,td { text-align:left; padding:9px 16px 9px 0; border-bottom:1px solid var(--rule);
+          vertical-align:top; }
+  th { font-family:var(--sans); font-weight:600; font-size:12.5px;
+       letter-spacing:.03em; color:var(--ink-2); }
+  td.n, th.r, td.r { font-family:var(--mono); font-size:13.5px; }
+  th.r, td.r { text-align:right; padding-right:0; }
+  tr.hi td { background:var(--hi); }
+  .note { border-left:2px solid var(--accent); padding:2px 0 2px 20px; margin:26px 0; }
+  .note h4 { color:var(--accent); }
+  .note p { margin:0 0 10px; }
+  .note p:last-child { margin-bottom:0; }
+  .note.open { border-left-color:var(--flag); }
+  .note.open h4 { color:var(--flag); }
+  .cols2 { display:grid; grid-template-columns:1fr 1fr; gap:26px; margin:22px 0; }
+  .gain h4 { color:var(--good); }
+  .risk h4 { color:var(--flag); }
+  .cols2 p { font-size:15.5px; margin:0; }
+  .aside { font-size:15px; color:var(--ink-2); }
+  footer { margin-top:80px; padding-top:22px; border-top:1px solid var(--rule);
+           font-family:var(--mono); font-size:12px; color:var(--ink-3); line-height:1.9; }
+  a { color:var(--accent); }
+  @media (max-width:720px) { .cols2 { grid-template-columns:1fr; } }
+  @media (prefers-reduced-motion: reduce) { * { animation:none!important; transition:none!important; } }
+</style>
+
+<div class="wrap">
+
+  <header>
+    <p class="eyebrow">hopfield-nav &middot; mechanism</p>
+    <h1>What kind of memory is this?</h1>
+    <div class="col">
+      <p class="standfirst">The recall is <b>one matrix&ndash;vector product</b>.
+      It is a matched filter, not an attractor network &mdash; and that turns out
+      to be the only regime in which the navigation signal survives at all.</p>
+    </div>
+    <div class="statrow">
+      <div class="stat"><div class="stat-v">0.987</div><div class="stat-l">a cue corrupted to cos 0.70, restored</div><div class="stat-s">in a single step</div></div>
+      <div class="stat"><div class="stat-v">99.7%</div><div class="stat-l">retrievals return the right pattern</div><div class="stat-s">at ten stored memories</div></div>
+      <div class="stat"><div class="stat-v">1</div><div class="stat-l">attractor, for 11 memories</div><div class="stat-s">and it is none of them</div></div>
+      <div class="stat"><div class="stat-v">2.3e&minus;07</div><div class="stat-l">deviation of tanh from identity</div><div class="stat-s">the nonlinearity is inert</div></div>
+    </div>
+  </header>
+
+  <div class="col">
+  <section>
+    <h2>The five claims</h2>
+    <ol class="claims">
+      <li><b>This is a linear associative memory &mdash; a matched filter.</b>
+      Retrieval happens entirely in one product. Iterating does not improve it
+      and actively degrades it.</li>
+      <li><b>It works well.</b> One step restores a cos-0.70 cue to 0.987, and
+      the correct pattern wins 99.7% of the time.</li>
+      <li><b>It works because of the encoder, not the memory.</b> The encoder
+      does two separate jobs: it separates environments, and it is a smooth
+      chart of the arena.</li>
+      <li><b>There are no basins, for a reason no hyper-parameter can fix.</b>
+      A saturating tanh has its fixed points at hypercube corners. The stored
+      patterns are continuous vectors, which are not corners.</li>
+      <li><b>The attractor regime exists, but it is a different network</b> &mdash;
+      and taking it may cost the geometry that produces the navigation signal.</li>
+    </ol>
+  </section>
+
+  <section>
+    <h2 class="num" data-n="1">What the system computes</h2>
+    <p>The memory stores <span class="m">M</span> patterns in a Hebbian matrix and
+    recalls with one step:</p>
+    <pre><code>W = (1/D) &middot; &Sigma;<sub>k</sub> &xi;<sub>k</sub> &xi;<sub>k</sub><sup>T</sup>        (zero diagonal)
+recall(x) = normalize(tanh(&beta; &middot; W x))</code></pre>
+    <p>Expanding the product is the whole story:</p>
+    <pre><code>W x = (1/D) &middot; &Sigma;<sub>k</sub> &xi;<sub>k</sub> (&xi;<sub>k</sub> &middot; x)</code></pre>
+    <p>A sum of every stored pattern, <b>weighted by how similar it is to the
+    cue</b>. That is a correlation &mdash; the classical linear associative memory
+    of Anderson and Kohonen. Nothing about it requires iteration, and &sect;3 shows
+    iterating makes it worse.</p>
+
+    <h3>The encoder does two jobs; the memory does neither</h3>
+    <p><b>Retrieval</b> works because the encoder separates environments:</p>
+    <div class="scroll"><table>
+      <tr><th></th><th class="r">similarity</th></tr>
+      <tr><td>same env, 1 cell apart</td><td class="r n">0.9993</td></tr>
+      <tr><td>same env, 5&ndash;8 cells apart</td><td class="r n">0.9832</td></tr>
+      <tr><td>same env, opposite corners</td><td class="r n">0.7534</td></tr>
+      <tr class="hi"><td><b>cross-environment, median</b></td><td class="r n"><b>&minus;0.0002</b></td></tr>
+    </table></div>
+    <p>An entire environment is mapped into a tight cone and other environments
+    are pushed to orthogonal. So the goal's term dominates the sum and one
+    product returns it. The margin over the best distractor has median
+    <b>0.862</b>; a distractor wins in only <b>0.26%</b> of cells.</p>
+
+    <p><b>Geometry</b> is the second job, and it is what the agent consumes.
+    Retrieval says <i>which</i> pattern, not <i>where</i>:</p>
+    <pre><code>q = W<sub>x</sub><sup>T</sup> (recall(x) &minus; x)</code></pre>
+    <p>the retrieved displacement projected onto the tangent plane of the
+    embedding manifold. Because the encoder is a smooth chart,
+    <span class="m">&xi;<sub>goal</sub> &minus; &xi;<sub>x</sub> &asymp; J<sub>x</sub>(p<sub>goal</sub> &minus; p<sub>x</sub>)</span>
+    locally, so this recovers the grid displacement. Measured direction accuracy:
+    cos <b>0.96</b>.</p>
+
+    <h3>Why explore and exploit are separable</h3>
+    <div class="scroll"><table>
+      <tr><th></th><th class="r">median &#8214;q&#8214;</th></tr>
+      <tr><td>displacement to the goal pattern</td><td class="r n"><b>0.3006</b></td></tr>
+      <tr><td>displacement to the nearest distractor</td><td class="r n"><b>0.0670</b></td></tr>
+    </table></div>
+    <p>A distractor lives in another environment, so the displacement to it is an
+    unrelated direction in 1024 dimensions &mdash; and an unrelated direction keeps
+    only <span class="m">&radic;(2/D) = 0.0442</span> of its norm when projected onto
+    a plane. With a displacement norm of about &radic;2 that predicts
+    <b>0.0625</b> against the measured 0.0670. <b>The explore/exploit separation
+    is a dimensionality effect</b>, predicted from first principles, and it is
+    free.</p>
+  </section>
+
+  <section>
+    <h2 class="num" data-n="2">Why the dynamics is linear</h2>
+    <div class="scroll"><table>
+      <tr><th></th><th class="r"></th></tr>
+      <tr><td>median &#124;&beta;&middot;W&middot;x&#124;</td><td class="r n"><b>9.97e&minus;05</b></td></tr>
+      <tr><td>max &#124;&beta;&middot;W&middot;x&#124;</td><td class="r n">7.68e&minus;04</td></tr>
+      <tr><td>max relative deviation of tanh(u) from u</td><td class="r n"><b>2.3e&minus;07</b></td></tr>
+      <tr><td>cos(trajectory with tanh, without) after 12 steps</td><td class="r n"><b>1.00000000</b></td></tr>
+    </table></div>
+    <p>tanh needs an argument of order 1 to bend. At 1e&minus;4 it is the identity,
+    so the update is <span class="m">normalize(W x)</span> &mdash; power iteration.</p>
+
+    <h3>One quantity, two knobs</h3>
+    <p>The governing quantity is the <b>loop gain</b>
+    <span class="m">&beta;&middot;S/D</span>, with <span class="m">S = &#8214;p&#8214;&sup2;</span>.
+    Since <span class="m">W = (1/D)&Sigma;pp<sup>T</sup></span>, storing
+    <span class="m">&lambda;p</span> scales <span class="m">W</span> by
+    <span class="m">&lambda;&sup2;</span> &mdash; so <span class="m">&beta;&middot;W</span>
+    is <b>exactly invariant</b> under
+    <span class="m">(p &rarr; &lambda;p, &beta; &rarr; &beta;/&lambda;&sup2;)</span>,
+    and zeroing the diagonal commutes with the scaling.</p>
+    <div class="note">
+      <h4>Storage norm and &beta; are the same knob</h4>
+      <p>Saying the system is linear "because patterns are stored at unit norm"
+      picks one arbitrary half of a product. The correct statement is that the
+      loop gain is ~1e&minus;4, and either factor moves it.</p>
+    </div>
+    <p><b>And <span class="m">hopfield.beta</span> is a no-op.</b> With tanh
+    linear to seven digits,
+    <span class="m">normalize(tanh(&beta;Wx)) = normalize(Wx)</span> for any
+    positive &beta; &mdash; the scalar cancels in the normalization. The trainer
+    sets it from the encoder's recorded gain and it has never done anything. It
+    would begin to matter at &beta; ~ 10&#8308;.</p>
+  </section>
+
+  <section>
+    <h2 class="num" data-n="3">What iterating actually does</h2>
+    <p>It does reach a fixed point &mdash; a symmetric-weight system must &mdash; but
+    the fixed point is not a memory, and getting there destroys the retrieval.</p>
+    <div class="scroll"><table>
+      <tr><th>recall steps</th><th class="r">cos to goal</th><th class="r">cos to top eigenvector</th><th class="r">residual</th></tr>
+      <tr><td class="n">1</td><td class="r n">0.991</td><td class="r n">0.086</td><td class="r n">3.6e&minus;01</td></tr>
+      <tr><td class="n">5</td><td class="r n">0.829</td><td class="r n">0.202</td><td class="r n">6.7e&minus;02</td></tr>
+      <tr><td class="n">12</td><td class="r n">0.673</td><td class="r n">0.583</td><td class="r n">8.1e&minus;02</td></tr>
+      <tr><td class="n">50</td><td class="r n">0.066</td><td class="r n"><b>1.0000</b></td><td class="r n">3.2e&minus;04</td></tr>
+      <tr class="hi"><td class="n">200</td><td class="r n">0.064</td><td class="r n">1.0000</td><td class="r n"><b>5.5e&minus;08</b></td></tr>
+    </table></div>
+    <p>Settled by ~50 steps, exact by 200, onto the <b>leading eigenvector of
+    W</b> &mdash; which sits at cos <b>0.064</b> to the goal, essentially orthogonal
+    to what was being recalled. The rate is spectral:
+    <span class="m">&lambda;&#8322;/&lambda;&#8321; = 0.838</span>, a 10&times;
+    reduction every 13 steps.</p>
+    <p>End to end on the navigation readout, cells with direction error worse than
+    cos 0.5: <b>1.46%</b> at one step, <b>12.27%</b> at twelve.</p>
+    <div class="note">
+      <h4>steps = 1 is not an untuned default</h4>
+      <p>It is the only setting that retrieves anything. Retrieval lives entirely
+      in the first product; every later step is power iteration toward the
+      direction most shared among all stored patterns, which by construction
+      carries no information about which one was cued.</p>
+    </div>
+  </section>
+
+  <section>
+    <h2 class="num" data-n="4">Why there are no basins</h2>
+    <div class="scroll"><table>
+      <tr><th>test</th><th class="r">result</th></tr>
+      <tr><td>start <b>exactly</b> at a stored pattern, 20 steps</td><td class="r n">cos to its own start <b>0.994 &rarr; 0.168</b></td></tr>
+      <tr><td>512 random starts, count distinct limits</td><td class="r n"><b>1</b>, for 11 patterns</td></tr>
+      <tr><td>that limit vs the top eigenvector</td><td class="r n">&#124;cos&#124; = <b>1.000000</b></td></tr>
+    </table></div>
+    <p>The memories are not attractors and the attractor is not a memory. Every
+    stored pattern is a <b>saddle</b>: with symmetric W each eigenvector is a
+    fixed point, but only the largest is stable.</p>
+
+    <h3>Two independent conditions</h3>
+    <p>Basins are <i>made by saturation</i> &mdash; it is what maps a whole
+    neighbourhood onto one state. Spurious mixtures are made the same way:
+    <span class="m">sign(&xi;&sup1;+&xi;&sup2;+&xi;&sup3;)</span> is a fixed point
+    precisely because sign maps it to itself. With the nonlinearity inert there is
+    no mechanism to create <i>any</i> extra stable state, memory or spurious.</p>
+    <div class="scroll"><table>
+      <tr><th>condition</th><th>knob</th><th>compensable</th><th>what it buys</th></tr>
+      <tr><td>loop gain &gt; 1</td><td>&beta; <b>or</b> storage norm &mdash; the same knob twice</td><td><b>yes</b></td><td>a nonzero fixed point instead of decay</td></tr>
+      <tr class="hi"><td>stored pattern near a <b>corner</b></td><td>storage gain <span class="m">g</span> only</td><td><b>no</b></td><td>that the fixed point <i>is your memory</i></td></tr>
+    </table></div>
+    <p>The current system fails the first. But it would fail the second even with
+    the first repaired &mdash; sweeping &beta; from 5 to 10&#8310; never took
+    stability above <b>0.226</b>. Raising the loop gain converts decay into a
+    nonzero fixed point; it cannot make a continuous vector into a corner.</p>
+
+    <h3>What normalization actually does</h3>
+    <p>It is not what prevents basins &mdash; with it still on, &beta; = 10&#8310;
+    does produce 8 attractors. What it decides is <i>what the degenerate attractor
+    is</i>: with normalization, the top eigenvector; without, the state decays to
+    the <b>origin</b>.</p>
+
+    <h3>The classical model is not broken</h3>
+    <div class="scroll"><table>
+      <tr><th>condition</th><th class="r">&beta;</th><th class="r">stored is a fixed pt</th><th class="r">attractors</th><th class="r">cue 0.70 &rarr;</th></tr>
+      <tr><td>classical + continuous <i>(current)</i></td><td class="r n">1e5</td><td class="r n">0.086</td><td class="r n">1</td><td class="r n">0.086</td></tr>
+      <tr class="hi"><td><b>classical + binarized</b></td><td class="r n">1e5</td><td class="r n"><b>1.0000</b></td><td class="r n"><b>11</b></td><td class="r n"><b>1.0000</b></td></tr>
+      <tr><td>classical + binarized</td><td class="r n">1e6</td><td class="r n">1.0000</td><td class="r n">34</td><td class="r n">1.0000</td></tr>
+    </table></div>
+    <p>All 11 patterns become fixed points, a corrupted cue is restored exactly,
+    and higher gain produces the spurious mixtures classical theory predicts.
+    <b>The failure is a mismatch between architecture and pattern type, not a
+    defect in the architecture.</b> Capacity is not involved: 0.138&middot;D = 141
+    against 11 stored.</p>
+    <p class="aside">That control is not perfectly clean &mdash; binarizing also
+    decorrelates (max overlap 0.4447 &rarr; 0.2910) and moves each pattern a long
+    way (median cos(&xi;, sign &xi;) = 0.7996). It shows the architecture retrieves
+    binary patterns, not that binarizing <i>these</i> patterns preserves what they
+    encode.</p>
+  </section>
+
+  <section>
+    <h2 class="num" data-n="5">Where the attractor regime does live</h2>
+    <h3>Route A &mdash; saturate the patterns before storing them</h3>
+    <p>Store <span class="m">p = tanh(g&middot;&xi;)</span>. The gain interpolates
+    between the encoder's vector and its binarization, moving the pattern toward a
+    corner. Recovery from a cue corrupted to cos 0.70:</p>
+    <div class="scroll"><table>
+      <tr><th>gain g</th><th class="r">M=5</th><th class="r">11</th><th class="r">25</th><th class="r">50</th><th class="r">100</th><th class="r">141</th></tr>
+      <tr><td class="n">10</td><td class="r n">0.499</td><td class="r n">0.461</td><td class="r n">0.228</td><td class="r n">0.091</td><td class="r n">0.098</td><td class="r n">0.052</td></tr>
+      <tr><td class="n">30</td><td class="r n">0.941</td><td class="r n">0.885</td><td class="r n">0.758</td><td class="r n">0.040</td><td class="r n">0.100</td><td class="r n">0.045</td></tr>
+      <tr class="hi"><td class="n"><b>100</b></td><td class="r n"><b>0.990</b></td><td class="r n"><b>0.986</b></td><td class="r n"><b>0.976</b></td><td class="r n">0.923</td><td class="r n">0.108</td><td class="r n">0.055</td></tr>
+      <tr class="hi"><td class="n"><b>300</b></td><td class="r n"><b>0.997</b></td><td class="r n"><b>0.996</b></td><td class="r n"><b>0.993</b></td><td class="r n"><b>0.986</b></td><td class="r n">0.146</td><td class="r n">0.062</td></tr>
+      <tr class="hi"><td class="n"><b>1000</b></td><td class="r n"><b>0.999</b></td><td class="r n"><b>0.998</b></td><td class="r n"><b>0.997</b></td><td class="r n"><b>0.996</b></td><td class="r n">0.318</td><td class="r n">0.062</td></tr>
+    </table></div>
+    <ul>
+      <li><b>Turn-on gain g &asymp; 100</b>, marginal at 30, absent below.</li>
+      <li><b>Capacity 50&ndash;100 patterns</b>, below the classical 141 &mdash; the
+      expected penalty for correlated patterns.</li>
+      <li><b>Real basins</b>: the stability table matches this recovery table cell
+      for cell.</li>
+      <li><b>Normalization does not move the boundary</b>; the two dynamics differ
+      only at the very edge.</li>
+      <li>The dynamics gain needs only <b>2&ndash;5&times;</b> its own threshold.</li>
+    </ul>
+
+    <h3>Route B &mdash; change the update rule</h3>
+    <p>The modern / dense associative memory update
+    <span class="m">&xi; &larr; X<sup>T</sup> softmax(&beta;X&xi;)</span> has the
+    stored patterns as fixed points <i>by construction</i>, for continuous
+    patterns: exact retrieval and <b>exactly 11 attractors with no spurious
+    states</b>, stable from &beta; = 8 through 512.</p>
+  </section>
+
+  <section>
+    <h2 class="num" data-n="6">Whether you would want it</h2>
+    <p>Both routes buy exact retrieval. Neither is obviously worth taking, and the
+    reason is &sect;1: <b>the encoder does two jobs, and only one of them is
+    retrieval.</b></p>
+    <p>The navigation signal is a <i>geometric</i> quantity that reads the
+    continuous structure of the embedding. At the storage gain where basins appear
+    (g &ge; 300) the pattern sits at cos ~0.98 to its own binarization &mdash; most
+    of that structure is gone.</p>
+    <div class="cols2">
+      <div class="gain"><h4>Gained</h4><p>Retrieval becomes exact, so direction
+      error attributable to recall fidelity disappears &mdash; and fidelity governs
+      essentially all of it. Cells whose recall sits at cos &ge; 0.99 to the goal
+      have a <b>0.01%</b> rate of bad direction, and <b>99.7%</b> of all
+      bad-direction cells fall below that threshold.</p></div>
+      <div class="risk"><h4>Risked</h4><p>The tangent projection may no longer
+      decode direction from a saturated pattern &mdash; in which case the exactness
+      is worthless, because direction is the only thing the policy consumes.</p></div>
+    </div>
+    <p>Route A also has an interface problem. If the stored pattern is
+    <span class="m">tanh(g&middot;&xi;<sub>goal</sub>)</span> but the cue is the raw
+    <span class="m">&xi;<sub>x</sub></span>, then the displacement subtracts an
+    unsaturated vector from a saturated one, which is not meaningful. A coherent
+    version saturates the cue as well and re-derives the tangent basis in the
+    saturated space &mdash; a different geometry, not a parameter change.</p>
+    <div class="note open">
+      <h4>The decisive test, not yet run</h4>
+      <p>Recompute direction accuracy and the goal-present / goal-absent
+      &#8214;q&#8214; separation under saturated storage with matched cueing, at
+      g &isin; {30, 100, 300}.</p>
+      <p>If direction survives, the attractor regime is genuinely available. If it
+      does not, then the matched filter is not a limitation of this design but
+      <b>the only regime in which the geometry survives</b> &mdash; the strongest
+      statement available about the architecture.</p>
+    </div>
+  </section>
+
+  <section>
+    <h2 class="num" data-n="7">What this says about the encoder</h2>
+    <p><b>It does not say the encoder must produce saturable codes.</b> That is
+    downstream of the test above and should not be pre-empted.</p>
+    <p><b>It does say something independent.</b> All retrieval failures come from
+    the extreme tail of the cross-environment similarity distribution:</p>
+    <div class="scroll"><table>
+      <tr><th>cross-env similarity</th><th class="r"></th></tr>
+      <tr><td>median</td><td class="r n">&minus;0.0002</td></tr>
+      <tr><td>p90</td><td class="r n">0.044</td></tr>
+      <tr><td>p99</td><td class="r n">0.273</td></tr>
+      <tr class="hi"><td><b>max</b></td><td class="r n"><b>0.9823</b></td></tr>
+    </table></div>
+    <p>The mean is already perfect &mdash; the repulsion objective achieved exactly
+    what it optimizes. The failures are <b>rare near-collisions</b>, where a
+    pattern from elsewhere in the scaffold encodes almost identically to an
+    in-environment position.</p>
+    <p>But the repel term is a <b>mean</b>:</p>
+    <pre><code>repel = (K_pred[far] ** 2).mean()</code></pre>
+    <p>Far-tail outliers contribute almost nothing to a mean-squared penalty, so
+    there is no gradient pressure on them. Meanwhile the <i>evaluation</i> already
+    uses worst-case quantities &mdash; <span class="m">bin_min</span>,
+    <span class="m">inner_min(R) &minus; outer_hi(R)</span>,
+    <span class="m">alias_crossing_radius</span>.</p>
+    <div class="note">
+      <h4>The sweeps are scored on worst case and trained on the mean</h4>
+      <p>A tail-sensitive repel term &mdash; a hinge, a top-k mean, logsumexp &mdash;
+      would put gradient where the failures are while leaving the 99% already near
+      zero untouched.</p>
+    </div>
+    <p class="aside"><b>Two qualifications.</b> This fixes the <i>matched
+    filter</i>; it creates no basins and does not touch the dynamics regime.
+    And whether a plain hinge suffices depends on how rare the damaging pairs are
+    &mdash; with ~32k far-pairs per batch a threshold near 0.2 would see hundreds of
+    violators, but if the collisions that actually break retrieval are far rarer,
+    hard-negative mining is needed instead. That distribution has not been measured
+    above p99.</p>
+  </section>
+
+  <section>
+    <h2>How each claim was measured</h2>
+    <div class="scroll"><table>
+      <tr><th>script</th><th>what it establishes</th></tr>
+      <tr><td class="m">why_it_works.py</td><td>&sect;1 &mdash; similarity structure, margin, &#8214;q&#8214; separation</td></tr>
+      <tr><td class="m">recall_dynamics.py</td><td>&sect;2, &sect;3 &mdash; tanh inertness, spectrum, long-run limit</td></tr>
+      <tr><td class="m">recall_convergence.py</td><td>&sect;3 &mdash; readout degradation with depth</td></tr>
+      <tr><td class="m">attractor_test.py</td><td>&sect;4 &mdash; stability, attractor count, one-step completion</td></tr>
+      <tr><td class="m">gain_sweep.py</td><td>&sect;4 &mdash; &beta; sweep with and without normalization</td></tr>
+      <tr><td class="m">architecture_test.py</td><td>&sect;4, &sect;5 &mdash; binarized control, modern-Hopfield route</td></tr>
+      <tr><td class="m">stored_gain_capacity.py</td><td>&sect;5 &mdash; storage-gain &times; capacity phase diagram</td></tr>
+    </table></div>
+    <p class="aside">Three faults were found and fixed while producing these, each
+    of which had produced a confident wrong answer. A padded zero in the final
+    step's residual read as "converged" &mdash; the opposite of what it meant. A
+    collapsed all-zero state read as 61 distinct attractors, because normalize maps
+    zero to zero and every pair of dead states has cosine 0. And the first
+    storage-gain sweep used a single dynamics gain &beta; = 1.0 and concluded
+    nothing worked anywhere: the threshold moves with the storage gain, from 1024
+    at g = 1 to ~1.3 at g = 100, so <b>a single-value control cannot test a grid
+    whose threshold moves with the other axis.</b></p>
+  </section>
+  </div>
+
+  <footer>
+    docs/MEMORY_MECHANISM.md &middot; analysis/nav_p2/ &middot; branch nav-tri-metric<br>
+    chronology, including the wrong turns: docs/EXPERIMENTS_NAV_P2.md &sect;5.3&ndash;5.9
+  </footer>
+
+</div>

@@ -1,0 +1,150 @@
+<title>Cheaper-Failure Run</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&family=Spectral:ital,wght@0,400;0,600;1,400&display=swap">
+<style>
+:root{--ground:#fbfbfd;--surface:#f2f3f7;--raised:#fff;--ink:#15171c;--ink-soft:#3d434f;--muted:#6a7183;
+--rule:#dde0e8;--rule-soft:#e9ebf1;--new:#a8560a;--new-fill:rgba(168,86,10,.10);--ctl:#7b8296;
+--d10:#0d6b64;--floor:#8a90a0;--band-a:rgba(168,86,10,.055);--band-b:rgba(90,100,125,.05)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+--ground:#0e1014;--surface:#171a20;--raised:#1c2027;--ink:#e9ebf1;--ink-soft:#c2c7d3;--muted:#8b93a5;
+--rule:#2b303a;--rule-soft:#232830;--new:#eda13f;--new-fill:rgba(237,161,63,.14);--ctl:#79839a;
+--d10:#3fc9bb;--floor:#767e92;--band-a:rgba(237,161,63,.06);--band-b:rgba(140,150,175,.06)}}
+:root[data-theme="dark"]{--ground:#0e1014;--surface:#171a20;--raised:#1c2027;--ink:#e9ebf1;--ink-soft:#c2c7d3;
+--muted:#8b93a5;--rule:#2b303a;--rule-soft:#232830;--new:#eda13f;--new-fill:rgba(237,161,63,.14);--ctl:#79839a;
+--d10:#3fc9bb;--floor:#767e92;--band-a:rgba(237,161,63,.06);--band-b:rgba(140,150,175,.06)}
+*{box-sizing:border-box}
+body{background:var(--ground);color:var(--ink);font-family:"IBM Plex Sans",system-ui,sans-serif;line-height:1.55;margin:0;padding:clamp(1.5rem,4vw,3.5rem) 1.25rem 5rem;-webkit-font-smoothing:antialiased}
+.wrap{max-width:1080px;margin:0 auto;display:flex;flex-direction:column;gap:clamp(2rem,4vw,3rem)}
+.eyebrow{font-family:"IBM Plex Mono",monospace;font-size:.72rem;letter-spacing:.14em;text-transform:uppercase;color:var(--muted);margin:0 0 .7rem}
+h1{font-family:Spectral,Georgia,serif;font-weight:600;font-size:clamp(2rem,5vw,3.1rem);line-height:1.08;letter-spacing:-.015em;margin:0 0 .6rem;text-wrap:balance}
+.standfirst{font-family:Spectral,Georgia,serif;font-style:italic;font-size:clamp(1.05rem,2.1vw,1.3rem);color:var(--ink-soft);max-width:62ch;margin:0}
+.meta{display:flex;flex-wrap:wrap;gap:.4rem 1.4rem;margin-top:1.4rem;font-family:"IBM Plex Mono",monospace;font-size:.76rem;color:var(--muted)}
+.meta b{color:var(--ink-soft);font-weight:500}
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(158px,1fr));gap:1px;background:var(--rule);border:1px solid var(--rule);border-radius:3px;overflow:hidden}
+.stat{background:var(--raised);padding:1.15rem 1.2rem}
+.stat .k{font-family:"IBM Plex Mono",monospace;font-size:.68rem;letter-spacing:.09em;text-transform:uppercase;color:var(--muted);margin-bottom:.5rem}
+.stat .v{font-family:"IBM Plex Mono",monospace;font-size:1.72rem;font-weight:500;line-height:1;font-variant-numeric:tabular-nums;letter-spacing:-.02em}
+.stat .n{font-size:.78rem;color:var(--muted);margin-top:.45rem}
+.stat.hi .v{color:var(--new)}
+section h2{font-family:Spectral,Georgia,serif;font-weight:600;font-size:1.42rem;margin:0 0 .3rem;letter-spacing:-.01em}
+section .sub{color:var(--muted);font-size:.9rem;margin:0 0 1.1rem;max-width:64ch}
+.chart{background:var(--raised);border:1px solid var(--rule);border-radius:3px;padding:1.1rem .9rem .6rem;overflow-x:auto}
+.chart svg{display:block;width:100%;height:auto;min-width:520px}
+.legend{display:flex;flex-wrap:wrap;gap:1.3rem;margin:.9rem 0 0;padding:0 .35rem;font-family:"IBM Plex Mono",monospace;font-size:.74rem;color:var(--muted)}
+.legend i{display:inline-block;width:15px;height:2px;vertical-align:middle;margin-right:.45rem}
+.legend .dash{height:0;border-top:1.5px dashed var(--floor)}
+.tw{overflow-x:auto;border:1px solid var(--rule);border-radius:3px;background:var(--raised)}
+table{width:100%;border-collapse:collapse;font-family:"IBM Plex Mono",monospace;font-size:.8rem;font-variant-numeric:tabular-nums}
+th,td{padding:.62rem .85rem;text-align:right;border-bottom:1px solid var(--rule-soft);white-space:nowrap}
+th{font-size:.68rem;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);font-weight:500;background:var(--surface)}
+th:first-child,td:first-child{text-align:left}
+tbody tr:last-child td{border-bottom:none}
+tbody tr.hl td{background:var(--new-fill);font-weight:600}
+.note{border-left:2px solid var(--rule);padding:.15rem 0 .15rem 1.15rem;color:var(--ink-soft);font-size:.92rem;max-width:66ch}
+.note+.note{margin-top:1rem}
+.note b{color:var(--ink)}
+code{font-family:"IBM Plex Mono",monospace;font-size:.86em;background:var(--surface);padding:.1rem .34rem;border-radius:2px}
+footer{border-top:1px solid var(--rule);padding-top:1.4rem;color:var(--muted);font-size:.82rem;max-width:70ch}
+</style>
+
+<div class="wrap">
+<header>
+  <p class="eyebrow">Phase 2 · P11 · run 21367235</p>
+  <h1>Cheaper-Failure Run</h1>
+  <p class="standfirst">Dropping the per-step time penalty from 0.05 to 0.02 makes a failed episode cost −4 instead of −10. The policy finds goals twenty-four times more often in its first fifty updates — and still takes longer to settle than the curriculum did.</p>
+  <div class="meta">
+    <span><b>variant</b> p11_tp</span>
+    <span><b>speed</b> frozen at 1.0</span>
+    <span><b>curriculum</b> none — distractors U[0,10] from update 1</span>
+    <span><b>time_penalty</b> 0.02 (from 0.05)</span>
+    <span><b>schedule</b> exploit 2000/2000</span>
+  </div>
+</header>
+
+<div class="stats">
+  <div class="stat hi"><div class="k">Success at u50</div><div class="v">0.760</div><div class="n">control: 0.031</div></div>
+  <div class="stat"><div class="k">First ≥0.85</div><div class="v">u100</div><div class="n">earliest of the four arms</div></div>
+  <div class="stat"><div class="k">Min after that</div><div class="v">0.365</div><div class="n">worst of the four</div></div>
+  <div class="stat"><div class="k">Final steps</div><div class="v">11.58</div><div class="n">best 10.59 at u1800</div></div>
+</div>
+
+<section>
+  <h2>Success rate, against the control</h2>
+  <p class="sub">The opening is transformed: 0.760 at u50 where the control manages 0.031, and 0.854 at u100. But the instability survives — 0.365 at u150 and 0.792 at u450 — and the run does not hold a ceiling until u500.</p>
+  <div class="chart" id="c-succ"></div>
+  <div class="legend"><span><i style="background:var(--new)"></i>cheaper failure</span><span><i style="background:var(--ctl)"></i>control</span></div>
+</section>
+
+<section>
+  <h2>Finding goals is not converging</h2>
+  <p class="sub">The same early evals in steps-to-goal. At u50 this policy reaches the goal in 59 steps against the control's 10 — it succeeds by wandering into the target, not by navigating to it. A cheaper failure buys exploration; it does not buy a policy.</p>
+  <div class="chart" id="c-steps"></div>
+  <div class="legend"><span><i style="background:var(--new)"></i>cheaper failure</span><span><i style="background:var(--ctl)"></i>control</span><span><i class="dash"></i>optimal (9.95)</span></div>
+</section>
+
+<section>
+  <h2>Ten distractors</h2>
+  <p class="sub">Tracks the zero-distractor curve closely all run, ending at 0.875 — the weakest final robustness of the three P11 arms, though within their shared oscillation.</p>
+  <div class="chart" id="c-d10"></div>
+  <div class="legend"><span><i style="background:var(--d10)"></i>10 distractors</span><span><i style="background:var(--new)"></i>0 distractors</span></div>
+</section>
+
+<section>
+  <h2>Checkpoints</h2>
+  <div class="tw"><table>
+    <thead><tr><th>Update</th><th>Succ · 0</th><th>Steps · 0</th><th>Succ · 10</th><th>Steps · 10</th><th>Control · 0</th></tr></thead>
+    <tbody id="tbody"></tbody>
+  </table></div>
+</section>
+
+<section>
+  <p class="note"><b>The early jump is real and it is not the thing that mattered.</b> A 24× improvement at u50 is the largest single-knob effect in this series. It also reaches 0.85 earlier than any other arm — u100 — and is then the <em>least</em> stable of the four: it falls to 0.365 immediately afterward, and is still dropping below 0.9 as late as u450, where the curriculum arm was done wobbling by u250. The reward asymmetry was genuinely suppressing early goal discovery, and that part of the diagnosis holds. Early goal discovery is simply not the bottleneck on convergence.</p>
+  <p class="note"><b>On the stability measure used here.</b> Earlier drafts of these pages counted "collapses below 0.55", which was applied inconsistently — the control's count included its pre-breakthrough updates while the treatment arms' did not, which flattered the treatments. Replaced with two facts that need no threshold: when the run first reaches 0.85, and the minimum it touches after that.
+  <br><br>control u150 / 0.490 · <b>curriculum u300 / 0.979</b> · cheaper-failure u100 / 0.365 · both u200 / 0.646</p>
+  <p class="note"><b>What the step counts show.</b> 59 steps to reach a goal at u50 is a policy stumbling onto the target within a 200-step budget, not one steering toward it. The cheaper penalty simply lets it survive long enough to stumble. That is why the success number moves so far while the settling time barely does.</p>
+  <p class="note"><b>Read on the recorded split</b> — the run's own six validation environments, not a fresh draw.</p>
+</section>
+
+<footer>
+  Only <code>time_penalty</code> changes; <code>goal_reward</code> is held at 2.0 deliberately, since under pooled advantage normalization only their ratio matters and varying both would be one confounded knob. Otherwise identical to <code>p10_pol_v1</code>: polar action head, speed frozen at 1.0, seed 42. Full record in <code>docs/EXPERIMENTS_NAV_P2.md</code> §9.4–9.8.
+</footer>
+</div>
+
+<script>
+const U=Array.from({length:40},(_,i)=>(i+1)*50);
+const S0=[.76042,.85417,.36458,.88542,1,.98958,.98958,1,.79167,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1];
+const T0=[59.11,42.49,31.83,42.89,29.73,28.06,20.82,21.32,54.49,15.43,15.85,21.90,14.44,17.71,17.05,12.24,13.80,13.04,13.21,13.48,12.46,11.54,12.57,11.64,12.81,11.90,11.17,11.16,12.16,11.28,11.55,11.42,11.28,11.04,11.75,10.59,10.67,11.06,10.65,11.58];
+const S10=[.76042,.82292,.36458,.85417,.95833,.96875,.97917,.92708,.64583,.9375,.92708,.9375,.95833,.94792,.97917,.95833,.95833,.97917,.97917,.9375,.97917,.94792,.97917,.98958,.98958,.94792,.96875,.96875,.95833,.95833,.95833,.95833,.94792,.96875,.96875,.94792,.95833,.95833,.94792,.875];
+const CS0=[.03125,.20833,.89583,.51042,.90625,1,.48958,.98958,1,1,.97917,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1];
+const CT0=[10,47.6,66.4,46.65,33.67,19.57,42.62,16.04,16.28,15.41,35.02,12.76,13.2,12.76,13.68,12.41,12.39,13.31,11.45,12.11,12.65,12.1,14.46,11.25,11.69,11.98,11.56,12.1,11.46,11.21,11.52,11.35,11.67,11.68,11.2,11.99,11.6,11.47,11.3,10.95];
+
+const W=980,H=290,M={t:16,r:16,b:34,l:52};
+function mk(el,series,xMin,xMax,yMin,yMax,ticks,fmt,floor,bands){
+  const px=u=>M.l+(u-xMin)/(xMax-xMin)*(W-M.l-M.r);
+  const py=v=>M.t+(1-(v-yMin)/(yMax-yMin))*(H-M.t-M.b);
+  let s=`<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="training curve">`;
+  for(const b of(bands||[]))s+=`<rect x="${px(b[0])}" y="${M.t}" width="${px(b[1])-px(b[0])}" height="${H-M.t-M.b}" fill="var(--${b[2]})"/>`;
+  for(const t of ticks){
+    s+=`<line x1="${M.l}" y1="${py(t)}" x2="${W-M.r}" y2="${py(t)}" stroke="var(--rule-soft)"/>`;
+    s+=`<text x="${M.l-10}" y="${py(t)+4}" text-anchor="end" font-family="IBM Plex Mono" font-size="11" fill="var(--muted)">${fmt(t)}</text>`;}
+  if(floor!==undefined)s+=`<line x1="${M.l}" y1="${py(floor)}" x2="${W-M.r}" y2="${py(floor)}" stroke="var(--floor)" stroke-width="1.4" stroke-dasharray="5 4"/>`;
+  for(let u=xMin+450;u<=xMax;u+=500){
+    s+=`<line x1="${px(u)}" y1="${M.t}" x2="${px(u)}" y2="${H-M.b}" stroke="var(--rule-soft)"/>`;
+    s+=`<text x="${px(u)}" y="${H-M.b+20}" text-anchor="middle" font-family="IBM Plex Mono" font-size="11" fill="var(--muted)">u${u}</text>`;}
+  s+=`<line x1="${M.l}" y1="${H-M.b}" x2="${W-M.r}" y2="${H-M.b}" stroke="var(--rule)"/>`;
+  for(const{data,color,w}of series){
+    s+=`<path d="${data.map((v,i)=>`${i?'L':'M'}${px(U[i]).toFixed(1)},${py(v).toFixed(1)}`).join('')}" fill="none" stroke="var(--${color})" stroke-width="${w||2}" stroke-linejoin="round" stroke-linecap="round"/>`;
+    s+=`<circle cx="${px(U[39])}" cy="${py(data[39])}" r="3.4" fill="var(--${color})"/>`;}
+  document.getElementById(el).innerHTML=s+'</svg>';
+}
+mk('c-succ',[{data:CS0,color:'ctl',w:1.6},{data:S0,color:'new'}],50,2000,0,1.04,[0,.25,.5,.75,1],v=>v.toFixed(2),undefined,[[50,500,'band-a'],[500,2000,'band-b']]);
+mk('c-steps',[{data:CT0,color:'ctl',w:1.6},{data:T0,color:'new'}],50,2000,0,70,[0,20,40,60],v=>v,9.95,[[50,500,'band-a'],[500,2000,'band-b']]);
+mk('c-d10',[{data:S0,color:'new',w:1.6},{data:S10,color:'d10'}],50,2000,.3,1.04,[.4,.6,.8,1],v=>v.toFixed(2));
+
+const rows=[0,1,2,4,8,9,15,25,39];
+document.getElementById('tbody').innerHTML=rows.map(i=>
+  `<tr${i===39?' class="hl"':''}><td>u${U[i]}</td><td>${S0[i].toFixed(3)}</td><td>${T0[i].toFixed(2)}</td>`+
+  `<td>${S10[i].toFixed(3)}</td><td>${(i<20?[51.3,39.4,54.5,36.0,39.2,27.1,24.2,24.5,44.1,15.9,18.6,22.3,18.0,18.1,21.6,14.9,17.0,15.7,16.2,14.9][i]:[14.8,13.3,14.5,13.5,15.1,13.2,12.3,14.2,13.5,12.2,12.7,12.0,13.2,13.0,14.0,13.4,11.2,13.1,12.8,13.5][i-20]).toFixed(2)}</td>`+
+  `<td style="color:var(--muted)">${CS0[i].toFixed(3)}</td></tr>`).join('');
+</script>

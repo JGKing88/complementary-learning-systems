@@ -1,0 +1,151 @@
+<title>Distractor Curriculum Run</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&family=Spectral:ital,wght@0,400;0,600;1,400&display=swap">
+<style>
+:root{--ground:#fbfbfd;--surface:#f2f3f7;--raised:#fff;--ink:#15171c;--ink-soft:#3d434f;--muted:#6a7183;
+--rule:#dde0e8;--rule-soft:#e9ebf1;--new:#a8560a;--new-fill:rgba(168,86,10,.10);--ctl:#7b8296;
+--d10:#0d6b64;--floor:#8a90a0;--band-a:rgba(168,86,10,.055);--band-b:rgba(90,100,125,.05)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+--ground:#0e1014;--surface:#171a20;--raised:#1c2027;--ink:#e9ebf1;--ink-soft:#c2c7d3;--muted:#8b93a5;
+--rule:#2b303a;--rule-soft:#232830;--new:#eda13f;--new-fill:rgba(237,161,63,.14);--ctl:#79839a;
+--d10:#3fc9bb;--floor:#767e92;--band-a:rgba(237,161,63,.06);--band-b:rgba(140,150,175,.06)}}
+:root[data-theme="dark"]{--ground:#0e1014;--surface:#171a20;--raised:#1c2027;--ink:#e9ebf1;--ink-soft:#c2c7d3;
+--muted:#8b93a5;--rule:#2b303a;--rule-soft:#232830;--new:#eda13f;--new-fill:rgba(237,161,63,.14);--ctl:#79839a;
+--d10:#3fc9bb;--floor:#767e92;--band-a:rgba(237,161,63,.06);--band-b:rgba(140,150,175,.06)}
+*{box-sizing:border-box}
+body{background:var(--ground);color:var(--ink);font-family:"IBM Plex Sans",system-ui,sans-serif;line-height:1.55;margin:0;padding:clamp(1.5rem,4vw,3.5rem) 1.25rem 5rem;-webkit-font-smoothing:antialiased}
+.wrap{max-width:1080px;margin:0 auto;display:flex;flex-direction:column;gap:clamp(2rem,4vw,3rem)}
+.eyebrow{font-family:"IBM Plex Mono",monospace;font-size:.72rem;letter-spacing:.14em;text-transform:uppercase;color:var(--muted);margin:0 0 .7rem}
+h1{font-family:Spectral,Georgia,serif;font-weight:600;font-size:clamp(2rem,5vw,3.1rem);line-height:1.08;letter-spacing:-.015em;margin:0 0 .6rem;text-wrap:balance}
+.standfirst{font-family:Spectral,Georgia,serif;font-style:italic;font-size:clamp(1.05rem,2.1vw,1.3rem);color:var(--ink-soft);max-width:62ch;margin:0}
+.meta{display:flex;flex-wrap:wrap;gap:.4rem 1.4rem;margin-top:1.4rem;font-family:"IBM Plex Mono",monospace;font-size:.76rem;color:var(--muted)}
+.meta b{color:var(--ink-soft);font-weight:500}
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(158px,1fr));gap:1px;background:var(--rule);border:1px solid var(--rule);border-radius:3px;overflow:hidden}
+.stat{background:var(--raised);padding:1.15rem 1.2rem}
+.stat .k{font-family:"IBM Plex Mono",monospace;font-size:.68rem;letter-spacing:.09em;text-transform:uppercase;color:var(--muted);margin-bottom:.5rem}
+.stat .v{font-family:"IBM Plex Mono",monospace;font-size:1.72rem;font-weight:500;line-height:1;font-variant-numeric:tabular-nums;letter-spacing:-.02em}
+.stat .n{font-size:.78rem;color:var(--muted);margin-top:.45rem}
+.stat.hi .v{color:var(--new)}
+section h2{font-family:Spectral,Georgia,serif;font-weight:600;font-size:1.42rem;margin:0 0 .3rem;letter-spacing:-.01em}
+section .sub{color:var(--muted);font-size:.9rem;margin:0 0 1.1rem;max-width:64ch}
+.chart{background:var(--raised);border:1px solid var(--rule);border-radius:3px;padding:1.1rem .9rem .6rem;overflow-x:auto}
+.chart svg{display:block;width:100%;height:auto;min-width:520px}
+.legend{display:flex;flex-wrap:wrap;gap:1.3rem;margin:.9rem 0 0;padding:0 .35rem;font-family:"IBM Plex Mono",monospace;font-size:.74rem;color:var(--muted)}
+.legend i{display:inline-block;width:15px;height:2px;vertical-align:middle;margin-right:.45rem}
+.legend .dash{height:0;border-top:1.5px dashed var(--floor)}
+.tw{overflow-x:auto;border:1px solid var(--rule);border-radius:3px;background:var(--raised)}
+table{width:100%;border-collapse:collapse;font-family:"IBM Plex Mono",monospace;font-size:.8rem;font-variant-numeric:tabular-nums}
+th,td{padding:.62rem .85rem;text-align:right;border-bottom:1px solid var(--rule-soft);white-space:nowrap}
+th{font-size:.68rem;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);font-weight:500;background:var(--surface)}
+th:first-child,td:first-child{text-align:left}
+tbody tr:last-child td{border-bottom:none}
+tbody tr.hl td{background:var(--new-fill);font-weight:600}
+.note{border-left:2px solid var(--rule);padding:.15rem 0 .15rem 1.15rem;color:var(--ink-soft);font-size:.92rem;max-width:66ch}
+.note+.note{margin-top:1rem}
+.note b{color:var(--ink)}
+code{font-family:"IBM Plex Mono",monospace;font-size:.86em;background:var(--surface);padding:.1rem .34rem;border-radius:2px}
+footer{border-top:1px solid var(--rule);padding-top:1.4rem;color:var(--muted);font-size:.82rem;max-width:70ch}
+</style>
+
+<div class="wrap">
+<header>
+  <p class="eyebrow">Phase 2 · P11 · run 21367234</p>
+  <h1>Distractor Curriculum Run</h1>
+  <p class="standfirst">The control spent 550 updates swinging between 3% and 100% success before it settled. Ramping the distractor count from zero to ten over the first 400 updates removes that oscillation entirely — and arrives at exactly the same place.</p>
+  <div class="meta">
+    <span><b>variant</b> p11_cur</span>
+    <span><b>speed</b> frozen at 1.0</span>
+    <span><b>curriculum</b> ON — distractor max 0→10 over 400 updates</span>
+    <span><b>time_penalty</b> 0.05 (unchanged)</span>
+    <span><b>schedule</b> exploit 2000/2000</span>
+  </div>
+</header>
+
+<div class="stats">
+  <div class="stat hi"><div class="k">Locks at</div><div class="v">u400</div><div class="n">control: u600</div></div>
+  <div class="stat hi"><div class="k">Min after 0.85</div><div class="v">0.979</div><div class="n">control: 0.490</div></div>
+  <div class="stat"><div class="k">Final steps</div><div class="v">11.40</div><div class="n">control: 10.95</div></div>
+  <div class="stat"><div class="k">Final · 10 dist</div><div class="v">0.948</div><div class="n">control: 0.958</div></div>
+</div>
+
+<section>
+  <h2>Success rate, against the control</h2>
+  <p class="sub">Both runs are identical apart from the curriculum. The control lurches — 0.90, then 0.51, then 0.91, then 1.00, then 0.49 — and does not hold a ceiling until u600. The curriculum arm climbs monotonically from u200 and never falls below 0.99 again after u350.</p>
+  <div class="chart" id="c-succ"></div>
+  <div class="legend"><span><i style="background:var(--new)"></i>curriculum</span><span><i style="background:var(--ctl)"></i>control</span></div>
+</section>
+
+<section>
+  <h2>The trade: a slower start</h2>
+  <p class="sub">The first 200 updates are <em>worse</em> than the control's — 0.04 against 0.90 at u150. The curriculum is training on one or two distractors there while the control already faces ten, and the control's early spike is part of the same instability that later costs it. Breakthrough comes at u250 rather than u150, and then holds.</p>
+  <div class="chart" id="c-early"></div>
+  <div class="legend"><span><i style="background:var(--new)"></i>curriculum</span><span><i style="background:var(--ctl)"></i>control</span></div>
+</section>
+
+<section>
+  <h2>Mean steps to goal</h2>
+  <p class="sub">Successes only, so the control's early values are drawn from a handful of lucky starts and mean little. Both arms settle near 11 steps against a 9.95 floor.</p>
+  <div class="chart" id="c-steps"></div>
+  <div class="legend"><span><i style="background:var(--new)"></i>curriculum</span><span><i style="background:var(--ctl)"></i>control</span><span><i class="dash"></i>optimal (9.95)</span></div>
+</section>
+
+<section>
+  <h2>Checkpoints</h2>
+  <div class="tw"><table>
+    <thead><tr><th>Update</th><th>Succ · 0</th><th>Steps · 0</th><th>Succ · 10</th><th>Steps · 10</th><th>Control · 0</th></tr></thead>
+    <tbody id="tbody"></tbody>
+  </table></div>
+</section>
+
+<section>
+  <p class="note"><b>The curriculum changes the path, not the destination.</b> Final performance is a wash — 11.40 steps against 10.95, and 0.948 against 0.958 at ten distractors, both inside the run-to-run oscillation. What it buys is 200 updates and, more importantly, a run that never falls apart: once it first reaches 0.85 at u300 it never touches below <b>0.979</b> again, where the control drops to 0.490 after its own breakthrough. Every collapse is a point where someone reading a single eval draws the wrong conclusion, so a run that has none is worth having even at an identical endpoint.</p>
+  <p class="note"><b>On the stability measure.</b> An earlier draft of this page counted "collapses below 0.55", which was applied inconsistently — the control's count swept in its pre-breakthrough updates while this arm's did not, which flattered the curriculum. Replaced with two threshold-free facts: when a run first reaches 0.85, and the minimum it touches afterward.
+  <br><br>control u150 / 0.490 · <b>curriculum u300 / 0.979</b> · cheaper-failure u100 / 0.365 · both u200 / 0.646</p>
+  <p class="note"><b>It does not explain the slow convergence.</b> The original question was why the control needs 550 updates. The curriculum answers "instability is avoidable" but still takes until u250 for its own first breakthrough, so most of the delay is something else — the sparse-reward structure is the remaining candidate, tested separately in <code>p11_tp</code>.</p>
+  <p class="note"><b>Read on the recorded split</b> — the run's own six validation environments, not a fresh draw.</p>
+</section>
+
+<footer>
+  Curriculum ramps <code>n_train_distractors_max</code> from 0 to 10 linearly over the first 400 updates; evaluation is always at 0 and 10 regardless. Otherwise identical to <code>p10_pol_v1</code>: polar action head, speed frozen at 1.0, seed 42. Full record in <code>docs/EXPERIMENTS_NAV_P2.md</code> §9.4–9.8.
+</footer>
+</div>
+
+<script>
+const U=Array.from({length:40},(_,i)=>(i+1)*50);
+const S0=[.04167,.05208,.03125,.07292,.67708,.92708,.97917,1,1,.98958,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1];
+const T0=[7.75,15.6,4.0,10.0,63.68,44.49,38.37,23.64,20.95,14.85,15.99,13.70,12.99,12.86,12.83,11.74,11.19,11.80,11.50,11.34,11.10,11.25,11.22,12.43,11.26,11.59,12.31,11.40,10.95,11.52,11.26,11.05,11.36,11.51,11.69,11.35,12.09,12.27,11.46,11.40];
+const S10=[.02083,.07292,.05208,.09375,.70833,.84375,.91667,.97917,.91667,.98958,.95833,.92708,.92708,.90625,.92708,.95833,.92708,.95833,.9375,.94792,.92708,.97917,.96875,.92708,.9375,.94792,.94792,.88542,.85417,.9375,.89583,.9375,.9375,.9375,.92708,.9375,.91667,.92708,.92708,.94792];
+const T10=[12.0,10.29,13.0,7.56,65.06,40.40,36.06,28.11,26.83,26.49,18.17,20.56,17.43,21.54,15.96,15.41,14.07,13.38,17.91,12.80,16.52,14.36,13.03,17.28,14.17,14.23,17.79,14.76,12.44,13.93,14.08,14.83,13.00,15.76,14.94,16.12,14.24,13.29,13.73,15.41];
+const CS0=[.03125,.20833,.89583,.51042,.90625,1,.48958,.98958,1,1,.97917,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1];
+const CT0=[10,47.6,66.4,46.65,33.67,19.57,42.62,16.04,16.28,15.41,35.02,12.76,13.2,12.76,13.68,12.41,12.39,13.31,11.45,12.11,12.65,12.1,14.46,11.25,11.69,11.98,11.56,12.1,11.46,11.21,11.52,11.35,11.67,11.68,11.2,11.99,11.6,11.47,11.3,10.95];
+
+const W=980,H=290,M={t:16,r:16,b:34,l:52};
+function mk(el,series,xMin,xMax,yMin,yMax,ticks,fmt,floor,bands){
+  const px=u=>M.l+(u-xMin)/(xMax-xMin)*(W-M.l-M.r);
+  const py=v=>M.t+(1-(v-yMin)/(yMax-yMin))*(H-M.t-M.b);
+  let s=`<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="training curve">`;
+  for(const b of(bands||[]))s+=`<rect x="${px(b[0])}" y="${M.t}" width="${px(b[1])-px(b[0])}" height="${H-M.t-M.b}" fill="var(--${b[2]})"/>`;
+  for(const t of ticks){
+    s+=`<line x1="${M.l}" y1="${py(t)}" x2="${W-M.r}" y2="${py(t)}" stroke="var(--rule-soft)"/>`;
+    s+=`<text x="${M.l-10}" y="${py(t)+4}" text-anchor="end" font-family="IBM Plex Mono" font-size="11" fill="var(--muted)">${fmt(t)}</text>`;}
+  if(floor!==undefined)s+=`<line x1="${M.l}" y1="${py(floor)}" x2="${W-M.r}" y2="${py(floor)}" stroke="var(--floor)" stroke-width="1.4" stroke-dasharray="5 4"/>`;
+  const step=(xMax-xMin)>800?500:100;
+  for(let u=xMin+step;u<=xMax;u+=step){
+    s+=`<line x1="${px(u)}" y1="${M.t}" x2="${px(u)}" y2="${H-M.b}" stroke="var(--rule-soft)"/>`;
+    s+=`<text x="${px(u)}" y="${H-M.b+20}" text-anchor="middle" font-family="IBM Plex Mono" font-size="11" fill="var(--muted)">u${u}</text>`;}
+  s+=`<line x1="${M.l}" y1="${H-M.b}" x2="${W-M.r}" y2="${H-M.b}" stroke="var(--rule)"/>`;
+  for(const{data,color,x,w}of series){
+    s+=`<path d="${data.map((v,i)=>`${i?'L':'M'}${px(x[i]).toFixed(1)},${py(v).toFixed(1)}`).join('')}" fill="none" stroke="var(--${color})" stroke-width="${w||2}" stroke-linejoin="round" stroke-linecap="round"/>`;
+    s+=`<circle cx="${px(x[x.length-1])}" cy="${py(data[data.length-1])}" r="3.4" fill="var(--${color})"/>`;}
+  document.getElementById(el).innerHTML=s+'</svg>';
+}
+mk('c-succ',[{data:CS0,color:'ctl',x:U,w:1.6},{data:S0,color:'new',x:U}],50,2000,0,1.04,[0,.25,.5,.75,1],v=>v.toFixed(2),undefined,[[50,400,'band-a'],[400,2000,'band-b']]);
+mk('c-early',[{data:CS0.slice(0,10),color:'ctl',x:U.slice(0,10),w:1.6},{data:S0.slice(0,10),color:'new',x:U.slice(0,10)}],50,500,0,1.04,[0,.25,.5,.75,1],v=>v.toFixed(2));
+mk('c-steps',[{data:CT0,color:'ctl',x:U,w:1.6},{data:T0,color:'new',x:U}],50,2000,0,70,[0,20,40,60],v=>v,9.95,[[50,400,'band-a'],[400,2000,'band-b']]);
+
+const rows=[0,2,4,5,7,11,19,29,39];
+document.getElementById('tbody').innerHTML=rows.map(i=>
+  `<tr${i===39?' class="hl"':''}><td>u${U[i]}</td><td>${S0[i].toFixed(3)}</td><td>${T0[i].toFixed(2)}</td>`+
+  `<td>${S10[i].toFixed(3)}</td><td>${T10[i].toFixed(2)}</td><td style="color:var(--muted)">${CS0[i].toFixed(3)}</td></tr>`).join('');
+</script>

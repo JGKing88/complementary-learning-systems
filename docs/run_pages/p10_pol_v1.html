@@ -1,0 +1,226 @@
+<title>Frozen-Speed Exploit Run</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&family=Spectral:ital,wght@0,400;0,600;1,400&display=swap">
+
+<style>
+:root{
+  --ground:#fbfbfd; --surface:#f2f3f7; --raised:#ffffff;
+  --ink:#15171c; --ink-soft:#3d434f; --muted:#6a7183;
+  --rule:#dde0e8; --rule-soft:#e9ebf1;
+  --d0:#a8560a; --d0-fill:rgba(168,86,10,.10);
+  --d10:#0d6b64; --d10-fill:rgba(13,107,100,.10);
+  --floor:#8a90a0;
+  --band-a:rgba(168,86,10,.055); --band-b:rgba(13,107,100,.045); --band-c:rgba(90,100,125,.05);
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    --ground:#0e1014; --surface:#171a20; --raised:#1c2027;
+    --ink:#e9ebf1; --ink-soft:#c2c7d3; --muted:#8b93a5;
+    --rule:#2b303a; --rule-soft:#232830;
+    --d0:#eda13f; --d0-fill:rgba(237,161,63,.14);
+    --d10:#3fc9bb; --d10-fill:rgba(63,201,187,.13);
+    --floor:#767e92;
+    --band-a:rgba(237,161,63,.06); --band-b:rgba(63,201,187,.05); --band-c:rgba(140,150,175,.06);
+  }
+}
+:root[data-theme="dark"]{
+  --ground:#0e1014; --surface:#171a20; --raised:#1c2027;
+  --ink:#e9ebf1; --ink-soft:#c2c7d3; --muted:#8b93a5;
+  --rule:#2b303a; --rule-soft:#232830;
+  --d0:#eda13f; --d0-fill:rgba(237,161,63,.14);
+  --d10:#3fc9bb; --d10-fill:rgba(63,201,187,.13);
+  --floor:#767e92;
+  --band-a:rgba(237,161,63,.06); --band-b:rgba(63,201,187,.05); --band-c:rgba(140,150,175,.06);
+}
+
+*{box-sizing:border-box}
+body{
+  background:var(--ground); color:var(--ink);
+  font-family:"IBM Plex Sans",system-ui,sans-serif;
+  line-height:1.55; margin:0; padding:clamp(1.5rem,4vw,3.5rem) 1.25rem 5rem;
+  -webkit-font-smoothing:antialiased;
+}
+.wrap{max-width:1080px;margin:0 auto;display:flex;flex-direction:column;gap:clamp(2rem,4vw,3rem)}
+
+.eyebrow{
+  font-family:"IBM Plex Mono",monospace; font-size:.72rem; letter-spacing:.14em;
+  text-transform:uppercase; color:var(--muted); margin:0 0 .7rem;
+}
+h1{
+  font-family:Spectral,Georgia,serif; font-weight:600;
+  font-size:clamp(2rem,5vw,3.1rem); line-height:1.08; letter-spacing:-.015em;
+  margin:0 0 .6rem; text-wrap:balance;
+}
+.standfirst{
+  font-family:Spectral,Georgia,serif; font-style:italic;
+  font-size:clamp(1.05rem,2.1vw,1.3rem); color:var(--ink-soft);
+  max-width:62ch; margin:0;
+}
+.meta{
+  display:flex; flex-wrap:wrap; gap:.4rem 1.4rem; margin-top:1.4rem;
+  font-family:"IBM Plex Mono",monospace; font-size:.76rem; color:var(--muted);
+}
+.meta b{color:var(--ink-soft);font-weight:500}
+
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(158px,1fr));gap:1px;background:var(--rule);border:1px solid var(--rule);border-radius:3px;overflow:hidden}
+.stat{background:var(--raised);padding:1.15rem 1.2rem}
+.stat .k{font-family:"IBM Plex Mono",monospace;font-size:.68rem;letter-spacing:.09em;text-transform:uppercase;color:var(--muted);margin-bottom:.5rem}
+.stat .v{font-family:"IBM Plex Mono",monospace;font-size:1.72rem;font-weight:500;line-height:1;font-variant-numeric:tabular-nums;letter-spacing:-.02em}
+.stat .n{font-size:.78rem;color:var(--muted);margin-top:.45rem}
+.stat.hi .v{color:var(--d0)}
+
+section h2{
+  font-family:Spectral,Georgia,serif;font-weight:600;font-size:1.42rem;
+  margin:0 0 .3rem;letter-spacing:-.01em;
+}
+section .sub{color:var(--muted);font-size:.9rem;margin:0 0 1.1rem;max-width:64ch}
+
+.chart{background:var(--raised);border:1px solid var(--rule);border-radius:3px;padding:1.1rem .9rem .6rem;overflow-x:auto}
+.chart svg{display:block;width:100%;height:auto;min-width:520px}
+.legend{display:flex;flex-wrap:wrap;gap:1.3rem;margin:.9rem 0 0;padding:0 .35rem;font-family:"IBM Plex Mono",monospace;font-size:.74rem;color:var(--muted)}
+.legend i{display:inline-block;width:15px;height:2px;vertical-align:middle;margin-right:.45rem}
+.legend .dash{height:0;border-top:1.5px dashed var(--floor)}
+
+table{width:100%;border-collapse:collapse;font-family:"IBM Plex Mono",monospace;font-size:.8rem;font-variant-numeric:tabular-nums}
+.tw{overflow-x:auto;border:1px solid var(--rule);border-radius:3px;background:var(--raised)}
+th,td{padding:.62rem .85rem;text-align:right;border-bottom:1px solid var(--rule-soft);white-space:nowrap}
+th{font-size:.68rem;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);font-weight:500;background:var(--surface)}
+th:first-child,td:first-child{text-align:left}
+tbody tr:last-child td{border-bottom:none}
+tbody tr.final td{font-weight:600;background:var(--d0-fill)}
+.phase{font-family:"IBM Plex Sans",sans-serif;font-size:.72rem;padding:.14rem .5rem;border-radius:2px;letter-spacing:.02em}
+.p-a{background:var(--band-a);color:var(--d0)} .p-b{background:var(--band-b);color:var(--d10)} .p-c{background:var(--band-c);color:var(--ink-soft)}
+
+.note{border-left:2px solid var(--rule);padding:.15rem 0 .15rem 1.15rem;color:var(--ink-soft);font-size:.92rem;max-width:66ch}
+.note b{color:var(--ink)}
+code{font-family:"IBM Plex Mono",monospace;font-size:.86em;background:var(--surface);padding:.1rem .34rem;border-radius:2px}
+footer{border-top:1px solid var(--rule);padding-top:1.4rem;color:var(--muted);font-size:.82rem;max-width:70ch}
+</style>
+
+<div class="wrap">
+
+<header>
+  <p class="eyebrow">Phase 2 · P10 polar · run 21300389</p>
+  <h1>Frozen-Speed Exploit Run</h1>
+  <p class="standfirst">Two thousand PPO updates of a polar-action navigation policy with its step size pinned at exactly one grid cell. It ends at a perfect success rate and a near-direct path — but only after five hundred updates of violent oscillation that made every early reading wrong.</p>
+  <div class="meta">
+    <span><b>variant</b> p10_pol_v1</span>
+    <span><b>speed</b> frozen at 1.0</span>
+    <span><b>curriculum</b> none — distractors U[0,10] from update 1</span>
+    <span><b>time_penalty</b> 0.05</span>
+    <span><b>schedule</b> exploit 2000/2000</span>
+    <span><b>eval</b> every 50, 96 trials</span>
+  </div>
+</header>
+
+<div class="stats">
+  <div class="stat hi"><div class="k">Success · 0 dist</div><div class="v">1.000</div><div class="n">96 of 96 trials</div></div>
+  <div class="stat hi"><div class="k">Mean steps</div><div class="v">10.95</div><div class="n">1.10× the 9.95 floor</div></div>
+  <div class="stat"><div class="k">Success · 10 dist</div><div class="v">0.958</div><div class="n">92 of 96 trials</div></div>
+  <div class="stat"><div class="k">Steps · 10 dist</div><div class="v">13.64</div><div class="n">1.37× floor</div></div>
+</div>
+
+<section>
+  <h2>Success rate</h2>
+  <p class="sub">Three regimes, and they are real rather than drawn: the run swings between 0.03 and 1.00 for its first 550 updates, converges over the next 350, then holds 1.000 without exception for the last 1050.</p>
+  <div class="chart" id="c-succ"></div>
+  <div class="legend">
+    <span><i style="background:var(--d0)"></i>0 distractors</span>
+    <span><i style="background:var(--d10)"></i>10 distractors</span>
+  </div>
+</section>
+
+<section>
+  <h2>Mean steps to goal</h2>
+  <p class="sub">Averaged over successful trials only, so the early points are flattered — at u50 a 10-step mean is drawn from the 3% of trials that happened to start next to the goal. The dashed line is the theoretical floor at speed 1.0: 9.95 cells of journey, 9.95 steps.</p>
+  <div class="chart" id="c-steps"></div>
+  <div class="legend">
+    <span><i style="background:var(--d0)"></i>0 distractors</span>
+    <span><i style="background:var(--d10)"></i>10 distractors</span>
+    <span><i class="dash"></i>optimal path (9.95)</span>
+  </div>
+</section>
+
+<section>
+  <h2>Realized step magnitude</h2>
+  <p class="sub">The policy commands exactly 1.0 every step, so anything below that is motion lost to the arena clip — the agent pressing into a wall. It climbs from 0.27 to 0.95, which is most of where the path-length gain comes from: not longer strides, but fewer collisions.</p>
+  <div class="chart" id="c-spd"></div>
+  <div class="legend">
+    <span><i style="background:var(--d0)"></i>0 distractors</span>
+    <span><i style="background:var(--d10)"></i>10 distractors</span>
+    <span><i class="dash"></i>commanded (1.0)</span>
+  </div>
+</section>
+
+<section>
+  <h2>Checkpoints</h2>
+  <p class="sub">Every 250 updates, plus the final. The <span class="phase p-a">chaotic</span> rows are why no single eval point in this project supports a directional claim.</p>
+  <div class="tw"><table>
+    <thead><tr><th>Update</th><th>Phase</th><th>Succ · 0</th><th>Steps · 0</th><th>Succ · 10</th><th>Steps · 10</th><th>Realized ‖a‖</th></tr></thead>
+    <tbody id="tbody"></tbody>
+  </table></div>
+</section>
+
+<section>
+  <p class="note"><b>Read on the recorded split.</b> Every number here is measured on the run's own six validation environments — never trained on, but the set it was scored against at every eval, not a fresh draw. The behaviour probe gained a <code>--split</code> flag only after this run finished, and nothing has been re-measured on minted environments yet.</p>
+</section>
+
+<footer>
+  Polar action head: heading drawn from a von&nbsp;Mises distribution over the allocentric angle, speed held constant at one grid cell. Companion run <code>p10_pol</code> learns its speed instead and reaches comparable step counts by moving 85% faster — at roughly half the per-step directness. Full record in <code>docs/EXPERIMENTS_NAV_P2.md</code> §9.4–9.8.
+</footer>
+
+</div>
+
+<script>
+const U=[50,100,150,200,250,300,350,400,450,500,550,600,650,700,750,800,850,900,950,1000,1050,1100,1150,1200,1250,1300,1350,1400,1450,1500,1550,1600,1650,1700,1750,1800,1850,1900,1950,2000];
+const S0=[.03125,.20833,.89583,.51042,.90625,1,.48958,.98958,1,1,.97917,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1];
+const S10=[.05208,.14583,.875,.58333,.76042,.97917,.54167,.95833,.95833,.90625,.78125,.9375,.9375,.95833,.92708,.94792,.94792,.89583,.9375,.95833,.90625,.89583,.95833,.94792,.9375,.94792,.90625,.95833,.95833,.95833,.96875,.97917,.95833,.96875,.95833,.9375,.96875,.95833,.94792,.95833];
+const T0=[10,47.6,66.4,46.65,33.67,19.57,42.62,16.04,16.28,15.41,35.02,12.76,13.2,12.76,13.68,12.41,12.39,13.31,11.45,12.11,12.65,12.1,14.46,11.25,11.69,11.98,11.56,12.1,11.46,11.21,11.52,11.35,11.67,11.68,11.2,11.99,11.6,11.47,11.3,10.95];
+const T10=[6.2,48.43,61.18,45.61,36.18,23.45,46.94,23.68,18.51,18.51,31.56,17.41,16.93,14.58,18.88,14.58,15.82,14.9,15.52,13.39,15.51,13.72,17.04,13.53,14.8,15.64,16.83,13.83,14.96,12.62,15.14,16.18,14.45,13.34,15.32,15.58,13.77,16.88,15.48,13.64];
+const V0=[.905,.484,.273,.481,.414,.677,.423,.783,.742,.788,.592,.867,.856,.884,.829,.888,.894,.805,.922,.910,.862,.887,.774,.923,.901,.885,.912,.880,.914,.931,.916,.923,.911,.898,.933,.883,.910,.912,.922,.948];
+const V10=[.973,.411,.302,.393,.435,.597,.484,.669,.707,.749,.591,.755,.799,.827,.776,.835,.795,.809,.844,.836,.840,.820,.731,.840,.830,.825,.822,.844,.859,.861,.833,.833,.842,.840,.839,.810,.820,.817,.810,.854];
+
+const PHASES=[[50,550,'band-a'],[600,900,'band-b'],[950,2000,'band-c']];
+const W=980,H=290,M={t:16,r:16,b:34,l:52};
+const px=u=>M.l+(u-50)/(2000-50)*(W-M.l-M.r);
+
+function chart(el,series,yMin,yMax,ticks,fmt,floor){
+  const py=v=>M.t+(1-(v-yMin)/(yMax-yMin))*(H-M.t-M.b);
+  let s=`<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="training curve">`;
+  for(const [a,b,c] of PHASES)
+    s+=`<rect x="${px(a)-8}" y="${M.t}" width="${px(b)-px(a)+16}" height="${H-M.t-M.b}" fill="var(--${c})"/>`;
+  for(const t of ticks){
+    s+=`<line x1="${M.l}" y1="${py(t)}" x2="${W-M.r}" y2="${py(t)}" stroke="var(--rule-soft)" stroke-width="1"/>`;
+    s+=`<text x="${M.l-10}" y="${py(t)+4}" text-anchor="end" font-family="IBM Plex Mono" font-size="11" fill="var(--muted)">${fmt(t)}</text>`;
+  }
+  if(floor!==undefined)
+    s+=`<line x1="${M.l}" y1="${py(floor)}" x2="${W-M.r}" y2="${py(floor)}" stroke="var(--floor)" stroke-width="1.5" stroke-dasharray="5 4"/>`;
+  for(const u of [500,1000,1500,2000]){
+    s+=`<line x1="${px(u)}" y1="${M.t}" x2="${px(u)}" y2="${H-M.b}" stroke="var(--rule-soft)"/>`;
+    s+=`<text x="${px(u)}" y="${H-M.b+20}" text-anchor="middle" font-family="IBM Plex Mono" font-size="11" fill="var(--muted)">u${u}</text>`;
+  }
+  s+=`<line x1="${M.l}" y1="${H-M.b}" x2="${W-M.r}" y2="${H-M.b}" stroke="var(--rule)"/>`;
+  for(const {data,color} of series){
+    const d=data.map((v,i)=>`${i?'L':'M'}${px(U[i]).toFixed(1)},${py(v).toFixed(1)}`).join('');
+    s+=`<path d="${d}" fill="none" stroke="var(--${color})" stroke-width="1.9" stroke-linejoin="round" stroke-linecap="round"/>`;
+    data.forEach((v,i)=>{ if(i===data.length-1)
+      s+=`<circle cx="${px(U[i])}" cy="${py(v)}" r="3.6" fill="var(--${color})"/>`; });
+  }
+  s+='</svg>';
+  document.getElementById(el).innerHTML=s;
+}
+
+chart('c-succ',[{data:S0,color:'d0'},{data:S10,color:'d10'}],0,1.04,[0,.25,.5,.75,1],v=>v.toFixed(2));
+chart('c-steps',[{data:T0,color:'d0'},{data:T10,color:'d10'}],0,70,[0,20,40,60],v=>v,9.95);
+chart('c-spd',[{data:V0,color:'d0'},{data:V10,color:'d10'}],.2,1.04,[.25,.5,.75,1],v=>v.toFixed(2),1);
+
+const rows=[0,4,9,14,19,24,29,34,39];
+const phaseOf=u=>u<=550?['chaotic','p-a']:u<=900?['converging','p-b']:['locked','p-c'];
+document.getElementById('tbody').innerHTML=rows.map(i=>{
+  const [name,cls]=phaseOf(U[i]);
+  return `<tr${i===39?' class="final"':''}><td>u${U[i]}</td><td style="text-align:left"><span class="phase ${cls}">${name}</span></td>`+
+    `<td>${S0[i].toFixed(3)}</td><td>${T0[i].toFixed(2)}</td>`+
+    `<td>${S10[i].toFixed(3)}</td><td>${T10[i].toFixed(2)}</td><td>${V0[i].toFixed(3)}</td></tr>`;
+}).join('');
+</script>
