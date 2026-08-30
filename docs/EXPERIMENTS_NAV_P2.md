@@ -3975,6 +3975,33 @@ And neither helps the free-heading case (§6.5), which is the one that binds.
 
 ## 12. P13 — per-episode failure forensics
 
+> **Summary of §12 and §13.** Six phase-2 exploit models, 3456 observational
+> episodes plus 30 paired intervention arms.
+>
+> 1. **The exploiter has exactly one failure mode, and it is memory
+>    interference.** Every checkpoint is 192/192 with no distractors. All 213
+>    failures are at ten. A goal-only memory rescues 155 of 155 failures and
+>    breaks none.
+> 2. **The goal pattern never loses the recall** — margin > 0 on 101/101
+>    failures and 667/667 successes. Interference is a degraded *level*
+>    (median 0.60 against 0.93 for matched successes), a blend the goal
+>    dominates, and the contamination is enough to rotate the direction into a
+>    miss.
+> 3. **The policy is not at fault.** It follows the recalled direction
+>    faithfully — `follow_q_fail` 0.435 against `align_true_fail` −0.176 — and
+>    scrambling that direction while holding magnitude and smoothness fixed
+>    collapses success from 0.87 to 0.26.
+> 4. **Failures are lost on the approach, not at the doorstep.** A clean
+>    readout beyond two cells rescues 90%; within two cells, 37%; and *no*
+>    episode is rescued by the near fix alone. The near-goal readout collapse
+>    is real but secondary.
+> 5. **1500 further updates change nothing** — neither how often nor why it
+>    fails.
+>
+> One correction to an earlier reading of ours: the near-goal widening of the
+> heading distribution is **not** the policy sensing an unreliable readout
+> (§12.7). It happens just as much with a perfect readout.
+
 Method spec: `docs/EXPLOIT_DIAGNOSTIC.md`. Tool: `analysis/nav_tri/exploit_diag.py`
 (rollouts → per-episode table → `derive()`) and `analysis/nav_tri/exploit_report.py`
 (table → HTML). Launcher: `hopfield_nav/run_exploit_diag.sh`. Report:
@@ -4056,6 +4083,12 @@ ranges 3–9 depending on the setting. The near-goal claim above is stated in
 threshold-free terms for that reason. "Straddled is the modal failure" is not a
 claim this data supports.
 
+**And read this section next to §13.3.** These are the failures that *end* near
+the goal, which is not the same as failures *caused* near the goal. The
+intervention shows the damage is done on the approach: fixing the readout only
+beyond two cells rescues 90% of failures, fixing it only within two cells
+rescues 37%, and no episode is rescued by the near fix alone.
+
 ### 12.4 Mode A, and the readout degrades near the goal
 
 Pooled at 10 distractors for p10_pol_v1: `follow_q_fail` 0.435 against
@@ -4105,12 +4138,19 @@ readout breaks (§12.7.1). Inside two cells the readout falls to 73% of its
 clean accuracy and the spread response is 1.06 — nil. Making the policy widen
 there is a live option, not something already solved.
 
-Things worth doing next, in order:
+**The intervention that was listed here as the top next step has been run — see
+§13.** It confirmed the readout attribution (155/155 failures rescued by a
+clean memory, 0 broken) and added the finding that the damage is done on the
+approach rather than at the doorstep. What remains:
 
-1. **The v2 intervention** — splice the true direction in place of `q` and
-   re-roll. If success recovers, mode A is proven rather than inferred. This is
-   the single highest-value follow-up and is already specified.
-2. **Re-probe on a minted split.** Every number here is `recorded`.
+1. **Separate clean memory from clean decode.** `A_clean` and `B_oracle` both
+   saturate at 1.000, so this difficulty cannot tell them apart. Needs a harder
+   regime — more distractors, or a smaller capture radius — where neither hits
+   the ceiling.
+2. **Forced widening** (§12.7.1) — clamp κ down near the goal at eval and see
+   whether a policy that widened where the readout breaks would do better. The
+   one policy-side lever the interventions did not test.
+3. **Re-probe on a minted split.** Every number in §12 and §13 is `recorded`.
 
 ### 12.7 Retraction — the policy does not widen because it distrusts the readout
 
@@ -4167,8 +4207,11 @@ Two controls, both of which strengthen the result rather than weaken it:
 **Alternative not ruled out.** κ is computed from the trunk's direction-vector
 norm (`polar_head.PolarHead.forward`), so the mid-range elevation could be
 passive magnitude propagation — ‖q‖ falls under interference and κ follows —
-rather than a learned calibration. Behaviourally the conclusion is the same;
-distinguishing them needs the v2 intervention.
+rather than a learned calibration. Behaviourally the conclusion is the same.
+The §13 arms do **not** separate them: `B_oracle` preserves ‖q‖ but also
+changes the trunk input, so κ could move either way. The clean test is
+`behavior_probe --q_scale`, which already exists — it multiplies ‖q‖ while
+preserving direction, so if κ tracks it the response is passive.
 
 **Consequence for §12.6.** The read that "the policy already widens where the
 signal is weak" is withdrawn. It does not. Widening the heading distribution
