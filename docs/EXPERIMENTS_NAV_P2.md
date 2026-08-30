@@ -4372,3 +4372,88 @@ Note the observational cells in §12 predate this axis and carry no motion
 fields; the intervention `baseline` arms cover the same six runs at ten
 distractors, which is where every failure is. The `p11_cur` training sweep has
 not been re-run with motion.
+
+---
+
+## 14. P15 — the loops are spurious attractors in the readout
+
+Tool: `analysis/nav_tri/readout_field.py`. Launcher:
+`hopfield_nav/run_readout_field.sh`. Job 21620981. Report:
+https://claude.ai/code/artifact/3e986fa7-72d0-4fb0-b9b6-09358ee75805
+
+§13.5 found that 61% of failures are loops — a tight ball, radius 1.41 ± 0.18,
+never centred on the goal, held for the whole horizon — and that separately
+trained policies land on the *same* phantom. That pointed at the readout rather
+than any policy, but only circumstantially.
+
+`q(x)` is a vector field over cells, and one memory can be evaluated at every
+cell at once (`Hopfield.recall_batch`). So the hypothesis is testable with **no
+policy and no rollouts**: evaluate `q` everywhere, then integrate it from all
+400 cells using the env's own update rule — fixed step, snapped sampling,
+clipped at the arena — and see where the flow ends up.
+
+### 14.1 A sink in `q` is necessary for failure
+
+p10_pol_v1, 192 memories, joined to the rollout outcomes on `(env, trial)`.
+The join is only meaningful if the memories match, so the RNG alignment is
+**checked, not assumed**: the field's drawn start position agrees with the
+rollout's on 192/192.
+
+| | agent failed | agent reached | failure rate |
+|---|---|---|---|
+| field has a sink | **24** | 13 | 65% |
+| field is clean | **0** | 155 | **0%** |
+
+**Zero failures in 155 episodes whose field was clean.** Every one of the 24
+failures had a sink. A sink is not sufficient — the agent escaped 13 of 37,
+since it is not a pure `q`-follower and has sensory input and RNN state — but it
+is present every single time the agent misses.
+
+The share of cells flowing to the goal separates almost completely: median 1.00
+on reached episodes, **0.09** on failed ones.
+
+### 14.2 The agent orbits where the field says it will
+
+| env / trial | agent orbited | field sink | apart |
+|---|---|---|---|
+| 0 / 1 | (14.9, 6.5) | (14.9, 6.5) | **0.06** |
+| 0 / 28 | (17.4, 0.0) | (17.4, 0.0) | **0.06** |
+| 5 / 7 | (6.6, 0.0) | (5.4, 0.0) | 1.15 |
+| 1 / 12 | (8.7, 4.7) | (8.6, 7.3) | 2.59 |
+
+Median agreement **0.61 cells**; chance for points placed at random in a 20×20
+arena is ~7.7. Nothing about the agent went into computing the sink.
+
+### 14.3 It is the memory, not the goal
+
+The same goal is clean under most distractor draws and trapped under others —
+for goal (17,4), trials 0/3/4/5/6/7 flow 100% to the goal with no sink while
+trials 1/2 have 3–4% flow and a sink with a basin of ~385/400. Overall 37/192
+memories carry a sink.
+
+So the attractor is a property of **the particular set of stored patterns**, not
+of the goal or the arena. That is exactly consistent with §13.2: interference
+degrades the recall margin without the goal ever losing the competition, and a
+contaminated blend does not need to flip the winner to bend the direction field
+into a vortex.
+
+### 14.4 What this changes
+
+This is a mechanism, and it makes the earlier results one story:
+
+- §12.2's contamination is causal *because* it folds `q` into a sink.
+- §13.3's "damage done on the approach" follows: the basin covers most of the
+  arena, so the trajectory is captured early and far out.
+- §13.5's loops are the orbits of that sink, and its radius (~1.4 cells) is the
+  ball the agent circles.
+
+**A failure is now predictable before running the agent.** `readout_field.py`
+scores a memory in seconds with no rollout, and no clean-field memory has ever
+produced a failure. That makes it a screening tool for encoder work: the target
+is not "make the goal win" — it already always wins — but **"make draws that do
+not fold the field"**.
+
+Open: only p10_pol_v1 has been mapped. The field is policy-independent, so the
+sinks should be identical for every arm sharing this encoder and seed — worth
+confirming on one other run, which would also re-derive §13.5.3's cross-model
+agreement from the field rather than from trajectories.

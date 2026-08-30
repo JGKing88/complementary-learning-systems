@@ -61,3 +61,16 @@ so the paired arm-vs-baseline math happens in Python rather than in the page.
 Method: `docs/EXPLOIT_DIAGNOSTIC.md`. Findings: EXPERIMENTS_NAV_P2 §12
 (observational) and §13 (interventions).
 All numbers are on the `recorded` split.
+
+## P15 — spurious attractors in the readout
+
+| file | contents | published |
+|---|---|---|
+| `spurious_attractor.html` | the `q(x)` field, its sinks, and where the agent orbited | [3e986fa7](https://claude.ai/code/artifact/3e986fa7-72d0-4fb0-b9b6-09358ee75805) |
+| `looping_paths.html` | the twelve class-median looping trajectories | [a950cbeb](https://claude.ai/code/artifact/a950cbeb-50ff-4fd5-a81b-1f4d08249023) |
+
+Both regenerable. `spurious_attractor.html` is built from
+`$CLS_RUNS/results/exploit_diag/field_p10v1.json` (job 21620981) joined against
+`iv_frozen.json`; `looping_paths.html` from `iv_frozen`/`iv_learned` alone.
+
+Method: `analysis/nav_tri/readout_field.py`. Findings: EXPERIMENTS_NAV_P2 §14.
