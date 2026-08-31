@@ -842,6 +842,82 @@ case "$VARIANT" in
     esac
     ;;
 
+  # === P20 -- the explore side of the w52 encoder ===========================
+  #
+  # P19 delivered the exploit half on Jack's encoder (17.10). This is the
+  # matching explore half, and it is deliberately p19_kcap with three things
+  # changed and NOTHING else: the schedule, the eval scope, and kappa.
+  #
+  # Explore depends on the OPPOSITE property of the memory from exploit. The
+  # exploit arm needs ||q|| to point at the goal; the explore arm needs ||q||
+  # to be SMALL when only distractors are stored, so the policy does not chase
+  # a phantom (phase 1's corner trap). That is the thing an encoder swap could
+  # break, and it is why this run is not a formality.
+  #
+  #   p20_e       p19_kcap's config on an explore schedule, kappa uncapped
+  #   p20_e_kcap  the same, plus LOG_KAPPA_MAX=2.5
+  #
+  # MAX_ACTION_NORM=1.0 is carried over from P19 per Jack's speed instruction,
+  # NOT the 2.0 that p10_e_pol ran at. This makes raw `cells_per_step`
+  # incomparable to p10_e_pol's 0.75 BY CONSTRUCTION -- cps depends on stride
+  # length. The comparison that survives is `strategy_efficiency`, which
+  # divides by a perfect billiard AT THE REALIZED SPEED (behavior_probe.py:540)
+  # and is the explore-side analogue of 17.5's `directness`. Quote that, not
+  # cps, against p10_e_pol's 1.113. 2.1 says billiard coverage peaks at
+  # ||a|| ~ 1.0-1.5 and falls above it, so capping at 1.0 sits at the low edge
+  # of the optimum and should cost little against 2.0 -- possibly help.
+  #
+  # explore:700 rather than p10_e_pol's 1500. Its series converged at u200-250
+  # (cps 0.747 at u200, 0.750 at u250) and the remaining 1250 updates bought
+  # +0.026 against an oscillation band of 0.61-0.78 -- i.e. nothing that clears
+  # this project's eval-noise bar. 700 is 2.8x the convergence point, gives 28
+  # eval points at EVAL_EVERY=25 (p10_e_pol had 30 across twice the updates),
+  # and lands near 4.5 h against the 6 h partition wall.
+  #
+  # PREDICTIONS ON RECORD
+  #
+  # H1 -- the encoder does NOT hurt explore. 7.7.2 measured goal-present vs
+  #   goal-absent ||q|| separability at AUC 0.930 on this encoder against 0.698
+  #   on the P2 gain-5 code at ten distractors. The property explore depends on
+  #   is BETTER here, not worse. Falsifier: cps at 10 distractors below cps at
+  #   0, or chase_q materially above 0. p10_e_pol had cps10 ~ cps0 throughout
+  #   and chase_q ~ 0.000.
+  #
+  # H2 -- LOG_KAPPA_MAX=2.5 HURTS explore, the OPPOSITE sign from P19. Coverage
+  #   comes from persistent straight motion: p5_e measured straightness 0.945,
+  #   and a billiard (straightness ~1) is the reactive ceiling. A von Mises at
+  #   kappa has circular sd ~ 1/sqrt(kappa), so the cap floors per-step
+  #   directional noise at 1/sqrt(12.2) = 0.286 rad = 16.4 deg, against the
+  #   4.7 deg the p10_pol_v1 exploit arm learned far-field (9.8.1). Capping
+  #   kappa is capping straightness. Falsifier: p20_e_kcap >= p20_e on
+  #   strategy_efficiency. If the cap turns out to be neutral or good here too,
+  #   then the e^5 default is simply wrong for this project and that is a
+  #   larger finding than either arm.
+  #
+  # H3 -- converged by ~u250, as p10_e_pol was.
+  #
+  # REGIME_ASSIGNMENT and GOAL_REWARD are both provably inert on a pure explore
+  # schedule -- n_pre_now is 0 or n_envs so both assignment branches agree
+  # (train_navigate.py:366), and EXPLORE_GOALS_OFF=1 means no goal is stored.
+  # They are set anyway, to p19_kcap's values, so the diff between the exploit
+  # and explore arms is exactly the three lines it claims to be.
+  p20_e|p20_e_kcap)
+    ENCODER=/orcd/pool/003/jackking/cls_runs/sweeps/w52_attract_fwhm/001_att0.5_seed=43/encoder_final.pt
+    ENCODER_GAIN=100
+    HOPFIELD_BETA=100
+    SCHEDULE=${SCHEDULE:-'explore:700'}
+    ENVS_PER_WORLD=20; BATCH_ENVS=64
+    EPSILON_EXPLORE=0.1; GOAL_REWARD=2.0
+    PERSISTENCE_BONUS=0.20
+    REGIME_ASSIGNMENT=shuffle
+    ACTION_POLAR=1; STATE_DEPENDENT_STD=1; FREEZE_LOG_STD=0
+    MIN_ACTION_NORM=0.5; MAX_ACTION_NORM=1.0
+    EVAL_SCOPE=expl; EVAL_EVERY=25; CKPT_EVERY=25
+    case "$VARIANT" in
+      p20_e_kcap) LOG_KAPPA_MAX=2.5 ;;
+    esac
+    ;;
+
   *)
     echo "ERROR: unknown VARIANT=$VARIANT" >&2; exit 1 ;;
 esac

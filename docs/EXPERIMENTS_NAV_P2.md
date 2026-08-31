@@ -19,6 +19,7 @@ mismatch that must be fixed first.
 | **Branch / worktree** | `nav-tri-metric` at `.claude/worktrees/nav-tri-metric` |
 | **Predecessor** | `docs/EXPERIMENTS_NAV_TRI.md` — read its §0 findings 1–22 |
 | **Open decisions** | §11 — four forks put to Jack; spec assumes the recommended default in each |
+| **Running** | **P20 (§18) — the explore half on Jack's encoder.** `p20_e` **21695407** and `p20_e_kcap` **21695408**, both `explore:700`, launched 2026-08-31. Two arms because the κ cap that unlocked exploit (§17.9) is predicted to **hurt** explore — coverage comes from straightness, and the cap floors directional noise at 16.4°. Predictions on record in §18.3. |
 | **Running** | **P19 (§17) — DONE.** Both arms COMPLETED 800/800. **`p19_kcap` 21656252 is the delivered model**: Jack's w52 encoder, gain=beta=100, learned speed [0.5, 1.0], plus `LOG_KAPPA_MAX=2.5`. **Accuracy 1.000 from u125; beeline from u150, worst 1.090, final 1.013; 27 consecutive evals ≥0.990.** Curriculum LOSES on both halves (§17.11). |
 | **Charts** | One published page per run — `p10_pol_v1` [3bc9ad4e](https://claude.ai/code/artifact/3bc9ad4e-0655-43ca-b870-0516f4487bdc) · `p10_pol` [388023ce](https://claude.ai/code/artifact/388023ce-a725-4253-a53b-c9979a77baf2) · `p10_e_pol` [00bd7fd3](https://claude.ai/code/artifact/00bd7fd3-bb60-4e22-a968-c62822c5cdb3) · `p10_e_pol_v1` [8fd3ecf0](https://claude.ai/code/artifact/8fd3ecf0-c429-40d6-bde6-008ca25b5a40) · `p11_cur` [4de8dfa7](https://claude.ai/code/artifact/4de8dfa7-9403-43c8-b4f9-b14669ae603e) · `p11_tp` [4dbbe6e9](https://claude.ai/code/artifact/4dbbe6e9-c8e3-41fb-9b38-36a1443bf420) · `p11_cur_tp` [6c3a0503](https://claude.ai/code/artifact/6c3a0503-dba1-405a-a90c-d33c491ee5b2) · `p12_lo` [6b09232a](https://claude.ai/code/artifact/6b09232a-bcd2-4609-9c1d-97d9757d0f5a) · `p12_lo_curtp` [835846df](https://claude.ai/code/artifact/835846df-d30d-46f7-b979-3fe41fdfff7e) |
 | **Finished** | **`p10_pol_v1` 21300389** — 2000/2000, **1.000 success @ 10.95 steps (1.10× optimal)**, the phase-2 best exploit model. **`p10_e_pol` 21300390** — 1500/1500, **cps 0.75** against a billiard ceiling of 0.775. |
@@ -5622,3 +5623,114 @@ that enabling the per-update goal refresh halved seed variance elsewhere. If
 this result needs hardening against the seed lottery, that is the one-flag
 rerun.
 Faster *and* tighter *and* steadier, on a different encoder, from one default.
+
+---
+
+## 18. P20 — the explore side of the w52 encoder
+
+P19 delivered the exploit half on Jack's encoder. This is the matching explore
+half. Two arms, launched 2026-08-31, **21695407 `p20_e`** and **21695408
+`p20_e_kcap`**.
+
+### 18.1 Why this is not a formality
+
+Explore depends on the **opposite** property of the memory from exploit, and
+the two are not guaranteed to move together under an encoder swap:
+
+| | needs | failure looks like |
+|---|---|---|
+| **exploit** | `q` points at the goal | drives the wrong way, or ignores a good readout (§12) |
+| **explore** | `‖q‖` is **small** when only distractors are stored | chases a phantom — phase 1's corner trap |
+
+The w52 code is sharper and higher-gain than the P2 gain-5 code every explore
+result in this document was measured on, so a sharp retrieval of a *distractor*
+is exactly the thing that could give the policy a confident `q` pointing
+nowhere. That is the open item §0 has carried since §5.7 ("a sharp retrieval
+could give a confident `q` pointing at a phantom and drive `chase_q` up").
+
+**§7.7.2 already put a number on it, and it points the other way.**
+Goal-present vs goal-absent `‖q‖` separability at ten distractors is **AUC
+0.930 on w52 against 0.698 on the gain-5 code**. The property explore depends
+on is *better* on this encoder. That is the prediction this run tests
+behaviourally rather than statically.
+
+### 18.2 The arms — three lines of diff, and nothing else
+
+Both arms are `p19_kcap` with the schedule, the eval scope and κ changed:
+
+| | `p19_kcap` (exploit) | `p20_e` | `p20_e_kcap` |
+|---|---|---|---|
+| schedule | `exploit:800` | `explore:700` | `explore:700` |
+| `EVAL_SCOPE` | `navexpl` | `expl` | `expl` |
+| `LOG_KAPPA_MAX` | **2.5** | *default 5.0* | **2.5** |
+| encoder / gain / beta | w52 / 100 / 100 | same | same |
+| `‖a‖` band | [0.5, 1.0] | same | same |
+| polar, learned speed, state-dep std | yes | same | same |
+| `ENVS_PER_WORLD` × `BATCH_ENVS` | 20 × 64 | same | same |
+
+`REGIME_ASSIGNMENT` and `GOAL_REWARD` are both **provably inert** on a pure
+explore schedule — `n_pre_now` is 0 or `n_envs` so both assignment branches
+agree (`train_navigate.py:366`), and `EXPLORE_GOALS_OFF=1` means no goal is
+stored — but they are set to `p19_kcap`'s values anyway so the diff is exactly
+the three rows that claim to be the diff.
+
+#### The metric to quote is `strategy_efficiency`, not `cells_per_step`
+
+`MAX_ACTION_NORM=1.0` carries over from P19, per Jack's speed instruction.
+`p10_e_pol` — the phase-2 explore best, cps **0.75** — ran at **2.0**. Since
+`cells_per_step` depends on stride length, **the raw comparison to 0.75 is
+invalid by construction**, in the same way §17.5's `mean_steps` was before
+`directness` replaced it.
+
+`strategy_efficiency` is the fix and it already exists: `cps` divided by a
+perfect billiard **at the realized speed** (`behavior_probe.py:540`). Quote
+that against `p5_e`'s **1.113**. §9.1's instrumentation fault is the reason to
+be careful here — the same metric once read 3.97 because it referenced the
+*commanded* magnitude.
+
+§2.1 says billiard coverage peaks at `‖a‖ ≈ 1.0–1.5` and falls above, so
+capping at 1.0 sits at the low edge of the optimum: it should cost little
+against 2.0, and may help.
+
+#### Why 700 updates and not 1500
+
+`p10_e_pol`'s own series converged at u200–250 and then went nowhere:
+
+| u200 | u250 | … | u1250 | u1500 |
+|---|---|---|---|---|
+| 0.747 | 0.750 | oscillating 0.61–0.78 | 0.776 | 0.721 |
+
+**+0.026 across 1250 updates**, against an oscillation band of 0.17. That does
+not clear this project's eval-noise bar (`feedback_eval_point_threshold`). 700
+updates is 2.8× the convergence point and gives **28 eval points at
+`EVAL_EVERY=25`** — more than `p10_e_pol` got across twice the updates — and
+lands near 4.5 h against the 6 h partition wall, with checkpoints every 25.
+
+### 18.3 Predictions on record
+
+**H1 — the encoder does NOT hurt explore.** Grounded in §7.7.2's 0.930 vs
+0.698. *Falsifier:* cps at ten distractors materially below cps at zero, or
+`chase_q` materially above 0. `p10_e_pol` had `cps10 ≈ cps0` at every one of
+its 30 evals and `chase_q ≈ 0.000`.
+
+**H2 — `LOG_KAPPA_MAX=2.5` HURTS explore. This is the opposite sign from
+P19,** and it is the reason both arms are being run rather than just the capped
+one. Explore coverage comes from persistent straight motion: `p5_e` measured
+`straightness` **0.945**, and a billiard (straightness ≈ 1) is the reactive
+ceiling it beat by 11%. A von Mises at κ has circular sd ≈ `1/√κ`, so the cap
+**floors** per-step directional noise at `1/√12.2` = 0.286 rad = **16.4°**,
+against the **4.7°** the `p10_pol_v1` exploit arm learned far-field (§9.8.1).
+Capping κ is capping straightness.
+
+*Falsifier:* `p20_e_kcap ≥ p20_e` on `strategy_efficiency`. **If the cap is
+neutral or good here too, that is the larger finding** — it would mean the
+`e⁵` default is simply wrong for this project across both regimes, not a
+regime-specific fix, and §17.9's result would generalize well beyond the arm it
+was found on.
+
+**H3 — converged by ~u250**, as `p10_e_pol` was.
+
+The three predictions are independent: H1 is about the memory, H2 about the
+policy's action distribution, H3 about budget. §7.7.1 got two predictions wrong
+in a row in this document (§7.7.2), so these are recorded to be scored, not to
+be right.
