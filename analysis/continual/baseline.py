@@ -260,6 +260,12 @@ def main() -> None:
     # Continual-learning method. See docs/CONTINUAL_CONTROLS_PLAN.md section 4
     # and hopfield_nav/continual/. "none" is naive sequential SGD -- the floor,
     # and what every recorded history to date used.
+    p.add_argument("--world_spec", action=argparse.BooleanOptionalAction,
+                   default=True,
+                   help="Write world.json beside --out. On by default. Turn it "
+                        "off for sweeps: many seeds writing into one directory "
+                        "leave a single world.json describing whichever "
+                        "finished last, which is worse than none at all.")
     p.add_argument("--method", default="none", choices=list(CONTINUAL_METHODS),
                    help="Continual-learning method applied to the BC update.")
     p.add_argument("--method_args", default=None,
@@ -366,7 +372,12 @@ def main() -> None:
         # Only the first iteration's world is recorded: `--num_full_iters` re-runs
         # the whole protocol at seed+k, so there is no single world to describe,
         # and writing k of them under one name would describe none of them.
-        if k == 0:
+        #
+        # The same argument applies *across processes*, which is why this can be
+        # switched off. A sweep writes many runs at different seeds into one
+        # directory; a single `world.json` there describes whichever finished
+        # last and none of the others, so it is worse than absent.
+        if k == 0 and args.world_spec:
             write_rnn_world_spec(cfg, world_split, vh, generator=world_kind,
                                  save_dir=os.path.dirname(os.path.abspath(args.out)))
 

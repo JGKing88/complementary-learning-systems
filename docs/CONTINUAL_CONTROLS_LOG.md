@@ -384,3 +384,57 @@ buffer under reservoir eviction (misalignment distils each trajectory against
 another one's target, and every "is the loss positive" test still passes).
 
 Full suite green.
+
+---
+
+## 2026-08-30 — Wave 1 died on a concurrency bug in `WorldSpec.write`
+
+246 of 272 runs failed within 12 minutes:
+
+```
+FileNotFoundError: '.../histories/wave1/world.json.tmp' -> '.../histories/wave1/world.json'
+```
+
+`WorldSpec.write` staged through a **fixed** temp name, `world.json.tmp`. Safe
+for one writer; quietly broken for several. Every run writes its `world.json`
+into the `--out` directory, so 272 concurrent processes all created the same
+staging file — the first `os.replace` consumed it and every later one raised.
+The failure happened *after* the environments were built and *before* any
+training, so it cost a node-hour and produced nothing.
+
+Wave 0 had the same shape (40 concurrent T0.4 runs into one directory) and got
+away with it: the race is probabilistic and 40 writers spread over a slower
+startup mostly missed each other. 272 launched at once did not.
+
+**Two fixes, because there were two problems.**
+
+*The race.* `write` now stages through `tempfile.mkstemp` in the destination
+directory. Unique across threads as well as processes — a pid suffix would have
+fixed the processes and left threads broken — and the rename stays atomic, so a
+reader still never sees a half-written file. Mutation-checked: with the old
+shared name, 48 concurrent writers give **27 failures**; with `mkstemp`, **0**.
+
+*The semantics.* Even with unique staging, 272 runs at different seeds all
+overwrite one `world.json`, which then describes whichever finished last and
+none of the others — worse than absent. `baseline.py` gained
+`--world_spec/--no-world_spec` (default on, preserving behaviour) and the
+sweeps pass `--no-world_spec`.
+
+### What the 26 survivors already showed
+
+Not enough seeds to conclude anything, but one thing was immediately visible and
+is the reason `current_env` sits next to `retained` in every table:
+
+| config | retained | current env |
+|---|---|---|
+| online EWC, λ=1e5 | **0.384** | **0.024** |
+| online EWC, λ=1e4 | 0.204 | 0.500 |
+| ER, buffer=10, replay×4 | 0.329 | 0.951 |
+| no method (reference) | 0.043 | 0.317 |
+
+EWC at λ=1e5 "wins" retention by refusing to learn anything at all. A
+leaderboard on `retained` alone would rank it first. This is exactly the
+degenerate solution the plasticity column exists to expose, and it will need
+saying explicitly in the results.
+
+Wave 1 relaunched as slurm 21628688 with the fix. Full suite green.

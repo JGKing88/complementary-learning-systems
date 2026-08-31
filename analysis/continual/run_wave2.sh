@@ -62,7 +62,7 @@ PIDS=(); NAMES=()
 launch () {
     local tag="$1"; shift
     python -u -m analysis.continual.baseline \
-        --out "$OUT/${tag}.json" --run_name "$tag" \
+        --out "$OUT/${tag}.json" --run_name "$tag" --no-world_spec \
         "${COMMON[@]}" "$@" > "$LOGS/${tag}.log" 2>&1 &
     PIDS+=($!); NAMES+=("$tag")
 }
