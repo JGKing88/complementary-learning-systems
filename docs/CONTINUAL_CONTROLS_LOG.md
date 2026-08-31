@@ -771,3 +771,36 @@ cc ∈ {3, 10, 30}, with ranges chosen by **ratio to the primary loss** (~0.03 t
 ~10) rather than by citation. SI is included at λ=1000 for completeness,
 although its Wave-2 sweep already turned over (λ=10 → 0.074, λ=100 → 0.066), so
 its peak is genuinely inside the range that ran.
+
+---
+
+## 2026-08-31 — a confound in the §5.2 design, named while it is still cheap
+
+Watching the in-context pretraining, the two arms diverge on the *ordinary*
+episodic eval, not just the in-context one:
+
+| updates | lifetime arm | episodic arm |
+|---|---|---|
+| 1 | 0.037 | 0.043 |
+| 250 | 0.158 | 0.137 |
+| 500 | **0.373** | — |
+
+The lifetime arm is simply the better policy, and there is a mechanical reason
+that has nothing to do with memory: **the arms do not receive equal
+supervision.** A lifetime rollout teleports its reachers and keeps collecting,
+so more of its 200 steps stay unmasked; an episodic rollout freezes a reacher
+and masks out the remainder. The lifetime arm therefore gets more gradient
+signal per update. The suite's own test `test_the_two_modes_actually_differ`
+asserts exactly this — it was written as a guard that the flag was wired up,
+and it is also a statement of the confound.
+
+**Consequence: the arms are comparable on the adaptation *slope*, not on the
+absolute level.** `adaptation` (last episode minus first) is scale-relative and
+is insulated from how good each policy is overall; the raw success rates are
+not. Both module docstrings now say so, so nobody reads the wrong number off
+the figure later.
+
+The clean fix, if this measurement turns out to be load-bearing, is to match
+**total supervised steps** rather than updates between the arms. That is a
+different job specification, not a code change, and it is not worth spending
+before seeing whether the slope shows anything at all.

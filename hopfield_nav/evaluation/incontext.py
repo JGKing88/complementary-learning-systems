@@ -24,6 +24,20 @@ Reading the result:
   with "you just needed a bigger buffer."
 
 Either way it has to be run, which is why it is here rather than in future work.
+
+**One confound, named rather than hidden.** The two arms do not receive equal
+supervision. A lifetime rollout teleports its reachers and keeps collecting, so
+more of its steps are supervised than in an episodic rollout, where a reacher
+is frozen and masked out for the remainder. The lifetime arm therefore gets
+more gradient signal per update and tends to be the better policy outright --
+which is visible in pretraining, not subtle.
+
+So **the comparison between arms is the adaptation slope, not the absolute
+level**. `adaptation` (last episode minus first) is scale-relative and is the
+number to read; comparing the arms' raw success rates would partly be comparing
+how much supervision each received. A cleaner design would match total
+supervised steps rather than updates, and that is the right thing to do if this
+measurement ends up load-bearing.
 """
 from __future__ import annotations
 
