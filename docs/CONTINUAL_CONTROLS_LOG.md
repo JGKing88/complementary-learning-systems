@@ -1034,3 +1034,45 @@ reported a healthy loss carrying no gradient; two coefficient sweeps stopped
 before their methods started working; and EWC sampled the tail while
 documenting the opposite. The failure mode of this codebase is not exceptions.
 It is numbers that look right.
+
+---
+
+## 2026-08-31 — the N=20 scaling panel (slurm 21631792, all 20 tasks OK)
+
+Four seeds per configuration, twenty environments, everything else matched to
+the headline protocol:
+
+| config | N=5 retained | N=20 retained | N=20 current env | N=20 stored |
+|---|---|---|---|---|
+| ER, replay ×16 | 0.546 | **0.384 ± 0.023** | 0.323 | 214.4 MB |
+| ER, replay ×4 | 0.419 | 0.282 ± 0.034 | 0.402 | 214.4 MB |
+| online EWC, λ=1e4 | 0.149 | 0.131 ± 0.009 | 0.329 | 0.6 MB |
+| naive, tuned | 0.081 | 0.046 ± 0.012 | 0.287 | — |
+| reference | 0.044 | 0.038 | 0.323 | — |
+
+**The ordering survives**, which is the main thing the panel was for. Replay >
+regularisation > tuned naive > reference, at both stream lengths.
+
+**The gap widens.** Against the *tuned* control, replay goes from 6.7× at N=5
+to 8.3× at N=20. Replay degrades proportionally less than everything else
+(0.546 → 0.384 keeps 70 %; the tuned control keeps 57 %).
+
+**Replay's storage grows with the stream and the store's does not.** 53.6 MB at
+five environments, **214.4 MB at twenty** — linear in the number of updates,
+because an unbounded buffer keeps everything. The Hopfield store's memory is a
+fixed `O(D²)` matrix: it does not grow with N at all. At five environments that
+distinction is a footnote; by twenty it is a factor of four and still climbing.
+This is the axis on which the two approaches diverge fastest, and it is only
+visible in a scaling panel.
+
+**And plasticity collapses for everyone.** Current-env performance is 0.29–0.40
+at N=20 against 0.75–0.82 at N=5, across every arm including the reference. At
+twenty environments the agent is not merely forgetting the old environments; it
+is failing to learn the one in front of it.
+
+That is exactly the trigger the plan named for **Family G** (continual
+backprop, L2-init, shrink-and-perturb), cut from the suite on the explicit
+grounds that "at N=5 the control is not plasticity-limited (`reached ≈ 0.99` on
+the current env)". At N=5 that was true and the cut was right. At N=20 it is
+false, and the plasticity-maintenance family becomes a live part of the suite
+rather than a deferred one. Recorded as the concrete next wave.

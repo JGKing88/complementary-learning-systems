@@ -275,3 +275,53 @@ def test_summarize_carries_the_cost_axes():
     assert s["needs_task_boundaries"] is False
     assert s["retained"] == pytest.approx(0.0)
     assert s["current_env"] == pytest.approx(1.0)
+
+
+# ---------------------------------------------------------------------------
+# the frontier's selection rule
+# ---------------------------------------------------------------------------
+
+from analysis.continual.results_page import (                       # noqa: E402
+    USABLE_CURRENT, best_per_family, degenerate_rows)
+
+
+def _row(arm, cfg, retained, current):
+    return {"arm": arm, "config": cfg, "display": arm, "family": "x",
+            "retained": retained, "retained_sem": 0.01,
+            "current_env": current, "forgetting": 0.0, "state_bytes": 0,
+            "needs_task_boundaries": False, "needs_task_id": False}
+
+
+def test_frontier_prefers_a_usable_setting_over_a_higher_degenerate_one():
+    """The whole point of carrying plasticity beside retention. `X_b` scores
+    higher but stopped learning, so the frontier must report `X_a`."""
+    rows = [_row("X", "X_a", 0.30, 0.80), _row("X", "X_b", 0.55, 0.20)]
+    best = best_per_family(rows)[0]
+    assert best["config"] == "X_a"
+    assert best["degenerate_only"] is False
+
+
+def test_frontier_flags_a_method_with_no_usable_setting():
+    """The latent trap: when *every* configuration is degenerate the fallback
+    still has to return something, and returning the best degenerate one
+    unmarked would put a network that refuses to learn at the top of the
+    frontier with nothing saying so."""
+    rows = [_row("Y", "Y_a", 0.50, 0.10), _row("Y", "Y_b", 0.40, 0.30)]
+    best = best_per_family(rows)[0]
+    assert best["degenerate_only"] is True, \
+        "an all-degenerate method must be flagged, not silently promoted"
+
+
+def test_frontier_is_sorted_by_retention():
+    rows = [_row("A", "A_a", 0.10, 0.9), _row("B", "B_a", 0.40, 0.9),
+            _row("C", "C_a", 0.25, 0.9)]
+    assert [r["arm"] for r in best_per_family(rows)] == ["B", "C", "A"]
+
+
+def test_degenerate_table_uses_the_same_threshold_as_the_frontier():
+    """One constant, so a row cannot be both 'usable' and 'degenerate' -- or
+    neither, which is how a bad configuration disappears from both tables."""
+    rows = [_row("X", "X_a", 0.30, USABLE_CURRENT - 0.01),
+            _row("X", "X_b", 0.30, USABLE_CURRENT)]
+    flagged = {r["config"] for r in degenerate_rows(rows)}
+    assert "X_a" in flagged and "X_b" not in flagged

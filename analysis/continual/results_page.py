@@ -179,19 +179,33 @@ def mb(b):
     return f"{b / 1e6:.1f} MB"
 
 
+#: A method has to still learn the environment in front of it for its score to
+#: mean anything. Below this, retention was bought by declining to learn.
+USABLE_CURRENT = 0.5
+
+
 def best_per_family(methods: list[dict]) -> list[dict]:
-    """One row per arm, the configuration with the highest retention -- but only
-    among those that still learned the current env. A method that scores well by
-    freezing the network is reported separately, not silently ranked first."""
+    """One row per arm: the highest-retention configuration that *still learned
+    the current environment*.
+
+    The fallback matters. If an arm has no usable configuration at all, the
+    honest answer is "this method has no working setting here", not its best
+    degenerate one -- silently promoting the latter would put a network that
+    refuses to learn at the top of the frontier with nothing marking it. Such a
+    row is returned flagged, and the caller renders it as such rather than as a
+    result.
+    """
     by_arm: dict[str, list[dict]] = {}
     for m in methods:
         by_arm.setdefault(m["arm"], []).append(m)
     out = []
     for arm, rows in by_arm.items():
         usable = [r for r in rows
-                  if (r["current_env"] or 0) >= 0.5 and (r["retained"] is not None)]
-        pool = usable or rows
-        out.append(max(pool, key=lambda r: r["retained"] or 0.0))
+                  if (r["current_env"] or 0) >= USABLE_CURRENT
+                  and (r["retained"] is not None)]
+        pick = dict(max(usable or rows, key=lambda r: r["retained"] or 0.0))
+        pick["degenerate_only"] = not usable
+        out.append(pick)
     return sorted(out, key=lambda r: -(r["retained"] or 0.0))
 
 
@@ -200,7 +214,8 @@ def degenerate_rows(methods: list[dict]) -> list[dict]:
     learning. Surfacing these is the point of carrying plasticity in the table."""
     return sorted(
         [m for m in methods
-         if (m["current_env"] or 0) < 0.5 and (m["retained"] or 0) > 0.15],
+         if (m["current_env"] or 0) < USABLE_CURRENT
+         and (m["retained"] or 0) > 0.15],
         key=lambda r: -(r["retained"] or 0.0))
 
 
@@ -436,7 +451,9 @@ def render(d: dict) -> str:
           '<td><span class="chip good">nothing</span></td></tr>')
     for r in rows:
         needs = []
-        if r["needs_task_id"]:
+        if r.get("degenerate_only"):
+            needs.append('<span class="chip crit">no usable setting</span>')
+        elif r["needs_task_id"]:
             needs.append('<span class="chip warn">task id</span>')
         elif r["needs_task_boundaries"]:
             needs.append('<span class="chip mut">boundaries</span>')
