@@ -873,3 +873,67 @@ switched on; `WorldSpec.write` raced only at scale; the joint-ceiling verdict
 was a plausible number from an unconverged run; the budget-blind key averaged
 two incompatible runs; and DER++ reported a healthy-looking loss that did
 nothing. Every one of them renders.
+
+---
+
+## 2026-08-31 — §5.1 (meta-pretraining): analysed, and deliberately not run
+
+Jack flagged §5.1 and §5.2 as important. §5.2 is running. This records why
+§5.1 is **not** being built, because "we ran out of time" would be the wrong
+reason and is not the actual one.
+
+OML's mechanism is a two-part split: a meta-learned representation network
+(the trunk) that is frozen at meta-test, and a small prediction network (the
+head) that adapts online. The claim is that meta-training can shape the trunk
+so that head-only online SGD stops interfering with itself.
+
+**P4 measured the head-only half directly, and it is actively harmful.**
+Adapting only the 260-parameter movement head over a normally-pretrained trunk
+gives retention 0.043 — *below* the 0.044 reference — and current-env 0.399
+against 0.753. Restricting plasticity to the head costs plasticity without
+buying any stability.
+
+That does not refute OML, because OML would change what the trunk represents.
+But it does relocate the entire burden: any benefit here would have to come
+from meta-learning making the goal linearly decodable from the trunk's hidden
+state within a handful of gradient steps on 260 parameters. The goal is never
+observed and differs per environment, so that is a strong requirement, and P4
+says the readout that would have to carry it is currently nowhere near able to.
+
+**The architecture also will not support the cheap version of the question.**
+The obvious next measurement — does retention improve as the adapted subset
+grows? — needs intermediate points between "head" and "everything". With a
+single GRU layer plus a linear head there are only two: 260 parameters or
+73,000. There is no principled middle, so the plasticity-restriction axis
+cannot be swept without changing the model, and changing the model would
+un-match it from every other run in the suite.
+
+**Decision.** §5.1 stays unbuilt, with this written down rather than left as an
+omission. If it is wanted later, the honest prerequisites are: a two-layer
+trunk so the restriction axis has intermediate points, and a first-order OML
+outer loop over the existing sequential protocol as the inner loop. Both are
+tractable; neither is worth doing before someone decides the P4 result is not
+already the answer.
+
+## 2026-08-31 — N=20 partial, and a plasticity finding
+
+With 2–3 of 4 seeds in:
+
+| config | N=5 retained | N=20 retained | N=20 current env |
+|---|---|---|---|
+| ER, replay ×16 | 0.546 | 0.361 | 0.317 |
+| ER, replay ×4 | 0.419 | 0.259 | 0.256 |
+| online EWC, λ=1e4 | 0.149 | 0.126 | 0.305 |
+| naive, tuned | 0.081 | 0.040 | 0.342 |
+
+Everything degrades, the ordering survives, and the ratio between replay and
+the naive control *widens* (6.7× at N=5, 9× at N=20).
+
+The part worth flagging is the last column. **Current-env performance collapses
+too** — 0.26–0.34 at N=20 against 0.75–0.82 at N=5. At twenty environments the
+agent is not merely forgetting the old ones; it is failing to learn the one in
+front of it. That is the signature the plan named as the trigger for Family G
+(plasticity maintenance — continual backprop, L2-init, shrink-and-perturb),
+which was cut from the suite on the grounds that "at N=5 the control is not
+plasticity-limited". At N=20 it is. Recorded as the concrete follow-up rather
+than acted on now, since the panel is still filling in.
