@@ -7,6 +7,7 @@ trajectory-level structure.
 from __future__ import annotations
 
 from collections import defaultdict
+from typing import Callable
 
 import torch
 import torch.nn as nn
@@ -22,8 +23,31 @@ def bc_rnn_update(
     cfg: RNNBCConfig,
     optimizer: torch.optim.Optimizer,
     movement_mode: str,
+    *,
+    penalty_fn: Callable[[], torch.Tensor | None] | None = None,
+    aux_loss_fn: Callable[[], torch.Tensor | None] | None = None,
+    on_step: Callable[[], None] | None = None,
 ) -> dict[str, float]:
-    """CE on movement teacher, masked. Returns averaged scalars per minibatch."""
+    """CE on movement teacher, masked. Returns averaged scalars per minibatch.
+
+    The three optional hooks are what continual-learning methods need
+    (`hopfield_nav/continual/`), and none of them changes the naive path:
+
+    ``penalty_fn``   a parameter-space term (EWC, SI), recomputed every
+                     minibatch step because it depends on the parameters as
+                     they currently stand -- a value computed once outside the
+                     loop would stop constraining after the first step.
+    ``aux_loss_fn``  an output-space term (CLEAR, DER++ distillation), for
+                     methods that regularise what the model *does* on specific
+                     states rather than where its parameters are.
+    ``on_step``      fires after each optimiser step, for methods that
+                     accumulate along the optimisation path (SI).
+
+    Replay needs no hook at all: ``rollouts`` is already a list and is already
+    concatenated, so a method contributes replayed trajectories simply by
+    having them appended. Loss weighting across new and replayed data is then
+    by supervised-token count, which is the intended behaviour.
+    """
     obs = torch.cat([r.obs for r in rollouts], dim=0)                     # (N, T, D)
     tm  = torch.cat([r.teacher_move_action for r in rollouts], dim=0)     # (N, T) or (N, T, 2)
     mm  = torch.cat([r.move_label_mask for r in rollouts], dim=0)         # (N, T)
@@ -71,10 +95,21 @@ def bc_rnn_update(
 
             loss = move_loss - cfg.move_ent_coef * move_ent
 
+            pen = penalty_fn() if penalty_fn is not None else None
+            if pen is not None:
+                loss = loss + pen
+                totals["penalty"] += float(pen.item())
+            aux = aux_loss_fn() if aux_loss_fn is not None else None
+            if aux is not None:
+                loss = loss + aux
+                totals["aux_loss"] += float(aux.item())
+
             optimizer.zero_grad(set_to_none=True)
             loss.backward()
             nn.utils.clip_grad_norm_(agent.parameters(), cfg.max_grad_norm)
             optimizer.step()
+            if on_step is not None:
+                on_step()
 
             totals["move_loss"] += move_loss.item()
             totals["move_entropy"] += move_ent.item()

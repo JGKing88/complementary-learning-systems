@@ -20,6 +20,7 @@ from typing import Callable
 import numpy as np
 import torch
 
+from ..continual.base import ContinualMethod, NoMethod
 from ..updates.bc_rnn import bc_rnn_update
 from ..world.env import GridEnv
 from ..evaluation.rnn import evaluate_nav_all
@@ -50,6 +51,7 @@ def run_sequential_blocks(
     env_offsets: list[tuple[int, int]] | None = None,
     on_update: Callable[[UpdateResult], None] | None = None,
     on_block_start: Callable[[int, GridEnv], None] | None = None,
+    method: ContinualMethod | None = None,
 ) -> list[tuple[int, int, int]]:
     """Train each env in turn; evaluate every env introduced so far, every update.
 
@@ -60,7 +62,17 @@ def run_sequential_blocks(
     ``on_update`` receives each update's rollout, losses and metrics; the caller
     decides what to record and what to print. Returns ``blocks`` as
     ``(start_step_inclusive, end_step_inclusive, env_idx)``.
+
+    ``method`` is a `hopfield_nav.continual.ContinualMethod`; the default is the
+    no-op, which reproduces naive sequential SGD exactly. The block loop is
+    where every method in the suite intervenes, so the hooks live here rather
+    than in the update: replay contributes extra batches, regularisers
+    contribute a loss term, and both get told where the block boundaries are.
+    Note the ordering -- `extra_batches` is asked for *before* `after_update`
+    stores the new rollout, so a replayed trajectory is always genuinely older
+    than the one driving the update.
     """
+    method = method or NoMethod()
     movement_mode = cfg.agent.movement_mode
     blocks: list[tuple[int, int, int]] = []
     global_step = 0
@@ -68,6 +80,7 @@ def run_sequential_blocks(
     for i, env in enumerate(envs):
         if on_block_start is not None:
             on_block_start(i, env)
+        method.on_block_start(i, agent, envs)
         block_start = global_step + 1
         vec = make_vec(env, cfg.batch_envs, movement_mode,
                        cfg.env.continuous_scale,
@@ -81,8 +94,15 @@ def run_sequential_blocks(
                 deterministic=False, teacher_force=False,
                 sgb=sgb, env_offset=env_offset_i,
             )
-            losses = bc_rnn_update(agent, [rollout], cfg.bc, optimizer,
-                                   movement_mode)
+            extra = method.extra_batches(rollout, i)
+            losses = bc_rnn_update(
+                agent, [rollout] + list(extra), cfg.bc, optimizer,
+                movement_mode,
+                penalty_fn=lambda: method.penalty(agent),
+                aux_loss_fn=lambda: method.aux_loss(agent, rollout, extra),
+            )
+            method.after_update(rollout, i, agent)
+            losses["n_replay_batches"] = float(len(extra))
             global_step += 1
 
             metrics = evaluate_nav_all(
@@ -100,6 +120,7 @@ def run_sequential_blocks(
                     global_step=global_step, block=i, update=upd,
                     rollout=rollout, losses=losses, metrics=metrics))
 
+        method.on_block_end(i, agent, envs)
         blocks.append((block_start, global_step, i))
 
     return blocks

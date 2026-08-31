@@ -20,6 +20,8 @@ import os
 import numpy as np
 import torch
 
+from hopfield_nav.continual.base import (
+    CONTINUAL_METHODS, build_method, parse_method_args)
 from hopfield_nav.policy.agent_rnn import RNNAgent, compute_rnn_input_dim
 from hopfield_nav.policy.recurrent import add_recurrent_args
 from hopfield_nav.config import EnvConfig, RNNAgentConfig, RNNBCConfig, RNNTrainConfig, VectorHashConfig
@@ -107,10 +109,14 @@ def run_sequential(
     device: torch.device,
     sgb: np.ndarray | None = None,
     env_offsets: list[tuple[int, int]] | None = None,
+    method=None,
 ) -> tuple[list[tuple[int, int, dict[int, dict]]], list[tuple[int, int, int]]]:
     """One block per env. Per update: collect rollout, BC update, single-trial
     eval on every env trained so far (untrained envs are NOT evaluated — they'd
     just inject pre-training noise into the curve).
+
+    ``method`` is a `hopfield_nav.continual.ContinualMethod`; None means naive
+    sequential SGD, which is the floor the suite is measured against.
 
     Returns (trace, blocks). `blocks` end is inclusive.
     """
@@ -131,7 +137,7 @@ def run_sequential(
         # A single trial per env per update, so each point is a raw 0/1 rather
         # than an average -- the figure smooths it afterwards.
         n_eval_trials=1,
-        sgb=sgb, env_offsets=env_offsets, on_update=_record,
+        sgb=sgb, env_offsets=env_offsets, on_update=_record, method=method,
     )
 
     return trace, blocks
@@ -243,6 +249,16 @@ def main() -> None:
     p.add_argument("--batch_envs", type=int, default=16,
                    help="Parallel rollouts per env per update.")
     p.add_argument("--steps_per_rollout", type=int, default=None)
+    # Continual-learning method. See docs/CONTINUAL_CONTROLS_PLAN.md section 4
+    # and hopfield_nav/continual/. "none" is naive sequential SGD -- the floor,
+    # and what every recorded history to date used.
+    p.add_argument("--method", default="none", choices=list(CONTINUAL_METHODS),
+                   help="Continual-learning method applied to the BC update.")
+    p.add_argument("--method_args", default=None,
+                   help="Comma-separated key=value pairs for the method, e.g. "
+                        "'buffer_size=inf,replay_batches=1' or "
+                        "'lam=1e3,gamma=1.0'. Values are coerced "
+                        "int -> float -> bool -> str; 'inf' is accepted.")
     args = p.parse_args()
 
     # If steps_per_rollout is not set, set it to max_steps
@@ -298,6 +314,9 @@ def main() -> None:
         print(f"[baseline] loading {args.load_checkpoint}  (fresh Adam moments)")
         ckpt = torch.load(args.load_checkpoint, map_location=device, weights_only=False)
         restore_arch_from_ckpt(cfg, ckpt)
+
+    method_kwargs = parse_method_args(args.method_args)
+    last_method_desc: dict = {}
 
     base_seed = args.seed
     n_iters = max(1, int(args.num_full_iters))
@@ -356,10 +375,18 @@ def main() -> None:
             print(f"[baseline] mode={mode}  iters_per_block={cfg.updates_per_env}  "
                   f"max_steps={cfg.eval_max_steps}  num_full_iters={n_iters}")
 
+        # Rebuilt per iteration: a replay buffer or a Fisher must never leak
+        # across seeds, or iteration k would start with iteration k-1's memory
+        # and the seed-to-seed variance would be silently understated.
+        method = build_method(args.method, seed=seed_k, **method_kwargs)
+        if k == 0:
+            print(f"[baseline] method={args.method}  {method.describe()}")
+
         trace, blocks = run_sequential(
             cfg, agent, optimizer, envs, device,
-            sgb=sgb, env_offsets=env_offsets,
+            sgb=sgb, env_offsets=env_offsets, method=method,
         )
+        last_method_desc = method.describe()
         iter_traces.append((trace, blocks))
         iter_env_goals.append([list(env.goal_location) for env in envs])
         iter_env_offsets.append(
@@ -389,6 +416,12 @@ def main() -> None:
             "raw_metric_is_binary": True,
             "ckpt_path": args.load_checkpoint,
             "num_full_iters": n_iters,
+            # What continual-learning method produced this history, and what it
+            # cost. `state_bytes` is one of the five axes of the cost frontier
+            # (plan section 0.1), so it belongs beside the curve, not in a log.
+            "method": args.method,
+            "method_args": args.method_args,
+            "method_detail": last_method_desc,
             "extra": {
                 "mode": mode,
                 "base_seed": base_seed,
