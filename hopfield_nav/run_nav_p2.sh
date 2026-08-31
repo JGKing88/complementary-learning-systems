@@ -705,7 +705,7 @@ case "$VARIANT" in
   # u50 to u1100, and the 6 h partition wall lands near u1100 anyway (both p17
   # and p18 TIMEOUT-ed there). 32 eval points clears by a wide margin the
   # >=4-point bar this project's eval noise requires for a directional claim.
-  p19_nc|p19_c100|p19_c300|p19_b5|p19_e20|p19_kcap)
+  p19_nc|p19_c100|p19_c300|p19_b5|p19_e20|p19_kcap|p19_kcur)
     ENCODER=/orcd/pool/003/jackking/cls_runs/sweeps/w52_attract_fwhm/001_att0.5_seed=43/encoder_final.pt
     ENCODER_GAIN=100
     HOPFIELD_BETA=100
@@ -800,6 +800,37 @@ case "$VARIANT" in
       # 0.99-accurate readout and a policy free to turn, then the fault is in
       # the reward or the action pipeline, not in exploration.
       p19_kcap) LOG_KAPPA_MAX=2.5 ;;
+      # p19_kcur -- Jack's ORIGINAL question, finally in a readable regime.
+      #
+      # He opened by saying a distractor curriculum would probably help reach
+      # best accuracy in fewest updates. Two attempts could not answer it:
+      # p19_c100 ran with the policy locked at the kappa clamp (§17.8) so both
+      # it and its control were flat at ~0.09 and the axis was confounded, and
+      # p19_c300 never started (GPU quota).
+      #
+      # §17.9 produced a config that learns -- kappa capped at 12.2, 0.990 @10
+      # distractors by u125. So this is p19_kcap PLUS the curriculum, against
+      # p19_kcap itself as the control. Single factor, readable at last.
+      #
+      #   max ramps FROM n_train_distractors_max TO _max_end, so the START
+      #   value is the one that has to be 0.
+      #
+      # 100 updates rather than p11_cur's 400 because the whole regime is now
+      # ~4x faster: p19_kcap saturates at u125, so a 400-update ramp would not
+      # finish until long after the arm it is meant to accelerate has converged.
+      #
+      # Prediction on record, and it is NOT that the curriculum wins. §9.9
+      # measured the only curriculum this project has run as REACHING
+      # breakthrough later (u300 vs u150) while winning stability outright
+      # (never below 0.979 after, against 0.490). On Jack's objective -- the
+      # beeline, fast AND stable -- those pull opposite ways, so the honest
+      # expectation is: later first-crossing, higher minimum-after. If it is
+      # later on BOTH, the curriculum is simply a delay in this regime and the
+      # question is closed.
+      p19_kcur) LOG_KAPPA_MAX=2.5
+                N_TRAIN_DISTRACTORS_MAX=0; N_TRAIN_DISTRACTORS_MAX_END=10
+                N_TRAIN_EMP_DISTRACTORS_MAX=0; N_TRAIN_EMP_DISTRACTORS_MAX_END=10
+                DISTRACTOR_CURRICULUM_UPDATES=100 ;;
       # max ramps FROM n_train_distractors_max TO _max_end, so the START value
       # is the one that has to be 0.
       p19_c100) N_TRAIN_DISTRACTORS_MAX=0; N_TRAIN_DISTRACTORS_MAX_END=10
