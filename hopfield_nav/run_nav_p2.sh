@@ -705,7 +705,7 @@ case "$VARIANT" in
   # u50 to u1100, and the 6 h partition wall lands near u1100 anyway (both p17
   # and p18 TIMEOUT-ed there). 32 eval points clears by a wide margin the
   # >=4-point bar this project's eval noise requires for a directional claim.
-  p19_nc|p19_c100|p19_c300|p19_b5|p19_e20)
+  p19_nc|p19_c100|p19_c300|p19_b5|p19_e20|p19_kcap)
     ENCODER=/orcd/pool/003/jackking/cls_runs/sweeps/w52_attract_fwhm/001_att0.5_seed=43/encoder_final.pt
     ENCODER_GAIN=100
     HOPFIELD_BETA=100
@@ -768,6 +768,38 @@ case "$VARIANT" in
       # input, and INPUT_HOPFIELD_RAW is FIXED BY INSTRUCTION, so that is a
       # question for Jack rather than a knob to turn.
       p19_e20) MOVE_ENT_COEF=0.02 ;;
+      # p19_kcap -- bound kappa, instead of pushing back on it with entropy.
+      #
+      # The diagnostic on p19_nc u225 (§17.8) is unambiguous: on FAILURES the
+      # readout is essentially perfect -- q_acc 0.988 at 0 distractors, 0.962 at
+      # 10 -- and the policy drives at follow_q -0.726, nearly straight backward,
+      # pinned against a wall for 100% of failures. Nothing is wrong with the
+      # encoder, the memory or the field. The policy locked a wall-ward heading
+      # and ~5 deg of angular noise cannot break it out.
+      #
+      # And kappa is not "running away" -- it is SATURATED. --log_kappa_max
+      # defaults to 5.0, so kappa_max = e^5 = 148.4, and p19_nc measures 147.66
+      # at u70. It is sitting on the ceiling. So did p18_knee (133) and p16_sat.
+      #
+      # 2.5 -> kappa_max = 12.2, just above the 8.5 that p17_gain -- the fast
+      # arm, beeline at u200 -- settled at naturally, and far below the clamp.
+      # At kappa 12 the angular sd is ~0.29 rad (~16 deg) against p19_nc's 0.08
+      # rad (4.7 deg), so the policy keeps the exploration it needs to discover
+      # that its heading is wrong.
+      #
+      # A hard bound rather than entropy pressure because MOVE_ENT_COEF=0.02
+      # (p19_e20) cut kappa 45% at u30 and bought NO success -- 0.083/0.104/
+      # 0.115/0.104/0.125 against the control's flat 0.09. A soft push against a
+      # saturating quantity is the wrong instrument.
+      #
+      # Everything else is p19_nc, INCLUDING Jack's beta=100 and gain=100 and
+      # the default MOVE_ENT_COEF, so this is a clean single factor.
+      #
+      # Prediction on record: kappa pinned at 12.2, ang_noise >= 0.25 rad, and
+      # follow_q POSITIVE on failures. If success still does not move with a
+      # 0.99-accurate readout and a policy free to turn, then the fault is in
+      # the reward or the action pipeline, not in exploration.
+      p19_kcap) LOG_KAPPA_MAX=2.5 ;;
       # max ramps FROM n_train_distractors_max TO _max_end, so the START value
       # is the one that has to be 0.
       p19_c100) N_TRAIN_DISTRACTORS_MAX=0; N_TRAIN_DISTRACTORS_MAX_END=10

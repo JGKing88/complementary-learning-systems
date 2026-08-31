@@ -19,7 +19,7 @@ mismatch that must be fixed first.
 | **Branch / worktree** | `nav-tri-metric` at `.claude/worktrees/nav-tri-metric` |
 | **Predecessor** | `docs/EXPERIMENTS_NAV_TRI.md` — read its §0 findings 1–22 |
 | **Open decisions** | §11 — four forks put to Jack; spec assumes the recommended default in each |
-| **Running** | **P19 (§17)** — `p19_nc` 21651001 (beta 100, control) vs `p19_b5` 21653544 (beta 5.0), w52 attract-0.5 encoder, learned speed [0.5, 1.0]. Single-factor test of the κ-runaway mechanism in §17.6. Scored on the BEELINE objective (§17.5). |
+| **Running** | **P19 (§17)** — `p19_nc` 21651001 (κ_max 148, control, Jack's config) vs `p19_kcap` 21656252 (κ_max 12.2). w52 encoder, learned speed [0.5, 1.0]. §17.8: readout is perfect (q_acc 0.988) and the policy drives backwards (follow_q −0.726), 100% pinned. |
 | **Charts** | One published page per run — `p10_pol_v1` [3bc9ad4e](https://claude.ai/code/artifact/3bc9ad4e-0655-43ca-b870-0516f4487bdc) · `p10_pol` [388023ce](https://claude.ai/code/artifact/388023ce-a725-4253-a53b-c9979a77baf2) · `p10_e_pol` [00bd7fd3](https://claude.ai/code/artifact/00bd7fd3-bb60-4e22-a968-c62822c5cdb3) · `p10_e_pol_v1` [8fd3ecf0](https://claude.ai/code/artifact/8fd3ecf0-c429-40d6-bde6-008ca25b5a40) · `p11_cur` [4de8dfa7](https://claude.ai/code/artifact/4de8dfa7-9403-43c8-b4f9-b14669ae603e) · `p11_tp` [4dbbe6e9](https://claude.ai/code/artifact/4dbbe6e9-c8e3-41fb-9b38-36a1443bf420) · `p11_cur_tp` [6c3a0503](https://claude.ai/code/artifact/6c3a0503-dba1-405a-a90c-d33c491ee5b2) · `p12_lo` [6b09232a](https://claude.ai/code/artifact/6b09232a-bcd2-4609-9c1d-97d9757d0f5a) · `p12_lo_curtp` [835846df](https://claude.ai/code/artifact/835846df-d30d-46f7-b979-3fe41fdfff7e) |
 | **Finished** | **`p10_pol_v1` 21300389** — 2000/2000, **1.000 success @ 10.95 steps (1.10× optimal)**, the phase-2 best exploit model. **`p10_e_pol` 21300390** — 1500/1500, **cps 0.75** against a billiard ceiling of 0.775. |
 | **Done** | §4 blocking fixes, P1 (§5) with figures, the recall-mechanism thread §5.3-5.9, **P2 (§6)**, and **P10 (§9.4–9.8)** |
@@ -5158,3 +5158,63 @@ So: ‖q‖ is *a* contributor with the right sign and a perfect rank match over
 four points, and is **not** a complete mechanism. Recorded at that strength
 deliberately — §5.4, §14, §15.4 and §17.6 were each a story that outran its
 measurement, and the pattern is expensive enough to stop repeating.
+
+### 17.8 RESULT — the readout is perfect and the policy drives backwards
+
+`exploit_diag` on `p19_nc` u225, 48 episodes per condition, CPU (the GPU quota
+was full):
+
+| condition | | n | `q_acc` | `follow_q` | `align_true` | `d_min` |
+|---|---|---|---|---|---|---|
+| 0 distractors | SUCCESS | 3 | +0.991 | +0.902 | +0.861 | 0.63 |
+| 0 distractors | **FAIL** | 45 | **+0.988** | **−0.726** | −0.742 | 5.98 |
+| 10 distractors | SUCCESS | 5 | +0.988 | +0.918 | +0.945 | 0.83 |
+| 10 distractors | **FAIL** | 43 | **+0.962** | **−0.691** | −0.725 | 6.31 |
+
+**On the failing episodes the readout is essentially perfect** — `cos(q,
+goal−pos)` = 0.988 with no distractors, 0.962 with ten — and the policy moves at
+`follow_q` **−0.726**, nearly straight backwards. Motion is **`pinned` for
+100% of failures** (45/45 and 43/43), symptom mostly `blocked`, and `d_min` ~6
+cells: the agent jams against a wall and drives into it for the whole horizon.
+
+This is Mode B — ignoring a usable readout — far past anything §12 recorded,
+where `follow_q` was merely *below* its `align_true` baseline rather than
+**negative**. Nothing is wrong with the encoder, the memory, or the field. §17.6
+and §17.7's field results said the signal was fine; this says the policy has it
+and throws it away.
+
+#### κ is not "running away" — it is SATURATED at the clamp
+
+`--log_kappa_max` defaults to **5.0**, so κ_max = e⁵ = **148.41**. `p19_nc`
+measures **147.66** at u70. It is sitting *on the ceiling*, and so were
+`p18_knee` (133) and `p16_sat` (~148, cancelled). Every "runaway" in this phase
+is the same clamp being reached.
+
+That reframes the fix. `p19_e20` (`MOVE_ENT_COEF` 0.005 → 0.02) cut κ 45% at u30
+— 40.6 against 72.2 — and bought **no success at all**: 0.083 / 0.104 / 0.115 /
+0.104 / 0.125 against the control's flat ~0.09. **A soft pressure against a
+saturating quantity is the wrong instrument.** Arm cancelled at u125.
+
+`p19_kcap` bounds it instead: `LOG_KAPPA_MAX` 5.0 → **2.5**, κ_max **12.2**,
+just above the 8.5 that `p17_gain` — the fast arm, beeline at u200 — settled at
+on its own. At κ 12 the angular sd is ~0.29 rad (~16°) against `p19_nc`'s 0.08
+rad (4.7°). Everything else is `p19_nc`, including Jack's beta=100 and gain=100,
+so it is a clean single factor.
+
+#### The control is slow, not stuck — and that took 13 eval points to see
+
+`p19_nc` sat at ~0.09 for **twelve consecutive evals** (u25–u300), then at u325
+went to **0.240 / 0.198**, ~2.4× on both metrics at once. That is the shape
+`p10_pol_v1` had (0.052 → 0.146 → 0.875 at u150) and `p18_knee` had (climbing
+from u200 to 0.917 at u500).
+
+**So the w52 encoder is viable, just slow** — which is exactly the finding that
+twelve flat points would have got wrong if the arm had been cancelled. Two
+readings were made and withdrawn along the way: "tracking `p18_knee`" (from two
+points, and it was flat where p18 climbed) and "`p19_e20` is slowly climbing"
+(from three, and it was not). **The rule that held up is the one §9.9 already
+adopted: report the series, and do not call a trend under ~5 points.**
+
+Being slow is still a failure against the stated objective — `p17_gain` reached
+the beeline at u200, and `p19_nc` had not reached 0.25 success by u325. The
+question `p19_kcap` answers is whether the cap recovers the difference.
