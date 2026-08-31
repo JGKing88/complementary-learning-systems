@@ -498,3 +498,50 @@ inferred.
 
 Job: 32-env pool, 2000 updates, hidden=256, 3 seeds per arm, evaluated on 8
 held-out envs × 64 lifetimes × 10 episodes.
+
+---
+
+## 2026-08-31 — T0.1 answered: the joint ceiling is ~0.99, and it was never capacity
+
+The corrected run (slurm 21627945, epochs 1→8, 8000 updates) is still in
+flight, but the answer is already unambiguous. Mean `nav_det` across all five
+envs, seed 1:
+
+| hidden | layers | lr | updates so far | mean nav_det |
+|---|---|---|---|---|
+| 128 | 1 | 1e-3 | 5500 | **0.988** |
+| 128 | 2 | 1e-3 | 4100 | **0.994** |
+| 512 | 1 | 1e-3 | 1500 | 0.944 |
+| 512 | 2 | 1e-3 | 600 | 0.925 |
+| 128 | 1 | 3e-3 | 5000 | 0.525 |
+| 128 | 2 | 3e-3 | 3400 | 0.125 |
+| 512 | 1 | 3e-3 | 1500 | 0.206 |
+| 512 | 2 | 3e-3 | 600 | 0.050 |
+
+**The joint ceiling is ≈ 0.99.** The first run's 0.45–0.59 was an
+optimisation artifact and nothing else. Three things follow, and they matter
+for how every other number in this suite is read.
+
+**Capacity was never the constraint.** The best joint result comes from
+`hidden=128, layers=1` — the *smallest* configuration tested, and exactly the
+one the recorded baseline uses. A 128-unit GRU holds all five environments
+simultaneously at 99 %. The original verdict would have claimed the opposite:
+that the network cannot represent five envs at once and that much of the
+recorded "forgetting" is really a capacity limit. That claim would have been
+wrong, it would have gone into the paper, and the only thing that stopped it
+was noticing the eval curves were still climbing.
+
+**The retention gap is entirely forgetting.** The same architecture, at the
+same capacity, on the same five environments, scores **0.99 trained jointly**
+and **0.196 trained sequentially**. Nothing about representational capacity
+explains that difference. Tier 2 is fully interpretable and T0.2 (per-env
+experts) is not needed — it would only have been informative if the ceiling had
+come in low.
+
+**lr matters more than capacity, and 3e-3 is unstable.** Every lr=3e-3 row is
+between 0.05 and 0.53 while every lr=1e-3 row is between 0.92 and 0.99. The
+Wave-1 Tier-1 sweep covers 3e-4 / 1e-3 / 3e-3 on the sequential side, so
+whether the same instability shows up there is about to be measured rather
+than assumed.
+
+Headroom for continual methods on the headline protocol: **0.196 → 0.99**.
