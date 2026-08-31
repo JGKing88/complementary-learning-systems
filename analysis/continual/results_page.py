@@ -20,6 +20,7 @@ import html
 import json
 import math
 import os
+import re
 
 # --- the palette, contrast-checked against both grounds ---------------------
 # Blue-biased neutrals rather than pure grey, one accent doing the magnitude
@@ -263,6 +264,95 @@ def incontext_svg(ic: dict) -> str:
     return "".join(out)
 
 
+_RB = re.compile(r"_rb(\d+)$")
+
+
+def replay_ratio_series(methods: list[dict]) -> list[tuple[int, float, float]]:
+    """(ratio, retained, sem) for unbounded-buffer ER, sorted by ratio.
+
+    Only `buffer=inf` rows, so the series varies one thing. Both the `B_` and
+    `I_` arms contribute -- they are the same method at different ratios and
+    were only split across waves because the second was a follow-up.
+    """
+    out = {}
+    for m in methods:
+        cfg = m["config"]
+        if not (cfg.startswith("B_er_bufinf_rb") or cfg.startswith("I_erhi_rb")):
+            continue
+        mt = _RB.search(cfg)
+        if not mt:
+            continue
+        out[int(mt.group(1))] = (m["retained"], m.get("retained_sem"))
+    return [(k, v[0], v[1]) for k, v in sorted(out.items())]
+
+
+def ratio_svg(series, ceiling=None, hopfield=None) -> str:
+    """Retention against replay ratio, log-x, with the ceiling as a reference.
+
+    One series, so no legend -- the heading names it and the line is
+    direct-labelled. The two reference lines are drawn in muted ink and
+    labelled in place, so they read as context rather than as data.
+    """
+    if len(series) < 2:
+        return ""
+    import math as _m
+    W, H = 640, 300
+    L, R, T, B = 54, 118, 20, 44
+    iw, ih = W - L - R, H - T - B
+    xs = [r for r, _, _ in series]
+    lo, hi = _m.log2(min(xs)), _m.log2(max(xs))
+
+    def X(r):
+        return L + (iw * (_m.log2(r) - lo) / max(1e-9, hi - lo))
+
+    def Y(v):
+        return T + ih * (1.0 - max(0.0, min(1.0, v)))
+
+    o = [f'<svg viewBox="0 0 {W} {H}" role="img" aria-label="Retention against '
+         'replay ratio for unbounded-buffer experience replay">']
+    for g in (0.0, 0.25, 0.5, 0.75, 1.0):
+        y = Y(g)
+        o.append(f'<line x1="{L}" y1="{y:.1f}" x2="{L + iw}" y2="{y:.1f}" '
+                 'stroke="var(--rule)" stroke-width="1"/>')
+        o.append(f'<text x="{L - 8}" y="{y + 4:.1f}" text-anchor="end" '
+                 'font-family="var(--mono)" font-size="10" '
+                 f'fill="var(--muted)">{g:.2f}</text>')
+    for ref, lab in ((ceiling, "joint ceiling"), (hopfield, "Hopfield store")):
+        if ref is None:
+            continue
+        y = Y(ref)
+        o.append(f'<line x1="{L}" y1="{y:.1f}" x2="{L + iw}" y2="{y:.1f}" '
+                 'stroke="var(--muted)" stroke-width="1.5" stroke-dasharray="6 4"/>')
+        o.append(f'<text x="{L + iw + 8}" y="{y + 4:.1f}" '
+                 'font-family="var(--mono)" font-size="10.5" '
+                 f'fill="var(--muted)">{esc(lab)} {ref:.3f}</text>')
+    for r in xs:
+        o.append(f'<text x="{X(r):.1f}" y="{T + ih + 18}" text-anchor="middle" '
+                 'font-family="var(--mono)" font-size="10" '
+                 f'fill="var(--muted)">{r}</text>')
+    o.append(f'<text x="{L + iw / 2:.0f}" y="{H - 8}" text-anchor="middle" '
+             'font-family="var(--mono)" font-size="10.5" fill="var(--muted)">'
+             'replayed trajectories per new one</text>')
+
+    dpath = " ".join(f"{'M' if i == 0 else 'L'}{X(r):.1f},{Y(v):.1f}"
+                     for i, (r, v, _) in enumerate(series))
+    o.append(f'<path d="{dpath}" fill="none" stroke="var(--accent)" '
+             'stroke-width="2.5" stroke-linejoin="round"/>')
+    for r, v, sem in series:
+        if sem:
+            o.append(f'<line x1="{X(r):.1f}" y1="{Y(v - sem):.1f}" '
+                     f'x2="{X(r):.1f}" y2="{Y(v + sem):.1f}" '
+                     'stroke="var(--accent)" stroke-width="1.5"/>')
+        o.append(f'<circle cx="{X(r):.1f}" cy="{Y(v):.1f}" r="4" '
+                 'fill="var(--accent)" stroke="var(--surface)" stroke-width="2"/>')
+    lr, lv, _ = series[-1]
+    o.append(f'<text x="{X(lr) + 10:.1f}" y="{Y(lv) + 4:.1f}" '
+             'font-family="var(--mono)" font-size="11" '
+             f'fill="var(--accent)">ER {lv:.3f}</text>')
+    o.append("</svg>")
+    return "".join(o)
+
+
 def render(d: dict) -> str:
     P: list[str] = []
     A = P.append
@@ -388,8 +478,39 @@ def render(d: dict) -> str:
               "<td>retention bought by refusing to learn</td></tr>")
         A("</tbody></table></div>")
 
+    # ---- the replay-ratio curve ---------------------------------------
+    series = replay_ratio_series(methods)
+    if len(series) >= 2:
+        conv = [j for j in d.get("joint", [])
+                if abs(j.get("end_slope") or 0) <= 0.02 and (j.get("final") or 0) > 0.5]
+        ceil = max((j["final"] for j in conv), default=None)
+        A('<h2 id="ratio"><span class="sec">3</span> '
+          "How far replay gets</h2>")
+        A("<p>The plan predicted that a perfect buffer would close most of this "
+          "gap. It does not. Every point below has an <strong>unbounded</strong> "
+          "buffer — every trajectory the agent ever saw — and varies only how "
+          "many of them are replayed per new one.</p>")
+        A('<div class="fig">')
+        A(ratio_svg(series, ceiling=ceil,
+                    hopfield=(hop or {}).get("retained")))
+        A('<p class="cap">Retention against replay ratio, unbounded buffer, '
+          "8 seeds per point, ±1 SEM. Buffer <em>size</em> barely matters by "
+          "comparison: ∞ against 200 entries is 0.419 against 0.404 at a fifth "
+          "of the storage.</p></div>")
+        gain = [(series[i][1] - series[i - 1][1]) for i in range(1, len(series))]
+        A("<p>Monotone and clearly decelerating"
+          + (f" (+{gain[-2]:.3f} then +{gain[-1]:.3f} per doubling)"
+             if len(gain) >= 2 else "")
+          + ". Perfect memory plus a 32:1 replay ratio reaches "
+          + f"<strong>{series[-1][1]:.3f}</strong>"
+          + (f" against a ceiling of {ceil:.3f}" if ceil else "")
+          + (f" — {100.0 * series[-1][1] / ceil:.0f} % of the way" if ceil else "")
+          + ", and the rest does not look reachable by more of the same. Every "
+          "one of these points still costs 200 gradient steps and 200 episodes "
+          "per environment, against the store's 0 and 1.</p>")
+
     # ---- Tier 0 -------------------------------------------------------
-    A('<h2 id="tier0"><span class="sec">3</span> The axes</h2>')
+    A('<h2 id="tier0"><span class="sec">4</span> The axes</h2>')
     A("<p>None of these are continual-learning methods. They are what makes "
       "every number above interpretable, and three of the four had never been "
       "run before this suite.</p>")
@@ -452,7 +573,7 @@ def render(d: dict) -> str:
     # ---- in-context ---------------------------------------------------
     ic = d.get("incontext")
     if ic and ic.get("arms"):
-        A('<h2 id="incontext"><span class="sec">4</span> '
+        A('<h2 id="incontext"><span class="sec">5</span> '
           "Zero weight updates</h2>")
         A("<p>The only control that meets the store on its own terms. One "
           "environment, ten episodes back to back, weights frozen throughout — "
@@ -491,7 +612,7 @@ def render(d: dict) -> str:
     # ---- N=20 ----------------------------------------------------------
     n20 = d.get("n20") or []
     if n20:
-        A('<h2 id="n20"><span class="sec">5</span> Twenty environments</h2>')
+        A('<h2 id="n20"><span class="sec">6</span> Twenty environments</h2>')
         A("<p>Methods look alike at five tasks and separate at twenty. Only "
           "configurations whose best setting was already pinned down at N=5 "
           "are scaled here.</p>")
@@ -513,7 +634,7 @@ def render(d: dict) -> str:
           "exist yet.</p></div>")
 
     # ---- bugs found ---------------------------------------------------
-    A('<h2 id="found"><span class="sec">6</span> Found along the way</h2>')
+    A('<h2 id="found"><span class="sec">7</span> Found along the way</h2>')
     A('<div class="note crit"><h4><code>input_prev_action</code> had never '
       "worked</h4>"
       "<p>Both the DAgger collector and the evaluator built the previous-action "
