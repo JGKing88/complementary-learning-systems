@@ -681,3 +681,93 @@ Neither bug would have crashed anything. Both would have produced a
 plausible-looking table with a wrong number in it, which is the failure mode
 this whole exercise keeps running into: the errors that matter here are the
 ones that still render.
+
+---
+
+## 2026-08-31 — Wave 2 complete (slurm 21631698, all 144 tasks OK)
+
+Against the joint ceiling of **0.985** and the matched reference of **0.044**:
+
+| method | best config | retained | current env | stored |
+|---|---|---|---|---|
+| **ER, replay ×32** | `buffer=∞` | **0.579 ± 0.039** | 0.796 | 53.6 MB |
+| ER, replay ×16 | `buffer=∞` | 0.546 ± 0.027 | 0.753 | 53.6 MB |
+| ER, replay ×8 | `buffer=∞` | 0.508 ± 0.033 | 0.762 | 53.6 MB |
+| ER, replay ×4 | `buffer=∞` | 0.419 ± 0.044 | 0.768 | 53.6 MB |
+| CLEAR | `cc=1.0` | 0.201 ± 0.036 | 0.622 | 53.9 MB |
+| online EWC | `λ=1e4` | 0.149 ± 0.033 | 0.524 | 0.6 MB |
+| DER++ | `α=1.0` | 0.143 ± 0.031 | 0.710 | 56.8 MB |
+| naive, tuned | `lr=3e-4, reset` | 0.081 ± 0.026 | 0.820 | — |
+| SI | `λ=10` | 0.074 ± 0.022 | 0.765 | 0.6 MB |
+| **frozen trunk** | `+ER` | **0.043 ± 0.010** | 0.399 | 53.6 MB |
+
+Plus two more entries in the plasticity trap: **LwF at α=10** (retained 0.235,
+current **0.238**) and **online EWC at λ=1e5** (0.274, current **0.296**). Both
+would top a leaderboard ranked on retention.
+
+### Replay ratio keeps paying, and still does not close the gap
+
+Arm I answered the question Wave 1 raised. Retention against replay ratio, all
+at an unbounded buffer:
+
+| ratio | 1 | 4 | 8 | 16 | 32 |
+|---|---|---|---|---|---|
+| retained | 0.143 | 0.419 | 0.508 | 0.546 | 0.579 |
+
+Monotone, clearly decelerating (+0.089, +0.038, +0.033 per doubling), and at
+**0.579 against a 0.985 ceiling** after replaying 32 stored trajectories for
+every new one. Plan §0.1 said a perfect buffer would close most of the gap. It
+does not: perfect memory plus a 32:1 replay ratio gets 59 % of the way, and the
+remaining distance is not obviously reachable by more of the same.
+
+### Frozen trunk (P4) is a clean negative, and it bears on §5.1
+
+Adapting only the 260-parameter movement head **hurts on both axes**: retention
+0.043 (below the 0.044 reference) and current-env 0.399 against 0.753. The
+trunk is where this task's competence lives; a head that small cannot express
+a new environment's goal, so confining plasticity there costs plasticity
+without buying stability.
+
+That is a direct, if partial, argument about OML (§5.1). OML's mechanism is
+head-only online adaptation over a *meta-learned* trunk. This result says the
+head-only half, over a **normally-pretrained** trunk, is actively harmful — so
+any benefit OML delivers here would have to come entirely from the
+meta-learning changing what the trunk represents, not from the restriction
+itself. That raises the bar for §5.1 considerably and is worth knowing before
+building it.
+
+### DER++ and CLEAR were under-tuned by us, in the way the plan warns about
+
+DER++ returned **bit-identical statistics at α = 0.1, 0.5 and 1.0**, and one of
+them matched plain ER at `rb=1` exactly. `aux_loss` fires and scales with α, so
+the wiring is fine. Measuring the term against the BC loss at the real
+configuration (`move_loss ≈ 17.8`) explains it:
+
+| method | coefficient | aux / move |
+|---|---|---|
+| DER++ | α=0.1 | **0.003** |
+| DER++ | α=1.0 | **0.029** |
+| DER++ | α=100 | 2.9 |
+| CLEAR | cc=1.0 | 0.40 |
+| LwF | α=1.0 | 0.11 |
+
+**The whole DER++ sweep sat below 3 % of the loss.** The method was effectively
+off across its entire range, and reporting 0.143 as "DER++'s result" would have
+been reporting a strawman.
+
+The cause is a units mismatch. Buzzega's α=0.5 is calibrated against a
+cross-entropy over CIFAR logits; here the primary loss is a Gaussian NLL of
+magnitude ~18, so the same constant buys a thirtieth of the influence. A
+coefficient copied from a paper only means anything alongside that paper's loss
+scale.
+
+Both sweeps were also **monotone-increasing to their top value** — the
+signature of a range that stops before the method starts working. The plan
+makes exactly this argument about EWC's λ, and we then made the mistake
+ourselves on two other methods.
+
+Wave 2b (slurm 21633232) re-runs DER++ at α ∈ {10, 100, 1000} and CLEAR at
+cc ∈ {3, 10, 30}, with ranges chosen by **ratio to the primary loss** (~0.03 to
+~10) rather than by citation. SI is included at λ=1000 for completeness,
+although its Wave-2 sweep already turned over (λ=10 → 0.074, λ=100 → 0.066), so
+its peak is genuinely inside the range that ran.
