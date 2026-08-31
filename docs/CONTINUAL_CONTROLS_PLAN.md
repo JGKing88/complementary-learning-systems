@@ -11,7 +11,7 @@ changed.
 > | The nine methods (§4) | implemented and tested in `hopfield_nav/continual/` |
 > | Wave 1 (Tier-1 sweeps + ER + online EWC) | on the cluster |
 > | Wave 2 (CLEAR, DER++, SI, LwF) | implemented, launcher ready |
-> | Wave 3 (HNET, multi-head, XdG) | **built and running** — job 21653228, 144 runs |
+> | Wave 3 (HNET, multi-head, XdG) | **done** — jobs 21653228 (144) + 21654989 (40), all OK |
 > | §5.2 in-context zero-update control | implemented and on the cluster |
 > | §5.1 meta-pretraining | not started |
 > | Metrics + results page | implemented, generated from the data |
@@ -21,6 +21,14 @@ changed.
 > when this document was finished, and nobody noticed until a reader asked
 > where HNET had gone. See the log's 2026-08-31 entries for both halves of that
 > — the omission, and what was built in response.
+>
+> It also changed the answer. **XdG + SI reaches 0.739 retained**, against
+> Experience Replay's 0.579 — so the best classic result on this task is a
+> parameter-isolation method, not a replay one, and the family that was left
+> out was the family that wins. It needs an oracle task id, which
+> `task_identifiability` shows is worth a great deal here (0.43 against a
+> chance of 0.20), so it is reported as an upper bound and the results page
+> splits its frontier table rather than ranking the two groups together.
 >
 > The running record — including three bugs this uncovered in shared code, and
 > one wrong verdict caught before it shipped — is
