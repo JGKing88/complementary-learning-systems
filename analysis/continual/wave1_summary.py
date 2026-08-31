@@ -106,6 +106,14 @@ def main() -> None:
                _load_group(d, "R_*.json", r"_s\d+$"))
     b = _table("B. Experience Replay", _load_group(d, "B_*.json", r"_s\d+$"))
     c = _table("C. Online EWC", _load_group(d, "C_*.json", r"_s\d+$"))
+    # Wave 2 writes into the same directory on purpose, so every method is read
+    # against the same reference arm R without re-running it.
+    dd = _table("D. CLEAR (replay + distillation to one past self)",
+                _load_group(d, "D_*.json", r"_s\d+$"))
+    e = _table("E. DER++ (replay + distillation to insertion-time targets)",
+               _load_group(d, "E_*.json", r"_s\d+$"))
+    f = _table("F. Synaptic Intelligence", _load_group(d, "F_*.json", r"_s\d+$"))
+    g = _table("G. LwF (no buffer at all)", _load_group(d, "G_*.json", r"_s\d+$"))
 
     print("\n" + "-" * 118)
     print("READING")
@@ -119,7 +127,9 @@ def main() -> None:
               f"(+/-{best['retained_sem']:.4f}), current {best['current_env']:.4f}")
         print("    ^ this is what every method must be compared against, not the")
         print("      recorded default -- an untuned control is a strawman.")
-    for name, rows in (("Experience Replay", b), ("Online EWC", c)):
+    for name, rows in (("Experience Replay", b), ("Online EWC", c),
+                       ("CLEAR", dd), ("DER++", e),
+                       ("Synaptic Intelligence", f), ("LwF", g)):
         if not rows:
             continue
         label, top = rows[0]
