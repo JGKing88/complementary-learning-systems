@@ -47,7 +47,13 @@ and nearly binary: a goal dies when **one** co-stored competitor crosses cos
 ≈ 0.25, that competitor sits ~370 cells away, and at K=1 no encoder loses a
 single environment. `r_min` cannot see any of it — six candidates share
 `r_min` 12.0 while their far-field alias rate spans seven-fold — and the rate
-of distant pairs above 0.25 predicts measured reach at **ρ = −0.92**.
+of distant pairs above 0.25 predicts measured reach at **ρ = −0.92**, and
+**−0.85 once the confirmation run's eight arms are added** (§10.8).
+
+**The screen's nomination was run and it won.** Level 6
+(`w49_g100_knee/*_eps1_rate0.5`) posts continuous reach **0.931 unsaturated and
+0.981 at gain 300 + β1e6** over four seeds — the best in the campaign, against
+level 7's 0.806 at the same settings.
 
 ---
 
@@ -487,7 +493,9 @@ Sec 10's measurements: `dead_goal_check.py` (per-env reach, dead fraction vs K),
 `gain_tradeoff_check.py` (alias rate against res90),
 `nav_screen_check.py` (the pool screen), `nav_screen_validate.py`
 (the screen against measured reach), `load_curve_check.py`
-(dead fraction against load, on a constant env set).
+(dead fraction against load, on a constant env set),
+`l6_confirm_check.py` (Sec 10.8's out-of-sample test). The run itself is
+`run_l6.sh`.
 
 ## 10. What sets continuous reach — the synthesis
 
@@ -635,10 +643,11 @@ The ranking is unchanged at any threshold from 0.15 to 0.35.
 1. **Select on the alias rate, not `r_min`**, with a res90 floor. Free, and it
    ranks a pool where `r_min` is constant.
 2. **Best available legal encoder: Level 6 at inference gain 300**, with
-   saturated β. `w49_g100_knee/008_eps1_rate0.5` lands at (0.0057, res90 8) —
-   the only constrained arm inside v35's box, and v35 there measured **zero
-   dead goals through K=10** and 0.974 continuous reach. Running the probe on
-   it is the one experiment that would confirm all of §10.
+   saturated β. Nominated off the screen at (0.0057, res90 8), the only
+   constrained arm inside v35's box — **and confirmed in §10.8**: continuous
+   reach 0.981 over four seeds, zero dead goals at K=3/5/10 on every seed.
+   Unsaturated it already reaches 0.931, which beats level 7 *with* the full
+   treatment.
 3. **Reverse the last two waves.** `attract_lambda` down (8 beats 16 beats 32
    beats 64; 4/2/1 untested), `repel_weight` down (`rep0.25` already beats
    `att16`, and `EXPERIMENTS_UNIQUE_RADIUS.md` §10.2 flagged the axis).
@@ -675,4 +684,98 @@ The ranking is unchanged at any threshold from 0.15 to 0.35.
 - Raising inference gain changes every embedding: none of this is a config edit
   for a trained policy.
 
+Raw: `$CLS_RESULTS/hopfield_probe/20260827/l6_production/` and
+`l6_g300_sat/`.
+
 Page: https://claude.ai/code/artifact/d65ad39b-eb99-4ae3-808c-52223bec874a
+
+### 10.8 The confirmation run — Level 6 probed, and it is the best in the campaign
+
+§10.6 item 2 nominated `w49_g100_knee/*_eps1_rate0.5` off the screen, with a
+prediction on record before the run: continuous reach 0.92–0.95 saturated,
+0.86–0.91 unsaturated. Four seeds, both arms, settings identical to every
+archived arm.
+
+| K=5, s=1 | \|err\| | acc45 | exact | basin | disc | **cont** | acc45 @ s=15 |
+|---|---|---|---|---|---|---|---|
+| **L6 production** (β=gain=100) | | | | | | | |
+| s42 | 7.13° | 99.9% | 90.4% | 17.57 | 0.948 | 0.951 | 92.9% |
+| s43 | 7.57° | 99.2% | 88.0% | 18.43 | 0.939 | 0.910 | 92.6% |
+| s44 | 6.33° | 99.9% | 90.3% | 18.70 | 0.957 | 0.960 | 95.1% |
+| s45 | 8.32° | 99.2% | 85.6% | 17.55 | 0.901 | 0.880 | 87.2% |
+| *median* | | | | | | **0.931** | |
+| **L6 gain 300 + β1e6** | | | | | | | |
+| s42 | 9.09° | 100.0% | 97.4% | 20.38 | 1.000 | 0.986 | 100.0% |
+| s43 | 9.20° | 99.8% | 90.2% | 18.23 | 0.997 | 0.976 | 99.8% |
+| s44 | 8.59° | 100.0% | 93.1% | 18.90 | 1.000 | 0.964 | 100.0% |
+| s45 | 9.15° | 99.4% | 93.6% | 19.25 | 0.974 | 0.987 | 99.3% |
+| *median* | | | | | | **0.981** | |
+
+Reference, same settings: att16 production 0.806, v35 production 0.867,
+att16 g300+sat 0.890, v35 g100+sat 0.974.
+
+**Both predictions were too low, in the same direction.** The screen ranked
+correctly and the mapping from alias rate to reach was pessimistic, which is
+what calibrating it on worse encoders would do.
+
+Three things this settles.
+
+**Level 6 unsaturated already beats every constrained arm ever measured** —
+0.931 against att16's 0.806 at the same settings, and against att16's 0.890
+*with* the full gain-300 + saturation treatment. It leads every other column
+too: 6.3–8.3° against 11.8°, retrieval 85.6–90.4% against 57.8%, basin 17.6–18.7
+against 11.0. So the campaign's step from level 6 to level 7 cost about 0.12 of
+continuous reach, and `r_min` scored that step as an improvement (floor 7 → 9).
+
+**And it does this in the linear regime.** `tanh` argument max **0.0044**, four
+orders below the `u ≈ 1` transition, loop gain `β·s` = 0.098 — identical to
+att16 production, the arm §0 calls a matched filter that degrades cues. What
+level 6 has is condition (a) *baked in at training time*: it is trained at final
+gain 100 (§6.10h). Since §6 established retrieval is a one-step jump rather
+than a relaxation, a linear filter makes that jump fine when the patterns are
+separable enough, and saturation is what stops the state drifting afterwards.
+
+**Saturation still adds, and it is not redundant.** 0.931 → 0.981, and it flattens
+the load curve outright: dead fraction at K=20 goes 0.29–0.50 → 0.00–0.12, and
+**all four saturated seeds have zero dead goals at K=3, 5 and 10**, matching
+`v35 g100+β1e6`. So both conditions earn their place — (a) from the encoder, (b)
+from the loop gain.
+
+#### The screen, out of sample
+
+Adding the eight new arms to §10.5's nine:
+
+| | ρ | p | n |
+|---|---|---|---|
+| original nine arms | −0.917 | 0.0005 | 9 |
+| the eight L6 arms alone | −0.762 | 0.028 | 8 |
+| **all seventeen** | **−0.853** | **0.00001** | 17 |
+
+It held. The degradation from −0.917 is the expected cost of an out-of-sample
+test rather than a fit.
+
+Its rank prediction at the very top did **not** resolve, though: L6 g300+sat has
+a *worse* alias rate than `v35 g100+sat` (0.0054–0.0062 against 0.0036) and
+scores at least as well (0.981 against 0.974). v35 is one seed and 0.974 sits
+inside L6's four-seed range of 0.964–0.987, so this is a tie rather than a
+reversal — but the screen has no resolving power left at this level, and it
+should be read as a filter, not a ranking, below about 0.006.
+
+> **A §10.2 claim does not survive.** That section reported `p` tracking the
+> alias rate at a ratio of 1.6–3.0 over seven arms. The eight new arms give
+> 0.60, 1.09, 1.70 and 2.82 for the unsaturated seeds, and the saturated ones
+> have `p = 0` exactly, so there is no ratio to take. `p` at K=10 is estimated
+> from 24 samples and is quantised in steps of 0.005, which the original seven
+> arms did not make obvious. The honest statement is that `p` is within a factor
+> of about three of the alias rate, not that it tracks it.
+
+#### What binds now
+
+At the top the failure mode has moved off aliasing entirely. The saturated arms
+post **discrete reach 1.000 with continuous 0.964–0.987**, and continuous reach
+from cells adjacent to the goal is 0.995–0.998. So 1.4–3.6% of starts reach the
+goal *cell* and never get within 0.5 of the goal *point*.
+
+That is the sub-cell approach, and `ARRIVAL_RADIUS = 0.5` against a float
+position is as much a property of the measurement as of the encoder. Anything
+further on this arm should establish which before spending runs on it.
