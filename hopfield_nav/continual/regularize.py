@@ -222,4 +222,110 @@ class OnlineEWC(ContinualMethod):
         return d
 
 
-__all__ = ["OnlineEWC"]
+class SynapticIntelligence(ContinualMethod):
+    """Zenke et al. 2017. Importance accumulated along the optimisation path.
+
+    The contrast with EWC is where the importance comes from. EWC stops at a
+    task boundary and asks a curvature question about the endpoint. SI never
+    stops: it watches each optimiser step and credits every parameter with the
+    loss reduction it personally produced,
+
+        omega_k  +=  -g_k * delta_theta_k
+
+    summed over the block, then normalises by how far the parameter actually
+    travelled,
+
+        Omega_k  +=  omega_k / ( (theta_k - theta_k^old)^2 + xi )
+
+    so a parameter that moved a long way for a small gain is not credited the
+    same as one that moved slightly for a large gain. `xi` is the usual damping
+    that keeps a parameter which barely moved from acquiring huge importance.
+
+    Two practical consequences worth having in the suite next to EWC:
+
+    - It needs **no separate Fisher pass**, so it costs essentially nothing on
+      top of training, where EWC pays a backward pass per trajectory per block.
+    - The accumulation itself needs no task boundary. Only the fold-in does,
+      and that could be done on a schedule instead -- which is why SI is the
+      cheap counterweight to online EWC in the boundary-free column.
+
+    On this benchmark's ancestor -- domain-incremental permuted MNIST -- SI beat
+    EWC (95.3 vs 94.3), and on split MNIST too (65.4 vs 64.0).
+    """
+
+    name = "si"
+    #: Only to fold omega into Omega and re-anchor. The path integral itself
+    #: runs continuously and needs nothing.
+    needs_task_boundaries = True
+    needs_task_id = False
+
+    def __init__(self, lam: float = 1.0, xi: float = 0.1) -> None:
+        self.lam = float(lam)
+        self.xi = float(xi)
+        self._omega: dict[str, torch.Tensor] = {}      # running path integral
+        self._importance: dict[str, torch.Tensor] = {}  # folded-in Omega
+        self._anchor: dict[str, torch.Tensor] = {}
+        self._block_start: dict[str, torch.Tensor] = {}
+        self._prev: dict[str, torch.Tensor] = {}
+        self._blocks_consolidated = 0
+
+    def on_block_start(self, block: int, agent, envs) -> None:
+        params = {n: p for n, p in agent.named_parameters() if p.requires_grad}
+        self._omega = {n: torch.zeros_like(p) for n, p in params.items()}
+        self._block_start = {n: p.detach().clone() for n, p in params.items()}
+        self._prev = {n: p.detach().clone() for n, p in params.items()}
+
+    def after_step(self, agent) -> None:
+        """The path integral. `p.grad` still holds this step's gradient here --
+        `bc_rnn_update` zeroes it at the *start* of the next iteration, not the
+        end of this one -- and `p` already holds the post-step value, so the
+        delta is against the copy kept from last time."""
+        for n, p in agent.named_parameters():
+            if not p.requires_grad or n not in self._prev:
+                continue
+            if p.grad is not None:
+                delta = p.detach() - self._prev[n]
+                self._omega[n] -= p.grad.detach() * delta
+            self._prev[n] = p.detach().clone()
+
+    def penalty(self, agent) -> torch.Tensor | None:
+        if not self._importance:
+            return None
+        total = None
+        for n, p in agent.named_parameters():
+            imp, anc = self._importance.get(n), self._anchor.get(n)
+            if imp is None or anc is None or not p.requires_grad:
+                continue
+            term = (imp * (p - anc).pow(2)).sum()
+            total = term if total is None else total + term
+        return None if total is None else self.lam * total
+
+    def on_block_end(self, block: int, agent, envs) -> None:
+        for n, p in agent.named_parameters():
+            if not p.requires_grad or n not in self._omega:
+                continue
+            travelled = (p.detach() - self._block_start[n]).pow(2) + self.xi
+            contrib = (self._omega[n] / travelled).clamp_min(0.0)
+            if n in self._importance:
+                self._importance[n] = self._importance[n] + contrib
+            else:
+                self._importance[n] = contrib
+        self._anchor = {n: p.detach().clone()
+                        for n, p in agent.named_parameters() if p.requires_grad}
+        self._blocks_consolidated += 1
+
+    def state_bytes(self) -> int:
+        b = 0
+        for d in (self._importance, self._anchor):
+            for t in d.values():
+                b += t.numel() * t.element_size()
+        return b
+
+    def describe(self) -> dict:
+        d = super().describe()
+        d.update({"lam": self.lam, "xi": self.xi,
+                  "blocks_consolidated": self._blocks_consolidated})
+        return d
+
+
+__all__ = ["OnlineEWC", "SynapticIntelligence"]

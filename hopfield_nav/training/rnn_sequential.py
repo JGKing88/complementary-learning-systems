@@ -117,6 +117,7 @@ def run_sequential_blocks(
                 movement_mode,
                 penalty_fn=lambda: method.penalty(agent),
                 aux_loss_fn=lambda: method.aux_loss(agent, rollout, extra),
+                on_step=lambda: method.after_step(agent),
             )
             method.after_update(rollout, i, agent)
             losses["n_replay_batches"] = float(len(extra))

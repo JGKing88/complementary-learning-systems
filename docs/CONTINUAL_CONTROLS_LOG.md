@@ -334,3 +334,53 @@ Also implemented **W2** (`--reset_optimizer_each_block`), which clears Adam's
 moment estimates at each task boundary in place, leaving parameter groups and
 the learning rate untouched. Off by default, because that is what every
 recorded history did.
+
+---
+
+## 2026-08-30 — Wave 2 methods implemented (ahead of the wave)
+
+Built while Wave 0b and Wave 1 were on the cluster, so Wave 2 can launch the
+moment Wave 1's tables land. The `ContinualMethod` interface held up: all four
+fit the existing hooks, and the only addition needed was wiring the `on_step`
+callback that was already stubbed in `bc_rnn_update` through to
+`after_step`.
+
+**SI** (`regularize.py`). The contrast with EWC is *where importance comes
+from*. EWC stops at a boundary and asks a curvature question about the
+endpoint; SI never stops, crediting each parameter with the loss reduction it
+personally produced along the path, then normalising by how far it actually
+travelled. Consequences worth having next to EWC: it needs no separate Fisher
+pass, so it is nearly free where EWC pays a backward per trajectory per block;
+and the accumulation itself needs no task boundary — only the fold-in does.
+
+**LwF** (`distill.py`). No buffer, no per-parameter state — a model copy and
+nothing else, which makes it the cheapest point on the memory axis by a wide
+margin. Inactive in block 0 on purpose: there is nothing to preserve yet, and
+snapshotting there would only pin the policy to its initialisation.
+
+**CLEAR** and **DER++** (`distill.py`). Both are ER plus an output-space
+anchor, and the interesting difference is *when the anchor is taken*. CLEAR
+snapshots one converged past self and distils every replayed state against it.
+DER++ freezes a target the instant a trajectory enters the buffer, so different
+entries are anchored to different, older versions of the policy — a spread of
+the optimisation trajectory rather than a single point. Both are boundary-free;
+they disagree about what "the past" means. DER++ stores distribution
+*parameters* rather than a frozen network, so its state is the buffer plus two
+small tensors per entry instead of a model copy.
+
+Design note: the distillation terms all go through `aux_loss`, not `penalty`,
+because they regularise the model's outputs *on specific states* and therefore
+need the data that `penalty` never sees. The frozen model's outputs are
+constant within an update but `aux_loss` is called once per minibatch step, so
+they are computed once and cached — and the cache is cleared in `after_update`,
+because a stale target distilled against new data would be silently wrong.
+
+The tests target the failures that would otherwise be invisible: KL against an
+unchanged model must be exactly zero (otherwise the term is measuring something
+other than divergence), SI's path integral must actually accumulate (a driver
+that stops calling `after_step` turns SI into a no-op that still looks like a
+method in the history), and DER++'s targets must stay index-aligned with its
+buffer under reservoir eviction (misalignment distils each trajectory against
+another one's target, and every "is the loss positive" test still passes).
+
+Full suite green.

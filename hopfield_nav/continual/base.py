@@ -83,6 +83,14 @@ class ContinualMethod:
         """
         return None
 
+    def after_step(self, agent) -> None:
+        """Fires after every optimiser step, inside the minibatch loop.
+
+        For methods that accumulate along the optimisation *path* rather than
+        at its endpoints -- Synaptic Intelligence needs the per-step gradient
+        and parameter delta, which exist nowhere else.
+        """
+
     def after_update(self, rollout, block: int, agent) -> None:
         """The update has been applied. Buffer insertion goes here."""
 
@@ -124,17 +132,23 @@ def _registry() -> dict[str, type[ContinualMethod]]:
     (`replay` and `regularize` both import from here; a module-scope import in
     the other direction would be a cycle.)
     """
-    from .regularize import OnlineEWC
+    from .distill import CLEAR, DERpp, LwF
+    from .regularize import OnlineEWC, SynapticIntelligence
     from .replay import ExperienceReplay
 
     return {
         NoMethod.name: NoMethod,
         ExperienceReplay.name: ExperienceReplay,
+        CLEAR.name: CLEAR,
+        DERpp.name: DERpp,
         OnlineEWC.name: OnlineEWC,
+        SynapticIntelligence.name: SynapticIntelligence,
+        LwF.name: LwF,
     }
 
 
-CONTINUAL_METHODS: tuple[str, ...] = ("none", "er", "online_ewc")
+CONTINUAL_METHODS: tuple[str, ...] = (
+    "none", "er", "clear", "derpp", "online_ewc", "si", "lwf")
 
 
 def build_method(name: str, seed: int | None = None, **kwargs) -> ContinualMethod:

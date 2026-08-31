@@ -9,6 +9,11 @@ method here is a modification of exactly two things -- what loss the update
 adds, and what happens at a block boundary -- which is what `ContinualMethod`
 in `base.py` formalises.
 """
-from .base import CONTINUAL_METHODS, ContinualMethod, NoMethod, build_method
+from .base import (
+    CONTINUAL_METHODS, ContinualMethod, NoMethod, build_method,
+    parse_method_args)
 
-__all__ = ["CONTINUAL_METHODS", "ContinualMethod", "NoMethod", "build_method"]
+__all__ = [
+    "CONTINUAL_METHODS", "ContinualMethod", "NoMethod", "build_method",
+    "parse_method_args",
+]

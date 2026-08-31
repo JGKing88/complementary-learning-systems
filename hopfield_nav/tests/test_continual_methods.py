@@ -511,3 +511,245 @@ def test_large_lambda_actually_restrains_drift():
     assert d_held < d_free, (
         f"lam=1e6 drifted {d_held:.5f} from the block-0 anchor vs "
         f"{d_free:.5f} at lam=0; the penalty is not constraining anything")
+
+
+# ===========================================================================
+# Wave 2: SI, LwF, CLEAR, DER++
+# ===========================================================================
+
+from hopfield_nav.continual.distill import CLEAR, DERpp, LwF          # noqa: E402
+from hopfield_nav.continual.regularize import SynapticIntelligence     # noqa: E402
+
+
+def _nudge(agent, eps=0.05):
+    with torch.no_grad():
+        for p in agent.parameters():
+            if p.requires_grad:
+                p.add_(eps)
+
+
+# --- Synaptic Intelligence -------------------------------------------------
+
+def test_si_registered_and_declares_its_needs():
+    si = build_method("si", lam=2.0)
+    assert isinstance(si, SynapticIntelligence)
+    assert si.needs_task_boundaries is True and si.needs_task_id is False
+
+
+def test_si_no_penalty_before_any_block_ends():
+    agent = _agent()
+    si = SynapticIntelligence()
+    si.on_block_start(0, agent, [])
+    assert si.penalty(agent) is None
+
+
+def test_si_path_integral_accumulates_on_each_step():
+    """`after_step` is the only place the per-step gradient and delta exist. If
+    the driver stops calling it, omega stays zero and SI silently becomes a
+    no-op that still looks like a method in the history."""
+    agent = _agent()
+    si = SynapticIntelligence()
+    si.on_block_start(0, agent, [])
+    assert all(float(v.abs().sum()) == 0 for v in si._omega.values())
+
+    for _ in range(3):
+        for p in agent.parameters():
+            if p.requires_grad:
+                p.grad = torch.full_like(p, 0.1)
+        _nudge(agent, 0.01)
+        si.after_step(agent)
+
+    assert any(float(v.abs().sum()) > 0 for v in si._omega.values()), \
+        "the path integral never accumulated"
+
+
+def test_si_importance_is_non_negative_and_penalty_binds():
+    agent = _agent()
+    si = SynapticIntelligence(lam=1.0)
+    si.on_block_start(0, agent, [])
+    for _ in range(3):
+        for p in agent.parameters():
+            if p.requires_grad:
+                p.grad = torch.full_like(p, -0.1)   # descending
+        _nudge(agent, 0.01)
+        si.after_step(agent)
+    si.on_block_end(0, agent, [])
+
+    assert si._importance and si._anchor
+    for v in si._importance.values():
+        assert torch.all(v >= 0), "importance must be clamped non-negative"
+
+    at_anchor = float(si.penalty(agent).detach())
+    _nudge(agent, 0.5)
+    moved = float(si.penalty(agent).detach())
+    assert at_anchor == pytest.approx(0.0, abs=1e-9)
+    assert moved > at_anchor
+
+
+def test_si_end_to_end_through_the_driver():
+    si = SynapticIntelligence(lam=1.0)
+    _, _, seen = _run(si, n_envs=2, updates=3)
+    assert si._blocks_consolidated == 2
+    assert seen[-1].get("penalty", 0.0) > 0.0, "SI penalty never became active"
+
+
+# --- LwF -------------------------------------------------------------------
+
+def test_lwf_stores_no_data():
+    """The cheapest point on the memory axis: a model copy, and nothing else."""
+    lwf = LwF()
+    assert lwf.state_bytes() == 0
+    agent = _agent()
+    lwf.on_block_start(1, agent, [])
+    params = sum(p.numel() * p.element_size() for p in agent.parameters())
+    assert lwf.state_bytes() == pytest.approx(params, rel=0.01)
+
+
+def test_lwf_is_inactive_in_the_first_block():
+    """Nothing to preserve yet; snapshotting at block 0 would only pin the
+    policy to its initialisation."""
+    agent = _agent()
+    lwf = LwF()
+    lwf.on_block_start(0, agent, [])
+    assert lwf._old is None
+    assert lwf.aux_loss(agent, _rollout(), []) is None
+
+
+def test_lwf_kl_is_zero_against_an_unchanged_model():
+    """KL(p || p) = 0. If this is nonzero the distillation term is measuring
+    something other than divergence from the snapshot."""
+    agent = _agent()
+    lwf = LwF(alpha=1.0)
+    lwf.on_block_start(1, agent, [])
+    loss = lwf.aux_loss(agent, _rollout(b=2, t=4), [])
+    assert float(loss.detach()) == pytest.approx(0.0, abs=1e-6)
+
+
+def test_lwf_kl_grows_as_the_model_moves():
+    agent = _agent()
+    lwf = LwF(alpha=1.0)
+    lwf.on_block_start(1, agent, [])
+    r = _rollout(b=2, t=4)
+    _nudge(agent, 0.05)
+    lwf.after_update(r, 1, agent)          # clears the cached snapshot outputs
+    near = float(lwf.aux_loss(agent, r, []).detach())
+    _nudge(agent, 0.5)
+    lwf.after_update(r, 1, agent)
+    far = float(lwf.aux_loss(agent, r, []).detach())
+    assert 0.0 < near < far, (near, far)
+
+
+def test_lwf_caches_the_frozen_outputs_but_not_across_updates():
+    """The snapshot's outputs are constant within an update, so they are
+    computed once -- but the cache must not survive into the next update, or a
+    stale target would be distilled against new data."""
+    agent = _agent()
+    lwf = LwF()
+    lwf.on_block_start(1, agent, [])
+    r = _rollout(b=1, t=3)
+    lwf.aux_loss(agent, r, [])
+    assert lwf._cache
+    lwf.after_update(r, 1, agent)
+    assert not lwf._cache
+
+
+# --- CLEAR -----------------------------------------------------------------
+
+def test_clear_is_replay_plus_distillation_and_needs_no_boundaries():
+    c = build_method("clear", buffer_size="inf", replay_batches="2")
+    assert isinstance(c, CLEAR) and isinstance(c, ExperienceReplay)
+    assert c.needs_task_boundaries is False and c.needs_task_id is False
+
+
+def test_clear_distillation_is_inactive_until_a_block_ends():
+    agent = _agent()
+    c = CLEAR(replay_batches=1)
+    c.after_update(_rollout(), 0, agent)
+    extra = c.extra_batches(_rollout(), 0)
+    assert extra, "fixture should have something to replay"
+    assert c.aux_loss(agent, _rollout(), extra) is None
+
+
+def test_clear_distillation_activates_and_grows_with_drift():
+    agent = _agent()
+    c = CLEAR(replay_batches=1, clone_coef=1.0)
+    for _ in range(3):
+        c.after_update(_rollout(b=2, t=4), 0, agent)
+    c.on_block_end(0, agent, [])
+    extra = c.extra_batches(_rollout(b=2, t=4), 1)
+
+    at_snapshot = float(c.aux_loss(agent, _rollout(b=2, t=4), extra).detach())
+    assert at_snapshot == pytest.approx(0.0, abs=1e-6)
+    _nudge(agent, 0.3)
+    c.after_update(_rollout(b=2, t=4), 1, agent)
+    moved = float(c.aux_loss(agent, _rollout(b=2, t=4), extra).detach())
+    assert moved > at_snapshot
+
+
+def test_clear_state_bytes_counts_buffer_and_snapshot():
+    agent = _agent()
+    c = CLEAR()
+    c.after_update(_rollout(), 0, agent)
+    buf_only = c.state_bytes()
+    c.on_block_end(0, agent, [])
+    assert c.state_bytes() > buf_only
+
+
+# --- DER++ -----------------------------------------------------------------
+
+def test_derpp_targets_stay_aligned_with_the_buffer():
+    """The invariant the whole method rests on. If they drift apart, DER++
+    distils each replayed trajectory against another trajectory's target and
+    every test that only checks 'the loss is positive' still passes."""
+    agent = _agent()
+    d = DERpp(buffer_size=5, seed=0)
+    for i in range(40):
+        d.after_update(_rollout(b=1, t=3, tag=float(i)), i % 3, agent)
+        assert len(d._targets) == len(d._buf), (
+            f"after {i + 1} inserts: {len(d._targets)} targets vs "
+            f"{len(d._buf)} buffer entries")
+
+
+def test_derpp_target_is_zero_error_against_an_unchanged_model():
+    agent = _agent()
+    d = DERpp(replay_batches=1, alpha=1.0)
+    d.after_update(_rollout(b=2, t=4), 0, agent)
+    extra = d.extra_batches(_rollout(b=2, t=4), 0)
+    loss = d.aux_loss(agent, _rollout(b=2, t=4), extra)
+    assert float(loss.detach()) == pytest.approx(0.0, abs=1e-6)
+
+
+def test_derpp_error_grows_as_the_model_moves():
+    agent = _agent()
+    d = DERpp(replay_batches=1, alpha=1.0)
+    d.after_update(_rollout(b=2, t=4), 0, agent)
+    extra = d.extra_batches(_rollout(b=2, t=4), 0)
+    _nudge(agent, 0.3)
+    moved = float(d.aux_loss(agent, _rollout(b=2, t=4), extra).detach())
+    assert moved > 1e-6
+
+
+def test_derpp_declares_it_needs_no_task_signal():
+    d = DERpp()
+    assert d.needs_task_boundaries is False and d.needs_task_id is False
+
+
+# --- all of them, through the driver ---------------------------------------
+
+@pytest.mark.parametrize("name,kwargs", [
+    ("er", {}),
+    ("clear", {"replay_batches": 1}),
+    ("derpp", {"replay_batches": 1}),
+    ("online_ewc", {"lam": 10.0, "fisher_trajectories": 4}),
+    ("si", {"lam": 1.0}),
+    ("lwf", {"alpha": 1.0}),
+])
+def test_every_method_runs_end_to_end(name, kwargs):
+    m = build_method(name, seed=0, **kwargs)
+    agent, blocks, seen = _run(m, n_envs=2, updates=3)
+    assert len(blocks) == 2
+    assert len(seen) == 6
+    assert m.state_bytes() >= 0
+    d = m.describe()
+    assert d["method"] == name
+    assert "state_bytes" in d
