@@ -4817,11 +4817,40 @@ Shared: `exploit:800`, 20 envs × 64 batch, `GOAL_REWARD` 2.0,
 `PERSISTENCE_BONUS` 0.20, polar action with state-dependent σ, **speed learned
 in [0.5, 1.0]** (`FREEZE_SPEED` unset), evals and checkpoints every 25.
 
-`exploit:800` rather than the 2000 the P10–P18 arms use: the question is
-entirely about the early curve, `p17_gain` was flat from u50 to u1100, and the
-6 h partition wall lands near u1100 anyway — both p17 and p18 TIMEOUT-ed there.
-32 eval points clears the ≥4-point bar this project's eval noise requires for
-any directional claim.
+`exploit:800` rather than the 2000 the P10–P18 arms use, and the 6 h partition
+wall lands near u1100 anyway — both p17 and p18 TIMEOUT-ed there rather than
+finishing their schedules. 32 eval points clears the ≥4-point bar this
+project's eval noise requires for any directional claim.
+
+**CORRECTION.** An earlier draft of this section justified the 800 budget by
+saying `p17_gain` "was flat from u50 to u1100". **That is false**, and it is
+peak-calling of exactly the kind §9.9 and the eval-noise rule exist to prevent.
+Its actual series:
+
+| u | 50 | 100 | 150 | 200 | 400 | 750 | 1100 |
+|---|---|---|---|---|---|---|---|
+| succ@10 | **1.000** | 0.885 | **0.760** | 1.000 | 1.000 | 0.969 | 1.000 |
+| steps@10 | 19.5 | 31.8 | 21.7 | 12.8 | **11.2** | 12.2 | 12.7 |
+| speed | 0.75 | 0.59 | 0.64 | 0.86 | **0.95** | 0.86 | 0.90 |
+
+It *touches* 1.000 at u50, **collapses to 0.760 by u150**, is reliably at 1.000
+from ~u200, and does not stop dipping below 0.99 until **u800**.
+
+§16.2 is not affected — it already reports the honest pair (first eval ≥ 0.95
+*and* the worst eval after it) and names the 0.760 wobble outright. The error
+was confined to this section's justification, and to a verbal summary that
+compressed §16.2 into "converges 11× faster (u50 vs u550)" while dropping the
+second half of the pair. **First-touch is not convergence**, and quoting it
+alone is the failure mode §9.9 adopted the two-number rule to prevent.
+
+The 800 budget survives the correction, for a better reason than the one it was
+given: success saturates near u200 and the dip-free point is u800, so 800 spans
+both. And the second half of the run is not idle — `steps@10` falls 19.5 → 11.2
+and `mean_speed` climbs 0.75 → 0.95 long after success is pinned at 1.000. **On
+this task success saturates first and the beeline arrives ~200-350 updates
+later**, which is directly relevant to Jack's ask: "best accuracy in as few
+updates as possible" and "beelines towards goal" are not reached at the same
+update, and the second is the later one.
 
 ### 17.4 Predictions on record
 
