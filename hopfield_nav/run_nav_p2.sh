@@ -648,6 +648,87 @@ case "$VARIANT" in
     esac
     ;;
 
+  # === P19 -- the w52 attract-0.5 encoder, and what a curriculum costs ======
+  #
+  # Jack's ask, in three parts: run this encoder; reach the best accuracy in as
+  # FEW UPDATES as possible; learned speed in [0.5, 1.0]. He expects a
+  # distractor curriculum to help, so curriculum LENGTH is the axis these arms
+  # sweep and `p19_nc` is the control that says what it costs.
+  #
+  # ENCODER -- w52_attract_fwhm/001_att0.5_seed=43. Its gain schedule ends at
+  # 100.0, so ENCODER_GAIN=100 and HOPFIELD_BETA=100 are what the checkpoint
+  # and the default beta-follows-gain coupling would produce anyway. They are
+  # written out because that silent coupling is exactly what made p16_sat a
+  # two-factor arm (section 15.1): a run in a comparison series says what it
+  # ran rather than inheriting it.
+  #
+  # The scaffold does not move with the encoder. lambdas [11 12 13], out_dim
+  # 1024, local radius 20 and fwhm_ratio 0.25 all match the shared defaults
+  # above, exactly as they did for the v35 and knee encoders.
+  #
+  # ONE THING TO WATCH. This encoder's unique radius is far shorter than the
+  # knee encoder's -- r_min 5.0 / median 9.5 against 12.0 / 17.0, at the same
+  # alias rate (0.871 vs 0.865). The arena is 20x20 and a typical start-goal
+  # distance is ~10.8 cells, so the MEDIAN unique radius sits BELOW the distance
+  # the agent usually has to cover. If that bites it will show up as far-field
+  # q errors rather than the near-goal ones section 16.5 left open. The
+  # policy-free field map (run_readout_field.sh) is the cheap way to see it, so
+  # it is run on the FIRST checkpoint rather than after training finishes.
+  #
+  # SPEED -- learned in [0.5, 1.0], per instruction. MIN 0.5 and MAX 1.0 are
+  # both spelled out, and FREEZE_SPEED is left unset so the policy chooses.
+  # This is p12_lo's setting, which section 9.9 measured as costing nothing on
+  # path quality (directness 1.081x, i.e. the beelines Jack is asking for) and
+  # buying a lot of stability: minimum after breakthrough 0.844 against the
+  # pinned arm's 0.490.
+  #
+  # THE CURRICULUM AXIS, and why it needs a control. Section 9.9 measured the
+  # 400-update curriculum as winning stability outright -- never below 0.979
+  # after breakthrough against the control's 0.490 -- but REACHING breakthrough
+  # LATER, u300 against u150. So on the exact axis Jack is asking about, the
+  # only curriculum this project has ever run LOST. That is a reason to bracket
+  # it rather than assume it.
+  #
+  # The prediction on record: p11_cur broke through about 75% of the way
+  # through its own ramp, so if breakthrough tracks ramp PROGRESS rather than
+  # update count, a 100-update ramp should break through near u75 and beat the
+  # no-curriculum control. If instead breakthrough is pinned near u150-u300
+  # regardless of ramp length, the curriculum is simply a delay and p19_nc wins.
+  # p19_nc is what makes that falsifiable.
+  #
+  #   p19_nc    no curriculum -- max=10 from update 1 (the shared default)
+  #   p19_c100  max 0 -> 10 over 100 updates
+  #   p19_c300  max 0 -> 10 over 300 updates
+  #
+  # exploit:800 with EVAL_EVERY=25, rather than the 2000/50 the P10-P18 arms
+  # use: the question is entirely about the early curve, p17_gain was flat from
+  # u50 to u1100, and the 6 h partition wall lands near u1100 anyway (both p17
+  # and p18 TIMEOUT-ed there). 32 eval points clears by a wide margin the
+  # >=4-point bar this project's eval noise requires for a directional claim.
+  p19_nc|p19_c100|p19_c300)
+    ENCODER=/orcd/pool/003/jackking/cls_runs/sweeps/w52_attract_fwhm/001_att0.5_seed=43/encoder_final.pt
+    ENCODER_GAIN=100
+    HOPFIELD_BETA=100
+    SCHEDULE=${SCHEDULE:-'exploit:800'}
+    ENVS_PER_WORLD=20; BATCH_ENVS=64
+    EPSILON_EXPLORE=0.1; GOAL_REWARD=2.0
+    PERSISTENCE_BONUS=0.20
+    REGIME_ASSIGNMENT=shuffle
+    ACTION_POLAR=1; STATE_DEPENDENT_STD=1; FREEZE_LOG_STD=0
+    MIN_ACTION_NORM=0.5; MAX_ACTION_NORM=1.0
+    EVAL_SCOPE=navexpl; EVAL_EVERY=25; CKPT_EVERY=25
+    case "$VARIANT" in
+      # max ramps FROM n_train_distractors_max TO _max_end, so the START value
+      # is the one that has to be 0.
+      p19_c100) N_TRAIN_DISTRACTORS_MAX=0; N_TRAIN_DISTRACTORS_MAX_END=10
+                N_TRAIN_EMP_DISTRACTORS_MAX=0; N_TRAIN_EMP_DISTRACTORS_MAX_END=10
+                DISTRACTOR_CURRICULUM_UPDATES=100 ;;
+      p19_c300) N_TRAIN_DISTRACTORS_MAX=0; N_TRAIN_DISTRACTORS_MAX_END=10
+                N_TRAIN_EMP_DISTRACTORS_MAX=0; N_TRAIN_EMP_DISTRACTORS_MAX_END=10
+                DISTRACTOR_CURRICULUM_UPDATES=300 ;;
+    esac
+    ;;
+
   *)
     echo "ERROR: unknown VARIANT=$VARIANT" >&2; exit 1 ;;
 esac

@@ -19,7 +19,7 @@ mismatch that must be fixed first.
 | **Branch / worktree** | `nav-tri-metric` at `.claude/worktrees/nav-tri-metric` |
 | **Predecessor** | `docs/EXPERIMENTS_NAV_TRI.md` — read its §0 findings 1–22 |
 | **Open decisions** | §11 — four forks put to Jack; spec assumes the recommended default in each |
-| **Running** | Nothing. All eight P10/P11/P12 runs finished their full schedules. |
+| **Running** | **P19 (§17)** — `p19_nc` 21651001, `p19_c100` 21651003, `p19_c300` 21651005 on the w52 attract-0.5 encoder, gain=beta=100, learned speed [0.5, 1.0]. Curriculum length is the axis; `p19_nc` is the control.  |
 | **Charts** | One published page per run — `p10_pol_v1` [3bc9ad4e](https://claude.ai/code/artifact/3bc9ad4e-0655-43ca-b870-0516f4487bdc) · `p10_pol` [388023ce](https://claude.ai/code/artifact/388023ce-a725-4253-a53b-c9979a77baf2) · `p10_e_pol` [00bd7fd3](https://claude.ai/code/artifact/00bd7fd3-bb60-4e22-a968-c62822c5cdb3) · `p10_e_pol_v1` [8fd3ecf0](https://claude.ai/code/artifact/8fd3ecf0-c429-40d6-bde6-008ca25b5a40) · `p11_cur` [4de8dfa7](https://claude.ai/code/artifact/4de8dfa7-9403-43c8-b4f9-b14669ae603e) · `p11_tp` [4dbbe6e9](https://claude.ai/code/artifact/4dbbe6e9-c8e3-41fb-9b38-36a1443bf420) · `p11_cur_tp` [6c3a0503](https://claude.ai/code/artifact/6c3a0503-dba1-405a-a90c-d33c491ee5b2) · `p12_lo` [6b09232a](https://claude.ai/code/artifact/6b09232a-bcd2-4609-9c1d-97d9757d0f5a) · `p12_lo_curtp` [835846df](https://claude.ai/code/artifact/835846df-d30d-46f7-b979-3fe41fdfff7e) |
 | **Finished** | **`p10_pol_v1` 21300389** — 2000/2000, **1.000 success @ 10.95 steps (1.10× optimal)**, the phase-2 best exploit model. **`p10_e_pol` 21300390** — 1500/1500, **cps 0.75** against a billiard ceiling of 0.775. |
 | **Done** | §4 blocking fixes, P1 (§5) with figures, the recall-mechanism thread §5.3-5.9, **P2 (§6)**, and **P10 (§9.4–9.8)** |
@@ -4754,3 +4754,99 @@ failures at 0.919 success; at 0.997 the residual is near-goal pinning against
 the arena boundary. Fixing more of the readout will not recover it. The levers
 that would are geometric — the capture radius against the minimum step, and how
 goals close to a wall are approached — and none of them has been tested.
+
+---
+
+## 17. P19 — the w52 attract-0.5 encoder, and how few updates it needs
+
+**Status: running.** Three arms launched 2026-08-31 — `p19_nc` 21651001,
+`p19_c100` 21651003, `p19_c300` 21651005. `exploit:800`, evals every 25.
+
+### 17.1 The ask, and the one axis it turns on
+
+Jack, in three parts: run
+`w52_attract_fwhm/001_att0.5_seed=43/encoder_final.pt`; reach the best accuracy
+in **as few updates as possible**; learned speed in [0.5, 1.0]. He expects a
+distractor curriculum to help, and adds the success criterion: *successful
+agents will make beelines towards goal*.
+
+Everything except the curriculum is fixed by that ask, so curriculum **length**
+is the only axis these arms sweep — with a no-curriculum control, because §9.9
+already measured the curriculum LOSING on exactly this axis.
+
+`ENCODER_GAIN=100` and `HOPFIELD_BETA=100` are what the checkpoint's gain
+schedule (`gain_start` 1.0 → `gain_end` 100.0) and the default
+beta-follows-gain coupling produce anyway. They are written out because that
+silent coupling is what made `p16_sat` a two-factor arm (§15.1).
+
+The scaffold does not move with the encoder: lambdas [11 12 13], `out_dim`
+1024, local radius 20, `fwhm_ratio` 0.25 all match the shared defaults, exactly
+as they did for the v35 and knee encoders. `goal_radius` 1.0 and
+`reset_state_on_teleport` 0 as always.
+
+### 17.2 What is different about this encoder — a short unique radius
+
+| encoder | `attract_lambda` | `r_min` | median | alias | `gain_end` |
+|---|---|---|---|---|---|
+| `w49_g100_knee/008` (p18) | 2.0 | 12.0 | 17.0 | 0.865 | 100 |
+| **`w52_attract_fwhm/001`** (P19) | **0.5** | **5.0** | **9.5** | 0.871 | 100 |
+
+The alias rate is the same; the **radius is less than half**. The arena is
+20×20 and a typical start–goal distance is ~10.8 cells, so this encoder's
+*median* unique radius sits **below the distance the agent usually has to
+cover**. If that bites, it should appear as **far-field** `q` errors, not the
+near-goal ones §16.5 left open.
+
+That is cheap to check without waiting for training, because the readout field
+`q(x)` depends on the encoder, the Hopfield and the stored memories and **not
+on the policy** — so the first checkpoint characterises it as well as the last.
+`run_readout_field.sh` is queued behind `p19_nc`'s u25 checkpoint with the same
+flags as the p17/p18 field runs (trials 8, draw 32, seed 42, 10 distractors),
+so its sink count lands on the same /192 denominator as their **2/192** and
+**4/192**.
+
+### 17.3 The arms
+
+|  | curriculum | `n_train_distractors_max` |
+|---|---|---|
+| `p19_nc` | none — the control | 10 from update 1 |
+| `p19_c100` | 100 updates | 0 → 10 |
+| `p19_c300` | 300 updates | 0 → 10 |
+
+Shared: `exploit:800`, 20 envs × 64 batch, `GOAL_REWARD` 2.0,
+`PERSISTENCE_BONUS` 0.20, polar action with state-dependent σ, **speed learned
+in [0.5, 1.0]** (`FREEZE_SPEED` unset), evals and checkpoints every 25.
+
+`exploit:800` rather than the 2000 the P10–P18 arms use: the question is
+entirely about the early curve, `p17_gain` was flat from u50 to u1100, and the
+6 h partition wall lands near u1100 anyway — both p17 and p18 TIMEOUT-ed there.
+32 eval points clears the ≥4-point bar this project's eval noise requires for
+any directional claim.
+
+### 17.4 Predictions on record
+
+**The curriculum is not free, and the only measurement we have says it loses on
+this axis.** §9.9: the 400-update curriculum won stability outright — never
+below 0.979 after breakthrough against the control's 0.490 — but reached
+breakthrough *later*, u300 against u150.
+
+- **If breakthrough tracks ramp PROGRESS** (p11_cur broke through ~75% of the
+  way through its own ramp), `p19_c100` should break through near **u75** and
+  beat `p19_nc`. That is the case for Jack's expectation.
+- **If breakthrough is pinned near u150–u300 regardless of ramp length**, the
+  curriculum is simply a delay and `p19_nc` wins outright.
+
+`p19_nc` is what makes that falsifiable, and §9.9 is the reason it had to be in
+the launch rather than assumed.
+
+**On beelines.** §9.9 measured every speed setting walking within 4–8% of the
+straight line, and learned [0.5, 1.0] specifically at directness **1.081×** —
+so the beeline criterion is expected to be met, and *step count tracks the
+speed cap*, not path quality. At a 1.0 cap over a ~10.8-cell start distance the
+ideal is ~11 steps; `p12_lo` got 11.79. **A `mean_steps` much above ~12 means
+something is wrong, not that the agent is slow.**
+
+**What would count as the answer to Jack's question:** the update at which each
+arm first reaches its plateau, and the minimum it touches afterwards — the two
+threshold-free numbers §9.9 settled on, reported as a series rather than as a
+peak, per the eval-noise rule.
