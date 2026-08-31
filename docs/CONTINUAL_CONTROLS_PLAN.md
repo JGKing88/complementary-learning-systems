@@ -11,9 +11,16 @@ changed.
 > | The nine methods (§4) | implemented and tested in `hopfield_nav/continual/` |
 > | Wave 1 (Tier-1 sweeps + ER + online EWC) | on the cluster |
 > | Wave 2 (CLEAR, DER++, SI, LwF) | implemented, launcher ready |
+> | Wave 3 (HNET, multi-head, XdG) | **built and running** — job 21653228, 144 runs |
 > | §5.2 in-context zero-update control | implemented and on the cluster |
 > | §5.1 meta-pretraining | not started |
 > | Metrics + results page | implemented, generated from the data |
+>
+> **Wave 3 was missed once.** It is not in the sequencing table below because
+> the suite was called complete when Wave 2's corrections finished rather than
+> when this document was finished, and nobody noticed until a reader asked
+> where HNET had gone. See the log's 2026-08-31 entries for both halves of that
+> — the omission, and what was built in response.
 >
 > The running record — including three bugs this uncovered in shared code, and
 > one wrong verdict caught before it shipped — is
@@ -345,6 +352,23 @@ count. Pair it with the **inferred** condition — a small learned env classifie
 over the observation stream, then route — because the gap between the two
 measures how much of the problem is task inference rather than forgetting,
 which is exactly the job the Hopfield store does in one shot.
+
+> **What was built instead of the inferred condition, 2026-08-31.** Routing a
+> learned classifier through the protocol is a second training loop with its own
+> failure modes, and the *number* it would produce can be measured directly:
+> how identifiable is the env from what the agent sees at all?
+> `analysis/continual/task_identifiability.py` fits observations to env index,
+> sweeping linear and MLP readouts over windows of 1–64 observations and
+> splitting by trajectory so correlated neighbouring frames cannot land on both
+> sides of it.
+>
+> **Best over every window and readout: 0.426, against a chance of 0.200.** The
+> environments are barely identifiable from their observations, so an inferred
+> task ID would be nowhere near a free substitute for the oracle — which means
+> the oracle is worth a great deal and every arm in this wave is an upper bound
+> rather than a peer. That is carried as a column in the tables, not a
+> footnote. Building the router would refine this number; it would not change
+> the conclusion that the arms need one.
 
 **XdG — context-dependent gating** (Masse, Grant & Freedman, PNAS 2018). For
 each task, zero a fixed random fraction of hidden units. ~10 lines, and it

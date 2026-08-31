@@ -1347,3 +1347,104 @@ consistently. This is a recurrent policy.
 The page now carries a **§10 "What has not run"** section naming all three
 methods, why each matters, and this explanation. The closing claim reads "six
 methods" and gained a bullet stating the boundary explicitly.
+
+---
+
+## 2026-08-31 — Wave 3 built and launched
+
+Jack said to build it. Three architectures, one method, 144 runs
+(job **21653228**), and two measurements taken *before* the sweep rather than
+after it.
+
+### What was built
+
+`--arch` is now a second axis beside `--method`, because a hypernetwork with no
+regulariser and a plain RNN with one are different runs and a table keyed on
+the method alone would file them under the same name.
+
+| arch | mechanism | trainable params |
+|---|---|---|
+| `rnn` | the baseline; one shared network | 73,220 |
+| `hnet` + `--hnet_base learned` | generator output added to a free base vector warm-started from the checkpoint | 146,204 |
+| `hnet` + `--hnet_base frozen` | base pinned at the checkpoint; only the task-conditioned part moves | 72,984 |
+| `hnet` + `--hnet_base none` | pure von Oswald, from scratch | 72,984 |
+| `multihead` | shared trunk, one movement head per task | 73,480 |
+| `xdg` | fixed random subset of hidden units per task, masked inside the recurrence | 73,220 |
+
+Plus `--method hnet`, the output regulariser: it pins what the generator
+*emits* for past tasks rather than where the generator's own parameters sit.
+That is the interesting difference from EWC in a recurrent policy, where a
+small weight change compounds over 200 timesteps. Its memory is one generator
+snapshot — 0.58 MB with a learned base, 0.29 MB with a frozen one, fixed in the
+number of tasks — against unbounded replay's ~50 MB.
+
+The forward pass runs the generated weights through a *template* `RNNAgent` via
+`torch.func.functional_call`, so the policy is the baseline's own code rather
+than a second implementation of it. A hand-written functional GRU would be a
+second copy of the thing the control is supposed to share with the baseline,
+and any drift between them would surface as a method effect. A test pins the
+equivalence directly: with the generator's output zeroed and the base set to an
+`RNNAgent`'s weights, the two produce identical distributions and hidden states.
+
+### The two things measured first
+
+**The beta range came from measurement, not from the paper.** `calibrate_beta`
+runs the real protocol and prints the penalty beside the BC loss:
+
+| beta | BC loss | penalty | ratio |
+|---|---|---|---|
+| 0.01 | 7.75 | 1.3e-05 | 1.6e-06 |
+| **1** *(von Oswald's value)* | 7.65 | 0.0013 | **1.7e-04** |
+| 100 | 7.83 | 0.082 | 1.0e-02 |
+| 10,000 | 7.69 | 1.23 | 1.6e-01 |
+| 1,000,000 | 10.83 | 4.04 | 3.7e-01 |
+
+The obvious sweep — decades around the published value — would have had **every
+arm contribute under 1% of the objective**, and the conclusion would have been
+"the regulariser does not help here". That is the third time this suite has
+come to that exact edge: DER++ and CLEAR each cost a re-run for it. The wave
+sweeps 1e2–1e7 instead, and the BC loss rising at 1e6 is the plasticity cost
+becoming visible, which is where the useful range ends.
+
+**The oracle task id is a real advantage, and now there is a number for it.**
+Every Wave 3 arm is told which env it is in; Waves 1 and 2 are not, and the
+Hopfield store is not. The plan (§4.3) asks for multi-head in an *inferred*
+condition too, so the gap between them measures how much of the problem is task
+inference. Rather than plumb a classifier through the protocol,
+`task_identifiability` measures what that gap would report: fit observations to
+env index, sweeping linear and MLP readouts over windows of 1–64 observations,
+split **by trajectory** so correlated neighbouring frames cannot land on both
+sides.
+
+Best over every window and readout: **0.426** against a chance of 0.200
+(5 envs, 1280 random-walk trajectories). The environments are barely
+identifiable from what the agent sees. So the oracle task id is worth a great
+deal here, and every Wave 3 arm is an upper bound on its family rather than a
+peer of the boundary-free methods — the tables and the page say so in a column,
+not a footnote.
+
+The first version of this measurement was wrong in a way worth recording: it
+split shuffled *frames* rather than trajectories, so neighbouring timesteps of
+one random walk sat on both sides of the split, and it tried only a linear
+readout on a single observation. It returned 0.266 — a low number from the
+weakest classifier available, which is the least informative outcome there is.
+The rewrite sweeps up to an MLP over 64-step windows before concluding.
+
+### Two guards, because both failures would have been silent
+
+A task-conditioned policy asked to act before `set_task` **raises** rather than
+defaulting to task 0. Defaulting would evaluate all five envs under one task's
+parameters and produce a curve indistinguishable from catastrophic forgetting —
+with nothing downstream able to tell the difference.
+
+And the driver **refuses** to fold replayed batches into a task-conditioned
+update. One BC update is one forward pass under one task's parameters, so
+replayed trajectories from other blocks would be trained through this block's
+head, destroying exactly the isolation the agent exists to provide while still
+producing a plausible-looking result. The multi-head + ER arm was dropped for
+this reason rather than run and quietly misinterpreted.
+
+51 tests, 1086 in the suite, all passing. The load-bearing ones assert
+gradients rather than loss values — the hnet penalty is checked to *move the
+generator*, and to restrain past-task weights monotonically in beta, which is
+precisely what DER++ failed while passing every value-based test.

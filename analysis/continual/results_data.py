@@ -57,6 +57,17 @@ ARMS = {
     "G":      ("LwF",                    "distill"),
     "H":      ("Frozen trunk",           "isolate"),
     "I":      ("Experience Replay",      "replay"),
+    # Wave 3. Every one of these is handed an oracle task id, which `summarize`
+    # now reads off the architecture as well as the method -- see
+    # `metrics.TASK_CONDITIONED_ARCHS`. They are upper bounds on their family,
+    # not peers of the boundary-free arms above.
+    "J":      ("Hypernetwork (HNET)",    "isolate"),
+    "K":      ("HNET, frozen base",      "isolate"),
+    "L":      ("HNET, from scratch",     "isolate"),
+    "L0":     ("Naive SGD, from scratch", "control"),
+    "M":      ("Multi-head",             "isolate"),
+    "N":      ("XdG",                    "isolate"),
+    "N2":     ("XdG + SI",               "isolate"),
 }
 
 
@@ -88,6 +99,11 @@ def collect_methods(hist_dir: str) -> list[dict]:
             "method": rs[0]["method"],
             "needs_task_boundaries": rs[0]["needs_task_boundaries"],
             "needs_task_id": rs[0]["needs_task_id"],
+            # Wave 3 put a second axis beside the method: a hypernetwork with
+            # no regulariser and a plain RNN with one are different runs, and a
+            # table keyed on `method` alone would show them under the same name.
+            "arch": rs[0].get("arch", "rnn"),
+            "params": rs[0].get("params"),
         }
         for k in ("retained", "current_env", "forgetting", "bwt",
                   "stability_gap", "episodes_to_criterion",

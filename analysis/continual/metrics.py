@@ -267,16 +267,25 @@ def _criterion(hist, key, threshold, smooth) -> tuple[list[float], float]:
 
 # ---------------------------------------------------------------------------
 
+#: Architectures that select their parameters by task id, and therefore need
+#: one at evaluation time whatever method is layered on top.
+TASK_CONDITIONED_ARCHS = ("hnet", "multihead", "xdg")
+
+
 def summarize(hist: dict, reference: dict | None = None,
               key: str = "reached") -> dict:
     """Every scalar for one history, plus the cost axes off its metadata."""
     p = performance_matrix(hist, key)
     md = hist.get("metadata", {}) or {}
     detail = md.get("method_detail") or {}
+    arch_detail = md.get("arch_detail") or {}
+    arch = md.get("arch", "rnn")
     out = {
         "run_name": md.get("run_name"),
         "method": md.get("method", "none"),
         "method_args": md.get("method_args"),
+        "arch": arch,
+        "params": arch_detail.get("trainable_params"),
         "n_envs": md.get("n_envs"),
         "seeds": md.get("num_full_iters", 1),
         # performance
@@ -291,7 +300,13 @@ def summarize(hist: dict, reference: dict | None = None,
         # cost axes (plan section 0.1)
         "state_bytes": detail.get("state_bytes", 0),
         "needs_task_boundaries": detail.get("needs_task_boundaries", False),
-        "needs_task_id": detail.get("needs_task_id", False),
+        # The *architecture* can demand a task id even when the method does
+        # not: multi-head and XdG select parameters by task with `--method
+        # none`, so reading this off `method_detail` alone would file two arms
+        # that are handed an oracle task id as though they were boundary-free,
+        # and the frontier's fifth axis would understate their cost.
+        "needs_task_id": bool(detail.get("needs_task_id", False)
+                              or arch in TASK_CONDITIONED_ARCHS),
     }
     if reference is not None:
         out["forward_transfer"] = forward_transfer(hist, reference, key)
@@ -299,6 +314,7 @@ def summarize(hist: dict, reference: dict | None = None,
 
 
 __all__ = [
+    "TASK_CONDITIONED_ARCHS",
     "load", "per_env_series", "performance_matrix",
     "final_average", "retained_average", "current_env_score",
     "forgetting", "backward_transfer", "auc_per_env", "forward_transfer",

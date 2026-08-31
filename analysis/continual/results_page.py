@@ -200,6 +200,42 @@ MECHANISM = {
     "R": ("No method",
           "The matched reference: the same configuration every method above "
           "runs at, with the method switched off."),
+    "J": ("Hypernetwork (HNET)",
+          "A small generator network produces the policy's 73k weights from a "
+          "learned 32-number code per environment, and a penalty pins what it "
+          "generates for past environments to what it used to generate. Unlike "
+          "EWC it constrains the <em>weights it emits</em> rather than its own "
+          "parameters — which matters in a recurrent policy, where a small "
+          "weight change compounds over 200 timesteps. Needs to be told which "
+          "environment it is in."),
+    "K": ("HNET, frozen base",
+          "The same, with the pretrained weights pinned so only the "
+          "task-conditioned part can move. There is no shared component left "
+          "to forget through, so whatever this fails to retain is the "
+          "generator overwriting itself."),
+    "L": ("HNET, from scratch",
+          "The published form: no warm start, and the only variant whose "
+          "parameter count matches the baseline policy. Read against its own "
+          "from-scratch control, not against the pretrained arms."),
+    "L0": ("Naive SGD, from scratch",
+           "The control the from-scratch hypernetwork is read against. Wave 1 "
+           "has no such arm, so without this one there is nothing to compare "
+           "it to."),
+    "M": ("Multi-head",
+          "One shared recurrent trunk, one movement head per environment, "
+          "selected by an oracle task id. The heads cannot interfere at all, "
+          "so whatever this fails to retain is forgetting in the shared trunk "
+          "— which bounds the whole isolation family in a single run."),
+    "N": ("XdG",
+          "Context-dependent gating: each environment gets a fixed random "
+          "subset of the hidden units, applied inside the recurrence rather "
+          "than at the readout, so a task's units are the only ones carrying "
+          "its state. Masks are drawn independently, so they overlap by "
+          "chance."),
+    "N2": ("XdG + SI",
+           "The same gating with Synaptic Intelligence layered on the units "
+           "that overlap between tasks, which is how the two were published "
+           "together."),
 }
 
 
