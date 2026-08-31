@@ -204,7 +204,16 @@ def main() -> None:
                   f"{sl:>+11.4f}{flag}")
             if best is None or fm > best[1]:
                 best = (key, fm)
-        converged = all(abs(_mean(v["slope"])) <= 0.02 for v in joint.values())
+        # The verdict turns on whether a CONVERGED row establishes a ceiling --
+        # not on whether every row converged. Requiring all of them made the
+        # summary report INCONCLUSIVE while a converged 0.998 sat in the table,
+        # because the earlier 1000-update runs are still rising. Those are
+        # lower bounds; a lower bound cannot invalidate a measurement above it.
+        settled = {k: v for k, v in joint.items()
+                   if abs(_mean(v["slope"])) <= 0.02}
+        best_settled = max(
+            ((k, _mean(v["final"])) for k, v in settled.items()),
+            key=lambda kv: kv[1], default=None)
 
     # -- T0.4 ---------------------------------------------------------------
     print("\nT0.4  SEQUENTIAL FLOOR (naive streaming SGD, from scratch)")
@@ -232,21 +241,30 @@ def main() -> None:
     if best is None or oracle is None or not floors:
         print("  Incomplete -- rerun once the missing pieces above have landed.")
     else:
-        (hid, lay, lr, nupd), ceil = best
         ref = oracle
         floor = min(floors.values())
-        print(f"  oracle {ref:.3f}  |  joint ceiling {ceil:.3f} "
-              f"(best: hidden={hid}, layers={lay}, lr={lr:g}, "
-              f"{nupd} updates)  |  floor {floor:.3f}")
-        if not converged:
+        if best_settled is not None:
+            (hid, lay, lr, nupd), ceil = best_settled
+            tag = "converged"
+        else:
+            (hid, lay, lr, nupd), ceil = best
+            tag = "NOT converged"
+        print(f"  oracle {ref:.3f}  |  joint ceiling {ceil:.3f} ({tag}: "
+              f"hidden={hid}, layers={lay}, lr={lr:g}, {nupd} updates)"
+              f"  |  floor {floor:.3f}")
+        n_rising = len(joint) - len(settled)
+        if n_rising:
+            print(f"  ({n_rising} of {len(joint)} configurations had not "
+                  "settled; those are lower bounds, not ceilings)")
+        if best_settled is None:
             # Checked BEFORE the capacity verdict, because a still-climbing
             # curve explains a low ceiling without any capacity story, and
             # reporting "capacity" here would be inventing a result.
-            print("  -> INCONCLUSIVE: the joint runs had not converged. The eval")
-            print("     curve is still rising where the budget ended, so this")
-            print("     number is a lower bound on the ceiling, not the ceiling.")
-            print("     Raise the joint budget and re-run before drawing any")
-            print("     conclusion about capacity or about forgetting.")
+            print("  -> INCONCLUSIVE: no joint run converged. Every eval curve")
+            print("     is still moving where its budget ended, so these are")
+            print("     lower bounds on the ceiling, not the ceiling. Raise the")
+            print("     budget and re-run before drawing any conclusion about")
+            print("     capacity or about forgetting.")
         elif ceil >= 0.9 * ref:
             print("  -> The network CAN hold all envs at once. The retention gap")
             print("     is genuinely forgetting, and Tier 2 is interpretable.")

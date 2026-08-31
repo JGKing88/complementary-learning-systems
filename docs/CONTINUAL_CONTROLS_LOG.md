@@ -1245,3 +1245,53 @@ two by reading code that had no failing symptom at all. The lesson this
 codebase keeps teaching is that its failure mode is not crashes — it is output
 that looks right, and the only defences that work against that are a positive
 control, a mutation check, and reading the number before believing it.
+
+---
+
+## 2026-08-31 — the joint sweep finishes, and the verdict logic was wrong
+
+The corrected T0.1 job completed with **2 of 24 tasks failed**, both
+`h512, lr=3e-3`:
+
+```
+ValueError: Expected parameter loc ... to satisfy the constraint Real(),
+but found invalid values: tensor([[[nan, nan]]])
+```
+
+That is the lr=3e-3 instability the sweep had already flagged, taken to its
+conclusion: at hidden=128 that learning rate merely degrades (0.19, slope
+−0.083); at hidden=512 it diverges to NaN and the run dies. A result, not a
+defect — and worth stating, because "2 tasks failed" in a log otherwise full of
+clean runs invites the assumption that something broke.
+
+The finished sweep also shows the larger models turning over: `h512, l2,
+lr=1e-3` reaches 0.842 at 8000 updates with slope **−0.040**, degrading.
+The converged ceiling belongs to the *smallest* configurations.
+
+### The verdict logic required every row to converge
+
+`wave0_summary` printed **INCONCLUSIVE** with a converged 0.998 sitting in its
+own table. The check was `all(abs(slope) <= 0.02 for every row)`, so the
+earlier 1000-update runs — which are still rising, and are supposed to be —
+vetoed a verdict they have no standing to veto. A lower bound cannot invalidate
+a measurement above it.
+
+Now the verdict asks whether a *converged* row establishes a ceiling, reports
+which configuration it came from, and says how many rows have not settled:
+
+```
+oracle 1.000 | joint ceiling 0.998 (converged: hidden=128, layers=2,
+                                    lr=0.001, 8000 updates) | floor 0.046
+(13 of 16 configurations had not settled; those are lower bounds, not ceilings)
+-> The network CAN hold all envs at once. The retention gap is genuinely
+   forgetting, and Tier 2 is interpretable. Headroom: 0.952.
+```
+
+The results page had this right all along — it filters converged rows
+individually — so the published numbers never carried the error. Only the
+command-line summary did, which is the sort of split that puts two different
+answers in front of two different readers.
+
+**That is nine defects, and the ninth is the same shape as the other eight:**
+no crash, a plausible-looking output, and a conclusion that would have been
+reported with confidence.
