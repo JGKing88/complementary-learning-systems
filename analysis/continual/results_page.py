@@ -615,11 +615,12 @@ def render(d: dict) -> str:
       "<em>what a network that learns by gradient descent would have to spend "
       "to match it</em>.</p></div>")
 
-    A("<h3>The nine methods</h3>")
-    A("<p>Chosen for this setting rather than by citation count. Every "
-      "coefficient is swept over decades, because a strength knob set from a "
-      "paper with a different loss scale is how a method gets accidentally "
-      "made to look bad.</p>")
+    A("<h3>The methods that ran</h3>")
+    A("<p>Six continual-learning methods, plus the controls they are measured "
+      "against. Chosen for this setting rather than by citation count, and "
+      "every coefficient swept over decades — a strength knob set from a paper "
+      "with a different loss scale is how a method gets accidentally made to "
+      "look bad.</p>")
     A('<div class="tw"><table>')
     A("<thead><tr><th>Method</th><th>What it does</th></tr></thead><tbody>")
     for key in ("B", "I", "E", "D", "C", "F", "G", "H", "A"):
@@ -1021,6 +1022,11 @@ def render(d: dict) -> str:
       "Online EWC and SI at usable settings sit between 0.07 and 0.15. Their "
       "apparent best results are the plasticity trap: retention bought by "
       "declining to learn.</li>")
+    A("<li><strong>This covers replay and regularisation, not "
+      "isolation.</strong> No method that gives each task its own parameters "
+      "has been run yet — see §10. The strongest untested candidate, a "
+      "task-conditioned hypernetwork, is the one the recurrent-continual-"
+      "learning literature actually recommends.</li>")
     A("<li><strong>Restricting plasticity to a small head is worse, not "
       "better.</strong> Freezing the trunk costs both retention and current-env "
       "performance. Whatever a meta-learned representation would buy here, it "
@@ -1029,7 +1035,7 @@ def render(d: dict) -> str:
 
     A('<div class="note acc"><h4>The honest form of the claim</h4>'
       "<p>Not “continual learning cannot do this”. What the suite supports is "
-      "narrower and more defensible: <em>on this task, across nine methods "
+      "narrower and more defensible: <em>on this task, across six methods "
       "with their coefficients swept over decades, the best classic result "
       "reaches roughly three-fifths of the joint ceiling while storing every "
       "trajectory it has ever seen and paying two hundred gradient steps per "
@@ -1038,7 +1044,55 @@ def render(d: dict) -> str:
       "the leaderboard is not.</p></div>")
 
     # ---- provenance ----------------------------------------------------
-    A('<h2 id="provenance"><span class="sec">10</span> Provenance</h2>')
+    A('<h2 id="notrun"><span class="sec">10</span> What has not run</h2>')
+    A("<p>The plan specifies a third wave of <strong>structural</strong> "
+      "methods — ones that give each task its own parameters instead of "
+      "sharing one set. None of it has been run, and its absence is the "
+      "largest gap in this page.</p>")
+    A('<div class="tw"><table>')
+    A("<thead><tr><th>Method</th><th>Why it matters here</th></tr></thead><tbody>")
+    for name, why in (
+        ("Task-conditioned hypernetwork (HNET)",
+         "The plan's designated headline competitor, and the most consequential "
+         "omission. Ehret et al. (ICLR 2021) benchmarked online EWC, SI, "
+         "masking, generative replay and coresets across four <em>recurrent</em> "
+         "benchmarks and found hypernetworks beat weight-importance methods "
+         "consistently — this is a recurrent policy, so it is the method the "
+         "literature points at. It is also the closest classical analogue to "
+         "the store: both keep a small addressable per-task code and recover "
+         "behaviour from it rather than overwriting shared weights. The "
+         "difference is how the code is written — a gradient-descent inner "
+         "loop over a whole block, against one Hebbian outer product."),
+        ("Multi-head with an oracle task ID",
+         "Bounds the entire parameter-isolation family in one run: if "
+         "isolation with a free task ID does not retain, nothing in that "
+         "family will. Paired with a learned task classifier, the gap between "
+         "the two would measure how much of the problem is task inference "
+         "rather than forgetting — which is precisely the job the store does "
+         "in one shot."),
+        ("XdG (context-dependent gating)",
+         "Sparse, mostly non-overlapping units per task; ~10 lines, and it "
+         "composes with SI. Kept in the plan over PackNet and HAT because "
+         "sparse addressing is the conceptually closest classical thing to "
+         "content-addressable storage."),
+    ):
+        A(f"<tr><td class='k'>{esc(name)}</td><td>{why}</td></tr>")
+    A("</tbody></table></div>")
+    A('<div class="note warn"><h4>Why it is missing</h4>'
+      "<p>Not a decision. Wave 2 finished, and then three corrections in a row "
+      "— a coefficient range chosen from the wrong loss scale, a distillation "
+      "term carrying no gradient, an importance sampler that was not a "
+      "reservoir — each re-ran an arm that already existed. Those re-runs "
+      "consumed the slot Wave 3 would have occupied, and the suite was called "
+      "complete when the corrections finished rather than when the plan was "
+      "finished. Re-running existing work displaced new work, and nothing in "
+      "the process noticed.</p>"
+      "<p>So the claim below is bounded by what ran: <strong>replay and "
+      "parameter-regularisation families</strong>. It says nothing yet about "
+      "methods that allocate separate parameters per task, and HNET is the one "
+      "with the strongest prior reason to do well here.</p></div>")
+
+    A('<h2 id="provenance"><span class="sec">11</span> Provenance</h2>')
     A("<p>Every number on this page is read out of the run histories by "
       "<code>results_data.py</code> and rendered by "
       "<code>results_page.py</code>. Nothing is typed in — a page whose "

@@ -1295,3 +1295,55 @@ answers in front of two different readers.
 **That is nine defects, and the ninth is the same shape as the other eight:**
 no crash, a plausible-looking output, and a conclusion that would have been
 reported with confidence.
+
+---
+
+## 2026-08-31 — Wave 3 never ran, and the page said "nine methods"
+
+Jack asked where HNET went. It went nowhere: **Wave 3 was never built or
+run.** There is no `hypernet.py`, no `isolate.py`, no `run_wave3.sh`, and
+`CONTINUAL_METHODS` holds seven entries — `none` plus six methods.
+
+Missing, all of it structural:
+
+- **HNET**, the plan's own designated headline competitor (§4.3: *"the most
+  important single competitor in this document"*)
+- **Multi-head with oracle and inferred task ID**, which bounds the entire
+  parameter-isolation family in one run
+- **XdG**, and **GPM** as the optional stretch
+
+And the results page claimed **"across nine methods"** in its closing claim
+statement. Six continual-learning methods ran — ER, online EWC, CLEAR, DER++,
+SI, LwF. The nine came from counting *arms* in the `MECHANISM` table, which
+also includes the naive control, its batch variant, and the frozen-trunk
+configuration. A count that happened to match the plan's number for a
+completely different reason, which is why nothing flagged it.
+
+### Why it slipped
+
+Not a decision — there is no entry anywhere saying Wave 3 was dropped. Wave 2
+finished, and then three corrections landed in a row: a coefficient range taken
+from a paper with a different loss scale, a distillation term carrying no
+gradient, and an importance sampler that was not a reservoir. **Each correction
+re-ran an arm that already existed.** They consumed the slot Wave 3 would have
+occupied, and the suite was declared complete when the corrections finished
+rather than when the plan was finished.
+
+Re-running existing work displaced new work and nothing noticed — including the
+wave-gating discipline in the plan, which specifies exit criteria for each wave
+but has nothing to say about a wave that is simply never entered. Every other
+defect in this log was caught by a check; this one was caught by a reader
+asking where a method went.
+
+### What the claim is bounded by
+
+The suite covers **replay and parameter-regularisation**. It says nothing about
+methods that allocate separate parameters per task, and HNET is the one with
+the strongest prior reason to do well here — Ehret et al. benchmarked online
+EWC, SI, masking, generative replay and coresets across four *recurrent*
+benchmarks and found hypernetworks beat weight-importance methods
+consistently. This is a recurrent policy.
+
+The page now carries a **§10 "What has not run"** section naming all three
+methods, why each matters, and this explanation. The closing claim reads "six
+methods" and gained a bullet stating the boundary explicitly.
