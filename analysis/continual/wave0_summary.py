@@ -56,21 +56,30 @@ def load_oracle(d: str) -> float | None:
 # T0.1 -- from train_rnn's final.pt history (list of {env_idx: metrics})
 # ---------------------------------------------------------------------------
 
+# Two generations of the joint run. The first (`wave0_T0.1_...`) turned out to
+# be under-optimised; the second (`wave0b_T0.1b_..._lr...`) raised the budget
+# and added the lr axis. Both are read, and the lr is part of the key so they
+# never silently average together.
 _T01 = re.compile(r"wave0_T0\.1_h(\d+)_l(\d+)_s(\d+)$")
+_T01B = re.compile(r"wave0b_T0\.1b_h(\d+)_l(\d+)_lr([0-9.e-]+)_s(\d+)$")
 
 
-def load_joint(runs_root: str) -> dict[tuple[int, int], dict]:
-    """-> {(hidden, layers): {"final": [...], "at200": [...], "seeds": n}}"""
+def load_joint(runs_root: str) -> dict[tuple, dict]:
+    """-> {(hidden, layers, lr): {"final", "at200", "slope", "seeds"}}"""
     import torch
 
-    out: dict[tuple[int, int], dict] = defaultdict(
-        lambda: {"final": [], "at200": [], "seeds": 0})
-    for path in sorted(glob.glob(os.path.join(runs_root, "rnn", "wave0_T0.1_*"))):
-        m = _T01.search(path)
+    out: dict[tuple, dict] = defaultdict(
+        lambda: {"final": [], "at200": [], "slope": [], "seeds": 0})
+    paths = (glob.glob(os.path.join(runs_root, "rnn", "wave0_T0.1_*"))
+             + glob.glob(os.path.join(runs_root, "rnn", "wave0b_T0.1b_*")))
+    for path in sorted(paths):
+        mb = _T01B.search(path)
+        m = mb or _T01.search(path)
         ckpt = os.path.join(path, "final.pt")
         if m is None or not os.path.exists(ckpt):
             continue
         hid, lay = int(m.group(1)), int(m.group(2))
+        lr = float(m.group(3)) if mb else 1e-3
         try:
             d = torch.load(ckpt, map_location="cpu", weights_only=False)
         except Exception as e:                       # a run that died mid-write
@@ -80,12 +89,19 @@ def load_joint(runs_root: str) -> dict[tuple[int, int], dict]:
         if not history:
             continue
         eval_every = int((d.get("cfg") or {}).get("eval_every") or 25)
-        key = (hid, lay)
+        key = (hid, lay, lr)
         out[key]["final"].append(_mean([mm["nav_det"] for mm in history[-1].values()]))
         # The budget-matched point: joint training given the same number of
         # rollouts per env the sequential protocol gets (200 updates).
         idx = max(0, min(len(history) - 1, 200 // eval_every - 1))
         out[key]["at200"].append(_mean([mm["nav_det"] for mm in history[idx].values()]))
+        # Has it converged? A "ceiling" that is still climbing when the budget
+        # runs out is not a ceiling, and calling it one turns a budget problem
+        # into a fabricated capacity result. Compare the last fifth of the eval
+        # history against the fifth before it.
+        curve = [_mean([mm["nav_det"] for mm in row.values()]) for row in history]
+        q = max(1, len(curve) // 5)
+        out[key]["slope"].append(_mean(curve[-q:]) - _mean(curve[-2 * q:-q]))
         out[key]["seeds"] += 1
     return dict(out)
 
@@ -159,18 +175,24 @@ def main() -> None:
     print("\nT0.1  JOINT CEILING (one net, all envs at once)")
     joint = load_joint(args.runs_root) if args.runs_root else {}
     best = None
+    converged = True
     if not joint:
         print("  missing.")
     else:
-        print(f"  {'hidden':>7} {'layers':>7} {'seeds':>6} "
-              f"{'final':>16} {'@200upd':>10}")
-        for (hid, lay) in sorted(joint):
-            v = joint[(hid, lay)]
+        print(f"  {'hidden':>7} {'layers':>7} {'lr':>7} {'seeds':>6} "
+              f"{'final':>16} {'@200upd':>10} {'end-slope':>11}")
+        for key in sorted(joint):
+            hid, lay, lr = key
+            v = joint[key]
             fm, fs = _mean(v["final"]), _sem(v["final"])
-            print(f"  {hid:>7} {lay:>7} {v['seeds']:>6} "
-                  f"{fm:>9.4f} +/-{fs:<5.4f} {_mean(v['at200']):>10.4f}")
+            sl = _mean(v["slope"])
+            flag = "  <- still rising" if sl > 0.02 else ""
+            print(f"  {hid:>7} {lay:>7} {lr:>7.0e} {v['seeds']:>6} "
+                  f"{fm:>9.4f} +/-{fs:<5.4f} {_mean(v['at200']):>10.4f} "
+                  f"{sl:>+11.4f}{flag}")
             if best is None or fm > best[1]:
-                best = ((hid, lay), fm)
+                best = (key, fm)
+        converged = _mean([s for v in joint.values() for s in v["slope"]]) <= 0.02
 
     # -- T0.4 ---------------------------------------------------------------
     print("\nT0.4  SEQUENTIAL FLOOR (naive streaming SGD, from scratch)")
@@ -198,22 +220,32 @@ def main() -> None:
     if best is None or oracle is None or not floors:
         print("  Incomplete -- rerun once the missing pieces above have landed.")
     else:
-        (hid, lay), ceil = best
+        (hid, lay, lr), ceil = best
         ref = oracle
         floor = min(floors.values())
         print(f"  oracle {ref:.3f}  |  joint ceiling {ceil:.3f} "
-              f"(best: hidden={hid}, layers={lay})  |  floor {floor:.3f}")
-        if ceil >= 0.9 * ref:
+              f"(best: hidden={hid}, layers={lay}, lr={lr:g})  |  "
+              f"floor {floor:.3f}")
+        if not converged:
+            # Checked BEFORE the capacity verdict, because a still-climbing
+            # curve explains a low ceiling without any capacity story, and
+            # reporting "capacity" here would be inventing a result.
+            print("  -> INCONCLUSIVE: the joint runs had not converged. The eval")
+            print("     curve is still rising where the budget ended, so this")
+            print("     number is a lower bound on the ceiling, not the ceiling.")
+            print("     Raise the joint budget and re-run before drawing any")
+            print("     conclusion about capacity or about forgetting.")
+        elif ceil >= 0.9 * ref:
             print("  -> The network CAN hold all envs at once. The retention gap")
             print("     is genuinely forgetting, and Tier 2 is interpretable.")
             print(f"     Headroom for continual methods: {ceil - floor:.3f}.")
             print("     T0.2 (per-env experts) is not needed; skip it.")
         else:
-            print("  -> The joint ceiling is well below the oracle at every")
-            print("     capacity tested. Part of the recorded 'forgetting' is a")
-            print("     CAPACITY result and must be reported as such.")
-            print("     Run T0.2 (per-env experts) to size the interference,")
-            print("     and extend the capacity sweep before starting Tier 2.")
+            print("  -> The joint ceiling is converged but well below the oracle")
+            print("     at every capacity tested. Part of the recorded")
+            print("     'forgetting' is a CAPACITY result and must be reported")
+            print("     as such. Run T0.2 (per-env experts) to size the")
+            print("     interference before starting Tier 2.")
     print("-" * 72)
 
 

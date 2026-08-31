@@ -110,6 +110,7 @@ def run_sequential(
     sgb: np.ndarray | None = None,
     env_offsets: list[tuple[int, int]] | None = None,
     method=None,
+    reset_optimizer_each_block: bool = False,
 ) -> tuple[list[tuple[int, int, dict[int, dict]]], list[tuple[int, int, int]]]:
     """One block per env. Per update: collect rollout, BC update, single-trial
     eval on every env trained so far (untrained envs are NOT evaluated — they'd
@@ -138,6 +139,7 @@ def run_sequential(
         # than an average -- the figure smooths it afterwards.
         n_eval_trials=1,
         sgb=sgb, env_offsets=env_offsets, on_update=_record, method=method,
+        reset_optimizer_each_block=reset_optimizer_each_block,
     )
 
     return trace, blocks
@@ -241,6 +243,12 @@ def main() -> None:
                    help="BC epochs per update.")
     p.add_argument("--n_minibatches", type=int, default=4)
     p.add_argument("--max_grad_norm", type=float, default=1.0)
+    p.add_argument("--reset_optimizer_each_block", action="store_true",
+                   help="Clear Adam's moment estimates at every task boundary. "
+                        "Off by default (what every recorded history did). "
+                        "Adam's second moments otherwise carry across "
+                        "boundaries, so the first steps in env i are scaled by "
+                        "statistics from env i-1 -- plan section 3.1 W2.")
     p.add_argument("--only_train_on_reached", action="store_true",
                    help="Per BC update, drop trajectories whose rollout never "
                         "reached the goal. If no trajectory reached, the update "
@@ -385,6 +393,7 @@ def main() -> None:
         trace, blocks = run_sequential(
             cfg, agent, optimizer, envs, device,
             sgb=sgb, env_offsets=env_offsets, method=method,
+            reset_optimizer_each_block=args.reset_optimizer_each_block,
         )
         last_method_desc = method.describe()
         iter_traces.append((trace, blocks))
@@ -447,6 +456,7 @@ def main() -> None:
                 "epochs": cfg.bc.epochs,
                 "n_minibatches": cfg.bc.n_minibatches,
                 "max_grad_norm": cfg.bc.max_grad_norm,
+                "reset_optimizer_each_block": args.reset_optimizer_each_block,
                 "batch_envs": cfg.batch_envs,
                 "steps_per_rollout": cfg.steps_per_rollout,
                 "observation_size": cfg.env.observation_size,

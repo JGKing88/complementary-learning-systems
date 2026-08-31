@@ -52,14 +52,42 @@ def _agent(hidden: int = 8, **kw) -> RNNAgent:
 # registry / arg parsing
 # ===========================================================================
 
-def test_parse_method_args_coercion():
+def test_parse_method_args_returns_raw_strings():
+    """Parsing does not coerce; `build_method` does, because coercion needs the
+    target type. See `test_coercion_is_directed_by_the_target_type`."""
     got = parse_method_args("buffer_size=inf,replay_batches=2,lam=1e3,"
                             "sampling=balanced,normalize_fisher=true")
-    assert got["buffer_size"] == float("inf")
-    assert got["replay_batches"] == 2 and isinstance(got["replay_batches"], int)
-    assert got["lam"] == 1000.0
-    assert got["sampling"] == "balanced"
-    assert got["normalize_fisher"] is True
+    assert got == {"buffer_size": "inf", "replay_batches": "2", "lam": "1e3",
+                   "sampling": "balanced", "normalize_fisher": "true"}
+
+
+def test_coercion_is_directed_by_the_target_type():
+    """The bug this exists to prevent: `fisher=true` names the *string* "true"
+    -- one of two allowed estimators -- while `normalize_fisher=true` means the
+    boolean. A parser guessing from the text alone turns the first into `True`
+    and the method rejects it, which is what happened the first time Wave 1 ran.
+    """
+    m = build_method("online_ewc", **parse_method_args(
+        "fisher=true,normalize_fisher=true,lam=1e3,fisher_trajectories=4"))
+    assert m.fisher == "true" and isinstance(m.fisher, str)
+    assert m.normalize_fisher is True
+    assert m.lam == 1000.0 and isinstance(m.lam, float)
+    assert m.fisher_trajectories == 4 and isinstance(m.fisher_trajectories, int)
+
+
+def test_coercion_handles_inf_and_ints():
+    er = build_method("er", **parse_method_args(
+        "buffer_size=inf,replay_batches=3,sampling=reservoir"))
+    assert er.buffer_size == float("inf")
+    assert er.replay_batches == 3 and isinstance(er.replay_batches, int)
+    assert er.sampling == "reservoir"
+    er2 = build_method("er", **parse_method_args("buffer_size=200"))
+    assert er2.buffer_size == 200
+
+
+def test_coercion_rejects_a_non_boolean_for_a_boolean():
+    with pytest.raises(ValueError, match="expected a boolean"):
+        build_method("online_ewc", **parse_method_args("normalize_fisher=maybe"))
 
 
 def test_parse_method_args_empty():

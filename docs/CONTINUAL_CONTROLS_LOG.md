@@ -191,3 +191,146 @@ writing them that way rather than as smoke tests:
    drift, so a broken control fails loudly instead of silently passing.
 
 Full suite green.
+
+---
+
+## 2026-08-30 — Wave 0 results, and a verdict that was wrong
+
+### T0.4: the from-scratch floor is far below the pretrained baseline
+
+20 seeds per arm, 5 envs × 200 updates, `reached` over the last 20 % of the
+final block:
+
+| arm | retained (envs 0…3) | current env | forgetting | stability gap | never reached criterion |
+|---|---|---|---|---|---|
+| `noprev` (legacy surface) | 0.054 ± 0.012 | 0.579 ± 0.082 | 0.422 ± 0.032 | 0.172 ± 0.024 | 71 % |
+| `prev` (settled surface) | 0.046 ± 0.010 | 0.510 ± 0.069 | 0.406 ± 0.032 | 0.168 ± 0.024 | 74 % |
+
+Two things follow.
+
+**Pretraining is doing real work, and now we know it.** The recorded pretrained
+baseline retains ~0.19 and scores ~0.99 on the current env. From scratch it is
+0.05 and ~0.55. So pretraining roughly quadruples retention and nearly doubles
+current-env performance. Plan §3.2 P2 worried that pretraining might be doing
+nothing and that nobody would know, because the from-scratch control had never
+been run. It is not nothing.
+
+**`input_prev_action` makes no detectable difference here.** 0.054 vs 0.046
+retained, 0.579 vs 0.510 on the current env — both differences are within one
+SEM of each other and the arms overlap. The decision to turn it on is harmless
+but is not a win, and no direction should be read from these numbers.
+
+Also worth flagging: at 200 updates/env from scratch, **71–74 % of envs never
+reach the 0.9 criterion at all**, and the current env only reaches ~0.55. The
+from-scratch control is not merely forgetting; it is barely learning. That
+makes the *pretrained* arm the meaningful control for the suite, and it is
+exactly what the Tier-1 tuning (W1–W6) exists to fix.
+
+### T0.1: the joint ceiling came back low — and the obvious reading was wrong
+
+The first run gave ~0.45–0.54 across every capacity from hidden=128 to 1024,
+against an oracle of 1.000. Read at face value that is a **capacity** result:
+one network cannot hold five envs at once, no continual method could exceed
+~0.5, and a large part of the recorded "forgetting" would not be forgetting at
+all. That is a big claim, and it is what the summary script printed.
+
+It is not what happened. Two things say so:
+
+1. **Capacity does not move the number.** 128 → 0.45, 256 → 0.54, 512 → 0.51,
+   1024 → 0.36. Flat and noisy, with no monotone trend. If capacity were
+   binding, more of it would help.
+2. **Every curve is still climbing where the budget ends.** hidden=128 goes
+   0.47 → 0.66 over its last 100 updates; the end-slope is +0.06 to +0.15 for
+   every configuration. Nothing has plateaued.
+
+The cause is arithmetic. At `batch_envs=1` and `epochs=1`, 1000 updates is
+**1000 gradient steps** — against roughly 1M timesteps of collected data. The
+run was optimisation-starved, not capacity-limited, and a "ceiling" that is
+still rising when the budget runs out is not a ceiling.
+
+**Two fixes.**
+
+`wave0_summary` now measures the end-slope of the eval curve and refuses to
+issue a capacity verdict while the run is still improving; it reports
+INCONCLUSIVE and says the number is a lower bound. The check runs *before* the
+capacity branch, because a still-climbing curve explains a low ceiling without
+any capacity story and reporting one anyway would be inventing a result.
+
+`run_wave0b.sh` re-runs T0.1 properly: **epochs 1 → 8** (eight passes over the
+same five rollouts — 8× the gradient steps at zero extra environment cost,
+which is the cheap axis when the bottleneck is optimisation) and **1000 → 8000
+updates**, for 64,000 joint gradient steps against the original 1,000. It also
+adds the lr axis, never swept before, and narrows capacity to {128, 512} ×
+{1, 2} since capacity was already shown not to bind.
+
+This run deliberately does **not** respect the online regime. T0.1 is an
+*offline* reference — the best a single network can do given every env at once
+— so hobbling it with the streaming protocol's one-step-per-rollout rule would
+understate the ceiling, which is the one thing a ceiling must not do.
+`n_minibatches` stays 1 so every gradient step sees all five envs, which is
+what makes it joint rather than round-robin.
+
+Submitted as slurm 21627945.
+
+---
+
+## 2026-08-30 — Wave 1 launched (slurm 21628160)
+
+`analysis/continual/run_wave1.sh`, 96 CPUs, five arms:
+
+| arm | what | runs |
+|---|---|---|
+| **A** | Tier-1 tuning of the *pretrained* control: lr × optimizer-reset × epochs | 12 configs × 8 seeds |
+| **A-batch** | the W1 sensitivity condition, `batch_envs=16` | 8 |
+| **A2** | Tier-1 tuning of the *from-scratch* control: `init_log_std` × lr (W5) | 6 configs × 8 seeds |
+| **R** | `method=none` at exactly B and C's configuration | 8 |
+| **B** | Experience Replay: buffer ∈ {inf, 200, 50, 10} × replay_batches ∈ {1, 4} | 8 configs × 8 seeds |
+| **C** | Online EWC: λ over six decades | 6 configs × 8 seeds |
+
+Three design points worth recording.
+
+**The pretrained arm is primary, and T0.4 is why.** From-scratch came back at
+0.05 retained with only ~0.55 on the env it is currently training on and 71–74 %
+of envs never reaching criterion. Method differences measured on a control that
+is barely learning would be noise on top of a broken baseline. The pretrained
+arm reaches ~0.99 on the current env, which is where a retention difference can
+actually show.
+
+**`init_log_std` is swept only on the from-scratch arm.** `movement_log_std` is
+a `Parameter`, so `load_state_dict` overwrites whatever `--init_log_std` asked
+for whenever a checkpoint is loaded. Sweeping it on the pretrained arm would
+sweep a value that never takes effect — precisely the kind of silently-inert
+knob W5 was about in the first place.
+
+**Arm R exists because B and C are meaningless without it.** A method has to be
+read against `none` at *its own* configuration, not against the recorded
+default from a different sweep.
+
+Wave 1 does not wait on the corrected T0.1: the joint ceiling says how to
+*interpret* these numbers, not what to run.
+
+### `--method_args` coercion was wrong, and the smoke test caught it
+
+`fisher=true` came back as the boolean `True` and `OnlineEWC` rejected it:
+
+```
+ValueError: fisher must be 'true' or 'empirical', got True
+```
+
+The parser was guessing types from the text alone, so it could not tell
+`fisher=true` (the *string* naming one of two Fisher estimators) from
+`normalize_fisher=true` (the boolean). Coercion needs the target type, and only
+`build_method` knows it.
+
+`parse_method_args` now returns raw strings and `build_method` coerces each
+value against its parameter's default — `str` defaults keep the string, `bool`
+defaults take true/false/1/0/yes/no and reject anything else, `int` and `float`
+defaults cast, and `inf`/`none` are recognised before the numeric branch. A bad
+boolean now names the argument and its default in the error rather than failing
+somewhere inside the method. Four tests cover it, including the exact
+`fisher` vs `normalize_fisher` case that broke.
+
+Also implemented **W2** (`--reset_optimizer_each_block`), which clears Adam's
+moment estimates at each task boundary in place, leaving parameter groups and
+the learning rate untouched. Off by default, because that is what every
+recorded history did.

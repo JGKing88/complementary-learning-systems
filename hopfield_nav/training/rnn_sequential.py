@@ -14,6 +14,7 @@ trains the agent, which the Hopfield protocol's never does.
 """
 from __future__ import annotations
 
+from collections import defaultdict
 from dataclasses import dataclass
 from typing import Callable
 
@@ -52,6 +53,7 @@ def run_sequential_blocks(
     on_update: Callable[[UpdateResult], None] | None = None,
     on_block_start: Callable[[int, GridEnv], None] | None = None,
     method: ContinualMethod | None = None,
+    reset_optimizer_each_block: bool = False,
 ) -> list[tuple[int, int, int]]:
     """Train each env in turn; evaluate every env introduced so far, every update.
 
@@ -71,6 +73,15 @@ def run_sequential_blocks(
     Note the ordering -- `extra_batches` is asked for *before* `after_update`
     stores the new rollout, so a replayed trajectory is always genuinely older
     than the one driving the update.
+
+    ``reset_optimizer_each_block`` clears Adam's moment estimates at every task
+    boundary. Off by default, because that is what every recorded history did.
+    It is worth sweeping (plan section 3.1, W2): the optimizer is built once and
+    its second moments carry across boundaries, so the first steps in env `i`
+    are scaled by statistics gathered on env `i-1` -- which is one of the
+    mechanisms behind the stability gap. The state is cleared in place rather
+    than by rebuilding the optimizer, so the parameter groups and the learning
+    rate survive untouched.
     """
     method = method or NoMethod()
     movement_mode = cfg.agent.movement_mode
@@ -81,6 +92,12 @@ def run_sequential_blocks(
         if on_block_start is not None:
             on_block_start(i, env)
         method.on_block_start(i, agent, envs)
+        if reset_optimizer_each_block and i > 0:
+            # In place, so param_groups and the lr are untouched -- only the
+            # per-parameter moment history goes. Skipped at i=0, where there is
+            # nothing to carry over and clearing would only discard whatever a
+            # pretraining checkpoint handed us.
+            optimizer.state = defaultdict(dict)
         block_start = global_step + 1
         vec = make_vec(env, cfg.batch_envs, movement_mode,
                        cfg.env.continuous_scale,

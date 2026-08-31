@@ -164,17 +164,30 @@ def build_method(name: str, seed: int | None = None, **kwargs) -> ContinualMetho
         accepted = sorted(p for p in params if p != "self")
         raise ValueError(
             f"method {name!r} got unknown args {unknown}; accepts {accepted}")
-    return cls(**kwargs)
+
+    typed = {}
+    for k, v in kwargs.items():
+        default = params[k].default
+        try:
+            typed[k] = coerce_to(v, default)
+        except ValueError as e:
+            raise ValueError(
+                f"method {name!r} arg {k}={v!r}: {e} "
+                f"(default is {default!r})") from None
+    return cls(**typed)
 
 
-def parse_method_args(spec: str | None) -> dict[str, Any]:
-    """`"buffer_size=inf,replay_batches=2,lam=1e3"` -> a kwargs dict.
+def parse_method_args(spec: str | None) -> dict[str, str]:
+    """`"buffer_size=inf,replay_batches=2,lam=1e3"` -> `{key: raw string}`.
 
-    Values are coerced int -> float -> bool -> str, in that order, so a sweep
-    script can pass everything as a flat string without the caller having to
-    know each method's signature.
+    Deliberately does **not** coerce. Coercion needs to know the target type,
+    and only `build_method` does: `fisher=true` names the string `"true"`
+    (one of two allowed Fisher estimators) while `normalize_fisher=true` means
+    the boolean. A parser guessing from the text alone turns the first into
+    `True` and the method rejects it -- which is exactly what happened the first
+    time this ran.
     """
-    out: dict[str, Any] = {}
+    out: dict[str, str] = {}
     if not spec:
         return out
     for item in spec.split(","):
@@ -184,30 +197,45 @@ def parse_method_args(spec: str | None) -> dict[str, Any]:
         if "=" not in item:
             raise ValueError(f"method arg {item!r} is not key=value")
         k, v = item.split("=", 1)
-        out[k.strip()] = _coerce(v.strip())
+        out[k.strip()] = v.strip()
     return out
 
 
-def _coerce(v: str) -> Any:
-    low = v.lower()
-    if low in ("true", "false"):
-        return low == "true"
+def coerce_to(value: Any, default: Any) -> Any:
+    """Coerce a raw string to whatever `default` is. Non-strings pass through,
+    so programmatic callers can hand over real types directly."""
+    if not isinstance(value, str):
+        return value
+    low = value.lower()
+    if isinstance(default, bool):
+        if low in ("true", "1", "yes"):
+            return True
+        if low in ("false", "0", "no"):
+            return False
+        raise ValueError(f"expected a boolean, got {value!r}")
+    if isinstance(default, str):
+        # A str default means the string IS the value -- do not helpfully turn
+        # "true" into a bool. This is the case that broke `fisher=true`.
+        return value
     if low in ("none", "null"):
         return None
     if low in ("inf", "infinity"):
         return float("inf")
-    try:
-        return int(v)
-    except ValueError:
-        pass
-    try:
-        return float(v)
-    except ValueError:
-        pass
-    return v
+    # bool is checked above, before int, because bool subclasses int.
+    if isinstance(default, int):
+        return int(value)
+    if isinstance(default, float):
+        return float(value)
+    # No usable default to steer by: fall back to the permissive guess.
+    for cast in (int, float):
+        try:
+            return cast(value)
+        except ValueError:
+            pass
+    return value
 
 
 __all__ = [
     "CONTINUAL_METHODS", "ContinualMethod", "NoMethod",
-    "build_method", "parse_method_args",
+    "build_method", "parse_method_args", "coerce_to",
 ]
