@@ -150,6 +150,124 @@ footer{margin-top:var(--s6);padding-top:var(--s3);border-top:1px solid var(--rul
 """
 
 
+#: What each method actually does, in one line. Without these the frontier is
+#: a list of names: nothing on the page would tell a reader why DER++ and CLEAR
+#: are different methods rather than two spellings of replay.
+MECHANISM = {
+    "B": ("Experience Replay",
+          "Keep past trajectories; train on a sample of them alongside each "
+          "new one. The buffer holds whole trajectories, not timesteps, because "
+          "a timestep torn out of its trajectory would be supervised in a "
+          "recurrent context the agent could never have been in."),
+    "I": ("Experience Replay, high ratio",
+          "The same method, varying only how many stored trajectories are "
+          "replayed per new one. This is the axis that turned out to matter."),
+    "E": ("DER++",
+          "Replay, plus a penalty for drifting from the model's own output at "
+          "the moment each trajectory entered the buffer. Different entries "
+          "are anchored to different, older versions of the policy."),
+    "D": ("CLEAR",
+          "Replay, plus a penalty for drifting from one snapshot of the policy "
+          "taken at the previous task boundary. Same idea as DER++; they "
+          "disagree about what 'the past' means."),
+    "C": ("Online EWC",
+          "No stored data. Estimate which weights mattered for previous tasks "
+          "(the diagonal Fisher, sampling actions from the model rather than "
+          "the teacher) and penalise moving them."),
+    "F": ("Synaptic Intelligence",
+          "Same idea as EWC, but importance is accumulated along the "
+          "optimisation path as training runs, so it needs no separate "
+          "estimation pass."),
+    "G": ("LwF",
+          "No stored data and no per-weight state. Penalise changing the "
+          "policy's <em>outputs</em> on the current task's own states, "
+          "relative to "
+          "the model as it stood when the task began."),
+    "H": ("Frozen trunk",
+          "Adapt only the 260-parameter movement head and hold the 73k-parameter "
+          "recurrent trunk fixed. The plasticity-restriction idea behind "
+          "meta-learning methods, without the meta-learning."),
+    "A": ("Naive SGD, tuned",
+          "No continual-learning method at all — just the behaviour-cloning "
+          "update, with its learning rate, optimiser reset and gradient budget "
+          "swept. This is the control, made as strong as it can be."),
+    "A2": ("Naive SGD, from scratch",
+           "The same, without pretraining."),
+    "Abatch": ("Naive SGD, batched",
+               "The control at 16 rollouts per update instead of 1 — a check on "
+               "whether single-trajectory gradient noise was causing the "
+               "forgetting. It was not."),
+    "R": ("No method",
+          "The matched reference: the same configuration every method above "
+          "runs at, with the method switched off."),
+}
+
+
+#: The runs behind this page. Historical facts, so they are literals -- but
+#: they belong on the page rather than only in a shell history, because "which
+#: job produced this number" is the first question anyone re-reading a result
+#: asks, and the second is "was it clean".
+JOBS = [
+    ("21626914", "Wave 0 — oracle, from-scratch floor, first joint sweep", "64/64"),
+    ("21627945", "Joint ceiling, corrected budget (8× epochs, 8000 updates)", "22/24"),
+    ("21628688", "Wave 1 — Tier-1 tuning, Experience Replay, online EWC", "272/272"),
+    ("21631698", "Wave 2 — CLEAR, DER++, SI, LwF, frozen trunk, high-ratio ER", "144/144"),
+    ("21631792", "N=20 scaling panel", "20/20"),
+    ("21633232", "Wave 2b — coefficient ranges re-swept by loss ratio", "56/56"),
+    ("21634287", "Wave 2c — DER++ after its gradient was fixed", "32/32"),
+    ("21634899", "Wave 2d — EWC and SI after the Fisher sampler was fixed", "56/56"),
+    ("21629579", "§5.2 — in-context pretraining and first evaluation", "9/9"),
+    ("21643814", "§5.2 — re-scored with the conditional memory test", "3/3"),
+]
+
+#: Things a reader will look for and not find. Saying why is more useful than
+#: leaving them to wonder whether they were forgotten.
+NOT_MEASURED = [
+    ("Meta-learned representations (OML/ANML)",
+     "Its mechanism is a frozen meta-learned trunk plus a small online-adapting "
+     "head. The head-only half was measured directly here and is <em>harmful</em> "
+     "— retention 0.043 against a 0.044 reference. Any benefit would have to come "
+     "entirely from meta-learning changing what the trunk represents, and the "
+     "single-GRU architecture offers no intermediate point between a "
+     "260-parameter head and a 73,000-parameter one to test that on."),
+    ("Plasticity maintenance (continual backprop, L2-init, shrink-and-perturb)",
+     "Cut because at five environments the control is not plasticity-limited — "
+     "it reaches 0.99 on the environment in front of it. The N=20 panel shows "
+     "that stops being true at twenty, where current-environment performance "
+     "collapses to 0.29–0.40 for every method including the reference. This is "
+     "the next wave, not an omission."),
+    ("Parameter-isolation methods with a task ID (PackNet, HAT, XdG)",
+     "These need to be told which environment they are in. The frozen-trunk arm "
+     "bounds the family's mechanism without that privilege, and it lost. A "
+     "task-ID arm would be an upper bound the store does not need, and is worth "
+     "running only if something in the family first looks competitive."),
+    ("A Hopfield comparison at twenty environments",
+     "Every recorded run of the store is a five-environment stream. The N=20 "
+     "panel therefore shows how the <em>methods</em> scale; the store's side of "
+     "it needs a run that does not exist yet."),
+]
+
+
+def _summarise(text: str, min_len: int = 60) -> str:
+    """The opening of a glossary entry, for the row beneath a method's name.
+
+    Derived from `MECHANISM` rather than written twice, so the table and the
+    methods section cannot drift apart. One sentence usually does it, but some
+    entries open with something like "No stored data", which is true and tells
+    the reader nothing -- so keep taking sentences until the line carries some
+    weight.
+    """
+    parts = [t.strip() for t in text.split(". ") if t.strip()]
+    out = ""
+    for part in parts:
+        # Rejoin with the separator `split(". ")` consumed, or the line reads
+        # "No stored data Estimate which weights mattered".
+        out = f"{out}. {part}" if out else part
+        if len(out) >= min_len:
+            break
+    return out if out.endswith(".") else out + "."
+
+
 def esc(s) -> str:
     return html.escape(str(s))
 
@@ -428,12 +546,123 @@ def render(d: dict) -> str:
       f'<span class="sub">{n_methods} methods, up to {seeds} seeds each</span></div>')
     A("</div>")
 
+    # ---- the setup -----------------------------------------------------
+    A('<h2 id="setup"><span class="sec">1</span> What is being measured</h2>')
+
+    A("<h3>The task</h3>")
+    A("<p>An agent navigates a square arena to a goal cell. Its only input is a "
+      "<strong>foveal ray-cast</strong>: sixty rays fanned around its heading, "
+      "each returning the ±1 code of whichever wall segment it hits. Each "
+      "environment's four walls carry their own <strong>random ±1 "
+      "barcode</strong>, so different environments look different and position "
+      "is recoverable from what the agent sees.</p>")
+    A("<p><strong>The goal is never observed.</strong> Only a shortest-path "
+      "oracle knows where it is, and the agent is trained by copying that "
+      "oracle's action. So an environment's identity is visible in every "
+      "observation, while its goal is not visible in any of them — which is "
+      "exactly the split that makes this a memory problem rather than a "
+      "perception one.</p>")
+
+    A("<h3>The protocol</h3>")
+    A('<div class="kpis">')
+    A('<div><span class="lab">Environments</span><span class="val">5</span>'
+      '<span class="sub">learned strictly one after another, never revisited</span></div>')
+    A('<div><span class="lab">Updates per env</span><span class="val">200</span>'
+      '<span class="sub">one rollout collected, one gradient step taken</span></div>')
+    A('<div><span class="lab">Evaluation</span><span class="val">every update</span>'
+      '<span class="sub">on every environment seen so far</span></div>')
+    A('<div><span class="lab">Seeds</span><span class="val">8</span>'
+      '<span class="sub">per configuration; 20 for the Tier-0 floor</span></div>')
+    A("</div>")
+    A("<p>One rollout per update is deliberate, and it is what makes the cost "
+      "axes readable: an update <em>is</em> an episode, so &ldquo;200 "
+      "updates&rdquo; and &ldquo;200 episodes of experience&rdquo; are the same "
+      "quantity. Batching would have broken that correspondence, and a separate "
+      "condition confirmed it was not the batching that caused the forgetting."
+      "</p>")
+
+    A("<h3>What the numbers mean</h3>")
+    A('<div class="tw"><table>')
+    A("<thead><tr><th>Metric</th><th>Definition</th></tr></thead><tbody>")
+    for k, v in [
+        ("retained", "Mean success on the environments the stream has already "
+                     "<em>left</em>, at the end of training. The headline: it is "
+                     "what forgetting destroys."),
+        ("current env", "Success on the environment being trained on right now. "
+                        "The plasticity check — a method can always score well on "
+                        "retention by refusing to learn, and this is what exposes it."),
+        ("forgetting", "Peak minus final, per environment. How much of what was "
+                       "once known has been lost."),
+        ("stability gap", "The <em>transient</em> collapse in the first updates "
+                          "after the stream moves on. Survives in methods whose "
+                          "final forgetting looks clean."),
+        ("stored", "Bytes the method must keep: replay data, importance "
+                   "matrices, model snapshots."),
+    ]:
+        A(f"<tr><td class='k'>{esc(k)}</td><td>{v}</td></tr>")
+    A("</tbody></table></div>")
+    A("<p>Success is scored by running the policy from a random start and "
+      "asking whether it reaches the goal within the step cap. Each evaluation "
+      "is a single trial, so an individual point is a coin flip; every number "
+      "on this page is averaged over a window of updates and over seeds.</p>")
+
+    A('<div class="note acc"><h4>Why an associative store is the comparison</h4>'
+      "<p>The model under test keeps its policy fixed and writes each new "
+      "environment's goal into a Hopfield memory as a <strong>single Hebbian "
+      "outer product from one episode</strong>. It cannot forget by gradient "
+      "descent because it does no gradient descent. The question this suite "
+      "exists to answer is not whether that works — it does — but "
+      "<em>what a network that learns by gradient descent would have to spend "
+      "to match it</em>.</p></div>")
+
+    A("<h3>The nine methods</h3>")
+    A("<p>Chosen for this setting rather than by citation count. Every "
+      "coefficient is swept over decades, because a strength knob set from a "
+      "paper with a different loss scale is how a method gets accidentally "
+      "made to look bad.</p>")
+    A('<div class="tw"><table>')
+    A("<thead><tr><th>Method</th><th>What it does</th></tr></thead><tbody>")
+    for key in ("B", "I", "E", "D", "C", "F", "G", "H", "A"):
+        name, desc = MECHANISM[key]
+        A(f"<tr><td class='k'>{esc(name)}</td><td>{desc}</td></tr>")
+    A("</tbody></table></div>")
+
     # ---- the frontier ------------------------------------------------
-    A('<h2 id="frontier"><span class="sec">1</span> The frontier</h2>')
+    A('<h2 id="frontier"><span class="sec">2</span> The frontier</h2>')
     A("<p>Best configuration per method, chosen among those that still learned "
-      "the environment they were training on. <strong>Retained</strong> is the "
-      "mean over the environments the stream had already left; "
-      "<strong>current</strong> is the plasticity check.</p>")
+      "the environment they were training on — a method can score well on "
+      "retention by refusing to learn anything, and picking its highest number "
+      "regardless would put exactly that at the top.</p>")
+
+    A('<div class="note"><h4>What the columns mean</h4>')
+    A('<div class="tw"><table>')
+    A("<thead><tr><th>Column</th><th>Definition</th></tr></thead><tbody>")
+    for k, v in (
+        ("Retained",
+         "mean success on the environments the stream has already <em>left</em>, "
+         "over the last fifth of the final block. The headline: 1.0 would mean "
+         "nothing was forgotten."),
+        ("Current env",
+         "success on the environment being trained on right now. The plasticity "
+         "check — it is what separates a method that retains from one that has "
+         "simply stopped learning."),
+        ("Forgetting",
+         "peak-minus-final per environment, averaged. How much of what was "
+         "learned got lost, as distinct from how much is left."),
+        ("Stored",
+         "bytes the method must carry: replay trajectories, importance "
+         "matrices, frozen model snapshots. The memory axis of the frontier."),
+        ("Needs",
+         "whether the method must be told where task boundaries fall, or which "
+         "task it is currently in. The store needs neither."),
+    ):
+        A(f"<tr><td class='k'>{esc(k)}</td><td>{v}</td></tr>")
+    A("</tbody></table></div>")
+    A("<p>Each evaluation is a single deterministic trial, so an individual "
+      "point is 0 or 1; every figure quoted is a mean over 8 seeds, "
+      "&plusmn;1 SEM. Two costs are constant across every row and so are not "
+      "columns: all of them spend <strong>200 gradient steps and 200 episodes "
+      "per environment</strong>, against the store's 0 and 1.</p></div>")
 
     rows = best_per_family(methods)
     A('<div class="tw"><table>')
@@ -459,8 +688,13 @@ def render(d: dict) -> str:
             needs.append('<span class="chip mut">boundaries</span>')
         else:
             needs.append('<span class="chip good">nothing</span>')
+        _mech = MECHANISM.get(r["arm"])
+        note = _summarise(_mech[1]) if _mech else ""
         A("<tr><td class='k'>" + esc(r["display"]) + "</td>"
-          f"<td><code>{esc(r['config'])}</code></td>"
+          f"<td><code>{esc(r['config'])}</code>"
+          + (f'<br><span style="color:var(--muted);font-size:12.5px">'
+             f"{esc(note)}</span>" if note else "")
+          + "</td>"
           f'<td class="num">{bar(r["retained"], r["retained_sem"])}</td>'
           f'<td class="num">{fmt(r["current_env"])}</td>'
           f'<td class="num">{fmt(r["forgetting"])}</td>'
@@ -478,7 +712,7 @@ def render(d: dict) -> str:
     # ---- the plasticity trap ----------------------------------------
     bad = degenerate_rows(methods)
     if bad:
-        A('<h2 id="trap"><span class="sec">2</span> The plasticity trap</h2>')
+        A('<h2 id="trap"><span class="sec">3</span> The plasticity trap</h2>')
         A("<p>These configurations post strong retention <em>because they "
           "stopped learning</em>. A table ranked on retention alone would put "
           "them at the top. They are the reason the plasticity column is not "
@@ -501,7 +735,7 @@ def render(d: dict) -> str:
         conv = [j for j in d.get("joint", [])
                 if abs(j.get("end_slope") or 0) <= 0.02 and (j.get("final") or 0) > 0.5]
         ceil = max((j["final"] for j in conv), default=None)
-        A('<h2 id="ratio"><span class="sec">3</span> '
+        A('<h2 id="ratio"><span class="sec">4</span> '
           "How far replay gets</h2>")
         A("<p>The plan predicted that a perfect buffer would close most of this "
           "gap. It does not. Every point below has an <strong>unbounded</strong> "
@@ -527,10 +761,18 @@ def render(d: dict) -> str:
           "per environment, against the store's 0 and 1.</p>")
 
     # ---- Tier 0 -------------------------------------------------------
-    A('<h2 id="tier0"><span class="sec">4</span> The axes</h2>')
+    A('<h2 id="tier0"><span class="sec">5</span> The axes</h2>')
     A("<p>None of these are continual-learning methods. They are what makes "
       "every number above interpretable, and three of the four had never been "
       "run before this suite.</p>")
+    A("<p>The question they settle is whether the retention gap is "
+      "<strong>forgetting</strong> or <strong>capacity</strong>. If one "
+      "network cannot represent five environments at once, then no continual "
+      "method could exceed that limit, the gap would be a statement about "
+      "model size rather than about memory, and every method number above "
+      "would be measuring the wrong thing. The joint ceiling is the run that "
+      "decides it: the same architecture, at the same size, trained on all "
+      "five environments simultaneously instead of in sequence.</p>")
 
     joint = d.get("joint", [])
     if joint:
@@ -590,7 +832,7 @@ def render(d: dict) -> str:
     # ---- in-context ---------------------------------------------------
     ic = d.get("incontext")
     if ic and ic.get("arms"):
-        A('<h2 id="incontext"><span class="sec">5</span> '
+        A('<h2 id="incontext"><span class="sec">6</span> '
           "Zero weight updates</h2>")
         A("<p>The only control that meets the store on its own terms. One "
           "environment, ten episodes back to back, weights frozen throughout — "
@@ -667,10 +909,21 @@ def render(d: dict) -> str:
     # ---- N=20 ----------------------------------------------------------
     n20 = d.get("n20") or []
     if n20:
-        A('<h2 id="n20"><span class="sec">6</span> Twenty environments</h2>')
+        A('<h2 id="n20"><span class="sec">7</span> Twenty environments</h2>')
         A("<p>Methods look alike at five tasks and separate at twenty. Only "
           "configurations whose best setting was already pinned down at N=5 "
-          "are scaled here.</p>")
+          "are scaled here — at 2.6 hours a seed, an unresolved sweep would "
+          "spend the budget rediscovering what a five-environment stream "
+          "answers for a tenth of the cost.</p>")
+        A("<p>Two things to watch beyond the ordering. <strong>Storage grows "
+          "with the stream and the store's does not</strong> — an unbounded "
+          "buffer goes from 53.6 MB at five environments to 214.4 MB at "
+          "twenty, linear in updates, while an associative matrix is a fixed "
+          "size. And <strong>plasticity collapses for everyone</strong>: "
+          "current-env performance falls to roughly a third of its "
+          "five-environment value across every arm including the control. At "
+          "twenty environments the agent is not only forgetting the old ones, "
+          "it is failing to learn the one in front of it.</p>")
         A('<div class="tw"><table>')
         A("<thead><tr><th>Method</th><th>Configuration</th>"
           '<th class="num">Retained</th><th class="num">Current env</th>'
@@ -689,7 +942,14 @@ def render(d: dict) -> str:
           "exist yet.</p></div>")
 
     # ---- bugs found ---------------------------------------------------
-    A('<h2 id="found"><span class="sec">7</span> Found along the way</h2>')
+    A('<h2 id="found"><span class="sec">8</span> Found along the way</h2>')
+    A("<p>Nine defects surfaced while building this, and they are on the page "
+      "because they share a property worth knowing about: <strong>not one of "
+      "them raised an exception in normal operation</strong>. Every one "
+      "produced a plausible number. Three were caught by a test written to be "
+      "falsifiable rather than confirmatory, three by inspecting a table "
+      "before publishing it, and two by reading code that had no failing "
+      "symptom at all. Four are shown here; the rest are in the log.</p>")
     A('<div class="note crit"><h4><code>input_prev_action</code> had never '
       "worked</h4>"
       "<p>Both the DAgger collector and the evaluator built the previous-action "
@@ -703,6 +963,14 @@ def render(d: dict) -> str:
       "246 of 272 died after building their environments and before training. "
       "Mutation-checked fix: 27/48 concurrent writers fail on the old code, "
       "0/48 on the new.</p></div>")
+    A('<div class="note crit"><h4>DER++ contributed no gradient</h4>'
+      "<p>Its distillation term was computed against a detached tensor, so it "
+      "returned a nonzero loss that scaled correctly with its coefficient and "
+      "carried <code>requires_grad=False</code>. It added a constant to the "
+      "objective and moved nothing. DER++ ran as plain Experience Replay for "
+      "two full waves, and every value-based test passed throughout — they "
+      "checked that the loss was nonzero and grew, which it was and did. "
+      "Fixing it moved the method from 0.143 to 0.326.</p></div>")
     A('<div class="note warn"><h4>A capacity verdict that was wrong</h4>'
       "<p>The first joint-ceiling run came back at ~0.5 across every capacity "
       "and the summary called it a capacity limit. It was not: capacity did not "
@@ -717,7 +985,7 @@ def render(d: dict) -> str:
       "of the action itself.</p></div>")
 
     # ---- what it means -------------------------------------------------
-    A('<h2 id="reading"><span class="sec">8</span> What this settles</h2>')
+    A('<h2 id="reading"><span class="sec">9</span> What this settles</h2>')
 
     rows2 = best_per_family(methods)
     best_m = rows2[0] if rows2 else None
@@ -768,6 +1036,57 @@ def render(d: dict) -> str:
       "environment — and an associative store reaches the ceiling at one "
       "episode and no gradient steps at all.</em> The frontier is the claim; "
       "the leaderboard is not.</p></div>")
+
+    # ---- provenance ----------------------------------------------------
+    A('<h2 id="provenance"><span class="sec">10</span> Provenance</h2>')
+    A("<p>Every number on this page is read out of the run histories by "
+      "<code>results_data.py</code> and rendered by "
+      "<code>results_page.py</code>. Nothing is typed in — a page whose "
+      "figures were transcribed stops matching its runs the first time one is "
+      "repeated.</p>")
+    A('<div class="tw"><table>')
+    A("<thead><tr><th>Job</th><th>What</th><th class='num'>Tasks</th>"
+      "</tr></thead><tbody>")
+    for job, what, n in (
+        ("21626914", "Wave 0 — oracle, from-scratch floor, first joint sweep", "64/64"),
+        ("21627945", "corrected joint ceiling (8× the gradient budget)", "22/24"),
+        ("21628688", "Wave 1 — Tier-1 tuning, ER, online EWC", "272/272"),
+        ("21631698", "Wave 2 — CLEAR, DER++, SI, LwF, frozen trunk, high-ratio ER", "144/144"),
+        ("21631792", "N=20 scaling panel", "20/20"),
+        ("21633232", "Wave 2b — corrected coefficient ranges", "56/56"),
+        ("21634287", "Wave 2c — DER++ after the gradient fix", "32/32"),
+        ("21634899", "Wave 2d — EWC/SI after the sampler fix", "56/56"),
+        ("21629579", "in-context pretraining and first evaluation", "9/9"),
+        ("21643814", "in-context re-scored with memory_lift", "3/3"),
+    ):
+        A(f"<tr><td class='k'>{esc(job)}</td><td>{esc(what)}</td>"
+          f'<td class="num">{esc(n)}</td></tr>')
+    A("</tbody></table></div>")
+    A("<p>Roughly <strong>530 sequential-protocol runs</strong> and 48 joint "
+      "runs, on CPU. The two failures in the joint sweep were both "
+      "<code>hidden=512, lr=3e-3</code> diverging to NaN — the same "
+      "instability the sweep reports at smaller sizes, taken to its "
+      "conclusion, rather than a defect.</p>")
+    A("<p>One sequential run is five environments × 200 updates, each update a "
+      "single 200-step rollout and a single gradient step, evaluated against "
+      "every environment seen so far — 1,000 evaluation points per run. "
+      "Method arms use 8 seeds, the from-scratch floor 20, the N=20 panel 4, "
+      "and the joint ceiling 3.</p>")
+    A('<div class="note"><h4>Reproducing it</h4>'
+      "<pre><code>python -m analysis.continual.results_data \\\n"
+      "    --wave0_dir $CLS_RUNS/histories/wave0 \\\n"
+      "    --wave1_dir $CLS_RUNS/histories/wave1 \\\n"
+      "    --n20_dir   $CLS_RUNS/histories/n20 \\\n"
+      "    --incontext_dir $CLS_RUNS/histories/incontext \\\n"
+      "    --recorded_dir $CLS_RUNS/histories \\\n"
+      "    --runs_root $CLS_RUNS --out results.json\n"
+      "python -m analysis.continual.results_page --data results.json --out page.html\n"
+      "python -m analysis.continual.validate_page page.html</code></pre>"
+      "<p>The launchers are <code>analysis/continual/run_wave*.sh</code>, "
+      "<code>run_n20.sh</code> and <code>run_incontext*.sh</code>. The plan is "
+      "<code>docs/CONTINUAL_CONTROLS_PLAN.md</code>; what actually happened, "
+      "including all nine defects, is "
+      "<code>docs/CONTINUAL_CONTROLS_LOG.md</code>.</p></div>")
 
     A("<footer><span>generated by analysis.continual.results_page</span>"
       f'<span>data: {esc(d.get("generated", ""))}</span>'
