@@ -1,7 +1,24 @@
 # A continual-learning control suite for the Hopfield-nav claim
 
 Written 2026-08-30. **Revised 2026-08-30 (v2)** after review — see §0.3 for what
-changed. Plan only; nothing here is implemented yet.
+changed.
+
+> **Status: in flight.** This is no longer plan-only. What exists:
+>
+> | piece | state |
+> |---|---|
+> | Wave 0 (T0.1 / T0.3 / T0.4) | run; T0.3 = 1.000, T0.4 landed, T0.1 **inconclusive** and re-running at 64× the budget |
+> | The nine methods (§4) | implemented and tested in `hopfield_nav/continual/` |
+> | Wave 1 (Tier-1 sweeps + ER + online EWC) | on the cluster |
+> | Wave 2 (CLEAR, DER++, SI, LwF) | implemented, launcher ready |
+> | §5.2 in-context zero-update control | implemented and on the cluster |
+> | §5.1 meta-pretraining | not started |
+> | Metrics + results page | implemented, generated from the data |
+>
+> The running record — including three bugs this uncovered in shared code, and
+> one wrong verdict caught before it shipped — is
+> [CONTINUAL_CONTROLS_LOG.md](CONTINUAL_CONTROLS_LOG.md). Read that for what
+> actually happened; this document is what was intended.
 
 Companion reading: `docs/CODEBASE_MAP.md` §"final_plotting", `analysis/continual/`,
 `hopfield_nav/training/rnn_sequential.py`.
