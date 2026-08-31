@@ -19,7 +19,7 @@ mismatch that must be fixed first.
 | **Branch / worktree** | `nav-tri-metric` at `.claude/worktrees/nav-tri-metric` |
 | **Predecessor** | `docs/EXPERIMENTS_NAV_TRI.md` — read its §0 findings 1–22 |
 | **Open decisions** | §11 — four forks put to Jack; spec assumes the recommended default in each |
-| **Running** | **P19 (§17)** — `p19_nc` 21651001, `p19_c100` 21651003 on the w52 attract-0.5 encoder, gain=beta=100, learned speed [0.5, 1.0]. `p19_c300` cancelled (§17.5). Scored on the BEELINE objective (§17.5), not accuracy alone. |
+| **Running** | **P19 (§17)** — `p19_nc` 21651001 (beta 100, control) vs `p19_b5` 21653544 (beta 5.0), w52 attract-0.5 encoder, learned speed [0.5, 1.0]. Single-factor test of the κ-runaway mechanism in §17.6. Scored on the BEELINE objective (§17.5). |
 | **Charts** | One published page per run — `p10_pol_v1` [3bc9ad4e](https://claude.ai/code/artifact/3bc9ad4e-0655-43ca-b870-0516f4487bdc) · `p10_pol` [388023ce](https://claude.ai/code/artifact/388023ce-a725-4253-a53b-c9979a77baf2) · `p10_e_pol` [00bd7fd3](https://claude.ai/code/artifact/00bd7fd3-bb60-4e22-a968-c62822c5cdb3) · `p10_e_pol_v1` [8fd3ecf0](https://claude.ai/code/artifact/8fd3ecf0-c429-40d6-bde6-008ca25b5a40) · `p11_cur` [4de8dfa7](https://claude.ai/code/artifact/4de8dfa7-9403-43c8-b4f9-b14669ae603e) · `p11_tp` [4dbbe6e9](https://claude.ai/code/artifact/4dbbe6e9-c8e3-41fb-9b38-36a1443bf420) · `p11_cur_tp` [6c3a0503](https://claude.ai/code/artifact/6c3a0503-dba1-405a-a90c-d33c491ee5b2) · `p12_lo` [6b09232a](https://claude.ai/code/artifact/6b09232a-bcd2-4609-9c1d-97d9757d0f5a) · `p12_lo_curtp` [835846df](https://claude.ai/code/artifact/835846df-d30d-46f7-b979-3fe41fdfff7e) |
 | **Finished** | **`p10_pol_v1` 21300389** — 2000/2000, **1.000 success @ 10.95 steps (1.10× optimal)**, the phase-2 best exploit model. **`p10_e_pol` 21300390** — 1500/1500, **cps 0.75** against a billiard ceiling of 0.775. |
 | **Done** | §4 blocking fixes, P1 (§5) with figures, the recall-mechanism thread §5.3-5.9, **P2 (§6)**, and **P10 (§9.4–9.8)** |
@@ -4961,3 +4961,78 @@ ramp is worth re-running only if it does.
 The readout-field job was moved to **CPU** (`mit_normal`) for the same reason —
 it is a policy-free sweep over a 20×20 grid with no rollouts, so it does not
 need a GPU and should not spend the quota the training arms need.
+
+### 17.6 RESULT — the field is clean, and `hopfield_beta` is what costs updates
+
+Two measurements, taken while the arms were still running, that together
+relocate the bottleneck for the third time in this phase.
+
+#### The readout field is clean — the short unique radius does NOT bite
+
+§17.2 predicted that a median unique radius of 9.5, below the ~10.8-cell
+typical travel distance, would show up as far-field `q` errors. **It does not.**
+Field mapped on `p19_nc`'s u25 checkpoint (policy-free, so the first checkpoint
+is as good as the last), restricted to draws 0–7 so every run is on the same 6
+envs, same seed, same draw stream, same denominator:
+
+| encoder | trapped | rate | goal basin |
+|---|---|---|---|
+| **w52 attract-0.5 @ gain 100** | **1/48** | **2.1%** | 0.980 |
+| `p17_gain` v35 @ gain 300 | 0/48 | 0.0% | 1.000 |
+| `p18_knee` w49 @ gain 300 | 1/48 | 2.1% | 0.985 |
+| `p10_pol_v1` BASELINE @ gain 5 | 5/48 | 10.4% | 0.905 |
+
+Identical to `p18_knee`, 5× cleaner than the baseline, and the single memory it
+traps on — **`(env5, trial7)`** — is the *same draw* that traps `p18_knee` and
+the baseline. Nothing about the failure is unique to this encoder.
+
+So at u25 the signal is already there: 47 of 48 draws route essentially the
+whole arena to the goal. An agent sitting at 0.10 success is **not** being
+misled by its memory.
+
+#### κ runaway, driven by `hopfield_beta`
+
+`p19_nc`'s own training metrics, against the two reference runs:
+
+| run | beta | κ@u10 | κ@u40 | κ@u70 | `dir_norm` | `ang_noise` | **beeline** |
+|---|---|---|---|---|---|---|---|
+| `p17_gain` | **5.0** | 4.8 | 8.4 | 8.8 | 0.26 | 20.6° | **u200** |
+| `p18_knee` | 300 | 17.4 | 70.1 | 119.1 | 1.06 | 5.4° | u500 |
+| `p19_nc` | 100 | 16.3 | 97.5 | **147.7** | **1.36** | **4.7°** | flat ≥u150 |
+
+The chain: **beta inflates ‖q‖** → `dir_norm` 0.26 → 1.36 → **κ runs away** →
+angular exploration collapses from ~21° to ~5°. The policy commits to a heading
+before it has learned which heading is right. κ = 147.7 at u70 is the *same
+value* that killed `p16_sat` at beta 1e6 (§15), which was cancelled flat at
+0.05.
+
+**RETRACTION.** The `p18_knee` variant comment justifies beta=300 with "300 is
+far below that regime". **That is wrong.** `p18_knee` ran κ to 133 and paid
+**2.5× in updates-to-beeline** (u500 against `p17_gain`'s u200). It did not fail
+outright, so the cost was never attributed to beta — it was filed under "the
+knee encoder trades convergence speed for stability" (§16.2). On this evidence
+the trade was never the encoder's; it was beta's.
+
+This makes beta the *third* thing in this phase whose effect was misread by
+looking at only one of its consequences — after "beta is a no-op" (§5.4,
+corrected §15.4) and "a sink is necessary for failure" (§14, corrected §16.5).
+
+#### `p19_b5` — the single-factor test
+
+`p19_c100` was cancelled to free the GPU slot: with neither arm learning, the
+curriculum axis is confounded by the pathology and cannot be read. `p19_b5` is
+`p19_nc` with **beta 100 → 5.0 and nothing else moved**, so it is a clean
+single-factor test against a control that is still running.
+
+`p19_nc` is deliberately left running at beta=100 — it is the config Jack
+specified, and it is the control.
+
+**Prediction on record:** `dir_norm` ~0.25, κ < 15, and the beeline reached far
+sooner than `p19_nc`'s. If κ still runs away at beta 5.0 then the cause is the
+encoder rather than beta, which is worth knowing too.
+
+**If it holds**, the lesson generalises past this encoder: `hopfield.beta`
+defaults to the encoder gain, so **every arm trained on a gain-100 or gain-300
+encoder has silently been paying this cost**, and the default coupling — already
+identified in §15.1 as what made `p16_sat` a two-factor arm — is more expensive
+than "an unstated default" made it sound.

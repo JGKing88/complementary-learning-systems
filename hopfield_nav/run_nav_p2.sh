@@ -705,7 +705,7 @@ case "$VARIANT" in
   # u50 to u1100, and the 6 h partition wall lands near u1100 anyway (both p17
   # and p18 TIMEOUT-ed there). 32 eval points clears by a wide margin the
   # >=4-point bar this project's eval noise requires for a directional claim.
-  p19_nc|p19_c100|p19_c300)
+  p19_nc|p19_c100|p19_c300|p19_b5)
     ENCODER=/orcd/pool/003/jackking/cls_runs/sweeps/w52_attract_fwhm/001_att0.5_seed=43/encoder_final.pt
     ENCODER_GAIN=100
     HOPFIELD_BETA=100
@@ -718,6 +718,28 @@ case "$VARIANT" in
     MIN_ACTION_NORM=0.5; MAX_ACTION_NORM=1.0
     EVAL_SCOPE=navexpl; EVAL_EVERY=25; CKPT_EVERY=25
     case "$VARIANT" in
+      # p19_b5 -- the SAME encoder, beta dropped 100 -> 5.0, nothing else moved.
+      #
+      # Diagnosed at u70 of p19_nc: hopfield_beta inflates ||q||, and dir_norm
+      # 1.36 drives kappa to 147.7 -- the exact value that killed p16_sat at
+      # beta 1e6. Angular noise collapses from ~21 deg to 4.7 deg, so the policy
+      # locks a heading before it has learned which heading is right.
+      #
+      #   beta 5.0 (p17_gain)  dir_norm 0.26  kappa  8.5  beeline at u200
+      #   beta 300 (p18_knee)  dir_norm 1.06  kappa 133    beeline at u500
+      #   beta 100 (p19_nc)    dir_norm 1.36  kappa 148    flat through u150
+      #
+      # This also RETRACTS the p18_knee comment above, which justified beta=300
+      # with "300 is far below that regime". It is not: p18_knee ran kappa to
+      # 133 and paid 2.5x in updates-to-beeline. It did not fail outright, so
+      # the cost was never attributed.
+      #
+      # 5.0 is p17_gain's value, i.e. the one cell of the section 15 grid where
+      # kappa did not run away. Prediction on record: dir_norm ~0.25, kappa <15,
+      # and the beeline reached far sooner than p19_nc's -- which is the whole
+      # objective (§17.5). If kappa still runs away at 5.0 the cause is the
+      # encoder, not beta, and that is worth knowing too.
+      p19_b5) HOPFIELD_BETA=5.0 ;;
       # max ramps FROM n_train_distractors_max TO _max_end, so the START value
       # is the one that has to be 0.
       p19_c100) N_TRAIN_DISTRACTORS_MAX=0; N_TRAIN_DISTRACTORS_MAX_END=10
