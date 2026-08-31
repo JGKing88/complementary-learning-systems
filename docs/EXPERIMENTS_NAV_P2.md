@@ -5128,3 +5128,33 @@ one aimed at Jack's objective.
 quantity I had not read the definition of — the first being the §15.4 beta
 correction. The measurement that killed it (`p19_b5`) cost ten updates. **The
 single-factor arm should have been launched before the write-up, not after it.**
+
+#### 17.7.1 ‖q‖ measured directly — a partial account, stated as such
+
+The claim above ("the newer encoders hand the policy a larger readout") was
+still an inference from `dir_norm`, a policy statistic. It is measurable
+directly and costs nothing: the field JSONs store `field` = the **raw,
+unnormalised `q`** at every cell, so ‖q‖ is already on disk for each encoder.
+
+| encoder | gain | beta | mean ‖q‖ | ratio | `dir@u1` ratio |
+|---|---|---|---|---|---|
+| P2 fixed | 5 | 5 | 0.2589 | 1.00 | 1.00 |
+| P2 fixed | 300 | 5 | 0.2390 | 0.92 | 0.98 |
+| knee | 300 | 300 | 0.3189 | **1.23** | **2.74** |
+| w52 | 100 | 100 | 0.3423 | **1.32** | **2.62** |
+
+**What this supports.** The readout genuinely IS larger for the two runaway
+encoders. Rank order agrees 4/4 with `dir@u1`, and the within-family control is
+clean: P2-fixed at gain 5 vs 300 moves ‖q‖ by 0.92× and `dir@u1` by 0.98×
+together — independent confirmation that `encoder_gain` does not touch either.
+
+**What it does NOT support, and this is the point.** ‖q‖ differs by **1.3×**
+while `dir@u1` differs by **2.7×**. Magnitude alone does not account for the
+size of the effect; something amplifies it — candidates include the three
+`multistep_q` channels scaling together, and the *consistency* of `q` across
+steps mattering more than its norm. **Neither has been measured.**
+
+So: ‖q‖ is *a* contributor with the right sign and a perfect rank match over
+four points, and is **not** a complete mechanism. Recorded at that strength
+deliberately — §5.4, §14, §15.4 and §17.6 were each a story that outran its
+measurement, and the pattern is expensive enough to stop repeating.
