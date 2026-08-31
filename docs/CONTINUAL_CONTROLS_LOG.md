@@ -1700,3 +1700,43 @@ reverts to reporting a result automatically.
 
 Every other defect in this log was caught by a check. This one was caught by
 being asked whether the effort had been good enough.
+
+### The number that should have been measured first: chance
+
+Explaining the proposed "generalisation gate" turned it into a sharper finding
+than the memorisation ratio it was meant to support.
+
+**A random walker solves 0.208 of these episodes.** Same held-out environments,
+same 200-step budget, actions drawn from a unit Gaussian — which is exactly
+what the policy itself emits at `init_log_std = 0` before any training, so this
+is the same agent with untrained weights rather than an arbitrary baseline.
+
+| | held-out episode-1 success | vs chance |
+|---|---|---|
+| random walker | 0.208 | 1.00× |
+| lifetime arm | 0.100 | **0.48×** |
+| episodic arm | 0.115 | **0.55×** |
+
+**Both arms are worse than random on the environments where in-context
+adaptation was measured.** Not weak — actively counterproductive. Having
+memorised thirty-two goals, the policy heads confidently towards where goals
+used to be, which is worse than exploring, and that is why it lands below the
+floor rather than merely near it.
+
+This is why the gate is a *precondition* and not a caveat. `memory_lift` is a
+**behavioural** statistic: memory can only show up as a higher success rate. A
+policy that cannot reach a goal in an unseen arena cannot express memory of
+where that goal is, no matter how completely the hidden state encodes it. The
+measurement channel is closed, and **a flat curve was guaranteed before the
+question was asked** — independently of anything true about recurrent memory.
+
+So the original result was not a weak null or a noisy one. It was an instrument
+reading taken with the instrument disconnected.
+
+The gate is now implemented rather than proposed:
+`incontext_generalization.py` simulates the chance rate on the evaluation's own
+environment seeds, compares it to held-out episode-1 success, and emits
+`gate_passed`. The page renders the withdrawal from that flag, so a future run
+that cannot clear the floor reports *"precondition not met"* instead of a
+publishable-looking flat line — which is the specific failure that produced
+this entry.
