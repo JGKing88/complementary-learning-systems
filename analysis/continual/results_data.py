@@ -54,6 +54,7 @@ ARMS = {
     "F":      ("Synaptic Intelligence",  "regularize"),
     "G":      ("LwF",                    "distill"),
     "H":      ("Frozen trunk",           "isolate"),
+    "I":      ("Experience Replay",      "replay"),
 }
 
 

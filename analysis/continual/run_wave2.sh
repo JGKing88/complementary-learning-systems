@@ -95,6 +95,26 @@ for S in $(seq 1 $SEEDS); do
         --method_args "alpha=${AL}"
 done; done
 
+# --- I: ER at high replay ratios --------------------------------------------
+# Wave 1 put unbounded ER at 0.419 retained against a joint ceiling of ~0.99,
+# which contradicts the plan's own section 0.1 -- it predicted that a perfect
+# buffer would approach joint training. It does not, and the reason is visible
+# in the sweep: replay *ratio* dominated buffer *size* (rb=4 beat rb=1 at every
+# size, while inf vs 200 barely mattered). At rb=4 an update still sees one new
+# trajectory against four replayed ones, which is not joint training; it is
+# training on the current env with a correction term.
+#
+# So push the ratio, not the size. If ER converges on the ceiling by rb=32 then
+# section 0.1 was right about the destination and wrong about the price, and
+# the honest statement is "replay matches the store when it replays 32x per
+# step". If it plateaus well below, replay has a real ceiling here and that is
+# a stronger result than the one that was expected.
+for RB in 8 16 32; do
+for S in $(seq 1 $SEEDS); do
+    launch "I_erhi_rb${RB}_s${S}" --seed "$S" --method er \
+        --method_args "buffer_size=inf,replay_batches=${RB},sampling=balanced"
+done; done
+
 # --- H: frozen trunk (plan 3.2 P4) ------------------------------------------
 # Adapt only the movement head -- 260 parameters against the trunk's 73k. This
 # is the load-bearing half of OML's mechanism without the meta-learning: if

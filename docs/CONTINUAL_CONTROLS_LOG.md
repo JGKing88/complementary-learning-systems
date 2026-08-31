@@ -545,3 +545,94 @@ whether the same instability shows up there is about to be measured rather
 than assumed.
 
 Headroom for continual methods on the headline protocol: **0.196 → 0.99**.
+
+---
+
+## 2026-08-31 — Wave 1 complete (slurm 21628688, all 272 tasks OK)
+
+Against a joint ceiling of **~0.99** and a matched reference of **0.044**:
+
+### A — the naive control, tuned (plan §3.1)
+
+| config | retained | current env |
+|---|---|---|
+| **lr=3e-4, optimizer reset, ep=1** | **0.081 ± 0.026** | 0.820 |
+| lr=3e-4, no reset, ep=1 | 0.066 ± 0.021 | 0.790 |
+| lr=1e-3, no reset, ep=1 *(the recorded default)* | 0.044 ± 0.013 | 0.753 |
+
+Tuning nearly **doubles** the control's retention, 0.044 → 0.081. So the
+recorded baseline *was* a mild strawman and now is not. The two knobs that did
+it: **a lower learning rate** and **W2, resetting Adam's moments at each task
+boundary** — the reset arm beats the no-reset arm at matched lr and epochs in
+five of six pairs. Neither changes the conclusion: 0.081 against a 0.99 ceiling
+is still nothing.
+
+### A-batch — the W1 sensitivity condition, and it vindicates the regime
+
+`batch_envs=16` gives **current env 0.997** (the best plasticity anywhere in the
+suite) and **retained 0.056** — statistically indistinguishable from
+`batch_envs=1`'s 0.044.
+
+So the gradient noise of a single autocorrelated trajectory is **not** doing
+the forgetting. That was the one real residual left after the v2 correction,
+and it is now measured rather than argued. `batch_envs=1` stays, and the
+episodes-consumed axis stays interpretable.
+
+### A2 — from scratch, and W5 was a real gap
+
+| init_log_std | best retained | current env |
+|---|---|---|
+| −1.0 | 0.069 ± 0.032 | 0.854 |
+| −1.5 | 0.048 ± 0.016 | 0.723 |
+| 0.0 *(the unreachable default)* | 0.034 ± 0.017 | 0.582 |
+
+σ = 1.0 against a unit-magnitude action was costing about half the retention
+and a quarter of the plasticity. The flag that could not be set from the run
+script mattered.
+
+### B — Experience Replay
+
+| config | retained | current env | stored |
+|---|---|---|---|
+| **buffer=∞, replay×4** | **0.419 ± 0.044** | 0.768 | 53.6 MB |
+| buffer=200, replay×4 | 0.404 ± 0.032 | 0.793 | 10.7 MB |
+| buffer=50, replay×4 | 0.256 ± 0.046 | 0.832 | 2.7 MB |
+| buffer=∞, replay×1 | 0.143 ± 0.031 | 0.710 | 53.6 MB |
+
+**Replay ratio dominates buffer size.** Every `rb=4` row beats every `rb=1` row,
+while ∞ versus 200 barely matters (0.419 vs 0.404 at a fifth of the storage).
+
+### C — Online EWC, and the plasticity trap in full
+
+| λ | retained | current env |
+|---|---|---|
+| 1e5 | 0.274 ± 0.032 | **0.296** ← degenerate |
+| 1e4 | 0.149 ± 0.033 | 0.524 |
+| 1e2 | 0.095 ± 0.033 | 0.762 |
+| 1e0 | 0.050 ± 0.009 | 0.747 |
+
+Ranked on retention alone, λ=1e5 is the best regulariser in the suite. It is
+also barely learning. The best *usable* setting is λ=1e4 at 0.149 — real, and
+far behind replay.
+
+### The plan's §0.1 prediction was wrong, and that is the interesting part
+
+§0.1 said: *"a replay buffer with an unbounded budget will probably close most
+of this gap."* It did not. Unbounded ER reaches **0.419 against a 0.99
+ceiling** — under half the distance, with 53.6 MB of stored trajectories.
+
+The reason is visible in the sweep itself. At `replay_batches=4` an update sees
+one new trajectory against four replayed ones, which is not joint training; it
+is training on the current env with a correction term. Perfect memory is
+necessary but nowhere near sufficient — what matters is how much of each
+gradient step is spent on the past.
+
+So Wave 2 gets a new arm **I**: unbounded ER at replay ratios 8, 16 and 32. If
+ER converges on the ceiling by rb=32, §0.1 was right about the destination and
+wrong about the price, and the honest statement becomes "replay matches the
+store when it replays 32× per step and stores every trajectory it has ever
+seen". If it plateaus well below, replay has a real ceiling here — a stronger
+result than the one that was expected.
+
+Wave 2 launched as slurm 21631698 (CLEAR, DER++, SI, LwF, frozen trunk, and
+arm I).

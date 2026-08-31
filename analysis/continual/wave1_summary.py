@@ -116,6 +116,8 @@ def main() -> None:
     g = _table("G. LwF (no buffer at all)", _load_group(d, "G_*.json", r"_s\d+$"))
     hh = _table("H. Frozen trunk: only the movement head adapts",
                 _load_group(d, "H_*.json", r"_s\d+$"))
+    ii = _table("I. Experience Replay at high replay ratios",
+                _load_group(d, "I_*.json", r"_s\d+$"))
 
     print("\n" + "-" * 118)
     print("READING")
@@ -132,7 +134,7 @@ def main() -> None:
     for name, rows in (("Experience Replay", b), ("Online EWC", c),
                        ("CLEAR", dd), ("DER++", e),
                        ("Synaptic Intelligence", f), ("LwF", g),
-                       ("Frozen trunk", hh)):
+                       ("Frozen trunk", hh), ("ER (high ratio)", ii)):
         if not rows:
             continue
         label, top = rows[0]
