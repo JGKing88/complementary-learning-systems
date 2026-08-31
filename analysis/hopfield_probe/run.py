@@ -99,12 +99,16 @@ def build_parser() -> argparse.ArgumentParser:
                    help="storage scale. Default 1/D. Equivalent to --beta by "
                         "(p -> lambda p, beta -> beta/lambda^2); only the "
                         "product beta*scale*D reaches the tanh.")
-    d.add_argument("--encoder_gain", type=float, default=None,
+    d.add_argument("--encoder_gain", type=float, action="append", default=None,
                    help="override the encoder's own gain at inference. Shapes "
                         "the PATTERN (how near a hypercube corner), which is a "
                         "different job from --beta. Changes every embedding, "
                         "so a policy trained on the checkpoint's own gain no "
-                        "longer applies.")
+                        "longer applies. Give it once to apply to every "
+                        "--ckpt, or once per --ckpt to set them individually "
+                        "-- encoders tuned at different coverages want "
+                        "different gains, and comparing them in one report "
+                        "needs each read at its own.")
     return p
 
 
@@ -150,6 +154,17 @@ def main(argv: list[str] | None = None) -> int:
     out_dir.mkdir(parents=True, exist_ok=True)
 
     labels = args.label or []
+    # One --encoder_gain applies to every checkpoint; one per checkpoint sets
+    # them individually. Anything else is a miscount, and silently broadcasting
+    # the first value would put encoders through charts they were not tuned for.
+    gains = args.encoder_gain
+    if gains is not None:
+        if len(gains) == 1:
+            gains = gains * len(args.ckpt)
+        elif len(gains) != len(args.ckpt):
+            raise SystemExit(
+                f"--encoder_gain given {len(gains)} times for "
+                f"{len(args.ckpt)} --ckpt: pass it once, or once per ckpt")
     manifest = {"config": cfg.to_json(), "encoders": [],
                 "created": time.strftime("%Y-%m-%d %H:%M:%S")}
 
@@ -162,9 +177,9 @@ def main(argv: list[str] | None = None) -> int:
             ckpt, device=cfg.device, fwhm_override=args.fwhm_override,
             fwhm_fallback=args.fwhm_fallback)
         header["label"] = label
-        if args.encoder_gain is not None:
-            encoder.gain = float(args.encoder_gain)
-            gain = float(args.encoder_gain)
+        if gains is not None:
+            encoder.gain = gains[i]
+            gain = gains[i]
             header["gain"] = gain
             header["gain_was_overridden"] = True
         # The recall regime belongs in the provenance bar: two runs of the same
