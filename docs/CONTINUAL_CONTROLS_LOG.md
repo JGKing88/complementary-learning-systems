@@ -1448,3 +1448,43 @@ this reason rather than run and quietly misinterpreted.
 gradients rather than loss values — the hnet penalty is checked to *move the
 generator*, and to restrain past-task weights monotonically in beta, which is
 precisely what DER++ failed while passing every value-based test.
+
+### The check that would have made a null result meaningless
+
+Before reading a single Wave 3 retention number, one thing had to be ruled out.
+The hypernetwork's generator starts with a deliberately small output layer, so
+that every task begins at the warm-started base — which is the only reason this
+arm is comparable to the pretrained controls at all. **If that output never
+grew, every task would receive approximately the same 73k weights**, all five
+environments would share one policy, and the arm would be the naive baseline
+wearing a hypernetwork's metadata.
+
+That failure is invisible from the outside. The losses would be sensible, the
+penalty would be nonzero and would scale correctly with beta, retention would
+come out low, and the honest-looking conclusion would be *"the hypernetwork
+does not help here"* when the truth is *"the hypernetwork was never switched
+on"*. No test of the method's mechanics catches it, because the mechanics would
+all be correct — it is a question about where optimisation ended up.
+
+`hnet_divergence.py` measures it: the mean over task pairs of
+‖w_i − w_j‖ / ‖w_i‖. At the headline configuration, over three blocks:
+
+| | conditioned fraction | pairwise divergence |
+|---|---|---|
+| beta = 0 (no regulariser) | 0.332 | **0.046** |
+| beta = 10,000 | 0.291 | **0.179** |
+
+The generator engaged in both cases, so a low score from this wave will be a
+result about the method rather than about its initialisation. But the contrast
+is the more interesting half, and it is mechanism evidence that does not depend
+on the retention numbers at all: **the regulariser makes the tasks' weights
+four times more different from each other.** That is precisely what it is
+supposed to do — it pins earlier tasks' generated weights while the current
+task's are free to move, so successive tasks separate instead of drifting
+together as one policy. Without it, the generator moves as a block and every
+task stays near every other.
+
+The measurement is now part of `HyperRNNAgent.describe()`, so every future
+history carries it rather than requiring a separate investigation. That needed
+`arch_detail` to be recorded *after* training rather than at construction,
+where it had been describing the initial state of a model nobody had trained.
