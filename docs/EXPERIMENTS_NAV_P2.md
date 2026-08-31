@@ -4759,8 +4759,24 @@ goals close to a wall are approached — and none of them has been tested.
 
 ## 17. P19 — the w52 attract-0.5 encoder, and how few updates it needs
 
-**Status: running.** Three arms launched 2026-08-31 — `p19_nc` 21651001,
-`p19_c100` 21651003, `p19_c300` 21651005. `exploit:800`, evals every 25.
+**Status: DONE, 2026-08-31.** Delivered model **`p19_kcap`** (21656252) —
+accuracy 1.000 from u125, beeline from u150, worst directness 1.090, final
+1.013. The one change from `p19_nc` is **`LOG_KAPPA_MAX` 5.0 → 2.5**; the
+encoder, both gains and the speed band are as Jack specified. Read §17.9–17.11
+for the result; §17.6 and §17.7 are a mechanism story that was **retracted**
+and are kept only for the record.
+
+Six arms, in order, and why each ended:
+
+| arm | job | what it tested | outcome |
+|---|---|---|---|
+| `p19_nc` | 21651001 | control, Jack's config | cancelled u475 — 0.375, κ pinned at the 148 clamp |
+| `p19_c100` | 21651003 | curriculum, 100-update ramp | cancelled u125 — confounded, policy locked |
+| `p19_c300` | 21651005 | curriculum, 300-update ramp | cancelled unstarted — GPU quota |
+| `p19_b5` | 21653544 | `hopfield_beta` 100 → 5 | cancelled u10 — **falsified §17.6 in ten updates** |
+| `p19_e20` | 21653877 | `MOVE_ENT_COEF` 0.005 → 0.02 | cancelled u125 — κ −45%, success unchanged |
+| **`p19_kcap`** | **21656252** | **`LOG_KAPPA_MAX` 5.0 → 2.5** | **COMPLETED 800/800 — the answer** |
+| `p19_kcur` | 21659098 | `p19_kcap` + curriculum | COMPLETED 800/800 — loses on both halves |
 
 ### 17.1 The ask, and the one axis it turns on
 
@@ -5296,10 +5312,13 @@ pair:
 
 | arm | ACC first ≥0.95 | worst after | **BEELINE first ≤1.10** | worst after |
 |---|---|---|---|---|
-| **`p19_kcap`** | **u125** | 0.990 | **u150** | 1.054 |
+| **`p19_kcap`** | **u125** | 0.990 | **u150** | **1.090** |
 | `p17_gain` | u50 touched | 0.760 | u200 | 1.092 |
-| `p18_knee` | u550 | 0.990 | u500 | 1.041 |
+| `p18_knee` | u550 | 0.990 | u500 | **1.041** |
 | `p19_nc` control | not by u475 | — | not by u475 | — |
+
+(`p19_kcap` scored over its completed 800-update run, 32 evals — see the
+stability note below, which the mid-run draft of this section got wrong.)
 
 `p19_kcap`'s trajectory:
 
@@ -5312,19 +5331,31 @@ pair:
 | directness | — | — | — | — | 1.525 | **1.054** |
 
 **It reaches the beeline sooner than `p17_gain` (u150 vs u200) and holds it
-tighter (1.054 vs 1.092)** — and does so on the w52 encoder at Jack's specified
-`ENCODER_GAIN` 100 and `HOPFIELD_BETA` 100, with learned speed in [0.5, 1.0].
-The delivered config is `p19_kcap`: `p19_nc` plus `LOG_KAPPA_MAX=2.5`.
+marginally tighter (1.090 vs 1.092)** — and does so on the w52 encoder at Jack's
+specified `ENCODER_GAIN` 100 and `HOPFIELD_BETA` 100, with learned speed in
+[0.5, 1.0]. The delivered config is `p19_kcap`: `p19_nc` plus
+`LOG_KAPPA_MAX=2.5`.
+
+Where it clearly beats `p17_gain` is the **success floor: 0.990 against
+0.760**, over 27 consecutive evals. The two are near-identical on worst-case
+directness; the win is speed-to-beeline and never losing accuracy.
 
 Note the u100 row — 75.1 steps at speed 0.20, path 14.7 — is the survivorship
 regime §17.5 warned about *inverted*: success is climbing, and the newly
 reachable goals are the FAR ones, so path inflates before it collapses. It is
 not a regression; directness at u125 (1.525) → u150 (1.054) is the correction.
 
-**Stability is NOT yet established.** u150 is the crossing itself, so its
-"worst after" rests on one point. `p17_gain` crossed and then fell (1.092 at
-u700, 0.969 success at u750). The number to quote is the minimum over ≥4 evals
-past u150, and it is not in yet.
+**Stability — RESOLVED at completion, and the mid-run number was optimistic.**
+This section was first written at u150, where "worst after" rested on a single
+point and read **1.054**. Over the completed 800-update run (32 evals) it is
+**1.090** — a single excursion at u700; from u650 on the arm runs 1.010–1.017.
+Success never drops below 0.990 across **27 consecutive evals from u150 to
+u800**.
+
+The pattern is worth naming because it recurred three times in P19: a minimum
+taken over few points is mechanically better than one taken over many, so every
+early "worst after" flatters its arm. §17.11 records the case where this
+actually reversed a conclusion.
 
 #### What actually delivered it
 
@@ -5404,10 +5435,28 @@ clamp is fixed there is little left for it to buy.
 | `ENCODER_GAIN` / `HOPFIELD_BETA` | 100 / 100 (Jack's) |
 | speed | learned in [0.5, 1.0] (Jack's) |
 | **`LOG_KAPPA_MAX`** | **2.5** — the one change from the default 5.0 |
-| accuracy | **1.000 @ 0 and @ 10 distractors, from u125** |
-| beeline | **directness 1.003–1.054 from u150**, ~1.02 at u450 |
-| mean_speed | 0.98 at u425, against the 1.0 cap |
+| run | **COMPLETED 800/800**, exit 0, 4h41m, 32 evals |
+| accuracy | **1.000 @ 0 and @ 10 distractors, from u125**; floor **0.990** over 27 consecutive evals u150–u800 |
+| beeline | **from u150**; worst 1.090 (one excursion at u700), **1.013 final**, 1.010–1.017 from u650 |
+| mean_speed | **0.99** at u800, against the 1.0 cap |
+
+Rollout shape, from the run's own `run.json`: 1 world, **20 envs × 64 rollouts
+per env = 1280 trajectories/update**, 200 steps each (256,000 env-steps/update,
+4,000 serial policy calls). PPO: `ppo_epochs` 4, `n_minibatches` 4 — advantages
+normalised across the full pool, minibatches over whole trajectories (the trunk
+is an RNN). `refresh_envs_each_update = False`, so **the 20 envs and their goals
+are fixed for the whole run**; start position and the distractor draw (~U[0,10])
+are re-sampled every rollout.
 
 Against the phase's previous best, `p17_gain`: beeline at **u150 against u200**,
-held at **1.054 against 1.092**, with a success floor of **0.990 against 0.760**.
+worst-case directness essentially tied (**1.090 against 1.092**), and a success
+floor of **0.990 against 0.760**. The win is speed-to-beeline and never losing
+accuracy, not a tighter path.
+
+**Caveat worth carrying.** With `refresh_envs_each_update=False` the model saw
+**20 fixed (env, goal) pairs** for all 800 updates. Scores are on the
+`recorded` val split, not those goals — but `project_hopfield_nav_v22` records
+that enabling the per-update goal refresh halved seed variance elsewhere. If
+this result needs hardening against the seed lottery, that is the one-flag
+rerun.
 Faster *and* tighter *and* steadier, on a different encoder, from one default.
