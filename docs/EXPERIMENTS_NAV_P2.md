@@ -19,7 +19,7 @@ mismatch that must be fixed first.
 | **Branch / worktree** | `nav-tri-metric` at `.claude/worktrees/nav-tri-metric` |
 | **Predecessor** | `docs/EXPERIMENTS_NAV_TRI.md` — read its §0 findings 1–22 |
 | **Open decisions** | §11 — four forks put to Jack; spec assumes the recommended default in each |
-| **Running** | **P19 (§17)** — `p19_nc` 21651001, `p19_c100` 21651003, `p19_c300` 21651005 on the w52 attract-0.5 encoder, gain=beta=100, learned speed [0.5, 1.0]. Curriculum length is the axis; `p19_nc` is the control.  |
+| **Running** | **P19 (§17)** — `p19_nc` 21651001, `p19_c100` 21651003 on the w52 attract-0.5 encoder, gain=beta=100, learned speed [0.5, 1.0]. `p19_c300` cancelled (§17.5). Scored on the BEELINE objective (§17.5), not accuracy alone. |
 | **Charts** | One published page per run — `p10_pol_v1` [3bc9ad4e](https://claude.ai/code/artifact/3bc9ad4e-0655-43ca-b870-0516f4487bdc) · `p10_pol` [388023ce](https://claude.ai/code/artifact/388023ce-a725-4253-a53b-c9979a77baf2) · `p10_e_pol` [00bd7fd3](https://claude.ai/code/artifact/00bd7fd3-bb60-4e22-a968-c62822c5cdb3) · `p10_e_pol_v1` [8fd3ecf0](https://claude.ai/code/artifact/8fd3ecf0-c429-40d6-bde6-008ca25b5a40) · `p11_cur` [4de8dfa7](https://claude.ai/code/artifact/4de8dfa7-9403-43c8-b4f9-b14669ae603e) · `p11_tp` [4dbbe6e9](https://claude.ai/code/artifact/4dbbe6e9-c8e3-41fb-9b38-36a1443bf420) · `p11_cur_tp` [6c3a0503](https://claude.ai/code/artifact/6c3a0503-dba1-405a-a90c-d33c491ee5b2) · `p12_lo` [6b09232a](https://claude.ai/code/artifact/6b09232a-bcd2-4609-9c1d-97d9757d0f5a) · `p12_lo_curtp` [835846df](https://claude.ai/code/artifact/835846df-d30d-46f7-b979-3fe41fdfff7e) |
 | **Finished** | **`p10_pol_v1` 21300389** — 2000/2000, **1.000 success @ 10.95 steps (1.10× optimal)**, the phase-2 best exploit model. **`p10_e_pol` 21300390** — 1500/1500, **cps 0.75** against a billiard ceiling of 0.775. |
 | **Done** | §4 blocking fixes, P1 (§5) with figures, the recall-mechanism thread §5.3-5.9, **P2 (§6)**, and **P10 (§9.4–9.8)** |
@@ -4879,3 +4879,85 @@ something is wrong, not that the agent is slow.**
 arm first reaches its plateau, and the minimum it touches afterwards — the two
 threshold-free numbers §9.9 settled on, reported as a series rather than as a
 peak, per the eval-noise rule.
+
+### 17.5 The objective, restated by Jack — the BEELINE, fast and stable
+
+> "report both separately it's good to know. but the goal should be to get
+> 'beelines to goal' as quickly (and stably) as possible"
+
+So accuracy is the **precondition**, not the target. Every P19 arm from here is
+reported as **two plateaus**, each with the threshold-free pair §9.9 settled on
+(first update reaching the level, and the worst value at or after it):
+
+| plateau | metric | crossing |
+|---|---|---|
+| **ACC** | `success_rate` @ 10 distractors | first ≥ 0.95 |
+| **BEELINE** | `directness` | first ≤ 1.10 |
+
+#### The beeline metric, and why it is not `mean_steps`
+
+`mean_steps` tracks the **speed cap** (§9.9): the same path walked slower costs
+more steps. The speed-invariant quantity is the distance actually walked,
+
+    path = mean_steps × mean_speed        [cells]
+    directness = path / 10.5
+
+whose floor is the mean straight-line start–goal distance. **10.5 cells** is
+inferred two independent ways from §9.9's own table and confirmed by a third:
+
+| source | arithmetic | → |
+|---|---|---|
+| `p10_pol_v1` | 10.95 steps × 1.00 speed / 1.043 directness | 10.50 |
+| `p12_lo` | 11.79 × 0.94 / 1.081 | 10.25 |
+| `p17_gain` best observed path | 11.2 × 0.95 | 10.64 |
+
+Good enough to rank arms; **not** a per-episode directness — for that, use the
+probe, which computes it against each episode's own start–goal distance.
+
+**Consequence, recorded because it killed a candidate arm:** directness is
+speed-invariant *by construction*, so `init_speed_mu` — which sets the initial
+speed as a NORMALIZED position in the band, i.e. 0.5 → 0.75 cells in the
+[0.5, 1.0] band, not 1.25 as its config comment (written for the [0.5, 2.0]
+band) says — moves `mean_steps` but **cannot move directness**. It was
+considered as a "reach the beeline sooner" lever and rejected on that basis.
+What moves directness is heading quality, and §16 showed the encoder dominates
+that.
+
+#### The survivorship trap
+
+`mean_steps` and `mean_speed` are computed over **successful episodes only**, so
+at low success only the nearest goals are reached and path looks spuriously
+good. `p19_nc` at u100 shows 9.3 steps / path 7.2 cells at success 0.073 — a
+"better than converged" path that means nothing. **Directness is therefore only
+quoted where succ@10 ≥ 0.90** and suppressed otherwise, rather than footnoted.
+
+#### The two reference runs, scored on the new objective
+
+| run | ACC first ≥0.95 | worst after | **BEELINE first ≤1.10** | **worst after** |
+|---|---|---|---|---|
+| `p17_gain` | u50 | 0.760 | **u200** | 1.092 |
+| `p18_knee` | u550 | 0.990 | u500 | **1.041** |
+
+The sharpest statement of the accuracy/beeline gap: at u50 `p17_gain` was
+**accurate but not beelining** — success 1.000 at directness **1.383**, walking
+38% further than the straight line. By u200 it was both (1.056), refining to
+~1.01 by u400.
+
+On Jack's objective the two split: `p17_gain` reaches the beeline **2.5×
+sooner**, `p18_knee` holds it **tighter**. Same gain, same schedule, same
+shaping — **the encoder is what separates them**, which is why P19's own curve
+is the measurement that matters.
+
+#### `p19_c300` cancelled
+
+`QOSMaxGRESPerUser` caps this account at **2 concurrent GPUs**, so the three
+arms serialise and Jack's own `w58_cov` encoder sweep queues behind them.
+`p19_c300` was dropped, unstarted: a 300-update ramp only reaches full task
+difficulty at u300, which is *by construction* the arm least able to reach a
+beeline quickly, and §9.9 already measured longer ramps breaking through later.
+`p19_nc` vs `p19_c100` still answers whether a curriculum helps at all; a longer
+ramp is worth re-running only if it does.
+
+The readout-field job was moved to **CPU** (`mit_normal`) for the same reason —
+it is a policy-free sweep over a 20×20 grid with no rollouts, so it does not
+need a GPU and should not spend the quota the training arms need.
