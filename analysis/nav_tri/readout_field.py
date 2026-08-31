@@ -41,14 +41,14 @@ from hopfield_nav.evaluation.checkpoint_io import (
 from hopfield_nav.evaluation.metrics import random_start
 from hopfield_nav.rollout.distractors import goal_encoding, sample_distractors
 from hopfield_nav.world import generate as gen
-from analysis.nav_tri.signal_separability import _q_at
+from analysis.nav_tri.signal_separability import q_at
 
 
 def field_over_cells(vh, hop, size, offset, device):
     """`q` at every cell of a size x size arena. Returns (size, size, 2)."""
     gx, gy = np.meshgrid(np.arange(size), np.arange(size), indexing="ij")
     cells = np.stack([gx.ravel(), gy.ravel()], axis=1)
-    q, _ms, _rec = _q_at(vh, hop, cells, offset, device, multistep=())
+    q, _ms, _rec = q_at(vh, hop, cells, offset, device, multistep=())
     return np.asarray(q, dtype=np.float64).reshape(size, size, 2)
 
 

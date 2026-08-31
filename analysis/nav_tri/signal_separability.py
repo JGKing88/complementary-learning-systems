@@ -76,7 +76,7 @@ def _auc(pos: np.ndarray, neg: np.ndarray) -> float:
 
 
 @torch.no_grad()
-def _q_at(vh, hop, cells, offset, device, multistep):
+def q_at(vh, hop, cells, offset, device, multistep):
     """(q, q_multistep, recalled) for a batch of cells against one memory."""
     pos = np.asarray(cells, dtype=np.int32)
     emb_np = vh.get_encoded_state(pos, offset)
@@ -167,13 +167,13 @@ def main() -> None:
             rng.shuffle(pats)
             for pat in pats:
                 hop_g.input_memory(torch.from_numpy(pat).float())
-            q_g, ms_g, rec_g = _q_at(vh, hop_g, cells, off, device, multistep)
+            q_g, ms_g, rec_g = q_at(vh, hop_g, cells, off, device, multistep)
 
             # goal absent (the explore regime's memory)
             hop_d = Hopfield(embed_dim, beta=cfg.hopfield.beta, device=str(device))
             for pat in d_pats:
                 hop_d.input_memory(torch.from_numpy(pat).float())
-            q_d, ms_d, _ = _q_at(vh, hop_d, cells, off, device, multistep)
+            q_d, ms_d, _ = q_at(vh, hop_d, cells, off, device, multistep)
 
             acc["q_goal"].append(np.linalg.norm(q_g, axis=1))
             acc["q_dist"].append(np.linalg.norm(q_d, axis=1))
