@@ -5051,3 +5051,80 @@ defaults to the encoder gain, so **every arm trained on a gain-100 or gain-300
 encoder has silently been paying this cost**, and the default coupling — already
 identified in §15.1 as what made `p16_sat` a two-factor arm — is more expensive
 than "an unstated default" made it sound.
+
+### 17.7 RETRACTION — beta is NOT the cause. The encoder's readout scale is.
+
+`p19_b5` answered in ten updates, and it **falsifies §17.6's mechanism**. Beta
+100 → 5.0, everything else identical:
+
+| u | `p19_nc` (beta 100) | `p19_b5` (beta 5.0) |
+|---|---|---|
+| 1 | κ 5.618, dir 0.336 | κ 5.638, dir 0.357 |
+| 10 | κ 16.343, dir 0.682 | κ 16.223, dir 0.671 |
+
+Identical to three digits. **Beta does nothing here.** The trainer's own startup
+line confirms the arm ran at `hopfield beta 5`, so this is not a plumbing
+failure — it is the hypothesis being wrong.
+
+#### What `dir_norm` actually is, and why the causal story was backwards
+
+`polar_head.py:393` — `dir_norm = sq.sqrt() * vmax`, the norm of the **policy's
+own direction vector**, logged as a gauge. It is the policy's *confidence*, an
+OUTPUT of the head, not ‖q‖ arriving from the memory. §17.6 read a policy
+statistic as a memory statistic and built a causal chain on it. κ and `dir_norm`
+are two views of the same quantity, so "dir_norm drives κ" was never even a
+mechanism — it was one number explaining itself.
+
+#### What the data actually says — it is the ENCODER, at update 1
+
+| run | encoder | gain | beta | κ@u1 | **dir@u1** | κ@u10 |
+|---|---|---|---|---|---|---|
+| `p10_pol_v1` | P2 fixed | 5 | 5 | 4.37 | **0.128** | 8.0 |
+| `p17_gain` | P2 fixed | **300** | 5 | 4.38 | **0.126** | 4.8 |
+| `p18_knee` | knee | 300 | **300** | 5.65 | **0.351** | 17.4 |
+| `p19_nc` | w52 | 100 | **100** | 5.62 | **0.336** | 16.3 |
+| `p19_b5` | w52 | 100 | **5** | 5.64 | **0.357** | 16.2 |
+
+Three facts, and they settle it:
+
+1. **The split exists at u1** — essentially at initialisation, before training
+   can have done anything. It is a property of the signal, not of learning.
+2. **It tracks encoder family exactly.** P2-fixed ⇒ dir ≈ 0.127. The newer
+   sweep encoders (knee, w52) ⇒ dir ≈ 0.35, a **2.75×** gap.
+3. **Neither knob touches it.** `encoder_gain` 5 → 300 moves dir 0.128 → 0.126
+   (`p10_pol_v1` vs `p17_gain`); `hopfield_beta` 100 → 5 moves it 0.336 → 0.357.
+
+So the newer encoders hand the policy a **larger-magnitude readout from the
+first step**, the direction head produces correspondingly larger logits, and κ
+starts higher and compounds. Angular exploration collapses before the policy has
+learned which heading is right.
+
+#### What survives, and what does not
+
+- **SURVIVES:** the κ runaway itself, and its cost. `p17_gain` (κ ~8) reaches
+  the beeline at u200; `p18_knee` (κ→133) at u500; `p19_nc` (κ→148) is flat at
+  u175. The §16.2 line "the knee encoder trades convergence speed for stability"
+  is *right after all* — it IS the encoder — but for the readout-scale reason
+  above, not for anything about basins or stability.
+- **RETRACTED:** everything in §17.6 attributing this to beta, including the
+  retraction §17.6 itself made of the `p18_knee` comment. That comment's claim
+  that beta=300 is harmless is, on this evidence, **correct**.
+- **UNCHANGED:** the field results (§17.6, first half). Those are direct
+  measurements of `q(x)` and do not depend on any of this.
+
+#### Consequence for the objective
+
+`p19_nc` is not broken — at u175 (0.104) it is tracking `p18_knee`, which was at
+0.115 at u150 and 0.188 at u200 before breaking through around u500. The w52
+encoder behaves like the knee encoder because it *is* the same kind of encoder.
+
+The lever is therefore whatever resists early κ sharpening, and **the one arm
+this project already wrote for that was never run**: `p10_pol_v1_e20` /
+`_e50` (`MOVE_ENT_COEF` 0.02 / 0.05 against the default 0.005) exist in the
+launcher with no checkpoint directory. That is the untested lever, and it is the
+one aimed at Jack's objective.
+
+**A note on method.** This is the second mechanism story in two hours built on a
+quantity I had not read the definition of — the first being the §15.4 beta
+correction. The measurement that killed it (`p19_b5`) cost ten updates. **The
+single-factor arm should have been launched before the write-up, not after it.**

@@ -705,7 +705,7 @@ case "$VARIANT" in
   # u50 to u1100, and the 6 h partition wall lands near u1100 anyway (both p17
   # and p18 TIMEOUT-ed there). 32 eval points clears by a wide margin the
   # >=4-point bar this project's eval noise requires for a directional claim.
-  p19_nc|p19_c100|p19_c300|p19_b5)
+  p19_nc|p19_c100|p19_c300|p19_b5|p19_e20)
     ENCODER=/orcd/pool/003/jackking/cls_runs/sweeps/w52_attract_fwhm/001_att0.5_seed=43/encoder_final.pt
     ENCODER_GAIN=100
     HOPFIELD_BETA=100
@@ -740,6 +740,34 @@ case "$VARIANT" in
       # objective (§17.5). If kappa still runs away at 5.0 the cause is the
       # encoder, not beta, and that is worth knowing too.
       p19_b5) HOPFIELD_BETA=5.0 ;;
+      # p19_e20 -- resist the early kappa sharpening with entropy pressure.
+      #
+      # §17.7 established that kappa runaway is set by the ENCODER's readout
+      # scale at update 1 (dir_norm 0.35 for the w52/knee family against 0.127
+      # for the P2-fixed one) and that NEITHER encoder_gain NOR hopfield_beta
+      # moves it. So the lever has to act on the policy, not on the memory.
+      #
+      # MOVE_ENT_COEF is that lever and it has never been run: p10_pol_v1_e20
+      # and _e50 exist in this file with no checkpoint directory anywhere. The
+      # entropy bonus opposes exactly what kappa runaway is -- the collapse of
+      # angular spread -- so it is the one knob aimed at the mechanism rather
+      # than at a correlate of it.
+      #
+      # 0.02 is 4x the 0.005 default, the lower of the two values the unrun
+      # e20/e50 pair bracketed. The upper one is not launched at the same time
+      # because the GPU quota is 2 and p19_nc must keep running as the control.
+      #
+      # Everything else is p19_nc, INCLUDING beta=100 and gain=100 -- Jack's
+      # specified config -- so this is a clean single-factor test against a
+      # control that is still running.
+      #
+      # Prediction on record: kappa stays below ~30 through u50 (p19_nc hits
+      # 119 there) and ang_noise stays above ~0.15 rad. If kappa still runs away
+      # then entropy cannot reach it either, and the remaining candidate is the
+      # readout magnitude itself -- which would mean normalising the hopfield
+      # input, and INPUT_HOPFIELD_RAW is FIXED BY INSTRUCTION, so that is a
+      # question for Jack rather than a knob to turn.
+      p19_e20) MOVE_ENT_COEF=0.02 ;;
       # max ramps FROM n_train_distractors_max TO _max_end, so the START value
       # is the one that has to be 0.
       p19_c100) N_TRAIN_DISTRACTORS_MAX=0; N_TRAIN_DISTRACTORS_MAX_END=10
