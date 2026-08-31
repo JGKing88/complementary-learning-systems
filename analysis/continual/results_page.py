@@ -1154,7 +1154,58 @@ def render(d: dict) -> str:
                   '<td class="num">0.907</td><td class="num">0.348</td></tr>')
             A("</tbody></table></div>")
 
-            if pc and lift < 0.25 * pc:
+            gen = d.get("incontext_generalization") or {}
+            if gen.get("memorised"):
+                # The measurement is reported, and then withdrawn. Leaving the
+                # verdict box in place with a caveat underneath would be worse
+                # than either publishing it or removing it: the box is what a
+                # reader takes away.
+                lt_g = (gen.get("arms", {}).get("lifetime") or {})
+                A('<div class="note crit"><h4>This measurement does not '
+                  "support a conclusion, and the earlier one is withdrawn</h4>"
+                  f"<p>The numbers above were read as <em>“activation memory "
+                  f"does not do this job”</em> — {lift:+.3f} against a "
+                  f"detectable {pc:+.3f}. That reading does not hold, because "
+                  "the policy being tested cannot navigate the environments it "
+                  "is being tested on.</p>"
+                  "<p>Pretraining used a fixed pool of 32 environments. On "
+                  "those, the frozen policy reaches "
+                  f"<strong>{fmt(lt_g.get('train_pool'))}</strong>. On the "
+                  "held-out environments this section evaluates, it reaches "
+                  f"<strong>{fmt(lt_g.get('held_out'))}</strong> — a gap of "
+                  f"<strong>{lt_g.get('ratio', 0):.0f}×</strong>. It "
+                  "learned thirty-two specific goals in its weights rather "
+                  "than a strategy for an unseen arena.</p>"
+                  "<p>So the flat curve is <em>overdetermined</em>. A policy "
+                  "that succeeds a tenth of the time has nothing for memory to "
+                  "modulate, and a flat line is the only thing it could have "
+                  "produced. This cannot distinguish <em>activation memory "
+                  "cannot do this</em> from <em>the pool was too small to make "
+                  "adapting easier than memorising</em> — and the second is "
+                  "the one the evidence actually points at.</p>"
+                  "<p>The positive control does not rescue it either. A "
+                  "scripted agent scoring +0.559 shows the <em>metric</em> can "
+                  "detect memory; nothing here shows this <em>network</em> "
+                  "could express memory if it had any. That control was never "
+                  "run.</p></div>")
+                A('<div class="note"><h4>What a real attempt needs</h4><ul>'
+                  "<li><strong>A fresh environment every lifetime</strong>, "
+                  "drawn from the ~10<sup>7</sup> available wall seeds, rather "
+                  "than cycling a fixed 32. This is the standard meta-learning "
+                  "setup and it removes memorisation as an option.</li>"
+                  "<li><strong>A generalisation gate.</strong> Held-out "
+                  "episode-1 success has to be materially above chance before "
+                  "the adaptation question means anything. The design never "
+                  "had this precondition.</li>"
+                  "<li><strong>An architecture-level positive control</strong> "
+                  "— reveal the goal during episode 1 only, and check the agent "
+                  "exploits it in episode 2. Failing that would be a "
+                  "<em>legible</em> failure mode, which is what the plan asked "
+                  "for and what a bare null does not give.</li>"
+                  "<li><strong>memory_lift on the training environments "
+                  "too</strong>, which localises the failure to generalisation "
+                  "rather than to memory.</li></ul></div>")
+            elif pc and lift < 0.25 * pc:
                 A('<div class="note acc"><h4>Activation memory does not do this '
                   "job</h4>"
                   f"<p>The lifetime arm scores <strong>{lift:+.3f}</strong> "
@@ -1171,11 +1222,6 @@ def render(d: dict) -> str:
                   f"<p>memory_lift <strong>{lift:+.3f}</strong>. Forgetting is "
                   "not the interesting axis for this comparison, and the "
                   "framing has to account for it.</p></div>")
-            A("<p><strong>What this does not license.</strong> The policies "
-              "here are weak in absolute terms, the pool was 32 environments, "
-              "and the recurrent state is 256 units. This says activation "
-              "memory in <em>this</em> network does not substitute for a "
-              "store — not that no recurrent policy could.</p>")
 
     # ---- N=20 ----------------------------------------------------------
     n20 = d.get("n20") or []
@@ -1214,15 +1260,16 @@ def render(d: dict) -> str:
 
     # ---- bugs found ---------------------------------------------------
     A('<h2 id="found"><span class="sec">9</span> Found along the way</h2>')
-    A("<p>Eleven defects surfaced while building this, and they are on the "
+    A("<p>Twelve defects surfaced while building this, and they are on the "
       "page because they share a property worth knowing about: <strong>not one "
       "of them raised an exception in normal operation</strong>. Every one "
       "produced a plausible number. Four were caught by a test written to be "
       "falsifiable rather than confirmatory, three by inspecting a table "
       "before publishing it, two by reading code that had no failing symptom "
-      "at all, one by a reader asking where a method had gone, and one by "
-      "disbelieving a result this project had just produced. Five are shown "
-      "here; the rest are in the log.</p>")
+      "at all, one by disbelieving a result this project had just produced, "
+      "and <strong>two by a reader asking a question</strong> — where a method "
+      "had gone, and whether a null result had really been tried hard enough. "
+      "Six are shown here; the rest are in the log.</p>")
     A('<div class="note crit"><h4><code>input_prev_action</code> had never '
       "worked</h4>"
       "<p>Both the DAgger collector and the evaluator built the previous-action "
@@ -1251,6 +1298,27 @@ def render(d: dict) -> str:
       "limit. The run was optimisation-starved. The summary now measures the "
       "end-slope and refuses a capacity verdict while a run is still "
       "improving.</p></div>")
+    A('<div class="note crit"><h4>A published null that its own training log '
+      "contradicted</h4>"
+      "<p>&sect;7 reported that a frozen recurrent policy shows no in-context "
+      "adaptation, and called it the strongest result available. The policy it "
+      "tested scores 0.80 on the 32 environments it was pretrained on and 0.10 "
+      "on the held-out environments it was evaluated on — an <strong>8× "
+      "gap</strong>. It had memorised its pool, so the evaluation was run on a "
+      "policy that cannot navigate its test environments, and a flat "
+      "success-vs-episode curve was the only outcome available.</p>"
+      "<p>The launcher's own comment asserted the thing that failed — "
+      "<em>“a pool big enough that memorising it is not obviously easier than "
+      "learning the strategy”</em> — as an assumption, never checked. The "
+      "numbers refuting it were written to the same job's log hours before the "
+      "conclusion was drawn from it. And the defence recorded at the time, "
+      "that a held-out split <em>“guards against the arms simply memorising”</em>, "
+      "is wrong in a specific way: a held-out split stops you reporting "
+      "memorisation as adaptation, but it cannot rescue an experiment whose "
+      "model memorised — it leaves nothing to measure.</p>"
+      "<p>Every other entry here was found by a check. This one was found by "
+      "being asked whether the effort had really been the best possible, and "
+      "the honest answer was no.</p></div>")
     A('<div class="note crit"><h4>A task-identifiability number that measured '
       "the wrong thing</h4>"
       "<p>&sect;5's headline depends on how recognisable an environment is "

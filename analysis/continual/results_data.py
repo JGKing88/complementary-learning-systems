@@ -231,6 +231,12 @@ def main() -> None:
                         "formality is this number's job to say.")
     p.add_argument("--beta_calibration", default=None,
                    help="calibrate_beta output, if it was written to a file.")
+    p.add_argument("--incontext_generalization", default=None,
+                   help="incontext_generalization.json. Decides whether "
+                        "section 5.2's result is interpretable at all: if the "
+                        "pretrained policy memorised its pool, the held-out "
+                        "evaluation is measuring a policy that cannot "
+                        "navigate, and a flat curve means nothing.")
     p.add_argument("--out", required=True)
     args = p.parse_args()
 
@@ -268,6 +274,7 @@ def main() -> None:
         "incontext": (collect_incontext(args.incontext_dir)
                       if args.incontext_dir else None),
         "identifiability": _read_json(args.identifiability),
+        "incontext_generalization": _read_json(args.incontext_generalization),
         "hopfield_costs": {
             # Constants of the model, not measurements -- stated here so the
             # frontier figure has both ends of every axis in one place.

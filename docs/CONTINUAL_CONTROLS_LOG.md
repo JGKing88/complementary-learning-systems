@@ -1624,3 +1624,79 @@ The hypernetwork's β peak is also bracketed now: 10⁶ → 0.454, 3×10⁶ → 
 Three sweeps, three interior optima, and a method that beats the previous best
 by 0.16 while storing 85× less — at the cost of a task label the environments
 themselves do not reveal.
+
+---
+
+## 2026-08-31 — §5.2 withdrawn: the policy had memorised its pretraining pool
+
+Jack asked whether I had really made the best possible effort at seeing if a
+frozen RNN could adapt in-context. Checking rather than defending, the answer is
+**no**, and the conclusion published two entries above does not hold.
+
+| arm | nav_det on the 32 **training** envs | success on **held-out** envs | ratio |
+|---|---|---|---|
+| lifetime | **0.804** | 0.100 | **8.1×** |
+| episodic | 0.611 | 0.115 | 5.3× |
+
+The pretrained policy solves the environments it was trained on and fails on
+new ones. It learned thirty-two specific goals in its weights; it never learned
+a strategy for navigating an unseen arena, let alone a strategy for adapting to
+one. So §5.2's held-out evaluation was run on a policy that succeeds a tenth of
+the time, **and a flat success-vs-episode curve is the only outcome such a
+policy can produce.**
+
+The measurement therefore cannot distinguish
+
+* *activation memory cannot do this job* — what was reported, from
+* *the pool was too small to make adapting easier than memorising* — which is
+  what an 8× generalisation gap actually points at.
+
+### Three ways this was worse than a simple miss
+
+**The launcher asserted the thing that failed.** Its comment reads *"A pool big
+enough that memorising it is not obviously easier than learning the strategy."*
+That was an assumption presented as a design justification, never measured. The
+numbers refuting it were written by the same job, into
+`logs/incontext/pre_lifetime_s*.log`, hours before the conclusion was drawn.
+
+**The defence recorded at the time was wrong.** The log said the held-out
+evaluation *"guards against the arms simply memorising the 32 training envs."*
+A held-out split stops you reporting memorisation *as* adaptation. It cannot
+rescue an experiment whose model memorised — it leaves nothing to measure. The
+sentence sounded like a control and functioned as a reassurance.
+
+**The positive control validated the metric, not the model.** A scripted agent
+scoring +0.559 proves `memory_lift` can *detect* memory. Nothing established
+that this network, trained this way, could *express* memory if it had any. The
+architecture-level control — reveal the goal in episode 1 only, check it is
+exploited in episode 2 — was never run, and without it a flat curve is
+uninterpretable in principle, not just in this instance.
+
+### What the page now says
+
+The verdict box is replaced rather than caveated. A caveat under a green
+"Activation memory does not do this job" heading would leave the heading as the
+takeaway, which is the thing that is wrong. `incontext_generalization.py`
+computes the gap and emits it as a recorded artifact, `results_data` carries it,
+and the page renders the withdrawal from that number rather than from prose —
+so if the experiment is redone with a policy that generalises, the section
+reverts to reporting a result automatically.
+
+### What a real attempt needs
+
+1. **A fresh environment every lifetime**, drawn from the ~10⁷ available wall
+   seeds, instead of cycling a fixed 32. This is the standard meta-learning
+   setup and it removes memorisation as an option entirely. It is also a small
+   change: the sampler, not the architecture.
+2. **A generalisation gate.** Held-out episode-1 success must be materially
+   above chance before the adaptation question means anything. The design never
+   had this precondition, which is why it produced an uninterpretable null
+   without anything failing.
+3. **An architecture-level positive control** — goal visible in episode 1 only.
+   Failing *that* would be a legible failure mode, which is what plan §5.2 asks
+   for ("capacity? interference? horizon?") and what a bare null never gives.
+4. **`memory_lift` on the training environments too**, which localises a null to
+   generalisation rather than to memory.
+
+Every other defect in this log was caught by a check. This one was caught by
+being asked whether the effort had been good enough.
