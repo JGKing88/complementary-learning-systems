@@ -288,8 +288,8 @@ def render(d: dict) -> str:
       f'<span class="dim">Results · {esc(d.get("generated", "")[:10])}</span>'
       '<span class="dim">docs/CONTINUAL_CONTROLS_PLAN.md</span></div>')
     A("<h1>How good does classic continual learning get?</h1>")
-    A('<p class="stand">Nine continual-learning methods against the Hopfield '
-      "store on the same five-environment stream. The comparison is a "
+    A('<p class="stand">State-of-the-art continual-learning methods against '
+      "the Hopfield store on the same environment stream. The comparison is a "
       "cost frontier, not a leaderboard: retention alone ranks a method that "
       "refuses to learn above one that works.</p>")
     A("</header>")
@@ -308,9 +308,19 @@ def render(d: dict) -> str:
         A(f'<div><span class="lab">Oracle ceiling</span>'
           f'<span class="val">{fmt(oracle, 3)}</span>'
           f'<span class="sub">T0.3 · the eval has no headroom problem</span></div>')
+    converged = [j for j in d.get("joint", [])
+                 if abs(j.get("end_slope") or 0) <= 0.02 and (j.get("final") or 0) > 0.5]
+    if converged:
+        best_j = max(converged, key=lambda j: j["final"])
+        A(f'<div><span class="lab">Joint ceiling</span>'
+          f'<span class="val">{fmt(best_j["final"])}</span>'
+          f'<span class="sub">T0.1 · hidden={best_j["hidden"]}, converged — '
+          f'the same net holds all envs at once</span></div>')
+    n_methods = len({m["display"] for m in methods}) if methods else 0
+    seeds = max((m["seeds"] for m in methods), default=0)
     A(f'<div><span class="lab">Method configs</span>'
       f'<span class="val">{len(methods)}</span>'
-      f'<span class="sub">across 9 methods, 8 seeds each</span></div>')
+      f'<span class="sub">{n_methods} methods, up to {seeds} seeds each</span></div>')
     A("</div>")
 
     # ---- the frontier ------------------------------------------------
