@@ -1584,3 +1584,43 @@ re-run:
 * **The best gating and the best λ were never run together.** XdG alone prefers
   0.8; XdG + SI was only ever run at 0.5. The published combination is the one
   that happened to be in the script, not the method's best setting.
+
+---
+
+## 2026-08-31 — Wave 3b: all three edges closed
+
+Job **21654989**, 40 runs, **all OK**, 12 minutes. The headline survives, and it
+is now a plateau rather than an edge.
+
+**λ has an interior optimum.** 100 → 0.503, 10⁴ → 0.739, 10⁵ → 0.739,
+10⁶ → 0.696. The two middle settings tie to four decimals — checked, and they
+are genuinely different runs whose per-seed values differ throughout, not a
+duplicated config. 10⁵ is the better of the two to report: identical mean, a
+tighter spread (±0.045 against ±0.067; worst seed 0.585 against 0.396) and a
+marginally higher current-environment score.
+
+**Gating has an interior optimum too.** 0.2 → 0.177, 0.5 → 0.386, 0.8 → 0.425,
+0.9 → 0.386. XdG alone peaks at 0.8 and falls away on both sides.
+
+**And the two optima interact, which is why the combination had to be run.**
+XdG alone prefers gating 0.8, but XdG + SI at gating 0.8 reaches only 0.592
+against 0.739 at gating 0.5. Combining each knob's individual best gives a
+*worse* result than the setting that was already in the script. So the original
+choice was right, for a reason nobody knew until this wave — and had it gone the
+other way, Wave 3 would have published a number that was not the method's best.
+
+The hypernetwork's β peak is also bracketed now: 10⁶ → 0.454, 3×10⁶ → 0.451,
+10⁷ → 0.431, all three of them plasticity traps (current 0.40–0.41). Its best
+*usable* setting remains β = 10⁵ at 0.398 with current 0.579.
+
+### Final standing
+
+| | retained | current | stored | task id |
+|---|---|---|---|---|
+| **XdG + SI** (gating 0.5, λ = 10⁵) | **0.739 ± 0.045** | 0.759 | 0.59 MB | needs one |
+| Experience Replay (ratio 32) | 0.579 | 0.796 | ~50 MB | no |
+| Hopfield store | 0.98 | 1.00 | none | no |
+
+Three sweeps, three interior optima, and a method that beats the previous best
+by 0.16 while storing 85× less — at the cost of a task label the environments
+themselves do not reveal.
