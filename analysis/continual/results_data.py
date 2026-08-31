@@ -114,6 +114,23 @@ def collect_methods(hist_dir: str) -> list[dict]:
     return out
 
 
+def _read_json(path: str | None) -> dict | None:
+    """A side measurement written by another tool, or None if it has not run.
+
+    Missing rather than fatal on purpose: the page has to render before every
+    auxiliary result exists, and a half-populated page is more useful during a
+    wave than a crash.
+    """
+    if not path or not os.path.exists(path):
+        return None
+    try:
+        with open(path) as f:
+            return json.load(f)
+    except Exception as e:
+        print(f"  ! unreadable {path}: {e}")
+        return None
+
+
 def collect_recorded(hist_dir: str) -> list[dict]:
     """The pre-existing histories: the Hopfield agent and the recorded RNN
     baselines. These are what the whole suite is measured against, so they
@@ -203,6 +220,13 @@ def main() -> None:
                    help="The 20-env scaling panel, if it has run.")
     p.add_argument("--incontext_dir", default=None,
                    help="Section 5.2 results, if they have run.")
+    p.add_argument("--identifiability", default=None,
+                   help="task_identifiability.json. Decides how the Wave 3 "
+                        "arms are framed: they are all handed an oracle task "
+                        "id, and whether that is a large advantage or a "
+                        "formality is this number's job to say.")
+    p.add_argument("--beta_calibration", default=None,
+                   help="calibrate_beta output, if it was written to a file.")
     p.add_argument("--out", required=True)
     args = p.parse_args()
 
@@ -239,6 +263,7 @@ def main() -> None:
         "n20": collect_methods(args.n20_dir) if args.n20_dir else [],
         "incontext": (collect_incontext(args.incontext_dir)
                       if args.incontext_dir else None),
+        "identifiability": _read_json(args.identifiability),
         "hopfield_costs": {
             # Constants of the model, not measurements -- stated here so the
             # frontier figure has both ends of every axis in one place.

@@ -1416,7 +1416,7 @@ env index, sweeping linear and MLP readouts over windows of 1–64 observations,
 split **by trajectory** so correlated neighbouring frames cannot land on both
 sides.
 
-Best over every window and readout: **0.426** against a chance of 0.200
+Best over every window and readout: **0.43** against a chance of 0.200
 (5 envs, 1280 random-walk trajectories). The environments are barely
 identifiable from what the agent sees. So the oracle task id is worth a great
 deal here, and every Wave 3 arm is an upper bound on its family rather than a

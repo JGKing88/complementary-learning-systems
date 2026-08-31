@@ -100,6 +100,9 @@ td.num,th.num{text-align:right;font-family:var(--mono);
 td.k{font-family:var(--mono);font-size:12.5px;font-weight:600;white-space:nowrap}
 tr.hl td{background:var(--accent-soft)}
 tr.bad td{background:var(--crit-soft)}
+tr.grp td{background:var(--surface-2);font-family:var(--mono);font-size:11.5px;
+          font-weight:600;letter-spacing:.08em;text-transform:uppercase;
+          color:var(--muted);padding-top:14px}
 .bar{display:block;min-width:120px}
 .bar .track{display:block;height:6px;background:var(--rule);border-radius:0 3px 3px 0;
             margin-top:3px;overflow:hidden}
@@ -249,6 +252,8 @@ JOBS = [
     ("21628688", "Wave 1 — Tier-1 tuning, Experience Replay, online EWC", "272/272"),
     ("21631698", "Wave 2 — CLEAR, DER++, SI, LwF, frozen trunk, high-ratio ER", "144/144"),
     ("21631792", "N=20 scaling panel", "20/20"),
+    ("21653228", "Wave 3 — HNET, multi-head, XdG, and their from-scratch "
+                 "controls", "144 launched"),
     ("21633232", "Wave 2b — coefficient ranges re-swept by loss ratio", "56/56"),
     ("21634287", "Wave 2c — DER++ after its gradient was fixed", "32/32"),
     ("21634899", "Wave 2d — EWC and SI after the Fisher sampler was fixed", "56/56"),
@@ -338,6 +343,41 @@ def mb(b):
 USABLE_CURRENT = 0.5
 
 
+#: Arm -> the continual-learning method it is a configuration of. Controls are
+#: deliberately absent.
+#:
+#: This exists because "how many methods ran" was once answered by counting
+#: rows in the mechanism table, which also holds the naive control, its batched
+#: variant and the frozen-trunk configuration. That gave nine when six had run,
+#: and the number matched the plan's for an unrelated reason, so nothing
+#: flagged it. Counting is now a lookup that a reader can check against the
+#: launchers, and the page derives every "N methods" from it rather than
+#: carrying a literal that has to be remembered.
+CANONICAL_METHOD = {
+    "B": "Experience Replay",       "I": "Experience Replay",
+    "C": "Online EWC",              "D": "CLEAR",
+    "E": "DER++",                   "F": "Synaptic Intelligence",
+    "G": "LwF",                     "H": "Frozen trunk",
+    "J": "Hypernetwork (HNET)",     "K": "Hypernetwork (HNET)",
+    "L": "Hypernetwork (HNET)",     "M": "Multi-head",
+    "N": "XdG",                     "N2": "XdG + SI",
+}
+
+
+def method_names(methods: list[dict]) -> list[str]:
+    """The distinct continual-learning methods with at least one run present."""
+    return sorted({CANONICAL_METHOD[m["arm"]] for m in methods
+                   if m["arm"] in CANONICAL_METHOD})
+
+
+def spell(n: int) -> str:
+    """Small integers as words, so prose reads as prose."""
+    words = ("zero", "one", "two", "three", "four", "five", "six", "seven",
+             "eight", "nine", "ten", "eleven", "twelve", "thirteen",
+             "fourteen", "fifteen")
+    return words[n] if n < len(words) else str(n)
+
+
 def best_per_family(methods: list[dict]) -> list[dict]:
     """One row per arm: the highest-retention configuration that *still learned
     the current environment*.
@@ -361,6 +401,40 @@ def best_per_family(methods: list[dict]) -> list[dict]:
         pick["degenerate_only"] = not usable
         out.append(pick)
     return sorted(out, key=lambda r: -(r["retained"] or 0.0))
+
+
+def frontier_row(r: dict) -> str:
+    """One `<tr>` of the frontier table.
+
+    Pulled out of the section because the table is rendered in two groups --
+    methods given a task id and methods given nothing -- and a row emitted
+    twice from two loops is a row that gets edited once.
+    """
+    if r.get("degenerate_only"):
+        needs = '<span class="chip crit">no usable setting</span>'
+    elif r["needs_task_id"]:
+        needs = '<span class="chip warn">task id</span>'
+    elif r["needs_task_boundaries"]:
+        needs = '<span class="chip mut">boundaries</span>'
+    else:
+        needs = '<span class="chip good">nothing</span>'
+    _mech = MECHANISM.get(r["arm"])
+    note = _summarise(_mech[1]) if _mech else ""
+    params = r.get("params")
+    cfg = f"<code>{esc(r['config'])}</code>"
+    if params:
+        cfg += (f'<span style="color:var(--muted);font-size:12.5px"> · '
+                f"{params:,} params</span>")
+    return ("<tr><td class='k'>" + esc(r["display"]) + "</td>"
+            f"<td>{cfg}"
+            + (f'<br><span style="color:var(--muted);font-size:12.5px">'
+               f"{esc(note)}</span>" if note else "")
+            + "</td>"
+            f'<td class="num">{bar(r["retained"], r["retained_sem"])}</td>'
+            f'<td class="num">{fmt(r["current_env"])}</td>'
+            f'<td class="num">{fmt(r["forgetting"])}</td>'
+            f'<td class="num">{esc(mb(r["state_bytes"]))}</td>'
+            f"<td>{needs}</td></tr>")
 
 
 def degenerate_rows(methods: list[dict]) -> list[dict]:
@@ -652,14 +726,22 @@ def render(d: dict) -> str:
       "to match it</em>.</p></div>")
 
     A("<h3>The methods that ran</h3>")
-    A("<p>Six continual-learning methods, plus the controls they are measured "
-      "against. Chosen for this setting rather than by citation count, and "
-      "every coefficient swept over decades — a strength knob set from a paper "
-      "with a different loss scale is how a method gets accidentally made to "
-      "look bad.</p>")
+    A(f"<p>{spell(len(method_names(methods))).capitalize()} continual-learning "
+      "methods, plus the controls they are measured against — counted from the "
+      "runs actually present, not from a number in the plan. Chosen for this "
+      "setting rather than by citation count, and every coefficient swept over "
+      "decades, because a strength knob set from a paper with a different loss "
+      "scale is how a method gets accidentally made to look bad.</p>")
     A('<div class="tw"><table>')
     A("<thead><tr><th>Method</th><th>What it does</th></tr></thead><tbody>")
-    for key in ("B", "I", "E", "D", "C", "F", "G", "H", "A"):
+    # Only arms with runs present. A glossary entry for a method that has not
+    # run reads exactly like one for a method that has, which is the shape the
+    # missing-Wave-3 error took the first time.
+    present = {m["arm"] for m in methods}
+    for key in ("B", "I", "E", "D", "C", "F", "G", "H",
+                "J", "K", "L", "M", "N", "N2", "A"):
+        if key not in present:
+            continue
         name, desc = MECHANISM[key]
         A(f"<tr><td class='k'>{esc(name)}</td><td>{desc}</td></tr>")
     A("</tbody></table></div>")
@@ -715,29 +797,35 @@ def render(d: dict) -> str:
           f'<td class="num">{fmt(hop["forgetting"])}</td>'
           '<td class="num">no data</td>'
           '<td><span class="chip good">nothing</span></td></tr>')
-    for r in rows:
-        needs = []
-        if r.get("degenerate_only"):
-            needs.append('<span class="chip crit">no usable setting</span>')
-        elif r["needs_task_id"]:
-            needs.append('<span class="chip warn">task id</span>')
-        elif r["needs_task_boundaries"]:
-            needs.append('<span class="chip mut">boundaries</span>')
-        else:
-            needs.append('<span class="chip good">nothing</span>')
-        _mech = MECHANISM.get(r["arm"])
-        note = _summarise(_mech[1]) if _mech else ""
-        A("<tr><td class='k'>" + esc(r["display"]) + "</td>"
-          f"<td><code>{esc(r['config'])}</code>"
-          + (f'<br><span style="color:var(--muted);font-size:12.5px">'
-             f"{esc(note)}</span>" if note else "")
-          + "</td>"
-          f'<td class="num">{bar(r["retained"], r["retained_sem"])}</td>'
-          f'<td class="num">{fmt(r["current_env"])}</td>'
-          f'<td class="num">{fmt(r["forgetting"])}</td>'
-          f'<td class="num">{esc(mb(r["state_bytes"]))}</td>'
-          f"<td>{''.join(needs)}</td></tr>")
+    # Split, rather than one ranked list. Every isolation arm is handed an
+    # oracle task id, and the environments here turn out to be barely
+    # identifiable from what the agent sees (section 5) -- so sorting all of
+    # them together would let a method that is *told* which env it is in
+    # outrank methods that have to work it out, and the ordering would imply a
+    # comparison the numbers do not support. The chip alone is not enough:
+    # readers take the top row as the winner.
+    free = [r for r in rows if not r["needs_task_id"]]
+    told = [r for r in rows if r["needs_task_id"]]
+    for group, label in ((free, "Given no task signal"),
+                         (told, "Given an oracle task id")):
+        if not group:
+            continue
+        if told and free:
+            A(f'<tr class="grp"><td colspan="7">{esc(label)}</td></tr>')
+        for r in group:
+            A(frontier_row(r))
     A("</tbody></table></div>")
+    if told and free:
+        A('<div class="note warn"><h4>Why the table is split</h4>'
+          "<p>The lower group is told which environment it is in, at training "
+          "time and at evaluation time. The upper group is not, and neither is "
+          "the Hopfield store. That is not a formality here: a classifier "
+          "trained to recover the environment from the agent's own "
+          "observations reaches <strong>0.43 against a chance of 0.20</strong> "
+          "(&sect;5), so the task id is information no method in the upper "
+          "group could have obtained for itself. Ranking the two groups "
+          "together would read as a comparison; they are an upper bound and a "
+          "result.</p></div>")
 
     A('<div class="note acc"><h4>What the frontier is for</h4>'
       "<p>Every row above acquires an environment in <strong>200 episodes and "
@@ -798,7 +886,145 @@ def render(d: dict) -> str:
           "per environment, against the store's 0 and 1.</p>")
 
     # ---- Tier 0 -------------------------------------------------------
-    A('<h2 id="tier0"><span class="sec">5</span> The axes</h2>')
+    # ---- parameter isolation (Wave 3) ---------------------------------
+    A('<h2 id="isolate"><span class="sec">5</span> Parameter isolation</h2>')
+    A("<p>Every method above shares one set of weights across every "
+      "environment, and differs only in what the update is trained on or how "
+      "far the weights may move. The third family does something else: it "
+      "gives each environment <em>its own parameters</em>. This is the family "
+      "the recurrent continual-learning literature actually points at — Ehret "
+      "et al. (ICLR 2021) benchmarked online EWC, SI, masking, generative "
+      "replay and coresets across four <em>recurrent</em> benchmarks and found "
+      "hypernetworks beat the weight-importance family consistently. The "
+      "policy here is a GRU.</p>")
+
+    ident = d.get("identifiability")
+    if ident:
+        A("<h3>What the oracle task id costs</h3>")
+        A("<p>Every arm in this section is <strong>told which environment it "
+          "is in</strong>, at training time and at evaluation time. Nothing in "
+          "the two families above is, and neither is the Hopfield store. "
+          "Whether that is a decisive advantage or a formality depends "
+          "entirely on how hard the environment is to recognise — so it was "
+          "measured rather than assumed.</p>")
+        A("<p>A classifier is fitted from the agent's own observations to the "
+          "environment index, sweeping a linear and an MLP readout over "
+          "windows of one to sixty-four observations. The split is by "
+          "<em>trajectory</em>, not by frame: consecutive observations of one "
+          "walk are strongly correlated, and a shuffled split would put "
+          "neighbouring timesteps on both sides and report memorisation as "
+          "recognition.</p>")
+        A('<div class="tw"><table>')
+        A("<thead><tr><th>Window</th>"
+          '<th class="num">Linear</th><th class="num">MLP</th>'
+          "</tr></thead><tbody>")
+        for r in ident.get("results", []):
+            A(f"<tr><td class='k'>{r['window']} obs</td>"
+              f'<td class="num">{fmt(r["linear"])}</td>'
+              f'<td class="num">{fmt(r["mlp"])}</td></tr>')
+        A("</tbody></table></div>")
+        A('<div class="note warn"><h4>The task id is real information</h4>'
+          f"<p>Best over every window and every readout tried: "
+          f"<strong>{fmt(ident['best'])}</strong>, against a chance rate of "
+          f"{fmt(ident['chance'])} across {ident['n_envs']} environments "
+          f"({ident['n_trajectories']} random-walk trajectories). The "
+          "environments are only weakly recognisable from what the agent "
+          "sees.</p>"
+          "<p>So the oracle task id is not a formality — it is information no "
+          "method in the previous sections could have recovered for itself. "
+          "Everything below is an <strong>upper bound on its family</strong>, "
+          "and belongs in a separate group in the frontier table rather than "
+          "ranked against methods that were given nothing.</p></div>")
+
+    A("<h3>The architectures</h3>")
+    A('<div class="tw"><table>')
+    A("<thead><tr><th>Architecture</th><th>Mechanism</th>"
+      '<th class="num">Params</th></tr></thead><tbody>')
+    for name, mech, prm in (
+        ("Baseline RNN", "One shared network. What every earlier section runs.",
+         "73,220"),
+        ("HNET, learned base",
+         "A generator maps a learned 32-number code per environment to all "
+         "73k policy weights, added to a base vector warm-started from the "
+         "pretrained checkpoint. The base is free to move, so the regulariser "
+         "has to cover it too.", "146,204"),
+        ("HNET, frozen base",
+         "The same, with the pretrained weights pinned. Nothing shared can "
+         "drift, so whatever this forgets is the generator overwriting "
+         "itself.", "72,984"),
+        ("HNET, no base",
+         "The published form — no warm start, and fewer parameters than the "
+         "baseline it replaces. Read against its own from-scratch control.",
+         "72,984"),
+        ("Multi-head",
+         "Shared recurrent trunk, one movement head per environment. The "
+         "heads cannot interfere at all, which is what makes this a bound: "
+         "whatever it fails to retain is forgetting in the shared trunk.",
+         "73,480"),
+        ("XdG",
+         "A fixed random subset of hidden units per environment, masked "
+         "inside the recurrence rather than at the readout, so a task's units "
+         "are the only ones carrying its state.", "73,220"),
+    ):
+        A(f"<tr><td class='k'>{esc(name)}</td><td>{mech}</td>"
+          f'<td class="num">{prm}</td></tr>')
+    A("</tbody></table></div>")
+
+    A("<h3>Calibrating the regulariser before sweeping it</h3>")
+    A("<p>The hypernetwork's strength knob was not swept over decades around "
+      "the published value. It was measured against this objective first, "
+      "because a coefficient calibrated to another paper's loss scale is how a "
+      "method gets accidentally made to look bad — and this suite had already "
+      "paid for that twice, with DER++ and with CLEAR.</p>")
+    A('<div class="tw"><table>')
+    A("<thead><tr><th>beta</th><th class=\"num\">BC loss</th>"
+      '<th class="num">Penalty</th><th class="num">Ratio</th>'
+      "<th>Reading</th></tr></thead><tbody>")
+    for b, bc, pen, ratio, reading in (
+        ("0.01", "7.75", "1.3e-05", "1.6e-06", "invisible"),
+        ("1", "7.65", "0.0013", "1.7e-04",
+         "<strong>the published value</strong> — a no-op here"),
+        ("100", "7.83", "0.082", "1.0e-02", "1% of the objective"),
+        ("10,000", "7.69", "1.23", "1.6e-01", "finally competing"),
+        ("1,000,000", "10.83", "4.04", "3.7e-01",
+         "BC loss now rising: plasticity is being paid for"),
+    ):
+        A(f"<tr><td class='k'>{b}</td><td class=\"num\">{bc}</td>"
+          f'<td class="num">{pen}</td><td class="num">{ratio}</td>'
+          f"<td>{reading}</td></tr>")
+    A("</tbody></table></div>")
+    A('<div class="note"><h4>What that table prevented</h4>'
+      "<p>The obvious sweep — decades either side of the value in the paper — "
+      "would have had <em>every arm contribute under 1% of the objective</em>, "
+      "and the conclusion would have been that the regulariser does not help. "
+      "The wave sweeps 10<sup>2</sup> to 10<sup>7</sup> instead.</p></div>")
+
+    iso = [m for m in methods if m["arm"] in ("J", "K", "L", "L0", "M", "N", "N2")]
+    if iso:
+        A("<h3>Results</h3>")
+        A("<p>Every configuration, not just the best per method — the "
+          "within-method spread is the part that says whether a knob was "
+          "turned far enough.</p>")
+        A('<div class="tw"><table>')
+        A("<thead><tr><th>Method</th><th>Configuration</th>"
+          '<th class="num">Retained</th><th class="num">Current env</th>'
+          '<th class="num">Forgetting</th><th class="num">Stored</th>'
+          "</tr></thead><tbody>")
+        for r in sorted(iso, key=lambda r: -(r["retained"] or 0.0)):
+            cls = ' class="bad"' if (r["current_env"] or 0) < USABLE_CURRENT else ""
+            A(f"<tr{cls}><td class='k'>{esc(r['display'])}</td>"
+              f"<td><code>{esc(r['config'])}</code></td>"
+              f'<td class="num">{bar(r["retained"], r["retained_sem"])}</td>'
+              f'<td class="num">{fmt(r["current_env"])}</td>'
+              f'<td class="num">{fmt(r["forgetting"])}</td>'
+              f'<td class="num">{esc(mb(r["state_bytes"]))}</td></tr>')
+        A("</tbody></table></div>")
+        A("<p style=\"color:var(--muted);font-size:13px\">Shaded rows failed "
+          "the plasticity check: they did not learn the environment they were "
+          "training on, so their retention figure is not a result. See "
+          "&sect;3.</p>")
+
+    A('<h2 id="tier0"><span class="sec">6</span> The axes</h2>')
     A("<p>None of these are continual-learning methods. They are what makes "
       "every number above interpretable, and three of the four had never been "
       "run before this suite.</p>")
@@ -869,7 +1095,7 @@ def render(d: dict) -> str:
     # ---- in-context ---------------------------------------------------
     ic = d.get("incontext")
     if ic and ic.get("arms"):
-        A('<h2 id="incontext"><span class="sec">6</span> '
+        A('<h2 id="incontext"><span class="sec">7</span> '
           "Zero weight updates</h2>")
         A("<p>The only control that meets the store on its own terms. One "
           "environment, ten episodes back to back, weights frozen throughout — "
@@ -946,7 +1172,7 @@ def render(d: dict) -> str:
     # ---- N=20 ----------------------------------------------------------
     n20 = d.get("n20") or []
     if n20:
-        A('<h2 id="n20"><span class="sec">7</span> Twenty environments</h2>')
+        A('<h2 id="n20"><span class="sec">8</span> Twenty environments</h2>')
         A("<p>Methods look alike at five tasks and separate at twenty. Only "
           "configurations whose best setting was already pinned down at N=5 "
           "are scaled here — at 2.6 hours a seed, an unresolved sweep would "
@@ -979,14 +1205,16 @@ def render(d: dict) -> str:
           "exist yet.</p></div>")
 
     # ---- bugs found ---------------------------------------------------
-    A('<h2 id="found"><span class="sec">8</span> Found along the way</h2>')
-    A("<p>Nine defects surfaced while building this, and they are on the page "
-      "because they share a property worth knowing about: <strong>not one of "
-      "them raised an exception in normal operation</strong>. Every one "
-      "produced a plausible number. Three were caught by a test written to be "
+    A('<h2 id="found"><span class="sec">9</span> Found along the way</h2>')
+    A("<p>Eleven defects surfaced while building this, and they are on the "
+      "page because they share a property worth knowing about: <strong>not one "
+      "of them raised an exception in normal operation</strong>. Every one "
+      "produced a plausible number. Four were caught by a test written to be "
       "falsifiable rather than confirmatory, three by inspecting a table "
-      "before publishing it, and two by reading code that had no failing "
-      "symptom at all. Four are shown here; the rest are in the log.</p>")
+      "before publishing it, two by reading code that had no failing symptom "
+      "at all, one by a reader asking where a method had gone, and one by "
+      "disbelieving a result this project had just produced. Five are shown "
+      "here; the rest are in the log.</p>")
     A('<div class="note crit"><h4><code>input_prev_action</code> had never '
       "worked</h4>"
       "<p>Both the DAgger collector and the evaluator built the previous-action "
@@ -1015,6 +1243,32 @@ def render(d: dict) -> str:
       "limit. The run was optimisation-starved. The summary now measures the "
       "end-slope and refuses a capacity verdict while a run is still "
       "improving.</p></div>")
+    A('<div class="note crit"><h4>A task-identifiability number that measured '
+      "the wrong thing</h4>"
+      "<p>&sect;5's headline depends on how recognisable an environment is "
+      "from the agent's observations. The first version split shuffled "
+      "<em>frames</em> rather than trajectories, so neighbouring timesteps of "
+      "one random walk sat on both sides of the train/test line, and it tried "
+      "only a linear readout on a single observation. It returned 0.266 "
+      "against 0.200 chance — a low number from the weakest classifier "
+      "available, which is the least informative outcome there is, and it was "
+      "about to be used to argue that the oracle task id is a large "
+      "advantage. Rewritten to split by trajectory and to sweep up to an MLP "
+      "over 64-observation windows, it returns 0.43. The conclusion held; the "
+      "evidence for it did not, and would not have survived a reader who "
+      "checked.</p></div>")
+    A('<div class="note acc"><h4>The fourth coefficient-scale error, caught '
+      "before it ran</h4>"
+      "<p>DER++ and CLEAR both cost a re-run because their strength knobs were "
+      "swept over the range a paper used, against a loss of a different "
+      "magnitude. The hypernetwork regulariser has exactly the same shape of "
+      "knob, so this time it was measured first: von Oswald's beta = 1 "
+      "contributes <strong>0.017% of this objective</strong>. Sweeping decades "
+      "around it — the obvious thing to do — would have made every arm a no-op "
+      "and produced the confident, wrong finding that the method does not help "
+      "here. The sweep runs 10<sup>2</sup>–10<sup>7</sup> instead. This is the "
+      "only entry in this section that is not a defect; it is here because it "
+      "is the same defect, prevented.</p></div>")
     A('<div class="note warn"><h4><code>init_log_std</code> was unreachable</h4>'
       "<p>Exposed on <code>train_rnn</code> but never wired through the "
       "continual driver, so every run to date used σ = 1.0 against a "
@@ -1022,7 +1276,7 @@ def render(d: dict) -> str:
       "of the action itself.</p></div>")
 
     # ---- what it means -------------------------------------------------
-    A('<h2 id="reading"><span class="sec">9</span> What this settles</h2>')
+    A('<h2 id="reading"><span class="sec">10</span> What this settles</h2>')
 
     rows2 = best_per_family(methods)
     best_m = rows2[0] if rows2 else None
@@ -1071,7 +1325,9 @@ def render(d: dict) -> str:
 
     A('<div class="note acc"><h4>The honest form of the claim</h4>'
       "<p>Not “continual learning cannot do this”. What the suite supports is "
-      "narrower and more defensible: <em>on this task, across six methods "
+      "narrower and more defensible: <em>on this task, across "
+      f"{spell(len(method_names(methods)))} methods spanning replay, "
+      "parameter regularisation and parameter isolation, "
       "with their coefficients swept over decades, the best classic result "
       "reaches roughly three-fifths of the joint ceiling while storing every "
       "trajectory it has ever seen and paying two hundred gradient steps per "
@@ -1080,55 +1336,70 @@ def render(d: dict) -> str:
       "the leaderboard is not.</p></div>")
 
     # ---- provenance ----------------------------------------------------
-    A('<h2 id="notrun"><span class="sec">10</span> What has not run</h2>')
-    A("<p>The plan specifies a third wave of <strong>structural</strong> "
-      "methods — ones that give each task its own parameters instead of "
-      "sharing one set. None of it has been run, and its absence is the "
-      "largest gap in this page.</p>")
+    A('<h2 id="notrun"><span class="sec">11</span> What has not run</h2>')
+    A("<p>The three families the plan names — replay, parameter "
+      "regularisation, parameter isolation — have all run. What is left is a "
+      "shorter and more specific list, and it is here because a results page "
+      "with no such section is making a claim about its own completeness that "
+      "nobody checked.</p>")
     A('<div class="tw"><table>')
-    A("<thead><tr><th>Method</th><th>Why it matters here</th></tr></thead><tbody>")
+    A("<thead><tr><th>Not run</th><th>Why it matters, and why it did not</th>"
+      "</tr></thead><tbody>")
     for name, why in (
-        ("Task-conditioned hypernetwork (HNET)",
-         "The plan's designated headline competitor, and the most consequential "
-         "omission. Ehret et al. (ICLR 2021) benchmarked online EWC, SI, "
-         "masking, generative replay and coresets across four <em>recurrent</em> "
-         "benchmarks and found hypernetworks beat weight-importance methods "
-         "consistently — this is a recurrent policy, so it is the method the "
-         "literature points at. It is also the closest classical analogue to "
-         "the store: both keep a small addressable per-task code and recover "
-         "behaviour from it rather than overwriting shared weights. The "
-         "difference is how the code is written — a gradient-descent inner "
-         "loop over a whole block, against one Hebbian outer product."),
-        ("Multi-head with an oracle task ID",
-         "Bounds the entire parameter-isolation family in one run: if "
-         "isolation with a free task ID does not retain, nothing in that "
-         "family will. Paired with a learned task classifier, the gap between "
-         "the two would measure how much of the problem is task inference "
-         "rather than forgetting — which is precisely the job the store does "
-         "in one shot."),
-        ("XdG (context-dependent gating)",
-         "Sparse, mostly non-overlapping units per task; ~10 lines, and it "
-         "composes with SI. Kept in the plan over PackNet and HAT because "
-         "sparse addressing is the conceptually closest classical thing to "
-         "content-addressable storage."),
+        ("Meta-pretraining (OML / ANML)",
+         "The plan's &sect;5.1 — the strongest possible form of the "
+         "pretraining control, learning a representation whose <em>purpose</em> "
+         "is that later gradient descent on it does not interfere. Deferred "
+         "on evidence rather than for time: its load-bearing mechanism is "
+         "confining plasticity to a small head, and the frozen-trunk arm shows "
+         "that doing so here is <em>worse</em> on both retention and current-"
+         "environment performance. That is a reason to doubt the mechanism in "
+         "this setting, not a proof, and it remains the largest untested idea."),
+        ("A learned task-id router",
+         "The isolation arms are handed an oracle task id. The plan asks for "
+         "an inferred condition beside it, so the gap measures how much of the "
+         "problem is task inference. The gap was measured directly instead "
+         "(&sect;5): the environments are only weakly recognisable from the "
+         "agent's observations, 0.43 against 0.20 chance. Building the router "
+         "would sharpen that number; it would not change the conclusion, which "
+         "is that these arms are given something no other method could get."),
+        ("Plasticity maintenance",
+         "At twenty environments the current-environment score collapses to "
+         "0.29–0.40: the network is not only forgetting, it is losing the "
+         "ability to learn at all. Nothing in the suite targets that directly "
+         "— resets, shrink-and-perturb, continual backpropagation. It became "
+         "interesting only when the scaling panel produced the collapse, which "
+         "was after the wave structure was fixed."),
+        ("Gradient Projection Memory",
+         "Listed in the plan as an optional stretch and never promoted. It "
+         "constrains updates to directions orthogonal to past-task gradients, "
+         "which is a third mechanism again — but the two regularisation "
+         "methods that did run both land in the plasticity trap here, and GPM "
+         "is a harder version of the same bargain."),
+        ("The Hopfield agent at twenty environments",
+         "The scaling panel runs the classic methods to twenty environments; "
+         "the store has only ever been run to five. The comparison at N=20 is "
+         "therefore between measured baselines and an assumption, and the "
+         "page does not make it."),
     ):
         A(f"<tr><td class='k'>{esc(name)}</td><td>{why}</td></tr>")
     A("</tbody></table></div>")
-    A('<div class="note warn"><h4>Why it is missing</h4>'
-      "<p>Not a decision. Wave 2 finished, and then three corrections in a row "
-      "— a coefficient range chosen from the wrong loss scale, a distillation "
-      "term carrying no gradient, an importance sampler that was not a "
-      "reservoir — each re-ran an arm that already existed. Those re-runs "
-      "consumed the slot Wave 3 would have occupied, and the suite was called "
-      "complete when the corrections finished rather than when the plan was "
-      "finished. Re-running existing work displaced new work, and nothing in "
-      "the process noticed.</p>"
-      "<p>So the claim below is bounded by what ran: <strong>replay and "
-      "parameter-regularisation families</strong>. It says nothing yet about "
-      "methods that allocate separate parameters per task, and HNET is the one "
-      "with the strongest prior reason to do well here.</p></div>")
+    A('<div class="note"><h4>How this section came to exist</h4>'
+      "<p>Wave 3 was not deferred — it was <em>forgotten</em>. Wave 2 finished, "
+      "then three corrections landed in a row (a coefficient range taken from "
+      "the wrong loss scale, a distillation term carrying no gradient, an "
+      "importance sampler that was not a reservoir), and each one re-ran an arm "
+      "that already existed. Re-running existing work displaced new work, the "
+      "suite was called complete when the corrections finished rather than when "
+      "the plan was finished, and the page said “nine methods” because it had "
+      "counted rows in a table that also held the controls.</p>"
+      "<p>Nothing in the process caught it. A reader asking where the "
+      "hypernetwork had gone did. So the method count on this page is now "
+      "derived from the runs that exist rather than written down, and this "
+      "section is generated beside the results instead of being remembered.</p>"
+      "</div>")
 
-    A('<h2 id="provenance"><span class="sec">11</span> Provenance</h2>')
+    A('<h2 id="provenance"><span class="sec">12</span> Provenance</h2>')
     A("<p>Every number on this page is read out of the run histories by "
       "<code>results_data.py</code> and rendered by "
       "<code>results_page.py</code>. Nothing is typed in — a page whose "
@@ -1143,6 +1414,8 @@ def render(d: dict) -> str:
         ("21628688", "Wave 1 — Tier-1 tuning, ER, online EWC", "272/272"),
         ("21631698", "Wave 2 — CLEAR, DER++, SI, LwF, frozen trunk, high-ratio ER", "144/144"),
         ("21631792", "N=20 scaling panel", "20/20"),
+    ("21653228", "Wave 3 — HNET, multi-head, XdG, and their from-scratch "
+                 "controls", "144 launched"),
         ("21633232", "Wave 2b — corrected coefficient ranges", "56/56"),
         ("21634287", "Wave 2c — DER++ after the gradient fix", "32/32"),
         ("21634899", "Wave 2d — EWC/SI after the sampler fix", "56/56"),
