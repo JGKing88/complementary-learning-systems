@@ -2273,6 +2273,11 @@ by in-chart directions the frame simply does not span, and the
 goal-present/absent contrast may wash out. That is the thing to measure, not to
 assume either way.
 
+> **MEASURED — §7.7.2. The prior above is wrong.** `chart_frac` reaches AUC
+> **0.974 / 0.988** at ten distractors (P2 gain-5 / w52), which **beats** the
+> env-fitted `d1_chart` (0.942 / 0.972) and beats `‖q‖` by **+0.276** on the
+> encoder §7 was measured on. The contrast does not wash out.
+
 #### Consequence for re-running P3 on a new encoder
 
 If the chart residual is what carries the signal, then the encoder's
@@ -2281,6 +2286,80 @@ explains less of a code that spreads over more dimensions. The w52 encoder runs
 at gain 100 against the gain-5 code P3 was measured on, so it is *more* binary
 and *higher*-dimensional. That makes `d1`'s 1.000 **more** likely to move under
 an encoder swap, not less, and it is the number in §7 most exposed to one.
+
+> **MEASURED — §7.7.2. Also wrong.** w52 is *better* on all three statistics,
+> not worse. `d1_chart` does fall to 0.972 at ten distractors — but it falls to
+> 0.942 on the gain-5 code as well, so the drop is a **distractor-count**
+> effect, not an encoder one. And `‖q‖` separability, the thing the worry was
+> really about, is **0.930 on w52 against 0.698 on gain-5**.
+
+### 7.7.2 RESULT — the compression works, and it beats the fitted basis
+
+§7.7.1 proposed the cheap test and predicted, explicitly, that it would probably
+fail: "the 2-D frame is a much smaller subspace than the 64-dim chart, so its
+residual is dominated by in-chart directions the frame simply does not span,
+and the goal-present/absent contrast may wash out."
+
+**That prediction is wrong.** Measured on both encoders, 200 random cells per
+env, 6 envs, `--chart_k 64`, seed 0 (job 21691512, CPU):
+
+| n_dist | encoder | `auc_qmag` | **`auc_chart_frac`** | `auc_d1_chart` |
+|---|---|---|---|---|
+| 1 | P2 gain-5 | 0.980 | **0.999** | 1.000 |
+| 1 | w52 gain-100 | 0.993 | **0.999** | 0.998 |
+| 3 | P2 gain-5 | 0.964 | **0.999** | 1.000 |
+| 3 | w52 gain-100 | 0.991 | **0.998** | 1.000 |
+| **10** | **P2 gain-5** | **0.698** | **0.974** | 0.942 |
+| **10** | **w52 gain-100** | **0.930** | **0.988** | 0.972 |
+
+`chart_frac` = `‖q‖ / ‖recall − x‖`, the fraction of the recalled displacement
+the **local 2-D tangent frame** explains. `d1_chart` = residual outside the
+env's 64-dim SVD chart, the §7.7 statistic that needs a per-env fit.
+
+**The one scalar matches or beats the fitted basis everywhere**, and by three
+points at ten distractors on both encoders. The means say why — at n=10 on the
+P2 encoder, `frac_goal` **0.638** against `frac_dist` **0.125**, a 5× gap, with
+the goal-absent value in the right ballpark for §7's own √(2/D) ≈ 0.044
+prediction for an unrelated direction in D = 1024.
+
+#### Three consequences
+
+1. **§7.11's "group D's acquisition cost is unmeasured" largely dissolves.**
+   That gap existed because `d1` needed a basis fitted from the env's 400
+   cells. `chart_frac` needs no fit: `W` is already built every step
+   (`project_to_signal`) and the recall is already computed. **One extra
+   scalar, no in-env experience required.**
+
+2. **It is a large gain over what the policy actually receives.** Against
+   `‖q‖`, the statistic in the observation today: **+0.276 AUC** on the P2
+   encoder (0.698 → 0.974) and +0.058 on w52, at ten distractors. This is
+   precisely the signal §7.7.1 identified as deleted by the projection, and it
+   survives compression to a single number.
+
+3. **The encoder swap IMPROVES separability, and §7.7.1's exposure claim was
+   also wrong.** w52 is better on all three statistics. `d1_chart` does fall
+   from 1.000 to 0.972 at ten distractors — but it falls to **0.942 on the P2
+   encoder as well**, so that is a distractor-count effect, not an encoder
+   effect. The worry that a more binary, higher-dimensional code would collapse
+   the goal-absent separability is not supported: `auc_qmag` at n=10 is 0.930
+   on w52 against 0.698 on the gain-5 code.
+
+#### What this does NOT establish
+
+- **The absolute numbers are not §7.7's.** This module samples 200 random cells
+  per env; §7.7's 0.887 for `a1_qnorm` is a per-env median over billiard
+  *trajectories*. `auc_qmag` here reads 0.698 on the same encoder. The
+  within-run comparisons are valid — all three statistics share one sampling —
+  the cross-reference to the published table is not, and no claim here rests
+  on it.
+- **This is static, per-cell, and policy-free.** It says the information is
+  present and cheap to expose. It does not say a policy trained with the extra
+  channel would use it, which is a training experiment and untried. Note also
+  `feedback_hopfield_nav_bc_inputs`: the input set was frozen for the bc-AQ
+  line, so adding a channel is a decision, not an obvious win.
+- **It needs `‖recall − x‖`**, the norm of the full 1024-dim displacement.
+  Trivial to compute where the recall already exists, but it is a rollout
+  change, not free at the policy's input layer today.
 
 ### 7.8 What probing behaviour buys, and the surprise
 
@@ -2518,11 +2597,13 @@ distance-to-wall), and phase 1's wall failures are still not a readout problem.
   worth AUC 1.000 against 0.87 — the largest single effect in §7 — and nothing
   here says how much in-env experience is needed to fit one well enough to keep
   that. §6.3's within-env nearest-neighbour table used all 400 cells.
-  **§7.7.1 reframes what this cost buys**: the policy receives only the 2-D
-  projection `q`, so the 1022 discarded dimensions of the recall are where D's
-  signal lives. The cheap test named there — the scalar `‖q‖ / ‖recalled‖`,
-  which needs no env-specific basis — is untried and would settle whether the
-  1024-dim route is needed at all.
+  **§7.7.1 reframes what this cost buys** and **§7.7.2 largely dissolves it**:
+  the policy receives only the 2-D projection `q`, and the scalar
+  `‖q‖ / ‖recall − x‖` — needing no env-specific basis at all — scores
+  **0.974 / 0.988** at ten distractors against the fitted `d1_chart`'s
+  **0.942 / 0.972**. The cheap version wins, so the 1024-dim route and its
+  acquisition cost are not required. What remains open is whether a *policy*
+  trained with the channel uses it, which is a training question.
 - **The agent-trajectory result is on policies that were still training.** The
   P4 checkpoints are `u1250` and `u1300` of runs that had not converged and P5
   is at `u850`. The inversion is mechanistic and should survive, but the

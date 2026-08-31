@@ -107,6 +107,12 @@ def main() -> None:
     p.add_argument("--seed", type=int, default=0)
     p.add_argument("--device", default="cuda")
     p.add_argument("--json", default=None)
+    p.add_argument("--chart_k", type=int, default=64,
+                   help="Rank of the per-env chart basis used for the "
+                        "`d1_chart` reference (§7.7). 0 skips it. This basis "
+                        "is fitted from the env's own cells and is NOT a free "
+                        "feature -- it is the ceiling the one-scalar "
+                        "`chart_frac` is being compared against.")
     p.add_argument("--npos", type=int, default=None,
                    help="Shrink the scaffold for tool validation. See the same "
                         "flag on behavior_probe.py -- it changes the geometry "
@@ -149,13 +155,29 @@ def main() -> None:
 
     for n_d in args.n_distractors:
         acc: dict[str, list] = {k: [] for k in (
-            "q_goal", "dir_goal", "margin", "q_dist", "ms_goal", "ms_dist")}
+            "q_goal", "dir_goal", "margin", "q_dist", "ms_goal", "ms_dist",
+            "frac_goal", "frac_dist", "disp_goal", "disp_dist",
+            "chart_goal", "chart_dist")}
         for i, env in enumerate(envs):
             off, goal, size = offsets[i], env.goal_location, env.size
             cells = np.stack([rng.randint(0, size, args.cells),
                               rng.randint(0, size, args.cells)], axis=1)
             true_dir = np.stack([goal[0] - cells[:, 0],
                                  goal[1] - cells[:, 1]], axis=1).astype(float)
+
+            # Chart basis for this env: top-k right singular vectors of ALL
+            # its cells' codes. Fitted from the env, which is exactly why it
+            # is a ceiling and not a free feature (§7.7.1 point 1).
+            basis_env = None
+            if args.chart_k > 0:
+                gx, gy = np.meshgrid(np.arange(size), np.arange(size),
+                                     indexing="ij")
+                allc = np.stack([gx.ravel(), gy.ravel()], axis=1)
+                E = vh.get_encoded_state(allc.astype(np.int32), off)
+                E = E.astype(np.float64)
+                E = E - E.mean(0, keepdims=True)
+                _u, _s, Vt = np.linalg.svd(E, full_matrices=False)
+                basis_env = Vt[:args.chart_k].astype(np.float32)
 
             g_pat = goal_encoding(vh, off, goal)
             d_pats = (sample_distractors(vh, off, size, n_d, rng)
@@ -173,10 +195,48 @@ def main() -> None:
             hop_d = Hopfield(embed_dim, beta=cfg.hopfield.beta, device=str(device))
             for pat in d_pats:
                 hop_d.input_memory(torch.from_numpy(pat).float())
-            q_d, ms_d, _ = q_at(vh, hop_d, cells, off, device, multistep)
+            q_d, ms_d, rec_d = q_at(vh, hop_d, cells, off, device, multistep)
 
             acc["q_goal"].append(np.linalg.norm(q_g, axis=1))
             acc["q_dist"].append(np.linalg.norm(q_d, axis=1))
+
+            # §7.7.1: the policy receives only q, the 2-D tangent projection of
+            # (recall - x). `chart_frac` = ||q|| / ||recall - x|| is the
+            # FRACTION of that displacement the local chart explains -- the
+            # decoder-free, one-scalar shadow of group D's `d1_chart`, needing
+            # no env-specific basis because W is already computed every step.
+            # The docstring's geometry predicts it separates: an in-env goal
+            # keeps nearly all of the norm, a distractor keeps ~sqrt(2/D).
+            #
+            # It is reported ALONGSIDE ||q||, not instead of it: ||q|| conflates
+            # the chart-explained fraction with how far away the target is,
+            # and the point is to see whether the fraction alone carries the
+            # discrimination.
+            emb_here = vh.get_encoded_state(np.asarray(cells, dtype=np.int32),
+                                            off)
+            for tag, rec in (("goal", rec_g), ("dist", rec_d)):
+                if rec is None:
+                    continue
+                disp = rec - emb_here
+                dn = np.linalg.norm(disp, axis=1)
+                qq = np.linalg.norm(q_g if tag == "goal" else q_d, axis=1)
+                acc[f"frac_{tag}"].append(qq / np.maximum(dn, 1e-12))
+                acc[f"disp_{tag}"].append(dn)
+
+            # The §7.7 reference the compression is being judged against:
+            # d1_chart, the residual of the recall outside this env's chart
+            # subspace (top-`chart_k` right singular vectors of its cells).
+            # This one DOES need the env-specific basis, which is the cost
+            # §7.11 records as unmeasured -- it is here as the ceiling, not as
+            # a candidate channel.
+            if args.chart_k > 0 and basis_env is not None:
+                for tag, rec in (("goal", rec_g), ("dist", rec_d)):
+                    if rec is None:
+                        continue
+                    proj = (rec @ basis_env.T) @ basis_env
+                    resid = np.linalg.norm(rec - proj, axis=1)
+                    acc[f"chart_{tag}"].append(
+                        resid / np.maximum(np.linalg.norm(rec, axis=1), 1e-12))
             nrm = np.linalg.norm(q_g, axis=1) * np.linalg.norm(true_dir, axis=1)
             ok = nrm > 1e-8
             c = np.zeros(len(cells))
@@ -223,6 +283,16 @@ def main() -> None:
             "recall_is_goal_frac": float((cat["margin"] > 0).mean()) if cat["margin"].size else float("nan"),
             "auc_qmag": _auc(cat["q_goal"], cat["q_dist"]) if n_d else float("nan"),
         }
+        # §7.7.1's question, in one number each.
+        if n_d and cat["frac_goal"].size and cat["frac_dist"].size:
+            row["frac_goal_mean"] = float(cat["frac_goal"].mean())
+            row["frac_dist_mean"] = float(cat["frac_dist"].mean())
+            row["auc_chart_frac"] = _auc(cat["frac_goal"], cat["frac_dist"])
+        if n_d and cat["chart_goal"].size and cat["chart_dist"].size:
+            row["chart_resid_goal"] = float(cat["chart_goal"].mean())
+            row["chart_resid_dist"] = float(cat["chart_dist"].mean())
+            # sign-corrected: goal-present has the SMALLER residual
+            row["auc_d1_chart"] = _auc(-cat["chart_goal"], -cat["chart_dist"])
         if multistep:
             row[f"auc_qmag_step{multistep[-1]}"] = (
                 _auc(cat["ms_goal"], cat["ms_dist"]) if n_d else float("nan"))
