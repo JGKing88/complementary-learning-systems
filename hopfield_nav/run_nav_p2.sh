@@ -396,6 +396,39 @@ case "$VARIANT" in
   # If it does not, a clean field is not sufficient and the limit is elsewhere
   # -- which section 14 already hinted at, since the agent escaped 13 of 37
   # sinks anyway.
+  # -------------------------------------------------------------------------
+  # P18 -- the w49_g100_knee encoder, both gains at 300.
+  #
+  # Jack's pick. That encoder was trained at gain 100 already (its checkpoint
+  # and model-config gains agree at 100.0, unlike v35's 3.699/5.0 split), so
+  # 300 sharpens a code that is already fairly binary rather than binarising a
+  # smooth one. lambdas [11 12 13] and out_dim 1024 match the P2 world, so the
+  # scaffold geometry is unchanged.
+  #
+  # Note HOPFIELD_BETA=300 is what beta would default to here anyway, since it
+  # follows the encoder gain when unset. It is written out because the default
+  # coupling is exactly the trap that made p16_sat a two-factor arm, and a run
+  # in a comparison series should say what it ran.
+  #
+  # Beta at 300 rather than p16_sat's 1e6 matters: 1e6 inflated ||q||, which
+  # drove dir_norm to ~1.2 against p17_gain's ~0.25, which ran kappa to ~148 and
+  # locked the policy onto a ~4 degree heading before it had learned anything.
+  # That arm was flat at 0.05 success for 200 updates and was cancelled. 300 is
+  # far below that regime.
+  p18_knee)
+    ENCODER=/orcd/pool/003/jackking/cls_runs/sweeps/w49_g100_knee/008_eps1_rate0.5_seed=42/encoder_final.pt
+    ENCODER_GAIN=300
+    HOPFIELD_BETA=300
+    SCHEDULE=${SCHEDULE:-'exploit:2000'}
+    ENVS_PER_WORLD=20; BATCH_ENVS=64
+    EPSILON_EXPLORE=0.1; GOAL_REWARD=2.0
+    PERSISTENCE_BONUS=0.20
+    REGIME_ASSIGNMENT=shuffle
+    ACTION_POLAR=1; STATE_DEPENDENT_STD=1; FREEZE_LOG_STD=0
+    FREEZE_SPEED=1.0
+    EVAL_SCOPE=navexpl; EVAL_EVERY=50; CKPT_EVERY=50
+    ;;
+
   p17_gain)
     ENCODER_GAIN=300
     HOPFIELD_BETA=5.0
