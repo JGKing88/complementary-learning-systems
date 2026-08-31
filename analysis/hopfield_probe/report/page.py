@@ -282,6 +282,14 @@ def run_header(header: dict, extra: str = "") -> str:
         _kv("params", f'{(header.get("n_params") or 0) / 1e6:.2f}M'),
         _kv("&lambda;", ",".join(str(v) for v in header.get("lambdas", []))),
     ]
+    if header.get("coverage") is not None:
+        patches = header.get("n_patches")
+        sizes = header.get("patch_sizes") or []
+        # A literal multiplication sign, not the entity: _kv escapes its value,
+        # so "&times;" would reach the page as visible text.
+        shape = (f' ({patches}×{"/".join(str(s) for s in sizes)})'
+                 if patches and sizes else "")
+        bits.append(_kv("coverage", f'{header["coverage"] * 100:.2f}%{shape}'))
     if header.get("alpha") is not None and header["alpha"] != 1.0:
         bits.append(_kv("&alpha;", _num(header["alpha"])))
     if header.get("beta") is not None:
@@ -296,6 +304,12 @@ def run_header(header: dict, extra: str = "") -> str:
         bits.append(_kv("alias ceiling", _num(ur.get("alias_ceiling_max"), 3)))
     if extra:
         bits.append(extra)
+    # Last, and on its own row. Every page carries it because the path is what
+    # someone reading a figure actually needs in order to use the encoder, and
+    # the label alone does not identify a checkpoint.
+    if header.get("path"):
+        bits.append(f'<span class="ckpt">checkpoint '
+                    f'<b>{esc(header["path"])}</b></span>')
     return "".join(bits)
 
 

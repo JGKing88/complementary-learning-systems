@@ -174,6 +174,15 @@ header.run {{
 header.run .name {{ font-weight: 650; }}
 header.run .kv {{ color: var(--ink2); font-size: 13px; }}
 header.run .kv b {{ color: var(--ink); font-weight: 600; }}
+/* The checkpoint path takes its own row: it is the one thing a reader has to
+   copy verbatim, and inlining it among the kv spans would let it wrap into
+   them. `order` puts it last regardless of where run_header emits it. */
+header.run .ckpt {{
+  flex-basis: 100%; order: 99; font-family: var(--mono, ui-monospace,
+  "SFMono-Regular", Menlo, monospace); font-size: 11.5px; color: var(--muted);
+  word-break: break-all; line-height: 1.45;
+}}
+header.run .ckpt b {{ color: var(--ink2); font-weight: 500; }}
 nav.tabs {{ display: flex; gap: 4px; flex-wrap: wrap; margin-left: auto; }}
 nav.tabs a {{
   padding: 4px 10px; border-radius: 6px; text-decoration: none;

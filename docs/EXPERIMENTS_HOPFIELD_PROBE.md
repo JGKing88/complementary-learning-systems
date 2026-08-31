@@ -1365,3 +1365,70 @@ alias rate (30 × 35 over 15 × 50) and the better mean. `EXPERIMENTS_UNIQUE_RAD
 
 Raw: `$CLS_RESULTS/hopfield_probe/20260827/w60_ps{0,1,2}/`. Reproduce with
 `analysis/hopfield_probe/run_w60probe.sh`; screen with `screen_w60_check.py`.
+
+### 10.16 Saturating the 10% winner — it becomes a real attractor, and reach does not care
+
+Every encoder in §10.8–§10.15 runs at `β = gain`, tanh argument ~0.003, which
+the report labels `regime: linear`. So none of them is an attractor network: the
+stored pattern is a saddle and the only stable fixed point of
+`x ← normalize(Wx)` is `W`'s leading eigenvector, which is not a memory. They
+land on the goal in one step and drift off it.
+
+`att0.5` saturated, four seeds (`run_sat.sh`). `cos_bin` first, because §7's
+condition (a) is an encoder property and β cannot buy it:
+
+| gain | `att0.5` cos_bin | res90 | v35 cos_bin | res90 |
+|---|---|---|---|---|
+| **100** | **0.9546** | **7** | 0.9682 | 8 |
+| 300 | 0.9841 | 5 | 0.9891 | 6 |
+| 1000 | 0.9952 | 4 | 0.9967 | 5 |
+
+`att0.5` at its own gain is already at the corner condition — near where v35 sat
+when its saturated arm worked — so β can be saturated **without touching gain**,
+which matters because gain 300 would drop res90 7 → 5, past the reach optimum.
+
+#### It is an attractor now
+
+Mean distance of the recalled state from the goal cell, K=5:
+
+| | tanh arg | s1 | s2 | s3 | s5 | s8 | s15 |
+|---|---|---|---|---|---|---|---|
+| β = gain = 100 | 0.004 | 0.00 | 0.00 | 0.00 | 1.21 | 1.41 | 1.41 |
+| **g100 + β1e6** | **36.8** | **0.00** | **0.00** | **0.00** | **0.00** | **0.00** | **0.00** |
+
+#### And reach does not move
+
+| `att0.5`, K=5 | \|err\| | acc45 | exact | basin | **cont** | **s15** | dead @ K=20 |
+|---|---|---|---|---|---|---|---|
+| β = gain = 100 | 7.78° | 99.5% | 98.2% | 21.12 | **0.987** | 96.5% | 0.04–0.12 |
+| g100 + β1e6 | 7.4–8.9° | 99.7–100% | 90.5–98.5% | 19.2–21.1 | 0.973 | **99.8–100%** | **0.00–0.08** |
+| g300 + β1e6 | 14.0–16.7° | 97.2–98.9% | **99.3–99.9%** | **21.3–21.6** | 0.984 | 97.3–98.9% | **0.00** |
+
+Saturation buys **step-invariance** (s15 96.5% → ~100%), the fixed point, and
+**load tolerance** (dead goals at K=20 halve, and reach zero at gain 300). It
+does not buy reach: 0.973 and 0.984 against 0.987, all inside the ±0.03 scaffold
+spread of §10.10.
+
+That is §10.15 restated from the other side. The residual failures are walkers
+parked outside the 0.5-cell arrival radius, not field failures, so fixing the
+*dynamics* cannot reach them. **Saturation is the right tool for a memory that
+has to survive iteration, and irrelevant to a readout consumed at `s=1`.**
+
+Four predictions were recorded in `run_sat.sh` before the run and all four held:
+the drift stops, s15 goes to ~100%, reach is unchanged, and `exact_hit` holds
+rather than collapsing.
+
+> **Why `exact_hit` held this time.** §2 saturated β on the old encoders and
+> retrieval fell 74% → 44%, because recall binarises while the cell bank stays
+> continuous, so a binarised state is far from *every* cell. `att0.5` at cos_bin
+> 0.955 is most of the way to a corner already, so the gap is small — and at
+> gain 300 (cos_bin 0.984) retrieval reaches **99.3–99.9%**, the highest in the
+> campaign. §7's gap 2 is therefore not a flaw in the dynamics but a statement
+> about how close the encoder's patterns sit to corners.
+
+The g300 arm also separates the two effects that move together: it is more
+corner-like *and* shorter-charted, and it trades 7° of angular error for near
+perfect retrieval and zero dead goals at K=20 — the same trade §10.9's gain
+ladder found, with saturation not changing its shape.
+
+Raw: `$CLS_RESULTS/hopfield_probe/20260827/att0.5_g{100,300}_sat/`.

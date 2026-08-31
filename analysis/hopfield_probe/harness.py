@@ -148,9 +148,21 @@ def encoder_header(
                 "cos_floor_mean", "r_at_cos0.5_median")
         ur_summary = {k: _jsonable(ur[k]) for k in keep if k in ur}
 
+    # Training coverage, from the patch layout the checkpoint carries. It is
+    # the axis the encoders are being compared along, and deriving it here
+    # keeps the report from having to re-open every checkpoint to plot it.
+    sizes = ckpt.get("sizes") or []
+    arena = int(np.prod(list(cfg.lambdas))) if getattr(cfg, "lambdas", None) \
+        else 0
+    coverage = (float(sum(int(s) * int(s) for s in sizes)) / (arena * arena)
+                if sizes and arena else None)
+
     return {
         "path": str(path),
         "name": Path(path).parent.name + "/" + Path(path).name,
+        "coverage": coverage,
+        "n_patches": len(sizes) or None,
+        "patch_sizes": sorted({int(s) for s in sizes}) or None,
         "gain": float(gain),
         "fwhm_ratio": float(fwhm_ratio),
         "fwhm_was_overridden": bool(fwhm_was_overridden),

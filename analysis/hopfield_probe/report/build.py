@@ -186,6 +186,12 @@ def page_index(results: list[dict], src: str) -> str:
         except (KeyError, TypeError):
             return None
 
+    def flow_c(r):
+        try:
+            return scal(r["test_d"]["k"][rk][rs]["continuous"], "reach_rate")
+        except (KeyError, TypeError):
+            return None
+
     tiles = []
     for label, fn, fmt, sub in (
         ("Basin radius", basin, lambda v: radius(v, 2),
@@ -201,7 +207,9 @@ def page_index(results: list[dict], src: str) -> str:
     # Capacity: K on the x-axis, so encoder identity takes the colour here.
     kk = ks(primary)
     kx = [float(k) for k in kk]
-    cols = [CAT1, CAT2, MUTED]
+    # Four coverage levels fit in one run, so three colours would wrap
+    # and give two encoders the same line.
+    cols = [CAT1, CAT2, CAT3, CAT8, MUTED]
     ex_series, acc_series = [], []
     for i, r in enumerate(results):
         name = r["header"].get("label", f"enc{i}")
@@ -221,6 +229,45 @@ def page_index(results: list[dict], src: str) -> str:
 {card("Direction accuracy vs. memory load",
       line_chart(kx, acc_series, xlabel="K (stored goals)", ylabel="acc45",
                  ylim=(0, 1), chance=0.25, chance_label="chance"))}
+</div>"""
+
+    # Coverage is the axis the encoders in a ladder run differ along, and it is
+    # the one comparison the per-encoder pages cannot show, since each page
+    # renders one encoder. Both panels are at the reference K: reach is the
+    # objective, and r_exact_95 is the radius within which a cue still
+    # retrieves the goal exactly -- they came apart on this ladder, reach
+    # staying flat while the radius shrank, which is the point of plotting
+    # them together. Omitted entirely when the run has no coverage metadata or
+    # only one distinct value, where a scatter would say nothing.
+    covs = [(r["header"].get("coverage"), r) for r in results]
+    covs = [(c, r) for c, r in covs if c is not None]
+    cov_block = ""
+    if len({round(c, 6) for c, _ in covs}) > 1:
+        covs.sort(key=lambda cr: cr[0])
+        cx = [c * 100 for c, _ in covs]
+
+        def _pt(getter):
+            return [{"label": r["header"].get("label", "?"),
+                     "color": cols[i % len(cols)],
+                     "values": [getter(r) if j == i else None
+                                for j in range(len(covs))]}
+                    for i, (_c, r) in enumerate(covs)]
+
+        reach_line = [{"label": "continuous reach", "color": CAT1,
+                       "values": [flow_c(r) for _c, r in covs]}]
+        basin_line = [{"label": "r_exact_95", "color": CAT2,
+                       "values": [basin(r) for _c, r in covs]}]
+        cov_block = f"""<h2>Coverage</h2>
+<div class="grid2">
+{card("Continuous reach vs. training coverage",
+      line_chart(cx, reach_line, xlabel="training coverage (%)",
+                 ylabel="continuous reach", ylim=(0, 1)),
+      note=f"K={rk}, s={rs}. One point per encoder in this run.")}
+{card("Basin radius vs. training coverage",
+      line_chart(cx, basin_line, xlabel="training coverage (%)",
+                 ylabel="r_exact_95 (cells)"),
+      note=f"K={rk}, s={rs}. The radius within which a cue still retrieves "
+           f"the goal exactly.")}
 </div>"""
 
     rows = []
@@ -258,6 +305,7 @@ resulting field actually carries trajectories to the goal.</p>
 <div class="tiles">{"".join(tiles)}</div>
 <h2>Capacity</h2>
 {cap}
+{cov_block}
 <h2>Everything</h2>
 {card("", tbl)}
 """
