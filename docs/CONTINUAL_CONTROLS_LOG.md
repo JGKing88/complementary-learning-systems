@@ -1137,3 +1137,54 @@ above every honest replay result:
 Every method in the suite has one. That is not a quirk of any single algorithm;
 it is what happens when a stability knob is turned far enough, and it is why
 the plasticity column is not optional.
+
+---
+
+## 2026-08-31 — §5.2 answered: activation memory does not do this job
+
+Three seeds, eight held-out environments each, 64 lifetimes of 10 episodes,
+weights frozen throughout.
+
+| | memory_lift | P(next \| hit) | P(next \| miss) | curve |
+|---|---|---|---|---|
+| **lifetime** (state carried) | **+0.029 ± 0.018** | 0.117 | 0.088 | 0.100 → 0.086 |
+| episodic control | −0.003 ± 0.012 | 0.109 | 0.112 | 0.115 → 0.104 |
+| *positive control* | *+0.559* | *0.907* | *0.348* | *0.31 → 0.82* |
+
+**+0.029 against a detectable +0.559 — about 5 % of the available signal, and
+within 1.6 SEM of zero at three seeds.** Attributable to carrying state:
++0.032. Both real curves are flat across ten episodes.
+
+The conditional framing is what makes this readable. These policies solve only
+~10 % of first episodes on held-out environments, so a flat *mean* curve would
+have been ambiguous between "no memory" and "rarely had anything to remember".
+`memory_lift` asks the sharper question — *among the lifetimes that did find the
+goal, was the next episode any easier?* — and the answer is essentially no:
+11.7 % against 8.8 %, where an agent that actually remembered would post 90.7 %
+against 34.8 %.
+
+**This is the result §0.2 named as the one that would genuinely hurt, and it
+did not happen.** A frozen recurrent policy, pretrained across 32 environments
+with its hidden state carried across episode boundaries, does not get better at
+a new environment by having been in it. The comparison that runs on the store's
+own terms — no weight updates for either model — is the one the store wins most
+clearly.
+
+### What this does and does not license
+
+It licenses: *on this task, activation memory in a 256-unit GRU does not
+substitute for an associative store.* A referee cannot answer that with "you
+needed a bigger buffer", because there is no buffer on either side.
+
+It does not license: *recurrent policies cannot do in-context navigation.* The
+policies here are weak in absolute terms (~10 % on held-out environments), the
+pool was 32 environments, and the hidden state is 256 units. A stronger
+in-context learner — more pretraining environments, a larger recurrent state,
+an architecture built for it — is not ruled out by this and would be the honest
+next control if anyone doubts the result.
+
+The supervision confound recorded earlier turned out not to matter for the
+headline: the lifetime arm is the better policy on the *training pool* (0.494
+against 0.268 by update 750) and the *worse* one on held-out environments
+(curve 0.100 against 0.115). It generalises worse, not better. Since
+`memory_lift` is conditional and within-arm, neither fact touches it.

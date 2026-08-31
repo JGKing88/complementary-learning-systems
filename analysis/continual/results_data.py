@@ -157,10 +157,23 @@ def collect_incontext(d: str) -> dict | None:
             "last_episode": _mean([r["last_episode"] for r in rs]),
             "adaptation": _mean([r["adaptation"] for r in rs]),
             "adaptation_sem": _sem([r["adaptation"] for r in rs]),
+            # The conditional test, which is the headline -- see
+            # hopfield_nav/evaluation/incontext.py.
+            "memory_lift": _mean([r.get("memory_lift") for r in rs]),
+            "memory_lift_sem": _sem([r.get("memory_lift") for r in rs]),
+            "p_next_given_hit": _mean([r.get("p_next_given_hit") for r in rs]),
+            "p_next_given_miss": _mean([r.get("p_next_given_miss") for r in rs]),
         }
     if "lifetime" in out["arms"] and "episodic" in out["arms"]:
         out["attributable"] = (out["arms"]["lifetime"]["adaptation"]
                                - out["arms"]["episodic"]["adaptation"])
+        lt, ep = out["arms"]["lifetime"], out["arms"]["episodic"]
+        if lt.get("memory_lift") is not None and ep.get("memory_lift") is not None:
+            out["attributable_lift"] = lt["memory_lift"] - ep["memory_lift"]
+    #: What a scripted agent that provably remembers scores on this metric, from
+    #: tests/test_memory_lift.py. Carried here so the page can state the null as
+    #: a fraction of a detectable effect rather than as a bare number near zero.
+    out["positive_control_lift"] = 0.559
     return out
 
 

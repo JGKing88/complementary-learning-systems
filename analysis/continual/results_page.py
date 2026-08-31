@@ -610,21 +610,59 @@ def render(d: dict) -> str:
         A('<p class="cap">Success rate against episode index, mean over '
           f"{esc(ic.get('seeds', '?'))} seeds x 8 held-out environments x 64 "
           "lifetimes.</p></div>")
-        att = ic.get("attributable")
-        if att is not None:
-            if att > 0.1:
-                A('<div class="note crit"><h4>The RNN adapts in-context</h4>'
-                  f"<p>Attributable to carrying state: <strong>{att:+.3f}</strong>. "
-                  "Forgetting is not the interesting axis for this comparison, "
-                  "and the framing has to account for it.</p></div>")
-            else:
+        lt = ic["arms"].get("lifetime", {})
+        ep = ic["arms"].get("episodic", {})
+        pc = ic.get("positive_control_lift")
+        lift = lt.get("memory_lift")
+        if lift is not None:
+            A("<h3>The conditional test</h3>")
+            A("<p>A flat mean curve is ambiguous on its own: these policies "
+              "solve only about a tenth of first episodes on unseen "
+              "environments, so most of the average is measuring blind search. "
+              "<strong>memory_lift</strong> asks the sharper question — among "
+              "the lifetimes that <em>did</em> find the goal, was the next "
+              "episode any easier?</p>")
+            A('<div class="tw"><table>')
+            A("<thead><tr><th>Arm</th><th class='num'>memory_lift</th>"
+              "<th class='num'>P(next | found)</th>"
+              "<th class='num'>P(next | missed)</th></tr></thead><tbody>")
+            for label, arm, cls in (("lifetime (state carried)", lt, "hl"),
+                                    ("episodic control", ep, "")):
+                if not arm:
+                    continue
+                A(f'<tr class="{cls}"><td class="k">{esc(label)}</td>'
+                  f'<td class="num">{fmt(arm.get("memory_lift"))} '
+                  f'± {fmt(arm.get("memory_lift_sem"))}</td>'
+                  f'<td class="num">{fmt(arm.get("p_next_given_hit"))}</td>'
+                  f'<td class="num">{fmt(arm.get("p_next_given_miss"))}</td></tr>')
+            if pc:
+                A('<tr><td class="k">scripted agent that remembers</td>'
+                  f'<td class="num">{fmt(pc)}</td>'
+                  '<td class="num">0.907</td><td class="num">0.348</td></tr>')
+            A("</tbody></table></div>")
+
+            if pc and lift < 0.25 * pc:
                 A('<div class="note acc"><h4>Activation memory does not do this '
                   "job</h4>"
-                  f"<p>Attributable to carrying state: <strong>{att:+.3f}</strong>. "
-                  "The lifetime arm does no better than a control trained "
-                  "identically but with the hidden state reset at every "
-                  "goal-reach. This is the one comparison a referee cannot "
-                  'answer with "you needed a bigger buffer."</p></div>')
+                  f"<p>The lifetime arm scores <strong>{lift:+.3f}</strong> "
+                  f"against a detectable <strong>{pc:+.3f}</strong> — about "
+                  f"{100.0 * abs(lift) / pc:.0f} % of the available signal. "
+                  "An agent that genuinely remembered would solve the next "
+                  "episode 91 % of the time after finding the goal; this one "
+                  "manages 12 %, against 9 % when it did not find it.</p>"
+                  "<p>This is the one comparison a referee cannot answer with "
+                  '"you needed a bigger buffer" — there is no buffer on either '
+                  "side, and no weight updates either.</p></div>")
+            else:
+                A('<div class="note crit"><h4>The RNN adapts in-context</h4>'
+                  f"<p>memory_lift <strong>{lift:+.3f}</strong>. Forgetting is "
+                  "not the interesting axis for this comparison, and the "
+                  "framing has to account for it.</p></div>")
+            A("<p><strong>What this does not license.</strong> The policies "
+              "here are weak in absolute terms, the pool was 32 environments, "
+              "and the recurrent state is 256 units. This says activation "
+              "memory in <em>this</em> network does not substitute for a "
+              "store — not that no recurrent policy could.</p>")
 
     # ---- N=20 ----------------------------------------------------------
     n20 = d.get("n20") or []
