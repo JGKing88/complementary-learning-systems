@@ -1966,6 +1966,68 @@ WAVES: dict[str, dict] = {
         },
         "seed": [42, 43, 44, 45],
     },
+    # W56 -- combinations, and the design target is now a NUMBER.
+    #
+    # Every arm in w45-w55 is Level 6 with exactly one knob moved. That was the
+    # right way to find the axes and it is the wrong way to finish: the two that
+    # work are independent mechanisms and have never been combined.
+    #
+    # What w55 and the probe established (docs/EXPERIMENTS_HOPFIELD_PROBE.md
+    # Sec 10.9-10.10):
+    #
+    #   * reach peaks at res90 ~7 and falls off both sides. attract_lambda 0.5
+    #     lands there (cont 0.987); 0.25 overshoots to res90 5 and gives 0.974
+    #     with |err| 14.4 deg against 7.8 -- retrieval saturates and the
+    #     direction readout degrades, the same signature as too much gain.
+    #   * sm30 (327 patches of 30 cells, same 10% coverage) is the only arm that
+    #     improves on Level 6 on BOTH axes at once: alias 0.0060 at res90 8
+    #     against 0.0082 at res90 10. Different mechanism from attract -- the
+    #     env-blind spread term sees only batch encodings, so more patches means
+    #     more of the arena reaches the one term with far-field purchase.
+    #   * training at gain 300 is much worse than training at 100 (alias 0.0140
+    #     against 0.0056 at the same operating point), and repel_weight down is
+    #     a null. Both are closed.
+    #
+    # So: combine attract and patch count, and use attract as the trim that
+    # lands the pair at res90 ~7. sm30 alone sits at 8, attract 0.5 alone at 7,
+    # so the combination will overshoot and the higher-attract variants are the
+    # ones expected to win -- which is why 0.75 and 1.0 are here rather than
+    # more aggressive settings.
+    #
+    #   a0.5_sm30 / a0.75_sm30 / a1_sm30   the combination, three trims
+    #   a0.75                              fills the untested 0.5-1.0 gap alone
+    #   sm20                               736 patches of 20 cells; pushes the
+    #                                      count axis past sm30. Sec 6.3 called
+    #                                      20 cells unusable, on a res90
+    #                                      argument -- res90 is a floor near 5
+    #                                      for navigation, not a maximand.
+    #   a0.5_rate1                         attract 0.5 with the spread term
+    #                                      doubled. rate0 has alias 0.2059
+    #                                      against 0.004-0.06 for everything
+    #                                      else, so the spread term does nearly
+    #                                      all far-field suppression and its
+    #                                      strength has never been tuned at low
+    #                                      attract.
+    "w56_nav_combos": {
+        "arm": {
+            name: {**dict(npos_list=SIZE_MIXES["sm50"], batch_size=4096,
+                          lr=3e-4, per_env_radius_frac=0.0, radius=20.0,
+                          rate_lambda=0.5, rate_eps=1.0, out_dim=1024,
+                          hidden_dim=256, gain_end=100.0), **over}
+            for name, over in (
+                ("a0.5_sm30",  dict(attract_lambda=0.5,
+                                    npos_list=SIZE_MIXES["sm30"])),
+                ("a0.75_sm30", dict(attract_lambda=0.75,
+                                    npos_list=SIZE_MIXES["sm30"])),
+                ("a1_sm30",    dict(attract_lambda=1.0,
+                                    npos_list=SIZE_MIXES["sm30"])),
+                ("a0.75",      dict(attract_lambda=0.75)),
+                ("sm20",       dict(npos_list=SIZE_MIXES["sm20"])),
+                ("a0.5_rate1", dict(attract_lambda=0.5, rate_lambda=1.0)),
+            )
+        },
+        "seed": [42, 43, 44, 45],
+    },
 }
 
 

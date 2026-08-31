@@ -9,6 +9,26 @@ envs, `steps` 1–15, `K` 1–20, four encoders.
 
 ## 0. Summary
 
+> ## ▸ Read §10.11 first
+>
+> **The mechanism, and the open questions.** Everything in §10 reduces to one
+> variable — the code's **effective dimension** `d_eff`, the participation ratio
+> of its covariance. Far-field cosine spread is `1/√d_eff` to within a few
+> percent over a 20× range, so aliasing is a tail event in a `d_eff`-dimensional
+> space; `attract_lambda` and the coding-rate term compete to set it; and
+> `r_min` fails because it is a **product of two opposing functions of `d_eff`**
+> and therefore peaks at a different value than reach does.
+>
+> §10.11 also lists the **four things this does not derive** — including the
+> res90 ≈ 5 floor that bounds the entire trade, which is the least understood
+> number in this document.
+>
+> **Best encoder:** `sweeps/w52_attract_fwhm/001_att0.5_seed=43/encoder_final.pt`
+> at its own gain 100 with `β = gain`. Continuous reach **0.987**
+> (0.977 across three scaffolds × four seeds) against level 7's 0.806.
+> Spec sheet: https://claude.ai/code/artifact/db70ecb9-ca16-4f8b-a897-5dfa0a01d198
+
+
 **Production's Hopfield is a linear matched filter that degrades cues.** At the
 live operating point a cue corrupted to cos 0.70 comes back *worse* — 0.54 at
 K=5, 0.27 at K=10 — and the `q` readout decays monotonically with recall depth.
@@ -931,3 +951,100 @@ also low; raising it is the cheaper fix than repeating draws, and the probe
 costs ~3 min per encoder either way.
 
 Raw: `att0.5_ps1`, `att0.5_ps2`, `l6_g300_ps1`, `l6_g300_ps2`.
+
+### 10.11 The mechanism: one variable, two metrics, two different optima
+
+**This is the section to read if you read one.** §10.1–§10.10 are a sequence of
+measurements; this is the account that makes them a single thing, and it is what
+makes the result transferable to a config nobody has run.
+
+#### Effective dimension is the variable
+
+`why_attract_check.py`, one seed per arm, 4000 random positions. **Effective
+dimension** is the participation ratio of the code covariance,
+`(Σλ)² / Σλ²` — how many of the 1024 output directions the code actually
+occupies:
+
+| arm | eff dim | PR/D | far-cos sd | **1/√d_eff** | alias rate |
+|---|---|---|---|---|---|
+| `att16` (level 7) | 131 | 0.128 | 0.0825 | 0.0874 | 0.0194 |
+| `att4` | 193 | 0.189 | 0.0675 | 0.0720 | 0.0109 |
+| `att2` (level 6) | 211 | 0.206 | 0.0659 | 0.0688 | 0.0114 |
+| `att1` | 235 | 0.230 | 0.0639 | 0.0652 | 0.0106 |
+| **`att0.5`** | **297** | 0.290 | 0.0577 | 0.0580 | 0.0083 |
+| `att0.25` | 345 | 0.337 | 0.0534 | 0.0538 | 0.0083 |
+| `rate0` (no spread term) | **16** | 0.016 | 0.2259 | 0.2500 | 0.2115 |
+
+**The far-field cosine spread is `1/√d_eff` to within a few percent over a 20×
+range.** Distant pairs behave like random vectors in a `d_eff`-dimensional
+space, which is what §10.3's "one competitor above 0.25" is a tail event of.
+
+#### Why `att0.5` works
+
+`attract_lambda` and the coding-rate term **compete for `d_eff`**. Attract asks
+nearby positions to be similar, so the code varies slowly and collapses into few
+directions; the rate term pushes it to spread over the sphere. Lowering attract
+shifts the balance: 16 → 0.25 raises `d_eff` 131 → 345. Removing the rate term
+altogether collapses the code to **16 of 1024 directions**, which is the whole
+explanation of `rate0`'s 0.21 alias rate.
+
+The chain to reach is then:
+
+1. a goal dies when **one** co-stored competitor exceeds cos ≈ 0.25 (§10.3);
+2. competitor cosines are ≈ `N(0, 1/√d_eff)`;
+3. so raising `d_eff` pushes that tail down fast, and the dead-goal rate with it.
+
+`att0.5` sits where `d_eff` is high enough that the tail is nearly empty and not
+so high that the chart is too short to build a local basis from.
+
+#### Why `r_min` is the wrong signal
+
+§4.4b's law is `r_min ≈ res90 · √(ln(1/C)/ln(1/0.9))` — **a product of two
+opposing functions of `d_eff`**. Raising `d_eff` shortens the chart (res90 down,
+first factor down) and suppresses aliases (`C` down, second factor up). So
+`r_min` has an **interior optimum in `d_eff`** and peaks around `att2`–`att16`,
+while reach keeps improving to `att0.5`. One underlying variable, two metrics,
+two different peaks — and w52–w54 climbed toward `r_min`'s peak for three waves.
+
+And navigation does not need res90 the way `r_min` does. The readout is
+`W_basis @ (recalled − current)` with the basis built from **±1-cell**
+neighbours, so the chart only has to be valid at one cell. res90 7 leaves the
+1-cell cosine at ~0.998. `r_min` maximises res90 because it asks a *decoding*
+question — how far can a position move and stay identifiable; navigation asks a
+*gradient* question and needs res90 only as a floor.
+
+#### What this explains that was previously just observed
+
+* **Every knob is the same trade** (§10.9) — attract, gain, `rate_lambda` and
+  patch count all move `d_eff`, so all of them buy alias rate with res90.
+* **Attract and inference gain are substitutes** (§10.9) — same variable, so a
+  budget spent in training cannot be spent again at inference.
+* **Combinations do not compound** (§10.10) — `a0.5_sm30` is worse than either
+  ingredient because you cannot move one variable twice and then trim back.
+* **res90 and the alias rate are rank-correlated across every arm measured** —
+  they are two readouts of `d_eff`.
+
+#### Open questions — three things this does *not* derive
+
+1. **Why `attract_lambda` sets `d_eff` quantitatively.** The qualitative account
+   is solid and the relation is monotone over six arms across a 64× range, but
+   there is no derivation of `d_eff(attract_lambda)`, so the optimum has to be
+   found empirically for any new geometry or loss.
+2. **Where the 0.25 threshold comes from.** It should fall out of the argmax
+   against the self-term at given K — the same condition (b) algebra as §7 — but
+   it was fitted from 20 goals per encoder, not derived. Deriving it would give
+   a *predicted* dead-goal rate from `d_eff` and K alone, which would remove the
+   probe from the loop entirely.
+3. **Why direction collapses below res90 ≈ 5.** At res90 5 the one-cell cosine
+   is still ~0.996, so the Gram-Schmidt basis should be fine — and yet `|err|`
+   reaches 42° (§10.9's gain-3000 row). Something about the basis conditioning,
+   or about the `recalled − current` difference vector, degrades faster than the
+   raw cosine implies. This is the floor that bounds the whole trade, and it is
+   the least understood number in §10.
+
+A fourth, from §10.9: an encoder **trained** into a short chart behaves better
+than one **read through** a short chart (`L5` at res90 6 scores 0.977; level 6
+forced to res90 6 by gain scores 0.954, and to res90 5 collapses to 0.608). If
+`d_eff` were the whole story those would match, so inference gain and training
+are not perfectly interchangeable and something beyond `d_eff` distinguishes
+them.
