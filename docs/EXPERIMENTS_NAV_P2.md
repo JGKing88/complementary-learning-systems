@@ -2206,6 +2206,82 @@ it could in principle use them some other way. But there is no evidence here
 that it should, and `--input_hopfield_multistep 1` is now the defensible
 default.
 
+### 7.7.1 What group D is really saying — the projection deletes the signal
+
+Jack's question, and it is the right one to ask of that 1.000: *is D saying
+that if we passed the raw encoding — the actual Hopfield recall — the policy
+would have the signal?*
+
+**Broadly yes, and the code says exactly how much is thrown away.**
+
+#### What the policy receives
+
+`rollout/signal.py::project_to_signal` computes the full recall at
+`embed_dim` = 1024, then:
+
+```
+W = vectorhash.gram_schmidt_projection(positions, env_offset)   # (B, 2, 1024)
+q = vectorhash.project_displacement(embeddings, recalled, W)    # (B, 2) E/N
+```
+
+`hopfield_signal_at` sets `signal_dim = 4 if hopfield_mode == "discrete" else
+2`. So what reaches the policy is **two numbers** per recall — the recalled
+displacement in a local 2-D frame, raw under `input_hopfield_raw` so `‖q‖`
+survives — for the main signal plus depths 1/2/3. About **8 of the agent's 74
+input dims**. The remaining **1022 dimensions of the recall are projected away
+and never reach the policy at all.**
+
+#### D measures precisely the discarded part
+
+`d1_chart` is the recall's residual against this env's chart subspace — the
+top-64 right singular vectors of the env's 400 encoded cells
+(`io_features.py::chart_basis`), i.e. how much of the recalled vector lies
+*outside* what this environment can explain. The 2-D Gram–Schmidt frame is a
+local slice of that same chart: `q` keeps the in-chart coordinates and discards
+the orthogonal remainder.
+
+So group D's AUC 1.000 against `‖q‖`'s 0.87 is not a claim that the policy has
+a perfect cue and ignores it. It is the statement that **the projection to `q`
+deletes a signal that the raw recall carries.**
+
+#### Three qualifications, in the order they bite
+
+1. **`d1` is not the raw vector — it is the raw vector measured against an
+   env-specific basis.** Handing the policy 1024 dims makes the information
+   *present*; extracting the statistic still requires inferring the current
+   env's chart subspace online. That is a representation-learning problem, not
+   a feature read, and it is the same gap §7.11 records as "group D's
+   acquisition cost is unmeasured".
+
+2. **There is a far cheaper version, and it should be tested first.** `W` is
+   already computed every step, so the orthogonal residual
+   `‖recalled − Wᵀq‖` — or better the ratio `‖q‖ / ‖recalled‖`, *how much of
+   this recall does the local chart explain* — is **one extra scalar**, needs
+   no env-specific fit, and is the decoder-free shadow of `d1`. If the
+   separation survives that compression it is nearly free. If it does not, the
+   1024-dim route is the only one and the acquisition cost becomes the real
+   question.
+
+3. **Whether it survives compression is measurable offline, with no training.**
+   Same machinery as `ideal_observer`: compute `‖q‖ / ‖recalled‖` on
+   goal-present and goal-absent draws and read its AUC against `d1_chart`'s
+   1.000 and `a1_qnorm`'s 0.887. A CPU job of minutes.
+
+**The honest prior is uncertain**, and against the cheap version: the 2-D frame
+is a much smaller subspace than the 64-dim chart, so its residual is dominated
+by in-chart directions the frame simply does not span, and the
+goal-present/absent contrast may wash out. That is the thing to measure, not to
+assume either way.
+
+#### Consequence for re-running P3 on a new encoder
+
+If the chart residual is what carries the signal, then the encoder's
+**effective dimensionality** bears on it directly — a fixed top-64 basis
+explains less of a code that spreads over more dimensions. The w52 encoder runs
+at gain 100 against the gain-5 code P3 was measured on, so it is *more* binary
+and *higher*-dimensional. That makes `d1`'s 1.000 **more** likely to move under
+an encoder swap, not less, and it is the number in §7 most exposed to one.
+
 ### 7.8 What probing behaviour buys, and the surprise
 
 Seven scripted probes plus a sixteen-point parametric sweep over
@@ -2442,6 +2518,11 @@ distance-to-wall), and phase 1's wall failures are still not a readout problem.
   worth AUC 1.000 against 0.87 — the largest single effect in §7 — and nothing
   here says how much in-env experience is needed to fit one well enough to keep
   that. §6.3's within-env nearest-neighbour table used all 400 cells.
+  **§7.7.1 reframes what this cost buys**: the policy receives only the 2-D
+  projection `q`, so the 1022 discarded dimensions of the recall are where D's
+  signal lives. The cheap test named there — the scalar `‖q‖ / ‖recalled‖`,
+  which needs no env-specific basis — is untried and would settle whether the
+  1024-dim route is needed at all.
 - **The agent-trajectory result is on policies that were still training.** The
   P4 checkpoints are `u1250` and `u1300` of runs that had not converged and P5
   is at `u850`. The inversion is mechanistic and should survive, but the
