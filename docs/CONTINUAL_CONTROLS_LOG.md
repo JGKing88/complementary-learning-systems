@@ -1488,3 +1488,99 @@ The measurement is now part of `HyperRNNAgent.describe()`, so every future
 history carries it rather than requiring a separate investigation. That needed
 `arch_detail` to be recorded *after* training rather than at construction,
 where it had been describing the initial state of a model nobody had trained.
+
+---
+
+## 2026-08-31 — Wave 3 results: the best classic result changes hands
+
+Job **21653228**, 144 runs, **all OK**, 33 minutes.
+
+### The headline
+
+| arm | retained | current | stored | params |
+|---|---|---|---|---|
+| **XdG + SI** (gating 0.5, λ = 10⁴) | **0.739 ± 0.067** | 0.750 | 0.59 MB | 73,220 |
+| ER, replay ratio 32 *(the previous best)* | 0.579 | 0.796 | ~50 MB | 73,220 |
+| XdG alone (gating 0.8) | 0.425 ± 0.067 | 0.689 | 0 | 73,220 |
+| HNET, learned base, β = 10⁵ | 0.398 ± 0.062 | 0.579 | 0.59 MB | 146,300 |
+| HNET, frozen base, β = 10⁴ | 0.393 ± 0.053 | 0.588 | 0.29 MB | 73,080 |
+| HNET from scratch, β = 10⁴ | 0.346 ± 0.067 | 0.518 | 0.29 MB | 73,080 |
+| Multi-head, oracle task id | 0.227 ± 0.048 | 0.863 | 0 | 74,260 |
+| naive SGD, pretrained *(the floor)* | 0.044 | 0.753 | 0 | 73,220 |
+
+**XdG + SI is the best classic result in the suite**, by a wide margin, and it
+is not bought with plasticity: its current-environment score of 0.750 is
+indistinguishable from the naive floor's 0.753. It also stores 85× less than
+the replay arm it displaces and has the same parameter count as the baseline
+policy.
+
+This is the plan's own §4.3 prediction reproducing. SI alone sits in the
+plasticity trap at 0.07–0.15. XdG alone reaches 0.386 at the same gating.
+Together they reach 0.739. Masse et al. reported exactly this synergy on
+permuted MNIST — "XdG+EWC learned 100 sequential tasks where either alone is
+near-chance" — and it holds here in a recurrent policy on a navigation task.
+
+### What the beta calibration was worth
+
+The hypernetwork's regulariser sweep is monotone in β, and the published value
+is in the dead zone:
+
+| β | 0 | 10² | 10³ | 10⁴ | 10⁵ | 10⁶ | 10⁷ |
+|---|---|---|---|---|---|---|---|
+| retained | 0.042 | 0.091 | 0.136 | 0.256 | 0.398 | 0.454 | 0.431 |
+| current | 0.720 | 0.692 | 0.649 | 0.582 | 0.579 | **0.415** | **0.396** |
+
+Sweeping decades around von Oswald's β = 1 — the obvious thing, and what this
+suite did twice before — would have returned something in the 0.04–0.09 range
+and reported *"hypernetworks do not help here"*. The honest answer is **ten
+times larger**. The pre-measurement in `calibrate_beta` cost about twelve
+minutes and is the only reason this wave says anything true about the method.
+
+The two highest-retention settings (β = 10⁶ and 10⁷) are **plasticity traps** —
+current-environment scores of 0.415 and 0.396, well under the 0.5 threshold —
+so the frontier reports β = 10⁵ at 0.398 as HNET's best *usable* result. The
+trap is visible only because the plasticity column exists.
+
+### The ablation that makes it interpretable
+
+**A hypernetwork with the regulariser switched off lands at 0.042, exactly on
+the naive floor** (0.044). Frozen-base with no regulariser: 0.035. So the
+architecture buys *nothing at all* on its own — the entire effect is the output
+regulariser. Had the β = 0 arm not been run, "HNET reaches 0.398" would have
+been reported as a fact about hypernetworks when it is a fact about a penalty
+that could in principle be applied to other parameterisations.
+
+The from-scratch variant reaches 0.346 against its own matched from-scratch
+control at 0.024, so the warm start is not doing the work either.
+
+### Multi-head bounds the family, as intended
+
+0.227 retained at 0.863 current: excellent plasticity, modest retention. Its
+per-task heads cannot interfere by construction, so everything it fails to
+retain is forgetting in the shared trunk — which confirms that head-level
+isolation is not where this problem lives, and that XdG's win comes from
+isolating *inside* the recurrence.
+
+### What is caveated, and how hard
+
+Every arm in this wave is handed an **oracle task id**, and
+`task_identifiability` says that is worth a great deal here: the best readout
+tried recovers the environment at 0.43 against a chance of 0.20. So XdG + SI's
+0.739 is not a like-for-like win over Experience Replay's 0.579 — it is an
+upper bound on its family, and the results page now splits the frontier table
+into two groups rather than ranking them together, because a "task id" chip in
+a single sorted table is not enough to stop a reader taking the top row as the
+winner.
+
+### Wave 3b, launched before publishing any of this
+
+Job **21654989**, 40 runs. Three of Wave 3's results sit at the edge of their
+own sweep, which is the precise shape of the mistake that cost Wave 2b a
+re-run:
+
+* **λ was at the top of its range when XdG + SI won** (100 → 0.503,
+  10⁴ → 0.739). Extended to 10⁵ and 10⁶.
+* **Gating was still rising** (0.2 → 0.177, 0.5 → 0.386, 0.8 → 0.425). Added 0.9.
+* **The best gating and the best λ were never run together.** XdG alone prefers
+  0.8; XdG + SI was only ever run at 0.5. The published combination is the one
+  that happened to be in the script, not the method's best setting.
