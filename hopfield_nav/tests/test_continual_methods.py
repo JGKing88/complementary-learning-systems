@@ -828,3 +828,97 @@ def test_freeze_trunk_refuses_to_leave_nothing_trainable():
 
     with pytest.raises(RuntimeError, match="nothing trainable"):
         freeze_trunk_params(_NoHead())
+
+
+# ===========================================================================
+# Every auxiliary loss must actually produce a gradient
+# ===========================================================================
+#
+# DER++ shipped with `requires_grad=False` on its distillation term for an
+# entire wave. It returned a nonzero number that scaled correctly with alpha,
+# so every value-based test passed and the diagnostic looked healthy -- but the
+# term added a *constant* to the loss and contributed nothing to any gradient.
+# DER++ ran as plain ER, which is precisely what the results showed: identical
+# statistics across alpha spanning four orders of magnitude.
+#
+# The cause was one shared helper that detached, used for both the stored
+# anchor (where detaching is right) and the live prediction (where it is
+# fatal). The lesson is that "the loss is nonzero and moves in the right
+# direction" is not evidence that a loss does anything.
+
+@pytest.mark.parametrize("name,build,setup", [
+    ("derpp", lambda: DERpp(replay_batches=1, alpha=1.0, seed=0),
+     "replay"),
+    ("clear", lambda: CLEAR(replay_batches=1, clone_coef=1.0, seed=0),
+     "replay_block"),
+    ("lwf", lambda: LwF(alpha=1.0), "block"),
+])
+def test_aux_loss_is_differentiable(name, build, setup):
+    agent = _agent()
+    m = build()
+    if setup in ("replay", "replay_block"):
+        m.after_update(_rollout(b=2, t=4), 0, agent)
+    if setup == "replay_block":
+        m.on_block_end(0, agent, [])
+    if setup == "block":
+        m.on_block_start(1, agent, [])
+    _nudge(agent, 0.2)
+
+    r = _rollout(b=2, t=4, tag=1.0)
+    extra = m.extra_batches(r, 1) if hasattr(m, "extra_batches") else []
+    loss = m.aux_loss(agent, r, extra)
+
+    assert loss is not None, f"{name}: aux_loss did not fire"
+    assert float(loss.detach()) > 0.0, f"{name}: aux_loss is zero"
+    assert loss.requires_grad, (
+        f"{name}: aux_loss has requires_grad=False -- it adds a constant to "
+        "the loss and contributes no gradient, so the method is a no-op that "
+        "still reports plausible numbers")
+
+    agent.zero_grad(set_to_none=True)
+    loss.backward()
+    total = sum(float(p.grad.abs().sum()) for p in agent.parameters()
+                if p.grad is not None)
+    assert total > 0.0, f"{name}: backward produced an all-zero gradient"
+
+
+def test_derpp_stored_target_is_detached_but_the_prediction_is_not():
+    """The two roles the same helper used to serve, pinned apart."""
+    agent = _agent()
+    d = DERpp(replay_batches=1, alpha=1.0, seed=0)
+    d.after_update(_rollout(b=1, t=3), 0, agent)
+
+    stored = d._targets[0]
+    for t in (stored if isinstance(stored, tuple) else (stored,)):
+        assert not t.requires_grad, "the stored anchor must be detached"
+
+    dist, _ = agent(_rollout(b=1, t=3).obs)
+    live = d._live_params(dist, agent.cfg.movement_mode)
+    # The mean is always on the graph. sigma is not, when `freeze_log_std` has
+    # deliberately taken it off -- so assert the component that must carry the
+    # gradient rather than every component.
+    mean = live[0] if isinstance(live, tuple) else live
+    assert mean.requires_grad, "the live prediction must stay on the graph"
+
+
+def test_derpp_gradient_scales_with_alpha():
+    """alpha must reach the gradient, not just the reported value. Four orders
+    of magnitude of alpha producing identical runs is what exposed the bug."""
+    def grad_for(alpha):
+        torch.manual_seed(0)
+        agent = _agent()
+        d = DERpp(replay_batches=1, alpha=alpha, seed=0)
+        d.after_update(_rollout(b=2, t=4), 0, agent)
+        _nudge(agent, 0.2)
+        r = _rollout(b=2, t=4, tag=1.0)
+        extra = d.extra_batches(r, 1)
+        loss = d.aux_loss(agent, r, extra)
+        agent.zero_grad(set_to_none=True)
+        loss.backward()
+        return sum(float(p.grad.abs().sum()) for p in agent.parameters()
+                   if p.grad is not None)
+
+    small, large = grad_for(1.0), grad_for(100.0)
+    assert large > small * 50, (
+        f"alpha=100 gave gradient {large:.4g} against alpha=1's {small:.4g}; "
+        "alpha is not reaching the gradient")

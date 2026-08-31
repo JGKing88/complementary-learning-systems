@@ -804,3 +804,72 @@ The clean fix, if this measurement turns out to be load-bearing, is to match
 **total supervised steps** rather than updates between the arms. That is a
 different job specification, not a code change, and it is not worth spending
 before seeing whether the slope shows anything at all.
+
+---
+
+## 2026-08-31 — Wave 2b, and DER++ turns out to have been a no-op
+
+### CLEAR, with a range that reaches
+
+The corrected sweep found its shape immediately:
+
+| clone_coef | retained | current env |
+|---|---|---|
+| 10 | 0.326 ± 0.019 | **0.250** ← trap |
+| 30 | 0.290 ± 0.012 | **0.095** ← trap |
+| 3 | 0.242 ± 0.029 | 0.424 |
+| **1.0** | **0.201 ± 0.036** | **0.622** |
+| 0.1 | 0.165 ± 0.029 | 0.686 |
+
+The usable peak is around `cc=1`–`3`; above that CLEAR walks straight into the
+plasticity trap. Wave 2's range stopped one step short of the turnover, so the
+correction was worth making even though the usable answer barely moved.
+
+SI at λ=1000 also improves on its Wave-2 peak (0.125 against 0.074 at λ=10) at
+a current-env of 0.665, so its sweep had *also* stopped early — less badly than
+DER++'s, and enough to matter.
+
+### DER++ was never running
+
+Wave 2b returned DER++ **bit-identical across α ∈ {10, 100, 1000}**, exactly as
+Wave 2 had across {0.1, 0.5, 1.0}. Four orders of magnitude with no effect is
+not a coefficient-scale problem, and it was not one.
+
+`_dist_params` detached — and it was used for **both** roles: storing the
+anchor at insertion time, where detaching is correct, and computing the live
+prediction inside `aux_loss`, where it is fatal. The loss came out nonzero,
+scaled correctly with α, and carried `requires_grad=False`. It added a
+**constant** to the objective and contributed nothing to any gradient. DER++
+ran as plain ER for two entire waves.
+
+```
+DER++  value=9.20e-01  requires_grad=False  grad_sum=None     <- before
+DER++  value=1.19e+00  requires_grad=True   grad_sum=21.8     <- after
+CLEAR  value=5.44e-01  requires_grad=True   grad_sum=8.97
+LwF    value=1.43e-01  requires_grad=True   grad_sum=1.75
+```
+
+**Every value-based test passed the whole time.** `test_derpp_error_grows_as_
+the_model_moves` asserted the loss was nonzero and grew as the model drifted —
+both true, and both irrelevant. The one thing it did not check was whether the
+number was attached to anything. I had written exactly that test for EWC
+(`test_ewc_penalty_is_differentiable_wrt_the_parameters`) and never the
+equivalent for the three distillation losses.
+
+Fixed by splitting the helper into `_stored_params` (detached, for the anchor)
+and `_live_params` (attached, for the prediction), with the docstring saying
+which is which and why. New tests: `test_aux_loss_is_differentiable` over all
+three methods, `test_derpp_stored_target_is_detached_but_the_prediction_is_not`
+pinning the two roles apart, and `test_derpp_gradient_scales_with_alpha`
+asserting that α reaches the *gradient* rather than only the reported value.
+
+The 48 stale DER++ histories are deleted rather than left to be averaged in —
+they describe a method that was not running. Wave 2c (slurm 21634287) re-runs
+α ∈ {0.1, 1, 10, 100}.
+
+**The pattern across all six defects so far is the same.** None of them crash.
+The prev-action channel produced a shape error only when a never-used flag was
+switched on; `WorldSpec.write` raced only at scale; the joint-ceiling verdict
+was a plausible number from an unconverged run; the budget-blind key averaged
+two incompatible runs; and DER++ reported a healthy-looking loss that did
+nothing. Every one of them renders.

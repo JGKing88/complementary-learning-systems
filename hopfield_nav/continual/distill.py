@@ -228,7 +228,7 @@ class DERpp(ExperienceReplay):
     def after_update(self, rollout, block: int, agent) -> None:
         with torch.no_grad():
             dist, _ = agent(rollout.obs)
-            target = self._dist_params(dist, agent.cfg.movement_mode)
+            target = self._stored_params(dist, agent.cfg.movement_mode)
         n_before = len(self._buf)
         super().after_update(rollout, block, agent)
         if len(self._buf) > n_before:
@@ -243,7 +243,24 @@ class DERpp(ExperienceReplay):
                     break
 
     @staticmethod
-    def _dist_params(dist, movement_mode: str):
+    def _live_params(dist, movement_mode: str):
+        """The current output, still attached to the graph.
+
+        Kept separate from `_stored_params` on purpose. A single helper that
+        detached was used for both roles, which is correct for the target and
+        silently fatal for the prediction: `aux_loss` then returned a nonzero
+        number with `requires_grad=False`, so DER++ added a constant to the loss
+        and contributed no gradient at all. It ran as plain ER, which is exactly
+        what the results showed -- bit-identical across alpha spanning four
+        orders of magnitude.
+        """
+        if movement_mode == "discrete":
+            return dist.logits
+        return (dist.mean, dist.stddev)
+
+    @staticmethod
+    def _stored_params(dist, movement_mode: str):
+        """The anchor, frozen at insertion time. Detached by design."""
         if movement_mode == "discrete":
             return dist.logits.detach().clone()
         return (dist.mean.detach().clone(), dist.stddev.detach().clone())
@@ -257,7 +274,7 @@ class DERpp(ExperienceReplay):
             if i >= len(self._targets):
                 continue
             dist, _ = agent(r.obs)
-            cur = self._dist_params(dist, movement_mode)
+            cur = self._live_params(dist, movement_mode)
             tgt = self._targets[i]
             mask = r.move_label_mask.unsqueeze(-1)
             if movement_mode == "discrete":
