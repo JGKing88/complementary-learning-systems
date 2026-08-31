@@ -133,6 +133,7 @@ def _registry() -> dict[str, type[ContinualMethod]]:
     the other direction would be a cycle.)
     """
     from .distill import CLEAR, DERpp, LwF
+    from .hypernet import HypernetOutputReg
     from .regularize import OnlineEWC, SynapticIntelligence
     from .replay import ExperienceReplay
 
@@ -144,11 +145,12 @@ def _registry() -> dict[str, type[ContinualMethod]]:
         OnlineEWC.name: OnlineEWC,
         SynapticIntelligence.name: SynapticIntelligence,
         LwF.name: LwF,
+        HypernetOutputReg.name: HypernetOutputReg,
     }
 
 
 CONTINUAL_METHODS: tuple[str, ...] = (
-    "none", "er", "clear", "derpp", "online_ewc", "si", "lwf")
+    "none", "er", "clear", "derpp", "online_ewc", "si", "lwf", "hnet")
 
 
 def build_method(name: str, seed: int | None = None, **kwargs) -> ContinualMethod:

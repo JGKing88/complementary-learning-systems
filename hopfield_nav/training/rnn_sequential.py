@@ -22,6 +22,7 @@ import numpy as np
 import torch
 
 from ..continual.base import ContinualMethod, NoMethod
+from ..policy.agent_rnn import set_agent_task
 from ..updates.bc_rnn import bc_rnn_update
 from ..world.env import GridEnv
 from ..evaluation.rnn import evaluate_nav_all
@@ -105,6 +106,13 @@ def run_sequential_blocks(
         env_offset_i = env_offsets[i] if env_offsets is not None else None
 
         for upd in range(1, cfg.updates_per_env + 1):
+            # Re-asserted every update rather than once per block: the
+            # evaluation below walks every env seen so far and sets the task as
+            # it goes, so by the time the loop comes round again the agent is
+            # pointing at whichever env was evaluated last. That happens to be
+            # this one today, and would stop being true the moment the eval
+            # order changed.
+            task_conditioned = set_agent_task(agent, i)
             vec.reset_all()
             rollout = collect_rollout_rnn(
                 vec, agent, cfg.agent, cfg.steps_per_rollout, device,
@@ -112,6 +120,21 @@ def run_sequential_blocks(
                 sgb=sgb, env_offset=env_offset_i,
             )
             extra = method.extra_batches(rollout, i)
+            if task_conditioned and extra:
+                # One BC update is one forward pass, so it can only run under
+                # one task's parameters. Replayed trajectories come from other
+                # blocks, and folding them in here would train env i's head on
+                # env j's supervision -- which destroys exactly the isolation
+                # the agent exists to provide, while still producing a
+                # plausible-looking curve. Combining the two needs a per-task
+                # forward, which the update does not have.
+                raise RuntimeError(
+                    f"method {method.name!r} replayed {len(extra)} batch(es) "
+                    f"into a task-conditioned {type(agent).__name__}. The "
+                    "update runs one forward under one task's parameters, so "
+                    "replayed data from other blocks would be trained through "
+                    "this block's head. Use a replay method with --arch rnn, "
+                    "or a non-replay method with this agent.")
             losses = bc_rnn_update(
                 agent, [rollout] + list(extra), cfg.bc, optimizer,
                 movement_mode,

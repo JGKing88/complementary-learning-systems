@@ -81,21 +81,66 @@ class RNNAgent(nn.Module):
         Returns dict with move_action ((B,) int or (B, 2) float),
         move_log_prob ((B,)), and h_next.
         """
-        move_dist, h_next = self.forward(x, h)
-        if deterministic:
-            if self.cfg.movement_mode == "discrete":
-                move_action = move_dist.probs.argmax(-1)
-            else:
-                move_action = move_dist.mean
+        return act_from_forward(self, x, h, deterministic)
+
+
+def set_agent_task(agent, task: int) -> bool:
+    """Tell a task-conditioned policy which task it is in. Returns whether it is.
+
+    The hypernetwork and the isolation policies select parameters by task id and
+    have no sensible default; every other policy in the stack has one set of
+    weights and no opinion. Rather than teach the driver and the evaluator which
+    is which, they call this on every agent and act on what comes back -- so
+    adding a task-conditioned policy needs no change to either, and a policy
+    that is *not* task-conditioned cannot accidentally be treated as one.
+
+    The return value is load-bearing, not informational: `run_sequential_blocks`
+    uses it to refuse combinations that would be silently wrong, such as
+    replaying one task's trajectories through another task's head.
+    """
+    fn = getattr(agent, "set_task", None)
+    if fn is None:
+        return False
+    fn(task)
+    return True
+
+
+@torch.no_grad()
+def act_from_forward(
+    agent,
+    x: torch.Tensor,
+    h: torch.Tensor | None = None,
+    deterministic: bool = False,
+) -> dict:
+    """One step of action selection, given anything with `forward` and `cfg`.
+
+    Free function rather than a method because `RNNAgent` is no longer the only
+    policy with this head. The hypernetwork agent and the multi-head agent
+    generate or select their weights differently, but the step *after* the
+    distribution exists -- sample or take the mode, sum the log-prob over a
+    continuous action's two dimensions, drop the length-1 time axis -- is
+    identical for all three, and duplicating it three times is how a
+    `deterministic` flag comes to mean the mode in one agent and the mean in
+    another.
+
+    Duck-typed on `agent.forward(x, h) -> (dist, h_next)` and
+    `agent.cfg.movement_mode`, so nothing here needs to import the agents.
+    """
+    move_dist, h_next = agent.forward(x, h)
+    if deterministic:
+        if agent.cfg.movement_mode == "discrete":
+            move_action = move_dist.probs.argmax(-1)
         else:
-            move_action = move_dist.sample()
+            move_action = move_dist.mean
+    else:
+        move_action = move_dist.sample()
 
-        move_log_prob = move_dist.log_prob(move_action)
-        if self.cfg.movement_mode == "continuous":
-            move_log_prob = move_log_prob.sum(-1)
+    move_log_prob = move_dist.log_prob(move_action)
+    if agent.cfg.movement_mode == "continuous":
+        move_log_prob = move_log_prob.sum(-1)
 
-        return {
-            "move_action": move_action.squeeze(1),
-            "move_log_prob": move_log_prob.squeeze(1),
-            "h_next": h_next,
-        }
+    return {
+        "move_action": move_action.squeeze(1),
+        "move_log_prob": move_log_prob.squeeze(1),
+        "h_next": h_next,
+    }

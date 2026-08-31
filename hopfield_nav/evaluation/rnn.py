@@ -11,7 +11,7 @@ from __future__ import annotations
 import numpy as np
 import torch
 
-from ..policy.agent_rnn import RNNAgent, compute_rnn_input_dim
+from ..policy.agent_rnn import RNNAgent, compute_rnn_input_dim, set_agent_task
 from ..config import RNNAgentConfig
 from ..world.env import GridEnv, at_goal
 from ..rollout.rnn import build_rnn_input, grid_state_vec, prev_action_channel
@@ -151,9 +151,18 @@ def evaluate_nav_all(
 
     ``env_offsets[i]`` is env i's offset into the global scaffold; required
     when ``agent.cfg.input_grid_state`` is True (passed to the gbook lookup).
+
+    A task-conditioned policy is told which env it is being evaluated on before
+    each one. That is an oracle task id and it is a real advantage -- the whole
+    point of recording `needs_task_id` on the method is that these arms are
+    upper bounds rather than peers. It is set here rather than by the caller
+    because the caller does not always know the agent needs it, and an agent
+    evaluated on five envs under one task's parameters produces a curve
+    indistinguishable from catastrophic forgetting.
     """
     out: dict[int, dict[str, float]] = {}
     for i, env in enumerate(envs):
+        set_agent_task(agent, i)
         out[i] = evaluate_nav_one_env(
             env, agent, n_trials, max_steps, device,
             deterministic=deterministic, continuous_scale=continuous_scale,

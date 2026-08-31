@@ -23,6 +23,8 @@ import torch
 from hopfield_nav.continual.base import (
     CONTINUAL_METHODS, build_method, parse_method_args)
 from hopfield_nav.policy.agent_rnn import RNNAgent, compute_rnn_input_dim
+from hopfield_nav.policy.hypernet import HNET_BASES, HyperRNNAgent
+from hopfield_nav.policy.isolate import MultiHeadRNNAgent, XdGRNNAgent, warm_start
 from hopfield_nav.policy.recurrent import add_recurrent_args
 from hopfield_nav.config import EnvConfig, RNNAgentConfig, RNNBCConfig, RNNTrainConfig, VectorHashConfig
 from hopfield_nav.world.env import GridEnv
@@ -114,20 +116,55 @@ def freeze_trunk_params(agent) -> tuple[int, int]:
     Plan section 3.2 P4. Must be called *after* any checkpoint load, so what is
     frozen is the pretrained trunk; freezing before would pin it at
     initialisation, which measures something else entirely.
+
+    An agent may name its head something else -- the multi-head policy keeps a
+    `ModuleList` of them -- so it can say so with a `head_prefixes` attribute.
+    Without one, `HEAD_PREFIXES` applies, and an agent whose head matches
+    neither trips the check at the bottom rather than training nothing.
     """
+    prefixes = tuple(getattr(agent, "head_prefixes", HEAD_PREFIXES))
     n_frozen = 0
     for name, prm in agent.named_parameters():
-        if not name.startswith(HEAD_PREFIXES):
+        if not name.startswith(prefixes):
             prm.requires_grad_(False)
             n_frozen += prm.numel()
     n_trainable = sum(prm.numel() for prm in agent.parameters()
                       if prm.requires_grad)
     if n_trainable == 0:
         raise RuntimeError(
-            "freeze_trunk left nothing trainable; HEAD_PREFIXES "
-            f"{HEAD_PREFIXES} matched no parameter of "
-            f"{type(agent).__name__}")
+            f"freeze_trunk left nothing trainable; head prefixes {prefixes} "
+            f"matched no parameter of {type(agent).__name__}")
     return n_frozen, n_trainable
+
+
+#: Policy architectures the protocol can be run with. `rnn` is the baseline
+#: every recorded history to date used; the rest are the isolation family
+#: (plan section 4.3), and all three of them need the task id.
+ARCHITECTURES: tuple[str, ...] = ("rnn", "hnet", "multihead", "xdg")
+
+
+def build_arch_agent(args, cfg, input_dim: int, seed: int):
+    """The policy `--arch` asks for.
+
+    Kept as one function with one switch because the alternative -- four
+    branches spread through `main` -- is how an architecture comes to miss a
+    config field that the others get. Everything architecture-specific is here;
+    everything shared is in `cfg.agent`.
+    """
+    if args.arch == "rnn":
+        return RNNAgent(cfg.agent, input_dim)
+    if args.arch == "hnet":
+        return HyperRNNAgent(
+            cfg.agent, input_dim, cfg.n_envs,
+            emb_dim=args.hnet_emb_dim, chunk_dim=args.hnet_chunk_dim,
+            hyper_hidden=tuple(args.hnet_hidden), base=args.hnet_base,
+            init_out_scale=args.hnet_init_out_scale)
+    if args.arch == "multihead":
+        return MultiHeadRNNAgent(cfg.agent, input_dim, cfg.n_envs)
+    if args.arch == "xdg":
+        return XdGRNNAgent(cfg.agent, input_dim, cfg.n_envs,
+                           gating=args.xdg_gating, seed=seed)
+    raise ValueError(f"unknown --arch {args.arch!r}; known: {list(ARCHITECTURES)}")
 
 
 def run_sequential(
@@ -236,6 +273,39 @@ def main() -> None:
                    help="Held-out envs recorded in world.json alongside the "
                         "train set.")
     # Agent
+    p.add_argument("--arch", default="rnn", choices=list(ARCHITECTURES),
+                   help="Policy architecture. 'rnn' is the single shared "
+                        "network every history to date used. The other three "
+                        "are the parameter-isolation family (plan section "
+                        "4.3) and all of them are given an oracle task id at "
+                        "training and evaluation time, which is a real "
+                        "advantage and is recorded as one.")
+    p.add_argument("--hnet_base", default="learned", choices=list(HNET_BASES),
+                   help="--arch hnet: what the generated weights are added to. "
+                        "'learned' warm-starts a free base vector from the "
+                        "checkpoint; 'frozen' pins it there forever so only "
+                        "the task-conditioned part can move; 'none' is the "
+                        "from-scratch von Oswald form, and the only one whose "
+                        "parameter count matches the baseline policy.")
+    p.add_argument("--hnet_emb_dim", type=int, default=32,
+                   help="--arch hnet: width of the task and chunk embeddings.")
+    p.add_argument("--hnet_chunk_dim", type=int, default=512,
+                   help="--arch hnet: generated weights per chunk. 0 builds "
+                        "the unchunked hypernetwork, whose output layer is "
+                        "then hidden x 74k -- millions of parameters to "
+                        "generate thousands.")
+    p.add_argument("--hnet_hidden", type=int, nargs="+", default=[100, 100],
+                   help="--arch hnet: hidden widths of the generator MLP.")
+    p.add_argument("--hnet_init_out_scale", type=float, default=0.01,
+                   help="--arch hnet: how much the generator's output layer is "
+                        "shrunk at init. Small means every task starts at the "
+                        "warm-started base, i.e. at the pretrained policy the "
+                        "controls start from. Ignored for --hnet_base none.")
+    p.add_argument("--xdg_gating", type=float, default=0.8,
+                   help="--arch xdg: fraction of hidden units held OFF for "
+                        "each task. 0.8 is the paper's value; the warm start "
+                        "makes it expensive here, since the checkpoint was "
+                        "trained with every unit available.")
     p.add_argument("--hidden_size", type=int, default=128)
     p.add_argument("--num_rnn_layers", type=int, default=1)
     p.add_argument("--dropout", type=float, default=0.0,
@@ -368,6 +438,7 @@ def main() -> None:
 
     method_kwargs = parse_method_args(args.method_args)
     last_method_desc: dict = {}
+    last_arch_detail: dict = {}
 
     base_seed = args.seed
     n_iters = max(1, int(args.num_full_iters))
@@ -421,10 +492,17 @@ def main() -> None:
         input_dim = compute_rnn_input_dim(cfg.agent, cfg.env.observation_size, gbook_dim)
         if k == 0:
             print(f"[baseline] RNN input_dim={input_dim}")
-        agent = RNNAgent(cfg.agent, input_dim).to(device)
+        agent = build_arch_agent(args, cfg, input_dim, seed_k).to(device)
         optimizer = torch.optim.Adam(agent.parameters(), lr=cfg.bc.lr)
         if ckpt is not None:
-            agent.load_state_dict(ckpt["agent_state_dict"])
+            # `warm_start` routes to whatever this architecture needs: a
+            # straight load for the baseline, the head fanned out across tasks
+            # for the multi-head policy, the base vector for the hypernetwork.
+            warm_start(agent, ckpt["agent_state_dict"])
+        arch_detail = (agent.describe() if hasattr(agent, "describe")
+                       else {"arch": "rnn"})
+        if k == 0 and args.arch != "rnn":
+            print(f"[baseline] arch={args.arch}  {arch_detail}")
 
         if args.freeze_trunk:
             # After the load, so what is frozen is the *pretrained* trunk.
@@ -458,6 +536,7 @@ def main() -> None:
             reset_optimizer_each_block=args.reset_optimizer_each_block,
         )
         last_method_desc = method.describe()
+        last_arch_detail = arch_detail
         iter_traces.append((trace, blocks))
         iter_env_goals.append([list(env.goal_location) for env in envs])
         iter_env_offsets.append(
@@ -493,6 +572,13 @@ def main() -> None:
             "method": args.method,
             "method_args": args.method_args,
             "method_detail": last_method_desc,
+            # The architecture is a second axis alongside the method: a
+            # hypernetwork with no regulariser and a plain RNN with one are
+            # different runs, and a summary keyed on `method` alone would
+            # average them together. `arch_detail` carries the parameter
+            # counts, which is what puts an isolation arm on the frontier.
+            "arch": args.arch,
+            "arch_detail": last_arch_detail,
             "extra": {
                 "mode": mode,
                 "base_seed": base_seed,
@@ -520,6 +606,15 @@ def main() -> None:
                 "max_grad_norm": cfg.bc.max_grad_norm,
                 "reset_optimizer_each_block": args.reset_optimizer_each_block,
                 "freeze_trunk": args.freeze_trunk,
+                "hnet_base": args.hnet_base if args.arch == "hnet" else None,
+                "hnet_emb_dim": args.hnet_emb_dim if args.arch == "hnet" else None,
+                "hnet_chunk_dim": (args.hnet_chunk_dim if args.arch == "hnet"
+                                   else None),
+                "hnet_hidden": (list(args.hnet_hidden) if args.arch == "hnet"
+                                else None),
+                "hnet_init_out_scale": (args.hnet_init_out_scale
+                                        if args.arch == "hnet" else None),
+                "xdg_gating": args.xdg_gating if args.arch == "xdg" else None,
                 "batch_envs": cfg.batch_envs,
                 "steps_per_rollout": cfg.steps_per_rollout,
                 "observation_size": cfg.env.observation_size,
