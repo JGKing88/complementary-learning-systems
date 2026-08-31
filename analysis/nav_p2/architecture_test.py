@@ -113,7 +113,8 @@ def main() -> None:
     ck = torch.load(args.ckpt, map_location="cpu", weights_only=False)
     cfg = cfg_from_checkpoint(ck["config"])
     cfg.num_val_envs = 1
-    encoder, enc_cfg, gain = load_encoder(cfg.encoder_checkpoint, str(device))
+    encoder, enc_cfg, gain = load_encoder(cfg.encoder_checkpoint, str(device),
+        getattr(cfg, "encoder_gain", None))
     if cfg.hopfield.beta is None:
         cfg.hopfield.beta = float(gain)
     D = enc_cfg.out_dim

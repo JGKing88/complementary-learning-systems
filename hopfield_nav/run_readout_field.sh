@@ -25,6 +25,8 @@ TRIALS=${TRIALS:-8}
 DRAW=${DRAW:-32}
 SEED=${SEED:-42}
 STEP=${STEP:-1.0}
+EGAIN=${EGAIN:-}
+HBETA=${HBETA:-}
 ENVS=${ENVS:-}
 TAG=${TAG:-field}
 OUTDIR=${OUTDIR:-/orcd/pool/003/jackking/cls_runs/results/exploit_diag}
@@ -41,7 +43,7 @@ mkdir -p "$OUTDIR"
 echo "################ readout_field :: $TAG ################"
 python -u -m analysis.nav_tri.readout_field \
     --ckpt "$CKPT" --n_distractors "$NDIST" --trials "$TRIALS" \
-    --seed "$SEED" --step "$STEP" --draw_trials "$DRAW" ${ENVS:+--envs $ENVS} \
+    --seed "$SEED" --step "$STEP" --draw_trials "$DRAW" ${EGAIN:+--encoder_gain $EGAIN} ${HBETA:+--hopfield_beta $HBETA} ${ENVS:+--envs $ENVS} \
     --json "$OUTDIR/${TAG}.json" --html "$OUTDIR/${TAG}.html"
 
 echo "done: $OUTDIR/${TAG}.json  $OUTDIR/${TAG}.html"

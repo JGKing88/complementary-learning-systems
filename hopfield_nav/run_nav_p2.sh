@@ -367,6 +367,48 @@ case "$VARIANT" in
   #
   # Otherwise byte-identical to p10_pol_v1, the frozen-speed exploiter that
   # anchors sections 12-15, so the diagnostics apply unchanged.
+  # -------------------------------------------------------------------------
+  # P17 -- the CLEAN single-factor arm: raise the encoder gain, change nothing
+  # else.
+  #
+  # Section 15.3's factor grid found that of the three things p16_sat changed
+  # (encoder, encoder gain, hopfield beta) only ONE does any work:
+  #
+  #   encoder gain 5 -> 300   spurious sinks 37/192 -> 2/192 on THIS encoder
+  #   hopfield beta            no effect at all once the code is binary
+  #                            (2/192 either way, identical to 3 decimals),
+  #                            and actively harmful on a smooth code (37 -> 62)
+  #   v35 encoder              19% -> 13% on its own; not needed
+  #
+  # So this arm keeps the P2 encoder marked FIXED BY INSTRUCTION and moves
+  # exactly one knob. Everything else is p10_pol_v1, which makes it the first
+  # arm in this line that is a clean comparison against a measured baseline.
+  #
+  # HOPFIELD_BETA IS PINNED, and must be. cfg.hopfield.beta defaults to the
+  # encoder gain, so setting ENCODER_GAIN=300 alone would drag beta to 300 as
+  # well -- two factors, and an untested cell. 5.0 is p10_pol_v1's own value,
+  # which is what the 2/192 grid cell was measured at.
+  #
+  # Prediction on record: the readout field is already known to be clean here
+  # (2/192 sinks, goal basin 0.991), and section 14 showed a sink is present in
+  # every failure and absent in all 155 clean-field episodes. If the field is
+  # what limits exploit, this should beat p10_pol_v1's 0.875 at ten distractors.
+  # If it does not, a clean field is not sufficient and the limit is elsewhere
+  # -- which section 14 already hinted at, since the agent escaped 13 of 37
+  # sinks anyway.
+  p17_gain)
+    ENCODER_GAIN=300
+    HOPFIELD_BETA=5.0
+    SCHEDULE=${SCHEDULE:-'exploit:2000'}
+    ENVS_PER_WORLD=20; BATCH_ENVS=64
+    EPSILON_EXPLORE=0.1; GOAL_REWARD=2.0
+    PERSISTENCE_BONUS=0.20
+    REGIME_ASSIGNMENT=shuffle
+    ACTION_POLAR=1; STATE_DEPENDENT_STD=1; FREEZE_LOG_STD=0
+    FREEZE_SPEED=1.0
+    EVAL_SCOPE=navexpl; EVAL_EVERY=50; CKPT_EVERY=50
+    ;;
+
   p16_sat)
     # Set unconditionally, NOT with :- . The fixed block at the top of this
     # file has already assigned ENCODER by the time a variant runs, so a

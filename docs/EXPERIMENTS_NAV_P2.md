@@ -4515,3 +4515,106 @@ that is informative regardless since the mechanism predicted it should.
 The sharp check is not the success rate but `readout_field.py`: a saturating
 recall should not be able to produce a smeared blend, so **the sinks should be
 gone or far rarer**. That is measurable on this checkpoint with no rollouts.
+
+### 15.3 Which knob mattered — and the mechanism story was wrong twice
+
+The field needs no policy, so both gains can be swept on **existing**
+checkpoints in minutes (`readout_field.py --encoder_gain / --hopfield_beta`).
+That turned "wait for a training run" into a factor grid. 192 memories per cell,
+same seed, same envs.
+
+Beta is the P2 encoder's own 5.0 on the P2 rows and v35's 3.699 on the v35
+rows -- each encoder's default, since beta defaults to the encoder gain.
+
+| encoder | enc gain | beta | trapped | basin mean | worst |
+|---|---|---|---|---|---|
+| P2 | 5.0 | 5.0 | 37/192 (19%) | 0.848 | 0.005 |
+| P2 | 300 | 5.0 | **2/192 (1%)** | 0.991 | 0.035 |
+| P2 | 5.0 | 1e6 | **62/192 (32%)** | 0.735 | 0.000 |
+| P2 | 300 | 1e6 | 2/192 (1%) | 0.991 | 0.035 |
+| v35 | 5.0 | 3.70 | 25/192 (13%) | 0.898 | 0.013 |
+| v35 | 300 | 3.70 | 3/192 (2%) | 0.999 | 0.757 |
+| v35 | 300 | 1e6 | 2/192 (1%) | 0.999 | 0.948 |
+
+**`encoder_gain` is the whole fix.** Binarising the code takes 37→2 on the P2
+encoder and 25→3 on v35. The encoder swap on its own accounts for only
+19%→13%.
+
+**`hopfield_beta` does nothing once the code is binary, and is harmful when it
+is not.** The controlled 2×2 on one encoder:
+
+| P2 code | beta 5.0 | beta 1e6 |
+|---|---|---|
+| smooth (gain 5) | 37 | 62 (**+25**) |
+| binary (gain 300) | 2 | 2 (**+0**) |
+
+### CORRECTED — beta does change the field, just not the trapping
+
+An earlier draft of this section read the two binary rows as "identical to three
+decimals" and concluded beta does nothing. **Jack pushed back, and he was
+right.** Comparing the stored `q` fields directly rather than the summary:
+
+| | beta 5.0 vs 1e6, binary code |
+|---|---|
+| cells with cos < 0.999 | **35.6%** |
+| minimum cosine | **−1.000** (some cells exactly reversed) |
+| \|q\| ratio | 0.25× to 36× |
+| median \|q\| where they disagree | 0.197, against 0.266 where they agree |
+
+So beta materially rewrites the field, at a third of all cells, including sign
+flips, and *not* only at cells where `q` is negligible. What it does **not**
+change is the basin structure: goal basin 0.990924 against 0.990846, one
+memory out of 192 with a different basin, and identical sink counts throughout.
+
+The flow is a dynamical system — local direction differences wash out while the
+overall gradient still points at the goal. "Same trapping" is a statement about
+the integrated outcome, not about `q`.
+
+**And the mechanism I gave for it was wrong.** I argued that with a binary code
+`sign(p) ∝ p` makes saturation idempotent. That confuses the *patterns* with the
+*recall*: `H = Σᵢ pᵢ⟨pᵢ, x⟩` is a sum of binary vectors and is not itself
+binary, so `sign(H) ≠ H/‖H‖`. There is no idempotence, which is exactly why the
+field moves.
+
+What survives, stated at the right strength:
+
+* **`encoder_gain` is the fix.** 37→2 on the P2 encoder, 25→3 on v35. Nothing
+  else comes close, and this is unaffected by any of the above.
+* **`hopfield_beta` changes the field everywhere, and changes the OUTCOME only
+  when the code is smooth** — 37→62 there, versus no basin change on a binary
+  code. Its effect is conditional on the code's geometry, not absent.
+
+That conditionality is also why `p17_gain` pins `HOPFIELD_BETA=5.0` rather than
+letting it follow the encoder gain: beta is a real factor on the field, so
+leaving it free would have made the "clean single-factor arm" a two-factor one.
+
+### 15.4 Two retractions
+
+This section's own hypothesis was wrong, twice, and the grid caught both.
+
+**"The recall is a linear blend; saturate it into an attractor."** §15's framing
+and the `p16_sat` rationale. False: saturation alone takes trapping from 19% to
+32%. Retrieval being a blend was never the problem.
+
+**"The two knobs are complementary — binary patterns plus a sign update."**
+The correction after the first retraction. Also false, in its second half: once
+the patterns are binary the sign update is a no-op, so `hopfield_beta` is not
+part of the fix at all.
+
+What survives is simpler than either: **the geometry of the code is what
+matters.** A near-binary code makes patterns drawn from elsewhere in the
+scaffold reliably near-orthogonal to the query, so the contaminating terms
+`⟨p_distractor, x⟩` stay uniformly small. A smooth code has a fatter overlap
+tail, and occasionally a distractor correlates strongly enough to bend the field
+into a vortex. That claim is *not yet directly measured* — it is the natural
+reading of the grid, and the sharp test is the overlap distribution at gain 5
+against gain 300, which no run has produced.
+
+**Consequence for §14.6.** "Make draws that do not fold the field" now has a
+concrete lever: raise the encoder gain. It costs nothing at training time and
+needs no new encoder.
+
+**Consequence for the P16 arm.** `p16_sat` sits in the best cell of the grid, so
+the configuration is right, but `hopfield_beta=1e6` is carrying no weight in it.
+A cleaner arm would be the P2 encoder at `encoder_gain=300` alone — one factor,
+same field quality (2/192), and directly comparable to `p10_pol_v1`.

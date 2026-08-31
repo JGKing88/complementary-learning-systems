@@ -136,6 +136,27 @@ def analyse(vh, env, offset, cfg, device, embed_dim, n_dist, trials, seed,
         for pat in pats:
             hop.input_memory(torch.from_numpy(pat).float())
 
+        # Overlap statistics: how strongly does each stored pattern correlate
+        # with the code at each cell? The claim the gain grid points at is that
+        # a near-binary code keeps the DISTRACTOR overlaps uniformly small,
+        # while a smooth code has a fat tail where one occasionally correlates
+        # enough to bend the field. Measured here rather than asserted.
+        _gx, _gy = np.meshgrid(np.arange(size), np.arange(size), indexing="ij")
+        _cells = np.stack([_gx.ravel(), _gy.ravel()], axis=1)
+        _x = vh.get_encoded_state(_cells, offset).astype(np.float64)
+        _x /= np.maximum(np.linalg.norm(_x, axis=-1, keepdims=True), 1e-12)
+        _P = np.asarray(pats, dtype=np.float64)
+        _P /= np.maximum(np.linalg.norm(_P, axis=-1, keepdims=True), 1e-12)
+        _ov = np.abs(_x @ _P.T)                      # (cells, patterns)
+        _gi = int(np.where(order == 0)[0][0]) if n_dist > 0 else 0
+        _dist = np.delete(_ov, _gi, axis=1) if _ov.shape[1] > 1 else _ov[:, :0]
+        overlap = {
+            "goal_mean": float(_ov[:, _gi].mean()),
+            "dist_mean": float(_dist.mean()) if _dist.size else 0.0,
+            "dist_p99": float(np.percentile(_dist, 99)) if _dist.size else 0.0,
+            "dist_max": float(_dist.max()) if _dist.size else 0.0,
+        }
+
         fld = field_over_cells(vh, hop, size, offset, device)
         ends, reached, _ = integrate(fld, size, goal, radius, step=step,
                                      max_steps=max_steps)
@@ -149,6 +170,7 @@ def analyse(vh, env, offset, cfg, device, embed_dim, n_dist, trials, seed,
                            np.asarray(s["centre"]) - np.asarray(goal, float)))}
                       for s in sinks],
             # Downsampled for the picture; the numbers above are on the full grid.
+            "overlap": overlap,
             "field": fld[::2, ::2].round(3).tolist(),
             "size": size, "radius": radius,
         })
@@ -276,6 +298,16 @@ def main() -> None:
     p.add_argument("--device", default="cuda")
     p.add_argument("--json", required=True)
     p.add_argument("--html", default=None)
+    p.add_argument("--encoder_gain", type=float, default=None,
+                   help="Override the checkpoint's encoder gain (code "
+                        "sharpness). The field needs no policy, so this sweeps "
+                        "a knob on ANY existing checkpoint without training "
+                        "one -- which is how the encoder change and the recall "
+                        "change get separated.")
+    p.add_argument("--hopfield_beta", type=float, default=None,
+                   help="Override the checkpoint's recall sharpness. At the "
+                        "default the tanh argument is ~1e-4 and retrieval is a "
+                        "linear blend; raising it saturates.")
     p.add_argument("--npos", type=int, default=None)
     args = p.parse_args()
 
@@ -289,9 +321,15 @@ def main() -> None:
               f"tool-validation only.")
         cfg.vectorhash.Npos = args.npos
 
-    encoder, enc_cfg, gain = load_encoder(cfg.encoder_checkpoint, str(device))
-    if cfg.hopfield.beta is None:
+    if args.encoder_gain is not None:
+        cfg.encoder_gain = args.encoder_gain
+    encoder, enc_cfg, gain = load_encoder(cfg.encoder_checkpoint, str(device),
+        getattr(cfg, "encoder_gain", None))
+    if args.hopfield_beta is not None:
+        cfg.hopfield.beta = float(args.hopfield_beta)
+    elif cfg.hopfield.beta is None:
         cfg.hopfield.beta = float(gain)
+    print(f"encoder gain {gain:g}   hopfield beta {cfg.hopfield.beta:g}")
     embed_dim = enc_cfg.out_dim
     torch.manual_seed(0)
     np.random.seed(0)

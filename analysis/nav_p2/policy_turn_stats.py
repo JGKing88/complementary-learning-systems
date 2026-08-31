@@ -101,7 +101,8 @@ def main() -> None:
     cfg = cfg_from_checkpoint(ck["config"])
     if args.envs is not None:
         cfg.num_val_envs = args.envs
-    encoder, enc_cfg, gain = load_encoder(cfg.encoder_checkpoint, str(device))
+    encoder, enc_cfg, gain = load_encoder(cfg.encoder_checkpoint, str(device),
+        getattr(cfg, "encoder_gain", None))
     if cfg.hopfield.beta is None:
         cfg.hopfield.beta = float(gain)
     embed_dim = enc_cfg.out_dim
