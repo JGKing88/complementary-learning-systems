@@ -4986,6 +4986,21 @@ Identical to `p18_knee`, 5× cleaner than the baseline, and the single memory it
 traps on — **`(env5, trial7)`** — is the *same draw* that traps `p18_knee` and
 the baseline. Nothing about the failure is unique to this encoder.
 
+Re-run at the full 32 draws per env, so the w52 number stands on the same 192
+denominator as the references rather than on a 48-draw subset:
+
+| encoder | trapped | rate | goal basin | worst |
+|---|---|---|---|---|
+| **w52 attract-0.5 @ gain 100** | **5/192** | **2.6%** | 0.984 | 0.013 |
+| `p17_gain` v35 @ gain 300 | 2/192 | 1.0% | 0.991 | 0.035 |
+| `p18_knee` w49 @ gain 300 | 4/192 | 2.1% | 0.987 | 0.025 |
+| `p10_pol_v1` BASELINE @ gain 5 | 37/192 | 19.3% | 0.848 | 0.005 |
+
+Same conclusion at 4× the resolution: w52 is marginally the loosest of the three
+good encoders and **7× cleaner than the baseline**. Draw **`(3, 29)`** traps all
+three of them and `(5, 7)` traps two — these are hard memory configurations, not
+a property of any one encoder.
+
 So at u25 the signal is already there: 47 of 48 draws route essentially the
 whole arena to the goal. An agent sitting at 0.10 success is **not** being
 misled by its memory.
