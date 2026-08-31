@@ -23,10 +23,22 @@ envs, `steps` 1–15, `K` 1–20, four encoders.
 > res90 ≈ 5 floor that bounds the entire trade, which is the least understood
 > number in this document.
 >
-> **Best encoder:** `sweeps/w52_attract_fwhm/001_att0.5_seed=43/encoder_final.pt`
-> at its own gain 100 with `β = gain`. Continuous reach **0.987**
-> (0.977 across three scaffolds × four seeds) against level 7's 0.806.
-> Spec sheet: https://claude.ai/code/artifact/db70ecb9-ca16-4f8b-a897-5dfa0a01d198
+> **Best encoder at each coverage** (§10.12–§10.14), all at `β = gain`:
+>
+> | coverage | checkpoint | gain | mean reach |
+> |---|---|---|---|
+> | 10% | `w52_attract_fwhm/001_att0.5_seed=43` | 100 | 0.978 |
+> | 5% | `w57_cov5/001_half_a0.5_seed=43` | 75 | 0.977 |
+> | 2.5% | `w58_cov2.5/011_q_a1_seed=45` | 100 | 0.965 |
+>
+> Means are over three scaffold draws × four training seeds. **Reach is flat
+> across a 4× range of coverage; what coverage buys is capacity** — dead goals
+> at K=20 go 0.08 → 0.25 → 0.42.
+>
+> Report page (all three, encoder selector, full Tests A–D):
+> https://claude.ai/code/artifact/d7a250c1-5044-4854-b453-61881bd518e7
+> · 10% spec sheet:
+> https://claude.ai/code/artifact/db70ecb9-ca16-4f8b-a897-5dfa0a01d198
 
 
 **Production's Hopfield is a linear matched filter that degrades cues.** At the
@@ -1213,3 +1225,59 @@ many goals the memory actually holds.
 
 Raw: `w58_q_a1_g100_ps{0,1,2}`, `w58_q_a0.5_g20_ps0`, `w58_q_a2_g200_ps0`.
 Screen: `screen_w58_check.py`.
+
+### 10.14 The coverage ladder — reach is flat, capacity is not
+
+§10.12 and §10.13 found the best encoder at 5% and 2.5% coverage. This runs all
+three through **one** probe invocation so they are directly comparable, each at
+its own optimal gain, β = gain, no saturation.
+
+| | checkpoint | gain | `attract_lambda` | patches |
+|---|---|---|---|---|
+| 10% | `w52_attract_fwhm/001_att0.5_seed=43` | 100 | 0.5 | 118 × 50 |
+| 5% | `w57_cov5/001_half_a0.5_seed=43` | **75** | 0.5 | 59 × 50 |
+| 2.5% | `w58_cov2.5/011_q_a1_seed=45` | 100 | **1.0** | 30 × 50 |
+
+| K=5, s=1 | \|err\| | acc45 | exact | basin | disc | **cont** | s15 | dead @ K=20 |
+|---|---|---|---|---|---|---|---|---|
+| 10% | 7.78° | 99.5% | 98.2% | 21.12 | 0.997 | **0.987** | 96.5% | 0.08 |
+| 5% | 9.44° | 99.5% | 97.4% | 20.73 | 0.996 | **0.987** | 98.2% | 0.25 |
+| 2.5% | 10.98° | 98.8% | 88.2% | 17.62 | 0.980 | **0.986** | 88.6% | 0.42 |
+
+All three are 0.00 dead at K = 1, 3, 5 and 10.
+
+**Reach is flat across a 4× range of coverage. Capacity is not.** Retrieval
+falls 98.2 → 88.2%, the basin shrinks 21.1 → 17.6 cells, and the dead-goal
+fraction at K=20 goes 0.08 → 0.25 → 0.42. Coverage buys the ability to hold
+*many* goals apart, not the ability to point at one — which is what §10.11
+predicts, since capacity is the tail of the competitor-overlap distribution and
+K=5 reach is not.
+
+`EXPERIMENTS_UNIQUE_RADIUS.md` §10.3 calls coverage "the largest single lever,
+a factor of 2.5, and nothing else in the campaign comes close." That is true of
+`r_min`. On continuous reach at K≤10 it is worth approximately nothing.
+
+> **Read the three-draw means, not this table.** These are one scaffold draw,
+> and §10.10 measured a fixed arm swinging up to 0.03 across draws. Over three
+> draws × four seeds the arms are **0.978 / 0.977 / 0.965**; the 0.001 spread
+> above is the draw being kind.
+
+**Both agents' §10.11 extrapolation failed, sign reversed, independently.** The
+prediction was that the attract optimum moves *down* as coverage falls. It moves
+**up** — 0.5 at 10%, 0.5 at 5%, 1.0–2.0 at 2.5%. The mechanism survives: alias
+rate and `d_eff` stay tightly rank-ordered at every coverage. What was wrong is
+the direction of the interaction. Attract holds the near field *up*, and at low
+coverage there is less local structure to hold, so the code needs more of it —
+and the low-attract arms are already maximally stretched, since reaching res90 7
+from `a0.25` at 2.5% requires gain 3, its lowest.
+
+**And the screen is a filter, not a ranking.** Twice, independently: `sm35_a0.5`
+at 5% and `sm25_a0.5` at 2.5% both had the better alias rate and lost the probe
+— the 5% case on all three draws. Use it to cut a wave to a shortlist; use the
+probe to order the shortlist.
+
+Report page, all three behind an encoder selector, full Tests A–D:
+https://claude.ai/code/artifact/d7a250c1-5044-4854-b453-61881bd518e7
+
+Raw: `$CLS_RESULTS/hopfield_probe/20260827/probe_three/`. Reproduce with
+`analysis/hopfield_probe/run_three.sh`.
