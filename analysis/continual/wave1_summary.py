@@ -114,6 +114,8 @@ def main() -> None:
                _load_group(d, "E_*.json", r"_s\d+$"))
     f = _table("F. Synaptic Intelligence", _load_group(d, "F_*.json", r"_s\d+$"))
     g = _table("G. LwF (no buffer at all)", _load_group(d, "G_*.json", r"_s\d+$"))
+    hh = _table("H. Frozen trunk: only the movement head adapts",
+                _load_group(d, "H_*.json", r"_s\d+$"))
 
     print("\n" + "-" * 118)
     print("READING")
@@ -129,7 +131,8 @@ def main() -> None:
         print("      recorded default -- an untuned control is a strawman.")
     for name, rows in (("Experience Replay", b), ("Online EWC", c),
                        ("CLEAR", dd), ("DER++", e),
-                       ("Synaptic Intelligence", f), ("LwF", g)):
+                       ("Synaptic Intelligence", f), ("LwF", g),
+                       ("Frozen trunk", hh)):
         if not rows:
             continue
         label, top = rows[0]

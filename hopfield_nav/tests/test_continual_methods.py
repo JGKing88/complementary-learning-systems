@@ -753,3 +753,78 @@ def test_every_method_runs_end_to_end(name, kwargs):
     d = m.describe()
     assert d["method"] == name
     assert "state_bytes" in d
+
+
+# ===========================================================================
+# --freeze_trunk (plan section 3.2 P4)
+# ===========================================================================
+
+from analysis.continual.baseline import (                      # noqa: E402
+    HEAD_PREFIXES, freeze_trunk_params)
+
+
+def test_freeze_trunk_holds_the_trunk_and_frees_the_head():
+    agent = _agent(hidden=16)
+    n_frozen, n_trainable = freeze_trunk_params(agent)
+    assert n_frozen > 0 and n_trainable > 0
+    for name, p in agent.named_parameters():
+        if name.startswith(HEAD_PREFIXES):
+            # log_std may be frozen by its own flag; the point is the head is
+            # not frozen *by this function*.
+            continue
+        assert not p.requires_grad, f"{name} should have been held"
+
+
+def test_freeze_trunk_counts_are_exact():
+    """A GRU(16->8) trunk plus a Linear(8->2) head, in continuous mode."""
+    agent = _agent(hidden=8)
+    n_frozen, n_trainable = freeze_trunk_params(agent)
+    head = sum(p.numel() for n, p in agent.named_parameters()
+               if n.startswith(HEAD_PREFIXES))
+    trunk = sum(p.numel() for n, p in agent.named_parameters()
+                if not n.startswith(HEAD_PREFIXES))
+    assert n_frozen == trunk
+    # log_std is frozen by the fixture's freeze_log_std, so the trainable count
+    # is the head minus whatever the fixture already held.
+    assert n_trainable <= head and n_trainable > 0
+
+
+def test_freeze_trunk_actually_stops_the_trunk_moving():
+    """The behavioural claim. A run with the trunk held must leave every trunk
+    tensor bit-identical, and must still move the head -- a "fix" that froze
+    everything would pass the first half and fail the second."""
+    torch.manual_seed(0)
+    cfg = _tiny_cfg(2, 3)
+    agent = RNNAgent(cfg.agent, compute_rnn_input_dim(cfg.agent, OBS))
+    before = {n: p.detach().clone() for n, p in agent.named_parameters()}
+    freeze_trunk_params(agent)
+    opt = torch.optim.Adam([p for p in agent.parameters() if p.requires_grad],
+                           lr=1e-2)
+    envs = [GridEnv(size=SIZE, observation_size=OBS, seed=s) for s in range(2)]
+    run_sequential_blocks(
+        cfg=cfg, agent=agent, optimizer=opt, envs=envs,
+        device=torch.device("cpu"), n_eval_trials=1,
+    )
+
+    moved_head = False
+    for n, p in agent.named_parameters():
+        if n.startswith(HEAD_PREFIXES):
+            if not torch.equal(p.detach(), before[n]):
+                moved_head = True
+        else:
+            assert torch.equal(p.detach(), before[n]), \
+                f"held parameter {n} moved anyway"
+    assert moved_head, "nothing in the head moved; the run learned nothing"
+
+
+def test_freeze_trunk_refuses_to_leave_nothing_trainable():
+    """If HEAD_PREFIXES ever stops matching -- a rename, a new architecture --
+    the run must fail loudly rather than train zero parameters and report a
+    plausible-looking flat curve."""
+    class _NoHead(torch.nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.rnn = torch.nn.Linear(4, 4)
+
+    with pytest.raises(RuntimeError, match="nothing trainable"):
+        freeze_trunk_params(_NoHead())

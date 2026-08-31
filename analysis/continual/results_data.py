@@ -53,6 +53,7 @@ ARMS = {
     "E":      ("DER++",                  "replay"),
     "F":      ("Synaptic Intelligence",  "regularize"),
     "G":      ("LwF",                    "distill"),
+    "H":      ("Frozen trunk",           "isolate"),
 }
 
 

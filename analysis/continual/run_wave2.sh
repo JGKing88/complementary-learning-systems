@@ -95,6 +95,18 @@ for S in $(seq 1 $SEEDS); do
         --method_args "alpha=${AL}"
 done; done
 
+# --- H: frozen trunk (plan 3.2 P4) ------------------------------------------
+# Adapt only the movement head -- 260 parameters against the trunk's 73k. This
+# is the load-bearing half of OML's mechanism without the meta-learning: if
+# confining plasticity to a small head is what buys retention, that is worth
+# knowing before building a meta-learner. Run bare and composed with ER, since
+# the two act on different things (what may move, vs what it is trained on).
+for S in $(seq 1 $SEEDS); do
+    launch "H_frozen_none_s${S}" --seed "$S" --freeze_trunk --method none
+    launch "H_frozen_er_s${S}"   --seed "$S" --freeze_trunk --method er \
+        --method_args "buffer_size=inf,replay_batches=1,sampling=balanced"
+done
+
 echo "[wave2] launched ${#PIDS[@]} tasks; waiting"
 
 FAILED=()

@@ -101,6 +101,35 @@ def merge_iter_traces(
     return combined, first_blocks
 
 
+#: Parameter-name prefixes that constitute the movement head. Everything else
+#: is "the trunk" for --freeze_trunk's purposes. Kept as a named constant
+#: because a silent mismatch here would freeze the head instead and the run
+#: would still look plausible -- it would simply learn nothing.
+HEAD_PREFIXES = ("movement_head", "movement_mean", "movement_log_std")
+
+
+def freeze_trunk_params(agent) -> tuple[int, int]:
+    """Hold everything but the movement head. Returns (n_frozen, n_trainable).
+
+    Plan section 3.2 P4. Must be called *after* any checkpoint load, so what is
+    frozen is the pretrained trunk; freezing before would pin it at
+    initialisation, which measures something else entirely.
+    """
+    n_frozen = 0
+    for name, prm in agent.named_parameters():
+        if not name.startswith(HEAD_PREFIXES):
+            prm.requires_grad_(False)
+            n_frozen += prm.numel()
+    n_trainable = sum(prm.numel() for prm in agent.parameters()
+                      if prm.requires_grad)
+    if n_trainable == 0:
+        raise RuntimeError(
+            "freeze_trunk left nothing trainable; HEAD_PREFIXES "
+            f"{HEAD_PREFIXES} matched no parameter of "
+            f"{type(agent).__name__}")
+    return n_frozen, n_trainable
+
+
 def run_sequential(
     cfg: RNNTrainConfig,
     agent: RNNAgent,
@@ -260,6 +289,14 @@ def main() -> None:
     # Continual-learning method. See docs/CONTINUAL_CONTROLS_PLAN.md section 4
     # and hopfield_nav/continual/. "none" is naive sequential SGD -- the floor,
     # and what every recorded history to date used.
+    p.add_argument("--freeze_trunk", action="store_true",
+                   help="Adapt only the movement head; hold the recurrent trunk "
+                        "at whatever the checkpoint gave it. Plan section 3.2 "
+                        "P4, and the load-bearing half of OML's mechanism "
+                        "(section 5.1) without the meta-learning: if confining "
+                        "plasticity to a small head is what buys retention, "
+                        "that is worth knowing before building a meta-learner. "
+                        "Composes with any --method.")
     p.add_argument("--world_spec", action=argparse.BooleanOptionalAction,
                    default=True,
                    help="Write world.json beside --out. On by default. Turn it "
@@ -389,6 +426,20 @@ def main() -> None:
         if ckpt is not None:
             agent.load_state_dict(ckpt["agent_state_dict"])
 
+        if args.freeze_trunk:
+            # After the load, so what is frozen is the *pretrained* trunk.
+            # Freezing before would pin it at initialisation, which measures
+            # something else entirely.
+            n_frozen, trainable = freeze_trunk_params(agent)
+            if k == 0:
+                print(f"[baseline] freeze_trunk: {n_frozen} params held, "
+                      f"{trainable} adapt")
+            # Rebuild the optimizer over the surviving parameters only, so
+            # Adam is not carrying state for tensors that can never move.
+            optimizer = torch.optim.Adam(
+                [prm for prm in agent.parameters() if prm.requires_grad],
+                lr=cfg.bc.lr)
+
         mode = "finetune" if ckpt is not None else "sequential"
         if k == 0:
             print(f"[baseline] mode={mode}  iters_per_block={cfg.updates_per_env}  "
@@ -468,6 +519,7 @@ def main() -> None:
                 "n_minibatches": cfg.bc.n_minibatches,
                 "max_grad_norm": cfg.bc.max_grad_norm,
                 "reset_optimizer_each_block": args.reset_optimizer_each_block,
+                "freeze_trunk": args.freeze_trunk,
                 "batch_envs": cfg.batch_envs,
                 "steps_per_rollout": cfg.steps_per_rollout,
                 "observation_size": cfg.env.observation_size,
