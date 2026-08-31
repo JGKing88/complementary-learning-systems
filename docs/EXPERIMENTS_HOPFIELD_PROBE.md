@@ -1133,3 +1133,83 @@ is wrong here — but the probe reverses the top two, so the honest statement is
 only that the ~30-env geometry is clearly worst.
 
 Raw: `$CLS_RESULTS/hopfield_probe/20260827/w57_{half,sm35}_a0.5_ps{0,1,2}/`.
+
+### 10.13 2.5% coverage — viable, and the attract optimum moves the other way
+
+**Predictions were recorded before any result was read.** §10.11 says attract
+and the coding-rate term compete for `d_eff`, and halving coverage twice shrinks
+the distinct arena positions the env-blind spread term samples — so `d_eff`
+should fall and attract should have to give up more of its share. Predicted:
+optimum moves **down** from 0.5; alias 0.010–0.020; continuous reach 0.90–0.96.
+
+#### The attract optimum moves UP
+
+Screened at matched res90 7, gain swept per arm, four seeds
+(`screen_w58_check.py`):
+
+| `attract_lambda` @ 2.5% | 0.25 | 0.5 | **1.0** | 2.0 | 4.0 |
+|---|---|---|---|---|---|
+| alias rate | 0.0253 | 0.0212 | **0.0178** | 0.0179 | 0.0195 |
+| gain for res90 7 | 3 | 20 | 100 | 200 | 300 |
+
+> **Prediction 1 is falsified, with the sign reversed.** The optimum is 1.0–2.0
+> at 2.5% coverage against 0.5 at 10% — it moves **up** as coverage falls, not
+> down. w58 swept 0.25/0.5/1.0 and returned a boundary value, so `w59` was added
+> to continue the axis; 4.0 turns over, which makes 1.0–2.0 a genuine interior
+> optimum rather than an edge.
+
+The mechanism reading that survives: attract **holds the near field up**
+(§6.11), and at 2.5% coverage there is less local structure for it to hold, so
+the code needs more of it. The low-attract arms are already maximally
+stretched — `q_a0.25` reaches res90 7 only at gain 3, the lowest swept, and its
+`res90 max` is exactly 7.0. So §10.11's "attract and the rate term compete for
+`d_eff`" is right about the competition and wrong about which way coverage
+pushes the balance.
+
+Geometry sub-prediction also failed: `sm25_a0.5` (count held, 118 × 25 cells)
+was predicted to beat `q_a0.5` (size held, 30 × 50) on the alias rate and is
+worse — 0.0253 against 0.0212. The 25-cell patches are under §6.3's ~50-cell
+floor and `res90 max` is 7.0, the shortest of the size-held arms, so the res90
+half of that prediction held while the alias half did not.
+
+#### The winner
+
+`w58_cov2.5/*_q_a1` at **inference gain 100** (its own trained gain), β = gain.
+Three scaffold draws × four seeds:
+
+| probe seed | s42 | s43 | s44 | s45 | median |
+|---|---|---|---|---|---|
+| 0 | 0.991 | 0.994 | 0.928 | 0.986 | **0.989** |
+| 1 | 0.991 | 0.931 | 0.964 | 0.969 | 0.967 |
+| 2 | 0.893 | 0.933 | 0.943 | 0.945 | 0.938 |
+| **mean** | 0.958 | 0.953 | 0.945 | **0.967** | **0.965** |
+
+Runners-up on scaffold 0: `q_a0.5` at gain 20 → 0.945; `q_a2` at gain 200 →
+0.962. The a1/a2 tie on the screen (0.0178 vs 0.0179) breaks to a1 by 0.027 on
+reach, just outside the ~0.02 scaffold noise, so a1 stands — and it stands on
+three draws against a2's one.
+
+#### Is 2.5% viable? Yes at K=5, and much less so under load
+
+| | 10% (`att0.5` @ g75–100) | 2.5% (`q_a1` @ g100) |
+|---|---|---|
+| alias rate at res90 7 | 0.0059 | **0.0178** (3×) |
+| continuous reach, mean of 3 draws | 0.977 | **0.965** |
+| dead goals at K=20 | 0.04–0.12 | **0.12–0.42** |
+
+**Quartering the coverage costs 0.012 of mean continuous reach** — at or inside
+the scaffold noise §10.10 measured — while tripling the alias rate. Prediction 4
+(0.90–0.96) was too pessimistic; prediction 2 (alias 0.010–0.020) held.
+
+The cost is real but it is **in load tolerance, not in K=5 reach**. That is the
+sharpest thing this section adds to §10.9: the alias rate stopped discriminating
+between the 10% leaders because they were all under ~0.007, but at 0.0178 it
+still predicts something — just not the headline number. It predicts how fast
+the encoder dies as goals accumulate.
+
+So: at K≤10, 2.5% coverage is a near-free saving. At K=20 it loses a third of
+its environments where 10% loses a tenth. Which of those matters depends on how
+many goals the memory actually holds.
+
+Raw: `w58_q_a1_g100_ps{0,1,2}`, `w58_q_a0.5_g20_ps0`, `w58_q_a2_g200_ps0`.
+Screen: `screen_w58_check.py`.

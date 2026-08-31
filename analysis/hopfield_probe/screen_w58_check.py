@@ -43,6 +43,9 @@ GROUPS = [
     ("w58 q_rate1", f"{S}/w58_cov2.5/*_q_rate1_seed=*"),
     ("w58 sm25_a0.5", f"{S}/w58_cov2.5/*_sm25_a0.5_seed=*"),
     ("w58 sm70q_a0.5", f"{S}/w58_cov2.5/*_sm70q_a0.5_seed=*"),
+    # w59 continues the attract axis past w58's boundary value of 1.0.
+    ("w59 q_a2", f"{S}/w59_cov2.5_att_hi/*_q_a2_seed=*"),
+    ("w59 q_a4", f"{S}/w59_cov2.5_att_hi/*_q_a4_seed=*"),
 ]
 
 
