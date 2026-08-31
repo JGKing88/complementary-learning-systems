@@ -81,16 +81,33 @@ REPO="${CL_REPO:-/orcd/home/002/jackking/cls/.claude/worktrees/continual-control
 cd "$REPO"
 source scripts/cls_env.sh
 
-export OMP_NUM_THREADS=1
-export MKL_NUM_THREADS=1
-export OPENBLAS_NUM_THREADS=1
+# 24 processes on 96 allocated cores. The Wave 1-3 launchers pin this to 1
+# because they run 144 processes and oversubscription is the risk; here the
+# same setting left ~60 cores idle for three and a half hours.
+export OMP_NUM_THREADS=4
+export MKL_NUM_THREADS=4
+export OPENBLAS_NUM_THREADS=4
 
 CKPTS="$CLS_RUNS/rnn"
 OUT="$CLS_HISTORIES/incontext_ub"
 LOGS="$REPO/hopfield_nav/logs/incontext_ub"
 mkdir -p "$OUT" "$LOGS"
 
-POOL=16          # environments pooled per update
+# Sixteen trajectories per gradient step either way -- the split between
+# environments and parallel rollouts within one is a pure throughput knob, and
+# the previous setting had it at the worst end. Measured, same 16 trajectories:
+#
+#   n_envs=16 batch_envs=1   rollout 2.39s + update 0.16s = 2.55s   (h=256)
+#   n_envs=1  batch_envs=16  rollout 0.23s + update 0.12s = 0.35s   7.3x
+#
+# The rollout was 94% of the time and all of it launch overhead: sixteen
+# separate 200-step Python loops doing forward passes at batch size 1. Four
+# environments of four rollouts keeps four distinct goals in every gradient
+# batch while cutting the sequential step count fourfold. Total distinct
+# environments over training is still ~3,200, against the 32 that caused the
+# memorisation failure.
+POOL=4           # distinct environments pooled per update
+PARALLEL=4       # parallel lifetimes within each
 UPDATES=8000
 # A LIFETIME is LIFETIME_UPDATES consecutive rollouts on one environment with
 # the hidden state carried across them, and it ends when the environment is
@@ -118,7 +135,7 @@ TRAIN_COMMON=(--mode mixed --n_envs "$POOL" --n_updates "$UPDATES"
               --movement_mode continuous --goal_radius 0.5
               --num_rnn_layers 1 --input_prev_action --input_prev_reward
               --lr 1e-3 --epochs 4 --n_minibatches 4
-              --batch_envs 1 --steps_per_rollout "$STEPS"
+              --batch_envs "$PARALLEL" --steps_per_rollout "$STEPS"
               --n_eval_trials 16 --eval_max_steps "$STEPS" --eval_every 500
               --device cpu --n_holdout_envs 16
               --resample_envs_every "$LIFETIME_UPDATES"
@@ -132,7 +149,10 @@ train () {
     PIDS+=($!); NAMES+=("$tag")
 }
 
-for H in 256 512 1024; do
+# h1024 runs in run_incontext_ub_gpu.sh instead. Once the rollout is batched
+# its BC update is 71% of the wall time and is a fused 200-step GRU over a real
+# batch -- which is GPU-shaped, where the batch-1 rollout never was.
+for H in 256 512; do
 for S in $(seq 1 $SEEDS); do
     # The upper bound: told the goal, still has to localise itself.
     train "ceilabs_h${H}_s${S}" --hidden_size "$H" --seed "$S" \
@@ -158,7 +178,7 @@ done
 # hold a goal across episodes and the in-context arm's shortfall is about
 # discovering one; if it fails, the recurrence cannot carry the fact at all and
 # no amount of exploration would have helped.
-for H in 512 1024; do
+for H in 512; do
 for S in $(seq 1 $SEEDS); do
     train "carry_h${H}_s${S}" --hidden_size "$H" --seed "$S" \
         --goal_channel abs --goal_visible_episodes 1 --carry_across_episodes
@@ -176,7 +196,7 @@ fi
 
 # --- the in-context measurement, on the arms that have no goal channel ------
 EPIDS=(); ENAMES=()
-for H in 256 512 1024; do
+for H in 256 512; do
 for S in $(seq 1 $SEEDS); do
     LT="$CKPTS/icub_ic_h${H}_s${S}/final.pt"
     EP="$CKPTS/icub_ep_h${H}_s${S}/final.pt"
@@ -193,7 +213,7 @@ done; done
 
 # The carry arm is evaluated with the goal shown in episode 1 only, matching
 # how it was trained -- so episodes 2..10 measure what it retained.
-for H in 512 1024; do
+for H in 512; do
 for S in $(seq 1 $SEEDS); do
     CK="$CKPTS/icub_carry_h${H}_s${S}/final.pt"
     [[ -f "$CK" ]] || continue
