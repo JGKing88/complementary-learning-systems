@@ -1312,11 +1312,37 @@ def render(d: dict) -> str:
       "Online EWC and SI at usable settings sit between 0.07 and 0.15. Their "
       "apparent best results are the plasticity trap: retention bought by "
       "declining to learn.</li>")
-    A("<li><strong>This covers replay and regularisation, not "
-      "isolation.</strong> No method that gives each task its own parameters "
-      "has been run yet — see §10. The strongest untested candidate, a "
-      "task-conditioned hypernetwork, is the one the recurrent-continual-"
-      "learning literature actually recommends.</li>")
+    # Derived, because this bullet is the one most likely to be left standing
+    # after the numbers behind it change -- it was written when the isolation
+    # family had not run, and it stayed on the page saying so for a while after
+    # that stopped being the interesting thing about it.
+    iso_arms = ("J", "K", "L", "M", "N", "N2")
+    iso_usable = [m for m in methods if m["arm"] in iso_arms
+                  and (m["current_env"] or 0) >= USABLE_CURRENT
+                  and m["retained"] is not None]
+    free_usable = [m for m in methods if m["arm"] not in iso_arms
+                   and not m["needs_task_id"]
+                   and (m["current_env"] or 0) >= USABLE_CURRENT
+                   and m["retained"] is not None]
+    if iso_usable:
+        top_iso = max(iso_usable, key=lambda m: m["retained"])
+        best_free = (max(free_usable, key=lambda m: m["retained"])
+                     if free_usable else None)
+        comparison = ""
+        if best_free:
+            verb = ("still does not reach"
+                    if top_iso["retained"] < best_free["retained"]
+                    else "beats")
+            comparison = (
+                f" Even with that advantage it {verb} the best method given "
+                f"no task signal at all ({esc(best_free['display'])}, "
+                f"{fmt(best_free['retained'])}).")
+        A("<li><strong>Giving each task its own parameters helps, and is not "
+          "enough.</strong> The best isolation result is "
+          f"{esc(top_iso['display'])} at {fmt(top_iso['retained'])} retained "
+          "— and it is <em>told which environment it is in</em>, which a "
+          "classifier on the agent's own observations cannot recover "
+          f"(&sect;5).{comparison}</li>")
     A("<li><strong>Restricting plasticity to a small head is worse, not "
       "better.</strong> Freezing the trunk costs both retention and current-env "
       "performance. Whatever a meta-learned representation would buy here, it "

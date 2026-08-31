@@ -499,10 +499,9 @@ def main() -> None:
             # straight load for the baseline, the head fanned out across tasks
             # for the multi-head policy, the base vector for the hypernetwork.
             warm_start(agent, ckpt["agent_state_dict"])
-        arch_detail = (agent.describe() if hasattr(agent, "describe")
-                       else {"arch": "rnn"})
         if k == 0 and args.arch != "rnn":
-            print(f"[baseline] arch={args.arch}  {arch_detail}")
+            print(f"[baseline] arch={args.arch}  "
+                  f"{agent.describe() if hasattr(agent, 'describe') else {}}")
 
         if args.freeze_trunk:
             # After the load, so what is frozen is the *pretrained* trunk.
@@ -536,7 +535,16 @@ def main() -> None:
             reset_optimizer_each_block=args.reset_optimizer_each_block,
         )
         last_method_desc = method.describe()
-        last_arch_detail = arch_detail
+        # Taken *after* training, not at construction. The parameter counts are
+        # the same either way, but the hypernetwork also reports how
+        # task-dependent its generated weights ended up -- and that number is
+        # only worth anything once the run has happened. A generator that never
+        # learned to condition on its task embedding produces an entirely
+        # ordinary-looking run whose low retention says nothing about the
+        # method, so the check belongs in every history rather than in a
+        # separate investigation.
+        last_arch_detail = (agent.describe() if hasattr(agent, "describe")
+                            else {"arch": "rnn"})
         iter_traces.append((trace, blocks))
         iter_env_goals.append([list(env.goal_location) for env in envs])
         iter_env_offsets.append(

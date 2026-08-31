@@ -664,3 +664,41 @@ def test_driver_runs_every_architecture():
         seen = _drive(agent, None, n_envs=2, updates=1)
         assert len(seen) == 2, type(agent).__name__
         assert all(np.isfinite(s["move_loss"]) for s in seen)
+
+
+# ===========================================================================
+# the collapse detector
+# ===========================================================================
+
+def test_task_divergence_is_zero_when_the_generator_is_silenced():
+    """The failure it exists to detect: if the generator emits nothing, every
+    task shares the base and the arm is the naive baseline in disguise."""
+    hyp = _hyper(base="frozen")
+    with torch.no_grad():
+        hyp.hyper.head.weight.zero_()
+        hyp.hyper.head.bias.zero_()
+    d = hyp.task_divergence()
+    assert d["pairwise_divergence"] == pytest.approx(0.0, abs=1e-9)
+    assert d["hyper_norm"] == pytest.approx(0.0, abs=1e-9)
+
+
+def test_task_divergence_grows_with_the_generator_output():
+    hyp = _hyper(base="frozen")
+    small = hyp.task_divergence()["pairwise_divergence"]
+    with torch.no_grad():
+        hyp.hyper.head.weight.mul_(50.0)
+        hyp.hyper.head.bias.mul_(50.0)
+    assert hyp.task_divergence()["pairwise_divergence"] > small
+
+
+def test_task_divergence_reports_the_conditioned_fraction_only_with_a_base():
+    assert "conditioned_frac" in _hyper(base="learned").task_divergence()
+    assert "conditioned_frac" in _hyper(base="frozen").task_divergence()
+    assert "conditioned_frac" not in _hyper(base="none").task_divergence()
+
+
+def test_describe_carries_the_divergence_so_every_history_does():
+    """Recorded per run rather than investigated separately, because a
+    collapsed generator produces an entirely ordinary-looking history."""
+    d = _hyper().describe()
+    assert "pairwise_divergence" in d and "trainable_params" in d

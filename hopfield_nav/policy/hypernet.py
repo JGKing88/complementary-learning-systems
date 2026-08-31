@@ -368,11 +368,47 @@ class HyperRNNAgent(nn.Module):
             named.append(("base", self.base))
         return named
 
+    @torch.no_grad()
+    def task_divergence(self) -> dict:
+        """How task-dependent the generated weights currently are.
+
+        The quietest failure this architecture has. The generator's output
+        layer starts small so that every task begins at the warm-started base
+        -- which is what makes the arm comparable to the pretrained controls.
+        If that output never grows, every task gets approximately the same 73k
+        weights, every environment shares one policy, and the arm is the naive
+        baseline wearing a hypernetwork's metadata. It would produce a
+        completely ordinary run: sensible losses, a penalty that scales with
+        beta, low retention, and the plausible, wrong conclusion that the
+        method does not help here.
+
+        No test of the mechanics catches it, because the mechanics would all be
+        correct; it is a question about where optimisation ended up. So the
+        answer is recorded beside every run.
+
+        `pairwise` is the one that matters: mean over task pairs of
+        ||w_i - w_j|| / ||w_i||, which is nonzero only if different tasks
+        genuinely get different weights.
+        """
+        ws = [self.generate(t) for t in range(self.n_tasks)]
+        pairs = [(i, j) for i in range(self.n_tasks)
+                 for j in range(i + 1, self.n_tasks)]
+        pairwise = (sum(float((ws[i] - ws[j]).norm() / ws[i].norm())
+                        for i, j in pairs) / len(pairs)) if pairs else 0.0
+        hyper_norm = sum(float(self.hyper(t).norm())
+                         for t in range(self.n_tasks)) / self.n_tasks
+        out = {"pairwise_divergence": pairwise, "hyper_norm": hyper_norm}
+        if self.base is not None:
+            out["base_norm"] = float(self.base.norm())
+            out["conditioned_frac"] = hyper_norm / max(out["base_norm"], 1e-12)
+        return out
+
     def describe(self) -> dict:
         """Parameter accounting, for the metadata and the frontier table."""
         n_hyper = sum(p.numel() for _, p in self.hyper.named_parameters())
         n_base = self.base.numel() if self.base is not None else 0
         return {
+            **self.task_divergence(),
             "arch": "hnet",
             "n_tasks": self.n_tasks,
             "base": self.base_mode,
