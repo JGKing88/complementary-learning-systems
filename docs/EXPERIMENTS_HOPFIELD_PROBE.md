@@ -31,9 +31,13 @@ envs, `steps` 1–15, `K` 1–20, four encoders.
 > | 5% | `w57_cov5/001_half_a0.5_seed=43` | 75 | 0.977 |
 > | 2.5% | `w58_cov2.5/011_q_a1_seed=45` | 100 | 0.965 |
 >
+> | *1.25%* | *`w60_cov1.25/*_sm35x_a2`* | *100* | *0.870* |
+>
 > Means are over three scaffold draws × four training seeds. **Reach is flat
 > across a 4× range of coverage; what coverage buys is capacity** — dead goals
-> at K=20 go 0.08 → 0.25 → 0.42.
+> at K=20 go 0.08 → 0.25 → 0.42, with K=5 and K=10 at exactly zero throughout.
+> **The floor is 2.5%**: at 1.25% the alias rate passes ~0.02, dead goals reach
+> the K=5 operating point, and reach drops 0.10 (§10.15).
 >
 > Report page (all three, encoder selector, full Tests A–D):
 > https://claude.ai/code/artifact/d7a250c1-5044-4854-b453-61881bd518e7
@@ -1281,3 +1285,83 @@ https://claude.ai/code/artifact/d7a250c1-5044-4854-b453-61881bd518e7
 
 Raw: `$CLS_RESULTS/hopfield_probe/20260827/probe_three/`. Reproduce with
 `analysis/hopfield_probe/run_three.sh`.
+
+### 10.15 The coverage floor is between 2.5% and 1.25%
+
+§10.14 left reach flat over a 4× range of coverage while capacity drained, and
+asked where it runs out. One more rung answers it, and lets the corrected
+mechanism predict instead of explain.
+
+#### The attract trend, predicted and confirmed
+
+§10.14 recorded a prediction before `w60` ran: the optimum at 1.25% is **2.0**,
+continuing 0.5 / 0.5 / 1.0. Among the size-held arms (15 × 50), it is:
+
+| 1.25%, 15 × 50 | gain | alias | `d_eff` |
+|---|---|---|---|
+| `x_a1` | 20 | 0.0477 | 54.4 |
+| **`x_a2`** | 200 | **0.0353** | 61.3 |
+| `x_a4` | 300 | 0.0408 | 56.4 |
+
+Interior, bracketed both sides. After §10.11's extrapolation failed twice with
+the sign reversed (§10.12, §10.13), the corrected account — attract holds the
+near field *up*, and low coverage leaves less structure to hold — now has a
+prediction it made and got right.
+
+#### `d_eff` across the whole ladder
+
+| coverage | best arm | gain | alias | `d_eff` |
+|---|---|---|---|---|
+| 10% | `att0.5` | 75 | 0.0059 | 120.4 |
+| 5% | `half_a0.5` | 75 | 0.0088 | 102.9 |
+| 2.5% | `q_a2` | 200 | 0.0179 | 84.8 |
+| 1.25% | `sm35x_a2` | 100 | 0.0286 | 64.9 |
+
+Coverage sets `d_eff`, `d_eff` sets the alias rate (§10.11: far-field cosine
+spread is `1/√d_eff`), the alias rate sets dead goals. The chain holds over an
+8× range of coverage.
+
+#### And reach finally breaks
+
+Both leading arms, four seeds, three scaffold draws:
+
+| | draw 0 | draw 1 | draw 2 | **mean** |
+|---|---|---|---|---|
+| `x_a2` (15 × 50) | 0.900 | 0.859 | 0.831 | **0.863** |
+| `sm35x_a2` (30 × 35) | 0.888 | 0.862 | 0.861 | **0.870** |
+
+Against the ladder above: **0.978 / 0.977 / 0.965 / ~0.87**. Flat to 2.5%, then
+a 0.10 drop — three times the scaffold spread, on every draw.
+
+The diagnostics say why, and it is not a new failure mode:
+
+| | 2.5% | 1.25% |
+|---|---|---|
+| dead @ K=5 | **0.00** | 0.04–0.25 |
+| dead @ K=10 | **0.00** | 0.08–0.29 |
+| `exact` | 88.2% | 67–83% |
+| basin | 17.62 | 12.0–15.9 |
+
+Every coverage down to 2.5% had **exactly zero** dead goals at K=5 and K=10, and
+paid only at K=20. At 1.25% the alias rate passes ~0.02 and dead goals cross
+into the K=5 operating point. That is the same mechanism running out, not
+something else appearing.
+
+**So the usable floor is 2.5%.** At K≤10, 2.5% coverage costs 0.013 of reach
+against 10% — four times less data for nothing. At 1.25% it costs 0.10 and the
+failures reach the operating load.
+
+> **Third strike for the screen as a ranking.** `sm35x_a2` has the better alias
+> rate (0.0286 against 0.0353) and the two arms tie on reach, with `sm35x_a2`
+> ahead only on the mean. §10.12 and §10.13 each had a case where the better
+> alias rate lost the probe outright. Three independent instances: **the alias
+> rate filters a wave to a shortlist and does not order one.**
+
+Geometry crossover, worth noting for anything below 2.5%: at 2.5% the size-held
+mix won (30 × 50 over 118 × 25); at 1.25% the count-held mix has the better
+alias rate (30 × 35 over 15 × 50) and the better mean. `EXPERIMENTS_UNIQUE_RADIUS.md`
+§6.6's "choose the size that gives ~30 environments" rule was derived for
+`r_min`, and it looks right at the bottom of this ladder specifically.
+
+Raw: `$CLS_RESULTS/hopfield_probe/20260827/w60_ps{0,1,2}/`. Reproduce with
+`analysis/hopfield_probe/run_w60probe.sh`; screen with `screen_w60_check.py`.
