@@ -50,10 +50,13 @@ single environment. `r_min` cannot see any of it — six candidates share
 of distant pairs above 0.25 predicts measured reach at **ρ = −0.92**, and
 **−0.85 once the confirmation run's eight arms are added** (§10.8).
 
-**The screen's nomination was run and it won.** Level 6
-(`w49_g100_knee/*_eps1_rate0.5`) posts continuous reach **0.931 unsaturated and
-0.981 at gain 300 + β1e6** over four seeds — the best in the campaign, against
-level 7's 0.806 at the same settings.
+**The screen's nomination was run and it won** (§10.8), and then §10.9 beat it
+without any inference override at all. Current best is
+`w52_attract_fwhm/*_att0.5` at its own gain 100 with **β = gain**: continuous
+reach **0.987** over four seeds, the tightest spread in the campaign. Reach
+rises monotonically as `attract_lambda` *falls* — 0.806 / 0.931 / 0.972 / 0.987
+at 16 / 2 / 1 / 0.5 — which is the axis w52–w54 spent three waves climbing in
+the other direction because `r_min` rewards it.
 
 ---
 
@@ -779,3 +782,112 @@ goal *cell* and never get within 0.5 of the goal *point*.
 That is the sub-cell approach, and `ARRIVAL_RADIUS = 0.5` against a float
 position is as much a property of the measurement as of the encoder. Anything
 further on this arm should establish which before spending runs on it.
+
+### 10.9 Selecting on the nav objective: `attract_lambda` **down**, and gain is spent
+
+§10.8 confirmed the screen's nomination. This round asks what is left, and the
+answer changes the recommendation: the best encoder is not Level 6 at all, and
+it needs no inference override.
+
+Everything below is at **β = gain** — no saturation anywhere.
+
+#### The pool screen
+
+`nav_screen_all.py` walks every arm in w39/w45–w54 at gains 100/300/1000. Two
+things fall out immediately.
+
+**The spread term does nearly all the far-field suppression.** `w48 rate0` —
+the same config with the coding-rate term off — has an alias rate of **0.2059**
+against 0.004–0.06 for everything else. A 25–50× effect, and the largest number
+in the screen. That is §5.6j's mechanism confirmed from the other side.
+
+**And `attract_lambda` is monotone the wrong way.** All eight arms share one
+base config, so this is a clean axis:
+
+| `attract_lambda` | 0.5 | 1 | 2 (L6) | 4 | 8 | 16 (L7) | 32 | 64 |
+|---|---|---|---|---|---|---|---|---|
+| alias @ g100 | 0.0059 | 0.0072 | 0.0082 | 0.0095 | 0.0123 | 0.0170 | 0.0269 | 0.0610 |
+| res90 @ g100 | 7 | 9 | 10 | 11 | 12 | 14 | 16 | 18 |
+| `r_min` | 6.0 | 10.0 | 12.0 | 12.0 | 12.0 | 12.0 | 12.0 | 12.0 |
+
+w52 → w53 → w54 climbed from 2 to 64 because `r_min` rewards res90. On the
+alias rate that is a 7× regression, and the untested direction was down.
+
+> **A one-seed reading retracted.** `fwhm_ratio` 0.5 looked 15% better than
+> Level 6 at seed 42. Over four seeds it is 0.0080 against 0.0082 — nothing,
+> and Level 6's own seed range (0.0071–0.0088) is wider than the effect
+> (`fwhm_seeds_check.py`). §6.9's "0.25 and 0.5 are equivalent" holds on this
+> metric too. `steps3x` survives at gain 100 (0.0073 vs 0.0082) and vanishes at
+> gain 300, where every arm converges near 0.0055.
+
+#### The gain ladder: an interior optimum, not a floor
+
+Four seeds of Level 6, β = gain (`run_ladder.sh`):
+
+| L6 | res90 | alias | \|err\| | exact | **cont** | dead @ **K=1** |
+|---|---|---|---|---|---|---|
+| g100 | 10 | 0.0082 | 7.3° | 88% | 0.931 | 0.00 |
+| **g300** | 8 | 0.0056 | 9.0° | 96% | **0.971** | 0.00 |
+| g1000 | 6 | 0.0052 | 19.3° | 99% | 0.954 | 0.03 |
+| g3000 | 5 | ~0.005 | 41.7° | **100%** | **0.608** | **0.34** |
+
+Gain 3000 collapses to 0.608 while retrieval hits 100% and the basin maxes out:
+the Hopfield finds the right goal every time and the readout cannot use it. The
+`K=1` column is the clean diagnostic — no cross-talk is possible there, so those
+failures are pure local chart.
+
+**It is an optimum because the alias rate saturates.** res90 8 → 6 → 5 buys
+0.0056 → 0.0052 → ~0.005 while `|err|` goes 9° → 19° → 42°. Past gain 300 the
+trade stops being a trade.
+
+> **The `res90 ≥ 8` guard of §10.6 was calibrated on the wrong quantity** —
+> angular error, not reach — and it is also too high. The cross-encoder ladder
+> has `att0.5` fine at res90 7 and `L5` at 0.977 with res90 6; only `rate3` at
+> res90 3 dies (`|err|` 80.5°, reach 0.077, **dead fraction 1.00 at K=1**). The
+> real floor is nearer 4–5. It lands on the right answer for the wrong reason,
+> because the alias rate flattens at the same place.
+>
+> It also conflated two failures. An encoder *trained* into a short chart is
+> fine (`L5`, res90 6, 0.977); an encoder *read through* a chart it was not
+> trained for degrades much faster (L6 forced to res90 6 by gain, 0.954, and to
+> res90 5, 0.608).
+
+#### `att0.5` is the best encoder measured
+
+Four seeds, own gain 100, β = 100 — no override of any kind
+(`run_att_low.sh`):
+
+| | \|err\| | acc45 | exact | basin | **cont** (4 seeds) |
+|---|---|---|---|---|---|
+| **`att0.5`** | 7.0–8.7° | 99.5–100% | 96.2–98.9% | 20.7–21.4 | **0.987** (0.984–0.993) |
+| `att1` | 6.5–7.6° | 99.6–100% | 90.6–96.9% | 18.5–20.0 | 0.972 (0.963–0.993) |
+
+`att0.5` has the tightest seed spread in the campaign. `att1`'s 0.993 was one
+lucky seed — the fifth time a one-seed reading has not survived here.
+
+| | cont | needs |
+|---|---|---|
+| **`att0.5` @ own gain 100** | **0.987** | nothing |
+| L6 @ g300 + β1e6 | 0.981 | override + saturation |
+| `att1` @ g100 | 0.972 | nothing |
+| L6 @ g300 | 0.971 | override |
+| L6 @ g100 | 0.931 | nothing |
+| att16 (level 7) @ g100 | 0.806 | nothing |
+
+Reach rises monotonically as `attract_lambda` falls — 0.806 / 0.931 / 0.972 /
+0.987 at 16 / 2 / 1 / 0.5 — while `r_min` falls from 12.0 to 6.0.
+
+**Attract and inference gain are substitutes.** Each arm's optimal gain falls as
+its `attract_lambda` falls: `att2` and `att1` want 300, `att0.5` wants 100
+(0.987 at g100 against 0.977 at g300). Both knobs shorten the chart, so an
+encoder that spent the budget in training gains nothing by spending it again at
+inference — which is why the best config is also the simplest.
+
+**Saturation is unnecessary.** L6 at g300 scores 0.971 with β = gain against
+0.981 saturated, a gap smaller than either arm's seed spread. What saturation
+buys is step-invariance (s15 0.90–0.96 against 0.99–1.00), and the policy reads
+s=1.
+
+Raw: `$CLS_RESULTS/hopfield_probe/20260827/` — `l6_g300`, `l6_g1000`,
+`l6_g3000`, `ladder_g100`, `attlow_g100`, `attlow_g300`, plus
+`screen_all_seed42.txt` and `screen_fwhm_steps_4seed.txt`.

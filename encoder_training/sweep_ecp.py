@@ -1900,6 +1900,72 @@ WAVES: dict[str, dict] = {
         },
         "seed": [42, 43, 44, 45],
     },
+    # W55 -- the first wave selected on the NAVIGATION objective rather than on
+    # `r_min`. See docs/EXPERIMENTS_HOPFIELD_PROBE.md Sec 10.
+    #
+    # What changed: continuous reach is set by the rate of FAR-FIELD pairs above
+    # cosine ~0.25, because a goal dies when one co-stored competitor crosses
+    # that line (Sec 10.3), and the competitors sit ~370 cells away. `r_min` is
+    # `res90 * sqrt(ln(1/C)/ln(1/0.9))`, so it prices res90 and the ceiling as
+    # comparable factors; navigation reads the ceiling almost alone, since the
+    # Gram-Schmidt basis only needs one-cell neighbours. res90 is a floor at
+    # roughly 8 cells, not a quantity to maximise.
+    #
+    # That reverses the campaign's last three waves. On the alias rate the
+    # attract axis is monotone the WRONG way from the incumbent 2.0 -- 2.0 gives
+    # 0.0088 and 8/16/32/64 give 0.0123/0.0170/0.0269/0.0610 -- so w52-w54
+    # walked uphill for three waves. Level 6 (`w49 eps1_rate0.5`, attract 2.0)
+    # probes at continuous reach 0.931 against level 7's 0.806 (Sec 10.8).
+    #
+    # Every arm here is level 6 with ONE thing moved, so the wave reads directly
+    # against `w49_g100_knee/*_eps1_rate0.5`.
+    #
+    #   g300_eps1    Is training at gain 300 better than training at 100 and
+    #                raising gain at inference? The latter gives (far 0.0057,
+    #                res90 8); this is the trained version of the same operating
+    #                point, spread left alone -- the transfer test.
+    #   g300_eps2    Sec 6.10i: a high gain does part of the spread term's job,
+    #                so the term wants relaxing as gain rises (`rate_eps` 1.0 is
+    #                right at gain 100 and *hurts* at gain 5). At gain 300 it
+    #   g300_rate.25 should want relaxing further. Two arms because eps and
+    #                rate_lambda were tuned jointly and may not transfer apart.
+    #   rep0.1       repel_weight has only ever been sampled at 0.25, 1.0, 2.0
+    #                and 4.0, and the helpful direction is down -- rep0.25
+    #                already beats the level-7 headline on the alias rate
+    #                (0.0106 against 0.0170).
+    #   att0.25      The attract axis is covered from 0.5 to 64 across w52-w54,
+    #                all sharing this exact base. Below 0.5 is the only untested
+    #                part, and it is the direction the alias rate wants. Sec
+    #                6.11 warns that weakening attract collapses res90, so this
+    #                arm is expected to fail the floor -- it is here to locate
+    #                the edge, not to win.
+    #   sm30         327 patches of 30 cells at the same 10% coverage. The
+    #                env-blind spread term is the only term with any far-field
+    #                purchase (Sec 5.6j) and it sees only batch encodings, so
+    #                more patches means it samples more of the arena. Sec 6.3
+    #                rejected small patches because a 30-cell patch cannot
+    #                supply pairs as far apart as the decay `r_min` wants -- an
+    #                argument about res90, which navigation prices very
+    #                differently. This is the legal version of the arena-spread
+    #                diagnostic (Sec 10.6 item 4), whose ceiling is the best
+    #                ever measured.
+    "w55_nav_objective": {
+        "arm": {
+            name: {**dict(npos_list=SIZE_MIXES["sm50"], batch_size=4096,
+                          lr=3e-4, per_env_radius_frac=0.0, radius=20.0,
+                          rate_lambda=0.5, rate_eps=1.0, out_dim=1024,
+                          hidden_dim=256, gain_end=100.0), **over}
+            for name, over in (
+                ("g300_eps1",    dict(gain_end=300.0)),
+                ("g300_eps2",    dict(gain_end=300.0, rate_eps=2.0)),
+                ("g300_rate.25", dict(gain_end=300.0, rate_lambda=0.25)),
+                ("rep0.1",       dict(repel_weight=0.1)),
+                ("att0.25",      dict(attract_lambda=0.25)),
+                ("sm30",         dict(npos_list=SIZE_MIXES["sm30"])),
+            )
+        },
+        "seed": [42, 43, 44, 45],
+    },
 }
 
 
