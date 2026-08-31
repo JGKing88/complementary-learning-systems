@@ -124,6 +124,17 @@ SIZE_MIXES: dict[str, str] = {
     "mix2_hi": _mix((200, 15), (100, 40)),      # 1.00M, 34.0%, 55 envs
     "mix3_45": _mix((200, 20), (150, 20), (100, 30)),   # 1.55M, 52.6%, 70 envs
     "mixsmall": _mix((200, 12), (100, 40), (50, 200)),  # 1.38M, 46.9%, 252 envs
+    # --- 5% and 2.5%, for w57/w58. All placement-checked at seeds 42-45.
+    # Two ways to halve coverage and they are not equivalent under the Sec 10.11
+    # account: fewer patches gives the env-blind spread term less of the arena,
+    # while smaller patches shortens the separations any pairwise term can see.
+    # sm50 (118 x 50, 10.0%) is the incumbent both descend from.
+    "sm50_half": _mix((50, 59)),                  #  5.01%,  59 envs
+    "sm35":      _mix((35, 120)),                 #  4.99%, 120 envs
+    "sm70_lo":   _mix((70, 30)),                  #  4.99%,  30 envs
+    "sm50_q":    _mix((50, 30)),                  #  2.55%,  30 envs
+    "sm25":      _mix((25, 118)),                 #  2.50%, 118 envs
+    "sm70_q":    _mix((70, 15)),                  #  2.50%,  15 envs
 }
 
 
@@ -2024,6 +2035,79 @@ WAVES: dict[str, dict] = {
                 ("a0.75",      dict(attract_lambda=0.75)),
                 ("sm20",       dict(npos_list=SIZE_MIXES["sm20"])),
                 ("a0.5_rate1", dict(attract_lambda=0.5, rate_lambda=1.0)),
+            )
+        },
+        "seed": [42, 43, 44, 45],
+    },
+    # W57 / W58 -- how far does the Sec 10 result carry to 5% and 2.5% coverage?
+    #
+    # The 10% answer is `w52_attract_fwhm/*_att0.5`: Level 6's config with
+    # attract_lambda 2.0 -> 0.5, continuous reach 0.987. Sec 10.11 says why --
+    # attract and the coding-rate term compete for the code's effective
+    # dimension, far-field cosine spread is 1/sqrt(d_eff), and a goal dies when
+    # one co-stored competitor crosses cos ~0.25.
+    #
+    # What halving coverage should do, on that account: the pairwise terms are
+    # already blind to the far field at 10% (Sec 5.6j: 0 of 200 alias pairs sit
+    # inside a patch), so the loss term that matters -- the env-blind spread
+    # term -- is the one that loses. It is computed on batch encodings, and the
+    # batch stays 4096 either way; what shrinks is the number of DISTINCT arena
+    # positions those 4096 are drawn from. So d_eff should fall and the alias
+    # rate rise, and the attract optimum should move DOWN, because attract has
+    # to give up more of its share of d_eff to compensate.
+    #
+    # That last part is the prediction worth recording: if the optimum stays at
+    # 0.5, attract and coverage act independently; if it moves to 0.25 or below,
+    # they trade against the same budget. Either way the axis has to be swept
+    # rather than transferred, which is why both waves sweep it.
+    #
+    # Geometry: two ways to halve coverage, held against each other at matched
+    # coverage. Fewer patches of the same size (sm50_half, sm50_q) keeps every
+    # separation the pairwise terms can see and gives the spread term less of
+    # the arena; smaller patches at the same count (sm35, sm25) does the
+    # reverse. sm70_lo / sm70_q is the ~30-env geometry Sec 6.6 recommends for
+    # extrapolating across coverage, included as the third option because that
+    # rule was derived for r_min and has never been checked on this objective.
+    "w57_cov5": {
+        "arm": {
+            name: {**dict(batch_size=4096, lr=3e-4, per_env_radius_frac=0.0,
+                          radius=20.0, rate_lambda=0.5, rate_eps=1.0,
+                          out_dim=1024, hidden_dim=256, gain_end=100.0), **over}
+            for name, over in (
+                ("half_a0.5",  dict(npos_list=SIZE_MIXES["sm50_half"],
+                                    attract_lambda=0.5)),
+                ("half_a0.25", dict(npos_list=SIZE_MIXES["sm50_half"],
+                                    attract_lambda=0.25)),
+                ("half_a1",    dict(npos_list=SIZE_MIXES["sm50_half"],
+                                    attract_lambda=1.0)),
+                ("sm35_a0.5",  dict(npos_list=SIZE_MIXES["sm35"],
+                                    attract_lambda=0.5)),
+                ("sm70_a0.5",  dict(npos_list=SIZE_MIXES["sm70_lo"],
+                                    attract_lambda=0.5)),
+                ("half_rate1", dict(npos_list=SIZE_MIXES["sm50_half"],
+                                    attract_lambda=0.5, rate_lambda=1.0)),
+            )
+        },
+        "seed": [42, 43, 44, 45],
+    },
+    "w58_cov2.5": {
+        "arm": {
+            name: {**dict(batch_size=4096, lr=3e-4, per_env_radius_frac=0.0,
+                          radius=20.0, rate_lambda=0.5, rate_eps=1.0,
+                          out_dim=1024, hidden_dim=256, gain_end=100.0), **over}
+            for name, over in (
+                ("q_a0.5",   dict(npos_list=SIZE_MIXES["sm50_q"],
+                                  attract_lambda=0.5)),
+                ("q_a0.25",  dict(npos_list=SIZE_MIXES["sm50_q"],
+                                  attract_lambda=0.25)),
+                ("q_a1",     dict(npos_list=SIZE_MIXES["sm50_q"],
+                                  attract_lambda=1.0)),
+                ("sm25_a0.5", dict(npos_list=SIZE_MIXES["sm25"],
+                                   attract_lambda=0.5)),
+                ("sm70q_a0.5", dict(npos_list=SIZE_MIXES["sm70_q"],
+                                    attract_lambda=0.5)),
+                ("q_rate1",  dict(npos_list=SIZE_MIXES["sm50_q"],
+                                  attract_lambda=0.5, rate_lambda=1.0)),
             )
         },
         "seed": [42, 43, 44, 45],
