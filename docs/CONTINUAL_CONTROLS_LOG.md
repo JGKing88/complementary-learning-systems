@@ -1076,3 +1076,64 @@ grounds that "at N=5 the control is not plasticity-limited (`reached ≈ 0.99` o
 the current env)". At N=5 that was true and the cut was right. At N=20 it is
 false, and the plasticity-maintenance family becomes a live part of the suite
 rather than a deferred one. Recorded as the concrete next wave.
+
+---
+
+## 2026-08-31 — EWC and SI, re-run on a uniform Fisher sample (slurm 21634899)
+
+All 56 tasks OK. The sampler fix moved EWC, modestly but in the right
+direction on both axes:
+
+| λ | retained (before → after) | current env (before → after) |
+|---|---|---|
+| 1e5 | 0.274 → 0.286 | 0.296 → 0.332 *(still degenerate)* |
+| **1e4** | **0.149 → 0.168** | **0.524 → 0.598** |
+| 1e3 | 0.091 → 0.098 | 0.695 → 0.674 |
+| 1e2 | 0.095 → 0.094 | 0.762 → 0.717 |
+
+Estimating the Fisher on a uniform sample of the block rather than its tail
+gains about 13 % relative retention at the usable setting **and** raises
+plasticity from 0.524 to 0.598 — better on both, which is the direction a
+better importance estimate should move things. The effect is not large, but the
+run now matches what the code documents, which was the point.
+
+SI's extended range confirms its shape: λ=1e4 posts 0.185 at current-env 0.287
+(the trap again), so its usable best stays λ=1e3 at 0.125.
+
+### The suite, complete and all-corrected
+
+Best configuration per method with current-env ≥ 0.5, against a joint ceiling
+of **0.998** and an oracle of **1.000**:
+
+| method | retained | current env | stored | needs |
+|---|---|---|---|---|
+| *Hopfield store* | *0.994* | *1.000* | *no data* | *nothing* |
+| ER, replay ×32 | **0.579 ± 0.039** | 0.796 | 53.6 MB | nothing |
+| ER, replay ×16 | 0.546 ± 0.027 | 0.753 | 53.6 MB | nothing |
+| ER, replay ×8 | 0.508 ± 0.033 | 0.762 | 53.6 MB | nothing |
+| ER, replay ×4 | 0.419 ± 0.044 | 0.768 | 53.6 MB | nothing |
+| DER++, α=10 | 0.326 ± 0.037 | 0.546 | 56.8 MB | nothing |
+| CLEAR, cc=1 | 0.201 ± 0.036 | 0.622 | 53.9 MB | nothing |
+| online EWC, λ=1e4 | 0.168 ± 0.033 | 0.598 | 0.6 MB | boundaries |
+| SI, λ=1e3 | 0.125 ± 0.030 | 0.665 | 0.6 MB | boundaries |
+| naive, tuned | 0.081 ± 0.026 | 0.820 | — | nothing |
+| LwF, α=1 | 0.058 ± 0.016 | 0.665 | 0.3 MB | boundaries |
+| frozen trunk + ER | 0.043 ± 0.010 | 0.399 | 53.6 MB | nothing |
+| reference (no method) | 0.044 ± 0.013 | 0.753 | — | nothing |
+
+And the configurations that score well only by declining to learn — reported
+separately, because a leaderboard on retention alone would rank three of them
+above every honest replay result:
+
+| config | retained | current env |
+|---|---|---|
+| CLEAR, cc=10 | 0.326 | 0.250 |
+| CLEAR, cc=30 | 0.290 | 0.095 |
+| online EWC, λ=1e5 | 0.286 | 0.332 |
+| DER++, α=100 | 0.277 | 0.360 |
+| LwF, α=10 | 0.235 | 0.238 |
+| SI, λ=1e4 | 0.185 | 0.287 |
+
+Every method in the suite has one. That is not a quirk of any single algorithm;
+it is what happens when a stability knob is turned far enough, and it is why
+the plasticity column is not optional.
