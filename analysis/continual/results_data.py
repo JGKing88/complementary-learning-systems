@@ -11,6 +11,8 @@ Emits:
     scratch       T0.4, the from-scratch floor per arm
     recorded      the pre-existing histories the suite is measured against
     methods       every Wave-1 / Wave-2 arm, aggregated over seeds
+    n20           the same, at a 20-env stream (the scaling panel)
+    incontext     section 5.2 -- adaptation with zero weight updates
     frontier      the cost axes, including the Hopfield agent's constants
 """
 from __future__ import annotations
@@ -124,20 +126,63 @@ def collect_recorded(hist_dir: str) -> list[dict]:
     return out
 
 
+def collect_incontext(d: str) -> dict | None:
+    """Section 5.2, aggregated over seeds.
+
+    Reports both arms and the difference. The lifetime arm alone is not
+    evidence -- only the gap over the episodic control is attributable to
+    carrying state -- so the reader never gets one without the other.
+    """
+    files = sorted(glob.glob(os.path.join(d, "incontext_s*.json")))
+    if not files:
+        return None
+    arms: dict[str, list] = defaultdict(list)
+    for fp in files:
+        try:
+            j = json.load(open(fp))
+        except Exception:
+            continue
+        for arm, v in (j.get("arms") or {}).items():
+            arms[arm].append(v)
+    if not arms:
+        return None
+    out: dict = {"seeds": len(files), "arms": {}}
+    for arm, rs in arms.items():
+        curves = [r["mean_curve"] for r in rs]
+        n = min(len(c) for c in curves)
+        mean_curve = [_mean([c[i] for c in curves]) for i in range(n)]
+        out["arms"][arm] = {
+            "mean_curve": mean_curve,
+            "first_episode": _mean([r["first_episode"] for r in rs]),
+            "last_episode": _mean([r["last_episode"] for r in rs]),
+            "adaptation": _mean([r["adaptation"] for r in rs]),
+            "adaptation_sem": _sem([r["adaptation"] for r in rs]),
+        }
+    if "lifetime" in out["arms"] and "episodic" in out["arms"]:
+        out["attributable"] = (out["arms"]["lifetime"]["adaptation"]
+                               - out["arms"]["episodic"]["adaptation"])
+    return out
+
+
 def main() -> None:
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--wave0_dir", required=True)
     p.add_argument("--wave1_dir", required=True)
     p.add_argument("--recorded_dir", required=True)
     p.add_argument("--runs_root", required=True)
+    p.add_argument("--n20_dir", default=None,
+                   help="The 20-env scaling panel, if it has run.")
+    p.add_argument("--incontext_dir", default=None,
+                   help="Section 5.2 results, if they have run.")
     p.add_argument("--out", required=True)
     args = p.parse_args()
 
     joint = W0.load_joint(args.runs_root)
     joint_rows = []
-    for (hid, lay, lr), v in sorted(joint.items()):
+    for (hid, lay, lr, nupd), v in sorted(joint.items()):
         joint_rows.append({
-            "hidden": hid, "layers": lay, "lr": lr, "seeds": v["seeds"],
+            "hidden": hid, "layers": lay, "lr": lr, "n_updates": nupd,
+            "seeds": v["seeds"],
             "final": _mean(v["final"]), "final_sem": _sem(v["final"]),
             "at200": _mean(v["at200"]), "end_slope": _mean(v["slope"]),
         })
@@ -162,6 +207,9 @@ def main() -> None:
         "scratch": scratch,
         "recorded": collect_recorded(args.recorded_dir),
         "methods": collect_methods(args.wave1_dir),
+        "n20": collect_methods(args.n20_dir) if args.n20_dir else [],
+        "incontext": (collect_incontext(args.incontext_dir)
+                      if args.incontext_dir else None),
         "hopfield_costs": {
             # Constants of the model, not measurements -- stated here so the
             # frontier figure has both ends of every axis in one place.
@@ -175,9 +223,11 @@ def main() -> None:
     with open(args.out, "w") as f:
         json.dump(data, f, indent=2)
     print(f"[results] wrote {args.out}")
+    ic = data.get("incontext")
     print(f"  oracle={data['oracle']}  joint_rows={len(joint_rows)}  "
           f"scratch_arms={len(scratch)}  recorded={len(data['recorded'])}  "
-          f"method_configs={len(data['methods'])}")
+          f"method_configs={len(data['methods'])}  n20={len(data['n20'])}  "
+          f"incontext={'yes' if ic else 'no'}")
 
 
 if __name__ == "__main__":

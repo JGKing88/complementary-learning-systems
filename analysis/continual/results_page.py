@@ -134,6 +134,14 @@ tr.bad td{background:var(--crit-soft)}
 .kpis .val{font-family:var(--mono);font-size:19px;font-weight:600;color:var(--accent);
            font-variant-numeric:tabular-nums}
 .kpis .sub{font-size:12.5px;color:var(--muted);display:block;margin-top:2px;line-height:1.35}
+.fig{border:1px solid var(--rule);background:var(--surface);border-radius:5px;
+     padding:var(--s4);margin:0 0 var(--s4);overflow-x:auto}
+.fig svg{display:block;max-width:100%;height:auto}
+.fig .cap{font-size:13px;color:var(--muted);margin-top:var(--s2);max-width:64ch}
+.legend{display:flex;gap:1.4em;flex-wrap:wrap;font-family:var(--mono);
+        font-size:11.5px;color:var(--ink-2);margin-bottom:var(--s2)}
+.legend .k{display:inline-flex;align-items:center;gap:.5em}
+.legend .sw{width:22px;height:0;border-top-width:2px;border-top-style:solid;display:inline-block}
 footer{margin-top:var(--s6);padding-top:var(--s3);border-top:1px solid var(--rule);
        font-family:var(--mono);font-size:11px;color:var(--muted);
        display:flex;flex-wrap:wrap;gap:1.4em}
@@ -193,6 +201,66 @@ def degenerate_rows(methods: list[dict]) -> list[dict]:
         [m for m in methods
          if (m["current_env"] or 0) < 0.5 and (m["retained"] or 0) > 0.15],
         key=lambda r: -(r["retained"] or 0.0))
+
+
+def incontext_svg(ic: dict) -> str:
+    """Success against episode index, one line per arm.
+
+    Two series, so identity is carried by line *style* as well as colour --
+    solid for the lifetime arm, dashed for the episodic control -- and both are
+    direct-labelled at their endpoints. Status hues stay reserved for state.
+    """
+    arms = ic.get("arms", {})
+    order = [a for a in ("lifetime", "episodic") if a in arms]
+    if not order:
+        return ""
+    n = max(len(arms[a]["mean_curve"]) for a in order)
+    W, H = 640, 260
+    L, R, T, B = 52, 96, 18, 40
+    iw, ih = W - L - R, H - T - B
+
+    def X(i):
+        return L + (iw * i / max(1, n - 1))
+
+    def Y(v):
+        return T + ih * (1.0 - max(0.0, min(1.0, v)))
+
+    out = [f'<svg viewBox="0 0 {W} {H}" role="img" '
+           'aria-label="Success rate against episode index, by arm">']
+    # recessive grid + axis
+    for g in (0.0, 0.25, 0.5, 0.75, 1.0):
+        y = Y(g)
+        out.append(f'<line x1="{L}" y1="{y:.1f}" x2="{L + iw}" y2="{y:.1f}" '
+                   'stroke="var(--rule)" stroke-width="1"/>')
+        out.append(f'<text x="{L - 8}" y="{y + 4:.1f}" text-anchor="end" '
+                   'font-family="var(--mono)" font-size="10" '
+                   f'fill="var(--muted)">{g:.2f}</text>')
+    for i in range(n):
+        out.append(f'<text x="{X(i):.1f}" y="{T + ih + 18}" '
+                   'text-anchor="middle" font-family="var(--mono)" '
+                   f'font-size="10" fill="var(--muted)">{i + 1}</text>')
+    out.append(f'<text x="{L + iw / 2:.0f}" y="{H - 6}" text-anchor="middle" '
+               'font-family="var(--mono)" font-size="10.5" '
+               'fill="var(--muted)">episode within the lifetime</text>')
+
+    style = {"lifetime": ("var(--accent)", "none", "lifetime (state carried)"),
+             "episodic": ("var(--muted)", "5 4", "episodic control")}
+    for a in order:
+        col, dash, label = style[a]
+        pts = arms[a]["mean_curve"][:n]
+        dpath = " ".join(f"{'M' if i == 0 else 'L'}{X(i):.1f},{Y(v):.1f}"
+                         for i, v in enumerate(pts))
+        out.append(f'<path d="{dpath}" fill="none" stroke="{col}" '
+                   f'stroke-width="2" stroke-dasharray="{dash}" '
+                   'stroke-linejoin="round"/>')
+        for i, v in enumerate(pts):
+            out.append(f'<circle cx="{X(i):.1f}" cy="{Y(v):.1f}" r="3" '
+                       f'fill="{col}"/>')
+        out.append(f'<text x="{X(len(pts) - 1) + 10:.1f}" '
+                   f'y="{Y(pts[-1]) + 4:.1f}" font-family="var(--mono)" '
+                   f'font-size="11" fill="{col}">{esc(label)}</text>')
+    out.append("</svg>")
+    return "".join(out)
 
 
 def render(d: dict) -> str:
@@ -319,7 +387,8 @@ def render(d: dict) -> str:
     joint = d.get("joint", [])
     if joint:
         A("<h3>T0.1 — the joint ceiling</h3>")
-        still_rising = [j for j in joint if (j.get("end_slope") or 0) > 0.02]
+        still_rising = [j for j in joint
+                        if abs(j.get("end_slope") or 0) > 0.02]
         if still_rising:
             A('<div class="note warn"><h4>Read as a lower bound</h4>'
               f"<p>{len(still_rising)} of {len(joint)} configurations were "
@@ -328,20 +397,26 @@ def render(d: dict) -> str:
               "run raises the gradient budget 64×.</p></div>")
         A('<div class="tw"><table>')
         A("<thead><tr><th class='num'>Hidden</th><th class='num'>Layers</th>"
-          "<th class='num'>lr</th><th class='num'>Seeds</th>"
+          "<th class='num'>lr</th><th class='num'>Updates</th>"
+          "<th class='num'>Seeds</th>"
           "<th class='num'>Final</th><th class='num'>End slope</th>"
           "<th>Status</th></tr></thead><tbody>")
         for j in joint:
-            rising = (j.get("end_slope") or 0) > 0.02
+            sl = j.get("end_slope") or 0
+            if sl > 0.02:
+                status = '<span class="chip warn">still rising</span>'
+            elif sl < -0.02:
+                status = '<span class="chip crit">degrading</span>'
+            else:
+                status = '<span class="chip good">converged</span>'
             A(f'<tr><td class="num">{j["hidden"]}</td>'
               f'<td class="num">{j["layers"]}</td>'
               f'<td class="num">{j["lr"]:g}</td>'
+              f'<td class="num">{j.get("n_updates", "—")}</td>'
               f'<td class="num">{j["seeds"]}</td>'
               f'<td class="num">{fmt(j["final"])}</td>'
-              f'<td class="num">{fmt(j.get("end_slope"), 3)}</td>'
-              + ('<td><span class="chip warn">still rising</span></td>'
-                 if rising else '<td><span class="chip good">converged</span></td>')
-              + "</tr>")
+              f'<td class="num">{fmt(sl, 3)}</td>'
+              f"<td>{status}</td></tr>")
         A("</tbody></table></div>")
 
     scratch = d.get("scratch", {})
@@ -364,8 +439,71 @@ def render(d: dict) -> str:
           "<em>pretrained</em> arm, and it settles a question the plan flagged "
           "as unmeasured: pretraining does real work here.</p>")
 
+    # ---- in-context ---------------------------------------------------
+    ic = d.get("incontext")
+    if ic and ic.get("arms"):
+        A('<h2 id="incontext"><span class="sec">4</span> '
+          "Zero weight updates</h2>")
+        A("<p>The only control that meets the store on its own terms. One "
+          "environment, ten episodes back to back, weights frozen throughout — "
+          "so an agent that solves episode 10 faster than episode 1 can only "
+          "be remembering, in activations. The episodic control is trained "
+          "identically and differs only in whether the hidden state survived a "
+          "goal-reach, so the <em>gap</em> is what is attributable to carrying "
+          "anything.</p>")
+        A('<div class="fig">')
+        A('<div class="legend">'
+          '<span class="k"><span class="sw" style="border-top-color:'
+          'var(--accent)"></span>lifetime (state carried)</span>'
+          '<span class="k"><span class="sw" style="border-top-color:'
+          'var(--muted);border-top-style:dashed"></span>episodic control</span>'
+          "</div>")
+        A(incontext_svg(ic))
+        A('<p class="cap">Success rate against episode index, mean over '
+          f"{esc(ic.get('seeds', '?'))} seeds x 8 held-out environments x 64 "
+          "lifetimes.</p></div>")
+        att = ic.get("attributable")
+        if att is not None:
+            if att > 0.1:
+                A('<div class="note crit"><h4>The RNN adapts in-context</h4>'
+                  f"<p>Attributable to carrying state: <strong>{att:+.3f}</strong>. "
+                  "Forgetting is not the interesting axis for this comparison, "
+                  "and the framing has to account for it.</p></div>")
+            else:
+                A('<div class="note acc"><h4>Activation memory does not do this '
+                  "job</h4>"
+                  f"<p>Attributable to carrying state: <strong>{att:+.3f}</strong>. "
+                  "The lifetime arm does no better than a control trained "
+                  "identically but with the hidden state reset at every "
+                  "goal-reach. This is the one comparison a referee cannot "
+                  'answer with "you needed a bigger buffer."</p></div>')
+
+    # ---- N=20 ----------------------------------------------------------
+    n20 = d.get("n20") or []
+    if n20:
+        A('<h2 id="n20"><span class="sec">5</span> Twenty environments</h2>')
+        A("<p>Methods look alike at five tasks and separate at twenty. Only "
+          "configurations whose best setting was already pinned down at N=5 "
+          "are scaled here.</p>")
+        A('<div class="tw"><table>')
+        A("<thead><tr><th>Method</th><th>Configuration</th>"
+          '<th class="num">Retained</th><th class="num">Current env</th>'
+          '<th class="num">Forgetting</th></tr></thead><tbody>')
+        for r in sorted(n20, key=lambda x: -(x["retained"] or 0.0)):
+            A(f"<tr><td class='k'>{esc(r['display'])}</td>"
+              f"<td><code>{esc(r['config'])}</code></td>"
+              f'<td class="num">{bar(r["retained"], r["retained_sem"])}</td>'
+              f'<td class="num">{fmt(r["current_env"])}</td>'
+              f'<td class="num">{fmt(r["forgetting"])}</td></tr>')
+        A("</tbody></table></div>")
+        A('<div class="note warn"><h4>No Hopfield number at N=20</h4>'
+          "<p>Every recorded <code>agenthash</code> history is a five-env "
+          "stream, so this panel shows how the <em>methods</em> scale with "
+          "stream length. The store's side of it needs a run that does not "
+          "exist yet.</p></div>")
+
     # ---- bugs found ---------------------------------------------------
-    A('<h2 id="found"><span class="sec">4</span> Found along the way</h2>')
+    A('<h2 id="found"><span class="sec">6</span> Found along the way</h2>')
     A('<div class="note crit"><h4><code>input_prev_action</code> had never '
       "worked</h4>"
       "<p>Both the DAgger collector and the evaluator built the previous-action "

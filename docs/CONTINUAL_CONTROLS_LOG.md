@@ -636,3 +636,48 @@ result than the one that was expected.
 
 Wave 2 launched as slurm 21631698 (CLEAR, DER++, SI, LwF, frozen trunk, and
 arm I).
+
+---
+
+## 2026-08-31 — the joint ceiling, settled: 0.985, converged
+
+The corrected run finished, and with the reader fixed (below) the answer is
+clean:
+
+| hidden | layers | lr | budget | final | end-slope | |
+|---|---|---|---|---|---|---|
+| 128 | 1 | 1e-3 | **8000** | **0.9854 ± 0.0055** | +0.012 | **converged** |
+| 128 | 1 | 3e-3 | 8000 | 0.1896 ± 0.0611 | −0.083 | degrading |
+| 128 | 1 | 1e-3 | 1000 | 0.4521 ± 0.1497 | +0.073 | still rising |
+| … | | | 1000 | 0.27–0.59 | +0.05…+0.16 | all still rising |
+
+**The joint ceiling is 0.985**, at the smallest capacity tested and at exactly
+the configuration the recorded baseline uses. Sequentially, the same network on
+the same envs retains 0.044 untuned and 0.081 tuned. The gap is forgetting, in
+full.
+
+lr=3e-3 does not merely underperform — it **diverges**, ending 8000 updates at
+0.19 with a negative slope. That is the same lr the sequential sweep found
+worst, so the instability is a property of the optimisation, not of the
+continual protocol.
+
+### Two reader bugs, caught by inspecting the table before publishing it
+
+**The budget was not in the key.** `load_joint` keyed on
+`(hidden, layers, lr)`, so the 1000-update run and the 8000-update run both
+landed on `(128, 1, 1e-3)` and were averaged into **0.719** — a number
+describing neither, sitting between an under-trained 0.45 and a converged 0.99.
+That would have gone straight onto the results page as the joint ceiling.
+`n_updates` is now part of the key: a budget is not a nuisance parameter here,
+it is the thing the second run changed.
+
+**A negative slope was being called "converged."** The convergence test was
+`slope <= 0.02`, which is true of a run getting rapidly *worse*. lr=3e-3 at
+−0.083 was labelled converged and would have been read as a genuine capacity
+result. The test is now two-sided: only a flat tail is convergence, a rising
+one is a lower bound, and a falling one is divergence.
+
+Neither bug would have crashed anything. Both would have produced a
+plausible-looking table with a wrong number in it, which is the failure mode
+this whole exercise keeps running into: the errors that matter here are the
+ones that still render.

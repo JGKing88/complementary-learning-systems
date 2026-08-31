@@ -65,7 +65,15 @@ _T01B = re.compile(r"wave0b_T0\.1b_h(\d+)_l(\d+)_lr([0-9.e-]+)_s(\d+)$")
 
 
 def load_joint(runs_root: str) -> dict[tuple, dict]:
-    """-> {(hidden, layers, lr): {"final", "at200", "slope", "seeds"}}"""
+    """-> {(hidden, layers, lr, n_updates): {"final", "at200", "slope", "seeds"}}
+
+    `n_updates` is part of the key, and has to be. The first joint run gave
+    every configuration 1000 updates and the corrected one gives 8000; without
+    the budget in the key both land on `(128, 1, 1e-3)` and get averaged into a
+    single number that describes neither run -- 0.719, sitting between an
+    under-trained 0.45 and a converged 0.99. A budget is not a nuisance
+    parameter here, it is the thing the second run changed.
+    """
     import torch
 
     out: dict[tuple, dict] = defaultdict(
@@ -88,8 +96,9 @@ def load_joint(runs_root: str) -> dict[tuple, dict]:
         history = d.get("history") or []
         if not history:
             continue
-        eval_every = int((d.get("cfg") or {}).get("eval_every") or 25)
-        key = (hid, lay, lr)
+        cfg = d.get("cfg") or {}
+        eval_every = int(cfg.get("eval_every") or 25)
+        key = (hid, lay, lr, int(cfg.get("n_updates") or 0))
         out[key]["final"].append(_mean([mm["nav_det"] for mm in history[-1].values()]))
         # The budget-matched point: joint training given the same number of
         # rollouts per env the sequential protocol gets (200 updates).
@@ -179,20 +188,23 @@ def main() -> None:
     if not joint:
         print("  missing.")
     else:
-        print(f"  {'hidden':>7} {'layers':>7} {'lr':>7} {'seeds':>6} "
-              f"{'final':>16} {'@200upd':>10} {'end-slope':>11}")
+        print(f"  {'hidden':>7} {'layers':>7} {'lr':>7} {'budget':>8} "
+              f"{'seeds':>6} {'final':>16} {'@200upd':>10} {'end-slope':>11}")
         for key in sorted(joint):
-            hid, lay, lr = key
+            hid, lay, lr, nupd = key
             v = joint[key]
             fm, fs = _mean(v["final"]), _sem(v["final"])
             sl = _mean(v["slope"])
-            flag = "  <- still rising" if sl > 0.02 else ""
-            print(f"  {hid:>7} {lay:>7} {lr:>7.0e} {v['seeds']:>6} "
+            # Either sign is unsettled: a rising curve has not finished, and a
+            # falling one is diverging. Only a flat tail is convergence.
+            flag = ("  <- still rising" if sl > 0.02 else
+                    "  <- DEGRADING" if sl < -0.02 else "")
+            print(f"  {hid:>7} {lay:>7} {lr:>7.0e} {nupd:>8} {v['seeds']:>6} "
                   f"{fm:>9.4f} +/-{fs:<5.4f} {_mean(v['at200']):>10.4f} "
                   f"{sl:>+11.4f}{flag}")
             if best is None or fm > best[1]:
                 best = (key, fm)
-        converged = _mean([s for v in joint.values() for s in v["slope"]]) <= 0.02
+        converged = all(abs(_mean(v["slope"])) <= 0.02 for v in joint.values())
 
     # -- T0.4 ---------------------------------------------------------------
     print("\nT0.4  SEQUENTIAL FLOOR (naive streaming SGD, from scratch)")
@@ -220,12 +232,12 @@ def main() -> None:
     if best is None or oracle is None or not floors:
         print("  Incomplete -- rerun once the missing pieces above have landed.")
     else:
-        (hid, lay, lr), ceil = best
+        (hid, lay, lr, nupd), ceil = best
         ref = oracle
         floor = min(floors.values())
         print(f"  oracle {ref:.3f}  |  joint ceiling {ceil:.3f} "
-              f"(best: hidden={hid}, layers={lay}, lr={lr:g})  |  "
-              f"floor {floor:.3f}")
+              f"(best: hidden={hid}, layers={lay}, lr={lr:g}, "
+              f"{nupd} updates)  |  floor {floor:.3f}")
         if not converged:
             # Checked BEFORE the capacity verdict, because a still-climbing
             # curve explains a low ceiling without any capacity story, and
