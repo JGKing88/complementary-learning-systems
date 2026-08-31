@@ -922,3 +922,59 @@ def test_derpp_gradient_scales_with_alpha():
     assert large > small * 50, (
         f"alpha=100 gave gradient {large:.4g} against alpha=1's {small:.4g}; "
         "alpha is not reaching the gradient")
+
+
+# ===========================================================================
+# EWC's block-rollout sampler: seeded, and an actual reservoir
+# ===========================================================================
+#
+# The first version drew from the `random` module -- whose global state neither
+# torch.manual_seed nor np.random.seed touches -- so EWC runs were silently
+# non-reproducible while every other method in the suite was fine. It also drew
+# `j` against the buffer size rather than the number of items seen, giving a
+# constant ~0.97 acceptance, so the "uniform sample of the block" it documented
+# was in fact approximately the last 32 rollouts.
+
+def test_ewc_block_sampler_is_seeded_and_reproducible():
+    def run(seed):
+        ewc = OnlineEWC(fisher_trajectories=4, seed=seed)
+        ewc.on_block_start(0, _agent(), [])
+        for i in range(60):
+            ewc.after_update(_rollout(b=1, t=2, tag=float(i)), 0, None)
+        return [float(r.obs[0, 0, 0]) for r in ewc._block_rollouts]
+
+    assert run(0) == run(0), "same seed gave different samples"
+    assert run(0) != run(1), "different seeds gave identical samples"
+
+
+def test_ewc_block_sampler_is_uniform_over_the_block():
+    """A correct reservoir keeps early items with probability k/n. The broken
+    version's constant acceptance meant the buffer was always the tail, so the
+    mean index of what it held sat near the end of the block instead of the
+    middle."""
+    k, n = 8, 400
+    means = []
+    for seed in range(12):
+        ewc = OnlineEWC(fisher_trajectories=k, seed=seed)
+        ewc.on_block_start(0, _agent(), [])
+        for i in range(n):
+            ewc.after_update(_rollout(b=1, t=2, tag=float(i)), 0, None)
+        means.append(np.mean([float(r.obs[0, 0, 0])
+                              for r in ewc._block_rollouts]))
+    overall = float(np.mean(means))
+    # Uniform over 0..n-1 has mean (n-1)/2 ~ 199.5. The tail-only failure mode
+    # lands near n - k/2 ~ 396.
+    assert 140 < overall < 260, (
+        f"mean retained index {overall:.0f}; uniform would be ~{(n - 1) / 2:.0f} "
+        f"and a tail-only buffer would be ~{n - k / 2:.0f}")
+
+
+def test_ewc_block_sampler_stays_bounded_and_resets_per_block():
+    ewc = OnlineEWC(fisher_trajectories=5, seed=0)
+    ewc.on_block_start(0, _agent(), [])
+    for i in range(100):
+        ewc.after_update(_rollout(b=1, t=2), 0, None)
+    assert len(ewc._block_rollouts) == 5
+    assert ewc._block_seen == 100
+    ewc.on_block_start(1, _agent(), [])
+    assert ewc._block_rollouts == [] and ewc._block_seen == 0

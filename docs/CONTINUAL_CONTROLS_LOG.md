@@ -984,3 +984,53 @@ Every replay-family method needs tens of megabytes. Every parameter-space
 method fits in 0.6 MB and reaches a fifth of what replay does. Nothing reaches
 the ceiling, and every row above spends 200 gradient steps and 200 episodes per
 environment against the store's 0 and 1.
+
+---
+
+## 2026-08-31 — a review pass on our own code, and two more defects in EWC
+
+Six defects in, all of the same shape — plausible output, no crash — so I read
+the methods package looking for the seventh rather than waiting for it. Both
+findings are in `OnlineEWC.after_update`, the sampler that decides which of a
+block's rollouts the Fisher is estimated on.
+
+**It was unseeded.** It reached for the `random` module, whose global state
+neither `torch.manual_seed` nor `np.random.seed` touches. Every other method in
+the suite carries its own `np.random.RandomState(seed)`; EWC alone was
+irreproducible, silently, and nothing would ever have surfaced it — two
+identical commands simply returned different numbers.
+
+**It was not a reservoir.** It drew `j` against the *buffer size* rather than
+the number of items seen, giving a constant acceptance of `k/(k+1)` ≈ 0.97.
+Correct reservoir sampling needs the acceptance to decay as `k/n`. Mutation-
+checked over 400 updates at `k=8`:
+
+```
+OLD (buffer-size draw)     mean retained index = 389.7   tail-only would be 396
+NEW (count-based)          mean retained index = 209.6   uniform would be 200
+```
+
+So the buffer held approximately **the last 32 rollouts of each block**, which
+is exactly what its own comment said it avoided: *"a bounded, uniformly-spread
+sample of the block rather than the last N updates."* The code and the comment
+had disagreed since the method was written.
+
+Whether this changes EWC's numbers is genuinely unclear — the tail of a block
+and a uniform sample of it are both defensible answers to "states this task
+visited", and the Fisher may not care much. But the run that produced 0.149 was
+not the run the code described, and EWC is a headline method. The 48 affected
+histories are deleted and Wave 2d (slurm 21634899) re-runs the full λ sweep,
+plus SI at λ=1e4 since its range had also stopped short.
+
+Three tests now cover it: reproducibility across seeds, uniformity of the
+retained sample (the one the mutation check validates), and that the buffer
+stays bounded and resets per block.
+
+**Seven defects, one shape.** Not one of them crashed. The prev-action channel
+errored only when a never-used flag was switched on; `WorldSpec.write` raced
+only at scale; the joint-ceiling verdict was a plausible number from an
+unconverged run; the budget-blind key averaged two incompatible budgets; DER++
+reported a healthy loss carrying no gradient; two coefficient sweeps stopped
+before their methods started working; and EWC sampled the tail while
+documenting the opposite. The failure mode of this codebase is not exceptions.
+It is numbers that look right.

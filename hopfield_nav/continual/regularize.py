@@ -36,6 +36,7 @@ decay against a single latest anchor -- the no-decay online variant, which is
 """
 from __future__ import annotations
 
+import numpy as np
 import torch
 import torch.nn as nn
 
@@ -59,6 +60,7 @@ class OnlineEWC(ContinualMethod):
         fisher: str = "true",
         fisher_trajectories: int = 32,
         normalize_fisher: bool = False,
+        seed: int = 0,
     ) -> None:
         if fisher not in ("true", "empirical"):
             raise ValueError(
@@ -68,6 +70,11 @@ class OnlineEWC(ContinualMethod):
         self.fisher = fisher
         self.fisher_trajectories = int(fisher_trajectories)
         self.normalize_fisher = bool(normalize_fisher)
+        # Its own generator. The first version reached for the `random` module,
+        # whose global state neither `torch.manual_seed` nor `np.random.seed`
+        # touches -- so EWC runs were not reproducible, silently, while every
+        # other method in the suite was.
+        self.rng = np.random.RandomState(seed)
 
         self._fisher: dict[str, torch.Tensor] = {}
         self._anchor: dict[str, torch.Tensor] = {}
@@ -77,26 +84,38 @@ class OnlineEWC(ContinualMethod):
         #: be estimated on the task that is being consolidated, and by the time
         #: `on_block_end` fires the collector has moved on.
         self._block_rollouts: list = []
+        self._block_seen = 0
         self._blocks_consolidated = 0
 
     # -- hooks ------------------------------------------------------------
 
     def on_block_start(self, block: int, agent, envs) -> None:
         self._block_rollouts = []
+        self._block_seen = 0
 
     def after_update(self, rollout, block: int, agent) -> None:
-        # Keep a bounded, uniformly-spread sample of the block rather than the
-        # last N updates: the Fisher should describe the policy that finished
-        # the block, but on states the block actually visited, and the late
-        # updates alone visit a narrower set.
+        """Keep a uniform sample of this block's rollouts, bounded in memory.
+
+        The Fisher should describe the policy that finished the block, on the
+        states the block actually visited -- and the last N updates alone visit
+        a narrower set than the block as a whole, so a uniform sample is the
+        right thing to estimate on.
+
+        Getting that requires a real reservoir, which the first version was
+        not: it drew `j` in `[0, k]` against the *buffer size* rather than the
+        number of items seen, giving a constant replacement probability of
+        `k/(k+1)` -- about 0.97. The buffer therefore held approximately the
+        last 32 rollouts, precisely the thing the comment said it avoided.
+        Drawing against `_block_seen` makes the acceptance decay as `k/n`,
+        which is what makes the sample uniform over the block.
+        """
+        self._block_seen += 1
         if len(self._block_rollouts) < self.fisher_trajectories:
             self._block_rollouts.append(rollout)
-        else:
-            # Reservoir over the block, so memory stays flat in updates_per_env.
-            import random
-            j = random.randint(0, len(self._block_rollouts))
-            if j < self.fisher_trajectories:
-                self._block_rollouts[j] = rollout
+            return
+        j = self.rng.randint(self._block_seen)
+        if j < self.fisher_trajectories:
+            self._block_rollouts[j] = rollout
 
     def penalty(self, agent) -> torch.Tensor | None:
         if not self._fisher:
@@ -135,6 +154,7 @@ class OnlineEWC(ContinualMethod):
                         for n, p in agent.named_parameters() if p.requires_grad}
         self._blocks_consolidated += 1
         self._block_rollouts = []
+        self._block_seen = 0
 
     # -- the Fisher -------------------------------------------------------
 
