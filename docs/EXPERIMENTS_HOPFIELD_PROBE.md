@@ -50,13 +50,18 @@ single environment. `r_min` cannot see any of it — six candidates share
 of distant pairs above 0.25 predicts measured reach at **ρ = −0.92**, and
 **−0.85 once the confirmation run's eight arms are added** (§10.8).
 
-**The screen's nomination was run and it won** (§10.8), and then §10.9 beat it
-without any inference override at all. Current best is
-`w52_attract_fwhm/*_att0.5` at its own gain 100 with **β = gain**: continuous
-reach **0.987** over four seeds, the tightest spread in the campaign. Reach
-rises monotonically as `attract_lambda` *falls* — 0.806 / 0.931 / 0.972 / 0.987
-at 16 / 2 / 1 / 0.5 — which is the axis w52–w54 spent three waves climbing in
-the other direction because `r_min` rewards it.
+**The screen's nomination was run and it won** (§10.8), and then §10.9 found a
+better arm needing no inference override at all: `w52_attract_fwhm/*_att0.5` at
+its own gain 100 with **β = gain**. Reach rises monotonically as
+`attract_lambda` *falls* — 0.806 / 0.931 / 0.972 / 0.987 at 16 / 2 / 1 / 0.5 —
+which is the axis w52–w54 spent three waves climbing the other way because
+`r_min` rewards it.
+
+**But §10.10 puts a floor on how finely any of this can be read.** The same arm
+varies **0.959–0.988** across three scaffold draws, so `att0.5`'s lead over
+Level 6 at gain 300 is +0.009 on average, winning two draws and losing one.
+Large orderings hold; gaps under ~0.02 between the top arms do not resolve on
+one scaffold, and §10.8–§10.9 quote them to three decimals as though they did.
 
 ---
 
@@ -891,3 +896,38 @@ s=1.
 Raw: `$CLS_RESULTS/hopfield_probe/20260827/` — `l6_g300`, `l6_g1000`,
 `l6_g3000`, `ladder_g100`, `attlow_g100`, `attlow_g300`, plus
 `screen_all_seed42.txt` and `screen_fwhm_steps_4seed.txt`.
+
+### 10.10 The scaffold is a variance source, and it was never varied
+
+Every reach number in §1–§10.9 comes from `--seed 0`: one draw of 8 worlds × 20
+envs. Encoder-training seed spread has been measured repeatedly here; the
+probe's own world and goal sampling never had been. Two more draws, on the two
+leading arms, four encoder seeds each (`run_probeseed.sh`):
+
+| probe seed | `att0.5` @ g100 | L6 @ g300 | leader |
+|---|---|---|---|
+| 0 | 0.987 | 0.971 | att0.5 |
+| 1 | 0.988 | 0.961 | att0.5 |
+| **2** | **0.959** | **0.972** | **L6** |
+| mean | 0.978 | 0.968 | att0.5, +0.009 |
+
+> **§10.9 overstated this.** It said `att0.5`'s worst encoder seed beats L6's
+> median "on either draw", which was true of draws 0 and 1 and was written as a
+> property of the arms. Draw 2 breaks it: `att0.5`'s worst is 0.939 against L6's
+> median 0.972. The defensible statement is that **`att0.5` leads on two of
+> three scaffolds by ~0.02 and trails on the third by 0.013**, averaging +0.009
+> — a real but small edge, inside scaffold variation.
+
+**The variance itself is the result.** One arm swings **0.959–0.988** across
+three world draws, which is larger than most of the differences §10.9 ranks. So:
+
+- the large orderings are safe — level 7 at 0.806 against everything else near
+  0.97 survives any draw;
+- **gaps of 0.01–0.02 between the top arms are not resolvable on one scaffold**,
+  and §10.8–§10.9 report them to three decimals as though they were.
+
+Anything meant to separate the leaders needs all three draws. `n_worlds` 8 is
+also low; raising it is the cheaper fix than repeating draws, and the probe
+costs ~3 min per encoder either way.
+
+Raw: `att0.5_ps1`, `att0.5_ps2`, `l6_g300_ps1`, `l6_g300_ps2`.
