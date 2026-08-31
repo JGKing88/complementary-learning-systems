@@ -23,6 +23,16 @@ Reading the result:
   positive result available -- it is the one comparison a referee cannot answer
   with "you just needed a bigger buffer."
 
+But a flat *mean* curve is ambiguous on its own, because it pools lifetimes
+that found the goal with lifetimes that never did. If the agent only stumbles
+onto the goal in a tenth of first episodes, nine tenths of the average is
+measuring blind search and the flatness says nothing about memory. So the
+sharper statistic is `memory_lift`: among consecutive episode pairs, the
+success rate when the previous episode *found* the goal minus the rate when it
+did not. An agent holding the goal in its activations must do better having
+just been there; one searching blind cannot tell the difference. That is the
+number to read.
+
 Either way it has to be run, which is why it is here rather than in future work.
 
 **One confound, named rather than hidden.** The two arms do not receive equal
@@ -145,6 +155,27 @@ def evaluate_in_context(
         prev_action_np = action
         prev_reward_np = rewards_full
 
+    # --- the conditional test, which is far sharper than the mean curve ----
+    #
+    # The mean success-vs-episode curve pools lifetimes that found the goal
+    # with lifetimes that never did, and if the agent only stumbles onto the
+    # goal in a tenth of first episodes then nine tenths of the average is
+    # measuring blind search. That makes a flat curve ambiguous: it could mean
+    # "no memory", or it could mean "rarely had anything to remember".
+    #
+    # Conditioning removes the ambiguity. Among consecutive episode pairs,
+    # compare the success rate when the *previous* episode found the goal
+    # against when it did not. An agent carrying the goal in its activations
+    # must do better in the first case; one that is searching blind cannot tell
+    # the difference. `memory_lift` is that gap.
+    nxt_given_hit, nxt_given_miss = [], []
+    for b in range(B):
+        for k in range(n_episodes - 1):
+            (nxt_given_hit if success[b, k] else nxt_given_miss).append(
+                bool(success[b, k + 1]))
+    p_hit = float(np.mean(nxt_given_hit)) if nxt_given_hit else float("nan")
+    p_miss = float(np.mean(nxt_given_miss)) if nxt_given_miss else float("nan")
+
     per_ep = success.mean(axis=0)
     # An episode index nobody solved is an all-NaN slice; nanmean warns and
     # returns nan, which is the right answer -- "no successful trial to average"
@@ -161,6 +192,15 @@ def evaluate_in_context(
         # The headline: how much better the agent gets at an environment it is
         # not allowed to learn. Zero means activation memory did nothing.
         "adaptation": float(per_ep[-1] - per_ep[0]),
+        # The conditional test. `memory_lift` is the headline: how much more
+        # often the next episode succeeds when the previous one found the goal.
+        # Zero means the agent gets nothing from having just been there.
+        "p_next_given_hit": p_hit,
+        "p_next_given_miss": p_miss,
+        "memory_lift": (float("nan") if (np.isnan(p_hit) or np.isnan(p_miss))
+                        else p_hit - p_miss),
+        "n_pairs_after_hit": len(nxt_given_hit),
+        "n_pairs_after_miss": len(nxt_given_miss),
         "n_lifetimes": int(n_lifetimes),
         "n_episodes": int(n_episodes),
     }

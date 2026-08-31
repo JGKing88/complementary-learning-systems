@@ -106,8 +106,11 @@ def main() -> None:
             per_env.append(r)
             print(f"  [{arm}] env {i}: ep1={r['first_episode']:.3f} -> "
                   f"ep{args.n_episodes}={r['last_episode']:.3f}  "
-                  f"adaptation={r['adaptation']:+.3f}")
+                  f"adaptation={r['adaptation']:+.3f}  "
+                  f"memory_lift={r['memory_lift']:+.3f}")
         curve = np.mean([r["success_by_episode"] for r in per_env], axis=0)
+        lifts = [r["memory_lift"] for r in per_env
+                 if r["memory_lift"] == r["memory_lift"]]
         results[arm] = {
             "checkpoint": path,
             "per_env": per_env,
@@ -115,10 +118,23 @@ def main() -> None:
             "first_episode": float(curve[0]),
             "last_episode": float(curve[-1]),
             "adaptation": float(curve[-1] - curve[0]),
+            # The conditional test -- see evaluation/incontext.py. Sharper than
+            # the curve, because it does not pool lifetimes that found the goal
+            # with lifetimes that never had anything to remember.
+            "memory_lift": float(np.mean(lifts)) if lifts else float("nan"),
+            "p_next_given_hit": float(np.mean(
+                [r["p_next_given_hit"] for r in per_env
+                 if r["p_next_given_hit"] == r["p_next_given_hit"]] or [np.nan])),
+            "p_next_given_miss": float(np.mean(
+                [r["p_next_given_miss"] for r in per_env
+                 if r["p_next_given_miss"] == r["p_next_given_miss"]] or [np.nan])),
         }
         print(f"  [{arm}] MEAN curve: "
               + " ".join(f"{v:.3f}" for v in curve))
         print(f"  [{arm}] adaptation: {results[arm]['adaptation']:+.4f}")
+        print(f"  [{arm}] memory_lift: {results[arm]['memory_lift']:+.4f}  "
+              f"(P(next|hit)={results[arm]['p_next_given_hit']:.3f} vs "
+              f"P(next|miss)={results[arm]['p_next_given_miss']:.3f})")
 
     print()
     lt = results["lifetime"]["adaptation"]
