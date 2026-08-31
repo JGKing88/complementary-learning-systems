@@ -789,14 +789,14 @@ def render(d: dict) -> str:
       '<th class="num">Retained</th><th class="num">Current env</th>'
       '<th class="num">Forgetting</th><th class="num">Stored</th>'
       "<th>Needs</th></tr></thead><tbody>")
-    if hop:
-        A('<tr class="hl"><td class="k">Hopfield store</td>'
-          "<td>frozen policy, one Hebbian write</td>"
-          f'<td class="num">{bar(hop["retained"], hi=True)}</td>'
-          f'<td class="num">{fmt(hop["current_env"])}</td>'
-          f'<td class="num">{fmt(hop["forgetting"])}</td>'
-          '<td class="num">no data</td>'
-          '<td><span class="chip good">nothing</span></td></tr>')
+    hop_row = ('<tr class="hl"><td class="k">Hopfield store</td>'
+               "<td>frozen policy, one Hebbian write</td>"
+               f'<td class="num">{bar(hop["retained"], hi=True)}</td>'
+               f'<td class="num">{fmt(hop["current_env"])}</td>'
+               f'<td class="num">{fmt(hop["forgetting"])}</td>'
+               '<td class="num">no data</td>'
+               '<td><span class="chip good">nothing</span></td></tr>'
+               ) if hop else None
     # Split, rather than one ranked list. Every isolation arm is handed an
     # oracle task id, and the environments here turn out to be barely
     # identifiable from what the agent sees (section 5) -- so sorting all of
@@ -806,12 +806,20 @@ def render(d: dict) -> str:
     # readers take the top row as the winner.
     free = [r for r in rows if not r["needs_task_id"]]
     told = [r for r in rows if r["needs_task_id"]]
+    split = bool(told and free)
+    if not split and hop_row:
+        A(hop_row)
     for group, label in ((free, "Given no task signal"),
                          (told, "Given an oracle task id")):
         if not group:
             continue
-        if told and free:
+        if split:
             A(f'<tr class="grp"><td colspan="7">{esc(label)}</td></tr>')
+            # The store belongs *inside* the first group, not floating above
+            # the headers: it needs no task signal either, and that is the
+            # whole point of the row.
+            if hop_row and group is free:
+                A(hop_row)
         for r in group:
             A(frontier_row(r))
     A("</tbody></table></div>")
@@ -1359,17 +1367,41 @@ def render(d: dict) -> str:
       "is not the head-only restriction by itself.</li>")
     A("</ul>")
 
-    A('<div class="note acc"><h4>The honest form of the claim</h4>'
-      "<p>Not “continual learning cannot do this”. What the suite supports is "
-      "narrower and more defensible: <em>on this task, across "
-      f"{spell(len(method_names(methods)))} methods spanning replay, "
-      "parameter regularisation and parameter isolation, "
-      "with their coefficients swept over decades, the best classic result "
-      "reaches roughly three-fifths of the joint ceiling while storing every "
-      "trajectory it has ever seen and paying two hundred gradient steps per "
-      "environment — and an associative store reaches the ceiling at one "
-      "episode and no gradient steps at all.</em> The frontier is the claim; "
-      "the leaderboard is not.</p></div>")
+    # Every quantity in this paragraph is derived. It previously read "roughly
+    # three-fifths of the joint ceiling while storing every trajectory it has
+    # ever seen" -- true of the replay arm that led at the time, and wrong in
+    # both halves once a gating method with a 0.6 MB importance matrix took the
+    # lead. A summary sentence carrying hand-written numbers goes stale exactly
+    # when the result gets interesting.
+    ceil_rows = [j for j in d.get("joint", [])
+                 if abs(j.get("end_slope") or 0) <= 0.02 and (j.get("final") or 0) > 0.5]
+    ceiling = max((j["final"] for j in ceil_rows), default=None)
+    usable = [m for m in methods if (m["current_env"] or 0) >= USABLE_CURRENT
+              and m["retained"] is not None]
+    if usable and ceiling:
+        top = max(usable, key=lambda m: m["retained"])
+        frac = top["retained"] / ceiling
+        share = (f"{round(frac * 100)}% of the joint ceiling"
+                 if frac == frac else "an unknown share of the ceiling")
+        cost = []
+        if top["state_bytes"]:
+            cost.append(f"carrying {esc(mb(top['state_bytes']))} of state")
+        if top["needs_task_id"]:
+            cost.append("being told which environment it is in")
+        cost.append("paying two hundred gradient steps and two hundred "
+                    "episodes per environment")
+        cost_text = ", ".join(cost[:-1]) + " and " + cost[-1] if len(cost) > 1 \
+            else cost[0]
+        A('<div class="note acc"><h4>The honest form of the claim</h4>'
+          "<p>Not “continual learning cannot do this”. What the suite supports "
+          "is narrower and more defensible: <em>on this task, across "
+          f"{spell(len(method_names(methods)))} methods spanning replay, "
+          "parameter regularisation and parameter isolation, with their "
+          "coefficients swept over decades, the best classic result "
+          f"({esc(top['display'])}) reaches {share} while {cost_text} — and an "
+          "associative store reaches the ceiling at one episode, no gradient "
+          "steps, no stored data and no task label.</em> The frontier is the "
+          "claim; the leaderboard is not.</p></div>")
 
     # ---- provenance ----------------------------------------------------
     A('<h2 id="notrun"><span class="sec">11</span> What has not run</h2>')

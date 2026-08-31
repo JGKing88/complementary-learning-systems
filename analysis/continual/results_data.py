@@ -64,7 +64,11 @@ ARMS = {
     "J":      ("Hypernetwork (HNET)",    "isolate"),
     "K":      ("HNET, frozen base",      "isolate"),
     "L":      ("HNET, from scratch",     "isolate"),
-    "L0":     ("Naive SGD, from scratch", "control"),
+    # Distinct from A2, which is Wave 1's from-scratch *tuning* sweep. This one
+    # is the single matched control the from-scratch hypernetwork is read
+    # against, at the same configuration. Two frontier rows reading "Naive SGD,
+    # from scratch" would look like a duplicate rather than two different runs.
+    "L0":     ("Naive SGD, from scratch (matched)", "control"),
     "M":      ("Multi-head",             "isolate"),
     "N":      ("XdG",                    "isolate"),
     "N2":     ("XdG + SI",               "isolate"),
