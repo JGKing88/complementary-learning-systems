@@ -70,6 +70,14 @@ def main() -> None:
     p.add_argument("--n_episodes", type=int, default=10)
     p.add_argument("--max_steps", type=int, default=200)
     p.add_argument("--device", default="cpu")
+    p.add_argument("--goal_visible_episodes", type=int, default=-1,
+                   help="For a checkpoint trained with an oracle goal channel: "
+                        "how many episodes of each lifetime to show it for. "
+                        "-1 = always. 1 shows it during episode 1 only, so the "
+                        "remaining episodes measure whether the network carried "
+                        "the goal across a boundary rather than whether it "
+                        "found one. Ignored when the checkpoint has no goal "
+                        "channel.")
     args = p.parse_args()
 
     device = torch.device(args.device if torch.cuda.is_available()
@@ -102,6 +110,7 @@ def main() -> None:
                 device=device, deterministic=True,
                 continuous_scale=cfg.env.continuous_scale,
                 continuous_normalize=cfg.env.continuous_normalize,
+                goal_visible_episodes=args.goal_visible_episodes,
             )
             per_env.append(r)
             print(f"  [{arm}] env {i}: ep1={r['first_episode']:.3f} -> "

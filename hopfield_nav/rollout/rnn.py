@@ -40,11 +40,17 @@ def build_rnn_input(
     grid_state: np.ndarray | None,          # (B, Ng) smoothed-gbook lookup or None
     cfg: RNNAgentConfig,
     device: torch.device,
+    goal_vec: np.ndarray | None = None,     # (B, 2) oracle goal channel or None
 ) -> torch.Tensor:
     """Assemble per-step RNN input -> (B, 1, input_dim) tensor on device.
 
     (The ``grid_state`` argument is what ``grid_state_vec`` below returns; the
     parameter is named differently so it does not shadow that function.)
+
+    ``goal_vec`` is what ``goal_channel_vec`` returns and is an **oracle**: the
+    goal is normally unobservable, and this exists only to put a ceiling under
+    the in-context measurement. It is appended last, so a checkpoint trained
+    without it keeps the same layout for every other channel.
     """
     parts = [sensory]
     if cfg.input_prev_action and prev_action is not None:
@@ -53,8 +59,43 @@ def build_rnn_input(
         parts.append(prev_reward.reshape(-1, 1))
     if cfg.input_grid_state and grid_state is not None:
         parts.append(grid_state)
+    if getattr(cfg, "goal_channel", "none") != "none" and goal_vec is not None:
+        parts.append(goal_vec)
     x = np.concatenate(parts, axis=1)                # (B, input_dim)
     return torch.from_numpy(x.astype(np.float32)).unsqueeze(1).to(device)  # (B, 1, D)
+
+
+def goal_channel_vec(
+    positions: np.ndarray,                  # (B, 2) agent positions
+    goal: tuple[int, int],                  # this env's goal cell
+    size: int,                              # arena size, for normalisation
+    mode: str,                              # "abs" | "rel"
+    visible: np.ndarray | None = None,      # (B,) bool; False rows are zeroed
+) -> np.ndarray:
+    """The oracle goal channel. Returns (B, 2) float32.
+
+    ``abs`` gives the goal's normalised coordinates and leaves the agent to
+    work out where it is; ``rel`` gives the displacement to it, which is the
+    answer. The two bracket the ceiling: no in-context memory could beat
+    ``abs``, because remembering where the goal is does not tell you where you
+    are, and nothing can beat ``rel`` at all.
+
+    ``visible`` masks the channel per row, so it can be shown for the first
+    episode of a lifetime and withheld afterwards -- which turns the ceiling
+    arm into a test of whether the network can *carry* a fact across an episode
+    boundary, separately from whether it can discover one.
+    """
+    B = positions.shape[0]
+    if mode == "abs":
+        out = np.tile(np.asarray(goal, dtype=np.float32) / max(size, 1), (B, 1))
+    elif mode == "rel":
+        out = (np.asarray(goal, dtype=np.float32)[None, :]
+               - positions.astype(np.float32)) / max(size, 1)
+    else:
+        raise ValueError(f"unknown goal_channel mode {mode!r}; use 'abs' or 'rel'")
+    if visible is not None:
+        out = out * visible.astype(np.float32).reshape(-1, 1)
+    return out.astype(np.float32)
 
 
 def grid_state_vec(
@@ -151,6 +192,11 @@ def collect_rollout_rnn(
     goal_buf = torch.zeros((B, steps), dtype=torch.float32, device=device)
 
     h = None
+    # Which episode of the lifetime each row is on. Only meaningful under
+    # `carry_across_episodes`, where a goal-reach teleports rather than ending
+    # the row -- and only used by the oracle goal channel's visibility mask, so
+    # a run without one is bit-identical to before.
+    ep_index = np.zeros(B, dtype=np.int64)
     prev_action_np: np.ndarray | None = None
     # Zero at t=0 for the same reason `prev_action_channel` exists: the channel
     # has to be present on every step or the input width does not match the
@@ -186,8 +232,21 @@ def collect_rollout_rnn(
             if (agent.cfg.input_grid_state and sgb is not None
                 and env_offset is not None) else None
         )
+        goal_vec = None
+        if getattr(agent.cfg, "goal_channel", "none") != "none":
+            # `goal_visible_episodes >= 0` hides the oracle after the first N
+            # episodes of a lifetime, so the network has to *carry* the goal
+            # across an episode boundary rather than be reminded of it. That is
+            # the architecture-level positive control: if it cannot do this,
+            # the failure is in carrying information, not in discovering it,
+            # and that is a legible failure mode rather than a bare null.
+            vis = (ep_index < agent.cfg.goal_visible_episodes
+                   if getattr(agent.cfg, "goal_visible_episodes", -1) >= 0
+                   else None)
+            goal_vec = goal_channel_vec(positions, goal, vec.size,
+                                        agent.cfg.goal_channel, visible=vis)
         x = build_rnn_input(sensory, prev_act_ch, prev_reward_np, grid_state,
-                             agent.cfg, device)
+                             agent.cfg, device, goal_vec=goal_vec)
         out = agent.act(x, h, deterministic=deterministic)
         h = out["h_next"]
         student_action = out["move_action"].cpu().numpy()
@@ -213,6 +272,7 @@ def collect_rollout_rnn(
             reached_now = np.where(at_goal_mask)[0]
             if len(reached_now) > 0:
                 vec.reset_indices(reached_now)
+                ep_index[reached_now] += 1
         else:
             # Mark newly-at-goal envs as done (after recording the at-goal
             # step's mask=0 so the agent's choice at the goal is never

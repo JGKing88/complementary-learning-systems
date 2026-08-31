@@ -396,6 +396,31 @@ class RNNAgentConfig:
     input_prev_action: bool = False
     input_prev_reward: bool = False
     input_grid_state: bool = False          # current (x, y) cell normalized to [0, 1]^2
+    # An ORACLE channel: the goal, which the agent normally never observes.
+    # Only ever used to establish a ceiling for the in-context control (plan
+    # section 5.2), which is uninterpretable without one -- a flat curve means
+    # nothing until you know what a policy that was simply *given* the answer
+    # would score.
+    #
+    #   "none"  the real setting. The goal is unobservable.
+    #   "abs"   the goal's (x, y) normalised to [0, 1]^2. The agent still has to
+    #           work out where *it* is from the barcode ray-cast, so this is the
+    #           ceiling in-context memory could actually reach: remembering
+    #           where the goal is does not tell you where you are.
+    #   "rel"   the goal minus the agent's position, normalised. Follow the
+    #           arrow. Not a realistic ceiling -- it is the architecture sanity
+    #           check, and a policy that cannot do this cannot do anything.
+    goal_channel: str = "none"
+    # How many episodes of a lifetime the oracle goal channel is shown for.
+    # -1 (default) means always. Set to 1 and the goal is visible during the
+    # first episode and withheld afterwards, so the network must carry it
+    # across an episode boundary -- the architecture-level positive control for
+    # the in-context measurement, which distinguishes "cannot carry a fact"
+    # from "cannot discover one".
+    goal_visible_episodes: int = -1
+
+
+GOAL_CHANNELS: tuple[str, ...] = ("none", "abs", "rel")
 
 
 @dataclass
@@ -438,6 +463,19 @@ class RNNTrainConfig:
     # thing linking consecutive episodes is recurrent activity. Used to train
     # the zero-weight-update control.
     carry_across_episodes: bool = False
+    # Draw a fresh set of environments every N updates (mixed mode only).
+    # 0 keeps one fixed pool for the whole run, which is what every run to date
+    # did -- and which let the in-context pretraining memorise its 32
+    # environments rather than learn a strategy: 0.80 on the pool against 0.10
+    # held out, below the 0.21 a random walker scores. With this at 1 the pool
+    # is never seen twice, so memorising it is not an available solution.
+    resample_envs_every: int = 0
+    # A fixed set of environments the run never trains on, evaluated on the
+    # same cadence as the training pool. Without one the only number a
+    # pretraining run reports is performance on the environments it is looking
+    # at, and a network that has memorised its pool is indistinguishable from
+    # one that has learned the task.
+    n_holdout_envs: int = 0
     seed: int = 0
     device: str = "cuda"
     save_dir: str | None = None

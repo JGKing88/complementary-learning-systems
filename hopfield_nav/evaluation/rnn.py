@@ -14,7 +14,8 @@ import torch
 from ..policy.agent_rnn import RNNAgent, compute_rnn_input_dim, set_agent_task
 from ..config import RNNAgentConfig
 from ..world.env import GridEnv, at_goal
-from ..rollout.rnn import build_rnn_input, grid_state_vec, prev_action_channel
+from ..rollout.rnn import (
+    build_rnn_input, goal_channel_vec, grid_state_vec, prev_action_channel)
 from ..world.vec_env import ContinuousVecEnv, VecEnv, make_vec
 
 
@@ -100,8 +101,12 @@ def evaluate_nav_one_env(
             if (agent.cfg.input_grid_state and sgb is not None
                 and env_offset is not None) else None
         )
+        goal_vec = (
+            goal_channel_vec(positions, goal, env.size, agent.cfg.goal_channel)
+            if getattr(agent.cfg, "goal_channel", "none") != "none" else None
+        )
         x = build_rnn_input(sensory, prev_act_ch, prev_reward_np, grid_state,
-                             agent.cfg, device)
+                             agent.cfg, device, goal_vec=goal_vec)
         out = agent.act(x, h, deterministic=deterministic)
         h = out["h_next"]
         student_action = out["move_action"].cpu().numpy()

@@ -57,7 +57,8 @@ import numpy as np
 import torch
 
 from ..policy.agent_rnn import RNNAgent
-from ..rollout.rnn import build_rnn_input, grid_state_vec, prev_action_channel
+from ..rollout.rnn import (
+    build_rnn_input, goal_channel_vec, grid_state_vec, prev_action_channel)
 from ..world.env import GridEnv, at_goal
 from ..world.vec_env import make_vec
 
@@ -75,6 +76,7 @@ def evaluate_in_context(
     continuous_normalize: bool = False,
     sgb: np.ndarray | None = None,
     env_offset: tuple[int, int] | None = None,
+    goal_visible_episodes: int = -1,
 ) -> dict:
     """Run `n_lifetimes` independent lifetimes of `n_episodes` episodes each.
 
@@ -91,6 +93,7 @@ def evaluate_in_context(
     vec.reset_all()
 
     B = n_lifetimes
+    goal = (int(vec._goal[0]), int(vec._goal[1]))
     ep_idx = np.zeros(B, dtype=np.int64)        # which episode each lifetime is on
     steps_in_ep = np.zeros(B, dtype=np.int64)
     success = np.zeros((B, n_episodes), dtype=bool)
@@ -139,8 +142,18 @@ def evaluate_in_context(
         grid_state = (grid_state_vec(positions, env_offset, sgb)
                       if (agent.cfg.input_grid_state and sgb is not None
                           and env_offset is not None) else None)
+        # The oracle channel, if this is a ceiling arm. `visible` is what makes
+        # the episode-1-only control possible: show the goal while the lifetime
+        # is on its first episode and withhold it afterwards, so the agent has
+        # to *carry* the fact rather than rediscover it.
+        goal_vec = None
+        if getattr(agent.cfg, "goal_channel", "none") != "none":
+            vis = (ep_idx < goal_visible_episodes
+                   if goal_visible_episodes >= 0 else None)
+            goal_vec = goal_channel_vec(positions, goal, env.size,
+                                        agent.cfg.goal_channel, visible=vis)
         x = build_rnn_input(sensory, prev_act_ch, prev_reward_np, grid_state,
-                            agent.cfg, device)
+                            agent.cfg, device, goal_vec=goal_vec)
         out = agent.act(x, h, deterministic=deterministic)
         h = out["h_next"]
         action = out["move_action"].cpu().numpy()

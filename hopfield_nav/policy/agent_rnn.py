@@ -30,6 +30,8 @@ def compute_rnn_input_dim(
         dim += 1
     if cfg.input_grid_state:
         dim += gbook_dim
+    if getattr(cfg, "goal_channel", "none") != "none":
+        dim += 2
     return dim
 
 
