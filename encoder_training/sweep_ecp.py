@@ -135,6 +135,9 @@ SIZE_MIXES: dict[str, str] = {
     "sm50_q":    _mix((50, 30)),                  #  2.55%,  30 envs
     "sm25":      _mix((25, 118)),                 #  2.50%, 118 envs
     "sm70_q":    _mix((70, 15)),                  #  2.50%,  15 envs
+    # --- 1.25%, the next rung down (w60). Placement-checked at seeds 42-45.
+    "sm50_x":    _mix((50, 15)),                  #  1.27%,  15 envs
+    "sm35_x":    _mix((35, 30)),                  #  1.25%,  30 envs
 }
 
 
@@ -2140,6 +2143,56 @@ WAVES: dict[str, dict] = {
                                     attract_lambda=0.5)),
                 ("q_rate1",  dict(npos_list=SIZE_MIXES["sm50_q"],
                                   attract_lambda=0.5, rate_lambda=1.0)),
+            )
+        },
+        "seed": [42, 43, 44, 45],
+    },
+    # W60 -- 1.25% coverage, and the corrected attract trend as a prediction.
+    #
+    # The ladder so far (Sec 10.12-10.14), best attract_lambda by coverage:
+    #
+    #   10%   0.5     reach 0.978
+    #    5%   0.5     reach 0.977
+    #  2.5%   1.0     reach 0.965   (w59 confirmed 4.0 turns over, so interior)
+    #
+    # My Sec 10.11 extrapolation said the optimum would move DOWN as coverage
+    # falls and it moved UP, at both levels, found independently. The corrected
+    # reading is that attract HOLDS THE NEAR FIELD UP, and at low coverage there
+    # is less local structure to hold, so the code needs more of it -- while the
+    # low-attract arms are already maximally stretched, since reaching res90 7
+    # from a0.25 at 2.5% needs gain 3.
+    #
+    # That correction now has to earn its keep by predicting rather than
+    # explaining. On record before the wave runs: **the optimum at 1.25% is
+    # 2.0**, continuing 0.5 / 0.5 / 1.0. If it is 1.0 the trend has saturated;
+    # if it is 4.0 it is steeper than linear in log-coverage. Sweeping 1/2/4
+    # brackets all three answers, and 4.0 is included because it was the arm
+    # that turned over at 2.5% -- if it wins here, that turnover was a coverage
+    # effect rather than a property of the attract term.
+    #
+    # The other question this rung answers is where coverage stops working at
+    # all. Reach was flat 10% -> 2.5% while dead-goals-at-K=20 went 0.08 -> 0.42,
+    # so capacity is what is being spent; at 1.25% it should run out. Expect
+    # reach to break from flat here, and if it does not, the constraint is
+    # somewhere other than coverage entirely.
+    #
+    # sm35_x holds the environment COUNT at 30 (2.5%'s winning count) while
+    # cutting size, against sm50_x which holds size and halves count again.
+    # At 2.5% the size-held mix won; this checks whether that survives.
+    "w60_cov1.25": {
+        "arm": {
+            name: {**dict(batch_size=4096, lr=3e-4, per_env_radius_frac=0.0,
+                          radius=20.0, rate_lambda=0.5, rate_eps=1.0,
+                          out_dim=1024, hidden_dim=256, gain_end=100.0), **over}
+            for name, over in (
+                ("x_a1",     dict(npos_list=SIZE_MIXES["sm50_x"],
+                                  attract_lambda=1.0)),
+                ("x_a2",     dict(npos_list=SIZE_MIXES["sm50_x"],
+                                  attract_lambda=2.0)),
+                ("x_a4",     dict(npos_list=SIZE_MIXES["sm50_x"],
+                                  attract_lambda=4.0)),
+                ("sm35x_a2", dict(npos_list=SIZE_MIXES["sm35_x"],
+                                  attract_lambda=2.0)),
             )
         },
         "seed": [42, 43, 44, 45],
