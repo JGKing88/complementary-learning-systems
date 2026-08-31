@@ -81,6 +81,25 @@ def action_to_prev_channel(
     return action.astype(np.float32)
 
 
+def prev_action_channel(
+    action: np.ndarray | None, movement_mode: str, batch: int
+) -> np.ndarray:
+    """`action_to_prev_channel`, but defined at t=0 where there is no action yet.
+
+    Both the collector and the evaluator used to build the channel only when
+    ``prev_action is not None``, which is false on the first step -- so with
+    ``input_prev_action`` on, step 0 fed the trunk an input two (continuous) or
+    four (discrete) columns narrower than ``compute_rnn_input_dim`` promised and
+    torch raised ``input.size(-1) must be equal to input_size``. The flag could
+    therefore never be used at all. "No previous action" is the all-zero row,
+    which is distinct from every one-hot and from any real displacement.
+    """
+    width = 4 if movement_mode == "discrete" else 2
+    if action is None:
+        return np.zeros((batch, width), dtype=np.float32)
+    return action_to_prev_channel(action, movement_mode)
+
+
 @torch.no_grad()
 def collect_rollout_rnn(
     vec: VecEnv | ContinuousVecEnv,
@@ -117,7 +136,10 @@ def collect_rollout_rnn(
 
     h = None
     prev_action_np: np.ndarray | None = None
-    prev_reward_np: np.ndarray | None = None
+    # Zero at t=0 for the same reason `prev_action_channel` exists: the channel
+    # has to be present on every step or the input width does not match the
+    # trunk. Zero reward is also the truthful value -- nothing has happened yet.
+    prev_reward_np: np.ndarray = np.zeros(B, dtype=np.float32)
     goal = (int(vec._goal[0]), int(vec._goal[1]))
 
     # Per-env "done" flag. Once an env's pre-step position is the goal, the
@@ -140,8 +162,8 @@ def collect_rollout_rnn(
 
         # Build RNN input and step the agent.
         prev_act_ch = (
-            action_to_prev_channel(prev_action_np, movement_mode)
-            if (agent.cfg.input_prev_action and prev_action_np is not None) else None
+            prev_action_channel(prev_action_np, movement_mode, B)
+            if agent.cfg.input_prev_action else None
         )
         grid_state = (
             grid_state_vec(positions, env_offset, sgb)

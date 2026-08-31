@@ -205,6 +205,17 @@ def main() -> None:
                    help="Inter-layer trunk dropout (only effective with "
                         "num_rnn_layers > 1).")
     add_recurrent_args(p)
+    # Continuous-mode exploration scale. These exist on `train_rnn` but were
+    # never wired through here, so every continual run to date used the
+    # RNNAgentConfig default of 0.0 -- sigma = 1.0 against a unit-magnitude
+    # action, and learnable. The DAgger student was exploring with noise the
+    # size of the action itself and the run script had no way to say otherwise.
+    p.add_argument("--init_log_std", type=float, default=0.0,
+                   help="Continuous policy: initial log sigma. Ignored in "
+                        "discrete mode. Auto-restored from ckpt in finetune.")
+    p.add_argument("--freeze_log_std", action="store_true",
+                   help="Hold log sigma at --init_log_std instead of learning "
+                        "it. Continuous mode only.")
     p.add_argument("--input_prev_action", action="store_true")
     p.add_argument("--input_prev_reward", action="store_true")
     p.add_argument("--input_grid_state", action="store_true",
@@ -248,6 +259,8 @@ def main() -> None:
             hidden_size=args.hidden_size, num_rnn_layers=args.num_rnn_layers,
             dropout=args.dropout, movement_mode=args.movement_mode,
             rnn_cell=args.rnn_cell, rnn_nonlinearity=args.rnn_nonlinearity,
+            init_log_std=args.init_log_std,
+            freeze_log_std=args.freeze_log_std,
             input_prev_action=args.input_prev_action,
             input_prev_reward=args.input_prev_reward,
             input_grid_state=args.input_grid_state,
@@ -385,6 +398,8 @@ def main() -> None:
                 "dropout": cfg.agent.dropout,
                 "rnn_cell": cfg.agent.rnn_cell,
                 "rnn_nonlinearity": cfg.agent.rnn_nonlinearity,
+                "init_log_std": cfg.agent.init_log_std,
+                "freeze_log_std": cfg.agent.freeze_log_std,
                 "input_prev_action": cfg.agent.input_prev_action,
                 "input_prev_reward": cfg.agent.input_prev_reward,
                 "input_grid_state": cfg.agent.input_grid_state,
