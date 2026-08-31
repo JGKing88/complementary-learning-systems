@@ -5288,3 +5288,55 @@ still scraping walls, just no longer pinned against them.
 **Not called converged.** `p17_gain` touched 1.000 at u50 and fell to 0.760 by
 u150, so the §9.9 pair — first crossing AND the minimum after it — is what
 decides this, and only the first half is in.
+
+### 17.10 THE ANSWER — beeline at u150, on Jack's encoder and Jack's gains
+
+Scored on the §17.5 objective — both plateaus, each with §9.9's threshold-free
+pair:
+
+| arm | ACC first ≥0.95 | worst after | **BEELINE first ≤1.10** | worst after |
+|---|---|---|---|---|
+| **`p19_kcap`** | **u125** | 0.990 | **u150** | 1.054 |
+| `p17_gain` | u50 touched | 0.760 | u200 | 1.092 |
+| `p18_knee` | u550 | 0.990 | u500 | 1.041 |
+| `p19_nc` control | not by u475 | — | not by u475 | — |
+
+`p19_kcap`'s trajectory:
+
+| u | 25 | 50 | 75 | 100 | 125 | 150 |
+|---|---|---|---|---|---|---|
+| succ@10 | 0.094 | 0.052 | 0.344 | 0.635 | 0.990 | **1.000** |
+| steps@10 | 11.1 | 8.8 | 17.1 | 75.1 | 41.0 | **16.5** |
+| speed | 0.76 | 0.83 | 0.68 | 0.20 | 0.39 | 0.67 |
+| path (cells) | 8.4 | 7.3 | 11.6 | 14.7 | 16.0 | **11.1** |
+| directness | — | — | — | — | 1.525 | **1.054** |
+
+**It reaches the beeline sooner than `p17_gain` (u150 vs u200) and holds it
+tighter (1.054 vs 1.092)** — and does so on the w52 encoder at Jack's specified
+`ENCODER_GAIN` 100 and `HOPFIELD_BETA` 100, with learned speed in [0.5, 1.0].
+The delivered config is `p19_kcap`: `p19_nc` plus `LOG_KAPPA_MAX=2.5`.
+
+Note the u100 row — 75.1 steps at speed 0.20, path 14.7 — is the survivorship
+regime §17.5 warned about *inverted*: success is climbing, and the newly
+reachable goals are the FAR ones, so path inflates before it collapses. It is
+not a regression; directness at u125 (1.525) → u150 (1.054) is the correction.
+
+**Stability is NOT yet established.** u150 is the crossing itself, so its
+"worst after" rests on one point. `p17_gain` crossed and then fell (1.092 at
+u700, 0.969 success at u750). The number to quote is the minimum over ≥4 evals
+past u150, and it is not in yet.
+
+#### What actually delivered it
+
+One knob, and it was never an experimental axis — it was a **default**.
+`--log_kappa_max` = 5.0 → κ_max = e⁵ = 148.4. Lowering it to 2.5 (κ_max 12.2)
+took a run that reached 0.375 in 475 updates to 1.000 in 150.
+
+Everything else tried on this encoder moved nothing:
+
+| tried | effect on κ | effect on success |
+|---|---|---|
+| `hopfield_beta` 100 → 5 | none (16.2 vs 16.3 at u10) | none |
+| `encoder_gain` (5 → 300, on the P2 encoder) | none (dir 0.128 → 0.126) | — |
+| `MOVE_ENT_COEF` 0.005 → 0.02 | −45% at u30 | **none** |
+| **`log_kappa_max` 5.0 → 2.5** | **pinned at 12.03** | **0.09 → 1.000** |
