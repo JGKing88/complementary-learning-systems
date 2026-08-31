@@ -19,7 +19,7 @@ mismatch that must be fixed first.
 | **Branch / worktree** | `nav-tri-metric` at `.claude/worktrees/nav-tri-metric` |
 | **Predecessor** | `docs/EXPERIMENTS_NAV_TRI.md` — read its §0 findings 1–22 |
 | **Open decisions** | §11 — four forks put to Jack; spec assumes the recommended default in each |
-| **Running** | **P19 (§17) — DELIVERED.** `p19_kcap` 21656252 is the answer: Jack's w52 encoder, gain=beta=100, learned speed [0.5, 1.0], plus `LOG_KAPPA_MAX=2.5`. **Accuracy 1.000 from u125, beeline (directness ≤1.10) from u150, worst 1.054** — faster and tighter than `p17_gain` (u200, 1.092). Curriculum (`p19_kcur` 21659098) costs 50 updates for ~1% (§17.11). |
+| **Running** | **P19 (§17) — DONE.** Both arms COMPLETED 800/800. **`p19_kcap` 21656252 is the delivered model**: Jack's w52 encoder, gain=beta=100, learned speed [0.5, 1.0], plus `LOG_KAPPA_MAX=2.5`. **Accuracy 1.000 from u125; beeline from u150, worst 1.090, final 1.013; 27 consecutive evals ≥0.990.** Curriculum LOSES on both halves (§17.11). |
 | **Charts** | One published page per run — `p10_pol_v1` [3bc9ad4e](https://claude.ai/code/artifact/3bc9ad4e-0655-43ca-b870-0516f4487bdc) · `p10_pol` [388023ce](https://claude.ai/code/artifact/388023ce-a725-4253-a53b-c9979a77baf2) · `p10_e_pol` [00bd7fd3](https://claude.ai/code/artifact/00bd7fd3-bb60-4e22-a968-c62822c5cdb3) · `p10_e_pol_v1` [8fd3ecf0](https://claude.ai/code/artifact/8fd3ecf0-c429-40d6-bde6-008ca25b5a40) · `p11_cur` [4de8dfa7](https://claude.ai/code/artifact/4de8dfa7-9403-43c8-b4f9-b14669ae603e) · `p11_tp` [4dbbe6e9](https://claude.ai/code/artifact/4dbbe6e9-c8e3-41fb-9b38-36a1443bf420) · `p11_cur_tp` [6c3a0503](https://claude.ai/code/artifact/6c3a0503-dba1-405a-a90c-d33c491ee5b2) · `p12_lo` [6b09232a](https://claude.ai/code/artifact/6b09232a-bcd2-4609-9c1d-97d9757d0f5a) · `p12_lo_curtp` [835846df](https://claude.ai/code/artifact/835846df-d30d-46f7-b979-3fe41fdfff7e) |
 | **Finished** | **`p10_pol_v1` 21300389** — 2000/2000, **1.000 success @ 10.95 steps (1.10× optimal)**, the phase-2 best exploit model. **`p10_e_pol` 21300390** — 1500/1500, **cps 0.75** against a billiard ceiling of 0.775. |
 | **Done** | §4 blocking fixes, P1 (§5) with figures, the recall-mechanism thread §5.3-5.9, **P2 (§6)**, and **P10 (§9.4–9.8)** |
@@ -5360,6 +5360,29 @@ Point counts differ (13 evals past the crossing for `p19_kcap`, 5 for
 
 **The curriculum delays both plateaus by exactly 50 updates** — +40% on
 accuracy, +33% on the beeline — and repays it with a **~1%** tighter hold.
+
+> **CORRECTED at completion.** Both arms finished their full `exploit:800`
+> schedules (COMPLETED, 32 evals each, ~4h41m). **The tightness gain was an
+> artifact of the short window and reverses with the full series:**
+>
+> | | ACC first | worst succ | BEELINE first | **worst direct** | final direct |
+> |---|---|---|---|---|---|
+> | **`p19_kcap`** none | **u125** | 0.990 | **u150** | **1.090** | 1.013 |
+> | `p19_kcur` curriculum | u175 | 0.990 | u200 | 1.118 | 1.031 |
+>
+> At 5 evals past the crossing the curriculum looked tighter (1.043 vs 1.054);
+> over all 32 it is **looser** (1.118 vs 1.090). This is precisely the
+> asymmetry the matched-window scoring was introduced to guard against — and
+> the guard was not enough, because *both* windows were short. **The rule that
+> actually works is to compare completed runs.**
+>
+> So the answer is not a trade-off: **no curriculum wins on BOTH halves** — it
+> crosses 50 updates sooner *and* holds tighter. Jack's opening hypothesis is
+> falsified in this regime, cleanly.
+>
+> `p19_kcap`'s worst is one excursion at u700; from u650 on it runs 1.010–1.017
+> at success 1.000, i.e. **27 consecutive evals from u150 to u800 with success
+> ≥ 0.990.**
 
 On the §17.5 objective (the beeline, fast AND stable) that is a bad trade, and
 **no curriculum wins**. The direction reproduces §9.9 exactly (there: u300
