@@ -1188,3 +1188,60 @@ headline: the lifetime arm is the better policy on the *training pool* (0.494
 against 0.268 by update 750) and the *worse* one on held-out environments
 (curve 0.100 against 0.115). It generalises worse, not better. Since
 `memory_lift` is conditional and within-arm, neither fact touches it.
+
+---
+
+## 2026-08-31 — done
+
+Every measurement in the plan that was scoped for this pass has run. The
+results page is generated from `results.json` by
+`analysis/continual/results_page.py`, so it cannot drift from the runs behind
+it:
+
+    python -m analysis.continual.results_data --wave0_dir ... --out results.json
+    python -m analysis.continual.results_page --data results.json --out page.html
+    python -m analysis.continual.validate_page page.html
+
+Published at https://claude.ai/code/artifact/f3a7987b-cd1f-476a-b2f2-6780191a2511
+
+### Jobs
+
+| job | what | outcome |
+|---|---|---|
+| 21626914 | Wave 0 (T0.1 / T0.3 / T0.4) | 64/64 OK |
+| 21627945 | corrected joint ceiling | ceiling **0.998**, converged |
+| 21628688 | Wave 1 (Tier-1, ER, EWC) | 272/272 OK |
+| 21631698 | Wave 2 (CLEAR, DER++, SI, LwF, frozen, high-ratio ER) | 144/144 OK |
+| 21631792 | N=20 scaling panel | 20/20 OK |
+| 21633232 | Wave 2b (coefficient ranges) | 56/56 OK |
+| 21634287 | Wave 2c (DER++ after the gradient fix) | 32/32 OK |
+| 21634899 | Wave 2d (EWC/SI after the sampler fix) | 56/56 OK |
+| 21629579 | §5.2 in-context | 6 pretrainings + 3 evals OK |
+| 21643814 | §5.2 re-scored with `memory_lift` | 3/3 OK |
+
+### The eight defects, and what they have in common
+
+1. `input_prev_action` had never worked — the channel was absent at `t=0`, so
+   the flag errored on the first forward and every recorded history had it off.
+2. `WorldSpec.write` raced itself through a fixed temp name; 246 of 272 runs
+   died at scale.
+3. A capacity verdict issued from an unconverged run — the summary called
+   ~0.5 a ceiling while every curve was still climbing.
+4. The joint-ceiling reader keyed without the training budget and averaged a
+   1000-update run with an 8000-update one into 0.719, a number describing
+   neither.
+5. A negative end-slope was labelled "converged" when it means diverging.
+6. DER++'s distillation term carried `requires_grad=False` — a healthy-looking
+   loss contributing no gradient, so the method ran as plain ER for two waves.
+7. Two coefficient sweeps (DER++, CLEAR) stopped before their methods began
+   working, chosen from papers with a different loss scale.
+8. EWC's block sampler was unseeded *and* not a reservoir, holding the tail of
+   each block while documenting the opposite.
+
+**Not one of them raised an exception in normal operation.** Every one produced
+a plausible number. Three were caught by a test written to be falsifiable
+rather than confirmatory, three by inspecting a table before publishing it, and
+two by reading code that had no failing symptom at all. The lesson this
+codebase keeps teaching is that its failure mode is not crashes — it is output
+that looks right, and the only defences that work against that are a positive
+control, a mutation check, and reading the number before believing it.
