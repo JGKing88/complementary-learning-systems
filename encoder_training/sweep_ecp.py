@@ -2090,6 +2090,38 @@ WAVES: dict[str, dict] = {
         },
         "seed": [42, 43, 44, 45],
     },
+    # W59 -- attract ABOVE 1.0 at 2.5% coverage, because w58 swept the wrong way.
+    #
+    # w58 tested attract 0.25 / 0.5 / 1.0 on the prediction (Sec 10.11) that the
+    # optimum moves DOWN as coverage falls. It moves UP, and monotonically over
+    # everything tested:
+    #
+    #   attract   0.25     0.5      1.0
+    #   alias   0.0253  0.0212   0.0178      (at the gain landing res90 7)
+    #
+    # So 1.0 is a BOUNDARY of the swept range, not an interior optimum, and
+    # reporting it as the answer would be reporting the edge of a grid. The
+    # mechanism reading: attract holds the near field up (Sec 6.11), and at 2.5%
+    # coverage there is less local structure for it to hold, so the code needs
+    # more of it rather than less -- the low-attract arms are already maximally
+    # stretched (q_a0.25 reaches res90 7 only at gain 3, its lowest).
+    #
+    # This continues the axis until it turns over. 2.0 is Level 6's value and
+    # 4.0 is w52's next rung, so both have 10%-coverage counterparts to compare
+    # against at matched attract.
+    "w59_cov2.5_att_hi": {
+        "arm": {
+            name: {**dict(npos_list=SIZE_MIXES["sm50_q"], batch_size=4096,
+                          lr=3e-4, per_env_radius_frac=0.0, radius=20.0,
+                          rate_lambda=0.5, rate_eps=1.0, out_dim=1024,
+                          hidden_dim=256, gain_end=100.0), **over}
+            for name, over in (
+                ("q_a2", dict(attract_lambda=2.0)),
+                ("q_a4", dict(attract_lambda=4.0)),
+            )
+        },
+        "seed": [42, 43, 44, 45],
+    },
     "w58_cov2.5": {
         "arm": {
             name: {**dict(batch_size=4096, lr=3e-4, per_env_radius_frac=0.0,
