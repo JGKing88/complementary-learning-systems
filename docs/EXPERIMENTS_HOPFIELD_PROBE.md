@@ -1048,3 +1048,88 @@ forced to res90 6 by gain scores 0.954, and to res90 5 collapses to 0.608). If
 `d_eff` were the whole story those would match, so inference gain and training
 are not perfectly interchangeable and something beyond `d_eff` distinguishes
 them.
+
+### 10.12 Halving coverage to 5% costs almost nothing — and the §10.11 prediction fails
+
+`w57_cov5`: six arms × four seeds at ~5% coverage, `exclude_cross_env_pairs`
+throughout, β = gain. Two ways to halve the incumbent's 118 × 50 patches held
+against each other, and the attract axis swept rather than transferred.
+
+**Prediction recorded before the results.** §10.11 says attract and the
+coding-rate term trade against one `d_eff` budget, and lower coverage gives the
+spread term fewer distinct arena positions — so the attract optimum should move
+**down** from 0.5. It does not.
+
+#### Screen, at matched res90 7
+
+| arm | gain | alias | `d_eff` |
+|---|---|---|---|
+| `att0.5` @ **10%** (reference) | 75 | **0.0059** | 286.9 |
+| `sm35_a0.5` — 120 × 35 | 50 | **0.0084** | 229.6 |
+| `half_a0.5` — 59 × 50 | 75 | 0.0088 | 210.2 |
+| `half_a1` | 150 | 0.0090 | 200.8 |
+| `half_rate1` | 20 | 0.0101 | 201.6 |
+| `sm70_a0.5` — 30 × 70 | 75 | 0.0104 | 182.5 |
+| **`half_a0.25`** | 10 | **0.0140** | 169.8 |
+
+> **The prediction failed, with the sign backwards.** `a0.25` is the *worst*
+> arm at 5% — 59% worse than `a0.5` — where at 10% it was level with it. The
+> optimum stays at 0.5–1.0 (0.0088 against 0.0090, a tie).
+>
+> The `d_eff` column shows why, and it is consistent with §10.11's *mechanism*
+> even though it breaks its *extrapolation*. To land at res90 7, `a0.25` has to
+> be read at gain **10**, and low gain costs `d_eff` — 169.8, the lowest in the
+> wave. Attract-down and coverage-down are **substitutes**, the way attract and
+> gain are: lower coverage already shortens the chart, so there is *less*
+> attract-lowering available, not more. Alias rate and `d_eff` stay tightly
+> rank-ordered across all seven rows, so the variable is right and the direction
+> was wrong.
+
+#### Probe, two arms × four seeds × three scaffold draws
+
+| arm | draw 0 | draw 1 | draw 2 | mean |
+|---|---|---|---|---|
+| `sm35_a0.5` (120 × 35, gain 50) | 0.972 | 0.984 | 0.931 | 0.962 |
+| **`half_a0.5` (59 × 50, gain 75)** | **0.981** | **0.985** | **0.948** | **0.971** |
+| `att0.5` @ 10% (gain 100) | 0.987 | 0.988 | 0.959 | 0.978 |
+
+**Halving coverage costs 0.007 of continuous reach** — 0.978 → 0.971. For
+comparison, `EXPERIMENTS_UNIQUE_RADIUS.md` §10.3 puts coverage as *the* largest
+lever on `r_min`, worth a factor of 2.5. On this objective it is worth almost
+nothing, which is the same divergence §10.11 explains: coverage moves `d_eff`
+only weakly, and `r_min` prices res90 heavily.
+
+> **The screen got this ordering backwards.** `sm35_a0.5` has the better alias
+> rate (0.0084 vs 0.0088) and loses on **all three draws**. The gap is small on
+> both axes, but the reach ordering is consistent 3/3 while the alias ordering
+> is opposite — so the screen's discriminating power is spent well above the
+> ~0.007 floor §10.9 identified. **Treat the screen as a filter down to a
+> shortlist, then probe; do not rank inside a shortlist with it.**
+
+#### The 5% answer
+
+`sweeps/w57_cov5/001_half_a0.5_seed=43/encoder_final.pt`, read at **inference
+gain 75** (not its trained gain of 100), β = gain. Continuous reach **0.987** on
+draw 0, **0.977** as the mean over three draws and four seeds.
+
+Config is `att0.5` with the patch set halved — 59 × 50 instead of 118 × 50 —
+and nothing else changed. Per-seed at draw 0:
+
+| seed | \|err\| | acc45 | exact | basin | disc | cont |
+|---|---|---|---|---|---|---|
+| 42 | 8.67° | 99.7% | 91.8% | 18.93 | 1.000 | 0.983 |
+| **43** | 9.44° | 99.5% | 97.4% | 20.73 | 0.996 | **0.987** |
+| 44 | 9.04° | 99.8% | 92.6% | 19.77 | 0.939 | 0.964 |
+| 45 | 9.90° | 99.1% | 91.2% | 19.15 | 0.980 | 0.979 |
+
+Dead-goal fraction 0.00 through K=10, **0.21 at K=20** — against `att0.5` @ 10%'s
+0.04–0.12. The load curve is where halving coverage actually shows up, not in
+the K=5 headline.
+
+Also worth recording: **more, smaller patches wins at 5% on the screen but not
+on reach.** `sm35` (120 × 35) beats `half` (59 × 50) beats `sm70_lo` (30 × 70)
+on the alias rate, so §6.6's "choose the size that gives ~30 environments" rule
+is wrong here — but the probe reverses the top two, so the honest statement is
+only that the ~30-env geometry is clearly worst.
+
+Raw: `$CLS_RESULTS/hopfield_probe/20260827/w57_{half,sm35}_a0.5_ps{0,1,2}/`.
