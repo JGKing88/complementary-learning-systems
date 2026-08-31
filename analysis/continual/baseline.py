@@ -543,8 +543,15 @@ def main() -> None:
         # ordinary-looking run whose low retention says nothing about the
         # method, so the check belongs in every history rather than in a
         # separate investigation.
-        last_arch_detail = (agent.describe() if hasattr(agent, "describe")
-                            else {"arch": "rnn"})
+        # The plain policy has no `describe` of its own, but it still needs a
+        # parameter count: it is the row every isolation arm's parameter cost
+        # is read against, and a blank there makes the comparison unreadable.
+        last_arch_detail = (
+            agent.describe() if hasattr(agent, "describe") else {
+                "arch": "rnn",
+                "trainable_params": sum(prm.numel() for prm in agent.parameters()
+                                        if prm.requires_grad),
+            })
         iter_traces.append((trace, blocks))
         iter_env_goals.append([list(env.goal_location) for env in envs])
         iter_env_offsets.append(

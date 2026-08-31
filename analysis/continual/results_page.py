@@ -1328,17 +1328,27 @@ def render(d: dict) -> str:
         top_iso = max(iso_usable, key=lambda m: m["retained"])
         best_free = (max(free_usable, key=lambda m: m["retained"])
                      if free_usable else None)
+        # The headline is conditional on the same comparison the sentence
+        # makes. Written as a fixed claim with a derived clause after it, the
+        # two halves would contradict each other the moment the ordering
+        # changed -- which is the failure this page keeps finding in itself.
+        beats = (best_free is not None
+                 and top_iso["retained"] > best_free["retained"])
         comparison = ""
         if best_free:
-            verb = ("still does not reach"
-                    if top_iso["retained"] < best_free["retained"]
-                    else "beats")
             comparison = (
-                f" Even with that advantage it {verb} the best method given "
-                f"no task signal at all ({esc(best_free['display'])}, "
-                f"{fmt(best_free['retained'])}).")
-        A("<li><strong>Giving each task its own parameters helps, and is not "
-          "enough.</strong> The best isolation result is "
+                (" It is the strongest classic result in the suite, and it "
+                 "beats the best method given no task signal at all "
+                 if beats else
+                 " Even with that advantage it does not reach the best method "
+                 "given no task signal at all ")
+                + f"({esc(best_free['display'])}, "
+                  f"{fmt(best_free['retained'])}).")
+        head = ("Giving each task its own parameters is the strongest thing "
+                "tried here — and it is not free."
+                if beats else
+                "Giving each task its own parameters helps, and is not enough.")
+        A(f"<li><strong>{head}</strong> The best isolation result is "
           f"{esc(top_iso['display'])} at {fmt(top_iso['retained'])} retained "
           "— and it is <em>told which environment it is in</em>, which a "
           "classifier on the agent's own observations cannot recover "
