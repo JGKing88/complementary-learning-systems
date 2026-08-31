@@ -19,7 +19,7 @@ mismatch that must be fixed first.
 | **Branch / worktree** | `nav-tri-metric` at `.claude/worktrees/nav-tri-metric` |
 | **Predecessor** | `docs/EXPERIMENTS_NAV_TRI.md` — read its §0 findings 1–22 |
 | **Open decisions** | §11 — four forks put to Jack; spec assumes the recommended default in each |
-| **Running** | **P19 (§17)** — `p19_nc` 21651001 (κ_max 148, control, Jack's config) vs `p19_kcap` 21656252 (κ_max 12.2). w52 encoder, learned speed [0.5, 1.0]. §17.8: readout is perfect (q_acc 0.988) and the policy drives backwards (follow_q −0.726), 100% pinned. |
+| **Running** | **P19 (§17) — DELIVERED.** `p19_kcap` 21656252 is the answer: Jack's w52 encoder, gain=beta=100, learned speed [0.5, 1.0], plus `LOG_KAPPA_MAX=2.5`. **Accuracy 1.000 from u125, beeline (directness ≤1.10) from u150, worst 1.054** — faster and tighter than `p17_gain` (u200, 1.092). Curriculum (`p19_kcur` 21659098) costs 50 updates for ~1% (§17.11). |
 | **Charts** | One published page per run — `p10_pol_v1` [3bc9ad4e](https://claude.ai/code/artifact/3bc9ad4e-0655-43ca-b870-0516f4487bdc) · `p10_pol` [388023ce](https://claude.ai/code/artifact/388023ce-a725-4253-a53b-c9979a77baf2) · `p10_e_pol` [00bd7fd3](https://claude.ai/code/artifact/00bd7fd3-bb60-4e22-a968-c62822c5cdb3) · `p10_e_pol_v1` [8fd3ecf0](https://claude.ai/code/artifact/8fd3ecf0-c429-40d6-bde6-008ca25b5a40) · `p11_cur` [4de8dfa7](https://claude.ai/code/artifact/4de8dfa7-9403-43c8-b4f9-b14669ae603e) · `p11_tp` [4dbbe6e9](https://claude.ai/code/artifact/4dbbe6e9-c8e3-41fb-9b38-36a1443bf420) · `p11_cur_tp` [6c3a0503](https://claude.ai/code/artifact/6c3a0503-dba1-405a-a90c-d33c491ee5b2) · `p12_lo` [6b09232a](https://claude.ai/code/artifact/6b09232a-bcd2-4609-9c1d-97d9757d0f5a) · `p12_lo_curtp` [835846df](https://claude.ai/code/artifact/835846df-d30d-46f7-b979-3fe41fdfff7e) |
 | **Finished** | **`p10_pol_v1` 21300389** — 2000/2000, **1.000 success @ 10.95 steps (1.10× optimal)**, the phase-2 best exploit model. **`p10_e_pol` 21300390** — 1500/1500, **cps 0.75** against a billiard ceiling of 0.775. |
 | **Done** | §4 blocking fixes, P1 (§5) with figures, the recall-mechanism thread §5.3-5.9, **P2 (§6)**, and **P10 (§9.4–9.8)** |
@@ -5340,3 +5340,51 @@ Everything else tried on this encoder moved nothing:
 | `encoder_gain` (5 → 300, on the P2 encoder) | none (dir 0.128 → 0.126) | — |
 | `MOVE_ENT_COEF` 0.005 → 0.02 | −45% at u30 | **none** |
 | **`log_kappa_max` 5.0 → 2.5** | **pinned at 12.03** | **0.09 → 1.000** |
+
+### 17.11 The curriculum answer — it costs 50 updates and buys ~1%
+
+Jack opened P19 expecting a distractor curriculum to help reach best accuracy in
+fewest updates. Two earlier attempts could not answer it — `p19_c100` ran with
+the policy locked at the κ clamp so it and its control were both flat at ~0.09,
+and `p19_c300` never started. `p19_kcur` is the same test in a regime that
+learns: `p19_kcap` **plus** a 0→10 ramp over 100 updates, single factor.
+
+Point counts differ (13 evals past the crossing for `p19_kcap`, 5 for
+`p19_kcur`), and a 13-point minimum is mechanically worse than a 5-point one, so
+**both are scored on their first five evals past each crossing**:
+
+| | ACC first ≥0.95 | worst succ (first 5) | BEELINE first ≤1.10 | worst direct (first 5) |
+|---|---|---|---|---|
+| **`p19_kcap`** no curriculum | **u125** | 0.990 | **u150** | 1.054 |
+| `p19_kcur` curriculum | u175 | **1.000** | u200 | **1.043** |
+
+**The curriculum delays both plateaus by exactly 50 updates** — +40% on
+accuracy, +33% on the beeline — and repays it with a **~1%** tighter hold.
+
+On the §17.5 objective (the beeline, fast AND stable) that is a bad trade, and
+**no curriculum wins**. The direction reproduces §9.9 exactly (there: u300
+against u150, with stability 0.979 against 0.490), so this is now measured
+**twice in two different regimes with the same sign**. The magnitude of the
+stability gain is much smaller here — 1% against §9.9's 0.49 — because with κ
+capped there is no longer a turbulent phase for the curriculum to smooth out.
+**That is the more interesting half of the result:** §9.9's curriculum was
+mostly compensating for instability that the κ clamp was causing, and once the
+clamp is fixed there is little left for it to buy.
+
+#### Delivered
+
+`p19_kcap` — job 21656252, `navigate_navp2_p19_kcap_s42_21656252/`.
+
+| | |
+|---|---|
+| encoder | `w52_attract_fwhm/001_att0.5_seed=43/encoder_final.pt` (Jack's) |
+| `ENCODER_GAIN` / `HOPFIELD_BETA` | 100 / 100 (Jack's) |
+| speed | learned in [0.5, 1.0] (Jack's) |
+| **`LOG_KAPPA_MAX`** | **2.5** — the one change from the default 5.0 |
+| accuracy | **1.000 @ 0 and @ 10 distractors, from u125** |
+| beeline | **directness 1.003–1.054 from u150**, ~1.02 at u450 |
+| mean_speed | 0.98 at u425, against the 1.0 cap |
+
+Against the phase's previous best, `p17_gain`: beeline at **u150 against u200**,
+held at **1.054 against 1.092**, with a success floor of **0.990 against 0.760**.
+Faster *and* tighter *and* steadier, on a different encoder, from one default.
