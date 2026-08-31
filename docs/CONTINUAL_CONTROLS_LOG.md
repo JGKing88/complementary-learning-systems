@@ -937,3 +937,50 @@ front of it. That is the signature the plan named as the trigger for Family G
 which was cut from the suite on the grounds that "at N=5 the control is not
 plasticity-limited". At N=20 it is. Recorded as the concrete follow-up rather
 than acted on now, since the panel is still filling in.
+
+---
+
+## 2026-08-31 — DER++, with a gradient (slurm 21634287, all 32 tasks OK)
+
+| α | retained | current env | |
+|---|---|---|---|
+| **10** | **0.326 ± 0.037** | 0.546 | usable best |
+| 100 | 0.277 ± 0.043 | 0.360 | entering the trap |
+| 1 | 0.168 ± 0.030 | 0.701 | |
+| 0.1 | 0.164 ± 0.025 | 0.738 | |
+
+**0.143 → 0.326.** The fix more than doubled the method, and DER++ is now the
+best non-pure-replay entry in the suite — ahead of CLEAR (0.201 usable), online
+EWC (0.149) and SI (0.125). It had been reported as the *second worst* replay
+variant while it was silently running as plain ER.
+
+Two things this settles about the earlier confusion. The coefficient range was
+never the problem — α=0.1 and α=1 now differ, as they should, and the method
+turns over into the plasticity trap by α=100, so the range was fine all along.
+And the Wave-2/Wave-2b split into two identical groups was an artifact of the
+no-op: with no gradient, the run depended only on whatever else differed
+between the two jobs.
+
+### The usable frontier, after all corrections
+
+Best configuration per method with current-env ≥ 0.5:
+
+| method | retained | current env | stored |
+|---|---|---|---|
+| ER, replay ×32 | **0.579** | 0.796 | 53.6 MB |
+| ER, replay ×16 | 0.546 | 0.753 | 53.6 MB |
+| ER, replay ×8 | 0.508 | 0.762 | 53.6 MB |
+| ER, replay ×4 | 0.419 | 0.768 | 53.6 MB |
+| DER++, α=10 | 0.326 | 0.546 | 56.8 MB |
+| CLEAR, cc=1 | 0.201 | 0.622 | 53.9 MB |
+| online EWC, λ=1e4 | 0.149 | 0.524 | 0.6 MB |
+| SI, λ=1000 | 0.125 | 0.665 | 0.6 MB |
+| naive, tuned | 0.081 | 0.820 | — |
+| frozen trunk | 0.043 | 0.399 | 53.6 MB |
+| *joint ceiling* | *0.998* | | |
+| *Hopfield store* | *0.994* | 1.000 | *no data* |
+
+Every replay-family method needs tens of megabytes. Every parameter-space
+method fits in 0.6 MB and reaches a fifth of what replay does. Nothing reaches
+the ceiling, and every row above spends 200 gradient steps and 200 episodes per
+environment against the store's 0 and 1.
