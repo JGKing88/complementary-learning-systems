@@ -4618,3 +4618,139 @@ needs no new encoder.
 the configuration is right, but `hopfield_beta=1e6` is carrying no weight in it.
 A cleaner arm would be the P2 encoder at `encoder_gain=300` alone — one factor,
 same field quality (2/192), and directly comparable to `p10_pol_v1`.
+
+---
+
+## 16. P17 / P18 — raising the encoder gain, end to end
+
+Jobs 21623992 (`p17_gain`) and 21625093 (`p18_knee`). Both stopped on the
+6-hour wall clock at u1100 and u1050 respectively — not crashes, and neither
+completed the 2000-update schedule.
+
+| arm | encoder | enc gain | beta |
+|---|---|---|---|
+| `p10_pol_v1` | P2 | 5 | 5 |
+| `p17_gain` | P2 (unchanged) | **300** | 5 (pinned) |
+| `p18_knee` | w49_g100_knee | **300** | 300 |
+
+`p17_gain` is the clean single-factor arm: same encoder as the baseline, one
+knob moved. `p18_knee` additionally swaps the encoder, which was already
+trained at gain 100 — so 300 sharpens an already fairly binary code rather than
+binarising a smooth one.
+
+### 16.1 Converged quality
+
+u550 onward, where all three are past their knee. 96 trials per eval,
+`recorded` split.
+
+| arm | @0 | @10 | worst @10 | perfect @10 | steps @10 |
+|---|---|---|---|---|---|
+| p10_pol_v1 | 0.998 | 0.919 | 0.781 | **0/12** | 16.9 |
+| p17_gain | 0.997 | **0.997** | 0.969 | **10/12** | 12.1 |
+| p18_knee | **1.000** | 0.995 | **0.990** | 6/11 | **11.6** |
+
+Both new arms' converged **mean** at ten distractors exceeds the baseline's
+**best single eval ever** — 0.979, across all 40 of its evals to u2000. The
+baseline never once scored 96/96 at ten distractors; `p17_gain` does it in 10
+of 12 evals and `p18_knee` in 6 of 11. Both are ~1.4x faster in steps.
+
+### 16.2 They converge very differently
+
+| arm | first eval ≥ 0.95 @10 | worst eval after that |
+|---|---|---|
+| p10_pol_v1 | u300 | 0.542 |
+| p17_gain | **u50** | 0.760 |
+| p18_knee | u550 | **0.990** |
+
+`p17_gain` is at 1.000/1.000 by update 50 — where the baseline was at
+0.031/0.052 — but wobbles early (0.760 at u150). `p18_knee` climbs slowly and
+almost linearly (0.125 at u50, 0.583 at u450, 0.917 at u500) and is then the
+most stable arm in the whole phase: **its worst eval after u550 is 0.990**.
+
+So the knee encoder trades convergence speed for stability and ends with the
+lowest step count. Which of those matters is a choice, not a result.
+
+### 16.3 What this closes
+
+The chain from §13 runs end to end:
+
+1. 61% of exploit failures are orbits (§13.5).
+2. Those orbits are sinks in the readout field, and a sink is present in every
+   failure and absent in all 155 clean-field episodes (§14).
+3. `encoder_gain` 5→300 removes the sinks, 37/192 → 2/192, with no policy
+   involved and replicated on two encoders (§15.3).
+4. **Removing them removes the failures**: 0.919 → 0.997 at ten distractors,
+   at ~1.4x the speed, one factor changed.
+
+### 16.4 What is still not explained
+
+**Why raising the encoder gain cleans the field.** The overlap-tail hypothesis
+— that a binary code keeps `⟨p_distractor, x⟩` uniformly small — was measured
+and **falsified**: distractor overlap p99 moves only 0.170 → 0.137 and the
+goal:distractor ratio is essentially unchanged (25.6 → 25.1). The recall
+composition is the same; the field is not.
+
+Four mechanism stories have now failed in this section (§15.4 has the other
+three). The empirical result is robust — replicated on two encoders, confirmed
+in training, policy-independent — and the account of it is absent. The
+remaining untested suspect is *local* geometry: `q` comes from projecting
+`recall − x` onto a Gram-Schmidt tangent basis, and gain changes how the code
+varies between adjacent cells even when global overlaps do not.
+
+Both runs are truncated at ~u1100 and every number is on the `recorded` split.
+
+### 16.5 The residual failures are NOT readout failures — §14's rule does not survive
+
+Field and diagnostic on both final checkpoints, joined on `(env, trial)` with
+the RNG alignment verified (0 start mismatches on 192/192 in both arms).
+
+**The field is exactly policy-independent.** `p17_gain` at u1100 gives 2/192
+trapped, basin mean 0.9909, worst 0.0350 — identical to four decimals to the
+same encoder+gain measured on an *untrained* checkpoint, and the same two
+memories `(2,12)` and `(3,29)`. 1100 updates of PPO moved it not at all, which
+is what "no policy involved" should mean.
+
+**The same two draws trap under both encoders.** `p18_knee` uses a different
+encoder and still traps on `(2,12)` and `(3,29)`, plus two of its own. Some
+distractor sets fold the field regardless of the encoding, which bounds what any
+encoder fix can buy.
+
+| arm | trapped | basin mean | worst |
+|---|---|---|---|
+| p10_pol_v1 | 37/192 | 0.848 | 0.005 |
+| p17_gain | 2/192 | 0.991 | 0.035 |
+| p18_knee | 4/192 | 0.987 | 0.025 |
+
+**And now the part that changes the story.** Both arms fail 3 of 192 at ten
+distractors, and **4 of those 6 failures sit on a perfectly clean field**
+(goal basin 1.00):
+
+| arm | case | field | symptom | motion | d_min |
+|---|---|---|---|---|---|
+| p17_gain | env3 t29 | trapped (0.04) | never_approached | committed | 3.27 |
+| p17_gain | env4 t14 | **clean (1.00)** | straddled | pinned | 1.26 |
+| p17_gain | env5 t28 | **clean (1.00)** | straddled | pinned | 1.12 |
+| p18_knee | env4 t14 | **clean (1.00)** | straddled | pinned | 1.20 |
+| p18_knee | env5 t7 | trapped (0.28) | straddled | looping | 1.54 |
+| p18_knee | env5 t19 | **clean (1.00)** | approached_left | looping | 1.64 |
+
+§14 established that a sink is *necessary* for failure — 24/24 failures had one,
+0/155 clean-field episodes failed. **That does not hold here.** It was not wrong
+for its regime; it does not generalise once the sinks are removed.
+
+What it was masking: the clean-field failures are `straddled` + `pinned` at
+`d_min` 1.1–1.3 against a capture radius of 1.0, with `edge_frac` 0.63–0.67. The
+readout is correct — the field routes 100% of the arena to the goal — and the
+agent still reaches the doorstep held against the **perimeter** and cannot close
+the last ~0.2 cells. That is execution and geometry, not readout.
+
+`env4 trial14` fails in **both** arms on a clean field, so it is a specific hard
+goal-near-wall configuration rather than noise. And the trapped memories were
+frequently solved anyway (1 of 2 for `p17_gain`, 3 of 4 for `p18_knee`),
+consistent with §14's "necessary but not sufficient".
+
+**So the binding constraint has moved.** Readout contamination dominated
+failures at 0.919 success; at 0.997 the residual is near-goal pinning against
+the arena boundary. Fixing more of the readout will not recover it. The levers
+that would are geometric — the capture radius against the minimum step, and how
+goals close to a wall are approached — and none of them has been tested.
