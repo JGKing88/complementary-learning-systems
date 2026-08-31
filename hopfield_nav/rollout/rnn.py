@@ -31,6 +31,29 @@ class RNNRolloutBatch:
     rewards: torch.Tensor                   # (B, T) float — for logging only
     goal_reached: torch.Tensor              # (B, T) float — 1 if env was at goal pre-step
     student_move_action: torch.Tensor       # (B, T) int64 or (B, T, 2) float — for logging
+    # The recurrent state at the START of this chunk, detached. `None` means
+    # "the lifetime began here", which is what every non-lifetime caller wants
+    # and what the field defaults to.
+    #
+    # This is load-bearing for the in-context measurement rather than
+    # bookkeeping. `bc_rnn_update` re-runs the agent over `obs` to get
+    # gradients, and it starts from whatever is here -- so a chunk whose
+    # initial state is dropped is trained as though its lifetime started at
+    # that chunk, which caps the horizon the network can ever learn to use at
+    # `steps_per_rollout` no matter how long the lifetime actually is.
+    initial_h: torch.Tensor | None = None    # (num_layers, B, hidden)
+    #: The state at the end, detached, for the caller to feed into the next
+    #: chunk of the same lifetime.
+    final_h: torch.Tensor | None = None      # (num_layers, B, hidden)
+    #: Episodes each row finished during this chunk, by reaching the goal or by
+    #: running out of steps. Zero under `carry_across_episodes=False`, where an
+    #: episode ends the row rather than continuing it.
+    #:
+    #: Worth recording rather than deriving: this is the quantity that was
+    #: silently 1 for the whole first in-context measurement, and a training
+    #: regime whose lifetimes contain one episode cannot teach anything about
+    #: crossing an episode boundary.
+    episodes_completed: torch.Tensor | None = None   # (B,) int64
 
 
 def build_rnn_input(
@@ -153,6 +176,8 @@ def collect_rollout_rnn(
     sgb: np.ndarray | None = None,
     env_offset: tuple[int, int] | None = None,
     carry_across_episodes: bool = False,
+    initial_h: torch.Tensor | None = None,
+    episode_max_steps: int | None = None,
 ) -> RNNRolloutBatch:
     """Collect a single (B, T) rollout in DAgger style.
 
@@ -191,7 +216,10 @@ def collect_rollout_rnn(
     reward_buf = torch.zeros((B, steps), dtype=torch.float32, device=device)
     goal_buf = torch.zeros((B, steps), dtype=torch.float32, device=device)
 
-    h = None
+    h = initial_h
+    # Steps taken in the current episode, per row. Only used under
+    # `carry_across_episodes`, to end an episode that is going nowhere.
+    steps_in_ep = np.zeros(B, dtype=np.int64)
     # Which episode of the lifetime each row is on. Only meaningful under
     # `carry_across_episodes`, where a goal-reach teleports rather than ending
     # the row -- and only used by the oracle goal channel's visibility mask, so
@@ -269,10 +297,24 @@ def collect_rollout_rnn(
             # A lifetime, not an episode: teleport the reachers and leave `h`
             # alone. Nothing is marked done, so every row keeps collecting and
             # the recurrent state is the only thing carrying the goal forward.
-            reached_now = np.where(at_goal_mask)[0]
-            if len(reached_now) > 0:
-                vec.reset_indices(reached_now)
-                ep_index[reached_now] += 1
+            # An episode ends on a goal-reach *or* on running out of steps.
+            # The timeout matters more than it looks: without one, a row that
+            # never finds the goal spends the whole rollout in a single episode
+            # and never crosses an episode boundary at all -- which on a fresh
+            # environment with a weak policy is the common case, so the
+            # cross-episode structure this whole regime exists to train would
+            # barely appear in the data. The evaluator has always ended
+            # episodes both ways; the collector did not, and the two therefore
+            # described different things.
+            steps_in_ep += 1
+            ended = at_goal_mask.copy()
+            if episode_max_steps is not None:
+                ended |= (steps_in_ep >= episode_max_steps)
+            closing = np.where(ended)[0]
+            if len(closing) > 0:
+                vec.reset_indices(closing)
+                ep_index[closing] += 1
+                steps_in_ep[closing] = 0
         else:
             # Mark newly-at-goal envs as done (after recording the at-goal
             # step's mask=0 so the agent's choice at the goal is never
@@ -297,6 +339,9 @@ def collect_rollout_rnn(
         prev_reward_np = rewards_full
 
     return RNNRolloutBatch(
+        initial_h=(initial_h.detach().clone() if initial_h is not None else None),
+        final_h=(h.detach().clone() if h is not None else None),
+        episodes_completed=torch.from_numpy(ep_index.copy()),
         obs=obs_buf,
         teacher_move_action=teacher_buf,
         move_label_mask=mask_buf,

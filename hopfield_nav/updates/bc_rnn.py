@@ -52,6 +52,28 @@ def bc_rnn_update(
     tm  = torch.cat([r.teacher_move_action for r in rollouts], dim=0)     # (N, T) or (N, T, 2)
     mm  = torch.cat([r.move_label_mask for r in rollouts], dim=0)         # (N, T)
 
+    # The recurrent state each rollout *started* from, if it was a continuation
+    # of a longer lifetime. Without this the forward pass below begins at zero,
+    # which trains the network as though every chunk were the start of its own
+    # lifetime -- and that silently caps the horizon it can learn to exploit at
+    # `steps_per_rollout`, however long the lifetime really is. That is exactly
+    # the defect that made the first in-context measurement meaningless: it was
+    # trained on 200-step lifetimes and evaluated on 2000-step ones.
+    #
+    # All-or-nothing across the batch: a mix of continuations and fresh starts
+    # would need per-row zeros, which is representable but has no caller, so it
+    # is refused rather than guessed at.
+    h0s = [r.initial_h for r in rollouts]
+    if any(h is not None for h in h0s):
+        if any(h is None for h in h0s):
+            raise ValueError(
+                "some rollouts carry an initial hidden state and some do not; "
+                "concatenating them would train the continuations as fresh "
+                "lifetimes. Pass initial_h for all of them or none.")
+        h0 = torch.cat(h0s, dim=1)                # (num_layers, N, hidden)
+    else:
+        h0 = None
+
     if cfg.only_train_on_reached:
         gr = torch.cat([r.goal_reached for r in rollouts], dim=0)         # (N, T)
         reached = (gr.sum(dim=1) > 0)                                     # (N,) bool
@@ -61,6 +83,8 @@ def bc_rnn_update(
         obs = obs[reached]
         tm = tm[reached]
         mm = mm[reached]
+        if h0 is not None:
+            h0 = h0[:, reached]
 
     N = obs.shape[0]
     n_mb = max(1, min(cfg.n_minibatches, N))
@@ -80,7 +104,12 @@ def bc_rnn_update(
             mb_tm = tm[idx]
             mb_mm = mm[idx]
 
-            move_dist, _ = agent(mb_obs)
+            # Detached: the state is a boundary condition carried in from the
+            # previous chunk, not something to backpropagate into it. This is
+            # truncated BPTT -- the lifetime is longer than the window, and the
+            # window is what fits in memory.
+            mb_h0 = h0[:, idx].contiguous().detach() if h0 is not None else None
+            move_dist, _ = agent(mb_obs, mb_h0)
 
             move_logp = move_dist.log_prob(mb_tm)
             if movement_mode == "continuous":

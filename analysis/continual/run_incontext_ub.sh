@@ -25,11 +25,24 @@ set -uo pipefail
 # So this wave fixes the training and, more importantly, brackets the answer.
 #
 # -- what changed in the training ---------------------------------------------
-#   --resample_envs_every 1   The pool is redrawn every update, so the run sees
-#                             ~128,000 distinct environments and never the same
-#                             one twice. Memorising is not an available
-#                             solution, which is the only way "learn to adapt"
-#                             becomes the easier option.
+#   --resample_envs_every 10  The pool is redrawn at every lifetime boundary, so
+#                             the run sees ~12,800 distinct environments and
+#                             never the same one twice. Memorising is not an
+#                             available solution, which is the only way "learn
+#                             to adapt" becomes the easier option.
+#   (carried hidden state)    Within a lifetime the state persists ACROSS
+#                             rollouts, and `bc_rnn_update` starts its forward
+#                             pass from it -- truncated BPTT over a 2000-step
+#                             lifetime in 200-step windows. Without this the
+#                             lifetime is the rollout, and the old run trained
+#                             on 200 steps while being scored on 2000.
+#   --episode_max_steps 200   An episode ends on a timeout as well as a
+#                             goal-reach, matching the evaluator. Without it a
+#                             row that never finds the goal spends the whole
+#                             rollout in one episode and never crosses a
+#                             boundary -- the common case on a fresh
+#                             environment, which left the cross-episode regime
+#                             almost absent from its own training data.
 #   --n_holdout_envs 16       A fixed set never trained on, evaluated on the
 #                             same cadence. The pool-to-holdout gap is printed
 #                             every eval, so memorisation is visible while the
@@ -77,8 +90,22 @@ OUT="$CLS_HISTORIES/incontext_ub"
 LOGS="$REPO/hopfield_nav/logs/incontext_ub"
 mkdir -p "$OUT" "$LOGS"
 
-POOL=16          # environments pooled per update; redrawn every update
+POOL=16          # environments pooled per update
 UPDATES=8000
+# A LIFETIME is LIFETIME_UPDATES consecutive rollouts on one environment with
+# the hidden state carried across them, and it ends when the environment is
+# redrawn -- so this single number is both the lifetime length and the
+# resampling cadence, because they are the same boundary.
+#
+#   lifetime = STEPS * LIFETIME_UPDATES = 200 * 10 = 2000 steps
+#   evaluation = n_episodes * max_steps = 10 * 200  = 2000 steps
+#
+# Those two have to match. In the withdrawn version they did not: the hidden
+# state was reset at the start of every rollout, so training lifetimes were 200
+# steps and the evaluation measured 2000-step ones. The network was asked to
+# use a horizon ten times longer than any it had ever been trained on.
+LIFETIME_UPDATES=10
+EPISODE_CAP=200  # matches the evaluator's per-episode cap exactly
 SIZE=20
 OBS=60
 STEPS=200
@@ -93,7 +120,9 @@ TRAIN_COMMON=(--mode mixed --n_envs "$POOL" --n_updates "$UPDATES"
               --lr 1e-3 --epochs 4 --n_minibatches 4
               --batch_envs 1 --steps_per_rollout "$STEPS"
               --n_eval_trials 16 --eval_max_steps "$STEPS" --eval_every 500
-              --device cpu --resample_envs_every 1 --n_holdout_envs 16)
+              --device cpu --n_holdout_envs 16
+              --resample_envs_every "$LIFETIME_UPDATES"
+              --episode_max_steps "$EPISODE_CAP")
 
 PIDS=(); NAMES=()
 train () {

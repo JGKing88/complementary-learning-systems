@@ -469,7 +469,22 @@ class RNNTrainConfig:
     # environments rather than learn a strategy: 0.80 on the pool against 0.10
     # held out, below the 0.21 a random walker scores. With this at 1 the pool
     # is never seen twice, so memorising it is not an available solution.
+    # Under `carry_across_episodes` this is BOTH the lifetime length in updates
+    # and the environment-resampling cadence, because they are the same
+    # boundary: a lifetime is a stretch of rollouts on one environment with the
+    # hidden state carried across them, and it ends when the environment
+    # changes. steps_per_rollout * resample_envs_every is the lifetime in
+    # steps, and it should match what the evaluator measures
+    # (n_episodes * max_steps) or the run is trained on one horizon and scored
+    # on another.
     resample_envs_every: int = 0
+    # Steps after which an episode ends even if the goal was never found.
+    # None keeps the historical behaviour: episodes end only on a goal-reach,
+    # so a row that never finds it spends the whole rollout in one episode and
+    # never crosses a boundary -- which is the common case on a fresh
+    # environment and left the cross-episode regime barely represented in its
+    # own training data. The evaluator has always timed episodes out.
+    episode_max_steps: int | None = None
     # A fixed set of environments the run never trains on, evaluated on the
     # same cadence as the training pool. Without one the only number a
     # pretraining run reports is performance on the environments it is looking

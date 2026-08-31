@@ -157,15 +157,33 @@ def train_mixed(
             h_cfg, np.random.RandomState(cfg.seed + 424_242))
         print(f"  [mixed] {len(holdout)} held-out envs, never trained on")
 
+    # The recurrent state at each env-slot's current position in its lifetime.
+    # `None` means "this slot starts a new lifetime on the next rollout".
+    #
+    # Carrying this across updates is what makes a lifetime longer than one
+    # backprop window. Without it the lifetime *is* the rollout: the agent was
+    # trained on 200-step lifetimes and then measured on 2000-step ones, which
+    # is a tenfold extrapolation dressed up as a null result.
+    carry_h: list[torch.Tensor | None] = [None] * len(vecs)
     history: list[dict[int, dict[str, float]]] = []
     for upd in range(1, cfg.n_updates + 1):
+        # A lifetime boundary: new environments, and the state that was
+        # carrying the old ones is dropped. The two have to happen together --
+        # carrying a hidden state into a different environment would be
+        # training the network to remember a goal that has moved.
         if (cfg.resample_envs_every
                 and (upd - 1) % cfg.resample_envs_every == 0
                 and upd > 1):
             envs = build_envs_from_config(cfg, pool_rng)
             vecs = _vecs_for(envs)
-        for vec in vecs:
-            vec.reset_all()
+            carry_h = [None] * len(vecs)
+        # Only reset the arena at a lifetime boundary. Mid-lifetime the
+        # positions have to persist too, or every chunk would silently
+        # teleport the agent and the carried state would describe somewhere it
+        # no longer is.
+        if any(h is None for h in carry_h):
+            for vec in vecs:
+                vec.reset_all()
         rollouts = [
             collect_rollout_rnn(
                 vec, agent, cfg.agent, cfg.steps_per_rollout, device,
@@ -173,18 +191,35 @@ def train_mixed(
                 sgb=sgb,
                 env_offset=env_offsets[k] if env_offsets is not None else None,
                 carry_across_episodes=cfg.carry_across_episodes,
+                initial_h=carry_h[k] if cfg.carry_across_episodes else None,
+                episode_max_steps=(cfg.episode_max_steps
+                                   if cfg.carry_across_episodes else None),
             )
             for k, vec in enumerate(vecs)
         ]
+        if cfg.carry_across_episodes:
+            carry_h = [r.final_h for r in rollouts]
         losses = bc_rnn_update(agent, rollouts, cfg.bc, optimizer, movement_mode)
         if upd == 1 or upd % cfg.eval_every == 0 or upd == cfg.n_updates:
             total_goal = sum(float(r.goal_reached.sum().item()) for r in rollouts)
             denom = max(1, len(rollouts) * cfg.batch_envs * cfg.steps_per_rollout)
+            # Episodes per lifetime-chunk. This is the number that was silently
+            # 1 for the whole first in-context measurement: a regime whose
+            # lifetimes contain one episode cannot teach anything about
+            # crossing an episode boundary, and nothing in the old log would
+            # have shown it.
+            eps = [r.episodes_completed for r in rollouts
+                   if r.episodes_completed is not None]
+            eps_txt = ""
+            if eps and cfg.carry_across_episodes:
+                per_chunk = float(torch.cat(eps).float().mean())
+                eps_txt = (f"  eps/chunk={per_chunk:.2f}"
+                           f"  eps/lifetime~{per_chunk * max(1, cfg.resample_envs_every):.1f}")
             print(
                 f"  mixed upd={upd}/{cfg.n_updates}  "
                 f"move_loss={losses['move_loss']:.4f}  "
                 f"ent={losses['move_entropy']:.3f}  "
-                f"goal_rate={total_goal / denom:.3f}"
+                f"goal_rate={total_goal / denom:.3f}{eps_txt}"
             )
             if wandb_run is not None:
                 wandb_run.log({
@@ -215,8 +250,9 @@ def train_mixed(
                 )
                 hd = float(np.mean([m["nav_det"] for m in hm.values()]))
                 tr = float(np.mean([m["nav_det"] for m in metrics.values()]))
+                gap = f"{tr / hd:.1f}x" if hd > 0 else "n/a"
                 print(f"    HOLDOUT nav_det={hd:.3f}   (pool {tr:.3f}, "
-                      f"gap {tr / max(hd, 1e-9):.1f}x)")
+                      f"gap {gap})")
                 if wandb_run is not None:
                     wandb_run.log({"eval/mixed/holdout_nav_det": hd,
                                    "eval/mixed/pool_nav_det": tr,
@@ -481,6 +517,14 @@ def main() -> None:
                         "episode only, so the network must carry the goal "
                         "across an episode boundary -- which separates 'cannot "
                         "carry a fact' from 'cannot discover one'.")
+    p.add_argument("--episode_max_steps", type=int, default=None,
+                   help="End an episode after this many steps even if the goal "
+                        "was never found (--carry_across_episodes only). "
+                        "Without it a row that never reaches the goal spends "
+                        "the whole rollout in one episode and never crosses a "
+                        "boundary, so the cross-episode regime is barely "
+                        "present in its own training data. Set it equal to the "
+                        "evaluator's per-episode cap.")
     p.add_argument("--resample_envs_every", type=int, default=0,
                    help="Redraw the whole environment pool every N updates "
                         "(--mode mixed). 0 keeps one fixed pool, which is what "
@@ -543,6 +587,7 @@ def main() -> None:
         eval_max_steps=args.eval_max_steps,
         carry_across_episodes=args.carry_across_episodes,
         resample_envs_every=args.resample_envs_every,
+        episode_max_steps=args.episode_max_steps,
         n_holdout_envs=args.n_holdout_envs,
         env_generator=args.env_generator,
         place_region=args.place_region,
