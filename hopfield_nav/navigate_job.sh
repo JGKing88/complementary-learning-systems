@@ -68,6 +68,7 @@ _bool() {
 
 # --- Encoder / scaffold ----------------------------------------------------
 _arg  encoder_gain                    "${ENCODER_GAIN:-}"
+_arg  hopfield_beta                   "${HOPFIELD_BETA:-}"
 _arg  fwhm_ratio                      "${FWHM_RATIO:-}"
 _list lambdas                         "${LAMBDAS:-}"
 _arg  Np                              "${NP:-}"

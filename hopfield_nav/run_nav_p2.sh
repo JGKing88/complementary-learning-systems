@@ -335,6 +335,56 @@ case "$VARIANT" in
   # Read dir_norm too. It is the direction head's magnitude, a gauge freedom
   # (atan2 is scale-invariant) that nothing in the objective pressures; if it
   # decays toward dir_soft the heading is being held near-uniform.
+  # -------------------------------------------------------------------------
+  # P16 -- a SATURATING Hopfield, on the v35 encoder.
+  #
+  # Section 14 found the mechanism behind every exploit failure: q(x) develops a
+  # spurious sink for ~19% of memory draws, and a sink is present in all 24
+  # failures and absent in all 155 clean-field episodes. The reason it can
+  # happen is that the recall is not an attractor at all -- `tanh(beta * W x)`
+  # runs with an argument around 1e-4, so tanh is in its linear region and
+  # retrieval is a weighted BLEND of the stored patterns. A blend can point
+  # anywhere, including into a vortex, without any pattern winning.
+  #
+  # This arm makes both nonlinearities actually saturate:
+  #
+  #   ENCODER_GAIN=300   the code is normalize(tanh(gain * z)), so this drives
+  #                      the embedding toward binary. It changes the code's
+  #                      SHAPE, not its magnitude -- the normalize is after.
+  #   HOPFIELD_BETA=1e6  the recall argument reaches ~1e2, so tanh saturates and
+  #                      retrieval becomes a sign-thresholded attractor rather
+  #                      than a blend.
+  #
+  # Both were previously impossible to set independently: beta had no flag and
+  # defaulted to the encoder gain, and --encoder_gain never reached the model.
+  #
+  # The v35 encoder is used because Jack asked for it; it shares lambdas
+  # (11 12 13) and size (20) with the P2 world, so the scaffold is unchanged.
+  # NOTE it is a departure from the encoder marked FIXED BY INSTRUCTION above,
+  # and it moves two things at once (encoder AND both gains), so this arm is not
+  # a clean single-factor test against p10_pol_v1 -- it is a "does saturation
+  # help at all" probe. If it does, the factors want separating.
+  #
+  # Otherwise byte-identical to p10_pol_v1, the frozen-speed exploiter that
+  # anchors sections 12-15, so the diagnostics apply unchanged.
+  p16_sat)
+    # Set unconditionally, NOT with :- . The fixed block at the top of this
+    # file has already assigned ENCODER by the time a variant runs, so a
+    # `${ENCODER:-...}` here is a no-op and the arm would silently train on the
+    # P2 encoder while claiming to use v35's.
+    ENCODER=encoders/run_20260422_185816/encoder_best.pt
+    ENCODER_GAIN=300
+    HOPFIELD_BETA=1e6
+    SCHEDULE=${SCHEDULE:-'exploit:2000'}
+    ENVS_PER_WORLD=20; BATCH_ENVS=64
+    EPSILON_EXPLORE=0.1; GOAL_REWARD=2.0
+    PERSISTENCE_BONUS=0.20
+    REGIME_ASSIGNMENT=shuffle
+    ACTION_POLAR=1; STATE_DEPENDENT_STD=1; FREEZE_LOG_STD=0
+    FREEZE_SPEED=1.0
+    EVAL_SCOPE=navexpl; EVAL_EVERY=50; CKPT_EVERY=50
+    ;;
+
   p10_pol|p10_pol_v1)
     SCHEDULE=${SCHEDULE:-'exploit:2000'}
     ENVS_PER_WORLD=20; BATCH_ENVS=64
@@ -544,6 +594,8 @@ goal=$GOAL_REWARD time=$TIME_PENALTY"
 echo "    noise      : eps=$EPSILON_EXPLORE/$EPSILON_ANNEAL_UPDATES \
 init_log_std=$INIT_LOG_STD freeze=$FREEZE_LOG_STD ent=$MOVE_ENT_COEF"
 echo "    trunk      : $RNN_CELL/$RNN_NONLINEARITY h=$HIDDEN_SIZE"
+echo "    encoder    : $(basename "$(dirname "$ENCODER")")/$(basename "$ENCODER") \
+gain=${ENCODER_GAIN:-<ckpt>} hopfield_beta=${HOPFIELD_BETA:-<encoder gain>}"
 echo "    movement   : |a| in [$MIN_ACTION_NORM, $MAX_ACTION_NORM] prev_action=$INPUT_PREV_ACTION prev_disp=$INPUT_PREV_DISPLACEMENT"
 if [ "${ACTION_POLAR:-0}" = "1" ]; then
   echo "    action     : POLAR  init_log_kappa=$INIT_LOG_KAPPA (kappa=6.36, ~23.8 deg) \

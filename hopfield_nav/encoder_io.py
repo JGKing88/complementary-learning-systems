@@ -51,8 +51,22 @@ def load_encoder(
 
     # Gain resolution order: explicit override → top-level "gain" (new format)
     # → model-config "gain" (old format) → 1.0 fallback.
+    #
+    # NOTE these are two different things and they are routinely NOT equal. The
+    # encoder applies `self.gain` (from the model config) inside its output
+    # nonlinearity -- `z = normalize(tanh(gain * z))` -- so it controls how
+    # BINARY the code is, not its magnitude. `effective_gain` is what the
+    # caller uses downstream, in practice to set the Hopfield's beta. For the
+    # v35 encoder they are 5.0 and 3.699 respectively, and every run so far has
+    # encoded at 5.0 while setting beta to 3.699.
+    #
+    # An EXPLICIT override is applied to the model as well, so `--encoder_gain`
+    # means what its name says. Without one the model keeps the gain it was
+    # built and trained with, so existing runs are unaffected.
     if gain_override is not None:
-        effective_gain = gain_override
+        effective_gain = float(gain_override)
+        encoder.gain = effective_gain
+        cfg.gain = effective_gain
     elif "gain" in ckpt:
         effective_gain = float(ckpt["gain"])
     else:

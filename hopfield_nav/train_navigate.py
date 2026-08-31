@@ -538,6 +538,8 @@ def train_navigate(
     cfg.encoder_gain = encoder_gain
     if cfg.hopfield.beta is None:
         cfg.hopfield.beta = float(encoder_gain)
+    print(f"encoder gain {encoder_gain:g} (code sharpness)   "
+          f"hopfield beta {cfg.hopfield.beta:g} (recall sharpness)")
 
     # One scaffold field for the whole run. It is a pure function of
     # (lambdas, Npos, fwhm_ratio, encoder), so the per-world copies this used
@@ -729,6 +731,7 @@ CFG_FIELDS: dict[str, tuple[str, ...]] = {
     # run structure
     "encoder_checkpoint": ("encoder_checkpoint",),
     "encoder_gain": ("encoder_gain",),
+    "hopfield_beta": ("hopfield.beta",),
     "fwhm_ratio": ("fwhm_ratio",),
     "num_worlds": ("num_worlds",),
     "envs_per_world": ("envs_per_world",),
@@ -1106,7 +1109,22 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--static-vectorhash", dest="static_vectorhash",
                    action=argparse.BooleanOptionalAction, default=True)
     p.add_argument("--fwhm_ratio", type=float, default=0.25)
-    p.add_argument("--encoder_gain", type=float, default=None)
+    p.add_argument("--encoder_gain", type=float, default=None,
+                   help="Sharpness of the encoder's output nonlinearity: the "
+                        "code is normalize(tanh(gain * z)), so raising it "
+                        "makes the embedding more BINARY without changing its "
+                        "magnitude. Overriding it now also applies to the "
+                        "model, which it previously did not -- see "
+                        "encoder_io.load_encoder.")
+    p.add_argument("--hopfield_beta", type=float, default=None,
+                   help="Sharpness of the Hopfield recall: the update is "
+                        "tanh(beta * W x). Defaults to the encoder's gain, "
+                        "which is why the two were never separable before. "
+                        "At the scale W x actually takes here (~1e-4) the "
+                        "default leaves tanh in its linear region, so recall "
+                        "is a weighted blend rather than an attractor -- see "
+                        "EXPERIMENTS_NAV_P2 section 14. Raising it is how you "
+                        "get a saturating, genuinely Hopfield-like recall.")
     p.add_argument("--load_checkpoint", type=str, default=None,
                    help="FORK a new run from this checkpoint's weights. Its "
                         "config becomes the base -- every setting is inherited "

@@ -4457,3 +4457,61 @@ Open: only p10_pol_v1 has been mapped. The field is policy-independent, so the
 sinks should be identical for every arm sharing this encoder and seed — worth
 confirming on one other run, which would also re-derive §13.5.3's cross-model
 agreement from the field rather than from trajectories.
+
+---
+
+## 15. P16 — a saturating Hopfield (`p16_sat`)
+
+Job 21622130, `VARIANT=p16_sat sbatch hopfield_nav/run_nav_p2.sh`.
+
+§14 found that every exploit failure has a spurious sink in `q(x)`, and the
+reason such a sink can exist at all is that **the recall is not an attractor**.
+The update is `tanh(beta · W x)` with an argument around 1e-4, so `tanh` sits in
+its linear region and retrieval is a weighted *blend* of the stored patterns. A
+blend can point anywhere — including into a vortex — without any pattern
+winning, which is exactly what §13.2 measured (the goal always wins, the margin
+is merely degraded).
+
+This arm saturates both nonlinearities:
+
+| knob | value | what it does |
+|---|---|---|
+| `--encoder_gain` | 300 | the code is `normalize(tanh(g·z))`, so this binarises the embedding. **Shape, not magnitude** — the normalize comes after. Measured: 88.5% of components land within 5% of ±1/√D against 5.2% at the default, norm unchanged at 1.000. |
+| `--hopfield_beta` | 1e6 | the recall argument reaches ~1e2, so `tanh` saturates and retrieval becomes sign-thresholded rather than a blend. |
+
+Encoder is v35's (`encoders/run_20260422_185816/encoder_best.pt`), which shares
+lambdas (11 12 13) and size (20) with the P2 world, so the scaffold is
+unchanged. Everything else is byte-identical to `p10_pol_v1` — the frozen-speed
+exploiter that anchors §12–15 — so the diagnostics apply unchanged.
+
+### 15.1 Three things this required fixing
+
+**Neither gain was settable as named.** `--encoder_gain` only ever wrote
+`cfg.hopfield.beta` and never reached the encoder, and there was **no
+`--hopfield_beta` flag at all** — beta defaulted to the encoder gain and had no
+independent route. Both added; an explicit `--encoder_gain` now applies to the
+model as well, while the default path is unchanged so no existing run moves.
+
+**The v35 encoder carries two different gains, and always has.** The
+checkpoint's top-level `gain` is **3.699** (which became beta) and its
+model-config `gain` is **5.0** (what `forward` actually encodes with). Every run
+on this encoder has encoded at 5.0 while setting beta to 3.699. Recorded in
+`encoder_io.load_encoder`.
+
+**A silent-wrong-config bug in the variant.** Written first as
+`ENCODER=${ENCODER:-...}`, which is a no-op because the fixed block at the top
+of `run_nav_p2.sh` has already assigned `ENCODER` — the arm would have trained
+on the P2 encoder while claiming v35's. Now set unconditionally, and the startup
+banner echoes the encoder and both gains so the config is confirmed from two
+independent points in the stack rather than assumed.
+
+### 15.2 Caveat on what this can conclude
+
+The arm moves **three** things at once against `p10_pol_v1` — encoder, encoder
+gain, and beta. It is a "does saturation help at all" probe, not a
+single-factor test. If it helps, the factors want separating; if it does not,
+that is informative regardless since the mechanism predicted it should.
+
+The sharp check is not the success rate but `readout_field.py`: a saturating
+recall should not be able to produce a smeared blend, so **the sinks should be
+gone or far rarer**. That is measurable on this checkpoint with no rollouts.
