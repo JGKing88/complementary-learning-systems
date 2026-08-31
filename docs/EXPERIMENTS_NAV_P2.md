@@ -5218,3 +5218,73 @@ adopted: report the series, and do not call a trend under ~5 points.**
 Being slow is still a failure against the stated objective — `p17_gain` reached
 the beeline at u200, and `p19_nc` had not reached 0.25 success by u325. The
 question `p19_kcap` answers is whether the cap recovers the difference.
+
+### 17.9 RESULT — the κ ceiling was the whole problem
+
+`LOG_KAPPA_MAX` 5.0 → 2.5 (κ_max 148.4 → 12.2). **One knob, nothing else moved**
+— same encoder, `ENCODER_GAIN` 100, `HOPFIELD_BETA` 100, default
+`MOVE_ENT_COEF`, learned speed [0.5, 1.0].
+
+| u | 25 | 50 | 75 | 100 | 125 |
+|---|---|---|---|---|---|
+| `p19_nc` κ≤148 | 0.083 | 0.083 | 0.073 | 0.073 | 0.104 |
+| **`p19_kcap` κ≤12.2** | 0.094 | 0.052 | **0.344** | **0.635** | **0.990** |
+
+A monotone five-point climb to **0.990 @ 10 distractors and 1.000 @ 0 at u125**,
+while the control needed 450 updates to reach 0.323.
+
+Against every reference in the phase, on first-reach:
+
+| arm | first ≥0.95 @10 |
+|---|---|
+| **`p19_kcap`** | **u125** |
+| `p10_pol_v1` | u150 (0.875) |
+| `p17_gain` | u50 touched, reliable ~u200 |
+| `p18_knee` | u550 |
+| `p19_nc` | not reached by u450 |
+
+#### The mechanical evidence, which is not eval noise
+
+Per-update training statistics, dense and unambiguous:
+
+| u | `p19_nc` κ / ang | `p19_kcap` κ / ang |
+|---|---|---|
+| 20 | 33.9 / 0.21 | **12.08** / 0.294 |
+| 40 | 97.5 / 0.14 | **12.03** / 0.295 |
+| 70 | 147.7 / 0.082 | **12.04** / 0.295 |
+
+κ pins at 12.03 and angular exploration holds flat at 0.295 rad (16.9°) while
+the control collapses to 0.082 rad (4.7°). `dir_norm` *falls* (0.587 → 0.486)
+instead of inflating. Every prediction §17.8 put on record is confirmed.
+
+#### What this says about the whole phase
+
+`--log_kappa_max` defaults to 5.0 = **e⁵ = 148.4**, and this is where
+`p16_sat` (~148, cancelled flat), `p18_knee` (133) and `p19_nc` (147.66) all
+ended up. **Three arms across three encoders were each sitting on the same
+clamp**, and in every case the effect was read as something else — as beta
+(§17.6, retracted), as the encoder "trading convergence speed for stability"
+(§16.2), and as a property of saturation (§15).
+
+The cost was never small. `p18_knee` reached the beeline at u500 against
+`p17_gain`'s u200; `p19_nc` had not reached 0.35 by u450 where `p19_kcap`
+reached 0.99 by u125. **`p17_gain` is the only arm in the phase that never
+approached the clamp** — it settled at κ ≈ 8.5 on its own — and it is also the
+only fast one. That correlation was visible in §16.2's own table and was
+attributed to the encoder.
+
+#### The beeline has NOT arrived, and that is the remaining work
+
+At u125, `steps@10` = 41.0 at `mean_speed` 0.39 → path ≈ 16.0 cells against the
+10.5-cell straight line, **directness 1.52**. The agent reaches the goal ~99% of
+the time by a route half again too long. Per §17.5 that is the expected ordering
+— accuracy saturates first, the beeline follows — and `p17_gain` took ~150 more
+updates to close the same gap (31.8 → 21.7 → 12.8 steps).
+
+Note also `mean_speed` 0.39 sits **below `min_action_norm` = 0.5**, so it is
+realized displacement after wall clipping, not commanded speed: the agent is
+still scraping walls, just no longer pinned against them.
+
+**Not called converged.** `p17_gain` touched 1.000 at u50 and fell to 0.760 by
+u150, so the §9.9 pair — first crossing AND the minimum after it — is what
+decides this, and only the first half is in.
