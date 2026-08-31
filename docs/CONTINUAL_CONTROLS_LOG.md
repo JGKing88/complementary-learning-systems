@@ -438,3 +438,63 @@ degenerate solution the plasticity column exists to expose, and it will need
 saying explicitly in the results.
 
 Wave 1 relaunched as slurm 21628688 with the fix. Full suite green.
+
+---
+
+## 2026-08-30 — Wave 0 complete, and §5.2 built and launched
+
+### Wave 0 final (slurm 21626914, all 64 tasks OK)
+
+The full capacity sweep, 3 seeds each:
+
+| hidden | layers | final | end-slope |
+|---|---|---|---|
+| 128 | 1 | 0.452 ± 0.150 | +0.073 |
+| 128 | 2 | 0.383 ± 0.101 | +0.075 |
+| 256 | 1 | 0.438 ± 0.099 | +0.084 |
+| 256 | 2 | 0.535 ± 0.150 | +0.095 |
+| 512 | 1 | 0.465 ± 0.114 | +0.148 |
+| 512 | 2 | 0.508 ± 0.109 | +0.132 |
+| 1024 | 1 | 0.271 ± 0.110 | +0.048 |
+| 1024 | 2 | 0.588 ± 0.125 | +0.159 |
+
+**Every configuration is still rising**, and capacity does not order the
+results (1024×1 is the *worst* row). The verdict stays INCONCLUSIVE and the
+numbers are lower bounds. The corrected run at 64× the gradient budget is the
+one that will answer it.
+
+### §5.2 — the in-context, zero-weight-update control (slurm 21629579)
+
+The measurement Jack flagged as important, and the one that could change the
+framing. Three pieces:
+
+**The collector gained `carry_across_episodes`.** Normally an env that reaches
+its goal is *frozen* for the rest of the rollout, so each row is one
+independent episode and the recurrent state never carries anything between
+them. With the flag on, a reaching env is instead **teleported to a fresh start
+and the hidden state is kept**, so one row becomes a lifetime — a sequence of
+episodes in the same environment linked only by recurrent activity.
+
+**`evaluation/incontext.py` measures success against episode index.** One
+environment, N episodes back to back, `h` zeroed only at the start of a
+lifetime. The goal is never observed and never moves, so an agent that solves
+episode 5 faster than episode 1 can only be doing it by remembering where the
+goal was, in activations, with no weight change.
+
+**The episodic control arm is not optional.** A rising curve on its own proves
+very little — a policy that drifts toward the middle of the arena, or simply
+explores well, would produce one for reasons unrelated to memory. The control
+is trained identically and differs *only* in whether state survived a
+goal-reach, so the difference between the curves is the part attributable to
+carrying anything. Evaluation is on held-out envs at a seed the pretraining
+never saw, which is also what guards against the arms just memorising the pool.
+
+The tests target the two ways this could be silently broken while still looking
+clean: the collector still freezing reachers (a "lifetime" that is one episode
+plus 190 frozen steps) and the evaluator zeroing `h` between episodes (no
+channel for anything to carry). Both would produce a flat curve — the same
+answer as a genuine negative — so both are asserted directly rather than
+inferred.
+
+Job: 32-env pool, 2000 updates, hidden=256, 3 seeds per arm, evaluated on 8
+held-out envs × 64 lifetimes × 10 episodes.

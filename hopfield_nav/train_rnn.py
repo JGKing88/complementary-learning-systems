@@ -134,6 +134,7 @@ def train_mixed(
                 deterministic=False, teacher_force=False,
                 sgb=sgb,
                 env_offset=env_offsets[k] if env_offsets is not None else None,
+                carry_across_episodes=cfg.carry_across_episodes,
             )
             for k, vec in enumerate(vecs)
         ]
@@ -400,6 +401,14 @@ def main() -> None:
     p.add_argument("--eval_every", type=int, default=25)
     p.add_argument("--n_eval_trials", type=int, default=32)
     p.add_argument("--eval_max_steps", type=int, default=64)
+    p.add_argument("--carry_across_episodes",
+                   action=argparse.BooleanOptionalAction, default=False,
+                   help="Make a rollout a LIFETIME rather than an episode: on "
+                        "goal-reach, teleport to a fresh start and keep the "
+                        "hidden state, so consecutive episodes in one env are "
+                        "linked only by recurrent activity. This is how the "
+                        "in-context, zero-weight-update control is trained "
+                        "(plan section 5.2).")
     # Bookkeeping
     p.add_argument("--seed", type=int, default=0)
     p.add_argument("--device", type=str, default="cuda")
@@ -443,6 +452,7 @@ def main() -> None:
         eval_every=args.eval_every,
         n_eval_trials=args.n_eval_trials,
         eval_max_steps=args.eval_max_steps,
+        carry_across_episodes=args.carry_across_episodes,
         env_generator=args.env_generator,
         place_region=args.place_region,
         goal_region=args.goal_region,

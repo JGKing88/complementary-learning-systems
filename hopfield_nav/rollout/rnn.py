@@ -111,12 +111,28 @@ def collect_rollout_rnn(
     teacher_force: bool = False,
     sgb: np.ndarray | None = None,
     env_offset: tuple[int, int] | None = None,
+    carry_across_episodes: bool = False,
 ) -> RNNRolloutBatch:
     """Collect a single (B, T) rollout in DAgger style.
 
     teacher_force=True overrides the student action with the oracle action when
     stepping the env. Used by the oracle-sanity smoke test (an in-distribution
     upper bound on nav success); irrelevant for normal training.
+
+    ``carry_across_episodes`` switches the rollout from *one episode* to *a
+    lifetime*. Normally an env that reaches its goal is frozen for the rest of
+    the rollout, so each row is a single independent navigation episode and the
+    recurrent state never has to carry anything between them. With this on, a
+    reaching env is instead **teleported to a fresh start and the hidden state
+    is kept**, so one row becomes a sequence of episodes in the same
+    environment and the only thing linking them is recurrent activity.
+
+    That is the whole in-context control (plan section 5.2): the goal is never
+    observed, so an agent that solves episode 2 faster than episode 1 can only
+    be doing it by remembering where the goal was -- in activations, with no
+    weight change. It is the one comparison that runs on the Hopfield store's
+    own terms, and the one whose positive result would force the framing to
+    change.
     """
     B = vec.B
     movement_mode = agent.cfg.movement_mode
@@ -190,9 +206,18 @@ def collect_rollout_rnn(
         mask_buf[:, t] = torch.from_numpy(step_mask.astype(np.float32)).to(device)
         goal_buf[:, t] = torch.from_numpy(at_goal_mask.astype(np.float32)).to(device)
 
-        # Mark newly-at-goal envs as done (after recording the at-goal step's
-        # mask=0 so the agent's choice at the goal is never supervised).
-        done = done | at_goal_mask
+        if carry_across_episodes:
+            # A lifetime, not an episode: teleport the reachers and leave `h`
+            # alone. Nothing is marked done, so every row keeps collecting and
+            # the recurrent state is the only thing carrying the goal forward.
+            reached_now = np.where(at_goal_mask)[0]
+            if len(reached_now) > 0:
+                vec.reset_indices(reached_now)
+        else:
+            # Mark newly-at-goal envs as done (after recording the at-goal
+            # step's mask=0 so the agent's choice at the goal is never
+            # supervised).
+            done = done | at_goal_mask
 
         # Step only the still-active envs. Done envs are frozen at their
         # current position (the goal) for the rest of the rollout — no

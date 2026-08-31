@@ -432,6 +432,12 @@ class RNNTrainConfig:
     eval_every: int = 25                    # within-env training log cadence
     n_eval_trials: int = 32                 # parallel eval trials per env
     eval_max_steps: int = 64
+    # In-context regime (plan section 5.2). With this on, a rollout is a
+    # *lifetime* rather than an episode: an env that reaches its goal is
+    # teleported to a fresh start and the hidden state is kept, so the only
+    # thing linking consecutive episodes is recurrent activity. Used to train
+    # the zero-weight-update control.
+    carry_across_episodes: bool = False
     seed: int = 0
     device: str = "cuda"
     save_dir: str | None = None
