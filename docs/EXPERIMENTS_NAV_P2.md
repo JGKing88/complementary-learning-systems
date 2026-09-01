@@ -70,6 +70,8 @@ care how mice do it.
 
 **Open items** (priority order):
 
+- [ ] **Re-score explore with `deterministic=False` (§20.4).** Every explore number in this document is the *noiseless mean policy*; the training reward was earned by *sampled* trajectories, and for a search task the noise is functional. §18.4's 12% κ-cap gap could shrink or invert, since the capped arm's whole difference is spread that a deterministic eval discards. No retraining needed.
+
 - [ ] **Run `p21_pr` — staged, not launched.** §18.7 measured **100% of episodes at u25/u50 wall-pinned**, and §18.8 priced it: the **persistence bonus pays +0.196/step for the pin** against `wall_penalty`'s −0.093, because it scores the *commanded* action and a pinned agent commands a perfect heading while realizing 0.09. `--persistence_realized` (default off) fixes that without taxing the walls; `p21_pr` is `p20_e` with that one bit flipped, `explore:300`, and `p20_e` is its own control. Score it with `explore_traj` on u25/u50/u75, not from the coverage curve.
 
 - [ ] **Read P4/P5 when they land** and fill §8/§9. P4 at u450 was already at
@@ -6409,3 +6411,104 @@ one leads, and the specific conclusions that turned on the speed axis (§19.2).
 golden files showed **no other difference**, in any file or any other array, so
 the change is provably additive: no existing evaluator number moved.
 Regenerated with `--only evaluators`.
+
+---
+
+## 20. What κ actually does — and the evaluation it never reaches
+
+Jack, on the intermittent-search proposal: *"wait but kappa is learned and a
+function of state right?"* Yes. `STATE_DEPENDENT_STD=1` and the trunk is an
+RNN, so "state" carries history: the policy can hold high κ through a
+relocation and drop it through a scan with no new machinery. **§19's claim that
+the parameterization is "confined to a single scale by construction" is
+retracted.** The question is not expressivity but use.
+
+### 20.1 κ does not affect evaluation at all
+
+Every eval in this document runs `deterministic=True` — `world_setup.py:614`
+calls `evaluate_exploration` without the flag, which defaults True, and
+`behavior_probe.py:245` does the same. A deterministic action is the
+distribution's **mean**; κ only sets the spread, which is never drawn.
+
+Measured, on 64 matched trials of `p20_e_kcap` under two different κ ceilings:
+
+| | κ p50 | coverage | `edge_frac` | `straightness` | `signed_turn` | speed |
+|---|---|---|---|---|---|---|
+| ceiling 5.0 | **44.6** | 0.3340 | 0.0548 | 0.9782 | 0.1194 | 0.9506 |
+| ceiling 2.5 | **11.6** | 0.3335 | 0.0547 | 0.9782 | 0.1191 | 0.9505 |
+
+**κ moves 4× and every behavioural statistic is identical to four decimals.**
+
+So the κ story throughout §17–§19 is a story about **training**, never about
+evaluated behaviour: the cap changes which trajectories PPO collects, which
+changes the mean-direction policy that is learned, and the 12% coverage gap is
+that learned difference. It is not the cap "capping straightness at eval" —
+straightness at eval is a property of the mean policy.
+
+### 20.2 A harness bug, found by this and harmless because of it
+
+`explore_traj.py` and `behavior_probe.py` both built **every** agent from
+`cks[0]`'s config while loading each checkpoint's own weights. With `p20_e`
+listed first, `p20_e_kcap` was instantiated under `log_kappa_max=5.0` instead
+of its own 2.5, and its weights emitted the κ its training clamp had been
+suppressing — 44.6 against a 12.2 ceiling, which is impossible, since
+`shrink = sq/(sq+soft_rel) ∈ [0,1)` can only *reduce* κ.
+
+`behavior_probe` guards **world** keys against exactly this ("does not share a
+world … Probe them separately") and had no guard for **agent** keys. Same blind
+spot in both files. Fixed: each agent is built from its own config, and any
+differing agent knob is printed rather than silently absorbed.
+
+**It invalidated nothing.** Because evaluation is deterministic, the wrong κ was
+never used — the table above is the measurement of that. An earlier note
+claiming §18.4 and §18.6 were "taken off an agent the run never produced" was
+wrong in its consequence and is withdrawn; those sections stand. The fix
+matters going forward, for stochastic probes and for any κ-derived statistic —
+which is exactly what §20.3 is.
+
+### 20.3 The policy modulates κ, and never leaves the ballistic band
+
+`p20_e` (uncapped), 64 trials × 200 steps, correct config:
+
+| | value |
+|---|---|
+| κ p05 → p95 | **22 → 97** (4.3×) |
+| within-episode sd / between-episode sd | 0.035 / **0.0025** |
+| autocorrelation time of κ | **~3 steps** |
+
+So the modulation is real and it is *within* episodes — 14× more within than
+between. But translate it into behaviour: **κ=97 is 5.8° of turn per step,
+κ=22 is 12°.** Both are committed. A scanning or tumbling mode needs κ of
+order 1 — near-uniform, 60°+ — and **the policy never goes there.** It
+modulates between "very straight" and "slightly less straight", and the
+modulation decorrelates in ~3 steps against a run length of ~κ ≈ 50.
+
+`p20_e_kcap` has no modulation at all: κ p05 = p50 = p95 = **11.6** against a
+12.2 cap, autocorrelation τ ≈ 1 step. It is welded to its ceiling — which is
+the cleanest evidence in the document that the cap binds.
+
+**Conclusion: the action space can express intermittent search and the learned
+policy occupies a narrow, uniformly ballistic corner of it.** Adding a mixture
+component would not help — nothing prevents low κ today and the policy does not
+use it. That points at optimization or reward, which is where §6.9 pointed too.
+
+### 20.4 OPEN — is a deterministic eval the right measurement for explore?
+
+Every explore number in this document — `cells_per_step`, the new
+`swept_coverage`, §18.4's 12% gap, the whole P20 comparison — is the
+**noiseless mean policy**, not the policy that was trained.
+
+For exploit that is defensible: the mean is the intended behaviour. **For
+explore it is questionable.** The policy earns its training reward through
+*sampled* trajectories, and directional noise is functionally part of how a
+searcher covers ground. Removing it measures a policy that was never trained
+and would never be deployed. `project_incontext_teacher_swap`, recorded the
+same day in a different workstream, puts it bluntly: *"ALWAYS evaluate
+uncertain policies sampled, not deterministic."*
+
+**And it could move a live conclusion.** The κ-capped arm's whole difference is
+that it carries more directional noise — noise that a deterministic eval
+discards. Under a sampled eval its extra spread might be *functional* for
+coverage, so §18.4's 12% gap could shrink or invert. That is a hypothesis, not
+a finding; the test is `evaluate_exploration(..., deterministic=False)` on both
+final checkpoints, which needs no retraining.

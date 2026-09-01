@@ -969,6 +969,60 @@ case "$VARIANT" in
     EVAL_SCOPE=expl; EVAL_EVERY=25; CKPT_EVERY=25
     ;;
 
+  # === P22 -- is the sensory input helping or harming explore? =============
+  #
+  # 60 of the policy's 74 input dims (81%) are the wall raycast. 6.9 concluded
+  # it supplies nothing explore needs -- "the lawnmower ceiling is not blocked,
+  # because 4's B3 already hands the agent exact self-motion... if P5 plateaus
+  # at billiard, the diagnosis is recurrent capacity or reward shape, not the
+  # sensor". P5 DID plateau at billiard. So the sensor's contribution to
+  # explore has never been measured directly, only argued about.
+  #
+  # Reasons it might still help, none of which 6 tested:
+  #   - 6's numbers are all CROSS-ENV. Explore trains on 20 FIXED envs, where
+  #     the +-1 code is injective by design (wall_resolution=4 exists so two
+  #     positions in one cell read differently).
+  #   - integrating prev_displacement is arithmetically exact, but a LEARNED
+  #     integrator drifts over 200 steps; a signature re-anchors it.
+  #   - "have I been here" is a matching operation against your own history --
+  #     env-general, needing only within-episode discriminability.
+  # Reason it might not: the cone is heading-coupled (psi = atan2 of realized
+  # displacement), so it is a (position, heading) signature, not a place code.
+  #
+  # p22_nos is p20_e with INPUT_SENSORY=0 and nothing else moved, so p20_e is
+  # the control and needs no re-run. 74 input dims -> 14.
+  #
+  # explore:700, matching p20_e point for point rather than the shorter
+  # schedule the early curve would allow -- the question is about final
+  # coverage, not about time-to-breakout.
+  #
+  # SCORE ON swept_coverage (19), which is now logged. Not cells_per_step.
+  #
+  # Prediction on record: NO significant loss, per 6.9. If that holds, 81% of
+  # the input is dead weight the policy spends capacity gating off, and the
+  # interleaved model should probably drop it too. If coverage DROPS, the
+  # sensor is doing something 6 did not measure -- most likely within-episode
+  # place recognition -- and that matters more for interleaving than for
+  # explore, because regime inference has to key on something.
+  #
+  # Read a null carefully: sensor and memory are complements for recognition,
+  # and this regime cannot write to memory (allows_store=False). A null here
+  # does not license "the sensor is useless" in a regime that can store.
+  p22_nos)
+    ENCODER=/orcd/pool/003/jackking/cls_runs/sweeps/w52_attract_fwhm/001_att0.5_seed=43/encoder_final.pt
+    ENCODER_GAIN=100
+    HOPFIELD_BETA=100
+    SCHEDULE=${SCHEDULE:-'explore:700'}
+    ENVS_PER_WORLD=20; BATCH_ENVS=64
+    EPSILON_EXPLORE=0.1; GOAL_REWARD=2.0
+    PERSISTENCE_BONUS=0.20
+    REGIME_ASSIGNMENT=shuffle
+    ACTION_POLAR=1; STATE_DEPENDENT_STD=1; FREEZE_LOG_STD=0
+    MIN_ACTION_NORM=0.5; MAX_ACTION_NORM=1.0
+    INPUT_SENSORY=0
+    EVAL_SCOPE=expl; EVAL_EVERY=25; CKPT_EVERY=25
+    ;;
+
   *)
     echo "ERROR: unknown VARIANT=$VARIANT" >&2; exit 1 ;;
 esac

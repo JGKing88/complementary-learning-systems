@@ -858,7 +858,21 @@ def main() -> None:
 
     all_out = {}
     for path, ck in zip(args.ckpt, cks):
-        agent = load_agent(cfg, ck["agent_state_dict"], embed_dim, device)
+        # ITS OWN config, not cks[0]'s. Building every agent from the first
+        # checkpoint's config hands the others the FIRST run's architecture
+        # knobs while loading their own weights. Measured cost of the old
+        # behaviour: `p20_e_kcap`, trained under log_kappa_max=2.5, probed
+        # under `p20_e`'s 5.0 and emitted kappa 45 against its own 12.2
+        # ceiling -- so every §18.4 number for that arm was taken off an agent
+        # the run never produced. The _WORLD_KEYS guard above catches this for
+        # world knobs and nothing caught it for agent knobs.
+        own = cfg_from_checkpoint(ck["config"])
+        _adiff = [k for k in vars(cfg.agent)
+                  if getattr(own.agent, k, None) != getattr(cfg.agent, k)]
+        if _adiff:
+            print(f"  NOTE {path} differs from {args.ckpt[0]} on agent knobs: "
+                  f"{', '.join(sorted(_adiff))} -- each is built from its own.")
+        agent = load_agent(own, ck["agent_state_dict"], embed_dim, device)
         print(f"\n================ {path} ================")
         all_out[path] = _probe_one(
             args, cfg, agent, envs, vh, offsets, embed_dim, device)

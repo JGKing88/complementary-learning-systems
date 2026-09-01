@@ -218,8 +218,33 @@ def collect(args):
                       val_seed=args.val_seed, n_envs=cfg.num_val_envs)
     envs, vh, offsets = es["envs"], es["field"], es["offsets"]
 
-    agents = {lab: load_agent(cfg, ck["agent_state_dict"], embed_dim, device)
-              for lab, ck in zip(args.labels, cks)}
+    # Each agent is built from ITS OWN config, not from cks[0]'s.
+    #
+    # This was a bug, and a quiet one. Building every agent from the first
+    # checkpoint's config gives the others the FIRST run's architecture knobs
+    # while loading their own weights -- so `p20_e_kcap`, trained under
+    # log_kappa_max=2.5, ran here under `p20_e`'s 5.0 and emitted the kappa its
+    # training clamp had been suppressing (measured 45 against a 12.2 ceiling).
+    # The WORLD still comes from `cfg`, which is shared and guarded above; only
+    # the agent-side knobs are taken per checkpoint.
+    #
+    # `behavior_probe` has the same shape of guard for world keys and none for
+    # agent keys, which is what let this through in both places.
+    agents, agent_cfgs = {}, {}
+    for lab, ck in zip(args.labels, cks):
+        own = cfg_from_checkpoint(ck["config"])
+        agent_cfgs[lab] = own
+        agents[lab] = load_agent(own, ck["agent_state_dict"], embed_dim, device)
+
+    # Surface any agent knob that differs rather than silently handling it: a
+    # difference here is a real experimental fact about the comparison.
+    base = agent_cfgs[args.labels[0]].agent
+    for lab in args.labels[1:]:
+        diff = [k for k in vars(base)
+                if getattr(agent_cfgs[lab].agent, k, None) != getattr(base, k)]
+        if diff:
+            print("  NOTE %s differs from %s on agent knobs: %s"
+                  % (lab, args.labels[0], ", ".join(sorted(diff))))
 
     size = cfg.env.size
     trials = []
@@ -260,6 +285,16 @@ def collect(args):
                 rec = per_ckpt[lab]
                 st = _traj_stats(rec["pos_f"][:, b], rec["cell"][:, b],
                                  rec["action"][:, b], rec["q"][:, b], size)
+                # Per-step policy state, for the question of whether a
+                # state-dependent kappa is actually USED to switch between a
+                # ballistic and a tortuous mode (intermittent search) or just
+                # settles on one scale.
+                if "circ_sd" in rec:
+                    st["circ_sd"] = [round(float(v), 5)
+                                     for v in rec["circ_sd"][:, b]]
+                if "mu_norm" in rec:
+                    st["mu_norm"] = [round(float(v), 4)
+                                     for v in rec["mu_norm"][:, b]]
                 st["path"] = [[round(float(p[0]), 3), round(float(p[1]), 3)]
                               for p in rec["pos_f"][:, b]]
                 row["by_ckpt"][lab] = st
