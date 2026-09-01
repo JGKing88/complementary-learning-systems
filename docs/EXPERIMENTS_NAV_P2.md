@@ -11,6 +11,47 @@ mismatch that must be fixed first.
 
 ---
 
+## 0.0 What exploration is FOR — read before optimizing it
+
+Settled with Jack 2026-09-01, after asking whether the target is "act like a
+mouse" or "impose a mouse's constraints and see what emerges".
+
+**Neither, quite. The target is EFFECTIVE STABLE SEARCH.** The central question
+of this project is not whether animals explore this way, so mouse-likeness is
+not the objective — and it could not be one anyway, since it cannot be written
+as a reward without a behavioural dataset to imitate.
+
+**Exploration is instrumental.** It exists so the memory system has something to
+store and the other two metrics have something to work with.
+
+**So why learn it at all?** A scripted billiard is ten lines, costs zero
+updates, has no wall-pin basin and no κ runaway — and `p5_e` beat a perfect
+billiard by only 11% while `p10_e_pol` plateaued *at* it. The answer is the
+**one-model constraint**: the tri-metric claim is a single policy that explores,
+navigates and discriminates while *inferring* which regime it is in (which is
+why `input_goal_in_memory` is cheating). A scripted explorer cannot be that
+policy. Exploration is learned because of the one-model claim, not because we
+care how mice do it.
+
+**Consequences, which are the point of writing this down:**
+
+1. **The bar is instrumental, not maximal.** "Good enough and stable enough not
+   to poison interleaved training" — concretely `strategy_efficiency >= 1`
+   (matches a scripted billiard at its own speed) with low eval variance.
+   `p20_e` is at **1.038**. That bar is met. Further explore optimization has
+   low marginal value; the leverage is in the interleaved regime, where the
+   actual claim lives.
+2. **The speed cap is a declared realism constraint with a known price.**
+   "Massive steps are unrealistic" is biological-realism reasoning applied to an
+   instrumental subsystem, and §19.2 measures it at ~30% of expected discovery
+   time. Keeping it is fine. Believing it is free is not — §18.2 did, and is
+   retracted.
+3. **Do not chase mouse-likeness by accident.** If it ever becomes a real
+   target it needs a behavioural dataset to score against, and exploration stops
+   being instrumental and becomes the result. That is a different project.
+
+---
+
 ## 0. Where I am
 
 | | |
