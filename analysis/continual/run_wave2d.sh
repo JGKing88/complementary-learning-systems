@@ -1,9 +1,9 @@
 #!/bin/bash -l
 #SBATCH --job-name=cl-wave2d
-#SBATCH --time=12:00:00
+#SBATCH --time=36:00:00
 #SBATCH --ntasks=1
-#SBATCH --cpus-per-task=48
-#SBATCH --mem=120G
+#SBATCH --cpus-per-task=96
+#SBATCH --mem=220G
 #SBATCH --partition=ou_bcs_normal
 #SBATCH --mail-type=FAIL
 #SBATCH --mail-user=jackking@mit.edu
@@ -11,32 +11,53 @@
 set -uo pipefail
 
 # =============================================================================
-# Online EWC and SI, re-run after the block-rollout sampler was fixed.
+# Wave 2 of the discrete suite: every method that carries a coefficient.
 #
-# Two defects in `OnlineEWC.after_update`, both found by reading rather than by
-# a failure:
+#   C  online EWC   lambda
+#   F  SI           lambda
+#   G  LwF          alpha
+#   D  CLEAR        clone_coef
+#   E  DER++        alpha
 #
-#   * It drew from the `random` module, whose global state neither
-#     `torch.manual_seed` nor `np.random.seed` touches -- so EWC runs were
-#     silently non-reproducible while every other method in the suite was fine.
-#   * It was not a reservoir. `j` was drawn against the *buffer size* rather
-#     than the number of items seen, giving a constant acceptance of k/(k+1),
-#     about 0.97. The buffer therefore held roughly the last 32 rollouts of the
-#     block -- exactly what its own comment said it avoided.
+# Split from wave1d on the real dependency rather than on the continuous
+# suite's numbering: these five cannot start until
+# analysis/continual/calibrate_discrete.py has said where to sweep.
 #
-# Mutation-checked over 400 updates with k=8: the old draw retains items whose
-# mean index is 389.7 (tail-only would be 396), the fix gives 209.6 (uniform
-# would be 200).
+# The discrete objective is a Categorical(4) cross-entropy sitting near
+# ln(4) = 1.39. The continuous suite's objective was a Gaussian negative
+# log-likelihood of order 10. A coefficient carried across unchanged is
+# therefore wrong by roughly that ratio, in the direction that makes every
+# regulariser look *stronger* than it was tuned to be -- the mirror image of
+# the DER++/CLEAR failure, where a range taken from a cross-entropy paper never
+# reached 3% of a Gaussian objective and the conclusion was "the method does
+# not help here" when the truth was "the knob was never turned on".
 #
-# So the Fisher was being estimated on the tail of each block rather than on a
-# uniform sample of it. Both are defensible choices for "states the block
-# visited" and the numbers may barely move -- but the run that produced them
-# was not the run the code documented, and EWC is a headline method. The 48
-# affected histories are deleted rather than kept.
-#
-# SI shares the block boundary but not the sampler, so it is included only to
-# extend its lambda range, which Wave 2b showed had also stopped short.
+# So the ranges below are read off the calibration table, not off the
+# continuous runs and not off the papers. The guard immediately after them
+# exists because a placeholder that silently runs is worse than one that stops.
 # =============================================================================
+
+# --- FROM THE CALIBRATION TABLE ---------------------------------------------
+# Set CALIBRATED=yes only after calibrate_discrete.py has run against the
+# discrete checkpoint and these six lines have been updated from its output.
+# The saved table lives at $CLS_RESULTS/calibrate_discrete.json and its printed
+# form is echoed into $LOGS/calibration.txt by the launcher.
+CALIBRATED=no
+EWC_LAMS=""            # ratio ~1e-3 .. ~1e0, four decades
+SI_LAMS=""
+LWF_ALPHAS=""
+CLEAR_COEFS=""
+DERPP_ALPHAS=""
+# -----------------------------------------------------------------------------
+
+if [[ "$CALIBRATED" != "yes" ]]; then
+    echo "[wave2d] FATAL: coefficient ranges have not been calibrated." >&2
+    echo "[wave2d]        run:  python -m analysis.continual.calibrate_discrete \\" >&2
+    echo "[wave2d]                  --ckpt \$CLS_CKPTS_RNN/pretrain_20x20_discrete/final.pt \\" >&2
+    echo "[wave2d]                  --out \$CLS_RESULTS/calibrate_discrete.json" >&2
+    echo "[wave2d]        then fill in the ranges above and set CALIBRATED=yes." >&2
+    exit 1
+fi
 
 module load miniforge/24.3.0-0
 source activate cls
@@ -49,50 +70,91 @@ export OMP_NUM_THREADS=1
 export MKL_NUM_THREADS=1
 export OPENBLAS_NUM_THREADS=1
 
-OUT="$CLS_HISTORIES/wave1"
+OUT="$CLS_HISTORIES/wave1d"     # one histories dir for the whole discrete suite
 LOGS="$REPO/hopfield_nav/logs/wave2d"
 mkdir -p "$OUT" "$LOGS"
 
-CKPT="/home/jackking/cls/checkpoint_rnn/pretrain_20x20/final.pt"
-[[ -f "$CKPT" ]] || { echo "[wave2d] FATAL: missing $CKPT" >&2; exit 1; }
+CKPT="$CLS_CKPTS_RNN/pretrain_20x20_discrete/final.pt"
+if [[ ! -f "$CKPT" ]]; then
+    echo "[wave2d] FATAL: discrete pretrain checkpoint missing: $CKPT" >&2
+    exit 1
+fi
+CKPT_MODE=$(python - "$CKPT" <<'PY'
+import sys, torch
+ck = torch.load(sys.argv[1], map_location="cpu", weights_only=False)
+print(((ck.get("cfg") or {}).get("agent") or {}).get("movement_mode", "unknown"))
+PY
+)
+if [[ "$CKPT_MODE" != "discrete" ]]; then
+    echo "[wave2d] FATAL: checkpoint movement_mode=$CKPT_MODE, expected discrete." >&2
+    exit 1
+fi
 
-SEEDS=8
-COMMON=(--n_envs 5 --iters_per_block 200 --max_steps 200 --size 20
-        --observation_size 60 --movement_mode continuous --goal_radius 0.5
-        --num_full_iters 1 --steps_per_rollout 200 --hidden_size 128
-        --num_rnn_layers 1 --max_grad_norm 1.0 --device cpu
-        --load_checkpoint "$CKPT" --no-world_spec
-        --lr 1e-3 --epochs 1 --n_minibatches 1 --batch_envs 1)
+N_ENVS=5; SIZE=20; OBS=60; MOVEMENT=discrete
+MAX_STEPS=200; ITERS=200; SEEDS=8
+
+COMMON=(--n_envs "$N_ENVS" --iters_per_block "$ITERS" --max_steps "$MAX_STEPS"
+        --size "$SIZE" --observation_size "$OBS" --movement_mode "$MOVEMENT"
+        --goal_radius 0.5 --num_full_iters 1 --steps_per_rollout "$MAX_STEPS"
+        --hidden_size 128 --num_rnn_layers 1 --max_grad_norm 1.0 --device cpu)
 
 echo "[wave2d] repo=$REPO  cpus=${SLURM_CPUS_PER_TASK:-$(nproc)}  started $(date -Is)"
+echo "[wave2d] ewc=$EWC_LAMS  si=$SI_LAMS  lwf=$LWF_ALPHAS"
+echo "[wave2d] clear=$CLEAR_COEFS  derpp=$DERPP_ALPHAS"
 
 PIDS=(); NAMES=()
 launch () {
     local tag="$1"; shift
     python -u -m analysis.continual.baseline \
-        --out "$OUT/${tag}.json" --run_name "$tag" \
+        --out "$OUT/${tag}.json" --run_name "$tag" --no-world_spec \
         "${COMMON[@]}" "$@" > "$LOGS/${tag}.log" 2>&1 &
     PIDS+=($!); NAMES+=("$tag")
 }
 
-for LAM in 1 10 100 1000 10000 100000; do
+BASE=(--load_checkpoint "$CKPT" --lr 1e-3 --epochs 1 --n_minibatches 1 --batch_envs 1)
+
+# --- C: Online EWC ----------------------------------------------------------
+for LAM in $EWC_LAMS; do
 for S in $(seq 1 $SEEDS); do
-    launch "C_ewc_lam${LAM}_s${S}" --seed "$S" --method online_ewc \
-        --method_args "lam=${LAM},gamma=1.0,fisher=true"
+    launch "C_ewc_lam${LAM}_s${S}" "${BASE[@]}" --seed "$S" \
+        --method online_ewc --method_args "lam=${LAM},gamma=1.0,fisher=true"
 done; done
 
-# SI's lambda range, extended past where Wave 2b showed it still climbing.
-for LAM in 10000; do
+# --- F: Synaptic Intelligence ------------------------------------------------
+for LAM in $SI_LAMS; do
 for S in $(seq 1 $SEEDS); do
-    launch "F_si_lam${LAM}_s${S}" --seed "$S" --method si \
-        --method_args "lam=${LAM},xi=0.1"
+    launch "F_si_lam${LAM}_s${S}" "${BASE[@]}" --seed "$S" \
+        --method si --method_args "lam=${LAM},xi=0.1"
+done; done
+
+# --- G: Learning without Forgetting -----------------------------------------
+for A in $LWF_ALPHAS; do
+for S in $(seq 1 $SEEDS); do
+    launch "G_lwf_a${A}_s${S}" "${BASE[@]}" --seed "$S" \
+        --method lwf --method_args "alpha=${A}"
+done; done
+
+# --- D: CLEAR ---------------------------------------------------------------
+for CC in $CLEAR_COEFS; do
+for S in $(seq 1 $SEEDS); do
+    launch "D_clear_cc${CC}_s${S}" "${BASE[@]}" --seed "$S" \
+        --method clear --method_args "buffer_size=inf,replay_batches=1,sampling=balanced,clone_coef=${CC}"
+done; done
+
+# --- E: DER++ ---------------------------------------------------------------
+for A in $DERPP_ALPHAS; do
+for S in $(seq 1 $SEEDS); do
+    launch "E_derpp_a${A}_s${S}" "${BASE[@]}" --seed "$S" \
+        --method derpp --method_args "buffer_size=inf,replay_batches=1,sampling=balanced,alpha=${A}"
 done; done
 
 echo "[wave2d] launched ${#PIDS[@]} tasks; waiting"
+
 FAILED=()
 for k in "${!PIDS[@]}"; do
     if ! wait "${PIDS[$k]}"; then FAILED+=("${NAMES[$k]}"); fi
 done
+
 echo "[wave2d] finished $(date -Is)"
 if (( ${#FAILED[@]} )); then
     echo "[wave2d] ${#FAILED[@]} FAILED: ${FAILED[*]:0:20}" >&2
