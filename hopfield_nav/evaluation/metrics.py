@@ -630,6 +630,8 @@ def evaluate_exploration(
     for n_dist in n_distractors_list:
         rng = np.random.RandomState(seed)
         trial_cells: list[int] = []
+        trial_swept: list[float] = []
+        per_env_union_swept: list[float] = []
         trial_denom: list[int] = []
         trial_found: list[bool] = []
         trial_steps_to_goal: list[int] = []
@@ -657,7 +659,7 @@ def evaluate_exploration(
                 hopfields.append(hopfield)
                 starts.append(random_start(grid_size, goal, rng))
 
-            visited, found, steps_to_goal = batched_exploration_trials(
+            visited, found, steps_to_goal, swept_res = batched_exploration_trials(
                 agent=agent, env=env, env_offset=env_offset,
                 vectorhash=vectorhash, hopfields=hopfields, cfg=cfg,
                 device=device, starts=starts, max_steps=max_steps,
@@ -665,6 +667,8 @@ def evaluate_exploration(
                 action_temperature=action_temperature,
             )
 
+            trial_swept.extend(float(v) for v in swept_res.per_trial)
+            per_env_union_swept.append(swept_res.union)
             union: set = set()
             summed = 0
             for _trial_idx, (cells, hit, s) in enumerate(
@@ -699,6 +703,18 @@ def evaluate_exploration(
         else:
             mean_cov = 0.0
         results[n_dist] = {
+            # THE HEADLINE. Union of goal_radius discs along the path = P(the
+            # goal was findable). mean_coverage counts snapped cells instead,
+            # which silently uses r ~ 0.5 and penalises long strides for
+            # ground they actually swept. See evaluation/swept.py.
+            "swept_coverage": (float(np.mean(trial_swept))
+                               if trial_swept else 0.0),
+            # Swept analogue of union_coverage: what ANY of the trials in an
+            # env reached. A spread diagnostic, not a single-episode search
+            # number -- a policy collapsed onto one route scores the same here
+            # as it does per-trial.
+            "union_swept_coverage": (float(np.mean(per_env_union_swept))
+                                     if per_env_union_swept else 0.0),
             "mean_coverage": mean_cov,
             "cells_per_step": mean_cells / max(max_steps, 1),
             "union_coverage": union_cov,

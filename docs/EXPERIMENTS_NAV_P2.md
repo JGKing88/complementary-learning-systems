@@ -15,6 +15,7 @@ mismatch that must be fixed first.
 
 | | |
 |---|---|
+| **Metric** | **`swept_coverage` is the headline explore metric from 2026-09-01 (§19).** Union of `goal_radius` discs along the path = P(goal findable). `mean_coverage` counts snapped cells, which hides the speed axis: it says speed barely matters, swept area says speed dominates. §2.1/§18.2's "the speed cap is free" is retracted. `union_swept_coverage` is the spread diagnostic. |
 | **Status** | **P10 polar landed (§9.4–9.8).** Two of four arms finished; the exploit-frozen model is the phase-2 best. |
 | **Branch / worktree** | `nav-tri-metric` at `.claude/worktrees/nav-tri-metric` |
 | **Predecessor** | `docs/EXPERIMENTS_NAV_TRI.md` — read its §0 findings 1–22 |
@@ -133,6 +134,8 @@ env refreshing, and **never** the `goal_stored_in_memory` input bit.
 ## 2. What changed, and three findings that reshape the plan
 
 ### 2.1 Step bounds are already implemented — and they bracket the explore optimum
+
+> **RETRACTED for the explore claim — §19.2.** The bracketing argument is measured on **cell** coverage, which counts snapped cell centres and so charges a long stride for ground it actually swept. Under **swept area** at the real detection radius, coverage is *monotone increasing* in speed and the [0.5, 1.0] cap costs ~30% of expected discovery time. The step bounds are still the right call for physical realism; they are not free.
 
 `--min_action_norm` / `--max_action_norm` exist and are plumbed end to end
 (`config.py:69-74`, `train_navigate.py:1073-1081`, `world/env.py:566-569`,
@@ -5694,6 +5697,10 @@ be careful here — the same metric once read 3.97 because it referenced the
 capping at 1.0 sits at the low edge of the optimum: it should cost little
 against 2.0, and may help.
 
+> **RETRACTED — §19.2.** Measured on **cell** coverage, which hides the
+> speed axis. Under swept area the cap costs ~30% of expected discovery time.
+> The table below is a correct reading of the wrong metric.
+
 **MEASURED — it helps, and it raises the target.** `billiard_cells_per_step`
 at this arena and horizon:
 
@@ -6218,3 +6225,146 @@ from "pinned but lucky".
 **Falsifier:** if the pin clears but coverage ends *lower*, the bonus was doing
 something real at the walls that this removes, and the answer is a smaller
 `persistence_bonus` on realized rather than the swap.
+
+---
+
+## 19. The explore metric — swept area replaces cell coverage
+
+Jack, opening an RL-theory discussion on explore: *"we want to train the agent
+to do optimal behavior to find a hidden goal, no?"* Yes — and taking that
+seriously changes the metric, because `mean_coverage` measures something else.
+
+**From 2026-09-01 the headline explore metric is `swept_coverage`.**
+
+### 19.1 What it is
+
+At every step the agent occupies a continuous position and would detect a goal
+anywhere within `goal_radius` of it — that is exactly what `at_goal` tests, an
+**L2 ball on the continuous position** (`env.py:170`, whose docstring already
+warns against "the snap-square vs L2-ball mismatch"). `swept_coverage` is the
+fraction of the arena covered by the **union** of those discs along the path.
+
+For a uniformly-placed goal it is **P(the goal was findable this episode)** —
+not a proxy for it, equal to it.
+
+`mean_coverage` counts unique *snapped cells* the agent's position landed on.
+That has a detection radius too; it is just an accidental one — the half-width
+of a grid cell — and it disagrees with the real one wherever the stride is long.
+
+### 19.2 Why it matters: cell coverage hides the speed axis
+
+Billiard, 200 paths, T=200, r=1.0:
+
+| speed | cell cov@200 | **swept cov@200** | E[T] by cells | **E[T] by swept** |
+|---|---|---|---|---|
+| 0.50 | 0.246 | 0.391 | 174 | 157 |
+| 1.00 | 0.383 | 0.633 | 159 | **127** |
+| 1.25 | **0.399** | 0.712 | 157 | 114 |
+| 1.50 | **0.401** | 0.771 | 157 | 104 |
+| 2.00 | 0.384 | 0.839 | 158 | **88** |
+| 3.00 | 0.397 | 0.881 | 157 | **70** |
+
+**Cell coverage says speed barely matters** — E[T] flat at ~157 across a 6×
+range, with a shallow peak at 1.25–1.5. **Swept area says speed is the dominant
+variable** — E[T] falls 127 → 88 → 70 from speed 1.0 to 3.0. A long stride
+sweeps the same corridor but lands on fewer cell *centres*, and cell-counting
+charges it for ground it actually crossed.
+
+#### RETRACTION — §2.1 and §18.2's "the speed cap is free"
+
+§2.1 says the [0.5, 2.0] band "brackets the explore optimum — billiard coverage
+peaks at |a| ~ 1.0–1.5 and FALLS above it, so this costs explore nothing", and
+§18.2 went further, calling the [0.5, 1.0] cap a measured *improvement*
+(billiard cps 0.757 at 1.0 against 0.687 at 2.0).
+
+**Both were computed on cell coverage and neither survives the swept version.**
+Under the metric that matches how the goal is actually detected, coverage is
+monotone increasing in speed and the cap costs roughly **30% of expected
+discovery time**. The [0.5, 1.0] band is a deliberate price for physical
+realism — Jack's "massive steps are unrealistic" — which is a fine reason, but
+it is a price and §18.2 reported it as a win.
+
+### 19.3 Why the endpoint, and not the time integral
+
+Expected discovery time is `E[min(T, 200)] = Σ_t (1 − swept(t))`, the area
+*above* the curve — the more fundamental quantity, since it rewards covering
+early rather than merely covering. Measured on the real rollouts, it ranks
+everything identically to the endpoint:
+
+| | swept@200 | E[T] |
+|---|---|---|
+| `p20_e` | **0.625** | **124.7** |
+| `p20_e_kcap` | 0.537 | 130.3 |
+
+and across six checkpoints (u25 → u700) the two orderings are the same list.
+The mean curves do cross (t = 14, 23, 70 — the capped arm leads briefly early)
+but never enough to flip a verdict. Our policies share one curve *shape* and
+differ only in rate, and when shape is fixed the endpoint determines the
+integral.
+
+So the endpoint wins on simplicity and cost — it needs only the final union
+mask, not a running fraction at every step.
+
+**The condition under which this stops being safe, and it is not
+hypothetical:** `novelty_scale_remaining` pays up to **10× more for late cells
+than early ones**, which is precisely a pressure to bend curve shape without
+moving its end. If that knob changes, re-check against `E[T]` before trusting
+the endpoint.
+
+### 19.4 Why it is not radius-free, though Jack is right to want that
+
+Jack: *"this poses an issue because this should be independent of goal_radius
+ideally."* It cannot be, and cell coverage is not either — it silently fixes
+`r ≈ 0.5` at the grid's half-width. There is no scale-free notion of "how much
+did you observe", and no meaningful `r → 0` limit: passing arbitrarily close to
+every point takes unbounded time.
+
+**An attempt at a radius-invariant behavioural statistic failed and is recorded
+so it is not retried.** `sweep_efficiency = swept / (2r · path_length)` should
+be 1.0 for a perfect lawnmower and radius-free to first order. Measured:
+
+| speed | r=0.5 | r=1.0 | r=2.0 |
+|---|---|---|---|
+| 0.50 | 0.899 | 0.811 | 0.644 |
+| 1.00 | 0.814 | 0.665 | 0.439 |
+| 2.00 | 0.646 | 0.440 | 0.247 |
+| 3.00 | 0.507 | 0.315 | 0.171 |
+
+It varies by 0.25–0.40 across `r` and is not speed-free either. Two real
+geometric causes, neither fixable by bookkeeping: **boundary waste** (the disc
+overhangs the wall; loss scales as `r · perimeter / area` = `0.2r` here, which
+predicts the observed r-drop), and **arena saturation** (the ratio is bounded
+by `arena / 2rL`; at speed 3, r=1 that ceiling is 0.335 and the measurement is
+0.315 — sitting *on* it). Normalising by the bound gives 0.81/0.67/0.88/0.94,
+non-monotone, so that does not rescue it either.
+
+The radius here is the task's own `goal_radius`, which is the honest choice: a
+bigger goal really is easier to find.
+
+### 19.5 `union_swept_coverage`
+
+Jack's ask, the swept analogue of `union_coverage`: the OR of the per-trial
+masks within an env, averaged over envs. It answers "given B attempts, how much
+of the arena was reachable at all" — a **spread / mode-collapse diagnostic**,
+not a single-episode search number. A policy collapsed onto one route scores
+`union == per_trial` exactly; that case is pinned by
+`test_a_collapsed_policy_gains_nothing_from_more_trials`.
+
+Expect it to saturate *harder* than the cell version (already 0.951 / 0.923 /
+0.876), since discs are strictly larger than cells. Good collapse detector,
+poor discriminator between healthy policies. `swept_coverage` stays the number
+that separates them.
+
+### 19.6 What this does not change
+
+`mean_coverage`, `cells_per_step`, `union_coverage` and `redundancy` are all
+still computed and logged. Every number in §9, §18 and before them stands as
+measured — they were correct readings of cell coverage. What changes is which
+one leads, and the specific conclusions that turned on the speed axis (§19.2).
+
+**Golden note.** Adding the two keys changed
+`evaluators.npz[evaluate_exploration__agg_keys/agg_vals]` from shape (18,) to
+(22,) — 2 keys × 2 distractor levels. `gen_golden --check` across all five
+golden files showed **no other difference**, in any file or any other array, so
+the change is provably additive: no existing evaluator number moved.
+Regenerated with `--only evaluators`.

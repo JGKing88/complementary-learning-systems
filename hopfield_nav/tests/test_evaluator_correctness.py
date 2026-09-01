@@ -72,7 +72,7 @@ def test_exploration_visits_exactly_the_cells_the_walk_covers():
     """An east-walker from (1, 2) on a 5-wide grid covers (1..4, 2). Four cells."""
     cfg, vh, envs = _world(goal=(0, 0))
     agent = ScriptedAgent(move=EAST); agent.eval()
-    visited, found, steps = batched_exploration_trials(
+    visited, found, steps, _sw = batched_exploration_trials(
         agent=agent, env=envs[0], env_offset=vh.env_offsets[0], vectorhash=vh,
         hopfields=_empty(cfg, 1), cfg=cfg, device=DEVICE,
         starts=[(1, 2)], max_steps=10, deterministic=True)
@@ -88,7 +88,7 @@ def test_exploration_reports_the_step_the_walk_hits_the_goal():
     """Goal at (3, 2), start at (0, 2): east-walker arrives on step 3."""
     cfg, vh, envs = _world(goal=(3, 2))
     agent = ScriptedAgent(move=EAST); agent.eval()
-    _v, found, steps = batched_exploration_trials(
+    _v, found, steps, _sw = batched_exploration_trials(
         agent=agent, env=envs[0], env_offset=vh.env_offsets[0], vectorhash=vh,
         hopfields=_empty(cfg, 1), cfg=cfg, device=DEVICE,
         starts=[(0, 2)], max_steps=10, deterministic=True)
@@ -107,7 +107,7 @@ def test_exploration_redundancy_is_one_when_rollouts_are_disjoint():
     cfg, vh, envs = _world(goal=(0, 0))
     agent = ScriptedAgent(move=EAST); agent.eval()
     starts = [(0, y) for y in range(4)]
-    visited, _f, _s = batched_exploration_trials(
+    visited, _f, _s, _sw = batched_exploration_trials(
         agent=agent, env=envs[0], env_offset=vh.env_offsets[0], vectorhash=vh,
         hopfields=_empty(cfg, 4), cfg=cfg, device=DEVICE,
         starts=starts, max_steps=10, deterministic=True)
@@ -128,7 +128,7 @@ def test_exploration_redundancy_is_one_over_n_when_rollouts_coincide():
     """
     cfg, vh, envs = _world(goal=(0, 0))
     agent = ScriptedAgent(move=EAST); agent.eval()
-    visited, _f, _s = batched_exploration_trials(
+    visited, _f, _s, _sw = batched_exploration_trials(
         agent=agent, env=envs[0], env_offset=vh.env_offsets[0], vectorhash=vh,
         hopfields=_empty(cfg, 4), cfg=cfg, device=DEVICE,
         starts=[(0, 2)] * 4, max_steps=10, deterministic=True)

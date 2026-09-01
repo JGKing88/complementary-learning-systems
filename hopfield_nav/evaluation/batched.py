@@ -42,6 +42,7 @@ import torch
 from ..policy import channels
 from ..rollout import signal as signal_ops
 from ..world.env import GridEnv, at_goal
+from .swept import SweptArea, swept_positions
 from hopfield import Hopfield
 from ..world.vec_env import make_vec
 from ..world import episode
@@ -216,8 +217,11 @@ def batched_exploration_trials(
     depend on how the env happens to be configured.
 
     Returns, per trial: the set of cells visited (including the start), whether
-    the goal was ever occupied, and the step at which it first was (-1 if
-    never).
+    the goal was ever occupied, the step at which it first was (-1 if never),
+    and a SweptResult -- per-trial swept-area fraction plus the union across
+    trials. Swept area is the union of goal_radius discs along the path, which
+    for a uniform goal is P(found). See evaluation/swept.py for why that is the
+    headline number and cell coverage is not.
     """
     B = len(hopfields)
     assert len(starts) == B
@@ -241,6 +245,10 @@ def batched_exploration_trials(
     prev_disp_t = torch.zeros(B, 2, device=device)
 
     visited: list[set] = [{tuple(p)} for p in vec.positions()]
+    # Swept area -- the headline metric (evaluation/swept.py). Accumulated on
+    # the CONTINUOUS position, because that is what `at_goal` tests.
+    swept = SweptArea(cfg.env.size, cfg.env.goal_radius, B)
+    swept.add(swept_positions(vec))
     found = [False] * B
     steps_to_goal = [-1] * B
 
@@ -328,6 +336,7 @@ def batched_exploration_trials(
         prev_disp_t = torch.from_numpy(
             vec.last_displacement()).float().to(device)
 
+        swept.add(swept_positions(vec))
         reached = at_goal(vec)
         for b, p in enumerate(vec.positions()):
             visited[b].add(tuple(p))
@@ -335,7 +344,7 @@ def batched_exploration_trials(
                 found[b] = True
                 steps_to_goal[b] = step + 1
 
-    return visited, found, steps_to_goal
+    return visited, found, steps_to_goal, swept.result()
 
 
 __all__ = ["batched_exploration_trials", "batched_navigation_trials"]

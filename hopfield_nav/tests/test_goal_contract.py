@@ -805,7 +805,7 @@ def test_exploration_records_a_goal_it_starts_on():
     cfg, agent, vh, envs = _explore_world()
     env, off = envs[0], vh.env_offsets[0]
     hop = Hopfield(EMBED_DIM, beta=cfg.hopfield.beta, device="cpu")
-    _visited, found, steps = batched_exploration_trials(
+    _visited, found, steps, _sw = batched_exploration_trials(
         agent=agent, env=env, env_offset=off, vectorhash=vh, hopfields=[hop],
         cfg=cfg, device=torch.device("cpu"), starts=[env.goal_location],
         max_steps=10, deterministic=True)
@@ -845,7 +845,7 @@ def test_exploration_runs_every_trial_to_the_full_budget():
     hops = [Hopfield(EMBED_DIM, beta=cfg.hopfield.beta, device="cpu")
             for _ in range(4)]
     max_steps = 12
-    visited, _f, _s = batched_exploration_trials(
+    visited, _f, _s, _sw = batched_exploration_trials(
         agent=agent, env=env, env_offset=off, vectorhash=vh, hopfields=hops,
         cfg=cfg, device=torch.device("cpu"),
         starts=[(0, 0), (0, 1), (1, 0), (1, 1)], max_steps=max_steps,
