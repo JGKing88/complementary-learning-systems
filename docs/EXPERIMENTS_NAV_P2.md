@@ -19,7 +19,7 @@ mismatch that must be fixed first.
 | **Branch / worktree** | `nav-tri-metric` at `.claude/worktrees/nav-tri-metric` |
 | **Predecessor** | `docs/EXPERIMENTS_NAV_TRI.md` — read its §0 findings 1–22 |
 | **Open decisions** | §11 — four forks put to Jack; spec assumes the recommended default in each |
-| **Running** | **P20 (§18) — the explore half on Jack's encoder.** `p20_e` **21695407** and `p20_e_kcap` **21695408**, both `explore:700`, launched 2026-08-31. Two arms because the κ cap that unlocked exploit (§17.9) is predicted to **hurt** explore — coverage comes from straightness, and the cap floors directional noise at 16.4°. Predictions on record in §18.3. |
+| **Running** | **P20 (§18) — DONE.** Both arms COMPLETED 700/700. **`p20_e` 21695407 is the delivered explore model**: `mean_coverage` **0.390** at realized speed **0.964**, `strategy_efficiency` **1.038**, `chase_q` **0.000** — matches `p5_e`'s coverage at half the speed, on a **fresh `held_out` draw**. The κ cap that unlocked exploit COSTS explore 12.1%, but **not** via straightness (§18.4 refutes its own mechanism) — via `edge_frac`, 0.061 vs 0.127. |
 | **Running** | **P19 (§17) — DONE.** Both arms COMPLETED 800/800. **`p19_kcap` 21656252 is the delivered model**: Jack's w52 encoder, gain=beta=100, learned speed [0.5, 1.0], plus `LOG_KAPPA_MAX=2.5`. **Accuracy 1.000 from u125; beeline from u150, worst 1.090, final 1.013; 27 consecutive evals ≥0.990.** Curriculum LOSES on both halves (§17.11). |
 | **Charts** | One published page per run — `p10_pol_v1` [3bc9ad4e](https://claude.ai/code/artifact/3bc9ad4e-0655-43ca-b870-0516f4487bdc) · `p10_pol` [388023ce](https://claude.ai/code/artifact/388023ce-a725-4253-a53b-c9979a77baf2) · `p10_e_pol` [00bd7fd3](https://claude.ai/code/artifact/00bd7fd3-bb60-4e22-a968-c62822c5cdb3) · `p10_e_pol_v1` [8fd3ecf0](https://claude.ai/code/artifact/8fd3ecf0-c429-40d6-bde6-008ca25b5a40) · `p11_cur` [4de8dfa7](https://claude.ai/code/artifact/4de8dfa7-9403-43c8-b4f9-b14669ae603e) · `p11_tp` [4dbbe6e9](https://claude.ai/code/artifact/4dbbe6e9-c8e3-41fb-9b38-36a1443bf420) · `p11_cur_tp` [6c3a0503](https://claude.ai/code/artifact/6c3a0503-dba1-405a-a90c-d33c491ee5b2) · `p12_lo` [6b09232a](https://claude.ai/code/artifact/6b09232a-bcd2-4609-9c1d-97d9757d0f5a) · `p12_lo_curtp` [835846df](https://claude.ai/code/artifact/835846df-d30d-46f7-b979-3fe41fdfff7e) |
 | **Finished** | **`p10_pol_v1` 21300389** — 2000/2000, **1.000 success @ 10.95 steps (1.10× optimal)**, the phase-2 best exploit model. **`p10_e_pol` 21300390** — 1500/1500, **cps 0.75** against a billiard ceiling of 0.775. |
@@ -5692,6 +5692,24 @@ be careful here — the same metric once read 3.97 because it referenced the
 capping at 1.0 sits at the low edge of the optimum: it should cost little
 against 2.0, and may help.
 
+**MEASURED — it helps, and it raises the target.** `billiard_cells_per_step`
+at this arena and horizon:
+
+| `‖a‖` | 0.5 | 0.75 | **1.0** | 1.25 | 1.5 | **1.98** | 2.0 |
+|---|---|---|---|---|---|---|---|
+| billiard cps | 0.495 | 0.658 | **0.757** | 0.783 | 0.761 | **0.702** | 0.687 |
+
+The reactive ceiling at the new cap (**0.757**) is **higher** than at the old
+one (0.687), because 2.0 is past the peak and 1.0 is not. So the [0.5, 1.0]
+band Jack's speed instruction imposes is not a concession on the explore side —
+it is nearer the coverage optimum than the band `p10_e_pol` ran in.
+
+This also fixes the target. `p10_e_pol`'s cps 0.75 at `‖a‖ ≈ 2.0` is
+`strategy_efficiency` **1.09**, consistent with `p5_e`'s independently measured
+1.113 at 1.98. **An arm that matches that efficiency at speed 1.0 should read
+cps ≈ 0.84**, not 0.75. That is the number to hold these runs to; anything
+compared against 0.75 flatters them by ~12%.
+
 #### Why 700 updates and not 1500
 
 `p10_e_pol`'s own series converged at u200–250 and then went nowhere:
@@ -5709,7 +5727,8 @@ lands near 4.5 h against the 6 h partition wall, with checkpoints every 25.
 ### 18.3 Predictions on record
 
 **H1 — the encoder does NOT hurt explore.** Grounded in §7.7.2's 0.930 vs
-0.698. *Falsifier:* cps at ten distractors materially below cps at zero, or
+0.698. **SCORED — §18.4: CONFIRMED.** `chase_q` 0.000, coverage at ten
+distractors equal to coverage at zero. *Falsifier:* cps at ten distractors materially below cps at zero, or
 `chase_q` materially above 0. `p10_e_pol` had `cps10 ≈ cps0` at every one of
 its 30 evals and `chase_q ≈ 0.000`.
 
@@ -5722,15 +5741,150 @@ ceiling it beat by 11%. A von Mises at κ has circular sd ≈ `1/√κ`, so the 
 against the **4.7°** the `p10_pol_v1` exploit arm learned far-field (§9.8.1).
 Capping κ is capping straightness.
 
+> **SCORED — §18.4. Direction right, mechanism WRONG.** The cap does cost
+> explore: −12.1% `strategy_efficiency`. But `straightness` came out **higher**
+> on the capped arm (0.979 vs 0.958), the opposite of what the argument above
+> requires. The real mechanism is `edge_frac` — 0.061 vs 0.127 — a κ ceiling
+> is a ceiling on *turn sharpness*, so the capped policy cannot run the wall
+> and under-visits the perimeter. Straightness is not a coverage proxy.
+
 *Falsifier:* `p20_e_kcap ≥ p20_e` on `strategy_efficiency`. **If the cap is
 neutral or good here too, that is the larger finding** — it would mean the
 `e⁵` default is simply wrong for this project across both regimes, not a
 regime-specific fix, and §17.9's result would generalize well beyond the arm it
 was found on.
 
-**H3 — converged by ~u250**, as `p10_e_pol` was.
+**H3 — converged by ~u250**, as `p10_e_pol` was. **SCORED — §18.4:
+approximately right** (~0.68 by u250) but the uncapped arm kept improving to
+0.777 by u700.
 
 The three predictions are independent: H1 is about the memory, H2 about the
 policy's action distribution, H3 about budget. §7.7.1 got two predictions wrong
 in a row in this document (§7.7.2), so these are recorded to be scored, not to
 be right.
+
+### 18.4 RESULT — the κ cap costs 12% of explore, and NOT for the reason predicted
+
+Both arms COMPLETED 700/700. Behaviour probe on the final checkpoints, job
+21719662, `--mode explore`, 8 envs × 32 trials, **`--split place=held_out`** —
+a fresh draw, not the `recorded` split every §9.6–9.8 number sits on (§9.8.2).
+
+| | **`p20_e`** (κ uncapped) | **`p20_e_kcap`** (κ ≤ 12.2) | Δ |
+|---|---|---|---|
+| `mean_coverage` | **0.390** | 0.338 | −13.3% |
+| `cells_per_step` | **0.780** | 0.676 | |
+| **`strategy_efficiency`** | **1.038** | **0.912** | **−12.1%** |
+| `billiard_ref` | 0.752 | 0.742 | |
+| `realized_mag_mean` | 0.964 | 0.951 | |
+| **`straightness`** | **0.958** | **0.979** | **+2.2% — WRONG WAY** |
+| `edge_frac` | **0.127** | **0.061** | **−52%** |
+| `chase_q` (0 / 10 dist) | 0.000 / 0.013 | 0.000 / −0.006 | |
+
+Training-eval agreement is good: the final four evals gave 0.777 against the
+probe's 0.780 for `p20_e` and 0.694 against 0.676 for `p20_e_kcap`, on
+different draws.
+
+#### H1 — CONFIRMED. The sharper encoder does not break explore.
+
+`chase_q` is **0.000** at zero distractors on both arms and **0.013 / −0.006**
+at ten. Coverage at ten distractors equals coverage at zero (0.387 vs 0.390).
+The concern §0 has carried since §5.7 — that a sharp retrieval would give the
+policy a confident `q` pointing at a phantom and drive `chase_q` up — **does
+not materialize on this encoder.** §7.7.2's static prediction (goal-absent
+`‖q‖` separability 0.930 on w52 against 0.698 on the gain-5 code) is now
+backed behaviourally.
+
+#### H2 — direction CONFIRMED, mechanism REFUTED
+
+The cap costs **12.1% of `strategy_efficiency`**, and `p20_e` won **all 16**
+of the last 16 matched eval points (u325–u700), so the effect is real and well
+past this project's noise bar. Across all 24 matched points from u125 the means
+are **0.703 against 0.671**; across the final four, **0.777 against 0.694** —
+the gap widens with training rather than closing.
+
+**But the stated mechanism is wrong, and the probe says so directly.** §18.3
+argued: "A von Mises at κ has circular sd ≈ 1/√κ, so the cap floors per-step
+directional noise at 16.4°… **capping κ is capping straightness**." Measured
+`straightness` is **higher** on the capped arm — 0.979 against 0.958. The
+prediction has the sign backwards on its own mechanism variable.
+
+**What actually separates them is `edge_frac`: 0.061 against 0.127, less than
+half.** Uniform occupancy is 0.19 and `p5_e` measured 0.121, so `p20_e` sits
+where the good explore policies sit and the capped arm is the outlier — it
+**avoids the perimeter**. The coherent reading, and it is consistent with every
+number in the table: a κ ceiling is a ceiling on how *sharply* the policy can
+turn. A policy that cannot turn tightly cannot run the wall — it must arc away
+on approach — so it under-visits the perimeter ring and its trajectories are
+straighter precisely *because* it never makes the hard corner turns the
+uncapped policy makes. Straightness goes up, coverage goes down.
+
+**The general lesson is that `straightness` is not a coverage proxy.** The
+billiard reference has straightness ≈ 1 and is the *reactive ceiling*, which
+invited exactly the inference §18.3 made. Here the straighter policy is the
+worse one. Any future argument of the form "this should help coverage because
+it makes motion more persistent" now has a counterexample in this document.
+
+#### The cap buys stability, and that is a real trade
+
+Final four evals, and this was not predicted either:
+
+| | u625 | u650 | u675 | u700 | range |
+|---|---|---|---|---|---|
+| `p20_e` | 0.749 | 0.794 | 0.796 | 0.769 | 0.047 |
+| `p20_e_kcap` | 0.695 | 0.697 | 0.689 | 0.695 | **0.007** |
+
+The capped arm is **~7× tighter**. So κ capping is the same shape of trade as
+§17.11's curriculum — steadier, worse — and **the κ setting for an interleaved
+model is a genuine choice, not a free win**: exploit needs the cap (§17.9 took
+it from 0.375-at-u475 to 1.000-at-u125), and explore pays 12% for it.
+
+#### H3 — approximately right
+
+Both arms reached ~0.68 by u250, as `p10_e_pol` did, then improved slowly:
+`p20_e` to 0.777 by u700, `p20_e_kcap` flat at ~0.694 from u500 on. So "u250"
+is right to within ~8% for the level but the last 400 updates were not wasted
+on the uncapped arm. `p10_e_pol`'s series showed the same slow tail.
+
+### 18.5 What `p20_e` is worth against the phase's explore best
+
+**`p20_e` is the delivered explore model**:
+`$CLS_RUNS/agent_ckpts/navigate_navp2_p20_e_s42_21695407/navigate_u700.pt`
+
+| | `p5_e` | `p10_e_pol` | **`p20_e`** |
+|---|---|---|---|
+| encoder | P2 gain-5 | P2 gain-5 | **w52 gain-100** |
+| `‖a‖` band | [0.5, 2.0] | [0.5, 2.0] | **[0.5, 1.0]** |
+| realized speed | 1.98 | ~2.0 | **0.964** |
+| `mean_coverage` | 0.390 | ~0.37 | **0.390** |
+| `strategy_efficiency` | 1.113 | ~1.09 | **1.038** |
+| split | `recorded` | `recorded` | **`held_out`** |
+
+**It matches `p5_e`'s absolute coverage exactly (0.390) at half the speed**,
+and beats `p10_e_pol`'s ~0.37. It still beats a perfect billiard, by 3.8%.
+
+**But the efficiency margin is lower — 1.038 against 1.113 — and that
+comparison is not clean in either direction.** Two confounds, pulling opposite
+ways and neither quantified:
+
+- **Against `p20_e`**: it runs at 0.964 where the billiard reference is
+  **0.752**, while `p5_e` ran at 1.98 where the reference is **0.702**. A
+  higher bar divides a similar numerator. This is a consequence of Jack's speed
+  band, not of the encoder.
+- **For `p20_e`**: this is the **first P-series probe on a fresh
+  `place=held_out` draw**. `p5_e`'s 1.113 is on the set it was scored against
+  at every eval. The direction of that bias is known — a fresh draw is
+  harder — so 1.038 and 1.113 are not comparable and the gap is an upper bound
+  on the real one.
+
+The honest statement is **absolute coverage matched at half the speed, margin
+over billiard not established either way**. Closing that needs `p5_e` re-probed
+with `--split place=held_out`, which is the §9.8.2 open item and one command.
+
+#### The speed cap was free, as §18.2 predicted
+
+`realized_mag_mean` is **0.964** against a 1.0 ceiling — the policy saturates
+its speed bound, exactly as §9.1/§9.2 measured it doing at 2.0. But at 1.0 that
+costs almost nothing: billiard peaks at 1.25 (0.783) and 1.0 gives 0.757,
+against 0.687 at 2.0. **Jack's [0.5, 1.0] band puts the saturating policy
+nearer the coverage optimum than the band the earlier explore runs used**, and
+the matched coverage at half the speed is that prediction landing.
