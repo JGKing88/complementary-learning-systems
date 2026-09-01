@@ -6172,13 +6172,25 @@ Implementation notes worth keeping:
   >    confirmed in `p20_e`'s own `run.json`. The mask is all-False, so the
   >    reset block **never executes**, and `prev_reward_t` / `prev_action_t`
   >    are not reset either. The asymmetry is textual, not behavioural.
-  > 2. In the explore regime `explore.py:93` sets
-  >    `ends_on_goal = (not goals_off) and ends_on_goal`, and with
-  >    `EXPLORE_GOALS_OFF=1` the env reports **no at-goal rows at all**
-  >    (`collector.py:142`), so there is nothing to teleport from. Where
-  >    `ends_on_goal` *is* live, an arriving row is **frozen** — "not stepped,
-  >    not teleported, and masked out of every loss" — which is Jack's point
-  >    exactly.
+  > 2. In the explore regime there is nothing to teleport *from*:
+  >    `EXPLORE_GOALS_OFF=1` means the env reports **no at-goal rows at all**
+  >    (`collector.py:142`).
+  >
+  > A later correction to reason 2: `explore.py:93` computes
+  > `ends_on_goal = (not goals_off) and ends_on_goal`, so with goals off
+  > `--explore_ends_on_goal` is **vacuous** — and `ExploitRegime` never sets
+  > `ends_on_goal` at all, taking `RolloutSpec`'s default `False`
+  > (`stages.py:109`). **So the row-freezing path is live in nothing this
+  > phase runs**, and citing it as a reason was wrong. Exploit genuinely
+  > teleports and continues; reason 1 is what covers it.
+  >
+  > Note this makes the *current* behaviour coherent rather than merely
+  > harmless: the reset is gated on `reset_state` precisely so the enrichment
+  > buffers share the hidden state's fate, and zeroing them while the
+  > recurrence deliberately carries across would be the inconsistent choice.
+  > **The asymmetry becomes real only if `RESET_STATE_ON_TELEPORT` is ever set
+  > to 1**, when `prev_reward_t` / `prev_action_t` would be zeroed and
+  > `prev_disp_t` silently would not.
   >
   > So nothing leaks today. The separate buffer stays because it costs nothing
   > and is correct under **any** contract, including if
