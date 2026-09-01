@@ -1977,3 +1977,93 @@ Converting a position into a move still requires knowing where the agent is,
 and that is still the weakest link in the stack. It bounds how much any
 in-context memory can be worth — remembering a coordinate is only useful to an
 agent that can localise itself against it.
+
+---
+
+## 2026-09-01 — how long it takes, and why the obvious version of that lies
+
+Every number in this suite is a success *rate*. The natural complaint is that
+it should also say how long the agent took. The distance travelled was in fact
+recorded from wave 0 — `_to_emit_metrics` has written `steps_to_goal` and
+`path_to_goal` into every history all along — so this looked like free
+re-analysis. It is not free, and the reason is worth writing down before
+anybody plots it.
+
+### Mean steps over successful trials is anti-correlated with competence
+
+Steps-to-goal is only defined on trials that reached the goal, so each arm is
+scored on the subpopulation it happened to solve. On retained environments the
+naive-SGD baseline retains almost nothing — and the few environments it still
+solves are the ones whose goal spawned near the agent. It therefore posts the
+*shortest* mean path in the suite, ahead of every method that actually retains,
+because those methods are additionally being graded on the far goals the
+baseline fails outright.
+
+Censoring failures at the step cap removes the selection bias and is nearly
+useless for a different reason: at these success rates the censored mean is
+approximately `succ·steps + (1−succ)·cap`, the cap term dominates, and the
+retained ordering comes out identical to the success ordering. It is the
+success table with a minus sign.
+
+### Under continuous movement, "steps" is not a clean quantity either
+
+`continuous_normalize` is False and no action-norm clamp is set, so in
+`ContinuousVecEnv.step_batch` the displacement *is* the raw action vector times
+`scale`. The policy chooses its own step magnitude. Step count therefore mixes
+route quality with how far the agent commits to moving, and those come apart in
+practice: the teacher always emits a unit vector, but no trained arm here moves
+at unit speed.
+
+### What was added
+
+`optimal_path_to_goal` in `hopfield_nav/evaluation/rnn.py`, and two new fields
+on the evaluator's return, carried into the history schema by
+`_to_emit_metrics`:
+
+| field | conditioning | what it is |
+|---|---|---|
+| `optimal_to_goal` | successes only | shortest attainable path for that trial; pairs cell-for-cell with `path_to_goal` so the two divide |
+| `optimal_all` | every trial | how hard the attempted trials were — what says whether an arm's successes are its easy ones |
+
+The optimum is **exact here, not a bound**. There are no interior obstacles —
+the four walls are the boundary and carry the barcode rather than blocking
+anything — so the box is convex, the straight segment between any two interior
+points is traversable, and `‖goal − start‖ − goal_radius` is achievable rather
+than aspirational. That is unusual; most embodied-navigation benchmarks have to
+use a geodesic on an obstacle map and get a loose denominator.
+
+Units are deliberately **distance, not steps**. "Optimal steps" is not a
+property of the environment under continuous movement — it is
+`optimal_distance / step_size`, and the step size belongs to the policy. The
+teacher's unit vector makes 1.0 the natural conversion, but that is an
+assumption about the policy and baking it into a recorded number would hide it.
+Under discrete movement the four cardinals make one action one cell, so the
+Manhattan distance is both quantities at once and the distinction collapses.
+
+What this buys is `SPL = success · optimal / max(path, optimal)`: bounded,
+defined on every trial, and normalised by trial difficulty — the first of these
+quantities that survives a comparison between arms with different success
+rates.
+
+**Not recoverable for waves 0–3.** No existing history carries the field;
+getting it for the published waves means re-running the evaluations from the
+saved checkpoints. Recorded from wave 4 on. No analysis has been run on it yet
+and none should be quoted until a wave produces it.
+
+### A correction, made before it reached the page
+
+The first read of the step data claimed multi-head was "the best learner in the
+suite" on the strength of a paired comparison against `R_none`. Checked against
+the full ranked table that is false — several naive-SGD configurations score
+higher on current-env than multi-head's 0.863, including one at 0.997. The
+comparison had been made against a single arbitrary baseline arm rather than
+against the ranking.
+
+What survives is narrower and more useful, and §5 of the page now says it:
+multi-head is the only arm whose readout cannot interfere across environments,
+so its retention loss localises forgetting. It reaches 0.863 on the environment
+it is training on and holds 0.227, meaning **74 % of attainable performance is
+lost through the shared trunk alone**. As a method it is unremarkable — XdG+SI
+retains 3.3× more at a current-env score only 0.104 lower. As a measurement it
+is the most specific result in that section: protecting output parameters
+cannot work here, however cleanly it is done.

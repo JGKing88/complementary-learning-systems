@@ -42,16 +42,29 @@ def _to_emit_metrics(m: dict) -> dict:
     nav_det ∈ {0.0, 1.0}                → reached  ∈ {0, 1}
     mean_steps_to_goal ∈ int | NaN      → steps_to_goal ∈ int | None
     mean_path_to_goal ∈ float | NaN     → path_to_goal ∈ float | None
+    mean_optimal_to_goal ∈ float | NaN  → optimal_to_goal ∈ float | None
+    mean_optimal_all ∈ float            → optimal_all ∈ float
+
+    `optimal_to_goal` is the shortest attainable path for this trial and is
+    what makes the other two comparable between arms: on its own `path_to_goal`
+    is conditioned on success, so an arm that solves only the near goals is
+    scored on nearer trials than one that solves the far ones too. Recorded
+    from wave 4 on; every history written before that has neither field, and
+    readers must treat them as absent rather than zero.
     """
     reached = int(round(float(m["nav_det"])))
     sg = float(m["mean_steps_to_goal"])
     steps_to_goal = None if math.isnan(sg) else int(round(sg))
     pg = float(m["mean_path_to_goal"])
     path_to_goal = None if math.isnan(pg) else float(pg)
+    og = float(m["mean_optimal_to_goal"])
+    optimal_to_goal = None if math.isnan(og) else float(og)
     return {
         "reached": reached,
         "steps_to_goal": steps_to_goal,
         "path_to_goal": path_to_goal,
+        "optimal_to_goal": optimal_to_goal,
+        "optimal_all": float(m["mean_optimal_all"]),
     }
 
 

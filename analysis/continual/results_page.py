@@ -1032,6 +1032,40 @@ def render(d: dict) -> str:
           "training on, so their retention figure is not a result. See "
           "&sect;3.</p>")
 
+        # Multi-head sat in this table for a while being read as a mediocre
+        # method, which is the one thing it is not for. Its heads cannot
+        # interfere by construction, so its retention number is a measurement
+        # of where the forgetting lives -- and that is worth more than its
+        # rank. Derived, because the moment it stops being the family's
+        # best-learning arm this paragraph has to stop saying so.
+        mh = next((r for r in iso if r["arm"] == "M"), None)
+        rated = [r for r in iso if r["retained"] is not None]
+        if mh and mh["retained"] is not None and (mh["current_env"] or 0) > 0:
+            lost = (mh["current_env"] - mh["retained"]) / mh["current_env"]
+            top_ret = max(rated, key=lambda r: r["retained"])
+            A('<div class="note"><h4>What the multi-head row is actually '
+              "for</h4>"
+              "<p>It is the only arm here whose <em>readout</em> cannot "
+              "interfere across environments: one movement head each, picked "
+              "by an oracle id, never touched while another environment is "
+              "training. So every point it loses is lost somewhere else — in "
+              "the shared recurrent trunk. It reaches "
+              f"{fmt(mh['current_env'])} on the environment it is training on "
+              f"and holds {fmt(mh['retained'])} of the ones it has left, so "
+              f"<strong>{lost:.0%} of attainable performance is lost through "
+              "the trunk alone</strong>.</p>"
+              "<p>That is the useful reading, and it is not a ranking. As a "
+              f"method it is unremarkable — {esc(top_ret['display'])} retains "
+              f"{top_ret['retained'] / mh['retained']:.1f}&times; more"
+              + (f", at a current-env score only "
+                 f"{mh['current_env'] - top_ret['current_env']:.3f} below "
+                 "multi-head's"
+                 if (top_ret["current_env"] or 0) > 0 else "")
+              + ". What it settles is mechanistic: protecting the readout is "
+              "not where the problem is, so a method that only isolates "
+              "output parameters cannot work in this setting no matter how "
+              "cleanly it does it.</p></div>")
+
     A('<h2 id="tier0"><span class="sec">6</span> The axes</h2>')
     A("<p>None of these are continual-learning methods. They are what makes "
       "every number above interpretable, and three of the four had never been "
@@ -1612,6 +1646,26 @@ def render(d: dict) -> str:
          "which is a third mechanism again — but the two regularisation "
          "methods that did run both land in the plasticity trap here, and GPM "
          "is a harder version of the same bargain."),
+        ("Route efficiency (SPL) — now recorded, not yet analysed",
+         "Every number on this page is a success <em>rate</em>. How far the "
+         "agent travelled to earn it was recorded all along, and is unusable "
+         "on its own: mean steps over successful trials scores each arm on "
+         "the subpopulation it happened to solve, so an arm that forgets "
+         "almost everything is graded only on the goals that were near its "
+         "start and comes out looking like the suite's fastest navigator. "
+         "Under continuous movement it is not even a clean quantity — the "
+         "displacement is the raw action vector, so step count mixes route "
+         "quality with how far the policy commits to moving. The evaluator "
+         "now also records <code>optimal_to_goal</code>, the shortest "
+         "attainable path for that trial, which is exact here rather than a "
+         "bound because the arena is a convex box with no interior obstacles. "
+         "That makes <code>optimal / max(path, optimal)</code>, zeroed on "
+         "failures, a proper SPL: bounded, defined on every trial, and "
+         "independent of how hard the trial was. Nothing on this page uses it "
+         "— no history behind these numbers carries the field, and it is not "
+         "recoverable for waves 0–3 without re-running the evaluations from "
+         "the saved checkpoints. It is here so the next wave is read with it "
+         "rather than discovering the need afterwards."),
         ("The Hopfield agent at twenty environments",
          "The scaling panel runs the classic methods to twenty environments; "
          "the store has only ever been run to five. The comparison at N=20 is "
