@@ -1740,3 +1740,95 @@ environment seeds, compares it to held-out episode-1 success, and emits
 that cannot clear the floor reports *"precondition not met"* instead of a
 publishable-looking flat line — which is the specific failure that produced
 this entry.
+
+---
+
+## 2026-09-01 — the upper-bound wave: the bottleneck is not memory
+
+Jobs **21684802** (CPU, h256/h512) and **21684803** (GPU, h1024), 11h45m each,
+both COMPLETED, 36 + 12 runs. Every arm converged — no end-slope exceeded
+0.009, so nothing here is "where it got to" rather than where it ends up.
+
+| arm | hidden | held-out | pool | gap | vs floor |
+|---|---|---|---|---|---|
+| `ceilrel` (told the direction) | 512 | **0.980** | 0.995 | 1.0× | 4.72× |
+| `ceilabs` (told the coordinates) | 512 | **0.362** | 0.594 | 1.6× | 1.74× |
+| `carry` (goal in episode 1 only) | 512 | 0.217 | 0.443 | 2.0× | 1.05× |
+| `ic` (in-context) | 512 | 0.058 | 0.094 | 1.6× | **0.28×** |
+| `ep` (episodic control) | 512 | 0.046 | 0.109 | 2.4× | 0.22× |
+| *floor (random walker)* | — | *0.208* | — | — | 1.00× |
+
+**The memorisation fix worked.** Pool-to-holdout gaps are 1.0–2.7× against the
+8.1× that invalidated the first attempt. That failure is gone.
+
+**The measurement still cannot be made, for a different reason.** The ceiling
+is 0.362 against a floor of 0.208 — 1.7× chance. Even a *perfect* in-context
+memory could only move a policy across that gap, and `ic` and `ep` both sit at
+0.05, well **below** the floor. The summariser's guard fires correctly: a
+ceiling this close to the floor makes every memory number uninterpretable.
+
+### What the arms localise
+
+The `ceilrel` / `ceilabs` split is the finding, and it is sharp:
+
+* handed the **direction** to the goal → **0.980**. Acting is fine. The
+  architecture, the objective and the training loop all work.
+* handed the goal's **coordinates** → **0.362**. Converting a position into a
+  direction requires knowing where *you* are, and that is what fails.
+
+So the bottleneck on this whole line is **egocentric self-localisation from the
+barcode ray-cast**, not memory. And `carry` closes it: with the goal handed over
+free in episode 1, `memory_lift` is −0.002 (h512) and +0.021 (h1024) against a
+detectable +0.559, with success flat at 0.083 → 0.079. Remembering a coordinate
+the policy cannot act on buys nothing. The carry arm's failure is *downstream*
+of the localisation failure, not independent evidence about memory.
+
+### Mean-collapse: hypothesised on 2026-08-31, measured today
+
+Deterministic action magnitude over 200 steps on a held-out env:
+
+| checkpoint | goal channel | mean ‖a‖ | median | frac < 0.1 |
+|---|---|---|---|---|
+| `ceilrel` | rel | **0.751** | 0.703 | 0.013 |
+| `ceilabs` | abs | 0.232 | 0.193 | 0.183 |
+| `ic` | none | 0.320 | 0.271 | 0.139 |
+| `ep` | none | 0.214 | 0.184 | 0.195 |
+
+A random walker draws from N(0, 1), so its mean ‖a‖ is ≈ 1.25. **The
+in-context policy moves about four times less per step than an agent doing
+nothing**, which is a mechanical explanation for scoring below the random
+floor: it barely covers ground.
+
+And the pattern is exactly the prediction. The one arm whose regression target
+is *unimodal* — direction handed over, no inference required — emits
+full-magnitude actions and works. Every arm facing goal uncertainty emits
+actions 2–3.5× smaller. That is a unimodal Gaussian head fitted to a
+multimodal target returning its mean: under goal uncertainty the oracle's
+action could point any direction, and the conditional mean of that is ≈ 0.
+
+**This is an objective-and-architecture failure, not a memory failure.** §5.2
+cannot be answered on this task until the policy can represent a multimodal
+action distribution, because until then there is no dynamic range in which
+memory could show up.
+
+### What this does and does not deliver
+
+It does **not** deliver the requested upper bound in usable form. 0.362 is the
+number, but it is a property of the action head rather than of in-context
+memory, and the floor is too near it for the question to have an answer.
+
+It does deliver the **legible failure mode** plan §5.2 asks for — *"capacity?
+interference? horizon?"* The answer is none of those. Capacity is ruled out
+(h256/512/1024 all land within 0.04 of each other); horizon is ruled out (the
+lifetime now matches the evaluation exactly, and all arms converged);
+interference is ruled out (`ceilrel` at 0.98). It is self-localisation, and
+underneath that, an action head that cannot express uncertainty about where to
+go.
+
+### Next step, now with evidence behind it
+
+`movement_mode=discrete` uses a Categorical head, which represents
+multimodality natively and is already supported. That is the cheap decisive
+test, and it is now motivated by a measurement rather than a hunch. The
+search-then-exploit teacher swap remains the follow-on if discretising is not
+enough.
