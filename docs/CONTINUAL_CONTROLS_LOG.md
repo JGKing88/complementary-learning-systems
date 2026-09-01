@@ -1919,3 +1919,61 @@ matched seeds: retained 0.0198, current 0.7683, delta +0.0000 on both. So
 `initial_h`, `episode_max_steps`, `ep_index`, `goal_channel` and the eval flag
 are all provably no-ops on the pre-existing path, which is worth more than the
 eval-mode answer itself.
+
+---
+
+## 2026-09-01 — §5.2 answered, and the answer is the opposite of the original
+
+Re-running all fifteen in-context evaluations with `--no-deterministic`, so the
+policy is sampled rather than reduced to its mean. `memory_lift` is conditional
+and within-arm — P(next | previous episode found the goal) minus
+P(next | it did not), for the same policy under the same sampling — so added
+exploration noise raises both terms equally and cannot manufacture a lift. The
+episodic control is sampled identically.
+
+| arm | memory_lift (deterministic) | **sampled** | P(next\|hit) | P(next\|miss) |
+|---|---|---|---|---|
+| **carry h512** (goal in episode 1 only) | −0.002 | **+0.330 ± 0.026** | 0.569 | 0.238 |
+| **carry h1024** | +0.021 | **+0.316 ± 0.007** | 0.586 | 0.270 |
+| ic h1024 | +0.001 | **+0.190 ± 0.022** | 0.285 | 0.095 |
+| ep h1024 *(control)* | +0.009 | +0.031 ± 0.018 | 0.174 | 0.143 |
+| ic h512 | +0.020 | +0.109 ± 0.008 | 0.192 | 0.083 |
+| ep h512 *(control)* | +0.007 | +0.067 ± 0.017 | 0.216 | 0.149 |
+| ic h256 | +0.022 | +0.146 ± 0.048 | 0.256 | 0.110 |
+| ep h256 *(control)* | +0.017 | +0.004 ± 0.008 | 0.133 | 0.129 |
+| *positive control* | | *+0.559* | *0.907* | *0.348* |
+
+**A frozen recurrent policy does adapt in-context on this task.** `carry`
+captures **59 % of the detectable signal**; `ic` at hidden 1024 sits **8.6 SEM
+from zero** with its own episodic control at +0.031. Attributable lift
+(ic − ep) is +0.14 at h256, +0.04 at h512, +0.16 at h1024.
+
+The original §5.2 reported +0.029 against a −0.003 control and concluded
+*"activation memory does not do this job."* That conclusion was wrong twice
+over — first because the policy had memorised a 32-environment pool and could
+not navigate its test environments, and second because the evaluation deleted
+the randomness from a policy whose randomness was the point.
+
+### The shape of the answer
+
+Handed the fact, the recurrence keeps it: **+0.33**. Made to discover the fact
+itself, it manages about a third of that: **+0.11 to +0.19**. That gap is the
+prediction registered on 2026-08-31 before these numbers existed — if `carry`
+succeeded while `ic` lagged, the honest reading is *"BC never showed it how to
+look"*, not *"the recurrence cannot hold a goal."* The recurrence works. The
+teacher cannot demonstrate search, because an omniscient expert has no reason
+to search.
+
+So the parked teacher swap is no longer a hedge against a null; it is the
+indicated next experiment, and it now has a number to beat: any
+search-then-exploit teacher has to move `ic` from ~0.15 toward `carry`'s 0.33
+to be worth the trouble.
+
+### What still stands from the earlier entries
+
+The self-localisation gap, which was measured under identical sampling on both
+sides: told the goal's **direction** 0.996, told its **coordinates** 0.562.
+Converting a position into a move still requires knowing where the agent is,
+and that is still the weakest link in the stack. It bounds how much any
+in-context memory can be worth — remembering a coordinate is only useful to an
+agent that can localise itself against it.
