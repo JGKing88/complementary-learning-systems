@@ -178,16 +178,10 @@ class RolloutCollector:
         # the norm clamp rescales it and the arena clip truncates it at a wall.
         prev_disp_t = torch.zeros(B, 2, device=self.device)
         # A SECOND copy of the same quantity, for the persistence bonus under
-        # `persistence_realized`. Kept separate from prev_disp_t, which is an
-        # input channel and has no reset in the block below (unlike
-        # prev_reward_t / prev_action_t). That asymmetry is textual, not
-        # behavioural: _reset_mask is `at_goal & teleport & reset_state`, and
-        # with reset_state_on_teleport=False -- this project's fixed setting --
-        # the whole block is unreachable, so none of the three is reset. And
-        # where ends_on_goal is live an arriving row is frozen rather than
-        # continued, so there is no next step to leak into. This buffer stays
-        # separate because it costs nothing and stays correct under ANY
-        # contract, not because the shared one is broken.
+        # `persistence_realized`. Separate from prev_disp_t because the shaping
+        # cosine is computed numpy-side while prev_disp_t is a device tensor
+        # feeding the observation -- not because their reset behaviour differs.
+        # Both are zeroed together in the teleport block below.
         prev_disp_shaping = np.zeros((B, 2), dtype=np.float32)
 
         # Buffers
@@ -721,6 +715,14 @@ class RolloutCollector:
                     # be a state neither regime produces.
                     prev_reward_t[reset_idx] = 0.0
                     prev_action_t[reset_idx] = 0.0
+                    prev_disp_t[reset_idx] = 0.0
+                    # prev_disp_t belongs to the same set and was missing from
+                    # it. Unreachable while reset_state_on_teleport is False
+                    # (this whole block is), so adding it changes nothing any
+                    # run has done -- but with the switch ON it was the one
+                    # enrichment buffer that survived a teleport it should not
+                    # have, feeding the policy a displacement made from a
+                    # position it no longer occupies.
                     # Same rule for the persistence-shaping copy: no valid
                     # "previous step" survives a teleport, and a stale one
                     # would pay a bonus for a displacement the agent did not

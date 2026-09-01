@@ -185,6 +185,122 @@ def _h_after_each_goal(flag: bool) -> list[float]:
     return seen
 
 
+# ---------------------------------------------------------------------------
+# The enrichment buffers, which must share the hidden state's fate
+# ---------------------------------------------------------------------------
+
+def _rollout_capturing_inputs(flag: bool):
+    """Run a teleporting rollout and capture what the policy was shown.
+
+    `prev_displacement` is an observation channel, so the only way to see
+    whether it survived a teleport is to read the policy input on the step
+    after one.
+    """
+    cfg = _cfg(flag)
+    cfg.steps_per_rollout = 40
+    cfg.batch_envs = 4
+    cfg.agent.input_prev_reward = True
+    cfg.agent.input_prev_action = True
+    cfg.agent.input_prev_displacement = True
+    col, agent, vh = make_collector(cfg, 8, seed=0)
+    env = make_env(cfg.env, "discrete", seed=100)
+    torch.manual_seed(0)
+    np.random.seed(0)
+    hops = [Hopfield(8, beta=1.0, device="cpu") for _ in range(cfg.batch_envs)]
+
+    seen = []
+    real = agent.get_action_and_value
+
+    def _spy(x, h=None, **kw):
+        seen.append(x.detach().clone())
+        return real(x, h, **kw)
+
+    agent.get_action_and_value = _spy
+    roll = col.collect_rollout(env, agent, hops, allow_store=True,
+                               update_idx=1)
+    # (T, B, D) -- one (B, 1, D) capture per step
+    return roll, torch.cat(seen, dim=1).permute(1, 0, 2), cfg
+
+
+def _slice_of(cfg, name):
+    from hopfield_nav.policy import channels
+    off = 0
+    for spec in channels.channel_specs(cfg.agent, embed_dim=8,
+                                       sensory_dim=cfg.env.observation_size):
+        if spec.name == name:
+            return slice(off, off + spec.width)
+        off += spec.width
+    raise AssertionError(f"{name} not in the channel layout")
+
+
+def test_a_teleporting_step_realizes_no_displacement():
+    """Why prev_disp_t's reset is belt-and-braces rather than a fix.
+
+    The TRAINING contract sets `move_ignored`, so an at-goal row is skipped by
+    the move loop (`vec_env.py:199`) and the teleport that follows never writes
+    to `moved`. Its realized displacement is therefore *already* exactly zero,
+    which is why removing prev_disp_t from the reset block was unobservable
+    even with the switch on -- there was nothing non-zero to carry.
+
+    This is the invariant that makes it so. If `move_ignored` is ever dropped
+    from the contract, a teleport starts producing a displacement, and the
+    reset in the collector stops being redundant -- so this test failing is
+    the signal to go look at it.
+    """
+    cfg = _cfg(True)
+    cfg.steps_per_rollout = 40
+    cfg.batch_envs = 4
+    col, agent, vh = make_collector(cfg, 8, seed=0)
+    env = make_env(cfg.env, "discrete", seed=100)
+    torch.manual_seed(0)
+    np.random.seed(0)
+    hops = [Hopfield(8, beta=1.0, device="cpu") for _ in range(cfg.batch_envs)]
+
+    from hopfield_nav.world.vec_env import VecEnv
+    vec = VecEnv(env, batch_size=cfg.batch_envs)
+    vec.reset_all()
+    contract = episode.contract_for("training_rollout", reset_state=True)
+    assert contract.move_ignored and contract.teleport
+
+    rng = np.random.RandomState(0)
+    seen_teleport = 0
+    for _ in range(60):
+        acts = rng.randint(0, 4, size=cfg.batch_envs)
+        _, reached, _ = vec.step_batch(
+            acts, indices=np.arange(cfg.batch_envs), contract=contract)
+        disp = vec.last_displacement()
+        for b in np.nonzero(np.asarray(reached, dtype=bool))[0]:
+            assert not disp[b].any(), (
+                f"a teleporting row realized displacement {disp[b].tolist()}; "
+                f"prev_disp_t's reset is now load-bearing, not redundant")
+            seen_teleport += 1
+    assert seen_teleport > 0, "no teleport occurred; this test proves nothing"
+
+
+
+def test_all_three_enrichment_buffers_agree_after_a_teleport():
+    """Whatever the rule is, it must be the same rule for all of them.
+
+    Discriminating for `prev_reward` and `prev_action` -- removing either
+    reset from the collector fails this. NOT discriminating for
+    `prev_displacement`, which is already zero after a teleport for the
+    reason `test_a_teleporting_step_realizes_no_displacement` pins; it is
+    included so the three stay coupled if that ever changes.
+    """
+    roll, obs, cfg = _rollout_capturing_inputs(True)
+    reached = roll.goal_reached.cpu().numpy().astype(bool)
+    slices = {n: _slice_of(cfg, n)
+              for n in ("prev_reward", "prev_action", "prev_displacement")}
+    for b in range(reached.shape[0]):
+        for t in np.nonzero(reached[b])[0]:
+            if t + 1 >= obs.shape[0]:
+                continue
+            for name, sl in slices.items():
+                v = obs[t + 1, b, sl]
+                assert torch.allclose(v, torch.zeros_like(v)), (
+                    f"{name} survived a teleport at row {b} step {t}")
+
+
 def test_evaluation_zeroes_the_hidden_state_only_when_asked():
     on = _h_after_each_goal(True)
     off = _h_after_each_goal(False)
