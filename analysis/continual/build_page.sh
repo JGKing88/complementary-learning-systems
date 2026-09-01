@@ -29,6 +29,7 @@ mkdir -p "$OUT_DIR"
     --incontext_dir "$CLS_HISTORIES/incontext" \
     --identifiability "$CLS_RESULTS/task_identifiability.json" \
     --incontext_generalization "$CLS_RESULTS/incontext_generalization.json" \
+    --incontext_upper_bound "$CLS_RESULTS/incontext_upper_bound.json" \
     --out "$DATA"
 
 "$PY" -u -m analysis.continual.results_page --data "$DATA" --out "$PAGE"

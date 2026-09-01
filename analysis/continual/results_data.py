@@ -231,6 +231,10 @@ def main() -> None:
                         "formality is this number's job to say.")
     p.add_argument("--beta_calibration", default=None,
                    help="calibrate_beta output, if it was written to a file.")
+    p.add_argument("--incontext_upper_bound", default=None,
+                   help="incontext_upper_bound.json -- the redone section 5.2, "
+                        "with a floor, a ceiling and sampled memory lifts. "
+                        "Supersedes the withdrawn first attempt.")
     p.add_argument("--incontext_generalization", default=None,
                    help="incontext_generalization.json. Decides whether "
                         "section 5.2's result is interpretable at all: if the "
@@ -275,6 +279,7 @@ def main() -> None:
                       if args.incontext_dir else None),
         "identifiability": _read_json(args.identifiability),
         "incontext_generalization": _read_json(args.incontext_generalization),
+        "incontext_upper_bound": _read_json(args.incontext_upper_bound),
         "hopfield_costs": {
             # Constants of the model, not measurements -- stated here so the
             # frontier figure has both ends of every axis in one place.

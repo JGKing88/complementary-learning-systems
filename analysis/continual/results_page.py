@@ -1195,6 +1195,96 @@ def render(d: dict) -> str:
                   "memory; nothing here shows this <em>network</em> could "
                   "express memory if it had any. That control was never "
                   "run.</p></div>")
+                ub = d.get("incontext_upper_bound") or {}
+                lifts = ub.get("memory_lift") or {}
+                if lifts:
+                    pc = ub.get("positive_control") or 0.559
+                    def _best(k):
+                        rows = lifts.get(k) or {}
+                        if not rows:
+                            return None, None
+                        h = max(rows, key=lambda x: rows[x]["mean"])
+                        return h, rows[h]
+                    h_c, carry = _best("carry")
+                    h_i, icb = _best("in_context")
+                    # The control has to be the SAME network size as the arm it
+                    # controls for. Taking the best episodic run at whatever
+                    # hidden size happened to produce it would compare two
+                    # different networks and call the difference memory.
+                    epb = (lifts.get("episodic") or {}).get(h_i)
+                    h_e = h_i
+                    A('<h3>Redone, and the answer reverses</h3>')
+                    A("<p>Two things were fixed: the pretraining pool is now "
+                      "redrawn every lifetime so it cannot be memorised, and "
+                      "the policy is <strong>sampled rather than reduced to "
+                      "its mean</strong>. The second matters more than it "
+                      "sounds. Behaviour cloning fits the mean of the "
+                      "teacher's action distribution and its spread; where the "
+                      "goal is unknown that mean is near zero, so scoring the "
+                      "mean measures a policy that barely moves. The arm handed "
+                      "the goal's <em>direction</em> — the only one whose "
+                      "target is unambiguous — is unaffected by the change "
+                      "(1.00&times;), while every uncertain arm gains "
+                      "2.2–4.0&times;. That asymmetry is the signature of a "
+                      "measurement artefact rather than a difference between "
+                      "policies.</p>")
+                    A('<div class="tw"><table>')
+                    A("<thead><tr><th>Arm</th><th class='num'>memory_lift</th>"
+                      "<th class='num'>share of signal</th><th>What it shows</th>"
+                      "</tr></thead><tbody>")
+                    rows_out = [
+                        ("Goal shown in episode 1 only", carry, h_c, "hl",
+                         "The architecture-level control. Handed the fact for "
+                         "free, the recurrence <em>keeps</em> it across an "
+                         "episode boundary."),
+                        ("In-context (must find the goal)", icb, h_i, "",
+                         "The real question. Real adaptation, but roughly a "
+                         "third of what the same network manages when the fact "
+                         "is handed over."),
+                        ("Episodic control (state reset)", epb, h_e, "",
+                         "Identical training, hidden state does not survive a "
+                         "goal-reach. The difference is what carrying state is "
+                         "worth."),
+                    ]
+                    for label, v, h, cls, why in rows_out:
+                        if not v:
+                            continue
+                        A(f'<tr class="{cls}"><td class="k">{esc(label)}</td>'
+                          f'<td class="num">{v["mean"]:+.3f} ± {v["sem"]:.3f}'
+                          f'<br><span style="color:var(--muted);font-size:12px">'
+                          f'hidden {esc(h)}</span></td>'
+                          f'<td class="num">{100 * v["mean"] / pc:.0f}%</td>'
+                          f"<td>{why}</td></tr>")
+                    A('<tr><td class="k">scripted agent that remembers</td>'
+                      f'<td class="num">{pc:+.3f}</td><td class="num">100%</td>'
+                      "<td>The positive control that sets the scale.</td></tr>")
+                    A("</tbody></table></div>")
+                    if carry and icb and epb:
+                        A('<div class="note acc"><h4>A frozen recurrent policy '
+                          "does adapt in-context</h4>"
+                          f"<p>Handed the fact, it retains "
+                          f"<strong>{carry['mean']:+.3f}</strong> — "
+                          f"{100 * carry['mean'] / pc:.0f}% of the detectable "
+                          "signal. Made to discover the fact itself it manages "
+                          f"<strong>{icb['mean']:+.3f}</strong>, against an "
+                          f"episodic control at {epb['mean']:+.3f}.</p>"
+                          "<p>The gap between those two is the interesting "
+                          "part, and it is not about memory. The teacher is a "
+                          "shortest-path oracle that can see the goal, so it "
+                          "beelines — and therefore <em>no timestep anywhere in "
+                          "the training data demonstrates searching for "
+                          "something</em>. The recurrence can hold a fact; the "
+                          "teacher cannot show it how to find one.</p></div>")
+                    A("<p><strong>What still bounds this.</strong> Told the "
+                      "goal's direction the policy reaches 0.996; told its "
+                      "coordinates, 0.562 — both measured under identical "
+                      "sampling. Converting a position into a move requires "
+                      "knowing where the agent is, and that self-localisation "
+                      "is the weakest link in the stack. It caps what any "
+                      "in-context memory can be worth: remembering a "
+                      "coordinate only helps an agent that can locate itself "
+                      "against it.</p>")
+
                 A('<div class="note"><h4>What a real attempt needs</h4><ul>'
                   "<li><strong>A fresh environment every lifetime</strong>, "
                   "drawn from the ~10<sup>7</sup> available wall seeds, rather "
