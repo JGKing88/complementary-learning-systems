@@ -408,10 +408,12 @@ multi-head(+task inference), XdG. Plus the two Tier-3 bounds in §5.
 
 ---
 
-## 5. Tier 3 — the two bounds that decide the framing
+## 5. Tier 3 — the bounds that decide the framing
 
-Both confirmed in scope, and both are first-class deliverables, not stretch
-goals.
+The first two were confirmed in scope at review and are first-class
+deliverables, not stretch goals. The third was added on 2026-09-01, after
+Waves 0-3 had run; it is not a stretch goal either, and the fact that nothing
+in the original plan asked for it is itself worth noticing.
 
 ### 5.1 Meta-pretraining — the strongest possible form of control #2
 
@@ -451,6 +453,133 @@ zeroes `h` on goal-reach so each per-env trajectory is an independent episode.
 In-context pretraining needs the opposite — carry `h` across the episode
 boundary within an env, and zero it only at the env boundary. That is a flag on
 the collector, not a rewrite.
+
+### 5.3 The substrate control — MLP and the frame-stack ladder
+
+*Added 2026-09-01, after Waves 0-3. Not in the original plan, and it should
+have been.*
+
+Every method in §4 was published and calibrated on **feedforward** networks —
+mostly MLPs on permuted or split MNIST. This suite runs all of them on a GRU.
+That is not a neutral change, and nothing in Waves 0-3 measures its effect:
+
+- **Importance estimation is scale-broken on recurrent weights.** A weight
+  applied once per forward pass and a weight applied *T* times per sequence do
+  not produce comparable Fisher information or SI path integrals. Part of what
+  the λ sweeps over decades are finding is plausibly a scale mismatch that
+  would not exist in an MLP — the same failure class as the β calibration that
+  nearly buried HNET (§4.3).
+- **XdG gates inside the recurrence** in this implementation. Masse et al.
+  gated feedforward activations. Owning a task's *dynamics* is a strictly
+  stronger intervention than owning its activations, so the suite's current
+  best classic result is not the published method.
+- **HNET generates GRU weights.** von Oswald generated feedforward target
+  weights; recurrent weight generation is a harder conditioning problem.
+
+So the MLP arm is the **method-fidelity control**. It separates "these methods
+underperform because this task is hard" from "these methods underperform
+because they are being applied to a substrate nobody characterised them on."
+Those are currently confounded in every number the suite reports.
+
+Two further things it buys, neither of which motivated it:
+
+**It decomposes the multi-head result.** Wave 3 puts 74 % of attainable
+performance loss in the shared trunk — but that trunk is a GRU. If an MLP
+forgets as much, the loss is in the input→feature map, and every
+recurrence-specific account of the fragility is dead.
+
+**It is a structural zero for §5.2.** `memory_lift` conditions on "the previous
+episode found the goal", which is also true of lifetimes that merely drew an
+easy goal. The episodic control bounds that confound at +0.031, so it is not
+unaddressed — but a memoryless policy has *no channel* for cross-episode state,
+so its `memory_lift` should be exactly zero. If it is not, the statistic is
+measuring something other than memory. The current design cannot run that test.
+
+**What it does not do.** It is an added arm, not a swap. §5.2's result — carry
++0.330, in-context +0.190 — exists *because* activations persist across episode
+boundaries. An MLP does not have a worse version of that; it has none.
+
+#### Implementation shape
+
+One agent class, and a trick that keeps the diff small: **carry the frame stack
+in the hidden-state slot**. `h` already threads through `collect_rollout_rnn`
+(`initial_h` / `final_h`), `bc_rnn_update` (`h0[:, idx]`) and
+`evaluate_nav_one_env` (`h = out["h_next"]`). If the MLP's "hidden state" is a
+rolling shift register of the last *k*−1 raw observations, shaped to the
+existing `(layers, B, width)` contract, then the rollout collector, the
+evaluator, the BC update and every continual method work unchanged.
+
+It stays honestly feedforward: a shift register of raw observations is not
+learned state, there is no gradient through time, and the memory horizon is
+hard-bounded at exactly *k* steps. At *k*=1 it is zero. Register as another
+entry in `ARCHITECTURES` in `analysis/continual/baseline.py`, sized by a
+`--frame_stack` flag.
+
+#### Phase A — 72 runs, and it gates everything else
+
+Naive SGD only (`R_none`), otherwise the standard protocol: N=5, 200 updates
+per env, `batch_envs=1`, `n_eval_trials=1`.
+
+| axis | values |
+|---|---|
+| frame stack *k* | 1, 4, 8 |
+| learning rate | 3e-4, 1e-3, 3e-3 |
+| seeds | 8 |
+
+**The lr sweep is not optional.** Wave 1 tuned lr for the GRU (§3.1). Comparing
+a tuned recurrent net against an untuned MLP is the unfair-comparison failure
+this project keeps catching in itself, and it would produce exactly the
+conclusion the experiment is supposed to test.
+
+Phase A alone answers the first-order question — *does this task need history,
+and how much* — which nothing in the suite currently measures.
+
+#### Phase B — conditional on Phase A, ~300 runs
+
+Run only if the MLP is competitive. Methods chosen so the design carries an
+internal control:
+
+| method | why it is in |
+|---|---|
+| ER | Replay is substrate-agnostic in principle, so its MLP↔GRU gap is the **baseline** gap the others are read against |
+| SI, EWC (4 λ each) | Where recurrent importance estimation is most suspect. Coefficients do **not** transfer across substrates and must be re-swept, not reused |
+| XdG, XdG+SI (2 gating values) | The most interesting cell in the design: gating a feedforward net is what Masse et al. actually published, so this is the *faithful* version of the suite's current best classic result |
+
+#### What must be matched, or the wave is void
+
+1. **Parameter count.** The GRU trunk is 73,220. Input width is 62 per frame
+   (60 rays + `prev_action`), so it grows to 496 at *k*=8 and the hidden width
+   must shrink to compensate — solved per *k*, not once. Unmatched capacity
+   confounds every comparison in both phases.
+2. **A fresh joint ceiling (T0.1).** "Is this forgetting or capacity?" *resets*
+   for a new architecture. Without an MLP joint-training run there is no
+   denominator for an MLP retention number. Cheap, easy to forget, fatal if
+   forgotten.
+3. **Wave-4 histories carry `optimal_to_goal`; Waves 0-3 do not.** Route
+   efficiency will be available for the MLP arms and not for their GRU
+   comparators. Say so rather than quietly comparing.
+
+#### Registered readings
+
+| outcome | reading |
+|---|---|
+| *k*=1 ≈ GRU on current-env | The task is Markov in one observation. Recurrence buys nothing on the supervised task, and every recurrence-specific claim about the continual results is unsupported. |
+| ladder saturates by *k*=4 | Short-window integration only. The GRU is not doing the long integration its architecture permits. |
+| ladder never reaches the GRU | Recurrence earns its place, and the residual gap quantifies what unbounded integration is worth. |
+| MLP retains **more** at matched current-env | Forgetting is recurrence-specific; §5 of the results page is about dynamics, not features. |
+| SI/EWC gap ≫ ER gap | Importance estimation is substrate-broken and the parameter-regularisation result is understated. |
+| `memory_lift`(*k*=1) ≠ 0 under §5.2's protocol | The statistic is confounded by lifetime difficulty and §5.2 needs revisiting. At *k*>1 there is a bounded *k*-step leak across the episode boundary, so *k*=1 is the clean cell. |
+
+**Prediction, registered before the runs exist.** The MLP loses on current-env
+— single observations look aliased, since a classifier on the agent's own
+observations separates the five environments at 0.426 against 0.200 chance. But
+the ladder saturates early, around *k*=4, which would mean the GRU is
+exploiting a short window rather than the long integration it is capable of.
+
+#### Cost
+
+Phase A is 72 runs, against Wave 1's 272 and Wave 3's 184 — small, and it
+decides whether Phase B is worth its ~300. One sbatch array each.
 
 ---
 
@@ -502,9 +631,12 @@ regulariser sit between them.*
 **Wave 3.** HNET (oracle and inferred embeddings) · multi-head with oracle and
 inferred task ID · XdG (+SI) · GPM if there is room.
 
-**Wave 4.** §5.1 meta-pretraining · §5.2 in-context zero-update control · the
-N=20 scaling panel across the surviving methods · plasticity maintenance only
-if N=20 shows the current-env curve degrading.
+**Wave 4.** §5.3 substrate control, Phase A gating Phase B · §5.1
+meta-pretraining · the N=20 scaling panel across the surviving methods · the
+N=20 `agenthash` run §10 assigns here · plasticity maintenance only if N=20
+shows the current-env curve degrading.
+*§5.2 was pulled forward and answered on 2026-09-01 — it is no longer part of
+this wave; see the log.*
 
 ---
 
