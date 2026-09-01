@@ -29,7 +29,6 @@ mismatch that must be fixed first.
 **Open items** (priority order):
 
 - [ ] **Run `p21_pr` — staged, not launched.** §18.7 measured **100% of episodes at u25/u50 wall-pinned**, and §18.8 priced it: the **persistence bonus pays +0.196/step for the pin** against `wall_penalty`'s −0.093, because it scores the *commanded* action and a pinned agent commands a perfect heading while realizing 0.09. `--persistence_realized` (default off) fixes that without taxing the walls; `p21_pr` is `p20_e` with that one bit flipped, `explore:300`, and `p20_e` is its own control. Score it with `explore_traj` on u25/u50/u75, not from the coverage curve.
-- [ ] **`prev_disp_t` is not reset on teleport** although `prev_reward_t` and `prev_action_t` beside it are (`collector.py`, the `reset_rows` block). It is an *observation* channel, so correcting it changes the input for every existing run — decide deliberately, don't fix in passing. Found in §18.8.
 
 - [ ] **Read P4/P5 when they land** and fill §8/§9. P4 at u450 was already at
       `mean_steps` 10.09 (d=0) / 14.10 (d=10) with `mean_speed` 1.25, so the
@@ -6160,13 +6159,31 @@ prevent. Turning it on is a variant, not a new baseline.
 Implementation notes worth keeping:
 
 - The shaping term uses its **own** `prev_disp_shaping` buffer rather than the
-  existing `prev_disp_t`. **`prev_disp_t` is not reset on teleport** although
-  `prev_reward_t` and `prev_action_t` beside it are, and the block's own
-  comment says enrichment buffers "go with it". That looks like an oversight
-  from when `input_prev_displacement` was added — but `prev_disp_t` is an
-  observation channel, so correcting it would change the input for every
-  existing run and is not this change's business. **Logged here as a separate
-  open question.**
+  existing `prev_disp_t`.
+
+  > **CORRECTION — Jack: "the rollout ends on teleport anyway, so
+  > `prev_disp_t` not resetting shouldn't matter." He is right, and I
+  > overstated it.** The first draft of this note called the missing reset a
+  > latent bug. It is not reachable in anything this project runs, for **two
+  > independent reasons**:
+  >
+  > 1. `_reset_mask` is `at_goal & contract.teleport & contract.reset_state`,
+  >    and `reset_state_on_teleport = False` is **fixed by instruction** —
+  >    confirmed in `p20_e`'s own `run.json`. The mask is all-False, so the
+  >    reset block **never executes**, and `prev_reward_t` / `prev_action_t`
+  >    are not reset either. The asymmetry is textual, not behavioural.
+  > 2. In the explore regime `explore.py:93` sets
+  >    `ends_on_goal = (not goals_off) and ends_on_goal`, and with
+  >    `EXPLORE_GOALS_OFF=1` the env reports **no at-goal rows at all**
+  >    (`collector.py:142`), so there is nothing to teleport from. Where
+  >    `ends_on_goal` *is* live, an arriving row is **frozen** — "not stepped,
+  >    not teleported, and masked out of every loss" — which is Jack's point
+  >    exactly.
+  >
+  > So nothing leaks today. The separate buffer stays because it costs nothing
+  > and is correct under **any** contract, including if
+  > `reset_state_on_teleport` is ever turned on — not because the shared one
+  > is broken.
 - Tests: `TestPersistenceRealized` in `test_audit.py`. The first case is a
   regression test on the *old* behaviour — it asserts the commanded version
   keeps paying ~1.0/step to an agent jammed against a wall — so the bug stays

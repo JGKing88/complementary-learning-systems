@@ -178,12 +178,16 @@ class RolloutCollector:
         # the norm clamp rescales it and the arena clip truncates it at a wall.
         prev_disp_t = torch.zeros(B, 2, device=self.device)
         # A SECOND copy of the same quantity, for the persistence bonus under
-        # `persistence_realized`. Deliberately not shared with prev_disp_t:
-        # that one is an input channel and is NOT reset on teleport (unlike
-        # prev_reward_t / prev_action_t, which are -- see the reset block
-        # below), so reusing it would leak a pre-teleport displacement into
-        # the reward. Fixing prev_disp_t's reset would change the observation
-        # for every existing run, which is not this change's business.
+        # `persistence_realized`. Kept separate from prev_disp_t, which is an
+        # input channel and has no reset in the block below (unlike
+        # prev_reward_t / prev_action_t). That asymmetry is textual, not
+        # behavioural: _reset_mask is `at_goal & teleport & reset_state`, and
+        # with reset_state_on_teleport=False -- this project's fixed setting --
+        # the whole block is unreachable, so none of the three is reset. And
+        # where ends_on_goal is live an arriving row is frozen rather than
+        # continued, so there is no next step to leak into. This buffer stays
+        # separate because it costs nothing and stays correct under ANY
+        # contract, not because the shared one is broken.
         prev_disp_shaping = np.zeros((B, 2), dtype=np.float32)
 
         # Buffers
