@@ -21,12 +21,14 @@ mismatch that must be fixed first.
 | **Open decisions** | §11 — four forks put to Jack; spec assumes the recommended default in each |
 | **Running** | **P20 (§18) — DONE.** Both arms COMPLETED 700/700. **`p20_e` 21695407 is the delivered explore model**: `mean_coverage` **0.390** at realized speed **0.964**, `strategy_efficiency` **1.038**, `chase_q` **0.000** — matches `p5_e`'s coverage at half the speed, on a **fresh `held_out` draw**. The κ cap that unlocked exploit COSTS explore 12.1%, but **not** via straightness (§18.4 refutes its own mechanism) — via `edge_frac`, 0.061 vs 0.127. |
 | **Running** | **P19 (§17) — DONE.** Both arms COMPLETED 800/800. **`p19_kcap` 21656252 is the delivered model**: Jack's w52 encoder, gain=beta=100, learned speed [0.5, 1.0], plus `LOG_KAPPA_MAX=2.5`. **Accuracy 1.000 from u125; beeline from u150, worst 1.090, final 1.013; 27 consecutive evals ≥0.990.** Curriculum LOSES on both halves (§17.11). |
-| **Charts** | One published page per run — `p10_pol_v1` [3bc9ad4e](https://claude.ai/code/artifact/3bc9ad4e-0655-43ca-b870-0516f4487bdc) · `p10_pol` [388023ce](https://claude.ai/code/artifact/388023ce-a725-4253-a53b-c9979a77baf2) · `p10_e_pol` [00bd7fd3](https://claude.ai/code/artifact/00bd7fd3-bb60-4e22-a968-c62822c5cdb3) · `p10_e_pol_v1` [8fd3ecf0](https://claude.ai/code/artifact/8fd3ecf0-c429-40d6-bde6-008ca25b5a40) · `p11_cur` [4de8dfa7](https://claude.ai/code/artifact/4de8dfa7-9403-43c8-b4f9-b14669ae603e) · `p11_tp` [4dbbe6e9](https://claude.ai/code/artifact/4dbbe6e9-c8e3-41fb-9b38-36a1443bf420) · `p11_cur_tp` [6c3a0503](https://claude.ai/code/artifact/6c3a0503-dba1-405a-a90c-d33c491ee5b2) · `p12_lo` [6b09232a](https://claude.ai/code/artifact/6b09232a-bcd2-4609-9c1d-97d9757d0f5a) · `p12_lo_curtp` [835846df](https://claude.ai/code/artifact/835846df-d30d-46f7-b979-3fe41fdfff7e) |
+| **Charts** | **Explore trajectories + failure modes** [f59ee221](https://claude.ai/code/artifact/f59ee221-a39d-4af4-8f18-0fb8a5f824f4) · One published page per run — `p10_pol_v1` [3bc9ad4e](https://claude.ai/code/artifact/3bc9ad4e-0655-43ca-b870-0516f4487bdc) · `p10_pol` [388023ce](https://claude.ai/code/artifact/388023ce-a725-4253-a53b-c9979a77baf2) · `p10_e_pol` [00bd7fd3](https://claude.ai/code/artifact/00bd7fd3-bb60-4e22-a968-c62822c5cdb3) · `p10_e_pol_v1` [8fd3ecf0](https://claude.ai/code/artifact/8fd3ecf0-c429-40d6-bde6-008ca25b5a40) · `p11_cur` [4de8dfa7](https://claude.ai/code/artifact/4de8dfa7-9403-43c8-b4f9-b14669ae603e) · `p11_tp` [4dbbe6e9](https://claude.ai/code/artifact/4dbbe6e9-c8e3-41fb-9b38-36a1443bf420) · `p11_cur_tp` [6c3a0503](https://claude.ai/code/artifact/6c3a0503-dba1-405a-a90c-d33c491ee5b2) · `p12_lo` [6b09232a](https://claude.ai/code/artifact/6b09232a-bcd2-4609-9c1d-97d9757d0f5a) · `p12_lo_curtp` [835846df](https://claude.ai/code/artifact/835846df-d30d-46f7-b979-3fe41fdfff7e) |
 | **Finished** | **`p10_pol_v1` 21300389** — 2000/2000, **1.000 success @ 10.95 steps (1.10× optimal)**, the phase-2 best exploit model. **`p10_e_pol` 21300390** — 1500/1500, **cps 0.75** against a billiard ceiling of 0.775. |
 | **Done** | §4 blocking fixes, P1 (§5) with figures, the recall-mechanism thread §5.3-5.9, **P2 (§6)**, and **P10 (§9.4–9.8)** |
 | **⚠ Read before quoting any §9.6–9.8 number** | Every behavioural number there is on the **`recorded`** split — the run's own `base_val`, never trained on but the set it was scored against at every eval, and the only set the probe could build until 2026-08-27. It is **not** a fresh draw. `--split` now exists on the probe; nothing has been re-run with it. |
 
 **Open items** (priority order):
+
+- [ ] **Bracket `WALL_PENALTY` (currently 0.1) on the explore arm.** §18.7 measured that **100% of episodes at u25/u50 are wall-pinned** (`clip_frac` 0.91, realized speed 0.09 against a commanded 0.79) and that un-pinning *is* the first 150 updates of the coverage curve. That term exists to prevent exactly this and is not doing it. Far cheaper than another 700-update arm.
 
 - [ ] **Read P4/P5 when they land** and fill §8/§9. P4 at u450 was already at
       `mean_steps` 10.09 (d=0) / 14.10 (d=10) with `mean_speed` 1.25, so the
@@ -5721,7 +5723,9 @@ compared against 0.75 flatters them by ~12%.
 **+0.026 across 1250 updates**, against an oscillation band of 0.17. That does
 not clear this project's eval-noise bar (`feedback_eval_point_threshold`). 700
 updates is 2.8× the convergence point and gives **28 eval points at
-`EVAL_EVERY=25`** — more than `p10_e_pol` got across twice the updates — and
+`EVAL_EVERY=25`** (§18.7 measures what that budget bought: 78% of the rise by
+u150, and the first ~150 updates go on escaping a wall-pin basin rather than on
+learning to explore) — more than `p10_e_pol` got across twice the updates — and
 lands near 4.5 h against the 6 h partition wall, with checkpoints every 25.
 
 ### 18.3 Predictions on record
@@ -5808,6 +5812,12 @@ directional noise at 16.4°… **capping κ is capping straightness**." Measured
 `straightness` is **higher** on the capped arm — 0.979 against 0.958. The
 prediction has the sign backwards on its own mechanism variable.
 
+> **SHARPENED — §18.6.** The account below is right in direction but weaker
+> than the trajectory data supports. The capped policy learned a **constant
+> one-signed turn** of +0.120 rad/step (a full revolution every 52 steps),
+> non-overlapping with the uncapped arm's +0.001. It traces an annulus, which
+> is why it both misses the perimeter and retraces the middle.
+
 **What actually separates them is `edge_frac`: 0.061 against 0.127, less than
 half.** Uniform occupancy is 0.19 and `p5_e` measured 0.121, so `p20_e` sits
 where the good explore policies sit and the capped arm is the outlier — it
@@ -5888,3 +5898,189 @@ costs almost nothing: billiard peaks at 1.25 (0.783) and 1.0 gives 0.757,
 against 0.687 at 2.0. **Jack's [0.5, 1.0] band puts the saturating policy
 nearer the coverage optimum than the band the earlier explore runs used**, and
 the matched coverage at half the speed is that prediction landing.
+
+### 18.6 The two explore failure modes, and a sharper mechanism for §18.4
+
+288 matched episodes (`analysis/nav_tri/explore_traj.py`, 6 envs × 24 trials ×
+2 distractor levels, `place=held_out`). Every episode is rolled from the
+identical start with identical memory contents on both checkpoints, so a
+difference between two arenas is the policy alone. Page:
+[f59ee221](https://claude.ai/code/artifact/f59ee221-a39d-4af4-8f18-0fb8a5f824f4)
+
+#### Mode 1 — the wall pin. Rare, catastrophic, and coverage does not name it.
+
+**One episode in 144** on `p20_e`:
+
+| | this episode | that policy's median |
+|---|---|---|
+| coverage | **0.052** (21 cells of 400) | 0.390 |
+| realized speed | **0.10** | 0.96 |
+| `clip_frac` | **0.91** | 0.03 |
+| `edge_frac` | **0.94** | 0.13 |
+
+The agent reaches a wall and stays there. It keeps *commanding* full stride
+while the boundary clip absorbs 91% of it, so realized speed collapses to a
+tenth. This is `project_hopfield_nav_perimeter_basin` in a single trajectory.
+
+**The diagnostic is the commanded/realized gap, not coverage.** Low coverage is
+the symptom and it is shared with ordinary bad episodes; `clip_frac` 0.91 at
+`speed` 0.10 is the signature and nothing else in 288 episodes comes near it.
+
+#### CORRECTION — both arms loop. Jack spotted this in the trajectories.
+
+The heading below originally read "the circler", which implies looping is
+specific to the capped arm. **It is not.** Measured on the same 288 episodes
+with a return-based detector (the path comes back within 1.0 cell of somewhere
+it was ≥15 steps earlier) and against a **billiard null** at each arm's own
+speed, because in a 20×20 box a 200-step path re-crosses itself by geometry
+alone:
+
+| | re-crossings / episode | vs null | share of steps on old ground | vs null | handedness flips |
+|---|---|---|---|---|---|
+| `p20_e` (uncapped) | **12.5** | **+4.4** | 0.310 | +0.062 | **7.9** |
+| billiard null @0.96 | 8.1 | — | 0.248 | — | — |
+| `p20_e_kcap` (capped) | 8.9 | +2.4 | **0.445** | **+0.140** | **0.0** |
+| billiard null @0.95 | 6.5 | — | 0.305 | — | — |
+
+**100% of episodes in BOTH arms re-cross their own path, and the uncapped arm
+does it MORE often** — 12.5 events against 8.9, and well above its own billiard
+null. My §18.6 framing was wrong to present looping as the capped arm's
+pathology.
+
+**What is actually different is dwelling, and handedness.** The uncapped arm
+crosses its path more but spends *less* of the episode on old ground (0.310
+against 0.445); its excess over the null is +0.062 against the capped arm's
+**+0.140, more than double**. It cuts across and keeps going. And it flips
+handedness ~8 times an episode where the capped arm flips **zero** times.
+
+> **The cost is not looping. It is not leaving.**
+
+**A detector caveat that nearly cost me a second wrong claim.** The turn-based
+detector — |Σ dθ| ≥ 2π inside a window — is contaminated by wall bounces, which
+are large instantaneous turns: the **billiard null scores 59% on it**. It
+cannot be read on its own as evidence of looping, only as "rotational
+character". The return-based detector is the one to trust, and it is the one
+the table above uses.
+
+#### Mode 2 — one-handed drift. What §18.4's 12% actually is.
+
+Given that both arms loop, the property specific to the capped policy is
+**handedness**. It turns the same direction on every step of every episode:
+
+| `signed_turn_mean` (rad/step) | mean | median | min | max |
+|---|---|---|---|---|
+| `p20_e` (uncapped) | +0.001 | −0.001 | −0.030 | **+0.036** |
+| `p20_e_kcap` (capped) | **+0.120** | +0.118 | **+0.094** | +0.148 |
+
+**The distributions do not overlap.** The slowest-turning capped episode still
+turns faster than the fastest-turning uncapped one, with a gap of 0.058
+rad/step across 144 episodes each. This is not a tendency; it is a property of
+the policy.
+
+**This REPLACES §18.4's mechanism sentence.** That section said a κ ceiling
+"is a ceiling on how sharply the policy can turn," so the capped policy "must
+arc away on approach" and under-visits the perimeter. The direction was right
+but the statement was weaker and vaguer than the data supports. What the capped
+policy actually learned is a **constant-rate turn** — 0.120 rad/step is a full
+revolution every 52 steps, so roughly four circuits per 200-step episode. A
+constant-rate turn traces an **annulus**, which explains both halves of the
+§18.4 table at once: it never reaches the perimeter (`edge_frac` 0.061) *and*
+it dwells in the middle (0.445 of steps on old ground against 0.310).
+
+It also explains the straightness inversion that refuted the original
+prediction. `straightness` is a mean **unsigned** cosine, so a steady circle
+and an unbiased walk are indistinguishable to it — the capped arm scores 0.979
+because a gentle constant curve is locally very straight. `signed_turn_mean`
+is the statistic that separates them, and it is the one `behavior_probe`'s own
+docstring says exists for exactly this case ("a policy that circles at a
+constant rate and one that jitters symmetrically can score the same").
+
+#### A methodological correction — `revisit_frac` is coverage restated
+
+Measured correlation with coverage is **−1.0000** in both arms, and it is
+algebraic rather than empirical: at a fixed 200 steps, unique cells =
+200·(1−revisit), so
+
+> **coverage = (1 − `revisit_frac`) / 2**, exactly — verified to 0.00000 max
+> absolute error across all 288 episodes.
+
+So `revisit_frac` carries **no information coverage does not**, and any future
+result quoting both as if they corroborate each other is double-counting one
+measurement. It stays in the trajectory captions because it is legible there,
+not because it is evidence.
+
+#### What did NOT show up
+
+`chase_q` at ten distractors is **+0.022** (uncapped) and **−0.016** (capped).
+Neither arm chases a phantom recall. Both failure modes above are **motor**,
+not memory — which is the behavioural counterpart of H1 and consistent with
+§7.7.2's separability result.
+
+### 18.7 Where the updates actually go — 100% of early episodes are wall-pinned
+
+Jack, on reading §18: *"I don't understand how it could take 700 updates to
+learn such a simple policy."* Two things are wrong with the premise, and the
+second one is the interesting one.
+
+**It did not take 700.** 78% of the total rise is done by u150 and the run is
+within 10% of its best by u250. 700 was a budget chosen before the run, not a
+learning time.
+
+**And the first ~150 updates are not spent learning to explore.** Rolling the
+early checkpoints (job 21745999, 4 envs × 16 trials, matched starts,
+`place=held_out`):
+
+| ckpt | coverage | realized speed | `clip_frac` | `edge_frac` | `straightness` | **pinned episodes** |
+|---|---|---|---|---|---|---|
+| u25 | 0.048 | **0.088** | **0.914** | 0.928 | **0.985** | **64/64 (100%)** |
+| u50 | 0.049 | **0.105** | **0.906** | 0.926 | 0.981 | **64/64 (100%)** |
+| u75 | 0.194 | 0.520 | 0.445 | 0.533 | 0.944 | 20/64 (31%) |
+| u100 | 0.215 | 0.609 | 0.374 | 0.468 | 0.962 | 13/64 (20%) |
+| u150 | 0.326 | 0.868 | 0.070 | 0.241 | 0.951 | **0/64 (0%)** |
+| u700 | 0.386 | 0.963 | 0.031 | 0.126 | 0.958 | 0/64 (0%) |
+
+("pinned" = the §18.6 wall-pin signature, `clip_frac` > 0.5 with realized speed
+< 0.5.)
+
+**Every episode at u25 and u50 is wall-pinned.** The policy *commands* ~0.79
+and *realizes* 0.09 — the boundary clip absorbs **91%** of every step — while
+spending 93% of the episode on the perimeter ring. It is pressed into the wall,
+not exploring.
+
+**The un-pinning IS the learning curve.** Pinned fraction goes
+100% → 31% → 20% → 0% across u50–u150, and coverage tracks it exactly
+(0.049 → 0.194 → 0.215 → 0.326). Once free at u150 the model is already at
+0.326, and the remaining **550 updates buy +18%** (0.326 → 0.386).
+
+So the honest budget is: **~150 updates to escape the wall-pin basin, then
+~100 more to reach the plateau, then a long slow tail.** The thing that looks
+expensive is not the exploring.
+
+#### This resolves the u50 anomaly, and adds a third straightness counterexample
+
+§18's own per-update trace showed `ang_noise` 0.191 at u50 — a persistence
+length of 27 steps, more than enough to cross a 20-cell arena — alongside
+coverage 0.05. That looked impossible for a policy "still learning to go
+straight", and it is: the policy is not walking at all.
+
+It also produces the strongest version of §18.4's lesson. **`straightness` at
+u25 is 0.985 — the highest value anywhere in this document** — and it belongs
+to a policy that covers 4.8% of the arena while jammed against a wall. A pinned
+agent does not turn. Three times now (§18.4's capped arm, §18.6's circler, and
+here) a *higher* straightness has accompanied *worse* coverage.
+
+#### What this suggests trying, and what it does not establish
+
+The obvious lever is the one aimed at the basin rather than at the objective:
+`WALL_PENALTY` is **0.1** in this config, and if 100% of early episodes are
+pinned then that term is not doing the job it exists for. A bracket on it —
+or an epsilon/κ schedule that keeps the early policy from committing into the
+boundary — is where the 150 updates are, and it is a much cheaper experiment
+than another 700-update arm.
+
+**Not established:** that the pin is *caused* by κ sharpening rather than
+merely co-occurring with it. `ang_noise` falls 0.477 → 0.191 over u1–u50, which
+is the same over-commitment mechanism §17.9 measured on the exploit side, and
+it is the natural story — but a pinned policy also *sees* almost no variation,
+so the causal arrow could run either way. Distinguishing them needs an
+intervention, not another observation.
