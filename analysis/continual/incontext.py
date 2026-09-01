@@ -70,6 +70,20 @@ def main() -> None:
     p.add_argument("--n_episodes", type=int, default=10)
     p.add_argument("--max_steps", type=int, default=200)
     p.add_argument("--device", default="cpu")
+    p.add_argument("--deterministic", action=argparse.BooleanOptionalAction,
+                   default=True,
+                   help="Act on the policy mean (default) or sample from it. "
+                        "This is not cosmetic for section 5.2. BC under goal "
+                        "uncertainty fits mu at the conditional MEAN of a "
+                        "multimodal oracle-action distribution -- which is "
+                        "near zero -- and sigma at its spread. Taking the mean "
+                        "therefore scores a policy that barely moves, while "
+                        "the sampled policy is a perfectly ordinary walker. "
+                        "Measured: the arm handed the goal direction is "
+                        "unaffected (1.00x, its mean is meaningful) while "
+                        "every uncertain arm gains 2.2-4.0x from sampling. Use "
+                        "--no-deterministic for any arm that is supposed to be "
+                        "uncertain.")
     p.add_argument("--goal_visible_episodes", type=int, default=-1,
                    help="For a checkpoint trained with an oracle goal channel: "
                         "how many episodes of each lifetime to show it for. "
@@ -107,7 +121,7 @@ def main() -> None:
             r = evaluate_in_context(
                 env, agent, n_lifetimes=args.n_lifetimes,
                 n_episodes=args.n_episodes, max_steps=args.max_steps,
-                device=device, deterministic=True,
+                device=device, deterministic=args.deterministic,
                 continuous_scale=cfg.env.continuous_scale,
                 continuous_normalize=cfg.env.continuous_normalize,
                 goal_visible_episodes=args.goal_visible_episodes,

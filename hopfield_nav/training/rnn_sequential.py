@@ -148,7 +148,7 @@ def run_sequential_blocks(
 
             metrics = evaluate_nav_all(
                 envs[: i + 1], agent, n_eval_trials, cfg.eval_max_steps,
-                device, deterministic=True,
+                device, deterministic=getattr(cfg, "eval_deterministic", True),
                 continuous_scale=cfg.env.continuous_scale,
                 continuous_normalize=cfg.env.continuous_normalize,
                 sgb=sgb,

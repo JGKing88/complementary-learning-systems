@@ -491,6 +491,20 @@ class RNNTrainConfig:
     # at, and a network that has memorised its pool is indistinguishable from
     # one that has learned the task.
     n_holdout_envs: int = 0
+    # Whether the per-update evaluation acts on the policy mean or samples from
+    # it. True is what every recorded history used, and is right for a
+    # confident policy. It is NOT right for an uncertain one: a Gaussian head
+    # fitted to a multimodal action distribution puts its mean near zero, so
+    # taking that mean scores a policy that barely moves. Measured on the
+    # in-context arms, sampling was worth 2.2-4.0x on every uncertain policy
+    # and exactly 1.00x on the one confident policy -- which is the signature
+    # of the artefact rather than of a real difference.
+    #
+    # This matters for retention specifically: an environment the network has
+    # *forgotten* is one it is now uncertain about, and if forgetting shows up
+    # as uncertainty rather than as confident error, deterministic evaluation
+    # understates what was retained.
+    eval_deterministic: bool = True
     seed: int = 0
     device: str = "cuda"
     save_dir: str | None = None

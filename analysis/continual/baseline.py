@@ -348,6 +348,15 @@ def main() -> None:
                         "Adam's second moments otherwise carry across "
                         "boundaries, so the first steps in env i are scaled by "
                         "statistics from env i-1 -- plan section 3.1 W2.")
+    p.add_argument("--eval_deterministic",
+                   action=argparse.BooleanOptionalAction, default=True,
+                   help="Evaluate on the policy mean (default, and what every "
+                        "recorded history used) or by sampling. A forgotten "
+                        "environment is one the network is uncertain about, "
+                        "and a Gaussian head fitted to an uncertain target "
+                        "puts its mean near zero -- so if forgetting shows up "
+                        "as uncertainty rather than confident error, the "
+                        "default understates retention.")
     p.add_argument("--only_train_on_reached", action="store_true",
                    help="Per BC update, drop trajectories whose rollout never "
                         "reached the goal. If no trajectory reached, the update "
@@ -413,6 +422,7 @@ def main() -> None:
         batch_envs=args.batch_envs,
         steps_per_rollout=args.steps_per_rollout,
         n_eval_trials=1,
+        eval_deterministic=args.eval_deterministic,
         eval_max_steps=args.max_steps,
         eval_every=1,
         seed=args.seed,
@@ -619,6 +629,7 @@ def main() -> None:
                 "epochs": cfg.bc.epochs,
                 "n_minibatches": cfg.bc.n_minibatches,
                 "max_grad_norm": cfg.bc.max_grad_norm,
+                "eval_deterministic": args.eval_deterministic,
                 "reset_optimizer_each_block": args.reset_optimizer_each_block,
                 "freeze_trunk": args.freeze_trunk,
                 "hnet_base": args.hnet_base if args.arch == "hnet" else None,

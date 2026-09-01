@@ -1832,3 +1832,90 @@ multimodality natively and is already supported. That is the cheap decisive
 test, and it is now motivated by a measurement rather than a hunch. The
 search-then-exploit teacher swap remains the follow-on if discretising is not
 enough.
+
+---
+
+## 2026-09-01 — the "below random" result was mostly deterministic evaluation
+
+Jack asked why the policy could not simply learn a random walk, given that the
+hopfield-nav explore models manage it. Checking that exposed an artefact in the
+evaluation rather than a property of the policy, and my previous entry needs
+correcting.
+
+**It does learn something like a random walk.** BC fits `mu` to
+`E[a_oracle | h]` and `sigma` to `sd(a_oracle | h)`. Under directional
+uncertainty the first is near zero and the second stays large, so the fitted
+policy is roughly N(0, 0.5) — and *sampled*, that is an ordinary walker.
+
+**Every evaluator in this stack hardcoded `deterministic=True`.** So the number
+being reported was that walker with its randomness deleted. Same checkpoints,
+same environments, one flag:
+
+| checkpoint | sigma | deterministic | sampled | ratio |
+|---|---|---|---|---|
+| `ceilrel` (told the direction) | 0.413 | 0.996 | 0.996 | **1.00×** |
+| `ceilabs` (told the coordinates) | 0.462 | 0.184 | 0.562 | 3.06× |
+| `carry` | 0.486 | 0.102 | 0.387 | 3.81× |
+| `ep` | 0.432 | 0.078 | 0.312 | 4.00× |
+| `ic` | 0.563 | 0.035 | 0.078 | 2.22× |
+
+The `ceilrel` row is the control that identifies the mechanism: it is the only
+arm whose regression target is unimodal, and it is the only arm sampling does
+not change. Deterministic evaluation penalises exactly the policies that are
+*correctly uncertain*, and leaves confident ones alone.
+
+**Corrections to the previous entry.** The ceiling is ~0.56, not 0.362 — 2.7×
+the floor rather than 1.7×, so there is more dynamic range for the memory
+question than I said there was. And "below random" was largely the missing
+randomness. What survives untouched is the self-localisation gap: `ceilrel`
+0.996 against `ceilabs` 0.562 is measured under identical sampling, so that
+comparison was never affected.
+
+### Why RL can learn exploration here and BC cannot
+
+RL optimises the return of the policy actually executed, so wandering is a
+strategy it can *select* and be rewarded for — which is what the explore models
+did. BC has no such freedom. The teacher is
+`bfs_action_batch(positions, goal)`: a function of position and goal only, with
+no dependence on the observation history, on whether the goal was ever seen, or
+on what the agent could know. The mask is `~done & ~at_goal_mask`, so every
+step of every trajectory is labelled with a beeline the agent had no way to
+compute, including trajectories that never found the goal
+(`only_train_on_reached` defaults False and no wave used it).
+
+So there is no label anywhere that rewards information-gathering, and the loss
+is myopic: an action that makes the *next* prediction easier earns nothing for
+it. Exploration is not merely unlearned here, it is unrepresentable in the
+teacher — an omniscient expert has no reason to explore, so it can never
+demonstrate exploring.
+
+### Does the artefact reach Waves 1-3?
+
+It had to be checked, because a forgotten environment is one the network is
+uncertain about, and the entire suite evaluates deterministically. Eight fresh
+runs on the reference arm, four seeds, both modes:
+
+| eval mode | retained | current env |
+|---|---|---|
+| deterministic | 0.0198 ± 0.0066 | 0.7683 |
+| sampled | 0.0274 ± 0.0055 | 0.8902 |
+| | 1.38× (+0.008) | 1.16× |
+
+**Waves 1-3 stand.** 1.38× against the 2.2-4.0× the in-context arms showed, on
+a base of 0.02 — the retention numbers, the 0.579 replay result and the 0.739
+XdG+SI headline are not affected.
+
+The reason is the same mechanism read backwards. In Waves 1-3 the agent gets
+200 updates of dense supervision on one environment, so about a *forgotten* one
+it is confidently wrong — still pointing where some later goal was — rather
+than uncertain. Its mean stays meaningful. The artefact bites only policies
+that are correctly uncertain, which is precisely an in-context arm meeting an
+arena it has never seen.
+
+### A regression check that came free
+
+The new deterministic runs reproduce the published `R_none` **exactly** on
+matched seeds: retained 0.0198, current 0.7683, delta +0.0000 on both. So
+`initial_h`, `episode_max_steps`, `ep_index`, `goal_channel` and the eval flag
+are all provably no-ops on the pre-existing path, which is worth more than the
+eval-mode answer itself.
