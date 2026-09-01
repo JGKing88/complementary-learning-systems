@@ -403,6 +403,84 @@ def _force_action(agent, x, h=None, *, action_idx=0, **kwargs):
     }
 
 
+class TestPersistenceRealized:
+    """§18.8 -- the persistence bonus must not pay an agent for standing still.
+
+    §18.7 measured 100% of early explore episodes wall-pinned: the policy
+    commands a rock-steady heading (straightness 0.981, the highest number in
+    that document) while the arena clip absorbs 91% of it, realizing 0.09.
+    Scored on the COMMANDED action it banks the full ballistic bonus anyway --
+    +0.196/step against wall_penalty's -0.093. `persistence_realized` scores
+    the realized displacement instead.
+
+    The rollout collector calls `vec.reset_all()`, so a staged start position
+    does not survive; these drive due east for long enough that ANY start ends
+    pinned against the east wall, and read the two ends of the same rollout.
+    """
+
+    N_STEPS = 12
+
+    def _run(self, realized: bool):
+        cfg = _make_stub_cfg(
+            movement_mode="continuous",
+            persistence_bonus=1.0,
+            persistence_realized=realized,
+        )
+        cfg.batch_envs = 1
+        cfg.steps_per_rollout = self.N_STEPS
+        collector, agent, vh = _make_collector(cfg)
+        env = ContinuousGridEnv(size=cfg.env.size, observation_size=12,
+                                goal_reward=1.0, time_penalty=0.01, seed=0)
+        # Goal in the west corner, away from the wall being driven into, so
+        # goal_reward never contaminates the reward under test.
+        env._goal = (0, 0)
+        hops = [Hopfield(8, beta=1.0, device="cpu")]
+
+        def _east(agent_, x, h=None, **kw):
+            move_dist, store_dist, values, h_next = agent_.forward(x, h)
+            B = x.shape[0]
+            act = torch.zeros(B, 2, device=x.device)
+            act[:, 0] = 1.0                     # due east, every step
+            store_action = torch.zeros(B, 1, device=x.device)
+            return {
+                "move_action": act,
+                "store_action": store_action.squeeze(1),
+                "move_log_prob": move_dist.log_prob(act).sum(-1),
+                "store_log_prob": store_dist.log_prob(store_action).squeeze(1),
+                "value": values.squeeze(1),
+                "h_next": h_next,
+            }
+
+        with patch.object(agent, "get_action_and_value",
+                          wraps=lambda *a, **k: _east(agent, *a, **k)):
+            roll = collector.collect_rollout(
+                env, agent, hops, allow_store=True, env_offset=(0, 0),
+                update_idx=1)
+        return roll.rewards.cpu().numpy()[0]
+
+    def test_commanded_pays_the_pinned_agent(self):
+        """Status quo: a constant command banks the bonus while stuck."""
+        rew = self._run(realized=False)
+        tail = rew[-4:]
+        # Arena is 6 wide and the step is 1.0, so by step 8 any start is
+        # jammed against the east wall -- yet cos(a_t, a_t-1) is still 1.
+        assert tail.min() > 0.9, (
+            f"expected the commanded-action bonus to keep paying ~1.0 while "
+            f"pinned; rewards={rew}")
+
+    def test_realized_stops_paying_at_the_wall(self):
+        """The fix: no motion, no bonus -- and free motion still pays."""
+        rew = self._run(realized=True)
+        tail = rew[-4:]
+        assert tail.max() < 0.1, (
+            f"expected no persistence bonus once pinned against the wall; "
+            f"rewards={rew}")
+        # Same rollout, before it reached the wall: real motion still earns.
+        assert rew.max() > 0.9, (
+            f"realized-displacement persistence must still pay an "
+            f"unobstructed straight run; rewards={rew}")
+
+
 class TestRolloutGoalInMemoryGate:
     def test_goal_bit_does_not_flip_in_exploit(self):
         """Bug #3 regression: agent_goal_store_fired stays False outside in_explore.

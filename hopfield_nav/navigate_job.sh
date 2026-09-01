@@ -135,6 +135,7 @@ _arg  novelty_scale_cap               "${NOVELTY_SCALE_CAP:-}"
 _arg  revisit_penalty                 "${REVISIT_PENALTY:-}"
 _arg  wall_penalty                    "${WALL_PENALTY:-}"
 _arg  persistence_bonus               "${PERSISTENCE_BONUS:-}"
+_bool persistence_realized            "${PERSISTENCE_REALIZED:-}"
 
 # --- Explore-regime behavior -----------------------------------------------
 _arg  regime_assignment               "${REGIME_ASSIGNMENT:-}"

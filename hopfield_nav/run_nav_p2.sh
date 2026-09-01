@@ -120,6 +120,9 @@ NOVELTY_SCALE_CAP=${NOVELTY_SCALE_CAP:-10}
 REVISIT_PENALTY=${REVISIT_PENALTY:-0}
 WALL_PENALTY=${WALL_PENALTY:-0.1}
 PERSISTENCE_BONUS=${PERSISTENCE_BONUS:-0.05}
+# §18.8: score persistence on realized displacement, not the commanded
+# action. Default 0 = every run up to P20.
+PERSISTENCE_REALIZED=${PERSISTENCE_REALIZED:-0}
 
 # --- explore regime (v35's) ------------------------------------------------
 EXPLORE_GOALS_OFF=${EXPLORE_GOALS_OFF:-1}
@@ -916,6 +919,54 @@ case "$VARIANT" in
     case "$VARIANT" in
       p20_e_kcap) LOG_KAPPA_MAX=2.5 ;;
     esac
+    ;;
+
+  # === P21 -- does the pin clear when persistence stops paying for it? ======
+  #
+  # 18.7 measured that 100% of episodes at u25 AND u50 are wall-pinned, and
+  # 18.8 priced it: at the pin the persistence bonus PAYS +0.196/step while
+  # wall_penalty charges only -0.093, a ratio of 2.1. The bonus scores
+  # cos(a_t, a_t-1) on the COMMANDED action, and a pinned agent commands a
+  # rock-steady heading (straightness 0.981, the highest number in the
+  # document) while realizing 0.09 of it. It is paid the full ballistic bonus
+  # for standing still.
+  #
+  # p21_pr is p20_e with ONE bit flipped: --persistence_realized. Nothing else
+  # moves, so p20_e's own eval series is the control and does not need
+  # re-running.
+  #
+  # explore:300 rather than 700 because the claim is entirely about the early
+  # curve. p20_e was 100% pinned at u50, 31% at u75, 0% at u150; 300 updates
+  # with EVAL_EVERY=25 gives 12 points across and past that window.
+  #
+  # PASS: the pinned fraction at u25/u50 is materially below 100%, and the
+  # coverage curve leaves the 0.05 floor earlier than p20_e's u75. Score it
+  # with `analysis.nav_tri.explore_traj` on the u25/u50/u75 checkpoints, the
+  # same way 18.7 was measured -- NOT from the coverage curve alone, which
+  # cannot tell "unpinned" from "pinned but lucky".
+  #
+  # Prediction on record: the pin clears earlier, and final coverage is
+  # UNCHANGED or slightly better. The realized and commanded cosines are equal
+  # whenever neither the norm clamp nor the arena clip bites, which for the
+  # converged p20_e policy is 97% of steps (clip_frac 0.031) -- so this should
+  # be nearly a no-op late and matter only where the agent is stuck.
+  #
+  # Falsifier worth stating: if the pin clears but coverage ends LOWER, the
+  # bonus was doing something at the walls that this removes, and the right
+  # answer is a smaller persistence_bonus on realized rather than the swap.
+  p21_pr)
+    ENCODER=/orcd/pool/003/jackking/cls_runs/sweeps/w52_attract_fwhm/001_att0.5_seed=43/encoder_final.pt
+    ENCODER_GAIN=100
+    HOPFIELD_BETA=100
+    SCHEDULE=${SCHEDULE:-'explore:300'}
+    ENVS_PER_WORLD=20; BATCH_ENVS=64
+    EPSILON_EXPLORE=0.1; GOAL_REWARD=2.0
+    PERSISTENCE_BONUS=0.20
+    PERSISTENCE_REALIZED=1
+    REGIME_ASSIGNMENT=shuffle
+    ACTION_POLAR=1; STATE_DEPENDENT_STD=1; FREEZE_LOG_STD=0
+    MIN_ACTION_NORM=0.5; MAX_ACTION_NORM=1.0
+    EVAL_SCOPE=expl; EVAL_EVERY=25; CKPT_EVERY=25
     ;;
 
   *)

@@ -726,6 +726,7 @@ CFG_FIELDS: dict[str, tuple[str, ...]] = {
     "revisit_penalty": ("hopfield.revisit_penalty",),
     "wall_penalty": ("hopfield.wall_penalty",),
     "persistence_bonus": ("hopfield.persistence_bonus",),
+    "persistence_realized": ("hopfield.persistence_realized",),
     "novelty_scale_remaining": ("hopfield.novelty_scale_remaining",),
     "novelty_scale_cap": ("hopfield.novelty_scale_cap",),
     # run structure
@@ -1003,6 +1004,14 @@ def build_parser() -> argparse.ArgumentParser:
                         "action_{t-1}). Encourages straight-line movement "
                         "in explore phase. Stateless alternative to "
                         "revisit_penalty.")
+    p.add_argument("--persistence_realized", action=argparse.BooleanOptionalAction,
+                   default=False,
+                   help="Score the persistence bonus on the REALIZED "
+                        "displacement rather than the commanded action. "
+                        "Default off, which is what every run up to P20 "
+                        "trained under. On the commanded action a "
+                        "wall-pinned agent collects the full bonus for not "
+                        "moving (P2 doc §18.7-18.8).")
     p.add_argument("--novelty_scale_remaining", action=argparse.BooleanOptionalAction,
                    default=False,
                    help="Scale novelty reward by total_cells/n_remaining "

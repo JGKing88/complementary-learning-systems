@@ -28,7 +28,8 @@ mismatch that must be fixed first.
 
 **Open items** (priority order):
 
-- [ ] **Bracket `WALL_PENALTY` (currently 0.1) on the explore arm.** §18.7 measured that **100% of episodes at u25/u50 are wall-pinned** (`clip_frac` 0.91, realized speed 0.09 against a commanded 0.79) and that un-pinning *is* the first 150 updates of the coverage curve. That term exists to prevent exactly this and is not doing it. Far cheaper than another 700-update arm.
+- [ ] **Run `p21_pr` — staged, not launched.** §18.7 measured **100% of episodes at u25/u50 wall-pinned**, and §18.8 priced it: the **persistence bonus pays +0.196/step for the pin** against `wall_penalty`'s −0.093, because it scores the *commanded* action and a pinned agent commands a perfect heading while realizing 0.09. `--persistence_realized` (default off) fixes that without taxing the walls; `p21_pr` is `p20_e` with that one bit flipped, `explore:300`, and `p20_e` is its own control. Score it with `explore_traj` on u25/u50/u75, not from the coverage curve.
+- [ ] **`prev_disp_t` is not reset on teleport** although `prev_reward_t` and `prev_action_t` beside it are (`collector.py`, the `reset_rows` block). It is an *observation* channel, so correcting it changes the input for every existing run — decide deliberately, don't fix in passing. Found in §18.8.
 
 - [ ] **Read P4/P5 when they land** and fill §8/§9. P4 at u450 was already at
       `mean_steps` 10.09 (d=0) / 14.10 (d=10) with `mean_speed` 1.25, so the
@@ -6071,6 +6072,14 @@ here) a *higher* straightness has accompanied *worse* coverage.
 
 #### What this suggests trying, and what it does not establish
 
+> **SUPERSEDED — §18.8.** The suggestion below (raise `WALL_PENALTY`) is
+> **not** the recommendation any more. The reward decomposition shows the pin
+> is *paid for* by the **persistence bonus** at +0.196/step against
+> `wall_penalty`'s −0.093 — and that raising `wall_penalty` to the >0.24 it
+> would need also taxes legitimate perimeter work, pushing toward the
+> edge-avoiding policy §18.4 measured at 12% worse coverage. The fix is
+> `--persistence_realized`.
+
 The obvious lever is the one aimed at the basin rather than at the objective:
 `WALL_PENALTY` is **0.1** in this config, and if 100% of early episodes are
 pinned then that term is not doing the job it exists for. A bracket on it —
@@ -6084,3 +6093,99 @@ is the same over-commitment mechanism §17.9 measured on the exploit side, and
 it is the natural story — but a pinned policy also *sees* almost no variation,
 so the causal arrow could run either way. Distinguishing them needs an
 intervention, not another observation.
+
+### 18.8 The pin is PAID FOR — and by the persistence bonus, not the wall
+
+Jack, following §18.7: *"so the next step might be to raise WALL_PENALTY?"*
+The reward decomposition says no, or at least not that knob first.
+
+Every explore-phase shaping term, priced per step:
+
+| ckpt | novelty | **persistence** | wall | time | **predicted** | **logged `mean_r`** |
+|---|---|---|---|---|---|---|
+| u50 **pinned** | +0.030 | **+0.196** | −0.093 | −0.050 | +0.084 | **+0.074** |
+| u150 free | +0.236 | +0.190 | −0.024 | −0.050 | +0.352 | **+0.334** |
+| u700 final | +0.292 | +0.192 | −0.013 | −0.050 | +0.421 | **+0.416** |
+
+(novelty = `0.3 · N · s̄ / 200` with `s̄` the mean of `min(10, 400/(400−k))`
+over the N novel visits; the rest read straight off `collector.py`.)
+
+The model reproduces the logged reward across a **5.7× range** with error
+≤0.018, so the shaping is understood and the pin can be priced.
+
+**At the pin the persistence bonus PAYS +0.196/step while `wall_penalty`
+charges only −0.093 — a ratio of 2.1.** The pin is not an unpunished state. It
+is a *rewarded* one, and the term rewarding it is the one meant to encourage
+ballistic exploration.
+
+#### Why: persistence is scored on the COMMANDED action
+
+`collector.py` computes `cos(a_t, a_{t−1})` from `result["move_action"]` — what
+the policy asked for, before the norm clamp and the arena clip. A wall-pinned
+agent asks for a rock-steady heading (`straightness` **0.981**, the highest
+number in this document) and realizes **0.09** of it. It collects the full
+straight-line bonus for standing still.
+
+**This is the same commanded-vs-realized confusion §9.1 already caught once**,
+where referencing the commanded magnitude made `strategy_efficiency` read 3.97
+for a policy merely sitting at its speed cap. Same bug class, different
+consumer, still live in the reward function rather than in a metric.
+
+#### Why raising `wall_penalty` is the wrong first move
+
+1. It would have to reach **>0.24** (from 0.10) merely to make the pin
+   unprofitable — it is bidding against +0.196/step of persistence income.
+2. At 0.24 it charges the *healthy* policy **−0.031/step** for legitimate
+   perimeter work. `p20_e` sits at `edge_frac` 0.126 and uniform occupancy is
+   0.19, so the ring is not a place a good explorer avoids.
+3. **We have already measured what an edge-avoiding explore policy looks
+   like.** It is `p20_e_kcap`: `edge_frac` 0.061 and **12% less coverage**
+   (§18.4). Raising `wall_penalty` pushes toward a failure mode this
+   workstream has already characterised.
+
+#### The change — `--persistence_realized`, default OFF
+
+Score the bonus on the realized displacement instead. A pinned agent's cosine
+collapses (its realized step is ~0, and a zero step scores 0 rather than the
+1.0 a 0/0 cosine would give); an unobstructed policy is untouched, because
+realized == commanded whenever neither the clamp nor the clip bites — which for
+converged `p20_e` is 97% of steps (`clip_frac` 0.031). It removes the pin's
+income **without taxing the walls at all**.
+
+**Default `False`, deliberately.** Every run from P1 to P20 trained under the
+commanded-action version, and this launcher's own header says an inherited
+default that moves silently is the thing spelling every knob out is meant to
+prevent. Turning it on is a variant, not a new baseline.
+
+Implementation notes worth keeping:
+
+- The shaping term uses its **own** `prev_disp_shaping` buffer rather than the
+  existing `prev_disp_t`. **`prev_disp_t` is not reset on teleport** although
+  `prev_reward_t` and `prev_action_t` beside it are, and the block's own
+  comment says enrichment buffers "go with it". That looks like an oversight
+  from when `input_prev_displacement` was added — but `prev_disp_t` is an
+  observation channel, so correcting it would change the input for every
+  existing run and is not this change's business. **Logged here as a separate
+  open question.**
+- Tests: `TestPersistenceRealized` in `test_audit.py`. The first case is a
+  regression test on the *old* behaviour — it asserts the commanded version
+  keeps paying ~1.0/step to an agent jammed against a wall — so the bug stays
+  documented rather than merely fixed. Both drive due east for 12 steps in a
+  6-wide arena, because `collect_rollout` calls `vec.reset_all()` and a staged
+  start position does not survive; any start therefore ends pinned, and the
+  two ends of the same rollout give both assertions.
+
+#### `p21_pr` — staged, NOT launched
+
+`p20_e` with one bit flipped, `explore:300`, everything else identical, so
+**`p20_e`'s own eval series is the control and needs no re-run**.
+
+**Prediction on record:** the pin clears earlier than `p20_e`'s u75, and final
+coverage is unchanged or slightly better. **Score it with
+`analysis.nav_tri.explore_traj` on the u25/u50/u75 checkpoints**, the way §18.7
+was measured — not from the coverage curve, which cannot distinguish "unpinned"
+from "pinned but lucky".
+
+**Falsifier:** if the pin clears but coverage ends *lower*, the bonus was doing
+something real at the walls that this removes, and the answer is a smaller
+`persistence_bonus` on realized rather than the swap.

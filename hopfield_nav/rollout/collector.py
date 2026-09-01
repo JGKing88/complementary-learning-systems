@@ -177,6 +177,14 @@ class RolloutCollector:
         # The displacement the env actually produced, which is not the action:
         # the norm clamp rescales it and the arena clip truncates it at a wall.
         prev_disp_t = torch.zeros(B, 2, device=self.device)
+        # A SECOND copy of the same quantity, for the persistence bonus under
+        # `persistence_realized`. Deliberately not shared with prev_disp_t:
+        # that one is an input channel and is NOT reset on teleport (unlike
+        # prev_reward_t / prev_action_t, which are -- see the reset block
+        # below), so reusing it would leak a pre-teleport displacement into
+        # the reward. Fixing prev_disp_t's reset would change the observation
+        # for every existing run, which is not this change's business.
+        prev_disp_shaping = np.zeros((B, 2), dtype=np.float32)
 
         # Buffers
         all_obs = torch.zeros(B, T, agent.rnn.input_size, device=self.device)
@@ -627,7 +635,32 @@ class RolloutCollector:
                         # rollout start / post-teleport). Continuous: raw
                         # 2D vectors, normalize. Discrete: one-hot codes,
                         # dot product == 1 if same direction else 0.
-                        if cfg.agent.movement_mode == "discrete":
+                        if cfg.hopfield.persistence_realized:
+                            # Score the motion the env actually produced. A
+                            # wall-pinned agent commands one steady heading
+                            # and realizes ~0.09 of it, so on the COMMANDED
+                            # action it banks the full ballistic bonus for
+                            # standing still (§18.7-18.8). On the realized
+                            # displacement its cosine collapses toward the
+                            # clip-truncated residual, while an unobstructed
+                            # policy is unchanged -- realized == commanded
+                            # whenever neither the norm clamp nor the arena
+                            # clip bites.
+                            cur = vec.last_displacement().astype(np.float32)
+                            cn = np.linalg.norm(cur, axis=-1, keepdims=True)
+                            pn = np.linalg.norm(prev_disp_shaping, axis=-1,
+                                                keepdims=True)
+                            cos_np = np.sum(
+                                (cur / np.maximum(cn, 1e-8))
+                                * (prev_disp_shaping / np.maximum(pn, 1e-8)),
+                                axis=-1)
+                            # A step that produced no motion at all scores 0,
+                            # not the 1.0 that a zero/zero cosine would give.
+                            cos_np = np.where(
+                                (cn[:, 0] < 1e-6) | (pn[:, 0] < 1e-6),
+                                0.0, cos_np).astype(np.float32)
+                            cos_sim = torch.from_numpy(cos_np).to(self.device)
+                        elif cfg.agent.movement_mode == "discrete":
                             a_t = F.one_hot(
                                 result["move_action"].long(), num_classes=4
                             ).float()
@@ -658,6 +691,7 @@ class RolloutCollector:
                 # every eval path agree by construction.
                 prev_disp_t = torch.from_numpy(
                     vec.last_displacement()).float().to(self.device)
+                prev_disp_shaping = vec.last_displacement().astype(np.float32)
 
                 # The teleport itself always invalidates the cached
                 # Gram-Schmidt basis -- that is about the agent's *position*
@@ -683,6 +717,11 @@ class RolloutCollector:
                     # be a state neither regime produces.
                     prev_reward_t[reset_idx] = 0.0
                     prev_action_t[reset_idx] = 0.0
+                    # Same rule for the persistence-shaping copy: no valid
+                    # "previous step" survives a teleport, and a stale one
+                    # would pay a bonus for a displacement the agent did not
+                    # make from where it now stands.
+                    prev_disp_shaping[np.where(reset)[0]] = 0.0
 
             # Bootstrap value at truncation
             pos_final = vec.positions()
