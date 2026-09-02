@@ -237,6 +237,8 @@ class AgentConfig:
     # [-1, 5] -> kappa in [0.37, 148] -> circular sd from 106 down to 4.7 deg.
     log_kappa_min: float = -1.0
     log_kappa_max: float = 5.0
+    log_kappa_max_end: float | None = None   # If set, log_kappa_max ramps LINEARLY from its start value to this over `log_kappa_anneal_updates`. The cap is a TRAINING-TIME device: kappa does not affect a deterministic action at all (P2 doc §20.1, measured), so it shapes what is learned rather than what is deployed. §17.9 needed the cap ON early for exploit's policy-space exploration; §24 wants it OFF late so the MEAN policy is optimized nearer the deployed deterministic regime. None = constant, i.e. every run before 2026-09-01.
+    log_kappa_anneal_updates: int = 0        # updates over which to ramp log_kappa_max -> log_kappa_max_end (0 = no ramp)
     init_speed_mu: float = 0.5              # NORMALIZED: 0.5 -> speed 1.25, the billiard peak
     init_speed_nu: float = 3.0              # -> speed sd 0.375
     # nu >= 2 forbids a U-shaped speed density for EVERY mu (a U-shape needs
@@ -483,6 +485,8 @@ class RNNAgentConfig:
     init_log_kappa: float = 1.85
     log_kappa_min: float = -1.0
     log_kappa_max: float = 5.0
+    log_kappa_max_end: float | None = None   # If set, log_kappa_max ramps LINEARLY from its start value to this over `log_kappa_anneal_updates`. The cap is a TRAINING-TIME device: kappa does not affect a deterministic action at all (P2 doc §20.1, measured), so it shapes what is learned rather than what is deployed. §17.9 needed the cap ON early for exploit's policy-space exploration; §24 wants it OFF late so the MEAN policy is optimized nearer the deployed deterministic regime. None = constant, i.e. every run before 2026-09-01.
+    log_kappa_anneal_updates: int = 0        # updates over which to ramp log_kappa_max -> log_kappa_max_end (0 = no ramp)
     init_speed_mu: float = 0.5
     init_speed_nu: float = 3.0
     speed_nu_min: float = 2.0

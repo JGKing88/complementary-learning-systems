@@ -279,6 +279,9 @@ class PolarHead(nn.Module):
         self.lo, self.hi = float(lo), float(hi)
         self.span = self.hi - self.lo
         self.log_kappa_min = float(getattr(cfg, "log_kappa_min", -1.0))
+        # Mutable on purpose: `train_navigate` ramps it per update when
+        # `log_kappa_max_end` is set. Read at forward time (line ~412),
+        # never captured, so assigning to it takes effect immediately.
         self.log_kappa_max = float(getattr(cfg, "log_kappa_max", 5.0))
         self.nu_min = float(getattr(cfg, "speed_nu_min", 2.0))
         self.nu_max = float(getattr(cfg, "speed_nu_max", 200.0))

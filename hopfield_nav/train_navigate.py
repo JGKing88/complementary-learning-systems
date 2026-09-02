@@ -70,6 +70,19 @@ def _compute_epsilon(update: int, base: float, anneal: int) -> float:
     return base * scale
 
 
+def _compute_log_kappa_max(update: int, base: float, end, anneal: int) -> float:
+    """Linear ramp of the kappa CEILING from `base` -> `end` over `anneal`.
+
+    Same shape as `_compute_epsilon`, and for the same reason: it is a property
+    of how far the run has got. `end is None` or `anneal <= 0` means constant,
+    which is every run before 2026-09-01.
+    """
+    if end is None or anneal <= 0:
+        return base
+    t = min(1.0, max(0.0, (update - 1) / float(anneal)))
+    return base + t * (float(end) - base)
+
+
 def run_navigate(
     cfg: TrainConfig,
     stages: list[Stage],
@@ -340,6 +353,18 @@ def run_navigate(
             emp_dist_min=cfg.n_train_emp_distractors_min,
             emp_dist_max=cur_emp_distractors_max,
         ))
+
+        # The kappa ceiling for this update. Assigned onto the head rather
+        # than passed, because it is read at forward time and nothing else
+        # needs to know about it.
+        if getattr(cfg.agent, "log_kappa_max_end", None) is not None:
+            _lkm = _compute_log_kappa_max(
+                update, cfg.agent.log_kappa_max,
+                cfg.agent.log_kappa_max_end,
+                cfg.agent.log_kappa_anneal_updates)
+            _head = getattr(agent, "polar_head", None)
+            if _head is not None:
+                _head.log_kappa_max = _lkm
 
         if knobs.lr != current_lr:
             for group in optimizer.param_groups:
@@ -699,6 +724,8 @@ CFG_FIELDS: dict[str, tuple[str, ...]] = {
     "init_log_kappa": ("agent.init_log_kappa",),
     "log_kappa_min": ("agent.log_kappa_min",),
     "log_kappa_max": ("agent.log_kappa_max",),
+    "log_kappa_max_end": ("agent.log_kappa_max_end",),
+    "log_kappa_anneal_updates": ("agent.log_kappa_anneal_updates",),
     "init_speed_mu": ("agent.init_speed_mu",),
     "init_speed_nu": ("agent.init_speed_nu",),
     "speed_nu_min": ("agent.speed_nu_min",),
@@ -898,6 +925,16 @@ def build_parser() -> argparse.ArgumentParser:
                    help="kappa=6.34, matching the Cartesian init sigma=exp(-0.7) "
                         "at mid-speed 1.25 (~23.8 deg of directional noise).")
     p.add_argument("--log_kappa_min", type=float, default=-1.0)
+    p.add_argument("--log_kappa_max_end", type=float, default=None,
+                   help="Ramp log_kappa_max to this over "
+                        "--log_kappa_anneal_updates. The cap is a "
+                        "training-time device (kappa does not affect a "
+                        "deterministic action, P2 §20.1): on early for "
+                        "exploit's policy-space exploration, off late so the "
+                        "mean policy is optimized nearer deployment (§24).")
+    p.add_argument("--log_kappa_anneal_updates", type=int, default=0,
+                   help="Updates over which to ramp log_kappa_max -> "
+                        "log_kappa_max_end. 0 = constant.")
     p.add_argument("--log_kappa_max", type=float, default=5.0,
                    help="[-1, 5] -> circular sd from 106 deg down to 4.7 deg.")
     p.add_argument("--init_speed_mu", type=float, default=0.5,

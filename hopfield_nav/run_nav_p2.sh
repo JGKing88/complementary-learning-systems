@@ -1023,6 +1023,57 @@ case "$VARIANT" in
     EVAL_SCOPE=expl; EVAL_EVERY=25; CKPT_EVERY=25
     ;;
 
+  # === P23 -- lever A: anneal the kappa ceiling off (2 doc 24.2) ===========
+  #
+  # The interleaved model deploys DETERMINISTICALLY -- exploit's 1.013 beeline
+  # (17.10) is a deterministic number -- so explore has to work deterministic
+  # too. And the kappa cap is what exploit NEEDS (17.9: 0.375@u475 ->
+  # 1.000@u125). But the cap is what makes explore's MEAN policy a constant
+  # curl (18.6), which deterministic eval then exposes:
+  #
+  #   p20_e_kcap swept   step 200: det 0.538  sampled 0.623
+  #                      step 999: det 0.748  sampled 0.935
+  #   p20_e              step 999: det 0.911  sampled 0.939
+  #
+  # The capped policy CAN reach 0.935 -- with noise doing the work. Training is
+  # sampled, so it collects that version and never experiences the trap.
+  #
+  # KEY FACT (20.1, measured): kappa does not affect a deterministic action AT
+  # ALL -- a 4x change moved every behavioural statistic by <0.001. The cap is
+  # purely a TRAINING-TIME device. So ramp it: on early where exploit needs it,
+  # off late so the mean policy is optimized nearer the regime it is deployed
+  # in.
+  #
+  # p23_kanneal is p20_e_kcap with the ramp and nothing else moved, so
+  # p20_e_kcap is the control and needs no re-run. 2.5 -> 5.0 over 400 of 700
+  # updates: the cap is fully off for the last 300, and 400 is past the u125
+  # where the exploit lineage converged, so it should not cost the unlock.
+  #
+  # SCORE DETERMINISTIC. That is the deployed regime and the entire point.
+  # Compare against p20_e_kcap's 0.538@200 / 0.748@1000 and p20_e's 0.644 /
+  # 0.911.
+  #
+  # Prediction on record: deterministic explore recovers toward p20_e. This is
+  # lever A and it is NOT Tier-2 -- it should produce a better FIELD, not a
+  # policy that uses memory. 22's replay signature is expected to SURVIVE. If
+  # coverage recovers and replay survives, A worked and B is still needed.
+  p23_kanneal)
+    ENCODER=/orcd/pool/003/jackking/cls_runs/sweeps/w52_attract_fwhm/001_att0.5_seed=43/encoder_final.pt
+    ENCODER_GAIN=100
+    HOPFIELD_BETA=100
+    SCHEDULE=${SCHEDULE:-'explore:700'}
+    ENVS_PER_WORLD=20; BATCH_ENVS=64
+    EPSILON_EXPLORE=0.1; GOAL_REWARD=2.0
+    PERSISTENCE_BONUS=0.20
+    REGIME_ASSIGNMENT=shuffle
+    ACTION_POLAR=1; STATE_DEPENDENT_STD=1; FREEZE_LOG_STD=0
+    MIN_ACTION_NORM=0.5; MAX_ACTION_NORM=1.0
+    LOG_KAPPA_MAX=2.5
+    LOG_KAPPA_MAX_END=5.0
+    LOG_KAPPA_ANNEAL_UPDATES=400
+    EVAL_SCOPE=expl; EVAL_EVERY=25; CKPT_EVERY=25
+    ;;
+
   *)
     echo "ERROR: unknown VARIANT=$VARIANT" >&2; exit 1 ;;
 esac
