@@ -724,6 +724,7 @@ CFG_FIELDS: dict[str, tuple[str, ...]] = {
     "init_log_kappa": ("agent.init_log_kappa",),
     "log_kappa_min": ("agent.log_kappa_min",),
     "log_kappa_max": ("agent.log_kappa_max",),
+    "input_visited": ("agent.input_visited",),
     "aux_visited_weight": ("agent.aux_visited_weight",),
     "aux_visited_radius": ("agent.aux_visited_radius",),
     "log_kappa_max_end": ("agent.log_kappa_max_end",),
@@ -927,6 +928,14 @@ def build_parser() -> argparse.ArgumentParser:
                    help="kappa=6.34, matching the Cartesian init sigma=exp(-0.7) "
                         "at mid-speed 1.25 (~23.8 deg of directional noise).")
     p.add_argument("--log_kappa_min", type=float, default=-1.0)
+    p.add_argument("--input_visited", action=argparse.BooleanOptionalAction,
+                   default=False,
+                   help="DIAGNOSTIC ONLY (P2 doc 27.5). Feed the "
+                        "8-direction visitation vector to the policy "
+                        "as an INPUT CHANNEL. This is an ORACLE at "
+                        "test time and is NOT shippable -- it exists "
+                        "to split whether the policy fails to USE "
+                        "visitation or fails to EXTRACT it.")
     p.add_argument("--aux_visited_weight", type=float, default=0.0,
                    help="BCE weight on an auxiliary head predicting "
                         "which of 8 surrounding cells the agent has "

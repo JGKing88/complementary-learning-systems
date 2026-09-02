@@ -43,6 +43,7 @@ from ..policy import channels
 from ..rollout import signal as signal_ops
 from ..world.env import GridEnv, at_goal
 from .swept import SweptArea, swept_positions
+from ..rollout import visited as visited_mod
 from hopfield import Hopfield
 from ..world.vec_env import make_vec
 from ..world import episode
@@ -85,6 +86,12 @@ def batched_navigation_trials(
                    continuous_normalize=cfg.env.continuous_normalize,
                    reset=False)
     vec.set_positions(starts)
+
+    # DIAGNOSTIC channel (§27.5). None unless input_visited is set, in which
+    # case every policy-input site must supply it or build_policy_input raises.
+    vis_probe = (visited_mod.VisitedProbe(
+        cfg.env.size, getattr(cfg.agent, "aux_visited_radius", 3.0), B)
+        if getattr(cfg.agent, "input_visited", False) else None)
 
     input_specs = channels.channel_specs(
         cfg.agent, vectorhash.encoded_Phi.shape[2], cfg.env.observation_size)
@@ -147,6 +154,10 @@ def batched_navigation_trials(
             for s, q_s in msq.items():
                 values[channels.multistep_name(s)] = torch.from_numpy(
                     q_s.astype(np.float32)).to(device)
+
+        if vis_probe is not None:
+            values["visited"] = torch.from_numpy(
+                vis_probe.read(vec.positions())).to(device)
 
         rnn_input = channels.build_policy_input(
             input_specs, values, batch_size=B).unsqueeze(1)
@@ -234,6 +245,12 @@ def batched_exploration_trials(
                    reset=False)
     vec.set_positions(starts)
 
+    # DIAGNOSTIC channel (§27.5). None unless input_visited is set, in which
+    # case every policy-input site must supply it or build_policy_input raises.
+    vis_probe = (visited_mod.VisitedProbe(
+        cfg.env.size, getattr(cfg.agent, "aux_visited_radius", 3.0), B)
+        if getattr(cfg.agent, "input_visited", False) else None)
+
     input_specs = channels.channel_specs(
         cfg.agent, vectorhash.encoded_Phi.shape[2], cfg.env.observation_size)
     signal_dim = channels.signal_width(cfg.agent)
@@ -310,6 +327,10 @@ def batched_exploration_trials(
             for s, q_s in msq.items():
                 values[channels.multistep_name(s)] = torch.from_numpy(
                     q_s.astype(np.float32)).to(device)
+
+        if vis_probe is not None:
+            values["visited"] = torch.from_numpy(
+                vis_probe.read(vec.positions())).to(device)
 
         rnn_input = channels.build_policy_input(
             input_specs, values, batch_size=B).unsqueeze(1)

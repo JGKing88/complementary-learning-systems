@@ -19,6 +19,7 @@ import torch.nn.functional as F
 
 from ..policy import channels
 from . import signal
+from . import visited as visited_mod
 from ..world import episode
 from ..config import TrainConfig
 from hopfield import Hopfield, recall_per_env_batch, recall_per_env_batch_trajectory
@@ -188,17 +189,18 @@ class RolloutCollector:
         # directions at `aux_visited_radius`, had the agent already visited that
         # cell when it acted? Recorded only when the head exists, so a run
         # without it pays nothing and its RolloutBatch carries None.
-        aux_vis_on = getattr(cfg.agent, "aux_visited_weight", 0.0) > 0
-        all_visited_targets = None
-        if aux_vis_on:
-            _r = float(getattr(cfg.agent, "aux_visited_radius", 3.0))
-            _a = np.arange(8) * (np.pi / 4.0)
-            AUX_OFF = np.stack([np.rint(_r * np.cos(_a)),
-                                np.rint(_r * np.sin(_a))], axis=1).astype(int)
-            all_visited_targets = torch.zeros(B, T, 8, device=self.device)
-            # Its own visited set: this head must work even when novelty is
-            # off, so it does not depend on the shaping block's bookkeeping.
-            aux_seen = np.zeros((B, cfg.env.size, cfg.env.size), dtype=bool)
+        # One probe, two consumers: the auxiliary head's target (§24.2 lever B)
+        # and the diagnostic input channel (§27.5). Shared so the diagnostic
+        # tests exactly what the head was trained on. See rollout/visited.py.
+        vis_probe = visited_mod.probe_for(cfg, B)
+        vis_channel_on = getattr(cfg.agent, "input_visited", False)
+        aux_head_on = getattr(cfg.agent, "aux_visited_weight", 0.0) > 0
+        all_visited_targets = (
+            torch.zeros(B, T, visited_mod.N_DIR, device=self.device)
+            if aux_head_on else None)
+        # Defensive: the bootstrap reads this, and the loop always sets it, but
+        # an empty rollout would otherwise leave it unbound.
+        _last_vis = torch.zeros(B, visited_mod.N_DIR, device=self.device)
 
         # Buffers
         all_obs = torch.zeros(B, T, agent.rnn.input_size, device=self.device)
@@ -466,18 +468,16 @@ class RolloutCollector:
                     values[channels.multistep_name(s)] = (
                         torch.from_numpy(q_s).float().to(self.device))
 
-                if aux_vis_on:
-                    # Read at the DECISION position, before stepping: the label
-                    # must describe what the agent knew when it CHOSE, or the
-                    # head predicts the future rather than reporting memory.
-                    _p = vec.positions()                    # (B, 2) snapped
-                    _q = np.clip(_p[:, None, :] + AUX_OFF[None, :, :],
-                                 0, cfg.env.size - 1)       # (B, 8, 2)
-                    _tg = aux_seen[np.arange(B)[:, None],
-                                   _q[:, :, 0], _q[:, :, 1]]
-                    all_visited_targets[:, t] = torch.from_numpy(
-                        _tg.astype(np.float32)).to(self.device)
-                    aux_seen[np.arange(B), _p[:, 0], _p[:, 1]] = True
+                if vis_probe is not None:
+                    _vt = torch.from_numpy(
+                        vis_probe.read(vec.positions())).to(self.device)
+                    if all_visited_targets is not None:
+                        all_visited_targets[:, t] = _vt
+                    if vis_channel_on:
+                        # The SAME vector the head is asked to predict, handed
+                        # straight to the policy instead. §27.5.
+                        values["visited"] = _vt
+                    _last_vis = _vt
 
                 rnn_input = channels.build_policy_input(
                     input_specs, values, batch_size=B,
@@ -806,6 +806,10 @@ class RolloutCollector:
                 values_final[channels.multistep_name(s)] = (
                     torch.from_numpy(q_s).float().to(self.device))
 
+            if vis_channel_on:
+                # The bootstrap value is read at the truncation state; the
+                # last computed vector is the right one for it.
+                values_final["visited"] = _last_vis
             final_input = channels.build_policy_input(
                 input_specs, values_final, batch_size=B,
             ).unsqueeze(1)

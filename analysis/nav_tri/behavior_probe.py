@@ -66,6 +66,7 @@ from hopfield_nav.world import generate as gen
 from hopfield_nav.evaluation.metrics import random_start
 from hopfield_nav.policy import channels
 from hopfield_nav.rollout import signal as signal_ops
+from hopfield_nav.rollout import visited as visited_mod
 from hopfield_nav.rollout.distractors import goal_encoding, sample_distractors
 from hopfield_nav.world import episode
 from hopfield_nav.world.env import at_goal
@@ -140,6 +141,11 @@ def rollout(*, agent, env, env_offset, vectorhash, hopfields, cfg, device,
                    continuous_normalize=cfg.env.continuous_normalize,
                    reset=False)
     vec.set_positions(starts)
+
+    # DIAGNOSTIC channel (§27.5); None unless input_visited is set.
+    vis_probe = (visited_mod.VisitedProbe(
+        cfg.env.size, getattr(cfg.agent, "aux_visited_radius", 3.0), B)
+        if getattr(cfg.agent, "input_visited", False) else None)
 
     input_specs = channels.channel_specs(
         cfg.agent, vectorhash.encoded_Phi.shape[2], cfg.env.observation_size)
@@ -240,6 +246,10 @@ def rollout(*, agent, env, env_offset, vectorhash, hopfields, cfg, device,
                 values[channels.multistep_name(s)] = torch.from_numpy(
                     _rescale_q(q_s, q_rescale, q_scale).astype(np.float32)
                 ).to(device)
+
+        if vis_probe is not None:
+            values["visited"] = torch.from_numpy(
+                vis_probe.read(vec.positions())).to(device)
 
         rnn_input = channels.build_policy_input(
             input_specs, values, batch_size=B).unsqueeze(1)

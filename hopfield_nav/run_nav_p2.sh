@@ -1120,6 +1120,55 @@ case "$VARIANT" in
     EVAL_SCOPE=expl; EVAL_EVERY=25; CKPT_EVERY=25
     ;;
 
+  # === P25 -- DIAGNOSTIC: hand visitation to the policy directly (27.5) =====
+  #
+  # NOT A SHIPPABLE CONFIG. INPUT_VISITED is an ORACLE at test time. This arm
+  # exists to split one question and should never become a baseline.
+  #
+  # 27: the auxiliary head LEARNED to predict 8-direction visitation from the
+  # trunk's features (aux_visited_loss 0.632 -> 0.367), so those features
+  # provably carry visitation -- and the policy head, reading the identical
+  # vector, ignored it. 22's replay signature was unchanged (ratio 0.115 vs the
+  # control's 0.125) and coverage FELL 13.7%.
+  #
+  # So the question is no longer "is the information available". It is:
+  #
+  #   does the policy fail to USE visitation, or fail to EXTRACT it?
+  #
+  # Handing the same 8-vector in as an INPUT collapses "use memory" from "learn
+  # to read your own hidden state" down to "learn to weight an input".
+  #
+  #   coverage IMPROVES  -> the bottleneck is representation-to-policy. The fix
+  #                         is architectural (how the policy reads state), not
+  #                         more pressure, and B2/B3 are the wrong next levers.
+  #   coverage FLAT      -> the policy cannot exploit visitation even when
+  #                         handed it. Much deeper: Tier-2 is not reachable
+  #                         this route at all, and the field is a local optimum
+  #                         that better inputs do not escape.
+  #
+  # p25_visin is p20_e plus the channel, nothing else moved, so p20_e is the
+  # control. Input widens 74 -> 82 dims.
+  #
+  # Score BOTH: swept_coverage (does it help at all) AND the replay probe (does
+  # it stop replaying). Those can come apart -- a policy could use the input to
+  # improve coverage while still being a fixed function of an ENLARGED state,
+  # which would still not be Tier-2. Worth knowing either way.
+  p25_visin)
+    ENCODER=/orcd/pool/003/jackking/cls_runs/sweeps/w52_attract_fwhm/001_att0.5_seed=43/encoder_final.pt
+    ENCODER_GAIN=100
+    HOPFIELD_BETA=100
+    SCHEDULE=${SCHEDULE:-'explore:700'}
+    ENVS_PER_WORLD=20; BATCH_ENVS=64
+    EPSILON_EXPLORE=0.1; GOAL_REWARD=2.0
+    PERSISTENCE_BONUS=0.20
+    REGIME_ASSIGNMENT=shuffle
+    ACTION_POLAR=1; STATE_DEPENDENT_STD=1; FREEZE_LOG_STD=0
+    MIN_ACTION_NORM=0.5; MAX_ACTION_NORM=1.0
+    INPUT_VISITED=1
+    AUX_VISITED_RADIUS=3.0
+    EVAL_SCOPE=expl; EVAL_EVERY=25; CKPT_EVERY=25
+    ;;
+
   *)
     echo "ERROR: unknown VARIANT=$VARIANT" >&2; exit 1 ;;
 esac
