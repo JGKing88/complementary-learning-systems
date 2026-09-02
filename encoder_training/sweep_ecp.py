@@ -138,6 +138,10 @@ SIZE_MIXES: dict[str, str] = {
     # --- 1.25%, the next rung down (w60). Placement-checked at seeds 42-45.
     "sm50_x":    _mix((50, 15)),                  #  1.27%,  15 envs
     "sm35_x":    _mix((35, 30)),                  #  1.25%,  30 envs
+    # --- 0.75%, the bottom rung (w61). Placement-checked at seeds 42-45.
+    "sm27_y":    _mix((27, 30)),                  #  0.74%,  30 envs
+    "sm35_y":    _mix((35, 18)),                  #  0.75%,  18 envs
+    "sm50_y":    _mix((50, 9)),                   #  0.76%,   9 envs
 }
 
 
@@ -2193,6 +2197,45 @@ WAVES: dict[str, dict] = {
                                   attract_lambda=4.0)),
                 ("sm35x_a2", dict(npos_list=SIZE_MIXES["sm35_x"],
                                   attract_lambda=2.0)),
+            )
+        },
+        "seed": [42, 43, 44, 45],
+    },
+    # W61 -- 0.75% coverage, below the floor, to see the shape of the falloff.
+    #
+    # Sec 10.15 put the usable floor between 2.5% and 1.25%: reach is flat at
+    # 0.978 / 0.977 / 0.965 down to 2.5% and drops to ~0.87 at 1.25%, where the
+    # alias rate passes ~0.02 and dead goals first cross into the K=5 operating
+    # point. This rung is not looking for a usable encoder -- it is looking at
+    # whether the falloff is a cliff or a slope, which decides whether 1.25% was
+    # the edge of a shelf or a point on a decline.
+    #
+    # Two predictions on record.
+    #
+    # Attract: the optimum has gone 0.5 / 0.5 / 1.0 / 2.0 down the ladder, so
+    # **2.0-4.0 here**, and 4.0 is the arm to watch since it lost at both 2.5%
+    # and 1.25%. If 2.0 still wins, the trend has flattened.
+    #
+    # Geometry: at 2.5% the size-held mix won and at 1.25% the count-held one
+    # did, so the crossover has already happened once. Holding the count at 30
+    # (the 1.25% winner's) needs 27-cell patches, which is under every floor
+    # Sec 6.3 identified -- if sm27_y still wins, patch size matters even less
+    # to this objective than Sec 10.15 suggested; if it loses to sm35_y or
+    # sm50_y, the crossover reverses and there is a genuine size floor after all.
+    "w61_cov0.75": {
+        "arm": {
+            name: {**dict(batch_size=4096, lr=3e-4, per_env_radius_frac=0.0,
+                          radius=20.0, rate_lambda=0.5, rate_eps=1.0,
+                          out_dim=1024, hidden_dim=256, gain_end=100.0), **over}
+            for name, over in (
+                ("y27_a2", dict(npos_list=SIZE_MIXES["sm27_y"],
+                                attract_lambda=2.0)),
+                ("y27_a4", dict(npos_list=SIZE_MIXES["sm27_y"],
+                                attract_lambda=4.0)),
+                ("y35_a2", dict(npos_list=SIZE_MIXES["sm35_y"],
+                                attract_lambda=2.0)),
+                ("y50_a2", dict(npos_list=SIZE_MIXES["sm50_y"],
+                                attract_lambda=2.0)),
             )
         },
         "seed": [42, 43, 44, 45],
