@@ -85,9 +85,12 @@ echo "[pretrain-disc] finished $(date -Is)  status=$STATUS"
 
 if [[ -f "$OUT_DIR/final.pt" ]]; then
     echo "[pretrain-disc] checkpoint present: $OUT_DIR/final.pt"
-    python - <<'PY'
-import os, torch
-p = os.path.join(os.environ["CLS_CKPTS_RNN"], "pretrain_20x20_discrete", "final.pt")
+    # The path is passed in rather than read from the environment:
+    # cls_env.sh sets CLS_CKPTS_RNN as a shell variable but only exports
+    # CLS_RUNS, so os.environ would not see it.
+    python - "$OUT_DIR/final.pt" <<'PY'
+import sys, torch
+p = sys.argv[1]
 ck = torch.load(p, map_location="cpu", weights_only=False)
 a = ck["cfg"]["agent"]
 print(f"[pretrain-disc] movement_mode={a['movement_mode']} hidden={a['hidden_size']} "

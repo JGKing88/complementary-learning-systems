@@ -538,7 +538,9 @@ def replay_ratio_series(methods: list[dict]) -> list[tuple[int, float, float]]:
 ENV_COLORS = ["#4C7DF0", "#E08A2E", "#35A47A", "#D2564F", "#9B72D6"]
 
 
-def staircase_svg(rows) -> str:
+def staircase_svg(rows, key: str = "envs", ymax: float = 1.0,
+                  yticks=((0.0, "0"), (0.5, "0.5"), (1.0, "1")),
+                  invert: bool = False) -> str:
     """Per-environment success across the whole stream, one panel per arm.
 
     This is the phenomenon every scalar in section 2 is a summary of. A
@@ -573,7 +575,8 @@ def staircase_svg(rows) -> str:
             return ox + PW * (float(step) / span)
 
         def Y(v):
-            return oy + PH * (1.0 - max(0.0, min(1.0, float(v))))
+            f = max(0.0, min(1.0, float(v) / ymax))
+            return oy + PH * (f if invert else 1.0 - f)
 
         o.append(f'<text class="stt" x="{cx + 6}" y="{cy + 16}">'
                  f'{esc(r["label"])}</text>')
@@ -587,14 +590,14 @@ def staircase_svg(rows) -> str:
                      f'width="{max(0.0, X(hi) - X(lo)):.1f}" height="{PH}" '
                      f'fill="{col}" opacity="0.08"/>')
 
-        for frac, lab in ((0.0, "0"), (0.5, "0.5"), (1.0, "1")):
+        for frac, lab in yticks:
             yy = Y(frac)
             o.append(f'<line x1="{ox}" y1="{yy:.1f}" x2="{ox + PW}" '
                      f'y2="{yy:.1f}" stroke="var(--rule)" stroke-width="1"/>')
             o.append(f'<text class="sax" x="{ox - 8}" y="{yy + 3:.1f}" '
                      f'text-anchor="end">{lab}</text>')
 
-        envs = r.get("envs") or {}
+        envs = r.get(key) or {}
         for k in sorted(envs, key=lambda z: int(z)):
             pts = envs[k]
             if not pts:
@@ -862,6 +865,32 @@ def render(d: dict) -> str:
           "retention on the environments already left rather than average "
           "performance: the average is dominated by the one environment the "
           "method happens to be training on, which every method solves.</p>")
+
+        cap = int((stair[0] or {}).get("step_cap") or 200)
+        A("<h3>The same thing in steps rather than in successes</h3>")
+        A("<p>Success is binary, so it says an environment was solved and not "
+          "how far the agent walked to solve it. The same traces in "
+          "steps-to-goal, with a trial that never arrives counted at the full "
+          f"{cap}-step cap. The axis is inverted so that up is still better: a "
+          f"curve sinking toward the {cap}-step line at the bottom is one that "
+          "has stopped arriving at all.</p>")
+        A(f'<div class="fig">'
+          f'{staircase_svg(stair, key="envs_steps", ymax=float(cap), yticks=((0.0, "0"), (cap / 2.0, str(cap // 2)), (float(cap), str(cap))), invert=True)}'
+          "</div>")
+        A("<p><strong>Counting the failures at the cap is the whole trick.</strong> "
+          "The obvious alternative — average the step count over the trials "
+          "that reached the goal — is worse than useless here, because it "
+          "scores each method on the subset it happened to solve. An arm that "
+          "retains almost nothing still solves the goals that spawned close to "
+          "the agent, so it posts the <em>shortest</em> mean path in the suite, "
+          "ahead of every method that actually retains and is therefore also "
+          "being graded on the far ones. Filling failures at the cap removes "
+          "that, at the price of making the retained half of this panel close "
+          "to a mirror of the one above: once the cap term dominates, censored "
+          "steps is nearly a function of the success rate. What it adds is in "
+          "the shaded blocks, where the curve shows how quickly a method "
+          "converts a solved environment into an <em>efficient</em> route — "
+          "which the success curve, already saturated, cannot show.</p>")
 
     A('<h2 id="frontier"><span class="sec">2</span> The frontier</h2>')
     A("<p>Best configuration per method, chosen among those that still learned "

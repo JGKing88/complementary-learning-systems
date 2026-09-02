@@ -245,6 +245,36 @@ def _smooth(xs, window: int):
     return out
 
 
+def _censored_steps_series(hist, cap: float):
+    """{env: [(step, mean_over_seeds)]} for steps-to-goal, failures filled at `cap`.
+
+    Deliberately NOT `M.per_env_series`. Its `_values` drops None, and
+    `steps_to_goal` is None exactly when the trial did not reach the goal --
+    so averaging through it would give the mean over the seeds that succeeded.
+    That statistic scores every arm on the subpopulation it happened to solve,
+    which is how the arm that forgets almost everything ends up looking like
+    the fastest navigator in the suite: it is graded only on the goals that
+    spawned near the agent. Filling at the step cap first is what makes the
+    number comparable between arms, and it is what `plotting.py` already does
+    via its `nan_fill` argument.
+    """
+    out = defaultdict(list)
+    for step, _train_env, inner in hist.get("trace", []):
+        for k, entry in inner.items():
+            v = entry.get("steps_to_goal")
+            if v is None:
+                seeds = [cap]
+            elif isinstance(v, list):
+                seeds = [cap if x is None else float(x) for x in v]
+            else:
+                seeds = [float(v)]
+            if seeds:
+                out[int(k)].append((int(step), sum(seeds) / len(seeds)))
+    for k in out:
+        out[k].sort()
+    return dict(out)
+
+
 def collect_staircase(merged_dir, smooth: int = 15, stride: int = 10):
     """Per-env `reached` traces for the forgetting panel, one entry per arm.
 
@@ -269,20 +299,27 @@ def collect_staircase(merged_dir, smooth: int = 15, stride: int = 10):
         series = M.per_env_series(hist, "reached")
         if not series:
             continue
-        envs = {}
-        max_step = 0
-        for j in sorted(series):
-            steps = [s for s, _ in series[j]]
-            vals = _smooth([v for _, v in series[j]], smooth)
-            max_step = max(max_step, max(steps) if steps else 0)
-            envs[j] = [[steps[i], round(vals[i], 4)]
-                       for i in range(0, len(steps), stride)
-                       if vals[i] == vals[i]]
+        cap = float((raw.get("metadata") or {}).get("max_steps") or 200)
+        steps_series = _censored_steps_series(hist, cap)
+
+        def _thin(src, digits):
+            envs = {}
+            for j in sorted(src):
+                xs = [s for s, _ in src[j]]
+                ys = _smooth([v for _, v in src[j]], smooth)
+                envs[j] = [[xs[i], round(ys[i], digits)]
+                           for i in range(0, len(xs), stride)
+                           if ys[i] == ys[i]]
+            return envs
+
+        max_step = max((s for j in series for s, _ in series[j]), default=0)
         out.append({
             "arm": arm, "label": label, "why": why,
             "blocks": [[int(b[0]), int(b[1]), int(b[2])]
                        for b in hist["blocks"]],
-            "envs": envs,
+            "envs": _thin(series, 4),
+            "envs_steps": _thin(steps_series, 1),
+            "step_cap": cap,
             "max_step": max_step,
         })
     return out
