@@ -7178,3 +7178,70 @@ continuous position.
 Tests: `test_recurrence.py`, 9 cases — recovers a known period, finds a
 **precessing** orbit (the §27 failure), finds a 6.9°/step curl that reads as
 straight, and does **not** fire on a straight run or a random walk.
+
+
+---
+
+## 29. P25 — the visitation oracle buys SPEED, not ceiling
+
+`p25_visin` = `p20_e` plus `--input_visited`, nothing else moved. Job 21812138,
+COMPLETED 700/700. **Not a shippable config** — the channel is an oracle at
+test time.
+
+### 29.1 Result
+
+| | swept (final-4) | cps (final-4) | reaches control's converged level |
+|---|---|---|---|
+| `p20_e` (control) | 0.625–0.644 | 0.777 | u700 |
+| **`p25_visin`** | **0.629** | **0.774** | **u300** |
+
+**Identical ceiling, ~2.3× faster, and steadier** (u225–300 range 0.022 against
+the control's 0.047 at convergence). It also skips the §18.7 wall-pin phase
+entirely: swept 0.408 at u25, where the control is 100% pinned at 0.048.
+
+### 29.2 What the oracle actually was — read this before citing the result
+
+Jack: *"wait how did the oracle work?"* It is **8 bits**: the 8 compass cells
+at radius **3** from the agent's snapped position, each "have I been there
+before?", binary, no recency.
+
+That is **not a visited map**. It is 8 samples of a 400-cell set on one small
+ring. It cannot express "the northwest quadrant is untouched" or "I am in row 4
+of a sweep."
+
+**So the claim this licenses is narrow:** *local* visitation at radius 3 is not
+the binding constraint on coverage. A richer signal — a coarse occupancy grid,
+or a direction-to-nearest-unexplored vector — was never tested. An earlier note
+here called this "the strongest possible version of a less memoryless state";
+that was wrong and is withdrawn.
+
+### 29.3 What DOES survive: memorylessness cannot be the cap
+
+Structural, not experimental, so the thin oracle does not touch it.
+
+**A boustrophedon is memoryless.** Sweeping a known rectangle is a function of
+position alone — east on even rows, west on odd, step north at the wall. Row
+parity is read off the y-coordinate, not off memory. So a *memoryless* field
+can score ~0.9 at 200 steps.
+
+**Therefore memorylessness cannot be what caps us at 0.644, because the target
+behaviour is itself memoryless.** §22's replay finding explains the orbiting
+story (§18.6, §28) and does not explain the coverage ceiling.
+
+### 29.4 The two candidates left, and the test that separates them
+
+Not memory (§29.3), not orbiting (`p20_e` has no recurrence dip, §28), not the
+κ cap (`p20_e` is uncapped). Remaining:
+
+1. **Localization.** A boustrophedon needs to know *which row you are in* —
+   absolute position, not relative displacement. The agent has exact
+   self-motion and no anchor. §25's ablation is suggestive: removing the wall
+   code cost 20%, and it is the only absolute-position signal available.
+2. **Optimization.** The wandering field is a strong local optimum and the
+   lawnmower basin may be unreachable by PPO regardless of what is available.
+
+**The test: hand the policy its absolute position, 2 dims.** Same machinery as
+`input_visited`. Coverage jumps toward 0.9 → localization was the blocker;
+coverage unchanged → optimization. That is the experiment that should have
+followed the boustrophedon argument, which was available before P25 was
+launched.
