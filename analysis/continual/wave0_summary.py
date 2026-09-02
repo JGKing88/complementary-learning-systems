@@ -60,11 +60,22 @@ def load_oracle(d: str) -> float | None:
 # be under-optimised; the second (`wave0b_T0.1b_..._lr...`) raised the budget
 # and added the lr axis. Both are read, and the lr is part of the key so they
 # never silently average together.
-_T01 = re.compile(r"wave0_T0\.1_h(\d+)_l(\d+)_s(\d+)$")
 _T01B = re.compile(r"wave0b_T0\.1b_h(\d+)_l(\d+)_lr([0-9.e-]+)_s(\d+)$")
 
 
-def load_joint(runs_root: str) -> dict[tuple, dict]:
+def _t01_re(tag: str) -> "re.Pattern":
+    """The plain T0.1 run-directory pattern for one wave.
+
+    Anchored on the exact tag rather than a wildcard: `wave0` and `wave0d` are
+    the continuous and discrete joint sweeps, they live side by side under
+    runs/rnn/, and a pattern loose enough to match both would quietly average a
+    Gaussian-head ceiling together with a Categorical one. The glob below is
+    anchored the same way, and "wave0_T0.1_" does not match "wave0d_T0.1_".
+    """
+    return re.compile(rf"{re.escape(tag)}_T0\.1_h(\d+)_l(\d+)_s(\d+)$")
+
+
+def load_joint(runs_root: str, tag: str = "wave0") -> dict[tuple, dict]:
     """-> {(hidden, layers, lr, n_updates): {"final", "at200", "slope", "seeds"}}
 
     `n_updates` is part of the key, and has to be. The first joint run gave
@@ -78,11 +89,16 @@ def load_joint(runs_root: str) -> dict[tuple, dict]:
 
     out: dict[tuple, dict] = defaultdict(
         lambda: {"final": [], "at200": [], "slope": [], "seeds": 0})
-    paths = (glob.glob(os.path.join(runs_root, "rnn", "wave0_T0.1_*"))
-             + glob.glob(os.path.join(runs_root, "rnn", "wave0b_T0.1b_*")))
+    t01 = _t01_re(tag)
+    paths = glob.glob(os.path.join(runs_root, "rnn", f"{tag}_T0.1_*"))
+    # The lr-swept re-run is a continuous-wave artifact; there is no wave0b
+    # for any other tag, and globbing for one would silently find nothing
+    # while looking like it had looked.
+    if tag == "wave0":
+        paths += glob.glob(os.path.join(runs_root, "rnn", "wave0b_T0.1b_*"))
     for path in sorted(paths):
-        mb = _T01B.search(path)
-        m = mb or _T01.search(path)
+        mb = _T01B.search(path) if tag == "wave0" else None
+        m = mb or t01.search(path)
         ckpt = os.path.join(path, "final.pt")
         if m is None or not os.path.exists(ckpt):
             continue
@@ -162,6 +178,11 @@ def load_sequential(d: str, arm: str) -> dict:
 def main() -> None:
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--dir", required=True, help="Wave-0 history directory.")
+    p.add_argument("--joint_tag", default="wave0",
+                   help="Run-directory tag for the T0.1 joint sweep: 'wave0' "
+                        "for the continuous wave, 'wave0d' for the discrete "
+                        "one. They sit side by side under runs/rnn/ and must "
+                        "not be averaged together.")
     p.add_argument("--runs_root", default=os.environ.get("CLS_RUNS"),
                    help="Root holding rnn/wave0_T0.1_* (default: $CLS_RUNS).")
     args = p.parse_args()
@@ -182,7 +203,7 @@ def main() -> None:
 
     # -- T0.1 ---------------------------------------------------------------
     print("\nT0.1  JOINT CEILING (one net, all envs at once)")
-    joint = load_joint(args.runs_root) if args.runs_root else {}
+    joint = load_joint(args.runs_root, args.joint_tag) if args.runs_root else {}
     best = None
     converged = True
     if not joint:

@@ -2067,3 +2067,77 @@ lost through the shared trunk alone**. As a method it is unremarkable — XdG+SI
 retains 3.3× more at a current-env score only 0.104 lower. As a measurement it
 is the most specific result in that section: protecting output parameters
 cannot work here, however cleanly it is done.
+
+---
+
+## 2026-09-01 — discrete Wave 0: the action space was doing more than confound the metric
+
+The discrete suite's axes are in (slurm 21777803 pretrain, 21777804 wave0d, all
+64 tasks OK). They were run to remove the mean-collapse confound. They also say
+something larger, which no one was looking for: **the continuous action
+parameterisation was making this task much harder to learn**, not merely harder
+to score.
+
+### The axes, side by side
+
+| | continuous | discrete |
+|---|---|---|
+| T0.3 oracle reachability | 1.0000 (10.7 mean steps) | 1.0000 (13.2 mean steps) |
+| T0.1 joint ceiling **at 1000 updates** | 0.27–0.59, still climbing (slope +0.05 … +0.16) | **0.998**, converged (slope +0.005) |
+| T0.1 joint ceiling, best at any budget | 0.998 — but at **8000** updates | 0.998 at **1000** |
+| T0.1 at the budget-matched 200-update point | 0.05–0.11 | 0.34–0.63 |
+| T0.4 from-scratch, current env | 0.510 | **0.879** |
+| T0.4 from-scratch, retained | 0.046 | 0.131 |
+
+The oracle row is the control that makes the rest readable: a perfect policy
+reaches the goal in both spaces, and Manhattan costs only 1.23x more steps
+against a 200-step cap with 5x headroom. The task is not easier in the sense of
+being a different task. It is easier to *fit*.
+
+The joint row is the sharp one. The continuous joint sweep at 1000 updates
+reached 0.45 and was climbing so steeply that wave0b had to re-run the whole
+thing at 8000 updates to find the ceiling — which is where the 0.998 in the
+published table comes from. The discrete sweep reaches the same 0.998 on an
+eighth of the budget and has flattened. Roughly **8x the sample efficiency for
+the same ceiling**.
+
+### What follows
+
+**The retention gap is still genuinely forgetting.** Ceiling 0.998, floor
+0.113, headroom 0.885. Tier 2 is interpretable in discrete, and T0.2 (per-env
+experts) can be skipped exactly as it was in the continuous wave.
+
+**The from-scratch control may no longer need pretraining.** run_wave1.sh runs
+its method comparisons on the pretrained arm, and says why in its own header:
+from-scratch came back at ~0.55 on the environment it was training on, with
+71-74% of environments never reaching criterion, so method differences measured
+on it would be noise on a broken control. In discrete that arm reaches 0.879.
+The justification does not obviously survive, and a discrete suite that can run
+its methods from scratch is a cleaner experiment than one carrying a
+pretraining confound. Not acting on this yet — wave1d is already in flight with
+the pretrained arm, and the two can be compared when it lands.
+
+**prev_action flips sign.** It *hurt* in continuous (0.510 with, 0.579
+without) and *helps* in discrete (0.879 with, 0.834 without). Consistent with
+the rest: a 4-wide one-hot of the last cardinal is real information, where a
+2-wide continuous displacement was largely a near-zero vector because the
+Gaussian head had collapsed toward its mean.
+
+### The measurement bug this turned up
+
+`load_joint` globbed `wave0_T0.1_*` with the wave tag baked into the regex, so
+the discrete joint runs were invisible and the summary reported T0.1 as
+"missing" while 24 completed runs sat beside it. The tag is now a parameter
+(`--joint_tag`), anchored exactly rather than wildcarded, because `wave0` and
+`wave0d` live side by side under `runs/rnn/` and a looser pattern would average
+a Gaussian-head ceiling together with a Categorical one — a worse failure than
+reporting nothing.
+
+### Registered before wave1d and wave2d land
+
+If the discrete method waves come back with retention numbers much higher than
+their continuous counterparts, the honest reading is **not** "these methods work
+better than we thought". It is that the substrate got easier, which the floor
+(0.046 -> 0.131) and the ceiling budget (8000 -> 1000 updates) already say
+independently. The comparison that survives is each method against its own
+space's floor and ceiling, not across the two panels.
