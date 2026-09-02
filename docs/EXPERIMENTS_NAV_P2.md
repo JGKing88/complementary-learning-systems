@@ -6926,3 +6926,55 @@ representation directly rather than hoping reward pressure produces it.
 field alone. Tier-2 is achieved iff **§22's replay signature breaks** — same
 position and heading, different action, because the hidden state now carries
 where the agent has been.
+
+
+---
+
+## 25. P22 — the sensory ablation. The sensor helps, and §6.9 was wrong.
+
+`p22_nos` = `p20_e` with `INPUT_SENSORY=0` and nothing else moved: 74 input
+dims → 14. Job 21776318, COMPLETED 700/700, `p20_e` as its own control.
+
+| window | `p22_nos` | `p20_e` | delta |
+|---|---|---|---|
+| u1–200 (breakout) | 0.274 | 0.424 | **−35.6%** |
+| u200–500 | 0.567 | 0.713 | −20.4% |
+| u500–700 (tail) | 0.667 | 0.750 | −11.0% |
+| **all 28 matched evals** | **0.512** | **0.641** | **−20.2%** |
+
+The ablation wins **2 of 28** points. Final four: **11.2% lower** and **3.4×
+more variable** (range 0.162 against 0.047); over the whole back half its eval
+sd is **1.9×** the control's. Its `swept_coverage` final-4 mean is 0.5615,
+against the 0.625–0.644 measured for `p20_e` on the trajectory sets.
+
+### 25.1 §6.9's prediction is refuted
+
+§6.9 concluded: *"the lawnmower ceiling is not blocked, because §4's B3 already
+hands the agent exact self-motion… if P5 plateaus at billiard, the diagnosis is
+recurrent capacity or reward shape, not the sensor."* That reasoning was
+endorsed here and used to argue the sensor was ~81% dead weight. **It is not.**
+
+What §6 measured was **cross-env displacement decoding**, and it measured it
+correctly. What it did not measure is what the sensor does *within* an episode,
+which is where the contribution turns out to be.
+
+### 25.2 The shape of the contribution is learning SPEED, then stability
+
+The gap narrows monotonically — 35.6% → 20.4% → 11.0% — so the sensor mostly
+buys **time to competence** rather than final coverage. It also buys
+**stability**: without it the run collapses intermittently (u250 fell to cps
+0.156, near the wall-pinned 0.048 of §18.7) and never becomes as steady.
+
+Both matter more for the interleaved model than for explore alone. §0.0 set the
+bar as "good enough **and stable enough** not to poison interleaved training",
+and an arm that periodically falls back toward the pin basin is exactly what
+would poison it.
+
+### 25.3 What this does not say
+
+It does not say the sensor is used for **place recognition**. §22 measured that
+the policy replays on a state repeat, i.e. it does not consult where it has
+been — so whatever the sensor buys, it is not visitation memory. The most
+likely reading, consistent with both results, is that it helps the policy
+**shape a better field faster** (and stay out of the §18.7 wall-pin basin),
+not that it supports Tier-2.
