@@ -40,6 +40,11 @@ class RolloutBatch:
     teacher_store_action: torch.Tensor | None = None  # (B, T) float
     move_label_mask: torch.Tensor | None = None       # (B, T) float 0/1
     store_label_mask: torch.Tensor | None = None      # (B, T) float 0/1
+    # (B, T, 8) float 0/1 -- for each of 8 compass directions at
+    # `aux_visited_radius`, had the agent already visited that cell at
+    # that step? Target for the auxiliary visitation head (§24.2 lever
+    # B). None unless aux_visited_weight > 0.
+    visited_targets: torch.Tensor | None = None
     trust_hop_mask: torch.Tensor | None = None        # (B, T) float 0/1 — 1 when teacher's move label was a Hopfield-direction (post-store-at-goal) label, 0 when novelty. Used for upweighting nav labels in BC loss.
 
 __all__ = ["RolloutBatch"]

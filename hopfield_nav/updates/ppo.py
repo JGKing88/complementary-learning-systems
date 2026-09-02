@@ -145,6 +145,12 @@ def _pool_rollouts(
         "policy_action_mask": pol_mask,
         "advantages": torch.cat(advs, dim=0),
         "returns": torch.cat(rets, dim=0),
+        # Auxiliary visitation targets (§24.2 lever B). None unless
+        # aux_visited_weight > 0; every rollout in a pool agrees
+        # because they share one config.
+        "visited_targets": (
+            torch.cat([r.visited_targets for r in rollouts], dim=0)
+            if rollouts[0].visited_targets is not None else None),
     }
 
 
@@ -206,6 +212,8 @@ def ppo_update(
     alive_mask = pool["alive_mask"]
     advantages = pool["advantages"]
     returns = pool["returns"]
+    visited_targets = pool["visited_targets"]
+    aux_vis_w = float(getattr(agent, "aux_visited_weight", 0.0))
 
     # Normalize advantages across the full pool (not per-minibatch — that would
     # inject minibatch-dependent bias into the policy gradient).
@@ -227,6 +235,7 @@ def ppo_update(
     total_mu_norm = total_sigma = total_ang = total_kappa = total_dir = 0.0
     n_diag = n_kappa = 0
     total_store_bc = 0.0
+    total_aux_vis = 0.0
     n_steps = 0
     n_nonfinite = 0
     reported_nonfinite = False
@@ -249,6 +258,8 @@ def ppo_update(
             mb_mask = explore_mask[idx]
             mb_pol_mask = policy_action_mask[idx]
             mb_alive = None if alive_mask is None else alive_mask[idx]
+            mb_vis = (None if visited_targets is None
+                      else visited_targets[idx])
 
             # Return features so detached-trunk BCE has access (below). When
             # bce_detach_trunk=False the features tensor is unused — PyTorch
@@ -397,6 +408,31 @@ def ppo_update(
             else:
                 store_bc_loss = torch.zeros((), device=obs.device)
 
+            # Auxiliary visitation BCE (§24.2 lever B). §22 measured that
+            # the policy REPLAYS on a state repeat -- it is a fixed
+            # (position, heading) field and never consults where it has been.
+            # This makes the trunk predict, from its own features, which of 8
+            # surrounding cells it has already visited, so the hidden state is
+            # forced to carry that and the policy head CAN use it.
+            #
+            # Deliberately NOT detached. `bce_detach_trunk` exists for the
+            # store head, whose BCE was polluting the trunk; here shaping the
+            # trunk IS the mechanism.
+            if aux_vis_w > 0 and mb_vis is not None:
+                vis_logits = agent.visited_logits(features)
+                if vis_logits is not None:
+                    # pos_weight balances the classes: early in an episode
+                    # almost nothing is visited and late almost everything is,
+                    # so an unweighted BCE would just track the base rate.
+                    n_pos = mb_vis.sum().clamp_min(1.0)
+                    n_neg = (mb_vis.numel() - n_pos).clamp_min(1.0)
+                    aux_vis_loss = F.binary_cross_entropy_with_logits(
+                        vis_logits, mb_vis, pos_weight=(n_neg / n_pos))
+                else:
+                    aux_vis_loss = torch.zeros((), device=obs.device)
+            else:
+                aux_vis_loss = torch.zeros((), device=obs.device)
+
             # The store terms are still computed above, because they are the
             # diagnostics the run logs -- but a frozen store head contributes
             # none of them to the gradient. All three go together: with the
@@ -406,6 +442,7 @@ def ppo_update(
                 move_loss
                 + cfg.vf_coef * value_loss
                 - cfg.ent_coef * move_ent
+                + aux_vis_w * aux_vis_loss
             )
             if store_trainable:
                 loss = (
@@ -496,6 +533,7 @@ def ppo_update(
             total_move_ent += move_ent.item()
             total_store_ent += store_ent.item()
             total_store_bc += store_bc_loss.item()
+            total_aux_vis += aux_vis_loss.item()
             n_steps += 1
 
     denom = max(n_steps, 1)
@@ -510,6 +548,7 @@ def ppo_update(
         "move_entropy": total_move_ent / denom,
         "store_entropy": total_store_ent / denom,
         "store_bc_loss": total_store_bc / denom,
+        "aux_visited_loss": total_aux_vis / denom,
         # Minibatches whose gradient was non-finite and therefore skipped. A
         # persistent nonzero here is a real problem being survived, not solved
         # -- it belongs in the log where it can be seen, not swallowed.

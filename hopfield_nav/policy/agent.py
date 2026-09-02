@@ -83,6 +83,14 @@ class NavAgent(nn.Module):
 
         # Value head
         self.value_head = nn.Linear(cfg.hidden_size, 1)
+        # Auxiliary visitation head (§24.2 lever B). Present only when
+        # asked for, so a checkpoint from a run without it has no
+        # unexpected parameters and load_state_dict stays strict.
+        self.aux_visited_weight = float(
+            getattr(cfg, "aux_visited_weight", 0.0))
+        self.visited_head = (
+            nn.Linear(cfg.hidden_size, 8)
+            if self.aux_visited_weight > 0 else None)
 
     def forward(
         self,
@@ -139,6 +147,16 @@ class NavAgent(nn.Module):
         that runs 2/8/10 in Phase 1 lacked.
         """
         return self.store_head(features).squeeze(-1)
+
+    def visited_logits(self, features):
+        """(B, T, 8) logits for 'have I already visited that cell?'.
+
+        Auxiliary only -- read by the PPO update, never by the policy
+        or by any evaluator. Its job is to shape `features`.
+        """
+        if self.visited_head is None:
+            return None
+        return self.visited_head(features)
 
     @torch.no_grad()
     def get_action_and_value(

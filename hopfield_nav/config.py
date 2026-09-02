@@ -191,6 +191,8 @@ class AgentConfig:
     input_sensory: bool = False
     input_hopfield_raw: bool = False        # Phase-2 enrichment: feed raw (unnormalized) q in continuous mode
     input_hopfield_multistep: list[int] = field(default_factory=list)  # If non-empty, project recall at these Hopfield iteration counts and pass each as 2-D extra input. Lets the policy read recall-convergence dynamics. Continuous mode only.
+    aux_visited_weight: float = 0.0          # BCE weight on an AUXILIARY head predicting, from the RNN features, which of 8 surrounding cells at `aux_visited_radius` the agent has ALREADY VISITED this episode. 0 = off, which is every run before 2026-09-01. Purpose (P2 doc §24.2, lever B): §22 measured that the policy replays on a state repeat -- it is a fixed (position, heading) vector field and does not consult where it has been. This forces the hidden state to encode visitation so the policy head CAN use it. Training-time oracle only: the target comes from the collector's visited_cells and nothing is added to the observation, the reward, or deployment.
+    aux_visited_radius: float = 3.0          # how far out the 8 probed cells sit
     input_goal_in_memory: bool = False      # Add 1-bit input indicating that the agent has stored at goal during this rollout (i.e., Hopfield content is trustworthy goal-direction). Lets policy distinguish explore (bit=0) from nav (bit=1) cleanly.
     # Linked to movement_mode
     hopfield_mode: str = "discrete"         # "discrete" (4-d) | "continuous" (2-d)
