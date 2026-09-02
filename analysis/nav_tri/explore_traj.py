@@ -233,6 +233,8 @@ def collect(args):
     agents, agent_cfgs = {}, {}
     for lab, ck in zip(args.labels, cks):
         own = cfg_from_checkpoint(ck["config"])
+        if own.hopfield.beta is None:
+            own.hopfield.beta = float(gain)
         agent_cfgs[lab] = own
         agents[lab] = load_agent(own, ck["agent_state_dict"], embed_dim, device)
 
@@ -270,9 +272,17 @@ def collect(args):
                 for pat in pats:
                     hop.input_memory(torch.from_numpy(pat).float())
                 hops.append(hop)
+    # ...and the ROLLOUT gets that same per-checkpoint config, not the shared
+    # one. Building the agent from `own` while handing `rollout` `cfg` fixes
+    # only half the bug: `rollout` assembles the policy input from
+    # `cfg.agent`, so an arm with a different CHANNEL SET gets the first
+    # checkpoint's channels. Comparing p20_e (74 inputs) against p26_abspos
+    # (76) would build a 74-wide input for a 76-input agent. The world still
+    # comes from the guarded keys, which are identical by construction.
             rec = rollout(
                 agent=agent, env=env, env_offset=off, vectorhash=vh,
-                hopfields=hops, cfg=cfg, device=device, starts=starts,
+                hopfields=hops, cfg=agent_cfgs[lab], device=device,
+                starts=starts,
                 max_steps=args.max_steps,
                 ends_on_arrival=False, goal_in_memory=False,
                 deterministic=args.deterministic)

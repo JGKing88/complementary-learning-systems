@@ -927,10 +927,16 @@ def main() -> None:
         if _adiff:
             print(f"  NOTE {path} differs from {args.ckpt[0]} on agent knobs: "
                   f"{', '.join(sorted(_adiff))} -- each is built from its own.")
+        if own.hopfield.beta is None:
+            own.hopfield.beta = float(gain)
         agent = load_agent(own, ck["agent_state_dict"], embed_dim, device)
         print(f"\n================ {path} ================")
+        # `own`, not `cfg`: `rollout` assembles the policy input from
+        # cfg.agent, so an arm with a different CHANNEL SET would otherwise be
+        # handed the first checkpoint's channels -- 74 inputs for a 76-input
+        # agent. The world keys are guarded identical above.
         all_out[path] = _probe_one(
-            args, cfg, agent, envs, vh, offsets, embed_dim, device)
+            args, own, agent, envs, vh, offsets, embed_dim, device)
 
     if args.json:
         with open(args.json, "w") as fh:
