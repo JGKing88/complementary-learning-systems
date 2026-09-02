@@ -395,6 +395,18 @@ def collect_staircase(merged_dir, smooth: int = 15, stride: int = 10,
             return envs
 
         max_step = max((s for j in series for s, _ in series[j]), default=0)
+
+        # The work done by each update, carried so a panel can re-register its
+        # curves against effort instead of against step count. Thinned the same
+        # way the curves are; the page interpolates between the points, which
+        # is exact wherever the cost is linear and only slightly soft at EWC's
+        # boundary jumps -- which are the one thing here worth not flattening.
+        raw_cost = raw.get("cost") or []
+        samples_at = [[int(c[0]), int(c[1])]
+                      for c in raw_cost[::stride]] if raw_cost else []
+        if raw_cost and samples_at and samples_at[-1][0] != int(raw_cost[-1][0]):
+            samples_at.append([int(raw_cost[-1][0]), int(raw_cost[-1][1])])
+
         out.append({
             "arm": arm, "label": label, "why": why,
             "blocks": [[int(b[0]), int(b[1]), int(b[2])]
@@ -402,6 +414,8 @@ def collect_staircase(merged_dir, smooth: int = 15, stride: int = 10,
             "envs": _thin(series, 4),
             "envs_steps": _thin(steps_series, 1),
             "envs_spl": _thin(spl_series, 4) if spl_series else {},
+            "samples_at": samples_at,
+            "samples_total": int(raw_cost[-1][1]) if raw_cost else None,
             "step_cap": cap,
             "max_step": max_step,
         })

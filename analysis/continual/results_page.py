@@ -76,6 +76,14 @@ body{margin:0;background:var(--ground);color:var(--ink);font-family:var(--sans);
 .switch button[aria-selected="true"]{background:var(--accent-soft);
   border-color:var(--accent);color:var(--accent)}
 .switch .note{font:12px var(--sans);color:var(--muted);margin-left:auto}
+.xsw{display:flex;gap:8px;align-items:baseline;margin:0 0 6px}
+.xsw .lb{font:500 11px var(--sans);color:var(--muted);
+  letter-spacing:.04em;text-transform:uppercase}
+.xsw button{font:500 12px var(--sans);color:var(--ink-2);cursor:pointer;
+  background:transparent;border:1px solid var(--rule);border-radius:999px;
+  padding:2px 10px}
+.xsw button[aria-selected="true"]{background:var(--accent-soft);
+  border-color:var(--accent);color:var(--accent)}
 header.mast{padding:var(--s6) 0 var(--s4);border-bottom:1px solid var(--rule);
             margin-bottom:var(--s5)}
 .eyebrow{font-family:var(--mono);font-size:11px;text-transform:uppercase;
@@ -573,9 +581,41 @@ def replay_ratio_series(methods: list[dict]) -> list[tuple[int, float, float]]:
 ENV_COLORS = ["#4C7DF0", "#E08A2E", "#35A47A", "#D2564F", "#9B72D6"]
 
 
+def _cum_samples(samples_at, step):
+    """Cumulative trunk-steps at `step`, piecewise-linear between records.
+
+    Exact wherever the cost is linear, which is everywhere except EWC's
+    boundary jumps -- and those land between two recorded points, so the ramp
+    is drawn over one stride rather than as a true vertical. That is a
+    rendering softness, not a measurement one.
+    """
+    if not samples_at:
+        return None
+    prev = samples_at[0]
+    for cur in samples_at:
+        if cur[0] >= step:
+            if cur[0] == prev[0]:
+                return float(cur[1])
+            t = (step - prev[0]) / float(cur[0] - prev[0])
+            return prev[1] + t * (cur[1] - prev[1])
+        prev = cur
+    return float(samples_at[-1][1])
+
+
+def _si(n) -> str:
+    """A trunk-step count a caption can carry."""
+    if n is None:
+        return "—"
+    n = float(n)
+    for div, suf in ((1e9, "B"), (1e6, "M"), (1e3, "k")):
+        if n >= div:
+            return f"{n / div:.2f}".rstrip("0").rstrip(".") + suf
+    return str(int(n))
+
+
 def staircase_svg(rows, key: str = "envs", ymax: float = 1.0,
                   yticks=((0.0, "0"), (0.5, "0.5"), (1.0, "1")),
-                  invert: bool = False) -> str:
+                  invert: bool = False, x_mode: str = "updates") -> str:
     """Per-environment success across the whole stream, one panel per arm.
 
     This is the phenomenon every scalar in section 2 is a summary of. A
@@ -585,6 +625,13 @@ def staircase_svg(rows, key: str = "envs", ymax: float = 1.0,
     """
     if not rows:
         return ""
+    # Against work, every panel shares one x extent -- that is the whole point.
+    # A method that stops after a fifth of the effort should occupy a fifth of
+    # the width, not be rescaled to fill it.
+    x_max_samples = max((r.get("samples_total") or 0) for r in rows) or 1
+    if x_mode == "samples" and not any(r.get("samples_at") for r in rows):
+        return ""
+
     PW, PH = 372, 132          # plot area per panel
     LEFT, TOP = 46, 30         # margins inside a panel cell
     CW, CH = PW + LEFT + 26, PH + TOP + 42
@@ -606,7 +653,14 @@ def staircase_svg(rows, key: str = "envs", ymax: float = 1.0,
         ox, oy = cx + LEFT, cy + TOP
         span = max(1, int(r.get("max_step") or 1))
 
+        _sa = r.get("samples_at") or []
+
         def X(step):
+            if x_mode == "samples":
+                c = _cum_samples(_sa, step)
+                if c is None:
+                    return ox
+                return ox + PW * (c / float(x_max_samples))
             return ox + PW * (float(step) / span)
 
         def Y(v):
@@ -643,12 +697,24 @@ def staircase_svg(rows, key: str = "envs", ymax: float = 1.0,
                      'stroke-width="1.6" stroke-linejoin="round"/>')
 
         o.append(f'<text class="sax" x="{ox}" y="{oy + PH + 14}">0</text>')
-        o.append(f'<text class="sax" x="{ox + PW}" y="{oy + PH + 14}" '
-                 f'text-anchor="end">{span}</text>')
-        o.append(f'<text class="slg" x="{ox + PW / 2:.0f}" y="{oy + PH + 14}" '
-                 'text-anchor="middle">gradient updates</text>')
+        if x_mode == "samples":
+            o.append(f'<text class="sax" x="{ox + PW}" y="{oy + PH + 14}" '
+                     f'text-anchor="end">{_si(x_max_samples)}</text>')
+            o.append(f'<text class="slg" x="{ox + PW / 2:.0f}" '
+                     f'y="{oy + PH + 14}" text-anchor="middle">'
+                     "trunk-steps processed</text>")
+        else:
+            o.append(f'<text class="sax" x="{ox + PW}" y="{oy + PH + 14}" '
+                     f'text-anchor="end">{span}</text>')
+            o.append(f'<text class="slg" x="{ox + PW / 2:.0f}" '
+                     f'y="{oy + PH + 14}" text-anchor="middle">'
+                     "gradient updates</text>")
+        tot = r.get("samples_total")
+        cap = esc(r["why"])
+        if tot:
+            cap += f"  ·  {_si(tot)} trunk-steps"
         o.append(f'<text class="slg" x="{cx + 6}" y="{oy + PH + 30}">'
-                 f'{esc(r["why"])}</text>')
+                 f"{cap}</text>")
 
     lx = 8
     ly = H - 10
@@ -987,7 +1053,22 @@ def render_body(d: dict, variant: str = "continuous",
           "environment's success rate, averaged over 8 seeds and smoothed "
           "over 15 updates because a single evaluation trial is a coin "
           "flip.</p>")
-        A(f'<div class="fig">{staircase_svg(stair)}</div>')
+        by_work = staircase_svg(stair, x_mode="samples")
+        gid = f"stair-{variant}"
+        if by_work:
+            A(f'<div class="xsw"><span class="lb">x-axis</span>'
+              f'<button id="{gid}-b-updates" aria-selected="true" '
+              f"onclick=\"showX('{gid}','updates')\">gradient updates</button>"
+              f'<button id="{gid}-b-work" aria-selected="false" '
+              f"onclick=\"showX('{gid}','work')\">work done</button></div>")
+        A(f'<div class="fig" id="{gid}-updates">{staircase_svg(stair)}</div>')
+        if by_work:
+            A(f'<div class="fig" id="{gid}-work" hidden>{by_work}</div>')
+            A("<p>Against work, the panels share one x extent, so a method that "
+              "stops after a fifth of the effort occupies a fifth of the width. "
+              "The curves are the same curves — only re-registered against what "
+              "they cost. Replay's retention is bought with several times the "
+              "processing, and that is the picture rather than a column.</p>")
         A("<p>Read the naive panel first, because it is the shape the rest are "
           "arguing with. Each environment climbs while it is being trained and "
           "then drops within a few dozen updates of the stream moving on — not "
@@ -2169,6 +2250,14 @@ function showPage(which){
   try { saved = localStorage.getItem('cl-action-space'); } catch (e) {}
   if (saved) showPage(saved);
 })();
+function showX(group, which){
+  ['updates','work'].forEach(function(k){
+    var fig = document.getElementById(group + '-' + k);
+    var bt = document.getElementById(group + '-b-' + k);
+    if (fig) fig.hidden = (k !== which);
+    if (bt) bt.setAttribute('aria-selected', String(k === which));
+  });
+}
 </script>""")
     return "\n".join(P)
 
