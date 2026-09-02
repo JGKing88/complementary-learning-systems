@@ -106,7 +106,7 @@ def rollout(*, agent, env, env_offset, vectorhash, hopfields, cfg, device,
             starts, max_steps, ends_on_arrival, goal_in_memory,
             q_rescale=None, q_scale=None,
             signal_hopfields=None, signal_mask_fn=None, q_transform=None,
-            deterministic: bool = True):
+            deterministic: bool = True, record_state: bool = False):
     """One trial per Hopfield, in parallel, recording everything.
 
     The three intervention hooks are no-ops unless passed, so the observational
@@ -123,6 +123,13 @@ def rollout(*, agent, env, env_offset, vectorhash, hopfields, cfg, device,
                           memory is used, elsewhere the real one. Gates the
                           swap in space, e.g. only within two cells of goal.
     ``q_transform``       ``(q, pos_f) -> q``; rewrites the recalled direction.
+
+    ``record_state``      additionally keep the POLICY INPUT and the RNN
+                          hidden state that went INTO each step, which is what
+                          `state_probe` needs to ask whether the state is
+                          carrying anything and whether the policy uses it.
+                          Off by default: it is (T, B, input_dim+hidden) of
+                          extra memory that no other caller wants.
 
     All three apply to EVERY channel carrying the recall, not just the obvious
     one: with ``input_hopfield_multistep=[1,2,3]`` the policy reads four copies
@@ -161,6 +168,8 @@ def rollout(*, agent, env, env_offset, vectorhash, hopfields, cfg, device,
 
     rec = {k: [] for k in ("pos_f", "cell", "action", "q", "at_goal",
                            "alive", "sigma", "mu_norm", "circ_sd")}
+    if record_state:
+        rec["obs"], rec["h_in"] = [], []
 
     for step in range(max_steps):
         positions = vec.positions()
@@ -256,6 +265,15 @@ def rollout(*, agent, env, env_offset, vectorhash, hopfields, cfg, device,
 
         rnn_input = channels.build_policy_input(
             input_specs, values, batch_size=B).unsqueeze(1)
+        if record_state:
+            # The state going IN, not h_next: the action at step t is
+            # f(obs_t, h_t), and a probe that pairs obs_t with h_{t+1} would be
+            # asking about a state the action never saw.
+            rec["obs"].append(rnn_input.squeeze(1).detach().cpu().numpy())
+            rec["h_in"].append(
+                None if h_rnn is None
+                else h_rnn.detach().permute(1, 0, 2).reshape(B, -1)
+                          .cpu().numpy())
         # `deterministic` defaults True, which is what every number in
         # the P2 doc was measured under. It is a parameter because §22
         # found the policy REPLAYS on a state repeat under the mean
@@ -316,6 +334,13 @@ def rollout(*, agent, env, env_offset, vectorhash, hopfields, cfg, device,
                 if reached[b]:
                     steps_to_goal[b] = step + 1
                     active[b] = False
+
+    if record_state:
+        # Only step 0 can be None (h starts unset); it is the zero state, and
+        # the width is not known until the first h_next exists.
+        width = next((a.shape[1] for a in rec["h_in"] if a is not None), 0)
+        rec["h_in"] = [np.zeros((B, width), dtype=np.float32) if a is None
+                       else a for a in rec["h_in"]]
 
     out = {k: np.asarray(v) for k, v in rec.items()}      # (T, B, ...)
     out["steps_to_goal"] = steps_to_goal

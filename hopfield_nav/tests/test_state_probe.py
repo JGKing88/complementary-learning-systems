@@ -1,0 +1,326 @@
+"""The state-usefulness probe: content, use, and the controls for both.
+
+Following `test_exploit_diag`, the heavy rollout is not exercised here -- it is
+`behavior_probe.rollout`, covered elsewhere. What is tested is the arithmetic
+that turns a rollout into a claim, because that is where a diagnostic goes
+quietly wrong: a probe that leaks across trials, a donor that draws from the
+episode it is meant to contrast with, or an influence number normalised by
+something that is not the action's natural spread.
+"""
+from __future__ import annotations
+
+import numpy as np
+import pytest
+import torch
+
+from analysis.nav_tri import state_probe as sp
+
+
+# ---------------------------------------------------------------------------
+# The trial split -- the leak that would invent memory
+# ---------------------------------------------------------------------------
+
+
+class TestSplit:
+
+    def test_no_trial_appears_on_both_sides(self):
+        """Consecutive hidden states are near-identical, so a split on
+        TIMESTEPS lets the probe memorise the test set. Splitting on trials is
+        the whole reason the R^2 means anything."""
+        rng = np.random.RandomState(0)
+        trial = np.repeat(np.arange(20), 50)
+        tr, te = sp._split_trials(trial, 0.3, rng)
+        assert not (set(trial[tr]) & set(trial[te]))
+        assert tr.sum() + te.sum() == len(trial)
+
+    def test_holds_out_roughly_the_requested_fraction(self):
+        rng = np.random.RandomState(0)
+        trial = np.repeat(np.arange(20), 10)
+        _, te = sp._split_trials(trial, 0.3, rng)
+        assert len(np.unique(trial[te])) == 6
+
+    def test_never_holds_out_everything(self):
+        """A two-trial probe must still have something to fit on."""
+        rng = np.random.RandomState(0)
+        trial = np.repeat(np.arange(2), 10)
+        tr, te = sp._split_trials(trial, 1.0, rng)
+        assert tr.sum() > 0 and te.sum() > 0
+
+
+# ---------------------------------------------------------------------------
+# The ridge itself
+# ---------------------------------------------------------------------------
+
+
+class TestFitScore:
+
+    def test_recovers_a_linear_map(self):
+        rng = np.random.RandomState(0)
+        X = rng.randn(400, 5)
+        Y = X @ rng.randn(5, 2)
+        r2 = sp._fit_score(X[:300], Y[:300], X[300:], Y[300:], 1e-2)
+        assert r2.min() > 0.99
+
+    def test_noise_scores_about_zero(self):
+        """The floor has to be 0, not 'whatever a 128-dim fit gives you'."""
+        rng = np.random.RandomState(1)
+        X = rng.randn(600, 40)
+        Y = rng.randn(600, 1)
+        r2 = sp._fit_score(X[:400], Y[:400], X[400:], Y[400:], 1e3)
+        assert r2.max() < 0.1
+
+    def test_predicting_the_train_mean_scores_exactly_zero(self):
+        """SStot is taken about the TRAIN mean, which makes "0 = learned
+        nothing" true no matter what the test set looks like. About the TEST
+        mean this same case scores about -25, because the test set is shifted
+        away from what the probe was fit on -- a floor that moves with the
+        split is not a floor."""
+        X = np.zeros((100, 3))                 # no signal: pred is the mean
+        Ytr = np.zeros((60, 1))
+        Yte = (np.arange(40, dtype=float)[:, None] % 3) + 5.0
+        r2 = sp._fit_score(X[:60], Ytr, X[60:], Yte, 1.0)
+        assert r2[0] == pytest.approx(0.0)
+        about_test_mean = 1.0 - (((Yte - 0.0) ** 2).sum()
+                                 / ((Yte - Yte.mean()) ** 2).sum())
+        assert about_test_mean < -20.0
+
+
+# ---------------------------------------------------------------------------
+# CONTENT
+# ---------------------------------------------------------------------------
+
+
+def _panel(n_trials=24, n_steps=20, seed=0):
+    rng = np.random.RandomState(seed)
+    trial = np.repeat(np.arange(n_trials), n_steps)
+    obs = rng.randn(n_trials * n_steps, 6)
+    return rng, trial, obs
+
+
+class TestContent:
+
+    def test_state_that_adds_nothing_scores_delta_zero(self):
+        """h is a copy of obs, so it carries no information obs does not.
+        deltaR^2 must be ~0 even though R^2(h) is ~1 -- which is exactly why
+        the raw R^2(h) column cannot be the headline."""
+        rng, trial, obs = _panel()
+        target = obs[:, :1] * 2.0
+        got = sp.content_probes(obs, obs.copy(), {"t": target}, trial, rng)
+        assert got["t"]["h"] > 0.9          # decodable from h ...
+        assert abs(got["t"]["delta"]) < 0.05  # ... and yet nothing is stored
+
+    def test_state_carrying_something_new_scores_delta_positive(self):
+        rng, trial, obs = _panel()
+        secret = np.repeat(np.random.RandomState(7).randn(24), 20)[:, None]
+        h = np.concatenate([obs, secret], axis=1)
+        got = sp.content_probes(obs, h, {"t": secret}, trial, rng)
+        assert got["t"]["obs"] < 0.2
+        assert got["t"]["delta"] > 0.7
+
+    def test_a_one_dim_target_is_accepted(self):
+        rng, trial, obs = _panel()
+        got = sp.content_probes(obs, obs.copy(), {"t": obs[:, 0]}, trial, rng)
+        assert got["t"]["dim"] == 1
+
+    def test_it_records_the_split_it_used(self):
+        rng, trial, obs = _panel()
+        got = sp.content_probes(obs, obs.copy(), {"t": obs[:, :1]}, trial, rng)
+        assert got["_n_train_trials"] + got["_n_test_trials"] == 24
+        assert got["_n_samples"] == len(trial)
+
+
+# ---------------------------------------------------------------------------
+# The donor
+# ---------------------------------------------------------------------------
+
+
+class TestDonor:
+
+    def test_never_draws_from_the_same_trial(self):
+        """A donor from the same episode is a near-copy of the state it
+        replaces, so the splice would measure nothing and read as 'the state
+        is ignored'."""
+        rng = np.random.RandomState(0)
+        trial = np.repeat(np.arange(10), 30)
+        idx = sp._donor(trial, rng)
+        assert (trial[idx] != trial).all()
+
+    def test_same_step_donor_matches_the_step(self):
+        rng = np.random.RandomState(0)
+        trial = np.repeat(np.arange(10), 30)
+        step = np.tile(np.arange(30), 10)
+        idx = sp._donor(trial, rng, step=step)
+        assert (step[idx] == step).all()
+        assert (trial[idx] != trial).all()
+
+    def test_a_lone_row_at_some_step_stays_a_no_op(self):
+        """One trial reaching step 5 alone has nobody to swap with; it must
+        stay put rather than borrow from another step index."""
+        rng = np.random.RandomState(0)
+        trial = np.array([0, 0, 1])
+        step = np.array([0, 5, 0])
+        idx = sp._donor(trial, rng, step=step)
+        assert idx[1] == 1
+
+
+# ---------------------------------------------------------------------------
+# USE
+# ---------------------------------------------------------------------------
+
+
+class _ToyAgent:
+    """action = w_obs . obs + w_h . h, so the two influences are dialable."""
+
+    def __init__(self, obs_dim, h_dim, w_obs, w_h, seed=0):
+        g = torch.Generator().manual_seed(seed)
+        self.A = torch.randn(obs_dim, 2, generator=g) * w_obs
+        self.B = torch.randn(h_dim, 2, generator=g) * w_h
+
+    def get_action_and_value(self, x, h, deterministic=True):
+        obs = x.squeeze(1).double()
+        # h is (layers, B, hidden); the probe's job is to hand it over in that
+        # layout, and flattening it back here is what checks that it did.
+        hh = h.permute(1, 0, 2).reshape(obs.shape[0], -1).double()
+        a = obs @ self.A.double() + hh @ self.B.double()
+        return {"move_action": a.unsqueeze(1)}
+
+
+def _use(w_obs, w_h, n_trials=20, n_steps=25, h_dim=8, obs_dim=6, seed=0):
+    rng = np.random.RandomState(seed)
+    n = n_trials * n_steps
+    obs = rng.randn(n, obs_dim)
+    h = rng.randn(n, h_dim)
+    trial = np.repeat(np.arange(n_trials), n_steps)
+    step = np.tile(np.arange(n_steps), n_trials)
+    agent = _ToyAgent(obs_dim, h_dim, w_obs, w_h)
+    return sp.use_probes(agent, obs, h, trial, step, 1,
+                         torch.device("cpu"), rng, lags=(1, 5))
+
+
+class TestUse:
+
+    def test_a_memoryless_policy_has_zero_state_influence(self):
+        """The §22 prediction for the explore arms: the action is a function
+        of the observation alone, so splicing the state must do nothing."""
+        u = _use(w_obs=1.0, w_h=0.0)
+        assert u["state_influence"] < 1e-6
+        assert u["state_share"] < 1e-6
+        assert u["obs_influence"] == pytest.approx(1.0, abs=0.15)
+
+    def test_a_state_only_policy_has_zero_obs_influence(self):
+        u = _use(w_obs=0.0, w_h=1.0)
+        assert u["obs_influence"] < 1e-6
+        assert u["state_share"] > 0.999
+
+    def test_a_balanced_policy_lands_near_a_half(self):
+        u = _use(w_obs=1.0, w_h=1.0, h_dim=6)
+        assert 0.35 < u["state_share"] < 0.65
+
+    def test_zeroing_the_state_moves_nothing_when_it_is_unused(self):
+        u = _use(w_obs=1.0, w_h=0.0)
+        assert u["zero_influence"] < 1e-6
+
+    def test_the_lag_curve_is_reported_as_a_fraction_of_the_scale(self):
+        u = _use(w_obs=1.0, w_h=1.0)
+        assert set(u["lag_curve"]) == {"1", "5"}
+        assert all(v >= 0.0 for v in u["lag_curve"].values())
+
+    def test_an_unused_state_gives_a_flat_zero_lag_curve(self):
+        u = _use(w_obs=1.0, w_h=0.0)
+        assert max(u["lag_curve"].values()) < 1e-6
+
+    def test_the_scale_is_the_both_swap_not_the_action_norm(self):
+        """Normalising by |action| would make the influences depend on how fast
+        the agent moves, which is not what is being asked."""
+        u = _use(w_obs=1.0, w_h=1.0)
+        assert u["state_influence"] == pytest.approx(
+            u["d_state"] / u["d_both"], rel=1e-9)
+
+
+# ---------------------------------------------------------------------------
+# Targets
+# ---------------------------------------------------------------------------
+
+
+def _rec(T=12, B=3, size=20, seed=0):
+    rng = np.random.RandomState(seed)
+    pos = np.cumsum(rng.rand(T, B, 2), axis=0) + 2.0
+    pos = np.clip(pos, 0, size - 1)
+    return {"pos_f": pos,
+            "cell": np.rint(pos).astype(int),
+            "action": rng.randn(T, B, 2)}
+
+
+class TestTargets:
+
+    def test_start_pos_is_constant_within_a_trial(self):
+        """It appears in no input channel and never changes, so decoding it
+        from h is path integration and nothing else."""
+        T, B = 12, 3
+        tg = sp.build_targets(_rec(T, B), 20, 3.0)
+        s = tg["start_pos"].reshape(T, B, 2)
+        assert np.allclose(s, s[:1])
+
+    def test_start_pos_is_the_first_position(self):
+        rec = _rec()
+        tg = sp.build_targets(rec, 20, 3.0)
+        first = 2.0 * rec["pos_f"][0] / 19.0 - 1.0
+        assert np.allclose(tg["start_pos"].reshape(12, 3, 2)[0], first)
+
+    def test_coverage_is_non_decreasing(self):
+        T, B = 12, 3
+        tg = sp.build_targets(_rec(T, B), 20, 3.0)
+        c = tg["coverage"].reshape(T, B)
+        assert (np.diff(c, axis=0) >= 0).all()
+
+    def test_coverage_counts_the_first_cell(self):
+        tg = sp.build_targets(_rec(), 20, 3.0)
+        assert tg["coverage"].reshape(12, 3)[0].min() == pytest.approx(
+            1.0 / 400.0)
+
+    def test_elapsed_runs_zero_to_one(self):
+        T, B = 12, 3
+        tg = sp.build_targets(_rec(T, B), 20, 3.0)
+        e = tg["elapsed"].reshape(T, B)
+        assert e[0].max() == 0.0
+        assert e[-1].min() == pytest.approx(1.0)
+
+    def test_visited_is_empty_at_the_first_step(self):
+        """Read-before-mark: at t=0 nothing has been visited, so a non-zero
+        row would mean the replay is off by one against the aux head's target
+        and the two would not be the same quantity."""
+        tg = sp.build_targets(_rec(), 20, 3.0)
+        assert tg["visited8"].reshape(12, 3, 8)[0].sum() == 0.0
+
+    def test_heading_is_the_previous_action_and_starts_at_zero(self):
+        rec = _rec()
+        tg = sp.build_targets(rec, 20, 3.0)
+        h = tg["heading"].reshape(12, 3, 2)
+        assert np.allclose(h[0], 0.0)
+        want = rec["action"][0] / np.linalg.norm(
+            rec["action"][0], axis=-1, keepdims=True)
+        assert np.allclose(h[1], want)
+
+    def test_every_block_is_flattened_the_same_way(self):
+        T, B = 12, 3
+        tg = sp.build_targets(_rec(T, B), 20, 3.0)
+        assert all(v.shape[0] == T * B for v in tg.values())
+        assert tg["visited8"].shape[1] == 8
+        assert tg["pos"].shape[1] == 2
+
+
+# ---------------------------------------------------------------------------
+# The rollout hook
+# ---------------------------------------------------------------------------
+
+
+class TestRecordState:
+
+    def test_rollout_takes_record_state_and_defaults_it_off(self):
+        """Off by default because it is (T, B, obs+hidden) of extra memory that
+        no other caller of `rollout` wants."""
+        import inspect
+
+        from analysis.nav_tri.behavior_probe import rollout
+        p = inspect.signature(rollout).parameters["record_state"]
+        assert p.default is False

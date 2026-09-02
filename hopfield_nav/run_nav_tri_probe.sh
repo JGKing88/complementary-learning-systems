@@ -14,6 +14,13 @@
 #
 #   CKPTS="/path/a.pt /path/b.pt" sbatch hopfield_nav/run_nav_tri_probe.sh
 #   CKPTS=... MODE="explore" TRIALS=32 sbatch hopfield_nav/run_nav_tri_probe.sh
+#
+# PROBE picks the tool: behavior (default) | signal | temporal | state.
+# `state` is analysis/nav_tri/state_probe.py -- is the agent storing useful
+# information in its recurrent state, and does the policy use it:
+#
+#   PROBE=state CKPTS="/path/a.pt /path/b.pt" TRIALS=16 \
+#       sbatch hopfield_nav/run_nav_tri_probe.sh
 
 set -euo pipefail
 
@@ -38,6 +45,23 @@ mkdir -p "$OUTDIR"
 # signal_separability.py, which needs no trained policy and reads the
 # checkpoint only for its config and recorded world.
 PROBE=${PROBE:-behavior}
+
+# PROBE=state is the exception to the per-checkpoint loop below: state_probe
+# takes every checkpoint in ONE process so the 12 GB scaffold is built once,
+# and comparing arms is the normal way to read it (a state_influence of 0.08
+# means nothing until you have seen what a control scores).
+if [ "$PROBE" = state ]; then
+    tag=$(basename "$(dirname "$(echo $CKPTS | awk '{print $1}')")")
+    echo ""
+    echo "################ state :: $tag (+$(($(echo $CKPTS | wc -w) - 1)) more) ################"
+    python -u -m analysis.nav_tri.state_probe \
+        --ckpt $CKPTS --mode ${SMODE:-explore} \
+        --n_distractors ${SNDIST:-0} \
+        --trials "$TRIALS" --max_steps "$MAX_STEPS" \
+        ${ENVS:+--envs $ENVS} ${SAMPLED:+--sampled_rollout} \
+        --json "$OUTDIR/state_${tag}.json"
+    exit 0
+fi
 
 for ck in $CKPTS; do
     tag=$(basename "$(dirname "$ck")")_$(basename "$ck" .pt)

@@ -7245,3 +7245,83 @@ Not memory (§29.3), not orbiting (`p20_e` has no recurrence dip, §28), not the
 coverage unchanged → optimization. That is the experiment that should have
 followed the boustrophedon argument, which was available before P25 was
 launched.
+
+## 30. The state probe — is the agent storing anything, and does it use it?
+
+`analysis/nav_tri/state_probe.py`. Runs on any checkpoint, any channel set,
+either mode:
+
+    PROBE=state CKPTS="a.pt b.pt" TRIALS=16 sbatch hopfield_nav/run_nav_tri_probe.sh
+
+Jack asked for "a test or metric that can tell us clearly whether the agent is
+learning to store useful information in state." The reason this is two numbers
+and not one is §27: **content without use is possible, and we have already
+produced it.** `p24_aux` drove `aux_visited_loss` 0.632 → 0.367 — the trunk
+learned to represent local visitation — while the policy reading that same
+vector went on ignoring it (replay ratio 0.115 vs the control's 0.125). A
+decoding-only diagnostic would have scored that a success.
+
+### 30.1 CONTENT — ridge probes, reported as ΔR²
+
+Linear probes from the hidden state `h` to `pos`, `start_pos`, `elapsed`,
+`coverage`, `visited8`, `heading`. Two design points do all the work:
+
+**Scored as ΔR² = R²([obs, h]) − R²(obs), never as R²(h).** The trunk sees the
+observation and passes it forward, so `h` decodes heading, the recall signal,
+and (under `input_abs_position`) position outright whether or not it is
+remembering anything. Only what `h` adds *beyond the current observation* is
+storage. `R²(h)` is printed anyway, because seeing it high next to a ΔR² of
+zero is what makes the distinction concrete.
+
+**Fit and scored on disjoint TRIALS.** Consecutive hidden states are nearly
+identical, so a split on timesteps lets the probe memorise its own test set and
+report memory that is not there.
+
+Two of the targets are controls. `heading` is in `prev_action` outright, so
+R²(obs) ≈ 1 says the machinery works. `start_pos` is the opposite: constant
+within an episode, present in no channel, so anything above 0 there is path
+integration and nothing else.
+
+### 30.2 USE — hold the observation fixed, splice the state
+
+The policy is f(obs, h). Swap each half from a different episode and measure how
+far the **deterministic** action moves (deterministic because that is what the
+evaluation protocol executes, and because κ does not enter it, §20.1):
+
+| | what it measures |
+|---|---|
+| swap BOTH | the natural spread of the action — **the scale**; everything else is a fraction of it |
+| swap STATE only | `state_influence` — the headline |
+| swap STATE, same step index | the same, with the clock controlled out |
+| swap OBS only | `obs_influence` |
+| zero the state | the episode-start counterfactual |
+| own-episode donor τ back | the lag curve — the on-manifold version |
+
+`state_share = Δstate / (Δstate + Δobs)` is the one-line summary: what fraction
+of the action is driven by memory rather than by what is in front of the agent.
+
+The cross-episode donor may be **off-manifold** for this observation, so the
+action could move for reasons that are not "the state is used" —
+`state_influence` is an **upper bound**. That is the useful direction when the
+finding is that it is near zero, and the lag curve is the on-manifold control
+when it is not.
+
+### 30.3 How to read the two together
+
+| content | use | reading |
+|---|---|---|
+| high | ~0 | the trunk represents history and **the policy ignores it** — §27's lever-B failure. The fix is in the readout, not the representation. |
+| ~0 | — | nothing is being stored. The fix is upstream of the trunk: input, horizon, or objective. |
+| high | high | the state carries history *and* changes the action — Tier-2 (§24). |
+
+Thresholds in the printed verdict are ΔR² > 0.05 and `state_influence` > 0.15;
+they are labels on a continuum, and the table is the thing to read.
+
+### 30.4 Relation to the replay probe (§22)
+
+The replay ratio is the coarse version of the same causal question: it compares
+two *naturally occurring* visits to the same (position, heading) and asks
+whether the continuations diverge. The splice is sharper because it holds the
+observation **exactly** fixed and varies only `h`, instead of relying on finding
+near-repeats — and because it comes with a scale (the both-swap) that makes the
+number comparable across agents with different action magnitudes.
