@@ -12,6 +12,8 @@ from typing import Callable
 import torch
 import torch.nn as nn
 
+from ..continual.cost import COUNTER
+
 from ..policy.agent_rnn import RNNAgent
 from ..config import RNNBCConfig
 from ..rollout.rnn import RNNRolloutBatch
@@ -109,6 +111,10 @@ def bc_rnn_update(
             # truncated BPTT -- the lifetime is longer than the window, and the
             # window is what fits in memory.
             mb_h0 = h0[:, idx].contiguous().detach() if h0 is not None else None
+            # The replayed batches were concatenated into `obs` by the caller,
+            # so this single count already covers them -- which is exactly the
+            # thing that makes ER's gradient step cost more than naive SGD's.
+            COUNTER.add(mb_obs, backward=True)
             move_dist, _ = agent(mb_obs, mb_h0)
 
             move_logp = move_dist.log_prob(mb_tm)

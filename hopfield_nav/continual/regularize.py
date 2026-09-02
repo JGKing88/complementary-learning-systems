@@ -38,6 +38,8 @@ from __future__ import annotations
 
 import numpy as np
 import torch
+
+from .cost import COUNTER
 import torch.nn as nn
 
 from .base import ContinualMethod
@@ -180,6 +182,12 @@ class OnlineEWC(ContinualMethod):
                     if float(mk.sum()) == 0:
                         continue                        # nothing supervised here
 
+                    # One sequence, forward and backward, per stored
+                    # trajectory. This is the whole of EWC's cost and none of
+                    # it happens during an update -- it lands at the block
+                    # boundary, which is why the running total steps rather
+                    # than sloping there.
+                    COUNTER.add(ob, backward=True)
                     dist, _ = agent(ob)
                     if self.fisher == "true":
                         # Actions from the MODEL -- this is what makes it the

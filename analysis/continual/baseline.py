@@ -198,13 +198,22 @@ def run_sequential(
     ``method`` is a `hopfield_nav.continual.ContinualMethod`; None means naive
     sequential SGD, which is the floor the suite is measured against.
 
-    Returns (trace, blocks). `blocks` end is inclusive.
+    Returns (trace, blocks, cost). `blocks` end is inclusive; `cost` is one
+    (global_step, cumulative fwd trunk-steps, cumulative bwd) per update.
     """
     trace: list[tuple[int, int, dict[int, dict]]] = []
+    cost: list = []
 
     def _record(u: UpdateResult) -> None:
         inner = {j: _to_emit_metrics(m) for j, m in u.metrics.items()}
         trace.append((u.global_step, u.block, inner))
+        # Cumulative trunk-steps at this update. Kept beside the trace rather
+        # than inside it because the cost is per *update*, while every entry in
+        # the trace is per evaluated environment -- folding it in would repeat
+        # the same number once per env and invite it to be averaged.
+        cost.append((u.global_step,
+                     int(u.losses.get("trunk_fwd_steps") or 0),
+                     int(u.losses.get("trunk_bwd_steps") or 0)))
         if (u.update == 1 or u.update % 25 == 0
                 or u.update == cfg.updates_per_env):
             summary = "  ".join(
@@ -221,7 +230,7 @@ def run_sequential(
         reset_optimizer_each_block=reset_optimizer_each_block,
     )
 
-    return trace, blocks
+    return trace, blocks, cost
 
 
 def main() -> None:
@@ -466,6 +475,7 @@ def main() -> None:
     base_seed = args.seed
     n_iters = max(1, int(args.num_full_iters))
     iter_traces: list[tuple[list, list]] = []
+    iter_costs: list[list] = []
     iter_env_goals: list[list[list[int]]] = []
     iter_env_offsets: list[list[list[int]] | None] = []
     last_vh_lambdas: list[int] = []
@@ -552,7 +562,7 @@ def main() -> None:
         if k == 0:
             print(f"[baseline] method={args.method}  {method.describe()}")
 
-        trace, blocks = run_sequential(
+        trace, blocks, cost = run_sequential(
             cfg, agent, optimizer, envs, device,
             sgb=sgb, env_offsets=env_offsets, method=method,
             reset_optimizer_each_block=args.reset_optimizer_each_block,
@@ -576,6 +586,7 @@ def main() -> None:
                                         if prm.requires_grad),
             })
         iter_traces.append((trace, blocks))
+        iter_costs.append(cost)
         iter_env_goals.append([list(env.goal_location) for env in envs])
         iter_env_offsets.append(
             [list(o) for o in env_offsets] if env_offsets is not None else None
@@ -585,6 +596,11 @@ def main() -> None:
         last_gbook_dim = gbook_dim
 
     trace, blocks = merge_iter_traces(iter_traces)
+    # Iteration 0's costs stand for the run. Every iteration walks the
+    # same protocol with the same method at the same settings, so the
+    # trunk-step totals are identical by construction -- averaging them
+    # would imply a spread that does not exist.
+    cost = iter_costs[0] if iter_costs else []
     # Local rebinds for metadata block below.
     vh_lambdas = last_vh_lambdas
     vh_Npos = last_vh_Npos
@@ -665,6 +681,11 @@ def main() -> None:
             for s, t, inner in trace
         ],
         "blocks": [list(b) for b in blocks],
+        # [global_step, cumulative forward trunk-steps, cumulative backward].
+        # Cumulative rather than per-update so a task-boundary Fisher pass
+        # appears as a jump between two entries instead of needing a record of
+        # its own. Absent from every history written before 2026-09-02.
+        "cost": [list(c) for c in cost],
     }
 
     os.makedirs(os.path.dirname(args.out) or ".", exist_ok=True)

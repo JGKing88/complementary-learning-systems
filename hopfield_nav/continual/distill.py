@@ -34,6 +34,8 @@ from __future__ import annotations
 import copy
 
 import torch
+
+from .cost import COUNTER
 from torch.distributions import kl_divergence
 
 from .base import ContinualMethod
@@ -91,8 +93,10 @@ class LwF(ContinualMethod):
             # The frozen model's outputs do not change within an update, but
             # `aux_loss` is called once per minibatch step -- so compute once.
             with torch.no_grad():
+                COUNTER.add(rollout.obs, backward=False)
                 self._cache = {key: self._old(rollout.obs)[0]}
         old_dist = self._cache[key]
+        COUNTER.add(rollout.obs, backward=True)
         new_dist, _ = agent(rollout.obs)
         kl = _masked_kl(old_dist, new_dist, rollout.move_label_mask,
                         agent.cfg.movement_mode)
@@ -155,7 +159,9 @@ class CLEAR(ExperienceReplay):
             key = id(r)
             if key not in self._cache:
                 with torch.no_grad():
+                    COUNTER.add(r.obs, backward=False)
                     self._cache[key] = self._past(r.obs)[0]
+            COUNTER.add(r.obs, backward=True)
             new_dist, _ = agent(r.obs)
             kl = _masked_kl(self._cache[key], new_dist, r.move_label_mask,
                             agent.cfg.movement_mode)
@@ -273,6 +279,7 @@ class DERpp(ExperienceReplay):
         for r, i in zip(extra, self._last_idx):
             if i >= len(self._targets):
                 continue
+            COUNTER.add(r.obs, backward=True)
             dist, _ = agent(r.obs)
             cur = self._live_params(dist, movement_mode)
             tgt = self._targets[i]

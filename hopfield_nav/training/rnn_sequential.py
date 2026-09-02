@@ -22,6 +22,7 @@ import numpy as np
 import torch
 
 from ..continual.base import ContinualMethod, NoMethod
+from ..continual.cost import COUNTER
 from ..policy.agent_rnn import set_agent_task
 from ..updates.bc_rnn import bc_rnn_update
 from ..world.env import GridEnv
@@ -144,6 +145,10 @@ def run_sequential_blocks(
             )
             method.after_update(rollout, i, agent)
             losses["n_replay_batches"] = float(len(extra))
+            # Running totals, not per-update: the difference between two
+            # updates is this update's cost, and a task-boundary Fisher pass
+            # shows up as a jump between blocks without needing its own record.
+            losses.update(COUNTER.snapshot())
             global_step += 1
 
             metrics = evaluate_nav_all(
