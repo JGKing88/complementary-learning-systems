@@ -6094,7 +6094,9 @@ within-env (0.009). It lives in the weights: not the arena, not sampling
 cleanly unbiased by the same measure — 49% positive, per-env means within
 ±0.001 of zero.
 
-**Mechanism: still unknown.** A concentration cap contains no left or right, so
+**Mechanism: MEASURED, §28.** A ~54-step orbit, read straight off the recurrence curve (dip depth 10.66, 98/100 trajectories) against the curl's predicted 51.9. The account below stands.
+
+**Originally recorded as unknown:** A concentration cap contains no left or right, so
 this is spontaneous symmetry breaking, and no account in §18.4 or §18.6
 explains it. One systematic asymmetry does exist and is worth knowing:
 `vec_env.reset_all` sets `_heading_rad = 0.0`, so every episode starts facing
@@ -7114,3 +7116,65 @@ remaining possibilities cleanly:
 - **Coverage does not improve** → the policy cannot exploit visitation *even
   when handed it*, which is a much deeper result and would say Tier-2 is not
   reachable by this route at all.
+
+
+---
+
+## 28. The recurrence curve — the primary orbit diagnostic
+
+`analysis/nav_tri/recurrence.py`. **`mean |p(t) − p(t+τ)|` as a function of τ.**
+An orbit of period T shows a clear MINIMUM at τ = T; a path that merely wanders
+shows no post-rise dip. Jack, after four rounds of me building indirect
+statistics: *"i am looking at the trajectories lol… capped is clearly just
+looping."*
+
+### 28.1 The measurement
+
+100 trajectories per arm, 200 steps, deterministic:
+
+| τ | 20 | 30 | 40 | **50** | **54** | 60 | 70 | 80 |
+|---|---|---|---|---|---|---|---|---|
+| `p20_e_kcap` | 13.67 | **14.47** | 10.98 | **5.30** | **4.06** | 6.18 | 11.84 | 13.91 |
+| `p20_e` | 11.82 | 12.77 | 11.93 | 10.22 | — | 8.12 | 9.33 | 11.08 |
+
+`p20_e_kcap` is **14.5 cells from where it was 30 steps ago and back within 4
+cells 54 steps later** — dip depth **10.66**, in 98/100 trajectories. `p20_e`
+has no post-rise dip at all in the mean curve.
+
+τ = 54 against the curl's predicted period 2π/0.121 = **51.9**. So §18.6's
+rotation-period account was right.
+
+### 28.2 It corrects a retraction
+
+§27 recorded the mechanism as "open" because I validated the period story
+against **revisit lag** and got a null (peak lag 70.8 vs 76.7 for the two arms,
+no within-arm correlation with `signed_turn`). **That was a false negative, and
+the retraction was wrong.**
+
+Cell-based revisit lag cannot see this orbit because the orbit **precesses**:
+the agent returns to the same *region*, within 4–5 cells, which is a different
+snapped cell. I had half-noticed this — §23.1 already said the capped arm
+"sweeps an annulus, not a single closed curve" — and then chose an instrument
+blind to exactly that.
+
+**The lesson is instrument choice, not more statistics.** `signed_turn_mean`
+needed three corrections; `straightness` is unsigned and reads a 6.9°/step curl
+as straight; windowed |Σdθ| is contaminated by wall bounces (billiard null 59%);
+revisit lag is blind to precession. The recurrence curve has none of those: no
+null, no window size, no signed/unsigned ambiguity, and it works on the
+continuous position.
+
+### 28.3 How to read it
+
+- **Trust the AGGREGATE curve**, not the per-trajectory count. Individual noisy
+  minima sit at scattered lags and cancel in the mean, which is exactly what
+  distinguishes a real orbit from noise. `p20_e` shows 91/100 "orbiting"
+  per-trajectory while its aggregate correctly shows none; the module prints a
+  warning when those disagree.
+- `DIP_CELLS = 3.0` (15% of the arena). 1.0 was far too lenient.
+- `period_iqr` is the consistency check: a real orbit has the same period
+  across trajectories, which is why the dips reinforce rather than cancel.
+
+Tests: `test_recurrence.py`, 9 cases — recovers a known period, finds a
+**precessing** orbit (the §27 failure), finds a 6.9°/step curl that reads as
+straight, and does **not** fire on a straight run or a random walk.
