@@ -613,6 +613,121 @@ def _si(n) -> str:
     return str(int(n))
 
 
+def frontier_scatter_svg(methods, hop=None) -> str:
+    """Retention against the work it cost, one point per method.
+
+    The page has called itself a cost frontier since its first section and has
+    only ever shown the cost axes as table columns, which the reader has to
+    hold in their head. Drawn, the trade is visible: replay climbs by spending,
+    the regularisers sit cheap and low, and the store sits at the top of the y
+    axis having spent nothing at all.
+
+    x is log, because the spread is two decades and a linear axis would put
+    every method except the replay arms in one stripe. Methods whose runs
+    predate the counter are dropped rather than placed at zero -- zero compute
+    is exactly where the store belongs, and a method sitting there would invert
+    the reading.
+    """
+    pts = [m for m in best_per_family(methods)
+           if m.get("trunk_steps") and m.get("retained") is not None]
+    if len(pts) < 3:
+        return ""
+
+    W, H = 888, 400
+    L, R, T, B = 62, 210, 26, 46
+    PW, PH = W - L - R, H - T - B
+    lo = math.log10(min(m["trunk_steps"] for m in pts))
+    hi = math.log10(max(m["trunk_steps"] for m in pts))
+    if hi - lo < 0.3:
+        lo, hi = lo - 0.15, hi + 0.15
+    pad = (hi - lo) * 0.08
+    lo, hi = lo - pad, hi + pad
+
+    def X(v):
+        return L + PW * (math.log10(v) - lo) / (hi - lo)
+
+    def Y(v):
+        return T + PH * (1.0 - max(0.0, min(1.0, v)))
+
+    o = [f'<svg viewBox="0 0 {W} {H}" role="img" aria-label="Retention against '
+         'total trunk-steps, one point per method">']
+    o.append('<style>'
+             '.fs{font:11px var(--sans);fill:var(--ink-2)}'
+             '.fsm{font:10px var(--mono);fill:var(--muted)}'
+             '.fsa{font:11px var(--sans);fill:var(--muted)}'
+             '</style>')
+
+    for frac, lab in ((0.0, "0"), (0.25, "0.25"), (0.5, "0.5"),
+                      (0.75, "0.75"), (1.0, "1.0")):
+        yy = Y(frac)
+        o.append(f'<line x1="{L}" y1="{yy:.1f}" x2="{L + PW}" y2="{yy:.1f}" '
+                 'stroke="var(--rule)" stroke-width="1"/>')
+        o.append(f'<text class="fsm" x="{L - 8}" y="{yy + 3:.1f}" '
+                 f'text-anchor="end">{lab}</text>')
+
+    d0, d1 = int(math.floor(lo)), int(math.ceil(hi))
+    for e in range(d0, d1 + 1):
+        v = 10 ** e
+        if not (lo <= e <= hi):
+            continue
+        xx = X(v)
+        o.append(f'<line x1="{xx:.1f}" y1="{T}" x2="{xx:.1f}" y2="{T + PH}" '
+                 'stroke="var(--rule)" stroke-width="1" stroke-dasharray="2,3"/>')
+        o.append(f'<text class="fsm" x="{xx:.1f}" y="{T + PH + 16}" '
+                 f'text-anchor="middle">10^{e}</text>')
+    o.append(f'<text class="fsa" x="{L + PW / 2:.0f}" y="{T + PH + 34}" '
+             'text-anchor="middle">total trunk-steps per environment stream '
+             '(log)</text>')
+    o.append(f'<text class="fsa" transform="translate(14,{T + PH / 2:.0f}) '
+             'rotate(-90)" text-anchor="middle">retained</text>')
+
+    # The store: no gradient steps at all, so it has no place on a log axis.
+    # Drawn against the left edge with the axis break said out loud, because
+    # leaving it off would quietly remove the comparison the page exists for.
+    if hop and hop.get("retained") is not None:
+        hy = Y(hop["retained"])
+        o.append(f'<line x1="{L - 26}" y1="{hy:.1f}" x2="{L + PW}" '
+                 f'y2="{hy:.1f}" stroke="var(--good)" stroke-width="1" '
+                 'stroke-dasharray="4,4" opacity="0.65"/>')
+        o.append(f'<circle cx="{L - 26}" cy="{hy:.1f}" r="5" '
+                 'fill="var(--good)"/>')
+        o.append(f'<text class="fs" x="{L + PW + 8}" y="{hy - 7:.1f}" '
+                 'fill="var(--good)">Hopfield store<tspan class="fsm" dx="5">'
+                 "0 steps</tspan></text>")
+
+    # Labels sit at their own point's height, pushed down only as far as
+    # collision forces. Ordering the column by retention instead -- which is
+    # what the first version did -- makes every leader line cross every other
+    # one, because points at the same x are spread over the whole y range.
+    lx = L + PW + 8
+    MINSEP = 13.5
+    placed = []
+    last = -1e9
+    for m in sorted(pts, key=lambda r: -r["retained"]):
+        want = Y(m["retained"])
+        got = max(want, last + MINSEP)
+        placed.append((got, m))
+        last = got
+    # If the pushing ran past the bottom, lift the whole column back inside.
+    overflow = (placed[-1][0] - (T + PH)) if placed else 0
+    if overflow > 0:
+        placed = [(y - overflow, m) for y, m in placed]
+
+    for ly, m in placed:
+        xx, yy = X(m["trunk_steps"]), Y(m["retained"])
+        col = "var(--warn)" if m.get("needs_task_id") else "var(--accent)"
+        o.append(f'<circle cx="{xx:.1f}" cy="{yy:.1f}" r="4.5" fill="{col}"/>')
+        o.append(f'<line x1="{xx + 6:.1f}" y1="{yy:.1f}" x2="{lx - 4}" '
+                 f'y2="{ly:.1f}" stroke="{col}" stroke-width="0.7" '
+                 'opacity="0.3"/>')
+        o.append(f'<text class="fs" x="{lx}" y="{ly + 3.5:.1f}" fill="{col}">'
+                 f'{esc(m["display"])}'
+                 f'<tspan class="fsm" dx="5">{_si(m["trunk_steps"])}</tspan>'
+                 "</text>")
+    o.append("</svg>")
+    return "".join(o)
+
+
 def staircase_svg(rows, key: str = "envs", ymax: float = 1.0,
                   yticks=((0.0, "0"), (0.5, "0.5"), (1.0, "1")),
                   invert: bool = False, x_mode: str = "updates") -> str:
@@ -1241,6 +1356,23 @@ def render_body(d: dict, variant: str = "continuous",
           "group could have obtained for itself. Ranking the two groups "
           "together would read as a comparison; they are an upper bound and a "
           "result.</p></div>")
+
+    _sc = frontier_scatter_svg(methods, hop)
+    if _sc:
+        A("<h3>The frontier, drawn</h3>")
+        A("<p>Retention against the work it cost — one point per method, at "
+          "its best usable configuration. The x axis is total trunk-steps "
+          "(sequences &times; timesteps through the recurrent core, counted "
+          "rather than derived), and it is logarithmic because the spread is "
+          "two decades.</p>")
+        A(f'<div class="fig">{_sc}</div>')
+        A("<p>Amber points are told which environment they are in; blue points "
+          "are not. The store's line is dashed and meets the left edge because "
+          "it takes <em>no</em> gradient steps at all, which has no position "
+          "on a log axis — the axis is broken there rather than the point "
+          "being dropped. Methods whose runs predate the counter are absent "
+          "rather than plotted at zero, since zero is exactly where the store "
+          "belongs and a method sitting there would invert the reading.</p>")
 
     A('<div class="note acc"><h4>What the frontier is for</h4>'
       "<p>Every row above acquires an environment in <strong>200 episodes and "
