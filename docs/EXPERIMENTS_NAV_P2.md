@@ -7574,3 +7574,73 @@ That reframes what a lever C should do. Adding representation is not the
 problem and neither is making it readable; the problem is that position
 dominates the state's influence on the action by an order of magnitude per
 direction, and nothing tried so far changes that ratio.
+
+## 31. P26 — absolute position ANSWERS §29.4, and the answer is optimization
+
+`p26_abspos` = `p20_e` plus a 2-dim normalised (x, y) channel, input 74 → 76,
+nothing else moved. Job 21824106, COMPLETED 700/700. **Not shippable** — the
+channel is an oracle at test time.
+
+### 31.1 Matched scoring, because the logs record different things
+
+`swept_coverage` postdates `p20_e`, so its training log has none. Both
+checkpoints were rolled on the SAME 6 envs, same starts, same seed (96 trials,
+200 steps) and the one dump reduced by `analysis/nav_tri/swept_from_traj.py`:
+
+| | swept @200 | sd | union |
+|---|---|---|---|
+| `p20_e` | **0.637** | 0.047 | 1.000 |
+| `p26_abspos` | **0.452** | 0.039 | 0.947 |
+
+`p20_e`'s matched 0.637 lands inside the 0.625–0.644 the doc already had for
+it, which is the reducer validating itself against an independent measurement.
+
+### 31.2 Speed, then a WORSE ceiling
+
+`cells_per_step`, the metric both logs recorded:
+
+| update | 25 | 50 | 75 | 100 | 200 | 300 | 450 | 700 |
+|---|---|---|---|---|---|---|---|---|
+| `p20_e` | 0.093 | 0.099 | 0.425 | 0.478 | 0.704 | 0.642 | 0.760 | **0.773** |
+| `p26_abspos` | **0.119** | **0.225** | **0.636** | **0.671** | 0.646 | 0.629 | 0.648 | 0.611 |
+
+Ahead through u100 — it skips the §18.7 wall-pin phase the control spends its
+first 50 updates in — then flat from u75 to u700 while the control climbs past
+it. Final-4 swept 0.479 against `p25_visin`'s 0.629 and the control's 0.637.
+
+**§29.4 is answered: OPTIMIZATION, not localization.** And §30 says why the
+oracle was redundant: the agent already carried a position estimate at
+R²(both) 0.66 and already read position from 2 of 1024 directions at 10–12×
+a random 2-plane. Handing it a cleaner copy of the one thing it already had
+and already prioritised moved the learning curve, not the destination.
+
+### 31.3 It is WORSE, and the recurrence curve says why
+
+| | aggregate dip | at τ | trajectories orbiting |
+|---|---|---|---|
+| `p20_e` | 4.83 | 102 | 84/96 |
+| `p26_abspos` | **11.28** | **46** | 96/96 |
+
+`p26_abspos` swings 13.79 cells at τ=20 down to **4.11 at τ=50**, back to 13.80
+at τ=70, down again at ~100 and ~140 — minima spaced ~48 apart, the signature
+of a closed orbit, and 2.3× the control's depth.
+
+**The oracle made it orbit.** That is coherent rather than surprising: §22
+established the policy is a deterministic vector field, §30.14 that every arm
+reads position from 2 directions at ~10×, and a deterministic field indexed on
+position has closed orbits as its generic attractor. Strengthening the position
+signal strengthened exactly the mechanism that produces them. Absolute position
+did not merely fail to help — it made the failure mode worse.
+
+### 31.4 CORRECTION to §28 — `p20_e` has a weak dip, not none
+
+§28 states "`p20_e` has no post-rise dip at all in the mean curve." **Its own
+table contradicts that**: 12.77 at τ=30 falling to 8.12 at τ=60 is a depth of
+4.65, above the `DIP_CELLS = 3.0` the same section sets. This run reproduces
+the curve (12.50 → 8.49, depth 4.83, τ=102).
+
+The substantive contrast §28 drew still holds and is what should be quoted: a
+dip of 4.8 spread over an IQR of 63–102 is weak and incoherent, against
+`p20_e_kcap`'s 10.66 at a period of 57 in 98/100 trajectories. But "no dip at
+all" is not what the data says, and the sentence should read **weak and broad,
+not absent**.

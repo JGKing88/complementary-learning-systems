@@ -63,6 +63,29 @@ if [ "$PROBE" = state ]; then
     exit 0
 fi
 
+# PROBE=traj is the MATCHED COMPARISON pipeline: roll every checkpoint on the
+# same envs, starts and seed, then reduce the one dump three ways. Arms whose
+# training logs recorded different metrics (swept postdates several of them)
+# can only be compared this way -- see analysis/nav_tri/swept_from_traj.py.
+if [ "$PROBE" = traj ]; then
+    tag=${TAG:-matched}
+    J="$OUTDIR/traj_${tag}.json"
+    python -u -m analysis.nav_tri.explore_traj \
+        --ckpt $CKPTS --labels $LABELS \
+        --envs "${TENVS:-6}" --trials "$TRIALS" --max_steps "$MAX_STEPS" \
+        --n_distractors "${NDIST_T:-0}" --json "$J"
+    echo ""
+    echo "################ swept (matched trajectories) ################"
+    python -u -m analysis.nav_tri.swept_from_traj \
+        --json "$J" --radius "${RADIUS:-1.0}" --size "${SIZE:-20}" \
+        --out "$OUTDIR/swept_${tag}.json"
+    echo ""
+    echo "################ recurrence ################"
+    python -u -m analysis.nav_tri.recurrence \
+        --json "$J" --out "$OUTDIR/recur_${tag}.json"
+    exit 0
+fi
+
 for ck in $CKPTS; do
     tag=$(basename "$(dirname "$ck")")_$(basename "$ck" .pt)
     echo ""
