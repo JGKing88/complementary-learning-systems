@@ -6778,6 +6778,27 @@ memory-driven exploration, since it makes state repeats impossible. But the
 current policy does not need it to explore well — which is also why there is no
 gradient pressure to learn it. Those are the same fact.
 
+### 22.3.1 The orbits do NOT bound coverage — measured to 1000 steps
+
+Jack: *"shouldn't the state be more variable to enable better deterministic
+exploration?"* The argument I gave for that — a deterministic policy is an
+autonomous dynamical system, must converge to an attractor, and is therefore
+coverage-bounded — **is wrong for `p20_e`.** 8 envs × 8 trials, 1000 steps:
+
+| step | swept DET | swept SAMPLED | cells DET | cells SAMP |
+|---|---|---|---|---|
+| 200 | 0.644 | 0.643 | 0.386 | 0.389 |
+| 400 | 0.814 | 0.833 | 0.591 | 0.607 |
+| 999 | **0.911** | 0.939 | 0.805 | 0.848 |
+
+It covers **91% deterministically** and is still gaining +0.026 over the last
+300 steps. The det/sampled gap is ~3% at 1000 steps and **zero at 200**.
+
+**The argument assumed a short limit cycle.** A deterministic continuous-state
+system can equally have a quasi-periodic, space-filling orbit, and this field is
+one. §22's replay is real — trajectories re-cross and locally repeat — but the
+repeats do not close into small loops, so they do not bound coverage.
+
 ### 22.4 The caveat that may be the whole story
 
 **This is measured under `deterministic=True`.** During training actions are
@@ -6850,3 +6871,58 @@ capped arm's ~16°) and its field has few closed orbits to escape.
 Those are also deterministic (`world_setup.py:614`), so the *series* comparison
 inherits the same bias — but a converged-checkpoint result does not
 automatically transfer to every point on a learning curve.
+
+
+---
+
+## 24. The Tier-2 prize, priced
+
+Jack: *"we do need determinism for when we mix this with exploit no? so I do
+want to get tier-2 capability somehow."* Right on both counts, and it makes
+`p20_e_kcap` the case that matters rather than `p20_e`: exploit deploys
+deterministically (that is where §17.10's 1.013 beeline comes from), and the κ
+cap is what exploit *needs* (§17.9: 0.375@u475 → 1.000@u125).
+
+### 24.1 The capped policy's deterministic deficit widens with horizon
+
+`p20_e_kcap`, 8 envs × 8 trials, 1000 steps:
+
+| step | swept DET | swept SAMPLED | gap |
+|---|---|---|---|
+| 200 | 0.538 | 0.623 | 14% |
+| 400 | 0.645 | 0.806 | 20% |
+| 999 | **0.748** | **0.935** | **20%** |
+
+Against `p20_e`'s 0.911 / 0.939 (3%). **The capped policy can reach 0.935 — with
+noise doing the work.** If it used memory instead it would get there
+deterministically. That 25% is the Tier-2 prize, and it is real gradient
+pressure — except **training never sees it**, because training is sampled and
+collects the 0.935 version. The flaw is only exposed in the regime we deploy in
+and never in the one we optimize in.
+
+### 24.2 Two separable problems
+
+**A — the capped policy's deterministic deficit.** Probably fixable without
+Tier-2 at all. κ is irrelevant at deterministic deployment (§20.1, measured);
+the cap is purely a training-time device for policy-space exploration. So
+**anneal `LOG_KAPPA_MAX` 2.5 → 5.0 over training**: on early when exploit needs
+it, off late so the policy sharpens and its *mean* is optimized nearer the
+deployed regime. One knob, mirroring `EPSILON_ANNEAL_UPDATES`.
+
+**B — Tier-2 proper.** Note where the prize actually is. At the **200-step
+operational horizon** `p20_e` gets swept **0.644** deterministically and
+sampling adds *nothing* (0.643). A perfect lawnmower at speed 0.96 with r=1.0
+sweeps a 2-wide corridor over ~192 cells of path ≈ **0.9**. So the field leaves
+~40% on the table at the horizon we train and deploy at, and **no amount of
+noise recovers it — only memory does.**
+
+Planned route for B: an **auxiliary visitation head** predicting "is the cell
+ahead already visited?" from the hidden state, supervised on the
+`visited_cells` array the collector already maintains. Training-time oracle
+only; no change to reward, action space, or deployment. It forces the
+representation directly rather than hoping reward pressure produces it.
+
+**The success test for B is NOT coverage.** Coverage could rise from a better
+field alone. Tier-2 is achieved iff **§22's replay signature breaks** — same
+position and heading, different action, because the hidden state now carries
+where the agent has been.
