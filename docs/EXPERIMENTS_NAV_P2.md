@@ -6512,3 +6512,89 @@ discards. Under a sampled eval its extra spread might be *functional* for
 coverage, so §18.4's 12% gap could shrink or invert. That is a hypothesis, not
 a finding; the test is `evaluate_exploration(..., deterministic=False)` on both
 final checkpoints, which needs no retraining.
+
+---
+
+## 21. The adaptation-novelty proposal — killed by a pre-diagnostic
+
+Jack objected that a `Δswept` reward is "too direct" and asked for something
+semi-biologically-plausible. The proposal was **firing-rate adaptation on the
+place code**: replace the oracle novelty reward — which reads a ground-truth
+`visited_cells` array the agent cannot see — with
+
+    a_t = λ·a_{t−1} + (1−λ)·φ_t          (adaptation trace)
+    n_t = 1 − cos(φ_t, a_{t−1})          (the un-adapted response)
+
+where `φ_t` is the encoder output at the current position, already computed
+every step at `collector.py:263`. Repetition suppression, local, online, no
+oracle, one extra vector.
+
+`analysis/nav_tri/adaptation_probe.py` tests it offline, with no training.
+**It fails**, and for the opposite reason to the one predicted.
+
+### 21.1 The kernel is graded — the stated risk was wrong
+
+The worry on record was that at `encoder_gain=100` the code would be a near
+lookup table, so `1 − cos` would read ~1.0 everywhere and no λ could make the
+signal graded. Measured over every cell pair in 3 held-out envs:
+
+| `|x−y|` | 0–2 | 2–4 | 4–5 | 5–7 | 7–10 | 10–14 | 14–30 |
+|---|---|---|---|---|---|---|---|
+| cos(φ(x), φ(y)) | **0.995** | 0.970 | 0.944 | 0.902 | 0.830 | 0.723 | **0.568** |
+
+Smooth decay across the whole arena, contrast 0.294, no cliff. **The gain-100
+code is not a hash-like lookup table**, which also corrects a loose claim made
+elsewhere in discussion that the vectorhash decorrelates nearby positions.
+
+### 21.2 But the signal does not track novelty — R² 0.016
+
+On real `p20_e` rollouts (3 envs × 8 trials × 200 steps), against the binary
+first-visit flag (which fires on 0.764 of steps):
+
+| λ | mean | sd | corr(new) | **R²(new)** | new-cell mean | revisit mean | gap |
+|---|---|---|---|---|---|---|---|
+| 0.90 | 0.066 | 0.032 | 0.098 | 0.010 | 0.0678 | 0.0604 | 0.007 |
+| 0.95 | 0.096 | 0.050 | 0.106 | 0.011 | 0.0990 | 0.0867 | 0.012 |
+| 0.99 | 0.143 | 0.090 | 0.128 | **0.016** | 0.1489 | 0.1219 | **0.027** |
+
+The predicted failure was `R² → 1` — the signal being binary novelty in
+disguise. The actual result is `R² → 0`: it is **nearly orthogonal to
+novelty**. At the best λ the new-cell/revisit gap is 0.027 against a signal sd
+of 0.090 — **0.3 sd of discrimination.**
+
+### 21.3 Why, and it is structural rather than a tuning failure
+
+Because the code varies *smoothly* with position (§21.1), the leaky trace is a
+low-pass filter of position: `a` converges to the code at the recent **mean
+position**. So `1 − cos(φ_t, a)` measures *how far you are from where you have
+recently been*, not *whether you have been here*. It is a displacement signal,
+not a novelty signal — it cannot tell "ten cells from my recent mean in a
+fresh direction" from "ten cells from my recent mean, back over old ground."
+
+> **Novelty is a set-membership question, and a single averaged trace cannot
+> represent a set.** Averaging destroys the shape of the visited region.
+
+### 21.4 The condition for reviving it: a SPARSE code
+
+The adaptation trick works when the place code is **sparse**. Sparse codes
+superpose without interference, so a leaky sum over visited positions *is* an
+occupancy map and `1 − cos` genuinely reads set membership — which is how it
+works in a real place-cell system at a few percent activity.
+
+This encoder is the opposite: adjacent cells at cos **0.9946**, opposite
+corners of a 20×20 arena still at **0.568**. A dense, highly correlated code
+averages into mush.
+
+**So the blocker is neither λ nor `encoder_gain` — it is code sparsity, an
+encoder property.** Re-run `adaptation_probe` if the encoder's sparsity or
+unique-radius setting ever changes; the module exists for that.
+
+### 21.5 What survives
+
+The *objection* that motivated it stands: the novelty reward reads an oracle
+the agent cannot see, and that is the implausible part, not the idea of a
+novelty bonus (which is well attested — SN/VTA responds to novelty absent
+reinforcement, and a CA3→CA1 comparator is a proposed intrinsic mechanism).
+What is refuted is this particular substrate. A learned-predictor novelty
+(RND/ICM-style) is untouched by the sparsity argument, because it does not
+rely on superposing codes.
