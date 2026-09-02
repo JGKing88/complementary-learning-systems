@@ -6012,7 +6012,30 @@ cannot be read on its own as evidence of looping, only as "rotational
 character". The return-based detector is the one to trust, and it is the one
 the table above uses.
 
-#### Mode 2 — one-handed drift. What §18.4's 12% actually is.
+#### Mode 2 — a CONSTANT-RATE circle. What §18.4's 12% actually is.
+
+> **SHARPENED again — Jack: "even the uncapped does circling sometimes."**
+> Right, and `signed_turn_mean` hid it for the second time, the same way it hid
+> the looping the first time: it is an EPISODE MEAN, so a path that circles one
+> way then the other cancels to ~0. Windowed over 40 steps, 144 episodes each:
+>
+> | | windows with \|turn\| > π | of those, positive | episodes with BOTH a +π and a −π window |
+> |---|---|---|---|
+> | `p20_e` | **24.4%** | 55% | **143/144 (99%)** |
+> | `p20_e_kcap` | 99.3% | 100% | 0/144 (0%) |
+>
+> **Both arms circle**, and the uncapped one accumulates half a rotation in a
+> quarter of its windows — in both directions, in 99% of episodes. The
+> difference is **CONSISTENCY, not presence**: windowed turn is mean −0.005 /
+> sd 2.69 for `p20_e` against mean **+4.86 / sd 0.77** for the capped arm —
+> 16% relative spread. The capped policy is a **metronome**: a near-constant
+> 0.121 rad/step, one revolution every 52 steps, every window, every episode.
+>
+> So the thing needing explanation is not a handedness preference but why it
+> locked onto a constant turn RATE — a limit cycle in the learned policy. That
+> also explains the spatial numbers better than the account below: a
+> fixed-rate turn traces a fixed-radius circle, hence `edge_frac` 0.061 (never
+> reaches the wall) and dwelling 0.445 (one repeated annulus).
 
 Given that both arms loop, the property specific to the capped policy is
 **handedness**. It turns the same direction on every step of every episode:
@@ -6026,6 +6049,28 @@ Given that both arms loop, the property specific to the capped policy is
 turns faster than the fastest-turning uncapped one, with a gap of 0.058
 rad/step across 144 episodes each. This is not a tendency; it is a property of
 the policy.
+
+**But read it with the box above:** what does not overlap is the *episode
+mean*. The uncapped arm turns hard in both directions and cancels; it is not a
+policy that goes straight.
+
+**And the bias is global, not environmental.** 100% of 144 trials turn the same
+way, across six arenas, with between-env spread (0.008) no larger than
+within-env (0.009). It lives in the weights: not the arena, not sampling
+(evaluation is deterministic, §20.1), not a per-episode accident. `p20_e` is
+cleanly unbiased by the same measure — 49% positive, per-env means within
+±0.001 of zero.
+
+**Mechanism: still unknown.** A concentration cap contains no left or right, so
+this is spontaneous symmetry breaking, and no account in §18.4 or §18.6
+explains it. One systematic asymmetry does exist and is worth knowing:
+`vec_env.reset_all` sets `_heading_rad = 0.0`, so every episode starts facing
+due east. That cannot be the whole story — `p20_e` shares the init and shows no
+bias — but it is a candidate seed. **The decisive test is a different seed:**
+if the capped config circles the other way, the direction is arbitrary and the
+mechanism is "the cap destabilises the symmetric solution"; if it circles the
+same way, something systematic is biasing it and the polar head's θ
+parameterization and that east-facing init are where to look.
 
 **This REPLACES §18.4's mechanism sentence.** That section said a κ ceiling
 "is a ceiling on how sharply the policy can turn," so the capped policy "must
