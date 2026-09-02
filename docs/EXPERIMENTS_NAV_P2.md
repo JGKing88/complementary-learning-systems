@@ -6978,3 +6978,59 @@ been — so whatever the sensor buys, it is not visitation memory. The most
 likely reading, consistent with both results, is that it helps the policy
 **shape a better field faster** (and stay out of the §18.7 wall-pin basin),
 not that it supports Tier-2.
+
+
+---
+
+## 26. P23 — lever A worked. The closed orbit is gone; Tier-2 is not.
+
+`p23_kanneal` = `p20_e_kcap` with `LOG_KAPPA_MAX` ramped 2.5 → 5.0 over 400 of
+700 updates, nothing else moved. Job 21787292, COMPLETED 700/700.
+
+### 26.1 The result
+
+| | swept@200 det | swept@999 det | det vs sampled @999 |
+|---|---|---|---|
+| `p20_e_kcap` (control) | 0.538 | 0.748 | **20%** |
+| **`p23_kanneal`** | **0.599** | **0.877** | **3.3%** |
+| `p20_e` (uncapped ref) | 0.644 | 0.911 | 3% |
+
+Training evals, final four: swept **0.624**, cps **0.758** — **+9.3%** over the
+capped control and **−2.4%** off the uncapped one.
+
+**The structural result is the third column.** §23 measured the capped arm's
+deterministic/sampled gap at 20%: its mean policy was trapped in §18.6's
+constant curl and only its own noise escaped. Annealed, that gap collapses to
+**3.3%**, matching `p20_e`. **The closed orbit is gone.**
+
+This is what §24.2 predicted from §20.1's measurement that κ does not affect a
+deterministic action: the cap is a *training-time* device, so keeping it early
+(where §17.9 showed exploit needs it) and lifting it late costs almost nothing
+in deterministic explore.
+
+### 26.2 It is NOT Tier-2, exactly as predicted
+
+Replay probe on the final checkpoint: divergence after a state repeat is
+**1.196 cells at k=10 against 10.127 for random pairs — ratio 0.118**, against
+`p20_e`'s 0.125. **The policy still replays.** The hidden state still does not
+change the action.
+
+So A delivered a **better vector field**, not a policy that uses memory. That
+was the prediction on record in the variant, and it is why B remains the
+interesting arm: §24's 200-step headroom (0.644 → ~0.9 for a perfect
+lawnmower) is untouched by this.
+
+### 26.3 Caveats
+
+- **Stability.** Final-4 range is 0.074, against the capped control's
+  remarkably tight 0.007 and `p20_e`'s 0.047 — the least steady of the three.
+  §0.0's bar is "good enough **and stable enough**", so this matters if
+  interleaving turns out to be stability-limited.
+- **A transient at the ramp endpoint.** swept dipped to 0.397 at u400, exactly
+  where the ramp completes, and recovered within one window. A longer or
+  smoother schedule is the fix if it recurs.
+- **Not tested here: what this does to EXPLOIT.** The whole justification for
+  keeping the cap early is §17.9's exploit unlock. This arm is explore-only,
+  so it shows the anneal is safe for explore and says nothing about whether
+  exploit still converges at u125 under it. That is the interleaved run's
+  question, and it should be checked before the anneal is adopted as default.
