@@ -2217,3 +2217,55 @@ discrete from-scratch arm learns its current environment nearly as well as the
 pretrained one (0.991) but retains far less. The methods were run on the
 pretrained arm as planned. Whether replay does the same work from scratch is a
 one-wave question and would remove the pretraining confound entirely.
+
+---
+
+## 2026-09-02 — the discrete isolation arms, and an inversion
+
+48 runs, all OK (slurm 21823103). Multi-head and XdG(+SI) only; the
+hypernetwork family stayed out.
+
+| arm | discrete | continuous |
+|---|---|---|
+| XdG + SI | **0.908** ret / 0.796 cur (lam 1e3) | 0.739 / 0.759 (lam 1e5) |
+| XdG alone | 0.839 / 0.948 (g 0.5) | 0.425 / 0.689 (g 0.8) |
+| Multi-head | 0.400 / 0.982 | 0.227 / 0.863 |
+
+### The coefficient moved 100x, in the direction the calibration predicted
+
+The best discrete `lam` is 1e3, the *smallest* value swept, and the continuous
+best was 1e5. That is the same 100x the calibration table implied for plain SI,
+and it is the third time in this suite that a coefficient carried across
+unchanged would have been wrong. Worth stating plainly: nothing about "SI needs
+lambda around 1e5" was ever a fact about SI. It was a fact about a Gaussian
+negative log-likelihood of order 10.
+
+### The inversion
+
+In the continuous suite the best result in the whole table was XdG+SI at 0.739,
+and that arm is **told which environment it is in**. Plain replay reached 0.419.
+In discrete the ordering flips:
+
+    Experience Replay (unbounded)   0.961   no task signal at all
+    XdG + SI                        0.908   oracle task id
+
+So the continuous suite's headline -- that the strongest classic method needs
+an oracle task id -- does not survive the action space. With a Categorical head
+the best method is the one that needs nothing, and it beats the one that is
+handed the answer. The task-identifiability result (0.43 against 0.20 chance)
+is what made that gap matter in the first place; in discrete the gap is gone
+and it matters less.
+
+Multi-head keeps its continuous character exactly: far better plasticity than
+retention (0.982 current against 0.400 retained), which is the same diagnostic
+reading as before -- its heads cannot interfere, so what it loses is lost in the
+shared trunk. The trunk fraction is smaller here, (0.982 - 0.400) / 0.982 = 59%
+against the continuous 74%.
+
+### The page rebuilt itself
+
+Section 5 of the discrete page (Parameter isolation) appeared on its own, and
+the sections after it renumbered, because that section is gated on the
+isolation data rather than on the page variant and the numbering is assigned at
+render time. Both were built that way on the guess that this exact thing would
+happen; it did, with no edit to the page code.

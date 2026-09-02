@@ -235,10 +235,11 @@ STAIRCASE_UNION = [
     ("C", "Online EWC",
      "The strongest pure regulariser, and short of replay in both spaces."),
     ("N2", "XdG + SI",
-     "The best classic result in the continuous suite. Never run in discrete."),
+     "The best classic result in the continuous suite, and told which "
+     "environment it is in."),
     ("M", "Multi-head (oracle task id)",
      "Heads cannot interfere, so what it still loses is lost in the shared "
-     "trunk. Never run in discrete."),
+     "trunk."),
 ]
 
 
