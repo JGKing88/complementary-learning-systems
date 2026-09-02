@@ -81,6 +81,8 @@ from hopfield_nav.world import generate as gen
 ALPHAS = (1e-2, 1e-1, 1.0, 10.0, 100.0, 1e3, 1e4)
 CHUNK = 8192           # forward-pass batch for the splice
 EPS = 1e-8
+GRID = 4               # coarse occupancy blocks per side (16 cells of a 20x20)
+POS_LAGS = (5, 10, 20)  # "where was I k steps ago"
 
 
 # ---------------------------------------------------------------------------
@@ -130,28 +132,131 @@ def _best_alpha(X, Y, trial, rng):
     return ALPHAS[int(np.argmax(scores))]
 
 
-def content_probes(obs, h, targets, trial, rng, test_frac=0.3) -> dict:
+def _flow_basis(pos, env, n_feat=96, seed=0, scales=(1.0, 3.0, 8.0)):
+    """Random Fourier features of position, in a separate block per env.
+
+    The proper null for "the past is a function of the present". §22 found the
+    policy is a deterministic vector field, so pos(t-k) is recoverable from
+    pos(t) by running the flow backwards -- and that map is SMOOTH BUT
+    NONLINEAR, and different in every environment because the walls are. A
+    linear position column (the `anchor` rung) cannot represent it, so a state
+    that merely encodes position in a rich basis scores as memory against it.
+    This basis can, which makes `delta_flow` the column that means trajectory.
+    """
+    pos = np.asarray(pos, dtype=np.float64)
+    rng = np.random.RandomState(seed)
+    per = max(n_feat // (2 * len(scales)), 1)
+    W = np.concatenate([rng.randn(pos.shape[1], per) * s for s in scales], 1)
+    b = rng.rand(W.shape[1]) * 2.0 * np.pi
+    z = np.concatenate([np.cos(pos @ W + b), np.sin(pos @ W + b)], axis=1)
+    ids = np.unique(env)
+    out = np.zeros((len(pos), z.shape[1] * len(ids)))
+    for j, e in enumerate(ids):
+        m = env == e
+        out[m, j * z.shape[1]:(j + 1) * z.shape[1]] = z[m]
+    return out
+
+
+class _Ridge:
+    """`_fit_score` with the expensive part hoisted out of the alpha loop.
+
+    The Gram matrix is 1098x1098 built from 13k rows and does not depend on
+    alpha or on the target, so the naive form recomputes it 350 times for one
+    table. This standardises and forms it once per (regressor, split); alphas
+    then cost a solve. `test_it_matches_the_reference_fit` pins it against
+    `_fit_score`, which stays the readable definition.
+    """
+
+    def __init__(self, Xtr, Xte):
+        self.mu = Xtr.mean(0)
+        sd = Xtr.std(0)
+        self.sd = np.where(sd < 1e-8, 1.0, sd)
+        self.Ztr = (Xtr - self.mu) / self.sd
+        self.Zte = (Xte - self.mu) / self.sd
+        self.G = self.Ztr.T @ self.Ztr
+
+    def score(self, Ytr, Yte, alpha):
+        ym = Ytr.mean(0)
+        A = self.G.copy()
+        A[np.diag_indices_from(A)] += alpha
+        w = np.linalg.solve(A, self.Ztr.T @ (Ytr - ym))
+        pred = self.Zte @ w + ym
+        sse = ((Yte - pred) ** 2).sum(0)
+        sst = ((Yte - ym) ** 2).sum(0)
+        return 1.0 - sse / np.maximum(sst, EPS)
+
+
+def content_probes(obs, h, targets, trial, rng, test_frac=0.3,
+                   clock=None, anchor=None, env=None) -> dict:
     """delta R^2 = R^2([obs, h]) - R^2(obs), per named target block.
 
-    All three columns are reported because they answer different questions:
+    All the columns are reported because they answer different questions:
     R^2(obs) is what the current observation alone gives you, R^2(h) is what
     the state gives you (inflated, since the trunk sees the observation), and
     the delta is the only one that means "stored".
+
+    ``clock`` and ``anchor`` build a LADDER OF BASELINES, each rung ruling out
+    a cheaper explanation for the one before it:
+
+    ``delta``      beyond the observation.
+    ``delta_clk``  beyond the observation AND a perfect clock. §30.6 found the
+                   state is partly a clock, and coverage-so-far is nearly a
+                   function of elapsed time, so `delta` scores a pure clock as
+                   spatial content. This rung is what caught that.
+    ``delta_anc``  beyond those AND the agent's current position. Needed
+                   because §22 established the policy is a deterministic
+                   vector field, and under a deterministic flow **the past is
+                   a function of the present** -- so decoding "where was I 20
+                   steps ago" from h is not evidence of a trajectory memory
+                   until knowing where you are now has been ruled out.
+
+    The rung a target is itself part of is degenerate there (`elapsed` has
+    delta_clk 0, `pos` has delta_anc 0) and that is the self-check.
     """
     tr, te = _split_trials(trial, test_frac, rng)
-    both = np.concatenate([obs, h], axis=1)
+    regs = {"obs": obs, "h": h, "both": np.concatenate([obs, h], axis=1)}
+    base = obs
+    if clock is not None:
+        base = np.concatenate(
+            [base, np.asarray(clock, np.float64).reshape(-1, 1)], axis=1)
+        regs["obsclk"] = base
+        regs["bothclk"] = np.concatenate([base, h], axis=1)
+    if anchor is not None:
+        base = np.concatenate([base, np.asarray(anchor, np.float64)], axis=1)
+        regs["obsanc"] = base
+        regs["bothanc"] = np.concatenate([base, h], axis=1)
+        if env is not None:
+            base = np.concatenate([base, _flow_basis(anchor, env)], axis=1)
+            regs["obsflow"] = base
+            regs["bothflow"] = np.concatenate([base, h], axis=1)
+
+    # One inner split, shared by every target and regressor. Previously each
+    # (target, regressor) drew its own, which added variance across a table
+    # whose rows are meant to be compared with each other.
+    itr, iva = _split_trials(trial[tr], 0.25, rng)
+    outer = {k: _Ridge(X[tr], X[te]) for k, X in regs.items()}
+    inner = {k: _Ridge(X[tr][itr], X[tr][iva]) for k, X in regs.items()}
+
     out = {}
     for name, Y in targets.items():
         Y = np.asarray(Y, dtype=np.float64)
         if Y.ndim == 1:
             Y = Y[:, None]
+        Ytr = Y[tr]
         row = {}
-        for key, X in (("obs", obs), ("h", h), ("both", both)):
-            a = _best_alpha(X[tr], Y[tr], trial[tr], rng)
-            r2 = _fit_score(X[tr], Y[tr], X[te], Y[te], a)
-            row[key] = float(np.mean(r2))
+        for key in regs:
+            sc = [float(np.mean(inner[key].score(Ytr[itr], Ytr[iva], a)))
+                  for a in ALPHAS]
+            a = ALPHAS[int(np.argmax(sc))]
+            row[key] = float(np.mean(outer[key].score(Ytr, Y[te], a)))
             row[key + "_alpha"] = float(a)
         row["delta"] = row["both"] - row["obs"]
+        if clock is not None:
+            row["delta_clk"] = row["bothclk"] - row["obsclk"]
+        if anchor is not None:
+            row["delta_anc"] = row["bothanc"] - row["obsanc"]
+            if env is not None:
+                row["delta_flow"] = row["bothflow"] - row["obsflow"]
         row["dim"] = int(Y.shape[1])
         # A target that never changes within an episode has only as many
         # independent samples as there are trials, not as there are steps.
@@ -309,16 +414,36 @@ def build_targets(rec, size: int, radius: float) -> dict:
     vp = VisitedProbe(size, radius, B)
     vis = np.stack([vp.read(cell[t]) for t in range(T)])       # (T, B, 8)
 
+    # A coarse occupancy MAP -- which G x G blocks have been entered so far.
+    # `start_pos` cannot settle the episodic-memory question because it is
+    # constant within a trial and so has only n_trials independent samples
+    # (§30.6); this varies every step, so it is scored on all T*B of them.
+    # §29.2 named it as the signal that was never tested.
+    blk = np.minimum((cell * GRID) // size, GRID - 1)
+    occ = np.zeros((T, B, GRID * GRID))
+    seen_b = np.zeros((B, GRID * GRID), dtype=bool)
+    for t in range(T):
+        seen_b[np.arange(B), blk[t, :, 0] * GRID + blk[t, :, 1]] = True
+        occ[t] = seen_b
+    # ... and where the agent WAS. Beyond what the observation says, knowing
+    # position k steps back is path history and cannot be anything else.
+    # Clamped at the episode start for t < k, which is 10% of rows at k=20.
+    lagged = {f"pos_lag{k}": norm[np.maximum(np.arange(T) - k, 0)]
+              for k in POS_LAGS}
+
     prev = np.concatenate([np.zeros((1, B, 2)), act[:-1]], axis=0)
     head = prev / np.maximum(np.linalg.norm(prev, axis=-1, keepdims=True), EPS)
 
     def flat(a):
         return np.asarray(a, dtype=np.float64).reshape(T * B, -1)
 
-    return {"pos": flat(norm), "start_pos": flat(start),
-            "elapsed": flat(elapsed[..., None]),
-            "coverage": flat(cov[..., None]),
-            "visited8": flat(vis), "heading": flat(head)}
+    out = {"pos": flat(norm), "start_pos": flat(start),
+           "elapsed": flat(elapsed[..., None]),
+           "coverage": flat(cov[..., None]),
+           "occupancy": flat(occ),
+           "visited8": flat(vis), "heading": flat(head)}
+    out.update({k: flat(v) for k, v in lagged.items()})
+    return out
 
 
 # ---------------------------------------------------------------------------
@@ -330,7 +455,7 @@ def collect(*, agent, cfg, envs, vh, offsets, embed_dim, device, args, mode,
             n_distractors):
     """Roll out every env and stack (obs, h, targets, trial, step)."""
     rng = np.random.RandomState(args.seed)
-    obs, hid, hcon, trial, step = [], [], [], [], []
+    obs, hid, hcon, trial, step, envi = [], [], [], [], [], []
     targets: dict = {}
     next_trial = 0
     for i, env in enumerate(envs):
@@ -378,13 +503,14 @@ def collect(*, agent, cfg, envs, vh, offsets, embed_dim, device, args, mode,
         hcon.append(hc.reshape(T * B, -1)[keep])
         trial.append((next_trial + np.tile(np.arange(B), T))[keep])
         step.append(np.repeat(np.arange(T), B)[keep])
+        envi.append(np.full(T * B, i)[keep])
         for k, v in tg.items():
             targets.setdefault(k, []).append(v[keep])
         next_trial += B
 
     return (np.concatenate(obs), np.concatenate(hid), np.concatenate(hcon),
             {k: np.concatenate(v) for k, v in targets.items()},
-            np.concatenate(trial), np.concatenate(step))
+            np.concatenate(trial), np.concatenate(step), np.concatenate(envi))
 
 
 # ---------------------------------------------------------------------------
@@ -406,17 +532,37 @@ def report(res: dict, label: str) -> None:
     print("\n  CONTENT -- out-of-sample R^2 on held-out trials, h_%s (%s)"
           % (h_at, "h_t, the state the action read" if h_at == "in"
              else "h_{t+1}, what an aux head sees"))
-    print("    %-12s %4s %8s %8s %8s %9s %9s"
+    print("    %-12s %4s %8s %8s %8s %9s %9s %10s %10s %10s"
           % ("target", "dim", "eff_n", "R2(obs)", "R2(h)", "R2(both)",
-             "deltaR2"))
+             "deltaR2", "delta_clk", "delta_anc", "delta_flow"))
     for k, v in c.items():
         if k.startswith("_"):
             continue
-        print("    %-12s %4d %8d %8.3f %8.3f %9.3f %9.3f"
+        print("    %-12s %4d %8d %8.3f %8.3f %9.3f %9.3f %10s %10s %10s"
               % (k, v["dim"], v.get("eff_n", c["_n_samples"]), v["obs"],
-                 v["h"], v["both"], v["delta"]))
-    print("    deltaR2 is the only memory number: what h adds beyond the "
-          "current observation.")
+                 v["h"], v["both"], v["delta"],
+                 "-" if "delta_clk" not in v else "%.3f" % v["delta_clk"],
+                 "-" if "delta_anc" not in v else "%.3f" % v["delta_anc"],
+                 "-" if "delta_flow" not in v else "%.3f" % v["delta_flow"]))
+    print("    A LADDER: each column adds a cheaper explanation to the "
+          "baseline and asks")
+    print("    what h still adds beyond it.")
+    print("    deltaR2   beyond the current observation.")
+    print("    delta_clk beyond that AND a perfect clock -- separates spatial "
+          "memory from")
+    print("              elapsed time (§30.6).")
+    print("    delta_anc beyond those AND current position, LINEARLY. Under a "
+          "deterministic")
+    print("              vector field (§22) THE PAST IS A FUNCTION OF THE "
+          "PRESENT, so decoding")
+    print("              where you were 20 steps ago is not memory until this "
+          "is ruled out.")
+    print("    delta_flow beyond those AND any SMOOTH function of position "
+          "within this env")
+    print("              (random Fourier features x env). The backward flow is "
+          "nonlinear and")
+    print("              wall-dependent, so this is the rung that actually "
+          "means trajectory.")
     print("    eff_n is INDEPENDENT samples: a target constant within an "
           "episode has only")
     print("    as many as there are trials, so a 0.000 there is weak evidence, "
@@ -440,14 +586,29 @@ def report(res: dict, label: str) -> None:
         print("      tau  " + "".join("%8s" % k for k in ks))
         print("      d    " + "".join("%8.3f" % u["lag_curve"][k] for k in ks))
 
+    # Scored on delta_clk where it exists: a state that is only a clock is not
+    # storing anything an explorer can use, and deltaR2 alone would call it
+    # content. `elapsed` itself is excluded -- the clock regressor contains it,
+    # so its delta_clk is 0 by construction and means nothing.
+    rows = {k: v for k, v in c.items() if not k.startswith("_")}
+    col, skip = "delta", set()
+    if any("delta_clk" in v for v in rows.values()):
+        col, skip = "delta_clk", {"elapsed"}
+    if any("delta_anc" in v for v in rows.values()):
+        col, skip = "delta_anc", {"elapsed", "pos"}
+    if any("delta_flow" in v for v in rows.values()):
+        col, skip = "delta_flow", {"elapsed", "pos"}
     best_k, best = "", 0.0
-    for k, v in c.items():
-        if not k.startswith("_") and v["delta"] > best:
-            best_k, best = k, v["delta"]
+    for k, v in rows.items():
+        # A target that IS a baseline rung scores 0 there by construction.
+        if k in skip:
+            continue
+        if v[col] > best:
+            best_k, best = k, v[col]
     stored, used = best > STORED, u["state_influence"] > USED
-    print("\n  VERDICT: content %s (best deltaR2 %.3f on %r), use %s "
+    print("\n  VERDICT: content %s (best %s %.3f on %r), use %s "
           "(state_influence %.3f)"
-          % ("YES" if stored else "no", best, best_k or "-",
+          % ("YES" if stored else "no", col, best, best_k or "-",
              "YES" if used else "no", u["state_influence"]))
     if stored and not used:
         print("  -> the trunk represents history and the POLICY IGNORES IT. "
@@ -491,7 +652,16 @@ def cross_report(out: dict) -> dict:
     flagged = {}
     print("\n\n================ ACROSS CHECKPOINTS ================")
     for title, col in (("deltaR2 -- what h adds beyond obs", "delta"),
+                       ("delta_clk -- beyond obs AND a perfect clock",
+                        "delta_clk"),
+                       ("delta_anc -- beyond those AND current position",
+                        "delta_anc"),
+                       ("delta_flow -- beyond any smooth f(position) in-env",
+                        "delta_flow"),
                        ("R2(both) -- total decodability", "both")):
+        if not all(col in out[n]["content"][t]
+                   for n in names for t in targets):
+            continue
         print(f"\n  {title}")
         print("    %-12s" % "target" + "".join("%17s" % s[:16] for s in short))
         for t in targets:
@@ -645,7 +815,7 @@ def main() -> None:
             print(f"  NOTE {path} differs on agent knobs: "
                   f"{', '.join(sorted(diff))} -- built from its own.")
         agent = load_agent(own, ck["agent_state_dict"], embed_dim, device)
-        obs, hid, hcon, targets, trial, step = collect(
+        obs, hid, hcon, targets, trial, step, envi = collect(
             agent=agent, cfg=own, envs=envs, vh=vh, offsets=offsets,
             embed_dim=embed_dim, device=device, args=args, mode=args.mode,
             n_distractors=args.n_distractors)
@@ -655,7 +825,9 @@ def main() -> None:
             "obs_dim": int(obs.shape[1]),
             "content_h": args.content_h,
             "content": content_probes(obs, hcon, targets, trial, rng,
-                                      args.test_frac),
+                                      args.test_frac,
+                                      clock=targets["elapsed"],
+                                      anchor=targets["pos"], env=envi),
             "use": use_probes(agent, obs, hid, trial, step,
                               own.agent.num_rnn_layers, device, rng,
                               tuple(args.lags)),

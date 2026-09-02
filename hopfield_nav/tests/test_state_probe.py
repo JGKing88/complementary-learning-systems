@@ -381,6 +381,161 @@ class TestCrossReport:
         assert sp.cross_report(out)["baseline_confounded"] == []
 
 
+class TestRidgeHoist:
+
+    def test_it_matches_the_reference_fit(self):
+        """`_Ridge` exists only to hoist the Gram matrix out of the alpha
+        loop; if it ever stops agreeing with `_fit_score`, the readable
+        definition is the one that is right."""
+        rng = np.random.RandomState(3)
+        X, Y = rng.randn(300, 12), rng.randn(300, 3)
+        r = sp._Ridge(X[:200], X[200:])
+        for a in (0.1, 10.0, 1e4):
+            assert r.score(Y[:200], Y[200:], a) == pytest.approx(
+                sp._fit_score(X[:200], Y[:200], X[200:], Y[200:], a))
+
+    def test_constant_columns_do_not_blow_up(self):
+        """A channel that never varies has sd 0; it must be passed through as
+        a zero column rather than dividing by nothing."""
+        rng = np.random.RandomState(4)
+        X = np.concatenate([rng.randn(200, 3), np.ones((200, 1))], axis=1)
+        r = sp._Ridge(X[:150], X[150:])
+        assert np.isfinite(r.score(rng.randn(150, 1), rng.randn(50, 1),
+                                   1.0)).all()
+
+
+class TestClockBaseline:
+
+    def test_a_pure_clock_target_adds_nothing_beyond_the_clock(self):
+        """delta_clk exists because deltaR2 counts a state that is only a
+        clock as content. Handed the clock, it must score that at zero."""
+        rng, trial, obs = _panel(n_trials=24, n_steps=20)
+        t = np.tile(np.arange(20, dtype=float) / 19.0, 24)[:, None]
+        h = np.concatenate([obs, t], axis=1)          # h knows only the time
+        got = sp.content_probes(obs, h, {"clockish": t * 3.0}, trial, rng,
+                                clock=t)
+        assert got["clockish"]["delta"] > 0.9         # ... looks like content
+        assert abs(got["clockish"]["delta_clk"]) < 0.05   # ... and is not
+
+    def test_spatial_content_survives_the_clock_baseline(self):
+        rng, trial, obs = _panel(n_trials=24, n_steps=20)
+        t = np.tile(np.arange(20, dtype=float) / 19.0, 24)[:, None]
+        secret = rng.randn(24 * 20, 1)
+        h = np.concatenate([obs, secret], axis=1)
+        got = sp.content_probes(obs, h, {"spatial": secret}, trial, rng,
+                                clock=t)
+        assert got["spatial"]["delta_clk"] > 0.7
+
+    def test_it_is_absent_when_no_clock_is_given(self):
+        rng, trial, obs = _panel()
+        got = sp.content_probes(obs, obs.copy(), {"t": obs[:, :1]}, trial, rng)
+        assert "delta_clk" not in got["t"]
+        assert "delta_anc" not in got["t"]
+
+
+class TestAnchorBaseline:
+
+    def test_a_past_that_is_a_function_of_the_present_scores_zero(self):
+        """§22 established the policy is a deterministic vector field, and
+        under a deterministic flow the past is recoverable from the present.
+        So `pos_lag20` decodable from h is not memory until current position
+        has been ruled out -- which is what this rung does."""
+        rng, trial, obs = _panel(n_trials=24, n_steps=20)
+        pos = rng.randn(24 * 20, 2)
+        past = pos * 0.8                       # past = f(present), exactly
+        t = np.tile(np.arange(20, dtype=float) / 19.0, 24)[:, None]
+        h = np.concatenate([obs, pos], axis=1)   # h knows only where it IS
+        got = sp.content_probes(obs, h, {"past": past}, trial, rng,
+                                clock=t, anchor=pos)
+        assert got["past"]["delta"] > 0.9          # ... looks like memory
+        assert abs(got["past"]["delta_anc"]) < 0.05   # ... and is not
+
+    def test_a_nonlinear_flow_defeats_the_linear_anchor_and_not_the_flow_rung(
+            self):
+        """The reason delta_flow exists. The backward flow of a deterministic
+        field is SMOOTH BUT NONLINEAR, so a state that merely encodes position
+        richly scores as trajectory memory against a linear position column.
+        Here the past is a nonlinear function of the present and nothing is
+        remembered: delta_anc must be fooled and delta_flow must not."""
+        rng, trial, obs = _panel(n_trials=24, n_steps=20)
+        n = 24 * 20
+        pos = rng.uniform(-1, 1, (n, 2))
+        past = np.stack([np.sin(3.0 * pos[:, 0]) * np.cos(2.0 * pos[:, 1]),
+                         np.cos(4.0 * pos[:, 0] + pos[:, 1])], axis=1)
+        t = np.tile(np.arange(20, dtype=float) / 19.0, 24)[:, None]
+        env = np.zeros(n, dtype=int)
+        # h holds position in a rich basis -- and no history whatsoever.
+        h = np.concatenate([obs, sp._flow_basis(pos, env, seed=1)], axis=1)
+        got = sp.content_probes(obs, h, {"past": past}, trial, rng,
+                                clock=t, anchor=pos, env=env)
+        assert got["past"]["delta_anc"] > 0.3      # the linear rung is fooled
+        assert abs(got["past"]["delta_flow"]) < 0.1   # this one is not
+
+    def test_genuine_history_survives_the_flow_rung(self):
+        rng, trial, obs = _panel(n_trials=24, n_steps=20)
+        n = 24 * 20
+        pos = rng.uniform(-1, 1, (n, 2))
+        past = rng.randn(n, 2)                  # unrelated to position
+        t = np.tile(np.arange(20, dtype=float) / 19.0, 24)[:, None]
+        env = np.zeros(n, dtype=int)
+        h = np.concatenate([obs, pos, past], axis=1)
+        got = sp.content_probes(obs, h, {"past": past}, trial, rng,
+                                clock=t, anchor=pos, env=env)
+        assert got["past"]["delta_flow"] > 0.7
+
+    def test_the_flow_basis_keeps_environments_apart(self):
+        """The walls differ per env, so the flow does too; one shared basis
+        would let env A's geometry explain env B's trajectory."""
+        pos = np.zeros((4, 2))
+        z = sp._flow_basis(pos, np.array([0, 0, 1, 1]))
+        half = z.shape[1] // 2
+        assert not z[:2, half:].any()      # env 0 writes only its own block
+        assert not z[2:, :half].any()
+
+    def test_genuine_history_survives_the_anchor(self):
+        rng, trial, obs = _panel(n_trials=24, n_steps=20)
+        pos = rng.randn(24 * 20, 2)
+        past = rng.randn(24 * 20, 2)           # unrelated to the present
+        t = np.tile(np.arange(20, dtype=float) / 19.0, 24)[:, None]
+        h = np.concatenate([obs, pos, past], axis=1)
+        got = sp.content_probes(obs, h, {"past": past}, trial, rng,
+                                clock=t, anchor=pos)
+        assert got["past"]["delta_anc"] > 0.7
+
+
+class TestNewTargets:
+
+    def test_occupancy_is_a_map_that_fills_in(self):
+        """The row `start_pos` could not carry: it varies every step, so it is
+        scored on all T*B samples rather than on n_trials (§30.6)."""
+        T, B = 12, 3
+        tg = sp.build_targets(_rec(T, B), 20, 3.0)
+        occ = tg["occupancy"].reshape(T, B, sp.GRID * sp.GRID)
+        assert occ.shape[2] == 16
+        assert (np.diff(occ, axis=0) >= 0).all()      # blocks never un-visit
+        assert occ[0].sum(axis=1).max() == 1.0        # one block at the start
+
+    def test_pos_lag_is_the_position_k_steps_back(self):
+        rec = _rec(T=30, B=3)
+        tg = sp.build_targets(rec, 20, 3.0)
+        want = tg["pos"].reshape(30, 3, 2)
+        for k in sp.POS_LAGS:
+            got = tg[f"pos_lag{k}"].reshape(30, 3, 2)
+            assert np.allclose(got[k:], want[:-k])
+
+    def test_pos_lag_clamps_at_the_episode_start(self):
+        """Before step k there is no t-k, and the start is the honest stand-in;
+        it is 10% of rows at k=20 and the docstring says so."""
+        tg = sp.build_targets(_rec(T=30, B=3), 20, 3.0)
+        got = tg["pos_lag20"].reshape(30, 3, 2)
+        assert np.allclose(got[:20], got[0])
+
+    def test_every_new_block_flattens_like_the_rest(self):
+        T, B = 12, 3
+        tg = sp.build_targets(_rec(T, B), 20, 3.0)
+        assert all(v.shape[0] == T * B for v in tg.values())
+
+
 class TestEffectiveN:
 
     def test_a_within_trial_constant_target_reports_trial_count(self):

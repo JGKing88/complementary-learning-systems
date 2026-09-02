@@ -7433,3 +7433,88 @@ nobody asked.
 therefore still not §27's quantity — re-running the four arms with
 `--content_h out` is what would settle whether the aux head's 0.632 → 0.367
 shows up as linear decodability. That has not been run.
+
+### 30.10 The baseline ladder — three controls, each catching the one before it
+
+`delta` alone is too weak a bar, and each rung was added because the previous
+one produced a claim that did not survive scrutiny. Every rung is the same
+mechanism: put the cheaper explanation into the BASELINE and ask what `h` still
+adds beyond it.
+
+| column | baseline | rules out |
+|---|---|---|
+| `deltaR2` | obs | — |
+| `delta_clk` | + a perfect clock | the state is a step counter |
+| `delta_anc` | + current position (linear) | it is a position code |
+| `delta_flow` | + any smooth f(position) **per env** | §22's deterministic field, under which **the past is a function of the present** |
+
+`delta_flow` uses random Fourier features of position in a separate block per
+environment — separate because the walls differ, so the flow does too. The
+self-checks are that `elapsed` scores exactly 0 at the clock rung and `pos`
+exactly 0 at the anchor rung, both by construction.
+
+### 30.11 Result — only `p24_aux` has a spatial map
+
+`delta_flow`, the column that survives every control:
+
+| target | `p20_e` | `p20_e_kcap` | `p24_aux` | `p25_visin` |
+|---|---|---|---|---|
+| occupancy (4x4) | 0.035 | 0.011 | **0.136** | 0.009 |
+| pos_lag5 | 0.023 | 0.009 | 0.006 | 0.012 |
+| pos_lag10 | 0.130 | 0.027 | 0.035 | 0.047 |
+| pos_lag20 | 0.157 | 0.026 | 0.088 | 0.041 |
+
+Verdicts: `p20_e` content YES, `kcap` **no**, `p24_aux` YES, `p25_visin` **no**.
+
+**The control has no map.** `p20_e` occupancy runs 0.207 → 0.030 → 0.044 →
+0.035: it collapses the moment the baseline gets a clock and never recovers.
+What looked like knowing where it had been was knowing what time it was. This
+is the well-powered version of §30.6's `start_pos` claim — 19,200 samples
+rather than 67 — and it says the same thing far more convincingly.
+
+**`p24_aux` is the exception, and it is a real one.** Occupancy runs 0.408 →
+0.132 → 0.133 → **0.136** — essentially unchanged across all three controls,
+and 4x the control arm. Not the clock, not position, not the flow.
+
+### 30.12 CORRECTION to §30.7 — the aux head built a map, not just a clock
+
+§30.7 concluded "what the aux head actually built was a much better clock; the
+thing it was trained on barely moved." **The second half was measured on the
+wrong target.** `visited8` is 8 bits on one ring at radius 3 and understates
+the representation badly; on the coarse occupancy map the same arm scores
+`delta_flow` 0.136 against the control's 0.035.
+
+Both halves of §27 therefore now read the other way:
+
+* the representation IS there — a genuine spatial occupancy map that survives
+  the clock, position and flow controls;
+* the policy DOES read the state more than the control does —
+  `state_influence` 0.310 vs 0.209, `state_share` 0.281 vs 0.181, lag-τ=20
+  0.404 vs 0.263;
+* **and coverage still did not improve** (§27).
+
+So lever B failed for neither of the two reasons the diagnostic was built to
+separate. It is a third mode: **a real, used representation that was not strong
+enough, or not of the right kind, to change the behaviour.** That is the finding
+that should drive what gets tried next, and it was invisible to every measure
+before this one.
+
+### 30.13 UNRESOLVED — `pos_lag20` on the control
+
+`p20_e` scores `pos_lag20` at 0.379 → 0.390 → 0.390 → **0.157**: it drops 60%
+at the flow rung but does not vanish, and it is 6x every other arm.
+
+**Do not read it as trajectory memory yet.** The lag profile is 0.023 at k=5,
+0.130 at k=10, 0.157 at k=20 — it **increases with lag**, and any decaying
+memory trace must do the opposite. A residual that grows with lag is the
+signature of a baseline degrading at long lag, not of a state that remembers
+further back. Two readings survive:
+
+1. genuine 20-step path memory, which would contradict §22; or
+2. 96 random features per env are not rich enough to capture a backward flow
+   that is also **not a function** where the wall clip is absorbing — several
+   pasts map to one present, so something must disambiguate them.
+
+**The cheap decider, not yet run:** extend `POS_LAGS` to (2, 5, 10, 20, 30, 50,
+100) and read the profile. Memory must fall monotonically with lag; a baseline
+artefact will keep climbing. No new machinery, one flag.
