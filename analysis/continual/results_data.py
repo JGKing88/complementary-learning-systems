@@ -214,6 +214,80 @@ def collect_incontext(d: str) -> dict | None:
     return out
 
 
+#: The four arms the forgetting panel shows, and why each earns its place.
+#: Chosen so the panel is a spread rather than a ranking: the floor, the
+#: memory-unbounded upper bound, the best method, and the one whose gap is
+#: structural instead of algorithmic.
+STAIRCASE_ARMS = [
+    ("R_none", "Naive SGD", "The floor. Each environment is learned and then "
+     "overwritten by the next."),
+    ("B_er_bufinf_rb4", "Experience Replay (unbounded)",
+     "The perfect-memory bound: every trajectory ever collected is kept."),
+    ("N2_xdgsi_g0.5_lam10000", "XdG + SI",
+     "The best classic result in the suite."),
+    ("M_multihead", "Multi-head (oracle task id)",
+     "Heads cannot interfere, so what it still loses is lost in the shared "
+     "trunk."),
+]
+
+
+def _smooth(xs, window: int):
+    """Centered rolling mean. At n_trials=1 each raw point is a coin flip, so
+    an unsmoothed curve is unreadable noise around the real trajectory."""
+    if window <= 1:
+        return list(xs)
+    half = window // 2
+    out = []
+    for i in range(len(xs)):
+        lo, hi = max(0, i - half), min(len(xs), i + half + 1)
+        seg = [v for v in xs[lo:hi] if v is not None and v == v]
+        out.append(sum(seg) / len(seg) if seg else float("nan"))
+    return out
+
+
+def collect_staircase(merged_dir, smooth: int = 15, stride: int = 10):
+    """Per-env `reached` traces for the forgetting panel, one entry per arm.
+
+    Reads the merged (multi-iter) histories, so every point is already a mean
+    over the arm's 8 seeds -- `per_env_series` averages the per-iter list at
+    each step. Thinned by `stride` afterwards: the page draws these as inline
+    SVG polylines, and 1000 points x 5 envs x 4 arms would be 20k coordinates
+    for a curve the eye cannot tell from a tenth of that.
+    """
+    if not merged_dir or not os.path.isdir(merged_dir):
+        return []
+    out = []
+    for arm, label, why in STAIRCASE_ARMS:
+        path = os.path.join(merged_dir, f"{arm}.json")
+        if not os.path.exists(path):
+            continue
+        with open(path) as f:
+            raw = json.load(f)
+        hist = {"trace": [(e[0], e[1], {int(k): v for k, v in e[2].items()})
+                          for e in raw["trace"]],
+                "blocks": raw.get("blocks") or []}
+        series = M.per_env_series(hist, "reached")
+        if not series:
+            continue
+        envs = {}
+        max_step = 0
+        for j in sorted(series):
+            steps = [s for s, _ in series[j]]
+            vals = _smooth([v for _, v in series[j]], smooth)
+            max_step = max(max_step, max(steps) if steps else 0)
+            envs[j] = [[steps[i], round(vals[i], 4)]
+                       for i in range(0, len(steps), stride)
+                       if vals[i] == vals[i]]
+        out.append({
+            "arm": arm, "label": label, "why": why,
+            "blocks": [[int(b[0]), int(b[1]), int(b[2])]
+                       for b in hist["blocks"]],
+            "envs": envs,
+            "max_step": max_step,
+        })
+    return out
+
+
 def main() -> None:
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--wave0_dir", required=True)
@@ -241,6 +315,9 @@ def main() -> None:
                         "pretrained policy memorised its pool, the held-out "
                         "evaluation is measuring a policy that cannot "
                         "navigate, and a flat curve means nothing.")
+    p.add_argument("--staircase_dir", default=None,
+                   help="Directory of merged multi-iter histories "
+                        "(merge_histories.py output), one per arm.")
     p.add_argument("--out", required=True)
     args = p.parse_args()
 
@@ -280,6 +357,7 @@ def main() -> None:
         "identifiability": _read_json(args.identifiability),
         "incontext_generalization": _read_json(args.incontext_generalization),
         "incontext_upper_bound": _read_json(args.incontext_upper_bound),
+        "staircase": collect_staircase(args.staircase_dir),
         "hopfield_costs": {
             # Constants of the model, not measurements -- stated here so the
             # frontier figure has both ends of every axis in one place.
@@ -297,7 +375,8 @@ def main() -> None:
     print(f"  oracle={data['oracle']}  joint_rows={len(joint_rows)}  "
           f"scratch_arms={len(scratch)}  recorded={len(data['recorded'])}  "
           f"method_configs={len(data['methods'])}  n20={len(data['n20'])}  "
-          f"incontext={'yes' if ic else 'no'}")
+          f"incontext={'yes' if ic else 'no'}  "
+          f"staircase={len(data['staircase'])}")
 
 
 if __name__ == "__main__":

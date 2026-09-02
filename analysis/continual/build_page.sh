@@ -20,6 +20,25 @@ DATA="$OUT_DIR/continual_results.json"
 PAGE="$OUT_DIR/continual_results.html"
 mkdir -p "$OUT_DIR"
 
+# The forgetting panel needs each arm's 8 seeds merged into one multi-iter
+# history. Done here rather than by hand so the panel regenerates from the raw
+# histories like every other number on the page -- a figure built from files
+# somebody merged once is exactly the kind of thing that stops matching its
+# runs. The arm list comes from results_data so there is one source of truth.
+MERGED="$CLS_HISTORIES/merged"
+mkdir -p "$MERGED"
+STAIR_ARMS=$("$PY" -c "from analysis.continual.results_data import STAIRCASE_ARMS; print(' '.join(a for a,_,_ in STAIRCASE_ARMS))")
+for A in $STAIR_ARMS; do
+    N=$(ls "$CLS_HISTORIES"/wave1/"${A}"_s*.json 2>/dev/null | wc -l)
+    if [[ "$N" -gt 0 ]]; then
+        "$PY" -u -m analysis.continual.merge_histories \
+            --inputs "$CLS_HISTORIES"/wave1/"${A}"_s*.json \
+            --out "$MERGED/${A}.json" --run_name "$A" >/dev/null
+    else
+        echo "[build_page] note: no seed files for $A; panel will omit it"
+    fi
+done
+
 "$PY" -u -m analysis.continual.results_data \
     --wave0_dir     "$CLS_HISTORIES/wave0" \
     --wave1_dir     "$CLS_HISTORIES/wave1" \
@@ -30,6 +49,7 @@ mkdir -p "$OUT_DIR"
     --identifiability "$CLS_RESULTS/task_identifiability.json" \
     --incontext_generalization "$CLS_RESULTS/incontext_generalization.json" \
     --incontext_upper_bound "$CLS_RESULTS/incontext_upper_bound.json" \
+    --staircase_dir "$MERGED" \
     --out "$DATA"
 
 "$PY" -u -m analysis.continual.results_page --data "$DATA" --out "$PAGE"

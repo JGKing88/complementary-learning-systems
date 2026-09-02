@@ -529,6 +529,104 @@ def replay_ratio_series(methods: list[dict]) -> list[tuple[int, float, float]]:
     return [(k, v[0], v[1]) for k, v in sorted(out.items())]
 
 
+#: One colour per environment, shared by the shaded training band and the
+#: curve it belongs to. Fixed hex rather than the theme's CSS variables
+#: because five categories are needed and the palette only carries four
+#: semantic colours -- and because these are the same hues matplotlib gives
+#: the standalone PNGs, so the page and the figure files do not disagree about
+#: which line is env 2. Mid-tone on purpose: legible on both grounds.
+ENV_COLORS = ["#4C7DF0", "#E08A2E", "#35A47A", "#D2564F", "#9B72D6"]
+
+
+def staircase_svg(rows) -> str:
+    """Per-environment success across the whole stream, one panel per arm.
+
+    This is the phenomenon every scalar in section 2 is a summary of. A
+    retention number says an arm ended at 0.04; the panel says it reached 0.9
+    on each environment first and then lost it inside a few dozen updates,
+    which is a different claim and the one that motivates the suite.
+    """
+    if not rows:
+        return ""
+    PW, PH = 372, 132          # plot area per panel
+    LEFT, TOP = 46, 30         # margins inside a panel cell
+    CW, CH = PW + LEFT + 26, PH + TOP + 42
+    COLS = 2
+    W = CW * COLS
+    H = CH * ((len(rows) + COLS - 1) // COLS) + 34
+
+    o = [f'<svg viewBox="0 0 {W} {H}" role="img" aria-label="Per-environment '
+         'success rate across the sequential stream, for four methods">']
+    o.append('<style>'
+             '.stt{font:600 12px var(--sans);fill:var(--ink)}'
+             '.sax{font:10px var(--mono);fill:var(--muted)}'
+             '.slg{font:10px var(--sans);fill:var(--muted)}'
+             '</style>')
+
+    for idx, r in enumerate(rows):
+        cx = (idx % COLS) * CW
+        cy = (idx // COLS) * CH
+        ox, oy = cx + LEFT, cy + TOP
+        span = max(1, int(r.get("max_step") or 1))
+
+        def X(step):
+            return ox + PW * (float(step) / span)
+
+        def Y(v):
+            return oy + PH * (1.0 - max(0.0, min(1.0, float(v))))
+
+        o.append(f'<text class="stt" x="{cx + 6}" y="{cy + 16}">'
+                 f'{esc(r["label"])}</text>')
+
+        # The band behind each block says which environment is being trained
+        # there. Without it the reader cannot tell a curve that is falling
+        # from one that simply has not been taught yet.
+        for lo, hi, env in r.get("blocks", []):
+            col = ENV_COLORS[int(env) % len(ENV_COLORS)]
+            o.append(f'<rect x="{X(lo):.1f}" y="{oy:.1f}" '
+                     f'width="{max(0.0, X(hi) - X(lo)):.1f}" height="{PH}" '
+                     f'fill="{col}" opacity="0.08"/>')
+
+        for frac, lab in ((0.0, "0"), (0.5, "0.5"), (1.0, "1")):
+            yy = Y(frac)
+            o.append(f'<line x1="{ox}" y1="{yy:.1f}" x2="{ox + PW}" '
+                     f'y2="{yy:.1f}" stroke="var(--rule)" stroke-width="1"/>')
+            o.append(f'<text class="sax" x="{ox - 8}" y="{yy + 3:.1f}" '
+                     f'text-anchor="end">{lab}</text>')
+
+        envs = r.get("envs") or {}
+        for k in sorted(envs, key=lambda z: int(z)):
+            pts = envs[k]
+            if not pts:
+                continue
+            col = ENV_COLORS[int(k) % len(ENV_COLORS)]
+            d = " ".join(f"{X(st):.1f},{Y(v):.1f}" for st, v in pts)
+            o.append(f'<polyline points="{d}" fill="none" stroke="{col}" '
+                     'stroke-width="1.6" stroke-linejoin="round"/>')
+
+        o.append(f'<text class="sax" x="{ox}" y="{oy + PH + 14}">0</text>')
+        o.append(f'<text class="sax" x="{ox + PW}" y="{oy + PH + 14}" '
+                 f'text-anchor="end">{span}</text>')
+        o.append(f'<text class="slg" x="{ox + PW / 2:.0f}" y="{oy + PH + 14}" '
+                 'text-anchor="middle">gradient updates</text>')
+        o.append(f'<text class="slg" x="{cx + 6}" y="{oy + PH + 30}">'
+                 f'{esc(r["why"])}</text>')
+
+    lx = 8
+    ly = H - 10
+    o.append(f'<text class="slg" x="{lx}" y="{ly}">environment:</text>')
+    lx += 78
+    for i, col in enumerate(ENV_COLORS):
+        o.append(f'<rect x="{lx}" y="{ly - 8}" width="18" height="3" '
+                 f'fill="{col}"/>')
+        o.append(f'<text class="slg" x="{lx + 23}" y="{ly}">{i}</text>')
+        lx += 42
+    o.append(f'<text class="slg" x="{lx + 10}" y="{ly}">'
+             'shaded band = the environment being trained</text>')
+    o.append("</svg>")
+    return "".join(o)
+
+
 def ratio_svg(series, ceiling=None, hopfield=None) -> str:
     """Retention against replay ratio, log-x, with the ceiling as a reference.
 
@@ -747,6 +845,24 @@ def render(d: dict) -> str:
     A("</tbody></table></div>")
 
     # ---- the frontier ------------------------------------------------
+    stair = d.get("staircase") or []
+    if stair:
+        A("<h3>What forgetting looks like before it becomes a number</h3>")
+        A("<p>Every scalar below is a summary of this. Each panel is one "
+          "method walking the same five-environment stream; each curve is one "
+          "environment's success rate, averaged over 8 seeds and smoothed "
+          "over 15 updates because a single evaluation trial is a coin "
+          "flip.</p>")
+        A(f'<div class="fig">{staircase_svg(stair)}</div>')
+        A("<p>Read the naive panel first, because it is the shape the rest are "
+          "arguing with. Each environment climbs to roughly 0.9 while it is "
+          "being trained and then falls to near the floor within a few dozen "
+          "updates of the stream moving on — not a slow decay, a collapse that "
+          "happens inside the next block. That is why the headline metric is "
+          "retention on the environments already left rather than average "
+          "performance: the average is dominated by the one environment the "
+          "method happens to be training on, which every method solves.</p>")
+
     A('<h2 id="frontier"><span class="sec">2</span> The frontier</h2>')
     A("<p>Best configuration per method, chosen among those that still learned "
       "the environment they were training on — a method can score well on "
