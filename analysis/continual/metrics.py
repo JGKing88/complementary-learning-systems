@@ -48,6 +48,15 @@ def load(path: str) -> dict:
         return json.load(f)
 
 
+#: A method is only credited with a retention number if it still learned the
+#: environment it was training on. Below this it has bought retention by
+#: refusing to learn, and its retention figure is not a result.
+#:
+#: Lives here rather than in the page because both the page and the collector
+#: gate on it, and a threshold defined twice is a threshold that drifts.
+USABLE_CURRENT = 0.5
+
+
 def _values(entry, key: str) -> list[float]:
     """A trace entry's metric as a list, whatever schema it is in.
 

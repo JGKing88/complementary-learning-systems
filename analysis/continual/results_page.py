@@ -18,6 +18,8 @@ from __future__ import annotations
 import argparse
 import html
 import json
+
+from . import metrics as M
 import math
 import os
 import re
@@ -353,7 +355,9 @@ def mb(b):
 
 #: A method has to still learn the environment in front of it for its score to
 #: mean anything. Below this, retention was bought by declining to learn.
-USABLE_CURRENT = 0.5
+# Re-exported so existing importers keep working; defined in metrics
+# because the collector gates on the same number.
+USABLE_CURRENT = M.USABLE_CURRENT
 
 
 #: Arm -> the continual-learning method it is a configuration of. Controls are

@@ -214,41 +214,54 @@ def collect_incontext(d: str) -> dict | None:
     return out
 
 
-#: The four arms the forgetting panel shows, and why each earns its place.
-#: Chosen so the panel is a spread rather than a ranking: the floor, the
-#: memory-unbounded upper bound, the best method, and the one whose gap is
-#: structural instead of algorithmic.
-STAIRCASE_ARMS = [
-    ("R_none", "Naive SGD", "The floor. Each environment is learned and then "
-     "overwritten by the next."),
-    ("B_er_bufinf_rb4", "Experience Replay (unbounded)",
+#: The arms the per-environment panels show, as arm prefixes rather than
+#: configuration names. This is the union of what each action space had worth
+#: showing: the floor and unbounded replay in both, the wave-3 isolation pair
+#: that only the continuous space ran, and the CLEAR / EWC arms that carry the
+#: discrete story. Every page draws every one of them it has data for, so the
+#: two pages are read against the same list rather than against two.
+#:
+#: Prefixes, not config strings, because the same method's best setting is not
+#: the same string in both spaces -- continuous CLEAR is `D_clear_cc1.0` and
+#: discrete is `D_clear_cc1` -- and hardcoding either would silently drop a
+#: panel on the other page.
+STAIRCASE_UNION = [
+    ("R", "Naive SGD",
+     "The floor. Each environment is learned and then overwritten by the next."),
+    ("B", "Experience Replay (unbounded)",
      "The perfect-memory bound: every trajectory ever collected is kept."),
-    ("N2_xdgsi_g0.5_lam10000", "XdG + SI",
-     "The best classic result in the suite."),
-    ("M_multihead", "Multi-head (oracle task id)",
-     "Heads cannot interfere, so what it still loses is lost in the shared "
-     "trunk."),
-]
-
-#: The discrete wave has no wave-3 isolation family, so two of the four arms
-#: above do not exist there. Same shape of spread -- the floor, the method that
-#: wins, a second replay-family method, and the best pure regulariser -- chosen
-#: from what that space actually ran.
-STAIRCASE_ARMS_DISCRETE = [
-    ("R_none", "Naive SGD", "The floor. Each environment is learned and then "
-     "overwritten by the next."),
-    ("B_er_bufinf_rb4", "Experience Replay (unbounded)",
-     "Closes 95% of the gap between this space's floor and its ceiling."),
-    ("D_clear_cc1", "CLEAR",
+    ("D", "CLEAR",
      "Replay with a behavioural-cloning term on the stored trajectories."),
-    ("C_ewc_lam10000", "Online EWC",
-     "The best pure regulariser here, and still far short of replay."),
+    ("C", "Online EWC",
+     "The strongest pure regulariser, and short of replay in both spaces."),
+    ("N2", "XdG + SI",
+     "The best classic result in the continuous suite. Never run in discrete."),
+    ("M", "Multi-head (oracle task id)",
+     "Heads cannot interfere, so what it still loses is lost in the shared "
+     "trunk. Never run in discrete."),
 ]
 
-STAIRCASE_SETS = {
-    "continuous": STAIRCASE_ARMS,
-    "discrete": STAIRCASE_ARMS_DISCRETE,
-}
+
+def staircase_stems(hist_dir: str):
+    """(config stem, label, why) for each union arm this directory actually has.
+
+    The stem is that arm's best *usable* configuration -- highest retention
+    among those that still learned the environment they were training on --
+    picked the same way the frontier table picks its rows, so the panel and the
+    table cannot end up showing different configurations of the same method.
+    Arms with no runs here are dropped, which is how the discrete page omits
+    the two wave-3 panels without being told about them.
+    """
+    wanted = {a for a, _, _ in STAIRCASE_UNION}
+    best: dict[str, tuple] = {}
+    for m in collect_methods(hist_dir):
+        if m["arm"] not in wanted or m["retained"] is None:
+            continue
+        key = ((m["current_env"] or 0) >= M.USABLE_CURRENT, m["retained"])
+        if m["arm"] not in best or key > best[m["arm"]][0]:
+            best[m["arm"]] = (key, m["config"])
+    return [(best[a][1], label, why)
+            for a, label, why in STAIRCASE_UNION if a in best]
 
 
 def _smooth(xs, window: int):
@@ -354,7 +367,7 @@ def collect_staircase(merged_dir, smooth: int = 15, stride: int = 10,
     if not merged_dir or not os.path.isdir(merged_dir):
         return []
     out = []
-    for arm, label, why in (arms if arms is not None else STAIRCASE_ARMS):
+    for arm, label, why in (arms or []):
         path = os.path.join(merged_dir, f"{arm}.json")
         if not os.path.exists(path):
             continue
@@ -429,11 +442,6 @@ def main() -> None:
                         "pretrained policy memorised its pool, the held-out "
                         "evaluation is measuring a policy that cannot "
                         "navigate, and a flat curve means nothing.")
-    p.add_argument("--staircase_set", default="continuous",
-                   choices=sorted(STAIRCASE_SETS),
-                   help="Which arm list the forgetting panels show. The two "
-                        "action spaces ran different methods, so the panel "
-                        "cannot use one list for both.")
     p.add_argument("--staircase_dir", default=None,
                    help="Directory of merged multi-iter histories "
                         "(merge_histories.py output), one per arm.")
@@ -477,7 +485,7 @@ def main() -> None:
         "incontext_generalization": _read_json(args.incontext_generalization),
         "incontext_upper_bound": _read_json(args.incontext_upper_bound),
         "staircase": collect_staircase(
-            args.staircase_dir, arms=STAIRCASE_SETS[args.staircase_set]),
+            args.staircase_dir, arms=staircase_stems(args.wave1_dir)),
         "hopfield_costs": {
             # Constants of the model, not measurements -- stated here so the
             # frontier figure has both ends of every axis in one place.

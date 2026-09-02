@@ -27,11 +27,15 @@ mkdir -p "$OUT_DIR"
 # runs. The arm list comes from results_data so there is one source of truth.
 # The two action spaces ran different methods, so each panel needs its own arm
 # list; both come from results_data so there is one source of truth.
-merge_set () {   # merge_set <histories subdir> <merged out dir> <set name>
-    local src="$CLS_HISTORIES/$1" dst="$2" setname="$3"
+merge_set () {   # merge_set <histories subdir> <merged out dir>
+    local src="$CLS_HISTORIES/$1" dst="$2"
     mkdir -p "$dst"
+    # The stems come from the runs themselves: each union arm's best usable
+    # configuration in *this* directory, picked by the same rule the frontier
+    # table uses. That is what lets one arm list serve both action spaces even
+    # though the same method's best setting is a different string in each.
     local arms
-    arms=$("$PY" -c "from analysis.continual.results_data import STAIRCASE_SETS; print(' '.join(a for a,_,_ in STAIRCASE_SETS['$setname']))")
+    arms=$("$PY" -c "from analysis.continual.results_data import staircase_stems; print(' '.join(a for a,_,_ in staircase_stems('$src')))")
     local A N
     for A in $arms; do
         N=$(ls "$src/${A}"_s*.json 2>/dev/null | wc -l)
@@ -47,8 +51,8 @@ merge_set () {   # merge_set <histories subdir> <merged out dir> <set name>
 
 MERGED="$CLS_HISTORIES/merged"
 MERGED_D="$CLS_HISTORIES/merged_d"
-merge_set wave1 "$MERGED" continuous
-[[ -d "$CLS_HISTORIES/wave1d" ]] && merge_set wave1d "$MERGED_D" discrete
+merge_set wave1 "$MERGED"
+[[ -d "$CLS_HISTORIES/wave1d" ]] && merge_set wave1d "$MERGED_D"
 
 "$PY" -u -m analysis.continual.results_data \
     --wave0_dir     "$CLS_HISTORIES/wave0" \
@@ -77,7 +81,6 @@ if [[ -d "$CLS_HISTORIES/wave1d" ]]; then
         --runs_root     "$CLS_RUNS" \
         --joint_tag     wave0d \
         --staircase_dir "$MERGED_D" \
-        --staircase_set discrete \
         --out "$DATA_D"
 else
     echo "[build_page] no discrete wave yet; page will carry one action space"
