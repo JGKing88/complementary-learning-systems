@@ -6032,10 +6032,37 @@ the table above uses.
 > 0.121 rad/step, one revolution every 52 steps, every window, every episode.
 >
 > So the thing needing explanation is not a handedness preference but why it
-> locked onto a constant turn RATE — a limit cycle in the learned policy. That
-> also explains the spatial numbers better than the account below: a
-> fixed-rate turn traces a fixed-radius circle, hence `edge_frac` 0.061 (never
-> reaches the wall) and dwelling 0.445 (one repeated annulus).
+> locked onto a constant turn RATE — a limit cycle in the learned policy.
+>
+> **THIRD correction, and "metronome circler" overstates the visual — Jack:
+> "it does really good looking nav sometimes."** It does, and by every LOCAL
+> measure the capped arm is *straighter than the control*:
+>
+> | | steps < 15°/step | longest straight run | abs turn | **signed turn** |
+> |---|---|---|---|---|
+> | `p20_e` | 76.7% | median 19, max 30 | 11.1° | **0.03°** |
+> | `p20_e_kcap` | **84.3%** | **median 22, max 37** | **8.4°** | **6.9°** |
+>
+> The drift is **6.9°/step — below the 15° that counts as running straight**.
+> Locally it is clean straight running; it simply never cancels, and closes a
+> revolution every 52 steps. Nothing in the paths looks like a tight circle.
+>
+> The honest statement is the ratio of systematic to total turning:
+> **`p20_e_kcap` is 6.9° of 8.4° = 82% systematic; `p20_e` is 0.03° of 11.1° =
+> 0.3%.** The uncapped arm turns MORE but symmetrically; the capped arm turns
+> LESS but almost entirely one way. Call it a **slow systematic curl inside
+> locally straight running**, not a circle.
+>
+> That is also the functional cost: bidirectional turning redirects into new
+> regions, while a curl that never reverses confines the agent to one annulus
+> — `edge_frac` 0.061 and dwelling 0.445, the 12% coverage gap.
+>
+> **METHOD NOTE.** This finding was corrected three times, each time by Jack,
+> and each time the cause was the same: an aggregate answering a subtly
+> different question than the one asked. `signed_turn_mean` (an episode mean)
+> hid the looping, then hid the bidirectional circling; `straightness` (an
+> unsigned cosine) hid the curl. **For turning behaviour, report the signed /
+> unsigned / windowed triple together — no one of them is safe alone.**
 
 Given that both arms loop, the property specific to the capped policy is
 **handedness**. It turns the same direction on every step of every episode:
