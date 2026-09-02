@@ -31,13 +31,17 @@ envs, `steps` 1–15, `K` 1–20, four encoders.
 > | 5% | `w57_cov5/001_half_a0.5_seed=43` | 75 | 0.977 |
 > | 2.5% | `w58_cov2.5/011_q_a1_seed=45` | 100 | 0.965 |
 >
-> | *1.25%* | *`w60_cov1.25/*_sm35x_a2`* | *100* | *0.870* |
+> | *1.25%* | *`w60_cov1.25/014_sm35x_a2_seed=44`* | *100* | *0.870* |
+> | *0.75%* | *`w61_cov0.75/014_y50_a2_seed=44`* | *200* | *0.727* |
 >
 > Means are over three scaffold draws × four training seeds. **Reach is flat
 > across a 4× range of coverage; what coverage buys is capacity** — dead goals
 > at K=20 go 0.08 → 0.25 → 0.42, with K=5 and K=10 at exactly zero throughout.
 > **The floor is 2.5%**: at 1.25% the alias rate passes ~0.02, dead goals reach
-> the K=5 operating point, and reach drops 0.10 (§10.15).
+> the K=5 operating point, and reach drops 0.10 (§10.15). Below that it is a
+> steepening knee, not a cliff, and at 0.75% the failure mode changes — dead
+> goals appear at **K=1**, where no cross-talk is possible, so the local chart
+> itself is failing (§10.17).
 >
 > Report page (all three, encoder selector, full Tests A–D):
 > https://claude.ai/code/artifact/d7a250c1-5044-4854-b453-61881bd518e7
@@ -1432,3 +1436,66 @@ perfect retrieval and zero dead goals at K=20 — the same trade §10.9's gain
 ladder found, with saturation not changing its shape.
 
 Raw: `$CLS_RESULTS/hopfield_probe/20260827/att0.5_g{100,300}_sat/`.
+
+### 10.17 0.75% — the falloff is a knee, and the failure mode changes
+
+§10.15 put the floor between 2.5% and 1.25% and left open whether 1.25% was the
+edge of a shelf or a point on a decline. One rung lower answers it.
+
+Screen (gain per arm to land res90 7, four seeds):
+
+| 0.75% arm | geometry | gain | alias | `d_eff` |
+|---|---|---|---|---|
+| **`y35_a2`** | 18 × 35 | 100 | **0.0541** | 46.7 |
+| `y50_a2` | 9 × 50 | 200 | 0.0600 | 45.7 |
+| `y27_a4` | 30 × 27 | 50 | 0.0649 | 42.8 |
+| `y27_a2` | 30 × 27 | **3** | 0.0705 | 44.2 |
+
+Probe, both leaders, four seeds, three draws:
+
+| median reach | draw 0 | draw 1 | draw 2 | **mean** |
+|---|---|---|---|---|
+| `y35_a2` | 0.700 | 0.738 | 0.670 | 0.703 |
+| **`y50_a2`** | 0.723 | 0.727 | 0.731 | **0.727** |
+
+#### The ladder, complete
+
+| coverage | best arm | reach | Δ | alias | `d_eff` | dead @ **K=1** |
+|---|---|---|---|---|---|---|
+| 10% | `att0.5` | 0.978 | — | 0.0059 | 120 | 0.00 |
+| 5% | `half_a0.5` | 0.977 | −0.001 | 0.0088 | 103 | 0.00 |
+| 2.5% | `q_a1` | 0.965 | −0.012 | 0.0179 | 85 | 0.00 |
+| 1.25% | `sm35x_a2` | 0.870 | −0.095 | 0.0286 | 65 | 0.00 |
+| **0.75%** | `y50_a2` | **0.727** | **−0.143** | 0.0541 | 47 | **0.00–0.25** |
+
+**A steepening knee, not a cliff.** Each halving costs more than the last, so
+1.25% was partway down rather than at an edge.
+
+**And the failure mode changes at the bottom.** Dead goals at **K=1** are
+nonzero for the first time. With one stored pattern no cross-talk is possible,
+so those are local-chart failures, not interference — every rung down to 1.25%
+was exactly 0.00 there. Below ~1% the binding constraint stops being the alias
+rate and becomes whether the code can support a direction readout at all, which
+is `d_eff` 47 running out of directions to be locally informative in.
+
+> **§10.15's geometry reading, corrected.** It called 1.25% a count-vs-size
+> crossover. Across three rungs the winners are 30×50, 30×**35**, 9×**50**, and
+> 27- and 25-cell patches lose wherever they appear — so it is **a patch-size
+> floor near 35 cells**, not a count preference. `EXPERIMENTS_UNIQUE_RADIUS.md`
+> §6.3 was right that a floor exists and put it at ~50; on this objective it is
+> nearer 35.
+
+> **And a one-draw over-call, corrected.** Draw 0 had `y50` ahead of `y35` and
+> was reported here as the screen losing a fourth time. Draw 1 reversed it. The
+> two arms differ by 0.006 in alias rate and the probe cannot separate them —
+> neither a win nor a loss for the screen. Sixth time in this campaign a
+> single-draw reading has not survived.
+
+Attract continues up: within the 27-cell geometry `a4` beats `a2`, so the ladder
+is 0.5 / 0.5 / 1.0 / 2.0 / 4.0. **Untested:** the winning 35- and 50-cell
+geometries were only run at `a2`, so their own optima may be higher.
+
+Report page, five rungs behind the encoder selector:
+https://claude.ai/code/artifact/d7a250c1-5044-4854-b453-61881bd518e7
+
+Raw: `$CLS_RESULTS/hopfield_probe/20260827/w61_ps{0,1,2}/` and `probe_five/`.
