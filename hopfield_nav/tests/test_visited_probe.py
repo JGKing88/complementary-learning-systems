@@ -97,3 +97,47 @@ class TestChannel:
                   for s in specs if s.name != "visited"}
         with pytest.raises(KeyError):
             channels.build_policy_input(specs, values, batch_size=2)
+
+
+class TestAbsPositionChannel:
+    """§29.4's diagnostic. Also an oracle, also not shippable."""
+
+    def test_absent_by_default(self):
+        cfg = AgentConfig(movement_mode="continuous",
+                          hopfield_mode="continuous")
+        names = [s.name for s in channels.channel_specs(cfg, embed_dim=8)]
+        assert "abs_position" not in names
+
+    def test_two_dims_when_enabled(self):
+        cfg = AgentConfig(movement_mode="continuous",
+                          hopfield_mode="continuous", input_abs_position=True)
+        w = {s.name: s.width
+             for s in channels.channel_specs(cfg, embed_dim=8)}
+        assert w["abs_position"] == 2
+
+    def test_normalisation_maps_the_arena_to_pm1(self):
+        from hopfield_nav.rollout.visited import abs_position_channel
+
+        class _Vec:
+            def __init__(self, p):
+                self._p = np.asarray(p, float)
+
+            def positions_continuous(self):
+                return self._p
+
+        got = abs_position_channel(_Vec([[0.0, 0.0], [19.0, 19.0],
+                                         [9.5, 9.5]]), 20)
+        assert got[0] == pytest.approx([-1.0, -1.0])
+        assert got[1] == pytest.approx([1.0, 1.0])
+        assert got[2] == pytest.approx([0.0, 0.0], abs=1e-6)
+
+    def test_falls_back_to_snapped_positions(self):
+        """Discrete envs have no sub-cell position; the snap IS the position."""
+        from hopfield_nav.rollout.visited import abs_position_channel
+
+        class _Vec:
+            def positions(self):
+                return np.array([[0, 19]])
+
+        got = abs_position_channel(_Vec(), 20)
+        assert got[0] == pytest.approx([-1.0, 1.0])

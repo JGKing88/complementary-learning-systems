@@ -247,6 +247,9 @@ def rollout(*, agent, env, env_offset, vectorhash, hopfields, cfg, device,
                     _rescale_q(q_s, q_rescale, q_scale).astype(np.float32)
                 ).to(device)
 
+        if getattr(cfg.agent, "input_abs_position", False):
+            values["abs_position"] = torch.from_numpy(
+                visited_mod.abs_position_channel(vec, cfg.env.size)).to(device)
         if vis_probe is not None:
             values["visited"] = torch.from_numpy(
                 vis_probe.read(vec.positions())).to(device)

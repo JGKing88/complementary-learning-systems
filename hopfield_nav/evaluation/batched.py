@@ -155,6 +155,9 @@ def batched_navigation_trials(
                 values[channels.multistep_name(s)] = torch.from_numpy(
                     q_s.astype(np.float32)).to(device)
 
+        if getattr(cfg.agent, "input_abs_position", False):
+            values["abs_position"] = torch.from_numpy(
+                visited_mod.abs_position_channel(vec, cfg.env.size)).to(device)
         if vis_probe is not None:
             values["visited"] = torch.from_numpy(
                 vis_probe.read(vec.positions())).to(device)
@@ -328,6 +331,9 @@ def batched_exploration_trials(
                 values[channels.multistep_name(s)] = torch.from_numpy(
                     q_s.astype(np.float32)).to(device)
 
+        if getattr(cfg.agent, "input_abs_position", False):
+            values["abs_position"] = torch.from_numpy(
+                visited_mod.abs_position_channel(vec, cfg.env.size)).to(device)
         if vis_probe is not None:
             values["visited"] = torch.from_numpy(
                 vis_probe.read(vec.positions())).to(device)

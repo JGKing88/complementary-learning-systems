@@ -1169,6 +1169,59 @@ case "$VARIANT" in
     EVAL_SCOPE=expl; EVAL_EVERY=25; CKPT_EVERY=25
     ;;
 
+  # === P26 -- DIAGNOSTIC: does the agent just not know WHERE IT IS? (29.4) ==
+  #
+  # NOT A SHIPPABLE CONFIG. INPUT_ABS_POSITION is an oracle at test time.
+  #
+  # The behaviour we are missing is a boustrophedon: east on even rows, west on
+  # odd, step north at the wall. That is MEMORYLESS -- a function of position
+  # alone -- so 22's replay finding cannot be what caps coverage at 0.644
+  # against a lawnmower's ~0.9. But a boustrophedon is position-DEPENDENT: it
+  # has to know which ROW it is in. The agent has exact relative self-motion
+  # (prev_displacement, integration error 2.3e-14) and NO ANCHOR. It knows how
+  # far it has moved, never where it is.
+  #
+  # 29 ruled out the memory story from the other side: handing the policy local
+  # visitation (8 bits at radius 3) bought SPEED -- converged at u300 not u700,
+  # steadier, no wall-pin phase -- and the SAME ceiling, 0.629 vs 0.625-0.644.
+  #
+  # So two candidates remain and this separates them:
+  #
+  #   coverage jumps toward ~0.9  -> LOCALIZATION was the blocker. The policy
+  #                                  could run a sweeping field and never knew
+  #                                  where it was.
+  #   coverage flat at ~0.64      -> OPTIMIZATION. The information was
+  #                                  sufficient and PPO cannot reach the
+  #                                  lawnmower basin from this initialization.
+  #
+  # This is a FAIRER oracle than 27.5's. Absolute position is only 2 dims but
+  # it is SUFFICIENT for the target behaviour, so a null here is informative in
+  # a way 29's null was not (8 bits on one ring could not express global
+  # structure at all). And it is derivable in principle: the wall code is
+  # position-specific -- that is what wall_resolution=4 exists for -- and 25
+  # measured that removing it costs 20%. So this asks "if localization were
+  # solved, would it help", without solving it.
+  #
+  # p26_abspos is p20_e plus the channel, nothing else moved. Input 74 -> 76.
+  #
+  # Score swept_coverage against p20_e's 0.625-0.644 at 200 steps and 0.911 at
+  # 1000, and run the recurrence curve (28) to confirm it is not just trading
+  # coverage for a new orbit.
+  p26_abspos)
+    ENCODER=/orcd/pool/003/jackking/cls_runs/sweeps/w52_attract_fwhm/001_att0.5_seed=43/encoder_final.pt
+    ENCODER_GAIN=100
+    HOPFIELD_BETA=100
+    SCHEDULE=${SCHEDULE:-'explore:700'}
+    ENVS_PER_WORLD=20; BATCH_ENVS=64
+    EPSILON_EXPLORE=0.1; GOAL_REWARD=2.0
+    PERSISTENCE_BONUS=0.20
+    REGIME_ASSIGNMENT=shuffle
+    ACTION_POLAR=1; STATE_DEPENDENT_STD=1; FREEZE_LOG_STD=0
+    MIN_ACTION_NORM=0.5; MAX_ACTION_NORM=1.0
+    INPUT_ABS_POSITION=1
+    EVAL_SCOPE=expl; EVAL_EVERY=25; CKPT_EVERY=25
+    ;;
+
   *)
     echo "ERROR: unknown VARIANT=$VARIANT" >&2; exit 1 ;;
 esac

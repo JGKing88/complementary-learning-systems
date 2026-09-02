@@ -194,6 +194,7 @@ class RolloutCollector:
         # tests exactly what the head was trained on. See rollout/visited.py.
         vis_probe = visited_mod.probe_for(cfg, B)
         vis_channel_on = getattr(cfg.agent, "input_visited", False)
+        abs_pos_on = getattr(cfg.agent, "input_abs_position", False)
         aux_head_on = getattr(cfg.agent, "aux_visited_weight", 0.0) > 0
         all_visited_targets = (
             torch.zeros(B, T, visited_mod.N_DIR, device=self.device)
@@ -468,6 +469,10 @@ class RolloutCollector:
                     values[channels.multistep_name(s)] = (
                         torch.from_numpy(q_s).float().to(self.device))
 
+                if abs_pos_on:
+                    values["abs_position"] = torch.from_numpy(
+                        visited_mod.abs_position_channel(
+                            vec, cfg.env.size)).to(self.device)
                 if vis_probe is not None:
                     _vt = torch.from_numpy(
                         vis_probe.read(vec.positions())).to(self.device)
@@ -806,6 +811,10 @@ class RolloutCollector:
                 values_final[channels.multistep_name(s)] = (
                     torch.from_numpy(q_s).float().to(self.device))
 
+            if abs_pos_on:
+                values_final["abs_position"] = torch.from_numpy(
+                    visited_mod.abs_position_channel(
+                        vec, cfg.env.size)).to(self.device)
             if vis_channel_on:
                 # The bootstrap value is read at the truncation state; the
                 # last computed vector is the right one for it.

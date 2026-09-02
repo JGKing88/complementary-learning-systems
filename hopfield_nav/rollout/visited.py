@@ -55,4 +55,16 @@ def probe_for(cfg, batch: int) -> "VisitedProbe | None":
     return None
 
 
-__all__ = ["VisitedProbe", "probe_for", "N_DIR"]
+def abs_position_channel(vec, size: int) -> np.ndarray:
+    """(B, 2) absolute position, normalised to [-1, 1]. DIAGNOSTIC ONLY.
+
+    An oracle at test time (§29.4). Uses the CONTINUOUS position where the env
+    has one, so it is the same quantity `at_goal` and the swept metric use.
+    """
+    getter = getattr(vec, "positions_continuous", None)
+    p = np.asarray(getter() if getter is not None else vec.positions(),
+                   dtype=np.float32)
+    return (2.0 * p / max(size - 1, 1) - 1.0).astype(np.float32)
+
+
+__all__ = ["VisitedProbe", "probe_for", "N_DIR", "abs_position_channel"]

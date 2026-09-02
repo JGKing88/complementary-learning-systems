@@ -724,6 +724,7 @@ CFG_FIELDS: dict[str, tuple[str, ...]] = {
     "init_log_kappa": ("agent.init_log_kappa",),
     "log_kappa_min": ("agent.log_kappa_min",),
     "log_kappa_max": ("agent.log_kappa_max",),
+    "input_abs_position": ("agent.input_abs_position",),
     "input_visited": ("agent.input_visited",),
     "aux_visited_weight": ("agent.aux_visited_weight",),
     "aux_visited_radius": ("agent.aux_visited_radius",),
@@ -928,6 +929,15 @@ def build_parser() -> argparse.ArgumentParser:
                    help="kappa=6.34, matching the Cartesian init sigma=exp(-0.7) "
                         "at mid-speed 1.25 (~23.8 deg of directional noise).")
     p.add_argument("--log_kappa_min", type=float, default=-1.0)
+    p.add_argument("--input_abs_position",
+                   action=argparse.BooleanOptionalAction, default=False,
+                   help="DIAGNOSTIC ONLY (P2 doc 29.4). Feed absolute "
+                        "(x, y) normalised to [-1, 1]. A boustrophedon "
+                        "is memoryless but position-DEPENDENT, so it "
+                        "needs to know which row it is in. Coverage "
+                        "jumping means localization was the blocker; "
+                        "unchanged means optimization. ORACLE, not "
+                        "shippable.")
     p.add_argument("--input_visited", action=argparse.BooleanOptionalAction,
                    default=False,
                    help="DIAGNOSTIC ONLY (P2 doc 27.5). Feed the "
