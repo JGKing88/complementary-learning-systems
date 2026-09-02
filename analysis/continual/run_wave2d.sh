@@ -1,10 +1,10 @@
 #!/bin/bash -l
 #SBATCH --job-name=cl-wave2d
-#SBATCH --time=36:00:00
+#SBATCH --time=48:00:00
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=96
 #SBATCH --mem=220G
-#SBATCH --partition=ou_bcs_normal
+#SBATCH --partition=pi_fiete
 #SBATCH --mail-type=FAIL
 #SBATCH --mail-user=jackking@mit.edu
 #SBATCH --output=/home/jackking/cls/hopfield_nav/logs/slurm_cl_wave2d_%j.out
@@ -38,16 +38,28 @@ set -uo pipefail
 # =============================================================================
 
 # --- FROM THE CALIBRATION TABLE ---------------------------------------------
-# Set CALIBRATED=yes only after calibrate_discrete.py has run against the
-# discrete checkpoint and these six lines have been updated from its output.
-# The saved table lives at $CLS_RESULTS/calibrate_discrete.json and its printed
-# form is echoed into $LOGS/calibration.txt by the launcher.
-CALIBRATED=no
-EWC_LAMS=""            # ratio ~1e-3 .. ~1e0, four decades
-SI_LAMS=""
-LWF_ALPHAS=""
-CLEAR_COEFS=""
-DERPP_ALPHAS=""
+# Filled in from slurm_cl_calib_disc_21779972.out (2026-09-01). The printed
+# tables are in logs/wave2d/calibration_*.txt and the JSON in
+# $CLS_RESULTS/calibrate_discrete_*.json. Each range brackets the value where
+# penalty/objective crosses ~1e-1, and runs far enough up to catch the
+# plasticity trap -- which is visible in the table as the bc_loss column
+# climbing, e.g. EWC at lam=1e7 (bc 1.77 -> 2.34) and SI at lam=1e6
+# (1.73 -> 2.51).
+#
+# The reason this had to be measured rather than rescaled: the coefficients do
+# not move in one direction. EWC and SI need roughly 100x MORE than the
+# continuous suite swept, while DER++ needs about 10x LESS -- its term was
+# already at ratio 0.16 at the smallest value the continuous wave used. A
+# blanket correction by the ratio of the two loss scales would have been wrong
+# for every one of them, because that ratio only describes the denominator;
+# the numerators are a parameter-space penalty for EWC/SI and an MSE on
+# Categorical logits for DER++, and those do not rescale together.
+CALIBRATED=yes
+EWC_LAMS="1000 10000 100000 1000000 10000000"        # crosses 0.1 at 1e4
+SI_LAMS="100 1000 10000 100000 1000000"              # crosses 0.1 at ~1e3
+LWF_ALPHAS="0.1 1 10 100 1000"                       # crosses 0.1 at ~1
+CLEAR_COEFS="0.1 1 10 100 1000"                      # crosses 0.1 at ~1
+DERPP_ALPHAS="0.01 0.03 0.1 0.3 1"                   # already 0.16 at 0.1
 # -----------------------------------------------------------------------------
 
 if [[ "$CALIBRATED" != "yes" ]]; then
