@@ -6743,6 +6743,41 @@ correction.
   incidence (0.35) rather than head-on (0.93). It has learned to slide along
   walls rather than bounce off them.
 
+### 22.3.1 The orbits do NOT bound coverage — measured to 1000 steps
+
+Jack: *"shouldn't the state be more variable to enable better deterministic
+exploration?"* The worry, and the argument I gave for it, was that a
+deterministic policy is an autonomous dynamical system, must converge to an
+attractor, and is therefore coverage-bounded. **Measured, that is wrong for
+`p20_e`.** 8 envs x 8 trials, 1000 steps:
+
+| step | swept DET | swept SAMPLED | cells DET | cells SAMP |
+|---|---|---|---|---|
+| 200 | 0.644 | 0.643 | 0.386 | 0.389 |
+| 400 | 0.814 | 0.833 | 0.591 | 0.607 |
+| 999 | **0.911** | 0.939 | 0.805 | 0.848 |
+
+It covers **91% of the arena deterministically** and is still gaining +0.026
+over the last 300 steps. The deterministic/sampled gap is ~3% at 1000 steps and
+**zero at 200**.
+
+**The argument was too strong.** It assumed a short limit cycle; a
+deterministic continuous-state system can equally have a quasi-periodic,
+space-filling orbit, and this field is one. §22's replay is real — trajectories
+re-cross and locally repeat — but the repeats do not close into small loops and
+so do not bound coverage.
+
+**Consequence: deterministic deployment is fine for `p20_e`**, and the state
+does not need to be more variable for coverage's sake. `p20_e_kcap` is the
+genuine exception: its constant curl IS a closed orbit, which is exactly why
+deterministic eval traps it at 0.333 while its own noise recovers 0.375 (§23).
+One arm has a space-filling field; the other has a circle.
+
+**What survives:** a monotone internal accumulator remains the mechanism for
+memory-driven exploration, since it makes state repeats impossible. But the
+current policy does not need it to explore well — which is also why there is no
+gradient pressure to learn it. Those are the same fact.
+
 ### 22.4 The caveat that may be the whole story
 
 **This is measured under `deterministic=True`.** During training actions are
