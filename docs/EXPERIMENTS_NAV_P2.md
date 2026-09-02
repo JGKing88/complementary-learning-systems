@@ -7034,3 +7034,83 @@ lawnmower) is untouched by this.
   so it shows the anneal is safe for explore and says nothing about whether
   exploit still converges at u125 under it. That is the interleaved run's
   question, and it should be checked before the anneal is adopted as default.
+
+
+---
+
+## 27. P24 — lever B FAILED. The representation was there and the policy ignored it.
+
+`p24_aux` = `p20_e` plus the auxiliary visitation head (8 compass cells at
+radius 3, BCE weight 0.5), nothing else moved. Job 21789497, COMPLETED 700/700.
+
+### 27.1 The success test, which was set before launching
+
+**Not coverage.** Coverage could rise from a better field alone, which is lever
+A's job. Tier-2 is achieved iff §22's **replay signature breaks** — same
+position, same heading, *different* action.
+
+| replay divergence at k=10 (cells; lower = more replay) | vs random | ratio |
+|---|---|---|
+| `p20_e` (control) | 1.275 / 10.216 | 0.125 |
+| `p23_kanneal` (lever A) | 1.196 / 10.127 | 0.118 |
+| **`p24_aux` (lever B)** | **1.170 / 10.184** | **0.115** |
+
+**It did not break.** Identical to the control. The policy still emits the same
+action at the same (position, heading) despite the hidden state carrying a full
+episode of different history.
+
+### 27.2 And it cost
+
+| | swept@200 det | swept@999 det | cps final-4 | volatility u300+ |
+|---|---|---|---|---|
+| `p20_e` | **0.644** | **0.911** | **0.777** | sd 0.030 |
+| `p24_aux` | 0.607 | 0.838 | 0.671 (**−13.7%**) | sd 0.097 (**3.3×**) |
+
+Across all 28 matched evals: −9.8%, winning 11 of 28 points.
+
+### 27.3 The informative part: the representation WAS there
+
+`aux_visited_loss` fell 0.632 → **0.367**. The head predicts 8-direction
+visitation *from the trunk's own features*, so those features provably contain
+visitation information — and the policy head, reading the identical vector,
+ignores it.
+
+> This is exactly the gap §7.7.2 named about `chart_frac` and could not test:
+> *"It does not say a policy trained with the extra channel would use it."*
+> Now tested, on a different quantity. **It does not.**
+
+**A note on `aux_visited_loss` as a metric:** it is confounded with coverage.
+Early in an episode almost nothing is visited, so the target is nearly all-zero
+and trivially predictable; as coverage improves the target becomes genuinely
+mixed and the balanced BCE *rises*. It ended at 0.893, higher than it started.
+It says the head is wired and training, and nothing about progress. It should
+not have been the headline signal in the run watch.
+
+### 27.4 What this rules out, and what it changes about the fallbacks
+
+This is **not** a pressure problem and **not** a representation-availability
+problem:
+
+- There is already **0.644 → ~0.9** of reward headroom at the 200-step horizon
+  (§24), so PPO has gradient available and is not taking it.
+- The information is already in `features`, and the policy ignores it.
+
+So the field is a strong **local optimum**, and a memory-conditioned policy is
+a qualitatively harder function to find. **B2 (close the train/deploy gap) and
+B3 (make the ceiling bite) both address pressure, and pressure is not what is
+missing.** Running either next would be answering a question that is not the
+one open.
+
+### 27.5 The diagnostic that splits what remains
+
+Hand the 8-direction visitation vector to the policy as an **actual input
+channel**. That collapses "use memory" from *learn to read your own hidden
+state* down to *learn to weight an input*. It is an oracle at test time and
+therefore **not a shippable answer** — it is a diagnostic, and it splits the
+remaining possibilities cleanly:
+
+- **Coverage improves** → the bottleneck is representation-to-policy. The fix
+  is architectural (how the policy reads state), not more pressure.
+- **Coverage does not improve** → the policy cannot exploit visitation *even
+  when handed it*, which is a much deeper result and would say Tier-2 is not
+  reachable by this route at all.
