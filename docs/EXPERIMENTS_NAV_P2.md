@@ -6670,3 +6670,81 @@ reinforcement, and a CA3→CA1 comparator is a proposed intrinsic mechanism).
 What is refuted is this particular substrate. A learned-predictor novelty
 (RND/ICM-style) is untouched by the sparsity argument, because it does not
 rely on superposing codes.
+
+---
+
+## 22. The explore policy is a vector field, not a memory-based explorer
+
+Jack, looking at the trajectory wall: *"why does it do the same movement again
+in the exact same spot?"* The answer turns out to be the clearest mechanistic
+result in this workstream, and it retracts two claims made while getting to it.
+
+Pages: [0 distractors](https://claude.ai/code/artifact/aad8b116-ff1e-403f-8100-a6d12b205c54)
+· [10 distractors](https://claude.ai/code/artifact/7ec1e4d3-9df9-457e-a514-0d241fcbfe76)
+
+### 22.1 On a state repeat, it replays
+
+Find every pair of timesteps where the agent is back within 0.5 cells of an
+earlier position with heading within 15°, at least 20 steps later, and measure
+how far the two continuations diverge. Against random pairs of timesteps in the
+same trajectory as the null:
+
+| divergence after k steps | `p20_e` repeat | random null |
+|---|---|---|
+| k=1 | 0.12 cells | 1.25 |
+| k=10 | **1.28** | 10.22 |
+| k=24 | **3.05** | 15.93 |
+
+438 repeats in 46 of 100 trajectories (`p20_e_kcap`: **1905** in 94 of 100).
+The continuations stay ~8× closer than chance for 25 steps.
+
+**The RNN hidden state is definitely different on the second visit — it carries
+the entire history, including having been there — and it barely changes the
+action.** The policy is close to a fixed function of (position, heading): a
+**learned vector field**. Under deterministic evaluation, same input, same
+output, forever.
+
+### 22.2 RETRACTION — "it steers toward novelty" was an itinerary artifact
+
+An earlier measurement compared, at each turn, the 90° cone ahead of the
+heading taken against the cone from turning the other way, and found the chosen
+side less-visited: 0.197 vs 0.276, with 69.6% of turns choosing the emptier
+side, ~50 se. **That measurement stands. The interpretation does not.**
+
+A fixed itinerary produces exactly that correlation with no memory at all: the
+field generates the visitation, so wherever the field takes you next is by
+construction somewhere you have not been *yet on this itinerary*. The test
+could not separate memory from itinerary.
+
+§22.1 separates them, because at a state repeat the visitation history is
+completely different and **the action is the same anyway**. So the policy does
+not consult where it has been. **Tier 2 — coarse spatial recency — really is
+unexploited**, which is where the analysis had it before this correction of a
+correction.
+
+### 22.3 What this explains
+
+- **Exact retracing.** The field has closed orbits; enter one and you loop.
+- **Consistency across arenas.** One field, applied everywhere — which is
+  reasonable, since every arena here is the same 20×20 box differing only in a
+  random ±1 wall code (Jack's point). There is nothing to adapt to.
+- **The "loose lawnmower" look.** The field is a decent space-filling flow.
+  That is a real achievement; it is just not a memory-based one.
+- **`p20_e_kcap`'s 4× higher repeat count** (1905 vs 438). Its field is the
+  constant curl of §18.6 — a closed orbit almost everywhere.
+- **Why retracing is not U-turns.** `p20_e` makes **9× fewer** sharp reversals
+  than a billiard (0.21% of steps vs 1.88%) and makes them at grazing
+  incidence (0.35) rather than head-on (0.93). It has learned to slide along
+  walls rather than bounce off them.
+
+### 22.4 The caveat that may be the whole story
+
+**This is measured under `deterministic=True`.** During training actions are
+*sampled*, and noise perturbs the state enough to break a closed orbit. The
+trained policy would not replay like this.
+
+So §20.4's open item is not a methodological nicety: **we may be characterising
+a failure mode that exists only because we turned the noise off.** Re-running
+these same 100 rollouts with `deterministic=False` settles it and costs
+nothing. Until then, "the explore policy is a vector field with closed orbits"
+is a statement about the *evaluated* policy, not necessarily the trained one.
