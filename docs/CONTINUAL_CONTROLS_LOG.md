@@ -2269,3 +2269,83 @@ the sections after it renumbered, because that section is gated on the
 isolation data rather than on the page variant and the numbering is assigned at
 render time. Both were built that way on the guess that this exact thing would
 happen; it did, with no edit to the page code.
+
+---
+
+## 2026-09-02 — the whole suite re-run, and what re-running proved
+
+1,192 runs across ten jobs, every task OK. Both action spaces, every method
+arm. The point was to backfill two fields that postdate the original waves --
+`cost` (trunk-steps per update) and `optimal_to_goal` -- into histories that
+had neither.
+
+### The gate
+
+Before spending the compute, one published configuration was re-run with
+current code and compared against its history: `R_none` seed 1, **1000/1000
+trace points identical**, every metric delta exactly 0.00000000, plus both new
+fields present. The re-run was provably additive rather than a silent change of
+results, and only then was the rest launched. The old histories were copied to
+`histories_backup_20260902` first.
+
+### What moved, and the instrument that lied about it
+
+The first comparison used **seed 1 alone** and reported a worst delta of 0.165,
+which looked alarming and was not the number the page reports. At the 8-seed
+mean:
+
+  * 61 of 81 configs bit-identical,
+  * the 20 that moved all move by <= 0.032, inside seed SEM (0.02-0.09),
+  * every headline number unchanged -- XdG+SI 0.7386, ER 0.5793,
+    B_er_bufinf_rb4 0.4192, R_none 0.0442, all to four decimals.
+
+No conclusion in the suite changes. Worth recording that the wrong statistic
+was reached for first: a single seed of a quantity the page only ever reports
+as an 8-seed mean.
+
+Ruled out as causes: nondeterminism (SI run twice gives 90/90 identical traces
+and identical cost), `--world_spec` (it writes a world.json and touches nothing
+else), and the concurrent scripts that overlap on arms -- `wave1` and `wave2d`
+both write `C_ewc_lam*`, but their invocations are character-identical, so
+racing them is harmless.
+
+**Not** isolated: why any config moved. The movers are exactly the arms
+carrying a penalty term (SI, EWC), an aux-loss term (CLEAR, DER++), or a gated
+architecture (XdG); plain replay and every control arm are untouched. The old
+files' metadata lacks keys the current code writes, so they were produced by
+older code, and the likeliest mechanism is a fix that shifted RNG consumption
+order. That is a hypothesis, not a finding.
+
+### Two defects the re-run exposed
+
+`run_wave2d.sh` had been **overwritten**. The continuous suite numbers its
+corrective re-runs with letters and the discrete wave-2 launcher was written to
+the same name, so the corrected EWC/SI script was gone from HEAD and an arm map
+built from the filename described the wrong file. Restored, and the discrete
+family renamed to a `_disc` suffix the continuous scheme cannot produce.
+
+The re-run also produced `E_derpp_a1` **and** `E_derpp_a1.0` -- one alpha,
+two filenames, from two scripts that format it differently, identical to four
+decimals. That would have put DER++ in the method table twice at one
+coefficient. The duplicate is deleted; `a0.5` and `a1000` are kept, being
+genuine new sweep points.
+
+### What the fields bought
+
+Route efficiency now works on **both** pages -- `optimal_to_goal` was
+discrete-only before, so the SPL panel could not be drawn for the continuous
+suite at all.
+
+And the frontier can finally be drawn as a frontier. Retention against total
+trunk-steps says the cost axis has two currencies:
+
+    XdG + SI            0.739 retained at   200,000   told the task id
+    Experience Replay   0.579           at 6,494,400  told nothing
+    naive SGD           0.081           at   200,000
+
+Parameter isolation is *free* in compute -- masking adds no sequences and SI's
+path integral is per-step parameter arithmetic -- so it reaches the suite's best
+retention at naive SGD's cost, paying with an oracle task id instead. Replay
+pays the other way: 32x the processing to reach a number XdG+SI gets for
+nothing, with each doubling past ~1.8M returning about +0.03. The store spends
+neither.
