@@ -7325,3 +7325,92 @@ whether the continuations diverge. The splice is sharper because it holds the
 observation **exactly** fixed and varies only `h`, instead of relying on finding
 near-repeats — and because it comes with a scale (the both-swap) that makes the
 number comparable across agents with different action magnitudes.
+
+### 30.5 First run — four arms at u700 (job 21826076)
+
+6 envs x 16 trials x 200 steps, explore, deterministic. Trunk is a 1024-unit
+vanilla RNN, obs 74 (82 for `p25_visin`).
+
+**The tool's own controls fire correctly**, which is the first thing to check:
+`heading` scores R²(obs) = 1.000 on every arm (the observation probe works) and
+ΔR² = −0.000 (it correctly adds nothing); `visited8` scores R²(obs) = 1.000 on
+`p25_visin` **and only there**, which is the arm that takes it as an input
+channel.
+
+| ΔR² | `p20_e` | `p20_e_kcap` | `p24_aux` | `p25_visin` | |
+|---|---|---|---|---|---|
+| pos | 0.592 | 0.123 | 0.058 | 0.144 | [!] |
+| start_pos | 0.000 | −0.004 | 0.017 | −0.009 | |
+| elapsed | 0.331 | 0.132 | **0.838** | 0.086 | [!] |
+| coverage | 0.362 | 0.170 | **0.879** | 0.086 | [!] |
+| visited8 | 0.085 | 0.043 | 0.119 | −0.000 | [!] |
+| heading | −0.000 | −0.000 | −0.000 | −0.000 | |
+
+| USE | `p20_e` | `p20_e_kcap` | `p24_aux` | `p25_visin` |
+|---|---|---|---|---|
+| state_influence | 0.210 | 0.191 | **0.311** | 0.145 |
+| same-step swap | 0.200 | 0.183 | 0.235 | 0.135 |
+| state_share | 0.183 | 0.175 | **0.281** | 0.132 |
+| lag τ=20 | 0.264 | 0.246 | **0.404** | 0.165 |
+
+### 30.6 The state is a LOCALIZER AND A CLOCK, not a memory
+
+For `p20_e`: total decodability R²(both) is 0.659 for position, 0.331/0.362 for
+elapsed/coverage — and **−0.002 for `start_pos`**, on every one of the four
+arms. The agent does not know where its episode began.
+
+`elapsed` and `coverage` are near-duplicates as targets (coverage grows
+monotonically with t), and they track each other to within 0.03 on every arm,
+so read them as one thing: a clock.
+
+So `h ≈ f(current position, time)`. Both are state-like; neither is *history*.
+A policy that is a function of (position, t) is still a vector field — a
+time-varying one. **This is consistent with §22's replay finding and sharpens
+it**: the state is not empty, it is a localizer plus a clock, and the reason
+the policy replays is that the episode-specific part of it is what is missing.
+
+It also bears on §29.4 before `p26_abspos` lands: the agent already carries a
+position estimate at R²(both) = 0.66, so "the policy could not know where it
+was" is weaker than §29.4 assumed. Not settled — 0.66 is not 1.0, and a linear
+probe is a lower bound on what the policy could use — but the abs-position
+oracle is not handing over something absent.
+
+### 30.7 §27's "the policy ignored it" is too strong — with an off-by-one caveat
+
+`p24_aux` has **more** content and **more** use than the control: elapsed
+0.331 → 0.838, coverage 0.362 → 0.879, state_influence 0.210 → 0.311,
+state_share 0.183 → 0.281, lag-τ=20 0.264 → 0.404. The policy did not ignore
+the state; it read it more.
+
+What the aux head actually built was a much better **clock**. The thing it was
+trained on barely moved: `visited8` R²(both) 0.138 → 0.156. And a better clock
+does not help you sweep, which is why §27 saw no coverage gain.
+
+**The caveat, and it is load-bearing:** the aux head reads `features`, which for
+a 1-layer trunk is `h_{t+1}` — the state *after* seeing obs_t. This probe reads
+`h_t`, the state going *in*, because the action at t is f(obs_t, h_t) and that
+is the causal question. So the `visited8` row is **not** the same quantity as
+§27's `aux_visited_loss` and does not by itself refute it. Recording `h_next`
+alongside `h_in` would make that comparison exact; it is a small change and has
+not been made.
+
+The elapsed/coverage and all the USE numbers are unaffected by this — they are
+measured on the same `h_t` across all four arms.
+
+### 30.8 An independent hint at §28's orbit, and the confound the run exposed
+
+`p20_e_kcap`'s lag curve falls hardest at long τ: 0.246 at τ=20 → **0.116** at
+τ=50, a 53% drop, against `p20_e`'s 0.264 → 0.198 (25%). §28 measured `kcap`'s
+orbit period at ~54, and at τ ≈ the period the state has come back near itself,
+so splicing it in changes little. Two unrelated measurements pointing at the
+same number. **Suggestive, not established** — every arm falls somewhat at
+τ=50 — and a finer grid over τ=35–70 would settle it cheaply.
+
+**The confound, found by running it:** R²(obs) for position is 0.067 on `p20_e`
+and 0.728 on `p24_aux` **with the same 74 input channels**. The observation
+baseline is not a property of the channel set — it is a property of the states
+the agent visits, and a narrow, orbit-like distribution makes position linearly
+decodable from the sensory code in a way a broad one does not. So where the
+baseline moves, a ΔR² gap is a **headroom** difference, not a storage
+difference. `cross_report` now flags those rows `[!]` and points at R²(both),
+rather than leaving it to be noticed.

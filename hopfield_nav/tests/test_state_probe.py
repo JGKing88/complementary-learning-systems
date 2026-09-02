@@ -324,3 +324,61 @@ class TestRecordState:
         from analysis.nav_tri.behavior_probe import rollout
         p = inspect.signature(rollout).parameters["record_state"]
         assert p.default is False
+
+
+# ---------------------------------------------------------------------------
+# The cross-arm comparison, and the confound it exists to flag
+# ---------------------------------------------------------------------------
+
+
+def _arm(obs_r2, delta, infl=0.2, lag=None):
+    return {"hidden": 8, "obs_dim": 4,
+            "content": {"pos": {"obs": obs_r2, "h": 0.5,
+                                "both": obs_r2 + delta, "delta": delta,
+                                "dim": 2, "eff_n": 100},
+                        "_n_samples": 100, "_n_train_trials": 7,
+                        "_n_test_trials": 3},
+            "use": {"state_influence": infl, "same_t_influence": infl,
+                    "obs_influence": 0.9, "state_share": 0.2,
+                    "lag_curve": lag or {"1": 0.05, "20": 0.3}}}
+
+
+class TestCrossReport:
+
+    def test_it_flags_a_target_whose_obs_baseline_moved(self):
+        """The confound the real run exposed: R^2(obs) for position was 0.067
+        on one arm and 0.728 on another with the SAME 74 channels, because the
+        baseline tracks which states the agent visits. A deltaR2 gap there is
+        headroom, not storage."""
+        out = {"a/one/u700.pt": _arm(0.07, 0.59),
+               "a/two/u700.pt": _arm(0.73, 0.06)}
+        assert sp.cross_report(out)["baseline_confounded"] == ["pos"]
+
+    def test_a_stable_baseline_is_not_flagged(self):
+        out = {"a/one/u700.pt": _arm(0.02, 0.59),
+               "a/two/u700.pt": _arm(0.05, 0.06)}
+        assert sp.cross_report(out)["baseline_confounded"] == []
+
+    def test_it_survives_arms_with_different_lag_grids(self):
+        """Short episodes drop long lags, so the union has holes; the table
+        must print them rather than raise."""
+        out = {"a/one/u700.pt": _arm(0.02, 0.1, lag={"1": 0.05}),
+               "a/two/u700.pt": _arm(0.02, 0.1, lag={"1": 0.06, "50": 0.2})}
+        assert sp.cross_report(out)["baseline_confounded"] == []
+
+
+class TestEffectiveN:
+
+    def test_a_within_trial_constant_target_reports_trial_count(self):
+        """`start_pos` has as many independent samples as there are trials --
+        24, not 480 -- which is why a 0.000 there is weak evidence against a
+        1024-unit state, not a proven null."""
+        rng, trial, obs = _panel(n_trials=24, n_steps=20)
+        const = np.repeat(np.arange(24, dtype=float), 20)[:, None]
+        got = sp.content_probes(obs, obs.copy(), {"c": const}, trial, rng)
+        assert got["c"]["eff_n"] == 24
+
+    def test_a_varying_target_reports_every_step(self):
+        rng, trial, obs = _panel(n_trials=24, n_steps=20)
+        got = sp.content_probes(obs, obs.copy(), {"v": obs[:, :1]}, trial, rng)
+        assert got["v"]["eff_n"] == 24 * 20

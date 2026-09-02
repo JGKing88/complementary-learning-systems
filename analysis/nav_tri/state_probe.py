@@ -62,6 +62,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 
 import numpy as np
 import torch
@@ -152,6 +153,14 @@ def content_probes(obs, h, targets, trial, rng, test_frac=0.3) -> dict:
             row[key + "_alpha"] = float(a)
         row["delta"] = row["both"] - row["obs"]
         row["dim"] = int(Y.shape[1])
+        # A target that never changes within an episode has only as many
+        # independent samples as there are trials, not as there are steps.
+        # `start_pos` is the case that matters: 67 effective samples against a
+        # 1024-unit hidden state, which is the lowest-powered row in the table
+        # and must not be read as a proven null.
+        const = all(np.ptp(Y[trial == t], axis=0).max() < 1e-9
+                    for t in np.unique(trial)[:8])
+        row["eff_n"] = int(len(np.unique(trial))) if const else int(len(Y))
         out[name] = row
     out["_n_train_trials"] = int(len(np.unique(trial[tr])))
     out["_n_test_trials"] = int(len(np.unique(trial[te])))
@@ -387,15 +396,21 @@ def report(res: dict, label: str) -> None:
           f"obs {res['obs_dim']}")
 
     print("\n  CONTENT -- out-of-sample R^2 on held-out trials")
-    print("    %-12s %4s %8s %8s %9s %9s"
-          % ("target", "dim", "R2(obs)", "R2(h)", "R2(both)", "deltaR2"))
+    print("    %-12s %4s %8s %8s %8s %9s %9s"
+          % ("target", "dim", "eff_n", "R2(obs)", "R2(h)", "R2(both)",
+             "deltaR2"))
     for k, v in c.items():
         if k.startswith("_"):
             continue
-        print("    %-12s %4d %8.3f %8.3f %9.3f %9.3f"
-              % (k, v["dim"], v["obs"], v["h"], v["both"], v["delta"]))
+        print("    %-12s %4d %8d %8.3f %8.3f %9.3f %9.3f"
+              % (k, v["dim"], v.get("eff_n", c["_n_samples"]), v["obs"],
+                 v["h"], v["both"], v["delta"]))
     print("    deltaR2 is the only memory number: what h adds beyond the "
           "current observation.")
+    print("    eff_n is INDEPENDENT samples: a target constant within an "
+          "episode has only")
+    print("    as many as there are trials, so a 0.000 there is weak evidence, "
+          "not a null.")
 
     print("\n  USE -- deterministic action displacement under a splice")
     print("    mean |action|                    %.4f" % u["action_norm"])
@@ -433,6 +448,76 @@ def report(res: dict, label: str) -> None:
               "trunk: input, horizon, or objective.")
     else:
         print("  -> the state carries history AND changes the action.")
+
+
+BASELINE_SPREAD = 0.15   # R^2(obs) varying more than this across arms
+
+
+def _short(name: str) -> str:
+    """A column heading: the run directory without the boilerplate."""
+    d = name.split("/")[-2] if "/" in name else name
+    return re.sub(r"_s\d+_\d+$", "", re.sub(r"^navigate_", "", d))
+
+
+def cross_report(out: dict) -> dict:
+    """Compare arms -- and refuse to let deltaR^2 be compared naively.
+
+    Found by running it: R^2(obs) for `pos` was 0.067 on `p20_e` and 0.728 on
+    `p24_aux` **with the same 74 input channels**. The observation baseline is
+    not a property of the channel set; it is a property of the states the agent
+    actually visits, and a narrow, orbit-like distribution makes position
+    linearly decodable from the sensory code in a way a broad one does not.
+
+    So where the baseline moves, a deltaR^2 difference is a HEADROOM
+    difference, not a storage difference, and R^2(both) -- the total
+    decodability -- is the honest cross-arm column. Where the baseline is flat
+    near zero (elapsed, coverage, visited8 on the arms that do not take it as
+    input) deltaR^2 compares cleanly. This flags which is which rather than
+    leaving it to be noticed.
+    """
+    names = list(out)
+    short = [_short(n) for n in names]
+    targets = [k for k in out[names[0]]["content"] if not k.startswith("_")]
+    flagged = {}
+    print("\n\n================ ACROSS CHECKPOINTS ================")
+    for title, col in (("deltaR2 -- what h adds beyond obs", "delta"),
+                       ("R2(both) -- total decodability", "both")):
+        print(f"\n  {title}")
+        print("    %-12s" % "target" + "".join("%17s" % s[:16] for s in short))
+        for t in targets:
+            base = [out[n]["content"][t]["obs"] for n in names]
+            spread = max(base) - min(base)
+            flagged[t] = bool(spread > BASELINE_SPREAD)
+            mark = " [!]" if flagged[t] and col == "delta" else ""
+            print("    %-12s" % t
+                  + "".join("%17.3f" % out[n]["content"][t][col]
+                            for n in names) + mark)
+    bad = [t for t, f in flagged.items() if f]
+    if bad:
+        print(f"\n    [!] {', '.join(bad)}: R^2(obs) itself differs across "
+              f"these arms by")
+        print("        more than %.2f, so the deltaR2 gap is headroom, not "
+              "storage." % BASELINE_SPREAD)
+        print("        Read R2(both) for those rows.")
+
+    print("\n  USE")
+    print("    %-16s" % "" + "".join("%17s" % s[:16] for s in short))
+    for k, lab in (("state_influence", "state_influence"),
+                   ("same_t_influence", "same-step swap"),
+                   ("obs_influence", "obs_influence"),
+                   ("state_share", "state_share")):
+        print("    %-16s" % lab
+              + "".join("%17.3f" % out[n]["use"][k] for n in names))
+    lags = sorted({int(L) for n in names for L in out[n]["use"]["lag_curve"]})
+    if lags:
+        print("\n  lag curve (own-episode donor tau steps back)")
+        print("    %-16s" % "tau" + "".join("%17s" % s[:16] for s in short))
+        for L in lags:
+            print("    %-16d" % L
+                  + "".join("%17.3f"
+                            % out[n]["use"]["lag_curve"].get(str(L), np.nan)
+                            for n in names))
+    return {"baseline_confounded": bad}
 
 
 # ---------------------------------------------------------------------------
@@ -558,10 +643,12 @@ def main() -> None:
         report(res, path)
         out[path] = res
 
+    cross = cross_report(out) if len(out) > 1 else {}
+
     if args.json:
         with open(args.json, "w") as fh:
             json.dump({"mode": args.mode, "max_steps": args.max_steps,
-                       "by_ckpt": out}, fh, indent=2)
+                       "cross": cross, "by_ckpt": out}, fh, indent=2)
         print(f"\nwrote {args.json}")
 
 
