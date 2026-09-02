@@ -70,7 +70,7 @@ care how mice do it.
 
 **Open items** (priority order):
 
-- [ ] **Re-score explore with `deterministic=False` (§20.4).** Every explore number in this document is the *noiseless mean policy*; the training reward was earned by *sampled* trajectories, and for a search task the noise is functional. §18.4's 12% κ-cap gap could shrink or invert, since the capped arm's whole difference is spread that a deterministic eval discards. No retraining needed.
+- [x] **DONE — §23. Re-scored explore with `deterministic=False`.** The κ-cap gap is **3.2%, not 14%**; §18.4's magnitude is retracted. §22's vector-field finding survives sampling. Explore should be scored sampled from here on. Original item: Every explore number in this document is the *noiseless mean policy*; the training reward was earned by *sampled* trajectories, and for a search task the noise is functional. §18.4's 12% κ-cap gap could shrink or invert, since the capped arm's whole difference is spread that a deterministic eval discards. No retraining needed.
 
 - [ ] **Run `p21_pr` — staged, not launched.** §18.7 measured **100% of episodes at u25/u50 wall-pinned**, and §18.8 priced it: the **persistence bonus pays +0.196/step for the pin** against `wall_penalty`'s −0.093, because it scores the *commanded* action and a pinned agent commands a perfect heading while realizing 0.09. `--persistence_realized` (default off) fixes that without taxing the walls; `p21_pr` is `p20_e` with that one bit flipped, `explore:300`, and `p20_e` is its own control. Score it with `explore_traj` on u25/u50/u75, not from the coverage curve.
 
@@ -5848,6 +5848,12 @@ not materialize on this encoder.** §7.7.2's static prediction (goal-absent
 `‖q‖` separability 0.930 on w52 against 0.698 on the gain-5 code) is now
 backed behaviourally.
 
+> **MAGNITUDE RETRACTED — §23.** Measured sampled rather than
+> deterministic, the gap is **3.2%, not 14%**: the capped arm goes 0.333 →
+> 0.375 while `p20_e` stays flat. Its own noise breaks the closed orbits that
+> trap its mean policy (state repeats 1905 → 524). The cap costs something; it
+> costs about a quarter of what this section reports.
+
 #### H2 — direction CONFIRMED, mechanism REFUTED
 
 The cap costs **12.1% of `strategy_efficiency`**, and `p20_e` won **all 16**
@@ -6748,3 +6754,64 @@ a failure mode that exists only because we turned the noise off.** Re-running
 these same 100 rollouts with `deterministic=False` settles it and costs
 nothing. Until then, "the explore policy is a vector field with closed orbits"
 is a statement about the *evaluated* policy, not necessarily the trained one.
+
+
+---
+
+## 23. RESOLVED — the κ cap costs 3%, not 12%. Deterministic eval was the rest.
+
+§20.4 flagged that every explore number in this document is the noiseless mean
+policy, and predicted that the κ-capped arm — whose entire difference is extra
+directional spread — might be systematically penalised by that. Measured, on
+the same 100 matched rollouts, `--no-deterministic`:
+
+| | deterministic | **sampled** |
+|---|---|---|
+| `p20_e` coverage | 0.3881 | 0.3870 |
+| `p20_e_kcap` coverage | 0.3332 | **0.3745** |
+| **gap** | **14.1%** | **3.2%** |
+
+**The cap costs ~3%, not the 12–14% §18.4 reported.** The rest was our
+evaluation discarding the noise that makes the capped policy work.
+
+### 23.1 The mechanism is §22's replay, and the noise breaks it
+
+| `p20_e_kcap` | deterministic | sampled |
+|---|---|---|
+| state repeats | **1905** in 94/100 | **524** in 91/100 |
+| replay ratio at k=10 | 0.112 | 0.285 |
+| `abs_turn` per step | 0.1445 | 0.3014 |
+
+Deterministically the capped policy is trapped in the closed orbits of §18.6's
+constant curl. Its own sampling noise — the noise the cap *forces it to keep* —
+perturbs the state enough to escape them. The doubling of `abs_turn` is that
+noise doing the work.
+
+So the cap is not mainly a coverage handicap. It is a handicap **to the mean
+policy**, and the policy is not deployed as its mean.
+
+### 23.2 §22 survives, for the arm that matters
+
+`p20_e` barely moves: coverage 0.3881 → 0.3870, repeats 438 → 408, replay ratio
+0.125 → 0.160. It **still replays on a state repeat under sampling**, so
+"learned vector field, not a memory-based explorer" is a property of the policy
+and not of the evaluation. Its noise is smaller (κ ≈ 50 ⇒ ~8°/step against the
+capped arm's ~16°) and its field has few closed orbits to escape.
+
+### 23.3 What this changes
+
+- **§18.4's headline is retracted to ~3%.** The direction still holds — the cap
+  costs something — but the magnitude was mostly measurement.
+- **§18.6's constant curl is still real** and still what makes the capped
+  policy's mean useless. Sampling rescues the *behaviour*, not the field.
+- **Deterministic evaluation systematically penalises policies whose noise is
+  functional**, which for a search task is a real bias, not a nicety. That is
+  `project_incontext_teacher_swap`'s lesson arriving in a second workstream.
+- **Explore should be scored sampled from here on**, or at minimum both ways.
+  Every `swept_coverage` number in §18–§19 is the deterministic figure.
+
+**Not established:** whether the training-time evals (the `cells_per_step` and
+`swept_coverage` series behind §18.4's 16-of-16 comparison) move the same way.
+Those are also deterministic (`world_setup.py:614`), so the *series* comparison
+inherits the same bias — but a converged-checkpoint result does not
+automatically transfer to every point on a learning curve.

@@ -104,7 +104,8 @@ def _circular_sd_np(kappa):
 def rollout(*, agent, env, env_offset, vectorhash, hopfields, cfg, device,
             starts, max_steps, ends_on_arrival, goal_in_memory,
             q_rescale=None, q_scale=None,
-            signal_hopfields=None, signal_mask_fn=None, q_transform=None):
+            signal_hopfields=None, signal_mask_fn=None, q_transform=None,
+            deterministic: bool = True):
     """One trial per Hopfield, in parallel, recording everything.
 
     The three intervention hooks are no-ops unless passed, so the observational
@@ -242,7 +243,14 @@ def rollout(*, agent, env, env_offset, vectorhash, hopfields, cfg, device,
 
         rnn_input = channels.build_policy_input(
             input_specs, values, batch_size=B).unsqueeze(1)
-        result = agent.get_action_and_value(rnn_input, h_rnn, deterministic=True)
+        # `deterministic` defaults True, which is what every number in
+        # the P2 doc was measured under. It is a parameter because §22
+        # found the policy REPLAYS on a state repeat under the mean
+        # action, and sampled rollouts are the control for whether that
+        # is a property of the policy or of switching the noise off
+        # (§20.4).
+        result = agent.get_action_and_value(rnn_input, h_rnn,
+                                            deterministic=deterministic)
         h_rnn = result["h_next"]
         actions = result["move_action"].cpu().numpy().reshape(B, -1)
         prev_action_t = result["move_action"].float().view(B, -1)

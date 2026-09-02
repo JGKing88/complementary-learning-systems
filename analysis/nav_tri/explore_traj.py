@@ -274,7 +274,8 @@ def collect(args):
                 agent=agent, env=env, env_offset=off, vectorhash=vh,
                 hopfields=hops, cfg=cfg, device=device, starts=starts,
                 max_steps=args.max_steps,
-                ends_on_arrival=False, goal_in_memory=False)
+                ends_on_arrival=False, goal_in_memory=False,
+                deterministic=args.deterministic)
             per_ckpt[lab] = rec
 
         for b in range(args.trials):
@@ -318,6 +319,12 @@ def main():
     p.add_argument("--split", default="recorded")
     p.add_argument("--val_seed", type=int, default=0)
     p.add_argument("--seed", type=int, default=42)
+    p.add_argument("--deterministic", action=argparse.BooleanOptionalAction,
+                   default=True,
+                   help="Act on the distribution MEAN (default, and what every "
+                        "P2 number was measured under) or SAMPLE. Sampling is "
+                        "the control for the replay finding: noise perturbs "
+                        "the state and should break a closed orbit.")
     p.add_argument("--device", default="cuda")
     p.add_argument("--json", required=True)
     args = p.parse_args()
