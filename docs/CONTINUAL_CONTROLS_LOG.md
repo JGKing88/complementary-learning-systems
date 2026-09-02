@@ -2141,3 +2141,79 @@ better than we thought". It is that the substrate got easier, which the floor
 (0.046 -> 0.131) and the ceiling budget (8000 -> 1000 updates) already say
 independently. The comparison that survives is each method against its own
 space's floor and ceiling, not across the two panels.
+
+---
+
+## 2026-09-02 — the discrete method waves: replay very nearly solves it
+
+wave1d (224 tasks) and wave2d (200 tasks) both came back with every task OK.
+424 runs, no failures.
+
+### Normalised by each space's own floor and ceiling
+
+This is the comparison registered before the waves landed, and the only one
+that survives the fact that the substrate changed. "Headroom" is the fraction
+of the gap between that action space's naive floor and its joint ceiling that
+the method actually closes: `(retained - floor) / (ceiling - floor)`, with
+floors 0.044 (continuous) and 0.298 (discrete) and a ceiling of 0.998 in both.
+
+| arm | continuous retained | headroom | discrete retained | headroom |
+|---|---|---|---|---|
+| R_none (floor) | 0.044 | 0% | 0.298 | 0% |
+| **ER, unbounded, rb4** | 0.419 | 39% | **0.961** | **95%** |
+| ER, buffer 200, rb4 | 0.404 | 38% | 0.925 | 90% |
+| CLEAR, clone_coef 1 | — | — | 0.912 | 88% |
+| ER, buffer 50, rb4 | 0.256 | 22% | 0.725 | 61% |
+| online EWC, lam 1e4 | 0.168 | 13% | 0.583 | 41% |
+| SI, lam 1e3 | 0.125 | 8% | 0.521 | 32% |
+| DER++, alpha 1 | 0.168 | 13% | 0.492 | 28% |
+| LwF, alpha 1 | 0.058 | 1% | 0.360 | 9% |
+
+**Every method captures two to three times more of its available headroom in
+the discrete action space.** The normalisation already accounts for the floor
+and the ceiling moving, so this is not the substrate being easier; the same
+methods, measured against their own space's endpoints, genuinely work better
+against a Categorical head than against a Gaussian one.
+
+The headline: **unbounded replay retains 0.961 against a 0.998 ceiling with no
+task id at all** -- 95% of the headroom, forgetting of 0.036, and current-env
+0.985. In continuous the identical arm captured 39%. The best continuous result
+in the whole suite was XdG+SI at 0.739 retained, and that arm is handed an
+oracle task id; plain replay in discrete beats it without one.
+
+### What this says about the paper's question
+
+"Can an agent quickly learn, learn after many envs, and retain knowledge about
+navigation to a goal via SGD?" In the discrete action space the answer for
+retention is close to yes, and it is replay that does it. In the continuous
+space the honest answer was "partially" -- and a large part of that shortfall
+was the action parameterisation rather than the continual-learning problem.
+That is a result about the experiment as much as about the methods, and it is
+the reason the discrete suite was worth running rather than merely worth
+mentioning as a robustness check.
+
+### The regularisers still fall into the plasticity trap, exactly where predicted
+
+The calibration table said where the bc_loss starts climbing, and the runs
+land there. At the top of each range the retention number goes up while the
+current-environment score collapses:
+
+    EWC   lam 1e7   retained 0.303   current 0.210
+    SI    lam 1e6   retained 0.301   current 0.210
+    CLEAR cc 1e3    retained 0.301   current 0.155
+    LwF   alpha 1e3 retained 0.274   current 0.201
+
+Those retention figures are all ~0.30, which is the naive floor -- they are not
+results, they are a network that has stopped learning anything. The
+`USABLE_CURRENT = 0.5` gate shades every one of them out, which is what it is
+for, and the calibration table predicted the location in advance rather than
+after a wasted wave.
+
+### Still open
+
+The from-scratch question from the Wave-0 entry is unresolved and now sharper:
+A2 (from scratch, no pretraining) reaches 0.107 retained / 0.875 current, so the
+discrete from-scratch arm learns its current environment nearly as well as the
+pretrained one (0.991) but retains far less. The methods were run on the
+pretrained arm as planned. Whether replay does the same work from scratch is a
+one-wave question and would remove the pretraining confound entirely.
