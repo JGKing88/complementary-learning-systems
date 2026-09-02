@@ -1074,6 +1074,52 @@ case "$VARIANT" in
     EVAL_SCOPE=expl; EVAL_EVERY=25; CKPT_EVERY=25
     ;;
 
+  # === P24 -- lever B: force Tier-2 with an auxiliary visitation head =======
+  #
+  # 22 measured that the explore policy REPLAYS on a state repeat -- it is a
+  # fixed (position, heading) vector field and does not consult where it has
+  # been. 24 priced what that costs: at the 200-step operational horizon p20_e
+  # gets swept 0.644 and SAMPLING ADDS NOTHING (0.643), against ~0.9 for a
+  # perfect lawnmower. Only memory recovers that; noise cannot.
+  #
+  # AUX_VISITED_WEIGHT puts a BCE head on the trunk predicting which of 8
+  # compass cells at radius 3 the agent has already visited. Training-time
+  # oracle only -- no change to the observation, the reward, or deployment.
+  #
+  # p24_aux is p20_e plus the head, nothing else moved, so p20_e is the control
+  # and needs no re-run. Weight 0.5 is a starting guess: large enough to shape
+  # the trunk against move_loss ~1e-2 and value_loss ~1, small enough that a
+  # BCE near 1.2 does not dominate. If the head learns (aux_visited_loss falls)
+  # but nothing else changes, the weight is the next thing to move.
+  #
+  # THE SUCCESS TEST IS NOT COVERAGE. Coverage could rise from a better field
+  # alone, which is lever A's job, not this one. Tier-2 is achieved iff 22's
+  # REPLAY SIGNATURE BREAKS: same position, same heading, DIFFERENT action,
+  # because the hidden state now carries where the agent has been. Score with
+  # the replay probe on the final checkpoint, then coverage second.
+  #
+  # Prediction on record: aux_visited_loss falls well below its ~1.18 start
+  # (the task is learnable from features -- pinned by test). Whether that
+  # transfers to the POLICY is the open question, and the honest prior is
+  # uncertain: a representation being present does not mean the policy head
+  # uses it, which is exactly what 7.7.2 said about chart_frac and never got
+  # to test.
+  p24_aux)
+    ENCODER=/orcd/pool/003/jackking/cls_runs/sweeps/w52_attract_fwhm/001_att0.5_seed=43/encoder_final.pt
+    ENCODER_GAIN=100
+    HOPFIELD_BETA=100
+    SCHEDULE=${SCHEDULE:-'explore:700'}
+    ENVS_PER_WORLD=20; BATCH_ENVS=64
+    EPSILON_EXPLORE=0.1; GOAL_REWARD=2.0
+    PERSISTENCE_BONUS=0.20
+    REGIME_ASSIGNMENT=shuffle
+    ACTION_POLAR=1; STATE_DEPENDENT_STD=1; FREEZE_LOG_STD=0
+    MIN_ACTION_NORM=0.5; MAX_ACTION_NORM=1.0
+    AUX_VISITED_WEIGHT=0.5
+    AUX_VISITED_RADIUS=3.0
+    EVAL_SCOPE=expl; EVAL_EVERY=25; CKPT_EVERY=25
+    ;;
+
   *)
     echo "ERROR: unknown VARIANT=$VARIANT" >&2; exit 1 ;;
 esac
