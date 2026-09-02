@@ -536,6 +536,137 @@ class TestNewTargets:
         assert all(v.shape[0] == T * B for v in tg.values())
 
 
+class _SubspaceAgent:
+    """action = (h . d) * v, so ONLY the direction `d` of h reaches the action.
+
+    The ground truth the targeted splice has to recover: swapping `d` must move
+    the action and swapping anything orthogonal to it must not.
+    """
+
+    def __init__(self, d, obs_dim):
+        self.d = torch.as_tensor(d, dtype=torch.float64)
+        self.obs_dim = obs_dim
+
+    def get_action_and_value(self, x, h, deterministic=True):
+        hh = h.permute(1, 0, 2).reshape(x.shape[0], -1).double()
+        a = (hh @ self.d).unsqueeze(-1) * torch.tensor([1.0, -1.0],
+                                                       dtype=torch.float64)
+        return {"move_action": a.unsqueeze(1)}
+
+
+class TestTargetedSplice:
+
+    def _setup(self, seed=0, H=12):
+        rng = np.random.RandomState(seed)
+        n_trials, n_steps = 20, 25
+        n = n_trials * n_steps
+        h = rng.randn(n, H)
+        d = np.zeros(H)
+        d[0] = 1.0                       # the only direction the agent reads
+        return (rng, rng.randn(n, 5), h, d,
+                np.repeat(np.arange(n_trials), n_steps))
+
+    def test_the_read_subspace_moves_the_action(self):
+        rng, obs, h, d, trial = self._setup()
+        agent = _SubspaceAgent(d, 5)
+        got = sp.subspace_splice(agent, obs, h, trial, d[:, None].copy(),
+                                 1, torch.device("cpu"), rng)
+        assert got["ratio"] > 5.0
+        assert got["frac_of_full"] == pytest.approx(1.0, abs=0.05)
+
+    def test_an_orthogonal_subspace_does_not(self):
+        """The control that makes the result mean something: a direction the
+        agent provably ignores must score ~0 even though it is a real, equally
+        large perturbation of h."""
+        rng, obs, h, d, trial = self._setup()
+        agent = _SubspaceAgent(d, 5)
+        other = np.zeros((len(d), 1))
+        other[3, 0] = 1.0
+        got = sp.subspace_splice(agent, obs, h, trial, other, 1,
+                                 torch.device("cpu"), rng)
+        assert got["d_sub"] < 1e-9
+
+    def test_the_splice_leaves_the_complement_untouched(self):
+        rng = np.random.RandomState(0)
+        h = rng.randn(50, 8)
+        don = rng.permutation(50)
+        B = np.linalg.qr(rng.randn(8, 2))[0]
+        g = h - (h @ B) @ B.T + (h[don] @ B) @ B.T
+        # orthogonal component identical, in-subspace component the donor's
+        assert np.allclose(g - (g @ B) @ B.T, h - (h @ B) @ B.T)
+        assert np.allclose(g @ B, h[don] @ B)
+
+
+class TestOrthAgainst:
+
+    def test_it_removes_the_shared_directions(self):
+        """A target subspace that is ENTIRELY position inherits position's
+        causal punch; after residualising there is nothing left of it."""
+        R = np.eye(6)[:, :2]
+        Q = np.eye(6)[:, :2]                    # identical to R
+        assert sp._orth_against(Q, R).shape[1] == 0
+
+    def test_it_keeps_the_part_that_is_its_own(self):
+        R = np.eye(6)[:, :1]
+        Q = np.eye(6)[:, [0, 3]]                # one shared, one its own
+        out = sp._orth_against(Q, R)
+        assert out.shape[1] == 1
+        assert abs(out[3, 0]) > 0.99
+        assert abs(float(R[:, 0] @ out[:, 0])) < 1e-9
+
+    def test_the_residual_is_still_orthonormal(self):
+        rng = np.random.RandomState(0)
+        R = np.linalg.qr(rng.randn(20, 2))[0]
+        Q = np.linalg.qr(rng.randn(20, 5))[0]
+        out = sp._orth_against(Q, R)
+        assert np.allclose(out.T @ out, np.eye(out.shape[1]), atol=1e-8)
+
+    def test_a_subspace_read_only_via_position_loses_its_effect(self):
+        """End to end: the agent reads direction 0 only, and the 'target'
+        subspace is direction 0 plus an ignored one. Raw splice looks causal;
+        with position projected out it is not."""
+        rng = np.random.RandomState(0)
+        # H must be well above the rank or the control is not a control: a
+        # random 2-plane in 12 dims already captures 1/6 of any direction, so
+        # the ratio saturates near 2.4 there. The real trunk is 1024.
+        n, H = 400, 64
+        h, obs = rng.randn(n, H), rng.randn(n, 5)
+        trial = np.repeat(np.arange(20), 20)
+        d = np.zeros(H)
+        d[0] = 1.0
+        agent = _SubspaceAgent(d, 5)
+        Q = np.eye(H)[:, [0, 5]]
+        raw = sp.subspace_splice(agent, obs, h, trial, Q, 1,
+                                 torch.device("cpu"), rng)
+        res = sp.subspace_splice(agent, obs, h, trial,
+                                 sp._orth_against(Q, d[:, None].copy()), 1,
+                                 torch.device("cpu"), rng)
+        assert raw["ratio"] > 3.0
+        assert res["d_sub"] < 1e-9
+
+
+class TestReadoutSubspace:
+
+    def test_it_finds_the_direction_that_codes_the_target(self):
+        rng = np.random.RandomState(0)
+        h = rng.randn(400, 10)
+        Y = h[:, [2]] * 2.0                       # only unit 2 codes Y
+        Q = sp._readout_subspace(h, Y, alpha=1e-3)
+        assert Q.shape[1] == 1
+        assert abs(Q[2, 0]) > 0.95                # ... and it is recovered
+
+    def test_the_basis_is_orthonormal(self):
+        rng = np.random.RandomState(1)
+        h = rng.randn(400, 10)
+        Q = sp._readout_subspace(h, rng.randn(400, 3))
+        assert np.allclose(Q.T @ Q, np.eye(Q.shape[1]), atol=1e-8)
+
+    def test_rank_never_exceeds_the_target_width(self):
+        rng = np.random.RandomState(2)
+        h = rng.randn(400, 32)
+        assert sp._readout_subspace(h, rng.randn(400, 4)).shape[1] <= 4
+
+
 class TestEffectiveN:
 
     def test_a_within_trial_constant_target_reports_trial_count(self):

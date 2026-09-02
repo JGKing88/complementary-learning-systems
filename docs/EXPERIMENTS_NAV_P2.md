@@ -7518,3 +7518,59 @@ further back. Two readings survive:
 **The cheap decider, not yet run:** extend `POS_LAGS` to (2, 5, 10, 20, 30, 50,
 100) and read the profile. Memory must fall monotonically with lag; a baseline
 artefact will keep climbing. No new machinery, one flag.
+
+### 30.14 The targeted splice — which content the policy actually reads
+
+The whole-state swap (§30.2) replaces position, clock and map at once, so it
+says the state matters and never WHICH content matters. `--splice_targets`
+fits a linear readout subspace of `h` for a named target on the TRAIN trials,
+then on held-out trials swaps **only that subspace** for a donor episode's,
+leaving the orthogonal complement untouched.
+
+Two controls, both required:
+
+* a **random subspace of the same rank** — any k-dimensional perturbation of
+  `h` moves the action somewhat, so `ratio > 1` is the claim, never `d_sub`;
+* **`ratio-pos`**, the same thing with the position directions projected out
+  of the target subspace. The decoders are not orthogonal — visitation near a
+  wall is partly a statement about where you are — and every arm reads
+  position at ~10x, so a map subspace can inherit its punch from position.
+
+| | `p20_e` | `kcap` | `p24_aux` | `p25_visin` |
+|---|---|---|---|---|
+| pos ratio (rank 2) | **11.99** | 10.53 | 10.21 | 9.78 |
+| pos frac of full swap | 0.259 | 0.320 | 0.189 | 0.291 |
+| occupancy ratio (rank 16) | 1.74 | 1.46 | **3.04** | 1.32 |
+| occupancy **ratio-pos** | 1.53 | 1.42 | **3.52** | 0.98 |
+| occupancy frac of full swap | 0.139 | 0.121 | 0.134 | 0.126 |
+
+**Every policy here reads position, and little else.** Two directions out of
+1024 carry a quarter to a third of the entire state's causal influence, at
+10-12x a random 2-plane, on all four arms regardless of what else is in there.
+
+**Only `p24_aux` reads a map**, at 3.52x after position is removed against
+0.98-1.53 elsewhere — and residualising RAISES it, so it is not position in
+disguise.
+
+### 30.15 Lever B, finally settled — all five claims measured
+
+| claim | measure | verdict |
+|---|---|---|
+| the map exists | occupancy `delta_flow` 0.136 vs 0.035 | **yes** |
+| the policy reads it | `ratio-pos` 3.52 vs 1.53 | **yes** |
+| it is a major input | 0.134 of the full swap from 16 dims, vs position's 0.189 from 2 — ~11x less per direction | **no** |
+| the aux head raised its priority | share of full swap 0.134 vs the control's 0.139 | **no** |
+| coverage improved (§27) | — | **no** |
+
+So lever B failed for **neither** of the two reasons this diagnostic was built
+to separate. Not "no representation" (§27's reading) and not "content the
+policy ignores" (§30.7's reading, and the framing this tool was designed
+around). It is a third mode: **a real, causally-read representation that never
+became a priority.** The aux head made the state matter more overall
+(`state_influence` 0.310 vs 0.209) and put a genuine map in it, and the map's
+share of the policy's state-driven behaviour did not move at all.
+
+That reframes what a lever C should do. Adding representation is not the
+problem and neither is making it readable; the problem is that position
+dominates the state's influence on the action by an order of magnitude per
+direction, and nothing tried so far changes that ratio.

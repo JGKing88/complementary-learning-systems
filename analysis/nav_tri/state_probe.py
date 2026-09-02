@@ -322,6 +322,75 @@ def _donor(trial, rng, step=None):
     return idx
 
 
+def _readout_subspace(h, Y, alpha=100.0):
+    """Orthonormal basis for the directions of h that code Y.
+
+    The ridge decoder's weight matrix (H, k) spans the subspace a linear
+    readout of Y would look at; its left singular vectors are that subspace's
+    basis. Fit on TRAIN rows only, so the splice is evaluated on states the
+    subspace was not chosen against.
+    """
+    Z = h - h.mean(0)
+    A = Z.T @ Z
+    A[np.diag_indices_from(A)] += alpha
+    W = np.linalg.solve(A, Z.T @ (Y - Y.mean(0)))
+    Q, s, _ = np.linalg.svd(W, full_matrices=False)
+    return Q[:, s > s[0] * 1e-6] if s[0] > 0 else Q[:, :1]
+
+
+def _orth_against(Q, R):
+    """Q with the span of R projected out, re-orthonormalised.
+
+    The USE-side counterpart of the content ladder. The occupancy, visited8 and
+    position decoders are not orthogonal -- visitation near a wall is partly a
+    statement about where you are -- so a target subspace can inherit its
+    causal punch from the position directions, which every arm reads at ~10x
+    random. This asks what the subspace does once position is taken out.
+    """
+    P = Q - R @ (R.T @ Q)
+    U, s, _ = np.linalg.svd(P, full_matrices=False)
+    return U[:, s > max(float(s[0]), EPS) * 1e-6] if s.size else P
+
+
+def subspace_splice(agent, obs, h, trial, Q, n_layers, device, rng,
+                    n_rand=3) -> dict:
+    """Swap ONLY the component of h inside Q, keeping the rest intact.
+
+    The whole-state swap in `use_probes` replaces position, clock and map at
+    once, so it says the state matters -- never WHICH content matters. This
+    replaces one readout subspace and leaves its orthogonal complement alone,
+    which is the question "does the policy read *this*".
+
+    The random-subspace control is not optional: any k-dimensional
+    perturbation of h moves the action somewhat, so `d_sub` alone is
+    uninterpretable. `ratio` above 1 is the claim.
+    """
+    base = _act(agent, obs, h, n_layers, device)
+    don = _donor(trial, rng)
+
+    def swap(B):
+        # Project out this subspace and write the donor's component back in;
+        # every direction orthogonal to B is untouched.
+        g = h - (h @ B) @ B.T + (h[don] @ B) @ B.T
+        return float(np.linalg.norm(
+            _act(agent, obs, g, n_layers, device) - base, axis=1).mean())
+
+    d_sub = swap(Q)
+    rand = [swap(np.linalg.qr(rng.randn(h.shape[1], Q.shape[1]))[0])
+            for _ in range(n_rand)]
+    d_rand = float(np.mean(rand))
+    d_full = float(np.linalg.norm(
+        _act(agent, obs, h[don], n_layers, device) - base, axis=1).mean())
+    return {
+        "rank": int(Q.shape[1]),
+        "d_sub": d_sub,
+        "d_rand": d_rand,
+        "d_full": d_full,
+        "ratio": d_sub / max(d_rand, EPS),
+        "frac_of_full": d_sub / max(d_full, EPS),
+    }
+
+
 def use_probes(agent, obs, h, trial, step, n_layers, device, rng,
                lags=(1, 2, 5, 10, 20, 50)) -> dict:
     """How much of the action is driven by state rather than observation."""
@@ -590,6 +659,32 @@ def report(res: dict, label: str) -> None:
     # storing anything an explorer can use, and deltaR2 alone would call it
     # content. `elapsed` itself is excluded -- the clock regressor contains it,
     # so its delta_clk is 0 by construction and means nothing.
+    sp_ = res.get("splice") or {}
+    if sp_:
+        print("\n  TARGETED SPLICE -- swap ONE readout subspace, keep the rest")
+        print("    %-12s %5s %9s %10s %8s %11s %7s %11s"
+              % ("subspace", "rank", "d_sub", "d_random", "ratio",
+                 "frac_full", "-pos", "ratio-pos"))
+        for t, v in sp_.items():
+            print("    %-12s %5d %9.4f %10.4f %8.2f %11.3f %7s %11s"
+                  % (t, v["rank"], v["d_sub"], v["d_rand"], v["ratio"],
+                     v["frac_of_full"],
+                     v.get("rank_resid", "-"),
+                     "-" if "ratio_resid" not in v
+                     else "%.2f" % v["ratio_resid"]))
+        print("    ratio vs a RANDOM subspace of the same rank. Any "
+              "k-dimensional")
+        print("    perturbation moves the action, so ratio > 1 is the claim, "
+              "not d_sub.")
+        print("    ratio-pos repeats it with the POSITION directions projected "
+              "out. The")
+        print("    decoders overlap -- visitation near a wall is partly a "
+              "statement about")
+        print("    where you are -- and every arm reads position at ~10x, so a "
+              "subspace can")
+        print("    inherit its punch from position. This is the number that "
+              "does not.")
+
     rows = {k: v for k, v in c.items() if not k.startswith("_")}
     col, skip = "delta", set()
     if any("delta_clk" in v for v in rows.values()):
@@ -735,6 +830,17 @@ def main() -> None:
                         "onto the trunk sees (`features`); use it to compare "
                         "against an aux-head loss, since a probe on h_t and a "
                         "head on h_{t+1} are not the same quantity (§30.7).")
+    p.add_argument("--splice_targets", nargs="*",
+                   default=["occupancy", "visited8", "pos"],
+                   help="TARGETED SPLICE. The whole-state swap says the state "
+                        "matters, never WHICH content matters -- it replaces "
+                        "position, clock and map at once. For each target "
+                        "named here the probe fits a linear readout subspace "
+                        "of h, swaps only that subspace for a donor "
+                        "episode's, and leaves the orthogonal complement "
+                        "intact. Scored against a RANDOM subspace of the same "
+                        "rank, without which the number is uninterpretable. "
+                        "Empty to skip.")
     p.add_argument("--lags", type=int, nargs="*",
                    default=[1, 2, 5, 10, 20, 50])
     p.add_argument("--device", default="cuda")
@@ -832,6 +938,35 @@ def main() -> None:
                               own.agent.num_rnn_layers, device, rng,
                               tuple(args.lags)),
         }
+        # Targeted splice: fit the readout subspace on TRAIN trials, then swap
+        # only that subspace on the HELD-OUT ones, so the directions were not
+        # chosen against the states they are tested on.
+        if args.splice_targets:
+            str_, ste = _split_trials(trial, args.test_frac,
+                                      np.random.RandomState(args.seed))
+            res["splice"] = {}
+            qpos = _readout_subspace(hid[str_], targets["pos"][str_])
+            for t in args.splice_targets:
+                if t not in targets:
+                    print(f"  NOTE no target {t!r}; skipping its splice.")
+                    continue
+                Q = _readout_subspace(hid[str_], targets[t][str_])
+                row = subspace_splice(
+                    agent, obs[ste], hid[ste], trial[ste], Q,
+                    own.agent.num_rnn_layers, device,
+                    np.random.RandomState(args.seed))
+                if t != "pos":
+                    # ... and again with the position directions removed.
+                    Qr = _orth_against(Q, qpos)
+                    r = subspace_splice(
+                        agent, obs[ste], hid[ste], trial[ste], Qr,
+                        own.agent.num_rnn_layers, device,
+                        np.random.RandomState(args.seed))
+                    row["rank_resid"] = r["rank"]
+                    row["d_sub_resid"] = r["d_sub"]
+                    row["ratio_resid"] = r["ratio"]
+                    row["frac_resid"] = r["frac_of_full"]
+                res["splice"][t] = row
         report(res, path)
         out[path] = res
 
