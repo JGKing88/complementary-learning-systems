@@ -88,7 +88,17 @@ def collect_methods(hist_dir: str) -> list[dict]:
             continue
         if not hist.get("blocks"):
             continue
-        groups[re.sub(r"_s\d+$", "", base)].append(M.summarize(hist))
+        summary = M.summarize(hist)
+        # Total work this run did, for the cost axis of the frontier. Read off
+        # the last cumulative entry rather than summed, because the trace is
+        # already cumulative. None for any history written before the counter
+        # existed, which the page must render as "not measured" rather than as
+        # zero -- a method plotted at zero compute would sit exactly where the
+        # Hopfield store belongs.
+        run_cost = hist.get("cost") or []
+        summary["trunk_steps"] = int(run_cost[-1][1]) if run_cost else None
+        summary["trunk_steps_bwd"] = int(run_cost[-1][2]) if run_cost else None
+        groups[re.sub(r"_s\d+$", "", base)].append(summary)
 
     out = []
     for label, rs in sorted(groups.items()):
@@ -111,7 +121,8 @@ def collect_methods(hist_dir: str) -> list[dict]:
         }
         for k in ("retained", "current_env", "forgetting", "bwt",
                   "stability_gap", "episodes_to_criterion",
-                  "criterion_censored_frac", "state_bytes"):
+                  "criterion_censored_frac", "state_bytes",
+                  "trunk_steps", "trunk_steps_bwd"):
             row[k] = _mean([r[k] for r in rs])
             row[k + "_sem"] = _sem([r[k] for r in rs])
         out.append(row)
