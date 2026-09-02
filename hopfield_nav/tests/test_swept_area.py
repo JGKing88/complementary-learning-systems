@@ -10,6 +10,44 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
+from analysis.nav_tri.swept_from_traj import swept_for
+
+
+class TestSweptFromTraj:
+    """The matched-comparison reducer. It must agree with the online metric,
+    since its whole purpose is to put arms whose training logs disagree about
+    what they recorded onto one protocol."""
+
+    def test_a_still_agent_sweeps_one_disc(self):
+        per, union, T = swept_for([np.zeros((10, 2)) + 10.0], 20, 1.0)
+        # pi r^2 / size^2, up to the raster quantisation
+        assert per[0] == pytest.approx(np.pi / 400.0, rel=0.1)
+        assert union == pytest.approx(per[0])
+        assert T == 10
+
+    def test_at_step_truncates_and_is_cumulative(self):
+        path = np.stack([np.linspace(2, 18, 40), np.full(40, 10.0)], axis=1)
+        short, _, ts = swept_for([path], 20, 1.0, at_step=10)
+        full, _, tf = swept_for([path], 20, 1.0)
+        assert ts == 10 and tf == 40
+        assert short[0] < full[0]
+
+    def test_paths_of_different_lengths_use_the_shortest(self):
+        """Arms that stopped at different steps must not be compared over
+        different horizons -- swept is cumulative, so that alone would rank
+        them."""
+        a = np.zeros((30, 2)) + 5.0
+        b = np.zeros((12, 2)) + 5.0
+        _, _, T = swept_for([a, b], 20, 1.0)
+        assert T == 12
+
+    def test_union_is_at_least_the_best_trial(self):
+        p1 = np.zeros((8, 2)) + 4.0
+        p2 = np.zeros((8, 2)) + 15.0
+        per, union, _ = swept_for([p1, p2], 20, 1.0)
+        assert union >= per.max() - 1e-9
+        assert union == pytest.approx(per.sum(), rel=0.05)   # disjoint discs
+
 from hopfield_nav.evaluation.swept import SweptArea
 
 
