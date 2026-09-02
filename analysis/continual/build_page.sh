@@ -52,9 +52,30 @@ done
     --staircase_dir "$MERGED" \
     --out "$DATA"
 
-"$PY" -u -m analysis.continual.results_page --data "$DATA" --out "$PAGE"
+# The discrete suite, built through the identical pipeline with its own
+# directories and its own joint tag. --joint_tag is load-bearing: the T0.1 runs
+# live under runs/rnn/ rather than in the histories directory, so pointing only
+# the history dirs at the discrete wave would leave a Gaussian-head ceiling as
+# the denominator of a Categorical page.
+DATA_D="$OUT_DIR/continual_results_discrete.json"
+if [[ -d "$CLS_HISTORIES/wave1d" ]]; then
+    "$PY" -u -m analysis.continual.results_data \
+        --wave0_dir     "$CLS_HISTORIES/wave0d" \
+        --wave1_dir     "$CLS_HISTORIES/wave1d" \
+        --recorded_dir  "$CLS_HISTORIES" \
+        --runs_root     "$CLS_RUNS" \
+        --joint_tag     wave0d \
+        --out "$DATA_D"
+else
+    echo "[build_page] no discrete wave yet; page will carry one action space"
+    DATA_D=""
+fi
+
+"$PY" -u -m analysis.continual.results_page --data "$DATA" \
+    ${DATA_D:+--data_discrete "$DATA_D"} --out "$PAGE"
 "$PY" -u -m analysis.continual.validate_page "$PAGE"
 
 echo
 echo "data: $DATA"
+[[ -n "$DATA_D" ]] && echo "data (discrete): $DATA_D"
 echo "page: $PAGE"

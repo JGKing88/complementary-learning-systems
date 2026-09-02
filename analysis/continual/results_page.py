@@ -61,6 +61,19 @@ CSS = """
 body{margin:0;background:var(--ground);color:var(--ink);font-family:var(--sans);
      font-size:16.5px;line-height:1.62;-webkit-font-smoothing:antialiased}
 .wrap{max-width:1080px;margin:0 auto;padding:0 var(--s4) var(--s6)}
+.switch{position:sticky;top:0;z-index:20;background:var(--ground);
+  border-bottom:1px solid var(--rule)}
+.switch .in{max-width:1080px;margin:0 auto;padding:10px var(--s4);
+  display:flex;gap:10px;align-items:baseline}
+.switch .lb{font:500 12px var(--sans);color:var(--muted);
+  letter-spacing:.04em;text-transform:uppercase}
+.switch button{font:500 13px var(--sans);color:var(--ink-2);cursor:pointer;
+  background:transparent;border:1px solid var(--rule);border-radius:999px;
+  padding:4px 14px}
+.switch button:hover{border-color:var(--rule-strong)}
+.switch button[aria-selected="true"]{background:var(--accent-soft);
+  border-color:var(--accent);color:var(--accent)}
+.switch .note{font:12px var(--sans);color:var(--muted);margin-left:auto}
 header.mast{padding:var(--s6) 0 var(--s4);border-bottom:1px solid var(--rule);
             margin-bottom:var(--s5)}
 .eyebrow{font-family:var(--mono);font-size:11px;text-transform:uppercase;
@@ -403,7 +416,8 @@ def best_per_family(methods: list[dict]) -> list[dict]:
     return sorted(out, key=lambda r: -(r["retained"] or 0.0))
 
 
-def frontier_row(r: dict) -> str:
+def frontier_row(r: dict, disc: dict | None = None,
+                 show_disc: bool = False) -> str:
     """One `<tr>` of the frontier table.
 
     Pulled out of the section because the table is rendered in two groups --
@@ -434,7 +448,24 @@ def frontier_row(r: dict) -> str:
             f'<td class="num">{fmt(r["current_env"])}</td>'
             f'<td class="num">{fmt(r["forgetting"])}</td>'
             f'<td class="num">{esc(mb(r["state_bytes"]))}</td>'
-            f"<td>{needs}</td></tr>")
+            + (_disc_cell(disc) if show_disc else "")
+            + f"<td>{needs}</td></tr>")
+
+
+def _disc_cell(disc: dict | None) -> str:
+    """The same arm's best discrete configuration, or a dash.
+
+    Retention only. The two spaces have different naive floors (0.04 against
+    0.30), so the raw numbers are not the comparison -- the fraction of
+    available headroom is, and that lives on the discrete page where both
+    endpoints are in view. This column is here to say which arms were re-run
+    and roughly where they landed, not to rank one space against the other.
+    """
+    if not disc or disc.get("retained") is None:
+        return '<td class="num">—</td>'
+    return (f'<td class="num">{fmt(disc["retained"])}'
+            f'<br><span style="color:var(--muted);font-size:12px">'
+            f'cur {fmt(disc["current_env"], 2)}</span></td>')
 
 
 def degenerate_rows(methods: list[dict]) -> list[dict]:
@@ -697,7 +728,100 @@ def ratio_svg(series, ceiling=None, hopfield=None) -> str:
     return "".join(o)
 
 
-def render(d: dict) -> str:
+def _renumber_sections(html: str) -> str:
+    """Rewrite the section chips so they count the sections that were emitted.
+
+    The numbers are written literally at each heading, which was fine while
+    every page had all twelve. The discrete page does not: there is no wave-3
+    isolation family, no in-context arm and no N=20 panel for it, and those
+    sections are guarded off. Left alone the reader would get 1, 2, 3, 4, 6,
+    12 and reasonably conclude the page was broken. Renumbering after the fact
+    keeps the headings authored in one place.
+    """
+    n = [0]
+
+    def bump(_m):
+        n[0] += 1
+        return f'<span class="sec">{n[0]}</span>'
+
+    return re.sub(r'<span class="sec">\d+</span>', bump, html)
+
+
+def floor_ceiling(dd: dict) -> tuple:
+    """(naive floor, converged joint ceiling) for one action space.
+
+    Both are read out of that space's own runs. Hardcoding either would make
+    the headroom figure below quietly wrong the first time a wave is re-run,
+    and the whole point of the figure is that the endpoints moved.
+    """
+    ms = dd.get("methods", [])
+    ref = next((m for m in ms if m["arm"] == "R"), None)
+    floor = ref["retained"] if ref and ref["retained"] is not None else None
+    conv = [j for j in dd.get("joint", [])
+            if abs(j.get("end_slope") or 0) <= 0.02 and (j.get("final") or 0) > 0.5]
+    ceiling = max((j["final"] for j in conv), default=None)
+    return floor, ceiling
+
+
+def headroom_table(here: dict, there: dict) -> str:
+    """How much of each space's own floor-to-ceiling gap a method actually closes.
+
+    The comparison that survives the substrate changing. Raw retention across
+    the two spaces is not readable -- the naive floor moves from 0.04 to 0.30 --
+    so every arm is scored as `(retained - floor) / (ceiling - floor)` against
+    the endpoints measured in its own space.
+    """
+    f_here, c_here = floor_ceiling(here)
+    f_there, c_there = floor_ceiling(there)
+    if None in (f_here, c_here, f_there, c_there):
+        return ""
+    a = {r["arm"]: r for r in best_per_family(here.get("methods", []))}
+    b = {r["arm"]: r for r in best_per_family(there.get("methods", []))}
+    # The from-scratch arms are excluded, not forgotten. `floor` here is the
+    # *pretrained* naive reference, and A2/L0 never saw the pretraining -- so
+    # scoring them against it produces a negative headroom that reads as a
+    # method doing worse than nothing when it is really a different control
+    # measured against the wrong baseline.
+    FROM_SCRATCH = {"A2", "L0"}
+    shared = [k for k in a if k in b and k not in FROM_SCRATCH
+              and a[k]["retained"] is not None
+              and b[k]["retained"] is not None]
+    if not shared:
+        return ""
+
+    def frac(v, lo, hi):
+        return (v - lo) / (hi - lo) if hi > lo else float("nan")
+
+    rows = sorted(shared, key=lambda k: -frac(a[k]["retained"], f_here, c_here))
+    o = ['<div class="tw"><table>']
+    o.append("<thead><tr><th>Method</th>"
+             '<th class="num">Continuous<br>'
+             '<span style="color:var(--muted);font-weight:400;font-size:12px">'
+             "retained</span></th>"
+             '<th class="num">of headroom</th>'
+             '<th class="num">Discrete<br>'
+             '<span style="color:var(--muted);font-weight:400;font-size:12px">'
+             "retained</span></th>"
+             '<th class="num">of headroom</th></tr></thead><tbody>')
+    for k in rows:
+        hh = frac(a[k]["retained"], f_here, c_here)
+        th = frac(b[k]["retained"], f_there, c_there)
+        cls = ' class="hl"' if hh >= 0.9 else ""
+        o.append(f'<tr{cls}><td class="k">{esc(a[k]["display"])}</td>'
+                 f'<td class="num">{fmt(b[k]["retained"])}</td>'
+                 f'<td class="num">{th:.0%}</td>'
+                 f'<td class="num">{fmt(a[k]["retained"])}</td>'
+                 f'<td class="num">{hh:.0%}</td></tr>')
+    o.append(f'<tr><td class="k">floor / ceiling</td>'
+             f'<td class="num" colspan="2">{fmt(f_there)} &rarr; {fmt(c_there)}</td>'
+             f'<td class="num" colspan="2">{fmt(f_here)} &rarr; {fmt(c_here)}</td>'
+             "</tr>")
+    o.append("</tbody></table></div>")
+    return "".join(o)
+
+
+def render_body(d: dict, variant: str = "continuous",
+                other: dict | None = None) -> str:
     P: list[str] = []
     A = P.append
 
@@ -707,13 +831,6 @@ def render(d: dict) -> str:
     methods = d.get("methods", [])
     oracle = d.get("oracle")
 
-    A("<title>Continual Control Results</title>")
-    A('<link rel="preconnect" href="https://fonts.googleapis.com">')
-    A('<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>')
-    A('<link rel="stylesheet" href="https://fonts.googleapis.com/css2?'
-      'family=Spectral:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&'
-      'family=IBM+Plex+Mono:wght@400;500;600&display=swap">')
-    A(f"<style>{CSS}</style>")
     A('<div class="wrap">')
 
     # ---- masthead ----------------------------------------------------
@@ -721,11 +838,21 @@ def render(d: dict) -> str:
     A('<div class="eyebrow"><span>Hopfield-nav</span>'
       f'<span class="dim">Results · {esc(d.get("generated", "")[:10])}</span>'
       '<span class="dim">docs/CONTINUAL_CONTROLS_PLAN.md</span></div>')
-    A("<h1>How good does classic continual learning get?</h1>")
-    A('<p class="stand">State-of-the-art continual-learning methods against '
-      "the Hopfield store on the same environment stream. The comparison is a "
-      "cost frontier, not a leaderboard: retention alone ranks a method that "
-      "refuses to learn above one that works.</p>")
+    if variant == "discrete":
+        A("<h1>The same suite, with a Categorical action head</h1>")
+        A('<p class="stand">Every method re-run under discrete movement — four '
+          "cardinal actions and a cross-entropy loss — against its own oracle, "
+          "joint ceiling and from-scratch floor. The continuous suite's action "
+          "head was a 2-D Gaussian whose mean collapses toward zero wherever "
+          "the goal is uncertain, and this wave exists to find out how much of "
+          "that suite was measuring the parameterisation rather than "
+          "forgetting.</p>")
+    else:
+        A("<h1>How good does classic continual learning get?</h1>")
+        A('<p class="stand">State-of-the-art continual-learning methods against '
+          "the Hopfield store on the same environment stream. The comparison is a "
+          "cost frontier, not a leaderboard: retention alone ranks a method that "
+          "refuses to learn above one that works.</p>")
     A("</header>")
 
     # ---- KPI strip ---------------------------------------------------
@@ -929,18 +1056,31 @@ def render(d: dict) -> str:
       "per environment</strong>, against the store's 0 and 1.</p></div>")
 
     rows = best_per_family(methods)
+    # The other action space's best configuration per arm, keyed by arm so a
+    # method whose best setting differs between the two still lines up.
+    show_disc = bool(other and other.get("methods"))
+    disc_best = ({r["arm"]: r for r in best_per_family(other["methods"])}
+                 if show_disc else {})
+    ncol = 8 if show_disc else 7
     A('<div class="tw"><table>')
     A("<thead><tr><th>Method</th><th>Configuration</th>"
       '<th class="num">Retained</th><th class="num">Current env</th>'
       '<th class="num">Forgetting</th><th class="num">Stored</th>'
-      "<th>Needs</th></tr></thead><tbody>")
+      + ('<th class="num">Discrete<br>'
+         '<span style="color:var(--muted);font-weight:400;font-size:12px">'
+         'retained</span></th>' if show_disc else "")
+      + "<th>Needs</th></tr></thead><tbody>")
     hop_row = ('<tr class="hl"><td class="k">Hopfield store</td>'
                "<td>frozen policy, one Hebbian write</td>"
                f'<td class="num">{bar(hop["retained"], hi=True)}</td>'
                f'<td class="num">{fmt(hop["current_env"])}</td>'
                f'<td class="num">{fmt(hop["forgetting"])}</td>'
                '<td class="num">no data</td>'
-               '<td><span class="chip good">nothing</span></td></tr>'
+               # The store has never been run in the discrete action space --
+               # it is a frozen policy plus a Hebbian write, so porting it is a
+               # real piece of work rather than a flag.
+               + ('<td class="num">—</td>' if show_disc else "")
+               + '<td><span class="chip good">nothing</span></td></tr>'
                ) if hop else None
     # Split, rather than one ranked list. Every isolation arm is handed an
     # oracle task id, and the environments here turn out to be barely
@@ -959,15 +1099,23 @@ def render(d: dict) -> str:
         if not group:
             continue
         if split:
-            A(f'<tr class="grp"><td colspan="7">{esc(label)}</td></tr>')
+            A(f'<tr class="grp"><td colspan="{ncol}">{esc(label)}</td></tr>')
             # The store belongs *inside* the first group, not floating above
             # the headers: it needs no task signal either, and that is the
             # whole point of the row.
             if hop_row and group is free:
                 A(hop_row)
         for r in group:
-            A(frontier_row(r))
+            A(frontier_row(r, disc_best.get(r["arm"]), show_disc))
     A("</tbody></table></div>")
+    if show_disc:
+        A('<p style="color:var(--muted);font-size:13px">The discrete column is '
+          "the same method's best configuration under a Categorical action "
+          "head, from the other page. Do not read the two retention columns "
+          "against each other directly: the naive floor is 0.04 in this space "
+          "and 0.30 in that one, so the fraction of available headroom each "
+          "method closes is the comparison that means something, and it is on "
+          "the discrete page.</p>")
     if told and free:
         A('<div class="note warn"><h4>Why the table is split</h4>'
           "<p>The lower group is told which environment it is in, at training "
@@ -1040,176 +1188,210 @@ def render(d: dict) -> str:
 
     # ---- Tier 0 -------------------------------------------------------
     # ---- parameter isolation (Wave 3) ---------------------------------
-    A('<h2 id="isolate"><span class="sec">5</span> Parameter isolation</h2>')
-    A("<p>Every method above shares one set of weights across every "
-      "environment, and differs only in what the update is trained on or how "
-      "far the weights may move. The third family does something else: it "
-      "gives each environment <em>its own parameters</em>. This is the family "
-      "the recurrent continual-learning literature actually points at — Ehret "
-      "et al. (ICLR 2021) benchmarked online EWC, SI, masking, generative "
-      "replay and coresets across four <em>recurrent</em> benchmarks and found "
-      "hypernetworks beat the weight-importance family consistently. The "
-      "policy here is a GRU.</p>")
+    if variant == "discrete" and other:
+        _ht = headroom_table(d, other)
+        if _ht:
+            A('<h2 id="against"><span class="sec">5</span> '
+              "Against the continuous suite</h2>")
+            A("<p>The two action spaces do not share a scale. The naive floor "
+              "is far higher here and the joint ceiling is the same, so a "
+              "method's raw retention says as much about the substrate as "
+              "about the method. What compares is the fraction of the "
+              "floor-to-ceiling gap each one actually closes, measured against "
+              "the endpoints of its own space.</p>")
+            A(_ht)
+            A('<div class="note acc"><h4>Every method closes more of the gap '
+              "here</h4>"
+              "<p>The normalisation already accounts for the floor moving and "
+              "the ceiling staying put, so this is not the task being easier. "
+              "The same methods, measured against their own endpoints, work "
+              "better against a Categorical head than against a Gaussian one — "
+              "and unbounded replay very nearly closes the gap outright, "
+              "without being told a task boundary or a task id.</p>"
+              "<p>The most likely mechanism is the one this wave was run to "
+              "remove. A 2-D Gaussian fitted to a target that is multimodal "
+              "given the observation returns its mean, and the mean of two "
+              "opposed directions is a near-zero vector — so an uncertain "
+              "continuous policy expresses its uncertainty by moving slowly "
+              "rather than by choosing. A Categorical head can hold the same "
+              "uncertainty as probability mass and still commit to a "
+              "direction.</p></div>")
 
-    ident = d.get("identifiability")
-    if ident:
-        A("<h3>What the oracle task id costs</h3>")
-        A("<p>Every arm in this section is <strong>told which environment it "
-          "is in</strong>, at training time and at evaluation time. Nothing in "
-          "the two families above is, and neither is the Hopfield store. "
-          "Whether that is a decisive advantage or a formality depends "
-          "entirely on how hard the environment is to recognise — so it was "
-          "measured rather than assumed.</p>")
-        A("<p>A classifier is fitted from the agent's own observations to the "
-          "environment index, sweeping a linear and an MLP readout over "
-          "windows of one to sixty-four observations. The split is by "
-          "<em>trajectory</em>, not by frame: consecutive observations of one "
-          "walk are strongly correlated, and a shuffled split would put "
-          "neighbouring timesteps on both sides and report memorisation as "
-          "recognition.</p>")
-        A('<div class="tw"><table>')
-        A("<thead><tr><th>Window</th>"
-          '<th class="num">Linear</th><th class="num">MLP</th>'
-          "</tr></thead><tbody>")
-        for r in ident.get("results", []):
-            A(f"<tr><td class='k'>{r['window']} obs</td>"
-              f'<td class="num">{fmt(r["linear"])}</td>'
-              f'<td class="num">{fmt(r["mlp"])}</td></tr>')
-        A("</tbody></table></div>")
-        A('<div class="note warn"><h4>The task id is real information</h4>'
-          f"<p>Best over every window and every readout tried: "
-          f"<strong>{fmt(ident['best'])}</strong>, against a chance rate of "
-          f"{fmt(ident['chance'])} across {ident['n_envs']} environments "
-          f"({ident['n_trajectories']} random-walk trajectories). The "
-          "environments are only weakly recognisable from what the agent "
-          "sees.</p>"
-          "<p>So the oracle task id is not a formality — it is information no "
-          "method in the previous sections could have recovered for itself. "
-          "Everything below is an <strong>upper bound on its family</strong>, "
-          "and belongs in a separate group in the frontier table rather than "
-          "ranked against methods that were given nothing.</p></div>")
-
-    A("<h3>The architectures</h3>")
-    A('<div class="tw"><table>')
-    A("<thead><tr><th>Architecture</th><th>Mechanism</th>"
-      '<th class="num">Params</th></tr></thead><tbody>')
-    for name, mech, prm in (
-        ("Baseline RNN", "One shared network. What every earlier section runs.",
-         "73,220"),
-        ("HNET, learned base",
-         "A generator maps a learned 32-number code per environment to all "
-         "73k policy weights, added to a base vector warm-started from the "
-         "pretrained checkpoint. The base is free to move, so the regulariser "
-         "has to cover it too.", "146,204"),
-        ("HNET, frozen base",
-         "The same, with the pretrained weights pinned. Nothing shared can "
-         "drift, so whatever this forgets is the generator overwriting "
-         "itself.", "72,984"),
-        ("HNET, no base",
-         "The published form — no warm start, and fewer parameters than the "
-         "baseline it replaces. Read against its own from-scratch control.",
-         "72,984"),
-        ("Multi-head",
-         "Shared recurrent trunk, one movement head per environment. The "
-         "heads cannot interfere at all, which is what makes this a bound: "
-         "whatever it fails to retain is forgetting in the shared trunk.",
-         "73,480"),
-        ("XdG",
-         "A fixed random subset of hidden units per environment, masked "
-         "inside the recurrence rather than at the readout, so a task's units "
-         "are the only ones carrying its state.", "73,220"),
-    ):
-        A(f"<tr><td class='k'>{esc(name)}</td><td>{mech}</td>"
-          f'<td class="num">{prm}</td></tr>')
-    A("</tbody></table></div>")
-
-    A("<h3>Calibrating the regulariser before sweeping it</h3>")
-    A("<p>The hypernetwork's strength knob was not swept over decades around "
-      "the published value. It was measured against this objective first, "
-      "because a coefficient calibrated to another paper's loss scale is how a "
-      "method gets accidentally made to look bad — and this suite had already "
-      "paid for that twice, with DER++ and with CLEAR.</p>")
-    A('<div class="tw"><table>')
-    A("<thead><tr><th>beta</th><th class=\"num\">BC loss</th>"
-      '<th class="num">Penalty</th><th class="num">Ratio</th>'
-      "<th>Reading</th></tr></thead><tbody>")
-    for b, bc, pen, ratio, reading in (
-        ("0.01", "7.75", "1.3e-05", "1.6e-06", "invisible"),
-        ("1", "7.65", "0.0013", "1.7e-04",
-         "<strong>the published value</strong> — a no-op here"),
-        ("100", "7.83", "0.082", "1.0e-02", "1% of the objective"),
-        ("10,000", "7.69", "1.23", "1.6e-01", "finally competing"),
-        ("1,000,000", "10.83", "4.04", "3.7e-01",
-         "BC loss now rising: plasticity is being paid for"),
-    ):
-        A(f"<tr><td class='k'>{b}</td><td class=\"num\">{bc}</td>"
-          f'<td class="num">{pen}</td><td class="num">{ratio}</td>'
-          f"<td>{reading}</td></tr>")
-    A("</tbody></table></div>")
-    A('<div class="note"><h4>What that table prevented</h4>'
-      "<p>The obvious sweep — decades either side of the value in the paper — "
-      "would have had <em>every arm contribute under 1% of the objective</em>, "
-      "and the conclusion would have been that the regulariser does not help. "
-      "The wave sweeps 10<sup>2</sup> to 10<sup>7</sup> instead.</p></div>")
-
+    # Wave 3 only ever ran in the continuous action space, so on a page
+    # built from a wave without those arms this whole section is empty.
+    # Gated on the data rather than on the variant: if the isolation
+    # family is ever run in discrete, the section appears by itself.
     iso = [m for m in methods if m["arm"] in ("J", "K", "L", "L0", "M", "N", "N2")]
     if iso:
-        A("<h3>Results</h3>")
-        A("<p>Every configuration, not just the best per method — the "
-          "within-method spread is the part that says whether a knob was "
-          "turned far enough.</p>")
-        A('<div class="tw"><table>')
-        A("<thead><tr><th>Method</th><th>Configuration</th>"
-          '<th class="num">Retained</th><th class="num">Current env</th>'
-          '<th class="num">Forgetting</th><th class="num">Stored</th>'
-          "</tr></thead><tbody>")
-        for r in sorted(iso, key=lambda r: -(r["retained"] or 0.0)):
-            cls = ' class="bad"' if (r["current_env"] or 0) < USABLE_CURRENT else ""
-            A(f"<tr{cls}><td class='k'>{esc(r['display'])}</td>"
-              f"<td><code>{esc(r['config'])}</code></td>"
-              f'<td class="num">{bar(r["retained"], r["retained_sem"])}</td>'
-              f'<td class="num">{fmt(r["current_env"])}</td>'
-              f'<td class="num">{fmt(r["forgetting"])}</td>'
-              f'<td class="num">{esc(mb(r["state_bytes"]))}</td></tr>')
-        A("</tbody></table></div>")
-        A("<p style=\"color:var(--muted);font-size:13px\">Shaded rows failed "
-          "the plasticity check: they did not learn the environment they were "
-          "training on, so their retention figure is not a result. See "
-          "&sect;3.</p>")
+        A('<h2 id="isolate"><span class="sec">5</span> Parameter isolation</h2>')
+        A("<p>Every method above shares one set of weights across every "
+          "environment, and differs only in what the update is trained on or how "
+          "far the weights may move. The third family does something else: it "
+          "gives each environment <em>its own parameters</em>. This is the family "
+          "the recurrent continual-learning literature actually points at — Ehret "
+          "et al. (ICLR 2021) benchmarked online EWC, SI, masking, generative "
+          "replay and coresets across four <em>recurrent</em> benchmarks and found "
+          "hypernetworks beat the weight-importance family consistently. The "
+          "policy here is a GRU.</p>")
 
-        # Multi-head sat in this table for a while being read as a mediocre
-        # method, which is the one thing it is not for. Its heads cannot
-        # interfere by construction, so its retention number is a measurement
-        # of where the forgetting lives -- and that is worth more than its
-        # rank. Derived, because the moment it stops being the family's
-        # best-learning arm this paragraph has to stop saying so.
-        mh = next((r for r in iso if r["arm"] == "M"), None)
-        rated = [r for r in iso if r["retained"] is not None]
-        if mh and mh["retained"] is not None and (mh["current_env"] or 0) > 0:
-            lost = (mh["current_env"] - mh["retained"]) / mh["current_env"]
-            top_ret = max(rated, key=lambda r: r["retained"])
-            A('<div class="note"><h4>What the multi-head row is actually '
-              "for</h4>"
-              "<p>It is the only arm here whose <em>readout</em> cannot "
-              "interfere across environments: one movement head each, picked "
-              "by an oracle id, never touched while another environment is "
-              "training. So every point it loses is lost somewhere else — in "
-              "the shared recurrent trunk. It reaches "
-              f"{fmt(mh['current_env'])} on the environment it is training on "
-              f"and holds {fmt(mh['retained'])} of the ones it has left, so "
-              f"<strong>{lost:.0%} of attainable performance is lost through "
-              "the trunk alone</strong>.</p>"
-              "<p>That is the useful reading, and it is not a ranking. As a "
-              f"method it is unremarkable — {esc(top_ret['display'])} retains "
-              f"{top_ret['retained'] / mh['retained']:.1f}&times; more"
-              + (f", at a current-env score only "
-                 f"{mh['current_env'] - top_ret['current_env']:.3f} below "
-                 "multi-head's"
-                 if (top_ret["current_env"] or 0) > 0 else "")
-              + ". What it settles is mechanistic: protecting the readout is "
-              "not where the problem is, so a method that only isolates "
-              "output parameters cannot work in this setting no matter how "
-              "cleanly it does it.</p></div>")
+        ident = d.get("identifiability")
+        if ident:
+            A("<h3>What the oracle task id costs</h3>")
+            A("<p>Every arm in this section is <strong>told which environment it "
+              "is in</strong>, at training time and at evaluation time. Nothing in "
+              "the two families above is, and neither is the Hopfield store. "
+              "Whether that is a decisive advantage or a formality depends "
+              "entirely on how hard the environment is to recognise — so it was "
+              "measured rather than assumed.</p>")
+            A("<p>A classifier is fitted from the agent's own observations to the "
+              "environment index, sweeping a linear and an MLP readout over "
+              "windows of one to sixty-four observations. The split is by "
+              "<em>trajectory</em>, not by frame: consecutive observations of one "
+              "walk are strongly correlated, and a shuffled split would put "
+              "neighbouring timesteps on both sides and report memorisation as "
+              "recognition.</p>")
+            A('<div class="tw"><table>')
+            A("<thead><tr><th>Window</th>"
+              '<th class="num">Linear</th><th class="num">MLP</th>'
+              "</tr></thead><tbody>")
+            for r in ident.get("results", []):
+                A(f"<tr><td class='k'>{r['window']} obs</td>"
+                  f'<td class="num">{fmt(r["linear"])}</td>'
+                  f'<td class="num">{fmt(r["mlp"])}</td></tr>')
+            A("</tbody></table></div>")
+            A('<div class="note warn"><h4>The task id is real information</h4>'
+              f"<p>Best over every window and every readout tried: "
+              f"<strong>{fmt(ident['best'])}</strong>, against a chance rate of "
+              f"{fmt(ident['chance'])} across {ident['n_envs']} environments "
+              f"({ident['n_trajectories']} random-walk trajectories). The "
+              "environments are only weakly recognisable from what the agent "
+              "sees.</p>"
+              "<p>So the oracle task id is not a formality — it is information no "
+              "method in the previous sections could have recovered for itself. "
+              "Everything below is an <strong>upper bound on its family</strong>, "
+              "and belongs in a separate group in the frontier table rather than "
+              "ranked against methods that were given nothing.</p></div>")
+
+        A("<h3>The architectures</h3>")
+        A('<div class="tw"><table>')
+        A("<thead><tr><th>Architecture</th><th>Mechanism</th>"
+          '<th class="num">Params</th></tr></thead><tbody>')
+        for name, mech, prm in (
+            ("Baseline RNN", "One shared network. What every earlier section runs.",
+             "73,220"),
+            ("HNET, learned base",
+             "A generator maps a learned 32-number code per environment to all "
+             "73k policy weights, added to a base vector warm-started from the "
+             "pretrained checkpoint. The base is free to move, so the regulariser "
+             "has to cover it too.", "146,204"),
+            ("HNET, frozen base",
+             "The same, with the pretrained weights pinned. Nothing shared can "
+             "drift, so whatever this forgets is the generator overwriting "
+             "itself.", "72,984"),
+            ("HNET, no base",
+             "The published form — no warm start, and fewer parameters than the "
+             "baseline it replaces. Read against its own from-scratch control.",
+             "72,984"),
+            ("Multi-head",
+             "Shared recurrent trunk, one movement head per environment. The "
+             "heads cannot interfere at all, which is what makes this a bound: "
+             "whatever it fails to retain is forgetting in the shared trunk.",
+             "73,480"),
+            ("XdG",
+             "A fixed random subset of hidden units per environment, masked "
+             "inside the recurrence rather than at the readout, so a task's units "
+             "are the only ones carrying its state.", "73,220"),
+        ):
+            A(f"<tr><td class='k'>{esc(name)}</td><td>{mech}</td>"
+              f'<td class="num">{prm}</td></tr>')
+        A("</tbody></table></div>")
+
+        A("<h3>Calibrating the regulariser before sweeping it</h3>")
+        A("<p>The hypernetwork's strength knob was not swept over decades around "
+          "the published value. It was measured against this objective first, "
+          "because a coefficient calibrated to another paper's loss scale is how a "
+          "method gets accidentally made to look bad — and this suite had already "
+          "paid for that twice, with DER++ and with CLEAR.</p>")
+        A('<div class="tw"><table>')
+        A("<thead><tr><th>beta</th><th class=\"num\">BC loss</th>"
+          '<th class="num">Penalty</th><th class="num">Ratio</th>'
+          "<th>Reading</th></tr></thead><tbody>")
+        for b, bc, pen, ratio, reading in (
+            ("0.01", "7.75", "1.3e-05", "1.6e-06", "invisible"),
+            ("1", "7.65", "0.0013", "1.7e-04",
+             "<strong>the published value</strong> — a no-op here"),
+            ("100", "7.83", "0.082", "1.0e-02", "1% of the objective"),
+            ("10,000", "7.69", "1.23", "1.6e-01", "finally competing"),
+            ("1,000,000", "10.83", "4.04", "3.7e-01",
+             "BC loss now rising: plasticity is being paid for"),
+        ):
+            A(f"<tr><td class='k'>{b}</td><td class=\"num\">{bc}</td>"
+              f'<td class="num">{pen}</td><td class="num">{ratio}</td>'
+              f"<td>{reading}</td></tr>")
+        A("</tbody></table></div>")
+        A('<div class="note"><h4>What that table prevented</h4>'
+          "<p>The obvious sweep — decades either side of the value in the paper — "
+          "would have had <em>every arm contribute under 1% of the objective</em>, "
+          "and the conclusion would have been that the regulariser does not help. "
+          "The wave sweeps 10<sup>2</sup> to 10<sup>7</sup> instead.</p></div>")
+
+        if iso:
+            A("<h3>Results</h3>")
+            A("<p>Every configuration, not just the best per method — the "
+              "within-method spread is the part that says whether a knob was "
+              "turned far enough.</p>")
+            A('<div class="tw"><table>')
+            A("<thead><tr><th>Method</th><th>Configuration</th>"
+              '<th class="num">Retained</th><th class="num">Current env</th>'
+              '<th class="num">Forgetting</th><th class="num">Stored</th>'
+              "</tr></thead><tbody>")
+            for r in sorted(iso, key=lambda r: -(r["retained"] or 0.0)):
+                cls = ' class="bad"' if (r["current_env"] or 0) < USABLE_CURRENT else ""
+                A(f"<tr{cls}><td class='k'>{esc(r['display'])}</td>"
+                  f"<td><code>{esc(r['config'])}</code></td>"
+                  f'<td class="num">{bar(r["retained"], r["retained_sem"])}</td>'
+                  f'<td class="num">{fmt(r["current_env"])}</td>'
+                  f'<td class="num">{fmt(r["forgetting"])}</td>'
+                  f'<td class="num">{esc(mb(r["state_bytes"]))}</td></tr>')
+            A("</tbody></table></div>")
+            A("<p style=\"color:var(--muted);font-size:13px\">Shaded rows failed "
+              "the plasticity check: they did not learn the environment they were "
+              "training on, so their retention figure is not a result. See "
+              "&sect;3.</p>")
+
+            # Multi-head sat in this table for a while being read as a mediocre
+            # method, which is the one thing it is not for. Its heads cannot
+            # interfere by construction, so its retention number is a measurement
+            # of where the forgetting lives -- and that is worth more than its
+            # rank. Derived, because the moment it stops being the family's
+            # best-learning arm this paragraph has to stop saying so.
+            mh = next((r for r in iso if r["arm"] == "M"), None)
+            rated = [r for r in iso if r["retained"] is not None]
+            if mh and mh["retained"] is not None and (mh["current_env"] or 0) > 0:
+                lost = (mh["current_env"] - mh["retained"]) / mh["current_env"]
+                top_ret = max(rated, key=lambda r: r["retained"])
+                A('<div class="note"><h4>What the multi-head row is actually '
+                  "for</h4>"
+                  "<p>It is the only arm here whose <em>readout</em> cannot "
+                  "interfere across environments: one movement head each, picked "
+                  "by an oracle id, never touched while another environment is "
+                  "training. So every point it loses is lost somewhere else — in "
+                  "the shared recurrent trunk. It reaches "
+                  f"{fmt(mh['current_env'])} on the environment it is training on "
+                  f"and holds {fmt(mh['retained'])} of the ones it has left, so "
+                  f"<strong>{lost:.0%} of attainable performance is lost through "
+                  "the trunk alone</strong>.</p>"
+                  "<p>That is the useful reading, and it is not a ranking. As a "
+                  f"method it is unremarkable — {esc(top_ret['display'])} retains "
+                  f"{top_ret['retained'] / mh['retained']:.1f}&times; more"
+                  + (f", at a current-env score only "
+                     f"{mh['current_env'] - top_ret['current_env']:.3f} below "
+                     "multi-head's"
+                     if (top_ret["current_env"] or 0) > 0 else "")
+                  + ". What it settles is mechanistic: protecting the readout is "
+                  "not where the problem is, so a method that only isolates "
+                  "output parameters cannot work in this setting no matter how "
+                  "cleanly it does it.</p></div>")
 
     A('<h2 id="tier0"><span class="sec">6</span> The axes</h2>')
     A("<p>None of these are continual-learning methods. They are what makes "
@@ -1538,301 +1720,307 @@ def render(d: dict) -> str:
           "exist yet.</p></div>")
 
     # ---- bugs found ---------------------------------------------------
-    A('<h2 id="found"><span class="sec">9</span> Found along the way</h2>')
-    A("<p>Twelve defects surfaced while building this, and they are on the "
-      "page because they share a property worth knowing about: <strong>not one "
-      "of them raised an exception in normal operation</strong>. Every one "
-      "produced a plausible number. Four were caught by a test written to be "
-      "falsifiable rather than confirmatory, three by inspecting a table "
-      "before publishing it, two by reading code that had no failing symptom "
-      "at all, one by disbelieving a result this project had just produced, "
-      "and <strong>two by a reader asking a question</strong> — where a method "
-      "had gone, and whether a null result had really been tried hard enough. "
-      "Six are shown here; the rest are in the log.</p>")
-    A('<div class="note crit"><h4><code>input_prev_action</code> had never '
-      "worked</h4>"
-      "<p>Both the DAgger collector and the evaluator built the previous-action "
-      "channel only when a previous action existed — false at <code>t=0</code>. "
-      "The first forward of every rollout fed the trunk an input two columns "
-      "narrower than it was sized for. The flag was unusable on this stack, "
-      "which is why every recorded history has it off.</p></div>")
-    A('<div class="note crit"><h4><code>WorldSpec.write</code> raced itself</h4>'
-      "<p>A fixed <code>world.json.tmp</code> staging name meant 272 concurrent "
-      "runs writing to one directory destroyed each other's temp file. "
-      "246 of 272 died after building their environments and before training. "
-      "Mutation-checked fix: 27/48 concurrent writers fail on the old code, "
-      "0/48 on the new.</p></div>")
-    A('<div class="note crit"><h4>DER++ contributed no gradient</h4>'
-      "<p>Its distillation term was computed against a detached tensor, so it "
-      "returned a nonzero loss that scaled correctly with its coefficient and "
-      "carried <code>requires_grad=False</code>. It added a constant to the "
-      "objective and moved nothing. DER++ ran as plain Experience Replay for "
-      "two full waves, and every value-based test passed throughout — they "
-      "checked that the loss was nonzero and grew, which it was and did. "
-      "Fixing it moved the method from 0.143 to 0.326.</p></div>")
-    A('<div class="note warn"><h4>A capacity verdict that was wrong</h4>'
-      "<p>The first joint-ceiling run came back at ~0.5 across every capacity "
-      "and the summary called it a capacity limit. It was not: capacity did not "
-      "move the number and every curve was still climbing at the budget "
-      "limit. The run was optimisation-starved. The summary now measures the "
-      "end-slope and refuses a capacity verdict while a run is still "
-      "improving.</p></div>")
-    A('<div class="note crit"><h4>A published null that its own training log '
-      "contradicted</h4>"
-      "<p>&sect;7 reported that a frozen recurrent policy shows no in-context "
-      "adaptation, and called it the strongest result available. The policy it "
-      "tested scores 0.80 on the 32 environments it was pretrained on and 0.10 "
-      "on the held-out environments it was evaluated on — an <strong>8× "
-      "gap</strong>. It had memorised its pool, so the evaluation was run on a "
-      "policy that cannot navigate its test environments, and a flat "
-      "success-vs-episode curve was the only outcome available.</p>"
-      "<p>The launcher's own comment asserted the thing that failed — "
-      "<em>“a pool big enough that memorising it is not obviously easier than "
-      "learning the strategy”</em> — as an assumption, never checked. The "
-      "numbers refuting it were written to the same job's log hours before the "
-      "conclusion was drawn from it. And the defence recorded at the time, "
-      "that a held-out split <em>“guards against the arms simply memorising”</em>, "
-      "is wrong in a specific way: a held-out split stops you reporting "
-      "memorisation as adaptation, but it cannot rescue an experiment whose "
-      "model memorised — it leaves nothing to measure.</p>"
-      "<p>Every other entry here was found by a check. This one was found by "
-      "being asked whether the effort had really been the best possible, and "
-      "the honest answer was no.</p></div>")
-    A('<div class="note crit"><h4>A task-identifiability number that measured '
-      "the wrong thing</h4>"
-      "<p>&sect;5's headline depends on how recognisable an environment is "
-      "from the agent's observations. The first version split shuffled "
-      "<em>frames</em> rather than trajectories, so neighbouring timesteps of "
-      "one random walk sat on both sides of the train/test line, and it tried "
-      "only a linear readout on a single observation. It returned 0.266 "
-      "against 0.200 chance — a low number from the weakest classifier "
-      "available, which is the least informative outcome there is, and it was "
-      "about to be used to argue that the oracle task id is a large "
-      "advantage. Rewritten to split by trajectory and to sweep up to an MLP "
-      "over 64-observation windows, it returns 0.43. The conclusion held; the "
-      "evidence for it did not, and would not have survived a reader who "
-      "checked.</p></div>")
-    A('<div class="note acc"><h4>The fourth coefficient-scale error, caught '
-      "before it ran</h4>"
-      "<p>DER++ and CLEAR both cost a re-run because their strength knobs were "
-      "swept over the range a paper used, against a loss of a different "
-      "magnitude. The hypernetwork regulariser has exactly the same shape of "
-      "knob, so this time it was measured first: von Oswald's beta = 1 "
-      "contributes <strong>0.017% of this objective</strong>. Sweeping decades "
-      "around it — the obvious thing to do — would have made every arm a no-op "
-      "and produced the confident, wrong finding that the method does not help "
-      "here. The sweep runs 10<sup>2</sup>–10<sup>7</sup> instead. This is the "
-      "only entry in this section that is not a defect; it is here because it "
-      "is the same defect, prevented.</p></div>")
-    A('<div class="note warn"><h4><code>init_log_std</code> was unreachable</h4>'
-      "<p>Exposed on <code>train_rnn</code> but never wired through the "
-      "continual driver, so every run to date used σ = 1.0 against a "
-      "unit-magnitude action — the DAgger student exploring with noise the size "
-      "of the action itself.</p></div>")
+    # Sections 9-11 are the project's own narrative -- the defects found,
+    # what the suite settles, what it has not run -- and every line of it
+    # was written about the continuous wave. Rendering it under discrete
+    # numbers would put continuous claims on a page that did not produce
+    # them, which is worse than omitting them.
+    if variant == "continuous":
+        A('<h2 id="found"><span class="sec">9</span> Found along the way</h2>')
+        A("<p>Twelve defects surfaced while building this, and they are on the "
+          "page because they share a property worth knowing about: <strong>not one "
+          "of them raised an exception in normal operation</strong>. Every one "
+          "produced a plausible number. Four were caught by a test written to be "
+          "falsifiable rather than confirmatory, three by inspecting a table "
+          "before publishing it, two by reading code that had no failing symptom "
+          "at all, one by disbelieving a result this project had just produced, "
+          "and <strong>two by a reader asking a question</strong> — where a method "
+          "had gone, and whether a null result had really been tried hard enough. "
+          "Six are shown here; the rest are in the log.</p>")
+        A('<div class="note crit"><h4><code>input_prev_action</code> had never '
+          "worked</h4>"
+          "<p>Both the DAgger collector and the evaluator built the previous-action "
+          "channel only when a previous action existed — false at <code>t=0</code>. "
+          "The first forward of every rollout fed the trunk an input two columns "
+          "narrower than it was sized for. The flag was unusable on this stack, "
+          "which is why every recorded history has it off.</p></div>")
+        A('<div class="note crit"><h4><code>WorldSpec.write</code> raced itself</h4>'
+          "<p>A fixed <code>world.json.tmp</code> staging name meant 272 concurrent "
+          "runs writing to one directory destroyed each other's temp file. "
+          "246 of 272 died after building their environments and before training. "
+          "Mutation-checked fix: 27/48 concurrent writers fail on the old code, "
+          "0/48 on the new.</p></div>")
+        A('<div class="note crit"><h4>DER++ contributed no gradient</h4>'
+          "<p>Its distillation term was computed against a detached tensor, so it "
+          "returned a nonzero loss that scaled correctly with its coefficient and "
+          "carried <code>requires_grad=False</code>. It added a constant to the "
+          "objective and moved nothing. DER++ ran as plain Experience Replay for "
+          "two full waves, and every value-based test passed throughout — they "
+          "checked that the loss was nonzero and grew, which it was and did. "
+          "Fixing it moved the method from 0.143 to 0.326.</p></div>")
+        A('<div class="note warn"><h4>A capacity verdict that was wrong</h4>'
+          "<p>The first joint-ceiling run came back at ~0.5 across every capacity "
+          "and the summary called it a capacity limit. It was not: capacity did not "
+          "move the number and every curve was still climbing at the budget "
+          "limit. The run was optimisation-starved. The summary now measures the "
+          "end-slope and refuses a capacity verdict while a run is still "
+          "improving.</p></div>")
+        A('<div class="note crit"><h4>A published null that its own training log '
+          "contradicted</h4>"
+          "<p>&sect;7 reported that a frozen recurrent policy shows no in-context "
+          "adaptation, and called it the strongest result available. The policy it "
+          "tested scores 0.80 on the 32 environments it was pretrained on and 0.10 "
+          "on the held-out environments it was evaluated on — an <strong>8× "
+          "gap</strong>. It had memorised its pool, so the evaluation was run on a "
+          "policy that cannot navigate its test environments, and a flat "
+          "success-vs-episode curve was the only outcome available.</p>"
+          "<p>The launcher's own comment asserted the thing that failed — "
+          "<em>“a pool big enough that memorising it is not obviously easier than "
+          "learning the strategy”</em> — as an assumption, never checked. The "
+          "numbers refuting it were written to the same job's log hours before the "
+          "conclusion was drawn from it. And the defence recorded at the time, "
+          "that a held-out split <em>“guards against the arms simply memorising”</em>, "
+          "is wrong in a specific way: a held-out split stops you reporting "
+          "memorisation as adaptation, but it cannot rescue an experiment whose "
+          "model memorised — it leaves nothing to measure.</p>"
+          "<p>Every other entry here was found by a check. This one was found by "
+          "being asked whether the effort had really been the best possible, and "
+          "the honest answer was no.</p></div>")
+        A('<div class="note crit"><h4>A task-identifiability number that measured '
+          "the wrong thing</h4>"
+          "<p>&sect;5's headline depends on how recognisable an environment is "
+          "from the agent's observations. The first version split shuffled "
+          "<em>frames</em> rather than trajectories, so neighbouring timesteps of "
+          "one random walk sat on both sides of the train/test line, and it tried "
+          "only a linear readout on a single observation. It returned 0.266 "
+          "against 0.200 chance — a low number from the weakest classifier "
+          "available, which is the least informative outcome there is, and it was "
+          "about to be used to argue that the oracle task id is a large "
+          "advantage. Rewritten to split by trajectory and to sweep up to an MLP "
+          "over 64-observation windows, it returns 0.43. The conclusion held; the "
+          "evidence for it did not, and would not have survived a reader who "
+          "checked.</p></div>")
+        A('<div class="note acc"><h4>The fourth coefficient-scale error, caught '
+          "before it ran</h4>"
+          "<p>DER++ and CLEAR both cost a re-run because their strength knobs were "
+          "swept over the range a paper used, against a loss of a different "
+          "magnitude. The hypernetwork regulariser has exactly the same shape of "
+          "knob, so this time it was measured first: von Oswald's beta = 1 "
+          "contributes <strong>0.017% of this objective</strong>. Sweeping decades "
+          "around it — the obvious thing to do — would have made every arm a no-op "
+          "and produced the confident, wrong finding that the method does not help "
+          "here. The sweep runs 10<sup>2</sup>–10<sup>7</sup> instead. This is the "
+          "only entry in this section that is not a defect; it is here because it "
+          "is the same defect, prevented.</p></div>")
+        A('<div class="note warn"><h4><code>init_log_std</code> was unreachable</h4>'
+          "<p>Exposed on <code>train_rnn</code> but never wired through the "
+          "continual driver, so every run to date used σ = 1.0 against a "
+          "unit-magnitude action — the DAgger student exploring with noise the size "
+          "of the action itself.</p></div>")
 
-    # ---- what it means -------------------------------------------------
-    A('<h2 id="reading"><span class="sec">10</span> What this settles</h2>')
+        # ---- what it means -------------------------------------------------
+        A('<h2 id="reading"><span class="sec">10</span> What this settles</h2>')
 
-    rows2 = best_per_family(methods)
-    best_m = rows2[0] if rows2 else None
-    conv2 = [j for j in d.get("joint", [])
-             if abs(j.get("end_slope") or 0) <= 0.02 and (j.get("final") or 0) > 0.5]
-    ceil2 = max((j["final"] for j in conv2), default=None)
-    # The matched sequential reference: method=none at the methods' own config.
-    seq_ref = next((m["retained"] for m in methods
-                    if m["config"].startswith("R_none")), None)
-
-    A("<ul>")
-    if ceil2:
-        A("<li><strong>The gap is forgetting, not capacity.</strong> The same "
-          f"architecture at the same size scores <strong>{ceil2:.3f}</strong> "
-          "trained jointly on these environments and "
-          f"<strong>{fmt(seq_ref)}</strong> trained sequentially. Nothing about "
-          "what the network can represent explains the difference, and the "
-          "eval itself has no headroom problem — the oracle scores 1.000.</li>")
-    if best_m and ceil2:
-        A("<li><strong>No method tested closes it, at any cost.</strong> The "
-          f"best is {esc(best_m['display'])} at "
-          f"<strong>{fmt(best_m['retained'])}</strong> — "
-          f"{100.0 * (best_m['retained'] or 0) / ceil2:.0f} % of the ceiling — "
-          f"while storing {esc(mb(best_m['state_bytes']))} of raw trajectories "
-          "and spending 200 gradient steps and 200 episodes on every "
-          "environment. The store reaches ~0.99 with none of those.</li>")
-    A("<li><strong>Replay is the only family that gets close, and it buys "
-      "retention with compute rather than with memory.</strong> Buffer size is "
-      "nearly irrelevant past a couple of hundred trajectories; what matters is "
-      "how much of each gradient step is spent on the past, and that runs out "
-      "of road well below the ceiling.</li>")
-    A("<li><strong>Parameter regularisation barely moves the number.</strong> "
-      "Online EWC and SI at usable settings sit between 0.07 and 0.15. Their "
-      "apparent best results are the plasticity trap: retention bought by "
-      "declining to learn.</li>")
-    # Derived, because this bullet is the one most likely to be left standing
-    # after the numbers behind it change -- it was written when the isolation
-    # family had not run, and it stayed on the page saying so for a while after
-    # that stopped being the interesting thing about it.
-    iso_arms = ("J", "K", "L", "M", "N", "N2")
-    iso_usable = [m for m in methods if m["arm"] in iso_arms
-                  and (m["current_env"] or 0) >= USABLE_CURRENT
-                  and m["retained"] is not None]
-    free_usable = [m for m in methods if m["arm"] not in iso_arms
-                   and not m["needs_task_id"]
-                   and (m["current_env"] or 0) >= USABLE_CURRENT
-                   and m["retained"] is not None]
-    if iso_usable:
-        top_iso = max(iso_usable, key=lambda m: m["retained"])
-        best_free = (max(free_usable, key=lambda m: m["retained"])
-                     if free_usable else None)
-        # The headline is conditional on the same comparison the sentence
-        # makes. Written as a fixed claim with a derived clause after it, the
-        # two halves would contradict each other the moment the ordering
-        # changed -- which is the failure this page keeps finding in itself.
-        beats = (best_free is not None
-                 and top_iso["retained"] > best_free["retained"])
-        comparison = ""
-        if best_free:
-            comparison = (
-                (" It is the strongest classic result in the suite, and it "
-                 "beats the best method given no task signal at all "
-                 if beats else
-                 " Even with that advantage it does not reach the best method "
-                 "given no task signal at all ")
-                + f"({esc(best_free['display'])}, "
-                  f"{fmt(best_free['retained'])}).")
-        head = ("Giving each task its own parameters is the strongest thing "
-                "tried here — and it is not free."
-                if beats else
-                "Giving each task its own parameters helps, and is not enough.")
-        A(f"<li><strong>{head}</strong> The best isolation result is "
-          f"{esc(top_iso['display'])} at {fmt(top_iso['retained'])} retained "
-          "— and it is <em>told which environment it is in</em>, which a "
-          "classifier on the agent's own observations cannot recover "
-          f"(&sect;5).{comparison}</li>")
-    A("<li><strong>Restricting plasticity to a small head is worse, not "
-      "better.</strong> Freezing the trunk costs both retention and current-env "
-      "performance. Whatever a meta-learned representation would buy here, it "
-      "is not the head-only restriction by itself.</li>")
-    A("</ul>")
-
-    # Every quantity in this paragraph is derived. It previously read "roughly
-    # three-fifths of the joint ceiling while storing every trajectory it has
-    # ever seen" -- true of the replay arm that led at the time, and wrong in
-    # both halves once a gating method with a 0.6 MB importance matrix took the
-    # lead. A summary sentence carrying hand-written numbers goes stale exactly
-    # when the result gets interesting.
-    ceil_rows = [j for j in d.get("joint", [])
+        rows2 = best_per_family(methods)
+        best_m = rows2[0] if rows2 else None
+        conv2 = [j for j in d.get("joint", [])
                  if abs(j.get("end_slope") or 0) <= 0.02 and (j.get("final") or 0) > 0.5]
-    ceiling = max((j["final"] for j in ceil_rows), default=None)
-    usable = [m for m in methods if (m["current_env"] or 0) >= USABLE_CURRENT
-              and m["retained"] is not None]
-    if usable and ceiling:
-        top = max(usable, key=lambda m: m["retained"])
-        frac = top["retained"] / ceiling
-        share = (f"{round(frac * 100)}% of the joint ceiling"
-                 if frac == frac else "an unknown share of the ceiling")
-        cost = []
-        if top["state_bytes"]:
-            cost.append(f"carrying {esc(mb(top['state_bytes']))} of state")
-        if top["needs_task_id"]:
-            cost.append("being told which environment it is in")
-        cost.append("paying two hundred gradient steps and two hundred "
-                    "episodes per environment")
-        cost_text = ", ".join(cost[:-1]) + " and " + cost[-1] if len(cost) > 1 \
-            else cost[0]
-        A('<div class="note acc"><h4>The honest form of the claim</h4>'
-          "<p>Not “continual learning cannot do this”. What the suite supports "
-          "is narrower and more defensible: <em>on this task, across "
-          f"{spell(len(method_names(methods)))} methods spanning replay, "
-          "parameter regularisation and parameter isolation, with their "
-          "coefficients swept over decades, the best classic result "
-          f"({esc(top['display'])}) reaches {share} while {cost_text} — and an "
-          "associative store reaches the ceiling at one episode, no gradient "
-          "steps, no stored data and no task label.</em> The frontier is the "
-          "claim; the leaderboard is not.</p></div>")
+        ceil2 = max((j["final"] for j in conv2), default=None)
+        # The matched sequential reference: method=none at the methods' own config.
+        seq_ref = next((m["retained"] for m in methods
+                        if m["config"].startswith("R_none")), None)
 
-    # ---- provenance ----------------------------------------------------
-    A('<h2 id="notrun"><span class="sec">11</span> What has not run</h2>')
-    A("<p>The three families the plan names — replay, parameter "
-      "regularisation, parameter isolation — have all run. What is left is a "
-      "shorter and more specific list, and it is here because a results page "
-      "with no such section is making a claim about its own completeness that "
-      "nobody checked.</p>")
-    A('<div class="tw"><table>')
-    A("<thead><tr><th>Not run</th><th>Why it matters, and why it did not</th>"
-      "</tr></thead><tbody>")
-    for name, why in (
-        ("Meta-pretraining (OML / ANML)",
-         "The plan's &sect;5.1 — the strongest possible form of the "
-         "pretraining control, learning a representation whose <em>purpose</em> "
-         "is that later gradient descent on it does not interfere. Deferred "
-         "on evidence rather than for time: its load-bearing mechanism is "
-         "confining plasticity to a small head, and the frozen-trunk arm shows "
-         "that doing so here is <em>worse</em> on both retention and current-"
-         "environment performance. That is a reason to doubt the mechanism in "
-         "this setting, not a proof, and it remains the largest untested idea."),
-        ("A learned task-id router",
-         "The isolation arms are handed an oracle task id. The plan asks for "
-         "an inferred condition beside it, so the gap measures how much of the "
-         "problem is task inference. The gap was measured directly instead "
-         "(&sect;5): the environments are only weakly recognisable from the "
-         "agent's observations, 0.43 against 0.20 chance. Building the router "
-         "would sharpen that number; it would not change the conclusion, which "
-         "is that these arms are given something no other method could get."),
-        ("Plasticity maintenance",
-         "At twenty environments the current-environment score collapses to "
-         "0.29–0.40: the network is not only forgetting, it is losing the "
-         "ability to learn at all. Nothing in the suite targets that directly "
-         "— resets, shrink-and-perturb, continual backpropagation. It became "
-         "interesting only when the scaling panel produced the collapse, which "
-         "was after the wave structure was fixed."),
-        ("Gradient Projection Memory",
-         "Listed in the plan as an optional stretch and never promoted. It "
-         "constrains updates to directions orthogonal to past-task gradients, "
-         "which is a third mechanism again — but the two regularisation "
-         "methods that did run both land in the plasticity trap here, and GPM "
-         "is a harder version of the same bargain."),
-        ("Route efficiency (SPL) — now recorded, not yet analysed",
-         "Every number on this page is a success <em>rate</em>. How far the "
-         "agent travelled to earn it was recorded all along, and is unusable "
-         "on its own: mean steps over successful trials scores each arm on "
-         "the subpopulation it happened to solve, so an arm that forgets "
-         "almost everything is graded only on the goals that were near its "
-         "start and comes out looking like the suite's fastest navigator. "
-         "Under continuous movement it is not even a clean quantity — the "
-         "displacement is the raw action vector, so step count mixes route "
-         "quality with how far the policy commits to moving. The evaluator "
-         "now also records <code>optimal_to_goal</code>, the shortest "
-         "attainable path for that trial, which is exact here rather than a "
-         "bound because the arena is a convex box with no interior obstacles. "
-         "That makes <code>optimal / max(path, optimal)</code>, zeroed on "
-         "failures, a proper SPL: bounded, defined on every trial, and "
-         "independent of how hard the trial was. Nothing on this page uses it "
-         "— no history behind these numbers carries the field, and it is not "
-         "recoverable for waves 0–3 without re-running the evaluations from "
-         "the saved checkpoints. It is here so the next wave is read with it "
-         "rather than discovering the need afterwards."),
-        ("The Hopfield agent at twenty environments",
-         "The scaling panel runs the classic methods to twenty environments; "
-         "the store has only ever been run to five. The comparison at N=20 is "
-         "therefore between measured baselines and an assumption, and the "
-         "page does not make it."),
-    ):
-        A(f"<tr><td class='k'>{esc(name)}</td><td>{why}</td></tr>")
-    A("</tbody></table></div>")
-    A('<div class="note"><h4>How this section came to exist</h4>'
-      "<p>Wave 3 was not deferred — it was <em>forgotten</em>. Wave 2 finished, "
-      "then three corrections landed in a row (a coefficient range taken from "
-      "the wrong loss scale, a distillation term carrying no gradient, an "
-      "importance sampler that was not a reservoir), and each one re-ran an arm "
-      "that already existed. Re-running existing work displaced new work, the "
-      "suite was called complete when the corrections finished rather than when "
-      "the plan was finished, and the page said “nine methods” because it had "
-      "counted rows in a table that also held the controls.</p>"
-      "<p>Nothing in the process caught it. A reader asking where the "
-      "hypernetwork had gone did. So the method count on this page is now "
-      "derived from the runs that exist rather than written down, and this "
-      "section is generated beside the results instead of being remembered.</p>"
-      "</div>")
+        A("<ul>")
+        if ceil2:
+            A("<li><strong>The gap is forgetting, not capacity.</strong> The same "
+              f"architecture at the same size scores <strong>{ceil2:.3f}</strong> "
+              "trained jointly on these environments and "
+              f"<strong>{fmt(seq_ref)}</strong> trained sequentially. Nothing about "
+              "what the network can represent explains the difference, and the "
+              "eval itself has no headroom problem — the oracle scores 1.000.</li>")
+        if best_m and ceil2:
+            A("<li><strong>No method tested closes it, at any cost.</strong> The "
+              f"best is {esc(best_m['display'])} at "
+              f"<strong>{fmt(best_m['retained'])}</strong> — "
+              f"{100.0 * (best_m['retained'] or 0) / ceil2:.0f} % of the ceiling — "
+              f"while storing {esc(mb(best_m['state_bytes']))} of raw trajectories "
+              "and spending 200 gradient steps and 200 episodes on every "
+              "environment. The store reaches ~0.99 with none of those.</li>")
+        A("<li><strong>Replay is the only family that gets close, and it buys "
+          "retention with compute rather than with memory.</strong> Buffer size is "
+          "nearly irrelevant past a couple of hundred trajectories; what matters is "
+          "how much of each gradient step is spent on the past, and that runs out "
+          "of road well below the ceiling.</li>")
+        A("<li><strong>Parameter regularisation barely moves the number.</strong> "
+          "Online EWC and SI at usable settings sit between 0.07 and 0.15. Their "
+          "apparent best results are the plasticity trap: retention bought by "
+          "declining to learn.</li>")
+        # Derived, because this bullet is the one most likely to be left standing
+        # after the numbers behind it change -- it was written when the isolation
+        # family had not run, and it stayed on the page saying so for a while after
+        # that stopped being the interesting thing about it.
+        iso_arms = ("J", "K", "L", "M", "N", "N2")
+        iso_usable = [m for m in methods if m["arm"] in iso_arms
+                      and (m["current_env"] or 0) >= USABLE_CURRENT
+                      and m["retained"] is not None]
+        free_usable = [m for m in methods if m["arm"] not in iso_arms
+                       and not m["needs_task_id"]
+                       and (m["current_env"] or 0) >= USABLE_CURRENT
+                       and m["retained"] is not None]
+        if iso_usable:
+            top_iso = max(iso_usable, key=lambda m: m["retained"])
+            best_free = (max(free_usable, key=lambda m: m["retained"])
+                         if free_usable else None)
+            # The headline is conditional on the same comparison the sentence
+            # makes. Written as a fixed claim with a derived clause after it, the
+            # two halves would contradict each other the moment the ordering
+            # changed -- which is the failure this page keeps finding in itself.
+            beats = (best_free is not None
+                     and top_iso["retained"] > best_free["retained"])
+            comparison = ""
+            if best_free:
+                comparison = (
+                    (" It is the strongest classic result in the suite, and it "
+                     "beats the best method given no task signal at all "
+                     if beats else
+                     " Even with that advantage it does not reach the best method "
+                     "given no task signal at all ")
+                    + f"({esc(best_free['display'])}, "
+                      f"{fmt(best_free['retained'])}).")
+            head = ("Giving each task its own parameters is the strongest thing "
+                    "tried here — and it is not free."
+                    if beats else
+                    "Giving each task its own parameters helps, and is not enough.")
+            A(f"<li><strong>{head}</strong> The best isolation result is "
+              f"{esc(top_iso['display'])} at {fmt(top_iso['retained'])} retained "
+              "— and it is <em>told which environment it is in</em>, which a "
+              "classifier on the agent's own observations cannot recover "
+              f"(&sect;5).{comparison}</li>")
+        A("<li><strong>Restricting plasticity to a small head is worse, not "
+          "better.</strong> Freezing the trunk costs both retention and current-env "
+          "performance. Whatever a meta-learned representation would buy here, it "
+          "is not the head-only restriction by itself.</li>")
+        A("</ul>")
+
+        # Every quantity in this paragraph is derived. It previously read "roughly
+        # three-fifths of the joint ceiling while storing every trajectory it has
+        # ever seen" -- true of the replay arm that led at the time, and wrong in
+        # both halves once a gating method with a 0.6 MB importance matrix took the
+        # lead. A summary sentence carrying hand-written numbers goes stale exactly
+        # when the result gets interesting.
+        ceil_rows = [j for j in d.get("joint", [])
+                     if abs(j.get("end_slope") or 0) <= 0.02 and (j.get("final") or 0) > 0.5]
+        ceiling = max((j["final"] for j in ceil_rows), default=None)
+        usable = [m for m in methods if (m["current_env"] or 0) >= USABLE_CURRENT
+                  and m["retained"] is not None]
+        if usable and ceiling:
+            top = max(usable, key=lambda m: m["retained"])
+            frac = top["retained"] / ceiling
+            share = (f"{round(frac * 100)}% of the joint ceiling"
+                     if frac == frac else "an unknown share of the ceiling")
+            cost = []
+            if top["state_bytes"]:
+                cost.append(f"carrying {esc(mb(top['state_bytes']))} of state")
+            if top["needs_task_id"]:
+                cost.append("being told which environment it is in")
+            cost.append("paying two hundred gradient steps and two hundred "
+                        "episodes per environment")
+            cost_text = ", ".join(cost[:-1]) + " and " + cost[-1] if len(cost) > 1 \
+                else cost[0]
+            A('<div class="note acc"><h4>The honest form of the claim</h4>'
+              "<p>Not “continual learning cannot do this”. What the suite supports "
+              "is narrower and more defensible: <em>on this task, across "
+              f"{spell(len(method_names(methods)))} methods spanning replay, "
+              "parameter regularisation and parameter isolation, with their "
+              "coefficients swept over decades, the best classic result "
+              f"({esc(top['display'])}) reaches {share} while {cost_text} — and an "
+              "associative store reaches the ceiling at one episode, no gradient "
+              "steps, no stored data and no task label.</em> The frontier is the "
+              "claim; the leaderboard is not.</p></div>")
+
+        # ---- provenance ----------------------------------------------------
+        A('<h2 id="notrun"><span class="sec">11</span> What has not run</h2>')
+        A("<p>The three families the plan names — replay, parameter "
+          "regularisation, parameter isolation — have all run. What is left is a "
+          "shorter and more specific list, and it is here because a results page "
+          "with no such section is making a claim about its own completeness that "
+          "nobody checked.</p>")
+        A('<div class="tw"><table>')
+        A("<thead><tr><th>Not run</th><th>Why it matters, and why it did not</th>"
+          "</tr></thead><tbody>")
+        for name, why in (
+            ("Meta-pretraining (OML / ANML)",
+             "The plan's &sect;5.1 — the strongest possible form of the "
+             "pretraining control, learning a representation whose <em>purpose</em> "
+             "is that later gradient descent on it does not interfere. Deferred "
+             "on evidence rather than for time: its load-bearing mechanism is "
+             "confining plasticity to a small head, and the frozen-trunk arm shows "
+             "that doing so here is <em>worse</em> on both retention and current-"
+             "environment performance. That is a reason to doubt the mechanism in "
+             "this setting, not a proof, and it remains the largest untested idea."),
+            ("A learned task-id router",
+             "The isolation arms are handed an oracle task id. The plan asks for "
+             "an inferred condition beside it, so the gap measures how much of the "
+             "problem is task inference. The gap was measured directly instead "
+             "(&sect;5): the environments are only weakly recognisable from the "
+             "agent's observations, 0.43 against 0.20 chance. Building the router "
+             "would sharpen that number; it would not change the conclusion, which "
+             "is that these arms are given something no other method could get."),
+            ("Plasticity maintenance",
+             "At twenty environments the current-environment score collapses to "
+             "0.29–0.40: the network is not only forgetting, it is losing the "
+             "ability to learn at all. Nothing in the suite targets that directly "
+             "— resets, shrink-and-perturb, continual backpropagation. It became "
+             "interesting only when the scaling panel produced the collapse, which "
+             "was after the wave structure was fixed."),
+            ("Gradient Projection Memory",
+             "Listed in the plan as an optional stretch and never promoted. It "
+             "constrains updates to directions orthogonal to past-task gradients, "
+             "which is a third mechanism again — but the two regularisation "
+             "methods that did run both land in the plasticity trap here, and GPM "
+             "is a harder version of the same bargain."),
+            ("Route efficiency (SPL) — now recorded, not yet analysed",
+             "Every number on this page is a success <em>rate</em>. How far the "
+             "agent travelled to earn it was recorded all along, and is unusable "
+             "on its own: mean steps over successful trials scores each arm on "
+             "the subpopulation it happened to solve, so an arm that forgets "
+             "almost everything is graded only on the goals that were near its "
+             "start and comes out looking like the suite's fastest navigator. "
+             "Under continuous movement it is not even a clean quantity — the "
+             "displacement is the raw action vector, so step count mixes route "
+             "quality with how far the policy commits to moving. The evaluator "
+             "now also records <code>optimal_to_goal</code>, the shortest "
+             "attainable path for that trial, which is exact here rather than a "
+             "bound because the arena is a convex box with no interior obstacles. "
+             "That makes <code>optimal / max(path, optimal)</code>, zeroed on "
+             "failures, a proper SPL: bounded, defined on every trial, and "
+             "independent of how hard the trial was. Nothing on this page uses it "
+             "— no history behind these numbers carries the field, and it is not "
+             "recoverable for waves 0–3 without re-running the evaluations from "
+             "the saved checkpoints. It is here so the next wave is read with it "
+             "rather than discovering the need afterwards."),
+            ("The Hopfield agent at twenty environments",
+             "The scaling panel runs the classic methods to twenty environments; "
+             "the store has only ever been run to five. The comparison at N=20 is "
+             "therefore between measured baselines and an assumption, and the "
+             "page does not make it."),
+        ):
+            A(f"<tr><td class='k'>{esc(name)}</td><td>{why}</td></tr>")
+        A("</tbody></table></div>")
+        A('<div class="note"><h4>How this section came to exist</h4>'
+          "<p>Wave 3 was not deferred — it was <em>forgotten</em>. Wave 2 finished, "
+          "then three corrections landed in a row (a coefficient range taken from "
+          "the wrong loss scale, a distillation term carrying no gradient, an "
+          "importance sampler that was not a reservoir), and each one re-ran an arm "
+          "that already existed. Re-running existing work displaced new work, the "
+          "suite was called complete when the corrections finished rather than when "
+          "the plan was finished, and the page said “nine methods” because it had "
+          "counted rows in a table that also held the controls.</p>"
+          "<p>Nothing in the process caught it. A reader asking where the "
+          "hypernetwork had gone did. So the method count on this page is now "
+          "derived from the runs that exist rather than written down, and this "
+          "section is generated beside the results instead of being remembered.</p>"
+          "</div>")
 
     A('<h2 id="provenance"><span class="sec">12</span> Provenance</h2>')
     A("<p>Every number on this page is read out of the run histories by "
@@ -1890,22 +2078,91 @@ def render(d: dict) -> str:
       f'<span>data: {esc(d.get("generated", ""))}</span>'
       "<span>branch worktree-continual-control-suite</span></footer>")
     A("</div>")
+    return _renumber_sections("\n".join(P))
+
+
+def render(d: dict, d_disc: dict | None = None) -> str:
+    """The whole document: one head, and one or two switchable page bodies.
+
+    Both action spaces live at the same URL on purpose. They are the same
+    experiment run twice and the only honest readings are comparative, so
+    putting them behind two links would make the comparison the reader's job.
+    """
+    P: list[str] = []
+    A = P.append
+    A("<title>Continual Control Results</title>")
+    A('<link rel="preconnect" href="https://fonts.googleapis.com">')
+    A('<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>')
+    A('<link rel="stylesheet" href="https://fonts.googleapis.com/css2?'
+      'family=Spectral:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&'
+      'family=IBM+Plex+Mono:wght@400;500;600&display=swap">')
+    A(f"<style>{CSS}</style>")
+
+    if d_disc:
+        A('<div class="switch"><div class="in">'
+          '<span class="lb">Action space</span>'
+          '<button id="btn-continuous" aria-selected="true" '
+          'onclick="showPage(\'continuous\')">Continuous</button>'
+          '<button id="btn-discrete" aria-selected="false" '
+          'onclick="showPage(\'discrete\')">Discrete</button>'
+          '<span class="note">Same runs, same protocol, different action '
+          'head. Floors and ceilings differ, so compare within a space.</span>'
+          "</div></div>")
+
+    A('<div id="page-continuous">')
+    A(render_body(d, "continuous", d_disc))
+    A("</div>")
+    if d_disc:
+        A('<div id="page-discrete" hidden>')
+        A(render_body(d_disc, "discrete", d))
+        A("</div>")
+        # `hidden` rather than a style toggle, and every storage access in a
+        # try/catch: the page is read in private windows and in thumbnail
+        # capture, where localStorage itself throws rather than returning null.
+        A("""<script>
+function showPage(which){
+  var ok = ['continuous','discrete'];
+  if (ok.indexOf(which) < 0) which = 'continuous';
+  ok.forEach(function(k){
+    var pg = document.getElementById('page-' + k);
+    var bt = document.getElementById('btn-' + k);
+    if (pg) pg.hidden = (k !== which);
+    if (bt) bt.setAttribute('aria-selected', String(k === which));
+  });
+  try { localStorage.setItem('cl-action-space', which); } catch (e) {}
+}
+(function(){
+  var saved = null;
+  try { saved = localStorage.getItem('cl-action-space'); } catch (e) {}
+  if (saved) showPage(saved);
+})();
+</script>""")
     return "\n".join(P)
 
 
 def main() -> None:
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--data", required=True)
+    p.add_argument("--data_discrete", default=None,
+                   help="Second results JSON, built from the discrete wave. "
+                        "When given the page carries both action spaces behind "
+                        "a switcher at one URL.")
     p.add_argument("--out", required=True)
     args = p.parse_args()
     with open(args.data) as f:
         d = json.load(f)
-    html_text = render(d)
+    d_disc = None
+    if args.data_discrete and os.path.exists(args.data_discrete):
+        with open(args.data_discrete) as f:
+            d_disc = json.load(f)
+    html_text = render(d, d_disc)
     os.makedirs(os.path.dirname(os.path.abspath(args.out)) or ".", exist_ok=True)
     with open(args.out, "w") as f:
         f.write(html_text)
     print(f"[page] wrote {args.out}  ({len(html_text)} bytes, "
-          f"{len(d.get('methods', []))} method configs)")
+          f"{len(d.get('methods', []))} method configs"
+          + (f", + {len(d_disc.get('methods', []))} discrete" if d_disc else "")
+          + ")")
 
 
 if __name__ == "__main__":
