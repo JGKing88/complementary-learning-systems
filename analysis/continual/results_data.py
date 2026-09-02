@@ -230,6 +230,26 @@ STAIRCASE_ARMS = [
      "trunk."),
 ]
 
+#: The discrete wave has no wave-3 isolation family, so two of the four arms
+#: above do not exist there. Same shape of spread -- the floor, the method that
+#: wins, a second replay-family method, and the best pure regulariser -- chosen
+#: from what that space actually ran.
+STAIRCASE_ARMS_DISCRETE = [
+    ("R_none", "Naive SGD", "The floor. Each environment is learned and then "
+     "overwritten by the next."),
+    ("B_er_bufinf_rb4", "Experience Replay (unbounded)",
+     "Closes 95% of the gap between this space's floor and its ceiling."),
+    ("D_clear_cc1", "CLEAR",
+     "Replay with a behavioural-cloning term on the stored trajectories."),
+    ("C_ewc_lam10000", "Online EWC",
+     "The best pure regulariser here, and still far short of replay."),
+]
+
+STAIRCASE_SETS = {
+    "continuous": STAIRCASE_ARMS,
+    "discrete": STAIRCASE_ARMS_DISCRETE,
+}
+
 
 def _smooth(xs, window: int):
     """Centered rolling mean. At n_trials=1 each raw point is a coin flip, so
@@ -275,7 +295,54 @@ def _censored_steps_series(hist, cap: float):
     return dict(out)
 
 
-def collect_staircase(merged_dir, smooth: int = 15, stride: int = 10):
+def _spl_series(hist):
+    """{env: [(step, mean SPL over seeds)]}, or {} if the runs predate the field.
+
+    SPL is `success * optimal / max(path, optimal)`: bounded in [0, 1], defined
+    on every trial because a failure contributes a clean zero, and normalised
+    by how hard the trial was. That last part is what neither `reached` nor
+    `steps_to_goal` can do -- both are scored on the trials the arm happened to
+    solve, so an arm that only ever reaches the near goals is graded on a
+    nearer subpopulation than one that also reaches the far ones.
+
+    Returns empty rather than zeros when `optimal_to_goal` is absent. Every
+    continuous history predates the field, and a series that quietly reported
+    0.0 for them would look like a policy that never takes an efficient route
+    rather than like a measurement that was never made.
+    """
+    def as_list(v):
+        return v if isinstance(v, list) else [v]
+
+    have_field = False
+    out = defaultdict(list)
+    for step, _train_env, inner in hist.get("trace", []):
+        for k, entry in inner.items():
+            R = as_list(entry.get("reached"))
+            P = as_list(entry.get("path_to_goal"))
+            O = as_list(entry.get("optimal_to_goal"))
+            vals = []
+            for i in range(max(len(R), len(P), len(O))):
+                ri = R[i] if i < len(R) else None
+                pi = P[i] if i < len(P) else None
+                oi = O[i] if i < len(O) else None
+                if not ri:
+                    vals.append(0.0)          # failed: SPL is zero, not missing
+                    continue
+                if oi is None or pi is None or oi <= 0:
+                    continue                  # reached, but unscoreable
+                have_field = True
+                vals.append(float(oi) / max(float(pi), float(oi)))
+            if vals:
+                out[int(k)].append((int(step), sum(vals) / len(vals)))
+    if not have_field:
+        return {}
+    for k in out:
+        out[k].sort()
+    return dict(out)
+
+
+def collect_staircase(merged_dir, smooth: int = 15, stride: int = 10,
+                      arms=None):
     """Per-env `reached` traces for the forgetting panel, one entry per arm.
 
     Reads the merged (multi-iter) histories, so every point is already a mean
@@ -287,7 +354,7 @@ def collect_staircase(merged_dir, smooth: int = 15, stride: int = 10):
     if not merged_dir or not os.path.isdir(merged_dir):
         return []
     out = []
-    for arm, label, why in STAIRCASE_ARMS:
+    for arm, label, why in (arms if arms is not None else STAIRCASE_ARMS):
         path = os.path.join(merged_dir, f"{arm}.json")
         if not os.path.exists(path):
             continue
@@ -301,6 +368,7 @@ def collect_staircase(merged_dir, smooth: int = 15, stride: int = 10):
             continue
         cap = float((raw.get("metadata") or {}).get("max_steps") or 200)
         steps_series = _censored_steps_series(hist, cap)
+        spl_series = _spl_series(hist)
 
         def _thin(src, digits):
             envs = {}
@@ -319,6 +387,7 @@ def collect_staircase(merged_dir, smooth: int = 15, stride: int = 10):
                        for b in hist["blocks"]],
             "envs": _thin(series, 4),
             "envs_steps": _thin(steps_series, 1),
+            "envs_spl": _thin(spl_series, 4) if spl_series else {},
             "step_cap": cap,
             "max_step": max_step,
         })
@@ -360,6 +429,11 @@ def main() -> None:
                         "pretrained policy memorised its pool, the held-out "
                         "evaluation is measuring a policy that cannot "
                         "navigate, and a flat curve means nothing.")
+    p.add_argument("--staircase_set", default="continuous",
+                   choices=sorted(STAIRCASE_SETS),
+                   help="Which arm list the forgetting panels show. The two "
+                        "action spaces ran different methods, so the panel "
+                        "cannot use one list for both.")
     p.add_argument("--staircase_dir", default=None,
                    help="Directory of merged multi-iter histories "
                         "(merge_histories.py output), one per arm.")
@@ -402,7 +476,8 @@ def main() -> None:
         "identifiability": _read_json(args.identifiability),
         "incontext_generalization": _read_json(args.incontext_generalization),
         "incontext_upper_bound": _read_json(args.incontext_upper_bound),
-        "staircase": collect_staircase(args.staircase_dir),
+        "staircase": collect_staircase(
+            args.staircase_dir, arms=STAIRCASE_SETS[args.staircase_set]),
         "hopfield_costs": {
             # Constants of the model, not measurements -- stated here so the
             # frontier figure has both ends of every axis in one place.

@@ -985,13 +985,20 @@ def render_body(d: dict, variant: str = "continuous",
           "flip.</p>")
         A(f'<div class="fig">{staircase_svg(stair)}</div>')
         A("<p>Read the naive panel first, because it is the shape the rest are "
-          "arguing with. Each environment climbs to roughly 0.9 while it is "
-          "being trained and then falls to near the floor within a few dozen "
-          "updates of the stream moving on — not a slow decay, a collapse that "
-          "happens inside the next block. That is why the headline metric is "
-          "retention on the environments already left rather than average "
-          "performance: the average is dominated by the one environment the "
-          "method happens to be training on, which every method solves.</p>")
+          "arguing with. Each environment climbs while it is being trained and "
+          "then drops within a few dozen updates of the stream moving on — not "
+          "a slow decay, a collapse that happens inside the next block. That "
+          "is why the headline metric is retention on the environments already "
+          "left rather than average performance: the average is dominated by "
+          "the one environment the method happens to be training on, which "
+          "every method solves.</p>")
+        if variant == "discrete":
+            A("<p>The drop is real but it does not go all the way down here. "
+              "The naive floor in this action space is far above the "
+              "continuous one, so the abandoned environments settle at a level "
+              "rather than at zero — which is the same fact the frontier "
+              "table's floor row reports, seen per environment and over "
+              "time.</p>")
 
         cap = int((stair[0] or {}).get("step_cap") or 200)
         A("<h3>The same thing in steps rather than in successes</h3>")
@@ -1004,6 +1011,28 @@ def render_body(d: dict, variant: str = "continuous",
         A(f'<div class="fig">'
           f'{staircase_svg(stair, key="envs_steps", ymax=float(cap), yticks=((0.0, "0"), (cap / 2.0, str(cap // 2)), (float(cap), str(cap))), invert=True)}'
           "</div>")
+        has_spl = any((r.get("envs_spl") or {}) for r in stair)
+        if has_spl:
+            A("<h3>And in route efficiency, which the other two cannot see</h3>")
+            A("<p>Success says the goal was reached; steps says how long it "
+              "took. Neither says whether the route was any good, because "
+              "neither knows how far away the goal actually was. These runs "
+              "record the shortest attainable path for every trial, so they "
+              "can be scored on <strong>SPL</strong> — "
+              "<code>success &times; optimal / max(path, optimal)</code>: "
+              "1.0 is a perfect straight-line route, 0 is a failure, and the "
+              "trial's own difficulty divides out.</p>")
+            A(f'<div class="fig">'
+              f'{staircase_svg(stair, key="envs_spl", ymax=1.0)}</div>')
+            A("<p>This is the panel the other two were standing in for, and it "
+              "exists only here: <code>optimal_to_goal</code> postdates every "
+              "continuous run, and the sequential runs save no agent "
+              "checkpoint, so it cannot be backfilled by re-evaluating — only "
+              "by retraining. The gap between a curve here and the same curve "
+              "in the success panel above is the share of each solved "
+              "environment that is being reached by a wandering route rather "
+              "than a direct one.</p>")
+
         A("<p><strong>Counting the failures at the cap is the whole trick.</strong> "
           "The obvious alternative — average the step count over the trials "
           "that reached the goal — is worse than useless here, because it "

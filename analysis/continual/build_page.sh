@@ -25,19 +25,30 @@ mkdir -p "$OUT_DIR"
 # histories like every other number on the page -- a figure built from files
 # somebody merged once is exactly the kind of thing that stops matching its
 # runs. The arm list comes from results_data so there is one source of truth.
+# The two action spaces ran different methods, so each panel needs its own arm
+# list; both come from results_data so there is one source of truth.
+merge_set () {   # merge_set <histories subdir> <merged out dir> <set name>
+    local src="$CLS_HISTORIES/$1" dst="$2" setname="$3"
+    mkdir -p "$dst"
+    local arms
+    arms=$("$PY" -c "from analysis.continual.results_data import STAIRCASE_SETS; print(' '.join(a for a,_,_ in STAIRCASE_SETS['$setname']))")
+    local A N
+    for A in $arms; do
+        N=$(ls "$src/${A}"_s*.json 2>/dev/null | wc -l)
+        if [[ "$N" -gt 0 ]]; then
+            "$PY" -u -m analysis.continual.merge_histories \
+                --inputs "$src/${A}"_s*.json \
+                --out "$dst/${A}.json" --run_name "$A" >/dev/null
+        else
+            echo "[build_page] note: no seed files for $A in $1; panel omits it"
+        fi
+    done
+}
+
 MERGED="$CLS_HISTORIES/merged"
-mkdir -p "$MERGED"
-STAIR_ARMS=$("$PY" -c "from analysis.continual.results_data import STAIRCASE_ARMS; print(' '.join(a for a,_,_ in STAIRCASE_ARMS))")
-for A in $STAIR_ARMS; do
-    N=$(ls "$CLS_HISTORIES"/wave1/"${A}"_s*.json 2>/dev/null | wc -l)
-    if [[ "$N" -gt 0 ]]; then
-        "$PY" -u -m analysis.continual.merge_histories \
-            --inputs "$CLS_HISTORIES"/wave1/"${A}"_s*.json \
-            --out "$MERGED/${A}.json" --run_name "$A" >/dev/null
-    else
-        echo "[build_page] note: no seed files for $A; panel will omit it"
-    fi
-done
+MERGED_D="$CLS_HISTORIES/merged_d"
+merge_set wave1 "$MERGED" continuous
+[[ -d "$CLS_HISTORIES/wave1d" ]] && merge_set wave1d "$MERGED_D" discrete
 
 "$PY" -u -m analysis.continual.results_data \
     --wave0_dir     "$CLS_HISTORIES/wave0" \
@@ -65,6 +76,8 @@ if [[ -d "$CLS_HISTORIES/wave1d" ]]; then
         --recorded_dir  "$CLS_HISTORIES" \
         --runs_root     "$CLS_RUNS" \
         --joint_tag     wave0d \
+        --staircase_dir "$MERGED_D" \
+        --staircase_set discrete \
         --out "$DATA_D"
 else
     echo "[build_page] no discrete wave yet; page will carry one action space"
