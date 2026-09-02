@@ -329,6 +329,14 @@ def main() -> None:
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--wave0_dir", required=True)
     p.add_argument("--wave1_dir", required=True)
+    p.add_argument("--joint_tag", default="wave0",
+                   help="Run-directory tag for the T0.1 joint sweep: 'wave0' "
+                        "for the continuous wave, 'wave0d' for the discrete "
+                        "one. Must be set alongside --wave0_dir/--wave1_dir: "
+                        "the joint runs live under runs/rnn/ rather than in "
+                        "the histories directory, so pointing the other two "
+                        "at a discrete wave while leaving this alone would "
+                        "put a Gaussian-head ceiling on a Categorical page.")
     p.add_argument("--recorded_dir", required=True)
     p.add_argument("--runs_root", required=True)
     p.add_argument("--n20_dir", default=None,
@@ -358,7 +366,7 @@ def main() -> None:
     p.add_argument("--out", required=True)
     args = p.parse_args()
 
-    joint = W0.load_joint(args.runs_root)
+    joint = W0.load_joint(args.runs_root, args.joint_tag)
     joint_rows = []
     for (hid, lay, lr, nupd), v in sorted(joint.items()):
         joint_rows.append({

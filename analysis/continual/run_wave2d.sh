@@ -1,10 +1,10 @@
 #!/bin/bash -l
 #SBATCH --job-name=cl-wave2d
-#SBATCH --time=48:00:00
+#SBATCH --time=23:59:00
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=96
 #SBATCH --mem=220G
-#SBATCH --partition=pi_fiete
+#SBATCH --partition=ou_bcs_normal
 #SBATCH --mail-type=FAIL
 #SBATCH --mail-user=jackking@mit.edu
 #SBATCH --output=/home/jackking/cls/hopfield_nav/logs/slurm_cl_wave2d_%j.out
@@ -70,6 +70,16 @@ if [[ "$CALIBRATED" != "yes" ]]; then
     echo "[wave2d]        then fill in the ranges above and set CALIBRATED=yes." >&2
     exit 1
 fi
+
+# Partition: ou_bcs_normal, NOT pi_fiete. pi_fiete looks like the right home for
+# a long job -- it is the 7-day partition the plan reserves for exactly that --
+# but its QOS caps the whole *group* at cpu=48, and this job asks for 96. A job
+# larger than the group cap does not queue behind other work; it sits at
+# QOSGrpCpuLimit forever, and in squeue it is indistinguishable from a normal
+# PENDING unless you read the REASON column. ou_bcs_normal allows cpu=448 across
+# 21 nodes, so both discrete waves fit side by side; the cost is its 1-day wall,
+# which is comfortable here -- wave0d put 64 concurrent tasks through in 71
+# minutes, so ~220 tasks is about three such waves.
 
 module load miniforge/24.3.0-0
 source activate cls
