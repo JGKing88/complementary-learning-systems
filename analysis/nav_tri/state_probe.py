@@ -330,7 +330,7 @@ def collect(*, agent, cfg, envs, vh, offsets, embed_dim, device, args, mode,
             n_distractors):
     """Roll out every env and stack (obs, h, targets, trial, step)."""
     rng = np.random.RandomState(args.seed)
-    obs, hid, trial, step = [], [], [], []
+    obs, hid, hcon, trial, step = [], [], [], [], []
     targets: dict = {}
     next_trial = 0
     for i, env in enumerate(envs):
@@ -359,7 +359,13 @@ def collect(*, agent, cfg, envs, vh, offsets, embed_dim, device, args, mode,
             deterministic=not args.sampled_rollout)
 
         o = np.asarray(rec["obs"], dtype=np.float64)           # (T, B, D)
+        # `h_in` for USE always: the action at t is f(obs_t, h_t), so splicing
+        # anything else answers a question nobody asked. CONTENT can take
+        # either, and `--content_h out` is the one that matches a supervised
+        # head bolted onto the trunk, which reads `features` = h_{t+1}.
         hh = np.asarray(rec["h_in"], dtype=np.float64)         # (T, B, H)
+        hc = (np.asarray(rec["h_out"], dtype=np.float64)
+              if args.content_h == "out" else hh)
         T, B, _ = o.shape
         tg = build_targets(rec, env.size,
                            getattr(cfg.agent, "aux_visited_radius", 3.0))
@@ -369,13 +375,14 @@ def collect(*, agent, cfg, envs, vh, offsets, embed_dim, device, args, mode,
                 if mode == "nav" else np.ones(T * B, dtype=bool))
         obs.append(o.reshape(T * B, -1)[keep])
         hid.append(hh.reshape(T * B, -1)[keep])
+        hcon.append(hc.reshape(T * B, -1)[keep])
         trial.append((next_trial + np.tile(np.arange(B), T))[keep])
         step.append(np.repeat(np.arange(T), B)[keep])
         for k, v in tg.items():
             targets.setdefault(k, []).append(v[keep])
         next_trial += B
 
-    return (np.concatenate(obs), np.concatenate(hid),
+    return (np.concatenate(obs), np.concatenate(hid), np.concatenate(hcon),
             {k: np.concatenate(v) for k, v in targets.items()},
             np.concatenate(trial), np.concatenate(step))
 
@@ -395,7 +402,10 @@ def report(res: dict, label: str) -> None:
           f"{c['_n_test_trials']} test trials, hidden {res['hidden']}, "
           f"obs {res['obs_dim']}")
 
-    print("\n  CONTENT -- out-of-sample R^2 on held-out trials")
+    h_at = res.get("content_h", "in")
+    print("\n  CONTENT -- out-of-sample R^2 on held-out trials, h_%s (%s)"
+          % (h_at, "h_t, the state the action read" if h_at == "in"
+             else "h_{t+1}, what an aux head sees"))
     print("    %-12s %4s %8s %8s %8s %9s %9s"
           % ("target", "dim", "eff_n", "R2(obs)", "R2(h)", "R2(both)",
              "deltaR2"))
@@ -546,6 +556,15 @@ def main() -> None:
                         "changes which states get visited, which matters "
                         "because a deterministic rollout can sit in a much "
                         "narrower part of the state space (§20.4).")
+    p.add_argument("--content_h", default="in", choices=["in", "out"],
+                   help="Which hidden state the CONTENT probes read. 'in' "
+                        "(default) is h_t, the state the action at t was "
+                        "computed from -- causally matched to the USE half, "
+                        "which always uses h_t. 'out' is h_{t+1}, the state "
+                        "AFTER obs_t, which is what a supervised head bolted "
+                        "onto the trunk sees (`features`); use it to compare "
+                        "against an aux-head loss, since a probe on h_t and a "
+                        "head on h_{t+1} are not the same quantity (§30.7).")
     p.add_argument("--lags", type=int, nargs="*",
                    default=[1, 2, 5, 10, 20, 50])
     p.add_argument("--device", default="cuda")
@@ -626,7 +645,7 @@ def main() -> None:
             print(f"  NOTE {path} differs on agent knobs: "
                   f"{', '.join(sorted(diff))} -- built from its own.")
         agent = load_agent(own, ck["agent_state_dict"], embed_dim, device)
-        obs, hid, targets, trial, step = collect(
+        obs, hid, hcon, targets, trial, step = collect(
             agent=agent, cfg=own, envs=envs, vh=vh, offsets=offsets,
             embed_dim=embed_dim, device=device, args=args, mode=args.mode,
             n_distractors=args.n_distractors)
@@ -634,7 +653,8 @@ def main() -> None:
         res = {
             "hidden": int(hid.shape[1]),
             "obs_dim": int(obs.shape[1]),
-            "content": content_probes(obs, hid, targets, trial, rng,
+            "content_h": args.content_h,
+            "content": content_probes(obs, hcon, targets, trial, rng,
                                       args.test_frac),
             "use": use_probes(agent, obs, hid, trial, step,
                               own.agent.num_rnn_layers, device, rng,

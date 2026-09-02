@@ -325,6 +325,20 @@ class TestRecordState:
         p = inspect.signature(rollout).parameters["record_state"]
         assert p.default is False
 
+    def test_content_h_defaults_to_the_state_the_action_read(self):
+        """h_t, not h_{t+1}: the action at t is f(obs_t, h_t), so the default
+        keeps CONTENT causally matched to USE. `out` exists only because an
+        aux head reads `features` = h_{t+1}, and comparing a probe on one
+        against a head on the other is comparing two quantities (§30.7)."""
+        import subprocess
+        import sys
+
+        r = subprocess.run(
+            [sys.executable, "-m", "analysis.nav_tri.state_probe", "--help"],
+            capture_output=True, text=True)
+        assert "--content_h" in r.stdout
+        assert "{in,out}" in r.stdout
+
 
 # ---------------------------------------------------------------------------
 # The cross-arm comparison, and the confound it exists to flag

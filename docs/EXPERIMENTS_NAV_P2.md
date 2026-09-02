@@ -7414,3 +7414,22 @@ decodable from the sensory code in a way a broad one does not. So where the
 baseline moves, a ΔR² gap is a **headroom** difference, not a storage
 difference. `cross_report` now flags those rows `[!]` and points at R²(both),
 rather than leaving it to be noticed.
+
+### 30.9 `--content_h` — closing the off-by-one
+
+§30.7's caveat is now a flag rather than a limitation. `rollout(record_state=True)`
+records both hidden states, and `--content_h` picks which one the CONTENT
+probes read:
+
+| | reads | right for |
+|---|---|---|
+| `in` (default) | `h_t` | the causal question — the action at t is f(obs_t, h_t), so this is matched to the USE half, which always uses `h_t` |
+| `out` | `h_{t+1}` | comparing against a supervised head bolted onto the trunk, which reads `features` (verified: `ppo.py` calls `agent(mb_obs, return_features=True)` and `agent.visited_logits(features)`) |
+
+USE always splices `h_t`; splicing the post-step state would answer a question
+nobody asked.
+
+**Every §30.5 number is `--content_h in`.** The `visited8` row there is
+therefore still not §27's quantity — re-running the four arms with
+`--content_h out` is what would settle whether the aux head's 0.632 → 0.367
+shows up as linear decodability. That has not been run.

@@ -128,7 +128,13 @@ def rollout(*, agent, env, env_offset, vectorhash, hopfields, cfg, device,
                           hidden state that went INTO each step, which is what
                           `state_probe` needs to ask whether the state is
                           carrying anything and whether the policy uses it.
-                          Off by default: it is (T, B, input_dim+hidden) of
+                          Records BOTH the state going in (`h_in`, which is
+                          what f(obs_t, h_t) actually reads) and the one coming
+                          out (`h_out`), because a supervised head bolted onto
+                          the trunk sees `features` -- the post-step state --
+                          and comparing a probe against such a head is only
+                          meaningful on the same tensor.
+                          Off by default: it is (T, B, input_dim+2*hidden) of
                           extra memory that no other caller wants.
 
     All three apply to EVERY channel carrying the recall, not just the obvious
@@ -169,7 +175,7 @@ def rollout(*, agent, env, env_offset, vectorhash, hopfields, cfg, device,
     rec = {k: [] for k in ("pos_f", "cell", "action", "q", "at_goal",
                            "alive", "sigma", "mu_norm", "circ_sd")}
     if record_state:
-        rec["obs"], rec["h_in"] = [], []
+        rec["obs"], rec["h_in"], rec["h_out"] = [], [], []
 
     for step in range(max_steps):
         positions = vec.positions()
@@ -283,6 +289,9 @@ def rollout(*, agent, env, env_offset, vectorhash, hopfields, cfg, device,
         result = agent.get_action_and_value(rnn_input, h_rnn,
                                             deterministic=deterministic)
         h_rnn = result["h_next"]
+        if record_state:
+            rec["h_out"].append(
+                h_rnn.detach().permute(1, 0, 2).reshape(B, -1).cpu().numpy())
         actions = result["move_action"].cpu().numpy().reshape(B, -1)
         prev_action_t = result["move_action"].float().view(B, -1)
         prev_reward_t = torch.from_numpy(current_reward).to(device).unsqueeze(1)
