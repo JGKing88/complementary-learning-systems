@@ -172,11 +172,16 @@ for S in $(seq 1 $SEEDS); do
         --method si --method_args "lam=${LAM},xi=0.1"
 done; done
 
-# --- J: the hypernetwork, in its published no-warm-start form ---------------
+# --- J: the hypernetwork, warm-started ---------------------------------------
+# base='learned', not 'none'. The no-warm-start form is what run_scratch.sh
+# runs; here there IS a checkpoint, and `hnet base='none' has no base vector to
+# warm-start` -- the agent says so itself and refuses, which is how the first
+# version of this block failed 24 tasks rather than quietly training something
+# that was not a warm start.
 for B in 10000 100000 1000000; do
 for S in $(seq 1 $SEEDS); do
     launch "J_hnet_b${B}_s${S}" "${BASE[@]}" --seed "$S" \
-        --arch hnet --hnet_base none --method hnet --method_args "beta=${B}"
+        --arch hnet --hnet_base learned --method hnet --method_args "beta=${B}"
 done; done
 
 echo "[wave-prev] launched ${#PIDS[@]} tasks; waiting"
