@@ -2349,3 +2349,98 @@ retention at naive SGD's cost, paying with an oracle task id instead. Replay
 pays the other way: 32x the processing to reach a number XdG+SI gets for
 nothing, with each doubling past ~1.8M returning about +0.03. The store spends
 neither.
+
+---
+
+## 2026-09-02 — the suite was finetuning, and the previous-action channel was never on
+
+Two facts about the published suite, found by looking rather than by a run
+failing.
+
+**Every method arm is a finetune.** 600 of 664 continuous runs load the
+pretrained checkpoint; only A2, L, L0 and T0.4 start from random weights. So
+the suite supported "a pretrained navigator retains per-environment knowledge
+across a stream" and not "an agent can learn continual navigation from
+nothing". The choice is on the record and was defensible at the time -- T0.4
+came back at ~0.55 current-env with 71-74% of environments never reaching
+criterion -- but nothing on the page said it, and a reader of the frontier table
+could not have known.
+
+**Plan decision #1 was never in effect.** The decision settled
+`--input_prev_action` on. It has been on in exactly one arm of the entire
+suite, A2. Not because anyone overrode it: the pretraining checkpoints were
+built without the channel, and `restore_arch_from_ckpt` takes
+`input_prev_action` from the checkpoint because the two imply different input
+widths. Every arm loading a checkpoint therefore ran without it regardless of
+its command line. No script passes the flag *and* a checkpoint, so nothing was
+silently dropped -- it is a gap between the plan and the runs, not a lie in the
+logs.
+
+### What the from-scratch waves found
+
+896 runs, both action spaces, configurations character-identical to the
+pretrained arms with `--load_checkpoint` removed.
+
+Discrete, best usable per method, from scratch against pretrained:
+
+    Experience Replay   0.866   0.961      XdG + SI    0.812   0.908
+    XdG                 0.721   0.829      CLEAR       0.692   0.912
+    DER++               0.652   0.904      Multi-head  0.571   0.400
+    online EWC          0.213   0.583      LwF         0.181   0.360
+    naive reference     0.088   0.298
+
+**Replay reaches 0.866 from random weights**, 90% of its pretrained value, so
+the headline was not a pretraining artefact. And the floor falls much further
+than the methods do (0.298 -> 0.088, keeping 30%), so normalised by each
+configuration's own floor and ceiling the methods look *better* from scratch,
+not worse.
+
+**Multi-head is better from scratch in both action spaces** -- 0.571 against
+0.400 discrete, 0.412 against 0.227 continuous, roughly doubling its headroom
+share both times. This is now replicated rather than a one-off, and the
+mechanism fits its own diagnostic: multi-head's heads cannot interfere, so all
+of its loss is shared-trunk drift, and a pretrained trunk carrying features
+tuned to 32 other environments has more to lose than a random one that
+co-adapts with the heads from the start. HNET behaves the same way in
+continuous (0.346 against 0.256), which is consistent -- its published form has
+no warm start at all.
+
+**The regularisers go the other way.** EWC keeps 37% of its pretrained
+retention from scratch and SI's best configuration is outright degenerate. They
+appear to need a good initialisation in a way replay does not. So "does
+pretraining help" has no single answer: it helps replay, hurts parameter
+isolation, and barely moves the regularisers, which sit near the floor either
+way.
+
+### What the channel is worth
+
+Discrete, from scratch, 54 configurations matched at 8 seeds, channel off to on:
+
+    DER++              0.652 -> 0.773   (+0.121)
+    CLEAR              0.692 -> 0.800   (+0.107)
+    Experience Replay  0.866 -> 0.945   (+0.079)
+    XdG                0.721 -> 0.766   (+0.045)
+    naive reference    0.088 -> 0.107   (+0.018)
+    XdG + SI, multi-head, EWC            flat within 0.005
+
+Eight of ten methods improve, and the gains are concentrated in the replay
+family. An earlier reading off the 160-run probe put DER++ at +0.328; the
+full-seed answer is +0.121, so the partial number was 2.7x too large. It was
+flagged as not load-bearing at the time, which was the right call.
+
+**The headline: from scratch with the channel, ER reaches 0.945 retained and
+0.976 current-env, against 0.961 and 0.985 for pretrained without it.** Within
+0.016. In the discrete action space the pretraining was *substitutable* -- give
+the agent its own last action and it gets there from random initialisation. The
+concern was not that pretraining inflated the numbers; it was that pretraining
+was standing in for a two-value input the plan had already asked for.
+
+### Still open at the time of writing
+
+Whether the channel does anything for a *pretrained* trunk. The only
+measurement is T0.4's, which is from-scratch, so it does not transfer -- an
+earlier claim here that "continuous is settled, the channel hurts there" was
+wrong for exactly that reason. Two new pretraining checkpoints were built with
+the channel and every method is running on them; discrete has ~4% of its
+headroom left and continuous 58%, so continuous is the only place it could
+move a headline.

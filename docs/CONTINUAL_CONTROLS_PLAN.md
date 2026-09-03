@@ -750,13 +750,31 @@ working and old histories stay readable.
 
 | # | decision |
 |---|---|
-| 1 | `--input_prev_action` **on**; `input_prev_reward` stays off (it leaks goal proximity) |
+| 1 | `--input_prev_action` **on**; `input_prev_reward` stays off (it leaks goal proximity). **Never took effect** — see below. |
 | 2 | **N=5 headline, N=20 scaling panel** |
 | 3 | **`continuous` movement mode**, matching the existing `agenthash` runs; `discrete` as a robustness check and the only home for EWC-DR |
 | 4 | `batch_envs=1` **kept as the regime**, with a `batch_envs=16` sensitivity condition |
 | 5 | Continual-RL framing **cut**; this is supervised domain-incremental CL |
 | 6 | Suite **cut to 9** methods; §5.1 and §5.2 promoted to first-class |
 | 7 | Compute: `ou_bcs_normal` (1-day) primary, `pi_fiete` (7-day) for long runs, `mit_normal_gpu` for burst; Wave 1 target 24 h |
+
+**Correction to decision #1 (2026-09-02).** The channel was on in exactly one
+arm of the whole suite, A2, and off in 616 of 664 continuous runs and 424 of
+472 discrete ones. The pretraining checkpoints were built without it, and
+`restore_arch_from_ckpt` takes `input_prev_action` from the checkpoint because
+the two imply different input widths — so every arm loading a checkpoint ran
+without the channel whatever its command line said. No script passes the flag
+*and* a checkpoint, so nothing was silently dropped; the decision was simply
+not implementable for the pretrained arms without rebuilding the checkpoint,
+which nobody noticed was required.
+
+It has since been measured rather than assumed. From scratch in discrete the
+channel is worth +0.079 to +0.121 retained across the replay family and flat
+elsewhere, and it closes almost the whole gap to pretraining — ER reaches 0.945
+from random weights with the channel against 0.961 pretrained without it. Two
+checkpoints have been rebuilt with the channel and the full method suite run on
+top of them, so all eight cells of the 2x2x2 (action space x initialisation x
+channel) now exist.
 
 **Still open — none blocking, defaults chosen:**
 
