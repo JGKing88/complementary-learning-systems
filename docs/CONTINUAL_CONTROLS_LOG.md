@@ -2444,3 +2444,67 @@ wrong for exactly that reason. Two new pretraining checkpoints were built with
 the channel and every method is running on them; discrete has ~4% of its
 headroom left and continuous 58%, so continuous is the only place it could
 move a headline.
+
+---
+
+## 2026-09-02 — all eight cells, and the channel's real shape
+
+The 2x2x2 is complete: two action spaces, pretrained or from scratch, channel
+off or on. Roughly 3,800 runs across the new waves.
+
+### Config-matched, which changes the answer
+
+Best-per-method compares across sweep grids that are not identical, so part of
+any delta is grid coverage rather than the variable. Matched on the exact
+configuration string, and restricted to configurations that passed the
+plasticity gate on both sides:
+
+| cell | matched | mean delta | better / worse |
+|---|---|---|---|
+| continuous, pretrained | 49 | **+0.086** | 40 / 2 |
+| continuous, from scratch | 33 | -0.016 | 1 / 8 |
+| discrete, pretrained | 40 | +0.033 | 27 / 5 |
+| discrete, from scratch | 40 | +0.044 | 22 / 1 |
+
+**The channel is worth most in continuous-pretrained** -- ER +0.302, DER++
++0.300, CLEAR +0.286 on matched configurations. That is the cell there was no
+evidence for, and the one where this log had speculated it would not matter
+because ER sat at 95% of headroom. The speculation anchored on ER and ignored
+that most methods had 10-20 points of room.
+
+### A conclusion in this log, corrected
+
+An earlier entry concluded "discrete: turn it on; continuous: leave it off --
+decision #1 was wrong as a blanket rule, it should have been
+action-space-dependent." That was drawn from the two from-scratch cells, which
+were all that existed at the time, and stated as a rule about action spaces.
+
+With all four cells it does not split by action space. It splits by
+initialisation, and only in continuous: **turn the channel on everywhere except
+continuous-from-scratch**, the single cell where it hurts. Decision #1 was
+closer to right than the earlier entry allowed. It simply could not take effect.
+
+### The one architecture that never wants it
+
+Multi-head loses in all four cells: -0.089 continuous-pretrained, -0.096
+continuous-scratch, -0.038 discrete-pretrained, -0.004 discrete-scratch. Four
+for four, and HNET behaves the same way (-0.107 continuous-pretrained). Both
+are architectures whose per-task parameters already carry the task-specific
+part, so the channel adds input width without adding anything they cannot
+already infer -- consistent with multi-head also being the one arm that is
+*better* without pretraining, for the same reason in reverse.
+
+### The page
+
+Eight pages at one URL behind a three-axis selector -- action space,
+initialisation, channel -- rather than eight flat buttons. An axis with a single
+live value is dropped, and a combination nobody ran says so rather than jumping
+somewhere the reader did not ask for. 1.55 MB, 70 sections, 100 tables, 49
+figures.
+
+One failure worth recording. The generated pretrained-with-channel wave carried
+`--hnet_base none` over from the from-scratch script and then added a
+checkpoint, which is contradictory: `none` is the no-warm-start variant. The
+agent refused by name -- "hnet base='none' has no base vector to warm-start" --
+and 24 tasks stopped instead of 24 runs quietly training something that was not
+a warm start, in a wave whose entire purpose is what a warm start does.
