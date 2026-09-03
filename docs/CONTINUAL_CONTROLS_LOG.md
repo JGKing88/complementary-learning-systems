@@ -2390,10 +2390,24 @@ Discrete, best usable per method, from scratch against pretrained:
     naive reference     0.088   0.298
 
 **Replay reaches 0.866 from random weights**, 90% of its pretrained value, so
-the headline was not a pretraining artefact. And the floor falls much further
-than the methods do (0.298 -> 0.088, keeping 30%), so normalised by each
-configuration's own floor and ceiling the methods look *better* from scratch,
-not worse.
+the headline result does not require pretraining to exist.
+
+**But pretraining helps, and substantially, almost everywhere.** An earlier
+version of this paragraph claimed that normalising by each configuration's own
+floor and ceiling made the methods look *better* from scratch. That is wrong.
+Normalisation shrinks the gap; it does not reverse it:
+
+    pretrained better, raw retention        9 of 10 discrete, 10 of 11 continuous
+    pretrained better, headroom-normalised  8 of 10 discrete,  8 of 11 continuous
+
+Headroom cost of dropping the checkpoint, discrete: EWC -27 points, DER++ -25,
+CLEAR -21, ER -9, XdG+SI -8. Continuous: XdG+SI -29, DER++ -16, ER -12.
+
+The error was generalising from multi-head, the single arm that genuinely
+reverses, to "the methods" -- while quoting ER at 94.7% -> 85.5% in the same
+sentence, which is a nine-point decrease and says the opposite. Recorded
+because a wrong claim that survives in a log is worse than one that never got
+written down.
 
 **Multi-head is better from scratch in both action spaces** -- 0.571 against
 0.400 discrete, 0.412 against 0.227 continuous, roughly doubling its headroom
