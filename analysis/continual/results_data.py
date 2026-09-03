@@ -468,6 +468,10 @@ def main() -> None:
                         "pretrained policy memorised its pool, the held-out "
                         "evaluation is measuring a policy that cannot "
                         "navigate, and a flat curve means nothing.")
+    p.add_argument("--prev_dir", default=None,
+                   help="Histories for the same arms run WITH "
+                        "--input_prev_action. Emitted as `prev_action` so the "
+                        "page can show the channel's worth arm-for-arm.")
     p.add_argument("--staircase_dir", default=None,
                    help="Directory of merged multi-iter histories "
                         "(merge_histories.py output), one per arm.")
@@ -510,6 +514,9 @@ def main() -> None:
         "identifiability": _read_json(args.identifiability),
         "incontext_generalization": _read_json(args.incontext_generalization),
         "incontext_upper_bound": _read_json(args.incontext_upper_bound),
+        "prev_action": (collect_methods(args.prev_dir)
+                        if args.prev_dir and os.path.isdir(args.prev_dir)
+                        else []),
         "staircase": collect_staircase(
             args.staircase_dir, arms=staircase_stems(args.wave1_dir)),
         "hopfield_costs": {

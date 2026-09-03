@@ -613,6 +613,52 @@ def _si(n) -> str:
     return str(int(n))
 
 
+def prev_action_table(d: dict) -> str:
+    """Matched arms with and without the previous-action channel.
+
+    Plan decision #1 settled `--input_prev_action` on. It was on in exactly one
+    arm of the whole suite, because the pretraining checkpoint was built
+    without it and `restore_arch_from_ckpt` takes the flag from the checkpoint
+    -- the two imply different input widths, so every arm loading that
+    checkpoint ran without the channel whatever its command line said.
+    From-scratch runs have no checkpoint to inherit from, which makes this the
+    first place the decision can actually be tested.
+
+    Matched on the exact configuration string, so the only difference between
+    the two columns is the channel. Configurations present in one wave and not
+    the other are simply absent rather than paired with a near neighbour.
+    """
+    base = {m["config"]: m for m in d.get("methods", [])}
+    prev = {m["config"]: m for m in d.get("prev_action", [])}
+    shared = [c for c in base if c in prev
+              and base[c]["retained"] is not None
+              and prev[c]["retained"] is not None]
+    if len(shared) < 3:
+        return ""
+    shared.sort(key=lambda c: -(prev[c]["retained"] or 0))
+
+    o = ['<div class="tw"><table>']
+    o.append("<thead><tr><th>Method</th><th>Configuration</th>"
+             '<th class="num">without</th><th class="num">with</th>'
+             '<th class="num">delta</th></tr></thead><tbody>')
+    gains = 0
+    for c in shared:
+        a, b = base[c], prev[c]
+        dv = b["retained"] - a["retained"]
+        gains += 1 if dv > 0 else 0
+        cls = ' class="hl"' if dv > 0.02 else (' class="bad"' if dv < -0.02 else "")
+        o.append(f'<tr{cls}><td class="k">{esc(a["display"])}</td>'
+                 f'<td><code>{esc(c)}</code></td>'
+                 f'<td class="num">{fmt(a["retained"])}</td>'
+                 f'<td class="num">{fmt(b["retained"])}</td>'
+                 f'<td class="num">{dv:+.3f}</td></tr>')
+    o.append("</tbody></table></div>")
+    o.append(f'<p style="color:var(--muted);font-size:13px">'
+             f"{gains} of {len(shared)} matched configurations improve with the "
+             "channel.</p>")
+    return "".join(o)
+
+
 def frontier_scatter_svg(methods, hop=None) -> str:
     """Retention against the work it cost, one point per method.
 
@@ -1005,8 +1051,22 @@ def headroom_table(here: dict, there: dict) -> str:
     return "".join(o)
 
 
-def render_body(d: dict, variant: str = "continuous",
-                other: dict | None = None) -> str:
+#: key -> (switcher label, action space, weight initialisation). The suite is
+#: a 2x2: two action spaces, each with and without the pretrained checkpoint
+#: that every method arm in waves 1-3 loads. They live at one URL because the
+#: only honest readings are comparative.
+PAGE_SPECS = {
+    "continuous":    ("Continuous",               "continuous", "pretrained"),
+    "discrete":      ("Discrete",                 "discrete",   "pretrained"),
+    "continuous_fs": ("Continuous, from scratch", "continuous", "scratch"),
+    "discrete_fs":   ("Discrete, from scratch",   "discrete",   "scratch"),
+}
+
+
+def render_body(d: dict, space: str = "continuous",
+                init: str = "pretrained",
+                other: dict | None = None,
+                other_space: str = "discrete") -> str:
     P: list[str] = []
     A = P.append
 
@@ -1023,7 +1083,7 @@ def render_body(d: dict, variant: str = "continuous",
     A('<div class="eyebrow"><span>Hopfield-nav</span>'
       f'<span class="dim">Results · {esc(d.get("generated", "")[:10])}</span>'
       '<span class="dim">docs/CONTINUAL_CONTROLS_PLAN.md</span></div>')
-    if variant == "discrete":
+    if space == "discrete":
         A("<h1>The same suite, with a Categorical action head</h1>")
         A('<p class="stand">Every method re-run under discrete movement — four '
           "cardinal actions and a cross-entropy loss — against its own oracle, "
@@ -1032,12 +1092,23 @@ def render_body(d: dict, variant: str = "continuous",
           "the goal is uncertain, and this wave exists to find out how much of "
           "that suite was measuring the parameterisation rather than "
           "forgetting.</p>")
+    elif init == "scratch":
+        A("<h1>How good does it get without the head start?</h1>")
     else:
         A("<h1>How good does classic continual learning get?</h1>")
         A('<p class="stand">State-of-the-art continual-learning methods against '
           "the Hopfield store on the same environment stream. The comparison is a "
           "cost frontier, not a leaderboard: retention alone ranks a method that "
           "refuses to learn above one that works.</p>")
+    if init == "scratch":
+        A('<div class="note warn"><h4>No pretrained checkpoint</h4>'
+          "<p>Every method arm in the main suite finetunes a policy pretrained "
+          "on 32 environments — 600 of 664 continuous runs, and the same "
+          "structure in discrete. This page is those methods at those "
+          "settings from random weights, with <code>--load_checkpoint</code> "
+          "removed and nothing else changed. The floor moves, so read every "
+          "arm against <em>this</em> page's reference row rather than against "
+          "the pretrained one.</p></div>")
     A("</header>")
 
     # ---- KPI strip ---------------------------------------------------
@@ -1169,7 +1240,7 @@ def render_body(d: dict, variant: str = "continuous",
           "over 15 updates because a single evaluation trial is a coin "
           "flip.</p>")
         by_work = staircase_svg(stair, x_mode="samples")
-        gid = f"stair-{variant}"
+        gid = f"stair-{space}-{init}"
         if by_work:
             A(f'<div class="xsw"><span class="lb">x-axis</span>'
               f'<button id="{gid}-b-updates" aria-selected="true" '
@@ -1192,7 +1263,7 @@ def render_body(d: dict, variant: str = "continuous",
           "left rather than average performance: the average is dominated by "
           "the one environment the method happens to be training on, which "
           "every method solves.</p>")
-        if variant == "discrete":
+        if space == "discrete":
             A("<p>The drop is real but it does not go all the way down here. "
               "The naive floor in this action space is far above the "
               "continuous one, so the abandoned environments settle at a level "
@@ -1295,7 +1366,7 @@ def render_body(d: dict, variant: str = "continuous",
     A("<thead><tr><th>Method</th><th>Configuration</th>"
       '<th class="num">Retained</th><th class="num">Current env</th>'
       '<th class="num">Forgetting</th><th class="num">Stored</th>'
-      + ('<th class="num">Discrete<br>'
+      + (f'<th class="num">{esc(other_space.capitalize())}<br>'
          '<span style="color:var(--muted);font-weight:400;font-size:12px">'
          'retained</span></th>' if show_disc else "")
       + "<th>Needs</th></tr></thead><tbody>")
@@ -1338,9 +1409,10 @@ def render_body(d: dict, variant: str = "continuous",
             A(frontier_row(r, disc_best.get(r["arm"]), show_disc))
     A("</tbody></table></div>")
     if show_disc:
-        A('<p style="color:var(--muted);font-size:13px">The discrete column is '
-          "the same method's best configuration under a Categorical action "
-          "head, from the other page. Do not read the two retention columns "
+        A('<p style="color:var(--muted);font-size:13px">The '
+          f"{esc(other_space)} column is "
+          "the same method's best configuration in the other action space, "
+          "from the other page. Do not read the two retention columns "
           "against each other directly: the naive floor is 0.04 in this space "
           "and 0.30 in that one, so the fraction of available headroom each "
           "method closes is the comparison that means something, and it is on "
@@ -1356,6 +1428,27 @@ def render_body(d: dict, variant: str = "continuous",
           "group could have obtained for itself. Ranking the two groups "
           "together would read as a comparison; they are an upper bound and a "
           "result.</p></div>")
+
+    if init == "scratch":
+        _pa = prev_action_table(d)
+        if _pa:
+            A('<h2 id="prevaction"><span class="sec">2</span> '
+              "What the previous-action channel is worth</h2>")
+            A("<p>The agent can be given its own last action as an input "
+              "channel. The plan settled that on; it has been on in exactly "
+              "one arm of the entire suite, because the pretraining checkpoint "
+              "was built without it and a loaded checkpoint overrides the flag "
+              "— the two imply different input widths. From-scratch runs have "
+              "no checkpoint to inherit from, so this is the first place the "
+              "decision can be tested at all.</p>")
+            A(_pa)
+            A("<p>The channel is 4 values wide under discrete movement — a "
+              "one-hot of the last cardinal — and 2 under continuous, where it "
+              "is a displacement that the collapsed Gaussian head keeps close "
+              "to zero. That is the likely reason the sign differs between the "
+              "action spaces, and it matches what T0.4 measured on the naive "
+              "floor: worth +0.045 current-env in discrete, costing 0.069 in "
+              "continuous.</p>")
 
     _sc = frontier_scatter_svg(methods, hop)
     if _sc:
@@ -1434,7 +1527,7 @@ def render_body(d: dict, variant: str = "continuous",
 
     # ---- Tier 0 -------------------------------------------------------
     # ---- parameter isolation (Wave 3) ---------------------------------
-    if variant == "discrete" and other:
+    if space == "discrete" and other:
         _ht = headroom_table(d, other)
         if _ht:
             A('<h2 id="against"><span class="sec">5</span> '
@@ -1971,7 +2064,7 @@ def render_body(d: dict, variant: str = "continuous",
     # was written about the continuous wave. Rendering it under discrete
     # numbers would put continuous claims on a page that did not produce
     # them, which is worse than omitting them.
-    if variant == "continuous":
+    if space == "continuous" and init == "pretrained":
         A('<h2 id="found"><span class="sec">9</span> Found along the way</h2>')
         A("<p>Twelve defects surfaced while building this, and they are on the "
           "page because they share a property worth knowing about: <strong>not one "
@@ -2327,13 +2420,24 @@ def render_body(d: dict, variant: str = "continuous",
     return _renumber_sections("\n".join(P))
 
 
-def render(d: dict, d_disc: dict | None = None) -> str:
-    """The whole document: one head, and one or two switchable page bodies.
+def render(datasets: dict) -> str:
+    """The whole document: one head, and every page that has data, switchable.
 
-    Both action spaces live at the same URL on purpose. They are the same
-    experiment run twice and the only honest readings are comparative, so
-    putting them behind two links would make the comparison the reader's job.
+    `datasets` maps a key of PAGE_SPECS to that page's results JSON. Missing
+    keys are simply absent -- the page renders whatever has been run, which is
+    what lets the from-scratch waves appear the moment they land without any
+    change here.
+
+    All of them live at one URL on purpose. They are the same experiment run
+    under two action spaces and two initialisations, and the only honest
+    readings are comparative; two or four links would make the comparison the
+    reader's job.
     """
+    keys = [k for k in PAGE_SPECS if k in datasets and datasets[k]]
+    if not keys:
+        raise ValueError("render() needs at least one dataset")
+    first = keys[0]
+
     P: list[str] = []
     A = P.append
     A("<title>Continual Control Results</title>")
@@ -2344,43 +2448,54 @@ def render(d: dict, d_disc: dict | None = None) -> str:
       'family=IBM+Plex+Mono:wght@400;500;600&display=swap">')
     A(f"<style>{CSS}</style>")
 
-    if d_disc:
+    if len(keys) > 1:
         A('<div class="switch"><div class="in">'
-          '<span class="lb">Action space</span>'
-          '<button id="btn-continuous" aria-selected="true" '
-          'onclick="showPage(\'continuous\')">Continuous</button>'
-          '<button id="btn-discrete" aria-selected="false" '
-          'onclick="showPage(\'discrete\')">Discrete</button>'
-          '<span class="note">Same runs, same protocol, different action '
-          'head. Floors and ceilings differ, so compare within a space.</span>'
-          "</div></div>")
+          '<span class="lb">Suite</span>')
+        for k in keys:
+            label = PAGE_SPECS[k][0]
+            sel = "true" if k == first else "false"
+            A(f'<button id="btn-{k}" aria-selected="{sel}" '
+              f"onclick=\"showPage('{k}')\">{esc(label)}</button>")
+        A('<span class="note">Same protocol throughout. Floors and ceilings '
+          "differ between action spaces and between initialisations, so "
+          "compare within a page.</span></div></div>")
 
-    A('<div id="page-continuous">')
-    A(render_body(d, "continuous", d_disc))
-    A("</div>")
-    if d_disc:
-        A('<div id="page-discrete" hidden>')
-        A(render_body(d_disc, "discrete", d))
+    for k in keys:
+        _, space, init = PAGE_SPECS[k]
+        # The comparison partner is the other action space at the SAME
+        # initialisation. Pairing a from-scratch page against a pretrained one
+        # would put the checkpoint and the action head in the same column.
+        partner_space = "discrete" if space == "continuous" else "continuous"
+        partner = next((o for o in keys
+                        if PAGE_SPECS[o][1] == partner_space
+                        and PAGE_SPECS[o][2] == init), None)
+        hid = "" if k == first else " hidden"
+        A(f'<div id="page-{k}"{hid}>')
+        A(render_body(datasets[k], space, init,
+                      datasets.get(partner), partner_space))
         A("</div>")
+
+    if len(keys) > 1:
         # `hidden` rather than a style toggle, and every storage access in a
         # try/catch: the page is read in private windows and in thumbnail
         # capture, where localStorage itself throws rather than returning null.
+        ids = ",".join(f"'{k}'" for k in keys)
         A("""<script>
+var CL_PAGES = [%s];
 function showPage(which){
-  var ok = ['continuous','discrete'];
-  if (ok.indexOf(which) < 0) which = 'continuous';
-  ok.forEach(function(k){
+  if (CL_PAGES.indexOf(which) < 0) which = CL_PAGES[0];
+  CL_PAGES.forEach(function(k){
     var pg = document.getElementById('page-' + k);
     var bt = document.getElementById('btn-' + k);
     if (pg) pg.hidden = (k !== which);
     if (bt) bt.setAttribute('aria-selected', String(k === which));
   });
-  try { localStorage.setItem('cl-action-space', which); } catch (e) {}
+  try { localStorage.setItem('cl-suite-page', which); } catch (e) {}
 }
 (function(){
   var saved = null;
-  try { saved = localStorage.getItem('cl-action-space'); } catch (e) {}
-  if (saved) showPage(saved);
+  try { saved = localStorage.getItem('cl-suite-page'); } catch (e) {}
+  if (saved && CL_PAGES.indexOf(saved) >= 0) showPage(saved);
 })();
 function showX(group, which){
   ['updates','work'].forEach(function(k){
@@ -2390,33 +2505,44 @@ function showX(group, which){
     if (bt) bt.setAttribute('aria-selected', String(k === which));
   });
 }
-</script>""")
+</script>""" % ids)
     return "\n".join(P)
 
 
 def main() -> None:
     p = argparse.ArgumentParser(description=__doc__)
-    p.add_argument("--data", required=True)
-    p.add_argument("--data_discrete", default=None,
-                   help="Second results JSON, built from the discrete wave. "
-                        "When given the page carries both action spaces behind "
-                        "a switcher at one URL.")
+    p.add_argument("--data", required=True,
+                   help="Results JSON for the canonical continuous page.")
+    p.add_argument("--page", action="append", default=[], metavar="KEY=PATH",
+                   help="An additional page, e.g. discrete=results_d.json. "
+                        f"Keys: {', '.join(k for k in PAGE_SPECS)}. Repeatable; "
+                        "a path that does not exist is skipped, so the build "
+                        "works before every wave has landed.")
     p.add_argument("--out", required=True)
     args = p.parse_args()
+    datasets: dict = {}
     with open(args.data) as f:
-        d = json.load(f)
-    d_disc = None
-    if args.data_discrete and os.path.exists(args.data_discrete):
-        with open(args.data_discrete) as f:
-            d_disc = json.load(f)
-    html_text = render(d, d_disc)
+        datasets["continuous"] = json.load(f)
+    for spec in args.page:
+        if "=" not in spec:
+            raise SystemExit(f"--page wants KEY=PATH, got {spec!r}")
+        key, path = spec.split("=", 1)
+        if key not in PAGE_SPECS:
+            raise SystemExit(f"unknown page key {key!r}; "
+                             f"known: {sorted(PAGE_SPECS)}")
+        if os.path.exists(path):
+            with open(path) as f:
+                datasets[key] = json.load(f)
+        else:
+            print(f"[page] note: {key} has no data yet ({path}); skipping")
+    html_text = render(datasets)
     os.makedirs(os.path.dirname(os.path.abspath(args.out)) or ".", exist_ok=True)
     with open(args.out, "w") as f:
         f.write(html_text)
-    print(f"[page] wrote {args.out}  ({len(html_text)} bytes, "
-          f"{len(d.get('methods', []))} method configs"
-          + (f", + {len(d_disc.get('methods', []))} discrete" if d_disc else "")
-          + ")")
+    counts = ", ".join(f"{k} {len(v.get('methods', []))}"
+                       for k, v in datasets.items())
+    print(f"[page] wrote {args.out}  ({len(html_text)} bytes; "
+          f"method configs: {counts})")
 
 
 if __name__ == "__main__":

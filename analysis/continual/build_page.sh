@@ -50,9 +50,7 @@ merge_set () {   # merge_set <histories subdir> <merged out dir>
 }
 
 MERGED="$CLS_HISTORIES/merged"
-MERGED_D="$CLS_HISTORIES/merged_d"
 merge_set wave1 "$MERGED"
-[[ -d "$CLS_HISTORIES/wave1d" ]] && merge_set wave1d "$MERGED_D"
 
 "$PY" -u -m analysis.continual.results_data \
     --wave0_dir     "$CLS_HISTORIES/wave0" \
@@ -72,26 +70,60 @@ merge_set wave1 "$MERGED"
 # live under runs/rnn/ rather than in the histories directory, so pointing only
 # the history dirs at the discrete wave would leave a Gaussian-head ceiling as
 # the denominator of a Categorical page.
-DATA_D="$OUT_DIR/continual_results_discrete.json"
-if [[ -d "$CLS_HISTORIES/wave1d" ]]; then
+# Every page beyond the canonical one: key, its histories dir, the wave-0 dir
+# its floor and ceiling come from, and the joint tag for T0.1. The from-scratch
+# pages share wave0's axes -- the oracle and the joint ceiling are properties of
+# the task and the architecture, not of where the weights started.
+#
+# A fifth field names the matching prev_action=ON histories, where they exist:
+# the flag only takes effect without a checkpoint, so only the from-scratch
+# pages can show what the channel is worth.
+#
+#   key            hist dir     wave0 dir   joint tag   prev_action dir
+EXTRA_PAGES="
+discrete:wave1d:wave0d:wave0d:
+continuous_fs:wave1_fs:wave0:wave0:wave1_fsp
+discrete_fs:wave1d_fs:wave0d:wave0d:wave1d_fsp
+"
+
+PAGE_ARGS=()
+while IFS=: read -r KEY HDIR W0DIR JTAG PDIR; do
+    [[ -z "$KEY" ]] && continue
+    if [[ ! -d "$CLS_HISTORIES/$HDIR" ]]; then
+        echo "[build_page] $KEY: no $HDIR yet; page omitted"
+        continue
+    fi
+    N=$(ls "$CLS_HISTORIES/$HDIR"/*.json 2>/dev/null | wc -l)
+    if [[ "$N" -eq 0 ]]; then
+        echo "[build_page] $KEY: $HDIR is empty; page omitted"
+        continue
+    fi
+    MDIR="$CLS_HISTORIES/merged_$KEY"
+    merge_set "$HDIR" "$MDIR"
+    PREV_ARG=()
+    if [[ -n "${PDIR:-}" && -d "$CLS_HISTORIES/$PDIR" ]]; then
+        PREV_ARG=(--prev_dir "$CLS_HISTORIES/$PDIR")
+    fi
+    DPATH="$OUT_DIR/continual_results_${KEY}.json"
     "$PY" -u -m analysis.continual.results_data \
-        --wave0_dir     "$CLS_HISTORIES/wave0d" \
-        --wave1_dir     "$CLS_HISTORIES/wave1d" \
+        --wave0_dir     "$CLS_HISTORIES/$W0DIR" \
+        --wave1_dir     "$CLS_HISTORIES/$HDIR" \
         --recorded_dir  "$CLS_HISTORIES" \
         --runs_root     "$CLS_RUNS" \
-        --joint_tag     wave0d \
-        --staircase_dir "$MERGED_D" \
-        --out "$DATA_D"
-else
-    echo "[build_page] no discrete wave yet; page will carry one action space"
-    DATA_D=""
-fi
+        --joint_tag     "$JTAG" \
+        --staircase_dir "$MDIR" \
+        "${PREV_ARG[@]}" \
+        --out "$DPATH"
+    PAGE_ARGS+=(--page "${KEY}=${DPATH}")
+done <<< "$EXTRA_PAGES"
 
 "$PY" -u -m analysis.continual.results_page --data "$DATA" \
-    ${DATA_D:+--data_discrete "$DATA_D"} --out "$PAGE"
+    "${PAGE_ARGS[@]}" --out "$PAGE"
 "$PY" -u -m analysis.continual.validate_page "$PAGE"
 
 echo
 echo "data: $DATA"
-[[ -n "$DATA_D" ]] && echo "data (discrete): $DATA_D"
+for a in "${PAGE_ARGS[@]}"; do
+    [[ "$a" == --page ]] || echo "data: $a"
+done
 echo "page: $PAGE"
