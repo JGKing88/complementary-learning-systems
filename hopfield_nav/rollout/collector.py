@@ -702,8 +702,16 @@ class RolloutCollector:
                             a_norm = a_t.norm(dim=-1, keepdim=True).clamp_min(1e-8)
                             p_norm = prev_action_t.norm(dim=-1, keepdim=True).clamp_min(1e-8)
                             cos_sim = ((a_t / a_norm) * (prev_action_t / p_norm)).sum(-1)
+                        cos_np_r = cos_sim.cpu().numpy().astype(np.float32)
+                        if getattr(cfg.hopfield, "persistence_one_sided",
+                                   False):
+                            # Reward smooth motion without penalising the turn.
+                            # Two-sided, a 180 deg reversal costs 2*bonus, so
+                            # the wall turn a lawnmower needs is priced above
+                            # the novelty of the row it opens up.
+                            cos_np_r = np.maximum(cos_np_r, 0.0)
                         rewards += (cfg.hopfield.persistence_bonus
-                                    * cos_sim.cpu().numpy().astype(np.float32)
+                                    * cos_np_r
                                     * moved)
 
                 all_rewards[:, t] = torch.from_numpy(rewards).to(self.device)

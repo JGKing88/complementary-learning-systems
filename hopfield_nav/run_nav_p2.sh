@@ -921,6 +921,62 @@ case "$VARIANT" in
     esac
     ;;
 
+  # === P27-P30 -- the retracing is PAID FOR. Four ways to stop paying. ======
+  #
+  # Jack: "it is totally going back over its own path a lot. i just don't get
+  # how this could happen with the novelty reward". It happens because of the
+  # OTHER reward. Priced from collector.py, early in an episode (scale ~1):
+  #
+  #   plough straight over ground already covered   0    + 0.20 = 0.20
+  #   180 deg turn at the wall onto fresh ground    0.30 - 0.20 = 0.10
+  #
+  # Persistence is bonus*cos, so a reversal costs -bonus and the SWING across
+  # a wall turn is 2*bonus = 0.40 -- more than the 0.30 a new cell pays. The
+  # agent is not ignoring novelty; it is correctly following a reward in which
+  # the lawnmower's defining move loses to retracing, two to one. Any turn past
+  # ~120 deg loses. And revisit_penalty is 0, so nothing sits on the other side.
+  #
+  # Second defect, independent: novelty_scale_remaining multiplies novelty by
+  # total/remaining up to 10x, and exists precisely to punish redundancy late.
+  # At 200 steps and 0.77 cells/step the agent reaches ~155 of 400 cells, so
+  # the scale never exceeds ~1.6. The mechanism never reaches the regime it
+  # was written for.
+  #
+  # Four one-line arms off p20_e. Each is scored on swept coverage AND on the
+  # state probe (PROBE=state), because coverage can move without the mechanism
+  # changing -- both oracle arms (P25, P26) proved that.
+  #
+  #   p27_pers1s   persistence pays max(0, cos): keeps the reward for smooth
+  #                motion, stops paying the agent not to turn around. The
+  #                minimal fix -- the wall turn goes from 0.10 to 0.30 and
+  #                beats retracing at every angle.
+  #   p28_revisit  revisit_penalty 0.15. Puts something on the empty side of
+  #                the ledger. 0.15 because the turn wins once rp > 0.10.
+  #   p29_long     600-step rollouts, so novelty_scale_remaining actually
+  #                engages. 3x the compute per update.
+  #   p30_perslow  persistence 0.20 -> 0.05. Same knob as p27 but by level
+  #                rather than by shape; separating the two says whether the
+  #                turn PENALTY or the straightness REWARD is what binds.
+  p27_pers1s|p28_revisit|p29_long|p30_perslow)
+    ENCODER=/orcd/pool/003/jackking/cls_runs/sweeps/w52_attract_fwhm/001_att0.5_seed=43/encoder_final.pt
+    ENCODER_GAIN=100
+    HOPFIELD_BETA=100
+    SCHEDULE=${SCHEDULE:-'explore:700'}
+    ENVS_PER_WORLD=20; BATCH_ENVS=64
+    EPSILON_EXPLORE=0.1; GOAL_REWARD=2.0
+    PERSISTENCE_BONUS=0.20
+    REGIME_ASSIGNMENT=shuffle
+    ACTION_POLAR=1; STATE_DEPENDENT_STD=1; FREEZE_LOG_STD=0
+    MIN_ACTION_NORM=0.5; MAX_ACTION_NORM=1.0
+    EVAL_SCOPE=expl; EVAL_EVERY=25; CKPT_EVERY=25
+    case "$VARIANT" in
+      p27_pers1s)  PERSISTENCE_ONE_SIDED=1 ;;
+      p28_revisit) REVISIT_PENALTY=0.15 ;;
+      p29_long)    STEPS_PER_ROLLOUT=600 ;;
+      p30_perslow) PERSISTENCE_BONUS=0.05 ;;
+    esac
+    ;;
+
   # === P21 -- does the pin clear when persistence stops paying for it? ======
   #
   # 18.7 measured that 100% of episodes at u25 AND u50 are wall-pinned, and

@@ -758,6 +758,7 @@ CFG_FIELDS: dict[str, tuple[str, ...]] = {
     "wall_penalty": ("hopfield.wall_penalty",),
     "persistence_bonus": ("hopfield.persistence_bonus",),
     "persistence_realized": ("hopfield.persistence_realized",),
+    "persistence_one_sided": ("hopfield.persistence_one_sided",),
     "novelty_scale_remaining": ("hopfield.novelty_scale_remaining",),
     "novelty_scale_cap": ("hopfield.novelty_scale_cap",),
     # run structure
@@ -1080,6 +1081,12 @@ def build_parser() -> argparse.ArgumentParser:
                         "trained under. On the commanded action a "
                         "wall-pinned agent collects the full bonus for not "
                         "moving (P2 doc §18.7-18.8).")
+    p.add_argument("--persistence_one_sided",
+                   action=argparse.BooleanOptionalAction,
+                   default=None,
+                   help="Persistence pays max(0, cos) instead of cos: "
+                        "rewards smooth motion without paying the "
+                        "agent not to turn around.")
     p.add_argument("--novelty_scale_remaining", action=argparse.BooleanOptionalAction,
                    default=False,
                    help="Scale novelty reward by total_cells/n_remaining "
