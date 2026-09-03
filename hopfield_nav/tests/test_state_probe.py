@@ -354,7 +354,18 @@ def _arm(obs_r2, delta, infl=0.2, lag=None):
                         "_n_test_trials": 3},
             "use": {"state_influence": infl, "same_t_influence": infl,
                     "obs_influence": 0.9, "state_share": 0.2,
+                    "shuffle_influence": 0.3, "state_vs_shuffle": 0.7,
                     "lag_curve": lag or {"1": 0.05, "20": 0.3}}}
+
+
+def test_cross_report_renders_a_dump_missing_a_newer_metric():
+    """Result JSONs on disk predate the shuffle null; rendering one must drop
+    the row it cannot fill, not fail to render at all."""
+    out = {"a/one/u700.pt": _arm(0.02, 0.1), "a/two/u700.pt": _arm(0.02, 0.1)}
+    for v in out.values():
+        del v["use"]["shuffle_influence"]
+        del v["use"]["state_vs_shuffle"]
+    assert sp.cross_report(out)["baseline_confounded"] == []
 
 
 class TestCrossReport:
@@ -554,9 +565,58 @@ class _SubspaceAgent:
         return {"move_action": a.unsqueeze(1)}
 
 
+class TestShuffleNull:
+    """The null the whole-state swap never had. At full rank a 'random
+    subspace of the same rank' is the whole space, so the targeted splice's
+    control degenerates; shuffling units is the version that does not."""
+
+    def test_every_unit_keeps_its_exact_marginal(self):
+        """Which is what makes it fair for a ReLU trunk: non-negativity and
+        sparsity survive, where a Gaussian null would put half its mass
+        somewhere the state can never be."""
+        rng = np.random.RandomState(0)
+        h = np.maximum(rng.randn(200, 12), 0.0)      # ReLU-like: >= 0, sparse
+        s = sp._shuffle_units(h, rng)
+        assert np.allclose(np.sort(h, axis=0), np.sort(s, axis=0))
+        assert (s >= 0).all()
+        assert (s == 0).sum() == (h == 0).sum()
+
+    def test_it_destroys_cross_unit_structure(self):
+        rng = np.random.RandomState(0)
+        base = rng.randn(400, 1)
+        h = np.hstack([base, base * 2.0])            # perfectly correlated
+        s = sp._shuffle_units(h, rng)
+        assert abs(np.corrcoef(h[:, 0], h[:, 1])[0, 1]) > 0.99
+        assert abs(np.corrcoef(s[:, 0], s[:, 1])[0, 1]) < 0.2
+
+    def test_units_are_permuted_independently(self):
+        rng = np.random.RandomState(0)
+        h = np.arange(60, dtype=float).reshape(20, 3)
+        s = sp._shuffle_units(h, rng)
+        # a single row permutation would keep each row's values together
+        rows_intact = sum(bool(np.isin(r, h).all()
+                               and (h == r).all(axis=1).any()) for r in s)
+        assert rows_intact < 20
+
+    def test_it_is_reported_against_the_same_scale(self):
+        u = _use(w_obs=1.0, w_h=1.0)
+        assert u["shuffle_influence"] == pytest.approx(
+            u["d_shuffle"] / u["d_both"], rel=1e-9)
+        assert u["state_vs_shuffle"] == pytest.approx(
+            u["d_state"] / u["d_shuffle"], rel=1e-9)
+
+    def test_a_policy_ignoring_the_state_moves_for_neither(self):
+        u = _use(w_obs=1.0, w_h=0.0)
+        assert u["d_shuffle"] < 1e-6
+        assert u["shuffle_influence"] < 1e-6
+
+
 class TestTargetedSplice:
 
-    def _setup(self, seed=0, H=12):
+    def _setup(self, seed=0, H=64):
+        # H must sit well above the rank or the random control is not a
+        # control: a random line in 12 dims already captures 1/12 of any
+        # direction, capping the ratio near 3.5. The real trunk is 1024.
         rng = np.random.RandomState(seed)
         n_trials, n_steps = 20, 25
         n = n_trials * n_steps
@@ -595,6 +655,84 @@ class TestTargetedSplice:
         # orthogonal component identical, in-subspace component the donor's
         assert np.allclose(g - (g @ B) @ B.T, h - (h @ B) @ B.T)
         assert np.allclose(g @ B, h[don] @ B)
+
+
+class TestMatchedDonor:
+    """The control for the asymmetry the plain donor creates: splicing the
+    POSITION subspace contradicts the held-fixed observation, and no other
+    subspace does, because the observation carries no visitation signal."""
+
+    def test_the_donor_stands_in_the_same_place(self):
+        rng = np.random.RandomState(0)
+        pos = np.repeat(np.arange(10, dtype=float), 20)[:, None]
+        pos = np.hstack([pos, np.zeros_like(pos)])
+        trial = np.tile(np.arange(20), 10)
+        idx, unmatched = sp._donor_matched(trial, pos, rng)
+        assert unmatched == 0
+        assert np.allclose(pos[idx], pos)
+
+    def test_the_donor_is_a_different_episode(self):
+        rng = np.random.RandomState(0)
+        pos = np.zeros((200, 2))
+        trial = np.repeat(np.arange(10), 20)
+        idx, _ = sp._donor_matched(trial, pos, rng)
+        assert (trial[idx] != trial).all()
+
+    def test_a_row_alone_in_its_cell_keeps_itself_and_is_counted(self):
+        """Silently treating it as 'no effect' would push the ratio toward
+        zero for reasons that have nothing to do with the policy."""
+        rng = np.random.RandomState(0)
+        pos = np.array([[0.0, 0.0], [0.0, 0.0], [9.0, 9.0]])
+        trial = np.array([0, 1, 2])
+        idx, unmatched = sp._donor_matched(trial, pos, rng)
+        assert unmatched == 1
+        assert idx[2] == 2
+
+    def test_matching_heading_too_splits_the_buckets(self):
+        """Position alone was not enough: two agents in one cell heading
+        opposite ways are not comparable, and the observation encodes heading,
+        so the mismatch reintroduces the contradiction the match removes."""
+        rng = np.random.RandomState(0)
+        pos = np.zeros((40, 2))                       # all in one cell
+        head = np.zeros((40, 2))
+        head[:20, 0] = 1.0                            # east
+        head[20:, 0] = -1.0                           # west
+        trial = np.arange(40) % 8
+        idx, unmatched = sp._donor_matched(trial, pos, rng, heading=head)
+        assert unmatched == 0
+        assert (np.sign(head[idx][:, 0]) == np.sign(head[:, 0])).all()
+        assert (trial[idx] != trial).all()
+
+    def test_without_heading_the_buckets_ignore_it(self):
+        rng = np.random.RandomState(0)
+        pos = np.zeros((40, 2))
+        head = np.zeros((40, 2))
+        head[:20, 0], head[20:, 0] = 1.0, -1.0
+        trial = np.arange(40) % 8
+        idx, _ = sp._donor_matched(trial, pos, rng)
+        assert not (np.sign(head[idx][:, 0]) == np.sign(head[:, 0])).all()
+
+    def test_a_position_only_state_barely_moves_under_a_matched_donor(self):
+        """The point of the control. An agent reading only position should be
+        strongly disturbed by an arbitrary donor and hardly at all by one
+        standing in the same place."""
+        rng = np.random.RandomState(0)
+        n, H = 600, 64
+        trial = np.repeat(np.arange(30), 20)
+        pos = np.stack([np.tile(np.arange(20, dtype=float), 30),
+                        np.zeros(600)], axis=1)
+        h = np.zeros((n, H))
+        h[:, 0] = pos[:, 0]                    # unit 0 IS the position code
+        h[:, 1:] = rng.randn(n, H - 1)
+        obs = rng.randn(n, 5)
+        d = np.zeros(H)
+        d[0] = 1.0
+        agent = _SubspaceAgent(d, 5)
+        Q = np.eye(H)[:, :1]
+        got = sp.subspace_splice(agent, obs, h, trial, Q, 1,
+                                 torch.device("cpu"), rng, pos=pos)
+        assert got["ratio"] > 3.0              # arbitrary donor: big effect
+        assert got["d_sub_matched"] < 1e-9     # same place: none at all
 
 
 class TestOrthAgainst:
@@ -643,6 +781,56 @@ class TestOrthAgainst:
                                  torch.device("cpu"), rng)
         assert raw["ratio"] > 3.0
         assert res["d_sub"] < 1e-9
+
+
+class TestSizeControl:
+    """`ratio` conflates 'the policy weights these directions' with 'these
+    directions are bigger'. A readout subspace for something the trunk encodes
+    strongly is high-variance; a random 2-plane in 1024 dims holds ~2/1024 of
+    the variance. `ratio_sens` divides that out."""
+
+    def test_a_high_variance_subspace_inflates_the_plain_ratio(self):
+        rng = np.random.RandomState(0)
+        n, H = 500, 64
+        h = rng.randn(n, H) * 0.05
+        h[:, 0] *= 200.0                      # one enormous direction
+        obs = rng.randn(n, 5)
+        trial = np.repeat(np.arange(25), 20)
+        # the agent weights EVERY direction identically
+        agent = _SubspaceAgent(np.ones(H) / np.sqrt(H), 5)
+        got = sp.subspace_splice(agent, obs, h, trial, np.eye(H)[:, :1], 1,
+                                 torch.device("cpu"), rng, n_rand=48)
+        assert got["size_vs_random"] > 5.0    # the edit really is much bigger
+        assert got["ratio"] > 3.0             # ... which the plain ratio reads
+        # ... and with size divided out, an equally-weighted agent scores ~1
+        assert got["ratio_sens"] == pytest.approx(1.0, abs=0.35)
+
+    def test_a_genuinely_favoured_direction_survives_the_size_control(self):
+        rng = np.random.RandomState(1)
+        n, H = 500, 64
+        h = rng.randn(n, H)                   # all directions equal variance
+        obs = rng.randn(n, 5)
+        trial = np.repeat(np.arange(25), 20)
+        d = np.zeros(H)
+        d[0] = 1.0                            # read direction 0 and nothing else
+        agent = _SubspaceAgent(d, 5)
+        got = sp.subspace_splice(agent, obs, h, trial, np.eye(H)[:, :1], 1,
+                                 torch.device("cpu"), rng, n_rand=48)
+        assert got["size_vs_random"] == pytest.approx(1.0, abs=0.25)
+        assert got["ratio_sens"] > 3.0
+
+    def test_the_sensitivity_ratio_is_the_stated_quotient(self):
+        rng = np.random.RandomState(2)
+        n, H = 300, 32
+        h, obs = rng.randn(n, H), rng.randn(n, 5)
+        trial = np.repeat(np.arange(15), 20)
+        agent = _SubspaceAgent(np.ones(H) / np.sqrt(H), 5)
+        g = sp.subspace_splice(agent, obs, h, trial, np.eye(H)[:, :2], 1,
+                               torch.device("cpu"), rng)
+        # mean of per-draw sensitivities, not a ratio of means
+        assert g["ratio_sens"] > 0.0
+        assert g["size_vs_random"] == pytest.approx(
+            g["dh_sub"] / g["dh_rand"], rel=1e-9)
 
 
 class TestReadoutSubspace:

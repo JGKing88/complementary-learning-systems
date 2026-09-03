@@ -7644,3 +7644,72 @@ dip of 4.8 spread over an IQR of 63–102 is weak and incoherent, against
 `p20_e_kcap`'s 10.66 at a period of 57 in 98/100 trajectories. But "no dip at
 all" is not what the data says, and the sentence should read **weak and broad,
 not absent**.
+
+## 32. The USE side needed its own ladder — and it overturns §30.15
+
+Jack, on the targeted splice: *"how can you do a position swap if the state you
+are bringing in is from an agent at the same position? unless it's not."*
+
+It was not. `_donor` draws from any (trial, step) of another episode, so the
+donor stands somewhere else. That is fine for most subspaces and **not** fine
+for position, and chasing why cost §30.14's headline its meaning.
+
+### 32.1 Four controls, each catching the previous one
+
+| control | what it removes | position, `p20_e` |
+|---|---|---|
+| none | — | 11.99 |
+| donor matched on POSITION | the state saying "I am at B" while the held-fixed observation says "I am at A". Only position suffers this: the observation carries no visitation signal, so swapping occupancy is merely uninformative, never self-contradictory. | 9.93 |
+| …and on HEADING | the same contradiction one level down. Two agents in a cell heading opposite ways are not comparable, and `prev_action` puts heading in the observation. | 7.86 |
+| …and SUBSPACE SIZE divided out | **the big one.** A readout subspace for something strongly encoded is HIGH-VARIANCE; a random 2-plane in 1024 dims holds ~2/1024 of the variance. `d_sub/d_random` was partly measuring *the edit was bigger*. `size/rnd` for position is **1.8–2.7 across every arm**. | **6.85 ± 1.69** |
+
+`ratio_sens` is action-change per unit of state-change, which is what "does the
+policy weight these directions" actually means.
+
+### 32.2 The corrected table, with the uncertainty it always needed
+
+`ratio_sens`, 1σ from the random baseline across 8 draws:
+
+| subspace | `p20_e` | `kcap` | `p24_aux` | `p25_visin` |
+|---|---|---|---|---|
+| position (rank 2) | 6.85 ± 1.69 | 3.83 ± 0.58 | 5.52 ± 1.50 | 5.13 |
+| occupancy (rank 16) | 2.21 ± 0.23 | 1.66 ± 0.24 | **2.62 ± 0.26** | 1.82 |
+| visited8 (rank 8) | 2.93 ± 0.37 | 1.52 ± 0.20 | 1.97 ± 0.43 | 1.33 |
+
+The band covers only the random baseline's spread, not sampling variance over
+the 96 episodes nor variance in the fitted subspace, so it is a **floor** on
+the uncertainty.
+
+### 32.3 §30.14's "10–12×, an order of magnitude per direction" is WITHDRAWN
+
+Position is 1.8–2.7× larger than a random subspace on every arm. Corrected, it
+sits at **3.8–6.9×** random, and against the other subspaces it is a factor of
+**2–3, not 10**. The conclusion drawn from the inflated number — *"adding
+representation cannot help because position swamps everything"* — was resting
+on the gap, and a 2–3× gap is a far more movable thing. Nothing about a lever C
+follows from these numbers the way §30.15 claimed it did.
+
+### 32.4 §30.12 and §30.15 are WITHDRAWN. §27 was right.
+
+`p24_aux` occupancy **2.62 ± 0.26** against the control's **2.21 ± 0.23**:
+difference 0.41, combined σ 0.35, **1.2σ**. Not a difference. Before the size
+control it read 3.04 vs 1.74 and I called it a 2× separation and a settled
+result.
+
+What survives, and it is worth stating precisely because it took four controls
+to isolate:
+
+* **CONTENT is real and large.** `p24_aux` has 4× more occupancy decodable from
+  its state than the control (`delta_flow` 0.136 vs 0.035). Decodability has no
+  subspace-size confound; none of this touches it.
+* **USE is not detectably different.** The policy's weighting of the map
+  directions did not measurably move.
+
+**That is §27's original reading — "the representation was there and the policy
+ignored it" — and §30.12's correction of it was wrong.** The "third failure
+mode" of §30.15 does not exist; there is no evidence the map became a
+causally-read input at all.
+
+The lesson is not about the aux head. **Every ratio in §30.14 was a ratio
+against a control chosen for its rank and nothing else**, and rank is the one
+property that does not determine how much of the state a subspace holds.

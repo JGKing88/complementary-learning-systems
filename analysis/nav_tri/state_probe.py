@@ -299,6 +299,69 @@ def _act(agent, obs, h, n_layers, device):
     return np.concatenate(outs, 0)
 
 
+def _shuffle_units(h, rng):
+    """Permute each unit independently across samples.
+
+    Column-wise, so every unit's marginal distribution is preserved exactly
+    and only the cross-unit structure is destroyed. That is what makes it a
+    fair null for a ReLU trunk, whose activity is non-negative and sparse:
+    matching a Gaussian to h's mean and sd would put half its mass below zero,
+    somewhere the state can never be, and the policy's response to THAT says
+    nothing about how much the real state matters.
+    """
+    idx = np.argsort(rng.random((h.shape[0], h.shape[1])), axis=0)
+    return np.take_along_axis(h, idx, axis=0)
+
+
+def _donor_matched(trial, pos, rng, cell=1.0, heading=None, n_oct=8):
+    """Donor from a DIFFERENT episode standing in the same place.
+
+    The plain donor comes from wherever that episode happened to be, so
+    splicing the POSITION subspace leaves the state saying "I am at B" while
+    the held-fixed observation still says "I am at A" -- a contradiction the
+    policy has never seen. Crucially that is asymmetric across subspaces: the
+    observation carries no visitation signal, so swapping the occupancy
+    directions is merely uninformative, while swapping the position directions
+    is self-contradictory. Comparing the two as-is therefore flatters position.
+
+    Matching the donor on position removes the contradiction and turns the
+    splice into the question actually worth asking: two agents in the same
+    place with different histories -- does the policy tell them apart?
+
+    Rows with no same-cell partner from another episode keep their own index
+    and are reported, not silently counted as "no effect".
+    """
+    p = np.asarray(pos, dtype=np.float64)
+    key = np.rint(p / float(cell)).astype(np.int64)
+    key = key[:, 0] * 100003 + key[:, 1]
+    if heading is not None:
+        # Matching position alone was not enough, and the failure was
+        # informative: the "position subspace" still moved the action ~10x
+        # between two agents in the SAME CELL. Those 2 directions are the ones
+        # position is most decodable FROM, not position itself, and they carry
+        # whatever else correlates with it -- heading first among them, which
+        # the observation also encodes (prev_action, prev_displacement). So a
+        # heading mismatch reintroduces exactly the contradiction the position
+        # match was added to remove.
+        hd = np.asarray(heading, dtype=np.float64)
+        ang = np.arctan2(hd[:, 1], hd[:, 0])
+        oct_ = (np.floor((ang + np.pi) / (2.0 * np.pi) * n_oct)
+                .astype(np.int64) % n_oct)
+        key = key * 16 + oct_
+    idx = np.arange(len(trial))
+    buckets: dict = {}
+    for i, k in enumerate(key):
+        buckets.setdefault(int(k), []).append(i)
+    unmatched = 0
+    for i, k in enumerate(key):
+        cand = [j for j in buckets[int(k)] if trial[j] != trial[i]]
+        if not cand:
+            unmatched += 1
+            continue
+        idx[i] = cand[rng.randint(len(cand))]
+    return idx, unmatched
+
+
 def _donor(trial, rng, step=None):
     """Index permutation drawing each row's donor from a DIFFERENT trial.
 
@@ -353,7 +416,7 @@ def _orth_against(Q, R):
 
 
 def subspace_splice(agent, obs, h, trial, Q, n_layers, device, rng,
-                    n_rand=3) -> dict:
+                    n_rand=8, pos=None, heading=None, cell=1.0) -> dict:
     """Swap ONLY the component of h inside Q, keeping the rest intact.
 
     The whole-state swap in `use_probes` replaces position, clock and map at
@@ -368,27 +431,82 @@ def subspace_splice(agent, obs, h, trial, Q, n_layers, device, rng,
     base = _act(agent, obs, h, n_layers, device)
     don = _donor(trial, rng)
 
-    def swap(B):
-        # Project out this subspace and write the donor's component back in;
-        # every direction orthogonal to B is untouched.
-        g = h - (h @ B) @ B.T + (h[don] @ B) @ B.T
-        return float(np.linalg.norm(
-            _act(agent, obs, g, n_layers, device) - base, axis=1).mean())
+    def swap_with(B, src):
+        """(action displacement, size of the edit made to h).
 
-    d_sub = swap(Q)
+        The second number is the control the ratio was missing. A readout
+        subspace for something the trunk encodes strongly is a HIGH-VARIANCE
+        subspace, while a random 2-plane in 1024 dimensions captures about
+        2/1024 of the state's variance -- so `d_sub / d_random` partly
+        measures "this subspace is bigger", not "the policy weights it more".
+        Dividing each by the perturbation it actually applied turns both into
+        a sensitivity, action-change per unit of state-change, and the two
+        become comparable.
+        """
+        g = h - (h @ B) @ B.T + (h[src] @ B) @ B.T
+        d_act = float(np.linalg.norm(
+            _act(agent, obs, g, n_layers, device) - base, axis=1).mean())
+        d_h = float(np.linalg.norm(g - h, axis=1).mean())
+        return d_act, d_h
+
+    def swap(B):
+        return swap_with(B, don)
+
+    d_sub, dh_sub = swap(Q)
     rand = [swap(np.linalg.qr(rng.randn(h.shape[1], Q.shape[1]))[0])
             for _ in range(n_rand)]
-    d_rand = float(np.mean(rand))
+    d_rand = float(np.mean([r[0] for r in rand]))
+    dh_rand = float(np.mean([r[1] for r in rand]))
+    # Mean of the per-draw sensitivities, NOT the ratio of the means. A random
+    # subspace's action-change and edit-size are strongly correlated across
+    # draws (both scale with how much of h's variance the draw happens to
+    # catch), so a ratio of means is dominated by whichever draw was largest
+    # and swings badly at small n_rand.
+    _sens = [r[0] / max(r[1], EPS) for r in rand]
+    sens_rand = float(np.mean(_sens))
+    # Spread of the random baseline across draws. Without it a gap like
+    # 2.48 vs 2.17 between two arms cannot be called a difference at all, and
+    # this project has already over-read one such gap.
+    sens_sd = float(np.std(_sens, ddof=1)) if len(_sens) > 1 else float("nan")
     d_full = float(np.linalg.norm(
         _act(agent, obs, h[don], n_layers, device) - base, axis=1).mean())
-    return {
+    out = {
         "rank": int(Q.shape[1]),
         "d_sub": d_sub,
         "d_rand": d_rand,
         "d_full": d_full,
+        "dh_sub": dh_sub,
+        "dh_rand": dh_rand,
         "ratio": d_sub / max(d_rand, EPS),
+        # Action-change per unit of state-change, against the same for a
+        # random subspace. This is the ratio with subspace SIZE divided out.
+        "ratio_sens": ((d_sub / max(dh_sub, EPS)) / max(sens_rand, EPS)),
+        "size_vs_random": dh_sub / max(dh_rand, EPS),
+        # 1-sigma band on ratio_sens induced by the random baseline alone.
+        "ratio_sens_sd": ((d_sub / max(dh_sub, EPS)) * sens_sd
+                          / max(sens_rand ** 2, EPS)),
+        "n_rand": int(n_rand),
         "frac_of_full": d_sub / max(d_full, EPS),
     }
+    if pos is not None:
+        # Same place, different episode. Removes the state/observation
+        # contradiction that only the position subspace suffers, so the
+        # subspaces become comparable to each other.
+        don_m, unmatched = _donor_matched(trial, pos, rng, cell=cell,
+                                          heading=heading)
+        m_sub, mh_sub = swap_with(Q, don_m)
+        mr = [swap_with(np.linalg.qr(rng.randn(h.shape[1], Q.shape[1]))[0],
+                        don_m) for _ in range(n_rand)]
+        m_rand = float(np.mean([r[0] for r in mr]))
+        mh_rand = float(np.mean([r[1] for r in mr]))
+        msens_rand = float(np.mean([r[0] / max(r[1], EPS) for r in mr]))
+        out["d_sub_matched"] = m_sub
+        out["d_rand_matched"] = m_rand
+        out["ratio_matched"] = m_sub / max(m_rand, EPS)
+        out["ratio_matched_sens"] = ((m_sub / max(mh_sub, EPS))
+                                     / max(msens_rand, EPS))
+        out["unmatched_frac"] = float(unmatched) / max(len(trial), 1)
+    return out
 
 
 def use_probes(agent, obs, h, trial, step, n_layers, device, rng,
@@ -411,6 +529,15 @@ def use_probes(agent, obs, h, trial, step, n_layers, device, rng,
     d_obs = d(_act(agent, obs[any_i], h, n_layers, device))
     d_same_t = d(_act(agent, obs, h[same_i], n_layers, device))
     d_zero = d(_act(agent, obs, np.zeros_like(h), n_layers, device))
+    # The null the whole-state swap never had. The targeted splice scores each
+    # subspace against a random subspace of the same RANK, but at full rank
+    # that is the whole space, so the control degenerates into the thing it
+    # controls for. Instead: shuffle each unit independently across samples.
+    # Every unit keeps its exact marginal -- scale, and for a ReLU trunk its
+    # sparsity and non-negativity, which a Gaussian null would violate outright
+    # -- while the joint pattern across units is destroyed. Same activity,
+    # wrongly configured.
+    d_shuffle = d(_act(agent, obs, _shuffle_units(h, rng), n_layers, device))
 
     lag_curve = {}
     span = int(step.max()) + 1
@@ -438,10 +565,16 @@ def use_probes(agent, obs, h, trial, step, n_layers, device, rng,
         "d_obs": d_obs,
         "d_same_t": d_same_t,
         "d_zero": d_zero,
+        "d_shuffle": d_shuffle,
         "state_influence": d_state / max(d_both, EPS),
         "obs_influence": d_obs / max(d_both, EPS),
         "same_t_influence": d_same_t / max(d_both, EPS),
         "zero_influence": d_zero / max(d_both, EPS),
+        "shuffle_influence": d_shuffle / max(d_both, EPS),
+        # < 1 means a real foreign state disturbs the policy LESS than
+        # structureless activity of the same marginals: the states the agent
+        # actually visits lie on a manifold it is comparatively robust to.
+        "state_vs_shuffle": d_state / max(d_shuffle, EPS),
         "state_share": d_state / max(d_state + d_obs, EPS),
         "lag_curve": lag_curve,
     }
@@ -648,6 +781,12 @@ def report(res: dict, label: str) -> None:
           % (u["d_obs"], u["obs_influence"]))
     print("    zero the state                   %.4f  = %.3f"
           % (u["d_zero"], u["zero_influence"]))
+    print("    SHUFFLE units (the null)         %.4f  = %.3f"
+          % (u["d_shuffle"], u["shuffle_influence"]))
+    print("    state / shuffle                  %.3f"
+          % u["state_vs_shuffle"])
+    print("      < 1: a real foreign state disturbs the policy LESS than")
+    print("      structureless activity with the same per-unit marginals.")
     print("    state_share = state/(state+obs)  %.3f" % u["state_share"])
     if u["lag_curve"]:
         ks = sorted(u["lag_curve"], key=int)
@@ -662,16 +801,45 @@ def report(res: dict, label: str) -> None:
     sp_ = res.get("splice") or {}
     if sp_:
         print("\n  TARGETED SPLICE -- swap ONE readout subspace, keep the rest")
-        print("    %-12s %5s %9s %10s %8s %11s %7s %11s"
-              % ("subspace", "rank", "d_sub", "d_random", "ratio",
-                 "frac_full", "-pos", "ratio-pos"))
+        print("    %-12s %5s %8s %8s %16s %13s %11s"
+              % ("subspace", "rank", "ratio", "size/rnd", "ratio-sens",
+                 "matched-sens", "frac_full"))
         for t, v in sp_.items():
-            print("    %-12s %5d %9.4f %10.4f %8.2f %11.3f %7s %11s"
-                  % (t, v["rank"], v["d_sub"], v["d_rand"], v["ratio"],
-                     v["frac_of_full"],
-                     v.get("rank_resid", "-"),
-                     "-" if "ratio_resid" not in v
-                     else "%.2f" % v["ratio_resid"]))
+            print("    %-12s %5d %8.2f %8.2f %16s %13s %11.3f"
+                  % (t, v["rank"], v["ratio"], v.get("size_vs_random", 0.0),
+                     "%.2f +/- %.2f" % (v.get("ratio_sens", 0.0),
+                                        v.get("ratio_sens_sd", float("nan"))),
+                     "-" if "ratio_matched_sens" not in v
+                     else "%.2f" % v["ratio_matched_sens"],
+                     v["frac_of_full"]))
+        print("    size/rnd  how much BIGGER the edit is than a random "
+              "subspace's. A readout")
+        print("              subspace for something strongly encoded is "
+              "high-variance, and a")
+        print("              random 2-plane in 1024 dims holds ~2/1024 of the "
+              "variance, so the")
+        print("              plain ratio partly measures size, not weighting.")
+        print("    *-sens    the same ratios with that divided out: action "
+              "change per unit of")
+        print("              state change. THIS is 'does the policy weight "
+              "these directions'.")
+        um = [v.get("unmatched_frac") for v in sp_.values()
+              if v.get("unmatched_frac") is not None]
+        if um:
+            print("    ratio-matched draws the donor from a DIFFERENT episode "
+                  "at the SAME position.")
+            print("    The plain donor is wherever that episode happened to "
+                  "be, so splicing the")
+            print("    POSITION directions leaves the state saying \"I am at "
+                  "B\" while the held-fixed")
+            print("    observation still says \"I am at A\". No other subspace "
+                  "suffers that, because")
+            print("    the observation carries no visitation signal -- so the "
+                  "plain ratio flatters")
+            print("    position specifically. Matched, the question becomes: "
+                  "same place, different")
+            print("    history, does the policy tell them apart? "
+                  "(%.1f%% of rows had no partner)" % (100.0 * max(um)))
         print("    ratio vs a RANDOM subspace of the same rank. Any "
               "k-dimensional")
         print("    perturbation moves the action, so ratio > 1 is the claim, "
@@ -779,10 +947,17 @@ def cross_report(out: dict) -> dict:
     print("    %-16s" % "" + "".join("%17s" % s[:16] for s in short))
     for k, lab in (("state_influence", "state_influence"),
                    ("same_t_influence", "same-step swap"),
+                   ("shuffle_influence", "shuffle (null)"),
+                   ("state_vs_shuffle", "state / shuffle"),
                    ("obs_influence", "obs_influence"),
                    ("state_share", "state_share")):
+        # .get, not [k]: a dump from before a metric existed should still
+        # render the rows it does have rather than failing to render at all.
+        if not any(k in out[n]["use"] for n in names):
+            continue
         print("    %-16s" % lab
-              + "".join("%17.3f" % out[n]["use"][k] for n in names))
+              + "".join("%17.3f" % out[n]["use"].get(k, np.nan)
+                        for n in names))
     lags = sorted({int(L) for n in names for L in out[n]["use"]["lag_curve"]})
     if lags:
         print("\n  lag curve (own-episode donor tau steps back)")
@@ -841,6 +1016,22 @@ def main() -> None:
                         "intact. Scored against a RANDOM subspace of the same "
                         "rank, without which the number is uninterpretable. "
                         "Empty to skip.")
+    p.add_argument("--match_heading", default=True,
+                   action=argparse.BooleanOptionalAction,
+                   help="Match the splice donor on HEADING as well as "
+                        "position. Matching position alone left the position "
+                        "subspace moving the action ~10x between two agents "
+                        "in the same cell -- those directions carry heading "
+                        "too, which the observation also encodes, so a "
+                        "heading mismatch reintroduces the very contradiction "
+                        "the match exists to remove. With both matched, what "
+                        "differs between donor and recipient is HISTORY, "
+                        "which is the only thing the observation does not "
+                        "carry.")
+    p.add_argument("--match_cell", type=float, default=1.0,
+                   help="Arena units per matching bin. Larger finds more "
+                        "partners and matches them more loosely; the "
+                        "unmatched fraction is reported either way.")
     p.add_argument("--lags", type=int, nargs="*",
                    default=[1, 2, 5, 10, 20, 50])
     p.add_argument("--device", default="cuda")
@@ -954,7 +1145,11 @@ def main() -> None:
                 row = subspace_splice(
                     agent, obs[ste], hid[ste], trial[ste], Q,
                     own.agent.num_rnn_layers, device,
-                    np.random.RandomState(args.seed))
+                    np.random.RandomState(args.seed),
+                    pos=targets["pos"][ste],
+                    heading=(targets["heading"][ste]
+                             if args.match_heading else None),
+                    cell=args.match_cell)
                 if t != "pos":
                     # ... and again with the position directions removed.
                     Qr = _orth_against(Q, qpos)
