@@ -30,7 +30,6 @@ envs, `steps` 1–15, `K` 1–20, four encoders.
 > | 10% | `w52_attract_fwhm/001_att0.5_seed=43` | 100 | 0.978 |
 > | 5% | `w57_cov5/001_half_a0.5_seed=43` | 75 | 0.977 |
 > | 2.5% | `w58_cov2.5/011_q_a1_seed=45` | 100 | 0.965 |
->
 > | *1.25%* | *`w60_cov1.25/014_sm35x_a2_seed=44`* | *100* | *0.870* |
 > | *0.75%* | *`w61_cov0.75/014_y50_a2_seed=44`* | *200* | *0.727* |
 >
@@ -41,10 +40,16 @@ envs, `steps` 1–15, `K` 1–20, four encoders.
 > the K=5 operating point, and reach drops 0.10 (§10.15). Below that it is a
 > steepening knee, not a cliff, and at 0.75% the failure mode changes — dead
 > goals appear at **K=1**, where no cross-talk is possible, so the local chart
-> itself is failing (§10.17). **Basin numbers below `env_size` 40 are
-> ceiling-clipped above ~2.5% coverage** (§10.18); reach is unaffected.
+> itself is failing (§10.17).
 >
-> Report page (all three, encoder selector, full Tests A–D):
+> **Every basin number before §10.18 is wrong** — measured over the eval env,
+> then over a bank that duplicated the goal, then read off a single training
+> seed. Corrected across four seeds: **27.0 / 23.0 / 19.2 / 11.5 / 13.5**, a
+> clean decline to 1.25% with the bottom two rungs not separable. Reach,
+> direction and flow were never affected.
+>
+> Report page (all five rungs, encoder selector, full Tests A–D,
+> plus the basin-across-seeds section):
 > https://claude.ai/code/artifact/d7a250c1-5044-4854-b453-61881bd518e7
 > · 10% spec sheet:
 > https://claude.ai/code/artifact/db70ecb9-ca16-4f8b-a897-5dfa0a01d198
@@ -1501,66 +1506,80 @@ https://claude.ai/code/artifact/d7a250c1-5044-4854-b453-61881bd518e7
 
 Raw: `$CLS_RESULTS/hopfield_probe/20260827/w61_ps{0,1,2}/` and `probe_five/`.
 
-### 10.18 The basin measurement is censored by the eval environment
+### 10.18 The basin, corrected twice
 
-The basin is a property of the encoder and the stored memory. It does not
-depend on the evaluation arena — but the **measurement** does, and that is a
-different thing.
+**Every basin figure in §10.8–§10.17 is wrong.** Two problems, one of design and
+one a bug, and the seed selection on top of both. The reach, direction and flow
+numbers in those sections are unaffected.
 
-`r_exact_95` is the largest radius within which ≥95% of cues retrieve the goal
-exactly, and *the cues are the cells of the eval environment*. In a 20×20 arena
-no cue sits more than ~27 cells from the goal, so the statistic cannot report a
-number above that however large the true basin is. It is censored, not scaled.
+#### 1. It was measured over the evaluation environment
 
-That the censoring bites was visible before running anything: across 198 probed
-encoders the largest basin ever recorded is **21.62**, with **18 within 0.1 of
-it**. A pin at one value is what a ceiling looks like.
+`run_test_a` drew its cues from `local_cells(env_size)`, so no cue sat more than
+~27 cells from the goal at `env_size` 20 and `r_exact_95` could not report a
+larger number however large the true basin was. The basin is a property of the
+encoder and the stored memory; the arena has nothing to do with it.
 
-Asked directly: the ladder was first checked for a *patch-size* confound and
-cleared it — restricted to arms trained at 50-cell patches the basin still runs
-21.12 / 20.73 / 17.62 / 11.12 across 10% → 0.76%, and at matched coverage two
-arms differing 2× in patch size give **identical** basins (1.25%: 30×35 and
-15×50 both 12.82; 0.75%: 18×35 11.90 against 9×50 11.77). Geometry is not the
-driver. The *env size* is a different question, and it is not clean:
+`basin_probe` now measures it over **every cell in a scaffold disc** of radius
+`cfg.basin_radius` (64) around the goal, as both cue and retrieval bank, with no
+env involved. It is the default — `r_exact_all` / `r_exact_95` come from it, and
+the env-bounded values are kept as `*_envcues` so archived runs stay visibly
+distinct rather than silently reinterpreted. The reported basin is
+**`r_exact_all`**: the radius within which *every* cue retrieves the goal, a
+guarantee rather than a 95% rate.
 
-| encoder | coverage | basin, env 20 | basin, env 40 | change |
-|---|---|---|---|---|
-| **10% `att0.5`** | 10.02% | 21.12 | **30.73** | **+9.60** |
-| **5% `half_a0.5`** | 5.01% | 20.73 | **27.68** | **+6.95** |
-| 2.5% `q_a1` | 2.55% | 17.62 | 17.95 | +0.32 |
-| 1.25% `sm35x_a2` | 1.25% | 16.62 | 17.55 | +0.93 |
-| 0.75% `y50_a2` | 0.76% | 11.12 | 12.95 | +1.82 |
-| *geometric cap* | | *26.9* | *55.2* | |
+#### 2. The first fix had a duplicate-bank bug
 
-**The top two rungs were censored; the bottom three were not.** The top two
-report values *above the 20×20 arena's maximum possible distance*, which can
-only happen if the earlier numbers were clipped. The bottom three barely move,
-so their env-20 numbers were already the real basin.
+The bank was `concat([disc_cells, mem.Z])`, which put the test env's goal in
+**twice** — once as the disc centre, once as its stored copy. Same position, so
+the same vector to within float noise, and `argmax` returns whichever copy
+carries the marginally larger dot product. When the duplicate won, a correct
+retrieval scored as a miss.
 
-Two consequences for §10.14's panel:
+It corrupted **6 of 16 values per encoder**, not just the 2 that surfaced as
+`-1`: the duplicate could also win at radius 2 or 3 and truncate the basin
+there, which reads as a small number rather than a sentinel. Intermittent,
+absent from the env-bounded path (no duplicates there), and not reproducible by
+recalling the goal cue alone — different batching, different rounding. Fixed by
+taking only the **other** K−1 stored goals.
 
-* **the spread is larger than it appears** — 17.8 cells across the ladder, not
-  10.0;
-* **the top two rungs are not equal** — 0.40 cells apart at env 20 and **3.05**
-  at env 40, so the apparent tie was both sitting against the ceiling.
+#### 3. And one seed is not the arm
 
-Corrected basin against coverage: **30.7 / 27.7 / 18.0 / 17.6 / 13.0** — a steep
-fall from 5% to 2.5%, a plateau over 2.5% and 1.25%, then a further drop at
-0.75%. A different shape from the env-20 reading, and the one to trust.
+The ladder page probes the **reach-winning** seed per rung. Reach has a tight
+seed spread; the basin's is wider than the entire ladder-wide effect, and it
+prefers different seeds. Median `r_exact_all` over 16 (world, env) pairs, all
+four training seeds:
 
-> **This section is only about the basin.** The env-40 run moves every other
-> metric too — reach, `exact_hit`, the angular errors — because they are scored
-> over a 4× larger cell set and a 4× longer path budget. Those are different
-> measurements of different populations, not the same measurement at a different
-> scale, and nothing here compares them. `r_exact_95` is a radius in cells, so
-> it is the one quantity where the two runs are measuring the same thing.
+| coverage | s42 | s43 | s44 | s45 | **median** | page used | self-fail |
+|---|---|---|---|---|---|---|---|
+| 10% `att0.5` | 25.5 | **30.5** | 28.0 | 26.0 | **27.0** | s43 (best) | 0.00 |
+| 5% `half_a0.5` | 23.0 | **23.0** | 23.0 | 19.5 | **23.0** | s43 | 0.00 |
+| 2.5% `q_a1` | 23.0 | 19.0 | 19.5 | **12.0** | **19.2** | s45 (worst) | 0.06 |
+| 1.25% `sm35x_a2` | 10.0 | 13.0 | **18.5** | 8.0 | **11.5** | s44 (best) | 0.22 |
+| 0.75% `y50_a2` | 12.5 | 6.0 | **14.5** | 16.0 | **13.5** | s44 | 0.12 |
 
-Practical: **`env_size` 20 cannot score the basin of anything above about 2.5%
-coverage** — raise it when the basin has to carry weight. Reach is a rate over
-whatever starts exist and is not censored this way, so §10.8–§10.17's reach
-numbers stand as measured.
+2.5% drew its worst seed and 1.25% its best, which between them **inverted the
+ladder** and made 2.5% look worse than 1.25%. 10% was flattered the same way,
+30.5 against 27.0. `q_a2` at 2.5% agrees independently at 19.5, so the
+correction is not an artefact of which arm is taken.
 
-Raw: `$CLS_RESULTS/hopfield_probe/20260827/probe_env40/`. Checks:
-`basin_confound_check.py` (patch size), `env_basin_check.py` (env size).
-The page carries this as its final section, with its own nav tab:
-https://claude.ai/code/artifact/d7a250c1-5044-4854-b453-61881bd518e7
+#### The corrected reading
+
+**27.0 / 23.0 / 19.2 / 11.5 / 13.5.** A clean decline with coverage down to
+1.25%; the bottom two rungs are **not separable** (11.5 against 13.5, per-seed
+ranges 8–18.5 and 6–16).
+
+Self-retrieval failure runs the other way — 0.00 / 0.00 / 0.06 / 0.22 / 0.12.
+At low coverage the goal increasingly fails to retrieve *itself*, which is a
+different failure from a shrinking basin and is now reported as its own metric
+rather than folded in as a `-1`.
+
+> **What this does not disturb.** Reach is a rate over whatever starts exist and
+> was never censored, so §10.8–§10.17's reach numbers, the coverage floor at
+> 2.5%, the `d_eff` account in §10.11 and the attract ladder all stand. What
+> falls is §10.14's claim that basin declines smoothly across the whole ladder,
+> and every specific basin value quoted before this section.
+
+Raw: `$CLS_RESULTS/hopfield_probe/20260827/probe_basin2/`. Checks:
+`basin_seeds_check.py` (across seeds), `basin_confound_check.py` (patch size),
+`env_basin_check.py` (the superseded env-size comparison).
+Page: https://claude.ai/code/artifact/d7a250c1-5044-4854-b453-61881bd518e7
