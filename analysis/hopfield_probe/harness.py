@@ -230,6 +230,17 @@ class ProbeConfig:
     hopfield_scale: float | None = None      # None -> 1/D, the production value
     beta_override: float | None = None       # None -> encoder gain
 
+    # Basin cues are drawn on a disc around the goal in SCAFFOLD coordinates,
+    # not from the env, because a basin is a property of the encoder and the
+    # memory and has nothing to do with the arena the flow tests happen to use.
+    # `env_size` 20 censors it at ~27 cells, which clips any encoder above
+    # about 2.5% coverage. 0 disables the probe.
+    # Every cell in this disc is both a cue and a bank row, so cost grows as
+    # R^2 -- 64 gives ~12.9k cells per (world, env), which is ample headroom
+    # over the largest basin measured (30.7 at env 40).
+    basin_radius: int = 64
+    basin_envs: int = 2               # envs per world to probe
+
     # retrieval
     n_alias: int = 20_000
 

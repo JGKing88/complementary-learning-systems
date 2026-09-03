@@ -1501,13 +1501,20 @@ https://claude.ai/code/artifact/d7a250c1-5044-4854-b453-61881bd518e7
 
 Raw: `$CLS_RESULTS/hopfield_probe/20260827/w61_ps{0,1,2}/` and `probe_five/`.
 
-### 10.18 The basin ceiling — env size is a lever, but only at the top
+### 10.18 The basin measurement is censored by the eval environment
 
-`r_exact_95` is a radius in cells and cannot exceed the largest goal-to-corner
-distance the eval environment offers, ~27 in a 20×20 arena. Across 198 probed
+The basin is a property of the encoder and the stored memory. It does not
+depend on the evaluation arena — but the **measurement** does, and that is a
+different thing.
+
+`r_exact_95` is the largest radius within which ≥95% of cues retrieve the goal
+exactly, and *the cues are the cells of the eval environment*. In a 20×20 arena
+no cue sits more than ~27 cells from the goal, so the statistic cannot report a
+number above that however large the true basin is. It is censored, not scaled.
+
+That the censoring bites was visible before running anything: across 198 probed
 encoders the largest basin ever recorded is **21.62**, with **18 within 0.1 of
-it** — a pin, not a coincidence. So §10.14's coverage-vs-basin panel may have
-been measuring the arena at the top of the ladder.
+it**. A pin at one value is what a ceiling looks like.
 
 Asked directly: the ladder was first checked for a *patch-size* confound and
 cleared it — restricted to arms trained at 50-cell patches the basin still runs
@@ -1525,8 +1532,10 @@ driver. The *env size* is a different question, and it is not clean:
 | 0.75% `y50_a2` | 0.76% | 11.12 | 12.95 | +1.82 |
 | *geometric cap* | | *26.9* | *55.2* | |
 
-**The top two rungs were clipped; the bottom three were not.** The bottom of the
-ladder reports its real basin and the top was reporting the arena.
+**The top two rungs were censored; the bottom three were not.** The top two
+report values *above the 20×20 arena's maximum possible distance*, which can
+only happen if the earlier numbers were clipped. The bottom three barely move,
+so their env-20 numbers were already the real basin.
 
 Two consequences for §10.14's panel:
 
@@ -1539,16 +1548,17 @@ Corrected basin against coverage: **30.7 / 27.7 / 18.0 / 17.6 / 13.0** — a ste
 fall from 5% to 2.5%, a plateau over 2.5% and 1.25%, then a further drop at
 0.75%. A different shape from the env-20 reading, and the one to trust.
 
-> **Only the basin transfers between env sizes.** A 40×40 arena is a harder
-> navigation problem with longer paths, so reach falls for every encoder
-> (0.987 → 0.856 at 10% coverage) and the angular errors move with it. Those
-> differences measure the arena, not the encoder. `r_exact_95` is a radius in
-> cells and is the one quantity where the comparison is clean — which is why
-> this section reports only it.
+> **This section is only about the basin.** The env-40 run moves every other
+> metric too — reach, `exact_hit`, the angular errors — because they are scored
+> over a 4× larger cell set and a 4× longer path budget. Those are different
+> measurements of different populations, not the same measurement at a different
+> scale, and nothing here compares them. `r_exact_95` is a radius in cells, so
+> it is the one quantity where the two runs are measuring the same thing.
 
-Practical: **`env_size` 20 is too small to score the basin of anything above
-about 2.5% coverage.** Reach is unaffected — it is a rate and has no such
-ceiling — so §10.8–§10.17's reach numbers stand as measured.
+Practical: **`env_size` 20 cannot score the basin of anything above about 2.5%
+coverage** — raise it when the basin has to carry weight. Reach is a rate over
+whatever starts exist and is not censored this way, so §10.8–§10.17's reach
+numbers stand as measured.
 
 Raw: `$CLS_RESULTS/hopfield_probe/20260827/probe_env40/`. Checks:
 `basin_confound_check.py` (patch size), `env_basin_check.py` (env size).

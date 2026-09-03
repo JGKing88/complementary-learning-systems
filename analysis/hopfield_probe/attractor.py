@@ -231,6 +231,76 @@ def trajectory_probe(
 # Driver
 # ---------------------------------------------------------------------------
 
+def basin_probe(
+    field, world, env: int, mem, cfg, *, steps=None,
+) -> dict:
+    """How far a cue can sit from the goal and still retrieve it exactly.
+
+    Independent of ``cfg.env_size``. The cue set and the retrieval bank are both
+    **every** cell in the disc of radius ``cfg.basin_radius`` around the goal, in
+    scaffold coordinates, plus the stored goals.
+
+    Every cell, not a sample of them: retrieval is an argmax over the bank, so a
+    sparse bank lets the goal win by default whenever the state's true nearest
+    cell is missing from the menu, which overstates the basin. Test A has this
+    right already -- its bank is every cell of the K envs -- and the only thing
+    wrong there is that its *cues* stop at the env boundary, which caps
+    ``r_exact_95`` at the arena diagonal however large the real basin is.
+
+    ``exact`` keeps Test A's definition exactly: the retrieved cell IS the goal
+    cell, not a threshold and not "near".
+    """
+    R = int(cfg.basin_radius)
+    if R <= 0:
+        return {}
+    off = world.specs[env].offset
+    goal = world.specs[env].goal
+    gx0, gy0 = int(goal[0] + off[0]), int(goal[1] + off[1])
+
+    a = np.arange(-R, R + 1)
+    dx, dy = np.meshgrid(a, a, indexing="ij")
+    d = np.hypot(dx, dy).ravel()
+    inside = d <= R
+    dx, dy, d = dx.ravel()[inside], dy.ravel()[inside], d[inside]
+
+    cx, cy = gx0 + dx, gy0 + dy
+    # A cue clipped to the scaffold is no longer at the offset it claims, so
+    # drop it rather than record it at the wrong radius.
+    keep = (cx >= 0) & (cx < cfg.Npos) & (cy >= 0) & (cy < cfg.Npos)
+    cx, cy, d = cx[keep], cy[keep], d[keep]
+    if cx.size == 0:
+        return {}
+
+    cells = field.encode(cx, cy)
+    # Only the OTHER stored goals. This env's goal is already the disc centre,
+    # and adding it again from `mem.Z` puts the same vector in the bank twice --
+    # `argmax` then returns whichever copy float noise happens to favour, and a
+    # perfect self-retrieval scores as a miss.
+    others = mem.Z[mem.owner != env] if mem.Z.shape[0] else mem.Z
+    bank = _unit(np.concatenate([cells, others], axis=0)
+                 if others.shape[0] else cells)
+    goal_row = int(np.flatnonzero(d == 0.0)[0])
+
+    steps = list(steps if steps is not None else cfg.steps)
+    traj = recall_trajectory(mem, cells, steps, cfg)
+
+    out = {}
+    for s in steps:
+        x = _unit(traj[s])
+        hit = np.empty(x.shape[0], dtype=bool)
+        for i in range(0, x.shape[0], cfg.cos_chunk):
+            j = min(i + cfg.cos_chunk, x.shape[0])
+            hit[i:j] = (x[i:j] @ bank.T).argmax(1) == goal_row
+        out[str(s)] = {
+            "r_exact_95": float(first_failure_radius(hit, d, 0.95, max_r=R)),
+            "r_exact_all": float(first_failure_radius(hit, d, 1.0, max_r=R)),
+            "exact_frac": float(hit.mean()),
+            "n_cues": int(hit.size),
+            "max_radius": float(d.max()),
+        }
+    return out
+
+
 def run_test_a(
     field: Field, worlds: list[World], cfg: ProbeConfig, *, progress=None,
 ) -> dict:
@@ -272,6 +342,19 @@ def run_test_a(
                 tanh_pool.append(tanh_argument(mem, mem.Z, cfg))
 
             test_envs = scored_envs(cfg, k)
+
+            # The basin, measured without reference to the env. Capped to a few
+            # envs per world because the disc is O(R^2) cells and would
+            # otherwise dominate the suite; the quantity is per-(memory, goal)
+            # and varies little across envs of the same world.
+            for e in test_envs[:cfg.basin_envs]:
+                bp = basin_probe(field, w, e, mem, cfg)
+                for s in cfg.steps:
+                    if str(s) in bp:
+                        acc[str(s)]["scalars"].add(
+                            "r_exact_95", bp[str(s)]["r_exact_95"])
+                        acc[str(s)]["scalars"].add(
+                            "r_exact_all", bp[str(s)]["r_exact_all"])
 
             cues = np.concatenate([
                 field.encode(cells[:, 0] + w.specs[e].offset[0],
@@ -328,8 +411,13 @@ def run_test_a(
                             "cos_goal": _nan_list(cos_goal),
                         })
 
-                A["scalars"].add("r_exact_all", float(np.mean(w_exact)))
-                A["scalars"].add("r_exact_95", float(np.mean(w_r95)))
+                # Env-bounded: cues are the env's cells, so these are
+                # censored at the arena diagonal and are NOT the headline
+                # basin. Kept because every run before this recorded them
+                # under the headline names, and a silent change of meaning is
+                # worse than two columns.
+                A["scalars"].add("r_exact_all_envcues", float(np.mean(w_exact)))
+                A["scalars"].add("r_exact_95_envcues", float(np.mean(w_r95)))
                 A["scalars"].add("exact_frac", float(np.mean(w_frac)))
 
             if w.index < cfg.n_map_worlds and cfg.trajectory_steps > 0:

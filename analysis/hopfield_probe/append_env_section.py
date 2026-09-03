@@ -7,7 +7,7 @@ final section with its own nav tab.
 import pathlib
 import re
 
-SRC = pathlib.Path("/home/jackking/.claude/jobs/d05f5770/tmp/probe_five/"
+SRC = pathlib.Path("/home/jackking/.claude/jobs/d05f5770/tmp/probe_basin2/"
                    "report/report.fragment.html")
 DST = pathlib.Path("/home/jackking/.claude/jobs/d05f5770/tmp/"
                    "coverage_ladder.html")
@@ -48,18 +48,21 @@ for lab, cov, b20, b40 in ROWS:
         f"{d:+.2f}</td></tr>")
 
 section = f"""<section id="envsize" class="page">
-<h1>Environment size and the basin ceiling</h1>
-<p class="lede">The basin radius <code>r_exact_95</code> is measured in cells,
-so it cannot exceed the largest goal-to-corner distance the evaluation
-environment offers &mdash; about 27 cells in a 20&times;20 arena. Across 198
-probed encoders the largest basin ever recorded was <b>21.62</b>, with 18 of
-them within 0.1 of it. That is a pin, not a coincidence, so the question is
-whether the top of the coverage ladder was measuring encoders or measuring the
-arena.</p>
+<h1>The basin measurement is censored by the arena</h1>
+<p class="lede">The basin is a property of the encoder and the stored memory.
+It does not depend on the evaluation arena &mdash; but the <em>measurement</em>
+does. <code>r_exact_95</code> is the largest radius within which 95% of cues
+retrieve the goal exactly, and <b>the cues are the cells of the evaluation
+environment</b>. In a 20&times;20 arena no cue sits more than ~27 cells from the
+goal, so the statistic cannot report a number above that however large the true
+basin is. It is censored, not rescaled.</p>
 
-<p class="lede">Re-running the same five encoders at <code>env_size 40</code>,
-which lifts the cap to ~55 cells, answers it. <b>The top two rungs were
-clipped and the bottom three were not.</b></p>
+<p class="lede">That the censoring bites was visible before running anything:
+across 198 probed encoders the largest basin ever recorded was <b>21.62</b>,
+with 18 of them within 0.1 of it. A pin at one value is what a ceiling looks
+like. Re-running the same five encoders at <code>env_size 40</code>, which
+lifts the cap to ~55 cells, confirms it &mdash; <b>the top two rungs were
+censored and the bottom three were not.</b></p>
 
 <div class="card"><table class="cmp">
 <thead><tr><th>encoder</th><th>coverage</th>
@@ -73,10 +76,11 @@ environment's geometric cap. Orange marks a basin close enough to its cap to be
 suspect.</p></div>
 
 <h2>What this changes</h2>
-<p class="lede">The 10% and 5% encoders gain <b>9.6</b> and <b>7.0</b> cells
-when given room; the 2.5%, 1.25% and 0.75% encoders gain 0.3&ndash;1.8, which is
-noise. So the two ends were being measured differently: the bottom of the ladder
-reports its real basin, and the top of it was reporting the arena.</p>
+<p class="lede">The 10% and 5% encoders report values <em>above the 20&times;20
+arena's largest possible distance</em>, which can only happen if the earlier
+numbers were clipped. The 2.5%, 1.25% and 0.75% encoders move by 0.3&ndash;1.8
+cells, which is noise &mdash; their env-20 numbers were already the real basin.
+So the two ends of the ladder were being measured differently.</p>
 
 <p class="lede">Two consequences for the coverage panel on the overview.
 <b>The spread is larger than it appears</b> &mdash; 17.8 cells across the ladder
@@ -90,12 +94,12 @@ plateau across 2.5% and 1.25%, then a further drop at 0.75%. That is a
 different shape from the one the env-20 panel shows, and it is the one to
 trust.</p>
 
-<p class="note"><b>Only the basin transfers between the two runs.</b> A
-40&times;40 arena is a harder navigation problem with longer paths, so reach
-falls for every encoder (0.987 &rarr; 0.856 at 10% coverage) and the angular
-errors move too. Those differences measure the arena, not the encoder, and are
-not comparable across env sizes. The basin is a radius in cells and is the one
-quantity where the comparison is clean.</p>
+<p class="note"><b>This section is only about the basin.</b> The env-40 run
+moves every other metric as well, because they are scored over a 4&times; larger
+cell set and a 4&times; longer path budget &mdash; different measurements of
+different populations, not the same measurement at a different scale. Nothing
+here compares them. <code>r_exact_95</code> is a radius in cells, so it is the
+one quantity where both runs are measuring the same thing.</p>
 </section>"""
 
 html = SRC.read_text()

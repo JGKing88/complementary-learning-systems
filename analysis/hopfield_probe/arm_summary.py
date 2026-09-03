@@ -38,7 +38,7 @@ def row(r):
         err=mo(bc["grid"]["scalars"], "abs_err_mean"),
         acc=mo(bc["grid"]["scalars"], "acc45"),
         exact=mo(ta["scalars"], "exact_frac"),
-        basin=mo(ta["scalars"], "r_exact_95"),
+        basin=mo(ta["scalars"], "r_exact_all"),
         disc=mo(td["discrete"]["scalars"], "reach_rate"),
         cont=mo(td["continuous"]["scalars"], "reach_rate"),
         s15=mo(r["test_bc"]["k"][K]["per_step"]["15"]["grid"]["scalars"],

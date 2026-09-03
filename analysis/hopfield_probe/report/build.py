@@ -11,6 +11,8 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+
+import numpy as np
 from pathlib import Path
 
 from ..harness import OUTCOMES
@@ -162,8 +164,21 @@ def page_index(results: list[dict], src: str) -> str:
         return label, fmt(head[1]), cmp
 
     def basin(r):
+        # MEDIAN, not mean. `first_failure_radius` returns -1 when even r=0
+        # fails -- the goal cell does not retrieve itself -- and averaging that
+        # sentinel in with real radii produces a number that is neither. The
+        # companion `basin_fail` reports how often it happens.
         try:
-            return scal(r["test_a"]["k"][rk]["per_step"][rs], "r_exact_95")
+            return scal(r["test_a"]["k"][rk]["per_step"][rs], "r_exact_all",
+                        "p50")
+        except (KeyError, TypeError):
+            return None
+
+    def basin_fail(r):
+        try:
+            v = (r["test_a"]["k"][rk]["per_step"][rs]["scalars"]
+                 ["r_exact_all"]["values"])
+            return float(np.mean([x < 0 for x in v])) if v else None
         except (KeyError, TypeError):
             return None
 
@@ -195,7 +210,9 @@ def page_index(results: list[dict], src: str) -> str:
     tiles = []
     for label, fn, fmt, sub in (
         ("Basin radius", basin, lambda v: radius(v, 2),
-         f"cells, r_exact_95 at K={rk}, s={rs}"),
+         f"cells, median r_exact_all at K={rk}, s={rs}"),
+        ("Goal self-retrieval fails", basin_fail, pct,
+         "of (world, env) pairs, where basin is undefined"),
         ("Direction accuracy", acc, pct, "acc45 vs. 25% chance"),
         ("Snap cost", snap, lambda v: deg(v, 2),
          "excess degrees at d < 2"),
@@ -234,7 +251,7 @@ def page_index(results: list[dict], src: str) -> str:
     # Coverage is the axis the encoders in a ladder run differ along, and it is
     # the one comparison the per-encoder pages cannot show, since each page
     # renders one encoder. Both panels are at the reference K: reach is the
-    # objective, and r_exact_95 is the radius within which a cue still
+    # objective, and r_exact_all is the radius within which EVERY cue still
     # retrieves the goal exactly -- they came apart on this ladder, reach
     # staying flat while the radius shrank, which is the point of plotting
     # them together. Omitted entirely when the run has no coverage metadata or
@@ -255,7 +272,7 @@ def page_index(results: list[dict], src: str) -> str:
 
         reach_line = [{"label": "continuous reach", "color": CAT1,
                        "values": [flow_c(r) for _c, r in covs]}]
-        basin_line = [{"label": "r_exact_95", "color": CAT2,
+        basin_line = [{"label": "r_exact_all", "color": CAT2,
                        "values": [basin(r) for _c, r in covs]}]
         cov_block = f"""<h2>Coverage</h2>
 <div class="grid2">
@@ -265,9 +282,11 @@ def page_index(results: list[dict], src: str) -> str:
       note=f"K={rk}, s={rs}. One point per encoder in this run.")}
 {card("Basin radius vs. training coverage",
       line_chart(cx, basin_line, xlabel="training coverage (%)",
-                 ylabel="r_exact_95 (cells)"),
-      note=f"K={rk}, s={rs}. The radius within which a cue still retrieves "
-           f"the goal exactly.")}
+                 ylabel="r_exact_all (cells)"),
+      note=f"K={rk}, s={rs}. Median over (world, env) of the radius within "
+           f"which EVERY cue retrieves the goal exactly -- a guarantee, not a "
+           f"95% rate. Cues are every cell in a scaffold disc around the goal, "
+           f"so this does not depend on the evaluation environment.")}
 </div>"""
 
     rows = []
@@ -282,7 +301,7 @@ def page_index(results: list[dict], src: str) -> str:
                 d = r.get("test_d", {}).get("k", {}).get(k, {}).get(s, {})
                 rows.append([
                     name, k, s,
-                    radius(scal(a, "r_exact_95"), 2),
+                    radius(scal(a, "r_exact_all", "p50"), 2),
                     pct(scal(a, "exact_frac")),
                     deg(scal(b.get("grid", {}), "abs_err_mean")),
                     pct(scal(b.get("grid", {}), "acc45")),
@@ -291,7 +310,7 @@ def page_index(results: list[dict], src: str) -> str:
                     pct(scal(d.get("discrete", {}), "reach_rate")),
                 ])
     tbl = table(
-        ["encoder", "K", "steps", "r_exact_95", "exact_hit", "B |err|",
+        ["encoder", "K", "steps", "r_exact_all", "exact_hit", "B |err|",
          "B acc45", "C |err|", "C excess<2", "D reach"], rows,
         summary="cross-test summary")
 
