@@ -7713,3 +7713,65 @@ causally-read input at all.
 The lesson is not about the aux head. **Every ratio in §30.14 was a ratio
 against a control chosen for its rank and nothing else**, and rank is the one
 property that does not determine how much of the state a subspace holds.
+
+### 32.5 The null a fitted subspace actually needs — and it reinstates the result
+
+Jack: *"but the comparison with full random is 1.27"*. Right, and the two
+numbers had to be reconciled before either could be quoted.
+
+**The fitted-subspace worry, and its control.** A readout subspace is CHOSEN to
+align with structure in `h`, and structure in `h` and what the policy reads
+both come from the same trained network -- so a fitted direction might beat a
+random one merely by pointing along the network's dominant computation. The
+control is a subspace fitted the SAME way, with the same ridge, to the same
+target **shuffled across trials**: identical procedure, identical target
+statistics, no real relationship.
+
+| `ratio-NULL` | `p20_e` | `p24_aux` |
+|---|---|---|
+| occupancy | 0.88 | 0.94 |
+| visited8 | 1.08 | 0.95 |
+| position | 1.34 | 0.54 |
+
+**All ~1. Fitting per se does not inflate the ratio**, so the confound does not
+exist and `ratio_sens` means what it claims. Against this reference the control
+arm's occupancy beats its own null by 2.5x and `p24_aux`'s by 2.8x.
+
+**And the full-rank comparison was the uninformative one, not the clean one.**
+`state/shuffle` = 1.27 looked like the better-constructed test -- a real
+foreign state against a scrambled one, both full rank, both size-matched. But
+if only a small number of `h`'s 1024 directions reach the action, swapping the
+whole state and shuffling the whole state randomise *the same few directions*,
+and the two conditions are near-equivalent by construction. That ratio cannot
+isolate anything. The subspace splice is a smaller, more linear perturbation,
+and it is what identifies which directions matter. I asserted the opposite for
+one message; it was wrong.
+
+### 32.6 What the control arm actually is
+
+**Weakly history-dependent, not memoryless.** The occupancy directions score
+2.21 +/- 0.23 against a fitted-to-noise null of 0.88, and 2.17 under
+position-AND-heading matching, where history is the only thing left that
+differs. Magnitude, in units that mean something: the occupancy subspace
+carries 0.139 of the whole-state effect, and the whole-state effect is 0.209 of
+the action's natural spread -- so roughly **3% of action variability traces to
+where the agent has been**. Non-zero, ~5 sigma from its null, and small.
+
+That refines §22 rather than overturning it: the policy is dominantly a
+function of position and heading with a weak history term.
+
+### 32.7 The final reading of lever B
+
+| | control | `p24_aux` | |
+|---|---|---|---|
+| occupancy CONTENT (`delta_flow`) | 0.035 | **0.136** | 4x more |
+| occupancy USE (`ratio_sens`) | 2.21 ± 0.23 | 2.62 ± 0.26 | 1.2 sigma -- not a difference |
+| its own null | 0.88 | 0.94 | both channels open |
+
+**The history channel was already open on the control arm. The aux head
+quadrupled what feeds it, and the channel did not widen.**
+
+Which is neither §27's "the policy ignored it" (the channel is open, on both
+arms) nor §30.12's "the policy reads it more" (it does not, detectably). It is:
+the readout weight is a property this intervention did not touch. A lever C has
+to move that weight, and no experiment run so far has moved it.

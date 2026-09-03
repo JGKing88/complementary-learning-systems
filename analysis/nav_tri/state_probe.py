@@ -416,7 +416,8 @@ def _orth_against(Q, R):
 
 
 def subspace_splice(agent, obs, h, trial, Q, n_layers, device, rng,
-                    n_rand=8, pos=None, heading=None, cell=1.0) -> dict:
+                    n_rand=8, pos=None, heading=None, cell=1.0,
+                    null_Q=None) -> dict:
     """Swap ONLY the component of h inside Q, keeping the rest intact.
 
     The whole-state swap in `use_probes` replaces position, clock and map at
@@ -488,6 +489,20 @@ def subspace_splice(agent, obs, h, trial, Q, n_layers, device, rng,
         "n_rand": int(n_rand),
         "frac_of_full": d_sub / max(d_full, EPS),
     }
+    if null_Q is not None:
+        # The control the random subspace cannot be. A FITTED subspace is
+        # chosen to align with structure in h, and structure in h and what the
+        # policy reads both come from the same trained network -- so a fitted
+        # direction may beat a random one merely by pointing along the
+        # network's dominant computation, whatever it decodes. This subspace
+        # is fitted the same way, with the same ridge, to a target SHUFFLED
+        # across trials: same fitting procedure, same target statistics, no
+        # real relationship to h. If it also scores ~2, the targeted splice
+        # says nothing about occupancy specifically.
+        n_sub, nh_sub = swap(null_Q)
+        out["rank_null"] = int(null_Q.shape[1])
+        out["d_sub_null"] = n_sub
+        out["ratio_null"] = ((n_sub / max(nh_sub, EPS)) / max(sens_rand, EPS))
     if pos is not None:
         # Same place, different episode. Removes the state/observation
         # contradiction that only the position subspace suffers, so the
@@ -801,17 +816,26 @@ def report(res: dict, label: str) -> None:
     sp_ = res.get("splice") or {}
     if sp_:
         print("\n  TARGETED SPLICE -- swap ONE readout subspace, keep the rest")
-        print("    %-12s %5s %8s %8s %16s %13s %11s"
-              % ("subspace", "rank", "ratio", "size/rnd", "ratio-sens",
-                 "matched-sens", "frac_full"))
+        print("    %-12s %5s %8s %16s %11s %13s %11s"
+              % ("subspace", "rank", "size/rnd", "ratio-sens",
+                 "ratio-NULL", "matched-sens", "frac_full"))
         for t, v in sp_.items():
-            print("    %-12s %5d %8.2f %8.2f %16s %13s %11.3f"
-                  % (t, v["rank"], v["ratio"], v.get("size_vs_random", 0.0),
+            print("    %-12s %5d %8.2f %16s %11s %13s %11.3f"
+                  % (t, v["rank"], v.get("size_vs_random", 0.0),
                      "%.2f +/- %.2f" % (v.get("ratio_sens", 0.0),
                                         v.get("ratio_sens_sd", float("nan"))),
+                     "-" if "ratio_null" not in v
+                     else "%.2f" % v["ratio_null"],
                      "-" if "ratio_matched_sens" not in v
                      else "%.2f" % v["ratio_matched_sens"],
                      v["frac_of_full"]))
+        print("    ratio-NULL  the SAME fit to a target shuffled across "
+              "trials. A fitted")
+        print("                subspace may beat a random one just by "
+              "pointing along the")
+        print("                network's dominant computation. ratio-sens "
+              "means something")
+        print("                only to the extent it exceeds THIS, not 1.0.")
         print("    size/rnd  how much BIGGER the edit is than a random "
               "subspace's. A readout")
         print("              subspace for something strongly encoded is "
@@ -1142,6 +1166,12 @@ def main() -> None:
                     print(f"  NOTE no target {t!r}; skipping its splice.")
                     continue
                 Q = _readout_subspace(hid[str_], targets[t][str_])
+                # Same target, same ridge, rows shuffled ACROSS TRIALS so the
+                # relationship to h is destroyed but the fitting procedure and
+                # the target's statistics are identical.
+                _r = np.random.RandomState(args.seed + 977)
+                Yn = targets[t][str_][_r.permutation(int(str_.sum()))]
+                nQ = _readout_subspace(hid[str_], Yn)
                 row = subspace_splice(
                     agent, obs[ste], hid[ste], trial[ste], Q,
                     own.agent.num_rnn_layers, device,
@@ -1149,7 +1179,7 @@ def main() -> None:
                     pos=targets["pos"][ste],
                     heading=(targets["heading"][ste]
                              if args.match_heading else None),
-                    cell=args.match_cell)
+                    cell=args.match_cell, null_Q=nQ)
                 if t != "pos":
                     # ... and again with the position directions removed.
                     Qr = _orth_against(Q, qpos)
