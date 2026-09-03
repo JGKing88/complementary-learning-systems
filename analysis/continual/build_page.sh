@@ -84,6 +84,10 @@ EXTRA_PAGES="
 discrete:wave1d:wave0d:wave0d:
 continuous_fs:wave1_fs:wave0:wave0:wave1_fsp
 discrete_fs:wave1d_fs:wave0d:wave0d:wave1d_fsp
+continuous_prev:wave1_p:wave0:wave0:
+discrete_prev:wave1d_p:wave0d:wave0d:
+continuous_fs_prev:wave1_fsp:wave0:wave0:
+discrete_fs_prev:wave1d_fsp:wave0d:wave0d:
 "
 
 PAGE_ARGS=()

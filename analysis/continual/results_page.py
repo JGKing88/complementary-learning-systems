@@ -1055,16 +1055,40 @@ def headroom_table(here: dict, there: dict) -> str:
 #: a 2x2: two action spaces, each with and without the pretrained checkpoint
 #: that every method arm in waves 1-3 loads. They live at one URL because the
 #: only honest readings are comparative.
+#: key -> (action space, weight initialisation, previous-action channel).
+#: The suite is a 2x2x2 and the selector is three axes rather than eight
+#: buttons, because eight flat labels is a list to read and three toggles is a
+#: structure to navigate.
 PAGE_SPECS = {
-    "continuous":    ("Continuous",               "continuous", "pretrained"),
-    "discrete":      ("Discrete",                 "discrete",   "pretrained"),
-    "continuous_fs": ("Continuous, from scratch", "continuous", "scratch"),
-    "discrete_fs":   ("Discrete, from scratch",   "discrete",   "scratch"),
+    "continuous":         ("continuous", "pretrained", "off"),
+    "discrete":           ("discrete",   "pretrained", "off"),
+    "continuous_fs":      ("continuous", "scratch",    "off"),
+    "discrete_fs":        ("discrete",   "scratch",    "off"),
+    "continuous_prev":    ("continuous", "pretrained", "on"),
+    "discrete_prev":      ("discrete",   "pretrained", "on"),
+    "continuous_fs_prev": ("continuous", "scratch",    "on"),
+    "discrete_fs_prev":   ("discrete",   "scratch",    "on"),
 }
+
+#: The three axes, in the order the selector shows them: (field index, legend,
+#: [(value, label)]).
+PAGE_AXES = [
+    (0, "Action space", [("continuous", "Continuous"), ("discrete", "Discrete")]),
+    (1, "Weights",      [("pretrained", "Pretrained"), ("scratch", "From scratch")]),
+    (2, "Prev-action",  [("off", "Off"), ("on", "On")]),
+]
+
+
+def page_key(space: str, init: str, prev: str) -> str:
+    """The PAGE_SPECS key for one combination, or None if it has no name."""
+    for k, v in PAGE_SPECS.items():
+        if v == (space, init, prev):
+            return k
+    return None
 
 
 def render_body(d: dict, space: str = "continuous",
-                init: str = "pretrained",
+                init: str = "pretrained", prev: str = "off",
                 other: dict | None = None,
                 other_space: str = "discrete") -> str:
     P: list[str] = []
@@ -1100,6 +1124,14 @@ def render_body(d: dict, space: str = "continuous",
           "the Hopfield store on the same environment stream. The comparison is a "
           "cost frontier, not a leaderboard: retention alone ranks a method that "
           "refuses to learn above one that works.</p>")
+    if prev == "on":
+        A('<div class="note"><h4>With the previous-action channel</h4>'
+          "<p>The agent is given its own last action as an input channel — 4 "
+          "values under discrete movement, 2 under continuous. Plan decision "
+          "#1 settled this on, and no arm of the published suite ever had it: "
+          "the checkpoints were built without it and a loaded checkpoint "
+          "overrides the flag, because the two imply different input widths. "
+          "These pages are the first runs where it is actually on.</p></div>")
     if init == "scratch":
         A('<div class="note warn"><h4>No pretrained checkpoint</h4>'
           "<p>Every method arm in the main suite finetunes a policy pretrained "
@@ -1240,7 +1272,7 @@ def render_body(d: dict, space: str = "continuous",
           "over 15 updates because a single evaluation trial is a coin "
           "flip.</p>")
         by_work = staircase_svg(stair, x_mode="samples")
-        gid = f"stair-{space}-{init}"
+        gid = f"stair-{space}-{init}-{prev}"
         if by_work:
             A(f'<div class="xsw"><span class="lb">x-axis</span>'
               f'<button id="{gid}-b-updates" aria-selected="true" '
@@ -1429,7 +1461,7 @@ def render_body(d: dict, space: str = "continuous",
           "together would read as a comparison; they are an upper bound and a "
           "result.</p></div>")
 
-    if init == "scratch":
+    if init == "scratch" and prev == "off":
         _pa = prev_action_table(d)
         if _pa:
             A('<h2 id="prevaction"><span class="sec">2</span> '
@@ -2449,29 +2481,36 @@ def render(datasets: dict) -> str:
     A(f"<style>{CSS}</style>")
 
     if len(keys) > 1:
-        A('<div class="switch"><div class="in">'
-          '<span class="lb">Suite</span>')
-        for k in keys:
-            label = PAGE_SPECS[k][0]
-            sel = "true" if k == first else "false"
-            A(f'<button id="btn-{k}" aria-selected="{sel}" '
-              f"onclick=\"showPage('{k}')\">{esc(label)}</button>")
-        A('<span class="note">Same protocol throughout. Floors and ceilings '
-          "differ between action spaces and between initialisations, so "
-          "compare within a page.</span></div></div>")
+        # One control per axis, and only values that some available page
+        # actually has -- an axis with a single live value is dropped rather
+        # than shown as a button that cannot be unpressed.
+        A('<div class="switch"><div class="in">')
+        for idx, legend, values in PAGE_AXES:
+            live = [(v, lab) for v, lab in values
+                    if any(PAGE_SPECS[k][idx] == v for k in keys)]
+            if len(live) < 2:
+                continue
+            A(f'<span class="lb">{esc(legend)}</span>')
+            for v, lab in live:
+                sel = "true" if PAGE_SPECS[first][idx] == v else "false"
+                A(f'<button id="ax-{idx}-{v}" aria-selected="{sel}" '
+                  f"onclick=\"pickAxis({idx},'{v}')\">{esc(lab)}</button>")
+        A('<span class="note" id="page-note">Same protocol throughout. '
+          "Floors and ceilings move between action spaces and between "
+          "initialisations, so compare within a page.</span>")
+        A("</div></div>")
 
     for k in keys:
-        _, space, init = PAGE_SPECS[k]
+        space, init, prev = PAGE_SPECS[k]
         # The comparison partner is the other action space at the SAME
         # initialisation. Pairing a from-scratch page against a pretrained one
         # would put the checkpoint and the action head in the same column.
         partner_space = "discrete" if space == "continuous" else "continuous"
         partner = next((o for o in keys
-                        if PAGE_SPECS[o][1] == partner_space
-                        and PAGE_SPECS[o][2] == init), None)
+                        if PAGE_SPECS[o] == (partner_space, init, prev)), None)
         hid = "" if k == first else " hidden"
         A(f'<div id="page-{k}"{hid}>')
-        A(render_body(datasets[k], space, init,
+        A(render_body(datasets[k], space, init, prev,
                       datasets.get(partner), partner_space))
         A("</div>")
 
@@ -2479,23 +2518,51 @@ def render(datasets: dict) -> str:
         # `hidden` rather than a style toggle, and every storage access in a
         # try/catch: the page is read in private windows and in thumbnail
         # capture, where localStorage itself throws rather than returning null.
-        ids = ",".join(f"'{k}'" for k in keys)
+        specs = {k: list(PAGE_SPECS[k]) for k in keys}
         A("""<script>
-var CL_PAGES = [%s];
+var CL_SPECS = %s;
+var CL_PAGES = Object.keys(CL_SPECS);
+var CL_SEL = CL_SPECS[CL_PAGES[0]].slice();
+
 function showPage(which){
-  if (CL_PAGES.indexOf(which) < 0) which = CL_PAGES[0];
+  if (CL_PAGES.indexOf(which) < 0) return false;
+  CL_SEL = CL_SPECS[which].slice();
   CL_PAGES.forEach(function(k){
     var pg = document.getElementById('page-' + k);
-    var bt = document.getElementById('btn-' + k);
     if (pg) pg.hidden = (k !== which);
-    if (bt) bt.setAttribute('aria-selected', String(k === which));
+  });
+  [0,1,2].forEach(function(i){
+    ['continuous','discrete','pretrained','scratch','off','on'].forEach(function(v){
+      var bt = document.getElementById('ax-' + i + '-' + v);
+      if (bt) bt.setAttribute('aria-selected', String(CL_SEL[i] === v));
+    });
   });
   try { localStorage.setItem('cl-suite-page', which); } catch (e) {}
+  return true;
 }
+
+// Pick a value on one axis and keep the others. If that exact combination was
+// never run, say so rather than silently jumping to a page the reader did not
+// ask for -- the grid is deliberately incomplete in places.
+function pickAxis(idx, val){
+  var want = CL_SEL.slice();
+  want[idx] = val;
+  var hit = CL_PAGES.filter(function(k){
+    var s = CL_SPECS[k];
+    return s[0] === want[0] && s[1] === want[1] && s[2] === want[2];
+  })[0];
+  var note = document.getElementById('page-note');
+  if (hit) { showPage(hit); if (note) note.textContent = note.dataset.base || note.textContent; }
+  else if (note) {
+    if (!note.dataset.base) note.dataset.base = note.textContent;
+    note.textContent = 'That combination has not been run.';
+  }
+}
+
 (function(){
   var saved = null;
   try { saved = localStorage.getItem('cl-suite-page'); } catch (e) {}
-  if (saved && CL_PAGES.indexOf(saved) >= 0) showPage(saved);
+  if (!(saved && showPage(saved))) showPage(CL_PAGES[0]);
 })();
 function showX(group, which){
   ['updates','work'].forEach(function(k){
@@ -2505,7 +2572,7 @@ function showX(group, which){
     if (bt) bt.setAttribute('aria-selected', String(k === which));
   });
 }
-</script>""" % ids)
+</script>""" % json.dumps(specs))
     return "\n".join(P)
 
 
