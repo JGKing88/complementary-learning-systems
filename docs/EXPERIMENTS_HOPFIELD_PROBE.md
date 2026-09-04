@@ -1605,3 +1605,50 @@ Raw: `$CLS_RESULTS/hopfield_probe/20260827/probe_basin2/`. Checks:
 `basin_seeds_check.py` (across seeds), `basin_confound_check.py` (patch size),
 `env_basin_check.py` (the superseded env-size comparison).
 Page: https://claude.ai/code/artifact/d7a250c1-5044-4854-b453-61881bd518e7
+
+### 10.19 Saturating the recall shrinks the basin
+
+§10.16 showed saturation turns the 10% encoder into a genuine attractor: the
+recalled state lands on the goal and holds `goal_dist` 0.00 to s=15, where the
+linear arm drifts to 1.41. So the basin — the radius from which a cue still
+retrieves the goal exactly — was predicted to grow. **It shrinks.**
+
+Same encoders, same encoder gains (100 / 75 / 100 / 100 / 200); only the recall
+loop gain changes. Median `r_exact_all` over four seeds:
+
+| coverage | β = gain | β = 1e6 | change | self-fail, gain → 1e6 |
+|---|---|---|---|---|
+| 10% | 27.0 | 24.5 | −2.5 | 0.00 → 0.03 |
+| 5% | 23.0 | **13.0** | −10.0 | 0.00 → 0.09 |
+| 2.5% | 19.2 | 12.2 | −7.0 | 0.06 → 0.12 |
+| 1.25% | 11.5 | **4.0** | −7.5 | 0.22 → **0.44** |
+| 0.75% | 13.5 | 10.2 | −3.3 | 0.12 → 0.22 |
+
+Self-retrieval failure roughly doubles at every rung: saturated, the goal cue
+itself increasingly fails to come back as the goal.
+
+**Why — §7's gap 2, biting exactly where it was predicted to.** The saturated
+update is `x ← sign(Wx)/√D`, so the recalled state is a hypercube corner, while
+the retrieval bank is **continuous cell encodings**. A binarised state is far
+from *every* cell, and the argmax then turns on which continuous cell happens to
+sit nearest a corner rather than on which one the memory is. §2 measured the
+same thing on the old encoders (retrieval 74% → 44% under β alone); §10.16 found
+it did *not* bite for `att0.5`, because its `cos_bin` is 0.955 and the bank was
+400 env cells plus aliases. Against **12,853 dense cells**, including every near
+neighbour of the goal, 0.955 is no longer close enough.
+
+So "basin" splits into two things that saturation moves in opposite directions:
+
+* **as dynamics** — does the state stay put once it arrives? Saturation makes it
+  perfect (§10.16, `goal_dist` 0.00 forever).
+* **as a readout** — is the state nearest the goal cell among all cells?
+  Saturation makes it worse, because binarising costs more against a dense
+  continuous bank than the fixed point buys.
+
+The `s=1` navigation readout wants the second. That is consistent with §10.16's
+other finding — saturation buys step-invariance and load tolerance and **not**
+reach — and it sharpens it: the fixed point is real, and it is not what the
+readout is asking for.
+
+Raw: `$CLS_RESULTS/hopfield_probe/20260827/probe_spliced_b1e06/`. Run with
+`splice_sat.sh`; the page carries it as its Saturated section.

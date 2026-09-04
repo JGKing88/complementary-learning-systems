@@ -38,6 +38,9 @@ from analysis.hopfield_probe.harness import (ProbeConfig, build_memory,
 ARCH = "/orcd/pool/003/jackking/cls_runs/results/hopfield_probe/20260827"
 S = "/orcd/pool/003/jackking/cls_runs/sweeps"
 OUT = "/home/jackking/.claude/jobs/d05f5770/tmp/probe_spliced"
+# With a beta override the recall regime changes, so the results go elsewhere:
+# one ladder must not mix beta = gain rows with saturated ones.
+OUT_BETA = "/home/jackking/.claude/jobs/d05f5770/tmp/probe_spliced_b{tag}"
 
 # coverage label, source archive dir, arm label prefix, checkpoint glob, gain
 RUNGS = [
@@ -55,17 +58,20 @@ RUNGS = [
 SEEDS = (42, 43, 44, 45)
 
 
-def main(only: int | None = None) -> None:
+def main(only: int | None = None, beta: float | None = None) -> None:
     """Recompute every checkpoint, or just index ``only`` of the 20.
 
     The work is per-checkpoint and independent, so splitting it across jobs is
     the difference between one long serial run and twenty short parallel ones.
     Each writes its own file into ``OUT``; nothing is shared.
     """
-    os.makedirs(OUT, exist_ok=True)
+    out_dir = (OUT if beta is None
+               else OUT_BETA.format(tag=f"{beta:g}".replace("+", "")))
+    os.makedirs(out_dir, exist_ok=True)
     cfg = ProbeConfig(n_worlds=8, n_envs_per_world=20, env_size=20, Npos=1716,
                       k_values=(1, 3, 5, 10, 20),
-                      steps=(1, 2, 3, 5, 10, 15), seed=0)
+                      steps=(1, 2, 3, 5, 10, 15), seed=0,
+                      beta_override=beta)
     worlds = sample_worlds(cfg)
     written = 0
 
@@ -95,7 +101,7 @@ def main(only: int | None = None) -> None:
             header["label"] = f"{cov} · {arm} · s{seed}"
             header["gain"] = gain
             header["gain_was_overridden"] = True
-            header["beta"] = gain
+            header["beta"] = gain if beta is None else float(beta)
             res["header"] = header
 
             for k in cfg.k_values:
@@ -138,16 +144,18 @@ def main(only: int | None = None) -> None:
                         }
 
             name = f"{cov}_{arm}_s{seed}".replace("%", "pct").replace(".", "_")
-            with open(os.path.join(OUT, name + ".json"), "w") as fh:
+            with open(os.path.join(out_dir, name + ".json"), "w") as fh:
                 json.dump(res, fh)
             written += 1
             print(f"  {cov:6s} {arm:10s} s{seed}  ok", flush=True)
 
     src_manifest = glob.glob(f"{ARCH}/attlow_g100/manifest.json")
     if src_manifest and only in (None, 0):
-        shutil.copy2(src_manifest[0], os.path.join(OUT, "manifest.json"))
-    print(f"\n{written} files -> {OUT}")
+        shutil.copy2(src_manifest[0],
+                     os.path.join(out_dir, "manifest.json"))
+    print(f"\n{written} files -> {out_dir}")
 
 
 if __name__ == "__main__":
-    main(int(sys.argv[1]) if len(sys.argv) > 1 else None)
+    main(int(sys.argv[1]) if len(sys.argv) > 1 else None,
+         float(sys.argv[2]) if len(sys.argv) > 2 else None)
