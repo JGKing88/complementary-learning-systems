@@ -463,6 +463,26 @@ class RolloutCollector:
                         agent_goal_store_fired.astype(np.float32)
                     ).to(self.device).unsqueeze(-1),
                 }
+                # CHANNEL DROPOUT, training rollouts only -- evaluation always
+                # sees the full input. The point is not to handicap the agent
+                # at test time but to stop the position and heading channels
+                # from being reliable enough to be the whole policy. Masked
+                # per-env per-step, so within one rollout the agent sometimes
+                # has the channel and sometimes does not.
+                _pdrop = float(getattr(cfg.hopfield, "place_dropout", 0.0))
+                if _pdrop > 0.0:
+                    keep = torch.from_numpy(
+                        (np.random.rand(B) >= _pdrop).astype(np.float32)
+                    ).to(self.device).unsqueeze(-1)
+                    values["encoded_state"] = values["encoded_state"] * keep
+                _hdrop = float(getattr(cfg.hopfield, "heading_dropout", 0.0))
+                if _hdrop > 0.0:
+                    keep = torch.from_numpy(
+                        (np.random.rand(B) >= _hdrop).astype(np.float32)
+                    ).to(self.device).unsqueeze(-1)
+                    values["prev_action"] = values["prev_action"] * keep
+                    values["prev_displacement"] = (
+                        values["prev_displacement"] * keep)
                 if cfg.agent.input_sensory:
                     values["sensory"] = sensory
                 for s, q_s in multistep_q.items():

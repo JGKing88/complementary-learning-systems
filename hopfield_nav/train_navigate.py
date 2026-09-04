@@ -758,6 +758,8 @@ CFG_FIELDS: dict[str, tuple[str, ...]] = {
     "wall_penalty": ("hopfield.wall_penalty",),
     "persistence_bonus": ("hopfield.persistence_bonus",),
     "persistence_realized": ("hopfield.persistence_realized",),
+    "place_dropout": ("hopfield.place_dropout",),
+    "heading_dropout": ("hopfield.heading_dropout",),
     "persistence_one_sided": ("hopfield.persistence_one_sided",),
     "novelty_scale_remaining": ("hopfield.novelty_scale_remaining",),
     "novelty_scale_cap": ("hopfield.novelty_scale_cap",),
@@ -1081,6 +1083,13 @@ def build_parser() -> argparse.ArgumentParser:
                         "trained under. On the commanded action a "
                         "wall-pinned agent collects the full bonus for not "
                         "moving (P2 doc §18.7-18.8).")
+    p.add_argument("--place_dropout", type=float, default=None,
+                   help="Per-step probability of zeroing the place "
+                        "code during training rollouts. Evaluation is "
+                        "unaffected.")
+    p.add_argument("--heading_dropout", type=float, default=None,
+                   help="Same, for prev_action and prev_displacement "
+                        "together.")
     p.add_argument("--persistence_one_sided",
                    action=argparse.BooleanOptionalAction,
                    default=None,

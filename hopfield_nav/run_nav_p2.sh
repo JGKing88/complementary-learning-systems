@@ -977,6 +977,61 @@ case "$VARIANT" in
     esac
     ;;
 
+  # === P31-P33 -- stop the policy being a function of position and heading ==
+  #
+  # The goal, stated by Jack: the agent must not just be acting as a function
+  # of position and heading. §30-§33 measured exactly that and it survived
+  # every reward intervention:
+  #
+  #   * position occupies 2 of 1024 state directions and is read at ~7x a
+  #     SIZE-MATCHED random subspace (§32.2) -- 2-3x any other content;
+  #   * position's SHARE of the whole-state causal effect predicts orbit depth
+  #     MONOTONICALLY across all five P20/P27-P30 arms (§33.3);
+  #   * four reward-shaping arms moved neither the ceiling nor that share much,
+  #     and the two that raised it (p29, p30) orbited hardest and covered least.
+  #
+  # Reward shaping is therefore the wrong lever. These attack the INPUT the
+  # policy is leaning on. Training rollouts only -- evaluation always sees the
+  # full input, because the question is whether a policy TRAINED under an
+  # unreliable position signal learns to weight it less, not whether it can
+  # cope with a handicap at test time.
+  #
+  #   p31_placedrop  place code zeroed on 30% of steps, per env. Position is
+  #                  intermittently unavailable, so a policy that is only a
+  #                  position field cannot collect reward on those steps.
+  #   p32_headdrop   prev_action AND prev_displacement zeroed together on 30%.
+  #                  Dropped as a pair: either alone still carries the
+  #                  direction of travel. The other half of the goal.
+  #   p33_revisit_hi revisit_penalty 0.15 -> 0.40. p28 was the ONLY arm that
+  #                  moved the balance the productive way -- lowest position
+  #                  share (0.224 vs the control's 0.275), highest occupancy
+  #                  share (0.170 vs 0.128), and the only arm with no orbit --
+  #                  while leaving coverage alone. If that relationship is
+  #                  causal and dose-dependent, more of it should push further.
+  #
+  # Scored on swept coverage, the PROXIMITY revisit measure (revisit_frac is
+  # exactly 1 - cells_per_step and so is coverage restated), recurrence, and
+  # the state probe. The state probe is the one that answers the goal: whether
+  # position's share of the action fell.
+  p31_placedrop|p32_headdrop|p33_revisit_hi)
+    ENCODER=/orcd/pool/003/jackking/cls_runs/sweeps/w52_attract_fwhm/001_att0.5_seed=43/encoder_final.pt
+    ENCODER_GAIN=100
+    HOPFIELD_BETA=100
+    SCHEDULE=${SCHEDULE:-'explore:700'}
+    ENVS_PER_WORLD=20; BATCH_ENVS=64
+    EPSILON_EXPLORE=0.1; GOAL_REWARD=2.0
+    PERSISTENCE_BONUS=0.20
+    REGIME_ASSIGNMENT=shuffle
+    ACTION_POLAR=1; STATE_DEPENDENT_STD=1; FREEZE_LOG_STD=0
+    MIN_ACTION_NORM=0.5; MAX_ACTION_NORM=1.0
+    EVAL_SCOPE=expl; EVAL_EVERY=25; CKPT_EVERY=25
+    case "$VARIANT" in
+      p31_placedrop)  PLACE_DROPOUT=0.3 ;;
+      p32_headdrop)   HEADING_DROPOUT=0.3 ;;
+      p33_revisit_hi) REVISIT_PENALTY=0.40 ;;
+    esac
+    ;;
+
   # === P21 -- does the pin clear when persistence stops paying for it? ======
   #
   # 18.7 measured that 100% of episodes at u25 AND u50 are wall-pinned, and

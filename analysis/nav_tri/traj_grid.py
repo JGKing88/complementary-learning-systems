@@ -17,14 +17,25 @@ import json
 
 from analysis.nav_tri.exploit_report import CSS, FONTS, esc
 
-SERIES = {"p20_e": "var(--s1)", "p20_e_kcap": "var(--s2)"}
+# One colour per series, assigned by position. This was a two-entry dict keyed
+# on the p20_e/p20_e_kcap pair, so any run comparing a different or longer set
+# of arms silently KeyError'd -- a poor way to find out.
+PALETTE = ["var(--s1)", "var(--s2)", "var(--s3)", "var(--s4)",
+           "var(--s5)", "var(--s6)"]
+
+
+def colour_for(labels):
+    return {lab: PALETTE[i % len(PALETTE)] for i, lab in enumerate(labels)}
 
 EXTRA = """
-:root{ --s1:#b8791f; --s2:#6d5aa8; }
+:root{ --s1:#b8791f; --s2:#6d5aa8; --s3:#1f7a6b;
+        --s4:#a33b52; --s5:#3a6ea5; --s6:#6b7d24; }
 @media (prefers-color-scheme: dark){
-  :root:not([data-theme="light"]){ --s1:#c6852c; --s2:#9885da; }
+  :root:not([data-theme="light"]){ --s1:#c6852c; --s2:#9885da; --s3:#3fb5a0;
+        --s4:#e0798c; --s5:#6fa5db; --s6:#a3ba4a; }
 }
-:root[data-theme="dark"]{ --s1:#c6852c; --s2:#9885da; }
+:root[data-theme="dark"]{ --s1:#c6852c; --s2:#9885da; --s3:#3fb5a0;
+        --s4:#e0798c; --s5:#6fa5db; --s6:#a3ba4a; }
 .envblk{margin-top:26px}
 .envhd{font-family:"IBM Plex Mono",monospace;font-size:11px;
   letter-spacing:.12em;text-transform:uppercase;color:var(--muted);
@@ -85,16 +96,20 @@ def mini(tr, size, color, w=100):
 def build(d):
     size = d["size"]
     labels = d["labels"]
+    SERIES = colour_for(labels)
     envs = sorted({t["env"] for t in d["trials"]})
 
     H = ["<title>Explore Trajectory Wall</title>", FONTS,
          f"<style>{CSS}{EXTRA}</style>", '<div class="wrap">']
-    H.append("<h1>Every rollout, both policies, matched starts</h1>")
+    H.append(f"<h1>Every rollout, all {len(labels)} policies, "
+             f"matched starts</h1>")
     H.append(f'<p class="sub">{len(envs)} envs &times; '
              f'{len(d["trials"]) // max(len(envs), 1)} rollouts &middot; '
-             '200 steps &middot; held-out &middot; 0 distractors</p>')
+             f'{d.get("max_steps", "?")} steps &middot; '
+             f'{esc(str(d.get("split", "held-out")))} &middot; '
+             f'{d.get("n_distractors", 0)} distractors</p>')
     H.append('<p class="lede">Column <i>j</i> is the same start in the same '
-             'arena under both policies. Shaded cells are those visited; the '
+             'arena under every policy. Shaded cells are those visited; the '
              'hollow dot is the start. Numbers under each are coverage. '
              'No claims on this page &mdash; the aggregates kept answering a '
              'different question than the one asked, so this is here to be '
@@ -122,9 +137,11 @@ def build(d):
             H.append("</div>")
         H.append("</div>")
 
-    H.append('<p class="sub" style="margin-top:34px">'
-             'p20_e = navigate_u700.pt (21695407) &middot; '
-             'p20_e_kcap = navigate_u700.pt (21695408)</p>')
+    ck = d.get("ckpts", [])
+    foot = " &middot; ".join(
+        f"{esc(lab)} = {esc('/'.join(str(ck[i]).split('/')[-2:]))}"
+        for i, lab in enumerate(labels) if i < len(ck))
+    H.append(f'<p class="sub" style="margin-top:34px">{foot}</p>')
     H.append("</div>")
     return "\n".join(H)
 
