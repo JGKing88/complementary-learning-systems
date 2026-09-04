@@ -7775,3 +7775,88 @@ Which is neither §27's "the policy ignored it" (the channel is open, on both
 arms) nor §30.12's "the policy reads it more" (it does not, detectably). It is:
 the readout weight is a property this intervention did not touch. A lever C has
 to move that weight, and no experiment run so far has moved it.
+
+## 33. P27-P30 — the reward fix failed, and it found the real variable
+
+Four arms off `p20_e`, one knob each, all scored on matched trajectories (96
+trials, same envs/starts/seed) and by the state probe. `p29_long` is at u550,
+its latest checkpoint, not u700.
+
+### 33.1 Coverage: nothing beat the control
+
+| | swept @200 | swept @600 |
+|---|---|---|
+| `p20_e` control | **0.638** | **0.865** |
+| `p27_pers1s` | 0.640 | 0.846 |
+| `p28_revisit` | 0.633 | 0.864 |
+| `p29_long` (u550) | 0.581 | 0.760 |
+| `p30_perslow` | 0.581 | 0.783 |
+
+The §33 reward arithmetic was right and did not matter. Retracing really was
+priced at 0.20 against a wall turn's 0.10; fixing that changed nothing about
+the ceiling.
+
+**And the horizon-mismatch defence of `p29_long` is dead.** I argued its low
+score was an artefact of training at 600 steps and scoring at 200. Scored at
+its OWN 600-step horizon it is still the worst arm, 0.760 against 0.865.
+
+### 33.2 Recurrence: one arm stopped orbiting
+
+| | dip depth | period | IQR | |
+|---|---|---|---|---|
+| `p20_e` | 5.03 | 101 | 64–103 | weak, broad |
+| `p27_pers1s` | 7.60 | 117 | 113–120 | tight orbit |
+| `p28_revisit` | **0.00** | — | scattered | **no orbit** |
+| `p29_long` | 10.99 | 51 | 50–53 | strong tight orbit |
+| `p30_perslow` | 8.34 | 49 | 48–89 | orbit |
+
+`p28_revisit` eliminated the orbit at no coverage cost. And `p27_pers1s` — the
+fix argued for as most principled — made the orbit MORE coherent than the
+control (IQR 113–120 against 64–103). Removing the turn penalty tightened the
+loop instead of breaking it.
+
+### 33.3 The result: position's SHARE of the state's effect predicts orbiting
+
+Ordering the five arms by how much of the whole-state causal effect the
+position subspace accounts for:
+
+| arm | position share | occupancy share | orbit depth | swept @600 |
+|---|---|---|---|---|
+| `p28_revisit` | **0.224** | **0.170** | **0.00** | 0.864 |
+| `p20_e` | 0.275 | 0.128 | 5.03 | 0.865 |
+| `p27_pers1s` | 0.287 | 0.078 | 7.60 | 0.846 |
+| `p30_perslow` | 0.338 | 0.157 | 8.34 | 0.783 |
+| `p29_long` | **0.382** | 0.128 | **10.99** | 0.760 |
+
+**Position share and orbit depth are monotonic across all five arms**, and
+coverage falls monotonically with them (the top two tie). The more of the
+action that traces to the position directions, relative to everything else in
+the state, the harder the agent orbits and the less it covers.
+
+This is the same mechanism `p26_abspos` demonstrated causally in §31.3 —
+strengthening the position signal deepened the orbit — now visible as a
+graded relationship across five independently trained arms.
+
+`p28_revisit` is the only arm that moved the balance the other way: the lowest
+position share and the highest occupancy share of any arm, and the only one
+without an orbit.
+
+### 33.4 What this does and does not license
+
+n = 5, and this is a correlation. It is not established that lowering the
+position share CAUSES the orbit to break; `p26_abspos` is the one causal
+manipulation in this direction and it only runs the arrow one way.
+
+`p28_revisit`'s mechanism numbers all move together — occupancy content 0.044
+→ 0.054, `ratio_sens` 2.13 ± 0.21 → 2.75 ± 0.38, occupancy share 0.128 →
+0.170, `state_influence` 0.208 → 0.349 — but **2.75 ± 0.38 against 2.13 ± 0.21
+is 1.4 sigma**, and §32.4 called a 1.2 sigma gap not a difference. The same
+standard applies here. Four columns moving together is suggestive; no column
+clears the bar.
+
+**Run-to-run noise, measured:** the control's own occupancy null came out 0.88
+in one run and 1.10 in another, on the identical checkpoint — a ~25% swing.
+Every ratio in §30–§33 should be read with that in mind.
+
+The orbit result needs none of this. Depth 0.00 against 5.03 is not a ratio
+against a constructed baseline, and it is the one hard finding in the batch.
