@@ -1738,11 +1738,59 @@ binarised attractor against a continuous menu.
 **And the attractor costs the entire direction field.** acc45 falls 0.997 →
 0.392 against 0.25 chance, |err| 7.8° → 66.4°, `qnorm` halves, and continuous
 reach goes 0.987 → 0.103. That is not a memory failure — retrieval is *better*
-than any other arm. It is that `q` is built from **differences** of neighbouring
-cell embeddings (`gram_schmidt_projection`, §6.2), and `sign(z)` has no usable
-local derivative: two adjacent cells differ by a handful of flipped bits in no
-particular direction. `acc90` holds at 0.71, so a coarse signal survives;
+than any other arm.
+
+#### Why: the code stops moving in a straight line
+
+`q` is `basis @ (z_goal − z_here)` with `basis = gram_schmidt(d_fwd, d_rgt)` and
+`d_fwd = z(x, y+1) − z(x, y)` (§6.2). Two things can break: the **frame**, or
+the **displacement**. Measured at 1500 scaffold positions
+(`binary_geometry_check.py`), it is the displacement.
+
+The frame survives binarisation. `||d_fwd||` is 0.267 against 0.086 — *larger*,
+and zero at no position — and the two axes go from `|cos|` 0.11 to 0.29: worse
+conditioned, nowhere near parallel. So "`sign(z)` has no local derivative", the
+first explanation offered here, is wrong; the difference vectors are bigger than
+before.
+
+What breaks is how displacement **accumulates**. `||z(x + k·N) − z(x)||`:
+
+| k cells north | 1 | 2 | 4 | 8 | 16 | 32 |
+|---|---|---|---|---|---|---|
+| gain 100 | 0.086 | 0.167 | 0.314 | 0.559 | 0.908 | 1.281 |
+| *per doubling* | | ×1.94 | ×1.88 | ×1.78 | ×1.62 | ×1.41 |
+| gain 1e6 | 0.267 | 0.373 | 0.523 | 0.732 | 1.011 | 1.310 |
+| *per doubling* | | ×1.40 | ×1.40 | ×1.40 | ×1.38 | ×1.30 |
+
+The linear code moves **ballistically** at short range — ×2 per doubling, i.e.
+`‖Δ‖ ∝ k`, a straight line in code space — and only turns diffusive (×√2) past
+k ≈ 16. The binarised code is **diffusive from the first cell**: ×1.40 ≈ √2 at
+every scale. Successive one-cell steps flip independent sets of coordinates, so
+displacement accumulates as a random walk rather than a line.
+
+The arithmetic closes to 1.5%: 1.8% of 1024 coordinates change sign per cell,
+each by `2/√D` = 0.0625, so one cell gives `√18.4 × 0.0625` = 0.268 against
+0.267 measured, and two give `√2 × 0.267` = 0.378 against 0.373.
+
+A random walk has no direction, and direction is the whole of what `q` reads —
+`cos(z(x + k·N) − z(x), d_fwd)`:
+
+| k | 1 | 2 | 4 | 8 | 16 |
+|---|---|---|---|---|---|
+| gain 100 | 1.000 | 0.965 | 0.875 | 0.699 | 0.461 |
+| gain 1e6 | 1.000 | **0.699** | 0.494 | 0.347 | 0.237 |
+
+One extra cell costs the binarised code the alignment that eight cells cost the
+linear one. Hence |err| is already **55.6° in the nearest distance bin** rather
+than degrading with range, and `qnorm` sits flat at 0.18 from d=1 outward where
+the working arms climb 0.09 → 0.37 — a `q` whose length carries no information
+about how far the goal is. `acc90` holds at 0.71, so a coarse signal survives;
 nothing at 45° does.
+
+The sign pattern is not where the smoothness lives. **Both regimes flip the same
+1.8% of coordinates per cell** — what the linear code carries in the *magnitudes*
+is exactly the differentiable part, and binarising keeps the part that random
+walks and discards the part that does not.
 
 So §7's two conditions are not two steps toward one goal, and this is the square
 they span:

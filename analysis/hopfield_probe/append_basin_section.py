@@ -202,12 +202,23 @@ arms on this page as their own tabs.</p>
 <p class="note">With both saturated the fixed point is exact, the goal cue never
 fails in 64 (world, env) pairs, <code>exact_hit</code> is the highest in the
 campaign, and <b>the basin does not shrink</b>. What goes instead is the
-direction field: <code>q</code> is a finite difference of neighbouring cell
-embeddings, and <code>sign(z)</code> has no usable local derivative &mdash; two
-adjacent cells differ by a handful of flipped bits in no particular direction.
-<code>acc90</code> holds at 0.71, so a coarse signal survives; nothing at 45&deg;
-does. The two conditions span a square, and production sits at the only corner
-where memory and direction both work.</p>
+direction field, and not for the reason it first looks like: the finite
+differences <code>q</code> is built from get <em>bigger</em> under binarisation
+(<code>||d_fwd||</code> 0.086&nbsp;&rarr;&nbsp;0.267, zero nowhere). What breaks
+is how displacement <b>accumulates</b>. Over k cells the linear code moves
+<b>ballistically</b>, <code>&#8214;&Delta;&#8214;</code> doubling with each
+doubling of k &mdash; a straight line in code space &mdash; while the binarised
+code grows by &times;1.40&nbsp;&asymp;&nbsp;&radic;2 at every scale, a
+<b>random walk from the very first cell</b>. Successive one-cell steps flip
+independent sets of coordinates, so alignment with the local frame falls from
+0.97 to 0.70 after a single extra cell. Hence
+<code>|err|</code>&nbsp;=&nbsp;55.6&deg; already in the nearest distance bin, and
+a <code>qnorm</code> pinned flat at 0.18 that carries no information about how
+far the goal is. Both regimes flip the same 1.8% of coordinates per cell &mdash;
+the smoothness lives in the <em>magnitudes</em>, and binarising keeps exactly
+the part that random-walks. <code>acc90</code> holds at 0.71, so a coarse signal
+survives; nothing at 45&deg; does. The two conditions span a square, and
+production sits at the only corner where memory and direction both work.</p>
 </section>"""
 
     html = SRC.read_text()
