@@ -88,19 +88,28 @@ def main() -> None:
         print(f"  coords changed per cell   {flip.mean():.1%}")
 
         print(f"  {'k cells north':<22s}" + "".join(f"{k:>9d}" for k in KS))
-        align, corr, nrm = [], [], []
+        align, corr, nrm, proj = [], [], [], []
+        nf = unit(d_fwd)
         for k in KS:
             zk = unit(field.encode(gx, gy + k))
             dk = zk - z0
-            align.append(float(np.mean((unit(dk) * unit(d_fwd)).sum(1))))
+            align.append(float(np.mean((unit(dk) * nf).sum(1))))
             corr.append(float(np.mean((zk * z0).sum(1))))
             nrm.append(float(np.mean(np.linalg.norm(dk, axis=1))))
+            # THE readout. `project_q` is basis @ (z_goal - z_here), so for a
+            # goal k cells due north this projection IS q_north. If it does not
+            # grow with k, `q` cannot encode distance and its ratio to q_east
+            # cannot encode bearing.
+            proj.append(float(np.mean((dk * nf).sum(1))))
         print(f"  {'cos(z(x+k)-z(x), d_fwd)':<22s}"
               + "".join(f"{v:>9.3f}" for v in align))
         print(f"  {'cos(z(x), z(x+k))':<22s}"
               + "".join(f"{v:>9.3f}" for v in corr))
         print(f"  {'||z(x+k) - z(x)||':<22s}"
               + "".join(f"{v:>9.3f}" for v in nrm))
+        print(f"  {'q_north = <dk, d_fwd>':<22s}"
+              + "".join(f"{v:>9.3f}" for v in proj)
+              + "   <- the readout itself")
 
 
 if __name__ == "__main__":

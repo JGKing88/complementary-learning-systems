@@ -1781,10 +1781,30 @@ A random walk has no direction, and direction is the whole of what `q` reads —
 | gain 1e6 | 1.000 | **0.699** | 0.494 | 0.347 | 0.237 |
 
 One extra cell costs the binarised code the alignment that eight cells cost the
-linear one. Hence |err| is already **55.6° in the nearest distance bin** rather
-than degrading with range, and `qnorm` sits flat at 0.18 from d=1 outward where
-the working arms climb 0.09 → 0.37 — a `q` whose length carries no information
-about how far the goal is. `acc90` holds at 0.71, so a coarse signal survives;
+linear one.
+
+The two effects cancel exactly in the readout. `project_q` is
+`basis @ (z_goal − z_here)`, so for a goal k cells due north the north component
+is `⟨Δk, d̂_fwd⟩` = `cos · ‖Δk‖` = `(1/√k)(√k·L)` = **L, constant in k**:
+
+| `q_north` for a goal k north | 1 | 2 | 4 | 8 | 16 | 32 |
+|---|---|---|---|---|---|---|
+| gain 100 | 0.086 | 0.161 | 0.274 | 0.389 | 0.417 | 0.246 |
+| gain 1e6 | **0.267** | **0.261** | **0.259** | **0.254** | **0.239** | 0.186 |
+
+**The binarised readout saturates after one cell.** The frame's support is a
+fixed set of ~18 coordinates, and those have either flipped or they have not —
+a binary quantity. One cell north flips them; twenty cells north flips *other*
+coordinates, which lie outside the frame's support and contribute nothing. So
+`q` reports the local one-cell geometry at `x` however far the goal is.
+
+Both failures follow. **No distance:** `qnorm` is pinned flat at 0.18 from d=1
+outward where the working arms climb 0.09 → 0.37. **No bearing:** the bearing is
+`atan2(q_north, q_east)` and both components saturate at their one-cell values,
+so the ratio reflects the local frame rather than the displacement — |err| is
+already **55.6° in the nearest distance bin** and only reaches 68° at d=13.5.
+Equally bad everywhere, which is the signature of a local-linearity failure
+rather than an aliasing one. `acc90` holds at 0.71 because quadrant survives;
 nothing at 45° does.
 
 The sign pattern is not where the smoothness lives. **Both regimes flip the same
