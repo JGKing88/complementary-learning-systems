@@ -1013,7 +1013,7 @@ case "$VARIANT" in
   # exactly 1 - cells_per_step and so is coverage restated), recurrence, and
   # the state probe. The state probe is the one that answers the goal: whether
   # position's share of the action fell.
-  p31_placedrop|p32_headdrop|p33_revisit_hi|p33_revisit_mid)
+  p31_placedrop|p32_headdrop|p33_revisit_hi|p33_revisit_mid|p34_dropaux)
     ENCODER=/orcd/pool/003/jackking/cls_runs/sweeps/w52_attract_fwhm/001_att0.5_seed=43/encoder_final.pt
     ENCODER_GAIN=100
     HOPFIELD_BETA=100
@@ -1036,6 +1036,26 @@ case "$VARIANT" in
       # gradient. The pin becomes absorbing. 0.15 worked because it stayed
       # below novelty; 0.25 is the largest dose that still does.
       p33_revisit_mid) REVISIT_PENALTY=0.25 ;;
+      # 0.25 STALLED TOO: 0.0976 at u25 to 0.1030 at u200, +0.005 over 175
+      # updates, while p28 at 0.15 was at 0.462 by u200. Predicted by the
+      # break-even: positive reward needs coverage rate > rp/(0.3+rp), so
+      # 0.15 -> 0.33 and 0.25 -> 0.45, against a pinned start of ~0.10. Every
+      # increment raises the bar the agent must clear BEFORE reward turns
+      # positive while making the pin more punishing. Escalating this knob is
+      # a dead end; the usable band is 0 < rp <~ 0.15.
+      #
+      # p34_dropaux takes the freed slot and is the better-motivated arm:
+      # dropout alone takes position AWAY without giving the policy anything
+      # to use instead. p24_aux is the one intervention that demonstrably put
+      # more visitation INTO the state (occupancy delta_flow 0.136 vs the
+      # control's 0.035, 4x, §30.11) and on its own changed no behaviour.
+      # Together they are the two halves of the goal: make position
+      # unreliable, and ensure there is a map to fall back on.
+      p34_dropaux)
+        PLACE_DROPOUT=0.3
+        AUX_VISITED_WEIGHT=0.5
+        AUX_VISITED_RADIUS=3.0
+        ;;
     esac
     ;;
 

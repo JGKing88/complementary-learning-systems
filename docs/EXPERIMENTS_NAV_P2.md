@@ -7905,3 +7905,38 @@ arms and predicted orbit depth monotonically (§33.3).
 A run that holds coverage flat while dropping position share below `p28`'s
 0.224 is progress on the stated goal. A run that lifts coverage with the share
 unchanged is not — it found another way to be a position field.
+
+### 34.3 `revisit_penalty` is a dead end, and the dose-response says why
+
+Three doses, and the failure is continuous rather than a cliff:
+
+| `revisit_penalty` | coverage rate needed for positive reward | outcome |
+|---|---|---|
+| 0.00 | 0 | control escapes the pin immediately |
+| **0.15** | 0.33 | `p28` escapes slowly — **works** |
+| 0.25 | 0.45 | `p33_mid` still at 0.10 by u200; 0.0976 → 0.1030 over 175 updates |
+| 0.40 | 0.57 | `p33_hi` never moves; swept identical at every eval, mean_r −0.31 |
+
+Positive reward needs `0.3·c − rp·(1 − c) > 0`, i.e. `c > rp/(0.3 + rp)`. The
+agent starts **pinned at c ≈ 0.10**, so every increment raises the bar it must
+clear *before* reward turns positive, while making the pin itself more
+punishing. The knob fights its own escape.
+
+**Usable band is 0 < rp ≲ 0.15**, and inside it the effect on position share
+was small. Escalation is not the way to push on §33.3.
+
+### 34.4 `p34_dropaux` — take position away AND supply a replacement
+
+Dropout alone removes position without giving the policy anything to use
+instead, and every intervention so far has been one-sided:
+
+* `p24_aux` put **4× more visitation into the state** (occupancy `delta_flow`
+  0.136 vs the control's 0.035, §30.11) and changed no behaviour, because the
+  policy had no reason to stop using position.
+* `p31_placedrop` makes position unreliable but leaves the state as empty of
+  visitation as the control's.
+
+`p34_dropaux` runs both: `place_dropout = 0.3` with `aux_visited_weight = 0.5`.
+Make position unreliable, and ensure there is a map to fall back on. It is the
+first arm that addresses both halves of the goal at once, and it took the slot
+freed by cancelling `p33_revisit_mid`.
