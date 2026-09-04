@@ -659,6 +659,188 @@ def prev_action_table(d: dict) -> str:
     return "".join(o)
 
 
+#: arm -> (heading, family label, knob shown in the sweep column, paragraphs).
+#: The prose is authored; every number beside it is derived from the page's own
+#: runs, so a re-sweep changes the figures without anyone editing this table.
+METHOD_DETAIL = [
+    ("B", "Experience Replay", "replay", "buffer size × replay ratio", [
+        "Keep past trajectories in a buffer and train on a sample of them "
+        "alongside each new one. The replayed batches are concatenated into "
+        "the same gradient step, not applied separately, so one update sees "
+        "the new trajectory and its companions at once.",
+        "The buffer holds <em>whole trajectories</em> rather than timesteps. "
+        "A timestep torn out of its trajectory would be supervised in a "
+        "recurrent hidden state the agent could never have reached, so the "
+        "label would be right for a situation that never occurred.",
+        "Two knobs. <code>buffer_size</code> caps what is kept — unbounded is "
+        "the perfect-memory bound, and bounded buffers evict by reservoir, "
+        "which keeps a uniform sample of everything ever offered rather than "
+        "the most recent. <code>replay_batches</code> sets how many stored "
+        "trajectories accompany each new one, and it is the axis that turned "
+        "out to matter: it multiplies the work of every gradient step, so "
+        "<code>rb=4</code> pushes five sequences through the trunk where naive "
+        "SGD pushes one.",
+    ]),
+    ("D", "CLEAR", "replay + distillation", "clone coefficient", [
+        "Replay, plus a behavioural-cloning term that penalises drifting away "
+        "from a <em>snapshot of the policy taken at the previous task "
+        "boundary</em>, measured on the replayed trajectories.",
+        "So it anchors twice: to the data, through the buffer, and to the "
+        "function, through the snapshot. That second anchor is what "
+        "distinguishes it from plain replay, and it is also why it costs more "
+        "— each replayed batch is forwarded through the frozen snapshot and "
+        "through the live policy, on top of going through the main update.",
+    ]),
+    ("E", "DER++", "replay + logit anchoring", "alpha", [
+        "Replay, plus a penalty against the policy's own outputs <em>as they "
+        "were at the moment each trajectory entered the buffer</em>.",
+        "The difference from CLEAR is what 'the past' means. CLEAR anchors "
+        "every replayed batch to one snapshot; DER++ anchors each entry to a "
+        "different, older version of the policy, so the constraint is a "
+        "distribution over past selves rather than a single one. It needs no "
+        "frozen copy at update time, because the targets were stored with the "
+        "data.",
+    ]),
+    ("C", "Online EWC", "parameter regularisation", "lambda", [
+        "No stored data. At each task boundary, estimate which weights "
+        "mattered for what has been learned so far, and penalise moving them: "
+        "the loss gains <code>lambda &middot; sum_i F_i (theta_i - "
+        "theta*_i)^2</code>, with <code>theta*</code> the weights at the "
+        "boundary.",
+        "Importance is the diagonal Fisher, and this implementation takes the "
+        "<em>true</em> Fisher rather than the empirical one: actions are "
+        "sampled from the model, not read from the teacher. The two differ "
+        "exactly when the policy has converged and its distribution has "
+        "separated from the teacher's, which is the regime that matters here.",
+        "The estimate is trajectory-level — one backward per stored trajectory "
+        "rather than per timestep — so its whole cost lands at the boundary "
+        "rather than in the updates. <code>gamma</code> decays older Fisher "
+        "matrices so the penalty does not grow without bound.",
+    ]),
+    ("F", "Synaptic Intelligence", "parameter regularisation", "lambda", [
+        "The same shape of penalty as EWC, but importance is accumulated "
+        "<em>along the optimisation path</em> while training runs: each "
+        "weight's credit is how much it reduced the loss, per unit of distance "
+        "it moved.",
+        "That makes it the cheap one. There is no estimation pass and so no "
+        "cost spike at a boundary — the running sums are updated with "
+        "gradients the update already computed. <code>xi</code> damps the "
+        "denominator so a weight that barely moved cannot acquire enormous "
+        "importance.",
+    ]),
+    ("G", "LwF", "distillation", "alpha", [
+        "No stored data and no per-weight state. Snapshot the policy when a "
+        "task begins, and penalise the current policy's outputs from drifting "
+        "away from the snapshot's — evaluated on the <em>current</em> task's "
+        "states.",
+        "It constrains the function rather than the parameters, which is "
+        "cheaper and more targeted than EWC. Its weakness is structural and "
+        "visible in the results: it only ever sees states the current task "
+        "produces, so it constrains behaviour where the new data lives and "
+        "says nothing about the regions the old environments occupied.",
+    ]),
+    ("J", "Hypernetwork (HNET)", "parameter isolation", "beta", [
+        "Do not store the policy's weights at all. Store a small learned "
+        "embedding per task, and generate all of the policy's weights from it "
+        "with a chunked generator — the generator is asked for one chunk at a "
+        "time so that it stays about the size of the network it produces "
+        "rather than exploding with it.",
+        "Continual learning becomes a constraint on the generator: after "
+        "learning task <em>n</em>, old embeddings must still produce "
+        "approximately the weights they produced before. <code>beta</code> "
+        "scales that output regularisation, and it is the coefficient this "
+        "suite calibrated against the objective before sweeping, having "
+        "learned the hard way that a value taken from another paper's loss "
+        "scale is how a method gets accidentally made to look bad.",
+        "The base variants matter: <em>learned</em> adds the generated weights "
+        "to a warm-started vector that is free to move, <em>frozen</em> pins "
+        "it, and <em>none</em> is the published form with no warm start at all "
+        "— which is why asking it to load a checkpoint is a contradiction the "
+        "agent refuses rather than silently accepts.",
+    ]),
+    ("M", "Multi-head", "parameter isolation", "—", [
+        "One shared recurrent trunk, and a separate movement head per "
+        "environment, selected by an oracle task id at both training and "
+        "evaluation time.",
+        "The heads cannot interfere at all, by construction. That makes this "
+        "less a method than a measurement: whatever it still fails to retain "
+        "is forgetting in the shared trunk, which localises the problem "
+        "without solving it.",
+    ]),
+    ("N", "XdG", "parameter isolation", "gating fraction", [
+        "Context-dependent gating. Each environment is assigned a fixed random "
+        "subset of hidden units, and the rest are held off while that "
+        "environment is being trained, so a task's units are the only ones "
+        "carrying its state.",
+        "The mask is applied <em>inside the recurrence</em> rather than at the "
+        "readout, which is a stronger intervention than the published "
+        "feedforward form: a task owns its dynamics, not merely its "
+        "activations. Masks are drawn independently per task, so they overlap "
+        "by chance rather than by design, and the gating fraction sets how "
+        "much. Unlike every coefficient here it is dimensionless — a share of "
+        "units, not a weight against a loss — so it is the one knob that "
+        "transfers unchanged between action spaces.",
+    ]),
+    ("N2", "XdG + SI", "parameter isolation + regularisation", "lambda", [
+        "The gating above, with Synaptic Intelligence layered on top to "
+        "protect the units that two tasks happen to share. This is how the two "
+        "were published together, and the combination is the point: gating "
+        "handles the units a task owns, and SI handles the overlap gating "
+        "leaves behind.",
+    ]),
+    ("H", "Frozen trunk", "control", "—", [
+        "Train only the movement head and hold the recurrent trunk fixed. Not "
+        "a continual-learning method but the mechanism underneath one: "
+        "confining plasticity to a small head is what meta-learning approaches "
+        "such as OML and ANML rely on, and this is that idea without the "
+        "meta-learning to make the representation worth freezing.",
+    ]),
+]
+
+
+def method_detail_section(methods) -> str:
+    """Per-method reference, with each method's own numbers beside its prose."""
+    by_arm = {}
+    for m in methods:
+        by_arm.setdefault(m["arm"], []).append(m)
+    out = []
+    for arm, name, family, knob, paras in METHOD_DETAIL:
+        rows = by_arm.get(arm)
+        if not rows:
+            continue
+        usable = [r for r in rows
+                  if (r["current_env"] or 0) >= USABLE_CURRENT
+                  and r["retained"] is not None]
+        best = max(usable, key=lambda r: r["retained"]) if usable else None
+        out.append('<div class="note"><h4>' + esc(name)
+                   + f' <span style="color:var(--muted);font-weight:400">'
+                   f"&middot; {family}</span></h4>")
+        for para in paras:
+            out.append(f"<p>{para}</p>")
+        out.append('<div class="tw"><table><tbody>')
+        out.append(f"<tr><td class='k'>Swept</td><td>{esc(knob)} &mdash; "
+                   f"{len(rows)} configuration"
+                   f"{'s' if len(rows) != 1 else ''} on this page</td></tr>")
+        need = ("an oracle task id" if rows[0]["needs_task_id"]
+                else "task boundaries" if rows[0]["needs_task_boundaries"]
+                else "nothing")
+        out.append(f"<tr><td class='k'>Needs</td><td>{need}</td></tr>")
+        if best:
+            out.append(f"<tr><td class='k'>Best here</td><td>"
+                       f"<code>{esc(best['config'])}</code> &mdash; "
+                       f"{fmt(best['retained'])} retained, "
+                       f"{fmt(best['current_env'])} on the current environment"
+                       f"{', storing ' + esc(mb(best['state_bytes'])) if best.get('state_bytes') else ''}"
+                       f"{', ' + _si(best['trunk_steps']) + ' trunk-steps' if best.get('trunk_steps') else ''}"
+                       "</td></tr>")
+        else:
+            out.append("<tr><td class='k'>Best here</td><td>no configuration "
+                       "passed the plasticity check &mdash; every setting that "
+                       "retained anything had stopped learning</td></tr>")
+        out.append("</tbody></table></div></div>")
+    return "".join(out)
+
+
 def frontier_scatter_svg(methods, hop=None) -> str:
     """Retention against the work it cost, one point per method.
 
@@ -1505,6 +1687,15 @@ def render_body(d: dict, space: str = "continuous",
       "<strong>1 episode and 0 gradient steps</strong>, keeping no data and "
       "needing no task signal. A method that matches on retention has not "
       "refuted that; it has located it on a different axis.</p></div>")
+
+    _md = method_detail_section(methods)
+    if _md:
+        A('<h2 id="methods"><span class="sec">3</span> '
+          "The methods, in detail</h2>")
+        A("<p>What each row of the frontier actually does, why it costs what it "
+          "costs, and where it sits on this page. The prose is the same on "
+          "every page; every number beside it is this page's own.</p>")
+        A(_md)
 
     # ---- the plasticity trap ----------------------------------------
     bad = degenerate_rows(methods)
