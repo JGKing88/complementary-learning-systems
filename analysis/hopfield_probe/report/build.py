@@ -17,8 +17,8 @@ from pathlib import Path
 
 from ..harness import OUTCOMES
 from .figures import (
-    grouped_bars, heatmap, line_chart, polar_bars, quiver_over_heat,
-    stacked_bars, stat_tile, table,
+    basin_map, grouped_bars, heatmap, line_chart, polar_bars,
+    quiver_over_heat, stacked_bars, stat_tile, table,
 )
 from .page import (
     banner, card, esc, facets, filter_row, run_header, shell, single_page,
@@ -285,9 +285,10 @@ def page_index(results: list[dict], src: str) -> str:
     # Capacity: K on the x-axis, so encoder identity takes the colour here.
     kk = ks(primary)
     kx = [float(k) for k in kk]
-    # Four coverage levels fit in one run, so three colours would wrap
-    # and give two encoders the same line.
-    cols = [CAT1, CAT2, CAT3, CAT8, MUTED]
+    # A ladder run carries five coverage levels plus any saturated arms, so
+    # three colours would wrap and give two encoders the same line. Eight
+    # named slots, then muted for anything past them.
+    cols = [c[0] for c in CATEGORICAL] + [MUTED]
     ex_series, acc_series = [], []
     for i, (name, members) in enumerate(groups(results)):
         r = representative(members)
@@ -319,6 +320,16 @@ def page_index(results: list[dict], src: str) -> str:
     # only one distinct value, where a scatter would say nothing.
     covs = [(r["header"].get("coverage"), r) for r in results]
     covs = [(c, r) for c, r in covs if c is not None]
+    # One recall regime per axis. A saturated arm of an encoder that is already
+    # on the ladder lands at the same x as its unsaturated twin, and the two
+    # are different dynamical systems rather than two draws of one -- reading
+    # a coverage trend off a mixture of them is reading two curves as one.
+    # Dropped unless dropping them empties the axis, in which case the run IS
+    # a saturated ladder and they are the whole story.
+    linear = [(c, r) for c, r in covs
+              if r["header"].get("recall_regime") != "saturated"]
+    if len({round(c, 6) for c, _ in linear}) > 1:
+        covs = linear
     cov_block = ""
     if len({round(c, 6) for c, _ in covs}) > 1:
         # One point per SEED, not per encoder type. The seed spread is the
@@ -502,6 +513,36 @@ def _body_test_a(res: dict) -> str:
                  "(darkest = exact). Orange dots retrieved into another env, "
                  "aqua onto an alias cell. Ring marks the goal.")
 
+    # The basin without the reduction to a radius. Everything else in this
+    # section is a mean over (world, env) at a given distance; this is one
+    # memory, every cue, and it is the only figure that says *which* cue fails
+    # and *where it goes*. Kept next to the radius it summarises.
+    bmap_html = ""
+    for m in (A["k"][ref_k(res)].get("basin_maps") or [])[:1]:
+        n_fail = sum(1 for c in m["cat"] if c != 0)
+        bsc = A["k"][ref_k(res)]["per_step"][rs]["scalars"].get(
+            "r_exact_all", {})
+        ctx = ""
+        if bsc.get("p50") is not None:
+            ctx = (f' This pair is the median of the {bsc.get("n", "?")} '
+                   f'measured, at r_exact_all {m.get("r_exact_all", 0):g} '
+                   f'against a median of {bsc["p50"]:g}.')
+        bmap_html = card(
+            f'world {m["world"]}, env {m["env"]} — every cue in the '
+            f'disc, and where it landed',
+            basin_map(m["dx"], m["dy"], m["cat"], m["rdx"], m["rdy"],
+                      m["radius"], cat_names=m["outcomes"],
+                      r_all=m.get("r_exact_all"), r_95=m.get("r_exact_95")),
+            note=f'K={ref_k(res)}, s={m["steps"]}. Each cell is one cue, '
+                 f'coloured by what it retrieved; the outlined cell at the '
+                 f'centre is the goal. Solid ring is this pair\'s '
+                 f'r_exact_all, dashed its r_exact_95. Dots sit on the cells '
+                 f'that failing cues land <em>on</em>, area with how many do '
+                 f'&mdash; one big dot is a single alias swallowing a whole '
+                 f'region. Arrows are a lattice subsample of the cue&rarr;'
+                 f'landing map, drawn sparse so it stays readable. '
+                 f'{n_fail} of {len(m["cat"])} cues miss.{ctx}')
+
     rbd = A["k"][ref_k(res)]["per_step"][rs].get("r_by_direction", {})
     polar = polar_bars(rbd.get("mean", []), unit="cells",
                        title=f"r_exact_all by sector (K={ref_k(res)}, s={rs})")
@@ -553,6 +594,7 @@ what makes this a position readout rather than a K-way choice.</p>
       note="exact_hit says whether retrieval was right; this says how wrong "
            "it was when it was not. NaN wherever retrieval left the test env "
            "-- across two rooms a real-space distance is not a quantity.")}
+{bmap_html}
 
 <h2>3 &middot; Outcomes</h2>
 {card(f"Outcome composition by distance (K={ref_k(res)})",

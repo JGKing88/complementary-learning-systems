@@ -34,18 +34,85 @@ K, S = "5", "1"
 CAT1, CAT2 = CATEGORICAL[0][0], CATEGORICAL[1][0]
 
 
-def load(d):
-    """[(coverage, basin_median, self_fail)] for every seed in a run dir."""
+def load(d, regime):
+    """[(coverage, basin_median, self_fail)] for every seed in a run dir.
+
+    ``regime`` filters, or ``None`` takes the directory whole. The ladder
+    directory needs the filter: it now also holds the full saturated arms of
+    the 10% encoder, which run at the same beta as the right-hand series here
+    and would otherwise be read into the left one. The saturated directory
+    holds nothing else, so it is taken whole -- and must be, since it was
+    written before `recall_regime` was recorded.
+    """
     out = []
     for f in sorted(glob.glob(d + "/*.json")):
         if "manifest" in f:
             continue
         r = json.load(open(f))
+        if regime is not None and r["header"].get("recall_regime") != regime:
+            continue
         sc = r["test_a"]["k"][K]["per_step"][S]["scalars"]
         v = np.asarray(sc["r_exact_all"]["values"], float)
         out.append((r["header"]["coverage"], float(np.median(v)),
                     float(np.mean(v < 0))))
     return sorted(out, key=lambda t: -t[0])
+
+
+ARMS = [("10%", "β = gain = 100"), ("10% β=1e6", "β = 1e6, gain 100"),
+        ("10% gain=1e6, β=1e6", "β = 1e6, gain 1e6")]
+
+
+def arms_rows():
+    """The three saturation arms of the 10% encoder, pooled over seeds.
+
+    Read out of the same directory the tabs are built from, so the table and
+    the tabs cannot disagree.
+    """
+    by: dict[str, list] = {}
+    for f in sorted(glob.glob(LIN + "/*.json")):
+        if "manifest" in f:
+            continue
+        r = json.load(open(f))
+        g = r["header"]["label"].split(" · ")[0].strip()
+        by.setdefault(g, []).append(r)
+
+    out = []
+    for group, name in ARMS:
+        rs = by.get(group)
+        if not rs:
+            continue
+        a = [r["test_a"]["k"][K]["per_step"][S] for r in rs]
+        bc = [r["test_bc"]["k"][K]["per_step"][S] for r in rs]
+        d = [r["test_d"]["k"][K][S] for r in rs]
+        v = np.concatenate([np.asarray(x["scalars"]["r_exact_all"]["values"],
+                                       float) for x in a])
+        per_seed = [float(np.median(np.asarray(
+            x["scalars"]["r_exact_all"]["values"], float))) for x in a]
+        out.append((
+            name,
+            np.mean([x["fixed_point"]["cos_self_mean"]["mean"] for x in a]),
+            float(np.median(per_seed)),
+            f"{int((v < 0).sum())}/{v.size}",
+            np.mean([x["scalars"]["exact_frac"]["mean"] for x in a]),
+            np.mean([x["grid"]["scalars"]["acc45"]["mean"] for x in bc]),
+            np.mean([x["grid"]["scalars"]["abs_err_mean"]["mean"] for x in bc]),
+            float(np.median([x["continuous"]["scalars"]["reach_rate"]["mean"]
+                             for x in d])),
+        ))
+    return out
+
+
+def arms_html():
+    head = ("arm", "cos_self", "basin", "self-fail", "exact_hit", "acc45",
+            "|err|", "cont reach")
+    trs = "".join(
+        f"<tr><td>{n}</td><td>{cs:.4f}</td><td>{b:.1f}</td><td>{sf}</td>"
+        f"<td>{ex:.3f}</td><td>{ac:.3f}</td><td>{er:.1f}&deg;</td>"
+        f"<td>{re_:.3f}</td></tr>"
+        for n, cs, b, sf, ex, ac, er, re_ in arms_rows())
+    ths = "".join(f"<th>{h}</th>" for h in head)
+    return (f'<table class="cmp"><thead><tr>{ths}</tr></thead>'
+            f'<tbody>{trs}</tbody></table>')
 
 
 def series(rows, idx, label, color):
@@ -67,7 +134,7 @@ def series(rows, idx, label, color):
 
 
 def main() -> None:
-    lin, sat = load(LIN), load(SAT)
+    lin, sat = load(LIN, "linear"), load(SAT, None)
     if not sat:
         raise SystemExit(f"no saturated results in {SAT}")
 
@@ -89,6 +156,7 @@ def main() -> None:
             by.setdefault(round(c, 6), []).append(rest[idx - 1])
         return {c: float(np.median(v)) for c, v in by.items()}
 
+    arms_table = arms_html()
     ml, ms = med_of(lin, 1), med_of(sat, 1)
     trs = "".join(
         f"<tr><td>{c * 100:.2f}%</td><td>{ml[c]:.1f}</td>"
@@ -100,9 +168,12 @@ def main() -> None:
 <h1>Saturating the recall</h1>
 <p class="lede">Same encoders, same encoder gains, one thing changed: the
 Hopfield's loop gain <code>&beta;</code> goes from each encoder's own gain to
-<b>1e6</b>. That is the knob deciding whether a stored pattern is a fixed point
-at all &mdash; unsaturated, recall lands on the goal in one step and then drifts
-off it; saturated, it lands and stays. The basin is where that should show.</p>
+<b>1e6</b>. This was taken to be the knob deciding whether a stored pattern is a
+fixed point at all. <b>It is not.</b> Recalling a stored pattern from itself at
+<code>&beta;</code>&nbsp;=&nbsp;1e6 returns <code>cos_self</code> = 0.957, not 1
+&mdash; the fixed point is a hypercube corner <em>near</em> the memory, not the
+memory. So the basin falling here is not the price of an attractor; it is the
+price of a half-made one.</p>
 
 <div class="grid2">
 {card("Basin vs. coverage, saturated and not", basin_fig,
@@ -116,6 +187,23 @@ off it; saturated, it lands and stays. The basin is where that should show.</p>
 <div class="card"><table class="cmp">
 <thead><tr><th>coverage</th><th>β = gain</th><th>β = 1e6</th><th>change</th>
 </tr></thead><tbody>{trs}</tbody></table></div>
+
+<h2>The other half</h2>
+<p class="lede">A pattern is a fixed point when it sits on a hypercube corner,
+and that is the <em>encoder's</em> gain, not <code>&beta;</code>. At encoder
+gain 1e6 the output is <code>tanh(1e6&thinsp;z)</code> = <code>sign(z)</code>,
+so the pattern <b>is</b> a corner. The 10% encoder, four training seeds per arm,
+both arms on this page as their own tabs.</p>
+<div class="card">{arms_table}</div>
+<p class="note">With both saturated the fixed point is exact, the goal cue never
+fails in 64 (world, env) pairs, <code>exact_hit</code> is the highest in the
+campaign, and <b>the basin does not shrink</b>. What goes instead is the
+direction field: <code>q</code> is a finite difference of neighbouring cell
+embeddings, and <code>sign(z)</code> has no usable local derivative &mdash; two
+adjacent cells differ by a handful of flipped bits in no particular direction.
+<code>acc90</code> holds at 0.71, so a coarse signal survives; nothing at 45&deg;
+does. The two conditions span a square, and production sits at the only corner
+where memory and direction both work.</p>
 </section>"""
 
     html = SRC.read_text()

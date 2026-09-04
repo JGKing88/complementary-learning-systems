@@ -48,8 +48,18 @@ envs, `steps` 1–15, `K` 1–20, four encoders.
 > clean decline to 1.25% with the bottom two rungs not separable. Reach,
 > direction and flow were never affected.
 >
-> Report page (all five rungs, encoder selector, full Tests A–D,
-> plus the basin-across-seeds section):
+> **Saturation is a square, not a ladder** (§10.20). β = 1e6 alone never made
+> the pattern a fixed point — `cos_self` 0.957, a corner *near* the memory —
+> which is why the basin fell 27.0 → 24.5 and the goal cue started failing.
+> Saturating the **encoder** too puts `cos_self` at 1.0000 exactly: the basin
+> recovers to 28.2, `exact_hit` hits 0.999, and the direction field is
+> **destroyed** — acc45 0.997 → 0.392, reach 0.987 → 0.103, because `q` is a
+> finite difference and `sign(z)` has no local derivative. Production's corner
+> is the only one where memory and direction both work.
+>
+> Report page (all five rungs plus both saturated arms, encoder selector, full
+> Tests A–D, per-encoder basin failure maps, and the basin-across-seeds
+> section):
 > https://claude.ai/code/artifact/d7a250c1-5044-4854-b453-61881bd518e7
 > · 10% spec sheet:
 > https://claude.ai/code/artifact/db70ecb9-ca16-4f8b-a897-5dfa0a01d198
@@ -1399,6 +1409,11 @@ which matters because gain 300 would drop res90 7 → 5, past the reach optimum.
 
 #### It is an attractor now
 
+> **Overstated; see §10.20.** What stops moving is the *decoded cell*. The state
+> itself does not land on the stored pattern: `cos_self` is 0.957, so the fixed
+> point is a corner near the memory rather than the memory. Saturating the
+> encoder as well takes `cos_self` to 1.0000 — and costs the direction field.
+
 Mean distance of the recalled state from the goal cell, K=5:
 
 | | tanh arg | s1 | s2 | s3 | s5 | s8 | s15 |
@@ -1608,6 +1623,13 @@ Page: https://claude.ai/code/artifact/d7a250c1-5044-4854-b453-61881bd518e7
 
 ### 10.19 Saturating the recall shrinks the basin
 
+> **The premise of this section is wrong; read §10.20 with it.** β = 1e6 alone
+> does *not* make the stored pattern a fixed point — `cos_self` is 0.957, not
+> 1 — so "the basin shrinks even though it is an attractor now" is not what
+> happened. The measurements below stand and the mechanism below survives; the
+> framing does not. §10.20 has the corrected version and the arm that settles
+> it.
+
 §10.16 showed saturation turns the 10% encoder into a genuine attractor: the
 recalled state lands on the goal and holds `goal_dist` 0.00 to s=15, where the
 linear arm drifts to 1.41. So the basin — the radius from which a cue still
@@ -1652,3 +1674,68 @@ readout is asking for.
 
 Raw: `$CLS_RESULTS/hopfield_probe/20260827/probe_spliced_b1e06/`. Run with
 `splice_sat.sh`; the page carries it as its Saturated section.
+
+### 10.20 β alone was never an attractor, and the corner that is one has no gradient
+
+§10.19 asked how self-retrieval could get *worse* once the network is a real
+attractor. It could not, and the premise was the error: **it was not one.**
+§10.16 read "it is an attractor now" off the trajectory probe, which decodes the
+state to a cell and found `goal_dist` 0.00 out to s=15. The direct test — recall
+a stored pattern from itself — says `cos_self = 0.957`. Under β = 1e6 with the
+encoder at its own gain, the fixed point is a hypercube **corner near** the
+memory, not the memory.
+
+Making it the memory is §7's condition (a), and β cannot buy it — the *encoder*
+gain can. At gain 1e6 the output is `tanh(1e6·z)` = `sign(z)` to float
+precision, so the pattern **is** a corner and `cos_bin` = 1 exactly. Full suite,
+`att0.5`, four training seeds per arm, K=5, s=1 (`run_sat10.sh`):
+
+| arm | `cos_self` | basin p50 | self-fail | exact | acc45 | \|err\| | `qnorm` | cont reach |
+|---|---|---|---|---|---|---|---|---|
+| β = gain = 100 | 0.9968 | 27.0 | 0/64 | 0.979 | 0.997 | 7.8° | 0.328 | **0.987** |
+| β = 1e6, gain 100 | 0.9570 | 24.5 | 2/64 | 0.945 | 0.998 | 8.0° | 0.332 | 0.973 |
+| **β = 1e6, gain 1e6** | **1.0000** | **28.2** | **0/64** | **0.999** | 0.392 | 66.4° | 0.184 | 0.103 |
+
+**The basin does not shrink under saturation. It shrinks under half of it.**
+With both saturated the fixed point is exact, the goal cue never fails in 64
+(world, env) pairs, `exact_hit` is 0.999 — the highest in the campaign — and the
+basin is 28.2 against 27.0 unsaturated. §10.19's *mechanism* therefore survives:
+what costs the argmax is the mismatch between a binarised state and a continuous
+bank, and binarising the bank too removes it. What has to be withdrawn is
+§10.19's framing. The lost basin was never the price of an attractor; it was the
+price of a half-made one.
+
+**And the attractor costs the entire direction field.** acc45 falls 0.997 →
+0.392 against 0.25 chance, |err| 7.8° → 66.4°, `qnorm` halves, and continuous
+reach goes 0.987 → 0.103. That is not a memory failure — retrieval is *better*
+than any other arm. It is that `q` is built from **differences** of neighbouring
+cell embeddings (`gram_schmidt_projection`, §6.2), and `sign(z)` has no usable
+local derivative: two adjacent cells differ by a handful of flipped bits in no
+particular direction. `acc90` holds at 0.71, so a coarse signal survives;
+nothing at 45° does.
+
+So §7's two conditions are not two steps toward one goal, and this is the square
+they span:
+
+| | encoder linear | encoder saturated |
+|---|---|---|
+| **β linear** | production: memory 0.979, direction 7.8° | §10.9's gain ladder, monotone trade |
+| **β saturated** | fixed point near-miss, basin −2.5 | perfect memory, **no direction** |
+
+Condition (b) alone buys step-invariance (§10.16) and costs a little basin.
+Condition (a) at its limit buys a perfect fixed point and a perfect readout and
+destroys the gradient the policy navigates on. The production corner is not a
+compromise between them — it is the only corner of the square where both work.
+
+This is §10.9's gain ladder at its endpoint, and it is why that ladder has an
+interior optimum at all: raising gain trades angular error for retrieval, and
+gain 1e6 is that trade taken to where retrieval is perfect and angle is gone.
+
+> **Open.** The direction collapse is a property of the *readout*, not of the
+> memory. A basis built from something other than a finite difference of
+> binarised codes — the pre-nonlinearity activations, say — might recover `q`
+> while keeping the exact fixed point. Untested, and it would change the
+> production contract, so it is not a small experiment.
+
+Raw: `probe_sat10`; the ladder page carries both as the tabs `10% β=1e6` and
+`10% gain=1e6, β=1e6`.

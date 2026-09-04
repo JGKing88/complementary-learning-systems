@@ -75,6 +75,11 @@ def build_parser() -> argparse.ArgumentParser:
     g.add_argument("--env_size", type=int, default=None)
     g.add_argument("--Npos", type=int, default=None)
     g.add_argument("--memory_mode", default=None, choices=list(MEMORY_MODES))
+    g.add_argument("--basin_radius", type=int, default=None,
+                   help="radius of the scaffold disc the basin is measured "
+                        "over. Cost grows as R^2 -- every cell in the disc is "
+                        "both a cue and a bank row -- so this is the knob for "
+                        "a fast smoke run. 0 disables the basin.")
     g.add_argument("--n_alias", type=int, default=None)
     g.add_argument("--n_cont_samples", type=int, default=None)
     g.add_argument("--n_cont_annulus", type=int, default=None)
@@ -120,6 +125,7 @@ def config_from_args(args) -> ProbeConfig:
         ("n_worlds", args.n_worlds), ("n_envs_per_world", args.n_envs_per_world),
         ("env_size", args.env_size), ("Npos", args.Npos),
         ("memory_mode", args.memory_mode), ("n_alias", args.n_alias),
+        ("basin_radius", args.basin_radius),
         ("n_cont_samples", args.n_cont_samples),
         ("n_cont_annulus", args.n_cont_annulus),
     ):

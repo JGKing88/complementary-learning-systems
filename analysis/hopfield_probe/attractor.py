@@ -33,6 +33,12 @@ from .stats import BinnedStat, CategoryByDist, Scalars
 
 N_SECTORS = 8
 
+# What a basin cue retrieved, in the order the map figure colours them.
+# Deliberately coarser than `OUTCOMES`: the basin bank is a disc of cells plus
+# the other stored goals, so "another env" is not a cell of the disc and has no
+# offset in it.
+BASIN_OUTCOMES = ("exact", "near", "far", "other_goal")
+
 
 # ---------------------------------------------------------------------------
 # Radii
@@ -231,8 +237,42 @@ def trajectory_probe(
 # Driver
 # ---------------------------------------------------------------------------
 
+def median_pair(
+    pairs: list[tuple[int, int, float]],
+) -> tuple[int, int, float]:
+    """The ``(world, env, radius)`` whose radius is the median of ``pairs``.
+
+    An actual measured pair, always: on an even count this takes the upper
+    median rather than averaging two radii, because the caller goes on to draw
+    that pair's map and a mean radius names no pair at all.
+
+    Used instead of "the first pair" because the first pair's geometry is fixed
+    by the probe seed alone -- the same goal for every encoder -- and it turns
+    out to be a hard one, sitting at the 7th percentile of its own run.
+    """
+    order = sorted(range(len(pairs)), key=lambda i: pairs[i][2])
+    return pairs[order[len(order) // 2]]
+
+
+def basin_bank(cells: np.ndarray, mem, env: int) -> np.ndarray:
+    """The disc's cells plus the OTHER stored goals, each row exactly once.
+
+    ``env``'s own goal is already the disc centre. Adding it again from
+    ``mem.Z`` puts the same vector in the bank twice, and ``argmax`` then
+    returns whichever copy float noise happens to favour -- so a perfect
+    self-retrieval scores as a miss and the radius reads -1. That bug corrupted
+    6 of every 16 measured radii before it was found, which is why the
+    composition is a named function with a test on it rather than two lines
+    inside the probe.
+    """
+    others = mem.Z[mem.owner != env] if mem.Z.shape[0] else mem.Z
+    return _unit(np.concatenate([cells, others], axis=0)
+                 if others.shape[0] else cells)
+
+
 def basin_probe(
     field, world, env: int, mem, cfg, *, steps=None,
+    want_map: bool = False,
 ) -> dict:
     """How far a cue can sit from the goal and still retrieve it exactly.
 
@@ -272,13 +312,7 @@ def basin_probe(
         return {}
 
     cells = field.encode(cx, cy)
-    # Only the OTHER stored goals. This env's goal is already the disc centre,
-    # and adding it again from `mem.Z` puts the same vector in the bank twice --
-    # `argmax` then returns whichever copy float noise happens to favour, and a
-    # perfect self-retrieval scores as a miss.
-    others = mem.Z[mem.owner != env] if mem.Z.shape[0] else mem.Z
-    bank = _unit(np.concatenate([cells, others], axis=0)
-                 if others.shape[0] else cells)
+    bank = basin_bank(cells, mem, env)
     goal_row = int(np.flatnonzero(d == 0.0)[0])
 
     steps = list(steps if steps is not None else cfg.steps)
@@ -287,10 +321,11 @@ def basin_probe(
     out = {}
     for s in steps:
         x = _unit(traj[s])
-        hit = np.empty(x.shape[0], dtype=bool)
+        won = np.empty(x.shape[0], dtype=np.int64)
         for i in range(0, x.shape[0], cfg.cos_chunk):
             j = min(i + cfg.cos_chunk, x.shape[0])
-            hit[i:j] = (x[i:j] @ bank.T).argmax(1) == goal_row
+            won[i:j] = (x[i:j] @ bank.T).argmax(1)
+        hit = won == goal_row
         out[str(s)] = {
             "r_exact_95": float(first_failure_radius(hit, d, 0.95, max_r=R)),
             "r_exact_all": float(first_failure_radius(hit, d, 1.0, max_r=R)),
@@ -298,7 +333,55 @@ def basin_probe(
             "n_cues": int(hit.size),
             "max_radius": float(d.max()),
         }
+        # The same measurement without the reduction to a radius: which cue
+        # failed, and what it retrieved instead. A radius says the basin stops
+        # at 12; only this says whether it stops because of one aliased cell in
+        # one direction or because a whole annulus goes at once. Recorded at
+        # the first requested step, which is production's single step.
+        if want_map and "map" not in out:
+            out["map"] = _basin_map(won, hit, dx, dy, d, cells.shape[0],
+                                    int(s), R, (int(gx0), int(gy0)),
+                                    out[str(s)])
     return out
+
+
+def _basin_map(
+    won: np.ndarray, hit: np.ndarray, dx: np.ndarray, dy: np.ndarray,
+    d: np.ndarray, n_cells: int, step: int, R: int,
+    goal_xy: tuple[int, int], scalars: dict,
+) -> dict:
+    """Per-cue outcome and landing offset, in goal-centred cell coordinates.
+
+    Bank rows ``>= n_cells`` are the OTHER stored goals. They are not cells of
+    this disc and have no offset in it, so they are reported as ``other_goal``
+    with a null landing rather than projected onto the grid at some
+    plausible-looking position.
+    """
+    lands_cell = won < n_cells
+    j = np.clip(won, 0, n_cells - 1)
+    rdx = np.where(lands_cell, dx[j], 0)
+    rdy = np.where(lands_cell, dy[j], 0)
+    rd = np.where(lands_cell, d[j], np.nan)
+
+    cat = np.full(won.shape, BASIN_OUTCOMES.index("other_goal"), dtype=np.int8)
+    cat[lands_cell] = BASIN_OUTCOMES.index("far")
+    with np.errstate(invalid="ignore"):
+        cat[lands_cell & (rd <= NEAR_CELLS)] = BASIN_OUTCOMES.index("near")
+    cat[hit] = BASIN_OUTCOMES.index("exact")
+
+    return {
+        "steps": step, "radius": int(R), "goal_xy": list(goal_xy),
+        "outcomes": list(BASIN_OUTCOMES),
+        # THIS pair's own radii, so the figure can draw its rings without
+        # borrowing the median over pairs -- which would put a ring on this
+        # map at a radius no cue on it failed at.
+        "r_exact_all": float(scalars["r_exact_all"]),
+        "r_exact_95": float(scalars["r_exact_95"]),
+        "dx": [int(v) for v in dx], "dy": [int(v) for v in dy],
+        "cat": [int(v) for v in cat],
+        "rdx": [int(a) if ok else None for a, ok in zip(rdx, lands_cell)],
+        "rdy": [int(a) if ok else None for a, ok in zip(rdy, lands_cell)],
+    }
 
 
 def run_test_a(
@@ -327,6 +410,7 @@ def run_test_a(
         fixed_pool: dict[str, list[dict]] = {str(s): [] for s in cfg.steps}
         diag_fracs: list[float] = []
         maps: list[dict] = []
+        basin_pairs: list[tuple[int, int, float]] = []
         traj_probe: list[dict] = []
 
         for w in worlds:
@@ -355,6 +439,10 @@ def run_test_a(
                             "r_exact_95", bp[str(s)]["r_exact_95"])
                         acc[str(s)]["scalars"].add(
                             "r_exact_all", bp[str(s)]["r_exact_all"])
+                s0 = str(cfg.steps[0])
+                if s0 in bp:
+                    basin_pairs.append(
+                        (w.index, e, bp[s0]["r_exact_all"]))
 
             cues = np.concatenate([
                 field.encode(cells[:, 0] + w.specs[e].offset[0],
@@ -430,6 +518,24 @@ def run_test_a(
             if progress:
                 progress(f"A  k={k:>3} world={w.index}")
 
+        # The map, for the pair whose radius is the median of the ones just
+        # measured. Chosen after the loop and re-probed rather than recorded
+        # during it, because "median" is not known until every pair is in --
+        # and the one pair that IS known up front, the first, is the same goal
+        # for every encoder and a hard one, sitting at the 7th percentile of
+        # its own run. One extra probe at one step is the whole cost.
+        basin_maps: list[dict] = []
+        if cfg.basin_map and basin_pairs:
+            w_i, e_i, _r = median_pair(basin_pairs)
+            w_m = worlds[w_i]
+            bp = basin_probe(
+                field, w_m, e_i,
+                build_memory(field, w_m, k, cfg,
+                             np.random.RandomState(w_m.seed * 31 + k)),
+                cfg, steps=(cfg.steps[0],), want_map=True)
+            if "map" in bp:
+                basin_maps.append({"world": w_i, "env": e_i, **bp["map"]})
+
         out["k"][str(k)] = {
             "diag_frac_mean": float(np.mean(diag_fracs)),
             "per_step": {
@@ -448,6 +554,7 @@ def run_test_a(
                 env_offset_distances(worlds[0], k).tolist()
                 if worlds else []),
             "maps": maps,
+            "basin_maps": basin_maps,
             "trajectory": traj_probe,
         }
 
@@ -504,6 +611,7 @@ def _sector_summary(rows: list[list[float]]) -> dict:
 
 
 __all__ = [
+    "BASIN_OUTCOMES", "basin_bank", "basin_probe",
     "classify_outcomes", "first_failure_radius", "fixed_point_probe",
     "radius_by_direction", "retrieve", "run_test_a",
 ]

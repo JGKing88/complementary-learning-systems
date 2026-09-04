@@ -815,7 +815,152 @@ def table(headers: list[str], rows: list[list[str]],
             f'</table></details>')
 
 
+# The basin outcome ramp: pale blue for the cues that work, then a
+# severity ladder through yellow and orange to red for leaving the disc
+# altogether. Ordered, so a reader can rank the colours without the legend.
+BASIN_CAT_COLORS = ["#cde2fb", "#eda100", "#eb6834", "#e34948"]
+_ARROW_BUDGET = 220
+_DOT_BUDGET = 60
+
+
+def basin_map(
+    dx: list[int], dy: list[int], cat: list[int],
+    rdx: list, rdy: list, radius: int,
+    *, cat_names: list[str], r_all: float | None = None,
+    r_95: float | None = None, title: str = "", cell: float = 3.0,
+) -> str:
+    """Every basin cue, coloured by what it retrieved, with the landings.
+
+    The goal is the centre cell. A radius is this picture reduced to one
+    number -- it says the guarantee stops at 12 and nothing about whether it
+    stops because of a single aliased cell on one bearing or because the whole
+    annulus goes at once, which are different failures with different fixes.
+
+    Three marks, in increasing order of how much they aggregate:
+
+    * every cue's fill, run-length merged along rows;
+    * a dot on each cell that failing cues *land* on, area with how many do --
+      an alias that swallows a thousand cues is one dot, and that is the point;
+    * arrows on a coarse lattice, so the map from cue to landing is legible
+      rather than a solid block of ink.
+    """
+    n = 2 * radius + 1
+    ml, mt, mr, mb = 34, 22 if title else 8, 12, 46
+    w, h = ml + n * cell + mr, mt + n * cell + mb
+    cid = f"c{next(_uid)}"
+
+    def px(v):                      # cue offset -> pixel centre, x rightward
+        return ml + (v + radius + 0.5) * cell
+
+    def py(v):                      # cue offset -> pixel centre, y UPWARD
+        return mt + (radius - v + 0.5) * cell
+
+    grid = [[None] * n for _ in range(n)]
+    for a, b, c in zip(dx, dy, cat):
+        grid[a + radius][b + radius] = c
+
+    o = [f'<svg viewBox="0 0 {w:.0f} {h:.0f}" role="img" '
+         f'aria-label="{_esc(title or "basin failure map")}" '
+         f'data-chart="{cid}">']
+    if title:
+        o.append(f'<text x="{ml}" y="13" font-size="12" '
+                 f'font-weight="600">{_esc(title)}</text>')
+
+    # Fill, one path per category with horizontal runs merged. At radius 64
+    # that is 16.6k cells; as individual rects it is a megabyte of markup.
+    paths: dict[int, list[str]] = {}
+    for j in range(n):
+        yy = mt + (n - 1 - j) * cell
+        i = 0
+        while i < n:
+            v = grid[i][j]
+            run = 1
+            while i + run < n and grid[i + run][j] == v:
+                run += 1
+            if v is not None:
+                paths.setdefault(v, []).append(
+                    f"M{ml + i * cell:.1f} {yy:.1f}h{run * cell:.1f}"
+                    f"v{cell:.1f}h{-run * cell:.1f}z")
+            i += run
+    for c, segs in sorted(paths.items()):
+        col = BASIN_CAT_COLORS[c % len(BASIN_CAT_COLORS)]
+        o.append(f'<path d="{"".join(segs)}" fill="{col}"/>')
+
+    # Where the failures land. Counted first, so one heavily-aliased cell is
+    # one big dot rather than a thousand coincident small ones.
+    land: dict[tuple[int, int], int] = {}
+    fails = []
+    for a, b, c, ra, rb in zip(dx, dy, cat, rdx, rdy):
+        if c == 0 or ra is None or rb is None:
+            continue
+        land[(ra, rb)] = land.get((ra, rb), 0) + 1
+        fails.append((a, b, ra, rb))
+
+    if land:
+        top = sorted(land.items(), key=lambda kv: -kv[1])[:_DOT_BUDGET]
+        cmax = top[0][1]
+        for (a, b), c in sorted(top, key=lambda kv: kv[1]):
+            r = 1.6 + 4.4 * (c / cmax) ** 0.5
+            o.append(f'<circle cx="{px(a):.1f}" cy="{py(b):.1f}" r="{r:.1f}" '
+                     f'fill="var(--ink)" fill-opacity="0.55" '
+                     f'stroke="var(--surface)" stroke-width="1" '
+                     f'data-tip="{_esc(f"lands at ({a}, {b}) — {c} cues")}"/>')
+
+    # Arrows on a lattice: enough to read the mapping, not enough to hide it.
+    if fails:
+        k = max(1, math.ceil(math.sqrt(len(fails) / _ARROW_BUDGET)))
+        for a, b, ra, rb in fails:
+            if (a + radius) % k or (b + radius) % k:
+                continue
+            x1, y1, x2, y2 = px(a), py(b), px(ra), py(rb)
+            if math.hypot(x2 - x1, y2 - y1) < 1.5:
+                continue
+            o.append(f'<line x1="{x1:.1f}" y1="{y1:.1f}" x2="{x2:.1f}" '
+                     f'y2="{y2:.1f}" stroke="var(--ink2)" stroke-width="0.6" '
+                     f'opacity="0.5"/>')
+            o.append(f'<circle cx="{x2:.1f}" cy="{y2:.1f}" r="0.9" '
+                     f'fill="var(--ink2)" opacity="0.6"/>')
+
+    # The reported radius, as a ring. `r_all` is the guarantee; anything
+    # outside it has at least one failing cue somewhere on the circle.
+    for r, dash, lab in ((r_95, "2 3", "r_exact_95"),
+                         (r_all, None, "r_exact_all")):
+        if r is None or r < 0:
+            continue
+        o.append(f'<circle cx="{px(0):.1f}" cy="{py(0):.1f}" '
+                 f'r="{r * cell:.1f}" fill="none" stroke="var(--ink)" '
+                 f'stroke-width="1.2" opacity="0.8"'
+                 + (f' stroke-dasharray="{dash}"' if dash else "")
+                 + f'><title>{_esc(f"{lab} = {r:g}")}</title></circle>')
+
+    # The goal, always drawn last so nothing covers it.
+    o.append(f'<rect x="{px(0) - cell / 2:.1f}" y="{py(0) - cell / 2:.1f}" '
+             f'width="{cell:.1f}" height="{cell:.1f}" fill="none" '
+             f'stroke="var(--ink)" stroke-width="2"/>')
+
+    counts = {c: sum(1 for v in cat if v == c) for c in set(cat)}
+    tot = max(len(cat), 1)
+    lx = ml
+    ly = mt + n * cell + 16
+    for c, name in enumerate(cat_names):
+        if c not in counts:
+            continue
+        o.append(f'<rect x="{lx:.1f}" y="{ly - 8:.1f}" width="9" height="9" '
+                 f'fill="{BASIN_CAT_COLORS[c % len(BASIN_CAT_COLORS)]}"/>')
+        txt = f"{name}  {100 * counts[c] / tot:.0f}%"
+        o.append(f'<text x="{lx + 13:.1f}" y="{ly:.1f}" font-size="10" '
+                 f'fill="var(--ink2)">{_esc(txt)}</text>')
+        lx += 22 + 5.6 * len(txt)
+    o.append(f'<text x="{ml:.1f}" y="{ly + 15:.1f}" font-size="10" '
+             f'fill="var(--muted)">cells from the goal, '
+             f'&#177;{radius}</text>')
+    o.append("</svg>")
+    return (f'<figure class="chartbox" style="margin:0">{"".join(o)}'
+            f'<script type="application/json" class="chartdata">'
+            f'{json.dumps({"type": "cells", "id": cid})}</script></figure>')
+
+
 __all__ = [
-    "grouped_bars", "heatmap", "line_chart", "polar_bars", "quiver_over_heat",
-    "stacked_bars", "stat_tile", "table",
+    "basin_map", "grouped_bars", "heatmap", "line_chart", "polar_bars",
+    "quiver_over_heat", "stacked_bars", "stat_tile", "table",
 ]

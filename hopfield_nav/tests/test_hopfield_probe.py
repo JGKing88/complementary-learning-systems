@@ -29,8 +29,9 @@ import numpy as np
 import pytest
 import torch
 
+from analysis.hopfield_probe import attractor
 from analysis.hopfield_probe.attractor import (
-    classify_outcomes, first_failure_radius,
+    BASIN_OUTCOMES, classify_outcomes, first_failure_radius,
 )
 from analysis.hopfield_probe.encode import Field, grid_codes
 from analysis.hopfield_probe.flow import (
@@ -426,7 +427,297 @@ def test_fwhm_is_read_from_train_config(tmp_path):
 
 
 # ---------------------------------------------------------------------------
-# 9. End to end
+# 9. The basin
+# ---------------------------------------------------------------------------
+#
+# `basin_probe` answers "how far from the goal can a cue sit and still retrieve
+# the goal exactly", and three separate bugs have lived in it: cues drawn from
+# the evaluation env (so the radius was censored at the arena diagonal), the
+# goal present in the retrieval bank twice (so a perfect recall could score as
+# a miss), and the radius read at the wrong quantile. What follows pins the
+# contract rather than any of those symptoms.
+#
+# The recall map is stubbed throughout. A basin is a statement about "given
+# where recall lands, what does the bank return" -- the dynamics that put it
+# there are Test A's business, and pinning them here would make these tests a
+# second, weaker copy of that. `test_basin_probe_runs_on_a_real_field` closes
+# the loop on the real path.
+
+_BASIN_DIM = 24
+
+
+class _CellStub:
+    """A distinct, deterministic, non-unit embedding per scaffold cell.
+
+    Non-unit on purpose: a real encoder's output is not normalised, and the
+    normalisation inside ``basin_probe`` is part of what is under test.
+    """
+
+    def encode(self, gx, gy):
+        gx = np.asarray(gx, dtype=np.int64).ravel()
+        gy = np.asarray(gy, dtype=np.int64).ravel()
+        key = (gx + 4096) * 8192 + (gy + 4096)
+        out = np.empty((key.size, _BASIN_DIM), dtype=np.float32)
+        for i, k in enumerate(key):
+            rs = np.random.RandomState(int(k) % (2 ** 31 - 1))
+            out[i] = rs.randn(_BASIN_DIM) * 3.0
+        return out
+
+
+def _stub_memory(Z, owner):
+    """Just enough of ``Memory`` for ``basin_probe``: the patterns and who owns
+    them. The ``Hopfield`` is never touched because recall is stubbed."""
+    from types import SimpleNamespace
+    Z = np.asarray(Z, dtype=np.float32)
+    return SimpleNamespace(Z=Z / np.linalg.norm(Z, axis=1, keepdims=True),
+                           owner=np.asarray(owner), hopfield=None,
+                           diag_frac=0.0)
+
+
+def _one_env_world(goal=(6, 6), offset=(40, 50), size=20, n=2):
+    from hopfield_nav.world.spec import EnvSpec
+    from analysis.hopfield_probe.harness import World
+    specs = tuple(
+        EnvSpec(wall_seed=0, size=size,
+                offset=(offset[0] + 200 * i, offset[1] + 200 * i),
+                goal=goal)
+        for i in range(n))
+    return World(index=0, seed=0, specs=specs)
+
+
+def _basin_cfg(**kw):
+    base = dict(Npos=1716, env_size=20, n_worlds=1, n_envs_per_world=2,
+                k_values=(1,), steps=(1,), basin_radius=4, seed=0)
+    base.update(kw)
+    return ProbeConfig(**base)
+
+
+def _recall(fn):
+    """A stand-in for ``recall_trajectory``: every step lands where ``fn`` says."""
+    def _r(_mem, cues, steps, _cfg):
+        return {s: np.ascontiguousarray(fn(cues), dtype=np.float32)
+                for s in steps}
+    return _r
+
+
+def _disc_count(R, keep=None):
+    a = np.arange(-R, R + 1)
+    dx, dy = np.meshgrid(a, a, indexing="ij")
+    m = np.hypot(dx, dy) <= R
+    if keep is not None:
+        m &= keep(dx, dy)
+    return int(m.sum())
+
+
+def test_basin_cues_are_a_disc_and_do_not_depend_on_env_size(monkeypatch):
+    """The basin is a property of the encoder and the memory. The arena the
+    other tests happen to use must not enter it at any point."""
+    field, world = _CellStub(), _one_env_world()
+    mem = _stub_memory(field.encode([46], [56]), [0])
+    monkeypatch.setattr(attractor, "recall_trajectory", _recall(lambda c: c))
+
+    # Both env sizes straddle the basin radius, so an env-censored radius
+    # would come back as 2 on the left and 4 on the right.
+    small = attractor.basin_probe(field, world, 0, mem, _basin_cfg(env_size=2))
+    large = attractor.basin_probe(field, world, 0, mem, _basin_cfg(env_size=40))
+    assert small == large
+    assert small["1"]["n_cues"] == _disc_count(4)
+    assert small["1"]["max_radius"] == pytest.approx(4.0)
+
+
+def test_identity_recall_gives_a_zero_basin_not_a_full_one(monkeypatch):
+    """A cue that stays put retrieves *itself*, so only the goal cue retrieves
+    the goal. Radius 0, and every other cue a miss -- the null case that a bank
+    missing its true nearest cell would turn into a full basin."""
+    field, world = _CellStub(), _one_env_world()
+    mem = _stub_memory(field.encode([46], [56]), [0])
+    monkeypatch.setattr(attractor, "recall_trajectory", _recall(lambda c: c))
+
+    out = attractor.basin_probe(field, world, 0, mem, _basin_cfg())
+    assert out["1"]["r_exact_all"] == 0.0
+    assert out["1"]["exact_frac"] == pytest.approx(1.0 / _disc_count(4))
+
+
+def test_the_goal_is_in_the_bank_exactly_once():
+    """The goal used to be in the bank twice -- once as the centre cell of the
+    disc, once as its row of ``mem.Z``.
+
+    Asserted on the bank itself, not through an ``argmax``: the two copies are
+    the same vector, so which one wins is a last-bit coin flip. That is exactly
+    what made the bug corrupt only some of the radii, and it is why an
+    outcome-level test would pass under the bug about half the time.
+    """
+    field = _CellStub()
+    cells = field.encode([46, 47, 48], [56, 56, 56])
+    mem = _stub_memory(np.concatenate([field.encode([46], [56]),
+                                       field.encode([246], [256]),
+                                       field.encode([646], [656])]),
+                       [0, 1, 2])
+
+    bank = attractor.basin_bank(cells, mem, 0)
+    assert bank.shape[0] == cells.shape[0] + 2      # 3 stored, 2 of them other
+    # Exactly one bank row is the goal cell, and the two other goals are there.
+    goal = cells[0] / np.linalg.norm(cells[0])
+    assert int((bank @ goal > 1 - 1e-5).sum()) == 1
+    for j in (1, 2):
+        z = mem.Z[j] / np.linalg.norm(mem.Z[j])
+        assert int((bank @ z > 1 - 1e-5).sum()) == 1
+
+
+def test_every_cue_retrieves_the_goal_when_recall_lands_on_it(monkeypatch):
+    """The behavioural half of the same contract: recall on the stored pattern
+    means every cue in the disc is an exact hit, out to the edge."""
+    field, world = _CellStub(), _one_env_world()
+    z = field.encode([46], [56])
+    other = field.encode([246], [256])
+    mem = _stub_memory(np.concatenate([z, other]), [0, 1])
+    monkeypatch.setattr(
+        attractor, "recall_trajectory",
+        _recall(lambda c: np.repeat(mem.Z[:1], c.shape[0], axis=0)))
+
+    out = attractor.basin_probe(field, world, 0, mem, _basin_cfg(),
+                                want_map=True)
+    assert out["1"]["exact_frac"] == 1.0
+    assert out["1"]["r_exact_all"] == 4.0
+    assert set(out["map"]["cat"]) == {BASIN_OUTCOMES.index("exact")}
+
+
+def test_the_other_stored_goals_are_in_the_bank_and_are_not_disc_cells(
+        monkeypatch):
+    """A cue that relaxes onto ANOTHER env's goal has left the disc. It is
+    reported as such, never projected onto whichever disc cell is nearest --
+    which would report a real failure as a modest landing error."""
+    field, world = _CellStub(), _one_env_world()
+    z = field.encode([46], [56])
+    other = field.encode([246], [256])
+    mem = _stub_memory(np.concatenate([z, other]), [0, 1])
+    monkeypatch.setattr(
+        attractor, "recall_trajectory",
+        _recall(lambda c: np.repeat(mem.Z[1:], c.shape[0], axis=0)))
+
+    out = attractor.basin_probe(field, world, 0, mem, _basin_cfg(),
+                                want_map=True)
+    assert out["1"]["exact_frac"] == 0.0
+    assert out["1"]["r_exact_all"] == -1.0
+    assert set(out["map"]["cat"]) == {BASIN_OUTCOMES.index("other_goal")}
+    assert set(out["map"]["rdx"]) == {None}
+
+
+def test_basin_is_minus_one_when_the_goal_cue_itself_misses(monkeypatch):
+    """No radius holds, and that is reported as -1 rather than as 0 -- a 0
+    basin is a working goal with no margin, which is a different animal."""
+    field, world = _CellStub(), _one_env_world()
+    edge = field.encode([50], [56])                    # the (+4, 0) cell
+    mem = _stub_memory(field.encode([46], [56]), [0])
+    monkeypatch.setattr(
+        attractor, "recall_trajectory",
+        _recall(lambda c: np.repeat(edge, c.shape[0], axis=0)))
+
+    out = attractor.basin_probe(field, world, 0, mem, _basin_cfg())
+    assert out["1"]["r_exact_all"] == -1.0
+    assert out["1"]["r_exact_95"] == -1.0
+
+
+def test_r_exact_95_tolerates_the_one_miss_that_r_exact_all_does_not(
+        monkeypatch):
+    """The two columns are the same measurement at two quantiles, and the
+    reported basin is the strict one. One aliased cell at radius 3 stops the
+    guarantee at 2 while the 95% figure runs to the edge of the disc."""
+    field, world = _CellStub(), _one_env_world()
+    z = field.encode([46], [56])
+    bad_cue = field.encode([49], [56])                 # the (+3, 0) cell
+    edge = field.encode([50], [56])                    # the (+4, 0) cell
+    mem = _stub_memory(z, [0])
+
+    def land(c):
+        out = np.repeat(mem.Z[:1], c.shape[0], axis=0)
+        miss = np.all(c == bad_cue, axis=1)
+        assert miss.sum() == 1
+        out[miss] = edge / np.linalg.norm(edge)
+        return out
+
+    monkeypatch.setattr(attractor, "recall_trajectory", _recall(land))
+    out = attractor.basin_probe(field, world, 0, mem, _basin_cfg())
+    assert out["1"]["r_exact_all"] == 2.0
+    assert out["1"]["r_exact_95"] == 4.0
+
+
+def test_basin_cues_are_dropped_at_the_scaffold_edge_not_clipped(monkeypatch):
+    """A clipped cue is no longer at the offset it claims, so it would be
+    scored at the wrong radius. Dropped instead."""
+    field = _CellStub()
+    world = _one_env_world(goal=(2, 3), offset=(0, 0))
+    mem = _stub_memory(field.encode([2], [3]), [0])
+    monkeypatch.setattr(attractor, "recall_trajectory", _recall(lambda c: c))
+
+    out = attractor.basin_probe(field, world, 0, mem, _basin_cfg())
+    assert out["1"]["n_cues"] == _disc_count(
+        4, lambda dx, dy: (dx + 2 >= 0) & (dy + 3 >= 0))
+    assert out["1"]["n_cues"] < _disc_count(4)
+
+
+def test_basin_map_landings_are_the_cells_that_were_actually_retrieved(
+        monkeypatch):
+    """Under identity recall every cue lands on itself, so the map's landing
+    offsets must be the cue offsets -- and only the centre is `exact`."""
+    field, world = _CellStub(), _one_env_world()
+    mem = _stub_memory(field.encode([46], [56]), [0])
+    monkeypatch.setattr(attractor, "recall_trajectory", _recall(lambda c: c))
+
+    m = attractor.basin_probe(field, world, 0, mem, _basin_cfg(),
+                              want_map=True)["map"]
+    assert m["rdx"] == m["dx"] and m["rdy"] == m["dy"]
+    assert m["goal_xy"] == [46, 56]
+    cat = np.array(m["cat"])
+    at_goal = (np.array(m["dx"]) == 0) & (np.array(m["dy"]) == 0)
+    assert list(cat[at_goal]) == [BASIN_OUTCOMES.index("exact")]
+    assert BASIN_OUTCOMES.index("exact") not in cat[~at_goal]
+    # Cells within NEAR_CELLS of the goal land on themselves, so they are
+    # "near"; the rest are "far". Nothing leaves the disc.
+    d = np.hypot(np.array(m["dx"]), np.array(m["dy"]))
+    assert set(cat[~at_goal & (d <= 2.0)]) == {BASIN_OUTCOMES.index("near")}
+    assert set(cat[d > 2.0]) == {BASIN_OUTCOMES.index("far")}
+
+
+def test_the_mapped_pair_is_a_real_pair_at_the_median_radius():
+    """Which (world, env) gets a map is a presentation choice with teeth: the
+    first pair has geometry fixed by the probe seed, so it is the same goal for
+    every encoder, and it measures at the 7th percentile of its own run."""
+    pairs = [(0, 0, 5.0), (0, 1, 30.0), (1, 0, 12.0), (2, 0, 27.0),
+             (3, 1, 19.0)]
+    assert attractor.median_pair(pairs) == (3, 1, 19.0)
+    # Even count: an actual measured pair, not the mean of the middle two.
+    assert attractor.median_pair(pairs[:4]) == (2, 0, 27.0)
+    assert attractor.median_pair([(7, 2, 1.0)]) == (7, 2, 1.0)
+
+
+def test_basin_probe_runs_on_a_real_field_and_memory():
+    """The stubs above replace recall; this one does not. Catches the shape and
+    dtype mistakes a stub would absorb."""
+    from analysis.hopfield_probe.harness import World, build_memory
+    from hopfield_nav.world.spec import EnvSpec
+
+    _vh, field, npos = _tiny()
+    specs = tuple(EnvSpec(wall_seed=0, size=2, offset=(0, 0), goal=(g, g))
+                  for g in (2, 4))
+    world = World(index=0, seed=0, specs=specs)
+    cfg = ProbeConfig(Npos=npos, env_size=2, n_worlds=1, n_envs_per_world=2,
+                      k_values=(2,), steps=(1,), basin_radius=2, seed=0)
+    mem = build_memory(field, world, 2, cfg, np.random.RandomState(0))
+
+    out = attractor.basin_probe(field, world, 0, mem, cfg, want_map=True)
+    got = out["1"]
+    assert got["n_cues"] == _disc_count(
+        2, lambda dx, dy: ((dx + 2 >= 0) & (dx + 2 < npos)
+                           & (dy + 2 >= 0) & (dy + 2 < npos)))
+    assert -1.0 <= got["r_exact_all"] <= 2.0
+    assert got["r_exact_all"] <= got["r_exact_95"]
+    assert 0.0 <= got["exact_frac"] <= 1.0
+    assert len(out["map"]["cat"]) == got["n_cues"]
+
+
+# ---------------------------------------------------------------------------
+# 10. End to end
 # ---------------------------------------------------------------------------
 
 @pytest.mark.slow

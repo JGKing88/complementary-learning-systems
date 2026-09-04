@@ -29,7 +29,7 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[2]))
 
 import numpy as np
 
-from analysis.hopfield_probe.attractor import basin_probe
+from analysis.hopfield_probe.attractor import basin_probe, median_pair
 from analysis.hopfield_probe.encode import Field
 from analysis.hopfield_probe.harness import (ProbeConfig, build_memory,
                                              load_probe_encoder, sample_worlds,
@@ -102,6 +102,13 @@ def main(only: int | None = None, beta: float | None = None) -> None:
             header["gain"] = gain
             header["gain_was_overridden"] = True
             header["beta"] = gain if beta is None else float(beta)
+            # Same rule as `run.py`: per coordinate (Wz)_i ~ D^-1.5, so the
+            # tanh argument bends around beta ~ D^1.5. The report keys the
+            # coverage panels on this, so a spliced row that omitted it would
+            # be read as unsaturated whatever beta it ran at.
+            header["recall_regime"] = (
+                "saturated" if header["beta"] >= int(ecfg.out_dim) ** 1.5
+                else "linear")
             res["header"] = header
 
             for k in cfg.k_values:
@@ -110,6 +117,8 @@ def main(only: int | None = None, beta: float | None = None) -> None:
                     continue
                 per = node["per_step"]
                 acc: dict[str, dict[str, list[float]]] = {}
+                pairs: list[tuple[int, int, float]] = []
+                s0 = str(cfg.steps[0])
                 for w in worlds:
                     mem = build_memory(
                         field, w, k, cfg,
@@ -120,6 +129,23 @@ def main(only: int | None = None, beta: float | None = None) -> None:
                             a = acc.setdefault(s, {"all": [], "p95": []})
                             a["all"].append(vals["r_exact_all"])
                             a["p95"].append(vals["r_exact_95"])
+                        if s0 in bp:
+                            pairs.append((w.index, e, bp[s0]["r_exact_all"]))
+
+                # Same rule as `run_test_a`: the map is the MEDIAN pair, not
+                # the first one. See the comment on `ProbeConfig.basin_map`.
+                node["basin_maps"] = []
+                if cfg.basin_map and pairs:
+                    w_i, e_i, _r = median_pair(pairs)
+                    w_m = worlds[w_i]
+                    bp = basin_probe(
+                        field, w_m, e_i,
+                        build_memory(field, w_m, k, cfg,
+                                     np.random.RandomState(w_m.seed * 31 + k)),
+                        cfg, steps=(cfg.steps[0],), want_map=True)
+                    if "map" in bp:
+                        node["basin_maps"] = [
+                            {"world": w_i, "env": e_i, **bp["map"]}]
                 for s, a in acc.items():
                     if s not in per:
                         continue

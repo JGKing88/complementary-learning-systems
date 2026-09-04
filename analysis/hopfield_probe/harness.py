@@ -240,6 +240,18 @@ class ProbeConfig:
     # over the largest basin measured (30.7 at env 40).
     basin_radius: int = 64
     basin_envs: int = 2               # envs per world to probe
+    # Keep the raw per-cue basin outcomes for ONE (world, env) pair. The radius
+    # is a reduction of this map to one number and throws away the thing a
+    # reader most wants: which direction the basin fails in, and what the
+    # failing cue retrieved instead.
+    #
+    # The pair is the one whose radius is the MEDIAN of the measured pairs,
+    # picked after they are all in, which costs one extra probe. The obvious
+    # alternative -- the first pair -- has geometry fixed by `seed` alone, so
+    # it is the same goal for every encoder, and it happens to be a hard one:
+    # it lands at the 7th percentile of its own run. Defaulting to it would put
+    # a near-worst-case map on every page.
+    basin_map: bool = True
 
     # retrieval
     n_alias: int = 20_000
