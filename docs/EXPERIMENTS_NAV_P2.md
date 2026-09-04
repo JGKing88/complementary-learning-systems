@@ -7940,3 +7940,29 @@ instead, and every intervention so far has been one-sided:
 Make position unreliable, and ensure there is a map to fall back on. It is the
 first arm that addresses both halves of the goal at once, and it took the slot
 freed by cancelling `p33_revisit_mid`.
+
+### 33.5 CORRECTION — `p29_long` rescored at u700
+
+§33 scored `p29_long` at **u550**, its latest checkpoint at the time, and
+flagged that it was still climbing. It finished. At u700, on matched
+trajectories against the control:
+
+| | swept @200 | swept @600 | recurrence dip | period IQR |
+|---|---|---|---|---|
+| `p20_e` | 0.647 | 0.869 | 4.97 @ τ=102 | 62–103 |
+| `p29_long` **u700** | 0.584 | **0.797** | **11.02 @ τ=54** | **54–57** |
+| `p29_long` u550 (§33) | 0.581 | 0.760 | 10.99 @ τ=51 | 50–53 |
+
+It improved (0.760 → 0.797 at 600 steps) and **the conclusion is unchanged**:
+still the worst arm at both horizons, still orbiting more than twice as hard as
+the control, and with an IQR of 54–57 the orbit is if anything *more* coherent
+than it was at u550. Longer-horizon training did not make the agent explore
+better; it made it a tighter position-indexed cycle.
+
+Proximity revisit at 600 steps, the measure that is not coverage restated:
+`p20_e` 0.702, `p29_long` 0.717 at r=1 — p29 passes back over its own ground
+slightly more often, consistent with the deeper orbit.
+
+The §33.3 monotonic relationship stands with the corrected value: `p29_long`
+still holds the largest position share (0.382) and the deepest orbit of the
+five arms.
