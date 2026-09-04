@@ -123,6 +123,39 @@ def label_of(res: dict) -> str:
     return str(res["header"].get("label", "encoder"))
 
 
+def group_of(res: dict) -> str:
+    """The encoder TYPE a result belongs to.
+
+    Labels of the form "<type> · <arm> · s<seed>" group by their first segment;
+    anything else is its own group, so a run that does not use the convention
+    behaves exactly as it did before.
+    """
+    return label_of(res).split(" · ")[0].strip()
+
+
+def groups(results: list[dict]) -> list[tuple[str, list[dict]]]:
+    """``[(group, members)]`` in first-appearance order."""
+    out: dict[str, list[dict]] = {}
+    for r in results:
+        out.setdefault(group_of(r), []).append(r)
+    return list(out.items())
+
+
+def representative(members: list[dict]) -> dict:
+    """The member whose body gets rendered. Median continuous reach, so the
+    figures show a typical seed rather than the best or the worst."""
+    def reach(r):
+        try:
+            k = ref_k(r)
+            s = steps(r)[0]
+            v = scal(r["test_d"]["k"][k][s]["continuous"], "reach_rate")
+            return v if v is not None else -1.0
+        except (KeyError, TypeError, IndexError):
+            return -1.0
+    ranked = sorted(members, key=reach)
+    return ranked[len(ranked) // 2]
+
+
 def multi_page(title: str, active: str, results: list[dict], src: str,
                body_fn) -> str:
     """Stack one body per encoder behind ``data-encoder``.
@@ -131,13 +164,25 @@ def multi_page(title: str, active: str, results: list[dict], src: str,
     one encoder's block is displayed at a time -- and it keeps every page
     builder a pure function of one result, which is what makes them testable.
     """
-    heads = "".join(
-        f'<span class="enc-hdr" data-encoder="{esc(label_of(r))}">'
-        f'{run_header(r["header"])}</span>' for r in results)
-    bodies = "".join(
-        f'<div data-encoder="{esc(label_of(r))}">{body_fn(r)}</div>'
-        for r in results)
-    return shell(title, active, heads, encoder_filter(results) + bodies, src)
+    gs = groups(results)
+    heads, bodies = [], []
+    for name, members in gs:
+        rep = representative(members)
+        extra = (_kv_seeds(members) if len(members) > 1 else "")
+        heads.append(f'<span class="enc-hdr" data-encoder="{esc(name)}">'
+                     f'{run_header(rep["header"], extra)}</span>')
+        bodies.append(f'<div data-encoder="{esc(name)}">'
+                      f'{body_fn(rep)}</div>')
+    return shell(title, active, "".join(heads),
+                 encoder_filter(results) + "".join(bodies), src)
+
+
+def _kv_seeds(members: list[dict]) -> str:
+    """Say plainly which seed the figures below are, and how many exist."""
+    rep = representative(members)
+    tail = label_of(rep).split(" · ")[-1]
+    return (f'<span class="kv">figures show <b>{esc(tail)}</b> of '
+            f'{len(members)} seeds</span>')
 
 
 def encoder_filter(results: list[dict]) -> str:
@@ -145,8 +190,12 @@ def encoder_filter(results: list[dict]) -> str:
     one-option control is chrome that does nothing."""
     if len(results) < 2:
         return ""
+
+    gs = groups(results)
+    if len(gs) < 2:
+        return ""
     return filter_row([("encoder", "encoder",
-                        [(label_of(r), label_of(r)) for r in results])])
+                        [(n, n) for n, _m in gs])])
 
 
 # ---------------------------------------------------------------------------
@@ -157,10 +206,19 @@ def page_index(results: list[dict], src: str) -> str:
     primary = results[0]
     rk, rs = ref_k(primary), steps(primary)[0]
 
-    def tile_for(label, fn, fmt):
-        vals = [(r["header"].get("label", "?"), fn(r)) for r in results]
+    def tile_for(label, fn, fmt, lower_is_better=False):
+        """Best seed of each encoder type, first type as the headline."""
+        vals = []
+        for name, members in groups(results):
+            got = [(m, fn(m)) for m in members]
+            got = [(m, v) for m, v in got if v is not None]
+            if not got:
+                vals.append((name, None, 0))
+                continue
+            pick = (min if lower_is_better else max)(got, key=lambda g: g[1])
+            vals.append((name, pick[1], len(members)))
         head = vals[0]
-        cmp = [(n, fmt(v)) for n, v in vals[1:]]
+        cmp = [(n, fmt(v)) for n, v, _k in vals[1:]]
         return label, fmt(head[1]), cmp
 
     def basin(r):
@@ -207,18 +265,21 @@ def page_index(results: list[dict], src: str) -> str:
         except (KeyError, TypeError):
             return None
 
+    n_seeds = max(len(m) for _n, m in groups(results))
+    seeded = f", best of {n_seeds} seeds" if n_seeds > 1 else ""
     tiles = []
-    for label, fn, fmt, sub in (
+    for label, fn, fmt, sub, low in (
         ("Basin radius", basin, lambda v: radius(v, 2),
-         f"cells, median r_exact_all at K={rk}, s={rs}"),
+         f"cells, median r_exact_all at K={rk}{seeded}", False),
         ("Goal self-retrieval fails", basin_fail, pct,
-         "of (world, env) pairs, where basin is undefined"),
-        ("Direction accuracy", acc, pct, "acc45 vs. 25% chance"),
+         f"of (world, env) pairs{seeded}", True),
+        ("Direction accuracy", acc, pct, f"acc45 vs. 25% chance{seeded}",
+         False),
         ("Snap cost", snap, lambda v: deg(v, 2),
-         "excess degrees at d < 2"),
-        ("Flow", flow, pct, "discrete reach rate"),
+         f"excess degrees at d < 2{seeded}", True),
+        ("Flow", flow, pct, f"discrete reach rate{seeded}", False),
     ):
-        lab, val, cmp = tile_for(label, fn, fmt)
+        lab, val, cmp = tile_for(label, fn, fmt, lower_is_better=low)
         tiles.append(stat_tile(lab, val, sub, cmp))
 
     # Capacity: K on the x-axis, so encoder identity takes the colour here.
@@ -228,8 +289,8 @@ def page_index(results: list[dict], src: str) -> str:
     # and give two encoders the same line.
     cols = [CAT1, CAT2, CAT3, CAT8, MUTED]
     ex_series, acc_series = [], []
-    for i, r in enumerate(results):
-        name = r["header"].get("label", f"enc{i}")
+    for i, (name, members) in enumerate(groups(results)):
+        r = representative(members)
         c = cols[i % len(cols)]
         ex_series.append({"label": name, "color": c, "values": [
             scal(r.get("test_a", {}).get("k", {}).get(k, {})
@@ -260,15 +321,10 @@ def page_index(results: list[dict], src: str) -> str:
     covs = [(c, r) for c, r in covs if c is not None]
     cov_block = ""
     if len({round(c, 6) for c, _ in covs}) > 1:
+        # One point per SEED, not per encoder type. The seed spread is the
+        # thing a single-seed chart hid, so it belongs on the chart.
         covs.sort(key=lambda cr: cr[0])
         cx = [c * 100 for c, _ in covs]
-
-        def _pt(getter):
-            return [{"label": r["header"].get("label", "?"),
-                     "color": cols[i % len(cols)],
-                     "values": [getter(r) if j == i else None
-                                for j in range(len(covs))]}
-                    for i, (_c, r) in enumerate(covs)]
 
         reach_line = [{"label": "continuous reach", "color": CAT1,
                        "values": [flow_c(r) for _c, r in covs]}]
@@ -279,7 +335,7 @@ def page_index(results: list[dict], src: str) -> str:
 {card("Continuous reach vs. training coverage",
       line_chart(cx, reach_line, xlabel="training coverage (%)",
                  ylabel="continuous reach", ylim=(0, 1)),
-      note=f"K={rk}, s={rs}. One point per encoder in this run.")}
+      note=f"K={rk}, s={rs}. One point per training seed.")}
 {card("Basin radius vs. training coverage",
       line_chart(cx, basin_line, xlabel="training coverage (%)",
                  ylabel="r_exact_all (cells)"),
@@ -1054,10 +1110,13 @@ def build(result_dir: Path, out_dir: Path | None = None) -> Path:
         # otherwise carry one identical copy each.
         sections.append((sid, label, _strip_encoder_filter(_body_of(html_text))))
     # Per-encoder headers, so the provenance bar tracks the selection instead
-    # of always reading the first encoder's gain and fwhm.
+    # of always reading the first encoder's gain and fwhm. Keyed by GROUP, to
+    # match the selector and the per-encoder bodies -- a header tagged with the
+    # full seed label would be hidden the moment a group is selected.
     hdr = "".join(
-        f'<span class="enc-hdr" data-encoder="{esc(label_of(r))}">'
-        f'{run_header(r["header"])}</span>' for r in results)
+        f'<span class="enc-hdr" data-encoder="{esc(name)}">'
+        f'{run_header(representative(members)["header"], _kv_seeds(members) if len(members) > 1 else "")}'
+        f'</span>' for name, members in groups(results))
     body_prefix = encoder_filter(results)
     stacked = [(sid, lbl, (body_prefix + inner) if i == 0 else inner)
                for i, (sid, lbl, inner) in enumerate(sections)]

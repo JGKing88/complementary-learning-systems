@@ -1562,6 +1562,28 @@ ladder** and made 2.5% look worse than 1.25%. 10% was flattered the same way,
 30.5 against 27.0. `q_a2` at 2.5% agrees independently at 19.5, so the
 correction is not an artefact of which arm is taken.
 
+#### On the page
+
+The report now groups by encoder **type**: the selector offers one entry per
+rung, the tiles show the **best of four seeds** for each, and the coverage
+charts plot **every seed** rather than one. Per-encoder bodies still render a
+single seed — 20 sets of Tests A–D would exceed the artifact size limit — so
+each header names which seed its figures are. The representative is the
+**median** by continuous reach, deliberately not the best.
+
+The 20 results were produced by recomputing `basin_probe` alone over the
+existing per-seed runs (`splice_basin.py`, `splice_one.sh` as a 20-task array)
+rather than re-probing everything: reach, direction and flow were already
+correct at four seeds per rung, and only the basin column was broken.
+
+| coverage | basin best | median | worst | self-fail | reach best |
+|---|---|---|---|---|---|
+| 10% | 30.5 | **27.0** | 25.5 | 0.00 | 0.993 |
+| 5% | 23.0 | **23.0** | 19.5 | 0.00 | 0.987 |
+| 2.5% | 23.0 | **19.2** | 12.0 | 0.06 | 0.994 |
+| 1.25% | 18.5 | **11.5** | 8.0 | 0.06 | 0.938 |
+| 0.75% | 16.0 | **13.5** | 6.0 | 0.00 | 0.836 |
+
 #### The corrected reading
 
 **27.0 / 23.0 / 19.2 / 11.5 / 13.5.** A clean decline with coverage down to
