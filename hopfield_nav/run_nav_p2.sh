@@ -1013,7 +1013,7 @@ case "$VARIANT" in
   # exactly 1 - cells_per_step and so is coverage restated), recurrence, and
   # the state probe. The state probe is the one that answers the goal: whether
   # position's share of the action fell.
-  p31_placedrop|p32_headdrop|p33_revisit_hi)
+  p31_placedrop|p32_headdrop|p33_revisit_hi|p33_revisit_mid)
     ENCODER=/orcd/pool/003/jackking/cls_runs/sweeps/w52_attract_fwhm/001_att0.5_seed=43/encoder_final.pt
     ENCODER_GAIN=100
     HOPFIELD_BETA=100
@@ -1029,6 +1029,13 @@ case "$VARIANT" in
       p31_placedrop)  PLACE_DROPOUT=0.3 ;;
       p32_headdrop)   HEADING_DROPOUT=0.3 ;;
       p33_revisit_hi) REVISIT_PENALTY=0.40 ;;
+      # 0.40 COLLAPSED: swept 0.0924 identical at every eval u25-u200, mean_r
+      # pinned at -0.31. The penalty EXCEEDS the novelty reward of 0.30, so
+      # during the early wall-pin phase -- where nearly every step lands on
+      # covered ground -- reward is uniformly negative and there is no escape
+      # gradient. The pin becomes absorbing. 0.15 worked because it stayed
+      # below novelty; 0.25 is the largest dose that still does.
+      p33_revisit_mid) REVISIT_PENALTY=0.25 ;;
     esac
     ;;
 

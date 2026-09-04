@@ -7860,3 +7860,48 @@ Every ratio in §30–§33 should be read with that in mind.
 
 The orbit result needs none of this. Depth 0.00 against 5.03 is not a ratio
 against a constructed baseline, and it is the one hard finding in the batch.
+
+## 34. P31-P33 — attacking the input instead of the reward
+
+Goal, from Jack: *the agent must not just be acting as a function of position
+and heading.* §30–§33 measured exactly that and reward shaping failed at it
+four times, so these attack the INPUT the policy leans on.
+
+| arm | change | why |
+|---|---|---|
+| `p31_placedrop` | place code zeroed on 30% of training steps, per env | position intermittently unavailable, so a pure position field cannot collect on those steps |
+| `p32_headdrop` | `prev_action` AND `prev_displacement` zeroed together on 30% | the other half; dropped as a pair because either alone carries direction of travel |
+| `p33_revisit_mid` | `revisit_penalty` 0.15 → 0.25 | escalating the only arm that moved position share down |
+
+Dropout is **training only**. Evaluation always sees the full input, because
+the question is whether a policy TRAINED under an unreliable position signal
+learns to weight it less — not whether it copes with a handicap at test time.
+
+### 34.1 `revisit_penalty` has a hard ceiling at the novelty reward
+
+`p33_revisit_hi` at **0.40 collapsed outright** and was cancelled at u200:
+swept **0.0924, identical at every one of eight evals** from u25, mean reward
+pinned at −0.31.
+
+The arithmetic says why, and it is a general constraint rather than a tuning
+accident. At 0.40 the penalty **exceeds the novelty reward of 0.30**. During
+the early wall-pin phase (§18.7) nearly every step lands on covered ground, so
+reward is uniformly negative, every action looks equally bad, and there is no
+gradient out. **The pin becomes an absorbing state.** 0.15 worked because it
+stayed below novelty; 0.25 is the largest dose that still does.
+
+**So `revisit_penalty < novelty_reward` is a stability constraint**, not a
+preference — any penalty above it converts the early pin from a phase into a
+trap. Worth remembering before anyone reaches for a bigger number.
+
+### 34.2 What decides these arms
+
+Not coverage. Both oracle arms (§29, §31) moved coverage without moving the
+mechanism, and all four P27–P30 arms moved neither. The measurement that
+answers the goal is the **state probe's position share** — position's fraction
+of the whole-state causal effect, which ran 0.224–0.382 across the five earlier
+arms and predicted orbit depth monotonically (§33.3).
+
+A run that holds coverage flat while dropping position share below `p28`'s
+0.224 is progress on the stated goal. A run that lifts coverage with the share
+unchanged is not — it found another way to be a position field.
