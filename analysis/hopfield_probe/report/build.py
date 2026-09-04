@@ -326,16 +326,36 @@ def page_index(results: list[dict], src: str) -> str:
         covs.sort(key=lambda cr: cr[0])
         cx = [c * 100 for c, _ in covs]
 
-        reach_line = [{"label": "continuous reach", "color": CAT1,
-                       "values": [flow_c(r) for _c, r in covs]}]
-        basin_line = [{"label": "r_exact_all", "color": CAT2,
-                       "values": [basin(r) for _c, r in covs]}]
+        def _seeds_and_median(getter, color):
+            """A scatter of every seed, plus a line through the per-coverage
+            medians. The scatter is the evidence; the line is the trend."""
+            pts = {"label": "per seed", "color": color, "points": True,
+                   "values": [getter(r) for _c, r in covs]}
+            by_cov: dict[float, list[float]] = {}
+            for c, r in covs:
+                v = getter(r)
+                if v is not None:
+                    by_cov.setdefault(round(c, 6), []).append(v)
+            med = []
+            for c, _r in covs:
+                vs = sorted(by_cov.get(round(c, 6), []))
+                if not vs:
+                    med.append(None)
+                else:
+                    n = len(vs)
+                    med.append(vs[n // 2] if n % 2
+                               else (vs[n // 2 - 1] + vs[n // 2]) / 2)
+            return [{"label": "median", "color": color, "width": 1.5,
+                     "values": med}, pts]
+
+        reach_line = _seeds_and_median(flow_c, CAT1)
+        basin_line = _seeds_and_median(basin, CAT2)
         cov_block = f"""<h2>Coverage</h2>
 <div class="grid2">
 {card("Continuous reach vs. training coverage",
       line_chart(cx, reach_line, xlabel="training coverage (%)",
                  ylabel="continuous reach", ylim=(0, 1)),
-      note=f"K={rk}, s={rs}. One point per training seed.")}
+      note=f"K={rk}, s={rs}. One point per training seed; the line joins the per-coverage medians.")}
 {card("Basin radius vs. training coverage",
       line_chart(cx, basin_line, xlabel="training coverage (%)",
                  ylabel="r_exact_all (cells)"),

@@ -198,6 +198,19 @@ def line_chart(
                      f'fill="{s["color"]}" opacity="0.13"/>')
 
     for s in series:
+        # `points`: a marker per value and no line. For a series whose x values
+        # repeat -- several training seeds at one coverage -- a polyline joins
+        # them in file order and draws a zigzag that means nothing.
+        if s.get("points"):
+            r = s.get("radius", 3.2)
+            for xv, v in zip(x, s["values"]):
+                if v is None or xv is None or (log_x and (not xv or xv <= 0)):
+                    continue
+                o.append(f'<circle cx="{px(xv):.1f}" cy="{py(v):.1f}" '
+                         f'r="{r}" fill="{s["color"]}" fill-opacity="0.75" '
+                         f'stroke="var(--surface)" stroke-width="0.8"/>')
+            continue
+
         seg, segs = [], []
         for xv, v in zip(x, s["values"]):
             if v is None or xv is None or (log_x and (not xv or xv <= 0)):
