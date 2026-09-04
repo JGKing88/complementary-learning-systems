@@ -360,9 +360,8 @@ def page_index(results: list[dict], src: str) -> str:
       line_chart(cx, basin_line, xlabel="training coverage (%)",
                  ylabel="r_exact_all (cells)"),
       note=f"K={rk}, s={rs}. Median over (world, env) of the radius within "
-           f"which EVERY cue retrieves the goal exactly -- a guarantee, not a "
-           f"95% rate. Cues are every cell in a scaffold disc around the goal, "
-           f"so this does not depend on the evaluation environment.")}
+           f"which EVERY cue retrieves the goal exactly. One point per "
+           f"training seed; the line joins the per-coverage medians.")}
 </div>"""
 
     rows = []
