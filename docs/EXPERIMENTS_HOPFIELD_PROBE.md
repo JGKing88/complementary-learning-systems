@@ -1809,11 +1809,52 @@ This is §10.9's gain ladder at its endpoint, and it is why that ladder has an
 interior optimum at all: raising gain trades angular error for retrieval, and
 gain 1e6 is that trade taken to where retrieval is perfect and angle is gone.
 
-> **Open.** The direction collapse is a property of the *readout*, not of the
-> memory. A basis built from something other than a finite difference of
-> binarised codes — the pre-nonlinearity activations, say — might recover `q`
-> while keeping the exact fixed point. Untested, and it would change the
-> production contract, so it is not a small experiment.
+#### Would *training* at gain 1e6 fix it? No, and not for a training reason
+
+`att0.5` is trained at `gain_end=100` with the `linspace(1, gain_end, epochs)`
+anneal, then arm B evaluates it at 1e6 — so the obvious objection is that the
+encoder was never fitted to a binary output. Two answers
+(`train_at_high_gain_check.py`), and the second one closes it.
+
+**It would train, but half-dead.** Gradient coverage through `tanh(g·u)`:
+
+| gain | 100 | 300 | 1000 | 1e4 | 1e6 |
+|---|---|---|---|---|---|
+| params with nonzero grad | 100% | 100% | 100% | 87% | **54.2%** |
+| max/mean \|grad\| | 43× | 47× | 51× | 147× | **1400×** |
+
+The anneal is the standard mitigation and is already there, but at
+`gain_end=1e6` the ramp is past 1e4 within ~1% of epochs, so nearly all of
+training sits in the half-dead regime.
+
+**But gain does not touch the sign pattern at all.** `sign(tanh(g·u)) =
+sign(u)` for every `g`, and the Hamming trajectory `H(k)/(k·H(1))` is
+bit-identical at gain 100 and 1e6 — 1.000, 0.975, 0.958, 0.938, 0.893, 0.743,
+0.431 for k = 1…64. Same code, same signs. Binarisation removes only the
+magnitudes, and the magnitudes are the entire difference: `‖Δk‖/(k‖Δ1‖)` is
+0.965 / 0.910 / 0.814 at k = 2/4/8 for gain 100 against 0.701 / 0.492 / 0.345
+at 1e6, the latter being `1/√k` to three decimals.
+
+**And `√k` is a hard ceiling for any binary code.** `‖Δk‖ = 2√(H(k)/D)`, and
+translation invariance caps `H(k) ≤ k·m`: each unit step flips `m` coordinates
+on average and they can at best *stay* flipped. So `‖Δk‖ ∝ √k` at best —
+ballistic growth is impossible for a binary code, trained or not — and the
+current one already sits at 89–100% of that cap out to k=16, i.e. coordinates
+essentially never flip back. There is no headroom for training to recover.
+
+Alignment above `1/√k` is buyable only by *slowing* `H(k)`. With `H(k) ∝ k^α`,
+`cos ∝ k^(−α/2)` while `‖Δk‖ ∝ k^(α/2)`: better bearing costs a `q` whose length
+says even less about distance, and costs discriminability between far cells,
+which is what the basin needs. **For a binary code those two are in direct
+opposition.** The continuous code escapes by walking the *same* sign trajectory
+with a norm that grows linearly on top of it — `cos·√k` reaches **1.97** at k=8,
+nearly double anything binary can reach.
+
+> **Open, and it is the readout not the encoder.** Gain is not the lever. A
+> basis built from something other than a finite difference of binarised codes
+> — the pre-nonlinearity activations, say — would let the memory see corners
+> while `q` still sees magnitudes, and is the only route to both. It changes the
+> production contract (`gram_schmidt_projection`, §6.2), so it is not a sweep.
 
 Raw: `probe_sat10`; the ladder page carries both as the tabs `10% β=1e6` and
 `10% gain=1e6, β=1e6`.
