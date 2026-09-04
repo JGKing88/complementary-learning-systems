@@ -168,12 +168,15 @@ def main() -> None:
 <h1>Saturating the recall</h1>
 <p class="lede">Same encoders, same encoder gains, one thing changed: the
 Hopfield's loop gain <code>&beta;</code> goes from each encoder's own gain to
-<b>1e6</b>. This was taken to be the knob deciding whether a stored pattern is a
-fixed point at all. <b>It is not.</b> Recalling a stored pattern from itself at
-<code>&beta;</code>&nbsp;=&nbsp;1e6 returns <code>cos_self</code> = 0.957, not 1
-&mdash; the fixed point is a hypercube corner <em>near</em> the memory, not the
-memory. So the basin falling here is not the price of an attractor; it is the
-price of a half-made one.</p>
+<b>1e6</b>. That does give a real attractor &mdash; the state holds its landing
+point to cosine <b>0.998</b> over 15 steps, where the unsaturated arm drifts to
+0.813. But the fixed point is a hypercube <em>corner</em>, 0.958 from the stored
+pattern, and it has to be: the saturated update's image is always a corner, so a
+continuous pattern can never be its own fixed point. Retrieval then scores that
+corner against <b>continuous</b> cells &mdash; 0.958 to the goal cell, about
+0.955 to its neighbours &mdash; and a <b>0.003 margin</b> decides it. The
+dynamics improve and the readout degrades, at the same time, for the same
+reason.</p>
 
 <div class="grid2">
 {card("Basin vs. coverage, saturated and not", basin_fig,
@@ -189,11 +192,12 @@ price of a half-made one.</p>
 </tr></thead><tbody>{trs}</tbody></table></div>
 
 <h2>The other half</h2>
-<p class="lede">A pattern is a fixed point when it sits on a hypercube corner,
-and that is the <em>encoder's</em> gain, not <code>&beta;</code>. At encoder
-gain 1e6 the output is <code>tanh(1e6&thinsp;z)</code> = <code>sign(z)</code>,
-so the pattern <b>is</b> a corner. The 10% encoder, four training seeds per arm,
-both arms on this page as their own tabs.</p>
+<p class="lede">To make the <em>pattern</em> the fixed point it has to sit on a
+corner itself, and that is the <em>encoder's</em> gain, not <code>&beta;</code>.
+At encoder gain 1e6 the output is <code>tanh(1e6&thinsp;z)</code> =
+<code>sign(z)</code>, so the pattern <b>is</b> a corner and the state-versus-bank
+mismatch above disappears. The 10% encoder, four training seeds per arm, both
+arms on this page as their own tabs.</p>
 <div class="card">{arms_table}</div>
 <p class="note">With both saturated the fixed point is exact, the goal cue never
 fails in 64 (world, env) pairs, <code>exact_hit</code> is the highest in the

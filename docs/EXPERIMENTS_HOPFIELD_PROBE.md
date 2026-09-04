@@ -48,10 +48,13 @@ envs, `steps` 1–15, `K` 1–20, four encoders.
 > clean decline to 1.25% with the bottom two rungs not separable. Reach,
 > direction and flow were never affected.
 >
-> **Saturation is a square, not a ladder** (§10.20). β = 1e6 alone never made
-> the pattern a fixed point — `cos_self` 0.957, a corner *near* the memory —
-> which is why the basin fell 27.0 → 24.5 and the goal cue started failing.
-> Saturating the **encoder** too puts `cos_self` at 1.0000 exactly: the basin
+> **Saturation is a square, not a ladder** (§10.20). β = 1e6 gives a real
+> attractor (the state holds its landing point to cos 0.998 over 15 steps) but
+> the fixed point is a hypercube *corner* 0.958 from the memory, not the memory
+> — so the basin, which asks whether the state is nearest the goal **cell**
+> among 12,853 continuous cells, falls 27.0 → 24.5 on a 0.003 margin even as
+> the dynamics improve. Saturating the **encoder** too puts `cos_self` at
+> 1.0000 exactly: the basin
 > recovers to 28.2, `exact_hit` hits 0.999, and the direction field is
 > **destroyed** — acc45 0.997 → 0.392, reach 0.987 → 0.103, because `q` is a
 > finite difference and `sign(z)` has no local derivative. Production's corner
@@ -1409,10 +1412,12 @@ which matters because gain 300 would drop res90 7 → 5, past the reach optimum.
 
 #### It is an attractor now
 
-> **Overstated; see §10.20.** What stops moving is the *decoded cell*. The state
-> itself does not land on the stored pattern: `cos_self` is 0.957, so the fixed
-> point is a corner near the memory rather than the memory. Saturating the
-> encoder as well takes `cos_self` to 1.0000 — and costs the direction field.
+> **This section stands. §10.20 sharpens one word.** The fixed point is real and
+> the state holds it — `cos(recall¹⁵(z), recall(z))` is 0.998 saturated against
+> 0.813 (min 0.46) unsaturated. What it is *not* is the stored pattern: the
+> saturated map's image is always a hypercube corner, so a continuous pattern
+> cannot be its own fixed point, and `cos_self` is capped at `cos_bin` = 0.956
+> by construction. The attractor is a corner 0.958 from the memory.
 
 Mean distance of the recalled state from the goal cell, K=5:
 
@@ -1623,12 +1628,14 @@ Page: https://claude.ai/code/artifact/d7a250c1-5044-4854-b453-61881bd518e7
 
 ### 10.19 Saturating the recall shrinks the basin
 
-> **The premise of this section is wrong; read §10.20 with it.** β = 1e6 alone
-> does *not* make the stored pattern a fixed point — `cos_self` is 0.957, not
-> 1 — so "the basin shrinks even though it is an attractor now" is not what
-> happened. The measurements below stand and the mechanism below survives; the
-> framing does not. §10.20 has the corrected version and the arm that settles
-> it.
+> **Read §10.20 with this.** Everything below is confirmed, and the apparent
+> paradox in the first sentence is a conflation rather than a result. β = 1e6
+> *does* make the network an attractor — the state holds its landing point to
+> cosine 0.998 over 15 steps. It does not make the **stored pattern** the fixed
+> point, which is structurally impossible under a map whose image is a
+> hypercube corner. The basin probe asks whether the state is nearest the goal
+> *cell*, not whether it stays put, so the two can and do move in opposite
+> directions. §10.20 has the arm that settles the mechanism.
 
 §10.16 showed saturation turns the 10% encoder into a genuine attractor: the
 recalled state lands on the goal and holds `goal_dist` 0.00 to s=15, where the
@@ -1675,19 +1682,40 @@ readout is asking for.
 Raw: `$CLS_RESULTS/hopfield_probe/20260827/probe_spliced_b1e06/`. Run with
 `splice_sat.sh`; the page carries it as its Saturated section.
 
-### 10.20 β alone was never an attractor, and the corner that is one has no gradient
+### 10.20 The attractor is a corner near the memory, and making it *be* the memory costs the gradient
 
 §10.19 asked how self-retrieval could get *worse* once the network is a real
-attractor. It could not, and the premise was the error: **it was not one.**
-§10.16 read "it is an attractor now" off the trajectory probe, which decodes the
-state to a cell and found `goal_dist` 0.00 out to s=15. The direct test — recall
-a stored pattern from itself — says `cos_self = 0.957`. Under β = 1e6 with the
-encoder at its own gain, the fixed point is a hypercube **corner near** the
-memory, not the memory.
+attractor. The attractor is real — that part of §10.16 stands, and an earlier
+draft of this section wrongly denied it. `att0.5-s43`, K=5, 40 stored patterns,
+one step versus fifteen:
 
-Making it the memory is §7's condition (a), and β cannot buy it — the *encoder*
-gain can. At gain 1e6 the output is `tanh(1e6·z)` = `sign(z)` to float
-precision, so the pattern **is** a corner and `cos_bin` = 1 exactly. Full suite,
+| | β = gain = 100 | β = 1e6 |
+|---|---|---|
+| `cos(recall(z), z)` | 0.9966 | 0.9582 |
+| `cos(recall(x), x)`, `x = recall(z)` | 0.9971 | **0.9989** |
+| `cos(recall¹⁵(z), x)` | **0.813** (min 0.46) | **0.9981** (min 0.989) |
+
+Saturated, the state lands in one step and holds it to s=15. Unsaturated it
+drifts most of the way off. That is an attractor by any useful definition.
+
+What it is **not** is the stored pattern. `cos_self = 0.958`, and that is
+structural, not a shortfall: the saturated update is `x ← normalize(sign(Wx))`,
+whose image is always a hypercube corner, so a *continuous* pattern can never be
+its own fixed point and `cos_self` is capped at `cos_bin` = 0.956 by
+construction. Reading that ceiling as "no attractor" is the error the earlier
+draft made — `fixed_point_probe` answers "is the **pattern** a fixed point", not
+"is there one".
+
+So there is no paradox in §10.19 to resolve, only a conflation. **The basin
+probe asks a different question than the trajectory probe.** Not "does the state
+stay put" but "is it nearest the goal cell among 12,853 *continuous* cells".
+The attractor sits 0.958 from the goal cell and about 0.955 from that cell's
+near neighbours, so a **0.003 margin** decides the argmax. The dynamics get
+better and the readout gets worse, at the same time, for the same reason.
+
+Making the pattern itself the fixed point is §7's condition (a), and β cannot
+buy it — the *encoder* gain can. At gain 1e6 the output is `tanh(1e6·z)` =
+`sign(z)` to float precision, so the pattern **is** a corner. Full suite,
 `att0.5`, four training seeds per arm, K=5, s=1 (`run_sat10.sh`):
 
 | arm | `cos_self` | basin p50 | self-fail | exact | acc45 | \|err\| | `qnorm` | cont reach |
@@ -1699,11 +1727,13 @@ precision, so the pattern **is** a corner and `cos_bin` = 1 exactly. Full suite,
 **The basin does not shrink under saturation. It shrinks under half of it.**
 With both saturated the fixed point is exact, the goal cue never fails in 64
 (world, env) pairs, `exact_hit` is 0.999 — the highest in the campaign — and the
-basin is 28.2 against 27.0 unsaturated. §10.19's *mechanism* therefore survives:
-what costs the argmax is the mismatch between a binarised state and a continuous
-bank, and binarising the bank too removes it. What has to be withdrawn is
-§10.19's framing. The lost basin was never the price of an attractor; it was the
-price of a half-made one.
+basin is 28.2 against 27.0 unsaturated. §10.19's *mechanism* is therefore
+confirmed rather than merely surviving: what costs the argmax is the mismatch
+between a binarised state and a continuous bank, and binarising the bank too
+removes it — the one manipulation that closes the gap is the one that fixes the
+basin. Nothing in §10.19 has to be withdrawn except its rhetorical framing: the
+lost basin is not the price of an attractor, it is the price of reading a
+binarised attractor against a continuous menu.
 
 **And the attractor costs the entire direction field.** acc45 falls 0.997 →
 0.392 against 0.25 chance, |err| 7.8° → 66.4°, `qnorm` halves, and continuous
