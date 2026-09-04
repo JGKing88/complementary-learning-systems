@@ -1829,6 +1829,43 @@ This is §10.9's gain ladder at its endpoint, and it is why that ladder has an
 interior optimum at all: raising gain trades angular error for retrieval, and
 gain 1e6 is that trade taken to where retrieval is perfect and angle is gone.
 
+#### Aside: there are two tanhs, and only one of them is inert
+
+Easy to conflate, and this document did. §1.3's "the tanh is numerically inert,
+so β is a no-op and recall is power iteration" is about the **recall** loop;
+§10.20's "binarising destroys the magnitudes" is about the **encoder**. Same
+function, arguments 650× apart (`two_tanhs_check.py`):
+
+| | argument | median at the production setting | saturated? |
+|---|---|---|---|
+| recall `tanh(β·Wx)` | `β·(Wx)` | **0.0033** at β=100 | no — `tanh(x)=x` to 5 dp |
+| encoder `tanh(g·u)` | `g·u` | **2.15** at gain=100 | yes — median \|tanh\| 0.973 |
+
+`W = s(ZᵀZ − diag)` with `s = 1/D` over unit patterns, so `(Wx)ᵢ ~ D^−1.5` =
+3.05e−5 at D=1024, and `β·(Wx)` = 3.05e−3 against 3.27e−3 measured. That
+`1/D^1.5` suppression is the whole reason the recall tanh is inert, and why
+saturating it needs `β ~ D^1.5` = 32768. The encoder's `u` is an MLP output with
+no such suppression — median `|u|` = 0.0215 — so it saturates at `gain ~ 47`,
+and production gain 100 is already past that:
+
+| gain | median \|g·u\| | coords with \|arg\|<1 | median \|tanh\| | `cos_bin` |
+|---|---|---|---|---|
+| 1 | 0.021 | 100% | 0.021 | 0.610 |
+| 10 | 0.215 | 93.4% | 0.211 | 0.760 |
+| **100** | **2.15** | **25.7%** | **0.973** | **0.953** |
+| 1000 | 21.5 | 2.6% | 1.0000 | 0.995 |
+| 1e6 | 21460 | 0.0% | 1.0000 | 1.0000 |
+
+So the production code is **already 95.3% of the way to its own corner**, and the
+perpendicular residual — about 30% of the norm, carried by the 26% of
+coordinates still in the graded band — is the entire direction field. Removing
+that last 4.7% of alignment takes reach 0.987 → 0.103.
+
+That reframes §10.9's gain ladder. It is not a smooth trade of angle against
+retrieval: gain 100 sits just past the saturation knee, where enough graded
+coordinates survive to keep `q` ballistic, and **the ladder's interior optimum
+is that knee**.
+
 #### Would *training* at gain 1e6 fix it? No, and not for a training reason
 
 `att0.5` is trained at `gain_end=100` with the `linspace(1, gain_end, epochs)`
