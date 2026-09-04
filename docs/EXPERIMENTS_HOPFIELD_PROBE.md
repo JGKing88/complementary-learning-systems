@@ -1844,7 +1844,30 @@ function, arguments 650× apart (`two_tanhs_check.py`):
 `W = s(ZᵀZ − diag)` with `s = 1/D` over unit patterns, so `(Wx)ᵢ ~ D^−1.5` =
 3.05e−5 at D=1024, and `β·(Wx)` = 3.05e−3 against 3.27e−3 measured. That
 `1/D^1.5` suppression is the whole reason the recall tanh is inert, and why
-saturating it needs `β ~ D^1.5` = 32768. The encoder's `u` is an MLP output with
+saturating it needs `β ~ D^1.5` = 32768.
+
+**And "inert" understates it — below the knee β cancels exactly.** With α=1 the
+update is `x ← normalize(tanh(β·Wx))`; in the tanh's linear range that is
+`normalize(β·Wx) = normalize(Wx)`, so β divides out of the normalisation
+altogether. Measured over seven decades (`beta_cancels_check.py`):
+
+| β | median \|β·Wx\| | cos to the β=1 output | `cos(s15, s1)` |
+|---|---|---|---|
+| 1 | 3.3e−5 | **1.000000** | 0.819 |
+| 10 | 3.3e−4 | **1.000000** | 0.819 |
+| 100 | 3.3e−3 | **1.000000** | 0.819 |
+| 1000 | 3.3e−2 | **1.000000** | 0.820 |
+| 1e4 | 0.33 | 0.999962 | 0.870 |
+| **32768 = D^1.5** | **1.08** | 0.997645 | **0.995** |
+| 1e5 | 3.3 | 0.979824 | 0.9998 |
+| 1e6 | 32.8 | 0.956614 | 0.998 |
+
+Identical output to six decimals across a factor of a thousand in β: not a weak
+knob, an absent one. The attractor switches on at exactly `β = D^1.5`, where the
+argument first reaches order 1 and `cos(s15, s1)` jumps 0.82 → 0.995 — the
+scaling argument landing on the nose. So β has a **dead zone spanning three-plus
+decades**, which is why it was never a tunable lever and why the saturated arms
+had to use 1e6 rather than something modest. The encoder's `u` is an MLP output with
 no such suppression — median `|u|` = 0.0215 — so it saturates at `gain ~ 47`,
 and production gain 100 is already past that:
 
