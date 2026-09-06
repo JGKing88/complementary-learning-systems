@@ -1042,63 +1042,43 @@ speed *cap* rather than navigation quality, so a `[0.5, 2.0]` arm would move
 `mean_steps` for a reason that is not about interleaving. It belongs in a wave
 of its own, scored on swept coverage.
 
-#### 9.1 LIVE — provisional, and D6's worry may have the sign backwards
+#### 9.1 LIVE — the κ anneal buys SPEED OF CONVERGENCE, not a better ceiling
 
-**Two arms running, `d0_base` at u100 and `d1_kanneal` at u150. Nothing here is
-a conclusion — it is 4 and 6 eval points, two of them matched, and this
-document's own guard is ≥4 eval points *and* a matched comparison before a
-directional claim.** Recorded now because the direction is unexpected.
+> **This section was wrong once and is corrected here.** An earlier revision
+> read the u75–u125 gap as "the anneal arm is 32–40% faster on exploit" and
+> suggested D6's worry had the sign backwards. **It was measuring a transient.**
+> `d0_base` was slower to break through and then caught up and briefly passed.
+> Finding 16 says exactly this — the exploit eval swings enormously at a fixed
+> seed and **no exploit conclusion is safe before ~500 updates** — and the
+> original reading was taken at u100.
+
+`steps@10`, matched on update index. The two arms are **bit-identical at u25**
+(0.583 / 59.1 / 0.171 / 0.152), which is the check that they differ by one knob:
 
 | u | `d0_base` succ@10 / steps@10 / swept@0 | `d1_kanneal` succ@10 / steps@10 / swept@0 |
 |---|---|---|
 | 25 | 0.583 / 59.1 / 0.171 | 0.583 / 59.1 / 0.171 |
 | 50 | 0.927 / 56.3 / 0.196 | 0.667 / 63.1 / 0.077 |
-| **75** | **0.844 / 54.0** / 0.171 | **0.969 / 36.6** / 0.112 |
-| **100** | **0.917 / 50.9** / 0.091 | **0.990 / 30.6** / 0.218 |
-| 125 | — | 0.979 / 26.8 / 0.223 |
-| 150 | — | 0.979 / 29.8 / 0.169 |
+| 75 | 0.844 / 54.0 / 0.171 | 0.969 / 36.6 / 0.112 |
+| 100 | 0.917 / 50.9 / 0.091 | 0.990 / 30.6 / 0.218 |
+| 125 | 1.000 / 34.4 / 0.199 | 0.979 / 26.8 / 0.223 |
+| **150** | **1.000 / 23.1 / 0.260** | 0.979 / 29.8 / 0.169 |
+| 175 | — | 0.990 / 23.5 / 0.236 |
+| 200 | — | 1.000 / 21.8 / 0.214 |
 
-**At u25 the two arms are bit-identical** (0.583 / 59.1 / 0.171 / 0.152), which
-is the check that they are actually matched: same seed, one knob.
+**Both arms reach the same exploit ceiling** — 1.000 success at ~22–23 steps —
+and the anneal arm gets there roughly 25–50 updates sooner. At u150 the
+baseline is *ahead* (23.1 against 29.8). The ordering flips twice across six
+matched points, which is what a 30-point eval swing looks like.
 
-**The exploit half is where the difference is, and it is large.** `steps@10`
-falls 59.1 → 50.9 on the baseline over 75 updates (−14%) and 59.1 → 26.8 on the
-anneal arm over 100 (−55%). At the two matched points the anneal arm is **32%
-and 40% faster**.
+So the defensible statement is: **the κ anneal changes the rate of convergence
+on the exploit half and not its level, and by u150 the difference is inside the
+eval's own variability.** Whether it costs or buys anything by u1000 is still
+open, and the ramp does not complete until u400.
 
-**The explore half is not readable.** Both oscillate between 0.08 and 0.24 and
-the sign flips between the matched points (u75 favours the baseline, u100 the
-anneal arm). Nothing to say yet.
-
-**Why the direction is a surprise, and the reading that would explain it.** D6
-was framed as a risk that lifting the cap would cost exploit the unlock §17.9
-measured. The data so far points the other way, and §9.8.1 is why: on a
-converging exploit arm **κ grows with training** — ≈38 at u300, ≈93 at u900,
-i.e. `log κ` ≈ 3.6 then 4.5. `LOG_KAPPA_MAX = 2.5` caps κ at **12.2**. So
-holding 2.5 fixed does not merely protect the early policy, it **caps the
-converged one**, and the anneal releases a ceiling the policy is pressing
-against.
-
-Both facts are consistent: §17.9 measured that the *default* 5.0 is too loose
-**early**, and §9.8.1 that a converged exploiter wants to be sharper than 2.5
-allows. Wanting the cap early and gone later is exactly what an anneal is, and
-D6's proposed refinement — trigger the ramp on exploit's first sustained
-success rather than on an update index — becomes more attractive rather than
-less if this holds.
-
-**What would overturn it:** the baseline catching up by u400–600 (it is only
-slower, not stuck), or the anneal arm's explore half degrading once the ramp
-completes at u400. Both are inside the run.
-
-> **UPDATE, u125 — the first falsifier is already firing.** `d0_base` reached
-> **1.000 / 1.000 success at 34.4 steps**, up from 50.9 at u100, so the matched
-> gap has gone **32% (u75) → 40% (u100) → 22% (u125)** and the baseline now has
-> the *better* success rate (1.000 against 0.979). The anneal arm is still
-> ahead on steps and got there sooner, but "the baseline catches up" is the
-> live hypothesis, not a hypothetical one. This is precisely the behaviour
-> finding 16 warns about — the exploit eval swings enormously at a fixed seed
-> and **no exploit conclusion is safe before ~500 updates.** Read §9.1 as a
-> record of what the series looked like early, not as a result.
+**§9.1.1 below is unaffected by this correction** and is worth reading with it:
+it is a *within-window* null on `follow_q` and `regime_gap`, so it says what the
+anneal is not doing regardless of which arm is ahead on any given eval.
 
 ##### 9.1.1 WHICH LINK moved — a null on `follow_q` with a 40% effect on steps
 
