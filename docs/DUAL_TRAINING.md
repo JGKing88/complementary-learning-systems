@@ -1269,6 +1269,58 @@ a 1200-update run, so the honest statement is that **the corner trap is open in
 both arms at u125 and neither κ knob addresses it**; whether training closes it
 is what the rest of the run answers.
 
+##### 9.1.4 Training does NOT close the corner trap — and `regime_gap` does not predict it
+
+`d1_kanneal` at five checkpoints across training, all rolled in **one process**
+on identical envs, starts and memory contents, at ten distractors:
+
+| u | swept | speed | **swept_eff** | **frac collapsed** | **chase in tail** | chase in body | `regime_gap` |
+|---|---|---|---|---|---|---|---|
+| 50 | 0.168 | 0.480 | 0.394 | *0.826* | *−0.116* | *−0.204* | 0.161 |
+| 100 | 0.398 | 0.695 | 0.745 | 0.118 | 0.444 | 0.039 | 0.361 |
+| 150 | 0.348 | 0.642 | 0.673 | 0.194 | 0.446 | 0.204 | 0.558 |
+| 200 | 0.432 | 0.750 | 0.762 | 0.118 | 0.483 | −0.014 | 0.624 |
+| 250 | 0.491 | 0.810 | **0.828** | **0.097** | **0.552** | 0.038 | **0.699** |
+| `p20_e` | 0.628 | 0.963 | **0.974** | **0.000** | — | 0.014 | — |
+
+*(u50 is degenerate and excluded from every statement below: the policy is
+barely moving at speed 0.48, so 83% of episodes fall under any threshold and
+`chase_q` is negative because there is no coherent motion to correlate.)*
+
+**Two things move and one does not.**
+
+*Moves:* **swept efficiency climbs steadily** — 0.745 → 0.673 → 0.762 → **0.828**
+against the specialist's 0.974. The body of the distribution is genuinely
+learning to explore.
+
+*Moves:* **`regime_gap` nearly doubles**, 0.361 → **0.699** (×1.94).
+
+*Does not move:* **the chasing tail.** 0.118 → 0.194 → 0.118 → **0.097**.
+`corr(regime_gap, frac collapsed) = −0.167` over those four points — nothing.
+
+> **So regime discrimination improving by a factor of two buys essentially
+> nothing on the corner trap.** That is a partial falsifier for §6's framing
+> and for §10's first falsifier, and it was the point of running this.
+
+**And the collapsed episodes chase *harder* as the gap grows**:
+`chase_q` in the tail goes 0.444 → **0.552**, `corr(regime_gap, chase in tail)
+= +0.794`. The population that fails is becoming a purer instance of the
+failure while the average gets better.
+
+**Which is the mixture lesson for the fifth time.** `regime_gap` is a *mean over
+rollouts*; it can double while a tenth of episodes get worse, and here it does
+exactly that. A metric panel that watched `regime_gap` alone would report steady
+improvement through a failure that is not improving at all.
+
+**The caveat, stated before the numbers were read.** This is *within one run*
+across training, so update index drives both quantities:
+`corr(update, regime_gap) = +0.970`. A "gap up, tail down" result would have
+been uninterpretable. What makes the *negative* readable is precisely that the
+tail did **not** follow the gap despite the confound pushing them together —
+the confound works against the finding rather than for it. The unconfounded
+test is still between arms at a matched update, which needs `d1_persr` and
+`d1_ms3`.
+
 ### Wave 2 — the regime signal
 
 Gated on wave 1, because §27 is a warning: the aux head proved the information
