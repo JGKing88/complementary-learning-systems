@@ -1090,6 +1090,16 @@ less if this holds.
 slower, not stuck), or the anneal arm's explore half degrading once the ramp
 completes at u400. Both are inside the run.
 
+> **UPDATE, u125 — the first falsifier is already firing.** `d0_base` reached
+> **1.000 / 1.000 success at 34.4 steps**, up from 50.9 at u100, so the matched
+> gap has gone **32% (u75) → 40% (u100) → 22% (u125)** and the baseline now has
+> the *better* success rate (1.000 against 0.979). The anneal arm is still
+> ahead on steps and got there sooner, but "the baseline catches up" is the
+> live hypothesis, not a hypothetical one. This is precisely the behaviour
+> finding 16 warns about — the exploit eval swings enormously at a fixed seed
+> and **no exploit conclusion is safe before ~500 updates.** Read §9.1 as a
+> record of what the series looked like early, not as a result.
+
 ##### 9.1.1 WHICH LINK moved — a null on `follow_q` with a 40% effect on steps
 
 The per-regime diagnostics answer something the eval metrics cannot: the arms
