@@ -574,11 +574,42 @@ the instrument for this population — and D2's prediction on record is that
 section adds to the prediction is **where to look**: not at the mean of any of
 them, but at the tail.
 
-**One open comparison.** Both explore specialists reported `chase_q ≈ 0`, and
-`p5_e`'s coverage at ten distractors equalled its coverage at zero — so the
-explore-side distractor problem is supposed to be *solved* in a specialist. If
-`p20_e` at d = 10 shows no collapsed tail, this failure belongs specifically to
-the combined model and is interference, not a property of the task.
+**The control settles it: this is INTERFERENCE, not the task.** `p20_e`, same
+protocol, same 144 trials, same reduction:
+
+| | mean | sd | p5 | p50 | p95 | **frac < 0.35** |
+|---|---|---|---|---|---|---|
+| `p20_e` d = 0 | 0.625 | 0.046 | 0.545 | 0.632 | 0.687 | **0.000** |
+| `p20_e` d = 10 | 0.631 | 0.041 | **0.562** | 0.638 | 0.686 | **0.000** |
+| `w6_pers` d = 0 | 0.671 | 0.092 | 0.471 | 0.688 | 0.778 | **0.000** |
+| `w6_pers` d = 10 | 0.608 | 0.199 | **0.163** | 0.668 | 0.820 | **0.146** |
+
+**The explore specialist is completely flat in distractors** — its mean is
+*marginally higher* at ten (0.631 against 0.625), its spread *narrower* (0.041
+against 0.046), its p5 *higher* (0.562 against 0.545), and it has **not one
+collapsed episode at either level**. That is the behavioural counterpart of the
+`chase_q ≈ 0.000` both explore arms report, and it reproduces `p5_e`'s phase-1
+result that coverage at ten distractors equals coverage at zero.
+
+So the 15% tail is not something the task does to any policy. **It is what
+training on exploit does to the explore half**, and it is D2 measured cleanly
+for the first time:
+
+> A specialist that has never learned to follow `q` cannot be lured by a
+> phantom. Interleaving installs the following, and the following is what
+> drives the agent into the wall on one episode in seven.
+
+**This sharpens what wave 1 has to show.** The question is no longer whether the
+corner trap exists but whether it can be *held at zero* while exploit still
+converges. `pin_frac` and `edge_frac` on the **explore** rollouts are the live
+readout, and the target is the specialist's number, not an improvement on
+`w6_pers`.
+
+**A caveat on the size of the tail.** `w6_pers` is a phase-1 model with no
+`[0.5, 1.0]` action bound, running at 1.40. A faster policy reaches a wall
+sooner and has more of its episode left to spend on it, so 14.6% is this
+model's number and not a constant of interleaving. `d0_base` measures it at
+matched speed.
 
 ---
 
