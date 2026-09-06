@@ -1488,8 +1488,17 @@ case "$VARIANT" in
     HOPFIELD_BETA=100
     # empty_frac=0.5 is phase 1's measured optimum (tri finding 13: 0.5->0.7
     # moves ALONG a coverage/steps frontier, +28% coverage for -41% steps,
-    # never outward). 1200 updates fits the 6 h wall at ~12.6 s/update with
-    # margin; CKPT_EVERY=25 so a TIMEOUT still leaves a usable series.
+    # never outward).
+    #
+    # TIMING, measured on the interleaved smoke (job 22132143, node4200):
+    # ~20 s/update, NOT the 12.6 s the tri doc quotes for phase-1 shape --
+    # hidden_size 1024 and the extra input channels cost the difference. So
+    # 1200 updates does NOT fit the 6 h wall; expect TIMEOUT near u1000-1100,
+    # and on a slower node earlier. That is deliberate and is what
+    # CKPT_EVERY=25 is for: a TIMEOUT is a normal outcome here (launcher
+    # header), and the arms are compared at their largest COMMON checkpoint
+    # rather than at whatever update each happened to die on. Sizing to 800 to
+    # guarantee completion would throw away the run on a fast node.
     SCHEDULE=${SCHEDULE:-'interleave:1200,empty_frac=0.5'}
     ENVS_PER_WORLD=20; BATCH_ENVS=64
     EPSILON_EXPLORE=0.1; GOAL_REWARD=2.0

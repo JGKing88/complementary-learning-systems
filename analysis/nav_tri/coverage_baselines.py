@@ -227,6 +227,76 @@ def billiard_cells_per_step(mag: float, size: int, steps: int,
     return _BILLIARD_CACHE[key]
 
 
+def swept_billiard(mag: float, size: int, steps: int, radius: float,
+                   trials: int = 64) -> float:
+    """`swept_coverage` a perfect billiard achieves at this step magnitude.
+
+    The swept analogue of `billiard_cells_per_step`, and it exists to solve a
+    specific problem: **swept numbers from different worlds are not directly
+    comparable, but their ratio against this reference is.** A billiard in an
+    empty box does not depend on the wall code or the encoder, so two models
+    trained on different encoders -- which therefore cannot be rolled on the
+    same trajectories at all -- can still be put on one axis by dividing each
+    by the billiard at its OWN realized speed.
+
+    That division is also the only honest way to read a swept number, because
+    §19.2 established that swept coverage is monotone in speed: a model that
+    sweeps more because it moves faster has not explored better.
+
+    **This reference does NOT reproduce the table in `swept.py`'s docstring,
+    and the discrepancy is pre-existing.** Measured at 256 trials, size 20,
+    r=1.0, 200 steps:
+
+        speed | cell: here / swept.py | swept: here / swept.py
+        0.50  |  0.241 / 0.246        |  0.416 / 0.391
+        1.00  |  0.375 / 0.383        |  0.626 / 0.633
+        2.00  |  0.361 / 0.384        |  0.783 / 0.839
+        3.00  |  0.340 / 0.397        |  0.887 / 0.881
+
+    The CELL column disagrees too, and the gap grows with speed (-0.005,
+    -0.008, -0.023, -0.057). So this is a difference between two *billiard
+    implementations*, not a bug in the swept reduction: `_rollout`'s reflection
+    is not the one that produced `swept.py`'s numbers, and it loses ground
+    at long strides where corner handling matters. It does not shrink with
+    more trials (checked at 64 / 256 / 1024), so it is systematic, not noise.
+
+    **Consequence worth knowing, because it is live:**
+    `behavior_probe.strategy_efficiency` already divides by
+    `billiard_cells_per_step`, i.e. by THIS billiard. At speed 3 that
+    reference is 14% low, so an efficiency computed for a fast policy is
+    inflated by about that much. At `p20_e`'s realized 0.96 the gap is 2% and
+    its 1.038 stands.
+
+    Which one is right is not settled here. What matters for the job this
+    function exists for -- putting models from different worlds on one axis --
+    is that ONE reference is used consistently, and using this one keeps the
+    swept efficiency consistent with the cell efficiency the probe already
+    reports. Ratios are safe; the absolute value should be quoted with the
+    implementation named.
+
+    Cached per (magnitude, size, steps, radius).
+    """
+    from hopfield_nav.evaluation.swept import SweptArea
+
+    key = ("swept", round(float(mag), 3), size, steps, round(float(radius), 3),
+           trials)
+    if key not in _BILLIARD_CACHE:
+        rng = np.random.default_rng(0)
+        track = _rollout(_persistent(rng, trials, 0.0), n=trials, steps=steps,
+                         size=size, mag=max(float(mag), 1e-6), eps=0.0,
+                         sigma_a=0.0, rng=rng, reflect=True)
+        track = np.asarray(track)
+        # `_rollout` returns (steps, n, 2) or (n, steps, 2) depending on the
+        # caller; normalise to (n, steps, 2) by putting `trials` first.
+        if track.shape[0] != trials and track.shape[1] == trials:
+            track = np.transpose(track, (1, 0, 2))
+        sa = SweptArea(size, radius, track.shape[0])
+        for t in range(track.shape[1]):
+            sa.add(track[:, t])
+        _BILLIARD_CACHE[key] = float(sa.result().per_trial.mean())
+    return _BILLIARD_CACHE[key]
+
+
 def _serpentine_track(*, n, steps, size, rng):
     """The lawnmower: the ceiling, run as a track so it scores identically.
 

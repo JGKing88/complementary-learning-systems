@@ -54,6 +54,13 @@ def main() -> None:
                    help="goal_radius; swept area is defined against it, so it "
                         "must match the value the arms were scored under.")
     p.add_argument("--at_step", type=int, default=None)
+    p.add_argument("--vs_billiard", action="store_true",
+                   help="also report the billiard swept at each model's OWN "
+                        "realized speed, and the ratio. Use this whenever "
+                        "comparing models that do not share a world -- two "
+                        "arms on different encoders cannot be rolled on the "
+                        "same trajectories, but both can be divided by a "
+                        "billiard, which does not depend on the encoder.")
     p.add_argument("--labels", nargs="*", default=None)
     p.add_argument("--out", default=None)
     a = p.parse_args()
@@ -61,16 +68,50 @@ def main() -> None:
     d = json.load(open(a.json))
     labels = a.labels or d["labels"]
     rows = {}
-    print("  %-28s %8s %8s %8s %8s"
-          % ("checkpoint", "steps", "swept", "sd", "union"))
+    hdr = ("  %-24s %6s %7s %7s %7s %7s"
+           % ("checkpoint", "steps", "swept", "sd", "union", "speed"))
+    if a.vs_billiard:
+        hdr += " %8s %8s" % ("bill@sp", "swept_eff")
+    print(hdr)
     for lab in labels:
         paths = [t["by_ckpt"][lab]["path"] for t in d["trials"]]
         per, union, T = swept_for(paths, a.size, a.radius, a.at_step)
+        # Realized speed, from the same truncated paths the swept used, so the
+        # billiard reference is matched to what was actually scored.
+        arr = [np.asarray(p, dtype=np.float64)[:T] for p in paths]
+        speed = float(np.mean([
+            np.linalg.norm(np.diff(p, axis=0), axis=-1).mean() for p in arr]))
         rows[lab] = {"swept": float(per.mean()), "sd": float(per.std()),
-                     "union": float(union), "n": len(paths), "steps": T}
-        print("  %-28s %8d %8.3f %8.3f %8.3f"
-              % (lab[-28:], T, per.mean(), per.std(), union))
+                     "union": float(union), "n": len(paths), "steps": T,
+                     "realized_speed": speed}
+        line = ("  %-24s %6d %7.3f %7.3f %7.3f %7.3f"
+                % (lab[-24:], T, per.mean(), per.std(), union, speed))
+        if a.vs_billiard:
+            from analysis.nav_tri.coverage_baselines import swept_billiard
+            ref = swept_billiard(speed, a.size, T, a.radius)
+            eff = float(per.mean()) / max(ref, 1e-9)
+            rows[lab]["billiard_at_speed"] = ref
+            rows[lab]["swept_efficiency"] = eff
+            line += " %8.3f %8.3f" % (ref, eff)
+        print(line)
     print("  swept is CUMULATIVE, so the step count is part of the number.")
+    if a.vs_billiard:
+        print("  swept_eff = swept / billiard at THIS model's own realized "
+              "speed.\n"
+              "  It exists because swept is monotone in speed (§19.2), so a "
+              "model that\n"
+              "  sweeps more by moving faster has not explored better -- and "
+              "because two\n"
+              "  models trained on different encoders cannot share "
+              "trajectories at all,\n"
+              "  while a billiard in an empty box does not depend on the "
+              "encoder.\n"
+              "  The reference is coverage_baselines' billiard, which differs "
+              "from the\n"
+              "  table in swept.py's docstring; see swept_billiard's "
+              "docstring. Ratios\n"
+              "  against one reference are safe; the absolute is "
+              "implementation-named.")
     if a.out:
         with open(a.out, "w") as fh:
             json.dump(rows, fh, indent=2)

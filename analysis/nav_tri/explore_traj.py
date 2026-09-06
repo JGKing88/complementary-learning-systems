@@ -300,12 +300,17 @@ def collect(args):
                 # state-dependent kappa is actually USED to switch between a
                 # ballistic and a tortuous mode (intermittent search) or just
                 # settles on one scale.
-                if "circ_sd" in rec:
-                    st["circ_sd"] = [round(float(v), 5)
-                                     for v in rec["circ_sd"][:, b]]
-                if "mu_norm" in rec:
-                    st["mu_norm"] = [round(float(v), 4)
-                                     for v in rec["mu_norm"][:, b]]
+                # `in rec` is NOT the right test and cost a job: the probe
+                # initialises these keys unconditionally and only FILLS them
+                # under a polar head, so a Cartesian checkpoint leaves an
+                # EMPTY list -- present, but 1-D -- and a two-index slice of
+                # it raises IndexError. Every phase-1 model is Cartesian, so
+                # this made explore_traj unable to score any of them.
+                # `behavior_probe` guards the same arrays on `.size`; match it.
+                for key, prec in (("circ_sd", 5), ("mu_norm", 4)):
+                    arr = np.asarray(rec.get(key, []))
+                    if arr.ndim == 2 and arr.size:
+                        st[key] = [round(float(v), prec) for v in arr[:, b]]
                 st["path"] = [[round(float(p[0]), 3), round(float(p[1]), 3)]
                               for p in rec["pos_f"][:, b]]
                 row["by_ckpt"][lab] = st
