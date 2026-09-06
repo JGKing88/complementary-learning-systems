@@ -120,10 +120,15 @@ def batched_navigation_trials(
             env_offset)
         embeddings = torch.from_numpy(embeddings_np).float().to(device)
 
+        _chart = None
         if cfg.agent.input_hopfield_signal:
-            sig_t, q, _mask, _W = signal_ops.hopfield_signal_at(
+            _chart_on = getattr(cfg.agent, "input_chart_frac", False)
+            _o = signal_ops.hopfield_signal_at(
                 vectorhash, cfg, embeddings_np, embeddings, positions,
-                env_offset, hopfields, False, device, embeddings.shape[1])
+                env_offset, hopfields, False, device, embeddings.shape[1],
+                return_chart=_chart_on)
+            sig_t, q, _mask, _W = _o[:4]
+            _chart = _o[4] if _chart_on else None
             if (cfg.agent.input_hopfield_raw
                     and cfg.agent.hopfield_mode != "discrete"):
                 hop_signal = torch.from_numpy(q.astype(np.float32)).to(device)
@@ -132,6 +137,12 @@ def batched_navigation_trials(
         else:
             hop_signal = torch.zeros(B, signal_dim, device=device)
 
+        # 7.7.2's channel. Supplied only when enabled: build_policy_input is
+        # strict, so an enabled-but-unsupplied channel raises there rather than
+        # shifting the layout silently.
+        _chart_v = (
+            torch.from_numpy(_chart).float().to(device).unsqueeze(-1)
+            if _chart is not None else None)
         values = {
             "current_reward": torch.from_numpy(current_reward).to(device).unsqueeze(1),
             "prev_reward": prev_reward_t,
@@ -144,6 +155,8 @@ def batched_navigation_trials(
             # goal_in_memory=True on this path.
             "goal_in_memory": torch.ones(B, 1, device=device),
         }
+        if _chart_v is not None:
+            values["chart_frac"] = _chart_v
         if cfg.agent.input_sensory:
             values["sensory"] = torch.from_numpy(
                 vec.obs_batch()).float().to(device)
@@ -300,10 +313,15 @@ def batched_exploration_trials(
             env_offset)
         embeddings = torch.from_numpy(embeddings_np).float().to(device)
 
+        _chart = None
         if cfg.agent.input_hopfield_signal:
-            sig_t, q, _mask, _W = signal_ops.hopfield_signal_at(
+            _chart_on = getattr(cfg.agent, "input_chart_frac", False)
+            _o = signal_ops.hopfield_signal_at(
                 vectorhash, cfg, embeddings_np, embeddings, positions,
-                env_offset, hopfields, False, device, embeddings.shape[1])
+                env_offset, hopfields, False, device, embeddings.shape[1],
+                return_chart=_chart_on)
+            sig_t, q, _mask, _W = _o[:4]
+            _chart = _o[4] if _chart_on else None
             if (cfg.agent.input_hopfield_raw
                     and cfg.agent.hopfield_mode != "discrete"):
                 hop_signal = torch.from_numpy(q.astype(np.float32)).to(device)
@@ -312,6 +330,12 @@ def batched_exploration_trials(
         else:
             hop_signal = torch.zeros(B, signal_dim, device=device)
 
+        # 7.7.2's channel. Supplied only when enabled: build_policy_input is
+        # strict, so an enabled-but-unsupplied channel raises there rather than
+        # shifting the layout silently.
+        _chart_v = (
+            torch.from_numpy(_chart).float().to(device).unsqueeze(-1)
+            if _chart is not None else None)
         values = {
             "current_reward": torch.from_numpy(current_reward).to(device).unsqueeze(1),
             "prev_reward": prev_reward_t,
@@ -323,6 +347,8 @@ def batched_exploration_trials(
             # for the whole trial.
             "goal_in_memory": torch.zeros(B, 1, device=device),
         }
+        if _chart_v is not None:
+            values["chart_frac"] = _chart_v
         if cfg.agent.input_sensory:
             values["sensory"] = torch.from_numpy(
                 vec.obs_batch()).float().to(device)

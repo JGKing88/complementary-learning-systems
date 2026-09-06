@@ -137,6 +137,7 @@ def agent_step(
             return torch.from_numpy(q.astype(np.float32)).to(device)
         return sig
 
+    _chart = None
     if not cfg.agent.input_hopfield_signal:
         hop_signal = torch.zeros(1, signal_dim, device=device)
     elif use_oracle:
@@ -148,14 +149,24 @@ def agent_step(
             torch.from_numpy(sig_np).float().to(device), q)
     elif hopfield.num_memories > 0:
         # B=1 through the same batched implementation the collector uses.
-        sig_t, q, _mask, _W = signal_ops.hopfield_signal_at(
+        _chart_on = getattr(cfg.agent, "input_chart_frac", False)
+        _o = signal_ops.hopfield_signal_at(
             vectorhash, cfg, embeddings_np, embeddings, pos_arr, env_offset,
             hopfield, True, device, embeddings.shape[1],
+            return_chart=_chart_on,
         )
+        sig_t, q, _mask, _W = _o[:4]
+        _chart = _o[4] if _chart_on else None
         hop_signal = _to_channel(sig_t, q)
     else:
         hop_signal = torch.zeros(1, signal_dim, device=device)
 
+    # 7.7.2's channel. Supplied only when enabled: build_policy_input is
+    # strict, so an enabled-but-unsupplied channel raises there rather than
+    # shifting the layout silently.
+    _chart_v = (
+        torch.from_numpy(_chart).float().to(device).unsqueeze(-1)
+        if _chart is not None else None)
     values = {
         "current_reward": current_reward,
         "prev_reward": prev_reward,
@@ -170,6 +181,8 @@ def agent_step(
         "goal_in_memory": torch.tensor(
             [[1.0 if goal_in_memory else 0.0]], device=device),
     }
+    if _chart_v is not None:
+        values["chart_frac"] = _chart_v
     if cfg.agent.input_sensory:
         # env.obs() reads at the env's own heading; pos_tuple IS env's current
         # cell, so this was the same call before headings existed and is the

@@ -234,6 +234,11 @@ class RolloutCollector:
         _diag = (RegimeDiagnostics(B)
                  if cfg.agent.movement_mode == "continuous" else None)
 
+        # §7.7.2's channel: the fraction of the 1024-dim recall the local 2-D
+        # chart explains. Resolved once so the two input-assembly sites and
+        # the signal call cannot disagree about whether it is on.
+        chart_on = getattr(cfg.agent, "input_chart_frac", False)
+
         # Novelty bonus: track per-rollout visited cells (B, size, size) bool.
         # +novelty_reward on first visit during the explore phase; revisits get 0.
         # BC mode also needs this buffer for the novelty-action teacher.
@@ -308,11 +313,18 @@ class RolloutCollector:
                     recompute_mask = invalidated_envs.copy()
                 invalidated_envs[:] = False
 
-                hopfield_signal, q_full, memory_mask, new_W = self._hopfield_signal_at(
+                _sig_out = self._hopfield_signal_at(
                     embeddings_np, embeddings, positions, env_offset,
                     hopfields, shared_hopfield, signal_dim,
                     cached_W=cached_W, recompute_mask=recompute_mask,
+                    return_chart=chart_on,
                 )
+                if chart_on:
+                    hopfield_signal, q_full, memory_mask, new_W, chart_np = \
+                        _sig_out
+                else:
+                    hopfield_signal, q_full, memory_mask, new_W = _sig_out
+                    chart_np = None
                 multistep_q = self._compute_multistep_q(
                     embeddings_np, embeddings, hopfields, shared_hopfield,
                     cached_W if new_W is None else new_W,
@@ -513,6 +525,10 @@ class RolloutCollector:
                         # straight to the policy instead. §27.5.
                         values["visited"] = _vt
                     _last_vis = _vt
+                if chart_on:
+                    values["chart_frac"] = torch.from_numpy(
+                        chart_np).float().to(self.device).unsqueeze(-1)
+                    _last_chart = values["chart_frac"]
 
                 rnn_input = channels.build_policy_input(
                     input_specs, values, batch_size=B,
@@ -872,6 +888,14 @@ class RolloutCollector:
                 # The bootstrap value is read at the truncation state; the
                 # last computed vector is the right one for it.
                 values_final["visited"] = _last_vis
+            if chart_on:
+                _, _, _, _, _cf = self._hopfield_signal_at(
+                    embeddings_np, embeddings, positions, env_offset,
+                    hopfields, shared_hopfield, signal_dim,
+                    cached_W=cached_W, return_chart=True,
+                )
+                values_final["chart_frac"] = torch.from_numpy(
+                    _cf).float().to(self.device).unsqueeze(-1)
             final_input = channels.build_policy_input(
                 input_specs, values_final, batch_size=B,
             ).unsqueeze(1)
@@ -924,7 +948,8 @@ class RolloutCollector:
         signal_dim: int,
         cached_W: np.ndarray | None = None,
         recompute_mask: np.ndarray | None = None,
-    ) -> tuple[torch.Tensor, np.ndarray, torch.Tensor, np.ndarray | None]:
+        return_chart: bool = False,
+    ) -> tuple:
         """Recall + Gram-Schmidt projection for a batch of states.
 
         ``signal_dim`` is accepted for call-site symmetry and derived from the
@@ -934,6 +959,7 @@ class RolloutCollector:
             self.vectorhash, self.cfg, embeddings_np, embeddings, positions,
             env_offset, hopfields, shared_hopfield, self.device,
             self.embed_dim, cached_W=cached_W, recompute_mask=recompute_mask,
+            return_chart=return_chart,
         )
 
     def _compute_multistep_q(
