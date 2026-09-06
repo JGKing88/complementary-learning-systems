@@ -1153,6 +1153,61 @@ It is also the number wave 1 should ultimately be judged on for the explore
 half, alongside the collapsed-tail fraction of §5.3.2: **the target is the
 specialist's 0.126, and neither arm is near it yet.**
 
+##### 9.1.3 D2 caught live in wave 1 — and the d=0/d=10 dissociation is exact
+
+Both u125 checkpoints rolled against `p20_e` on **matched trajectories** (same
+w52 encoder, so `explore_traj` puts all three in one process on identical envs,
+starts and memory contents — the comparison wave 0.2 could not have). Sampled,
+144 trials, threshold = ½ × billiard at each model's own speed:
+
+| | n_dist | swept | speed | **swept_eff** | **frac collapsed** | **chase in tail** | chase in body |
+|---|---|---|---|---|---|---|---|
+| `d0_base` u125 | 0 | 0.375 | 0.702 | 0.692 | 0.083 | **0.000** | 0.000 |
+| `d1_kanneal` u125 | 0 | 0.460 | 0.746 | 0.811 | 0.028 | **0.000** | 0.000 |
+| `p20_e` u700 | 0 | 0.636 | 0.962 | **0.982** | **0.000** | — | 0.000 |
+| `d0_base` u125 | **10** | 0.422 | 0.711 | 0.770 | **0.090** | **0.487** | −0.018 |
+| `d1_kanneal` u125 | **10** | 0.452 | 0.729 | 0.805 | **0.083** | **0.522** | 0.040 |
+| `p20_e` u700 | **10** | 0.639 | 0.963 | **0.990** | **0.000** | — | 0.014 |
+
+**The dissociation §5.3.4 predicted is exact.** The same arms, the same
+checkpoints, the same reduction:
+
+* **at d = 0** they collapse a little (2.8–8.3%) and the tail chases at
+  **exactly 0.000** — early-training motor failure, not the corner trap;
+* **at d = 10** they collapse about as often (8.3–9.0%) and the tail chases at
+  **0.487–0.522** against a body chasing at −0.018 to 0.040 — a **12–25×
+  separation**;
+* **`p20_e` has zero collapsed episodes at either level**, and its body chase is
+  0.000 / 0.014.
+
+So D2 is not a phase-1 artefact and it is not something the phase-2 config
+avoided. It is present in the very first interleaved run this phase has, at
+u125, in both arms, at essentially the same rate — **and the κ anneal does not
+touch it (0.090 vs 0.083)**, which is what should be expected: κ is a
+directional-precision knob and this is a regime-detection failure.
+
+**The threshold that made this readable, and the one that hid it.** A first
+pass used an absolute cut of 0.35, which flagged **37.5%** of `d0_base`'s d = 0
+episodes — every one with `chase_q` exactly 0.000. That arm runs at realized
+speed 0.702, where a billiard sweeps only 0.542, so 0.35 was 65% of *chance*:
+the cut was labelling a slow policy as a broken one. Against the billiard at
+each model's own speed the same data reads 8.3%, and the real signal at d = 10
+stops being buried in it.
+
+That is the third instance in this document of the same error class — a
+statistic compared against a constant when its baseline moves (`follow_q`
+without `align_true`, `edge_frac` against zero when uniform is 0.19, and now
+this). **The §5.3.2 headline survives the change**: `w6_pers` at d = 10 reads
+0.160 under the speed-relative rule against 0.146 absolute, with the chase
+separation intact (0.263 vs 0.119).
+
+**Where this leaves wave 1.** The explore half of both arms is well short of the
+specialist on every axis — swept 0.42–0.45 against 0.64, efficiency 0.77–0.81
+against 0.99, and a 9% chasing tail against zero. These are u125 checkpoints of
+a 1200-update run, so the honest statement is that **the corner trap is open in
+both arms at u125 and neither κ knob addresses it**; whether training closes it
+is what the rest of the run answers.
+
 ### Wave 2 — the regime signal
 
 Gated on wave 1, because §27 is a warning: the aux head proved the information

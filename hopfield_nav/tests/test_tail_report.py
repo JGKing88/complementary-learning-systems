@@ -91,7 +91,7 @@ class TestItReportsTheTail:
         line = [l for l in out.splitlines() if l.strip().startswith("m ")][0]
         parts = line.split()
         mean, p5, p50 = float(parts[2]), float(parts[3]), float(parts[4])
-        frac = float(parts[7])
+        frac = float(parts[9])
         assert frac == pytest.approx(4 / 24, abs=1e-3)
         assert p50 > mean          # the mean is dragged down by the tail
         assert p5 < 0.35 < p50     # and the tail is separated from the body
@@ -103,8 +103,8 @@ class TestItSplitsTheTailByChase:
         main(_write(tmp_path, _traj(20, sweeping=16, chase=0.6)))
         out = capsys.readouterr().out
         line = [l for l in out.splitlines() if l.strip().startswith("m ")][0]
-        chase_tail = float(line.split()[8])
-        chase_rest = float(line.split()[9])
+        chase_tail = float(line.split()[11])
+        chase_rest = float(line.split()[12])
         assert chase_tail == pytest.approx(0.6, abs=1e-6)
         assert chase_rest == pytest.approx(0.0, abs=1e-6)
 
@@ -115,7 +115,7 @@ class TestItSplitsTheTailByChase:
         main(_write(tmp_path, _traj(20, sweeping=16, chase=0.0)))
         out = capsys.readouterr().out
         line = [l for l in out.splitlines() if l.strip().startswith("m ")][0]
-        assert float(line.split()[8]) == pytest.approx(0.0, abs=1e-6)
+        assert float(line.split()[11]) == pytest.approx(0.0, abs=1e-6)
 
     def test_no_tail_prints_a_dash_rather_than_a_number(self, tmp_path,
                                                        capsys):
@@ -124,7 +124,7 @@ class TestItSplitsTheTailByChase:
         main(_write(tmp_path, _traj(12, sweeping=12)))
         out = capsys.readouterr().out
         line = [l for l in out.splitlines() if l.strip().startswith("m ")][0]
-        assert line.split()[8] == "--"
+        assert line.split()[11] == "--"
 
 
 class TestThreshold:
@@ -134,7 +134,24 @@ class TestThreshold:
         applied once and invisibly is how a 'collapse count' previously
         flattered an arm (EXPLOIT_DIAGNOSTIC §4)."""
         d = _traj(20, sweeping=16)
-        main(_write(tmp_path, d), 0.0)
+        main(_write(tmp_path, d), abs_thr=0.0)
         assert "0.000" in capsys.readouterr().out
-        main(_write(tmp_path, d), 1.0)
+        main(_write(tmp_path, d), abs_thr=1.0)
         assert "1.000" in capsys.readouterr().out
+
+    def test_it_is_relative_to_the_billiard_at_the_MODEL_S_OWN_speed(
+            self, tmp_path, capsys):
+        """The bug this fixes, caught on real data: an absolute cut mislabels
+        a SLOW policy. d0_base at u125 runs at realized speed 0.702, where a
+        billiard sweeps only 0.542 -- so an absolute 0.35 is 65% of chance and
+        flagged 37.5% of its episodes, every one with chase_q exactly 0.000.
+        A slow policy and a broken one are not the same thing."""
+        d = _traj(20, sweeping=20)
+        main(_write(tmp_path, d))
+        out = capsys.readouterr().out
+        line = [l for l in out.splitlines() if l.strip().startswith("m ")][0]
+        speed, thresh = float(line.split()[7]), float(line.split()[8])
+        assert speed > 0
+        # the threshold must track the speed, not be the module constant
+        assert 0.0 < thresh < 1.0
+        assert "own speed" in out
