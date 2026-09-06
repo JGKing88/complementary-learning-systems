@@ -808,13 +808,53 @@ that acts on the memory. The explore specialist, which moves but not along `q`,
 collects **less** information than the exploiter (Q_trust refit 0.838) and less
 than a billiard (0.884).
 
+#### 6.3.1 MEASURED live — the inversion is an EVAL-time phenomenon, and that is a trap
+
+The per-update diagnostics test §7.9's *mechanism* directly, with no fitted
+classifier and no cross-encoder transfer. If ‖q‖ next to the goal is smaller
+than the goal-absent value, then as the exploit half converges `expt/q_mag` must
+fall toward `expl/q_mag`. Measured on both wave-1 arms, early third against late
+third:
+
+| | `expt/q_mag` early → late | `expl/q_mag` | ratio | `follow_q` early → late |
+|---|---|---|---|---|
+| `d0_base` | 0.322 → **0.261** (−19%) | 0.076 → 0.077 | 4.25 → **3.37** | −0.019 → 0.646 |
+| `d1_kanneal` | 0.315 → **0.267** (−15%) | 0.077 → 0.083 | 4.09 → **3.22** | 0.038 → 0.724 |
+
+**The direction is confirmed and the magnitude is not.** `expt/q_mag` falls as
+the policy learns to arrive, `expl/q_mag` is flat, and the separation narrows
+from ~4.2× to ~3.3×. But it stays a **3.3× separation** — nowhere near the
+reversal §7.9 measured, where the frozen classifier went 0.857 → 0.208.
+
+**Why, and it is the useful part.** §7.9 measured *evaluation* episodes, where a
+successful exploiter arrives and spends the remainder of the episode next to the
+goal. A **training** rollout teleports on arrival and keeps going
+(`reset_state_on_teleport = False`, teleport on), so a converged arm reaching
+the goal in ~20 steps of a 200-step rollout does that ten times and spends most
+of its time *far* from any goal. The region where the cue reverses is exactly
+the region training rollouts pass through and do not dwell in.
+
+> **The trap this names.** A regime gate fitted on *training-time* statistics
+> would see a healthy 3.3× separation and conclude the cue is fine — then invert
+> at evaluation, where episodes dwell at the goal. §6.3's constraint is
+> therefore stronger than "do not fit on exploration rollouts": **do not fit on
+> training rollouts of either regime.** The statistics that survive — the
+> running maximum `a6_q_max` and running s.d. `a5_q_std` — survive precisely
+> because they do not care where the episode *ends*.
+
+This also explains why `regime_gap` stays healthy (0.43–0.44) in both arms while
+§7.9 predicts a collapse: `regime_gap` is a training-time statistic and is
+measuring the regime question in the half of the state space where it is easy.
+**It is a necessary condition, not a sufficient one**, and a wave-1 arm with a
+good `regime_gap` has not thereby shown it would gate correctly at eval.
+
 ### 6.4 The behavioural panel — what the agent actually does
 
 | quantity | reads | current values |
 |---|---|---|
 | `follow_q` (exploit rollouts) | is it exploiting? | 0.911 @ d=0 → 0.630 @ d=10 (`p10_pol_v1`) |
 | `chase_q` (explore rollouts) | is it exploiting when it shouldn't? | **≈0.000** in both explore arms — the explore-side distractor problem is solved |
-| **`regime_gap` = `follow_q` − `chase_q`** | **direct measure of regime discrimination** | **not yet computed — propose adding** |
+| **`regime_gap` = `follow_q` − `chase_q`** | **direct measure of regime discrimination** — but a *training-time* one, see §6.3.1 | **0.43–0.44 in both wave-1 arms** |
 | near-goal κ gradient | does it hedge on final approach? | grows with training: 1.03× (u300) → 1.24× (u900) → **1.65×** (u2000) |
 | `follow_q` vs distractor count | does it withdraw trust as the readout degrades? | 0.558 → 0.427 as `q_accuracy` 0.989 → 0.711 |
 
