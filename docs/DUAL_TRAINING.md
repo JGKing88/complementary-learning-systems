@@ -520,6 +520,21 @@ rolled on shared trajectories at all (`explore_traj` refuses: "does not share a
 world"), which is precisely why the billiard ratio exists. `d0_base` supersedes
 this with a same-encoder, same-bound number.
 
+> **AND THE TABLE ABOVE IS ALREADY STALE ON THE EXPLOIT SIDE.** Every "best
+> combined" figure in §5.3 is `w6_pers`, phase 1's model, which reached
+> **success 0.849 at ten distractors**. Both wave-1 arms reach **1.000 at ten
+> distractors** from u125–150 onward, and hold it. So the 11-point exploit
+> interference in that table is a phase-1 number, not a property of
+> interleaving: phase 2's configuration — polar head, κ cap, w52 encoder,
+> bounded step — interleaves far better than phase 1's did, and the exploit
+> half of the one-model claim is **no longer where the difficulty is**.
+>
+> What is left is the explore half, and specifically its tail. Both arms are
+> climbing (swept 0.44–0.47 at u175–250 against the specialist's 0.636) while
+> carrying the 8–9% chasing tail of §9.1.3. The interference table should be
+> rebuilt on a finished wave-1 arm; until then read its exploit rows as
+> historical.
+
 #### 5.3.2 The distractor cost is a 15% TAIL, not a shift — and it is D2
 
 The d=10 numbers looked like a modest degradation and are not. Per-trial swept
