@@ -1090,6 +1090,59 @@ less if this holds.
 slower, not stuck), or the anneal arm's explore half degrading once the ramp
 completes at u400. Both are inside the run.
 
+##### 9.1.1 WHICH LINK moved — a null on `follow_q` with a 40% effect on steps
+
+The per-regime diagnostics answer something the eval metrics cannot: the arms
+differ by 40% on `mean_steps`, so *which link of §1's chain* is different?
+Matched on update index over the overlapping range, late window u85–u128, mean
+± sd over ~44 logged updates each:
+
+| | `d0_base` | `d1_kanneal` | Δ |
+|---|---|---|---|
+| **exploit `follow_q`** | 0.462 ± 0.08 | 0.500 ± 0.06 | **+0.038** |
+| **`regime_gap`** | 0.434 ± 0.12 | 0.437 ± 0.11 | **+0.003** |
+| exploit `edge_frac` | 0.189 ± 0.03 | 0.153 ± 0.02 | −0.036 |
+| explore `chase_q` | 0.028 ± 0.10 | 0.063 ± 0.07 | +0.034 |
+| explore `edge_frac` | 0.488 ± 0.07 | 0.444 ± 0.10 | −0.044 |
+| explore `pin_frac` | 0.024 ± 0.03 | 0.038 ± 0.08 | +0.014 |
+
+**Every difference is inside one standard deviation, and `regime_gap` is
+identical to three decimals — while `mean_steps@10` differs by 40%.**
+
+That is a null on the mediator with a large effect on the outcome, and it says
+what the κ anneal is *not* doing:
+
+> The anneal arm does not consult the readout more (`follow_q` +0.038 on a
+> ±0.08 spread) and does not discriminate the regimes better (`regime_gap`
+> +0.003). It navigates faster because it can **point more precisely**.
+
+Which is exactly what the knob governs. κ is a directional-precision parameter;
+it has no term that would make a policy trust a recall more. §9.8.1's
+measurement — a converged exploiter running at κ ≈ 93 against a 2.5 cap's
+ceiling of 12.2 — predicts a precision effect and nothing else, and that is what
+shows up. **The mechanism and the knob agree, which is the check that a
+40%-on-one-metric result most needs.**
+
+Without this instrument the steps difference would have been attributable to
+anything — better following, better regime detection, a different exploration
+schedule. It is none of them.
+
+##### 9.1.2 And the interference is visible live, in `edge_frac`
+
+`explore edge_frac` sits at **0.444–0.488 in both interleaved arms**. Uniform
+occupancy of the perimeter ring is **0.19**, and the explore specialist runs at
+**0.241 at u150** and **0.126 converged.**
+
+So both interleaved arms spend roughly **twice** as much of their explore
+rollouts on the perimeter as the specialist does at a comparable stage. That is
+D2's signature as a live time series rather than a post-hoc autopsy — the thing
+§7's instrumentation was built for — and it is present in the baseline as much
+as in the anneal arm, so it is a property of *interleaving*, not of the κ knob.
+
+It is also the number wave 1 should ultimately be judged on for the explore
+half, alongside the collapsed-tail fraction of §5.3.2: **the target is the
+specialist's 0.126, and neither arm is near it yet.**
+
 ### Wave 2 — the regime signal
 
 Gated on wave 1, because §27 is a warning: the aux head proved the information
