@@ -56,7 +56,7 @@ care how mice do it.
 
 | | |
 |---|---|
-| **PLAN** | **`docs/DUAL_TRAINING.md` — read it before designing any interleaved run.** The standalone synthesis of both regimes: failure modes with their diagnostics, the knobs whose optima *conflict* between explore and exploit (§4.3 there), the dual-specific failure modes with falsifiers, a three-tier metric panel, logic gates, and waves. Supersedes §10 as a plan. Experiments keep being logged *here*. |
+| **PLAN** | **`docs/DUAL_TRAINING.md` — read it before designing any interleaved run.** Page: [bb0e31c3](https://claude.ai/code/artifact/bb0e31c3-4aca-4710-b57f-e71a227ff994). The standalone synthesis of both regimes: failure modes with their diagnostics, the knobs whose optima *conflict* between explore and exploit (§4.3 there), the dual-specific failure modes with falsifiers, a three-tier metric panel, logic gates, and waves. Supersedes §10 as a plan. Experiments keep being logged *here*. |
 | **Metric** | **`swept_coverage` is the headline explore metric from 2026-09-01 (§19).** Union of `goal_radius` discs along the path = P(goal findable). `mean_coverage` counts snapped cells, which hides the speed axis: it says speed barely matters, swept area says speed dominates. §2.1/§18.2's "the speed cap is free" is retracted. `union_swept_coverage` is the spread diagnostic. |
 | **Status** | **P10 polar landed (§9.4–9.8).** Two of four arms finished; the exploit-frozen model is the phase-2 best. |
 | **Branch / worktree** | `nav-tri-metric` at `.claude/worktrees/nav-tri-metric` |

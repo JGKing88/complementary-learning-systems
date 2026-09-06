@@ -14,6 +14,10 @@ the problem (`EXPERIMENTS_NAV_P2` §0.0).
 **Reading order for someone new:** §1 (the chain) → §5 (dual failure modes) →
 §7 (the metric panel) → §9 (waves). §2–§4 are reference.
 
+**Published page:**
+[bb0e31c3](https://claude.ai/code/artifact/bb0e31c3-4aca-4710-b57f-e71a227ff994)
+— the same content, laid out. Re-publish it when this file changes.
+
 ---
 
 ## 0. The one-paragraph state of play
