@@ -187,7 +187,10 @@ def rollout(*, agent, env, env_offset, vectorhash, hopfields, cfg, device,
             else np.full(B, -cfg.env.time_penalty, dtype=np.float32)
         ).astype(np.float32)
 
-        embeddings_np = vectorhash.get_encoded_state(positions, env_offset)
+        embeddings_np = vectorhash.get_encoded_state(
+            visited_mod.alias_positions(
+                positions, getattr(cfg.hopfield, 'alias_mod', 0)),
+            env_offset)
         embeddings = torch.from_numpy(embeddings_np).float().to(device)
 
         # Where the alternate memory applies this step. Computed once and
@@ -405,7 +408,10 @@ def _warm_vs_cold(*, agent, env, env_offset, vectorhash, hopfields, cfg,
             if vec.goals_active
             else np.full(B, -cfg.env.time_penalty, dtype=np.float32)
         ).astype(np.float32)
-        embeddings_np = vectorhash.get_encoded_state(positions, env_offset)
+        embeddings_np = vectorhash.get_encoded_state(
+            visited_mod.alias_positions(
+                positions, getattr(cfg.hopfield, 'alias_mod', 0)),
+            env_offset)
         embeddings = torch.from_numpy(embeddings_np).float().to(device)
 
         sig_t, q, _m, _W = signal_ops.hopfield_signal_at(

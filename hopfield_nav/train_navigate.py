@@ -282,6 +282,12 @@ def run_navigate(
         print(f"Restored RNG streams (global, distractor, per-env); "
               f"continuing at u{start_update + 1}", flush=True)
 
+    # Captured before the loop: the ramp target for
+    # revisit_anneal_updates. cfg.hopfield.revisit_penalty is
+    # overwritten each update, so reading it inside the loop would
+    # ramp toward the previous iteration's value and decay to 0.
+    _rp_target = float(getattr(cfg.hopfield, 'revisit_penalty', 0.0))
+
     for update in range(start_update + 1, n_updates_total + 1):
         stage, local_update = stage_at(stages, update)
 
@@ -353,6 +359,17 @@ def run_navigate(
             emp_dist_min=cfg.n_train_emp_distractors_min,
             emp_dist_max=cur_emp_distractors_max,
         ))
+
+        # revisit_penalty for this update. Assigned onto cfg rather than
+        # passed, for the same reason as the kappa ceiling below: the
+        # collector reads it where it computes the reward and no other caller
+        # needs to know. `_rp_target` is captured before the loop so the ramp
+        # is always toward the CONFIGURED value, never toward whatever the
+        # previous iteration left behind.
+        if getattr(cfg.hopfield, "revisit_anneal_updates", 0) > 0:
+            _rp_frac = min(1.0, float(update)
+                           / float(cfg.hopfield.revisit_anneal_updates))
+            cfg.hopfield.revisit_penalty = _rp_target * _rp_frac
 
         # The kappa ceiling for this update. Assigned onto the head rather
         # than passed, because it is read at forward time and nothing else
@@ -758,6 +775,8 @@ CFG_FIELDS: dict[str, tuple[str, ...]] = {
     "wall_penalty": ("hopfield.wall_penalty",),
     "persistence_bonus": ("hopfield.persistence_bonus",),
     "persistence_realized": ("hopfield.persistence_realized",),
+    "revisit_anneal_updates": ("hopfield.revisit_anneal_updates",),
+    "alias_mod": ("hopfield.alias_mod",),
     "place_dropout": ("hopfield.place_dropout",),
     "heading_dropout": ("hopfield.heading_dropout",),
     "persistence_one_sided": ("hopfield.persistence_one_sided",),
@@ -1083,6 +1102,17 @@ def build_parser() -> argparse.ArgumentParser:
                         "trained under. On the commanded action a "
                         "wall-pinned agent collects the full bonus for not "
                         "moving (P2 doc §18.7-18.8).")
+    p.add_argument("--revisit_anneal_updates", type=int, default=None,
+                   help="Ramp revisit_penalty linearly from 0 to its "
+                        "configured value over this many updates. A "
+                        "constant penalty is self-defeating (§34.3): "
+                        "it raises the coverage rate needed for "
+                        "positive reward while making the early pin "
+                        "more punishing.")
+    p.add_argument("--alias_mod", type=int, default=None,
+                   help="Fold positions modulo this before encoding, "
+                        "so distinct places emit identical place "
+                        "codes. Applies at training AND evaluation.")
     p.add_argument("--place_dropout", type=float, default=None,
                    help="Per-step probability of zeroing the place "
                         "code during training rollouts. Evaluation is "

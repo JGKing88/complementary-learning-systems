@@ -1059,6 +1059,70 @@ case "$VARIANT" in
     esac
     ;;
 
+  # === P35-P37 -- WAVE 2. Stop adjusting inputs; change the problem. =========
+  #
+  # Wave 1 (§35) was a behavioural null and taught two things:
+  #
+  #   * every lever so far moves what the state CONTAINS and never what the
+  #     policy DOES with it -- occupancy's absolute influence on the action sat
+  #     at 0.024-0.030 across the control, p24_aux, and all three wave-1 arms;
+  #   * p34_dropaux HALVED position's absolute grip (0.031 vs 0.057) and
+  #     changed no behaviour at all, so position dominance is not the binding
+  #     constraint either.
+  #
+  # Jack, correcting a claim in the first draft of this: "the models retrace
+  # their steps because they don't have history, which obviously hugely harms
+  # novelty." Right, and it reframes the puzzle. History is NOT useless here --
+  # the policy passes within a cell of its own track on ~33% of steps and every
+  # one costs novelty. So memory would pay, the information is in the state,
+  # and the policy still will not use it. That is a CREDIT problem, not an
+  # information problem.
+  #
+  #   p35_alias      alias_mod=10: the four quadrants of the 20x20 arena emit
+  #                  IDENTICAL place codes. What is true about position
+  #                  sufficiency is narrow -- a lawnmower is a function of
+  #                  position alone (row parity off the y-coordinate) and would
+  #                  score ~0.9 (§29.3), so a near-optimal MEMORYLESS policy
+  #                  exists and that is the basin PPO settles into. Aliasing
+  #                  removes it: no memoryless policy can be optimal. Applies
+  #                  at training AND evaluation -- a sensor property, not a
+  #                  perturbation.
+  #   p36_rpanneal   revisit_penalty 0.40 ramped from 0 over 400 updates. The
+  #                  penalty is the only signal that makes the value of memory
+  #                  IMMEDIATE rather than diffuse, and p28 at 0.15 was the
+  #                  only arm ever to kill the orbit. Constant doses fail for a
+  #                  reason §34.3 derived: positive reward needs coverage rate
+  #                  > rp/(0.3+rp) and the agent starts pinned at ~0.10, so the
+  #                  penalty raises the bar before reward turns positive. The
+  #                  ramp separates the jobs -- escape the pin, then apply the
+  #                  pressure. 400 updates because at 300 the effective penalty
+  #                  hits the pinned break-even by u25, and the control needs
+  #                  ~u75 to break the pin.
+  #   p37_aliasaux   alias_mod=10 plus the aux head. If aliasing makes memory
+  #                  necessary, this also makes a map available to be the
+  #                  memory -- the pairing that made p34 the only arm to move
+  #                  position's grip.
+  p35_alias|p36_rpanneal|p37_aliasaux)
+    ENCODER=/orcd/pool/003/jackking/cls_runs/sweeps/w52_attract_fwhm/001_att0.5_seed=43/encoder_final.pt
+    ENCODER_GAIN=100
+    HOPFIELD_BETA=100
+    SCHEDULE=${SCHEDULE:-'explore:700'}
+    ENVS_PER_WORLD=20; BATCH_ENVS=64
+    EPSILON_EXPLORE=0.1; GOAL_REWARD=2.0
+    PERSISTENCE_BONUS=0.20
+    REGIME_ASSIGNMENT=shuffle
+    ACTION_POLAR=1; STATE_DEPENDENT_STD=1; FREEZE_LOG_STD=0
+    MIN_ACTION_NORM=0.5; MAX_ACTION_NORM=1.0
+    EVAL_SCOPE=expl; EVAL_EVERY=25; CKPT_EVERY=25
+    case "$VARIANT" in
+      p35_alias)    ALIAS_MOD=10 ;;
+      p36_rpanneal) REVISIT_PENALTY=0.40; REVISIT_ANNEAL_UPDATES=400 ;;
+      p37_aliasaux) ALIAS_MOD=10
+                    AUX_VISITED_WEIGHT=0.5
+                    AUX_VISITED_RADIUS=3.0 ;;
+    esac
+    ;;
+
   # === P21 -- does the pin clear when persistence stops paying for it? ======
   #
   # 18.7 measured that 100% of episodes at u25 AND u50 are wall-pinned, and

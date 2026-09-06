@@ -8043,3 +8043,72 @@ things now look immovable regardless of intervention:
 Every lever tried so far changes what the state *contains* and leaves what the
 policy *does with it* alone. Wave 2 should stop adjusting inputs and rewards
 and make the task itself require memory.
+
+## 36. PROPOSED — wave 2. NOT RUN.
+
+Implemented and tested; deliberately **not launched**. Variants `p35_alias`,
+`p36_rpanneal`, `p37_aliasaux` exist in `run_nav_p2.sh` and the knobs
+(`alias_mod`, `revisit_anneal_updates`) are wired config → `CFG_FIELDS` → CLI →
+launcher with tests on each. Nothing here has been measured.
+
+### 36.1 The reframing that motivates it
+
+A claim in the first draft of this section was **wrong and is corrected here**,
+because the correction is the reason wave 2 looks the way it does. That draft
+said memory stays optional because "position is sufficient, so history buys
+nothing." Jack: *"the models retrace their steps because they don't have
+history, which obviously hugely harms novelty."*
+
+That is right. The learned policy passes within a cell of its own earlier track
+on **~33% of steps** (§35 proximity), and every one of those costs novelty.
+**History would pay.** What is actually true is narrower and is about which
+optima *exist*: a lawnmower is a function of position alone — row parity comes
+off the y-coordinate — and would score ~0.9 (§29.3), so a near-optimal
+**memoryless** policy exists in a uniquely-coded arena, and that is the basin
+PPO settles into.
+
+So the puzzle is sharper than "the agent lacks information":
+
+* history **would** pay — retracing is 33% of steps and directly costs novelty;
+* the information **is** in the state — occupancy content runs 0.044 on the
+  control and 0.105–0.116 on `p32`/`p34`;
+* the policy **still** does not use it — occupancy's absolute influence on the
+  action is pinned at 0.024–0.030 across the control, `p24_aux`, and all three
+  wave-1 arms.
+
+**That is a credit-assignment problem, not an information problem.** Avoiding a
+revisit pays diffusely, as slightly more novelty spread over later steps, while
+persistence pays immediately and certainly on the very next step.
+
+### 36.2 The three arms and what each would test
+
+| arm | change | what it tests |
+|---|---|---|
+| `p35_alias` | `alias_mod=10` — the four quadrants of the 20×20 arena emit identical place codes | removes the memoryless optimum. If a near-optimal position-only policy cannot exist, does PPO find a memory-using one, or just get worse? |
+| `p36_rpanneal` | `revisit_penalty=0.40` ramped from 0 over 400 updates | makes the value of memory **immediate**. `p28` at a constant 0.15 was the only arm ever to kill the orbit; §34.3 showed constant doses above that are self-defeating, so this separates escaping the pin from applying the pressure. |
+| `p37_aliasaux` | `alias_mod=10` + aux head | makes memory necessary **and** supplies a map to be the memory — the pairing that made `p34` the only arm to move position's grip. |
+
+Aliasing applies at **training and evaluation alike**, unlike §34's dropout: it
+is a property of the sensor, not a perturbation of it, and aliasing one but not
+the other would score a policy on a world it never trained against.
+
+The 400-update ramp is not arbitrary. Positive reward needs coverage rate
+`c > rp/(0.3+rp)`; at the pinned start of `c ≈ 0.10` the tolerable penalty is
+exactly 0.0333. A 300-update ramp to 0.40 reaches that by u25, and the control
+needs ~u75 to break the pin, so 300 would bite too early. 400 buys until u33 and
+is still fully applied by u400 of 700.
+
+### 36.3 What would count as a result
+
+**Not coverage.** Both oracle arms (§29, §31) and all seven arms since moved
+coverage without moving the mechanism, or moved neither.
+
+The measurement is **occupancy's ABSOLUTE influence** — `frac_of_full ×
+state_influence` — which has not moved off 0.024–0.030 under any intervention
+yet tried. Share alone is a trap (§35.1): `p32_headdrop`'s share fell 0.275 →
+0.071 purely because its denominator grew.
+
+An arm that lifts that number is the first evidence the readout weight is
+movable at all. An arm that does not adds a sixth point to a constant that is
+starting to look structural — in which case the next question is whether PPO
+can move it at all, or whether it needs a different objective.

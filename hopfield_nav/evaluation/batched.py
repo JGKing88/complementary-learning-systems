@@ -114,7 +114,10 @@ def batched_navigation_trials(
             else np.full(B, -cfg.env.time_penalty, dtype=np.float32)
         ).astype(np.float32)
 
-        embeddings_np = vectorhash.get_encoded_state(positions, env_offset)
+        embeddings_np = vectorhash.get_encoded_state(
+            visited_mod.alias_positions(
+                positions, getattr(cfg.hopfield, 'alias_mod', 0)),
+            env_offset)
         embeddings = torch.from_numpy(embeddings_np).float().to(device)
 
         if cfg.agent.input_hopfield_signal:
@@ -291,7 +294,10 @@ def batched_exploration_trials(
         )
         current_reward = res.rewards.astype(np.float32)
 
-        embeddings_np = vectorhash.get_encoded_state(positions, env_offset)
+        embeddings_np = vectorhash.get_encoded_state(
+            visited_mod.alias_positions(
+                positions, getattr(cfg.hopfield, 'alias_mod', 0)),
+            env_offset)
         embeddings = torch.from_numpy(embeddings_np).float().to(device)
 
         if cfg.agent.input_hopfield_signal:

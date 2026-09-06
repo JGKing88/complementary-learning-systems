@@ -67,4 +67,35 @@ def abs_position_channel(vec, size: int) -> np.ndarray:
     return (2.0 * p / max(size - 1, 1) - 1.0).astype(np.float32)
 
 
-__all__ = ["VisitedProbe", "probe_for", "N_DIR", "abs_position_channel"]
+def alias_positions(pos, mod: int):
+    """Fold the arena so distinct places share a place code. §36.
+
+    Every lever tried through §35 changed what the state CONTAINS and left what
+    the policy DOES with it alone -- occupancy's absolute influence on the
+    action sat at ~0.025 across five arms regardless.
+
+    **History is not useless here, and saying so would be wrong**: the learned
+    policy passes within a cell of its own earlier track on ~33% of steps, and
+    every one of those costs novelty. Remembering would pay.
+
+    What is true is narrower and is about which optima EXIST. A lawnmower is a
+    function of position alone -- row parity comes off the y-coordinate -- and
+    would score ~0.9 (§29.3). So a near-optimal MEMORYLESS policy exists in a
+    uniquely-coded arena, and that is the basin PPO settles into. Aliasing
+    removes it: with ``mod = size // 2`` the four quadrants emit identical
+    codes, no function of the place code alone can separate them, and no
+    memoryless policy can be optimal. The textbook POMDP construction, and the
+    one structural change not yet tried.
+
+    Applies at TRAINING AND EVALUATION alike, unlike the §34 dropout -- it is a
+    property of the sensor, not a perturbation of it. Aliasing one and not the
+    other would mean scoring a policy on inputs it never trained against.
+    """
+    if not mod or mod <= 0:
+        return pos
+    import numpy as _np
+    return _np.asarray(pos) % int(mod)
+
+
+__all__ = ["VisitedProbe", "probe_for", "N_DIR", "abs_position_channel",
+           "alias_positions"]

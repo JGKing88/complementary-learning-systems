@@ -136,6 +136,8 @@ _arg  ppo_clip_coef                   "${PPO_CLIP_COEF:-}"
 # --- Reward shaping --------------------------------------------------------
 _arg  novelty_reward                  "${NOVELTY_REWARD:-}"
 _bool novelty_anneal                  "${NOVELTY_ANNEAL:-}"
+_arg  revisit_anneal_updates          "${REVISIT_ANNEAL_UPDATES:-}"
+_arg  alias_mod                       "${ALIAS_MOD:-}"
 _arg  place_dropout                   "${PLACE_DROPOUT:-}"
 _arg  heading_dropout                 "${HEADING_DROPOUT:-}"
 _bool persistence_one_sided           "${PERSISTENCE_ONE_SIDED:-}"

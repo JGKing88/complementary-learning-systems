@@ -279,7 +279,10 @@ class RolloutCollector:
                 current_reward_t = torch.from_numpy(current_reward).to(self.device).unsqueeze(1)  # (B, 1)
 
                 # 3. Look up embeddings from encoded_Phi
-                embeddings_np = self.vectorhash.get_encoded_state(positions, env_offset)
+                embeddings_np = self.vectorhash.get_encoded_state(
+                    visited_mod.alias_positions(
+                        positions, getattr(cfg.hopfield, 'alias_mod', 0)),
+                    env_offset)
                 embeddings = torch.from_numpy(embeddings_np).float().to(self.device)
 
                 # 3b. Raw sensory observations from env codebook (if agent uses them)
@@ -805,7 +808,10 @@ class RolloutCollector:
             # Real Hopfield signal at the bootstrap state (was zeros). Without
             # this the value head sees "no memory" at horizon regardless of the
             # actual Hopfield content, biasing the truncation bootstrap.
-            emb_final_np = self.vectorhash.get_encoded_state(pos_final, env_offset)
+            emb_final_np = self.vectorhash.get_encoded_state(
+                visited_mod.alias_positions(
+                    pos_final, getattr(cfg.hopfield, 'alias_mod', 0)),
+                env_offset)
             emb_final = torch.from_numpy(emb_final_np).float().to(self.device)
             sig_final, q_final, _, W_final = self._hopfield_signal_at(
                 emb_final_np, emb_final, pos_final, env_offset,
