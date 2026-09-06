@@ -73,15 +73,50 @@ def orbit_stats(curve: np.ndarray, min_tau: int = 10) -> dict:
 
     ``min_tau`` skips the rise out of the agent's own footprint, which every
     trajectory has and which is not an orbit.
+
+    **The minimum must be INTERIOR, not global.** An orbit is a *post-rise*
+    dip -- the curve climbs as the agent leaves, falls as it comes back, and
+    climbs again as it leaves a second time. A global minimum over the window
+    is a different thing, and taking one made the verdict turn on whether the
+    initial rise happened to finish before ``min_tau``:
+
+        p20_e, ten distractors, 144 trajectories, 200 steps
+          deterministic   tau=10: 7.91   tau=60: 8.04   -> depth 0.00, "no orbit"
+          sampled         tau=10: 7.84   tau=60: 7.62   -> depth 4.85, "ORBITS"
+
+    Those two curves are the same curve to within 0.3 cells at every lag, and
+    the old rule gave them opposite verdicts, because in the deterministic one
+    the window edge sits 0.13 cells below the real dip and captured the argmin.
+    Requiring the minimum to be a genuine interior trough removes that.
     """
     tail = curve[min_tau:]
     ok = np.isfinite(tail)
     if ok.sum() < 5:
         return {"period": float("nan"), "depth": 0.0, "orbits": False}
     idx = np.nonzero(ok)[0]
-    k = int(idx[np.argmin(tail[idx])])
-    peak = float(np.nanmax(curve[1:min_tau + k + 1]))
-    depth = peak - float(tail[k])
+    vals = tail[idx]
+
+    # Interior troughs: strictly below the running max before them AND
+    # followed by a rise. `rise_after` is what makes it an orbit rather than
+    # a curve that simply stops going up.
+    best = None
+    for j in range(1, len(idx) - 1):
+        before = vals[:j + 1]
+        after = vals[j:]
+        peak_before = float(before.max())
+        rise_after = float(after.max()) - float(vals[j])
+        depth = peak_before - float(vals[j])
+        if rise_after < DIP_CELLS / 2.0:
+            continue                      # it never left again
+        if best is None or depth > best[1]:
+            best = (int(idx[j]), depth)
+
+    if best is None:
+        # No interior trough with a rise after it. Report the shallowest
+        # possible reading rather than a global-minimum artefact.
+        return {"period": float("nan"), "depth": 0.0, "orbits": False}
+
+    k, depth = best
     return {"period": float(min_tau + k),
             "depth": float(depth),
             "orbits": bool(depth > DIP_CELLS)}

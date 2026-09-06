@@ -91,3 +91,57 @@ class TestSummary:
     def test_short_paths_do_not_crash(self):
         s = summarise([_straight(n=8)], "tiny")
         assert s["n"] == 1
+
+class TestInteriorTroughNotGlobalMin:
+    """The bug that produced §28's retracted 'no post-rise dip at all'.
+
+    `orbit_stats` used to take the GLOBAL minimum over tau >= min_tau, so the
+    verdict turned on whether the initial rise happened to finish before
+    tau = 10. Measured on p20_e at ten distractors, 144 trajectories:
+
+        deterministic   tau=10: 7.91   tau=60: 8.04  -> depth 0.00 "no orbit"
+        sampled         tau=10: 7.84   tau=60: 7.62  -> depth 4.85 "ORBITS"
+
+    The same curve to within 0.3 cells at every lag, opposite verdicts, because
+    in the deterministic one the window edge sat 0.13 cells below the real dip
+    and captured the argmin.
+
+    §31.4 had already corrected §28 empirically -- "p20_e has a weak dip
+    (4.65-4.83), not none" -- without identifying the cause. The fixed detector
+    reads 4.85-5.10 at tau=62 on all four conditions, which matches §31.4 and
+    is consistent across det/sampled for the first time.
+    """
+
+    def test_a_dip_at_the_window_edge_is_not_an_orbit(self):
+        """A curve that is still RISING at min_tau must not have its edge
+        value taken as the trough."""
+        cur = np.full(141, np.nan)
+        # monotone rise, then flat -- no return, so no orbit
+        cur[1:60] = np.linspace(2.0, 12.0, 59)
+        cur[60:141] = 12.0
+        st = orbit_stats(cur)
+        assert not st["orbits"], st
+
+    def test_the_edge_being_marginally_low_does_not_erase_a_real_dip(self):
+        """The exact failure: value at min_tau fractionally below the real
+        trough. The trough must still be found."""
+        cur = np.full(141, np.nan)
+        cur[1:10] = np.linspace(2.0, 7.91, 9)
+        cur[10] = 7.91                      # window edge, marginally LOW
+        cur[11:30] = np.linspace(8.5, 12.8, 19)
+        cur[30:60] = np.linspace(12.8, 8.04, 30)   # the real trough
+        cur[60:80] = np.linspace(8.04, 11.0, 20)   # and it leaves again
+        cur[80:141] = 11.0
+        st = orbit_stats(cur)
+        assert st["orbits"], st
+        assert 45 <= st["period"] <= 75, st
+        assert st["depth"] > 4.0, st
+
+    def test_a_trough_with_no_rise_after_it_is_not_an_orbit(self):
+        """An orbit means coming back AND leaving again. A curve that simply
+        settles has a 'depth' but no period."""
+        cur = np.full(141, np.nan)
+        cur[1:30] = np.linspace(2.0, 12.0, 29)
+        cur[30:141] = np.linspace(12.0, 6.0, 111)   # falls and stays
+        st = orbit_stats(cur)
+        assert not st["orbits"], st
