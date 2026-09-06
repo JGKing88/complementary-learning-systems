@@ -520,20 +520,12 @@ rolled on shared trajectories at all (`explore_traj` refuses: "does not share a
 world"), which is precisely why the billiard ratio exists. `d0_base` supersedes
 this with a same-encoder, same-bound number.
 
-> **AND THE TABLE ABOVE IS ALREADY STALE ON THE EXPLOIT SIDE.** Every "best
-> combined" figure in §5.3 is `w6_pers`, phase 1's model, which reached
-> **success 0.849 at ten distractors**. Both wave-1 arms reach **1.000 at ten
-> distractors** from u125–150 onward, and hold it. So the 11-point exploit
-> interference in that table is a phase-1 number, not a property of
-> interleaving: phase 2's configuration — polar head, κ cap, w52 encoder,
-> bounded step — interleaves far better than phase 1's did, and the exploit
-> half of the one-model claim is **no longer where the difficulty is**.
->
-> What is left is the explore half, and specifically its tail. Both arms are
-> climbing (swept 0.44–0.47 at u175–250 against the specialist's 0.636) while
-> carrying the 8–9% chasing tail of §9.1.3. The interference table should be
-> rebuilt on a finished wave-1 arm; until then read its exploit rows as
-> historical.
+> **AND THE TABLE ABOVE IS STALE ON THE EXPLOIT SIDE — but not in the way an
+> earlier revision of this note said.** That revision read "both wave-1 arms
+> reach 1.000 at ten distractors" and concluded the exploit half is *no longer
+> where the difficulty is*. **That was quoting `success_rate` as a headline,
+> which tri finding 8 exists to forbid**: it reads 1.000 for a policy whose
+> direction is wrong by 60°. §5.3.5 has the corrected reading.
 
 #### 5.3.2 The distractor cost is a 15% TAIL, not a shift — and it is D2
 
@@ -717,6 +709,49 @@ That distinction matters for wave 1 because the two want different fixes:
 second, while the second is a regime-detection failure and is what §6 is about.
 Reading `pin_frac` without `chase_q` beside it would conflate them — which is
 the same shape of error as reading `follow_q` without `align_true`.
+
+#### 5.3.5 The exploit interference is PURE MODE B — and `success_rate` hides all of it
+
+Wave-1 arms at u250 against `p19_kcap` u800, the exploit specialist on the
+**same w52 encoder** (`p10_pol_v1` is the better exploit model but trained on
+the old encoder, so the probe refuses to put them in one world). 192 held-out
+trials per level:
+
+| at d = 10 | success | `q_accuracy` | `align_true` | `follow_q` | steps | speed | **× optimal** |
+|---|---|---|---|---|---|---|---|
+| `p19_kcap` u800 | 1.000 | **0.972** | **0.952** | **0.972** | **11.3** | 0.973 | **1.12×** |
+| `d0_base` u250 | 1.000 | **0.973** | 0.708 | 0.716 | 17.9 | 0.871 | **1.58×** |
+| `d1_kanneal` u250 | 1.000 | **0.972** | 0.687 | 0.706 | 18.0 | 0.905 | **1.65×** |
+
+*(× optimal = measured steps ÷ `(mean_start_dist − goal_radius) / that model's
+own realized speed`. Steps are not comparable raw: these arms choose ~0.89
+against the specialist's 0.973.)*
+
+**`success_rate` is identical and says nothing.** All three are at 1.000. Tri
+finding 8 is explicit that it reads 1.000 for a policy whose direction is wrong
+by 60°, and `align_true` **0.687 is a mean cosine — a 46.6° heading error.**
+
+**`q_accuracy` is identical too, at 0.972–0.973.** So this is **not mode A** and
+not an encoder problem: the readout handed to the interleaved arms is exactly as
+good as the one the specialist gets. That is the w52 encoder's doing — the same
+statistic on `p10_pol_v1`'s old encoder was **0.450** at d=10 (§9.8).
+
+**What differs is entirely the use of it**: `align_true` 0.95 → 0.69, and
+~45% more steps. **This is mode B in its pure form**, with the mode-A confound
+removed by the encoder rather than argued away.
+
+> **So the exploit interference is real, large, and invisible to the metric
+> that was being quoted.** Not 11 points of success — zero points of success,
+> and **1.12× → 1.6× of path efficiency.**
+
+**One honest limit on the wording.** At `q_accuracy ≈ 0.97` the relation
+`follow_q ≈ align_true` is forced by geometry (§2.4), and it holds for all three
+rows (0.972/0.952, 0.716/0.708, 0.706/0.687). So "follows the readout less" and
+"moves less directly" are **the same measurement here**, not two pieces of
+evidence. The claim that survives is the weaker and sufficient one: *with an
+equally good readout available, the interleaved arms extract much less of it.*
+Separating the two would need a condition where `q_accuracy` is poor, i.e. a
+worse encoder.
 
 ---
 
