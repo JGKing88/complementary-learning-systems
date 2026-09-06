@@ -1335,6 +1335,52 @@ was in the trunk and the policy ignored it anyway.
 set for the bc-AQ line. Adding a channel is a decision, not an obvious win, and
 §27 is direct evidence that availability ≠ use.
 
+> **THE GATE HAS CLOSED AGAINST THIS, AND EARLIER THAN EXPECTED.** §9's wording
+> was: *"if wave 1 shows the corner trap still open at 15%, then adding a better
+> regime CUE means handing a sharper signal to a policy that cannot act on the
+> one it already has."* §9.1.4 measured exactly that condition — `regime_gap`
+> nearly doubled (0.361 → 0.699) while the chasing tail stayed flat at ~10% and
+> the chasing *inside* it rose.
+>
+> **A policy whose regime discrimination doubled without touching the failure
+> will not be rescued by discriminating better still.** `chart_frac` stays
+> implemented, tested and unlaunched. `d2_qstats` should not be built.
+>
+> This is the third time this project has reached the same verdict by a
+> different route — §27's aux head (information in the trunk, policy ignores
+> it), §29's visitation oracle (hand it the answer, ceiling unchanged), and now
+> this. **Supplying information is not the lever.**
+
+### 9.4 What the negative points at instead — a hypothesis with a test already queued
+
+If regime *detection* is not the binding constraint, what is? The collapsed
+episodes do follow the phantom (`chase_q` 0.55) and do ride the wall. They are
+not confused about the recall; they are acting on it.
+
+**Hypothesis: chasing is not about believing the recall — it is about having a
+heading to commit to, and commitment is what the reward pays for.** In an
+explore rollout the persistence bonus pays `bonus × cos(a_t, a_{t−1})` for a
+consistent heading, and a phantom recall supplies a perfectly consistent one:
+it is a fixed point outside the arena, so following it is a straight run.
+§18.8 already priced this mechanism in its other form — the persistence bonus
+paying **+0.196/step** for a wall pin against `wall_penalty`'s −0.093, a ratio
+of 2.1 — and the collapsed episodes here have exactly the wall-pin signature.
+
+On this reading the corner trap and the wall pin are **the same failure with
+two different sources of a steady heading**, which would explain why they look
+identical in every statistic except `chase_q`.
+
+**The test is already in wave 1.** `d1_persr` scores persistence on the
+*realized* displacement, which removes the income a wall-pinned agent collects
+for commanding a heading it does not achieve. If the hypothesis is right,
+`d1_persr` should shrink the chasing tail — and it would be the first
+intervention of any kind to do so.
+
+**Falsifier:** `d1_persr`'s tail matches `d0_base`'s at a matched update. Then
+the commitment story is wrong too, and what remains is that the policy has no
+*escape* behaviour once against a boundary — which is a different fix again
+(and not one this document has a lever for).
+
 ### Wave 3 — credit assignment
 
 The explore-side wave already written up as `EXPERIMENTS_NAV_P2` §36
