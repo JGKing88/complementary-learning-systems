@@ -611,6 +611,43 @@ sooner and has more of its episode left to spend on it, so 14.6% is this
 model's number and not a constant of interleaving. `d0_base` measures it at
 matched speed.
 
+#### 5.3.3 Deterministically it is worse still — and that is the deployed regime
+
+All four conditions, job 22134356:
+
+| model | eval | n_dist | swept | sd | speed | billiard | **swept_eff** |
+|---|---|---|---|---|---|---|---|
+| `w6_pers` | sampled | 0 | 0.680 | 0.093 | 1.417 | 0.779 | 0.873 |
+| `w6_pers` | sampled | 10 | 0.616 | 0.201 | 1.402 | 0.763 | 0.807 |
+| `w6_pers` | **det** | 0 | 0.623 | 0.130 | 1.303 | 0.729 | 0.855 |
+| `w6_pers` | **det** | **10** | **0.556** | **0.216** | 1.236 | 0.711 | **0.781** |
+| `p20_e` | sampled | 0 | 0.626 | 0.046 | 0.961 | 0.649 | 0.965 |
+| `p20_e` | sampled | 10 | 0.632 | 0.041 | 0.962 | 0.649 | 0.975 |
+| `p20_e` | **det** | 0 | 0.631 | 0.065 | 0.957 | 0.646 | 0.977 |
+| `p20_e` | **det** | **10** | **0.637** | **0.050** | 0.963 | 0.645 | **0.988** |
+
+**Under deterministic evaluation the combined model is worse than the
+specialist on the RAW number too** — 0.556 against 0.637 at ten distractors —
+so the speed advantage that made the sampled comparison look favourable is gone.
+The efficiency gap widens from 9.5% to **21%**.
+
+**This is the deployment-relevant comparison, not the charitable one.** §24
+records why: exploit deploys deterministically — that is where §17.10's 1.013
+beeline comes from — and the whole reason `p20_e_kcap` mattered was that a
+deterministic deficit is invisible during sampled training. The same asymmetry
+applies here, in the same direction.
+
+**And `p20_e` is monotonically *better* under every hardening.** Its best number
+of all four conditions is deterministic at ten distractors (0.988): more
+distractors, less noise, higher efficiency. Its spread never exceeds 0.065. The
+explore specialist is not merely unharmed by distractors — it is completely
+insensitive to them.
+
+Whereas `w6_pers` degrades on every axis at once: raw swept 0.680 → 0.556 across
+the sampled/d=0 to det/d=10 corners, efficiency 0.873 → 0.781, and spread
+**0.093 → 0.216**. The spread is the tell throughout: every one of its numbers
+is a mixture.
+
 ---
 
 ## 6. Is the agent exploring or exploiting? — independent of the rollout's regime
