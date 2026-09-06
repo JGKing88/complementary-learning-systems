@@ -56,6 +56,7 @@ care how mice do it.
 
 | | |
 |---|---|
+| **PLAN** | **`docs/DUAL_TRAINING.md` — read it before designing any interleaved run.** The standalone synthesis of both regimes: failure modes with their diagnostics, the knobs whose optima *conflict* between explore and exploit (§4.3 there), the dual-specific failure modes with falsifiers, a three-tier metric panel, logic gates, and waves. Supersedes §10 as a plan. Experiments keep being logged *here*. |
 | **Metric** | **`swept_coverage` is the headline explore metric from 2026-09-01 (§19).** Union of `goal_radius` discs along the path = P(goal findable). `mean_coverage` counts snapped cells, which hides the speed axis: it says speed barely matters, swept area says speed dominates. §2.1/§18.2's "the speed cap is free" is retracted. `union_swept_coverage` is the spread diagnostic. |
 | **Status** | **P10 polar landed (§9.4–9.8).** Two of four arms finished; the exploit-frozen model is the phase-2 best. |
 | **Branch / worktree** | `nav-tri-metric` at `.claude/worktrees/nav-tri-metric` |
@@ -4093,7 +4094,22 @@ nothing on explore (§9.8), and it is not the cause of the near-goal κ gradient
 
 ## 10. P6 — interleaved
 
-Runs last; needs P3's frozen classifier. Starts from phase-1 finding 11
+> **SUPERSEDED as a plan by `docs/DUAL_TRAINING.md` (2026-09-06).** That
+> document is the standalone synthesis — every explore and exploit failure
+> mode with its diagnostic, the knobs whose optima *conflict* between the two
+> regimes, the dual-specific failure modes with falsifiers, the three-tier
+> metric panel, the logic gates and the waves. **New experiments still get
+> logged here.** The metric panel and instrumentation note below are kept
+> because they are cited from there; the rest is folded in.
+>
+> **One thing in this section is now known to be wrong.** "Needs P3's frozen
+> classifier" is exactly what §7.9 refuted: a classifier fitted on exploration
+> rollouts does not merely lose power on a successful exploiter, it **inverts**
+> (Q_ep 0.857 → 0.208), because ‖q‖ next to the goal is *smaller* than its
+> goal-absent value. Any regime signal must be built from statistics that
+> survive the approach — `a6_q_max`, `a5_q_std` — not from `a1_qnorm`.
+
+Runs last. Starts from phase-1 finding 11
 (interleave within the same PPO update; explore-first, exploit-first and blocked
 all collapse) and finding 14 (select by `joint_curve.py`, not the last
 checkpoint).
