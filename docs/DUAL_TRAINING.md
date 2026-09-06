@@ -471,14 +471,54 @@ Report it per metric, every wave. Current reference lines:
 
 | metric | specialist ceiling | best combined | interference |
 |---|---|---|---|
-| swept coverage @200 | **0.644** (`p20_e`) | — *(never measured on the combined model)* | **unknown — measure this first** |
+| **swept @200 (raw)** | 0.626 (`p20_e`) | **0.680** (`w6_pers`) | **−8.6% — the combined model WINS** |
+| **swept efficiency** | **0.965** (`p20_e`) | **0.873** (`w6_pers`) | **+9.5%** |
 | cell coverage d=0 | 0.385 | 0.315 | 18% |
 | `mean_steps` d=0 | 10.95 @ 1.10× optimal (`p10_pol_v1`) | 7.6 *(at higher speed — not comparable)* | confounded by stride |
 | success d=10 | 0.958 | 0.849 | 11 pts |
 
-**The blank row is the most important one in this document.** Every combined
-model to date was scored on `mean_coverage`, which §19 established hides the
-speed axis. No combined model has a swept number.
+#### 5.3.1 MEASURED — and the raw number says the opposite of the right one
+
+Wave 0.2, job 22134356. Sampled, `n_dist=0`, 200 steps, `place=held_out`,
+144 matched trials per model, reduced through the online evaluator's own
+`SweptArea`:
+
+| model | swept | sd | union | realized speed | billiard @ that speed | **swept_eff** |
+|---|---|---|---|---|---|---|
+| `w6_pers` u1950 — phase-1 combined | **0.680** | 0.093 | 1.000 | **1.417** | 0.779 | **0.873** |
+| `p20_e` u700 — explore specialist | 0.626 | 0.046 | 0.997 | 0.961 | 0.649 | **0.965** |
+
+*(`p20_e` reads 0.626 here against the 0.644 quoted in §0 and §22.3.1. Not a
+correction — a different protocol: 6 envs × 24 trials **sampled** on
+`place=held_out` here, 8 × 8 **deterministic** there. §5.3's table uses this
+one because an interference number must be measured the same way on both
+sides.)*
+
+> **Raw swept says the combined model beats the explore specialist by 8.6%.
+> Efficiency against a speed-matched billiard says it loses by 9.5%. The entire
+> raw advantage is speed — 1.42 against 0.96.**
+
+This is §19.2's warning arriving as a concrete near-miss: swept is monotone in
+speed, so a model that sweeps more *because it moves faster* has not explored
+better, and `w6_pers` moves faster only because phase 1 had no `[0.5, 1.0]`
+action bound. Quoting the raw number would have recorded "interleaving costs the
+explore half nothing" — the opposite of what happened.
+
+**A second thing the ratio exposes.** `p20_e`'s *cell* `strategy_efficiency` is
+**1.038** — it beats a billiard — while its *swept* efficiency is **0.965**, and
+it does not. Those are consistent rather than contradictory: §22 found `p20_e`
+slides along walls rather than bouncing off them (9× fewer sharp reversals than a
+billiard), and cell-counting rewards visiting distinct cell *centres* while swept
+only rewards covering distinct *area*. **The explore specialist's edge over a
+billiard is in where it lands, not in what it sweeps.**
+
+`w6_pers` also carries **twice the trial-to-trial spread** (sd 0.093 vs 0.046).
+
+**Caveats, both load-bearing.** These are cross-phase — different encoders
+(`ur_loss2_repel_low` vs w52) and different action bounds. They could not be
+rolled on shared trajectories at all (`explore_traj` refuses: "does not share a
+world"), which is precisely why the billiard ratio exists. `d0_base` supersedes
+this with a same-encoder, same-bound number.
 
 ---
 
