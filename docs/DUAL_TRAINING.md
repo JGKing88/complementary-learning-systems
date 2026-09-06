@@ -520,6 +520,66 @@ rolled on shared trajectories at all (`explore_traj` refuses: "does not share a
 world"), which is precisely why the billiard ratio exists. `d0_base` supersedes
 this with a same-encoder, same-bound number.
 
+#### 5.3.2 The distractor cost is a 15% TAIL, not a shift — and it is D2
+
+The d=10 numbers looked like a modest degradation and are not. Per-trial swept
+on the same 144 episodes:
+
+| `w6_pers` | mean | sd | p5 | **p50** | p95 | frac < 0.35 |
+|---|---|---|---|---|---|---|
+| d = 0 | 0.671 | 0.092 | 0.471 | **0.688** | 0.778 | **0.000** |
+| d = 10 | 0.608 | **0.199** | **0.163** | **0.668** | 0.820 | **0.146** |
+
+**The median barely moves — 0.688 → 0.668, −3%.** The mean falls only because
+**14.6% of episodes collapse outright**, and the p95 actually *rises*. A mean
+over this mixture reports "distractors cost the explore half 9%", which is not
+what happens to any individual episode: 85% are unaffected and one in seven is
+destroyed.
+
+That is the fourth time in this project a mean over a mixture has told the
+opposite of the truth (§5.1's eight-env mean, §5.2.1's two-draw fluke, §7.7's
+pooled `b2`, and now this).
+
+**What the collapsed episodes do**, against the 123 that did not:
+
+| | collapsed (21) | rest (123) |
+|---|---|---|
+| swept | 0.193 | 0.678 |
+| realized speed | **0.702** | 1.522 |
+| share of steps < 0.3 cells | **0.496** | 0.058 |
+| **edge occupancy** | **0.858** | 0.300 |
+| path length | **139.8** | 302.9 |
+| span traversed | 17.9 | 19.0 |
+
+**They ride the wall.** 86% of steps on the perimeter ring — against a uniform
+occupancy of 0.19 — with half of all steps barely moving, and half the path
+length of a healthy episode. They are not trapped in a corner from the start:
+`span` is 17.9 of a 20-cell arena, so the agent crosses the arena, reaches a
+boundary, and then stays on it.
+
+**And there are zero such episodes at d = 0.** The distractors cause it.
+
+This is phase-1 finding 12 — **D2, the corner trap** — measured directly for the
+first time, and the mechanism reads exactly as that finding predicted.
+Distractors in this codebase are **memory-only**: `sample_distractors` draws
+encoded patterns from grid positions *outside* the test env, so a phantom recall
+points at something that is literally not in the arena. A policy carrying
+exploit's persistent `q`-following drives at it, arrives at the boundary, and
+has nowhere further to go.
+
+**Consequence for wave 1, and it is why §7's instrumentation was built first.**
+`pin_frac` and `edge_frac`, split by regime and logged every update, are exactly
+the instrument for this population — and D2's prediction on record is that
+`chase_q` rises *before* `edge_frac` does. That is now testable. What this
+section adds to the prediction is **where to look**: not at the mean of any of
+them, but at the tail.
+
+**One open comparison.** Both explore specialists reported `chase_q ≈ 0`, and
+`p5_e`'s coverage at ten distractors equalled its coverage at zero — so the
+explore-side distractor problem is supposed to be *solved* in a specialist. If
+`p20_e` at d = 10 shows no collapsed tail, this failure belongs specifically to
+the combined model and is interference, not a property of the task.
+
 ---
 
 ## 6. Is the agent exploring or exploiting? — independent of the rollout's regime
