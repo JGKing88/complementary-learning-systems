@@ -648,6 +648,61 @@ the sampled/d=0 to det/d=10 corners, efficiency 0.873 → 0.781, and spread
 **0.093 → 0.216**. The spread is the tell throughout: every one of its numbers
 is a mixture.
 
+#### 5.3.4 CONFIRMED on `chase_q` — and there are TWO collapse modes, not one
+
+§5.3.2 *inferred* the corner-trap mechanism from edge occupancy. `explore_traj`
+records `chase_q` = mean `cos(a, q)` per trial, which measures it directly.
+Collapsed episodes (swept < 0.35) against the rest, same runs:
+
+| run | n collapsed | **chase_q** collapsed | **chase_q** rest | edge collapsed | edge rest |
+|---|---|---|---|---|---|
+| `p20_e` samp d=0 | **0** | — | 0.000 | — | 0.126 |
+| `p20_e` samp d=10 | **0** | — | 0.021 | — | 0.127 |
+| `p20_e` det d=0 | 1 | **0.000** | 0.000 | 0.940 | 0.129 |
+| `p20_e` det d=10 | **0** | — | 0.021 | — | 0.129 |
+| `w6_pers` samp d=0 | **0** | — | 0.000 | — | 0.255 |
+| `w6_pers` det d=0 | 8 | **0.000** | 0.000 | 0.655 | 0.226 |
+| `w6_pers` samp d=10 | 21 | **0.275** | 0.120 | 0.841 | 0.325 |
+| `w6_pers` det d=10 | 25 | **0.453** | 0.110 | 0.928 | 0.308 |
+
+**The mechanism is confirmed.** At ten distractors the collapsed episodes chase
+the recall **4.1× harder** than the rest deterministically (0.453 against 0.110)
+and 2.3× sampled. And the chain is measurable end to end across all 144 trials:
+
+    corr(chase_q, edge_frac) = +0.408
+    corr(edge_frac, swept)   = −0.792
+    corr(chase_q, swept)     = −0.315
+
+Chasing raises edge occupancy, and edge occupancy is what destroys the sweep.
+
+**But there are TWO collapse modes and only one is D2.** Look at the rows with
+`chase_q` **exactly 0.000**:
+
+* **`w6_pers` det d=0 — 8 collapsed, no chasing at all.** At zero distractors
+  there is no phantom to chase, yet 5.6% of episodes still collapse. That is
+  §18.6's **mode-1 wall pin**, the motor failure, and it appears here because
+  *deterministic* evaluation traps a policy that its own sampling noise would
+  free — the same asymmetry §23 measured on `p20_e_kcap`. Note it is absent
+  from the sampled run at d=0 (0 collapsed).
+* **`p20_e` det d=0 — 1 collapsed, `chase_q` 0.000**, `edge` 0.940, speed 0.10.
+  One episode in 144, the specialist's own rare wall pin, and §18.6 reports
+  exactly that rate.
+
+So the two failure modes that both read as "a collapsed episode" are separable,
+and `chase_q` is what separates them:
+
+> **collapse WITHOUT chasing = the wall pin** (mode 1). Present in both models,
+> rare, and induced by *deterministic* evaluation rather than by distractors.
+>
+> **collapse WITH chasing = the corner trap** (D2). Only in the combined model,
+> only with distractors, and it is the 15%.
+
+That distinction matters for wave 1 because the two want different fixes:
+`--persistence_realized` addresses the first (§3.1) and does nothing for the
+second, while the second is a regime-detection failure and is what §6 is about.
+Reading `pin_frac` without `chase_q` beside it would conflate them — which is
+the same shape of error as reading `follow_q` without `align_true`.
+
 ---
 
 ## 6. Is the agent exploring or exploiting? — independent of the rollout's regime
@@ -798,6 +853,7 @@ each guard exists because it has already caught a wrong conclusion.**
 | regime discrimination | **`regime_gap`** = `follow_q` − `chase_q` | large | → 0 |
 | motor link | **commanded ‖a‖ vs realized ‖a‖** | ratio ≈1 | ratio ≫1 = pinned |
 | wall pin | `clip_frac` × realized speed | <0.1, ≈1 | **>0.5, <0.5** |
+| **which collapse mode** | **`pin_frac` × `chase_q`** (§5.3.4) | — | chase ≈0 → motor wall pin · chase ≫0 → **corner trap** |
 | orbiting | **recurrence dip depth / period / IQR** | no post-rise dip | depth >3, tight IQR |
 | retracing | `proximity_revisit` (**not** `revisit_frac`) | — | ~0.33 now |
 | memory use | replay divergence ratio at k=10 | > 0.3 | **0.115–0.125 now** |
@@ -808,6 +864,7 @@ each guard exists because it has already caught a wrong conclusion.**
 | guard | catches |
 |---|---|
 | `align_true` printed beside every `follow_q` | the geometric identity at `q_accuracy ≈ 1` |
+| `chase_q` printed beside every `pin_frac` | conflating the two collapse modes (§5.3.4) — they want opposite fixes |
 | distance-matched baselines on every failure statistic | failures being far from the goal by construction |
 | `pos_f`, never the snapped cell | the snap-square / L2-ball mismatch (~0.7 cells) |
 | realized magnitude in `strategy_efficiency` | the 3.97 artifact |
