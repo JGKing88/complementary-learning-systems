@@ -1522,6 +1522,55 @@ case "$VARIANT" in
     esac
     ;;
 
+  # === D2 -- WAVE 2. The regime signal. GATED ON WAVE 1, not launched. =====
+  #
+  # `d2_chart` is `d0_base` plus one scalar input: chart_frac =
+  # ||q|| / ||recall - x||, the fraction of the recalled 1024-dim displacement
+  # that the local 2-D Gram-Schmidt frame explains.
+  #
+  # Why this one and not another channel: the policy receives only `q`, about
+  # 8 of its 74 input dims, so 1022 dimensions of every recall are projected
+  # away. §7.7.1 predicted in writing that compressing what they carry into a
+  # single number would fail -- "the goal-present/absent contrast may wash
+  # out" -- and §7.7.2 measured the opposite. At ten distractors:
+  #
+  #     ||q||       (what the policy has today)   0.698 / 0.930 AUC
+  #     chart_frac  (this)                        0.974 / 0.988
+  #     d1_chart    (needs a per-env fit)         0.942 / 0.972
+  #
+  # +0.276 over ||q|| on the encoder §7 was measured on, and it BEATS the
+  # env-fitted 64-dim basis while needing no fit at all. It is the single
+  # largest measured information gap in the project.
+  #
+  # NOT an oracle. Unlike `--input_visited` and `--input_abs_position`, every
+  # term is already computed in the rollout, so a model trained with it ships.
+  #
+  # GATED, and the gate is not a formality. §27 is the standing warning: the
+  # aux head proved the visitation information was in the trunk and the policy
+  # head, reading the identical vector, ignored it -- while costing 13.7% of
+  # coverage and 3.3x the volatility. Availability is not use. Wave 1 has to
+  # report first, because if the corner trap is still open at 15% then a
+  # better regime CUE is being added to a policy that cannot act on the one it
+  # has.
+  #
+  # `feedback_hopfield_nav_bc_inputs` also froze the input set for the bc-AQ
+  # line, so adding a channel is a decision rather than an obvious win.
+  d2_chart)
+    ENCODER=/orcd/pool/003/jackking/cls_runs/sweeps/w52_attract_fwhm/001_att0.5_seed=43/encoder_final.pt
+    ENCODER_GAIN=100
+    HOPFIELD_BETA=100
+    SCHEDULE=${SCHEDULE:-'interleave:1200,empty_frac=0.5'}
+    ENVS_PER_WORLD=20; BATCH_ENVS=64
+    EPSILON_EXPLORE=0.1; GOAL_REWARD=2.0
+    PERSISTENCE_BONUS=0.20
+    REGIME_ASSIGNMENT=shuffle
+    ACTION_POLAR=1; STATE_DEPENDENT_STD=1; FREEZE_LOG_STD=0
+    MIN_ACTION_NORM=0.5; MAX_ACTION_NORM=1.0
+    LOG_KAPPA_MAX=2.5
+    INPUT_CHART_FRAC=1
+    EVAL_SCOPE=navexpl; EVAL_EVERY=25; CKPT_EVERY=25
+    ;;
+
   *)
     echo "ERROR: unknown VARIANT=$VARIANT" >&2; exit 1 ;;
 esac

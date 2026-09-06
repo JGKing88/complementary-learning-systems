@@ -777,6 +777,7 @@ CFG_FIELDS: dict[str, tuple[str, ...]] = {
     "log_kappa_min": ("agent.log_kappa_min",),
     "log_kappa_max": ("agent.log_kappa_max",),
     "input_abs_position": ("agent.input_abs_position",),
+    "input_chart_frac": ("agent.input_chart_frac",),
     "input_visited": ("agent.input_visited",),
     "aux_visited_weight": ("agent.aux_visited_weight",),
     "aux_visited_radius": ("agent.aux_visited_radius",),
@@ -995,6 +996,18 @@ def build_parser() -> argparse.ArgumentParser:
                         "jumping means localization was the blocker; "
                         "unchanged means optimization. ORACLE, not "
                         "shippable.")
+    p.add_argument("--input_chart_frac",
+                   action=argparse.BooleanOptionalAction, default=False,
+                   help="Feed ||q|| / ||recall - x||, the fraction of "
+                        "the recalled 1024-dim displacement the local "
+                        "2-D chart explains (P2 doc 7.7.2). AUC "
+                        "0.974/0.988 at ten distractors against ||q||'s "
+                        "0.698/0.930, and it BEATS the env-fitted "
+                        "64-dim basis while needing no fit. NOT an "
+                        "oracle -- every term is already computed in "
+                        "the rollout, so a model trained with it is "
+                        "shippable, unlike --input_visited and "
+                        "--input_abs_position.")
     p.add_argument("--input_visited", action=argparse.BooleanOptionalAction,
                    default=False,
                    help="DIAGNOSTIC ONLY (P2 doc 27.5). Feed the "
