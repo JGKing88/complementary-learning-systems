@@ -1042,6 +1042,54 @@ speed *cap* rather than navigation quality, so a `[0.5, 2.0]` arm would move
 `mean_steps` for a reason that is not about interleaving. It belongs in a wave
 of its own, scored on swept coverage.
 
+#### 9.1 LIVE — provisional, and D6's worry may have the sign backwards
+
+**Two arms running, `d0_base` at u100 and `d1_kanneal` at u150. Nothing here is
+a conclusion — it is 4 and 6 eval points, two of them matched, and this
+document's own guard is ≥4 eval points *and* a matched comparison before a
+directional claim.** Recorded now because the direction is unexpected.
+
+| u | `d0_base` succ@10 / steps@10 / swept@0 | `d1_kanneal` succ@10 / steps@10 / swept@0 |
+|---|---|---|
+| 25 | 0.583 / 59.1 / 0.171 | 0.583 / 59.1 / 0.171 |
+| 50 | 0.927 / 56.3 / 0.196 | 0.667 / 63.1 / 0.077 |
+| **75** | **0.844 / 54.0** / 0.171 | **0.969 / 36.6** / 0.112 |
+| **100** | **0.917 / 50.9** / 0.091 | **0.990 / 30.6** / 0.218 |
+| 125 | — | 0.979 / 26.8 / 0.223 |
+| 150 | — | 0.979 / 29.8 / 0.169 |
+
+**At u25 the two arms are bit-identical** (0.583 / 59.1 / 0.171 / 0.152), which
+is the check that they are actually matched: same seed, one knob.
+
+**The exploit half is where the difference is, and it is large.** `steps@10`
+falls 59.1 → 50.9 on the baseline over 75 updates (−14%) and 59.1 → 26.8 on the
+anneal arm over 100 (−55%). At the two matched points the anneal arm is **32%
+and 40% faster**.
+
+**The explore half is not readable.** Both oscillate between 0.08 and 0.24 and
+the sign flips between the matched points (u75 favours the baseline, u100 the
+anneal arm). Nothing to say yet.
+
+**Why the direction is a surprise, and the reading that would explain it.** D6
+was framed as a risk that lifting the cap would cost exploit the unlock §17.9
+measured. The data so far points the other way, and §9.8.1 is why: on a
+converging exploit arm **κ grows with training** — ≈38 at u300, ≈93 at u900,
+i.e. `log κ` ≈ 3.6 then 4.5. `LOG_KAPPA_MAX = 2.5` caps κ at **12.2**. So
+holding 2.5 fixed does not merely protect the early policy, it **caps the
+converged one**, and the anneal releases a ceiling the policy is pressing
+against.
+
+Both facts are consistent: §17.9 measured that the *default* 5.0 is too loose
+**early**, and §9.8.1 that a converged exploiter wants to be sharper than 2.5
+allows. Wanting the cap early and gone later is exactly what an anneal is, and
+D6's proposed refinement — trigger the ramp on exploit's first sustained
+success rather than on an update index — becomes more attractive rather than
+less if this holds.
+
+**What would overturn it:** the baseline catching up by u400–600 (it is only
+slower, not stuck), or the anneal arm's explore half degrading once the ramp
+completes at u400. Both are inside the run.
+
 ### Wave 2 — the regime signal
 
 Gated on wave 1, because §27 is a warning: the aux head proved the information
