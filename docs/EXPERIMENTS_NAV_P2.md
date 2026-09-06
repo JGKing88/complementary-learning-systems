@@ -7966,3 +7966,80 @@ slightly more often, consistent with the deeper orbit.
 The §33.3 monotonic relationship stands with the corrected value: `p29_long`
 still holds the largest position share (0.382) and the deepest orbit of the
 five arms.
+
+## 35. Wave 1 (P31/P32/P34) — dropout backfires, and §33.3 does not survive
+
+Three arms, all completed 700 updates. **Behaviourally a clean null**: swept
+0.605–0.632 @200 and 0.798–0.851 @600 against the control's 0.638/0.865,
+proximity revisit 0.710–0.721 against 0.706, and every arm still orbits.
+
+### 35.1 The share number is a trap — use SHARE × state_influence
+
+| | pos share | `state_influence` | **pos ABSOLUTE** | occ share | **occ ABSOLUTE** |
+|---|---|---|---|---|---|
+| `p20_e` | 0.275 | 0.208 | **0.0573** | 0.128 | 0.0266 |
+| `p31_placedrop` | 0.416 | 0.162 | **0.0672** | 0.182 | 0.0295 |
+| `p32_headdrop` | **0.071** | **0.760** | **0.0539** | 0.032 | 0.0241 |
+| `p34_dropaux` | 0.099 | 0.315 | **0.0311** | 0.080 | 0.0251 |
+
+`frac_of_full` is a share of the WHOLE-STATE effect, so it moves when the
+denominator moves. **`p32_headdrop`'s share collapse from 0.275 to 0.071 is
+almost entirely a bigger denominator** — `state_influence` went 0.208 → 0.760
+— and in absolute terms position's grip is 0.0539 against the control's 0.0573,
+i.e. unchanged. The right quantity is **share × state_influence**: the fraction
+of the action's natural spread that subspace actually accounts for.
+
+### 35.2 What each arm did
+
+**`p31_placedrop` backfired.** Dropping the place code 30% of the time RAISED
+position's absolute influence, 0.0573 → 0.0672. Forced to reconstruct position
+from sensory and integrated displacement, the policy built a *better* internal
+position estimate and leaned on it harder. Taking the signal away taught it to
+rebuild the signal — the same lesson as `p26_abspos` from the other direction.
+
+**`p32_headdrop` became a clock, not a memory.** `state_influence` 0.208 →
+0.760 is the largest state-dependence of any arm measured, but ~90% of it is in
+directions the probe does not name — not occupancy (share 0.032) and not
+visited8 (0.027). The named thing that grew is TIME: `elapsed` R²(h) 0.317 →
+0.711. Dropping heading forced the policy to carry *something* internally, and
+what it carried was mostly a step counter.
+
+**`p34_dropaux` is the only genuine reduction.** Absolute position influence
+0.0311 against 0.0573 — **down 46%**, the first intervention of any kind to
+move it. Occupancy content also rose 2.6× (`delta_flow` 0.044 → 0.116). It is
+the arm that both removed position and supplied a map.
+
+### 35.3 But no arm moved the map's INFLUENCE, and that is now four for four
+
+Absolute occupancy influence: **0.0266, 0.0295, 0.0241, 0.0251**. Flat across
+the control, place dropout, heading dropout, and dropout+aux — and flat across
+`p24_aux` before them, which had 4× the content. Content moves freely; the
+readout weight on it does not move at all.
+
+### 35.4 §33.3 is REFUTED — position share does not predict orbiting
+
+§33 highlighted a monotonic relationship across five arms and flagged it as
+correlational at n = 5. Wave 1 adds three points and it does not survive:
+
+| pos share | 0.071 | 0.099 | 0.224 | 0.275 | 0.287 | 0.338 | 0.382 | 0.416 |
+|---|---|---|---|---|---|---|---|---|
+| orbit depth | 7.30 | 4.94 | **0.00** | 5.03 | 7.60 | 8.34 | 10.99 | **5.65** |
+
+Not monotonic, not close. `p32` has the lowest share and a high depth; `p31`
+has the highest share and a middling one. **The n = 5 monotonicity was a
+coincidence**, exactly as the caveat allowed.
+
+### 35.5 What this means for the goal
+
+`p34_dropaux` halved position's grip on the action and **changed no behaviour
+at all** — coverage, orbiting, and retracing all within noise of the control.
+So position dominance is not the binding constraint on exploration either. Two
+things now look immovable regardless of intervention:
+
+* the **map's influence on the action**, pinned near 0.025 across five arms;
+* the **behaviour**, which four reward interventions and three input
+  interventions have all failed to shift.
+
+Every lever tried so far changes what the state *contains* and leaves what the
+policy *does with it* alone. Wave 2 should stop adjusting inputs and rewards
+and make the task itself require memory.
