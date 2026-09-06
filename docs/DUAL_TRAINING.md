@@ -1080,7 +1080,7 @@ open, and the ramp does not complete until u400.
 it is a *within-window* null on `follow_q` and `regime_gap`, so it says what the
 anneal is not doing regardless of which arm is ahead on any given eval.
 
-##### 9.1.1 WHICH LINK moved — a null on `follow_q` with a 40% effect on steps
+##### 9.1.1 WHICH LINK differs — a null on `follow_q` and `regime_gap`
 
 The per-regime diagnostics answer something the eval metrics cannot: the arms
 differ by 40% on `mean_steps`, so *which link of §1's chain* is different?
@@ -1097,7 +1097,11 @@ Matched on update index over the overlapping range, late window u85–u128, mean
 | explore `pin_frac` | 0.024 ± 0.03 | 0.038 ± 0.08 | +0.014 |
 
 **Every difference is inside one standard deviation, and `regime_gap` is
-identical to three decimals — while `mean_steps@10` differs by 40%.**
+identical to three decimals** — over a window where the arms' `mean_steps@10`
+differed by 40% (50.9 against 30.6 at u100). §9.1 has since established that
+the steps gap was a *transient* and both arms converge to ~22, so read the 40%
+as "the window where they were most different", not as a durable effect. The
+null is the point and it does not depend on the gap's size.
 
 That is a null on the mediator with a large effect on the outcome, and it says
 what the κ anneal is *not* doing:
