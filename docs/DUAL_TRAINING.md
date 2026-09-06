@@ -1163,7 +1163,82 @@ speed *cap* rather than navigation quality, so a `[0.5, 2.0]` arm would move
 `mean_steps` for a reason that is not about interleaving. It belongs in a wave
 of its own, scored on swept coverage.
 
-#### 9.1 LIVE — the κ anneal buys SPEED OF CONVERGENCE, not a better ceiling
+#### 9.0 RESULT — wave 1's first two arms, at matched u725
+
+**Both arms ran to the 6 h wall** (TIMEOUT is the normal outcome here and
+leaves a full checkpoint series): `d0_base` reached u730, `d1_kanneal` u1050,
+and everything below is at their largest **common** checkpoint, u725, on the
+144/192-trial held-out probe rather than the training eval.
+
+**EXPLORE** — sampled, `place=held_out`, 144 matched trials, threshold = ½ ×
+billiard at each model's own speed:
+
+| | n_dist | swept | sd | speed | **swept_eff** | **frac collapsed** | chase in tail |
+|---|---|---|---|---|---|---|---|
+| `d0_base` u725 | 0 | 0.607 | **0.036** | 0.955 | **0.950** | **0.000** | — |
+| `d1_kanneal` u725 | 0 | 0.534 | 0.107 | 0.923 | 0.841 | 0.076 | 0.000 |
+| `p20_e` u700 | 0 | 0.635 | 0.038 | 0.962 | **0.979** | **0.000** | — |
+| `d0_base` u725 | **10** | 0.589 | 0.078 | 0.941 | **0.934** | **0.014** | 0.752 |
+| `d1_kanneal` u725 | **10** | 0.521 | 0.140 | 0.884 | 0.849 | **0.125** | 0.461 |
+| `p20_e` u700 | **10** | 0.637 | 0.038 | 0.962 | **0.981** | **0.000** | — |
+
+**EXPLOIT** — `place=held_out`, 192 trials per level. `× optimal` is
+`steps ÷ (9.85 / that model's own realized speed)`:
+
+| | d | success | `q_accuracy` | `align_true` | `follow_q` | steps | **× optimal** |
+|---|---|---|---|---|---|---|---|
+| `d0_base` u725 | 0 | 1.000 | 0.980 | 0.906 | 0.916 | 11.74 | **1.15** |
+| `d0_base` u725 | 10 | 0.995 | 0.966 | 0.802 | 0.819 | 12.14 | **1.19** |
+| `d1_kanneal` u725 | 0 | 1.000 | 0.979 | 0.911 | 0.920 | 11.78 | **1.15** |
+| `d1_kanneal` u725 | 10 | 1.000 | 0.970 | 0.872 | 0.891 | 12.58 | **1.23** |
+| `p19_kcap` u800 | 0 | 1.000 | 0.979 | **0.969** | 0.983 | 10.87 | **1.07** |
+| `p19_kcap` u800 | 10 | 1.000 | 0.972 | **0.952** | 0.972 | 11.29 | **1.12** |
+
+##### The four things this settles
+
+**1. One model does both jobs at near-specialist level.** `d0_base` at u725:
+explore efficiency **0.934–0.950** against the specialist's 0.979–0.981 (95–97%
+of it) with the **same trial-to-trial spread** (sd 0.036 vs 0.038), and exploit
+at **1.15–1.19× optimal** against 1.07–1.12×. For scale, phase 1's combined
+model managed 0.849 success at d=10 and explore efficiency 0.873 with a 15%
+collapsed tail.
+
+**2. The corner trap CLOSES — in the baseline.** `d0_base`'s chasing tail at ten
+distractors went **12.5% (u250) → 1.4% (u725)**, two episodes in 144. That is
+the first time any intervention or condition has moved it.
+
+**3. And it does NOT close in the κ-anneal arm: 9.0% → 12.5%.** This is a
+matched-checkpoint, matched-trial, probe-based separation, and it is the
+opposite sign to what §9.1 read early.
+
+**4. So D6 is answered, and the answer is that the anneal is NOT explore-safe
+under interleaving.** §26 measured it safe on an **explore-only** run
+(`p23_kanneal`, det/sampled gap 20% → 3.3%) and §26.3 flagged that it said
+nothing about the interleaved case. It costs: explore efficiency 0.849 against
+0.934, spread 0.140 against 0.078, and a corner trap that stays open. On the
+exploit half it buys nothing durable — both arms converge to the same ~1.15×
+at d=0, and the anneal arm is *worse* at d=10 (1.23× against 1.19×).
+
+> **`d0_base` — the plain interleaved baseline, κ capped at 2.5 throughout — is
+> the better model on both halves. The recommended recipe does not include the
+> anneal.**
+
+##### Why the anneal would hurt, and it fits §9.4
+
+Lifting `LOG_KAPPA_MAX` from 2.5 to 5.0 lets κ rise from a ceiling of 12.2 to
+one of 148, i.e. it lets the converged policy commit *harder* to whatever
+heading it holds. §9.4's hypothesis is that the corner trap is about **having a
+heading to commit to** rather than about believing the recall — and a sharper
+policy commits harder to a phantom's heading too. The two arms' tails are
+consistent with that: the annealed arm keeps a 12.5% tail chasing at 0.461,
+while the baseline's tail is two episodes.
+
+**This is a hypothesis the data fits, not one it tests.** The clean test is
+`d1_persr`, which is running.
+
+---
+
+#### 9.1 EARLY READING, SUPERSEDED — the κ anneal buys speed of convergence
 
 > **This section was wrong once and is corrected here.** An earlier revision
 > read the u75–u125 gap as "the anneal arm is 32–40% faster on exploit" and
@@ -1334,7 +1409,13 @@ a 1200-update run, so the honest statement is that **the corner trap is open in
 both arms at u125 and neither κ knob addresses it**; whether training closes it
 is what the rest of the run answers.
 
-##### 9.1.4 Training does NOT close the corner trap — and `regime_gap` does not predict it
+##### 9.1.4 In `d1_kanneal`, training does not close the corner trap — and `regime_gap` does not predict it
+
+> **SCOPE CORRECTED by §9.0.** This section measured `d1_kanneal` alone across
+> u50–u250 and its title read "training does NOT close the corner trap". That
+> is true **of this arm** — it is still at 12.5% at u725 — and **false in
+> general**: `d0_base` went 12.5% → **1.4%** over the same span. What the arm
+> that fails has, and the one that closes does not, is the κ anneal.
 
 `d1_kanneal` at five checkpoints across training, all rolled in **one process**
 on identical envs, starts and memory contents, at ten distractors:
