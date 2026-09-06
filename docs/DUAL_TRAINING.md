@@ -426,7 +426,7 @@ and makes `goal_reward` a between-regime knob rather than a within-regime one.
 | # | failure | signature | mitigation |
 |---|---|---|---|
 | **D1** | **Schedule collapse.** Explore-first collapses (coverage 0.068), exploit-first mirrors it (0.062), and *blocked* — which sees both regimes but never together — behaves like explore-first. | one metric near zero at the end of a run that looked fine mid-way | **Interleave within the same PPO update.** Only simultaneous exposure holds both. |
-| **D2** | **The corner trap.** Exploit installs persistent `q`-following; in an explore rollout `q` points at distractors; the agent drives into a wall. `edge_frac` 0.82, `clip_frac` 0.65. | `chase_q` rising, then `edge_frac` | per-update per-regime logging (§7); reduce exploit weight |
+| **D2** | **The corner trap.** Exploit installs persistent `q`-following; in an explore rollout `q` points at distractors; the agent drives into a wall. `edge_frac` 0.82, `clip_frac` 0.65. **CONFIRMED §5.3.4** — collapsed episodes chase 4.1× harder than the rest. | sustained `chase_q`; and per-episode, the collapsed tail (§5.3.2) | per-update per-regime logging (§7); reduce exploit weight |
 | **D3** | **Env-identity leak.** Regime assignment was *positional*, so at fixed `empty_frac` the same envs were always exploit and the policy could gate on env identity instead of on the recall signal. | a regime gap that vanishes on fresh envs | **`--regime_assignment shuffle`** (fixed; default stays `index` for back-compat) |
 | **D4** | **Peak-then-degrade.** Every interleaved run peaks mid-run and degrades. | joint metric falling after a mid-run maximum | select with `joint_curve.py`, not the last checkpoint; **LR 1e-4** fixes it at a small cost in peak |
 | **D5** | **Mode conversion.** Explore training does not add exploit failures — it converts mode A into mode B at roughly constant cost. | `follow_q_fail` collapsing while `q_accuracy_fail` stays healthy | this is the *tractable* failure; see §6 |
@@ -849,7 +849,7 @@ each guard exists because it has already caught a wrong conclusion.**
 | exploit mode A vs B | **`follow_q_fail` × `q_accuracy_fail`** | both moderate | A: follow high, acc low · B: **follow ≈0, acc ≥0.4** |
 | readout following | `follow_q`, **always with `align_true`** | diverge at high d | equal → uninformative |
 | memory vs decode | `margin` deficit vs distance-matched baseline | ≈0 | ≤0.6 vs 0.93 |
-| corner trap | **`chase_q`** | ≈0 | rising — *precedes* `edge_frac` |
+| corner trap | **`chase_q`** | ≈0 | sustained elevation (NOT a lead over `edge_frac` — §7.1) |
 | regime discrimination | **`regime_gap`** = `follow_q` − `chase_q` | large | → 0 |
 | motor link | **commanded ‖a‖ vs realized ‖a‖** | ratio ≈1 | ratio ≫1 = pinned |
 | wall pin | `clip_frac` × realized speed | <0.1, ≈1 | **>0.5, <0.5** |
@@ -916,6 +916,47 @@ is **undefined, not zero** — §7.5's degenerate condition. Ungated, `regime_ga
 would silently have reported exploit's own `cos_aq` as a discrimination.
 `regime_gap` is now emitted only when *both* regimes have a usable recall on at
 least half their steps.
+
+#### 7.1 What this instrument can and cannot test — D2's lead/lag is NOT one
+
+D2's prediction on record is that **`chase_q` rises before `edge_frac` does**,
+and building the per-update logger was justified partly by making that testable.
+Having run it: **it is not testable at this resolution, and that is a property
+of the quantity, not of the run.**
+
+Both statistics are **episode means over the same 200-step rollout**, and the
+causal chain D2 describes — follow a phantom, arrive at the boundary, stay
+there — happens *within* an episode. A cause and its effect that both complete
+inside one update land in the same logged row, so a per-update cross-correlation
+puts them at lag 0 by construction. Testing the lead needs *within-episode*
+timing, which this instrument does not produce.
+
+A fixed-threshold onset test is worse than useless here, and worth recording
+because it is the mistake this project keeps making in new clothes: `edge_frac`
+starts at **0.445** because the early policy is wall-pinned by default (§18.7:
+100% of episodes pinned at u25/u50), so "first `edge_frac` > 0.25" fires at
+u = 0 for reasons that have nothing to do with chasing. **A statistic compared
+against zero when its baseline is not zero** — the same shape as reading
+`follow_q` without `align_true`.
+
+**What the lagged test does say**, on the post-pin window (after the last update
+with `pin_frac` > 0.10), against a shuffle null that fixes the marginals and
+destroys only the timing:
+
+| arm | window | peak r | at lag | null 95th pct | reading |
+|---|---|---|---|---|---|
+| `d0_base` | u14–74 | **+0.666** | **0** | 0.359 | strongly coupled, **simultaneous** |
+| `d1_kanneal` | u48–107 | +0.255 | 0 | 0.399 | **below the null — no relationship** |
+
+So chasing and edge occupancy co-move strongly in the baseline and not
+detectably in the κ-anneal arm. That is *suggestive* and no more: the two
+windows cover different update ranges and the arms are at different stages, so
+this is not a matched comparison and must not be read as one.
+
+**What the instrument IS good for**, and what it should be judged on: a
+*sustained* regime — `chase_q` elevated across many updates — and its onset
+relative to a coverage collapse. That is the "corner trap as a time series"
+use, and it needs a long run, which is what wave 1 is.
 
 ---
 
