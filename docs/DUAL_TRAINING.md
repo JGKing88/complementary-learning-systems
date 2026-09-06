@@ -926,7 +926,8 @@ each guard exists because it has already caught a wrong conclusion.**
 | signed **and** unsigned **and** windowed turning together | three separate wrong claims about circling |
 | `swept_coverage` not `mean_coverage` as the headline | the speed axis |
 | ≥8 distractor draws before any separability number | the 23.3% two-draw fluke that misdirected a whole section |
-| ≥4 eval points before any directional claim | evals swing 30+ points |
+| ≥4 eval points before any directional claim | the exploit eval swings 30+ points (finding 16) |
+| a WINDOW MEAN for explore, never one eval | the swept eval swings **39–45% point-to-point**, median ratio 1.5×, max 2.2× (§9.1) |
 | sampled, not deterministic, evaluation for explore | the κ-cap gap read 14% deterministic, 3.2% sampled |
 | both training-eval and probe success quoted as a bracket | 0.958 vs 0.901 on the same checkpoint |
 | held-out split, not `recorded` | every §9.6–9.8 number is on the run's own validation set |
@@ -1134,6 +1135,27 @@ open, and the ramp does not complete until u400.
 **§9.1.1 below is unaffected by this correction** and is worth reading with it:
 it is a *within-window* null on `follow_q` and `regime_gap`, so it says what the
 anneal is not doing regardless of which arm is ahead on any given eval.
+
+> **AND THE EXPLORE COLUMN OF THAT TABLE IS NOT READABLE AT ALL.** Measured on
+> the wave-1 logs, the training-time `swept_coverage` eval swings **39–45% from
+> one eval to the next** (median; max 94–119%), a median hi/lo ratio of
+> **1.45–1.51×** and a max of **2.20×**. `d1_kanneal` went 0.312 → 0.467 →
+> 0.232 over three consecutive evals with exploit pinned at 1.000 throughout.
+>
+> So **every single-point explore comparison drawn between these arms is inside
+> the noise** — u125 (0.199 vs 0.223), u150 (0.260 vs 0.169), u175 (0.444 vs
+> 0.236) — and each was stated in an earlier revision of this section as if it
+> meant something. Window means over the last six evals are 0.227 ± 0.109 and
+> 0.272 ± 0.097, which overlap heavily; the arms are **indistinguishable on the
+> explore half so far**, and the windows are not even at matched updates.
+>
+> **This is the explore analogue of finding 16, and it did not exist on
+> record.** Finding 16 covers the exploit eval (`mean_steps_all` between 17 and
+> 159 at a fixed seed → no exploit conclusion before ~500 updates); nothing said
+> the same about the explore eval, and its absence is why the comparisons above
+> got made. **Report a window mean over the last k evals, never a value at one
+> update** — and prefer the probe (`explore_traj` + `tail_report`, 144 matched
+> trials) over the training eval (6 envs × 16 trials) for anything load-bearing.
 
 ##### 9.1.1 WHICH LINK differs — a null on `follow_q` and `regime_gap`
 
