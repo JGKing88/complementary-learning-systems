@@ -20,6 +20,7 @@ import torch.nn.functional as F
 from ..policy import channels
 from . import signal
 from . import visited as visited_mod
+from .diagnostics import RegimeDiagnostics, on_perimeter
 from ..world import episode
 from ..config import TrainConfig
 from hopfield import Hopfield, recall_per_env_batch, recall_per_env_batch_trajectory
@@ -226,6 +227,12 @@ class RolloutCollector:
         # `ends_on_goal`; left None otherwise so PPO keeps its old reduction
         # rather than multiplying by a mask of ones.
         all_alive_mask = torch.ones(B, T, device=self.device)
+
+        # Per-update rollout diagnostics (docs/DUAL_TRAINING.md §7). Continuous
+        # only: `cos(a, q)` needs an action vector, and every phase-2 run is
+        # continuous. Costs one dot product and four norms per step.
+        _diag = (RegimeDiagnostics(B)
+                 if cfg.agent.movement_mode == "continuous" else None)
 
         # Novelty bonus: track per-rollout visited cells (B, size, size) bool.
         # +novelty_reward on first visit during the explore phase; revisits get 0.
@@ -617,6 +624,22 @@ class RolloutCollector:
                     rewards, goal_reached, _ = vec.step_batch(
                         actions, contract=goal_contract)
 
+                if _diag is not None:
+                    # Read BEFORE `done` is updated below, so `alive` means
+                    # "was stepped this iteration". Teleporting rows are
+                    # excluded for the same reason the shaping excludes them
+                    # via `moved`: their realized displacement is a teleport
+                    # jump, not a move, and averaging it in would inflate
+                    # realized_mag exactly where the agent is succeeding.
+                    _diag.observe(
+                        q=q_full,
+                        action=actions,
+                        realized=vec.last_displacement(),
+                        at_edge=on_perimeter(vec.positions(), cfg.env.size),
+                        alive=~done & ~at_goal_mask,
+                        from_policy=policy_chose.cpu().numpy(),
+                    )
+
                 if ends_on_goal:
                     # After this step, whoever was at the goal is finished.
                     done = done | goal_reached
@@ -676,11 +699,7 @@ class RolloutCollector:
                         visited_cells[np.arange(B), xs, ys] = True
 
                     if wall_on:
-                        size = cfg.env.size
-                        at_edge = (
-                            (xs == 0) | (xs == size - 1)
-                            | (ys == 0) | (ys == size - 1)
-                        )
+                        at_edge = on_perimeter(new_pos, cfg.env.size)
                         rewards -= (cfg.hopfield.wall_penalty
                                     * at_edge.astype(np.float32)
                                     * moved)
@@ -886,6 +905,7 @@ class RolloutCollector:
             teacher_store_action=teacher_store if collect_teacher else None,
             move_label_mask=move_label_mask if collect_teacher else None,
             store_label_mask=store_label_mask if collect_teacher else None,
+            diag=_diag.summary() if _diag is not None else None,
         )
 
     # The three helpers below moved to signal.py so that eval.agent_step runs

@@ -343,6 +343,52 @@ ignored it, and coverage fell 13.7% with 3.3× the volatility (§27).
 | `--epsilon_explore` on an exploit-only schedule | `exploit.py` hard-codes `epsilon=0.0`. Accepted, echoed, discarded — produced bit-identical numbers to the control. Also retracts an earlier claim that ε-annealing contributed to the u150–u250 swings: **there was never any ε in any exploit run in this phase.** |
 | `hopfield_beta` | the tanh argument is ~1e-4, so tanh is inert and recall is power iteration; β is a no-op and `steps=1` is the only setting that retrieves |
 | `WALL_PENALTY`, raising it | see §3.1 — it bids against +0.196/step of persistence income and taxes work the agent must do |
+| **`input_hopfield_multistep` depths 2 and 3** | **DROPPED 2026-09-06** — see §4.2.1 |
+
+### 4.2.1 Multi-step Hopfield — dropped
+
+Jack, 2026-09-06: *"i don't see multi step hopfield mentioned and i think you
+should drop that."* The evidence was already in and it agrees.
+
+**What it was.** `--input_hopfield_multistep 1 2 3` projects the recall at
+three iteration counts and feeds each as a 2-D input, on the theory that the
+policy can read recall-*convergence dynamics*. Every run from P1 to P35 used
+all three.
+
+**Why it goes.** Three independent reasons, in increasing order of how much
+they should have settled it earlier:
+
+1. **It adds nothing measurable.** §7.7 ablated the depth channel directly.
+   Group C *is* the depth-2 and depth-3 statistics, so `A∪B` is the
+   depth-{1}-only classifier — and it scores **0.869 against 0.858** at ten
+   distractors and t=8, **0.888 against 0.884** at t=64, and 0.763 against
+   0.760 at t=1. **Depth {1} is never worse and is usually slightly better.**
+2. **The premise is false.** §5.4: the recall does **not** converge, it
+   *drifts*. The network is a linear associative memory in which iterating is
+   power iteration toward the top eigenvector, and pooled direction quality
+   degrades from 1.46% bad at one step to 12.27% at twelve. Depths 2 and 3 are
+   not better-converged states, they are strictly **degraded** ones sampling
+   the transient of a walk *away* from the answer. `steps=1` is the only
+   setting that retrieves at all.
+3. **It creates an intervention trap.** `q` reaches the policy through **four**
+   channels, not one — the raw signal plus three `multistep_q` channels
+   (`EXPLOIT_DIAGNOSTIC` §7). Intervening on the obvious one leaves the other
+   three carrying the contaminated recall and contradicting it, and the run
+   looks like it worked. Dropping to depth {1} removes a whole class of silent
+   experimental error.
+
+**It is measured, not assumed.** `INPUT_HOPFIELD_MULTISTEP` now defaults to
+`"1"`, and wave 1 carries **`d1_ms3`**, which is `d0_base` with `"1 2 3"` and
+nothing else moved. The honest qualification in §7.7 is the reason that arm
+exists: the ablation removed *four summary statistics* of the depth channel,
+while the policy receives `q²` and `q³` as raw 2-D vectors and could in
+principle use them some other way. There is no evidence it should — but "no
+evidence for" is not "evidence against", and one arm settles it.
+
+**Cost of the change, stated because this launcher moves a default:** every run
+up to and including P35 trained with `"1 2 3"`, so a phase-2 number and a
+post-2026-09-06 number are not comparable on this axis. It also removes 4 of
+the policy's 74 input dims.
 
 ### 4.3 The knobs whose optima CONFLICT between the regimes
 
@@ -605,15 +651,46 @@ each guard exists because it has already caught a wrong conclusion.**
 | both training-eval and probe success quoted as a bracket | 0.958 vs 0.901 on the same checkpoint |
 | held-out split, not `recorded` | every §9.6–9.8 number is on the run's own validation set |
 
-### The instrumentation that does not exist yet and should be built first
+### The instrumentation — **BUILT 2026-09-06**
 
-**Per-update, per-regime rollout diagnostics.** Evals run every 25–50 updates
-and do not split by regime, so the corner trap has only ever been seen after the
-fact. Log `chase_q`, `follow_q`, `edge_frac`, `clip_frac`, commanded and
-realized ‖a‖, and `regime_gap` **every update, split explore/exploit**. These
-are already computed inside the rollout; this is bookkeeping, not new
-computation, and it converts the corner trap from a post-hoc diagnosis into a
-time series with an onset.
+`hopfield_nav/rollout/diagnostics.py`, wired through `RolloutBatch.diag` and
+logged by `train_navigate` **every update, split explore/exploit** as
+`train/expl/*` and `train/expt/*`, plus `train/regime_gap`. Continuous movement
+only. 24 tests in `test_rollout_diagnostics.py`.
+
+Evals run every 25–50 updates and do not split by regime, so the corner trap
+had only ever been seen after the fact — and D2's prediction, that `chase_q`
+rises *before* `edge_frac`, was untestable. It is now a time series with an
+onset. The cost is one dot product and four norms per step.
+
+Emitted per regime: `cos_aq`, `cos_aq_frac`, `q_mag`, `edge_frac`, `clip_frac`,
+`cmd_mag`, `realized_mag`, `pin_frac`, `steps`.
+
+Three decisions worth knowing:
+
+1. **`follow_q` and `chase_q` are one statistic.** `cos(a, q)` is emitted once
+   as `cos_aq`; which name it takes is a property of the *rollout's regime*,
+   not of the statistic. The trainer labels it. Their difference is
+   `regime_gap`.
+2. **ε and auto-nav steps are excluded from `cos_aq`.** A step the policy did
+   not choose says nothing about whether the *policy* follows `q`, and
+   including them makes a policy that ignores the recall read as partly
+   following it.
+3. **`pin_frac` is per-row, and `clip_frac` is not enough on its own.** A
+   policy parked past `max_action_norm` reads `clip_frac` 1.000 with no wall
+   involved (the probe's own docstring warns about this). `pin_frac` requires
+   *both* `clip_frac > 0.5` and realized speed `< 0.5`, which is clamp-immune,
+   and it is per-row because a rollout with half its rows pinned and one with
+   every row half-pinned have identical pooled `clip_frac` — and only the first
+   is §18.7's basin.
+
+**A guard found by running it, not by a unit test.** On a first live rollout the
+explore side came back `q_mag` **0.000** and `cos_aq_frac` **0.000**: with no
+distractors the goal-absent memory is *empty*, so `q = 0` exactly and `chase_q`
+is **undefined, not zero** — §7.5's degenerate condition. Ungated, `regime_gap`
+would silently have reported exploit's own `cos_aq` as a discrimination.
+`regime_gap` is now emitted only when *both* regimes have a usable recall on at
+least half their steps.
 
 ---
 
@@ -677,16 +754,27 @@ Ordered by information per GPU-hour. **Nothing here is launched.**
 3. **Refit the P3 feature set on the combined model's own rollouts**, both
    regimes. Gives `regime_gap` and the frozen/refit pair with no training.
 
-### Wave 1 — resolve the knob conflicts (§4.3)
+### Wave 1 — resolve the knob conflicts (§4.3) · **BUILT AND LAUNCHED**
+
+All four arms are `interleave:1200,empty_frac=0.5`, `regime_assignment shuffle`,
+`EVAL_SCOPE=navexpl`, w52 encoder, polar, `LOG_KAPPA_MAX=2.5`, speed `[0.5,1.0]`.
+Each differs from `d0_base` by exactly one knob.
 
 | arm | change | tests | falsifier |
 |---|---|---|---|
-| `d1_kanneal` | interleaved + `LOG_KAPPA_MAX` 2.5→5.0 over 400 | **D6** — the highest-value open test. Explore-verified, exploit unknown | exploit fails to lock by u300 → trigger the ramp on exploit success instead of on an update index |
-| `d1_persr` | interleaved + `--persistence_realized` | **D7** and gate 1 together | pin clears but coverage *falls* → the bonus was doing real work at the walls; try a smaller realized bonus |
-| `d1_speed` | polar, learned speed `[0.5, 2.0]` | the speed conflict | `mean_steps` improves but swept does not → step count was tracking the cap (§12), not navigation |
+| **`d0_base`** | nothing — **the P6 baseline that never ran** | the control for the other three, and the first interleaved run in phase 2 | — |
+| `d1_kanneal` | `LOG_KAPPA_MAX` 2.5→5.0 over 400 | **D6** — the highest-value open test. Explore-verified (§26), exploit unknown (§26.3 says so outright) | exploit fails to lock by u300 → trigger the ramp on exploit's first sustained success instead of on an update index |
+| `d1_persr` | `--persistence_realized` | **D7** and gate 1 together | pin clears but coverage *falls* → the bonus was doing real work at the walls; try a smaller realized bonus |
+| `d1_ms3` | keeps `input_hopfield_multistep 1 2 3` | §4.2.1 — makes the multistep drop measured rather than assumed | `d1_ms3` beats `d0_base` → depths 2/3 carry something the §7.7 summaries missed, and the drop is reverted |
 
-`p21_pr` (explore-only, `persistence_realized`) should run alongside as the
-clean single-regime control — it is already staged and costs one short job.
+`p21_pr` (explore-only, `persistence_realized`, `explore:300`) runs alongside as
+the clean single-regime control for D7 — `p20_e`'s own eval series is its
+control, so it needs no re-run of the baseline.
+
+**Speed is deliberately NOT an arm here.** §12 showed step count tracks the
+speed *cap* rather than navigation quality, so a `[0.5, 2.0]` arm would move
+`mean_steps` for a reason that is not about interleaving. It belongs in a wave
+of its own, scored on swept coverage.
 
 ### Wave 2 — the regime signal
 

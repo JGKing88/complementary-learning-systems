@@ -46,5 +46,11 @@ class RolloutBatch:
     # B). None unless aux_visited_weight > 0.
     visited_targets: torch.Tensor | None = None
     trust_hop_mask: torch.Tensor | None = None        # (B, T) float 0/1 — 1 when teacher's move label was a Hopfield-direction (post-store-at-goal) label, 0 when novelty. Used for upweighting nav labels in BC loss.
+    # Per-update rollout diagnostics -- see rollout/diagnostics.py and
+    # docs/DUAL_TRAINING.md §7. Scalars only, already computed inside the step
+    # loop; the trainer splits them by regime and logs them EVERY update, which
+    # is what turns the corner trap (D2) into a time series with an onset.
+    # None in discrete movement mode, where cos(a, q) has no meaning.
+    diag: dict | None = None
 
 __all__ = ["RolloutBatch"]

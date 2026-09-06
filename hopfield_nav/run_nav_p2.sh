@@ -105,7 +105,16 @@ INIT_SPEED_NU=${INIT_SPEED_NU:-3.0}
 INPUT_HOPFIELD_SIGNAL=${INPUT_HOPFIELD_SIGNAL:-1}
 INPUT_SENSORY=${INPUT_SENSORY:-1}
 INPUT_ENCODED_STATE=${INPUT_ENCODED_STATE:-0}
-INPUT_HOPFIELD_MULTISTEP=${INPUT_HOPFIELD_MULTISTEP:-"1 2 3"}
+# Depth {1} only, from 2026-09-06 (Jack). §7.7 ablated the depth channel and
+# {1} is NEVER worse than {1,2,3} for a regime classifier; §5.4 says why --
+# the recall does not converge, it DRIFTS, so depths 2 and 3 are degraded
+# states sampling the transient of a power iteration away from the answer.
+# Dropping them also removes the four-channel trap in EXPLOIT_DIAGNOSTIC §7.
+# `d1_ms3` keeps "1 2 3" so the change is measured, not assumed.
+# NOTE: this MOVES a default, which this launcher's header warns about. Every
+# run up to and including P35 trained with "1 2 3"; a P2 number is therefore
+# not comparable to a post-2026-09-06 one on this axis.
+INPUT_HOPFIELD_MULTISTEP=${INPUT_HOPFIELD_MULTISTEP:-"1"}
 
 # --- optimization (v35's) --------------------------------------------------
 LR=${LR:-3e-4}
@@ -1422,6 +1431,86 @@ case "$VARIANT" in
     MIN_ACTION_NORM=0.5; MAX_ACTION_NORM=1.0
     INPUT_ABS_POSITION=1
     EVAL_SCOPE=expl; EVAL_EVERY=25; CKPT_EVERY=25
+    ;;
+
+  # === D0/D1 -- WAVE 1 of docs/DUAL_TRAINING.md. The interleaved run. =======
+  #
+  # P6 was specced in §10 and never ran, so phase 2 has TWO specialists at
+  # their ceilings and nothing that does both. These arms are that run, plus
+  # the three knobs DUAL_TRAINING §4.3 identifies as having CONFLICTING optima
+  # between the regimes -- the first list of contradictions this project has
+  # had, and the reason interleaving is not just a schedule question.
+  #
+  #   d0_base     the P6 baseline. Interleave in the SAME PPO update (phase-1
+  #               finding 11: explore-first collapses to 0.068, exploit-first
+  #               to 0.062, and `blocked` behaves like explore-first). It is
+  #               the control for the other three, so it must run.
+  #   d1_kanneal  LOG_KAPPA_MAX 2.5 -> 5.0 over 400. **The highest-value open
+  #               test in the project.** Exploit NEEDS the cap (§17.9: 1.000
+  #               @u125 against 0.375@u475); explore needs it lifted (§23/§24:
+  #               the cap traps the mean policy in a closed orbit, a 20%
+  #               det/sampled gap). §26 measured the anneal explore-safe --
+  #               gap 20% -> 3.3% -- and §26.3 says outright it tested nothing
+  #               about whether exploit still converges under it. This is D6.
+  #   d1_persr    --persistence_realized. §18.8 priced the wall pin: the
+  #               persistence bonus PAYS +0.196/step for it against
+  #               wall_penalty's -0.093, because it scores the COMMANDED
+  #               action and a pinned agent commands a perfect heading while
+  #               realizing 0.09. Gate 1 says nothing downstream is
+  #               interpretable until the pin clears. This is D7.
+  #   d1_ms3      the multistep control -- see the block below.
+  #
+  # MULTISTEP. Jack, 2026-09-06: "i don't see multi step hopfield mentioned
+  # and i think you should drop that." The evidence was already in and agrees:
+  # §7.7 ablated it and depth {1} is NEVER worse than {1,2,3} for a regime
+  # classifier (0.869 vs 0.858 at ten distractors t=8, 0.888 vs 0.884 at
+  # t=64), and §5.4 explains why -- the recall does not converge, it drifts,
+  # so depths 2 and 3 are strictly DEGRADED states sampling the transient of a
+  # power iteration away from the answer. It also removes the four-channel
+  # implementation trap in EXPLOIT_DIAGNOSTIC §7, where `q` reaches the policy
+  # through the raw signal plus three multistep channels and intervening on
+  # one leaves the other three contradicting it.
+  #
+  # So the default is now "1" (changed above) and `d1_ms3` keeps "1 2 3".
+  # The drop is therefore MEASURED against d0_base rather than assumed -- the
+  # honest qualification in §7.7 is that it ablated four SUMMARY statistics of
+  # the depth channel, while the policy receives q^2 and q^3 as raw 2-D
+  # vectors and could in principle use them some other way.
+  #
+  # Speed is left at p20_e's [0.5, 1.0] so the explore interference number is
+  # comparable to §22.3.1's 0.644. The [0.5, 2.0] arm is deliberately NOT in
+  # this wave: §12 showed step count tracks the speed CAP rather than
+  # navigation quality, so it would move mean_steps for a reason that is not
+  # about interleaving.
+  d0_base|d1_kanneal|d1_persr|d1_ms3)
+    ENCODER=/orcd/pool/003/jackking/cls_runs/sweeps/w52_attract_fwhm/001_att0.5_seed=43/encoder_final.pt
+    ENCODER_GAIN=100
+    HOPFIELD_BETA=100
+    # empty_frac=0.5 is phase 1's measured optimum (tri finding 13: 0.5->0.7
+    # moves ALONG a coverage/steps frontier, +28% coverage for -41% steps,
+    # never outward). 1200 updates fits the 6 h wall at ~12.6 s/update with
+    # margin; CKPT_EVERY=25 so a TIMEOUT still leaves a usable series.
+    SCHEDULE=${SCHEDULE:-'interleave:1200,empty_frac=0.5'}
+    ENVS_PER_WORLD=20; BATCH_ENVS=64
+    EPSILON_EXPLORE=0.1; GOAL_REWARD=2.0
+    PERSISTENCE_BONUS=0.20
+    # Non-negotiable: positional assignment let the policy gate on env
+    # IDENTITY instead of on the recall signal (D3), which is the one way to
+    # score well on both metrics without solving the problem.
+    REGIME_ASSIGNMENT=shuffle
+    ACTION_POLAR=1; STATE_DEPENDENT_STD=1; FREEZE_LOG_STD=0
+    MIN_ACTION_NORM=0.5; MAX_ACTION_NORM=1.0
+    # Exploit's unlock, kept for the base. d1_kanneal is the arm that asks
+    # whether it can be released later without losing it.
+    LOG_KAPPA_MAX=2.5
+    # navexpl, not expl: an interleaved run that scores only one half cannot
+    # see interference, which is the whole quantity of interest.
+    EVAL_SCOPE=navexpl; EVAL_EVERY=25; CKPT_EVERY=25
+    case "$VARIANT" in
+      d1_kanneal) LOG_KAPPA_MAX_END=5.0; LOG_KAPPA_ANNEAL_UPDATES=400 ;;
+      d1_persr)   PERSISTENCE_REALIZED=1 ;;
+      d1_ms3)     INPUT_HOPFIELD_MULTISTEP="1 2 3" ;;
+    esac
     ;;
 
   *)

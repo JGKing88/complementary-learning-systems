@@ -38,6 +38,13 @@ from .world.env import warn_if_offcell_stores
 from .policy.agent import NavAgent, compute_input_dim
 from .policy.recurrent import add_recurrent_args
 from .rollout.collector import RolloutCollector
+from .rollout import diagnostics as rollout_diag
+
+# `regime_gap` needs a usable recall on BOTH sides to mean anything. At
+# n_distractors = 0 the goal-absent memory is empty, q = 0 exactly, and the
+# explore side has no angle at all -- §7.5's degenerate condition. Half the
+# steps carrying a recall is a low bar that still excludes that case.
+MIN_COS_FRAC = 0.5
 from .updates.ppo import ppo_update
 from .evaluation.checkpoint_io import cfg_from_checkpoint
 from .training.cfg_args import settle_encoder
@@ -466,6 +473,34 @@ def run_navigate(
             log["train/current_lr"] = knobs.lr
             log["train/stage_kind"] = stage.kind
             log["train/stage_local_update"] = local_update
+
+            # Per-regime rollout diagnostics, EVERY update. docs/DUAL_TRAINING
+            # §7: evals run every 25-50 updates and do not split by regime, so
+            # the corner trap has only ever been diagnosed after the fact. The
+            # prediction on record is that chase_q rises BEFORE edge_frac, and
+            # nothing until now logged either per update.
+            #
+            # `cos_aq` is one statistic wearing two names: in a goal-present
+            # rollout it is `follow_q`, in a goal-absent one it is `chase_q`.
+            # `pre` here means the goal was pre-stored, i.e. the exploit rows.
+            pre_d = [r.diag for r in pre_rs if r.diag is not None]
+            emp_d = [r.diag for r in emp_rs if r.diag is not None]
+            for name, ds in (("expt", pre_d), ("expl", emp_d)):
+                for k, v in rollout_diag.merge(ds).items():
+                    log[f"train/{name}/{k}"] = v
+            if pre_d and emp_d:
+                # THE number for regime discrimination: how much more does the
+                # policy follow the recall when there is something to follow?
+                # It collapsing toward zero is mode B arriving.
+                #
+                # Guarded on BOTH regimes having a usable recall, because at
+                # n_distractors = 0 the goal-absent memory is EMPTY, so q = 0
+                # exactly and `chase_q` is undefined rather than zero (§7.5
+                # calls that condition degenerate and says not to pool it).
+                # Ungated, the gap would silently report exploit's own cos_aq.
+                a, b = rollout_diag.merge(pre_d), rollout_diag.merge(emp_d)
+                if min(a["cos_aq_frac"], b["cos_aq_frac"]) >= MIN_COS_FRAC:
+                    log["train/regime_gap"] = a["cos_aq"] - b["cos_aq"]
             if refresher is not None:
                 for trait in refresher.counts:
                     log[f"train/refresh_{trait}"] = int(trait in refreshed)
