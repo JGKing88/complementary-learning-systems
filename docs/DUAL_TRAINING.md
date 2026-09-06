@@ -753,6 +753,36 @@ equally good readout available, the interleaved arms extract much less of it.*
 Separating the two would need a condition where `q_accuracy` is poor, i.e. a
 worse encoder.
 
+##### 5.3.5.1 The deficit is CLOSING with training, not a level
+
+The u250 snapshot above is mid-training and should not be read as a ceiling.
+`mean_steps` against each checkpoint's **own** optimum — `steps ÷ (9.85 / that
+checkpoint's realized speed)`, because realized speed moves from 0.30 to 0.79
+within a single run and raw steps are not comparable across it:
+
+| × optimal at d=10 | u100 | u150 | u200 | u250 | u300 | u350 | u425 |
+|---|---|---|---|---|---|---|---|
+| `d0_base` | 1.92 | 1.35 | 1.31 | 1.30 | **1.22** | — | — |
+| `d1_kanneal` | 1.60 | 1.83 | 1.29 | 1.29 | 1.22 | **1.15** | 1.21 |
+| `p19_kcap` (reference) | | | | | | | **1.12** |
+
+Both arms decline steadily toward the specialist, and `d1_kanneal` has touched
+**1.15** twice. So §5.3.5's deficit is a **rate**, not a level — the same shape
+as §9.1's κ finding, and the same mistake would have been available here if the
+u250 probe were quoted as an endpoint.
+
+**A discrepancy to resolve at the final measurement, not to explain away.** At
+u250 the *training eval* puts both arms at **1.30×** while the *held-out probe*
+put them at **1.58× / 1.65×**. The two disagree by ~20%, and they are different
+populations: the training eval runs on the run's own validation envs, the probe
+on a fresh `place=held_out` draw. §9.8.2 flags exactly this — the run's own
+`base_val` is never trained on but is not a fresh draw either.
+
+If that gap survives at the final checkpoint it is a **generalization gap**, and
+it belongs in the interference table rather than in a footnote. **The probe is
+the number to trust**; the trend above is from the training eval and is
+therefore the optimistic version of the story.
+
 ---
 
 ## 6. Is the agent exploring or exploiting? — independent of the rollout's regime
