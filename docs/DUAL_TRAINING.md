@@ -47,9 +47,12 @@ And the mechanism is a **scalar magnitude gate on ‖q‖**. Following is gated 
 ‖q‖ in both regimes, and the gate spans the full behavioural range: scaling q
 alone moves exploit `follow_q` 0.06 ↔ 0.97 and explore `chase_q` 0.003 ↔ 0.88
 with memory contents untouched (§9.3). The two regimes sit on opposite sides of
-**one threshold with ~3× margin each way** — and distractors squeeze the two
-distributions toward each other from both sides, inflating goal-absent ‖q‖
-while degrading the goal-present readout. The collapsed tail is the upper tail
+**one threshold with ~3× margin each way** in the means — but the *tails*
+overlap, and only one side moves: distractors inflate goal-absent ‖q‖ (0.049 →
+0.086) while the goal-present magnitude stays flat (0.280 → 0.272) and only its
+*direction* degrades. Measured, the goal-absent top decile (0.205) sits above
+the goal-present p10 (0.143), so any threshold sits where both regimes have
+real mass. The collapsed tail is the upper tail
 of goal-absent ‖q‖ crossing that gate: collapsed episodes carry **2.69× the
 ‖q‖** of the rest, `corr(q_mag, swept) = −0.636`, and the effect is a threshold
 (deciles 1–7 flat, only decile 10 breaks) rather than a slope (§9.6).
@@ -1728,12 +1731,35 @@ each way.** Exploit's native ‖q‖ is about 3× above the gate; explore's
 goal-absent ‖q‖ (0.087 at d=10) about 3× below it. That is what "one threshold
 serving two regimes" means quantitatively.
 
-**3. It names the interference mechanism.** §5.8: goal-absent ‖q‖ *grows* with
-distractor count (0.049 at d=1 → 0.086 at d=10) because it is a max over
-unrelated draws. Meanwhile distractors *degrade* the goal-present readout
-(`q_accuracy` 0.98 at d=0, 0.87–0.92 at d=5). **Distractors squeeze the two
-distributions toward each other from both sides.** The gate has to hold a gap
-that the distractors are closing.
+**3. It names the interference mechanism — and the squeeze is ONE-SIDED.**
+§5.8: goal-absent ‖q‖ *grows* with distractor count, 0.049 at d=1 → 0.086 at
+d=10, because it is a max over unrelated draws. The goal-present magnitude does
+**not** move to meet it: measured 2026-09-07 at 0.280 / 0.271 / 0.272 across
+d=0/5/10, flat to 3%. What distractors degrade on the goal-present side is the
+**direction**, not the length — `q_accuracy` 0.980 → 0.937. So the phantom
+distribution climbs toward a stationary goal distribution, while separately the
+real signal's bearing gets noisier at constant magnitude.
+
+*Corrected here.* An earlier revision said distractors squeeze the two
+distributions toward each other *from both sides*. That was inferred from
+`q_accuracy` falling, which is a direction statistic and says nothing about
+magnitude. The goal-present magnitude had never been recorded — `q_mag_mean`
+existed only in `_explore_stats` — so the claim rested on a quantity nothing
+measured. `_nav_stats` now emits it (`test_nav_qmag.py`, 8 tests).
+
+**And the overlap is now measured on both sides, not inferred.** Goal-present
+**p10 = 0.143** at d=10; goal-absent **decile-10 mean = 0.205**, with the
+collapsed episodes at **0.232**. The gate sits at 0.09–0.20. So the top decile
+of goal-absent ‖q‖ lies *above* the bottom decile of goal-present ‖q‖: the
+distributions genuinely cross, and any threshold must be placed where both
+regimes have real mass. That is why moving it trades one failure for the other.
+It also prices mode B — roughly a tenth of goal-present steps carry ‖q‖ at or
+below the gate band, and those are steps with a real goal signal that the
+policy declines.
+
+The exploit specialist sits in the same place (`p19_kcap` u800: mean 0.267, p10
+0.130 at d=10) and follows anyway — `follow_q` 0.972 against `d0_base`'s 0.819.
+It can afford the overlap because it never has to explore.
 
 **And the mode-B deficit IS the gate.** At 3.2× exploit `follow_q` at d=10 goes
 0.819 → 0.969 — full-specialist level, deficit gone. The reason this is not a
@@ -1917,6 +1943,107 @@ gate merely set higher, making the difference threshold **placement**
 rather than **presence**, which would have been the better outcome because
 placement is tunable. It did not chase. The falsifier is rejected and the
 harder reading stands.
+
+---
+
+#### 9.7 A SECOND CUE: is `q` pulling me into the box? — Jack, 2026-09-07
+
+> *"or it could learn something like: if q is guiding me towards a wall, then
+> realize we are in explore, right?"*
+
+The proposal is a discriminator of a different kind. ‖q‖ separates the regimes
+**statistically** — two distributions that overlap and that distractors push
+together (§9.3). Wall-directedness would separate them **structurally**:
+`rollout/distractors.py` draws patterns from grid positions *outside* the test
+env's footprint, so a phantom target is by construction not in the box while a
+real goal always is, and adding distractors does not move the walls.
+
+Measured with **no policy and no rollouts** — encoder, memory and the env's own
+update rule only, so nothing depends on what any agent learned. For each memory
+draw `q(x)` is evaluated at all 400 cells twice, once with the goal stored and
+once with only distractors. 6 envs × 6 draws = 36 memories per level.
+
+| n_dist | outward present | outward absent | AUC per-memory | **AUC per-cell** | flow→edge present | flow→edge absent |
+|---|---|---|---|---|---|---|
+| 1 | −0.699 | +0.003 | 1.000 | **0.777** | 0.277 | 0.866 |
+| 5 | −0.699 | +0.009 | 1.000 | **0.800** | 0.279 | 0.864 |
+| 10 | −0.691 | +0.077 | 0.995 | **0.807** | 0.284 | 0.859 |
+
+`outward` is cos(q, outward normal) at perimeter cells — scale-free, so no
+target distance has to be extrapolated from ‖q‖.
+
+**As a per-step cue it is WORSE than what the agent already has.** One glance at
+one cell gives AUC 0.78–0.81 against ‖q‖'s 0.881. It is not a drop-in better
+threshold, and anyone reading only the per-memory column would conclude the
+opposite.
+
+**But it does not degrade with distractors, and ‖q‖ does.** Per-memory AUC is
+1.000 / 1.000 / 0.995 and the present-condition outwardness is flat at −0.699 /
+−0.699 / −0.691 over a 10× change in distractor count, where ‖q‖'s separability
+falls 0.96 → 0.62. That is the structural-vs-statistical distinction showing up
+as a measurement rather than an argument.
+
+**The mechanism is not the one proposed, and the data says so.** The phantom
+does *not* point out of the box — absent outwardness is +0.003 at one distractor
+and only +0.077 at ten, i.e. essentially isotropic. What carries the signal is
+the other side: with the goal stored, `q` at a boundary is strongly and
+consistently **inward** (−0.69). The discriminator is *"is something in the box
+pulling me"*, not *"is something outside pushing me"*.
+
+That also re-reads the flow column. Phantom flows end on the perimeter 86% of
+the time not because they are driven outward but because **nothing pulls them
+off it** — an isotropic field plus a clipping boundary is absorbing. The agent
+is not lured into a wall; it drifts into one and then has no reason to leave.
+Which finally explains §5.3.2's collapsed episodes having span 17.9 of a
+20-cell arena: they cross open ground normally, reach a boundary, and stick.
+
+**Why it is robust:** pointing inward is a coarse, near-binary property, where
+`q_accuracy` needs a precise bearing. Coarseness is the reason distractors do
+not touch it — the same reason it is weak per-step.
+
+##### The control that mattered
+
+A *real* goal one cell from a wall also produces wallward `q`, so the cue had to
+survive that or it would fire on legitimate navigation. It does, at every
+level: goals within 2 cells of a wall give −0.574 / −0.576 / −0.562 against
+−0.824 / −0.822 / −0.819 for goals in the open. Both firmly inward, both far
+from the phantom's ~0.0–0.08.
+
+##### What this does and does not license
+
+The cue is real, robust to distractors, and complementary to ‖q‖ rather than a
+replacement — it is weak where ‖q‖ is strong (one glance) and strong where ‖q‖
+is weak (many distractors). Combining them is the obvious move.
+
+**The obstacle is §3's mode 3, and it is the same obstacle as everywhere else.**
+Getting from 0.81 to ~1.0 requires *accumulating* the cue over steps, and the
+policy is a near-memoryless vector field: continuations at a state repeat stay
+~8× closer than chance for 25 steps, and occupancy's absolute influence on the
+action is pinned at 0.024–0.030 across five arms. Asking it to integrate
+evidence over time is asking for the one capability measured absent five times.
+Two ways past that, in increasing cost:
+
+1. **Compute it outside the policy** and hand in a running scalar (e.g. the
+   drift of ĝ = Σd + q, or a leaky average of inward-ness). This makes it an
+   input channel rather than a demand on the RNN — and §10's falsifier applies:
+   if supplying it changes nothing, that is the *fourth* time after `p24_aux`,
+   `p25_visin` and `chart_frac`, and the bottleneck is architectural.
+2. **Wave 3 (credit assignment)**, which was scoped as an explore-side fix. If
+   the tail needs history and the explore ceiling needs history, they are one
+   problem and wave 3 is load-bearing for both halves rather than one.
+
+**Not tested here:** whether `d0_base` behaves any differently on cells where
+the field is outward. This is the field a q-follower would experience, not what
+the trained policy did with it. And 36 memories per level supports the flat
+trend, not a third decimal.
+
+**Related and previously mis-filed.** §6.2's `b2_spread` is the temporal version
+of the same idea — ĝ = Σd + q is constant when the goal is stored and drifts
+when it is not — scoring AUC **1.000 on unclipped episodes** and 0.611 after a
+clip. This document filed that as a limitation ("the wall destroys the cue, so
+no input channel can fix it"). The right reading is the opposite: **the cue does
+not need to survive the pin, it needs to fire before it**, and the collapsed
+episodes provide a long clean approach in which to do so.
 
 ---
 

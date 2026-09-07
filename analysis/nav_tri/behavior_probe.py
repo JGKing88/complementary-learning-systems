@@ -646,6 +646,7 @@ def _nav_stats(rec, size, goal, starts):
     follow, ok_f = _cos(act, rec["q"])
     qacc, ok_q = _cos(rec["q"], to_goal)
     mag = np.linalg.norm(act, axis=-1)
+    qnorm = np.linalg.norm(rec["q"], axis=-1)              # (T, B)
 
     live = alive.astype(bool)
     def m(arr, ok, mask):
@@ -779,6 +780,19 @@ def _nav_stats(rec, size, goal, starts):
         "follow_q_fail": m(follow, ok_f, fail_mask),
         "q_accuracy": m(qacc, ok_q, np.ones_like(succ_mask)),
         "q_accuracy_fail": m(qacc, ok_q, fail_mask),
+        # The GOAL-PRESENT ||q||, the counterpart of _explore_stats'
+        # goal-absent one. Both halves are needed to say where the following
+        # threshold sits relative to each regime, and only the explore half
+        # was recorded until 2026-09-07 -- so the exploit-side number in the
+        # dose response was quoted from a design comment, not measured.
+        # Masked to LIVE steps: nav episodes end on arrival, so the padding
+        # after a success would otherwise drag the mean toward zero.
+        **{f"q_mag_{k}": v for k, v in (
+            ("mean", float(qnorm[live].mean()) if live.any() else float("nan")),
+            ("median", float(np.median(qnorm[live])) if live.any() else float("nan")),
+            ("p10", float(np.percentile(qnorm[live], 10)) if live.any() else float("nan")),
+            ("p90", float(np.percentile(qnorm[live], 90)) if live.any() else float("nan")),
+        )},
         **dist_stats,
         "final_dist_fail": float(final_d[~succ].mean()) if (~succ).any() else float("nan"),
         "fail_frac_at_edge": float(
