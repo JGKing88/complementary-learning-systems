@@ -4,7 +4,7 @@
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=16
 #SBATCH --partition=mit_normal
-#SBATCH --mem=120G
+#SBATCH --mem=48G   # probes use 27.5 GB actual; 120G put five jobs behind QOSMaxMemoryPerUser
 #SBATCH --output=/orcd/pool/003/jackking/cls_runs/logs/w1_final_%j.out
 #
 # The complete wave-1 report, in one job.

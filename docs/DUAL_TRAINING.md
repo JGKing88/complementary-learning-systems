@@ -22,17 +22,62 @@ the problem (`EXPERIMENTS_NAV_P2` §0.0).
 
 ## 0. The one-paragraph state of play
 
+**Updated 2026-09-07 — the dual problem now has a mechanism.**
+
 Both specialists are solved to a known ceiling. Exploit reaches **1.000 success
 at 10.95 steps, 1.10× optimal** (`p10_pol_v1`, §9.8) and its residual failures
 at ten distractors are mode A — following a readout that is wrong. Explore
-reaches **swept 0.644 @200 steps, 0.911 @1000** (`p20_e`, §22.3.1) which is *at*
-the billiard ceiling, and its residual failure is that the policy is a
-**memoryless vector field** — it replays the same action at the same
-(position, heading) regardless of history. Phase 1 produced a combined model at
-coverage 0.315 / success 0.849 / 16.5 steps at d=10. What phase 2 added is that
-the two specialists' *knob optima conflict on at least three axes* (§4.3), and
-that the regime signal a combined model needs is **available but inverts on a
-successful exploiter** (§6.3). Those two facts are the dual problem.
+reaches **swept 0.644 @200 steps, 0.911 @1000** (`p20_e`, §22.3.1), *at* the
+billiard ceiling, and its residual failure is that the policy is a **memoryless
+vector field**. Phase 2's interleaving produces **one model at near-specialist
+level on both halves** (`d0_base` u725: exploit 1.19× optimal at d=10 with
+0.995 success; explore `swept_eff` 0.94 with a collapsed tail of 0.021–0.036).
+So the one-model claim is *demonstrated*; what remained was why a gap persists.
+
+It is now decomposed, and the two halves of it are different in kind:
+
+* **Exploit** — ~60% interference, ~40% budget (§9.2). The interference is pure
+  **mode B** (§5.3.5): `q_accuracy` is intact, the policy just under-trusts it.
+* **Explore** — the split is **by metric**, not by fraction. Efficiency is
+  entirely a budget effect and the combined model actually *beats* its
+  budget-matched specialist (0.940 vs 0.881). The **collapsed tail is pure
+  interference** — both specialists are at 0.000 at every budget (§9.2).
+
+And the mechanism is a **scalar magnitude gate on ‖q‖**. Following is gated on
+‖q‖ in both regimes, and the gate spans the full behavioural range: scaling q
+alone moves exploit `follow_q` 0.06 ↔ 0.97 and explore `chase_q` 0.003 ↔ 0.88
+with memory contents untouched (§9.3). The two regimes sit on opposite sides of
+**one threshold with ~3× margin each way** — and distractors squeeze the two
+distributions toward each other from both sides, inflating goal-absent ‖q‖
+while degrading the goal-present readout. The collapsed tail is the upper tail
+of goal-absent ‖q‖ crossing that gate: collapsed episodes carry **2.69× the
+‖q‖** of the rest, `corr(q_mag, swept) = −0.636`, and the effect is a threshold
+(deciles 1–7 flat, only decile 10 breaks) rather than a slope (§9.6).
+
+**The sharpest statement: the explore specialist sits at the same goal-absent
+‖q‖ (0.092 vs 0.086) with a zero tail. The tail is not caused by ‖q‖ being
+large — it is caused by having a gate at all, which is needed only because the
+same policy must follow q when exploiting.** The collapsed tail is the price of
+the gate; the gate is the price of being one model.
+
+That reading is now confirmed directly rather than inferred. Driven over a 10×
+range of ‖q‖, the specialist's `chase_q` stays flat at 0.012 → 0.013 → 0.026 —
+and at the top point its ‖q‖ (0.882) is *higher* than the combined model's
+(0.833) while it chases **34× less** (0.026 vs 0.882). The difference is
+**presence, not placement**: the specialist has no threshold anywhere in the
+reachable range, so there is nothing to retune (§9.6). The easier remedy is
+foreclosed — the gate must become conditional on something other than ‖q‖,
+which is §6's problem in its sharpest form.
+
+One thing this does **not** settle: whether ‖q‖ is the *only* regime cue for
+the combined model. At matched ‖q‖ the two regimes still differ, and the
+conditions differ structurally (§9.3 caveat).
+
+Standing constraints on all of this: the specialists' *knob optima conflict on
+at least three axes* (§4.3), the regime signal **inverts on a successful
+exploiter** (§6.3), `input_goal_in_memory` is banned (§0.0), and
+explore-only validation **does not predict interleaved behaviour** (2/2, §9.0).
+
 
 ---
 
@@ -1615,6 +1660,265 @@ tail did **not** follow the gap despite the confound pushing them together —
 the confound works against the finding rather than for it. The unconfounded
 test is still between arms at a matched update, which needs `d1_persr` and
 `d1_ms3`.
+
+#### 9.2 THE GAP DECOMPOSED — matched budget splits it BY METRIC
+
+At `empty_frac=0.5`, N interleaved updates buy ≈ N/2 regime-specific gradient
+steps. `d0_base` at u725 has therefore seen roughly **363 exploit updates and
+363 explore updates**, so the budget-matched specialist is u375 — not the u700–
+u800 endpoints every earlier comparison used. Both comparisons below are run in
+one process on identical envs, starts and memory contents.
+
+**Exploit** — `× optimal`, mean over d=0/5/10, deterministic, 192 episodes each:
+
+| checkpoint | expt updates | × optimal |
+|---|---|---|
+| `d0_base` u725 | ~363 | 1.186 |
+| `p19_kcap` u375 | 375 | **1.133** ← budget-matched |
+| `p19_kcap` u800 | 800 | 1.097 ← full specialist |
+
+Total gap 0.089. Budget accounts for 1.133 − 1.097 = 0.036 (**40%**);
+interference accounts for 1.186 − 1.133 = 0.053 (**60%**).
+
+**Explore** — `swept_eff` and the tail at d=10, 144 episodes each:
+
+| checkpoint | expl updates | swept_eff | frac<t |
+|---|---|---|---|
+| `d0_base` u725 | ~363 | 0.940 | **0.021** |
+| `p20_e` u375 | 375 | 0.881 | 0.000 ← budget-matched |
+| `p20_e` u700 | 700 | 0.982 | 0.000 ← full specialist |
+
+This does **not** decompose the same way, and the difference is the finding:
+
+* On **efficiency** the combined model *beats* its budget-matched specialist
+  (0.940 vs 0.881) and trails only the full one. There is no interference to
+  explain — given equal explore gradient steps the interleaved model is ahead.
+  The entire efficiency gap is budget.
+* On the **tail** both specialists are at 0.000 — at *both* budgets, so it is
+  not something the specialist buys with extra updates. The combined model is
+  the only one with a tail at all.
+
+**The explore deficit splits cleanly by metric: efficiency is a budget effect,
+the tail is pure interference.** This is the sharpest form of §5.3.2, and it is
+the reason `frac<t` and not the mean is the headline — the mean says the
+combined explore model is *better* than a matched specialist.
+
+---
+
+#### 9.3 THE MAGNITUDE GATE — a five-point dose response
+
+`q_scale` multiplies the Hopfield readout by a constant at eval time. Direction
+preserved, memory contents untouched, weights untouched.
+
+| q_scale | ‖q‖ expl d10 | expt follow_q d0 | expt follow_q d10 | expt success d10 | expl chase_q d10 |
+|---|---|---|---|---|---|
+| 0.10 | 0.009 | 0.068 | 0.075 | 0.495 | −0.017 |
+| 0.31 | 0.027 | 0.070 | 0.060 | 0.464 | −0.020 |
+| 1.00 | 0.087 | 0.916 | 0.819 | 0.995 | +0.003 |
+| 3.20 | 0.289 | 0.973 | **0.969** | 1.000 | **+0.429** |
+| 10.0 | 0.833 | 0.976 | 0.969 | 0.995 | +0.882 |
+
+**1. Following is gated on ‖q‖ in both regimes, and the gate spans the full
+behavioural range.** Between 0.31× and 1.0× exploit following goes 0.06 → 0.82
+and success 0.46 → 1.00. Between 1.0× and 3.2× explore chasing goes 0.003 →
+0.429. No memory content changed at any point on this table.
+
+**2. The two regimes sit on opposite sides of ONE threshold with ~3× margin
+each way.** Exploit's native ‖q‖ is about 3× above the gate; explore's
+goal-absent ‖q‖ (0.087 at d=10) about 3× below it. That is what "one threshold
+serving two regimes" means quantitatively.
+
+**3. It names the interference mechanism.** §5.8: goal-absent ‖q‖ *grows* with
+distractor count (0.049 at d=1 → 0.086 at d=10) because it is a max over
+unrelated draws. Meanwhile distractors *degrade* the goal-present readout
+(`q_accuracy` 0.98 at d=0, 0.87–0.92 at d=5). **Distractors squeeze the two
+distributions toward each other from both sides.** The gate has to hold a gap
+that the distractors are closing.
+
+**And the mode-B deficit IS the gate.** At 3.2× exploit `follow_q` at d=10 goes
+0.819 → 0.969 — full-specialist level, deficit gone. The reason this is not a
+fix is that the same 3.2× switches on explore chasing (0.003 → 0.429). A
+*regime-conditional* gain would work, but knowing the regime is precisely §6's
+open problem. This is a restatement of the difficulty in units, not a way past
+it.
+
+*Caveat on record.* At matched ‖q‖ ≈ 0.28–0.29 the regimes are still not
+equivalent — exploit follows at 0.819 (native scale) where explore chases at
+0.429 (3.2×) — and the conditions differ structurally (nav episodes end on
+arrival, explore episodes run the full 200 steps). So ‖q‖ is the *dominant*
+control variable and is sufficient to span the range; whether it is the *only*
+cue is not settled by this design.
+
+---
+
+#### 9.5 HOW MUCH OF THE TRAINING WAS LOAD-BEARING
+
+Six `d0_base` checkpoints, one process, identical envs, starts and memory.
+
+**Explore**, d=10, 144 episodes each:
+
+| u | swept | swept_eff | frac<t |
+|---|---|---|---|
+| 200 | 0.453 | 0.777 | 0.076 |
+| 300 | 0.422 | 0.707 | 0.097 |
+| 400 | 0.532 | 0.864 | 0.042 |
+| 500 | 0.569 | 0.895 | 0.042 |
+| 600 | 0.585 | **0.933** | 0.035 |
+| 725 | 0.585 | 0.930 | **0.021** |
+
+**Exploit**, deterministic, 192 episodes each:
+
+| u | × opt d0 | × opt d10 | follow_q d0 | follow_q d10 | q_acc d0 | q_acc d10 |
+|---|---|---|---|---|---|---|
+| 200 | 1.996 | 2.168 | 0.604 | 0.570 | 0.981 | 0.974 |
+| 300 | 1.400 | 1.562 | 0.794 | 0.741 | 0.981 | 0.974 |
+| 400 | 1.346 | 1.330 | 0.811 | 0.814 | 0.980 | 0.974 |
+| 500 | 1.300 | 1.298 | 0.845 | 0.838 | 0.979 | 0.974 |
+| 600 | 1.179 | 1.211 | 0.897 | **0.885** | 0.979 | 0.973 |
+| 725 | 1.167 | **1.186** | **0.916** | 0.819 | 0.980 | 0.966 |
+
+**1. Every update after u200 is mode-B work.** `q_accuracy` at d=10 is flat at
+0.974 to three decimals from u200 to u600, while `follow_q` climbs 0.570 →
+0.885 and cost falls 2.17 → 1.21 × optimal. The readout is finished at u200;
+everything after is the policy learning to trust a readout that was already
+correct. This is §2's dichotomy appearing as a *training curve* rather than as
+a between-arm comparison, and it is the cleanest separation of the two axes the
+project has produced.
+
+**2. The tail is the slowest-converging quantity.** Explore efficiency plateaus
+at u600 (0.933 vs 0.930) but `frac<t` falls monotonically all the way out
+(0.097 → 0.042 → 0.042 → 0.035 → 0.021). `d0_base` was stopped by the 6h wall
+at u730, not by a plateau — on the metric that distinguishes it from every
+other arm it wanted *more* training.
+
+**3. u725 is not strictly the best checkpoint.** Between u600 and u725 the
+model traded distractor robustness for clean-memory performance: d=0 `follow_q`
+0.897 → 0.916 **up**, d=10 `follow_q` 0.885 → 0.819 **down**, d=10
+`q_accuracy` 0.973 → 0.966 down, d=10 success 1.000 → 0.995. The two distractor
+conditions move in *opposite* directions on matched episodes, so this is a
+trade and not noise — and because `q_accuracy` itself moves, it is partly mode
+**A**, not the pure mode B of the earlier stretch.
+
+**Answer to "same performance with less training".** u600 — **83% of the
+budget** — matches or beats u725 on three of four axes: explore efficiency tied
+(0.933 / 0.930), exploit `follow_q` at d=10 **better** (0.885 / 0.819), exploit
+`× optimal` 2% worse (1.211 / 1.186). It loses only on the explore tail (0.035
+vs 0.021 — five episodes versus three out of 144, inside the probe's measured
+run-to-run swing).
+
+So ~17% is cuttable at no cost on the converged metrics. But that is the less
+interesting half of the result. The important half is that **two of the three
+headline metrics had not converged when the wall stopped it, and one of them
+was actively regressing.** The run is simultaneously under-trained on the
+explore tail and over-trained on distractor robustness. "Less training" and
+"more training" are both right, for different metrics — which is what §4.3's
+conflicting optima predict, now visible along the time axis of a single run.
+
+---
+
+#### 9.6 THE TAIL IS THE GATE — confirmed on 576 episodes, and the specialist has none
+
+§9.3 established the gate by *intervening* on ‖q‖. This tests the same claim by
+*observation*, changing nothing: if following is gated on magnitude, the explore
+episodes that collapse should be the ones whose goal-**absent** ‖q‖ happened to
+clear the threshold. §5.8 makes it plausible — goal-absent ‖q‖ is a max over
+unrelated draws, so it grows with distractor count and has an upper tail.
+
+576 episodes (12 envs × 48 trials) at d=10, sampled, held-out places. The
+sample size is the fix §9.0.1's caveat asked for: at a 2% tail, 144 trials is
+three episodes and cannot support any comparison.
+
+| | n | frac<t | ‖q‖ in tail | ‖q‖ in body | ratio | chase in tail | chase in body |
+|---|---|---|---|---|---|---|---|
+| `d0_base` u725 | 576 | 0.036 | **0.2318** | 0.0863 | **2.69×** | **0.621** | 0.008 |
+| `p20_e` u700 | 576 | **0.000** | — | 0.0920 | — | — | 0.015 |
+
+`corr(q_mag, swept) = −0.636`; `corr(q_mag, chase_q) = +0.661`. **Prediction
+confirmed.**
+
+And the decile structure says it is a **threshold, not a slope**:
+
+| decile | ‖q‖ | swept | chase_q |
+|---|---|---|---|
+| 1 | 0.0498 | 0.608 | −0.011 |
+| 4 | 0.0705 | 0.600 | +0.005 |
+| 7 | 0.0895 | **0.609** | −0.002 |
+| 10 | 0.2047 | **0.442** | +0.246 |
+
+Deciles 1–7 are flat in `swept` — 0.608, 0.600, 0.609 — while ‖q‖ nearly
+doubles across them. Only the top decile breaks. Smooth degradation in ‖q‖ does
+not produce that shape; a gate does.
+
+**Two independent methods now bracket the gate to the same place.** §9.3's dose
+response put it between ‖q‖ 0.087 (chase 0.003) and 0.289 (chase 0.429) by
+*perturbing* q. This puts it between decile 7 at 0.090 (chase −0.002) and
+decile 10 at 0.205 (chase +0.246) by *observing natural variation with nothing
+changed*. Intervention and observation agree.
+
+##### The specialist line is the one that matters
+
+`p20_e` sits at goal-absent ‖q‖ **0.0920** — slightly *higher* than the
+combined model's 0.0863 — and has a tail of **0.000** with chase 0.015. Same
+input distribution, no collapse.
+
+So the tail is not caused by ‖q‖ being large. It is caused by **the combined
+model having a gate to trip at all** — which it needs only because it must
+follow q in the exploit regime. Explore-only training never rewards following
+q, so the specialist has no threshold for its own ‖q‖ excursions to cross.
+
+**The collapsed tail is the price of the gate, and the gate is the price of
+being one model.** That is a mechanism for §9.2's "the tail is pure
+interference", not merely a contrast — and it explains why the tail is the one
+explore metric that extra specialist budget does not buy (both `p20_e` u375 and
+u700 are at 0.000).
+
+##### CONFIRMED DIRECTLY — the specialist has no gate at any magnitude
+
+`specgate` (22206109) drove both models' ‖q‖ over a 10× range at d=10, same
+envs, same seed, `behavior_probe --mode explore`:
+
+| q_scale | `p20_e` ‖q‖ | `p20_e` chase_q | `d0_base` ‖q‖ | `d0_base` chase_q |
+|---|---|---|---|---|
+| 1.0 | 0.0866 | 0.0117 | 0.0872 | 0.0034 |
+| 3.2 | 0.2774 | **0.0133** | 0.2890 | **0.4290** |
+| 10.0 | 0.8820 | **0.0262** | 0.8327 | **0.8823** |
+
+**The specialist never chases.** Across a 10× sweep its `chase_q` moves 0.0117
+→ 0.0133 → 0.0262 — flat, and all three inside the noise around zero. At the
+top row its ‖q‖ is **0.8820, *higher* than the combined model's 0.8327**, and
+it chases at 0.0262 where the combined model chases at 0.8823. **34× apart at
+matched-or-favourable magnitude.**
+
+So the difference is **presence, not placement**. The explore specialist has no
+threshold anywhere in the reachable range of ‖q‖ — there is nothing to raise or
+lower. It is not that its gate is set safely high; it never built one, because
+explore-only training never rewards following q.
+
+This closes §9.6's inference limit, and it forecloses the easier remedy: the
+falsifier ("it has a gate, merely set higher → placement is tunable") is
+**rejected**. Tuning a threshold is not available as a fix, because the
+combined model's gate is not a mis-set version of the specialist's — it is a
+structure the specialist does not have.
+
+What that leaves is the shape of the intervention. Making the tail go away by
+weakening the gate would take exploit's `follow_q` down with it (§9.3 runs that
+experiment in the other direction: 0.31× costs exploit 0.82 → 0.06). The gate
+has to become **conditional on something other than ‖q‖** — which is §6's
+problem restated in the sharpest form the project has reached, and now with a
+quantitative target: a cue that separates goal-present from goal-absent better
+than a scalar threshold on ‖q‖ separates them at d=10, where the two
+distributions overlap in the top decile.
+
+
+*The prediction was recorded before the run.* §9.6 originally rested on a
+mean and a zero — `p20_e`'s ‖q‖ upper tail was not separately measured —
+and named its own falsifier: if the specialist chased at 10× it *had* a
+gate merely set higher, making the difference threshold **placement**
+rather than **presence**, which would have been the better outcome because
+placement is tunable. It did not chase. The falsifier is rejected and the
+harder reading stands.
+
+---
 
 ### Wave 2 — the regime signal
 

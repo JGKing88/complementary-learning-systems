@@ -183,6 +183,17 @@ def _traj_stats(pos_f, cell, action, q, size):
         "revisit_frac": float(revisit.mean()),
         "clip_frac": float(clipped.mean()),
         "chase_q": float(chase[okq].mean()) if okq.any() else 0.0,
+        # Mean ||q|| over the episode. The q_scale dose response established
+        # that following is a MAGNITUDE GATE -- pushing exploit's ||q|| to the
+        # decoy level collapses follow_q 0.819 -> 0.070, and pushing explore's
+        # to the goal level raises chase_q 0.003 -> 0.429. That makes a
+        # prediction about the corner trap: the collapsed episodes should be
+        # the ones where the goal-ABSENT ||q|| happened to clear the gate.
+        # SS5.8 makes it plausible -- goal-absent ||q|| grows with distractor
+        # count (0.049 at d=1 to 0.086 at d=10) because it is a max over more
+        # unrelated draws, so its upper tail is what crosses.
+        "q_mag": float(qn.mean()),
+        "q_mag_p90": float(np.percentile(qn, 90)),
         "speed": float(realized.mean()),
         # unique cells, for the footprint
         "cells": [[int(c // size), int(c % size)] for c in uniq],
