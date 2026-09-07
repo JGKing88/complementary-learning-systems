@@ -985,6 +985,7 @@ each guard exists because it has already caught a wrong conclusion.**
 |---|---|
 | `align_true` printed beside every `follow_q` | the geometric identity at `q_accuracy ≈ 1` |
 | `chase_q` printed beside every `pin_frac` | conflating the two collapse modes (§5.3.4) — they want opposite fixes |
+| **a knob validated on a specialist is UNVALIDATED for the combined model** | two for two in wave 1: the κ anneal and `persistence_realized` both help a specialist and hurt interleaved (§9.0.1 4b) |
 | distance-matched baselines on every failure statistic | failures being far from the goal by construction |
 | `pos_f`, never the snapped cell | the snap-square / L2-ball mismatch (~0.7 cells) |
 | realized magnitude in `strategy_efficiency` | the 3.97 artifact |
@@ -1319,6 +1320,60 @@ action, interleave in the same PPO update, `regime_assignment shuffle`.
 
 **If the exploit half were weighted more heavily, `d1_ms3` is the better
 model** and the recipe would keep multistep.
+
+##### 4b. `p21_pr` — the knob WORKS in isolation, and that is the problem
+
+`p21_pr` is `p20_e` with `--persistence_realized` and nothing else moved, so
+`p20_e` is its own control. Scored the way §18.8 specified — `explore_traj` on
+the early checkpoints where the pin lives, not from the coverage curve, "which
+cannot distinguish 'unpinned' from 'pinned but lucky'". 144 matched trials,
+`n_dist = 0`:
+
+| u | | speed | clip | edge | straightness | **PINNED** | swept | **eff** |
+|---|---|---|---|---|---|---|---|---|
+| 25 | `p21_pr` | 0.625 | 0.386 | 0.598 | 0.601 | **4/144 (3%)** | 0.245 | 0.485 |
+| 25 | `p20_e` | 0.103 | 0.907 | 0.930 | **0.934** | **144/144 (100%)** | 0.094 | 0.807 |
+| 50 | `p21_pr` | 0.716 | 0.215 | 0.366 | 0.785 | **0/144 (0%)** | 0.426 | 0.786 |
+| 50 | `p20_e` | 0.189 | 0.881 | 0.925 | **0.944** | **144/144 (100%)** | 0.104 | 0.510 |
+| 75 | `p21_pr` | 0.762 | 0.188 | 0.352 | 0.797 | **0/144** | 0.464 | 0.816 |
+| 75 | `p20_e` | 0.641 | 0.287 | 0.400 | 0.892 | 13/144 (9%) | 0.381 | 0.735 |
+| **300** | **`p21_pr`** | 0.902 | 0.055 | 0.169 | 0.908 | **0/144** | **0.582** | **0.936** |
+| **300** | `p20_e` | 0.926 | 0.092 | 0.265 | 0.941 | 0/144 | 0.558 | 0.877 |
+
+**§18.8's prediction, made before the arm ran, is confirmed on both halves.**
+It said: *"the pin clears earlier than `p20_e`'s u75, and final coverage is
+unchanged or slightly better."* The pin clears by **u25–u50** against the
+baseline's ~u150, and final efficiency is **better**, 0.936 against 0.877, with
+a tighter spread (0.043 vs 0.065) and no edge-avoidance pathology — `edge_frac`
+0.169 against a uniform 0.19, nowhere near `p20_e_kcap`'s pathological 0.061.
+
+The probe also reproduces §18.7's baseline exactly (144/144 pinned at u25 and
+u50, against its 64/64 on a smaller draw) and reproduces the straightness trap:
+**`p20_e` at u25 scores 0.934 straightness while covering 9.4%.** A pinned agent
+does not turn.
+
+> ##### The finding that matters is the DISSOCIATION
+>
+> **`--persistence_realized` is a clear win on the explore-only task and the
+> worst arm under interleaving** — `d1_persr` had the largest chasing tail of
+> the four (0.083 against the baseline's 0.021), the lowest explore efficiency
+> (0.808) and the worst exploit (1.25×).
+>
+> **That is the second time in wave 1 that an intervention validated on an
+> explore-only run failed under interleaving.** The κ anneal was the first:
+> §26 measured it explore-safe on `p23_kanneal` (det/sampled gap 20% → 3.3%)
+> and it costs efficiency and leaves the corner trap open in `d1_kanneal`.
+>
+> **Two for two. Explore-only validation does not predict interleaved
+> behaviour, and this document should stop treating specialist results as
+> evidence about the combined model.** Every knob in §4 whose optimum was
+> measured on a specialist is now suspect on that axis, including ones that
+> look settled.
+
+That also explains the shape of §9.0.1's result — *doing nothing beat all three
+knobs* — without needing to call the knobs bad. Each was chosen because it
+helped, or was predicted to help, a **specialist**. None was ever tested in the
+setting it was deployed into.
 
 ##### 5. A caveat on the tail numbers specifically
 
