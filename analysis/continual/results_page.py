@@ -690,6 +690,21 @@ METHOD_DETAIL = [
         "distinguishes it from plain replay, and it is also why it costs more "
         "— each replayed batch is forwarded through the frozen snapshot and "
         "through the live policy, on top of going through the main update.",
+        "The quantity is the KL divergence from the snapshot's action "
+        "distribution to the current one, averaged over the supervised "
+        "timesteps of each replayed trajectory. Only the current policy "
+        "carries a gradient, so minimising it is exactly a cross-entropy "
+        "against the snapshot's <em>whole distribution</em> as a soft label — "
+        "ordinary behaviour cloning, with the teacher replaced by the policy's "
+        "own former weights. The snapshot is a complete frozen copy, so under "
+        "continuous movement the learned action spread is pinned too, not only "
+        "the mean.",
+        "One consequence of the policy being recurrent: a replayed trajectory "
+        "is re-processed from a zero hidden state, for the snapshot and the "
+        "live policy alike. That keeps the comparison between them fair, but "
+        "it means the constraint is imposed on the sequence as run from "
+        "scratch rather than from the hidden state it actually had when it was "
+        "collected.",
     ]),
     ("E", "DER++", "replay + logit anchoring", "alpha", [
         "Replay, plus a penalty against the policy's own outputs <em>as they "
@@ -716,6 +731,24 @@ METHOD_DETAIL = [
         "rather than per timestep — so its whole cost lands at the boundary "
         "rather than in the updates. <code>gamma</code> decays older Fisher "
         "matrices so the penalty does not grow without bound.",
+        "<strong>Nothing is selected.</strong> The importance is a number per "
+        "individual weight, and every weight is penalised for moving, scaled "
+        "by its own value: one whose Fisher is near zero is effectively free, "
+        "one with a large Fisher is stiff. There is no threshold, no top-k and "
+        "nothing frozen — parameters are not in or out but continuously more "
+        "or less expensive to move. The hard-selection version of that idea is "
+        "XdG below, which gates whole units off instead of weighting them.",
+        "It also keeps no list. This is the <em>online</em> form: one "
+        "accumulated Fisher and one anchor, each the size of the network and "
+        "neither growing with the length of the stream, where the original "
+        "keeps a pair per task. The cost is that the anchor is always the most "
+        "recent boundary — importances from every environment add up, but the "
+        "point they all pull toward is where the weights sat at the end of the "
+        "last one. Collapsing several penalties centred on different old "
+        "optima into one centred on the latest is exact only if those optima "
+        "coincide, which they do not; <code>gamma</code> is the knob that lets "
+        "the older contributions fade rather than accumulate as though they "
+        "did.",
     ]),
     ("F", "Synaptic Intelligence", "parameter regularisation", "lambda", [
         "The same shape of penalty as EWC, but importance is accumulated "
@@ -727,6 +760,26 @@ METHOD_DETAIL = [
         "gradients the update already computed. <code>xi</code> damps the "
         "denominator so a weight that barely moved cannot acquire enormous "
         "importance.",
+        "The direction is worth stating plainly, because it reads backwards "
+        "easily: a weight that produced a lot of loss reduction is thereby "
+        "held <em>more</em> firmly in place on later environments, not moved "
+        "more. The reasoning is that the finished environment's behaviour "
+        "depends on that weight having the value it ended up with.",
+        "Two details in the accounting. Credit is divided by how far the "
+        "weight actually travelled, so it measures loss reduction <em>per unit "
+        "of movement</em> rather than in total — a weight that moved a long "
+        "way for a small gain is not credited like one that moved slightly for "
+        "a large gain. And a weight whose movement happened to increase the "
+        "loss is floored at zero importance rather than given a negative one: "
+        "there is no mechanism here that actively pushes a parameter around, "
+        "only one that holds it still.",
+        "Nothing in this constrains the environment being learned at the time. "
+        "The path integral is recorded throughout a block but only folded into "
+        "the penalty at its end, so within a block the weights move exactly as "
+        "they would without the method. SI only ever resists drift away from "
+        "what is already consolidated — and like online EWC it stores one "
+        "accumulated importance and one anchor, though unlike EWC it applies "
+        "no decay, so old contributions simply add.",
     ]),
     ("G", "LwF", "distillation", "alpha", [
         "No stored data and no per-weight state. Snapshot the policy when a "
