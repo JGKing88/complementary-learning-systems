@@ -1236,6 +1236,100 @@ while the baseline's tail is two episodes.
 **This is a hypothesis the data fits, not one it tests.** The clean test is
 `d1_persr`, which is running.
 
+##### 9.0.1 ALL FOUR ARMS at matched u725 — and multistep is a REGIME TRADE
+
+All four interleaved arms plus both specialists, one probe, identical envs,
+starts and memory contents.
+
+**EXPLORE**, d = 10, 144 matched trials:
+
+| arm | swept | sd | **swept_eff** | **frac collapsed** | chase in tail |
+|---|---|---|---|---|---|
+| **`d0_base`** | 0.589 | **0.082** | **0.938** | **0.021** | 0.429 |
+| `d1_ms3` | 0.527 | 0.118 | 0.845 | 0.076 | 0.416 |
+| `d1_kanneal` | 0.523 | 0.130 | 0.840 | 0.090 | 0.480 |
+| `d1_persr` | 0.504 | 0.121 | 0.808 | 0.083 | 0.383 |
+| `p20_e` u700 | 0.628 | 0.048 | **0.970** | **0.000** | — |
+
+**EXPLOIT**, d = 10, 192 held-out trials:
+
+| arm | success | `q_accuracy` | `align_true` | steps | **× optimal** |
+|---|---|---|---|---|---|
+| **`d1_ms3`** | 1.000 | 0.967 | **0.923** | **11.78** | **1.15** |
+| `d0_base` | 0.995 | 0.966 | 0.802 | 12.14 | 1.19 |
+| `d1_kanneal` | 1.000 | 0.970 | 0.872 | 12.58 | 1.23 |
+| `d1_persr` | 1.000 | 0.965 | 0.822 | 12.83 | 1.25 |
+| `p19_kcap` u800 | 1.000 | 0.972 | **0.952** | 11.29 | **1.12** |
+
+##### 1. §9.4's commitment hypothesis is FALSIFIED
+
+The falsifier was written before the arm ran: *"`d1_persr`'s tail matches
+`d0_base`'s at a matched update. Then the commitment story is wrong too."* Its
+tail is **0.083 against the baseline's 0.021** — four times larger, not smaller
+— and it is also the **worst arm on exploit** (1.25×). Scoring persistence on
+realized displacement does not fix the corner trap and costs elsewhere.
+
+What §9.4 said remains if that fired: *"what remains is that the policy has no
+escape behaviour once against a boundary — which is a different fix again, and
+not one this document has a lever for."*
+
+##### 2. Every intervention is a mild negative on the explore half
+
+`d0_base` has the smallest tail (0.021, and 0.014 in an independent probe run
+of the same checkpoint), the best efficiency (0.938) and the tightest spread
+(0.082). All three treatment arms sit at 0.076–0.090. **Doing nothing beat all
+three knobs.**
+
+##### 3. But multistep is not a null — it is a REGIME TRADE, and this reverses part of §4.2.1
+
+`d1_ms3` keeps `input_hopfield_multistep 1 2 3`; `d0_base` uses depth 1. At
+matched u725:
+
+| | `align_true` @ d=10 | × optimal | explore eff | tail |
+|---|---|---|---|---|
+| `d1_ms3` (depths 1,2,3) | **0.923** | **1.15** | 0.845 | 0.076 |
+| `d0_base` (depth 1) | 0.802 | 1.19 | **0.938** | **0.021** |
+
+**The depth channels help the exploit half and hurt the explore half.**
+`align_true` 0.923 against 0.802 is a large difference in how directly the
+policy moves on the readout — and `d1_ms3` also reached the joint region around
+u225–275 where `d0_base` needed ~u500, so it converges roughly twice as fast.
+
+That is a coherent mechanism rather than noise: more information about the
+recall makes the policy follow it better, which is what exploit wants — and
+following the recall harder is exactly the corner trap in an explore rollout.
+
+**§4.2.1 justified the drop partly on "depth {1} is never worse". That was
+measured on a regime CLASSIFIER's AUC (§7.7), and it does not transfer to a
+trained policy's behaviour.** The honest statement is now:
+
+> Dropping multistep improves the explore half and costs the exploit half.
+> It is a trade, not a free simplification. The §5.4 mechanism (depths 2–3 are
+> degraded states) and the four-channel intervention trap remain good reasons
+> to prefer depth 1; "it costs nothing" is no longer one of them.
+
+##### 4. What to recommend
+
+For the one-model claim as stated — a single policy that explores, navigates
+and discriminates — **`d0_base` is the pick**: exploit within 6% of the
+specialist's path efficiency at ≥0.995 success, explore at 97% of the
+specialist's efficiency, and the only arm whose chasing tail is near zero.
+Depth 1, κ capped at 2.5 throughout, no anneal, persistence on the commanded
+action, interleave in the same PPO update, `regime_assignment shuffle`.
+
+**If the exploit half were weighted more heavily, `d1_ms3` is the better
+model** and the recipe would keep multistep.
+
+##### 5. A caveat on the tail numbers specifically
+
+The probe is **not reproducible across different `--ckpt` lists**: sampled
+rollouts consume RNG per agent, so the stream depends on how many checkpoints
+are in the run. The same `d1_kanneal` u725 checkpoint read `swept_eff` 0.841 /
+tail 0.076 in a two-arm run and 0.887 / 0.035 in this five-arm one at d = 0.
+`d0_base` was stable (0.950/0.000 vs 0.948/0.000), and the d = 10 ordering is
+the same in both runs, but **a tail difference smaller than ~2× should not be
+read as real** without repeating the probe at fixed list length.
+
 ---
 
 #### 9.1 EARLY READING, SUPERSEDED — the κ anneal buys speed of convergence
