@@ -820,6 +820,27 @@ power spectrum, `d_eff = PR(P)`, `K` stored goals, `D = 1024`.
 **Status: essentially proven; needs writing up and its assumptions stated.**
 This is Jack's "big one", and it is a theorem rather than a measurement.
 
+> **In plain language.** For the stored memories to be actual fixed points *of
+> this recurrence*, the code has to be binary — below saturation the recall is
+> power iteration and converges to a single mixture rather than to any stored
+> pattern, and once it saturates the map's image *is* the set of hypercube
+> corners, so a fixed point can only be a corner. But a binary code cannot
+> carry **accumulating** distance. Each cell step flips some coordinates, and
+> Hamming distance is a metric, so distance over `k` cells grows at most like
+> `√k` and never like `k`. The one-cell difference is still there — it is
+> *larger* than the continuous code's — but the difference to a goal `k` cells
+> away is a sum of nearly orthogonal increments, so its projection onto the
+> local frame stops growing after about one cell and stops depending on which
+> direction the goal lies in. The readout loses range first and bearing soon
+> after.
+>
+> **Two things this is not.** It is not "a binary code has no local distance
+> information": `‖d_fwd‖` is 0.267 binarised against 0.086 continuous and zero
+> at none of 1500 positions. What fails is accumulation, not the increment.
+> (That exact overstatement was made and retracted once already in this
+> campaign.) And it is not a statement about attractor networks in general —
+> see the escapes below.
+
 Assume (i) a genuine fixed point of the recall map, which above the knee forces
 `φ(y)` onto a hypercube corner (§7's condition (a), §10.20's `cos_self` =
 1.0000 arm); and (ii) the readout is the first-order finite difference of §5.1.
@@ -842,15 +863,38 @@ for any binary code whatever. The continuous code escapes because its
 displacement is a coherent vector sum rather than a count of flips.
 
 This converts §10.20's measured `‖Δk‖/(k‖Δ1‖)` = 0.701 / 0.492 / 0.345 ≈ `1/√k`
-from a fact about one checkpoint into the only thing that could have happened,
-and it says exactly where the two escapes are:
+from a fact about one checkpoint into the only thing that could have happened.
 
-* relax (i) — a recurrence whose fixed points are not corners;
-* relax (ii) — a readout that is not a finite difference of the stored code
+**Why the readout loses *bearing* and not only range.** If displacement is
+diffusive, `φ(y) − φ(p)` is a sum of `k` mutually near-orthogonal increments, so
+its overlap with `d̂_fwd` — the *first* increment's direction — is one
+increment's worth regardless of `k`, and regardless of which direction `y` lies
+in. `q` becomes a 2-vector of roughly fixed magnitude and roughly arbitrary
+angle. Measured: `q_north` is flat at 0.267 → 0.239 over `k` = 1 → 32 binarised,
+against 0.086 → 0.417 continuous, and the fully saturated arm's acc45 is 0.392
+against a 0.25 chance floor. **[M]**
+
+**The two escapes, precisely.**
+
+* *Relax (i) — the binarity comes from `tanh` being applied **coordinatewise**,
+  not from the system being an attractor network.* A recurrence whose
+  nonlinearity acts in *pattern* space rather than coordinate space —
+  `x ← Z^T softmax(β Z x)`, the dense-associative-memory / modern-Hopfield form
+  — has well-separated **continuous** patterns as fixed points with no
+  binarisation anywhere. T1 says nothing against that. It is a theorem about
+  *this* recurrence, and the fact that we have been calling it a Hopfield
+  network is part of why the constraint looked fundamental.
+* *Relax (ii) — a readout that is not a finite difference of the stored code*
   (§10.20's parked "basis from pre-nonlinearity activations" is exactly this).
 
 **Falsified by:** a binary code with `‖Δk‖/k‖Δ1‖` bounded away from `1/√k` over
 a decade of `k`. (T1) says there is none.
+
+**Supporting fact worth keeping.** `sign(tanh(g·u)) = sign(u)` for every `g`, so
+the *sign pattern* is identical at gain 100 and 1e6 — `H(k)/(k·H(1))` is
+bit-identical, 1.000 / 0.975 / 0.958 / 0.938 / 0.893 / 0.743 / 0.431 at
+`k` = 1…64. **[M]** Binarisation discards only the magnitudes, and the
+magnitudes are the entire difference between ballistic and diffusive.
 
 ---
 
@@ -1031,6 +1075,18 @@ than one number. (ii) R4 was unreadable; split into four statements. (iii) Do
 not assume basin and reach share a variable — measured instead, §3.2, and found
 the basin metric mixes a cross-talk term with a precision term. Bug found and
 fixed on the way (§3.3).
+
+**Turn 7 — is this a true statement of T1?** Jack's paraphrase: binary is
+needed for fixed points, binary has "no local distance information between two
+codes", so the direction decoder fails. First and third right, **middle
+sentence false** — `‖d_fwd‖` is 0.267 binarised against 0.086 continuous and
+zero nowhere; what fails is *accumulation*, not the increment. The same
+overstatement was made and retracted earlier in this campaign. Plain-language
+box added to T1, plus the bearing-loss mechanism (a sum of orthogonal
+increments has a `k`-independent overlap with the first one) and the escape
+that matters: **the binarity comes from `tanh` being coordinatewise**, so a
+pattern-space nonlinearity (dense associative memory) gets continuous fixed
+points and T1 says nothing against it.
 
 **Turn 6 — pitch the questions at the right level.** Jack: T1 and T2 are right,
 the rest are too specific, and "`d_eff` isn't inherent to the problem setup —
