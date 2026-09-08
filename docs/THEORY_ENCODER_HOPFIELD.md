@@ -682,6 +682,59 @@ inventing.
 
 ---
 
+## 5.7 Why theory, at all
+
+Short version of the case, since the rest of this document assumes it.
+
+**What we would get.** Four things, in decreasing order of confidence: whether a
+genuine attractor is possible at all *and where the exits are* (Q1 — already
+answered, negatively, in a page); what the basin *should* be, as a formula
+rather than a measurement (Q2); whether we are near a ceiling or nowhere near
+one (Q4, Q5); and what to measure instead of sweeping.
+
+**Why the empirics say we *can*.** This system keeps behaving law-like rather
+than idiosyncratically, which is not true of most things we could point theory
+at.
+
+* A three-line estimate — `(Wx)ᵢ ~ D^−1.5` — predicted the β knee at 32768, and
+  the measured knee is 32768, with the median tanh argument there equal to 1.08.
+  That is a prediction landing **three decades away from where it was derived**.
+* A zero-parameter law, far-cos sd = `1/√d_eff`, holds to a few percent over a
+  20× range of `d_eff`.
+* `‖Δk‖ ∝ √k` to three decimals for the binarised code, and `H(k)/(k·H(1))` is
+  **bit-identical** across a 10⁴ change in gain.
+* Six knobs turn out to move roughly one thing, and do not compound. That is
+  what a system with few governing variables looks like from the outside.
+* A deliberately crude derivation of the basin already gives 19.7 against a
+  measured 27.0 (§7.2), with three order-unity constants dropped.
+
+**Why the empirics say we *should*.** The empirical route is failing in specific,
+recurring, expensive ways.
+
+* **Resolution.** A fixed arm swings 0.959–0.988 across scaffold draws, so gaps
+  under ~0.02 need 4 seeds × 3 draws to resolve — and the top arms are separated
+  by less than that. We are measuring below our own noise floor.
+* **Wrong-metric cost, measured in waves.** Three sweep waves climbed
+  `attract_lambda` the wrong way because `r_min` rewards it. `r_min` being a
+  *product of two opposing functions* of the same variable is derivable in a
+  paragraph. The price of not having that paragraph was three waves.
+* **Retraction rate.** Five one-seed readings retracted; every basin number
+  before §10.18 wrong; an env-censored metric inverted the coverage ladder.
+  Confident numbers keep flipping, and a prediction is the only independent
+  check on a measurement.
+* **Two fitted constants are load-bearing.** The cos-0.25 competitor threshold
+  and the res90 ≈ 5 floor gate every screening decision, and neither is derived,
+  so neither transfers to a new coverage, `K`, or geometry.
+* **The project's actual question is not empirical.** No amount of sweeping
+  separates "our encoder is bad" from "no encoder could do better." That needs a
+  bound.
+
+**The limit.** None of this touches what an optimiser *reaches* (Q7). Theory can
+say which codes are admissible and which are optimal; the loss, the sampling and
+the coverage stay empirical.
+
+---
+
 ## 6. The questions
 
 *(Opened turn 6.)* Seven, stated using **only the objects of §5.1** — position,
