@@ -2145,100 +2145,133 @@ gap between "first metric saturates" and "run stops improving" is not the 200–
 the second point. It is also the fourth reason in this document not to quote
 `success_rate` as a headline.
 
-##### Continual learning — 1980 revisits, zero failures
+##### Continual learning — 2,240 revisits, zero failures
 
 `analysis/continual/agenthash.py` over the sequential protocol
 (`evaluation/protocols.py`), **autostore**: `--oracle_store_at_goal
---oracle_lock_store_not_at_goal`, i.e. store exactly when at the goal and never
-otherwise. This model has a `store_head` but it was **frozen throughout
-training** (`freeze_store: True`), so there is no learned store policy to use.
+--oracle_lock_store_not_at_goal`, i.e. store at the goal and never otherwise.
+This model has a `store_head` but it was **frozen throughout training**
+(`freeze_store: True`), so there is no learned store policy to use.
 
-16 held-out envs, 20 iterations per block, 320 outer iterations, **2,720
-episodes**, max 200 steps, deterministic policy. Envs enter one at a time; each
-iteration replays every env introduced so far; **only the newest may store**;
-the Hopfield is never reset. It ends holding **269 patterns**.
+Envs enter one at a time; each iteration replays every env introduced so far;
+**only the newest may store**; the Hopfield is never reset. Deterministic
+policy, 200-step cap, held-out envs. **One store per env**
+(`--lock_store_after_goal`) — see §9.8.1 for why that flag is load-bearing.
 
-| | episodes | success | steps |
-|---|---|---|---|
-| **primary** (own block, store allowed) | 280 | 0.950 | 15.98 |
-| **revisit** (store locked) | **1,980** | **1.0000** | **10.89** |
+| | envs | episodes | revisit eps | revisit success | primary steps | revisit steps |
+|---|---|---|---|---|---|---|
+| 16 envs, 20 iters/block | 16 | 2,720 | **2,240** | **1.0000** | 13.64 | 11.41 |
+| 5 envs, 40 iters/block | 5 | 600 | 400 | **1.0000** | 12.75 | 11.61 |
 
-**Figures** are `analysis/continual/plotting.py`'s own output — the per-env
-forgetting and steps plots — written to
-`results/nav_tri_probe/cl_d0_base_u725_n16_*.{png,pdf}` and embedded on the
-page resampled, not redrawn. Fourteen of sixteen lines sit flat on 1.0 for the
-whole protocol; the two that drop are env 2 (tab10 green) and env 7 (grey).
+**Zero forgetting, and every env retained.** 2,240 locked-store revisit
+episodes across all 16 envs and 2,240 successes; worst per-env retention delta
+**+0.0000**. Revisits also beat first encounters on steps (11.41 vs 13.64),
+because the primary block has nothing in memory and the goal has to be found by
+*exploring* while every later visit is an *exploit* episode that beelines. That
+gap is the value of the memory, measured.
+
+**Figures** are `analysis/continual/plotting.py`'s own output, written to
+`results/nav_tri_probe/cl_d0_base_u725_n{5,16}_lock_*.{png,pdf}` and embedded
+on the page resampled, not redrawn.
 
 *Reading trap in the steps plot:* `_render` passes `nan_fill=max_steps`, so a
 **failed** trial is drawn at the 200 ceiling rather than omitted. Every spike to
-200 is a timeout, not a slow success, and the successful traffic all sits in the
-5–25 band at the bottom. An earlier draft of the page's caption read those
-spikes as slow episodes.
+200 is a timeout, not a slow success.
 
-*And do not read a retention number off a pooled line.* A first pass at these
-figures plotted one aggregate "revisit" curve over **all** envs, which sits at
-0.833 because the two dead envs are in it — directly contradicting the 1.0000
-in the table beside it. That is the same pooling error `retention.py` exists to
-prevent, made in the figure instead of the table. Per-env lines do not have the
-problem, which is a reason to prefer them.
+*And do not read a retention number off a pooled line.* A first pass plotted one
+aggregate "revisit" curve over **all** envs, which sat at 0.833 because the
+never-learned envs were in it — contradicting the 1.0000 in the table beside it.
+Per-env lines do not have the problem. Summarise with
+`analysis/continual/retention.py`, which splits primary from revisit and drops
+never-learned envs for the retention figure.
 
-**Zero forgetting.** 1,980 locked-store revisit episodes across 14 envs and
-1,980 successes — not "approximately zero", exactly zero, with the memory
-growing to 269 patterns underneath. No env that was ever learned degraded; the
-final-block mean on those envs is 0.993.
+#### 9.8.1 WHY ONE ENV USED TO FAIL — an alias, amplified by autostore
 
-**And revisits are BETTER than the first encounter**, on both axes — 1.000
-against 0.950 success and **32% fewer steps** (10.89 vs 15.98). That is the
-two-regime story doing exactly what it should: the primary block has nothing in
-memory, so the agent must *explore* to find the goal, and every later visit is
-an *exploit* episode that beelines. The gap between the two columns is the
-value of the memory, measured.
+**This section replaces a wrong explanation.** An earlier revision reported *two
+of sixteen envs that never became solvable* and attributed it to §15.4's
+perimeter signature — readout clean, agent held against the wall, unable to
+close the last fraction of a cell — with the further observation that both
+failures sat on the **west** wall. Both readings are **retracted**. The cause is
+an interaction between the encoder and the **protocol**, and fixing the protocol
+removes it entirely. The goal's position relative to any wall is irrelevant.
 
-##### Five envs — the same protocol at a legible scale, and a third reproduction
+Measured policy-free, on the field (`analysis/nav_tri/alias_multiplicity.py`):
 
-The 16-env figure is 25 inches wide by construction and compresses every line
-into a band. Re-run at **5 envs, 40 iterations per block** — 600 episodes,
-memory to 162 patterns:
-
-| 5 envs | episodes | success | steps |
+| env | goal | max overlap with a FOREIGN goal code | goal-absent ‖q‖ mean / p90 |
 |---|---|---|---|
-| primary (own block, store allowed) | 160 | 0.9938 | 14.54 |
-| **revisit** (store locked) | **320** | **1.0000** | **11.09** |
+| 0 | (8,8) | **0.326** ← env 2 | 0.085 / 0.127 |
+| 1 | (2,0) | 0.069 | 0.055 / 0.086 |
+| **2** | (0,4) | **0.387** ← env 0 | **0.138 / 0.207** |
+| 3 | (15,8) | 0.089 | 0.062 / 0.096 |
+| 4 | (18,6) | 0.066 | 0.066 / 0.101 |
 
-Worst per-env retention delta **+0.0000** again. Four lines flat on 1.0 for the
-whole protocol — including env 0, carried through four subsequent blocks and
-160 locked-store revisits without a single miss. The one purple notch is env
-4's *own* block: one first-encounter failure in 40, before its goal was stored.
+**Env 0 and env 2's scaffold patches alias with each other**, at 0.33–0.39
+where every other pair sits at 0.066–0.089. Nothing else in the set aliases.
+And env 2's goal-*absent* ‖q‖ is 0.138 mean / 0.207 p90 — **inside the gate
+band** of §9.3, where every other env sits comfortably below.
 
-**Three independent runs — 5, 8 and 16 envs — and the retention number is
-1.0000 in every one** (320 and 1,980 locked-store revisits at 5 and 16 envs).
-The same single env fails in all three, always from its own block onward rather
-than degrading later.
+But with its own goal stored, env 2's field is **perfect**: goal basin **1.000**
+from all 400 cells, `q_accuracy` 0.992. So the readout is not broken and the
+perimeter story is out. What remained was **multiplicity**.
 
-##### The two envs that never became solvable
+`--oracle_store_at_goal` fires a store on **every** at-goal step, so an env
+solved 40/40 writes its goal **40 times** while env 2 managed 1–3. The Hopfield
+here is linear (tanh inert, recall = one step of power iteration), so
+`W = Σ pᵢpᵢᵀ` and storing a pattern k times scales its term by **k**. Forty
+copies of a pattern that already aliases env 2 at 0.387 swamp env 2's single
+copy of its own.
 
-`e2` (goal (0,4)) and `e7` (goal (1,6)) sit at 0.05–0.10 in their own block and
-stay there — and they are the same two in the independent 8-env run, so this
-reproduces. They stored 1–2 patterns each against 18–20 for the others, so the
-agent rarely reached those goals *at all*.
+| copies of env 0's goal (env 2's stored once) | 0 | 1 | 2 | 5 | 10 | 20 | 40 |
+|---|---|---|---|---|---|---|---|
+| **env 2 goal basin** | 1.000 | 1.000 | 1.000 | **0.013** | 0.010 | 0.007 | 0.007 |
+| env 3 basin — control, no alias | 1.000 | 1.000 | — | — | 1.000 | — | 1.000 |
 
-It is not simply a store failure: after block 2, `e2`'s goal **is** in memory
-and it still fails, and its rare successes take 2–4 steps, i.e. only when it
-spawns essentially on top of the goal. That is the §15.4 signature — readout
-clean, agent held against the perimeter, unable to close the last fraction of a
-cell — and it is the same absorbing boundary §9.7 measured.
+Three things that settles:
 
-**Open, and not settled by n=2:** both failures are on the **west** wall (x=0,
-x=1) while goals at 0–1 cells from the south (`e1` (2,0)), east (`e4` (18,6))
-and north (`e11` (14,18)) walls all reach 1.000. Two envs is not enough to call
-an asymmetry. The cheap next test is `readout_field.py` on those two memories —
-it is policy-free, and §14 already found that particular stored sets fold the
-field into a vortex.
+* **The collapse is sharp** — fine at two copies, gone at five.
+* **The control shows it is the alias, not memory load.** Env 3, which does not
+  alias, holds basin 1.000 with forty copies of env 0 in memory.
+* **It is symmetric.** Forty copies of env 2's goal break *env 0* instead
+  (basin 0.163), so neither env is special; whichever of the pair is written
+  more often wins.
 
-**Caveat on the protocol:** with autostore, an env whose goal is never found
-during its own block is permanently unsolvable, because nothing else may write.
-So this protocol measures explore and exploit *in series*, and a single explore
-failure is unrecoverable. That is a property of the protocol, not of the model.
+**And parity rescues it completely** — 20:40 → 1.000, 40:40 → 1.000, 40:1 →
+1.000. So the failure is the **ratio** between two aliasing patterns, not the
+alias itself, and the trap is self-reinforcing: env 0 goes first and writes
+forty copies; by the time env 2 is introduced, standing anywhere in it produces
+‖q‖ above the gate, so the agent **chases env 0's phantom instead of exploring**,
+never finds its own goal, writes one or two copies, and the ratio stays at
+~1:13 for the rest of the protocol.
+
+##### The fix, confirmed end to end
+
+`--lock_store_after_goal` stops storing once an env's goal is in memory —
+exactly one write per env. The prediction was recorded before the run: *env 2
+should work*.
+
+| 5 envs | memory at end | dead envs | env 2 own block | env 2 later | revisit success |
+|---|---|---|---|---|---|
+| autostore, every at-goal step | 162 patterns | 1 | 0.07 | 0.03–0.07 | 1.0000 *excl. dead* |
+| **one store per env** | **5 patterns** | **0** | **0.85** | **1.000** | **1.0000** *all envs* |
+
+**What this changes.** The retention result is unaffected and in fact stronger —
+every env is now retained and the revisit rate is 1.0000 without excluding
+anything. What changes is the reading of the failures: they were an **artifact
+of the storage rule**, not evidence about the model, and not about goals near
+walls.
+
+It also means the protocol's autostore is **not a neutral stand-in for a trained
+store head**: a store policy that fires repeatedly at the goal degrades the
+memory it is writing into, through an encoder alias that is invisible until two
+particular envs are held at once. That is a concrete target for the store head
+this project has never trained, and it belongs with §5.8's separability work
+rather than with the policy.
+
+*Open:* how common the aliasing is. One pair in five envs here, and the
+`place=held_out` split enforces `place_gap>=55` between envs, so it is not a
+near-offset artefact. Screening candidate env sets for pairwise code overlap is
+cheap and policy-free.
+
 
 ---
 
