@@ -682,6 +682,225 @@ inventing.
 
 ---
 
+## 6. Pushing it: a bound, and what it costs to have an attractor
+
+*(Turn 5. Derivations, no new measurements. Order-one constants are carried
+loosely and flagged; the *scalings* are the claims, and where a number is
+quoted it is against data already in §2.)*
+
+### 6.1 Everything is the spectrum, so write the conditions in it
+
+Stationary, so `C(a) = Σ_ω p(ω) cos(ω·a)` with `p ≥ 0`, `Σ p = 1`, on the dual
+of `X = (Z_L)²`. Two facts do all the work.
+
+**Fact 1 — ballisticity confines the spectrum.**
+
+```
+N(a)² = 2(1 − C(a)) = 4 Σ_ω p(ω) sin²(ω·a / 2)
+```
+
+Each mode contributes `(ω·a)²` while `|ω·a| ≲ 1` and **saturates** at `2p(ω)`
+after. So `N(a) ∝ ‖a‖` out to `R_ball` requires every occupied mode to satisfy
+`|ω| ≲ 1/R_ball`:
+
+```
+supp(p) ⊆ { |ω| ≤ Ω },      Ω ≈ 1 / R_ball                              (★)
+```
+
+A code that is diffusive (`N ∝ √k`) is one whose spectrum has spread past
+`|ω| ~ 1`; a code that is ballistic to 30 cells has a spectrum inside a disc of
+radius 1/30. **(J3) is a bandwidth constraint.**
+
+**Fact 2 — the disc holds only so many modes.** On the dual of `(Z_L)²` the
+number of lattice frequencies with `|ω| ≤ Ω` is `≈ πΩ²(L/2π)² = Ω²L²/4π`. Since
+`d_eff = PR(p) ≤ |supp(p)|`:
+
+```
+d_eff  ≤  L² / (4π R_ball²)                                             (†)
+```
+
+### 6.2 The consequence: a parameter-free floor on the far field
+
+Far-field cosine spread is `σ = 1/√d_eff` (§2.0). Combining with (†):
+
+> ```
+> σ_far  ≥  2√π · R_ball / L
+> ```
+>
+> **A code that stays ballistic across `R_ball` cells of a period-`L` scaffold
+> cannot have far-field cosines below `2√π R_ball / L`, in any dimension.**
+
+Note what is *absent*: `D` does not appear. Raising the output dimension buys
+nothing here — the binding resource is the number of low-frequency modes the
+scaffold has, not the number of directions the sphere has. `D` only matters
+through `d_eff ≤ D`, which at `D = 1024` is not the active constraint.
+
+**Against the numbers already in §2**, with `L = 1716` and the arena diagonal
+`R_op = √(19²+19²) = 26.9` as the range the readout must span:
+
+| | |
+|---|---|
+| floor `2√π R_op / L` | **0.0558** |
+| measured far-cos sd, `att0.5` | **0.0577** |
+
+**3.4% above a parameter-free floor.** Read the other way, the measured spread
+implies a ballistic range `R_ball = σL / 2√π = 27.9` cells — and the measured
+basin of the same encoder is **27.0**. Two numbers from unrelated measurements
+(a cosine histogram over random pairs; an argmax over a 12,853-cell disc)
+agreeing to 3% through a relation neither was fitted to.
+
+**And it explains why the gain ladder has an interior optimum.** `R_ball` too
+short breaks (J3); `R_ball` longer than `R_op` spends far-field suppression on
+range the arena never uses. The optimum is `R_ball = R_op`, which is a *number*,
+not a hyperparameter: `d_eff* = L²/(4πR_op²) = 325`. Measured `d_eff`: `att0.5`
+297, `att0.25` 345. The predicted optimum sits between the two arms that
+bracket the empirical one. **[D + arithmetic against [M] data]**
+
+**A prediction for the measurement §3.1 says has never been made.** Reading
+`R_ball` off each arm's far-cos sd and putting it through the (J2) estimate
+below gives predicted basins across the attract ladder of about
+**27 / 27 / 27 / 25 / 24** at `att` 16 / 2 / 1 / 0.5 / 0.25 — nearly *flat*,
+while reach goes 0.806 → 0.987. Two effects cancel: a longer chart raises the
+basin, its worse cross-talk lowers it. If the basin instead tracks reach, or
+falls steeply, (†) is wrong or `σ = 1/√d_eff` is doing more work than it should.
+
+### 6.3 (J2) in the same variables
+
+Ballistic with `C(R_ball) ≈ 0` fixes the near field: `C(r) = 1 − ‖r‖²/R_ball²`,
+so the one-cell margin is
+
+```
+1 − C(1) = 1 / R_ball²
+```
+
+The cross-talk residual perturbs the argmax along `φ(y±e) − φ(y)`. Each
+competitor contributes a *difference of far-field values one cell apart*, and
+because the spectrum is confined to `|ω| ≤ 1/R_ball` the far field varies on
+scale `R_ball`, so that difference is `~ σ/R_ball` rather than `~ σ`. Over K−1
+competitors with random signs, and dividing by the signal `C(r)`:
+
+```
+basin edge:     C(r) ≳ σ² √(K−1) · R_ball
+⇒   R_basin  ≈  R_ball · √( 1 − 4π √(K−1) R_ball³ / L² )                (‡)
+```
+
+At `R_ball = 27.9`, `K = 5`, `L = 1716` this gives **25.2** against a measured
+**27.0** — order-one constants are sloppy, but the structure is the claim:
+
+* **the basin cannot exceed the ballistic range.** Basin and chart length are
+  the same scale, not independent quantities. §2.2's ladder (27 / 23 / 19 /
+  11.5 / 13.5) is then a statement about `R_ball` falling with coverage;
+* the K-dependence enters as `√(K−1) R_ball³/L²`, so **capacity and range trade
+  as a cube** — doubling the ballistic range costs 8× in the number of goals
+  that can be held at the same basin. That is a much harsher trade than
+  anything in §2 and it is testable directly on the K ladder;
+* `L` enters as `L²`. The scaffold period is a free parameter nobody has moved
+  (§1.2: "never varied"), and it is the only quantity in (‡) that helps
+  *everything at once*.
+
+### 6.4 What a genuine attractor costs, exactly
+
+The recall is `x ← normalize(tanh(β W x))` — a nonlinearity in **neuron
+space**. Below the knee it is linear (§1.3), and then:
+
+* a stored pattern is an approximate **one-step** fixed point already:
+  `Wz₁ ∝ (1 − K/D)z₁ + Σ_{k≠1} c_k z_k`, and `K/D = 0.005`;
+* but it is not a *stable* one. Iterating a linear map is power iteration, so
+  the trajectory leaves `z₁` for the leading eigenvector of `W` — a **mixture**
+  of all K. That is §10.16's `cos(recall¹⁵(z), z) = 0.813`, and it is why
+  `steps = 1` is the only setting that retrieves.
+
+To get a stable fixed point you must saturate, and saturating a neuron-space
+nonlinearity drives `φ(y)` to a hypercube **corner**. For a binary code,
+`N(k)² = 4H(k)/D`, and translation invariance caps the Hamming growth at
+`H(k) ≤ k·m` (each unit step flips `m` bits and they can at best stay flipped).
+Therefore
+
+```
+N(k)  ≤  2√(km/D)   ∝  √k        — diffusive, for ANY binary code
+```
+
+so `R_ball ≈ 1`, and by (‡) the basin collapses to the argmax's own resolution
+while (J3) fails outright. **This is a proof, not an observation**: it is
+independent of training, architecture and gain, and it is what §10.20 measured
+(reach 0.987 → 0.103 with `cos_self` at 1.0000).
+
+**But the corner requirement comes from *where* the nonlinearity sits, not from
+wanting an attractor.** A pattern-space update —
+
+```
+x  ←  Zᵀ softmax(β Z x)
+```
+
+— is the modern / dense associative memory (Krotov & Hopfield 2016; Ramsauer et
+al. 2020). Its fixed points sit near the stored patterns with a separation
+condition on *inter-pattern* distances, its output lies in the convex hull of
+`Z` and is therefore **continuous**, and it never asks the code to be binary. It
+also has exponential rather than linear capacity in `D`.
+
+So the honest answer to "can we have a real attractor and a working direction
+field" is: **not with this update rule, provably; and the obstruction is the
+update rule, not the code.** That reframes §10.20's open item from an encoder
+question into an architecture question.
+
+### 6.5 The two questions
+
+Everything above reduces to two, and they are of different kinds.
+
+> ### Q-A. Is the bound `σ_far ≥ 2√π R_ball / L` tight, and is the optimal
+> ### encoder the one that saturates it at `R_ball = R_op`?
+>
+> **Why it is the right question.** If yes, the entire encoder design problem
+> collapses to choosing **one scalar** — the ballistic range — and setting it to
+> the arena diagonal. `attract_lambda`, `rate_lambda`, gain, patch count and
+> coverage are then not five knobs but five parameterisations of that one
+> number, which is exactly what §2.0 observed empirically and could not
+> explain. The optimum stops being a thing to sweep for and becomes a thing to
+> compute: `d_eff* = L²/4πR_op²`.
+>
+> **What would settle it.** Three things, in order of cost: (i) is `d_eff`
+> really `PR(p)` and `C` really `FT(p)` — the §2.0 genericity assumption, which
+> is a numerical check on a checkpoint; (ii) does the measured `supp(p)` sit
+> inside a disc, or is it a shell or a lattice (which would break the counting
+> in (†) in a *knowable* direction); (iii) is `1/√d_eff` an equality or only an
+> upper bound on the useful spread — a spectrum concentrated on few modes with
+> unequal weights has the same `d_eff` and a different tail.
+>
+> **What it would rule out.** If tight, there is no encoder ~3% better than the
+> one we have, and improvement has to come from raising `L` or lowering `R_op`
+> — the scaffold and the arena, neither of which anyone has treated as a design
+> variable.
+
+> ### Q-B. Is the attractor-vs-gradient trade a property of the memory, or only
+> ### of putting the nonlinearity in neuron space?
+>
+> **Why it is the right question.** §6.4 proves the trade is forced for
+> `tanh(βWx)`: an attractor needs corners, corners force a binary code, a binary
+> code is diffusive, and diffusive kills (J3). Every part of that chain is
+> about *where the nonlinearity acts*. A pattern-space update has attractors
+> without corners, so the chain does not start. If that is right, the campaign's
+> central open item — "production's corner is the only one where memory and
+> direction both work" — is a statement about a specific update rule that was
+> never chosen deliberately, and the fix is an architecture change rather than
+> another encoder sweep.
+>
+> **What would settle it.** Whether `Zᵀsoftmax(βZx)` satisfies (J1)–(J3)
+> simultaneously is answerable on paper: its retrieval error is bounded by the
+> separation `Δ = min_k (1 − C(y − y_k))`, which §6.1 already expresses in the
+> spectrum, and its output is a convex combination of stored codes so (J3) is
+> untouched by construction. The question is whether the *basin* it gives is
+> larger than the linear map's argmax basin, which is (‡) with a different
+> noise term.
+>
+> **What it would rule out.** If a pattern-space update does not help, then the
+> obstruction is genuinely in the code geometry and §10.20's finding is a
+> theorem about 2D scaffolds rather than about this implementation.
+
+**Q-A asks whether we are at the ceiling. Q-B asks whether the ceiling is
+where we think it is.** Neither needs a sweep to make progress on.
+
+---
+
 ## Conversation log
 
 **Turn 1 — the core heuristics.** Assembled §1 and §2 from the probe log.
@@ -696,6 +915,18 @@ than one number. (ii) R4 was unreadable; split into four statements. (iii) Do
 not assume basin and reach share a variable — measured instead, §3.2, and found
 the basin metric mixes a cross-talk term with a precision term. Bug found and
 fixed on the way (§3.3).
+
+**Turn 5 — push the formalism, no measuring.** §6. Ballisticity is a bandwidth
+constraint, mode counting on the scaffold's dual turns it into a
+parameter-free floor `σ_far ≥ 2√π R_ball / L` in which `D` does not appear —
+the binding resource is the scaffold's low-frequency modes, not the sphere's
+directions. Production sits 3.4% above it, and the `R_ball` implied by its
+far-cos sd (27.9) matches its measured basin (27.0). (‡) makes the basin
+bounded by the ballistic range and makes capacity trade against range as a
+*cube*. §6.4 turns §10.20's empirical finding into a proof — and locates the
+obstruction in the neuron-space nonlinearity rather than in the code, which a
+pattern-space (dense associative memory) update would not have. Two questions
+in §6.5.
 
 **Turn 4 — formalise.** Jack: "there is a lot going on here and many ways to
 break the problem apart… it feels like theory can make a lot of headway,
