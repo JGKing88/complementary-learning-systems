@@ -2161,7 +2161,10 @@ policy, 200-step cap, held-out envs. **One store per env**
 | | envs | episodes | revisit eps | revisit success | primary steps | revisit steps |
 |---|---|---|---|---|---|---|
 | 16 envs, 20 iters/block | 16 | 2,720 | **2,240** | **1.0000** | 13.64 | 11.41 |
+| **5 envs, 200 iters/block** | 5 | 3,000 | **2,000** | **1.0000** | 12.10 | 11.54 |
 | 5 envs, 40 iters/block | 5 | 600 | 400 | **1.0000** | 12.75 | 11.61 |
+
+Across the three, **4,640 locked-store revisit episodes and zero failures.**
 
 **Zero forgetting, and every env retained.** 2,240 locked-store revisit
 episodes across all 16 envs and 2,240 successes; worst per-env retention delta
@@ -2184,6 +2187,28 @@ never-learned envs were in it — contradicting the 1.0000 in the table beside i
 Per-env lines do not have the problem. Summarise with
 `analysis/continual/retention.py`, which splits primary from revisit and drops
 never-learned envs for the retention figure.
+
+##### Memory load is NOT the constraint — 788 patterns, no retention cost
+
+The same five envs at 200 iters/block *without* the one-store-per-env rule
+drives memory to **788 patterns** instead of 5, at matched statistics. This
+isolates capacity from aliasing, which the earlier runs could not:
+
+| 5 envs, 200 iters/block | memory | live | revisit eps | revisit success | worst delta |
+|---|---|---|---|---|---|
+| **one store per env** | 5 | **5** | 2,000 | **1.0000** | +0.0000 |
+| autostore, every at-goal step | **788** | 4 | 1,600 | **1.0000** | +0.0000 |
+
+**At 788 stored patterns in a 1024-dim linear Hopfield, the four non-aliasing
+envs still retain at 1.0000 across 1,600 locked-store revisits.** So capacity is
+not what breaks env 2 — only the aliasing pair breaks, and only through the
+write ratio. That is why the fix is a *storage rule* and not a smaller memory.
+
+*Second-order, noted not leaned on:* revisit steps are slightly **lower** under
+repeated storing (10.84 vs 11.54). Amplifying a pattern raises its ‖q‖ and
+pushes it further above the gate, so repeated writing helps the env being
+written and hurts an aliasing neighbour — consistent with §9.3, but it is 0.7
+steps and is a direction, not a result.
 
 #### 9.8.1 WHY ONE ENV USED TO FAIL — an alias, amplified by autostore
 
