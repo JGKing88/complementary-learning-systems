@@ -2194,6 +2194,27 @@ memory, so the agent must *explore* to find the goal, and every later visit is
 an *exploit* episode that beelines. The gap between the two columns is the
 value of the memory, measured.
 
+##### Five envs — the same protocol at a legible scale, and a third reproduction
+
+The 16-env figure is 25 inches wide by construction and compresses every line
+into a band. Re-run at **5 envs, 40 iterations per block** — 600 episodes,
+memory to 162 patterns:
+
+| 5 envs | episodes | success | steps |
+|---|---|---|---|
+| primary (own block, store allowed) | 160 | 0.9938 | 14.54 |
+| **revisit** (store locked) | **320** | **1.0000** | **11.09** |
+
+Worst per-env retention delta **+0.0000** again. Four lines flat on 1.0 for the
+whole protocol — including env 0, carried through four subsequent blocks and
+160 locked-store revisits without a single miss. The one purple notch is env
+4's *own* block: one first-encounter failure in 40, before its goal was stored.
+
+**Three independent runs — 5, 8 and 16 envs — and the retention number is
+1.0000 in every one** (320 and 1,980 locked-store revisits at 5 and 16 envs).
+The same single env fails in all three, always from its own block onward rather
+than degrading later.
+
 ##### The two envs that never became solvable
 
 `e2` (goal (0,4)) and `e7` (goal (1,6)) sit at 0.05–0.10 in their own block and
