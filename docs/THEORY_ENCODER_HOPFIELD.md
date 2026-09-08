@@ -281,6 +281,10 @@ This matters for where the marginal return is: reach at the production encoder
 is 0.987 with a seed spread of ±0.005 — near enough to a ceiling that R1–R5 have
 little left to buy. The basin is 27 cells and has no known ceiling at all.
 
+> **Superseded in part by §3.4.** At production coverage the residual reach loss
+> is ~80–90% starts whose retrieval was *exact*, so the binding constraint on
+> reach is neither the basin nor the memory — it is the direction field.
+
 **3.2 — The basin metric mixes two mechanisms, and only one of them is reach's.**
 `basin_mode_check.py` decomposes every recorded basin map by *what the failing
 cue retrieved instead*. Two structurally different failures exist:
@@ -312,11 +316,28 @@ edge of the guarantee** that half the failures are 1–2 cell misses.
 
 Two consequences:
 
-1. **The published basin under-reports what navigation gets, and it does so
-   more at low coverage.** The retrieved code is consumed as
+1. > ### ✗ Retracted — `r_exact` is the right metric, and this was wrong
+   >
+   > The claim below was that a `near` retrieval is cheap, so the operational
+   > basin is `r_goal` rather than `r_exact_all`. **Measured, and it is false**
+   > (§3.4). The `~2°` figure is computed at r ≈ 29 and is irrelevant: the walk
+   > has to pass through the *terminal* neighbourhood, and there the same
+   > 1-cell target error is a large relative error against a small
+   > `z_goal − z_here`. With `ARRIVAL_RADIUS = 0.5` a cue 0–4 cells from the
+   > goal whose retrieval is off by one arrives **34.5%** of the time against
+   > 99.5% for an exact retrieval.
+   >
+   > `r_exact_all` is right *because* it is a guarantee measured outward from
+   > radius 0: it certifies a **contiguous exact core** around the goal, and a
+   > contiguous exact core containing the terminal neighbourhood is exactly
+   > what arrival needs. `r_goal` certifies nothing about the last four cells.
+   > The tolerance table is kept below because §3.4 reads against it.
+
+   **The published basin under-reports what navigation gets, and it does so
+   more at low coverage.** ~~The retrieved code is consumed as
    `q = basis @ (z_goal − z_here)`; retrieving the cell one north of the goal
    is not a failed retrieval, it is a target one cell off, which at r ≈ 29 is a
-   ~2° bearing error. Re-measuring the same discs — paired per map, since the
+   ~2° bearing error.~~ Re-measuring the same discs — paired per map, since the
    two columns can share a median with no map sharing a pair: **[m]**
 
    | encoder | `r_exact → r_goal`, per map | median gap |
@@ -343,18 +364,68 @@ Two consequences:
    reappears here at the level of a single cue.
 
 So the honest answer to "do basin and reach share a variable" is **neither yes
-nor no.** The *operational* basin — `r_goal`, purely cross-talk-limited —
-plausibly does share reach's variable, and is much flatter across coverage than
-the published ladder. The published `r_exact_all` carries an additional
-**precision** term which is zero at 10% coverage and grows to ~11 cells at
-1.25%. B1's "coverage buys capacity" survives on the dead-goal rate at K = 20,
-which is measured independently; part of its *basin* evidence is this precision
-term rather than capacity.
+nor no**, but not for the reason first given. The published `r_exact_all`
+carries a **precision** term alongside the cross-talk term — zero at 10%
+coverage, ~11 cells at 1.25%. That term is real, it is *not* reach's variable,
+and §3.4 shows it is *not* free either. B1's "coverage buys capacity" survives
+on the dead-goal rate at K = 20, which is measured independently.
 
 Caveat: 2–4 maps per group, one (world, env) pair each, so **[m]**. The
 direction is monotone in coverage across all five rungs and the saturation
 contrast is 0.02 against 0.90 `near`, both far larger than that noise, but the
 per-rung magnitudes are not to be quoted.
+
+**3.4 — A `near` retrieval is free at range and lethal at the goal.**
+`near_miss_cost_check.py` crosses each cell's *retrieval outcome* against
+whether the continuous flow from that cell *arrives*, on one memory per world
+so both halves refer to the same object. It reproduces §10.14's reach exactly
+(10% at four seeds: 0.993 / 0.987 / 0.987 / 0.984 against a published 0.987,
+range 0.984–0.993), which is the check that the cross-tab is measuring the
+published system. **[M]** for the contrast, four seeds each:
+
+Arrival rate given the retrieval outcome, by **start distance from the goal**:
+
+| encoder | outcome | 0–4 | 4–8 | 8–12 | 12–18 | 18–30 |
+|---|---|---|---|---|---|---|
+| 10% s43 | exact | 0.998 | 0.996 | 0.992 | 0.987 | 0.972 |
+| 10% s43 | near | — | — | 1.000 | 0.992 | 0.791 |
+| 1.25% s44 | exact | 0.995 | 0.987 | 0.980 | 0.973 | 0.948 |
+| 1.25% s44 | **near** | **0.345** | **0.354** | 0.657 | 0.847 | 0.900 |
+| 1.25% s43 | **near** | **0.504** | **0.522** | 0.708 | 0.811 | 0.742 |
+
+The `near` row is not a constant discount, it is a **range-dependent** one:
+~0.35 in the terminal neighbourhood, ~0.90 at range. Close to the goal
+`z_goal − z_here` is small, so a one-cell error in the target is a large
+*relative* error and the unit-length step misses the 0.5-cell arrival disc;
+far away the same error is a couple of degrees, and the walk repairs it once it
+enters the exact core.
+
+**Production has no `near` retrievals inside 8 cells at all** — the "—" entries
+above are empty cells, not small samples. Its exact core is contiguous out to
+26–31 cells, so every near-miss it has is at range, where they are nearly free.
+That is *why* production works, and it is why the metric has to be a guarantee
+from radius 0 rather than a tolerance.
+
+**And a second reading, which points somewhere else entirely.** Decomposing the
+*lost* reach by retrieval outcome:
+
+| | share `exact` | arrival if exact | fraction of lost reach that is `exact` |
+|---|---|---|---|
+| 10% s42 | 0.982 | 0.993 | **0.91** |
+| 10% s43 | 0.982 | 0.990 | **0.79** |
+| 1.25% s44 | 0.825 | 0.979 | 0.19 |
+| 1.25% s42 | 0.685 | 0.987 | 0.19 |
+
+At production coverage **~80–90% of the residual reach loss comes from starts
+whose retrieval was exactly right**. The memory handed back the correct goal
+code and the walk still did not arrive — a direction-field failure, not a
+memory failure. At 1.25% that inverts: the memory is the problem (`near` alone
+is ~45% of the loss at s44).
+
+This changes §3.1's conclusion about where the marginal return is. At 10%
+coverage neither the basin nor retrieval is what is capping reach at 0.987 —
+**the readout is**, which is the same object §10.20 found the saturated arm
+destroying and R4(d) found training-vs-inference distinguishing.
 
 **3.3 — A bug found while doing 3.2, now fixed.** `basin_probe` filtered
 `cx, cy, d` by the scaffold-edge `keep` mask but not `dx, dy`, so for any goal
@@ -383,12 +454,24 @@ empirical fit.
 14.6k–25.7k against a broadband ceiling of ~234k. Is the missing factor of ~10
 a property of the losses, or of the input code?
 
-**Q3 — Where does `r_goal` come from?** §3.2 makes the operational basin a
-pure cross-talk quantity. If distant cosines are `N(0, 1/√d_eff)` and the cue
-at radius `r` retrieves with weight `C(r)`, the radius at which some cue in a
-disc of ~12,853 loses to one of K−1 competitors should be predictable from
-`d_eff`, `K` and `C(·)` alone. That would give a *predicted* basin, and it is
-the same algebra as PROBE §10.11's open question 2.
+**Q3 — What sets the radius of the *exact* core?** §3.4 makes `r_exact_all`
+the metric that matters, and it is a statement about local precision, not about
+cross-talk: within the core the recalled state's nearest cell must be the goal
+and not its neighbour, and neighbouring cells sit at cosine ~0.998 of each
+other. So the core radius is where the recall's perturbation first exceeds a
+margin of order `1 − C(1)`. Both quantities should be computable — the
+perturbation from `K`, `d_eff` and `C(r)`; the margin from `C(1)`, which is the
+near field. If so, the exact basin is predictable from the same power spectrum
+as everything else, and it is the one place where the *near* field enters a
+capacity-like quantity.
+
+**Q4 — What is actually capping reach at 0.987?** §3.4 says ~80–90% of the
+residual loss at production coverage is starts that retrieved exactly. That is
+the direction field, and the campaign has no account of it: §10.11's open
+question 3 (why direction collapses below res90 ≈ 5) is the same gap seen from
+the other end. Where do those starts sit, and do they fail by bearing error,
+by a sink, or by a limit cycle? `discrete_flow` already records sinks and limit
+cycles and they have never been read against this.
 
 ---
 
@@ -406,3 +489,12 @@ than one number. (ii) R4 was unreadable; split into four statements. (iii) Do
 not assume basin and reach share a variable — measured instead, §3.2, and found
 the basin metric mixes a cross-talk term with a precision term. Bug found and
 fixed on the way (§3.3).
+
+**Turn 3 — "we need `r_exact` otherwise the policy doesn't find the goal all
+the time."** Correct, and §3.2's proposed relaxation is retracted. Measured in
+§3.4: a `near` retrieval costs almost nothing at range and ~65% of arrivals in
+the terminal neighbourhood, so a tolerance radius certifies the wrong thing and
+a guarantee-from-zero certifies the right one. The measurement also turned up
+something not being looked for — at production coverage the residual reach loss
+is ~80–90% starts that retrieved *exactly*, i.e. the readout, not the memory
+(Q4).
