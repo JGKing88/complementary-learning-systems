@@ -2163,6 +2163,25 @@ the Hopfield is never reset. It ends holding **269 patterns**.
 | **primary** (own block, store allowed) | 280 | 0.950 | 15.98 |
 | **revisit** (store locked) | **1,980** | **1.0000** | **10.89** |
 
+**Figures** are `analysis/continual/plotting.py`'s own output — the per-env
+forgetting and steps plots — written to
+`results/nav_tri_probe/cl_d0_base_u725_n16_*.{png,pdf}` and embedded on the
+page resampled, not redrawn. Fourteen of sixteen lines sit flat on 1.0 for the
+whole protocol; the two that drop are env 2 (tab10 green) and env 7 (grey).
+
+*Reading trap in the steps plot:* `_render` passes `nan_fill=max_steps`, so a
+**failed** trial is drawn at the 200 ceiling rather than omitted. Every spike to
+200 is a timeout, not a slow success, and the successful traffic all sits in the
+5–25 band at the bottom. An earlier draft of the page's caption read those
+spikes as slow episodes.
+
+*And do not read a retention number off a pooled line.* A first pass at these
+figures plotted one aggregate "revisit" curve over **all** envs, which sits at
+0.833 because the two dead envs are in it — directly contradicting the 1.0000
+in the table beside it. That is the same pooling error `retention.py` exists to
+prevent, made in the figure instead of the table. Per-env lines do not have the
+problem, which is a reason to prefer them.
+
 **Zero forgetting.** 1,980 locked-store revisit episodes across 14 envs and
 1,980 successes — not "approximately zero", exactly zero, with the memory
 growing to 269 patterns underneath. No env that was ever learned degraded; the
