@@ -440,13 +440,13 @@ K = 5 maps.
 
 ---
 
-## 4. Questions for theory
+## 4. Cheap next measurements
 
-> **§5 supersedes the framing of this list.** These four were accumulated one
+> **Superseded as a framing by §6.** These four were accumulated one
 > per turn; §5.5 derives a taxonomy they are instances of. Kept because the
 > specific measurements they name are still the cheapest next steps.
 
-**Q1 — Is `d_eff = PR(P)` and `C = FT(P)` actually right?** §2.0 asserts the
+**§4.1 — Is `d_eff = PR(P)` and `C = FT(P)` actually right?** §2.0 asserts the
 code covariance's eigenvalues are the spatial power spectrum, under a
 genericity assumption that distinct spatial frequencies map to orthogonal
 output directions. Cheap to check: compute `P(ω)` directly, compare `PR(P)`
@@ -454,11 +454,11 @@ against the measured `d_eff` and `FT(P)` against the measured `C(Δ)`, on the
 same checkpoints §10.11 used. If it holds, the `1/√d_eff` law stops being an
 empirical fit.
 
-**Q2 — What spectra can a 3-module grid input reach?** `d_eff · res90²` runs
+**§4.2 — What spectra can a 3-module grid input reach?** `d_eff · res90²` runs
 14.6k–25.7k against a broadband ceiling of ~234k. Is the missing factor of ~10
 a property of the losses, or of the input code?
 
-**Q3 — What sets the radius of the *exact* core?** §3.4 makes `r_exact_all`
+**§4.3 — What sets the radius of the *exact* core?** §3.4 makes `r_exact_all`
 the metric that matters, and it is a statement about local precision, not about
 cross-talk: within the core the recalled state's nearest cell must be the goal
 and not its neighbour, and neighbouring cells sit at cosine ~0.998 of each
@@ -469,7 +469,7 @@ near field. If so, the exact basin is predictable from the same power spectrum
 as everything else, and it is the one place where the *near* field enters a
 capacity-like quantity.
 
-**Q4 — What is actually capping reach at 0.987?** §3.4 says ~80–90% of the
+**§4.4 — What is actually capping reach at 0.987?** §3.4 says ~80–90% of the
 residual loss at production coverage is starts that retrieved exactly. That is
 the direction field, and the campaign has no account of it: §10.11's open
 question 3 (why direction collapses below res90 ≈ 5) is the same gap seen from
@@ -631,7 +631,7 @@ inequalities relating `C`, `d_eff`, `K`, `R_op`.
   large separations, which is what K−1 competitors sample. Spread is a
   statement about that tail, and §2.0 makes it `1/√d_eff`.
 * *What guarantees a basin of radius `R`?* → (J1) ∧ (J2) for all `‖r‖ ≤ R`,
-  which is Q3.
+  which is §4.3.
 * *Where does the 0.25 threshold come from, and the res90 ≈ 5 floor?* → the
   two fitted constants in §2; both should fall out of (J1) and (J3).
 
@@ -682,10 +682,131 @@ inventing.
 
 ---
 
-## 6. The analytic program
+## 6. The questions
 
-*(Opened turn 5.)* Six targets, ordered by value × tractability. Each is stated
-with enough of the derivation to show it is a calculation and not a hope, plus
+*(Opened turn 6.)* Seven, stated using **only the objects of §5.1** — position,
+grid code, encoder, memory, readout — and the two success criteria. Nothing
+here presupposes `d_eff`, res90, the alias rate or any other quantity the
+campaign invented along the way; those belong to the *routes* in §7, not to the
+questions. Each carries the context that makes it worth asking.
+
+---
+
+### Q1. Can the memory be a genuine attractor network and still support navigation?
+
+**Context.** The memory is a recurrent network, but at the operating point it
+does nothing recurrent: one step, in a regime where the nonlinearity is
+inactive, so it acts as a linear matched filter. Making the stored goals into
+genuine fixed points looks like an unambiguous improvement — recall would be
+stable, iterating would help instead of degrade, and the thing would deserve
+the name it has been given. Whether it is an improvement at all is not obvious,
+because the readout does not consume the retrieved vector as a *label*; it
+consumes it as one end of a *difference*.
+
+**An answer looks like.** A statement of what a genuine fixed point requires of
+the code, and whether that requirement can hold at the same time as the
+readout's. → **§7.1, and the answer is no, with a proof.**
+
+---
+
+### Q2. From how far away can a stored goal be recovered, and what sets that distance?
+
+**Context.** One of the two success criteria. Measured at ~27 cells for the
+production encoder and 11–23 for weaker ones, with no account of why. It is the
+number that decides whether an agent dropped anywhere in a room can find its
+goal — and it has to be an **exact-cell** radius rather than an approximate one,
+because a target one cell off is fatal on the final approach (§3.4).
+
+**An answer looks like.** A formula for the radius in terms of how many goals
+are stored, the code's local geometry, and its global statistics. → **§7.2**,
+which already lands within ~30% and has ten predictions sitting in data we
+have.
+
+---
+
+### Q3. What is the encoder actually for?
+
+**Context.** The input is not raw position. It is a grid code — an already
+highly structured, exactly translation-equivariant representation with
+well-understood coding properties, and one this lab has theory for. The
+campaign has treated the encoder as the thing that *builds* spatial structure
+and has spent many sweeps tuning it on that assumption. It may instead be
+inheriting nearly all of the structure and repairing one specific defect. If
+so, the knob space we have explored is aimed at the wrong target.
+
+**An answer looks like.** A decomposition: which properties navigation needs are
+already present in the grid code, which are not, and hence what the encoder's
+job is — with the follow-on of whether another structured spatial input would
+serve, and whether the co-prime modules buy anything beyond setting the period.
+→ **§7.5, §7.6.**
+
+---
+
+### Q4. What must any code satisfy for this to work, and what does that cost in dimension?
+
+**Context.** Everything we know is about encoders we happen to have trained. We
+have never asked what is admissible in principle, and without that we cannot
+tell "our encoder is bad" from "no encoder could do better" — which is the
+whole of *is this the best we can do*. The instinct that a 3-dimensional code
+cannot do this is a special case.
+
+**An answer looks like.** Conditions on the code's similarity structure for
+retrieval and for direction-reading, stated separately, plus the smallest
+output dimension in which a code meeting them exists. → **§7.3, §7.6.**
+
+---
+
+### Q5. Is the tension between separating far positions and relating near ones forced?
+
+**Context.** Retrieval needs distant positions to have unrelated codes; the
+readout needs nearby positions to have smoothly related ones. Every knob we
+have moves both at once and in opposition — which is why the knobs do not
+compound, and why an obvious selection metric sent three sweep waves the wrong
+way. We have assumed the trade without asking where it comes from, and there
+are four candidates with four different consequences: forced by information
+(any code on a 2D domain at all), by the input, by the readout we chose, or
+only by our loss.
+
+**An answer looks like.** For each candidate, either a bound showing the trade
+is unavoidable or a construction showing it is not. → **§7.4, §7.5.**
+
+---
+
+### Q6. Is the direction readout the right one?
+
+**Context.** Direction is a first-order finite difference — a *linear* probe of
+a code we deliberately made *nonlinear*. Two things point at it. At production
+coverage, 80–90% of the remaining navigation failures are starts where the
+memory returned exactly the right goal and the walk still failed (§3.4), so the
+readout and not the memory is what is capping us. And Q1 turns on the readout
+too: it is the readout's requirement that a true attractor violates.
+
+**An answer looks like.** How much information about displacement is present in
+the difference between retrieved and current codes, and how much a
+finite-difference basis recovers — hence whether another readout has headroom,
+and what it costs. → **§7.1's second escape.**
+
+---
+
+### Q7. What can training reach? — the boundary of the analytic program
+
+**Context.** All of our operational knowledge lives here: which loss, how much
+coverage, what sampling, whether an equivariant architecture would help. None
+of it is derived and most of it probably cannot be. Q1–Q6 can say which codes
+are admissible and which are optimal; they cannot say that gradient descent on
+our loss finds them.
+
+**An answer looks like.** Mostly measurement. What theory contributes is
+telling us *what* to measure: once Q4 or Q5 names a target code, "does our loss
+produce it?" becomes a test against a predicted object rather than another
+sweep.
+
+---
+
+## 7. Routes: the specific calculations
+
+The concrete decomposition of §6, ordered by value × tractability. Each is
+stated with enough derivation to show it is a calculation and not a hope, plus
 what would falsify it. **T1 and T3 are close to done; T2 already produces a
 number that can be checked against §10.18 today.**
 
@@ -694,7 +815,7 @@ power spectrum, `d_eff = PR(P)`, `K` stored goals, `D = 1024`.
 
 ---
 
-### T1. A true attractor and a working direction field are incompatible
+### T1. A true attractor and a working direction field are incompatible — Q1, Q6
 
 **Status: essentially proven; needs writing up and its assumptions stated.**
 This is Jack's "big one", and it is a theorem rather than a measurement.
@@ -733,7 +854,7 @@ a decade of `k`. (T1) says there is none.
 
 ---
 
-### T2. A closed form for the exact basin radius
+### T2. A closed form for the exact basin radius — Q2
 
 **Status: derivable now; the sketch below already lands within ~30% of the
 measured value.** This is §5.2's (J2) solved for `r`.
@@ -779,7 +900,7 @@ not being `√(K−1)`.
 
 ---
 
-### T3. The far-field law `sd(C) = 1/√d_eff`
+### T3. The far-field law `sd(C) = 1/√d_eff` — Q4
 
 **Status: three lines; needs a numerical check of one assumption.** §2.0 states
 it; here it is.
@@ -808,7 +929,7 @@ the covariance.
 
 ---
 
-### T4. Where the 0.25 comes from — the dead-goal threshold
+### T4. When retrieval names the wrong goal — where the 0.25 comes from — Q2, Q4
 
 **Status: tractable, and the highest payoff; also the hardest of the six.**
 
@@ -830,7 +951,7 @@ should not, or vice versa. The six-arm attract ladder is the test set.
 
 ---
 
-### T5. What spectrum maximises `d_eff` at fixed chart length
+### T5. What spectrum maximises `d_eff` at fixed chart length — Q3, Q5
 
 **Status: a clean variational problem; the answer decides whether the grid
 input is the right one.** This is the optimality question of §5.5-IV.
@@ -858,7 +979,7 @@ disc-shaped with a parabolic taper, in which case the gap is elsewhere.
 
 ---
 
-### T6. The minimum dimension
+### T6. The minimum dimension — Q3, Q4
 
 **Status: the topological half is immediate; the monotone half is real work.**
 
@@ -881,18 +1002,18 @@ positive-definite functions on spheres is the tool.
 
 ---
 
-### What is *not* analytic
+### What is *not* analytic — Q7
 
-Worth naming, so the program does not overreach. Everything in §5.5-III —
-which loss, what coverage, what sampling, whether an equivariant architecture
-helps — is a question about what an optimiser *reaches*, not about what exists.
-T1–T6 can say which codes are admissible and which are optimal; they cannot say
-that gradient descent on `mse_attract_repel` with `rate_lambda` on finds them.
-That gap stays empirical, and it is where §2's heuristics keep their value.
+No route, and that is the point. Everything in §5.5-III — which loss, what
+coverage, what sampling, whether an equivariant architecture helps — is a
+question about what an optimiser *reaches*, not about what exists. T1–T6 say
+which codes are admissible and which are optimal; none of them says that
+gradient descent on `mse_attract_repel` with `rate_lambda` on finds one. That
+gap stays empirical, and it is where §2's heuristics keep their value.
 
-One exception: if T5 says the optimal `P` is a disc with a parabolic taper,
-then "does the loss produce that `P`?" becomes a **measurement of a predicted
-object**, which is a much better experiment than another sweep.
+The one lever theory has on it: if T5 says the optimal spectrum is a disc with
+a parabolic taper, then "does the loss produce that?" becomes a **measurement
+of a predicted object** rather than another sweep.
 
 ---
 
@@ -910,6 +1031,13 @@ than one number. (ii) R4 was unreadable; split into four statements. (iii) Do
 not assume basin and reach share a variable — measured instead, §3.2, and found
 the basin metric mixes a cross-talk term with a precision term. Bug found and
 fixed on the way (§3.3).
+
+**Turn 6 — pitch the questions at the right level.** Jack: T1 and T2 are right,
+the rest are too specific, and "`d_eff` isn't inherent to the problem setup —
+that's something we have gotten to as we've worked." Correct. §6 restates seven
+questions using only the objects of §5.1 and the two success criteria, each
+with the context that makes it worth asking; §7 keeps the calculations as
+*routes* under them, which is where campaign-invented quantities belong.
 
 **Turn 5 — "what can and should we answer analytically."** §6: six targets.
 T1 (a true attractor and a working direction field are incompatible) is a
