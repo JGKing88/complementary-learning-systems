@@ -2047,6 +2047,161 @@ episodes provide a long clean approach in which to do so.
 
 ---
 
+#### 9.8 THE BEST COMBINED MODEL — what it is, what it cost, and what it retains
+
+##### The checkpoint
+
+```
+/orcd/pool/003/jackking/cls_runs/agent_ckpts/
+    navigate_navp2_d0_base_s42_22133273/navigate_u725.pt
+```
+
+Run `navp2_d0_base`, seed 42, slurm 22133273. Encoder
+`w52_attract_fwhm/001_att0.5_seed=43`, gain 100. Recipe:
+`interleave:1200,empty_frac=0.5`, `LOG_KAPPA_MAX=2.5`, `regime_assignment
+shuffle`, 20 envs × 64 batch × 200 steps, `epsilon_explore 0.1`,
+`GOAL_REWARD 2.0`, `PERSISTENCE_BONUS 0.20` (commanded, **not** realized),
+`novelty 0.3`, `wall_penalty 0.1`, `time_penalty 0.05`, multistep depth **1**,
+`n_train_distractors 0–10`, `freeze_store True`, `reset_state_on_teleport
+False`.
+
+`u600` is the alternative pick — §9.5: it matches or beats u725 on three of
+four axes and is better on `follow_q` at ten distractors. u725 is used
+everywhere in this document because it is where every other arm was measured.
+
+##### Stats
+
+**Exploit**, deterministic, 192 held-out trials per level:
+
+| | success | steps | × optimal | `follow_q` | `q_accuracy` | ‖q‖ |
+|---|---|---|---|---|---|---|
+| d=0 | 1.000 | 11.74 | 1.167 | 0.916 | 0.980 | 0.280 |
+| d=5 | 0.990 | 12.77 | 1.206 | 0.871 | 0.937 | 0.271 |
+| d=10 | 0.995 | 12.14 | 1.186 | 0.819 | 0.966 | 0.272 |
+
+Specialist reference `p19_kcap` u800: **1.097** × optimal averaged over the
+three levels, against `d0_base`'s **1.186** (§9.2 splits that gap ~60/40
+interference/budget).
+
+**Explore**, sampled, 200 steps, held-out places:
+
+| | n | swept | `swept_eff` | `frac<t` | chase (body) |
+|---|---|---|---|---|---|
+| d=0 | 144 | 0.607 | 0.951 | 0.000 | 0.000 |
+| d=10 | 576 | 0.587 | **0.944** | **0.036** | 0.008 |
+
+Specialist reference `p20_e` u700: `swept_eff` 0.982 / 0.970, tail **0.000**.
+
+##### Exactly how much experience it consumed
+
+Straight from the config — `num_worlds 1`, `envs_per_world 20`,
+`batch_envs 64`, `steps_per_rollout 200`, `empty_frac 0.5`:
+
+| | per update | at u725 |
+|---|---|---|
+| `collect_rollout` calls | 20 (10 exploit + 10 explore) | **14,500** |
+| **episodes** | **1,280** | **928,000** |
+|  — exploit | 640 | 464,000 |
+|  — explore | 640 | 464,000 |
+| env steps, ceiling | 256,000 | 185,600,000 |
+
+All 20 rollouts of an update are pooled into **one** PPO update, so 928,000
+episodes bought 725 gradient-update groups.
+
+**Actual environment steps ≈ 103.5M, 56% of the ceiling.** The explore half is
+exact at **92,800,000** — `explore_goals_off=True` makes `ends_on_goal` False
+(`training/explore.py:93`), so every explore episode runs the full 200 steps.
+The exploit half is **≈10.7M**, integrated from the run's own eval
+`mean_steps` (62.7 at u25 → 12.0 at u725, mean 23.2); read it as a lower bound,
+because the eval is held-out with the goal pre-stored while training rollouts
+draw 0–10 distractors and their failures run the full horizon.
+
+The run reached **u730** and was `CANCELLED ... DUE TO TIME LIMIT` — the 6h
+wall, not convergence.
+
+##### Saturation — exactly one metric, and it is the uninformative one
+
+29 evals, u25 to u725. "Saturated at u" = the first update after which the
+metric never again departs from its final value by more than the tolerance.
+
+| metric | 5% | 10% | final | slope over u550–u725, per 100u |
+|---|---|---|---|---|
+| success d=0 | **u100** | u50 | 1.000 | +0.000 |
+| success d=10 | **u125** | u100 | 1.000 | +0.001 |
+| mean_steps d=0 | u600 | u600 | 11.70 | **−0.61 (−5.2%)** |
+| mean_steps d=10 | u725 | u725 | 12.31 | **−0.89 (−7.2%)** |
+| swept d=0 | u600 | u550 | 0.588 | **+0.032 (+5.4%)** |
+| swept d=10 | u600 | u550 | 0.559 | **+0.029 (+5.2%)** |
+| goal_find d=10 | u725 | u725 | 0.510 | **+0.048 (+9.3%)** |
+
+**`success_rate` pinned at 1.000 by u125 and never moved again — 600 updates
+before the run ended.** Every other metric was still improving linearly into
+the final quarter, at 5–9% of its own value per 100 updates. Nothing had
+plateaued when the wall hit.
+
+This is [[project_nav_success_before_beeline]] in its most extreme form yet: the
+gap between "first metric saturates" and "run stops improving" is not the 200–
+350 updates recorded there, it is **at least 600**, and the run never reached
+the second point. It is also the fourth reason in this document not to quote
+`success_rate` as a headline.
+
+##### Continual learning — 1980 revisits, zero failures
+
+`analysis/continual/agenthash.py` over the sequential protocol
+(`evaluation/protocols.py`), **autostore**: `--oracle_store_at_goal
+--oracle_lock_store_not_at_goal`, i.e. store exactly when at the goal and never
+otherwise. This model has a `store_head` but it was **frozen throughout
+training** (`freeze_store: True`), so there is no learned store policy to use.
+
+16 held-out envs, 20 iterations per block, 320 outer iterations, **2,720
+episodes**, max 200 steps, deterministic policy. Envs enter one at a time; each
+iteration replays every env introduced so far; **only the newest may store**;
+the Hopfield is never reset. It ends holding **269 patterns**.
+
+| | episodes | success | steps |
+|---|---|---|---|
+| **primary** (own block, store allowed) | 280 | 0.950 | 15.98 |
+| **revisit** (store locked) | **1,980** | **1.0000** | **10.89** |
+
+**Zero forgetting.** 1,980 locked-store revisit episodes across 14 envs and
+1,980 successes — not "approximately zero", exactly zero, with the memory
+growing to 269 patterns underneath. No env that was ever learned degraded; the
+final-block mean on those envs is 0.993.
+
+**And revisits are BETTER than the first encounter**, on both axes — 1.000
+against 0.950 success and **32% fewer steps** (10.89 vs 15.98). That is the
+two-regime story doing exactly what it should: the primary block has nothing in
+memory, so the agent must *explore* to find the goal, and every later visit is
+an *exploit* episode that beelines. The gap between the two columns is the
+value of the memory, measured.
+
+##### The two envs that never became solvable
+
+`e2` (goal (0,4)) and `e7` (goal (1,6)) sit at 0.05–0.10 in their own block and
+stay there — and they are the same two in the independent 8-env run, so this
+reproduces. They stored 1–2 patterns each against 18–20 for the others, so the
+agent rarely reached those goals *at all*.
+
+It is not simply a store failure: after block 2, `e2`'s goal **is** in memory
+and it still fails, and its rare successes take 2–4 steps, i.e. only when it
+spawns essentially on top of the goal. That is the §15.4 signature — readout
+clean, agent held against the perimeter, unable to close the last fraction of a
+cell — and it is the same absorbing boundary §9.7 measured.
+
+**Open, and not settled by n=2:** both failures are on the **west** wall (x=0,
+x=1) while goals at 0–1 cells from the south (`e1` (2,0)), east (`e4` (18,6))
+and north (`e11` (14,18)) walls all reach 1.000. Two envs is not enough to call
+an asymmetry. The cheap next test is `readout_field.py` on those two memories —
+it is policy-free, and §14 already found that particular stored sets fold the
+field into a vortex.
+
+**Caveat on the protocol:** with autostore, an env whose goal is never found
+during its own block is permanently unsolvable, because nothing else may write.
+So this protocol measures explore and exploit *in series*, and a single explore
+failure is unrecoverable. That is a property of the protocol, not of the model.
+
+---
+
 ### Wave 2 — the regime signal
 
 Gated on wave 1, because §27 is a warning: the aux head proved the information
