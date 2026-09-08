@@ -2145,6 +2145,39 @@ gap between "first metric saturates" and "run stops improving" is not the 200–
 the second point. It is also the fourth reason in this document not to quote
 `success_rate` as a headline.
 
+##### The three metrics over training, on one axis
+
+`analysis/nav_tri/training_curve.py` plots success, path optimality and swept
+coverage together, because they are all fractions in [0, 1] and the point is
+their relative **timing**. Written to
+`results/nav_tri_probe/d0_base_training_curve.{png,pdf}`.
+
+**path optimality** = (mean_start_dist − goal_radius) / mean_steps; 1.0 is a
+straight run at one cell per step, which is the cap at `max_action_norm 1.0`.
+
+| d=10 | u125 | u725 | last-quarter slope per 100u |
+|---|---|---|---|
+| success | 1.000 | 1.000 | **+0.00005** (+0.0%) |
+| path optimality | 0.287 | **0.802** | **+0.047** (+5.8%) |
+| swept coverage | 0.211 | **0.559** | **+0.029** (+5.2%) |
+
+**Success is pinned at 1.000 from u125; the other two are still climbing when
+the wall stops the run at u730.** This is §9.8's saturation table drawn rather
+than tabulated, and it is the clearest single statement of why `success_rate`
+is not a headline here.
+
+*Three caveats, all handled in the module rather than ignored.* (1) `mean_steps`
+is a mean over **successes only**, so while success is below 1.0 the average is
+over the easy trials; that stretch is shaded and excluded. Same class of error
+as `follow_q` without `align_true` — a ratio whose denominator is defined on a
+subset. (2) The log does not record `mean_start_dist`, so the constant the probe
+measures on this fixed env set is used; it is legitimate because the validation
+envs do not change across evals of one run. (3) The line is a ratio of means,
+not a mean of ratios. Six exact per-episode `path_efficiency` values from
+`behavior_probe` are overlaid as markers: they agree within **0.02 from u400 on**
+and the approximation **understates** before that (0.394 vs 0.483 at u200), so
+the early curve is conservative rather than flattering.
+
 ##### Continual learning — 2,240 revisits, zero failures
 
 `analysis/continual/agenthash.py` over the sequential protocol
