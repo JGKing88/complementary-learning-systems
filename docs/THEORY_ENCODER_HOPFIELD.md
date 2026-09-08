@@ -442,6 +442,10 @@ K = 5 maps.
 
 ## 4. Questions for theory
 
+> **§5 supersedes the framing of this list.** These four were accumulated one
+> per turn; §5.5 derives a taxonomy they are instances of. Kept because the
+> specific measurements they name are still the cheapest next steps.
+
 **Q1 — Is `d_eff = PR(P)` and `C = FT(P)` actually right?** §2.0 asserts the
 code covariance's eigenvalues are the spatial power spectrum, under a
 genericity assumption that distinct spatial frequencies map to orthogonal
@@ -475,6 +479,209 @@ cycles and they have never been read against this.
 
 ---
 
+## 5. The formal setup
+
+*(Opened turn 4. §4's questions are re-derived from this in §5.5; the loose list
+they started as is superseded.)*
+
+### 5.1 Objects
+
+| | | |
+|---|---|---|
+| `X` | `(Z_L)²`, `L = lcm(11,12,13) = 1716` | the scaffold: a discrete flat 2-torus, \|X\| = 2.94 M |
+| `g : X → R^434` | ⊕ over modules λ of a Gaussian bump on `Z_λ × Z_λ` | the grid code. `‖g(p)‖` is constant; `g` is **exactly translation-equivariant** — `g(p+a)` is a cyclic permutation of `g(p)` |
+| `φ : X → S^{D−1}` | `normalize ∘ tanh(γ·) ∘ MLP ∘ g`, `D = 1024`, γ = gain | the encoder. **Not** equivariant: the MLP mixes coordinates arbitrarily |
+| `M = φ(X) ⊂ S^{D−1}` | | the **code manifold** — a 2-dimensional (discrete) surface on the sphere |
+| `Z = [φ(y_1) … φ(y_K)]` | K goals drawn from X | the memory |
+| `W` | `D^{-1}(ZᵀZ − diag)` | |
+| `R(x)` | `normalize(tanh(β W x))`, `= normalize(Wx)` below the knee | one recall step |
+| `B(p)` | `GS(φ(p+e₂) − φ(p), φ(p+e₁) − φ(p))` | the local frame |
+| `q(p, v)` | `B(p)(v − φ(p))` | the readout |
+
+Everything below is written in terms of **one function**, the similarity
+kernel
+
+```
+C(a) = ⟨φ(p), φ(p + a)⟩            (assuming stationarity; see §2.0)
+```
+
+and its displacement form `N(a) = ‖φ(p+a) − φ(p)‖ = √(2(1 − C(a)))`.
+
+### 5.2 The three conditions
+
+Write `y` for the goal of the agent's own environment, `r = p − y` for the
+agent's displacement from it, `R_op` for the largest `‖r‖` the system must work
+at (≈ 30 cells for a size-20 arena), and `S_k = φ(y) − φ(y_k)` for the
+separations between co-stored goals.
+
+**(J1) Addressing.** One recall step gives
+`W φ(p) ∝ C(r)·φ(y) + Σ_{k≠y} C(p − y_k)·φ(y_k)`. Retrieval names the right
+memory when the first term dominates:
+
+```
+C(r)  >  max_{k ≠ y} C(p − y_k)                                        (J1)
+```
+
+A **max of K−1 far-field samples against one near-field signal**. §10.3's
+fitted "one competitor above cos 0.25" is an empirical reading of exactly this,
+and the far-field samples are `≈ N(0, 1/√d_eff)` (§2.0), so (J1) is a
+tail-of-the-max problem in `d_eff` and `K`.
+
+**(J2) Localisation.** Retrieval names the right *cell* when the recalled
+state's nearest neighbour in `M` is `φ(y)` and not `φ(y ± e)`. Writing the
+cross-talk residual as `ε`, this needs
+
+```
+⟨ε, φ(y ± e) − φ(y)⟩  <  ½‖φ(y ± e) − φ(y)‖²  =  1 − C(1)              (J2)
+```
+
+**The margin is the near field and the noise is the far field.** This is the
+sharpest form of the tension: the quantity that has to be *large* for
+localisation, `1 − C(1)`, is the quantity the readout wants *small*.
+
+**(J3) Differentiation.** `q` is a first-order finite difference, so it needs
+the chart to be **locally flat over the operating range**. Concretely, `q`
+carries bearing *and* distance iff
+
+```
+‖φ(p + r) − φ(p)‖  ∝  ‖r‖      for ‖r‖ ≤ R_op                          (J3)
+```
+
+i.e. `N` is **ballistic** rather than diffusive. `N(k) ∝ √k` is what a generic
+curved manifold gives — successive unit displacements are mutually orthogonal —
+and it makes `⟨φ(y)−φ(p), d̂⟩` saturate after one cell, which is §10.20's
+measured failure. Ballistic `N` is equivalent to the image being an
+approximately **flat 2-plane patch** of radius `R_op`: zero extrinsic curvature
+over that scale.
+
+### 5.3 The system, in one sentence
+
+> **The encoder must embed a 2-torus in `S^{D−1}` as a union of nearly-flat 2D
+> patches of radius `R_op`, such that patches around different goals are nearly
+> orthogonal, and adjacent cells within a patch are separated by more than the
+> cross-talk noise.**
+
+(J3) is a *local flatness* condition, (J1) a *global packing* condition, (J2) a
+*resolution* condition sitting between them. That is the whole system, and
+naming them separately is what §2's heuristics never did — R1–R5 are all (J1)
+with (J3) as an afterthought, and (J2) was invisible until §3.2.
+
+### 5.4 Where the tension actually is — and where it isn't
+
+Two observations that change the shape of the problem.
+
+**(a) The grid code already satisfies (J3), exactly.** A single module with
+continuous phase is the Clifford torus `(cos θ₁, sin θ₁, cos θ₂, sin θ₂)/√2`:
+intrinsically flat, and `N(k)² = 2 − cos k₁ − cos k₂ ≈ ‖k‖²/2` — **ballistic by
+construction**, with zero extrinsic curvature. Multiple co-prime modules are a
+product of such tori: still flat, still ballistic, and non-aliasing out to
+`lcm(λ)`. So the *near field is not the encoder's problem to solve* — it is
+handed to it, and the encoder's job is to not break it. What the raw grid code
+fails is (J1): its far field is a **lattice**, with exact revivals at every
+`k ≡ 0 mod λ`, so `C` is not small at those separations at all. **[D]**
+
+**(b) A random MLP cannot fix (J1) — it can only reshape the kernel
+pointwise.** For a wide random network on constant-norm inputs, the composite
+kernel is a scalar function of the input kernel: `C_φ(a) = f(C_g(a))`, with `f`
+determined by the activation (Cho & Saul's arc-cosine kernels; Daniely et al.).
+Two consequences. First, **an exact alias survives any `f`**: if `C_g(a) = 1`
+then `C_φ(a) = 1`. Second, along the whole ladder of things the campaign
+called knobs, a pointwise `f` trades (J1) against (J3) in a fixed way — a
+power-law `f(c) = c^m` suppresses the far field as `ε^m` while shortening the
+chart only linearly in `m`, which is a *very* favourable trade and is probably
+why gain and the rate term work as well as they do. **[G — the conjecture; the
+kernel identity itself is [D]]**
+
+> **The single cheapest experiment in this document.** If (b) is right, then
+> for an **untrained** encoder a scatter of `C_φ(a)` against `C_g(a)` over all
+> displacements `a` must **collapse onto one curve**. For a trained encoder it
+> must not, and the deviation *is* what training bought. §4.1's untrained
+> control already exists. One afternoon, and it separates "the encoder is a
+> kernel reshaping" from "the encoder learns geometry".
+
+### 5.5 The question taxonomy
+
+Four kinds of question, distinguished by what an answer would look like. Jack's
+turn-4 list is written into it to check the taxonomy covers the space.
+
+**I. Realizability — what codes exist at all?** Answers are existence proofs
+and dimension bounds; no training involved.
+
+* *What `D` is needed for a strictly monotone distance↔similarity code on a 2D
+  scaffold?* → `C` must be a positive-definite function on `X`, so this is
+  Schoenberg's theorem and the rank of the kernel: `D ≥ #{ω : P(ω) > 0}`. The
+  1D case is solvable in `D = 2` (`C(k) = cos 2πk/L`); the 2D isotropic case is
+  the obstruction Jack recalls at `D = 3`.
+* *Is a network with basins in this way even possible?* → is there any `φ`
+  satisfying (J1)–(J3) simultaneously at the required `K` and `R_op`, and what
+  is the largest `R_op` for given `D`, `K`? A **packing** question: how many
+  flat 2D patches of radius `R` fit in `S^{D−1}` at coherence ≤ μ (Grassmannian
+  packing, Welch and Levenshtein bounds).
+* *Can you have a true attractor network **and** a good reach rate?* → (J3)
+  needs `M` to have graded structure near `φ(y)`; a genuine fixed point needs
+  `φ(y)` to be a hypercube corner (§7, §10.20). **This is the one question the
+  campaign has already answered empirically and negatively** — the question is
+  whether that is a theorem or a property of this readout (see IV).
+
+**II. Sufficiency — what does each condition demand of the code?** Answers are
+inequalities relating `C`, `d_eff`, `K`, `R_op`.
+
+* *Is perfect distance↔similarity enough for a good reach rate?* → no, by
+  inspection of (J1): monotone `C` says nothing about the *tail* of `C` at
+  large separations, which is what K−1 competitors sample. Spread is a
+  statement about that tail, and §2.0 makes it `1/√d_eff`.
+* *What guarantees a basin of radius `R`?* → (J1) ∧ (J2) for all `‖r‖ ≤ R`,
+  which is Q3.
+* *Where does the 0.25 threshold come from, and the res90 ≈ 5 floor?* → the
+  two fitted constants in §2; both should fall out of (J1) and (J3).
+
+**III. Attainability — what training reaches such a code?** Answers are about
+losses, sampling and coverage.
+
+* *Coverage, sampling, loss shape, regularisation.* The empirical answers are
+  §2.1's R1–R5 and §2.2's B1. The theory question is which of them are
+  properties of the *optimum* and which of the *optimiser*.
+* *Does an equivariant architecture do better?* → `g` is equivariant and `φ` is
+  not; equivariance would make `C` exactly stationary, which is the assumption
+  every result in §2.0 rests on. `encoder_training/equivariant.py` exists and
+  has never been read against the probe.
+
+**IV. Mechanism / optimality — is this the best we can do?**
+
+* *What about the grid code enables this?* → §5.4(a): it supplies (J3) for
+  free. The follow-on is whether any structured spatial input with a flat,
+  ballistic local geometry would do (a torus of any period; a random Fourier
+  feature bank with a shell spectrum), and whether the co-prime module
+  structure matters beyond setting `lcm(λ)`.
+* *Is this actually a Hopfield network?* → below the knee it is a linear
+  matched filter (§1.3), so the classical capacity theory does not apply and
+  the modern/dense-associative-memory separation theorems (Krotov & Hopfield;
+  Ramsauer et al.) describe a system we are not running. Naming this correctly
+  changes which literature is even relevant.
+* *Is the (J1)-vs-(J3) trade forced?* → forced by information (any code on a 2D
+  scaffold), by the input (three grid modules), by the readout (a first-order
+  finite difference), or by the loss? **These have completely different
+  implications and the campaign has never distinguished them.**
+
+### 5.6 Theory that already exists and bears on this
+
+Listed because the input and the objective are both unusually well specified,
+which is exactly the situation where reaching for existing results beats
+inventing.
+
+| body | bears on |
+|---|---|
+| Schoenberg's theorem; positive-definite functions on spheres and tori | I — which `C(·)` profiles are realizable, and in what `D` |
+| Spherical codes; Rankin, Welch, Levenshtein bounds; Grassmannian packing | I, II — how many near-orthogonal patches fit; the ceiling on `K` at given `D`, `R_op` |
+| Grid-code capacity and resolution (Fiete, Burak & Brookings 2008; Sreenivasan & Fiete 2011; Mathis, Herz & Stemmler) | IV — what the co-prime module structure buys, and the Fisher-information view of res90 |
+| Classical Hopfield capacity (Amit–Gutfreund–Sompolinsky) and the correlated-pattern extensions | I, II — but only if we move above the knee |
+| Dense associative memory / modern Hopfield (Krotov & Hopfield 2016; Ramsauer et al. 2020) | I, IV — the separation condition, and what a real attractor would cost |
+| Dual activations / arc-cosine kernels (Cho & Saul 2009; Daniely, Frostig & Singer 2016) | III, IV — §5.4(b), what an untrained encoder can and cannot do |
+| Manifold capacity (Chung, Lee & Sompolinsky) | I, II — packing curved manifolds rather than points |
+| Steerable / equivariant CNNs (Cohen & Welling) | III — the architecture question |
+
+---
+
 ## Conversation log
 
 **Turn 1 — the core heuristics.** Assembled §1 and §2 from the probe log.
@@ -489,6 +696,19 @@ than one number. (ii) R4 was unreadable; split into four statements. (iii) Do
 not assume basin and reach share a variable — measured instead, §3.2, and found
 the basin metric mixes a cross-talk term with a precision term. Bug found and
 fixed on the way (§3.3).
+
+**Turn 4 — formalise.** Jack: "there is a lot going on here and many ways to
+break the problem apart… it feels like theory can make a lot of headway,
+largely because the input and desired behavior are really well defined." §5
+written: the objects, the three conditions (J1) addressing / (J2) localisation
+/ (J3) differentiation as inequalities, and a four-way taxonomy
+(realizability / sufficiency / attainability / mechanism) that Jack's example
+questions are instances of. Two claims came out of writing it that were not in
+any log: the **grid code already supplies (J3) for free** (a product of
+Clifford tori is flat and ballistic by construction, so the encoder's job is
+not to build the chart but to avoid breaking it), and **a random MLP can only
+reshape the kernel pointwise**, which cannot remove an exact alias — with a
+cheap experiment that separates the two.
 
 **Turn 3 — "we need `r_exact` otherwise the policy doesn't find the goal all
 the time."** Correct, and §3.2's proposed relaxation is retracted. Measured in
