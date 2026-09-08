@@ -2108,6 +2108,29 @@ Straight from the config — `num_worlds 1`, `envs_per_world 20`,
 All 20 rollouts of an update are pooled into **one** PPO update, so 928,000
 episodes bought 725 gradient-update groups.
 
+*Not reconstructed — the run logs this itself*, and the arithmetic above
+matches its header line:
+
+```
+rollout : 20 envs x 64 batch x 200 steps
+          pool=1280 trajectories, 256000 env-steps/update, 4000 serial calls/update
+```
+
+**"Rollout" is doing double duty and the two readings differ by 64×.** One
+`collect_rollout` call handles one env and is batched over `batch_envs`
+trajectories inside it, so *20 per update* counts calls — which is the
+codebase's own usage, since the startup line reads "Exploit-regime distractors
+per **rollout**: ~U[0, 10]", one distractor draw per env — while *1,280 per
+update* counts trajectories, which the header calls exactly that. Quote whichever,
+but not interchangeably.
+
+**4,000 serial calls/update** = 20 envs × 200 steps is the sequential depth: each
+env's rollout is its own 200-step loop batched over 64, so `batch_envs` is
+free width and `envs_per_world × steps_per_rollout` is what sets wall-clock.
+That is why the cost model is serial-call-bound
+([[project_hopfield_nav_explore_min]]) and why 20×64 beats 80×16 at 2.9× less
+wall-clock for the same pool.
+
 **Actual environment steps ≈ 103.5M, 56% of the ceiling.** The explore half is
 exact at **92,800,000** — `explore_goals_off=True` makes `ends_on_goal` False
 (`training/explore.py:93`), so every explore episode runs the full 200 steps.
