@@ -890,9 +890,9 @@ and it says exactly where the three escapes are — one per premise:
   be a corner only there. Untested and probably unusable: goals are arbitrary
   cells of arbitrary environments.
 * relax (iii) — a readout that is not a finite difference of the *stored* code.
-  §10.20's parked "basis from pre-nonlinearity activations" is exactly this: it
-  lets the memory see corners while `q` sees magnitudes, and it is the only
-  escape that could give an exact fixed point *and* a direction field.
+  The only escape that could give an exact fixed point **and** a direction
+  field. Four candidate forms, worked through below; §10.20's parked "basis
+  from pre-nonlinearity activations" is **not** one of the live ones.
 
 **Falsified by:** a binary code with `‖Δk‖/k‖Δ1‖` bounded away from `1/√k` over
 a decade of `k`. (T1) says there is none.
@@ -927,9 +927,70 @@ time constant, not a destroyer" — and §4.2's, that the rescue sweep's `α`
 optimum did not transfer. `α` sets how fast the state walks to the fixed point,
 never which fixed point or which way `q` points.
 
-There is a real idea underneath the α proposal, and it is escape (iii): *read
-the direction the state moves under recall, rather than treating the recalled
-vector as a target.* That is a different readout, not a different `α`.
+There is a real idea underneath the α proposal, and it is escape (iii). But it
+needs stating carefully, because *"read the direction the state moves under
+recall"* is **already what is implemented**: `project_q` is literally
+`basis @ (recalled − current)` and `recalled = R(current)`, so `q` is the
+one-step recall displacement projected on the local frame. The instinct is
+right and the code already has it; what breaks under full saturation is that
+**both ends of the subtraction are binary**.
+
+#### What escape (iii) would actually be
+
+The code `z` has two consumers with opposite requirements: the **memory** wants
+it binary (exact fixed points), the **readout** wants it graded (a chart).
+Escape (iii) is any scheme that stops making one object serve both. Four
+candidates, and they are not equally alive.
+
+**(iii-a) Basis from the pre-nonlinearity activations, target still `z`.** The
+version parked in §10.20: `basis = GS(u(p+N) − u(p), u(p+E) − u(p))` with `q`
+still `basis @ (z_goal − z(p))`. **This is dead, by §10.20's own measurement.**
+The frame was never the problem — `‖d_fwd‖` is 0.267 binarised against 0.086
+continuous, *larger*, and zero at none of 1500 positions. What breaks is the
+accumulation: `q_north = ⟨Δk, d̂_fwd⟩` is flat at 0.267 → 0.239 for binary
+against 0.086 → 0.417 continuous. Fixing a frame that was already
+well-conditioned changes nothing. **[M]** — and this should be recorded in
+§10.20, which still lists it as the open route.
+
+**(iii-b) Heteroassociation — a binary key with a graded value.** Store
+`z_k = sign(u_k)` as the key and `u_k` as the value. The autoassociative
+recurrence runs on keys only, so its fixed points are exact; a second,
+heteroassociative step emits `u_goal`; and the readout becomes
+`q = GS(Δu) @ (u_goal − u(p))`, a difference of two **continuous** codes.
+(J1) is satisfied on the key side and (J3) on the value side, by different
+objects, which is exactly the decoupling. Cost: a second matrix (or an explicit
+value store), and the value is only as good as the key retrieval — but key
+retrieval is now a clean binary nearest-neighbour problem with exact fixed
+points, which is *better* than the current continuous matched filter, not worse.
+This is the key/value split of attention, i.e. the modern-Hopfield form in
+§5.6 — worth noting that the principled fix is a known architecture.
+
+**(iii-c) A scalar potential — descend `‖z_goal − z(p)‖` instead of projecting
+it.** Binarisation destroys *bearing*, not *distance*: with
+`‖z_goal − z(p)‖² = 4H/D` and `H ∝ k`, the **norm** still encodes displacement,
+monotonically, as `√k`. So take the readout to be a finite difference of the
+**scalar** rather than of the code — evaluate `‖z_goal − z(p ± e)‖` at the
+neighbours the agent can already encode, and step downhill. No extra storage,
+no second matrix, and it works on a fully binary code.
+
+Its range limit falls out immediately: `H` saturates at `D/2` once positions
+decorrelate, so the potential is informative only while `k·m ≪ D/2`. With
+`m ≈ 18.4` flips per cell (§10.20) that is `k ≪ D/2m ≈ 28` cells — which is the
+arena. Viable here, and it would fail on a much larger one.
+
+**This is the cheapest thing in the document to test**, and it tests on data we
+already have: arm B currently has a perfect memory (`exact` 0.999, basin 28.2,
+`cos_self` 1.0000) and reach 0.103. If `‖z_goal − z(p+e)‖ − ‖z_goal − z(p)‖` is
+reliably negative toward the goal on arm B's codes, then arm B's navigation was
+never broken — only its *readout* was, and escape (iii-c) recovers a system with
+an exact attractor **and** a direction field.
+
+**(iii-d) A learned decoding head.** `(z_here, z_goal) → q` as a trained map,
+dropping the local-linearity requirement entirely. Most general and least
+attractive: the current readout is parameter-free and environment-agnostic, so
+it transfers zero-shot to arenas and goals never seen. A head has to be trained
+on `(position, goal)` pairs and inherits that distribution. Only worth it if
+(iii-b) and (iii-c) both fail.
 
 ---
 
@@ -1110,6 +1171,18 @@ than one number. (ii) R4 was unreadable; split into four statements. (iii) Do
 not assume basin and reach share a variable — measured instead, §3.2, and found
 the basin metric mixes a cross-talk term with a precision term. Bug found and
 fixed on the way (§3.3).
+
+**Turn 8 — "what would escape (iii) actually look like?"** §7.1 gains four
+candidate forms. First finding: *"read the direction the state moves under
+recall"* is already the implementation — `project_q` is literally
+`basis @ (recalled − current)` with `recalled = R(current)`. Second: the route
+§10.20 parked, a basis from pre-nonlinearity activations, is **dead** by
+§10.20's own numbers — the frame was never the problem, the accumulation was.
+The live ones are **(iii-b)** heteroassociation, a binary key with a graded
+value, which is the key/value split of attention; and **(iii-c)** descending
+the *scalar* `‖z_goal − z(p)‖`, which survives binarisation because
+binarisation destroys bearing but not distance, has range `D/2m ≈ 28` cells
+(the arena), needs no extra storage, and is testable on arm B's existing codes.
 
 **Turn 7 — "if we had an attractor and then reduced α, so the recalled vector
 was in the direction of the goal but only a step away from the cue, could that
