@@ -656,6 +656,33 @@ def test_basin_cues_are_dropped_at_the_scaffold_edge_not_clipped(monkeypatch):
     assert out["1"]["n_cues"] < _disc_count(4)
 
 
+def test_basin_map_offsets_track_clipping(monkeypatch):
+    """And the *map* has to lose the same cues the radius did.
+
+    The test above passes on the radius alone, because the radius comes from
+    ``d``, which was filtered. ``dx``/``dy`` were built before the clip and
+    never filtered, so ``_basin_map`` paired cue *i*'s outcome with some other
+    cue's offset -- and nothing crashed, because ``zip`` truncates to the
+    shorter list. 60 of 140 recorded maps were affected before this was found.
+
+    Under identity recall every cue retrieves itself, so the landing offset
+    must equal the cue offset for every cue on the map. That is the invariant
+    the mismatch broke, and it does not depend on the recall dynamics at all.
+    """
+    field = _CellStub()
+    world = _one_env_world(goal=(0, 6), offset=(2, 50))    # goal at x = 2
+    mem = _stub_memory(field.encode([2], [56]), [0])
+    monkeypatch.setattr(attractor, "recall_trajectory", _recall(lambda c: c))
+
+    out = attractor.basin_probe(field, world, 0, mem, _basin_cfg(),
+                                want_map=True)
+    m, n = out["map"], out["1"]["n_cues"]
+    assert n == _disc_count(4, lambda dx, dy: dx + 2 >= 0) < _disc_count(4)
+    assert len(m["dx"]) == len(m["dy"]) == len(m["cat"]) == n
+    assert min(m["dx"]) == -2                              # nothing off-scaffold
+    assert m["rdx"] == m["dx"] and m["rdy"] == m["dy"]
+
+
 def test_basin_map_landings_are_the_cells_that_were_actually_retrieved(
         monkeypatch):
     """Under identity recall every cue lands on itself, so the map's landing

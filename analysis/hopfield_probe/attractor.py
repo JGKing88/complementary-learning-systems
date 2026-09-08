@@ -306,8 +306,15 @@ def basin_probe(
     cx, cy = gx0 + dx, gy0 + dy
     # A cue clipped to the scaffold is no longer at the offset it claims, so
     # drop it rather than record it at the wrong radius.
+    #
+    # `dx`/`dy` must be filtered alongside `cx`/`cy`/`d`. They were not, and
+    # nothing crashed: the radii are computed from `d` and stayed correct, but
+    # `_basin_map` pairs offsets with outcomes positionally and `zip` truncates
+    # to the shorter list, so a clipped disc silently rendered every cue's
+    # outcome at some *other* cue's offset. 60 of 140 recorded maps were
+    # affected. See `test_basin_map_offsets_track_clipping`.
     keep = (cx >= 0) & (cx < cfg.Npos) & (cy >= 0) & (cy < cfg.Npos)
-    cx, cy, d = cx[keep], cy[keep], d[keep]
+    cx, cy, d, dx, dy = cx[keep], cy[keep], d[keep], dx[keep], dy[keep]
     if cx.size == 0:
         return {}
 
