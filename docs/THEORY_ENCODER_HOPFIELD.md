@@ -722,8 +722,12 @@ constrain the *same* geometry. Whether both can hold at once is the question.
 
 **What an answer looks like.** What stable fixed points require of the code,
 what the direction computation requires of it, and a proof that the two can or
-cannot hold together. → **§7.1: they cannot** — and the proof names exactly two
-escapes, one for each requirement.
+cannot hold together. → **§7.1, and the answer splits.** An attractor whose
+fixed points sit *near* each memory is compatible with navigation and already
+exists (measured: reach 0.973 against production's 0.987, in exchange for
+step-invariance). An attractor whose fixed point **is** the memory is provably
+incompatible, for any code and any encoder. The interesting content of Q1 is
+that gap, and what the near-miss costs.
 
 ---
 
@@ -833,15 +837,30 @@ power spectrum, `d_eff = PR(P)`, `K` stored goals, `D = 1024`.
 
 ---
 
-### T1. A true attractor and a working direction field are incompatible — Q1, Q6
+### T1. An attractor is fine; an attractor *at the memory* is not — Q1, Q6
 
-**Status: essentially proven; needs writing up and its assumptions stated.**
-This is Jack's "big one", and it is a theorem rather than a measurement.
+> **Corrected turn 7, and the correction matters.** This was first written as
+> "a true attractor and a working direction field are incompatible", full stop.
+> That is too strong, and the counterexample is already measured. §10.20's
+> **arm A** — recall saturated (β = 1e6), encoder left continuous (gain 100) —
+> has genuine attracting fixed points (`cos(recall(x), x)` = 0.9989,
+> `cos(recall¹⁵(z), x)` = 0.9981 against 0.813 unsaturated) **and** a working
+> direction field (reach 0.973, against production's 0.987). Its fixed point is
+> a hypercube corner **near** each memory, at `cos_self` = 0.957, not the memory
+> itself. The code stays continuous, so (J3) survives.
+>
+> What is actually impossible is the *stronger* requirement — that the stored
+> code **be** the fixed point, `cos_self` = 1. The proof below is a proof of
+> that, and its premise has to be stated to see why.
 
-Assume (i) a genuine fixed point of the recall map, which above the knee forces
-`φ(y)` onto a hypercube corner (§7's condition (a), §10.20's `cos_self` =
-1.0000 arm); and (ii) the readout is the first-order finite difference of §5.1.
-If *every* code is a corner, `φ(p) ∈ {±1}^D/√D`, then
+**Status: proven for the strong form.** Assume (i) each stored code is *itself*
+a fixed point of the recall map, which above the knee forces `φ(y)` onto a
+hypercube corner (§7's condition (a); §10.20's arm B attains it, `cos_self` =
+1.0000); (ii) any cell can be a goal, so (i) must hold at every position — the
+encoder is one function and cannot be a corner only at K chosen points; and
+(iii) the readout is the first-order finite difference of §5.1.
+
+By (i)+(ii) every code is a corner, `φ(p) ∈ {±1}^D/√D`, and then
 
 ```
 N(k)² = 4·H(k)/D                        H = Hamming distance
@@ -861,14 +880,56 @@ displacement is a coherent vector sum rather than a count of flips.
 
 This converts §10.20's measured `‖Δk‖/(k‖Δ1‖)` = 0.701 / 0.492 / 0.345 ≈ `1/√k`
 from a fact about one checkpoint into the only thing that could have happened,
-and it says exactly where the two escapes are:
+and it says exactly where the three escapes are — one per premise:
 
-* relax (i) — a recurrence whose fixed points are not corners;
-* relax (ii) — a readout that is not a finite difference of the stored code
-  (§10.20's parked "basis from pre-nonlinearity activations" is exactly this).
+* relax (i) — **accept a fixed point near the memory rather than at it.** This
+  is arm A, it is already measured, and it costs basin 27.0 → 24.5 and reach
+  0.987 → 0.973 in exchange for step-invariance. The cheapest escape by far,
+  and the one the campaign already has in hand.
+* relax (ii) — make goals a restricted subset of positions, so the code has to
+  be a corner only there. Untested and probably unusable: goals are arbitrary
+  cells of arbitrary environments.
+* relax (iii) — a readout that is not a finite difference of the *stored* code.
+  §10.20's parked "basis from pre-nonlinearity activations" is exactly this: it
+  lets the memory see corners while `q` sees magnitudes, and it is the only
+  escape that could give an exact fixed point *and* a direction field.
 
 **Falsified by:** a binary code with `‖Δk‖/k‖Δ1‖` bounded away from `1/√k` over
 a decade of `k`. (T1) says there is none.
+
+#### Why lowering `α` is not a fourth escape
+
+The obvious next thought is to keep the saturated recall but take a *small step*
+toward it — `x ← normalize((1−α)x + α·tanh(βWx))` with `α ≪ 1` — so the state
+moves in the direction of the goal without ever binarising. It does not work,
+and the reason is worth recording because it is not obvious.
+
+`tanh(βWx)` is **not** normalised before the mix (`hopfield/core.py`), so above
+the knee its norm is `√D = 32` against the cue's 1: the two terms are
+comparable only near `α ≈ 0.03`, not at `α ≈ 0.5`. Writing `v = tanh(βWx₀)` and
+`m = ‖(1−α)x₀ + αv‖`,
+
+```
+x_out − x₀ = (α/m)·v + ((1−α)/m − 1)·x₀
+```
+
+so `q = B(x_out − x₀)` **always lies in the span of the same two 2-vectors,
+`Bv` and `Bφ(p)`**, for every `α`. Working the small-`α` limit through gives
+`q ≈ 32α·B(v̂ − c·φ(p))` with `c = ⟨φ(p), v̂⟩ ≈ cos_bin·C(r)`, against `α = 1`'s
+`q = B(v̂ − φ(p))`. The only difference is that the `−z_here` half of the
+readout is subtracted with weight `c` instead of 1 — and since
+`1 − cos_bin·C(r)` stays small where the signal is small, the resulting bias is
+under 4% of the signal at every radius.
+
+**`α` is a scalar gain on `q` plus a sub-4% bias. It cannot rotate a wrong
+direction into a right one.** Which is exactly §4.3's empirical finding — "a
+time constant, not a destroyer" — and §4.2's, that the rescue sweep's `α`
+optimum did not transfer. `α` sets how fast the state walks to the fixed point,
+never which fixed point or which way `q` points.
+
+There is a real idea underneath the α proposal, and it is escape (iii): *read
+the direction the state moves under recall, rather than treating the recalled
+vector as a target.* That is a different readout, not a different `α`.
 
 ---
 
@@ -1049,6 +1110,19 @@ than one number. (ii) R4 was unreadable; split into four statements. (iii) Do
 not assume basin and reach share a variable — measured instead, §3.2, and found
 the basin metric mixes a cross-talk term with a precision term. Bug found and
 fixed on the way (§3.3).
+
+**Turn 7 — "if we had an attractor and then reduced α, so the recalled vector
+was in the direction of the goal but only a step away from the cue, could that
+work?"** No, and the reason exposed that §7.1 was overstated. `α` cannot rotate
+`q`: for every `α`, `q` lies in the span of the same two 2-vectors, and the
+small-`α` limit differs from `α = 1` only by subtracting `z_here` with weight
+`cos_bin·C(r)` instead of 1 — under 4% of the signal at every radius. `α` is a
+gain and a time constant, which is what §4.2–4.3 measured. **But the premise
+did not need rescuing**: T1's original "an attractor and a direction field are
+incompatible" was too strong. Arm A already has both. What is impossible is an
+attractor whose fixed point *is* the memory, and stating that premise properly
+turns two escapes into three — the third being the readout change, which is
+also the real idea underneath the α proposal.
 
 **Turn 6 — pitch the questions at the right level.** Jack: T1 and T2 are right,
 the rest are too specific, and "`d_eff` isn't inherent to the problem setup —
