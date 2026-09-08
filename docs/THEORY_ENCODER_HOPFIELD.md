@@ -682,59 +682,6 @@ inventing.
 
 ---
 
-## 5.7 Why theory, at all
-
-Short version of the case, since the rest of this document assumes it.
-
-**What we would get.** Four things, in decreasing order of confidence: whether a
-genuine attractor is possible at all *and where the exits are* (Q1 — already
-answered, negatively, in a page); what the basin *should* be, as a formula
-rather than a measurement (Q2); whether we are near a ceiling or nowhere near
-one (Q4, Q5); and what to measure instead of sweeping.
-
-**Why the empirics say we *can*.** This system keeps behaving law-like rather
-than idiosyncratically, which is not true of most things we could point theory
-at.
-
-* A three-line estimate — `(Wx)ᵢ ~ D^−1.5` — predicted the β knee at 32768, and
-  the measured knee is 32768, with the median tanh argument there equal to 1.08.
-  That is a prediction landing **three decades away from where it was derived**.
-* A zero-parameter law, far-cos sd = `1/√d_eff`, holds to a few percent over a
-  20× range of `d_eff`.
-* `‖Δk‖ ∝ √k` to three decimals for the binarised code, and `H(k)/(k·H(1))` is
-  **bit-identical** across a 10⁴ change in gain.
-* Six knobs turn out to move roughly one thing, and do not compound. That is
-  what a system with few governing variables looks like from the outside.
-* A deliberately crude derivation of the basin already gives 19.7 against a
-  measured 27.0 (§7.2), with three order-unity constants dropped.
-
-**Why the empirics say we *should*.** The empirical route is failing in specific,
-recurring, expensive ways.
-
-* **Resolution.** A fixed arm swings 0.959–0.988 across scaffold draws, so gaps
-  under ~0.02 need 4 seeds × 3 draws to resolve — and the top arms are separated
-  by less than that. We are measuring below our own noise floor.
-* **Wrong-metric cost, measured in waves.** Three sweep waves climbed
-  `attract_lambda` the wrong way because `r_min` rewards it. `r_min` being a
-  *product of two opposing functions* of the same variable is derivable in a
-  paragraph. The price of not having that paragraph was three waves.
-* **Retraction rate.** Five one-seed readings retracted; every basin number
-  before §10.18 wrong; an env-censored metric inverted the coverage ladder.
-  Confident numbers keep flipping, and a prediction is the only independent
-  check on a measurement.
-* **Two fitted constants are load-bearing.** The cos-0.25 competitor threshold
-  and the res90 ≈ 5 floor gate every screening decision, and neither is derived,
-  so neither transfers to a new coverage, `K`, or geometry.
-* **The project's actual question is not empirical.** No amount of sweeping
-  separates "our encoder is bad" from "no encoder could do better." That needs a
-  bound.
-
-**The limit.** None of this touches what an optimiser *reaches* (Q7). Theory can
-say which codes are admissible and which are optimal; the loss, the sampling and
-the coverage stay empirical.
-
----
-
 ## 6. The questions
 
 *(Opened turn 6.)* Seven, stated using **only the objects of §5.1** — position,
@@ -745,20 +692,38 @@ questions. Each carries the context that makes it worth asking.
 
 ---
 
-### Q1. Can the memory be a genuine attractor network and still support navigation?
+### Q1. Can the memory be a real attractor network and still support navigation?
 
-**Context.** The memory is a recurrent network, but at the operating point it
-does nothing recurrent: one step, in a regime where the nonlinearity is
-inactive, so it acts as a linear matched filter. Making the stored goals into
-genuine fixed points looks like an unambiguous improvement — recall would be
-stable, iterating would help instead of degrade, and the thing would deserve
-the name it has been given. Whether it is an improvement at all is not obvious,
-because the readout does not consume the retrieved vector as a *label*; it
-consumes it as one end of a *difference*.
+**What the memory does now.** Each environment's goal is encoded as a vector,
+and the set of them is stored in an outer-product weight matrix. To recall, a
+cue vector is passed once through that matrix and renormalised. At the
+operating point the saturating nonlinearity in that pass is numerically
+inactive, so the operation is linear: the recalled vector is, up to a small
+correction, a **weighted sum of the stored goal codes, weighted by how similar
+the cue is to each**. Nothing about it is dynamical. The stored goals are not
+fixed points of the map, and running it for more steps makes the result worse
+rather than better.
 
-**An answer looks like.** A statement of what a genuine fixed point requires of
-the code, and whether that requirement can hold at the same time as the
-readout's. → **§7.1, and the answer is no, with a proof.**
+**What a real attractor network would mean.** That each stored goal code is a
+*stable fixed point*: recall started from a nearby cue moves onto it and stays.
+That is worth wanting on its own terms — it makes recall robust to a corrupted
+cue, makes the number of recall steps stop mattering, and gives each goal a
+basin in the proper dynamical sense rather than as a measured radius.
+
+**Why it might be incompatible with navigation.** The recalled vector is never
+used as an identifier. It is used as one end of a subtraction: the agent's
+heading comes from the **difference** between the recalled goal code and the
+code at the agent's current position, expressed in a frame built from the codes
+of two immediately adjacent positions. For that to give a usable direction —
+and a usable distance — the code has to vary smoothly and *proportionally* with
+displacement, over the whole range the agent must cover. Stable fixed points
+constrain the code's geometry; so does proportional variation; and they
+constrain the *same* geometry. Whether both can hold at once is the question.
+
+**What an answer looks like.** What stable fixed points require of the code,
+what the direction computation requires of it, and a proof that the two can or
+cannot hold together. → **§7.1: they cannot** — and the proof names exactly two
+escapes, one for each requirement.
 
 ---
 
@@ -873,27 +838,6 @@ power spectrum, `d_eff = PR(P)`, `K` stored goals, `D = 1024`.
 **Status: essentially proven; needs writing up and its assumptions stated.**
 This is Jack's "big one", and it is a theorem rather than a measurement.
 
-> **In plain language.** For the stored memories to be actual fixed points *of
-> this recurrence*, the code has to be binary — below saturation the recall is
-> power iteration and converges to a single mixture rather than to any stored
-> pattern, and once it saturates the map's image *is* the set of hypercube
-> corners, so a fixed point can only be a corner. But a binary code cannot
-> carry **accumulating** distance. Each cell step flips some coordinates, and
-> Hamming distance is a metric, so distance over `k` cells grows at most like
-> `√k` and never like `k`. The one-cell difference is still there — it is
-> *larger* than the continuous code's — but the difference to a goal `k` cells
-> away is a sum of nearly orthogonal increments, so its projection onto the
-> local frame stops growing after about one cell and stops depending on which
-> direction the goal lies in. The readout loses range first and bearing soon
-> after.
->
-> **Two things this is not.** It is not "a binary code has no local distance
-> information": `‖d_fwd‖` is 0.267 binarised against 0.086 continuous and zero
-> at none of 1500 positions. What fails is accumulation, not the increment.
-> (That exact overstatement was made and retracted once already in this
-> campaign.) And it is not a statement about attractor networks in general —
-> see the escapes below.
-
 Assume (i) a genuine fixed point of the recall map, which above the knee forces
 `φ(y)` onto a hypercube corner (§7's condition (a), §10.20's `cos_self` =
 1.0000 arm); and (ii) the readout is the first-order finite difference of §5.1.
@@ -916,38 +860,15 @@ for any binary code whatever. The continuous code escapes because its
 displacement is a coherent vector sum rather than a count of flips.
 
 This converts §10.20's measured `‖Δk‖/(k‖Δ1‖)` = 0.701 / 0.492 / 0.345 ≈ `1/√k`
-from a fact about one checkpoint into the only thing that could have happened.
+from a fact about one checkpoint into the only thing that could have happened,
+and it says exactly where the two escapes are:
 
-**Why the readout loses *bearing* and not only range.** If displacement is
-diffusive, `φ(y) − φ(p)` is a sum of `k` mutually near-orthogonal increments, so
-its overlap with `d̂_fwd` — the *first* increment's direction — is one
-increment's worth regardless of `k`, and regardless of which direction `y` lies
-in. `q` becomes a 2-vector of roughly fixed magnitude and roughly arbitrary
-angle. Measured: `q_north` is flat at 0.267 → 0.239 over `k` = 1 → 32 binarised,
-against 0.086 → 0.417 continuous, and the fully saturated arm's acc45 is 0.392
-against a 0.25 chance floor. **[M]**
-
-**The two escapes, precisely.**
-
-* *Relax (i) — the binarity comes from `tanh` being applied **coordinatewise**,
-  not from the system being an attractor network.* A recurrence whose
-  nonlinearity acts in *pattern* space rather than coordinate space —
-  `x ← Z^T softmax(β Z x)`, the dense-associative-memory / modern-Hopfield form
-  — has well-separated **continuous** patterns as fixed points with no
-  binarisation anywhere. T1 says nothing against that. It is a theorem about
-  *this* recurrence, and the fact that we have been calling it a Hopfield
-  network is part of why the constraint looked fundamental.
-* *Relax (ii) — a readout that is not a finite difference of the stored code*
+* relax (i) — a recurrence whose fixed points are not corners;
+* relax (ii) — a readout that is not a finite difference of the stored code
   (§10.20's parked "basis from pre-nonlinearity activations" is exactly this).
 
 **Falsified by:** a binary code with `‖Δk‖/k‖Δ1‖` bounded away from `1/√k` over
 a decade of `k`. (T1) says there is none.
-
-**Supporting fact worth keeping.** `sign(tanh(g·u)) = sign(u)` for every `g`, so
-the *sign pattern* is identical at gain 100 and 1e6 — `H(k)/(k·H(1))` is
-bit-identical, 1.000 / 0.975 / 0.958 / 0.938 / 0.893 / 0.743 / 0.431 at
-`k` = 1…64. **[M]** Binarisation discards only the magnitudes, and the
-magnitudes are the entire difference between ballistic and diffusive.
 
 ---
 
@@ -1128,18 +1049,6 @@ than one number. (ii) R4 was unreadable; split into four statements. (iii) Do
 not assume basin and reach share a variable — measured instead, §3.2, and found
 the basin metric mixes a cross-talk term with a precision term. Bug found and
 fixed on the way (§3.3).
-
-**Turn 7 — is this a true statement of T1?** Jack's paraphrase: binary is
-needed for fixed points, binary has "no local distance information between two
-codes", so the direction decoder fails. First and third right, **middle
-sentence false** — `‖d_fwd‖` is 0.267 binarised against 0.086 continuous and
-zero nowhere; what fails is *accumulation*, not the increment. The same
-overstatement was made and retracted earlier in this campaign. Plain-language
-box added to T1, plus the bearing-loss mechanism (a sum of orthogonal
-increments has a `k`-independent overlap with the first one) and the escape
-that matters: **the binarity comes from `tanh` being coordinatewise**, so a
-pattern-space nonlinearity (dense associative memory) gets continuous fixed
-points and T1 says nothing against it.
 
 **Turn 6 — pitch the questions at the right level.** Jack: T1 and T2 are right,
 the rest are too specific, and "`d_eff` isn't inherent to the problem setup —
