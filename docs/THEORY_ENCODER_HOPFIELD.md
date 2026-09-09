@@ -832,7 +832,8 @@ constrain the *same* geometry. Whether both can hold at once is the question.
 
 **What an answer looks like.** What stable fixed points require of the code,
 what the direction computation requires of it, and a proof that the two can or
-cannot hold together. → **§7.1, and the answer splits.** An attractor whose
+cannot hold together. → **§7.1, whose *Synthesis* subsection is where this
+question has landed.** In short: the answer splits. An attractor whose
 fixed points sit *near* each memory is compatible with navigation and already
 exists (measured: reach 0.973 against production's 0.987, in exchange for
 step-invariance). An attractor whose fixed point **is** the memory is provably
@@ -1017,6 +1018,74 @@ and it says exactly where the three escapes are — one per premise:
 
 **Falsified by:** a binary code with `‖Δk‖/k‖Δ1‖` bounded away from `1/√k` over
 a decade of `k`. (T1) says there is none.
+
+#### Synthesis — where Q1 has landed
+
+> We want an attractor whose relaxation — and ideally whose dynamics — passes
+> through intermediate encoded states and comes to rest at a fixed point. The
+> **graded** code gives us the intermediate states, because its manifold is
+> locally **flat**, so a chord between two codes stays near the surface and
+> decodes to real positions. But it cannot make a memory a stable fixed point:
+> all `K` patterns are near-degenerate eigenvectors, so each is only
+> *marginally* stable and the state drifts to a blend. The **binary** code gives
+> us the exact fixed point but cannot traverse, because a blend of two corners
+> has the sign pattern of whichever endpoint dominates — the decode flips
+> discontinuously at the halfway point, with the cosine to the manifold dipping
+> to `√(1 − H/D)`. A **continuous attractor network** is the structure that has
+> both, though it needs an added symmetry-breaking term to drift toward a
+> *chosen* goal rather than resting wherever it lands.
+
+Three things that phrasing is carrying, each measured above:
+
+* **Flat, not 2D.** Both codes are 2-parameter families; that is not the
+  difference. The continuous one is flat over ~30 cells and the binary one is
+  maximally curved — successive unit steps near-orthogonal — which is (T1)
+  restated. Flatness and traversability are the same fact, not two.
+* **Marginal, not absent.** See below.
+* **A CAN gives two of three.** Invariance of the manifold (traversal stays on
+  it) and stability of every point on it (arrival holds). It does **not** give
+  drift toward one particular stored goal — that is what translation symmetry
+  along the manifold forbids, and breaking it is the actual design work. Note
+  also the near-circularity: the manifold you would want the CAN to carry *is*
+  the position manifold, which is what the grid code already is.
+
+##### What "near-degenerate eigenvectors, marginally stable" means
+
+Below the knee the recall is `x ← normalize(Wx)` — **pure power iteration**, and
+`W ≈ (1/D)·ZᵀZ` is, up to a 0.5% diagonal correction, `1/D` times the
+**projector onto the span of the stored patterns**.
+
+If the patterns were exactly orthogonal, that is *all* it would be: every
+direction in the span stretched by the same factor. Power iteration would then
+have nothing to select on, and **every stored pattern — and every blend of them
+— would be an exact fixed point.** Perfect degeneracy.
+
+What breaks the tie is the pattern **overlaps**. Write the Gram matrix
+`G = ZZᵀ = I + E`, with `E` the off-diagonal cosines, of order `1/√d_eff` ≈ 0.06.
+`W`'s nonzero eigenvalues are `(1 + eᵢ)/D` where `eᵢ` are `E`'s eigenvalues, so
+they are all near 1 and split only by `O(‖E‖)`. Two consequences:
+
+1. **A stored pattern is nearly, but not exactly, fixed.** Measured
+   `cos(recall(z), z)` = 0.9966 at one step (§10.20). The force pushing it off is
+   proportional to the eigenvalue splitting, which is tiny — hence *marginal*.
+2. **Iterating amplifies the tie-break exponentially, and the winner has nothing
+   to do with the cue.** Power iteration converges as `(λ₂/λ₁)ᵗ ≈ (1 − gap)ᵗ`
+   toward `E`'s top eigenvector, which is some fixed combination of all `K`
+   patterns. Measured `cos(recall¹⁵(z), x)` = 0.813.
+
+So the **first** step is retrieval — it weights the stored patterns by the cue's
+overlaps with them. **Every step after that is not retrieval**; it is the
+tie-breaking dynamics grinding toward the globally favoured blend, forgetting the
+cue as it goes. That is why more steps makes recall *worse* (§0), why `q` decays
+with recall depth, and why the state drifts off the manifold (cos 0.989 → 0.729)
+while its decoded position barely moves.
+
+**And this is exactly the CAN parallel.** A CAN *engineers* exact degeneracy —
+translation symmetry along the manifold — so the state is marginally stable in a
+controlled direction and stays put until something moves it. Production has the
+same mathematical structure by *accident*, in the `K`-dimensional memory span
+rather than along the code manifold, with the degeneracy broken by uncontrolled
+overlaps. Same shape; one designed, one not.
 
 #### Why lowering `α` is not a fourth escape
 
