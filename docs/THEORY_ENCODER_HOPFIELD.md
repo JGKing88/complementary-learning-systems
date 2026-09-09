@@ -1190,8 +1190,87 @@ distance readout; for the continuous code it is the other way round. So on a
 binary code (iii-c) must take distance from the value and bearing from the
 gradient, and not mix them up.
 
-**Why expect it to work at all?** Three reasons of decreasing strength, and one
-gap.
+##### In what sense is that `q` a gradient? — and the answer explains arm B exactly
+
+Both readouts are finite differences of the **same scalar field**
+`s(p) = ⟨ẑ, z(p)⟩`. Three lines show it. With `d_i = z(p+e_i) − z(p)` and unit
+codes,
+
+```
+⟨d_i, ẑ⟩    = s(p + e_i) − s(p)
+⟨d_i, z(p)⟩ = C(1) − 1
+```
+
+so the **current** readout's component along axis `i` is
+
+```
+q_i^now  =  ⟨d̂_i, ẑ − z(p)⟩  =  [ s(p+e_i) − s(p)  +  (1 − C(1)) ] / ‖d_i‖      (∗)
+```
+
+— a **forward** difference of `s`, plus a constant, over `‖d_i‖`. And (iii-c) is
+
+```
+q_i^new  =  [ s(p+e_i) − s(p−e_i) ] / 2                                          (∗∗)
+```
+
+— a **central** difference of the same `s`. Both estimate `∂s/∂p_i`, and both
+vanish at the goal. That is the sense in which either one steps downhill in
+`E = −s`: a vector of per-axis finite differences of a scalar *is* the discrete
+gradient, and moving along it increases `s`.
+
+**So why does (∗) fail on a binary code when (∗∗) should not?** Because the
+constant `(1 − C(1))` in (∗) is a correction calibrated for one particular shape
+of `C`, and binarisation changes the shape.
+
+Write the goal at displacement `r`, bearing `θ`, and use `C` as a function of
+distance:
+
+| | `1 − C(j)` | `s(p+e_i) − s(p)` | **`q^now ∝`** | **`q^new ∝`** |
+|---|---|---|---|---|
+| continuous (ballistic) | `a·j²` | `a(2r_i − 1)` | `2a·r_i` ✔ | `2a·r_i` ✔ |
+| binary (diffusive) | `(2m/D)·j` | `(2m/D)·cos θ_i` | `(2m/D)(1 + cos θ_i)` ✘ | `(2m/D)·cos θ_i` ✔ |
+
+For a **quadratic** profile the `+(1 − C(1))` exactly cancels the `−1` thrown
+off by expanding `|r − e_i|²`, and (∗) returns the true gradient. For a
+**linear** profile there is nothing for it to cancel, and it survives as a
+constant added to **both** components:
+
+```
+q^now  ∝  (1 + cos θ,  1 + sin θ)          instead of   (cos θ, sin θ)
+```
+
+which is not a scaling — it is a translation of the 2-vector, and it wrecks the
+bearing. The **central** difference in (∗∗) never picks up the constant in the
+first place, because `s(p+e) − s(p−e)` cancels the self-term identically.
+
+**This predicts arm B's number.** The bearing of `(1 + cos θ, 1 + sin θ)` is
+within 45° of `θ` only for `θ ∈ (−30°, 120°)` — a 150° window out of 360°.
+`readout_offset_check.py` evaluates (∗) and (∗∗) on the exact profiles, with no
+encoder and nothing fitted:
+
+| | current (∗) | (iii-c) (∗∗) | measured |
+|---|---|---|---|
+| continuous code | **1.000** | 1.000 | 0.995 (production) |
+| binary code | **0.423** | **1.000** | 0.392 (arm B) |
+
+and the pure-offset window argument gives 0.417 against the profile evaluation's
+0.423. It reproduces the third anchor too: goal due north, binary code, (∗)
+equals `√(4m/D)` = **0.2681** independent of distance, against §10.20's measured
+`q_north` of **0.267**, flat over k = 1…8. **[D vs M]**
+
+So the answer to "why should (iii-c) work" is no longer an analogy. **Arm B's
+direction field fails by a specific, identified term, and the central difference
+removes exactly that term.** The prediction is that (iii-c) takes arm B's `acc45`
+from 0.392 to near 1 — which is Stage 0, and it is now a falsifiable number
+rather than a hope.
+
+> **Caveat on the caveat.** This says the *systematic* part of arm B's failure
+> is the offset. It says nothing about the noise, the local maxima, or whether
+> `C` is really linear-in-distance and isotropic for this code rather than
+> linear along an axis, which is all §10.20 measured. Those remain the Stage 0
+> questions below.
+
+**Why expect it to work at all?** Three further reasons, and one gap.
 
 *1. The basin measurement is already a statement about this exact potential.*
 `basin_probe` asks whether `argmax_p ⟨ẑ, z(p)⟩` over every cell of a disc is the
@@ -1465,6 +1544,23 @@ than one number. (ii) R4 was unreadable; split into four statements. (iii) Do
 not assume basin and reach share a variable — measured instead, §3.2, and found
 the basin metric mixes a cross-talk term with a precision term. Bug found and
 fixed on the way (§3.3).
+
+**Turn 14 — "I don't get why specifically that equation for `q` is stepping
+down in energy."** The best question of the conversation, because working it out
+turned (iii-c) from an analogy into a closed-form prediction. Both readouts are
+finite differences of the *same* field `s(p) = ⟨ẑ, z(p)⟩`: the current one is a
+**forward** difference plus `(1 − C(1))`, over `‖d_i‖`; (iii-c) is a **central**
+difference. That constant is a correction calibrated for a **quadratic**
+similarity profile — it cancels exactly when `1 − C(j) ∝ j²` and survives as an
+additive term in *both* components when `1 − C(j) ∝ j`, which is what
+binarisation produces. So on a binary code the current readout returns
+`(1 + cos θ, 1 + sin θ)` instead of `(cos θ, sin θ)` — a translation of the
+2-vector, which destroys the bearing while leaving the magnitude plausible.
+`readout_offset_check.py` reproduces **three** measured anchors with nothing
+fitted: arm B's acc45 0.392 (predicts 0.423), production's 0.995 (predicts
+1.000), and §10.20's flat `q_north` 0.267 (predicts `√(4m/D)` = 0.2681). And it
+predicts (iii-c) gives **1.000** on the binary code. Arm B's direction field
+fails by an *identified term*, and the central difference removes exactly it.
 
 **Turn 13 — "but how is this going down the gradient?"** The "energy descent
 moved into physical space" framing was loose and is corrected in §7.1. `E(p) =
