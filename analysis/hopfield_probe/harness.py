@@ -44,6 +44,7 @@ from hopfield_nav.world.spec import EnvSpec
 from .encode import Field
 
 MEMORY_MODES = ("multi_env_goals", "goal+distractors", "same_env_goals")
+STORAGE_RULES = ("hebb", "proj")
 
 # Outcome categories for Test A retrieval, in severity order. The ordering is
 # load-bearing: the report colours the first three as one sequential ramp on
@@ -229,6 +230,15 @@ class ProbeConfig:
     zero_diag: bool = True
     hopfield_scale: float | None = None      # None -> 1/D, the production value
     beta_override: float | None = None       # None -> encoder gain
+    # How the patterns get into W. "hebb" is production's one-shot outer
+    # product. "proj" is the projection rule (Personnaz et al.): the orthogonal
+    # projector onto span(Z), for which `W z_i = z_i` EXACTLY, so a stored
+    # pattern is a true fixed point without binarising anything. It keeps every
+    # property that makes the Hebbian rule attractive -- one-shot, online, D^2
+    # synapses, no stored patterns (`graded_fixedpoint_check.py --incremental`)
+    # -- and it does NOT zero the diagonal, because that would break the very
+    # identity it exists to provide.
+    storage_rule: str = "hebb"
 
     # Basin cues are drawn on a disc around the goal in SCAFFOLD coordinates,
     # not from the env, because a basin is a property of the encoder and the
@@ -287,6 +297,16 @@ class ProbeConfig:
         if self.memory_mode not in MEMORY_MODES:
             raise ValueError(
                 f"memory_mode={self.memory_mode!r} not in {MEMORY_MODES}")
+        if self.storage_rule not in STORAGE_RULES:
+            raise ValueError(
+                f"storage_rule={self.storage_rule!r} not in {STORAGE_RULES}")
+        if self.storage_rule == "proj" and self.memory_mode == "same_env_goals":
+            raise ValueError(
+                "storage_rule='proj' with memory_mode='same_env_goals' is the "
+                "unstable corner: the online gain is 1/<z, r>, the reciprocal "
+                "of a pattern's novelty, and goals inside one env have codes "
+                "at cos ~0.99, where that denominator collapses. Measured 0.97 "
+                "for goals in different envs against 0.010 at cos 0.99.")
         if max(self.k_values) > self.n_envs_per_world:
             raise ValueError(
                 f"max(k_values)={max(self.k_values)} exceeds "
@@ -568,6 +588,18 @@ def _store(
     Zt = torch.from_numpy(np.ascontiguousarray(Z)).float().to(cfg.device)
     for i in order:
         hop.input_memory(Zt[int(i)])
+
+    if cfg.storage_rule == "proj":
+        # The orthogonal projector onto span(Z), scaled to `hop.scale` so that
+        # `beta * (Wx)` lands in the same range the Hebbian rule produces and
+        # the recall tanh stays in the regime everything else was measured in.
+        # The scale cannot change the fixed point -- `normalize(cPx)` is
+        # `normalize(Px)` for any `c > 0` -- only whether tanh is linear.
+        # The diagonal is deliberately NOT zeroed: `zero_diag` exists to remove
+        # the Hebbian self-term, and removing it here would destroy `W z = z`.
+        Zn_t = torch.nn.functional.normalize(Zt, dim=1)
+        gram = Zn_t @ Zn_t.T
+        hop.W = (hop.scale * (Zn_t.T @ torch.linalg.pinv(gram) @ Zn_t))
 
     # diag_frac is measured on the un-zeroed outer-product sum, because the
     # question it answers is how much signal `zero_diag` throws away -- which

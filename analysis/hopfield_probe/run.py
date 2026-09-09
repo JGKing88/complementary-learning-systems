@@ -30,7 +30,8 @@ from .controls import run_controls, run_rescue
 from .encode import Field
 from .flow import run_test_d
 from .harness import (
-    MEMORY_MODES, ProbeConfig, load_probe_encoder, sample_worlds, write_json,
+    MEMORY_MODES, STORAGE_RULES, ProbeConfig, load_probe_encoder,
+    sample_worlds, write_json,
 )
 from .qfield import run_tests_bc
 
@@ -100,6 +101,11 @@ def build_parser() -> argparse.ArgumentParser:
                         "damping is what lets a cue settle toward a memory "
                         "instead of overshooting past it, and for the L7 "
                         "encoders it is the binding knob, not beta.")
+    d.add_argument("--storage_rule", default=None, choices=list(STORAGE_RULES),
+                   help="how patterns enter W. 'hebb' is production's one-shot "
+                        "outer product; 'proj' is the projection rule, for "
+                        "which a stored pattern is an EXACT fixed point without "
+                        "binarising anything (Sec 7.1).")
     d.add_argument("--hopfield_scale", type=float, default=None,
                    help="storage scale. Default 1/D. Equivalent to --beta by "
                         "(p -> lambda p, beta -> beta/lambda^2); only the "
@@ -137,6 +143,8 @@ def config_from_args(args) -> ProbeConfig:
         kw["beta_override"] = args.beta
     if args.hopfield_scale is not None:
         kw["hopfield_scale"] = args.hopfield_scale
+    if args.storage_rule is not None:
+        kw["storage_rule"] = args.storage_rule
     if args.alpha is not None:
         kw["alpha"] = args.alpha
 
