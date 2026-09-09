@@ -82,8 +82,58 @@ def run(rule: str, Z: np.ndarray, X: np.ndarray, steps: int, beta: float,
     return x
 
 
+def incremental_proj(Z: np.ndarray, eps: float = 1e-12):
+    """The projection rule built one pattern at a time, no history kept.
+
+    The projector onto ``span(z_1..z_n)`` is the projector onto
+    ``span(z_1..z_{n-1})`` plus the projector onto the residual, so
+
+        r = z - W z                  the part of z the network does not yet know
+        W <- W + r r^T / <z, r>
+
+    uses only the NEW pattern and the CURRENT weights. It is a delta rule --
+    Hebbian on the error ``(z - Wz)`` rather than on ``z`` -- and it needs one
+    forward pass to form the residual. ``<z, r> = ||r||^2`` because ``W`` is a
+    projector, so the denominator is the squared novelty of the pattern, and it
+    goes to zero as the pattern approaches the span of what is already stored.
+    """
+    W = np.zeros((Z.shape[1], Z.shape[1]))
+    denoms = []
+    for z in Z:
+        r = z - W @ z
+        d = float(z @ r)
+        denoms.append(d)
+        if d > eps:
+            W = W + np.outer(r, r) / d
+    return W, denoms
+
+
+def incremental_report(K: int, D: int, seed: int = 0) -> None:
+    """Does the online form equal the batch one, and where does it break?"""
+    rng = np.random.RandomState(seed)
+    base = unit(rng.randn(1, D))
+    cases = (("near-orthogonal (goals in different envs)", unit(rng.randn(K, D))),
+             ("correlated, cos ~ 0.99 (goals within one env)",
+              unit(0.995 * base + 0.0999 * unit(rng.randn(K, D)))))
+    for name, Z in cases:
+        Wb = Z.T @ np.linalg.pinv(Z @ Z.T) @ Z
+        Wi, denoms = incremental_proj(Z)
+        Wi2, _ = incremental_proj(Z[rng.permutation(len(Z))])
+        off = np.abs(Z @ Z.T - np.eye(len(Z)))
+        print(f"\n=== {name} ===  K={len(Z)}  "
+              f"max |off-diagonal cos| {off.max():.4f}")
+        print(f"  incremental vs batch    max |diff| {np.abs(Wi - Wb).max():.2e}")
+        print(f"  order independence      max |diff| {np.abs(Wi - Wi2).max():.2e}")
+        print(f"  cos(recall(z), z)       "
+              f"{float(np.mean(np.einsum('id,id->i', unit(Z @ Wi.T), Z))):.6f}")
+        print(f"  smallest <z, r>         {min(denoms):.3e}"
+              f"   <- the update divides by this")
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__)
+    ap.add_argument("--incremental", action="store_true",
+                    help="check the online projection rule instead")
     ap.add_argument("--dir", default=DEFAULT_DIR)
     ap.add_argument("--label", default="10% · ")
     ap.add_argument("--k", type=int, default=5)
@@ -91,6 +141,10 @@ def main() -> None:
     ap.add_argument("--beta", type=float, default=30.0,
                     help="softmax sharpness, on cosines in [-1, 1]")
     args = ap.parse_args()
+
+    if args.incremental:
+        incremental_report(20, 1024)
+        return
 
     with open(os.path.join(args.dir, "manifest.json")) as f:
         man = json.load(f)

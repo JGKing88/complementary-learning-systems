@@ -1159,6 +1159,47 @@ between. Predicted `√(1 − H/D)` = 0.9182, measured **0.9183**.
 > manifold, so none walks through encoded states. The CAN argument stands
 > untouched.
 >
+> **Can these be stored one pattern at a time, and do they keep the patterns?**
+> The two rules differ completely here, and it decides which is usable.
+>
+> | | add one at a time? | what is stored |
+> |---|---|---|
+> | `hebb` | yes, `W += (1/D)·zzᵀ` | **synapses only**, `D²` fixed |
+> | **`proj`** | **yes, exactly** | **synapses only**, `D²` fixed |
+> | `soft` | append a row | **the patterns themselves**, `K×D`, growing |
+>
+> `proj` has an exact online form. The projector onto `span(z₁…zₙ)` is the
+> projector onto `span(z₁…zₙ₋₁)` plus the projector onto the residual, so
+>
+> ```
+> r = z − W z                  the part of z the network does not yet know
+> W ← W + r rᵀ / ⟨z, r⟩        and ⟨z, r⟩ = ‖r‖², since W is a projector
+> ```
+>
+> using **only the new pattern and the current weights** — no history. It is a
+> **delta rule**: Hebbian on the error `(z − Wz)` rather than on `z`, needing one
+> forward pass to form the residual. Verified (`--incremental`): equal to the
+> batch projector to **9e−17**, order-independent to **2e−17**, `cos(recall(z),
+> z)` = **1.000000**.
+>
+> `soft` has no such form. `Zᵀ softmax(βZx)` is not `f(Wx)` for any fixed matrix
+> — the softmax runs *over patterns*, so each must be held separately. A
+> polynomial dense-associative energy of degree `n` can be folded into an
+> order-`n` tensor of size `Dⁿ` (fixed but astronomical for `n > 2`, and `n = 2`
+> is just classical Hopfield); the exponential limit cannot be folded at all. So
+> keeping `K×D` is essential, not an implementation shortcut. **That is the
+> standard objection to modern Hopfield as a network model: it is attention, and
+> attention keeps its keys.**
+>
+> **Where `proj` breaks.** The online gain is `1/⟨z, r⟩`, the reciprocal of the
+> new pattern's squared novelty, which → 0 as a pattern approaches the span of
+> what is stored. Measured: `⟨z, r⟩` = 0.97 for near-orthogonal patterns,
+> **0.010** for patterns at cos ≈ 0.99 — a hundredfold gain increase. Our goals
+> sit in different envs at cos ≈ 0.06, comfortably safe; the harness's
+> `same_env_goals` mode stores goals *within* one env, whose codes are highly
+> correlated, and that is the unstable case. Capacity also caps at `K = D`
+> exactly, i.e. 1024 — irrelevant at `K ≤ 20`.
+>
 > **What might be, and is untested.** Modern-Hopfield storage on the *production*
 > graded encoder would give exact fixed points and step-invariance while leaving
 > the code alone — so the direction field should survive, `ẑ` coming back cleaner
