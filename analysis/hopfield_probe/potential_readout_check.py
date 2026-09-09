@@ -36,6 +36,7 @@ import os
 import numpy as np
 
 from analysis.hopfield_probe.encode import Field
+from analysis.hopfield_probe.flow import continuous_flow, discrete_flow
 from analysis.hopfield_probe.harness import (ProbeConfig, build_memory,
                                              load_probe_encoder, local_cells,
                                              recall_trajectory, sample_worlds,
@@ -62,8 +63,16 @@ def headers(d: str, want: list[str]):
             if any(e["label"].startswith(w) for w in want)]
 
 
-def one_encoder(header: dict, cfg: ProbeConfig, k: int):
-    """Per-cell errors for both readouts, plus the sink census."""
+def one_encoder(header: dict, cfg: ProbeConfig, k: int, rng_mul: int = 17,
+                flows: bool = False):
+    """Per-cell errors for both readouts, the sink census, and optionally
+    Stage 1: the same `q` fields pushed through the unmodified flows.
+
+    ``rng_mul`` selects which test's memory draw to reproduce -- 17 is Test B's,
+    so the `acc45` control matches the published 0.392 / 0.995; 13 is Test D's,
+    so the *reach* control matches the published 0.103 / 0.987. They are
+    different memories, so one run cannot validate against both.
+    """
     enc, ecfg, gain, fwhm, _h = load_probe_encoder(
         header["path"], fwhm_fallback=header.get("fwhm_ratio", 0.25))
     gain = float(header.get("gain", gain))
@@ -74,9 +83,12 @@ def one_encoder(header: dict, cfg: ProbeConfig, k: int):
     cells = local_cells(size)
     s = cfg.steps[0]
     err_now, err_new, dists, sinks, closer = [], [], [], [], []
+    flow: dict[str, list] = {"cont_now": [], "cont_new": [], "disc_now": [],
+                             "disc_new": [], "fsink_now": [], "fsink_new": [],
+                             "cyc_now": [], "cyc_new": []}
 
     for w in sample_worlds(cfg):
-        rng = np.random.RandomState(w.seed * 17 + k)   # Test B's convention
+        rng = np.random.RandomState(w.seed * rng_mul + k)
         mem = build_memory(field, w, k, cfg, rng)
 
         for e in scored_envs(cfg, k):
@@ -115,12 +127,23 @@ def one_encoder(header: dict, cfg: ProbeConfig, k: int):
             nd = np.hypot(dx - step[:, 0], dy - step[:, 1])
             closer.append((nd < d)[keep])
 
+            if flows:
+                for tag, q in (("now", q_now), ("new", q_new)):
+                    c = continuous_flow(q, size, goal, cfg)
+                    dsc = discrete_flow(q, size, goal)
+                    flow[f"cont_{tag}"].append(c["reach_rate"])
+                    flow[f"disc_{tag}"].append(dsc["reach_rate"])
+                    flow[f"fsink_{tag}"].append(len(dsc["sinks"]))
+                    flow[f"cyc_{tag}"].append(len(dsc["limit_cycles"]))
+
     return (np.concatenate(err_now), np.concatenate(err_new),
             np.concatenate(dists), np.concatenate(sinks),
-            np.concatenate(closer))
+            np.concatenate(closer),
+            {kk: np.asarray(v, dtype=float) for kk, v in flow.items()})
 
 
-def report(label: str, err_now, err_new, d, sinks, closer, expect) -> None:
+def report(label: str, err_now, err_new, d, sinks, closer, flow, expect,
+           expect_reach) -> None:
     q45 = np.pi / 4
     print(f"\n=== {label} ===  {err_now.size} cells")
     print(f"  {'readout':<12s}{'acc45':>9s}{'|err| deg':>11s}   published")
@@ -143,6 +166,19 @@ def report(label: str, err_now, err_new, d, sinks, closer, expect) -> None:
           f"{np.mean(err_new < q45):>11.3f}{np.mean(sinks):>9.3f}"
           f"{np.mean(closer):>13.3f}{err_now.size:>8d}")
 
+    if flow["cont_now"].size:
+        n_env = flow["cont_now"].size
+        print(f"\n  STAGE 1 -- the same q fields through the unmodified flows,"
+              f" {n_env} envs")
+        print(f"  {'readout':<12s}{'reach cont':>12s}{'reach disc':>12s}"
+              f"{'sinks/env':>11s}{'cycles/env':>12s}   published")
+        for tag, name, note in (("now", "current", expect_reach),
+                                ("new", "(iii-c)", "")):
+            print(f"  {name:<12s}{flow[f'cont_{tag}'].mean():>12.3f}"
+                  f"{flow[f'disc_{tag}'].mean():>12.3f}"
+                  f"{flow[f'fsink_{tag}'].mean():>11.2f}"
+                  f"{flow[f'cyc_{tag}'].mean():>12.2f}   {note}")
+
 
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__)
@@ -152,6 +188,11 @@ def main() -> None:
     ap.add_argument("--k", type=int, default=5)
     ap.add_argument("--seeds", type=int, default=2,
                     help="how many training seeds per arm")
+    ap.add_argument("--rng_mul", type=int, default=17,
+                    help="17 = Test B's memory draw (acc45 control), "
+                         "13 = Test D's (reach control)")
+    ap.add_argument("--flows", action="store_true",
+                    help="Stage 1: push the same q fields through the flows")
     args = ap.parse_args()
 
     seen: dict[str, int] = {}
@@ -165,8 +206,11 @@ def main() -> None:
                           Npos=1716, k_values=(args.k,), steps=(1,), seed=0,
                           basin_radius=0,
                           beta_override=float(beta) if beta else None)
-        expect = "0.392 (arm B)" if "1e6," in arm else "0.995 (production)"
-        report(label, *one_encoder(header, cfg, args.k), expect=expect)
+        armb = "1e6," in arm
+        report(label,
+               *one_encoder(header, cfg, args.k, args.rng_mul, args.flows),
+               expect="0.392 (arm B)" if armb else "0.995 (production)",
+               expect_reach="0.103 (arm B)" if armb else "0.987 (production)")
 
 
 if __name__ == "__main__":

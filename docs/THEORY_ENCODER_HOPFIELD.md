@@ -1396,8 +1396,43 @@ than waiting for the flow to reveal them.
 > production's 8.3°, which is the discrete field's residual noise.
 >
 > **Two seeds, not four** — but the effect is 0.39 → 0.99 against a seed spread
-> of 0.004, so the ordering is not in question. Stage 1 (the flow, hence reach
-> against arm B's 0.103) is one flag away and has not been run.
+> of 0.004, so the ordering is not in question.
+>
+> ### ✓ Stage 1 ran too. Arm B goes from reach 0.103 to 0.984.
+>
+> Same `q` fields, pushed through `continuous_flow` and `discrete_flow`
+> **unmodified**, on Test D's memory draw so the control has to reproduce the
+> published reach. 40 envs per arm.
+>
+> | | reach (cont) | reach (disc) | sinks/env | published |
+> |---|---|---|---|---|
+> | arm B, current | 0.100 / 0.103 | 0.230 | 8.62 / 8.97 | **0.103** |
+> | **arm B, (iii-c)** | **0.984 / 0.978** | **0.998** | **0.10 / 0.20** | |
+> | production, current | 0.993 / 0.987 | 0.997 | 0.00 / 0.17 | **0.987** |
+> | production, (iii-c) | 0.967 / 0.997 | 0.999 | 0.00 / 0.07 | |
+>
+> The control lands on 0.103 and 0.987 exactly. **Arm B's reach goes 0.103 →
+> 0.984**, and the flow's spurious attractors collapse from ~9 per env to ~0.15.
+>
+> **What that gives.** Arm B already had `cos_self` = 1.0000, exact retrieval
+> 0.999, and the largest basin measured, 28.2. With this readout it also
+> navigates. Against production — reach 0.987, basin 27.0, retrieval 0.982, no
+> attractor — arm B plus (iii-c) matches the reach, beats the basin and the
+> retrieval, and is step-invariant. **It is the first configuration in this
+> campaign that is a genuine attractor network *and* navigates**, which §7.1
+> said required escaping one of T1's premises. It escapes premise (iii).
+>
+> **Reported against itself: on the *continuous* code this is a wash, not a
+> win.** Production s42 goes 0.993 → 0.967 — a real drop — while s43 goes 0.987
+> → 0.997, and s42's per-cell `acc45` was *better* under (iii-c) (1.000 vs
+> 0.997). Better bearings with worse reach means the losses are limit cycles
+> rather than wrong headings, and the cycle count moved 0.00 → 0.03 per env on
+> exactly that seed. So (iii-c) is transformative where the code is binary and
+> neutral-to-slightly-worse where it is not; it is a fix for arm B, not an
+> upgrade for production.
+>
+> Two seeds. Stage 2 — the policy path, where `‖q‖` no longer means what the
+> magnitude gate was fitted on — is untouched.
 
 *Stage 0 — the field and the landscape, offline.* On arm B's checkpoint
 (encoder gain 1e6, β = 1e6), and production as the control, compute the (iii-c)
@@ -1635,6 +1670,17 @@ than one number. (ii) R4 was unreadable; split into four statements. (iii) Do
 not assume basin and reach share a variable — measured instead, §3.2, and found
 the basin metric mixes a cross-talk term with a precision term. Bug found and
 fixed on the way (§3.3).
+
+**Turn 17 — Stage 1, run.** Same `q` fields through the unmodified flows, Test
+D's memory draw so the control reproduces the published reach — it lands on
+0.103 and 0.987 exactly. **Arm B's reach goes 0.103 → 0.984**, discrete 0.998,
+and the flow's spurious attractors collapse from ~9 per env to ~0.15. Arm B plus
+(iii-c) therefore has `cos_self` 1.0000, exact retrieval 0.999, basin 28.2 *and*
+reach 0.98 — the first configuration in the campaign that is a genuine attractor
+network and navigates, escaping T1's premise (iii). Reported against itself: on
+the **continuous** code it is a wash, s42 going 0.993 → 0.967 with a *better*
+per-cell acc45, so those losses are limit cycles rather than headings. A fix for
+arm B, not an upgrade for production.
 
 **Turn 16 — Stage 0, run.** `potential_readout_check.py`. The control
 reproduces both published numbers to ±0.003 (production 0.995, arm B 0.392), and
