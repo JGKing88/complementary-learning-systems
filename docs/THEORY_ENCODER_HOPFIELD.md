@@ -1185,6 +1185,28 @@ is supposed to. Three reasons, of increasing importance:
 > manifold* as it converges to the cue-independent top eigenvector — §0's
 > matched-filter decay, visible as geometry rather than as a reach number.
 >
+> **So every production row is approach-then-retreat, and α only sets the
+> clock.** At α = 0.9 the state closes to 0.12 cells by step 8 and is back out
+> to 0.36 by step 30, with cos falling 0.979 → 0.846; at α = 1 it closes to 0.04
+> at step 1 and is at 0.63 by step 30. The goal is **not a fixed point** of
+> production's dynamics — the only fixed point is `W`'s top eigenvector, a fixed
+> blend of all `K` stored patterns that does not depend on the cue — so the
+> trajectory merely *passes near* its goal on the way there.
+>
+> And α cannot change that, only the rate. In the linear regime the update is
+> `x ← normalize(((1−α)I + αβW)·x)`, and adding a multiple of the identity
+> leaves the eigenvectors untouched: **the destination is α-independent, the
+> time constant is not.** That is §4.3's "a time constant, not a destroyer",
+> derived rather than observed, and it is the same reason α could not rotate `q`
+> in §7.1.
+>
+> The operational consequence is that the best step count moves with α — about
+> 1 at α = 1, 5–8 at α = 0.9, ~12 at α = 0.8 — and running past it costs
+> accuracy. Production uses `steps = 1` at α = 1, which is the right corner of
+> that trade. Note the retreat is a *minority defecting*, not a uniform creep:
+> the mean distance rises because a growing fraction of starts decode somewhere
+> else, and the `in env` fraction falls with it (α = 1: 1.00 → 0.81 by step 30).
+>
 > **So the answer to "do we have an attractor whose dynamics pass through
 > encoded states" is: we can have one, and it is not arm B.** Production at
 > α ≈ 0.8–0.9 traverses the manifold; but its memories are not fixed points, so
