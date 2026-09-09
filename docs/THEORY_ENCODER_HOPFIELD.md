@@ -29,8 +29,12 @@ accumulates like a random walk rather than a straight line. Right now our
 "attractor network" is actually **a one-step linear matched filter**, which
 **returns a similarity-weighted sum of the stored goals and renormalises — so
 the stored goals are not fixed points at all, and iterating degrades recall
-instead of cleaning it up.** It is not an attractor network, and it navigates
-well. *Why it matters:* "make it a genuine attractor" is an open design
+instead of cleaning it up.** Nor can it descend gradually toward a goal the way
+a Hopfield network is usually pictured: one pass leaves the state inside the
+low-dimensional subspace spanned by the stored goals, so its intermediate states
+are *blends of goals* rather than codes of intermediate positions, and there is
+nothing in them to read a direction from. It is not an attractor network, and it
+navigates well. *Why it matters:* "make it a genuine attractor" is an open design
 direction we keep half-pursuing. If the incompatibility is real, it stops being
 one, and the effort moves to changing the readout instead.
 
@@ -1120,6 +1124,84 @@ question "does (iii-c) work" is the question "how many local minima does
 `−⟨z_goal, z(·)⟩` have", and `discrete_flow` already records sinks and limit
 cycles, which are exactly those.
 
+##### How we would actually do (iii-c)
+
+**The readout.** At position `p`, with `ẑ` the vector the memory returned, take
+a central difference of the scalar over the four neighbours the agent can
+already encode:
+
+```
+s_n  = ⟨ẑ, z(p + n)⟩            for n ∈ {±e_E, ±e_N}
+q    = ( (s_{+E} − s_{−E})/2 ,  (s_{+N} − s_{−N})/2 )
+```
+
+Four encoder evaluations and four dot products, against the current two
+evaluations plus a Gram–Schmidt and a projection. Comparable cost.
+
+**What it removes.** No local frame, no Gram–Schmidt, and — the point — **no
+local-linearity assumption**. The current readout needs `z` to vary
+proportionally with displacement over the whole operating range, which is (J3),
+which is what binarisation destroys. (iii-c) needs only that `⟨ẑ, z(·)⟩` be
+*monotone* in distance. That is a far weaker requirement and a binary code
+satisfies it.
+
+**It gives two signals where the current readout gives one and a half.**
+Bearing comes from the gradient; **distance comes from `E(p)` itself**, which is
+directly monotone in `‖p − y‖`. That is worth noting because it is not a
+consolation prize: today distance is supposed to come from `‖q‖`, and `‖q‖` is
+the least trustworthy thing the readout produces. Note the two codes behave
+oppositely here — for a binary code `1 − C(k) ∝ k`, so the *slope* is constant
+and carries no distance information at all, while `E` itself is a clean linear
+distance readout; for the continuous code it is the other way round. So on a
+binary code (iii-c) must take distance from the value and bearing from the
+gradient, and not mix them up.
+
+**How to test it, in three stages, each against a number we already have.**
+
+*Stage 0 — the field, offline.* On arm B's checkpoint (encoder gain 1e6,
+β = 1e6), and production as the control, compute the (iii-c) `q` at every cell
+of every scored env, with `ẑ` the **retrieved** code rather than the true goal
+code so the memory stays in the loop. Report `|err|` and `acc45` by distance
+band, which is exactly Test B's output: the comparison is arm B's **acc45 0.392**
+and production's **0.995**. If arm B does not clear ~0.9 here, stop.
+
+*Stage 1 — the flow.* Feed that `q` field to `continuous_flow` and
+`discrete_flow` unchanged. Reach is then directly comparable to arm B's
+**0.103** and production's **0.987**, and `discrete_flow`'s sink and limit-cycle
+counts are the local-minimum census the mechanism predicts is the binding
+failure. This is the whole result: a system with `cos_self` = 1.0000, basin
+28.2, and a working direction field would be the first one in the campaign that
+is genuinely an attractor network *and* navigates.
+
+*Stage 2 — the policy, only if 0 and 1 pass.* The production `VectorHash` needs
+a sibling to `project_displacement`. The interface is unchanged — the policy
+still consumes a 2-vector — but `‖q‖` no longer means what it did, so the
+magnitude gate (`EXPERIMENTS_NAV_TRI.md`) has to be re-fitted or re-pointed at
+`E`. That is the only part of this that touches the production contract.
+
+In the probe the seam is small: `qfield.project_q(basis, current, recalled)`
+gains a sibling `potential_q(field, cells, offset, recalled)`, and
+`cell_q_field` chooses between them. Everything downstream — Tests B, C, D, the
+report — is untouched.
+
+**One design question worth testing both ways.** Does `ẑ` come from a single
+recall step, as now, or from iterating to the fixed point? Arm B is a genuine
+attractor, so iterating is free and should *help* — cleaning up a corrupted cue
+is the thing an attractor is for, and it is the first time in this campaign that
+running more steps could be expected to improve anything.
+
+**Three ways it fails, each with the measurement that catches it.**
+
+1. **Local minima (aliases).** The predicted binding failure. Caught by
+   `discrete_flow`'s sink census at Stage 1, and visible in Stage 0 as clusters
+   of large `|err|` at particular positions rather than a uniform degradation.
+2. **A one-cell difference too noisy to resolve.** The signal is `2·C′(k)` and
+   the noise is the cell-to-cell roughness of the code. No need to model it —
+   Stage 0's `acc45` measures it directly.
+3. **Range.** `E` is flat beyond `k ≈ D/2m ≈ 28` cells, so there is no gradient
+   at all out there. Fine for a 20×20 arena, fatal for a much larger one, and
+   Stage 0's by-distance-band table shows exactly where it dies.
+
 **(iii-d) A learned decoding head.** `(z_here, z_goal) → q` as a trained map,
 dropping the local-linearity requirement entirely. Most general and least
 attractive: the current readout is parameter-free and environment-agnostic, so
@@ -1306,6 +1388,16 @@ than one number. (ii) R4 was unreadable; split into four statements. (iii) Do
 not assume basin and reach share a variable — measured instead, §3.2, and found
 the basin metric mixes a cross-talk term with a precision term. Bug found and
 fixed on the way (§3.3).
+
+**Turn 11 — how we would actually do (iii-c).** The subspace point added to §0
+in one sentence. §7.1 gains a concrete design: a central difference of the
+scalar `⟨ẑ, z(·)⟩` over the four neighbours, which removes the frame, the
+Gram–Schmidt and the local-linearity assumption, and needs only *monotonicity*
+of similarity in distance. Bearing from the gradient, **distance from `E` itself**
+— and on a binary code those must not be mixed up, since `1 − C(k) ∝ k` makes
+the slope constant and the value linear. Three test stages, each against an
+existing number (arm B acc45 0.392, reach 0.103; production 0.995, 0.987), with
+the probe seam being a sibling to `project_q` and nothing downstream touched.
 
 **Turn 10 — "why is the attractor not producing intermediary codes? I thought
 that's how a Hopfield network works — lowering energy iteratively."** Three
