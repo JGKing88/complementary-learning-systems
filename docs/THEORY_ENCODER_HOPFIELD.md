@@ -1135,6 +1135,34 @@ is supposed to. Three reasons, of increasing importance:
    recall worse rather than better (§0), and it is the opposite of pattern
    completion.
 
+> **Qualified turn 19 — with `α < 1` on a *continuous* code, it partly does.**
+> The claim above is right at `α = 1`, which is production and both saturated
+> arms, and PROBE §6 measured it: the first application travels ~10 cells and
+> lands on the goal, one step. But §6's `L7 alpha 0.9` row decodes each recall
+> step to its nearest cell and gets **8.2 → 6.01 → 3.08 → 1.66 → 0.60** — a
+> *walk*, not a jump.
+>
+> The mechanism to expect, **[G]**: with `α < 1` the state is a blend of the cue
+> and the memory span, so it sits on the **chord** from `z(p)` toward `z(y)`.
+> A chord lies close to the manifold exactly when the manifold is **flat over
+> that range** — which is (J3), the ballistic property. So a continuous code's
+> chords are near-geodesics and decode to intermediate positions; a binary
+> code's are not, because a blend of two hypercube corners is near no corner at
+> all.
+>
+> **If that holds, the real trade is not the one stated in T1.** It would be:
+> *an exact fixed point (binary code, dynamics jump) versus dynamics that
+> genuinely traverse encoded states (ballistic code, memories are not fixed
+> points)* — with (iii-c) giving navigation in either case. That is a sharper
+> and more interesting fork than "attractor versus direction field", and it is
+> untested.
+>
+> **The measurement that would settle it** is one column §6 does not report:
+> `cos(state, code of its nearest cell)` at each step. "Decodes to a cell 3.08
+> from the goal" is not "is the encoded state of a position 3.08 from the goal"
+> — a vector far off the manifold still has a nearest cell. Distinguishing those
+> is exactly the kind of gap that has bitten this campaign repeatedly.
+
 But a descent does exist, and it is the same idea with one constraint added.
 
 > **Be careful with the word "energy".** The Hopfield energy is
