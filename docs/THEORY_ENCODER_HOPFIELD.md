@@ -1097,7 +1097,52 @@ a decade of `k`. (T1) says there is none.
 > both, though it needs an added symmetry-breaking term to drift toward a
 > *chosen* goal rather than resting wherever it lands.
 
-Three things that phrasing is carrying, each measured above:
+##### The four claims, each with its actual reason
+
+**1. Binary *can* have the memory as an exact fixed point — because saturation
+rounds to the nearest corner, and the memory is already a corner.** Above the
+knee the map is `x ← normalize(sign(Wx))`. Cross-talk perturbs `Wz` away from
+`z`, but unless it flips a coordinate's *sign*, `sign(Wz) = sign(z) = z`: the
+nonlinearity erases the perturbation exactly. **[M]** `cos_self` = 1.0000. This
+is not about binary codes being special as codes — the corner set is the fixed
+set of the saturating map, and the code already lives there.
+
+**2. Graded *cannot* — because below the knee the map is linear, and the stored
+patterns are not exactly its eigenvectors.** `x ← normalize(Wx)` has eigenvectors
+as fixed points; `Wz_i ∝ z_i + Σ_{j≠i} z_j c_ij` with overlaps `c_ij` ≈ 0.06, so
+`z_i` is not one, and nothing rounds the overlap away. **[M]**
+`cos(recall(z), z)` = 0.9966 at one step, 0.813 at fifteen. *Not* that graded
+codes forbid fixed points: saturate the recall on one and you get a fixed point
+(arm A) — at the nearest **corner**, 0.957 from the memory rather than at it.
+
+**3. Graded *can* do intermediate states — because the manifold is flat, so a
+chord between two codes stays near the surface.** Flatness is measured, not
+derived: `‖Δk‖/(k‖Δ1‖)` = 0.965 / 0.910 / 0.814 at k = 2/4/8. The consequence is
+measured too: walking the chord over 10 cells, the cosine to the nearest actual
+cell never drops below **0.990** and decoded position tracks `t` almost linearly.
+
+**4. Binary *cannot* — because a blend of two corners is not a corner.** Corners
+are the extreme points of the cube, so a convex combination of two distinct ones
+lies in the interior; and the blend's sign pattern is that of whichever endpoint
+dominates, so the nearest corner flips discontinuously at `t = ½` with nothing in
+between. Predicted `√(1 − H/D)` = 0.9182, measured **0.9183**.
+
+##### Why the two abilities exclude each other — exactly
+
+* An exact fixed point requires every code to be a fixed point of the saturating
+  map, i.e. a corner, i.e. an **extreme point** of the ambient convex hull. Every
+  code, not just `K` of them, because any cell can be a goal and the encoder is
+  one function.
+* An intermediate state requires some code to be near the **midpoint** of two
+  others.
+
+An extreme point is by definition *not* a convex combination of two other points
+of the set. So if every code is extreme, **no code is a midpoint of two others**,
+and interpolation between codes never lands on a code. That is not an empirical
+trade-off, it is the definition; the quantitative version — how far off you land
+— is the `√(1 − H/D)` above.
+
+Three further things the synthesis is carrying, each measured above:
 
 * **Flat, not 2D.** Both codes are 2-parameter families; that is not the
   difference. The continuous one is flat over ~30 cells and the binary one is
