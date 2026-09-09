@@ -1249,6 +1249,63 @@ between. Predicted `√(1 − H/D)` = 0.9182, measured **0.9183**.
 > than a coverage floor. Same 4-task array on the 2.5% and 1.25% encoders would
 > answer it, and it would revise B1.
 >
+> > **What "K" is, and what production's load actually is.** Every run in this
+> > section uses the probe's default `memory_mode = multi_env_goals`, which
+> > stores `K` goals **from `K` different environments** in one memory.
+> > Production does not do that: `hopfield_nav/train.py` gives each parallel
+> > rollout its **own** Hopfield, pre-populates it with `n_train_distractors`
+> > patterns drawn from *outside* that env, and the agent then stores its goal —
+> > which is the probe's `goal+distractors` mode. The phase-A sweeps run
+> > `--n_train_distractors_min 0 --n_train_distractors_max 10`, so the load is
+> > **K = 1…11, sampled per rollout**.
+> >
+> > So **K = 5 is a reporting convention, not an operating point** — it is where
+> > the campaign quotes its headline reach — and the production-relevant column
+> > here is nearer **K = 10**, with K = 20 sitting *beyond* production's load
+> > rather than at it. The cross-talk mechanism only cares how many patterns are
+> > in the memory, so the columns transfer in that sense, but distractors are
+> > uniform scaffold cells while goals are env goals, so the overlap statistics
+> > are not identical and the transfer is approximate.
+> >
+> > At K = 10 the result reads: 10% coverage 0.989/0.986 → 0.984/0.983 (a small
+> > loss), 2.5% 0.953/0.944 → **0.984/0.976**, 1.25% 0.867/0.783 → **0.993**. A
+> > wash at production coverage, a real gain below it.
+>
+> ### ✓ And with `α < 1` it walks in and *stops*
+>
+> `alpha_walk_check.py --rules hebb proj`, production encoder, cues starting a
+> mean 10.46 cells out. Decoded distance per step, with the cosine to that
+> cell's code:
+>
+> | α = 0.9 | 1 | 2 | 3 | 5 | 8 | 12 | 20 | 30 |
+> |---|---|---|---|---|---|---|---|---|
+> | hebb, cells | 7.89 | 3.53 | 1.37 | 0.16 | 0.12 | 0.23 | 0.31 | **0.36** |
+> | hebb, cos | 0.982 | 0.970 | 0.977 | 0.979 | 0.967 | 0.945 | 0.899 | **0.846** |
+> | **proj, cells** | 7.91 | 3.57 | 1.40 | 0.13 | 0.03 | **0.02** | **0.02** | **0.02** |
+> | **proj, cos** | 0.983 | 0.972 | 0.982 | 0.991 | 0.992 | **0.992** | **0.992** | **0.992** |
+>
+> **The walk in is identical** — 7.91 vs 7.89, 3.57 vs 3.53, 1.40 vs 1.37 —
+> because both are moving along the same chord toward `z_goal`, and §7.1's chord
+> argument does not care which rule drew it. **What differs is the end.** `proj`
+> arrives at 0.02 cells and holds it, with cos pinned at 0.992, for steps 8
+> through 30. `hebb` passes through, drifts back out to 0.36, and leaves the
+> manifold (cos 0.846).
+>
+> Predicted in advance, and for the right reason: below the knee the map is
+> `M = (1−α)I + α(β/D)P`, whose eigenvalues are 0.188 on span(Z) and 0.100 off
+> it, so the off-span component decays by 0.53 per step and the state converges
+> to `normalize(P·x₀)` — which, unlike `hebb`'s cue-independent top eigenvector,
+> **is a point on the code manifold**. Hence cos 0.992 rather than 0.846.
+>
+> **This is the combination Q1 asked for**: a gradual relaxation, through
+> intermediate states that are genuine encoded positions (cos ≥ 0.972 the whole
+> way in), coming to rest and staying. One caveat on the wording — the resting
+> point is `normalize(P·x₀)`, the projection of the *cue*, not the nearest
+> memory. It decodes to the goal cell 98.7% of the time, but "projects onto the
+> memory subspace and freezes" is the accurate description, not "is attracted to
+> the memory". And per §7.1 above, this is still a *relaxation* toward a
+> one-shot answer rather than dynamics traversing the manifold.
+>
 > Still untested: `soft`, and anything touching the policy — `‖q‖` semantics are
 > unchanged here, so the magnitude gate should carry over, but that is an
 > inference, not a measurement.

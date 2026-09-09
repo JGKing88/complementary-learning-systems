@@ -55,7 +55,8 @@ def headers(d: str, want: list[str]):
             if any(e["label"].startswith(w) for w in want)]
 
 
-def walk(header: dict, alpha: float, k: int, max_steps: int):
+def walk(header: dict, alpha: float, k: int, max_steps: int,
+         storage_rule: str = "hebb"):
     """Per-step (distance to goal, cos to nearest cell, fraction in env)."""
     enc, ecfg, gain, fwhm, _h = load_probe_encoder(
         header["path"], fwhm_fallback=header.get("fwhm_ratio", 0.25))
@@ -64,7 +65,7 @@ def walk(header: dict, alpha: float, k: int, max_steps: int):
     beta = header.get("beta")
     cfg = ProbeConfig(n_worlds=2, n_envs_per_world=20, env_size=20, Npos=1716,
                       k_values=(k,), steps=(1,), seed=0, basin_radius=0,
-                      alpha=alpha,
+                      alpha=alpha, storage_rule=storage_rule,
                       beta_override=float(beta) if beta else None)
     field = Field(enc, list(ecfg.lambdas), fwhm, gain, cfg.Npos)
 
@@ -106,6 +107,12 @@ def main() -> None:
     ap.add_argument("--labels", nargs="+", default=["10% · ", "10% gain=1e6"])
     ap.add_argument("--k", type=int, default=5)
     ap.add_argument("--max_steps", type=int, default=30)
+    ap.add_argument("--alphas", type=float, nargs="+", default=list(ALPHAS))
+    ap.add_argument("--rules", nargs="+", default=["hebb"],
+                    help="storage rules to sweep alongside alpha. With 'proj' "
+                         "the stored pattern is an exact fixed point, so the "
+                         "relaxation should approach and STOP rather than "
+                         "drift past -- see Sec 7.1.")
     args = ap.parse_args()
 
     seen: set[str] = set()
@@ -114,18 +121,20 @@ def main() -> None:
         if arm in seen:
             continue
         seen.add(arm)
-        print(f"\n{'=' * 78}\n=== {label} ===")
-        for alpha in ALPHAS:
-            s0, res = walk(header, alpha, args.k, args.max_steps)
-            print(f"\n  alpha {alpha:<5g}  start {s0:.2f} cells from goal")
-            print(f"    {'step':<6s}" + "".join(f"{s:>8d}" for s in SHOW))
-            print(f"    {'cells':<6s}"
-                  + "".join(f"{res[s][0]:>8.2f}" for s in SHOW))
-            print(f"    {'cos':<6s}"
-                  + "".join(f"{res[s][1]:>8.3f}" for s in SHOW)
-                  + "   <- to its own nearest cell")
-            print(f"    {'in env':<6s}"
-                  + "".join(f"{res[s][2]:>8.2f}" for s in SHOW))
+        for rule in args.rules:
+            print(f"\n{'=' * 78}\n=== {label}   storage = {rule} ===")
+            for alpha in args.alphas:
+                s0, res = walk(header, alpha, args.k, args.max_steps, rule)
+                print(f"\n  alpha {alpha:<5g}  start {s0:.2f} cells from goal")
+                print(f"    {'step':<6s}"
+                      + "".join(f"{s:>8d}" for s in SHOW))
+                print(f"    {'cells':<6s}"
+                      + "".join(f"{res[s][0]:>8.2f}" for s in SHOW))
+                print(f"    {'cos':<6s}"
+                      + "".join(f"{res[s][1]:>8.3f}" for s in SHOW)
+                      + "   <- to its own nearest cell")
+                print(f"    {'in env':<6s}"
+                      + "".join(f"{res[s][2]:>8.2f}" for s in SHOW))
 
 
 if __name__ == "__main__":
