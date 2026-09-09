@@ -1370,6 +1370,35 @@ than waiting for the flow to reveal them.
 
 **How to test it, in three stages, each against a number we already have.**
 
+> ### ✓ Stage 0 ran, 2026-09-08. It passes.
+>
+> `potential_readout_check.py`, two training seeds per arm, 15,960 cells each,
+> `ẑ` taken from the memory rather than ground truth, and the **current** readout
+> computed on the identical memory as a control.
+>
+> | | current | **(iii-c)** | published |
+> |---|---|---|---|
+> | production s42 | 0.997 | **1.000** | 0.995 |
+> | production s43 | 0.995 | **0.997** | 0.995 |
+> | **arm B** s42 | 0.389 | **0.998** | 0.392 |
+> | **arm B** s43 | 0.393 | **0.993** | 0.392 |
+>
+> The control reproduces both published numbers to ±0.003, so the comparison is
+> against the real system. **Arm B's `acc45` goes 0.392 → 0.998**, and `|err|`
+> goes 66.5° → 11.8°. The predicted failure mode does **not** bind: sinks
+> (cells with no better neighbour) are **0.000–0.002**, and the greedy step
+> moves closer to the goal in real space **0.998–1.000** of the time. It holds
+> across every distance band, including 18–30 cells where the current readout
+> is worst (0.281 → 0.986).
+>
+> And it is not a special case for binary codes: production improves slightly
+> too, 0.997 → 1.000 and 0.995 → 0.997. Arm B's 11.8° remains coarser than
+> production's 8.3°, which is the discrete field's residual noise.
+>
+> **Two seeds, not four** — but the effect is 0.39 → 0.99 against a seed spread
+> of 0.004, so the ordering is not in question. Stage 1 (the flow, hence reach
+> against arm B's 0.103) is one flag away and has not been run.
+
 *Stage 0 — the field and the landscape, offline.* On arm B's checkpoint
 (encoder gain 1e6, β = 1e6), and production as the control, compute the (iii-c)
 `q` at every cell of every scored env, with `ẑ` the **retrieved** code rather
@@ -1606,6 +1635,15 @@ than one number. (ii) R4 was unreadable; split into four statements. (iii) Do
 not assume basin and reach share a variable — measured instead, §3.2, and found
 the basin metric mixes a cross-talk term with a precision term. Bug found and
 fixed on the way (§3.3).
+
+**Turn 16 — Stage 0, run.** `potential_readout_check.py`. The control
+reproduces both published numbers to ±0.003 (production 0.995, arm B 0.392), and
+**arm B's `acc45` goes 0.392 → 0.998** under the central-difference readout,
+`|err|` 66.5° → 11.8°. The predicted binding failure does not bind: sinks
+0.000–0.002, greedy step moves closer 0.998–1.000. Holds in every distance band,
+including 18–30 cells where the old readout is worst (0.281 → 0.986), and
+production improves slightly too, so it is not a binary-code special case. Two
+seeds; Stage 1 not yet run.
 
 **Turn 15 — "tell me exactly how you will find `q` at a position `p`."** §7.1's
 readout written as a six-step spec pinned to the existing API — `encoded_state`
