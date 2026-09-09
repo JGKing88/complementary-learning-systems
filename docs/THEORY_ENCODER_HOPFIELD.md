@@ -322,6 +322,41 @@ K=20 go 0.08 → 0.25 → 0.42, and the basin shrinks. **[M]** The corrected bas
 ladder is **27.0 / 23.0 / 19.2 / 11.5 / 13.5** cells at 10 / 5 / 2.5 / 1.25 /
 0.75%, with the bottom two rungs not separable. Practical floor: **2.5%**.
 
+> ### ⚠ Revised 2026-09-09 — half of this was the storage rule, not coverage
+>
+> All of the above is measured with the **Hebbian outer product**. Job 22345479
+> reran 2.5% and 1.25% under both rules, two seeds each, full suite
+> (`$CLS_RESULTS/hopfield_probe/20260827/probe_projlow/`):
+>
+> | | basin | exact | acc45 | K=5 | K=10 | **K=20** | s15 |
+> |---|---|---|---|---|---|---|---|
+> | 2.5% hebb | 20.8 / 18.4 | 0.900 / 0.884 | 0.997 / 0.989 | 0.991 / 0.994 | 0.953 / 0.944 | 0.678 / 0.799 | 0.42 / 0.61 |
+> | **2.5% proj** | 20.6 / 19.3 | 0.927 / 0.933 | 0.996 / 0.990 | 0.981 / 0.986 | 0.984 / 0.976 | **0.979 / 0.969** | 0.98 / 0.99 |
+> | 1.25% hebb | 9.2 / 11.7 | 0.685 / 0.778 | 0.981 / 0.939 | 0.938 / 0.858 | 0.867 / 0.783 | 0.539 / 0.476 | 0.29 / 0.37 |
+> | **1.25% proj** | **11.9 / 13.8** | **0.797 / 0.849** | 0.984 / 0.952 | **0.986 / 0.984** | **0.993 / 0.984** | **0.970 / 0.964** | 0.98 / 0.97 |
+>
+> **What does not survive.** "Dead goals at K=20 go 0.08 → 0.25 → 0.42" was
+> measuring cross-talk the Hebbian rule propagates, not a capacity limit of the
+> code. Under `proj`, K=20 reach is 0.97–0.98 at *every* rung, 2.5% and 1.25%
+> included. And §10.15's floor between 2.5% and 1.25% goes with it: at 1.25%
+> under `proj`, reach at K=5 is **0.985** against 10% coverage's 0.987. The
+> rungs are indistinguishable where they used to differ by 0.10.
+>
+> **What does survive, and is now cleanly separated.** The basin still falls
+> with coverage under `proj` — **25.3 / 20.6 / 11.9** (s42) at 10 / 2.5 / 1.25%
+> — as does exact retrieval, **0.987 / 0.927 / 0.797**. Those are properties of
+> the code, and no storage rule recovers them.
+>
+> **So B1 becomes:** *coverage buys basin radius and retrieval precision. It does
+> not buy reach, and it does not buy capacity at high load — those were limited
+> by the Hebbian rule's cross-talk, which the projection rule removes.* Two
+> seeds per cell, and the effects (0.48 → 0.97 at K=20, 1.25%) are far outside
+> the seed spread.
+>
+> Note `proj` also *improves* the 1.25% basin, 9.2 → 11.9 and 11.7 → 13.8
+> seed-for-seed, where at 10% and 2.5% it left the basin flat. At that coverage
+> cross-talk is bad enough to eat the basin itself.
+
 **B2 — Saturation is a square, not a ladder.** There are two independent
 saturation knobs — the **encoder** gain, which decides whether the *code* is
 graded or binary, and **β**, which decides whether the *recall map* saturates —
