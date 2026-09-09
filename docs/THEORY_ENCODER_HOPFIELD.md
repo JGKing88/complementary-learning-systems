@@ -322,19 +322,33 @@ K=20 go 0.08 → 0.25 → 0.42, and the basin shrinks. **[M]** The corrected bas
 ladder is **27.0 / 23.0 / 19.2 / 11.5 / 13.5** cells at 10 / 5 / 2.5 / 1.25 /
 0.75%, with the bottom two rungs not separable. Practical floor: **2.5%**.
 
-**B2 — Saturation is a square, not a ladder.** Three corners measured on the 10%
-winner: **[M]**
+**B2 — Saturation is a square, not a ladder.** There are two independent
+saturation knobs — the **encoder** gain, which decides whether the *code* is
+graded or binary, and **β**, which decides whether the *recall map* saturates —
+so the possibilities form a square, not a ladder. Three of its corners are
+measured on the 10% winner (`run_sat10.sh`), and **this table is where the names
+"arm A" and "arm B" used throughout this document are defined**: **[M]**
 
-| arm | `cos_self` | basin | exact | acc45 | reach |
-|---|---|---|---|---|---|
-| production (gain 100, β = 100) | 0.813 | 27.0 | 0.982 | 0.995 | 0.987 |
-| β = 1e6 only | 0.957 | 24.5 | — | — | 0.973 |
-| gain = 1e6 **and** β = 1e6 | 1.0000 | 28.2 | 0.999 | 0.392 | 0.103 |
+| | encoder gain | β | `cos_self` | basin | exact | acc45 | reach |
+|---|---|---|---|---|---|---|---|
+| **production** | 100 | 100 | 0.813 | 27.0 | 0.982 | 0.995 | 0.987 |
+| **arm A** — recall only | 100 | 1e6 | 0.957 | 24.5 | — | — | 0.973 |
+| **arm B** — both | 1e6 | 1e6 | 1.0000 | 28.2 | 0.999 | 0.392 | 0.103 |
 
-Half-saturation *costs* basin (binarised state against a continuous bank); full
-saturation gives a perfect fixed point and **destroys the direction field**,
-because `q` is a finite difference and `sign(z)` carries no magnitude. The
-production corner is the only one where memory and direction both work.
+*Production* saturates neither: a graded code, and a recall map in its linear
+regime. *Arm A* saturates the recall alone — the code stays graded, and the
+dynamics gain genuine attracting fixed points sitting at hypercube corners
+**near** each memory. *Arm B* saturates both — `z = sign(u)` makes the code
+binary, and each stored pattern becomes an **exact** fixed point of the recall
+(`cos_self` = 1.0000). The fourth corner (encoder saturated, β low) is not
+measured and is not interesting: a binary code read through a linear filter.
+
+Half-saturation *costs* basin (a binarised state compared against a continuous
+bank); full saturation gives the perfect fixed point and a *larger* basin, and
+**destroys the direction field** — acc45 0.995 → 0.392, reach 0.987 → 0.103.
+The production corner is the only one where memory and direction both work
+today, which is why arm B is the checkpoint §7.1's escape (iii-c) is aimed at:
+its memory is already perfect and only its readout fails.
 
 **B3 — β is a switch, not a knob** (§1.3). What crossing it buys is
 step-invariance, which the policy does not use at `steps = 1`.
@@ -938,7 +952,8 @@ power spectrum, `d_eff = PR(P)`, `K` stored goals, `D = 1024`.
 > **Corrected turn 7, and the correction matters.** This was first written as
 > "a true attractor and a working direction field are incompatible", full stop.
 > That is too strong, and the counterexample is already measured. §10.20's
-> **arm A** — recall saturated (β = 1e6), encoder left continuous (gain 100) —
+> **arm A** (§2.2 defines the arms) — recall saturated (β = 1e6), encoder left
+> continuous (gain 100) —
 > has genuine attracting fixed points (`cos(recall(x), x)` = 0.9989,
 > `cos(recall¹⁵(z), x)` = 0.9981 against 0.813 unsaturated) **and** a working
 > direction field (reach 0.973, against production's 0.987). Its fixed point is
