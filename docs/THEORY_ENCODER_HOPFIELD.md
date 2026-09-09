@@ -1160,17 +1160,64 @@ cycles, which are exactly those.
 
 ##### How we would actually do (iii-c)
 
-**The readout.** At position `p`, with `ẑ` the vector the memory returned, take
-a central difference of the scalar over the four neighbours the agent can
-already encode:
+**The readout, exactly.** At one position `p` (local cell coordinates), in an
+env with scaffold `offset`, `e_E = (+1, 0)` and `e_N = (0, +1)`:
+
+1. **Encode the agent's own position.**
+   `z_p = field.encoded_state(p, offset)` — unit, `(D,)`. This is the cue, and
+   it is the same call the current readout already makes.
+2. **Recall.** `ẑ = recall_trajectory(mem, z_p, steps, cfg)[s]`. Unchanged from
+   today, and unit because the recall normalises at every step.
+3. **Encode the four neighbours.**
+   `z_n = field.encoded_state(p + n, offset)` for `n ∈ {+e_E, −e_E, +e_N, −e_N}`
+   — four calls where the current readout makes two (`+e_E`, `+e_N`, inside
+   `local_basis`). These are *scaffold* neighbours: the code is defined
+   everywhere, so a neighbour behind a wall is still encodable, exactly as
+   `local_basis` already assumes.
+4. **Four dot products.** `s_n = ⟨ẑ, z_n⟩`. Normalise defensively first — the
+   probe's `_unit` — since a non-unit `ẑ` leaves the bearing alone but corrupts
+   step 6.
+5. **Central differences, in the order `project_q` already returns.**
+
+   ```
+   q = ( (s_{+E} − s_{−E}) / 2 ,  (s_{+N} − s_{−N}) / 2 )      # (East, North)
+   ```
+
+   The `/2` is the central-difference spacing, not a normalisation. Nothing is
+   orthonormalised and there is no Gram–Schmidt: `q` is already a 2-vector in
+   the (East, North) frame by construction.
+6. **Distance, separately.** `s_0 = ⟨ẑ, z_p⟩` from steps 1 and 2, no extra
+   encode. On a binary code this is the linear distance readout and `‖q‖` is
+   not; see the note above on not mixing them up.
+
+Vectorised over an env, which is how `cell_q_field` would call it:
 
 ```
-s_n  = ⟨ẑ, z(p + n)⟩            for n ∈ {±e_E, ±e_N}
-q    = ( (s_{+E} − s_{−E})/2 ,  (s_{+N} − s_{−N})/2 )
+cells = local_cells(size)                              # (n, 2)
+cues  = field.encoded_state(cells, offset)             # (n, D)
+Zhat  = _unit(recall_trajectory(mem, cues, steps, cfg)[s])
+S     = {n: np.einsum("id,id->i", Zhat,
+                      _unit(field.encoded_state(cells + n, offset)))
+         for n in (+e_E, -e_E, +e_N, -e_N)}
+q     = 0.5 * np.stack([S[+e_E] - S[-e_E], S[+e_N] - S[-e_N]], axis=1)
 ```
 
-Four encoder evaluations and four dot products, against the current two
-evaluations plus a Gram–Schmidt and a projection. Comparable cost.
+**Cost.** Four encodes of `n` cells instead of two, plus `4n` dot products,
+minus the Gram–Schmidt and the projection. Recall is untouched and is the
+expensive part, so the suite cost barely moves.
+
+**One boundary case to assert, not assume.** `encoded_state` *clips* to
+`[0, Npos−1]`, so a neighbour off the scaffold silently returns `z_p` itself and
+the central difference degenerates into a one-sided one — which is (∗) without
+its correction term, the exact failure this readout exists to avoid. At
+`Npos = 1716` with envs placed well inside it should never fire; assert rather
+than trust it.
+
+**Two switches to run both ways rather than choose.** Whether `ẑ` is one recall
+step or iterated to the fixed point (see below); and whether the flow follows
+the 2-vector (`continuous_flow`) or steps to the best of the four neighbours by
+`s_n` directly (`discrete_flow`) — the second does not need `q` at all, and on a
+lattice it is the more faithful descent.
 
 **What it removes.** No local frame, no Gram–Schmidt, and — the point — **no
 local-linearity assumption**. The current readout needs `z` to vary
@@ -1544,6 +1591,18 @@ than one number. (ii) R4 was unreadable; split into four statements. (iii) Do
 not assume basin and reach share a variable — measured instead, §3.2, and found
 the basin metric mixes a cross-talk term with a precision term. Bug found and
 fixed on the way (§3.3).
+
+**Turn 15 — "tell me exactly how you will find `q` at a position `p`."** §7.1's
+readout written as a six-step spec pinned to the existing API — `encoded_state`
+for the cue and the four neighbours, `recall_trajectory` unchanged, four dot
+products, one central difference per axis in `project_q`'s own (East, North)
+order, and `s_0 = ⟨ẑ, z_p⟩` for distance at no extra encode. No Gram–Schmidt and
+no orthonormalisation: `q` is already in the (East, North) frame. Plus the
+vectorised form `cell_q_field` would use, the cost (four encodes where there
+were two, recall untouched), the one boundary case that must be *asserted* —
+`encoded_state` clips, so an off-scaffold neighbour silently degenerates the
+central difference into the one-sided form this readout exists to avoid — and
+the two switches to run both ways rather than pick.
 
 **Turn 14 — "I don't get why specifically that equation for `q` is stepping
 down in energy."** The best question of the conversation, because working it out
