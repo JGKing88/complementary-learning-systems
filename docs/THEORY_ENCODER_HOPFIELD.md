@@ -1135,6 +1135,62 @@ is supposed to. Three reasons, of increasing importance:
    recall worse rather than better (§0), and it is the opposite of pattern
    completion.
 
+> ### ✓ Measured turn 20. Production walks the manifold; arm B cannot.
+>
+> `alpha_walk_check.py`, 10% `att0.5` s42, K = 5, cues starting a mean 10.46
+> cells from the goal, decoding every recall step to its nearest cell **and**
+> recording `cos(state, that cell's code)` — the column §6 never had.
+>
+> **Production (gain 100, β = 100).** Lowering `α` turns the jump into a walk,
+> and the walk stays on the manifold:
+>
+> | α | decoded distance, steps 1→12 | cos to nearest cell |
+> |---|---|---|
+> | 1.0 | 0.04 · 0.06 · 0.09 · 0.21 · 0.29 · 0.34 | 0.989 → 0.868 |
+> | 0.95 | 4.97 · 1.05 · 0.15 · 0.10 · 0.22 · 0.29 | 0.971–0.982 |
+> | **0.9** | **7.89 · 3.53 · 1.37 · 0.16 · 0.12 · 0.23** | **0.967–0.982** |
+> | 0.8 | 9.39 · 7.72 · 5.43 · 1.91 · 0.42 · 0.13 | 0.970–0.993 |
+> | 0.5 | 10.46 · 9.91 · 9.53 · 8.74 · 7.17 · 4.49 | 0.969–0.999 |
+>
+> At α = 0.9 the state visits 7.89, 3.53 and 1.37 cells from the goal on the way
+> in, and **never falls below cos 0.967 of an actual cell's code**. These are
+> encoded states, not merely vectors with a nearest cell. `α` is a clean speed
+> knob: the walk lengthens smoothly as `α` falls, and at 0.05 it has not left
+> the start after 30 steps.
+>
+> **Arm B (gain 1e6, β = 1e6) cannot do this at any `α`.** Its recall term has
+> norm `√D` = 32 against the cue's 1, so it stays recall-dominated down to
+> α ≈ 0.03; below that it does not walk, it **stalls and then snaps**:
+>
+> | α | decoded distance, steps 1→30 | cos |
+> |---|---|---|
+> | 0.01 | 10.46 · 10.46 · **0.00** · 0.00 · … | 0.979 · 0.934 · **0.919** · 0.973 → 1.000 |
+> | 0.003 | 10.46 · 10.46 · 10.46 · 10.46 · 7.45 · **0.00** | 0.998 → **0.906** → 0.998 |
+> | 0.001 | 10.46 … 10.46 · **0.00** | 1.000 → **0.925** → 0.930 |
+>
+> It sits at the *cue's own cell*, then jumps to the goal, and **the cosine dips
+> to 0.906–0.93 exactly during the transition** — the state is off the manifold
+> while it crosses, and decodes to no position in between.
+>
+> **That is the chord prediction, confirmed.** A partial step puts the state on
+> the chord from `z(here)` to `z(goal)`. On production's ballistic code the
+> manifold is flat over that range, so the chord hugs it (cos ≥ 0.967) and every
+> intermediate point is a real position. On arm B's binary code a blend of two
+> hypercube corners is near no corner, so the chord leaves the manifold (cos
+> 0.91) and the decode has nothing to land on until it arrives. **[M]**, one
+> seed.
+>
+> A third thing fell out, unlooked for: at α = 1 production's cosine **decays
+> monotonically 0.989 → 0.729 over 30 steps**. The state drifts *off the
+> manifold* as it converges to the cue-independent top eigenvector — §0's
+> matched-filter decay, visible as geometry rather than as a reach number.
+>
+> **So the answer to "do we have an attractor whose dynamics pass through
+> encoded states" is: we can have one, and it is not arm B.** Production at
+> α ≈ 0.8–0.9 traverses the manifold; but its memories are not fixed points, so
+> it is not an attractor. Arm B's memories *are* exact fixed points, and it
+> cannot traverse. The fork is real, and it is the one below, not T1's.
+
 > **Qualified turn 19 — with `α < 1` on a *continuous* code, it partly does.**
 > The claim above is right at `α = 1`, which is production and both saturated
 > arms, and PROBE §6 measured it: the first application travels ~10 cells and

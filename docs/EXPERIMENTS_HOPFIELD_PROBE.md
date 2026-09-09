@@ -470,6 +470,19 @@ goal, K=5, start ≈ 8.2 cells:
 | L7 alpha 0.9 | **6.01** | 3.08 | 1.66 | 0.60 | 0.67 |
 | L7 g300+β1e6 | 0.35 | 0.50 | 0.50 | 0.50 | 0.50 |
 
+> **Extended 2026-09-08 — `alpha_walk_check.py`.** This table is missing the
+> column that decides whether an intermediate step is a *code* or merely a
+> vector with a nearest cell: `cos(state, that cell's code)`. Added, and swept
+> over `alpha` on the production 10% encoder. Lowering `alpha` turns the jump
+> into a walk that **stays on the manifold** — at α = 0.9 the state visits 7.89,
+> 3.53 and 1.37 cells from the goal with cos never below **0.967**. The
+> saturated arm cannot do it at any `alpha`: its recall term has norm `√D` = 32
+> against the cue's 1, and below α ≈ 0.03 it stalls at the cue's own cell and
+> then snaps to the goal, with the **cosine dipping to 0.91 during the
+> transition** — off-manifold while crossing, decoding to nothing in between.
+> Also: at α = 1 production's cosine decays 0.989 → 0.729 over 30 steps, which
+> is §0's matched-filter drift seen as geometry.
+
 **The first application travels ~10 cells and lands on the goal.** Retrieval is
 a one-step jump. Production then *drifts away* — 0.00 → 1.00 by s=8 — which is
 the matched-filter decay of §0 made concrete in real space. The saturated arm
