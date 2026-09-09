@@ -689,11 +689,25 @@ line.
 
 **A second picture, sometimes more useful.** Flat means the code points are laid
 out locally like a **lattice in a plane** — so the point halfway between two of
-them is itself (near) a code. Diffusive means they are laid out like **random
-points on a sphere**, near-equidistant beyond a few cells — and the midpoint of
-two random points on a sphere is near *no* point of the set. Check: the binary
-code's `cos(k) = 1 − 2mk/D` hits zero at k ≈ 28 and stays there, which is the
-near-equidistant regime exactly.
+them is itself (near) a code. Binary means they are the **vertices of a convex
+body**, and a convex combination of two distinct vertices is never a vertex: it
+lies in the interior, near no point of the set at all. That is why the midpoints
+are missing — nothing to do with the points being scattered or unstructured.
+
+> **Not because the binary code is random — it is not.** An earlier draft of this
+> paragraph said the binary points sit "like random points on a sphere,
+> near-equidistant". That is wrong and it contradicts everything else here: if
+> they were random, retrieval could not work, and arm B's retrieval is the best
+> in the campaign (`exact` 0.999, basin 28.2). The binary code has **excellent**
+> similarity structure — `cos(k) = 1 − 2mk/D`, strictly monotone in distance out
+> to k ≈ 28 cells, with `C(1)` = 0.964. That monotonicity is exactly what
+> retrieval uses, and exactly what (iii-c) descends.
+>
+> Monotone similarity and missing midpoints are entirely compatible: the
+> *ordering* of similarities is clean, and the *set* simply has holes where the
+> intermediate points would be. Only the near-equidistance **beyond** ~28 cells,
+> where `cos` reaches 0 and flattens, is a far-field statement — and that part is
+> a feature, since it is what suppresses aliases.
 
 **Flatness then buys two things, which are one property seen twice.**
 
