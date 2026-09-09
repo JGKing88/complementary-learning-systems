@@ -1,5 +1,97 @@
 # Why does grid → encoder → Hopfield work, and is it the best we can do?
 
+## 0. The case for doing this analytically
+
+*Written for someone not already inside the project. §1 onward assumes far more.*
+
+**What the system is.** An agent moving through space needs to remember where
+things are and go back to them. Ours does this with three pieces: grid cells
+supply a periodic code for the agent's current position, a learned encoder
+embeds that code as a high-dimensional vector, and an associative memory stores
+the embedded codes of goal locations. To navigate, the agent cues the memory
+with where it is now and reads a heading out of what comes back.
+
+**The problem.** We want the encoder to map the grid code to embeddings that
+work as memories in an attractor network: within some radius R of a remembered
+goal, cues relax onto that goal. And when they do, we want to read the
+real-space direction from cue to goal off the relaxation itself. Both halves are
+precisely specified — the input code is fixed and known, the desired behaviour
+is a concrete geometric property — so whether it is achievable is a question
+that can be **answered**, not just explored.
+
+### Questions independent of the grid code
+
+**Can one embedding do both jobs?** Our empirical results suggest not. An
+attractor network wants its memories to be binary — that is what makes them
+fixed points — but a binary code carries no usable directional information,
+because it can only change by flipping coordinates, so displacement over k cells
+accumulates like a random walk rather than a straight line. Right now our
+"attractor network" is actually **a one-step linear matched filter**, which
+**returns a similarity-weighted sum of the stored goals and renormalises — so
+the stored goals are not fixed points at all, and iterating degrades recall
+instead of cleaning it up.** It is not an attractor network, and it navigates
+well. *Why it matters:* "make it a genuine attractor" is an open design
+direction we keep half-pursuing. If the incompatibility is real, it stops being
+one, and the effort moves to changing the readout instead.
+
+Existing theory is worth leaning on here. Classical Hopfield results give a real
+guarantee — with N units you can store on the order of 0.1N patterns and recover
+each exactly from a corrupted cue — but that guarantee is about cleaning up
+**bit flips on a hypercube**. Our noise is not bit flips; it is displacement
+along a 2D surface embedded in a high-dimensional sphere. Whether "relax to the
+nearest memory" survives that change of geometry should be provable either way,
+and the modern continuous-pattern versions of Hopfield networks come with
+explicit separation conditions that would tell us.
+
+**What dimension does this need?** Either way, we need real-space distance
+between positions to track cosine similarity between their codes. Which
+similarity-versus-distance profiles are achievable at all, and in how few
+dimensions, is a classical question — which functions are positive-definite on a
+sphere, and how many near-orthogonal directions fit in D dimensions. *Why it
+matters:* we use 1024 dimensions, chosen by default. Three provably cannot do
+it; where the real minimum sits between those two numbers is the difference
+between having capacity to spare and sitting near a limit.
+
+**What sets R?** R is one of our two success criteria, and we currently improve
+it by trial. We do not know whether it is simply a property of how fast code
+similarity falls off with distance — a near-field quantity — or whether it also
+depends on how many goals are stored and how they interfere; our measurements
+don't obviously support the simple story. *Why it matters:* a formula would say
+which knob moves R and by how much, instead of one training run per guess.
+
+### Questions about the grid code
+
+**What is the encoder actually for?** A grid module with continuous phase traces
+out a flat torus on the sphere, and a product of co-prime modules extends that
+without repeating over an enormous range. That is already an embedding in which
+real displacement maps proportionally onto code displacement — precisely the
+property the direction readout needs. The grid code's one real defect is
+aliasing: similarity returns at the module periods. So the encoder may not be
+building spatial structure at all; it may only be suppressing aliases, while
+risking damage to the geometry it was handed. Three things follow worth knowing:
+is there a simpler or more direct way to remove the aliasing, how much of the
+grid code's geometry does our encoder actually preserve, and would some other
+structured input serve just as well? *Why it matters:* this is where nearly all
+of our engineering effort has gone. If alias suppression is the encoder's only
+real job, much of the space we have been searching is aimed at something the
+input already provides.
+
+### Why analytically
+
+Scoring one candidate encoder costs a training run plus a full evaluation suite,
+and every question above is currently answered by doing that many times over.
+That reliably tells us which of the encoders we happened to train is best; it
+never tells us whether a better one exists. The setup is unusually well
+specified for a learned system — a fixed, structured input and a purely
+geometric objective — which is exactly the case where theory should be able to
+say what is possible before we spend more compute finding out.
+
+> The precise versions of these questions are §6, with the calculations that
+> would answer them in §7. §0 deliberately uses none of the vocabulary the
+> campaign invented along the way.
+
+---
+
 A running conversation, started **2026-09-08**. Not a results log — the results
 live in `EXPERIMENTS_HOPFIELD_PROBE.md` (probe), `EXPERIMENTS_UNIQUE_RADIUS.md`
 (coding radius) and `EXPERIMENTS_NAV_TRI.md` (policy). This document asks what
@@ -1171,6 +1263,14 @@ than one number. (ii) R4 was unreadable; split into four statements. (iii) Do
 not assume basin and reach share a variable — measured instead, §3.2, and found
 the basin metric mixes a cross-talk term with a precision term. Bug found and
 fixed on the way (§3.3).
+
+**Turn 9 — the case, for someone outside the project.** §0 added at the top.
+Jack drafted it; the revision adds what the system is *for* (the document had
+no motivation section at all — the same gap), a "why it matters" line on each
+question, and a specific closing (scoring one encoder costs a training run plus
+an evaluation suite) in place of a generic one. The hedge on the
+attractor/direction incompatibility is **kept deliberately**: what §7.1 proves
+is the narrow form, and §0 states the strong one.
 
 **Turn 8 — "what would escape (iii) actually look like?"** §7.1 gains four
 candidate forms. First finding: *"read the direction the state moves under
