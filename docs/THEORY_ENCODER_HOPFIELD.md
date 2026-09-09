@@ -1077,6 +1077,49 @@ reliably negative toward the goal on arm B's codes, then arm B's navigation was
 never broken — only its *readout* was, and escape (iii-c) recovers a system with
 an exact attractor **and** a direction field.
 
+##### (iii-c) is the energy descent, moved into physical space
+
+Worth stating separately, because it is the reason to expect (iii-c) to work at
+all rather than a nice property of it.
+
+The natural question about the memory is why it does not descend an energy
+landscape through a sequence of intermediate states, the way a Hopfield network
+is supposed to. Three reasons, of increasing importance:
+
+1. **The update is synchronous and `α = 1`.** Classical Hopfield's incremental
+   descent is a consequence of updating *one unit at a time*; the monotone-energy
+   theorem is proved for asynchronous updates, and synchronous ones can even
+   cycle. Updating every coordinate at once, with `α = 1` discarding the current
+   state entirely, takes the whole step immediately by construction.
+2. **The recall map's image is the span of the memories, not the code
+   manifold.** `Wx = s·Zᵀ(Zx) − s·diag·x`, and the diagonal term is smaller than
+   the first by `K/D` ≈ 0.5%. So after one step the state lies in the
+   `K`-dimensional subspace spanned by the stored goals — it has left the 2D
+   surface of position codes altogether. **The intermediate states are mixtures
+   of goals, not codes of intermediate positions.** A blend of `z(y₁)` and
+   `z(y₂)` is not the code of anywhere between them, so nothing can be decoded
+   from it. Lowering `α` makes the descent gradual but does not change this: the
+   path still runs through the memory span, transverse to the manifold.
+3. **Below the knee, iterating actively destroys information.** `x ←
+   normalize(Wx)` is power iteration on a near-degenerate spectrum, so it drifts
+   toward a **cue-independent** top eigenvector. That is why more steps makes
+   recall worse rather than better (§0), and it is the opposite of pattern
+   completion.
+
+But the energy descent does exist — over **position** rather than over the state
+vector. Minimising `‖z_goal − z(p)‖²  =  2 − 2⟨z_goal, z(p)⟩` in `p` is exactly
+minimising the Hopfield-style energy `E(p) = −⟨z_goal, z(p)⟩`, whose minimum is
+the goal. **(iii-c) is that descent, performed by moving the agent instead of by
+iterating the network.** The network never has to produce intermediate codes,
+because the agent's own trajectory supplies them.
+
+Which also says what the test has to look for. The failure mode of a potential
+descent is **local minima**, and a local minimum of `E(p)` is precisely a
+position whose code is spuriously similar to the goal's — an alias. So the
+question "does (iii-c) work" is the question "how many local minima does
+`−⟨z_goal, z(·)⟩` have", and `discrete_flow` already records sinks and limit
+cycles, which are exactly those.
+
 **(iii-d) A learned decoding head.** `(z_here, z_goal) → q` as a trained map,
 dropping the local-linearity requirement entirely. Most general and least
 attractive: the current readout is parameter-free and environment-agnostic, so
@@ -1263,6 +1306,18 @@ than one number. (ii) R4 was unreadable; split into four statements. (iii) Do
 not assume basin and reach share a variable — measured instead, §3.2, and found
 the basin metric mixes a cross-talk term with a precision term. Bug found and
 fixed on the way (§3.3).
+
+**Turn 10 — "why is the attractor not producing intermediary codes? I thought
+that's how a Hopfield network works — lowering energy iteratively."** Three
+reasons, and the third is the useful one: the update is synchronous with α = 1;
+the recall map's image is the `K`-dimensional span of the memories rather than
+the 2D code manifold, so intermediate states are *mixtures of goals* and not
+codes of intermediate positions; and below the knee iterating is power iteration
+toward a cue-independent eigenvector, which destroys information. The payoff:
+the energy descent does exist, over **position** rather than over the state —
+minimising `‖z_goal − z(p)‖` is minimising `−⟨z_goal, z(p)⟩` — so (iii-c) *is*
+that descent, performed by moving the agent. Its failure mode is therefore local
+minima, i.e. aliases, which `discrete_flow` already records as sinks.
 
 **Turn 9 — the case, for someone outside the project.** §0 added at the top.
 Jack drafted it; the revision adds what the system is *for* (the document had
