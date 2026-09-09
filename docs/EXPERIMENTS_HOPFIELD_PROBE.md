@@ -63,8 +63,9 @@ envs, `steps` 1–15, `K` 1–20, four encoders.
 > **✗ Corrected 2026-09-08 — see the box in §10.20.** The direction field is
 > destroyed *by this readout*, by one uncancelled term, not by the code. `q`'s
 > `−z_here` half is a chord-to-tangent correction valid only when `1 − C(j) ∝ j²`;
-> on a binary code `1 − C(j) ∝ j` and it survives as a constant added to both
-> components, so the readout can only emit headings in [0°, 90°]. A central
+> on a binary code `1 − C(j) ∝ j` and it survives as a constant 2.2× the size of
+> the signal, added to both components, so `q_North` is positive at 98% of cells
+> and 64% emit a north-east heading against 25% by chance. A central
 > difference of `⟨z_goal, z(·)⟩` instead takes this same arm to **acc45 0.998,
 > reach 0.984**, with retrieval 0.999 and basin 28.2 intact — an attractor
 > network that also navigates.
@@ -1768,13 +1769,29 @@ than any other arm.
 > q  ∝  (1 + cos θ,  1 + sin θ)      instead of      (cos θ, sin θ)
 > ```
 >
-> Both components are non-negative for every θ, so **the readout can only ever
-> emit a heading in [0°, 90°]** — it is structurally unable to say "go south" or
-> "go west". Four independent anchors, nothing fitted: predicted acc45 0.417–0.423
-> against **0.392** measured; predicted mean |err| 62.4° against **66.4°**;
-> predicted `q_north` = `√(4m/D)` = 0.2681, flat in k, against **0.267** measured
-> below; and it explains the ~9 flow sinks per env as the pile-up against the
-> north and east walls.
+> The constant is a **bias larger than the signal**. Measured per cell on this
+> arm: `1 − C(1)` is 0.0358 (matching `2m/D` = 0.0359) against a forward
+> difference `s(east) − s(here)` with sd 0.0164 — **2.2× the typical signal.**
+>
+> `gram_schmidt_2d_batch` keeps **North** exactly (`e1 = normalize(d_fwd)`) and
+> **reduces East** against it, so the identity above is exact for the *North*
+> component — measured max |diff| **2.5e−05**, correlation **1.00000000** — and
+> approximate for East (corr 0.976). The bias therefore lands asymmetrically:
+> **`q_North` ≥ 0 at 98.0% of cells**, `q_East` ≥ 0 at 66.2%, and 64.2% of cells
+> emit a north-east heading against 25% by chance. The readout says "go north"
+> almost everywhere.
+>
+> The `q_north` anchor is exact, since it is the kept axis: predicted
+> `√(4m/D)` = 0.2681, flat in k, against **0.267** measured below. The other two
+> anchors come from an idealised model *without* the Gram–Schmidt reduction and
+> are ballpark rather than exact: predicted acc45 0.417–0.423 against **0.392**,
+> predicted mean |err| 62.4° against **66.4°**.
+>
+> > **Retracted, same day.** An earlier version of this box said both components
+> > are non-negative for every θ, so the readout "can only ever emit a heading in
+> > [0°, 90°]". That is true of the idealised model and **false of the code**,
+> > because Gram–Schmidt reduces the East axis and partly cancels the shared
+> > bias. 64% NE, not 100%.
 >
 > Replacing the forward difference with a **central** one,
 > `q_i = [s(p+e_i) − s(p−e_i)]/2`, never picks the constant up. Measured on this

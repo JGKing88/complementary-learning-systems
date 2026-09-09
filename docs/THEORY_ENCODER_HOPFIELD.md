@@ -1312,7 +1312,10 @@ q^now  ∝  (1 + cos θ,  1 + sin θ)          instead of   (cos θ, sin θ)
 ```
 
 which is not a scaling — it is a translation of the 2-vector, and it wrecks the
-bearing. The **central** difference in (∗∗) never picks up the constant in the
+bearing. Measured on arm B, the constant is 0.0358 against a signal of sd 0.0164:
+**2.2× larger than what it is added to.** (The idealised form above omits the
+Gram–Schmidt reduction of the East axis, which partly cancels the shared bias —
+see the retraction note below.) The **central** difference in (∗∗) never picks up the constant in the
 first place, because `s(p+e) − s(p−e)` cancels the self-term identically.
 
 **This predicts arm B's number.** The bearing of `(1 + cos θ, 1 + sin θ)` is
@@ -1423,6 +1426,18 @@ than waiting for the flow to reveal them.
 >
 > The control lands on 0.103 and 0.987 exactly. **Arm B's reach goes 0.103 →
 > 0.984**, and the sink count collapses from ~9 per env to ~0.15.
+>
+> > **Retracted: "the readout can only point north-east."** An earlier note here
+> > said both components of `q` are non-negative for every bearing, so the
+> > heading is confined to [0°, 90°]. True of the idealised algebra, **false of
+> > the code**: `gram_schmidt_2d_batch` keeps *North* exactly and *reduces East*
+> > against it, which partly cancels the shared bias. Measured on arm B, the
+> > identity is exact for the North component (max |diff| 2.5e−05, corr
+> > 1.00000000) and approximate for East (corr 0.976); `q_North` ≥ 0 at **98.0%**
+> > of cells, `q_East` ≥ 0 at 66.2%, and **64.2%** emit a north-east heading
+> > against 25% by chance. The bias is real and large — the constant is 0.0358
+> > against a signal of sd 0.0164 — but it is a strong tilt, not a hard
+> > restriction.
 >
 > > **"Sink" here is not a spurious memory.** Two different objects have been
 > > called attractors in this document, and only one of them is arm B's. A
