@@ -1081,7 +1081,7 @@ reliably negative toward the goal on arm B's codes, then arm B's navigation was
 never broken — only its *readout* was, and escape (iii-c) recovers a system with
 an exact attractor **and** a direction field.
 
-##### (iii-c) is the energy descent, moved into physical space
+##### (iii-c) is the descent, constrained to the manifold of realizable codes
 
 Worth stating separately, because it is the reason to expect (iii-c) to work at
 all rather than a nice property of it.
@@ -1110,12 +1110,46 @@ is supposed to. Three reasons, of increasing importance:
    recall worse rather than better (§0), and it is the opposite of pattern
    completion.
 
-But the energy descent does exist — over **position** rather than over the state
-vector. Minimising `‖z_goal − z(p)‖²  =  2 − 2⟨z_goal, z(p)⟩` in `p` is exactly
-minimising the Hopfield-style energy `E(p) = −⟨z_goal, z(p)⟩`, whose minimum is
-the goal. **(iii-c) is that descent, performed by moving the agent instead of by
-iterating the network.** The network never has to produce intermediate codes,
-because the agent's own trajectory supplies them.
+But a descent does exist, and it is the same idea with one constraint added.
+
+> **Be careful with the word "energy".** The Hopfield energy is
+> `E_H(x) = −½ xᵀWx`, a function of the **state vector** `x ∈ R^D`. What
+> (iii-c) descends is `E(p) = −⟨ẑ, z(p)⟩`, a function of **position**. They are
+> not the same object, and an earlier draft of this section called them the same
+> thing. `E` is the single coupling term of `E_H` between the state and one
+> stored pattern, re-read as a field over space. (Restricting `E_H` itself to
+> the code manifold gives `−(1/2D)·Σ_k C(p − y_k)²`, which is minimised at
+> *whichever* stored goal is nearest — including another environment's. That is
+> the wrong target, so `E` is what we want, but it is not `E_H`.)
+
+The right statement is about **where the descent is allowed to go**. Classical
+Hopfield dynamics move the state toward the nearest memory through all of `R^D`,
+and §7.1's first point is that they immediately leave the 2D surface of position
+codes into the `K`-dimensional span of the memories, which is why nothing can be
+decoded from their intermediate states.
+
+(iii-c) runs the same "move toward the memory" descent **constrained to the
+manifold of realizable codes** — because the agent can only be at real
+positions, and `z(p)` is the only code it can occupy. It is a projected descent,
+and the projection is physical rather than imposed. That constraint is exactly
+what makes the intermediate states meaningful: the trajectory cannot leave the
+manifold, so every point on it is a place the agent actually is. **The network
+never has to produce intermediate codes, because the agent's own trajectory
+supplies them.**
+
+Two things this does not paper over. First, "descent" on a lattice means a
+finite difference, the same as the current readout — take central differences
+for a 2-vector and follow it (`continuous_flow`), or just step to the best
+neighbour (`discrete_flow`); the harness supports both, and they are different
+algorithms with different failure modes. Second, for a binary code the potential
+is quantised in units of `2/D`, and a one-cell step moves it by about `m` = 18
+of those — well resolved, not near the quantisation floor. What is *not*
+established is whether the potential is monotone **cell by cell** or only **on
+average**: §10.20 shows the mean `H(k)` is near-linear out to `k ≈ 16`, but its
+fluctuation was never measured, and if the per-step fluctuation rivals the
+per-step drift then a greedy walk is a biased random walk rather than a descent.
+That is the same gap as the local-maxima one below, and Stage 0's `acc45`
+measures it directly.
 
 Which also says what the test has to look for. The failure mode of a potential
 descent is **local minima**, and a local minimum of `E(p)` is precisely a
@@ -1431,6 +1465,22 @@ than one number. (ii) R4 was unreadable; split into four statements. (iii) Do
 not assume basin and reach share a variable — measured instead, §3.2, and found
 the basin metric mixes a cross-talk term with a precision term. Bug found and
 fixed on the way (§3.3).
+
+**Turn 13 — "but how is this going down the gradient?"** The "energy descent
+moved into physical space" framing was loose and is corrected in §7.1. `E(p) =
+−⟨ẑ, z(p)⟩` is **not** the Hopfield energy — that is `−½xᵀWx` over the state
+vector; `E` is its single state-to-pattern coupling term re-read as a field over
+space. (Restricting `E_H` to the code manifold gives `−Σ_k C(p−y_k)²/2D`, which
+targets *whichever* goal is nearest, including another environment's — the wrong
+target.) The correct statement is about **where the descent may go**: classical
+dynamics move toward the memory through all of `R^D` and leave the code manifold
+at once; (iii-c) runs the same descent **constrained to the manifold**, because
+the agent can only be at real positions. A projected descent whose projection is
+physical, which is precisely why its intermediate states mean something. Also
+recorded: on a lattice "descent" is a finite difference either way
+(`continuous_flow` vs `discrete_flow` are different algorithms), the potential
+is quantised in units `2/D` with a one-cell step moving it ~18 quanta, and
+whether it is monotone *cell by cell* rather than *on average* is unmeasured.
 
 **Turn 12 — "why do we think this should work?"** Three reasons written into
 §7.1, and one gap that had been glossed. The strongest: `basin_probe` *is* a
