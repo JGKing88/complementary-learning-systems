@@ -1412,7 +1412,28 @@ than waiting for the flow to reveal them.
 > | production, (iii-c) | 0.967 / 0.997 | 0.999 | 0.00 / 0.07 | |
 >
 > The control lands on 0.103 and 0.987 exactly. **Arm B's reach goes 0.103 →
-> 0.984**, and the flow's spurious attractors collapse from ~9 per env to ~0.15.
+> 0.984**, and the sink count collapses from ~9 per env to ~0.15.
+>
+> > **"Sink" here is not a spurious memory.** Two different objects have been
+> > called attractors in this document, and only one of them is arm B's. A
+> > *spurious memory* is a fixed point of the recall dynamics in `R^D` that is
+> > not a stored pattern — and arm B has essentially none, which is the whole
+> > point of saturating: `cos_self` = 1.0000, exact retrieval 0.999, basin 28.2.
+> > `discrete_flow`'s **sinks** are something else entirely: single-cell
+> > terminal states of the *agent's walk on the arena grid*, cells whose `q`
+> > points into a wall so the agent stops. They are a property of the readout,
+> > not of the memory.
+> >
+> > And the closed form says why arm B had ~9 of them. With a binary code the
+> > old readout gives `q ∝ (1 + cos θ, 1 + sin θ)`, and **both components are
+> > non-negative for every θ** — `1 + cos θ ≥ 0`, `1 + sin θ ≥ 0`, never both
+> > zero. So the heading always lies in the closed **first quadrant**: the
+> > readout is structurally incapable of telling the agent to go south or west.
+> > Every agent walks north-east regardless of where its goal is, piles into the
+> > north or east wall, and stops. Nine sinks in a 400-cell arena is that
+> > pile-up, and it is the same single defect that gives `acc45` = 0.39. The
+> > central difference carries no offset, so its `q` spans all four quadrants —
+> > which is why one change fixes the bearing and the sinks together.
 >
 > **What that gives.** Arm B already had `cos_self` = 1.0000, exact retrieval
 > 0.999, and the largest basin measured, 28.2. With this readout it also
