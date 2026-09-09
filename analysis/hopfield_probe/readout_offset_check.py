@@ -96,12 +96,24 @@ def main() -> None:
 
     # And the window that sets acc45 for the binary code.
     th = np.linspace(-np.pi, np.pi, 200000, endpoint=False)
-    err = wrap(np.arctan2(1 + np.sin(th), 1 + np.cos(th)) - th)
+    phi = np.arctan2(1 + np.sin(th), 1 + np.cos(th))
+    err = wrap(phi - th)
     ok = np.abs(err) < np.pi / 4
     lo, hi = np.degrees(th[ok].min()), np.degrees(th[ok].max())
     print(f"\n  bearing of (1+cos t, 1+sin t) is within 45 deg of t for "
           f"t in ({lo:.0f}, {hi:.0f}) deg")
     print(f"  window {hi - lo:.0f}/360 = {(hi - lo) / 360:.3f}")
+    print(f"  mean |err| = {np.degrees(np.abs(err).mean()):.1f} deg"
+          f"   vs 66.5 measured on arm B")
+
+    # The part that should be alarming: both components are non-negative for
+    # every t, so the emitted heading can only ever lie in the first quadrant.
+    print(f"\n  emitted heading ranges over "
+          f"[{np.degrees(phi.min()):.1f}, {np.degrees(phi.max()):.1f}] deg "
+          f"as t covers the circle")
+    print(f"  min over t of (1 + cos t) = {np.min(1 + np.cos(th)):.4f}, "
+          f"of (1 + sin t) = {np.min(1 + np.sin(th)):.4f}")
+    print("  -> the readout cannot emit a southward or westward heading at all")
 
 
 if __name__ == "__main__":

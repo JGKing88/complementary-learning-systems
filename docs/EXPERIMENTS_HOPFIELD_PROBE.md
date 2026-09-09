@@ -60,6 +60,15 @@ envs, `steps` 1–15, `K` 1–20, four encoders.
 > finite difference and `sign(z)` has no local derivative. Production's corner
 > is the only one where memory and direction both work.
 >
+> **✗ Corrected 2026-09-08 — see the box in §10.20.** The direction field is
+> destroyed *by this readout*, by one uncancelled term, not by the code. `q`'s
+> `−z_here` half is a chord-to-tangent correction valid only when `1 − C(j) ∝ j²`;
+> on a binary code `1 − C(j) ∝ j` and it survives as a constant added to both
+> components, so the readout can only emit headings in [0°, 90°]. A central
+> difference of `⟨z_goal, z(·)⟩` instead takes this same arm to **acc45 0.998,
+> reach 0.984**, with retrieval 0.999 and basin 28.2 intact — an attractor
+> network that also navigates.
+>
 > Report page (all five rungs plus both saturated arms, encoder selector, full
 > Tests A–D, per-encoder basin failure maps, and the basin-across-seeds
 > section):
@@ -1739,6 +1748,47 @@ binarised attractor against a continuous menu.
 0.392 against 0.25 chance, |err| 7.8° → 66.4°, `qnorm` halves, and continuous
 reach goes 0.987 → 0.103. That is not a memory failure — retrieval is *better*
 than any other arm.
+
+> ### ✗ It costs the direction field *as read by this readout*, and that is one term
+>
+> **Corrected 2026-09-08** (`readout_offset_check.py`,
+> `potential_readout_check.py`, `THEORY_ENCODER_HOPFIELD.md` §7.1). Everything
+> measured below is right. The conclusion drawn from it — that a binarised code
+> carries no usable directional information — is **wrong**, and the whole loss
+> is recoverable by changing one term in the readout.
+>
+> `q = basis @ (z_goal − z_here)` expands, component-wise, to a **forward
+> difference of the scalar `s(p) = ⟨z_goal, z(p)⟩` plus the constant
+> `(1 − C(1))`, over `‖d_i‖`**. That constant is a chord-to-tangent correction,
+> and it cancels exactly when `1 − C(j) ∝ j²` — a smooth code. Binarisation
+> makes `1 − C(j) ∝ j`, nothing cancels, and the constant survives as the *same
+> positive number added to both components*:
+>
+> ```
+> q  ∝  (1 + cos θ,  1 + sin θ)      instead of      (cos θ, sin θ)
+> ```
+>
+> Both components are non-negative for every θ, so **the readout can only ever
+> emit a heading in [0°, 90°]** — it is structurally unable to say "go south" or
+> "go west". Four independent anchors, nothing fitted: predicted acc45 0.417–0.423
+> against **0.392** measured; predicted mean |err| 62.4° against **66.4°**;
+> predicted `q_north` = `√(4m/D)` = 0.2681, flat in k, against **0.267** measured
+> below; and it explains the ~9 flow sinks per env as the pile-up against the
+> north and east walls.
+>
+> Replacing the forward difference with a **central** one,
+> `q_i = [s(p+e_i) − s(p−e_i)]/2`, never picks the constant up. Measured on this
+> same checkpoint: **acc45 0.392 → 0.998, |err| 66.4° → 11.8°, continuous reach
+> 0.103 → 0.984, sinks ~9/env → ~0.15/env.**
+>
+> What survives from the analysis below: the `√k` accumulation law and the
+> ballistic-vs-diffusive geometry are correct and are a real property of any
+> binary code. What does not survive is the inference from them. Diffusive
+> accumulation means the gradient's **magnitude stops growing with distance**, so
+> a binary code cannot encode *how far*. It says nothing about *which way*, and
+> the bearing was recoverable the whole time. The flat `q_north` = 0.267 read
+> here as "the readout saturates" is in fact half constant offset and half
+> signal — constant in `k`, but never absent.
 
 #### Why: the code stops moving in a straight line
 

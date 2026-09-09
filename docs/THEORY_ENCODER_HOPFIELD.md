@@ -989,6 +989,16 @@ beyond a single cell — not for this encoder, not for a better-trained one, not
 for any binary code whatever. The continuous code escapes because its
 displacement is a coherent vector sum rather than a count of flips.
 
+> **What (T1) does and does not say — sharpened turn 18.** It bounds the
+> **magnitude** of displacement, so a binary code cannot encode *how far*: the
+> similarity gradient's size stops growing with distance. It says **nothing
+> about bearing.** A gradient that is constant in `k` is still a perfectly good
+> direction field, and Stage 1 measured exactly that — arm B reaching 0.984 on a
+> fully binary code. The campaign read "does not grow" as "does not exist" for
+> months. (J3) as stated in §5.2 is therefore too strong for what navigation
+> actually needs: it demands proportionality, when *monotonicity* buys the
+> bearing and only the distance readout needs more.
+
 This converts §10.20's measured `‖Δk‖/(k‖Δ1‖)` = 0.701 / 0.492 / 0.345 ≈ `1/√k`
 from a fact about one checkpoint into the only thing that could have happened,
 and it says exactly where the three escapes are — one per premise:
