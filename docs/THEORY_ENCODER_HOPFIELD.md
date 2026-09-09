@@ -1156,14 +1156,57 @@ distance readout; for the continuous code it is the other way round. So on a
 binary code (iii-c) must take distance from the value and bearing from the
 gradient, and not mix them up.
 
+**Why expect it to work at all?** Three reasons of decreasing strength, and one
+gap.
+
+*1. The basin measurement is already a statement about this exact potential.*
+`basin_probe` asks whether `argmax_p ⟨ẑ, z(p)⟩` over every cell of a disc is the
+goal cell. That argmax **is** the minimum of `E`. So arm B's basin of 28.2 says
+precisely: for essentially every cue within 28 cells, the potential (iii-c)
+would descend has its **global optimum at the goal**, over a menu of 12,853
+candidate positions. We are not hoping the landscape has the right minimum; we
+measured that it does, 28 times over, before ever thinking of this readout.
+**[M]**
+
+*2. The predicted range and the measured basin agree.* The model says `E` goes
+flat once Hamming distance saturates, at `k ≈ D/2m` with `m ≈ 18.4` flips per
+cell — **27.8 cells**. Arm B's basin is **28.2**. The basin ends exactly where
+the potential stops carrying information, which is what the picture predicts and
+a place it could easily have failed. **[M]**
+
+*3. The property (iii-c) needs is not the property that broke.* Binarisation
+destroys **proportionality** — `‖Δk‖` going as `√k` rather than `k`. It leaves
+**monotonicity** intact: `H(k)` still increases with `k`. (iii-c) asks only for
+monotonicity. And the per-cell signal is *larger* after binarisation, by about
+9× near the goal — the drop in similarity per cell is 0.036 binarised against
+0.0037 continuous (§10.20's `‖d_fwd‖` 0.267 vs 0.086). Whether the
+signal-to-noise is also better depends on the roughness of the code, which is
+not something we can argue and Stage 0 measures directly. Worth noting the
+shapes are opposite: the binary potential has a **constant** slope all the way
+in, while the continuous one's slope **vanishes at the goal** — and §3.4 showed
+the terminal neighbourhood is where failures are fatal.
+
+*The gap, stated plainly.* A verified global optimum is **not** a verified
+landscape. `argmax` being correct says nothing about local maxima between the
+cue and the goal, and a greedy walk stalls at one. **We have no evidence either
+way** — the campaign has only ever measured the argmax. That is the thing that
+could kill this, and it is why Stage 0 below counts local maxima directly rather
+than waiting for the flow to reveal them.
+
 **How to test it, in three stages, each against a number we already have.**
 
-*Stage 0 — the field, offline.* On arm B's checkpoint (encoder gain 1e6,
-β = 1e6), and production as the control, compute the (iii-c) `q` at every cell
-of every scored env, with `ẑ` the **retrieved** code rather than the true goal
-code so the memory stays in the loop. Report `|err|` and `acc45` by distance
-band, which is exactly Test B's output: the comparison is arm B's **acc45 0.392**
-and production's **0.995**. If arm B does not clear ~0.9 here, stop.
+*Stage 0 — the field and the landscape, offline.* On arm B's checkpoint
+(encoder gain 1e6, β = 1e6), and production as the control, compute the (iii-c)
+`q` at every cell of every scored env, with `ẑ` the **retrieved** code rather
+than the true goal code so the memory stays in the loop. Report `|err|` and
+`acc45` by distance band, which is exactly Test B's output: the comparison is
+arm B's **acc45 0.392** and production's **0.995**.
+
+And — because this is the gap above, not an afterthought — **census the local
+maxima in the same pass**: count the cells that are not the goal and whose four
+neighbours all have lower `⟨ẑ, z(·)⟩`. That is a handful of comparisons per
+cell, it needs no flow simulation, and it is the direct measurement of the one
+thing we have never looked at. If either number is bad, stop here.
 
 *Stage 1 — the flow.* Feed that `q` field to `continuous_flow` and
 `discrete_flow` unchanged. Reach is then directly comparable to arm B's
@@ -1388,6 +1431,18 @@ than one number. (ii) R4 was unreadable; split into four statements. (iii) Do
 not assume basin and reach share a variable — measured instead, §3.2, and found
 the basin metric mixes a cross-talk term with a precision term. Bug found and
 fixed on the way (§3.3).
+
+**Turn 12 — "why do we think this should work?"** Three reasons written into
+§7.1, and one gap that had been glossed. The strongest: `basin_probe` *is* a
+measurement of this potential — its argmax over the disc is `E`'s minimum — so
+arm B's basin of 28.2 already says the landscape's global optimum is the goal
+over 12,853 candidates, measured before this readout was conceived. Second: the
+model's predicted range `D/2m` = 27.8 cells matches that 28.2. Third:
+binarisation destroys proportionality but not monotonicity, and (iii-c) needs
+only the latter — with a per-cell signal ~9× larger near the goal, though the
+SNR is not something we can argue. **The gap:** a verified global optimum is not
+a verified landscape, and nothing in the campaign has ever looked for local
+maxima. Stage 0 now censuses them directly instead of waiting for the flow.
 
 **Turn 11 — how we would actually do (iii-c).** The subspace point added to §0
 in one sentence. §7.1 gains a concrete design: a central difference of the
