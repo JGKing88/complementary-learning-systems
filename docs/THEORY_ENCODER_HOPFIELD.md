@@ -1245,7 +1245,31 @@ is supposed to. Three reasons, of increasing importance:
 > encoded states" is: we can have one, and it is not arm B.** Production at
 > α ≈ 0.8–0.9 traverses the manifold; but its memories are not fixed points, so
 > it is not an attractor. Arm B's memories *are* exact fixed points, and it
-> cannot traverse. The fork is real, and it is the one below, not T1's.
+> cannot traverse.
+>
+> > **Qualified turn 22 — this is interpolation, not dynamics.** The `(1−α)x`
+> > term is not computation; it is retention of the previous state. The network
+> > computes `tanh(βWx)`, which is the jump, and α only sets how far toward that
+> > answer to move. `chord_manifold_check.py` demonstrates it inadvertently:
+> > it contains **no recall at all** — the blend of `z(here)` and `z(goal)` is
+> > formed by hand — and it reproduces the same decoded trajectory the α = 0.9
+> > recall produces. If straight interpolation gives the same path, the path is
+> > not coming from the dynamics. In the linear regime,
+> > `x ← normalize(((1−α)I + αβW)·x)` is power iteration on a shifted matrix and
+> > the intermediate states are partially-converged iterates toward one fixed
+> > point. Nothing moves *along* the manifold; something moves *across* it, and
+> > the manifold is flat enough that the shadow looks like a walk.
+> >
+> > **What would be genuinely different:** the manifold as an *invariant set*,
+> > `R(M) ⊆ M` — codes mapping to codes, drifting along the surface toward the
+> > goal. That is a continuous attractor network (ring / grid CAN), where the
+> > recurrent weights make the manifold itself the attractor set. Ours is an
+> > outer-product memory over `K` isolated patterns whose image is the
+> > `K`-dimensional span, meeting the manifold only near the memories. **So the
+> > honest claim is a *relaxation* that passes through encoded states, not
+> > dynamics that traverse them** — and "should the attractor be the code
+> > manifold rather than `K` isolated points" is a design fork this campaign has
+> > never named.
 
 > **Qualified turn 19 — with `α < 1` on a *continuous* code, it partly does.**
 > The claim above is right at `α = 1`, which is production and both saturated
