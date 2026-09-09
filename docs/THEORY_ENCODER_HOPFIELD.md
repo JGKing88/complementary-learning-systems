@@ -1172,23 +1172,57 @@ is supposed to. Three reasons, of increasing importance:
 > to 0.906–0.93 exactly during the transition** — the state is off the manifold
 > while it crosses, and decodes to no position in between.
 >
-> **That is the chord prediction, confirmed.** A partial step puts the state on
-> the chord from `z(here)` to `z(goal)`. On production's ballistic code the
-> manifold is flat over that range, so the chord hugs it (cos ≥ 0.967) and every
-> intermediate point is a real position. On arm B's binary code a blend of two
-> hypercube corners is near no corner, so the chord leaves the manifold (cos
-> 0.91) and the decode has nothing to land on until it arrives. **[M]**, one
-> seed.
+> **That is the chord prediction, confirmed — and the number is exact.**
+> `chord_manifold_check.py` walks the chord directly, `x(t) = (1−t)z(here) +
+> t·z(goal)`, 23 start cells ~10 from the goal, decoding every point:
+>
+> | t | 0.0 | 0.2 | 0.4 | **0.5** | 0.6 | 0.8 | 1.0 |
+> |---|---|---|---|---|---|---|---|
+> | production, decoded cells | 10.03 | 8.50 | 6.44 | **4.94** | 3.77 | 1.57 | 0.00 |
+> | production, cos | 1.000 | 0.996 | 0.991 | **0.990** | 0.991 | 0.996 | 1.000 |
+> | arm B, decoded cells | 10.03 | 10.03 | 10.03 | **2.69** | 0.00 | 0.00 | 0.00 |
+> | arm B, cos | 1.000 | 0.988 | 0.949 | **0.918** | 0.949 | 0.988 | 1.000 |
+>
+> **Why arm B's chord is off-manifold, exactly.** Blend two hypercube corners.
+> On the coordinates where they *agree* the blend keeps magnitude 1; on the
+> fraction `f = H/D` where they *disagree* it takes the graded value `|1 − 2t|`.
+> So the blend's **sign pattern is that of whichever endpoint dominates** — it
+> flips discontinuously at `t = ½`, and there is no intermediate sign pattern,
+> hence no intermediate position to decode to. At `t = ½` the disagreeing
+> coordinates are exactly zero and
+>
+> ```
+> cos(blend, nearest corner) = √(1 − H/D)
+> ```
+>
+> Measured `H/D` = 0.1568 at this separation, so the prediction is **0.9182**
+> against **0.9183** observed. Four decimal places, nothing fitted.
+>
+> Production's manifold is flat over the range, so its chord is a near-geodesic:
+> the decoded position tracks `t` almost linearly (t = 0.5 → 4.94 cells of
+> 10.03) and the cosine never drops below **0.990**. **[M]**, one seed.
 >
 > A third thing fell out, unlooked for: at α = 1 production's cosine **decays
 > monotonically 0.989 → 0.729 over 30 steps**. The state drifts *off the
 > manifold* as it converges to the cue-independent top eigenvector — §0's
 > matched-filter decay, visible as geometry rather than as a reach number.
 >
-> **So every production row is approach-then-retreat, and α only sets the
-> clock.** At α = 0.9 the state closes to 0.12 cells by step 8 and is back out
-> to 0.36 by step 30, with cos falling 0.979 → 0.846; at α = 1 it closes to 0.04
-> at step 1 and is at 0.63 by step 30. The goal is **not a fixed point** of
+> **Corrected: in decoded position it very nearly *does* stay put.** Calling
+> 0.12 → 0.36 cells over 22 steps "moving away" overstated it — that is 2% of a
+> 10.46-cell journey, and as a position readout it is arrival. What actually
+> degrades is the state's distance **from the manifold**: cos 0.979 → 0.846 at
+> α = 0.9, 0.989 → 0.729 at α = 1. At cos 0.846 the state is `√(2·0.154)` =
+> 0.555 away from its nearest cell in code space, against a per-cell step
+> `‖d₁‖` = 0.086 — **6.5 cells' worth of code distance off the manifold, while
+> its projection sits 0.36 cells from the goal.** The drift is transverse, which
+> is why the decode barely moves and the readout still suffers: `q` differences
+> against `ẑ`, and an off-manifold `ẑ` contributes displacement that corresponds
+> to no position at all. That is §0's "the `q` readout decays monotonically with
+> recall depth", mechanised.
+>
+> **So every production row is approach-then-drift, and α only sets the clock.**
+> At α = 0.9 the state closes to 0.12 cells by step 8; at α = 1 it closes to
+> 0.04 at step 1. The goal is **not a fixed point** of
 > production's dynamics — the only fixed point is `W`'s top eigenvector, a fixed
 > blend of all `K` stored patterns that does not depend on the cue — so the
 > trajectory merely *passes near* its goal on the way there.
