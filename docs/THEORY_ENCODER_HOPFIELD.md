@@ -1105,10 +1105,12 @@ knee the map is `x ← normalize(sign(Wx))`. Cross-talk perturbs `Wz` away from
 `z`, but unless it flips a coordinate's *sign*, `sign(Wz) = sign(z) = z`: the
 nonlinearity erases the perturbation exactly. **[M]** `cos_self` = 1.0000. This
 is not about binary codes being special as codes — the corner set is the fixed
-set of the saturating map, and the code already lives there.
+set of the saturating map, and the code already lives there. (Confirmed from the
+other side in the retraction box below: swap the storage rule and a **graded**
+code is an exact fixed point too.)
 
-**2. Graded *cannot* — because below the knee the map is linear, and the stored
-patterns are not exactly its eigenvectors.** `x ← normalize(Wx)` has eigenvectors
+**2. Graded cannot, *with the Hebbian outer product* — because below the knee
+the map is linear, and the stored patterns are not exactly its eigenvectors.** `x ← normalize(Wx)` has eigenvectors
 as fixed points; `Wz_i ∝ z_i + Σ_{j≠i} z_j c_ij` with overlaps `c_ij` ≈ 0.06, so
 `z_i` is not one, and nothing rounds the overlap away. **[M]**
 `cos(recall(z), z)` = 0.9966 at one step, 0.813 at fifteen. *Not* that graded
@@ -1127,7 +1129,45 @@ lies in the interior; and the blend's sign pattern is that of whichever endpoint
 dominates, so the nearest corner flips discontinuously at `t = ½` with nothing in
 between. Predicted `√(1 − H/D)` = 0.9182, measured **0.9183**.
 
-##### Why the two abilities exclude each other — exactly
+> ### ✗ Retracted — the exclusion below holds only for *our* recurrence
+>
+> The argument that follows was stated as a definition. It is not. It assumes the
+> recurrence is `x ← normalize(sign(Wx))`, whose fixed set *is* the hypercube
+> corners — and that assumption is the whole of it. `graded_fixedpoint_check.py`,
+> production's **graded** code, identical patterns, three storage rules:
+>
+> | rule | `cos(recall(z), z)` s=1 | s=15 | cue → own goal, s=1 / s=15 |
+> |---|---|---|---|
+> | `hebb` — what we run | 0.9979 | 0.8303 | 1.000 / 1.000 |
+> | **`proj`** — projection rule | **1.0000** | **1.0000** | 1.000 / 1.000 |
+> | **`soft`** — modern Hopfield | **1.0000** | **1.0000** | 1.000 / 1.000 |
+>
+> `proj` is `W = Zᵀ(ZZᵀ)⁻¹Z`, the orthogonal projector onto span(Z) (Personnaz
+> et al.): `Wz_i = z_i` **exactly**, for any linearly independent patterns,
+> graded or binary, with no saturation anywhere. `soft` is
+> `x ← normalize(Zᵀ softmax(βZx))` — dense associative memory, whose softmax
+> selects the nearest pattern rather than blending, and which is *designed* for
+> continuous patterns.
+>
+> So **"binary codes are needed for exact fixed points" is false.** Exact fixed
+> points are a property of the **recurrence**, not of the code: `proj`'s fixed
+> set is span(Z) and `soft`'s is the stored patterns themselves, and neither
+> requires a code to be an extreme point of anything.
+>
+> **What is not fixed by this: traversal.** All three rules have their image in
+> the span or convex hull of the `K` stored patterns, transverse to the code
+> manifold, so none walks through encoded states. The CAN argument stands
+> untouched.
+>
+> **What might be, and is untested.** Modern-Hopfield storage on the *production*
+> graded encoder would give exact fixed points and step-invariance while leaving
+> the code alone — so the direction field should survive, `ẑ` coming back cleaner
+> than production's rather than dirtier. That is the combination this campaign
+> chased by saturating the *encoder* (arm B), which wrecked the readout. Only
+> `cos_self` and cue→own-goal retrieval are measured here; **`acc45`, reach and
+> basin under `proj` / `soft` are not**, and must not be claimed.
+
+##### Why the two abilities exclude each other — for the recurrence we run
 
 * An exact fixed point requires every code to be a fixed point of the saturating
   map, i.e. a corner, i.e. an **extreme point** of the ambient convex hull. Every
