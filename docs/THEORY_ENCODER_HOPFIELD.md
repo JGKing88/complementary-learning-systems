@@ -1200,13 +1200,58 @@ between. Predicted `√(1 − H/D)` = 0.9182, measured **0.9183**.
 > correlated, and that is the unstable case. Capacity also caps at `K = D`
 > exactly, i.e. 1024 — irrelevant at `K ≤ 20`.
 >
-> **What might be, and is untested.** Modern-Hopfield storage on the *production*
-> graded encoder would give exact fixed points and step-invariance while leaving
-> the code alone — so the direction field should survive, `ẑ` coming back cleaner
-> than production's rather than dirtier. That is the combination this campaign
-> chased by saturating the *encoder* (arm B), which wrecked the readout. Only
-> `cos_self` and cue→own-goal retrieval are measured here; **`acc45`, reach and
-> basin under `proj` / `soft` are not**, and must not be claimed.
+> ### ✓ Full suite run, 2026-09-08. `proj` costs nothing and fixes the load limit.
+>
+> `run_proj.sh`, job 22343138: both storage rules × two training seeds on the
+> production encoder, full suite, identical config, `hebb` as the control.
+> Raw: `$CLS_RESULTS/hopfield_probe/20260827/probe_proj/`.
+>
+> | arm | basin | exact | acc45 | \|err\| | K=1 | K=3 | K=5 | K=10 | **K=20** | **s15** |
+> |---|---|---|---|---|---|---|---|---|---|---|
+> | hebb s42 | 25.44 | 0.982 | 0.997 | 8.65 | 0.959 | 0.978 | 0.993 | 0.989 | 0.894 | 0.774 |
+> | hebb s43 | 27.69 | 0.982 | 0.995 | 7.78 | 0.971 | 0.988 | 0.987 | 0.986 | 0.927 | 0.784 |
+> | **proj s42** | 25.31 | 0.987 | 0.998 | 8.56 | **1.000** | 0.977 | 0.989 | 0.984 | **0.988** | **0.989** |
+> | **proj s43** | 27.56 | 0.984 | 0.995 | 7.59 | **0.997** | 0.989 | 0.985 | 0.983 | **0.984** | **0.979** |
+>
+> The control reproduces §10.18's per-seed basin (25.5 / 27.7 published) and
+> §3.4's reach (0.993 s42), so this is the published system.
+>
+> **Three results, all holding seed-for-seed.**
+>
+> 1. **The high-load limit is largely a storage-rule limit, not a capacity
+>    limit.** Reach at K = 20 goes **0.911 → 0.986** (mean). That is the
+>    cross-talk the Hebbian outer product propagates and the projector
+>    deconvolves.
+> 2. **Step-invariance is exact, not improved.** `exact_frac` is **0.9872 at
+>    s = 1 and 0.9872 at s = 15**, identical to four decimals, against hebb's
+>    0.9818 → 0.6396; reach is flat 0.9889 / 0.9897 / 0.9903 / 0.9899 / 0.9918 /
+>    0.9893 over steps 1–15 against hebb's 0.9928 → 0.7745. That is `P² = P`
+>    appearing exactly where it must, which also confirms the implementation is
+>    the projector rather than something that merely resembles it.
+> 3. **It costs nothing on the readout.** basin −0.13 both seeds, `acc45`
+>    +0.001 / 0.000, `|err|` −0.09 / −0.19. Compare arm B, which bought the same
+>    exact fixed point by binarising the *encoder* and lost the direction field
+>    entirely.
+>
+> **And one consistent small loss, reported because it is consistent.** K = 5 and
+> K = 10 are *down* in both seeds, by 0.002–0.005. That is the price of
+> idempotence: `proj` projects onto span(Z) rather than contracting toward the
+> nearest memory, so it has **no error correction**. At mid load, where hebb's
+> contraction still helps and cross-talk has not yet swamped it, hebb wins
+> slightly. At K = 20 cross-talk dominates and the deconvolution wins by 0.075.
+> At K = 1 there is no cross-talk at all and hebb's only defect is the zeroed
+> diagonal, which `proj` does not have — hence 0.959 / 0.971 → 1.000 / 0.997.
+>
+> **The follow-up this opens.** §10.14 concluded "coverage buys the ability to
+> hold *many* goals apart", from dead-goal rates at K = 20 of 0.08 / 0.25 / 0.42
+> across the coverage ladder. If the Hebbian rule is what limits K = 20 at 10%
+> coverage, the coverage *floor* at 2.5% may also be a cross-talk floor rather
+> than a coverage floor. Same 4-task array on the 2.5% and 1.25% encoders would
+> answer it, and it would revise B1.
+>
+> Still untested: `soft`, and anything touching the policy — `‖q‖` semantics are
+> unchanged here, so the magnitude gate should carry over, but that is an
+> inference, not a measurement.
 
 ##### Why the two abilities exclude each other — for the recurrence we run
 
