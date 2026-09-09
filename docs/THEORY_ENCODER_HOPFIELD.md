@@ -664,6 +664,54 @@ measured failure. Ballistic `N` is equivalent to the image being an
 approximately **flat 2-plane patch** of radius `R_op`: zero extrinsic curvature
 over that scale.
 
+#### What "locally flat" means, and why a binary code cannot be it
+
+**Operationally.** Take unit steps along the code manifold and ask whether the
+displacements **stack** or **decorrelate**:
+
+```
+flat       φ(p + k·e) − φ(p)  ≈  k · (φ(p+e) − φ(p))       a straight line, ‖·‖ ∝ k
+curved     each step's direction is fresh                   a random walk,   ‖·‖ ∝ √k
+```
+
+Measured (§10.20), `‖Δk‖ / (k‖Δ1‖)` at k = 2 / 4 / 8: production **0.965 /
+0.910 / 0.814** — 81% of perfect flatness even eight cells out. Binary **0.701 /
+0.492 / 0.345**, which is `1/√k` to three decimals. Maximally curved.
+
+**Why a binary code is forced into it.** A binary code can only change by
+flipping coordinates, and **a coordinate can only flip once** — flipping it back
+undoes the move. So once a bit has flipped it cannot contribute further
+displacement in that direction, and every subsequent step must recruit *fresh*
+bits, which are orthogonal directions. Hence the random walk. That is
+`H(k) ≤ k·H(1)` in words, i.e. (T1). A graded code has no such constraint: a
+coordinate can keep moving in the same direction, so displacements add along a
+line.
+
+**A second picture, sometimes more useful.** Flat means the code points are laid
+out locally like a **lattice in a plane** — so the point halfway between two of
+them is itself (near) a code. Diffusive means they are laid out like **random
+points on a sphere**, near-equidistant beyond a few cells — and the midpoint of
+two random points on a sphere is near *no* point of the set. Check: the binary
+code's `cos(k) = 1 − 2mk/D` hits zero at k ≈ 28 and stays there, which is the
+near-equidistant regime exactly.
+
+**Flatness then buys two things, which are one property seen twice.**
+
+* **Chords stay on the surface.** In a plane, the straight line between two
+  points lies in the plane. In a curved set it cuts through the interior. This
+  is what decides whether a partial step *decodes to an intermediate position* —
+  and its failure is measured exactly, cos dipping to `√(1 − H/D)` = 0.918.
+* **The tangent plane still approximates far points.** `q` is a first-order
+  Taylor estimate built from a one-cell step. On a flat patch it stays valid out
+  to `R_op`; on a curved one it saturates after one cell.
+
+**What curvature costs, precisely — three things, and only two of them bite.**
+No intermediate states to traverse (fatal for Q1); no *distance* signal, since
+`‖Δk‖ ∝ √k` means the gradient's magnitude stops growing (so `‖q‖` cannot encode
+range); but **not** the bearing, which needs only that similarity *decrease* with
+distance, and monotonicity survives curvature intact. That last is why (iii-c)
+recovers arm B, and it is the distinction §10.20 originally missed.
+
 ### 5.3 The system, in one sentence
 
 > **The encoder must embed a 2-torus in `S^{D−1}` as a union of nearly-flat 2D
