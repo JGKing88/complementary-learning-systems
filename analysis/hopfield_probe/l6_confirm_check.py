@@ -19,16 +19,17 @@ import sys
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[2]))
 
 import numpy as np
+
+from cls_paths import encoders_dir, results_dir, sweeps_dir
 from scipy.stats import spearmanr
 
 from analysis.hopfield_probe.encode import Field
 from analysis.hopfield_probe.harness import load_probe_encoder
 
-ARCH = "/orcd/pool/003/jackking/cls_runs/results/hopfield_probe/20260827"
-RUNS = "/orcd/pool/003/jackking/cls_runs"
-S = RUNS + "/sweeps"
-NEW = RUNS + "/results/hopfield_probe/20260827"
-V35 = RUNS + "/encoders/run_20260422_185816/encoder_best.pt"
+ARCH = str(results_dir() / "hopfield_probe/20260827")
+S = str(sweeps_dir())
+NEW = str(results_dir() / "hopfield_probe/20260827")
+V35 = str(encoders_dir() / "run_20260422_185816/encoder_best.pt")
 A16 = f"{S}/w53_attract_knee/004_att16_seed=42/encoder_final.pt"
 A16b = f"{S}/w53_attract_knee/005_att16_seed=43/encoder_final.pt"
 NPOS = 1716

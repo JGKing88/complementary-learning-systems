@@ -20,18 +20,19 @@ import sys
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[2]))
 
 import numpy as np
+
+from cls_paths import encoders_dir, results_dir, sweeps_dir
 import torch
 
 from analysis.hopfield_probe.encode import Field
 from analysis.hopfield_probe.harness import load_probe_encoder
 
-RUNS = "/orcd/pool/003/jackking/cls_runs"
-S = RUNS + "/sweeps"
+S = str(sweeps_dir())
 NPOS = 1716
 GAINS = [5, 100, 300]
 
 CANDS = [
-    ("v35", RUNS + "/encoders/run_20260422_185816/encoder_best.pt"),
+    ("v35", str(encoders_dir() / "run_20260422_185816/encoder_best.pt")),
     ("L5 sm50_b4096", f"{S}/w39_batch_pairs/008_sm50_b4096_seed=42"),
     ("L6 eps1_rate0.5", f"{S}/w49_g100_knee/008_eps1_rate0.5_seed=42"),
     ("L7 att16", f"{S}/w53_attract_knee/004_att16_seed=42"),

@@ -24,13 +24,14 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[2]))
 
 import numpy as np
 
+from cls_paths import encoders_dir, results_dir, sweeps_dir
+
 from analysis.hopfield_probe.encode import Field
 from analysis.hopfield_probe.harness import load_probe_encoder
 
 ROOT = "/orcd/pool/003/jackking/cls_runs/results/hopfield_probe/20260827"
-RUNS = "/orcd/pool/003/jackking/cls_runs"
-S = RUNS + "/sweeps"
-V35 = RUNS + "/encoders/run_20260422_185816/encoder_best.pt"
+S = str(sweeps_dir())
+V35 = str(encoders_dir() / "run_20260422_185816/encoder_best.pt")
 NPOS = 1716
 DEAD = 0.5
 

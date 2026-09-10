@@ -22,17 +22,18 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[2]))
 
 import numpy as np
 
+from cls_paths import encoders_dir, results_dir, sweeps_dir
+
 from analysis.hopfield_probe.encode import Field
 from analysis.hopfield_probe.harness import load_probe_encoder
 
-RUNS = "/orcd/pool/003/jackking/cls_runs"
-S = RUNS + "/sweeps"
+S = str(sweeps_dir())
 NPOS = 1716
 GAINS = [1, 3.7, 10, 30, 100, 300, 1000, 3000]
 
 ENC = [
     ("att16-s42", f"{S}/w53_attract_knee/004_att16_seed=42/encoder_final.pt"),
-    ("v35", RUNS + "/encoders/run_20260422_185816/encoder_best.pt"),
+    ("v35", str(encoders_dir() / "run_20260422_185816/encoder_best.pt")),
 ]
 
 rng = np.random.RandomState(7)

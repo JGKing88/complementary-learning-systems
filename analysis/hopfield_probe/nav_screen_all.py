@@ -31,13 +31,14 @@ import sys
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[2]))
 
 import numpy as np
+
+from cls_paths import encoders_dir, results_dir, sweeps_dir
 import torch
 
 from analysis.hopfield_probe.encode import Field
 from analysis.hopfield_probe.harness import load_probe_encoder
 
-RUNS = "/orcd/pool/003/jackking/cls_runs"
-S = RUNS + "/sweeps"
+S = str(sweeps_dir())
 NPOS = 1716
 GAINS = [100, 300, 1000]
 SEED = "seed=42"
@@ -54,7 +55,7 @@ OOB = {"w21_arena_spread"}
 
 def arms() -> list[tuple[str, str]]:
     out = [("v35 (out of brief)",
-            RUNS + "/encoders/run_20260422_185816/encoder_best.pt")]
+            str(encoders_dir() / "run_20260422_185816/encoder_best.pt"))]
     for w in WAVES:
         for d in sorted(glob.glob(f"{S}/{w}/*{SEED}")):
             ck = os.path.join(d, "encoder_final.pt")

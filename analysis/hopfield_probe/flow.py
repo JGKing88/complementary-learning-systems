@@ -35,7 +35,12 @@ from .stats import BinnedStat, Scalars
 ARRIVAL_RADIUS = 0.5
 
 
-def _unit_q(q: np.ndarray) -> np.ndarray:
+def unit_q(q: np.ndarray) -> np.ndarray:
+    """Normalise each row, leaving exact zeros alone.
+
+    Public because the flow's own step is the thing analysis
+    scripts have to reproduce exactly; a private copy in each of
+    them is a copy that can drift from the field being tested."""
     n = np.linalg.norm(q, axis=1, keepdims=True)
     return np.divide(q, n, out=np.zeros_like(q), where=n > 1e-12)
 
@@ -169,7 +174,7 @@ def continuous_flow(
     q: np.ndarray, size: int, goal: tuple[int, int], cfg: ProbeConfig,
 ) -> dict:
     """Follow ``continuous_scale * q_hat`` from every cell centre."""
-    qh = _unit_q(q)
+    qh = unit_q(q)
     p = local_cells(size).astype(float)
     n = p.shape[0]
     max_steps = cfg.flow_max_steps_factor * size
@@ -289,6 +294,6 @@ def run_test_d(
 
 
 __all__ = [
-    "ARRIVAL_RADIUS", "continuous_flow", "discrete_flow",
+    "ARRIVAL_RADIUS", "continuous_flow", "discrete_flow", "unit_q",
     "discrete_successor", "run_test_d", "terminal_structure",
 ]

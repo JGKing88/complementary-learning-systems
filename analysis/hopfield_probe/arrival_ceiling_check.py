@@ -29,7 +29,7 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[2]))
 import numpy as np
 
 from analysis.hopfield_probe.encode import Field
-from analysis.hopfield_probe.flow import ARRIVAL_RADIUS, _unit_q
+from analysis.hopfield_probe.flow import ARRIVAL_RADIUS, unit_q
 from analysis.hopfield_probe.harness import (ProbeConfig, build_memory,
                                              load_probe_encoder, local_cells,
                                              sample_worlds, scored_envs)
@@ -56,7 +56,7 @@ def final_distances(field, world, cfg, k):
         qf, _c, _b = cell_q_field(field, world, e, mem, cfg)
         q = qf[STEP]
         goal = np.array(world.specs[e].goal, dtype=float)
-        qh = _unit_q(q)
+        qh = unit_q(q)
         p = local_cells(size).astype(float)
         arrived = np.zeros(p.shape[0], dtype=bool)
         for _t in range(cfg.flow_max_steps_factor * size):

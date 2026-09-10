@@ -15,11 +15,12 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[2]))
 
 import numpy as np
 
+from cls_paths import encoders_dir, results_dir, sweeps_dir
+
 from analysis.hopfield_probe.encode import Field
 from analysis.hopfield_probe.harness import load_probe_encoder
 
-RUNS = "/orcd/pool/003/jackking/cls_runs"
-S = RUNS + "/sweeps"
+S = str(sweeps_dir())
 NPOS = 1716
 N = 4000            # positions; pairs are drawn from a random permutation
 
@@ -28,8 +29,8 @@ ENC = [
      None),
     ("att32-s42", f"{S}/w54_attract_far/000_att32_seed=42/encoder_final.pt",
      None),
-    ("v35", RUNS + "/encoders/run_20260422_185816/encoder_best.pt", None),
-    ("v35-g100", RUNS + "/encoders/run_20260422_185816/encoder_best.pt",
+    ("v35", str(encoders_dir() / "run_20260422_185816/encoder_best.pt"), None),
+    ("v35-g100", str(encoders_dir() / "run_20260422_185816/encoder_best.pt"),
      100.0),
 ]
 
