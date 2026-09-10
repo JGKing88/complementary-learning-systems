@@ -35,6 +35,10 @@ INK2 = "var(--ink2)"
 # total, which is exactly the all-pairs budget.
 OUTCOME_COLORS = ["#0d366b", "#3987e5", "#b7d3f6", CAT2, CAT3]
 
+# Render the full-scaffold alias panel at 1/N the stored resolution.
+# See `_simmap_html`: page size, not fidelity, sets this.
+_FULL_COARSEN = 2
+
 
 # ---------------------------------------------------------------------------
 # small helpers over the result schema
@@ -458,6 +462,51 @@ def _simmap_html(res: dict) -> str:
         symlog=sd / 2.0, ticks=[-1.0, -0.2, -sd, 0.0, sd, 0.2, 1.0],
         xlabel="east offset (cells)", ylabel="north offset (cells)")
     res90 = sm.get("res90_axis")
+    full_html = ""
+    fu = sm.get("full")
+    if fu:
+        grid, nb, bl = fu["grid"], fu["n_blocks"], fu["block"]
+        # The stored grid is deliberately finer than the page needs. This field
+        # is block MAXIMA of a noisy tail, so neighbouring cells rarely share a
+        # colour bucket and the run-length path degenerates to one segment per
+        # cell -- 7 encoders of it is over a megabyte. Coarsening here, by max
+        # again so no alias is lost, keeps the data at full resolution in the
+        # JSON while the page stays inside the artifact's 16 MB ceiling.
+        step = _FULL_COARSEN
+        if step > 1:
+            nb2 = nb // step
+            grid = [[max(max(grid[i * step + a][j * step + b]
+                             for b in range(step)) for a in range(step))
+                     for j in range(nb2)] for i in range(nb2)]
+            nb, bl = nb2, bl * step
+        c = nb // 2
+        px, py = fu["peak_at"]
+        fig = heatmap(
+            grid, kind="sequential", vmin=0.0, vmax=1.0, unit="max cos",
+            mark=(c, c), x_origin=-c, y_origin=-c, cell=5.0, tip_nd=3,
+            symlog=max(fu["median"], 1e-3) / 2.0,
+            ticks=[0.0, fu["median"], 0.1, 0.3, 1.0],
+            overlay=[{"cell": (c + px // bl, c + py // bl),
+                      "fill": "var(--cat2)", "r": 4.0,
+                      "tip": f"peak {fu['peak']:.3f} at ({px}, {py})"}],
+            xlabel=f"east offset (blocks of {bl} cells)",
+            ylabel="north offset")
+        full_html = f"""
+<div class="tiles">{stat_tile("worst alias anywhere", num(fu["peak"], 3),
+                              f"at offset ({px}, {py}) cells")}{
+    stat_tile("typical block max", num(fu["median"], 3),
+              f"median over blocks of {bl}&times;{bl} cells")}</div>
+{card(f"Full scaffold &mdash; all {nb * bl}&times;{nb * bl} displacements, "
+      f"block-max",
+      fig,
+      note=f"Every displacement on the scaffold torus, reduced to "
+           f"{bl}&times;{bl}-cell blocks by their <b>maximum</b> &mdash; not "
+           "their mean and not a subsample, either of which averages a sharp "
+           "alias away. The centre block contains a = 0 and reads 1.000 by "
+           "construction. The run header's alias ceiling is a scalar version "
+           "of this panel; here it has a location. Marked: the worst block "
+           "outside the near field.")}
+"""
     return f"""
 <h2>0 &middot; The code's similarity kernel</h2>
 <div class="tiles">{stat_tile("res90, off this map",
@@ -486,6 +535,7 @@ def _simmap_html(res: dict) -> str:
            "multiples of &lambda; = 11, 12, 13, and whether they survive here "
            "is what the coding-rate term decides.")}
 </div>
+{full_html}
 """
 
 

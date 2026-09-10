@@ -331,6 +331,14 @@ def _symlog_t(vmin: float, vmax: float, lin: float):
     hi = max(abs(vmin), abs(vmax), lin)
     top = math.log1p(hi / lin)
 
+    if vmin >= 0.0:
+        # One-sided: a sequential ramp runs 0 -> 1, not -1 -> 1, and folding it
+        # about zero would waste half the colours on values that cannot occur.
+        def to_t(v: float) -> float:
+            u = math.log1p(max(v, 0.0) / lin) / top
+            return min(max(u, 0.0), 1.0)
+        return to_t
+
     def to_t(v: float) -> float:
         s = -1.0 if v < 0 else 1.0
         u = s * math.log1p(abs(v) / lin) / top          # [-1, 1]

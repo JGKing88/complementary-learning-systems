@@ -42,6 +42,11 @@ from analysis.hopfield_probe.harness import load_probe_encoder
 
 NEAR_R, FAR_R = 16, 48
 N_REFS = 48
+# The full-space panel: every one of the 1716^2 displacements on the scaffold
+# torus, reduced to blocks of BLOCK cells by their MAXIMUM. Max, not mean or a
+# subsample: an alias is a sharp peak on a lattice, and both of the others
+# average it away. 22 divides 1716 exactly, giving 78x78 blocks.
+BLOCK = 22
 
 
 def _unit(a):
@@ -72,7 +77,55 @@ def kernel(field: Field, radius: int, n_refs: int, npos: int,
     return (acc / n_refs).reshape(2 * radius + 1, 2 * radius + 1)
 
 
-def sim_map(header: dict, npos: int, seed: int = 0) -> dict:
+def full_space(field: Field, npos: int, ref: tuple[int, int]) -> dict:
+    """Block-max of ``cos(z(ref), z(ref + a))`` over EVERY displacement.
+
+    The near and far panels cover +-48 cells; the alias ceiling the run header
+    reports (0.87 on the 10% encoder) lives somewhere outside that, and nothing
+    in the campaign has ever said where. This covers the whole torus.
+
+    One reference position, not an average over many. The statistic is a max
+    over the ~484 displacements in each block, so it needs the FINE grid, not a
+    quiet estimate of the mean -- and averaging references would flatten the
+    very peaks it exists to find.
+
+    Encoded a scaffold row at a time: 1716 x 1024 floats per row is nothing,
+    where the whole field at once would be 12 GB.
+    """
+    gx0, gy0 = ref
+    z0 = _unit(field.encode(np.array([gx0]), np.array([gy0])))[0]
+    xs = np.arange(npos)
+    cos = np.empty((npos, npos), dtype=np.float32)
+    for y in range(npos):
+        zz = _unit(field.encode(xs, np.full(npos, y)))
+        cos[:, y] = zz @ z0
+
+    # Re-index to displacement, then roll so a = 0 sits at the centre.
+    cos = np.roll(cos, (-gx0, -gy0), axis=(0, 1))
+    cos = np.roll(cos, (npos // 2, npos // 2), axis=(0, 1))
+
+    nb = npos // BLOCK
+    blocks = cos[:nb * BLOCK, :nb * BLOCK].reshape(
+        nb, BLOCK, nb, BLOCK).max(axis=(1, 3))
+
+    centre = nb // 2
+    ring = np.hypot(*np.meshgrid(np.arange(nb) - centre,
+                                 np.arange(nb) - centre, indexing="ij"))
+    outer = blocks[ring > 2]                 # beyond the near field's blocks
+    hot = int(np.argmax(outer))
+    idx = np.argwhere(ring > 2)[hot]
+    return {
+        "block": BLOCK, "n_blocks": nb, "ref": [int(gx0), int(gy0)],
+        "grid": [[float(v) for v in row] for row in blocks],
+        "peak": float(outer.max()),
+        "peak_at": [int((idx[0] - centre) * BLOCK),
+                    int((idx[1] - centre) * BLOCK)],
+        "median": float(np.median(outer)),
+    }
+
+
+def sim_map(header: dict, npos: int, seed: int = 0,
+            want_full: bool = True) -> dict:
     enc, ecfg, gain, fwhm, _h = load_probe_encoder(
         header["path"], fwhm_fallback=header.get("fwhm_ratio", 0.25))
     gain = float(header.get("gain", gain))
@@ -96,7 +149,7 @@ def sim_map(header: dict, npos: int, seed: int = 0) -> dict:
     mid = NEAR_R
     axis = np.concatenate([near[mid, mid:], near[mid:, mid]])
     hit = np.flatnonzero(axis < 0.9)
-    return {
+    out = {
         "near_radius": NEAR_R, "far_radius": FAR_R, "n_refs": N_REFS,
         "near": [[float(v) for v in row] for row in near],
         "far": [[float(v) for v in row] for row in far],
@@ -105,6 +158,10 @@ def sim_map(header: dict, npos: int, seed: int = 0) -> dict:
         "res90_axis": int(hit[0]) if hit.size else None,
         "clip": float(3.0 * sd),
     }
+    if want_full:
+        mid = npos // 2
+        out["full"] = full_space(field, npos, (mid, mid))
+    return out
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -113,6 +170,10 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--out", default=None,
                    help="write here instead of patching in place")
     p.add_argument("--npos", type=int, default=1716)
+    p.add_argument("--full", action="store_true",
+                   help="also compute the full-scaffold alias panel: every "
+                        "displacement on the torus, block-max'd. ~130 s per "
+                        "encoder against ~10 s for the other two.")
     args = p.parse_args(argv)
 
     src = pathlib.Path(args.result_dir)
@@ -127,16 +188,31 @@ def main(argv: list[str] | None = None) -> int:
     for f in files:
         with open(f) as fh:
             res = json.load(fh)
-        if "sim_map" in res:
+        npos = res.get("config", {}).get("Npos", args.npos)
+        sm = res.get("sim_map")
+        if sm and ("full" in sm or not args.full):
             print(f"  skip (has one) {os.path.basename(f)}")
             continue
-        npos = res.get("config", {}).get("Npos", args.npos)
-        res["sim_map"] = sim_map(res["header"], npos)
+        if sm and args.full:
+            # Keep the near/far panels; only the expensive one is missing.
+            enc, ecfg, gain, fwhm, _h = load_probe_encoder(
+                res["header"]["path"],
+                fwhm_fallback=res["header"].get("fwhm_ratio", 0.25))
+            gain = float(res["header"].get("gain", gain))
+            enc.gain = gain
+            field = Field(enc, list(ecfg.lambdas), fwhm, gain, npos)
+            sm["full"] = full_space(field, npos, (npos // 2, npos // 2))
+        else:
+            sm = sim_map(res["header"], npos, want_full=args.full)
+        res["sim_map"] = sm
         with open(f, "w") as fh:
             json.dump(res, fh)
-        sm = res["sim_map"]
+        fu = sm.get("full")
+        tail = (f"  full peak {fu['peak']:.3f} at {tuple(fu['peak_at'])}"
+                f"  median {fu['median']:.3f}" if fu else "")
         print(f"  {res['header']['label']:<34s} res90 {sm['res90_axis']}"
-              f"  far sd {sm['far_sd']:.4f}  |far| max {sm['far_absmax']:.3f}")
+              f"  far sd {sm['far_sd']:.4f}"
+              f"  |far| max {sm['far_absmax']:.3f}{tail}")
     return 0
 
 
