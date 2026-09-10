@@ -583,6 +583,89 @@ basin number in PROBE §10.18, are unaffected. Fixed, with
 recall every cue must land on its own offset). §3.2 uses only the 21 clean
 K = 5 maps.
 
+**3.5 — The worst alias on the scaffold is a hole in the training
+distribution.** `splice_simmap.py --full` evaluates `C(a)` at **every** one of
+the 1716² displacements on the torus, block-max'd — max, not mean or a
+subsample, because an alias is a sharp peak and both of those average it away.
+The run header has always reported an "alias ceiling" as a scalar; this gives it
+a location, and the numbers are far above anything the ±48-cell view showed
+(where `|far|` max is 0.14–0.27):
+
+| coverage | peak alias over the whole scaffold | floor |
+|---|---|---|
+| 10% | 0.609 / 0.646 / 0.756 / 0.703 | 0.031–0.036 |
+| 5% | 0.899 / 0.573 / 0.856 / 0.937 | 0.037–0.054 |
+| 2.5% | 0.855 / 0.803 / 0.937 / 0.921 | 0.038–0.061 |
+| 0.75% | 0.952 / 0.940 / 0.947 / 0.920 | 0.056–0.102 |
+| arm A (β = 1e6) | 0.609 / 0.646 / 0.756 / 0.703 | identical to 10% |
+| arm B (gain = 1e6) | 0.514 / 0.561 / 0.666 / 0.584 | *below* production |
+
+**[M]**, four seeds each. Arm A matching 10% on every column is the self-check:
+β cannot enter `C(a)`, so it must.
+
+#### The peak is not a lattice revival, and that is the interesting part
+
+Localising the 10% peak: `dx = 784` on-axis, cos 0.600, a broad **ridge**
+(780–785 within 0.01) rather than a spike — and `784 mod (11,12,13) = (3,4,4)`,
+so it is not a grid revival at all. Over 40 reference positions the displacement
+is stationary, so it is a property of the code rather than of one location:
+
+| dx | phase (11,12,13) | mod-11 | mod-12 | mod-13 | grid total | **encoder** |
+|---|---|---|---|---|---|---|
+| **784** | (3,4,4) | 0.192 | 0.085 | 0.122 | **0.133** | **0.668** |
+| 792 | (0,0,12) | 1.000 | 1.000 | 0.877 | 0.959 | 0.625 |
+| 132 | (0,0,2) | 1.000 | 1.000 | 0.592 | 0.864 | 0.268 |
+| 156 | (2,0,0) | 0.480 | 1.000 | 1.000 | 0.827 | 0.290 |
+| **400** | (4,4,10) | 0.053 | 0.085 | 0.307 | **0.148** | **0.016** |
+
+Two facts fall out, and the second is the load-bearing one.
+
+**The encoder does suppress the grid code's own revivals, hard.** 0.959 → 0.625
+at dx = 792, 0.864 → 0.268 at 132, 0.827 → 0.290 at 156. That is the first
+direct measurement of the job §5.4(a) says the encoder exists to do, and it is
+a large effect.
+
+**But output similarity is not a function of input similarity.** `dx = 784` and
+`dx = 400` have near-identical grid similarity — 0.133 against 0.148, with
+neither having any module strongly aligned — and encoder similarity differing by
+**40×**. Across these five displacements 784 is the *lowest* in input and the
+*highest* in output. No pointwise map `C_φ = f(C_g)` can do that, so the trained
+encoder is not one — which retires §5.4(b)'s conjecture as a description of the
+trained network (it was only ever claimed for random init).
+
+#### Why, most likely: the encoder does not *create* aliases, it *fails to remove* them
+
+The same architecture with **re-initialised weights** gives `C_φ` ≈ **0.999 –
+1.000 at every displacement tested**, including `dx = 400` where the grid code
+is at 0.148. An untrained encoder at gain 100 has no spatial selectivity at all;
+it maps everything to nearly one direction.
+
+That inverts the reading. Training does not manufacture the ridge at 784 — it
+starts from "everything is identical" and pushes apart the pairs the loss
+actually *samples*. A displacement the training batches never cover keeps its
+initial value, which is ~1. **The peak alias is a hole in the training pair
+distribution, not an artefact the encoder invented.** **[G]**, but with two
+measurements behind it:
+
+* the untrained baseline really is ~1.0 everywhere, so "left alone" means "left
+  high"; and
+* peak alias rises **monotonically as coverage falls** — 10% ≈ 0.68, 5% ≈ 0.82,
+  2.5% ≈ 0.88, 0.75% ≈ 0.94 — which is exactly what fewer sampled pairs
+  predicts, and is not what any account based on the grid code's own structure
+  would predict, since the input is identical at every coverage.
+
+**What this changes.** Q3 asked what the encoder is *for*. The answer sharpens:
+it is a machine for suppressing similarity at displacements it is *shown*, and
+its failures live at displacements it is not. That makes the alias ceiling a
+property of the **training pair distribution** — patch count, patch size,
+placement — rather than of capacity, `d_eff`, or the loss weights the campaign
+has spent its sweeps on. It also predicts the fix: sample far pairs by
+displacement rather than by whatever the patch layout happens to produce.
+
+**The obvious next check**, not run: take the 10% patch layout and histogram the
+displacements its within-batch pairs actually cover. If there is a trough near
+780, this is settled.
+
 ---
 
 ## 4. Cheap next measurements
@@ -2274,6 +2357,19 @@ than one number. (ii) R4 was unreadable; split into four statements. (iii) Do
 not assume basin and reach share a variable — measured instead, §3.2, and found
 the basin metric mixes a cross-talk term with a precision term. Bug found and
 fixed on the way (§3.3).
+
+**Turn 24 — the full-scaffold alias panel, and "it's really weird that the alias
+point isn't a lattice revival, right?"** It is weird, and chasing it inverted the
+reading (§3.5). The peak alias is 0.61–0.95 depending on coverage, far above the
+±48 view's 0.14–0.27, and it sits at `dx = 784` where the grid code is at 0.13 —
+not at the revivals, which the encoder demonstrably *suppresses* (0.96 → 0.63).
+`dx = 784` and `dx = 400` have near-identical input similarity and outputs 40×
+apart, so the trained encoder is not a pointwise kernel map. Then the untrained
+control settled it: same architecture, re-initialised, gives ≈1.0 at **every**
+displacement. So training starts from "everything identical" and separates the
+pairs it samples; the peak alias is a **hole in the training pair distribution**,
+not something the encoder invented — which the monotone coverage trend
+(0.68 → 0.94 as coverage falls) independently supports.
 
 **Turn 17 — Stage 1, run.** Same `q` fields through the unmodified flows, Test
 D's memory draw so the control reproduces the published reach — it lands on
