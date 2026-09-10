@@ -1,8 +1,12 @@
 # Goal-conditioned NN control: can a plain network navigate from encoded states?
 
-Status: **plan**, 2026-09-10. Nothing below §2 is built. Branch
-`worktree-nn-generalization-control`; the config edits in §2.1 marked
-*done* are the only changes so far.
+Status: **plan, revision 2**, 2026-09-10. Nothing below §5 is built. Branch
+`worktree-nn-generalization-control`; the config edits in §5.1 marked *done*
+are the only code so far.
+
+Revision 2 replaces the single rollout-based design of revision 1 with two
+experiments that answer two different claims, and it pares the primary one
+down to a supervised loop over sampled pairs. §1 says why.
 
 ---
 
@@ -22,455 +26,534 @@ never trained on?
 The teacher makes the question exact. `GridEnv` has no obstacles, so the
 optimal action is `normalize(g − p)` (`rollout/oracles.py`: *"shortest-path =
 greedy Manhattan toward the goal"*; `bfs_action_batch_continuous` literally
-returns the unit vector). So the whole task is:
+returns the unit vector). So the task is:
 
 > **Can the network compute `normalize(g − p)` from `enc(p)` and `enc(g)`,
 > for encodings it has not seen?**
 
-Everything else is packaging around that.
+---
+
+## 1. Two experiments, one table
+
+There are two claims hiding in "can a NN do this", and they need different
+controls.
+
+**The instant claim.** Given one pair `(enc(p), enc(g))` and nothing else,
+emit the direction. This is what the attractor does; no trajectory, no
+history. The right control is a **memoryless** network trained on
+**i.i.d. sampled pairs** — Experiment **A**. A rollout adds nothing a
+memoryless net can use, and it adds one thing that hurts: trajectories walk
+through held-out cells, which leaks the cell-level holdout.
+
+**The given-time claim.** Put the network in the environment and let it
+move. A recurrent net sees `(Δenc, action)` pairs as it goes, which is enough
+to estimate *how the code changes under movement here* — the local frame the
+attractor's readout hand-codes — and to build the observation→position map
+of a new wall in-context (the §5.2 mechanism, measured at +0.33). It might
+succeed where A fails, **by a different mechanism**, and that mechanism is
+memory, which is what the rest of this project studies. Experiment **B**
+tests it — and is factorialised so that a B win can be attributed to memory
+rather than to the rollout data distribution.
+
+Both are scored on **one table** — A's static quadrant table, evaluated for B
+at the state of an episode's first step (`h = 0`, `prev_action = 0`). That is
+B's *instant* number. B additionally reports direction quality **against step
+in episode**, which is its *eventual* number. A flat curve means B is
+memoryless-equivalent and A's result stands. A rising curve is in-context
+mapping — a real finding about memory, not a rebuttal of A.
+
+A runs first: it is minutes per run, it owns every within-env holdout, and
+its table decides which cells of B are informative.
 
 ---
 
-## 1. The task, precisely
+## 2. The task, precisely (shared by A and B)
 
-### 1.1 One episode
+### 2.1 Environments
 
-A row is a (start `p`, goal `g`) pair of integer cells in one `GridEnv` of
-size `S`. At each step the policy receives its input (§1.2), emits a movement,
-the env moves it (clipped at the arena), and the episode ends when it is at
-`g`. It is then re-seeded with a fresh `(p, g)` and, for a recurrent trunk, a
-zeroed hidden state — each pair is an independent episode, exactly as
-`collect_rollout_rnn` treats a goal-reach today.
+`GridEnv`, size `S = 20`, no obstacles, walls carrying a ±1 barcode at
+`wall_resolution = 1`, `observation_size = 60` rays over a 120° cone. Envs
+are placed on the `lambdas = [11, 12, 13]` scaffold (`Npos = 1716`) by the
+declared-domain generator (`world/generate.py`) with `place_margin = 20`.
 
-Supervision is behaviour cloning against the teacher with DAgger: the student
-acts, the teacher labels every step. At-goal steps are masked out of the loss
-(existing contract).
+### 2.2 Encodings
 
-### 1.2 Inputs, by mode
+| name | `enc(c)` for a cell `c` | width | produced by |
+|---|---|---|---|
+| **gbook** | smoothed grid code at the cell's *global* scaffold position (env offset + local cell) | `Ng = 434` | `smooth_gbook`; `rollout/rnn.py::grid_state_vec` |
+| **omni** | all four cardinal ray-cast views at the cell, concatenated | `4 · 60 = 240` | `GridEnv.omni_obs_at` — a codebook gather |
+| **xy** | `(x, y) / S` | 2 | — |
 
-All channels are things the agent legitimately has. Knowing what the goal
-looks like is the premise of the task, not a leak. There is **no reward
-channel**: with the goal as an input the only reward event is arrival, which
-carries nothing.
+**Grid mode** is `[gbook(p), gbook(g)]`. **Regular mode** is
+`[omni(p), omni(g)]`. **xy mode** is `[xy(p), xy(g)]`, the ceiling. There is
+no sensory channel in grid mode — it would be a second encoding of `p`, and
+one that carries env identity, so a success would be unattributable and a
+held-out-env failure could be the barcode's fault rather than the code's.
+There is no reward channel: with the goal as an input, arrival is the only
+reward event and it carries nothing. `prev_action` is absent from A by
+construction (§3) and is a **factor** in B (§4).
 
-| mode | channels | what `enc(·)` is |
-|---|---|---|
-| **grid** | sensory(p), prev_action, **gbook(p)**, **gbook(g)** | the smoothed grid code, width `Ng`, at the cell's *global* scaffold position (env offset + local cell). `input_grid_state` already supplies `gbook(p)`. |
-| **regular** | sensory(p), prev_action, **omni(g)** | the raw ray vector. `omni(g)` is all four cardinal views at `g` (`GridEnv.omni_obs_at`), `4·obs_size`, which removes "which way was it facing" from the spec. A `north` variant (one view) is a cheaper arm. |
-| **xy** (ceiling) | sensory(p), prev_action, **(x,y)(p)/S**, **(x,y)(g)/S** | clean coordinates. If this fails, nothing else is interpretable. |
+`omni` rather than the single egocentric view, for `p` as well as `g`: it
+makes both encodings heading-free, so the task is symmetric and "which way
+was it facing" is not a hidden variable. The codebase already calls this
+"the heading-invariant observation". The single-view version is a realism
+arm for later, and B uses omni too so that A and B differ only in history.
 
-`prev_action` is kept because it was specified, and because it is the only
-channel that reports a wall clip. It is not needed for the task, which is
-memoryless once `g` is an input; §3.4 says how static evaluation handles it.
-
-### 1.3 Outputs
+### 2.3 Output and teacher
 
 Both action modes, as separate arms:
 
-- **discrete** — `Categorical(4)` over cardinal moves. Teacher: greedy
-  Manhattan; the *optimal set* is 1 action when `p` and `g` share an axis,
-  else 2.
-- **continuous** — `Normal(2)`, env run with `continuous_normalize=True` so
-  the step is a unit vector and only direction is learned. Teacher: the unit
-  vector `(g − p)/‖g − p‖`. No ties.
+- **discrete** — 4 cardinal logits. Teacher: the **optimal set** — actions
+  that reduce Manhattan distance; 1 action when `p` and `g` share an axis,
+  else 2. Loss and metric both use the set, so tie-breaking never enters.
+- **continuous** — a 2-vector. Teacher: the unit vector `(g − p)/‖g − p‖`.
+  No ties. (B runs the env with `continuous_normalize = True` so a step is a
+  unit vector and only direction is learned.)
 
-### 1.4 What "never trained on" means — three orthogonal holdouts
+### 2.4 Holdouts
 
-The split machinery already expresses two of them as traits
-(`world/generate.py`, `world/domains.py`). The third is new.
+Three, orthogonal. Two are existing traits; the third is new.
 
-| holdout | mechanism | grid mode tests | regular mode tests |
-|---|---|---|---|
-| **H-env** — held-out environments | `make_val_set(levels={wall: held_out, place: held_out})` | a scaffold region whose grid codes were never seen (`place`) | a barcode never seen — the observation *generating rule*, not a table (`wall`) |
-| **H-goal** — cells never used as a goal | `goal_cells_train` / `goal_cells_val` (exists, `goal_val_frac`) | goal-input generalization within familiar envs | same |
-| **H-region** — cells never used as a start **or** a goal | **new**: `region_cells ⊂ goal_cells_val`, excluded from starts too (`region_val_frac`) | scattered global codes never seen at all | observations never seen at all |
+| holdout | mechanism | grid mode tests | regular mode tests | A | B |
+|---|---|---|---|---|---|
+| **H-env** — held-out environments | `make_val_set(levels={wall: held_out, place: held_out})` | a scaffold region whose grid codes were never seen (`place`) | a barcode never seen — the observation *generating rule*, not a table (`wall`) | ✓ | ✓ |
+| **H-goal** — cells never used as a goal | `goal_cells_train` / `goal_cells_val` (exists, `goal_val_frac`) | goal-input generalization within familiar envs | same | ✓ | — |
+| **H-region** — cells never a start **or** a goal | **new**: `region_cells ⊂ goal_cells_val` (`region_val_frac`) | scattered global codes never seen at all | observations never seen at all | ✓ | — |
 
-Region cells are the same *local* cells in every training env. In grid mode
-their global codes differ per env (offsets differ), so the held-out set is
-scattered across the scaffold — which is what we want. `H-env` then holds out
-a *contiguous* region on top of that.
+Region cells are the same *local* cells in every training env; in grid mode
+their global codes differ per env, so the held-out set is scattered across
+the scaffold, and H-env `place` is the contiguous one on top. B cannot honor
+cell-level holdouts (its trajectories pass through them), so H-goal and
+H-region belong to A alone.
 
-Evaluation reports the full **start × goal quadrant table**:
-start ∈ {train, region} × goal ∈ {train, goal-heldout, region} = 6 cells,
-on training envs and on held-out envs. This is what tells a start-side failure
-from a goal-side failure from a both-sides failure.
+### 2.5 The table
+
+For every env set (train envs, H-env envs, and a `same`-level set as the
+memorisation probe), the **start × goal quadrant table**:
+
+start ∈ {train, region} × goal ∈ {train, goal-heldout, region} — 6 cells.
+
+Each cell: continuous → **mean angular error** (deg), median, fraction
+< 30°; discrete → **optimal-set accuracy**. Reference lines: teacher
+= 0° / 1.0; uniform random = 90° / ≈ 0.37 (the optimal set averages ~1.5 of
+4). The table is the deliverable of both experiments.
 
 ---
 
-## 2. Code changes
+## 3. Experiment A — memoryless, i.i.d. pairs
 
-Ordered so each step is testable on its own. File paths are current as of
-`b83ec51`.
+### 3.1 Model
 
-### 2.1 Config vocabulary — `hopfield_nav/config.py`
+`RNNAgent` with the `mlp` trunk (§5.3): `num_rnn_layers` hidden layers of
+`hidden_size`, the existing discrete / continuous heads. Input is the pair
+encoding from §2.2 and nothing else. There is no GRU arm: with i.i.d.
+samples there is nothing to recur over, and a GRU here is an MLP with extra
+parameters.
+
+### 3.2 Data
+
+Per training env, precompute once: `gbook` at every cell (`S² × Ng`), `omni`
+at every cell (`S² × 240`), and the `CellSets` (§5.5). A training batch is,
+for every train env, `pairs_per_env` draws of `p ∈ start_train`,
+`g ∈ goal_train`, `p ≠ g` — an index gather, no env stepping. At 64 envs
+× 512 pairs that is 32k samples per update, and an update is one forward.
+
+No DAgger: the policy's "state" is the cell `p`, and uniform sampling covers
+every state it could ever be in — strictly more than rollouts, which pile up
+along straight lines to goals.
+
+### 3.3 Loss
+
+- discrete: cross-entropy against a **uniform distribution over the optimal
+  set** (soft target; never an arbitrary tie-break).
+- continuous: MSE between the head's mean and the unit vector. Cosine loss
+  would match the metric exactly but has a degenerate gradient at zero mean;
+  MSE reaches the same optimum.
+
+### 3.4 Evaluation
+
+The sampler pointed at a different cell set. During training, every
+`eval_every` updates: 4096 pairs per quadrant per env set. At the end:
+**full enumeration** of every `(p, g)` in every quadrant (train quadrant is
+360 × 320 ≈ 115k pairs per env — one batched forward), so the final table
+has no sampling variance.
+
+Checkpoint selection is by the H-env **train × train** cell, never by the
+held-out cells it is then reported on.
+
+Secondary, on H-env envs only: roll the trained policy out (deterministic,
+no teacher) for success rate and steps-to-goal, to confirm the static number
+turns into behaviour. Existing env stepping, nothing new.
+
+### 3.5 Arms
+
+| id | mode | trunk | encoder (regular only) | action |
+|---|---|---|---|---|
+| **A0** | xy | mlp-2 | — | both |
+| **A1** | grid | mlp-2, mlp-4 | — | both |
+| **A2** | regular | mlp-4 | linear | both |
+| **A3** | regular | mlp-4 | conv, xcorr | both |
+| **A4** | the closest-but-failing arm | ×2 width, ×1.5 depth, `obs_size = 120`, 256 envs | | |
+
+Encoders (§5.4) act on the ray-vector columns before the trunk. `linear` is
+identity. `conv` is a siamese `Conv1d` over the ray axis, the same module on
+all 8 views. `xcorr` has no parameters: the circular cross-correlation of
+each current view with the goal view of the **same heading** (N with N, E
+with E …), `4 × 60` lags, appended to the raw input — the quantity `conv`
+would have to learn, handed over, to separate *cannot compute it* from
+*cannot use it*.
+
+### 3.6 Script
+
+`hopfield_nav/train_goal_pairs.py`, its own composer. It builds an
+`RNNTrainConfig` so that `rnn_world`, `restore_arch_from_ckpt` and
+`write_rnn_world_spec` work unchanged, then: precompute per-env tensors →
+loop {sample, forward, loss, step} → periodic static eval → checkpoints,
+`run.json`, `world.json`, wandb (`train_goal_pairs`). Nothing from
+`updates/` or `rollout/`: `bc_rnn_update` is built around
+`RNNRolloutBatch`, and A's loss is one line. Launcher `run_goal_pairs.sh`.
+
+---
+
+## 4. Experiment B — recurrent, rollouts
+
+### 4.1 What it tests
+
+Whether a network **given time in the environment** can reach goals in
+held-out envs that A could not reach instantly — and, if so, whether that is
+because of memory or because of the rollout data.
+
+### 4.2 Arms — the factorial that makes a B win attributable
+
+| B arm | trunk | `prev_action` | data | isolates |
+|---|---|---|---|---|
+| **B-full** | GRU | on | rollouts | the full hypothesis |
+| **B-rec** | GRU | off | rollouts | recurrence alone — multiple looks, nothing to integrate against |
+| **B-dist** | MLP | off | rollouts | **the data distribution** — on-path states, DAgger recovery — with no memory |
+
+B-dist is the control that matters. If B-dist ≈ A on the table, any B-full
+gain over A is memory. If B-dist is already better than A, the gain was the
+data, not the history, and the "history helps" story is dead before B-full
+is read.
+
+Both action modes; grid and regular. Regular uses `omni(p)` (§2.2) so the
+only difference from A is history.
+
+### 4.3 Data
+
+`train_rnn.py` mixed mode with `carry_across_episodes` (lifetimes) and
+`resample_envs_every` (a lifetime is one env), plus the goal channels of
+§5.2. Two additions:
+
+- **goal resampled every rollout chunk** (`--goal_resample_every_rollout`):
+  `env.set_goal()` before each `collect_rollout_rnn` call. Within a lifetime
+  the goal changes every `steps_per_rollout` steps, so the network cannot
+  substitute "learn where the goal is in-context" (the §5.2 route, which is
+  available whenever a lifetime has one goal) for "read the goal input". One
+  `set_goal` call; no per-row goal machinery.
+- **omni as the sensory channel** (`--sensory_mode omni`), for comparability
+  with A.
+
+Starts are uniform over all cells and goals over `goal_cells_train`; B does
+not attempt the region holdout (§2.4).
+
+### 4.4 Evaluation
+
+Three readouts, in this order:
+
+1. **A's static table**, at `h = 0`, `prev_action = 0` — B's instant number,
+   on the same env sets as A. `evaluation/goal_pairs.py` is imported, not
+   reimplemented.
+2. **Direction quality vs. step-in-episode**, on H-env envs: run lifetimes,
+   and at every step record the angular error / set-membership of the
+   *policy's own action*, binned by step index within the episode and by
+   episode index within the lifetime. This is the curve that separates the
+   two mechanisms.
+3. Rollout success rate and steps-to-goal (existing `evaluate_nav_all`).
+
+### 4.5 What B can and cannot conclude
+
+- B-full first-step ≈ A, later steps better, B-dist ≈ A → **history helps,
+  via in-context mapping**. A's instant result stands; B is a memory result.
+- B-dist already better than A on the table → the rollout **data** helped;
+  A's sampler should be revisited before anything is concluded about memory.
+- B-full ≈ A everywhere → history does not help here; A is the whole story.
+- B is read only in cells where A **failed**. Where A generalizes, B cannot
+  beat it on the instant table (A is at the ceiling), and B's only possible
+  finding there is "history hurts", which is minor.
+
+---
+
+## 5. Code changes
+
+Ordered so each step is testable alone. Paths current as of `b83ec51`.
+
+### 5.1 Config vocabulary — `hopfield_nav/config.py`
 
 - `RNN_CELLS = ("gru", "rnn", "mlp")`; `validate_recurrent_core` rejects
-  `mlp` + `softplus` (that value names `SoftplusRNN`, not an activation). **done**
+  `mlp` + `softplus`. **done**
 - `GOAL_SENSORY_MODES = ("none", "omni", "north")`. **done**
-- `SENSORY_ENCODERS = ("linear", "conv", "xcorr")` — the ray-axis arms (§2.4).
+- `SENSORY_MODES = ("ego", "omni")` — the current-observation channel's form.
+- `SENSORY_ENCODERS = ("linear", "conv", "xcorr")`.
 - `RNNAgentConfig`:
-  - `input_goal_grid_state: bool = False` **done**
-  - `goal_sensory: str = "none"` **done**
-  - `input_xy_state: bool = False` — current `(x,y)/S`, pairs with
-    `goal_channel="abs"` for the ceiling arm.
+  - `input_goal_grid_state: bool = False` **done**; `goal_sensory: str = "none"` **done**
+  - `input_sensory: bool = True` — today it is hard-wired on
+    (`compute_rnn_input_dim`: "Sensory always on"). Grid mode turns it off.
+  - `sensory_mode: str = "ego"` — `omni` makes the channel `4 · obs_size`.
+  - `input_xy_state: bool = False` — `xy(p)`; pairs with `goal_channel="abs"`
+    (which is already `xy(g)`) for the ceiling arm.
   - `sensory_encoder: str = "linear"`, `sensory_encoder_channels: int = 16`,
     `sensory_encoder_kernel: int = 5`.
-- `RNNTrainConfig`: `region_val_frac: float = 0.0`; `envs_per_update: int = 0`
-  (0 = all train envs each update; the goal-conditioned trainer samples a
-  subset because per-row goals make each env's rollout much richer).
+- `RNNTrainConfig`: `region_val_frac: float = 0.0`; `pairs_per_env: int = 512`
+  (A); `goal_resample_every_rollout: bool = False` (B).
 
-### 2.2 Input layout — `hopfield_nav/policy/agent_rnn.py`, `hopfield_nav/rollout/rnn.py`
+### 5.2 Input layout — `hopfield_nav/policy/agent_rnn.py`, `hopfield_nav/rollout/rnn.py`
 
-The RNN stack builds its input in `build_rnn_input` and sums widths in
-`compute_rnn_input_dim`, in two places that agree by convention. The ray-axis
-encoder (§2.4) needs to know *which columns* are ray vectors, which forces the
-layout to be data. Do what `policy/channels.py` did for the other stack:
+The layout becomes data, as `policy/channels.py` did for the other stack,
+because the ray-axis encoder has to know which columns are ray vectors and
+because `sensory` is now optional and variable-width.
 
-- `rnn_input_layout(cfg, sensory_dim, gbook_dim) -> list[tuple[str, int]]`
-  in `agent_rnn.py`. Order is a compatibility surface — every existing
-  checkpoint's first layer was trained against
-  `sensory, prev_action, prev_reward, grid_state, goal_vec`; the new channels
-  **append** in this order: `xy_state(2)`, `goal_grid_state(Ng)`,
-  `goal_sensory(4·obs | obs)`.
-- `compute_rnn_input_dim` becomes `sum(w for _, w in rnn_input_layout(...))`.
-- `build_rnn_input(..., xy_state=None, goal_grid_state=None, goal_sensory=None)`
-  appends in the same order; an enabled-but-missing channel raises (today it
-  silently skips — `if cfg.input_grid_state and grid_state is not None`; that
-  is the shape-preserving failure `channels.py` was written to kill, and the
-  new channels should not inherit it).
-- Value producers, in `rollout/rnn.py` next to `grid_state_vec`:
-  - `gbook(g)` is `grid_state_vec(goals, env_offset, sgb)` — same function,
-    goals in place of positions. No new code.
-  - `goal_sensory_vec(env, goals, mode)`: `omni` →
-    `env._codebook[gx, gy].reshape(B, -1)`; `north` →
-    `env._codebook[gx, gy, cardinal_index(0.0)]`. A gather, no ray-casting.
-  - `xy_vec(positions, size)` — the `abs` branch of `goal_channel_vec`
-    applied to positions.
+- `rnn_input_layout(cfg, obs_size, gbook_dim) -> list[tuple[str, int]]`.
+  Order is a compatibility surface — every existing checkpoint was trained
+  against `sensory, prev_action, prev_reward, grid_state, goal_vec`; the new
+  channels **append**: `xy_state(2)`, `goal_grid_state(Ng)`,
+  `goal_sensory(240 | 60)`. `sensory` off removes the first slot; a
+  checkpoint with it on is unaffected.
+- `compute_rnn_input_dim` = the sum over the layout.
+- `build_rnn_input(...)` takes the new channels as keywords and appends in
+  layout order. An enabled-but-missing channel **raises** — today it silently
+  skips (`if cfg.input_grid_state and grid_state is not None`), which is the
+  shape-preserving failure `channels.py` was written to kill.
+- Producers in `rollout/rnn.py`: `gbook(g)` is `grid_state_vec(goals, …)`
+  unchanged; `goal_sensory_vec(env, goals, mode)` and
+  `sensory_vec(env, positions, mode)` are codebook gathers
+  (`omni` → `env._codebook[x, y].reshape(B, −1)`; `north` → view
+  `cardinal_index(0.0)`); `xy_vec(positions, size)` is the `abs` branch of
+  `goal_channel_vec` applied to positions.
+- `RNNAgent.__init__(cfg, input_dim, *, layout=None)`: keyword, default
+  None → today's path.
 
-### 2.3 Trunks — `hopfield_nav/policy/recurrent.py`
+### 5.3 Trunk — `hopfield_nav/policy/recurrent.py`
 
-- `FeedForwardCore(nn.Module)`: `num_layers` hidden layers of `hidden_size`,
-  activation from `rnn_nonlinearity` (tanh | relu), dropout between layers
-  only. `forward(x, h) -> (features (B,T,H), zeros (num_layers,B,H))`. It
-  honours the four trunk contracts (`input_size`, `parameters()`,
-  `(L,B,H)` state, T-step ≡ T single-steps — trivially, there is no state) so
-  the rollout, `bc_rnn_update`, `initial_h`/`final_h` plumbing and the
-  evaluator run unchanged. `build_recurrent_core` dispatches on
-  `cell == "mlp"`. **Docstring and `--rnn_cell` help done; class not yet.**
-- Depth is `--num_rnn_layers`, reused deliberately: one flag, same meaning
-  ("how many stacked layers") in both trunks.
+`FeedForwardCore(nn.Module)`: `num_layers` hidden layers of `hidden_size`,
+activation from `rnn_nonlinearity` (tanh | relu), dropout between layers
+only. `forward(x, h) -> (features (B,T,H), zeros (L,B,H))`. It honours the
+four trunk contracts — `input_size`, `parameters()`, `(L,B,H)` state,
+T-step ≡ T single-steps (trivially) — so B-dist runs through the rollout and
+`bc_rnn_update` unchanged. `build_recurrent_core` dispatches on
+`cell == "mlp"`. **Docstring and `--rnn_cell` help done; class not yet.**
 
-### 2.4 Ray-axis encoders — `hopfield_nav/policy/sensory_encoder.py` (new)
+### 5.4 Ray-axis encoders — `hopfield_nav/policy/sensory_encoder.py` (new)
 
-Applied inside `RNNAgent.forward` before the trunk, on the columns the layout
-marks as ray vectors (`sensory`, and `goal_sensory` split into its 1 or 4
-views). Three arms, one class:
+Applied in `RNNAgent.forward` before the trunk, on the columns the layout
+marks as views (`sensory` split into 1 or 4, `goal_sensory` into 1 or 4).
+`linear` identity; `conv` siamese `Conv1d(1 → C, k)` on every view, flatten,
+replaces the raw columns; `xcorr` parameter-free circular cross-correlation
+of each current view with the same-heading goal view, appended. Built last
+(§5.9): A1/A2 do not need it and A3 may not run.
 
-- `linear` — identity. Today's behaviour; the default.
-- `conv` — `Conv1d(1 → C, k)` over the ray axis, **the same module applied to
-  every view** (siamese; the current view and the goal views are the same kind
-  of thing), then flatten, replacing the raw columns. Adds the shift-sharing
-  inductive bias and nothing else.
-- `xcorr` — **no parameters**. The circular cross-correlation of the current
-  ray vector with each goal view, `obs_size` lags each, appended to the raw
-  input. Hands the trunk the quantity `conv` would have to learn, so it
-  separates *cannot compute the correlation* from *cannot use it*. It is a
-  fixed function of two observations the agent already has — not an oracle.
+### 5.5 The split — `hopfield_nav/world/spec.py`, `hopfield_nav/world/generate.py`, `hopfield_nav/training/rnn_setup.py`
 
-Ray-vector width is `observation_size`; `RNNAgent.__init__` receives the
-layout rather than a bare `input_dim` (a keyword, default None → old path,
-so nothing that constructs an `RNNAgent` today changes).
-
-### 2.5 Per-row goals — `hopfield_nav/world/env.py`, `hopfield_nav/world/vec_env.py`, `hopfield_nav/rollout/oracles.py`
-
-`VecEnv` shares one goal across its `B` rows. Per-row goals are what make a
-memoryless policy's data rich — `B` goals per rollout instead of one — and
-they are the natural unit for the quadrant table. Rather than refactor the
-shared `VecEnv` (the Hopfield stack sits on it), the goal-conditioned
-collector **owns its goals** and drives the env with `goals_active=False`,
-so `step_batch` never consumes an at-goal step or teleports. Three small
-supporting changes:
-
-- `env._at_goal_l2(pos, goal, radius)`: accept `goal` of shape `(B,2)`
-  (`ndim == 2` → row-wise). `(2,)` path untouched.
-- `VecEnv.set_positions(positions, indices=None)` and the same on
-  `ContinuousVecEnv`: with `indices`, only those rows' positions and headings
-  are touched. Today both reset **every** row's heading to North, which would
-  silently change the observation of every row that was not re-seeded.
-  `indices=None` keeps today's behaviour exactly.
-- `oracles.py`: `unit_vector_batch(positions, goals)`,
-  `greedy_manhattan_batch(positions, goals, size, rng)` and
-  `optimal_action_set_batch(positions, goals, size) -> (B,4) bool`. The
-  scalar-goal functions stay for `train_rnn`.
-
-### 2.6 The collector — `hopfield_nav/rollout/goal_conditioned.py` (new)
-
-`collect_goal_conditioned(vec, env, agent, cells, *, sgb, env_offset, steps,
-device, movement_mode, rng, h0=None) -> RNNRolloutBatch`
-
-- `cells: CellSets` (§2.7) supplies `start_train` and `goal_train`; each row
-  draws `p ∈ start_train`, `g ∈ goal_train`, `p ≠ g`.
-- Per step: `obs_batch`, `positions` → teacher per row → assemble input
-  (§2.2) → `agent.act` → `step_batch`. Rows whose post-step position is at
-  their goal are re-seeded via `set_positions(..., indices=rows)`, their
-  hidden state zeroed, and the at-goal step's label masked (existing
-  `move_label_mask` contract).
-- Returns the same `RNNRolloutBatch`, so `updates/bc_rnn.py::bc_rnn_update`
-  is reused untouched. Layer: `rollout` (imports `policy`, `world`); never
-  imports `updates` or `training`.
-
-### 2.7 The split — `hopfield_nav/world/spec.py`, `hopfield_nav/world/generate.py`, `hopfield_nav/training/rnn_setup.py`
-
-- `GeneratedSplit.region_cells: frozenset = frozenset()`. JSON round-trip
-  with a default, so every existing `world.json` still loads.
+- `GeneratedSplit.region_cells: frozenset = frozenset()`; JSON round-trip
+  with a default so every existing `world.json` loads.
 - `generate_split(..., region_frac=0.0)`: after the goal partition, draw
-  `region_cells ⊂ goal_cells_val` of size `round(region_frac · S²)` from
-  `trait_rng(seed, "region")`. Invariant: **region ⊂ never-goal**, so H-region
-  is strictly stronger than H-goal.
-- `CellSets` (in `spec.py`): derived from a split —
-  `start_train = all − region`, `goal_train = goal_cells_train`,
-  `goal_heldout = goal_cells_val − region`, `region`. One object the collector
-  and the evaluator both read, so they cannot disagree about which cells are
-  which.
+  `region_cells ⊂ goal_cells_val`, size `round(region_frac · S²)`, from
+  `trait_rng(seed, "region")`. Invariant: **region ⊂ never-goal**.
+- `CellSets` (in `spec.py`): `start_train = all − region`,
+  `goal_train = goal_cells_train`, `goal_heldout = goal_cells_val − region`,
+  `region`. One object read by the sampler and the evaluator, so they cannot
+  disagree.
 - `rnn_world` passes `region_frac=cfg.region_val_frac`. The declared path
-  already returns `split.base_val` for held-out envs; H-env sets at other
-  levels come from `make_val_set`.
+  already returns `split.base_val` for H-env; other levels via
+  `make_val_set`.
 
-### 2.8 The static evaluator — `hopfield_nav/evaluation/goal_pairs.py` (new)
+### 5.6 Pair sampler and static evaluator — `hopfield_nav/evaluation/goal_pairs.py` (new)
 
-`evaluate_pairs(agent, env, cells, *, sgb, env_offset, n_pairs, device,
-movement_mode, rng) -> dict`
+- `EnvTensors(env, offset, sgb, device)`: `gbook`, `omni`, `xy` for every
+  cell, computed once.
+- `sample_pairs(cells, starts: str, goals: str, n, rng) -> (p, g)` and
+  `enumerate_pairs(cells, starts, goals)`.
+- `pair_inputs(tensors, cfg, p, g) -> (B, D)` — assembles the input in
+  layout order, using the same producers as §5.2 so A and B build
+  bit-identical tensors for the same `(p, g)`.
+- `pair_targets(p, g, movement_mode)` — unit vectors, or the `(B, 4)` optimal
+  set.
+- `evaluate_pairs(agent, tensors, cells, *, movement_mode, n_per_quadrant |
+  enumerate, device) -> dict` — the 6-cell table. `h = 0`,
+  `prev_action = 0`, which is what makes it valid for B.
 
-For each of the 6 quadrants: sample `n_pairs` `(p, g)`, build the input at
-**episode-first-step state** (`prev_action = 0`, `h = 0`, heading North —
-exactly the state every training episode starts in, so it is in-distribution
-by construction), one deterministic forward, compare to the teacher:
+Layer: `evaluation` (imports `policy`, `rollout`, `world`).
 
-- continuous → angular error in degrees (mean, median, fraction < 30°)
-- discrete → fraction of chosen actions in the optimal set
+### 5.7 Experiment A's script — `hopfield_nav/train_goal_pairs.py`, `hopfield_nav/run_goal_pairs.sh` (new)
 
-Optionally a second pass with `prev_action = teacher(p, g)` — the
-"arrived along the line" proxy — to check the first-step number is not an
-artefact of the zero prev-action.
+§3.6. ~150 lines including the CLI. Adds itself to
+`scripts/check_entry_points.py`.
 
-`evaluate_goal_rollouts(...)` reuses the collector with a deterministic
-student and no re-seeding to report success rate and steps-to-goal on
-held-out envs. Secondary: it confirms the static number turns into
-behaviour, and it is the only place a GRU's use of history can show up.
+### 5.8 Experiment B's additions — `hopfield_nav/train_rnn.py`, `hopfield_nav/rollout/rnn.py`, `hopfield_nav/evaluation/rnn.py`, `hopfield_nav/evaluation/incontext.py`
 
-### 2.9 CLI and launcher — `hopfield_nav/train_goal_nav.py`, `hopfield_nav/run_goal_nav.sh` (new)
+- The three call sites that assemble the input (`collect_rollout_rnn`,
+  `evaluate_nav_all`'s step, `evaluate_in_context`) compute and pass the new
+  channels. `restore_arch_from_ckpt` restores the new agent fields.
+- `--goal_resample_every_rollout` (§4.3) in the mixed-mode loop.
+- `--sensory_mode omni`.
+- `evaluation/rnn.py::evaluate_direction_by_step(...)` — the
+  vs-step-in-episode curve (§4.4 item 2).
+- The periodic eval calls `evaluate_pairs` on the same env sets A uses.
 
-A thin composer, the pattern `train_navigate.py` follows. Builds an
-`RNNTrainConfig`, calls `rnn_world` (with `--env_generator`,
-`--place_margin`), builds `sgb` when grid state is on, `RNNAgent`, Adam;
-each update samples `envs_per_update` train envs, collects one
-goal-conditioned rollout per env, runs `bc_rnn_update`; every `eval_every`
-runs `evaluate_pairs` on train envs and on every held-out set; logs to wandb
-(`train_goal_nav` project); writes checkpoints, `run.json` via
-`run_manifest`, `world.json` via `write_rnn_world_spec`. Not a fourth mode of
-`train_rnn.py`: that file's modes are the continual-learning protocol, and a
-goal-conditioned mode would branch it in four places.
+### 5.9 Order of work
 
-`run_goal_nav.sh`: `VARIANT=<name> sbatch`, the `run_nav_tri.sh` pattern;
-`mit_normal_gpu`, 1 GPU, 4 CPU, 3 h.
+1. §5.1 rest, §5.3, §5.2 — trunk and layout; unit-testable with a synthetic
+   batch.
+2. §5.5 — split; unit-testable.
+3. §5.6, §5.7 — sampler, evaluator, A's script. Run **A0** as the integration
+   test.
+4. **A1, A2** run. While they run:
+5. §5.8 — B's additions. Run **B** arms.
+6. §5.4 — encoders, only if A2 fails on held-out walls. Run **A3**.
 
-### 2.10 Tests — `hopfield_nav/tests/test_goal_nav.py` (new) + existing suites
+### 5.10 Tests — `hopfield_nav/tests/test_goal_pairs.py` (new) + existing
 
-- Layout: widths sum to `compute_rnn_input_dim`; with all new channels off
-  the assembled tensor is bit-identical to today's (extend the golden
-  observation fixture rather than replace it).
+- Layout: widths sum to `compute_rnn_input_dim`; with every new flag at its
+  default the assembled tensor is bit-identical to today's (extend the golden
+  fixture, do not replace it); enabled-but-missing raises.
 - `FeedForwardCore`: T-step ≡ T single-steps; state shape `(L,B,H)`.
-- `set_positions(indices=)`: untouched rows keep position **and heading**.
-- `_at_goal_l2` with `(B,2)` goals.
-- Collector: every start ∉ region, every goal ∈ `goal_train`, re-seed zeroes
-  `h`, mask is 0 at at-goal steps, `episodes_completed` counts.
-- Split: `region_cells ⊂ goal_cells_val`; `world.json` round-trip; a
-  `world.json` without the field loads with an empty region.
-- `optimal_action_set_batch`: aligned → 1 action, off-axis → 2.
-- `xcorr`: recovers a known shift on a synthetic ray vector.
-- Entry-point smoke test: add `train_goal_nav` to
-  `scripts/check_entry_points.py`.
-- `test_layering.py` must pass unchanged: new modules sit in `rollout`,
-  `evaluation`, `policy`, `world`.
+- Split: `region ⊂ goal_cells_val`; round-trip; a `world.json` without the
+  field loads with an empty region.
+- Sampler: every `p ∈ starts`, `g ∈ goals`, `p ≠ g`; enumeration count is
+  `|starts| · |goals| − |starts ∩ goals|`.
+- `pair_inputs` equals `build_rnn_input` on the same `(p, g)` with
+  `prev_action = 0` — the A/B bridge, pinned.
+- Optimal set: aligned → 1 action, off-axis → 2; random-policy accuracy
+  ≈ 0.37 on enumeration.
+- `xcorr`: recovers a known shift on a synthetic view.
+- Entry-point smoke; `test_layering.py` unchanged.
 
-### 2.11 Not changed
+### 5.11 Not changed
 
-`policy/channels.py` and the Hopfield stack; `collect_rollout_rnn`;
-`evaluate_nav_all`; `train_rnn.py`'s three modes; `VecEnv.step_batch`
-semantics; the scalar-goal oracles. Every existing checkpoint loads, every
-existing `world.json` reads.
-
-### 2.12 Order of work
-
-1. §2.1 rest, §2.3, §2.2 — trunk + channels, testable with a synthetic batch.
-2. §2.5, §2.7 — env/split support, unit-tested in isolation.
-3. §2.6, §2.8 — collector and evaluator.
-4. §2.9 — CLI; run W0 (§3.5) on CPU as the integration test.
-5. §2.4 — encoders. Deferred to last because W1/W2 don't need them and W3
-   may not run.
+`policy/channels.py` and the Hopfield stack; `VecEnv`; `_at_goal_l2`; the
+oracles; `bc_rnn_update`; `train_rnn.py`'s sequential/finetune modes. Every
+existing checkpoint loads (layout with defaults is today's layout); every
+existing `world.json` reads. The per-row-goal collector of revision 1 is
+gone: A does not step the env and B does not need per-row goals.
 
 ---
 
-## 3. Experiment plan
+## 6. Experiment plan
 
-### 3.1 Fixed settings
+### 6.1 Fixed settings
 
 | | value | why |
 |---|---|---|
 | `size` | 20 | project working size |
-| `lambdas` | 11, 12, 13 (`Npos = 1716`) | the working scaffold; every launcher uses it |
+| `lambdas` | 11, 12, 13 (`Npos = 1716`, `Ng = 434`) | the working scaffold |
 | `fwhm_ratio` | 0.25 | `RNNTrainConfig` default |
-| `observation_size` | **60** (120 as a scaling arm) | ~9% exact twins at 60 vs ~27% at 12 (`docs/sensory_code.md`); precision is ~4 lags per unit `dx` at 60, ~15 at 240 |
-| `wall_resolution` | **1** | raising it dissolves the shift structure regular mode depends on: pure-shift correlation ~0.85 at 1, ~0.38 at 8 |
-| `egocentric_heading` | True (default) | first-step heading is North after `set_positions` |
-| continuous | `continuous_normalize=True`, `continuous_scale=1.0` | unit step, direction only — the teacher's unit vector is the exact target |
-| discrete | `speed=1` | |
-| episode cap | `3·size = 60` steps | a straight line is ≤ 38 |
-| envs | 64 train, 16 held-out (`wall=held_out, place=held_out`), 8 `same` (memorisation probe) | `place_margin=20`; 88 footprints of 20² on 1716² is 1.2% of the scaffold |
-| cells | `goal_val_frac=0.2`, `region_val_frac=0.1` | 40 region cells ⊂ 80 never-goal cells; 320 train-goal cells, 360 start cells |
-| batch | `batch_envs=64`, `steps_per_rollout=64`, `envs_per_update=8` | 32k labelled steps/update, ~500 episodes/update |
-| trunk | `hidden_size=256` | |
-| BC | `lr=1e-3`, `epochs=4`, `n_minibatches=4` | the DAgger consensus from the BC line |
-| budget | 2000 updates | ~1.5–2 h at the measured ~7 s per 100k steps |
-| seeds | 2 per headline arm | env draws are the variance, not the metric — static eval over 4096 pairs is tight |
+| `observation_size` | **60** (120 in A4) | ~9% exact single-view twins at 60 vs ~27% at 12; omni is lower still. Precision ~4 lags per unit `dx` at 60 |
+| `wall_resolution` | **1** | raising it dissolves the shift structure regular mode depends on (pure-shift correlation ~0.85 at 1, ~0.38 at 8) |
+| envs | 64 train; H-env 16 (`wall = held_out, place = held_out`); `same` 8 | `place_margin = 20`; 88 footprints of 20² is 1.2% of the scaffold |
+| cells | `goal_val_frac = 0.2`, `region_val_frac = 0.1` | 40 region ⊂ 80 never-goal; 320 train-goal, 360 start cells |
+| A batch | 64 envs × 512 pairs = 32k / update | one forward |
+| A budget | 2000 updates, `hidden_size = 256`, Adam `lr = 1e-3` | minutes per run |
+| B batch | `batch_envs = 64`, `steps_per_rollout = 64`, 8 envs / update | 32k labelled steps / update |
+| B budget | 2000 updates; BC `lr = 1e-3`, `epochs = 4`, 4 minibatches | ~2 h at the measured ~7 s per 100k steps |
+| continuous env (B) | `continuous_normalize = True`, `scale = 1.0` | unit step, direction only |
+| episode cap (B, rollouts) | 60 steps | a straight line is ≤ 38 |
+| seeds | A: 2 per arm (cheap). B: 1, then 2 for any arm that is read | env draws are the variance; A's final table is enumerated |
 
-### 3.2 Arms
+### 6.2 Waves and kill criteria
 
-Factors: input mode × trunk × action × (regular only) encoder.
+**A0 — the pipeline.** xy, mlp-2, both actions, 300 updates, CPU fine. Must
+hit ≤ 5° / ≥ 0.98 on **every** cell of every env set — coordinates carry no
+env identity, so any gap is a bug. `same` ≈ H-env. *Kill*: anything else;
+fix before A1.
 
-| id | mode | trunk | encoder | action |
-|---|---|---|---|---|
-| **W0** | xy | mlp-2 | — | both |
-| **W1** | grid | mlp-2, mlp-4, gru | — | both |
-| **W2** | regular | mlp-4, gru | linear | both |
-| **W3** | regular | mlp-4 | conv, xcorr | both |
-| **W4** | the closest-but-failing arm | ×2 width, ×1.5 depth, `obs_size=120`, 256 envs | | |
+**A1 — grid mode.** The primary question. mlp-2, mlp-4 × both actions × 2
+seeds = 8 runs. *Kill*: if mlp-2 generalizes by §6.3, mlp-4 seed 2 is dropped.
 
-`mlp-k` = `--rnn_cell mlp --num_rnn_layers k`. GRU is `num_rnn_layers=1`.
-W0 = 2 runs, W1 = 12 (×2 seeds), W2 = 8, W3 = 4, W4 ≤ 4. ≈ 30 runs, ≈ 60 GPU-h.
+**A2 — regular mode, linear.** mlp-4 × both × 2 seeds = 4 runs. Informative
+either way. If held-out walls **pass**, A3 is unnecessary and that is the
+stronger result.
 
-### 3.3 Metrics and reference lines
+**A3 — regular, encoders.** Only if A2 failed on held-out walls. `xcorr`
+first, then `conv`. 4 runs.
 
-Primary, per arm, per checkpoint: the 6-cell quadrant table on train envs
-and on held-out envs, for
+**B1 / B2 — grid / regular.** The three arms of §4.2 × both actions = 6 runs
+per mode, 1 seed. Run after A1/A2 have tables, read only in cells A failed.
+Second seed only for an arm that is read.
 
-- continuous: **mean angular error** (deg); also median and frac < 30°.
-- discrete: **optimal-set accuracy**.
+**A4 — scaling.** Only for an A arm within ~2× of threshold; one factor at a
+time. *Kill*: a 2× scale that moves the number < 20% is not a scale problem.
 
-Reference lines: teacher = 0° / 1.0. Uniform random = 90° / ≈0.37 (the
-optimal set averages ~1.5 of 4). Always plotted.
+Totals: A ≈ 22 runs at minutes each; B ≤ 12 runs at ~2 h; encoders and
+scaling conditional.
 
-Secondary: held-out-env rollout success rate and mean steps-to-goal, and the
-`same`-env quadrant table (the memorisation probe — if `same` ≫ held-out,
-the network learned the pool, not the task).
+### 6.3 Decision rules (stated before the runs)
 
-A checkpoint is picked by held-out-env **train×train** quadrant, never by the
-held-out quadrants it is then reported on.
+Applied to the A table; B is read against it by §4.5.
 
-### 3.4 Decision rules
+- **Generalizes**: H-env region × region within 10° / 0.05 of train-env
+  train × train, and both at ≤ 20° / ≥ 0.90.
+- **Interpolates only**: train × train and train × goal-heldout pass; any
+  region row fails.
+- **Memorises**: train-env train × train passes; H-env near random; `same`
+  ≫ H-env.
+- **Cannot represent**: A0 fails → pipeline bug, stop.
 
-Stated before the runs so the result is read by the rule, not the other way.
+For regular mode report the measured twin rate of the actual envs
+(`positional_identifiability.py`) beside the table, so the ceiling is known
+and a 0.92 is read as a pass.
 
-- **Generalizes**: held-out-env, region×region quadrant within 10° (cont.) /
-  0.05 (disc.) of the train-env train×train quadrant, and both are at
-  ≤ 20° / ≥ 0.90.
-- **Interpolates only**: train×train and train×goal-heldout pass; any
-  region row fails. The net localises seen cells and does not extend.
-- **Memorises**: train-env train×train passes; held-out envs near random.
-- **Cannot represent**: train-env train×train fails to reach ≤ 20° / ≥ 0.90
-  by 2000 updates on the xy arm → pipeline bug, stop.
+### 6.4 Predictions
 
-For regular mode the ceiling is below 1.0 because of exact twins (~9% of
-cells at `obs_size=60`); report the measured twin rate of the actual envs
-(`positional_identifiability.py`) beside the table so a 0.92 is read as a
-pass.
+- **P1** A0: solved everywhere in < 200 updates.
+- **P2** A1, mlp-4: generalizes to H-env `place` and to region. The grid code
+  is a smooth periodic function of position and the target is a smooth
+  function of a difference. mlp-2 worse on region cells.
+- **P3** A2: train-env table passes; H-env `wall` at or near random. A linear
+  read of the ray vector cannot express a cross-correlation between two
+  views (`docs/sensory_code.md`, Open); without it a new barcode is a new
+  lookup table.
+- **P4** A3: `xcorr` closes most of the held-out-wall gap; `conv` some of it.
+- **P5** B-dist ≈ A in every cell (the sampler is not the problem).
+- **P6** B-full, regular, held-out walls: first-step ≈ A, rising over the
+  episode — in-context mapping, the §5.2 mechanism. B-rec between.
+- **P7** B-full, grid, held-out place: if P2 holds, B has nothing to add. If
+  P2 fails, B-full rises over the episode — it estimates the local frame from
+  `(Δgbook, action)`.
+- **P8** Discrete and continuous rank arms identically; discrete stricter.
+- **P9** Region × region is always the worst cell; the start row is worse
+  than the goal column — the goal is a constant to condition on, the start
+  has to be decoded.
 
-### 3.5 Waves, with kill criteria
+### 6.5 What would change the conclusion
 
-**W0 — the pipeline works.** xy mode, mlp-2, both actions, 1 seed, 300
-updates, CPU is fine. Must hit ≤ 5° / ≥ 0.98 on **every** quadrant, train
-and held-out envs alike — coordinates carry no env identity, so any gap here
-is a bug. Also confirms `same` ≈ held-out. *Kill*: anything else; fix before
-W1.
-
-**W1 — grid mode.** The primary question. 3 trunks × 2 actions × 2 seeds.
-Read: (a) does mlp-4 generalize by §3.4; (b) is gru better than mlp on the
-static table (it should not be — the task is memoryless; if it is, the
-static eval is leaking history somewhere); (c) is gru better on the
-*rollout* numbers (it may be — that gap is "uses history", and is the one
-place recurrence can legitimately show). *Kill*: if mlp-2 already
-generalizes, drop mlp-4/gru seeds 2.
-
-**W2 — regular mode, linear encoder.** Pre-registered expectation: train-env
-table passes, held-out-**wall** table fails for the MLP, gru static ≈ mlp
-static. If it *passes* held-out walls, W3 is unnecessary and that is the
-stronger result — record it and skip. *Kill*: none; this wave is informative
-either way.
-
-**W3 — regular mode, ray-axis encoders.** Only if W2 failed on held-out walls.
-`xcorr` first: if it passes and `conv` does not, the failure was "cannot
-compute the correlation"; if neither passes, the failure is downstream of the
-code. *Kill*: skip entirely if W2 passed.
-
-**W4 — scaling.** Only for an arm that is within ~2× of the threshold. Scale
-one thing at a time (width, depth, rays, envs). *Kill*: if a 2× scale moves
-the number < 20%, it is not a scale problem.
-
-### 3.6 Predictions
-
-Written down now so they can be wrong.
-
-- **P1** xy: solved everywhere in < 200 updates.
-- **P2** grid, mlp-4: solved on train envs; **generalizes** to held-out place
-  and region by §3.4. The grid code is a smooth periodic function of
-  position and the target is a smooth function of a difference — this is the
-  case a plain network should get. mlp-2 will be noticeably worse on region
-  quadrants. gru ≈ mlp on the static table.
-- **P3** regular, linear: train-env table passes; held-out walls at or near
-  random for the MLP. The single linear read of the ray vector cannot express
-  a cross-correlation between two views (`docs/sensory_code.md`, Open), and
-  without it a new barcode is a new lookup table.
-- **P4** regular, xcorr: closes most of the held-out-wall gap. conv: closes
-  some of it, more slowly.
-- **P5** discrete and continuous rank the arms the same way; discrete is
-  stricter in absolute terms.
-- **P6** the both-sides quadrant (region × region) is always the worst cell,
-  and the start-side row is worse than the goal-side column — the goal is a
-  constant the trunk can condition on; the start is what has to be
-  *decoded*.
-
-### 3.7 What would change the conclusion
-
-- If P2 fails on region but passes on goal-heldout, the net localises by
-  lookup and the "instant generalization" claim for the attractor stands in
-  its strongest form. That is a real result, not a failed experiment.
-- If P3 *passes*, the warp structure is learnable from a linear read after
-  all, and the `sensory_code.md` "Open" note should be amended.
-- If gru beats mlp on the **static** table, the static evaluator is wrong —
-  investigate before believing anything else.
+- P2 fails on region but passes on goal-heldout → the net localises by lookup
+  and the attractor's instant-generalization claim stands in its strongest
+  form. A real result.
+- P3 passes → the warp is learnable from a linear read; amend
+  `sensory_code.md`.
+- P5 fails (B-dist > A) → A's sampler is missing something the rollout
+  distribution has; fix A before reading any B arm.
+- B-full first-step > A on the static table → the static evaluator is
+  leaking; investigate before believing anything.
 
 ---
 
-## 4. Risks and open points
+## 7. Risks and open points
 
-- **Aliasing floor in regular mode.** ~9% of cells have an exact twin at
-  `obs_size=60`. Fixed by reporting the ceiling, not by raising
-  `wall_resolution` (see §3.1). If the floor turns out to bind, go to 120 rays
-  (W4), never to resolution.
-- **Region cells are local, not global.** In grid mode the H-region holdout is
-  scattered across the scaffold; H-env `place=held_out` is the contiguous
-  one. Both are reported; they answer different questions and should not be
-  averaged.
-- **prev_action in the static eval.** First-step state is in-distribution by
-  construction; the "arrived along the line" pass is the check that the
-  first-step number is representative. If the two disagree by more than the
-  seed spread, report both and say so.
-- **Continuous at-goal.** `goal_radius=0.5` on the snapped cell; with unit
-  normalised steps the agent lands on cells, so at-goal is exact equality in
-  practice. Confirm in W0.
-- **`place_margin`.** The RNN stack requires it explicitly. 20 is generous;
-  the split diagnostics report the realised cosine margin — read it once.
+- **Aliasing floor in regular mode.** Report the ceiling; never raise
+  `wall_resolution`. If the floor binds, 120 rays (A4).
+- **Region is local, H-env place is global.** Both reported; not averaged.
+- **B's goal-per-chunk.** With `steps_per_rollout = 64` and episodes of
+  ~15 steps, a chunk holds ~4 episodes at one goal. Enough to prevent
+  goal-learning-in-context from being a strategy across a lifetime; not
+  per-episode. If B-full's vs-step curve rises *within the first chunk only*
+  and resets at chunk boundaries, that is goal-learning, not map-learning —
+  the episode-index binning in §4.4 shows it.
+- **Continuous at-goal in B.** `goal_radius = 0.5` on the snapped cell; unit
+  steps land on cells; confirm exact equality in the first B run.
+- **`place_margin`.** Required explicitly by the RNN stack; 20 is generous.
+  Read the split diagnostics' realised cosine margin once.
 - **Not in scope.** Multi-goal memory, capacity, interference — the axes the
-  attractor is actually built for. Supplying the goal as an input removes
-  them by design. If the MLP wins here, the attractor's claim relocates to
-  those axes; it does not disappear.
+  attractor is built for. Supplying the goal as an input removes them by
+  design. If A wins, the attractor's claim relocates to those axes; it does
+  not disappear.
