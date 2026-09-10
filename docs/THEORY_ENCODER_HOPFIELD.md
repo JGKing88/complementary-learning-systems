@@ -654,6 +654,49 @@ measurements behind it:
   predicts, and is not what any account based on the grid code's own structure
   would predict, since the input is identical at every coverage.
 
+> ### ⚠ Corrected — "fails to remove them" overstates it. It removes them nearly everywhere.
+>
+> Jack: *the encoder must be generalizing to some extent, it only sees 10%.*
+> Right, and the fraction of the scaffold above each threshold says how much:
+>
+> | encoder | >0.1 | >0.2 | >0.3 | >0.5 | median |
+> |---|---|---|---|---|---|
+> | 10% | 0.053 | 0.017 | 0.008 | **0.0016** | 0.034 |
+> | 5% | 0.103 | 0.047 | 0.026 | 0.009 | 0.041 |
+> | 2.5% | 0.117 | 0.052 | 0.029 | 0.008 | 0.038 |
+> | 1.25% | 0.255 | 0.094 | 0.062 | 0.032 | 0.055 |
+> | 0.75% | 0.378 | 0.191 | 0.115 | 0.044 | 0.070 |
+>
+> At 10% coverage **94.7% of all displacements sit below 0.1** and only 0.16%
+> exceed 0.5. The encoder generalises a low floor across 2.94 M displacements it
+> overwhelmingly never saw; the failure is ~0.2% of the space.
+>
+> **Two mechanisms, different generalisation, and §3.5 conflated them.**
+>
+> * *Position* generalisation is free: the network is continuous, so a position
+>   near a training position gets a nearby code. That is why res90, the basin and
+>   reach all hold at unseen positions.
+> * *Pair* generalisation cannot be pairwise — there are ~4×10¹² position pairs
+>   and training samples a vanishing fraction. The attract and repel terms act
+>   only where they sample.
+> * So the far field is generalised **statistically**, which is precisely the
+>   coding-rate term's job: constrain the batch covariance, spread the code over
+>   many directions, and far pairs behave like random vectors in `d_eff`
+>   dimensions — a low floor *everywhere*, sampled or not.
+>
+> The rate term generalises and sets the 0.034 floor; the pairwise terms do not,
+> and the outliers are where the statistical mechanism alone did not finish the
+> job. That is why `rate_lambda = 0` collapses `d_eff` to 16 and the alias rate
+> to 0.21 (§2.1 R1) — it removes the only mechanism that covers unsampled pairs.
+>
+> The coverage ladder degrades both halves together: the floor rises
+> 0.034 → 0.070 **and** the aliased fraction grows sevenfold, 5.3% → 37.8%.
+> Coverage buys spread and pair-sampling at once.
+>
+> Aside: arm B has a *higher* floor (0.047) but *fewer* extremes (0.0003 above
+> 0.5). Binarisation compresses toward the middle — clipping the worst aliases
+> while raising the typical one.
+
 **What this changes.** Q3 asked what the encoder is *for*. The answer sharpens:
 it is a machine for suppressing similarity at displacements it is *shown*, and
 its failures live at displacements it is not. That makes the alias ceiling a
