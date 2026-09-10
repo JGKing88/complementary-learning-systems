@@ -71,6 +71,60 @@ def project_to_signal(
     return q_to_signal(q, agent_cfg), q, W
 
 
+def chart_fraction(
+    q: np.ndarray,
+    recalled_np: np.ndarray,
+    embeddings_np: np.ndarray,
+    valid: np.ndarray | None = None,
+) -> np.ndarray:
+    """``‖q‖ / ‖recall − x‖`` — how much of this recall the local chart explains.
+
+    **The one genuinely missing input channel P3 found** (§7.7.2). The policy
+    receives `q`, the recalled displacement projected into a local 2-D
+    Gram-Schmidt frame — about 8 of its 74 input dims. The recall itself is
+    1024-dimensional, so **1022 dimensions are projected away and never reach
+    the policy**. This scalar is what they carried.
+
+    §7.7.1 predicted, explicitly, that compressing the signal to one number
+    would fail: "the 2-D frame is a much smaller subspace than the 64-dim
+    chart, so its residual is dominated by in-chart directions the frame simply
+    does not span, and the goal-present/absent contrast may wash out."
+
+    That prediction was wrong. Measured (§7.7.2), at ten distractors:
+
+        statistic                     P2 gain-5   w52 gain-100
+        ‖q‖ (what the policy has)         0.698          0.930
+        chart_frac (this)                 0.974          0.988
+        d1_chart (needs a per-env fit)    0.942          0.972
+
+    **It matches or beats the fitted 64-dim basis everywhere**, and beats ‖q‖
+    by **+0.276 AUC** on the encoder §7 was measured on. The means say why: at
+    ten distractors `frac_goal` is 0.638 against `frac_dist` 0.125, a 5× gap,
+    with the goal-absent value near §5.8's √(2/D) ≈ 0.044 prediction for an
+    unrelated direction in D = 1024.
+
+    Free where the recall already exists: `W` is built every step by
+    `project_to_signal` and the recall is already computed.
+
+    Rows with no recall get 0.0 rather than a 0/0 — an empty memory means the
+    quantity is *undefined*, and the same distinction the per-regime
+    diagnostics needed (`cos_aq_frac`) applies here.
+    """
+    disp = np.asarray(recalled_np, dtype=np.float64) - np.asarray(
+        embeddings_np, dtype=np.float64)
+    den = np.linalg.norm(disp, axis=-1)
+    num = np.linalg.norm(np.asarray(q, dtype=np.float64), axis=-1)
+    out = np.zeros(den.shape, dtype=np.float32)
+    ok = den > 1e-8
+    if valid is not None:
+        # A row with no memory has recalled == 0, so the displacement is -x
+        # and the ratio is a perfectly finite NUMBER that means nothing. Gate
+        # it explicitly rather than letting the arithmetic invent a value.
+        ok = ok & np.asarray(valid).reshape(-1).astype(bool)
+    out[ok] = (num[ok] / den[ok]).astype(np.float32)
+    return out
+
+
 def hopfield_signal_at(
     vectorhash,
     cfg: TrainConfig,
@@ -84,7 +138,8 @@ def hopfield_signal_at(
     embed_dim: int,
     cached_W: np.ndarray | None = None,
     recompute_mask: np.ndarray | None = None,
-) -> tuple[torch.Tensor, np.ndarray, torch.Tensor, np.ndarray | None]:
+    return_chart: bool = False,
+) -> tuple:
     """Recall + project for a batch of states.
 
     ``hopfields`` is either one shared Hopfield (``shared_hopfield=True``) or a
@@ -95,6 +150,12 @@ def hopfield_signal_at(
     Returns ``(signal_t, q, memory_mask_t, new_cached_W)``. ``new_cached_W`` is
     None when no recall happened, in which case the caller's existing cache is
     left alone.
+
+    With ``return_chart=True`` a fifth element is appended: ``chart_frac``,
+    the (B,) array from :func:`chart_fraction`. It is opt-in rather than always
+    returned because fifteen call sites unpack the four-tuple, and a signature
+    change to all of them is a large blast radius for a channel only one arm
+    uses.
     """
     B = positions.shape[0]
     signal_dim = 4 if cfg.agent.hopfield_mode == "discrete" else 2
@@ -105,10 +166,20 @@ def hopfield_signal_at(
     if recompute_mask is None:
         recompute_mask = np.ones(B, dtype=bool)
 
+    def _ret(sig, q, mask, W, recalled=None):
+        if not return_chart:
+            return sig, q, mask, W
+        if recalled is None:
+            chart = np.zeros(B, dtype=np.float32)
+        else:
+            chart = chart_fraction(q, recalled, embeddings_np,
+                                   valid=mask.cpu().numpy())
+        return sig, q, mask, W, chart
+
     if shared_hopfield:
         hop = hopfields
         if hop.num_memories == 0:
-            return hopfield_signal, q_full, memory_mask, None
+            return _ret(hopfield_signal, q_full, memory_mask, None)
         recalled = hop.recall_batch(
             embeddings, steps=cfg.hopfield.steps,
             beta=cfg.hopfield.beta, alpha=cfg.hopfield.alpha,
@@ -119,13 +190,14 @@ def hopfield_signal_at(
         )
         hopfield_signal = torch.from_numpy(sig_np).float().to(device)
         memory_mask[:] = True
-        return hopfield_signal, q_full, memory_mask, cached_W
+        return _ret(hopfield_signal, q_full, memory_mask, cached_W,
+                    recalled.cpu().numpy())
 
     # Per-env Hopfields: recall only the rows that have something to recall,
     # stacking their weight matrices into one batched pass.
     has_memory = [b for b in range(B) if hopfields[b].num_memories > 0]
     if not has_memory:
-        return hopfield_signal, q_full, memory_mask, None
+        return _ret(hopfield_signal, q_full, memory_mask, None)
 
     idx = torch.as_tensor(has_memory, device=device, dtype=torch.long)
     W_stack = torch.stack([hopfields[b].W for b in has_memory], dim=0)
@@ -146,7 +218,11 @@ def hopfield_signal_at(
         torch.from_numpy(sig).float().to(device),
         hopfield_signal,
     )
-    return hopfield_signal, q_full, memory_mask, cached_W
+    # `memory_mask` is now set, so _ret gates chart_frac on it: rows with no
+    # memory get 0 rather than the finite-but-meaningless ratio that
+    # recalled == 0 would otherwise produce.
+    return _ret(hopfield_signal, q_full, memory_mask, cached_W,
+                recalled_np_full)
 
 
 def oracle_signal_at(
@@ -233,6 +309,7 @@ def multistep_q(
 
 
 __all__ = [
+    "chart_fraction",
     "hopfield_signal_at",
     "multistep_q",
     "oracle_signal_at",

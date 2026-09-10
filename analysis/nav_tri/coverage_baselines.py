@@ -1,0 +1,437 @@
+"""What coverage is worth chasing, and what each source of action noise costs.
+
+The arena `train_navigate` trains on has **no interior obstacles**. Movement is
+`pos_f = clip(pos_f + action * scale, 0, size-1)` (`world/vec_env.py:410`); the
+four "walls" are boundary planes at x,y = -0.5 and size-0.5 whose only role is
+to carry the +/-1 stripe codes the sensory cone ray-casts
+(`world/env.py:141-166`). Nothing blocks a step. So the geometry of both target
+behaviours is trivially known in advance:
+
+  explore  -- a lawnmower sweep visits one NEW cell per step, so
+              `mean_coverage` at T steps is (T+1)/size**2 and `cells_per_step`
+              is 1.0. At size=20, T=200 that is 0.5025 -- a HARD ceiling that
+              no policy can pass, because a step can add at most one cell.
+  exploit  -- a beeline. `mean_steps` is the Euclidean start-goal distance
+              divided by the step magnitude, minus whatever `goal_radius`
+              forgives.
+
+That makes the interesting question empirical rather than architectural: how
+far up that range does each *behaviour class* get, and how much does each
+source of action noise cost? Both are pure geometry -- no encoder, no scaffold,
+no GPU -- so they are answerable in seconds instead of GPU-hours, and the
+answers set the reference lines every trained policy in
+`docs/EXPERIMENTS_NAV_TRI.md` is scored against.
+
+The policies below are deliberately *scripted*, not learned. They bracket the
+space a learned policy could land in:
+
+  uniform     -- direction resampled uniformly every step (a random walk)
+  persistent  -- heading diffuses by N(0, sigma) per step (a correlated walk);
+                 sigma=0 is ballistic, sigma=pi is uniform
+  billiard    -- straight until the boundary, then a specular reflection
+  serpentine  -- the lawnmower, i.e. the ceiling
+
+Two noise sources are modelled on top of any of them, because both are live
+knobs in the trainer and both act on the *behaviour* policy while evaluation
+scores the mean:
+
+  eps    -- `epsilon_explore`: with probability eps the step is replaced by a
+            uniform random direction (`rollout/collector.py`).
+  sigma_a -- `exp(init_log_std)`: Gaussian noise added to each action
+            component. At `init_log_std=-1.8` that is 0.165 of a cell.
+
+Usage:
+    python -m analysis.nav_tri.coverage_baselines
+    python -m analysis.nav_tri.coverage_baselines --steps 400 --size 20
+"""
+from __future__ import annotations
+
+import argparse
+import json
+
+import numpy as np
+
+# --------------------------------------------------------------------------
+# The environment, reduced to the two lines that matter
+# --------------------------------------------------------------------------
+
+
+def _snap(pos_f: np.ndarray, size: int) -> np.ndarray:
+    """`world/vec_env.py:275` -- round, then clip into the grid."""
+    return np.clip(np.round(pos_f), 0, size - 1).astype(np.int64)
+
+
+def _rollout(headings_fn, *, n: int, steps: int, size: int, mag: float,
+             eps: float, sigma_a: float, rng: np.random.Generator,
+             reflect: bool = False) -> np.ndarray:
+    """Run `n` episodes and return the (n, steps+1, 2) snapped cell track.
+
+    `headings_fn(theta, t, hit)` returns the next heading given the current
+    one, the step index, and which boundary (if any) the previous step hit.
+    """
+    pos_f = rng.uniform(0, size - 1, size=(n, 2))
+    theta = rng.uniform(-np.pi, np.pi, size=n)
+    track = np.empty((n, steps + 1, 2), dtype=np.int64)
+    track[:, 0] = _snap(pos_f, size)
+
+    for t in range(steps):
+        theta = headings_fn(theta, t)
+        step = np.stack([np.cos(theta), np.sin(theta)], axis=1) * mag
+        if sigma_a > 0:
+            step = step + rng.normal(0.0, sigma_a, size=step.shape)
+        if eps > 0:
+            # epsilon_explore replaces the action outright with a uniform
+            # random direction, at the same magnitude the policy would use.
+            swap = rng.random(n) < eps
+            if swap.any():
+                phi = rng.uniform(-np.pi, np.pi, size=int(swap.sum()))
+                step[swap] = np.stack([np.cos(phi), np.sin(phi)], 1) * mag
+        new = np.clip(pos_f + step, 0.0, float(size - 1))
+        if reflect:
+            # A specular bounce off whichever boundary absorbed the step. The
+            # env itself does not reflect -- it clips -- so this models a
+            # POLICY that turns at the wall, which is what a good sweep does.
+            hit_x = (new[:, 0] <= 0.0) | (new[:, 0] >= size - 1)
+            hit_y = (new[:, 1] <= 0.0) | (new[:, 1] >= size - 1)
+            theta = np.where(hit_x, np.pi - theta, theta)
+            theta = np.where(hit_y, -theta, theta)
+        pos_f = new
+        track[:, t + 1] = _snap(pos_f, size)
+    return track
+
+
+def _coverage(track: np.ndarray, size: int) -> tuple[float, float]:
+    """(mean per-episode coverage, union coverage over all episodes)."""
+    flat = track[..., 0] * size + track[..., 1]
+    per = np.array([len(np.unique(row)) for row in flat]) / float(size * size)
+    union = len(np.unique(flat)) / float(size * size)
+    return float(per.mean()), float(union)
+
+
+# --------------------------------------------------------------------------
+# The behaviour classes
+# --------------------------------------------------------------------------
+
+
+def _uniform(rng, n):
+    return lambda theta, t: rng.uniform(-np.pi, np.pi, size=n)
+
+
+def _persistent(rng, n, sigma):
+    return lambda theta, t: theta + rng.normal(0.0, sigma, size=n)
+
+
+def _noisy_billiard_track(*, n, steps, size, mag, r2, rng, thresh=1.5):
+    """A billiard that must *sense* the wall, at a given decoding quality.
+
+    The plain `billiard` reflects with perfect knowledge of the boundary, which
+    the agent does not have: P0.9 measures wall-distance decodability from the
+    60-ray cone at R² ≈ 0.27 at the instructed `wall_resolution=4`. This turns
+    that R² into a behaviour, so the coverage ladder has a rung that the agent
+    could actually stand on.
+
+    The estimate is `d_true + N(0, sigma)`, and `sigma` is set so that the
+    estimator's own R² against `d_true` is the requested one:
+
+        R² = Var(d) / (Var(d) + sigma²)   =>   sigma² = Var(d) (1 - R²) / R²
+
+    NOT `sigma² = (1 - R²) Var(d)`, which is the natural-looking form and is
+    wrong: it bottoms out at R² = 0.5 as the requested R² goes to zero, because
+    `d_true` is still inside the estimate. Getting that wrong made an earlier
+    version of this function report that coverage was insensitive to wall
+    sensing all the way down to "R² = 0", when the worst case it actually
+    simulated was R² = 0.5.
+
+    The policy turns to a fresh heading when its *estimate* of the distance
+    ahead drops below `thresh` -- so it turns early when it overestimates the
+    danger and drives into the wall when it underestimates.
+    """
+    pos = rng.uniform(0, size - 1, size=(n, 2))
+    theta = rng.uniform(-np.pi, np.pi, size=n)
+    track = np.empty((n, steps + 1, 2), dtype=np.int64)
+    track[:, 0] = _snap(pos, size)
+
+    # Var of distance-to-nearest-wall under a uniform position, for the noise
+    # scale. Sampled rather than derived: it is one line either way.
+    s = rng.uniform(0, size - 1, size=(20000, 2))
+    d_all = np.minimum(s, (size - 1) - s).min(1)
+    sigma = (np.inf if r2 <= 0
+             else np.sqrt(d_all.var() * (1.0 - r2) / r2))
+
+    for t in range(steps):
+        step = np.stack([np.cos(theta), np.sin(theta)], axis=1) * mag
+        # True distance to the boundary along the current heading.
+        with np.errstate(divide="ignore", invalid="ignore"):
+            tx = np.where(step[:, 0] > 0, (size - 1 - pos[:, 0]) / step[:, 0],
+                          np.where(step[:, 0] < 0, -pos[:, 0] / step[:, 0], np.inf))
+            ty = np.where(step[:, 1] > 0, (size - 1 - pos[:, 1]) / step[:, 1],
+                          np.where(step[:, 1] < 0, -pos[:, 1] / step[:, 1], np.inf))
+        d_true = np.minimum(tx, ty) * mag
+        d_est = (rng.normal(d_all.mean(), d_all.std(), size=n)
+                 if not np.isfinite(sigma)
+                 else d_true + rng.normal(0.0, sigma, size=n))
+        turn = d_est < thresh
+        if turn.any():
+            theta[turn] = rng.uniform(-np.pi, np.pi, size=int(turn.sum()))
+            step[turn] = np.stack([np.cos(theta[turn]),
+                                   np.sin(theta[turn])], axis=1) * mag
+        pos = np.clip(pos + step, 0.0, float(size - 1))
+        track[:, t + 1] = _snap(pos, size)
+    return track
+
+
+def _run_and_tumble(rng, n, p_turn):
+    """Hold the heading; with probability `p_turn` per step, resample it.
+
+    The memoryless behaviour that the noisy-billiard result points at: coverage
+    turned out to be insensitive to *what* triggers a turn (R²=0.27 and R²=0.0
+    score the same) and sensitive only to *how often* one happens. Run-and-tumble
+    is that statistic in its purest form -- straight runs of mean length
+    `1/p_turn`, separated by a full re-orientation -- and unlike a heading that
+    diffuses continuously it needs no state at all beyond the current heading,
+    which the env supplies for free by pointing the sensory cone.
+    """
+    def fn(theta, t):
+        turn = rng.random(n) < p_turn
+        if turn.any():
+            theta = theta.copy()
+            theta[turn] = rng.uniform(-np.pi, np.pi, size=int(turn.sum()))
+        return theta
+    return fn
+
+
+_BILLIARD_CACHE: dict = {}
+
+
+def billiard_cells_per_step(mag: float, size: int, steps: int,
+                            trials: int = 64) -> float:
+    """`cells_per_step` a perfect billiard achieves at this step magnitude.
+
+    Public because `behavior_probe.strategy_efficiency` divides an observed
+    `cells_per_step` by it, to separate "the agent moves too slowly" from "the
+    agent moves badly" -- two failures with different fixes that a raw coverage
+    number conflates. It lives here rather than there because this module owns
+    the scripted-policy simulation, and duplicating the rollout would let the
+    reference drift from the ladder it is a rung of.
+
+    Cached per (magnitude, size, steps): the probe calls it once per env.
+    """
+    key = (round(float(mag), 3), size, steps, trials)
+    if key not in _BILLIARD_CACHE:
+        rng = np.random.default_rng(0)
+        track = _rollout(_persistent(rng, trials, 0.0), n=trials, steps=steps,
+                         size=size, mag=max(float(mag), 1e-6), eps=0.0,
+                         sigma_a=0.0, rng=rng, reflect=True)
+        cov, _ = _coverage(track, size)
+        _BILLIARD_CACHE[key] = cov * size * size / steps
+    return _BILLIARD_CACHE[key]
+
+
+def swept_billiard(mag: float, size: int, steps: int, radius: float,
+                   trials: int = 64) -> float:
+    """`swept_coverage` a perfect billiard achieves at this step magnitude.
+
+    The swept analogue of `billiard_cells_per_step`, and it exists to solve a
+    specific problem: **swept numbers from different worlds are not directly
+    comparable, but their ratio against this reference is.** A billiard in an
+    empty box does not depend on the wall code or the encoder, so two models
+    trained on different encoders -- which therefore cannot be rolled on the
+    same trajectories at all -- can still be put on one axis by dividing each
+    by the billiard at its OWN realized speed.
+
+    That division is also the only honest way to read a swept number, because
+    §19.2 established that swept coverage is monotone in speed: a model that
+    sweeps more because it moves faster has not explored better.
+
+    **This reference does NOT reproduce the table in `swept.py`'s docstring,
+    and the discrepancy is pre-existing.** Measured at 256 trials, size 20,
+    r=1.0, 200 steps:
+
+        speed | cell: here / swept.py | swept: here / swept.py
+        0.50  |  0.241 / 0.246        |  0.416 / 0.391
+        1.00  |  0.375 / 0.383        |  0.626 / 0.633
+        2.00  |  0.361 / 0.384        |  0.783 / 0.839
+        3.00  |  0.340 / 0.397        |  0.887 / 0.881
+
+    The CELL column disagrees too, and the gap grows with speed (-0.005,
+    -0.008, -0.023, -0.057). So this is a difference between two *billiard
+    implementations*, not a bug in the swept reduction: `_rollout`'s reflection
+    is not the one that produced `swept.py`'s numbers, and it loses ground
+    at long strides where corner handling matters. It does not shrink with
+    more trials (checked at 64 / 256 / 1024), so it is systematic, not noise.
+
+    **Consequence worth knowing, because it is live:**
+    `behavior_probe.strategy_efficiency` already divides by
+    `billiard_cells_per_step`, i.e. by THIS billiard. At speed 3 that
+    reference is 14% low, so an efficiency computed for a fast policy is
+    inflated by about that much. At `p20_e`'s realized 0.96 the gap is 2% and
+    its 1.038 stands.
+
+    Which one is right is not settled here. What matters for the job this
+    function exists for -- putting models from different worlds on one axis --
+    is that ONE reference is used consistently, and using this one keeps the
+    swept efficiency consistent with the cell efficiency the probe already
+    reports. Ratios are safe; the absolute value should be quoted with the
+    implementation named.
+
+    Cached per (magnitude, size, steps, radius).
+    """
+    from hopfield_nav.evaluation.swept import SweptArea
+
+    key = ("swept", round(float(mag), 3), size, steps, round(float(radius), 3),
+           trials)
+    if key not in _BILLIARD_CACHE:
+        rng = np.random.default_rng(0)
+        track = _rollout(_persistent(rng, trials, 0.0), n=trials, steps=steps,
+                         size=size, mag=max(float(mag), 1e-6), eps=0.0,
+                         sigma_a=0.0, rng=rng, reflect=True)
+        track = np.asarray(track)
+        # `_rollout` returns (steps, n, 2) or (n, steps, 2) depending on the
+        # caller; normalise to (n, steps, 2) by putting `trials` first.
+        if track.shape[0] != trials and track.shape[1] == trials:
+            track = np.transpose(track, (1, 0, 2))
+        sa = SweptArea(size, radius, track.shape[0])
+        for t in range(track.shape[1]):
+            sa.add(track[:, t])
+        _BILLIARD_CACHE[key] = float(sa.result().per_trial.mean())
+    return _BILLIARD_CACHE[key]
+
+
+def _serpentine_track(*, n, steps, size, rng):
+    """The lawnmower: the ceiling, run as a track so it scores identically.
+
+    Starts at a random cell, walks to the nearest corner, then sweeps columns.
+    Any step that would leave the grid is spent in place, which is exactly the
+    penalty a real sweep pays for its turns.
+    """
+    track = np.empty((n, steps + 1, 2), dtype=np.int64)
+    for i in range(n):
+        start = rng.integers(0, size, size=2)
+        path = [tuple(start)]
+        x, y = int(start[0]), int(start[1])
+        while y > 0:                       # drop to the bottom row
+            y -= 1
+            path.append((x, y))
+        while x > 0:                       # then to the left edge
+            x -= 1
+            path.append((x, y))
+        up = True
+        while len(path) <= steps:
+            for _ in range(size - 1):      # sweep a column
+                y = y + 1 if up else y - 1
+                path.append((x, y))
+            x += 1
+            if x >= size:
+                break
+            path.append((x, y))
+            up = not up
+        while len(path) <= steps:          # ran out of grid: stand still
+            path.append(path[-1])
+        track[i] = np.array(path[:steps + 1])
+    return track
+
+
+# --------------------------------------------------------------------------
+
+
+def main() -> None:
+    p = argparse.ArgumentParser(description=__doc__)
+    p.add_argument("--size", type=int, default=20)
+    p.add_argument("--steps", type=int, default=200)
+    p.add_argument("--trials", type=int, default=32,
+                   help="episodes per condition; union coverage is over these")
+    p.add_argument("--seed", type=int, default=0)
+    p.add_argument("--json", type=str, default=None)
+    args = p.parse_args()
+
+    size, steps, n = args.size, args.steps, args.trials
+    ceiling = min(1.0, (steps + 1) / float(size * size))
+    print(f"grid {size}x{size} = {size*size} cells, {steps} steps, "
+          f"{n} trials/condition")
+    print(f"coverage ceiling (one new cell per step) = {ceiling:.4f}\n")
+
+    rows = []
+
+    def run(name, track):
+        cov, union = _coverage(track, size)
+        rows.append({"policy": name, "mean_coverage": cov,
+                     "cells_per_step": cov * size * size / steps,
+                     "union_coverage": union})
+        print(f"  {name:<44s} cov={cov:.4f}  cells/step={cov*size*size/steps:.3f}"
+              f"  union={union:.4f}")
+
+    rng = np.random.default_rng(args.seed)
+    print("--- behaviour class, noiseless, magnitude 1.0 ---")
+    run("serpentine (lawnmower ceiling)",
+        _serpentine_track(n=n, steps=steps, size=size, rng=rng))
+    run("billiard (straight, specular bounce)",
+        _rollout(_persistent(rng, n, 0.0), n=n, steps=steps, size=size,
+                 mag=1.0, eps=0.0, sigma_a=0.0, rng=rng, reflect=True))
+    for sigma in (0.05, 0.2, 0.5, 1.0):
+        run(f"persistent walk sigma={sigma}",
+            _rollout(_persistent(rng, n, sigma), n=n, steps=steps, size=size,
+                     mag=1.0, eps=0.0, sigma_a=0.0, rng=rng))
+    run("uniform random walk",
+        _rollout(_uniform(rng, n), n=n, steps=steps, size=size,
+                 mag=1.0, eps=0.0, sigma_a=0.0, rng=rng))
+
+    print("\n--- billiard that must SENSE the wall (P0.9: R^2 ~ 0.27 at "
+          "wall_resolution=4) ---")
+    for r2 in (1.0, 0.45, 0.27, 0.17, 0.0):
+        run(f"noisy billiard, wall-distance R^2={r2}",
+            _noisy_billiard_track(n=n, steps=steps, size=size, mag=1.0,
+                                  r2=r2, rng=rng))
+
+    print("\n--- run-and-tumble: the memoryless optimum, by turn rate ---")
+    for p in (0.02, 0.05, 0.1, 0.15, 0.2, 0.3, 0.5, 1.0):
+        run(f"run-and-tumble p_turn={p} (mean run {1/p:.0f} steps)",
+            _rollout(_run_and_tumble(rng, n, p), n=n, steps=steps, size=size,
+                     mag=1.0, eps=0.0, sigma_a=0.0, rng=rng))
+
+    # Includes the sub-cell magnitudes a partly-trained policy actually has.
+    # At |a| = m < 1 the agent needs 1/m steps to leave a cell, so cells/step
+    # cannot exceed ~m however good the trajectory is -- which is why a run
+    # sitting at |a| = 0.25 is magnitude-limited, not strategy-limited, and no
+    # shaping or schedule can move it.
+    print("\n--- step magnitude (billiard) ---")
+    for mag in (0.15, 0.25, 0.5, 0.75, 1.0, 1.5, 2.0, 3.0):
+        run(f"billiard |a|={mag}",
+            _rollout(_persistent(rng, n, 0.0), n=n, steps=steps, size=size,
+                     mag=mag, eps=0.0, sigma_a=0.0, rng=rng, reflect=True))
+
+    print("\n--- epsilon_explore, on top of a billiard ---")
+    for eps in (0.0, 0.05, 0.1, 0.2, 0.4):
+        run(f"billiard + eps={eps}",
+            _rollout(_persistent(rng, n, 0.0), n=n, steps=steps, size=size,
+                     mag=1.0, eps=eps, sigma_a=0.0, rng=rng, reflect=True))
+
+    print("\n--- action Gaussian sigma = exp(init_log_std), billiard ---")
+    for ils in (-1.8, -1.2, -0.8, -0.5, 0.0):
+        run(f"billiard + init_log_std={ils} (sigma={np.exp(ils):.3f})",
+            _rollout(_persistent(rng, n, 0.0), n=n, steps=steps, size=size,
+                     mag=1.0, eps=0.0, sigma_a=float(np.exp(ils)), rng=rng,
+                     reflect=True))
+
+    print("\n--- exploit reference: straight-line steps to goal ---")
+    g = np.random.default_rng(args.seed + 1)
+    a = g.integers(0, size, size=(20000, 2)).astype(float)
+    b = g.integers(0, size, size=(20000, 2)).astype(float)
+    d = np.linalg.norm(a - b, axis=1)
+    d = d[d > 0]
+    for radius in (0.5, 1.0):
+        for mag in (1.0, 1.5, 2.0):
+            steps_ideal = np.maximum(0.0, d - radius) / mag
+            print(f"  goal_radius={radius} |a|={mag}: "
+                  f"mean_steps_ideal={steps_ideal.mean():.2f}  "
+                  f"median={np.median(steps_ideal):.2f}")
+    print(f"  (mean start-goal Euclidean distance = {d.mean():.2f})")
+
+    if args.json:
+        with open(args.json, "w") as fh:
+            json.dump({"size": size, "steps": steps, "trials": n,
+                       "ceiling": ceiling, "rows": rows}, fh, indent=2)
+        print(f"\nwrote {args.json}")
+
+
+if __name__ == "__main__":
+    main()

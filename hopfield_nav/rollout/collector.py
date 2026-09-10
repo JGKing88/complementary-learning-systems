@@ -19,6 +19,8 @@ import torch.nn.functional as F
 
 from ..policy import channels
 from . import signal
+from . import visited as visited_mod
+from .diagnostics import RegimeDiagnostics, on_perimeter
 from ..world import episode
 from ..config import TrainConfig
 from hopfield import Hopfield, recall_per_env_batch, recall_per_env_batch_trajectory
@@ -174,6 +176,33 @@ class RolloutCollector:
         # reset to zero for envs that just teleported (post-goal-reach).
         prev_reward_t = torch.zeros(B, 1, device=self.device)
         prev_action_t = torch.zeros(B, prev_action_dim, device=self.device)
+        # The displacement the env actually produced, which is not the action:
+        # the norm clamp rescales it and the arena clip truncates it at a wall.
+        prev_disp_t = torch.zeros(B, 2, device=self.device)
+        # A SECOND copy of the same quantity, for the persistence bonus under
+        # `persistence_realized`. Separate from prev_disp_t because the shaping
+        # cosine is computed numpy-side while prev_disp_t is a device tensor
+        # feeding the observation -- not because their reset behaviour differs.
+        # Both are zeroed together in the teleport block below.
+        prev_disp_shaping = np.zeros((B, 2), dtype=np.float32)
+
+        # Auxiliary visitation targets (§24.2 lever B). For each of 8 compass
+        # directions at `aux_visited_radius`, had the agent already visited that
+        # cell when it acted? Recorded only when the head exists, so a run
+        # without it pays nothing and its RolloutBatch carries None.
+        # One probe, two consumers: the auxiliary head's target (§24.2 lever B)
+        # and the diagnostic input channel (§27.5). Shared so the diagnostic
+        # tests exactly what the head was trained on. See rollout/visited.py.
+        vis_probe = visited_mod.probe_for(cfg, B)
+        vis_channel_on = getattr(cfg.agent, "input_visited", False)
+        abs_pos_on = getattr(cfg.agent, "input_abs_position", False)
+        aux_head_on = getattr(cfg.agent, "aux_visited_weight", 0.0) > 0
+        all_visited_targets = (
+            torch.zeros(B, T, visited_mod.N_DIR, device=self.device)
+            if aux_head_on else None)
+        # Defensive: the bootstrap reads this, and the loop always sets it, but
+        # an empty rollout would otherwise leave it unbound.
+        _last_vis = torch.zeros(B, visited_mod.N_DIR, device=self.device)
 
         # Buffers
         all_obs = torch.zeros(B, T, agent.rnn.input_size, device=self.device)
@@ -198,6 +227,17 @@ class RolloutCollector:
         # `ends_on_goal`; left None otherwise so PPO keeps its old reduction
         # rather than multiplying by a mask of ones.
         all_alive_mask = torch.ones(B, T, device=self.device)
+
+        # Per-update rollout diagnostics (docs/DUAL_TRAINING.md §7). Continuous
+        # only: `cos(a, q)` needs an action vector, and every phase-2 run is
+        # continuous. Costs one dot product and four norms per step.
+        _diag = (RegimeDiagnostics(B)
+                 if cfg.agent.movement_mode == "continuous" else None)
+
+        # §7.7.2's channel: the fraction of the 1024-dim recall the local 2-D
+        # chart explains. Resolved once so the two input-assembly sites and
+        # the signal call cannot disagree about whether it is on.
+        chart_on = getattr(cfg.agent, "input_chart_frac", False)
 
         # Novelty bonus: track per-rollout visited cells (B, size, size) bool.
         # +novelty_reward on first visit during the explore phase; revisits get 0.
@@ -251,7 +291,10 @@ class RolloutCollector:
                 current_reward_t = torch.from_numpy(current_reward).to(self.device).unsqueeze(1)  # (B, 1)
 
                 # 3. Look up embeddings from encoded_Phi
-                embeddings_np = self.vectorhash.get_encoded_state(positions, env_offset)
+                embeddings_np = self.vectorhash.get_encoded_state(
+                    visited_mod.alias_positions(
+                        positions, getattr(cfg.hopfield, 'alias_mod', 0)),
+                    env_offset)
                 embeddings = torch.from_numpy(embeddings_np).float().to(self.device)
 
                 # 3b. Raw sensory observations from env codebook (if agent uses them)
@@ -270,11 +313,18 @@ class RolloutCollector:
                     recompute_mask = invalidated_envs.copy()
                 invalidated_envs[:] = False
 
-                hopfield_signal, q_full, memory_mask, new_W = self._hopfield_signal_at(
+                _sig_out = self._hopfield_signal_at(
                     embeddings_np, embeddings, positions, env_offset,
                     hopfields, shared_hopfield, signal_dim,
                     cached_W=cached_W, recompute_mask=recompute_mask,
+                    return_chart=chart_on,
                 )
+                if chart_on:
+                    hopfield_signal, q_full, memory_mask, new_W, chart_np = \
+                        _sig_out
+                else:
+                    hopfield_signal, q_full, memory_mask, new_W = _sig_out
+                    chart_np = None
                 multistep_q = self._compute_multistep_q(
                     embeddings_np, embeddings, hopfields, shared_hopfield,
                     cached_W if new_W is None else new_W,
@@ -430,15 +480,55 @@ class RolloutCollector:
                     "encoded_state": embeddings,
                     "hopfield_signal": sig_for_rnn,
                     "prev_action": prev_action_t,
+                    "prev_displacement": prev_disp_t,
                     "goal_in_memory": torch.from_numpy(
                         agent_goal_store_fired.astype(np.float32)
                     ).to(self.device).unsqueeze(-1),
                 }
+                # CHANNEL DROPOUT, training rollouts only -- evaluation always
+                # sees the full input. The point is not to handicap the agent
+                # at test time but to stop the position and heading channels
+                # from being reliable enough to be the whole policy. Masked
+                # per-env per-step, so within one rollout the agent sometimes
+                # has the channel and sometimes does not.
+                _pdrop = float(getattr(cfg.hopfield, "place_dropout", 0.0))
+                if _pdrop > 0.0:
+                    keep = torch.from_numpy(
+                        (np.random.rand(B) >= _pdrop).astype(np.float32)
+                    ).to(self.device).unsqueeze(-1)
+                    values["encoded_state"] = values["encoded_state"] * keep
+                _hdrop = float(getattr(cfg.hopfield, "heading_dropout", 0.0))
+                if _hdrop > 0.0:
+                    keep = torch.from_numpy(
+                        (np.random.rand(B) >= _hdrop).astype(np.float32)
+                    ).to(self.device).unsqueeze(-1)
+                    values["prev_action"] = values["prev_action"] * keep
+                    values["prev_displacement"] = (
+                        values["prev_displacement"] * keep)
                 if cfg.agent.input_sensory:
                     values["sensory"] = sensory
                 for s, q_s in multistep_q.items():
                     values[channels.multistep_name(s)] = (
                         torch.from_numpy(q_s).float().to(self.device))
+
+                if abs_pos_on:
+                    values["abs_position"] = torch.from_numpy(
+                        visited_mod.abs_position_channel(
+                            vec, cfg.env.size)).to(self.device)
+                if vis_probe is not None:
+                    _vt = torch.from_numpy(
+                        vis_probe.read(vec.positions())).to(self.device)
+                    if all_visited_targets is not None:
+                        all_visited_targets[:, t] = _vt
+                    if vis_channel_on:
+                        # The SAME vector the head is asked to predict, handed
+                        # straight to the policy instead. §27.5.
+                        values["visited"] = _vt
+                    _last_vis = _vt
+                if chart_on:
+                    values["chart_frac"] = torch.from_numpy(
+                        chart_np).float().to(self.device).unsqueeze(-1)
+                    _last_chart = values["chart_frac"]
 
                 rnn_input = channels.build_policy_input(
                     input_specs, values, batch_size=B,
@@ -550,6 +640,22 @@ class RolloutCollector:
                     rewards, goal_reached, _ = vec.step_batch(
                         actions, contract=goal_contract)
 
+                if _diag is not None:
+                    # Read BEFORE `done` is updated below, so `alive` means
+                    # "was stepped this iteration". Teleporting rows are
+                    # excluded for the same reason the shaping excludes them
+                    # via `moved`: their realized displacement is a teleport
+                    # jump, not a move, and averaging it in would inflate
+                    # realized_mag exactly where the agent is succeeding.
+                    _diag.observe(
+                        q=q_full,
+                        action=actions,
+                        realized=vec.last_displacement(),
+                        at_edge=on_perimeter(vec.positions(), cfg.env.size),
+                        alive=~done & ~at_goal_mask,
+                        from_policy=policy_chose.cpu().numpy(),
+                    )
+
                 if ends_on_goal:
                     # After this step, whoever was at the goal is finished.
                     done = done | goal_reached
@@ -609,11 +715,7 @@ class RolloutCollector:
                         visited_cells[np.arange(B), xs, ys] = True
 
                     if wall_on:
-                        size = cfg.env.size
-                        at_edge = (
-                            (xs == 0) | (xs == size - 1)
-                            | (ys == 0) | (ys == size - 1)
-                        )
+                        at_edge = on_perimeter(new_pos, cfg.env.size)
                         rewards -= (cfg.hopfield.wall_penalty
                                     * at_edge.astype(np.float32)
                                     * moved)
@@ -623,7 +725,32 @@ class RolloutCollector:
                         # rollout start / post-teleport). Continuous: raw
                         # 2D vectors, normalize. Discrete: one-hot codes,
                         # dot product == 1 if same direction else 0.
-                        if cfg.agent.movement_mode == "discrete":
+                        if cfg.hopfield.persistence_realized:
+                            # Score the motion the env actually produced. A
+                            # wall-pinned agent commands one steady heading
+                            # and realizes ~0.09 of it, so on the COMMANDED
+                            # action it banks the full ballistic bonus for
+                            # standing still (§18.7-18.8). On the realized
+                            # displacement its cosine collapses toward the
+                            # clip-truncated residual, while an unobstructed
+                            # policy is unchanged -- realized == commanded
+                            # whenever neither the norm clamp nor the arena
+                            # clip bites.
+                            cur = vec.last_displacement().astype(np.float32)
+                            cn = np.linalg.norm(cur, axis=-1, keepdims=True)
+                            pn = np.linalg.norm(prev_disp_shaping, axis=-1,
+                                                keepdims=True)
+                            cos_np = np.sum(
+                                (cur / np.maximum(cn, 1e-8))
+                                * (prev_disp_shaping / np.maximum(pn, 1e-8)),
+                                axis=-1)
+                            # A step that produced no motion at all scores 0,
+                            # not the 1.0 that a zero/zero cosine would give.
+                            cos_np = np.where(
+                                (cn[:, 0] < 1e-6) | (pn[:, 0] < 1e-6),
+                                0.0, cos_np).astype(np.float32)
+                            cos_sim = torch.from_numpy(cos_np).to(self.device)
+                        elif cfg.agent.movement_mode == "discrete":
                             a_t = F.one_hot(
                                 result["move_action"].long(), num_classes=4
                             ).float()
@@ -633,8 +760,16 @@ class RolloutCollector:
                             a_norm = a_t.norm(dim=-1, keepdim=True).clamp_min(1e-8)
                             p_norm = prev_action_t.norm(dim=-1, keepdim=True).clamp_min(1e-8)
                             cos_sim = ((a_t / a_norm) * (prev_action_t / p_norm)).sum(-1)
+                        cos_np_r = cos_sim.cpu().numpy().astype(np.float32)
+                        if getattr(cfg.hopfield, "persistence_one_sided",
+                                   False):
+                            # Reward smooth motion without penalising the turn.
+                            # Two-sided, a 180 deg reversal costs 2*bonus, so
+                            # the wall turn a lawnmower needs is priced above
+                            # the novelty of the row it opens up.
+                            cos_np_r = np.maximum(cos_np_r, 0.0)
                         rewards += (cfg.hopfield.persistence_bonus
-                                    * cos_sim.cpu().numpy().astype(np.float32)
+                                    * cos_np_r
                                     * moved)
 
                 all_rewards[:, t] = torch.from_numpy(rewards).to(self.device)
@@ -650,6 +785,11 @@ class RolloutCollector:
                     ).float()
                 else:
                     prev_action_t = result["move_action"].float()
+                # Read off the env rather than recomputed here, so training and
+                # every eval path agree by construction.
+                prev_disp_t = torch.from_numpy(
+                    vec.last_displacement()).float().to(self.device)
+                prev_disp_shaping = vec.last_displacement().astype(np.float32)
 
                 # The teleport itself always invalidates the cached
                 # Gram-Schmidt basis -- that is about the agent's *position*
@@ -675,6 +815,19 @@ class RolloutCollector:
                     # be a state neither regime produces.
                     prev_reward_t[reset_idx] = 0.0
                     prev_action_t[reset_idx] = 0.0
+                    prev_disp_t[reset_idx] = 0.0
+                    # prev_disp_t belongs to the same set and was missing from
+                    # it. Unreachable while reset_state_on_teleport is False
+                    # (this whole block is), so adding it changes nothing any
+                    # run has done -- but with the switch ON it was the one
+                    # enrichment buffer that survived a teleport it should not
+                    # have, feeding the policy a displacement made from a
+                    # position it no longer occupies.
+                    # Same rule for the persistence-shaping copy: no valid
+                    # "previous step" survives a teleport, and a stale one
+                    # would pay a bonus for a displacement the agent did not
+                    # make from where it now stands.
+                    prev_disp_shaping[np.where(reset)[0]] = 0.0
 
             # Bootstrap value at truncation
             pos_final = vec.positions()
@@ -690,7 +843,10 @@ class RolloutCollector:
             # Real Hopfield signal at the bootstrap state (was zeros). Without
             # this the value head sees "no memory" at horizon regardless of the
             # actual Hopfield content, biasing the truncation bootstrap.
-            emb_final_np = self.vectorhash.get_encoded_state(pos_final, env_offset)
+            emb_final_np = self.vectorhash.get_encoded_state(
+                visited_mod.alias_positions(
+                    pos_final, getattr(cfg.hopfield, 'alias_mod', 0)),
+                env_offset)
             emb_final = torch.from_numpy(emb_final_np).float().to(self.device)
             sig_final, q_final, _, W_final = self._hopfield_signal_at(
                 emb_final_np, emb_final, pos_final, env_offset,
@@ -712,6 +868,7 @@ class RolloutCollector:
                 "encoded_state": emb_final,
                 "hopfield_signal": sig_for_rnn_final,
                 "prev_action": prev_action_t,
+                "prev_displacement": prev_disp_t,
                 "goal_in_memory": torch.from_numpy(
                     agent_goal_store_fired.astype(np.float32)
                 ).to(self.device).unsqueeze(-1),
@@ -723,6 +880,22 @@ class RolloutCollector:
                 values_final[channels.multistep_name(s)] = (
                     torch.from_numpy(q_s).float().to(self.device))
 
+            if abs_pos_on:
+                values_final["abs_position"] = torch.from_numpy(
+                    visited_mod.abs_position_channel(
+                        vec, cfg.env.size)).to(self.device)
+            if vis_channel_on:
+                # The bootstrap value is read at the truncation state; the
+                # last computed vector is the right one for it.
+                values_final["visited"] = _last_vis
+            if chart_on:
+                _, _, _, _, _cf = self._hopfield_signal_at(
+                    embeddings_np, embeddings, positions, env_offset,
+                    hopfields, shared_hopfield, signal_dim,
+                    cached_W=cached_W, return_chart=True,
+                )
+                values_final["chart_frac"] = torch.from_numpy(
+                    _cf).float().to(self.device).unsqueeze(-1)
             final_input = channels.build_policy_input(
                 input_specs, values_final, batch_size=B,
             ).unsqueeze(1)
@@ -750,11 +923,13 @@ class RolloutCollector:
             explore_mask=all_explore_mask,
             policy_action_mask=all_policy_action_mask,
             alive_mask=all_alive_mask if ends_on_goal else None,
+            visited_targets=all_visited_targets,
             trust_hop_mask=trust_hop_mask if collect_teacher else None,
             teacher_move_action=teacher_move if collect_teacher else None,
             teacher_store_action=teacher_store if collect_teacher else None,
             move_label_mask=move_label_mask if collect_teacher else None,
             store_label_mask=store_label_mask if collect_teacher else None,
+            diag=_diag.summary() if _diag is not None else None,
         )
 
     # The three helpers below moved to signal.py so that eval.agent_step runs
@@ -773,7 +948,8 @@ class RolloutCollector:
         signal_dim: int,
         cached_W: np.ndarray | None = None,
         recompute_mask: np.ndarray | None = None,
-    ) -> tuple[torch.Tensor, np.ndarray, torch.Tensor, np.ndarray | None]:
+        return_chart: bool = False,
+    ) -> tuple:
         """Recall + Gram-Schmidt projection for a batch of states.
 
         ``signal_dim`` is accepted for call-site symmetry and derived from the
@@ -783,6 +959,7 @@ class RolloutCollector:
             self.vectorhash, self.cfg, embeddings_np, embeddings, positions,
             env_offset, hopfields, shared_hopfield, self.device,
             self.embed_dim, cached_W=cached_W, recompute_mask=recompute_mask,
+            return_chart=return_chart,
         )
 
     def _compute_multistep_q(

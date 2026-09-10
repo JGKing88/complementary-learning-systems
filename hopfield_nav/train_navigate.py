@@ -38,6 +38,13 @@ from .world.env import warn_if_offcell_stores
 from .policy.agent import NavAgent, compute_input_dim
 from .policy.recurrent import add_recurrent_args
 from .rollout.collector import RolloutCollector
+from .rollout import diagnostics as rollout_diag
+
+# `regime_gap` needs a usable recall on BOTH sides to mean anything. At
+# n_distractors = 0 the goal-absent memory is empty, q = 0 exactly, and the
+# explore side has no angle at all -- §7.5's degenerate condition. Half the
+# steps carrying a recall is a low bar that still excludes that case.
+MIN_COS_FRAC = 0.5
 from .updates.ppo import ppo_update
 from .evaluation.checkpoint_io import cfg_from_checkpoint
 from .training.cfg_args import settle_encoder
@@ -49,6 +56,7 @@ from .training.stages import (
     Knobs, ScheduleError, Stage, format_schedule, parse_schedule, resolve,
     stage_at, total_updates,
 )
+from .policy.action_head import action_bounds_from
 from .training.world_setup import (
     build_field, do_eval, set_phase_freeze, setup_run_world,
 )
@@ -67,6 +75,19 @@ def _compute_epsilon(update: int, base: float, anneal: int) -> float:
         return base
     scale = max(0.0, 1.0 - (update - 1) / float(anneal))
     return base * scale
+
+
+def _compute_log_kappa_max(update: int, base: float, end, anneal: int) -> float:
+    """Linear ramp of the kappa CEILING from `base` -> `end` over `anneal`.
+
+    Same shape as `_compute_epsilon`, and for the same reason: it is a property
+    of how far the run has got. `end is None` or `anneal <= 0` means constant,
+    which is every run before 2026-09-01.
+    """
+    if end is None or anneal <= 0:
+        return base
+    t = min(1.0, max(0.0, (update - 1) / float(anneal)))
+    return base + t * (float(end) - base)
 
 
 def run_navigate(
@@ -217,8 +238,27 @@ def run_navigate(
         cfg.log_std_anneal_target is not None
         and cfg.log_std_anneal_end_update > cfg.log_std_anneal_start_update
     )
-    log_std_init_val = float(agent.movement_log_std.detach().mean().item()) \
-        if hasattr(agent, "movement_log_std") else None
+    # `getattr(..., None) is not None`, not `hasattr`: under
+    # state_dependent_std the attribute exists and holds None, so hasattr is
+    # True and the .detach() below dies.
+    log_std_init_val = (
+        float(agent.movement_log_std.detach().mean().item())
+        if getattr(agent, "movement_log_std", None) is not None else None)
+
+    # A knob that is accepted, echoed and then silently discarded is the most
+    # expensive kind of bug this project has: `--freeze_log_std` did nothing on
+    # this trainer for the whole v35 lineage, and `--epsilon_explore 0.3` on an
+    # exploit-only schedule burned a run producing numbers bit-identical to its
+    # control. Epsilon reaches the ROLLOUT only through the explore regime --
+    # `exploit.py` hard-zeros it, because with the goal already in memory a
+    # random action is a wasted step rather than exploration.
+    if cfg.epsilon_explore > 0 and not any(
+            s.kind in ("explore", "interleave") for s in stages):
+        print(f"  WARNING: --epsilon_explore {cfg.epsilon_explore} is INERT for "
+              f"this schedule. Epsilon applies to explore rollouts only, and "
+              f"this run has none ({', '.join(s.kind for s in stages)}). The "
+              f"value will be ignored -- do not read it as an active knob.",
+              flush=True)
 
     # None follows the rollout length, which is what every run did before
     # `eval_max_steps` existed.
@@ -249,6 +289,12 @@ def run_navigate(
         print(f"Restored RNG streams (global, distractor, per-env); "
               f"continuing at u{start_update + 1}", flush=True)
 
+    # Captured before the loop: the ramp target for
+    # revisit_anneal_updates. cfg.hopfield.revisit_penalty is
+    # overwritten each update, so reading it inside the loop would
+    # ramp toward the previous iteration's value and decay to 0.
+    _rp_target = float(getattr(cfg.hopfield, 'revisit_penalty', 0.0))
+
     for update in range(start_update + 1, n_updates_total + 1):
         stage, local_update = stage_at(stages, update)
 
@@ -271,7 +317,12 @@ def run_navigate(
             new_log_std = log_std_init_val + t_ls * (
                 cfg.log_std_anneal_target - log_std_init_val)
             with torch.no_grad():
-                agent.movement_log_std.data.fill_(new_log_std)
+                # No global parameter to anneal under a state-dependent head;
+                # the schedule would have to become a bias offset, which is a
+                # separate design question. Left unapplied rather than
+                # half-applied.
+                if getattr(agent, "movement_log_std", None) is not None:
+                    agent.movement_log_std.data.fill_(new_log_std)
 
         # Anneal novelty if requested.
         if cfg.novelty_anneal:
@@ -316,6 +367,29 @@ def run_navigate(
             emp_dist_max=cur_emp_distractors_max,
         ))
 
+        # revisit_penalty for this update. Assigned onto cfg rather than
+        # passed, for the same reason as the kappa ceiling below: the
+        # collector reads it where it computes the reward and no other caller
+        # needs to know. `_rp_target` is captured before the loop so the ramp
+        # is always toward the CONFIGURED value, never toward whatever the
+        # previous iteration left behind.
+        if getattr(cfg.hopfield, "revisit_anneal_updates", 0) > 0:
+            _rp_frac = min(1.0, float(update)
+                           / float(cfg.hopfield.revisit_anneal_updates))
+            cfg.hopfield.revisit_penalty = _rp_target * _rp_frac
+
+        # The kappa ceiling for this update. Assigned onto the head rather
+        # than passed, because it is read at forward time and nothing else
+        # needs to know about it.
+        if getattr(cfg.agent, "log_kappa_max_end", None) is not None:
+            _lkm = _compute_log_kappa_max(
+                update, cfg.agent.log_kappa_max,
+                cfg.agent.log_kappa_max_end,
+                cfg.agent.log_kappa_anneal_updates)
+            _head = getattr(agent, "polar_head", None)
+            if _head is not None:
+                _head.log_kappa_max = _lkm
+
         if knobs.lr != current_lr:
             for group in optimizer.param_groups:
                 group["lr"] = knobs.lr
@@ -324,16 +398,36 @@ def run_navigate(
         n_emp_now = int(round(n_envs * knobs.empty_frac))
         n_pre_now = n_envs - n_emp_now
 
+        # WHICH envs are exploit, as opposed to how many. Positionally, the
+        # count alone decides: the first `n_pre_now` are exploit every update,
+        # so at a fixed `empty_frac` a given env is in the same regime for the
+        # whole run. That is a memorization channel -- the policy can learn
+        # "this env's walls mean the recall signal is trustworthy" and gate on
+        # env identity instead of on the signal, which is exactly the skill the
+        # interleaved schedule exists to teach, and which does not transfer to
+        # a held-out env.
+        #
+        # `shuffle` re-draws the assignment every update from the run's own RNG,
+        # so an env is exploit on some updates and explore on others and its
+        # identity carries no information about its regime. `index` is the
+        # historical behaviour and stays the default, because every run before
+        # 2026-08-14 was trained under it.
+        if cfg.regime_assignment == "shuffle":
+            is_pre = np.zeros(n_envs, dtype=bool)
+            is_pre[np.random.permutation(n_envs)[:n_pre_now]] = True
+        else:
+            is_pre = np.arange(n_envs) < n_pre_now
+
         rollouts = []
+        pre_flags: list[bool] = []
         for w_idx, world in enumerate(worlds):
             vh = world.field
             collector = RolloutCollector(vh, cfg, embed_dim, device)
             for local_idx, env in enumerate(world.envs):
                 env_offset = world.offsets[local_idx]
-                # Order: the first n_pre_now envs are exploit, the rest explore.
-                # The reward split logged below slices on the same boundary.
-                regime = (exploit_regime if local_idx < n_pre_now
+                regime = (exploit_regime if is_pre[local_idx]
                           else explore_regime)
+                pre_flags.append(bool(is_pre[local_idx]))
                 spec = regime.spec(w_idx, world, local_idx, env, env_offset, knobs)
                 # The collector reads novelty off cfg and the goal reward off
                 # the env, so the regime's choice has to be written into both.
@@ -354,11 +448,12 @@ def run_navigate(
 
         mean_r = sum(r.rewards.sum().item() for r in rollouts) / max(
             sum(r.rewards.numel() for r in rollouts), 1)
-        if n_pre_now > 0:
-            pre_rs = rollouts[:n_pre_now * len(worlds)]
-            emp_rs = rollouts[n_pre_now * len(worlds):]
-        else:
-            pre_rs, emp_rs = [], rollouts
+        # Split by the flag recorded per rollout, not by a slice. The slice was
+        # only ever correct for `index` assignment AND num_worlds == 1 -- the
+        # rollout list is world-major, so `rollouts[:n_pre * n_worlds]` mixed
+        # regimes as soon as there was more than one world.
+        pre_rs = [r for r, pre in zip(rollouts, pre_flags) if pre]
+        emp_rs = [r for r, pre in zip(rollouts, pre_flags) if not pre]
         def _mr(rs):
             if not rs:
                 return 0.0
@@ -378,6 +473,34 @@ def run_navigate(
             log["train/current_lr"] = knobs.lr
             log["train/stage_kind"] = stage.kind
             log["train/stage_local_update"] = local_update
+
+            # Per-regime rollout diagnostics, EVERY update. docs/DUAL_TRAINING
+            # §7: evals run every 25-50 updates and do not split by regime, so
+            # the corner trap has only ever been diagnosed after the fact. The
+            # prediction on record is that chase_q rises BEFORE edge_frac, and
+            # nothing until now logged either per update.
+            #
+            # `cos_aq` is one statistic wearing two names: in a goal-present
+            # rollout it is `follow_q`, in a goal-absent one it is `chase_q`.
+            # `pre` here means the goal was pre-stored, i.e. the exploit rows.
+            pre_d = [r.diag for r in pre_rs if r.diag is not None]
+            emp_d = [r.diag for r in emp_rs if r.diag is not None]
+            for name, ds in (("expt", pre_d), ("expl", emp_d)):
+                for k, v in rollout_diag.merge(ds).items():
+                    log[f"train/{name}/{k}"] = v
+            if pre_d and emp_d:
+                # THE number for regime discrimination: how much more does the
+                # policy follow the recall when there is something to follow?
+                # It collapsing toward zero is mode B arriving.
+                #
+                # Guarded on BOTH regimes having a usable recall, because at
+                # n_distractors = 0 the goal-absent memory is EMPTY, so q = 0
+                # exactly and `chase_q` is undefined rather than zero (§7.5
+                # calls that condition degenerate and says not to pool it).
+                # Ungated, the gap would silently report exploit's own cos_aq.
+                a, b = rollout_diag.merge(pre_d), rollout_diag.merge(emp_d)
+                if min(a["cos_aq_frac"], b["cos_aq_frac"]) >= MIN_COS_FRAC:
+                    log["train/regime_gap"] = a["cos_aq"] - b["cos_aq"]
             if refresher is not None:
                 for trait in refresher.counts:
                     log[f"train/refresh_{trait}"] = int(trait in refreshed)
@@ -386,7 +509,13 @@ def run_navigate(
 
         n_updates_timed += 1
         if update == 1 or update % 10 == 0:
-            log_std_mean = float(agent.movement_log_std.exp().mean().item())
+            # Under a state-dependent head there is no single sigma to print;
+            # the per-update `sigma` in the PPO stats is the realized one, so
+            # fall back to it rather than inventing a number here.
+            log_std_mean = (
+                float(agent.movement_log_std.exp().mean().item())
+                if getattr(agent, "movement_log_std", None) is not None
+                else float(losses.get("sigma", float("nan"))))
             s_per_update = (time.time() - t_update_mark) / max(n_updates_timed, 1)
             print(f"  u{update}({stage.kind}): "
                   f"mean_r={mean_r:.4f} (pre={_mr(pre_rs):.4f}, "
@@ -486,6 +615,8 @@ def train_navigate(
     cfg.encoder_gain = encoder_gain
     if cfg.hopfield.beta is None:
         cfg.hopfield.beta = float(encoder_gain)
+    print(f"encoder gain {encoder_gain:g} (code sharpness)   "
+          f"hopfield beta {cfg.hopfield.beta:g} (recall sharpness)")
 
     # One scaffold field for the whole run. It is a pure function of
     # (lambdas, Npos, fwhm_ratio, encoder), so the per-world copies this used
@@ -523,7 +654,8 @@ def train_navigate(
     input_dim = compute_input_dim(cfg.agent, embed_dim, cfg.env.observation_size)
     print(f"Agent input_dim={input_dim} init_log_std={cfg.agent.init_log_std}",
           flush=True)
-    agent = NavAgent(cfg.agent, input_dim).to(device)
+    agent = NavAgent(cfg.agent, input_dim,
+                     action_bounds=action_bounds_from(cfg.env)).to(device)
 
     if load_checkpoint is not None:
         ck = torch.load(load_checkpoint, map_location=device, weights_only=False)
@@ -635,6 +767,29 @@ CFG_FIELDS: dict[str, tuple[str, ...]] = {
     "input_encoded_state": ("agent.input_encoded_state",),
     "input_hopfield_signal": ("agent.input_hopfield_signal",),
     "input_prev_action": ("agent.input_prev_action",),
+    "input_prev_displacement": ("agent.input_prev_displacement",),
+    "action_squash": ("agent.action_squash",),
+    "state_dependent_std": ("agent.state_dependent_std",),
+    "log_std_min": ("agent.log_std_min",),
+    "log_std_max": ("agent.log_std_max",),
+    "action_polar": ("agent.action_polar",),
+    "init_log_kappa": ("agent.init_log_kappa",),
+    "log_kappa_min": ("agent.log_kappa_min",),
+    "log_kappa_max": ("agent.log_kappa_max",),
+    "input_abs_position": ("agent.input_abs_position",),
+    "input_chart_frac": ("agent.input_chart_frac",),
+    "input_visited": ("agent.input_visited",),
+    "aux_visited_weight": ("agent.aux_visited_weight",),
+    "aux_visited_radius": ("agent.aux_visited_radius",),
+    "log_kappa_max_end": ("agent.log_kappa_max_end",),
+    "log_kappa_anneal_updates": ("agent.log_kappa_anneal_updates",),
+    "init_speed_mu": ("agent.init_speed_mu",),
+    "init_speed_nu": ("agent.init_speed_nu",),
+    "speed_nu_min": ("agent.speed_nu_min",),
+    "speed_nu_max": ("agent.speed_nu_max",),
+    "speed_mu_eps": ("agent.speed_mu_eps",),
+    "dir_soft": ("agent.dir_soft",),
+    "freeze_speed": ("agent.freeze_speed",),
     "input_prev_reward": ("agent.input_prev_reward",),
     "input_hopfield_raw": ("agent.input_hopfield_raw",),
     "input_hopfield_multistep": ("agent.input_hopfield_multistep",),
@@ -655,11 +810,18 @@ CFG_FIELDS: dict[str, tuple[str, ...]] = {
     "revisit_penalty": ("hopfield.revisit_penalty",),
     "wall_penalty": ("hopfield.wall_penalty",),
     "persistence_bonus": ("hopfield.persistence_bonus",),
+    "persistence_realized": ("hopfield.persistence_realized",),
+    "revisit_anneal_updates": ("hopfield.revisit_anneal_updates",),
+    "alias_mod": ("hopfield.alias_mod",),
+    "place_dropout": ("hopfield.place_dropout",),
+    "heading_dropout": ("hopfield.heading_dropout",),
+    "persistence_one_sided": ("hopfield.persistence_one_sided",),
     "novelty_scale_remaining": ("hopfield.novelty_scale_remaining",),
     "novelty_scale_cap": ("hopfield.novelty_scale_cap",),
     # run structure
     "encoder_checkpoint": ("encoder_checkpoint",),
     "encoder_gain": ("encoder_gain",),
+    "hopfield_beta": ("hopfield.beta",),
     "fwhm_ratio": ("fwhm_ratio",),
     "num_worlds": ("num_worlds",),
     "envs_per_world": ("envs_per_world",),
@@ -692,6 +854,7 @@ CFG_FIELDS: dict[str, tuple[str, ...]] = {
     "refresh_size": ("refresh_size",),
     # schedule
     "schedule": ("schedule",),
+    "regime_assignment": ("regime_assignment",),
     "novelty_anneal": ("novelty_anneal",),
     "epsilon_explore": ("epsilon_explore",),
     "epsilon_anneal_updates": ("epsilon_anneal_updates",),
@@ -797,6 +960,118 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--hopfield_mode", default="continuous")
     p.add_argument("--input_prev_reward", action=argparse.BooleanOptionalAction, default=True)
     p.add_argument("--input_prev_action", action=argparse.BooleanOptionalAction, default=True)
+    p.add_argument("--action_squash", action=argparse.BooleanOptionalAction,
+                   default=False,
+                   help="Radial tanh on the policy MEAN, mapping ||mu|| into "
+                        "[min_action_norm, max_action_norm]. Squashing the mean "
+                        "rather than the sample keeps the distribution Gaussian, "
+                        "so no log-prob Jacobian is needed. Fixes the unbounded "
+                        "||mu|| drift a hard env clamp permits.")
+    p.add_argument("--state_dependent_std", action=argparse.BooleanOptionalAction,
+                   default=False,
+                   help="Per-state log_std head instead of one global parameter. "
+                        "Initialized to reproduce the global-sigma policy exactly.")
+    p.add_argument("--log_std_min", type=float, default=-2.5)
+    p.add_argument("--log_std_max", type=float, default=0.5)
+    p.add_argument("--action_polar", action=argparse.BooleanOptionalAction,
+                   default=False,
+                   help="Heading x speed as SEPARATE distributions -- "
+                        "VonMises(theta, kappa) on the allocentric heading and "
+                        "a Beta on speed over [min,max]_action_norm -- instead "
+                        "of one isotropic Cartesian Gaussian. Decouples "
+                        "directional exploration from speed, which sigma/||mu|| "
+                        "cannot. Under this flag --state_dependent_std and "
+                        "--freeze_log_std govern kappa and nu; the speed mean "
+                        "stays learnable.")
+    p.add_argument("--init_log_kappa", type=float, default=1.85,
+                   help="kappa=6.34, matching the Cartesian init sigma=exp(-0.7) "
+                        "at mid-speed 1.25 (~23.8 deg of directional noise).")
+    p.add_argument("--log_kappa_min", type=float, default=-1.0)
+    p.add_argument("--input_abs_position",
+                   action=argparse.BooleanOptionalAction, default=False,
+                   help="DIAGNOSTIC ONLY (P2 doc 29.4). Feed absolute "
+                        "(x, y) normalised to [-1, 1]. A boustrophedon "
+                        "is memoryless but position-DEPENDENT, so it "
+                        "needs to know which row it is in. Coverage "
+                        "jumping means localization was the blocker; "
+                        "unchanged means optimization. ORACLE, not "
+                        "shippable.")
+    p.add_argument("--input_chart_frac",
+                   action=argparse.BooleanOptionalAction, default=False,
+                   help="Feed ||q|| / ||recall - x||, the fraction of "
+                        "the recalled 1024-dim displacement the local "
+                        "2-D chart explains (P2 doc 7.7.2). AUC "
+                        "0.974/0.988 at ten distractors against ||q||'s "
+                        "0.698/0.930, and it BEATS the env-fitted "
+                        "64-dim basis while needing no fit. NOT an "
+                        "oracle -- every term is already computed in "
+                        "the rollout, so a model trained with it is "
+                        "shippable, unlike --input_visited and "
+                        "--input_abs_position.")
+    p.add_argument("--input_visited", action=argparse.BooleanOptionalAction,
+                   default=False,
+                   help="DIAGNOSTIC ONLY (P2 doc 27.5). Feed the "
+                        "8-direction visitation vector to the policy "
+                        "as an INPUT CHANNEL. This is an ORACLE at "
+                        "test time and is NOT shippable -- it exists "
+                        "to split whether the policy fails to USE "
+                        "visitation or fails to EXTRACT it.")
+    p.add_argument("--aux_visited_weight", type=float, default=0.0,
+                   help="BCE weight on an auxiliary head predicting "
+                        "which of 8 surrounding cells the agent has "
+                        "already visited this episode. Forces the "
+                        "hidden state to carry visitation so the "
+                        "policy can stop being a fixed (position, "
+                        "heading) field (P2 doc 22, 24.2). "
+                        "Training-time oracle only. 0 = off.")
+    p.add_argument("--aux_visited_radius", type=float, default=3.0,
+                   help="How far out the 8 probed cells sit.")
+    p.add_argument("--log_kappa_max_end", type=float, default=None,
+                   help="Ramp log_kappa_max to this over "
+                        "--log_kappa_anneal_updates. The cap is a "
+                        "training-time device (kappa does not affect a "
+                        "deterministic action, P2 §20.1): on early for "
+                        "exploit's policy-space exploration, off late so the "
+                        "mean policy is optimized nearer deployment (§24).")
+    p.add_argument("--log_kappa_anneal_updates", type=int, default=0,
+                   help="Updates over which to ramp log_kappa_max -> "
+                        "log_kappa_max_end. 0 = constant.")
+    p.add_argument("--log_kappa_max", type=float, default=5.0,
+                   help="[-1, 5] -> circular sd from 106 deg down to 4.7 deg.")
+    p.add_argument("--init_speed_mu", type=float, default=0.5,
+                   help="NORMALIZED mean speed in (0,1); 0.5 -> 1.25 cells, "
+                        "the measured billiard-coverage peak.")
+    p.add_argument("--init_speed_nu", type=float, default=3.0,
+                   help="Beta concentration; 3.0 -> speed sd 0.375.")
+    p.add_argument("--speed_nu_min", type=float, default=2.0,
+                   help="Floor forbidding a U-shaped speed density for every "
+                        "mu (a U-shape needs nu < min(1/mu, 1/(1-mu)) <= 2). "
+                        "One constant, so nu stays a single freezable scalar.")
+    p.add_argument("--speed_nu_max", type=float, default=200.0)
+    p.add_argument("--speed_mu_eps", type=float, default=0.05)
+    p.add_argument("--dir_soft", type=float, default=0.05,
+                   help="Softens the direction head's magnitude, which is a "
+                        "gauge freedom (atan2 is scale-invariant) whose decay "
+                        "would send the heading gradient to infinity. A short "
+                        "direction vector becomes a LOW concentration instead. "
+                        "Watch the dir_norm column: sustained values near this "
+                        "mean the heading is being held near-uniform.")
+    p.add_argument("--freeze_speed", type=float, default=None,
+                   help="Hold speed constant at this many GRID CELLS and drop "
+                        "the speed factor entirely (not a degenerate limit: "
+                        "its log-prob and entropy slots are exactly zero). "
+                        "All exploration becomes directional. Requires "
+                        "--action_polar; inexpressible under the Cartesian "
+                        "head at any parameter setting.")
+    p.add_argument("--input_prev_displacement",
+                   action=argparse.BooleanOptionalAction, default=False,
+                   help="Feed the REALIZED displacement of the previous step "
+                        "as a separate 2-D channel. Not redundant with "
+                        "--input_prev_action: the norm clamp and the arena "
+                        "clip both make the executed move differ from the "
+                        "commanded one, and the regime cues that compare a "
+                        "change in q against distance travelled need the "
+                        "executed one. Continuous movement only.")
     p.add_argument("--input_hopfield_raw", action=argparse.BooleanOptionalAction, default=True)
     p.add_argument("--input_hopfield_multistep", type=int, nargs="*", default=[],
                    help="If non-empty, project recall at these Hopfield iteration counts and pass each as 2-D extra input. Continuous mode only. e.g. --input_hopfield_multistep 1 2 3")
@@ -867,6 +1142,38 @@ def build_parser() -> argparse.ArgumentParser:
                         "action_{t-1}). Encourages straight-line movement "
                         "in explore phase. Stateless alternative to "
                         "revisit_penalty.")
+    p.add_argument("--persistence_realized", action=argparse.BooleanOptionalAction,
+                   default=False,
+                   help="Score the persistence bonus on the REALIZED "
+                        "displacement rather than the commanded action. "
+                        "Default off, which is what every run up to P20 "
+                        "trained under. On the commanded action a "
+                        "wall-pinned agent collects the full bonus for not "
+                        "moving (P2 doc §18.7-18.8).")
+    p.add_argument("--revisit_anneal_updates", type=int, default=None,
+                   help="Ramp revisit_penalty linearly from 0 to its "
+                        "configured value over this many updates. A "
+                        "constant penalty is self-defeating (§34.3): "
+                        "it raises the coverage rate needed for "
+                        "positive reward while making the early pin "
+                        "more punishing.")
+    p.add_argument("--alias_mod", type=int, default=None,
+                   help="Fold positions modulo this before encoding, "
+                        "so distinct places emit identical place "
+                        "codes. Applies at training AND evaluation.")
+    p.add_argument("--place_dropout", type=float, default=None,
+                   help="Per-step probability of zeroing the place "
+                        "code during training rollouts. Evaluation is "
+                        "unaffected.")
+    p.add_argument("--heading_dropout", type=float, default=None,
+                   help="Same, for prev_action and prev_displacement "
+                        "together.")
+    p.add_argument("--persistence_one_sided",
+                   action=argparse.BooleanOptionalAction,
+                   default=None,
+                   help="Persistence pays max(0, cos) instead of cos: "
+                        "rewards smooth motion without paying the "
+                        "agent not to turn around.")
     p.add_argument("--novelty_scale_remaining", action=argparse.BooleanOptionalAction,
                    default=False,
                    help="Scale novelty reward by total_cells/n_remaining "
@@ -944,12 +1251,15 @@ def build_parser() -> argparse.ArgumentParser:
                         "action a consequence first (see --allow_store paths), "
                         "or it learns from pure noise.")
     p.add_argument("--eval_scope", type=str, default="all",
-                   choices=("all", "expl"),
+                   choices=("all", "navexpl", "expl"),
                    help="Which evaluators an in-training eval runs. 'all' is "
-                        "nav + goal-discovery + exploration. 'expl' is "
-                        "exploration only, for pure-explore schedules where "
-                        "the other two are undefined -- it removes about two "
-                        "thirds of the eval cost.")
+                        "nav + goal-discovery + exploration. 'navexpl' drops "
+                        "goal discovery, which is the only evaluator that "
+                        "measures the store head -- a head this trainer never "
+                        "trains -- and the only unbatched one, so it costs "
+                        "~73 s against ~5 s for the other two together. "
+                        "'expl' is exploration only, for pure-explore "
+                        "schedules where the other two are undefined.")
     p.add_argument("--eval_max_steps", type=int, default=None,
                    help="Step budget for in-training evals. Default: follow "
                         "--steps_per_rollout, which is what this did "
@@ -970,7 +1280,22 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--static-vectorhash", dest="static_vectorhash",
                    action=argparse.BooleanOptionalAction, default=True)
     p.add_argument("--fwhm_ratio", type=float, default=0.25)
-    p.add_argument("--encoder_gain", type=float, default=None)
+    p.add_argument("--encoder_gain", type=float, default=None,
+                   help="Sharpness of the encoder's output nonlinearity: the "
+                        "code is normalize(tanh(gain * z)), so raising it "
+                        "makes the embedding more BINARY without changing its "
+                        "magnitude. Overriding it now also applies to the "
+                        "model, which it previously did not -- see "
+                        "encoder_io.load_encoder.")
+    p.add_argument("--hopfield_beta", type=float, default=None,
+                   help="Sharpness of the Hopfield recall: the update is "
+                        "tanh(beta * W x). Defaults to the encoder's gain, "
+                        "which is why the two were never separable before. "
+                        "At the scale W x actually takes here (~1e-4) the "
+                        "default leaves tanh in its linear region, so recall "
+                        "is a weighted blend rather than an attractor -- see "
+                        "EXPERIMENTS_NAV_P2 section 14. Raising it is how you "
+                        "get a saturating, genuinely Hopfield-like recall.")
     p.add_argument("--load_checkpoint", type=str, default=None,
                    help="FORK a new run from this checkpoint's weights. Its "
                         "config becomes the base -- every setting is inherited "
@@ -1069,6 +1394,15 @@ def build_parser() -> argparse.ArgumentParser:
                         "the new value.")
     p.add_argument("--log_std_anneal_target", type=float, default=None,
                    help="Target log_std at end of anneal. e.g. -1.4 → σ≈0.247.")
+    p.add_argument("--regime_assignment", choices=("index", "shuffle"),
+                   default=None,
+                   help="Which envs take the exploit regime, given how many do."
+                        " 'index' (default) takes the first n_pre in order, so"
+                        " at a fixed empty_frac an env keeps its regime for the"
+                        " whole run and the policy can gate on env identity"
+                        " instead of on the recall signal -- a shortcut that"
+                        " does not transfer to a held-out env. 'shuffle'"
+                        " re-draws the assignment every update.")
     p.add_argument("--ppo_clip_coef", type=float, default=None,
                    help="Override PPOConfig.clip_coef (default 0.2). Lower "
                         "values (0.1-0.15) limit policy update size, helping "

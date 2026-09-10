@@ -78,8 +78,20 @@ def channel_specs(
             specs.append(ChannelSpec(multistep_name(step), 2))
     if cfg.input_prev_action:
         specs.append(ChannelSpec("prev_action", prev_action_width(cfg)))
+    if getattr(cfg, "input_prev_displacement", False):
+        specs.append(ChannelSpec("prev_displacement", 2))
     if cfg.input_sensory:
         specs.append(ChannelSpec("sensory", sensory_dim))
+    if getattr(cfg, "input_visited", False):
+        # DIAGNOSTIC ONLY -- an oracle at test time. See §27.5.
+        specs.append(ChannelSpec("visited", 8))
+    if getattr(cfg, "input_abs_position", False):
+        # DIAGNOSTIC ONLY -- an oracle at test time. See §29.4.
+        specs.append(ChannelSpec("abs_position", 2))
+    if getattr(cfg, "input_chart_frac", False):
+        # NOT a diagnostic -- computable from what the rollout already has,
+        # so unlike `visited` and `abs_position` this one is shippable. §7.7.2.
+        specs.append(ChannelSpec("chart_frac", 1))
     if cfg.input_goal_in_memory:
         specs.append(ChannelSpec("goal_in_memory", 1))
     return specs

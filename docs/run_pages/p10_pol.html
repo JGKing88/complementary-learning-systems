@@ -1,0 +1,208 @@
+<title>Learned-Speed Exploit Run</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&family=Spectral:ital,wght@0,400;0,600;1,400&display=swap">
+
+<style>
+:root{
+  --ground:#fbfbfd; --surface:#f2f3f7; --raised:#ffffff;
+  --ink:#15171c; --ink-soft:#3d434f; --muted:#6a7183;
+  --rule:#dde0e8; --rule-soft:#e9ebf1;
+  --d0:#a8560a; --d0-fill:rgba(168,86,10,.10);
+  --d10:#0d6b64; --d10-fill:rgba(13,107,100,.10);
+  --floor:#8a90a0;
+  --band-a:rgba(168,86,10,.055); --band-b:rgba(13,107,100,.045); --band-c:rgba(90,100,125,.05);
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    --ground:#0e1014; --surface:#171a20; --raised:#1c2027;
+    --ink:#e9ebf1; --ink-soft:#c2c7d3; --muted:#8b93a5;
+    --rule:#2b303a; --rule-soft:#232830;
+    --d0:#eda13f; --d0-fill:rgba(237,161,63,.14);
+    --d10:#3fc9bb; --d10-fill:rgba(63,201,187,.13);
+    --floor:#767e92;
+    --band-a:rgba(237,161,63,.06); --band-b:rgba(63,201,187,.05); --band-c:rgba(140,150,175,.06);
+  }
+}
+:root[data-theme="dark"]{
+  --ground:#0e1014; --surface:#171a20; --raised:#1c2027;
+  --ink:#e9ebf1; --ink-soft:#c2c7d3; --muted:#8b93a5;
+  --rule:#2b303a; --rule-soft:#232830;
+  --d0:#eda13f; --d0-fill:rgba(237,161,63,.14);
+  --d10:#3fc9bb; --d10-fill:rgba(63,201,187,.13);
+  --floor:#767e92;
+  --band-a:rgba(237,161,63,.06); --band-b:rgba(63,201,187,.05); --band-c:rgba(140,150,175,.06);
+}
+
+*{box-sizing:border-box}
+body{
+  background:var(--ground); color:var(--ink);
+  font-family:"IBM Plex Sans",system-ui,sans-serif;
+  line-height:1.55; margin:0; padding:clamp(1.5rem,4vw,3.5rem) 1.25rem 5rem;
+  -webkit-font-smoothing:antialiased;
+}
+.wrap{max-width:1080px;margin:0 auto;display:flex;flex-direction:column;gap:clamp(2rem,4vw,3rem)}
+.eyebrow{font-family:"IBM Plex Mono",monospace;font-size:.72rem;letter-spacing:.14em;text-transform:uppercase;color:var(--muted);margin:0 0 .7rem}
+h1{font-family:Spectral,Georgia,serif;font-weight:600;font-size:clamp(2rem,5vw,3.1rem);line-height:1.08;letter-spacing:-.015em;margin:0 0 .6rem;text-wrap:balance}
+.standfirst{font-family:Spectral,Georgia,serif;font-style:italic;font-size:clamp(1.05rem,2.1vw,1.3rem);color:var(--ink-soft);max-width:62ch;margin:0}
+.meta{display:flex;flex-wrap:wrap;gap:.4rem 1.4rem;margin-top:1.4rem;font-family:"IBM Plex Mono",monospace;font-size:.76rem;color:var(--muted)}
+.meta b{color:var(--ink-soft);font-weight:500}
+
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(158px,1fr));gap:1px;background:var(--rule);border:1px solid var(--rule);border-radius:3px;overflow:hidden}
+.stat{background:var(--raised);padding:1.15rem 1.2rem}
+.stat .k{font-family:"IBM Plex Mono",monospace;font-size:.68rem;letter-spacing:.09em;text-transform:uppercase;color:var(--muted);margin-bottom:.5rem}
+.stat .v{font-family:"IBM Plex Mono",monospace;font-size:1.72rem;font-weight:500;line-height:1;font-variant-numeric:tabular-nums;letter-spacing:-.02em}
+.stat .n{font-size:.78rem;color:var(--muted);margin-top:.45rem}
+.stat.hi .v{color:var(--d0)}
+
+section h2{font-family:Spectral,Georgia,serif;font-weight:600;font-size:1.42rem;margin:0 0 .3rem;letter-spacing:-.01em}
+section .sub{color:var(--muted);font-size:.9rem;margin:0 0 1.1rem;max-width:64ch}
+.chart{background:var(--raised);border:1px solid var(--rule);border-radius:3px;padding:1.1rem .9rem .6rem;overflow-x:auto}
+.chart svg{display:block;width:100%;height:auto;min-width:520px}
+.legend{display:flex;flex-wrap:wrap;gap:1.3rem;margin:.9rem 0 0;padding:0 .35rem;font-family:"IBM Plex Mono",monospace;font-size:.74rem;color:var(--muted)}
+.legend i{display:inline-block;width:15px;height:2px;vertical-align:middle;margin-right:.45rem}
+.legend .dash{height:0;border-top:1.5px dashed var(--floor)}
+
+table{width:100%;border-collapse:collapse;font-family:"IBM Plex Mono",monospace;font-size:.8rem;font-variant-numeric:tabular-nums}
+.tw{overflow-x:auto;border:1px solid var(--rule);border-radius:3px;background:var(--raised)}
+th,td{padding:.62rem .85rem;text-align:right;border-bottom:1px solid var(--rule-soft);white-space:nowrap}
+th{font-size:.68rem;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);font-weight:500;background:var(--surface)}
+th:first-child,td:first-child{text-align:left}
+tbody tr:last-child td{border-bottom:none}
+tbody tr.final td{font-weight:600;background:var(--d0-fill)}
+.phase{font-family:"IBM Plex Sans",sans-serif;font-size:.72rem;padding:.14rem .5rem;border-radius:2px}
+.p-a{background:var(--band-a);color:var(--d0)}.p-b{background:var(--band-b);color:var(--d10)}.p-c{background:var(--band-c);color:var(--ink-soft)}
+
+.note{border-left:2px solid var(--rule);padding:.15rem 0 .15rem 1.15rem;color:var(--ink-soft);font-size:.92rem;max-width:66ch}
+.note b{color:var(--ink)}
+.note+.note{margin-top:1rem}
+code{font-family:"IBM Plex Mono",monospace;font-size:.86em;background:var(--surface);padding:.1rem .34rem;border-radius:2px}
+footer{border-top:1px solid var(--rule);padding-top:1.4rem;color:var(--muted);font-size:.82rem;max-width:70ch}
+</style>
+
+<div class="wrap">
+
+<header>
+  <p class="eyebrow">Phase 2 · P10 polar · run 21300385</p>
+  <h1>Learned-Speed Exploit Run</h1>
+  <p class="standfirst">The companion to the frozen-speed run: identical in every way except that this policy chooses its own step size. It ends at the same perfect success rate and the same near-optimal path, but reaches the goal in a third fewer steps — by learning to move half again as fast.</p>
+  <div class="meta">
+    <span><b>variant</b> p10_pol</span>
+    <span><b>speed</b> learned on [0.5, 2.0]</span>
+    <span><b>curriculum</b> none — distractors U[0,10] from update 1</span>
+    <span><b>time_penalty</b> 0.05</span>
+    <span><b>schedule</b> exploit 2000/2000</span>
+    <span><b>eval</b> every 50, 96 trials</span>
+  </div>
+</header>
+
+<div class="stats">
+  <div class="stat hi"><div class="k">Success · 0 dist</div><div class="v">1.000</div><div class="n">96 of 96 trials</div></div>
+  <div class="stat hi"><div class="k">Mean steps</div><div class="v">7.17</div><div class="n">vs 10.95 when speed is pinned</div></div>
+  <div class="stat"><div class="k">Success · 10 dist</div><div class="v">0.927</div><div class="n">against 0.958 frozen</div></div>
+  <div class="stat"><div class="k">Learned speed</div><div class="v">1.49</div><div class="n">realized, from 0.69 at u50</div></div>
+</div>
+
+<section>
+  <h2>Success rate</h2>
+  <p class="sub">Converges earlier than the frozen arm — 0.97 by u150 against u150's 0.90 — but with the same violent interruption: a collapse to 0.698 at u300 from a run of 0.98s. Locked at 1.000 from u900 onward, 23 consecutive evals.</p>
+  <div class="chart" id="c-succ"></div>
+  <div class="legend"><span><i style="background:var(--d0)"></i>0 distractors</span><span><i style="background:var(--d10)"></i>10 distractors</span></div>
+</section>
+
+<section>
+  <h2>Mean steps to goal</h2>
+  <p class="sub">Averaged over successes only. The dashed line is the floor <em>at this run's final speed</em> — 9.95 cells at 1.49 per step is 6.66 steps. The frozen arm's floor sits at 9.95, which is why the two cannot be compared on this axis alone.</p>
+  <div class="chart" id="c-steps"></div>
+  <div class="legend"><span><i style="background:var(--d0)"></i>0 distractors</span><span><i style="background:var(--d10)"></i>10 distractors</span><span><i class="dash"></i>floor at final speed (6.66)</span></div>
+</section>
+
+<section>
+  <h2>Learned step magnitude</h2>
+  <p class="sub">The variable the frozen arm does not have. It starts <em>below</em> 1.0 — the policy is losing motion to wall collisions faster than it commands it — crosses 1.0 near u600, and settles around 1.45. The permitted range is [0.5, 2.0].</p>
+  <div class="chart" id="c-spd"></div>
+  <div class="legend"><span><i style="background:var(--d0)"></i>0 distractors</span><span><i style="background:var(--d10)"></i>10 distractors</span><span><i class="dash"></i>the frozen arm's fixed 1.0</span></div>
+</section>
+
+<section>
+  <h2>Against the frozen-speed arm</h2>
+  <p class="sub">Both finished 2000 updates on the same seed, config and envs. Path length is steps × realized speed, and directness is the 9.95-cell optimum over that.</p>
+  <div class="tw"><table>
+    <thead><tr><th>Final, 0 distractors</th><th>Learned speed</th><th>Frozen at 1.0</th></tr></thead>
+    <tbody>
+      <tr><td>Success</td><td>1.000</td><td>1.000</td></tr>
+      <tr><td>Mean steps</td><td>7.17</td><td>10.95</td></tr>
+      <tr><td>Realized ‖a‖</td><td>1.49</td><td>0.95</td></tr>
+      <tr><td>Path length</td><td>10.71</td><td>10.38</td></tr>
+      <tr class="final"><td>Directness</td><td>0.929</td><td>0.959</td></tr>
+      <tr><td>Success · 10 dist</td><td>0.927</td><td>0.958</td></tr>
+    </tbody>
+  </table></div>
+  <p class="note" style="margin-top:1.2rem"><b>They converge to the same navigator.</b> Both walk a path within 4–7% of the straight line. The learned arm reaches the goal in a third fewer steps purely because each step is longer — not because it steers better. Mid-training this looked very different: at u1050 the frozen arm was at 1.27× optimal against the learned arm's 1.68×, and the gap closed entirely over the following 950 updates.</p>
+  <p class="note"><b>The frozen arm is better under distractors.</b> 0.958 against 0.927 success at ten, and a shorter path (11.64 against 13.78 cells). So pinning the speed costs steps and buys robustness — which is the trade to weigh before P6 asks one model to do both regimes.</p>
+</section>
+
+<section>
+  <h2>Checkpoints</h2>
+  <p class="sub">Every 250 updates, plus the final.</p>
+  <div class="tw"><table>
+    <thead><tr><th>Update</th><th>Phase</th><th>Succ · 0</th><th>Steps · 0</th><th>‖a‖</th><th>Succ · 10</th><th>Steps · 10</th></tr></thead>
+    <tbody id="tbody"></tbody>
+  </table></div>
+</section>
+
+<section>
+  <p class="note"><b>Read on the recorded split.</b> Measured on the run's own six validation environments — never trained on, but the set it was scored against at every eval, not a fresh draw. Nothing here has been re-measured on minted environments.</p>
+</section>
+
+<footer>
+  Polar action head: heading from a von&nbsp;Mises over the allocentric angle, speed from a Beta on [0.5, 2.0] in (mean, concentration) form. Companion run <code>p10_pol_v1</code> pins the speed at 1.0. Full record in <code>docs/EXPERIMENTS_NAV_P2.md</code> §9.4–9.8.
+</footer>
+</div>
+
+<script>
+const U=Array.from({length:40},(_,i)=>(i+1)*50);
+const S0=[.67708,.84375,.96875,.97917,.98958,.69792,.88542,.96875,1,.96875,1,1,1,1,1,1,.97917,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1];
+const T0=[41.98,32.98,36.34,28.20,27.19,40.99,21.12,33.82,18.69,27.44,20.55,13.61,18.07,10.53,13.80,11.91,14.78,9.75,10.97,9.78,9.20,8.65,9.51,8.56,9.33,8.73,10.35,8.81,7.41,7.65,7.22,7.72,7.60,7.40,7.29,7.11,8.21,8.06,7.56,7.17];
+const V0=[.690,.721,.598,.630,.738,.536,.675,.579,.865,.771,.795,1.031,1.007,1.217,1.006,1.124,1.088,1.285,1.136,1.186,1.230,1.326,1.230,1.284,1.268,1.267,1.148,1.285,1.442,1.448,1.498,1.410,1.407,1.449,1.429,1.478,1.373,1.364,1.385,1.495];
+const S10=[.55208,.85417,.85417,.80208,.96875,.69792,.82292,.84375,.94792,.91667,.92708,.96875,.96875,.9375,.95833,.94792,.94792,.97917,.98958,.95833,.98958,.96875,.94792,.96875,.91667,.95833,.9375,.97917,.94792,.95833,.9375,.9375,.9375,.94792,.96875,.9375,.9375,.92708,.86458,.92708];
+const T10=[41.38,41.21,42.99,27.56,22.56,44.97,26.06,28.65,24.51,30.97,19.51,18.78,19.60,16.16,15.20,14.13,17.13,12.86,15.92,10.63,12.63,10.95,13.38,10.75,13.08,12.37,16.74,12.60,11.12,9.14,12.21,10.21,14.88,12.65,11.37,10.99,10.60,9.62,8.58,9.78];
+const V10=[.682,.611,.552,.638,.775,.619,.726,.679,.856,.728,.847,.985,.943,1.132,1.014,1.107,1.102,1.163,1.013,1.184,1.105,1.254,1.129,1.167,1.137,1.151,1.082,1.250,1.338,1.323,1.313,1.268,1.192,1.286,1.290,1.319,1.289,1.322,1.332,1.410];
+
+const PHASES=[[50,500,'band-a'],[550,850,'band-b'],[900,2000,'band-c']];
+const W=980,H=290,M={t:16,r:16,b:34,l:52};
+const px=u=>M.l+(u-50)/1950*(W-M.l-M.r);
+
+function chart(el,series,yMin,yMax,ticks,fmt,floor){
+  const py=v=>M.t+(1-(v-yMin)/(yMax-yMin))*(H-M.t-M.b);
+  let s=`<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="training curve">`;
+  for(const[a,b,c]of PHASES)s+=`<rect x="${px(a)-8}" y="${M.t}" width="${px(b)-px(a)+16}" height="${H-M.t-M.b}" fill="var(--${c})"/>`;
+  for(const t of ticks){
+    s+=`<line x1="${M.l}" y1="${py(t)}" x2="${W-M.r}" y2="${py(t)}" stroke="var(--rule-soft)"/>`;
+    s+=`<text x="${M.l-10}" y="${py(t)+4}" text-anchor="end" font-family="IBM Plex Mono" font-size="11" fill="var(--muted)">${fmt(t)}</text>`;
+  }
+  if(floor!==undefined)s+=`<line x1="${M.l}" y1="${py(floor)}" x2="${W-M.r}" y2="${py(floor)}" stroke="var(--floor)" stroke-width="1.5" stroke-dasharray="5 4"/>`;
+  for(const u of[500,1000,1500,2000]){
+    s+=`<line x1="${px(u)}" y1="${M.t}" x2="${px(u)}" y2="${H-M.b}" stroke="var(--rule-soft)"/>`;
+    s+=`<text x="${px(u)}" y="${H-M.b+20}" text-anchor="middle" font-family="IBM Plex Mono" font-size="11" fill="var(--muted)">u${u}</text>`;
+  }
+  s+=`<line x1="${M.l}" y1="${H-M.b}" x2="${W-M.r}" y2="${H-M.b}" stroke="var(--rule)"/>`;
+  for(const{data,color}of series){
+    s+=`<path d="${data.map((v,i)=>`${i?'L':'M'}${px(U[i]).toFixed(1)},${py(v).toFixed(1)}`).join('')}" fill="none" stroke="var(--${color})" stroke-width="1.9" stroke-linejoin="round" stroke-linecap="round"/>`;
+    s+=`<circle cx="${px(U[39])}" cy="${py(data[39])}" r="3.6" fill="var(--${color})"/>`;
+  }
+  return document.getElementById(el).innerHTML=s+'</svg>';
+}
+chart('c-succ',[{data:S0,color:'d0'},{data:S10,color:'d10'}],.4,1.04,[.5,.75,1],v=>v.toFixed(2));
+chart('c-steps',[{data:T0,color:'d0'},{data:T10,color:'d10'}],0,48,[0,15,30,45],v=>v,6.66);
+chart('c-spd',[{data:V0,color:'d0'},{data:V10,color:'d10'}],.4,1.6,[.5,1,1.5],v=>v.toFixed(2),1);
+
+const rows=[0,4,9,14,19,24,29,34,39];
+const ph=u=>u<=500?['chaotic','p-a']:u<=850?['converging','p-b']:['locked','p-c'];
+document.getElementById('tbody').innerHTML=rows.map(i=>{
+  const[n,c]=ph(U[i]);
+  return `<tr${i===39?' class="final"':''}><td>u${U[i]}</td><td style="text-align:left"><span class="phase ${c}">${n}</span></td>`+
+    `<td>${S0[i].toFixed(3)}</td><td>${T0[i].toFixed(2)}</td><td>${V0[i].toFixed(2)}</td>`+
+    `<td>${S10[i].toFixed(3)}</td><td>${T10[i].toFixed(2)}</td></tr>`;
+}).join('');
+</script>

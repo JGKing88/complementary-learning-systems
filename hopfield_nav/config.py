@@ -159,6 +159,12 @@ class HopfieldConfig:
     revisit_penalty: float = 0.0          # -reward applied each step the agent occupies an already-visited cell (per-rollout visit count). Densifies the coverage gradient: novelty alone goes silent on revisits, this keeps signal alive late in a rollout.
     wall_penalty: float = 0.0             # -reward each step the agent occupies a grid edge cell (x or y in {0, size-1}). Counters the "perimeter-walk basin" learned when novelty rewards walking along edges (high coverage from wall-clip). Applied during the explore phase, alongside novelty.
     persistence_bonus: float = 0.0        # +reward × cos(action_t, action_{t-1}) per step, encouraging straight-line motion. Stateless dense alternative to revisit_penalty for explore-phase shaping. Applied during the explore phase only.
+    persistence_realized: bool = False    # If True, score persistence on the REALIZED displacement instead of the commanded action. Default False preserves every run up to P20. See EXPERIMENTS_NAV_P2 §18.8: a wall-pinned agent commands a rock-steady heading (straightness 0.981) while realizing ~0.09 of it, so on the commanded action it collects the full ballistic bonus (+0.196/step) for not moving — 2.1× what wall_penalty charges it. On the realized displacement the pin's cosine collapses and the bonus stops paying, while a genuinely ballistic policy is unaffected (realized ≈ commanded when nothing clips). Same commanded-vs-realized confusion §9.1 caught in strategy_efficiency.
+    revisit_anneal_updates: int = 0       # Ramp revisit_penalty LINEARLY from 0 to its configured value over this many updates (0 = constant from the start). §34.3 measured why a constant penalty is self-defeating: positive reward needs coverage rate > rp/(0.3+rp), the agent starts pinned at ~0.10, so the penalty raises the bar it must clear BEFORE reward turns positive while making the pin more punishing. Annealing lets it escape the pin first, then applies the pressure. The point of the pressure is credit assignment -- avoiding a revisit otherwise pays only diffusely, over later steps, while persistence pays immediately and certainly.
+    alias_mod: int = 0                    # Fold positions modulo this before encoding, so distinct places emit IDENTICAL place codes: at size//2 the four quadrants are indistinguishable. Makes position INSUFFICIENT, which is what makes history necessary rather than optional -- §35 found every input/reward lever moved what the state contains and never what the policy does with it. Applies at training AND evaluation, unlike place_dropout.
+    place_dropout: float = 0.0            # Per-step probability of zeroing the encoded_state (place code) channel during TRAINING rollouts only. §30-§33 measured the policy reading position from 2 of 1024 state directions at ~7x a size-matched random subspace, and position's SHARE of the state's causal effect predicts orbit depth monotonically across five arms. This makes position intermittently unavailable so the policy cannot depend on it every step.
+    heading_dropout: float = 0.0          # Same, for prev_action and prev_displacement together. The other half of "a function of position and heading" -- dropped as a pair because either alone still carries the direction of travel.
+    persistence_one_sided: bool = False   # If True, persistence pays max(0, cos) instead of cos. The two-sided form does not merely reward going straight, it PAYS THE AGENT NOT TO TURN AROUND: a 180 deg turn swings 2*bonus while a fresh cell pays novelty_reward, so at bonus=0.2 and novelty=0.3 ploughing straight over covered ground (0.20) beats the lawnmower's wall turn onto new ground (0.10).
     novelty_scale_remaining: bool = False # If True, scale novelty by total_cells / n_remaining_unvisited. Late-game cells (rare) pay more than early-game cells, keeping gradient alive as coverage saturates.
     novelty_scale_cap: float = 10.0       # Upper bound on the remaining-scale multiplier, to avoid value-head instability from rare-cell jackpots.
     n_train_distractors: int = 0          # if >0, pre-populate each training env's per-env Hopfield with this many distractor patterns (from outside that env's region) at rollout start. Matches eval-time distractor setup so the training/eval distributions align.
@@ -179,16 +185,95 @@ class AgentConfig:
     input_encoded_state: bool = True
     input_hopfield_signal: bool = True
     input_prev_action: bool = False
+    # The REALIZED displacement of the previous step, as a separate 2-D
+    # channel. Not redundant with input_prev_action: the two differ
+    # whenever the norm clamp or the arena clip bites, and the difference
+    # is itself information (a clip means a wall is there). The regime
+    # cues in EXPERIMENTS_NAV_P2 §7.2 need the realized one. Continuous
+    # movement only.
+    input_prev_displacement: bool = False
     input_prev_reward: bool = False         # Phase-2 enrichment: add prev step's reward as input channel
     input_sensory: bool = False
     input_hopfield_raw: bool = False        # Phase-2 enrichment: feed raw (unnormalized) q in continuous mode
     input_hopfield_multistep: list[int] = field(default_factory=list)  # If non-empty, project recall at these Hopfield iteration counts and pass each as 2-D extra input. Lets the policy read recall-convergence dynamics. Continuous mode only.
+    input_abs_position: bool = False         # DIAGNOSTIC ONLY (P2 doc §29.4). Feeds the agent's ABSOLUTE (x, y) in the arena, normalised to [-1, 1], as a 2-dim channel. A boustrophedon is memoryless but position-DEPENDENT -- east on even rows, west on odd -- so it needs to know which row it is in, which relative self-motion cannot supply. Coverage jumping toward ~0.9 means localization was the blocker; unchanged means optimization. An oracle at test time and NOT shippable, but a fairer one than input_visited: position is derivable in principle from the wall code (that is what wall_resolution=4 is for), so this tests 'if localization were solved, would it help' without solving it.
+    input_chart_frac: bool = False           # Feed ||q|| / ||recall - x||, the fraction of the recalled 1024-dim displacement that the local 2-D chart explains. §7.7.2: AUC 0.974/0.988 at ten distractors against ||q||'s 0.698/0.930 -- +0.276 on the encoder §7 was measured on -- and it BEATS the env-fitted 64-dim basis while needing no fit at all. The policy currently receives only the 2-D projection, so 1022 dimensions of every recall are discarded; this is the one scalar that recovers them. NOT an oracle: computed from things the rollout already has.
+    input_visited: bool = False              # DIAGNOSTIC ONLY (P2 doc §27.5). Feeds the 8-direction visitation vector to the policy as an INPUT CHANNEL, collapsing 'use memory' from 'learn to read your own hidden state' down to 'learn to weight an input'. This is an ORACLE at test time and is NOT a shippable configuration -- it exists to split two hypotheses after §27: does the policy fail to USE visitation, or fail to EXTRACT it? Uses `aux_visited_radius` for the probe distance.
+    aux_visited_weight: float = 0.0          # BCE weight on an AUXILIARY head predicting, from the RNN features, which of 8 surrounding cells at `aux_visited_radius` the agent has ALREADY VISITED this episode. 0 = off, which is every run before 2026-09-01. Purpose (P2 doc §24.2, lever B): §22 measured that the policy replays on a state repeat -- it is a fixed (position, heading) vector field and does not consult where it has been. This forces the hidden state to encode visitation so the policy head CAN use it. Training-time oracle only: the target comes from the collector's visited_cells and nothing is added to the observation, the reward, or deployment.
+    aux_visited_radius: float = 3.0          # how far out the 8 probed cells sit
     input_goal_in_memory: bool = False      # Add 1-bit input indicating that the agent has stored at goal during this rollout (i.e., Hopfield content is trustworthy goal-direction). Lets policy distinguish explore (bit=0) from nav (bit=1) cleanly.
     # Linked to movement_mode
     hopfield_mode: str = "discrete"         # "discrete" (4-d) | "continuous" (2-d)
     movement_mode: str = "discrete"         # "discrete" (Categorical 4) | "continuous" (Gaussian 2)
     init_log_std: float = 0.0               # continuous policy: initial log std (default std=1.0)
     freeze_log_std: bool = False            # When True, movement_log_std is held at its initial value (no gradient). For Phase A: pin variance low so PPO loss directly pressures the policy mean instead of letting samples "hide" the mean.
+    # --- action parameterization (phase 2 section 8.2) ----------------------
+    # Radial tanh squash on the policy MEAN: ||mu|| is mapped smoothly into
+    # [min_action_norm, max_action_norm] instead of being hard-clamped by the
+    # env. Squashing the mean rather than the sample keeps the distribution
+    # Gaussian, so no Jacobian correction is needed anywhere.
+    #
+    # Why: with the hard clamp the gradient on ||mu|| past the cap is zero in
+    # one direction only, so the commanded magnitude drifts unboundedly -- it
+    # was measured at 8.18 against a cap of 2.0. That collapses the effective
+    # angular noise sigma/||mu|| to ~3.5 degrees, and nothing in the objective
+    # can see it because Gaussian entropy depends on sigma alone.
+    action_squash: bool = False
+    # A per-state log_std head instead of one global parameter. All four
+    # phase-2 arms modulate their angular noise ~2x between zero and ten
+    # distractors, and with a global sigma the ONLY channel for that is
+    # ||mu|| -- so the policy buys state-dependent exploration by paying in
+    # speed. This gives it a proper channel.
+    state_dependent_std: bool = False
+    # Range the log_std head is clamped to. A state-dependent sigma can
+    # collapse SELECTIVELY -- to zero exactly where exploitation pays, near
+    # the goal -- which is harder to notice than a global collapse.
+    log_std_min: float = -2.5
+    log_std_max: float = 0.5
+    # --- polar action parameterization (phase 2 section 10) ----------------
+    # Heading and speed as SEPARATE distributions instead of one isotropic
+    # Cartesian Gaussian, so directional exploration cannot be bought by
+    # changing speed. Section 9.3 measured the sigma head displacing nothing:
+    # ||mu|| modulated 1.234x without it and 1.220x with it, so the magnitude
+    # channel was doing the exploration work regardless. See polar_head.py.
+    #
+    # Under this flag `state_dependent_std` and `freeze_log_std` govern kappa
+    # and nu -- which ARE the spreads here -- rather than a Gaussian sigma.
+    # The speed MEAN stays learnable either way.
+    action_polar: bool = False
+    # kappa = 6.34 matches the Cartesian init (sigma = exp(-0.7)) at mid-speed
+    # 1.25: both give ~23.8 degrees of directional noise.
+    init_log_kappa: float = 1.85
+    # [-1, 5] -> kappa in [0.37, 148] -> circular sd from 106 down to 4.7 deg.
+    log_kappa_min: float = -1.0
+    log_kappa_max: float = 5.0
+    log_kappa_max_end: float | None = None   # If set, log_kappa_max ramps LINEARLY from its start value to this over `log_kappa_anneal_updates`. The cap is a TRAINING-TIME device: kappa does not affect a deterministic action at all (P2 doc §20.1, measured), so it shapes what is learned rather than what is deployed. §17.9 needed the cap ON early for exploit's policy-space exploration; §24 wants it OFF late so the MEAN policy is optimized nearer the deployed deterministic regime. None = constant, i.e. every run before 2026-09-01.
+    log_kappa_anneal_updates: int = 0        # updates over which to ramp log_kappa_max -> log_kappa_max_end (0 = no ramp)
+    init_speed_mu: float = 0.5              # NORMALIZED: 0.5 -> speed 1.25, the billiard peak
+    init_speed_nu: float = 3.0              # -> speed sd 0.375
+    # nu >= 2 forbids a U-shaped speed density for EVERY mu (a U-shape needs
+    # nu < min(1/mu, 1/(1-mu)) <= 2), which is what lets nu be a single
+    # freezable scalar with no coupled restriction on mu.
+    speed_nu_min: float = 2.0
+    speed_nu_max: float = 200.0
+    speed_mu_eps: float = 0.05              # keeps mu off the boundary where Beta's gradient blows up
+    # The direction head's MAGNITUDE is a gauge freedom -- atan2 is
+    # scale-invariant, so nothing pressures ||v|| and it random-walks, while
+    # the heading gradient goes as kappa/||v||. Softening it makes a short
+    # direction vector mean a LOW concentration rather than an exploding
+    # gradient. Measured: at ||v||=0.24 one sample in 48 hit an importance
+    # ratio of 2.34 after a single 1e-3 step without this.
+    #
+    # 0.01, not 0.05: this is meant to be a BACKSTOP, not a live participant.
+    # The real 1024-unit trunk emits ||v|| ~ 0.071 at init, where 0.05 cut
+    # kappa by a third (6.36 -> 4.25, i.e. 23.8 -> 29.9 degrees) and silently
+    # broke the calibration against the p9 arms. 0.01 costs 1% there, less as
+    # ||v|| grows, and still caps the gradient at ~318 against unbounded.
+    dir_soft: float = 0.01
+    # Constant speed in GRID CELLS, or None to learn it. Set, the speed factor
+    # is deleted outright rather than driven to a degenerate limit -- see
+    # PolarMove. Not expressible under the Cartesian head at any parameter.
+    freeze_speed: float | None = None
     # Recurrent trunk. Defaults reproduce the historical GRU exactly.
     rnn_cell: str = "gru"                   # "gru" | "rnn" (vanilla Elman)
     rnn_nonlinearity: str = "tanh"          # "tanh" | "relu" | "softplus"; rnn_cell="rnn" only
@@ -284,7 +369,12 @@ class TrainConfig:
     # policy is never trained to reach or store a goal, so nav/disc measure
     # nothing -- and they are two thirds of the eval cost, which on a short run
     # is a large fraction of the whole run.
-    eval_scope: str = "all"                 # "all" | "expl"
+    # "all" runs all three evaluators. "expl" runs exploration only, for
+    # pure-explore runs where nav and discovery are undefined. "navexpl" drops
+    # only goal discovery -- the one evaluator that measures the store head,
+    # which `train_navigate` never trains, and the only unbatched one, so it
+    # costs ~73 s against ~5 s for the other two together.
+    eval_scope: str = "all"                 # "all" | "navexpl" | "expl"
     # Step budget for in-training evals. None keeps the historical behavior of
     # following steps_per_rollout. They need to come apart whenever rollout
     # length is itself the variable: mean_coverage is cells / grid-cells, so a
@@ -354,6 +444,13 @@ class TrainConfig:
     refresh_goal: int | None = None
     refresh_size: int | None = None
     schedule: str | None = None
+    # Which envs take the exploit regime on an update, given how many do.
+    # "index" (default, and what every run before 2026-08-14 did) takes the
+    # first n_pre in order, so at a fixed empty_frac an env keeps its regime
+    # for the whole run -- letting the policy gate on env identity rather than
+    # on the recall signal, which does not transfer to a held-out env.
+    # "shuffle" re-draws the assignment every update.
+    regime_assignment: str = "index"    # "index" | "shuffle"
     novelty_anneal: bool = False            # linearly scale novelty_reward -> 0 across the whole run
     epsilon_explore: float = 0.0            # per-step chance of a uniform-random move, explore regime only
     epsilon_anneal_updates: int = 0         # linearly scale epsilon_explore -> 0 over this many updates; 0 = constant
@@ -389,11 +486,36 @@ class RNNAgentConfig:
     movement_mode: str = "discrete"         # "discrete" (Categorical 4) | "continuous" (Normal 2)
     init_log_std: float = 0.0               # continuous policy: initial log std
     freeze_log_std: bool = False
+    action_squash: bool = False              # radial tanh on ||mu||; see the other copy
+    state_dependent_std: bool = False        # per-state log_std head
+    log_std_min: float = -2.5
+    log_std_max: float = 0.5
+    # Polar action parameterization; see AgentConfig for the same block.
+    action_polar: bool = False
+    init_log_kappa: float = 1.85
+    log_kappa_min: float = -1.0
+    log_kappa_max: float = 5.0
+    log_kappa_max_end: float | None = None   # If set, log_kappa_max ramps LINEARLY from its start value to this over `log_kappa_anneal_updates`. The cap is a TRAINING-TIME device: kappa does not affect a deterministic action at all (P2 doc §20.1, measured), so it shapes what is learned rather than what is deployed. §17.9 needed the cap ON early for exploit's policy-space exploration; §24 wants it OFF late so the MEAN policy is optimized nearer the deployed deterministic regime. None = constant, i.e. every run before 2026-09-01.
+    log_kappa_anneal_updates: int = 0        # updates over which to ramp log_kappa_max -> log_kappa_max_end (0 = no ramp)
+    init_speed_mu: float = 0.5
+    init_speed_nu: float = 3.0
+    speed_nu_min: float = 2.0
+    speed_nu_max: float = 200.0
+    speed_mu_eps: float = 0.05
+    dir_soft: float = 0.01
+    freeze_speed: float | None = None
     # Recurrent trunk; see AgentConfig for the same two knobs.
     rnn_cell: str = "gru"                   # "gru" | "rnn" (vanilla Elman)
     rnn_nonlinearity: str = "tanh"          # "tanh" | "relu" | "softplus"; rnn_cell="rnn" only
     # Optional auxiliary input channels (sensory codebook vector is always on).
     input_prev_action: bool = False
+    # The REALIZED displacement of the previous step, as a separate 2-D
+    # channel. Not redundant with input_prev_action: the two differ
+    # whenever the norm clamp or the arena clip bites, and the difference
+    # is itself information (a clip means a wall is there). The regime
+    # cues in EXPERIMENTS_NAV_P2 §7.2 need the realized one. Continuous
+    # movement only.
+    input_prev_displacement: bool = False
     input_prev_reward: bool = False
     input_grid_state: bool = False          # current (x, y) cell normalized to [0, 1]^2
 

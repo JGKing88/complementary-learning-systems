@@ -510,9 +510,29 @@ def set_requires_grad(params, flag: bool):
 
 
 def move_params(agent: NavAgent) -> list[torch.nn.Parameter]:
+    """Every parameter of the movement head, under either std parameterization.
+
+    `movement_log_std` is None when `state_dependent_std` is on -- the spread is
+    a `movement_log_std_head` linear layer instead -- so this cannot assume the
+    global parameter exists. Returning a None here reached
+    `set_requires_grad` and died on `NoneType.requires_grad_`.
+    """
     if agent.cfg.movement_mode == "discrete":
         return list(agent.movement_head.parameters())
-    return list(agent.movement_mean.parameters()) + [agent.movement_log_std]
+    params = list(agent.movement_mean.parameters())
+    if getattr(agent, "movement_log_std", None) is not None:
+        params.append(agent.movement_log_std)
+    head = getattr(agent, "movement_log_std_head", None)
+    if head is not None:
+        params.extend(head.parameters())
+    # Polar: kappa / speed-mu / speed-nu, as global Parameters or per-state
+    # Linears. Omitting them here would make set_phase_freeze silently leave
+    # the whole spread parameterization frozen -- the same class of bug as the
+    # `[None]` this function was already fixed for.
+    polar = getattr(agent, "polar_head", None)
+    if polar is not None:
+        params.extend(polar.parameters())
+    return params
 
 
 def store_params(agent: NavAgent) -> list[torch.nn.Parameter]:
@@ -538,8 +558,18 @@ def set_phase_freeze(agent: NavAgent, freeze_move: bool,
     # std drifting 0.166 -> 0.294 over 250 updates. The agent's own config is
     # the authority; a phase mask must not overrule it.
     if getattr(agent.cfg, "freeze_log_std", False) \
-            and hasattr(agent, "movement_log_std"):
+            and getattr(agent, "movement_log_std", None) is not None:
         agent.movement_log_std.requires_grad = False
+    # Same re-enforcement for polar. `freeze_log_std` means "freeze the
+    # spread", and under polar the spreads are kappa and nu -- the speed MEAN
+    # stays learnable, which is the case (alpha, beta) could not express and
+    # the reason for the (mu, nu) parameterization. Missing this would
+    # reproduce the v35-lineage bug in a new place.
+    polar = getattr(agent, "polar_head", None)
+    if polar is not None and getattr(agent.cfg, "freeze_log_std", False):
+        for p in (polar.log_kappa, polar.speed_nu):
+            if p is not None:
+                p.requires_grad = False
     set_requires_grad(store_params(agent), not freeze_store)
     set_requires_grad(value_params(agent), not freeze_value)
     set_requires_grad(rnn_params(agent), not freeze_rnn)
@@ -558,31 +588,43 @@ def do_eval(cfg, agent, eval_world: World, device, update_tag: str,
     nt = cfg.n_val_trials
 
     # "expl" skips the two evaluators a pure-explore run cannot be scored on.
-    # They stay in the wandb log as empty dicts rather than as stale values, so
-    # a scope switch mid-project cannot be mistaken for a collapse in nav.
-    expl_only = getattr(cfg, "eval_scope", "all") == "expl"
+    # "navexpl" skips only goal discovery: it is the sole evaluator that
+    # measures the STORE head, and every run under `train_navigate` keeps that
+    # head frozen (`--freeze_store` defaults True and the trainer drops its
+    # objective from the loss entirely), so it reports a constant. It is also
+    # the only unbatched evaluator -- one `agent_step` per trial per step --
+    # which at 6 envs x 16 trials x 2 distractor levels x 200 steps is ~73 s,
+    # against ~5 s for the other two together.
+    # Skipped evaluators stay in the wandb log as empty dicts rather than as
+    # stale values, so a scope switch mid-project cannot be mistaken for a
+    # collapse in nav.
+    scope = getattr(cfg, "eval_scope", "all")
+    expl_only = scope == "expl"
+    run_disc = scope == "all"
 
     t0 = time.time()
     nav = {} if expl_only else evaluate_navigation(
         agent, val_envs, val_vh, val_offsets, cfg, device,
         num_trials=nt, max_steps=max_steps,
         n_distractors_list=dist, deterministic=True)
-    disc = {} if expl_only else evaluate_goal_discovery(
+    disc = evaluate_goal_discovery(
         agent, val_envs, val_vh, val_offsets, cfg, device,
-        num_trials=nt, max_steps=max_steps, n_distractors_list=dist)
+        num_trials=nt, max_steps=max_steps,
+        n_distractors_list=dist) if run_disc else {}
     expl = evaluate_exploration(agent, val_envs, val_vh, val_offsets, cfg, device,
                                 num_trials=nt, max_steps=max_steps,
                                 n_distractors_list=dist)
     eval_s = time.time() - t0
     if not expl_only:
         print(f"  [{update_tag}] nav={nav}")
+    if run_disc:
         print(f"  [{update_tag}] disc={disc}")
     print(f"  [{update_tag}] expl={expl}")
     # Sizing a run needs the eval's own cost, not just the per-update total it
     # is folded into -- see docs/EXPERIMENTS_SCHEDULE_REPRO.md on how badly a
     # run can be mis-sized when that number has to be inferred after the fact.
-    print(f"  [{update_tag}] eval_seconds={eval_s:.1f} scope="
-          f"{'expl' if expl_only else 'all'}", flush=True)
+    print(f"  [{update_tag}] eval_seconds={eval_s:.1f} scope={scope}",
+          flush=True)
     if use_wandb:
         import wandb
         log = {"eval/eval_seconds": eval_s}

@@ -69,6 +69,12 @@ class VecEnv:
         # exactly on a multiple of π/2, so obs stays on the codebook gather.
         self._pos = np.zeros((batch_size, 2), dtype=np.int32)
         self._heading_rad = np.zeros(batch_size, dtype=np.float64)
+        # Displacement actually realized by the last step_batch, which is not
+        # the action: the norm clamp and the arena clip both bite, and the
+        # at-goal contract can suppress movement entirely. Kept here so every
+        # consumer reads one number rather than recomputing it -- see
+        # last_displacement().
+        self._last_displacement = np.zeros((batch_size, 2), dtype=np.float64)
         self._rng = np.random.RandomState(base_env.rng.randint(0, 2**31))
 
     # ------------------------------------------------------------------
@@ -110,6 +116,22 @@ class VecEnv:
         """
         pos = self._pos if indices is None else self._pos[indices]
         return _views(self, pos, _obs_psi(self, indices))
+
+    def last_displacement(self, indices: np.ndarray | None = None) -> np.ndarray:
+        """Displacement the last ``step_batch`` actually produced, (B, 2).
+
+        Distinct from the action in three ways that all matter to the policy:
+        the norm clamp rescales it, the arena clip truncates it at a wall, and
+        the at-goal contract can suppress the move outright. Zero for episodes
+        not included in that step's ``indices``, which did not move.
+
+        The regime cues in EXPERIMENTS_NAV_P2 §7.2 compare how much ``q``
+        changed against how far the agent went; fed the commanded action
+        instead, they are wrong exactly at walls.
+        """
+        if indices is None:
+            return self._last_displacement.copy()
+        return self._last_displacement[indices].copy()
 
     def positions(self, indices: np.ndarray | None = None) -> np.ndarray:
         """Get current positions (B, 2) or (len(indices), 2)."""
@@ -196,6 +218,11 @@ class VecEnv:
         if spun.any():
             self._heading_rad[indices[spun]] = CARDINAL_RADIANS[turned[spun]]
 
+        # Recorded before the teleport below, so it is the displacement the
+        # action produced and not the jump that followed it.
+        self._last_displacement[:] = 0.0
+        self._last_displacement[indices] = moved
+
         # Relocate the envs the contract says to teleport.
         reached_b = indices[res.teleport]
         if len(reached_b) > 0:
@@ -263,6 +290,8 @@ class ContinuousVecEnv:
 
         self._pos_f = np.zeros((batch_size, 2), dtype=np.float64)
         self._pos = np.zeros((batch_size, 2), dtype=np.int32)
+        # See VecEnv.__init__ -- realized displacement of the last step.
+        self._last_displacement = np.zeros((batch_size, 2), dtype=np.float64)
         # Heading, radians clockwise from North. Continuous movement can face
         # any angle, so unlike VecEnv this rarely lands on a cardinal and
         # observations are genuinely ray-cast each step.
@@ -308,6 +337,17 @@ class ContinuousVecEnv:
     # ------------------------------------------------------------------
     # Observe
     # ------------------------------------------------------------------
+
+    def last_displacement(self, indices: np.ndarray | None = None) -> np.ndarray:
+        """Displacement the last ``step_batch`` actually produced, (B, 2).
+
+        The continuous copy of ``VecEnv.last_displacement`` -- these two
+        classes do not share a base, so the method has to exist on both. This
+        is the one that matters: the norm clamp only applies here.
+        """
+        if indices is None:
+            return self._last_displacement.copy()
+        return self._last_displacement[indices].copy()
 
     def positions(self, indices: np.ndarray | None = None) -> np.ndarray:
         """Snapped integer positions (B, 2) int. Always consistent with _pos_f."""
@@ -425,12 +465,20 @@ class ContinuousVecEnv:
 
         self._update_snapped(indices)
 
+        # Recorded before the teleport below, so it is the displacement the
+        # action produced and not the jump that followed it.
+        self._last_displacement[:] = 0.0
+        self._last_displacement[indices] = moved
+
         # Relocate the envs the contract says to teleport.
         reached_b = indices[res.teleport]
         if len(reached_b) > 0:
             self.reset_indices(reached_b)
 
         return rewards, goal_reached, self._pos[indices].copy()
+
+
+_INHERIT = object()
 
 
 def make_vec(
@@ -441,6 +489,8 @@ def make_vec(
     continuous_normalize: bool = False,
     *,
     reset: bool = True,
+    min_action_norm: float | None = _INHERIT,
+    max_action_norm: float | None = _INHERIT,
 ) -> VecEnv | ContinuousVecEnv:
     """Build the batched env matching ``movement_mode``.
 
@@ -451,11 +501,28 @@ def make_vec(
     not, because its caller places the agent explicitly. That difference is now
     the ``reset`` argument rather than a discrepancy between two functions with
     the same name.
+
+    The action-norm bounds default to **whatever the wrapped env carries**
+    rather than to None. They used not to be forwarded at all, which made this
+    function silently drop them: training builds ContinuousVecEnv directly and
+    passes both, while every eval path comes through here, so setting the
+    bounds clamped training and left every reported number unclamped. Reading
+    them off ``env`` fixes that for all five call sites at once and, unlike an
+    argument each caller must remember, cannot be forgotten by the next one --
+    a batched env that moved differently from the single env it wraps would be
+    a contradiction in terms. Pass an explicit value (including None) to
+    override.
     """
+    if min_action_norm is _INHERIT:
+        min_action_norm = getattr(env, "min_action_norm", None)
+    if max_action_norm is _INHERIT:
+        max_action_norm = getattr(env, "max_action_norm", None)
     if movement_mode == "continuous":
         vec = ContinuousVecEnv(
             env, batch_size=batch, scale=continuous_scale,
             normalize=continuous_normalize,
+            min_action_norm=min_action_norm,
+            max_action_norm=max_action_norm,
         )
     else:
         vec = VecEnv(env, batch_size=batch)

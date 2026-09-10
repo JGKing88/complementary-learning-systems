@@ -1,0 +1,179 @@
+<title>Frozen-Speed Explore Run</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&family=Spectral:ital,wght@0,400;0,600;1,400&display=swap">
+
+<style>
+:root{
+  --ground:#fbfbfd;--surface:#f2f3f7;--raised:#ffffff;
+  --ink:#15171c;--ink-soft:#3d434f;--muted:#6a7183;
+  --rule:#dde0e8;--rule-soft:#e9ebf1;
+  --d0:#a8560a;--d0-fill:rgba(168,86,10,.10);
+  --d10:#0d6b64;--d10-fill:rgba(13,107,100,.10);
+  --floor:#8a90a0;
+  --band-a:rgba(168,86,10,.055);--band-b:rgba(90,100,125,.05);
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --ground:#0e1014;--surface:#171a20;--raised:#1c2027;
+  --ink:#e9ebf1;--ink-soft:#c2c7d3;--muted:#8b93a5;
+  --rule:#2b303a;--rule-soft:#232830;
+  --d0:#eda13f;--d0-fill:rgba(237,161,63,.14);
+  --d10:#3fc9bb;--d10-fill:rgba(63,201,187,.13);
+  --floor:#767e92;
+  --band-a:rgba(237,161,63,.06);--band-b:rgba(140,150,175,.06);
+}}
+:root[data-theme="dark"]{
+  --ground:#0e1014;--surface:#171a20;--raised:#1c2027;
+  --ink:#e9ebf1;--ink-soft:#c2c7d3;--muted:#8b93a5;
+  --rule:#2b303a;--rule-soft:#232830;
+  --d0:#eda13f;--d0-fill:rgba(237,161,63,.14);
+  --d10:#3fc9bb;--d10-fill:rgba(63,201,187,.13);
+  --floor:#767e92;
+  --band-a:rgba(237,161,63,.06);--band-b:rgba(140,150,175,.06);
+}
+*{box-sizing:border-box}
+body{background:var(--ground);color:var(--ink);font-family:"IBM Plex Sans",system-ui,sans-serif;line-height:1.55;margin:0;padding:clamp(1.5rem,4vw,3.5rem) 1.25rem 5rem;-webkit-font-smoothing:antialiased}
+.wrap{max-width:1080px;margin:0 auto;display:flex;flex-direction:column;gap:clamp(2rem,4vw,3rem)}
+.eyebrow{font-family:"IBM Plex Mono",monospace;font-size:.72rem;letter-spacing:.14em;text-transform:uppercase;color:var(--muted);margin:0 0 .7rem}
+h1{font-family:Spectral,Georgia,serif;font-weight:600;font-size:clamp(2rem,5vw,3.1rem);line-height:1.08;letter-spacing:-.015em;margin:0 0 .6rem;text-wrap:balance}
+.standfirst{font-family:Spectral,Georgia,serif;font-style:italic;font-size:clamp(1.05rem,2.1vw,1.3rem);color:var(--ink-soft);max-width:62ch;margin:0}
+.meta{display:flex;flex-wrap:wrap;gap:.4rem 1.4rem;margin-top:1.4rem;font-family:"IBM Plex Mono",monospace;font-size:.76rem;color:var(--muted)}
+.meta b{color:var(--ink-soft);font-weight:500}
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(158px,1fr));gap:1px;background:var(--rule);border:1px solid var(--rule);border-radius:3px;overflow:hidden}
+.stat{background:var(--raised);padding:1.15rem 1.2rem}
+.stat .k{font-family:"IBM Plex Mono",monospace;font-size:.68rem;letter-spacing:.09em;text-transform:uppercase;color:var(--muted);margin-bottom:.5rem}
+.stat .v{font-family:"IBM Plex Mono",monospace;font-size:1.72rem;font-weight:500;line-height:1;font-variant-numeric:tabular-nums;letter-spacing:-.02em}
+.stat .n{font-size:.78rem;color:var(--muted);margin-top:.45rem}
+.stat.hi .v{color:var(--d0)}
+section h2{font-family:Spectral,Georgia,serif;font-weight:600;font-size:1.42rem;margin:0 0 .3rem;letter-spacing:-.01em}
+section .sub{color:var(--muted);font-size:.9rem;margin:0 0 1.1rem;max-width:64ch}
+.chart{background:var(--raised);border:1px solid var(--rule);border-radius:3px;padding:1.1rem .9rem .6rem;overflow-x:auto}
+.chart svg{display:block;width:100%;height:auto;min-width:520px}
+.legend{display:flex;flex-wrap:wrap;gap:1.3rem;margin:.9rem 0 0;padding:0 .35rem;font-family:"IBM Plex Mono",monospace;font-size:.74rem;color:var(--muted)}
+.legend i{display:inline-block;width:15px;height:2px;vertical-align:middle;margin-right:.45rem}
+.legend .dash{height:0;border-top:1.5px dashed var(--floor)}
+.tw{overflow-x:auto;border:1px solid var(--rule);border-radius:3px;background:var(--raised)}
+table{width:100%;border-collapse:collapse;font-family:"IBM Plex Mono",monospace;font-size:.8rem;font-variant-numeric:tabular-nums}
+th,td{padding:.62rem .85rem;text-align:right;border-bottom:1px solid var(--rule-soft);white-space:nowrap}
+th{font-size:.68rem;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);font-weight:500;background:var(--surface)}
+th:first-child,td:first-child{text-align:left}
+tbody tr:last-child td{border-bottom:none}
+tbody tr.hl td{background:var(--d0-fill);font-weight:600}
+.note{border-left:2px solid var(--rule);padding:.15rem 0 .15rem 1.15rem;color:var(--ink-soft);font-size:.92rem;max-width:66ch}
+.note+.note{margin-top:1rem}
+.note b{color:var(--ink)}
+code{font-family:"IBM Plex Mono",monospace;font-size:.86em;background:var(--surface);padding:.1rem .34rem;border-radius:2px}
+footer{border-top:1px solid var(--rule);padding-top:1.4rem;color:var(--muted);font-size:.82rem;max-width:70ch}
+</style>
+
+<div class="wrap">
+
+<header>
+  <p class="eyebrow">Phase 2 · P10 polar · run 21300391</p>
+  <h1>Frozen-Speed Explore Run</h1>
+  <p class="standfirst">The same coverage task with the step size pinned at one grid cell. It reaches the same billiard ceiling as the policy that was free to move nearly twice as fast — which is the finding, because in the exploit task that freedom was worth a third of the step count.</p>
+  <div class="meta">
+    <span><b>variant</b> p10_e_pol_v1</span>
+    <span><b>speed</b> frozen at 1.0</span>
+    <span><b>curriculum</b> none — distractors U[0,10] from update 1</span>
+    <span><b>time_penalty</b> 0.05</span>
+    <span><b>schedule</b> explore 1500/1500, goals off</span>
+  </div>
+</header>
+
+<div class="stats">
+  <div class="stat hi"><div class="k">Cells / step</div><div class="v">0.77</div><div class="n">billiard reference 0.775</div></div>
+  <div class="stat"><div class="k">Coverage</div><div class="v">0.38</div><div class="n">per rollout, 400-cell arena</div></div>
+  <div class="stat"><div class="k">Union coverage</div><div class="v">0.93</div><div class="n">across trials in an env</div></div>
+  <div class="stat"><div class="k">vs learned speed</div><div class="v">+0.05</div><div class="n">0.770 against 0.721 final</div></div>
+</div>
+
+<section>
+  <h2>Cells per step, against the strategy ladder</h2>
+  <p class="sub">A uniform random walk manages 0.36 in this arena, a billiard 0.775, a lawnmower sweep 0.955. This run reaches billiard by u350 and holds it — but only after a collapse to 0.14 at u200, deeper than anything the learned-speed arm produced.</p>
+  <div class="chart" id="c-cps"></div>
+  <div class="legend"><span><i style="background:var(--d0)"></i>cells / step</span><span><i class="dash"></i>random walk · billiard · lawnmower</span></div>
+</section>
+
+<section>
+  <h2>The collapse at u200</h2>
+  <p class="sub">Coverage ran 0.207 → 0.274 → 0.125 → 0.072 across four consecutive evals before recovering to 0.322. Training reward fell alongside it, so this was a real regression, not an eval artifact — and it recovered without intervention.</p>
+  <div class="chart" id="c-early"></div>
+  <div class="legend"><span><i style="background:var(--d0)"></i>cells / step</span><span><i style="background:var(--d10)"></i>union coverage</span></div>
+</section>
+
+<section>
+  <h2>Heading noise, and the gauge</h2>
+  <p class="sub">Directional spread falls from 27° to 13° — a far gentler collapse than the learned-speed arm's 29° → 5°. With speed pinned, the policy has one fewer way to sharpen its trajectory, and it ends markedly blunter while covering the same ground.</p>
+  <div class="chart" id="c-ang"></div>
+  <div class="legend"><span><i style="background:var(--d10)"></i>directional spread (degrees)</span></div>
+</section>
+
+<section>
+  <h2>Checkpoints</h2>
+  <div class="tw"><table>
+    <thead><tr><th>Update</th><th>Coverage</th><th>Cells / step</th><th>Union</th><th>Spread</th></tr></thead>
+    <tbody id="tbody"></tbody>
+  </table></div>
+</section>
+
+<section>
+  <p class="note"><b>Freezing the speed costs nothing here.</b> Final cells-per-step is 0.770 frozen against 0.721 learned, and both arms oscillate across roughly 0.61–0.78 for their whole plateau, so the difference is inside the noise. What matters is the direction: in the <em>exploit</em> task the same freeze costs a third of the step count. Coverage does not reward speed the way goal-reaching does.</p>
+  <p class="note"><b>The u200 collapse was called wrong twice.</b> At u150 one declining point looked like nothing; at u200, three declining evals plus a falling training reward looked like a genuine failure. It recovered on its own by u250. Four directional calls were reversed in this project by reading too few eval points — this run produced two of them.</p>
+  <p class="note"><b>Read on the recorded split</b> — the run's own six validation environments, not a fresh draw.</p>
+</section>
+
+<footer>
+  Polar action head with the speed factor deleted rather than driven to a degenerate limit: heading from a von&nbsp;Mises over the allocentric angle, magnitude a constant 1.0. Companion run <code>p10_e_pol</code> learns speed on [0.5, 2.0] and picks ~1.8. Reference ladder from <code>analysis/nav_tri/coverage_baselines.py</code>. Full record in <code>docs/EXPERIMENTS_NAV_P2.md</code> §9.4–9.8.
+</footer>
+</div>
+
+<script>
+const UE=Array.from({length:30},(_,i)=>(i+1)*50);
+const COV=[.2068,.2742,.1249,.0724,.3218,.3107,.3734,.3761,.3803,.3765,.3713,.3261,.3721,.3458,.3350,.3767,.3720,.3753,.3661,.3765,.3792,.3622,.3750,.3090,.3676,.3845,.3801,.3708,.3813,.3848];
+const CPS=COV.map(v=>v*2);
+const UNI=[.892,.943,.569,.437,.907,.852,.925,.939,.934,.916,.888,.825,.919,.857,.826,.910,.917,.897,.877,.916,.910,.869,.918,.774,.899,.912,.918,.895,.906,.929];
+const UK=[50,100,150,200,250,300,400,500,600,700,800,900,1000,1100,1200,1300,1400,1500];
+const KAP=[5.456,3.455,5.601,5.976,8.704,16.261,27.667,20.569,21.883,30.366,29.253,38.019,66.474,53.223,52.295,53.588,45.396,63.196];
+const ANG=KAP.map(k=>180/Math.PI/Math.sqrt(k));
+
+const W=980,H=280,M={t:16,r:16,b:34,l:52};
+function mk(el,xs,series,xMin,xMax,yMin,yMax,ticks,fmt,refs,bands){
+  const px=u=>M.l+(u-xMin)/(xMax-xMin)*(W-M.l-M.r);
+  const py=v=>M.t+(1-(v-yMin)/(yMax-yMin))*(H-M.t-M.b);
+  let s=`<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="training curve">`;
+  for(const b of(bands||[]))s+=`<rect x="${px(b[0])}" y="${M.t}" width="${px(b[1])-px(b[0])}" height="${H-M.t-M.b}" fill="var(--${b[2]})"/>`;
+  for(const t of ticks){
+    s+=`<line x1="${M.l}" y1="${py(t)}" x2="${W-M.r}" y2="${py(t)}" stroke="var(--rule-soft)"/>`;
+    s+=`<text x="${M.l-10}" y="${py(t)+4}" text-anchor="end" font-family="IBM Plex Mono" font-size="11" fill="var(--muted)">${fmt(t)}</text>`;
+  }
+  for(const r of(refs||[])){
+    s+=`<line x1="${M.l}" y1="${py(r.v)}" x2="${W-M.r}" y2="${py(r.v)}" stroke="var(--floor)" stroke-width="1.4" stroke-dasharray="5 4"/>`;
+    s+=`<text x="${W-M.r-4}" y="${py(r.v)-6}" text-anchor="end" font-family="IBM Plex Mono" font-size="10.5" fill="var(--muted)">${r.l}</text>`;
+  }
+  const step=(xMax-xMin)>800?500:200;
+  for(let u=xMin+step-((xMin)%step||0);u<=xMax;u+=step){
+    s+=`<line x1="${px(u)}" y1="${M.t}" x2="${px(u)}" y2="${H-M.b}" stroke="var(--rule-soft)"/>`;
+    s+=`<text x="${px(u)}" y="${H-M.b+20}" text-anchor="middle" font-family="IBM Plex Mono" font-size="11" fill="var(--muted)">u${u}</text>`;
+  }
+  s+=`<line x1="${M.l}" y1="${H-M.b}" x2="${W-M.r}" y2="${H-M.b}" stroke="var(--rule)"/>`;
+  for(const{data,color,x}of series){
+    const X=x||xs;
+    s+=`<path d="${data.map((v,i)=>`${i?'L':'M'}${px(X[i]).toFixed(1)},${py(v).toFixed(1)}`).join('')}" fill="none" stroke="var(--${color})" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>`;
+    s+=`<circle cx="${px(X[X.length-1])}" cy="${py(data[data.length-1])}" r="3.6" fill="var(--${color})"/>`;
+  }
+  document.getElementById(el).innerHTML=s+'</svg>';
+}
+
+mk('c-cps',UE,[{data:CPS,color:'d0'}],50,1500,0,1.02,[0,.25,.5,.75,1],v=>v.toFixed(2),
+  [{v:.36,l:'random walk 0.36'},{v:.775,l:'billiard 0.775'},{v:.955,l:'lawnmower 0.955'}],
+  [[50,350,'band-a'],[350,1500,'band-b']]);
+mk('c-early',UE.slice(0,8),[{data:CPS.slice(0,8),color:'d0'},{data:UNI.slice(0,8),color:'d10'}],
+  50,400,0,1.02,[0,.25,.5,.75,1],v=>v.toFixed(2),[{v:.775,l:'billiard'}]);
+mk('c-ang',UK,[{data:ANG,color:'d10',x:UK}],50,1500,0,32,[0,10,20,30],v=>v+'°');
+
+const rows=[[0,0],[3,3],[5,5],[9,7],[15,10],[21,13],[25,15],[29,17]];
+document.getElementById('tbody').innerHTML=rows.map(([i,j])=>
+  `<tr${i===29?' class="hl"':''}><td>u${UE[i]}</td><td>${COV[i].toFixed(3)}</td><td>${CPS[i].toFixed(3)}</td>`+
+  `<td>${UNI[i].toFixed(3)}</td><td>${ANG[j].toFixed(1)}°</td></tr>`).join('');
+</script>

@@ -1,0 +1,186 @@
+"""Turn the slurm logs of a wave into the markdown tables the tracker wants.
+
+`nav_tri_status.sh` answers "what is running"; this answers "what happened",
+in the form that gets pasted into `docs/EXPERIMENTS_NAV_TRI.md`. Kept as code
+rather than done by hand each wave because the eval lines are python dict
+reprs embedded in a log, transcribing them is error-prone, and the resulting
+table is the thing every conclusion in that document rests on.
+
+Emits two tables:
+
+  curve    mean_coverage at n_dist=0 against update index, one row per run.
+           Runs are compared at a MATCHED update index, never at each run's
+           own end -- pi_fiete is ~1.6x slower than mit_normal_gpu through node
+           contention, so equal wall-clock is not equal training.
+  final    the last eval of each run: coverage at each distractor level, and
+           nav (success_rate / mean_steps) where the run evaluated it.
+
+Usage:
+    python -m analysis.nav_tri.collect_results --prefix w1
+    python -m analysis.nav_tri.collect_results --at 100 200 300 400
+"""
+from __future__ import annotations
+
+import argparse
+import ast
+import glob
+import os
+import re
+
+LOGDIR = "/orcd/pool/003/jackking/cls_runs/logs"
+
+_VARIANT = re.compile(r"=== nav_tri variant=(\S+)")
+_EVAL = re.compile(r"\[(\S+)\] (nav|disc|expl)=(\{.*\})\s*$")
+_UPDATE = re.compile(r"navigate_u(\d+)")
+_SPU = re.compile(r"s/u=([0-9.]+)")
+
+
+def _parse(path):
+    """(variant, {update: {kind: {n_dist: metrics}}}, s_per_update, last_u)."""
+    variant, evals, spu, last_u = None, {}, None, 0
+    with open(path, errors="replace") as fh:
+        for line in fh:
+            m = _VARIANT.search(line)
+            if m:
+                variant = m.group(1)
+                continue
+            m = _SPU.search(line)
+            if m:
+                spu = float(m.group(1))
+            m = re.search(r"  u(\d+)\(", line)
+            if m:
+                last_u = max(last_u, int(m.group(1)))
+            m = _EVAL.search(line)
+            if m:
+                tag, kind, body = m.groups()
+                u = _UPDATE.search(tag)
+                key = int(u.group(1)) if u else -1      # -1 = after_navigate
+                # The logged dicts are python reprs, so a NaN metric prints as
+                # a bare `nan` -- which `ast.literal_eval` rejects. That
+                # happens whenever no trial found the goal, i.e. exactly on the
+                # early evals of a run that is not yet exploring, so silently
+                # dropping them would delete the start of every curve.
+                # -> None, not float('nan'): literal_eval rejects a Call node
+                # too, and None flows through the formatters as an em dash.
+                # Word-bounded so a key containing the letters is untouched.
+                clean = re.sub(r"\b(nan|inf)\b", "None", body)
+                try:
+                    evals.setdefault(key, {})[kind] = ast.literal_eval(clean)
+                except (ValueError, SyntaxError) as exc:
+                    print(f"  WARNING: unparseable {kind} eval at {tag} "
+                          f"in {os.path.basename(path)}: {exc}")
+    return variant, evals, spu, last_u
+
+
+def main() -> None:
+    p = argparse.ArgumentParser(description=__doc__)
+    p.add_argument("--prefix", default="",
+                   help="only variants starting with this, e.g. w1")
+    p.add_argument("--at", type=int, nargs="+", default=None,
+                   help="update indices for the curve table; default = every "
+                        "index that all matched runs share")
+    p.add_argument("--logdir", default=LOGDIR)
+    p.add_argument("--max_cols", type=int, default=12,
+                   help="subsample the curve to at most this many columns")
+    p.add_argument("--max_steps", type=int, default=200,
+                   help="eval step budget, used to charge failed nav trials "
+                        "when deriving mean_steps_all")
+    args = p.parse_args()
+
+    runs = []
+    for path in sorted(glob.glob(os.path.join(args.logdir, "nav_tri_*.out"))):
+        variant, evals, spu, last_u = _parse(path)
+        if not variant or not variant.startswith(args.prefix):
+            continue
+        if not evals:
+            continue
+        runs.append({"job": os.path.basename(path)[8:-4], "variant": variant,
+                     "evals": evals, "spu": spu, "last_u": last_u})
+    if not runs:
+        print(f"no runs matching prefix {args.prefix!r} in {args.logdir}")
+        return
+
+    # --- curve -------------------------------------------------------------
+    if args.at:
+        cols = args.at
+    else:
+        # Union, not intersection. Variants deliberately eval on different
+        # cadences -- the cheap-per-update ladder rungs run 5x the updates and
+        # would otherwise force a 100-wide table -- so an intersection is
+        # routinely EMPTY and silently prints nothing. A gap is shown as an
+        # em dash, which is honest; a missing column is not.
+        allu = sorted({u for r in runs for u in r["evals"] if u > 0})
+        if len(allu) > args.max_cols:
+            step = len(allu) / float(args.max_cols)
+            allu = [allu[min(len(allu) - 1, int(i * step))]
+                    for i in range(args.max_cols)]
+            allu = sorted(set(allu))
+        cols = allu
+    print("#### coverage curve — `mean_coverage` at `n_dist=0`\n")
+    print("| variant | " + " | ".join(f"u{c}" for c in cols) + " | s/u | last |")
+    print("|---" * (len(cols) + 3) + "|")
+    for r in sorted(runs, key=lambda r: r["variant"]):
+        cells = []
+        for c in cols:
+            e = r["evals"].get(c, {}).get("expl", {})
+            v = e.get(0, e.get("0", {})).get("mean_coverage")
+            cells.append(f"{v:.4f}" if v is not None else "—")
+        print(f"| `{r['variant']}` | " + " | ".join(cells)
+              + f" | {r['spu'] or float('nan'):.1f} | u{r['last_u']} |")
+
+    # --- final -------------------------------------------------------------
+    print("\n#### last eval of each run\n")
+    print("| variant | update | cov d0 | cov d10 | cells/step d0 "
+          "| nav d0 (sr / steps / **all**) | nav d10 (sr / steps / **all**) |")
+    print("|---|---|---|---|---|---|---|")
+    for r in sorted(runs, key=lambda r: r["variant"]):
+        u = max(r["evals"]) if -1 not in r["evals"] else -1
+        block = r["evals"][u]
+        expl, nav = block.get("expl", {}), block.get("nav", {})
+
+        def _e(nd, k):
+            d = expl.get(nd, expl.get(str(nd), {}))
+            v = d.get(k)
+            return f"{v:.4f}" if isinstance(v, (int, float)) else "—"
+
+        def _n(nd):
+            """success_rate / mean_steps / mean_steps_all.
+
+            The third is derived and is the honest one. `mean_steps` is over
+            SUCCESSFUL trials only (metrics.py:351-354), so a policy that
+            succeeds less can post a better mean_steps purely by dropping its
+            hard trials out of the average -- which is not hypothetical: the
+            first exploit run went 0.969/38.0 at u25 to 0.510/28.4 at u50,
+            reading as an improvement while actually regressing.
+
+            Charging each failure at the step budget gives
+                (successes * mean_steps + failures * max_steps) / trials
+            which turns that pair into 43 -> 112, i.e. the truth.
+            """
+            d = nav.get(nd, nav.get(str(nd), {}))
+            if not d:
+                return "—"
+            sr = d.get("success_rate", float("nan"))
+            ms = d.get("mean_steps", float("nan"))
+            tot = d.get("total_trials") or 0
+            suc = d.get("total_successes") or 0
+            if tot and isinstance(ms, (int, float)):
+                allv = (suc * ms + (tot - suc) * args.max_steps) / tot
+            else:
+                allv = float("nan")
+            return f"{sr:.3f} / {ms:.1f} / **{allv:.1f}**"
+        label = "final" if u == -1 else f"u{u}"
+        print(f"| `{r['variant']}` | {label} | {_e(0,'mean_coverage')} "
+              f"| {_e(10,'mean_coverage')} | {_e(0,'cells_per_step')} "
+              f"| {_n(0)} | {_n(10)} |")
+
+    print("\nReference lines (docs §3.1 / §3.3.1): coverage ceiling 0.5025, "
+          "lawnmower 0.478 (unreachable — position is not decodable),\n"
+          "billiard at the instructed wall_resolution **0.352**, "
+          "run-and-tumble 0.274, uniform random walk 0.178.\n"
+          "mean_steps reference at |a|=1: 10.1 at cos(q,goal)=0.99 "
+          "(n_dist<=3), 15.3 at cos=0.70 (n_dist=10).")
+
+
+if __name__ == "__main__":
+    main()

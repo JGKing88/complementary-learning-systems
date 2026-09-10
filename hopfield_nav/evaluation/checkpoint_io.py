@@ -35,6 +35,7 @@ from ..world.generate import (
     val_set_report)
 from ..world.scaffold import VectorHash, fit_env_assoc, place_envs
 from ..world.spec import WORLD_SPEC_NAME, WorldSpec
+from ..policy.action_head import action_bounds_from
 
 
 def coerce_legacy_cfg(cd: dict) -> dict:
@@ -351,7 +352,8 @@ def load_agent(
     init seed the RNG before calling: nothing here consumes it.
     """
     input_dim = compute_input_dim(cfg.agent, embed_dim, cfg.env.observation_size)
-    agent = NavAgent(cfg.agent, input_dim).to(device)
+    agent = NavAgent(cfg.agent, input_dim,
+                     action_bounds=action_bounds_from(cfg.env)).to(device)
     if state_dict is not None:
         agent.load_state_dict(state_dict)
     if eval_mode:

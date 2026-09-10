@@ -42,6 +42,8 @@ import torch
 from ..policy import channels
 from ..rollout import signal as signal_ops
 from ..world.env import GridEnv, at_goal
+from .swept import SweptArea, swept_positions
+from ..rollout import visited as visited_mod
 from hopfield import Hopfield
 from ..world.vec_env import make_vec
 from ..world import episode
@@ -85,6 +87,12 @@ def batched_navigation_trials(
                    reset=False)
     vec.set_positions(starts)
 
+    # DIAGNOSTIC channel (§27.5). None unless input_visited is set, in which
+    # case every policy-input site must supply it or build_policy_input raises.
+    vis_probe = (visited_mod.VisitedProbe(
+        cfg.env.size, getattr(cfg.agent, "aux_visited_radius", 3.0), B)
+        if getattr(cfg.agent, "input_visited", False) else None)
+
     input_specs = channels.channel_specs(
         cfg.agent, vectorhash.encoded_Phi.shape[2], cfg.env.observation_size)
     signal_dim = channels.signal_width(cfg.agent)
@@ -93,6 +101,7 @@ def batched_navigation_trials(
     h_rnn = None
     prev_reward_t = torch.zeros(B, 1, device=device)
     prev_action_t = torch.zeros(B, prev_action_dim, device=device)
+    prev_disp_t = torch.zeros(B, 2, device=device)
     steps_to_goal = [-1] * B
     active = np.ones(B, dtype=bool)
 
@@ -105,13 +114,21 @@ def batched_navigation_trials(
             else np.full(B, -cfg.env.time_penalty, dtype=np.float32)
         ).astype(np.float32)
 
-        embeddings_np = vectorhash.get_encoded_state(positions, env_offset)
+        embeddings_np = vectorhash.get_encoded_state(
+            visited_mod.alias_positions(
+                positions, getattr(cfg.hopfield, 'alias_mod', 0)),
+            env_offset)
         embeddings = torch.from_numpy(embeddings_np).float().to(device)
 
+        _chart = None
         if cfg.agent.input_hopfield_signal:
-            sig_t, q, _mask, _W = signal_ops.hopfield_signal_at(
+            _chart_on = getattr(cfg.agent, "input_chart_frac", False)
+            _o = signal_ops.hopfield_signal_at(
                 vectorhash, cfg, embeddings_np, embeddings, positions,
-                env_offset, hopfields, False, device, embeddings.shape[1])
+                env_offset, hopfields, False, device, embeddings.shape[1],
+                return_chart=_chart_on)
+            sig_t, q, _mask, _W = _o[:4]
+            _chart = _o[4] if _chart_on else None
             if (cfg.agent.input_hopfield_raw
                     and cfg.agent.hopfield_mode != "discrete"):
                 hop_signal = torch.from_numpy(q.astype(np.float32)).to(device)
@@ -120,17 +137,26 @@ def batched_navigation_trials(
         else:
             hop_signal = torch.zeros(B, signal_dim, device=device)
 
+        # 7.7.2's channel. Supplied only when enabled: build_policy_input is
+        # strict, so an enabled-but-unsupplied channel raises there rather than
+        # shifting the layout silently.
+        _chart_v = (
+            torch.from_numpy(_chart).float().to(device).unsqueeze(-1)
+            if _chart is not None else None)
         values = {
             "current_reward": torch.from_numpy(current_reward).to(device).unsqueeze(1),
             "prev_reward": prev_reward_t,
             "encoded_state": embeddings,
             "hopfield_signal": hop_signal,
             "prev_action": prev_action_t,
+            "prev_displacement": prev_disp_t,
             # Navigation preloads the goal into every trial's Hopfield, so the
             # bit is True from step zero -- matching agent_step's hardcoded
             # goal_in_memory=True on this path.
             "goal_in_memory": torch.ones(B, 1, device=device),
         }
+        if _chart_v is not None:
+            values["chart_frac"] = _chart_v
         if cfg.agent.input_sensory:
             values["sensory"] = torch.from_numpy(
                 vec.obs_batch()).float().to(device)
@@ -144,6 +170,13 @@ def batched_navigation_trials(
             for s, q_s in msq.items():
                 values[channels.multistep_name(s)] = torch.from_numpy(
                     q_s.astype(np.float32)).to(device)
+
+        if getattr(cfg.agent, "input_abs_position", False):
+            values["abs_position"] = torch.from_numpy(
+                visited_mod.abs_position_channel(vec, cfg.env.size)).to(device)
+        if vis_probe is not None:
+            values["visited"] = torch.from_numpy(
+                vis_probe.read(vec.positions())).to(device)
 
         rnn_input = channels.build_policy_input(
             input_specs, values, batch_size=B).unsqueeze(1)
@@ -167,8 +200,13 @@ def batched_navigation_trials(
         active_idx = np.nonzero(active)[0]
         if active_idx.size == 0:
             break
+        # After the step, so it is the displacement the env actually
+        # produced -- not the action, which the norm clamp and the
+        # arena clip both alter.
         vec.step_batch(actions[active_idx], indices=active_idx,
                        contract=contract)
+        prev_disp_t = torch.from_numpy(
+            vec.last_displacement()).float().to(device)
 
         reached = at_goal(vec)
         for b in active_idx:
@@ -209,8 +247,11 @@ def batched_exploration_trials(
     depend on how the env happens to be configured.
 
     Returns, per trial: the set of cells visited (including the start), whether
-    the goal was ever occupied, and the step at which it first was (-1 if
-    never).
+    the goal was ever occupied, the step at which it first was (-1 if never),
+    and a SweptResult -- per-trial swept-area fraction plus the union across
+    trials. Swept area is the union of goal_radius discs along the path, which
+    for a uniform goal is P(found). See evaluation/swept.py for why that is the
+    headline number and cell coverage is not.
     """
     B = len(hopfields)
     assert len(starts) == B
@@ -223,6 +264,12 @@ def batched_exploration_trials(
                    reset=False)
     vec.set_positions(starts)
 
+    # DIAGNOSTIC channel (§27.5). None unless input_visited is set, in which
+    # case every policy-input site must supply it or build_policy_input raises.
+    vis_probe = (visited_mod.VisitedProbe(
+        cfg.env.size, getattr(cfg.agent, "aux_visited_radius", 3.0), B)
+        if getattr(cfg.agent, "input_visited", False) else None)
+
     input_specs = channels.channel_specs(
         cfg.agent, vectorhash.encoded_Phi.shape[2], cfg.env.observation_size)
     signal_dim = channels.signal_width(cfg.agent)
@@ -231,8 +278,13 @@ def batched_exploration_trials(
     h_rnn = None
     prev_reward_t = torch.zeros(B, 1, device=device)
     prev_action_t = torch.zeros(B, prev_action_dim, device=device)
+    prev_disp_t = torch.zeros(B, 2, device=device)
 
     visited: list[set] = [{tuple(p)} for p in vec.positions()]
+    # Swept area -- the headline metric (evaluation/swept.py). Accumulated on
+    # the CONTINUOUS position, because that is what `at_goal` tests.
+    swept = SweptArea(cfg.env.size, cfg.env.goal_radius, B)
+    swept.add(swept_positions(vec))
     found = [False] * B
     steps_to_goal = [-1] * B
 
@@ -255,13 +307,21 @@ def batched_exploration_trials(
         )
         current_reward = res.rewards.astype(np.float32)
 
-        embeddings_np = vectorhash.get_encoded_state(positions, env_offset)
+        embeddings_np = vectorhash.get_encoded_state(
+            visited_mod.alias_positions(
+                positions, getattr(cfg.hopfield, 'alias_mod', 0)),
+            env_offset)
         embeddings = torch.from_numpy(embeddings_np).float().to(device)
 
+        _chart = None
         if cfg.agent.input_hopfield_signal:
-            sig_t, q, _mask, _W = signal_ops.hopfield_signal_at(
+            _chart_on = getattr(cfg.agent, "input_chart_frac", False)
+            _o = signal_ops.hopfield_signal_at(
                 vectorhash, cfg, embeddings_np, embeddings, positions,
-                env_offset, hopfields, False, device, embeddings.shape[1])
+                env_offset, hopfields, False, device, embeddings.shape[1],
+                return_chart=_chart_on)
+            sig_t, q, _mask, _W = _o[:4]
+            _chart = _o[4] if _chart_on else None
             if (cfg.agent.input_hopfield_raw
                     and cfg.agent.hopfield_mode != "discrete"):
                 hop_signal = torch.from_numpy(q.astype(np.float32)).to(device)
@@ -270,16 +330,25 @@ def batched_exploration_trials(
         else:
             hop_signal = torch.zeros(B, signal_dim, device=device)
 
+        # 7.7.2's channel. Supplied only when enabled: build_policy_input is
+        # strict, so an enabled-but-unsupplied channel raises there rather than
+        # shifting the layout silently.
+        _chart_v = (
+            torch.from_numpy(_chart).float().to(device).unsqueeze(-1)
+            if _chart is not None else None)
         values = {
             "current_reward": torch.from_numpy(current_reward).to(device).unsqueeze(1),
             "prev_reward": prev_reward_t,
             "encoded_state": embeddings,
             "hopfield_signal": hop_signal,
             "prev_action": prev_action_t,
+            "prev_displacement": prev_disp_t,
             # No goal is ever written to these Hopfields, so the bit is False
             # for the whole trial.
             "goal_in_memory": torch.zeros(B, 1, device=device),
         }
+        if _chart_v is not None:
+            values["chart_frac"] = _chart_v
         if cfg.agent.input_sensory:
             values["sensory"] = torch.from_numpy(
                 vec.obs_batch()).float().to(device)
@@ -293,6 +362,13 @@ def batched_exploration_trials(
             for s, q_s in msq.items():
                 values[channels.multistep_name(s)] = torch.from_numpy(
                     q_s.astype(np.float32)).to(device)
+
+        if getattr(cfg.agent, "input_abs_position", False):
+            values["abs_position"] = torch.from_numpy(
+                visited_mod.abs_position_channel(vec, cfg.env.size)).to(device)
+        if vis_probe is not None:
+            values["visited"] = torch.from_numpy(
+                vis_probe.read(vec.positions())).to(device)
 
         rnn_input = channels.build_policy_input(
             input_specs, values, batch_size=B).unsqueeze(1)
@@ -312,8 +388,14 @@ def batched_exploration_trials(
         prev_reward_t = torch.from_numpy(current_reward).to(device).unsqueeze(1)
 
         # Every trial steps, every step: nothing terminates early.
+        # After the step, so it is the displacement the env actually
+        # produced -- not the action, which the norm clamp and the
+        # arena clip both alter.
         vec.step_batch(actions, contract=contract)
+        prev_disp_t = torch.from_numpy(
+            vec.last_displacement()).float().to(device)
 
+        swept.add(swept_positions(vec))
         reached = at_goal(vec)
         for b, p in enumerate(vec.positions()):
             visited[b].add(tuple(p))
@@ -321,7 +403,7 @@ def batched_exploration_trials(
                 found[b] = True
                 steps_to_goal[b] = step + 1
 
-    return visited, found, steps_to_goal
+    return visited, found, steps_to_goal, swept.result()
 
 
 __all__ = ["batched_exploration_trials", "batched_navigation_trials"]

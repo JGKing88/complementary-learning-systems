@@ -298,13 +298,24 @@ class VectorHash:
             sgb = self.gbook.copy()
 
         flat = sgb.reshape(self.Ng, Npos * Npos).T.astype(np.float32)
-        parts = []
+        del sgb
+
+        # Written straight into the destination rather than collected into a
+        # list and concatenated. At Npos=1716 the result is 12 GB, so holding
+        # the parts and their concatenation at once doubled that, and peak RSS
+        # was 44 GB for a 12 GB answer -- which on a memory-contended node is
+        # the difference between scheduling and queueing. The first chunk sizes
+        # the buffer because embed_dim is the encoder's business, not ours.
         with torch.no_grad():
             for start in range(0, flat.shape[0], 1000):
                 chunk = torch.from_numpy(flat[start:start + 1000]).to(device)
-                parts.append(encoder(chunk).cpu().numpy())
+                out = encoder(chunk).cpu().numpy()
+                if start == 0:
+                    encoded = np.empty((flat.shape[0], out.shape[1]),
+                                       dtype=out.dtype)
+                encoded[start:start + out.shape[0]] = out
+        del flat
 
-        encoded = np.concatenate(parts, axis=0)
         self.encoded_Phi = encoded.reshape(Npos, Npos, -1)
         print(f"  precomputed encoded_Phi: {self.encoded_Phi.shape}")
 

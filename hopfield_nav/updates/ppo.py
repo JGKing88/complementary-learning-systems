@@ -145,6 +145,12 @@ def _pool_rollouts(
         "policy_action_mask": pol_mask,
         "advantages": torch.cat(advs, dim=0),
         "returns": torch.cat(rets, dim=0),
+        # Auxiliary visitation targets (§24.2 lever B). None unless
+        # aux_visited_weight > 0; every rollout in a pool agrees
+        # because they share one config.
+        "visited_targets": (
+            torch.cat([r.visited_targets for r in rollouts], dim=0)
+            if rollouts[0].visited_targets is not None else None),
     }
 
 
@@ -206,6 +212,8 @@ def ppo_update(
     alive_mask = pool["alive_mask"]
     advantages = pool["advantages"]
     returns = pool["returns"]
+    visited_targets = pool["visited_targets"]
+    aux_vis_w = float(getattr(agent, "aux_visited_weight", 0.0))
 
     # Normalize advantages across the full pool (not per-minibatch — that would
     # inject minibatch-dependent bias into the policy gradient).
@@ -224,8 +232,13 @@ def ppo_update(
     total_value_loss = 0.0
     total_move_ent = 0.0
     total_store_ent = 0.0
+    total_mu_norm = total_sigma = total_ang = total_kappa = total_dir = 0.0
+    n_diag = n_kappa = 0
     total_store_bc = 0.0
+    total_aux_vis = 0.0
     n_steps = 0
+    n_nonfinite = 0
+    reported_nonfinite = False
 
     for _ in range(cfg.ppo_epochs):
         perm = torch.randperm(N, device=obs.device)
@@ -245,6 +258,8 @@ def ppo_update(
             mb_mask = explore_mask[idx]
             mb_pol_mask = policy_action_mask[idx]
             mb_alive = None if alive_mask is None else alive_mask[idx]
+            mb_vis = (None if visited_targets is None
+                      else visited_targets[idx])
 
             # Return features so detached-trunk BCE has access (below). When
             # bce_detach_trunk=False the features tensor is unused — PyTorch
@@ -256,16 +271,38 @@ def ppo_update(
 
             # Movement policy loss
             new_move_lp = move_dist.log_prob(mb_move_act)
-            if isinstance(move_dist, Normal):  # continuous: sum over action dims
+            if new_move_lp.dim() > mb_old_move_lp.dim():
+                # Continuous: sum over the action's factor axis. Duck-typed on
+                # the shape rather than `isinstance(move_dist, Normal)`, so the
+                # polar head -- whose log_prob returns [heading, speed] on that
+                # same axis -- takes this path too. An isinstance check would
+                # have silently left the polar ratio one factor short.
                 new_move_lp = new_move_lp.sum(-1)
-            ratio_move = torch.exp(new_move_lp - mb_old_move_lp)
+            # CLAMPED before exp. The comment below already notes that ε /
+            # auto-nav steps explode the ratio; under a von Mises whose kappa
+            # can reach its ceiling the log-prob gap between two policies can
+            # reach ~2*kappa, and exp() of that is `inf` in float32. An `inf`
+            # then meets `* mb_pol_mask` and `inf * 0` is NaN -- so the mask
+            # that exists to REMOVE those steps is what converts them into a
+            # NaN that poisons every parameter at once. exp(20) = 4.9e8, far
+            # past anything clip_coef admits, so this changes no healthy step.
+            log_ratio_move = (new_move_lp - mb_old_move_lp).clamp(-20.0, 20.0)
+            ratio_move = torch.exp(log_ratio_move)
             surr1 = ratio_move * mb_adv
             surr2 = torch.clamp(ratio_move, 1 - cfg.clip_coef, 1 + cfg.clip_coef) * mb_adv
             # Mask ε / auto-nav steps out of move_loss — those actions did
             # not come from the policy sample, so including them in the PPO
             # surrogate explodes the importance ratio under narrow std.
+            #
+            # `torch.where`, not `* mask`: multiplication propagates a
+            # non-finite value through a zero, selection does not. The mask is
+            # applied to exactly the steps whose surrogate is most likely to be
+            # non-finite, which is the worst possible place for that
+            # distinction to be wrong.
             pol_mask_sum = mb_pol_mask.sum().clamp_min(1.0)
-            move_loss = (-torch.min(surr1, surr2) * mb_pol_mask).sum() / pol_mask_sum
+            _surr = -torch.min(surr1, surr2)
+            move_loss = torch.where(mb_pol_mask > 0, _surr,
+                                    torch.zeros_like(_surr)).sum() / pol_mask_sum
 
             # Store policy loss — masked by explore_mask: during exploit the
             # store action is inert (rollout ignores it, no store_cost/
@@ -273,17 +310,52 @@ def ppo_update(
             # zero causal signal for the store head. Including them just pumps
             # variance into the store logits and the shared RNN trunk.
             new_store_lp = store_dist.log_prob(mb_store_act)
-            ratio_store = torch.exp(new_store_lp - mb_old_store_lp)
+            ratio_store = torch.exp(
+                (new_store_lp - mb_old_store_lp).clamp(-20.0, 20.0))
             surr1_s = ratio_store * mb_adv
             surr2_s = torch.clamp(ratio_store, 1 - cfg.clip_coef, 1 + cfg.clip_coef) * mb_adv
             mask_sum = mb_mask.sum().clamp_min(1.0)
-            store_loss = (-torch.min(surr1_s, surr2_s) * mb_mask).sum() / mask_sum
+            _surr_s = -torch.min(surr1_s, surr2_s)
+            store_loss = torch.where(mb_mask > 0, _surr_s,
+                                     torch.zeros_like(_surr_s)).sum() / mask_sum
 
             # Value loss. Steps after a row's episode ended are not states the
             # value head should be fit to -- the agent was frozen there and the
             # return is defined to be zero, so regressing onto them teaches it
             # that finishing is worth nothing.
             sq_err = (mb_ret - new_values) ** 2
+            # Action-parameterization diagnostics. ||mu|| and sigma are what
+            # the phase-2 section 8.2 pathology lives in -- the commanded
+            # magnitude drifted to 8.18 against a cap of 2.0, collapsing the
+            # effective angular noise sigma/||mu||, and it was found only by
+            # probing saved checkpoints long afterwards. Logged per update so
+            # the next one is visible while it happens.
+            if hasattr(move_dist, "diag"):
+                # Polar. The columns are deliberately the same three names:
+                # mean speed <-> ||mu||, speed sd <-> radial noise, circular sd
+                # <-> sigma/||mu||. Calibrated so section 9.3's 10.56 deg reads
+                # as 10.66 deg here, i.e. the two parameterizations plot on one
+                # axis rather than needing separate panels.
+                _d = move_dist.diag()
+                total_mu_norm += _d["mu_norm"]
+                total_sigma += _d["sigma"]
+                total_ang += _d["ang_noise"]
+                total_kappa += _d["kappa"]
+                total_dir += _d.get("dir_norm", float("nan"))
+                n_kappa += 1
+                n_diag += 1
+            elif hasattr(move_dist, "mean") and move_dist.mean.dim() >= 2 \
+                    and move_dist.mean.shape[-1] == 2:
+                with torch.no_grad():
+                    _mu = move_dist.mean.norm(dim=-1)
+                    _sd = move_dist.stddev.mean(-1)
+                    total_mu_norm += float(_mu.mean())
+                    total_sigma += float(_sd.mean())
+                    # The ratio is the quantity that actually governs
+                    # directional exploration, so take its mean rather than
+                    # the ratio of the means.
+                    total_ang += float((_sd / _mu.clamp_min(1e-8)).mean())
+                    n_diag += 1
             move_entropy = move_dist.entropy()
             if move_entropy.dim() > 2:
                 move_entropy = move_entropy.sum(-1)
@@ -292,10 +364,20 @@ def ppo_update(
                 value_loss = sq_err.mean()
                 move_ent = move_entropy.mean()
             else:
+                # `where` rather than `* mb_alive`, for the reason given at
+                # move_loss: dead steps are exactly where a stale observation
+                # could make these non-finite, and a zero multiplier does not
+                # remove a non-finite value, it spreads it.
                 alive_sum = mb_alive.sum().clamp_min(1.0)
-                value_loss = (sq_err * mb_alive).sum() / alive_sum
-                move_ent = (move_entropy * mb_alive).sum() / alive_sum
-            store_ent = (store_dist.entropy() * mb_mask).sum() / mask_sum
+                keep = mb_alive > 0
+                value_loss = torch.where(
+                    keep, sq_err, torch.zeros_like(sq_err)).sum() / alive_sum
+                move_ent = torch.where(
+                    keep, move_entropy,
+                    torch.zeros_like(move_entropy)).sum() / alive_sum
+            _sent = store_dist.entropy()
+            store_ent = torch.where(mb_mask > 0, _sent,
+                                    torch.zeros_like(_sent)).sum() / mask_sum
 
             # Auxiliary BCE loss on store head: directly teach "fire store at
             # goal". Only applied where the store action is eligible (explore
@@ -326,6 +408,31 @@ def ppo_update(
             else:
                 store_bc_loss = torch.zeros((), device=obs.device)
 
+            # Auxiliary visitation BCE (§24.2 lever B). §22 measured that
+            # the policy REPLAYS on a state repeat -- it is a fixed
+            # (position, heading) field and never consults where it has been.
+            # This makes the trunk predict, from its own features, which of 8
+            # surrounding cells it has already visited, so the hidden state is
+            # forced to carry that and the policy head CAN use it.
+            #
+            # Deliberately NOT detached. `bce_detach_trunk` exists for the
+            # store head, whose BCE was polluting the trunk; here shaping the
+            # trunk IS the mechanism.
+            if aux_vis_w > 0 and mb_vis is not None:
+                vis_logits = agent.visited_logits(features)
+                if vis_logits is not None:
+                    # pos_weight balances the classes: early in an episode
+                    # almost nothing is visited and late almost everything is,
+                    # so an unweighted BCE would just track the base rate.
+                    n_pos = mb_vis.sum().clamp_min(1.0)
+                    n_neg = (mb_vis.numel() - n_pos).clamp_min(1.0)
+                    aux_vis_loss = F.binary_cross_entropy_with_logits(
+                        vis_logits, mb_vis, pos_weight=(n_neg / n_pos))
+                else:
+                    aux_vis_loss = torch.zeros((), device=obs.device)
+            else:
+                aux_vis_loss = torch.zeros((), device=obs.device)
+
             # The store terms are still computed above, because they are the
             # diagnostics the run logs -- but a frozen store head contributes
             # none of them to the gradient. All three go together: with the
@@ -335,6 +442,7 @@ def ppo_update(
                 move_loss
                 + cfg.vf_coef * value_loss
                 - cfg.ent_coef * move_ent
+                + aux_vis_w * aux_vis_loss
             )
             if store_trainable:
                 loss = (
@@ -346,8 +454,78 @@ def ppo_update(
 
             optimizer.zero_grad(set_to_none=True)
             loss.backward()
-            nn.utils.clip_grad_norm_(agent.parameters(), cfg.max_grad_norm)
-            optimizer.step()
+            # Computed WITHOUT mutating, because `clip_grad_norm_` scales every
+            # gradient in place by `max_norm / (total_norm + 1e-6)` -- and when
+            # total_norm is NaN that factor is NaN, so it smears NaN across
+            # every parameter and destroys the evidence of which one was
+            # actually bad. The first parameter-level report came back with the
+            # four RNN tensors named and NOTHING finite anywhere, which is that
+            # smearing, not a finding. Third time in this debug that a
+            # diagnostic ran after the step that erased what it was reading.
+            _grads = [p.grad for p in agent.parameters() if p.grad is not None]
+            total_norm = torch.norm(
+                torch.stack([g.norm() for g in _grads])) if _grads else \
+                torch.zeros((), device=obs.device)
+            # SKIP the step on a non-finite gradient rather than taking it.
+            #
+            # `clip_grad_norm_` scales every gradient by
+            # `max_norm / (total_norm + 1e-6)`; when total_norm is inf that
+            # factor is 0, and `inf * 0` is NaN -- so one bad sample does not
+            # merely dominate the update, it writes NaN into a parameter
+            # permanently, and every subsequent forward is NaN. That is how
+            # both P10 arms died in update 2 with EVERY entry of the heading
+            # NaN at once. One skipped minibatch costs nothing; a poisoned
+            # parameter costs the run.
+            if torch.isfinite(total_norm):
+                nn.utils.clip_grad_norm_(agent.parameters(), cfg.max_grad_norm)
+                optimizer.step()
+            else:
+                n_nonfinite += 1
+                # Report BEFORE clearing. `zero_grad(set_to_none=True)` sets
+                # every .grad to None, so inspecting after it reported empty
+                # lists for both the non-finite and the finite parameters --
+                # which reads as "no gradients anywhere" rather than as "the
+                # diagnostic looked too late".
+                if not reported_nonfinite:
+                    # Named once per update, not per minibatch. Dying with no
+                    # information about WHICH term went bad is what made the
+                    # first two P10 crashes cost a full diagnosis; this makes
+                    # the next occurrence say so itself.
+                    reported_nonfinite = True
+                    with torch.no_grad():
+                        # WHICH PARAMETER, not just which loss. The first
+                        # report showed every loss term finite and small
+                        # (ratio_max 11.5, all losses < 1), so the non-finite
+                        # value is created inside the BACKWARD, not carried in
+                        # from the forward -- which rules out an overflowing
+                        # ratio and points at gradient amplification. Naming
+                        # the parameter separates "the 200-step RNN backward
+                        # exploded" from "the polar head emitted it".
+                        # The count matters as much as the names: "4 of 4 RNN
+                        # tensors" and "4 of 12 parameters" mean different
+                        # things, and a truncated list cannot tell them apart.
+                        n_par = sum(1 for _, p in agent.named_parameters()
+                                    if p.grad is not None)
+                        bad = [n for n, p in agent.named_parameters()
+                               if p.grad is not None
+                               and not torch.isfinite(p.grad).all()]
+                        big = sorted(
+                            ((float(p.grad.abs().max()), n)
+                             for n, p in agent.named_parameters()
+                             if p.grad is not None and torch.isfinite(p.grad).all()),
+                            reverse=True)[:3]
+                        print("  [ppo] non-finite gradient, step skipped: "
+                              f"ratio_max={float(ratio_move.max()):.3e} "
+                              f"logratio_max={float(log_ratio_move.abs().max()):.3f} "
+                              f"adv_absmax={float(mb_adv.abs().max()):.3e} "
+                              f"move_loss={float(move_loss):.4g} "
+                              f"value_loss={float(value_loss):.4g} "
+                              f"move_ent={float(move_ent):.4g} "
+                              f"| nonfinite {len(bad)}/{n_par}: {bad[:4]} "
+                              f"| largest_finite="
+                              f"{[(n, f'{v:.3e}') for v, n in big]}",
+                              flush=True)
+                optimizer.zero_grad(set_to_none=True)
 
             total_move_loss += move_loss.item()
             total_store_loss += store_loss.item()
@@ -355,14 +533,37 @@ def ppo_update(
             total_move_ent += move_ent.item()
             total_store_ent += store_ent.item()
             total_store_bc += store_bc_loss.item()
+            total_aux_vis += aux_vis_loss.item()
             n_steps += 1
 
     denom = max(n_steps, 1)
-    return {
+    d_diag = max(n_diag, 1)
+    stats = {
+        "mu_norm": total_mu_norm / d_diag,
+        "sigma": total_sigma / d_diag,
+        "ang_noise": total_ang / d_diag,
         "move_loss": total_move_loss / denom,
         "store_loss": total_store_loss / denom,
         "value_loss": total_value_loss / denom,
         "move_entropy": total_move_ent / denom,
         "store_entropy": total_store_ent / denom,
         "store_bc_loss": total_store_bc / denom,
+        "aux_visited_loss": total_aux_vis / denom,
+        # Minibatches whose gradient was non-finite and therefore skipped. A
+        # persistent nonzero here is a real problem being survived, not solved
+        # -- it belongs in the log where it can be seen, not swallowed.
+        "nonfinite_steps": float(n_nonfinite),
     }
+    # Emitted only under the polar head, where kappa exists. Not 0.0 (which
+    # would plot as a real measurement) and not NaN either: every per-update
+    # field is asserted finite by test_smoke_train, and that invariant is how
+    # a genuinely broken run gets caught. Absent is the unambiguous option.
+    if n_kappa:
+        stats["kappa"] = total_kappa / n_kappa
+        # The direction head's magnitude: a gauge freedom nothing in the
+        # objective pressures. Logged because the softening only BOUNDS what
+        # happens when it decays -- it does not stop it decaying, and a run
+        # whose heading has gone near-uniform should say so while it happens
+        # rather than in a post-mortem.
+        stats["dir_norm"] = total_dir / n_kappa
+    return stats

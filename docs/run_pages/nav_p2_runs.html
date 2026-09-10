@@ -1,0 +1,344 @@
+<title>Polar Navigation Runs</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&family=Spectral:ital,wght@0,400;0,600;1,400&display=swap">
+<style>
+:root{
+  --ground:#fbfbfd;--surface:#f2f3f7;--raised:#fff;--ink:#15171c;--ink-soft:#3d434f;--muted:#6a7183;
+  --rule:#dde0e8;--rule-soft:#e9ebf1;
+  --a:#a8560a;--a-fill:rgba(168,86,10,.10);--b:#0d6b64;--ctl:#8890a2;
+  --floor:#8a90a0;--band:rgba(168,86,10,.055);--band2:rgba(90,100,125,.045);
+  --chip:rgba(90,100,125,.10);--chip-on:rgba(168,86,10,.14);
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --ground:#0e1014;--surface:#171a20;--raised:#1c2027;--ink:#e9ebf1;--ink-soft:#c2c7d3;--muted:#8b93a5;
+  --rule:#2b303a;--rule-soft:#232830;
+  --a:#eda13f;--a-fill:rgba(237,161,63,.14);--b:#3fc9bb;--ctl:#79839a;
+  --floor:#767e92;--band:rgba(237,161,63,.06);--band2:rgba(140,150,175,.055);
+  --chip:rgba(140,150,175,.13);--chip-on:rgba(237,161,63,.17);
+}}
+:root[data-theme="dark"]{
+  --ground:#0e1014;--surface:#171a20;--raised:#1c2027;--ink:#e9ebf1;--ink-soft:#c2c7d3;--muted:#8b93a5;
+  --rule:#2b303a;--rule-soft:#232830;
+  --a:#eda13f;--a-fill:rgba(237,161,63,.14);--b:#3fc9bb;--ctl:#79839a;
+  --floor:#767e92;--band:rgba(237,161,63,.06);--band2:rgba(140,150,175,.055);
+  --chip:rgba(140,150,175,.13);--chip-on:rgba(237,161,63,.17);
+}
+*{box-sizing:border-box}
+body{background:var(--ground);color:var(--ink);font-family:"IBM Plex Sans",system-ui,sans-serif;line-height:1.55;margin:0;padding:clamp(1.4rem,4vw,3rem) 1.25rem 5rem;-webkit-font-smoothing:antialiased}
+.wrap{max-width:1120px;margin:0 auto;display:flex;flex-direction:column;gap:clamp(1.8rem,3.5vw,2.8rem)}
+a{color:inherit}
+.eyebrow{font-family:"IBM Plex Mono",monospace;font-size:.72rem;letter-spacing:.14em;text-transform:uppercase;color:var(--muted);margin:0 0 .7rem}
+h1{font-family:Spectral,Georgia,serif;font-weight:600;font-size:clamp(1.9rem,4.6vw,2.9rem);line-height:1.09;letter-spacing:-.015em;margin:0 0 .55rem;text-wrap:balance}
+.standfirst{font-family:Spectral,Georgia,serif;font-style:italic;font-size:clamp(1.02rem,2vw,1.24rem);color:var(--ink-soft);max-width:64ch;margin:0}
+h2{font-family:Spectral,Georgia,serif;font-weight:600;font-size:1.38rem;margin:0 0 .3rem;letter-spacing:-.01em}
+.sub{color:var(--muted);font-size:.9rem;margin:0 0 1.05rem;max-width:66ch}
+
+.back{display:inline-flex;align-items:center;gap:.45rem;font-family:"IBM Plex Mono",monospace;font-size:.76rem;color:var(--muted);text-decoration:none;padding:.3rem 0}
+.back:hover{color:var(--a)}
+.back:focus-visible{outline:2px solid var(--a);outline-offset:3px;border-radius:2px}
+
+/* config chips — identical on every page */
+.cfg{display:flex;flex-wrap:wrap;gap:.4rem}
+.chip{font-family:"IBM Plex Mono",monospace;font-size:.72rem;padding:.26rem .6rem;border-radius:2px;background:var(--chip);color:var(--ink-soft);white-space:nowrap}
+.chip b{color:var(--muted);font-weight:500}
+.chip.on{background:var(--chip-on);color:var(--a)}
+
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:1px;background:var(--rule);border:1px solid var(--rule);border-radius:3px;overflow:hidden}
+.stat{background:var(--raised);padding:1.05rem 1.1rem}
+.stat .k{font-family:"IBM Plex Mono",monospace;font-size:.66rem;letter-spacing:.09em;text-transform:uppercase;color:var(--muted);margin-bottom:.45rem}
+.stat .v{font-family:"IBM Plex Mono",monospace;font-size:1.6rem;font-weight:500;line-height:1;font-variant-numeric:tabular-nums;letter-spacing:-.02em}
+.stat .n{font-size:.76rem;color:var(--muted);margin-top:.4rem}
+.stat.hi .v{color:var(--a)}
+
+.chart{background:var(--raised);border:1px solid var(--rule);border-radius:3px;padding:1rem .85rem .5rem;overflow-x:auto}
+.chart svg{display:block;width:100%;height:auto;min-width:520px}
+.legend{display:flex;flex-wrap:wrap;gap:1.2rem;margin:.85rem 0 0;padding:0 .3rem;font-family:"IBM Plex Mono",monospace;font-size:.73rem;color:var(--muted)}
+.legend i{display:inline-block;width:15px;height:2px;vertical-align:middle;margin-right:.42rem}
+.legend .dash{height:0;border-top:1.5px dashed var(--floor)}
+
+.tw{overflow-x:auto;border:1px solid var(--rule);border-radius:3px;background:var(--raised)}
+table{width:100%;border-collapse:collapse;font-family:"IBM Plex Mono",monospace;font-size:.79rem;font-variant-numeric:tabular-nums}
+th,td{padding:.6rem .8rem;text-align:right;border-bottom:1px solid var(--rule-soft);white-space:nowrap}
+th{font-size:.66rem;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);font-weight:500;background:var(--surface)}
+th:first-child,td:first-child{text-align:left}
+tbody tr:last-child td{border-bottom:none}
+tbody tr.me td{background:var(--a-fill);font-weight:600}
+td a{color:var(--a);text-decoration:none;font-weight:500}
+td a:hover{text-decoration:underline}
+
+.cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(310px,1fr));gap:1rem}
+.card{background:var(--raised);border:1px solid var(--rule);border-radius:3px;padding:1.15rem 1.2rem 1.25rem;display:flex;flex-direction:column;gap:.7rem;text-decoration:none;transition:border-color .12s}
+.card:hover{border-color:var(--a)}
+.card:focus-visible{outline:2px solid var(--a);outline-offset:2px}
+.card .fam{font-family:"IBM Plex Mono",monospace;font-size:.66rem;letter-spacing:.1em;text-transform:uppercase;color:var(--muted)}
+.card h3{font-family:Spectral,Georgia,serif;font-size:1.16rem;font-weight:600;margin:0;letter-spacing:-.01em}
+.card p{margin:0;font-size:.87rem;color:var(--ink-soft)}
+.hd3{display:grid;grid-template-columns:repeat(3,1fr);gap:1px;background:var(--rule);border:1px solid var(--rule);border-radius:2px;overflow:hidden}
+.hd3 div{background:var(--raised);padding:.55rem .6rem}
+.hd3 b{display:block;font-family:"IBM Plex Mono",monospace;font-size:1.16rem;font-weight:500;color:var(--a);font-variant-numeric:tabular-nums;line-height:1.1}
+.hd3 span{display:block;font-family:"IBM Plex Mono",monospace;font-size:.62rem;letter-spacing:.07em;text-transform:uppercase;color:var(--muted);margin-top:.28rem}
+.hd3 div.dim b{color:var(--ink-soft)}
+
+.note{border-left:2px solid var(--rule);padding:.15rem 0 .15rem 1.1rem;color:var(--ink-soft);font-size:.91rem;max-width:68ch}
+.note+.note{margin-top:.9rem}
+.note b{color:var(--ink)}
+code{font-family:"IBM Plex Mono",monospace;font-size:.86em;background:var(--surface);padding:.08rem .32rem;border-radius:2px}
+footer{border-top:1px solid var(--rule);padding-top:1.3rem;color:var(--muted);font-size:.81rem;max-width:72ch}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+
+<div class="wrap" id="app"></div>
+
+<script>
+const U40=Array.from({length:40},(_,i)=>(i+1)*50);
+const U30=Array.from({length:30},(_,i)=>(i+1)*50);
+const UK=[50,100,150,200,250,300,400,500,600,700,800,900,1000,1100,1200,1300,1400,1500];
+
+const RUNS=[
+{id:'p10_pol_v1',fam:'P10 · polar',name:'Frozen Speed, Exploit',job:'21300389',task:'exploit',
+ blurb:'The reference run. Step size pinned at exactly one cell — the baseline every other exploit arm is measured against.',
+ cfg:{speed:'frozen 1.0',cur:null,tp:'0.05',sch:'exploit 2000'},U:U40,
+ s0:[.031,.208,.896,.510,.906,1,.490,.990,1,1,.979,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],
+ s10:[.052,.146,.875,.583,.760,.979,.542,.958,.958,.906,.781,.938,.938,.958,.927,.948,.948,.896,.938,.958,.906,.896,.958,.948,.938,.948,.906,.958,.958,.958,.969,.979,.958,.969,.958,.938,.969,.958,.948,.958],
+ t0:[10,47.6,66.4,46.65,33.67,19.57,42.62,16.04,16.28,15.41,35.02,12.76,13.2,12.76,13.68,12.41,12.39,13.31,11.45,12.11,12.65,12.1,14.46,11.25,11.69,11.98,11.56,12.1,11.46,11.21,11.52,11.35,11.67,11.68,11.2,11.99,11.6,11.47,11.3,10.95],
+ v0:[.905,.484,.273,.481,.414,.677,.423,.783,.742,.788,.592,.867,.856,.884,.829,.888,.894,.805,.922,.910,.862,.887,.774,.923,.901,.885,.912,.880,.914,.931,.916,.923,.911,.898,.933,.883,.910,.912,.922,.948]},
+
+{id:'p10_pol',fam:'P10 · polar',name:'Learned Speed, Exploit',job:'21300385',task:'exploit',
+ blurb:'Speed free over the full [0.5, 2.0] band. Learns ~1.8 and reaches goals in a third fewer steps — by stride, not by steering.',
+ cfg:{speed:'learned [0.5, 2.0]',cur:null,tp:'0.05',sch:'exploit 2000'},U:U40,
+ s0:[.677,.844,.969,.979,.990,.698,.885,.969,1,.969,1,1,1,1,1,1,.979,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],
+ s10:[.552,.854,.854,.802,.969,.698,.823,.844,.948,.917,.927,.969,.969,.938,.958,.948,.948,.979,.990,.958,.990,.969,.948,.969,.917,.958,.938,.979,.948,.958,.938,.938,.938,.948,.969,.938,.938,.927,.865,.927],
+ t0:[41.98,32.98,36.34,28.20,27.19,40.99,21.12,33.82,18.69,27.44,20.55,13.61,18.07,10.53,13.80,11.91,14.78,9.75,10.97,9.78,9.20,8.65,9.51,8.56,9.33,8.73,10.35,8.81,7.41,7.65,7.22,7.72,7.60,7.40,7.29,7.11,8.21,8.06,7.56,7.17],
+ v0:[.690,.721,.598,.630,.738,.536,.675,.579,.865,.771,.795,1.031,1.007,1.217,1.006,1.124,1.088,1.285,1.136,1.186,1.230,1.326,1.230,1.284,1.268,1.267,1.148,1.285,1.442,1.448,1.498,1.410,1.407,1.449,1.429,1.478,1.373,1.364,1.385,1.495]},
+
+{id:'p11_cur',fam:'P11 · convergence',name:'Distractor Curriculum',job:'21367234',task:'exploit',
+ blurb:'Distractors ramp from none to ten over 400 updates. Removes every training collapse and locks 200 updates earlier — at an identical endpoint.',
+ cfg:{speed:'frozen 1.0',cur:'0→10 over 400',tp:'0.05',sch:'exploit 2000'},U:U40,
+ s0:[.042,.052,.031,.073,.677,.927,.979,1,1,.990,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],
+ s10:[.021,.073,.052,.094,.708,.844,.917,.979,.917,.990,.958,.927,.927,.906,.927,.958,.927,.958,.938,.948,.927,.979,.969,.927,.938,.948,.948,.885,.854,.938,.896,.938,.938,.938,.927,.938,.917,.927,.927,.948],
+ t0:[7.75,15.6,4.0,10.0,63.68,44.49,38.37,23.64,20.95,14.85,15.99,13.70,12.99,12.86,12.83,11.74,11.19,11.80,11.50,11.34,11.10,11.25,11.22,12.43,11.26,11.59,12.31,11.40,10.95,11.52,11.26,11.05,11.36,11.51,11.69,11.35,12.09,12.27,11.46,11.40],
+ v0:[.968,.897,.933,.991,.310,.473,.479,.603,.622,.798,.798,.859,.871,.856,.857,.905,.942,.903,.914,.932,.951,.941,.941,.879,.929,.916,.888,.918,.961,.923,.935,.953,.934,.925,.921,.938,.891,.880,.925,.921]},
+
+{id:'p11_tp',fam:'P11 · convergence',name:'Cheaper Failure',job:'21367235',task:'exploit',
+ blurb:'Time penalty 0.05 → 0.02, so a failed episode costs −4 not −10. Finds goals 24× more often at u50 and is the least stable of all four.',
+ cfg:{speed:'frozen 1.0',cur:null,tp:'0.02',sch:'exploit 2000'},U:U40,
+ s0:[.760,.854,.365,.885,1,.990,.990,1,.792,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],
+ s10:[.760,.823,.365,.854,.958,.969,.979,.927,.646,.938,.927,.938,.958,.948,.979,.958,.958,.979,.979,.938,.979,.948,.979,.990,.990,.948,.969,.969,.958,.958,.958,.958,.948,.969,.969,.948,.958,.958,.948,.875],
+ t0:[59.11,42.49,31.83,42.89,29.73,28.06,20.82,21.32,54.49,15.43,15.85,21.90,14.44,17.71,17.05,12.24,13.80,13.04,13.21,13.48,12.46,11.54,12.57,11.64,12.81,11.90,11.17,11.16,12.16,11.28,11.55,11.42,11.28,11.04,11.75,10.59,10.67,11.06,10.65,11.58],
+ v0:[.464,.501,.584,.461,.632,.632,.781,.632,.446,.800,.774,.646,.834,.798,.746,.910,.858,.876,.852,.843,.891,.923,.865,.915,.863,.900,.949,.949,.903,.958,.927,.927,.949,.952,.927,.992,.994,.963,.988,.933]},
+
+{id:'p11_cur_tp',fam:'P11 · convergence',name:'Curriculum + Cheaper Failure',job:'21367486',task:'exploit',
+ blurb:'Both P11 treatments together. Intermediate on every stability measure and worst of the four on final efficiency — the knobs oppose each other.',
+ cfg:{speed:'frozen 1.0',cur:'0→10 over 400',tp:'0.02',sch:'exploit 2000'},U:U40,
+ s0:[.385,.698,.167,.885,.854,.646,.948,.948,1,1,.990,1,1,1,.969,1,1,.979,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],
+ s10:[.354,.635,.094,.844,.927,.604,.896,.781,.906,.885,.792,.969,.875,.875,.917,.896,.854,.854,.802,.875,.958,.917,.896,.938,.906,.958,.885,.938,.938,.948,.917,.906,.896,.948,.938,.906,.958,.958,.958,.958],
+ t0:[70.73,32.64,62.31,34.54,26.62,49.71,38.49,34.63,22.45,22.03,22.78,25.35,16.05,15.66,12.99,18.51,15.36,16.86,22.80,15.25,13.59,12.76,12.34,12.10,13.66,11.69,12.15,12.04,11.85,11.45,11.51,11.49,12.35,11.07,10.96,12.18,11.45,12.10,11.05,12.09],
+ v0:[.368,.488,.547,.547,.637,.345,.534,.515,.678,.748,.665,.626,.755,.753,.882,.673,.787,.752,.686,.765,.816,.868,.878,.898,.830,.904,.885,.895,.911,.937,.926,.921,.890,.949,.956,.884,.922,.882,.949,.865]},
+
+{id:'p12_lo',fam:'P12 · speed control',name:'Choice Without Speed',job:'21382760',task:'exploit',
+ blurb:'Speed learned but capped at 1.0 — it may choose, never exceed. Picks 0.94, gains no steps over the pinned arm, and is far steadier.',
+ cfg:{speed:'learned [0.5, 1.0]',cur:null,tp:'0.05',sch:'exploit 2000'},U:U40,
+ s0:[.406,.448,.896,.844,.979,1,1,1,1,1,1,.990,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],
+ s10:[.396,.510,.885,.823,.833,.948,.979,.885,.896,.906,.875,.938,.906,.896,.865,.896,.906,.885,.865,.917,.948,.917,.958,.958,.958,.969,.885,.938,.938,.958,.885,.927,.917,.938,.906,.948,.927,.927,.917,.917],
+ t0:[66.33,64.09,46.16,29.53,34.09,23.48,21.19,16.85,15.20,15.26,15.68,16.83,16.94,15.34,17.35,14.18,13.56,14.05,13.08,12.86,13.08,12.59,11.78,11.98,12.64,11.61,12.30,12.02,11.63,12.63,12.19,11.75,12.61,12.03,11.95,11.83,11.56,11.66,11.76,11.79],
+ v0:[.326,.328,.369,.570,.467,.565,.583,.737,.782,.750,.751,.744,.716,.754,.700,.795,.833,.805,.831,.834,.812,.858,.890,.885,.851,.908,.871,.875,.900,.844,.868,.881,.848,.873,.876,.897,.910,.903,.901,.912]},
+
+{id:'p12_lo_curtp',fam:'P12 · speed control',name:'Pinned at the Cap',job:'21382761',task:'exploit',
+ blurb:'Capped speed plus both P11 treatments. Settles at 0.975 of its 1.0 ceiling and finishes indistinguishable from having no choice at all.',
+ cfg:{speed:'learned [0.5, 1.0]',cur:'0→10 over 400',tp:'0.02',sch:'exploit 2000'},U:U40,
+ s0:[.042,.010,.031,.260,.885,.979,.990,1,.885,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],
+ s10:[.042,.042,.063,.198,.823,.865,.938,.917,.771,.917,.865,.875,.865,.844,.906,.938,.906,.896,.917,.969,.969,.896,.948,.979,.948,.906,.885,.969,.938,.938,.948,.969,.958,.917,.938,.896,.958,.917,.958,.938],
+ t0:[6.25,11.0,4.0,81.16,43.89,33.24,27.17,27.07,25.64,18.58,15.79,14.52,15.67,14.52,12.80,12.16,12.49,13.30,13.26,12.68,12.01,12.24,11.40,13.00,12.01,13.55,12.30,11.92,11.43,11.41,11.89,11.96,11.99,11.80,11.48,12.49,11.68,11.80,12.36,11.25],
+ v0:[.797,.464,.894,.284,.366,.492,.530,.542,.599,.718,.741,.793,.785,.784,.863,.878,.863,.839,.842,.858,.892,.902,.922,.831,.889,.830,.862,.879,.919,.918,.889,.874,.879,.880,.905,.846,.885,.875,.854,.922]},
+
+{id:'p10_e_pol',fam:'P10 · polar',name:'Learned Speed, Explore',job:'21300390',task:'explore',
+ blurb:'Coverage rather than goal-reaching. Finds the billiard strategy by u150 — fast, straight, bouncing — then spends 1350 updates not improving on it.',
+ cfg:{speed:'learned [0.5, 2.0]',cur:null,tp:'0.05',sch:'explore 1500'},U:U30,
+ cov:[.163,.126,.333,.373,.375,.355,.376,.304,.315,.374,.378,.370,.356,.358,.384,.361,.380,.365,.383,.369,.340,.380,.368,.385,.388,.379,.388,.355,.385,.361],
+ cov10:[.162,.130,.334,.370,.372,.354,.378,.307,.316,.372,.378,.369,.353,.356,.385,.360,.382,.367,.381,.371,.342,.382,.360,.389,.385,.378,.388,.356,.387,.364],
+ uni:[.826,.590,.888,.948,.917,.908,.914,.805,.762,.923,.934,.910,.865,.850,.923,.883,.930,.893,.953,.888,.825,.930,.900,.951,.927,.924,.971,.911,.921,.889],
+ muX:UK,mu:[1.500,1.542,1.688,1.645,1.727,1.732,1.704,1.741,1.850,1.802,1.787,1.756,1.723,1.795,1.817,1.809,1.778,1.772]},
+
+{id:'p10_e_pol_v1',fam:'P10 · polar',name:'Frozen Speed, Explore',job:'21300391',task:'explore',
+ blurb:'The same coverage task with speed pinned at 1.0. Reaches the same billiard ceiling as the arm free to move nearly twice as fast.',
+ cfg:{speed:'frozen 1.0',cur:null,tp:'0.05',sch:'explore 1500'},U:U30,
+ cov:[.207,.274,.125,.072,.322,.311,.373,.376,.380,.377,.371,.326,.372,.346,.335,.377,.372,.375,.366,.376,.379,.362,.375,.309,.368,.385,.380,.371,.381,.385],
+ cov10:[.205,.292,.124,.075,.315,.310,.376,.374,.379,.374,.368,.324,.378,.344,.331,.377,.365,.375,.365,.377,.378,.360,.371,.303,.367,.387,.375,.371,.376,.386],
+ uni:[.892,.943,.569,.437,.907,.852,.925,.939,.934,.916,.888,.825,.919,.857,.826,.910,.917,.897,.877,.916,.910,.869,.918,.774,.899,.912,.918,.895,.906,.929],
+ muX:UK,mu:UK.map(()=>1.0)},
+];
+
+/* ---- one metric definition, used for every run, so the cards cannot drift ---- */
+const last=a=>a[a.length-1];
+function derive(r){
+  const ex=r.task==='exploit';
+  const primary=ex?r.s0:r.cov.map(v=>v*2);
+  const thresh=ex?0.85:0.70;
+  let bi=primary.findIndex(v=>v>=thresh);
+  const minAfter=bi<0?null:Math.min(...primary.slice(bi+1));
+  return {
+    ex, primary, thresh,
+    breakthrough: bi<0?null:r.U[bi],
+    minAfter,
+    headline:   ex?last(r.s0):last(primary),
+    headline10: ex?last(r.s10):last(r.cov10)*2,
+    second:   ex?last(r.s10):last(r.cov),
+    third:    ex?last(r.t0):last(r.uni),
+    speed:    ex?last(r.v0):last(r.mu),
+  };
+}
+const F=(v,n=3)=>v==null?'—':v.toFixed(n);
+
+/* ---- charts ---- */
+const W=980,H=280,M={t:16,r:16,b:34,l:52};
+function svg(xs,series,o){
+  const x0=xs[0],x1=last(xs);
+  const px=u=>M.l+(u-x0)/(x1-x0)*(W-M.l-M.r);
+  const py=v=>M.t+(1-(v-o.yMin)/(o.yMax-o.yMin))*(H-M.t-M.b);
+  let s=`<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${o.label||'training curve'}">`;
+  if(o.band)s+=`<rect x="${px(x0)}" y="${M.t}" width="${px(o.band)-px(x0)}" height="${H-M.t-M.b}" fill="var(--band)"/>`+
+              `<rect x="${px(o.band)}" y="${M.t}" width="${px(x1)-px(o.band)}" height="${H-M.t-M.b}" fill="var(--band2)"/>`;
+  for(const t of o.ticks){
+    s+=`<line x1="${M.l}" y1="${py(t)}" x2="${W-M.r}" y2="${py(t)}" stroke="var(--rule-soft)"/>`+
+       `<text x="${M.l-10}" y="${py(t)+4}" text-anchor="end" font-family="IBM Plex Mono" font-size="11" fill="var(--muted)">${o.fmt(t)}</text>`;}
+  for(const r of (o.refs||[])){
+    s+=`<line x1="${M.l}" y1="${py(r.v)}" x2="${W-M.r}" y2="${py(r.v)}" stroke="var(--floor)" stroke-width="1.4" stroke-dasharray="5 4"/>`+
+       `<text x="${W-M.r-4}" y="${py(r.v)-6}" text-anchor="end" font-family="IBM Plex Mono" font-size="10.5" fill="var(--muted)">${r.l}</text>`;}
+  const gs=(x1-x0)>1000?500:250;
+  for(let u=x0+gs-x0%gs;u<=x1;u+=gs){
+    s+=`<line x1="${px(u)}" y1="${M.t}" x2="${px(u)}" y2="${H-M.b}" stroke="var(--rule-soft)"/>`+
+       `<text x="${px(u)}" y="${H-M.b+20}" text-anchor="middle" font-family="IBM Plex Mono" font-size="11" fill="var(--muted)">u${u}</text>`;}
+  s+=`<line x1="${M.l}" y1="${H-M.b}" x2="${W-M.r}" y2="${H-M.b}" stroke="var(--rule)"/>`;
+  for(const se of series){
+    const X=se.x||xs;
+    s+=`<path d="${se.d.map((v,i)=>`${i?'L':'M'}${px(X[i]).toFixed(1)},${py(v).toFixed(1)}`).join('')}" fill="none" stroke="var(--${se.c})" stroke-width="${se.w||2}" stroke-linejoin="round" stroke-linecap="round" opacity="${se.w?.72:1}"/>`;
+    s+=`<circle cx="${px(last(X))}" cy="${py(last(se.d))}" r="3.4" fill="var(--${se.c})"/>`;}
+  return s+'</svg>';
+}
+const box=(inner,leg)=>`<div class="chart">${inner}</div><div class="legend">${leg}</div>`;
+const key=(c,t)=>`<span><i style="background:var(--${c})"></i>${t}</span>`;
+const dashKey=t=>`<span><i class="dash"></i>${t}</span>`;
+
+/* ---- views ---- */
+function cfgChips(c){
+  return `<div class="cfg">
+    <span class="chip"><b>speed</b> ${c.speed}</span>
+    <span class="chip${c.cur?' on':''}"><b>curriculum</b> ${c.cur?c.cur:'none — U[0,10] from update 1'}</span>
+    <span class="chip${c.tp!=='0.05'?' on':''}"><b>time_penalty</b> ${c.tp}</span>
+    <span class="chip"><b>schedule</b> ${c.sch}</span>
+  </div>`;
+}
+function statRow(r,d){
+  const c=[
+    {k:d.ex?'Success · 0 dist':'Cells / step',v:F(d.headline),n:d.ex?'96 of 96 = 1.000':'billiard ref 0.775',hi:1},
+    {k:d.ex?'Success · 10 dist':'Coverage',v:F(d.second),n:d.ex?'of 96 trials':'per rollout'},
+    {k:d.ex?'Mean steps':'Union coverage',v:d.ex?d.third.toFixed(2):F(d.third),n:d.ex?'floor 9.95':'across trials'},
+    {k:'Final speed',v:d.speed.toFixed(2),n:r.cfg.speed.startsWith('frozen')?'fixed by config':'chosen'},
+    {k:`First ≥${d.thresh}`,v:'u'+d.breakthrough,n:'then min '+F(d.minAfter),hi:1},
+  ];
+  if(d.ex)c[0].n=(d.headline===1?'96 of 96':'')+' — perfect';
+  return `<div class="stats">${c.map(s=>
+    `<div class="stat${s.hi?' hi':''}"><div class="k">${s.k}</div><div class="v">${s.v}</div><div class="n">${s.n}</div></div>`).join('')}</div>`;
+}
+function charts(r,d){
+  if(d.ex){
+    return `
+    <section><h2>Outcome — success rate</h2><p class="sub">Both distractor levels. Shaded to the left of the update where it first holds a ceiling.</p>
+      ${box(svg(r.U,[{d:r.s10,c:'b'},{d:r.s0,c:'a'}],{yMin:0,yMax:1.04,ticks:[0,.25,.5,.75,1],fmt:v=>v.toFixed(2),band:d.breakthrough,label:'success rate'}),
+        key('a','0 distractors')+key('b','10 distractors'))}</section>
+    <section><h2>Efficiency — mean steps to goal</h2><p class="sub">Over successful trials only, so early points drawn from a handful of lucky starts mean little.</p>
+      ${box(svg(r.U,[{d:r.t0,c:'a'}],{yMin:0,yMax:Math.max(...r.t0)*1.05,ticks:[0,20,40,60],fmt:v=>v,refs:[{v:9.95,l:'optimal 9.95'}],band:d.breakthrough,label:'mean steps'}),
+        key('a','mean steps')+dashKey('optimal path at speed 1.0'))}</section>
+    <section><h2>Realized step magnitude</h2><p class="sub">Distance actually covered per step after the arena clip. Below the commanded value wherever the agent is pressing into a wall.</p>
+      ${box(svg(r.U,[{d:r.v0,c:'a'}],{yMin:0.2,yMax:Math.max(1.06,Math.max(...r.v0)*1.05),ticks:[.25,.5,.75,1,1.25,1.5].filter(t=>t<=Math.max(1.06,Math.max(...r.v0)*1.05)),fmt:v=>v.toFixed(2),refs:[{v:1,l:'1.0'}],label:'step magnitude'}),
+        key('a','realized ‖a‖')+dashKey('one cell'))}</section>`;
+  }
+  const cps=r.cov.map(v=>v*2);
+  return `
+  <section><h2>Outcome — cells per step</h2><p class="sub">Against the strategy ladder: a uniform random walk manages 0.36 here, a billiard 0.775, a lawnmower sweep 0.955.</p>
+    ${box(svg(r.U,[{d:cps,c:'a'}],{yMin:0,yMax:1.02,ticks:[0,.25,.5,.75,1],fmt:v=>v.toFixed(2),refs:[{v:.36,l:'random walk'},{v:.775,l:'billiard'},{v:.955,l:'lawnmower'}],band:d.breakthrough,label:'cells per step'}),
+      key('a','cells / step')+dashKey('strategy ladder'))}</section>
+  <section><h2>Efficiency — union coverage</h2><p class="sub">Share of the arena reached across all trials in an environment, as opposed to within one rollout.</p>
+    ${box(svg(r.U,[{d:r.uni,c:'b'}],{yMin:.3,yMax:1.02,ticks:[.4,.6,.8,1],fmt:v=>v.toFixed(2),band:d.breakthrough,label:'union coverage'}),
+      key('b','union coverage'))}</section>
+  <section><h2>Commanded step magnitude</h2><p class="sub">What the policy asks for, against its permitted ceiling of 2.0.</p>
+    ${box(svg(r.muX,[{d:r.mu,c:'a',x:r.muX}],{yMin:.8,yMax:2.08,ticks:[1,1.5,2],fmt:v=>v.toFixed(2),refs:[{v:2,l:'cap 2.0'}],label:'commanded magnitude'}),
+      key('a','commanded ‖a‖')+dashKey('permitted maximum'))}</section>`;
+}
+
+function compareTable(hereId){
+  const rows=RUNS.map(r=>{const d=derive(r);
+    return `<tr class="${r.id===hereId?'me':''}"><td><a href="#${r.id}">${r.name}</a></td>
+      <td>${r.cfg.speed.replace('learned ','').replace('frozen ','')}</td><td>${r.cfg.cur?'yes':'—'}</td><td>${r.cfg.tp}</td>
+      <td>${F(d.headline)}</td><td>${F(d.headline10)}</td><td>${d.speed.toFixed(2)}</td>
+      <td>${d.ex?d.third.toFixed(2):F(d.third)}</td>
+      <td>u${d.breakthrough}</td><td>${F(d.minAfter)}</td></tr>`;}).join('');
+  return `<div class="tw"><table>
+    <thead><tr><th>Run</th><th>Speed cfg</th><th>Curric.</th><th>t_pen</th>
+      <th>@ 0 dist</th><th>@ 10 dist</th><th>Final ‖a‖</th><th>Steps / union</th><th>First good</th><th>Min after</th></tr></thead>
+    <tbody>${rows}</tbody></table></div>`;
+}
+
+function home(){
+  return `
+  <header>
+    <p class="eyebrow">hopfield_nav · phase 2 · polar action head</p>
+    <h1>Polar Navigation Runs</h1>
+    <p class="standfirst">Nine training runs of a policy whose heading and speed are drawn from separate distributions. Four establish the parameterization, three ask why convergence takes 550 updates, and two isolate what freedom over step size is actually worth.</p>
+  </header>
+
+  <section><h2>All nine at a glance</h2>
+    <p class="sub">Headline is success rate for exploit runs and cells-per-step for explore, reported at both zero and ten distractors. “Final ‖a‖” is the realized step magnitude — what the policy actually moved, after the arena clip. “First good” is the update at which the zero-distractor headline first reaches 0.85 (exploit) or 0.70 (explore); “min after” is the lowest it falls thereafter, which is the stability measure.</p>
+    ${compareTable(null)}</section>
+
+  <section><h2>The runs</h2><div class="cards">
+    ${RUNS.map(r=>{const d=derive(r);return `<a class="card" href="#${r.id}">
+      <span class="fam">${r.fam}</span>
+      <h3>${r.name}</h3>
+      <div class="hd3">
+        <div><b>${F(d.headline)}</b><span>${d.ex?'succ · 0d':'cps · 0d'}</span></div>
+        <div class="dim"><b>${F(d.headline10)}</b><span>${d.ex?'succ · 10d':'cps · 10d'}</span></div>
+        <div class="dim"><b>${d.speed.toFixed(2)}</b><span>speed</span></div>
+      </div>
+      <p>${r.blurb}</p>
+      ${cfgChips(r.cfg)}
+    </a>`;}).join('')}
+  </div></section>
+
+  <section>
+    <p class="note"><b>What the set establishes.</b> Polar closed the magnitude channel the Cartesian head left open — speed modulation across distractor levels fell from 1.234× to 1.003× — and with it closed, directional noise picks up the near-goal state-dependence that σ never showed. The best exploit model reaches every goal in 10.95 steps against a 9.95 floor.</p>
+    <p class="note"><b>What it deflates.</b> Step count tracks the speed <em>cap</em>, not the freedom: capped at 1.0 the policy takes 11.79 steps against the pinned arm's 10.95. And none of the three shaping knobs changes where a run ends up — all four P11 arms finish within 10.95–12.09 steps. They change only how turbulently it gets there.</p>
+    <p class="note"><b>Read on the recorded split.</b> Every number here comes from each run's own six validation environments — never trained on, but the set it was scored against at every eval, not a fresh draw.</p>
+  </section>
+
+  <footer>Polar action head: heading from a von&nbsp;Mises over the allocentric angle, speed from a Beta over the permitted band, or deleted outright when frozen. All runs seed 42, evaluated every 50 updates on 96 trials. Full record in <code>docs/EXPERIMENTS_NAV_P2.md</code> §9.4–9.9.</footer>`;
+}
+
+function detail(r){
+  const d=derive(r);
+  return `
+  <a class="back" href="#">← all runs</a>
+  <header>
+    <p class="eyebrow">${r.fam} · run ${r.job}</p>
+    <h1>${r.name}</h1>
+    <p class="standfirst">${r.blurb}</p>
+    <div style="margin-top:1.3rem">${cfgChips(r.cfg)}</div>
+  </header>
+  ${statRow(r,d)}
+  ${charts(r,d)}
+  <section><h2>Against the other eight</h2>
+    <p class="sub">This run highlighted. Same columns and same definitions for every run in the set.</p>
+    ${compareTable(r.id)}</section>
+  <footer>Measured on the recorded split — the run's own six validation environments, not a fresh draw. Full record in <code>docs/EXPERIMENTS_NAV_P2.md</code> §9.4–9.9.</footer>`;
+}
+
+function render(){
+  const id=location.hash.replace('#','');
+  const r=RUNS.find(x=>x.id===id);
+  document.getElementById('app').innerHTML=r?detail(r):home();
+  window.scrollTo(0,0);
+}
+addEventListener('hashchange',render);
+render();
+</script>
