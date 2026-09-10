@@ -72,7 +72,7 @@ its table decides which cells of B are informative.
 ### 2.1 Environments
 
 `GridEnv`, size `S = 20`, no obstacles, walls carrying a ±1 barcode at
-`wall_resolution = 1`, `observation_size = 60` rays over a 120° cone. Envs
+`wall_resolution = 1`, `observation_size = 120` rays over a 120° cone. Envs
 are placed on the `lambdas = [11, 12, 13]` scaffold (`Npos = 1716`) by the
 declared-domain generator (`world/generate.py`) with `place_margin = 20`.
 
@@ -81,7 +81,7 @@ declared-domain generator (`world/generate.py`) with `place_margin = 20`.
 | name | `enc(c)` for a cell `c` | width | produced by |
 |---|---|---|---|
 | **gbook** | smoothed grid code at the cell's *global* scaffold position (env offset + local cell) | `Ng = 434` | `smooth_gbook`; `rollout/rnn.py::grid_state_vec` |
-| **omni** | all four cardinal ray-cast views at the cell, concatenated | `4 · 60 = 240` | `GridEnv.omni_obs_at` — a codebook gather |
+| **omni** | all four cardinal ray-cast views at the cell, concatenated | `4 · 120 = 480` | `GridEnv.omni_obs_at` — a codebook gather |
 | **xy** | `(x, y) / S` | 2 | — |
 
 **Grid mode** is `[gbook(p), gbook(g)]`. **Regular mode** is
@@ -153,7 +153,7 @@ parameters.
 ### 3.2 Data
 
 Per training env, precompute once: `gbook` at every cell (`S² × Ng`), `omni`
-at every cell (`S² × 240`), and the `CellSets` (§5.5). A training batch is,
+at every cell (`S² × 480`), and the `CellSets` (§5.5). A training batch is,
 for every train env, `pairs_per_env` draws of `p ∈ start_train`,
 `g ∈ goal_train`, `p ≠ g` — an index gather, no env stepping. At 64 envs
 × 512 pairs that is 32k samples per update, and an update is one forward.
@@ -193,13 +193,13 @@ turns into behaviour. Existing env stepping, nothing new.
 | **A1** | grid | mlp-2, mlp-4 | — | both |
 | **A2** | regular | mlp-4 | linear | both |
 | **A3** | regular | mlp-4 | conv, xcorr | both |
-| **A4** | the closest-but-failing arm | ×2 width, ×1.5 depth, `obs_size = 120`, 256 envs | | |
+| **A4** | the closest-but-failing arm | ×2 width, ×1.5 depth, `obs_size = 240`, 256 envs | | |
 
 Encoders (§5.4) act on the ray-vector columns before the trunk. `linear` is
 identity. `conv` is a siamese `Conv1d` over the ray axis, the same module on
 all 8 views. `xcorr` has no parameters: the circular cross-correlation of
 each current view with the goal view of the **same heading** (N with N, E
-with E …), `4 × 60` lags, appended to the raw input — the quantity `conv`
+with E …), `4 × 120` lags, appended to the raw input — the quantity `conv`
 would have to learn, handed over, to separate *cannot compute it* from
 *cannot use it*.
 
@@ -317,7 +317,7 @@ because `sensory` is now optional and variable-width.
   Order is a compatibility surface — every existing checkpoint was trained
   against `sensory, prev_action, prev_reward, grid_state, goal_vec`; the new
   channels **append**: `xy_state(2)`, `goal_grid_state(Ng)`,
-  `goal_sensory(240 | 60)`. `sensory` off removes the first slot; a
+  `goal_sensory(480 | 120)`. `sensory` off removes the first slot; a
   checkpoint with it on is unaffected.
 - `compute_rnn_input_dim` = the sum over the layout.
 - `build_rnn_input(...)` takes the new channels as keywords and appends in
@@ -447,7 +447,7 @@ gone: A does not step the env and B does not need per-row goals.
 | `size` | 20 | project working size |
 | `lambdas` | 11, 12, 13 (`Npos = 1716`, `Ng = 434`) | the working scaffold |
 | `fwhm_ratio` | 0.25 | `RNNTrainConfig` default |
-| `observation_size` | **60** (120 in A4) | ~9% exact single-view twins at 60 vs ~27% at 12; omni is lower still. Precision ~4 lags per unit `dx` at 60 |
+| `observation_size` | **120** (240 in A4) | a codebook gather either way, so it costs nothing; ~9% exact single-view twins at 60 vs ~27% at 12, lower at 120 and lower still under omni. Displacement precision rises with rays (~4 lags per unit `dx` at 60, ~15 at 240) |
 | `wall_resolution` | **1** | raising it dissolves the shift structure regular mode depends on (pure-shift correlation ~0.85 at 1, ~0.38 at 8) |
 | envs | 64 train; H-env 16 (`wall = held_out, place = held_out`); `same` 8 | `place_margin = 20`; 88 footprints of 20² is 1.2% of the scaffold |
 | cells | `goal_val_frac = 0.2`, `region_val_frac = 0.1` | 40 region ⊂ 80 never-goal; 320 train-goal, 360 start cells |
@@ -541,7 +541,7 @@ and a 0.92 is read as a pass.
 ## 7. Risks and open points
 
 - **Aliasing floor in regular mode.** Report the ceiling; never raise
-  `wall_resolution`. If the floor binds, 120 rays (A4).
+  `wall_resolution`. If the floor binds, 240 rays (A4).
 - **Region is local, H-env place is global.** Both reported; not averaged.
 - **B's goal-per-chunk.** With `steps_per_rollout = 64` and episodes of
   ~15 steps, a chunk holds ~4 episodes at one goal. Enough to prevent
