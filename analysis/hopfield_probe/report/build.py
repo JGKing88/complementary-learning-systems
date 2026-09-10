@@ -426,6 +426,63 @@ def _kv_extra(results: list[dict]) -> str:
     return f'<span class="kv">also <b>{names}</b></span>'
 
 
+def _simmap_html(res: dict) -> str:
+    """The code's own similarity kernel, before any memory is involved.
+
+    Every other figure on this page is a consequence of this one: res90, the
+    alias rate, the basin and `q`'s angular error are all read off
+    ``C(a) = <phi(p), phi(p + a)>``, and the report never showed it. Two panels
+    rather than one because a single colour scale cannot carry a 1.0 core and a
+    0.06 tail, and the near/far split is the substantive point -- see
+    THEORY_ENCODER_HOPFIELD.md Sec 5.2.
+
+    Absent unless `splice_simmap.py` has been run, so archived result sets
+    render exactly as before.
+    """
+    sm = res.get("sim_map")
+    if not sm:
+        return ""
+    nr, fr = sm["near_radius"], sm["far_radius"]
+    clip = sm["clip"] or 0.05
+    near = heatmap(
+        sm["near"], kind="sequential", vmin=0.0, vmax=1.0, unit="cos",
+        mark=(nr, nr), x_origin=-nr, y_origin=-nr, cell=9.0,
+        merge=True, tip_nd=3,
+        xlabel="east offset (cells)", ylabel="north offset (cells)")
+    far = heatmap(
+        sm["far"], kind="diverging", vmin=-clip, vmax=clip, unit="cos",
+        mark=(fr, fr), x_origin=-fr, y_origin=-fr, cell=4.0, tip_nd=3,
+        xlabel="east offset (cells)", ylabel="north offset (cells)")
+    res90 = sm.get("res90_axis")
+    return f"""
+<h2>0 &middot; The code's similarity kernel</h2>
+<div class="tiles">{stat_tile("res90, off this map",
+                              "&mdash;" if res90 is None else str(res90),
+                              "cells to cos 0.90")}{
+    stat_tile("far-field sd", num(sm["far_sd"], 4),
+              "beyond 32 cells &mdash; 1/&radic;d_eff")}{
+    stat_tile("far-field |max|", num(sm["far_absmax"], 3),
+              "worst alias on this map")}</div>
+<div class="grid2">
+{card(f"Near field &mdash; &plusmn;{nr} cells, full scale",
+      near,
+      note="cos of the code at the centre against the code at each offset, "
+           f"averaged over {sm['n_refs']} reference positions. This is the "
+           "chart the readout takes differences across: a smooth isotropic "
+           "bowl is what makes a two-neighbour Gram-Schmidt frame a valid "
+           "local basis.")}
+{card(f"Far field &mdash; &plusmn;{fr} cells, clipped at &plusmn;{num(clip, 3)}",
+      far,
+      note="Same quantity, wider and clipped to 3 sd of the tail so the tail "
+           "is legible beside a core that would otherwise saturate "
+           "everything. Bright spots away from the centre are aliases; the "
+           "grid code's own revivals sit at multiples of &lambda; = 11, 12, "
+           "13, and whether they survive here is what the coding-rate term "
+           "decides.")}
+</div>
+"""
+
+
 def _body_test_a(res: dict) -> str:
     A = res["test_a"]
     kk, ss = ks(res), steps(res)
@@ -574,7 +631,7 @@ every <em>cell</em> in the world, not against the stored goals &mdash; that is
 what makes this a position readout rather than a K-way choice.</p>
 {filter_row([("steps", "recall steps",
               [("*", "all")] + [(s, s) for s in ss])])}
-
+{_simmap_html(res)}
 <h2>1 &middot; Is it an attractor at all?</h2>
 <div class="tiles">{sf_tile}{tanh_tile}</div>
 <div class="grid2">

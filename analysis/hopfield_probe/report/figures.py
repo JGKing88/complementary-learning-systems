@@ -357,12 +357,16 @@ def _run_length_cells(matrix, nx, ny, cell, ml, mt, vmin, vmax, kind):
     return out
 
 
-def _hit_grid(matrix, counts, nx, ny, cell, ml, mt):
+def _hit_grid(matrix, counts, nx, ny, cell, ml, mt, tip_nd: int = 1):
     """Transparent blocks carrying the mean of what they cover.
 
     A 3-pixel cell is not a hoverable target, so the hit target is a block --
     which is also what keeps the interaction rule ("the hit target is bigger
     than the mark") true rather than nominally satisfied.
+
+    ``tip_nd`` because one decimal place suits the degrees and cell counts this
+    was written for and destroys anything on a unit scale: a map of cosines
+    would report every block as "0.0" or "1.0".
     """
     # Ceiling: dividing *into* at most _HIT_BLOCKS blocks per axis. Floor
     # division gave a 39-wide map 39 blocks, i.e. no coarsening and no saving.
@@ -386,7 +390,7 @@ def _hit_grid(matrix, counts, nx, ny, cell, ml, mt):
             yy = mt + (ny - 1 - (j1 - 1)) * cell
             mean = sum(vals) / len(vals)
             tip = (f"x {i0}-{min(i0 + bx, nx) - 1}, y {j0}-{j1 - 1}: "
-                   f"{mean:.1f}" + (f" (n={ns})" if ns else ""))
+                   f"{mean:.{tip_nd}f}" + (f" (n={ns})" if ns else ""))
             out.append(
                 f'<rect class="hit" x="{xx:.1f}" y="{yy:.1f}" '
                 f'width="{(min(i0 + bx, nx) - i0) * cell:.1f}" '
@@ -412,6 +416,8 @@ def heatmap(
     xlabel: str = "",
     ylabel: str = "",
     overlay: list[dict] | None = None,
+    merge: bool | None = None,
+    tip_nd: int = 1,
 ) -> str:
     """A grid of cells; the cell is the hit target.
 
@@ -449,7 +455,11 @@ def heatmap(
         o.append(f'<text x="{ml}" y="13" font-size="12" '
                  f'font-weight="600">{_esc(title)}</text>')
 
-    big = nx * ny > LARGE_MAP_CELLS
+    # A per-cell rect carries its own hit target and costs ~9x the markup of a
+    # run-length path plus a coarse hit grid, so the default switches on size.
+    # `merge` overrides it: a smooth field of small values wants the cheap path
+    # and the block tooltip regardless of how few cells it has.
+    big = nx * ny > LARGE_MAP_CELLS if merge is None else merge
     if not big:
         for i in range(nx):
             for j in range(ny):
@@ -463,7 +473,7 @@ def heatmap(
     else:
         o.extend(_run_length_cells(matrix, nx, ny, cell, ml, mt, vmin, vmax,
                                    kind))
-        o.extend(_hit_grid(matrix, counts, nx, ny, cell, ml, mt))
+        o.extend(_hit_grid(matrix, counts, nx, ny, cell, ml, mt, tip_nd))
 
     if mark is not None:
         mi, mj = mark
