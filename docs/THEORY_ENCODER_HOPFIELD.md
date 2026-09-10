@@ -686,7 +686,9 @@ measurements behind it:
 >
 > The rate term generalises and sets the 0.034 floor; the pairwise terms do not,
 > and the outliers are where the statistical mechanism alone did not finish the
-> job. That is why `rate_lambda = 0` collapses `d_eff` to 16 and the alias rate
+> job. (§3.6 revises *why* the pairwise terms leave a residue: not because the
+> pairs go unsampled — they do not — but because both objectives are
+> average-case and the failure is worst-case.) That is why `rate_lambda = 0` collapses `d_eff` to 16 and the alias rate
 > to 0.21 (§2.1 R1) — it removes the only mechanism that covers unsampled pairs.
 >
 > The coverage ladder degrades both halves together: the floor rises
@@ -705,9 +707,78 @@ placement — rather than of capacity, `d_eff`, or the loss weights the campaign
 has spent its sweeps on. It also predicts the fix: sample far pairs by
 displacement rather than by whatever the patch layout happens to produce.
 
-**The obvious next check**, not run: take the 10% patch layout and histogram the
-displacements its within-batch pairs actually cover. If there is a trough near
-780, this is settled.
+**3.6 — Can sampling prevent aliasing? Probably not, and the reason points at
+the loss instead.**
+
+The natural follow-up to §3.5 is Jack's: *is there a way to sample envs that
+prevents aliasing?* Chasing it killed my own hypothesis, so the honest state is
+three candidate mechanisms with different consequences.
+
+**(a) Aliases live at displacements training never samples → sampling fixes it.
+Probably false.** `batch_size` is **16384** drawn from 118 randomly placed
+patches, so a batch holds ~139 positions from *every* patch and ~1.3×10⁸ pairs;
+and `exclude_cross_env_pairs` defaults to **False**, so every non-near pair is
+in the repel term. The displacement space is covered densely, many times per
+batch — there is no hole to fill. Worse for the hypothesis: an aliased pair at
+cos 0.67 contributes 0.45 to an MSE where a typical pair contributes 0.001, so
+the outliers get ~450× the per-pair gradient. They are not being ignored; they
+are being pushed on and not moving.
+
+**(b) It is the extreme value of a finite-dimensional code → sampling cannot fix
+it, only `d_eff` can.** With `N` = 2.94 M positions there are `M` = 4.3×10¹²
+pairs, and the maximum of `M` draws at spread `σ` is `σ·√(2 ln M)` = `7.63σ`.
+Against the measured far-field sd:
+
+| encoder | far sd | predicted max | measured | ratio |
+|---|---|---|---|---|
+| 10% | 0.0459 | 0.350 | 0.609 | 1.74 |
+| 5% | 0.0427 | 0.326 | 0.899 | 2.76 |
+| 2.5% | 0.0527 | 0.402 | 0.855 | 2.13 |
+| 1.25% | 0.0511 | 0.390 | 0.944 | 2.42 |
+| 0.75% | 0.0705 | 0.538 | 0.952 | 1.77 |
+| arm B | 0.0366 | 0.280 | 0.514 | 1.84 |
+
+Right order, and it explains the coverage trend — the peak tracks the sd, which
+tracks `1/√d_eff`. **But it is consistently low by 1.7–2.8×**, so a random code
+of the same effective dimension would not have coincidences this extreme.
+
+**(c) Structured excess above chance.** The factor of ~2 that (b) leaves over.
+Unexplained, and the only one of the three that is genuinely open.
+
+#### What this says to do instead
+
+The sharper realisation is that **the loss never optimises the thing that is
+failing.** `rate_lambda`'s coding-rate term constrains the batch *covariance* —
+a statement about the mean spread, i.e. about `1/d_eff` — and the repel term is
+an **MSE over far pairs**, which minimises *mean* squared similarity. Neither
+has any term that sees the maximum. The alias ceiling is a worst-case quantity
+being optimised by two average-case objectives, so it is not surprising that it
+sits at ~2× the random-code expectation.
+
+And the tool for this is already in the codebase, switched off.
+`losses.uniformity_loss` is a **logsumexp over pairs** — a soft maximum, whose
+own docstring notes it "is dominated by the pair with the smallest distance" —
+and `uniformity_lambda` defaults to **0**. That is a term aimed precisely at the
+tail, unused for the whole campaign.
+
+So the answer to the question as asked is *probably no, not by sampling* — the
+displacements are already covered and already pushed on. The lever is a
+**worst-case term in the loss** rather than a different draw of environments:
+
+* turn on `uniformity_lambda` and measure the full-scaffold peak, not just the
+  alias rate — the campaign has never scored an encoder on its maximum;
+* the prediction is that it moves the peak (1.7–2.8× → nearer 1×) while leaving
+  `d_eff`, res90 and the floor roughly alone, since it acts only where the
+  tail is;
+* and it would be the first knob in the campaign that is not a re-weighting of
+  the same `d_eff` trade — §2.0's "every knob moves one variable" would gain a
+  second variable.
+
+**What would settle (b) vs (c):** shuffle the code. Take the trained encoder's
+outputs, randomly permute which position gets which code, and recompute the
+full-scaffold peak. That destroys all spatial structure while preserving the
+exact distribution of pairwise cosines, so it isolates how much of the excess is
+extreme-value statistics and how much is structure. Cheap — no retraining.
 
 ---
 
