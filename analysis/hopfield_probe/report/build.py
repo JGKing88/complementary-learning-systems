@@ -449,9 +449,13 @@ def _simmap_html(res: dict) -> str:
         mark=(nr, nr), x_origin=-nr, y_origin=-nr, cell=9.0,
         merge=True, tip_nd=3,
         xlabel="east offset (cells)", ylabel="north offset (cells)")
+    sd = sm["far_sd"] or 0.02
+    # Half the tail sd, not the sd itself: the aliases this panel exists to
+    # show sit just above the noise, so the linear core has to end below it.
     far = heatmap(
-        sm["far"], kind="diverging", vmin=-clip, vmax=clip, unit="cos",
+        sm["far"], kind="diverging", vmin=-1.0, vmax=1.0, unit="cos",
         mark=(fr, fr), x_origin=-fr, y_origin=-fr, cell=4.0, tip_nd=3,
+        symlog=sd / 2.0, ticks=[-1.0, -0.2, -sd, 0.0, sd, 0.2, 1.0],
         xlabel="east offset (cells)", ylabel="north offset (cells)")
     res90 = sm.get("res90_axis")
     return f"""
@@ -471,14 +475,16 @@ def _simmap_html(res: dict) -> str:
            "chart the readout takes differences across: a smooth isotropic "
            "bowl is what makes a two-neighbour Gram-Schmidt frame a valid "
            "local basis.")}
-{card(f"Far field &mdash; &plusmn;{fr} cells, clipped at &plusmn;{num(clip, 3)}",
+{card(f"Far field &mdash; &plusmn;{fr} cells, symlog beyond &plusmn;{num(sd, 3)}",
       far,
-      note="Same quantity, wider and clipped to 3 sd of the tail so the tail "
-           "is legible beside a core that would otherwise saturate "
-           "everything. Bright spots away from the centre are aliases; the "
-           "grid code's own revivals sit at multiples of &lambda; = 11, 12, "
-           "13, and whether they survive here is what the coding-rate term "
-           "decides.")}
+      note=f"Same quantity, wider, and on a colour ramp that is linear within "
+           f"&plusmn;{num(sd, 3)} &mdash; the tail's own sd &mdash; and "
+           "logarithmic outside it. Nothing is clipped: a linear ramp cannot "
+           "show a 1.0 core and a 0.05 tail at once, and clipping the core "
+           "made a quarter of this panel one flat colour. Bright spots away "
+           "from the centre are aliases; the grid code's own revivals sit at "
+           "multiples of &lambda; = 11, 12, 13, and whether they survive here "
+           "is what the coding-rate term decides.")}
 </div>
 """
 

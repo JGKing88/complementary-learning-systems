@@ -318,7 +318,28 @@ _BUCKETS = 24
 _HIT_BLOCKS = 24
 
 
-def _run_length_cells(matrix, nx, ny, cell, ml, mt, vmin, vmax, kind):
+def _symlog_t(vmin: float, vmax: float, lin: float):
+    """Value -> [0, 1], linear within +-`lin` and logarithmic beyond it.
+
+    A map whose core is 1.0 and whose tail is 0.05 cannot be read on a linear
+    ramp: clip it and the core is one flat colour, do not and the tail is one
+    flat colour. Setting `lin` to the tail's own sd puts the noise scale at the
+    bottom of the log range, so the tail gets most of the resolution and the
+    core still varies.
+    """
+    lin = max(abs(lin), 1e-9)
+    hi = max(abs(vmin), abs(vmax), lin)
+    top = math.log1p(hi / lin)
+
+    def to_t(v: float) -> float:
+        s = -1.0 if v < 0 else 1.0
+        u = s * math.log1p(abs(v) / lin) / top          # [-1, 1]
+        return min(max(0.5 * (u + 1.0), 0.0), 1.0)
+    return to_t
+
+
+def _run_length_cells(matrix, nx, ny, cell, ml, mt, vmin, vmax, kind,
+                      to_t=None):
     """One path per colour bucket, horizontal runs merged.
 
     Quantising to `_BUCKETS` levels is what makes runs long enough to be worth
@@ -326,20 +347,24 @@ def _run_length_cells(matrix, nx, ny, cell, ml, mt, vmin, vmax, kind):
     the colourbar is continuous either way.
     """
     span = max(vmax - vmin, 1e-12)
+    if to_t is None:
+        def to_t(v):
+            return (v - vmin) / span
+
+    def bucket(v):
+        return None if v is None else min(
+            int(to_t(v) * _BUCKETS), _BUCKETS - 1)
+
     paths: dict[int, list[str]] = {}
     for j in range(ny):
         yy = mt + (ny - 1 - j) * cell
         i = 0
         while i < nx:
             v = matrix[i][j]
-            b = None if v is None else min(
-                int((v - vmin) / span * _BUCKETS), _BUCKETS - 1)
+            b = bucket(v)
             run = 1
             while i + run < nx:
-                v2 = matrix[i + run][j]
-                b2 = None if v2 is None else min(
-                    int((v2 - vmin) / span * _BUCKETS), _BUCKETS - 1)
-                if b2 != b:
+                if bucket(matrix[i + run][j]) != b:
                     break
                 run += 1
             if b is not None:
@@ -418,6 +443,8 @@ def heatmap(
     overlay: list[dict] | None = None,
     merge: bool | None = None,
     tip_nd: int = 1,
+    symlog: float | None = None,
+    ticks: list[float] | None = None,
 ) -> str:
     """A grid of cells; the cell is the hit target.
 
@@ -442,10 +469,15 @@ def heatmap(
     if vmax <= vmin:
         vmax = vmin + 1e-9
 
+    # `symlog` is the half-width of the linear core; beyond it the ramp is
+    # logarithmic, so a 1.0 core and a 0.05 tail are both readable on one map.
+    to_t = (_symlog_t(vmin, vmax, symlog) if symlog
+            else (lambda v: (v - vmin) / (vmax - vmin)))
+
     def color(v):
         if v is None:
             return "none"
-        t = (v - vmin) / (vmax - vmin)
+        t = to_t(v)
         return (diverging(2 * t - 1) if kind == "diverging"
                 else sequential(t))
 
@@ -472,7 +504,7 @@ def heatmap(
                     f'data-c="{i},{j}"/>')
     else:
         o.extend(_run_length_cells(matrix, nx, ny, cell, ml, mt, vmin, vmax,
-                                   kind))
+                                   kind, to_t))
         o.extend(_hit_grid(matrix, counts, nx, ny, cell, ml, mt, tip_nd))
 
     if mark is not None:
@@ -504,10 +536,15 @@ def heatmap(
     bh = ny * cell
     o.append(f'<rect x="{bx}" y="{mt}" width="10" height="{bh}" '
              f'fill="url(#{cid}g)" stroke="var(--axis)" stroke-width="0.5"/>')
-    for frac, val in ((0.0, vmin), (0.5, (vmin + vmax) / 2), (1.0, vmax)):
-        yy = mt + bh - frac * bh
+    # Ticks are placed by the same transform the cells use, so a nonlinear ramp
+    # gets labels where its values actually sit rather than at even thirds.
+    tv = (ticks if ticks is not None
+          else [vmin, (vmin + vmax) / 2, vmax])
+    nd = 1 if ticks is None else 2
+    for val in tv:
+        yy = mt + bh - to_t(val) * bh
         o.append(f'<text x="{bx + 14}" y="{yy + 3.5:.1f}" font-size="10">'
-                 f'{_fmt(val, 1)}</text>')
+                 f'{_fmt(val, nd)}</text>')
     if unit:
         o.append(f'<text x="{bx + 14}" y="{mt - 5}" font-size="10">'
                  f'{_esc(unit)}</text>')
