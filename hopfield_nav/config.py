@@ -8,8 +8,13 @@ from dataclasses import dataclass, field
 # this module's dataclasses, and this module is a layer-0 leaf -- reaching up
 # into `policy` to validate its own fields would be the one import that stops
 # `config` being importable on its own.
-RNN_CELLS = ("gru", "rnn")
+RNN_CELLS = ("gru", "rnn", "mlp")
 RNN_NONLINEARITIES = ("tanh", "relu", "softplus")
+# Where the goal observation comes from, for the goal-conditioned
+# control. "omni" is all four cardinal views (heading-free); "north" is
+# the single fixed North view, which is what an agent that walked in
+# facing North would have seen.
+GOAL_SENSORY_MODES = ("none", "omni", "north")
 
 
 def validate_recurrent_core(cell: str, nonlinearity: str) -> None:
@@ -32,6 +37,13 @@ def validate_recurrent_core(cell: str, nonlinearity: str) -> None:
             f"are sigmoid and its candidate is tanh by construction, so "
             f"rnn_nonlinearity={nonlinearity!r} would be silently ignored. "
             f"Pass --rnn_cell rnn to choose a nonlinearity.")
+    if cell == "mlp" and nonlinearity == "softplus":
+        # No reason in principle, but SoftplusRNN is the only reason that value
+        # exists, and an MLP would silently get a plain softplus MLP under a
+        # name that means "the Python recurrence" everywhere else here.
+        raise ValueError(
+            "rnn_cell='mlp' takes rnn_nonlinearity tanh or relu; 'softplus' "
+            "names the recurrent cell in SoftplusRNN, not an activation.")
 
 
 def validate_train_config(cfg: "TrainConfig") -> None:
@@ -533,6 +545,29 @@ class RNNAgentConfig:
     #           arrow. Not a realistic ceiling -- it is the architecture sanity
     #           check, and a policy that cannot do this cannot do anything.
     goal_channel: str = "none"
+    # --- Goal-conditioned control (the "can a plain net do this" experiment) --
+    #
+    # `goal_channel` above hands the goal over as a COORDINATE. These two hand
+    # it over as the same kind of thing the agent sees for itself, which is what
+    # makes the comparison a comparison: the network is told "here is a state"
+    # and has to work out how to get there, rather than being handed a vector to
+    # follow. Both are legitimate task inputs, not oracles -- knowing what the
+    # goal looks like is the premise of the task, not a leak.
+    #
+    #   input_goal_grid_state  the smoothed-gbook column at the goal, width Ng.
+    #                          Pairs with `input_grid_state` for "grid mode":
+    #                          current grid state + goal grid state.
+    #   goal_sensory           the observation AT the goal. Pairs with the
+    #                          always-on sensory channel for "regular mode".
+    #                          "omni" is all four cardinal views (4*obs_size),
+    #                          which removes the question of which way the agent
+    #                          was facing when it saw the goal; "north" is the
+    #                          single North view (obs_size).
+    #
+    # Both are constant within an episode, so under either one the task is
+    # memoryless and an MLP trunk is a fair model of it.
+    input_goal_grid_state: bool = False
+    goal_sensory: str = "none"
     # How many episodes of a lifetime the oracle goal channel is shown for.
     # -1 (default) means always. Set to 1 and the goal is visible during the
     # first episode and withheld afterwards, so the network must carry it

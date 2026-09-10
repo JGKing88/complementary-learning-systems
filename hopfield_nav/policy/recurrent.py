@@ -6,11 +6,19 @@ cell type; it stops being harmless the moment there are three, because the two
 agents can then disagree about what `--rnn_cell` means. One factory, two
 callers.
 
-Three cores are reachable:
+Four cores are reachable:
 
   ``gru``                  -- `nn.GRU`, the historical default, unchanged.
   ``rnn`` + tanh/relu      -- `nn.RNN`, which is cuDNN-backed like the GRU.
   ``rnn`` + softplus       -- `SoftplusRNN` below, a Python recurrence.
+  ``mlp``                  -- `FeedForwardCore` below, no recurrence at all.
+
+The last is not a recurrent cell and is not pretending to be one. It exists
+because a goal-conditioned policy that is handed both where it is and where it
+is going has a *memoryless* task, and the honest model of a memoryless task is a
+network with no memory. Running that arm through the same trunk factory is what
+lets it share the rest of the stack -- the rollout, the BC update, the
+evaluator -- rather than forking a second trainer to delete one `nn.GRU`.
 
 Everything downstream reaches the trunk through four contracts -- `input_size`,
 `parameters()`, an `(num_layers, B, hidden)` hidden state, and equivalence
@@ -47,13 +55,16 @@ def add_recurrent_args(parser: argparse.ArgumentParser) -> None:
     """
     g = parser.add_argument_group("recurrent trunk")
     g.add_argument("--rnn_cell", choices=list(RNN_CELLS), default="gru",
-                   help="Recurrent cell for the policy trunk. 'gru' (default) "
-                        "is the historical trunk. 'rnn' is a vanilla Elman "
-                        "cell -- no gates, so it must carry state through the "
-                        "nonlinearity alone.")
+                   help="Trunk for the policy. 'gru' (default) is the "
+                        "historical trunk. 'rnn' is a vanilla Elman cell -- no "
+                        "gates, so it must carry state through the "
+                        "nonlinearity alone. 'mlp' has no recurrence at all: "
+                        "the right control when the goal is an input channel, "
+                        "because the task is then memoryless. --num_rnn_layers "
+                        "sets its hidden-layer count.")
     g.add_argument("--rnn_nonlinearity", choices=list(RNN_NONLINEARITIES),
                    default="tanh",
-                   help="Activation for --rnn_cell rnn (a GRU's are fixed, so "
+                   help="Activation for --rnn_cell rnn or mlp (a GRU's are fixed, so "
                         "combining this with 'gru' is an error rather than a "
                         "silent no-op). 'tanh'/'relu' run on cuDNN; 'softplus' "
                         "is a Python recurrence, and gives a strictly "
