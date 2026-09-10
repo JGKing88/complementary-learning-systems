@@ -39,7 +39,9 @@ import torch
 from analysis.hopfield_probe.encode import Field, grid_codes
 from analysis.hopfield_probe.harness import load_probe_encoder
 
-S = "/orcd/pool/003/jackking/cls_runs/sweeps"
+from cls_paths import sweeps_dir
+
+S = str(sweeps_dir())
 CK = f"{S}/w52_attract_fwhm/001_att0.5_seed=43/encoder_final.pt"
 NPOS, N_SAMPLE = 1716, 1200
 KS = (1, 2, 4, 8, 16, 32, 64)

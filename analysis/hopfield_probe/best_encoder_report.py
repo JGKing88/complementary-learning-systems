@@ -18,8 +18,10 @@ sys.path.insert(0, "/orcd/home/002/jackking/cls/.claude/worktrees/"
 import numpy as np
 import torch
 
-ARCH = "/orcd/pool/003/jackking/cls_runs/results/hopfield_probe/20260827"
-W52 = "/orcd/pool/003/jackking/cls_runs/sweeps/w52_attract_fwhm"
+from cls_paths import results_dir, sweeps_dir
+
+ARCH = str(results_dir() / "hopfield_probe/20260827")
+W52 = str(sweeps_dir() / "w52_attract_fwhm")
 SEEDS = (42, 43, 44, 45)
 DRAWS = [("probe seed 0", "attlow_g100"), ("probe seed 1", "att0.5_ps1"),
          ("probe seed 2", "att0.5_ps2")]

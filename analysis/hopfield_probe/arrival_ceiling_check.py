@@ -35,8 +35,10 @@ from analysis.hopfield_probe.harness import (ProbeConfig, build_memory,
                                              sample_worlds, scored_envs)
 from analysis.hopfield_probe.qfield import cell_q_field
 
-S = "/orcd/pool/003/jackking/cls_runs/sweeps"
-ARCH = "/orcd/pool/003/jackking/cls_runs/results/hopfield_probe/20260827"
+from cls_paths import results_dir, sweeps_dir
+
+S = str(sweeps_dir())
+ARCH = str(results_dir() / "hopfield_probe/20260827")
 NPOS = 1716
 K, STEP = 5, 1
 

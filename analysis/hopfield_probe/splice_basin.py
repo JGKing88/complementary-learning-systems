@@ -35,8 +35,10 @@ from analysis.hopfield_probe.harness import (ProbeConfig, build_memory,
                                              load_probe_encoder, sample_worlds,
                                              scored_envs)
 
-ARCH = "/orcd/pool/003/jackking/cls_runs/results/hopfield_probe/20260827"
-S = "/orcd/pool/003/jackking/cls_runs/sweeps"
+from cls_paths import results_dir, sweeps_dir
+
+ARCH = str(results_dir() / "hopfield_probe/20260827")
+S = str(sweeps_dir())
 OUT = "/home/jackking/.claude/jobs/d05f5770/tmp/probe_spliced"
 # With a beta override the recall regime changes, so the results go elsewhere:
 # one ladder must not mix beta = gain rows with saturated ones.

@@ -44,8 +44,10 @@ from analysis.hopfield_probe.harness import (ProbeConfig, build_memory,
 from analysis.hopfield_probe.qfield import project_q
 from analysis.hopfield_probe.stats import wrap_to_pi
 
+from cls_paths import results_dir
+
 DEFAULT_DIR = os.path.join(
-    os.environ.get("CLS_RESULTS", "/orcd/pool/003/jackking/cls_runs/results"),
+    str(results_dir()),
     "hopfield_probe/20260827/probe_ladder7")
 # (East, North), matching project_q's output order.
 NEIGHBOURS = ((1, 0), (-1, 0), (0, 1), (0, -1))

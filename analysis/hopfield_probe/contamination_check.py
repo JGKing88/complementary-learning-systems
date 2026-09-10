@@ -29,9 +29,8 @@ from analysis.hopfield_probe.harness import (
 )
 from analysis.hopfield_probe.qfield import project_q
 
-R = "/orcd/pool/003/jackking/cls_runs"
 enc, cfg_m, g0, fwhm, _ = load_probe_encoder(
-    f"{R}/sweeps/w53_attract_knee/004_att16_seed=42/encoder_final.pt")
+    str(sweeps_dir() / "w53_attract_knee/004_att16_seed=42/encoder_final.pt"))
 ENC_GAIN = 300.0
 enc.gain = ENC_GAIN
 
@@ -51,6 +50,8 @@ print(f"{'':9s} {'z_goal)':>12s} {'in plane':>9s} {'in plane':>9s} "
 print("-" * 66)
 
 import dataclasses
+
+from cls_paths import sweeps_dir
 for beta in (300.0, 1e4, 1e5, 1e6, 1e7):
     cfg = dataclasses.replace(base, beta_override=beta)
     cos_r, sig, con, ang = [], [], [], []

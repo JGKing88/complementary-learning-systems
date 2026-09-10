@@ -41,8 +41,10 @@ from analysis.hopfield_probe.harness import (ProbeConfig, build_cell_bank,
                                              local_cells, recall_trajectory,
                                              sample_worlds, scored_envs)
 
+from cls_paths import results_dir
+
 DEFAULT_DIR = os.path.join(
-    os.environ.get("CLS_RESULTS", "/orcd/pool/003/jackking/cls_runs/results"),
+    str(results_dir()),
     "hopfield_probe/20260827/probe_ladder7")
 ALPHAS = (1.0, 0.95, 0.9, 0.8, 0.5, 0.2, 0.05)
 SHOW = (1, 2, 3, 5, 8, 12, 20, 30)

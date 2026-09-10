@@ -51,8 +51,10 @@ from analysis.hopfield_probe.harness import (ProbeConfig, build_memory,
                                              load_probe_encoder, local_cells,
                                              sample_worlds, scored_envs)
 
+from cls_paths import results_dir
+
 DEFAULT_DIR = os.path.join(
-    os.environ.get("CLS_RESULTS", "/orcd/pool/003/jackking/cls_runs/results"),
+    str(results_dir()),
     "hopfield_probe/20260827/probe_ladder7")
 
 

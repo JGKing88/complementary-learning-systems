@@ -36,7 +36,9 @@ from analysis.hopfield_probe.harness import (ProbeConfig, build_memory,
                                              recall_trajectory, sample_worlds,
                                              tanh_argument)
 
-S = "/orcd/pool/003/jackking/cls_runs/sweeps"
+from cls_paths import sweeps_dir
+
+S = str(sweeps_dir())
 CK = f"{S}/w52_attract_fwhm/001_att0.5_seed=43/encoder_final.pt"
 NPOS, K = 1716, 5
 BETAS = (1.0, 10.0, 100.0, 1e3, 1e4, 32768.0, 1e5, 1e6)

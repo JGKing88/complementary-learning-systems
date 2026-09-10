@@ -14,12 +14,13 @@ import numpy as np
 from analysis.hopfield_probe.encode import Field
 from analysis.hopfield_probe.harness import load_probe_encoder
 
-R = "/orcd/pool/003/jackking/cls_runs"
+from cls_paths import encoders_dir, sweeps_dir
+
 ENCODERS = [
-    ("v35 (gain 3.70)", f"{R}/encoders/run_20260422_185816/encoder_best.pt", None),
+    ("v35 (gain 3.70)", str(encoders_dir() / "run_20260422_185816/encoder_best.pt"), None),
     ("L7-s42 (gain 100)",
-     f"{R}/sweeps/w53_attract_knee/004_att16_seed=42/encoder_final.pt", None),
-    ("untrained (gain 5)", f"{R}/encoders/untrained_mlp.pt", 0.25),
+     str(sweeps_dir() / "w53_attract_knee/004_att16_seed=42/encoder_final.pt"), None),
+    ("untrained (gain 5)", str(encoders_dir() / "untrained_mlp.pt"), 0.25),
 ]
 NPOS, M = 1716, 25
 rng = np.random.RandomState(0)

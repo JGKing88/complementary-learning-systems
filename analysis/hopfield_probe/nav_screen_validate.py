@@ -23,7 +23,7 @@ from scipy.stats import spearmanr
 from analysis.hopfield_probe.encode import Field
 from analysis.hopfield_probe.harness import load_probe_encoder
 
-ROOT = "/orcd/pool/003/jackking/cls_runs/results/hopfield_probe/20260827"
+ROOT = str(results_dir() / "hopfield_probe/20260827")
 S = str(sweeps_dir())
 V35 = str(encoders_dir() / "run_20260422_185816/encoder_best.pt")
 NPOS = 1716

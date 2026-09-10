@@ -17,7 +17,9 @@ import torch
 from analysis.hopfield_probe.encode import Field
 from analysis.hopfield_probe.harness import load_probe_encoder
 
-S = "/orcd/pool/003/jackking/cls_runs/sweeps"
+from cls_paths import sweeps_dir
+
+S = str(sweeps_dir())
 ENC = [
     ("att16-s42", f"{S}/w53_attract_knee/004_att16_seed=42/encoder_final.pt"),
     ("att16-s43", f"{S}/w53_attract_knee/005_att16_seed=43/encoder_final.pt"),

@@ -26,10 +26,11 @@ from analysis.hopfield_probe.harness import (
 )
 from analysis.hopfield_probe.qfield import GridAcc, cell_q_field
 
-R = "/orcd/pool/003/jackking/cls_runs"
+from cls_paths import sweeps_dir
+
 PATH = os.environ.get(
     "PROBE_CKPT",
-    f"{R}/sweeps/w53_attract_knee/004_att16_seed=42/encoder_final.pt")
+    str(sweeps_dir() / "w53_attract_knee/004_att16_seed=42/encoder_final.pt"))
 GAINS = [float(g) for g in os.environ.get(
     "PROBE_GAINS", "100,300,1000,3000,10000").split(",")]
 FWHM_FALLBACK = os.environ.get("PROBE_FWHM")

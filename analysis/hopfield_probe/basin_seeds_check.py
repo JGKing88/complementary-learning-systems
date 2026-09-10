@@ -25,7 +25,9 @@ from analysis.hopfield_probe.harness import (ProbeConfig, build_memory,
                                              load_probe_encoder, sample_worlds,
                                              scored_envs)
 
-S = "/orcd/pool/003/jackking/cls_runs/sweeps"
+from cls_paths import sweeps_dir
+
+S = str(sweeps_dir())
 NPOS, K, STEP = 1716, 5, 1
 
 ARMS = [

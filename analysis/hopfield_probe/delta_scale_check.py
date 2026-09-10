@@ -18,14 +18,15 @@ from analysis.hopfield_probe.harness import (
     ProbeConfig, build_memory, load_probe_encoder, local_cells, sample_worlds,
 )
 
-R = "/orcd/pool/003/jackking/cls_runs"
+from cls_paths import encoders_dir, sweeps_dir
+
+V35 = str(encoders_dir() / "run_20260422_185816/encoder_best.pt")
 CASES = [
-    ("L7-s42 production", f"{R}/sweeps/w53_attract_knee/004_att16_seed=42/"
-     "encoder_final.pt", None, None),
-    ("v35 production", f"{R}/encoders/run_20260422_185816/encoder_best.pt",
+    ("L7-s42 production",
+     str(sweeps_dir() / "w53_attract_knee/004_att16_seed=42/encoder_final.pt"),
      None, None),
-    ("v35 g100 + b1e6", f"{R}/encoders/run_20260422_185816/encoder_best.pt",
-     100.0, 1e6),
+    ("v35 production", V35, None, None),
+    ("v35 g100 + b1e6", V35, 100.0, 1e6),
 ]
 
 print("||recall term|| vs ||retained cue|| per step, at alpha=1 scale\n")

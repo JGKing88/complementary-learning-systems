@@ -39,9 +39,11 @@ import os
 
 import numpy as np
 
+from cls_paths import results_dir
+
 CATS = ("exact", "near", "far", "other_goal")
 DEFAULT_DIR = os.path.join(
-    os.environ.get("CLS_RESULTS", "/orcd/pool/003/jackking/cls_runs/results"),
+    str(results_dir()),
     "hopfield_probe/20260827/probe_ladder7")
 
 

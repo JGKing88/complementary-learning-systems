@@ -27,7 +27,9 @@ import numpy as np
 from analysis.hopfield_probe.encode import Field
 from analysis.hopfield_probe.harness import load_probe_encoder
 
-S = "/orcd/pool/003/jackking/cls_runs/sweeps"
+from cls_paths import sweeps_dir
+
+S = str(sweeps_dir())
 NPOS = 1716
 GAINS = [3, 5, 10, 20, 30, 50, 75, 100, 150, 200, 300, 500]
 TARGET = 7.0

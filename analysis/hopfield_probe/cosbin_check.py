@@ -23,7 +23,9 @@ import numpy as np
 from analysis.hopfield_probe.encode import Field
 from analysis.hopfield_probe.harness import load_probe_encoder
 
-S = "/orcd/pool/003/jackking/cls_runs/sweeps"
+from cls_paths import encoders_dir, sweeps_dir
+
+S = str(sweeps_dir())
 NPOS = 1716
 GAINS = [100, 300, 1000, 3000, 10000]
 
@@ -39,8 +41,7 @@ print("-" * 39)
 for lab, pat in (("att0.5-s43", f"{S}/w52_attract_fwhm/*_att0.5_seed=43"),
                  ("v35 (ref)", None)):
     if pat is None:
-        ck = ("/orcd/pool/003/jackking/cls_runs/encoders/"
-              "run_20260422_185816/encoder_best.pt")
+        ck = (str(encoders_dir() / "run_20260422_185816/encoder_best.pt"))
     else:
         ck = os.path.join(sorted(glob.glob(pat))[0], "encoder_final.pt")
     enc, cfg, own, fwhm, _ = load_probe_encoder(ck, fwhm_fallback=0.25)

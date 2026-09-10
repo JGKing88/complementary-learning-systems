@@ -22,8 +22,10 @@ import numpy as np
 from analysis.hopfield_probe.encode import Field
 from analysis.hopfield_probe.harness import load_probe_encoder
 
-ROOT = "/orcd/pool/003/jackking/cls_runs/results/hopfield_probe/20260827"
-S = "/orcd/pool/003/jackking/cls_runs/sweeps"
+from cls_paths import results_dir, sweeps_dir
+
+ROOT = str(results_dir() / "hopfield_probe/20260827")
+S = str(sweeps_dir())
 NPOS = 1716
 DEAD = 0.5
 

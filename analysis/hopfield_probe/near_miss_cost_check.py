@@ -42,8 +42,10 @@ from analysis.hopfield_probe.harness import (OUTCOMES, ProbeConfig,
                                              sample_worlds, scored_envs)
 from analysis.hopfield_probe.qfield import cell_q_field
 
+from cls_paths import results_dir
+
 DEFAULT_DIR = os.path.join(
-    os.environ.get("CLS_RESULTS", "/orcd/pool/003/jackking/cls_runs/results"),
+    str(results_dir()),
     "hopfield_probe/20260827/probe_ladder7")
 BANDS = [(0, 4), (4, 8), (8, 12), (12, 18), (18, 30)]
 

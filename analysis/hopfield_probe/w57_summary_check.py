@@ -13,8 +13,10 @@ import os
 
 import numpy as np
 
+from cls_paths import results_dir
+
 NEW = "/home/jackking/.claude/jobs/d05f5770/tmp/probe_w57"
-ARCH = "/orcd/pool/003/jackking/cls_runs/results/hopfield_probe/20260827"
+ARCH = str(results_dir() / "hopfield_probe/20260827")
 SEEDS = (42, 43, 44, 45)
 
 

@@ -16,9 +16,10 @@ import torch
 from analysis.hopfield_probe.encode import grid_codes
 from analysis.hopfield_probe.harness import load_probe_encoder
 
-R = "/orcd/pool/003/jackking/cls_runs"
+from cls_paths import sweeps_dir
+
 enc, cfg_m, g0, fwhm, _ = load_probe_encoder(
-    f"{R}/sweeps/w53_attract_knee/004_att16_seed=42/encoder_final.pt")
+    str(sweeps_dir() / "w53_attract_knee/004_att16_seed=42/encoder_final.pt"))
 rng = np.random.RandomState(0)
 gx, gy = rng.randint(0, 1716, 25), rng.randint(0, 1716, 25)
 codes = torch.from_numpy(grid_codes(list(cfg_m.lambdas), gx, gy, fwhm))

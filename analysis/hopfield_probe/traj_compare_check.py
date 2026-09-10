@@ -12,9 +12,10 @@ from analysis.hopfield_probe.harness import (
     sample_worlds,
 )
 
-R = "/orcd/pool/003/jackking/cls_runs"
-V35 = f"{R}/encoders/run_20260422_185816/encoder_best.pt"
-L7 = f"{R}/sweeps/w53_attract_knee/004_att16_seed=42/encoder_final.pt"
+from cls_paths import encoders_dir, sweeps_dir
+
+V35 = str(encoders_dir() / "run_20260422_185816/encoder_best.pt")
+L7 = str(sweeps_dir() / "w53_attract_knee/004_att16_seed=42/encoder_final.pt")
 
 # label, ckpt, encoder-gain override, beta override, alpha
 ARMS = [

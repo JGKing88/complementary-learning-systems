@@ -11,7 +11,9 @@ import sys
 
 import numpy as np
 
-ROOT = "/orcd/pool/003/jackking/cls_runs/results/hopfield_probe/20260827"
+from cls_paths import results_dir
+
+ROOT = str(results_dir() / "hopfield_probe/20260827")
 K, S = "5", "1"
 
 
