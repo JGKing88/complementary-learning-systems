@@ -124,6 +124,24 @@ SIZE_MIXES: dict[str, str] = {
     "mix2_hi": _mix((200, 15), (100, 40)),      # 1.00M, 34.0%, 55 envs
     "mix3_45": _mix((200, 20), (150, 20), (100, 30)),   # 1.55M, 52.6%, 70 envs
     "mixsmall": _mix((200, 12), (100, 40), (50, 200)),  # 1.38M, 46.9%, 252 envs
+    # --- 5% and 2.5%, for w57/w58. All placement-checked at seeds 42-45.
+    # Two ways to halve coverage and they are not equivalent under the Sec 10.11
+    # account: fewer patches gives the env-blind spread term less of the arena,
+    # while smaller patches shortens the separations any pairwise term can see.
+    # sm50 (118 x 50, 10.0%) is the incumbent both descend from.
+    "sm50_half": _mix((50, 59)),                  #  5.01%,  59 envs
+    "sm35":      _mix((35, 120)),                 #  4.99%, 120 envs
+    "sm70_lo":   _mix((70, 30)),                  #  4.99%,  30 envs
+    "sm50_q":    _mix((50, 30)),                  #  2.55%,  30 envs
+    "sm25":      _mix((25, 118)),                 #  2.50%, 118 envs
+    "sm70_q":    _mix((70, 15)),                  #  2.50%,  15 envs
+    # --- 1.25%, the next rung down (w60). Placement-checked at seeds 42-45.
+    "sm50_x":    _mix((50, 15)),                  #  1.27%,  15 envs
+    "sm35_x":    _mix((35, 30)),                  #  1.25%,  30 envs
+    # --- 0.75%, the bottom rung (w61). Placement-checked at seeds 42-45.
+    "sm27_y":    _mix((27, 30)),                  #  0.74%,  30 envs
+    "sm35_y":    _mix((35, 18)),                  #  0.75%,  18 envs
+    "sm50_y":    _mix((50, 9)),                   #  0.76%,   9 envs
 }
 
 
@@ -1896,6 +1914,328 @@ WAVES: dict[str, dict] = {
                 ("att32",   dict(attract_lambda=32.0)),
                 ("att64",   dict(attract_lambda=64.0)),
                 ("rep0.25", dict(attract_lambda=2.0, repel_weight=0.25)),
+            )
+        },
+        "seed": [42, 43, 44, 45],
+    },
+    # W55 -- the first wave selected on the NAVIGATION objective rather than on
+    # `r_min`. See docs/EXPERIMENTS_HOPFIELD_PROBE.md Sec 10.
+    #
+    # What changed: continuous reach is set by the rate of FAR-FIELD pairs above
+    # cosine ~0.25, because a goal dies when one co-stored competitor crosses
+    # that line (Sec 10.3), and the competitors sit ~370 cells away. `r_min` is
+    # `res90 * sqrt(ln(1/C)/ln(1/0.9))`, so it prices res90 and the ceiling as
+    # comparable factors; navigation reads the ceiling almost alone, since the
+    # Gram-Schmidt basis only needs one-cell neighbours. res90 is a floor at
+    # roughly 8 cells, not a quantity to maximise.
+    #
+    # That reverses the campaign's last three waves. On the alias rate the
+    # attract axis is monotone the WRONG way from the incumbent 2.0 -- 2.0 gives
+    # 0.0088 and 8/16/32/64 give 0.0123/0.0170/0.0269/0.0610 -- so w52-w54
+    # walked uphill for three waves. Level 6 (`w49 eps1_rate0.5`, attract 2.0)
+    # probes at continuous reach 0.931 against level 7's 0.806 (Sec 10.8).
+    #
+    # Every arm here is level 6 with ONE thing moved, so the wave reads directly
+    # against `w49_g100_knee/*_eps1_rate0.5`.
+    #
+    #   g300_eps1    Is training at gain 300 better than training at 100 and
+    #                raising gain at inference? The latter gives (far 0.0057,
+    #                res90 8); this is the trained version of the same operating
+    #                point, spread left alone -- the transfer test.
+    #   g300_eps2    Sec 6.10i: a high gain does part of the spread term's job,
+    #                so the term wants relaxing as gain rises (`rate_eps` 1.0 is
+    #                right at gain 100 and *hurts* at gain 5). At gain 300 it
+    #   g300_rate.25 should want relaxing further. Two arms because eps and
+    #                rate_lambda were tuned jointly and may not transfer apart.
+    #   rep0.1       repel_weight has only ever been sampled at 0.25, 1.0, 2.0
+    #                and 4.0, and the helpful direction is down -- rep0.25
+    #                already beats the level-7 headline on the alias rate
+    #                (0.0106 against 0.0170).
+    #   att0.25      The attract axis is covered from 0.5 to 64 across w52-w54,
+    #                all sharing this exact base. Below 0.5 is the only untested
+    #                part, and it is the direction the alias rate wants. Sec
+    #                6.11 warns that weakening attract collapses res90, so this
+    #                arm is expected to fail the floor -- it is here to locate
+    #                the edge, not to win.
+    #   sm30         327 patches of 30 cells at the same 10% coverage. The
+    #                env-blind spread term is the only term with any far-field
+    #                purchase (Sec 5.6j) and it sees only batch encodings, so
+    #                more patches means it samples more of the arena. Sec 6.3
+    #                rejected small patches because a 30-cell patch cannot
+    #                supply pairs as far apart as the decay `r_min` wants -- an
+    #                argument about res90, which navigation prices very
+    #                differently. This is the legal version of the arena-spread
+    #                diagnostic (Sec 10.6 item 4), whose ceiling is the best
+    #                ever measured.
+    "w55_nav_objective": {
+        "arm": {
+            name: {**dict(npos_list=SIZE_MIXES["sm50"], batch_size=4096,
+                          lr=3e-4, per_env_radius_frac=0.0, radius=20.0,
+                          rate_lambda=0.5, rate_eps=1.0, out_dim=1024,
+                          hidden_dim=256, gain_end=100.0), **over}
+            for name, over in (
+                ("g300_eps1",    dict(gain_end=300.0)),
+                ("g300_eps2",    dict(gain_end=300.0, rate_eps=2.0)),
+                ("g300_rate.25", dict(gain_end=300.0, rate_lambda=0.25)),
+                ("rep0.1",       dict(repel_weight=0.1)),
+                ("att0.25",      dict(attract_lambda=0.25)),
+                ("sm30",         dict(npos_list=SIZE_MIXES["sm30"])),
+            )
+        },
+        "seed": [42, 43, 44, 45],
+    },
+    # W56 -- combinations, and the design target is now a NUMBER.
+    #
+    # Every arm in w45-w55 is Level 6 with exactly one knob moved. That was the
+    # right way to find the axes and it is the wrong way to finish: the two that
+    # work are independent mechanisms and have never been combined.
+    #
+    # What w55 and the probe established (docs/EXPERIMENTS_HOPFIELD_PROBE.md
+    # Sec 10.9-10.10):
+    #
+    #   * reach peaks at res90 ~7 and falls off both sides. attract_lambda 0.5
+    #     lands there (cont 0.987); 0.25 overshoots to res90 5 and gives 0.974
+    #     with |err| 14.4 deg against 7.8 -- retrieval saturates and the
+    #     direction readout degrades, the same signature as too much gain.
+    #   * sm30 (327 patches of 30 cells, same 10% coverage) is the only arm that
+    #     improves on Level 6 on BOTH axes at once: alias 0.0060 at res90 8
+    #     against 0.0082 at res90 10. Different mechanism from attract -- the
+    #     env-blind spread term sees only batch encodings, so more patches means
+    #     more of the arena reaches the one term with far-field purchase.
+    #   * training at gain 300 is much worse than training at 100 (alias 0.0140
+    #     against 0.0056 at the same operating point), and repel_weight down is
+    #     a null. Both are closed.
+    #
+    # So: combine attract and patch count, and use attract as the trim that
+    # lands the pair at res90 ~7. sm30 alone sits at 8, attract 0.5 alone at 7,
+    # so the combination will overshoot and the higher-attract variants are the
+    # ones expected to win -- which is why 0.75 and 1.0 are here rather than
+    # more aggressive settings.
+    #
+    #   a0.5_sm30 / a0.75_sm30 / a1_sm30   the combination, three trims
+    #   a0.75                              fills the untested 0.5-1.0 gap alone
+    #   sm20                               736 patches of 20 cells; pushes the
+    #                                      count axis past sm30. Sec 6.3 called
+    #                                      20 cells unusable, on a res90
+    #                                      argument -- res90 is a floor near 5
+    #                                      for navigation, not a maximand.
+    #   a0.5_rate1                         attract 0.5 with the spread term
+    #                                      doubled. rate0 has alias 0.2059
+    #                                      against 0.004-0.06 for everything
+    #                                      else, so the spread term does nearly
+    #                                      all far-field suppression and its
+    #                                      strength has never been tuned at low
+    #                                      attract.
+    "w56_nav_combos": {
+        "arm": {
+            name: {**dict(npos_list=SIZE_MIXES["sm50"], batch_size=4096,
+                          lr=3e-4, per_env_radius_frac=0.0, radius=20.0,
+                          rate_lambda=0.5, rate_eps=1.0, out_dim=1024,
+                          hidden_dim=256, gain_end=100.0), **over}
+            for name, over in (
+                ("a0.5_sm30",  dict(attract_lambda=0.5,
+                                    npos_list=SIZE_MIXES["sm30"])),
+                ("a0.75_sm30", dict(attract_lambda=0.75,
+                                    npos_list=SIZE_MIXES["sm30"])),
+                ("a1_sm30",    dict(attract_lambda=1.0,
+                                    npos_list=SIZE_MIXES["sm30"])),
+                ("a0.75",      dict(attract_lambda=0.75)),
+                ("sm20",       dict(npos_list=SIZE_MIXES["sm20"])),
+                ("a0.5_rate1", dict(attract_lambda=0.5, rate_lambda=1.0)),
+            )
+        },
+        "seed": [42, 43, 44, 45],
+    },
+    # W57 / W58 -- how far does the Sec 10 result carry to 5% and 2.5% coverage?
+    #
+    # The 10% answer is `w52_attract_fwhm/*_att0.5`: Level 6's config with
+    # attract_lambda 2.0 -> 0.5, continuous reach 0.987. Sec 10.11 says why --
+    # attract and the coding-rate term compete for the code's effective
+    # dimension, far-field cosine spread is 1/sqrt(d_eff), and a goal dies when
+    # one co-stored competitor crosses cos ~0.25.
+    #
+    # What halving coverage should do, on that account: the pairwise terms are
+    # already blind to the far field at 10% (Sec 5.6j: 0 of 200 alias pairs sit
+    # inside a patch), so the loss term that matters -- the env-blind spread
+    # term -- is the one that loses. It is computed on batch encodings, and the
+    # batch stays 4096 either way; what shrinks is the number of DISTINCT arena
+    # positions those 4096 are drawn from. So d_eff should fall and the alias
+    # rate rise, and the attract optimum should move DOWN, because attract has
+    # to give up more of its share of d_eff to compensate.
+    #
+    # That last part is the prediction worth recording: if the optimum stays at
+    # 0.5, attract and coverage act independently; if it moves to 0.25 or below,
+    # they trade against the same budget. Either way the axis has to be swept
+    # rather than transferred, which is why both waves sweep it.
+    #
+    # Geometry: two ways to halve coverage, held against each other at matched
+    # coverage. Fewer patches of the same size (sm50_half, sm50_q) keeps every
+    # separation the pairwise terms can see and gives the spread term less of
+    # the arena; smaller patches at the same count (sm35, sm25) does the
+    # reverse. sm70_lo / sm70_q is the ~30-env geometry Sec 6.6 recommends for
+    # extrapolating across coverage, included as the third option because that
+    # rule was derived for r_min and has never been checked on this objective.
+    "w57_cov5": {
+        "arm": {
+            name: {**dict(batch_size=4096, lr=3e-4, per_env_radius_frac=0.0,
+                          radius=20.0, rate_lambda=0.5, rate_eps=1.0,
+                          out_dim=1024, hidden_dim=256, gain_end=100.0), **over}
+            for name, over in (
+                ("half_a0.5",  dict(npos_list=SIZE_MIXES["sm50_half"],
+                                    attract_lambda=0.5)),
+                ("half_a0.25", dict(npos_list=SIZE_MIXES["sm50_half"],
+                                    attract_lambda=0.25)),
+                ("half_a1",    dict(npos_list=SIZE_MIXES["sm50_half"],
+                                    attract_lambda=1.0)),
+                ("sm35_a0.5",  dict(npos_list=SIZE_MIXES["sm35"],
+                                    attract_lambda=0.5)),
+                ("sm70_a0.5",  dict(npos_list=SIZE_MIXES["sm70_lo"],
+                                    attract_lambda=0.5)),
+                ("half_rate1", dict(npos_list=SIZE_MIXES["sm50_half"],
+                                    attract_lambda=0.5, rate_lambda=1.0)),
+            )
+        },
+        "seed": [42, 43, 44, 45],
+    },
+    # W59 -- attract ABOVE 1.0 at 2.5% coverage, because w58 swept the wrong way.
+    #
+    # w58 tested attract 0.25 / 0.5 / 1.0 on the prediction (Sec 10.11) that the
+    # optimum moves DOWN as coverage falls. It moves UP, and monotonically over
+    # everything tested:
+    #
+    #   attract   0.25     0.5      1.0
+    #   alias   0.0253  0.0212   0.0178      (at the gain landing res90 7)
+    #
+    # So 1.0 is a BOUNDARY of the swept range, not an interior optimum, and
+    # reporting it as the answer would be reporting the edge of a grid. The
+    # mechanism reading: attract holds the near field up (Sec 6.11), and at 2.5%
+    # coverage there is less local structure for it to hold, so the code needs
+    # more of it rather than less -- the low-attract arms are already maximally
+    # stretched (q_a0.25 reaches res90 7 only at gain 3, its lowest).
+    #
+    # This continues the axis until it turns over. 2.0 is Level 6's value and
+    # 4.0 is w52's next rung, so both have 10%-coverage counterparts to compare
+    # against at matched attract.
+    "w59_cov2.5_att_hi": {
+        "arm": {
+            name: {**dict(npos_list=SIZE_MIXES["sm50_q"], batch_size=4096,
+                          lr=3e-4, per_env_radius_frac=0.0, radius=20.0,
+                          rate_lambda=0.5, rate_eps=1.0, out_dim=1024,
+                          hidden_dim=256, gain_end=100.0), **over}
+            for name, over in (
+                ("q_a2", dict(attract_lambda=2.0)),
+                ("q_a4", dict(attract_lambda=4.0)),
+            )
+        },
+        "seed": [42, 43, 44, 45],
+    },
+    "w58_cov2.5": {
+        "arm": {
+            name: {**dict(batch_size=4096, lr=3e-4, per_env_radius_frac=0.0,
+                          radius=20.0, rate_lambda=0.5, rate_eps=1.0,
+                          out_dim=1024, hidden_dim=256, gain_end=100.0), **over}
+            for name, over in (
+                ("q_a0.5",   dict(npos_list=SIZE_MIXES["sm50_q"],
+                                  attract_lambda=0.5)),
+                ("q_a0.25",  dict(npos_list=SIZE_MIXES["sm50_q"],
+                                  attract_lambda=0.25)),
+                ("q_a1",     dict(npos_list=SIZE_MIXES["sm50_q"],
+                                  attract_lambda=1.0)),
+                ("sm25_a0.5", dict(npos_list=SIZE_MIXES["sm25"],
+                                   attract_lambda=0.5)),
+                ("sm70q_a0.5", dict(npos_list=SIZE_MIXES["sm70_q"],
+                                    attract_lambda=0.5)),
+                ("q_rate1",  dict(npos_list=SIZE_MIXES["sm50_q"],
+                                  attract_lambda=0.5, rate_lambda=1.0)),
+            )
+        },
+        "seed": [42, 43, 44, 45],
+    },
+    # W60 -- 1.25% coverage, and the corrected attract trend as a prediction.
+    #
+    # The ladder so far (Sec 10.12-10.14), best attract_lambda by coverage:
+    #
+    #   10%   0.5     reach 0.978
+    #    5%   0.5     reach 0.977
+    #  2.5%   1.0     reach 0.965   (w59 confirmed 4.0 turns over, so interior)
+    #
+    # My Sec 10.11 extrapolation said the optimum would move DOWN as coverage
+    # falls and it moved UP, at both levels, found independently. The corrected
+    # reading is that attract HOLDS THE NEAR FIELD UP, and at low coverage there
+    # is less local structure to hold, so the code needs more of it -- while the
+    # low-attract arms are already maximally stretched, since reaching res90 7
+    # from a0.25 at 2.5% needs gain 3.
+    #
+    # That correction now has to earn its keep by predicting rather than
+    # explaining. On record before the wave runs: **the optimum at 1.25% is
+    # 2.0**, continuing 0.5 / 0.5 / 1.0. If it is 1.0 the trend has saturated;
+    # if it is 4.0 it is steeper than linear in log-coverage. Sweeping 1/2/4
+    # brackets all three answers, and 4.0 is included because it was the arm
+    # that turned over at 2.5% -- if it wins here, that turnover was a coverage
+    # effect rather than a property of the attract term.
+    #
+    # The other question this rung answers is where coverage stops working at
+    # all. Reach was flat 10% -> 2.5% while dead-goals-at-K=20 went 0.08 -> 0.42,
+    # so capacity is what is being spent; at 1.25% it should run out. Expect
+    # reach to break from flat here, and if it does not, the constraint is
+    # somewhere other than coverage entirely.
+    #
+    # sm35_x holds the environment COUNT at 30 (2.5%'s winning count) while
+    # cutting size, against sm50_x which holds size and halves count again.
+    # At 2.5% the size-held mix won; this checks whether that survives.
+    "w60_cov1.25": {
+        "arm": {
+            name: {**dict(batch_size=4096, lr=3e-4, per_env_radius_frac=0.0,
+                          radius=20.0, rate_lambda=0.5, rate_eps=1.0,
+                          out_dim=1024, hidden_dim=256, gain_end=100.0), **over}
+            for name, over in (
+                ("x_a1",     dict(npos_list=SIZE_MIXES["sm50_x"],
+                                  attract_lambda=1.0)),
+                ("x_a2",     dict(npos_list=SIZE_MIXES["sm50_x"],
+                                  attract_lambda=2.0)),
+                ("x_a4",     dict(npos_list=SIZE_MIXES["sm50_x"],
+                                  attract_lambda=4.0)),
+                ("sm35x_a2", dict(npos_list=SIZE_MIXES["sm35_x"],
+                                  attract_lambda=2.0)),
+            )
+        },
+        "seed": [42, 43, 44, 45],
+    },
+    # W61 -- 0.75% coverage, below the floor, to see the shape of the falloff.
+    #
+    # Sec 10.15 put the usable floor between 2.5% and 1.25%: reach is flat at
+    # 0.978 / 0.977 / 0.965 down to 2.5% and drops to ~0.87 at 1.25%, where the
+    # alias rate passes ~0.02 and dead goals first cross into the K=5 operating
+    # point. This rung is not looking for a usable encoder -- it is looking at
+    # whether the falloff is a cliff or a slope, which decides whether 1.25% was
+    # the edge of a shelf or a point on a decline.
+    #
+    # Two predictions on record.
+    #
+    # Attract: the optimum has gone 0.5 / 0.5 / 1.0 / 2.0 down the ladder, so
+    # **2.0-4.0 here**, and 4.0 is the arm to watch since it lost at both 2.5%
+    # and 1.25%. If 2.0 still wins, the trend has flattened.
+    #
+    # Geometry: at 2.5% the size-held mix won and at 1.25% the count-held one
+    # did, so the crossover has already happened once. Holding the count at 30
+    # (the 1.25% winner's) needs 27-cell patches, which is under every floor
+    # Sec 6.3 identified -- if sm27_y still wins, patch size matters even less
+    # to this objective than Sec 10.15 suggested; if it loses to sm35_y or
+    # sm50_y, the crossover reverses and there is a genuine size floor after all.
+    "w61_cov0.75": {
+        "arm": {
+            name: {**dict(batch_size=4096, lr=3e-4, per_env_radius_frac=0.0,
+                          radius=20.0, rate_lambda=0.5, rate_eps=1.0,
+                          out_dim=1024, hidden_dim=256, gain_end=100.0), **over}
+            for name, over in (
+                ("y27_a2", dict(npos_list=SIZE_MIXES["sm27_y"],
+                                attract_lambda=2.0)),
+                ("y27_a4", dict(npos_list=SIZE_MIXES["sm27_y"],
+                                attract_lambda=4.0)),
+                ("y35_a2", dict(npos_list=SIZE_MIXES["sm35_y"],
+                                attract_lambda=2.0)),
+                ("y50_a2", dict(npos_list=SIZE_MIXES["sm50_y"],
+                                attract_lambda=2.0)),
             )
         },
         "seed": [42, 43, 44, 45],
