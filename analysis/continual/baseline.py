@@ -20,7 +20,11 @@ import os
 import numpy as np
 import torch
 
+from hopfield_nav.continual.base import (
+    CONTINUAL_METHODS, build_method, parse_method_args)
 from hopfield_nav.policy.agent_rnn import RNNAgent, compute_rnn_input_dim
+from hopfield_nav.policy.hypernet import HNET_BASES, HyperRNNAgent
+from hopfield_nav.policy.isolate import MultiHeadRNNAgent, XdGRNNAgent, warm_start
 from hopfield_nav.policy.recurrent import add_recurrent_args
 from hopfield_nav.config import EnvConfig, RNNAgentConfig, RNNBCConfig, RNNTrainConfig, VectorHashConfig
 from hopfield_nav.world.env import GridEnv
@@ -38,16 +42,29 @@ def _to_emit_metrics(m: dict) -> dict:
     nav_det ∈ {0.0, 1.0}                → reached  ∈ {0, 1}
     mean_steps_to_goal ∈ int | NaN      → steps_to_goal ∈ int | None
     mean_path_to_goal ∈ float | NaN     → path_to_goal ∈ float | None
+    mean_optimal_to_goal ∈ float | NaN  → optimal_to_goal ∈ float | None
+    mean_optimal_all ∈ float            → optimal_all ∈ float
+
+    `optimal_to_goal` is the shortest attainable path for this trial and is
+    what makes the other two comparable between arms: on its own `path_to_goal`
+    is conditioned on success, so an arm that solves only the near goals is
+    scored on nearer trials than one that solves the far ones too. Recorded
+    from wave 4 on; every history written before that has neither field, and
+    readers must treat them as absent rather than zero.
     """
     reached = int(round(float(m["nav_det"])))
     sg = float(m["mean_steps_to_goal"])
     steps_to_goal = None if math.isnan(sg) else int(round(sg))
     pg = float(m["mean_path_to_goal"])
     path_to_goal = None if math.isnan(pg) else float(pg)
+    og = float(m["mean_optimal_to_goal"])
+    optimal_to_goal = None if math.isnan(og) else float(og)
     return {
         "reached": reached,
         "steps_to_goal": steps_to_goal,
         "path_to_goal": path_to_goal,
+        "optimal_to_goal": optimal_to_goal,
+        "optimal_all": float(m["mean_optimal_all"]),
     }
 
 
@@ -99,6 +116,70 @@ def merge_iter_traces(
     return combined, first_blocks
 
 
+#: Parameter-name prefixes that constitute the movement head. Everything else
+#: is "the trunk" for --freeze_trunk's purposes. Kept as a named constant
+#: because a silent mismatch here would freeze the head instead and the run
+#: would still look plausible -- it would simply learn nothing.
+HEAD_PREFIXES = ("movement_head", "movement_mean", "movement_log_std")
+
+
+def freeze_trunk_params(agent) -> tuple[int, int]:
+    """Hold everything but the movement head. Returns (n_frozen, n_trainable).
+
+    Plan section 3.2 P4. Must be called *after* any checkpoint load, so what is
+    frozen is the pretrained trunk; freezing before would pin it at
+    initialisation, which measures something else entirely.
+
+    An agent may name its head something else -- the multi-head policy keeps a
+    `ModuleList` of them -- so it can say so with a `head_prefixes` attribute.
+    Without one, `HEAD_PREFIXES` applies, and an agent whose head matches
+    neither trips the check at the bottom rather than training nothing.
+    """
+    prefixes = tuple(getattr(agent, "head_prefixes", HEAD_PREFIXES))
+    n_frozen = 0
+    for name, prm in agent.named_parameters():
+        if not name.startswith(prefixes):
+            prm.requires_grad_(False)
+            n_frozen += prm.numel()
+    n_trainable = sum(prm.numel() for prm in agent.parameters()
+                      if prm.requires_grad)
+    if n_trainable == 0:
+        raise RuntimeError(
+            f"freeze_trunk left nothing trainable; head prefixes {prefixes} "
+            f"matched no parameter of {type(agent).__name__}")
+    return n_frozen, n_trainable
+
+
+#: Policy architectures the protocol can be run with. `rnn` is the baseline
+#: every recorded history to date used; the rest are the isolation family
+#: (plan section 4.3), and all three of them need the task id.
+ARCHITECTURES: tuple[str, ...] = ("rnn", "hnet", "multihead", "xdg")
+
+
+def build_arch_agent(args, cfg, input_dim: int, seed: int):
+    """The policy `--arch` asks for.
+
+    Kept as one function with one switch because the alternative -- four
+    branches spread through `main` -- is how an architecture comes to miss a
+    config field that the others get. Everything architecture-specific is here;
+    everything shared is in `cfg.agent`.
+    """
+    if args.arch == "rnn":
+        return RNNAgent(cfg.agent, input_dim)
+    if args.arch == "hnet":
+        return HyperRNNAgent(
+            cfg.agent, input_dim, cfg.n_envs,
+            emb_dim=args.hnet_emb_dim, chunk_dim=args.hnet_chunk_dim,
+            hyper_hidden=tuple(args.hnet_hidden), base=args.hnet_base,
+            init_out_scale=args.hnet_init_out_scale)
+    if args.arch == "multihead":
+        return MultiHeadRNNAgent(cfg.agent, input_dim, cfg.n_envs)
+    if args.arch == "xdg":
+        return XdGRNNAgent(cfg.agent, input_dim, cfg.n_envs,
+                           gating=args.xdg_gating, seed=seed)
+    raise ValueError(f"unknown --arch {args.arch!r}; known: {list(ARCHITECTURES)}")
+
+
 def run_sequential(
     cfg: RNNTrainConfig,
     agent: RNNAgent,
@@ -107,18 +188,32 @@ def run_sequential(
     device: torch.device,
     sgb: np.ndarray | None = None,
     env_offsets: list[tuple[int, int]] | None = None,
+    method=None,
+    reset_optimizer_each_block: bool = False,
 ) -> tuple[list[tuple[int, int, dict[int, dict]]], list[tuple[int, int, int]]]:
     """One block per env. Per update: collect rollout, BC update, single-trial
     eval on every env trained so far (untrained envs are NOT evaluated — they'd
     just inject pre-training noise into the curve).
 
-    Returns (trace, blocks). `blocks` end is inclusive.
+    ``method`` is a `hopfield_nav.continual.ContinualMethod`; None means naive
+    sequential SGD, which is the floor the suite is measured against.
+
+    Returns (trace, blocks, cost). `blocks` end is inclusive; `cost` is one
+    (global_step, cumulative fwd trunk-steps, cumulative bwd) per update.
     """
     trace: list[tuple[int, int, dict[int, dict]]] = []
+    cost: list = []
 
     def _record(u: UpdateResult) -> None:
         inner = {j: _to_emit_metrics(m) for j, m in u.metrics.items()}
         trace.append((u.global_step, u.block, inner))
+        # Cumulative trunk-steps at this update. Kept beside the trace rather
+        # than inside it because the cost is per *update*, while every entry in
+        # the trace is per evaluated environment -- folding it in would repeat
+        # the same number once per env and invite it to be averaged.
+        cost.append((u.global_step,
+                     int(u.losses.get("trunk_fwd_steps") or 0),
+                     int(u.losses.get("trunk_bwd_steps") or 0)))
         if (u.update == 1 or u.update % 25 == 0
                 or u.update == cfg.updates_per_env):
             summary = "  ".join(
@@ -131,10 +226,11 @@ def run_sequential(
         # A single trial per env per update, so each point is a raw 0/1 rather
         # than an average -- the figure smooths it afterwards.
         n_eval_trials=1,
-        sgb=sgb, env_offsets=env_offsets, on_update=_record,
+        sgb=sgb, env_offsets=env_offsets, on_update=_record, method=method,
+        reset_optimizer_each_block=reset_optimizer_each_block,
     )
 
-    return trace, blocks
+    return trace, blocks, cost
 
 
 def main() -> None:
@@ -199,12 +295,56 @@ def main() -> None:
                    help="Held-out envs recorded in world.json alongside the "
                         "train set.")
     # Agent
+    p.add_argument("--arch", default="rnn", choices=list(ARCHITECTURES),
+                   help="Policy architecture. 'rnn' is the single shared "
+                        "network every history to date used. The other three "
+                        "are the parameter-isolation family (plan section "
+                        "4.3) and all of them are given an oracle task id at "
+                        "training and evaluation time, which is a real "
+                        "advantage and is recorded as one.")
+    p.add_argument("--hnet_base", default="learned", choices=list(HNET_BASES),
+                   help="--arch hnet: what the generated weights are added to. "
+                        "'learned' warm-starts a free base vector from the "
+                        "checkpoint; 'frozen' pins it there forever so only "
+                        "the task-conditioned part can move; 'none' is the "
+                        "from-scratch von Oswald form, and the only one whose "
+                        "parameter count matches the baseline policy.")
+    p.add_argument("--hnet_emb_dim", type=int, default=32,
+                   help="--arch hnet: width of the task and chunk embeddings.")
+    p.add_argument("--hnet_chunk_dim", type=int, default=512,
+                   help="--arch hnet: generated weights per chunk. 0 builds "
+                        "the unchunked hypernetwork, whose output layer is "
+                        "then hidden x 74k -- millions of parameters to "
+                        "generate thousands.")
+    p.add_argument("--hnet_hidden", type=int, nargs="+", default=[100, 100],
+                   help="--arch hnet: hidden widths of the generator MLP.")
+    p.add_argument("--hnet_init_out_scale", type=float, default=0.01,
+                   help="--arch hnet: how much the generator's output layer is "
+                        "shrunk at init. Small means every task starts at the "
+                        "warm-started base, i.e. at the pretrained policy the "
+                        "controls start from. Ignored for --hnet_base none.")
+    p.add_argument("--xdg_gating", type=float, default=0.8,
+                   help="--arch xdg: fraction of hidden units held OFF for "
+                        "each task. 0.8 is the paper's value; the warm start "
+                        "makes it expensive here, since the checkpoint was "
+                        "trained with every unit available.")
     p.add_argument("--hidden_size", type=int, default=128)
     p.add_argument("--num_rnn_layers", type=int, default=1)
     p.add_argument("--dropout", type=float, default=0.0,
                    help="Inter-layer trunk dropout (only effective with "
                         "num_rnn_layers > 1).")
     add_recurrent_args(p)
+    # Continuous-mode exploration scale. These exist on `train_rnn` but were
+    # never wired through here, so every continual run to date used the
+    # RNNAgentConfig default of 0.0 -- sigma = 1.0 against a unit-magnitude
+    # action, and learnable. The DAgger student was exploring with noise the
+    # size of the action itself and the run script had no way to say otherwise.
+    p.add_argument("--init_log_std", type=float, default=0.0,
+                   help="Continuous policy: initial log sigma. Ignored in "
+                        "discrete mode. Auto-restored from ckpt in finetune.")
+    p.add_argument("--freeze_log_std", action="store_true",
+                   help="Hold log sigma at --init_log_std instead of learning "
+                        "it. Continuous mode only.")
     p.add_argument("--input_prev_action", action="store_true")
     p.add_argument("--input_prev_reward", action="store_true")
     p.add_argument("--input_grid_state", action="store_true",
@@ -224,6 +364,21 @@ def main() -> None:
                    help="BC epochs per update.")
     p.add_argument("--n_minibatches", type=int, default=4)
     p.add_argument("--max_grad_norm", type=float, default=1.0)
+    p.add_argument("--reset_optimizer_each_block", action="store_true",
+                   help="Clear Adam's moment estimates at every task boundary. "
+                        "Off by default (what every recorded history did). "
+                        "Adam's second moments otherwise carry across "
+                        "boundaries, so the first steps in env i are scaled by "
+                        "statistics from env i-1 -- plan section 3.1 W2.")
+    p.add_argument("--eval_deterministic",
+                   action=argparse.BooleanOptionalAction, default=True,
+                   help="Evaluate on the policy mean (default, and what every "
+                        "recorded history used) or by sampling. A forgotten "
+                        "environment is one the network is uncertain about, "
+                        "and a Gaussian head fitted to an uncertain target "
+                        "puts its mean near zero -- so if forgetting shows up "
+                        "as uncertainty rather than confident error, the "
+                        "default understates retention.")
     p.add_argument("--only_train_on_reached", action="store_true",
                    help="Per BC update, drop trajectories whose rollout never "
                         "reached the goal. If no trajectory reached, the update "
@@ -232,6 +387,30 @@ def main() -> None:
     p.add_argument("--batch_envs", type=int, default=16,
                    help="Parallel rollouts per env per update.")
     p.add_argument("--steps_per_rollout", type=int, default=None)
+    # Continual-learning method. See docs/CONTINUAL_CONTROLS_PLAN.md section 4
+    # and hopfield_nav/continual/. "none" is naive sequential SGD -- the floor,
+    # and what every recorded history to date used.
+    p.add_argument("--freeze_trunk", action="store_true",
+                   help="Adapt only the movement head; hold the recurrent trunk "
+                        "at whatever the checkpoint gave it. Plan section 3.2 "
+                        "P4, and the load-bearing half of OML's mechanism "
+                        "(section 5.1) without the meta-learning: if confining "
+                        "plasticity to a small head is what buys retention, "
+                        "that is worth knowing before building a meta-learner. "
+                        "Composes with any --method.")
+    p.add_argument("--world_spec", action=argparse.BooleanOptionalAction,
+                   default=True,
+                   help="Write world.json beside --out. On by default. Turn it "
+                        "off for sweeps: many seeds writing into one directory "
+                        "leave a single world.json describing whichever "
+                        "finished last, which is worse than none at all.")
+    p.add_argument("--method", default="none", choices=list(CONTINUAL_METHODS),
+                   help="Continual-learning method applied to the BC update.")
+    p.add_argument("--method_args", default=None,
+                   help="Comma-separated key=value pairs for the method, e.g. "
+                        "'buffer_size=inf,replay_batches=1' or "
+                        "'lam=1e3,gamma=1.0'. Values are coerced "
+                        "int -> float -> bool -> str; 'inf' is accepted.")
     args = p.parse_args()
 
     # If steps_per_rollout is not set, set it to max_steps
@@ -248,6 +427,8 @@ def main() -> None:
             hidden_size=args.hidden_size, num_rnn_layers=args.num_rnn_layers,
             dropout=args.dropout, movement_mode=args.movement_mode,
             rnn_cell=args.rnn_cell, rnn_nonlinearity=args.rnn_nonlinearity,
+            init_log_std=args.init_log_std,
+            freeze_log_std=args.freeze_log_std,
             input_prev_action=args.input_prev_action,
             input_prev_reward=args.input_prev_reward,
             input_grid_state=args.input_grid_state,
@@ -263,6 +444,7 @@ def main() -> None:
         batch_envs=args.batch_envs,
         steps_per_rollout=args.steps_per_rollout,
         n_eval_trials=1,
+        eval_deterministic=args.eval_deterministic,
         eval_max_steps=args.max_steps,
         eval_every=1,
         seed=args.seed,
@@ -286,9 +468,14 @@ def main() -> None:
         ckpt = torch.load(args.load_checkpoint, map_location=device, weights_only=False)
         restore_arch_from_ckpt(cfg, ckpt)
 
+    method_kwargs = parse_method_args(args.method_args)
+    last_method_desc: dict = {}
+    last_arch_detail: dict = {}
+
     base_seed = args.seed
     n_iters = max(1, int(args.num_full_iters))
     iter_traces: list[tuple[list, list]] = []
+    iter_costs: list[list] = []
     iter_env_goals: list[list[list[int]]] = []
     iter_env_offsets: list[list[list[int]] | None] = []
     last_vh_lambdas: list[int] = []
@@ -326,28 +513,80 @@ def main() -> None:
         # Only the first iteration's world is recorded: `--num_full_iters` re-runs
         # the whole protocol at seed+k, so there is no single world to describe,
         # and writing k of them under one name would describe none of them.
-        if k == 0:
+        #
+        # The same argument applies *across processes*, which is why this can be
+        # switched off. A sweep writes many runs at different seeds into one
+        # directory; a single `world.json` there describes whichever finished
+        # last and none of the others, so it is worse than absent.
+        if k == 0 and args.world_spec:
             write_rnn_world_spec(cfg, world_split, vh, generator=world_kind,
                                  save_dir=os.path.dirname(os.path.abspath(args.out)))
 
         input_dim = compute_rnn_input_dim(cfg.agent, cfg.env.observation_size, gbook_dim)
         if k == 0:
             print(f"[baseline] RNN input_dim={input_dim}")
-        agent = RNNAgent(cfg.agent, input_dim).to(device)
+        agent = build_arch_agent(args, cfg, input_dim, seed_k).to(device)
         optimizer = torch.optim.Adam(agent.parameters(), lr=cfg.bc.lr)
         if ckpt is not None:
-            agent.load_state_dict(ckpt["agent_state_dict"])
+            # `warm_start` routes to whatever this architecture needs: a
+            # straight load for the baseline, the head fanned out across tasks
+            # for the multi-head policy, the base vector for the hypernetwork.
+            warm_start(agent, ckpt["agent_state_dict"])
+        if k == 0 and args.arch != "rnn":
+            print(f"[baseline] arch={args.arch}  "
+                  f"{agent.describe() if hasattr(agent, 'describe') else {}}")
+
+        if args.freeze_trunk:
+            # After the load, so what is frozen is the *pretrained* trunk.
+            # Freezing before would pin it at initialisation, which measures
+            # something else entirely.
+            n_frozen, trainable = freeze_trunk_params(agent)
+            if k == 0:
+                print(f"[baseline] freeze_trunk: {n_frozen} params held, "
+                      f"{trainable} adapt")
+            # Rebuild the optimizer over the surviving parameters only, so
+            # Adam is not carrying state for tensors that can never move.
+            optimizer = torch.optim.Adam(
+                [prm for prm in agent.parameters() if prm.requires_grad],
+                lr=cfg.bc.lr)
 
         mode = "finetune" if ckpt is not None else "sequential"
         if k == 0:
             print(f"[baseline] mode={mode}  iters_per_block={cfg.updates_per_env}  "
                   f"max_steps={cfg.eval_max_steps}  num_full_iters={n_iters}")
 
-        trace, blocks = run_sequential(
+        # Rebuilt per iteration: a replay buffer or a Fisher must never leak
+        # across seeds, or iteration k would start with iteration k-1's memory
+        # and the seed-to-seed variance would be silently understated.
+        method = build_method(args.method, seed=seed_k, **method_kwargs)
+        if k == 0:
+            print(f"[baseline] method={args.method}  {method.describe()}")
+
+        trace, blocks, cost = run_sequential(
             cfg, agent, optimizer, envs, device,
-            sgb=sgb, env_offsets=env_offsets,
+            sgb=sgb, env_offsets=env_offsets, method=method,
+            reset_optimizer_each_block=args.reset_optimizer_each_block,
         )
+        last_method_desc = method.describe()
+        # Taken *after* training, not at construction. The parameter counts are
+        # the same either way, but the hypernetwork also reports how
+        # task-dependent its generated weights ended up -- and that number is
+        # only worth anything once the run has happened. A generator that never
+        # learned to condition on its task embedding produces an entirely
+        # ordinary-looking run whose low retention says nothing about the
+        # method, so the check belongs in every history rather than in a
+        # separate investigation.
+        # The plain policy has no `describe` of its own, but it still needs a
+        # parameter count: it is the row every isolation arm's parameter cost
+        # is read against, and a blank there makes the comparison unreadable.
+        last_arch_detail = (
+            agent.describe() if hasattr(agent, "describe") else {
+                "arch": "rnn",
+                "trainable_params": sum(prm.numel() for prm in agent.parameters()
+                                        if prm.requires_grad),
+            })
         iter_traces.append((trace, blocks))
+        iter_costs.append(cost)
         iter_env_goals.append([list(env.goal_location) for env in envs])
         iter_env_offsets.append(
             [list(o) for o in env_offsets] if env_offsets is not None else None
@@ -357,6 +596,11 @@ def main() -> None:
         last_gbook_dim = gbook_dim
 
     trace, blocks = merge_iter_traces(iter_traces)
+    # Iteration 0's costs stand for the run. Every iteration walks the
+    # same protocol with the same method at the same settings, so the
+    # trunk-step totals are identical by construction -- averaging them
+    # would imply a spread that does not exist.
+    cost = iter_costs[0] if iter_costs else []
     # Local rebinds for metadata block below.
     vh_lambdas = last_vh_lambdas
     vh_Npos = last_vh_Npos
@@ -376,6 +620,19 @@ def main() -> None:
             "raw_metric_is_binary": True,
             "ckpt_path": args.load_checkpoint,
             "num_full_iters": n_iters,
+            # What continual-learning method produced this history, and what it
+            # cost. `state_bytes` is one of the five axes of the cost frontier
+            # (plan section 0.1), so it belongs beside the curve, not in a log.
+            "method": args.method,
+            "method_args": args.method_args,
+            "method_detail": last_method_desc,
+            # The architecture is a second axis alongside the method: a
+            # hypernetwork with no regulariser and a plain RNN with one are
+            # different runs, and a summary keyed on `method` alone would
+            # average them together. `arch_detail` carries the parameter
+            # counts, which is what puts an isolation arm on the frontier.
+            "arch": args.arch,
+            "arch_detail": last_arch_detail,
             "extra": {
                 "mode": mode,
                 "base_seed": base_seed,
@@ -385,6 +642,8 @@ def main() -> None:
                 "dropout": cfg.agent.dropout,
                 "rnn_cell": cfg.agent.rnn_cell,
                 "rnn_nonlinearity": cfg.agent.rnn_nonlinearity,
+                "init_log_std": cfg.agent.init_log_std,
+                "freeze_log_std": cfg.agent.freeze_log_std,
                 "input_prev_action": cfg.agent.input_prev_action,
                 "input_prev_reward": cfg.agent.input_prev_reward,
                 "input_grid_state": cfg.agent.input_grid_state,
@@ -399,6 +658,18 @@ def main() -> None:
                 "epochs": cfg.bc.epochs,
                 "n_minibatches": cfg.bc.n_minibatches,
                 "max_grad_norm": cfg.bc.max_grad_norm,
+                "eval_deterministic": args.eval_deterministic,
+                "reset_optimizer_each_block": args.reset_optimizer_each_block,
+                "freeze_trunk": args.freeze_trunk,
+                "hnet_base": args.hnet_base if args.arch == "hnet" else None,
+                "hnet_emb_dim": args.hnet_emb_dim if args.arch == "hnet" else None,
+                "hnet_chunk_dim": (args.hnet_chunk_dim if args.arch == "hnet"
+                                   else None),
+                "hnet_hidden": (list(args.hnet_hidden) if args.arch == "hnet"
+                                else None),
+                "hnet_init_out_scale": (args.hnet_init_out_scale
+                                        if args.arch == "hnet" else None),
+                "xdg_gating": args.xdg_gating if args.arch == "xdg" else None,
                 "batch_envs": cfg.batch_envs,
                 "steps_per_rollout": cfg.steps_per_rollout,
                 "observation_size": cfg.env.observation_size,
@@ -410,6 +681,11 @@ def main() -> None:
             for s, t, inner in trace
         ],
         "blocks": [list(b) for b in blocks],
+        # [global_step, cumulative forward trunk-steps, cumulative backward].
+        # Cumulative rather than per-update so a task-boundary Fisher pass
+        # appears as a jump between two entries instead of needing a record of
+        # its own. Absent from every history written before 2026-09-02.
+        "cost": [list(c) for c in cost],
     }
 
     os.makedirs(os.path.dirname(args.out) or ".", exist_ok=True)

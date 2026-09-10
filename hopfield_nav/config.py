@@ -518,6 +518,31 @@ class RNNAgentConfig:
     input_prev_displacement: bool = False
     input_prev_reward: bool = False
     input_grid_state: bool = False          # current (x, y) cell normalized to [0, 1]^2
+    # An ORACLE channel: the goal, which the agent normally never observes.
+    # Only ever used to establish a ceiling for the in-context control (plan
+    # section 5.2), which is uninterpretable without one -- a flat curve means
+    # nothing until you know what a policy that was simply *given* the answer
+    # would score.
+    #
+    #   "none"  the real setting. The goal is unobservable.
+    #   "abs"   the goal's (x, y) normalised to [0, 1]^2. The agent still has to
+    #           work out where *it* is from the barcode ray-cast, so this is the
+    #           ceiling in-context memory could actually reach: remembering
+    #           where the goal is does not tell you where you are.
+    #   "rel"   the goal minus the agent's position, normalised. Follow the
+    #           arrow. Not a realistic ceiling -- it is the architecture sanity
+    #           check, and a policy that cannot do this cannot do anything.
+    goal_channel: str = "none"
+    # How many episodes of a lifetime the oracle goal channel is shown for.
+    # -1 (default) means always. Set to 1 and the goal is visible during the
+    # first episode and withheld afterwards, so the network must carry it
+    # across an episode boundary -- the architecture-level positive control for
+    # the in-context measurement, which distinguishes "cannot carry a fact"
+    # from "cannot discover one".
+    goal_visible_episodes: int = -1
+
+
+GOAL_CHANNELS: tuple[str, ...] = ("none", "abs", "rel")
 
 
 @dataclass
@@ -554,6 +579,54 @@ class RNNTrainConfig:
     eval_every: int = 25                    # within-env training log cadence
     n_eval_trials: int = 32                 # parallel eval trials per env
     eval_max_steps: int = 64
+    # In-context regime (plan section 5.2). With this on, a rollout is a
+    # *lifetime* rather than an episode: an env that reaches its goal is
+    # teleported to a fresh start and the hidden state is kept, so the only
+    # thing linking consecutive episodes is recurrent activity. Used to train
+    # the zero-weight-update control.
+    carry_across_episodes: bool = False
+    # Draw a fresh set of environments every N updates (mixed mode only).
+    # 0 keeps one fixed pool for the whole run, which is what every run to date
+    # did -- and which let the in-context pretraining memorise its 32
+    # environments rather than learn a strategy: 0.80 on the pool against 0.10
+    # held out, below the 0.21 a random walker scores. With this at 1 the pool
+    # is never seen twice, so memorising it is not an available solution.
+    # Under `carry_across_episodes` this is BOTH the lifetime length in updates
+    # and the environment-resampling cadence, because they are the same
+    # boundary: a lifetime is a stretch of rollouts on one environment with the
+    # hidden state carried across them, and it ends when the environment
+    # changes. steps_per_rollout * resample_envs_every is the lifetime in
+    # steps, and it should match what the evaluator measures
+    # (n_episodes * max_steps) or the run is trained on one horizon and scored
+    # on another.
+    resample_envs_every: int = 0
+    # Steps after which an episode ends even if the goal was never found.
+    # None keeps the historical behaviour: episodes end only on a goal-reach,
+    # so a row that never finds it spends the whole rollout in one episode and
+    # never crosses a boundary -- which is the common case on a fresh
+    # environment and left the cross-episode regime barely represented in its
+    # own training data. The evaluator has always timed episodes out.
+    episode_max_steps: int | None = None
+    # A fixed set of environments the run never trains on, evaluated on the
+    # same cadence as the training pool. Without one the only number a
+    # pretraining run reports is performance on the environments it is looking
+    # at, and a network that has memorised its pool is indistinguishable from
+    # one that has learned the task.
+    n_holdout_envs: int = 0
+    # Whether the per-update evaluation acts on the policy mean or samples from
+    # it. True is what every recorded history used, and is right for a
+    # confident policy. It is NOT right for an uncertain one: a Gaussian head
+    # fitted to a multimodal action distribution puts its mean near zero, so
+    # taking that mean scores a policy that barely moves. Measured on the
+    # in-context arms, sampling was worth 2.2-4.0x on every uncertain policy
+    # and exactly 1.00x on the one confident policy -- which is the signature
+    # of the artefact rather than of a real difference.
+    #
+    # This matters for retention specifically: an environment the network has
+    # *forgotten* is one it is now uncertain about, and if forgetting shows up
+    # as uncertainty rather than as confident error, deterministic evaluation
+    # understates what was retained.
+    eval_deterministic: bool = True
     seed: int = 0
     device: str = "cuda"
     save_dir: str | None = None

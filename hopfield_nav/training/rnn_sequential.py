@@ -14,12 +14,16 @@ trains the agent, which the Hopfield protocol's never does.
 """
 from __future__ import annotations
 
+from collections import defaultdict
 from dataclasses import dataclass
 from typing import Callable
 
 import numpy as np
 import torch
 
+from ..continual.base import ContinualMethod, NoMethod
+from ..continual.cost import COUNTER
+from ..policy.agent_rnn import set_agent_task
 from ..updates.bc_rnn import bc_rnn_update
 from ..world.env import GridEnv
 from ..evaluation.rnn import evaluate_nav_all
@@ -50,6 +54,8 @@ def run_sequential_blocks(
     env_offsets: list[tuple[int, int]] | None = None,
     on_update: Callable[[UpdateResult], None] | None = None,
     on_block_start: Callable[[int, GridEnv], None] | None = None,
+    method: ContinualMethod | None = None,
+    reset_optimizer_each_block: bool = False,
 ) -> list[tuple[int, int, int]]:
     """Train each env in turn; evaluate every env introduced so far, every update.
 
@@ -60,7 +66,26 @@ def run_sequential_blocks(
     ``on_update`` receives each update's rollout, losses and metrics; the caller
     decides what to record and what to print. Returns ``blocks`` as
     ``(start_step_inclusive, end_step_inclusive, env_idx)``.
+
+    ``method`` is a `hopfield_nav.continual.ContinualMethod`; the default is the
+    no-op, which reproduces naive sequential SGD exactly. The block loop is
+    where every method in the suite intervenes, so the hooks live here rather
+    than in the update: replay contributes extra batches, regularisers
+    contribute a loss term, and both get told where the block boundaries are.
+    Note the ordering -- `extra_batches` is asked for *before* `after_update`
+    stores the new rollout, so a replayed trajectory is always genuinely older
+    than the one driving the update.
+
+    ``reset_optimizer_each_block`` clears Adam's moment estimates at every task
+    boundary. Off by default, because that is what every recorded history did.
+    It is worth sweeping (plan section 3.1, W2): the optimizer is built once and
+    its second moments carry across boundaries, so the first steps in env `i`
+    are scaled by statistics gathered on env `i-1` -- which is one of the
+    mechanisms behind the stability gap. The state is cleared in place rather
+    than by rebuilding the optimizer, so the parameter groups and the learning
+    rate survive untouched.
     """
+    method = method or NoMethod()
     movement_mode = cfg.agent.movement_mode
     blocks: list[tuple[int, int, int]] = []
     global_step = 0
@@ -68,6 +93,13 @@ def run_sequential_blocks(
     for i, env in enumerate(envs):
         if on_block_start is not None:
             on_block_start(i, env)
+        method.on_block_start(i, agent, envs)
+        if reset_optimizer_each_block and i > 0:
+            # In place, so param_groups and the lr are untouched -- only the
+            # per-parameter moment history goes. Skipped at i=0, where there is
+            # nothing to carry over and clearing would only discard whatever a
+            # pretraining checkpoint handed us.
+            optimizer.state = defaultdict(dict)
         block_start = global_step + 1
         vec = make_vec(env, cfg.batch_envs, movement_mode,
                        cfg.env.continuous_scale,
@@ -75,19 +107,53 @@ def run_sequential_blocks(
         env_offset_i = env_offsets[i] if env_offsets is not None else None
 
         for upd in range(1, cfg.updates_per_env + 1):
+            # Re-asserted every update rather than once per block: the
+            # evaluation below walks every env seen so far and sets the task as
+            # it goes, so by the time the loop comes round again the agent is
+            # pointing at whichever env was evaluated last. That happens to be
+            # this one today, and would stop being true the moment the eval
+            # order changed.
+            task_conditioned = set_agent_task(agent, i)
             vec.reset_all()
             rollout = collect_rollout_rnn(
                 vec, agent, cfg.agent, cfg.steps_per_rollout, device,
                 deterministic=False, teacher_force=False,
                 sgb=sgb, env_offset=env_offset_i,
             )
-            losses = bc_rnn_update(agent, [rollout], cfg.bc, optimizer,
-                                   movement_mode)
+            extra = method.extra_batches(rollout, i)
+            if task_conditioned and extra:
+                # One BC update is one forward pass, so it can only run under
+                # one task's parameters. Replayed trajectories come from other
+                # blocks, and folding them in here would train env i's head on
+                # env j's supervision -- which destroys exactly the isolation
+                # the agent exists to provide, while still producing a
+                # plausible-looking curve. Combining the two needs a per-task
+                # forward, which the update does not have.
+                raise RuntimeError(
+                    f"method {method.name!r} replayed {len(extra)} batch(es) "
+                    f"into a task-conditioned {type(agent).__name__}. The "
+                    "update runs one forward under one task's parameters, so "
+                    "replayed data from other blocks would be trained through "
+                    "this block's head. Use a replay method with --arch rnn, "
+                    "or a non-replay method with this agent.")
+            losses = bc_rnn_update(
+                agent, [rollout] + list(extra), cfg.bc, optimizer,
+                movement_mode,
+                penalty_fn=lambda: method.penalty(agent),
+                aux_loss_fn=lambda: method.aux_loss(agent, rollout, extra),
+                on_step=lambda: method.after_step(agent),
+            )
+            method.after_update(rollout, i, agent)
+            losses["n_replay_batches"] = float(len(extra))
+            # Running totals, not per-update: the difference between two
+            # updates is this update's cost, and a task-boundary Fisher pass
+            # shows up as a jump between blocks without needing its own record.
+            losses.update(COUNTER.snapshot())
             global_step += 1
 
             metrics = evaluate_nav_all(
                 envs[: i + 1], agent, n_eval_trials, cfg.eval_max_steps,
-                device, deterministic=True,
+                device, deterministic=getattr(cfg, "eval_deterministic", True),
                 continuous_scale=cfg.env.continuous_scale,
                 continuous_normalize=cfg.env.continuous_normalize,
                 sgb=sgb,
@@ -100,6 +166,7 @@ def run_sequential_blocks(
                     global_step=global_step, block=i, update=upd,
                     rollout=rollout, losses=losses, metrics=metrics))
 
+        method.on_block_end(i, agent, envs)
         blocks.append((block_start, global_step, i))
 
     return blocks

@@ -296,13 +296,38 @@ class WorldSpec:
                 "world_json": path}
 
     def write(self, save_dir) -> str:
+        """Atomically write `world.json` into `save_dir`.
+
+        The temp file carries the writing process's pid. A fixed `.tmp` name is
+        safe for one writer and quietly broken for several: two processes
+        writing into the same directory both create `world.json.tmp`, the first
+        `os.replace` consumes it, and the second raises
+
+            FileNotFoundError: '.../world.json.tmp' -> '.../world.json'
+
+        which is exactly how 246 of a 272-run sweep died. The rename stays
+        atomic, so a reader still never sees a half-written file; only the
+        staging name needed to be unique.
+        """
         import os
+        import tempfile
         os.makedirs(save_dir, exist_ok=True)
         path = os.path.join(str(save_dir), WORLD_SPEC_NAME)
-        tmp = path + ".tmp"
-        with open(tmp, "w") as f:
-            json.dump(self.to_json(), f, indent=2, sort_keys=True)
-        os.replace(tmp, path)
+        # mkstemp rather than a pid suffix: unique across threads as well as
+        # processes, and it creates the file atomically. Same directory, so the
+        # rename below stays on one filesystem and stays atomic.
+        fd, tmp = tempfile.mkstemp(
+            dir=str(save_dir), prefix=WORLD_SPEC_NAME + ".", suffix=".tmp")
+        try:
+            with os.fdopen(fd, "w") as f:
+                json.dump(self.to_json(), f, indent=2, sort_keys=True)
+            os.replace(tmp, path)
+        except BaseException:
+            try:
+                os.unlink(tmp)
+            except OSError:
+                pass
+            raise
         return path
 
     @staticmethod

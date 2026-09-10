@@ -55,6 +55,10 @@ def restore_arch_from_ckpt(cfg: RNNTrainConfig, ckpt: dict) -> None:
     _restore(cfg.agent, "input_prev_action", saved_agent.get("input_prev_action"), "input_prev_action")
     _restore(cfg.agent, "input_prev_reward", saved_agent.get("input_prev_reward"), "input_prev_reward")
     _restore(cfg.agent, "input_grid_state",  saved_agent.get("input_grid_state"),  "input_grid_state")
+    # Two extra input columns when set, so a mismatch here is a load-time shape
+    # error rather than a wrong-but-runnable model -- the same reason rnn_cell
+    # is restored.
+    _restore(cfg.agent, "goal_channel",      saved_agent.get("goal_channel"),      "goal_channel")
     # Env-side movement_mode must mirror agent-side (VecEnv vs ContinuousVecEnv).
     cfg.env.movement_mode = cfg.agent.movement_mode
     _restore(cfg, "lambdas",    saved.get("lambdas"),    "lambdas")

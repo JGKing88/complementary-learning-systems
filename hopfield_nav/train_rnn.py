@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import argparse
 import os
-from dataclasses import asdict
+from dataclasses import asdict, replace
 
 import numpy as np
 import torch
@@ -24,7 +24,9 @@ import run_manifest
 from .policy.agent_rnn import RNNAgent, compute_rnn_input_dim
 from .policy.recurrent import add_recurrent_args
 from .updates.bc_rnn import bc_rnn_update
-from .config import EnvConfig, RNNAgentConfig, RNNBCConfig, RNNTrainConfig, VectorHashConfig
+from .config import (
+    EnvConfig, GOAL_CHANNELS, RNNAgentConfig, RNNBCConfig, RNNTrainConfig,
+    VectorHashConfig)
 from .world.env import GridEnv, warn_if_offcell_stores
 from .evaluation.rnn import evaluate_nav_all
 from .rollout.rnn import collect_rollout_rnn
@@ -117,35 +119,107 @@ def train_mixed(
     sgb: np.ndarray | None = None,
     env_offsets: list[tuple[int, int]] | None = None,
 ) -> list[dict[int, dict[str, float]]]:
-    """Pool rollouts from all envs every update (pretraining scaffolding)."""
+    """Pool rollouts from all envs every update (pretraining scaffolding).
+
+    With ``cfg.resample_envs_every`` set, the pool is redrawn on that cadence
+    rather than fixed for the run. That matters more than it looks: a fixed pool
+    of N environments can be *memorised*, and for the in-context control that is
+    not a nuisance but a substitute solution -- learning where N specific goals
+    are is easier than learning to find an unknown one, so the network does
+    that instead and the whole measurement becomes vacuous. Redrawing means the
+    pool is never seen twice and memorising it is not on the table.
+    """
     movement_mode = cfg.agent.movement_mode
-    vecs = [
-        _make_vec(env, cfg.batch_envs, movement_mode, cfg.env.continuous_scale,
-                       continuous_normalize=cfg.env.continuous_normalize)
-        for env in envs
-    ]
+
+    def _vecs_for(envs_):
+        return [
+            _make_vec(e, cfg.batch_envs, movement_mode, cfg.env.continuous_scale,
+                      continuous_normalize=cfg.env.continuous_normalize)
+            for e in envs_
+        ]
+
+    vecs = _vecs_for(envs)
+    # Seeded off the run's own seed so a resampled run is as reproducible as a
+    # fixed-pool one.
+    pool_rng = np.random.RandomState(cfg.seed + 777_000)
+
+    # A fixed set the run never trains on. Without it, the only number this
+    # loop reports is performance on the environments of the moment, and a
+    # network that has memorised its pool looks identical to one that has
+    # learned the task -- which is exactly how the in-context pretraining came
+    # to be reported as a working policy when it scored below a random walker
+    # on anything it had not seen. Drawn from a seed offset far from both the
+    # pool's and the run's.
+    holdout: list[GridEnv] = []
+    if cfg.n_holdout_envs > 0:
+        h_cfg = replace(cfg, n_envs=cfg.n_holdout_envs)
+        holdout = build_envs_from_config(
+            h_cfg, np.random.RandomState(cfg.seed + 424_242))
+        print(f"  [mixed] {len(holdout)} held-out envs, never trained on")
+
+    # The recurrent state at each env-slot's current position in its lifetime.
+    # `None` means "this slot starts a new lifetime on the next rollout".
+    #
+    # Carrying this across updates is what makes a lifetime longer than one
+    # backprop window. Without it the lifetime *is* the rollout: the agent was
+    # trained on 200-step lifetimes and then measured on 2000-step ones, which
+    # is a tenfold extrapolation dressed up as a null result.
+    carry_h: list[torch.Tensor | None] = [None] * len(vecs)
     history: list[dict[int, dict[str, float]]] = []
     for upd in range(1, cfg.n_updates + 1):
-        for vec in vecs:
-            vec.reset_all()
+        # A lifetime boundary: new environments, and the state that was
+        # carrying the old ones is dropped. The two have to happen together --
+        # carrying a hidden state into a different environment would be
+        # training the network to remember a goal that has moved.
+        if (cfg.resample_envs_every
+                and (upd - 1) % cfg.resample_envs_every == 0
+                and upd > 1):
+            envs = build_envs_from_config(cfg, pool_rng)
+            vecs = _vecs_for(envs)
+            carry_h = [None] * len(vecs)
+        # Only reset the arena at a lifetime boundary. Mid-lifetime the
+        # positions have to persist too, or every chunk would silently
+        # teleport the agent and the carried state would describe somewhere it
+        # no longer is.
+        if any(h is None for h in carry_h):
+            for vec in vecs:
+                vec.reset_all()
         rollouts = [
             collect_rollout_rnn(
                 vec, agent, cfg.agent, cfg.steps_per_rollout, device,
                 deterministic=False, teacher_force=False,
                 sgb=sgb,
                 env_offset=env_offsets[k] if env_offsets is not None else None,
+                carry_across_episodes=cfg.carry_across_episodes,
+                initial_h=carry_h[k] if cfg.carry_across_episodes else None,
+                episode_max_steps=(cfg.episode_max_steps
+                                   if cfg.carry_across_episodes else None),
             )
             for k, vec in enumerate(vecs)
         ]
+        if cfg.carry_across_episodes:
+            carry_h = [r.final_h for r in rollouts]
         losses = bc_rnn_update(agent, rollouts, cfg.bc, optimizer, movement_mode)
         if upd == 1 or upd % cfg.eval_every == 0 or upd == cfg.n_updates:
             total_goal = sum(float(r.goal_reached.sum().item()) for r in rollouts)
             denom = max(1, len(rollouts) * cfg.batch_envs * cfg.steps_per_rollout)
+            # Episodes per lifetime-chunk. This is the number that was silently
+            # 1 for the whole first in-context measurement: a regime whose
+            # lifetimes contain one episode cannot teach anything about
+            # crossing an episode boundary, and nothing in the old log would
+            # have shown it.
+            eps = [r.episodes_completed for r in rollouts
+                   if r.episodes_completed is not None]
+            eps_txt = ""
+            if eps and cfg.carry_across_episodes:
+                per_chunk = float(torch.cat(eps).float().mean())
+                eps_txt = (f"  eps/chunk={per_chunk:.2f}"
+                           f"  eps/lifetime~{per_chunk * max(1, cfg.resample_envs_every):.1f}")
             print(
                 f"  mixed upd={upd}/{cfg.n_updates}  "
                 f"move_loss={losses['move_loss']:.4f}  "
                 f"ent={losses['move_entropy']:.3f}  "
-                f"goal_rate={total_goal / denom:.3f}"
+                f"goal_rate={total_goal / denom:.3f}{eps_txt}"
             )
             if wandb_run is not None:
                 wandb_run.log({
@@ -162,6 +236,27 @@ def train_mixed(
                 reset_state_on_teleport=cfg.env.reset_state_on_teleport,
             )
             history.append(metrics)
+            if holdout:
+                # The number that decides whether anything else here means
+                # something. Printed on one line rather than per-env, because
+                # it is a single summary and the per-env detail belongs to the
+                # training pool.
+                hm = evaluate_nav_all(
+                    holdout, agent, cfg.n_eval_trials, cfg.eval_max_steps,
+                    device, deterministic=True,
+                    continuous_scale=cfg.env.continuous_scale,
+                    continuous_normalize=cfg.env.continuous_normalize,
+                    reset_state_on_teleport=cfg.env.reset_state_on_teleport,
+                )
+                hd = float(np.mean([m["nav_det"] for m in hm.values()]))
+                tr = float(np.mean([m["nav_det"] for m in metrics.values()]))
+                gap = f"{tr / hd:.1f}x" if hd > 0 else "n/a"
+                print(f"    HOLDOUT nav_det={hd:.3f}   (pool {tr:.3f}, "
+                      f"gap {gap})")
+                if wandb_run is not None:
+                    wandb_run.log({"eval/mixed/holdout_nav_det": hd,
+                                   "eval/mixed/pool_nav_det": tr,
+                                   "global_step": upd})
             for j, m in metrics.items():
                 print(
                     f"    eval env_{j}: nav_det={m['nav_det']:.3f}  "
@@ -400,6 +495,51 @@ def main() -> None:
     p.add_argument("--eval_every", type=int, default=25)
     p.add_argument("--n_eval_trials", type=int, default=32)
     p.add_argument("--eval_max_steps", type=int, default=64)
+    p.add_argument("--goal_channel", choices=list(GOAL_CHANNELS), default="none",
+                   help="ORACLE channel exposing the goal, which the agent "
+                        "normally never observes. Only for establishing a "
+                        "ceiling under the in-context control (plan 5.2), "
+                        "which is uninterpretable without one. 'abs' gives the "
+                        "goal's normalised coordinates and leaves the agent to "
+                        "localise itself, which is the ceiling in-context "
+                        "memory could actually reach; 'rel' gives the "
+                        "displacement to it, which is the architecture sanity "
+                        "check rather than a realistic bound.")
+    p.add_argument("--n_holdout_envs", type=int, default=0,
+                   help="Evaluate on this many environments the run never "
+                        "trains on, alongside the training pool. The gap "
+                        "between the two is the memorisation signature, and "
+                        "without it a memorised pool looks exactly like a "
+                        "learned task.")
+    p.add_argument("--goal_visible_episodes", type=int, default=-1,
+                   help="Episodes of a lifetime the oracle goal channel is "
+                        "shown for. -1 = always. 1 shows it during the first "
+                        "episode only, so the network must carry the goal "
+                        "across an episode boundary -- which separates 'cannot "
+                        "carry a fact' from 'cannot discover one'.")
+    p.add_argument("--episode_max_steps", type=int, default=None,
+                   help="End an episode after this many steps even if the goal "
+                        "was never found (--carry_across_episodes only). "
+                        "Without it a row that never reaches the goal spends "
+                        "the whole rollout in one episode and never crosses a "
+                        "boundary, so the cross-episode regime is barely "
+                        "present in its own training data. Set it equal to the "
+                        "evaluator's per-episode cap.")
+    p.add_argument("--resample_envs_every", type=int, default=0,
+                   help="Redraw the whole environment pool every N updates "
+                        "(--mode mixed). 0 keeps one fixed pool, which is what "
+                        "every run to date did -- and which let the in-context "
+                        "pretraining memorise its 32 environments instead of "
+                        "learning a strategy. 1 means the pool is never seen "
+                        "twice.")
+    p.add_argument("--carry_across_episodes",
+                   action=argparse.BooleanOptionalAction, default=False,
+                   help="Make a rollout a LIFETIME rather than an episode: on "
+                        "goal-reach, teleport to a fresh start and keep the "
+                        "hidden state, so consecutive episodes in one env are "
+                        "linked only by recurrent activity. This is how the "
+                        "in-context, zero-weight-update control is trained "
+                        "(plan section 5.2).")
     # Bookkeeping
     p.add_argument("--seed", type=int, default=0)
     p.add_argument("--device", type=str, default="cuda")
@@ -427,6 +567,8 @@ def main() -> None:
             input_prev_action=args.input_prev_action,
             input_prev_reward=args.input_prev_reward,
             input_grid_state=args.input_grid_state,
+            goal_channel=args.goal_channel,
+            goal_visible_episodes=args.goal_visible_episodes,
         ),
         bc=RNNBCConfig(
             lr=args.lr, move_ent_coef=args.move_ent_coef,
@@ -443,6 +585,10 @@ def main() -> None:
         eval_every=args.eval_every,
         n_eval_trials=args.n_eval_trials,
         eval_max_steps=args.eval_max_steps,
+        carry_across_episodes=args.carry_across_episodes,
+        resample_envs_every=args.resample_envs_every,
+        episode_max_steps=args.episode_max_steps,
+        n_holdout_envs=args.n_holdout_envs,
         env_generator=args.env_generator,
         place_region=args.place_region,
         goal_region=args.goal_region,

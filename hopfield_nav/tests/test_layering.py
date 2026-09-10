@@ -84,6 +84,13 @@ LAYERS: dict[str, int] = {
     "hopfield_nav.policy": 2,          # agent, agent_rnn, channels
     "hopfield_nav.rollout": 3,         # collector, rnn, signal, oracles, distractors, types
     "hopfield_nav.updates": 4,         # ppo, bc, bc_rnn
+    # The continual-learning methods. Same layer as `updates` and not below it:
+    # a method needs `rollout` (a replay buffer holds RNNRolloutBatch) and
+    # `policy` (a Fisher needs the agent's own distribution), and nothing above.
+    # The dependency with `updates` deliberately runs one way -- `bc_rnn_update`
+    # takes plain callables, so it never imports a method, and `training`
+    # composes the two.
+    "hopfield_nav.continual": 4,       # base, replay, regularize
     "hopfield_nav.evaluation": 5,      # metrics, rnn, protocols, batched, checkpoint_io
     "hopfield_nav.training": 6,        # world_setup, rnn_sequential
 

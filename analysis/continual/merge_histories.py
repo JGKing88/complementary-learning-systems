@@ -19,7 +19,7 @@ import os
 from .baseline import merge_iter_traces
 
 
-def _load_history(path: str) -> tuple[list, list, dict]:
+def _load_history(path: str) -> tuple[list, list, dict, list]:
     with open(path) as f:
         h = json.load(f)
     trace = []
@@ -28,7 +28,7 @@ def _load_history(path: str) -> tuple[list, list, dict]:
         inner = {int(k): v for k, v in inner_str.items()}
         trace.append((int(step), int(train_env), inner))
     blocks = [(int(b[0]), int(b[1]), int(b[2])) for b in h["blocks"]]
-    return trace, blocks, h.get("metadata", {})
+    return trace, blocks, h.get("metadata", {}), h.get("cost") or []
 
 
 def _check_compat(metadatas: list[dict]) -> None:
@@ -48,11 +48,29 @@ def merge(in_paths: list[str], out_path: str, run_name: str | None) -> None:
         raise RuntimeError("merge: no input histories provided")
     iter_traces: list[tuple[list, list]] = []
     metadatas: list[dict] = []
+    costs: list[list] = []
     for p in in_paths:
-        trace, blocks, md = _load_history(p)
+        trace, blocks, md, cost = _load_history(p)
         iter_traces.append((trace, blocks))
         metadatas.append(md)
+        costs.append(cost)
     _check_compat(metadatas)
+
+    # One arm's seeds must agree exactly: the trace is a function of the
+    # configuration, not of the seed. A disagreement means these files are not
+    # what the caller thinks they are. Reported rather than raised -- a merge
+    # that aborts mid-figure is worse than one that says so and carries the
+    # first.
+    present = [c for c in costs if c]
+    merged_cost = present[0] if present else []
+    odd = [i for i, c in enumerate(present[1:], start=1) if c != present[0]]
+    if odd:
+        print(f"[merge_histories] WARNING: cost trace differs across seeds "
+              f"at input(s) {odd}; carrying the first. Same arm name, "
+              f"different configuration?")
+    if present and len(present) != len(costs):
+        print(f"[merge_histories] note: {len(costs) - len(present)} of "
+              f"{len(costs)} inputs predate the cost trace")
 
     merged_trace, merged_blocks = merge_iter_traces(iter_traces)
 
@@ -92,6 +110,13 @@ def merge(in_paths: list[str], out_path: str, run_name: str | None) -> None:
             for s, t, inner in merged_trace
         ],
         "blocks": [list(b) for b in merged_blocks],
+        # Carried, not merged. The trunk-step trace is a function of the
+        # configuration -- same method, same replay setting, same rollout
+        # length -- so every seed of one arm produces the identical series and
+        # averaging them would only invent a spread. Seeds that disagree mean
+        # the inputs are not the same configuration, which is worth saying out
+        # loud rather than silently averaging away.
+        "cost": merged_cost,
     }
     os.makedirs(os.path.dirname(out_path) or ".", exist_ok=True)
     with open(out_path, "w") as f:
