@@ -1,12 +1,16 @@
 # Goal-conditioned NN control: can a plain network navigate from encoded states?
 
-Status: **plan, revision 2**, 2026-09-10. Nothing below §5 is built. Branch
+Status: **plan, revision 3**, 2026-09-10. Nothing below §5 is built. Branch
 `worktree-nn-generalization-control`; the config edits in §5.1 marked *done*
 are the only code so far.
 
-Revision 2 replaces the single rollout-based design of revision 1 with two
-experiments that answer two different claims, and it pares the primary one
-down to a supervised loop over sampled pairs. §1 says why.
+Revision 2 replaced the single rollout-based design of revision 1 with two
+experiments that answer two different claims, and pared the primary one down
+to a supervised loop over sampled pairs. §1 says why. Revision 3 gives B a
+fresh goal on every goal-reach (per-row goals, §4.3), which makes B's data
+unit identical to A's and removes the goal-memorisation loophole outright;
+it also states the evaluation in units (§4.4) and adds the continual plot
+(§4.6).
 
 ---
 
@@ -239,48 +243,149 @@ is read.
 Both action modes; grid and regular. Regular uses `omni(p)` (§2.2) so the
 only difference from A is history.
 
-### 4.3 Data
+### 4.3 Data — lifetimes of independent episodes
 
-`train_rnn.py` mixed mode with `carry_across_episodes` (lifetimes) and
-`resample_envs_every` (a lifetime is one env), plus the goal channels of
-§5.2. Two additions:
+The unit vocabulary, because the design lives in it:
 
-- **goal resampled every rollout chunk** (`--goal_resample_every_rollout`):
-  `env.set_goal()` before each `collect_rollout_rnn` call. Within a lifetime
-  the goal changes every `steps_per_rollout` steps, so the network cannot
-  substitute "learn where the goal is in-context" (the §5.2 route, which is
-  available whenever a lifetime has one goal) for "read the goal input". One
-  `set_goal` call; no per-row goal machinery.
-- **omni as the sensory channel** (`--sensory_mode omni`), for comparability
-  with A.
+- **episode** — one (start `p` → goal `g`) attempt. Ends at goal-reach or at
+  the 60-step cap.
+- **chunk** — `steps_per_rollout` (64) consecutive steps of one env, the unit
+  of one BC update. Contains however many episodes fit; an imperfect policy
+  in a new env may not finish one.
+- **lifetime** — `resample_envs_every` chunks on **one env** with the hidden
+  state carried the whole way. At its end the env is swapped and `h` zeroed.
 
-Starts are uniform over all cells and goals over `goal_cells_train`; B does
-not attempt the region holdout (§2.4).
+`train_rnn.py` mixed mode with `carry_across_episodes` already gives
+lifetimes. B adds one rule on top of it:
 
-### 4.4 Evaluation
+> **On goal-reach, the row gets a fresh start *and* a fresh goal. Its hidden
+> state is kept.**
 
-Three readouts, in this order:
+The goal is drawn from `goal_cells_train`, the start uniformly, `p ≠ g`.
+That is one flag, `--resample_goal_on_reach`, and it makes B's data unit
+identical to A's: an episode is one `(p, g)` pair in both. The *only*
+difference is that B's episodes are consecutive in one env with `h` carried
+across them — which is the cleanest possible statement of "B = A + history".
 
-1. **A's static table**, at `h = 0`, `prev_action = 0` — B's instant number,
-   on the same env sets as A. `evaluation/goal_pairs.py` is imported, not
-   reimplemented.
-2. **Direction quality vs. step-in-episode**, on H-env envs: run lifetimes,
-   and at every step record the angular error / set-membership of the
-   *policy's own action*, binned by step index within the episode and by
-   episode index within the lifetime. This is the curve that separates the
-   two mechanisms.
-3. Rollout success rate and steps-to-goal (existing `evaluate_nav_all`).
+Why both halves of the rule matter:
+
+- **Fresh goal.** With one goal per lifetime, a recurrent net can succeed by
+  finding the goal once and remembering *where it was* — the §5.2 mechanism,
+  already measured at +0.33 — without ever reading `enc(g)`. That would make a
+  B success uninterpretable. A new goal every episode removes the strategy:
+  the only thing that persists across episodes is the **env**, so the only
+  thing worth holding in `h` is the map.
+- **Keep `h`.** Zeroing the state at goal-reach (what `collect_rollout_rnn`
+  does without `carry_across_episodes`) leaves one episode of history —
+  ~15 steps of a good policy, one chunk of a bad one — which is not enough to
+  learn anything about an env. That regime is the one in which no in-context
+  effect was ever found; the effect appeared only once lifetimes existed.
+
+So: goal-learning in-context is made impossible; map-learning in-context is
+what B measures.
+
+**The BC update** is truncated BPTT: each chunk is re-run with gradients from
+its detached `initial_h` (`RNNRolloutBatch.initial_h`, whose docstring says
+why: starting from zeros would cap the usable horizon at one chunk). Forward,
+the network sees the whole lifetime; backward, credit is assigned within 64
+steps. Map-learning is local — a few `(Δenc, action)` pairs fix a local
+frame — so this should not bind, and the §5.2 result was obtained under the
+same truncation. It is the same for all three B arms, so the B-full vs B-dist
+comparison cancels it.
+
+Per-row goals require `VecEnv` to hold a `(B, 2)` goal array rather than one
+tuple (§5.8). Under the default the rows are identical and behaviour is
+bit-for-bit today's. `omni` is the sensory channel (`--sensory_mode omni`),
+for comparability with A. B does not attempt the cell-level holdouts (§2.4).
+
+### 4.4 Evaluation — three readouts, one metric
+
+Everything below scores the **policy's own action against the teacher**,
+`normalize(g − p)`: angular error (continuous) or optimal-set membership
+(discrete). The teacher is never in the loop at eval — the student acts on its
+own policy throughout, which is off-teacher, unlike DAgger training. Using one
+metric everywhere is what lets the three readouts be laid side by side.
+
+**Readout 1 — instant: A's static table at `h = 0`.** B's trained weights,
+every `(enc(p), enc(g))` pair, zero hidden state, zero `prev_action`, one
+forward. Identical protocol, cell sets and env sets to A;
+`evaluation/goal_pairs.py` is imported, not reimplemented. This is what B can
+do with **no experience of the env** — its score on the attractor's own claim.
+
+**Readout 2 — eventual: direction quality vs. experience.** On H-env envs,
+run lifetimes exactly as in training (same chunk length, same lifetime
+length, goal resampled on reach), record the per-step score, and bin it two
+ways:
+
+- **by step within episode** — does the direction improve as the agent moves
+  toward *this* goal? Episode-local information: the last few
+  `(Δenc, action)` pairs. Read out to the 60-step cap, not to 15.
+- **by episode within lifetime** — does episode 5 start better than episode
+  1? With a fresh goal every episode this is exactly *number of goals seen so
+  far in this env*, and there is nothing else it could be. **This is the
+  map-learning curve, and the one that decides B.**
+
+Because the goal changes every episode there is no chunk-boundary artefact
+to bin around; the episode index is clean. Episode 0, step 0 of this curve
+should agree with readout 1 — it is the same state — and that agreement is a
+check on both.
+
+**Readout 3 — behaviour.** Success rate and steps-to-goal over the same
+lifetimes (`evaluate_nav_all` machinery). Confirms that direction quality
+turns into reaching goals. Secondary.
+
+Pre-registered definition of "rising" for readout 2: episode ≥ 5 score
+better than episode 0 score by more than the seed spread, on H-env envs.
 
 ### 4.5 What B can and cannot conclude
 
-- B-full first-step ≈ A, later steps better, B-dist ≈ A → **history helps,
-  via in-context mapping**. A's instant result stands; B is a memory result.
-- B-dist already better than A on the table → the rollout **data** helped;
-  A's sampler should be revisited before anything is concluded about memory.
-- B-full ≈ A everywhere → history does not help here; A is the whole story.
-- B is read only in cells where A **failed**. Where A generalizes, B cannot
-  beat it on the instant table (A is at the ceiling), and B's only possible
-  finding there is "history hurts", which is minor.
+| readout 1 (instant) | readout 2 (vs episode) | B-dist | reading |
+|---|---|---|---|
+| B-full ≈ A | flat | ≈ A | history does not help; A is the whole story |
+| B-full ≈ A | **rising** | ≈ A | **in-context mapping** — a memory result; A's instant result stands |
+| B-full > A | — | ≈ A | not history — the static evaluator is leaking; investigate first |
+| — | — | **> A** | the rollout **data** helped; fix A's sampler before reading any B arm |
+
+B is read only in cells where A **failed**. Where A generalizes, B cannot beat
+it on the instant table (A is at the ceiling), and its only possible finding
+there is "history hurts", which is minor.
+
+### 4.6 The classic continual-learning plot, from the same machinery
+
+The project's headline figure is success-vs-time with one block per env:
+train on env 0, then env 1, …, and at every point score **every env seen so
+far**, so forgetting appears as each earlier env's curve falling when a later
+block starts. `train_rnn.py` sequential mode already produces it for the
+no-goal RNN (`train_sequential` records `trace[(global_step, block,
+{env: nav_det})]`), and `evaluate_sequential_episodes` produces the Hopfield
+version.
+
+The goal-conditioned models slot into it with no new protocol — only a change
+in what the model is given:
+
+- **A in sequential mode.** `train_goal_pairs.py --mode sequential`: envs
+  introduced one per block, the pair sampler restricted to the current block's
+  env, and at every eval the static table on every env seen so far. Score per
+  env is the train × train cell (or success from a short rollout, to match
+  the existing plot's y-axis). Since A never steps the env and the only
+  per-env state is the weights, this is the pure **weight-forgetting** curve
+  for a memoryless goal-conditioned net: did learning env 3's codes
+  overwrite env 0's? It is a ~30-line addition to the script.
+- **B in sequential mode.** `train_rnn.py --mode sequential` with the goal
+  channels and `--resample_goal_on_reach`. Already exists; nothing to add.
+  Its per-env score at revisit is readout 3 on that env with a fresh `h`, or
+  — the more interesting variant — with `h` carried from the last time it was
+  in that env, which separates *weight* forgetting from *activation*
+  retention.
+
+Three curves on the existing axes: the attractor (stores, no weight update
+per env), A-sequential (weights only), B-sequential (weights + activations).
+The attractor's claim is that its curve is flat because nothing was learned
+per env; A's and B's show what a network that *does* learn per env pays for
+it. The Hopfield stack's `evaluate_sequential_episodes` is not reused — its
+protocol is built around store events — but the x-axis, y-axis and block
+structure are the same, and `analysis/continual/` plots all three from the
+same `trace` shape.
 
 ---
 
@@ -305,7 +410,7 @@ Ordered so each step is testable alone. Paths current as of `b83ec51`.
   - `sensory_encoder: str = "linear"`, `sensory_encoder_channels: int = 16`,
     `sensory_encoder_kernel: int = 5`.
 - `RNNTrainConfig`: `region_val_frac: float = 0.0`; `pairs_per_env: int = 512`
-  (A); `goal_resample_every_rollout: bool = False` (B).
+  (A); `resample_goal_on_reach: bool = False` (B).
 
 ### 5.2 Input layout — `hopfield_nav/policy/agent_rnn.py`, `hopfield_nav/rollout/rnn.py`
 
@@ -389,16 +494,48 @@ Layer: `evaluation` (imports `policy`, `rollout`, `world`).
 §3.6. ~150 lines including the CLI. Adds itself to
 `scripts/check_entry_points.py`.
 
-### 5.8 Experiment B's additions — `hopfield_nav/train_rnn.py`, `hopfield_nav/rollout/rnn.py`, `hopfield_nav/evaluation/rnn.py`, `hopfield_nav/evaluation/incontext.py`
+### 5.8 Experiment B's additions
+
+**Per-row goals** — `hopfield_nav/world/env.py`, `hopfield_nav/world/vec_env.py`, `hopfield_nav/rollout/oracles.py`:
+
+- `_at_goal_l2(pos, goal, radius)`: a `goal.ndim == 2` branch, row-wise.
+  Three lines; the `(2,)` path is untouched. (`goal_arr[0]` on a `(B, 2)`
+  array is the first *row*, so it does not broadcast by accident — the
+  branch is needed.)
+- `VecEnv` and `ContinuousVecEnv`: `_goal` becomes a `(B, 2)` array,
+  initialised by tiling `base_env._goal`. `reset_all` / `reset_indices`
+  exclude the *row's* goal. New `set_goals(goals, indices=None)`. When
+  `resample_goal_on_reach` is set, `reset_indices` also draws a fresh goal
+  for each reset row from a caller-supplied cell pool (`goal_cells_train`),
+  before drawing the start. `step_batch` is goal-agnostic already — it only
+  reads the goal through `at_goal` — so it does not change. Under the default
+  every row holds the same goal and behaviour is bit-for-bit today's; the
+  Hopfield stack never sees a difference. `best_action_batch` has no callers
+  and is left alone.
+- `bfs_action_batch_discrete` / `_continuous`: accept `(B, 2)` goals. The
+  loops already index per row; it is an `np.atleast_2d` and a broadcast.
+- `collect_rollout_rnn` and `goal_channel_vec` read `vec._goal[b]` per row.
+  ~10 lines.
+
+**Trainer and evaluators** — `hopfield_nav/train_rnn.py`, `hopfield_nav/rollout/rnn.py`, `hopfield_nav/evaluation/rnn.py`, `hopfield_nav/evaluation/incontext.py`:
 
 - The three call sites that assemble the input (`collect_rollout_rnn`,
   `evaluate_nav_all`'s step, `evaluate_in_context`) compute and pass the new
   channels. `restore_arch_from_ckpt` restores the new agent fields.
-- `--goal_resample_every_rollout` (§4.3) in the mixed-mode loop.
-- `--sensory_mode omni`.
-- `evaluation/rnn.py::evaluate_direction_by_step(...)` — the
-  vs-step-in-episode curve (§4.4 item 2).
-- The periodic eval calls `evaluate_pairs` on the same env sets A uses.
+- `--resample_goal_on_reach` (§4.3) and `--sensory_mode omni`.
+- `evaluation/rnn.py::evaluate_lifetime_direction(...)` — readout 2: runs
+  lifetimes on H-env envs with the training regime's chunk and lifetime
+  lengths, records the per-step score of the policy's own action, returns it
+  binned by step-in-episode and by episode-in-lifetime. Built on
+  `evaluate_in_context`'s lifetime loop, which already exists for §5.2.
+- The periodic eval calls `evaluate_pairs` (readout 1) on the same env sets
+  A uses.
+
+**Continual (§4.6)** — `hopfield_nav/train_goal_pairs.py --mode sequential`:
+~30 lines — introduce envs one per block, restrict the sampler to the current
+env, evaluate the table on every env seen so far, emit the same
+`trace[(global_step, block, {env: score})]` shape `train_sequential` writes.
+B's sequential mode exists already.
 
 ### 5.9 Order of work
 
@@ -408,7 +545,8 @@ Layer: `evaluation` (imports `policy`, `rollout`, `world`).
 3. §5.6, §5.7 — sampler, evaluator, A's script. Run **A0** as the integration
    test.
 4. **A1, A2** run. While they run:
-5. §5.8 — B's additions. Run **B** arms.
+5. §5.8 — per-row goals first (unit-tested: default is bit-identical), then
+   B's additions. Run **B** arms.
 6. §5.4 — encoders, only if A2 fails on held-out walls. Run **A3**.
 
 ### 5.10 Tests — `hopfield_nav/tests/test_goal_pairs.py` (new) + existing
@@ -425,16 +563,24 @@ Layer: `evaluation` (imports `policy`, `rollout`, `world`).
   `prev_action = 0` — the A/B bridge, pinned.
 - Optimal set: aligned → 1 action, off-axis → 2; random-policy accuracy
   ≈ 0.37 on enumeration.
+- Per-row goals: `_at_goal_l2` with `(B, 2)`; `VecEnv` with
+  `resample_goal_on_reach` off reproduces today's rollout bit-for-bit
+  (extend the golden fixture); with it on, every reset row's goal is in the
+  pool and differs from its start; `bfs_action_batch_*` with `(B, 2)`
+  equals a per-row loop over the scalar version.
 - `xcorr`: recovers a known shift on a synthetic view.
 - Entry-point smoke; `test_layering.py` unchanged.
 
 ### 5.11 Not changed
 
-`policy/channels.py` and the Hopfield stack; `VecEnv`; `_at_goal_l2`; the
-oracles; `bc_rnn_update`; `train_rnn.py`'s sequential/finetune modes. Every
-existing checkpoint loads (layout with defaults is today's layout); every
-existing `world.json` reads. The per-row-goal collector of revision 1 is
-gone: A does not step the env and B does not need per-row goals.
+`policy/channels.py` and the Hopfield stack; `VecEnv.step_batch` and the
+at-goal contract; `bc_rnn_update`; `train_rnn.py`'s sequential/finetune
+protocols. `VecEnv`'s goal becomes an array but every row is identical under
+the default, so the Hopfield stack is bit-for-bit unaffected. Every existing
+checkpoint loads (layout with defaults is today's layout); every existing
+`world.json` reads. The per-row-goal *collector* of revision 1 is gone — A
+does not step the env — but per-row goals themselves came back for B, as the
+smallest change that gives every episode its own goal.
 
 ---
 
@@ -456,7 +602,8 @@ gone: A does not step the env and B does not need per-row goals.
 | B batch | `batch_envs = 64`, `steps_per_rollout = 64`, 8 envs / update | 32k labelled steps / update |
 | B budget | 2000 updates; BC `lr = 1e-3`, `epochs = 4`, 4 minibatches | ~2 h at the measured ~7 s per 100k steps |
 | continuous env (B) | `continuous_normalize = True`, `scale = 1.0` | unit step, direction only |
-| episode cap (B, rollouts) | 60 steps | a straight line is ≤ 38 |
+| episode cap (B, rollouts) | 60 steps, **on** | a straight line is ≤ 38; an imperfect policy in a new env needs the cap to produce episode boundaries at all |
+| lifetime (B) | match §5.2's `resample_envs_every` | the one lifetime length at which an in-context effect has been measured |
 | seeds | A: 2 per arm (cheap). B: 1, then 2 for any arm that is read | env draws are the variance; A's final table is enumerated |
 
 ### 6.2 Waves and kill criteria
@@ -514,10 +661,10 @@ and a 0.92 is read as a pass.
   lookup table.
 - **P4** A3: `xcorr` closes most of the held-out-wall gap; `conv` some of it.
 - **P5** B-dist ≈ A in every cell (the sampler is not the problem).
-- **P6** B-full, regular, held-out walls: first-step ≈ A, rising over the
-  episode — in-context mapping, the §5.2 mechanism. B-rec between.
+- **P6** B-full, regular, held-out walls: readout 1 ≈ A; readout 2 rising
+  by episode — in-context mapping, the §5.2 mechanism. B-rec between.
 - **P7** B-full, grid, held-out place: if P2 holds, B has nothing to add. If
-  P2 fails, B-full rises over the episode — it estimates the local frame from
+  P2 fails, B-full rises by episode — it estimates the local frame from
   `(Δgbook, action)`.
 - **P8** Discrete and continuous rank arms identically; discrete stricter.
 - **P9** Region × region is always the worst cell; the start row is worse
@@ -543,12 +690,11 @@ and a 0.92 is read as a pass.
 - **Aliasing floor in regular mode.** Report the ceiling; never raise
   `wall_resolution`. If the floor binds, 240 rays (A4).
 - **Region is local, H-env place is global.** Both reported; not averaged.
-- **B's goal-per-chunk.** With `steps_per_rollout = 64` and episodes of
-  ~15 steps, a chunk holds ~4 episodes at one goal. Enough to prevent
-  goal-learning-in-context from being a strategy across a lifetime; not
-  per-episode. If B-full's vs-step curve rises *within the first chunk only*
-  and resets at chunk boundaries, that is goal-learning, not map-learning —
-  the episode-index binning in §4.4 shows it.
+- **B's truncation.** Credit is assigned within one 64-step chunk. If the
+  episode-in-lifetime curve rises only for the first chunk's worth of
+  episodes and then plateaus, the truncation is binding and
+  `steps_per_rollout` should go up before anything is concluded. The §5.2
+  result under the same truncation says this is unlikely.
 - **Continuous at-goal in B.** `goal_radius = 0.5` on the snapped cell; unit
   steps land on cells; confirm exact equality in the first B run.
 - **`place_margin`.** Required explicitly by the RNN stack; 20 is generous.
