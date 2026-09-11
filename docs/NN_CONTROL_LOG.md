@@ -403,4 +403,20 @@ established is that a memoryless MLP generalizes to unseen cells and
 unseen *combinations* when training covers the cycle — not that it
 learned the translation-equivariant displacement map the attractor
 hand-builds. The corner is the test that separates the two, and it was
-not in the original plan. K=160 pending; it will be worse.
+not in the original plan.
+
+**A1x K=160, seed 0 (22588481)** — 12 train envs, 9% of the cycle:
+
+| region×region | mean | median | frac<30 | env-std |
+|---|---|---|---|---|
+| train | 0.4 | 0.3 | 1.00 | 0.1 |
+| `heldout_in` | 12.8 | 2.5 | 0.89 | 16.1 |
+| `heldout_out` | **71.2** | 65.1 | 0.34 | 15.9 |
+
+Outside: essentially random (random is 90°, and 0.34 within 30° is the
+random floor). Inside, with only 12 envs, even new walls in the same
+corner degrade — median 2.5° but a few envs fail badly (env-std 16°).
+Monotone in cycle coverage: 100% (A1 scattered) → 0.23°; 23% (K=400)
+→ 44° outside; 9% (K=160) → 71° outside. There is no extrapolation; the
+network's competence is bounded by the stretch of the cycle it was shown.
+Seed 1 pending.
