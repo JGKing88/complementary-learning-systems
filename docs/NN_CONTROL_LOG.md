@@ -97,3 +97,34 @@ registered at layer 7; green.
 
 **A0 launched** on CPU: xy mode, both action modes, 300 updates, the full
 64 / 16 / 8 world.
+
+## 2026-09-10 — A0 and the A1 launch
+
+**A0 on the login node failed for a reason worth recording.** Two runs
+at 15 GB RSS each (the full smoothed gbook, ~5 GB, plus torch) plus a
+probe script exceeded what the login node tolerates; one run and the
+probe were OOM-killed (exit 137, no traceback). Fix: `build_env_sets`
+now drops `vh.gbook` and `sgb` after the `EnvTensors` are built — every
+cell a run reads is in them — unless `keep_field=True` (the pre-flight).
+A0 resubmitted on `mit_normal_gpu`. Also: one eval of the 88-env table
+is 37 s on CPU, 16 s on GPU; the trainer is GPU-only in practice.
+
+**A0 (xy, mlp-2 h256, 300 updates), jobs 22523174 / 22523175:**
+
+| | u=1 | u=50 | u=100 | u=300 |
+|---|---|---|---|---|
+| continuous, heldout tt | 80.1° | 1.50° | 0.60° | **0.35°** |
+| continuous, heldout rr | 82.3° | 1.65° | 0.65° | **0.37°** |
+| discrete, heldout tt | 0.51 | 1.00 | 1.00 | 1.00 |
+| discrete, heldout rr | 0.49 | 1.00 | 1.00 | 1.00 |
+
+NN-decoder line on heldout rr: 6.3° / 0.96. **C13 passes** — ≤ 5° /
+≥ 0.98 on every cell, heldout tracks train exactly, and the model beats
+the lookup line on region cells by 17×, which is what learning the
+function rather than the table looks like. Enumerated FINAL pending.
+
+**A1 wave submitted** (jobs 22523453–22523467, 15 runs) before A0's
+enumeration finished: the gate is unambiguous at 0.35° / 1.00. Plan
+baseline (mlp-2, mlp-4 × both actions × 2 seeds, h256) plus a sweep on
+continuous seed 0: h512, h1024, l3h512, l4h512, l3h512+cosine,
+l3h512+wd1e-4, l3h512 tanh.
