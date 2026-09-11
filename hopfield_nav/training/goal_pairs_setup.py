@@ -7,8 +7,10 @@ of the layering keeps programs unimported.
 """
 from __future__ import annotations
 
+import numpy as np
+
 from ..config import RNNAgentConfig, RNNTrainConfig
-from ..evaluation.goal_pairs import EnvTensors
+from ..evaluation.goal_pairs import EnvTensors, aggregate_tables, evaluate_pairs
 from ..utils import smooth_gbook
 from ..world import generate as gen
 from .rnn_setup import rnn_world
@@ -75,3 +77,26 @@ def build_env_sets(cfg: RNNTrainConfig, rng, *, n_same: int, keep_field: bool = 
         vh.gbook = None
         sgb = None
     return train, heldout, same, split, vh, sgb
+
+
+def eval_all(model, sets, acfg, cells, movement_mode, device, *, n_per_quadrant, seed):
+    """Aggregate quadrant table per env set."""
+    model.eval()
+    out = {}
+    for es in sets:
+        tabs = []
+        for i, t in enumerate(es.tensors):
+            tabs.append(evaluate_pairs(
+                model, t, acfg, cells, movement_mode=movement_mode, device=device,
+                env_set=es.name, n_per_quadrant=n_per_quadrant,
+                rng=np.random.RandomState(seed * 1000 + i)))
+        out[es.name] = aggregate_tables(tabs)
+    model.train()
+    return out
+
+
+def jsonable(tables: dict) -> dict:
+    return {es: {f"{s}x{g}": {k: (list(v) if isinstance(v, tuple) else v)
+                               for k, v in row.items()}
+                 for (s, g), row in agg.items()}
+            for es, agg in tables.items()}

@@ -240,3 +240,30 @@ the same size. ReLU throughout. A1 wave complete.
 `same` = train (as it must); env-side gap 0.15°. Held-out region×region:
 median **0.63°**, **100% of pairs within 30°**, per-env std 0.06°. There
 are no failure cases; the mean is a uniformly small error.
+
+## 2026-09-10 — A1b: 4× updates, and a late instability
+
+**l4h512, 8000 updates, seed 0 (22526922).** Heldout region×region,
+sampled every 250:
+
+| u | 2000 | 3750 | 5750 | **6250** | 7750 | 8000 |
+|---|---|---|---|---|---|---|
+| ho rr | 0.84 | 0.46 | 0.34 | **0.32** | 0.99 | 0.90 |
+
+Four times the updates takes it from 0.84° to **0.32°** — and then a
+late instability at constant lr 1e-3 (loss 0.0000 → 0.0002, error back
+to ~0.9°). The enumerated FINAL at u=8000 is 0.9°, which understates the
+model. By the selection rule (heldout train×train), the best checkpoint
+is u=6250 (0.326° tt / 0.323° rr, sampled); the nearest saved one is
+`pairs_u6000.pt` (0.37° sampled). **Enumerating it** on a GPU node
+(22527723) via the new `eval_goal_pairs` CLI so the headline is not a
+sampled number.
+
+**Fix for the instability: a late step decay**, ×0.1 at 70% — not
+cosine-from-the-start, which the A1 wave showed hurts. Added
+`--lr_schedule step` (`--lr_step_at`, `--lr_step_gamma`). **A1c
+submitted**: l4h512, 8k updates, step at 5600, seeds 0 and 1
+(22527728 / 22527731). Also `eval_goal_pairs.py` + launcher, so any
+checkpoint can be enumerated after the fact; `eval_all`/`jsonable`
+moved to `training/goal_pairs_setup.py` so the two CLIs share them
+without one importing the other.

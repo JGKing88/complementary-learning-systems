@@ -44,6 +44,8 @@ N_UPDATES=${N_UPDATES:-2000}
 LR=${LR:-1e-3}
 WD=${WD:-0.0}
 LR_SCHEDULE=${LR_SCHEDULE:-none}
+LR_STEP_AT=${LR_STEP_AT:-0.75}
+LR_STEP_GAMMA=${LR_STEP_GAMMA:-0.1}
 EVAL_EVERY=${EVAL_EVERY:-100}
 EVAL_PAIRS=${EVAL_PAIRS:-2048}
 CKPT_EVERY=${CKPT_EVERY:-500}
@@ -69,6 +71,6 @@ PYTHONUNBUFFERED=1 python -m hopfield_nav.train_goal_pairs \
   --pairs_per_env "$PAIRS_PER_ENV" --size "$SIZE" --observation_size "$OBS" \
   --lambdas $LAMBDAS --fwhm_ratio "$FWHM" --place_margin "$PLACE_MARGIN" \
   --goal_val_frac "$GOAL_VAL_FRAC" --region_val_frac "$REGION_VAL_FRAC" \
-  --n_updates "$N_UPDATES" --lr "$LR" --weight_decay "$WD" --lr_schedule "$LR_SCHEDULE" \
+  --n_updates "$N_UPDATES" --lr "$LR" --weight_decay "$WD" --lr_schedule "$LR_SCHEDULE" --lr_step_at "$LR_STEP_AT" --lr_step_gamma "$LR_STEP_GAMMA" \
   --eval_every "$EVAL_EVERY" --eval_pairs "$EVAL_PAIRS" --ckpt_every "$CKPT_EVERY" \
   --seed "$SEED" --tag "$TAG" --wandb_project "$WANDB_PROJECT" $WANDB_FLAG

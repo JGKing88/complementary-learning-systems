@@ -38,11 +38,11 @@ from cls_paths import run_dir, run_name
 import run_manifest
 from .config import EnvConfig, RNNTrainConfig, RNNBCConfig
 from .evaluation.goal_pairs import (
-    aggregate_tables, evaluate_pairs, format_table, pair_inputs, pair_targets,
-    sample_pairs)
+    format_table, pair_inputs, pair_targets, sample_pairs)
 from .policy.agent_rnn import compute_rnn_input_dim
 from .policy.pair_regressor import PairRegressor
-from .training.goal_pairs_setup import MODES, EnvSet, agent_cfg_for_mode, build_env_sets
+from .training.goal_pairs_setup import (
+    MODES, EnvSet, agent_cfg_for_mode, build_env_sets, eval_all, jsonable)
 from .training.rnn_setup import write_rnn_world_spec
 
 
@@ -57,22 +57,6 @@ def train_batch(train: EnvSet, cells, acfg, movement_mode, pairs_per_env, rng, d
     return x, y
 
 
-def eval_all(model, sets, acfg, cells, movement_mode, device, *, n_per_quadrant, seed):
-    """Aggregate quadrant table per env set."""
-    model.eval()
-    out = {}
-    for es in sets:
-        tabs = []
-        for i, t in enumerate(es.tensors):
-            tabs.append(evaluate_pairs(
-                model, t, acfg, cells, movement_mode=movement_mode, device=device,
-                env_set=es.name, n_per_quadrant=n_per_quadrant,
-                rng=np.random.RandomState(seed * 1000 + i)))
-        out[es.name] = aggregate_tables(tabs)
-    model.train()
-    return out
-
-
 def flatten_for_log(tables: dict, prefix: str = "eval") -> dict:
     log = {}
     for es, agg in tables.items():
@@ -83,13 +67,6 @@ def flatten_for_log(tables: dict, prefix: str = "eval") -> dict:
             if "metric_std" in row["model"]:
                 log[f"{prefix}/{es}/{s}x{g}/model_std"] = row["model"]["metric_std"]
     return log
-
-
-def jsonable(tables: dict) -> dict:
-    return {es: {f"{s}x{g}": {k: (list(v) if isinstance(v, tuple) else v)
-                               for k, v in row.items()}
-                 for (s, g), row in agg.items()}
-            for es, agg in tables.items()}
 
 
 def main() -> None:
@@ -119,7 +96,12 @@ def main() -> None:
     p.add_argument("--n_updates", type=int, default=2000)
     p.add_argument("--lr", type=float, default=1e-3)
     p.add_argument("--weight_decay", type=float, default=0.0)
-    p.add_argument("--lr_schedule", choices=["none", "cosine"], default="none")
+    p.add_argument("--lr_schedule", choices=["none", "cosine", "step"], default="none",
+                   help="step: multiply lr by --lr_step_gamma at --lr_step_at (a fraction of n_updates). "
+                        "cosine-from-the-start hurt on grid mode (A1); the models are still "
+                        "descending at a constant lr and only destabilise late.")
+    p.add_argument("--lr_step_at", type=float, default=0.75)
+    p.add_argument("--lr_step_gamma", type=float, default=0.1)
     p.add_argument("--max_grad_norm", type=float, default=1.0)
     # Eval
     p.add_argument("--eval_every", type=int, default=100)
@@ -175,8 +157,13 @@ def main() -> None:
     print(f"model: mode={args.mode} D={D} hidden={args.hidden_size} layers={args.num_layers} "
           f"{args.nonlinearity} params={n_params:,}")
     opt = torch.optim.AdamW(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
-    sched = (torch.optim.lr_scheduler.CosineAnnealingLR(opt, args.n_updates)
-             if args.lr_schedule == "cosine" else None)
+    if args.lr_schedule == "cosine":
+        sched = torch.optim.lr_scheduler.CosineAnnealingLR(opt, args.n_updates)
+    elif args.lr_schedule == "step":
+        sched = torch.optim.lr_scheduler.MultiStepLR(
+            opt, milestones=[int(args.lr_step_at * args.n_updates)], gamma=args.lr_step_gamma)
+    else:
+        sched = None
 
     wandb_run = None
     if args.use_wandb:
