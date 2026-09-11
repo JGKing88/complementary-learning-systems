@@ -300,3 +300,6 @@ Enumerated final, held-out region×region: **mean 0.27°, median 0.20°,
 100% within 30°**; train 0.245°; `same` 0.239°; env-side gap 0.03°.
 The schedule turns the mid-run pick into a stable final and improves on
 it (0.38 → 0.27).
+
+**l4h512 step, seed 1 (22527731):** heldout rr **0.28° / median 0.21°**,
+stable. Seeds agree to 0.01°.
