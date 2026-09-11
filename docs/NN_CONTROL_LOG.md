@@ -544,3 +544,39 @@ first-steps refinement, no collapse, no episode lasts past ~25 steps.
 episode-local history, not a map.** The GRU refines within an episode
 from the last few observations and forgets at every reset. It does not
 estimate the local frame of a new region and keep it.
+
+**B1x `rec` FINAL (22599733):** identical to `full` at every checkpoint.
+R1 heldout_out 44.9°; R2 by episode 53–65° flat, slope −0.25°/ep;
+by-step 43 → 31 → 35 → 77 → 97. `prev_action` contributes nothing.
+
+**B1x `dist` FINAL (22599734), MLP 5×768 on rollout data:** R1 train
+0.6°, heldout_in 0.6°, **heldout_out 22.5° ± 12** (region×region mean
+24°, **median 6°**, 74% < 30%). Trajectory 35 → 34 → 28 → 26 → 22.5
+over 2000 updates, still falling. R2 outside flat at 70–76° (sampled;
+the MLP's log_std head is uncertain there and sampling scatters it —
+the §5.2 effect in the other direction). R2 inside 6° flat from
+episode 0: no drop, because no memory.
+
+**B1x complete — three arms, one seed:**
+
+| arm | R1 heldout_out | R2 by episode | slope |
+|---|---|---|---|
+| A1x ref (MLP, i.i.d.) | 44° | — | — |
+| dist (MLP, rollouts) | **22.5°** | flat 70–76 | 0 |
+| full (GRU + pa) | 44.5° | flat 55–65 | −0.24 |
+| rec (GRU) | 44.9° | flat 53–65 | −0.25 |
+
+Findings: (1) no arm builds a map across episodes — every slope is
+zero; the GRUs' one-episode dip is episode-local refinement that
+collapses on long episodes. (2) The rollout data distribution halves the
+MLP's out-of-corner error with the same architecture, 44 → 22.5, most
+outside pairs near-solved and a quarter not. (3) The 1-layer GRU is a
+worse function approximator than the 5-layer MLP on the same data and
+does not earn it back through memory. P12 falsified for `full`;
+confirmed for `dist` in the static-map sense. Written to the plan's §0.
+3 runs, ~1.6 GPU-h. B's grid arm on the corner: done.
+
+**Open, not run:** a deeper GRU (the arms were 1×512 against the MLP's
+5×768 — not matched); longer BPTT windows; and whether `dist`'s 22.5°
+keeps falling with more updates. All three are follow-ups, not part of
+the question asked.

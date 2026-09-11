@@ -1,10 +1,63 @@
 # Goal-conditioned NN control: can a plain network navigate from encoded states?
 
-Status: **A0, A1, A1x done, 2026-09-11.** Everything in §5 except the
-ray-axis encoders (§5.4) and B's additions (§5.8) is built and tested;
-pre-flight C1–C8 and A0's C13 pass. Branch
+Status: **A0, A1, A1x, A2, B1x done, 2026-09-11.** Everything in §5
+except the ray-axis encoders (§5.4, unnecessary after A2) is built and
+tested; pre-flight C1–C8 and A0's C13 pass. Branch
 `worktree-nn-generalization-control`. The run-by-run record is
 `NN_CONTROL_LOG.md`.
+
+### B1x result — history does not build a map; the rollout data does help the map
+
+Three arms trained on the 400 × 400 corner, scored outside it
+(`heldout_out`, 16 envs). Readout 1 is the static table at `h = 0`;
+readout 2 is direction quality by episode over 20-episode lifetimes,
+sampled.
+
+| arm | trunk | data | R1 static | R2 by episode | slope |
+|---|---|---|---|---|---|
+| A1x (reference) | MLP 5×768 | i.i.d. pairs | **44°** | — | — |
+| B-dist | MLP 5×768 | rollouts | **22.5°** (median 6°, 74% < 30°) | 70–76°, flat | 0 |
+| B-full | GRU 1×512 + prev_action | rollouts | 44.5° | 55–65°, flat | −0.24°/ep |
+| B-rec | GRU 1×512 | rollouts | 44.9° | 53–65°, flat | −0.25°/ep |
+
+**No arm accumulates a map of a new region across episodes.** Every
+by-episode slope is zero. What the GRUs do is *episode-local*: the
+by-step marginal goes 46° → 31° in the first two steps of an episode
+(the last few `(Δgbook, action)` pairs refine the estimate), holds for
+~5 steps, then drifts — and on the episodes that run long, collapses to
+110° at step 40, an agent that has lost its heading and points away.
+That is the middle row of §4.4's three shapes, and it forgets at every
+reset. P12's "full rising" is falsified. `prev_action` contributes
+nothing: `rec` equals `full` at every checkpoint.
+
+**The rollout data distribution halves the MLP's out-of-corner error**:
+44° → 22.5° with the same 5×768 trunk on the same corner, and still
+falling at 2000 updates. That is P12's `dist` branch, but for the static
+map rather than for memory. On-path pairs are short-range and
+concentrated near goals; that distribution teaches a map that
+extrapolates further than uniform i.i.d. pairs do. The per-env spread
+(±12°) and the mean/median gap (22.5 vs 6) say it is uneven: most
+outside envs are near-solved, a quarter are not. And the 1-layer GRU is
+a weaker function approximator than the 5-layer MLP on the same data —
+44° vs 22.5° — so the recurrent arms lose on the map and do not earn it
+back through memory.
+
+What this leaves standing: the attractor's local frame is not something
+a recurrent network reconstructs in-context from a few steps in a new
+region, at least not a 1-layer GRU under 64-step BPTT in 2000 updates.
+The memoryless MLP's extrapolation is bounded by the stretch of the
+cycle it saw, and is improved but not fixed by training on trajectories.
+
+### A2 result — regular mode generalizes to unseen barcodes
+
+`[omni(p), omni(g)]` on the standard scattered world; the test is
+`wall = held_out` (the corner is a no-op here — scaffold position never
+enters the input). Held-out region × region: l5h768 **5.65° / 5.35°**
+(two seeds; median 4.1°, 99.4% within 30°), l4h512 6.3°, discrete
+**0.991**. Train 4.3–4.7°. NN line 38°. P3 (near-random on new walls) is
+falsified; P11 stands. The memoryless MLP learns observation → direction
+for a barcode it never saw, with no ray-axis architecture. A3 (encoders)
+is unnecessary.
 
 ### A1x result — the corner reverses A1's reading
 
@@ -991,7 +1044,9 @@ re-confirms this on the actual envs of every run.
   rising over episodes on `heldout_out`; `rec` between. The magnitude of
   `full`'s rise is the open number — from 44° toward the ~0.3° the
   attractor's local frame would give, and how far it gets in 20 episodes
-  is the finding.
+  is the finding. *(Falsified for `full`: flat, slope −0.24°/ep. Confirmed
+  for `dist` in a different sense: its static map halves the error,
+  44° → 22.5°, from the rollout distribution alone. See §0.)*
 
 ### 6.5 What would change the conclusion
 
