@@ -226,3 +226,17 @@ Reading:
 
 **A1b submitted** (22526922–24): l4h512 × 2 seeds and l5h768, at 8000
 updates (4×), eval every 250, 3 h limit.
+
+**15th run: l3 h512 tanh — 12.3° heldout rr**, 10× worse than relu at
+the same size. ReLU throughout. A1 wave complete.
+
+**Best A1 run so far, l4h512 s0, same-vs-heldout probe:**
+
+| cell | train | same | heldout |
+|---|---|---|---|
+| train×train | 0.69 | 0.67 | 0.85 |
+| region×region | 0.76 | 0.75 | 0.84 |
+
+`same` = train (as it must); env-side gap 0.15°. Held-out region×region:
+median **0.63°**, **100% of pairs within 30°**, per-env std 0.06°. There
+are no failure cases; the mean is a uniformly small error.
