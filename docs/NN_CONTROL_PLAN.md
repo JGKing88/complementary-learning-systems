@@ -1,11 +1,46 @@
 # Goal-conditioned NN control: can a plain network navigate from encoded states?
 
-Status: **A0 and A1 done, 2026-09-10.** Everything in §5 except the ray-axis
-encoders (§5.4) and B's additions (§5.8) is built and tested; pre-flight
-C1–C8 and A0's C13 pass. Branch `worktree-nn-generalization-control`. The
-run-by-run record is `NN_CONTROL_LOG.md`.
+Status: **A0, A1, A1x done, 2026-09-11.** Everything in §5 except the
+ray-axis encoders (§5.4) and B's additions (§5.8) is built and tested;
+pre-flight C1–C8 and A0's C13 pass. Branch
+`worktree-nn-generalization-control`. The run-by-run record is
+`NN_CONTROL_LOG.md`.
 
-### A1 result — grid mode generalizes
+### A1x result — the corner reverses A1's reading
+
+Train on a 400 × 400 corner of the scaffold (64 envs, 23% of one axis),
+test outside it. Same config as A1's best. Held-out region × region, two
+seeds:
+
+| env set | seed 0 | seed 1 |
+|---|---|---|
+| `heldout_in` — new walls, **inside** the corner | 0.21° | 0.30° |
+| `heldout_out` — new walls, **outside** the corner | **44.5°** | **44.0°** |
+
+Same weights, same cells, same wall novelty. The only thing that differs
+is where on the scaffold the env sits — and outside the corner the
+network is halfway to random (median 30°, 55% of pairs within 30°, per-env
+std ±19°: some outside envs fine, some near-random). The OUT error fell
+58 → 44° over 8000 updates and is not converging.
+
+**So the A1 network did not learn the phase-difference function.** It
+learned something that works within the corner's stretch of the
+Chinese-remainder cycle and does not transfer. A1's scattered
+`place = held_out` passed because scattered training covers the cycle
+and held-out envs interleave with training envs in phase space — the
+network interpolates. That is a real capability, but it is not the
+translation-equivariant displacement map the attractor hand-builds, and
+the corner is the test that separates the two. P10 is falsified.
+
+What stands from A1: a memoryless MLP on `[gbook(p), gbook(g)]` reaches
+0.23° on cells, goals and scaffold positions it never saw, *when
+training samples the whole cycle*. What does not stand: the sentence
+"learned phase geometry, full stop". The honest statement is that it
+learned the map on the part of the cycle it was shown, with enough
+smoothness to fill in gaps between training envs but not to extrapolate
+to an unseen stretch. K = 160 pending.
+
+### A1 result — grid mode generalizes across a covered cycle
 
 A memoryless MLP given `[gbook(p), gbook(g)]` emits the direction to the
 goal at **0.23° mean / 0.17° median angular error on held-out
@@ -34,14 +69,12 @@ constant lr every run destabilises at ~6000 updates (three for three),
 while cosine-from-the-start hurts because the models are still
 descending. tanh is 10× worse than relu; weight decay does nothing.
 
-Two things this changes downstream. P2 was withdrawn on the grounds that
-the code is not translation-invariant; it is not (C7: mean cos −0.03),
-and the network learned the phase geometry anyway, so the *reasoning* was
-wrong and the *prediction* would have been right. And B's grid-mode arm
-has nothing to add: A is at the ceiling in every cell (§4.5). B is worth
-running only in regular mode, and only if A2 fails there.
-
-Next: **A2** (regular mode). Not started.
+*(Written before A1x. The paragraph that followed here said the network
+"learned the phase geometry anyway" and that B's grid arm had nothing to
+add. Both are withdrawn: see A1x above. The grid-mode question is open
+again on the corner, and B's grid arm — a recurrent net that could
+estimate the local frame from `(Δgbook, action)` in a new region — is
+now the natural next test there, alongside A2.)*
 
 Revision 2 replaced the single rollout-based design of revision 1 with two
 experiments that answer two different claims, and pared the primary one down

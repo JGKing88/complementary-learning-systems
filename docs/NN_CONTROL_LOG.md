@@ -373,3 +373,34 @@ of one axis) and K=160 with 12 envs (9%).
 **A1x submitted** (22588476 / 79 / 81 / 83): A1's best config (l5h768,
 8k, step at 5600), K=400 × 2 seeds and K=160 × 2 seeds, 16 `heldout_out`
 envs each.
+
+**A1x K=400 — P10 falsified.** Both seeds, u=8000, held-out region×region:
+
+| | seed 0 | seed 1 |
+|---|---|---|
+| train | 0.16 | 0.18 |
+| `heldout_in` (new walls, inside corner) | **0.21** | **0.30** |
+| `heldout_out` (outside corner) | **44.5** | **44.0** |
+
+Same weights, same cells, same wall novelty — the only difference between
+`heldout_in` and `heldout_out` is *where on the scaffold the env sits*.
+Inside the corner the network is at A1's level; outside it is halfway to
+random (median 29.8°, 55% of pairs within 30°, per-env std ±19° — some
+outside envs are fine, some are near-random). The OUT curve fell 58 → 44°
+over 8000 updates and is not converging.
+
+**The network did not learn the phase-difference function.** It learned
+something that works within the corner's stretch of the CRT cycle and
+does not transfer. A1's scattered `place = held_out` passed because
+scattered training covers the cycle; held-out envs interleave with
+training envs in phase space and the network interpolates between them.
+That is the "interpolates across the scaffold" reading, not "learned the
+function". The per-env variance outside is the fingerprint: envs whose
+phase triples happen to resemble the corner's do well.
+
+This reverses the A1 conclusion as I wrote it in the plan's §0. What A1
+established is that a memoryless MLP generalizes to unseen cells and
+unseen *combinations* when training covers the cycle — not that it
+learned the translation-equivariant displacement map the attractor
+hand-builds. The corner is the test that separates the two, and it was
+not in the original plan. K=160 pending; it will be worse.
