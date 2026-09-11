@@ -267,3 +267,10 @@ submitted**: l4h512, 8k updates, step at 5600, seeds 0 and 1
 checkpoint can be enumerated after the fact; `eval_all`/`jsonable`
 moved to `training/goal_pairs_setup.py` so the two CLIs share them
 without one importing the other.
+
+**A1b seed 1 (22526923) reproduces both halves.** 0.34° at u=6000, then
+a much sharper blow-up at u=6250 (loss 0.40, error 40°), recovering to
+2.1° by 8000. Best by rule: u=5500, 0.345° tt / 0.334° rr. The
+instability is reproducible and seed-independent in timing (~6000
+updates) — Adam at a sharp minimum with a fixed lr, a single overshoot.
+A1c's step at 5600 lands just before it.
