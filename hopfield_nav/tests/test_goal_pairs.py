@@ -279,3 +279,73 @@ def test_regressor_learns_xy_quickly(world):
     x = torch.from_numpy(pair_inputs(t, acfg, p, g))
     sc = score_pairs(m.predict_direction(x).detach().numpy(), p, g, SIZE, "continuous")
     assert sc["metric"] < 15.0, sc
+
+
+# ---------------------------------------------------------------------------
+# Experiment B: per-row goals in the vec env and the collector
+# ---------------------------------------------------------------------------
+
+def test_vec_goals_default_is_scalar_goal(world):
+    from hopfield_nav.world.vec_env import make_vec
+    env = world["train"].envs[0]
+    vec = make_vec(env, 5, "discrete")
+    assert vec._goals.shape == (5, 2) and (vec._goals == np.asarray(env._goal)).all()
+    # No pool: a reset keeps every row's goal.
+    vec.reset_indices(np.array([1, 3]))
+    assert (vec._goals == np.asarray(env._goal)).all()
+
+
+def test_vec_goal_pool_redraws_on_reset(world):
+    from hopfield_nav.world.env import at_goal
+    from hopfield_nav.world.vec_env import make_vec
+    env, cells = world["train"].envs[0], world["cells"]
+    vec = make_vec(env, 16, "discrete")
+    vec.set_goal_pool(cells.goal_train)
+    vec.reset_all()
+    pool = set(map(tuple, vec._goal_pool.tolist()))
+    for b in range(16):
+        assert tuple(vec._goals[b]) in pool
+        assert tuple(vec._pos[b]) != tuple(vec._goals[b])
+    before = vec._goals.copy()
+    vec.reset_indices(np.array([2, 5]))
+    # Rows not reset keep their goal; reset rows draw from the pool.
+    keep = np.ones(16, bool); keep[[2, 5]] = False
+    assert (vec._goals[keep] == before[keep]).all()
+    assert all(tuple(vec._goals[b]) in pool for b in (2, 5))
+    # at_goal is row-wise on _goals.
+    vec.set_positions(vec._goals.copy())
+    assert at_goal(vec).all()
+
+
+def test_collector_follows_per_row_goals(world):
+    from hopfield_nav.rollout.rnn import collect_rollout_rnn
+    from hopfield_nav.world.vec_env import make_vec
+    env, off, sgb, cells = (world["train"].envs[0], world["train"].offsets[0],
+                            world["sgb"], world["cells"])
+    cfg = RNNAgentConfig(rnn_cell="gru", hidden_size=8, movement_mode="continuous",
+                         input_sensory=False, input_grid_state=True,
+                         input_goal_grid_state=True, input_prev_action=True)
+    agent = RNNAgent(cfg, compute_rnn_input_dim(cfg, OBS, world["vh"].Ng))
+    vec = make_vec(env, 6, "continuous")
+    vec.set_goal_pool(cells.goal_train)
+    vec.reset_all()
+    g0 = vec._goals.copy()
+    # Place every row ON its goal so the first step reaches and resets it.
+    vec.set_positions(g0.astype(np.float64))
+    # Two steps: t=0 is the at-goal step (reset after it), t=1 reads the new
+    # goal. Stopping there means no row can reach again and be redrawn twice.
+    r = collect_rollout_rnn(vec, agent, cfg, 2, "cpu", sgb=sgb, env_offset=off,
+                            carry_across_episodes=True, episode_max_steps=50)
+    assert (r.move_label_mask[:, 0] == 0).all()
+    assert (r.episodes_completed >= 1).all()
+    g1 = vec._goals.copy()
+    assert (g1 != g0).any(axis=1).sum() >= 4, "most rows should have a new goal"
+    from hopfield_nav.rollout.rnn import grid_state_vec
+    D_gs = world["vh"].Ng
+    # Layout: prev_action(2) | grid_state(Ng) | goal_grid_state(Ng).
+    lo = 2 + D_gs
+    chan = r.obs[:, 1, lo:lo + D_gs].numpy()
+    # Rows that did not reach again at t=1 still hold g1; compare those.
+    still = ~(r.goal_reached[:, 1].numpy().astype(bool))
+    assert still.sum() >= 3
+    assert np.allclose(chan[still], grid_state_vec(g1[still], off, sgb), atol=1e-6)

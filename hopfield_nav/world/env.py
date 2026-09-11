@@ -193,14 +193,19 @@ def at_goal(env):
         pos = env._continuous_pos
     else:                                   # GridEnv / VecEnv
         pos = env._pos
-    return _at_goal_l2(pos, env._goal, env.goal_radius)
+    # A vec env carries per-row goals in `_goals`, (B, 2); by default every
+    # row holds the scalar `_goal`, so this is the same check it always was.
+    goal = getattr(env, "_goals", None)
+    if goal is None:
+        goal = env._goal
+    return _at_goal_l2(pos, goal, env.goal_radius)
 
 
 def _at_goal_l2(pos, goal, radius: float = 0.5):
     """L2 ball predicate on raw positions.
 
     pos:    (2,) or (B, 2) — int or float
-    goal:   (gx, gy)
+    goal:   (gx, gy), or (B, 2) for per-row goals (pos must then be (B, 2))
     radius: L2 distance threshold; inclusive (distance == radius counts).
     Returns: Python bool for (2,) input; ndarray[bool] (B,) for (B, 2).
     """
@@ -208,11 +213,20 @@ def _at_goal_l2(pos, goal, radius: float = 0.5):
     goal_arr = np.asarray(goal)
     r2 = float(radius) * float(radius)
     if pos_arr.ndim == 1:
+        if goal_arr.ndim != 1:
+            raise ValueError("per-row goals need (B, 2) positions")
         dx = float(pos_arr[0]) - float(goal_arr[0])
         dy = float(pos_arr[1]) - float(goal_arr[1])
         return bool(dx * dx + dy * dy <= r2)
     if pos_arr.ndim == 2:
-        d2 = (pos_arr[:, 0] - goal_arr[0]) ** 2 + (pos_arr[:, 1] - goal_arr[1]) ** 2
+        if goal_arr.ndim == 2:
+            # Row-wise. `goal_arr[0]` on a (B, 2) array is the first ROW, so
+            # this branch is needed -- it does not broadcast by accident.
+            if goal_arr.shape[0] != pos_arr.shape[0]:
+                raise ValueError(f"goals {goal_arr.shape} vs positions {pos_arr.shape}")
+            d2 = ((pos_arr - goal_arr) ** 2).sum(axis=1)
+        else:
+            d2 = (pos_arr[:, 0] - goal_arr[0]) ** 2 + (pos_arr[:, 1] - goal_arr[1]) ** 2
         return d2 <= r2
     raise ValueError(f"pos must be (2,) or (B, 2), got shape {pos_arr.shape}")
 

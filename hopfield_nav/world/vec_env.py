@@ -56,6 +56,12 @@ class VecEnv:
         self._codebook = base_env._codebook  # shared
         self._wall_code = base_env._wall_code  # shared; for off-cardinal casts
         self._goal = base_env._goal
+        # Per-row goals, (B, 2). Every row holds `_goal` until `set_goals` or
+        # a goal pool changes it, so a run that never touches these is
+        # bit-for-bit what it was. `_goal` itself stays the scalar tuple the
+        # five existing readers expect.
+        self._goals = np.tile(np.asarray(base_env._goal, dtype=np.int64), (batch_size, 1))
+        self._goal_pool: np.ndarray | None = None     # (K, 2) cells to redraw from
         self._obs_size = base_env._observation_size
         self.time_penalty = base_env.time_penalty
         self.goals_active = getattr(base_env, "goals_active", True)
@@ -81,10 +87,38 @@ class VecEnv:
     # Reset
     # ------------------------------------------------------------------
 
+    def _redraw_goals(self, indices) -> None:
+        """With a goal pool set, give each of `indices` a fresh goal from it."""
+        if self._goal_pool is None:
+            return
+        pick = self._rng.randint(len(self._goal_pool), size=len(indices))
+        self._goals[np.asarray(indices)] = self._goal_pool[pick]
+
+    def set_goal_pool(self, cells) -> None:
+        """Cells a reset row draws its next goal from; None turns it off.
+
+        Experiment B's rule (plan sec 4.3): on goal-reach a row gets a fresh
+        start AND a fresh goal, with its hidden state kept. The pool is what
+        makes the goal fresh; `reset_indices` is where it is applied.
+        """
+        self._goal_pool = (None if cells is None
+                           else np.asarray(sorted(cells), dtype=np.int64).reshape(-1, 2))
+
+    def set_goals(self, goals, indices=None) -> None:
+        """Place caller-chosen goals on some or all rows."""
+        g = np.asarray(goals, dtype=np.int64).reshape(-1, 2)
+        if indices is None:
+            if g.shape[0] != self.B:
+                raise ValueError(f"expected {self.B} goals, got {g.shape[0]}")
+            self._goals[:] = g
+        else:
+            self._goals[np.asarray(indices)] = g
+
     def reset_all(self) -> None:
-        """Random start positions for all episodes (all != goal)."""
-        gx, gy = self._goal
+        """Random start positions for all episodes (each != its own goal)."""
+        self._redraw_goals(np.arange(self.B))
         for b in range(self.B):
+            gx, gy = self._goals[b]
             while True:
                 x = self._rng.randint(0, self.size)
                 y = self._rng.randint(0, self.size)
@@ -94,9 +128,10 @@ class VecEnv:
             self._heading_rad[b] = 0.0
 
     def reset_indices(self, indices: np.ndarray) -> None:
-        """Reset specific episodes to random positions (goal stays fixed)."""
-        gx, gy = self._goal
+        """Reset specific episodes to random positions (goal redrawn if a pool is set)."""
+        self._redraw_goals(indices)
         for b in indices:
+            gx, gy = self._goals[b]
             while True:
                 x = self._rng.randint(0, self.size)
                 y = self._rng.randint(0, self.size)
@@ -234,9 +269,9 @@ class VecEnv:
         """Greedy best action indices toward goal for each episode."""
         if indices is None:
             indices = np.arange(self.B)
-        gx, gy = self._goal
         actions = np.zeros(len(indices), dtype=np.int32)
         for j, b in enumerate(indices):
+            gx, gy = self._goals[b]
             best_dist = float('inf')
             best_a = 0
             for a_idx, (dx, dy) in enumerate(CARDINAL_ACTIONS):
@@ -271,6 +306,8 @@ class ContinuousVecEnv:
         self._codebook = base_env._codebook
         self._wall_code = base_env._wall_code  # shared; for off-cardinal casts
         self._goal = base_env._goal
+        self._goals = np.tile(np.asarray(base_env._goal, dtype=np.int64), (batch_size, 1))
+        self._goal_pool: np.ndarray | None = None
         self._obs_size = base_env._observation_size
         self.time_penalty = base_env.time_penalty
         self.goals_active = getattr(base_env, "goals_active", True)
@@ -310,9 +347,14 @@ class ContinuousVecEnv:
     # Reset
     # ------------------------------------------------------------------
 
+    _redraw_goals = VecEnv._redraw_goals
+    set_goal_pool = VecEnv.set_goal_pool
+    set_goals = VecEnv.set_goals
+
     def reset_all(self) -> None:
-        gx, gy = self._goal
+        self._redraw_goals(np.arange(self.B))
         for b in range(self.B):
+            gx, gy = self._goals[b]
             while True:
                 x = self._rng.randint(0, self.size)
                 y = self._rng.randint(0, self.size)
@@ -323,8 +365,9 @@ class ContinuousVecEnv:
         self._update_snapped()
 
     def reset_indices(self, indices: np.ndarray) -> None:
-        gx, gy = self._goal
+        self._redraw_goals(indices)
         for b in indices:
+            gx, gy = self._goals[b]
             while True:
                 x = self._rng.randint(0, self.size)
                 y = self._rng.randint(0, self.size)

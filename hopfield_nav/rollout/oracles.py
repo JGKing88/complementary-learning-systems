@@ -36,8 +36,10 @@ def bfs_action_batch_discrete(
     """
     B = positions.shape[0]
     out = np.zeros(B, dtype=np.int32)
-    gx, gy = int(goal[0]), int(goal[1])
+    g = np.asarray(goal)
+    per_row = g.ndim == 2          # (B, 2): each row its own goal
     for b in range(B):
+        gx, gy = (int(g[b, 0]), int(g[b, 1])) if per_row else (int(g[0]), int(g[1]))
         cx, cy = int(positions[b, 0]), int(positions[b, 1])
         if (cx, cy) == (gx, gy):
             out[b] = 0
@@ -69,8 +71,10 @@ def bfs_action_batch_continuous(
     """
     B = positions.shape[0]
     out = np.zeros((B, 2), dtype=np.float32)
-    gx, gy = float(goal[0]), float(goal[1])
+    g = np.asarray(goal)
+    per_row = g.ndim == 2          # (B, 2): each row its own goal
     for b in range(B):
+        gx, gy = (float(g[b, 0]), float(g[b, 1])) if per_row else (float(g[0]), float(g[1]))
         dx = gx - float(positions[b, 0])
         dy = gy - float(positions[b, 1])
         n = float(np.sqrt(dx * dx + dy * dy))

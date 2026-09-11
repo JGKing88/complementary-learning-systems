@@ -200,11 +200,13 @@ def goal_channel_vec(
     boundary, separately from whether it can discover one.
     """
     B = positions.shape[0]
+    g = np.asarray(goal, dtype=np.float32)
+    if g.ndim == 1:
+        g = np.tile(g, (B, 1))          # scalar goal -> every row
     if mode == "abs":
-        out = np.tile(np.asarray(goal, dtype=np.float32) / max(size, 1), (B, 1))
+        out = g / max(size, 1)
     elif mode == "rel":
-        out = (np.asarray(goal, dtype=np.float32)[None, :]
-               - positions.astype(np.float32)) / max(size, 1)
+        out = (g - positions.astype(np.float32)) / max(size, 1)
     else:
         raise ValueError(f"unknown goal_channel mode {mode!r}; use 'abs' or 'rel'")
     if visible is not None:
@@ -321,7 +323,11 @@ def collect_rollout_rnn(
     # has to be present on every step or the input width does not match the
     # trunk. Zero reward is also the truthful value -- nothing has happened yet.
     prev_reward_np: np.ndarray = np.zeros(B, dtype=np.float32)
-    goal = (int(vec._goal[0]), int(vec._goal[1]))
+    # Per-row goals, (B, 2). Under the default every row holds the env's one
+    # goal and this is `(vec._goal,) * B`; with a goal pool set on the vec
+    # (plan sec 4.3) a row's goal changes when it is reset, so the teacher
+    # and the goal channels below read this array fresh every step.
+    goals = vec._goals
 
     # Per-env "done" flag. Once an env's pre-step position is the goal, the
     # navigation episode ends: that env is frozen for the rest of the rollout
@@ -329,17 +335,29 @@ def collect_rollout_rnn(
     # env are masked out of the BC loss.
     done = np.zeros(B, dtype=bool)
 
+    cfg_ = agent.cfg
+    want_sensory = getattr(cfg_, "input_sensory", True)
+    sensory_mode = getattr(cfg_, "sensory_mode", "ego")
+    want_goal_gs = getattr(cfg_, "input_goal_grid_state", False)
+    goal_sens_mode = getattr(cfg_, "goal_sensory", "none")
+    want_xy = getattr(cfg_, "input_xy_state", False)
+
     for t in range(steps):
-        sensory = vec.obs_batch().astype(np.float32)             # (B, obs_size)
         positions = vec.positions()                              # (B, 2) int
+        if not want_sensory:
+            sensory = None
+        elif sensory_mode == "omni":
+            sensory = sensory_vec(vec, positions, "omni")        # (B, 4*obs)
+        else:
+            sensory = vec.obs_batch().astype(np.float32)         # (B, obs_size)
 
         at_goal_mask = at_goal(vec)
 
-        # Oracle teacher action.
+        # Oracle teacher action, per row.
         if movement_mode == "discrete":
-            teacher_np = bfs_action_batch_discrete(positions, goal, vec.size, vec._rng)
+            teacher_np = bfs_action_batch_discrete(positions, goals, vec.size, vec._rng)
         else:
-            teacher_np = bfs_action_batch_continuous(positions, goal, vec._rng)
+            teacher_np = bfs_action_batch_continuous(positions, goals, vec._rng)
 
         # Build RNN input and step the agent.
         prev_act_ch = (
@@ -351,6 +369,13 @@ def collect_rollout_rnn(
             if (agent.cfg.input_grid_state and sgb is not None
                 and env_offset is not None) else None
         )
+        goal_grid_state = (
+            grid_state_vec(goals, env_offset, sgb)
+            if (want_goal_gs and sgb is not None and env_offset is not None) else None
+        )
+        goal_sensory = (goal_sensory_vec(vec, goals, goal_sens_mode)
+                        if goal_sens_mode != "none" else None)
+        xy_state = xy_vec(positions, vec.size) if want_xy else None
         goal_vec = None
         if getattr(agent.cfg, "goal_channel", "none") != "none":
             # `goal_visible_episodes >= 0` hides the oracle after the first N
@@ -362,10 +387,12 @@ def collect_rollout_rnn(
             vis = (ep_index < agent.cfg.goal_visible_episodes
                    if getattr(agent.cfg, "goal_visible_episodes", -1) >= 0
                    else None)
-            goal_vec = goal_channel_vec(positions, goal, vec.size,
+            goal_vec = goal_channel_vec(positions, goals, vec.size,
                                         agent.cfg.goal_channel, visible=vis)
         x = build_rnn_input(sensory, prev_act_ch, prev_reward_np, grid_state,
-                             agent.cfg, device, goal_vec=goal_vec)
+                             agent.cfg, device, goal_vec=goal_vec,
+                             xy_state=xy_state, goal_grid_state=goal_grid_state,
+                             goal_sensory=goal_sensory)
         out = agent.act(x, h, deterministic=deterministic)
         h = out["h_next"]
         student_action = out["move_action"].cpu().numpy()
