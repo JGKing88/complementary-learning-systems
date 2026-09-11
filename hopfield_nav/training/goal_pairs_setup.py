@@ -50,7 +50,7 @@ class EnvSet:
         return len(self.envs)
 
 
-def build_env_sets(cfg: RNNTrainConfig, rng, *, n_same: int):
+def build_env_sets(cfg: RNNTrainConfig, rng, *, n_same: int, keep_field: bool = False):
     """Train, held-out (`base_val`) and `same` env sets, plus split, field, sgb.
 
     `same` is a fixed subset of the ACTUAL training envs -- same wall, same
@@ -67,4 +67,11 @@ def build_env_sets(cfg: RNNTrainConfig, rng, *, n_same: int):
     heldout = EnvSet("heldout", val_envs, [s.offset for s in split.base_val], sgb)
     k = min(n_same, len(envs))
     same = EnvSet("same", envs[:k], offsets[:k], sgb)
+    # `sgb` is 434 x 1716 x 1716 float32 (~5 GB) and every cell this run will
+    # ever read is now in the EnvTensors. Drop the field and the smoothed
+    # book so the process does not hold 10 GB it never touches again; the
+    # pre-flight rebuilds them itself for the checks that need the scaffold.
+    if not keep_field:
+        vh.gbook = None
+        sgb = None
     return train, heldout, same, split, vh, sgb

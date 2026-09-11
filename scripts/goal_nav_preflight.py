@@ -62,7 +62,7 @@ def main() -> None:
         region_val_frac=args.region_val_frac, lambdas=list(args.lambdas),
         fwhm_ratio=args.fwhm_ratio, seed=args.seed)
     train, heldout, same, split, vh, sgb = build_env_sets(
-        cfg, np.random.RandomState(args.seed), n_same=args.n_same_envs)
+        cfg, np.random.RandomState(args.seed), n_same=args.n_same_envs, keep_field=True)
     cells = split.cell_sets()
     S = args.size
     print(f"world: {len(train)} train / {len(heldout)} heldout / {len(same)} same; "

@@ -62,7 +62,7 @@ source scripts/cls_env.sh
 WANDB_FLAG=--use_wandb
 [[ "$USE_WANDB" == "0" ]] && WANDB_FLAG=--no-use_wandb
 
-python -m hopfield_nav.train_goal_pairs \
+PYTHONUNBUFFERED=1 python -m hopfield_nav.train_goal_pairs \
   --mode "$MODE" --movement_mode "$MOVEMENT" \
   --hidden_size "$HIDDEN" --num_layers "$LAYERS" --nonlinearity "$NONLIN" --dropout "$DROPOUT" \
   --n_envs "$N_ENVS" --n_val_envs "$N_VAL_ENVS" --n_same_envs "$N_SAME_ENVS" \
