@@ -384,6 +384,18 @@ periodic static eval with the nearest-neighbour line (§2.5) → checkpoints,
 
 ## 4. Experiment B — recurrent, rollouts
 
+### 4.0 Script
+
+`hopfield_nav/train_goal_lifetimes.py`, its own composer on the same
+`build_env_sets` as A (so it takes the corner and every holdout A takes),
+with `--arm full|rec|dist`. Not a mode of `train_rnn.py` after all: that
+file's mixed mode redraws environments through the legacy builder, which
+cannot place them in a declared region, and the corner world is the point
+of B1x. Rollouts via `collect_rollout_rnn` with a goal pool on the vec env
+(§4.3), state carried across chunks, `bc_rnn_update` unchanged. Readout 1
+through `RNNAgentAsPairModel` + `evaluate_pairs`; readout 2 in
+`evaluation/lifetime.py`. Launcher `run_goal_lifetimes.sh`.
+
 ### 4.1 What it tests
 
 Whether a network **given time in the environment** can reach goals in
@@ -876,12 +888,31 @@ phase stretch). Continuous only; 2 seeds each = 4 runs. *Read*:
 A1's scattered result was interpolation. *Gate*: every `heldout_out` box
 clears the rect by ≥ margin, checked at launch.
 
-**A2 — regular mode, linear.** mlp-4 × both × 2 seeds = 4 runs. Informative
-either way. If held-out walls **pass**, A3 is unnecessary and that is the
+**A2 — regular mode, linear.** On the standard scattered world only: the
+input is `[omni(p), omni(g)]`, a ray-cast of the wall, and scaffold
+position never enters it, so the corner is a no-op in regular mode. The
+holdout that matters is `wall`, which every run has. A1's best config
+(l5h768 step) × 2 seeds continuous, l4h512 step continuous and discrete
+= 4 runs. Informative either way. If held-out walls **pass**, A3 is unnecessary and that is the
 stronger result.
 
 **A3 — regular, encoders.** Only if A2 failed on held-out walls. `xcorr`
 first, then `conv`. 4 runs.
+
+**B1x — recurrent lifetimes on the corner world, grid mode.** The test
+A1x opened: can a network *given time in a new region* estimate the local
+frame from `(Δgbook, action)` and navigate where the memoryless one
+cannot? Three arms (§4.2) trained on `rect:0,0,400,400` with 16
+`heldout_out` envs: `full` (GRU 1×512 + prev_action), `rec` (GRU, no
+prev_action), `dist` (MLP 5×768 — A1's architecture — on rollout data).
+2000 updates, 64 lifetimes × 8 envs per update, 64-step chunks, 32
+chunks per lifetime, goal resampled on reach. *Read* on `heldout_out`:
+readout 1 (h = 0) should sit near A1x's 44° for every arm — nothing has
+been seen yet; readout 2 by episode is the question. `dist` flat and
+`full` rising → in-context local-frame estimation, the memory result.
+`dist` rising → the rollout data did it, not memory. Everything flat →
+history does not help here. *Gate* C16: readout 2's (episode 0, step 0)
+must agree with readout 1 on the same env set.
 
 **B1 / B2 — grid / regular.** The three arms of §4.2 × both actions = 6 runs
 per mode, 1 seed. Run after A1/A2 have tables, read only in cells A failed.
@@ -946,7 +977,21 @@ re-confirms this on the actual envs of every run.
   of the cycle contains every per-module bump position many times over.
   K = 120: worse, by an amount that says how much of the cycle the
   phase-difference map needs to be pinned down — a guess is 2–5× A1's
-  error, still far under threshold.
+  error, still far under threshold. *(Falsified: 44° outside at K = 400,
+  57–71° at K = 160. See §0.)*
+- **P11** A2: held-out walls pass at a few degrees, not the near-random
+  P3 predicted. `omni` at 120 rays is 480 numbers per cell with zero
+  twins and a nearest-neighbour line around 40° — locally smoother than
+  gbook — and the MLP that learned a corner of the CRT cycle to 0.2°
+  has more than enough capacity for a barcode. If this holds, P3's
+  "cannot express a cross-correlation" was true and irrelevant: the
+  network does not need the warp, it learns the map directly.
+- **P12** B1x: `dist` ≈ A1x on readout 1 and flat on readout 2 (the
+  rollout distribution is not the fix); `full` at ≈ 44° on episode 0 and
+  rising over episodes on `heldout_out`; `rec` between. The magnitude of
+  `full`'s rise is the open number — from 44° toward the ~0.3° the
+  attractor's local frame would give, and how far it gets in 20 episodes
+  is the finding.
 
 ### 6.5 What would change the conclusion
 
