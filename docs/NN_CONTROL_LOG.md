@@ -481,3 +481,20 @@ barcode it has never seen, from 480 ±1 ray values per cell, with no
 ray-axis architecture. Still descending at 8000 (7.3 → 5.4 over the
 second half); a longer run would close more of the gap. Other three A2
 runs and all of B1x queued behind the QOS cap.
+
+**A2 complete.** Held-out walls, region×region:
+
+| run | train | heldout | median | frac<30 |
+|---|---|---|---|---|
+| l5h768 cont s0 | 4.3 | **5.65** | 4.3 | 0.994 |
+| l5h768 cont s1 | 4.7 | **5.35** | 4.1 | 0.995 |
+| l4h512 cont s0 | 2.8 (tt) | 6.3 | — | — |
+| l4h512 disc s0 | — | **0.991** | — | — |
+
+Regular mode generalizes to never-seen barcodes at ~5.5° / 0.99. Same
+shape as A1 on the scattered world: every held-out cell equal, a small
+train→heldout gap (3°), depth helps. The wall holdout is not the corner
+holdout — there is no "corner" of barcode space — so this is the
+regular-mode result, full stop: the memoryless MLP learns
+observation→direction for a barcode it never saw, with no ray-axis
+architecture. A3 (encoders) is unnecessary. 4 runs, ~1.3 GPU-h.
