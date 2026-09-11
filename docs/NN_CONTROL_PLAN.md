@@ -186,6 +186,27 @@ Region cells are the same *local* cells in every training env; in grid mode
 their global codes differ per env, so the held-out set is scattered across
 the scaffold, and H-env `place` is the contiguous one on top.
 
+**H-env has two strengths of `place` holdout**, and they are not the same
+test. *Scattered* (`place = held_out`, what A1 ran): training envs are
+placed at random over the whole 1716² scaffold and held-out envs at other
+random positions. Every module's bump position `(X mod λ, Y mod λ)` is
+seen at every value; only the cross-module *combinations* are new, and
+they are new at random. *Corner* (`place_region = rect:0,0,K,K` for
+training, `place = ood` for the test set): every training env sits in
+one K × K corner and every test env outside it, `OutsideRect` with the
+margin. Two things change. Inside a contiguous corner the phase triples
+`(X mod 11, X mod 12, X mod 13)` occupy one stretch of the CRT cycle and
+are correlated with each other in a way that does not hold elsewhere —
+a network can learn to *use* that correlation as a shortcut and then fail
+on the rest of the scaffold, where it is broken. Scattered placement
+never offers the shortcut; a corner does, and then tests whether it was
+taken. And the unseen configurations are systematically far, not
+randomly far. Corner is the stronger claim: not "interpolates across the
+scaffold" but "learned the phase-difference function, full stop". Both
+are reported; `base_val` inside the corner (new walls, same phase
+stretch) is kept as a third env set so the phase effect is separated
+from the wall effect.
+
 B honours H-goal — its goals are drawn from `goal_cells_train`, so it never
 sees `enc(g)` of a held-out goal cell as an input, the same guarantee A has.
 B cannot honour H-region: its trajectories walk through region cells, so it
@@ -297,6 +318,7 @@ turns into behaviour. Existing env stepping, nothing new.
 |---|---|---|---|---|
 | **A0** | xy | mlp-2 | — | both |
 | **A1** | grid | mlp-2, mlp-4 | — | both |
+| **A1x** | grid, **corner** placement (§2.4) | A1's best | — | continuous |
 | **A2** | regular | mlp-4 | linear | both |
 | **A3** | regular | mlp-4 | conv, xcorr | both |
 | **A4** | the closest-but-failing arm | ×2 width, ×1.5 depth, `obs_size = 240`, 256 envs | | |
@@ -802,6 +824,20 @@ have passed first. *Kill*: anything else; fix before A1.
 **A1 — grid mode.** The primary question. mlp-2, mlp-4 × both actions × 2
 seeds = 8 runs. *Kill*: if mlp-2 generalizes by §6.3, mlp-4 seed 2 is dropped.
 
+**A1x — grid mode, corner placement.** A1's best config, with training
+envs confined to `rect:0,0,K,K` and the test set minted at `place = ood`.
+Two corners: **K = 400** with 64 envs (23% of one axis, so ~23% of each
+module's CRT cycle seen; isolates the correlation-shortcut question at
+A1's data volume) and **K = 120** with as many envs as fit at margin 20
+(~6; ~7% of the cycle; asks how little of the cycle suffices). Three env
+sets per run: train, `heldout_in` (base_val, inside the corner — new
+walls, same phase stretch), `heldout_out` (outside — new walls, new
+phase stretch). Continuous only; 2 seeds each = 4 runs. *Read*:
+`heldout_out` ≈ `heldout_in` ≈ train → the function was learned;
+`heldout_out` ≫ `heldout_in` → a corner-specific shortcut was taken, and
+A1's scattered result was interpolation. *Gate*: every `heldout_out` box
+clears the rect by ≥ margin, checked at launch.
+
 **A2 — regular mode, linear.** mlp-4 × both × 2 seeds = 4 runs. Informative
 either way. If held-out walls **pass**, A3 is unnecessary and that is the
 stronger result.
@@ -866,7 +902,13 @@ re-confirms this on the actual envs of every run.
 - **P8** Discrete and continuous rank arms identically; discrete stricter.
 - **P9** Region × region is always the worst cell; the start row is worse
   than the goal column — the goal is a constant to condition on, the start
-  has to be decoded.
+  has to be decoded. *(A1: falsified — every cell equal.)*
+- **P10** A1x, K = 400: `heldout_out` within 0.1° of `heldout_in`. The A1
+  network already handles cross-module combinations it never saw, and 23%
+  of the cycle contains every per-module bump position many times over.
+  K = 120: worse, by an amount that says how much of the cycle the
+  phase-difference map needs to be pinned down — a guess is 2–5× A1's
+  error, still far under threshold.
 
 ### 6.5 What would change the conclusion
 
