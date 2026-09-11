@@ -189,3 +189,40 @@ mode is solved outright.
 
 Full test suite: green (one failure fixed — the test fixture had to keep
 the scaffold field after `build_env_sets` started dropping it).
+
+## 2026-09-10 — A1 wave results (14 of 15; tanh pending)
+
+All runs: grid mode, 64 train / 16 heldout / 8 same envs, 2000 updates,
+lr 1e-3 AdamW, relu unless noted. Heldout cells are enumerated. Every
+continuous run's best checkpoint is its **last** — still descending.
+
+**Discrete: solved outright.** mlp-2 and mlp-4, both seeds: **1.000 on
+all six held-out cells** (NN line 0.53; random 0.48).
+
+**Continuous, heldout region×region (the hardest cell):**
+
+| config | params | ho rr | ho tt | tr tt |
+|---|---|---|---|---|
+| l2 h256 s0 / s1 | 290k | 3.01 / 3.12 | 3.02 / 3.21 | 2.72 / 2.88 |
+| l2 h512 | 710k | 2.26 | 2.22 | 1.88 |
+| l2 h1024 | 1.9M | 1.78 | 1.77 | 1.26 |
+| l4 h256 s0 / s1 | 420k | 1.53 / 1.58 | 1.52 / 1.60 | 1.31 / 1.36 |
+| l3 h512 | 970k | 1.26 | 1.23 | 1.01 |
+| l3 h512 + wd 1e-4 | 970k | 1.24 | 1.23 | 0.98 |
+| l3 h512 + cosine | 970k | 1.86 | 1.85 | 1.46 |
+| **l4 h512** | 1.5M | **0.84** | **0.85** | 0.69 |
+
+Reading:
+- **Depth beats width per parameter**: l4h256 (420k) < l2h1024 (1.9M).
+  They stack: l4h512 is the best at 0.84°.
+- **Every held-out cell equals every other** to within 0.05°: start
+  side, goal side, region — no cell is harder. Train→heldout gap is
+  0.2–0.5° and shrinks with capacity.
+- **Weight decay does nothing**; there is no overfitting to regularise.
+- **Cosine hurts** (1.86 vs 1.26): it anneals the LR to zero while the
+  model is still descending. Same message as "best = last checkpoint":
+  the remaining lever is **updates**, not architecture.
+- Seed spread ≈ 0.1°.
+
+**A1b submitted** (22526922–24): l4h512 × 2 seeds and l5h768, at 8000
+updates (4×), eval every 250, 3 h limit.
