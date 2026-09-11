@@ -1,6 +1,6 @@
 # Goal-conditioned NN control: can a plain network navigate from encoded states?
 
-Status: **plan, revision 4**, 2026-09-10. Nothing below §5 is built. Branch
+Status: **plan, revision 5**, 2026-09-10. Nothing below §5 is built. Branch
 `worktree-nn-generalization-control`; the config edits in §5.1 marked *done*
 are the only code so far.
 
@@ -15,7 +15,9 @@ translation-invariant (§2.2), so P2 is withdrawn and a nearest-neighbour
 decoder joins every table as the lookup line; A is a deterministic
 regression with no distribution head (§3.1); B honours H-goal; the B-dist
 comparison is made on H-env envs only; readout 2 samples rather than
-taking the mean; B's lifetime is pinned.
+taking the mean; B's lifetime is pinned. Revision 5 adds §7, the sanity
+gates — pre-flight, per-eval, and before-B-is-read — and retires the
+regular-mode aliasing hedge: `omni` has zero exact twins, measured.
 
 ---
 
@@ -680,8 +682,9 @@ B's sequential mode exists already.
 1. §5.1 rest, §5.3, §5.2 — trunk and layout; unit-testable with a synthetic
    batch.
 2. §5.5 — split; unit-testable.
-3. §5.6, §5.7 — sampler, evaluator, A's script. Run **A0** as the integration
-   test.
+3. §5.6, §5.7 — sampler, evaluator, A's script, and
+   `scripts/goal_nav_preflight.py` (§7.1). Run the pre-flight on the
+   configured world, then **A0** as the integration test.
 4. **A1, A2** run. While they run:
 5. §5.8 — per-row goals first (unit-tested: default is bit-identical), then
    B's additions. Run **B** arms.
@@ -736,7 +739,7 @@ smallest change that gives every episode its own goal.
 | `size` | 20 | project working size |
 | `lambdas` | 11, 12, 13 (`Npos = 1716`, `Ng = 434`) | the working scaffold |
 | `fwhm_ratio` | 0.25 | `RNNTrainConfig` default |
-| `observation_size` | **120** (240 in A4) | a codebook gather either way, so it costs nothing; ~9% exact single-view twins at 60 vs ~27% at 12, lower at 120 and lower still under omni. Displacement precision rises with rays (~4 lags per unit `dx` at 60, ~15 at 240) |
+| `observation_size` | **120** (240 in A4) | a codebook gather either way, so it costs nothing; single-view twin rate is 5.6% at 120, and `omni` has **none** (measured, 20 envs). Displacement precision rises with rays (~4 lags per unit `dx` at 60, ~15 at 240) |
 | `wall_resolution` | **1** | raising it dissolves the shift structure regular mode depends on (pure-shift correlation ~0.85 at 1, ~0.38 at 8) |
 | envs | 64 train; H-env 16 (`wall = held_out, place = held_out`); `same` 8 | `place_margin = 20`; 88 footprints of 20² is 1.2% of the scaffold |
 | cells | `goal_val_frac = 0.2`, `region_val_frac = 0.1` | 40 region ⊂ 80 never-goal; 320 train-goal, 360 start cells |
@@ -753,8 +756,8 @@ smallest change that gives every episode its own goal.
 
 **A0 — the pipeline.** xy, mlp-2, both actions, 300 updates, CPU fine. Must
 hit ≤ 5° / ≥ 0.98 on **every** cell of every env set — coordinates carry no
-env identity, so any gap is a bug. `same` ≈ H-env. *Kill*: anything else;
-fix before A1.
+env identity, so any gap is a bug. `same` ≈ H-env. Pre-flight C1–C8 must
+have passed first. *Kill*: anything else; fix before A1.
 
 **A1 — grid mode.** The primary question. mlp-2, mlp-4 × both actions × 2
 seeds = 8 runs. *Kill*: if mlp-2 generalizes by §6.3, mlp-4 seed 2 is dropped.
@@ -788,9 +791,11 @@ Applied to the A table; B is read against it by §4.5.
   ≫ H-env.
 - **Cannot represent**: A0 fails → pipeline bug, stop.
 
-For regular mode report the measured twin rate of the actual envs
-(`positional_identifiability.py`) beside the table, so the ceiling is known
-and a 0.92 is read as a pass.
+Regular mode has **no aliasing ceiling**: measured over 20 envs at 120 rays,
+the exact-twin rate of `omni` is 0.000 (single North view: 0.056; `omni` at
+60 rays: also 0.000). Every cell is identifiable from its omni observation,
+so a regular-mode shortfall is the network's, not the code's. Check C2
+re-confirms this on the actual envs of every run.
 
 ### 6.4 Predictions
 
@@ -838,10 +843,70 @@ and a 0.92 is read as a pass.
 
 ---
 
-## 7. Risks and open points
+## 7. Sanity checks — gates, not tests
 
-- **Aliasing floor in regular mode.** Report the ceiling; never raise
-  `wall_resolution`. If the floor binds, 240 rays (A4).
+§5.10 tests that the code does what it says. This section checks that the
+**experiment** does what it says: that the assumptions the reading rests on
+actually hold on the runs as configured. Each is a script or a logged
+number with a pass condition, and each has a stage at which it runs. A
+failed gate stops the wave it guards; nothing downstream is read until it
+passes. Two of the plan's revisions were forced by exactly this kind of
+check (the grid code's non-invariance, the omni twin rate) being run late
+rather than early.
+
+### 7.1 Pre-flight — once, before A0, on the configured world
+
+`scripts/goal_nav_preflight.py --world <run_dir>/world.json`. Reads the
+split, builds the envs, prints every number below, exits non-zero on any
+failure.
+
+| id | check | pass condition | what it protects |
+|---|---|---|---|
+| **C1** | Split invariants: `region ⊂ goal_cells_val`, `start_train ∩ region = ∅`, `goal_train ∩ goal_cells_val = ∅`, every H-env spec's `wall` seed and `place` box disjoint from every train spec's, `same` specs ⊂ train specs | all hold | the holdouts are what the doc says they are |
+| **C2** | Exact-twin rate of `omni` and of `gbook`, per env, for the actual envs of the run | `omni`: 0 in every env; `gbook`: 0 (Npos ≫ S²) | no identifiability floor; a failure is the network's |
+| **C3** | Teacher agreement: `unit_vector` and `optimal_set` from the plan's own code against a brute-force recomputation on 10k random pairs; optimal set has size 1 iff `p`, `g` share an axis | exact | the labels are right |
+| **C4** | Uniform-random baseline on enumerated pairs: ≈ 90° continuous, ≈ 0.37 discrete | within 1° / 0.01 | the reference lines are where the doc says |
+| **C5** | Nearest-neighbour decoder on **xy** mode scores 0° / 1.0 on every quadrant, and on **gbook** scores 0° / 1.0 on `train × train` (decoding a training cell to itself is exact) | exact | the lookup line is implemented correctly before it is used to read A1 |
+| **C6** | `pair_inputs(p, g)` is bit-identical to `build_rnn_input` with `prev_action = 0`, `h` unused, on 1k random `(p, g)` in each mode | exact | the A/B bridge — readout 1 for B is A's evaluator |
+| **C7** | Grid-code non-invariance, restated as a number the reader can see: cosine between `gbook(p) − gbook(p + d)` at 100 random base-point pairs, `d = (5, 0)` | mean well below 1 (it was −0.33 at one pair) | the P2 withdrawal is recorded against the actual scaffold, not one probe |
+| **C8** | Scaffold footprint: min pairwise Chebyshev gap between every train / H-env / `same` box, on the torus | ≥ `place_margin` | `place = held_out` means what it says |
+
+### 7.2 During A — every eval, logged, with a printed flag on breach
+
+| id | check | pass condition | what it protects |
+|---|---|---|---|
+| **C9** | Train-env `train × train` loss and metric move together: correlation of the two across evals | > 0.9 after update 50 | the loss is the metric (§3.3); if they diverge, one is wrong |
+| **C10** | `same` vs train-env table at `train × train` | equal within seed spread | `same` is drawn from the train pool and must be indistinguishable from it — anything else is a split bug |
+| **C11** | The three reference lines (teacher, random, NN) are recomputed each eval on the same enumerated pairs the model is scored on, and printed in the same row | teacher = 0° / 1.0, random unchanged from C4 | a metric bug shows up as the *teacher* failing, which is unambiguous |
+| **C12** | Exposure counter: distinct `(env, p, g)` triples seen so far, as a fraction of the train quadrant | reported; the "epochs" claim of §3.3 is checked against it | the memorisation reading depends on knowing what was seen |
+| **C13** | A0's own gate (§6.2): ≤ 5° / ≥ 0.98 on every quadrant of every env set | must pass before A1 | pipeline correctness, end to end |
+
+### 7.3 Before B is read — once per B run, on its final checkpoint
+
+| id | check | pass condition | what it protects |
+|---|---|---|---|
+| **C14** | Per-row goals under the default (`resample_goal_on_reach` off) reproduce a recorded rollout bit-for-bit | exact (golden fixture, §5.10) | the Hopfield stack is untouched |
+| **C15** | With it on: over one training rollout, every goal-reach row's next goal is in `goal_cells_train` and `≠` its new start; the count of goal changes equals `episodes_completed` | exact | the fresh-goal rule is applied every time and only then |
+| **C16** | Readout 2's `(episode 0, step 0)` cell equals readout 1 on the same env, same checkpoint, same quadrant | within Monte-Carlo error of the sampled action (readout 2 samples; readout 1 scores the mean direction — compare readout 1 to the *mean* of readout 2's sampled directions at that cell) | the two evaluators agree on the one state they share |
+| **C17** | Lifetime horizon: training `steps_per_rollout × resample_envs_every` ≥ eval `n_episodes × max_steps`, and the median episodes-per-training-lifetime (from `episodes_completed`) ≥ 20 | both | the by-episode curve's tail is in-distribution |
+| **C18** | Sampled-vs-mean gap: readout 2 run once with `deterministic=True` on one H-env env | reported; if the sampled score is > 1.5× the mean score, the §5.2 defect is live and the mean number must not be quoted anywhere | the evaluation defect that inverted §5.2's first conclusion |
+| **C19** | Truncation: the by-episode curve's rise, if any, is not confined to the first `steps_per_rollout / median_episode_length` episodes | reported | the 64-step BPTT window is not what is being measured |
+
+### 7.4 Before any comparison is written down
+
+| id | check | pass condition |
+|---|---|---|
+| **C20** | Every number in a comparison was produced on the **same env set, same cell set, same enumeration** — the table code carries a `key = (env_set_id, quadrant, n_pairs)` and refuses to subtract two entries whose keys differ | enforced in code |
+| **C21** | Checkpoint selection (§3.4) used the H-env `train × train` cell and nothing else; the selected update index is logged next to every reported number | logged |
+| **C22** | Seed spread is reported for every headline number, from ≥ 2 seeds; a single-seed number is labelled as such | in the table |
+
+---
+
+## 8. Risks and open points
+
+- **Aliasing in regular mode** — retired. `omni` has zero exact twins
+  (§6.3); the floor the earlier revisions hedged against does not exist.
+  `wall_resolution` stays at 1 for the shift-structure reason alone.
 - **Region is local, H-env place is global.** Both reported; not averaged.
 - **B's truncation.** Credit is assigned within one 64-step chunk. If the
   episode-in-lifetime curve rises only for the first chunk's worth of
