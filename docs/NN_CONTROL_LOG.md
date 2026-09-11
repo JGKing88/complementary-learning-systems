@@ -514,3 +514,33 @@ leaning on carried state more than on the static map. Outside the
 corner: flat and near-random across 20 episodes. No in-context
 local-frame estimation, at this point in training. Early; static is
 still moving.
+
+**B1x `full` FINAL (u=2000).** Readout 1, enumerated, h=0, every cell:
+train 22–23°, heldout_in 24°, **heldout_out 44–47°**. The recurrent
+net's static map outside the corner is the same 44° A1x's memoryless
+MLP hit. Readout 2, by episode (20 episodes):
+
+| | e0 | e1 | e2 | e5 | e10 | e19 | slope |
+|---|---|---|---|---|---|---|---|
+| heldout_in | 11.3 | 9.1 | 8.4 | 8.4 | 8.5 | 8.5 | 0 |
+| heldout_out | 59.4 | 59.9 | 61.0 | 64.1 | 59.1 | 54.9 | **−0.24°/ep** |
+
+Flat outside. No map accumulates across episodes. But the by-**step**
+marginal is where the mechanism shows:
+
+| step within episode | 0 | 1 | 2 | 5 | 10 | 20 | 40 | 59 |
+|---|---|---|---|---|---|---|---|---|
+| heldout_in | 27 | 9 | 7 | 7 | 8 | 18 | — | — |
+| heldout_out | 46 | **31** | 31 | 34 | 43 | 76 | **110** | 113 |
+
+Outside the corner the net is *better than its static map* for the
+first ~5 steps of an episode (46° → 31°: it uses the `prev_action` and
+the `Δgbook` it just saw), then drifts, and on the episodes that run
+long it is worse than random — 110° at step 40 is an agent that has
+lost its heading and is systematically pointing away. Inside, the same
+first-steps refinement, no collapse, no episode lasts past ~25 steps.
+
+**This is the middle row of the plan's three-shape table (§4.4):
+episode-local history, not a map.** The GRU refines within an episode
+from the last few observations and forgets at every reset. It does not
+estimate the local frame of a new region and keep it.
