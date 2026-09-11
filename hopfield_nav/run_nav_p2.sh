@@ -1525,7 +1525,13 @@ case "$VARIANT" in
   # Requires REPO to carry the generator pass-through in navigate_job.sh
   # (guarded below) -- an older tree would drop every one of these knobs and
   # train a legacy-placement model under an OOD name.
-  d0_base|d1_kanneal|d1_persr|d1_ms3|ood_place|ood_place_rp)
+  #   ood_place_rp10 the cadence knob: re-draw every 10 updates (2.4k
+  #                 footprints). Defined 2026-09-11 when ood_place_rp's u100
+  #                 eval read nav 0.08 (from 0.92) with mean_r 0.19 -> 0.05 --
+  #                 which turned out to be one bad update, back to 0.20 by
+  #                 u110 -- and NOT launched. Here so the cadence can be
+  #                 bracketed without re-deriving the block if it is needed.
+  d0_base|d1_kanneal|d1_persr|d1_ms3|ood_place|ood_place_rp|ood_place_rp10)
     ENCODER=/orcd/pool/003/jackking/cls_runs/sweeps/w52_attract_fwhm/001_att0.5_seed=43/encoder_final.pt
     ENCODER_GAIN=100
     HOPFIELD_BETA=100
@@ -1562,11 +1568,14 @@ case "$VARIANT" in
       d1_kanneal) LOG_KAPPA_MAX_END=5.0; LOG_KAPPA_ANNEAL_UPDATES=400 ;;
       d1_persr)   PERSISTENCE_REALIZED=1 ;;
       d1_ms3)     INPUT_HOPFIELD_MULTISTEP="1 2 3" ;;
-      ood_place|ood_place_rp)
+      ood_place|ood_place_rp|ood_place_rp10)
         ENV_GENERATOR=1
         PLACE_REGION=${PLACE_REGION:-rect:0,0,858,1716}
         PLACE_MARGIN=${PLACE_MARGIN:-80}
-        if [ "$VARIANT" = ood_place_rp ]; then REFRESH_PLACE=${REFRESH_PLACE:-1}; fi
+        case "$VARIANT" in
+          ood_place_rp)   REFRESH_PLACE=${REFRESH_PLACE:-1} ;;
+          ood_place_rp10) REFRESH_PLACE=${REFRESH_PLACE:-10} ;;
+        esac
         ;;
     esac
     ;;
