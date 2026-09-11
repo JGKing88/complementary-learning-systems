@@ -171,8 +171,8 @@ start ∈ {train, region} × goal ∈ {train, goal-heldout, region} — 6 cells.
 
 Each cell: continuous → **mean angular error** (deg), median, fraction
 < 30°; discrete → **optimal-set accuracy**. Reference lines: teacher
-= 0° / 1.0; uniform random = 90° / ≈ 0.37 (the optimal set averages ~1.5 of
-4); and a **nearest-neighbour decoder** — decode `p` and `g` each to the
+= 0° / 1.0; uniform random = 90° / ≈ 0.48 (the optimal set is 2 actions for
+every off-axis pair and 1 for an aligned one, ~1.9 of 4 on average); and a **nearest-neighbour decoder** — decode `p` and `g` each to the
 nearest *training* cell by cosine on `enc(·)`, then emit `normalize(ĝ − p̂)`.
 That is the lookup-then-subtract strategy, with no learning. In every cell
 of the table it is the line a network must beat to have learned structure
@@ -705,8 +705,9 @@ B's sequential mode exists already.
 - `RNNAgentAsPairModel` on an `RNNAgent` with the `mlp` trunk gives the same
   direction as a `PairRegressor` with the same weights — the two model paths
   through `evaluate_pairs` agree.
-- Nearest-neighbour baseline scores 0° / 1.0 on xy mode (decoding is exact
-  there) and is strictly worse than the teacher elsewhere.
+- Nearest-neighbour baseline scores 0° / 1.0 on `train × train` in every
+  mode (decoding is exact there) and is strictly worse than the teacher on
+  held-out cells.
 - Optimal set: aligned → 1 action, off-axis → 2; random-policy accuracy
   ≈ 0.37 on enumeration.
 - Per-row goals: `_at_goal_l2` with `(B, 2)`; `VecEnv` with
@@ -865,8 +866,8 @@ failure.
 | **C1** | Split invariants: `region ⊂ goal_cells_val`, `start_train ∩ region = ∅`, `goal_train ∩ goal_cells_val = ∅`, every H-env spec's `wall` seed and `place` box disjoint from every train spec's, `same` specs ⊂ train specs | all hold | the holdouts are what the doc says they are |
 | **C2** | Exact-twin rate of `omni` and of `gbook`, per env, for the actual envs of the run | `omni`: 0 in every env; `gbook`: 0 (Npos ≫ S²) | no identifiability floor; a failure is the network's |
 | **C3** | Teacher agreement: `unit_vector` and `optimal_set` from the plan's own code against a brute-force recomputation on 10k random pairs; optimal set has size 1 iff `p`, `g` share an axis | exact | the labels are right |
-| **C4** | Uniform-random baseline on enumerated pairs: ≈ 90° continuous, ≈ 0.37 discrete | within 1° / 0.01 | the reference lines are where the doc says |
-| **C5** | Nearest-neighbour decoder on **xy** mode scores 0° / 1.0 on every quadrant, and on **gbook** scores 0° / 1.0 on `train × train` (decoding a training cell to itself is exact) | exact | the lookup line is implemented correctly before it is used to read A1 |
+| **C4** | Uniform-random baseline on enumerated pairs: ≈ 90° continuous, ≈ 0.48 discrete | within 2° / 0.02 | the reference lines are where the doc says |
+| **C5** | Nearest-neighbour decoder scores 0° / 1.0 on `train × train` in **every** mode (decoding a training cell to itself is exact), and on **xy** its held-out cells sit at ~5° / ~0.97 — the nearest training cell to a held-out coordinate is one cell away, so lookup is already nearly perfect there | exact on train × train; xy held-out within 2° of 5° | the lookup line is implemented correctly before it is used to read A1 — and its strength on xy is the calibration for how strong it will be wherever the encoding is locally smooth |
 | **C6** | `pair_inputs(p, g)` is bit-identical to `build_rnn_input` with `prev_action = 0`, `h` unused, on 1k random `(p, g)` in each mode | exact | the A/B bridge — readout 1 for B is A's evaluator |
 | **C7** | Grid-code non-invariance, restated as a number the reader can see: cosine between `gbook(p) − gbook(p + d)` at 100 random base-point pairs, `d = (5, 0)` | mean well below 1 (it was −0.33 at one pair) | the P2 withdrawal is recorded against the actual scaffold, not one probe |
 | **C8** | Scaffold footprint: min pairwise Chebyshev gap between every train / H-env / `same` box, on the torus | ≥ `place_margin` | `place = held_out` means what it says |

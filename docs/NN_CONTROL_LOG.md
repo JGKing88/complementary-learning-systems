@@ -48,3 +48,52 @@ partition it needs; `rnn_world` now passes `refresh_goal=True` whenever
 `region_val_frac > 0`. Configured world at size 20, 64 + 16 envs, margin
 20, `lambdas = [11, 12, 13]`: `start_train 360 / goal_train 320 /
 goal_heldout 40 / region 40`, `region ⊂ goal_cells_val` True. Build 4 s.
+
+**Evaluator (§5.6) smoke test on the configured world, 4 envs.** Teacher
+scores 0° / 1.0 in every mode; NN decoder 0° / 1.0 on train × train in
+every mode. Two plan numbers corrected from this:
+
+- *Random discrete baseline is 0.48, not 0.37.* Off-axis pairs have a
+  2-action optimal set and are the majority; mean set size is 1.9/4.
+- *The NN decoder is exact only on train × train.* On held-out cells it
+  decodes to the nearest **training** cell, which is a neighbour by
+  construction, so on xy it scores ~5° / ~0.97 there. That is correct — a
+  held-out cell is not in the dictionary — and it is the calibration for
+  the line: wherever the encoding is locally smooth, lookup-then-subtract
+  is already nearly perfect, and the model has to beat ~5°, not 90°. C5
+  rewritten accordingly.
+
+Enumerated train × train is 114,880 pairs per env; a 2048-pair table with
+all four reference lines takes 0.1–0.3 s on CPU.
+
+**Script, launcher, pre-flight (§5.7, §7.1).** `train_goal_pairs.py`
+(composer), `training/goal_pairs_setup.py` (modes + env sets, layer 6, so
+the pre-flight and the trainer share it without importing a CLI — rule 5),
+`run_goal_pairs.sh`, `scripts/goal_nav_preflight.py`. Smoke run on 4 envs:
+xy goes 83° → 6.5° in 30 updates, heldout tracks train exactly.
+
+**Pre-flight on the configured world: C1–C8 all PASS.**
+
+| gate | result |
+|---|---|
+| C1 | split invariants hold; heldout walls/boxes disjoint; same ⊂ train |
+| C2 | exact-twin rate omni **0.000**, gbook **0.000** (single-north 0.055) |
+| C3 | unit_vectors == bfs_continuous; bfs_discrete ∈ optimal_set; set size 1 iff aligned |
+| C4 | random 89.6° / 0.482 (expect 90 / 0.476) |
+| C5 | NN decoder exact on train×train in every mode; xy region×region 6.4° / 0.96 |
+| C6 | pair_inputs bit-identical to build_rnn_input, all three modes |
+| C7 | cos(Δgbook@p1, Δgbook@p2), same d=(5,0), 100 pairs: **mean −0.03**, range [−0.67, 0.36] |
+| C8 | min pairwise Chebyshev gap over 80 boxes = 27 ≥ margin 20 |
+
+C7 sharpens the non-invariance finding: over 100 random base-point pairs
+the code-difference for the same displacement is *uncorrelated* on
+average, not merely imperfect. The grid-mode network cannot learn one
+displacement operator; it has to learn the phase geometry.
+
+**Tests (§5.10).** `tests/test_goal_pairs.py`, 26 tests, all pass. Two
+tolerances loosened from 1e-3° to 0.1°: float32 `arccos` near 1 gives
+~0.02° of noise on an exact match. Layering test: `train_goal_pairs`
+registered at layer 7; green.
+
+**A0 launched** on CPU: xy mode, both action modes, 300 updates, the full
+64 / 16 / 8 world.
