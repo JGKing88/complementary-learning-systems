@@ -312,23 +312,68 @@ forward. Identical protocol, cell sets and env sets to A;
 `evaluation/goal_pairs.py` is imported, not reimplemented. This is what B can
 do with **no experience of the env** — its score on the attractor's own claim.
 
-**Readout 2 — eventual: direction quality vs. experience.** On H-env envs,
-run lifetimes exactly as in training (same chunk length, same lifetime
-length, goal resampled on reach), record the per-step score, and bin it two
-ways:
+**Readout 2 — eventual: direction quality vs. experience.** The procedure,
+exactly, because the reading depends on it. It is `evaluate_in_context`'s
+lifetime loop (`evaluation/incontext.py:67`, the §5.2 evaluator) with per-row
+goals and a per-step score.
 
-- **by step within episode** — does the direction improve as the agent moves
-  toward *this* goal? Episode-local information: the last few
-  `(Δenc, action)` pairs. Read out to the 60-step cap, not to 15.
-- **by episode within lifetime** — does episode 5 start better than episode
-  1? With a fresh goal every episode this is exactly *number of goals seen so
-  far in this env*, and there is nothing else it could be. **This is the
-  map-learning curve, and the one that decides B.**
+*Setup.* One H-env env. `n_lifetimes = 64` parallel rows via `make_vec`,
+each an independent lifetime — one sample of "meeting this env for the first
+time". Every row draws a start uniformly and a goal from `goal_cells_train`.
+`h = 0`, `prev_action = 0`. Weights frozen.
 
-Because the goal changes every episode there is no chunk-boundary artefact
-to bin around; the episode index is clean. Episode 0, step 0 of this curve
-should agree with readout 1 — it is the same state — and that agreement is a
-check on both.
+*One tick, per row:*
+
+1. Rows at goal or at `steps_in_ep ≥ 60` close their episode: `ep_idx += 1`,
+   `steps_in_ep = 0`, `reset_indices` → fresh start **and fresh goal**. `h`
+   untouched. (Existing logic; the only change is the goal redraw.)
+2. Build the input: `enc(p)`, `enc(g)` for *this row's* goal, `prev_action`
+   if the arm has it.
+3. `agent.act(x, h, deterministic=True)` → action `a`, `h_next`.
+4. **Score `a` against the teacher** — continuous: `angle(a, g − p)` in
+   degrees; discrete: `a ∈ optimal_set(p, g)` as 0/1. The label is computed,
+   used for the score, and discarded — it never touches the action.
+5. Record `(row, ep_idx, steps_in_ep, score)`, for live rows only.
+6. `step_batch(a)`; `steps_in_ep += 1`; `prev_action = a`.
+
+`n_episodes = 20` per lifetime; budget `20 × 61` ticks; rows that finish sit
+out and their `h` is not advanced. Repeat over every H-env env; report the
+mean and the per-env spread.
+
+*Aggregation.* Every score has an `(episode, step)` coordinate. Keep the full
+2-D table with per-cell counts (an empty bin reads as empty, not zero), and
+its two marginals:
+
+- **by episode** — `mean(score | ep_idx = k)`, `k = 0..19`. With a fresh
+  goal every episode this is exactly *goals seen so far in this env*, and
+  nothing else. **This is the map-learning curve, and the one that decides
+  B.** Pre-registered "rising": `mean(ep ≥ 5) − mean(ep 0)` beyond the seed
+  spread.
+- **by step** — `mean(score | steps_in_ep = t)`, `t = 0..59`. Read to the
+  cap, not to 15: an imperfect policy in a new env runs long.
+
+*Three shapes the 2-D table separates,* which the marginals alone would blur:
+
+| shape | meaning |
+|---|---|
+| flat in both axes | memoryless-equivalent; A's result stands |
+| rises with step, resets at each episode | **episode-local** — uses the last few `(Δenc, action)` pairs, forgets at teleport. Real history use, but not a map. The B-rec signature. |
+| rises with episode, flat-ish within | **map-learning** — knowledge of the env accumulates across goals |
+
+*Why it is valid.* The teacher scores only; the student acts on its own
+policy every step — off-teacher, unlike DAgger training. The score is dense
+(every step has one), so unlike the §5.2 evaluator's `memory_lift` it needs
+no conditioning on whether the previous episode succeeded. And **episode 0,
+step 0 is readout 1 by construction** — same state, same forward, same
+score — so that cell of the table must equal the static table's entry for the
+matching quadrant. If it does not, one of the two evaluators is wrong.
+
+*Code.* `evaluation/rnn.py::evaluate_lifetime_direction(env, agent,
+n_lifetimes, n_episodes, max_steps, device, *, sgb, env_offset, goal_pool,
+rng)`. ~40 lines on top of the existing 80: goal redraw in the reset, per-row
+goal in the input, score-and-record after `act`, and the live-row mask on
+both the score and `h` (the existing loop advances `h` for dead rows on a
+stale observation; harmless there, wrong here).
 
 **Readout 3 — behaviour.** Success rate and steps-to-goal over the same
 lifetimes (`evaluate_nav_all` machinery). Confirms that direction quality
