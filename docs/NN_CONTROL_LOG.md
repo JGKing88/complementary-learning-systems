@@ -280,3 +280,14 @@ A1c's step at 5600 lands just before it.
 Three for three on the ~6000-update instability. The bigger model
 reaches lower before it goes. A1c extended: l5h768 with the step decay,
 seeds 0 and 1 (22528824 / 22528827).
+
+**Enumerated u6000 checkpoint, l4h512 seed 0 (eval job 22527723):**
+
+| | train | goal_heldout | region |
+|---|---|---|---|
+| heldout, start=train | 0.4 | 0.4 | 0.4 |
+| heldout, start=region | 0.4 | 0.4 | **0.4** |
+
+Held-out region×region: **mean 0.38°, median 0.29°, 100% within 30°**,
+24,960 pairs, per-env std 0.0. Train region×region 0.36°; gap 0.02°.
+This is the current headline, pending A1c's stable finals.
