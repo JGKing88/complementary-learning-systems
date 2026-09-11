@@ -348,3 +348,28 @@ wall, ~8 GPU-h. Checkpoints under
 **Consequence for B.** A is at the ceiling in every grid-mode cell, so
 B's grid arm has nothing to add (§4.5). B is worth running only in
 regular mode, only if A2 fails there.
+
+## 2026-09-11 — A1x: corner placement
+
+Added to the plan as A1x (§2.4, §3.5, §6.2, P10). A1's `place = held_out`
+scatters training envs over the whole scaffold; every per-module bump
+position is seen and only cross-module combinations are new, at random.
+A **corner** confines every training env to `rect:0,0,K,K` and mints the
+test set outside it (`place = ood`, `OutsideRect` with the margin). Inside
+a contiguous corner the phase triples are correlated in a way that does
+not hold elsewhere, so a corner offers a shortcut that scattered
+placement does not — and then tests whether it was taken.
+
+Code: `--place_region` and `--n_ood_place` on the trainer; a fourth env
+set `heldout_out`; `base_val` renamed `heldout_in` (new walls, same phase
+stretch) so the phase effect is separated from the wall effect; a launch
+gate that every minted box clears the rect by ≥ margin on the torus.
+
+World check on a CPU node: K=400 holds 64+4 envs at margin 20 (train
+offsets ≤ 379; out-of-corner envs at e.g. (339, 977), (1191, 1624)).
+K=120 cannot hold 6+4; **K=160 holds 12+4**. So: K=400 with 64 envs (23%
+of one axis) and K=160 with 12 envs (9%).
+
+**A1x submitted** (22588476 / 79 / 81 / 83): A1's best config (l5h768,
+8k, step at 5600), K=400 × 2 seeds and K=160 × 2 seeds, 16 `heldout_out`
+envs each.
