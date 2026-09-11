@@ -498,3 +498,19 @@ holdout — there is no "corner" of barcode space — so this is the
 regular-mode result, full stop: the memoryless MLP learns
 observation→direction for a barcode it never saw, with no ray-axis
 architecture. A3 (encoders) is unnecessary. 4 runs, ~1.3 GPU-h.
+
+**B1x `full` (22599732), first lifetime eval at u=500.** eps/chunk 1.0
+→ 5.2 by u=200 as the policy learns to reach. Readout 1 (h=0): train
+48.8°, heldout_in 48.4°, heldout_out 75.5°. Readout 2, by episode:
+
+| | e0 | e1 | e2 | e4 | e9 | e19 |
+|---|---|---|---|---|---|---|
+| heldout_in | 17.5 | **10.7** | 10.1 | 9.9 | 10.0 | 10.0 |
+| heldout_out | 76.4 | 73.5 | 77.6 | 73.4 | 68.9 | 72.7 |
+
+Inside the corner the recurrent net uses history hard: a 7° drop after
+one episode, then flat — and readout 1 at 48° says that at u=500 it is
+leaning on carried state more than on the static map. Outside the
+corner: flat and near-random across 20 episodes. No in-context
+local-frame estimation, at this point in training. Early; static is
+still moving.
