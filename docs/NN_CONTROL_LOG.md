@@ -303,3 +303,7 @@ it (0.38 → 0.27).
 
 **l4h512 step, seed 1 (22527731):** heldout rr **0.28° / median 0.21°**,
 stable. Seeds agree to 0.01°.
+
+**l5h768 step, seed 0 (22528824):** stable, monotone; final held-out
+region×region **mean 0.23°, median 0.17°**, 100% within 30°. Train 0.19°,
+`same` 0.19°, env-side gap 0.04°. Best final.
