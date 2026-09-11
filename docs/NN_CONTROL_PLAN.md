@@ -1,6 +1,6 @@
 # Goal-conditioned NN control: can a plain network navigate from encoded states?
 
-Status: **plan, revision 3**, 2026-09-10. Nothing below §5 is built. Branch
+Status: **plan, revision 4**, 2026-09-10. Nothing below §5 is built. Branch
 `worktree-nn-generalization-control`; the config edits in §5.1 marked *done*
 are the only code so far.
 
@@ -10,7 +10,12 @@ to a supervised loop over sampled pairs. §1 says why. Revision 3 gives B a
 fresh goal on every goal-reach (per-row goals, §4.3), which makes B's data
 unit identical to A's and removes the goal-memorisation loophole outright;
 it also states the evaluation in units (§4.4) and adds the continual plot
-(§4.6).
+(§4.6). Revision 4 folds in a critique: the grid code is not
+translation-invariant (§2.2), so P2 is withdrawn and a nearest-neighbour
+decoder joins every table as the lookup line; A is a deterministic
+regression with no distribution head (§3.1); B honours H-goal; the B-dist
+comparison is made on H-env envs only; readout 2 samples rather than
+taking the mean; B's lifetime is pinned.
 
 ---
 
@@ -97,6 +102,18 @@ There is no reward channel: with the goal as an input, arrival is the only
 reward event and it carries nothing. `prev_action` is absent from A by
 construction (§3) and is a **factor** in B (§4).
 
+**What the grid code does and does not give away.** It is *not*
+translation-invariant: measured at `fwhm_ratio = 0.25`, the difference
+`gbook(p) − gbook(p + d)` for the same `d = 5` at two base points has cosine
+**−0.33**, and 0.73 only when the base points differ by a module period.
+So `(gbook(p), gbook(g)) → g − p` depends on the phase of `p` within each of
+the three modules, not just on `g − p`. The attractor sidesteps this with a
+hand-built local frame at every cell (`d_N = Φ[x, y+1] − Φ[x, y]`); a
+network has to learn the phase geometry well enough to apply it at phases
+it has not seen. Cosine also falls to ~0 by `d = 5` and then aliases
+(`d = 10` → 0.53), so a long-range pair carries phase, not a smooth distance
+signal. Both are the substance of the grid-mode test, not obstacles to it.
+
 `omni` rather than the single egocentric view, for `p` as well as `g`: it
 makes both encodings heading-free, so the task is symmetric and "which way
 was it facing" is not a hidden variable. The codebase already calls this
@@ -121,26 +138,51 @@ Three, orthogonal. Two are existing traits; the third is new.
 | holdout | mechanism | grid mode tests | regular mode tests | A | B |
 |---|---|---|---|---|---|
 | **H-env** — held-out environments | `make_val_set(levels={wall: held_out, place: held_out})` | a scaffold region whose grid codes were never seen (`place`) | a barcode never seen — the observation *generating rule*, not a table (`wall`) | ✓ | ✓ |
-| **H-goal** — cells never used as a goal | `goal_cells_train` / `goal_cells_val` (exists, `goal_val_frac`) | goal-input generalization within familiar envs | same | ✓ | — |
-| **H-region** — cells never a start **or** a goal | **new**: `region_cells ⊂ goal_cells_val` (`region_val_frac`) | scattered global codes never seen at all | observations never seen at all | ✓ | — |
+| **H-goal** — cells never used as a goal | `goal_cells_train` / `goal_cells_val` (exists, `goal_val_frac`) | goal-input generalization within familiar envs | same | ✓ | ✓ |
+| **H-region** — cells never a start **or** a goal | **new**: `region_cells ⊂ goal_cells_val` (`region_val_frac`) | a phase combination never seen at all | an observation never seen at all | ✓ | — |
 
 Region cells are the same *local* cells in every training env; in grid mode
 their global codes differ per env, so the held-out set is scattered across
-the scaffold, and H-env `place` is the contiguous one on top. B cannot honor
-cell-level holdouts (its trajectories pass through them), so H-goal and
-H-region belong to A alone.
+the scaffold, and H-env `place` is the contiguous one on top.
+
+B honours H-goal — its goals are drawn from `goal_cells_train`, so it never
+sees `enc(g)` of a held-out goal cell as an input, the same guarantee A has.
+B cannot honour H-region: its trajectories walk through region cells, so it
+sees their `enc(p)`. H-region is A's alone, and A and B share 4 of the 6
+table cells (the `start_train` row).
+
+**The region holdout differs in kind between modes**, and the two should not
+be compared as equals. In regular mode `omni(c)` for a region cell is a
+vector the net has never seen at all. In grid mode `gbook(c)` is a
+*combination of module phases* the net has never seen, but every individual
+phase was seen elsewhere (each module wraps every `λ` cells). So regular-mode
+region is "unseen input"; grid-mode region is "unseen combination of seen
+parts". The second is the more demanding kind of generalisation, and it is
+the one the attractor claims.
 
 ### 2.5 The table
 
-For every env set (train envs, H-env envs, and a `same`-level set as the
-memorisation probe), the **start × goal quadrant table**:
+For every env set (train envs, H-env envs, and a `same`-level set), the
+**start × goal quadrant table**:
 
 start ∈ {train, region} × goal ∈ {train, goal-heldout, region} — 6 cells.
 
 Each cell: continuous → **mean angular error** (deg), median, fraction
 < 30°; discrete → **optimal-set accuracy**. Reference lines: teacher
 = 0° / 1.0; uniform random = 90° / ≈ 0.37 (the optimal set averages ~1.5 of
-4). The table is the deliverable of both experiments.
+4); and a **nearest-neighbour decoder** — decode `p` and `g` each to the
+nearest *training* cell by cosine on `enc(·)`, then emit `normalize(ĝ − p̂)`.
+That is the lookup-then-subtract strategy, with no learning. In every cell
+of the table it is the line a network must beat to have learned structure
+rather than a table; equal to it on region cells means lookup. Ten lines,
+run once per env set. The table is the deliverable of both experiments.
+
+On the `same` set: it is drawn from the training env pool, and A trains on
+every train pair of every train env within a few epochs (§3.3), so for A it
+*is* the training data and cannot separate memorised from learned on the
+data side. Its role is the **env-side** probe — same cells, `same` vs
+H-env — for both experiments. For B, whose rollouts never cover every pair,
+it is a data-side probe as well.
 
 ---
 
@@ -148,11 +190,21 @@ Each cell: continuous → **mean angular error** (deg), median, fraction
 
 ### 3.1 Model
 
-`RNNAgent` with the `mlp` trunk (§5.3): `num_rnn_layers` hidden layers of
-`hidden_size`, the existing discrete / continuous heads. Input is the pair
-encoding from §2.2 and nothing else. There is no GRU arm: with i.i.d.
-samples there is nothing to recur over, and a GRU here is an MLP with extra
-parameters.
+A plain MLP: `num_rnn_layers` hidden layers of `hidden_size`, activation
+tanh | relu, and a linear output — 4 logits (discrete) or a 2-vector
+(continuous). Input is the pair encoding from §2.2 and nothing else.
+
+A is a **deterministic regression**, not a policy. The `Normal` head, its
+`log_std`, and `act()`'s sampling exist for policy gradient and DAgger,
+neither of which A does, so none of them is used: the continuous output is
+the direction itself, normalised, and there is no variance to fit. That
+keeps the loss and the metric the same function (§3.3), and removes the
+deterministic-vs-sampled ambiguity that bit §5.2. It shares the
+`FeedForwardCore` trunk and the input layout with `RNNAgent` (so readout 1
+can run B's weights through the same evaluator), but not the heads.
+
+There is no GRU arm: with i.i.d. samples there is nothing to recur over, and
+a GRU here is an MLP with extra parameters.
 
 ### 3.2 Data
 
@@ -169,10 +221,19 @@ along straight lines to goals.
 ### 3.3 Loss
 
 - discrete: cross-entropy against a **uniform distribution over the optimal
-  set** (soft target; never an arbitrary tie-break).
-- continuous: MSE between the head's mean and the unit vector. Cosine loss
-  would match the metric exactly but has a degenerate gradient at zero mean;
-  MSE reaches the same optimum.
+  set** (soft target; never an arbitrary tie-break). Metric: argmax in the
+  set.
+- continuous: `1 − cos(out / (‖out‖ + ε), u)` where `u` is the teacher's
+  unit vector. With no sampling there is no reason to keep a Gaussian, and
+  a normalised output makes the loss exactly the metric. `ε = 1e-6`; the
+  degenerate point `out = 0` is measure-zero and the network is initialised
+  away from it.
+
+Exposure: at 64 envs × 512 pairs per update, 2000 updates is 65M samples
+over a train quadrant of ~115k pairs per env × 64 envs ≈ 7.4M — about
+**9 epochs** of the training set, drawn with replacement. Stated because
+"2000 updates" and "9 epochs" are different descriptions of the same
+exposure and the memorisation reading depends on the second.
 
 ### 3.4 Evaluation
 
@@ -212,7 +273,8 @@ would have to learn, handed over, to separate *cannot compute it* from
 `hopfield_nav/train_goal_pairs.py`, its own composer. It builds an
 `RNNTrainConfig` so that `rnn_world`, `restore_arch_from_ckpt` and
 `write_rnn_world_spec` work unchanged, then: precompute per-env tensors →
-loop {sample, forward, loss, step} → periodic static eval → checkpoints,
+`PairRegressor` (§5.3) → loop {sample, forward, loss (§3.3), step} →
+periodic static eval with the nearest-neighbour line (§2.5) → checkpoints,
 `run.json`, `world.json`, wandb (`train_goal_pairs`). Nothing from
 `updates/` or `rollout/`: `bc_rnn_update` is built around
 `RNNRolloutBatch`, and A's loss is one line. Launcher `run_goal_pairs.sh`.
@@ -239,6 +301,11 @@ B-dist is the control that matters. If B-dist ≈ A on the table, any B-full
 gain over A is memory. If B-dist is already better than A, the gain was the
 data, not the history, and the "history helps" story is dead before B-full
 is read.
+
+**The B-dist vs A comparison is made on H-env envs only.** On training envs
+B's rollouts visit region cells and A's sampler does not, so a B-dist edge
+in a region cell there is the holdout, not the data distribution. On H-env
+envs the two have identical information and the comparison is clean.
 
 Both action modes; grid and regular. Regular uses `omni(p)` (§2.2) so the
 only difference from A is history.
@@ -329,7 +396,15 @@ time". Every row draws a start uniformly and a goal from `goal_cells_train`.
    untouched. (Existing logic; the only change is the goal redraw.)
 2. Build the input: `enc(p)`, `enc(g)` for *this row's* goal, `prev_action`
    if the arm has it.
-3. `agent.act(x, h, deterministic=True)` → action `a`, `h_next`.
+3. `agent.act(x, h, deterministic=False)` → action `a`, `h_next`.
+   **Sampled, not the mean.** BC fits the Gaussian's mean to the teacher's
+   conditional mean; in an env where the policy is uncertain where it is,
+   that mean collapses toward zero and the mean action scores a policy that
+   barely moves (§5.2 measured 2.2–4× gains from sampling on uncertain
+   arms). B in a new env is exactly the uncertain case. Readout 1 is a
+   function evaluation and stays deterministic; for B's Gaussian head that
+   means scoring the mean *direction*, which is well-defined even when the
+   mean's norm is small.
 4. **Score `a` against the teacher** — continuous: `angle(a, g − p)` in
    degrees; discrete: `a ∈ optimal_set(p, g)` as 0/1. The label is computed,
    used for the score, and discarded — it never touches the action.
@@ -487,11 +562,20 @@ because `sensory` is now optional and variable-width.
 
 `FeedForwardCore(nn.Module)`: `num_layers` hidden layers of `hidden_size`,
 activation from `rnn_nonlinearity` (tanh | relu), dropout between layers
-only. `forward(x, h) -> (features (B,T,H), zeros (L,B,H))`. It honours the
+only. It is both A's whole network (under `PairRegressor`, below) and the
+B-dist trunk (under `RNNAgent`).
+
+`forward(x, h) -> (features (B,T,H), zeros (L,B,H))`. It honours the
 four trunk contracts — `input_size`, `parameters()`, `(L,B,H)` state,
 T-step ≡ T single-steps (trivially) — so B-dist runs through the rollout and
 `bc_rnn_update` unchanged. `build_recurrent_core` dispatches on
 `cell == "mlp"`. **Docstring and `--rnn_cell` help done; class not yet.**
+
+`PairRegressor(nn.Module)` — `hopfield_nav/policy/pair_regressor.py` (new):
+`FeedForwardCore` plus one linear layer, `direction(x) -> (B, 2)` normalised
+or `logits(x) -> (B, 4)`. No distribution, no `act()`, no hidden state. A's
+model (§3.1). It exposes `predict_direction(x)` / `predict_logits(x)`, the
+one interface the static evaluator needs (§5.6).
 
 ### 5.4 Ray-axis encoders — `hopfield_nav/policy/sensory_encoder.py` (new)
 
@@ -528,9 +612,18 @@ of each current view with the same-heading goal view, appended. Built last
   bit-identical tensors for the same `(p, g)`.
 - `pair_targets(p, g, movement_mode)` — unit vectors, or the `(B, 4)` optimal
   set.
-- `evaluate_pairs(agent, tensors, cells, *, movement_mode, n_per_quadrant |
-  enumerate, device) -> dict` — the 6-cell table. `h = 0`,
-  `prev_action = 0`, which is what makes it valid for B.
+- `evaluate_pairs(model, tensors, cells, *, movement_mode, n_per_quadrant |
+  enumerate, device) -> dict` — the 6-cell table. `model` is anything with
+  `predict_direction(x)` / `predict_logits(x)`: `PairRegressor` has them
+  natively, and a thin `RNNAgentAsPairModel(agent)` adapter provides them
+  for B by running `agent.forward(x[:, None], h=None)` with
+  `prev_action = 0` and taking the mean direction / the logits. One
+  evaluator, two models, no branching inside it.
+- `nearest_neighbour_baseline(tensors, cells, movement_mode)` — the §2.5
+  reference line: decode each of `p`, `g` to the nearest `start_train` cell
+  by cosine on `enc(·)`, emit `normalize(ĝ − p̂)`, score like any model. It
+  satisfies the same `predict_*` interface so the table code does not know
+  it is not a network.
 
 Layer: `evaluation` (imports `policy`, `rollout`, `world`).
 
@@ -606,6 +699,11 @@ B's sequential mode exists already.
   `|starts| · |goals| − |starts ∩ goals|`.
 - `pair_inputs` equals `build_rnn_input` on the same `(p, g)` with
   `prev_action = 0` — the A/B bridge, pinned.
+- `RNNAgentAsPairModel` on an `RNNAgent` with the `mlp` trunk gives the same
+  direction as a `PairRegressor` with the same weights — the two model paths
+  through `evaluate_pairs` agree.
+- Nearest-neighbour baseline scores 0° / 1.0 on xy mode (decoding is exact
+  there) and is strictly worse than the teacher elsewhere.
 - Optimal set: aligned → 1 action, off-axis → 2; random-policy accuracy
   ≈ 0.37 on enumeration.
 - Per-row goals: `_at_goal_l2` with `(B, 2)`; `VecEnv` with
@@ -648,7 +746,7 @@ smallest change that gives every episode its own goal.
 | B budget | 2000 updates; BC `lr = 1e-3`, `epochs = 4`, 4 minibatches | ~2 h at the measured ~7 s per 100k steps |
 | continuous env (B) | `continuous_normalize = True`, `scale = 1.0` | unit step, direction only |
 | episode cap (B, rollouts) | 60 steps, **on** | a straight line is ≤ 38; an imperfect policy in a new env needs the cap to produce episode boundaries at all |
-| lifetime (B) | match §5.2's `resample_envs_every` | the one lifetime length at which an in-context effect has been measured |
+| lifetime (B) | `resample_envs_every = 32` → 2048 steps, ≥ 30 episodes at the cap | readout 2's 20 eval episodes must sit inside the training horizon, or the tail of the by-episode curve is out-of-distribution |
 | seeds | A: 2 per arm (cheap). B: 1, then 2 for any arm that is read | env draws are the variance; A's final table is enumerated |
 
 ### 6.2 Waves and kill criteria
@@ -697,20 +795,29 @@ and a 0.92 is read as a pass.
 ### 6.4 Predictions
 
 - **P1** A0: solved everywhere in < 200 updates.
-- **P2** A1, mlp-4: generalizes to H-env `place` and to region. The grid code
-  is a smooth periodic function of position and the target is a smooth
-  function of a difference. mlp-2 worse on region cells.
-- **P3** A2: train-env table passes; H-env `wall` at or near random. A linear
-  read of the ray vector cannot express a cross-correlation between two
-  views (`docs/sensory_code.md`, Open); without it a new barcode is a new
-  lookup table.
+- **P2** — withdrawn. The draft predicted grid-mode generalisation on the
+  grounds that the code is a smooth function of position and the target a
+  smooth function of a difference; the code-difference is not
+  translation-invariant (§2.2), so that reasoning was false. Grid-mode
+  generalisation is the open question of A1, and the nearest-neighbour line
+  (§2.5) is what will say whether whatever A1 does is structure or lookup.
+- **P3** A2: train-env table passes but may sit well below ceiling — the
+  standing §5.2 constraint is that a policy told the goal's *direction*
+  scores 0.996 and told its *coordinates* 0.562, so self-localisation from
+  the ray-cast is the weakest link, and "told its observation" is one step
+  harder than coordinates. H-env `wall` at or near random: a linear read of
+  the ray vector cannot express a cross-correlation between two views
+  (`docs/sensory_code.md`, Open); without it a new barcode is a new lookup
+  table.
 - **P4** A3: `xcorr` closes most of the held-out-wall gap; `conv` some of it.
-- **P5** B-dist ≈ A in every cell (the sampler is not the problem).
+- **P5** B-dist ≈ A on H-env envs, every cell (the sampler is not the
+  problem).
 - **P6** B-full, regular, held-out walls: readout 1 ≈ A; readout 2 rising
   by episode — in-context mapping, the §5.2 mechanism. B-rec between.
-- **P7** B-full, grid, held-out place: if P2 holds, B has nothing to add. If
-  P2 fails, B-full rises by episode — it estimates the local frame from
-  `(Δgbook, action)`.
+- **P7** B-full, grid, held-out place: if A1 generalises there, B has
+  nothing to add. If A1 does not, B-full rises by episode — it estimates the
+  local frame from `(Δgbook, action)`, which is the thing the attractor
+  hand-builds.
 - **P8** Discrete and continuous rank arms identically; discrete stricter.
 - **P9** Region × region is always the worst cell; the start row is worse
   than the goal column — the goal is a constant to condition on, the start
@@ -718,9 +825,10 @@ and a 0.92 is read as a pass.
 
 ### 6.5 What would change the conclusion
 
-- P2 fails on region but passes on goal-heldout → the net localises by lookup
-  and the attractor's instant-generalization claim stands in its strongest
-  form. A real result.
+- A1 at the nearest-neighbour line on region cells → the net localises by
+  lookup and the attractor's instant-generalisation claim stands in its
+  strongest form. A real result. Above the line but below threshold → partial
+  structure; report the gap, do not round it either way.
 - P3 passes → the warp is learnable from a linear read; amend
   `sensory_code.md`.
 - P5 fails (B-dist > A) → A's sampler is missing something the rollout
