@@ -419,4 +419,16 @@ corner degrade — median 2.5° but a few envs fail badly (env-std 16°).
 Monotone in cycle coverage: 100% (A1 scattered) → 0.23°; 23% (K=400)
 → 44° outside; 9% (K=160) → 71° outside. There is no extrapolation; the
 network's competence is bounded by the stretch of the cycle it was shown.
-Seed 1 pending.
+
+**K=160 seed 1 (22588483):** in 3.3°, out **57.4°**. All four A1x runs:
+
+| run | train | in | out |
+|---|---|---|---|
+| K=400 s0 | 0.19 | 0.21 | 44.7 |
+| K=400 s1 | 0.21 | 0.30 | 44.0 |
+| K=160 s0 | 0.41 | 12.8 | 71.2 |
+| K=160 s1 | 0.39 | 3.3 | 57.4 |
+
+Seed spread is wider at K=160 (with 12 envs, which ones fall in the
+corner matters more) but the direction is the same in every run. A1x
+complete. 4 runs, ~1.5 GPU-h.

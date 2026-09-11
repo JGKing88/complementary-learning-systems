@@ -38,7 +38,12 @@ training samples the whole cycle*. What does not stand: the sentence
 "learned phase geometry, full stop". The honest statement is that it
 learned the map on the part of the cycle it was shown, with enough
 smoothness to fill in gaps between training envs but not to extrapolate
-to an unseen stretch. K = 160 pending.
+to an unseen stretch.
+
+K = 160 (12 envs, 9% of one axis), two seeds: inside 12.8° / 3.3°,
+outside **71° / 57°** — essentially random (90°). Monotone in cycle
+coverage: 100% seen → 0.23°; 23% → 44° outside; 9% → 57–71° outside.
+Four for four.
 
 ### A1 result — grid mode generalizes across a covered cycle
 
