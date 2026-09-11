@@ -14,6 +14,8 @@ import glob
 import json
 import os
 
+from cls_paths import checkpoints_dir
+
 CELLS = ["trainxtrain", "trainxgoal_heldout", "trainxregion",
          "regionxtrain", "regionxgoal_heldout", "regionxregion"]
 SHORT = {"trainxtrain": "tt", "trainxgoal_heldout": "tg", "trainxregion": "tr",
@@ -58,7 +60,7 @@ def fmt(v, mm):
 def main() -> None:
     p = argparse.ArgumentParser()
     p.add_argument("--prefix", default="a1_")
-    p.add_argument("--root", default=os.path.join(os.environ.get("CLS_RUNS", "/orcd/pool/003/jackking/cls_runs"), "agent_ckpts"))
+    p.add_argument("--root", default=str(checkpoints_dir()))
     args = p.parse_args()
     paths = sorted(glob.glob(os.path.join(args.root, f"goal_pairs_{args.prefix}*", "final_tables.json")))
     rows = [load(x) for x in paths]
