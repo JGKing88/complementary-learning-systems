@@ -180,3 +180,12 @@ region×region gap 0.0°. By §6.3 (≤ 20°, region within 10° of train×train
 this **generalizes**, and the smallest model in the wave does it. The
 NN-decoder line it beats is 58–83°: there is no lookup route on this
 encoding, so the 3° is learned phase geometry.
+
+**Seed 1 (22523454) agrees:** heldout 3.1–3.2° every cell. Seed spread
+~0.2°. **mlp-4 h256 continuous (22523455) at u=1900: heldout rr 1.57°** —
+depth halves the error. **mlp-4 discrete (22523460) at u=1100: 1.000 on
+every held-out cell**, NN line 0.53 (random floor 0.48). Discrete grid
+mode is solved outright.
+
+Full test suite: green (one failure fixed — the test fixture had to keep
+the scaffold field after `build_env_sets` started dropping it).
