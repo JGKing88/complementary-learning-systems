@@ -432,3 +432,37 @@ network's competence is bounded by the stretch of the cycle it was shown.
 Seed spread is wider at K=160 (with 12 envs, which ones fall in the
 corner matters more) but the direction is the same in every run. A1x
 complete. 4 runs, ~1.5 GPU-h.
+
+## 2026-09-11 — A2 and B1x
+
+**A2 launched** (22599345 / 46 / 47 / 49): regular mode on the standard
+scattered world. No corner: `[omni(p), omni(g)]` is a ray-cast of the
+wall and scaffold position never enters the input, so `place` is a
+no-op there and the test is `wall = held_out`, which every run has.
+l5h768 step × 2 seeds continuous, l4h512 step continuous and discrete.
+First signal at u=3750, l5h768 s0: train 3.0°, **heldout 6.3°** on new
+walls, NN line 38°. P3 (near-random on held-out walls) is already
+failing; P11 written into the plan before the run finished.
+
+**B built** (§5.8, with one deviation). Per-row goals as a `_goals`
+(B, 2) array *beside* the scalar `_goal` rather than replacing it —
+five existing readers do `(vec._goal[0], vec._goal[1])` and would have
+silently read the first row. `at_goal`, the oracles and
+`goal_channel_vec` are row-wise; a goal pool on the vec is applied on
+every reset; the collector reads `vec._goals` fresh each step and passes
+the goal channels. Bit-identical under defaults (golden fixture green).
+`evaluation/lifetime.py` is readout 2: sampled action, `(episode ×
+step)` table with counts, live-row mask on both score and `h`.
+`train_goal_lifetimes.py` is B's own composer on `build_env_sets` —
+`train_rnn.py`'s mixed mode redraws envs through the legacy builder,
+which cannot place them in a declared region, and the corner world is
+the point. Fresh lifetimes start from explicit zeros so
+`bc_rnn_update`'s all-or-nothing `initial_h` guard is satisfied under
+round-robin. Smoke-tested end to end on a toy world.
+
+**B1x launched** (22599732 / 33 / 34): `full` (GRU 1×512 + prev_action),
+`rec` (GRU, no prev_action), `dist` (MLP 5×768, A1's architecture, on
+rollout data), all on `rect:0,0,400,400` with 16 `heldout_out` envs,
+seed 0. 2000 updates, 8 envs × 64 lifetimes per update, 64-step chunks,
+32 per lifetime, goal resampled on reach, lifetime eval every 500 on 8
+held-out envs × 64 lifetimes × 20 episodes.
