@@ -52,12 +52,21 @@ class EnvSet:
         return len(self.envs)
 
 
-def build_env_sets(cfg: RNNTrainConfig, rng, *, n_same: int, keep_field: bool = False):
+def build_env_sets(cfg: RNNTrainConfig, rng, *, n_same: int, keep_field: bool = False,
+                   n_ood_place: int = 0):
     """Train, held-out (`base_val`) and `same` env sets, plus split, field, sgb.
 
     `same` is a fixed subset of the ACTUAL training envs -- same wall, same
     offset -- not a `make_val_set(same)` draw, which re-pairs walls and
     offsets. The env-side probe wants the envs themselves.
+
+    With `n_ood_place > 0` a fourth set, `heldout_out`, is minted at
+    `place = ood` -- envs whose footprint lies OUTSIDE the declared place
+    region by at least the margin (plan sec 2.4, the corner holdout). It
+    only means something when the region is a `Rect`; `Anywhere` has no
+    complement and `make_val_set` raises. The split's own `base_val` is
+    then `heldout_in`: new walls inside the region, so the phase effect and
+    the wall effect are separated.
     """
     envs, offsets, split, vh, kind = rnn_world(cfg, rng)
     if kind != "declared":
@@ -66,9 +75,32 @@ def build_env_sets(cfg: RNNTrainConfig, rng, *, n_same: int, keep_field: bool = 
     sgb = smooth_gbook(vh.gbook, vh.lambdas, cfg.fwhm_ratio)
     train = EnvSet("train", envs, offsets, sgb)
     val_envs = gen.build_envs(split.base_val, cfg.env, "discrete")
-    heldout = EnvSet("heldout", val_envs, [s.offset for s in split.base_val], sgb)
+    in_name = "heldout_in" if n_ood_place > 0 else "heldout"
+    heldout = EnvSet(in_name, val_envs, [s.offset for s in split.base_val], sgb)
     k = min(n_same, len(envs))
     same = EnvSet("same", envs[:k], offsets[:k], sgb)
+    heldout_out = None
+    if n_ood_place > 0:
+        specs = gen.make_val_set(
+            split, n_ood_place,
+            {"place": "ood", "wall": "held_out", "goal": "held_out"},
+            seed=int(cfg.seed) + 7919)
+        # The gate: every minted box clears the training rect by >= margin,
+        # on the torus, on at least one axis. Checked here, at launch, so a
+        # run whose "outside" set is not outside never starts.
+        region = split.domains.place
+        if not hasattr(region, "x0"):
+            raise SystemExit("--n_ood_place needs --place_region rect:...; "
+                             "'anywhere' has no outside")
+        for sp in specs:
+            gx = gen.axis_separation(region.x0, region.w, sp.offset[0], sp.size, split.period)
+            gy = gen.axis_separation(region.y0, region.h, sp.offset[1], sp.size, split.period)
+            if max(gx, gy) < split.margin:
+                raise SystemExit(
+                    f"ood env at {sp.offset} is only {max(gx, gy)} cells from the "
+                    f"training rect (margin {split.margin}); refusing to run")
+        out_envs = gen.build_envs(specs, cfg.env, "discrete")
+        heldout_out = EnvSet("heldout_out", out_envs, [sp.offset for sp in specs], sgb)
     # `sgb` is 434 x 1716 x 1716 float32 (~5 GB) and every cell this run will
     # ever read is now in the EnvTensors. Drop the field and the smoothed
     # book so the process does not hold 10 GB it never touches again; the
@@ -76,6 +108,8 @@ def build_env_sets(cfg: RNNTrainConfig, rng, *, n_same: int, keep_field: bool = 
     if not keep_field:
         vh.gbook = None
         sgb = None
+    if heldout_out is not None:
+        return train, heldout, same, split, vh, sgb, heldout_out
     return train, heldout, same, split, vh, sgb
 
 

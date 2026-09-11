@@ -39,6 +39,8 @@ FWHM=${FWHM:-0.25}
 PLACE_MARGIN=${PLACE_MARGIN:-20}
 GOAL_VAL_FRAC=${GOAL_VAL_FRAC:-0.2}
 REGION_VAL_FRAC=${REGION_VAL_FRAC:-0.1}
+PLACE_REGION=${PLACE_REGION:-anywhere}
+N_OOD_PLACE=${N_OOD_PLACE:-0}
 
 N_UPDATES=${N_UPDATES:-2000}
 LR=${LR:-1e-3}
@@ -71,6 +73,7 @@ PYTHONUNBUFFERED=1 python -m hopfield_nav.train_goal_pairs \
   --pairs_per_env "$PAIRS_PER_ENV" --size "$SIZE" --observation_size "$OBS" \
   --lambdas $LAMBDAS --fwhm_ratio "$FWHM" --place_margin "$PLACE_MARGIN" \
   --goal_val_frac "$GOAL_VAL_FRAC" --region_val_frac "$REGION_VAL_FRAC" \
+  --place_region "$PLACE_REGION" --n_ood_place "$N_OOD_PLACE" \
   --n_updates "$N_UPDATES" --lr "$LR" --weight_decay "$WD" --lr_schedule "$LR_SCHEDULE" --lr_step_at "$LR_STEP_AT" --lr_step_gamma "$LR_STEP_GAMMA" \
   --eval_every "$EVAL_EVERY" --eval_pairs "$EVAL_PAIRS" --ckpt_every "$CKPT_EVERY" \
   --seed "$SEED" --tag "$TAG" --wandb_project "$WANDB_PROJECT" $WANDB_FLAG

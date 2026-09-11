@@ -92,6 +92,12 @@ def main() -> None:
     p.add_argument("--goal_val_frac", type=float, default=0.2)
     p.add_argument("--region_val_frac", type=float, default=0.1)
     p.add_argument("--wall_seeds", type=str, default="0,10000000")
+    p.add_argument("--place_region", type=str, default="anywhere",
+                   help="'anywhere' or 'rect:X0,Y0,W,H' in scaffold cells. With a rect, "
+                        "every training env (and base_val) sits inside it.")
+    p.add_argument("--n_ood_place", type=int, default=0,
+                   help="Mint this many envs OUTSIDE --place_region as a fourth env "
+                        "set, heldout_out (plan sec 2.4, corner holdout). 0 = off.")
     # Optimisation
     p.add_argument("--n_updates", type=int, default=2000)
     p.add_argument("--lr", type=float, default=1e-3)
@@ -139,16 +145,23 @@ def main() -> None:
         env_generator=True, place_margin=args.place_margin,
         goal_val_frac=args.goal_val_frac, region_val_frac=args.region_val_frac,
         wall_seeds=args.wall_seeds, pairs_per_env=args.pairs_per_env,
+        place_region=args.place_region,
     )
     # rnn_world builds a scaffold only when grid state is on or the generator
     # is declared; the generator IS declared, so every mode gets a scaffold and
     # every mode's envs are placed identically for the same seed.
     rng = np.random.RandomState(args.seed)
     t0 = time.time()
-    train, heldout, same, split, vh, sgb = build_env_sets(cfg, rng, n_same=args.n_same_envs)
+    built = build_env_sets(cfg, rng, n_same=args.n_same_envs, n_ood_place=args.n_ood_place)
+    train, heldout, same, split, vh, sgb = built[:6]
+    heldout_out = built[6] if len(built) > 6 else None
     cells = split.cell_sets()
-    print(f"world: {len(train)} train / {len(heldout)} heldout / {len(same)} same envs; "
-          f"Npos={vh.Npos} Ng={vh.Ng}; cells={cells.summary()}; {time.time()-t0:.1f}s")
+    print(f"world: {len(train)} train / {len(heldout)} {heldout.name} / {len(same)} same"
+          + (f" / {len(heldout_out)} heldout_out" if heldout_out else "")
+          + f" envs; place={args.place_region}; Npos={vh.Npos} Ng={vh.Ng}; "
+          f"cells={cells.summary()}; {time.time()-t0:.1f}s")
+    if heldout_out:
+        print("  heldout_out offsets:", [tuple(int(v) for v in o) for o in heldout_out.offsets])
 
     D = compute_rnn_input_dim(acfg, args.observation_size, vh.Ng)
     model = PairRegressor(D, args.hidden_size, args.num_layers, args.movement_mode,
@@ -184,7 +197,8 @@ def main() -> None:
                        config={**asdict(cfg), "argv": vars(args)}, parent=None,
                        wandb_run=wandb_run)
 
-    sets = [train, heldout, same]
+    sets = [train, heldout, same] + ([heldout_out] if heldout_out else [])
+    set_names = [es.name for es in sets]
     seen = set()          # (env, p, g) triples, the C12 exposure counter
     history = []
     data_rng = np.random.RandomState(args.seed + 1)
@@ -209,12 +223,17 @@ def main() -> None:
             log.update(flatten_for_log(tables))
             history.append({"update": u, "loss": float(loss.item()), "tables": jsonable(tables)})
             tt = tables["train"][("train", "train")]["model"]["metric"]
-            ht = tables["heldout"][("train", "train")]["model"]["metric"]
-            hr = tables["heldout"][("region", "region")]["model"]["metric"]
-            nn_hr = tables["heldout"][("region", "region")]["nn"]["metric"]
+            ht = tables[heldout.name][("train", "train")]["model"]["metric"]
+            hr = tables[heldout.name][("region", "region")]["model"]["metric"]
+            nn_hr = tables[heldout.name][("region", "region")]["nn"]["metric"]
+            extra = ""
+            if heldout_out:
+                ot = tables["heldout_out"][("train", "train")]["model"]["metric"]
+                orr = tables["heldout_out"][("region", "region")]["model"]["metric"]
+                extra = f" | OUT tt={ot:.2f} rr={orr:.2f}"
             print(f"u={u:5d} loss={loss.item():.4f} gn={float(gn):.2f} | train tt={tt:.2f} | "
-                  f"heldout tt={ht:.2f} rr={hr:.2f} (nn {nn_hr:.2f}) | {time.time()-t_train:.0f}s",
-                  flush=True)
+                  f"{heldout.name} tt={ht:.2f} rr={hr:.2f} (nn {nn_hr:.2f}){extra} | "
+                  f"{time.time()-t_train:.0f}s", flush=True)
             if wandb_run is not None:
                 wandb_run.log(log)
         if u % args.ckpt_every == 0:
@@ -228,7 +247,7 @@ def main() -> None:
                      n_per_quadrant=None if args.final_enumerate else args.eval_pairs,
                      seed=args.n_updates)
     print("\n=== FINAL (enumerated)" if args.final_enumerate else "\n=== FINAL (sampled)")
-    for es in ("train", "heldout", "same"):
+    for es in set_names:
         print(format_table(final[es], args.movement_mode, title=es))
         print()
     with open(os.path.join(args.save_dir, "final_tables.json"), "w") as f:

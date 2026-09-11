@@ -42,9 +42,12 @@ def main() -> None:
         agent=acfg, n_envs=a["n_envs"], n_val_envs=a["n_val_envs"], seed=a["seed"],
         fwhm_ratio=a["fwhm_ratio"], lambdas=list(a["lambdas"]), env_generator=True,
         place_margin=a["place_margin"], goal_val_frac=a["goal_val_frac"],
-        region_val_frac=a["region_val_frac"], wall_seeds=a["wall_seeds"])
-    train, heldout, same, split, vh, _ = build_env_sets(
-        cfg, np.random.RandomState(a["seed"]), n_same=a["n_same_envs"])
+        region_val_frac=a["region_val_frac"], wall_seeds=a["wall_seeds"],
+        place_region=a.get("place_region", "anywhere"))
+    built = build_env_sets(cfg, np.random.RandomState(a["seed"]), n_same=a["n_same_envs"],
+                           n_ood_place=a.get("n_ood_place", 0))
+    train, heldout, same, split, vh, _ = built[:6]
+    sets = [train, heldout, same] + ([built[6]] if len(built) > 6 else [])
     cells = split.cell_sets()
     D = compute_rnn_input_dim(acfg, a["observation_size"], vh.Ng)
     assert D == ck["input_dim"], (D, ck["input_dim"])
@@ -52,10 +55,10 @@ def main() -> None:
                           nonlinearity=a["nonlinearity"], dropout=a["dropout"]).to(args.device)
     model.load_state_dict(ck["model_state_dict"])
 
-    tables = eval_all(model, [train, heldout, same], acfg, cells, a["movement_mode"],
+    tables = eval_all(model, sets, acfg, cells, a["movement_mode"],
                       torch.device(args.device), n_per_quadrant=None, seed=ck["update"])
     print(f"=== ENUMERATED  {os.path.basename(args.ckpt)}  (update {ck['update']})")
-    for es in ("train", "heldout", "same"):
+    for es in [x.name for x in sets]:
         print(format_table(tables[es], a["movement_mode"], title=es))
         print()
     out = os.path.splitext(args.ckpt)[0] + "_tables.json"
