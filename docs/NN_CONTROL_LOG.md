@@ -307,3 +307,44 @@ stable. Seeds agree to 0.01°.
 **l5h768 step, seed 0 (22528824):** stable, monotone; final held-out
 region×region **mean 0.23°, median 0.17°**, 100% within 30°. Train 0.19°,
 `same` 0.19°, env-side gap 0.04°. Best final.
+
+**l5h768 step, seed 1 (22528827):** 0.25° / median 0.17°. All four A1c
+finals, held-out region×region:
+
+| config | s0 | s1 | median |
+|---|---|---|---|
+| l4h512 step | 0.270 | 0.279 | 0.20 |
+| **l5h768 step** | **0.233** | **0.246** | **0.17** |
+
+## A1 — the table (written to the plan's §0)
+
+Best model: 5 × 768 relu, 8000 updates, lr 1e-3, ×0.1 at 5600. Held-out
+envs, every pair enumerated, mean degrees (s0 / s1; NN line):
+
+| start \ goal | train | goal_heldout | region |
+|---|---|---|---|
+| train | 0.24 / 0.25 (0.0) | 0.23 / 0.25 (62.5) | 0.23 / 0.25 (58.2) |
+| region | 0.23 / 0.26 (63.3) | 0.22 / 0.27 (79.8) | **0.23 / 0.25** (82.9) |
+
+Discrete: 1.000 on every held-out cell (mlp-2 and mlp-4, both seeds).
+
+**Grid mode generalizes.** The memoryless network computes the direction
+between two grid codes it has never seen — cells held out from both
+starts and goals, in scaffold regions and walls it never trained on — to
+a quarter of a degree, with no interpolation route (the lookup line is
+58–83°). Every cell of the table is the same number: no side of the pair
+is harder than the other.
+
+What moved it, in order: depth (l4h256 < l2h1024 per parameter), 4×
+updates (0.84 → 0.32), and a late step decay (necessary: constant-lr runs
+destabilise at ~6000 updates, three for three; cosine-from-the-start
+hurts because they are still descending). Not moving it: weight decay.
+Hurting it: tanh (10× worse).
+
+Runs: 15 (A1 wave) + 3 (A1b) + 4 (A1c) + 1 eval = 23 GPU jobs, ~4 h
+wall, ~8 GPU-h. Checkpoints under
+`CLS_RUNS/agent_ckpts/goal_pairs_a1c_cont_l5h768_u8k_step_s{0,1}_*/`.
+
+**Consequence for B.** A is at the ceiling in every grid-mode cell, so
+B's grid arm has nothing to add (§4.5). B is worth running only in
+regular mode, only if A2 fails there.

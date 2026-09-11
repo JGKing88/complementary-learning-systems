@@ -1,8 +1,47 @@
 # Goal-conditioned NN control: can a plain network navigate from encoded states?
 
-Status: **plan, revision 5**, 2026-09-10. Nothing below §5 is built. Branch
-`worktree-nn-generalization-control`; the config edits in §5.1 marked *done*
-are the only code so far.
+Status: **A0 and A1 done, 2026-09-10.** Everything in §5 except the ray-axis
+encoders (§5.4) and B's additions (§5.8) is built and tested; pre-flight
+C1–C8 and A0's C13 pass. Branch `worktree-nn-generalization-control`. The
+run-by-run record is `NN_CONTROL_LOG.md`.
+
+### A1 result — grid mode generalizes
+
+A memoryless MLP given `[gbook(p), gbook(g)]` emits the direction to the
+goal at **0.23° mean / 0.17° median angular error on held-out
+region × region** — cells never seen as start or goal, in scaffold regions
+and walls never seen — with 100% of pairs within 30°, on every pair
+enumerated (24,960 per env set). Discrete: **1.000** on every held-out
+cell. The nearest-neighbour lookup line on the same cells is **58–83°**
+(random is 90°): on this encoding the nearest training code is an alias
+12 cells away, so there is no interpolation route and the number is
+learned phase geometry. Best config: 5 × 768 relu, 8000 updates at lr
+1e-3 with ×0.1 at 70%; two seeds agree to 0.015°.
+
+Held-out envs, best model, enumerated, mean degrees (seed 0 / seed 1; NN line):
+
+| start \ goal | train | goal_heldout | region |
+|---|---|---|---|
+| train | 0.24 / 0.25 (0.0) | 0.23 / 0.25 (62.5) | 0.23 / 0.25 (58.2) |
+| region | 0.23 / 0.26 (63.3) | 0.22 / 0.27 (79.8) | **0.23 / 0.25** (82.9) |
+
+Every cell equals every other: no side of the pair is harder. Train
+envs 0.19°, `same` 0.19° — an env-side gap of 0.04°. By §6.3 this is
+*generalizes*, by a factor of ~80 on the threshold. What moved the
+number: depth > width per parameter (l4h256 beat l2h1024); 4× updates
+(0.84° → 0.32°); and a **late** step decay, which was necessary — at a
+constant lr every run destabilises at ~6000 updates (three for three),
+while cosine-from-the-start hurts because the models are still
+descending. tanh is 10× worse than relu; weight decay does nothing.
+
+Two things this changes downstream. P2 was withdrawn on the grounds that
+the code is not translation-invariant; it is not (C7: mean cos −0.03),
+and the network learned the phase geometry anyway, so the *reasoning* was
+wrong and the *prediction* would have been right. And B's grid-mode arm
+has nothing to add: A is at the ceiling in every cell (§4.5). B is worth
+running only in regular mode, and only if A2 fails there.
+
+Next: **A2** (regular mode). Not started.
 
 Revision 2 replaced the single rollout-based design of revision 1 with two
 experiments that answer two different claims, and pared the primary one down
