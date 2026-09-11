@@ -128,3 +128,15 @@ enumeration finished: the gate is unambiguous at 0.35° / 1.00. Plan
 baseline (mlp-2, mlp-4 × both actions × 2 seeds, h256) plus a sweep on
 continuous seed 0: h512, h1024, l3h512, l4h512, l3h512+cosine,
 l3h512+wd1e-4, l3h512 tanh.
+
+**A0 enumerated FINAL — C13 PASS both modes.** Every pair in every
+quadrant, 88 envs:
+
+| | train | heldout | same |
+|---|---|---|---|
+| continuous, all 6 cells | 0.3–0.4° | 0.3–0.4° | 0.3–0.4° |
+| discrete, all 6 cells | 1.000 | 1.000 | 1.000 |
+
+Seed spread across envs 0.0. NN-decoder line on region×region: 6.4° /
+0.965. The xy model is 17× better than lookup on cells it never saw,
+and heldout equals train to the last digit. The pipeline is correct.
