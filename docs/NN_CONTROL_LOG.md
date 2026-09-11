@@ -165,3 +165,18 @@ not a lookup.)
 
 The train/heldout gap that was 12° at u=100 is 1.5° at u=400, and
 region×region equals train×train on held-out envs. Still climbing.
+
+**First A1 enumerated FINAL — mlp-2 h256 continuous seed 0 (22523453):**
+
+| | train | goal_heldout | region |
+|---|---|---|---|
+| **heldout envs**, start=train | 3.0 ± 0.2 (nn 0.0) | 3.0 ± 0.2 (nn 62.5) | 3.0 ± 0.2 (nn 58.2) |
+| **heldout envs**, start=region | 3.0 ± 0.2 (nn 63.3) | 3.0 ± 0.2 (nn 79.8) | **3.0 ± 0.2** (nn 82.9) |
+| train envs, start=train | 2.7 | 2.7 | 2.8 |
+| train envs, start=region | 2.8 | 2.8 | 2.9 |
+
+Every held-out cell at 3.0°. Train→heldout gap 0.3°; train×train →
+region×region gap 0.0°. By §6.3 (≤ 20°, region within 10° of train×train)
+this **generalizes**, and the smallest model in the wave does it. The
+NN-decoder line it beats is 58–83°: there is no lookup route on this
+encoding, so the 3° is learned phase geometry.
