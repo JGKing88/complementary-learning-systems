@@ -466,3 +466,18 @@ rollout data), all on `rect:0,0,400,400` with 16 `heldout_out` envs,
 seed 0. 2000 updates, 8 envs × 64 lifetimes per update, 64-step chunks,
 32 per lifetime, goal resampled on reach, lifetime eval every 500 on 8
 held-out envs × 64 lifetimes × 20 episodes.
+
+**A2 l5h768 seed 0 (22599345), enumerated FINAL on held-out walls:**
+
+| start \ goal | train | goal_heldout | region |
+|---|---|---|---|
+| train | 5.5 (nn 0.0) | 5.4 (nn 24.0) | 5.5 (nn 25.5) |
+| region | 5.6 (nn 25.7) | 5.5 (nn 36.7) | **5.6** (nn 38.4) |
+
+Train 2.3°. Every held-out cell equal; a 3° gap from train to new
+barcodes. **P3 falsified** — held-out walls are at 5.5°, not near
+random. The memoryless MLP learns the observation→direction map of a
+barcode it has never seen, from 480 ±1 ray values per cell, with no
+ray-axis architecture. Still descending at 8000 (7.3 → 5.4 over the
+second half); a longer run would close more of the gap. Other three A2
+runs and all of B1x queued behind the QOS cap.
