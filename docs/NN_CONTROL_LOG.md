@@ -140,3 +140,28 @@ quadrant, 88 envs:
 Seed spread across envs 0.0. NN-decoder line on region×region: 6.4° /
 0.965. The xy model is 17× better than lookup on cells it never saw,
 and heldout equals train to the last digit. The pipeline is correct.
+
+## 2026-09-10 — A1 grid mode, first signal
+
+**The NN-decoder line on grid mode is ~83°, i.e. random.** Probed on one
+env's 40 region cells: the nearest *training* cell by gbook cosine is
+**12 Manhattan cells away for 36 of the 40** (an alias, not a neighbour;
+only 4 decode to an adjacent cell). Cosine vs spatial distance on this
+scaffold: d=1 0.86, d=2 0.64, d=3 0.40, d=4 0.21, d=6 **0.04**, then
+aliasing back up (d=10 max 0.53) as the 11/12/13 modules wrap. So on grid
+mode there is no interpolation crutch: a held-out cell's code is not
+*near* any training code in the input metric. Whatever the model gets on
+region cells comes from having learned the phase structure. (This is
+also why the codebase reads the code with a hand-built local frame and
+not a lookup.)
+
+**First A1 run, mlp-2 h256 continuous seed 0 (job 22523453):**
+
+| u | train tt | heldout tt | heldout rr | nn rr |
+|---|---|---|---|---|
+| 1 | 88.3° | 89.4° | 89.9° | 82.9° |
+| 100 | 53.1° | 65.3° | 64.8° | 83.0° |
+| 400 | 11.8° | 13.3° | 13.5° | 82.6° |
+
+The train/heldout gap that was 12° at u=100 is 1.5° at u=400, and
+region×region equals train×train on held-out envs. Still climbing.
