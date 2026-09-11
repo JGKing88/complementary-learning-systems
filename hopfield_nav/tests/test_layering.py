@@ -102,6 +102,7 @@ LAYERS: dict[str, int] = {
     "hopfield_nav.train_rnn": 7,
     "hopfield_nav.train_goal_pairs": 7,
     "hopfield_nav.eval_goal_pairs": 7,
+    "hopfield_nav.train_goal_lifetimes": 7,
     "hopfield_nav.eval_all": 7,
 
     "analysis": 8,                     # figure + experiment pipelines

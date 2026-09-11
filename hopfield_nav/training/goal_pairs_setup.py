@@ -25,8 +25,10 @@ def agent_cfg_for_mode(mode: str, movement_mode: str, **kw) -> RNNAgentConfig:
         grid     [gbook(p), gbook(g)]      the grid code, no sensory
         regular  [omni(p), omni(g)]        the ray-cast, heading-free
     """
-    base = dict(movement_mode=movement_mode, input_prev_action=False,
-                input_prev_reward=False, **kw)
+    # A has no prev_action (memoryless); B's `full` arm turns it on. Neither
+    # ever has prev_reward (plan sec 2.2: arrival is the only reward event).
+    base = {"movement_mode": movement_mode, "input_prev_action": False,
+            "input_prev_reward": False, **kw}
     if mode == "xy":
         return RNNAgentConfig(input_sensory=False, input_xy_state=True,
                               goal_channel="abs", **base)

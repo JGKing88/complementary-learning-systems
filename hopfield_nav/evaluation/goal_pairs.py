@@ -257,6 +257,13 @@ class RNNAgentAsPairModel:
         self.agent = agent
         self.movement_mode = agent.cfg.movement_mode
 
+    # `eval_all` toggles train/eval mode on whatever it is handed.
+    def eval(self):
+        self.agent.eval(); return self
+
+    def train(self, mode: bool = True):
+        self.agent.train(mode); return self
+
     @torch.no_grad()
     def _dist(self, x: torch.Tensor):
         dist, _ = self.agent(x.unsqueeze(1), None)
