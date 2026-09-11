@@ -1482,7 +1482,50 @@ case "$VARIANT" in
   # this wave: §12 showed step count tracks the speed CAP rather than
   # navigation quality, so it would move mean_steps for a reason that is not
   # about interleaving.
-  d0_base|d1_kanneal|d1_persr|d1_ms3)
+  # === OOD -- d0_base trained on HALF the scaffold. ==========================
+  #
+  # Same recipe as d0_base in every respect but where the train envs may sit.
+  # The legacy placement path (every run above, d0_base included) declares
+  # place=Anywhere, so d0_base has no place-OOD val set: `Anywhere` has no
+  # complement (world/domains.py). These arms declare the left half of the
+  # 1716x1716 scaffold as the training region, and `eval_all --split place=ood`
+  # then mints val envs on the right half, clear of every train footprint by
+  # the margin (toroidally -- the scaffold wraps, and the sampler excludes the
+  # recorded train boxes with the wrapped gap, so the x=0 seam is not a leak).
+  #
+  #   ood_place     20 fixed placements, exactly d0_base's shape. Note what this
+  #                 CAN'T distinguish: with 20 footprints in an 858x1716 region,
+  #                 a fresh in-region env (place=held_out) and an out-of-region
+  #                 one (place=ood) are both >=80 cells from every train env,
+  #                 and embedding correlation dies by ~80 (EVAL_SPLITS_DESIGN
+  #                 §2.11). A gap between the two is region-scale structure in
+  #                 the encoder field, not "unseen positions" -- d0_base's own
+  #                 base_val already tests unseen positions.
+  #   ood_place_rp  same region, placements re-drawn EVERY update
+  #                 (--refresh_place 1): 24k distinct footprints over 1200
+  #                 updates, covering the left half ~6x over. This is the arm
+  #                 where "trained on this region" is dense enough to mean it.
+  #                 Post-hoc `place=held_out` is then nearly infeasible (the
+  #                 preflight ceiling is ~6 envs at margin 80), so the
+  #                 in-distribution control is `--split recorded` -- the run's
+  #                 own 6 base_val envs, drawn once inside the region and held.
+  #
+  # PLACE_MARGIN=80 is explicit, not derived: `derive_margin` reads the
+  # encoder's cosine-vs-distance curve, which the p99<0.15 rule put at ~80 for
+  # a different encoder (EVAL_SPLITS_DESIGN §2.11); spelling it out keeps this
+  # run's separation a stated number rather than one the w52 encoder decides.
+  # Capacity at this margin: 153 envs in the region, 119 in its complement
+  # (measured, 2026-09-11) -- 26 used here.
+  #
+  # Distractors are NOT region-aware: `sample_distractors` draws from the whole
+  # scaffold, so the exploit rollouts do preload patterns from the OOD half as
+  # memory content. The policy never navigates there, which is the claim being
+  # tested; but a strict reading of "never saw the right half" is false.
+  #
+  # Requires REPO to carry the generator pass-through in navigate_job.sh
+  # (guarded below) -- an older tree would drop every one of these knobs and
+  # train a legacy-placement model under an OOD name.
+  d0_base|d1_kanneal|d1_persr|d1_ms3|ood_place|ood_place_rp)
     ENCODER=/orcd/pool/003/jackking/cls_runs/sweeps/w52_attract_fwhm/001_att0.5_seed=43/encoder_final.pt
     ENCODER_GAIN=100
     HOPFIELD_BETA=100
@@ -1519,6 +1562,12 @@ case "$VARIANT" in
       d1_kanneal) LOG_KAPPA_MAX_END=5.0; LOG_KAPPA_ANNEAL_UPDATES=400 ;;
       d1_persr)   PERSISTENCE_REALIZED=1 ;;
       d1_ms3)     INPUT_HOPFIELD_MULTISTEP="1 2 3" ;;
+      ood_place|ood_place_rp)
+        ENV_GENERATOR=1
+        PLACE_REGION=${PLACE_REGION:-rect:0,0,858,1716}
+        PLACE_MARGIN=${PLACE_MARGIN:-80}
+        if [ "$VARIANT" = ood_place_rp ]; then REFRESH_PLACE=${REFRESH_PLACE:-1}; fi
+        ;;
     esac
     ;;
 
@@ -1601,6 +1650,18 @@ speed=${FREEZE_SPEED:-learned mu0=$INIT_SPEED_MU nu0=$INIT_SPEED_NU} \
 state_dep=$STATE_DEPENDENT_STD  [init_log_std is INERT]"
 else
   echo "    action     : cartesian  squash=$ACTION_SQUASH state_dep=$STATE_DEPENDENT_STD"
+fi
+if [ "${ENV_GENERATOR:-0}" = "1" ]; then
+  echo "    world      : GENERATOR place=$PLACE_REGION margin=$PLACE_MARGIN \
+goal=${GOAL_REGION:-any} refresh_place=${REFRESH_PLACE:-never}"
+  # navigate_job.sh passes an unset knob as nothing at all, so a REPO whose
+  # copy predates the generator block would drop every one of these and train
+  # a legacy-placement model under an OOD name, with no error anywhere.
+  if ! grep -q '^_bool env_generator' "$REPO/hopfield_nav/navigate_job.sh"; then
+    echo "ERROR: $REPO/hopfield_nav/navigate_job.sh has no env_generator" \
+         "pass-through; point REPO at a tree that carries it." >&2
+    exit 1
+  fi
 fi
 
 cd "$REPO"

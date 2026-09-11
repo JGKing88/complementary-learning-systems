@@ -153,9 +153,25 @@ _bool persistence_realized            "${PERSISTENCE_REALIZED:-}"
 _arg  regime_assignment               "${REGIME_ASSIGNMENT:-}"
 _bool explore_goals_off               "${EXPLORE_GOALS_OFF:-}"
 _bool explore_ends_on_goal            "${EXPLORE_ENDS_ON_GOAL:-}"
-_bool randomize_goal_per_rollout      "${RANDOMIZE_GOAL_PER_ROLLOUT:-}"
 _arg  epsilon_explore                 "${EPSILON_EXPLORE:-}"
 _arg  epsilon_anneal_updates          "${EPSILON_ANNEAL_UPDATES:-}"
+
+# --- Env generator / train-val splits (docs/EVAL_SPLITS_DESIGN.md) ---------
+# Unset, every launcher takes the historical placement path and these are
+# inert. ENV_GENERATOR=1 draws envs from the declared domains; a PLACE_REGION
+# rect or a GOAL_REGION ring/interior/quadrant is what gives the checkpoint an
+# OOD val set later (`eval_all --split place=ood`). REFRESH_GOAL replaces the
+# deleted --randomize_goal_per_rollout, which this file used to pass through.
+_bool env_generator                   "${ENV_GENERATOR:-}"
+_arg  place_region                    "${PLACE_REGION:-}"
+_arg  goal_region                     "${GOAL_REGION:-}"
+_arg  wall_seeds                      "${WALL_SEEDS:-}"
+_arg  place_margin                    "${PLACE_MARGIN:-}"
+_arg  goal_val_frac                   "${GOAL_VAL_FRAC:-}"
+_arg  refresh_place                   "${REFRESH_PLACE:-}"
+_arg  refresh_wall                    "${REFRESH_WALL:-}"
+_arg  refresh_goal                    "${REFRESH_GOAL:-}"
+_arg  refresh_size                    "${REFRESH_SIZE:-}"
 
 # --- Distractors -----------------------------------------------------------
 _arg  n_train_distractors_min         "${N_TRAIN_DISTRACTORS_MIN:-}"
