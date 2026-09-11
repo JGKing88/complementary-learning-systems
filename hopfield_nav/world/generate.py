@@ -601,9 +601,14 @@ def generate_split(
     field, env_cfg, domains: TraitDomains, n_train: int, n_val: int, seed: int,
     *, refresh_goal: bool = False, margin: int | None = None,
     val_frac: float = 0.2, diagnostics: bool = True,
-    inherited: dict | None = None,
+    inherited: dict | None = None, region_frac: float = 0.0,
 ) -> GeneratedSplit:
     """Draw the train and base-validation env sets together.
+
+    ``region_frac`` reserves ``round(region_frac * size**2)`` cells from
+    starts as well as goals, drawn from inside the never-goal partition so
+    that a region cell is always also a held-out goal cell. Its own RNG key
+    (``trait_rng(seed, "region")``) so changing it moves nothing else.
 
     Together, not one after the other: sampling validation without knowing the
     train set is exactly what produces today's overlap (§1.3 -- 10/10 val envs
@@ -767,10 +772,23 @@ def generate_split(
     base_val = [EnvSpec(val_seeds[i], size, val_off[i], val_goals[i])
                 for i in range(n_val)]
 
+    region_cells: frozenset = frozenset()
+    if region_frac > 0.0:
+        n_region = int(round(float(region_frac) * size * size))
+        pool = sorted(cells_val)
+        if n_region > len(pool):
+            raise ValueError(
+                f"region_frac={region_frac} asks for {n_region} cells but only "
+                f"{len(pool)} are held out from goals; raise --goal_val_frac")
+        region_rng = dom.trait_rng(seed, "region", role="split")
+        pick = region_rng.choice(len(pool), size=n_region, replace=False)
+        region_cells = frozenset(pool[i] for i in pick)
+
     split = GeneratedSplit(
         domains=domains, train=train, base_val=base_val,
         goal_cells_train=cells_train, goal_cells_val=cells_val,
         margin=int(margin), period=period, Npos=Npos,
+        region_cells=region_cells,
     )
     split.record_used(train)
     # The union this run's `world.json` records, and therefore what a later

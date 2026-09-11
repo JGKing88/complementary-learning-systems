@@ -130,6 +130,22 @@ class GeneratedSplit:
     Npos: int
     used: dict = dc_field(default_factory=dict)
     diagnostics: dict = dc_field(default_factory=dict)
+    # Cells reserved from BOTH starts and goals (plan sec 2.4, H-region).
+    # Always a subset of `goal_cells_val`, so holding a region out is strictly
+    # stronger than holding a goal out. Empty for every rollout-based run: a
+    # trajectory walks wherever it walks, and only the pair sampler can keep
+    # a cell out of the start distribution. Defaulted so every world.json
+    # written before it existed still loads.
+    region_cells: frozenset = dc_field(default_factory=frozenset)
+
+    def cell_sets(self, size: int | None = None) -> "CellSets":
+        """The four cell sets the pair sampler and the static evaluator read."""
+        if size is None:
+            sizes = {s.size for s in self.train}
+            if len(sizes) != 1:
+                raise ValueError(f"pass size=; training used {sorted(sizes)}")
+            size = next(iter(sizes))
+        return CellSets.from_split(self, int(size))
 
     def record_used(self, specs: list[EnvSpec]) -> None:
         """Fold ``specs`` into the per-trait union."""
@@ -185,6 +201,8 @@ class GeneratedSplit:
                                        for c in self.goal_cells_train),
             "goal_cells_val": sorted([int(c[0]), int(c[1])]
                                      for c in self.goal_cells_val),
+            "region_cells": sorted([int(c[0]), int(c[1])]
+                                   for c in self.region_cells),
             "train": [s.to_json() for s in self.train],
             "base_val": [s.to_json() for s in self.base_val],
             "used": {
@@ -210,6 +228,7 @@ class GeneratedSplit:
             goal_cells_val=frozenset(tuple(c) for c in d["goal_cells_val"]),
             margin=int(d["margin"]), period=int(d["period"]),
             Npos=int(d["Npos"]), diagnostics=d.get("diagnostics", {}),
+            region_cells=frozenset(tuple(c) for c in d.get("region_cells", ())),
         )
         u = d.get("used", {})
         split.used = {
@@ -219,6 +238,75 @@ class GeneratedSplit:
             "size": set(u.get("size", ())),
         }
         return split
+
+
+@dataclass(frozen=True)
+class CellSets:
+    """Which env-local cells may be a start, a goal, or neither.
+
+    One object, read by both the pair sampler (training) and the static
+    evaluator (the quadrant table), so the two cannot disagree about what a
+    "held-out" cell is. Derived from a split, never stored -- the split is
+    the record.
+
+        start_train   every cell except the region
+        goal_train    the split's training goal partition
+        goal_heldout  never a goal, but a legal start
+        region        never a start, never a goal
+
+    Invariants, checked at construction: `region ⊂ goal_cells_val`;
+    `goal_train`, `goal_heldout`, `region` partition the arena.
+    """
+
+    size: int
+    start_train: frozenset
+    goal_train: frozenset
+    goal_heldout: frozenset
+    region: frozenset
+
+    @staticmethod
+    def from_split(split: "GeneratedSplit", size: int) -> "CellSets":
+        arena = frozenset((x, y) for x in range(size) for y in range(size))
+        region = frozenset(split.region_cells) & arena
+        gval = frozenset(split.goal_cells_val) & arena
+        gtrain = frozenset(split.goal_cells_train) & arena
+        if not region <= gval:
+            raise ValueError(
+                f"region_cells has {len(region - gval)} cells outside "
+                "goal_cells_val; a region cell must never be a goal")
+        if gtrain & gval:
+            raise ValueError("goal_cells_train and goal_cells_val overlap")
+        if (gtrain | gval) != arena:
+            raise ValueError(
+                f"goal partition does not cover the {size}x{size} arena "
+                f"({len(arena - (gtrain | gval))} cells missing)")
+        return CellSets(size=int(size), start_train=arena - region,
+                        goal_train=gtrain, goal_heldout=gval - region,
+                        region=region)
+
+    def __post_init__(self) -> None:
+        if self.region & self.start_train:
+            raise ValueError("region cells must not be legal starts")
+        if self.region & self.goal_train or self.region & self.goal_heldout:
+            raise ValueError("region cells must not be legal goals")
+
+    # The quadrant vocabulary (plan sec 2.5). Starts come from one of two
+    # sets, goals from one of three.
+    START_SETS = ("train", "region")
+    GOAL_SETS = ("train", "goal_heldout", "region")
+
+    def starts(self, which: str) -> frozenset:
+        return {"train": self.start_train, "region": self.region}[which]
+
+    def goals(self, which: str) -> frozenset:
+        return {"train": self.goal_train, "goal_heldout": self.goal_heldout,
+                "region": self.region}[which]
+
+    def summary(self) -> dict:
+        return {"size": self.size, "start_train": len(self.start_train),
+                "goal_train": len(self.goal_train),
+                "goal_heldout": len(self.goal_heldout),
+                "region": len(self.region)}
 
 
 @dataclass

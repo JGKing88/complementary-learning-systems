@@ -182,7 +182,14 @@ def rnn_world(cfg: RNNTrainConfig, rng: np.random.RandomState):
     split = gen.generate_split(
         field, cfg.env, domains, int(cfg.n_envs), int(cfg.n_val_envs),
         seed=int(cfg.seed), margin=int(cfg.place_margin),
-        val_frac=float(cfg.goal_val_frac), diagnostics=False)
+        val_frac=float(cfg.goal_val_frac), diagnostics=False,
+        # `refresh_goal` selects the FRACTION-based goal partition (val_frac of
+        # the arena held out, the rest trainable) over the historical one-cell-
+        # per-env draw. The pair sampler draws goals from the whole train
+        # partition, so it is the partition it needs -- and `region_frac` is
+        # only meaningful against that partition.
+        refresh_goal=float(getattr(cfg, "region_val_frac", 0.0)) > 0.0,
+        region_frac=float(getattr(cfg, "region_val_frac", 0.0)))
     envs = gen.build_envs(split.train, cfg.env, "discrete")
     return envs, [s.offset for s in split.train], split, field, "declared"
 

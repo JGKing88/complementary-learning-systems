@@ -15,6 +15,12 @@ RNN_NONLINEARITIES = ("tanh", "relu", "softplus")
 # the single fixed North view, which is what an agent that walked in
 # facing North would have seen.
 GOAL_SENSORY_MODES = ("none", "omni", "north")
+# The form of the agent's OWN observation channel. "ego" is the single view
+# from the current heading (obs_size wide, the historical channel); "omni" is
+# all four cardinal views (4*obs_size), heading-free.
+SENSORY_MODES = ("ego", "omni")
+# Ray-axis encoders applied to view columns before the trunk (plan sec 5.4).
+SENSORY_ENCODERS = ("linear", "conv", "xcorr")
 
 
 def validate_recurrent_core(cell: str, nonlinearity: str) -> None:
@@ -568,6 +574,24 @@ class RNNAgentConfig:
     # memoryless and an MLP trunk is a fair model of it.
     input_goal_grid_state: bool = False
     goal_sensory: str = "none"
+    # The agent's own observation channel. Historically hard-wired on and
+    # single-view; both are now choices. Grid mode turns it OFF so the only
+    # encoding of the current position is the grid code, and a success there
+    # is attributable to the code rather than to a second channel that also
+    # carries env identity. `omni` makes it heading-free (4*obs_size), the
+    # same form `goal_sensory="omni"` gives the goal, so the two ends of a
+    # pair are the same kind of thing.
+    input_sensory: bool = True
+    sensory_mode: str = "ego"
+    # The current (x, y) / size as a 2-dim channel: the coordinate ceiling arm
+    # of the goal-conditioned control, paired with `goal_channel="abs"`. It is
+    # an oracle in the same sense `goal_channel` is, and is used the same way.
+    input_xy_state: bool = False
+    # Ray-axis encoder over the view columns (sensory and goal_sensory), see
+    # plan sec 5.4. "linear" is identity, the historical read.
+    sensory_encoder: str = "linear"
+    sensory_encoder_channels: int = 16
+    sensory_encoder_kernel: int = 5
     # How many episodes of a lifetime the oracle goal channel is shown for.
     # -1 (default) means always. Set to 1 and the goal is visible during the
     # first episode and withheld afterwards, so the network must carry it
@@ -682,6 +706,17 @@ class RNNTrainConfig:
     place_margin: int | None = None
     goal_val_frac: float = 0.2
     n_val_envs: int = 2                     # held-out envs recorded alongside the train set
+    # Cells reserved from BOTH starts and goals, as a fraction of size**2,
+    # drawn from inside the never-goal partition (so region is a subset of
+    # goal_cells_val). 0 keeps every cell a legal start, which is what every
+    # rollout-based run does; the goal-conditioned pair sampler is the only
+    # consumer that can honour it.
+    region_val_frac: float = 0.0
+    # Pairs drawn per training env per update in train_goal_pairs.
+    pairs_per_env: int = 512
+    # Draw a fresh goal for a row when it reaches its goal, from
+    # goal_cells_train, keeping its hidden state. Experiment B's rule.
+    resample_goal_on_reach: bool = False
 
 
 @dataclass

@@ -166,6 +166,68 @@ class SoftplusRNN(nn.RNN):
         return layer_in, torch.stack(h_next, dim=0)
 
 
+class FeedForwardCore(nn.Module):
+    """A stack of hidden layers with no recurrence, behind the trunk contract.
+
+    `num_layers` hidden layers of `hidden_size`, `nonlinearity` between them,
+    dropout between layers and never on the output -- `nn.RNN`'s convention,
+    kept so the `dropout` field means the same thing under every cell.
+
+    It honours the four contracts the recurrent cores honour: `input_size`
+    and `hidden_size` attributes, `parameters()`, an `(num_layers, B, hidden)`
+    state that is accepted and returned, and a T-step call equal to T
+    single-step calls -- trivially, because the state is ignored on the way
+    in and returned as zeros on the way out. That is what lets a memoryless
+    policy run through the rollout collector, the BC update and the
+    evaluators unchanged: they carry a state that happens to be inert.
+
+    The state returned is zeros rather than the input state passed through,
+    so that a caller which *reads* it (the lifetime plumbing) sees a network
+    that provably keeps nothing, rather than one that echoes.
+    """
+
+    def __init__(
+        self,
+        input_size: int,
+        hidden_size: int,
+        num_layers: int = 1,
+        nonlinearity: str = "tanh",
+        dropout: float = 0.0,
+    ) -> None:
+        super().__init__()
+        if num_layers < 1:
+            raise ValueError("FeedForwardCore needs at least one hidden layer")
+        self.input_size = int(input_size)
+        self.hidden_size = int(hidden_size)
+        self.num_layers = int(num_layers)
+        act = {"tanh": nn.Tanh, "relu": nn.ReLU}
+        if nonlinearity not in act:
+            raise ValueError(
+                f"FeedForwardCore takes nonlinearity tanh or relu, got "
+                f"{nonlinearity!r}")
+        layers: list[nn.Module] = []
+        d = self.input_size
+        for i in range(self.num_layers):
+            layers.append(nn.Linear(d, self.hidden_size))
+            layers.append(act[nonlinearity]())
+            if dropout > 0.0 and i < self.num_layers - 1:
+                layers.append(nn.Dropout(dropout))
+            d = self.hidden_size
+        self.net = nn.Sequential(*layers)
+
+    def forward(
+        self, x: torch.Tensor, h: torch.Tensor | None = None,
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        """x: (B, T, input_size). Returns (features (B, T, H), zeros (L, B, H))."""
+        if x.dim() != 3:
+            raise ValueError(
+                f"FeedForwardCore expects a batched (B, T, input_size) "
+                f"sequence, got shape {tuple(x.shape)}.")
+        B = x.shape[0]
+        out = self.net(x)
+        return out, x.new_zeros(self.num_layers, B, self.hidden_size)
+
+
 def build_recurrent_core(cfg, input_dim: int) -> nn.Module:
     """The trunk `cfg` asks for.
 
@@ -190,6 +252,10 @@ def build_recurrent_core(cfg, input_dim: int) -> nn.Module:
     )
     if cell == "gru":
         return nn.GRU(input_dim, cfg.hidden_size, **kwargs)
+    if cell == "mlp":
+        return FeedForwardCore(input_dim, cfg.hidden_size, num_layers=layers,
+                               nonlinearity=nonlinearity,
+                               dropout=cfg.dropout if layers > 1 else 0.0)
     if nonlinearity == "softplus":
         return SoftplusRNN(input_dim, cfg.hidden_size, **kwargs)
     return nn.RNN(input_dim, cfg.hidden_size, nonlinearity=nonlinearity, **kwargs)

@@ -16,25 +16,56 @@ from .polar_head import PolarHead
 from ..config import RNNAgentConfig
 
 
+def rnn_input_layout(
+    cfg: RNNAgentConfig, sensory_dim: int, gbook_dim: int = 0,
+) -> list[tuple[str, int]]:
+    """The RNN stack's input channels, in order, as ``(name, width)``.
+
+    This is the one place the layout is written down; ``compute_rnn_input_dim``
+    sums it and ``rollout.rnn.build_rnn_input`` assembles it. Before this
+    function the two agreed by convention, in two files, which is how a
+    channel can move while the tensor keeps its shape.
+
+    **Order is a compatibility surface.** Every saved checkpoint's first layer
+    was trained against ``sensory, prev_action, prev_reward, grid_state,
+    goal_vec``. New channels append after those, in the order below;
+    reordering silently invalidates every checkpoint. A channel that is off
+    contributes nothing, so a checkpoint trained with the defaults sees
+    exactly the layout it was trained with.
+
+    ``sensory_dim`` is the width of ONE view (``observation_size``); the
+    channel is that or four times it under ``sensory_mode="omni"``.
+    ``gbook_dim`` is the smoothed-gbook width (``vectorhash.Ng``), used by both
+    grid-state channels; the caller computes it from the VectorHash it built.
+    """
+    specs: list[tuple[str, int]] = []
+    if getattr(cfg, "input_sensory", True):
+        mode = getattr(cfg, "sensory_mode", "ego")
+        specs.append(("sensory", 4 * sensory_dim if mode == "omni" else sensory_dim))
+    if cfg.input_prev_action:
+        specs.append(("prev_action", 4 if cfg.movement_mode == "discrete" else 2))
+    if cfg.input_prev_reward:
+        specs.append(("prev_reward", 1))
+    if cfg.input_grid_state:
+        specs.append(("grid_state", gbook_dim))
+    if getattr(cfg, "goal_channel", "none") != "none":
+        specs.append(("goal_vec", 2))
+    # --- appended 2026-09-10 for the goal-conditioned control -------------
+    if getattr(cfg, "input_xy_state", False):
+        specs.append(("xy_state", 2))
+    if getattr(cfg, "input_goal_grid_state", False):
+        specs.append(("goal_grid_state", gbook_dim))
+    gs = getattr(cfg, "goal_sensory", "none")
+    if gs != "none":
+        specs.append(("goal_sensory", 4 * sensory_dim if gs == "omni" else sensory_dim))
+    return specs
+
+
 def compute_rnn_input_dim(
     cfg: RNNAgentConfig, sensory_dim: int, gbook_dim: int = 0,
 ) -> int:
-    """Sensory always on; optional prev_action / prev_reward / grid_state channels.
-
-    ``gbook_dim`` is the smoothed-gbook channel width (== ``vectorhash.Ng``); it
-    is added when ``cfg.input_grid_state`` is True. Caller is responsible for
-    computing it from the VectorHash they built.
-    """
-    dim = sensory_dim
-    if cfg.input_prev_action:
-        dim += 4 if cfg.movement_mode == "discrete" else 2
-    if cfg.input_prev_reward:
-        dim += 1
-    if cfg.input_grid_state:
-        dim += gbook_dim
-    if getattr(cfg, "goal_channel", "none") != "none":
-        dim += 2
-    return dim
+    """Total RNN input width: the sum over ``rnn_input_layout``."""
+    return sum(w for _, w in rnn_input_layout(cfg, sensory_dim, gbook_dim))
 
 
 class RNNAgent(nn.Module):

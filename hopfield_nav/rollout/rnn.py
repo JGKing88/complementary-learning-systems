@@ -57,35 +57,126 @@ class RNNRolloutBatch:
 
 
 def build_rnn_input(
-    sensory: np.ndarray,                    # (B, obs_size) float32
+    sensory: np.ndarray | None,             # (B, obs_size | 4*obs_size) float32, or None if off
     prev_action: np.ndarray | None,         # (B, 4) or (B, 2) float32 or None
     prev_reward: np.ndarray | None,         # (B,) float32 or None
     grid_state: np.ndarray | None,          # (B, Ng) smoothed-gbook lookup or None
     cfg: RNNAgentConfig,
     device: torch.device,
     goal_vec: np.ndarray | None = None,     # (B, 2) oracle goal channel or None
+    *,
+    xy_state: np.ndarray | None = None,     # (B, 2) current (x, y)/size or None
+    goal_grid_state: np.ndarray | None = None,   # (B, Ng) gbook at the goal or None
+    goal_sensory: np.ndarray | None = None,      # (B, obs | 4*obs) views at the goal or None
+    sensory_dim: int | None = None,         # ONE view's width; only needed to validate
 ) -> torch.Tensor:
     """Assemble per-step RNN input -> (B, 1, input_dim) tensor on device.
+
+    The channel order comes from ``policy.agent_rnn.rnn_input_layout``, the
+    same function ``compute_rnn_input_dim`` sums, so the two cannot drift.
 
     (The ``grid_state`` argument is what ``grid_state_vec`` below returns; the
     parameter is named differently so it does not shadow that function.)
 
     ``goal_vec`` is what ``goal_channel_vec`` returns and is an **oracle**: the
     goal is normally unobservable, and this exists only to put a ceiling under
-    the in-context measurement. It is appended last, so a checkpoint trained
-    without it keeps the same layout for every other channel.
+    the in-context measurement.
+
+    The three keyword channels are the goal-conditioned control's
+    (``config.RNNAgentConfig``): the current coordinate, the goal's grid code,
+    the goal's observation. They are task inputs, not oracles.
+
+    **Enabled-but-missing raises.** The historical channels kept the old
+    ``if cfg.x and value is not None`` guard because callers rely on it; the
+    new channels do not, because a tensor that keeps its shape while a
+    channel silently drops out is exactly the failure this layout exists to
+    prevent. Pass ``sensory_dim`` to have every width checked as well.
     """
-    parts = [sensory]
-    if cfg.input_prev_action and prev_action is not None:
-        parts.append(prev_action)
-    if cfg.input_prev_reward and prev_reward is not None:
-        parts.append(prev_reward.reshape(-1, 1))
-    if cfg.input_grid_state and grid_state is not None:
-        parts.append(grid_state)
-    if getattr(cfg, "goal_channel", "none") != "none" and goal_vec is not None:
-        parts.append(goal_vec)
+    from ..policy.agent_rnn import rnn_input_layout
+
+    values = {
+        "sensory": sensory,
+        "prev_action": prev_action,
+        "prev_reward": None if prev_reward is None else prev_reward.reshape(-1, 1),
+        "grid_state": grid_state,
+        "goal_vec": goal_vec,
+        "xy_state": xy_state,
+        "goal_grid_state": goal_grid_state,
+        "goal_sensory": goal_sensory,
+    }
+    lenient = {"prev_action", "prev_reward", "grid_state", "goal_vec"}
+    gbook_dim = 0
+    for k in ("grid_state", "goal_grid_state"):
+        if values[k] is not None:
+            gbook_dim = int(values[k].shape[1])
+    sd = sensory_dim
+    if sd is None:
+        # Unknown; the layout still orders the channels correctly, it just
+        # cannot check the view widths.
+        sd = 0
+        for k in ("sensory", "goal_sensory"):
+            if values[k] is not None:
+                sd = int(values[k].shape[1])
+                if (k == "sensory" and getattr(cfg, "sensory_mode", "ego") == "omni") or \
+                   (k == "goal_sensory" and getattr(cfg, "goal_sensory", "none") == "omni"):
+                    sd //= 4
+                break
+    parts = []
+    for name, width in rnn_input_layout(cfg, sd, gbook_dim):
+        v = values[name]
+        if v is None:
+            if name in lenient:
+                continue
+            raise KeyError(
+                f"RNN input channel {name!r} is enabled but was not supplied")
+        if sensory_dim is not None and v.shape[1] != width:
+            raise ValueError(
+                f"RNN input channel {name!r} must have width {width}, got "
+                f"{v.shape[1]}")
+        parts.append(v)
     x = np.concatenate(parts, axis=1)                # (B, input_dim)
     return torch.from_numpy(x.astype(np.float32)).unsqueeze(1).to(device)  # (B, 1, D)
+
+
+def sensory_vec(env, positions: np.ndarray, mode: str) -> np.ndarray:
+    """The observation channel at ``positions`` in the requested form.
+
+    ``omni`` is every cardinal view at the cell, ``(B, 4 * obs_size)``, a
+    codebook gather; it is heading-free, which is what makes it the same
+    kind of thing as ``goal_sensory="omni"``. ``ego`` is NOT produced here --
+    the live heading belongs to the vec env, so callers take ``obs_batch()``
+    for that and only call this for ``omni``.
+    """
+    if mode != "omni":
+        raise ValueError(
+            "sensory_vec produces the omni form only; use vec.obs_batch() "
+            "for the egocentric view")
+    pos = np.asarray(positions, dtype=np.int64)
+    return env._codebook[pos[:, 0], pos[:, 1]].reshape(pos.shape[0], -1).astype(np.float32)
+
+
+def goal_sensory_vec(env, goals: np.ndarray, mode: str) -> np.ndarray:
+    """Views at the goal cell(s). ``goals`` is ``(2,)`` broadcast to B, or ``(B, 2)``.
+
+    ``omni`` -> ``(B, 4 * obs_size)``; ``north`` -> the fixed North view,
+    ``(B, obs_size)``. Both are codebook gathers; no ray is cast.
+    """
+    from ..world.env import cardinal_index
+    g = np.asarray(goals, dtype=np.int64)
+    if g.ndim == 1:
+        g = g[None, :]
+    if mode == "omni":
+        return env._codebook[g[:, 0], g[:, 1]].reshape(g.shape[0], -1).astype(np.float32)
+    if mode == "north":
+        k = cardinal_index(0.0)
+        return env._codebook[g[:, 0], g[:, 1], k].astype(np.float32)
+    raise ValueError(f"unknown goal_sensory mode {mode!r}; use 'omni' or 'north'")
+
+
+def xy_vec(positions: np.ndarray, size: int) -> np.ndarray:
+    """``(B, 2)`` positions normalised by ``size`` -- the ``abs`` form of
+    ``goal_channel_vec`` applied to the agent's own cell."""
+    return (np.asarray(positions, dtype=np.float32) / max(size, 1)).astype(np.float32)
 
 
 def goal_channel_vec(
