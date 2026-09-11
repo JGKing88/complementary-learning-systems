@@ -291,3 +291,12 @@ seeds 0 and 1 (22528824 / 22528827).
 Held-out region×region: **mean 0.38°, median 0.29°, 100% within 30°**,
 24,960 pairs, per-env std 0.0. Train region×region 0.36°; gap 0.02°.
 This is the current headline, pending A1c's stable finals.
+
+## 2026-09-10 — A1c: step decay gives a stable final
+
+**l4h512, 8k updates, lr ×0.1 at 5600, seed 0 (22527728).** At the step:
+0.42° → 0.30°; then monotone to **0.27° at u=8000**, no blow-up.
+Enumerated final, held-out region×region: **mean 0.27°, median 0.20°,
+100% within 30°**; train 0.245°; `same` 0.239°; env-side gap 0.03°.
+The schedule turns the mid-run pick into a stable final and improves on
+it (0.38 → 0.27).
