@@ -274,3 +274,9 @@ a much sharper blow-up at u=6250 (loss 0.40, error 40°), recovering to
 instability is reproducible and seed-independent in timing (~6000
 updates) — Adam at a sharp minimum with a fixed lr, a single overshoot.
 A1c's step at 5600 lands just before it.
+
+**l5h768, 8k, seed 0 (22526924), 3.0M params:** 0.68 → 0.39 → 0.32 →
+**0.25° at u=6000**, then the same blow-up (7.2° at u=7000, 2.9° final).
+Three for three on the ~6000-update instability. The bigger model
+reaches lower before it goes. A1c extended: l5h768 with the step decay,
+seeds 0 and 1 (22528824 / 22528827).
