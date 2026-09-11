@@ -48,7 +48,7 @@ def world(tmp_path_factory):
         n_envs=3, n_val_envs=2, env_generator=True, place_margin=4,
         goal_val_frac=0.25, region_val_frac=0.1, lambdas=[5, 6, 7], seed=3)
     train, heldout, same, split, vh, sgb = build_env_sets(
-        cfg, np.random.RandomState(3), n_same=1)
+        cfg, np.random.RandomState(3), n_same=1, keep_field=True)
     return dict(cfg=cfg, train=train, heldout=heldout, same=same, split=split,
                 vh=vh, sgb=sgb, cells=split.cell_sets())
 
