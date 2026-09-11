@@ -58,9 +58,9 @@ def fmt(v, mm):
 def main() -> None:
     p = argparse.ArgumentParser()
     p.add_argument("--prefix", default="a1_")
-    p.add_argument("--root", default=os.path.join(os.environ.get("CLS_RUNS", "/orcd/pool/003/jackking/cls_runs"), "goal_pairs"))
+    p.add_argument("--root", default=os.path.join(os.environ.get("CLS_RUNS", "/orcd/pool/003/jackking/cls_runs"), "agent_ckpts"))
     args = p.parse_args()
-    paths = sorted(glob.glob(os.path.join(args.root, f"{args.prefix}*", "final_tables.json")))
+    paths = sorted(glob.glob(os.path.join(args.root, f"goal_pairs_{args.prefix}*", "final_tables.json")))
     rows = [load(x) for x in paths]
     if not rows:
         print(f"no finished runs under {args.root}/{args.prefix}*")
