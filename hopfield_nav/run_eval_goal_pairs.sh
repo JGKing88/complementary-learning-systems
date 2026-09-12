@@ -18,4 +18,4 @@ source activate cls
 unset CUDA_VISIBLE_DEVICES
 cd "$REPO"
 source scripts/cls_env.sh
-PYTHONUNBUFFERED=1 python -m hopfield_nav.eval_goal_pairs --ckpt "$CKPT"
+PYTHONUNBUFFERED=1 python -m hopfield_nav.eval_goal_pairs --ckpt "$CKPT" ${EXTRA:-}
