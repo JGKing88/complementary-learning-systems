@@ -1531,7 +1531,20 @@ case "$VARIANT" in
   #                 which turned out to be one bad update, back to 0.20 by
   #                 u110 -- and NOT launched. Here so the cadence can be
   #                 bracketed without re-deriving the block if it is needed.
-  d0_base|d1_kanneal|d1_persr|d1_ms3|ood_place|ood_place_rp|ood_place_rp10)
+  #   ood_corner    Jack, 2026-09-12, after the half-scaffold pair came back
+  #   ood_corner_rp null at u600 and u1200: "try training on one small corner,
+  #                 like 500 x 500 ... you can lower the margin, i want within
+  #                 500." rect:0,0,500,500 is 8.5% of the scaffold. The margin
+  #                 has to drop to 50: at 60 and 70 the initial 26-env draw
+  #                 fits, but the every-update refresh dies on tick 1 -- 20
+  #                 train envs cannot be re-placed clear of the 6 fixed val
+  #                 envs AND each other in a 500 box (17 fit, no lattice).
+  #                 At 50 the field is mean-decorrelated (cos +0.07, p99 +0.36
+  #                 -- EVAL_SPLITS_DESIGN §2.11), weaker than the half-
+  #                 scaffold's 80. Both arms share the margin so they compare.
+  #                 place=held_out is infeasible inside a 500 box at any of
+  #                 these margins; `recorded` is the control.
+  d0_base|d1_kanneal|d1_persr|d1_ms3|ood_place|ood_place_rp|ood_place_rp10|ood_corner|ood_corner_rp)
     ENCODER=/orcd/pool/003/jackking/cls_runs/sweeps/w52_attract_fwhm/001_att0.5_seed=43/encoder_final.pt
     ENCODER_GAIN=100
     HOPFIELD_BETA=100
@@ -1576,6 +1589,12 @@ case "$VARIANT" in
           ood_place_rp)   REFRESH_PLACE=${REFRESH_PLACE:-1} ;;
           ood_place_rp10) REFRESH_PLACE=${REFRESH_PLACE:-10} ;;
         esac
+        ;;
+      ood_corner|ood_corner_rp)
+        ENV_GENERATOR=1
+        PLACE_REGION=${PLACE_REGION:-rect:0,0,500,500}
+        PLACE_MARGIN=${PLACE_MARGIN:-50}
+        if [ "$VARIANT" = ood_corner_rp ]; then REFRESH_PLACE=${REFRESH_PLACE:-1}; fi
         ;;
     esac
     ;;
