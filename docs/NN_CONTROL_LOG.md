@@ -609,3 +609,32 @@ locally similar to short-range again. So the network learned the code's
 periodicity; what does not transfer is the mid-range Chinese-remainder
 disambiguation. The 44° mean is dominated by `d = 6–12`, where i.i.d.
 sampling puts most of its mass.
+
+**D1 — B-dist's profile beside A1x's:**
+
+| d | 1 | 2 | 3 | 4 | 5 | 6 | 8 | 9 | 10 | 12 | 14 | 16 | 19 |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| A1x (i.i.d., 1−cos) | 14 | 13 | 16 | 22 | 32 | 43 | 60 | **63** | 62 | 46 | 30 | 34 | 45 |
+| B-dist (rollouts, Gaussian NLL) | **1.6** | **5** | 12 | 22 | 27 | 28 | 25 | 23 | 23 | 24 | 20 | 26 | 27 |
+
+Two different things. (1) At `d ≤ 2` B-dist is near-perfect outside the
+corner where A1x is 14° — a real short-range gain, and A1y says it does
+not come from the pair distribution through A's loss. (2) The mid-range
+CRT band is **flattened, not solved**: A1x's 63° peak becomes a flat
+~25° from `d = 4` to `d = 19`. That is not better disambiguation; it is a
+**hedge** — a network that is uncertain and outputs a conservative
+average rather than committing to the wrong CRT branch. A Gaussian NLL
+with learnable σ does exactly that: where the target is unpredictable
+the optimizer raises σ and pulls μ toward the mean, whereas `1 − cos`
+has no escape and fits the corner's shortcut with confidence. The
+mean/median gap on B-dist's region×region (24° vs 6°) is the same
+signature: many near-perfect pairs, a tail of hedges.
+
+**Verdict:** the loss, not the data. B-dist's 22.5° mean is partly a real
+short-range gain and partly a hedge that scores better on a mean-angle
+metric without knowing the answer. P13 half right (loss), half wrong
+(distribution). The remaining open question — whether the short-range
+gain is *also* the loss, or something about DAgger's off-path states —
+is one run: A's trainer with a Gaussian-NLL head. Not run.
+
+D1: 2 eval jobs. A1y: 2 runs, ~1 GPU-h.

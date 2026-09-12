@@ -46,7 +46,22 @@ What this leaves standing: the attractor's local frame is not something
 a recurrent network reconstructs in-context from a few steps in a new
 region, at least not a 1-layer GRU under 64-step BPTT in 2000 updates.
 The memoryless MLP's extrapolation is bounded by the stretch of the
-cycle it saw, and is improved but not fixed by training on trajectories.
+cycle it saw.
+
+**D1 / A1y — why B-dist extrapolated better (2026-09-12).** Trajectory-
+shaped pairs through A's own trainer and `1 − cos` loss land at 39–44°
+outside the corner, i.e. A1x's number: the rollout *distribution* is not
+the cause. Binning error by `|g − p|` shows what is. A1x outside the
+corner is non-monotone — 14° at `d = 1–2`, a 63° peak at `d = 9`, back
+to 30° at `d = 13–15` where the modules wrap — so the MLP learned the
+code's periodicity and fails only on mid-range Chinese-remainder
+disambiguation. B-dist is 1.6° at `d = 1` (a real short-range gain) and
+then a *flat* ~25° from `d = 4` to `19`: the mid-range band is hedged,
+not solved. That is the Gaussian-NLL loss with learnable σ pulling μ
+toward a conservative mean where the target is unpredictable, which a
+`1 − cos` loss cannot do. B-dist's 22.5° is partly real and partly a
+hedge that scores well on a mean-angle metric. P13: right about the
+loss, wrong about the distribution.
 
 ### A2 result — regular mode generalizes to unseen barcodes
 
