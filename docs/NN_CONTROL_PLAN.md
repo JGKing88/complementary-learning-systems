@@ -941,6 +941,25 @@ phase stretch). Continuous only; 2 seeds each = 4 runs. *Read*:
 A1's scattered result was interpolation. *Gate*: every `heldout_out` box
 clears the rect by ≥ margin, checked at launch.
 
+**D1 — out-of-corner error by displacement.** No training. Take the A1x
+(i.i.d.) and B-dist (rollout) checkpoints, enumerate `heldout_out`, and
+bin angular error by `|g − p|` (Chebyshev, 1–19). If B-dist's advantage
+lives only at short range, the rollout distribution's short-range
+weighting is the explanation; if it is uniform across range, look at
+the loss. `eval_goal_pairs --by_distance`, which now loads either
+checkpoint type.
+
+**A1y — trajectory-shaped pairs through A's trainer.** The other half of
+the split: same trainer, same `1 − cos` loss, same schedule, same corner
+as A1x — only the pair sampler changes. `--pair_sampler trajectory`
+draws `(p₀, g)` as before, then emits every cell along the unit-step
+straight line from `p₀` to `g`, so the displacement distribution matches
+an ideal rollout's (one pair at each distance per episode, hence weighted
+toward short range) and `g` is fixed while `p` moves. If this reproduces
+B-dist's ~22° outside the corner, the data distribution is the cause; if
+it stays at A1x's 44°, the cause is the Gaussian-NLL loss or the
+minibatched optimiser. l5h768 step, K = 400, 2 seeds.
+
 **A2 — regular mode, linear.** On the standard scattered world only: the
 input is `[omni(p), omni(g)]`, a ray-cast of the wall, and scaffold
 position never enters it, so the corner is a no-op in regular mode. The
@@ -1039,6 +1058,10 @@ re-confirms this on the actual envs of every run.
   has more than enough capacity for a barcode. If this holds, P3's
   "cannot express a cross-correlation" was true and irrelevant: the
   network does not need the warp, it learns the map directly.
+- **P13** D1: B-dist's advantage over A1x outside the corner is largest
+  at short displacements (`|g − p| ≤ 5`) and shrinks or vanishes by ~10.
+  A1y: reproduces most of B-dist's gain (to within ~5° of 22°) — the
+  pair distribution is the cause, not the loss.
 - **P12** B1x: `dist` ≈ A1x on readout 1 and flat on readout 2 (the
   rollout distribution is not the fix); `full` at ≈ 44° on episode 0 and
   rising over episodes on `heldout_out`; `rec` between. The magnitude of
