@@ -43,16 +43,11 @@ from .evaluation.lifetime import aggregate_lifetimes, evaluate_lifetime_directio
 from .policy.agent_rnn import RNNAgent, compute_rnn_input_dim
 from .rollout.rnn import collect_rollout_rnn
 from .training.goal_pairs_setup import (
-    MODES, agent_cfg_for_mode, build_env_sets, eval_all, jsonable)
+    ARMS, MODES, agent_cfg_for_mode, build_env_sets, eval_all, jsonable)
 from .training.rnn_setup import write_rnn_world_spec
 from .updates.bc_rnn import bc_rnn_update
 from .world.vec_env import make_vec
 
-ARMS = {
-    "full": dict(rnn_cell="gru", input_prev_action=True),
-    "rec":  dict(rnn_cell="gru", input_prev_action=False),
-    "dist": dict(rnn_cell="mlp", input_prev_action=False),
-}
 
 
 def main() -> None:

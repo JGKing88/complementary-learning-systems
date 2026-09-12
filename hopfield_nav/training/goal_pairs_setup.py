@@ -17,6 +17,15 @@ from .rnn_setup import rnn_world
 
 MODES = ("xy", "grid", "regular")
 
+# Experiment B's arms (plan sec 4.2): the factorial that makes a B win
+# attributable. Lives here so the eval CLI can rebuild an arm's agent
+# without importing the training CLI.
+ARMS = {
+    "full": dict(rnn_cell="gru", input_prev_action=True),
+    "rec":  dict(rnn_cell="gru", input_prev_action=False),
+    "dist": dict(rnn_cell="mlp", input_prev_action=False),
+}
+
 
 def agent_cfg_for_mode(mode: str, movement_mode: str, **kw) -> RNNAgentConfig:
     """The three input modes, each a complete channel configuration (plan §2.2).

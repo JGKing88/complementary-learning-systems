@@ -102,6 +102,48 @@ def sample_pairs(cells: CellSets, starts: str, goals: str, n: int,
     return p, g
 
 
+def sample_trajectory_pairs(cells: CellSets, starts: str, goals: str, n: int,
+                            rng: np.random.RandomState) -> tuple[np.ndarray, np.ndarray]:
+    """~``n`` pairs shaped like an ideal rollout (plan A1y).
+
+    Draw ``(p0, g)`` as ``sample_pairs`` does, then walk the unit-step straight
+    line from ``p0`` toward ``g`` (snapping to cells, as the continuous env
+    does) and emit ``(p_t, g)`` for every distinct cell on the way, excluding
+    ``g`` itself. One episode contributes one pair at each displacement from
+    ``|g - p0|`` down to 1, so the displacement distribution is weighted
+    toward short range and ``g`` is fixed while ``p`` moves -- the two
+    properties of rollout data that A1x's i.i.d. sampler does not have.
+    Episodes are drawn until at least ``n`` pairs exist, then truncated.
+
+    Intermediate cells are NOT restricted to ``start_train``: a rollout does
+    not avoid region cells either, and the point of this sampler is to
+    reproduce the rollout distribution, not to improve on it.
+    """
+    S = cells.size
+    ps_out, gs_out = [], []
+    total = 0
+    while total < n:
+        p0, g = sample_pairs(cells, starts, goals, max(8, n // 8), rng)
+        for a, b in zip(p0, g):
+            ax, ay, bx, by = a // S, a % S, b // S, b % S
+            d = np.array([bx - ax, by - ay], dtype=np.float64)
+            u = d / np.linalg.norm(d)
+            pos = np.array([ax, ay], dtype=np.float64)
+            seen = set()
+            for _ in range(2 * S):
+                cx, cy = int(np.round(pos[0])), int(np.round(pos[1]))
+                cx, cy = min(max(cx, 0), S - 1), min(max(cy, 0), S - 1)
+                cid = cx * S + cy
+                if cid == b:
+                    break
+                if cid not in seen:
+                    seen.add(cid); ps_out.append(cid); gs_out.append(int(b)); total += 1
+                pos = pos + u
+            if total >= n:
+                break
+    return np.array(ps_out[:n], dtype=np.int64), np.array(gs_out[:n], dtype=np.int64)
+
+
 def enumerate_pairs(cells: CellSets, starts: str, goals: str) -> tuple[np.ndarray, np.ndarray]:
     """Every ``(p, g)`` with ``p`` in one set, ``g`` in another, ``p != g``."""
     S = cells.size
@@ -471,3 +513,51 @@ def format_table(agg: dict, movement_mode: str, title: str = "") -> str:
             row += cell.ljust(22)
         lines.append(row)
     return "\n".join(lines)
+
+
+# ---------------------------------------------------------------------------
+# Error by displacement (plan D1)
+# ---------------------------------------------------------------------------
+
+def evaluate_pairs_by_distance(
+    model, tensors: EnvTensors, cfg: RNNAgentConfig, cells: CellSets, *,
+    movement_mode: str, device, starts: str = "train", goals: str = "train",
+    max_d: int | None = None,
+) -> dict:
+    """Enumerate one quadrant and bin the per-pair score by Chebyshev |g - p|.
+
+    Returns ``{"d": [1..max_d], "mean": [...], "n": [...]}`` -- the mean score
+    (angular error or set-membership) at each displacement magnitude. This is
+    the view that says WHERE a model's error lives: a model that learned a
+    local map is good at short range and degrades with distance; one that
+    memorised absolute phase configurations is bad everywhere it was not
+    trained.
+    """
+    S = tensors.size
+    p, g = enumerate_pairs(cells, starts, goals)
+    x = pair_inputs(tensors, cfg, p, g)
+    pred = _predict(model, x, movement_mode, device)
+    if movement_mode == "continuous":
+        score = angular_error_deg(pred, unit_vectors(p, g, S))
+    else:
+        opt = optimal_action_set(p, g, S)
+        score = opt[np.arange(len(p)), pred.argmax(axis=1)].astype(np.float64)
+    d = np.maximum(np.abs(p // S - g // S), np.abs(p % S - g % S))
+    dmax = int(d.max()) if max_d is None else int(max_d)
+    out_d, out_m, out_n = [], [], []
+    for k in range(1, dmax + 1):
+        m = d == k
+        if m.any():
+            out_d.append(k); out_m.append(float(score[m].mean())); out_n.append(int(m.sum()))
+    return {"d": out_d, "mean": out_m, "n": out_n}
+
+
+def aggregate_by_distance(results: list[dict]) -> dict:
+    """n-weighted mean over envs at each displacement."""
+    ds = sorted({k for r in results for k in r["d"]})
+    mean, n = [], []
+    for k in ds:
+        num = sum(r["mean"][r["d"].index(k)] * r["n"][r["d"].index(k)] for r in results if k in r["d"])
+        den = sum(r["n"][r["d"].index(k)] for r in results if k in r["d"])
+        mean.append(num / den); n.append(den)
+    return {"d": ds, "mean": mean, "n": n}

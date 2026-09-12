@@ -38,7 +38,7 @@ from cls_paths import run_dir, run_name
 import run_manifest
 from .config import EnvConfig, RNNTrainConfig, RNNBCConfig
 from .evaluation.goal_pairs import (
-    format_table, pair_inputs, pair_targets, sample_pairs)
+    format_table, pair_inputs, pair_targets, sample_pairs, sample_trajectory_pairs)
 from .policy.agent_rnn import compute_rnn_input_dim
 from .policy.pair_regressor import PairRegressor
 from .training.goal_pairs_setup import (
@@ -46,10 +46,12 @@ from .training.goal_pairs_setup import (
 from .training.rnn_setup import write_rnn_world_spec
 
 
-def train_batch(train: EnvSet, cells, acfg, movement_mode, pairs_per_env, rng, device):
+def train_batch(train: EnvSet, cells, acfg, movement_mode, pairs_per_env, rng, device,
+                sampler: str = "iid"):
+    draw = sample_pairs if sampler == "iid" else sample_trajectory_pairs
     xs, ys = [], []
     for t in train.tensors:
-        p, g = sample_pairs(cells, "train", "train", pairs_per_env, rng)
+        p, g = draw(cells, "train", "train", pairs_per_env, rng)
         xs.append(pair_inputs(t, acfg, p, g))
         ys.append(pair_targets(p, g, t.size, movement_mode))
     x = torch.from_numpy(np.concatenate(xs)).to(device)
@@ -83,6 +85,10 @@ def main() -> None:
     p.add_argument("--n_val_envs", type=int, default=16)
     p.add_argument("--n_same_envs", type=int, default=8)
     p.add_argument("--pairs_per_env", type=int, default=512)
+    p.add_argument("--pair_sampler", choices=["iid", "trajectory"], default="iid",
+                   help="iid: uniform (p, g). trajectory: every cell on the straight line "
+                        "from p0 to g, so the displacement distribution matches an ideal "
+                        "rollout's (plan A1y).")
     p.add_argument("--size", type=int, default=20)
     p.add_argument("--observation_size", type=int, default=120)
     p.add_argument("--wall_resolution", type=int, default=1)
@@ -205,7 +211,7 @@ def main() -> None:
     t_train = time.time()
     for u in range(1, args.n_updates + 1):
         x, y = train_batch(train, cells, acfg, args.movement_mode, args.pairs_per_env,
-                           data_rng, device)
+                           data_rng, device, sampler=args.pair_sampler)
         loss = model.loss(x, y)
         opt.zero_grad(set_to_none=True)
         loss.backward()

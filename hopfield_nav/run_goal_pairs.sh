@@ -32,6 +32,7 @@ N_ENVS=${N_ENVS:-64}
 N_VAL_ENVS=${N_VAL_ENVS:-16}
 N_SAME_ENVS=${N_SAME_ENVS:-8}
 PAIRS_PER_ENV=${PAIRS_PER_ENV:-512}
+PAIR_SAMPLER=${PAIR_SAMPLER:-iid}
 SIZE=${SIZE:-20}
 OBS=${OBS:-120}
 LAMBDAS=${LAMBDAS:-"11 12 13"}
@@ -70,7 +71,7 @@ PYTHONUNBUFFERED=1 python -m hopfield_nav.train_goal_pairs \
   --mode "$MODE" --movement_mode "$MOVEMENT" \
   --hidden_size "$HIDDEN" --num_layers "$LAYERS" --nonlinearity "$NONLIN" --dropout "$DROPOUT" \
   --n_envs "$N_ENVS" --n_val_envs "$N_VAL_ENVS" --n_same_envs "$N_SAME_ENVS" \
-  --pairs_per_env "$PAIRS_PER_ENV" --size "$SIZE" --observation_size "$OBS" \
+  --pairs_per_env "$PAIRS_PER_ENV" --pair_sampler "$PAIR_SAMPLER" --size "$SIZE" --observation_size "$OBS" \
   --lambdas $LAMBDAS --fwhm_ratio "$FWHM" --place_margin "$PLACE_MARGIN" \
   --goal_val_frac "$GOAL_VAL_FRAC" --region_val_frac "$REGION_VAL_FRAC" \
   --place_region "$PLACE_REGION" --n_ood_place "$N_OOD_PLACE" \

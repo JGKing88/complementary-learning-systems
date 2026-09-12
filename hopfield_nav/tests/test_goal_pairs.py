@@ -349,3 +349,19 @@ def test_collector_follows_per_row_goals(world):
     still = ~(r.goal_reached[:, 1].numpy().astype(bool))
     assert still.sum() >= 3
     assert np.allclose(chan[still], grid_state_vec(g1[still], off, sgb), atol=1e-6)
+
+
+def test_trajectory_sampler_is_short_range_weighted(world):
+    from hopfield_nav.evaluation.goal_pairs import sample_trajectory_pairs
+    cells = world["cells"]
+    rng = np.random.RandomState(0)
+    pi, gi = sample_pairs(cells, "train", "train", 4000, rng)
+    pt, gt = sample_trajectory_pairs(cells, "train", "train", 4000, rng)
+    assert len(pt) == 4000 and (pt != gt).all()
+    gs = {(int(i // SIZE), int(i % SIZE)) for i in gt}
+    assert gs <= cells.goal_train
+    cheb = lambda p, g: np.maximum(np.abs(p // SIZE - g // SIZE), np.abs(p % SIZE - g % SIZE))
+    d_iid, d_tr = cheb(pi, gi), cheb(pt, gt)
+    # The point of the sampler: mass moves to short range.
+    assert d_tr.mean() < d_iid.mean() - 0.5
+    assert (d_tr == 1).mean() > (d_iid == 1).mean() * 1.5
