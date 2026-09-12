@@ -24,10 +24,18 @@
 #
 #   UPDATE=600 sbatch hopfield_nav/run_eval_ood.sh
 #   UPDATE=1200 N_ENVS=48 sbatch --partition=pi_fiete hopfield_nav/run_eval_ood.sh
+#   SET=corner UPDATE=1200 sbatch hopfield_nav/run_eval_ood.sh
+#
+# SET picks the arm family: `half` (ood_place / ood_place_rp, rect 858x1716 at
+# margin 80, plus d0_base as reference) or `corner` (ood_corner /
+# ood_corner_rp, rect 500x500 at margin 50). The corner set gets no
+# place=held_out at all: a 500 box has no room for a fresh 24-env draw clear
+# of even the 26 fixed envs, let alone the refresh union.
 
 set -euo pipefail
 
 REPO=${REPO:-/orcd/home/002/jackking/cls/.claude/worktrees/nav-ood-place}
+SET=${SET:-half}
 UPDATE=${UPDATE:-600}
 N_ENVS=${N_ENVS:-24}          # minted envs per split; `recorded` keeps its own 6
 NUM_TRIALS=${NUM_TRIALS:-16}
@@ -43,13 +51,15 @@ unset CUDA_VISIBLE_DEVICES
 source scripts/cls_env.sh
 
 CK=$CLS_CKPTS
-OUT=${OUT:-$CLS_RESULTS/eval_results/ood_place_u${UPDATE}}
+OUT=${OUT:-$CLS_RESULTS/eval_results/ood_${SET}_u${UPDATE}}
 mkdir -p "$OUT"
 
 declare -A RUN=(
   [d0_base]=navigate_navp2_d0_base_s42_22133273
   [ood_place]=navigate_navp2_ood_place_s42_22599420
   [ood_place_rp]=navigate_navp2_ood_place_rp_s42_22599421
+  [ood_corner]=navigate_navp2_ood_corner_s42_22629938
+  [ood_corner_rp]=navigate_navp2_ood_corner_rp_s42_22629939
 )
 
 ev() {  # ev <arm> <tag> <split...>
@@ -68,9 +78,18 @@ ev() {  # ev <arm> <tag> <split...>
       "${args[@]}" || echo "!!! $arm $tag FAILED (exit $?)"
 }
 
-ev ood_place    main     recorded place=held_out place=ood
-ev ood_place_rp main     recorded place=ood
-ev ood_place_rp heldout  place=held_out
-ev d0_base      main     recorded place=held_out
+case "$SET" in
+  half)
+    ev ood_place    main     recorded place=held_out place=ood
+    ev ood_place_rp main     recorded place=ood
+    ev ood_place_rp heldout  place=held_out
+    ev d0_base      main     recorded place=held_out
+    ;;
+  corner)
+    ev ood_corner    main    recorded place=ood
+    ev ood_corner_rp main    recorded place=ood
+    ;;
+  *) echo "unknown SET=$SET (half|corner)" >&2; exit 1 ;;
+esac
 
 echo; echo "=== done $(date)  results in $OUT"
