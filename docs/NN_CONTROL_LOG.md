@@ -580,3 +580,32 @@ confirmed for `dist` in the static-map sense. Written to the plan's §0.
 5×768 — not matched); longer BPTT windows; and whether `dist`'s 22.5°
 keeps falling with more updates. All three are follow-ups, not part of
 the question asked.
+
+## 2026-09-12 — D1 and A1y: why does the rollout-trained MLP extrapolate better?
+
+Two tests, plan §6.2 (D1, A1y) and P13. The sampler check first: at
+size 20, i.i.d. pairs have mean `|g − p|` 9.4 with 22% at `d ≤ 5` and 48%
+at `d ≥ 10`; the trajectory sampler flips that to 6.3, 50%, 22% (`d = 1`
+goes from 2% to 11% of pairs).
+
+**A1y — trajectory-shaped pairs through A's trainer** (`--pair_sampler
+trajectory`, A's `1 − cos` loss, A's step schedule, K=400, l5h768):
+heldout_out **39.4° / 43.9°** (two seeds). A1x's i.i.d. was 44.7 / 44.0.
+**P13 falsified for A1y.** The displacement-weighting and goal-fixed
+structure of rollout data does *not* explain B-dist's 22.5°.
+
+**D1 — A1x's out-of-corner error by Chebyshev `|g − p|`**, enumerated:
+
+| d | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12 | 13 | 14 | 15 | 19 |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| out | **14** | 13 | 16 | 22 | 32 | 43 | 53 | 60 | **63** | 62 | 56 | 46 | 36 | 30 | 30 | 45 |
+| in | 0.4 | 0.3 | 0.3 | 0.3 | 0.2 | … | | | | | | | | | | 0.5 |
+
+Non-monotone. Outside the corner the memoryless MLP extrapolates at short
+range (14° at `d = 1–2`), fails in the mid-range band `d ≈ 6–11` (peak
+63° at `d = 9`), and **recovers to ~30° at `d = 13–15`** — where the
+modules (λ = 11, 12, 13) wrap and the phase-difference pattern becomes
+locally similar to short-range again. So the network learned the code's
+periodicity; what does not transfer is the mid-range Chinese-remainder
+disambiguation. The 44° mean is dominated by `d = 6–12`, where i.i.d.
+sampling puts most of its mass.
