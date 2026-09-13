@@ -36,7 +36,8 @@ from hopfield_nav.evaluation import protocols
 from hopfield_nav.world.env import make_env
 from hopfield_nav.evaluation.metrics import agent_step, random_start
 from hopfield_nav.evaluation.checkpoint_io import (
-    cfg_from_checkpoint, eval_world_for_split, load_agent,
+    cfg_from_checkpoint, eval_env_set, eval_world_for_split, load_agent,
+    world_spec_for,
 )
 from .baseline import merge_iter_traces
 from hopfield import Hopfield
@@ -407,7 +408,27 @@ def main() -> None:
         # val_envs once via the build_eval_world draw order) flows.
         vh = VectorHash(cfg.vectorhash)
         _load_scaffold_cache(vh, args.scaffold_cache, cfg, mmap=args.mmap)
-        if args.env_seed is None:
+        spec = world_spec_for(args.ckpt) if args.env_seed is None else None
+        if spec is not None:
+            # The run recorded its world, so this is the same resolver every
+            # eval CLI uses, handed the cached field instead of a rebuilt one.
+            # Before 2026-09-13 this branch fell through to the RNG replay
+            # below regardless of --split: a `--split place=ood` on a
+            # generator run silently scored d0_base's legacy val set (same
+            # seed, same skip loop), and nothing in the output said so.
+            es = eval_env_set(cfg, encoder, str(device), ckpt_path=args.ckpt,
+                              levels=gen.parse_levels(args.split),
+                              val_seed=args.val_seed, spec=spec, field=vh)
+            val_envs, offsets = es["envs"], es["offsets"]
+            r = es["report"]
+            print(f"[agenthash] split={es['key']}: {len(val_envs)} envs"
+                  + (f", place_gap>={r.get('min_place_gap_vs_train')} "
+                     f"(margin {r.get('margin')})" if r else ""), flush=True)
+        elif args.env_seed is None:
+            if gen.parse_levels(args.split) is not None:
+                raise SystemExit(
+                    f"--split {args.split} needs a world.json, and {args.ckpt} "
+                    "has none: the legacy replay below cannot mint a level.")
             # Mirror build_eval_world's val_env construction (rng skip + draws).
             rng = np.random.RandomState(cfg.seed)
             for _ in range(cfg.envs_per_world * cfg.num_worlds):

@@ -217,6 +217,18 @@ def test_every_eval_driver_can_be_asked_for_a_split():
     # table.
     assert "eval_env_set(" in inspect.getsource(eval_all)
 
+    # agenthash has a second env-resolution branch behind --scaffold_cache,
+    # and the assertion above could not see that it replayed the legacy RNG
+    # draw regardless of --split: on 2026-09-13 a `--split place=ood` on a
+    # generator run scored d0_base's legacy val set under that name. The
+    # cached branch must consult the record and go through the shared call.
+    src = inspect.getsource(agenthash)
+    cached = src[src.index("if args.scaffold_cache is not None:"):
+                 src.index("elif args.env_seed is None:")]
+    assert "world_spec_for(args.ckpt)" in cached and "eval_env_set(" in cached, (
+        "agenthash's --scaffold_cache branch resolves envs without the world "
+        "record, so --split is ignored there")
+
     # Every CLI that owns a RolloutEngine passes the flag through; a driver that
     # forgets it silently decodes the recorded set while reporting a level.
     for mod in (exp1, exp2):
