@@ -305,6 +305,23 @@ class PPOConfig:
     # behaviour). Makes a high ppo_epochs setting safe: the loop runs as many
     # passes as the clip region allows and no more.
     target_kl: float | None = None
+    # Linear warmup of lr from lr * lr_warmup_start_frac to lr over the first
+    # lr_warmup_updates updates (0 = none). Measured 2026-09-13: from a fresh
+    # init one 3e-4 Adam step is approx-KL 0.4-1.5, thirty to a hundred times
+    # the steady-state step, so the first ~100 updates of every run were a
+    # random walk PPO's clip could not govern.
+    lr_warmup_updates: int = 0
+    lr_warmup_start_frac: float = 0.1
+    # KL-adaptive lr (rl_games style): after each update, if kl_final (mean
+    # approx-KL over the last epoch, vs the rollout policy) exceeds
+    # 2 x adaptive_kl the lr is divided by adaptive_kl_factor; below
+    # adaptive_kl / 2 it is multiplied; bounded to [adaptive_lr_min,
+    # adaptive_lr_max]. None = off. A stage's `lr=` override and the warmup
+    # both act on the BASE lr; the adaptive multiplier sits on top.
+    adaptive_kl: float | None = None
+    adaptive_kl_factor: float = 1.5
+    adaptive_lr_min: float = 1e-6
+    adaptive_lr_max: float = 1e-3
 
 
 @dataclass

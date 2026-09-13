@@ -239,6 +239,7 @@ def ppo_update(
     total_aux_vis = 0.0
     total_approx_kl = 0.0
     total_clip_frac = 0.0
+    last_epoch_kl: list[float] = []
     n_steps = 0
     n_nonfinite = 0
     reported_nonfinite = False
@@ -250,6 +251,7 @@ def ppo_update(
         if kl_stop:
             break
         epochs_run += 1
+        last_epoch_kl = []
         perm = torch.randperm(N, device=obs.device)
         for start in range(0, N, mb_size):
             idx = perm[start:start + mb_size]
@@ -558,6 +560,7 @@ def ppo_update(
             total_aux_vis += aux_vis_loss.item()
             total_approx_kl += approx_kl
             total_clip_frac += clip_frac
+            last_epoch_kl.append(approx_kl)
             n_steps += 1
             if trace is not None:
                 # Per gradient step, for the optimizer probe
@@ -601,6 +604,12 @@ def ppo_update(
         "approx_kl": total_approx_kl / denom,
         "clip_frac": total_clip_frac / denom,
         "epochs_run": float(epochs_run),
+        # Mean KL over the LAST epoch's minibatches: how far the policy ended
+        # up from the one that collected the pool, which is what an adaptive
+        # learning rate has to read (the all-steps mean above dilutes it with
+        # the near-zero first epoch).
+        "kl_final": (sum(last_epoch_kl) / len(last_epoch_kl)
+                     if last_epoch_kl else 0.0),
         "grad_steps": float(n_steps),
     }
     # Emitted only under the polar head, where kappa exists. Not 0.0 (which

@@ -149,7 +149,25 @@ the end of the run. TIMEOUT at 24 h is the expected end.
 
 ## 4. Results
 
-*(filled as evals land; window means, `sample_eff_curve.py`)*
+*(window means of the training eval, `sample_eff_curve.py`; the verdict is
+§1's probe, `hopfield_nav/run_se_probe.sh`)*
+
+### 4.0 Launch record
+
+| arm | job | node | s/update (roll / ppo) | u1 approx_kl / clip / steps |
+|---|---|---|---|---|
+| `se_b8` | 22701297 | node2702 | 28.6 (27.8 / 0.8) | **1.47 / 0.81** / 16 — the init random walk, live |
+| `se_b8_lr1` | 22701298 | node3811 | 27.3 (26.8 / 0.5) | 0.083 / 0.35 / 2 (KL stop at step 2, fresh Adam) |
+| `se_b8_lr03` | 22701299 | node2703 | 28.4 (25.4 / 3.0) | 0.034 / 0.39 / 160 |
+| `se_b4_lr1` | 22701300 | node3911 | 28.3 (27.5 / 0.8) | 0.049 / 0.33 / 3 |
+| `se_n10_b8_lr1` | 22701302 | node3810 | 13.2 (12.4 / 0.8) | u10: 0.052 / 0.31 / 66 |
+| `se_b8_lr1_h100` | 22701304 | node3811 | 13.7 (13.1 / 0.6) | u10: 0.059 / 0.44 / 31 |
+
+Timing smokes before the wave (8 updates each, 3e-4, target_kl 0.02):
+22700947 (`se_b8`) 36 s/u, 22700949 (20 envs, 10×8) 30 s/u with the KL stop
+firing at step 2 every update, 22700951 (10 envs, 10×8) 12.4 s/u. The
+per-update line now carries `(roll= ppo=)`, `eps_cum= steps_cum=`,
+`approx_kl clip_frac epochs_run grad_steps`.
 
 ## 5. Accounting notes
 

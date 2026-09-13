@@ -1596,6 +1596,14 @@ case "$VARIANT" in
   #                  are always the full rollout length (goals off), so this
   #                  halves the explore env-steps; eval stays at 200 steps.
   #
+  # Wave S2 (optimizer self-tuning), from the same probe:
+  #   se_b8_akl      10x8 from lr 1e-4 with --adaptive_kl 0.02: the lr is
+  #                  divided by 1.5 whenever the last epoch's KL exceeds 0.04
+  #                  and multiplied when below 0.01, in [1e-6, 1e-3]. Shrinks
+  #                  through the init random walk on its own and grows back as
+  #                  the gradient weakens.
+  #   se_b8_wu       10x8 at 1e-4 with a 100-update linear warmup from 1e-5.
+  #
   # Schedules are long (4000) because an update is now cheap; TIMEOUT at the
   # 24 h ou_bcs_normal wall is the normal outcome and CKPT_EVERY=25 leaves the
   # series. Samples-to-target is read off the checkpoint that first meets the
@@ -1669,6 +1677,8 @@ case "$VARIANT" in
           se_b4_lr1)      BATCH_ENVS=4; PPO_EPOCHS=10; N_MINIBATCHES=8; TARGET_KL=0.1; LR=1e-4 ;;
           se_n10_b8_lr1)  ENVS_PER_WORLD=10; PPO_EPOCHS=10; N_MINIBATCHES=8; TARGET_KL=0.1; LR=1e-4 ;;
           se_b8_lr1_h100) PPO_EPOCHS=10; N_MINIBATCHES=8; TARGET_KL=0.1; LR=1e-4; STEPS_PER_ROLLOUT=100 ;;
+          se_b8_akl)      PPO_EPOCHS=10; N_MINIBATCHES=8; TARGET_KL=0.1; LR=1e-4; ADAPTIVE_KL=0.02 ;;
+          se_b8_wu)       PPO_EPOCHS=10; N_MINIBATCHES=8; TARGET_KL=0.1; LR=1e-4; LR_WARMUP_UPDATES=100 ;;
           # Timing-smoke names from the first pass (jobs 22700191/949/951),
           # kept so their logs can be re-read: 10x8 at 3e-4 with target_kl
           # 0.02, which the probe then showed stops every update at step 2.

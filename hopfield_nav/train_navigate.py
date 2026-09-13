@@ -140,6 +140,9 @@ def run_navigate(
     # trajectory, so Adam's moments carry across a boundary. A stage-level `lr`
     # retunes the existing group instead of building a new optimizer.
     current_lr = cfg.ppo.lr
+    # KL-adaptive multiplier on the base lr (PPOConfig.adaptive_kl). Carried in
+    # the resume point so a continuation does not restart at 1.0.
+    adaptive_lr_mult = float((resume_state or {}).get("adaptive_lr_mult", 1.0))
 
     # After the freeze, because the freeze is what decides which parameters Adam
     # owns and therefore what shape its state has to be. The RNG is *not*
@@ -404,10 +407,19 @@ def run_navigate(
             if _head is not None:
                 _head.log_kappa_max = _lkm
 
-        if knobs.lr != current_lr:
+        # The lr this update runs at: the schedule's base, times the warmup
+        # ramp, times the KL-adaptive multiplier carried from the last update.
+        _wu = int(getattr(cfg.ppo, "lr_warmup_updates", 0) or 0)
+        if _wu > 0 and update <= _wu:
+            _f0 = float(getattr(cfg.ppo, "lr_warmup_start_frac", 0.1))
+            _warm = _f0 + (1.0 - _f0) * (update - 1) / float(max(_wu - 1, 1))
+        else:
+            _warm = 1.0
+        lr_now = knobs.lr * _warm * adaptive_lr_mult
+        if lr_now != current_lr:
             for group in optimizer.param_groups:
-                group["lr"] = knobs.lr
-            current_lr = knobs.lr
+                group["lr"] = lr_now
+            current_lr = lr_now
 
         n_emp_now = int(round(n_envs * knobs.empty_frac))
         n_pre_now = n_envs - n_emp_now
@@ -472,6 +484,21 @@ def run_navigate(
         t_ppo0 = time.time()
         losses = ppo_update(agent, rollouts, cfg.ppo, optimizer, aux_scale=1.0)
         t_ppo_acc += time.time() - t_ppo0
+
+        _akl = getattr(cfg.ppo, "adaptive_kl", None)
+        if _akl is not None:
+            _kf = float(losses.get("kl_final", 0.0))
+            _fac = float(getattr(cfg.ppo, "adaptive_kl_factor", 1.5))
+            if _kf > 2.0 * _akl:
+                adaptive_lr_mult /= _fac
+            elif _kf < 0.5 * _akl:
+                adaptive_lr_mult *= _fac
+            _lo = float(getattr(cfg.ppo, "adaptive_lr_min", 1e-6))
+            _hi = float(getattr(cfg.ppo, "adaptive_lr_max", 1e-3))
+            adaptive_lr_mult = min(max(adaptive_lr_mult,
+                                       _lo / max(knobs.lr, 1e-12)),
+                                   _hi / max(knobs.lr, 1e-12))
+        losses["lr"] = current_lr
 
         mean_r = sum(r.rewards.sum().item() for r in rollouts) / max(
             sum(r.rewards.numel() for r in rollouts), 1)
@@ -556,7 +583,8 @@ def run_navigate(
                   f"s/u={s_per_update:.1f} "
                   f"(roll={t_roll_acc / _nt:.1f} ppo={t_ppo_acc / _nt:.1f}) "
                   f"eps_cum={cum_episodes} steps_cum={cum_env_steps} | "
-                  + " ".join(f"{k}={v:.3f}" for k, v in losses.items())
+                  + " ".join((f"{k}={v:.2e}" if k == "lr" else f"{k}={v:.3f}")
+                             for k, v in losses.items())
                   + (f" | refresh={','.join(refreshed)}" if refreshed else ""),
                   flush=True)
             t_update_mark, n_updates_timed = time.time(), 0
@@ -610,6 +638,7 @@ def run_navigate(
                                   "wandb_id": wandb_id,
                                   "cum_episodes": cum_episodes,
                                   "cum_env_steps": cum_env_steps,
+                                  "adaptive_lr_mult": adaptive_lr_mult,
                                   # Its own stream, advanced once per distractor
                                   # draw, so it is not covered by the global
                                   # numpy state and has to be carried too.
@@ -855,6 +884,12 @@ CFG_FIELDS: dict[str, tuple[str, ...]] = {
     "ppo_epochs": ("ppo.ppo_epochs",),
     "n_minibatches": ("ppo.n_minibatches",),
     "target_kl": ("ppo.target_kl",),
+    "lr_warmup_updates": ("ppo.lr_warmup_updates",),
+    "lr_warmup_start_frac": ("ppo.lr_warmup_start_frac",),
+    "adaptive_kl": ("ppo.adaptive_kl",),
+    "adaptive_kl_factor": ("ppo.adaptive_kl_factor",),
+    "adaptive_lr_min": ("ppo.adaptive_lr_min",),
+    "adaptive_lr_max": ("ppo.adaptive_lr_max",),
     "gamma": ("ppo.gamma",),
     "gae_lambda": ("ppo.gae_lambda",),
     "vf_coef": ("ppo.vf_coef",),
@@ -1476,6 +1511,20 @@ def build_parser() -> argparse.ArgumentParser:
                         "(old||new) over a minibatch exceeds this (0.01-0.03 "
                         "is the usual range). Off by default, which is what "
                         "every run before 2026-09-13 did.")
+    p.add_argument("--lr_warmup_updates", type=int, default=None,
+                   help="Linear lr warmup over this many updates, from "
+                        "lr * lr_warmup_start_frac (PPOConfig default 0 = "
+                        "none).")
+    p.add_argument("--lr_warmup_start_frac", type=float, default=None)
+    p.add_argument("--adaptive_kl", type=float, default=None,
+                   help="Target for a KL-adaptive lr: the lr is divided by "
+                        "adaptive_kl_factor when the last epoch's mean approx "
+                        "KL exceeds 2x this, multiplied when below half of "
+                        "it, within [adaptive_lr_min, adaptive_lr_max]. Off "
+                        "by default.")
+    p.add_argument("--adaptive_kl_factor", type=float, default=None)
+    p.add_argument("--adaptive_lr_min", type=float, default=None)
+    p.add_argument("--adaptive_lr_max", type=float, default=None)
     p.add_argument("--gamma", type=float, default=None,
                    help="Discount (PPOConfig default 0.99).")
     p.add_argument("--gae_lambda", type=float, default=None,
