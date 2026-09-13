@@ -1,10 +1,33 @@
 # Goal-conditioned NN control: can a plain network navigate from encoded states?
 
-Status: **A0, A1, A1x, A2, B1x done, 2026-09-11.** Everything in §5
-except the ray-axis encoders (§5.4, unnecessary after A2) is built and
-tested; pre-flight C1–C8 and A0's C13 pass. Branch
+Status: **A0, A1, A1x, A2, B1x, D1, A1y, D2 done, 2026-09-13.** Everything
+in §5 except the ray-axis encoders (§5.4, unnecessary after A2) is built
+and tested; pre-flight C1–C8 and A0's C13 pass. Branch
 `worktree-nn-generalization-control`. The run-by-run record is
 `NN_CONTROL_LOG.md`.
+
+### Summary
+
+A memoryless MLP given `[enc(p), enc(g)]` and trained on i.i.d. pairs
+generalizes to unseen cells, goals, walls and scaffold positions — **0.23°**
+on grid codes, **5.5°** on ray-casts of never-seen barcodes — *when
+training covers the whole Chinese-remainder cycle*. Confine training to
+a 400 × 400 corner of the scaffold and grid mode fails outside it (**44°**;
+random is 90°), monotone in cycle coverage; by displacement the failure is
+confined to the mid-range disambiguation band, with the code's periodicity
+learned. Regular mode has no such corner (scaffold position never enters
+the input) and its 5.5° is real: flat in distance, and it survives at
+**22°** when the two views come from two different unseen walls — the
+network inverts the ray projection view-by-view. A recurrent net given
+lifetimes in a new scaffold region builds no map across episodes (every
+by-episode slope ≈ 0); it refines within an episode and collapses on long
+ones. An MLP trained on the same rollouts looked better outside the
+corner (22.5°), but that is the Gaussian-NLL loss hedging the mid-range
+band to a flat ~25°, not better disambiguation; trajectory-shaped pairs
+through the `1 − cos` loss stay at 44°. **What stands:** the attractor's
+hand-built local frame does two things no network here reproduced —
+extrapolate the grid code past the stretch of cycle it was shown, and
+estimate that frame in-context from a few steps in a new region.
 
 ### B1x result — history does not build a map; the rollout data does help the map
 
@@ -984,6 +1007,18 @@ B-dist's ~22° outside the corner, the data distribution is the cause; if
 it stays at A1x's 44°, the cause is the Gaussian-NLL loss or the
 minibatched optimiser. l5h768 step, K = 400, 2 seeds.
 
+**D2 — is A2 real, and by which mechanism.** No training. Two things on
+the A2 checkpoint's held-out walls. (i) Error by `|g − p|`: a network
+that decodes each view to a position and subtracts is flat in distance;
+one that matches the two views against their shared bits degrades with
+it. (ii) `--mismatched_walls`: feed `omni(p)` from held-out wall *i* and
+`omni(g)` from held-out wall *j ≠ i*. If the network inverts the ray
+projection view-by-view — run boundaries sit at angles fixed by
+position, wall-independently — the direction survives; if it relies on
+the shared bits, it collapses toward 90°. Also the leak audit: C1 (seed
+disjointness), C2 (zero twins), C6 (input bridge), C11 (reference lines
+on the scored pairs), stated in one place.
+
 **A2 — regular mode, linear.** On the standard scattered world only: the
 input is `[omni(p), omni(g)]`, a ray-cast of the wall, and scaffold
 position never enters it, so the corner is a no-op in regular mode. The
@@ -1086,6 +1121,10 @@ re-confirms this on the actual envs of every run.
   at short displacements (`|g − p| ≤ 5`) and shrinks or vanishes by ~10.
   A1y: reproduces most of B-dist's gain (to within ~5° of 22°) — the
   pair distribution is the cause, not the loss.
+- **P14** D2: the mismatched-wall error lands well below random but
+  well above matched — both mechanisms, with projection inversion
+  carrying most of the load — and the by-distance profile is flat.
+  *(Confirmed: 5.5° matched, 22° mismatched, flat 5.5° at every `d`.)*
 - **P12** B1x: `dist` ≈ A1x on readout 1 and flat on readout 2 (the
   rollout distribution is not the fix); `full` at ≈ 44° on episode 0 and
   rising over episodes on `heldout_out`; `rec` between. The magnitude of
