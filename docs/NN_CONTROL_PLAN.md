@@ -18,16 +18,24 @@ confined to the mid-range disambiguation band, with the code's periodicity
 learned. Regular mode has no such corner (scaffold position never enters
 the input) and its 5.5° is real: flat in distance, and it survives at
 **22°** when the two views come from two different unseen walls — the
-network inverts the ray projection view-by-view. A recurrent net given
-lifetimes in a new scaffold region builds no map across episodes (every
-by-episode slope ≈ 0); it refines within an episode and collapses on long
-ones. An MLP trained on the same rollouts looked better outside the
-corner (22.5°), but that is the Gaussian-NLL loss hedging the mid-range
-band to a flat ~25°, not better disambiguation; trajectory-shaped pairs
-through the `1 − cos` loss stay at 44°. **What stands:** the attractor's
-hand-built local frame does two things no network here reproduced —
-extrapolate the grid code past the stretch of cycle it was shown, and
-estimate that frame in-context from a few steps in a new region.
+network inverts the ray projection view-by-view. A GRU trained on
+lifetimes *inside* the corner and dropped outside it shows no in-context
+map-building across 20 episodes (every by-episode slope ≈ 0; one seed,
+1 layer, 2000 updates) — it refines for a few steps within an episode and
+collapses on long ones. That null is structural, not a weak run: the
+local frame at any cell is a deterministic function of the observable
+`gbook`, so for every region training covers the weights learn it
+outright, and no training lifetime ever rewards inferring it from
+history. Supervised training on this code cannot select for in-context
+region-learning; the pressure exists only at test time. An MLP trained
+on the same rollouts looked better outside the corner (22.5°), but that
+is the Gaussian-NLL loss hedging the mid-range band to a flat ~25°, not
+better disambiguation; trajectory-shaped pairs through the `1 − cos`
+loss stay at 44°. **What stands:** the attractor's local frame is
+*given* — built from Φ at every cell — so it works in any region without
+training. No network here learned an equivalent that extrapolates past
+the stretch of cycle it was shown, and in-context acquisition of one is
+not something this training can produce.
 
 ### B1x result — history does not build a map; the rollout data does help the map
 
@@ -1048,6 +1056,31 @@ must agree with readout 1 on the same env set.
 **B1 / B2 — grid / regular.** The three arms of §4.2 × both actions = 6 runs
 per mode, 1 seed. Run after A1/A2 have tables, read only in cells A failed.
 Second seed only for an arm that is read.
+
+**B1x-strong — the emergence null, hardened.** B1x's null is one seed,
+a 1-layer GRU, 2000 updates at constant lr, BPTT 64, scored over 20
+episodes. Four things, none of which can turn the null into a positive
+(see the structural note below) but all of which make it solid:
+(i) re-evaluate the existing B1x checkpoints with `n_eval_episodes = 160`
+— the training lifetimes were ~160 episodes and a slow in-context effect
+is invisible at 20; free. (ii) 2 more seeds of `full`. (iii) `full` at
+GRU 3×512, 8000 updates with the step decay, so the recurrent arm is
+depth- and budget-matched to the MLP it is compared against.
+(iv) BPTT 128 (`steps_per_rollout`) on the best of (iii). *Read*: any
+by-episode slope on `heldout_out` beyond the seed spread is a finding;
+none is expected.
+
+*Structural note, for the record.* On the real grid code no training
+distribution selects for in-context learning of an unseen region: the
+local frame at a cell is a deterministic function of the observable
+code, so whatever regions training covers, the weights learn the frame
+and no lifetime ever rewards inferring it from `(Δgbook, action)`. The
+pressure appears only at test time. Two forcing designs were considered
+and **rejected** — a per-lifetime random rotation of the direction frame,
+and a per-lifetime permutation of the modules — because they test
+inference of a synthetic randomization, not learning of the real code's
+unseen region. The question as posed is answered by the null plus this
+note, not by a better training regime.
 
 **A4 — scaling.** Only for an A arm within ~2× of threshold; one factor at a
 time. *Kill*: a 2× scale that moves the number < 20% is not a scale problem.
