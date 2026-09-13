@@ -944,3 +944,34 @@ Submitted: `enc-full` on the primary design (22699034) — the hypothesis
 with the memoryless half of the computation given the architecture that
 can do it — and `enc-full` anchor-mix (22699035) — the foothold. The
 plain-GRU anchor-mix (22694701) runs on to 8000 for the record.
+
+**Plain-GRU anchor-mix FINAL (22694701, u = 8000).** Readout 1:
+`heldout@90` (the anchor) **72.1°**, `heldout@45` 79.1°, `heldout@7`
+89.1°, `heldout` (θ = 0) **91.2°**; trajectory on the anchor 89.5 → 90.4
+→ 85.9 → 86.0 → 83.4 → 75.3 → 70.9 → 72.1 (the fall came with the lr
+step at 5600). Readout 2: `heldout@90` 83°, `heldout@45` 86°, `heldout`
+90.5°, all flat across 20 episodes, no within-episode drop anywhere.
+The plain GRU does learn the determined half — an order of magnitude
+slower than the MLP and only to 72° by the end — and nothing
+in-context: on the held-out lattice both readouts stay at 90°.
+
+**First encoder runs (22699034 primary, 22699035 anchor-mix) — the
+encoder died.** Both showed the constant-output signature (readout 1
+identical to 0.1° across every set, primary loss 2.3–2.6 above the
+null's 2.14 floor, anchor-mix `heldout@90` 89.3° at u = 1000 where the
+MLP alone was at 1°). Probed the anchor-mix u = 1000 checkpoint on 2000
+synthetic codes (`gbook_at`, random θ and shift): encoder ReLU layers
+dead fraction **0.55 / 0.42 / 0.84 / 0.999 / 1.000**, output variance
+0.0, policy mean constant (0.02, 0.07). The undetermined half's gradient
+shrinks the stack's activations toward zero and the deep ReLUs die
+before the determined half carves out the decode; the pure MLP `dist`
+escaped only because 100% of its data was determined (`dist` on the
+primary design, 88.9° on every set, died the same way — harmless for a
+null). Both cancelled. **Fix (fa9844f):** LayerNorm before each encoder
+nonlinearity (`FeedForwardCore(norm=True)`, off for the historical
+trunk) and a skip from the encoder output to the heads beside the
+recurrent output (`EncodedRecurrentCore(skip=True)`; `feature_size` ≠
+state width, `RNNAgent` reads it), so the memoryless path has the short
+gradient route the `dist` arm has. Resubmitted as `enc2`: anchor-mix
+22702168, primary 22702190 — queued behind a 7-GPU sweep of Jack's on
+the shared quota.
