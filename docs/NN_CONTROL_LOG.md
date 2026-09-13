@@ -913,3 +913,34 @@ the GRU is the bottleneck and the foothold + capacity line continues;
 if it does not, the rollout regime (random-walk data, Gaussian-NLL
 head, sampled DAgger) is, and B's trainer needs a direction head /
 `1 − cos` loss before B2 can be read.
+
+**Diagnostic `dist` @ θ = 90° (22698232, per-row translation, all
+lifetimes at one training orientation), cancelled at u = 1000 as
+answered:**
+
+| u | loss | goal rate | R1 heldout@90 | heldout@45 | heldout (θ=0) |
+|---|---|---|---|---|---|
+| 200 | 2.15 | 0.001 | 88.7 | 89.0 | 89.5 |
+| 400 | 0.43 | 0.009 | 45.2 | 55.9 | 88.8 |
+| 600 | −1.76 | 0.082 | **1.1** | 45.1 | 89.9 |
+| 1000 | −1.75 | 0.083 | **0.7** | **45.1** | **90.0** |
+
+Readout 2 at θ = 90: 6° flat (sampled policy). The memoryless MLP learns
+the **translation-invariant** displacement decode from rollouts in 600
+updates — and its errors elsewhere are exactly |θ − 90°|: it decodes the
+rotated displacement and applies the one rotation it was trained on.
+The rollout regime (random-walk data, Gaussian-NLL head, sampled
+DAgger) is not the block. **The GRU is**: the same determined target
+that the 5×768 ReLU stack fits in 600 updates, the 2×512 GRU fed the raw
+code has not fitted in 3000 (anchor-mix `heldout@90` 89.5 / 90.4 / 85.9
+at u = 1000 / 2000 / 3000). B1x showed the same gap on the absolute
+decode (GRU 22° vs MLP 0.6°): on this input a GRU is a poor function
+approximator at its first layer.
+
+**Encoder arm (1bb21f9).** `EncodedRecurrentCore`: the `dist` trunk
+(5×768 ReLU) as a per-step encoder in front of the GRU, state shape
+unchanged, off by default; `--encoder_layers 5 --encoder_hidden 768`.
+Submitted: `enc-full` on the primary design (22699034) — the hypothesis
+with the memoryless half of the computation given the architecture that
+can do it — and `enc-full` anchor-mix (22699035) — the foothold. The
+plain-GRU anchor-mix (22694701) runs on to 8000 for the record.
