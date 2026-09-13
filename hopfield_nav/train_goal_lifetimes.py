@@ -97,6 +97,10 @@ def main() -> None:
                    help="also translate the lattice by a uniform random shift per lifetime, so the "
                         "absolute phases of a training env cannot pin theta through memorised "
                         "offsets (sec 4B.2); --no-lattice_translate reproduces the 2026-09-13 runs")
+    p.add_argument("--lattice_per_row", action=argparse.BooleanOptionalAction, default=True,
+                   help="one lattice per lifetime (row) rather than per env, so the weights "
+                        "cannot fit the current lifetimes' maps; --no-lattice_per_row reproduces "
+                        "the 2026-09-13 per-env runs")
     p.add_argument("--eval_thetas", type=str, default="0",
                    help="degrees; extra copies of the held-out set at each non-zero theta")
     p.add_argument("--scripted", action="store_true",
@@ -180,7 +184,7 @@ def main() -> None:
     print(f"world: {len(train)} train / {len(heldout)} {heldout.name} / {len(same)} same"
           + (f" / {len(heldout_out)} heldout_out" if heldout_out else "")
           + f"; place={args.place_region}; cells={cells.summary()}; {time.time()-t0:.1f}s"
-          + (f"; lattice random (holdout {args.lattice_theta_holdout_deg} deg, scale {args.lattice_scale_range}, translate {args.lattice_translate}, "
+          + (f"; lattice random (holdout {args.lattice_theta_holdout_deg} deg, scale {args.lattice_scale_range}, translate {args.lattice_translate}, per_row {args.lattice_per_row}, "
              f"mix {args.lattice_mix_standard_frac}); eval sets {[s.name for s in sets]}" if lattice else ""))
 
     D = compute_rnn_input_dim(acfg, args.observation_size, vh.Ng)
@@ -236,9 +240,20 @@ def main() -> None:
     def new_lifetime(k):
         if lattice is None:
             return
-        lat = lattice.draw()
-        env_tables[k] = train.lattice_gbook(k, lat.theta, lat.scale, lat.shift)
-        thetas_drawn.append(lat.theta)
+        if args.lattice_per_row:
+            # One lattice per ROW, i.e. per lifetime: (B, S*S, Ng). With one
+            # lattice per env the weights fit the current 64 code->direction
+            # maps across the ~256 updates a lifetime lasts (seen 2026-09-13,
+            # `dist` loss -0.19 on data it could not generalise from); 4096
+            # concurrent lattices, each on one row, is past what weights can
+            # memorise, and in-context is the only route left.
+            lats = [lattice.draw() for _ in range(args.batch_envs)]
+            env_tables[k] = np.stack([train.lattice_gbook(k, l.theta, l.scale, l.shift) for l in lats])
+            thetas_drawn.extend(l.theta for l in lats)
+        else:
+            lat = lattice.draw()
+            env_tables[k] = train.lattice_gbook(k, lat.theta, lat.scale, lat.shift)
+            thetas_drawn.append(lat.theta)
 
     def lifetime_eval(u):
         out = {}

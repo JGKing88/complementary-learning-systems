@@ -229,11 +229,21 @@ def grid_state_vec(
 
 
 def table_gather(table: np.ndarray, positions: np.ndarray, size: int) -> np.ndarray:
-    """``table[x * size + y]`` for local ``positions (B, 2)``: a per-env ``(S * S, Ng)`` code table."""
+    """``table[x * size + y]`` for local ``positions (B, 2)``.
+
+    ``table`` is one ``(S * S, Ng)`` code table shared by every row, or
+    ``(B, S * S, Ng)`` with a table per row -- a lattice per lifetime rather
+    than per env (plan sec 4B.2): row ``b`` reads ``table[b, x * size + y]``.
+    """
     pos = np.asarray(positions)
     x = np.clip(np.rint(pos[:, 0]).astype(np.int64), 0, size - 1)
     y = np.clip(np.rint(pos[:, 1]).astype(np.int64), 0, size - 1)
-    return table[x * size + y].astype(np.float32)
+    idx = x * size + y
+    if table.ndim == 3:
+        if table.shape[0] != len(idx):
+            raise ValueError(f"per-row table has {table.shape[0]} rows for {len(idx)} positions")
+        return table[np.arange(len(idx)), idx].astype(np.float32)
+    return table[idx].astype(np.float32)
 
 
 def action_to_prev_channel(
@@ -313,7 +323,7 @@ def collect_rollout_rnn(
     B = vec.B
     movement_mode = agent.cfg.movement_mode
     if gbook_table is not None and agent.cfg.input_grid_state:
-        gbook_dim = int(gbook_table.shape[1])
+        gbook_dim = int(gbook_table.shape[-1])
     else:
         gbook_dim = int(sgb.shape[0]) if (sgb is not None and agent.cfg.input_grid_state) else 0
     input_dim = compute_rnn_input_dim(agent.cfg, vec._obs_size, gbook_dim)

@@ -308,3 +308,33 @@ def test_lattice_sampler_translate_is_uniform_over_the_period():
     assert all(not ls.in_holdout(d.theta) for d in draws)
     off = LatticeSampler(np.random.RandomState(0), holdout_deg=15, translate=False)
     assert off.draw().shift == (0.0, 0.0)
+
+
+def test_table_gather_per_row_and_collector_on_per_row_tables(world):
+    from hopfield_nav.rollout.rnn import collect_rollout_rnn
+    from hopfield_nav.world.vec_env import make_vec
+    tr, cells = world["train"], world["cells"]
+    env, off = tr.envs[0], tr.offsets[0]
+    B = 4
+    ls = LatticeSampler(np.random.RandomState(0), holdout_deg=15, translate=True, period=210.0)
+    lats = [ls.draw() for _ in range(B)]
+    tables = np.stack([tr.lattice_gbook(0, l.theta, l.scale, l.shift) for l in lats])
+    assert tables.shape == (B, SIZE * SIZE, world["vh"].Ng)
+    pos = np.array([[1, 2], [3, 4], [5, 6], [7, 0]])
+    got = table_gather(tables, pos, SIZE)
+    for b in range(B):
+        assert np.allclose(got[b], tables[b, pos[b, 0] * SIZE + pos[b, 1]])
+    with pytest.raises(ValueError):
+        table_gather(tables, pos[:2], SIZE)
+    cfg = agent_cfg_for_mode("grid", "continuous", rnn_cell="gru", hidden_size=8)
+    agent = RNNAgent(cfg, compute_rnn_input_dim(cfg, OBS, world["vh"].Ng))
+    vec = make_vec(env, B, "continuous")
+    vec.set_goal_pool(cells.goal_train); vec.reset_all()
+    p0 = vec.positions().copy(); g0 = vec._goals.copy()
+    r = collect_rollout_rnn(vec, agent, cfg, 1, "cpu", carry_across_episodes=True,
+                            episode_max_steps=10, gbook_table=tables)
+    Ng = world["vh"].Ng
+    x = r.obs[:, 0].numpy()
+    for b in range(B):
+        assert np.allclose(x[b, :Ng], tables[b, p0[b, 0] * SIZE + p0[b, 1]], atol=1e-6)
+        assert np.allclose(x[b, Ng:2 * Ng], tables[b, g0[b, 0] * SIZE + g0[b, 1]], atol=1e-6)
