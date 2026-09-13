@@ -821,3 +821,28 @@ above. Wave 1 resubmitted on the corrected design: `dist` 22691028,
 translation (22691032/22691033) so the gate matches the arms' design.
 The scripted estimator (C4) uses phase differences only and needs no
 rerun.
+
+**Diagnostic (22690872), `dist` u = 3000 (rotation only), readout 1
+enumerated, train × train:** train 107°, heldout 97°, **train@45 114°,
+heldout@45 124°**, train@90 105°, heldout@90 92°. No general offset → θ
+map: on its own training envs at a training orientation the memoryless
+net is as lost as anywhere (and anti-aligned — the θ̄ = 180° guess). So
+the −0.19 training loss (≈ 18° on the rollouts it was scored on, at
+σ ≈ 0.37) is not a route it can reuse; it is **within-lifetime weight
+memorisation**: each env's lattice is fixed for 32 chunks, the env is
+picked every 8 updates, so one code → direction map is fitted across
+~256 consecutive updates, 64 maps at a time, and dropped at turnover.
+Translation alone does not touch that. **Second design change
+(af2adda): one lattice per row**, i.e. per lifetime — 4096 concurrent
+lattices, each on one row's data, past what the weights can fit while
+it lasts. `--lattice_per_row` default on; the per-env translated wave
+(22691028–30, up to u = 400) cancelled unread; wave 1 resubmitted a
+third time on the per-row design: `dist` 22691259, `full` s0/s1
+22691260/22691261. The C3 reruns (22691032/33, A's trainer: θ per env
+per *update*, each lattice seen once) are unaffected and stay queued.
+
+The lesson, for the record: a randomisation that is fixed for longer
+than the weights take to fit it is not a randomisation. B1x's fixed
+lattice was the extreme case; a per-env per-lifetime lattice was a
+milder one; per-row is the first version in which the training data
+never hold a lattice still long enough to be learned in weights.

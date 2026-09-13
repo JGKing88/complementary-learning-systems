@@ -811,6 +811,23 @@ offsets, so this is realism, not a synthetic scramble. On by default
 (`--lattice_translate`); the rotation-only runs of 2026-09-13 are kept
 in the log as the diagnosis.
 
+**And the lattice is per lifetime (per row), not per env (same day,
+after the diagnostic).** The diagnostic did *not* show a general
+offset → θ map (`dist`'s readout 1 on training envs at a training θ was
+113°, the same as held-out envs); what its −0.19 training loss showed
+is **within-lifetime weight memorisation**: an env's lattice is fixed for
+32 chunks and the env is picked every 8 updates, so one code → direction
+map is fitted across ~256 consecutive updates, 64 maps at a time, and
+forgotten at turnover. That is "learning in weights, within the
+lifetime", and it is available to the GRUs too. Translation does not
+change it. What does is the count of concurrent lattices: with one per
+*row* (`--lattice_per_row`, default), 64 rows × 64 envs = 4096 lattices
+are live at once, each on one row's data, past what the weights can fit
+in the time a lifetime lasts — and in-context is the only route left.
+Cost: the per-env table becomes `(64, 400, 434)` float32, 2.8 GB for
+64 envs, and 0.15 s per env-lifetime to synthesise. The evaluator's
+lattice is shared across rows (it is the held-out θ = 0 for all).
+
 ### 4B.3 Training
 
 `train_goal_lifetimes.py` with `--lattice_theta_random`. Scattered
