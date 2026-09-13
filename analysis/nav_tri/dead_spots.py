@@ -59,6 +59,10 @@ def main():
     p.add_argument("--max_steps", type=int, default=200)
     p.add_argument("--seed", type=int, default=42)
     p.add_argument("--device", default="cuda")
+    p.add_argument("--stochastic", action="store_true",
+                   help="sample actions from the policy (temperature 1) instead of "
+                        "the argmax -- the one-flag test of whether the holes belong "
+                        "to the policy or to its argmax (EXPERIMENTS_NAV_P2 section 37.6)")
     a = p.parse_args()
     dev = torch.device(a.device if torch.cuda.is_available() else "cpu")
     ks = [int(k) for k in a.ks.split(",")]
@@ -88,7 +92,8 @@ def main():
     agent.eval()
     n, size, grid = len(envs), envs[0].size, 8
     print(f"policy={a.ckpt}\nenvs: {a.split} from {src_ckpt} ({n} envs, size {size})"
-          f"\ntrials/env={a.trials} max_steps={a.max_steps} deterministic, empty memory")
+          f"\ntrials/env={a.trials} max_steps={a.max_steps} "
+          f"{'SAMPLED (temperature 1)' if a.stochastic else 'deterministic'}, empty memory")
 
     batched.SweptArea = _RecordingSweptArea
     dead_frac = {k: [] for k in ks}
@@ -110,7 +115,7 @@ def main():
         visited, found, _steps, _swept = batched.batched_exploration_trials(
             agent=agent, env=env, env_offset=off, vectorhash=vh, hopfields=hops,
             cfg=cfg, device=dev, starts=starts, max_steps=a.max_steps,
-            deterministic=True)
+            deterministic=not a.stochastic)
         sa = _INSTANCES[-1]
         M = sa._mask.reshape(a.trials, sa.res, sa.res)
         union_cells = set().union(*visited)
