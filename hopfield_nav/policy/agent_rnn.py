@@ -83,22 +83,25 @@ class RNNAgent(nn.Module):
         self.action_bounds = action_bounds
 
         self.rnn = build_recurrent_core(cfg, input_dim)
+        # The width the heads read: the state width, unless the core hands the
+        # heads something wider (`EncodedRecurrentCore` with a skip).
+        feat = int(getattr(self.rnn, "feature_size", cfg.hidden_size))
 
         if cfg.movement_mode == "discrete":
-            self.movement_head = nn.Linear(cfg.hidden_size, 4)
+            self.movement_head = nn.Linear(feat, 4)
         else:
             # Under polar this is the DIRECTION head; see agent.py.
-            self.movement_mean = nn.Linear(cfg.hidden_size, 2)
+            self.movement_mean = nn.Linear(feat, 2)
             if getattr(cfg, "action_polar", False):
                 if action_bounds is None:
                     raise ValueError(
                         "action_polar needs the env's min/max_action_norm "
                         "passed as action_bounds; the speed Beta is defined "
                         "on that interval")
-                self.polar_head = PolarHead(cfg, cfg.hidden_size, *action_bounds)
+                self.polar_head = PolarHead(cfg, feat, *action_bounds)
             else:
                 self.polar_head = None
-                log_std, log_std_head = build_log_std(cfg, cfg.hidden_size)
+                log_std, log_std_head = build_log_std(cfg, feat)
                 if log_std is not None:
                     self.movement_log_std = nn.Parameter(log_std)
                     self.movement_log_std.requires_grad = log_std.requires_grad

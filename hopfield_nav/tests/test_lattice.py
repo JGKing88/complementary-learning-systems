@@ -349,7 +349,14 @@ def test_encoded_recurrent_core_contracts():
     assert core.input_size == 40 and core.hidden_size == 16 and core.num_layers == 2
     x = torch.randn(5, 7, 40)
     f, h = core(x, None)
-    assert f.shape == (5, 7, 16) and h.shape == (2, 5, 16)
+    assert core.feature_size == 16 + 24
+    assert f.shape == (5, 7, 40) and h.shape == (2, 5, 16)
+    assert any(isinstance(m, torch.nn.LayerNorm) for m in core.encoder.net)
+    plain = build_recurrent_core(RNNAgentConfig(rnn_cell="gru", hidden_size=16, num_rnn_layers=2,
+                                                input_encoder_layers=3, input_encoder_hidden=24,
+                                                input_encoder_skip=False, input_encoder_norm=False), 40)
+    assert plain.feature_size == 16 and plain(x, None)[0].shape == (5, 7, 16)
+    assert not any(isinstance(m, torch.nn.LayerNorm) for m in plain.encoder.net)
     # T steps == T single steps, carrying the CORE's state.
     hs, outs = None, []
     for t in range(7):

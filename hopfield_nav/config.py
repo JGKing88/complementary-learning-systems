@@ -600,6 +600,13 @@ class RNNAgentConfig:
     input_encoder_layers: int = 0
     input_encoder_hidden: int = 768
     input_encoder_nonlinearity: str = "relu"
+    # LayerNorm before each encoder nonlinearity, and a skip from the encoder
+    # output to the heads beside the recurrent output. Both on: without them
+    # the encoder's activations shrank to zero under an undetermined target
+    # and its ReLUs died (2026-09-13), and the skip gives the memoryless path
+    # the same short gradient route the `dist` arm has.
+    input_encoder_norm: bool = True
+    input_encoder_skip: bool = True
     # Ray-axis encoder over the view columns (sensory and goal_sensory), see
     # plan sec 5.4. "linear" is identity, the historical read.
     sensory_encoder: str = "linear"

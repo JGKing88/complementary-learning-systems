@@ -193,6 +193,7 @@ class FeedForwardCore(nn.Module):
         num_layers: int = 1,
         nonlinearity: str = "tanh",
         dropout: float = 0.0,
+        norm: bool = False,
     ) -> None:
         super().__init__()
         if num_layers < 1:
@@ -209,6 +210,13 @@ class FeedForwardCore(nn.Module):
         d = self.input_size
         for i in range(self.num_layers):
             layers.append(nn.Linear(d, self.hidden_size))
+            # `norm`: a LayerNorm before every nonlinearity. Off for the
+            # historical trunk; on for the encoder of `EncodedRecurrentCore`,
+            # where without it the stack's activations shrink to zero under
+            # an undetermined target and the ReLUs die (seen 2026-09-13:
+            # layers 4-5 100% dead by u = 1000).
+            if norm:
+                layers.append(nn.LayerNorm(self.hidden_size))
             layers.append(act[nonlinearity]())
             if dropout > 0.0 and i < self.num_layers - 1:
                 layers.append(nn.Dropout(dropout))
@@ -248,19 +256,28 @@ class EncodedRecurrentCore(nn.Module):
     combine per-step features.
     """
 
-    def __init__(self, encoder: nn.Module, core: nn.Module) -> None:
+    def __init__(self, encoder: nn.Module, core: nn.Module, skip: bool = False) -> None:
         super().__init__()
         self.encoder = encoder
         self.core = core
+        self.skip = bool(skip)
         self.input_size = int(encoder.input_size)
-        self.hidden_size = int(core.hidden_size)
+        self.hidden_size = int(core.hidden_size)          # the STATE width
         self.num_layers = int(core.num_layers)
+        # With `skip` the features handed to the heads are the recurrent
+        # output concatenated with the encoder's own output, so the
+        # memoryless path from code to action is exactly the `dist` arm's and
+        # the recurrence is a correction on top. The state stays the core's.
+        self.feature_size = self.hidden_size + (int(encoder.hidden_size) if self.skip else 0)
 
     def forward(
         self, x: torch.Tensor, h: torch.Tensor | None = None,
     ) -> tuple[torch.Tensor, torch.Tensor]:
         z, _ = self.encoder(x, None)
-        return self.core(z, h)
+        f, h_next = self.core(z, h)
+        if self.skip:
+            f = torch.cat([f, z], dim=-1)
+        return f, h_next
 
 
 def build_recurrent_core(cfg, input_dim: int) -> nn.Module:
@@ -298,7 +315,7 @@ def build_recurrent_core(cfg, input_dim: int) -> nn.Module:
         enc_hidden = int(getattr(cfg, "input_encoder_hidden", cfg.hidden_size))
         encoder = FeedForwardCore(input_dim, enc_hidden, num_layers=enc_layers,
                                   nonlinearity=getattr(cfg, "input_encoder_nonlinearity", "relu"),
-                                  dropout=0.0)
+                                  dropout=0.0, norm=bool(getattr(cfg, "input_encoder_norm", True)))
         core_in = enc_hidden
     if cell == "gru":
         core = nn.GRU(core_in, cfg.hidden_size, **kwargs)
@@ -306,4 +323,6 @@ def build_recurrent_core(cfg, input_dim: int) -> nn.Module:
         core = SoftplusRNN(core_in, cfg.hidden_size, **kwargs)
     else:
         core = nn.RNN(core_in, cfg.hidden_size, nonlinearity=nonlinearity, **kwargs)
-    return EncodedRecurrentCore(encoder, core) if encoder is not None else core
+    if encoder is None:
+        return core
+    return EncodedRecurrentCore(encoder, core, skip=bool(getattr(cfg, "input_encoder_skip", True)))
