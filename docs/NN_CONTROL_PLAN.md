@@ -37,6 +37,35 @@ training. No network here learned an equivalent that extrapolates past
 the stretch of cycle it was shown, and in-context acquisition of one is
 not something this training can produce.
 
+**B2 (§4B), in progress 2026-09-13 — can in-context learning of the
+grid code be *forced*?** The lattice is randomised per lifetime
+(rotation θ, translation T, one lattice per row), so the frame is
+unknowable from the weights and only the trajectory carries it; the
+test is the standard lattice, never trained on. The gates all pass:
+told θ, a memoryless MLP is at **1.0°** on the held-out lattice (the
+task is well-posed); a scripted two-step estimator through the same
+lifetime evaluator is at **5.4° at step 2 and 0.0° from step 3**, flat
+across 19 goal changes (the information is in two steps of the
+trajectory and lasts the lifetime); the memoryless null is a clean
+**90°** on every readout (nothing but the trajectory carries θ). The
+GRU 2×512 trained on this for 8000 updates is **89° flat** on every
+readout — it never leaves the plateau where the displacement decode has
+no gradient until θ is known and θ has none until the displacement is
+decoded. A foothold run with half the lifetimes at a fixed *training*
+orientation was flat at 2000 updates *even on that orientation*, which
+says the block is below the chicken-and-egg: this GRU is not learning
+the translation-invariant decode from rollout data at all (the MLP
+learned it from i.i.d. pairs; a GRU learned the absolute decode from
+rollouts in B1x). Two design corrections were needed on the way and are
+recorded in §4B.2 and the log: without translation, absolute phases
+plus memorised env offsets are a weights route to θ; without per-row
+lattices, a lattice held fixed for a lifetime is fitted in weights
+across the ~256 updates it lasts. *Standing reading:* in-context
+learning of an unseen grid code is **possible** — the estimator is the
+existence proof — and a GRU trained from scratch on lifetimes at this
+budget does **not** find it; where the block sits (the decode from
+rollouts, or the frame) is what the running diagnostic answers.
+
 ### B1x result — history does not build a map; the rollout data does help the map
 
 Three arms trained on the 400 × 400 corner, scored outside it

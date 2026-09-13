@@ -893,3 +893,23 @@ foothold runs (§8 contingency (i)) are the next wave: anchor-mix
 orientation 90°, so the decode gets a determined target, the rest
 random, test still θ = 0) and `full-cap` 3×768 (22695405, queued).
 `full` s1 was cancelled unstarted in favour of these (two GPUs).
+
+**Anchor-mix `full` (22694701), u = 2000:** flat at 88–90° on every
+set — **including `heldout@90`, the anchor orientation**, where half
+the training rows carry a fully determined memoryless target (fixed
+θ = 90°, per-row translation). Loss 2.1, goal rate 0.001. `full-cap`
+3×768 (22695405) at u = 1000: 89–90° flat too. So the block is below
+the θ chicken-and-egg: **this GRU is not learning the
+translation-invariant displacement decode from rollout data at all.**
+What has been shown: B1x's GRU learned the *absolute* decode from
+rollouts (fixed lattice); the A-trainer MLP learned the
+translation-invariant decode from i.i.d. pairs (C3t, 1.2°). What has
+not: any net learning the translation-invariant decode from rollouts.
+`full-cap` cancelled (capacity is not what the anchor points at);
+diagnostic queued in its place (22698232): `dist` — the MLP 5×768 that
+reached 0.6° on B1x rollouts — on lifetimes *all* at θ = 90° with
+per-row translation, 4000 updates. If it learns (`heldout@90` ≪ 90°),
+the GRU is the bottleneck and the foothold + capacity line continues;
+if it does not, the rollout regime (random-walk data, Gaussian-NLL
+head, sampled DAgger) is, and B's trainer needs a direction head /
+`1 − cos` loss before B2 can be read.
