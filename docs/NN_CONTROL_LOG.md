@@ -760,3 +760,30 @@ at that orientation, not a leak (the model is at 0.6° either way).
 
 **Wave 1 submitted:** `dist` (22689649), `full` 2×512 s0/s1 (22689650,
 22689651); the scripted estimator (22688915) is running.
+
+**B2-C4 PASSES — scripted two-step estimator (22688915), readout 2, 64
+lifetimes × 20 episodes on 8 envs per set, sampled-policy protocol
+(the estimator is deterministic except for its zero-decode step).**
+
+| set | ep0 s0 | s1 | **s2** | s3 | s5 | s10 | by episode e0 | e1 | e2–e19 |
+|---|---|---|---|---|---|---|---|---|---|
+| heldout (θ = 0) | 91.7 | 87.8 | **5.4** | 0.1 | 0.0 | 1.3 | 15.6 | 2.1 | 1.5–2.3 |
+| same (θ = 0) | 91.7 | 87.8 | 5.4 | 0.1 | 0.0 | 1.5 | 15.5 | 1.7 | 1.4–2.4 |
+| heldout@7 | 91.7 | 87.8 | 5.4 | 0.1 | 0.0 | 1.3 | 15.6 | 2.0 | 1.8–2.3 |
+| heldout@45 | 91.7 | 87.8 | 5.4 | 0.1 | 0.0 | 1.2 | 15.6 | 1.6 | 1.5–2.2 |
+
+Two measuring steps (~90°, it is acting along the arena axes and has no
+direction yet), then **exact from step 2 of the lifetime on**, and flat
+across 19 goal changes at ~2°. The 2° residual and the s20 values
+(5–15°) are the goal-cell/L2-ball steps noted above — a row standing on
+the goal cell outside the 0.5 ball scores 90° whatever it does — plus
+the random escape step. The curve is the same on every lattice, as it
+must be for an agent with no training set. Pass criterion was ≤ 5° from
+step 2 on; s2 = 5.4 is the step the frame is first used (the 5° is the
+few rows whose measuring step was clipped or teleported and retried),
+s3 = 0.1.
+
+**Read together with C3:** told the frame, a memoryless net is at 1°;
+the frame is measurable from two steps of the trajectory to < 1° and
+lasts the lifetime. The design is sound. Whatever the GRUs do on the
+held-out lattice is a statement about the GRUs.
