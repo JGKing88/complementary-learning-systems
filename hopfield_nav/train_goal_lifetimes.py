@@ -92,7 +92,10 @@ def main() -> None:
     p.add_argument("--lattice_scale_range", type=str, default="1,1",
                    help="'lo,hi' for a per-lifetime module scale; '1,1' = off")
     p.add_argument("--lattice_mix_standard_frac", type=float, default=0.0,
-                   help="probability a lifetime uses the standard lattice (B2-mix, sec 4B.8)")
+                   help="probability a lifetime uses the fixed lattice at --lattice_mix_theta_deg "
+                        "(B2-mix, sec 4B.8, at 0; the anchor-mix foothold of sec 8 at a training theta)")
+    p.add_argument("--lattice_mix_theta_deg", type=float, default=0.0,
+                   help="orientation of the mixed-in fixed lattice; 0 = the standard lattice")
     p.add_argument("--lattice_translate", action=argparse.BooleanOptionalAction, default=True,
                    help="also translate the lattice by a uniform random shift per lifetime, so the "
                         "absolute phases of a training env cannot pin theta through memorised "
@@ -176,6 +179,7 @@ def main() -> None:
         lattice = LatticeSampler(np.random.RandomState(args.seed + 17),
                                  holdout_deg=args.lattice_theta_holdout_deg,
                                  scale_range=(lo, hi), mix_standard_frac=args.lattice_mix_standard_frac,
+                                 mix_theta=float(np.radians(args.lattice_mix_theta_deg)),
                                  translate=args.lattice_translate, period=float(np.prod(args.lambdas)))
         for th in parse_thetas(args.eval_thetas):
             if abs(th) < 1e-9:
@@ -395,7 +399,7 @@ def main() -> None:
                              "holdout_deg": args.lattice_theta_holdout_deg,
                              "mix_standard_frac": args.lattice_mix_standard_frac}}
         print(f"lattice: {len(thetas_drawn)} lifetimes drawn, {extra['lattice']['n_in_holdout']} in the "
-              f"held-out band (expected {'0' if args.lattice_mix_standard_frac == 0 else 'mix only'})")
+              f"held-out band (expected {'0' if args.lattice_mix_standard_frac == 0 or args.lattice_mix_theta_deg != 0 else 'mix only'})")
     with open(os.path.join(args.save_dir, "final_tables.json"), "w") as f:
         json.dump({"final": jsonable(final), "lifetime": lt, "history": history,
                    "argv": vars(args), "cells": cells.summary(), "input_dim": D,

@@ -123,12 +123,13 @@ class LatticeSampler:
     """
 
     def __init__(self, rng, *, holdout_deg: float = 15.0, scale_range=(1.0, 1.0),
-                 mix_standard_frac: float = 0.0, translate: bool = False,
+                 mix_standard_frac: float = 0.0, mix_theta: float = 0.0, translate: bool = False,
                  period: float = 1716.0) -> None:
         self.rng = rng
         self.holdout = np.radians(float(holdout_deg))
         self.scale_range = (float(scale_range[0]), float(scale_range[1]))
         self.mix = float(mix_standard_frac)
+        self.mix_theta = float(mix_theta)
         self.translate = bool(translate)
         self.period = float(period)
         if not (0.0 <= self.holdout < np.pi):
@@ -141,7 +142,7 @@ class LatticeSampler:
 
     def draw(self) -> Lattice:
         if self.mix > 0 and self.rng.uniform() < self.mix:
-            return Lattice(0.0, 1.0, self._shift())
+            return Lattice(self.mix_theta, 1.0, self._shift())
         theta = self.rng.uniform(self.holdout, 2 * np.pi - self.holdout)
         lo, hi = self.scale_range
         if lo == hi:
