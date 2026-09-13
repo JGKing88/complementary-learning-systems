@@ -59,7 +59,9 @@ care how mice do it.
 | **PLAN** | **`docs/DUAL_TRAINING.md` — read it before designing any interleaved run.** Page: [bb0e31c3](https://claude.ai/code/artifact/bb0e31c3-4aca-4710-b57f-e71a227ff994). The standalone synthesis of both regimes: failure modes with their diagnostics, the knobs whose optima *conflict* between explore and exploit (§4.3 there), the dual-specific failure modes with falsifiers, a three-tier metric panel, logic gates, and waves. Supersedes §10 as a plan. Experiments keep being logged *here*. |
 | **Metric** | **`swept_coverage` is the headline explore metric from 2026-09-01 (§19).** Union of `goal_radius` discs along the path = P(goal findable). `mean_coverage` counts snapped cells, which hides the speed axis: it says speed barely matters, swept area says speed dominates. §2.1/§18.2's "the speed cap is free" is retracted. `union_swept_coverage` is the spread diagnostic. |
 | **Status** | **P10 polar landed (§9.4–9.8).** Two of four arms finished; the exploit-frozen model is the phase-2 best. |
-| **Branch / worktree** | `nav-tri-metric` at `.claude/worktrees/nav-tri-metric` |
+| **Branch / worktree** | `nav-tri-metric` at `.claude/worktrees/nav-tri-metric`; **OOD line on `worktree-nav-ood-place`** (§37) |
+| **⚠ OPEN — dead spots (§37.6)** | **The deterministic explorer never visits ~1–3% of goal cells (dead@40 attempts: 1.2% d0_base, 3.2% corner model), all on the boundary and corners, interior ~0 — and `mean_coverage`/`swept_coverage` cannot see it: a fraction of cells, blind to WHICH cells.** It is what "dead envs" in the continual protocol are; nav on the same env with the goal preloaded is 1.00. Same holes in d0_base, in and out of distribution. First test: the sampled policy (`--stochastic_policy`). Tools: `analysis/nav_tri/dead_env_probe.py`, `dead_spots.py`; map `results/nav_tri_probe/dead_spot_maps.png`. |
+| **Place-OOD (§37)** | **NULL, robustly.** d0_base's recipe trained on half the scaffold and on a 500×500 corner (fixed and every-update-refreshed placement, 1200 updates each) navigates and explores never-visited scaffold exactly as well as its own region at u600 and u1200 (success 1.00 vs 1.00, steps ±1, coverage equal); continual protocol: zero forgetting on OOD arenas too. Cause: no absolute-position input. Training cost identical to full-scaffold. d0_base itself has no OOD set (legacy `Anywhere`). Framework: `--env_generator --place_region rect` + `eval_all --split place=ood`; `run_eval_ood.sh`, `run_cl_ood.sh`. |
 | **Predecessor** | `docs/EXPERIMENTS_NAV_TRI.md` — read its §0 findings 1–22 |
 | **Open decisions** | §11 — four forks put to Jack; spec assumes the recommended default in each |
 | **Running** | **P20 (§18) — DONE.** Both arms COMPLETED 700/700. **`p20_e` 21695407 is the delivered explore model**: `mean_coverage` **0.390** at realized speed **0.964**, `strategy_efficiency` **1.038**, `chase_q` **0.000** — matches `p5_e`'s coverage at half the speed, on a **fresh `held_out` draw**. The κ cap that unlocked exploit COSTS explore 12.1%, but **not** via straightness (§18.4 refutes its own mechanism) — via `edge_frac`, 0.061 vs 0.127. |
@@ -70,6 +72,8 @@ care how mice do it.
 | **⚠ Read before quoting any §9.6–9.8 number** | Every behavioural number there is on the **`recorded`** split — the run's own `base_val`, never trained on but the set it was scored against at every eval, and the only set the probe could build until 2026-08-27. It is **not** a fresh draw. `--split` now exists on the probe; nothing has been re-run with it. |
 
 **Open items** (priority order):
+
+- [ ] **⚠ SOLVE — the explorer's dead spots (§37.6).** ~1–3% of uniformly drawn goals are never reached by 40 deterministic 200-step explore trials; the holes sit on the boundary/corners and are invisible to `mean_coverage`/`swept_coverage`. Every discovery-dependent number (continual primary block, `goal_find_rate`, `discovery`) is bounded by them. Step 1 is free: rerun `dead_spots.py` with `deterministic=False` and `agenthash --stochastic_policy` — if sampling fills the holes it is a protocol convention; if not it is a training objective (boundary term / worst-case per-cell visit probability) and `union_swept_coverage` + a per-cell dead map should be reported at every eval so it cannot hide again.
 
 - [x] **DONE — §23. Re-scored explore with `deterministic=False`.** The κ-cap gap is **3.2%, not 14%**; §18.4's magnitude is retracted. §22's vector-field finding survives sampling. Explore should be scored sampled from here on. Original item: Every explore number in this document is the *noiseless mean policy*; the training reward was earned by *sampled* trajectories, and for a search task the noise is functional. §18.4's 12% κ-cap gap could shrink or invert, since the capped arm's whole difference is spread that a deterministic eval discards. No retraining needed.
 
@@ -8128,3 +8132,297 @@ An arm that lifts that number is the first evidence the readout weight is
 movable at all. An arm that does not adds a sixth point to a constant that is
 starting to look structural — in which case the next question is whether PPO
 can move it at all, or whether it needs a different objective.
+
+---
+
+## 37. Place-OOD — position transfer is a null, and the explorer has DEAD SPOTS
+
+**2026-09-11 → 09-13.** Jack: *"we need to train a new d0_base type model, but
+for testing OOD generalization. So need to train on one section of grid
+scaffold and test on the other."* Then: *"try training on one small corner,
+like 500 x 500 … you can lower the margin, i want within 500."* Four runs, two
+region sizes, every checkpoint evaluated on scaffold it never visited — and the
+position question came back a clean null at every level. The thing that came
+out of it instead is §37.6: **a ~1–3% dead-goal rate that the coverage metric
+is structurally blind to. That one is open and needs solving.**
+
+Branch `worktree-nav-ood-place` (from `main` b83ec51). Everything below is
+reproducible from the launchers named in each subsection.
+
+### 37.1 The framework already existed; d0_base cannot use it
+
+`docs/EVAL_SPLITS_DESIGN.md` / `docs/ENV_GENERATOR_STATUS.md` (phases 1–8 all
+done, 142 tests) already decompose an env into four traits — place, goal, wall,
+size — each with a declared train domain and three eval levels (`same`,
+`held_out`, `ood`). Train-time: `--env_generator --place_region rect:X0,Y0,W,H
+--place_margin N [--refresh_place N]`; eval-time: `eval_all --split
+place=ood`. Also wired and still unexercised: `--goal_region ring:W` →
+`goal=ood`, `--val_size N`, `eval_all --encoder`.
+
+**`navigate_navp2_d0_base_s42_22133273` has no place-OOD set.** Its `world.json`
+reads `generator=legacy`, place=`Anywhere`, goal=`AnyCells`, and `Anywhere` has
+no complement — `--split place=ood` raises on it by design. The same holds for
+every run before 2026-09-11: nothing had ever declared a `rect`. So the runs
+below are the first place-OOD runs at `Npos=1716`. `navigate_job.sh` had no
+pass-through for the generator's flags (it also still passed the deleted
+`--randomize_goal_per_rollout`, which would have crashed a job); the launcher
+now refuses a `REPO` whose copy lacks the block, because an unset knob is passed
+as nothing and an old tree would silently train a legacy model under an OOD
+name.
+
+### 37.2 The four arms
+
+d0_base's recipe **verbatim** (argv diffed against its recorded `run.json` —
+the only differences are the generator flags; fresh init, not resumed), 1200
+updates, seed 42, 20 train envs + 6 base_val, 1,280 episodes/update:
+
+| arm | job | region | margin | placement |
+|---|---|---|---|---|
+| `ood_place` | 22599420 | `rect:0,0,858,1716` (left half, 50%) | 80 | 20 fixed |
+| `ood_place_rp` | 22599421 | same | 80 | re-drawn every update — 23,799 footprints |
+| `ood_corner` | 22629938 | `rect:0,0,500,500` (8.5%) | **50** | 20 fixed |
+| `ood_corner_rp` | 22629939 | same | 50 | re-drawn every update — 22,106 footprints |
+
+Two arms per region because with 20 fixed size-20 footprints in a region, an
+in-region `held_out` env and an out-of-region `ood` env are *both* ≥ margin
+from every train footprint, and the encoder field has decorrelated by ~80
+cells (EVAL_SPLITS §2.11) — the fixed arm can only see region-scale structure
+in the field; the refresh arm is where "trained on this region" is dense.
+
+The corner's margin had to drop to 50: at 60 and 70 the initial 26-env draw
+fits, but the every-update refresh dies on tick 1 — 20 train envs cannot be
+re-placed clear of the 6 fixed val envs *and* each other inside a 500 box (17
+fit, no lattice). At 50 the field is mean-decorrelated (cos +0.07, p99 +0.36).
+`place=held_out` is infeasible inside a 500 box at any margin and collapses to
+~6 slots under refresh in the half-scaffold, so **`recorded` is the
+in-distribution control for the refresh arms** (the preflight records this).
+
+Verified before spending GPU: generator smoke at the real scale (capacity 153
+in-region / 119 OOD at margin 80; `place=ood` mints 50/50 outside the rect;
+refresh-every-update preflight over 1200 ticks never runs dry).
+
+Caveat that stands: `rollout/distractors.py:sample_distractors` draws from the
+**whole** scaffold regardless of place domain, so exploit rollouts preload
+patterns from the OOD region as memory content. Never navigated there, which is
+the claim under test — but "never saw the other half" is not strictly true.
+
+### 37.3 Training cost — the region does not matter
+
+All five runs converge to the same plateau on the same timescale. First
+*sustained* crossing (holds for every later eval; one dip moves it by 100+, so
+differences of that size are eval swing):
+
+| run | succ ≥ 0.95 | steps ≤ 20 | steps ≤ 15 | cov ≥ 0.30 | plateau (u600+) succ / steps / cov |
+|---|---|---|---|---|---|
+| d0_base (full scaffold) | u100 | u275 | u500 | u325 | 1.000 / 12.0 / 0.359 |
+| ood_place (half) | u100 | u200 | u425 | u375 | 1.000 / 12.1 / 0.343 |
+| ood_place_rp | u125 | u350 | u450 | u450 | 1.000 / 12.2 / 0.351 |
+| ood_corner (500×500) | u250\* | u175 | u375 | u400 | 1.000 / 12.1 / 0.351 |
+| ood_corner_rp | u125 | u175 | u575 | u700 | 1.000 / 12.0 / 0.343 |
+
+\*first crossed at u75; a 0.93 at u150 and a 0.94 at u225 push the sustained
+crossing out. `ood_corner` had the slowest first 50 updates (0.14 / 0.30 at
+u25 / u50 vs 0.65–0.93 for the rest) and caught up by u75.
+
+Expected: the policy has `input_encoded_state` and `input_abs_position` **off**,
+so region size changes nothing it has to learn — the same 1,280 episodes per
+update, sampled from 8.5% or 100% of the scaffold, pose the same readout
+problem. One transient worth knowing: `ood_place_rp`'s u100 eval read nav
+**0.08** (from 0.92) with `mean_r` 0.19 → 0.05; it was **one bad update**, back
+to 0.20 by u110 and 1.00 at u125. A cadence variant `ood_place_rp10` exists in
+the launcher for bracketing and was not launched.
+
+### 37.4 Post-hoc OOD — no gap, at any region size, at any checkpoint
+
+`hopfield_nav/run_eval_ood.sh` (`SET=half|corner UPDATE=N`): 24 minted envs per
+split × 16 trials at 0 and 10 distractors, nav_det + nav_stoch + discovery +
+exploration; `recorded` = the run's own 6 base_val. Every minted set's
+separation is *measured* into the report (ood sets sat ≥ 76–121 cells from
+every train footprint, no shared wall seeds or goal cells). Deterministic nav
+success / mean steps / explore coverage, 0 distractors (10-distractor numbers
+in the JSONs, same story):
+
+| run | split | u600 | u1200 |
+|---|---|---|---|
+| d0_base (legacy) | recorded | 1.00 / 12.3 / 0.349 | — (ends u725) |
+| | held_out (anywhere) | 1.00 / 12.7 / 0.347 | — |
+| ood_place | recorded | 1.00 / 12.1 / 0.355 | 1.00 / 11.6 / 0.33 |
+| | held_out (in rect) | 1.00 / 12.0 / 0.357 | 1.00 / 11.1 / 0.34 |
+| | **ood (right half)** | **1.00 / 12.0 / 0.357** | **1.00 / 11.0 / 0.34** |
+| ood_place_rp | recorded | 1.00 / 12.8 / 0.355 | 1.00 / 12.0 / 0.34 |
+| | **ood** | **1.00 / 13.3 / 0.356** | **1.00 / 12.5 / 0.34** |
+| ood_corner | recorded (in corner) | 1.00 / 12.7 / 0.37 | 1.00 / 11.8 / 0.35 |
+| | **ood (other 91.5%)** | **1.00 / 12.0 / 0.37** | **1.00 / 11.0 / 0.34** |
+| ood_corner_rp | recorded | 1.00 / 13.8 / 0.35 | 1.00 / 11.9 / 0.35 |
+| | **ood** | **1.00 / 12.4 / 0.35** | **1.00 / 11.1 / 0.35** |
+
+Sampled nav is the same (1.00 everywhere; steps +1). **Scaffold-position OOD is
+a null for this recipe**, robustly: four runs, two region sizes (50% and
+8.5%), two checkpoints, fixed and refreshed placement — success at ceiling both
+sides, OOD steps within ±1 of in-region (often lower), coverage equal to two
+decimals. d0_base's own `held_out`-anywhere equals its `recorded` the same way.
+
+**Why, and what would not be null.** The policy reads the Hopfield-relative
+displacement in a local frame plus egocentric sensory input; there is no
+absolute-position channel for a region split to catch, and the encoder's local
+geometry is evidently uniform enough across the torus that the readout
+transfers. The one run on which a place split *could* bite is a policy with
+`INPUT_ABS_POSITION=1` (§31's `p26_abspos` shape) — EVAL_SPLITS open question 1,
+now a one-line launch. The OOD axes more likely to be non-trivial for *this*
+policy are goal-region (`--goal_region ring:1` → `goal=ood`, the perimeter-basin
+question), arena size (`--val_size 28 --scaled-budget`, no retraining) and a
+held-out encoder (`eval_all --encoder`).
+
+Results: `$CLS_RUNS/results/eval_results/ood_{place,corner}_u{600,1200}/`.
+
+### 37.5 Continual protocol on the corner model — zero forgetting either side
+
+`hopfield_nav/run_cl_ood.sh`: d0_base's continual recipe (autostore, one store
+per env, 40 iters/block, 200-step cap, deterministic; 6 envs here vs d0_base's
+5) on the corner arms' u1200, on their own in-corner val envs and on 6 envs
+minted outside the corner. Figures are `analysis/continual/plotting.py`'s own
+output, `results/nav_tri_probe/cl_ood_corner{,_rp}_u1200_{recorded,place-ood}_*`.
+
+| ood_corner u1200 | live | primary eps / succ / steps | locked-store revisits / succ / steps | worst retention Δ |
+|---|---|---|---|---|
+| recorded (in corner) | 6/6 | 240 / 0.983 / 12.5 | **600 / 1.0000 / 12.2** | +0.0000 |
+| **place=ood** | 5/6 | 200 / 0.950 / 11.7 | **480 / 1.0000 / 10.8** | +0.0000 |
+| ood_corner_rp, recorded | 6/6 | 240 / 0.971 / 12.7 | 600 / 1.0000 / 12.4 | +0.0000 |
+| ood_corner_rp, place=ood | 5/6 | 200 / 0.945 / 12.4 | 480 / 1.0000 / 11.0 | +0.0000 |
+
+Every env learned in its own block is retained at 1.0000 through every later
+block, on never-visited scaffold as on trained scaffold; revisits beat first
+encounters on steps, as for d0_base. The one OOD env that is never learned —
+env 2, goal **(0, 3)**, dead in *both* arms at two unrelated positions — is
+§37.6.
+
+**Bug found and fixed on the way (`6301b14`).** `agenthash --scaffold_cache`
+replayed `build_eval_world`'s legacy RNG draw regardless of `--split`, so the
+first attempt scored **d0_base's legacy val set** for both splits under OOD
+names — identical numbers to four decimals was the tell. Phase 5's
+source-reading test asked only that `eval_world_for_split(` appear somewhere in
+the module, which the uncached branch satisfied. The cached branch now resolves
+through `eval_env_set` with the cached field, refuses a minted `--split` on a
+legacy checkpoint, and the test reads that branch specifically
+(mutation-checked). d0_base's published continual numbers are unaffected: its
+env set is reproducible as `--split place=held_out --val_seed 0` (goals (8,8),
+(2,0), (0,4), (15,8), (18,6)), and with the lock it had **no** dead env — the
+(0,4) env went 34/40 in-block; the earlier "dead in all three" was the
+*unlocked* alias/multiplicity case (`alias_multiplicity.py`).
+
+### 37.6 ⚠ OPEN — the explorer has dead spots, and the coverage metric cannot see them
+
+**This is the finding that needs solving.** Jack, on the OOD env 2 figure:
+*"it has env 2 totally failing. i thought it had a perfect success rate on
+eval?"* Both are right, and the gap between them is the problem.
+
+`eval_all` nav on that very env, goal **preloaded**, is 16/16 — it is env 2 of
+the 24-env OOD set. The continual protocol preloads nothing: the goal must be
+*found* in the env's own block (memory holding envs 0 and 1's goals) and
+autostore fires only when the agent stands on it. Env 2's own block: **0 of 40
+episodes reached the goal**, so the store never fired, so 119 of 120 later
+store-locked revisits failed too. A discovery failure propagating, not a
+navigation failure.
+
+**Not memory, not alias, not readout, not position** —
+`analysis/nav_tri/dead_env_probe.py` (`run_dead_env_probe.sh`), 16
+deterministic 200-step explore trials per env:
+
+| env (OOD set) | goal | cov / find, empty memory | cov / find, goals 0+1 stored | goal-absent ‖q‖ mean / p90 | max cos vs stored | basin, own goal |
+|---|---|---|---|---|---|---|
+| 0 | (8,9) | 0.343 / 0.19 | 0.050 / 1.00\* | — | — | 1.000 |
+| 1 | (1,17) | 0.345 / 0.06 | 0.098 / 1.00\* | — | — | 1.000 |
+| **2** | **(0,3)** | **0.344 / 0.00** | **0.351 / 0.00** | 0.086 / 0.116 | 0.062 | 1.000 |
+| 3 | (15,6) | 0.346 / 0.31 | 0.349 / 0.81 | 0.152 / 0.223 | 0.307 | 1.000 |
+| 4 | (18,7) | 0.353 / 1.00 | 0.331 / 1.00 | 0.105 / 0.131 | 0.017 | 1.000 |
+| 5 | (5,12) | 0.344 / 0.81 | 0.340 / 0.81 | 0.058 / 0.093 | 0.074 | 1.000 |
+
+\*own goal in memory → exploit beeline.
+
+Env 2's explorer covers a perfectly normal **34%** of the arena — the same as
+every other env — and never once stands on (0,3): 0/16 empty, 0/16 with the
+protocol's memory, 0/40 in the protocol. The memory state changes nothing for
+it. No alias (0.062 against 0.307 for an env that discovers fine), ‖q‖ below
+the gate band (lower than three envs that discover fine), readout basin 1.000
+with its own goal stored. And **d0_base has the same hole on the same arena**
+(`--envs_from`: cov 0.360, find 1/16 empty, 0/16 stored), with the same
+find-rate profile across the six (envs 1 and 2 lowest, 4 and 5 highest, at
+identical coverage). The profile is set by the arena — wall code and where the
+goal sits — and both policies, same recipe, sweep it the same way.
+
+**Why the coverage stat is blind to it.** Jack: *"shouldn't the coverage stat
+show this"* / *"coverage stat has 10 distractors"*. It cannot. `mean_coverage`
+(and `swept_coverage`) is a *fraction of cells*; a deterministic policy from
+random starts sweeps a systematic subset, and 34% can be reached while a
+specific cell is never in it. The 10-distractor column rules out "memory
+content breaks exploration in general" (coverage unchanged) — the hole is
+env-specific, and no aggregate over 24 envs will show a 1/24-weighted zero.
+`union_swept_coverage` / `union_coverage` (cells ever reached across rollouts)
+is the stat that exposes holes, and it has been in every eval since §19 with
+nobody reading it for this.
+
+**How common — `analysis/nav_tri/dead_spots.py` (`run_dead_spots.sh`).** Per
+env, 64 deterministic explore trials with an empty memory; the swept mask read
+at each integer cell; a cell is *dead at k* if none of the first k trials came
+within `goal_radius` of it. Goals are uniform over cells, so dead@40 (the
+protocol's primary block) **is** P(dead env).
+
+| policy · env set | dead @16 | **dead @40** | dead @64 | edge cells @40 | interior cells @40 | union cov (64) |
+|---|---|---|---|---|---|---|
+| corner model · 24 OOD arenas | 8.2% | **3.2%** (0.7–7.0) | 2.0% | 13.4% | 0.9% | 0.940 |
+| d0_base · same 24 arenas | 4.4% | **1.2%** (0.3–3.5) | 0.9% | 6.0% | 0.1% | 0.973 |
+| d0_base · 24 fresh in-distribution | 4.2% | **1.3%** (0.3–3.7) | 0.9% | 6.2% | 0.1% | 0.973 |
+
+Map: `results/nav_tri_probe/dead_spot_maps.png` (three 20×20 dead-count maps,
+shared scale). What it shows:
+
+1. **The interior is essentially never dead** (0.1–0.9%). The holes are on the
+   boundary (6–13% of edge cells) and pile up in the **corners**: (19,19) is
+   dead in 16 of 24 arenas for d0_base, (0,0) in 15 of 24 for the corner model.
+   Which corners are hard is policy-specific — a deterministic sweep has
+   habits — but the structure is the same for both.
+2. **They are low-probability cells, not unreachable ones.** Dead fraction
+   decays 8% → 3% → 2% with attempts rather than plateauing; (0,3) *was* found
+   from some of the 64 census starts while none of the protocol's 40 hit it.
+   At a ~2–5%-per-trial cell, P(0/40) is 13–45%.
+3. **d0_base is identical in and out of distribution** (1.2% vs 1.3%) — one more
+   null for position-OOD. Its boundary reach is ~2× the corner model's; with one
+   policy per condition that is seed-or-training, not attributable.
+4. **The dead-env risk of a continual run follows:** 6 envs → P(≥1 dead) ≈ 7%
+   (d0_base) to 18% (corner model). Observed: 0 of 5 (d0_base lock), 0 of 6
+   in-corner, 1 of 6 OOD twice (same goal, same wall code — the two arms share
+   the val draw).
+
+**Why it needs solving.** Every discovery-dependent number — the continual
+protocol's primary block, `goal_find_rate`, `discovery`'s
+`reach_success_rate` (0.22 on the OOD set) — is bounded by a set of cells the
+argmax explorer will not visit, and the set sits exactly where §22's vector
+field runs out: the boundary. It is invisible to the headline explore metric,
+so it cannot be tuned away by watching `swept_coverage`. Candidate levers, none
+tried:
+
+- **Sampled exploration.** The protocol and the census run the *argmax* policy.
+  §23 already showed sampled explore is the honest number; `--stochastic_policy`
+  on `agenthash` / `deterministic=False` in `dead_spots.py` is the one-flag test
+  of whether the holes belong to the policy or to its argmax. If sampling fills
+  them, the fix is a protocol convention, not training.
+- **A boundary term in the explore objective**, or scoring exploration by the
+  *minimum* per-cell visit probability (a worst-case, in the spirit of the
+  theory note on aliasing) rather than the mean — the metric that would have
+  shown this on day one.
+- **Report `union_swept_coverage` and a per-cell dead map at every eval**, so a
+  policy whose holes grow is caught while it trains.
+
+### 37.7 State
+
+- Branch `worktree-nav-ood-place`, pushed; 10 commits over `main`: launcher
+  variants (`ood_place*`, `ood_corner*`, `ood_place_rp10` unlaunched),
+  `navigate_job.sh` generator pass-through, `run_eval_ood.sh`, `run_cl_ood.sh`,
+  the `agenthash` cache fix + test, `dead_env_probe.py`, `dead_spots.py` and
+  their launchers. No job depends on the worktree any more; merge when ready.
+- Checkpoints: `agent_ckpts/navigate_navp2_ood_{place,place_rp,corner,corner_rp}_s42_*`,
+  all to u1200.
+- **Next, in order:** (1) the sampled-policy test of §37.6 — cheapest possible
+  answer to whether dead spots are real; (2) the `INPUT_ABS_POSITION=1` place
+  split, the only run on which position-OOD can be non-null; (3) `goal=ood` on
+  a `ring:1`-trained arm, the OOD axis this policy is most likely to fail.

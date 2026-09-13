@@ -81,6 +81,8 @@ at least three axes* (§4.3), the regime signal **inverts on a successful
 exploiter** (§6.3), `input_goal_in_memory` is banned (§0.0), and
 explore-only validation **does not predict interleaved behaviour** (2/2, §9.0).
 
+**Added 2026-09-13 — two results from the OOD line (`EXPERIMENTS_NAV_P2` §37).** (1) Scaffold-position OOD is a **null**: the d0_base recipe trained on half the scaffold or on a 500×500 corner navigates and explores never-visited scaffold exactly as well as its own region, with zero forgetting in the continual protocol — there is no absolute-position input for a place split to catch. (2) **⚠ OPEN: the explorer has dead spots.** The argmax policy never reaches ~1–3% of goal cells in 40 attempts (all on the boundary and corners; same in d0_base, in and out of distribution), which is what a "dead env" in the continual protocol is — and `swept_coverage`, a fraction of cells, cannot see it. The metric panel needs `union_swept_coverage` / a per-cell dead map, and the first test is the sampled policy. §37.6 there.
+
 
 ---
 
