@@ -1,6 +1,6 @@
 # Goal-conditioned NN control: can a plain network navigate from encoded states?
 
-Status: **A0, A1, A1x, A2, B1x, D1, A1y, D2 done, 2026-09-13.** Everything
+Status: **A0, A1, A1x, A2, B1x, D1, A1y, D2 done; B2 planned, not built (§4B), 2026-09-13.** Everything
 in §5 except the ray-axis encoders (§5.4, unnecessary after A2) is built
 and tested; pre-flight C1–C8 and A0's C13 pass. Branch
 `worktree-nn-generalization-control`. The run-by-run record is
@@ -327,6 +327,7 @@ Three, orthogonal. Two are existing traits; the third is new.
 | **H-env** — held-out environments | `make_val_set(levels={wall: held_out, place: held_out})` | a scaffold region whose grid codes were never seen (`place`) | a barcode never seen — the observation *generating rule*, not a table (`wall`) | ✓ | ✓ |
 | **H-goal** — cells never used as a goal | `goal_cells_train` / `goal_cells_val` (exists, `goal_val_frac`) | goal-input generalization within familiar envs | same | ✓ | ✓ |
 | **H-region** — cells never a start **or** a goal | **new**: `region_cells ⊂ goal_cells_val` (`region_val_frac`) | a phase combination never seen at all | an observation never seen at all | ✓ | — |
+| **H-lattice** — a grid code whose lattice orientation was never trained (§4B) | per-lifetime θ, held-out band around 0° | the frame itself is unseen; undetermined from any single pair | n/a | oracle only | ✓ (B2) |
 
 Region cells are the same *local* cells in every training env; in grid mode
 their global codes differ per env, so the held-out set is scattered across
@@ -730,6 +731,199 @@ same `trace` shape.
 
 ---
 
+## 4B. Experiment B2 — in-context learning of the grid code under lattice randomization
+
+Status: **planned, not built** (2026-09-13).
+
+### 4B.1 Why this exists
+
+B1x asked whether a GRU trained inside a corner would, dropped outside it,
+learn the new region's local frame in-context. It did not — and §6.2's
+structural note says why that null could never have gone the other way:
+with one fixed lattice, the frame at any cell is a deterministic function
+of the observable `gbook`, so for every region training covers the
+weights learn the frame outright and no training lifetime ever rewards
+inferring it from history. The pressure exists only at test time.
+
+B2 removes the fixed lattice. The code varies across lifetimes in a way
+that keeps every instance a real grid code but leaves the weights nothing
+to memorise: the only route to the direction is to measure this
+lifetime's frame from `(Δgbook, action)` and carry it. That is the
+attractor's `d_N, d_E` — read off Φ there, measured from the trajectory
+here.
+
+### 4B.2 The code family
+
+Standard: module *m*'s bump sits at phases `(X mod λ_m, Y mod λ_m)` on
+its λ_m × λ_m torus, a Gaussian of fwhm `fwhm_ratio · λ_m`, where `(X, Y)`
+is the global scaffold position (env offset + local cell). Randomized:
+
+    (X', Y') = R_θ (X, Y) / s          R_θ = [[cos θ, −sin θ], [sin θ, cos θ]]
+    φ_m      = (X' mod λ_m, Y' mod λ_m)       continuous phases
+    gbook_m  = Gaussian bump on the torus centred at φ_m, toroidal distance
+
+`θ` is the lattice orientation relative to the arena, `s` the module scale.
+Grid modules in animals differ in both, so every (θ, s) is a legitimate
+code, not a synthetic scramble. `gbook_at(positions, lambdas, fwhm_ratio,
+θ, s) → (N, Ng)` synthesises it directly; at (θ = 0, s = 1) it must
+reproduce `sgb` to float precision (gate B2-C1). The convention it has
+to match, from `gridcode/smoothing.py`: per module a Gaussian with
+`σ = fwhm / (2√(2 ln 2))`, peak 1, unnormalised, toroidal distance
+`min(d, λ − d)` on each axis, the λ × λ block flattened row-major with
+the y-phase as the row (`active // λ`) and the x-phase as the column
+(`active % λ`). Continuous phases replace the integer `(cy, cx)`; nothing
+else changes.
+
+**Rotation is the essential ingredient.** Under unknown θ, a memoryless
+network can recover the rotated displacement `(ΔX', ΔY') = R_θ (ΔX, ΔY)`
+from a single `(gbook(p), gbook(g))` pair — three coprime moduli pin the
+rotated coordinates — but the teacher's target is the *arena-frame*
+direction, and undoing `R_θ` needs θ, which no single pair contains. The
+direction is ambiguous by exactly θ; for θ uniform on the circle the
+best memoryless output averages 90°. Scale alone would **not** do this
+(direction is scale-invariant), so `s` is an optional realism knob, off
+(`s = 1`) in the primary run.
+
+**Sampling.** Per lifetime: θ ~ U[0, 2π) **excluding** the held-out band
+`|θ| < 15°`; `s = 1` (primary) or `s ~ U[0.7, 1.4]` excluding
+`[0.95, 1.05]` (realism arm). **Test lattice: (θ = 0, s = 1) — the
+standard code**, which the weights have never seen. A second test point
+inside the band (θ = 7°) checks it is the band that is held out, not the
+one value.
+
+### 4B.3 Training
+
+`train_goal_lifetimes.py` with `--lattice_theta_random`. Scattered
+placement (`place_region = anywhere`, 64 train envs) — no corner: the
+lattice is what makes the code unseen, so every scaffold position is
+"outside" under θ = 0. Everything else as B1x: 64 lifetimes × 8 envs per
+update, 64-step chunks, 32 chunks per lifetime, goal resampled on reach,
+DAgger against `normalize(g − p)` in the arena frame (the teacher is
+unchanged; only the code rotates). At each lifetime boundary for env *k*:
+draw (θ, s), rebuild that env's `(S², Ng)` gbook table, and the
+collector reads positions and goals from the table for the rest of the
+lifetime. **8000 updates**, lr 1e-3 with the ×0.1 step at 70% (A1's
+lesson), BPTT 64 — the frame is measurable in two steps, so the credit
+window is not the constraint.
+
+Continuous movement only. Discrete adds nothing here.
+
+### 4B.4 Arms
+
+| arm | trunk | `prev_action` | what it isolates |
+|---|---|---|---|
+| **full** | GRU 2×512 | on | the hypothesis |
+| **full-cap** | GRU 3×768 | on | capacity — B1x's 1-layer GRU was under-matched |
+| **rec** | GRU 2×512 | off | can it use its *own* chosen actions (it knows the policy mean) |
+| **dist** | MLP 5×768 | off | **the null**: undetermined input, must sit at ~90° |
+
+Predicted ordering `full ≥ rec ≫ dist ≈ 90°`. Two seeds of `full`; one
+of the rest.
+
+### 4B.5 Controls — the gates that make the result readable
+
+Two positive controls, built and passed **before** any GRU is trained.
+The pattern is §5.2's scripted rememberer (+0.559).
+
+**B2-C3 — oracle-θ MLP (the task is well-posed).** A's trainer on
+randomized-lattice pairs with `(cos θ, sin θ)` appended to the input
+(`--input_lattice_oracle`); θ drawn per env per update from the training
+set. No memory, but told the frame. Evaluated on the held-out lattice.
+*Pass:* ≤ 5° on held-out region × region — A1-like. Verifies the bump
+synthesis, the rotation convention and the teacher together, with
+nothing in-context involved. If it fails the bug is in the code.
+
+**B2-C4 — the scripted two-step estimator (solvable from the
+trajectory).** `evaluation/scripted_frame.py::ScriptedFrameAgent`, a
+hand-written agent with the same `act(x, h)` interface, run through the
+same lifetime evaluator as the GRUs. It reads `gbook(p)` and `gbook(g)`
+out of `x` at the layout's offsets and keeps its own per-row state. Its
+algorithm:
+
+1. *Steps 0 and 1:* act N, then E (if a step is clipped at the arena and
+   `‖Δgbook‖ ≈ 0`, act S / W instead and record the sign). For each step,
+   per module, compute the bump centroid on the torus before and after
+   (circular mean of the bump weights) and take the wrapped difference
+   in `[−λ_m/2, λ_m/2)`. A unit step never wraps. Average across modules:
+   that is `R_θ a / s` for the action `a` taken. Two independent actions
+   give the two columns of `R_θ / s`; θ = `atan2` of the N column,
+   `s = 1/‖column‖`. **Frame measured in two steps.**
+2. *Every step:* per module, the wrapped phase difference between
+   `gbook(g)` and `gbook(p)`; then the CRT step — the `(ΔX', ΔY')` in
+   `[−S√2, S√2]` consistent with all three moduli (brute force over
+   `k ∈ [−3, 3]` per modulus; within one env `|Δ'| ≤ 28`). This is what
+   three coprime moduli are *for*, and it works at every range — unlike a
+   local-linear frame, which D1 showed is good only for `d ≲ 3`.
+3. Direction = `normalize(R_θ⁻¹ (ΔX', ΔY'))`. `s` cancels.
+
+*Pass:* through readout 2 on the held-out lattice, ~90° at episode 0
+steps 0–1 (nothing observed yet), **≤ 5° from step 2 onward**, flat
+across episodes. That is the ceiling a GRU is being asked to reach, and
+it says two things a GRU's curve can be read against: two steps suffice,
+and the frame is per-lifetime so nothing should need re-learning after
+episode 0. If the estimator fails, the design is broken and no GRU
+result means anything.
+
+**B2-C5 — the null holds.** `dist` at ~90° on the held-out lattice on
+both readouts. Any `full`/`rec` number below that is history, with no
+distribution or loss confound left to chase.
+
+**B2-C1, B2-C2 — synthesis gates.** `gbook_at(θ = 0, s = 1)` equals
+`sgb[:, X, Y]` to 1e-5 at every cell of every env; and the per-module
+centroid shift for a unit N step equals `R_θ (0, 1) / s` to 0.05 cells
+over 100 random (θ, position). **B2-C6** — C16's analogue: `full`'s
+readout 2 at (episode 0, step 0) agrees with its readout 1.
+
+### 4B.6 Readouts
+
+As §4.4, on two env sets under the **held-out** lattice (θ = 0): the 16
+scattered held-out envs (new walls, new positions) and the 64 training
+envs (the code is unseen there too — the weights never saw θ = 0).
+
+- **Readout 1** (`h = 0`): expected ~90° for every arm but the oracle.
+  Nothing observed, nothing to extrapolate from.
+- **Readout 2** by (episode, step): the question. Its *by-step* marginal
+  within episode 0 says how many steps the network needs to measure the
+  frame (the estimator needs two); its *by-episode* marginal says whether
+  it keeps the frame across goal changes (it should — the frame is a
+  property of the lifetime, not the episode).
+- Readout 2 on a **training** θ (e.g. 45°) as the in-distribution check.
+
+### 4B.7 What B2 can and cannot conclude
+
+| `dist` | scripted | `full` readout 2, held-out θ | reading |
+|---|---|---|---|
+| ~90° | ≤ 5° from step 2 | falls within episode 0, flat after, final well below 44° | **in-context learning of an unseen grid code is possible**, and beats the corner-trained weights' extrapolation |
+| ~90° | ≤ 5° | falls but plateaus high (30–60°) | learnable in part; the GRU found a cruder estimator than the scripted one — read the by-step curve for how many steps it uses |
+| ~90° | ≤ 5° | ~90° flat | a capability/optimisation limit of this GRU at this budget — not "impossible": the estimator shows the information is there |
+| ~90° | fails | — | the design is broken; stop |
+| < 90° | — | — | rotation is leaking through something; find it before reading anything |
+
+The tie back to the original question is one number: the corner-trained
+GRU's weights gave **44°** outside the corner, flat over episodes. A
+meta-trained GRU whose readout 2 drops below 44° on the standard lattice
+has learned an unseen part of the grid code in-context, on the real
+code, beating extrapolation.
+
+### 4B.8 B2-mix — the literal version of "learn the outside portion in context"
+
+Secondary. Corner placement (`rect:0,0,400,400`, as A1x), lifetimes
+inside it; per lifetime, with probability `mix_standard_frac = 0.5` the
+standard lattice (θ = 0), otherwise random θ. The weights learn the
+standard lattice's map *for the corner* and the in-context skill *from
+the randomized lifetimes*. Test: standard lattice, `heldout_out` (outside
+the corner). Prediction: readout 1 ≈ 44° (the weights' extrapolation, as
+A1x), readout 2 falls below it within episode 0 (in-context takes over
+where the weights fail). Two seeds of `full`.
+
+### 4B.9 Cost
+
+Build ~half a day (§5.12). Runs: B2-C3 oracle MLP (minutes); B2-C4
+estimator (eval only); `dist`, `rec`, `full` ×2, `full-cap` at 8000
+updates ≈ 5 × ~3 h; B2-mix 2 × ~3 h. ≈ 20 GPU-h.
+
+---
+
 ## 5. Code changes
 
 Ordered so each step is testable alone. Paths current as of `b83ec51`.
@@ -937,6 +1131,43 @@ B's sequential mode exists already.
 - `xcorr`: recovers a known shift on a synthetic view.
 - Entry-point smoke; `test_layering.py` unchanged.
 
+### 5.12 B2 — lattice randomization (planned)
+
+- `gridcode/lattice.py` (new, layer below `hopfield_nav`):
+  `gbook_at(positions (N, 2) global, lambdas, fwhm_ratio, theta=0.0,
+  scale=1.0) -> (N, Ng) float32`. Rotates and scales the positions,
+  takes continuous phases per module, evaluates a Gaussian on each
+  module's torus with toroidal distance, concatenates in the same module
+  order as `gen_gbook_2d`. Vectorised over positions. Reproduces
+  `smooth_gbook` exactly at (0, 1) — that is gate B2-C1, and it pins the
+  smoothing convention (toroidal Gaussian around the phase) so the two
+  cannot drift.
+- `EnvTensors.build(..., gbook_table=None)`: a caller-supplied `(S², Ng)`
+  table overrides the `sgb` gather. `EnvSet.rebuild_gbook(k, theta,
+  scale)` regenerates env *k*'s table from its offset.
+- `collect_rollout_rnn(..., gbook_table=None)` and
+  `evaluate_lifetime_direction(..., gbook_table=None)`: when given, both
+  `grid_state` and `goal_grid_state` are `table[x * S + y]` instead of
+  `grid_state_vec(·, env_offset, sgb)`. One keyword each; the default
+  path is untouched.
+- `train_goal_lifetimes.py`: `--lattice_theta_random`,
+  `--lattice_theta_holdout_deg 15`, `--lattice_scale_range "1,1"`,
+  `--lattice_mix_standard_frac 0.0`, `--eval_thetas "0,7,45"`. At each
+  lifetime boundary for env *k*, draw (θ, s) and `rebuild_gbook`. Eval
+  env sets are built once per listed θ.
+- `evaluation/scripted_frame.py` (new): `ScriptedFrameAgent(cfg, layout,
+  lambdas, S)` with `act(x, h, deterministic) -> {"move_action",
+  "h_next"}`; per-row numpy state (previous `gbook(p)`, shifts collected,
+  θ̂, ŝ, step index); `torus_centroid`, `wrapped_phase_diff`,
+  `crt_displacement`. The lifetime evaluator accepts `h_next=None` from a
+  scripted agent (skips the `torch.where` carry).
+- `train_goal_pairs.py`: `--lattice_theta_random` (θ per env per update)
+  and `--input_lattice_oracle` (appends `cos θ, sin θ` as a 2-wide channel
+  `lattice_oracle`, last in the layout) for gate B2-C3.
+- Tests: B2-C1 and B2-C2 as unit tests; `ScriptedFrameAgent` recovers θ
+  to 1° and direction to 1° on a synthetic lifetime; the oracle channel
+  appends last and `pair_inputs` still equals `build_rnn_input`.
+
 ### 5.11 Not changed
 
 `policy/channels.py` and the Hopfield stack; `VecEnv.step_batch` and the
@@ -1070,6 +1301,12 @@ depth- and budget-matched to the MLP it is compared against.
 by-episode slope on `heldout_out` beyond the seed spread is a finding;
 none is expected.
 
+**B2 — lattice randomization (§4B).** In order: gates B2-C1/C2 (unit
+tests), B2-C3 (oracle-θ MLP, must pass before anything else), B2-C4
+(scripted estimator through readout 2, must pass), B2-C5 (`dist` ~90°);
+then `full` ×2 seeds, `rec`, `full-cap`; then B2-mix ×2. *Kill:* a
+failed C3 or C4 stops the wave — fix the design, do not run the GRUs.
+
 *Structural note, for the record.* On the real grid code no training
 distribution selects for in-context learning of an unseen region: the
 local frame at a cell is a deterministic function of the observable
@@ -1154,6 +1391,19 @@ re-confirms this on the actual envs of every run.
   at short displacements (`|g − p| ≤ 5`) and shrinks or vanishes by ~10.
   A1y: reproduces most of B-dist's gain (to within ~5° of 22°) — the
   pair distribution is the cause, not the loss.
+- **P15** B2 gates: oracle-θ MLP ≤ 5° on the held-out lattice; scripted
+  estimator ≤ 5° from step 2 of episode 0; `dist` ≈ 90° on both readouts.
+- **P16** B2 `full` 2×512, held-out θ = 0: readout 1 ≈ 90°; readout 2
+  falls within episode 0 and is flat by episode thereafter (the frame is
+  per-lifetime, learned once); final level **10–25°** — well below the
+  corner-trained 44°, well above the estimator's ~0°. The GRU finds a
+  cruder estimator than the two-step one and needs more than two steps.
+  Low confidence on the level; high on the shape.
+- **P17** `rec` between `full` and `dist`, nearer `full`; `full-cap`
+  below `full` by a few degrees.
+- **P18** B2-mix on the standard lattice outside the corner: readout 1
+  ≈ 44° (the weights), readout 2 below it within episode 0 (in-context
+  takes over where the weights fail).
 - **P14** D2: the mismatched-wall error lands well below random but
   well above matched — both mechanisms, with projection inversion
   carrying most of the load — and the by-distance profile is flat.
@@ -1242,6 +1492,19 @@ failure.
 ---
 
 ## 8. Risks and open points
+
+- **B2: the centroid-shift computation is a real nonlinear op.** A GRU
+  has to locate a bump on a torus and difference it across a step; if
+  `full` sits at ~90° after 8000 updates while the estimator sits at 0°,
+  the reading is "not learned at this capacity and budget", not "not
+  learnable" — the estimator proves the information is there. `full-cap`
+  and a longer run are the follow-ups, in that order.
+- **B2: interpolation over θ is fine.** The held-out band means the
+  weights never saw θ = 0, but a network that has seen 20° and −20° could
+  interpolate. It still has to *read* θ from the trajectory to know which
+  interpolation to use; that is the capability under test.
+- **B2: leakage through anything but the trajectory** would show as
+  `dist < 90°`. Gate B2-C5 is not optional.
 
 - **Aliasing in regular mode** — retired. `omni` has zero exact twins
   (§6.3); the floor the earlier revisions hedged against does not exist.
