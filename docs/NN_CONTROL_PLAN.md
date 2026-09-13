@@ -791,6 +791,26 @@ standard code**, which the weights have never seen. A second test point
 inside the band (θ = 7°) checks it is the band that is held out, not the
 one value.
 
+**Translation is required too (added 2026-09-13, after the first
+`dist` run).** Rotation alone leaves a weights route to θ on the
+*training* envs: they sit at 64 fixed scaffold offsets `O`, and the
+absolute phases `R_θ(O + p) mod λ_m` over three modules pin θ once the
+offsets are memorised. Seen directly — the memoryless `dist` arm's loss
+fell 3.4 → −0.2 and its goal rate rose 0.001 → 0.07 on training
+lifetimes, which no memoryless net can do under a genuinely unknown θ.
+It cannot transfer to held-out envs or to θ = 0, so the held-out
+readouts stay valid nulls, but it makes in-context estimation
+*unnecessary during training* — exactly the structural problem B2
+exists to remove. The fix is a per-lifetime lattice translation
+`T ~ U[0, 1716)²` (the combined period) applied after rotation:
+`φ_m = (R_θ P / s + T) mod λ_m`. Absolute phases are then uniform for
+every θ; phase *differences* — the displacement decode, and the
+`(Δgbook, action)` frame information in the trajectory — are untouched
+(a test pins both). Grid modules in animals have arbitrary phase
+offsets, so this is realism, not a synthetic scramble. On by default
+(`--lattice_translate`); the rotation-only runs of 2026-09-13 are kept
+in the log as the diagnosis.
+
 ### 4B.3 Training
 
 `train_goal_lifetimes.py` with `--lattice_theta_random`. Scattered

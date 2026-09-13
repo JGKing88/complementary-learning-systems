@@ -787,3 +787,37 @@ s3 = 0.1.
 the frame is measurable from two steps of the trajectory to < 1° and
 lasts the lifetime. The design is sound. Whatever the GRUs do on the
 held-out lattice is a statement about the GRUs.
+
+**Wave 1 (rotation only) — stopped at u = 3000: a leak in the design.**
+`full` 2×512 s0 (22689650): 88–90° flat on both readouts at u = 1000,
+2000, 3000, goal rate 0.001, loss 2.0–2.1 — nothing learned, the
+chicken-and-egg plateau (plan §8). But `dist` (22689649), the memoryless
+MLP on the same rollouts, moved: loss 3.44 → 1.86 (u = 1000) → 1.00
+(u = 2000) → **−0.19 (u = 3000)**, goal rate 0.001 → 0.04 → **0.07**,
+episodes/chunk 1.0 → 4.5. A memoryless net cannot predict the direction
+under a genuinely unknown θ — its best guess is `R_θ̄ᵀ Δ'` for the
+training set's mean rotation θ̄ = 180° (the excluded band is around 0),
+worth ~0.01 nats — so 3.6 nats of improvement on training lifetimes
+means the input *does* determine θ there. It does: the training envs
+sit at 64 fixed scaffold offsets `O`, and the absolute phases
+`R_θ(O + p) mod λ_m` across three modules pin θ once `O` is memorised.
+The held-out readouts were still nulls — `dist` at θ = 0 was 97–124°,
+the θ̄ = 180° anti-alignment showing through on new offsets it cannot
+place — but a weights route to θ on the training data makes in-context
+estimation unnecessary in training, which is the structural problem B2
+exists to remove. Both runs cancelled at u = 3000/3300; a diagnostic
+(22690872, `eval_goal_pairs --eval_thetas 45,90` on `dist`'s u = 3000
+checkpoint: train@45 vs heldout@45) queued to measure the route
+directly.
+
+**Fix (3b3ba15): per-lifetime lattice translation**, `T ~ U[0, 1716)²`
+after rotation, so absolute phases are uniform for every θ and only
+phase differences carry information (plan §4B.2, as amended). Tests:
+absolute phases shift by `T mod λ_m`, pairwise differences invariant to
+1e-3, the scripted estimator unaffected, the sampler uniform over the
+period. Default on; `--no-lattice_translate` reproduces the runs
+above. Wave 1 resubmitted on the corrected design: `dist` 22691028,
+`full` s0/s1 22691029/22691030; C3 oracle and null rerun with
+translation (22691032/22691033) so the gate matches the arms' design.
+The scripted estimator (C4) uses phase differences only and needs no
+rerun.
