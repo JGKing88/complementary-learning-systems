@@ -39,6 +39,12 @@ MAX_STEPS=${MAX_STEPS:-200}
 SEED=${SEED:-3000}
 VAL_SEED=${VAL_SEED:-0}
 SMOOTH=${SMOOTH:-10}
+# STOCHASTIC=1 samples actions from the policy throughout (agenthash
+# --stochastic_policy) instead of the argmax; outputs get a _stoch tag so the
+# deterministic histories beside them are kept. EXPERIMENTS_NAV_P2 §37.6: the
+# argmax explorer's dead spots are what a "dead env" is, and sampling removes
+# most of them.
+STOCHASTIC=${STOCHASTIC:-0}
 
 cd "$REPO"
 module load miniforge/24.3.0-0
@@ -68,11 +74,12 @@ for arm in $ARMS; do
   echo "[cl_ood] $arm u$UPDATE scaffold cache: $scaffold"
   for split in $SPLITS; do
     tag=$(echo "$split" | tr '=' '-' | tr ',' '_')
+    if [ "$STOCHASTIC" = "1" ]; then tag="${tag}_stoch"; fi
     prefix="$OUT/cl_${arm}_u${UPDATE}_${tag}"
     echo; echo "=== $arm u$UPDATE split=$split  ($(date))"
     python -u -m analysis.continual.agenthash \
         --out "$prefix.json" \
-        --run_name "$arm u$UPDATE, $split, one store per env" \
+        --run_name "$arm u$UPDATE, $split, one store per env$([ "$STOCHASTIC" = "1" ] && echo ", sampled")" \
         --ckpt "$ckpt" --device cuda \
         --n_envs "$N_ENVS" --iters_per_block "$ITERS_PER_BLOCK" \
         --max_steps "$MAX_STEPS" --seed "$SEED" --num_full_iters 1 \
@@ -80,6 +87,7 @@ for arm in $ARMS; do
         --static_vectorhash --scaffold_cache "$scaffold" --mmap \
         --lock_store_after_goal --oracle_store_at_goal \
         --oracle_lock_store_not_at_goal --goal_radius 1 \
+        $([ "$STOCHASTIC" = "1" ] && echo --stochastic_policy) \
       || { echo "!!! $arm $split agenthash FAILED"; continue; }
     python -u -m analysis.continual.plotting \
         --history "$prefix.json" --out_prefix "$prefix" \
