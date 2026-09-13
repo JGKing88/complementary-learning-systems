@@ -269,6 +269,11 @@ def run_navigate(
     # mtimes conflates the two and gets the answer wrong by the eval's share.
     t_update_mark = time.time()
     n_updates_timed = 0
+    # Split of that wall-clock between collecting and optimizing, so a pool
+    # shape can be sized from where the time actually goes: the serial
+    # rollout calls do not shrink with batch_envs, the PPO term grows with
+    # epochs x minibatches.
+    t_roll_acc = t_ppo_acc = 0.0
 
     # Whether the store action writes / learns / pays is decided by three
     # unrelated mechanisms in three files; say so once, from the first spec
@@ -429,6 +434,7 @@ def run_navigate(
 
         rollouts = []
         pre_flags: list[bool] = []
+        t_roll0 = time.time()
         for w_idx, world in enumerate(worlds):
             vh = world.field
             collector = RolloutCollector(vh, cfg, embed_dim, device)
@@ -460,8 +466,12 @@ def run_navigate(
         cum_episodes += n_episodes_now
         cum_env_steps += n_env_steps_now
 
+        t_roll_acc += time.time() - t_roll0
+
         agent.train()
+        t_ppo0 = time.time()
         losses = ppo_update(agent, rollouts, cfg.ppo, optimizer, aux_scale=1.0)
+        t_ppo_acc += time.time() - t_ppo0
 
         mean_r = sum(r.rewards.sum().item() for r in rollouts) / max(
             sum(r.rewards.numel() for r in rollouts), 1)
@@ -529,7 +539,7 @@ def run_navigate(
             wandb.log(log)
 
         n_updates_timed += 1
-        if update == 1 or update % 10 == 0:
+        if update == 1 or update % max(int(getattr(cfg, "print_every", 10)), 1) == 0:
             # Under a state-dependent head there is no single sigma to print;
             # the per-update `sigma` in the PPO stats is the realized one, so
             # fall back to it rather than inventing a number here.
@@ -537,17 +547,20 @@ def run_navigate(
                 float(agent.movement_log_std.exp().mean().item())
                 if getattr(agent, "movement_log_std", None) is not None
                 else float(losses.get("sigma", float("nan"))))
-            s_per_update = (time.time() - t_update_mark) / max(n_updates_timed, 1)
+            _nt = max(n_updates_timed, 1)
+            s_per_update = (time.time() - t_update_mark) / _nt
             print(f"  u{update}({stage.kind}): "
                   f"mean_r={mean_r:.4f} (pre={_mr(pre_rs):.4f}, "
                   f"emp={_mr(emp_rs):.4f}) nov={knobs.novelty:.3f} "
                   f"emp_frac={knobs.empty_frac:.3f} std={log_std_mean:.3f} "
                   f"s/u={s_per_update:.1f} "
+                  f"(roll={t_roll_acc / _nt:.1f} ppo={t_ppo_acc / _nt:.1f}) "
                   f"eps_cum={cum_episodes} steps_cum={cum_env_steps} | "
                   + " ".join(f"{k}={v:.3f}" for k, v in losses.items())
                   + (f" | refresh={','.join(refreshed)}" if refreshed else ""),
                   flush=True)
             t_update_mark, n_updates_timed = time.time(), 0
+            t_roll_acc = t_ppo_acc = 0.0
 
         if eval_world is not None and update % max(eval_every, 1) == 0:
             print(f"  [navigate_u{update}] samples={{'episodes': {cum_episodes}, "
@@ -558,6 +571,7 @@ def run_navigate(
             # Eval time is reported by do_eval and must not be charged to the
             # updates that follow it.
             t_update_mark, n_updates_timed = time.time(), 0
+            t_roll_acc = t_ppo_acc = 0.0
 
         # Checkpointing on its own cadence. It used to sit inside the eval
         # branch above, which coupled two things with opposite costs: an eval
@@ -871,6 +885,7 @@ CFG_FIELDS: dict[str, tuple[str, ...]] = {
     "batch_envs": ("batch_envs",),
     "steps_per_rollout": ("steps_per_rollout",),
     "eval_every": ("eval_every",),
+    "print_every": ("print_every",),
     "eval_scope": ("eval_scope",),
     "freeze_store": ("freeze_store",),
     "eval_max_steps": ("eval_max_steps",),
@@ -1235,6 +1250,8 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--seed", type=int, default=0)
     p.add_argument("--device", type=str, default="cuda")
     p.add_argument("--eval_every", type=int, default=50)
+    p.add_argument("--print_every", type=int, default=None,
+                   help="Cadence of the per-update stats line (default 10).")
     p.add_argument("--env_generator", action=argparse.BooleanOptionalAction,
                    default=False,
                    help="Draw envs from declared domains (world/generate.py) "

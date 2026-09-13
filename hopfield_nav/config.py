@@ -367,6 +367,7 @@ class TrainConfig:
     # Training
     n_updates: int = 1000
     eval_every: int = 50
+    print_every: int = 10                   # per-update stats line cadence (u1 always prints)
     # Which evaluators an in-training eval runs. "all" is the three-evaluator
     # pass every phased trainer has always done. "expl" runs exploration only,
     # for runs where navigation and goal-discovery are not merely uninteresting

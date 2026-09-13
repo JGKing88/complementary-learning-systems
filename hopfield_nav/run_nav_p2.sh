@@ -1560,20 +1560,41 @@ case "$VARIANT" in
   # ~60x more data per gradient step than a textbook PPO update, so the first
   # wave brackets the pool size and the passes over it, and nothing else:
   #
-  #   se_b8          BATCH_ENVS 64 -> 8. 160 trajectories/update, PPO 4x4 as
-  #                  d0_base. The CONTROL: pool shrunk, optimizer untouched.
-  #   se_b8_e10      + 10 epochs x 8 minibatches (20 traj/mb), target_kl 0.02.
-  #                  80 gradient steps per update instead of 16.
-  #   se_b4_e10      BATCH_ENVS 4 (80 traj/update), same optimizer. 16x fewer
+  # MEASURED before the wave (analysis/nav_tri/ppo_step_probe.py, d0_base
+  # u725 weights, 160-trajectory pool; docs/EXPERIMENTS_SAMPLE_EFF.md §3.1):
+  #
+  #   * With d0_base's own Adam moments (steady state) a 3e-4 step is KL
+  #     ~0.003-0.007; 16 of them (d0_base's update) accumulate to 0.015 with
+  #     clip_frac 0.22. EIGHTY of them drift a CONVERGED policy to KL 0.06 /
+  #     clip 0.5 -- that is fitting noise in the pool, so "10 epochs at 3e-4"
+  #     is not an arm. 80 steps at 1e-4 land where 16 at 3e-4 do (0.010).
+  #   * From a FRESH init one 3e-4 step is KL 0.4-1.5, clip 0.75-0.93: the
+  #     init policy (direction-vector norm 0.09) is reshuffled every step,
+  #     and d0_base's first ~100 updates ran like that. At 3e-5 a step is
+  #     0.01-0.02, accumulating coherently with 2/3 of the pool inside the
+  #     clip region -- textbook PPO.
+  #   * An update is entirely rollout time (20 envs x 200 serial steps =
+  #     30-36 s; PPO < 1 s even at 80 steps), so gradient steps are free in
+  #     wall-clock and wall-clock scales with envs x T, not with batch.
+  #
+  # So the wave brackets the LEARNING RATE under many steps per update, with
+  # the clip as the trust region and target_kl 0.1 as a safety against
+  # pool-overfitting (it fires at step 33 of 80 for 3e-4 on a converged
+  # policy, never for 1e-4 or 3e-5 in steady state):
+  #
+  #   se_b8          BATCH_ENVS 64 -> 8. 160 trajectories/update, PPO 4x4 at
+  #                  3e-4 as d0_base. The CONTROL: pool shrunk, optimizer
+  #                  untouched.
+  #   se_b8_lr1      10 epochs x 8 minibatches (20 traj/mb) at lr 1e-4.
+  #   se_b8_lr03     20 x 8 at lr 3e-5. 160 small steps per update.
+  #   se_b4_lr1      BATCH_ENVS 4 (80 traj/update), 10x8 at 1e-4. 16x fewer
   #                  samples per update than d0_base.
-  #   se_n10_b8_e10  10 envs x 8 = the same 80 traj/update as se_b4 but half
-  #                  the serial rollout calls: does per-update env DIVERSITY
-  #                  matter, or only the pool size?
-  #   se_b8_e10_h100 se_b8_e10 with 100-step rollouts. Explore trajectories
+  #   se_n10_b8_lr1  10 envs x 8 = the same 80 traj/update as se_b4 but half
+  #                  the serial rollout calls: env DIVERSITY per update vs
+  #                  pool size, and 2x the updates per wall-clock.
+  #   se_b8_lr1_h100 se_b8_lr1 with 100-step rollouts. Explore trajectories
   #                  are always the full rollout length (goals off), so this
   #                  halves the explore env-steps; eval stays at 200 steps.
-  #   se_b8_e10_lr6  se_b8_e10 at LR 6e-4: does a bigger step per update buy
-  #                  updates, now that the KL stop bounds the damage?
   #
   # Schedules are long (4000) because an update is now cheap; TIMEOUT at the
   # 24 h ou_bcs_normal wall is the normal outcome and CKPT_EVERY=25 leaves the
@@ -1638,14 +1659,21 @@ case "$VARIANT" in
         # SCHEDULE was defaulted to d0_base's 1200 above; the SE arms want
         # the long form unless the caller said otherwise.
         [ -z "${SCHEDULE_SET:-}" ] && SCHEDULE=${SE_SCHEDULE:-'interleave:4000,empty_frac=0.5'}
+        # The block above pinned the cadences; a smoke needs to move them.
+        EVAL_EVERY=${SE_EVAL_EVERY:-25}; CKPT_EVERY=${SE_CKPT_EVERY:-25}
         BATCH_ENVS=8
         case "$VARIANT" in
           se_b8) ;;
+          se_b8_lr1)      PPO_EPOCHS=10; N_MINIBATCHES=8; TARGET_KL=0.1; LR=1e-4 ;;
+          se_b8_lr03)     PPO_EPOCHS=20; N_MINIBATCHES=8; TARGET_KL=0.1; LR=3e-5 ;;
+          se_b4_lr1)      BATCH_ENVS=4; PPO_EPOCHS=10; N_MINIBATCHES=8; TARGET_KL=0.1; LR=1e-4 ;;
+          se_n10_b8_lr1)  ENVS_PER_WORLD=10; PPO_EPOCHS=10; N_MINIBATCHES=8; TARGET_KL=0.1; LR=1e-4 ;;
+          se_b8_lr1_h100) PPO_EPOCHS=10; N_MINIBATCHES=8; TARGET_KL=0.1; LR=1e-4; STEPS_PER_ROLLOUT=100 ;;
+          # Timing-smoke names from the first pass (jobs 22700191/949/951),
+          # kept so their logs can be re-read: 10x8 at 3e-4 with target_kl
+          # 0.02, which the probe then showed stops every update at step 2.
           se_b8_e10)      PPO_EPOCHS=10; N_MINIBATCHES=8; TARGET_KL=0.02 ;;
-          se_b4_e10)      BATCH_ENVS=4; PPO_EPOCHS=10; N_MINIBATCHES=8; TARGET_KL=0.02 ;;
           se_n10_b8_e10)  ENVS_PER_WORLD=10; PPO_EPOCHS=10; N_MINIBATCHES=8; TARGET_KL=0.02 ;;
-          se_b8_e10_h100) PPO_EPOCHS=10; N_MINIBATCHES=8; TARGET_KL=0.02; STEPS_PER_ROLLOUT=100 ;;
-          se_b8_e10_lr6)  PPO_EPOCHS=10; N_MINIBATCHES=8; TARGET_KL=0.02; LR=6e-4 ;;
           *) echo "ERROR: unknown SE variant $VARIANT" >&2; exit 1 ;;
         esac
         ;;

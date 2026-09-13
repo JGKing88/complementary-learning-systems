@@ -160,6 +160,7 @@ def ppo_update(
     cfg: PPOConfig,
     optimizer: torch.optim.Optimizer,
     aux_scale: float = 1.0,
+    trace: list | None = None,
 ) -> dict[str, float]:
     """Run PPO epochs on a pooled rollout buffer with minibatching.
 
@@ -558,6 +559,15 @@ def ppo_update(
             total_approx_kl += approx_kl
             total_clip_frac += clip_frac
             n_steps += 1
+            if trace is not None:
+                # Per gradient step, for the optimizer probe
+                # (analysis/nav_tri/ppo_step_probe.py). Not logged by the
+                # trainer: the per-update means above are what wandb gets.
+                trace.append({"epoch": epochs_run, "step": n_steps,
+                              "approx_kl": approx_kl, "clip_frac": clip_frac,
+                              "move_loss": float(move_loss),
+                              "value_loss": float(value_loss),
+                              "grad_norm": float(total_norm)})
 
             # Checked AFTER the step, as in the reference implementations: the
             # minibatch that crosses the threshold is still applied, and the
