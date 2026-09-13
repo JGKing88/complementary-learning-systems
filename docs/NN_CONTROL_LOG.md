@@ -846,3 +846,19 @@ than the weights take to fit it is not a randomisation. B1x's fixed
 lattice was the extreme case; a per-env per-lifetime lattice was a
 milder one; per-row is the first version in which the training data
 never hold a lattice still long enough to be learned in weights.
+
+**C3 on the corrected design (22691032/33, translation on):** oracle
+**1.2°** on held-out θ = 0 (1.05° at 7°, 0.7° at 45°), a shade slower
+than without translation (9.7° vs 4.4° at u = 1000, same by u = 3000);
+null 89–90° with zero gradient throughout. The gate holds.
+
+**Per-row design, wave 1 at u = 2000.** `dist` (22691259): loss
+3.47 → 2.15 (u = 200) → **2.14 (u = 1000) → 2.04 (u = 2000)**, goal
+rate 0.001 throughout, readout 1 at 90 ± 1° on every set, readout 2 at
+90° (u = 1000) then ~100° (u = 2000, the θ̄ = 180° guess emerging). The
+within-lifetime memorisation is gone: with 4096 concurrent lattices the
+memoryless net has nothing to fit. This is gate B2-C5 in its proper form.
+`full` 2×512 s0 (22691260): loss 3.31 → 2.13 (u = 1000) → 2.05
+(u = 2000), goal rate 0.001, readouts 88–89° flat on every set and every
+step — indistinguishable from the null. The plateau, on a clean design.
+Decision point per §6.2 is u = 8000.
