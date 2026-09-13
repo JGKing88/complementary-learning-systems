@@ -1413,6 +1413,12 @@ between. Predicted `√(1 − H/D)` = 0.9182, measured **0.9183**.
 > forward pass to form the residual. Verified (`--incremental`): equal to the
 > batch projector to **9e−17**, order-independent to **2e−17**, `cos(recall(z),
 > z)` = **1.000000**.
+> **Implemented 2026-09-13 in `hopfield/core.py`: `Hopfield(storage_rule="proj")`**
+> stores exactly this way (`_store_proj`), keeps `W = scale·P` so recall's β
+> regime is unchanged, refuses `zero_diag`, and is tested against the batch
+> projector and for order-independence (`tests/test_hopfield_proj.py`). Not yet
+> reachable from any trainer or eval config — every production store still
+> constructs the Hebbian default.
 >
 > `soft` has no such form. `Zᵀ softmax(βZx)` is not `f(Wx)` for any fixed matrix
 > — the softmax runs *over patterns*, so each must be held separately. A
