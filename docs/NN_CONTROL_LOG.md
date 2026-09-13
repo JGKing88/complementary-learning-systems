@@ -725,3 +725,38 @@ form of B2-C5 — must sit at ~90° everywhere (22688914); B2-C4 the
 scripted estimator through readout 2 on the real world, 64 lifetimes ×
 20 episodes on 8 envs of each of `heldout`, `same`, `heldout@7`,
 `heldout@45` (22688915).
+
+**B2-C3 PASSES — oracle-θ MLP l5h768 (22688913), 8000 updates, 27 min.**
+Enumerated final, held-out envs, region×region: **1.0°** on the
+standard lattice (θ = 0, never trained: the band |θ| < 15° was
+excluded), **0.9°** at θ = 7° (inside the band), **0.6°** at θ = 45° (a
+training θ); train 0.9–1.0°. Trajectory on held-out θ = 0: 89° at
+u = 200, 4.4° at u = 1000, 2.4° at u = 2000, 1.2° at u = 5000, 0.95°
+at u = 8000. Every piece of §4B.2 — continuous-phase synthesis, the
+rotation convention, the CRT within an env, the arena-frame teacher — is
+consistent, and interpolation over θ into the held-out band costs
+nothing. Told the frame, a memoryless net solves it to A1's precision.
+
+**Its no-oracle twin (22688914), same data:** loss 0.99 and grad-norm
+0.00 from u = 100 to the end; enumerated final 78–101° across quadrants
+(a constant output), region×region **90.0°** on every lattice. The
+i.i.d. form of B2-C5: with the frame withheld the input is undetermined
+and a memoryless net has nothing to learn. Rotation leaks through
+nothing.
+
+*Two things seen on the way.* (1) The oracle run sat at loss ≈ 1 with
+grad-norm 0.01 for the first ~200 updates, numerically identical to the
+null — a plateau of the `1 − cos` loss where the output norm inflates
+and the tangential gradient shrinks as 1/‖v‖. It escaped on its own by
+u = 1000; a toy-world probe (12×12, λ = 7 8 9, l4h512, batch 16 × 128)
+stayed on it for 600 updates while an MSE-to-unit-vector loss learned
+(9.5° at u = 600). At the real batch size no change was needed and none
+was made. (2) The nearest-neighbour reference line on held-out
+region×region is 58–92° at θ = 0 and 7° but **5–7° at θ = 45°**: at 45°
+adjacent cells are 1/√2 apart in phase per axis, the bumps overlap, and
+the nearest *training* cell to a region cell is a true neighbour rather
+than the 12-cell alias. A property of the code's effective resolution
+at that orientation, not a leak (the model is at 0.6° either way).
+
+**Wave 1 submitted:** `dist` (22689649), `full` 2×512 s0/s1 (22689650,
+22689651); the scripted estimator (22688915) is running.
