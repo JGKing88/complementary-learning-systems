@@ -249,11 +249,62 @@ def test_collector_and_evaluator_gbook_table_path_matches_sgb(world):
 def test_lattice_sampler_respects_holdout_band():
     ls = LatticeSampler(np.random.RandomState(0), holdout_deg=15, scale_range=(0.7, 1.4))
     for _ in range(2000):
-        th, s = ls.draw()
+        th, s, _ = ls.draw()
         assert not ls.in_holdout(th)
         assert 0.7 <= s <= 1.4 and not (0.95 <= s <= 1.05)
     assert ls.in_holdout(np.radians(7)) and ls.in_holdout(np.radians(-7)) and not ls.in_holdout(np.radians(20))
     mix = LatticeSampler(np.random.RandomState(0), holdout_deg=15, mix_standard_frac=0.5)
-    zeros = sum(1 for _ in range(400) if mix.draw() == (0.0, 1.0))
+    zeros = sum(1 for _ in range(400) if mix.draw()[:2] == (0.0, 1.0))
     assert 150 < zeros < 250
     assert parse_thetas("0,7,45") == pytest.approx([0.0, np.radians(7), np.radians(45)])
+
+
+# ---------------------------------------------------------------------------
+# Translation (the fix for the memorised-offset route, 2026-09-13)
+# ---------------------------------------------------------------------------
+
+def test_translation_moves_absolute_phases_but_not_differences():
+    rng = np.random.RandomState(6)
+    pos = rng.uniform(0, 1000, size=(40, 2))
+    th = 0.9
+    a = code_phases(gbook_at(pos, LAM, 0.25, th), LAM)
+    b = code_phases(gbook_at(pos, LAM, 0.25, th, 1.0, shift=(123.4, 567.8)), LAM)
+    lam = np.array(LAM, dtype=float)[:, None]
+    # Absolute phases differ by the shift (mod lambda) in every module ...
+    d = wrapped_phase_diff(b, a, lam)
+    assert np.allclose(d, d[0:1], atol=1e-3)          # the same shift for every position
+    for m, l in enumerate(LAM):
+        assert abs(wrapped_phase_diff(d[0, m, 0], 123.4, l)) < 1e-3
+        assert abs(wrapped_phase_diff(d[0, m, 1], 567.8, l)) < 1e-3
+    # ... and pairwise differences are untouched.
+    da = wrapped_phase_diff(a[1:], a[:-1], lam)
+    db = wrapped_phase_diff(b[1:], b[:-1], lam)
+    assert np.abs(da - db).max() < 1e-3
+
+
+def test_scripted_agent_is_unaffected_by_translation():
+    cfg = agent_cfg_for_mode("grid", "continuous", rnn_cell="mlp")
+    agent = ScriptedFrameAgent(cfg, OBS, LAM, 20)
+    th, shift = 2.2, (901.1, 44.4)
+    pos = np.array([[300.0, 300.0]]); goal = np.array([[311.0, 295.0]])
+    agent.begin_lifetimes(1)
+
+    def x(p):
+        gp = gbook_at(p, LAM, 0.25, th, 1.0, shift); gg = gbook_at(goal, LAM, 0.25, th, 1.0, shift)
+        return build_rnn_input(None, None, None, gp, cfg, "cpu", goal_grid_state=gg)
+    for _ in range(2):
+        pos = pos + agent.act(x(pos))["move_action"].numpy()
+    a = agent.act(x(pos))["move_action"].numpy()[0]
+    assert abs(np.degrees(np.mod(agent.frame()["theta"][0] - th + np.pi, 2 * np.pi) - np.pi)) < 1.0
+    d = (goal - pos)[0]; u = d / np.linalg.norm(d)
+    assert np.degrees(np.arccos(np.clip(a @ u, -1, 1))) < 1.0
+
+
+def test_lattice_sampler_translate_is_uniform_over_the_period():
+    ls = LatticeSampler(np.random.RandomState(0), holdout_deg=15, translate=True, period=1716.0)
+    draws = [ls.draw() for _ in range(500)]
+    sh = np.array([d.shift for d in draws])
+    assert sh.min() >= 0 and sh.max() < 1716 and sh.std() > 400
+    assert all(not ls.in_holdout(d.theta) for d in draws)
+    off = LatticeSampler(np.random.RandomState(0), holdout_deg=15, translate=False)
+    assert off.draw().shift == (0.0, 0.0)

@@ -27,7 +27,8 @@ from .evaluation.goal_pairs import (
     RNNAgentAsPairModel, aggregate_by_distance, evaluate_pairs_by_distance, format_table)
 from .policy.agent_rnn import RNNAgent, compute_rnn_input_dim
 from .policy.pair_regressor import PairRegressor
-from .training.goal_pairs_setup import ARMS, agent_cfg_for_mode, build_env_sets, eval_all, jsonable
+from .training.goal_pairs_setup import (
+    ARMS, agent_cfg_for_mode, build_env_sets, eval_all, jsonable, parse_thetas)
 
 
 def load_model(ck: dict, acfg, D: int, device):
@@ -48,6 +49,9 @@ def main() -> None:
     p.add_argument("--ckpt", required=True)
     p.add_argument("--by_distance", action="store_true")
     p.add_argument("--mismatched_walls", action="store_true")
+    p.add_argument("--eval_thetas", type=str, default="",
+                   help="degrees, e.g. '45,90': add train@theta and heldout@theta env sets "
+                        "(the grid code re-synthesised on that lattice, plan sec 4B)")
     p.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")
     args = p.parse_args()
 
@@ -77,6 +81,9 @@ def main() -> None:
                            n_ood_place=a.get("n_ood_place", 0))
     train, heldout, same, split, vh, _ = built[:6]
     sets = [train, heldout, same] + ([built[6]] if len(built) > 6 else [])
+    for th in parse_thetas(args.eval_thetas):
+        sets.append(train.with_lattice(th, 1.0))
+        sets.append(heldout.with_lattice(th, 1.0))
     cells = split.cell_sets()
     D = compute_rnn_input_dim(acfg, a["observation_size"], vh.Ng)
     assert D == ck["input_dim"], (D, ck["input_dim"])

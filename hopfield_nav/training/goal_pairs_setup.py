@@ -8,6 +8,7 @@ of the layering keeps programs unimported.
 from __future__ import annotations
 
 from dataclasses import replace
+from typing import NamedTuple
 
 import numpy as np
 
@@ -77,15 +78,16 @@ class EnvSet:
     def __len__(self) -> int:
         return len(self.envs)
 
-    def lattice_gbook(self, k: int, theta: float, scale: float = 1.0) -> np.ndarray:
-        """Env ``k``'s ``(S * S, Ng)`` code under lattice ``(theta, scale)``, from its offset."""
+    def lattice_gbook(self, k: int, theta: float, scale: float = 1.0,
+                      shift=(0.0, 0.0)) -> np.ndarray:
+        """Env ``k``'s ``(S * S, Ng)`` code under lattice ``(theta, scale, shift)``, from its offset."""
         if self.lambdas is None or self.fwhm_ratio is None:
             raise ValueError("EnvSet was built without lambdas/fwhm_ratio; cannot re-synthesise")
         S = self.envs[k].size
         cells = np.array([(x, y) for x in range(S) for y in range(S)], dtype=np.float64)
         ox, oy = self.offsets[k]
         return gbook_at(cells + np.array([ox, oy], dtype=np.float64), self.lambdas,
-                        self.fwhm_ratio, theta, scale)
+                        self.fwhm_ratio, theta, scale, shift)
 
     def with_lattice(self, theta: float, scale: float = 1.0, name: str | None = None) -> "EnvSet":
         """A copy of this set with every env's grid code on lattice ``(theta, scale)``."""
@@ -96,36 +98,58 @@ class EnvSet:
                       theta=theta, scale=scale)
 
 
+class Lattice(NamedTuple):
+    theta: float
+    scale: float
+    shift: tuple[float, float]
+
+
 class LatticeSampler:
-    """Per-lifetime (theta, scale) draws for the lattice-randomised runs (plan sec 4B.2).
+    """Per-lifetime lattice draws for the lattice-randomised runs (plan sec 4B.2).
 
     theta ~ U[0, 2 pi) minus the held-out band ``|theta| < holdout_deg``, so
     the standard lattice (theta = 0) and its neighbourhood are never trained
     on; scale ~ U[lo, hi] minus ``[0.95, 1.05]`` unless the range is the
     point ``(1, 1)``; with probability ``mix_standard_frac`` the draw is the
     standard lattice (0, 1) instead (B2-mix, sec 4B.8).
+
+    ``translate`` adds a lattice translation uniform over the combined period
+    (``prod(lambdas)``, 1716 for 11 12 13) to every draw, the standard ones
+    included. Without it the absolute phases of a training env -- whose
+    scaffold offset is fixed and can be memorised -- pin theta through the
+    weights, which is the route B2 exists to close (seen on `dist`,
+    2026-09-13). With it the absolute phases are uniform for every theta and
+    only phase differences, and the trajectory, carry information.
     """
 
     def __init__(self, rng, *, holdout_deg: float = 15.0, scale_range=(1.0, 1.0),
-                 mix_standard_frac: float = 0.0) -> None:
+                 mix_standard_frac: float = 0.0, translate: bool = False,
+                 period: float = 1716.0) -> None:
         self.rng = rng
         self.holdout = np.radians(float(holdout_deg))
         self.scale_range = (float(scale_range[0]), float(scale_range[1]))
         self.mix = float(mix_standard_frac)
+        self.translate = bool(translate)
+        self.period = float(period)
         if not (0.0 <= self.holdout < np.pi):
             raise ValueError("holdout_deg must be in [0, 180)")
 
-    def draw(self) -> tuple[float, float]:
+    def _shift(self) -> tuple[float, float]:
+        if not self.translate:
+            return (0.0, 0.0)
+        return (float(self.rng.uniform(0, self.period)), float(self.rng.uniform(0, self.period)))
+
+    def draw(self) -> Lattice:
         if self.mix > 0 and self.rng.uniform() < self.mix:
-            return 0.0, 1.0
+            return Lattice(0.0, 1.0, self._shift())
         theta = self.rng.uniform(self.holdout, 2 * np.pi - self.holdout)
         lo, hi = self.scale_range
         if lo == hi:
-            return float(theta), lo
+            return Lattice(float(theta), lo, self._shift())
         for _ in range(100):
             s = self.rng.uniform(lo, hi)
             if not (0.95 <= s <= 1.05):
-                return float(theta), float(s)
+                return Lattice(float(theta), float(s), self._shift())
         raise RuntimeError("scale range is inside the held-out band [0.95, 1.05]")
 
     def in_holdout(self, theta: float) -> bool:

@@ -93,6 +93,10 @@ def main() -> None:
                    help="'lo,hi' for a per-lifetime module scale; '1,1' = off")
     p.add_argument("--lattice_mix_standard_frac", type=float, default=0.0,
                    help="probability a lifetime uses the standard lattice (B2-mix, sec 4B.8)")
+    p.add_argument("--lattice_translate", action=argparse.BooleanOptionalAction, default=True,
+                   help="also translate the lattice by a uniform random shift per lifetime, so the "
+                        "absolute phases of a training env cannot pin theta through memorised "
+                        "offsets (sec 4B.2); --no-lattice_translate reproduces the 2026-09-13 runs")
     p.add_argument("--eval_thetas", type=str, default="0",
                    help="degrees; extra copies of the held-out set at each non-zero theta")
     p.add_argument("--scripted", action="store_true",
@@ -167,7 +171,8 @@ def main() -> None:
         lo, hi = (float(v) for v in args.lattice_scale_range.split(","))
         lattice = LatticeSampler(np.random.RandomState(args.seed + 17),
                                  holdout_deg=args.lattice_theta_holdout_deg,
-                                 scale_range=(lo, hi), mix_standard_frac=args.lattice_mix_standard_frac)
+                                 scale_range=(lo, hi), mix_standard_frac=args.lattice_mix_standard_frac,
+                                 translate=args.lattice_translate, period=float(np.prod(args.lambdas)))
         for th in parse_thetas(args.eval_thetas):
             if abs(th) < 1e-9:
                 continue
@@ -175,7 +180,7 @@ def main() -> None:
     print(f"world: {len(train)} train / {len(heldout)} {heldout.name} / {len(same)} same"
           + (f" / {len(heldout_out)} heldout_out" if heldout_out else "")
           + f"; place={args.place_region}; cells={cells.summary()}; {time.time()-t0:.1f}s"
-          + (f"; lattice random (holdout {args.lattice_theta_holdout_deg} deg, scale {args.lattice_scale_range}, "
+          + (f"; lattice random (holdout {args.lattice_theta_holdout_deg} deg, scale {args.lattice_scale_range}, translate {args.lattice_translate}, "
              f"mix {args.lattice_mix_standard_frac}); eval sets {[s.name for s in sets]}" if lattice else ""))
 
     D = compute_rnn_input_dim(acfg, args.observation_size, vh.Ng)
@@ -231,9 +236,9 @@ def main() -> None:
     def new_lifetime(k):
         if lattice is None:
             return
-        th, sc = lattice.draw()
-        env_tables[k] = train.lattice_gbook(k, th, sc)
-        thetas_drawn.append(th)
+        lat = lattice.draw()
+        env_tables[k] = train.lattice_gbook(k, lat.theta, lat.scale, lat.shift)
+        thetas_drawn.append(lat.theta)
 
     def lifetime_eval(u):
         out = {}

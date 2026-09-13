@@ -39,12 +39,22 @@ def rotation(theta: float) -> np.ndarray:
 
 
 def module_phases(positions: np.ndarray, lambdas, theta: float = 0.0,
-                  scale: float = 1.0) -> np.ndarray:
-    """Continuous phases `(N, M, 2)` in `[0, lambda_m)` of the rotated, scaled positions."""
+                  scale: float = 1.0, shift=(0.0, 0.0)) -> np.ndarray:
+    """Continuous phases `(N, M, 2)` in `[0, lambda_m)` of the rotated, scaled, shifted positions.
+
+    `shift` is a translation of the lattice, added after rotation and scaling
+    (`R_theta P / s + shift`). Every module is shifted by the same amount, so
+    a shift uniform over the combined period leaves the ABSOLUTE phases
+    uniform whatever `theta` is, while phase DIFFERENCES between two
+    positions -- everything a displacement decode uses -- are untouched.
+    That is what makes it the ingredient that closes the weights' route to
+    `theta` through memorised env positions (plan sec 4B.2).
+    """
     pos = np.asarray(positions, dtype=np.float64).reshape(-1, 2)
     if scale <= 0:
         raise ValueError(f"scale must be positive, got {scale}")
     xy = (pos @ rotation(theta).T) / float(scale)               # (N, 2) = R_theta (X, Y) / s
+    xy = xy + np.asarray(shift, dtype=np.float64).reshape(1, 2)
     lam = np.asarray(lambdas, dtype=np.float64)                  # (M,)
     return np.mod(xy[:, None, :], lam[None, :, None])            # (N, M, 2)
 
@@ -62,13 +72,13 @@ def _module_bump(phase: np.ndarray, lam: int, sigma: float) -> np.ndarray:
 
 
 def gbook_at(positions: np.ndarray, lambdas, fwhm_ratio: float, theta: float = 0.0,
-             scale: float = 1.0) -> np.ndarray:
+             scale: float = 1.0, shift=(0.0, 0.0)) -> np.ndarray:
     """The smoothed grid code `(N, Ng)` float32 at global `positions (N, 2)`.
 
     `fwhm_ratio <= 0` gives the one-hot code (nearest integer phase), matching
     `smooth_gbook`'s early return.
     """
-    phases = module_phases(positions, lambdas, theta, scale)
+    phases = module_phases(positions, lambdas, theta, scale, shift)
     parts = []
     for m, lam in enumerate(lambdas):
         lam = int(lam)

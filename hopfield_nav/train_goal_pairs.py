@@ -55,8 +55,9 @@ def train_batch(train: EnvSet, cells, acfg, movement_mode, pairs_per_env, rng, d
     xs, ys = [], []
     for k, t in enumerate(train.tensors):
         if lattice is not None:
-            th, sc = lattice.draw()
-            t = replace(t, gbook=train.lattice_gbook(k, th, sc), theta=th, scale=sc)
+            lat = lattice.draw()
+            t = replace(t, gbook=train.lattice_gbook(k, lat.theta, lat.scale, lat.shift),
+                        theta=lat.theta, scale=lat.scale)
         p, g = draw(cells, "train", "train", pairs_per_env, rng)
         xs.append(pair_inputs(t, acfg, p, g))
         ys.append(pair_targets(p, g, t.size, movement_mode))
@@ -116,6 +117,10 @@ def main() -> None:
                         "fresh lattice orientation every update")
     p.add_argument("--lattice_theta_holdout_deg", type=float, default=15.0)
     p.add_argument("--lattice_scale_range", type=str, default="1,1")
+    p.add_argument("--lattice_translate", action=argparse.BooleanOptionalAction, default=True,
+                   help="also translate the lattice by a uniform random shift per draw, so the "
+                        "absolute phases of a training env cannot pin theta through memorised "
+                        "offsets (sec 4B.2); --no-lattice_translate reproduces the 2026-09-13 runs")
     p.add_argument("--input_lattice_oracle", action="store_true",
                    help="append (cos theta, sin theta) of the lattice to the input: the "
                         "oracle-theta MLP, which must reach A1-like error if the task is well-posed")
@@ -230,14 +235,15 @@ def main() -> None:
             raise SystemExit("--lattice_theta_random only means something in grid mode")
         lo, hi = (float(v) for v in args.lattice_scale_range.split(","))
         lattice = LatticeSampler(np.random.RandomState(args.seed + 17),
-                                 holdout_deg=args.lattice_theta_holdout_deg, scale_range=(lo, hi))
+                                 holdout_deg=args.lattice_theta_holdout_deg, scale_range=(lo, hi),
+                                 translate=args.lattice_translate, period=float(np.prod(args.lambdas)))
         # The base sets are the standard lattice (theta = 0), the held-out
         # one. Extra copies of the held-out set at each further theta.
         for th in parse_thetas(args.eval_thetas):
             if abs(th) > 1e-9:
                 sets.append(heldout.with_lattice(th, 1.0))
         print(f"lattice random: holdout {args.lattice_theta_holdout_deg} deg, scale "
-              f"{args.lattice_scale_range}, oracle={args.input_lattice_oracle}; eval sets "
+              f"{args.lattice_scale_range}, translate {args.lattice_translate}, oracle={args.input_lattice_oracle}; eval sets "
               f"{[s.name for s in sets]}")
     set_names = [es.name for es in sets]
     seen = set()          # (env, p, g) triples, the C12 exposure counter
