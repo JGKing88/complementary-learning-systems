@@ -295,6 +295,15 @@ def run_navigate(
     # ramp toward the previous iteration's value and decay to 0.
     _rp_target = float(getattr(cfg.hopfield, 'revisit_penalty', 0.0))
 
+    # Sample accounting (docs/EXPERIMENTS_SAMPLE_EFF.md). Episodes are exact
+    # from the pool shape; env-steps are the REALIZED count -- an exploit row
+    # ends on arrival, so `envs x batch x steps` is only a ceiling and the
+    # ceiling overstates d0_base by 1.8x. Cumulative, carried across a
+    # --continue_from so a resumed run's total is the run's total, and written
+    # into every checkpoint so a probe can read the cost of what it scores.
+    cum_episodes = int((resume_state or {}).get("cum_episodes", 0))
+    cum_env_steps = int((resume_state or {}).get("cum_env_steps", 0))
+
     for update in range(start_update + 1, n_updates_total + 1):
         stage, local_update = stage_at(stages, update)
 
@@ -443,6 +452,14 @@ def run_navigate(
                 rollouts.append(rollout)
         cfg.hopfield.novelty_reward = 0.0
 
+        n_episodes_now = sum(int(r.rewards.shape[0]) for r in rollouts)
+        n_env_steps_now = sum(
+            int(r.alive_mask.sum().item()) if r.alive_mask is not None
+            else int(r.rewards.numel())
+            for r in rollouts)
+        cum_episodes += n_episodes_now
+        cum_env_steps += n_env_steps_now
+
         agent.train()
         losses = ppo_update(agent, rollouts, cfg.ppo, optimizer, aux_scale=1.0)
 
@@ -468,6 +485,10 @@ def run_navigate(
             log["train/mean_reward_pre"] = _mr(pre_rs)
             log["train/mean_reward_emp"] = _mr(emp_rs)
             log["train/current_novelty"] = knobs.novelty
+            log["train/episodes"] = n_episodes_now
+            log["train/env_steps"] = n_env_steps_now
+            log["train/cum_episodes"] = cum_episodes
+            log["train/cum_env_steps"] = cum_env_steps
             log["train/current_epsilon"] = knobs.eps
             log["train/current_emp_frac"] = knobs.empty_frac
             log["train/current_lr"] = knobs.lr
@@ -521,13 +542,16 @@ def run_navigate(
                   f"mean_r={mean_r:.4f} (pre={_mr(pre_rs):.4f}, "
                   f"emp={_mr(emp_rs):.4f}) nov={knobs.novelty:.3f} "
                   f"emp_frac={knobs.empty_frac:.3f} std={log_std_mean:.3f} "
-                  f"s/u={s_per_update:.1f} | "
+                  f"s/u={s_per_update:.1f} "
+                  f"eps_cum={cum_episodes} steps_cum={cum_env_steps} | "
                   + " ".join(f"{k}={v:.3f}" for k, v in losses.items())
                   + (f" | refresh={','.join(refreshed)}" if refreshed else ""),
                   flush=True)
             t_update_mark, n_updates_timed = time.time(), 0
 
         if eval_world is not None and update % max(eval_every, 1) == 0:
+            print(f"  [navigate_u{update}] samples={{'episodes': {cum_episodes}, "
+                  f"'env_steps': {cum_env_steps}}}", flush=True)
             do_eval(cfg, agent, eval_world, device,
                     f"navigate_u{update}", use_wandb,
                     max_steps=eval_max_steps)
@@ -556,6 +580,8 @@ def run_navigate(
                 "config": ckpt_config,
                 "world_spec": ckpt_world,
                 "update": update,
+                "cum_episodes": cum_episodes,
+                "cum_env_steps": cum_env_steps,
             }, os.path.join(cfg.save_dir, f"navigate_u{update}.pt"))
             run_manifest.record_checkpoint(
                 cfg.save_dir, f"navigate_u{update}.pt", update)
@@ -568,6 +594,8 @@ def run_navigate(
                            config=ckpt_config, world_spec=ckpt_world,
                            extra={"parent": parent_ckpt,
                                   "wandb_id": wandb_id,
+                                  "cum_episodes": cum_episodes,
+                                  "cum_env_steps": cum_env_steps,
                                   # Its own stream, advanced once per distractor
                                   # draw, so it is not covered by the global
                                   # numpy state and has to be carried too.
@@ -805,6 +833,17 @@ CFG_FIELDS: dict[str, tuple[str, ...]] = {
     "lr": ("ppo.lr",),
     "move_ent_coef": ("ppo.ent_coef",),
     "ppo_clip_coef": ("ppo.clip_coef",),
+    # Sample-efficiency knobs (docs/EXPERIMENTS_SAMPLE_EFF.md). None of these
+    # existed as flags before 2026-09-13: every run to date took the
+    # dataclass defaults (4 epochs x 4 minibatches, no KL stop), which at
+    # d0_base's 1,280-trajectory pool is 16 gradient steps on ~64k-transition
+    # minibatches per update -- the reason that run needed 928k episodes.
+    "ppo_epochs": ("ppo.ppo_epochs",),
+    "n_minibatches": ("ppo.n_minibatches",),
+    "target_kl": ("ppo.target_kl",),
+    "gamma": ("ppo.gamma",),
+    "gae_lambda": ("ppo.gae_lambda",),
+    "vf_coef": ("ppo.vf_coef",),
     # reward shaping
     "novelty_reward": ("hopfield.novelty_reward",),
     "revisit_penalty": ("hopfield.revisit_penalty",),
@@ -1407,6 +1446,25 @@ def build_parser() -> argparse.ArgumentParser:
                    help="Override PPOConfig.clip_coef (default 0.2). Lower "
                         "values (0.1-0.15) limit policy update size, helping "
                         "stability when goal_reward inflates value targets.")
+    p.add_argument("--ppo_epochs", type=int, default=None,
+                   help="Passes over the pooled rollout per update "
+                        "(PPOConfig default 4). More epochs extract more "
+                        "gradient per sample; pair with --target_kl.")
+    p.add_argument("--n_minibatches", type=int, default=None,
+                   help="Minibatches per epoch, over TRAJECTORIES (PPOConfig "
+                        "default 4). Gradient steps per update = epochs x "
+                        "minibatches.")
+    p.add_argument("--target_kl", type=float, default=None,
+                   help="Stop the epoch loop early once the mean approx KL "
+                        "(old||new) over a minibatch exceeds this (0.01-0.03 "
+                        "is the usual range). Off by default, which is what "
+                        "every run before 2026-09-13 did.")
+    p.add_argument("--gamma", type=float, default=None,
+                   help="Discount (PPOConfig default 0.99).")
+    p.add_argument("--gae_lambda", type=float, default=None,
+                   help="GAE lambda (PPOConfig default 0.95).")
+    p.add_argument("--vf_coef", type=float, default=None,
+                   help="Value-loss weight (PPOConfig default 0.5).")
     return p
 
 

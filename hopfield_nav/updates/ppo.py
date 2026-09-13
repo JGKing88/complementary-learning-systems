@@ -236,11 +236,19 @@ def ppo_update(
     n_diag = n_kappa = 0
     total_store_bc = 0.0
     total_aux_vis = 0.0
+    total_approx_kl = 0.0
+    total_clip_frac = 0.0
     n_steps = 0
     n_nonfinite = 0
     reported_nonfinite = False
+    epochs_run = 0
+    target_kl = getattr(cfg, "target_kl", None)
+    kl_stop = False
 
     for _ in range(cfg.ppo_epochs):
+        if kl_stop:
+            break
+        epochs_run += 1
         perm = torch.randperm(N, device=obs.device)
         for start in range(0, N, mb_size):
             idx = perm[start:start + mb_size]
@@ -303,6 +311,19 @@ def ppo_update(
             _surr = -torch.min(surr1, surr2)
             move_loss = torch.where(mb_pol_mask > 0, _surr,
                                     torch.zeros_like(_surr)).sum() / pol_mask_sum
+            # How far the policy has moved from the one that collected the
+            # data, on the steps the surrogate scores. The k3 estimator
+            # (ratio - 1) - log_ratio is unbiased and non-negative; the mean
+            # over the masked steps is what `target_kl` compares against.
+            with torch.no_grad():
+                _kl = (ratio_move - 1.0) - log_ratio_move
+                approx_kl = float(torch.where(
+                    mb_pol_mask > 0, _kl,
+                    torch.zeros_like(_kl)).sum() / pol_mask_sum)
+                _clipped = ((ratio_move - 1.0).abs() > cfg.clip_coef).float()
+                clip_frac = float(torch.where(
+                    mb_pol_mask > 0, _clipped,
+                    torch.zeros_like(_clipped)).sum() / pol_mask_sum)
 
             # Store policy loss — masked by explore_mask: during exploit the
             # store action is inert (rollout ignores it, no store_cost/
@@ -534,7 +555,17 @@ def ppo_update(
             total_store_ent += store_ent.item()
             total_store_bc += store_bc_loss.item()
             total_aux_vis += aux_vis_loss.item()
+            total_approx_kl += approx_kl
+            total_clip_frac += clip_frac
             n_steps += 1
+
+            # Checked AFTER the step, as in the reference implementations: the
+            # minibatch that crosses the threshold is still applied, and the
+            # loop stops taking further passes over data the policy has
+            # already moved away from.
+            if target_kl is not None and approx_kl > target_kl:
+                kl_stop = True
+                break
 
     denom = max(n_steps, 1)
     d_diag = max(n_diag, 1)
@@ -553,6 +584,14 @@ def ppo_update(
         # persistent nonzero here is a real problem being survived, not solved
         # -- it belongs in the log where it can be seen, not swallowed.
         "nonfinite_steps": float(n_nonfinite),
+        # Sample-efficiency diagnostics. approx_kl is the mean k3 estimate per
+        # gradient step; clip_frac the fraction of scored steps whose ratio
+        # left the clip region; epochs_run < ppo_epochs means target_kl fired;
+        # grad_steps is the number of optimizer steps this update took.
+        "approx_kl": total_approx_kl / denom,
+        "clip_frac": total_clip_frac / denom,
+        "epochs_run": float(epochs_run),
+        "grad_steps": float(n_steps),
     }
     # Emitted only under the polar head, where kappa exists. Not 0.0 (which
     # would plot as a real measurement) and not NaN either: every per-update

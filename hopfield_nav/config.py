@@ -300,6 +300,11 @@ class PPOConfig:
     max_grad_norm: float = 1.0
     ppo_epochs: int = 4
     n_minibatches: int = 4                  # minibatches per epoch over the pooled rollout buffer
+    # Early-stop the epoch loop when the approximate KL(old||new), averaged
+    # over a minibatch's policy steps, exceeds this. None = never (historical
+    # behaviour). Makes a high ppo_epochs setting safe: the loop runs as many
+    # passes as the clip region allows and no more.
+    target_kl: float | None = None
 
 
 @dataclass

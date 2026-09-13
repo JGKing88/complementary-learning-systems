@@ -133,6 +133,12 @@ _arg  rnn_nonlinearity                "${RNN_NONLINEARITY:-}"
 _arg  lr                              "${LR:-}"
 _arg  move_ent_coef                   "${MOVE_ENT_COEF:-}"
 _arg  ppo_clip_coef                   "${PPO_CLIP_COEF:-}"
+_arg  ppo_epochs                      "${PPO_EPOCHS:-}"
+_arg  n_minibatches                   "${N_MINIBATCHES:-}"
+_arg  target_kl                       "${TARGET_KL:-}"
+_arg  gamma                           "${GAMMA:-}"
+_arg  gae_lambda                      "${GAE_LAMBDA:-}"
+_arg  vf_coef                         "${VF_COEF:-}"
 
 # --- Reward shaping --------------------------------------------------------
 _arg  novelty_reward                  "${NOVELTY_REWARD:-}"

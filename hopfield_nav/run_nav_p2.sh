@@ -35,6 +35,10 @@ set -euo pipefail
 
 JOB_LABEL=nav_p2
 VARIANT=${VARIANT:-smoke}
+# Whether the caller set SCHEDULE, recorded before any variant block defaults
+# it -- the SE arms replace the block default with their own long schedule but
+# must not override an explicit one.
+SCHEDULE_SET=${SCHEDULE:+1}
 # The worktree this line of work lives in. Overridable so the script still
 # works if the branch is ever merged down to the main checkout.
 REPO=${REPO:-/orcd/home/002/jackking/cls/.claude/worktrees/nav-tri-metric}
@@ -1544,7 +1548,41 @@ case "$VARIANT" in
   #                 scaffold's 80. Both arms share the margin so they compare.
   #                 place=held_out is infeasible inside a 500 box at any of
   #                 these margins; `recorded` is the control.
-  d0_base|d1_kanneal|d1_persr|d1_ms3|ood_place|ood_place_rp|ood_place_rp10|ood_corner|ood_corner_rp)
+  # === SE -- SAMPLE EFFICIENCY. d0_base's recipe on a fraction of the data. ==
+  #
+  # docs/EXPERIMENTS_SAMPLE_EFF.md. Jack, 2026-09-13: train a model as good as
+  # d0_base u725 on as few samples as possible -- fewer envs, fewer rollouts,
+  # any change to rewards / batching / PPO that helps.
+  #
+  # Where the samples went in d0_base: 20 envs x 64 batch = 1,280 trajectories
+  # per update, 4 epochs x 4 minibatches = 16 gradient steps on ~64k-transition
+  # minibatches, each sample touched 4 times. 928k episodes by u725. That is
+  # ~60x more data per gradient step than a textbook PPO update, so the first
+  # wave brackets the pool size and the passes over it, and nothing else:
+  #
+  #   se_b8          BATCH_ENVS 64 -> 8. 160 trajectories/update, PPO 4x4 as
+  #                  d0_base. The CONTROL: pool shrunk, optimizer untouched.
+  #   se_b8_e10      + 10 epochs x 8 minibatches (20 traj/mb), target_kl 0.02.
+  #                  80 gradient steps per update instead of 16.
+  #   se_b4_e10      BATCH_ENVS 4 (80 traj/update), same optimizer. 16x fewer
+  #                  samples per update than d0_base.
+  #   se_n10_b8_e10  10 envs x 8 = the same 80 traj/update as se_b4 but half
+  #                  the serial rollout calls: does per-update env DIVERSITY
+  #                  matter, or only the pool size?
+  #   se_b8_e10_h100 se_b8_e10 with 100-step rollouts. Explore trajectories
+  #                  are always the full rollout length (goals off), so this
+  #                  halves the explore env-steps; eval stays at 200 steps.
+  #   se_b8_e10_lr6  se_b8_e10 at LR 6e-4: does a bigger step per update buy
+  #                  updates, now that the KL stop bounds the damage?
+  #
+  # Schedules are long (4000) because an update is now cheap; TIMEOUT at the
+  # 24 h ou_bcs_normal wall is the normal outcome and CKPT_EVERY=25 leaves the
+  # series. Samples-to-target is read off the checkpoint that first meets the
+  # d0_base u725 probe bar, never off the end of the run.
+  #
+  #   VARIANT=se_b8_e10 REPO=<worktree> sbatch --partition=ou_bcs_normal \
+  #       --time=24:00:00 hopfield_nav/run_nav_p2.sh
+  d0_base|d1_kanneal|d1_persr|d1_ms3|ood_place|ood_place_rp|ood_place_rp10|ood_corner|ood_corner_rp|se_*)
     ENCODER=/orcd/pool/003/jackking/cls_runs/sweeps/w52_attract_fwhm/001_att0.5_seed=43/encoder_final.pt
     ENCODER_GAIN=100
     HOPFIELD_BETA=100
@@ -1595,6 +1633,21 @@ case "$VARIANT" in
         PLACE_REGION=${PLACE_REGION:-rect:0,0,500,500}
         PLACE_MARGIN=${PLACE_MARGIN:-50}
         if [ "$VARIANT" = ood_corner_rp ]; then REFRESH_PLACE=${REFRESH_PLACE:-1}; fi
+        ;;
+      se_*)
+        # SCHEDULE was defaulted to d0_base's 1200 above; the SE arms want
+        # the long form unless the caller said otherwise.
+        [ -z "${SCHEDULE_SET:-}" ] && SCHEDULE=${SE_SCHEDULE:-'interleave:4000,empty_frac=0.5'}
+        BATCH_ENVS=8
+        case "$VARIANT" in
+          se_b8) ;;
+          se_b8_e10)      PPO_EPOCHS=10; N_MINIBATCHES=8; TARGET_KL=0.02 ;;
+          se_b4_e10)      BATCH_ENVS=4; PPO_EPOCHS=10; N_MINIBATCHES=8; TARGET_KL=0.02 ;;
+          se_n10_b8_e10)  ENVS_PER_WORLD=10; PPO_EPOCHS=10; N_MINIBATCHES=8; TARGET_KL=0.02 ;;
+          se_b8_e10_h100) PPO_EPOCHS=10; N_MINIBATCHES=8; TARGET_KL=0.02; STEPS_PER_ROLLOUT=100 ;;
+          se_b8_e10_lr6)  PPO_EPOCHS=10; N_MINIBATCHES=8; TARGET_KL=0.02; LR=6e-4 ;;
+          *) echo "ERROR: unknown SE variant $VARIANT" >&2; exit 1 ;;
+        esac
         ;;
     esac
     ;;
@@ -1668,6 +1721,8 @@ wall=$WALL_PENALTY pers=$PERSISTENCE_BONUS revisit=$REVISIT_PENALTY \
 goal=$GOAL_REWARD time=$TIME_PENALTY"
 echo "    noise      : eps=$EPSILON_EXPLORE/$EPSILON_ANNEAL_UPDATES \
 init_log_std=$INIT_LOG_STD freeze=$FREEZE_LOG_STD ent=$MOVE_ENT_COEF"
+echo "    ppo        : lr=$LR clip=$PPO_CLIP_COEF epochs=${PPO_EPOCHS:-4(default)} \
+minibatches=${N_MINIBATCHES:-4(default)} target_kl=${TARGET_KL:-off}"
 echo "    trunk      : $RNN_CELL/$RNN_NONLINEARITY h=$HIDDEN_SIZE"
 echo "    encoder    : $(basename "$(dirname "$ENCODER")")/$(basename "$ENCODER") \
 gain=${ENCODER_GAIN:-<ckpt>} hopfield_beta=${HOPFIELD_BETA:-<encoder gain>}"
