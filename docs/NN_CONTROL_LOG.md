@@ -682,3 +682,46 @@ goals), C2 (zero twins), C6 (`pair_inputs` bit-identical to the rollout
 stack's input), C11 (reference lines on the same enumerated pairs). The
 within-env NN lookup line on held-out region×region is 38°. Nothing
 per-wall transfers; nothing is looked up. 1 eval job.
+
+## 2026-09-13 — B2: build and gates
+
+**Build (a9d5ac4).** Plan §5.12, as-built notes in §5.12. Unit gates:
+B2-C1 `gbook_at(θ=0, s=1)` equals `smooth_gbook` gathered at 300 random
+scaffold positions with max |diff| **0.0**, and the one-hot at fwhm 0;
+B2-C2 the per-module centroid shift for a unit step equals `R_θ a / s`
+to **5e-7 cells** over 100 random (θ, s, position) (bound was 0.05); the
+CRT decode recovers rotated displacements up to |d| = 19 to 1e-6;
+`ScriptedFrameAgent` recovers θ to < 1° and the direction to < 1° on 32
+synthetic lifetimes with and without `prev_action` in the layout, and
+retries a clipped first step; the oracle channel is last in the layout
+and `pair_inputs` matches `build_rnn_input`; `with_lattice(0, 1)` is the
+identity; the collector and the evaluator on `gbook_table` at (0, 1)
+reproduce the `sgb` path bit for bit. 11/11, plus the 78 existing
+goal-pairs / layering / lifetime tests unchanged.
+
+**CPU smoke, 8×8 toy world (lambdas 5 6 7).** The estimator through
+readout 2, `heldout` set, episode 0 by step: **96 → 67 → 13 → 0.0 → 0.0**
+— two measuring steps, then exact; by episode 30 / 1.7 / 5.4 / 8.3
+(residual is the goal-cell/L2-ball artifact below and 8×8 clipping). The
+GRU `full` arm on random lattices trains and evaluates on `heldout`,
+`same`, `heldout@45`; θ histogram: 0 draws in the held-out band. The
+oracle MLP path trains and evaluates on `heldout@45`.
+
+**One evaluator property, noted for reading every B curve.** Continuous
+at-goal is an L2 ball of radius 0.5 on the continuous position, so a row
+can stand on the goal cell (which is all a cell-resolution code shows)
+without being at goal. The teacher there is the zero vector and every
+agent scores 90° on that step. B1x was scored the same way. A
+deterministic agent that decodes Δ' = 0 and emits a zero action would sit
+there until timeout; the estimator now takes a random unit step in that
+case (a sampled policy does this by itself). Not changed in the
+evaluator, to keep B1x comparable.
+
+**Gates submitted, 3 jobs.** B2-C3 oracle-θ MLP l5h768, 8000 updates,
+step at 70%, θ per env per update from the training set, eval on the
+standard lattice (θ = 0), θ = 7° (inside the band) and θ = 45° (a
+training θ) (22688913); its no-oracle twin on the same data, the i.i.d.
+form of B2-C5 — must sit at ~90° everywhere (22688914); B2-C4 the
+scripted estimator through readout 2 on the real world, 64 lifetimes ×
+20 episodes on 8 envs of each of `heldout`, `same`, `heldout@7`,
+`heldout@45` (22688915).

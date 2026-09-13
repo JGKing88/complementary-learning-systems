@@ -1,6 +1,6 @@
 # Goal-conditioned NN control: can a plain network navigate from encoded states?
 
-Status: **A0, A1, A1x, A2, B1x, D1, A1y, D2 done; B2 planned, not built (§4B), 2026-09-13.** Everything
+Status: **A0, A1, A1x, A2, B1x, D1, A1y, D2 done; B2 built and gates running (§4B, §5.12), 2026-09-13.** Everything
 in §5 except the ray-axis encoders (§5.4, unnecessary after A2) is built
 and tested; pre-flight C1–C8 and A0's C13 pass. Branch
 `worktree-nn-generalization-control`. The run-by-run record is
@@ -733,7 +733,7 @@ same `trace` shape.
 
 ## 4B. Experiment B2 — in-context learning of the grid code under lattice randomization
 
-Status: **planned, not built** (2026-09-13).
+Status: **built 2026-09-13 (§5.12 as-built); gates B2-C1, B2-C2 pass as unit tests; B2-C3, B2-C4 and the no-oracle null submitted.** Results in `docs/NN_CONTROL_LOG.md` and, when read, §0.
 
 ### 4B.1 Why this exists
 
@@ -1131,7 +1131,7 @@ B's sequential mode exists already.
 - `xcorr`: recovers a known shift on a synthetic view.
 - Entry-point smoke; `test_layering.py` unchanged.
 
-### 5.12 B2 — lattice randomization (planned)
+### 5.12 B2 — lattice randomization (as built)
 
 - `gridcode/lattice.py` (new, layer below `hopfield_nav`):
   `gbook_at(positions (N, 2) global, lambdas, fwhm_ratio, theta=0.0,
@@ -1167,6 +1167,59 @@ B's sequential mode exists already.
 - Tests: B2-C1 and B2-C2 as unit tests; `ScriptedFrameAgent` recovers θ
   to 1° and direction to 1° on a synthetic lifetime; the oracle channel
   appends last and `pair_inputs` still equals `build_rnn_input`.
+
+**As built (2026-09-13), where it differs from the above.**
+`hopfield_nav/tests/test_lattice.py`, 11 tests, all pass; B2-C1 is exact
+(max |diff| 0.0 against `smooth_gbook`, and the one-hot at fwhm 0) and
+B2-C2 is 5e-7 cells, not 0.05. Deviations:
+
+- The decoding helpers (`torus_centroid`, `code_phases`,
+  `wrapped_phase_diff`, `crt_displacement`) live in `gridcode/lattice.py`
+  beside the synthesis, not in `scripted_frame.py`: reading the code back
+  is the code's business, and the C2 unit test needs them without the
+  agent. `scripted_frame.py` holds only `ScriptedFrameAgent`.
+- The flattening convention the plan text had backwards: in
+  `gen_gbook_2d` the module row is `X mod λ` and the column `Y mod λ`
+  (`flat = phi1[x] * λ + phi2[y]`). `gbook_at` follows the code, and gate
+  C1 is what settles it.
+- `EnvSet.lattice_gbook(k, θ, s)` returns a table without mutating the
+  set (the training loop keeps its per-env table beside the vec);
+  `EnvSet.with_lattice(θ, s)` returns a copy for the eval sets, named
+  `heldout@45` etc. `EnvTensors` carries `theta`, `scale` and a
+  `lattice_oracle` property; `EnvSet` carries `lambdas` and
+  `fwhm_ratio`. `LatticeSampler` (holdout band, scale band, mix) and
+  `parse_thetas` sit in `training/goal_pairs_setup.py`.
+- `rollout.rnn.table_gather(table, positions, S)` is the one gather both
+  the collector and the evaluator use; the sgb path is untouched and a
+  test pins that `gbook_table = tensors.gbook` at (0, 1) reproduces it
+  bit for bit through both.
+- The evaluator returns `ep0_by_step` (episode 0's own by-step row) —
+  the "how many steps to measure the frame" readout, unblurred by later
+  episodes that start with the frame known. `aggregate_lifetimes` averages
+  it. The trainer prints it at every lifetime eval and at the end.
+- `ScriptedFrameAgent` has a `begin_lifetimes(n)` hook the evaluator calls
+  once per batch; and when its CRT decode is *exactly zero* it takes a
+  random unit step. Reason: `goal_radius` is an L2 ball of 0.5 on the
+  continuous position, so a row can stand on the goal *cell* (all the
+  cell-resolution code can show) without being at goal; the teacher there
+  is the zero vector and is scored 90° for any agent (an existing
+  evaluator property B1x was scored under too), and a deterministic zero
+  action would sit there until the episode timed out. A sampled GRU
+  policy escapes by its own noise; the estimator needs the random step to
+  be its equal. On the 8×8 smoke world this is what makes its by-episode
+  curve flat after episode 0.
+- `train_goal_lifetimes.py` also gained `--scripted` (run the estimator
+  through readout 2 in place of an arm: gate C4 with no separate script)
+  and `--lr_schedule step --lr_step_at 0.7 --lr_step_gamma 0.1` (the plan
+  asks for A1's step; B's trainer did not have one). Under lattice mode
+  the final JSON records the θ histogram of every lifetime drawn and the
+  count inside the held-out band (must be 0, or the mix fraction).
+- `train_goal_pairs.py`: `--lattice_theta_random` re-synthesises all 64
+  training tables every update (~150 ms; 500 positions take 3 ms), θ per
+  env per update as planned. `--eval_thetas` default `0,45`. The
+  no-oracle twin of C3 — same data, no `(cos θ, sin θ)` — is the i.i.d.
+  form of gate C5 and is run beside it.
+- Both launchers pass `${EXTRA:-}` through to argparse.
 
 ### 5.11 Not changed
 
