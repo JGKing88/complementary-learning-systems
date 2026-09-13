@@ -1552,6 +1552,23 @@ failure.
   the reading is "not learned at this capacity and budget", not "not
   learnable" — the estimator proves the information is there. `full-cap`
   and a longer run are the follow-ups, in that order.
+  *Seen 2026-09-13, u = 1000:* `full` at 88–89° on both readouts, goal
+  rate 0.001, loss flat — the chicken-and-egg form of this: the gradient
+  on the displacement features is ~0 while θ is unknown, and the gradient
+  on the θ features is ~0 while the displacement is not decoded. The
+  oracle MLP had the same plateau for ~200 updates with only the first
+  half to solve. **Contingency, if `full` is still ~90° at 8000 (not
+  run unless it is):** a foothold that keeps θ = 0 held out —
+  (i) *anchor-mix*: half the lifetimes at one fixed training θ (90°),
+  the rest random; the fixed half gives a determined target so the
+  displacement decode is learned, after which the random half's residual
+  is a rotation and the θ gradient is live. The test (θ = 0) stays
+  unseen. (ii) *band curriculum*: θ ∈ [45°, 135°] for the first 2000
+  updates, then the full circle minus the band. (iii) *oracle
+  annealing*: the `(cos θ, sin θ)` channel shown for the first 2000
+  updates and zeroed after, so the net first learns to use a frame and
+  then to measure it. Each is one flag on the same trainer; (i) is the
+  one to run first because it changes nothing about what is held out.
 - **B2: interpolation over θ is fine.** The held-out band means the
   weights never saw θ = 0, but a network that has seen 20° and −20° could
   interpolate. It still has to *read* θ from the trajectory to know which
