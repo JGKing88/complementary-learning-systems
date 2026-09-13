@@ -34,6 +34,7 @@ from hopfield_nav.evaluation.checkpoint_io import (
     cfg_from_checkpoint, eval_world_for_split, load_agent,
 )
 from hopfield_nav.evaluation.metrics import random_start
+from hopfield_nav.rollout.distractors import sample_distractors
 
 _INSTANCES: list = []
 
@@ -59,6 +60,12 @@ def main():
     p.add_argument("--max_steps", type=int, default=200)
     p.add_argument("--seed", type=int, default=42)
     p.add_argument("--device", default="cuda")
+    p.add_argument("--n_distractors", type=int, default=0,
+                   help="patterns stored per trial before it starts: random scaffold "
+                        "cells outside the env footprint, a fresh draw per trial, as "
+                        "evaluate_exploration preloads them. 0 = empty memory.")
+    p.add_argument("--storage_rule", default="hebb", choices=("hebb", "proj"),
+                   help="Hopfield storage rule for the preloaded patterns")
     p.add_argument("--stochastic", action="store_true",
                    help="sample actions from the policy (temperature 1) instead of "
                         "the argmax -- the one-flag test of whether the holes belong "
@@ -93,7 +100,8 @@ def main():
     n, size, grid = len(envs), envs[0].size, 8
     print(f"policy={a.ckpt}\nenvs: {a.split} from {src_ckpt} ({n} envs, size {size})"
           f"\ntrials/env={a.trials} max_steps={a.max_steps} "
-          f"{'SAMPLED (temperature 1)' if a.stochastic else 'deterministic'}, empty memory")
+          f"{'SAMPLED (temperature 1)' if a.stochastic else 'deterministic'}, "
+          f"memory: {a.n_distractors} distractors/trial, storage_rule={a.storage_rule}")
 
     batched.SweptArea = _RecordingSweptArea
     dead_frac = {k: [] for k in ks}
@@ -109,7 +117,13 @@ def main():
     xs, ys = np.meshgrid(np.arange(size) * grid, np.arange(size) * grid, indexing="ij")
     for j, (env, off) in enumerate(zip(envs, offsets)):
         goal = tuple(int(v) for v in env.goal_location)
-        hops = [Hopfield(D, beta=cfg.hopfield.beta, device=str(dev)) for _ in range(a.trials)]
+        hops = []
+        for _ in range(a.trials):
+            hop = Hopfield(D, beta=cfg.hopfield.beta, device=str(dev),
+                           storage_rule=a.storage_rule)
+            for pat in sample_distractors(vh, off, size, a.n_distractors, rng):
+                hop.input_memory(torch.from_numpy(pat).float())
+            hops.append(hop)
         starts = [random_start(size, goal, rng) for _ in range(a.trials)]
         _INSTANCES.clear()
         visited, found, _steps, _swept = batched.batched_exploration_trials(
