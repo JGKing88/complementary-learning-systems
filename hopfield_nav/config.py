@@ -592,6 +592,14 @@ class RNNAgentConfig:
     # the one thing a randomised lattice hides from it. Appended LAST in the
     # layout. Only A's trainer ever turns it on.
     input_lattice_oracle: bool = False
+    # A feed-forward encoder (`input_encoder_layers` x `input_encoder_hidden`,
+    # ReLU) in front of a recurrent cell, so the recurrence sits on features
+    # a deep stack computed rather than on the raw code (plan sec 4B;
+    # `policy.recurrent.EncodedRecurrentCore`). 0 layers = off, the
+    # historical trunk. Ignored under rnn_cell="mlp".
+    input_encoder_layers: int = 0
+    input_encoder_hidden: int = 768
+    input_encoder_nonlinearity: str = "relu"
     # Ray-axis encoder over the view columns (sensory and goal_sensory), see
     # plan sec 5.4. "linear" is identity, the historical read.
     sensory_encoder: str = "linear"

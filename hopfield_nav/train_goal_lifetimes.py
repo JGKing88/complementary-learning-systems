@@ -60,6 +60,10 @@ def main() -> None:
     p.add_argument("--hidden_size", type=int, default=512)
     p.add_argument("--num_layers", type=int, default=1)
     p.add_argument("--nonlinearity", choices=["tanh", "relu"], default="relu")
+    p.add_argument("--encoder_layers", type=int, default=0,
+                   help="feed-forward ReLU encoder in front of a GRU/RNN cell (plan sec 4B; "
+                        "0 = the raw code into the cell, as B1x). Ignored for --arm dist.")
+    p.add_argument("--encoder_hidden", type=int, default=768)
     # World (same flags as A)
     p.add_argument("--n_envs", type=int, default=64)
     p.add_argument("--n_val_envs", type=int, default=16)
@@ -143,7 +147,9 @@ def main() -> None:
     acfg = agent_cfg_for_mode(args.mode, args.movement_mode,
                               hidden_size=args.hidden_size, num_rnn_layers=args.num_layers,
                               rnn_nonlinearity=args.nonlinearity if arm["rnn_cell"] == "mlp" else "tanh",
-                              init_log_std=args.init_log_std, **arm)
+                              init_log_std=args.init_log_std,
+                              input_encoder_layers=args.encoder_layers,
+                              input_encoder_hidden=args.encoder_hidden, **arm)
     cfg = RNNTrainConfig(
         env=EnvConfig(size=args.size, observation_size=args.observation_size,
                       movement_mode=args.movement_mode, wall_resolution=args.wall_resolution,
@@ -200,7 +206,7 @@ def main() -> None:
         agent = RNNAgent(acfg, D).to(device)
         n_params = sum(q.numel() for q in agent.parameters())
         print(f"agent: mode={args.mode} arm={args.arm} cell={acfg.rnn_cell} prev_action={acfg.input_prev_action} "
-              f"D={D} hidden={args.hidden_size} layers={args.num_layers} params={n_params:,}")
+              f"D={D} hidden={args.hidden_size} layers={args.num_layers} encoder={args.encoder_layers}x{args.encoder_hidden} params={n_params:,}")
         opt = torch.optim.Adam(agent.parameters(), lr=args.lr)
         sched = None
         if args.lr_schedule == "step":

@@ -60,7 +60,9 @@ def main() -> None:
     is_lifetimes = "agent_state_dict" in ck
     extra = {}
     if is_lifetimes:
-        extra = dict(ARMS[a["arm"]], init_log_std=a.get("init_log_std", 0.0))
+        extra = dict(ARMS[a["arm"]], init_log_std=a.get("init_log_std", 0.0),
+                     input_encoder_layers=a.get("encoder_layers", 0),
+                     input_encoder_hidden=a.get("encoder_hidden", 768))
         nonlin = a["nonlinearity"] if extra["rnn_cell"] == "mlp" else "tanh"
     else:
         extra = dict(rnn_cell="mlp", dropout=a.get("dropout", 0.0),

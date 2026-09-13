@@ -228,6 +228,41 @@ class FeedForwardCore(nn.Module):
         return out, x.new_zeros(self.num_layers, B, self.hidden_size)
 
 
+class EncodedRecurrentCore(nn.Module):
+    """A feed-forward encoder in front of a recurrent core, behind the trunk contract.
+
+    `encoder` is a `FeedForwardCore` applied per step (its inert state is
+    discarded); `core` is the recurrent stack over the encoded features. The
+    state that goes in and comes out is the CORE's `(num_layers, B, hidden)`,
+    so every caller that carries a state -- the collector, the BC update, the
+    lifetime evaluator -- is unchanged.
+
+    Why it exists (plan sec 4B, 2026-09-13): on the grid code a GRU fed the
+    raw bump vectors is a far weaker function approximator than a deep ReLU
+    stack on the same input -- B1x's 1-layer GRU reached 22 deg where the
+    5x768 MLP reached 0.6 deg on the absolute decode, and under a per-row
+    lattice translation the 2x512 GRU did not learn the relative-phase decode
+    in 3000 updates that the MLP learned from the same rollouts in 600. With
+    the MLP as the encoder the memoryless part of the computation is exactly
+    what the `dist` arm has, and the recurrence is asked only to carry and
+    combine per-step features.
+    """
+
+    def __init__(self, encoder: nn.Module, core: nn.Module) -> None:
+        super().__init__()
+        self.encoder = encoder
+        self.core = core
+        self.input_size = int(encoder.input_size)
+        self.hidden_size = int(core.hidden_size)
+        self.num_layers = int(core.num_layers)
+
+    def forward(
+        self, x: torch.Tensor, h: torch.Tensor | None = None,
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        z, _ = self.encoder(x, None)
+        return self.core(z, h)
+
+
 def build_recurrent_core(cfg, input_dim: int) -> nn.Module:
     """The trunk `cfg` asks for.
 
@@ -250,12 +285,25 @@ def build_recurrent_core(cfg, input_dim: int) -> nn.Module:
         batch_first=True,
         dropout=cfg.dropout if layers > 1 else 0.0,
     )
-    if cell == "gru":
-        return nn.GRU(input_dim, cfg.hidden_size, **kwargs)
     if cell == "mlp":
         return FeedForwardCore(input_dim, cfg.hidden_size, num_layers=layers,
                                nonlinearity=nonlinearity,
                                dropout=cfg.dropout if layers > 1 else 0.0)
-    if nonlinearity == "softplus":
-        return SoftplusRNN(input_dim, cfg.hidden_size, **kwargs)
-    return nn.RNN(input_dim, cfg.hidden_size, nonlinearity=nonlinearity, **kwargs)
+    # An optional feed-forward encoder in front of a recurrent cell (plan sec
+    # 4B). Off (0 layers) for every config that predates it.
+    enc_layers = int(getattr(cfg, "input_encoder_layers", 0))
+    core_in = input_dim
+    encoder = None
+    if enc_layers > 0:
+        enc_hidden = int(getattr(cfg, "input_encoder_hidden", cfg.hidden_size))
+        encoder = FeedForwardCore(input_dim, enc_hidden, num_layers=enc_layers,
+                                  nonlinearity=getattr(cfg, "input_encoder_nonlinearity", "relu"),
+                                  dropout=0.0)
+        core_in = enc_hidden
+    if cell == "gru":
+        core = nn.GRU(core_in, cfg.hidden_size, **kwargs)
+    elif nonlinearity == "softplus":
+        core = SoftplusRNN(core_in, cfg.hidden_size, **kwargs)
+    else:
+        core = nn.RNN(core_in, cfg.hidden_size, nonlinearity=nonlinearity, **kwargs)
+    return EncodedRecurrentCore(encoder, core) if encoder is not None else core

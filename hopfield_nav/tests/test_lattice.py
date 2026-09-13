@@ -338,3 +338,28 @@ def test_table_gather_per_row_and_collector_on_per_row_tables(world):
     for b in range(B):
         assert np.allclose(x[b, :Ng], tables[b, p0[b, 0] * SIZE + p0[b, 1]], atol=1e-6)
         assert np.allclose(x[b, Ng:2 * Ng], tables[b, g0[b, 0] * SIZE + g0[b, 1]], atol=1e-6)
+
+
+def test_encoded_recurrent_core_contracts():
+    from hopfield_nav.policy.recurrent import EncodedRecurrentCore, build_recurrent_core
+    cfg = RNNAgentConfig(rnn_cell="gru", hidden_size=16, num_rnn_layers=2,
+                         input_encoder_layers=3, input_encoder_hidden=24)
+    core = build_recurrent_core(cfg, 40)
+    assert isinstance(core, EncodedRecurrentCore)
+    assert core.input_size == 40 and core.hidden_size == 16 and core.num_layers == 2
+    x = torch.randn(5, 7, 40)
+    f, h = core(x, None)
+    assert f.shape == (5, 7, 16) and h.shape == (2, 5, 16)
+    # T steps == T single steps, carrying the CORE's state.
+    hs, outs = None, []
+    for t in range(7):
+        o, hs = core(x[:, t:t + 1], hs)
+        outs.append(o)
+    assert torch.allclose(torch.cat(outs, 1), f, atol=1e-5)
+    # Off by default: a plain GRU.
+    assert not isinstance(build_recurrent_core(RNNAgentConfig(rnn_cell="gru", hidden_size=16), 40),
+                          EncodedRecurrentCore)
+    # The agent runs on it end to end.
+    agent = RNNAgent(cfg, 40)
+    out = agent.act(x[:, :1], None)
+    assert out["h_next"].shape == (2, 5, 16)
