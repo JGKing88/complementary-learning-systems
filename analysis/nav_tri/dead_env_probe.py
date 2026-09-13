@@ -23,6 +23,18 @@ Four measurements per env, no squinting:
      stored once alongside goals 0 and 1.
 
     python -m analysis.nav_tri.dead_env_probe [--ckpt ...] [--split place=ood]
+
+Two more env sources, for comparing policies on the SAME arenas:
+
+  --envs_from CKPT   mint the set from another run's world record (the scaffold
+                     field is a pure function of the encoder, so any policy
+                     trained on the same encoder can be run on it) -- e.g.
+                     d0_base on the env the corner model failed.
+  --legacy_replay    agenthash's pre-record draw (RandomState(cfg.seed), skip
+                     envs_per_world*num_worlds, make_env x n, place_envs spread
+                     after np.random.seed(0)) -- the envs d0_base's continual
+                     figures were made on; the offsets are checked against a
+                     history with --check_history.
 """
 from __future__ import annotations
 
@@ -60,6 +72,14 @@ def main():
                    help="env indices whose goals are in memory for (2)-(4)")
     p.add_argument("--num_trials", type=int, default=16)
     p.add_argument("--device", default="cuda")
+    p.add_argument("--envs_from", default=None,
+                   help="checkpoint whose world record mints the env set "
+                        "(default: --ckpt itself)")
+    p.add_argument("--legacy_replay", action="store_true",
+                   help="agenthash's pre-record env draw instead of a --split")
+    p.add_argument("--check_history", default=None,
+                   help="continual history .json whose recorded offsets/goals "
+                        "the env set must match (asserts)")
     a = p.parse_args()
     dev = torch.device(a.device if torch.cuda.is_available() else "cpu")
 
@@ -73,8 +93,51 @@ def main():
     D = enc_cfg.out_dim
     torch.manual_seed(0)
     np.random.seed(0)
-    envs, vh, offsets = eval_world_for_split(
-        cfg, enc, str(dev), ckpt_path=a.ckpt, split=a.split, val_seed=a.val_seed)
+    if a.legacy_replay:
+        from hopfield_nav.training.world_setup import build_field
+        from hopfield_nav.world.env import make_env
+        from hopfield_nav.world.scaffold import place_envs
+        vh = build_field(cfg, enc)
+        rng = np.random.RandomState(cfg.seed)
+        for _ in range(cfg.envs_per_world * cfg.num_worlds):
+            rng.randint(0, 10_000_000)
+        envs = [make_env(cfg.env, cfg.agent.movement_mode,
+                         seed=int(rng.randint(0, 10_000_000)))
+                for _ in range(a.n_envs)]
+        np.random.seed(0)     # agenthash draws offsets right after seeding
+        offsets = place_envs(a.n_envs, cfg.env.size, vh.Npos, np.random,
+                             placement="spread")
+        source = "legacy replay"
+    else:
+        src_ckpt = a.envs_from or a.ckpt
+        if a.envs_from:
+            # The env set is minted from the OTHER run's record and domains; the
+            # field is a pure function of (encoder, lambdas, Npos, fwhm), which
+            # both runs share, so this policy can be run on those arenas.
+            src_cfg = cfg_from_checkpoint(torch.load(
+                src_ckpt, map_location="cpu", weights_only=False)["config"])
+            src_cfg.num_val_envs = a.n_envs
+            assert src_cfg.encoder_checkpoint == cfg.encoder_checkpoint, (
+                "env source trained on a different encoder; its arenas are not "
+                "this policy's scaffold")
+        else:
+            src_cfg = cfg
+        envs, vh, offsets = eval_world_for_split(
+            src_cfg, enc, str(dev), ckpt_path=src_ckpt, split=a.split,
+            val_seed=a.val_seed)
+        source = f"{a.split} from {src_ckpt}"
+    if a.check_history:
+        import json
+        ex = json.load(open(a.check_history))["metadata"]["extra"]
+        want_o = [tuple(o) for o in ex["env_offsets_per_iter"][0]]
+        want_g = [tuple(g) for g in ex["env_goals_per_iter"][0]]
+        got_o = [tuple(int(v) for v in o) for o in offsets]
+        got_g = [tuple(int(v) for v in e.goal_location) for e in envs]
+        assert got_o == want_o and got_g == want_g, (
+            f"env set differs from {a.check_history}:\n  offsets {got_o}\n"
+            f"  vs      {want_o}\n  goals {got_g}\n  vs    {want_g}")
+        print(f"env set matches {a.check_history}")
+    print(f"env source: {source}")
     n, size, R = len(envs), envs[0].size, float(cfg.env.goal_radius)
     goals = [goal_encoding(vh, offsets[j], envs[j].goal_location) for j in range(n)]
     stored = [int(s) for s in a.stored.split(",") if s != ""]
