@@ -60,7 +60,7 @@ care how mice do it.
 | **Metric** | **`swept_coverage` is the headline explore metric from 2026-09-01 (§19).** Union of `goal_radius` discs along the path = P(goal findable). `mean_coverage` counts snapped cells, which hides the speed axis: it says speed barely matters, swept area says speed dominates. §2.1/§18.2's "the speed cap is free" is retracted. `union_swept_coverage` is the spread diagnostic. |
 | **Status** | **P10 polar landed (§9.4–9.8).** Two of four arms finished; the exploit-frozen model is the phase-2 best. |
 | **Branch / worktree** | `nav-tri-metric` at `.claude/worktrees/nav-tri-metric`; **OOD line on `worktree-nav-ood-place`** (§37) |
-| **⚠ OPEN — dead spots (§37.6)** | **The deterministic explorer never visits ~1–3% of goal cells (dead@40 attempts: 1.2% d0_base, 3.2% corner model), all on the boundary and corners, interior ~0 — and `mean_coverage`/`swept_coverage` cannot see it: a fraction of cells, blind to WHICH cells.** It is what "dead envs" in the continual protocol are; nav on the same env with the goal preloaded is 1.00. Same holes in d0_base, in and out of distribution. First test: the sampled policy (`--stochastic_policy`). Tools: `analysis/nav_tri/dead_env_probe.py`, `dead_spots.py`; map `results/nav_tri_probe/dead_spot_maps.png`. |
+| **⚠ OPEN — dead spots (§37.6)** | **The argmax explorer never visits ~1–3% of goal cells in 40 attempts (1.2% d0_base, 3.2% corner model), all on the boundary and corners, interior ~0 — and `mean_coverage`/`swept_coverage` cannot see it: a fraction of cells, blind to WHICH cells.** It is what "dead envs" in the continual protocol are; nav on the same env with the goal preloaded is 1.00. **Sampled at temperature 1 the holes mostly vanish: 0.1–0.2% d0_base, 0.7% corner model** — so run the protocol `--stochastic_policy`; the residue (corner model's two hard corners) is the part that is still a training problem. Tools: `analysis/nav_tri/dead_env_probe.py`, `dead_spots.py [--stochastic]`; maps `results/nav_tri_probe/dead_spot_maps*.png`. |
 | **Place-OOD (§37)** | **NULL, robustly.** d0_base's recipe trained on half the scaffold and on a 500×500 corner (fixed and every-update-refreshed placement, 1200 updates each) navigates and explores never-visited scaffold exactly as well as its own region at u600 and u1200 (success 1.00 vs 1.00, steps ±1, coverage equal); continual protocol: zero forgetting on OOD arenas too. Cause: no absolute-position input. Training cost identical to full-scaffold. d0_base itself has no OOD set (legacy `Anywhere`). Framework: `--env_generator --place_region rect` + `eval_all --split place=ood`; `run_eval_ood.sh`, `run_cl_ood.sh`. |
 | **Predecessor** | `docs/EXPERIMENTS_NAV_TRI.md` — read its §0 findings 1–22 |
 | **Open decisions** | §11 — four forks put to Jack; spec assumes the recommended default in each |
@@ -73,7 +73,7 @@ care how mice do it.
 
 **Open items** (priority order):
 
-- [ ] **⚠ SOLVE — the explorer's dead spots (§37.6).** ~1–3% of uniformly drawn goals are never reached by 40 deterministic 200-step explore trials; the holes sit on the boundary/corners and are invisible to `mean_coverage`/`swept_coverage`. Every discovery-dependent number (continual primary block, `goal_find_rate`, `discovery`) is bounded by them. Step 1 is free: rerun `dead_spots.py` with `deterministic=False` and `agenthash --stochastic_policy` — if sampling fills the holes it is a protocol convention; if not it is a training objective (boundary term / worst-case per-cell visit probability) and `union_swept_coverage` + a per-cell dead map should be reported at every eval so it cannot hide again.
+- [ ] **⚠ Dead spots (§37.6) — mostly resolved by sampling; a residue remains.** The argmax explorer misses ~1–3% of goal cells in 40 attempts (boundary/corners, invisible to `swept_coverage`); sampled at temperature 1 that is 0.1–0.2% for d0_base and 0.7% for the corner model. Two actions: (a) make `--stochastic_policy` the continual protocol's default and re-run the corner figures with it — a deterministic protocol reports argmax holes as dead envs; (b) report `union_swept_coverage` and a per-cell dead map at every eval so a policy whose residue grows is caught while it trains. The 0.7% residue is the only part left for a training-side lever (boundary term / worst-case per-cell visit probability).
 
 - [x] **DONE — §23. Re-scored explore with `deterministic=False`.** The κ-cap gap is **3.2%, not 14%**; §18.4's magnitude is retracted. §22's vector-field finding survives sampling. Explore should be scored sampled from here on. Original item: Every explore number in this document is the *noiseless mean policy*; the training reward was earned by *sampled* trajectories, and for a search task the noise is functional. §18.4's 12% κ-cap gap could shrink or invert, since the capped arm's whole difference is spread that a deterministic eval discards. No retraining needed.
 
@@ -8393,6 +8393,26 @@ shared scale). What it shows:
    in-corner, 1 of 6 OOD twice (same goal, same wall code — the two arms share
    the val draw).
 
+**Sampled policy — the one-flag test, run (jobs 22690152/3/4).** Same
+arenas, same 64 starts, actions sampled at the policy's own temperature
+instead of the argmax:
+
+| policy · env set | dead @16 | **dead @40** | dead @64 | edge cells @40 | interior @40 | union cov |
+|---|---|---|---|---|---|---|
+| corner model · 24 OOD | 8.2% → **2.6%** | 3.2% → **0.7%** (0–2.5) | 2.0% → 0.4% | 13.4% → 3.6% | 0.9% → 0.0% | 0.94 → 0.99 |
+| d0_base · same 24 | 4.4% → 1.1% | 1.2% → **0.1%** (0–0.7) | 0.9% → 0.1% | 6.0% → 0.5% | 0.1% → 0.0% | 0.97 → 1.00 |
+| d0_base · 24 in-distribution | 4.2% → 1.0% | 1.3% → **0.2%** (0–0.7) | 0.9% → 0.1% | 6.2% → 0.9% | 0.1% → 0.0% | 0.97 → 1.00 |
+
+Map: `results/nav_tri_probe/dead_spot_maps_argmax_vs_sampled.png`. **Most of
+the holes belong to the argmax, not the policy.** Sampling cuts the dead
+fraction 5–10×: d0_base is essentially hole-free (0.1–0.2% at 40 attempts, a
+few edge cells in a few arenas, interior exactly 0), and the corner model keeps
+a **0.7% boundary residue** — its two hard corners at 7–11 of 24 arenas instead
+of 14–15. So the dead env in the continual figures and the 1–3% argmax rates
+are mainly a consequence of running the protocol deterministically, which is
+§23's lesson (score explore *sampled*) reaching discovery. The residue is real
+but small, and it is the only part that is a training problem.
+
 **Why it needs solving.** Every discovery-dependent number — the continual
 protocol's primary block, `goal_find_rate`, `discovery`'s
 `reach_success_rate` (0.22 on the OOD set) — is bounded by a set of cells the
@@ -8401,11 +8421,10 @@ field runs out: the boundary. It is invisible to the headline explore metric,
 so it cannot be tuned away by watching `swept_coverage`. Candidate levers, none
 tried:
 
-- **Sampled exploration.** The protocol and the census run the *argmax* policy.
-  §23 already showed sampled explore is the honest number; `--stochastic_policy`
-  on `agenthash` / `deterministic=False` in `dead_spots.py` is the one-flag test
-  of whether the holes belong to the policy or to its argmax. If sampling fills
-  them, the fix is a protocol convention, not training.
+- **Sampled exploration — DONE, and it is most of the answer** (table above).
+  The continual protocol (`agenthash`) should run `--stochastic_policy` from
+  here on, as the explore evals already do since §23; a deterministic protocol
+  reports argmax holes as "dead envs".
 - **A boundary term in the explore objective**, or scoring exploration by the
   *minimum* per-cell visit probability (a worst-case, in the spirit of the
   theory note on aliasing) rather than the mean — the metric that would have
