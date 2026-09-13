@@ -35,7 +35,7 @@ import torch
 from ..evaluation.goal_pairs import angular_error_deg, optimal_action_set
 from ..rollout.rnn import (
     build_rnn_input, goal_channel_vec, goal_sensory_vec, grid_state_vec,
-    prev_action_channel, sensory_vec, xy_vec)
+    prev_action_channel, sensory_vec, table_gather, xy_vec)
 from ..world.env import at_goal
 from ..world.spec import CellSets
 from ..world.vec_env import make_vec
@@ -50,12 +50,27 @@ def evaluate_lifetime_direction(
     env, agent, *, cells: CellSets, n_lifetimes: int, n_episodes: int,
     max_steps: int, device, sgb=None, env_offset=None,
     continuous_scale: float = 1.0, continuous_normalize: bool = True,
-    deterministic: bool = False, seed: int = 0,
+    deterministic: bool = False, seed: int = 0, gbook_table=None,
 ) -> dict:
-    """The (episode x step) score table for one env, plus its marginals."""
+    """The (episode x step) score table for one env, plus its marginals.
+
+    ``gbook_table`` ``(S * S, Ng)`` replaces the ``sgb`` gather for both grid
+    channels, exactly as in ``collect_rollout_rnn`` (plan sec 4B). An agent
+    with a ``begin_lifetimes(n)`` method -- the scripted estimator -- is told
+    the batch size before the first step so it can allocate per-row state.
+    """
     cfg = agent.cfg
     mm = cfg.movement_mode
     S = env.size
+    if hasattr(agent, "begin_lifetimes"):
+        agent.begin_lifetimes(n_lifetimes)
+
+    def grid_at(cells):
+        if gbook_table is not None:
+            return table_gather(gbook_table, cells, S)
+        return grid_state_vec(cells, env_offset, sgb)
+
+    have_grid = gbook_table is not None or (sgb is not None and env_offset is not None)
     vec = make_vec(env, n_lifetimes, mm, continuous_scale, continuous_normalize, reset=False)
     vec._rng = np.random.RandomState(seed)
     # Starts from the training start set, goals from the training goal set --
@@ -121,10 +136,8 @@ def evaluate_lifetime_direction(
             sensory = vec.obs_batch().astype(np.float32)
         prev_act_ch = (prev_action_channel(prev_action_np, mm, B)
                        if cfg.input_prev_action else None)
-        grid_state = (grid_state_vec(positions, env_offset, sgb)
-                      if (cfg.input_grid_state and sgb is not None and env_offset is not None) else None)
-        goal_gs = (grid_state_vec(goals, env_offset, sgb)
-                   if (want_goal_gs and sgb is not None and env_offset is not None) else None)
+        grid_state = grid_at(positions) if (cfg.input_grid_state and have_grid) else None
+        goal_gs = grid_at(goals) if (want_goal_gs and have_grid) else None
         goal_sens = goal_sensory_vec(vec, goals, goal_sens_mode) if goal_sens_mode != "none" else None
         xy_state = xy_vec(positions, S) if want_xy else None
         goal_vec = (goal_channel_vec(positions, goals, S, cfg.goal_channel)
@@ -175,6 +188,10 @@ def evaluate_lifetime_direction(
     return {
         "by_episode": by_episode.tolist(),
         "by_step": by_step.tolist(),
+        # Episode 0's own by-step row: with a per-lifetime frame to measure
+        # (plan sec 4B.6) this is the "how many steps" readout, unblurred by
+        # later episodes that start with the frame already known.
+        "ep0_by_step": mean_table[0].tolist(),
         "table": mean_table.tolist(),
         "count": count.tolist(),
         "ep0_step0": float(mean_table[0, 0]) if count[0, 0] > 0 else None,
@@ -187,11 +204,13 @@ def aggregate_lifetimes(results: list[dict]) -> dict:
     """Mean of by_episode / by_step over envs (nan-aware), plus the spread."""
     be = np.array([r["by_episode"] for r in results], dtype=np.float64)
     bs = np.array([r["by_step"] for r in results], dtype=np.float64)
+    e0 = np.array([r.get("ep0_by_step", r["table"][0]) for r in results], dtype=np.float64)
     with np.errstate(invalid="ignore"):
         return {
             "by_episode": np.nanmean(be, axis=0).tolist(),
             "by_episode_std": np.nanstd(be, axis=0).tolist(),
             "by_step": np.nanmean(bs, axis=0).tolist(),
+            "ep0_by_step": np.nanmean(e0, axis=0).tolist(),
             "ep0_step0": float(np.nanmean([r["ep0_step0"] for r in results if r["ep0_step0"] is not None])),
             "n_envs": len(results), "metric": results[0]["metric"],
         }

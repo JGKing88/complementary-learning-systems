@@ -51,21 +51,36 @@ class EnvTensors:
     omni: np.ndarray                # (S*S, 4*obs)
     north: np.ndarray               # (S*S, obs)
     xy: np.ndarray                  # (S*S, 2)
+    # The lattice `gbook` was synthesised on (plan sec 4B.2). The scaffold's
+    # own code is (0, 1); `with_lattice` makes any other. The oracle channel
+    # of gate B2-C3 reads `(cos theta, sin theta)` from here.
+    theta: float = 0.0
+    scale: float = 1.0
 
     @staticmethod
     def build(env: GridEnv, env_offset: tuple[int, int] | None,
-              sgb: np.ndarray | None) -> "EnvTensors":
+              sgb: np.ndarray | None, gbook_table: np.ndarray | None = None,
+              theta: float = 0.0, scale: float = 1.0) -> "EnvTensors":
+        """``gbook_table (S*S, Ng)``, when given, overrides the ``sgb`` gather."""
         S = env.size
         cells = np.array([(x, y) for x in range(S) for y in range(S)], dtype=np.int64)
         gb = None
-        if sgb is not None and env_offset is not None:
+        if gbook_table is not None:
+            gb = np.asarray(gbook_table, dtype=np.float32)
+            if gb.shape[0] != S * S:
+                raise ValueError(f"gbook_table has {gb.shape[0]} rows for a {S}x{S} env")
+        elif sgb is not None and env_offset is not None:
             gb = grid_state_vec(cells, env_offset, sgb)
         return EnvTensors(
             size=S, gbook=gb,
             omni=sensory_vec(env, cells, "omni"),
             north=goal_sensory_vec(env, cells, "north"),
-            xy=xy_vec(cells, S),
+            xy=xy_vec(cells, S), theta=float(theta), scale=float(scale),
         )
+
+    @property
+    def lattice_oracle(self) -> np.ndarray:
+        return np.array([np.cos(self.theta), np.sin(self.theta)], dtype=np.float32)
 
     def encoding(self, kind: str) -> np.ndarray:
         if kind == "gbook":
@@ -195,6 +210,8 @@ def input_kinds(cfg: RNNAgentConfig) -> list[tuple[str, str]]:
         out.append(("goal_sensory", "omni:g"))
     elif gs == "north":
         out.append(("goal_sensory", "north:g"))
+    if getattr(cfg, "input_lattice_oracle", False):
+        out.append(("lattice_oracle", "lattice"))
     return out
 
 
@@ -207,6 +224,8 @@ def pair_inputs(tensors: EnvTensors, cfg: RNNAgentConfig,
             parts.append(np.zeros((len(p), int(spec.split(":")[1])), dtype=np.float32))
         elif spec == "xyrel":
             parts.append(tensors.xy[g] - tensors.xy[p])
+        elif spec == "lattice":
+            parts.append(np.tile(tensors.lattice_oracle, (len(p), 1)))
         else:
             kind, end = spec.split(":")
             parts.append(tensors.encoding(kind)[p if end == "p" else g])

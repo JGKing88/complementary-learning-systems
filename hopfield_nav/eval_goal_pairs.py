@@ -59,7 +59,8 @@ def main() -> None:
         extra = dict(ARMS[a["arm"]], init_log_std=a.get("init_log_std", 0.0))
         nonlin = a["nonlinearity"] if extra["rnn_cell"] == "mlp" else "tanh"
     else:
-        extra = dict(rnn_cell="mlp", dropout=a.get("dropout", 0.0))
+        extra = dict(rnn_cell="mlp", dropout=a.get("dropout", 0.0),
+                     input_lattice_oracle=a.get("input_lattice_oracle", False))
         nonlin = a["nonlinearity"]
     acfg = agent_cfg_for_mode(a["mode"], a["movement_mode"],
                               hidden_size=a["hidden_size"], num_rnn_layers=a["num_layers"],

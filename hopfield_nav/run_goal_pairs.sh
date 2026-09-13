@@ -77,4 +77,4 @@ PYTHONUNBUFFERED=1 python -m hopfield_nav.train_goal_pairs \
   --place_region "$PLACE_REGION" --n_ood_place "$N_OOD_PLACE" \
   --n_updates "$N_UPDATES" --lr "$LR" --weight_decay "$WD" --lr_schedule "$LR_SCHEDULE" --lr_step_at "$LR_STEP_AT" --lr_step_gamma "$LR_STEP_GAMMA" \
   --eval_every "$EVAL_EVERY" --eval_pairs "$EVAL_PAIRS" --ckpt_every "$CKPT_EVERY" \
-  --seed "$SEED" --tag "$TAG" --wandb_project "$WANDB_PROJECT" $WANDB_FLAG
+  --seed "$SEED" --tag "$TAG" --wandb_project "$WANDB_PROJECT" $WANDB_FLAG ${EXTRA:-}

@@ -69,6 +69,7 @@ def build_rnn_input(
     goal_grid_state: np.ndarray | None = None,   # (B, Ng) gbook at the goal or None
     goal_sensory: np.ndarray | None = None,      # (B, obs | 4*obs) views at the goal or None
     sensory_dim: int | None = None,         # ONE view's width; only needed to validate
+    lattice_oracle: np.ndarray | None = None,    # (B, 2) (cos theta, sin theta) or None
 ) -> torch.Tensor:
     """Assemble per-step RNN input -> (B, 1, input_dim) tensor on device.
 
@@ -103,6 +104,7 @@ def build_rnn_input(
         "xy_state": xy_state,
         "goal_grid_state": goal_grid_state,
         "goal_sensory": goal_sensory,
+        "lattice_oracle": lattice_oracle,
     }
     lenient = {"prev_action", "prev_reward", "grid_state", "goal_vec"}
     gbook_dim = 0
@@ -226,6 +228,14 @@ def grid_state_vec(
     return sgb[:, gx, gy].T.astype(np.float32)
 
 
+def table_gather(table: np.ndarray, positions: np.ndarray, size: int) -> np.ndarray:
+    """``table[x * size + y]`` for local ``positions (B, 2)``: a per-env ``(S * S, Ng)`` code table."""
+    pos = np.asarray(positions)
+    x = np.clip(np.rint(pos[:, 0]).astype(np.int64), 0, size - 1)
+    y = np.clip(np.rint(pos[:, 1]).astype(np.int64), 0, size - 1)
+    return table[x * size + y].astype(np.float32)
+
+
 def action_to_prev_channel(
     action: np.ndarray, movement_mode: str
 ) -> np.ndarray:
@@ -271,8 +281,15 @@ def collect_rollout_rnn(
     carry_across_episodes: bool = False,
     initial_h: torch.Tensor | None = None,
     episode_max_steps: int | None = None,
+    gbook_table: np.ndarray | None = None,
 ) -> RNNRolloutBatch:
     """Collect a single (B, T) rollout in DAgger style.
+
+    ``gbook_table`` ``(S * S, Ng)`` replaces the ``sgb`` gather for BOTH grid
+    channels: ``grid_state = table[x * S + y]``. It is how a lifetime is run
+    on a lattice other than the scaffold's (plan sec 4B); the table is the
+    env's local cells under that lattice, from ``gridcode.lattice.gbook_at``.
+    Without it the default path is untouched.
 
     teacher_force=True overrides the student action with the oracle action when
     stepping the env. Used by the oracle-sanity smoke test (an in-distribution
@@ -295,8 +312,19 @@ def collect_rollout_rnn(
     """
     B = vec.B
     movement_mode = agent.cfg.movement_mode
-    gbook_dim = int(sgb.shape[0]) if (sgb is not None and agent.cfg.input_grid_state) else 0
+    if gbook_table is not None and agent.cfg.input_grid_state:
+        gbook_dim = int(gbook_table.shape[1])
+    else:
+        gbook_dim = int(sgb.shape[0]) if (sgb is not None and agent.cfg.input_grid_state) else 0
     input_dim = compute_rnn_input_dim(agent.cfg, vec._obs_size, gbook_dim)
+    S = vec.size
+
+    def grid_at(cells):
+        if gbook_table is not None:
+            return table_gather(gbook_table, cells, S)
+        return grid_state_vec(cells, env_offset, sgb)
+
+    have_grid = gbook_table is not None or (sgb is not None and env_offset is not None)
 
     obs_buf = torch.zeros((B, steps, input_dim), dtype=torch.float32, device=device)
     if movement_mode == "discrete":
@@ -364,15 +392,8 @@ def collect_rollout_rnn(
             prev_action_channel(prev_action_np, movement_mode, B)
             if agent.cfg.input_prev_action else None
         )
-        grid_state = (
-            grid_state_vec(positions, env_offset, sgb)
-            if (agent.cfg.input_grid_state and sgb is not None
-                and env_offset is not None) else None
-        )
-        goal_grid_state = (
-            grid_state_vec(goals, env_offset, sgb)
-            if (want_goal_gs and sgb is not None and env_offset is not None) else None
-        )
+        grid_state = grid_at(positions) if (agent.cfg.input_grid_state and have_grid) else None
+        goal_grid_state = grid_at(goals) if (want_goal_gs and have_grid) else None
         goal_sensory = (goal_sensory_vec(vec, goals, goal_sens_mode)
                         if goal_sens_mode != "none" else None)
         xy_state = xy_vec(positions, vec.size) if want_xy else None

@@ -79,4 +79,4 @@ PYTHONUNBUFFERED=1 python -m hopfield_nav.train_goal_lifetimes \
   --n_updates "$N_UPDATES" --lr "$LR" --epochs "$EPOCHS" --n_minibatches "$N_MINIBATCHES" \
   --eval_every "$EVAL_EVERY" --eval_pairs "$EVAL_PAIRS" --lifetime_every "$LIFETIME_EVERY" \
   --n_lifetimes "$N_LIFETIMES" --n_eval_episodes "$N_EVAL_EPISODES" --n_lifetime_envs "$N_LIFETIME_ENVS" \
-  --ckpt_every "$CKPT_EVERY" --seed "$SEED" --tag "$TAG" --wandb_project "$WANDB_PROJECT" $WANDB_FLAG
+  --ckpt_every "$CKPT_EVERY" --seed "$SEED" --tag "$TAG" --wandb_project "$WANDB_PROJECT" $WANDB_FLAG ${EXTRA:-}

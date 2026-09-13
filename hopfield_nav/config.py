@@ -587,6 +587,11 @@ class RNNAgentConfig:
     # of the goal-conditioned control, paired with `goal_channel="abs"`. It is
     # an oracle in the same sense `goal_channel` is, and is used the same way.
     input_xy_state: bool = False
+    # `(cos theta, sin theta)` of the lattice the grid code was synthesised on
+    # (plan sec 4B.5, gate B2-C3): an oracle that tells a memoryless network
+    # the one thing a randomised lattice hides from it. Appended LAST in the
+    # layout. Only A's trainer ever turns it on.
+    input_lattice_oracle: bool = False
     # Ray-axis encoder over the view columns (sensory and goal_sensory), see
     # plan sec 5.4. "linear" is identity, the historical read.
     sensory_encoder: str = "linear"

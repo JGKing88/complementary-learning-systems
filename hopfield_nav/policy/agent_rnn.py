@@ -58,6 +58,8 @@ def rnn_input_layout(
     gs = getattr(cfg, "goal_sensory", "none")
     if gs != "none":
         specs.append(("goal_sensory", 4 * sensory_dim if gs == "omni" else sensory_dim))
+    if getattr(cfg, "input_lattice_oracle", False):
+        specs.append(("lattice_oracle", 2))
     return specs
 
 

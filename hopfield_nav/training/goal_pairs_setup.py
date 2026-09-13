@@ -7,8 +7,11 @@ of the layering keeps programs unimported.
 """
 from __future__ import annotations
 
+from dataclasses import replace
+
 import numpy as np
 
+from gridcode.lattice import gbook_at
 from ..config import RNNAgentConfig, RNNTrainConfig
 from ..evaluation.goal_pairs import EnvTensors, aggregate_tables, evaluate_pairs
 from ..utils import smooth_gbook
@@ -51,16 +54,88 @@ def agent_cfg_for_mode(mode: str, movement_mode: str, **kw) -> RNNAgentConfig:
 
 
 class EnvSet:
-    """Envs + their precomputed tensors, under one name, for the table."""
+    """Envs + their precomputed tensors, under one name, for the table.
 
-    def __init__(self, name: str, envs, offsets, sgb) -> None:
+    ``lambdas`` and ``fwhm_ratio`` are what ``lattice_gbook`` / ``with_lattice``
+    need to re-synthesise an env's grid code on another lattice (plan sec
+    4B.2); the tensors built here are the scaffold's own lattice, (0, 1).
+    """
+
+    def __init__(self, name: str, envs, offsets, sgb, *, lambdas=None,
+                 fwhm_ratio: float | None = None, tensors=None,
+                 theta: float = 0.0, scale: float = 1.0) -> None:
         self.name = name
         self.envs = envs
         self.offsets = offsets
-        self.tensors = [EnvTensors.build(e, o, sgb) for e, o in zip(envs, offsets)]
+        self.lambdas = None if lambdas is None else [int(l) for l in lambdas]
+        self.fwhm_ratio = fwhm_ratio
+        self.theta, self.scale = float(theta), float(scale)
+        if tensors is None:
+            tensors = [EnvTensors.build(e, o, sgb) for e, o in zip(envs, offsets)]
+        self.tensors = tensors
 
     def __len__(self) -> int:
         return len(self.envs)
+
+    def lattice_gbook(self, k: int, theta: float, scale: float = 1.0) -> np.ndarray:
+        """Env ``k``'s ``(S * S, Ng)`` code under lattice ``(theta, scale)``, from its offset."""
+        if self.lambdas is None or self.fwhm_ratio is None:
+            raise ValueError("EnvSet was built without lambdas/fwhm_ratio; cannot re-synthesise")
+        S = self.envs[k].size
+        cells = np.array([(x, y) for x in range(S) for y in range(S)], dtype=np.float64)
+        ox, oy = self.offsets[k]
+        return gbook_at(cells + np.array([ox, oy], dtype=np.float64), self.lambdas,
+                        self.fwhm_ratio, theta, scale)
+
+    def with_lattice(self, theta: float, scale: float = 1.0, name: str | None = None) -> "EnvSet":
+        """A copy of this set with every env's grid code on lattice ``(theta, scale)``."""
+        tensors = [replace(t, gbook=self.lattice_gbook(k, theta, scale), theta=float(theta),
+                           scale=float(scale)) for k, t in enumerate(self.tensors)]
+        return EnvSet(name or f"{self.name}@{np.degrees(theta):.0f}", self.envs, self.offsets, None,
+                      lambdas=self.lambdas, fwhm_ratio=self.fwhm_ratio, tensors=tensors,
+                      theta=theta, scale=scale)
+
+
+class LatticeSampler:
+    """Per-lifetime (theta, scale) draws for the lattice-randomised runs (plan sec 4B.2).
+
+    theta ~ U[0, 2 pi) minus the held-out band ``|theta| < holdout_deg``, so
+    the standard lattice (theta = 0) and its neighbourhood are never trained
+    on; scale ~ U[lo, hi] minus ``[0.95, 1.05]`` unless the range is the
+    point ``(1, 1)``; with probability ``mix_standard_frac`` the draw is the
+    standard lattice (0, 1) instead (B2-mix, sec 4B.8).
+    """
+
+    def __init__(self, rng, *, holdout_deg: float = 15.0, scale_range=(1.0, 1.0),
+                 mix_standard_frac: float = 0.0) -> None:
+        self.rng = rng
+        self.holdout = np.radians(float(holdout_deg))
+        self.scale_range = (float(scale_range[0]), float(scale_range[1]))
+        self.mix = float(mix_standard_frac)
+        if not (0.0 <= self.holdout < np.pi):
+            raise ValueError("holdout_deg must be in [0, 180)")
+
+    def draw(self) -> tuple[float, float]:
+        if self.mix > 0 and self.rng.uniform() < self.mix:
+            return 0.0, 1.0
+        theta = self.rng.uniform(self.holdout, 2 * np.pi - self.holdout)
+        lo, hi = self.scale_range
+        if lo == hi:
+            return float(theta), lo
+        for _ in range(100):
+            s = self.rng.uniform(lo, hi)
+            if not (0.95 <= s <= 1.05):
+                return float(theta), float(s)
+        raise RuntimeError("scale range is inside the held-out band [0.95, 1.05]")
+
+    def in_holdout(self, theta: float) -> bool:
+        t = np.mod(float(theta) + np.pi, 2 * np.pi) - np.pi
+        return abs(t) < self.holdout
+
+
+def parse_thetas(spec: str) -> list[float]:
+    """``"0,7,45"`` (degrees) -> radians."""
+    return [float(np.radians(float(v))) for v in str(spec).split(",") if v.strip() != ""]
 
 
 def build_env_sets(cfg: RNNTrainConfig, rng, *, n_same: int, keep_field: bool = False,
@@ -84,12 +159,13 @@ def build_env_sets(cfg: RNNTrainConfig, rng, *, n_same: int, keep_field: bool = 
         raise SystemExit("train_goal_pairs needs --env_generator: the holdouts "
                          "are defined by the declared split")
     sgb = smooth_gbook(vh.gbook, vh.lambdas, cfg.fwhm_ratio)
-    train = EnvSet("train", envs, offsets, sgb)
+    lat = dict(lambdas=vh.lambdas, fwhm_ratio=cfg.fwhm_ratio)
+    train = EnvSet("train", envs, offsets, sgb, **lat)
     val_envs = gen.build_envs(split.base_val, cfg.env, "discrete")
     in_name = "heldout_in" if n_ood_place > 0 else "heldout"
-    heldout = EnvSet(in_name, val_envs, [s.offset for s in split.base_val], sgb)
+    heldout = EnvSet(in_name, val_envs, [s.offset for s in split.base_val], sgb, **lat)
     k = min(n_same, len(envs))
-    same = EnvSet("same", envs[:k], offsets[:k], sgb)
+    same = EnvSet("same", envs[:k], offsets[:k], sgb, **lat)
     heldout_out = None
     if n_ood_place > 0:
         specs = gen.make_val_set(
@@ -111,7 +187,7 @@ def build_env_sets(cfg: RNNTrainConfig, rng, *, n_same: int, keep_field: bool = 
                     f"ood env at {sp.offset} is only {max(gx, gy)} cells from the "
                     f"training rect (margin {split.margin}); refusing to run")
         out_envs = gen.build_envs(specs, cfg.env, "discrete")
-        heldout_out = EnvSet("heldout_out", out_envs, [sp.offset for sp in specs], sgb)
+        heldout_out = EnvSet("heldout_out", out_envs, [sp.offset for sp in specs], sgb, **lat)
     # `sgb` is 434 x 1716 x 1716 float32 (~5 GB) and every cell this run will
     # ever read is now in the EnvTensors. Drop the field and the smoothed
     # book so the process does not hold 10 GB it never touches again; the

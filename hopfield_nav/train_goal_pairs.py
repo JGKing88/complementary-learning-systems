@@ -29,7 +29,7 @@ import argparse
 import json
 import os
 import time
-from dataclasses import asdict
+from dataclasses import asdict, replace
 
 import numpy as np
 import torch
@@ -42,15 +42,21 @@ from .evaluation.goal_pairs import (
 from .policy.agent_rnn import compute_rnn_input_dim
 from .policy.pair_regressor import PairRegressor
 from .training.goal_pairs_setup import (
-    MODES, EnvSet, agent_cfg_for_mode, build_env_sets, eval_all, jsonable)
+    MODES, EnvSet, LatticeSampler, agent_cfg_for_mode, build_env_sets, eval_all, jsonable,
+    parse_thetas)
 from .training.rnn_setup import write_rnn_world_spec
 
 
 def train_batch(train: EnvSet, cells, acfg, movement_mode, pairs_per_env, rng, device,
-                sampler: str = "iid"):
+                sampler: str = "iid", lattice: LatticeSampler | None = None):
+    """One update's batch. With ``lattice`` every env's grid code is re-synthesised
+    on a fresh (theta, scale) draw first (plan sec 4B.5: theta per env per update)."""
     draw = sample_pairs if sampler == "iid" else sample_trajectory_pairs
     xs, ys = [], []
-    for t in train.tensors:
+    for k, t in enumerate(train.tensors):
+        if lattice is not None:
+            th, sc = lattice.draw()
+            t = replace(t, gbook=train.lattice_gbook(k, th, sc), theta=th, scale=sc)
         p, g = draw(cells, "train", "train", pairs_per_env, rng)
         xs.append(pair_inputs(t, acfg, p, g))
         ys.append(pair_targets(p, g, t.size, movement_mode))
@@ -104,6 +110,17 @@ def main() -> None:
     p.add_argument("--n_ood_place", type=int, default=0,
                    help="Mint this many envs OUTSIDE --place_region as a fourth env "
                         "set, heldout_out (plan sec 2.4, corner holdout). 0 = off.")
+    # Lattice randomisation (plan sec 4B.5, gate B2-C3). Off by default.
+    p.add_argument("--lattice_theta_random", action="store_true",
+                   help="grid mode only: re-synthesise every training env's code on a "
+                        "fresh lattice orientation every update")
+    p.add_argument("--lattice_theta_holdout_deg", type=float, default=15.0)
+    p.add_argument("--lattice_scale_range", type=str, default="1,1")
+    p.add_argument("--input_lattice_oracle", action="store_true",
+                   help="append (cos theta, sin theta) of the lattice to the input: the "
+                        "oracle-theta MLP, which must reach A1-like error if the task is well-posed")
+    p.add_argument("--eval_thetas", type=str, default="0,45",
+                   help="degrees; extra copies of the held-out set at each non-zero theta")
     # Optimisation
     p.add_argument("--n_updates", type=int, default=2000)
     p.add_argument("--lr", type=float, default=1e-3)
@@ -134,11 +151,14 @@ def main() -> None:
     np.random.seed(args.seed)
     device = torch.device(args.device)
 
+    if args.input_lattice_oracle and args.mode != "grid":
+        raise SystemExit("--input_lattice_oracle only means something in grid mode")
     acfg = agent_cfg_for_mode(args.mode, args.movement_mode,
                               hidden_size=args.hidden_size,
                               num_rnn_layers=args.num_layers,
                               rnn_cell="mlp", rnn_nonlinearity=args.nonlinearity,
-                              dropout=args.dropout)
+                              dropout=args.dropout,
+                              input_lattice_oracle=args.input_lattice_oracle)
     cfg = RNNTrainConfig(
         env=EnvConfig(size=args.size, observation_size=args.observation_size,
                       movement_mode=args.movement_mode,
@@ -204,6 +224,21 @@ def main() -> None:
                        wandb_run=wandb_run)
 
     sets = [train, heldout, same] + ([heldout_out] if heldout_out else [])
+    lattice = None
+    if args.lattice_theta_random:
+        if args.mode != "grid":
+            raise SystemExit("--lattice_theta_random only means something in grid mode")
+        lo, hi = (float(v) for v in args.lattice_scale_range.split(","))
+        lattice = LatticeSampler(np.random.RandomState(args.seed + 17),
+                                 holdout_deg=args.lattice_theta_holdout_deg, scale_range=(lo, hi))
+        # The base sets are the standard lattice (theta = 0), the held-out
+        # one. Extra copies of the held-out set at each further theta.
+        for th in parse_thetas(args.eval_thetas):
+            if abs(th) > 1e-9:
+                sets.append(heldout.with_lattice(th, 1.0))
+        print(f"lattice random: holdout {args.lattice_theta_holdout_deg} deg, scale "
+              f"{args.lattice_scale_range}, oracle={args.input_lattice_oracle}; eval sets "
+              f"{[s.name for s in sets]}")
     set_names = [es.name for es in sets]
     seen = set()          # (env, p, g) triples, the C12 exposure counter
     history = []
@@ -211,7 +246,7 @@ def main() -> None:
     t_train = time.time()
     for u in range(1, args.n_updates + 1):
         x, y = train_batch(train, cells, acfg, args.movement_mode, args.pairs_per_env,
-                           data_rng, device, sampler=args.pair_sampler)
+                           data_rng, device, sampler=args.pair_sampler, lattice=lattice)
         loss = model.loss(x, y)
         opt.zero_grad(set_to_none=True)
         loss.backward()
@@ -237,6 +272,10 @@ def main() -> None:
                 ot = tables["heldout_out"][("train", "train")]["model"]["metric"]
                 orr = tables["heldout_out"][("region", "region")]["model"]["metric"]
                 extra = f" | OUT tt={ot:.2f} rr={orr:.2f}"
+            for es in sets:
+                if "@" in es.name:
+                    extra += (f" | {es.name} tt={tables[es.name][('train', 'train')]['model']['metric']:.2f}"
+                              f" rr={tables[es.name][('region', 'region')]['model']['metric']:.2f}")
             print(f"u={u:5d} loss={loss.item():.4f} gn={float(gn):.2f} | train tt={tt:.2f} | "
                   f"{heldout.name} tt={ht:.2f} rr={hr:.2f} (nn {nn_hr:.2f}){extra} | "
                   f"{time.time()-t_train:.0f}s", flush=True)
