@@ -8413,6 +8413,29 @@ are mainly a consequence of running the protocol deterministically, which is
 §23's lesson (score explore *sampled*) reaching discovery. The residue is real
 but small, and it is the only part that is a training problem.
 
+**Memory content and the storage rule (jobs 22693580–3, argmax, 10 random
+scaffold patterns stored per trial, `hebb` vs the new `proj` rule of
+`hopfield/core.py`).** The empty-memory census above is invariant to the
+storage rule by construction (`W = 0`); with 10 distractors:
+
+| policy · env set | memory | dead @16 | **dead @40** | dead @64 | edge @40 | union cov |
+|---|---|---|---|---|---|---|
+| corner · 24 OOD | empty | 8.2% | **3.2%** | 2.0% | 13.4% | 0.940 |
+| | 10 distr. hebb | 5.2% | **1.6%** | 0.7% | 6.9% | 0.974 |
+| | 10 distr. proj | 5.2% | **1.4%** | 0.6% | 6.5% | 0.975 |
+| d0_base · 24 in-dist. | empty | 4.2% | **1.3%** | 0.9% | 6.2% | 0.973 |
+| | 10 distr. hebb | 2.7% | **0.7%** | 0.3% | 3.5% | 0.989 |
+| | 10 distr. proj | 3.0% | **0.7%** | 0.2% | 3.4% | 0.989 |
+
+`hebb` and `proj` agree to a tenth of a percent everywhere — expected: ten
+random 1024-d patterns are near-orthogonal, so the projector *is* the Hebbian
+sum up to the diagonal, and the rule can only separate on overlapping patterns
+(the alias case, or many stored goals in the continual protocol). Memory
+content itself halves the argmax holes (a nonzero recall perturbs the fixed
+sweep — a weak version of what sampling does). Remedy ranking: sampling ≫
+memory content ≫ storage rule. Starts differ from the empty-memory run (the
+distractor draw shares the RNG); the effect is the same on both policies.
+
 **Why it needs solving.** Every discovery-dependent number — the continual
 protocol's primary block, `goal_find_rate`, `discovery`'s
 `reach_success_rate` (0.22 on the OOD set) — is bounded by a set of cells the
