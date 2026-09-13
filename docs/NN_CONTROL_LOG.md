@@ -862,3 +862,34 @@ memoryless net has nothing to fit. This is gate B2-C5 in its proper form.
 (u = 2000), goal rate 0.001, readouts 88–89° flat on every set and every
 step — indistinguishable from the null. The plateau, on a clean design.
 Decision point per §6.2 is u = 8000.
+
+**Per-row design, wave 1 FINAL (8000 updates, step at 5600).**
+
+| arm | loss (u=8000) | goal rate | R1 heldout tt | R2 heldout e0 / e1 / e19 | ep0 by step s0 / s2 / s3 / s5 / s10 |
+|---|---|---|---|---|---|
+| `dist` MLP 5×768 (22691259) | 2.15 | 0.001 | **88.9** | 89.9 / 90.1 / 90.2 | 91.7 / 91.5 / 87.0 / 85.9 / 87.2 |
+| `full` GRU 2×512 (22691260) | 2.12 | 0.001 | **90.2** | 88.6 / 88.8 / 89.0 | 91.6 / 90.6 / 86.1 / 85.5 / 85.8 |
+| scripted estimator (22688915) | — | — | — | 15.6 / 2.1 / 1.9 | 91.7 / 5.4 / 0.1 / 0.0 / 1.3 |
+
+`dist` is a clean null on every lattice (θ = 0, 7°, 45°; readout 1
+88.9° on all five sets, readout 2 90.0 ± 0.5° at every episode): with
+4096 concurrent lattices there is nothing for the weights to fit, and
+nothing but the trajectory carries θ — **B2-C5 passes**. `full` is the
+same curve: flat across 20 episodes on every set, no drop within
+episode 0 (the 4–5° dip from step 3 on `heldout` is ~2 s.e. and absent
+on `same`, `heldout@7`, `heldout@45`), loss never below the null's,
+goal rate never above chance, for 8000 updates. 131,072 lifetimes
+drawn, 0 in the held-out band.
+
+**Reading (plan §4B.7, row 3):** the estimator shows that two steps of
+the trajectory determine the frame to < 1° and that it lasts the
+lifetime; the oracle shows a memoryless net does the rest to 1°; this
+GRU at this budget found neither half. It is the chicken-and-egg of §8:
+with θ unknown the gradient on the displacement decode averages to
+zero, and with no decode there is no gradient on θ. **Not "impossible"
+— "not learned from scratch at this capacity and budget."** The
+foothold runs (§8 contingency (i)) are the next wave: anchor-mix
+(22694701, running — half the lifetimes at the fixed training
+orientation 90°, so the decode gets a determined target, the rest
+random, test still θ = 0) and `full-cap` 3×768 (22695405, queued).
+`full` s1 was cancelled unstarted in favour of these (two GPUs).
