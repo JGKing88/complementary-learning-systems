@@ -59,7 +59,11 @@ def parse_log(path: str) -> dict:
     for kind in ("nav", "expl"):
         for m in re.finditer(r"\[navigate_u(\d+)\] %s=(\{.*?\})\n" % kind, txt):
             u = int(m.group(1))
-            out.setdefault(u, {})[kind] = ast.literal_eval(m.group(2))
+            # `mean_steps_to_goal` is nan when no explore trial found the
+            # goal, which is every early eval of a small-pool run; literal_eval
+            # has no nan, so it reads as None and callers float() it as nan.
+            body = re.sub(r"\bnan\b", "None", m.group(2))
+            out.setdefault(u, {})[kind] = ast.literal_eval(body)
     return {u: v for u, v in sorted(out.items()) if "nav" in v and "expl" in v}
 
 

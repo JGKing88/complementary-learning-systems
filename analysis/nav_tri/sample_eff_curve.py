@@ -82,7 +82,7 @@ def reconstruct_samples(log: dict, hdr: dict) -> dict[int, dict]:
     pts = []
     for u in us:
         nav = log[u]["nav"]
-        ms = float(nav.get(0, nav[min(nav)])["mean_steps"])
+        ms = _f(nav.get(0, nav[min(nav)])["mean_steps"])
         pts.append(T if ms <= 0 else min(T, ms))
     out, cum_steps = {}, 0
     prev_u, prev_ms = 0, T
@@ -108,6 +108,10 @@ def load_run(path: str) -> dict:
     return {"log": log, "hdr": hdr, "samples": samples, "reconstructed": recon}
 
 
+def _f(x) -> float:
+    return float("nan") if x is None else float(x)
+
+
 METRICS = (("succ0", "nav", 0, "success_rate"),
            ("succ10", "nav", 10, "success_rate"),
            ("steps0", "nav", 0, "mean_steps"),
@@ -124,7 +128,7 @@ def table(run: dict, window: int) -> list[dict]:
         row = {"u": u, "n_win": len(win)}
         row.update(run["samples"][u])
         for name, kind, nd, key in METRICS:
-            vals = [float(run["log"][w][kind][nd][key]) for w in win
+            vals = [_f(run["log"][w][kind][nd][key]) for w in win
                     if nd in run["log"][w][kind]]
             row[name] = float(np.mean(vals)) if vals else float("nan")
         rows.append(row)
