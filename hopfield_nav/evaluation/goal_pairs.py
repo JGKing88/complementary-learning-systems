@@ -552,6 +552,40 @@ def evaluate_pairs_by_distance(
     return {"d": out_d, "mean": out_m, "n": out_n}
 
 
+def evaluate_pairs_mismatched(
+    model, tensors_p: EnvTensors, tensors_g: EnvTensors, cfg: RNNAgentConfig,
+    cells: CellSets, *, movement_mode: str, device, n: int = 4096,
+    rng: np.random.RandomState | None = None,
+) -> dict:
+    """Score pairs whose p-side and g-side encodings come from DIFFERENT envs.
+
+    The test that separates two ways of succeeding on a never-seen wall
+    (plan D2). If the network inverts the ray projection -- localises each
+    view on its own, wall-independently, then subtracts -- the direction is
+    still right when `omni(p)` is drawn from one wall and `omni(g)` from
+    another. If it instead matches the two views against their shared bits,
+    it collapses. Only meaningful for encodings that depend on the wall
+    (`omni`, `north`); for `gbook` and `xy` the two tensors carry identical
+    columns and this reduces to the matched case.
+    """
+    rng = rng if rng is not None else np.random.RandomState(0)
+    S = tensors_p.size
+    p, g = sample_pairs(cells, "train", "train", n, rng)
+    parts = []
+    for name, spec in input_kinds(cfg):
+        if spec.startswith("zeros:"):
+            parts.append(np.zeros((len(p), int(spec.split(":")[1])), dtype=np.float32))
+        elif spec == "xyrel":
+            parts.append(tensors_p.xy[g] - tensors_p.xy[p])
+        else:
+            kind, end = spec.split(":")
+            t = tensors_p if end == "p" else tensors_g
+            parts.append(t.encoding(kind)[p if end == "p" else g])
+    x = np.concatenate(parts, axis=1).astype(np.float32)
+    pred = _predict(model, x, movement_mode, device)
+    return score_pairs(pred, p, g, S, movement_mode)
+
+
 def aggregate_by_distance(results: list[dict]) -> dict:
     """n-weighted mean over envs at each displacement."""
     ds = sorted({k for r in results for k in r["d"]})

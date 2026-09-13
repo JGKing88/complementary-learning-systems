@@ -47,6 +47,7 @@ def main() -> None:
     p = argparse.ArgumentParser()
     p.add_argument("--ckpt", required=True)
     p.add_argument("--by_distance", action="store_true")
+    p.add_argument("--mismatched_walls", action="store_true")
     p.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")
     args = p.parse_args()
 
@@ -101,6 +102,30 @@ def main() -> None:
             agg = aggregate_by_distance(res)
             out["by_distance"][es.name] = agg
             print(f"{es.name:12s}" + " ".join(f"{v:5.1f}" for v in agg["mean"]))
+
+    if args.mismatched_walls:
+        from .evaluation.goal_pairs import evaluate_pairs_mismatched
+        # Held-out envs only; every ordered pair (i, j), i != j, plus the
+        # matched diagonal on the same sampled pairs for the comparison.
+        hs = [x for x in sets if x.name.startswith("heldout")][0]
+        rng = np.random.RandomState(123)
+        matched, mism = [], []
+        for i, ti in enumerate(hs.tensors):
+            matched.append(evaluate_pairs_mismatched(
+                model, ti, ti, acfg, cells, movement_mode=a["movement_mode"],
+                device=torch.device(args.device), n=2048, rng=np.random.RandomState(1000 + i))["metric"])
+            for j, tj in enumerate(hs.tensors):
+                if j == i:
+                    continue
+                mism.append(evaluate_pairs_mismatched(
+                    model, ti, tj, acfg, cells, movement_mode=a["movement_mode"],
+                    device=torch.device(args.device), n=512, rng=np.random.RandomState(1000 + i * 100 + j))["metric"])
+        out["mismatched_walls"] = {"matched": float(np.mean(matched)), "matched_per_env": matched,
+                                   "mismatched": float(np.mean(mism)), "mismatched_std": float(np.std(mism)),
+                                   "n_env_pairs": len(mism)}
+        print(f"=== MISMATCHED WALLS ({hs.name}, {len(hs.tensors)} envs)")
+        print(f"matched    (omni(p), omni(g) same wall):      {np.mean(matched):6.2f}")
+        print(f"mismatched (omni(p) wall i, omni(g) wall j):  {np.mean(mism):6.2f} ± {np.std(mism):.2f}  over {len(mism)} ordered env pairs")
 
     path = os.path.splitext(args.ckpt)[0] + "_tables.json"
     with open(path, "w") as f:

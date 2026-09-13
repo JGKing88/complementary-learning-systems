@@ -74,6 +74,15 @@ falsified; P11 stands. The memoryless MLP learns observation → direction
 for a barcode it never saw, with no ray-axis architecture. A3 (encoders)
 is unnecessary.
 
+**D2 — how (2026-09-13).** The 5.5° is flat in `|g − p|` from 1 to 19,
+and it survives at **22°** when `omni(p)` and `omni(g)` are taken from
+two *different* held-out walls — so the network mostly localizes each
+view on its own from the ray geometry (run boundaries sit at angles
+fixed by position, wall-independently) and subtracts, and uses the
+shared bits for a further 17°. It learned the generating function, in
+the strong sense: it can place a single view of a wall it has never
+seen.
+
 ### A1x result — the corner reverses A1's reading
 
 Train on a 400 × 400 corner of the scaffold (64 envs, 23% of one axis),

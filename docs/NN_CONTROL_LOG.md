@@ -638,3 +638,47 @@ gain is *also* the loss, or something about DAgger's off-path states —
 is one run: A's trainer with a Gaussian-NLL head. Not run.
 
 D1: 2 eval jobs. A1y: 2 runs, ~1 GPU-h.
+
+## 2026-09-13 — D2: is A2 real, and how does it work?
+
+Two ways a network could hit 5.5° on an 80-bit wall it never saw: (a)
+invert the ray projection view-by-view — run-structure → position,
+wall-independently — then subtract; (b) match `omni(p)` against `omni(g)`
+through the bits they share. `--mismatched_walls` separates them: feed
+`omni(p)` from held-out wall *i* and `omni(g)` from held-out wall *j ≠ i*.
+Under (a) the direction survives; under (b) it collapses.
+
+**A2 l5h768 s0, held-out envs:**
+
+| | error |
+|---|---|
+| matched, same wall (16 envs, per-env 4.2–7.4) | **5.5°** |
+| mismatched, wall *i* for p and wall *j* for g (240 ordered pairs) | **22.2° ± 5.5** |
+| random | 90° |
+
+**And by displacement, matched:** 5.5° at every `d` from 1 to 19 — flat
+to the decimal. No range structure at all, unlike grid mode.
+
+**Reading.** Both mechanisms, with (a) carrying most of the load. With
+the shared wall removed the network still gets the direction to 22° from
+two views of *different* unseen barcodes, and the only thing those views
+share is the ray geometry — so it localizes each view on its own. The
+shared bits are worth a further 17°, so it uses them too. The flat
+by-distance profile is the signature of decode-then-subtract: the
+subtraction does not care how far apart the cells are.
+
+**How it can work at all:** the bits are random, the projection is not.
+Rays hitting one segment return one bit, so a view is a sequence of runs
+whose boundaries sit at angles fixed by position (a boundary 3 cells away
+spans more rays than one 15 away; lateral offset shifts the pattern).
+Half the boundaries are invisible (adjacent segments share a bit with
+p = 0.5), but four views give ~20–30 visible ones per cell — C2 measured
+zero exact twins. Position is identifiable from a single cell's `omni`
+without knowing the wall, and the network learned the map.
+
+**Leak audit, for the record:** C1 (train/held-out wall seeds disjoint,
+expected Hamming distance 40 of 80 bits; region cells never starts or
+goals), C2 (zero twins), C6 (`pair_inputs` bit-identical to the rollout
+stack's input), C11 (reference lines on the same enumerated pairs). The
+within-env NN lookup line on held-out region×region is 38°. Nothing
+per-wall transfers; nothing is looked up. 1 eval job.
