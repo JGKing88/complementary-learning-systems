@@ -975,3 +975,26 @@ state width, `RNNAgent` reads it), so the memoryless path has the short
 gradient route the `dist` arm has. Resubmitted as `enc2`: anchor-mix
 22702168, primary 22702190 — queued behind a 7-GPU sweep of Jack's on
 the shared quota.
+
+**`enc2` (LayerNorm + skip; 22702168 anchor-mix, 22702190 primary) —
+collapsed again, differently.** Readout 1 identical across every set
+from u = 200 on; `heldout@90` 89.1° at u = 1000. Probe of the anchor-mix
+u = 1000 checkpoint: the encoder is alive in scale (mean activations
+0.3–0.5, LayerNorm doing its job) but **input-independent** — std across
+inputs 0.05 at layer 1 decaying to 5e-9 at the output; GRU output std
+2e-9; the head's contribution std 1e-7 from both the recurrent and the
+skip path. The stack has learned to ignore its input. With half the data
+undetermined the pull toward "output the constant best guess" wins the
+first 200 updates, before any decode exists; `dist@90`, with 100%
+determined data, only began to move at u = 400. Both cancelled.
+
+**Warm-up curriculum (8ffc035; plan §8 (ii)):**
+`--lattice_mix_warmup_updates N` — every lifetime that starts in the
+first N updates is on the fixed anchor lattice (θ = 90°, per-row
+translation), then the configured mix. Two runs, `enc2` architecture,
+N = 1500 (the decode formed by u = 600 for the MLP): then mix 0.5
+(22702687, the foothold kept) and then mix 0 (22702689, the primary
+design with a pre-formed decode). The readouts that matter: `heldout@90`
+should be ≪ 90° by u = 1000 (the decode forming, as `dist@90`); after
+the switch, `heldout@45` and `heldout` (θ = 0) are the in-context
+question, with the memoryless prediction being |θ − 90°| = 45° and 90°.
