@@ -19,10 +19,10 @@ Read §0 to resume.
 | | |
 |---|---|
 | **Target** | `d0_base` u725 on the held-out probe (§1). Exploit: success ≥ 0.995, ≤ ~1.19× optimal at d = 10. Explore, sampled: `swept_eff` ≥ 0.93, collapsed tail ≤ 0.02. |
-| **Baseline cost** | **928,000 episodes / ~103.5 M env-steps** at u725 (1,280 episodes per update). Its own training-eval window first clears the §2 screen at **u625 = 800k episodes / ~91 M env-steps**. |
+| **Baseline cost** | **928,000 episodes / 185.6 M env-steps** at u725 (1,280 episodes × 200 steps per update; no rollout in this recipe ends early — see §6). Its own training-eval window first clears the §2 screen at **u625 = 800k episodes / 160 M env-steps**. |
 | **Where the samples went** | 16 gradient steps per update on ~64k-transition minibatches, every sample touched 4× — ~60× more data per gradient step than a textbook PPO update. That is the lever wave S1 pulls. |
 | **Running** | Wave S1 (§3) on `ou_bcs_normal`, 24 h: `se_b8`, `se_b8_lr1`, `se_b8_lr03`, `se_n10_b8_lr1`, `se_b8_lr1_h100`, plus S2 `se_n10_b8_lr1_h100` (22707208) and `se_h100_d5`. Cancelled with checkpoints kept: `se_n5_b8_lr1` (40 traj too few), `se_b8_akl` (band too low), `se_b4_lr1` (n10 ≥ b4). |
-| **Result so far** | **§5.2–5.3: `se_b8_lr1` at 80–112k episodes (8–12× fewer) matches d0_base u725 on the whole exploit half and on explore efficiency at d=0 and d=10; the one open row is the d=10 collapsed tail, 5–8% for every small-pool arm at ~100k vs d0_base's 1.4–2.1%. Wave S3 (explore-heavy mix) targets it; round 4 calibrates against d0_base u500/u600.** |
+| **Result** | **§5.4: `se_b8_lr1` u1000 at 160k episodes / 32M env-steps equals d0_base u600 (768k / 154M) on every probe row including the d=10 tail (6 vs 6 of 144) — 4.8× — and equals d0_base u725 on every row but that tail, which is 2.0× (6 vs 3), the probe's own noise boundary — 5.8×.** Exploit half alone: matched at 80–92k (10×; 20× on env-steps with 100-step rollouts). Checkpoint: `agent_ckpts/navigate_navp2_se_b8_lr1_s42_22701298/navigate_u1000.pt`. |
 | **Tools** | `analysis/nav_tri/sample_eff_curve.py` (eval series vs cumulative samples, window means, first-clear of the screen); the wave-1 probe pipeline `hopfield_nav/run_wave1_final.sh` pattern for the verdict. Trainer now logs exact `episodes` / realized `env_steps` per update and per eval, and writes both into every checkpoint. |
 
 ---
@@ -206,7 +206,7 @@ the end of the run. TIMEOUT at 24 h is the expected end.
 | `se_b8_lr1_h100` | 350 | 56,000 | 5.6M | 1.00 / 1.00 | 13.6 / 13.9 | 0.43 / 0.44 |
 | `se_b8_akl` | 175 | 28,000 | 5.6M | 0.995 / 0.98 | 40 / 42 | 0.27 / 0.29 |
 | `se_n5_b8_lr1` | 325 | 13,000 | 2.6M | 0.88 / 0.85 | 47 / 52 | 0.21 / 0.21 |
-| d0_base (ref) | 400 | 512,000 | ~60M | 1.00 / 1.00 | 15.5 / 17.8 | 0.52 / 0.48 |
+| d0_base (ref) | 400 | 512,000 | 102M | 1.00 / 1.00 | 15.5 / 17.8 | 0.52 / 0.48 |
 
 - `n10` at 30k episodes reads what d0_base read at u400 (512k episodes):
   **~17× fewer episodes, ~10× fewer env-steps** for that quality, and it is
@@ -236,10 +236,10 @@ the end of the run. TIMEOUT at 24 h is the expected end.
 | `se_b8` (3e-4) | 325 | 52,000 | 10.4M | 1.00 / 0.997 | 17.0 / 18.9 | 0.44 / 0.42 | |
 | `se_b8_akl` | 350 | 56,000 | 11.2M | 1.00 / 0.995 | 27.0 / 27.2 | 0.42 / 0.39 | |
 | `se_n5_b8_lr1` | 825 | 33,000 | 6.6M | 0.98 / 0.98 | 21.1 / 23.6 | 0.39 / 0.39 | **cancelled** |
-| d0_base (ref) | 625 | 800,000 | ~91M | 1.00 / 0.997 | 12.6 / 13.9 | 0.55 / 0.53 | YES (first) |
+| d0_base (ref) | 625 | 800,000 | 160M | 1.00 / 0.997 | 12.6 / 13.9 | 0.55 / 0.53 | YES (first) |
 
-- **`h100` clears the screen at 92k episodes / 9.2M env-steps — 8.7× / 10×
-  below d0_base's own screen clear (800k / ~91M), 10× / 11× below u725.**
+- **`h100` clears the screen at 92k episodes / 9.2M env-steps — 8.7× / 17×
+  below d0_base's own screen clear (800k / 160M), 10× / 20× below u725.**
   Prediction 4 (h100 loses on 200-step explore) is **wrong**: its swept at
   200 eval steps is on the bar. Coverage over the second hundred steps is
   apparently what a memoryless vector field does anyway.
@@ -264,7 +264,7 @@ the end of the run. TIMEOUT at 24 h is the expected end.
 | `se_b8_lr03` | not yet | 104,000 so far | 20.8M | u650 · 14.5/15.9 · 0.57/0.53 |
 | `se_b8` (3e-4) | not yet | 116,000 so far | 23.2M | u725 · 13.2/13.4 · 0.50/0.45 |
 | `se_h100_d5` | not yet | 64,000 so far | 6.4M | u400 · 15.2/17.0 · 0.48/0.44 |
-| d0_base | u625 | 800,000 | ~91M | u725 · 12.0/13.1 · 0.585/0.557 |
+| d0_base | u625 | 800,000 | 160M | u725 · 12.0/13.1 · 0.585/0.557 |
 
 - The 10-env arms lock exploit earliest per sample but their d=10 `steps`
   settle ~1–2 above the 20-env arms (15 vs 13): with 5 exploit envs per
@@ -298,7 +298,7 @@ steps ÷ ((start − 1) / realized speed)):
 | **h100 u575** | **92k** | **9.2M** | 1.000 / 0.995 / 0.995 | 11.73 / 12.46 | 1.20 | 0.879 |
 | h100 u600 | 96k | 9.6M | 1.000 / 0.995 / 1.000 | 11.55 / 12.42 | 1.19 | 0.887 |
 | n10 u625 | 50k | 10.0M | 1.000 / 1.000 / 1.000 | 12.28 / 13.01 | 1.25 | 0.850 |
-| d0_base u725 | 928k | 103.5M | 1.000 / 0.990 / 1.000 | 11.71 / 12.35 | 1.21 | 0.880 |
+| d0_base u725 | 928k | 185.6M | 1.000 / 0.990 / 1.000 | 11.71 / 12.35 | 1.21 | 0.880 |
 
 **Explore** (`swept_eff` = swept ÷ billiard at own speed; tail = frac
 collapsed below ½ billiard; `chase_t` = chase_q inside the tail):
@@ -311,7 +311,7 @@ collapsed below ½ billiard; `chase_t` = chase_q inside the tail):
 | n10 u625 | 0.481 / 0.783 / 0.090 | 0.508 / 0.824 / **0.104** / 0.56 |
 | d0_base u725 | 0.606 / 0.944 / 0.000 | 0.589 / 0.931 / **0.021** / 0.56 |
 
-1. **The exploit half is matched at 92k episodes / 9.2M env-steps — 10× / 11×
+1. **The exploit half is matched at 92k episodes / 9.2M env-steps — 10× / 20×
    below d0_base u725** (h100 u575 and u600: success ≥0.995 at every level,
    steps within 0.1 at d=0 and d=10, × optimal 1.19–1.20 vs 1.21,
    `align_true` equal). n10 u625 passes success at 50k and is 0.6 step / 0.04×
@@ -348,7 +348,7 @@ Same protocol. × optimal = steps ÷ ((start − 1) ÷ realized speed).
 | h100 u800 | 128k / 12.8M | 1.000 / 0.995 / 1.000 | 12.12 / 12.94 / 12.75 | 1.18 / 1.20 / 1.22 | 0.89 / 0.88 / 0.87 |
 | h100 u1000 | 160k / 16.0M | 1.000 / 1.000 / 1.000 | 12.52 / 13.23 / 13.49 | 1.22 / 1.22 / 1.29 | 0.87 / 0.86 / 0.83 |
 | n10 u1000 | 80k / 16.0M | 1.000 / 1.000 / 1.000 | 11.87 / 12.49 / 12.57 | 1.16 / 1.16 / 1.21 | 0.91 / 0.91 / 0.88 |
-| d0_base u725 | 928k / 103.5M | 1.000 / 0.995 / 0.995 | 11.66 / 13.29 / 11.99 | 1.16 / 1.26 / 1.18 | 0.91 / 0.85 / 0.90 |
+| d0_base u725 | 928k / 185.6M | 1.000 / 0.995 / 0.995 | 11.66 / 13.29 / 11.99 | 1.16 / 1.26 / 1.18 | 0.91 / 0.85 / 0.90 |
 
 **Explore**:
 
@@ -390,7 +390,7 @@ Same protocol. × optimal = steps ÷ ((start − 1) ÷ realized speed).
 | h100_d5 u700 | 112k / 11.2M | 12.2 / 12.8 / 12.1 | 1.21 / 1.21 / 1.19 | 0.934 / 0 | 0.892 / 0.056 (8) |
 | combo u1200 | 96k / 9.6M | 12.5 / 13.4 / 13.0 | 1.24 / 1.26 / 1.27 | 0.927 / 0 | 0.901 / 0.083 (12) |
 | combo u1400 | 112k / 11.2M | 12.1 / 13.6 / 12.7 | 1.20 / 1.28 / 1.23 | 0.926 / 0.007 | 0.900 / 0.083 (12) |
-| d0_base u725 | 928k / 103.5M | 11.7 / 12.3 / 12.4 | 1.16 / 1.17 / 1.21 | 0.945 / 0 | 0.939 / **0.014** (2) |
+| d0_base u725 | 928k / 185.6M | 11.7 / 12.3 / 12.4 | 1.16 / 1.17 / 1.21 | 0.945 / 0 | 0.939 / **0.014** (2) |
 
 1. **Every small-pool arm at ~100k episodes matches d0_base u725 on the
    exploit half and on explore efficiency at both levels** — `lr1` u700 is
@@ -419,6 +419,62 @@ the interleave *mix* is the untried lever on the sample axis: `se_lr1_e75`
 optimizer on 1/8 the data ≈ d0_base at matched updates, i.e. the pool was
 never the constraint) and `se_b8_lr03` (3e-5 is too slow late: steps 14.6 /
 17.1 at u825). Round 4 at `lr1` u1000 with d0_base u500 / u600.
+
+### 5.4 Round 4 (job 22717265): calibrated against d0_base's own trajectory — `lr1` u1000 IS d0_base u600
+
+Same protocol, with d0_base's u500 and u600 probed as candidates beside u725.
+
+**Exploit** (d = 0 / 5 / 10):
+
+| checkpoint | episodes / env-steps | success | steps | × opt | `align_true` |
+|---|---|---|---|---|---|
+| lr1 u800 | 128k / 25.6M | 1.000 / 1.000 / 1.000 | **11.43 / 12.26 / 12.02** | **1.14 / 1.16 / 1.18** | **0.92 / 0.91 / 0.90** |
+| **lr1 u1000** | **160k / 32.0M** | 1.000 / 1.000 / 0.995 | 11.51 / 13.33 / 11.99 | 1.14 / 1.25 / 1.17 | 0.92 / 0.85 / 0.90 |
+| d0_base u500 | 640k / 128M | 1.000 / 0.995 / 1.000 | 13.31 / 14.39 / 13.59 | 1.30 / 1.34 / 1.31 | 0.83 / 0.80 / 0.82 |
+| d0_base u600 | 768k / 153.6M | 1.000 / 0.995 / 1.000 | 11.98 / 13.09 / 12.62 | 1.18 / 1.23 / 1.22 | 0.89 / 0.86 / 0.87 |
+| d0_base u725 | 928k / 185.6M | 1.000 / 0.995 / 0.995 | 11.66 / 13.29 / 11.99 | 1.16 / 1.26 / 1.18 | 0.91 / 0.85 / 0.90 |
+
+**Explore**:
+
+| checkpoint | d=0 swept / eff / tail | d=10 swept / eff / **tail** (n of 144) / chase_t |
+|---|---|---|
+| lr1 u800 | 0.532 / 0.853 / 0.049 | 0.510 / 0.825 / 0.139 (20) / 0.46 |
+| **lr1 u1000** | **0.583 / 0.927 / 0.000** | **0.568 / 0.907 / 0.042 (6)** / 0.57 |
+| d0_base u500 | 0.589 / 0.928 / 0.000 | 0.564 / 0.893 / 0.049 (7) / 0.56 |
+| d0_base u600 | 0.593 / 0.931 / 0.000 | 0.574 / 0.923 / **0.042 (6)** / 0.43 |
+| d0_base u725 | 0.602 / 0.942 / 0.000 | 0.589 / 0.931 / 0.021 (3) / 0.44 |
+
+1. **`se_b8_lr1` u1000 — 160,000 episodes / 32.0 M env-steps — is d0_base u600
+   (768,000 episodes / 153.6 M) on every row of the probe, tail included**:
+   exploit steps 11.5 / 13.3 / 12.0 vs 12.0 / 13.1 / 12.6, × optimal
+   1.14 / 1.25 / 1.17 vs 1.18 / 1.23 / 1.22, explore efficiency
+   0.927 / 0.907 vs 0.931 / 0.923, d=10 tail **6 of 144 vs 6 of 144**. That is
+   **4.8× fewer episodes and env-steps** for the checkpoint the wave-1
+   write-up itself called "the cheaper alternative" to u725.
+2. **Against u725 it matches every row but the tail, and the tail is 2.0×
+   (6 vs 3)** — the exact boundary the wave-1 caveat draws for probe noise
+   ("a tail difference smaller than ~2× should not be read as real"). Exploit
+   is equal or better on every level (× optimal 1.14 / 1.25 / 1.17 vs
+   1.16 / 1.26 / 1.18); explore efficiency within 0.015 / 0.024.
+   **5.8× fewer episodes and env-steps.**
+3. **d0_base's own tail trajectory is 0.049 → 0.042 → 0.021 over u500 →
+   u600 → u725 (128 → 154 → 186 M env-steps).** The small-pool arms' 5–8% at
+   ~100k is the same stage of the same curve; its last factor of two cost
+   d0_base 160,000 episodes. `lr1` u1000 is on that curve at u1000; where it
+   sits at u1500–2000 (240–320k) is what the running arm will show.
+4. `lr1` u800 has the **best exploit half of anything probed** (× optimal
+   1.14 / 1.16 / 1.18, `align_true` 0.92 / 0.91 / 0.90 — better than d0_base
+   u725 on every level) and a bad explore checkpoint (tail 20). The two
+   halves do not peak together within one run any more than they did in
+   d0_base (§9.5 of `DUAL_TRAINING`); select by the joint probe, not either
+   half.
+
+**Headline, as of round 4:** the d0_base recipe with `batch_envs` 8 instead of
+64 and PPO at lr 1e-4 × 10 epochs × 8 minibatches (`target_kl` 0.1) reaches
+**d0_base u600 on every probe metric at 160k episodes (4.8×)** and
+**d0_base u725 on every metric but a 2×-within-noise collapsed tail at the
+same 160k (5.8×)**; the exploit half alone is matched at 80–92k (10×, or 20×
+on env-steps with 100-step rollouts).
 
 ## 6. Accounting notes
 

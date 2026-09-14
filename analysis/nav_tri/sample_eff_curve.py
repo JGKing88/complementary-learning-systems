@@ -10,15 +10,16 @@ Two sample counts, both read from the log:
     episodes    exact everywhere. envs x batch per update.
     env_steps   REALIZED transitions. Runs from 2026-09-13 print
                 `[navigate_uN] samples={...}` beside every eval; older logs
-                (d0_base) do not, and for those the count is RECONSTRUCTED:
-                explore rows always run the full rollout (goals off), exploit
-                rows end on arrival, so per update
-                    n_expl x T  +  n_expt x min(T, steps_at_u)
-                with steps_at_u linearly interpolated from the nav eval's own
-                mean_steps at d=0 (a mean over successes; while success < 1 the
-                failures ran to T, so this UNDER-counts early -- flagged as
-                `~` in the table). d0_base's reconstruction lands at 104.6M
-                by u725 against the 103.5M measured from its rollout diag.
+                (d0_base) do not, and for those the count is the CEILING
+                envs x batch x T per update -- which is exact for the d0_base
+                recipe, because NO rollout there ends early: explore rows have
+                goals off, and exploit rows teleport on arrival and continue
+                (`RolloutSpec.ends_on_goal` defaults False and ExploitRegime
+                never sets it). d0_base u725 = 1,280 x 200 x 725 = 185.6M.
+                An earlier note put it at 103.5M by assuming exploit rows end
+                on arrival; they do not. Flagged `~` in the table because a
+                run that DID pass --explore_ends_on_goal with goals on would
+                be over-counted here.
 
 Window means, not point values: the training eval swings 30+ points between
 consecutive evals (feedback_eval_point_threshold), so every quality column is
@@ -72,30 +73,12 @@ def parse_samples(path: str) -> dict[int, dict]:
 
 
 def reconstruct_samples(log: dict, hdr: dict) -> dict[int, dict]:
-    """Episodes exactly; env-steps from the eval's own mean_steps (see doc)."""
+    """Episodes exactly; env-steps as the ceiling (exact when nothing ends early)."""
     per_update = hdr["envs"] * hdr["batch"]
-    n_emp = int(round(hdr["envs"] * hdr["empty_frac"]))
-    n_pre = hdr["envs"] - n_emp
     T = hdr["steps"]
-    us = sorted(log)
-    # steps_at_u: nav d=0 mean_steps, 0 -> T (no successes = every row ran out)
-    pts = []
-    for u in us:
-        nav = log[u]["nav"]
-        ms = _f(nav.get(0, nav[min(nav)])["mean_steps"])
-        pts.append(T if ms <= 0 else min(T, ms))
-    out, cum_steps = {}, 0
-    prev_u, prev_ms = 0, T
-    for u, ms in zip(us, pts):
-        for uu in range(prev_u + 1, u + 1):
-            # linear interpolation between eval points
-            f = (uu - prev_u) / max(u - prev_u, 1)
-            s = prev_ms + f * (ms - prev_ms)
-            cum_steps += n_emp * hdr["batch"] * T + n_pre * hdr["batch"] * s
-        out[u] = {"episodes": per_update * u, "env_steps": int(cum_steps),
-                  "reconstructed": True}
-        prev_u, prev_ms = u, ms
-    return out
+    return {u: {"episodes": per_update * u,
+                "env_steps": per_update * T * u,
+                "reconstructed": True} for u in sorted(log)}
 
 
 def load_run(path: str) -> dict:
