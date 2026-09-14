@@ -33,7 +33,7 @@ def main() -> None:
     p = argparse.ArgumentParser(description=__doc__,
                                 formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--log", action="append", required=True,
-                   help="label=path; repeatable, drawn in order")
+                   help="label=path; repeatable, drawn in order (split at the last =)")
     p.add_argument("--out", required=True, help="output image path")
     p.add_argument("--x", choices=tuple(X_LABELS), default="update")
     p.add_argument("--n_dist", type=int, nargs="+", default=[0, 10])
@@ -52,7 +52,7 @@ def main() -> None:
 
     runs = []
     for spec in a.log:
-        label, path = spec.split("=", 1)
+        label, path = spec.rsplit("=", 1)   # labels may contain "="
         log = parse_log(path)
         if not log:
             raise SystemExit(f"{path}: no eval pairs")
