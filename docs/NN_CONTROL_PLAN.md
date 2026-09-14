@@ -1,6 +1,6 @@
 # Goal-conditioned NN control: can a plain network navigate from encoded states?
 
-Status: **A0, A1, A1x, A2, B1x, D1, A1y, D2 done; B2 built and gates running (§4B, §5.12), 2026-09-13.** Everything
+Status: **A0, A1, A1x, A2, B1x, D1, A1y, D2 done; B2 gates passed and the frozen-decode GRU learns the held-out lattice in-context (§4B, §5.12), 2026-09-13.** Everything
 in §5 except the ray-axis encoders (§5.4, unnecessary after A2) is built
 and tested; pre-flight C1–C8 and A0's C13 pass. Branch
 `worktree-nn-generalization-control`. The run-by-run record is
@@ -60,11 +60,26 @@ rollouts in B1x). Two design corrections were needed on the way and are
 recorded in §4B.2 and the log: without translation, absolute phases
 plus memorised env offsets are a weights route to θ; without per-row
 lattices, a lattice held fixed for a lifetime is fitted in weights
-across the ~256 updates it lasts. *Standing reading:* in-context
-learning of an unseen grid code is **possible** — the estimator is the
-existence proof — and a GRU trained from scratch on lifetimes at this
-budget does **not** find it; where the block sits (the decode from
-rollouts, or the frame) is what the running diagnostic answers.
+across the ~256 updates it lasts. The block was then located: the
+memoryless MLP learns the translation-invariant displacement decode
+from rollouts in 600 updates; the GRU fed the raw code learns the same
+determined target only to 72° in 8000; and an MLP encoder trained
+*jointly* with the GRU collapses to a constant (the GRU's BPTT gradient
+destabilises it) even on fully determined data. **With the decode
+decoupled — the `dist` trunk trained once at a fixed orientation,
+frozen, and a GRU 2×512 + `prev_action` trained on top over
+random-lattice lifetimes — the recurrent net learns the held-out
+lattice in-context: on the standard lattice it never saw, readout 2
+falls 89 → 68 → 52 → 38 → 23 → 18.7° across 19 goal changes (u = 1000
+of 8000, still falling), while the same network with no history
+(readout 1) is at 120°, the memoryless null is at 90°, and the
+corner-trained weights' extrapolation was 44°.** The frame accumulates
+across the lifetime, as the estimator says it should, only slower: ~10
+steps to 70° in episode 0 where the estimator needs 2 to 5°. *Standing
+reading:* in-context learning of an unseen grid code is possible and
+**a recurrent net does learn it from lifetimes** — once the memoryless
+part of the computation is given to an architecture that can carry it.
+What no network here did is learn both halves together from scratch.
 
 ### B1x result — history does not build a map; the rollout data does help the map
 
