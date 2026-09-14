@@ -16,8 +16,9 @@
 #   LABELS="se_b8_lr1_u400 se_b4_lr1_u600" \
 #   TAG=s1_round1 sbatch hopfield_nav/run_se_probe.sh
 #
-# d0_base u725 is ALWAYS appended (label d0_base_u725), and p20_e u700 /
-# p19_kcap u800 ride along as the specialist references, as in wave 1. The
+# d0_base u725 is ALWAYS appended (label d0_base_u725); REFS=1 adds p20_e u700
+# / p19_kcap u800 as the specialist references, as in wave 1 (off by default:
+# they are not part of the pass/fail and cost a third of the probe). The
 # probe's collapsed-tail number depends on the --ckpt list length (DUAL_TRAINING
 # §9.0.1 caveat 5), so compare within one run of this script, never across two.
 set -euo pipefail
@@ -45,7 +46,13 @@ EXPLOIT=$CKD/navigate_navp2_p19_kcap_s42_21656252/navigate_u800.pt
 [ -n "${CKPTS:-}" ] || { echo "CKPTS is required" >&2; exit 1; }
 [ -n "${LABELS:-}" ] || { echo "LABELS is required" >&2; exit 1; }
 ALL="$CKPTS $BASE"; ALLL="$LABELS d0_base_u725"
-echo "candidates: $LABELS  (+ d0_base_u725, p20_e_u700, p19_kcap_u800)"
+REFS=${REFS:-0}
+if [ "$REFS" = 1 ]; then
+  ESPEC="$SPEC"; ESPECL="p20_e_u700"; NREF="$EXPLOIT"
+else
+  ESPEC=""; ESPECL=""; NREF=""
+fi
+echo "candidates: $LABELS  (+ d0_base_u725$( [ "$REFS" = 1 ] && echo ', p20_e_u700, p19_kcap_u800'))"
 for c in $CKPTS; do
   # Cost of what is being scored, from the checkpoint itself.
   $PY - "$c" <<'EOF'
@@ -60,7 +67,7 @@ for ND in 0 10; do
   J="$OUT/se_${TAG}_d${ND}.json"
   echo "################ explore  n_dist=$ND ################"
   $PY -u -m analysis.nav_tri.explore_traj \
-      --ckpt $ALL "$SPEC" --labels $ALLL p20_e_u700 \
+      --ckpt $ALL $ESPEC --labels $ALLL $ESPECL \
       --envs 6 --trials "$TRIALS" --n_distractors "$ND" \
       --max_steps 200 --split place=held_out \
       --seed 42 --device "$DEVICE" --no-deterministic --json "$J"
@@ -72,7 +79,7 @@ done
 
 echo "################ EXPLOIT half ################"
 $PY -u -m analysis.nav_tri.behavior_probe \
-    --ckpt $ALL "$EXPLOIT" \
+    --ckpt $ALL $NREF \
     --mode nav --n_distractors 0 5 10 \
     --split place=held_out --trials "$NAV_TRIALS" --envs 6 \
     --max_steps 200 --seed 42 --device "$DEVICE" \
