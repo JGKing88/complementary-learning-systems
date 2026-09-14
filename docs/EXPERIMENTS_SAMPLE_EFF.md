@@ -163,6 +163,36 @@ the end of the run. TIMEOUT at 24 h is the expected end.
 | `se_n10_b8_lr1` | 22701302 | node3810 | 13.2 (12.4 / 0.8) | u10: 0.052 / 0.31 / 66 |
 | `se_b8_lr1_h100` | 22701304 | node3811 | 13.7 (13.1 / 0.6) | u10: 0.059 / 0.44 / 31 |
 
+### 4.1 Digest at ~1.4 h (window means of the last ≤4 evals; episodes exact)
+
+| arm | u | episodes | succ0 / succ10 | steps0 / steps10 | swept0 / swept10 |
+|---|---|---|---|---|---|
+| `se_b8` (3e-4, 4×4) | 75 | 12,000 | 0.51 / 0.54 | 66 / 66 | 0.17 / 0.17 |
+| `se_b8_lr1` | 75 | 12,000 | 0.54 / 0.51 | 47 / 43 | 0.15 / 0.17 |
+| `se_b8_lr03` | 75 | 12,000 | **0.96 / 0.95** | 53 / 53 | 0.28 / 0.23 |
+| `se_b4_lr1` | 75 | 6,000 | 0.73 / 0.72 | 68 / 65 | 0.25 / 0.24 |
+| `se_n10_b8_lr1` | 175 | 14,000 | **0.995 / 0.990** | **25 / 28** | 0.28 / 0.27 |
+| `se_b8_lr1_h100` | 150 | 24,000 | 0.995 / 0.995 | 30 / 29 | 0.14 / 0.17 |
+| `se_b8_akl` | 50 | 8,000 | 0.81 / 0.80 | 68 / 71 | 0.20 / 0.18 |
+| d0_base (ref) | 125 | 160,000 | 1.00 / 1.00 | 34 / 34 | 0.20 / 0.21 |
+| d0_base (ref) | 150 | 192,000 | 1.00 / 1.00 | 22 / 23 | 0.26 / 0.34 |
+
+- **The exploit lock costs 12–14k episodes in `se_n10_b8_lr1`** (success
+  ≥0.99 over a 4-eval window from u125–175) against d0_base's 160k — **~12×**
+  — and its steps/swept at that point match what d0_base had at u150 (192k).
+- The per-sample leader is the arm with the most, smallest updates (80
+  trajectories, 175 of them), not the arm with the best per-update curve
+  (`lr03`). Prediction 5 (n10 ≈ b4 on samples) is **wrong so far**: n10 is
+  well ahead of b4 at the same pool size, so the number of policy moves is
+  what the small pool buys, and 10 envs' worth of diversity per update is
+  enough. → `se_n5_b8_lr1` (40 trajectories/update) launched as the 8th arm.
+- `se_b8` — d0_base's optimizer on 1/8 the data — is the worst arm: a 3e-4
+  step from a 160-trajectory pool is a noisy step of the same size, exactly
+  what §3.1 predicted. The KL-adaptive arm settled at lr 2e-5 by u20 on its
+  own (`kl_final` 0.016 in its 0.01–0.04 band).
+- `h100` locks exploit at 24k but its explore half is the weakest (swept0
+  0.14) — prediction 4 holding.
+
 Timing smokes before the wave (8 updates each, 3e-4, target_kl 0.02):
 22700947 (`se_b8`) 36 s/u, 22700949 (20 envs, 10×8) 30 s/u with the KL stop
 firing at step 2 every update, 22700951 (10 envs, 10×8) 12.4 s/u. The
