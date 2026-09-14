@@ -778,3 +778,25 @@ falling; `k4_g` s43 has the exploit bar and is one point short on explore.
 Both have ~5 h to the wall. Cancelled `od3` (22762039) and the plateaued
 `b32_g` (22761191) for two sample-lean 3:1 arms: `one_k4_b16_g_e75` (64
 episodes/update, 48 explore) and `one_k4_b32_g_e75` (128, 96), 5 h 20 wall.
+
+### 7.7 19:40 — probe round 1 and the page rows
+
+Digest at 19:03: `one_k4_g` s43 u1225 (314k) **11.4/12.6 steps, 1.00/0.99,
+swept 0.53/0.49** — d0_base's own eval at u725 read 11.7/12.1 and
+~0.55–0.6: a d0_base-class checkpoint from one arena at 3× fewer episodes.
+`e75` s42 u800 13.7/16.3, swept 0.47/0.43 (its u675 window 0.55/0.52 was a
+peak, not a plateau); `one_k2_g` u2325 13.0/14.6, 0.45/0.38 — explore
+climbs slowly with updates in every arm; `b16_g` u2025 (65k) 12.8/13.8,
+0.34/0.31.
+
+Verdict probe round 1 (job 22767338, `run_se_probe.sh`, d0_base u725 in
+process): `one_k4_g_s43` u1200 + u1450, `one_k4_g_e75_s42` u1250,
+`one_k4_g_e75_s43` u1000, `one_k2_g` u2800, `one_k2_b16_g` u2500. CPU
+re-evals for the page (22767322: `one_k4_g_s43` held-out sampled + train
+arena det/sampled to u1300; 22767323: the fixed-goal arm's train arena).
+All must land before the 00:00 maintenance; the arms TIMEOUT at ~23:50
+with checkpoints, and `--continue_from` resumes tomorrow if anything is
+still climbing.
+
+Other sessions' GPU jobs (`cc_scatter*`, `corner_check`) now share the
+partition; `se_b8_lr1` (22701298) reached its 24 h wall at 20:01.
