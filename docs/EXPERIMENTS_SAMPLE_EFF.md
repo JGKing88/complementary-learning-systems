@@ -21,8 +21,8 @@ Read §0 to resume.
 | **Target** | `d0_base` u725 on the held-out probe (§1). Exploit: success ≥ 0.995, ≤ ~1.19× optimal at d = 10. Explore, sampled: `swept_eff` ≥ 0.93, collapsed tail ≤ 0.02. |
 | **Baseline cost** | **928,000 episodes / 185.6 M env-steps** at u725 (1,280 episodes × 200 steps per update; no rollout in this recipe ends early — see §6). Its own training-eval window first clears the §2 screen at **u625 = 800k episodes / 160 M env-steps**. |
 | **Where the samples went** | 16 gradient steps per update on ~64k-transition minibatches, every sample touched 4× — ~60× more data per gradient step than a textbook PPO update. That is the lever wave S1 pulls. |
-| **Running** | Wave S1 (§3) on `ou_bcs_normal`, 24 h: `se_b8`, `se_b8_lr1`, `se_b8_lr03`, `se_n10_b8_lr1`, `se_b8_lr1_h100`, plus S2 `se_n10_b8_lr1_h100` (22707208) and `se_h100_d5`. Cancelled with checkpoints kept: `se_n5_b8_lr1` (40 traj too few), `se_b8_akl` (band too low), `se_b4_lr1` (n10 ≥ b4). |
-| **Result** | **§5.4: `se_b8_lr1` u1000 at 160k episodes / 32M env-steps equals d0_base u600 (768k / 154M) on every probe row including the d=10 tail (6 vs 6 of 144) — 4.8× — and equals d0_base u725 on every row but that tail, which is 2.0× (6 vs 3), the probe's own noise boundary — 5.8×.** Exploit half alone: matched at 80–92k (10×; 20× on env-steps with 100-step rollouts). Checkpoint: `agent_ckpts/navigate_navp2_se_b8_lr1_s42_22701298/navigate_u1000.pt`. |
+| **Runs** | All on `ou_bcs_normal`. Completed their 4000-update schedules: `se_n10_b8_lr1` (22701302), `se_b8_lr1_h100` (22701304), `se_n10_b8_lr1_h100` (22707208). Ran to the wall: `se_b8_lr1` (22701298, the delivered arm), `se_h100_d5` (22707437), `se_lr1_e75` (22715546), `se_lr1_d5_e75` (22715547). Cancelled with checkpoints kept: `se_n5_b8_lr1` (40 traj too few), `se_b8_akl` (band too low), `se_b4_lr1` (n10 ≥ b4), `se_b8` (d0_base's optimizer on 1/8 data ≈ d0_base at matched updates), `se_b8_lr03` (3e-5 too slow late). |
+| **RESULT** | **§5.5: `se_b8_lr1` u1500 at 240k episodes / 48M env-steps passes every held-out probe row against d0_base u725 (928k / 185.6M) — 3.9× fewer samples; explore efficiency better at both levels.** u1000 at 160k equals d0_base u600 on every row (4.8×) and u725 on all but a 2×-within-noise tail (5.8×); the exploit half alone is matched at 80–92k (10×; 20× on env-steps with 100-step rollouts). Delivered: `agent_ckpts/navigate_navp2_se_b8_lr1_s42_22701298/navigate_u1500.pt`. Recipe change: `batch_envs` 64 → 8, PPO lr 1e-4 × 10 epochs × 8 minibatches, `target_kl` 0.1. |
 | **Tools** | `analysis/nav_tri/sample_eff_curve.py` (eval series vs cumulative samples, window means, first-clear of the screen); the wave-1 probe pipeline `hopfield_nav/run_wave1_final.sh` pattern for the verdict. Trainer now logs exact `episodes` / realized `env_steps` per update and per eval, and writes both into every checkpoint. |
 
 ---
@@ -475,6 +475,85 @@ Same protocol, with d0_base's u500 and u600 probed as candidates beside u725.
 **d0_base u725 on every metric but a 2×-within-noise collapsed tail at the
 same 160k (5.8×)**; the exploit half alone is matched at 80–92k (10×, or 20×
 on env-steps with 100-step rollouts).
+
+### 5.5 Round 5 (job 22748125): the FULL pass — `lr1` u1500 at 240k episodes
+
+Ten checkpoints in one process; this run's d0_base u725 tail read 4 of 144.
+
+**Exploit** (d = 0 / 5 / 10):
+
+| checkpoint | episodes / env-steps | success | steps | × opt | `align_true` |
+|---|---|---|---|---|---|
+| lr1 u1250 | 200k / 40M | 1.000 / 1.000 / 1.000 | 12.10 / 13.42 / 12.96 | 1.20 / 1.26 / 1.26 | 0.89 / 0.85 / 0.85 |
+| **lr1 u1500** | **240k / 48M** | 1.000 / 0.990 / 0.995 | 12.07 / 12.42 / 12.38 | **1.20 / 1.18 / 1.22** | 0.88 / 0.90 / 0.87 |
+| lr1 u2000 | 320k / 64M | 1.000 / 1.000 / 1.000 | 11.70 / 13.05 / 12.20 | 1.15 / 1.22 / 1.18 | 0.92 / 0.88 / 0.89 |
+| lr1 u2500 | 400k / 80M | 1.000 / 0.995 / 1.000 | 12.26 / 13.42 / 12.91 | 1.19 / 1.24 / 1.23 | 0.89 / 0.86 / 0.86 |
+| e75 u800 | 128k / 25.6M | 1.000 / 1.000 / 1.000 | 12.70 / 13.54 / 13.83 | 1.24 / 1.26 / 1.33 | 0.85 / 0.84 / 0.80 |
+| e75 u1200 | 192k / 38.4M | 1.000 / 0.990 / 0.995 | 12.58 / 14.03 / 14.85 | 1.22 / 1.30 / **1.42** | 0.87 / 0.83 / **0.76** |
+| e75 u1450 | 232k / 46.4M | 1.000 / 0.995 / 1.000 | 11.98 / 14.21 / 12.82 | 1.17 / 1.33 / 1.23 | 0.90 / 0.80 / 0.86 |
+| d5e75 u800 | 128k / 25.6M | 1.000 / 1.000 / 0.990 | 15.94 / 17.36 / 17.53 | 1.57 / 1.63 / 1.71 | 0.67 / 0.65 / 0.63 |
+| d5e75 u1250 | 200k / 40M | 1.000 / 0.995 / 1.000 | 13.98 / 15.21 / 14.80 | 1.36 / 1.41 / 1.42 | 0.78 / 0.75 / 0.74 |
+| d0_base u725 | 928k / 185.6M | 1.000 / 0.990 / 1.000 | 11.71 / 12.30 / 12.35 | 1.16 / 1.17 / 1.21 | 0.91 / 0.90 / 0.88 |
+
+**Explore**:
+
+| checkpoint | d=0 swept / eff / tail | d=10 swept / eff / **tail** (n of 144) / chase_t |
+|---|---|---|
+| lr1 u1250 | 0.607 / 0.942 / 0.000 | 0.591 / 0.945 / 0.021 (3) / 0.77 |
+| **lr1 u1500** | **0.616 / 0.969 / 0.000** | **0.601 / 0.961 / 0.035 (5)** / 0.68 |
+| lr1 u2000 | 0.617 / 0.968 / 0.000 | 0.597 / 0.961 / 0.028 (4) / 0.60 |
+| lr1 u2500 | 0.610 / 0.975 / 0.000 | 0.599 / 0.950 / **0.007 (1)** / 0.74 |
+| e75 u800 | 0.549 / 0.877 / 0.021 | 0.518 / 0.837 / 0.062 (9) / 0.42 |
+| e75 u1200 | 0.621 / 0.971 / 0.000 | 0.605 / 0.958 / **0.000 (0)** / — |
+| e75 u1450 | 0.595 / 0.938 / 0.000 | 0.577 / 0.928 / 0.035 (5) / 0.28 |
+| d5e75 u800 | 0.568 / 0.909 / 0.028 | 0.552 / 0.882 / 0.062 (9) / 0.22 |
+| d5e75 u1250 | 0.597 / 0.954 / 0.000 | 0.584 / 0.921 / 0.042 (6) / 0.39 |
+| d0_base u725 | 0.609 / 0.953 / 0.000 | 0.593 / 0.945 / 0.028 (4) / 0.41 |
+
+1. **`se_b8_lr1` u1500 — 240,000 episodes / 48.0 M env-steps — passes every
+   row of §1 within noise against d0_base u725: 3.9× fewer episodes and
+   env-steps.** Success 1.000 / 0.990 / 0.995 vs 1.000 / 0.990 / 1.000;
+   × optimal 1.20 / 1.18 / 1.22 vs 1.16 / 1.17 / 1.21 (within 0.04);
+   explore efficiency **0.969 / 0.961 against 0.953 / 0.945** — better at
+   both levels; d=10 collapsed tail 5 vs 4 of 144. u2000 (320k, 2.9×)
+   passes with margin on every row and u2500's tail is 1 of 144 — the
+   tail keeps closing along d0_base's own curve (§5.4 point 3).
+2. **u1250 (200k, 4.6×) passes the whole explore half** — tail 3 of 144,
+   efficiency 0.942 / 0.945 — and misses exploit only on directness at
+   d = 5 / 10 (× optimal 1.26 / 1.26 vs 1.17 / 1.21, past the 0.03 rule).
+   Between u1000 (§5.4: every row but a 2× tail) and u1500 the two halves
+   take turns; the first checkpoint on the 250-update probe grid that holds
+   both is u1500.
+3. **The explore-heavy mix closes the tail and pays for it on exploit.**
+   `e75` u1200 has a **zero** tail and the best explore of anything probed
+   (0.971 / 0.958) at 192k episodes, and × optimal 1.42 at d = 10 with
+   `align_true` 0.76 — with 5 exploit envs per update the directness never
+   converges. `d5e75` is worse still (1.4–1.7×). Tri finding 13's frontier
+   again: `empty_frac` trades the halves rather than buying both. A mix
+   *schedule* — 0.5 until the exploit lock, 0.75 after — is the obvious
+   follow-up and was not run.
+4. The tail as read here for d0_base u725 is 4 of 144 (0.028) against 2–3
+   in rounds 2–4: the ten-checkpoint list shifts the sampled stream, as the
+   wave-1 caveat says. Rank tails within a round only.
+
+**Final headline.** The d0_base recipe with `batch_envs` 8 instead of 64 and
+PPO at lr 1e-4 × 10 epochs × 8 minibatches (`target_kl` 0.1) — nothing else
+changed — reaches **d0_base u725 on every held-out probe metric at 240k
+episodes / 48M env-steps (3.9× fewer)**, reaches **d0_base u600 on every
+metric at 160k (4.8× vs u600; 5.8× vs u725 with a 2×-within-noise tail)**,
+and matches the **exploit half alone at 80–92k (10×; 20× on env-steps with
+100-step rollouts)**. The residual factor between 160k and 240k is the
+d=10 collapsed tail, the slowest-converging quantity for d0_base too. The
+delivered checkpoint is
+`agent_ckpts/navigate_navp2_se_b8_lr1_s42_22701298/navigate_u1500.pt`
+(u2000 for margin; u1000 for the 5.8× near-pass).
+
+**Wall-clock caveat, stated because it is the opposite sign to the sample
+result:** an update's cost is the serial rollout loop (envs × T × ~8 ms),
+independent of batch, so `lr1` u1500 took ~11 h on one a100 against
+d0_base's 6 h on an H200 for u725. Fewer samples cost more time here. The
+lever for both at once is a multi-env `VecEnv` (batch across envs, not
+within one), which was not attempted.
 
 ## 6. Accounting notes
 
