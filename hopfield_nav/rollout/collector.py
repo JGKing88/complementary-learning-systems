@@ -301,6 +301,12 @@ class RolloutCollector:
                 if cfg.agent.input_sensory:
                     sensory_np = vec.obs_batch()
                     sensory = torch.from_numpy(sensory_np).float().to(self.device)
+                    # Training-only regulariser (TrainConfig.obs_dropout):
+                    # the dropped observation is what goes into `all_obs`,
+                    # so PPO trains on exactly what the policy acted on.
+                    _od = float(getattr(cfg, "obs_dropout", 0.0) or 0.0)
+                    if _od > 0.0:
+                        sensory = sensory * (torch.rand_like(sensory) >= _od)
                 else:
                     sensory = None
 

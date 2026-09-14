@@ -959,6 +959,7 @@ CFG_FIELDS: dict[str, tuple[str, ...]] = {
     "regime_assignment": ("regime_assignment",),
     "env_repeats": ("env_repeats",),
     "redraw_goal_per_rollout": ("redraw_goal_per_rollout",),
+    "obs_dropout": ("obs_dropout",),
     "novelty_anneal": ("novelty_anneal",),
     "epsilon_explore": ("epsilon_explore",),
     "epsilon_anneal_updates": ("epsilon_anneal_updates",),
@@ -1521,6 +1522,10 @@ def build_parser() -> argparse.ArgumentParser:
                         " rollout slot, from the env's own RNG. Default: one"
                         " goal per env for the whole run. Legacy placement path"
                         " only -- under --env_generator use --refresh_goal.")
+    p.add_argument("--obs_dropout", type=float, default=None,
+                   help="Training-only dropout probability on the sensory"
+                        " (wall-code) input, per entry per step. Eval sees"
+                        " the clean observation. Default 0.")
     p.add_argument("--ppo_clip_coef", type=float, default=None,
                    help="Override PPOConfig.clip_coef (default 0.2). Lower "
                         "values (0.1-0.15) limit policy update size, helping "

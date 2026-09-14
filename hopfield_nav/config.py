@@ -490,6 +490,14 @@ class TrainConfig:
     # which is what made `--randomize_goal_per_rollout` wrong under the env
     # generator and is why this is a separate, legacy-path-only knob.
     redraw_goal_per_rollout: bool = False
+    # Training-only dropout on the sensory (raycast wall-code) channel: each
+    # of the 60 +-1 entries is zeroed with this probability, per step and per
+    # trajectory, in the ROLLOUT (what PPO then trains on); evaluation sees
+    # the clean observation. A regulariser against reading the wall barcode
+    # as a landmark map, which a ONE-env run can do and a held-out env
+    # defeats -- the surviving rays still carry the run-length structure
+    # (adjacent rays on the same segment) that distance-to-wall is read from.
+    obs_dropout: float = 0.0
     novelty_anneal: bool = False            # linearly scale novelty_reward -> 0 across the whole run
     epsilon_explore: float = 0.0            # per-step chance of a uniform-random move, explore regime only
     epsilon_anneal_updates: int = 0         # linearly scale epsilon_explore -> 0 over this many updates; 0 = constant

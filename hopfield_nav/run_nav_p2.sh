@@ -1771,6 +1771,12 @@ case "$VARIANT" in
           one_k2_b16_g) ENV_REPEATS=2; BATCH_ENVS=16; REDRAW_GOAL_PER_ROLLOUT=1 ;;
           one_k2_b32_g) ENV_REPEATS=2; BATCH_ENVS=32; REDRAW_GOAL_PER_ROLLOUT=1 ;;
           one_k2_b32_h100_g) ENV_REPEATS=2; BATCH_ENVS=32; STEPS_PER_ROLLOUT=100; REDRAW_GOAL_PER_ROLLOUT=1 ;;
+          # `_od<p>`: sensory (wall-code) dropout p during training. The
+          # redraw arm's held-out EXPLORE slides while exploit holds -- the
+          # explore policy reads the one barcode as a landmark map, which a
+          # held-out env defeats; this is the regulariser against it.
+          one_k2_g_od3) ENV_REPEATS=2; REDRAW_GOAL_PER_ROLLOUT=1; OBS_DROPOUT=0.3 ;;
+          one_k2_g_od5) ENV_REPEATS=2; REDRAW_GOAL_PER_ROLLOUT=1; OBS_DROPOUT=0.5 ;;
           one_k4_b8_g) ENV_REPEATS=4; BATCH_ENVS=8; REDRAW_GOAL_PER_ROLLOUT=1 ;;
           *) echo "ERROR: unknown ONE variant $VARIANT" >&2; exit 1 ;;
         esac
@@ -1838,6 +1844,7 @@ echo "    schedule   : $SCHEDULE"
 echo "    rollout    : ${ENVS_PER_WORLD} envs x ${BATCH_ENVS} batch x ${STEPS_PER_ROLLOUT} steps"
 [ -n "${ENV_REPEATS:-}" ] && echo "    repeats    : ${ENV_REPEATS} rollouts per env per update (regime slots = envs x repeats)"
 [ -n "${REDRAW_GOAL_PER_ROLLOUT:-}" ] && echo "    goals      : re-drawn per rollout slot (redraw_goal_per_rollout=${REDRAW_GOAL_PER_ROLLOUT})"
+[ -n "${OBS_DROPOUT:-}" ] && echo "    obs_dropout: ${OBS_DROPOUT} (training rollouts only)"
 echo "                 pool=$((ENVS_PER_WORLD * BATCH_ENVS)) trajectories, \
 $((ENVS_PER_WORLD * BATCH_ENVS * STEPS_PER_ROLLOUT)) env-steps/update, \
 $((ENVS_PER_WORLD * STEPS_PER_ROLLOUT)) serial calls/update"
