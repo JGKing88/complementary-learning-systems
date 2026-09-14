@@ -680,3 +680,32 @@ the pre-maintenance window is open — Jack's second ask, on the reading that
 works: `one_k2_b32_g` (64 traj/update) and `one_k2_b16_g` (32 traj/update),
 both s42, 7 h wall. The SE line put the usable pool floor at ~80–160
 trajectories per update with 20 envs; these ask where it is with one.
+
+### 7.4 16:55 — the one-env failure mode is EXPLORE, and it is a landmark map
+
+`one_k2_g` held-out swept coverage by eval: u100 0.40, u200 0.31, u300 0.17,
+u400 0.37, u500 0.15, u600 0.10 — sliding while its exploit holds at
+d0_base level (u600: 1.00/0.99, 14.5/16.2 steps). The two halves read
+different inputs: exploit follows `q`, the local-chart displacement from the
+Hopfield recall, which is the same object in every env; explore has only
+the 60-ray wall code and its own path integration (`prev_disp`), and with
+ONE barcode the wall code is a landmark map — every view names a position —
+so the cheapest explore policy is a memorised sweep keyed on views that no
+held-out env has. Twenty barcodes forced d0_base onto the barcode-agnostic
+cue (run-length structure of the rays = distance to wall); one does not.
+
+Two checks queued: CPU re-eval 22761980 (held-out SAMPLED — explore's
+convention — and the TRAIN env, det + sampled, u100–600) — if the train env
+scores ~0.55 while held-out slides, the diagnosis stands.
+
+Remedy within one env: `--obs_dropout p` (commit after ae1bd36) — training-
+only dropout on the sensory channel, per entry per step; eval is clean. The
+surviving rays keep the run-length cue; the landmark identity gets noisy.
+Cancelled `one_k4` s43 (22757000; strict reading covered by `one_k2` s42,
+same slide) and `one_k4_g` s42 (22757441; K=4 covered by s43) for
+`one_k2_g_od3` and `one_k2_g_od5` (K=2, batch 64, redraw, p = 0.3 / 0.5),
+6 h 50 wall.
+
+Also at 16:55: `one_k2_b32_g` (64 traj/update) collapsed at u200 to success
+0.09/0.06 from 0.51/0.43 at u100 — the SE line's pool floor (~80–160
+traj/update) again, or a transient; `one_k2_b16_g` u100 0.66/0.74.
