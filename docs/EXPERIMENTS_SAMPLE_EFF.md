@@ -575,3 +575,55 @@ within one), which was not attempted.
   rollout diagnostics gave — good to 1%.
 - A `--continue_from` carries both counters, so a resumed run reports the run's
   total, not the segment's.
+
+---
+
+## 7. ONE env — the best model a single training env can give
+
+Started 2026-09-14 16:00. Jack: *"get a model trained on just one environment
+to be as good as possible. then add to that page ... if you get a model
+trained on one env as good as those d0, then see how few samples you can
+train with."*
+
+### 7.1 What "one env" is, and what had to change
+
+An env is a wall barcode (the ±1 code the 60 raycasts read, drawn from the
+env's seed), a scaffold offset (which place codes the agent sees), and a
+goal drawn per exploit rollout from its 20×20 cells. Distractors come from
+the scaffold OUTSIDE the env's rectangle, so they are as diverse at 1 env as
+at 20. Val is the run's own 6 held-out envs as always — the curve is
+**generalization from one env**; `reeval_series --which train` scores the
+training env itself.
+
+The trainer assigns the explore/exploit regime **per env**: at
+`empty_frac=0.5`, `round(1 × 0.5) = 0` explore slots — a one-env run would
+have been exploit-only every update, and any rounding fix would still put
+one regime per update instead of both in the same PPO update (the tri line's
+whole point). **`--env_repeats K`** (commit 6853202): each train env is
+collected K times per update, the regime draw (`shuffle`) is over envs × K
+slots, and the K rollouts of the one env — some exploit with a fresh goal
+memory + distractors, some explore with an empty memory — land in one PPO
+update exactly as d0_base's 20 envs do. K=1 is the historical loop
+byte-for-byte.
+
+Cost model: the rollout loop is serial in slots (K × 200 steps × ~8 ms),
+batch-independent, so a one-env update at K=4, batch 64 is ~6.4 s of
+rollouts + PPO for 256 episodes — about d0_base's 20 s/update ÷ 3.
+
+### 7.2 Wave 1 (2026-09-14 16:05; ou_bcs_normal, 7.5 h wall — the monthly
+maintenance blocks 09-15 00:00–21:00, so these TIMEOUT at ~u2500–4000 and
+resume with `--continue_from` if still climbing)
+
+All: `ENVS_PER_WORLD=1`, d0_base recipe, `interleave:4000,empty_frac=0.5`,
+eval/ckpt every 25, the SE optimizer (lr 1e-4 × 10 epochs × 8 minibatches,
+`target_kl` 0.1) unless noted.
+
+| arm | seed | K | batch | eps/update | job |
+|---|---|---|---|---|---|
+| `one_k4` | 42 | 4 (2+2) | 64 | 256 | 22756994 |
+| `one_k2` | 42 | 2 (1+1) | 64 | 128 | 22756995 |
+| `one_k8_b32` | 42 | 8 (4+4) | 32 | 256 | 22756996 |
+| `one_k2_lr3` | 42 | 2 | 64 | 128 | 22756997 — d0_base's optimizer (3e-4, 4×4) as the control |
+| `one_k4` | 43 | 4 | 64 | 256 | 22757000 — a different single env: how much is env identity |
+
+Smoke (6 updates, 40-step rollouts): 22756982.
