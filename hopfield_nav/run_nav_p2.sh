@@ -1642,7 +1642,7 @@ case "$VARIANT" in
   #
   #   VARIANT=se_b8_e10 REPO=<worktree> sbatch --partition=ou_bcs_normal \
   #       --time=24:00:00 hopfield_nav/run_nav_p2.sh
-  d0_base|d1_kanneal|d1_persr|d1_ms3|ood_place|ood_place_rp|ood_place_rp10|ood_corner|ood_corner_rp|se_*)
+  d0_base|d1_kanneal|d1_persr|d1_ms3|ood_place|ood_place_rp|ood_place_rp10|ood_corner|ood_corner_rp|se_*|one_*)
     ENCODER=/orcd/pool/003/jackking/cls_runs/sweeps/w52_attract_fwhm/001_att0.5_seed=43/encoder_final.pt
     ENCODER_GAIN=100
     HOPFIELD_BETA=100
@@ -1726,6 +1726,43 @@ case "$VARIANT" in
           *) echo "ERROR: unknown SE variant $VARIANT" >&2; exit 1 ;;
         esac
         ;;
+      # === ONE -- a single training env. =================================
+      #
+      # d0_base's recipe with ENVS_PER_WORLD=1: one wall barcode, one
+      # scaffold offset, goals drawn from that env's cells, distractors
+      # from the scaffold outside it as before. Scored on the run's own 6
+      # held-out val envs like every other run, so the curve is
+      # GENERALIZATION from one env; `reeval_series --which train` scores
+      # the training env itself.
+      #
+      # The regime split is per env, so one env at empty_frac 0.5 rounds
+      # to zero explore slots: ENV_REPEATS=K collects the env K times per
+      # update, each pass its own regime draw, and both regimes meet in
+      # the one PPO update exactly as they do across d0_base's 20 envs.
+      # BATCH_ENVS is back at d0_base's 64 -- the point here is the best
+      # one-env model, not the fewest samples; the SE optimizer (10x8 at
+      # 1e-4, kl 0.1) stays because it is the better optimizer, not
+      # because it is the smaller one. `one_k2_lr3` is the d0_base
+      # optimizer control.
+      one_*)
+        [ -z "${SCHEDULE_SET:-}" ] && SCHEDULE=${SE_SCHEDULE:-'interleave:4000,empty_frac=0.5'}
+        EVAL_EVERY=${SE_EVAL_EVERY:-25}; CKPT_EVERY=${SE_CKPT_EVERY:-25}
+        ENVS_PER_WORLD=1; BATCH_ENVS=${ONE_BATCH_ENVS:-64}
+        PPO_EPOCHS=10; N_MINIBATCHES=8; TARGET_KL=0.1; LR=1e-4
+        case "$VARIANT" in
+          one_k2)      ENV_REPEATS=2 ;;
+          one_k4)      ENV_REPEATS=4 ;;
+          one_k8_b32)  ENV_REPEATS=8; BATCH_ENVS=32 ;;
+          one_k2_lr3)  ENV_REPEATS=2; PPO_EPOCHS=; N_MINIBATCHES=; TARGET_KL=; LR=3e-4 ;;
+          # sample-efficiency arms on one env: smaller batches / shorter
+          # rollouts, the SE optimizer throughout.
+          one_k2_b8)   ENV_REPEATS=2; BATCH_ENVS=8 ;;
+          one_k2_b16)  ENV_REPEATS=2; BATCH_ENVS=16 ;;
+          one_k4_b8)   ENV_REPEATS=4; BATCH_ENVS=8 ;;
+          one_k2_b16_h100) ENV_REPEATS=2; BATCH_ENVS=16; STEPS_PER_ROLLOUT=100 ;;
+          *) echo "ERROR: unknown ONE variant $VARIANT" >&2; exit 1 ;;
+        esac
+        ;;
     esac
     ;;
 
@@ -1787,6 +1824,7 @@ export WANDB_NAME=${WANDB_NAME:-navp2_${VARIANT}_s${SEED}_${SLURM_JOB_ID:-local}
 echo "=== nav_p2 variant=$VARIANT seed=$SEED ==="
 echo "    schedule   : $SCHEDULE"
 echo "    rollout    : ${ENVS_PER_WORLD} envs x ${BATCH_ENVS} batch x ${STEPS_PER_ROLLOUT} steps"
+[ -n "${ENV_REPEATS:-}" ] && echo "    repeats    : ${ENV_REPEATS} rollouts per env per update (regime slots = envs x repeats)"
 echo "                 pool=$((ENVS_PER_WORLD * BATCH_ENVS)) trajectories, \
 $((ENVS_PER_WORLD * BATCH_ENVS * STEPS_PER_ROLLOUT)) env-steps/update, \
 $((ENVS_PER_WORLD * STEPS_PER_ROLLOUT)) serial calls/update"

@@ -421,8 +421,13 @@ def run_navigate(
                 group["lr"] = lr_now
             current_lr = lr_now
 
-        n_emp_now = int(round(n_envs * knobs.empty_frac))
-        n_pre_now = n_envs - n_emp_now
+        # Regime slots: envs x repeats. `n_reps` > 1 collects each env that
+        # many times in one update, each pass under its own regime draw --
+        # what lets a run with fewer envs than 1/empty_frac interleave at all.
+        n_reps = max(int(getattr(cfg, "env_repeats", 1) or 1), 1)
+        n_slots = n_envs * n_reps
+        n_emp_now = int(round(n_slots * knobs.empty_frac))
+        n_pre_now = n_slots - n_emp_now
 
         # WHICH envs are exploit, as opposed to how many. Positionally, the
         # count alone decides: the first `n_pre_now` are exploit every update,
@@ -439,10 +444,10 @@ def run_navigate(
         # historical behaviour and stays the default, because every run before
         # 2026-08-14 was trained under it.
         if cfg.regime_assignment == "shuffle":
-            is_pre = np.zeros(n_envs, dtype=bool)
-            is_pre[np.random.permutation(n_envs)[:n_pre_now]] = True
+            is_pre = np.zeros(n_slots, dtype=bool)
+            is_pre[np.random.permutation(n_slots)[:n_pre_now]] = True
         else:
-            is_pre = np.arange(n_envs) < n_pre_now
+            is_pre = np.arange(n_slots) < n_pre_now
 
         rollouts = []
         pre_flags: list[bool] = []
@@ -452,22 +457,26 @@ def run_navigate(
             collector = RolloutCollector(vh, cfg, embed_dim, device)
             for local_idx, env in enumerate(world.envs):
                 env_offset = world.offsets[local_idx]
-                regime = (exploit_regime if is_pre[local_idx]
-                          else explore_regime)
-                pre_flags.append(bool(is_pre[local_idx]))
-                spec = regime.spec(w_idx, world, local_idx, env, env_offset, knobs)
-                # The collector reads novelty off cfg and the goal reward off
-                # the env, so the regime's choice has to be written into both.
-                cfg.hopfield.novelty_reward = spec.novelty_reward
-                env.goals_active = spec.goals_active
-                rollout = collector.collect_rollout(
-                    env, agent, spec.hop, allow_store=spec.allow_store,
-                    h_rnn=None, env_offset=env_offset,
-                    update_idx=update, aux_scale=1.0, epsilon_now=spec.epsilon,
-                    goal_in_memory_init=spec.goal_in_memory_init,
-                    ends_on_goal=spec.ends_on_goal,
-                )
-                rollouts.append(rollout)
+                for slot in range(local_idx * n_reps, (local_idx + 1) * n_reps):
+                    regime = (exploit_regime if is_pre[slot]
+                              else explore_regime)
+                    pre_flags.append(bool(is_pre[slot]))
+                    spec = regime.spec(w_idx, world, local_idx, env, env_offset,
+                                       knobs)
+                    # The collector reads novelty off cfg and the goal reward
+                    # off the env, so the regime's choice has to be written
+                    # into both.
+                    cfg.hopfield.novelty_reward = spec.novelty_reward
+                    env.goals_active = spec.goals_active
+                    rollout = collector.collect_rollout(
+                        env, agent, spec.hop, allow_store=spec.allow_store,
+                        h_rnn=None, env_offset=env_offset,
+                        update_idx=update, aux_scale=1.0,
+                        epsilon_now=spec.epsilon,
+                        goal_in_memory_init=spec.goal_in_memory_init,
+                        ends_on_goal=spec.ends_on_goal,
+                    )
+                    rollouts.append(rollout)
         cfg.hopfield.novelty_reward = 0.0
 
         n_episodes_now = sum(int(r.rewards.shape[0]) for r in rollouts)
@@ -944,6 +953,7 @@ CFG_FIELDS: dict[str, tuple[str, ...]] = {
     # schedule
     "schedule": ("schedule",),
     "regime_assignment": ("regime_assignment",),
+    "env_repeats": ("env_repeats",),
     "novelty_anneal": ("novelty_anneal",),
     "epsilon_explore": ("epsilon_explore",),
     "epsilon_anneal_updates": ("epsilon_anneal_updates",),
@@ -1494,6 +1504,12 @@ def build_parser() -> argparse.ArgumentParser:
                         " instead of on the recall signal -- a shortcut that"
                         " does not transfer to a held-out env. 'shuffle'"
                         " re-draws the assignment every update.")
+    p.add_argument("--env_repeats", type=int, default=None,
+                   help="Rollouts per train env per update, each with its own"
+                        " regime slot. The regime split is over envs, so a"
+                        " one-env run at empty_frac 0.5 has no explore slot;"
+                        " K repeats split envs x K slots instead and the same"
+                        " env is collected K times in one update. Default 1.")
     p.add_argument("--ppo_clip_coef", type=float, default=None,
                    help="Override PPOConfig.clip_coef (default 0.2). Lower "
                         "values (0.1-0.15) limit policy update size, helping "

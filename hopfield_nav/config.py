@@ -474,6 +474,14 @@ class TrainConfig:
     # on the recall signal, which does not transfer to a held-out env.
     # "shuffle" re-draws the assignment every update.
     regime_assignment: str = "index"    # "index" | "shuffle"
+    # Rollouts per train env per update, each its own regime slot. The regime
+    # assignment above is over ENVS, so a one-env run under empty_frac=0.5
+    # rounds to zero explore slots and never interleaves. With K repeats the
+    # assignment is over envs x K slots -- the same env is collected K times
+    # in one update, some slots exploit and some explore -- and the two
+    # regimes meet in the same PPO update exactly as they do across 20 envs.
+    # 1 (default) is the historical loop.
+    env_repeats: int = 1
     novelty_anneal: bool = False            # linearly scale novelty_reward -> 0 across the whole run
     epsilon_explore: float = 0.0            # per-step chance of a uniform-random move, explore regime only
     epsilon_anneal_updates: int = 0         # linearly scale epsilon_explore -> 0 over this many updates; 0 = constant

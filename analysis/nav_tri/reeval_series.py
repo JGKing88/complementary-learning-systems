@@ -61,6 +61,11 @@ def main() -> None:
                    help="default: the run's val_n_distractors_list")
     p.add_argument("--max_steps", type=int, default=None,
                    help="default: the run's eval_max_steps (or 200)")
+    p.add_argument("--which", default="base_val", choices=("base_val", "train"),
+                   help="which recorded env set to score: the run's held-out "
+                        "val set (default) or its own TRAIN envs -- the "
+                        "in-distribution score, which is what a one-env run's "
+                        "val curve has to be read against.")
     p.add_argument("--seed", type=int, default=42)
     p.add_argument("--device", default="cuda")
     args = p.parse_args()
@@ -85,7 +90,8 @@ def main() -> None:
     encoder, enc_cfg, gain = load_encoder(cfg.encoder_checkpoint, str(device),
                                           cfg.encoder_gain)
     cfg.encoder_gain = gain
-    envs, field, offsets = eval_world_from_spec(spec, cfg, encoder, str(device))
+    envs, field, offsets = eval_world_from_spec(spec, cfg, encoder, str(device),
+                                                which=args.which)
     agent = load_agent(cfg, first["agent_state_dict"], enc_cfg.out_dim, device)
 
     nt = args.trials if args.trials is not None else int(cfg.n_val_trials)
@@ -106,7 +112,7 @@ def main() -> None:
         fh.write(f"    schedule   : {cfg.schedule}\n")
         fh.write(f"    eval       : {len(envs)} envs x {nt} trials, "
                  f"n_dist={dist}, max_steps={max_steps}, {mode}, "
-                 f"split=recorded\n")
+                 f"split=recorded:{args.which}\n")
         fh.flush()
         print(f"{len(ckpts)} checkpoints, {len(envs)} envs x {nt} trials, "
               f"n_dist={dist}, {mode}", flush=True)
