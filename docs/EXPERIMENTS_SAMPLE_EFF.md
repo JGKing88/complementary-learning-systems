@@ -709,3 +709,40 @@ same slide) and `one_k4_g` s42 (22757441; K=4 covered by s43) for
 Also at 16:55: `one_k2_b32_g` (64 traj/update) collapsed at u200 to success
 0.09/0.06 from 0.51/0.43 at u100 — the SE line's pool floor (~80–160
 traj/update) again, or a transient; `one_k2_b16_g` u100 0.66/0.74.
+
+### 7.5 17:20 — the re-eval (CPU job 22762054): a generalization gap AND an oscillating explore half
+
+`one_k2_g` s42, swept coverage d=0 / d=10 by checkpoint:
+
+| u | held-out det (trainer) | held-out sampled | TRAIN env det | exploit (held-out det) |
+|---|---|---|---|---|
+| 100 | 0.40 | 0.48/0.43 | 0.44/0.43 | 0.98/0.95, 36 steps |
+| 200 | 0.31 | 0.42/0.41 | **0.55/0.50** | 1.00/0.98, 19.5 |
+| 300 | 0.17 | 0.35/0.37 | **0.52/0.47** | 1.00/0.99, 15.9/17.0 |
+| 400 | 0.37 | 0.46/0.40 | 0.51/0.42 | 1.00/1.00, 13.8/17.1 |
+| 500 | 0.15 | 0.19/0.18 | 0.26/0.17 | 1.00/0.98, 13.8/15.1 |
+| 600 | 0.10 | 0.13/0.26 | 0.29/0.32 | 1.00/0.99, 14.5/16.2 |
+| 700–900 | 0.28, 0.33, 0.20 | | | 1.00/0.99, 12.7–13.0 / 14.2–14.7 |
+
+Two effects, both real. (1) The training arena scores explore ~0.5 where
+held-out scores 0.2–0.3 at the same checkpoint (u200–400): a landmark
+component — the explore policy is partly a view-keyed sweep of its one
+barcode. (2) Explore also DIPS on the training arena (u500: 0.52 → 0.26),
+and the explore half's own training reward dips with it (100-update means
+of `emp=`: 0.35 → 0.28 → **0.20** → 0.32 → 0.34 → **0.23** → 0.32 over
+u301–1000) while exploit's `pre=` sits flat at 0.24–0.28. The explore half
+oscillates; it has 64 trajectories per update against d0_base's 640.
+Exploit is d0_base-level from u300 (bar 13/14 steps: u700 12.96/14.7,
+u800 12.7/14.2, u900 12.9/14.4) and stays there.
+
+`one_k2_g_od5` (obs dropout 0.5) is DEAD: reward flat at 0.05 from u50,
+`approx_kl=0.000 clip_frac=0.000` — a fixed point PPO cannot leave.
+`od3` learns, slower (u100 0.49/0.48 vs 0.98/0.95 clean). Cancelled od5
+(22762040) and `one_k2` fixed-goal (22756995; u900: exploit 0.52/0.50,
+explore 0.48 — the strict reading's shape is on record) for
+**`one_k4_g_e75`** on s42 and s43: K=4 with `empty_frac` 0.75 = 3 explore +
+1 exploit slots, 192 explore trajectories per update. 6 h 30 wall.
+
+Sample-lean redraw arms at 17:20: `b32_g` u500 (32k episodes) 1.00/0.98,
+14.0/16.2 steps, swept 0.46; `b16_g` u400 (12.8k) 1.00/0.99, 17.6/18.2,
+swept 0.29. Neither is below the pool floor on one env.

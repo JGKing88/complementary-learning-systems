@@ -1775,6 +1775,12 @@ case "$VARIANT" in
           # redraw arm's held-out EXPLORE slides while exploit holds -- the
           # explore policy reads the one barcode as a landmark map, which a
           # held-out env defeats; this is the regulariser against it.
+          # `_e75`: explore-heavy mix, 3 explore + 1 exploit slots at K=4.
+          # Exploit is solved by u300 on one env; the explore half is what
+          # oscillates (train-env swept 0.52 -> 0.26 -> 0.29 over u300-600)
+          # and it had 64 trajectories per update -- this gives it 192.
+          one_k4_g_e75) ENV_REPEATS=4; REDRAW_GOAL_PER_ROLLOUT=1
+                        [ -z "${SCHEDULE_SET:-}" ] && SCHEDULE='interleave:4000,empty_frac=0.75' ;;
           one_k2_g_od3) ENV_REPEATS=2; REDRAW_GOAL_PER_ROLLOUT=1; OBS_DROPOUT=0.3 ;;
           one_k2_g_od5) ENV_REPEATS=2; REDRAW_GOAL_PER_ROLLOUT=1; OBS_DROPOUT=0.5 ;;
           one_k4_b8_g) ENV_REPEATS=4; BATCH_ENVS=8; REDRAW_GOAL_PER_ROLLOUT=1 ;;
