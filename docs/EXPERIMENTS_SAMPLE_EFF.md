@@ -21,7 +21,8 @@ Read §0 to resume.
 | **Target** | `d0_base` u725 on the held-out probe (§1). Exploit: success ≥ 0.995, ≤ ~1.19× optimal at d = 10. Explore, sampled: `swept_eff` ≥ 0.93, collapsed tail ≤ 0.02. |
 | **Baseline cost** | **928,000 episodes / ~103.5 M env-steps** at u725 (1,280 episodes per update). Its own training-eval window first clears the §2 screen at **u625 = 800k episodes / ~91 M env-steps**. |
 | **Where the samples went** | 16 gradient steps per update on ~64k-transition minibatches, every sample touched 4× — ~60× more data per gradient step than a textbook PPO update. That is the lever wave S1 pulls. |
-| **Running** | Wave S1 (§3) — six arms, `ou_bcs_normal`, 24 h. |
+| **Running** | Wave S1 (§3) on `ou_bcs_normal`, 24 h: `se_b8`, `se_b8_lr1`, `se_b8_lr03`, `se_n10_b8_lr1`, `se_b8_lr1_h100`, plus S2 `se_n10_b8_lr1_h100` (22707208) and `se_h100_d5`. Cancelled with checkpoints kept: `se_n5_b8_lr1` (40 traj too few), `se_b8_akl` (band too low), `se_b4_lr1` (n10 ≥ b4). |
+| **Result so far** | **§5.1: exploit half matched at 92k episodes / 9.2M env-steps (10× / 11×), explore d=0 within noise; explore d=10 collapsed tail 0.14 vs 0.021 — not yet.** |
 | **Tools** | `analysis/nav_tri/sample_eff_curve.py` (eval series vs cumulative samples, window means, first-clear of the screen); the wave-1 probe pipeline `hopfield_nav/run_wave1_final.sh` pattern for the verdict. Trainer now logs exact `episodes` / realized `env_steps` per update and per eval, and writes both into every checkpoint. |
 
 ---
@@ -258,7 +259,61 @@ firing at step 2 every update, 22700951 (10 envs, 10×8) 12.4 s/u. The
 per-update line now carries `(roll= ppo=)`, `eps_cum= steps_cum=`,
 `approx_kl clip_frac epochs_run grad_steps`.
 
-## 5. Accounting notes
+## 5. Verdicts — the held-out probe
+
+### 5.1 Round 1 (job 22707156, ~25 min on one a100): exploit passes at 92k, the d=10 tail does not
+
+`run_se_probe.sh`, place=held_out, 6 envs; explore 144 sampled trials per
+level, exploit 192 trials per level, d0_base u725 in the same process.
+
+**Exploit** (success d=0/5/10 · steps d=0/d=10 · × optimal at d=10 =
+steps ÷ ((start − 1) / realized speed)):
+
+| checkpoint | episodes | env-steps | success | steps | × opt | `align_true` d10 |
+|---|---|---|---|---|---|---|
+| h100 u550 | 88k | 8.8M | 1.000 / 0.995 / 1.000 | 11.90 / 12.49 | 1.20 | 0.875 |
+| **h100 u575** | **92k** | **9.2M** | 1.000 / 0.995 / 0.995 | 11.73 / 12.46 | 1.20 | 0.879 |
+| h100 u600 | 96k | 9.6M | 1.000 / 0.995 / 1.000 | 11.55 / 12.42 | 1.19 | 0.887 |
+| n10 u625 | 50k | 10.0M | 1.000 / 1.000 / 1.000 | 12.28 / 13.01 | 1.25 | 0.850 |
+| d0_base u725 | 928k | 103.5M | 1.000 / 0.990 / 1.000 | 11.71 / 12.35 | 1.21 | 0.880 |
+
+**Explore** (`swept_eff` = swept ÷ billiard at own speed; tail = frac
+collapsed below ½ billiard; `chase_t` = chase_q inside the tail):
+
+| checkpoint | d=0 swept / eff / tail | d=10 swept / eff / **tail** / chase_t |
+|---|---|---|
+| h100 u550 | 0.543 / 0.871 / 0.035 | 0.477 / 0.789 / **0.188** / 0.58 |
+| h100 u575 | 0.578 / 0.919 / 0.000 | 0.511 / 0.858 / **0.139** / 0.59 |
+| h100 u600 | 0.557 / 0.890 / 0.042 | 0.497 / 0.830 / **0.160** / 0.48 |
+| n10 u625 | 0.481 / 0.783 / 0.090 | 0.508 / 0.824 / **0.104** / 0.56 |
+| d0_base u725 | 0.606 / 0.944 / 0.000 | 0.589 / 0.931 / **0.021** / 0.56 |
+
+1. **The exploit half is matched at 92k episodes / 9.2M env-steps — 10× / 11×
+   below d0_base u725** (h100 u575 and u600: success ≥0.995 at every level,
+   steps within 0.1 at d=0 and d=10, × optimal 1.19–1.20 vs 1.21,
+   `align_true` equal). n10 u625 passes success at 50k and is 0.6 step / 0.04×
+   behind on directness.
+2. **Explore at d=0 is within noise at u575** (eff 0.919 vs 0.944, tail 0).
+3. **Explore at d=10 is not.** The collapsed tail is 0.10–0.19 against 0.021,
+   with `chase_t` ≈0.5–0.6 — the corner trap (chasing a phantom recall), the
+   thing d0_base closed between u250 (12.5%) and u725 (1.4%). These
+   candidates are at u575–625 and have the tail d0_base had at ~u300.
+   Prediction 3 of §3.2 — that the tail is the quantity a small pool cannot
+   buy cheaply — is the live hypothesis. Two ways it can resolve: the arms
+   keep running (the tail closes with UPDATES → h100 passes at ~u1000–1500 =
+   160–240k episodes, ~4–6×), or it needs EPISODES with many stored patterns
+   (→ the distractor floor arm below).
+4. The u550/u575/u600 spread (tail 0.19 / 0.14 / 0.16, eff 0.79 / 0.86 / 0.83)
+   is the probe's own noise plus checkpoint-to-checkpoint swing; per the wave-1
+   caveat a < 2× tail difference is not a ranking.
+
+**Action.** `se_h100_d5` launched: h100 with the explore-regime distractor
+floor raised to 5 (U[5,10]; exploit unchanged). Half of the U[0,10] explore
+episodes carry ≤5 patterns and teach nothing about the tail. `b4` cancelled
+to free the slot (its question is answered: n10 ≥ b4 per sample at half the
+wall-clock). Probe round 2 at u~1000 of h100 / n10 / the combo arm.
+
+## 6. Accounting notes
 
 - **Episodes** are exact: envs × batch per update, every update.
 - **Env-steps** are realized transitions (`alive_mask.sum()`), logged since
