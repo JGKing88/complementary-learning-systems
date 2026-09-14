@@ -1086,3 +1086,53 @@ knows its policy mean, not the sampled action) but it integrates over
 the lifetime and gets there more slowly. `prev_action` is worth ~2× in
 episodes at this point (A was at 18.7 by e19 at u = 1000). Seed 1 of A
 (22704383) queued.
+
+## 2026-09-13 — B2 RESULT: run A final
+
+**Run A — frozen `dist@90` decode + GRU 2×512 + `prev_action`, trained
+8000 updates (step at 5600) on random-θ per-row lifetimes with
+translation, no anchor (22703355).** Held-out envs; the standard lattice
+θ = 0 was never trained (band |θ| < 15° excluded); `same` = training
+envs at θ = 0, unseen there too.
+
+| readout | heldout θ=0 | same θ=0 | heldout@7 | heldout@45 | heldout@90 |
+|---|---|---|---|---|---|
+| R1, h = 0, enumerated, train×train | **150.0** | 150.1 | 149.9 | 134.0 | 92.7 |
+| R2 by episode e0 / e1 / e2 / e4 / e9 / e19 | **32.0 / 27.6 / 26.5 / 21.9 / 17.7 / 14.5** | 31.8 / 30.3 / 25.4 / 26.0 / 20.6 / 13.5 | 32.4 / 34.5 / 25.6 / 26.2 / 18.9 / 12.0 | 27.7 / 28.8 / 20.6 / 14.6 / 11.4 / 8.3 | 24.2 / 26.7 / 16.6 / 13.8 / 10.9 / 7.6 |
+| R2 e10–e19 mean | **14.2** | 14.1 | 13.6 | 8.5 | 7.7 |
+| R2 ep0 by step s0 / s1 / s2 / s3 / s5 / s10 | **122 / 56 / 42 / 34 / 22 / 18** | 127 / 55 / 42 / 32 / 22 / 17 | 126 / 50 / 41 / 33 / 24 / 19 | 117 / 49 / 35 / 25 / 17 / 13 | 92 / 38 / 28 / 21 / 17 / 14 |
+
+Loss −1.77, goal rate 0.083, 131,072 lifetimes drawn, 0 in the band.
+Trajectory over training on θ = 0, e19: 18.7 (u = 1000) → 15.7 → 15.7 →
+17.4 → 23.1 (u = 5000, drifting at lr 1e-3) → 14.6 (u = 6000, after the
+step) → 15.5 → **14.3**; ep0 s10: 68 → 30 → 29 → 43 → 41 → 19 → 18 →
+**17**.
+
+**Reading.** The three reference lines on the same lattice: memoryless
+null 90° (`dist`, C5); the same network with no history 150° (it
+commits to the training-mean orientation, which at θ = 0 is nearly
+opposite — the worst possible prior, and exactly what a memoryless
+best guess under the training distribution is); the corner-trained
+weights' extrapolation 44° (A1x, B1x). **From its own trajectory the
+recurrent net gets the unseen lattice to 56° in one step, 18° in ten,
+and 14° over the lifetime.** The frame accumulates across goal changes
+(by-episode monotone) and is measured within an episode (by-step
+monotone): the plan's row-1 reading of §4B.7, on the real code. The
+scripted estimator's ceiling is 5° at step 2 and ~2° after; on the
+*trained* orientations the GRU sits at ~8°, the floor of a sampled
+policy (`dist@90` at its own θ: 6°), so the cost of the held-out band
+is ~6° of interpolation and the cost of being a GRU rather than the
+estimator is ~10 steps rather than 2. Leak audit as at u = 1000: the
+decode was trained at θ = 90° only and never saw θ = 0; the GRU and
+heads saw θ ∈ [15°, 345°]; test envs are new walls at new offsets; the
+null on this design is 90°; readout 1 is 150°. Everything between 150°
+and 14° is the trajectory.
+
+**What did not work, for the record:** the GRU fed the raw code (89°
+flat at 8000); the raw-code GRU with an anchor foothold (72° on the
+anchor, 90° on θ = 0); a jointly-trained MLP encoder in front of the
+GRU with or without LayerNorm, with or without a warm-up on determined
+data (collapses to a constant — the GRU's BPTT gradient into the shared
+encoder); a detached encoder on mixed data (collapses on the
+undetermined half). The decode has to be learned memorylessly, once,
+and given; the recurrence then learns the frame from lifetimes.
