@@ -193,6 +193,36 @@ the end of the run. TIMEOUT at 24 h is the expected end.
 - `h100` locks exploit at 24k but its explore half is the weakest (swept0
   0.14) — prediction 4 holding.
 
+### 4.2 Digest at ~2.4 h
+
+| arm | u | episodes | env-steps | succ0 / succ10 | steps0 / steps10 | swept0 / swept10 |
+|---|---|---|---|---|---|---|
+| `se_b8` (3e-4) | 175 | 28,000 | 5.6M | 0.90 / 0.92 | 44 / 44 | 0.21 / 0.22 |
+| `se_b8_lr1` | 175 | 28,000 | 5.6M | 1.00 / 0.997 | 22.5 / 24.6 | 0.38 / 0.38 |
+| `se_b8_lr03` | 175 | 28,000 | 5.6M | 1.00 / 1.00 | 21.0 / 21.2 | 0.41 / 0.35 |
+| `se_b4_lr1` | 175 | 14,000 | 2.8M | 0.997 / 1.00 | 24.7 / 28.8 | 0.30 / 0.30 |
+| **`se_n10_b8_lr1`** | **375** | **30,000** | **6.0M** | **1.00 / 0.997** | **14.7 / 15.7** | **0.50 / 0.48** |
+| `se_b8_lr1_h100` | 350 | 56,000 | 5.6M | 1.00 / 1.00 | 13.6 / 13.9 | 0.43 / 0.44 |
+| `se_b8_akl` | 175 | 28,000 | 5.6M | 0.995 / 0.98 | 40 / 42 | 0.27 / 0.29 |
+| `se_n5_b8_lr1` | 325 | 13,000 | 2.6M | 0.88 / 0.85 | 47 / 52 | 0.21 / 0.21 |
+| d0_base (ref) | 400 | 512,000 | ~60M | 1.00 / 1.00 | 15.5 / 17.8 | 0.52 / 0.48 |
+
+- `n10` at 30k episodes reads what d0_base read at u400 (512k episodes):
+  **~17× fewer episodes, ~10× fewer env-steps** for that quality, and it is
+  one notch from the §2 screen (steps ≤13/14, swept ≥0.55/0.50).
+- Every arm at lr ≤1e-4 locks exploit by 14–28k episodes; `se_b8` (3e-4)
+  only reaches 0.90/0.92 at 28k. The optimizer, not the pool, was d0_base's
+  bottleneck in the early phase.
+- `n5` (40 trajectories) is *worse* per sample than `n10` (0.85 vs 0.99
+  success at 12k episodes): 5-trajectory minibatches trip the KL safety at
+  7–48 steps and the steps are noisier. ~80 trajectories per update is the
+  floor for this recipe; the win is in the number of updates, not in
+  shrinking the pool further.
+- `h100` is on the screen for exploit (13.6/13.9) at 56k episodes but its
+  explore half trails (0.43/0.44 vs n10's 0.50/0.48 at half the episodes).
+- `akl` settled at lr 2e-5 and is the slowest of the small-lr arms on steps
+  (40): its 0.01–0.04 band is set too low for the late phase.
+
 Timing smokes before the wave (8 updates each, 3e-4, target_kl 0.02):
 22700947 (`se_b8`) 36 s/u, 22700949 (20 envs, 10×8) 30 s/u with the KL stop
 firing at step 2 every update, 22700951 (10 envs, 10×8) 12.4 s/u. The
