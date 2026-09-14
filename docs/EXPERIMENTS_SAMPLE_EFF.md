@@ -627,3 +627,27 @@ eval/ckpt every 25, the SE optimizer (lr 1e-4 × 10 epochs × 8 minibatches,
 | `one_k4` | 43 | 4 | 64 | 256 | 22757000 — a different single env: how much is env identity |
 
 Smoke (6 updates, 40-step rollouts): 22756982.
+
+**16:05 — one env has ONE goal.** `VecEnv` shares `base_env._goal` and every
+reset keeps it; `reset_goal` is only ever called by the legacy `train.py`.
+So d0_base's 20 envs were 20 goal cells, and the exploit half of a one-env
+run sees a single cell (s42's is [17, 0], on the edge; s43's [11, 6]). The
+evaluator has the same convention — one goal per val env, trials vary the
+start — so the wave-1 arms are the strict reading: one arena, one goal.
+Added `--redraw_goal_per_rollout` (commit after 6853202): a fresh goal cell
+from the env's own RNG before every rollout slot, both regimes. Same arena,
+goals everywhere in it — the "as good as possible" reading. Cancelled
+`one_k8_b32` (22756996) and `one_k2_lr3` (22756997) at u25 — second-order
+questions the SE line already answered — and `se_lr1_d5_e75` (22715547,
+past u2700, verdict taken at u1200) to make room:
+
+| arm | seed | K | batch | eps/update | job |
+|---|---|---|---|---|---|
+| `one_k4_g` | 42 | 4 | 64 | 256 | see launch record below |
+| `one_k4_g` | 43 | 4 | 64 | 256 | |
+| `one_k2_g` | 42 | 2 | 64 | 128 | |
+
+First evals (u25, 6 held-out envs, deterministic): `one_k4` s42 success
+0.64/0.59 (d=0/10), swept 0.18; `one_k2` 0.32/0.17; the 3e-4 control 0.82/0.72
+(the usual fast start of the large step). Timing: K=4 8.2 s/update (7.4
+rollout + 0.8 PPO), eval 23.5 s per 25 → ~3000 updates before the wall.
