@@ -1158,3 +1158,27 @@ episode 66 → 32 → 22 → 19 → 16 → 15.1, then 71 → 37 → 25 → 20 �
 14.9; episode 0 by step at u = 2000: 102 → 83 → 74 → 70 → 56 → 49 (s10).
 Replicates seed 0 at the same points (18.7 / 15.7 at e19; 68 / 30 at
 s10). Running to 8000.
+
+**Seed 1 of A, FINAL (22704383).** Held-out lattice: by episode 37.9 →
+21.4 → 18.1 → 18.2 → 16.4 → 16.3 → 15.8 → 15.9 → 15.0 → 15.2 → **14.2–15.0
+(e10–19, mean 14.7)**; episode 0 by step **115 → 81 → 55 → 42 → 30 (s5) →
+23 (s10)**; readout 1 139.0. Trained orientations: θ = 45 33 → 8.9, θ = 90
+29 → 8.8. Seed 0 at the same cells: e10–19 mean 14.2, s10 18, readout 1
+150. **Two seeds agree**: the recurrent net with the decode given reads an
+unseen grid lattice to ~15° over a lifetime and to ~20° within ten steps
+of its first episode, from 120–150° with no history.
+
+**B2 complete.** Final table (`analysis/b2_results.py --prefix b2`),
+held-out envs, held-out lattice θ = 0:
+
+| run | R1 (no history) | R2 e0 / e2 / e9 / e19 | ep0 s1 / s2 / s5 / s10 |
+|---|---|---|---|
+| `dist` MLP null | 89 | 90 / 90 / 90 / 90 | 92 / 92 / 86 / 87 |
+| `full` GRU, raw code | 90 | 89 / 89 / 89 / 89 | 90 / 91 / 86 / 86 |
+| `full` GRU, raw code, anchor-mix | 91 | 90 / 91 / 90 / 91 | 86 / 94 / 88 / 90 |
+| scripted estimator | — | 16 / 1.5 / 1.7 / 1.9 | 88 / **5.4** / 0.0 / 1.3 |
+| `rec` GRU, frozen decode | 103 | 101 / 96 / 78 / 45 | 105 / 101 / 102 / 100 |
+| **`full` GRU, frozen decode, s0** | **150** | **32 / 27 / 18 / 14.5** | **56 / 42 / 22 / 18** |
+| **`full` GRU, frozen decode, s1** | **139** | **38 / 18 / 15 / 15.0** | **81 / 55 / 30 / 23** |
+
+Compute: ≈ 30 GPU-h across 22 jobs including the cancelled diagnostics.
