@@ -223,6 +223,35 @@ the end of the run. TIMEOUT at 24 h is the expected end.
 - `akl` settled at lr 2e-5 and is the slowest of the small-lr arms on steps
   (40): its 0.01–0.04 band is set too low for the late phase.
 
+### 4.3 Digest at ~3.4 h — the first screen clear
+
+| arm | u | episodes | env-steps | succ0 / succ10 | steps0 / steps10 | swept0 / swept10 | screen |
+|---|---|---|---|---|---|---|---|
+| **`se_b8_lr1_h100`** | **575** | **92,000** | **9.2M** | 1.00 / 1.00 | 12.1 / 12.5 | 0.57 / 0.52 | **YES (first)** |
+| `se_n10_b8_lr1` | 625 | 50,000 | 10.0M | 0.99 / 0.98 | 14.0 / 15.3 | 0.54 / 0.53 | close |
+| `se_b8_lr03` | 325 | 52,000 | 10.4M | 1.00 / 1.00 | 14.1 / 14.5 | 0.54 / 0.47 | close |
+| `se_b8_lr1` | 300 | 48,000 | 9.6M | 1.00 / 1.00 | 14.3 / 15.8 | 0.45 / 0.44 | |
+| `se_b4_lr1` | 300 | 24,000 | 4.8M | 1.00 / 1.00 | 15.0 / 15.3 | 0.45 / 0.40 | |
+| `se_b8` (3e-4) | 325 | 52,000 | 10.4M | 1.00 / 0.997 | 17.0 / 18.9 | 0.44 / 0.42 | |
+| `se_b8_akl` | 350 | 56,000 | 11.2M | 1.00 / 0.995 | 27.0 / 27.2 | 0.42 / 0.39 | |
+| `se_n5_b8_lr1` | 825 | 33,000 | 6.6M | 0.98 / 0.98 | 21.1 / 23.6 | 0.39 / 0.39 | **cancelled** |
+| d0_base (ref) | 625 | 800,000 | ~91M | 1.00 / 0.997 | 12.6 / 13.9 | 0.55 / 0.53 | YES (first) |
+
+- **`h100` clears the screen at 92k episodes / 9.2M env-steps — 8.7× / 10×
+  below d0_base's own screen clear (800k / ~91M), 10× / 11× below u725.**
+  Prediction 4 (h100 loses on 200-step explore) is **wrong**: its swept at
+  200 eval steps is on the bar. Coverage over the second hundred steps is
+  apparently what a memoryless vector field does anyway.
+- Per env-step, `h100` and `n10` are the same pool (16k transitions per
+  update) and reach the bar region at the same env-step count (~9–10M);
+  `n10` has half the episodes. Both are ~600 updates in, which is d0_base's
+  update count — **the small pool did not cost updates**.
+- `n5` cancelled at u825 to free a GPU for the probe: at 33k episodes it
+  trails `n10`-at-33k on every column (steps 21 vs ~14.5). 40 trajectories is
+  below the floor. Its checkpoints are kept.
+- **Probe round 1 launched** (job 22707156, GPU): h100 u550/u575/u600 and
+  n10 u625 beside d0_base u725.
+
 Timing smokes before the wave (8 updates each, 3e-4, target_kl 0.02):
 22700947 (`se_b8`) 36 s/u, 22700949 (20 envs, 10×8) 30 s/u with the KL stop
 firing at step 2 every update, 22700951 (10 envs, 10×8) 12.4 s/u. The
