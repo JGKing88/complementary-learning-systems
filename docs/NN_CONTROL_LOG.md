@@ -1182,3 +1182,26 @@ held-out envs, held-out lattice θ = 0:
 | **`full` GRU, frozen decode, s1** | **139** | **38 / 18 / 15 / 15.0** | **81 / 55 / 30 / 23** |
 
 Compute: ≈ 30 GPU-h across 22 jobs including the cancelled diagnostics.
+
+## 2026-09-14 — the from-scratch question
+
+Jack asked whether a GRU with an MLP in front of it, trained *jointly*
+from scratch, would work. Every joint attempt on 09-13 collapsed the
+encoder, and the warm-up run (100% determined data) collapsed with loss
+spikes where the MLP alone learned the same data to 1° — the GRU's BPTT
+gradient into the shared encoder at lr 1e-3. The untried fix:
+`--encoder_lr` (7ef0ce6), a separate Adam group for the encoder.
+
+Two runs, MLP 5×768 (LayerNorm, skip) → GRU 2×512 + `prev_action`, all
+weights from scratch, encoder lr 1e-4 against 1e-3 for the rest, warm-up
+**3000** updates on the fixed orientation (θ = 90°, per-row translation)
+then the 0.5 anchor mix, 8000 updates, step at 5600:
+
+- **S1** joint (22749410).
+- **S2** joint with the encoder detached from the GRU's gradient
+  (22749423) — the encoder then trains through the skip alone.
+
+To read: `heldout@90` at u = 1000–3000 (the decode forming; the MLP
+alone: 1° by u = 600); then `heldout` (θ = 0) by episode and by step
+after the mix begins — the frozen-decode run A reached 14° by e19 and
+56° at s1.
