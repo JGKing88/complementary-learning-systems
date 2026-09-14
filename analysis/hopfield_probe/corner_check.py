@@ -67,13 +67,19 @@ DEFAULT_OUT = os.path.join(str(results_dir()),
 
 
 def default_encoders() -> list[tuple[str, str]]:
+    """``(label, path)``; the label's first word is the arm the tables group by.
+
+    w62 is the att16 wave, w63 the same two arms at the ladder's att0.5 (the
+    ``_a0.5`` arms). Missing checkpoints are skipped at run time.
+    """
     S, E = sweeps_dir(), encoders_dir()
     out = []
-    for i, arm in ((0, "corner500"), (2, "scatter100")):
-        for j, seed in enumerate((42, 43)):
-            out.append((f"{arm} s{seed}",
-                        str(S / f"w62_corner/{i + j:03d}_{arm}_seed={seed}"
-                              "/encoder_final.pt")))
+    for wave, suffix in (("w62_corner", ""), ("w63_corner_a0.5", "_a0.5")):
+        for i, arm in ((0, "corner500"), (2, "scatter100")):
+            for j, seed in enumerate((42, 43)):
+                out.append((f"{arm}{suffix} s{seed}",
+                            str(S / f"{wave}/{i + j:03d}_{arm}_seed={seed}"
+                                  "/encoder_final.pt")))
     for i, seed in ((4, 42), (5, 43)):
         out.append((f"scatter118 att16 s{seed}",
                     str(S / f"w53_attract_knee/{i:03d}_att16_seed={seed}"

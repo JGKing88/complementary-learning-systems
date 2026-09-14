@@ -2262,6 +2262,27 @@ WAVES: dict[str, dict] = {
         },
         "seed": [42, 43],
     },
+    # W63 -- w62 at the ladder's attract level. w62 used att16 (w53, "level 7"
+    # by unique radius), and the region probe then showed att16 to be a much
+    # weaker Hopfield encoder than the ladder's att0.5 (exact 0.59 vs 0.98,
+    # reach 0.78 vs 0.99 on the whole arena). The corner conclusion is a
+    # same-recipe comparison and does not depend on that, but the headline
+    # should sit beside the ladder's numbers, so: the same two arms at att0.5.
+    "w63_corner_a0.5": {
+        "arm": {
+            name: {**dict(npos_list=SIZE_MIXES["sm50_100"], batch_size=4096,
+                          lr=3e-4, per_env_radius_frac=0.0, radius=20.0,
+                          rate_lambda=0.5, rate_eps=1.0, out_dim=1024,
+                          hidden_dim=256, gain_end=100.0, attract_lambda=0.5),
+                   **over}
+            for name, over in (
+                ("corner500", dict(patch_arena=500,
+                                   patch_placement="stratified")),
+                ("scatter100", dict()),
+            )
+        },
+        "seed": [42, 43],
+    },
     "w61_cov0.75": {
         "arm": {
             name: {**dict(batch_size=4096, lr=3e-4, per_env_radius_frac=0.0,

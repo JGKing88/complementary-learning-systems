@@ -15,10 +15,14 @@
 # unique-radius eval, which for corner500 would let the unseen region pick the
 # checkpoint.
 #
-#   sbatch analysis/hopfield_probe/run_corner.sh check
-#   sbatch analysis/hopfield_probe/run_corner.sh probe
+#   sbatch analysis/hopfield_probe/run_corner.sh check [ONLY]
+#   sbatch analysis/hopfield_probe/run_corner.sh probe [ARRAY]
 #
-# The probe array is 18 tasks: index = 3 * encoder + region.
+# check takes an optional label substring (corner_check --only); one encoder
+# is ~20 min of GPU (the per-row grid-code build is CPU-bound), so run the
+# encoders as separate jobs rather than one. The probe array is
+# index = 3 * encoder + region over the ENCS list below; ARRAY defaults to all
+# of it (0-29). w63 (the att0.5 replication) is encoders 6-9, tasks 18-29.
 set -euo pipefail
 
 WT=/orcd/home/002/jackking/cls/.claude/worktrees/encoder-hopfield-eval-spec
@@ -28,16 +32,19 @@ OUT=/orcd/pool/003/jackking/cls_runs/results/hopfield_probe/20260914
 TMP=/home/jackking/.claude/jobs/d05f5770/tmp
 
 MODE=${1:-check}
+ARG=${2:-}
 
 if [[ -z "${SLURM_JOB_ID:-}" ]]; then
     # Submit ourselves with the right resources for the mode.
     if [[ "$MODE" == check ]]; then
-        exec sbatch --job-name=corner_check --partition=ou_bcs_normal \
+        exec sbatch --job-name="corner_check_${ARG:-all}" \
+            --partition=ou_bcs_normal \
             --time=1:00:00 --gres=gpu:1 --cpus-per-task=4 --mem=16G \
-            --output="$TMP/corner_check_%j.out" "$0" check
+            --output="$TMP/corner_check_${ARG:-all}_%j.out" "$0" check "$ARG"
     else
         exec sbatch --job-name=corner_probe --partition=ou_bcs_normal \
-            --time=4:00:00 --cpus-per-task=16 --mem=32G --array=0-17 \
+            --time=4:00:00 --cpus-per-task=16 --mem=32G \
+            --array="${ARG:-0-29}" \
             --output="$TMP/corner_probe_%A_%a.out" "$0" probe
     fi
 fi
@@ -46,9 +53,11 @@ cd "$WT"
 export OMP_NUM_THREADS=${SLURM_CPUS_PER_TASK:-4}
 
 if [[ "$MODE" == check ]]; then
+    ONLY=()
+    [[ -n "$ARG" ]] && ONLY=(--only "$ARG")
     "$PY" -m analysis.hopfield_probe.corner_check --n_per_band 8 --seed 0 \
-        --out "$OUT/corner_check"
-    echo "DONE corner_check -> $OUT/corner_check"
+        "${ONLY[@]}" --out "$OUT/corner_check"
+    echo "DONE corner_check ${ARG:-all} -> $OUT/corner_check"
     exit 0
 fi
 
@@ -63,6 +72,10 @@ ENCS=(
     "w62_corner/003_scatter100_seed=43|scatter100 · s43"
     "w53_attract_knee/004_att16_seed=42|scatter118 · s42"
     "w53_attract_knee/005_att16_seed=43|scatter118 · s43"
+    "w63_corner_a0.5/000_corner500_seed=42|corner500_a0.5 · s42"
+    "w63_corner_a0.5/001_corner500_seed=43|corner500_a0.5 · s43"
+    "w63_corner_a0.5/002_scatter100_seed=42|scatter100_a0.5 · s42"
+    "w63_corner_a0.5/003_scatter100_seed=43|scatter100_a0.5 · s43"
 )
 REGIONS=("0 0 500|corner" "608 608 500|centre" "1216 1216 500|opposite")
 

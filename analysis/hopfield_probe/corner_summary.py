@@ -19,8 +19,14 @@ from analysis.hopfield_probe.corner_check import BANDS
 from cls_paths import results_dir
 
 ROOT = os.path.join(str(results_dir()), "hopfield_probe/20260914")
-ARMS = ("corner500", "scatter100", "scatter118", "untrained")
-REGIONS = ("corner", "centre", "opposite")
+# The ``_a0.5`` arms are w63, the same two layouts at the ladder's attract
+# level; att0.5 is the ladder's own 10% encoder (w52), run in the corner region
+# once to separate recipe from region density; "whole" is the unconfined
+# probe, the ladder's own setting. Longer names first so prefix matching is
+# unambiguous.
+ARMS = ("corner500_a0.5", "scatter100_a0.5", "corner500", "scatter100",
+        "scatter118", "att0.5", "untrained")
+REGIONS = ("corner", "centre", "opposite", "whole")
 
 
 def arm_of(label: str) -> str:
@@ -71,7 +77,7 @@ def scan_tables(d: str) -> None:
 
 def probe_tables(d: str) -> None:
     cells: dict[tuple[str, str], list[dict]] = {}
-    for f in sorted(glob.glob(os.path.join(d, "t*", "*.json"))):
+    for f in sorted(glob.glob(os.path.join(d, "*", "*.json"))):
         if f.endswith("manifest.json"):
             continue
         js = json.load(open(f))
