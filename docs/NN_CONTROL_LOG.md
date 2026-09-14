@@ -998,3 +998,33 @@ design with a pre-formed decode). The readouts that matter: `heldout@90`
 should be ≪ 90° by u = 1000 (the decode forming, as `dist@90`); after
 the switch, `heldout@45` and `heldout` (θ = 0) are the in-context
 question, with the memoryless prediction being |θ − 90°| = 45° and 90°.
+
+**Warm-up runs (22702687 mix 0.5, 22702689 mix 0; identical through the
+warm-up as expected) — collapsed on 100% determined data.** `heldout@90`
+90.9° at u = 1000, identical across sets, loss 2.13 → 4.42 → 3.31 →
+2.15 → 2.66. The pure MLP on exactly this data (`dist@90`) was at 1° by
+u = 600. So it was never the undetermined target: **the GRU's BPTT
+gradient into the shared encoder is what destabilises it** (the spikes)
+and the encoder collapses to a constant to end the instability. Both
+cancelled.
+
+**Decoupling (38d60a3).** `EncodedRecurrentCore(detach=True)`: the core
+reads the features but sends no gradient back — the encoder trains
+through the skip alone, i.e. exactly as the `dist` arm. `bypass`: the
+`prev_action` columns go past the encoder to the core (the action is not
+something to decode, and a `dist` trunk never saw it). Trainer:
+`--encoder_init <dist checkpoint> --encoder_freeze` (a pretrained, fixed
+decode; the recurrent net and heads are all that train — 3.7M of 10.3M
+params), `--encoder_detach`, `--no-encoder_norm`. Two runs:
+
+- **A, frozen decode, primary design (22703355):** encoder = the
+  `dist@90` trunk (u = 1000; it decodes Δ' for every θ — its errors were
+  exactly |θ − 90°|), frozen; GRU 2×512 + prev_action + heads train on
+  random-θ per-row lifetimes with translation, no anchor. The cleanest
+  form of the in-context question: given features from which the
+  rotated displacement is linearly decodable, can a recurrent net learn
+  from `(Δ'_t, a_t)` history to un-rotate it? Memoryless prediction on
+  the readouts: 90° everywhere (a fixed head can only apply one
+  rotation).
+- **B, detached encoder, anchor-mix 0.5 at 90° (22703357):** end to end,
+  encoder trained like `dist` on the mixed data, GRU on top.
