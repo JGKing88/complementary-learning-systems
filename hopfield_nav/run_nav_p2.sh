@@ -1603,6 +1603,12 @@ case "$VARIANT" in
   #                  through the init random walk on its own and grows back as
   #                  the gradient weakens.
   #   se_b8_wu       10x8 at 1e-4 with a 100-update linear warmup from 1e-5.
+  #   se_n5_b8_lr1   5 envs x 8 = 40 traj/update (3 exploit + 2 explore under
+  #                  shuffle), 10x8 at 1e-4. Launched 2026-09-13 21:10 when
+  #                  se_n10_b8_lr1 was the per-sample leader at the exploit
+  #                  lock (12-14k episodes): the arm with the MOST, SMALLEST
+  #                  updates won, so push that axis 2x further.
+  #   se_n10_b8_lr03 10 envs at 3e-5, 20x8: the two early leaders combined.
   #
   # Schedules are long (4000) because an update is now cheap; TIMEOUT at the
   # 24 h ou_bcs_normal wall is the normal outcome and CKPT_EVERY=25 leaves the
@@ -1679,6 +1685,8 @@ case "$VARIANT" in
           se_b8_lr1_h100) PPO_EPOCHS=10; N_MINIBATCHES=8; TARGET_KL=0.1; LR=1e-4; STEPS_PER_ROLLOUT=100 ;;
           se_b8_akl)      PPO_EPOCHS=10; N_MINIBATCHES=8; TARGET_KL=0.1; LR=1e-4; ADAPTIVE_KL=0.02 ;;
           se_b8_wu)       PPO_EPOCHS=10; N_MINIBATCHES=8; TARGET_KL=0.1; LR=1e-4; LR_WARMUP_UPDATES=100 ;;
+          se_n5_b8_lr1)   ENVS_PER_WORLD=5; PPO_EPOCHS=10; N_MINIBATCHES=8; TARGET_KL=0.1; LR=1e-4 ;;
+          se_n10_b8_lr03) ENVS_PER_WORLD=10; PPO_EPOCHS=20; N_MINIBATCHES=8; TARGET_KL=0.1; LR=3e-5 ;;
           # Timing-smoke names from the first pass (jobs 22700191/949/951),
           # kept so their logs can be re-read: 10x8 at 3e-4 with target_kl
           # 0.02, which the probe then showed stops every update at step 2.
