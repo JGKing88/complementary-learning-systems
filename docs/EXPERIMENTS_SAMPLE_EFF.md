@@ -253,6 +253,29 @@ the end of the run. TIMEOUT at 24 h is the expected end.
 - **Probe round 1 launched** (job 22707156, GPU): h100 u550/u575/u600 and
   n10 u625 beside d0_base u725.
 
+### 4.4 Digest at 4.5 h — three arms through the screen
+
+| arm | screen clear | episodes | env-steps | latest window (u · steps0/10 · swept0/10) |
+|---|---|---|---|---|
+| `se_b8_lr1` | **u475** | **76,000** | 15.2M | u575 · 12.0/12.5 · 0.57/0.53 |
+| `se_b8_lr1_h100` | u575 | 92,000 | **9.2M** | u1100 · 11.9/13.3 · 0.55/0.52 |
+| `se_n10_b8_lr1_h100` | not yet | 74,000 so far | 7.4M | u925 · 13.7/15.6 · 0.55/0.53 |
+| `se_n10_b8_lr1` | not yet | 92,000 so far | 18.4M | u1150 · 12.9/15.0 · 0.58/0.55 — steps10 sits at ~15 |
+| `se_b8_lr03` | not yet | 104,000 so far | 20.8M | u650 · 14.5/15.9 · 0.57/0.53 |
+| `se_b8` (3e-4) | not yet | 116,000 so far | 23.2M | u725 · 13.2/13.4 · 0.50/0.45 |
+| `se_h100_d5` | not yet | 64,000 so far | 6.4M | u400 · 15.2/17.0 · 0.48/0.44 |
+| d0_base | u625 | 800,000 | ~91M | u725 · 12.0/13.1 · 0.585/0.557 |
+
+- The 10-env arms lock exploit earliest per sample but their d=10 `steps`
+  settle ~1–2 above the 20-env arms (15 vs 13): with 5 exploit envs per
+  update the d=10 directness signal is thinner. Per env-step the combo arm is
+  still the cheapest at the bar's edge (7.4M).
+- `se_b8` at matched updates (u725) trails d0_base by 1.2 steps at d=0 and
+  0.08 swept — the 1/8 pool at 3e-4 costs a little per update and ~8× less
+  data; the lr arms cost nothing per update.
+- `h100_d5`'s exploit lock came late (u~300) but it is now on the same
+  trajectory as h100 was; its d=10 tail is what round 3 will read.
+
 Timing smokes before the wave (8 updates each, 3e-4, target_kl 0.02):
 22700947 (`se_b8`) 36 s/u, 22700949 (20 envs, 10×8) 30 s/u with the KL stop
 firing at step 2 every update, 22700951 (10 envs, 10×8) 12.4 s/u. The
