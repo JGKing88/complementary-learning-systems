@@ -1205,3 +1205,42 @@ To read: `heldout@90` at u = 1000–3000 (the decode forming; the MLP
 alone: 1° by u = 600); then `heldout` (θ = 0) by episode and by step
 after the mix begins — the frozen-decode run A reached 14° by e19 and
 56° at s1.
+
+**From-scratch FINALS (8000 updates). Yes — it works.** Held-out envs,
+held-out lattice θ = 0:
+
+| run | R1 (no history) | R2 e0 / e2 / e9 / e19 | e10–19 mean | ep0 s1 / s2 / s5 / s10 |
+|---|---|---|---|---|
+| **S1** joint, encoder lr 1e-4 (22749410) | 93.7 | 22.9 / 18.9 / 16.5 / 15.2 | **15.7** | **31 / 26 / 15 / 12.5** |
+| **S2** joint + detached encoder (22749423) | 95.7 | 41.3 / 21.7 / 11.4 / 9.8 | **10.3** | 81 / 67 / 41 / 26 |
+| run A, frozen `dist@90` decode, s0 / s1 | 150 / 139 | 32 / 27 / 15 / 14.5 | 14.2 / 14.7 | 56 / 42 / 22 / 18 |
+
+Both learned the decode during the 3000-update warm-up (`heldout@90`
+2.0° and 0.5° at u = 3000, readout 2 there 6°, |θ − 90°| elsewhere: the
+memoryless signature) and then, once the lattices varied, the frame
+in-context: S1 was at 15.3° by e19 within 1000 updates of the switch.
+Trained orientations at the end: 8.6 / 7.2 (S1), 9.0 / 7.4 (S2). No
+collapse in either (readout 1 differs across sets throughout; loss
+−1.7 to −1.9). The two variants trade off: with the GRU's gradient
+reaching the encoder (S1) the network measures the frame in one step
+(31° at s1, twice as fast as the frozen decode) and plateaus at ~15°;
+with it cut off (S2) the per-step measurement is slower but the
+lifetime estimate reaches 10°, the best of any run. Readout 1 sits at
+~94° rather than the frozen run's 150° because half the training
+lifetimes were the anchor orientation: with no history the network
+assumes the anchor, which at θ = 0 is 90° off.
+
+**What made the difference from the 09-13 joint runs:** a 10× lower
+learning rate for the encoder (`--encoder_lr 1e-4`), and the warm-up
+on a fixed orientation so the decode exists before undetermined data
+arrives. Everything else was already in place. So the earlier "no
+network learned both halves from scratch" was an optimiser statement:
+with the encoder on its own learning rate, the joint MLP → GRU learns
+the decode and the in-context frame together, and matches or beats the
+frozen-decode result.
+
+*Caveat kept honest:* both from-scratch runs keep 50% anchor lifetimes
+after the warm-up; the anchor is a *training* orientation and the test
+lattice stays unseen, but a run with mix 0 after the warm-up (pure
+random lattices) was not repeated with the encoder lr fix — the
+09-13 attempt at it failed for the lr reason, not the mix.
