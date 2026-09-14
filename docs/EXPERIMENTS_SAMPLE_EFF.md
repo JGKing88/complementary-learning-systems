@@ -22,8 +22,8 @@ Read §0 to resume.
 | **Baseline cost** | **928,000 episodes / 185.6 M env-steps** at u725 (1,280 episodes × 200 steps per update; no rollout in this recipe ends early — see §6). Its own training-eval window first clears the §2 screen at **u625 = 800k episodes / 160 M env-steps**. |
 | **Where the samples went** | 16 gradient steps per update on ~64k-transition minibatches, every sample touched 4× — ~60× more data per gradient step than a textbook PPO update. That is the lever wave S1 pulls. |
 | **Runs** | All on `ou_bcs_normal`. Completed their 4000-update schedules: `se_n10_b8_lr1` (22701302), `se_b8_lr1_h100` (22701304), `se_n10_b8_lr1_h100` (22707208). Ran to the wall: `se_b8_lr1` (22701298, the delivered arm), `se_h100_d5` (22707437), `se_lr1_e75` (22715546), `se_lr1_d5_e75` (22715547). Cancelled with checkpoints kept: `se_n5_b8_lr1` (40 traj too few), `se_b8_akl` (band too low), `se_b4_lr1` (n10 ≥ b4), `se_b8` (d0_base's optimizer on 1/8 data ≈ d0_base at matched updates), `se_b8_lr03` (3e-5 too slow late). |
-| **RESULT** | **§5.5: `se_b8_lr1` u1500 at 240k episodes / 48M env-steps passes every held-out probe row against d0_base u725 (928k / 185.6M) — 3.9× fewer samples; explore efficiency better at both levels.** u1000 at 160k equals d0_base u600 on every row (4.8×) and u725 on all but a 2×-within-noise tail (5.8×); the exploit half alone is matched at 80–92k (10×; 20× on env-steps with 100-step rollouts). Delivered: `agent_ckpts/navigate_navp2_se_b8_lr1_s42_22701298/navigate_u1500.pt`. Recipe change: `batch_envs` 64 → 8, PPO lr 1e-4 × 10 epochs × 8 minibatches, `target_kl` 0.1. |
-| **Curves page** | [15cc014f](https://claude.ai/code/artifact/15cc014f-fc15-4432-9f7f-8f7e41be1bc7) — success / path optimality / swept coverage for `se_b8_lr1` (deterministic and sampled) and `d0_base` (sampled), by update, episodes and env-steps. Sources `results/nav_tri_probe/*_training_curve.png`; sampled rows from `reeval_series.py`. |
+| **RESULT** | **`se_b8_lr1` — d0_base with `batch_envs` 64→8 and PPO lr 1e-4 × 10 epochs × 8 minibatches (`target_kl` 0.1) — is on its plateau on every mean-level metric by u600–1000 = 96–160k episodes, 6–10× below d0_base's 928k (curves page [15cc014f](https://claude.ai/code/artifact/15cc014f-fc15-4432-9f7f-8f7e41be1bc7)). On the held-out probe u1000 (160k / 32M env-steps, 5.8×) matches d0_base u725 on every row but the d=10 collapsed tail, 6 vs 3 of 144 — a rare-event count the probe cannot resolve below ~2× (the same d0_base checkpoint read 2–4 across rounds). u1500 (240k, 3.9×) passes even that. Exploit half alone at 80–92k (10×). Delivered: `agent_ckpts/navigate_navp2_se_b8_lr1_s42_22701298/navigate_u1000.pt` (u1500 if the tail count must also match). |
+| **Curves page** | [15cc014f](https://claude.ai/code/artifact/15cc014f-fc15-4432-9f7f-8f7e41be1bc7) — success / path optimality / swept coverage for `se_b8_lr1` and `d0_base`, each deterministic and sampled, by update, episodes and env-steps. Sources `results/nav_tri_probe/*_training_curve.png`; sampled rows from `reeval_series.py`. |
 | **Tools** | `analysis/nav_tri/sample_eff_curve.py` (eval series vs cumulative samples, window means, first-clear of the screen); the wave-1 probe pipeline `hopfield_nav/run_wave1_final.sh` pattern for the verdict. Trainer now logs exact `episodes` / realized `env_steps` per update and per eval, and writes both into every checkpoint. |
 
 ---
@@ -537,17 +537,24 @@ Ten checkpoints in one process; this run's d0_base u725 tail read 4 of 144.
    in rounds 2–4: the ten-checkpoint list shifts the sampled stream, as the
    wave-1 caveat says. Rank tails within a round only.
 
-**Final headline.** The d0_base recipe with `batch_envs` 8 instead of 64 and
-PPO at lr 1e-4 × 10 epochs × 8 minibatches (`target_kl` 0.1) — nothing else
-changed — reaches **d0_base u725 on every held-out probe metric at 240k
-episodes / 48M env-steps (3.9× fewer)**, reaches **d0_base u600 on every
-metric at 160k (4.8× vs u600; 5.8× vs u725 with a 2×-within-noise tail)**,
-and matches the **exploit half alone at 80–92k (10×; 20× on env-steps with
-100-step rollouts)**. The residual factor between 160k and 240k is the
-d=10 collapsed tail, the slowest-converging quantity for d0_base too. The
-delivered checkpoint is
-`agent_ckpts/navigate_navp2_se_b8_lr1_s42_22701298/navigate_u1500.pt`
-(u2000 for margin; u1000 for the 5.8× near-pass).
+**Final headline (revised 2026-09-14 after the curves, Jack: "se_b8_lr1
+honestly stops improving at like 1000 updates").** The d0_base recipe with
+`batch_envs` 8 instead of 64 and PPO at lr 1e-4 × 10 epochs × 8 minibatches
+(`target_kl` 0.1) — nothing else changed — is on its plateau on every
+mean-level metric (success, steps, × optimal, explore efficiency at d=0 and
+d=10, on the training eval and on the probe) by **u600–1000 = 96–160k
+episodes, 6–10× below d0_base's 928k**, and is flat from there to 416k. On
+the probe, **u1000 (160k / 32M env-steps, 5.8×) matches d0_base u725 on every
+row but the d=10 collapsed tail** — 6 vs 3 of 144, a rare-event count the
+probe cannot resolve below ~2× (d0_base u725 itself read 2, 3 and 4 across
+rounds; Fisher p ≈ 0.5). **u1500 (240k, 3.9×) passes even that row** (5 vs 4),
+and the exploit half alone is matched at 80–92k (10×; 20× on env-steps with
+100-step rollouts). The 3.9× in §5.5 was the pre-registered "tail ≤ 2×" rule
+applied past what the instrument supports; **5.8× at 160k is the defensible
+headline**, 3.9× the reading where even the tail count is within 1.25×.
+Delivered checkpoint:
+`agent_ckpts/navigate_navp2_se_b8_lr1_s42_22701298/navigate_u1000.pt`
+(u1500 if the tail count must also match; u2000 for margin).
 
 **Wall-clock caveat, stated because it is the opposite sign to the sample
 result:** an update's cost is the serial rollout loop (envs × T × ~8 ms),
