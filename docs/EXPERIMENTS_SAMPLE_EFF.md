@@ -746,3 +746,35 @@ explore 0.48 — the strict reading's shape is on record) for
 Sample-lean redraw arms at 17:20: `b32_g` u500 (32k episodes) 1.00/0.98,
 14.0/16.2 steps, swept 0.46; `b16_g` u400 (12.8k) 1.00/0.99, 17.6/18.2,
 swept 0.29. Neither is below the pool floor on one env.
+
+### 7.6 18:30 — explore follows explore DATA per update; the 3:1 mix is the arm
+
+| arm | u | episodes | succ 0/10 | steps 0/10 | swept 0/10 |
+|---|---|---|---|---|---|
+| **`one_k4_g_e75` s42** | 675 | 173k | 1.00/0.98 | 14.0/16.4 | **0.55/0.52** |
+| `one_k4_g_e75` s43 | 400 | 102k | 1.00/0.98 | 17.5/18.6 | 0.46/0.43 |
+| `one_k4_g` s43 (1:1) | 1000 | 256k | 1.00/0.99 | **11.3/13.6** | 0.51/0.49 |
+| `one_k2_g` (1:1) | 1875 | 240k | 1.00/0.99 | 13.6/15.1 | 0.32/0.23 |
+| `one_k2_b32_g` | 1400 | 90k | 1.00/1.00 | 12.6/13.5 | 0.26/0.26 |
+| `one_k2_b16_g` | 1400 | 45k | 1.00/1.00 | 13.9/15.3 | 0.29/0.24 |
+| `one_k2_g_od3` | 525 | 67k | 1.00/1.00 | 13.6/15.0 | 0.12/0.23 |
+
+Ordering by explore trajectories per update — 32 (b16), 64 (k2, b32),
+128 (k4 1:1), 192 (e75) — is the ordering of the explore window: 0.25,
+0.25–0.35, 0.51, 0.55. The exploit half is indifferent (every redraw arm
+reaches ≤13/14 steps, the 32-trajectory pool included). Obs dropout 0.3
+did nothing for explore (0.12/0.23 at u525): the landmark story was not
+the binding one — the trunk interference / explore pool size was.
+
+The overlay (`results/nav_tri_probe/one_vs_d0_by_episodes.png`) shows the
+mirror image on the fixed-goal arm: its explore generalizes (0.45–0.48 at
+u700–900) while its exploit collapses. Explore rollouts are built the same
+way in both, so the difference is what the exploit half does to the shared
+trunk: a strong general follow-`q` captures explore; a goal-specific one
+leaves it alone (and does not transfer).
+
+`e75` s42 clears the explore bar at 173k with exploit two steps short and
+falling; `k4_g` s43 has the exploit bar and is one point short on explore.
+Both have ~5 h to the wall. Cancelled `od3` (22762039) and the plateaued
+`b32_g` (22761191) for two sample-lean 3:1 arms: `one_k4_b16_g_e75` (64
+episodes/update, 48 explore) and `one_k4_b32_g_e75` (128, 96), 5 h 20 wall.

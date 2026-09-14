@@ -1781,6 +1781,11 @@ case "$VARIANT" in
           # and it had 64 trajectories per update -- this gives it 192.
           one_k4_g_e75) ENV_REPEATS=4; REDRAW_GOAL_PER_ROLLOUT=1
                         [ -z "${SCHEDULE_SET:-}" ] && SCHEDULE='interleave:4000,empty_frac=0.75' ;;
+          # sample-lean 3:1 arms: 64 / 128 episodes per update.
+          one_k4_b16_g_e75) ENV_REPEATS=4; BATCH_ENVS=16; REDRAW_GOAL_PER_ROLLOUT=1
+                        [ -z "${SCHEDULE_SET:-}" ] && SCHEDULE='interleave:4000,empty_frac=0.75' ;;
+          one_k4_b32_g_e75) ENV_REPEATS=4; BATCH_ENVS=32; REDRAW_GOAL_PER_ROLLOUT=1
+                        [ -z "${SCHEDULE_SET:-}" ] && SCHEDULE='interleave:4000,empty_frac=0.75' ;;
           one_k2_g_od3) ENV_REPEATS=2; REDRAW_GOAL_PER_ROLLOUT=1; OBS_DROPOUT=0.3 ;;
           one_k2_g_od5) ENV_REPEATS=2; REDRAW_GOAL_PER_ROLLOUT=1; OBS_DROPOUT=0.5 ;;
           one_k4_b8_g) ENV_REPEATS=4; BATCH_ENVS=8; REDRAW_GOAL_PER_ROLLOUT=1 ;;
