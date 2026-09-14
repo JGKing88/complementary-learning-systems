@@ -461,6 +461,10 @@ def run_navigate(
                     regime = (exploit_regime if is_pre[slot]
                               else explore_regime)
                     pre_flags.append(bool(is_pre[slot]))
+                    # Before the spec: the exploit regime reads
+                    # `env.goal_location` when it builds the memory.
+                    if getattr(cfg, "redraw_goal_per_rollout", False):
+                        env.reset_goal()
                     spec = regime.spec(w_idx, world, local_idx, env, env_offset,
                                        knobs)
                     # The collector reads novelty off cfg and the goal reward
@@ -954,6 +958,7 @@ CFG_FIELDS: dict[str, tuple[str, ...]] = {
     "schedule": ("schedule",),
     "regime_assignment": ("regime_assignment",),
     "env_repeats": ("env_repeats",),
+    "redraw_goal_per_rollout": ("redraw_goal_per_rollout",),
     "novelty_anneal": ("novelty_anneal",),
     "epsilon_explore": ("epsilon_explore",),
     "epsilon_anneal_updates": ("epsilon_anneal_updates",),
@@ -1510,6 +1515,12 @@ def build_parser() -> argparse.ArgumentParser:
                         " one-env run at empty_frac 0.5 has no explore slot;"
                         " K repeats split envs x K slots instead and the same"
                         " env is collected K times in one update. Default 1.")
+    p.add_argument("--redraw_goal_per_rollout", action=argparse.BooleanOptionalAction,
+                   default=None,
+                   help="Draw a fresh goal cell for each train env before every"
+                        " rollout slot, from the env's own RNG. Default: one"
+                        " goal per env for the whole run. Legacy placement path"
+                        " only -- under --env_generator use --refresh_goal.")
     p.add_argument("--ppo_clip_coef", type=float, default=None,
                    help="Override PPOConfig.clip_coef (default 0.2). Lower "
                         "values (0.1-0.15) limit policy update size, helping "

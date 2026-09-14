@@ -164,6 +164,7 @@ _bool persistence_realized            "${PERSISTENCE_REALIZED:-}"
 # --- Explore-regime behavior -----------------------------------------------
 _arg  regime_assignment               "${REGIME_ASSIGNMENT:-}"
 _arg  env_repeats                     "${ENV_REPEATS:-}"
+_bool redraw_goal_per_rollout         "${REDRAW_GOAL_PER_ROLLOUT:-}"
 _bool explore_goals_off               "${EXPLORE_GOALS_OFF:-}"
 _bool explore_ends_on_goal            "${EXPLORE_ENDS_ON_GOAL:-}"
 _arg  epsilon_explore                 "${EPSILON_EXPLORE:-}"

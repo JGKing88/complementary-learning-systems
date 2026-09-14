@@ -482,6 +482,14 @@ class TrainConfig:
     # regimes meet in the same PPO update exactly as they do across 20 envs.
     # 1 (default) is the historical loop.
     env_repeats: int = 1
+    # Re-draw each train env's goal cell before every rollout (both regimes).
+    # The historical loop holds one goal per env for the whole run, so the
+    # exploit half of a ONE-env run sees a single goal cell; this draws a
+    # fresh one from the env's own RNG per rollout slot. The legacy placement
+    # path has no held-out goal cells to protect (val is a different env),
+    # which is what made `--randomize_goal_per_rollout` wrong under the env
+    # generator and is why this is a separate, legacy-path-only knob.
+    redraw_goal_per_rollout: bool = False
     novelty_anneal: bool = False            # linearly scale novelty_reward -> 0 across the whole run
     epsilon_explore: float = 0.0            # per-step chance of a uniform-random move, explore regime only
     epsilon_anneal_updates: int = 0         # linearly scale epsilon_explore -> 0 over this many updates; 0 = constant

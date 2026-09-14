@@ -1760,6 +1760,16 @@ case "$VARIANT" in
           one_k2_b16)  ENV_REPEATS=2; BATCH_ENVS=16 ;;
           one_k4_b8)   ENV_REPEATS=4; BATCH_ENVS=8 ;;
           one_k2_b16_h100) ENV_REPEATS=2; BATCH_ENVS=16; STEPS_PER_ROLLOUT=100 ;;
+          # `_g`: same single arena, a fresh goal cell every rollout slot.
+          # The historical loop holds ONE goal per env for the run (and the
+          # evaluator holds one per val env), so the fixed-goal arms above
+          # are the strict reading and these are the "as good as possible"
+          # reading: exploit sees goals everywhere in the arena, not one cell.
+          one_k4_g)    ENV_REPEATS=4; REDRAW_GOAL_PER_ROLLOUT=1 ;;
+          one_k2_g)    ENV_REPEATS=2; REDRAW_GOAL_PER_ROLLOUT=1 ;;
+          one_k2_b8_g) ENV_REPEATS=2; BATCH_ENVS=8; REDRAW_GOAL_PER_ROLLOUT=1 ;;
+          one_k2_b16_g) ENV_REPEATS=2; BATCH_ENVS=16; REDRAW_GOAL_PER_ROLLOUT=1 ;;
+          one_k4_b8_g) ENV_REPEATS=4; BATCH_ENVS=8; REDRAW_GOAL_PER_ROLLOUT=1 ;;
           *) echo "ERROR: unknown ONE variant $VARIANT" >&2; exit 1 ;;
         esac
         ;;
@@ -1825,6 +1835,7 @@ echo "=== nav_p2 variant=$VARIANT seed=$SEED ==="
 echo "    schedule   : $SCHEDULE"
 echo "    rollout    : ${ENVS_PER_WORLD} envs x ${BATCH_ENVS} batch x ${STEPS_PER_ROLLOUT} steps"
 [ -n "${ENV_REPEATS:-}" ] && echo "    repeats    : ${ENV_REPEATS} rollouts per env per update (regime slots = envs x repeats)"
+[ -n "${REDRAW_GOAL_PER_ROLLOUT:-}" ] && echo "    goals      : re-drawn per rollout slot (redraw_goal_per_rollout=${REDRAW_GOAL_PER_ROLLOUT})"
 echo "                 pool=$((ENVS_PER_WORLD * BATCH_ENVS)) trajectories, \
 $((ENVS_PER_WORLD * BATCH_ENVS * STEPS_PER_ROLLOUT)) env-steps/update, \
 $((ENVS_PER_WORLD * STEPS_PER_ROLLOUT)) serial calls/update"
