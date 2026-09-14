@@ -100,6 +100,10 @@ def main() -> None:
                         "(B2-mix, sec 4B.8, at 0; the anchor-mix foothold of sec 8 at a training theta)")
     p.add_argument("--lattice_mix_theta_deg", type=float, default=0.0,
                    help="orientation of the mixed-in fixed lattice; 0 = the standard lattice")
+    p.add_argument("--lattice_mix_warmup_updates", type=int, default=0,
+                   help="for the first N updates every new lifetime is the mixed-in fixed lattice "
+                        "(mix 1.0), so the decode forms before undetermined data arrives (plan "
+                        "sec 8 curriculum); after N the configured --lattice_mix_standard_frac")
     p.add_argument("--lattice_translate", action=argparse.BooleanOptionalAction, default=True,
                    help="also translate the lattice by a uniform random shift per lifetime, so the "
                         "absolute phases of a training env cannot pin theta through memorised "
@@ -310,6 +314,10 @@ def main() -> None:
     t_train = time.time()
     order = np.arange(len(vecs))
     for u in range(1, args.n_updates + 1):
+        if lattice is not None and args.lattice_mix_warmup_updates > 0:
+            # Warm-up curriculum: every lifetime that starts during the first N
+            # updates is on the fixed mixed-in lattice; then the configured mix.
+            lattice.mix = 1.0 if u <= args.lattice_mix_warmup_updates else float(args.lattice_mix_standard_frac)
         pick = order[((u - 1) * args.envs_per_update) % len(vecs):][:args.envs_per_update]
         if len(pick) < args.envs_per_update:
             pick = np.concatenate([pick, order[:args.envs_per_update - len(pick)]])
