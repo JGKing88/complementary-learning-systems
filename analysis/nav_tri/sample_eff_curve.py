@@ -56,6 +56,12 @@ def parse_header(path: str) -> dict:
     envs, batch, steps = (int(g) for g in m.groups())
     m2 = re.search(r"empty_frac=([0-9.]+)", head)
     emp = float(m2.group(1)) if m2 else 0.5
+    # `--env_repeats K` collects each env K times per update; the banner
+    # says so on its own line. Folded into `envs` because that is the count
+    # of rollouts per update, which is all the reconstruction uses it for.
+    m3 = re.search(r"repeats\s*:\s*(\d+) rollouts per env", head)
+    if m3:
+        envs *= int(m3.group(1))
     return {"envs": envs, "batch": batch, "steps": steps, "empty_frac": emp}
 
 
