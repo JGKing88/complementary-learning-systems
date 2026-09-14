@@ -1136,3 +1136,25 @@ data (collapses to a constant — the GRU's BPTT gradient into the shared
 encoder); a detached encoder on mixed data (collapses on the
 undetermined half). The decode has to be learned memorylessly, once,
 and given; the recurrence then learns the frame from lifetimes.
+
+**`rec` with the frozen decode, FINAL (22704382).** Held-out lattice,
+by episode: **100.9 → 97.9 → 95.8 → 91.5 → 90.9 → 88.9 → 85.7 → 85.6 →
+82.9 → 78.3 → 75.7 → 72.0 → 69.6 → 65.5 → 61.9 → 58.1 → 55.0 → 53.7 →
+49.8 → 44.7**; episode 0 by step flat at 98–105; readout 1 102.6. On
+the trained orientations 107 → 80 (θ = 45) and 104 → 77 (θ = 90). The
+third shape of the plan's §4.4 table, unblurred: **rises across
+episodes, not within** — without `prev_action` the network cannot read
+the frame from one `(Δgbook, action)` pair (it knows its policy mean,
+not the action it sampled), so it integrates evidence across the
+lifetime and needs ~20 episodes to get where `full` gets in ten steps.
+Its training was also unstable at lr 1e-3 (33° at e19 by u = 1000, then
+lost — 122° at u = 2000, 98–105 through u = 6000 — and back to 45° after
+the step at 5600; final loss 1.96 against `full`'s −1.77). `prev_action`
+is what turns frame estimation from a lifetime-scale integration into a
+one-step measurement, as the estimator's algorithm says it should.
+
+**Seed 1 of A (22704383) at u = 1000 / 2000:** held-out lattice by
+episode 66 → 32 → 22 → 19 → 16 → 15.1, then 71 → 37 → 25 → 20 → 16 →
+14.9; episode 0 by step at u = 2000: 102 → 83 → 74 → 70 → 56 → 49 (s10).
+Replicates seed 0 at the same points (18.7 / 15.7 at e19; 68 / 30 at
+s10). Running to 8000.
