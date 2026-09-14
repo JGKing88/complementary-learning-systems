@@ -36,7 +36,13 @@ without `align_true`: a ratio whose denominator is only defined on a subset.
 
 Usage:
     python -m analysis.nav_tri.training_curve \\
-        --log /path/nav_p2_<jobid>.out --out_prefix /path/prefix
+        --log /path/nav_p2_<jobid>.out --out_prefix /path/prefix \\
+        [--x update|episodes|env_steps] [--reliable_at 0.99]
+
+`--x episodes` / `--x env_steps` put cumulative SAMPLES on the abscissa (the
+sample-efficiency question of docs/EXPERIMENTS_SAMPLE_EFF.md); the shading
+and the "reliable from" readout are then in those units too. Output name gets
+`_by_<x>` unless --suffix says otherwise.
 """
 from __future__ import annotations
 
@@ -113,11 +119,47 @@ def first_reliable(s: dict, thresh: float) -> float | None:
     return None
 
 
+# x-axis choices. "update" is the historical one; the two sample axes read
+# the `[navigate_uN] samples={...}` lines (trainer and reeval_series logs from
+# 2026-09-13) or, for older logs, the exact ceiling envs x batch (x T) per
+# update -- see sample_eff_curve for why the ceiling is exact for this recipe.
+X_LABELS = {"update": "training update",
+            "episodes": "episodes (rollouts) consumed",
+            "env_steps": "environment steps consumed"}
+
+
+def x_axis(log: dict, path: str, which: str) -> tuple[dict[int, float], str]:
+    """{update: x} and an axis label for --x."""
+    if which == "update":
+        return {u: float(u) for u in log}, X_LABELS[which]
+    from .sample_eff_curve import (parse_header, parse_samples,
+                                   reconstruct_samples)
+    samples = parse_samples(path)
+    recon = not samples
+    if recon:
+        samples = reconstruct_samples(log, parse_header(path))
+    return ({u: float(samples[u][which]) for u in log if u in samples},
+            X_LABELS[which] + (" (exact ceiling)" if recon else ""))
+
+
 def render(sets: list[dict], out_prefix: str, thresh: float,
-           overlay: dict | None = None) -> None:
+           overlay: dict | None = None, xmap: dict[int, float] | None = None,
+           xlabel: str = "training update") -> None:
     import matplotlib
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
+
+    if xmap is not None:
+        # Re-express every series' abscissa; `first_reliable` and the shading
+        # then work in the same units, so a band drawn from a sample count is
+        # read against a sample count.
+        sets = [dict(s, u=np.array([xmap[int(u)] for u in s["u"]]))
+                for s in sets]
+        if overlay:
+            overlay = dict(overlay,
+                           u=[xmap[int(u)] for u in overlay["u"]])
+    span = float(sets[0]["u"][-1] - sets[0]["u"][0]) if len(sets[0]["u"]) > 1 else 1.0
+    pad = 0.004 * span   # the old "-5 / +10 updates" offsets, unit-free
 
     fig, ax = plt.subplots(figsize=(9.5, 5.2))
     styles = {0: (":", 1.8, 0.55), 5: ("--", 1.8, 0.75), 10: ("-", 2.4, 1.0)}
@@ -131,12 +173,12 @@ def render(sets: list[dict], out_prefix: str, thresh: float,
         if s["n_dist"] == max(x["n_dist"] for x in sets):
             shade_to = first_reliable(s, thresh)
     if shade_to is not None and shade_to > sets[0]["u"][0]:
-        ax.axvspan(sets[0]["u"][0] - 5, shade_to, color="0.5", alpha=0.13,
+        ax.axvspan(sets[0]["u"][0] - pad, shade_to, color="0.5", alpha=0.13,
                    zorder=0, linewidth=0)
         # Anchored INSIDE the axes to the right of the band. Anchoring it to
         # the band's left edge puts it outside the figure whenever the band is
         # narrow, which is the usual case once a run converges early.
-        ax.text(shade_to + 10, 0.90,
+        ax.text(shade_to + 2 * pad, 0.90,
                 "← success < %.2f in the shaded band: path optimality there is\n"
                 "   a mean over the trials that SUCCEEDED, i.e. the easy ones,\n"
                 "   so it is not comparable with the converged value" % thresh,
@@ -154,7 +196,14 @@ def render(sets: list[dict], out_prefix: str, thresh: float,
                 markersize=5.5, markerfacecolor="white", markeredgewidth=1.6,
                 zorder=5, label="path optimality — exact, per-episode probe")
 
-    ax.set_xlabel("training update")
+    ax.set_xlabel(xlabel)
+    if xmap is not None:
+        # Sample counts run to 10^5-10^8; plain integers with separators read
+        # better than an offset/scientific axis.
+        from matplotlib.ticker import FuncFormatter
+        ax.xaxis.set_major_formatter(FuncFormatter(
+            lambda v, _: f"{v / 1e6:g}M" if v >= 1e6 else
+                         (f"{v / 1e3:g}k" if v >= 1e3 else f"{v:g}")))
     ax.set_ylabel("all three metrics are fractions in [0, 1]")
     ax.set_ylim(0.0, 1.045)
     ax.axhline(1.0, linestyle=":", linewidth=1.0, color="black", alpha=0.6)
@@ -180,6 +229,13 @@ def main() -> None:
     p.add_argument("--overlay_json", default=None,
                    help="{'u': [...], 'optimality': [...]} of exact "
                         "per-episode path_efficiency, drawn as markers.")
+    p.add_argument("--x", choices=tuple(X_LABELS), default="update",
+                   help="x-axis: training update (default), or cumulative "
+                        "episodes / env_steps from the log's samples= lines "
+                        "(older logs: the exact ceiling per update).")
+    p.add_argument("--suffix", default=None,
+                   help="output name suffix (default: '' for --x update, "
+                        "else '_by_<x>'), before '_training_curve'.")
     a = p.parse_args()
 
     log = parse_log(a.log)
@@ -194,7 +250,12 @@ def main() -> None:
         print("    %-14s %s" % ("final", " ".join(
             "%s %.3f" % (k, s[k][-1]) for k in ("success", "optimality", "swept"))))
     ov = json.load(open(a.overlay_json)) if a.overlay_json else None
-    render(sets, a.out_prefix, a.reliable_at, ov)
+    xmap, xlabel = (None, X_LABELS["update"]) if a.x == "update" \
+        else x_axis(log, a.log, a.x)
+    suffix = a.suffix if a.suffix is not None else (
+        "" if a.x == "update" else f"_by_{a.x}")
+    render(sets, a.out_prefix + suffix, a.reliable_at, ov, xmap=xmap,
+           xlabel=xlabel)
 
 
 if __name__ == "__main__":
