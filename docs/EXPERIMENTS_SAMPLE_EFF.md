@@ -22,7 +22,7 @@ Read §0 to resume.
 | **Baseline cost** | **928,000 episodes / ~103.5 M env-steps** at u725 (1,280 episodes per update). Its own training-eval window first clears the §2 screen at **u625 = 800k episodes / ~91 M env-steps**. |
 | **Where the samples went** | 16 gradient steps per update on ~64k-transition minibatches, every sample touched 4× — ~60× more data per gradient step than a textbook PPO update. That is the lever wave S1 pulls. |
 | **Running** | Wave S1 (§3) on `ou_bcs_normal`, 24 h: `se_b8`, `se_b8_lr1`, `se_b8_lr03`, `se_n10_b8_lr1`, `se_b8_lr1_h100`, plus S2 `se_n10_b8_lr1_h100` (22707208) and `se_h100_d5`. Cancelled with checkpoints kept: `se_n5_b8_lr1` (40 traj too few), `se_b8_akl` (band too low), `se_b4_lr1` (n10 ≥ b4). |
-| **Result so far** | **§5.1: exploit half matched at 92k episodes / 9.2M env-steps (10× / 11×), explore d=0 within noise; explore d=10 collapsed tail 0.14 vs 0.021 — not yet.** |
+| **Result so far** | **§5.2: `se_b8_lr1` u500 at 80k episodes (11.6× fewer) matches d0_base u725 on every probe row except the d=10 collapsed tail (8 vs 3 of 144 episodes). Exploit half matched at 92k in §5.1 already. The tail closes with updates (h100: 0.14 → 0.04 by u1000).** |
 | **Tools** | `analysis/nav_tri/sample_eff_curve.py` (eval series vs cumulative samples, window means, first-clear of the screen); the wave-1 probe pipeline `hopfield_nav/run_wave1_final.sh` pattern for the verdict. Trainer now logs exact `episodes` / realized `env_steps` per update and per eval, and writes both into every checkpoint. |
 
 ---
@@ -335,6 +335,50 @@ floor raised to 5 (U[5,10]; exploit unchanged). Half of the U[0,10] explore
 episodes carry ≤5 patterns and teach nothing about the tail. `b4` cancelled
 to free the slot (its question is answered: n10 ≥ b4 per sample at half the
 wall-clock). Probe round 2 at u~1000 of h100 / n10 / the combo arm.
+
+### 5.2 Round 2 (job 22710570): `se_b8_lr1` u500 at 80k episodes is one row short
+
+Same protocol. × optimal = steps ÷ ((start − 1) ÷ realized speed).
+
+**Exploit** (d = 0 / 5 / 10):
+
+| checkpoint | episodes / env-steps | success | steps | × opt | `align_true` |
+|---|---|---|---|---|---|
+| **lr1 u500** | **80k / 16.0M** | 1.000 / 0.990 / 1.000 | 11.79 / 12.43 / 12.16 | 1.17 / 1.18 / 1.19 | 0.90 / 0.90 / 0.89 |
+| h100 u800 | 128k / 12.8M | 1.000 / 0.995 / 1.000 | 12.12 / 12.94 / 12.75 | 1.18 / 1.20 / 1.22 | 0.89 / 0.88 / 0.87 |
+| h100 u1000 | 160k / 16.0M | 1.000 / 1.000 / 1.000 | 12.52 / 13.23 / 13.49 | 1.22 / 1.22 / 1.29 | 0.87 / 0.86 / 0.83 |
+| n10 u1000 | 80k / 16.0M | 1.000 / 1.000 / 1.000 | 11.87 / 12.49 / 12.57 | 1.16 / 1.16 / 1.21 | 0.91 / 0.91 / 0.88 |
+| d0_base u725 | 928k / 103.5M | 1.000 / 0.995 / 0.995 | 11.66 / 13.29 / 11.99 | 1.16 / 1.26 / 1.18 | 0.91 / 0.85 / 0.90 |
+
+**Explore**:
+
+| checkpoint | d=0 swept / eff / tail | d=10 swept / eff / **tail** / chase_t |
+|---|---|---|
+| **lr1 u500** | **0.609 / 0.974 / 0.000** | **0.584 / 0.939 / 0.056** (8 of 144) / 0.57 |
+| h100 u800 | 0.589 / 0.946 / 0.000 | 0.546 / 0.888 / 0.090 / 0.45 |
+| h100 u1000 | 0.563 / 0.910 / 0.000 | 0.547 / 0.883 / 0.042 / 0.53 |
+| n10 u1000 | 0.538 / 0.856 / 0.000 | 0.480 / 0.782 / 0.076 / 0.59 |
+| d0_base u725 | 0.604 / 0.950 / 0.000 | 0.592 / 0.937 / 0.021 (3 of 144) / 0.46 |
+
+1. **`se_b8_lr1` u500 — 80k episodes, 11.6× below d0_base u725 — matches or
+   beats it on every row but one.** Exploit: steps within 0.2 at d=0 and
+   d=10 and 0.9 better at d=5, × optimal 1.17–1.19 vs 1.16–1.26,
+   `align_true` equal. Explore: efficiency 0.974 / 0.939 against
+   0.950 / 0.937, d=0 tail 0. The one open row is the **d=10 collapsed
+   tail: 8 episodes of 144 against 3** (0.056 vs 0.021, Fisher p ≈ 0.12;
+   the wave-1 caveat puts a < 2× tail difference inside probe noise and this
+   is 2.7×). Not declared; the arm is still training.
+2. **The tail does close with updates.** h100 went 0.139 (u575) → 0.090
+   (u800) → 0.042 (u1000) — but its d=10 directness went the other way
+   (× optimal 1.20 → 1.29, `align_true` 0.88 → 0.83), the same
+   clean-memory-vs-distractor trade `d0_base` showed between u600 and u725.
+   h100's 100-step rollouts appear to under-train the d=10 exploit half late.
+3. **The 10-env arm has the best exploit half of any candidate** (1.16 /
+   1.16 / 1.21, `align_true` 0.91 / 0.91 / 0.88 — d0_base's numbers) at 80k
+   episodes, and the weakest explore (eff 0.856 / 0.782). Five explore envs
+   per update is enough for exploit and not for coverage.
+4. Round 3 at lr1 u600 / u700, `h100_d5` u600 / u700 and the combo arm at
+   u1200 / u1400, when they exist.
 
 ## 6. Accounting notes
 
