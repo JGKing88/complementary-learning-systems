@@ -22,7 +22,7 @@ Read §0 to resume.
 | **Baseline cost** | **928,000 episodes / ~103.5 M env-steps** at u725 (1,280 episodes per update). Its own training-eval window first clears the §2 screen at **u625 = 800k episodes / ~91 M env-steps**. |
 | **Where the samples went** | 16 gradient steps per update on ~64k-transition minibatches, every sample touched 4× — ~60× more data per gradient step than a textbook PPO update. That is the lever wave S1 pulls. |
 | **Running** | Wave S1 (§3) on `ou_bcs_normal`, 24 h: `se_b8`, `se_b8_lr1`, `se_b8_lr03`, `se_n10_b8_lr1`, `se_b8_lr1_h100`, plus S2 `se_n10_b8_lr1_h100` (22707208) and `se_h100_d5`. Cancelled with checkpoints kept: `se_n5_b8_lr1` (40 traj too few), `se_b8_akl` (band too low), `se_b4_lr1` (n10 ≥ b4). |
-| **Result so far** | **§5.2: `se_b8_lr1` u500 at 80k episodes (11.6× fewer) matches d0_base u725 on every probe row except the d=10 collapsed tail (8 vs 3 of 144 episodes). Exploit half matched at 92k in §5.1 already. The tail closes with updates (h100: 0.14 → 0.04 by u1000).** |
+| **Result so far** | **§5.2–5.3: `se_b8_lr1` at 80–112k episodes (8–12× fewer) matches d0_base u725 on the whole exploit half and on explore efficiency at d=0 and d=10; the one open row is the d=10 collapsed tail, 5–8% for every small-pool arm at ~100k vs d0_base's 1.4–2.1%. Wave S3 (explore-heavy mix) targets it; round 4 calibrates against d0_base u500/u600.** |
 | **Tools** | `analysis/nav_tri/sample_eff_curve.py` (eval series vs cumulative samples, window means, first-clear of the screen); the wave-1 probe pipeline `hopfield_nav/run_wave1_final.sh` pattern for the verdict. Trainer now logs exact `episodes` / realized `env_steps` per update and per eval, and writes both into every checkpoint. |
 
 ---
@@ -379,6 +379,46 @@ Same protocol. × optimal = steps ÷ ((start − 1) ÷ realized speed).
    per update is enough for exploit and not for coverage.
 4. Round 3 at lr1 u600 / u700, `h100_d5` u600 / u700 and the combo arm at
    u1200 / u1400, when they exist.
+
+### 5.3 Round 3 (job 22714339): the tail is real, ~5–8% for every small-pool arm at ~100k
+
+| checkpoint | episodes / env-steps | exploit steps d0/5/10 | × opt | explore d0 eff / tail | explore d10 eff / **tail** (n of 144) |
+|---|---|---|---|---|---|
+| lr1 u600 | 96k / 19.2M | 11.9 / 12.6 / 12.4 | 1.17 / 1.18 / 1.21 | 0.895 / 0 | 0.822 / **0.153** (22) |
+| **lr1 u700** | **112k / 22.4M** | 12.0 / 12.5 / 12.5 | 1.19 / 1.18 / 1.22 | **0.972 / 0** | **0.927 / 0.069** (10) |
+| h100_d5 u600 | 96k / 9.6M | 12.3 / 13.2 / 12.9 | 1.22 / 1.25 / 1.26 | 0.854 / 0.014 | 0.870 / 0.083 (12) |
+| h100_d5 u700 | 112k / 11.2M | 12.2 / 12.8 / 12.1 | 1.21 / 1.21 / 1.19 | 0.934 / 0 | 0.892 / 0.056 (8) |
+| combo u1200 | 96k / 9.6M | 12.5 / 13.4 / 13.0 | 1.24 / 1.26 / 1.27 | 0.927 / 0 | 0.901 / 0.083 (12) |
+| combo u1400 | 112k / 11.2M | 12.1 / 13.6 / 12.7 | 1.20 / 1.28 / 1.23 | 0.926 / 0.007 | 0.900 / 0.083 (12) |
+| d0_base u725 | 928k / 103.5M | 11.7 / 12.3 / 12.4 | 1.16 / 1.17 / 1.21 | 0.945 / 0 | 0.939 / **0.014** (2) |
+
+1. **Every small-pool arm at ~100k episodes matches d0_base u725 on the
+   exploit half and on explore efficiency at both levels** — `lr1` u700 is
+   at 0.972 / 0.927 against 0.945 / 0.939 — **and every one carries a d=10
+   collapsed tail of 5–8%** (8–12 of 144) against d0_base's 2–3. Three
+   rounds, eleven candidate checkpoints, all above; this is not probe noise.
+   `chase_t` 0.55–0.75 in every tail: the corner trap, as in §5.1.
+2. The tail is the **noisiest quantity between adjacent checkpoints** of one
+   run (`lr1` u500 / u600 / u700 = 8 / 22 / 10), which is why the training
+   eval's mean coverage cannot screen it and why a single checkpoint's tail
+   cannot be ranked against another's below ~2×.
+3. **The distractor floor did not close it** (`h100_d5` u700: 8, against
+   `lr1`'s 10 and `h100`'s 6 at u1000). Exposure to many-pattern memories
+   per episode is not the limiting factor.
+4. What is left on the table is exactly d0_base's own slowest-converging
+   quantity (`DUAL_TRAINING` §9.2: "the explore tail had not plateaued when
+   the 6 h wall stopped the run at u730"). Its value at d0_base u500 / u600
+   was never probed; round 4 does that, because if d0_base-u600 (768k
+   episodes) also reads ~5%, `lr1` at 112k matches *it* outright and the
+   residual is d0_base's last 160k episodes of tail closure.
+
+**Action.** Exploit locks at 12k episodes and explore is the bottleneck, so
+the interleave *mix* is the untried lever on the sample axis: `se_lr1_e75`
+(`empty_frac` 0.75, 15 explore + 5 exploit envs per update) and
+`se_lr1_d5_e75`, launched at ~02:15 in place of `se_b8` (conclusion: d0_base's
+optimizer on 1/8 the data ≈ d0_base at matched updates, i.e. the pool was
+never the constraint) and `se_b8_lr03` (3e-5 is too slow late: steps 14.6 /
+17.1 at u825). Round 4 at `lr1` u1000 with d0_base u500 / u600.
 
 ## 6. Accounting notes
 
