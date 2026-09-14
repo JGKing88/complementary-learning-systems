@@ -72,6 +72,9 @@ def main() -> None:
     p.add_argument("--encoder_init", type=str, default="",
                    help="a train_goal_lifetimes --arm dist checkpoint whose trunk (FeedForwardCore, "
                         "same layers/hidden, no norm) initialises the encoder")
+    p.add_argument("--encoder_lr", type=float, default=None,
+                   help="a separate Adam learning rate for the encoder (default: --lr); the "
+                        "from-scratch line uses 1e-4 against the GRU's 1e-3")
     p.add_argument("--encoder_freeze", action="store_true",
                    help="freeze the encoder (with --encoder_init: a pretrained, fixed decode; the "
                         "recurrent net and heads are all that train)")
@@ -244,7 +247,18 @@ def main() -> None:
         trainable = [q for q in agent.parameters() if q.requires_grad]
         print(f"trainable params: {sum(q.numel() for q in trainable):,} of {n_params:,}"
               + (" (encoder frozen)" if args.encoder_freeze else ""))
-        opt = torch.optim.Adam(trainable, lr=args.lr)
+        if args.encoder_lr is not None and hasattr(agent.rnn, "encoder") and not args.encoder_freeze:
+            # A separate learning rate for the encoder: the joint runs of
+            # 2026-09-13 collapsed the encoder under the GRU's BPTT gradient
+            # at the shared lr 1e-3, even on fully determined data.
+            enc_ids = {id(q) for q in agent.rnn.encoder.parameters()}
+            groups = [{"params": [q for q in trainable if id(q) in enc_ids], "lr": args.encoder_lr},
+                      {"params": [q for q in trainable if id(q) not in enc_ids], "lr": args.lr}]
+            print(f"encoder lr {args.encoder_lr} ({sum(q.numel() for q in groups[0]['params']):,} params), "
+                  f"rest lr {args.lr}")
+            opt = torch.optim.Adam(groups, lr=args.lr)
+        else:
+            opt = torch.optim.Adam(trainable, lr=args.lr)
         sched = None
         if args.lr_schedule == "step":
             sched = torch.optim.lr_scheduler.MultiStepLR(
