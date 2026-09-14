@@ -256,12 +256,18 @@ class EncodedRecurrentCore(nn.Module):
     combine per-step features.
     """
 
-    def __init__(self, encoder: nn.Module, core: nn.Module, skip: bool = False) -> None:
+    def __init__(self, encoder: nn.Module, core: nn.Module, skip: bool = False,
+                 detach: bool = False, bypass: int = 0) -> None:
         super().__init__()
         self.encoder = encoder
         self.core = core
         self.skip = bool(skip)
-        self.input_size = int(encoder.input_size)
+        self.detach = bool(detach)
+        # `bypass`: this many LEADING input columns skip the encoder and go to
+        # the core beside the encoded features -- the previous action, which
+        # is not something to decode and which a `dist` trunk never saw.
+        self.bypass = int(bypass)
+        self.input_size = int(encoder.input_size) + self.bypass
         self.hidden_size = int(core.hidden_size)          # the STATE width
         self.num_layers = int(core.num_layers)
         # With `skip` the features handed to the heads are the recurrent
@@ -273,8 +279,14 @@ class EncodedRecurrentCore(nn.Module):
     def forward(
         self, x: torch.Tensor, h: torch.Tensor | None = None,
     ) -> tuple[torch.Tensor, torch.Tensor]:
-        z, _ = self.encoder(x, None)
-        f, h_next = self.core(z, h)
+        z, _ = self.encoder(x[..., self.bypass:], None)
+        zc = torch.cat([x[..., :self.bypass], z], dim=-1) if self.bypass else z
+        # `detach`: the recurrent core reads the features but sends no gradient
+        # back into the encoder, which is then trained through the skip path
+        # alone -- exactly the `dist` arm's dynamics. Seen 2026-09-13: with the
+        # GRU's BPTT gradient reaching the encoder the loss spiked and the
+        # encoder collapsed to a constant even on fully determined data.
+        f, h_next = self.core(zc.detach() if self.detach else zc, h)
         if self.skip:
             f = torch.cat([f, z], dim=-1)
         return f, h_next
@@ -311,12 +323,14 @@ def build_recurrent_core(cfg, input_dim: int) -> nn.Module:
     enc_layers = int(getattr(cfg, "input_encoder_layers", 0))
     core_in = input_dim
     encoder = None
+    bypass = 0
     if enc_layers > 0:
         enc_hidden = int(getattr(cfg, "input_encoder_hidden", cfg.hidden_size))
-        encoder = FeedForwardCore(input_dim, enc_hidden, num_layers=enc_layers,
+        bypass = int(getattr(cfg, "input_encoder_bypass", 0))
+        encoder = FeedForwardCore(input_dim - bypass, enc_hidden, num_layers=enc_layers,
                                   nonlinearity=getattr(cfg, "input_encoder_nonlinearity", "relu"),
                                   dropout=0.0, norm=bool(getattr(cfg, "input_encoder_norm", True)))
-        core_in = enc_hidden
+        core_in = enc_hidden + bypass
     if cell == "gru":
         core = nn.GRU(core_in, cfg.hidden_size, **kwargs)
     elif nonlinearity == "softplus":
@@ -325,4 +339,5 @@ def build_recurrent_core(cfg, input_dim: int) -> nn.Module:
         core = nn.RNN(core_in, cfg.hidden_size, nonlinearity=nonlinearity, **kwargs)
     if encoder is None:
         return core
-    return EncodedRecurrentCore(encoder, core, skip=bool(getattr(cfg, "input_encoder_skip", True)))
+    return EncodedRecurrentCore(encoder, core, skip=bool(getattr(cfg, "input_encoder_skip", True)),
+                                detach=bool(getattr(cfg, "input_encoder_detach", False)), bypass=bypass)

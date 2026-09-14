@@ -607,6 +607,12 @@ class RNNAgentConfig:
     # the same short gradient route the `dist` arm has.
     input_encoder_norm: bool = True
     input_encoder_skip: bool = True
+    # The recurrent core reads the encoder features without sending a gradient
+    # back: the encoder trains through the skip alone (the `dist` dynamics).
+    input_encoder_detach: bool = False
+    # Leading input columns that skip the encoder and go to the core beside
+    # the encoded features (the previous action; the trainer sets it).
+    input_encoder_bypass: int = 0
     # Ray-axis encoder over the view columns (sensory and goal_sensory), see
     # plan sec 5.4. "linear" is identity, the historical read.
     sensory_encoder: str = "linear"

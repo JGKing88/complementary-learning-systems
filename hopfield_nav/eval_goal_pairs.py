@@ -62,7 +62,11 @@ def main() -> None:
     if is_lifetimes:
         extra = dict(ARMS[a["arm"]], init_log_std=a.get("init_log_std", 0.0),
                      input_encoder_layers=a.get("encoder_layers", 0),
-                     input_encoder_hidden=a.get("encoder_hidden", 768))
+                     input_encoder_hidden=a.get("encoder_hidden", 768),
+                     input_encoder_norm=a.get("encoder_norm", True),
+                     input_encoder_detach=a.get("encoder_detach", False),
+                     input_encoder_bypass=(0 if not ARMS[a["arm"]]["input_prev_action"]
+                                           else (4 if a["movement_mode"] == "discrete" else 2)))
         nonlin = a["nonlinearity"] if extra["rnn_cell"] == "mlp" else "tanh"
     else:
         extra = dict(rnn_cell="mlp", dropout=a.get("dropout", 0.0),

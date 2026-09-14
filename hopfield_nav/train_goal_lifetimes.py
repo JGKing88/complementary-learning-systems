@@ -64,6 +64,17 @@ def main() -> None:
                    help="feed-forward ReLU encoder in front of a GRU/RNN cell (plan sec 4B; "
                         "0 = the raw code into the cell, as B1x). Ignored for --arm dist.")
     p.add_argument("--encoder_hidden", type=int, default=768)
+    p.add_argument("--encoder_norm", action=argparse.BooleanOptionalAction, default=True,
+                   help="LayerNorm before each encoder nonlinearity")
+    p.add_argument("--encoder_detach", action="store_true",
+                   help="the GRU reads the encoder features but sends no gradient into the encoder, "
+                        "which then trains through the skip path alone (the dist arm's dynamics)")
+    p.add_argument("--encoder_init", type=str, default="",
+                   help="a train_goal_lifetimes --arm dist checkpoint whose trunk (FeedForwardCore, "
+                        "same layers/hidden, no norm) initialises the encoder")
+    p.add_argument("--encoder_freeze", action="store_true",
+                   help="freeze the encoder (with --encoder_init: a pretrained, fixed decode; the "
+                        "recurrent net and heads are all that train)")
     # World (same flags as A)
     p.add_argument("--n_envs", type=int, default=64)
     p.add_argument("--n_val_envs", type=int, default=16)
@@ -153,7 +164,12 @@ def main() -> None:
                               rnn_nonlinearity=args.nonlinearity if arm["rnn_cell"] == "mlp" else "tanh",
                               init_log_std=args.init_log_std,
                               input_encoder_layers=args.encoder_layers,
-                              input_encoder_hidden=args.encoder_hidden, **arm)
+                              input_encoder_hidden=args.encoder_hidden,
+                              input_encoder_norm=args.encoder_norm,
+                              input_encoder_detach=args.encoder_detach,
+                              input_encoder_bypass=(0 if not arm["input_prev_action"]
+                                                    else (4 if args.movement_mode == "discrete" else 2)),
+                              **arm)
     cfg = RNNTrainConfig(
         env=EnvConfig(size=args.size, observation_size=args.observation_size,
                       movement_mode=args.movement_mode, wall_resolution=args.wall_resolution,
@@ -211,7 +227,24 @@ def main() -> None:
         n_params = sum(q.numel() for q in agent.parameters())
         print(f"agent: mode={args.mode} arm={args.arm} cell={acfg.rnn_cell} prev_action={acfg.input_prev_action} "
               f"D={D} hidden={args.hidden_size} layers={args.num_layers} encoder={args.encoder_layers}x{args.encoder_hidden} params={n_params:,}")
-        opt = torch.optim.Adam(agent.parameters(), lr=args.lr)
+        if args.encoder_init:
+            # A `dist` checkpoint's trunk into the encoder: the decode learned
+            # once, memorylessly, so the recurrent net is asked only the
+            # in-context question on top of it.
+            src = torch.load(args.encoder_init, map_location="cpu", weights_only=False)
+            trunk = {k[len("rnn."):]: v for k, v in src["agent_state_dict"].items() if k.startswith("rnn.")}
+            missing, unexpected = agent.rnn.encoder.load_state_dict(trunk, strict=False)
+            if missing or unexpected:
+                raise SystemExit(f"--encoder_init trunk does not match the encoder: missing {missing}, "
+                                 f"unexpected {unexpected} (use --no-encoder_norm and the same layers/hidden)")
+            print(f"encoder initialised from {args.encoder_init} (update {src['update']})")
+        if args.encoder_freeze:
+            for q in agent.rnn.encoder.parameters():
+                q.requires_grad_(False)
+        trainable = [q for q in agent.parameters() if q.requires_grad]
+        print(f"trainable params: {sum(q.numel() for q in trainable):,} of {n_params:,}"
+              + (" (encoder frozen)" if args.encoder_freeze else ""))
+        opt = torch.optim.Adam(trainable, lr=args.lr)
         sched = None
         if args.lr_schedule == "step":
             sched = torch.optim.lr_scheduler.MultiStepLR(

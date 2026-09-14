@@ -370,3 +370,28 @@ def test_encoded_recurrent_core_contracts():
     agent = RNNAgent(cfg, 40)
     out = agent.act(x[:, :1], None)
     assert out["h_next"].shape == (2, 5, 16)
+
+
+def test_encoder_bypass_and_detach():
+    from hopfield_nav.policy.recurrent import EncodedRecurrentCore, build_recurrent_core
+    cfg = RNNAgentConfig(rnn_cell="gru", hidden_size=16, num_rnn_layers=1, input_prev_action=True,
+                         input_encoder_layers=2, input_encoder_hidden=24, input_encoder_bypass=2,
+                         input_encoder_detach=True)
+    core = build_recurrent_core(cfg, 42)
+    assert isinstance(core, EncodedRecurrentCore)
+    assert core.encoder.input_size == 40 and core.input_size == 42
+    assert core.core.input_size == 24 + 2
+    x = torch.randn(3, 5, 42, requires_grad=True)
+    f, h = core(x, None)
+    assert f.shape == (3, 5, 16 + 24)
+    # The bypass columns reach the core but not the encoder: perturbing them
+    # changes the recurrent half of the features and not the skip half.
+    x2 = x.detach().clone(); x2[..., :2] += 1.0
+    f2, _ = core(x2, None)
+    assert not torch.allclose(f2[..., :16], f[..., :16])
+    assert torch.allclose(f2[..., 16:], f[..., 16:])
+    # Detach: the encoder gets gradient only through the skip half.
+    f[..., :16].sum().backward(retain_graph=True)
+    assert all(p.grad is None or p.grad.abs().sum() == 0 for p in core.encoder.parameters())
+    f[..., 16:].sum().backward()
+    assert any(p.grad is not None and p.grad.abs().sum() > 0 for p in core.encoder.parameters())
