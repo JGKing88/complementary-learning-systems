@@ -69,17 +69,22 @@ destabilises it) even on fully determined data. **With the decode
 decoupled — the `dist` trunk trained once at a fixed orientation,
 frozen, and a GRU 2×512 + `prev_action` trained on top over
 random-lattice lifetimes — the recurrent net learns the held-out
-lattice in-context: on the standard lattice it never saw, readout 2
-falls 89 → 68 → 52 → 38 → 23 → 18.7° across 19 goal changes (u = 1000
-of 8000, still falling), while the same network with no history
-(readout 1) is at 120°, the memoryless null is at 90°, and the
-corner-trained weights' extrapolation was 44°.** The frame accumulates
-across the lifetime, as the estimator says it should, only slower: ~10
-steps to 70° in episode 0 where the estimator needs 2 to 5°. *Standing
+lattice in-context. Final (8000 updates), on the standard lattice it
+never saw: one step of its own trajectory takes it from 122° to 56°,
+ten steps to 18°, and over the lifetime it holds 14° (episodes 10–19),
+while the same network with no history is at 150°, the memoryless null
+at 90°, and the corner-trained weights' extrapolation was 44°.** On the
+orientations it trained on it sits at 8°, the floor of a sampled policy,
+so the held-out band costs ~6° of interpolation; the scripted estimator
+needs 2 steps to reach 5° where the GRU needs ~10 to reach 18°. The
+frame accumulates across goal changes and is measured within an
+episode — the plan's row-1 reading, on the real code. *Standing
 reading:* in-context learning of an unseen grid code is possible and
 **a recurrent net does learn it from lifetimes** — once the memoryless
-part of the computation is given to an architecture that can carry it.
-What no network here did is learn both halves together from scratch.
+half of the computation (the translation-invariant displacement decode)
+is learned once and given to it. What no network here did is learn both
+halves together from scratch: every joint attempt either sat on the
+plateau or collapsed.
 
 ### B1x result — history does not build a map; the rollout data does help the map
 
@@ -777,7 +782,7 @@ same `trace` shape.
 
 ## 4B. Experiment B2 — in-context learning of the grid code under lattice randomization
 
-Status: **built and run 2026-09-13.** Gates C1–C5 all pass; the plain GRU is flat at 89°; the frozen-decode GRU (run A) learns the held-out lattice in-context — 89 → 18.7° across 19 episodes at u = 1000. Design amendments (translation, per-row lattice, decoupled decode) in §4B.2 and §5.12; run-by-run in `docs/NN_CONTROL_LOG.md`; summary in §0.
+Status: **built and run 2026-09-13.** Gates C1–C5 all pass; the plain GRU is flat at 89°; the frozen-decode GRU (run A, final) learns the held-out lattice in-context — 122 → 56° in one step, 18° in ten, 14° over the lifetime, against 150° with no history and 90° memoryless. Design amendments (translation, per-row lattice, decoupled decode) in §4B.2 and §5.12; run-by-run in `docs/NN_CONTROL_LOG.md`; summary in §0.
 
 ### 4B.1 Why this exists
 
