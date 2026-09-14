@@ -101,6 +101,11 @@ def build_parser() -> argparse.ArgumentParser:
                         "damping is what lets a cue settle toward a memory "
                         "instead of overshooting past it, and for the L7 "
                         "encoders it is the binding knob, not beta.")
+    d.add_argument("--world_region", type=int, nargs=3, default=None,
+                   metavar=("X0", "Y0", "SIDE"),
+                   help="spread the worlds' envs over [X0, X0+SIDE)^2 of the "
+                        "scaffold instead of all of it -- inside or outside "
+                        "the corner an encoder was trained on (--patch_arena)")
     d.add_argument("--storage_rule", default=None, choices=list(STORAGE_RULES),
                    help="how patterns enter W. 'hebb' is production's one-shot "
                         "outer product; 'proj' is the projection rule, for "
@@ -145,6 +150,8 @@ def config_from_args(args) -> ProbeConfig:
         kw["hopfield_scale"] = args.hopfield_scale
     if args.storage_rule is not None:
         kw["storage_rule"] = args.storage_rule
+    if args.world_region is not None:
+        kw["world_region"] = tuple(args.world_region)
     if args.alpha is not None:
         kw["alpha"] = args.alpha
 

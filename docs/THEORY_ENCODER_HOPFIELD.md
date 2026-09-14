@@ -645,7 +645,11 @@ starts from "everything is identical" and pushes apart the pairs the loss
 actually *samples*. A displacement the training batches never cover keeps its
 initial value, which is ~1. **The peak alias is a hole in the training pair
 distribution, not an artefact the encoder invented.** **[G]**, but with two
-measurements behind it:
+measurements behind it — *and retracted 2026-09-14: the pair terms never see
+any displacement beyond 70 cells (§3.6's box), so 784 and 400 are equally
+"holes" and this cannot be what separates them. What survives is the untrained
+baseline and the coverage trend; the mechanism is the rate term's covariance,
+below.*
 
 * the untrained baseline really is ~1.0 everywhere, so "left alone" means "left
   high"; and
@@ -686,9 +690,12 @@ measurements behind it:
 >
 > The rate term generalises and sets the 0.034 floor; the pairwise terms do not,
 > and the outliers are where the statistical mechanism alone did not finish the
-> job. (§3.6 revises *why* the pairwise terms leave a residue: not because the
-> pairs go unsampled — they do not — but because both objectives are
-> average-case and the failure is worst-case.) That is why `rate_lambda = 0` collapses `d_eff` to 16 and the alias rate
+> job. (Corrected 2026-09-14, see §3.6's box: the pairwise terms leave the far
+> field alone not because of sampling but because `exclude_cross_env_pairs`
+> masks every cross-patch pair — no displacement beyond 70 cells is in a pair
+> term. The rate term is not merely the *main* far-field mechanism, it is the
+> *only* one, and it is average-case where the failure is worst-case.) That is
+> why `rate_lambda = 0` collapses `d_eff` to 16 and the alias rate
 > to 0.21 (§2.1 R1) — it removes the only mechanism that covers unsampled pairs.
 >
 > The coverage ladder degrades both halves together: the floor rises
@@ -714,15 +721,52 @@ The natural follow-up to §3.5 is Jack's: *is there a way to sample envs that
 prevents aliasing?* Chasing it killed my own hypothesis, so the honest state is
 three candidate mechanisms with different consequences.
 
+> ### ⚠ Corrected 2026-09-14 — (a) below argued from the CLI defaults, not the run.
+>
+> I wrote that the ladder encoders train with `batch_size` 16384 and
+> `exclude_cross_env_pairs` False. Those are `train.py`'s argparse defaults.
+> The checkpoints' own `train_config` says **4096** and **True** — for the
+> ladder's 10% (w52 att0.5), for w53 att16, and for every wave in
+> `sweep_ecp.BASE`, whose comment calls the mask "THE constraint". In the loss
+> that mask is `far = ~near & same_env`, so the repel term only ever sees
+> same-patch pairs: with 50-cell patches, **no displacement beyond 70 cells is
+> in any pair term, ever.** (The v35-lineage encoder, batch 8192 and no mask,
+> is the one that fits what I wrote; it is not in the ladder.)
+>
+> What that changes:
+>
+> * **(a) is false for a simpler reason.** Not "far pairs are sampled and pushed
+>   on without moving" — far pairs are never pushed on pairwise at all. The 784
+>   ridge and the quiet 400 are *equally* unsampled by the pair terms, so
+>   sampling cannot be what separates them, and §3.5's "hole in the training
+>   pair distribution" is the wrong picture: beyond 70 cells everything is a
+>   hole, and 94.7% of it is fine.
+> * **The whole far field is the coding-rate term's.** It constrains the batch
+>   *covariance* — a second-moment quantity over whatever positions the batch
+>   holds — and the far field is what the network extrapolates under that
+>   constraint. The coverage trend (peak 0.68 → 0.94 as coverage falls) is
+>   therefore about which **positions**, i.e. which joint phases, enter that
+>   covariance, not about which pairs are drawn.
+> * **"Sample far pairs by displacement" is off the table by construction**,
+>   not by argument: withholding cross-env pairs is the brief the campaign was
+>   run under. The lever that remains is the one below — a term with a maximum
+>   in it — and it would have to live in the spread family, the only family the
+>   brief lets see a far displacement.
+>
+> The corner experiment (§3.7) is the direct test of the corrected story: same
+> recipe, same point budget, positions confined to one 500×500 corner, so the
+> rate term's covariance covers 8.5% of the joint-phase space in one block.
+
 **(a) Aliases live at displacements training never samples → sampling fixes it.
-Probably false.** `batch_size` is **16384** drawn from 118 randomly placed
-patches, so a batch holds ~139 positions from *every* patch and ~1.3×10⁸ pairs;
-and `exclude_cross_env_pairs` defaults to **False**, so every non-near pair is
-in the repel term. The displacement space is covered densely, many times per
-batch — there is no hole to fill. Worse for the hypothesis: an aliased pair at
-cos 0.67 contributes 0.45 to an MSE where a typical pair contributes 0.001, so
-the outliers get ~450× the per-pair gradient. They are not being ignored; they
-are being pushed on and not moving.
+False, see the box above.** *(Original text, kept for the record:)* `batch_size`
+is **16384** drawn from 118 randomly placed patches, so a batch holds ~139
+positions from *every* patch and ~1.3×10⁸ pairs; and `exclude_cross_env_pairs`
+defaults to **False**, so every non-near pair is in the repel term. The
+displacement space is covered densely, many times per batch — there is no hole
+to fill. Worse for the hypothesis: an aliased pair at cos 0.67 contributes 0.45
+to an MSE where a typical pair contributes 0.001, so the outliers get ~450× the
+per-pair gradient. They are not being ignored; they are being pushed on and not
+moving.
 
 **(b) It is the extreme value of a finite-dimensional code → sampling cannot fix
 it, only `d_eff` can.** With `N` = 2.94 M positions there are `M` = 4.3×10¹²
