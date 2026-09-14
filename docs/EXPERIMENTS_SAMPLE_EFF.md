@@ -651,3 +651,32 @@ First evals (u25, 6 held-out envs, deterministic): `one_k4` s42 success
 0.64/0.59 (d=0/10), swept 0.18; `one_k2` 0.32/0.17; the 3e-4 control 0.82/0.72
 (the usual fast start of the large step). Timing: K=4 8.2 s/update (7.4
 rollout + 0.8 PPO), eval 23.5 s per 25 → ~3000 updates before the wall.
+
+### 7.3 Digest at 16:38 (~35 min; window means of the last 4 evals, held-out, deterministic)
+
+| arm | u | episodes | succ 0/10 | steps 0/10 | swept 0/10 |
+|---|---|---|---|---|---|
+| `one_k2` (fixed goal) | 425 | 54k | 0.84/0.84 | 46/52 | 0.28/0.31 |
+| `one_k4` (fixed) s42 | 250 | 64k | 0.70/0.69 | 38/38 | 0.25/0.29 |
+| `one_k4` (fixed) s43 | 125 | 32k | 0.74/0.72 | 57/50 | 0.17/0.18 |
+| **`one_k2_g`** (redraw) | 375 | 48k | **1.00/0.99** | **15.1/17.2** | 0.24/0.24 |
+| `one_k4_g` s43 | 200 | 51k | 0.98/0.97 | 29/33 | 0.21/0.21 |
+| `one_k4_g` s42 | 175 | 45k | 0.41/0.32 | 67/62 | 0.17/0.16 |
+
+Fixed-goal arms peak EARLY on held-out (`one_k2` 0.99/0.99 at u100,
+`one_k4` s43 0.90/0.88 at u25) and slide to ~0.8 with mean steps 40–50 as
+the policy specializes to its one goal cell — the strict reading is a
+worse model the longer it trains. The goal-redraw arm is at d0_base-level
+exploit by u300–375 (38–48k episodes; d0_base u725: 11.7/12.1 steps). Explore
+is the laggard (swept 0.24 vs the 0.55/0.50 bar; d0_base was ~0.25 at u200,
+0.5 at u400–500). Seed spread is large — `one_k4_g` s42 vs s43 — the price
+of one arena. Same env for both s42 arms (seed → wall 6423388, val set), so
+K=2 vs K=4 there is an init/draw difference, not an env difference.
+
+**Action (16:39):** the strict reading is answered by `one_k2` s42 +
+`one_k4` s43; cancelled `one_k4` s42 (22756994) and the finished
+`se_lr1_e75` (22715546, u2800+) to launch two sample-lean redraw arms while
+the pre-maintenance window is open — Jack's second ask, on the reading that
+works: `one_k2_b32_g` (64 traj/update) and `one_k2_b16_g` (32 traj/update),
+both s42, 7 h wall. The SE line put the usable pool floor at ~80–160
+trajectories per update with 20 envs; these ask where it is with one.

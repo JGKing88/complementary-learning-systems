@@ -1769,6 +1769,8 @@ case "$VARIANT" in
           one_k2_g)    ENV_REPEATS=2; REDRAW_GOAL_PER_ROLLOUT=1 ;;
           one_k2_b8_g) ENV_REPEATS=2; BATCH_ENVS=8; REDRAW_GOAL_PER_ROLLOUT=1 ;;
           one_k2_b16_g) ENV_REPEATS=2; BATCH_ENVS=16; REDRAW_GOAL_PER_ROLLOUT=1 ;;
+          one_k2_b32_g) ENV_REPEATS=2; BATCH_ENVS=32; REDRAW_GOAL_PER_ROLLOUT=1 ;;
+          one_k2_b32_h100_g) ENV_REPEATS=2; BATCH_ENVS=32; STEPS_PER_ROLLOUT=100; REDRAW_GOAL_PER_ROLLOUT=1 ;;
           one_k4_b8_g) ENV_REPEATS=4; BATCH_ENVS=8; REDRAW_GOAL_PER_ROLLOUT=1 ;;
           *) echo "ERROR: unknown ONE variant $VARIANT" >&2; exit 1 ;;
         esac
