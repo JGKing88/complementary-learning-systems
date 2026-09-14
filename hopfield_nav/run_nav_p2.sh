@@ -1618,6 +1618,16 @@ case "$VARIANT" in
   #                  Half of U[0,10] explore episodes carry <=5 patterns and
   #                  teach nothing about that tail; this doubles the exposure
   #                  per sample.
+  #   se_lr1_e75     se_b8_lr1 with empty_frac 0.75 (15 explore + 5 exploit
+  #                  envs per update). Probe rounds 2-3: at ~100k episodes
+  #                  every small-pool arm matches d0_base u725 on the exploit
+  #                  half and on explore EFFICIENCY, and every one carries a
+  #                  d=10 collapsed tail of 5-8% against 1.4-2%. Exploit locks
+  #                  at 12k episodes; the tail is the last open row; so spend
+  #                  the pool where the gap is. Tri finding 13 priced 0.5 ->
+  #                  0.7 as +28% coverage for -41% steps on a FAT pool -- here
+  #                  the exploit half is over-served, which is the bet.
+  #   se_lr1_d5_e75  the same plus the explore distractor floor of 5.
   #   se_n10_b8_lr1_h100  10 envs x 8 x 100 steps = 80 episodes / 8k
   #                  transitions per update. Launched 2026-09-13 22:30 when
   #                  h100 was the first arm through the screen (92k episodes,
@@ -1704,6 +1714,10 @@ case "$VARIANT" in
           se_n10_b8_lr03) ENVS_PER_WORLD=10; PPO_EPOCHS=20; N_MINIBATCHES=8; TARGET_KL=0.1; LR=3e-5 ;;
           se_n10_b8_lr1_h100) ENVS_PER_WORLD=10; PPO_EPOCHS=10; N_MINIBATCHES=8; TARGET_KL=0.1; LR=1e-4; STEPS_PER_ROLLOUT=100 ;;
           se_h100_d5)     PPO_EPOCHS=10; N_MINIBATCHES=8; TARGET_KL=0.1; LR=1e-4; STEPS_PER_ROLLOUT=100; N_TRAIN_EMP_DISTRACTORS_MIN=5 ;;
+          se_lr1_e75)     PPO_EPOCHS=10; N_MINIBATCHES=8; TARGET_KL=0.1; LR=1e-4
+                          [ -z "${SCHEDULE_SET:-}" ] && SCHEDULE='interleave:4000,empty_frac=0.75' ;;
+          se_lr1_d5_e75)  PPO_EPOCHS=10; N_MINIBATCHES=8; TARGET_KL=0.1; LR=1e-4; N_TRAIN_EMP_DISTRACTORS_MIN=5
+                          [ -z "${SCHEDULE_SET:-}" ] && SCHEDULE='interleave:4000,empty_frac=0.75' ;;
           # Timing-smoke names from the first pass (jobs 22700191/949/951),
           # kept so their logs can be re-read: 10x8 at 3e-4 with target_kl
           # 0.02, which the probe then showed stops every update at step 2.
