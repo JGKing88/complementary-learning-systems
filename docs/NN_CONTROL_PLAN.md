@@ -777,7 +777,7 @@ same `trace` shape.
 
 ## 4B. Experiment B2 — in-context learning of the grid code under lattice randomization
 
-Status: **built 2026-09-13 (§5.12 as-built); gates B2-C1, B2-C2 pass as unit tests; B2-C3, B2-C4 and the no-oracle null submitted.** Results in `docs/NN_CONTROL_LOG.md` and, when read, §0.
+Status: **built and run 2026-09-13.** Gates C1–C5 all pass; the plain GRU is flat at 89°; the frozen-decode GRU (run A) learns the held-out lattice in-context — 89 → 18.7° across 19 episodes at u = 1000. Design amendments (translation, per-row lattice, decoupled decode) in §4B.2 and §5.12; run-by-run in `docs/NN_CONTROL_LOG.md`; summary in §0.
 
 ### 4B.1 Why this exists
 
