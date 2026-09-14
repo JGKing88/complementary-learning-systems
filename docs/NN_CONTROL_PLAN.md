@@ -82,9 +82,14 @@ episode — the plan's row-1 reading, on the real code. *Standing
 reading:* in-context learning of an unseen grid code is possible and
 **a recurrent net does learn it from lifetimes** — once the memoryless
 half of the computation (the translation-invariant displacement decode)
-is learned once and given to it. What no network here did is learn both
-halves together from scratch: every joint attempt either sat on the
-plateau or collapsed.
+is learned once and given to it. **And (2026-09-14) it learns both
+halves together from scratch** once the encoder has its own, 10× lower
+learning rate and a warm-up on one fixed orientation before the
+lattices vary: the joint MLP → GRU reaches the unseen lattice to 31° in
+one step, 12.5° in ten and 15.7° over the lifetime; with the GRU's
+gradient cut off from the encoder, 10.3° over the lifetime. The joint
+attempts that failed on 09-13 failed on the optimiser (the recurrent
+gradient into a shared encoder at lr 1e-3), not on the task.
 
 ### B1x result — history does not build a map; the rollout data does help the map
 
@@ -782,7 +787,7 @@ same `trace` shape.
 
 ## 4B. Experiment B2 — in-context learning of the grid code under lattice randomization
 
-Status: **built and run 2026-09-13.** Gates C1–C5 all pass; the plain GRU is flat at 89°; the frozen-decode GRU (run A, final) learns the held-out lattice in-context — 122 → 56° in one step, 18° in ten, 14° over the lifetime, against 150° with no history and 90° memoryless. Design amendments (translation, per-row lattice, decoupled decode) in §4B.2 and §5.12; run-by-run in `docs/NN_CONTROL_LOG.md`; summary in §0.
+Status: **built and run 2026-09-13/14.** Gates C1–C5 all pass; the plain GRU is flat at 89°; the frozen-decode GRU learns the held-out lattice in-context (56° in one step, 18° in ten, 14° over the lifetime; 150° with no history, 90° memoryless); and the joint MLP → GRU from scratch does the same with an encoder lr of 1e-4 and a fixed-orientation warm-up (31° in one step, 12.5° in ten, 15.7° over the lifetime; 10.3° with the encoder detached). Design amendments (translation, per-row lattice, decoupled decode) in §4B.2 and §5.12; run-by-run in `docs/NN_CONTROL_LOG.md`; summary in §0.
 
 ### 4B.1 Why this exists
 
