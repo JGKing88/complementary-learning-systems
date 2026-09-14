@@ -163,7 +163,7 @@ the end of the run. TIMEOUT at 24 h is the expected end.
 | `se_n10_b8_lr1` | 22701302 | node3810 | 13.2 (12.4 / 0.8) | u10: 0.052 / 0.31 / 66 |
 | `se_b8_lr1_h100` | 22701304 | node3811 | 13.7 (13.1 / 0.6) | u10: 0.059 / 0.44 / 31 |
 
-### 4.1 Digest at ~1.4 h (window means of the last ≤4 evals; episodes exact)
+### 4.1 Digest at ~45 min (arms started 20:01) (window means of the last ≤4 evals; episodes exact)
 
 | arm | u | episodes | succ0 / succ10 | steps0 / steps10 | swept0 / swept10 |
 |---|---|---|---|---|---|
@@ -193,7 +193,7 @@ the end of the run. TIMEOUT at 24 h is the expected end.
 - `h100` locks exploit at 24k but its explore half is the weakest (swept0
   0.14) — prediction 4 holding.
 
-### 4.2 Digest at ~2.4 h
+### 4.2 Digest at ~1.3 h
 
 | arm | u | episodes | env-steps | succ0 / succ10 | steps0 / steps10 | swept0 / swept10 |
 |---|---|---|---|---|---|---|
@@ -223,7 +223,7 @@ the end of the run. TIMEOUT at 24 h is the expected end.
 - `akl` settled at lr 2e-5 and is the slowest of the small-lr arms on steps
   (40): its 0.01–0.04 band is set too low for the late phase.
 
-### 4.3 Digest at ~3.4 h — the first screen clear
+### 4.3 Digest at ~2.3 h — the first screen clear
 
 | arm | u | episodes | env-steps | succ0 / succ10 | steps0 / steps10 | swept0 / swept10 | screen |
 |---|---|---|---|---|---|---|---|
