@@ -1609,6 +1609,15 @@ case "$VARIANT" in
   #                  lock (12-14k episodes): the arm with the MOST, SMALLEST
   #                  updates won, so push that axis 2x further.
   #   se_n10_b8_lr03 10 envs at 3e-5, 20x8: the two early leaders combined.
+  #   se_h100_d5     se_b8_lr1_h100 with the EXPLORE-regime distractor floor
+  #                  raised 0 -> 5 (U[5,10]; exploit stays U[0,10]). Probe
+  #                  round 1 (job 22707156): h100 u575 at 92k episodes matches
+  #                  d0_base u725 on the whole exploit half and on explore at
+  #                  d=0, but its d=10 collapsed tail is 0.14 against 0.021 --
+  #                  the corner trap d0_base closed between u250 and u725.
+  #                  Half of U[0,10] explore episodes carry <=5 patterns and
+  #                  teach nothing about that tail; this doubles the exposure
+  #                  per sample.
   #   se_n10_b8_lr1_h100  10 envs x 8 x 100 steps = 80 episodes / 8k
   #                  transitions per update. Launched 2026-09-13 22:30 when
   #                  h100 was the first arm through the screen (92k episodes,
@@ -1694,6 +1703,7 @@ case "$VARIANT" in
           se_n5_b8_lr1)   ENVS_PER_WORLD=5; PPO_EPOCHS=10; N_MINIBATCHES=8; TARGET_KL=0.1; LR=1e-4 ;;
           se_n10_b8_lr03) ENVS_PER_WORLD=10; PPO_EPOCHS=20; N_MINIBATCHES=8; TARGET_KL=0.1; LR=3e-5 ;;
           se_n10_b8_lr1_h100) ENVS_PER_WORLD=10; PPO_EPOCHS=10; N_MINIBATCHES=8; TARGET_KL=0.1; LR=1e-4; STEPS_PER_ROLLOUT=100 ;;
+          se_h100_d5)     PPO_EPOCHS=10; N_MINIBATCHES=8; TARGET_KL=0.1; LR=1e-4; STEPS_PER_ROLLOUT=100; N_TRAIN_EMP_DISTRACTORS_MIN=5 ;;
           # Timing-smoke names from the first pass (jobs 22700191/949/951),
           # kept so their logs can be re-read: 10x8 at 3e-4 with target_kl
           # 0.02, which the probe then showed stops every update at step 2.
