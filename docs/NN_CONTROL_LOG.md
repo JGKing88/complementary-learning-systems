@@ -1028,3 +1028,36 @@ params), `--encoder_detach`, `--no-encoder_norm`. Two runs:
   rotation).
 - **B, detached encoder, anchor-mix 0.5 at 90° (22703357):** end to end,
   encoder trained like `dist` on the mixed data, GRU on top.
+
+**RUN A — frozen decode + GRU, primary design (22703355), u = 1000 of
+8000: IN-CONTEXT LEARNING OF THE UNSEEN LATTICE.** Held-out envs, the
+standard lattice θ = 0 (never trained; the band |θ| < 15° excluded):
+
+| readout | value |
+|---|---|
+| R1, h = 0 (no history) | **119.6°** — worse than random, the memoryless best guess (un-rotate by the training mean θ̄ ≈ 180°) |
+| R2 by episode e0 / e1 / e2 / e4 / e9 / **e19** | 89.2 / 67.9 / 51.5 / 38.4 / 22.9 / **18.7** |
+| R2 episode 0 by step s0 / s1 / s2 / s3 / s5 / s10 | 104 / 120 / 111 / 103 / 80 / 68 |
+| `same` (training envs, θ = 0) e0 / e19 | 90.7 / 18.4 |
+| `heldout@7` e0 / e19 | 83.9 / 17.3 |
+| `heldout@45` (training θ) e0 / e19 | 51.2 / 9.6 |
+| `heldout@90` (the decode's own θ) e0 / e19 | 34.4 / 8.5 |
+
+Loss −1.70, goal rate 0.084 (≈ `dist@90`'s), 3.55M trainable params
+(GRU + heads; the 5×768 trunk frozen at `dist@90` u = 1000). The
+by-episode curve is monotone across goal changes — the frame is a
+lifetime property and the GRU keeps refining it through the lifetime;
+the by-step curve within episode 0 says it needs ~10 steps to get to
+70° where the scripted estimator needs 2 to get to 5°. A recurrent net
+trained from lifetimes, with the decode given, **learns the frame of a
+grid code it never saw from its own trajectory**, to 18.7° after 19
+episodes at a quarter of the run, against 90° memoryless and 44° for
+the corner-trained weights' extrapolation (§4B.7 row 1). Leak check:
+the decode was trained at θ = 90° with translation and knows nothing of
+θ = 0; the GRU and heads saw only θ ∈ [15°, 345°]; test envs are new
+walls at new offsets; `dist` on this design is 90°; and readout 1 —
+the same network with no history — is 120°. Everything below 120° is
+history.
+
+Run B (detached encoder, anchor-mix, 22703357) at u = 800: 88–91°, the
+encoder still forming.
