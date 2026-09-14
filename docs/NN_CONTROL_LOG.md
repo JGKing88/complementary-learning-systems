@@ -1061,3 +1061,28 @@ history.
 
 Run B (detached encoder, anchor-mix, 22703357) at u = 800: 88–91°, the
 encoder still forming.
+
+**Run A at u = 2000 / 3000, held-out lattice θ = 0.** By episode:
+47 → 34 → 27 → 22 → 15.3 → 15.7 (u = 2000); 50 → 40 → 26 → 18 → 16 →
+**15.7** (u = 3000). Episode 0 by step at u = 3000: **s0 128 → s1 57 →
+s2 54 → s3 49 → s5 38 → s10 29** — the frame is measured largely from
+the first step (one `(Δgbook, prev_action)` pair) and refined over the
+next ten; readout 1 (no history) has moved to **138°**: with nothing
+observed the network commits hard to the training-mean orientation,
+which on θ = 0 is nearly opposite, and one step of evidence flips it.
+On the training orientations: `heldout@45` 53 → 8.2, `heldout@90`
+55 → 8.2 by episode 19. Goal rate 0.083.
+
+**Run B (detached encoder, anchor-mix 0.5; 22703357) — cancelled at
+u = 1000:** 90.9° identical across sets; the skip-trained encoder
+collapses on half-undetermined data as `dist` did on fully undetermined
+data. The frozen-decode line is the one that works; B was redundant
+with it and held a GPU the `rec` control needed.
+
+**`rec` with the frozen decode (22704382), u = 1000:** by episode on
+θ = 0: 96 → 92 → 80 → 65 → 47 → **33**; episode-0 by-step flat at
+~90. Without `prev_action` it cannot read the frame from one step (it
+knows its policy mean, not the sampled action) but it integrates over
+the lifetime and gets there more slowly. `prev_action` is worth ~2× in
+episodes at this point (A was at 18.7 by e19 at u = 1000). Seed 1 of A
+(22704383) queued.
