@@ -91,6 +91,36 @@ gradient cut off from the encoder, 10.3° over the lifetime. The joint
 attempts that failed on 09-13 failed on the optimiser (the recurrent
 gradient into a shared encoder at lr 1e-3), not on the task.
 
+**What B2 does and does not show (2026-09-14, after discussion).** B2's
+translation randomisation draws the shift uniformly over the full
+combined period, and a shift by `T` is the same as moving the env to
+scaffold position `O + T` — so over its 131k lifetimes a B2 network sees
+the equivalent of *every* scaffold position. **B2 holds out orientation,
+not region.** It therefore says nothing about learning an unseen
+scaffold region in weights, and its networks were never dropped into
+one. Two consequences. (i) The "corner" question stands exactly where
+A1x/B1x left it, with a sharper reason: a contiguous corner's data fit
+two decoders equally — the absolute one (code → position, subtract) and
+the relative one (phase difference → displacement) — and only the
+relative one extrapolates; the data cannot separate them, because any
+translation that would reveals new phase combinations, i.e. new
+scaffold. Which decoder a plain net finds is inductive bias, and A1x
+says it finds the absolute one. Nothing in a lifetime can repair that
+in context, because under the same lattice the frame outside the corner
+*is* the frame inside — there is nothing to measure. The attractor has
+the relative-phase invariance built in and learns it from nowhere.
+(ii) What B2 does establish: a plain network *can* represent and learn
+the relative-phase decode when the training distribution removes the
+absolute shortcut — the capacity is there, the bias is not; and the one
+property of a grid code that no invariance fixes, its orientation, a
+recurrent network can measure from its own trajectory. Neither is "a
+recurrent net learned a new region of the scaffold in context." A
+corner-plus-translation run, briefly proposed as a closing check, is
+not a holdout and is withdrawn. The remaining meaningful experiment on
+the corner is architectural — a corner-trained network with an explicit
+phase-difference front end, tested outside — which would be handing the
+network the attractor's ingredient rather than a control.
+
 ### B1x result — history does not build a map; the rollout data does help the map
 
 Three arms trained on the 400 × 400 corner, scored outside it
@@ -995,6 +1025,19 @@ GRU's weights gave **44°** outside the corner, flat over episodes. A
 meta-trained GRU whose readout 2 drops below 44° on the standard lattice
 has learned an unseen part of the grid code in-context, on the real
 code, beating extrapolation.
+
+*Correction (2026-09-14).* The last sentence overstates the tie. The
+44° and the B2 numbers are on different holdouts: A1x/B1x held out a
+scaffold *region* under one lattice; B2 holds out the lattice's
+*orientation* while its full-period translation shows the network the
+equivalent of every region. "An unseen part of the grid code" in B2
+means an unseen orientation, not an unseen region, and a rotation is a
+one-parameter thing to measure — the estimator does it in two steps.
+The honest reading of a pass here is: the frame — the one property of
+a grid code that no invariance determines — can be learned in context
+by a recurrent net. The corner result is not overturned by it; see §0
+for why the corner is an inductive-bias question that lifetimes cannot
+repair.
 
 ### 4B.8 B2-mix — the literal version of "learn the outside portion in context"
 

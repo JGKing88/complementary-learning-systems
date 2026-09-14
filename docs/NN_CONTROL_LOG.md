@@ -1244,3 +1244,44 @@ after the warm-up; the anchor is a *training* orientation and the test
 lattice stays unseen, but a run with mix 0 after the warm-up (pure
 random lattices) was not repeated with the encoder lr fix — the
 09-13 attempt at it failed for the lr reason, not the mix.
+
+## 2026-09-14 — what B2 does and does not show (discussion with Jack)
+
+Jack's question: with translation drawn over the full period, isn't B2
+training on the whole scaffold? **Yes.** A shift by `T` is a move of the
+env to scaffold position `O + T`; `T ~ U[0, 1716)²` covers every phase
+combination the code can produce; over 131k lifetimes a B2 network sees
+the equivalent of every scaffold position. B2 holds out *orientation*,
+not *region* — by design (scattered placement, "the lattice is what
+makes the code unseen"), but the tie-back sentence in §4B.7 read as if
+the two holdouts were the same thing. They are not, and a rotation is a
+much smaller in-context target (one parameter, two steps for the
+estimator) than "a new portion of the code."
+
+Consequences, now written into §0 and §4B.7:
+
+- The corner question (A1x 44°, B1x flat) stands, and B2 sharpens the
+  reason rather than overturning it: a contiguous corner's data fit the
+  absolute decode (code → position, subtract) and the relative decode
+  (phase difference → displacement) equally; only the relative one
+  extrapolates; the data cannot separate them because any translation
+  that would do so exposes new phase combinations, i.e. new scaffold.
+  Which one a plain net finds is inductive bias; A1x says absolute.
+  Nothing in a lifetime can fix it in context, since under one lattice
+  the frame outside the corner is the frame inside — there is nothing
+  to measure. The attractor has the relative-phase invariance built in.
+- What B2 establishes: (i) a plain net can represent and learn the
+  relative-phase decode when the absolute shortcut is removed — the
+  capacity is there, the bias is not; (ii) orientation, which no
+  invariance fixes, a recurrent net measures from its trajectory.
+- Withdrawn: the corner-plus-translation run I proposed as a closing
+  check. It is not a holdout; the translations show the network the
+  outside.
+- The remaining meaningful corner experiment is architectural (an
+  explicit phase-difference front end on a corner-trained net, tested
+  outside) and would be handing the network the attractor's ingredient
+  rather than a control. Not run.
+- Also not run, and still open: the mechanism probes on the from-scratch
+  model (θ decodable from the GRU state; Δ′ from the encoder; a
+  mid-lifetime lattice swap; a wrong `prev_action`), and a from-scratch
+  run with mix 0 after the warm-up.
