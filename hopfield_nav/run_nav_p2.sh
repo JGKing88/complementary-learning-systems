@@ -1781,6 +1781,14 @@ case "$VARIANT" in
           # and it had 64 trajectories per update -- this gives it 192.
           one_k4_g_e75) ENV_REPEATS=4; REDRAW_GOAL_PER_ROLLOUT=1
                         [ -z "${SCHEDULE_SET:-}" ] && SCHEDULE='interleave:4000,empty_frac=0.75' ;;
+          # Probe rounds 1-2: the 1:1 mix gives d0_base's exploit, the 3:1
+          # mix gives its explore (tail 5 = d0_base), no checkpoint both.
+          # `_sched`: 1:1 until the exploit lock, then 3:1. `k3_g_e67`: a
+          # 2:1 mix (K=3, round(3 x 0.67) = 2 explore + 1 exploit).
+          one_k4_g_sched) ENV_REPEATS=4; REDRAW_GOAL_PER_ROLLOUT=1
+                        [ -z "${SCHEDULE_SET:-}" ] && SCHEDULE='interleave:400,empty_frac=0.5 ; interleave:3600,empty_frac=0.75' ;;
+          one_k3_g_e67) ENV_REPEATS=3; REDRAW_GOAL_PER_ROLLOUT=1
+                        [ -z "${SCHEDULE_SET:-}" ] && SCHEDULE='interleave:4000,empty_frac=0.67' ;;
           # sample-lean 3:1 arms: 64 / 128 episodes per update.
           one_k4_b16_g_e75) ENV_REPEATS=4; BATCH_ENVS=16; REDRAW_GOAL_PER_ROLLOUT=1
                         [ -z "${SCHEDULE_SET:-}" ] && SCHEDULE='interleave:4000,empty_frac=0.75' ;;
