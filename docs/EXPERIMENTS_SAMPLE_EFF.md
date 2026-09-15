@@ -883,3 +883,32 @@ coverage in 4000 updates.
 Probe round 2 (job 22772411): `k4_g` s43 u1900, `e75` s42 u2150, `e75`
 s43 u1825 + u1000 (its first clear), `b32_g_e75` u1750, `b16_g_e75` u1800,
 `k2_g` u4000 — vs d0_base u725.
+
+### 7.10 Why the fixed-goal exploit fails on new arenas — it never follows `q` (job 22772812, 21:55)
+
+`behavior_probe --mode nav`, held-out arenas, 32 trials × 6, d = 0 / 10:
+
+| checkpoint | success | steps | **follow_q** | align_true | follow_q t0 / t1 / t2 / t6+ |
+|---|---|---|---|---|---|
+| fixed u100 | 0.92 / 0.91 | 38 / 43 | **0.13 / 0.09** | 0.12 / 0.08 | 0.34 / 0.36 / 0.48 / 0.09 |
+| fixed u500 | 0.96 / 0.96 | 44 / 45 | 0.21 / 0.16 | 0.19 / 0.14 | 0.46 / 0.37 / 0.42 / 0.16 |
+| fixed u900 | 0.83 / 0.84 | 59 / 59 | **0.05 / 0.09** | 0.04 / 0.09 | 0.76 / 0.69 / 0.53 / 0.00 |
+| redraw u900 | 1.00 / 1.00 | 12 / 13 | **0.90 / 0.87** | 0.90 / 0.87 | 0.66 / 0.82 / 0.91 / 0.92 |
+
+With one goal cell, "position → heading to (17, 0)" — readable from the
+one barcode and from path integration — fits every training rollout at
+least as well as "follow `q`", without `q`'s distractor noise, and it is
+what PPO learns from the start: on new arenas the fixed-goal policy's
+actions are uncorrelated with the recall at every checkpoint (`follow_q`
+0.05–0.2 vs 0.9 for the redraw policy), its successes are search (40–60
+steps; u900's 0.5 success in the trainer's eval ≈ its explore coverage),
+and on failures it moves away from the goal (`align_true_fail` −0.1 to
+−0.4). `q` appears only in the first 2–3 steps of a late-training episode
+(0.76 → 0.53 → 0) before wall views arrive and the map takes over. The
+fixed goal does not make a `q`-follower that drifts; it never makes one.
+Redrawing the goal removes the redundancy — only `q` predicts the target —
+and d0_base's 20 goals do the same at 20 envs (the D3 identity-gating note
+in `run_nav_p2.sh` is the same failure one level up). The explore-side
+corollary — a goal-keyed map leaves the trunk freer for sweeping than a
+general follow-`q` — fits the curves but is NOT measured. Output:
+`results/nav_tri_probe/fixed_goal_nav_heldout.json`.
