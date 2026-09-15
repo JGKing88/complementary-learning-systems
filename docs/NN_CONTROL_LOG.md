@@ -1350,3 +1350,25 @@ a network learn the full-range decode (a fixed linear map on module
 phase angles mod 2π; unique to |Δ| < 858). Jack's small-MLP hypothesis
 for the corner stands as the open test: the pair lookup is the cheapest
 fit only while the network has room for it.
+
+## 2026-09-15 — B3: the corner with lifetimes (plan §6.1)
+
+**Build (33f106b).** `LatticeSampler(region=rect)` draws each lifetime's
+translation so the env's *rotated* footprint stays inside the rect
+(`shift_into_rect`), so training shows only the corner's phase
+combinations at every orientation; `--eval_far_rect` adds `far@θ` eval
+sets whose rotated footprints sit in `[700, 1200)²`, 300 cells clear of
+the corner on both axes — needed because a physical outside env rotated
+by 90° can land inside the corner on the torus. 19 lattice tests pass;
+toy smoke builds the nine eval sets.
+
+**Submitted.** Corner `rect:0,0,400,400` (A1x's 64 envs), 16 `heldout_out`,
+eval sets `heldout_in`, `heldout_out` (θ = 0, physical), `heldout_in@45/90`,
+`far@0/45/90`:
+- **B3-1** (22783724): `dist` 5×768, every lifetime at θ = 90° with
+  corner-confined translation, 1000 updates. The decode question: `far@90`
+  ≪ 90° means the rule was learned from a corner; ~44–90° the lookup.
+- **B3-2** (22783731): from scratch MLP 5×768 (LN, skip, lr 1e-4) → GRU
+  2×512 + prev_action, warm-up 3000 at 90°, then mix 0.5, 8000 updates.
+  `far@45`/`far@90` isolate the decode's position generalisation;
+  `far@0` and `heldout_out` are the composite.
