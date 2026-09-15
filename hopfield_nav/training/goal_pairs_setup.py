@@ -12,7 +12,7 @@ from typing import NamedTuple
 
 import numpy as np
 
-from gridcode.lattice import gbook_at
+from gridcode.lattice import gbook_at, rotation
 from ..config import RNNAgentConfig, RNNTrainConfig
 from ..evaluation.goal_pairs import EnvTensors, aggregate_tables, evaluate_pairs
 from ..utils import smooth_gbook
@@ -89,13 +89,55 @@ class EnvSet:
         return gbook_at(cells + np.array([ox, oy], dtype=np.float64), self.lambdas,
                         self.fwhm_ratio, theta, scale, shift)
 
-    def with_lattice(self, theta: float, scale: float = 1.0, name: str | None = None) -> "EnvSet":
-        """A copy of this set with every env's grid code on lattice ``(theta, scale)``."""
-        tensors = [replace(t, gbook=self.lattice_gbook(k, theta, scale), theta=float(theta),
+    def with_lattice(self, theta: float, scale: float = 1.0, name: str | None = None,
+                     shifts=None) -> "EnvSet":
+        """A copy of this set with every env's grid code on lattice ``(theta, scale)``.
+
+        ``shifts``: an optional per-env list of lattice translations (B3's
+        ``far@theta`` sets place each env's ROTATED footprint in a region
+        away from the training corner; without them the shift is 0 and the
+        env sits at its physical scaffold position).
+        """
+        shifts = shifts if shifts is not None else [(0.0, 0.0)] * len(self.tensors)
+        tensors = [replace(t, gbook=self.lattice_gbook(k, theta, scale, shifts[k]), theta=float(theta),
                            scale=float(scale)) for k, t in enumerate(self.tensors)]
         return EnvSet(name or f"{self.name}@{np.degrees(theta):.0f}", self.envs, self.offsets, None,
                       lambdas=self.lambdas, fwhm_ratio=self.fwhm_ratio, tensors=tensors,
                       theta=theta, scale=scale)
+
+
+def parse_rect(spec: str) -> tuple[float, float, float, float]:
+    """``"rect:X0,Y0,W,H"`` or ``"X0,Y0,W,H"`` -> floats."""
+    body = spec.split(":", 1)[1] if ":" in spec else spec
+    x0, y0, w, h = (float(v) for v in body.split(","))
+    return x0, y0, w, h
+
+
+def rotated_footprint(offset, size: int, theta: float, scale: float = 1.0) -> tuple[float, float, float, float]:
+    """Bounding box ``(xmin, ymin, xmax, ymax)`` of an env's cells after ``R_theta / s``."""
+    ox, oy = offset
+    corners = np.array([(ox, oy), (ox + size - 1, oy), (ox, oy + size - 1), (ox + size - 1, oy + size - 1)],
+                       dtype=np.float64)
+    xy = (corners @ rotation(theta).T) / float(scale)
+    return float(xy[:, 0].min()), float(xy[:, 1].min()), float(xy[:, 0].max()), float(xy[:, 1].max())
+
+
+def shift_into_rect(rect, offset, size: int, theta: float, scale: float, rng) -> tuple[float, float]:
+    """A lattice translation, uniform over those that put the env's rotated footprint inside ``rect``.
+
+    The training-side use (B3): every phase combination a lifetime shows is
+    a point of the corner, whatever the orientation. The eval-side use: put a
+    test env's rotated footprint in a region far from the corner, so its
+    phases are unseen on both axes. If the footprint does not fit, it is
+    pinned at the rect's low corner.
+    """
+    x0, y0, w, h = rect
+    xmin, ymin, xmax, ymax = rotated_footprint(offset, size, theta, scale)
+    lo_x, hi_x = x0 - xmin, x0 + w - 1 - xmax
+    lo_y, hi_y = y0 - ymin, y0 + h - 1 - ymax
+    tx = rng.uniform(lo_x, hi_x) if hi_x > lo_x else lo_x
+    ty = rng.uniform(lo_y, hi_y) if hi_y > lo_y else lo_y
+    return float(tx), float(ty)
 
 
 class Lattice(NamedTuple):
@@ -124,7 +166,7 @@ class LatticeSampler:
 
     def __init__(self, rng, *, holdout_deg: float = 15.0, scale_range=(1.0, 1.0),
                  mix_standard_frac: float = 0.0, mix_theta: float = 0.0, translate: bool = False,
-                 period: float = 1716.0) -> None:
+                 period: float = 1716.0, region=None) -> None:
         self.rng = rng
         self.holdout = np.radians(float(holdout_deg))
         self.scale_range = (float(scale_range[0]), float(scale_range[1]))
@@ -132,25 +174,33 @@ class LatticeSampler:
         self.mix_theta = float(mix_theta)
         self.translate = bool(translate)
         self.period = float(period)
+        # B3: confine every lifetime's ROTATED footprint to this rect, so the
+        # phase combinations training shows are the corner's and nothing
+        # else, at every orientation. Needs the env's offset at draw time.
+        self.region = None if region is None else tuple(float(v) for v in region)
         if not (0.0 <= self.holdout < np.pi):
             raise ValueError("holdout_deg must be in [0, 180)")
 
-    def _shift(self) -> tuple[float, float]:
+    def _shift(self, theta: float, scale: float, offset=None, size: int | None = None) -> tuple[float, float]:
         if not self.translate:
             return (0.0, 0.0)
+        if self.region is not None:
+            if offset is None or size is None:
+                raise ValueError("a region-confined LatticeSampler needs the env offset and size at draw time")
+            return shift_into_rect(self.region, offset, size, theta, scale, self.rng)
         return (float(self.rng.uniform(0, self.period)), float(self.rng.uniform(0, self.period)))
 
-    def draw(self) -> Lattice:
+    def draw(self, offset=None, size: int | None = None) -> Lattice:
         if self.mix > 0 and self.rng.uniform() < self.mix:
-            return Lattice(self.mix_theta, 1.0, self._shift())
-        theta = self.rng.uniform(self.holdout, 2 * np.pi - self.holdout)
+            return Lattice(self.mix_theta, 1.0, self._shift(self.mix_theta, 1.0, offset, size))
+        theta = float(self.rng.uniform(self.holdout, 2 * np.pi - self.holdout))
         lo, hi = self.scale_range
         if lo == hi:
-            return Lattice(float(theta), lo, self._shift())
+            return Lattice(theta, lo, self._shift(theta, lo, offset, size))
         for _ in range(100):
-            s = self.rng.uniform(lo, hi)
+            s = float(self.rng.uniform(lo, hi))
             if not (0.95 <= s <= 1.05):
-                return Lattice(float(theta), float(s), self._shift())
+                return Lattice(theta, s, self._shift(theta, s, offset, size))
         raise RuntimeError("scale range is inside the held-out band [0.95, 1.05]")
 
     def in_holdout(self, theta: float) -> bool:

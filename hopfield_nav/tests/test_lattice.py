@@ -395,3 +395,49 @@ def test_encoder_bypass_and_detach():
     assert all(p.grad is None or p.grad.abs().sum() == 0 for p in core.encoder.parameters())
     f[..., 16:].sum().backward()
     assert any(p.grad is not None and p.grad.abs().sum() > 0 for p in core.encoder.parameters())
+
+
+def test_region_confined_translation_and_far_shifts():
+    from hopfield_nav.training.goal_pairs_setup import parse_rect, rotated_footprint, shift_into_rect
+    rng = np.random.RandomState(0)
+    rect = parse_rect("rect:0,0,400,400")
+    assert rect == (0.0, 0.0, 400.0, 400.0)
+    # Any offset, any theta: the shifted rotated footprint lies inside the rect.
+    for _ in range(200):
+        off = rng.uniform(0, 1700, size=2); th = rng.uniform(0, 2 * np.pi)
+        sh = shift_into_rect(rect, off, 20, th, 1.0, rng)
+        xmin, ymin, xmax, ymax = rotated_footprint(off, 20, th, 1.0)
+        assert xmin + sh[0] >= -1e-6 and xmax + sh[0] <= 399 + 1e-6
+        assert ymin + sh[1] >= -1e-6 and ymax + sh[1] <= 399 + 1e-6
+    # The sampler with a region needs the offset and honours it; without one it draws the full period.
+    ls = LatticeSampler(np.random.RandomState(1), holdout_deg=15, translate=True, region=rect)
+    with pytest.raises(ValueError):
+        ls.draw()
+    for _ in range(50):
+        lat = ls.draw((900.0, 300.0), 20)
+        xmin, ymin, xmax, ymax = rotated_footprint((900.0, 300.0), 20, lat.theta, lat.scale)
+        assert xmin + lat.shift[0] >= -1e-6 and xmax + lat.shift[0] <= 399 + 1e-6
+        assert ymin + lat.shift[1] >= -1e-6 and ymax + lat.shift[1] <= 399 + 1e-6
+    # The phases the code is built from are those of a point in the rect: the
+    # code equals gbook_at of the shifted rotated coordinates directly.
+    cells = np.array([(x, y) for x in range(20) for y in range(20)], dtype=float) + np.array([900.0, 300.0])
+    lat = ls.draw((900.0, 300.0), 20)
+    a = gbook_at(cells, LAM, 0.25, lat.theta, lat.scale, lat.shift)
+    inside = cells @ rotation(lat.theta).T / lat.scale + np.array(lat.shift)
+    assert inside.min() >= -1e-6 and inside.max() <= 399 + 1e-6
+    b = gbook_at(inside, LAM, 0.25, 0.0, 1.0)
+    assert np.abs(a - b).max() < 1e-5
+
+
+def test_with_lattice_per_env_shifts(world):
+    from hopfield_nav.training.goal_pairs_setup import shift_into_rect
+    tr = world["train"]
+    rng = np.random.RandomState(0)
+    th = np.radians(90)
+    shifts = [shift_into_rect((100, 100, 80, 80), o, SIZE, th, 1.0, rng) for o in tr.offsets]
+    es = tr.with_lattice(th, 1.0, name="far@90", shifts=shifts)
+    assert es.name == "far@90"
+    for k, t in enumerate(es.tensors):
+        assert np.allclose(t.gbook, tr.lattice_gbook(k, th, 1.0, shifts[k]))
+    # Different shifts give different codes.
+    assert np.abs(es.tensors[0].gbook - tr.with_lattice(th, 1.0).tensors[0].gbook).max() > 0.5

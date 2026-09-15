@@ -45,7 +45,7 @@ from .policy.agent_rnn import RNNAgent, compute_rnn_input_dim
 from .rollout.rnn import collect_rollout_rnn
 from .training.goal_pairs_setup import (
     ARMS, MODES, LatticeSampler, agent_cfg_for_mode, build_env_sets, eval_all, jsonable,
-    parse_thetas)
+    parse_rect, parse_thetas, shift_into_rect)
 from .training.rnn_setup import write_rnn_world_spec
 from .updates.bc_rnn import bc_rnn_update
 from .world.vec_env import make_vec
@@ -122,6 +122,14 @@ def main() -> None:
                    help="also translate the lattice by a uniform random shift per lifetime, so the "
                         "absolute phases of a training env cannot pin theta through memorised "
                         "offsets (sec 4B.2); --no-lattice_translate reproduces the 2026-09-13 runs")
+    p.add_argument("--lattice_translate_region", type=str, default="",
+                   help="B3: 'rect:X0,Y0,W,H' -- draw each lifetime's translation so the env's ROTATED "
+                        "footprint stays inside this rect, so training shows only the corner's phase "
+                        "combinations at every orientation (plan sec 6.1). Default: the full period.")
+    p.add_argument("--eval_far_rect", type=str, default="",
+                   help="B3: 'X0,Y0,W,H' -- add far@theta eval sets: the held-out envs with a lattice "
+                        "shift that puts each ROTATED footprint inside this rect, far from the corner "
+                        "on both axes, so its phases are unseen at every eval orientation")
     p.add_argument("--lattice_per_row", action=argparse.BooleanOptionalAction, default=True,
                    help="one lattice per lifetime (row) rather than per env, so the weights "
                         "cannot fit the current lifetimes' maps; --no-lattice_per_row reproduces "
@@ -209,15 +217,28 @@ def main() -> None:
                                  holdout_deg=args.lattice_theta_holdout_deg,
                                  scale_range=(lo, hi), mix_standard_frac=args.lattice_mix_standard_frac,
                                  mix_theta=float(np.radians(args.lattice_mix_theta_deg)),
-                                 translate=args.lattice_translate, period=float(np.prod(args.lambdas)))
+                                 translate=args.lattice_translate, period=float(np.prod(args.lambdas)),
+                                 region=(parse_rect(args.lattice_translate_region)
+                                         if args.lattice_translate_region else None))
         for th in parse_thetas(args.eval_thetas):
             if abs(th) < 1e-9:
                 continue
             sets.append(heldout.with_lattice(th, 1.0))
+        if args.eval_far_rect:
+            # far@theta: the held-out envs (the OUTSIDE ones when a corner
+            # was declared), each with a shift that puts its rotated
+            # footprint inside the far rect. Phases unseen on both axes at
+            # every orientation, including the trained ones.
+            far_rect = parse_rect(args.eval_far_rect)
+            src = heldout_out if heldout_out is not None else heldout
+            far_rng = np.random.RandomState(args.seed + 29)
+            for th in parse_thetas(args.eval_thetas):
+                shifts = [shift_into_rect(far_rect, o, args.size, th, 1.0, far_rng) for o in src.offsets]
+                sets.append(src.with_lattice(th, 1.0, name=f"far@{np.degrees(th):.0f}", shifts=shifts))
     print(f"world: {len(train)} train / {len(heldout)} {heldout.name} / {len(same)} same"
           + (f" / {len(heldout_out)} heldout_out" if heldout_out else "")
           + f"; place={args.place_region}; cells={cells.summary()}; {time.time()-t0:.1f}s"
-          + (f"; lattice random (holdout {args.lattice_theta_holdout_deg} deg, scale {args.lattice_scale_range}, translate {args.lattice_translate}, per_row {args.lattice_per_row}, "
+          + (f"; lattice random (holdout {args.lattice_theta_holdout_deg} deg, scale {args.lattice_scale_range}, translate {args.lattice_translate}{' in ' + args.lattice_translate_region if args.lattice_translate_region else ''}, per_row {args.lattice_per_row}, "
              f"mix {args.lattice_mix_standard_frac}); eval sets {[s.name for s in sets]}" if lattice else ""))
 
     D = compute_rnn_input_dim(acfg, args.observation_size, vh.Ng)
@@ -308,11 +329,11 @@ def main() -> None:
             # `dist` loss -0.19 on data it could not generalise from); 4096
             # concurrent lattices, each on one row, is past what weights can
             # memorise, and in-context is the only route left.
-            lats = [lattice.draw() for _ in range(args.batch_envs)]
+            lats = [lattice.draw(train.offsets[k], args.size) for _ in range(args.batch_envs)]
             env_tables[k] = np.stack([train.lattice_gbook(k, l.theta, l.scale, l.shift) for l in lats])
             thetas_drawn.extend(l.theta for l in lats)
         else:
-            lat = lattice.draw()
+            lat = lattice.draw(train.offsets[k], args.size)
             env_tables[k] = train.lattice_gbook(k, lat.theta, lat.scale, lat.shift)
             thetas_drawn.append(lat.theta)
 
