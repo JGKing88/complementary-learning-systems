@@ -48,7 +48,7 @@ def scan_tables(d: str) -> None:
     print("  medians over references (both seeds pooled); alias = max cos "
           "beyond 50 cells; @corner = fraction of those aliases inside the "
           "training corner; <0.1 = fraction of the arena below cos 0.1\n")
-    hdr = (f"  {'arm':<11s}{'band':<13s}{'n':>3s}{'C(1)':>7s}{'r_0.9':>7s}"
+    hdr = (f"  {'arm':<16s}{'band':<13s}{'n':>3s}{'C(1)':>7s}{'r_0.9':>7s}"
            f"{'r_mono':>8s}{'r_u16':>7s}{'alias':>7s}{'max':>6s}"
            f"{'@corner':>9s}{'<0.1':>7s}")
     print(hdr)
@@ -65,7 +65,7 @@ def scan_tables(d: str) -> None:
             def g(k):
                 return np.array([r[k] for r in b], dtype=float)
 
-            print(f"  {arm:<11s}{name:<13s}{len(b):>3d}{g('c1').mean():>7.3f}"
+            print(f"  {arm:<16s}{name:<13s}{len(b):>3d}{g('c1').mean():>7.3f}"
                   f"{np.median(g('r_0.9')):>7.1f}"
                   f"{np.median(g('r_mono')):>8.1f}"
                   f"{np.median(g('r_u16')):>7.1f}"
@@ -92,7 +92,7 @@ def probe_tables(d: str) -> None:
     print("  means over seeds; basin = r_exact_all (cells); reach = "
           "continuous flow reach rate; exact = fraction of goal cues "
           "retrieving their own cell\n")
-    hdr = (f"  {'arm':<11s}{'region':<10s}{'n':>3s}{'acc45':>8s}{'|err|':>7s}"
+    hdr = (f"  {'arm':<16s}{'region':<10s}{'n':>3s}{'acc45':>8s}{'|err|':>7s}"
            f"{'exact':>8s}{'basin':>8s}{'reach':>8s}{'disc':>8s}")
     print(hdr)
     print("  " + "-" * (len(hdr) - 2))
@@ -105,7 +105,7 @@ def probe_tables(d: str) -> None:
             def m(k):
                 return float(np.mean([r[k] for r in rs]))
 
-            print(f"  {arm:<11s}{region:<10s}{len(rs):>3d}{m('acc'):>8.3f}"
+            print(f"  {arm:<16s}{region:<10s}{len(rs):>3d}{m('acc'):>8.3f}"
                   f"{m('err'):>7.1f}{m('exact'):>8.3f}{m('basin'):>8.1f}"
                   f"{m('cont'):>8.3f}{m('disc'):>8.3f}")
         if any(a == arm for a, _ in cells):

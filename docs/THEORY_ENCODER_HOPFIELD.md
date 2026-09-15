@@ -1005,8 +1005,55 @@ numbers (the `hebb` controls of the §7.1 projection run: 0.997 / 0.982 / 25–2
 (EXPERIMENTS_UNIQUE_RADIUS), and it is a substantially weaker Hopfield encoder
 than att0.5 on exactness, basin and reach. That does not touch the corner
 conclusion, which is a same-recipe comparison, but the ladder and this section
-use different attract levels; `w63_corner_a0.5` repeats both arms at att0.5 and
-its rows go here when they land.
+use different attract levels, so `w63_corner_a0.5` repeats both arms at att0.5.
+
+#### Replication at the ladder's attract level (w63, att0.5)
+
+Same two layouts, same seeds, `attract_lambda` 0.5. **Probe** (K = 5, s = 1,
+means of two seeds; `att0.5` is the ladder's own 118-patch encoder in the same
+square, one seed):
+
+| arm | region | acc45 | \|err\| | exact | basin | reach |
+|---|---|---|---|---|---|---|
+| **corner500** | its corner | 0.892 | 18° | 0.981 | 16.0 | 0.888 |
+| **corner500** | centre | **0.512** | **59°** | 0.862 | 10.3 | **0.164** |
+| **corner500** | opposite corner | **0.534** | **57°** | 0.743 | 14.5 | **0.205** |
+| scatter100 | corner / centre / opposite | 0.998 / 0.996 / 0.999 | 8–9° | 0.86 / 0.87 / 0.85 | 19.7 / 16.3 / 16.9 | 0.95 / 0.94 / 0.95 |
+| att0.5 (118 patches) | corner | 1.000 | 8° | 0.924 | 21.8 | 0.980 |
+
+**Scan** (medians over 16 references per band, both seeds pooled):
+
+| arm | band | C(1) | r₀.₉ | r_mono | r_u16 | alias | max | <0.1 |
+|---|---|---|---|---|---|---|---|---|
+| corner500 | inside | 0.996 | 5.0 | 25.0 | 3.0 | 0.661 | 0.777 | 0.984 |
+| corner500 | out 1–100 | **0.938** | 3.5 | **6.5** | 0.0 | **0.924** | 0.958 | 0.869 |
+| corner500 | out 100–300 | **0.923** | 3.0 | **11.5** | 0.0 | **0.941** | 0.972 | 0.866 |
+| corner500 | out 300–700 | 0.966 | 5.0 | 11.0 | 1.0 | 0.845 | 0.976 | 0.919 |
+| corner500 | out 700+ | 0.955 | 3.5 | 10.0 | 1.0 | 0.897 | 0.964 | 0.892 |
+| scatter100 | every band | 0.995–0.996 | 6 | 33.5–36 | 3–4 | 0.80–0.84 | 0.88–0.90 | 0.97 |
+
+**[M]**. The conclusion is the same at the ladder's recipe — outside its corner
+the corner encoder's bearing is at 57–59° error and reach is 0.16–0.21, against
+8–9° and 0.94–0.95 for the scattered control; and it is again worse inside its
+own corner than the control is there (acc45 0.89 vs 0.998, reach 0.89 vs 0.95).
+But the two halves of the failure now **separate**, which the att16 wave could
+not show:
+
+* **Retrieval mostly survives outside.** `exact` 0.74–0.86 and basin 10–15
+  against the control's 0.85–0.87 and 16–20. At att0.5 the alias ceiling
+  outside is 0.85–0.94, below where the bank's argmax flips away from the goal;
+  at att16 it was 0.96–0.99 and retrieval went with it (`exact` 0.27–0.39).
+  (J1) is degraded, not lost.
+* **The direction field does not.** `C(1)` 0.92–0.97 and `r_mono` 6–12 cells
+  against 33–36 — the same (J2)/(J3) failure as at att16, to the same degree,
+  and acc45 sits at 0.51–0.53 either way. The readout is a one-cell derivative
+  of the similarity field; retrieval is an argmax over it. The derivative dies
+  as soon as the field is rough at the cell scale; the argmax tolerates
+  roughness until an alias overtakes the goal.
+
+So what an encoder loses first outside its training distribution is
+*differentiability*, not *addressability* — and the attract level sets only how
+much of the second goes with the first.
 
 ---
 
@@ -2719,8 +2766,13 @@ does not extrapolate to phase triples it never saw. The outside code is not
 untrained (77–87% of the arena below 0.1 vs 0% untrained); it is trained with
 the wrong structure. Side finding: w53 `att16`, "level 7" by unique radius, is a
 much weaker Hopfield encoder than the ladder's `att0.5` (exact 0.59 vs 0.98,
-reach 0.78 vs 0.99 on the whole arena); `w63_corner_a0.5` repeats the wave at
-att0.5.
+reach 0.78 vs 0.99 on the whole arena). Replicated at att0.5 (`w63`): outside
+the corner acc45 0.51–0.53 and reach 0.16–0.21 against 0.996 and 0.94 for the
+scattered control — and there the two halves separate: retrieval mostly
+survives (exact 0.74–0.86, basin 10–15) while the direction field does not
+(C(1) 0.92–0.97, r_mono 6–12 vs 33–36). Differentiability is lost before
+addressability; the attract level only sets how much of the second goes with
+the first.
 
 **Turn 25 — a correction, found on the way.** §3.6(a) had argued from
 `train.py`'s argparse defaults (batch 16384, cross-env pairs in the repel
