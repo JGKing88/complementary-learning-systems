@@ -950,3 +950,11 @@ resume tomorrow with `--continue_from`):** `one_k4_g_sched` (22772984; K=4,
 `interleave:400,empty_frac=0.5 ; interleave:3600,empty_frac=0.75` = 2+2
 until the exploit lock, then 3+1) and `one_k3_g_e67` (22772985; K=3,
 `empty_frac` 0.67 = 2 explore + 1 exploit, 192 episodes/update).
+
+**22:40:** `one_k3_g_e67` (22772985) is DEAD the way `od5` was — movement
+std 0.125 → 0.011 by u300, `approx_kl = clip_frac = 0` from there, reward
+flat at 0.07 — cancelled at u575; a fixed point of the polar head's
+noise, not a result about the 2:1 mix (re-run on another seed). The
+schedule arm is healthy: u625 (160k) 13.0/15.4 steps, swept 0.48/0.45
+and climbing after its u400 switch to 3:1. `one_k4_g` s43 holds the
+screen: u2475 (634k) 11.3/12.9, 0.55/0.50.
