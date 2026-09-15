@@ -979,3 +979,43 @@ and the 128-episode 3:1 arm). Queued for the 21:00 node release
 `one_k4_g` s43, `one_k4_g_e75` s43 and `one_k4_b32_g_e75` (12 h each,
 same schedules), then a probe round 3 on their final checkpoints — the
 schedule arm is the candidate for both halves in one model.
+
+---
+
+## 8. FIXED goals, few envs — make it generalize (2026-09-15)
+
+Jack: *"when those are done, I'd like you to try to get three envs with no
+goal refresh working. then if that works, try harder on one env with no
+goal refresh. I'm not sure what this will involve. Maybe a smaller network?
+Don't take my word for that. But the point is it has to learn to generalize
+somehow, as the issue had been memorization."*
+
+### 8.1 The failure to beat, and the levers
+
+§7.10: with one (env, goal) pair the exploit half learns "position →
+heading to the goal cell" off the wall code and path integration
+(`follow_q` 0.05–0.2 on new arenas at every checkpoint; the redraw policy
+0.9), perfect at home, coin-flip elsewhere. Two things make the map the
+cheaper fit: position is readable (one barcode, `prev_disp` integration),
+and `q` is the noisier target (0–10 distractor recalls). Levers, each a
+regulariser against the map:
+
+- **`h<N>`** — smaller trunk (Jack's guess). The barcode→position lookup
+  is the expensive representation; atan2(`q`) is cheap.
+- **`xod<p>`** — `--exploit_obs_dropout`: barcode dropout in EXPLOIT
+  rollouts only, so the map's input is unreliable exactly when `q` is
+  available; explore rollouts keep clean walls for sweeping. (Run-wide
+  `obs_dropout` 0.5 killed a run and 0.3 did nothing for explore, §7.5 —
+  this is a different placement of the same knob.)
+- **`xhd<p>`** — `--exploit_heading_dropout`: the path-integration
+  channels (`prev_action`, `prev_displacement`) dropped in exploit only.
+- **`nd0`** — no exploit distractors: `q` is clean, so following it fits
+  at least as well as the map. (Distractor robustness would then come
+  from a curriculum, `N_TRAIN_DISTRACTORS_MAX_END`, once `q`-following is
+  in place.)
+
+Launcher: `VARIANT=fix3_<lever> run_nav_p2.sh` (3 envs × K=2 = 3+3 slots ×
+32 = 192 episodes/update) and `fix1_<lever>` (1 env × K=2 = 1+1 × 64).
+Verdict instrument: the standard held-out training eval plus the nav
+probe's `follow_q` (§7.10's table) — the question is not only "does it
+reach held-out goals" but "is it following `q` when it does".
