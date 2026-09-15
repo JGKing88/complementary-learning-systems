@@ -912,3 +912,35 @@ in `run_nav_p2.sh` is the same failure one level up). The explore-side
 corollary — a goal-keyed map leaves the trunk freer for sweeping than a
 general follow-`q` — fits the curves but is NOT measured. Output:
 `results/nav_tri_probe/fixed_goal_nav_heldout.json`.
+
+### 7.11 Probe round 2 (job 22772411, 21:35): the two halves come from different mixes
+
+d0_base u725 tail read 5 of 144 this run.
+
+| checkpoint | episodes | exploit × opt (d=0/5/10) | success | explore d=0 swept / eff / tail | explore d=10 swept / eff / **tail** (n) |
+|---|---|---|---|---|---|
+| d0_base u725 | 928k | 1.20 / 1.16 / 1.28 | 1 / 1 / 1 | 0.607 / 0.953 / 0 | 0.578 / 0.925 / **0.035 (5)** |
+| **k4_g s43 u1900** (1:1) | 486k | **1.17 / 1.17 / 1.23** | 1 / 1 / 1 | 0.564 / 0.898 / 0 | 0.517 / 0.845 / 0.146 (21) |
+| e75 s42 u2150 (3:1) | 550k | 1.39 / 1.30 / **1.61** | 0.995 / 0.984 / 0.984 | 0.615 / 0.957 / 0 | **0.592 / 0.954 / 0.035 (5)** |
+| e75 s43 u1825 (3:1) | 467k | 1.30 / 1.30 / 1.43 | 1 / 1 / 1 | 0.599 / 0.957 / 0 | 0.556 / 0.889 / 0.076 (11) |
+| e75 s43 u1000 | 256k | 1.35 / 1.28 / 1.36 | 1 / 1 / 1 | 0.486 / 0.800 / 0.083 | 0.452 / 0.762 / 0.194 (28) |
+| b32_g_e75 u1750 (3:1, 128/u) | 224k | 1.26 / 1.21 / 1.28 | 1 / 1 / 0.995 | 0.589 / 0.928 / 0 | 0.523 / 0.852 / 0.118 (17) |
+| b16_g_e75 u1800 (3:1, 64/u) | 115k | 1.35 / 1.36 / 1.47 | 1 / 1 / 1 | 0.506 / 0.824 / 0.111 | 0.467 / 0.796 / 0.167 (24) |
+| k2_g u4000 (1:1) | 512k | 1.19 / 1.23 / 1.28 | 1 / 1 / 1 | 0.568 / 0.924 / 0 | 0.462 / 0.812 / 0.201 (29) |
+
+1. **No single one-arena checkpoint passes every row, and the miss is a
+   mix, not a data, question.** The 1:1 K=4 arm has d0_base's exploit
+   (× optimal 1.17/1.17/1.23 — better) and d=0 explore within 0.05, with
+   a distractor tail of 15% that did NOT close from u1450 (19) to u1900
+   (21). The 3:1 arm (s42 u2150) matches d0_base's explore completely —
+   tail 5 vs 5, efficiency 0.954 vs 0.925 at d=10 — and pays in directness
+   (1.61 at d=10, `align_true` 0.55). Same frontier as §5.5 point 3.
+2. The sample-lean 3:1 arm at 224k sits on the frontier too (exploit
+   within 0.06, d=0 explore passes, tail 17): explore data per update
+   sets how fast the explore half arrives, not which half you get.
+3. **Delivered:** `agent_ckpts/navigate_navp2_one_k4_g_s43_22757447/navigate_u1900.pt`
+   (486k episodes; exploit ✓, explore d=0 ≈, d=10 tail ✗) and, for the
+   explore-complete alternative, `..._one_k4_g_e75_s42_22763086/navigate_u2150.pt`.
+4. **Next arm:** a mix SCHEDULE — 1:1 until the exploit lock (~u400), then
+   3:1 — or a 2:1 mix (K=3, `empty_frac` 0.67; K=6, 4+2). The SE line's
+   untried follow-up, now with the same shape on one arena.
