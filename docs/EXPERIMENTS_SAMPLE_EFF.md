@@ -800,3 +800,50 @@ still climbing.
 
 Other sessions' GPU jobs (`cc_scatter*`, `corner_check`) now share the
 partition; `se_b8_lr1` (22701298) reached its 24 h wall at 20:01.
+
+### 7.8 Probe round 1 (job 22767338, 20:00): one arena = d0_base on every row but the d=10 explore tail
+
+Seven checkpoints in one process; this run's d0_base u725 tail read 6 of 144.
+
+**Exploit** (d = 0 / 5 / 10):
+
+| checkpoint | episodes | success | steps | × opt | `align_true` |
+|---|---|---|---|---|---|
+| **k4_g s43 u1450** | **371k** | 1.000 / 1.000 / 1.000 | 11.59 / 12.47 / 12.31 | **1.22 / 1.19 / 1.26** | 0.93 / 0.94 / 0.91 |
+| k4_g s43 u1200 | 307k | 1.000 / 1.000 / 0.995 | 11.52 / 12.47 / 12.54 | 1.21 / 1.19 / 1.29 | 0.94 / 0.94 / 0.82 |
+| e75 s42 u1250 | 320k | 1.000 / 1.000 / 1.000 | 12.65 / 13.35 / 13.93 | 1.33 / 1.28 / **1.43** | 0.83 / 0.86 / 0.78 |
+| e75 s43 u1000 | 256k | 1.000 / 1.000 / 1.000 | 12.82 / 13.37 / 13.27 | 1.35 / 1.28 / 1.36 | 0.84 / 0.88 / 0.83 |
+| k2_g u2800 | 358k | 1.000 / 1.000 / 1.000 | 11.83 / 12.98 / 12.96 | 1.24 / 1.24 / 1.33 | 0.95 / 0.95 / 0.89 |
+| b16_g u2500 | 80k | 1.000 / 1.000 / 0.995 | 11.61 / 12.90 / 13.43 | 1.22 / 1.23 / 1.37 | 0.95 / 0.94 / 0.79 |
+| d0_base u725 | 928k | 1.000 / 1.000 / 1.000 | 11.40 / 12.14 / 12.48 | 1.20 / 1.16 / 1.28 | 0.92 / 0.93 / 0.86 |
+
+**Explore** (144 sampled trials, held-out):
+
+| checkpoint | d=0 swept / eff / tail | d=10 swept / eff / **tail** (n) / chase_t |
+|---|---|---|
+| **k4_g s43 u1450** | **0.596 / 0.951 / 0.000** | 0.514 / 0.879 / **0.132 (19)** / 0.67 |
+| k4_g s43 u1200 | 0.535 / 0.854 / 0.000 | 0.481 / 0.824 / 0.160 (23) / 0.64 |
+| e75 s42 u1250 | 0.593 / 0.935 / 0.007 | 0.541 / 0.870 / 0.097 (14) / 0.64 |
+| e75 s43 u1000 | 0.497 / 0.810 / 0.056 | 0.465 / 0.804 / 0.139 (20) / 0.59 |
+| k2_g u2800 | 0.518 / 0.876 / 0.014 | 0.464 / 0.830 / 0.153 (22) / 0.76 |
+| b16_g u2500 | 0.269 / 0.504 / 0.493 | 0.134 / 0.356 / 0.840 (121) / 0.68 |
+| d0_base u725 | 0.606 / 0.944 / 0.000 | 0.577 / 0.922 / **0.042 (6)** / 0.60 |
+
+1. **`one_k4_g` s43 u1450 — 371k episodes, one arena — equals d0_base u725
+   on every §1 row except the d=10 explore collapsed tail**: success 1.000
+   everywhere, × optimal within 0.03 at all three levels, explore
+   efficiency at d=0 0.951 vs 0.944, tail 0 vs 0. At d=10 its tail is 19
+   of 144 vs 6 (efficiency 0.879 vs 0.922), and the collapsed trials chase
+   `q` — distractor capture: the ||q|| gate learned at one offset transfers
+   imperfectly to arenas at other offsets. 2.5× fewer episodes than
+   d0_base for everything but that row.
+2. The 3:1 mix buys the smaller one-env tail (14) at the usual exploit
+   price (× optimal 1.43 at d=10) — the same frontier as §5.5 point 3.
+3. **Explore needs the data on one arena.** `b16_g` (32 episodes/update) at
+   80k has exploit at d0_base level but its SAMPLED explore is 0.27 / 0.13
+   swept (deterministic eval read 0.34 / 0.31 — the one case here where
+   sampling hurt), tail 121 of 144 at d=10. One arena's exploit is cheap;
+   its explore is not.
+4. Round 2 at ~22:30 on the last pre-maintenance checkpoints (k4_g s43
+   ~u2400, e75 s42 ~u2000, the sample-lean 3:1 arms) asks whether the
+   tail closes with updates as d0_base's did (§5.4 point 3).
