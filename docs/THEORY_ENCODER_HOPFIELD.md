@@ -605,6 +605,13 @@ a location, and the numbers are far above anything the ±48-cell view showed
 
 #### The peak is not a lattice revival, and that is the interesting part
 
+> *Refined 2026-09-14 (§3.7):* the point 784 is not a revival, but the ridge it
+> sits on is anchored on the grid code's **near-revivals of the full triple** —
+> 780, 792, 793 and 924, 935, 936, where all three module phases return to
+> within one cell and the input is at 0.9–0.96. The trained output is a plateau
+> bridging them. "Not at the revivals" was true of the point and not of the
+> ridge.
+
 Localising the 10% peak: `dx = 784` on-axis, cos 0.600, a broad **ridge**
 (780–785 within 0.01) rather than a spike — and `784 mod (11,12,13) = (3,4,4)`,
 so it is not a grid revival at all. Over 40 reference positions the displacement
@@ -879,19 +886,19 @@ composition: outside the corner, beyond ~24 cells, 64–86% of misses land on a
 recall blends them — while inside the corner 71% of misses are `far`, a foreign
 cell winning the argmax.
 
-**Scan** (medians over 8 references per band per seed, `seed 42`; alias = max
+**Scan** (medians over 16 references per band, both seeds pooled; alias = max
 cos beyond 50 cells; `@corner` = fraction of those aliases lying inside the
 training corner; `<0.1` = fraction of the arena below cos 0.1):
 
 | arm | band | C(1) | r₀.₉ | r_mono | r_u16 | alias | max | @corner | <0.1 |
 |---|---|---|---|---|---|---|---|---|---|
-| corner500 | inside | 0.999 | 8.5 | 22.5 | 3.5 | 0.885 | 0.976 | 0.00 | 0.935 |
-| corner500 | out 1–100 | **0.950** | **3.5** | **2.0** | 0.0 | **0.957** | 0.985 | 0.00 | 0.828 |
-| corner500 | out 100–300 | **0.915** | **3.5** | **3.0** | 0.0 | **0.964** | 0.984 | 0.00 | 0.845 |
-| corner500 | out 300–700 | 0.965 | 7.0 | 3.5 | 0.0 | 0.885 | 0.965 | 0.25 | 0.909 |
-| corner500 | out 700+ | 0.961 | 6.0 | 3.0 | 0.0 | 0.925 | 0.992 | 0.00 | 0.877 |
-| scatter100 | every band | 0.999 | 12.5–14 | 59–64 | 2.5–3 | 0.78–0.86 | 0.81–0.91 | 0–0.12 | 0.91–0.94 |
-| scatter118 | every band | 0.999 | 13–15 | 60–64 | 2.5–3.5 | 0.73–0.84 | 0.83–0.89 | 0–0.25 | 0.91–0.94 |
+| corner500 | inside | 0.999 | 8.0 | 25.0 | 3.0 | 0.937 | 0.984 | 0.00 | 0.927 |
+| corner500 | out 1–100 | **0.945** | **5.0** | **2.0** | 0.0 | **0.966** | 0.994 | 0.00 | 0.787 |
+| corner500 | out 100–300 | **0.915** | **3.5** | **2.5** | 0.0 | **0.975** | 0.995 | 0.06 | 0.774 |
+| corner500 | out 300–700 | 0.968 | 6.5 | 3.5 | 0.0 | 0.901 | 0.997 | 0.19 | 0.868 |
+| corner500 | out 700+ | 0.957 | 4.5 | 3.0 | 0.0 | 0.943 | 0.996 | 0.06 | 0.836 |
+| scatter100 | every band | 0.999 | 13–14 | 58–63 | 2.5–3.5 | 0.78–0.85 | 0.86–0.93 | 0–0.12 | 0.91–0.93 |
+| scatter118 | every band | 0.999 | 13–15 | 62–66 | 3–4 | 0.74–0.81 | 0.83–0.89 | 0–0.19 | 0.92–0.93 |
 | untrained | every band | 1.000 | — | 1.0 | 0.0 | 1.000 | 1.000 | — | 0.000 |
 
 **[M]**. Read against the three conditions of §5.2:
@@ -909,7 +916,7 @@ training corner; `<0.1` = fraction of the arena below cos 0.1):
 * **J1, addressing.** The alias ceiling is 0.96–0.99 outside (0.78–0.86 for the
   scattered encoders), the unique radius is 0, and the worst alias of an outside
   reference is **another outside position**, not a corner one (`@corner` ≈ 0).
-  The outside code has *not* collapsed onto the training set — 83–91% of the
+  The outside code has *not* collapsed onto the training set — 77–87% of the
   arena is still below 0.1, against 0% for the untrained floor. It is a trained
   code with the wrong structure, not an untrained one.
 
@@ -918,17 +925,40 @@ control in the same band) always lies outside the corner.
 
 #### Where the aliases are, and why there
 
-`corner_alias_structure.py`: for **all 32** outside references the worst alias
-is **on-axis** — one coordinate unchanged to within a few cells — at a
-displacement in one of two narrow ranges, **781–796** or **918–938**. Those
-straddle the grid code's own two-module revivals, 780 / 792 (12&13, 11&12) and
-924 / 936 (11&12, 12&13), the on-axis displacements at which two modules return
-to phase and the third is one cell off. It is the same place §3.5 found the 10%
-encoder's ridge (784), and the scattered control's worst aliases sit in the same
-two ranges — at 0.70–0.88. **The alias locations are a property of the recipe
-and the grid code; corner training changes their height, 0.8 → 0.96–0.99.**
+`corner_alias_structure.py`: for **all 64** outside references (both seeds) the
+worst alias is **on-axis** — one coordinate unchanged to within six cells — and
+for 77% of them at a displacement in one of two narrow ranges, **781–796** or
+**918–938**. The scattered controls' worst aliases sit in the same two ranges
+(99–100% of 80 references each, 88–90% on-axis) — at 0.65–0.93. **The alias
+locations are a property of the recipe and the grid code; corner training
+changes their height, ~0.8 → 0.96–0.99.**
 
-Counting what each layout contains settles why (seed 42 layouts):
+What those two ranges are: `corner_axis_profile.py` takes the 1-D similarity
+profile along each axis, and its peaks sit at displacements whose residues
+mod (11, 12, 13) are **all within one cell of zero** — 780 ≡ (−1, 0, 0),
+792 ≡ (0, 0, −1), 793 ≡ (1, 1, 0), 924 ≡ (0, 0, 1), 935 ≡ (0, −1, −1),
+936 ≡ (1, 0, 0). These are the grid code's **near-revivals of the full
+triple**: every module phase returns to within a cell, the input itself is at
+cos ~0.9–0.96, and the encoder has to tell the two positions apart from a
+one-cell phase shift in one or two modules. The trained output is a plateau
+bridging them (781–796, 918–938), which is why the single point §3.5 looked at
+(784, input 0.13) read as "not a revival": the ridge is anchored on
+near-revivals a few cells to either side of it. (§3.5's other claim stands: the
+encoder *does* suppress these, from 0.96 at the input to ~0.8 — when it has
+seen them.)
+
+The other 23% of the corner encoder's outside aliases are all seed 43's, all
+along one axis (Δy ≈ 0) at displacements anywhere from 111 to 1,198 cells, at
+cos 0.90–0.997 — and its profile along the unseen axis is a plateau (916–948
+at ≥ 0.90). That is the same failure carried further: the code's dependence on
+an unseen x-phase triple has nearly vanished, so positions along a row alias at
+arbitrary spacing. Seed 42 kept enough of it to alias only at the near-revivals.
+At an unseen-x position the code also varies *less along the seen axis* (mean
+similarity along y 0.34–0.49 against 0.10–0.13 inside): losing one axis-triple
+degrades the whole code, not one axis of it.
+
+Counting what each layout contains settles why (seed-42 layouts; a revival
+pair is two training cells at one of those near-revival displacements):
 
 | layout | x-phase triples seen | y-phase triples seen | on-axis pairs at Δ = 792 | at Δ = 924 | at Δ = 400 |
 |---|---|---|---|---|---|
@@ -939,8 +969,8 @@ The code at a position is a function of six phases (x and y for each of three
 modules), and by the CRT the x-phase triple *is* `x mod 1716`. A 500-wide
 corner shows the encoder 500 of the 1716 x-triples and 500 of the y-triples;
 100 scattered 50-cell patches show it essentially all of both. And a revival
-pair — same two module phases, third one cell off — needs a displacement of 792
-or 924, so **no such pair fits inside a 500-wide corner**, while the scattered
+pair — every module phase back to within a cell — needs a displacement of 780
+or more, so **no such pair fits inside a 500-wide corner**, while the scattered
 layout holds tens of thousands. So:
 
 * the rate term, the only term that sees a far pair (§3.6's box), was never
@@ -957,7 +987,7 @@ axis and the revival displacements**, and 100 scattered 50-cell patches cover
 both while one 500-cell corner covers neither. It also says what an encoder
 trained in one place needs from its training distribution if it is to be used
 elsewhere: not proximity in space, but every per-axis phase triple, and pairs at
-the two-module revival displacements.
+the near-revival displacements (780, 792, 793, 924, 935, 936).
 
 **Testable prediction.** Two 500-cell corners 792 cells apart on one axis put
 revival pairs back in the training set while raising x-triple coverage only to
@@ -2678,14 +2708,14 @@ and reach is 0.05, against 0.97+ / 0.54–0.66 for the scattered control in the
 same squares. The scan says why: `C(1)` 0.999 → 0.92–0.96 (a one-cell step
 moves the code 6–9× further), the similarity stops falling after 2–3 cells so
 the one-cell readout differentiates roughness, and the alias ceiling is
-0.96–0.99 — at the *same* on-axis two-module revival displacements (781–796,
+0.96–0.99 — at the *same* on-axis near-revival displacements (781–796,
 918–938) where every encoder of this recipe has its worst aliases at ~0.8.
 Counting the layouts: a 500-wide corner contains **zero** pairs at 792 or 924
 and shows the encoder 29% of the per-axis phase triples; 100 scattered patches
 contain tens of thousands and show it 97%. So the rate term — the only term that
 sees a far pair — never met a revival pair, and the attract term's smoothness
 does not extrapolate to phase triples it never saw. The outside code is not
-untrained (83–91% of the arena below 0.1 vs 0% untrained); it is trained with
+untrained (77–87% of the arena below 0.1 vs 0% untrained); it is trained with
 the wrong structure. Side finding: w53 `att16`, "level 7" by unique radius, is a
 much weaker Hopfield encoder than the ladder's `att0.5` (exact 0.59 vs 0.98,
 reach 0.78 vs 0.99 on the whole arena); `w63_corner_a0.5` repeats the wave at
