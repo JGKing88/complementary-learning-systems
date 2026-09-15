@@ -23,7 +23,7 @@ import torch
 
 from analysis.hopfield_probe.encode import Field
 from analysis.hopfield_probe.harness import load_probe_encoder
-from analysis.hopfield_probe.corner_check import _unit, default_encoders
+from analysis.hopfield_probe.corner_check import default_encoders, unit
 
 NPOS = 1716
 LAMBDAS = (11, 12, 13)
@@ -31,12 +31,12 @@ LAMBDAS = (11, 12, 13)
 
 def profile(field: Field, ref: tuple[int, int], axis: int, dmax: int):
     gx, gy = ref
-    z0 = _unit(field.encode(np.array([gx]), np.array([gy])))[0]
+    z0 = unit(field.encode(np.array([gx]), np.array([gy])))[0]
     d = np.arange(1, dmax + 1)
     if axis == 0:
-        zz = _unit(field.encode(gx + d, np.full(d.size, gy)))
+        zz = unit(field.encode(gx + d, np.full(d.size, gy)))
     else:
-        zz = _unit(field.encode(np.full(d.size, gx), gy + d))
+        zz = unit(field.encode(np.full(d.size, gx), gy + d))
     return d, zz @ z0
 
 

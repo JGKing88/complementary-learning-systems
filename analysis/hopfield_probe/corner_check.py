@@ -39,7 +39,9 @@ full-budget reference; the ladder's "10%" encoder is w52 att0.5, a different
 attract level) and the untrained MLP floor, whose cos is ~1 everywhere.
 
 One cosine map is 1716 rows of a 1716-position encode; ~100 s on four CPU
-threads and well under a second on a GPU, so run this on a GPU node.
+threads and ~30 s with the MLP on a GPU, because the per-row grid-code build
+stays on the CPU. Forty maps is ~20 min per encoder: one encoder per job
+(``run_corner.sh check LABEL``).
 """
 from __future__ import annotations
 
@@ -88,7 +90,7 @@ def default_encoders() -> list[tuple[str, str]]:
     return out
 
 
-def _unit(a):
+def unit(a):
     return a / np.linalg.norm(a, axis=-1, keepdims=True).clip(1e-30)
 
 
@@ -113,11 +115,11 @@ def sample_refs(rng: np.random.RandomState, lo: int, hi: int, n: int,
 def cos_map(field: Field, ref: tuple[int, int]) -> np.ndarray:
     """``cos(z(ref), z(p))`` for every ``p``, indexed ``[gx, gy]``."""
     gx0, gy0 = ref
-    z0 = _unit(field.encode(np.array([gx0]), np.array([gy0])))[0]
+    z0 = unit(field.encode(np.array([gx0]), np.array([gy0])))[0]
     xs = np.arange(NPOS)
     cos = np.empty((NPOS, NPOS), dtype=np.float32)
     for y in range(NPOS):
-        cos[:, y] = _unit(field.encode(xs, np.full(NPOS, y))) @ z0
+        cos[:, y] = unit(field.encode(xs, np.full(NPOS, y))) @ z0
     return cos
 
 
