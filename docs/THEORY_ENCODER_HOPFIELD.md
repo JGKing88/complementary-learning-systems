@@ -929,7 +929,7 @@ control in the same band) always lies outside the corner.
 worst alias is **on-axis** — one coordinate unchanged to within six cells — and
 for 77% of them at a displacement in one of two narrow ranges, **781–796** or
 **918–938**. The scattered controls' worst aliases sit in the same two ranges
-(99–100% of 80 references each, 88–90% on-axis) — at 0.65–0.93. **The alias
+(99–100% of 80 references each, 88–90% on-axis) — at 0.57–0.93. **The alias
 locations are a property of the recipe and the grid code; corner training
 changes their height, ~0.8 → 0.96–0.99.**
 
@@ -949,13 +949,14 @@ seen them.)
 
 The other 23% of the corner encoder's outside aliases are all seed 43's, all
 along one axis (Δy ≈ 0) at displacements anywhere from 111 to 1,198 cells, at
-cos 0.90–0.997 — and its profile along the unseen axis is a plateau (916–948
+cos 0.90–0.997 — and its profile along the unseen axis is a plateau (916–940
 at ≥ 0.90). That is the same failure carried further: the code's dependence on
 an unseen x-phase triple has nearly vanished, so positions along a row alias at
 arbitrary spacing. Seed 42 kept enough of it to alias only at the near-revivals.
-At an unseen-x position the code also varies *less along the seen axis* (mean
-similarity along y 0.34–0.49 against 0.10–0.13 inside): losing one axis-triple
-degrades the whole code, not one axis of it.
+At one unseen-x reference, (700, 300), the code also varies *less along the
+seen axis* — mean similarity along y 0.34–0.49 against 0.10–0.13 inside — though
+not at (1100, 300); whether losing one axis-triple degrades the other axis is
+not settled by two references.
 
 Counting what each layout contains settles why (seed-42 layouts; a revival
 pair is two training cells at one of those near-revival displacements):
