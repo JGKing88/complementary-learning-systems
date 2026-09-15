@@ -1285,3 +1285,68 @@ Consequences, now written into §0 and §4B.7:
   model (θ decodable from the GRU state; Δ′ from the encoder; a
   mid-lifetime lattice swap; a wrong `prev_action`), and a from-scratch
   run with mix 0 after the warm-up.
+
+## 2026-09-14 — range probes: what each model actually computes
+
+Synthetic code pairs via `gbook_at` (no scaffold), 3000 per distance,
+angular error vs Chebyshev |Δ|. Scripts `range_probe.py`,
+`range_probe_corner.py`, `band_probe.py` in the job tmp dir.
+
+**`dist@90` (B2, translation-trained) and A1 (scattered, fixed
+lattice), positions uniform over the whole 1716-cycle:**
+
+| \|Δ\| | 1–17 | 18 | 19 | 20 | 22 | 24 | 26 | 28 | 30 | 35 | 40 | 50 | 60 | 80 | 100 |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| `dist@90` | 0.5–1.0 | 1.3 | 2.2 | 9.2 | 18 | 22 | 20 | 14 | 16 | 87 | 93 | 140 | 137 | 58 | 65 |
+| A1 l5h768 | 0.2–0.4 | 0.6 | 1.4 | 5.2 | 16 | 22 | 18 | 15 | 11 | 101 | 89 | 140 | 144 | 52 | 58 |
+
+Both are **position-free and range-limited**: sub-degree at random
+positions anywhere in the cycle through the trained ±19, a step at 20,
+10–20° to 30, collapse past 35, anti-alignment at 50–60 (the residues of
+50 are (−5, 2, −2): a residue read gives the wrong sign). An absolute
+decode-and-subtract would be range-free; neither is. **So A1 — the
+scattered fixed-lattice MLP — also learned the rule on differences**,
+with no translation trick: scattered coverage was enough. The earlier
+statement that only B2's model was known to have learned the rule is
+withdrawn.
+
+**A1x (corner K=400, s0), |Δ| ≤ 19, positions split by whether each
+coordinate VALUE was ever inside any training env** (seen X: 226 of 400
+values, seen Y: 221; seen cells 25,600 of 160,000):
+
+| pair's coordinates | mean | median |
+|---|---|---|
+| X seen, Y seen (cell itself never seen, X and Y from different envs) | **0.2** | 0.1 |
+| X seen, Y unseen | 54 | 36 |
+| X unseen, Y seen | 44 | 21 |
+| X unseen, Y unseen | **92** | 90 |
+| seen X / seen Y at \|Δ\| = 20–40, 40–80, …, 250–400 | 86–89 | — |
+
+The corner model is a **per-axis lookup over the coordinate pairs it
+saw within the trained range** — position-limited AND range-limited,
+the most literal fit to its training pairs, factorised by axis. It is
+not an absolute table (that would be range-free on seen coordinates; it
+is 90° at |Δ| ≥ 20 there), and not the rule (that would be
+position-free).
+
+**Correction to A1x's "inside 0.2–0.3°, outside 44°".** The generator
+places envs on a lattice (pitch 47 here) and draws held-out envs from
+the same lattice's free slots with ±3 jitter, so A1x's held-out-inside
+envs shared the training envs' coordinate bands; their 0.21° tested
+unseen *cells* on seen *coordinate values*. The real boundary is seen
+vs unseen coordinate values, wherever they lie: 0.2° vs 44–92°. The
+outside number (44°, all coordinates unseen) stands; the inside number
+was a placement artifact. In the scattered setting the slack is ±101,
+there is no band structure, and A1's random-position probe is a fair
+test. *General caveat for any "held-out place inside the region" claim
+from this generator under a dense packing.*
+
+**The hierarchy, corrected.** Same architecture, same objective; the
+training geometry chose the solution: dense corner → per-axis pair
+lookup (neither position- nor range-general); scattered envs → the rule
+on differences (position-general, range-limited); translation-randomised
+B2 → the rule, provably (the table route was closed). Nothing has made
+a network learn the full-range decode (a fixed linear map on module
+phase angles mod 2π; unique to |Δ| < 858). Jack's small-MLP hypothesis
+for the corner stands as the open test: the pair lookup is the cheapest
+fit only while the network has room for it.
