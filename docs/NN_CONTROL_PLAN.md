@@ -15,7 +15,19 @@ training covers the whole Chinese-remainder cycle*. Confine training to
 a 400 × 400 corner of the scaffold and grid mode fails outside it (**44°**;
 random is 90°), monotone in cycle coverage; by displacement the failure is
 confined to the mid-range disambiguation band, with the code's periodicity
-learned. Regular mode has no such corner (scaffold position never enters
+learned. *Probed 2026-09-14 (log):* what the two models compute differs
+in kind. The scattered model learned **the rule on differences** —
+sub-degree at random positions anywhere in the cycle, but only within
+the displacement range it trained on (±19; 20° by |Δ| = 24, random past
+35, anti-aligned at 50–60). The corner model learned **a per-axis lookup
+over the coordinate pairs it saw**: 0.2° wherever both coordinate
+values were inside some training env — including cells it never saw —
+and 44–92° wherever one was not, inside or outside the corner; and 90°
+at |Δ| ≥ 20 even on seen coordinates. Its reported 0.2° "inside" on
+held-out envs was a placement artifact: the generator draws held-out
+envs from the same lattice as the training envs (pitch 47, ±3 jitter in
+a dense packing), so their coordinate values were all seen. The 44°
+outside stands. Regular mode has no such corner (scaffold position never enters
 the input) and its 5.5° is real: flat in distance, and it survives at
 **22°** when the two views come from two different unseen walls — the
 network inverts the ray projection view-by-view. A GRU trained on
@@ -111,9 +123,14 @@ in context, because under the same lattice the frame outside the corner
 the relative-phase invariance built in and learns it from nowhere.
 (ii) What B2 does establish: a plain network *can* represent and learn
 the relative-phase decode when the training distribution removes the
-absolute shortcut — the capacity is there, the bias is not; and the one
-property of a grid code that no invariance fixes, its orientation, a
-recurrent network can measure from its own trajectory. Neither is "a
+absolute shortcut — the capacity is there, the bias is not (and the
+09-14 range probes showed the scattered A1 model had found the same
+rule on its own; the corner model is the one that took the lookup); and
+the one property of a grid code that no invariance fixes, its
+orientation, a recurrent network can measure from its own trajectory.
+Neither the rule nor anything else here generalises past the trained
+displacement range (±19): the full-range decode is a fixed linear map on
+module phase angles mod 2π, and no network learned it. Neither is "a
 recurrent net learned a new region of the scaffold in context." A
 corner-plus-translation run, briefly proposed as a closing check, is
 not a holdout and is withdrawn. The remaining meaningful experiment on
