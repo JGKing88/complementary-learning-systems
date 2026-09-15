@@ -847,3 +847,12 @@ Seven checkpoints in one process; this run's d0_base u725 tail read 6 of 144.
 4. Round 2 at ~22:30 on the last pre-maintenance checkpoints (k4_g s43
    ~u2400, e75 s42 ~u2000, the sample-lean 3:1 arms) asks whether the
    tail closes with updates as d0_base's did (§5.4 point 3).
+
+**Page v3 (20:50):** [15cc014f](https://claude.ai/code/artifact/15cc014f-fc15-4432-9f7f-8f7e41be1bc7)
+Part II — overlays `one_vs_d0_by_{episodes,update}.png`, per-run rows for
+`one_k4_g` s43 (held-out det / sampled; TRAINING arena det / sampled),
+`one_k4_g_e75` s42, `one_k2_b16_g`, and the fixed-goal `one_k2` (held-out
+and its own arena). Re-eval logs `results/nav_tri_probe/reeval_one_k4_g_s43_{stoch,train,train_stoch}.log`,
+`reeval_one_k2_s42_fixed_{stoch,train,train_stoch}.log`. Training arena for
+`one_k4_g` s43: exploit 8.8–9.0 steps from u800 (its own goal), swept
+0.55–0.60 from u1000 — the level held-out reaches sampled.
