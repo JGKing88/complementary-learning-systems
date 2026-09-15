@@ -23,8 +23,9 @@ Read §0 to resume.
 | **Where the samples went** | 16 gradient steps per update on ~64k-transition minibatches, every sample touched 4× — ~60× more data per gradient step than a textbook PPO update. That is the lever wave S1 pulls. |
 | **Runs** | All on `ou_bcs_normal`. Completed their 4000-update schedules: `se_n10_b8_lr1` (22701302), `se_b8_lr1_h100` (22701304), `se_n10_b8_lr1_h100` (22707208). Ran to the wall: `se_b8_lr1` (22701298, the delivered arm), `se_h100_d5` (22707437), `se_lr1_e75` (22715546), `se_lr1_d5_e75` (22715547). Cancelled with checkpoints kept: `se_n5_b8_lr1` (40 traj too few), `se_b8_akl` (band too low), `se_b4_lr1` (n10 ≥ b4), `se_b8` (d0_base's optimizer on 1/8 data ≈ d0_base at matched updates), `se_b8_lr03` (3e-5 too slow late). |
 | **RESULT** | **`se_b8_lr1` — d0_base with `batch_envs` 64→8 and PPO lr 1e-4 × 10 epochs × 8 minibatches (`target_kl` 0.1) — is on its plateau on every mean-level metric by u600–1000 = 96–160k episodes, 6–10× below d0_base's 928k (curves page [15cc014f](https://claude.ai/code/artifact/15cc014f-fc15-4432-9f7f-8f7e41be1bc7)). On the held-out probe u1000 (160k / 32M env-steps, 5.8×) matches d0_base u725 on every row but the d=10 collapsed tail, 6 vs 3 of 144 — a rare-event count the probe cannot resolve below ~2× (the same d0_base checkpoint read 2–4 across rounds). u1500 (240k, 3.9×) passes even that. Exploit half alone at 80–92k (10×). Delivered: `agent_ckpts/navigate_navp2_se_b8_lr1_s42_22701298/navigate_u1000.pt` (u1500 if the tail count must also match). |
-| **Curves page** | [15cc014f](https://claude.ai/code/artifact/15cc014f-fc15-4432-9f7f-8f7e41be1bc7) — success / path optimality / swept coverage for `se_b8_lr1` and `d0_base`, each deterministic and sampled, by update, episodes and env-steps. Sources `results/nav_tri_probe/*_training_curve.png`; sampled rows from `reeval_series.py`. |
-| **Tools** | `analysis/nav_tri/sample_eff_curve.py` (eval series vs cumulative samples, window means, first-clear of the screen); the wave-1 probe pipeline `hopfield_nav/run_wave1_final.sh` pattern for the verdict. Trainer now logs exact `episodes` / realized `env_steps` per update and per eval, and writes both into every checkpoint. |
+| **Curves page** | [15cc014f](https://claude.ai/code/artifact/15cc014f-fc15-4432-9f7f-8f7e41be1bc7) — Part I: `se_b8_lr1` and `d0_base`, deterministic and sampled, by update / episodes / env-steps. Part II (v4): one-arena overlays and rows (`one_k4_g` s43 held-out det/sampled + training arena det/sampled, `one_k4_g_e75`, `one_k2_b16_g`, the fixed-goal `one_k2` held-out and on its own arena), both probe rounds, the fixed-goal `follow_q` finding. Sources `results/nav_tri_probe/*_training_curve.png`; sampled rows from `reeval_series.py`. |
+| **ONE ARENA (§7, 2026-09-14/15)** | `envs_per_world` 1 with `--env_repeats K` (the one env collected K times per update so both regimes share the PPO update) and `--redraw_goal_per_rollout` (each env otherwise holds ONE goal for the run — the strict one-goal reading learns a position map, never follows `q`, and is coin-flip on new arenas; §7.10). **Exploit transfers from one arena at d0_base level in every redraw arm; explore needs explore data** (held-out coverage orders by explore trajectories/update: 32 → 0.25, 64 → 0.35, 128 → 0.5, 192 → 0.55). Training-eval screen first cleared at **221–250k episodes by the 3:1 K=4 arms** (d0_base 800k). Held-out probe (§7.8, §7.11): the 1:1 K=4 arm (`one_k4_g` s43 u1900, 486k) has d0_base's exploit — × optimal 1.17/1.17/1.23 vs 1.20/1.16/1.28 — and d=0 explore within 0.05, with a d=10 collapsed tail 21 vs 5 of 144 (distractor capture on unseen offsets); the 3:1 arm (`one_k4_g_e75` s42 u2150, 550k) matches explore completely (tail 5 vs 5) and pays in directness (1.61 at d=10). No single checkpoint passes every row yet; the mix schedule (`one_k4_g_sched`, 1:1 → 3:1 at u400) is a hair off the screen at 307k and resumes after maintenance. Delivered: `agent_ckpts/navigate_navp2_one_k4_g_s43_22757447/navigate_u1900.pt`; explore-complete alternative `..._one_k4_g_e75_s42_22763086/navigate_u2150.pt`. Page v4 Part II. |
+| **Tools** | `analysis/nav_tri/compare_curves.py` (several runs on one 3-panel figure); `reeval_series --which train` (score the training arena); `analysis/nav_tri/sample_eff_curve.py` (eval series vs cumulative samples, window means, first-clear of the screen); the wave-1 probe pipeline `hopfield_nav/run_wave1_final.sh` pattern for the verdict. Trainer now logs exact `episodes` / realized `env_steps` per update and per eval, and writes both into every checkpoint. |
 
 ---
 
@@ -958,3 +959,23 @@ noise, not a result about the 2:1 mix (re-run on another seed). The
 schedule arm is healthy: u625 (160k) 13.0/15.4 steps, swept 0.48/0.45
 and climbing after its u400 switch to 3:1. `one_k4_g` s43 holds the
 screen: u2475 (634k) 11.3/12.9, 0.55/0.50.
+
+### 7.12 End of the pre-maintenance wave (all arms TIMEOUT with checkpoints; 2026-09-15 16:40)
+
+Last 4-eval windows, held-out deterministic:
+
+| arm | last u | episodes | steps 0/10 | swept 0/10 |
+|---|---|---|---|---|
+| `one_k4_g` s43 (1:1) | 2800 | 717k | 11.2 / 12.8 | 0.54 / 0.53 (on the screen from u2000) |
+| `one_k4_g_e75` s42 (3:1) | 3600 | 922k | 12.2 / 14.6 | 0.61 / 0.56 |
+| `one_k4_g_e75` s43 (3:1) | 3050 | 781k | 12.3 / 14.2 | 0.59 / 0.56 |
+| `one_k4_b32_g_e75` (3:1, 128/u) | 3475 | 445k | 12.9 / 15.5 | 0.54 / 0.52 |
+| `one_k4_b16_g_e75` (3:1, 64/u) | 3900 | 250k | 13.4 / 15.6 | 0.52 / 0.50 |
+| `one_k4_g_sched` (1:1 → 3:1 at u400) | 1300 | 333k | 12.4 / 14.5 (u1200) | 0.55 / 0.51 (u1200) |
+
+Page v4 published (Part II final curves; overlays now include the schedule
+and the 128-episode 3:1 arm). Queued for the 21:00 node release
+(`queue_continues.sh`): `--continue_from` for `one_k4_g_sched`,
+`one_k4_g` s43, `one_k4_g_e75` s43 and `one_k4_b32_g_e75` (12 h each,
+same schedules), then a probe round 3 on their final checkpoints — the
+schedule arm is the candidate for both halves in one model.
