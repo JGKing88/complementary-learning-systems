@@ -856,3 +856,30 @@ and its own arena). Re-eval logs `results/nav_tri_probe/reeval_one_k4_g_s43_{sto
 `reeval_one_k2_s42_fixed_{stoch,train,train_stoch}.log`. Training arena for
 `one_k4_g` s43: exploit 8.8–9.0 steps from u800 (its own goal), swept
 0.55–0.60 from u1000 — the level held-out reaches sampled.
+
+### 7.9 21:20 — the §2 screen on one arena: first clear at 221–250k episodes
+
+`sample_eff_curve` window means (4 evals), first window meeting succ ≥0.99,
+steps ≤13/14, swept ≥0.55/0.50:
+
+| arm | eps/update | first clear | episodes | latest window |
+|---|---|---|---|---|
+| `one_k4_g_e75` s43 | 256 | u975 | **250k** | u1825: 12.9/13.5 · 0.56/0.54 |
+| **`one_k4_b32_g_e75`** | 128 | u1725 | **221k** | u1775: 12.6/13.9 · 0.51/0.49 |
+| `one_k4_g_e75` s42 | 256 | u1775 | 454k | u2175: 12.5/16.3 · 0.57/0.55 |
+| `one_k4_g` s43 (1:1) | 256 | — (swept0 0.54) | — | u1800: 11.1/13.3 · 0.54/0.51 |
+| `one_k4_b16_g_e75` | 64 | — (steps0 14.3) | — | swept 0.55–0.58 at 77–115k; dip at u2000 |
+| `one_k2_g` (COMPLETED u4000) | 128 | — | 512k | 12.5/14.1 · 0.39/0.36 |
+| `one_k2_b16_g` (COMPLETED u4000) | 32 | — | 128k | 12.3/14.2 · 0.33/0.18 |
+
+d0_base first cleared this screen at u625 = 800k (§0), `se_b8_lr1` at
+~100k (§4.3). On one arena the 3:1 K=4 recipe clears it at 221–250k —
+3.2–3.6× below d0_base — and the 1:1 K=4 arm sits a point under the
+swept0 line with the best exploit of anything. Explore trajectories per
+update is the currency: 64/update (`b16_g_e75`) has the coverage at
+77k but not the directness; 32/update (`b16_g`, 1:1) never gets the
+coverage in 4000 updates.
+
+Probe round 2 (job 22772411): `k4_g` s43 u1900, `e75` s42 u2150, `e75`
+s43 u1825 + u1000 (its first clear), `b32_g_e75` u1750, `b16_g_e75` u1800,
+`k2_g` u4000 — vs d0_base u725.
