@@ -1642,7 +1642,7 @@ case "$VARIANT" in
   #
   #   VARIANT=se_b8_e10 REPO=<worktree> sbatch --partition=ou_bcs_normal \
   #       --time=24:00:00 hopfield_nav/run_nav_p2.sh
-  d0_base|d1_kanneal|d1_persr|d1_ms3|ood_place|ood_place_rp|ood_place_rp10|ood_corner|ood_corner_rp|se_*|one_*)
+  d0_base|d1_kanneal|d1_persr|d1_ms3|ood_place|ood_place_rp|ood_place_rp10|ood_corner|ood_corner_rp|se_*|one_*|fix3_*|fix1_*)
     ENCODER=/orcd/pool/003/jackking/cls_runs/sweeps/w52_attract_fwhm/001_att0.5_seed=43/encoder_final.pt
     ENCODER_GAIN=100
     HOPFIELD_BETA=100
@@ -1800,6 +1800,47 @@ case "$VARIANT" in
           *) echo "ERROR: unknown ONE variant $VARIANT" >&2; exit 1 ;;
         esac
         ;;
+      # === FIX -- few envs, FIXED goals (no redraw): make it generalize. ===
+      #
+      # §7.10: with one (env, goal) pair the exploit half learns "position ->
+      # heading to the goal cell" off the wall code + path integration and
+      # never follows `q` (follow_q 0.05-0.2 on new arenas vs 0.9 for the
+      # redraw policy). Jack: get THREE envs with fixed goals to generalize,
+      # then ONE. Levers, all regularisers against the position map:
+      #   h<N>      smaller trunk (Jack's guess; the barcode->position lookup
+      #             is the expensive part, atan2(q) is cheap)
+      #   xod<p>    obs_dropout in EXPLOIT rollouts only (explore keeps clean
+      #             walls for sweeping)
+      #   xhd<p>    heading_dropout (prev_action + prev_disp) in exploit only
+      #   nd0       no exploit distractors -- `q` clean, so following it is
+      #             at least as good a fit as the map
+      # fix3: 3 envs x K=2 = 3 explore + 3 exploit slots x 32 = 192 eps/u.
+      # fix1: 1 env  x K=2 = 1 + 1 slots x 64 = 128 eps/u (as one_k2).
+      fix3_*|fix1_*)
+        [ -z "${SCHEDULE_SET:-}" ] && SCHEDULE=${SE_SCHEDULE:-'interleave:4000,empty_frac=0.5'}
+        EVAL_EVERY=${SE_EVAL_EVERY:-25}; CKPT_EVERY=${SE_CKPT_EVERY:-25}
+        PPO_EPOCHS=10; N_MINIBATCHES=8; TARGET_KL=0.1; LR=1e-4
+        ENV_REPEATS=2
+        case "$VARIANT" in
+          fix3_*) ENVS_PER_WORLD=3; BATCH_ENVS=${FIX_BATCH_ENVS:-32} ;;
+          fix1_*) ENVS_PER_WORLD=1; BATCH_ENVS=${FIX_BATCH_ENVS:-64} ;;
+        esac
+        case "${VARIANT#fix?_}" in
+          base) ;;
+          h256) HIDDEN_SIZE=256 ;;
+          h128) HIDDEN_SIZE=128 ;;
+          h64)  HIDDEN_SIZE=64 ;;
+          xod5) EXPLOIT_OBS_DROPOUT=0.5 ;;
+          xod8) EXPLOIT_OBS_DROPOUT=0.8 ;;
+          xod8_xhd5) EXPLOIT_OBS_DROPOUT=0.8; EXPLOIT_HEADING_DROPOUT=0.5 ;;
+          xod9_xhd8) EXPLOIT_OBS_DROPOUT=0.9; EXPLOIT_HEADING_DROPOUT=0.8 ;;
+          nd0)  N_TRAIN_DISTRACTORS_MAX=0 ;;
+          nd0_xod8) N_TRAIN_DISTRACTORS_MAX=0; EXPLOIT_OBS_DROPOUT=0.8 ;;
+          h128_xod8) HIDDEN_SIZE=128; EXPLOIT_OBS_DROPOUT=0.8 ;;
+          h128_xod8_xhd5) HIDDEN_SIZE=128; EXPLOIT_OBS_DROPOUT=0.8; EXPLOIT_HEADING_DROPOUT=0.5 ;;
+          *) echo "ERROR: unknown FIX variant $VARIANT" >&2; exit 1 ;;
+        esac
+        ;;
     esac
     ;;
 
@@ -1864,6 +1905,7 @@ echo "    rollout    : ${ENVS_PER_WORLD} envs x ${BATCH_ENVS} batch x ${STEPS_PE
 [ -n "${ENV_REPEATS:-}" ] && echo "    repeats    : ${ENV_REPEATS} rollouts per env per update (regime slots = envs x repeats)"
 [ -n "${REDRAW_GOAL_PER_ROLLOUT:-}" ] && echo "    goals      : re-drawn per rollout slot (redraw_goal_per_rollout=${REDRAW_GOAL_PER_ROLLOUT})"
 [ -n "${OBS_DROPOUT:-}" ] && echo "    obs_dropout: ${OBS_DROPOUT} (training rollouts only)"
+[ -n "${EXPLOIT_OBS_DROPOUT:-}${EXPLOIT_HEADING_DROPOUT:-}" ] && echo "    exploit-only dropout: obs=${EXPLOIT_OBS_DROPOUT:-run-wide} heading=${EXPLOIT_HEADING_DROPOUT:-run-wide}"
 echo "                 pool=$((ENVS_PER_WORLD * BATCH_ENVS)) trajectories, \
 $((ENVS_PER_WORLD * BATCH_ENVS * STEPS_PER_ROLLOUT)) env-steps/update, \
 $((ENVS_PER_WORLD * STEPS_PER_ROLLOUT)) serial calls/update"

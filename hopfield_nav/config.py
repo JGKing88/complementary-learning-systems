@@ -498,6 +498,15 @@ class TrainConfig:
     # defeats -- the surviving rays still carry the run-length structure
     # (adjacent rays on the same segment) that distance-to-wall is read from.
     obs_dropout: float = 0.0
+    # Regime-specific overrides of the two input dropouts, applied to EXPLOIT
+    # rollouts only (None = use the run-wide value). The fixed-goal finding
+    # (EXPERIMENTS_SAMPLE_EFF §7.10): with few (env, goal) pairs the exploit
+    # half learns "position -> heading to the goal cell" off the wall code and
+    # path integration and never follows `q`. Making those channels unreliable
+    # in exploit rollouts leaves `q` as the one dependable route to the goal,
+    # while explore rollouts keep clean inputs for sweeping.
+    exploit_obs_dropout: float | None = None
+    exploit_heading_dropout: float | None = None
     novelty_anneal: bool = False            # linearly scale novelty_reward -> 0 across the whole run
     epsilon_explore: float = 0.0            # per-step chance of a uniform-random move, explore regime only
     epsilon_anneal_updates: int = 0         # linearly scale epsilon_explore -> 0 over this many updates; 0 = constant

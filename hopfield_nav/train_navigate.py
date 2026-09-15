@@ -452,6 +452,8 @@ def run_navigate(
         rollouts = []
         pre_flags: list[bool] = []
         t_roll0 = time.time()
+        _base_obs_dropout = float(getattr(cfg, "obs_dropout", 0.0) or 0.0)
+        _base_heading_dropout = float(getattr(cfg.hopfield, "heading_dropout", 0.0) or 0.0)
         for w_idx, world in enumerate(worlds):
             vh = world.field
             collector = RolloutCollector(vh, cfg, embed_dim, device)
@@ -472,6 +474,16 @@ def run_navigate(
                     # into both.
                     cfg.hopfield.novelty_reward = spec.novelty_reward
                     env.goals_active = spec.goals_active
+                    # Regime-specific input dropout: exploit rollouts may run
+                    # under their own rates; the run-wide values are restored
+                    # after the loop (as novelty is).
+                    _eod = getattr(cfg, "exploit_obs_dropout", None)
+                    _ehd = getattr(cfg, "exploit_heading_dropout", None)
+                    cfg.obs_dropout = (float(_eod) if (is_pre[slot] and _eod is not None)
+                                       else _base_obs_dropout)
+                    cfg.hopfield.heading_dropout = (
+                        float(_ehd) if (is_pre[slot] and _ehd is not None)
+                        else _base_heading_dropout)
                     rollout = collector.collect_rollout(
                         env, agent, spec.hop, allow_store=spec.allow_store,
                         h_rnn=None, env_offset=env_offset,
@@ -482,6 +494,8 @@ def run_navigate(
                     )
                     rollouts.append(rollout)
         cfg.hopfield.novelty_reward = 0.0
+        cfg.obs_dropout = _base_obs_dropout
+        cfg.hopfield.heading_dropout = _base_heading_dropout
 
         n_episodes_now = sum(int(r.rewards.shape[0]) for r in rollouts)
         n_env_steps_now = sum(
@@ -960,6 +974,8 @@ CFG_FIELDS: dict[str, tuple[str, ...]] = {
     "env_repeats": ("env_repeats",),
     "redraw_goal_per_rollout": ("redraw_goal_per_rollout",),
     "obs_dropout": ("obs_dropout",),
+    "exploit_obs_dropout": ("exploit_obs_dropout",),
+    "exploit_heading_dropout": ("exploit_heading_dropout",),
     "novelty_anneal": ("novelty_anneal",),
     "epsilon_explore": ("epsilon_explore",),
     "epsilon_anneal_updates": ("epsilon_anneal_updates",),
@@ -1522,6 +1538,12 @@ def build_parser() -> argparse.ArgumentParser:
                         " rollout slot, from the env's own RNG. Default: one"
                         " goal per env for the whole run. Legacy placement path"
                         " only -- under --env_generator use --refresh_goal.")
+    p.add_argument("--exploit_obs_dropout", type=float, default=None,
+                   help="obs_dropout for EXPLOIT rollouts only (explore keeps"
+                        " the run-wide value). See EXPERIMENTS_SAMPLE_EFF §7.10.")
+    p.add_argument("--exploit_heading_dropout", type=float, default=None,
+                   help="heading_dropout (prev_action + prev_displacement) for"
+                        " EXPLOIT rollouts only.")
     p.add_argument("--obs_dropout", type=float, default=None,
                    help="Training-only dropout probability on the sensory"
                         " (wall-code) input, per entry per step. Eval sees"
