@@ -944,3 +944,9 @@ d0_base u725 tail read 5 of 144 this run.
 4. **Next arm:** a mix SCHEDULE — 1:1 until the exploit lock (~u400), then
    3:1 — or a 2:1 mix (K=3, `empty_frac` 0.67; K=6, 4+2). The SE line's
    untried follow-up, now with the same shape on one arena.
+
+**21:37 — launched on the two freed slots, 2 h 05 wall (TIMEOUT at 23:42,
+resume tomorrow with `--continue_from`):** `one_k4_g_sched` (22772984; K=4,
+`interleave:400,empty_frac=0.5 ; interleave:3600,empty_frac=0.75` = 2+2
+until the exploit lock, then 3+1) and `one_k3_g_e67` (22772985; K=3,
+`empty_frac` 0.67 = 2 explore + 1 exploit, 192 episodes/update).
