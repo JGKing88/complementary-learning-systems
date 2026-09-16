@@ -1837,6 +1837,8 @@ case "$VARIANT" in
           nd0)  N_TRAIN_DISTRACTORS_MAX=0 ;;
           nd0_xod8) N_TRAIN_DISTRACTORS_MAX=0; EXPLOIT_OBS_DROPOUT=0.8 ;;
           h128_xod8) HIDDEN_SIZE=128; EXPLOIT_OBS_DROPOUT=0.8 ;;
+          h128_xod5) HIDDEN_SIZE=128; EXPLOIT_OBS_DROPOUT=0.5 ;;
+          h128_xod3) HIDDEN_SIZE=128; EXPLOIT_OBS_DROPOUT=0.3 ;;
           h128_xod8_xhd5) HIDDEN_SIZE=128; EXPLOIT_OBS_DROPOUT=0.8; EXPLOIT_HEADING_DROPOUT=0.5 ;;
           *) echo "ERROR: unknown FIX variant $VARIANT" >&2; exit 1 ;;
         esac
