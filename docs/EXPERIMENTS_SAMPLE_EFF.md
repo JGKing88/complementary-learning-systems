@@ -1434,3 +1434,12 @@ ONE fixed goal. The deterministic run's dead env is the known argmax-
 explorer blind spot (§37.6 of EXPERIMENTS_NAV_P2), absent when sampled.
 Figures `results/nav_tri_probe/cl_fix1_h128_s43_u3000_recorded_stoch_{steps_to_goal,forgetting,path_to_goal}.png`
 (+ deterministic without `_stoch`); on the page (v11, Part III).
+
+**200 iterations per arena (job 22859040, 19:32; `ITERS_PER_BLOCK=200`,
+sampled):** first visits 1,200 at **0.993** / 11.8 steps, locked-store
+revisits **3,000 / 3,000** at 11.6 steps, worst retention delta +0.00;
+diagonal 0.99 / 1.00 / 0.97 / 0.99 / 1.00 / 1.00, all revisit cells 1.00.
+The 40-iteration first-visit rate (0.917) was the exploratory first trials
+weighing more in a short block. Files
+`results/nav_tri_probe/cl_i200/cl_fix1_h128_s43_u3000_recorded_stoch_*`;
+page v12 (main protocol figure, 40-iteration version kept beside it).
