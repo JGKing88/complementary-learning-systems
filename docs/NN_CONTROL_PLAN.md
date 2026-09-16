@@ -205,11 +205,15 @@ test envs whose rotated footprints sit 300 cells outside on both axes
 (`far@θ`). From scratch, S1's recipe (warm-up 3000 at θ = 90°, then the
 0.5 mix), 8000 updates:
 
-**The decode learned from the corner is the rule.** During the warm-up
-`far@90` — every coordinate unseen, the orientation trained — reached
-**1.6°** (4.5° at u = 1000), while `far@45` sat at 46° and `far@0` at
-90°, the |θ − 90°| signature. A1x's fixed placement on the same corner
-produced the lookup; corner-confined translation produced the rule.
+**The decode learned from the corner is the rule.** The memoryless
+control — `dist` alone, every lifetime at θ = 90° with corner-confined
+translations — reaches `far@90` **0.8°** by u = 800 (coordinates 300
+cells outside the corner on both axes), with `far@45` at 45° and `far@0`
+at 90°, the |θ − 90°| signature; B3-2's warm-up phase gives the same
+(1.6°). A1x's fixed placement on the same corner produced the lookup
+(44° outside); corner-confined translation produces the rule. The
+lookup was the cheaper fit only while every cell kept the same absolute
+phase for the whole run.
 
 **Then the frame, in context, in the unseen region.** At u = 8000:
 
@@ -529,10 +533,10 @@ A1x's 44° (region vs orientation, §1.5).
 The version of the original question that survives §1.5: train **only on
 the corner's phase combinations**, at every orientation and every
 translation *within* the corner, and test outside it. Run 2026-09-15/16;
-(1) the pure-MLP control never left the loss plateau (uninformative; a
-second seed is running), (2) from scratch answered both questions — the
-rule from the corner, the frame in the unseen region — so (3) is not
-needed. Design kept here for the record.
+(1) the pure-MLP control's first seed never left the loss plateau
+(stochastic; the second seed did, at u = 400, and gives 0.8° outside),
+(2) from scratch answered both questions — the rule from the corner, the
+frame in the unseen region — so (3) is not needed. Design kept here for the record.
 
 **Design.** Envs inside `rect:0,0,400,400` (A1x's 64), per-row lattices
 with random θ and a translation drawn so the rotated env's footprint stays
@@ -700,7 +704,7 @@ readout 2 samples actions, so a policy's floor is ~6–8°, not 0.
 | P16 | B2 `full`: R1 ~90°, R2 falls in episode 0, final 10–25° | shape ✓ and level ✓ — but only with the decode decoupled; the raw-code GRU stayed at 89° |
 | P17 | `rec` between `full` and `dist`, nearer `full` | partly: 45° at e19, but by cross-episode accumulation only — no within-episode measurement, a different shape from `full` |
 | P18 | B2-mix on the corner | superseded by B3 (§6.1) |
-| P19 | B3 (1): a corner-trained decode with corner translations learns the rule | ✓ `far@90` 1.6° in B3-2's warm-up (the pure-MLP control stalled on the plateau; second seed running) |
+| P19 | B3 (1): a corner-trained decode with corner translations learns the rule | ✓ `far@90` 0.8° (memoryless `dist`, seed 1; seed 0 stalled on the plateau), 1.6° in B3-2's warm-up |
 | P20 | B3 (2): `heldout_out` at θ = 0 falls to ~20° within a lifetime if P19 holds | ✓ 14° by episode 4, 14 by step 5; `far@0` the same |
 | P21 | probes: θ is linearly decodable from the GRU state after 1–2 steps in the frozen-decode and S1 models; Δ′ from the encoder at R² > 0.95; P-swap error ≈ θ₂ − θ₁ for a few steps | open |
 
