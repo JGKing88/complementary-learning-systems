@@ -1329,3 +1329,22 @@ s42 (its story is §8.8 point 2). Launched on the wall goal:
 `fix1_h128_xhd5` (exploit heading dropout 0.5; 22839979) and
 `fix1_h128_xod3_xhd5` (22839980), 12 h. Still running: `fix1_h128` s42/s44/
 s45, `fix1_base` s43, `fix1_h128_xod3`/`xod5` s42, `fix3_h64`.
+
+### 8.12 14:22 digest — second interior arena at d0_base level; wall-goal levers still early
+
+| arm | goal | u | succ 0/10 | steps 0/10 | swept |
+|---|---|---|---|---|---|
+| **fix1_h128 s44** | (5,14) interior | 2025 | 1.00/1.00 | **12.1 / 12.5** | 0.43/0.38 |
+| fix1_base s43 (h1024) | (11,6) interior | 1875 | 1.00/0.98 | 13.3 / 13.8 (16.1/15.4 at u1500) | 0.55/0.52 |
+| fix1_h128 s45 | (10,1) near wall | 1500 | 0.83/0.82 | 16.8 / 16.8 | 0.51/0.48 |
+| fix1_h128 s42 | (17,0) wall | 3500 | 0.99/0.97 | **21.6 / 23.7** (33 at u3000) | 0.18/0.28 (dip) |
+| fix1_h128_xod5 s42 | wall | 2000 | 0.97/0.96 | 30 / 32 | 0.42/0.42 |
+| fix1_h128_xhd5 s42 | wall | 500 | 0.19/0.26 | 41 / 53 | 0.35/0.32 |
+| fix1_h128_xod3_xhd5 s42 | wall | 500 | 0.12/0.13 | 65 / 67 | 0.40/0.39 |
+
+Heading dropout slows early learning on the wall goal; too early to
+call. The wall-goal h128 arm moved late (33 → 21.6 steps over u3000–3500)
+— its u4000 checkpoint goes in the next probe. Arms end 20:30–01:20;
+final probe + page/tracker wrap-up on the morning's checkpoints:
+`fix1_h128` s44 (u2000+), s45, `fix1_base` s43, the two `xhd` arms,
+`fix1_h128` s42 u4000.
