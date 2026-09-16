@@ -86,6 +86,11 @@ class Decoder:
             pl = w["domains"]["place"]
             if pl.get("kind") == "Rect":
                 self.rect = (int(pl["x0"]), int(pl["y0"]), int(pl["w"]), int(pl["h"]))
+            else:
+                # Scattered placement: the "corner" is the whole cycle, and the
+                # seen-vs-unseen split runs over every coordinate value in it.
+                period = int(np.prod(self.lambdas))
+                self.rect = (0, 0, period, period)
             self.offsets = np.array([t["offset"] for t in w["train"]], dtype=int)
 
     def __call__(self, p: np.ndarray, delta: np.ndarray) -> np.ndarray:
@@ -103,8 +108,9 @@ class Decoder:
         sx = np.zeros(w, bool)
         sy = np.zeros(h, bool)
         for ox, oy in self.offsets:
-            sx[ox - x0:ox - x0 + self.size] = True
-            sy[oy - y0:oy - y0 + self.size] = True
+            for k in range(self.size):
+                sx[(ox - x0 + k) % w] = True
+                sy[(oy - y0 + k) % h] = True
         return sx, sy
 
 
@@ -147,7 +153,7 @@ def report(dec: Decoder, far, n: int, max_abs: int, do_range: bool, rng):
     regions = []
     if dec.rect:
         x0, y0, w, h = dec.rect
-        regions.append(("inside corner", np.arange(x0, x0 + w), np.arange(y0, y0 + h)))
+        regions.append(("inside corner" if w < 1716 else "whole cycle", np.arange(x0, x0 + w), np.arange(y0, y0 + h)))
     regions.append((f"far {far}", np.arange(far[0], far[0] + far[2]), np.arange(far[1], far[1] + far[3])))
     for name, xs, ys in regions:
         p, d = pairs_in(rng, xs, ys, n, max_abs)
