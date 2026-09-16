@@ -1274,3 +1274,25 @@ arena, one goal; exploit > d0_base, d=0 explore = d0_base) and
 
 **Page v6 (12:45):** Part III carries the verdict table (§8.9), the
 per-arena `follow_q` rows (§8.8) and the completed `fix1_h128` s43 curves.
+
+### 8.10 13:07 digest — goal placement dominates; the h1024 control on the interior goal generalizes too
+
+| arm | goal | u | succ 0/10 | steps 0/10 | swept |
+|---|---|---|---|---|---|
+| **fix1_base s43 (h1024)** | (11,6) interior | 1000 | 0.995/0.98 | **12.8 / 13.6** | 0.52/0.49 |
+| fix1_h128 s44 | (5,14) interior | 1025 | 1.00/1.00 | 14.3 / 14.7 | 0.35/0.32 |
+| fix1_h128 s45 | (10,1) near wall | 1050 | **0.75/0.78** (0.995 at u600) | 15 / 16 | 0.43/0.42 |
+| fix1_h128_xod5 s42 | (17,0) wall | 1000 | 0.90/0.91 | 40 / 38 | 0.28/0.33 |
+| fix1_h64_xod3 s42 | wall | 1000 | 0.03 | — | collapsed (cancelled) |
+| fix3_h64 | 3 wall goals | 2025 | 1.00/1.00 | 16.4 / 17.7 (12.4 at u1500) | 0.41/0.37 (dip) |
+
+The h1024 control on the interior-goal arena generalizes at u1000 (12.8/
+13.6) — the §7.3 slide I read off the K=4 h1024 arm on s43 (0.90 → 0.74
+by u125, cancelled at u300) was early noise. Second interior goal (s44)
+works at h128; the near-wall goal (s45) rose to 0.995 and is sliding, the
+wall-goal shape. **Goal placement dominates**; the small trunk's
+contribution is at the margin (directness at three wall goals, distractor
+handling). `xod5` no better than `xod3` on the wall goal; `h64_xod3`
+collapsed. `fix3_h64` degraded after u1500 (pick by eval). Probe r3
+(22839117): `follow_q` for base s43 u1000, h128 s44 u1000, s45 u600/u1000,
+xod5 u1000.
