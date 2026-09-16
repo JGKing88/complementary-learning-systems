@@ -1183,3 +1183,9 @@ the trials fail but the successes are direct (16 steps): the shape of a
 `q`-follower with a broken gate; probe when it has more updates. Five arms
 still queued on ou_bcs (backlog): `fix1_base` s43, `fix1_h128` s44/s45,
 `fix1_h128_xod5`, `fix1_h64_xod3`.
+
+**Page v5 (09-16 10:50):** Part III "fixed goals, few environments" —
+overlays `results/nav_tri_probe/fix3_by_update.png`, `fix1_by_update.png`;
+rows `fix3_h128`, `fix3_base`, `fix1_h128` s43 / s42; the `follow_q` table
+(§7.10, §8.3, §8.5). Regenerate with `make_fix_plots.sh` + `splice_page.py`
+(job tmp).
