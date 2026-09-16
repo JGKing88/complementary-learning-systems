@@ -1205,3 +1205,31 @@ where `fix3_h128` needed u3300. `fix1_h64` on the wall goal: exactly half
 the held-out trials succeed and those are direct — a follower that works
 on some arenas and not others, or a broken gate; probe with a per-arena
 breakdown (added to `behavior_probe` nav mode).
+
+### 8.8 Per-arena `follow_q` (job 22831447, 11:25): the interior-goal one-arena model follows `q` on every held-out arena
+
+| checkpoint | d | success | steps | follow_q | per-arena follow_q |
+|---|---|---|---|---|---|
+| **fix1_h128 s43 u2250** (goal (11,6)) | 0 | **1.000** | **11.4** | **0.91** | 0.95 / 0.92 / 0.97 / 0.88 / 0.81 / 0.90 |
+| fix1_h128 s43 u2250 | 10 | **1.000** | 13.9 | **0.80** | 0.91 / 0.92 / 0.97 / 0.58 / 0.67 / 0.72 |
+| fix3_h64 u1000 | 0 / 10 | 1.00 / 0.995 | 14.7 / 17.0 | 0.75 / 0.64 | 0.56–0.88 / 0.39–0.89 |
+| fix1_h128_xod3 s42 u2000 (goal (17,0)) | 0 / 10 | 1.00 / 0.98 | 29 / 30 | 0.44 / 0.39 | 0.27–0.81 / 0.19–0.73 |
+| fix1_h64 s42 u1875 (goal (17,0)) | 0 / 10 | 0.67 / 0.66 | 25 / 26 | **0.03 / 0.02** | **−0.38 … +0.34** |
+| fix1_h64 s42 u1500 | 0 / 10 | 0.73 / 0.68 | 21 / 21 | 0.12 / 0.12 | −0.21 … +0.55 |
+| redraw one_k2_g u900 (§7.10) | 0 / 10 | 1.0 | 12 / 13 | 0.90 / 0.87 | — |
+
+1. **`fix1_h128` s43 u2250 (288k episodes) is a `q`-follower on every
+   held-out arena**: follow_q ≥ 0.81 on all six at d=0 (mean 0.91), all
+   at 100% success in 9–13 steps — as much a follower as the redraw
+   policy (0.90) and above d0_base's own `align_true` (0.92/0.93/0.86).
+   Under distractors 0.80: three arenas ≥ 0.91, three at 0.58–0.72 — the
+   gate is the remaining softness, and it is the same softness the
+   three-arena h1024 policy shows (§8.3).
+2. **The wall-goal h64 arm is not a follower with a broken gate**: its
+   per-arena follow_q runs from −0.38 to +0.34 — on one arena it moves
+   AWAY from the recall. A position map with the along-the-wall sign
+   baked in per arena. Half-direct successes in the trainer eval were the
+   arenas whose sign happened to agree.
+3. Mild exploit barcode dropout on the wall goal: 0.16 → 0.44 (one arena
+   0.81). Real movement, not enough. `xod5`, `h64_xod3`, and the arena-
+   distribution arms (s44, s45) plus the h1024 control (s43) are queued.
