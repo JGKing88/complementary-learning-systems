@@ -1651,3 +1651,31 @@ holding θ as a linear variable, measured from (Δcode, prev_action) over
 state, for the head. From scratch (S1, B3-2) the encoder's decode is
 cleaner than the frozen trunk's, so the joint training did not
 compromise the memoryless part.
+
+## 2026-09-16 — A1m: the memorisation test (plan §6.3)
+
+Jack: *if the corner MLP's problem was memorising, can an MLP on even
+less data than the corner — not corner-shaped — generalise, with input
+noise or a much smaller network?* Design in §6.3; `--input_noise` added
+to `train_goal_pairs.py` (Gaussian on every input column, training only;
+bumps have peak 1). Scattered placement (`anywhere`, margin 20), 16
+held-out envs anywhere, A1's schedule, ~32k pairs per update. Everything
+on `mit_preemptable` (the other session holds the `mit_normal_gpu` cap);
+preemptions requeue a run from scratch, so some finals come from the
+last checkpoint before the kill.
+
+**Wave 1 — the 5×768 baseline at K = 4 / 8 / 16 scattered envs.**
+
+| K (cells) | train tt | `heldout` tt (NN line) | decode probe: seen X & Y / one unseen / neither | far rect |
+|---|---|---|---|---|
+| 4 (1,600) | 0.25 | **76.3** (82) at u = 8000 | 13.9 / 56–59 / 83 | 78.6 |
+| 8 (3,200) | 1.3 | **77.0** (83) at u = 5750 (preempted; probe at u = 4000) | 45 / 67 / 85 | 82 |
+| 16 (6,400) | K16_TRAIN | K16_HELDOUT | K16_PROBE | K16_FAR |
+| 64 (A1, 25,600) | 0.2 | 0.23 | 0.3 / 0.3 / 0.3 | 0.4 |
+
+P23 ✓: with 4 or 8 clusters the big network is a lookup at chance on
+every unseen coordinate value, and — unlike A1x, whose 12 bands were
+shared by several envs — not even the cross-env "seen X, seen Y"
+combinations are decoded (14–45°): the table is per env. Nothing about
+the count of pairs (8000 × 32k, every within-env pair many times over)
+moves it.
