@@ -1059,3 +1059,57 @@ late while keeping d0_base explore; `one_k4_g` s43 u4000 11.4/12.4,
 0.52/0.50; `sched` u4000 12.9/15.2, 0.55/0.52 (did not beat plain 3:1);
 `b32_g_e75` u4000 (512k) 12.3/13.9, 0.53/0.51. Probe round 3 on these
 (job 22824395).
+
+### 8.3 Probes (09-16 08:45): three fixed goals already make a `q`-follower at d=0; the small trunk keeps it under distractors
+
+**Round 3, redraw line (job 22824395; d0_base u725 tail 4 of 144):**
+
+| checkpoint | episodes | × opt d=0/5/10 | explore d=0 swept/eff/tail | d=10 swept/eff/**tail** |
+|---|---|---|---|---|
+| d0_base u725 | 928k | 1.19 / 1.17 / 1.37 | 0.603 / 0.943 / 0 | 0.580 / 0.931 / **0.028 (4)** |
+| **e75 s43 u4000** | 1.02M | 1.26 / 1.22 / **1.32** | **0.613 / 0.988 / 0** | 0.565 / 0.926 / 0.083 (12) |
+| e75 s43 u3500 | 896k | 1.31 / 1.24 / 1.49 | 0.612 / 0.976 / 0 | 0.571 / 0.912 / 0.062 (9) |
+| k4g s43 u3000 | 768k | **1.17 / 1.20 / 1.32** | 0.562 / 0.898 / 0 | 0.526 / 0.863 / 0.090 (13) |
+| k4g s43 u4000 | 1.02M | 1.20 / 1.17 / 1.33 | 0.496 / 0.808 / 0.132 | 0.456 / 0.761 / 0.153 (22) |
+| sched u4000 | 1.02M | 1.29 / 1.29 / 1.40 | 0.583 / 0.946 / 0.007 | 0.521 / 0.891 / 0.132 (19) |
+| b32e75 u2500 | 320k | 1.29 / 1.24 / 1.35 | 0.599 / 0.935 / 0 | 0.546 / 0.890 / 0.104 (15) |
+| b32e75 u4000 | 512k | 1.22 / 1.18 / 1.38 | 0.550 / 0.885 / 0.007 | 0.473 / 0.807 / 0.153 (22) |
+
+`e75` s43 u4000 is the closest single one-arena checkpoint: exploit
+success 1.000 everywhere, d=10 directness better than d0_base, d=0/5
++0.05–0.07 (past the 0.03 rule), explore efficiency ≥ d0_base at both
+levels, d=10 tail 12 vs 4. The schedule arm did not beat plain 3:1;
+`k4g` s43's explore DEGRADED from u3000 to u4000 (d=0 tail 0 → 0.132).
+Delivered one-arena checkpoints stand as §7.11 point 3 plus
+`..._one_k4_g_e75_s43_22763088/navigate_u4000.pt` as the best all-round.
+
+**Three envs, fixed goals — `follow_q` on held-out (job 22824404):**
+
+| checkpoint | d | success | steps | follow_q | fq t0/t1/t2/t6+ |
+|---|---|---|---|---|---|
+| **fix3_h128 u3300** | 0 | 1.000 | **12.8** | **0.83** | 0.79/0.89/0.86/0.81 |
+| fix3_h128 u3300 | 10 | 0.995 | **14.9** | **0.65** | 0.80/0.87/0.85/0.54 |
+| fix3_h128 u3700 | 0 / 10 | 1.0 / 0.99 | 15.9 / 18.9 | 0.68 / 0.52 | t6+ 0.59 / 0.42 |
+| fix3_base u3600 | 0 | 1.000 | 13.5 | 0.83 | 0.90/0.88/0.92/0.78 |
+| fix3_base u3600 | 10 | 0.990 | 19.6 | 0.58 | 0.83/0.84/0.88/0.48 |
+| fix3_nd0 u3600 | 0 / 10 | 1.0 / 0.99 | 22.8 / 24.7 | 0.55 / 0.45 | t6+ 0.44 / 0.34 |
+| fix3_xod8 u2600 | 0 / 10 | 0.63 / 0.63 | 71 / 57 | 0.11 / 0.11 | 0.65/0.49/0.39/0.09 |
+| redraw one_k2_g u900 (§7.10) | 0 / 10 | 1.0 | 12 / 13 | 0.90 / 0.87 | t6+ 0.92 / 0.88 |
+
+1. **Three (arena, goal) pairs are enough to make a `q`-follower at d=0**
+   — `follow_q` 0.83 for BOTH trunk sizes, against 0.05–0.2 for one pair
+   (§7.10). The one-arena collapse is a one-pair effect.
+2. **The small trunk keeps following under distractors**: at d=10 h128
+   0.65 / 14.9 steps vs h1024 0.58 / 19.6, and the difference is late in
+   the episode (t6+ 0.54 vs 0.48) — the large trunk lets go of `q` when
+   the recall is corrupted, the small one has less else to fall back on.
+   h128's u3700 is worse than its u3300 (0.68/0.52): not monotone, pick
+   by eval.
+3. `nd0` (no exploit distractors) made a policy that cannot handle them
+   (0.45 at d=10) and follows less even at d=0 (0.55, 22.8 steps).
+   `xod8` destroyed `q`-following (0.11): training under 80% barcode
+   dropout and evaluating clean is a distribution shift, not a
+   regulariser, at this rate.
+
+Wave 2 (one env, fixed goal, trunk sweep) running: `fix1_h128` u200
+0.64/0.53 success.
