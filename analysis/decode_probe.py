@@ -38,17 +38,20 @@ RANGE_DS = [1, 5, 10, 15, 19, 20, 22, 24, 26, 30, 35, 40, 50, 60]
 class Decoder:
     """One callable `(p, delta) -> unit direction` from either checkpoint kind."""
 
-    def __init__(self, run_dir: str, theta_override: float | None = None):
-        self.run = os.path.basename(run_dir.rstrip("/"))
-        pairs = os.path.join(run_dir, "pairs_final.pt")
-        life = os.path.join(run_dir, "life_final.pt")
+    def __init__(self, run_dir: str, theta_override: float | None = None, ckpt: str = ""):
+        """`run_dir` may carry a checkpoint file after a colon (`RUN:pairs_u6000.pt`)."""
+        if ":" in run_dir:
+            run_dir, ckpt = run_dir.split(":", 1)
+        self.run = os.path.basename(run_dir.rstrip("/")) + (f":{ckpt}" if ckpt else "")
+        pairs = os.path.join(run_dir, ckpt or "pairs_final.pt")
+        life = os.path.join(run_dir, ckpt or "life_final.pt")
         path = pairs if os.path.exists(pairs) else life
         ck = torch.load(path, map_location="cpu", weights_only=False)
         a = ck["argv"]
         self.lambdas = list(a["lambdas"])
         self.fwhm = float(a["fwhm_ratio"])
         self.size = int(a["size"])
-        if path == pairs:
+        if "model_state_dict" in ck:
             m = PairRegressor(ck["input_dim"], a["hidden_size"], a["num_layers"], a["movement_mode"],
                               nonlinearity=a["nonlinearity"], dropout=a.get("dropout", 0.0))
             m.load_state_dict(ck["model_state_dict"])

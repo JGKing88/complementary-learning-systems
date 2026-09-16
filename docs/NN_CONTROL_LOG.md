@@ -1472,7 +1472,7 @@ Placement dry-run on the login node first (`check_dense_placement.py`).
 | 500 | **3.6** | 6.4 | 58 |
 | 1250 | 1.9 | 3.7 | — |
 | 2500 | 1.3 | 2.9 (u = 2250) | — |
-| 8000 | FINAL_S0 | FINAL_S1 | 44.5 |
+| 8000 | **0.70** (u = 5500; the job was preempted at ~6000, `pairs_u6000.pt` kept) | **1.73** | 44.5 |
 
 **Coverage, not the randomisation, is the lever — P22 falsified.** A
 fixed placement that shows every coordinate value in the corner
@@ -1494,8 +1494,12 @@ Decode probe (`analysis/decode_probe.py`, synthetic pairs, |Δ| ≤ 19):
 | model | inside corner, any position | far rect [700, 1200)² | seen X & Y / one unseen / neither |
 |---|---|---|---|
 | A1x s0 (fixed, banded) | 46.4 | 48.5 | 0.3 / 50.5, 37.4 / 87.7 |
-| A1xd s0 (fixed, dense) | PROBE_A1XD_IN | PROBE_A1XD_FAR | all seen: PROBE_A1XD_BAND |
+| A1xd s0 u6000 / s1 u8000 (fixed, dense) | **0.9 / 1.8** | **1.2 / 2.4** (medians 0.3 / 0.4) | every value seen: 1.0 / 1.7 |
 | B3-1b (translated, θ = 90) | 0.4 | 0.4 | — |
+
+By |Δ| in the far rect A1xd has the rule's profile exactly (4–6° at 19,
+16° at 22, 86° at 35, anti-aligned 138° at 50) — the same solution A1
+and `dist@90` found, from a fixed placement.
 
 This reframes the memorisation question (plan §6.3, asked today): the
 shortcut is a matter of the *structure* of the training positions —
