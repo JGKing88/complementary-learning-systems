@@ -1167,3 +1167,19 @@ jobs 22825504/5.
 not it). Queued for the wall-goal case: `fix1_h128_xod5` (22827721) and
 `fix1_h64_xod3` (22827722), both s42. Pending: `fix1_base` s43 (h1024
 control on the interior goal), `fix1_h128` s44/s45.
+
+### 8.6 10:33 digest — one arena, fixed interior goal, h128 = d0_base exploit on held-out
+
+| arm | u | episodes | succ 0/10 | steps 0/10 | swept |
+|---|---|---|---|---|---|
+| **fix1_h128 s43** (goal (11,6)) | 1525 | 195k | **1.00/0.99** | **11.4 / 12.4** | 0.49/0.46 ↑ |
+| fix1_h128 s42 (goal (17,0)) | 1800 | 230k | 0.98/0.97 | 31 / 31 | 0.46/0.47 |
+| fix1_h128_xod3 s42 | 1425 | 182k | 0.99/0.97 | 32 / 32 | 0.44/0.43 |
+| fix1_h64 s42 | 1200 | 154k | 0.54/0.49 | 16 / 17 | 0.43/0.47 |
+| fix3_h64 | 600 | 115k | 1.00/0.97 | 20 / 23 | 0.42/0.44 |
+
+d0_base u725's own eval: 11.7/12.1. `fix1_h64` s42 is the odd one — half
+the trials fail but the successes are direct (16 steps): the shape of a
+`q`-follower with a broken gate; probe when it has more updates. Five arms
+still queued on ou_bcs (backlog): `fix1_base` s43, `fix1_h128` s44/s45,
+`fix1_h128_xod5`, `fix1_h64_xod3`.
