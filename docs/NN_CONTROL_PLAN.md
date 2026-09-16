@@ -1,8 +1,7 @@
 # Goal-conditioned NN control: can a plain network navigate from encoded states?
 
-**Status (2026-09-15).** A0, A1, A1x, A2, B1x, B2 and their diagnostics are
-done; findings in §1. Next (§6): B3, the corner-confined recurrent test,
-and the representation probes. Branch `worktree-nn-generalization-control`;
+**Status (2026-09-16).** A0, A1, A1x, A2, B1x, B2, B3 and their diagnostics
+are done; findings in §1. Next (§6): the representation probes. Branch `worktree-nn-generalization-control`;
 run-by-run record in `NN_CONTROL_LOG.md`; code map in §7.
 
 ---
@@ -196,20 +195,61 @@ target (the estimator needs two steps); "a new region under the same
 lattice" needs no in-context learning at all once the decode is the rule
 — and none if it is the lookup, because there is nothing to measure.
 
-### 1.6 Standing conclusions
+### 1.6 From a corner to an unseen region under an unseen orientation (B3)
+
+B3 (§6.1) keeps the region holdout B2 gave up: training envs inside the
+400×400 corner, per-row lattices at every orientation with the
+translation drawn so each *rotated* footprint stays inside the corner —
+so the network never sees a phase combination from outside it — and
+test envs whose rotated footprints sit 300 cells outside on both axes
+(`far@θ`). From scratch, S1's recipe (warm-up 3000 at θ = 90°, then the
+0.5 mix), 8000 updates:
+
+**The decode learned from the corner is the rule.** During the warm-up
+`far@90` — every coordinate unseen, the orientation trained — reached
+**1.6°** (4.5° at u = 1000), while `far@45` sat at 46° and `far@0` at
+90°, the |θ − 90°| signature. A1x's fixed placement on the same corner
+produced the lookup; corner-confined translation produced the rule.
+
+**Then the frame, in context, in the unseen region.** At u = 8000:
+
+| set | region | orientation | no history | e0 → e4 → e9 → e19 | ep0 s0 → s1 → s2 → s5 → s10 |
+|---|---|---|---|---|---|
+| `far@0` | unseen | unseen | 94° | 23.5 → 20 → 15 → **13.9** | 94 → 34 → 25 → 14 → 14 |
+| `heldout_out` / `heldout_in` | outside / inside | unseen | 94° | 23 → 19 → 15 → 14.4 / 14.5 | 95 → 34 → 24 → 14 → 13 (both) |
+| `far@45` / `far@90` | unseen | trained | 49° / 6° | 15.5 → 13 → 9 → 7.5 / 8.6 → 14 → 9 → 7.3 | 50 → 24 → 18 → 10 / 11 → 11 → 9 → 6 |
+
+Inside and outside the corner are identical to the decimal at every
+orientation: the decode is fully position-general, and the only cost
+left is the held-out orientation (~7°, as in B2). A network trained on
+nothing but a corner's phase combinations navigates a region it never
+saw under an orientation it never saw, to ~34° after one step of its own
+trajectory, ~14° after five, and ~14° over the lifetime, against 94°
+with no history, 90° memoryless, and 44° for A1x's weights outside the
+same corner. Open: a transient at episode 1 on the trained-orientation
+sets (`far@45` 15.5 → 30.5 → 26.5 → 12.7) — the first goal change
+disturbs something a fixed orientation had made free — which the probes
+(§6.2) should explain.
+
+### 1.7 Standing conclusions
 
 1. A memoryless network does not learn the attractor's given frame; it
    learns the code it was shown — the rule on differences from scattered
-   coverage, a lookup from a corner — and neither extrapolates in range.
+   coverage or from corner-confined translations, a lookup from a fixed
+   corner placement — and neither extrapolates in displacement range.
 2. On the real code, no training regime can make history build a frame,
    because the weights always have the shorter route.
 3. Remove that route and a recurrent network learns an unseen code's
-   frame from its trajectory: ~150° → ~15° over a lifetime, ~20° in ten
-   steps — as a two-part computation, memoryless decode then in-context
-   rotation, which it can also learn jointly from scratch.
-4. Whether a corner-trained network can be pushed to the rule (and then,
-   with lifetimes, to the frame) on a real region holdout is the open
-   question: §6.
+   frame from its trajectory — as a two-part computation, memoryless
+   decode then in-context rotation, learnable jointly from scratch — and
+   with the decode learned from a corner under corner-confined
+   translations, it does so in a region it never saw: ~150° → ~15° over a
+   lifetime, ~20° in ten steps, ~14° in five on B3.
+4. What the attractor has built in — a translation-invariant code and a
+   frame — a plain network can acquire: the invariance from data that
+   deny it a lookup, the frame from lifetimes that deny it a fixed
+   lattice. What it does not acquire from either is the full-range
+   decode (§1.2).
 
 ---
 
@@ -484,11 +524,15 @@ A1x's 44° (region vs orientation, §1.5).
 
 ## 6. Next
 
-### 6.1 B3 — the corner, with lifetimes: does the rule get learned, and the frame on top?
+### 6.1 B3 — the corner, with lifetimes (done; results in §1.6)
 
 The version of the original question that survives §1.5: train **only on
 the corner's phase combinations**, at every orientation and every
-translation *within* the corner, and test outside it.
+translation *within* the corner, and test outside it. Run 2026-09-15/16;
+(1) the pure-MLP control never left the loss plateau (uninformative; a
+second seed is running), (2) from scratch answered both questions — the
+rule from the corner, the frame in the unseen region — so (3) is not
+needed. Design kept here for the record.
 
 **Design.** Envs inside `rect:0,0,400,400` (A1x's 64), per-row lattices
 with random θ and a translation drawn so the rotated env's footprint stays
@@ -518,10 +562,10 @@ trained), `heldout_out@90`.
 
 **Reading.** (1) rule + (2) `heldout_out` falls like §1.4 → a recurrent
 net trained on a corner navigates a new region under a new orientation,
-the strongest form of the claim. (1) lookup → the corner question is an
-inductive-bias question (§1.2) and (3) is the test; (2) is then read on
-`heldout_in` only. This supersedes the earlier B2-mix idea, which had no
-real holdout.
+the strongest form of the claim — *which is what happened (§1.6)*.
+(1) lookup → the corner question is an inductive-bias question (§1.2)
+and (3) is the test; (2) is then read on `heldout_in` only. This
+supersedes the earlier B2-mix idea, which had no real holdout.
 
 ### 6.2 Representation probes — what the encoder and the GRU hold
 
@@ -538,7 +582,10 @@ raw-code `full` as a null; `analysis/b2_probes.py`, ~1–2 h total.
 | **P-act** | feed a wrong `prev_action` for one step | if the frame comes from `(Δcode, action)`, the output rotates by a predictable amount; `rec`'s insensitivity is the control |
 
 Also on `dist@90` and A1 (P-Δ only): whether the rule's residue lookup
-is linearly readable, and where it breaks past |Δ| = 19.
+is linearly readable, and where it breaks past |Δ| = 19. And on B3-2:
+what the episode-1 transient on trained orientations is (§1.6) — P-θ by
+episode should show whether the frame estimate is disturbed by the goal
+change.
 
 ### 6.3 Open, lower priority
 
@@ -653,8 +700,8 @@ readout 2 samples actions, so a policy's floor is ~6–8°, not 0.
 | P16 | B2 `full`: R1 ~90°, R2 falls in episode 0, final 10–25° | shape ✓ and level ✓ — but only with the decode decoupled; the raw-code GRU stayed at 89° |
 | P17 | `rec` between `full` and `dist`, nearer `full` | partly: 45° at e19, but by cross-episode accumulation only — no within-episode measurement, a different shape from `full` |
 | P18 | B2-mix on the corner | superseded by B3 (§6.1) |
-| P19 | B3 (1): a corner-trained `dist` with corner translations learns the rule | open — coin flip by the lookup-size argument |
-| P20 | B3 (2): `heldout_out` at θ = 0 falls to ~20° within a lifetime if P19 holds | open |
+| P19 | B3 (1): a corner-trained decode with corner translations learns the rule | ✓ `far@90` 1.6° in B3-2's warm-up (the pure-MLP control stalled on the plateau; second seed running) |
+| P20 | B3 (2): `heldout_out` at θ = 0 falls to ~20° within a lifetime if P19 holds | ✓ 14° by episode 4, 14 by step 5; `far@0` the same |
 | P21 | probes: θ is linearly decodable from the GRU state after 1–2 steps in the frozen-decode and S1 models; Δ′ from the encoder at R² > 0.95; P-swap error ≈ θ₂ − θ₁ for a few steps | open |
 
 ---
