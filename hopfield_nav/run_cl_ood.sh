@@ -62,6 +62,11 @@ declare -A RUN=(
   [ood_place_rp]=navigate_navp2_ood_place_rp_s42_22599421
   [ood_corner]=navigate_navp2_ood_corner_s42_22629938
   [ood_corner_rp]=navigate_navp2_ood_corner_rp_s42_22629939
+  # EXPERIMENTS_SAMPLE_EFF §8: ONE arena, ONE fixed goal, hidden 128 -- the
+  # fixed-goal generalisers (interior goals), and the three-arena one.
+  [fix1_h128_s43]=navigate_navp2_fix1_h128_s43_22825505
+  [fix1_h128_s44]=navigate_navp2_fix1_h128_s44_22826509
+  [fix3_h128]=navigate_navp2_fix3_h128_s42_22783800
 )
 
 for arm in $ARMS; do
