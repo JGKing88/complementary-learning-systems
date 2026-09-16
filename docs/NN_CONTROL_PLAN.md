@@ -207,8 +207,8 @@ test envs whose rotated footprints sit 300 cells outside on both axes
 
 **The decode learned from the corner is the rule.** The memoryless
 control — `dist` alone, every lifetime at θ = 90° with corner-confined
-translations — reaches `far@90` **0.8°** by u = 800 (coordinates 300
-cells outside the corner on both axes), with `far@45` at 45° and `far@0`
+translations — reaches `far@90` **0.3°** enumerated at u = 3000 (0.8° by
+u = 800; coordinates 300 cells outside the corner on both axes), with `far@45` at 45° and `far@0`
 at 90°, the |θ − 90°| signature; B3-2's warm-up phase gives the same
 (1.6°). A1x's fixed placement on the same corner produced the lookup
 (44° outside); corner-confined translation produces the rule. The
@@ -704,7 +704,7 @@ readout 2 samples actions, so a policy's floor is ~6–8°, not 0.
 | P16 | B2 `full`: R1 ~90°, R2 falls in episode 0, final 10–25° | shape ✓ and level ✓ — but only with the decode decoupled; the raw-code GRU stayed at 89° |
 | P17 | `rec` between `full` and `dist`, nearer `full` | partly: 45° at e19, but by cross-episode accumulation only — no within-episode measurement, a different shape from `full` |
 | P18 | B2-mix on the corner | superseded by B3 (§6.1) |
-| P19 | B3 (1): a corner-trained decode with corner translations learns the rule | ✓ `far@90` 0.8° (memoryless `dist`, seed 1; seed 0 stalled on the plateau), 1.6° in B3-2's warm-up |
+| P19 | B3 (1): a corner-trained decode with corner translations learns the rule | ✓ `far@90` 0.3° enumerated (memoryless `dist`, seed 1; seed 0 stalled on the plateau), 1.6° in B3-2's warm-up |
 | P20 | B3 (2): `heldout_out` at θ = 0 falls to ~20° within a lifetime if P19 holds | ✓ 14° by episode 4, 14 by step 5; `far@0` the same |
 | P21 | probes: θ is linearly decodable from the GRU state after 1–2 steps in the frozen-decode and S1 models; Δ′ from the encoder at R² > 0.95; P-swap error ≈ θ₂ − θ₁ for a few steps | open |
 

@@ -1438,3 +1438,7 @@ on coordinate values it had seen). The rule is what corner-confined
 translation induces; the fixed placement's lookup was the cheaper fit
 only because every cell kept the same absolute phase for all 8000
 updates.
+
+B3-1b final (u = 3000, enumerated): `far@90` **0.2–0.3°** in every
+quadrant (region × region 0.3°; NN line 55–86°), `far@45` 45.1°,
+`far@0` 90.0°. A1's scattered number (0.23°), from a corner.
