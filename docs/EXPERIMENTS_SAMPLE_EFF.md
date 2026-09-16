@@ -1019,3 +1019,43 @@ Launcher: `VARIANT=fix3_<lever> run_nav_p2.sh` (3 envs × K=2 = 3+3 slots ×
 Verdict instrument: the standard held-out training eval plus the nav
 probe's `follow_q` (§7.10's table) — the question is not only "does it
 reach held-out goals" but "is it following `q` when it does".
+
+### 8.2 Wave 1 (3 envs, fixed goals; 2026-09-15 16:50 → 09-16 morning): the smaller trunk generalizes
+
+Arms: `fix3_base` (h 1024), `fix3_nd0`, `fix3_xod8`, `fix3_h128`; 3 envs ×
+K=2 = 3+3 slots × 32 = 192 episodes/update; `fix3_base`/`nd0` 12 h on
+ou_bcs (to ~u3870), `xod8`/`h128` 6 h on mit_normal_gpu (to u2625/u3725).
+Held-out deterministic, 4-eval windows:
+
+| arm | window | succ 0/10 | steps 0/10 | swept 0/10 |
+|---|---|---|---|---|
+| `fix3_base` | u3850 | 0.99/0.97 | 17.1 / 16.0 | 0.55/0.53 |
+| `fix3_nd0` | u3875 | 0.99/0.95 | 21.3 / 18.0 | 0.56/0.55 |
+| `fix3_xod8` | u2625 | **0.57/0.60** | 70 / 66 | 0.59/0.59 |
+| **`fix3_h128`** | u3300 | **1.00/0.98** | **12.0 / 14.2** | 0.54/0.50 |
+| `fix3_h128` | u3725 | 1.00/0.95 | 13.3 / 16.0 | 0.57/0.54 |
+
+1. **Three arenas with fixed goals do not collapse the way one did** —
+   the baseline holds 0.97–0.99 held-out success — but they navigate
+   indirectly (17–25 steps against the 13/14 bar): a mixed policy, part
+   map, part `q`.
+2. **`h128` reaches the bar**: 12.0/14.2 steps at 1.00/0.98 with d0_base-
+   level explore (0.54/0.50) at u3300 = 634k episodes. Jack's guess. The
+   barcode→position lookup is the expensive representation and atan2(`q`)
+   the cheap one; at h 128 the cheap one wins.
+3. Clean `q` (`nd0`) did nothing for directness; exploit-only barcode
+   dropout at 0.8 hurt exploit badly (trained under noise, evaluated
+   clean) while giving the best explore (0.59). Milder xod (0.3/0.5) with
+   h128 is the combination to test.
+
+Probes: `follow_q` on held-out for h128 u3300/u3700, base u3600, nd0
+u3600, xod8 u2600 (job 22824404). Wave 2 launched: `fix1_h128`,
+`fix1_h64`, `fix1_h256` (ONE env, fixed goal, trunk sweep) and `fix3_h64`
+(jobs 22824406–09, 12 h, ou_bcs).
+
+Continuations (§7.12) all COMPLETED u4000: **`one_k4_g_e75` s43 u4000
+11.5/13.6 steps, swept 0.60/0.56** — the 3:1 arm's exploit caught up
+late while keeping d0_base explore; `one_k4_g` s43 u4000 11.4/12.4,
+0.52/0.50; `sched` u4000 12.9/15.2, 0.55/0.52 (did not beat plain 3:1);
+`b32_g_e75` u4000 (512k) 12.3/13.9, 0.53/0.51. Probe round 3 on these
+(job 22824395).
