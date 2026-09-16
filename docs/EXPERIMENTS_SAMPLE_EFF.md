@@ -1189,3 +1189,19 @@ overlays `results/nav_tri_probe/fix3_by_update.png`, `fix1_by_update.png`;
 rows `fix3_h128`, `fix3_base`, `fix1_h128` s43 / s42; the `follow_q` table
 (§7.10, §8.3, §8.5). Regenerate with `make_fix_plots.sh` + `splice_page.py`
 (job tmp).
+
+### 8.7 11:07 digest — interior-goal one-arena model beats d0_base's own directness; h64 works at 3 envs; a half-and-half follower on the wall goal
+
+| arm | u | episodes | succ 0/10 | steps 0/10 | swept |
+|---|---|---|---|---|---|
+| **fix1_h128 s43** (interior) | 2275 | 291k | 1.00/0.99 | **11.1 / 11.7** | 0.52/0.49 |
+| **fix3_h64** | 1000 | 192k | 1.00/1.00 | **12.7 / 14.3** | 0.54/0.49 |
+| fix1_h64 s42 (wall) | 1875 | 240k | **0.50/0.48** | **12.9 / 13.9** | 0.43/0.46 |
+| fix1_h128 s42 (wall) | 2500 | 320k | 0.99/0.97 | 31 / 33 | 0.50/0.50 |
+| fix1_h128_xod3 s42 | 2000 | 256k | 1.00/0.98 | 27 / 30 | 0.43/0.43 |
+
+d0_base u725's own eval is 11.7/12.1. `fix3_h64` reaches the bar at u1000
+where `fix3_h128` needed u3300. `fix1_h64` on the wall goal: exactly half
+the held-out trials succeed and those are direct — a follower that works
+on some arenas and not others, or a broken gate; probe with a per-arena
+breakdown (added to `behavior_probe` nav mode).
