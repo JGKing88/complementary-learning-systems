@@ -1162,3 +1162,8 @@ jobs 22825504/5.
    (22826509/10) the arena distribution. Running: `fix1_h64` (u1000 0.56
    success but 16.8 steps — direct when it works), `fix1_h256` (0.69, 48
    steps), `fix3_h64` (u500 1.00/0.96, 23.7 steps).
+
+**10:05:** cancelled `fix1_h256` (u1000: 0.69 success, 48 steps — h256 is
+not it). Queued for the wall-goal case: `fix1_h128_xod5` (22827721) and
+`fix1_h64_xod3` (22827722), both s42. Pending: `fix1_base` s43 (h1024
+control on the interior goal), `fix1_h128` s44/s45.
