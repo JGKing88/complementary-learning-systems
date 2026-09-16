@@ -1393,3 +1393,7 @@ final probe + page/tracker wrap-up on the morning's checkpoints:
 (one arena, one goal, h128 — the best), `..._fix1_h128_s44_22826509/navigate_u3000.pt`
 (the replicate), `..._fix3_h128_s42_22783800/navigate_u3300.pt` (three
 arenas, three goals).
+
+**Page v8 (17:30):** Part III final — verdict table with the replicate
+arena (s44), the h1024 control, the near-wall and wall finals; `fix1_h128`
+s44 row; overlays include the h1024 control and the s44/s45 arenas.
