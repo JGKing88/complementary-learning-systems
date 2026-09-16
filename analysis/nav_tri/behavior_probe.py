@@ -1009,9 +1009,22 @@ def _probe_one(args, cfg, agent, envs, vh, offsets, embed_dim, device):
                     else _explore_stats(rec, env.size, goal))
             agg = {k: float(np.nanmean([e[k] for e in per_env]))
                    for k in per_env[0]}
+            # Per-arena rows too: a policy that follows q on some arenas and
+            # not others averages to the same number as one that half-follows
+            # everywhere, and only the breakdown tells them apart.
+            agg["per_env"] = [
+                {k: float(e[k]) for k in ("success_rate", "mean_steps",
+                                          "follow_q", "align_true")
+                 if k in e}
+                for e in per_env]
             out[f"{mode}_d{n_d}"] = agg
             print(f"\n--- {mode}  n_dist={n_d} ---")
             for k, v in agg.items():
+                if k == "per_env":
+                    for i, e in enumerate(v):
+                        print(f"  env{i}: " + " ".join(
+                            f"{kk}={vv:.3f}" for kk, vv in e.items()))
+                    continue
                 print(f"  {k:<26s} {v:.4f}")
     return out
 
