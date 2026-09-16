@@ -1669,8 +1669,8 @@ last checkpoint before the kill.
 | K (cells) | train tt | `heldout` tt (NN line) | decode probe: seen X & Y / one unseen / neither | far rect |
 |---|---|---|---|---|
 | 4 (1,600) | 0.25 | **76.3** (82) at u = 8000 | 13.9 / 56–59 / 83 | 78.6 |
-| 8 (3,200) | 1.3 | **77.0** (83) at u = 5750 (preempted; probe at u = 4000) | 45 / 67 / 85 | 82 |
-| 16 (6,400) | K16_TRAIN | K16_HELDOUT | K16_PROBE | K16_FAR |
+| 8 (3,200) | 0.99 | **77.2** (83) at u = 8000 (second attempt; the first was preempted at 5750 at 77.0) | 43 / 67 / 84 | 81 |
+| 16 (6,400) | 0.50 | **52–53** (83) from u = 1000 to 5000, then the constant-lr blow-up at 5250 (loss 0 → 0.89); preempted four times; probe at u = 4000 | 53 / 57–61 / 70 | 65 |
 | 64 (A1, 25,600) | 0.2 | 0.23 | 0.3 / 0.3 / 0.3 | 0.4 |
 
 P23 ✓: with 4 or 8 clusters the big network is a lookup at chance on
@@ -1679,3 +1679,51 @@ shared by several envs — not even the cross-env "seen X, seen Y"
 combinations are decoded (14–45°): the table is per env. Nothing about
 the count of pairs (8000 × 32k, every within-env pair many times over)
 moves it.
+
+**Wave 2 at K = 8 — noise, dropout, smaller networks.** Preemptions on
+`mit_preemptable` killed several runs mid-way and requeued them from
+scratch; where a run did not finish the row is from its last checkpoint
+(marked). `heldout` is the trainer's enumerated held-out-env number (16
+new envs anywhere — flattered, since the generator places them on the
+training envs' lattice and some coordinate values are shared);
+**neither-seen** is the decode probe on far-rect pairs whose X and Y
+values never lay in a training footprint — the honest position number;
+d = 1 / 10 are the far-rect errors at Chebyshev |Δ| = 1 and 10.
+
+| arm (K = 8 unless stated) | train tt | `heldout` tt | neither-seen | seen X & Y | d = 1 / 10 / 19 |
+|---|---|---|---|---|---|
+| 5×768 baseline, K = 4 | 0.25 | 76 | 83 | 14 | 69 / 82 / 81 |
+| 5×768 baseline, K = 8 | 0.99 | 77.2 | 84 | 43 | 59 / 86 / 83 |
+| 5×768 baseline, K = 16 (u = 4000; lr blow-up at 5250) | 0.5 | 53 | 70 | 53 | 22 / 78 / 70 |
+| 5×768 + input noise 0.1 | 0.42 | **48.9** | **56** | 22 | **6** / 75 / 50 |
+| 5×768 + input noise 0.3 (u = 4000) | 1.6 | ~42 | **47** | 22 | 17 / 68 / 35 |
+| 5×768 + dropout 0.2 (u = 6000) | 0.8 | 58 | 61 | 20 | 4 / 75 / 60 |
+| 2×64 | 4.5 | 86 | 89 | 49 | 84 / 86 / 86 |
+| 2×128 | 2.4 | 85 | 89 | 41 | 83 / 83 / 83 |
+| 3×256 | L3H256_ROW |
+| A1: 5×768, K = 64 | 0.2 | 0.23 | 0.3 | 0.3 | — |
+
+**Reading.** (i) *Smaller networks make it worse, not better* (P25 ✗ in
+the hoped-for direction): 2×64 and 2×128 fit the eight training envs
+(2–5°) and are at 85–89° on everything else, with no short-range
+structure at all (84° even at |Δ| = 1). Capacity pressure does not push
+toward the rule; it produces a smaller table. (ii) *Input noise and
+dropout move the network partway* — from the pure lookup (85°) to
+47–61° on unseen coordinates — and the range profile says which part
+moved: the **per-module, short-range** decode now generalises (4–6° at
+|Δ| = 1 for noise 0.1 and dropout, where the baseline is 66–69°) while
+the **cross-module combination** does not (68–75° at |Δ| = 10, the
+Chinese-remainder band, exactly A1x's D1 profile of 14° at d = 1 and 63°
+at d = 9). Noise at σ = 0.3 spreads the error more evenly (17 / 68 / 35)
+but is no closer to the rule. (iii) The K = 16 baseline, at the crossing
+between 8 and 64 clusters, has the same shape unaided (22 / 78 / 70).
+
+So the answer to the question as asked is **no**: on 3,200 cells in
+eight clusters, neither noise nor a smaller network recovers the rule.
+What they recover is the half of it that a single module's bump pair
+determines locally; the half that needs the phase *triples* to have
+been seen in enough combinations — the residue-to-displacement table —
+is not a regularisation problem but a coverage-structure one, which is
+what A1xd (one contiguous run of 400 values → 1°) and A1 (64 scattered
+clusters → 0.3°) showed from the other side. P23 ✓, P24 ✗ (partway),
+P25 ✗, P26 ✓ (dropout ≈ noise 0.1, both short of noise 0.3).

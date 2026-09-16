@@ -100,7 +100,9 @@ contiguous run of 400 values (A1xd) or 64 scattered clusters (A1) offer
 no such coordinate, and the rule wins. B3-1b's corner-confined
 translation worked by filling the corner, not by decoupling cells from
 codes. The lookup is a *structure* effect — few clusters — not a
-quantity effect; §6.3 tests that directly.
+quantity effect; §6.3 tests that directly: on 8 scattered clusters
+neither input noise nor a smaller network recovers the rule (noise
+gets the per-module half, small networks build a smaller table).
 
 A1x's reported 0.2° on held-out envs *inside* the corner was a placement
 artifact: the generator draws held-out envs from the training envs'
@@ -645,7 +647,7 @@ what the episode-1 transient on trained orientations is (§1.6) — P-θ by
 episode should show whether the frame estimate is disturbed by the goal
 change.
 
-### 6.3 Memorisation test — is the shortcut about data quantity or data structure?
+### 6.3 Memorisation test — is the shortcut about data quantity or data structure? (run 2026-09-16; result below)
 
 Asked 2026-09-16, after the dense-tiling control (§1.2): *if the corner
 MLP's failure was memorisation, can an MLP trained on even less data than
@@ -688,6 +690,19 @@ outright (no room for either solution) or takes the rule — the outcome
 worth having is a small network at the rule where the big one is at the
 lookup. P26: dropout does less than input noise (it perturbs the
 features, not the template).
+
+**Result (log 2026-09-16).** Error on far-rect pairs whose coordinate
+values were never in a training footprint, at K = 8 (3,200 cells):
+baseline **84°** (K = 4: 83°, K = 16: 70°, A1's K = 64: 0.3°); input
+noise 0.1 → 56°, noise 0.3 → 47°, dropout 0.2 → 61°; 2×64 / 2×128 /
+3×256 → **89° / 89° / ~85°** while fitting train to 2–5°. The range
+profile says what noise buys: the per-module, short-range decode (4–6°
+at |Δ| = 1, from 66°) and not the cross-module combination (68–75° at
+|Δ| = 10, A1x's Chinese-remainder band). **Answer: no.** On few
+clusters neither regularisation nor capacity recovers the rule; smaller
+networks build a smaller table. The residue-to-displacement table needs
+the phase triples seen in enough combinations — coverage structure
+(A1xd, A1), not regularisation. P23 ✓, P24 ✗ (partway), P25 ✗, P26 ✓.
 
 ### 6.4 Open, lower priority
 
@@ -806,7 +821,7 @@ readout 2 samples actions, so a policy's floor is ~6–8°, not 0.
 | P20 | B3 (2): `heldout_out` at θ = 0 falls to ~20° within a lifetime if P19 holds | ✓ 14° by episode 4, 14 by step 5; `far@0` the same |
 | P21 | probes: θ is linearly decodable from the GRU state after 1–2 steps in the frozen-decode and S1 models; Δ′ from the encoder at R² > 0.95; P-swap error ≈ θ₂ − θ₁ for a few steps | ✓ θ at 33–50° after 2 steps, 12–22° after 5; Δ′ at R² 0.986–0.999; P-swap +87–90° for the *whole* episode, not a few steps (§1.7) |
 | P22 | A1xd: dense fixed tiling of the corner still takes the lookup (coverage alone is not enough) | ✗ 3.6° / 6.4° outside by u = 500, 0.7 / 1.7° final — the rule; the arrangement of the seen values is the lever (§1.2, §6.3) |
-| P23–P26 | A1m memorisation test (§6.3) | open |
+| P23–P26 | A1m memorisation test (§6.3) | P23 ✓ (84° unseen at K = 8); P24 ✗ noise 0.3 reaches 47°, the short-range half only; P25 ✗ small nets 85–89°, a smaller table; P26 ✓ dropout 61° ≈ noise 0.1 |
 
 ---
 
