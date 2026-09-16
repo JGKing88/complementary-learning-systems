@@ -1323,3 +1323,9 @@ xod5 u1000.
   in exploit rollouts (the along-the-wall sign lives in path integration
   as much as in the barcode), and a second fixed goal (the 3-wall-goal
   set follows `q` at 0.83 — two may suffice).
+
+**13:20:** page v7 (Part III updated with §8.10–8.11). Cancelled `fix1_h64`
+s42 (its story is §8.8 point 2). Launched on the wall goal:
+`fix1_h128_xhd5` (exploit heading dropout 0.5; 22839979) and
+`fix1_h128_xod3_xhd5` (22839980), 12 h. Still running: `fix1_h128` s42/s44/
+s45, `fix1_base` s43, `fix1_h128_xod3`/`xod5` s42, `fix3_h64`.
