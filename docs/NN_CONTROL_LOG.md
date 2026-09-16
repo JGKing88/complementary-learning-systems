@@ -1700,7 +1700,7 @@ d = 1 / 10 are the far-rect errors at Chebyshev |Δ| = 1 and 10.
 | 5×768 + dropout 0.2 (u = 6000) | 0.8 | 58 | 61 | 20 | 4 / 75 / 60 |
 | 2×64 | 4.5 | 86 | 89 | 49 | 84 / 86 / 86 |
 | 2×128 | 2.4 | 85 | 89 | 41 | 83 / 83 / 83 |
-| 3×256 | L3H256_ROW |
+| 3×256 (CPU) | 1.25 | 81.3 | 87 | 44 | 68 / 87 / 84 |
 | A1: 5×768, K = 64 | 0.2 | 0.23 | 0.3 | 0.3 | — |
 
 **Reading.** (i) *Smaller networks make it worse, not better* (P25 ✗ in

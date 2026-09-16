@@ -695,7 +695,7 @@ features, not the template).
 values were never in a training footprint, at K = 8 (3,200 cells):
 baseline **84°** (K = 4: 83°, K = 16: 70°, A1's K = 64: 0.3°); input
 noise 0.1 → 56°, noise 0.3 → 47°, dropout 0.2 → 61°; 2×64 / 2×128 /
-3×256 → **89° / 89° / ~85°** while fitting train to 2–5°. The range
+3×256 → **89° / 89° / 87°** while fitting train to 1–5°. The range
 profile says what noise buys: the per-module, short-range decode (4–6°
 at |Δ| = 1, from 66°) and not the cross-module combination (68–75° at
 |Δ| = 10, A1x's Chinese-remainder band). **Answer: no.** On few
