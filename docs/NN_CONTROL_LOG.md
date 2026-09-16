@@ -1442,3 +1442,208 @@ updates.
 B3-1b final (u = 3000, enumerated): `far@90` **0.2–0.3°** in every
 quadrant (region × region 0.3°; NN line 55–86°), `far@45` 45.1°,
 `far@0` 90.0°. A1's scattered number (0.23°), from a corner.
+
+## 2026-09-16 — A1xd: the dense-tiling control (coverage vs randomisation)
+
+Jack, on B3-1b vs A1x: how does a memoryless MLP trained only on one
+corner generalise when A1x, also a memoryless MLP on the same corner,
+did not? My answer was the corner-confined translation: A1x's fixed
+placement leaves a cheap lookup over the 226 X / 221 Y coordinate values
+its 64 envs cover; translating every lifetime's code within the corner
+randomises which absolute phase a cell carries, so only the relative-phase
+rule fits. Jack: wouldn't refreshing goals do the same? No — A1x already
+resamples `(p, g)` i.i.d. every update (`sample_pairs`); goals recombine
+the same 25,600 fixed codes, they add none. But the translation changes
+two things at once — the codes seen (16% → 100% of the corner's
+positions) and the cell ↔ code pairing — and only a control separates
+them: **fixed placement that tiles the corner densely.**
+
+**A1xd** (22831291 / 92, `mit_preemptable`): A1x's recipe (l5h768, 8000
+updates, step lr at 0.7, `rect:0,0,400,400`) with `--place_margin 0`, so
+384 training + 16 held-out envs sit on an exact pitch-20 lattice filling
+the corner (every X and Y value in [0, 400) seen; all 400 slots used; no
+jitter; pairs still within an env only), `--pairs_per_env 128` (49k
+pairs/update vs A1x's 33k), 16 `heldout_out` envs ≥ 52 cells outside.
+Placement dry-run on the login node first (`check_dense_placement.py`).
+
+| u | A1xd s0 OUT | A1xd s1 OUT | A1x s0 OUT (fixed, 12 × 12 bands) |
+|---|---|---|---|
+| 250 | 9.3 | 15.9 | — |
+| 500 | **3.6** | 6.4 | 58 |
+| 1250 | 1.9 | 3.7 | — |
+| 2500 | 1.3 | 2.9 (u = 2250) | — |
+| 8000 | FINAL_S0 | FINAL_S1 | 44.5 |
+
+**Coverage, not the randomisation, is the lever — P22 falsified.** A
+fixed placement that shows every coordinate value in the corner
+generalises 300 cells outside it; the same fixed placement showing 226
+values in 12 clusters does not. So the earlier reading — "the lookup was
+the cheaper fit only while every cell kept the same absolute phase" — is
+wrong as stated, and B3-1b's translation worked *because* it filled the
+corner, not because it decoupled cells from codes. What the lookup needs
+is a **cheap absolute coordinate**: with the seen values in 12 clusters
+of 20, "which cluster, where in it" is a 12-way plus 20-way read and
+undercuts the residue rule; with one contiguous run of 400 values the
+absolute route is a 400-way read of the phase triple, no cheaper than the
+difference route, and the rule wins — as it did with A1's 64 scattered
+clusters. The band-structure of the placement lattice (pitch 47) was the
+artifact all along, the same one that produced A1x's "0.2° inside".
+
+Decode probe (`analysis/decode_probe.py`, synthetic pairs, |Δ| ≤ 19):
+
+| model | inside corner, any position | far rect [700, 1200)² | seen X & Y / one unseen / neither |
+|---|---|---|---|
+| A1x s0 (fixed, banded) | 46.4 | 48.5 | 0.3 / 50.5, 37.4 / 87.7 |
+| A1xd s0 (fixed, dense) | PROBE_A1XD_IN | PROBE_A1XD_FAR | all seen: PROBE_A1XD_BAND |
+| B3-1b (translated, θ = 90) | 0.4 | 0.4 | — |
+
+This reframes the memorisation question (plan §6.3, asked today): the
+shortcut is a matter of the *structure* of the training positions —
+how many clusters they form — not their number. Few scattered envs are
+few clusters, which is the regime for testing whether noise or capacity
+can push a network off the shortcut.
+
+## 2026-09-16 — representation probes (plan §6.2): the decoupled algorithm, seen directly
+
+`analysis/b2_probes.py` (commit 37eabf1), synthetic per-row lattices,
+no scaffold; `evaluate_lifetime_direction` grew an optional `probe` with
+`grid_at` / `prev_action` / `record` hooks (a read-only probe reproduces
+a run bit for bit — test). Runs: frozen-decode `full` s0 / s1, S1, S2,
+B3-2, the raw-code `full` as the null, `rec` as the no-action control;
+P-Δ also on `dist@90` and A1. 384 lifetimes × 20 episodes per probe,
+sampled actions; ridge readouts (centred, penalty ∝ N × mean variance,
+fit on trained-band rows only, read on the rest). CPU job, ~40 s per
+model. Three passes: the first two fixed the readout (per-dimension
+standardisation blew up near-constant units; a fit that includes the
+narrow held-out band decodes uncertain states to that band's centre).
+
+### P-Δ — the decode is explicit in the encoder, and it is the rule
+
+Ridge from the encoder's 768 features (random θ and shift, |Δ| ≤ 19) to
+the code-frame direction `R_θ(g − p)`, to the env-frame direction
+`(g − p)` (not recoverable from two codes — the control), and to the
+per-module wrapped phase differences (cos/sin, 12 targets):
+
+| encoder | code-frame dir R² (deg) | env-frame dir R² | phase diffs R² | code-frame deg at \|Δ\| = 19 / 22 / 25 / 30 / 40 |
+|---|---|---|---|---|
+| frozen `dist@90` trunk (frozen s0/s1, `rec`, `dist90`) | 0.986 (3.2°) | −0.01 (89°) | 0.88 | 6 / 11 / 20 / 45 / 95 |
+| S1 (joint, lr 1e-4) | **0.998 (1.0°)** | −0.01 | **0.99** | 2 / 7 / 17 / 41 / 101 |
+| S2 (joint, detached) | 0.991 (2.8°) | −0.01 | 0.92 | 6 / 11 / 19 / 43 / 100 |
+| B3-2 (corner, joint) | **0.999 (0.8°)** | −0.01 | 0.99 | 2 / 8 / 16 / 42 / 101 |
+| A1 (pairs, fixed lattice θ = 0) | 0.989 (2.4°) | −0.00 | 0.96 | 7 / 12 / 21 / 41 / 95 |
+| raw-code GRU, one step from h = 0 (null) | −0.02 (89°) | −0.02 | 0.28 | 86–97 throughout |
+
+Every trained encoder exposes the code-frame displacement linearly at
+R² ≥ 0.986 and the per-module phase differences at R² 0.88–0.99; none
+exposes the env-frame direction (which needs θ). A1, trained on one
+orientation, reads the same at every orientation — the rule again. The
+readout breaks past |Δ| = 19 exactly where the behaviour does (§1.2).
+The jointly trained encoders (S1, B3-2) are *cleaner* than the frozen
+`dist` trunk: 1.0° / 0.8° vs 3.2°, phase diffs 0.99 vs 0.88.
+
+### P-θ — the frame is an explicit, linear variable in the GRU state
+
+Lifetimes at θ ~ U over the trained band (a third of the rows in the
+held-out band |θ| < 15°, read but not fit). Ridge from the GRU's top
+layer to (cos θ, sin θ), fit on episodes ≥ 2 of half the trained-band
+rows, read on the rest; angular error of the decoded θ, trained band,
+beside the policy's own error on the same rows:
+
+| model | θ from h, episode 0 by step 0 / 1 / 2 / 3 / 5 / 10 | policy, same steps | θ by episode 0 / 1 / 2 / 5 / 10 | policy by episode |
+|---|---|---|---|---|
+| frozen s0 | 82 / 71 / 50 / 37 / 22 / 14 | 83 / 38 / 30 / 21 / 15 / 13 | 30 / 11 / 13 / 7 / 6 | 22 / 23 / 23 / 11 / 9 |
+| frozen s1 | 79 / 84 / 73 / 57 / 38 / 23 | 91 / 62 / 47 / 41 / 23 / 14 | 39 / 12 / 9 / 8 / 6 | 29 / 16 / 14 / 11 / 9 |
+| S1 | 88 / 70 / **33 / 19 / 12 / 11** | 84 / 24 / 18 / 15 / 9 / 10 | 25 / 18 / 13 / 8 / 6 | 19 / 20 / 15 / 11 / 8 |
+| S2 (detached) | 96 / 92 / 91 / 87 / 71 / 57 | 83 / 75 / 51 / 40 / 31 / 20 | 71 / 35 / 26 / 13 / 10 | 38 / 23 / 18 / 13 / 10 |
+| B3-2 | 87 / 88 / 46 / 29 / 22 / 22 | 82 / 26 / 20 / 14 / 10 / 9 | 36 / 28 / 18 / 12 / 8 | 19 / **35** / 23 / 17 / 9 |
+| `rec` (no action) | 82–88 flat | 78–96 | 78 / 66 / 62 / 58 / 50 | 94 / 93 / 89 / 81 / 75 |
+| raw (null) | 86–91 flat | 85–99 | 90 / 89 / 87 / 86 / 88 | 88–90 |
+
+θ is a linear variable in the state (R² 0.86–0.93 late for the frozen
+and S1 models), measured in the first 3–5 steps of the lifetime in step
+with the policy's own curve, and refined to 6–7° over the lifetime. A
+second readout fit on episode-0 states only (not shown) reads the same
+or better early — the early estimate is not hiding in another subspace.
+S2, whose encoder was trained detached, holds θ far less linearly
+(57° after ten steps, 10° by episode 10) although its policy is as good
+— the same computation, less readable. `rec` has the cross-episode
+frame only (78 → 50° over ten episodes, nothing within an episode).
+
+The GRU state also carries the *un-rotated* direction the head needs
+(ridge from h to the env-frame direction, late episodes: frozen s0 10.7°
+R² 0.94, s1 11.2° / 0.94, S1 9.3° / 0.96, B3-2 11.5° / 0.92, S2 22.4° /
+0.76) beside the code-frame direction (6–9°, R² 0.96–0.98; S2 32°). So the
+picture is: encoder → `R_θΔ` (linear); GRU → θ (linear) and `Δ`
+(linear); the head reads `Δ`. The raw-code GRU has none of it (θ ~85°,
+directions ~88°).
+
+### P-swap — a decoupled estimator, wrong by exactly the swap angle
+
+Lattice switched by +90° at the start of episode 10, `h` kept. Signed
+error (from the true direction to the action) in the swap episode, by
+step, and by episode after it:
+
+| model | swap episode, steps 1 / 5 / 10 / 20 | by episode 10 → 19 |
+|---|---|---|
+| frozen s0 | **+90 / +88 / +84 / +77** | 79, 61, 47, 37, 32, 29, 28, 25, 24, 23 |
+| frozen s1 | +89 / +86 / +82 / +74 | 76, 48, 34, 22, 19, 17, 15, 14, 13, 13 |
+| S1 | +87 / +84 / +78 / +75 | 75, 60, 49, 43, 38, 33, 31, 30, 28, 26 |
+| S2 | +90 / +88 / +85 / +81 | 81, 67, 54, 45, 37, 32, 28, 26, 24, 22 |
+| B3-2 | +89 / +85 / +82 / +76 | 77, 65, 57, 50, 46, 41, 39, 36, 33, 31 |
+| `rec` | +61 / +56 / +55 / +46 | 83, 73, 67, 63, 58, 56, 55, 51, 48, 47 |
+| raw (null) | −6 … +3 (abs 89 throughout) | 89 flat |
+
+Before the swap the signed error is 0 ± 2° everywhere. After it the
+action is off by the swap angle itself — the network keeps un-rotating
+by the θ it had measured — **for the whole episode**, and re-measures
+over the next 5–10 episodes, an order of magnitude slower than the first
+measurement (episode 0: ~5 steps). The frame estimate is sticky: once
+formed, new (Δcode, action) evidence is weighted far below the initial
+evidence. (`rec`, with no action input, moves +61° — it has a weaker,
+cross-episode frame, as §1.4 said.)
+
+### P-act — the frame comes from (Δcode, prev_action), evidence weighted down over the lifetime
+
+`prev_action` rotated by +90° for one step; signed error at the
+perturbed step and the next four (baseline 0 ± 3°):
+
+| model | ep 0 step 1 | ep 0 step 3 | ep 0 step 6 | ep 5 step 2 |
+|---|---|---|---|---|
+| frozen s0 | **+57**, 42, 29, 15, 11 | +24, 29, 18, 9, 8 | +14, 19, 15, 13, 8 | −1, −1, 0 |
+| frozen s1 | +16, 37, 17, 9, 6 | +17, 27, 17, 12, 8 | +13, 20, 19, 6, 6 | −3, 0, −1 |
+| S1 | +15, 21, 20, 11, 8 | +17, 23, 16, 11, 9 | +8, 11, 8, 5, 4 | −2, −1, −2 |
+| S2 | +10, 15, 11, 12, 6 | +10, 14, 10, 10, 7 | +7, 17, 15, 11, 9 | 0, 0, 0 |
+| B3-2 | +14, 18, 14, 13, 7 | +19, 23, 15, 10, 6 | +9, 10, 8, 6, 4 | −1, 1, 0 |
+| raw (null) | ±10 noise | ±10 | ±10 | ±10 |
+
+The sign is the one the swap predicts (a +90° action rotation implies a
+frame rotated by −90°, un-rotating the output by +90°), the size scales
+inversely with how much evidence the state already holds — half the
+perturbation at step 1 for frozen s0, a quarter at step 3, ~15° at step
+6, nothing by episode 5 — and the perturbation's effect persists for
+3–5 steps, the same integration window the initial measurement shows.
+The decode is untouched (the encoder never sees the action).
+
+### B3-2's episode-1 transient (§1.6)
+
+The transient is in the frame estimate. On trained orientations B3-2's
+θ readout stalls over episodes 1–3 (36 → 28 → 18 → 17°, then 10 by
+episode 4) where S1's falls monotonically (25 → 18 → 13 → 9), and its
+policy dips in step (19 → 35 → 23 → 22 → 11 by episode; S1 19 → 20 →
+15 → 10). Its episode-0 estimate is as fast as S1's (46° at step 2, 22°
+at step 5; policy 20° / 10°), so it is the goal change — a reset that
+teleports the start, putting a code jump into the (Δcode, prev_action)
+integrator that no action explains — that disturbs an estimate the
+fixed-orientation warm-up had made cheap to hold. Not proven by these
+probes: a lifetime variant that begins each episode at the previous goal
+(no teleport) would settle it; low priority, the transient is gone by
+episode 4 and absent on the held-out band.
+
+**Bottom line (P21 ✓ on every count).** The mechanism inferred from
+behaviour in §1.4 is what the state holds: a memoryless encoder computing
+the rule on phase differences (code-frame Δ, linear); a recurrent state
+holding θ as a linear variable, measured from (Δcode, prev_action) over
+~5 steps and then held sticky; and the un-rotated Δ, linear in the same
+state, for the head. From scratch (S1, B3-2) the encoder's decode is
+cleaner than the frozen trunk's, so the joint training did not
+compromise the memoryless part.

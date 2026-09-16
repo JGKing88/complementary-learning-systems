@@ -27,6 +27,7 @@ HIDDEN=${HIDDEN:-256}
 LAYERS=${LAYERS:-2}
 NONLIN=${NONLIN:-relu}
 DROPOUT=${DROPOUT:-0.0}
+INPUT_NOISE=${INPUT_NOISE:-0.0}
 
 N_ENVS=${N_ENVS:-64}
 N_VAL_ENVS=${N_VAL_ENVS:-16}
@@ -69,7 +70,7 @@ WANDB_FLAG=--use_wandb
 
 PYTHONUNBUFFERED=1 python -m hopfield_nav.train_goal_pairs \
   --mode "$MODE" --movement_mode "$MOVEMENT" \
-  --hidden_size "$HIDDEN" --num_layers "$LAYERS" --nonlinearity "$NONLIN" --dropout "$DROPOUT" \
+  --hidden_size "$HIDDEN" --num_layers "$LAYERS" --nonlinearity "$NONLIN" --dropout "$DROPOUT" --input_noise "$INPUT_NOISE" \
   --n_envs "$N_ENVS" --n_val_envs "$N_VAL_ENVS" --n_same_envs "$N_SAME_ENVS" \
   --pairs_per_env "$PAIRS_PER_ENV" --pair_sampler "$PAIR_SAMPLER" --size "$SIZE" --observation_size "$OBS" \
   --lambdas $LAMBDAS --fwhm_ratio "$FWHM" --place_margin "$PLACE_MARGIN" \

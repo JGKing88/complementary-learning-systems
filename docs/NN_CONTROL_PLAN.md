@@ -86,6 +86,21 @@ range-general. Same architecture, same objective: the training geometry
 chose the solution. The rule fits a corner's data exactly too; SGD took
 the lookup because at corner scale it is cheaper.
 
+**What "corner scale" means — the dense-tiling control (A1xd, 09-16).**
+The same recipe with 384 envs tiling the corner edge to edge at fixed
+placement (every coordinate value in [0, 400) seen, pairs still within
+an env) reaches **A1XD_FINAL° outside the corner** (A1x: 44°), and the
+decode probe puts it at the rule everywhere. So it is not the absolute
+codes being fixed, nor how many positions are seen, but how they are
+arranged: A1x's 64 envs sat on a pitch-47 placement lattice, so the
+seen X values formed 12 clusters of 20 and "which cluster, where in it"
+was a cheap absolute coordinate that undercut the residue rule. One
+contiguous run of 400 values (A1xd) or 64 scattered clusters (A1) offer
+no such coordinate, and the rule wins. B3-1b's corner-confined
+translation worked by filling the corner, not by decoupling cells from
+codes. The lookup is a *structure* effect — few clusters — not a
+quantity effect; §6.3 tests that directly.
+
 A1x's reported 0.2° on held-out envs *inside* the corner was a placement
 artifact: the generator draws held-out envs from the training envs'
 lattice (pitch 47, ±3 jitter in a dense packing), so their coordinate
@@ -211,9 +226,9 @@ translations — reaches `far@90` **0.3°** enumerated at u = 3000 (0.8° by
 u = 800; coordinates 300 cells outside the corner on both axes), with `far@45` at 45° and `far@0`
 at 90°, the |θ − 90°| signature; B3-2's warm-up phase gives the same
 (1.6°). A1x's fixed placement on the same corner produced the lookup
-(44° outside); corner-confined translation produces the rule. The
-lookup was the cheaper fit only while every cell kept the same absolute
-phase for the whole run.
+(44° outside); corner-confined translation produces the rule — because
+it fills the corner: the dense-tiling control (§1.2, A1xd) gets the rule
+from a fixed placement too.
 
 **Then the frame, in context, in the unseen region.** At u = 8000:
 
@@ -235,12 +250,50 @@ sets (`far@45` 15.5 → 30.5 → 26.5 → 12.7) — the first goal change
 disturbs something a fixed orientation had made free — which the probes
 (§6.2) should explain.
 
-### 1.7 Standing conclusions
+### 1.7 What the encoder and the GRU hold (probes, §6.2)
+
+Linear readouts on synthetic lifetimes (`analysis/b2_probes.py`, log
+2026-09-16), on the frozen-decode `full` (s0, s1), S1, S2, B3-2, the
+raw-code `full` as the null and `rec` as the no-action control:
+
+- **Encoder → code-frame displacement, explicitly.** Ridge from the
+  encoder's features to `R_θ(g − p)`: R² 0.986 (frozen trunk), 0.998
+  (S1), 0.999 (B3-2), 0.991 (S2); per-module phase differences at R²
+  0.88–0.99; the env-frame direction at R² 0 (needs θ). A1's features read
+  the same at every orientation. The readout breaks past |Δ| = 19 where
+  the behaviour does. The jointly trained encoders are cleaner than the
+  frozen `dist` trunk (1.0° / 0.8° vs 3.2°).
+- **GRU state → θ, linearly.** R² 0.86–0.93 in late episodes; measured
+  in the first 3–5 steps of episode 0 in step with the policy (frozen s0:
+  82 → 50 → 37 → 22 → 14° at steps 0/2/3/5/10, policy 83 → 30 → 21 → 15 →
+  13; S1: 88 → 33 → 19 → 12 → 11) and refined to 6–7° over the lifetime.
+  The same state carries the un-rotated direction the head reads (9–11°,
+  R² 0.92–0.96). S2 (detached encoder) holds θ far less linearly with an
+  equally good policy. `rec`: cross-episode only. Raw: nothing.
+- **P-swap: a decoupled estimator.** Switch the lattice by +90° at
+  episode 10 with `h` kept and every model's action is off by **+87 to
+  +90°** — the swap angle — for the whole episode, then re-measures over
+  5–10 episodes: the frame estimate is sticky once formed (the first
+  measurement took ~5 steps). Raw: no effect (89° throughout).
+- **P-act: the frame comes from (Δcode, prev_action).** One step of
+  `prev_action` rotated by +90° rotates the output in the predicted sense
+  by up to +57° at step 1 (frozen s0), +15–25° at step 3, ~10–15° at step
+  6, and 0° by episode 5, with a 3–5-step tail — evidence weighted down
+  as the state fills.
+- **B3-2's episode-1 transient** is a frame-estimate transient: its θ
+  readout stalls over episodes 1–3 (28 / 18 / 17° vs S1's 18 / 13 / 9)
+  in step with the policy dip, and is gone by episode 4. Probably the
+  reset's teleport entering the (Δcode, action) integrator; untested.
+
+The mechanism inferred from behaviour in §1.4 is what the state holds.
+
+### 1.8 Standing conclusions
 
 1. A memoryless network does not learn the attractor's given frame; it
    learns the code it was shown — the rule on differences from scattered
-   coverage or from corner-confined translations, a lookup from a fixed
-   corner placement — and neither extrapolates in displacement range.
+   or dense coverage (fixed or translated), a lookup when the seen
+   positions form a few clusters that give a cheap absolute coordinate —
+   and neither extrapolates in displacement range.
 2. On the real code, no training regime can make history build a frame,
    because the weights always have the shorter route.
 3. Remove that route and a recurrent network learns an unseen code's
@@ -250,9 +303,9 @@ disturbs something a fixed orientation had made free — which the probes
    translations, it does so in a region it never saw: ~150° → ~15° over a
    lifetime, ~20° in ten steps, ~14° in five on B3.
 4. What the attractor has built in — a translation-invariant code and a
-   frame — a plain network can acquire: the invariance from data that
-   deny it a lookup, the frame from lifetimes that deny it a fixed
-   lattice. What it does not acquire from either is the full-range
+   frame — a plain network can acquire: the invariance from positions
+   that leave it no cheap absolute coordinate, the frame from lifetimes
+   that deny it a fixed lattice. What it does not acquire from either is the full-range
    decode (§1.2).
 
 ---
@@ -571,10 +624,10 @@ the strongest form of the claim — *which is what happened (§1.6)*.
 and (3) is the test; (2) is then read on `heldout_in` only. This
 supersedes the earlier B2-mix idea, which had no real holdout.
 
-### 6.2 Representation probes — what the encoder and the GRU hold
+### 6.2 Representation probes — what the encoder and the GRU hold (done; results in §1.7)
 
-Behaviour matches the decoupled algorithm (§1.4); the mechanism is
-inferred. Four probes, on synthetic lattices (`gbook_at`, no scaffold),
+Behaviour matches the decoupled algorithm (§1.4); the mechanism was
+inferred; run 2026-09-16, every prediction met. Four probes, on synthetic lattices (`gbook_at`, no scaffold),
 run on the **frozen-decode `full`** (s0, s1), **S1**, **S2**, and the
 raw-code `full` as a null; `analysis/b2_probes.py`, ~1–2 h total.
 
@@ -591,7 +644,51 @@ what the episode-1 transient on trained orientations is (§1.6) — P-θ by
 episode should show whether the frame estimate is disturbed by the goal
 change.
 
-### 6.3 Open, lower priority
+### 6.3 Memorisation test — is the shortcut about data quantity or data structure?
+
+Asked 2026-09-16, after the dense-tiling control (§1.2): *if the corner
+MLP's failure was memorisation, can an MLP trained on even less data than
+the corner — not corner-shaped — generalise, given input noise or a much
+smaller network?*
+
+**What the controls say the shortcut is.** A1x (64 envs on a 12 × 12
+placement lattice inside the corner) took the lookup; A1xd (384 envs
+tiling the same corner edge to edge, fixed placement) and A1 (64 envs
+scattered) took the rule. What the lookup needs is a *cheap absolute
+coordinate*: with the seen X values in 12 clusters of 20, "which cluster,
+where in it" is a 12-way plus 20-way read, cheaper than the residue
+rule; with one contiguous run of 400 values, or 64 scattered clusters, it
+is not. So the lever is the number of clusters the training positions
+form, not the number of positions. Few scattered envs = few clusters =
+the cheap coordinate: the regime in which to ask whether noise or
+capacity can push the network back to the rule.
+
+**Runs (A1m).** Scattered placement (A1's `anywhere`, margin 20), 16
+held-out envs anywhere, 8000 updates, A1's schedule, pairs per update
+held at ~32k.
+- *Wave 1, the baseline curve:* 5×768 at K = 4 / 8 / 16 training envs
+  (1,600 / 3,200 / 6,400 cells; A1 and A1x had 25,600). Where does the
+  big network switch to the shortcut?
+- *Wave 2, at the largest K where the baseline fails:* input noise on
+  the bump inputs, σ = 0.1 / 0.3 (peak 1) — the exact template becomes
+  unreliable while phase differences survive; smaller networks 2×64,
+  2×128, 3×256; dropout 0.2 as a third regulariser. Two seeds where an
+  arm crosses.
+
+**Readouts.** `heldout` (new walls, new positions) enumerated; the
+decode probe (`analysis/decode_probe.py`): far rect, pairs split by
+whether their coordinate values were seen, error by |Δ|. The lookup and
+the rule are told apart by the seen/unseen split, not by the mean.
+
+**Predictions.** P23: the 5×768 baseline is at the lookup by K = 8
+(≥ 30° on unseen coordinate values, < 1° on seen). P24: noise at σ = 0.3
+moves it to the rule at the same K. P25: a small network either fails
+outright (no room for either solution) or takes the rule — the outcome
+worth having is a small network at the rule where the big one is at the
+lookup. P26: dropout does less than input noise (it perturbs the
+features, not the template).
+
+### 6.4 Open, lower priority
 
 - From scratch with mix 0 after the warm-up (pure random lattices) — the
   09-13 attempt failed for the lr reason, not the mix.
@@ -706,7 +803,9 @@ readout 2 samples actions, so a policy's floor is ~6–8°, not 0.
 | P18 | B2-mix on the corner | superseded by B3 (§6.1) |
 | P19 | B3 (1): a corner-trained decode with corner translations learns the rule | ✓ `far@90` 0.3° enumerated (memoryless `dist`, seed 1; seed 0 stalled on the plateau), 1.6° in B3-2's warm-up |
 | P20 | B3 (2): `heldout_out` at θ = 0 falls to ~20° within a lifetime if P19 holds | ✓ 14° by episode 4, 14 by step 5; `far@0` the same |
-| P21 | probes: θ is linearly decodable from the GRU state after 1–2 steps in the frozen-decode and S1 models; Δ′ from the encoder at R² > 0.95; P-swap error ≈ θ₂ − θ₁ for a few steps | open |
+| P21 | probes: θ is linearly decodable from the GRU state after 1–2 steps in the frozen-decode and S1 models; Δ′ from the encoder at R² > 0.95; P-swap error ≈ θ₂ − θ₁ for a few steps | ✓ θ at 33–50° after 2 steps, 12–22° after 5; Δ′ at R² 0.986–0.999; P-swap +87–90° for the *whole* episode, not a few steps (§1.7) |
+| P22 | A1xd: dense fixed tiling of the corner still takes the lookup (coverage alone is not enough) | ✗ 3.6° / 6.4° outside by u = 500 — the rule; coverage structure is the lever (§6.3) |
+| P23–P26 | A1m memorisation test (§6.3) | open |
 
 ---
 

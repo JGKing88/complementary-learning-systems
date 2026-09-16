@@ -87,6 +87,9 @@ def main() -> None:
     p.add_argument("--num_layers", type=int, default=2)
     p.add_argument("--nonlinearity", choices=["tanh", "relu"], default="relu")
     p.add_argument("--dropout", type=float, default=0.0)
+    p.add_argument("--input_noise", type=float, default=0.0,
+                   help="plan sec 6.4 (memorisation test): Gaussian noise of this std added to "
+                        "every input column at training time only; the bumps have peak 1")
     # Data
     p.add_argument("--n_envs", type=int, default=64)
     p.add_argument("--n_val_envs", type=int, default=16)
@@ -253,6 +256,8 @@ def main() -> None:
     for u in range(1, args.n_updates + 1):
         x, y = train_batch(train, cells, acfg, args.movement_mode, args.pairs_per_env,
                            data_rng, device, sampler=args.pair_sampler, lattice=lattice)
+        if args.input_noise > 0:
+            x = x + args.input_noise * torch.randn_like(x)
         loss = model.loss(x, y)
         opt.zero_grad(set_to_none=True)
         loss.backward()

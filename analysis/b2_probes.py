@@ -208,23 +208,25 @@ def signed_err(pred: np.ndarray, true: np.ndarray) -> np.ndarray:
 # ---------------------------------------------------------------------------
 
 class Ridge:
-    """Standardised inputs; the penalty scales with the sample count so the
-    readout's bias is the same at 20k static pairs and 100k lifetime states."""
+    """Centred inputs, no per-dimension scaling (a near-constant hidden unit
+    would otherwise be blown up on states it was not fit on); the penalty is
+    `alpha x N x mean variance`, so it means the same at 20k static pairs and
+    100k lifetime states whatever the feature scale."""
 
-    def __init__(self, alpha_per_sample: float = 1e-3):
-        self.alpha = alpha_per_sample
+    def __init__(self, alpha: float = 1e-2):
+        self.alpha = alpha
 
     def fit(self, X: np.ndarray, Y: np.ndarray) -> "Ridge":
         self.mu = X.mean(0)
-        self.sd = X.std(0) + 1e-3
         self.ymu = Y.mean(0)
-        Z = (X - self.mu) / self.sd
-        A = Z.T @ Z + self.alpha * len(Z) * np.eye(Z.shape[1])
+        Z = X - self.mu
+        lam = self.alpha * len(Z) * float(Z.var(0).mean())
+        A = Z.T @ Z + lam * np.eye(Z.shape[1])
         self.W = np.linalg.solve(A, Z.T @ (Y - self.ymu))
         return self
 
     def predict(self, X: np.ndarray) -> np.ndarray:
-        return ((X - self.mu) / self.sd) @ self.W + self.ymu
+        return (X - self.mu) @ self.W + self.ymu
 
     @staticmethod
     def r2(pred: np.ndarray, Y: np.ndarray) -> float:
@@ -362,8 +364,9 @@ def by_bins(values: np.ndarray, keys: np.ndarray, bins) -> list:
 
 def probe_theta(model: Loaded, rng, n_lifetimes: int, n_episodes: int, max_steps: int, seed: int) -> dict:
     thetas = rng.uniform(-np.pi, np.pi, size=n_lifetimes)
-    # Half the rows in the held-out band so both bands have enough states.
-    k = n_lifetimes // 2
+    # A third of the rows in the held-out band; the rest, uniform over the
+    # trained band, fit the readout and read it.
+    k = n_lifetimes // 3
     thetas[:k] = rng.uniform(-np.radians(HOLDOUT_DEG), np.radians(HOLDOUT_DEG), size=k)
     shifts = rng.uniform(0, PERIOD, size=(n_lifetimes, 2))
     tables = row_tables(thetas, shifts)
@@ -374,7 +377,12 @@ def probe_theta(model: Loaded, rng, n_lifetimes: int, n_episodes: int, max_steps
     th = thetas[A["row"]]
     d = A["d"]
     dp = rotate(d, th)                       # the code-frame displacement, what the decode sees
-    train_rows = rng.permutation(n_lifetimes)[: n_lifetimes // 2]
+    # The readout is fit on trained-band rows only: they are uniform over
+    # ~330 deg, so an uncertain state decodes to an arbitrary angle (~90 deg
+    # error) rather than to the held-out band's centre, which half the rows
+    # sit in. Half of those rows fit, the other half and every held-out row read.
+    trained_rows = np.where(np.abs(thetas) >= np.radians(HOLDOUT_DEG))[0]
+    train_rows = rng.permutation(trained_rows)[: len(trained_rows) // 2]
     is_train = np.isin(A["row"], train_rows)
     late = A["ep"] >= 2
     fit_theta = Ridge().fit(H[is_train & late], np.stack([np.cos(th), np.sin(th)], 1)[is_train & late])
@@ -388,7 +396,15 @@ def probe_theta(model: Loaded, rng, n_lifetimes: int, n_episodes: int, max_steps
     ep, t = A["ep"][test], A["t"][test]
     steps = list(range(0, 11)) + [15, 20]
     eps = list(range(0, min(n_episodes, 20)))
+    # A second readout fit on episode-0 states only: is theta there early, in
+    # a subspace the settled readout does not see?
+    early = A["ep"] == 0
+    fit0 = Ridge().fit(H[is_train & early], np.stack([np.cos(th), np.sin(th)], 1)[is_train & early])
+    pred0 = fit0.predict(H[test])
+    err0 = np.degrees(np.abs(np.angle(np.exp(1j * (np.arctan2(pred0[:, 1], pred0[:, 0]) - th[test])))))
     out = {
+        "theta_deg_ep0_by_step_ep0fit": {"trained": by_bins(err0[~held], t[~held] * (ep[~held] == 0) + 999 * (ep[~held] != 0), steps),
+                                         "heldout": by_bins(err0[held], t[held] * (ep[held] == 0) + 999 * (ep[held] != 0), steps)},
         "theta_deg_ep0_by_step": {"trained": by_bins(err[~held], t[~held] * (ep[~held] == 0) + 999 * (ep[~held] != 0), steps),
                                   "heldout": by_bins(err[held], t[held] * (ep[held] == 0) + 999 * (ep[held] != 0), steps)},
         "theta_deg_by_episode": {"trained": by_bins(err[~held], ep[~held], eps),
@@ -489,8 +505,12 @@ def print_theta(name, r):
     print(f"                                      heldout: {fmt(r['theta_deg_ep0_by_step']['heldout'])}")
     print(f"           by episode (0..)           trained: {fmt(r['theta_deg_by_episode']['trained'][:12])}")
     print(f"                                      heldout: {fmt(r['theta_deg_by_episode']['heldout'][:12])}")
+    print(f"           ep0 by step, ep0-fit       trained: {fmt(r['theta_deg_ep0_by_step_ep0fit']['trained'])}")
+    print(f"                                      heldout: {fmt(r['theta_deg_ep0_by_step_ep0fit']['heldout'])}")
     print(f"           policy ep0 by step         trained: {fmt(r['policy_deg_ep0_by_step']['trained'])}")
     print(f"                                      heldout: {fmt(r['policy_deg_ep0_by_step']['heldout'])}")
+    print(f"           policy by episode          trained: {fmt(r['policy_deg_by_episode']['trained'][:12])}")
+    print(f"                                      heldout: {fmt(r['policy_deg_by_episode']['heldout'][:12])}")
     e, c = r["env_dir_from_h"], r["code_dir_from_h"]
     print(f"           env-frame dir from h: late {e['deg_late']:.1f} deg (R2 {e['r2_late']:.3f}); ep0 by step {fmt(e['deg_ep0_by_step'])}")
     print(f"           code-frame dir from h: late {c['deg_late']:.1f} deg (R2 {c['r2_late']:.3f})")
