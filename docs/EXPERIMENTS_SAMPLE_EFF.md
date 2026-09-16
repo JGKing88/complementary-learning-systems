@@ -1113,3 +1113,20 @@ Delivered one-arena checkpoints stand as §7.11 point 3 plus
 
 Wave 2 (one env, fixed goal, trunk sweep) running: `fix1_h128` u200
 0.64/0.53 success.
+
+### 8.4 Wave 2 digest (09-16 09:17): the h128 ONE-env fixed-goal arm rises where h1024 slid
+
+| arm | u | episodes | succ 0/10 | steps 0/10 | swept |
+|---|---|---|---|---|---|
+| **fix1_h128** | 750 | 96k | **0.94/0.94** | 32 / 35 | 0.34 |
+| fix1_h64 | 475 | 61k | 0.43/0.40 | 32 / 34 | 0.34 |
+| fix1_h256 | 425 | 54k | 0.42/0.40 | 35 / 36 | 0.32 |
+| fix3_h64 | 200 | 38k | 0.72/0.72 | 49 | 0.18 |
+
+`fix1_h128` held-out success by window: 0.02, 0.40, 0.63, 0.71, 0.84,
+0.92, 0.97, 0.94 (u100–750) — rising, where the h1024 one-env fixed-goal
+arm (§7.3) peaked at 0.99 at u100 and slid to 0.5. Directness still 32–35
+steps: whether it tightens toward `q`-following or plateaus as search is
+the `follow_q` question at ~u1500. Launched on mit (6 h): `fix1_h128_xod3`
+(+ mild exploit barcode dropout) and `fix1_h128` s43 (a second arena),
+jobs 22825504/5.
