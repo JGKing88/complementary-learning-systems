@@ -1415,3 +1415,22 @@ K=4) at u300 for "sliding" — the proper K=2 control on the same arena
 recovers by u600. Nothing in the training recipe changed between the Part
 II failure and the Part III success beyond hidden size, which is second-
 order (how well `q` is followed, not whether).
+
+### 8.15 Continual-learning protocol, `fix1_h128` s43 u3000 (jobs 22858736 sampled / 22858737 deterministic; 09-16 19:20)
+
+`run_cl_ood.sh` protocol (as the d0_base figures in DUAL_TRAINING.md): the
+model's own six recorded val arenas — never seen in training — introduced
+one at a time, 40 iterations per block, 200-step cap, one oracle store per
+arena at its first goal, Hopfield never reset, earlier arenas revisited
+with the store locked.
+
+| policy | live envs | own-block success / steps | **locked-store revisits** | worst retention delta |
+|---|---|---|---|---|
+| **sampled** (convention) | 6 / 6 | 0.917 / 12.6 | **600 / 600 at 11.75 steps** | **+0.00** |
+| deterministic | 5 / 6 (env 4 dead in its own block, 0.33) | 0.980 / 11.7 | 560 / 560 at 10.85 | +0.00 |
+
+Zero forgetting on unseen arenas from a model trained on ONE arena with
+ONE fixed goal. The deterministic run's dead env is the known argmax-
+explorer blind spot (§37.6 of EXPERIMENTS_NAV_P2), absent when sampled.
+Figures `results/nav_tri_probe/cl_fix1_h128_s43_u3000_recorded_stoch_{steps_to_goal,forgetting,path_to_goal}.png`
+(+ deterministic without `_stoch`); on the page (v11, Part III).
