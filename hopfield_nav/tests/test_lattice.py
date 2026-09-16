@@ -441,3 +441,52 @@ def test_with_lattice_per_env_shifts(world):
         assert np.allclose(t.gbook, tr.lattice_gbook(k, th, 1.0, shifts[k]))
     # Different shifts give different codes.
     assert np.abs(es.tensors[0].gbook - tr.with_lattice(th, 1.0).tensors[0].gbook).max() > 0.5
+
+
+def test_lifetime_probe_hook_is_transparent_and_sees_every_step(world):
+    """Plan sec 6.2: a probe that only reads reproduces the run bit for bit; its
+    recorder sees exactly the scored steps; the prev_action override fires only
+    at the (episode, step) asked for and on the rows asked for."""
+    from hopfield_nav.evaluation.lifetime import evaluate_lifetime_direction
+    tr, cells = world["train"], world["cells"]
+    env = tr.envs[0]
+    cfg = agent_cfg_for_mode("grid", "continuous", rnn_cell="gru", hidden_size=8,
+                             input_prev_action=True)
+    torch.manual_seed(0)
+    agent = RNNAgent(cfg, compute_rnn_input_dim(cfg, OBS, world["vh"].Ng))
+    table = tr.tensors[0].gbook
+
+    class Rec:
+        def __init__(self):
+            self.n = 0; self.h_widths = set(); self.fired = 0
+        def grid_at(self, c, ep_idx, steps_in_ep):
+            return table_gather(table, c, SIZE)
+        def record(self, *, ep_idx, steps_in_ep, live, positions, goals, h, x, action, score):
+            self.n += int(live.sum()); self.h_widths.add(tuple(h.shape))
+        def prev_action(self, prev, ep_idx, steps_in_ep):
+            if prev is None:
+                return prev
+            hit = (ep_idx == 0) & (steps_in_ep == 2)
+            hit[2:] = False
+            self.fired += int(hit.sum())
+            out = prev.copy(); out[hit] = -out[hit]
+            return out
+
+    torch.manual_seed(2)
+    base = evaluate_lifetime_direction(env, agent, cells=cells, n_lifetimes=4, n_episodes=2, max_steps=6,
+                                       device="cpu", seed=5, gbook_table=table)
+    rec = Rec()
+    torch.manual_seed(2)
+    # A probe with grid_at + record only: the same run.
+    class ReadOnly:
+        grid_at = rec.grid_at; record = rec.record
+    same = evaluate_lifetime_direction(env, agent, cells=cells, n_lifetimes=4, n_episodes=2, max_steps=6,
+                                       device="cpu", seed=5, gbook_table=None, probe=ReadOnly())
+    assert np.allclose(np.array(base["table"], float), np.array(same["table"], float), equal_nan=True)
+    assert rec.n == int(np.array(base["count"]).sum())
+    assert rec.h_widths == {(1, 4, 8)}
+    # With the override on rows 0-1 at (episode 0, step 2): fires at most once per row.
+    torch.manual_seed(2)
+    evaluate_lifetime_direction(env, agent, cells=cells, n_lifetimes=4, n_episodes=2, max_steps=6,
+                                device="cpu", seed=5, probe=rec)
+    assert 1 <= rec.fired <= 2

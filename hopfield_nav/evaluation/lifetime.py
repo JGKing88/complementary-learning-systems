@@ -50,7 +50,7 @@ def evaluate_lifetime_direction(
     env, agent, *, cells: CellSets, n_lifetimes: int, n_episodes: int,
     max_steps: int, device, sgb=None, env_offset=None,
     continuous_scale: float = 1.0, continuous_normalize: bool = True,
-    deterministic: bool = False, seed: int = 0, gbook_table=None,
+    deterministic: bool = False, seed: int = 0, gbook_table=None, probe=None,
 ) -> dict:
     """The (episode x step) score table for one env, plus its marginals.
 
@@ -58,19 +58,33 @@ def evaluate_lifetime_direction(
     channels, exactly as in ``collect_rollout_rnn`` (plan sec 4B). An agent
     with a ``begin_lifetimes(n)`` method -- the scripted estimator -- is told
     the batch size before the first step so it can allocate per-row state.
+
+    ``probe`` (plan sec 6.2, `analysis/b2_probes.py`) is an object with any of
+    three optional methods, each a no-op when absent: ``grid_at(cells, ep_idx,
+    steps_in_ep)`` supplies the code in place of the table (a lattice that
+    changes mid-lifetime); ``prev_action(prev, ep_idx, steps_in_ep)`` rewrites
+    the previous-action channel before it is fed (a wrong action for one
+    step); ``record(...)`` sees every step's state after the agent acts. None
+    of them touches the scoring.
     """
     cfg = agent.cfg
     mm = cfg.movement_mode
     S = env.size
     if hasattr(agent, "begin_lifetimes"):
         agent.begin_lifetimes(n_lifetimes)
+    probe_grid = getattr(probe, "grid_at", None)
+    probe_prev = getattr(probe, "prev_action", None)
+    probe_record = getattr(probe, "record", None)
 
     def grid_at(cells):
+        if probe_grid is not None:
+            return probe_grid(cells, ep_idx, steps_in_ep)
         if gbook_table is not None:
             return table_gather(gbook_table, cells, S)
         return grid_state_vec(cells, env_offset, sgb)
 
-    have_grid = gbook_table is not None or (sgb is not None and env_offset is not None)
+    have_grid = (gbook_table is not None or probe_grid is not None
+                 or (sgb is not None and env_offset is not None))
     vec = make_vec(env, n_lifetimes, mm, continuous_scale, continuous_normalize, reset=False)
     vec._rng = np.random.RandomState(seed)
     # Starts from the training start set, goals from the training goal set --
@@ -134,6 +148,8 @@ def evaluate_lifetime_direction(
             sensory = sensory_vec(vec, positions, "omni")
         else:
             sensory = vec.obs_batch().astype(np.float32)
+        if probe_prev is not None:
+            prev_action_np = probe_prev(prev_action_np, ep_idx, steps_in_ep)
         prev_act_ch = (prev_action_channel(prev_action_np, mm, B)
                        if cfg.input_prev_action else None)
         grid_state = grid_at(positions) if (cfg.input_grid_state and have_grid) else None
@@ -171,6 +187,11 @@ def evaluate_lifetime_direction(
             e, t = ep_idx[b], min(steps_in_ep[b], max_steps)
             table[e, t] += score[b]
             count[e, t] += 1
+        if probe_record is not None:
+            probe_record(ep_idx=ep_idx.copy(), steps_in_ep=steps_in_ep.copy(),
+                         live=(live & ~reached).copy(), positions=positions.copy(),
+                         goals=np.asarray(goals).copy(), h=h, x=x, action=action.copy(),
+                         score=np.asarray(score).copy())
 
         idx = np.where(live)[0]
         rewards_full = np.zeros(B, dtype=np.float32)
