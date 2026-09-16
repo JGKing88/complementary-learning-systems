@@ -1271,3 +1271,6 @@ Per-arena `follow_q` for fix1_h128 s43 u4000 (probe's nav rows): d=0
 `agent_ckpts/navigate_navp2_fix1_h128_s43_22825505/navigate_u3000.pt` (one
 arena, one goal; exploit > d0_base, d=0 explore = d0_base) and
 `..._fix3_h128_s42_22783800/navigate_u3300.pt` (three arenas, three goals).
+
+**Page v6 (12:45):** Part III carries the verdict table (§8.9), the
+per-arena `follow_q` rows (§8.8) and the completed `fix1_h128` s43 curves.
