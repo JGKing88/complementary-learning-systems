@@ -1102,9 +1102,14 @@ def staircase_svg(rows, key: str = "envs", ymax: float = 1.0,
         else:
             o.append(f'<text class="sax" x="{ox + PW}" y="{oy + PH + 14}" '
                      f'text-anchor="end">{span}</text>')
+            # The counter is rollouts: global_step ticks once per collected
+            # trajectory. Every plotted arm takes exactly one optimizer step
+            # per rollout (epochs=1, n_minibatches=1), so the two coincide
+            # here -- but the ep4 tuning configs would not, and a label that
+            # names the counter stays right if one of them is ever plotted.
             o.append(f'<text class="slg" x="{ox + PW / 2:.0f}" '
                      f'y="{oy + PH + 14}" text-anchor="middle">'
-                     "gradient updates</text>")
+                     "rollouts (one gradient step each)</text>")
         tot = r.get("samples_total")
         cap = esc(r["why"])
         if tot:
@@ -1511,7 +1516,7 @@ def render_body(d: dict, space: str = "continuous",
         if by_work:
             A(f'<div class="xsw"><span class="lb">x-axis</span>'
               f'<button id="{gid}-b-updates" aria-selected="true" '
-              f"onclick=\"showX('{gid}','updates')\">gradient updates</button>"
+              f"onclick=\"showX('{gid}','updates')\">rollouts</button>"
               f'<button id="{gid}-b-work" aria-selected="false" '
               f"onclick=\"showX('{gid}','work')\">work done</button></div>")
         A(f'<div class="fig" id="{gid}-updates">{staircase_svg(stair)}</div>')
