@@ -1696,7 +1696,7 @@ d = 1 / 10 are the far-rect errors at Chebyshev |Δ| = 1 and 10.
 | 5×768 baseline, K = 8 | 0.99 | 77.2 | 84 | 43 | 59 / 86 / 83 |
 | 5×768 baseline, K = 16 (u = 4000; lr blow-up at 5250) | 0.5 | 53 | 70 | 53 | 22 / 78 / 70 |
 | 5×768 + input noise 0.1 | 0.42 | **48.9** | **56** | 22 | **6** / 75 / 50 |
-| 5×768 + input noise 0.3 (u = 4000) | 1.6 | ~42 | **47** | 22 | 17 / 68 / 35 |
+| 5×768 + input noise 0.3 | 0.97 | 40.5 | **44** | 18 | 12 / 66 / 32 |
 | 5×768 + dropout 0.2 (u = 6000) | 0.8 | 58 | 61 | 20 | 4 / 75 / 60 |
 | 2×64 | 4.5 | 86 | 89 | 49 | 84 / 86 / 86 |
 | 2×128 | 2.4 | 85 | 89 | 41 | 83 / 83 / 83 |
@@ -1714,8 +1714,8 @@ moved: the **per-module, short-range** decode now generalises (4–6° at
 |Δ| = 1 for noise 0.1 and dropout, where the baseline is 66–69°) while
 the **cross-module combination** does not (68–75° at |Δ| = 10, the
 Chinese-remainder band, exactly A1x's D1 profile of 14° at d = 1 and 63°
-at d = 9). Noise at σ = 0.3 spreads the error more evenly (17 / 68 / 35)
-but is no closer to the rule. (iii) The K = 16 baseline, at the crossing
+at d = 9). Noise at σ = 0.3 spreads the error more evenly (12 / 66 / 32)
+but is no closer to the rule at the CRT band. (iii) The K = 16 baseline, at the crossing
 between 8 and 64 clusters, has the same shape unaided (22 / 78 / 70).
 
 So the answer to the question as asked is **no**: on 3,200 cells in

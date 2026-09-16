@@ -694,7 +694,7 @@ features, not the template).
 **Result (log 2026-09-16).** Error on far-rect pairs whose coordinate
 values were never in a training footprint, at K = 8 (3,200 cells):
 baseline **84°** (K = 4: 83°, K = 16: 70°, A1's K = 64: 0.3°); input
-noise 0.1 → 56°, noise 0.3 → 47°, dropout 0.2 → 61°; 2×64 / 2×128 /
+noise 0.1 → 56°, noise 0.3 → 44°, dropout 0.2 → 61°; 2×64 / 2×128 /
 3×256 → **89° / 89° / 87°** while fitting train to 1–5°. The range
 profile says what noise buys: the per-module, short-range decode (4–6°
 at |Δ| = 1, from 66°) and not the cross-module combination (68–75° at
@@ -821,7 +821,7 @@ readout 2 samples actions, so a policy's floor is ~6–8°, not 0.
 | P20 | B3 (2): `heldout_out` at θ = 0 falls to ~20° within a lifetime if P19 holds | ✓ 14° by episode 4, 14 by step 5; `far@0` the same |
 | P21 | probes: θ is linearly decodable from the GRU state after 1–2 steps in the frozen-decode and S1 models; Δ′ from the encoder at R² > 0.95; P-swap error ≈ θ₂ − θ₁ for a few steps | ✓ θ at 33–50° after 2 steps, 12–22° after 5; Δ′ at R² 0.986–0.999; P-swap +87–90° for the *whole* episode, not a few steps (§1.7) |
 | P22 | A1xd: dense fixed tiling of the corner still takes the lookup (coverage alone is not enough) | ✗ 3.6° / 6.4° outside by u = 500, 0.7 / 1.7° final — the rule; the arrangement of the seen values is the lever (§1.2, §6.3) |
-| P23–P26 | A1m memorisation test (§6.3) | P23 ✓ (84° unseen at K = 8); P24 ✗ noise 0.3 reaches 47°, the short-range half only; P25 ✗ small nets 85–89°, a smaller table; P26 ✓ dropout 61° ≈ noise 0.1 |
+| P23–P26 | A1m memorisation test (§6.3) | P23 ✓ (84° unseen at K = 8); P24 ✗ noise 0.3 reaches 44°, the short-range half only; P25 ✗ small nets 85–89°, a smaller table; P26 ✓ dropout 61° ≈ noise 0.1 |
 
 ---
 
