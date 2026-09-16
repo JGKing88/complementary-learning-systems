@@ -1130,3 +1130,35 @@ steps: whether it tightens toward `q`-following or plateaus as search is
 the `follow_q` question at ~u1500. Launched on mit (6 h): `fix1_h128_xod3`
 (+ mild exploit barcode dropout) and `fix1_h128` s43 (a second arena),
 jobs 22825504/5.
+
+### 8.5 ONE env, fixed goal, h128 — it works when the goal is interior (09-16 10:30; job 22826500)
+
+`behavior_probe --mode nav`, held-out, 32 trials × 6 arenas:
+
+| checkpoint | goal | d | success | steps | **follow_q** | fq t0/t1/t2/t6+ |
+|---|---|---|---|---|---|---|
+| **fix1_h128 s43 u500** (64k eps) | (11, 6) interior | 0 | 1.000 | **12.9** | **0.83** | 0.50/0.69/0.76/0.89 |
+| fix1_h128 s43 u500 | | 10 | 0.995 | **14.4** | **0.72** | 0.44/0.61/0.69/0.74 |
+| fix1_h128 s42 u800 | (17, 0) edge | 0 / 10 | 0.94 / 0.89 | 47 / 51 | 0.19 / 0.14 | t6+ 0.17 / 0.13 |
+| fix1_h128 s42 u1200 | edge | 0 / 10 | 0.93 / 0.88 | 42 / 48 | 0.16 / 0.08 | 0.63/0.65/0.51/0.11 |
+| fix1_h128_xod3 s42 u500 | edge | 0 / 10 | 0.96 / 0.92 | 36 / 32 | 0.33 / 0.29 | t6+ 0.28 / 0.25 |
+| fix3_h64 s42 u400 | 3 edge goals | 0 / 10 | 1.0 / 0.99 | 21 / 22 | 0.57 / 0.45 | t6+ 0.54 / 0.39 |
+| redraw one_k2_g u900 (§7.10) | — | 0 / 10 | 1.0 | 12 / 13 | 0.90 / 0.87 | t6+ 0.92 / 0.88 |
+
+1. **One arena, one fixed goal, h 128, interior goal → a `q`-follower**:
+   follow_q 0.83/0.72, 12.9/14.4 steps at 1.00/0.995 on six unseen arenas
+   at u500 = 64k episodes. The h1024 fixed-goal policy was 0.05–0.2.
+2. **A wall goal defeats it even at h 128.** s42's goal (17, 0): follow_q
+   0.16, 93% held-out success by search (42–48 steps). The time profile is
+   the tell — follows `q` for two steps (0.63/0.65) then lets go — the
+   signature of "go to the bottom wall, slide along": a one-dimensional
+   map that even a small trunk prefers. Mild exploit barcode dropout (0.3)
+   moves it (0.16 → 0.33) but not enough. Note the seed-42 THREE-env set is
+   three wall goals — (17, 0), (0, 13), (0, 15) — and h1024 follows `q`
+   there (0.83, §8.3): three wall-maps cost more than one `q`.
+3. The one-env h1024 arm on s43 (`one_k4` s43, §7.3) slid early (0.90 →
+   0.74 by u125), so trunk size matters on the interior goal too;
+   `fix1_base` s43 (22826508) is the clean control, `fix1_h128` s44/s45
+   (22826509/10) the arena distribution. Running: `fix1_h64` (u1000 0.56
+   success but 16.8 steps — direct when it works), `fix1_h256` (0.69, 48
+   steps), `fix3_h64` (u500 1.00/0.96, 23.7 steps).
