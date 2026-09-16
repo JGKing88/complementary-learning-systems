@@ -1424,3 +1424,17 @@ sets (e1 > e0: 15.5 → 30.5 at `far@45`) — the first goal change
 disturbs a frame estimate that a fixed orientation's lifetimes had made
 "free" — is visible and unexplained; the probes (§6.2) are the place to
 look.
+
+**B3-1b (22824444), `dist` at θ = 90° on the corner, seed 1, 3000
+updates** — the memoryless number, clean. Escaped the plateau at u = 400
+(loss 2.09 → −1.46), as B2's `dist@90` did and seed 0 never did.
+Readout 1 `far@90` **2.4° (u = 400) → 1.1 → 0.8 → 0.8 (u = 1000)**;
+`heldout_in@90` identical; `far@45` 45.0°, `far@0` / `heldout_out` /
+`heldout_in` 89.9° — the |θ − 90°| signature. **A memoryless MLP trained
+only on the corner's phase combinations, with corner-confined
+translations, decodes displacements 300 cells outside the corner to
+0.8°.** A1x on the same corner without translation: 44° (and 0.2° only
+on coordinate values it had seen). The rule is what corner-confined
+translation induces; the fixed placement's lookup was the cheaper fit
+only because every cell kept the same absolute phase for all 8000
+updates.
