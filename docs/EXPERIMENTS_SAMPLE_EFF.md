@@ -1348,3 +1348,47 @@ call. The wall-goal h128 arm moved late (33 → 21.6 steps over u3000–3500)
 final probe + page/tracker wrap-up on the morning's checkpoints:
 `fix1_h128` s44 (u2000+), s45, `fix1_base` s43, the two `xhd` arms,
 `fix1_h128` s42 u4000.
+
+### 8.13 Final probe (job 22854199, 17:18; d0_base u725 tail 5 of 144) — the fixed-goal line closes
+
+| checkpoint | goal | episodes | × opt d=0/5/10 | success | explore d=0 eff/tail | d=10 eff/**tail** |
+|---|---|---|---|---|---|---|
+| d0_base u725 | 20 goals | 928k | 1.20 / 1.17 / 1.38 | 1/1/1 | 0.948 / 0 | 0.940 / 5 |
+| fix1_h128 s43 u3000 (§8.9) | (11,6) interior | 384k | **1.14 / 1.14 / 1.19** | 1 / 1 / 0.995 | 0.943 / 0 | 0.855 / 18 |
+| **fix1_h128 s44 u3000** | (5,14) interior | 384k | **1.22 / 1.21 / 1.25** | 1 / 0.995 / 1 | 0.919 / 1 | 0.848 / 18 |
+| fix1_h128 s44 u4000 | interior | 512k | 1.27 / 1.25 / 1.28 | 1/1/1 | 0.915 / 0 | 0.841 / 14 |
+| fix1_base s43 (h1024) u4000 | (11,6) interior | 512k | 1.31 / 1.31 / 1.40 | 0.995 / 1 / 0.96 | 0.850 / 1 | 0.793 / 11 |
+| fix1_h128 s45 u3900 | (10,1) near wall | 499k | 1.76 / 1.62 / 1.97 | 0.95 / 0.93 / 0.94 | 0.837 / 6 | 0.825 / 18 |
+| fix1_h128 s42 u4000 | (17,0) wall | 512k | 2.33 / 2.16 / 2.56 | 1 / 1 / 0.995 | 0.834 / 7 | 0.819 / 18 |
+| fix1_h128_xhd5 s42 u3800 | wall | 486k | 3.69 / 3.81 / 4.10 | 0.93 | 0.868 / 7 | 0.885 / 10 |
+| fix3_h64 u4000 | 3 wall goals | 768k | 1.72 / 1.70 / 1.68 | 1 / 1 / 0.97 | 0.911 / 0 | 0.884 / 13 |
+
+**Closing statement for §8.**
+1. **Three arenas, fixed goals: generalizes.** `follow_q` 0.83 at d=0 at
+   both trunk sizes; h128 holds under distractors (0.65 vs 0.58) and is
+   the most direct on the strict probe (1.25/1.29/1.35 at u3300) — a
+   touch behind d0_base at d=0/5 on three WALL goals. `fix3_h64` ends
+   with the best fixed-goal explore (0.911/0.884) and drifted exploit.
+2. **One arena, one fixed goal: generalizes when the goal is interior,
+   and the small trunk makes it d0_base-class.** Two of two interior
+   arenas: `fix1_h128` s43 u3000 beats d0_base on every exploit row
+   (1.14/1.14/1.19), s44 u3000 is within 0.04 (1.22/1.21/1.25, better at
+   d=10); both match d=0 explore within 0.03 with ~zero tail; both miss
+   only the d=10 explore tail (18 vs 5 — distractor capture on unseen
+   arenas, the residual of every one-arena line). 384k episodes, 2.4×
+   below d0_base. The h1024 control on the same arena follows `q` (0.79)
+   but ends less direct and less robust (1.31/1.31/1.40, `align_true` 0.63
+   at d=10): placement decides whether `q` is followed, trunk size how
+   well.
+3. **Wall and near-wall goals (2 of 2 arenas) become position maps** at
+   every trunk (1024/256/128/64), exploit barcode dropout (0.3/0.5/0.8)
+   and heading dropout (0.5) tried; the near-wall one is the intermediate
+   case (follows on some unseen arenas, sign-flipped map on others).
+   Untried: a second fixed goal on the same arena (three wall goals
+   follow at 0.83, so two may suffice) — outside "one env, no refresh"
+   only if the second goal counts as refresh.
+
+**Delivered:** `agent_ckpts/navigate_navp2_fix1_h128_s43_22825505/navigate_u3000.pt`
+(one arena, one goal, h128 — the best), `..._fix1_h128_s44_22826509/navigate_u3000.pt`
+(the replicate), `..._fix3_h128_s42_22783800/navigate_u3300.pt` (three
+arenas, three goals).
