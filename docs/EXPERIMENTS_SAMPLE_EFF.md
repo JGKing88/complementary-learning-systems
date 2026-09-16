@@ -1391,7 +1391,7 @@ final probe + page/tracker wrap-up on the morning's checkpoints:
 
 **Delivered:** `agent_ckpts/navigate_navp2_fix1_h128_s43_22825505/navigate_u3000.pt`
 (one arena, one goal, h128 — the best), `..._fix1_h128_s44_22826509/navigate_u3000.pt`
-(the replicate), `..._fix3_h128_s42_22783800/navigate_u3300.pt` (three
+(the second interior arena), `..._fix3_h128_s42_22783800/navigate_u3300.pt` (three
 arenas, three goals).
 
 **Page v8 (17:30):** Part III final — verdict table with the replicate
