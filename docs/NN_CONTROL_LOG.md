@@ -1372,3 +1372,55 @@ eval sets `heldout_in`, `heldout_out` (θ = 0, physical), `heldout_in@45/90`,
   2×512 + prev_action, warm-up 3000 at 90°, then mix 0.5, 8000 updates.
   `far@45`/`far@90` isolate the decode's position generalisation;
   `far@0` and `heldout_out` are the composite.
+
+## 2026-09-16 — B3 results
+
+**B3-1 (22783724), `dist` at θ = 90° on the corner, 1000 updates:**
+uninformative — loss 2.144 from u = 100 to 1000, goal rate 0.001,
+readout 1 identical (89.1°) on all nine sets: it never left the σ-only
+plateau. B2's `dist@90` escaped it at u = 400; the escape is stochastic.
+The per-row corner-confined codes were checked directly (64 distinct
+shifts, footprints inside the rect, CRT decode of the phase differences
+exact to 1e-15). Resubmitted as seed 1, 3000 updates (22824444).
+
+**B3-2 (22783731), from scratch MLP 5×768 (LN, skip, lr 1e-4) → GRU
+2×512 + prev_action, corner `rect:0,0,400,400`, corner-confined
+translations, warm-up 3000 at θ = 90° then mix 0.5, 8000 updates.**
+Loss −1.6 by u = 800, −1.8 at the end; goal rate 0.083; 131,072
+lifetimes, 0 in the held-out band.
+
+*Warm-up phase (the decode question).* Readout 1 at u = 1000 / 2000 /
+3000 — `far@90` (rotated footprint in `[700, 1200)²`, every coordinate
+unseen, orientation trained): **4.5 / 1.6 / 1.9°**; `heldout_in@90`
+identical; `far@45` 46°, `far@0` and `heldout_out` 90° (the |θ − 90°|
+signature); readout 2 at `far@90` 6°. **The corner-trained encoder
+learned the rule**, position-free: A1x's fixed placement produced the
+lookup, corner-confined translation produced the rule, with the training
+region the same corner in both.
+
+*After the mix (the frame question), u = 8000:*
+
+| set | region | orientation | R1 | R2 e0 / e1 / e2 / e4 / e9 / e19 | ep0 s0 / s1 / s2 / s3 / s5 / s10 |
+|---|---|---|---|---|---|
+| `far@0` | unseen, 300+ cells out | unseen | 94 | 23.5 / 29.3 / 27.0 / 20.4 / 15.0 / **13.9** | 94 / 34 / 25 / 20 / 14 / 14 |
+| `heldout_out` | outside, physical | unseen | 94 | 23.1 / 33.0 / 24.0 / 18.6 / 15.0 / 14.4 | 95 / 34 / 24 / 19 / 14 / 13 |
+| `heldout_in` | inside the corner | unseen | 94 | 22.6 / 34.9 / 29.5 / 19.0 / 14.9 / 14.5 | 94 / 34 / 24 / 19 / 14 / 13 |
+| `far@45` | unseen | trained | 49 | 15.5 / 30.5 / 26.5 / 12.7 / 8.9 / 7.5 | 50 / 24 / 18 / 13 / 10 / 11 |
+| `far@90` | unseen | trained | 5.6 | 8.6 / 34.6 / 21.9 / 13.6 / 8.7 / 7.3 | 11 / 11 / 9 / 7 / 6 / 9 |
+
+Trajectory on `far@0` e19: 90.8 (u = 3000, before the mix) → 14.6
+(u = 4000) → 14.7 → 13.5 → 13.9; ep0 s10: 55 → 26 → 16 → 14.
+
+**Reading.** Inside and outside the corner give the same numbers to the
+decimal, at every orientation: the decode is fully position-general and
+the only cost left is orientation (~7° for the held-out band, as in B2).
+**A network trained on nothing but a 400×400 corner's phase
+combinations navigates a region it never saw, under an orientation it
+never saw, to ~34° after one step of its own trajectory, ~14° after
+five, and ~14° over the lifetime** (94° with no history; 90°
+memoryless; 44° for A1x's weights). Under trained orientations the same
+region is at 7–8°. A transient at episode 1 on the trained-orientation
+sets (e1 > e0: 15.5 → 30.5 at `far@45`) — the first goal change
+disturbs a frame estimate that a fixed orientation's lifetimes had made
+"free" — is visible and unexplained; the probes (§6.2) are the place to
+look.
