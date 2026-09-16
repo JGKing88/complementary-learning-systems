@@ -1296,3 +1296,30 @@ handling). `xod5` no better than `xod3` on the wall goal; `h64_xod3`
 collapsed. `fix3_h64` degraded after u1500 (pick by eval). Probe r3
 (22839117): `follow_q` for base s43 u1000, h128 s44 u1000, s45 u600/u1000,
 xod5 u1000.
+
+### 8.11 Probe r3 (job 22839117, 13:30): interior goals follow `q` at both trunk sizes; wall/near-wall goals make maps at every size
+
+| checkpoint | goal | d | success | steps | follow_q | per-arena follow_q |
+|---|---|---|---|---|---|---|
+| fix1_base s43 (h1024) u1000 | (11,6) interior | 0 / 10 | 0.995 / 0.97 | 12.7 / 14.9 | **0.79 / 0.56** | 0.56–0.92 / 0.24–0.88 |
+| **fix1_h128 s44** u1000 | (5,14) interior | 0 / 10 | 1.00 / 1.00 | 11.8 / 13.1 | **0.89 / 0.84** | 0.86–0.94 / 0.70–0.94 |
+| fix1_h128 s45 u600 | (10,1) near wall | 0 / 10 | 0.99 / 1.00 | 24 / 28 | 0.49 / 0.50 | 0.12–0.90 |
+| fix1_h128 s45 u1000 | near wall | 0 / 10 | 0.91 / 0.91 | 15.5 / 15.5 | 0.54 / 0.55 | **−0.23 … 0.96** |
+| fix1_h128_xod5 s42 u1000 | (17,0) wall | 0 / 10 | 0.81 / 0.79 | 41 / 42 | 0.15 / 0.11 | −0.51 … 0.86 |
+
+**The one-arena fixed-goal answer, on four arenas:**
+- Interior goals (s43 (11,6), s44 (5,14)) → a `q`-follower from ONE arena
+  at h128 (0.89–0.91 / 0.80–0.84, the redraw policy's level) AND at h1024
+  (0.79 at d=0) — with the trunk-size effect exactly where the 3-arena
+  wave put it: h1024 lets go under distractors (0.56, per-arena to 0.24),
+  h128 holds. Following is decided by goal placement; distractor
+  robustness by trunk size.
+- Wall / near-wall goals (s42 (17,0), s45 (10,1)) → a position map at
+  every trunk size (1024/256/128/64) and exploit-dropout (0.3/0.5) tried;
+  the near-wall arena is the intermediate case (follows on some unseen
+  arenas, sign-flipped map on others). The 1-D "go to the wall, slide"
+  map is cheaper than atan2(`q`) for every trunk we have.
+- Untried levers for the wall goal, in order of promise: `heading_dropout`
+  in exploit rollouts (the along-the-wall sign lives in path integration
+  as much as in the barcode), and a second fixed goal (the 3-wall-goal
+  set follows `q` at 0.83 — two may suffice).
