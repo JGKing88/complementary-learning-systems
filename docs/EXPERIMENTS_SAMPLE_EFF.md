@@ -1397,3 +1397,21 @@ arenas, three goals).
 **Page v8 (17:30):** Part III final — verdict table with the replicate
 arena (s44), the h1024 control, the near-wall and wall finals; `fix1_h128`
 s44 row; overlays include the h1024 control and the s44/s45 arenas.
+
+### 8.14 Correction to §7.10 / Part II (09-16 18:00): the fixed-goal failure was arena-specific
+
+§7.10's "the fixed goal does not make a `q`-follower that drifts; it never
+makes one" was measured on ONE arena — seed 42, goal (17, 0) on the bottom
+wall — and §8 shows it does not generalize: with Part II's exact recipe
+(h1024, K=2 × 64, same PPO and interleave, no redraw) on seed 43's arena
+(goal (11, 6), interior) the policy follows `q` on unseen arenas (0.79 at
+d=0) and reaches held-out goals in 12–13 steps (`fix1_base` s43, §8.10–
+8.13). The correct statement: **a fixed WALL goal never made a
+`q`-follower in any configuration tried (h 1024/256/128/64, exploit-only
+barcode dropout 0.3/0.5/0.8, heading dropout 0.5); a fixed INTERIOR goal
+makes one with the original recipe, and h128 makes it d0_base-class.**
+Also premature: §7.3's cancellation of `one_k4` s43 (fixed goal, h1024,
+K=4) at u300 for "sliding" — the proper K=2 control on the same arena
+recovers by u600. Nothing in the training recipe changed between the Part
+II failure and the Part III success beyond hidden size, which is second-
+order (how well `q` is followed, not whether).
