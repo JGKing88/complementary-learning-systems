@@ -1233,3 +1233,41 @@ breakdown (added to `behavior_probe` nav mode).
 3. Mild exploit barcode dropout on the wall goal: 0.16 → 0.44 (one arena
    0.81). Real movement, not enough. `xod5`, `h64_xod3`, and the arena-
    distribution arms (s44, s45) plus the h1024 control (s43) are queued.
+
+### 8.9 Full held-out verdict, fixed-goal candidates (job 22835915, 12:30; d0_base u725 tail 4 of 144)
+
+| checkpoint | episodes | × opt d=0/5/10 | success | explore d=0 swept/eff/tail | d=10 swept/eff/**tail** (n) |
+|---|---|---|---|---|---|
+| d0_base u725 | 928k | 1.19 / 1.17 / 1.37 | 1/1/1 | 0.607 / 0.949 / 0 | 0.587 / 0.942 / **0.028 (4)** |
+| **fix1_h128 s43 u3000** (1 arena, goal (11,6)) | 384k | **1.14 / 1.14 / 1.19** | 1 / 1 / 0.995 | **0.587 / 0.943 / 0** | 0.520 / 0.855 / 0.125 (18) |
+| fix1_h128 s43 u4000 | 512k | **1.13 / 1.15 / 1.27** | 1/1/1 | 0.566 / 0.914 / 0.007 (1) | 0.530 / 0.869 / 0.097 (14) |
+| fix3_h128 u3300 (3 arenas, wall goals) | 634k | 1.25 / 1.29 / 1.35 | 1 / 1 / 0.984 | 0.563 / 0.891 / 0.028 (4) | 0.517 / 0.865 / 0.153 (22) |
+| fix3_h64 u1500 | 288k | 1.32 / 1.38 / 1.54 | 1/1/1 | 0.586 / 0.925 / 0 | 0.521 / 0.841 / 0.125 (18) |
+| fix3_base (h1024) u3600 | 691k | 1.41 / 1.45 / 1.92 | 1/1/1 | **0.594 / 0.958 / 0** | **0.554 / 0.903 / 0.062 (9)** |
+
+Per-arena `follow_q` for fix1_h128 s43 u4000 (probe's nav rows): d=0
+0.92–0.98 on all six arenas, d=5 0.87–0.98, d=10 0.78–0.96.
+
+1. **One arena, one fixed interior goal, h 128, u3000 (384k episodes):
+   beats d0_base on every exploit row** (× optimal 1.14/1.14/1.19 vs
+   1.19/1.17/1.37; `align_true` 0.95/0.95/0.86 vs 0.92/0.93/0.83) **and
+   matches d=0 explore** (0.943 vs 0.949, tail 0). Misses d=10 explore —
+   efficiency 0.855, tail 18 vs 4 — distractor capture on unseen arenas,
+   the same residual as the redraw one-arena line (§7.11, §8.3). 2.4×
+   fewer episodes than d0_base.
+2. **Three arenas, wall goals: `q`-following, directness short of
+   d0_base on the strict probe.** h128 is the most direct (1.25/1.29/1.35;
+   the training eval's 12.0/14.2 steps translate to +0.06/+0.12 × optimal
+   at d=0/5 against the probe's held_out split), h1024 follows `q` but
+   indirectly (1.41/1.45/1.92) while carrying the best explore of the
+   fixed-goal arms (0.958 / 0.903, tail 9). h64 is between.
+3. **Goal placement mattered more than arena count**: one interior goal at
+   h128 beats three wall goals at any trunk size. Arena-distribution arms
+   (s44 goal (5,14) interior, s45 goal (10,1) near-wall) and the h1024
+   control on s43 are running (jobs 22826508–10), with `xod5` and
+   `h64_xod3` on the wall goal (22827721/2).
+
+**Delivered fixed-goal checkpoints:**
+`agent_ckpts/navigate_navp2_fix1_h128_s43_22825505/navigate_u3000.pt` (one
+arena, one goal; exploit > d0_base, d=0 explore = d0_base) and
+`..._fix3_h128_s42_22783800/navigate_u3300.pt` (three arenas, three goals).
