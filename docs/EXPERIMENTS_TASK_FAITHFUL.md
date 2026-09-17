@@ -181,6 +181,20 @@ beeline through visited cells (2.0 per ~10 steps).
 |---|---|---|
 | task1r_k2_h128_nv_c1 | 22872240 (mit_normal_gpu 6 h) | launched 00:27 |
 | task3r_k2_h128_nv_c1 | 22872241 (ou_bcs 12 h) | queued 00:27 |
+| task1r_k4_h128_nv_c1 | 22874710 (ou_bcs 12 h) | queued 00:58 |
 
 `task3r_*` added to the launcher (3 arenas, goal redrawn per visit
 sequence). h128 only (h1024 collapses under `_nv`).
+
+- 2026-09-17 00:55 — `_c1` does not separate: task1r_k2_h128_nv_c1
+  held-out u300 found 0.59–0.61, revisits 0.90 at 62 steps, 50 steps/touch,
+  follow_q 0.09, against the cap-10 twin's 0.52–0.57 / 0.74 at 63 / 50 /
+  0.01 at u300. Flat novelty is not what unlocks exploit under redraw.
+  Reading: bootstrapping. The fixed-goal arms reach ~10 touches per rollout
+  early through the position map, so q and reward co-occur densely and
+  q-following is learned as the generalising shortcut; the redraw arm gets
+  1–2 touches per rollout, so the q signal is sparse. The task-faithful way
+  to densify it: more visits per memory (K=4 — three of four rollouts in a
+  sequence start with the goal stored). `k4` added to the launcher
+  (ENV_REPEATS 4); `task1r_k4_h128_nv_c1` replaces the low-priority h1024
+  `_c1` arm (22866168 cancelled unstarted).
