@@ -107,7 +107,7 @@ beeline through visited cells (2.0 per ~10 steps).
 
 | arm | job | status |
 |---|---|---|
-| task3_k2_h1024_nv | ~~22866165~~ → ~~22866716~~ → 22869638 (s43, mit_normal_gpu 6 h) | s42 dead at u60 (polar fixed point: std 0.045, approx_kl = clip_frac = 0.000 from u60 on); re-seeded 22:58, moved 00:20 |
+| task3_k2_h1024_nv | ~~22866165~~ (s42) / ~~22869638~~ (s43) | **2/2 seeds hit the polar fixed point** (s42 from u60, s43 from u20: approx_kl 0.74 at u10, then kappa 11.7 vs cap 12.2, sigma 0.027, KL = clip = 0). Not a seed artefact under this reward; parked |
 | task3_k2_h128_nv | 22866166 | queued |
 | task3_k1_h128_nv | 22866167 | queued |
 | task3_k2_h1024_nv_c1 | 22866168 | queued |
@@ -151,3 +151,14 @@ beeline through visited cells (2.0 per ~10 steps).
   shortcut is removed: task1r_k2_h128_nv and the h1024_nv re-seed moved to
   mit_normal_gpu (6 h walls) as 22869636 / 22869638 because ou_bcs_normal's
   backlog was holding them; `_c1` (22866168) still queued there.
+- 2026-09-17 00:55 — task3_k2_h1024_nv s43 (22869638) collapsed too: u10
+  approx_kl 0.74 (one blow-up update; wave-1 h1024 arms sat at 0.02–0.05),
+  u20 onward kappa 11.7 against the 12.2 cap, sigma 0.027, approx_kl =
+  clip_frac = 0.000. 2/2 seeds → the one-rule reward's higher-variance
+  returns (novelty and goal in the same steps) plus the 1024 trunk take a
+  step the polar head cannot recover from. Cancelled; h1024 parked under
+  `_nv` (the `_c1` arm, flat novelty, is the lower-variance test). h128 —
+  the better trunk in §8 anyway — carries the line. task3_k2_h128_nv
+  held-out u500: revisits 1.00 at **19 steps**, post-store 20 steps/touch,
+  follow_q 0.52, found 0.54 / 0.33 (d 0 / 10). task1r_k2_h128_nv u100: train
+  found 0.49 at 13 % coverage, held-out 0.25–0.34, revisits 0.38.
