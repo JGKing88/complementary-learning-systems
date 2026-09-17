@@ -66,3 +66,52 @@ rollouts of its env with the state reset each rollout. No
   task3_k1_h128, 22864187 task3_k2_h128, 22864188 task3_k1_h1024, 22864189
   task3_k2_h1024, 22864190 task1r_k2_h128, 22864192 task1_k2_h128. Expect
   ~15 h for h128 at 4000 updates → one `--continue_from` leg after the wall.
+- 2026-09-16 22:15 — **wave-1 finding: the goal is a penalty.** Every arm
+  shows reward per step rising monotonically while train `found_frac` stalls
+  or falls after an early peak, with coverage-at-touch flat and post-store
+  steps per touch not improving in the h128 arms. Clearest series,
+  task3_k1_h1024 (per 20 updates): reward 0.09 → 0.33, found 0.33 / 0.67 /
+  0.77 (u120) / 0.44 / 0.31 / 0.26 / 0.14 (u200), cov_first 0.15–0.17
+  throughout, std 0.123 → 0.053. task3_k1_h128: found 0.61 (u120) → 0.11–0.33;
+  task3_k2_h128: 0.61 → 0.26–0.45; task1r_k2_h128 (goal redrawn, nothing to
+  memorise): 0.22–0.66 with post-store 50–90 steps per touch. Mechanism:
+  novelty is remaining-scaled (0.3 × 400/remaining, cap 10 → up to 3.0 per
+  new cell late in a rollout) against 2.0 per touch, and under the wave-1
+  rule a touch switches novelty OFF for the rest of the rollout — so until
+  exploit is ≤ ~10 steps per touch, finding the goal lowers a trajectory's
+  return, and on a fixed-goal arena the agent can sweep around the goal it
+  knows. Pure-explore eval (empty memory) confirms search itself is learning
+  slowly rather than avoiding an unknown goal (task3_k1_h128 coverage 0.05 /
+  0.10 / 0.08 / 0.10 at u50–u200; d0_base's explorer reaches 0.31).
+  Held-out at u150–u200 for the record: task3_k1_h1024 found 31–43 %,
+  revisits 83–88 % at 74–83 steps, follow_q 0.21–0.26; task3_k2_h1024 found
+  35–39 %, revisits 97 % at 41 steps, follow_q 0.26 (my u100 "position map"
+  read of it was premature — it generalises as well as K=1); h128 arms
+  found 10–19 %, no q-following.
+- 2026-09-16 22:18 — cancelled 22864186 task3_k1_h128, 22864190
+  task1r_k2_h128, 22864192 task1_k2_h128 (pending) to free slots; kept
+  22864187 task3_k2_h128, 22864188 task3_k1_h1024, 22864189 task3_k2_h1024
+  running to the wall as the does-it-self-correct record (K=2 h1024 is the
+  best exploiter on train: 8 touches at 18 steps, revisits 100 % at 20).
+
+## 4. Wave 2 — novelty stays on after the store
+
+One reward rule for the whole rollout (`--task_novelty_after_store`,
+launcher lever `_nv`): novelty for every new cell whenever it happens, +2.0
+and a teleport for every touch, wall / persistence / time throughout. A touch
+never costs anything; the teleport lands the agent somewhere new, which pays
+novelty too. `_c1` additionally flattens novelty (`NOVELTY_SCALE_CAP=1`, 0.3
+per cell with no remaining-scaling) to test the directness concern — with
+the cap at 10, late-rollout sweeping (up to 3.0 per cell) can still outpay a
+beeline through visited cells (2.0 per ~10 steps).
+
+| arm | job | status |
+|---|---|---|
+| task3_k2_h1024_nv | 22866165 | queued 22:19 |
+| task3_k2_h128_nv | 22866166 | queued |
+| task3_k1_h128_nv | 22866167 | queued |
+| task3_k2_h1024_nv_c1 | 22866168 | queued |
+| task1r_k2_h128_nv | 22866169 | queued |
+
+- 2026-09-16 22:19 — wave 2 launched, seed 42, 12 h walls, ou_bcs_normal
+  (8 of 8 slots with the three surviving wave-1 arms).
