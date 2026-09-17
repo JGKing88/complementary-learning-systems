@@ -128,3 +128,11 @@ beeline through visited cells (2.0 per ~10 steps).
   0.36–0.40, revisits 1.00 at 34 steps, follow_q 0.35; task3_k2_h1024 found
   0.38–0.44, revisits 1.00 at 53, follow_q 0.31; task3_k1_h1024 revisits
   0.72 at 96, follow_q 0.27, std 0.032 and falling.
+- 2026-09-16 23:25 — wave-1 h1024 arms cancelled at u400 (22864188
+  task3_k1_h1024: train found 0.16 vs held-out 0.53–0.56; 22864189
+  task3_k2_h1024: train found 0.02, revisits 95 steps — avoidance complete
+  and exploit decaying). Their slots go to the pending wave-2 arms. 22864187
+  task3_k2_h128 kept as the wave-1 survivor (u400 held-out found 0.31–0.33,
+  revisits 0.97 at 42 steps, follow_q 0.37). Wave-2 task3_k2_h128_nv at
+  u150: train found 0.86 (rising), 3.4 post-store touches at 36 steps,
+  revisits 1.00; held-out found 0.36–0.47, revisits 0.83.
