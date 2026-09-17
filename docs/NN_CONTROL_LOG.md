@@ -1957,3 +1957,42 @@ only; at ≤ 2M steps the encoder is far ahead.
 
 Figures regenerated with these points (`analysis/p1_curves.py --points`):
 `$CLS_RUNS/figures/nn_control/p1_size20.png`, `p1_size50.png`.
+
+## 2026-09-17 — the encoder online, on the decode's axis
+
+Jack: make the encoder's training like the decode's — positions generated
+step by step — so the whole process sits on one plot. Done as
+`train_encoder_walk.py --buffer visited`: one walker per arena, 32,768
+new steps per update (the decode's count), 8 batches of 4,096 rows drawn
+uniformly over the cells each walker has visited so far (their trainer's
+mixed batching over the growing visited set), odometry labels, att0.5's
+model / loss / gain schedule over the 4,000 updates. Read out every 50
+updates as before. Preempted once each; resumed from checkpoint (the
+visited set refills within a few updates).
+
+| | final (131M env-steps) | shape |
+|---|---|---|
+| 20×20, r 10, within 19 | **24.9°** | 26° at 18M (gain 15), 38° at 31M, settles at 25° from ~70M; no erosion |
+| 50×50, r 20, within 19 | **14.7°** | 80° until gain ≈ 8 (~10M), 21° at 13M, 15° from ~50M |
+| 50×50, r 20, within 49 | **27.6°** | same shape |
+| their trainer on the same walker's dumps | 16.3 / 8.6 / 20.1° | (0.5M / 8M / 8M steps) |
+
+Two things to read off. (1) Online, the encoder's early readout tracks
+its gain schedule, not its data: at 10M steps it has seen every cell of
+every arena many times but the gain is still ~8 and the readout ~80°;
+the dump points show that the same data with the full schedule gives
+10.5° at 0.5M steps. The env-step axis is therefore fair to the decode
+(whose schedule is a single lr step at 70%) and unfair to the encoder in
+the early part; the dump points are the encoder's honest early numbers.
+(2) The online encoder lands 6–8° above their trainer on the same walker's
+dumps (24.9 vs 16.3; 14.7 vs 8.6; 27.6 vs 20.1) with the batching now
+matched; what remains between the two loops is sampling with replacement
+vs an epoch pass, and this objective's seed variance (att0.5's own recipe
+reruns at 15° against its checkpoint's 6°). Either number leaves the
+conclusion where the dump points put it: the encoder objective plateaus
+at 9–15° within its radius and 20–28° beyond it, the decode passes it
+between 10M and 20M steps and ends at 0.5°.
+
+Figures (clean, valid arms only, both encoder forms):
+`$CLS_RUNS/figures/nn_control/p1_size20_clean.png`, `p1_size50_clean.png`
+(`analysis/p1_curves.py --clean --points ...`).

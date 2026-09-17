@@ -348,7 +348,13 @@ target — no teacher, no goal, no position (log 2026-09-16):
   composition and produced eroding 24–48° readouts; superseded — log
   09-17, correction.) Their trainer verbatim on 64 patches of 50×50
   reproduces the pre-trained att0.5 (7.1° / 8.2° / 19.0°); att0.5's own
-  25-patch recipe reruns at 15–17° for the same seed.
+  25-patch recipe reruns at 15–17° for the same seed. Trained **online**
+  on the decode's axis (`--buffer visited`: one walker per arena, 32,768
+  new steps per update, batches from the cells visited so far) it ends at
+  24.9° (20×20) and 14.7° / 27.6° (50×50 within 19 / 49), 6–8° above
+  their trainer on the same walker's dumps, and its early readout follows
+  its gain schedule rather than its data — the dump points are its honest
+  early numbers. Clean figures: `p1_size20_clean.png`, `p1_size50_clean.png`.
 
 ### 1.9 Standing conclusions
 

@@ -50,6 +50,8 @@ def label_decode(a: dict) -> str:
 
 
 def label_encoder(a: dict) -> str:
+    if a.get("buffer") == "visited":
+        return f"encoder, online (att0.5 objective, {a['walkers']} walker/arena), r={a['radius']:.0f}; within {a['max_abs']}"
     src = "i.i.d. positions (its own sampling)" if a.get("positions", "walk") == "iid" else "walk moments"
     lab = f"encoder: {src}, {a['labels']} labels, r={a['radius']:.0f}"
     if a.get("n_updates", 4000) != 4000:
@@ -76,12 +78,12 @@ def main():
     root = str(checkpoints_dir())
     sz = "" if args.size == 20 else f"_sz{args.size}"
     dec = sorted(glob.glob(os.path.join(root, f"goal_pairs_p1_*{sz}_s*", "final_tables.json")))
-    enc = sorted(glob.glob(os.path.join(root, f"goal_pairs_p1e_*_sz{args.size}_s*", "final.json")))
+    enc = sorted(glob.glob(os.path.join(root, f"goal_pairs_p1e_*sz{args.size}*", "final.json")))
     if args.size == 20:
         dec = [p for p in dec if "_sz" not in p]
     if args.clean:
         dec = [p for p in dec if "heading8" not in p and "regular" not in p and "grid32" not in p]
-        enc = []
+        enc = [p for p in enc if "online" in p]
     fig, ax = plt.subplots(figsize=(11, 5.6))
     styles, labelled = {}, set()
     for p in dec:
