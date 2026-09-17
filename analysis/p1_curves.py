@@ -42,13 +42,18 @@ def encoder_curve(path: str):
 def label_decode(a: dict) -> str:
     bits = [a.get("mode", "grid"), f"{a['n_envs']} envs"]
     bits.append("balanced |Δ|" if a.get("balance_range") else "raw walk pairs")
+    if a.get("range_warmup_updates", 0):
+        bits.append("range warm-up")
     if a.get("target", "direction") != "direction":
         bits.append(a["target"])
     return "decode: " + ", ".join(bits)
 
 
 def label_encoder(a: dict) -> str:
-    lab = f"encoder: {a['labels']} labels, r={a['radius']:.0f}"
+    src = "i.i.d. positions (its own sampling)" if a.get("positions", "walk") == "iid" else "walk moments"
+    lab = f"encoder: {src}, {a['labels']} labels, r={a['radius']:.0f}"
+    if a.get("n_updates", 4000) != 4000:
+        lab += f", {a['n_updates'] // 1000}k updates"
     if float(a.get("gain_end", 100)) != 100:
         lab += f", gain\u2192{a['gain_end']:.0f}"
     return lab
@@ -69,21 +74,23 @@ def main():
     if args.size == 20:
         dec = [p for p in dec if "_sz" not in p]
     fig, ax = plt.subplots(figsize=(11, 5.6))
-    styles = {}
+    styles, labelled = {}, set()
     for p in dec:
         x, y, a = decode_curve(p)
         lab = label_decode(a)
-        seed = a["seed"]
+        first = lab not in labelled
         color = styles.setdefault(lab, f"C{len(styles)}")
-        ax.plot(x, y, "-", color=color, lw=1.8 if seed == 0 else 1.2, alpha=1.0 if seed == 0 else 0.6,
-                label=lab if seed == 0 else None)
+        ax.plot(x, y, "-", color=color, lw=1.8 if first else 1.2, alpha=1.0 if first else 0.6,
+                label=lab if first else None)
+        labelled.add(lab)
     for p in enc:
         x, y, a = encoder_curve(p)
         lab = label_encoder(a)
-        seed = a["seed"]
+        first = lab not in labelled
         color = styles.setdefault(lab, f"C{len(styles)}")
-        ax.plot(x, y, "--", color=color, lw=1.8 if seed == 0 else 1.2, alpha=1.0 if seed == 0 else 0.6,
-                label=lab if seed == 0 else None)
+        ax.plot(x, y, "--", color=color, lw=1.8 if first else 1.2, alpha=1.0 if first else 0.6,
+                label=lab if first else None)
+        labelled.add(lab)
         i = int(np.argmin(y))
         ax.plot(x[i], y[i], "o", color=color, ms=5, mfc="white")     # its best point (its own protocol selects by eval)
     for spec in args.refs.split(","):

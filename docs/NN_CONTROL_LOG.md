@@ -1798,3 +1798,98 @@ by the scaffold at the agent's true coordinates. Phase 1 gets the full
 decode from 64 arenas of 400 cells (25.6k unique positions), 41M
 env-steps, a direction per pair from odometry, and no frame. Same axis,
 different labels, stated.
+
+## 2026-09-17 — Phase 1, encoder side: Agent-HaSH's encoder objective on the same walks; and 50×50 arenas
+
+Jack asked for the direct version of the comparison: the encoder's data
+drawn from the *same walks* as the decode. `train_encoder_walk.py`
+(commits a176a78 … 03327b0) imports the decode's `Walkers` and `Buffer`
+— same 64 arenas, same walkers, same env-step count at every update —
+and trains the encoder package's own model and loss with att0.5's
+configuration (4×256 GELU → 1024, tanh, gain annealed 1 → 100,
+`mse_attract_repel` attract 0.5 / repel 1 + 0.5 × coding rate, AdamW
+3e-4). Per update 8 batches of 4,096 positions (8 envs × 8 walkers × 64
+moments), matching the decode's 32,768 samples per update. Labels:
+**odometry** — near/far (radius 20, Euclidean) over pairs of moments of
+the *same walker*, from its recorded displacement, every other pair left
+out; **coords** — the encoder's own source, near/far over pairs in the
+same env from true coordinates, cross-env pairs excluded as its
+`exclude_cross_env_pairs=True` did. Read out exactly as the harness
+does (`rollout/signal.py`): encode every cell of a held-out env, `W` =
+Gram-Schmidt of the encoded +x / +y neighbours at the agent's true cell,
+`q = W (z(g) − z(p))`, angular error over pairs within the range — the
+decode's metric on the decode's test set. Axis convention checked
+(swapped axes → 89°). The pre-trained encoders with that readout on our
+20×20 held-out arenas: **att0.5 6.00°, ur029 5.96°** (within 19 cells).
+
+Figures: `$CLS_RUNS/figures/nn_control/p1_size20.png`, `p1_size50.png` (PNGs are gitignored; regenerate with `python -m analysis.p1_curves --size 20|50`)
+(`analysis/p1_curves.py`) — held-out error vs env-steps, decode solid,
+encoder dashed with its best checkpoint circled, references dotted.
+
+**20×20 arenas, pairs within 19 (held-out; best during training → final).**
+
+| arm | best | at | final |
+|---|---|---|---|
+| decode, balanced pairs (2 seeds) | **0.46–0.48°** | 131M | 0.46–0.48 |
+| encoder, walk moments, odometry labels, r 20 (2 seeds) | 35.0 / 35.4 | 20–21M, gain 16–17 | 75 |
+| encoder, walk moments, coords labels, r 20 | 37.8 | 16M | 77 |
+| encoder, odometry / coords, r 20, gain held → 13 | 32.1 / 37.2 | 20–29M, gain 3–4 | 70 / 74 |
+| encoder, odometry, r 10 | **25.4** | 18M, gain 15 | 63 |
+| encoder, coords, r 10 | 23.7 | 18M | 62 |
+| encoder, odometry, r 10, gain → 13 | 25.9 | 28M, gain 3.5 | 57 |
+| encoder, odometry, r 5 | 61.9 | — | 64 |
+| encoder, **i.i.d. positions (its own sampling)**, coords, r 10 | 24.1 | 18M, gain 15 | 62 |
+| pre-trained att0.5 / ur029, same readout | 6.0 | 62.5M / 600M draws, 62.5k / 600k positions | — |
+
+**50×50 arenas, pairs within 49.**
+
+| arm | best | at | final |
+|---|---|---|---|
+| decode, balanced, seed 0 | **0.64°** (10/5/2/1° at 9.8/14.7/29.5/62M) | 131M | 0.64 |
+| decode, balanced, seeds 1, 2 | stalled on the `1 − cos` plateau (loss ≈ 1, 90° throughout) | | |
+| decode, balanced + range warm-up (19 → 49 over 500 updates), seeds 1, 2 | **0.55 / 0.49** (1° at 51M / 46M) | 131M | 0.55 / 0.49 |
+| decode, raw walk pairs (k ≤ 30) | 43 | — | 43 |
+| encoder, walk, odometry, r 20 (2 seeds) | 46.1 / 47.5 | 18M, gain 15 | 75 / 77 |
+| encoder, walk, coords, r 20 | 41.7 | 21M | 74 |
+| encoder, walk, odometry, gain → 13 | 45.1 | 37M, gain 4 | 60 |
+| encoder, i.i.d. positions, coords, r 20 (att0.5's own regime on our arenas) | 39.2 | 21M | 63 |
+| — the same encoders read within 19 cells (their regime): walk-odometry u500 | 20.6 / 23.8 | 16M | 68 / 71 |
+| — i.i.d. u750 / final, within 19 | 29.6 | 25M | 53 |
+| pre-trained att0.5 on 50×50 arenas, within 49 / within 19 | 15.7 / 7.3 | — | — |
+
+**Reading.**
+1. On the same walks, the decode reaches 0.5° while the encoder's
+   objective reaches 24–38° at best (size 20) and 40–48° (size 50; 21–30°
+   within its 20-cell radius) — and then gets *worse* as training
+   continues, on training envs too (e.g. r 10: 25° at 18M steps → 63° at
+   131M), while its own loss keeps falling. The contrastive objective is
+   being optimised; what it optimises is not local linearity, which is
+   what the harness's frame projection needs. The gain anneal to 100
+   accelerates the erosion but holding the gain low does not remove it
+   (best 26–32°, then erosion).
+2. It is not the walks. The encoder's own sampling (i.i.d. positions,
+   coordinate labels) on our arenas gives the same curve (24° best at
+   size 20, 39° at size 50). It is not the label source either: odometry
+   and coordinate labels agree to within 2°. Radius matters (r 20 covers
+   a 20×20 arena and leaves nothing to repel; r 10 is best; r 5 too
+   few near pairs).
+3. What the pre-trained encoders had that these runs did not: 62.5k–600k
+   unique positions over 25–60 patches of 50–100 cells, and 15k–73k
+   gradient steps with the gain annealed over all of them. On our 64
+   arenas (25.6k / 160k positions) with 32k gradient steps the objective
+   does not reach their 6–7°. The remaining untested difference is the
+   anneal length; a 16k-update single-batch replication is running.
+4. At 50×50 the decode learns the full 49-cell table to 0.5–0.6° at
+   1.5× the size-20 cost (1° at 46–62M env-steps), given the range
+   warm-up; two of three seeds without it stall on the `1 − cos` plateau
+   (the known failure: a batch two-thirds of which the network cannot
+   fit at all). The encoder's readout beyond its radius is noise by
+   construction (15.7° even for the pre-trained att0.5 within 49).
+
+**Bottom line.** Trained on identical experience, in identical
+env-steps, the odometry-supervised decode is the better use of a random
+walk by a factor of 50–100 in angular error, and it is the only one of
+the two whose readout keeps improving with more data. The encoder
+objective's 6° in Agent-HaSH is a product of its own data regime (many
+large patches, i.i.d. draws, a long anneal), not something the walks
+withhold from it.

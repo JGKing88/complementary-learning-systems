@@ -328,6 +328,27 @@ target — no teacher, no goal, no position (log 2026-09-16):
   unique positions, 600M draws). Phase 1 gets the full decode from 64
   arenas of 400 cells (25.6k unique positions), 41M env-steps, a
   direction per pair from odometry, and no frame.
+- **The encoder's objective on the same walks (09-17;
+  `train_encoder_walk.py`, figures `$CLS_RUNS/figures/nn_control/p1_size20.png`,
+  `p1_size50.png`).** att0.5's model, loss and schedule, positions from
+  the decode's walkers, near/far labels from odometry (same-walker
+  pairs) or true coordinates, read out with the harness's frame
+  projection on the decode's held-out arenas. On 20×20 arenas the
+  decode reaches 0.5°; the encoder's readout reaches **24–38° at best**
+  (r 10 best, 18M steps) and then erodes to 57–77° as training continues
+  — on training envs too, while its loss still falls — with the label
+  source (odometry vs coordinates) and the sampling (walk moments vs
+  its own i.i.d. positions) making no difference. On 50×50 arenas the
+  decode learns the full 49-cell table to 0.5–0.6° (range warm-up
+  needed: two of three seeds otherwise stall on the `1 − cos` plateau);
+  the encoder reaches 40–48° over pairs within 49 and 21–30° within its
+  20-cell radius, then erodes. The pre-trained att0.5 gives 6.0° (20×20,
+  within 19) and 15.7 / 7.3° (50×50, within 49 / 19) with the same
+  readout: its number comes from its own regime (62.5k–600k positions in
+  25–60 large patches, 15k–73k gradient steps), not from anything the
+  walks withhold. On identical experience the odometry-supervised decode
+  is the better use of a random walk by 50–100× in angular error and the
+  only one whose readout keeps improving with data.
 
 ### 1.9 Standing conclusions
 
@@ -954,6 +975,7 @@ readout 2 samples actions, so a policy's floor is ~6–8°, not 0.
 | P22 | A1xd: dense fixed tiling of the corner still takes the lookup (coverage alone is not enough) | ✗ 3.6° / 6.4° outside by u = 500, 0.7 / 1.7° final — the rule; the arrangement of the seen values is the lever (§1.2, §6.3) |
 | P23–P26 | A1m memorisation test (§6.3) | P23 ✓ (84° unseen at K = 8); P24 ✗ noise 0.3 reaches 44°, the short-range half only; P25 ✗ small nets 85–89°, a smaller table; P26 ✓ dropout 61° ≈ noise 0.1 |
 | P27–P30 | Phase 1, the self-taught decode (§6.4) | P27 ✓ 0.48 / 0.46°, 1° at 41M / 39M env-steps; P28 ✓ (plain walks: 32 envs 9.1° = 64 envs 8–10°); P29 ✓ 5.7 / 6.3° from views; P30 ✓ 8 headings learn on the same curve to their 11° floor |
+| P31 | encoder objective on the same walks: within 2× of the decode's env-steps to its own 6° | ✗ best 24–38° (20×20) / 21–30° within radius (50×50), then eroding; the walks are not the limit (its own sampling gives the same) |
 
 ---
 
