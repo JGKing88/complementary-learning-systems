@@ -257,6 +257,17 @@ Two task-faithful ways, both run:
   task_curves.py` (held-out task series, four panels, runs overlaid) →
   `task_fixed_by_update.png`, `task_redraw_by_update.png`; the continual
   figures for task3r_k2_h128 u1000; findings and the two verdict tables.
+- 2026-09-17 15:45 — **task3r_k2_h128 s42 u2500: search 0.73 / 0.73,
+  revisits 1.00 at 12.7, 12.7 steps/touch, follow_q 0.94** — both halves
+  at once. s43 replicate at u1000 / u1500: revisits 1.00 at 15.5 / 13.1,
+  12.7 / 12.3 steps/touch, follow_q 0.89 / 0.93, search 0.42–0.46 /
+  0.47–0.56 — exploit on top of s42, search a little behind. task1r_k4_h128
+  holds 0.51–0.58 / 1.00 at 12–14 / 0.93 through u3500. Finished:
+  task3r_k2_h128_nv_c1 s42 (4000, 9.2 h: found 0.50–0.57, revisits 1.00 at
+  11.3, follow_q 0.92); its s43 twin timed out at ~u2600 still in the
+  trough. Verdicts round 2 submitted: probe 22911869 (task3r_k2 u2500,
+  task1r_k4 u3500, task3r_nv_c1 u4000 + d0_base), CL 22911870
+  (task3r_k2_h128 u2500).
 
 - 2026-09-17 06:45 — **task3r_k2_h128_nv_c1 (3 redrawn arenas) is the first
   arm strong on both halves**: held-out u1500 found 0.66–0.68, revisits
