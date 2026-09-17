@@ -241,6 +241,15 @@ Two task-faithful ways, both run:
   recovery from u1500, well below its u1000 peak). K=4 s43 u500: found
   0.40, revisits 1.00 at 44, follow_q 0.16. task1r_k2_h128_nv_c1 hit its
   6 h wall at ~u3600 (22872240): exploit never left ~50 steps/touch.
+- 2026-09-17 07:20 — **wave-1 rule under redraw: task1r_k4_h128 at u500**
+  (held-out): found 0.52–0.59, revisits 1.00 at **18.9 steps**, 17.6
+  steps/touch, 7.6 touches per rollout, follow_q **0.80**. The exploit
+  level the fixed-goal `nv` arms needed ~2000 updates for, at u500, with
+  honest search and no avoidance possible (the goal moves). Novelty off
+  after the store gives an unambiguous exploit signal; the wave-1 failure
+  was the *known* goal, not the rule. For the record at the same hour:
+  task3_k2_h128_nv u2500 14.4 steps/touch, revisits 1.00 at 19, follow_q
+  0.79, found 0.25–0.38; K=4 s43 u1000 revisits 1.00 at 31, follow_q 0.28.
 
 `task3r_*` added to the launcher (3 arenas, goal redrawn per visit
 sequence). h128 only (h1024 collapses under `_nv`).
