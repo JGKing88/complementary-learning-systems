@@ -63,10 +63,12 @@ def sample_batch(buf: Buffer, rng, batch_envs: int, per_walker: int):
     return e, w, buf._at(e, w, t)
 
 
-def near_far_masks(e: np.ndarray, w: np.ndarray, pos: np.ndarray, radius: float, labels: str):
+def near_far_masks(e, w, pos, radius: float, labels: str):
     """`(near, far)` boolean `(B, B)`: near = within `radius` (Euclidean), far
     otherwise, both restricted to the pairs the label source can relate --
-    the same walker (`odometry`) or the same env (`coords`)."""
+    the same walker (`odometry`) or the same env (`coords`). numpy in, numpy
+    out; torch tensors in (on any device), torch out on that device."""
+    xp = torch if isinstance(e, torch.Tensor) else np
     same_env = e[:, None] == e[None, :]
     if labels == "odometry":
         group = same_env & (w[:, None] == w[None, :])
@@ -75,8 +77,11 @@ def near_far_masks(e: np.ndarray, w: np.ndarray, pos: np.ndarray, radius: float,
     else:
         raise ValueError(labels)
     d = pos[:, None, :] - pos[None, :, :]
-    dist = np.sqrt((d * d).sum(-1))
-    eye = np.eye(len(e), dtype=bool)
+    dist = xp.sqrt((d * d).sum(-1))
+    if xp is torch:
+        eye = torch.eye(len(e), dtype=torch.bool, device=e.device)
+    else:
+        eye = np.eye(len(e), dtype=bool)
     near = (dist < radius) & group & ~eye
     far = group & ~near & ~eye
     return near, far
@@ -305,12 +310,12 @@ def main() -> None:
             for k in np.unique(e):
                 m = e == k
                 x[m] = train.tensors[k].gbook[ids[m]]
-            near, far = near_far_masks(e, w, pos, args.radius, args.labels)
+            near, far = near_far_masks(torch.from_numpy(e).to(device), torch.from_numpy(w).to(device),
+                                       torch.from_numpy(pos).float().to(device), args.radius, args.labels)
             xb = torch.from_numpy(x).to(device)
             z = encoder(xb, gain)
             K = (z @ z.T).clamp(-1.0, 1.0)
-            loss = mse_attract_repel(K, torch.from_numpy(near).to(device), attract_lambda=args.attract,
-                                     repel_weight=args.repel, far_mask=torch.from_numpy(far).to(device))
+            loss = mse_attract_repel(K, near, attract_lambda=args.attract, repel_weight=args.repel, far_mask=far)
             if args.rate > 0:
                 loss = loss + args.rate * coding_rate_loss(z, eps=args.rate_eps)
             opt.zero_grad(set_to_none=True)
