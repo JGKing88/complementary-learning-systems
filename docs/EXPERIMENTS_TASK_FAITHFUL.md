@@ -182,6 +182,7 @@ beeline through visited cells (2.0 per ~10 steps).
 | task1r_k2_h128_nv_c1 | 22872240 (mit_normal_gpu 6 h) | launched 00:27 |
 | task3r_k2_h128_nv_c1 | 22872241 (ou_bcs 12 h) | queued 00:27 |
 | task1r_k4_h128_nv_c1 | 22874710 (ou_bcs 12 h) | running (started ~03:15) |
+| task1r_k4_h128_nv_c1 s43 | 22882203 (mit_normal_gpu 6 h) | launched 05:20 — replicate |
 
 - 2026-09-17 04:40 — **K=4 densifies exploit under redraw.**
   task1r_k4_h128_nv_c1 held-out u500: found 0.60–0.66, revisits 0.98 at
@@ -198,6 +199,10 @@ beeline through visited cells (2.0 per ~10 steps).
   task3_k1_h128_nv revisits 0.93 at 64, 21 steps/touch, follow_q 0.43,
   found 0.38–0.44; wave-1 survivor task3_k2_h128 u2000: found 0.59–0.63,
   revisits 1.00 at 40, 28 steps/touch, follow_q 0.36.
+- 2026-09-17 05:20 — task1r_k4_h128_nv_c1 held-out u1000: found 0.57–0.61,
+  revisits 1.00 at 30 steps, 33 steps/touch, follow_q 0.34 — both halves
+  improving together, the first arm to do that. Seed 43 replicate launched
+  (22882203, mit_normal_gpu 6 h).
 
 `task3r_*` added to the launcher (3 arenas, goal redrawn per visit
 sequence). h128 only (h1024 collapses under `_nv`).
