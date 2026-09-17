@@ -181,7 +181,23 @@ beeline through visited cells (2.0 per ~10 steps).
 |---|---|---|
 | task1r_k2_h128_nv_c1 | 22872240 (mit_normal_gpu 6 h) | launched 00:27 |
 | task3r_k2_h128_nv_c1 | 22872241 (ou_bcs 12 h) | queued 00:27 |
-| task1r_k4_h128_nv_c1 | 22874710 (ou_bcs 12 h) | queued 00:58 |
+| task1r_k4_h128_nv_c1 | 22874710 (ou_bcs 12 h) | running (started ~03:15) |
+
+- 2026-09-17 04:40 — **K=4 densifies exploit under redraw.**
+  task1r_k4_h128_nv_c1 held-out u500: found 0.60–0.66, revisits 0.98 at
+  **34 steps**, 37 steps/touch, follow_q 0.26 — against the K=2 redraw arms
+  at u500 (revisits 0.82–0.96 at 62–64, 52–55 steps/touch, follow_q
+  0.10–0.13). task3r_k2_h128_nv_c1 u500: found 0.47–0.48, revisits 0.98
+  at 44, 39 steps/touch, follow_q 0.29 — three arenas' post-store data
+  helps too. task1r_k2_h128_nv finished (22869636, 4000 updates, 4 h 43):
+  held-out found 0.50–0.60, revisits 0.93 at 64, 53 steps/touch, follow_q
+  0.13 — search transferred, exploit never left the sparse-signal regime.
+  task1r_k2_h128_nv_c1 at u2500: same shape (0.45–0.57 / 0.82 at 45 / 55 /
+  0.13). Fixed-goal arms at u1300–u1500: task3_k2_h128_nv revisits 1.00
+  at 22–27, 17 steps/touch, follow_q 0.54–0.70, found 0.29–0.35;
+  task3_k1_h128_nv revisits 0.93 at 64, 21 steps/touch, follow_q 0.43,
+  found 0.38–0.44; wave-1 survivor task3_k2_h128 u2000: found 0.59–0.63,
+  revisits 1.00 at 40, 28 steps/touch, follow_q 0.36.
 
 `task3r_*` added to the launcher (3 arenas, goal redrawn per visit
 sequence). h128 only (h1024 collapses under `_nv`).
