@@ -752,8 +752,11 @@ class RolloutCollector:
                     # they stop for a trajectory once its goal is stored.
                     # Wall, persistence and time run on, as they do in both
                     # regimes of the interleaved schedule.
-                    searching = ((~agent_goal_store_fired).astype(np.float32)
-                                 if task_mode else np.ones(B, dtype=np.float32))
+                    searching = (
+                        (~agent_goal_store_fired).astype(np.float32)
+                        if (task_mode
+                            and not getattr(cfg, "task_novelty_after_store", False))
+                        else np.ones(B, dtype=np.float32))
 
                     if need_visited:
                         not_visited = ~visited_cells[np.arange(B), xs, ys]

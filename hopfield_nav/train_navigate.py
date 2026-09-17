@@ -237,7 +237,9 @@ def run_navigate(
                  f"{cfg.n_train_distractors_max}] distractors"
                  if use_distractors else " (no distractors)")
               + f"; visits={_vis} (memory kept across consecutive rollouts "
-              f"of an env, state reset each rollout); input_goal_in_memory="
+              f"of an env, state reset each rollout); novelty after the store: "
+              f"{'ON' if getattr(cfg, 'task_novelty_after_store', False) else 'off'}"
+              f"; input_goal_in_memory="
               f"{bool(getattr(cfg.agent, 'input_goal_in_memory', False))}",
               flush=True)
         if bool(getattr(cfg.agent, "input_goal_in_memory", False)):
@@ -1052,6 +1054,7 @@ CFG_FIELDS: dict[str, tuple[str, ...]] = {
     "regime_assignment": ("regime_assignment",),
     "env_repeats": ("env_repeats",),
     "redraw_goal_per_rollout": ("redraw_goal_per_rollout",),
+    "task_novelty_after_store": ("task_novelty_after_store",),
     "obs_dropout": ("obs_dropout",),
     "exploit_obs_dropout": ("exploit_obs_dropout",),
     "exploit_heading_dropout": ("exploit_heading_dropout",),
@@ -1619,6 +1622,13 @@ def build_parser() -> argparse.ArgumentParser:
                         " rollout slot, from the env's own RNG. Default: one"
                         " goal per env for the whole run. Legacy placement path"
                         " only -- under --env_generator use --refresh_goal.")
+    p.add_argument("--task_novelty_after_store",
+                   action=argparse.BooleanOptionalAction, default=None,
+                   help="Task regime: keep novelty / revisit shaping on after a"
+                        " trajectory's goal is stored (one reward rule for the"
+                        " whole rollout). Default off: explore shaping until the"
+                        " store, goal reward only after -- which wave 1 showed"
+                        " makes the goal a penalty while exploit is still slow.")
     p.add_argument("--exploit_obs_dropout", type=float, default=None,
                    help="obs_dropout for EXPLOIT rollouts only (explore keeps"
                         " the run-wide value). See EXPERIMENTS_SAMPLE_EFF §7.10.")

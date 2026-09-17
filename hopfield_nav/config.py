@@ -490,6 +490,16 @@ class TrainConfig:
     # which is what made `--randomize_goal_per_rollout` wrong under the env
     # generator and is why this is a separate, legacy-path-only knob.
     redraw_goal_per_rollout: bool = False
+    # Task regime only (docs/TASK_FAITHFUL_PLAN.md, wave 2): keep the novelty
+    # / revisit shaping running after a trajectory's goal is stored instead of
+    # switching to goal-reward-only. Wave 1 showed why: with novelty
+    # remaining-scaled to 3.0 a cell late in a rollout against 2.0 a touch,
+    # and a touch switching novelty OFF, PPO learned to sweep and -- on a
+    # fixed-goal arena -- to sweep around the goal it knew (train found 77%
+    # -> 14% over 80 updates while reward per step rose monotonically). With
+    # this on there is one reward rule for the whole rollout and a touch
+    # never costs anything.
+    task_novelty_after_store: bool = False
     # Training-only dropout on the sensory (raycast wall-code) channel: each
     # of the 60 +-1 entries is zeroed with this probability, per step and per
     # trajectory, in the ROLLOUT (what PPO then trains on); evaluation sees

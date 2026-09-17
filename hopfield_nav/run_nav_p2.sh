@@ -1875,13 +1875,24 @@ case "$VARIANT" in
           task1r_*) ENVS_PER_WORLD=1; BATCH_ENVS=${FIX_BATCH_ENVS:-64}; REDRAW_GOAL_PER_ROLLOUT=1 ;;
           task1_*)  ENVS_PER_WORLD=1; BATCH_ENVS=${FIX_BATCH_ENVS:-64} ;;
         esac
-        case "${VARIANT#task*_k?}" in
-          "") ;;
-          _h128)  HIDDEN_SIZE=128 ;;
-          _h1024) HIDDEN_SIZE=1024 ;;
-          _h256)  HIDDEN_SIZE=256 ;;
-          *) echo "ERROR: unknown TASK variant $VARIANT" >&2; exit 1 ;;
+        # Levers after the trunk, in order (wave 2, docs/EXPERIMENTS_TASK_FAITHFUL.md):
+        #   _nv   novelty stays on after the store (one reward rule per rollout)
+        #   _c1   flat novelty: NOVELTY_SCALE_CAP=1 (no remaining-scaling)
+        #   _c3   NOVELTY_SCALE_CAP=3
+        _rest="${VARIANT#task*_k?}"
+        case "$_rest" in
+          _h128*)  HIDDEN_SIZE=128;  _rest="${_rest#_h128}" ;;
+          _h1024*) HIDDEN_SIZE=1024; _rest="${_rest#_h1024}" ;;
+          _h256*)  HIDDEN_SIZE=256;  _rest="${_rest#_h256}" ;;
         esac
+        while [ -n "$_rest" ]; do
+          case "$_rest" in
+            _nv*) TASK_NOVELTY_AFTER_STORE=1; _rest="${_rest#_nv}" ;;
+            _c1*) NOVELTY_SCALE_CAP=1; _rest="${_rest#_c1}" ;;
+            _c3*) NOVELTY_SCALE_CAP=3; _rest="${_rest#_c3}" ;;
+            *) echo "ERROR: unknown TASK lever '$_rest' in $VARIANT" >&2; exit 1 ;;
+          esac
+        done
         ;;
     esac
     ;;
@@ -1947,7 +1958,7 @@ echo "    rollout    : ${ENVS_PER_WORLD} envs x ${BATCH_ENVS} batch x ${STEPS_PE
 [ -n "${ENV_REPEATS:-}" ] && echo "    repeats    : ${ENV_REPEATS} rollouts per env per update (regime slots = envs x repeats)"
 [ -n "${REDRAW_GOAL_PER_ROLLOUT:-}" ] && echo "    goals      : re-drawn per rollout slot (redraw_goal_per_rollout=${REDRAW_GOAL_PER_ROLLOUT})"
 [ -n "${OBS_DROPOUT:-}" ] && echo "    obs_dropout: ${OBS_DROPOUT} (training rollouts only)"
-[ -n "${TASK_VISITS:-}" ] && echo "    regime     : TASK-FAITHFUL (search -> oracle store once at goal -> teleport; visits=${TASK_VISITS}; eval_scope=${EVAL_SCOPE})"
+[ -n "${TASK_VISITS:-}" ] && echo "    regime     : TASK-FAITHFUL (search -> oracle store once at goal -> teleport; visits=${TASK_VISITS}; novelty after store=${TASK_NOVELTY_AFTER_STORE:-0}; eval_scope=${EVAL_SCOPE})"
 [ -n "${EXPLOIT_OBS_DROPOUT:-}${EXPLOIT_HEADING_DROPOUT:-}" ] && echo "    exploit-only dropout: obs=${EXPLOIT_OBS_DROPOUT:-run-wide} heading=${EXPLOIT_HEADING_DROPOUT:-run-wide}"
 echo "                 pool=$((ENVS_PER_WORLD * BATCH_ENVS)) trajectories, \
 $((ENVS_PER_WORLD * BATCH_ENVS * STEPS_PER_ROLLOUT)) env-steps/update, \
