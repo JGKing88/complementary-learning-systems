@@ -263,6 +263,19 @@ Two task-faithful ways, both run:
   steps/touch, follow_q 0.84, found 0.43–0.50 (from 0.66–0.68 at u1500).
   Fixed-goal task3_k2_h128_nv u3000: held-out found 0.17–0.20, exploit
   intact (14–15 steps/touch) — the shortcut keeps eroding sweep.
+- 2026-09-17 09:55 — **task3r_k2_h128 (wave-1 rule, 3 redrawn arenas, K=2)
+  at u1000**: found 0.61 / 0.46 (d 0 / 10), revisits 1.00 at 14.6, 12.7
+  steps/touch, follow_q 0.89 — both halves at u1000; task1r_k4_h128 u1500
+  0.52–0.54 / 1.00 at 15.9 / 14.4 / 0.87; task3r_k2_h128_nv_c1 s42 u2500
+  0.42–0.52 / 1.00 at **12.4** / 12.5 / 0.91; K=4 nv s42 u3500 recovered
+  (1.00 at 14.7, 13.6, 0.83, found 0.42–0.53). Wave-1 survivor 22864187
+  timed out at u3400 (record complete). Verdicts submitted: held-out probe
+  22893595 (`run_se_probe.sh`, TAG task_r1: task3r_k2 u1000, task1r_k4
+  u1500, task3r_nv_c1 u2500, task3_nv u2500 + d0_base u725) and the
+  continual protocol (200 iterations per arena, sampled) on task3r_k2_h128
+  u1000 (22893661) and task1r_k4_h128 u1500 (22893662). Note: job 22891316
+  `xfB0_task1r_k4_h1024` is another session's run of this launcher, not
+  part of this log.
 
 `task3r_*` added to the launcher (3 arenas, goal redrawn per visit
 sequence). h128 only (h1024 collapses under `_nv`).
