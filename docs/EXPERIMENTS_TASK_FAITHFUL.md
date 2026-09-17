@@ -107,11 +107,11 @@ beeline through visited cells (2.0 per ~10 steps).
 
 | arm | job | status |
 |---|---|---|
-| task3_k2_h1024_nv | ~~22866165~~ → 22866716 (s43) | s42 dead at u60 (polar fixed point: std 0.045, approx_kl = clip_frac = 0.000 from u60 on); re-seeded 22:58 |
+| task3_k2_h1024_nv | ~~22866165~~ → ~~22866716~~ → 22869638 (s43, mit_normal_gpu 6 h) | s42 dead at u60 (polar fixed point: std 0.045, approx_kl = clip_frac = 0.000 from u60 on); re-seeded 22:58, moved 00:20 |
 | task3_k2_h128_nv | 22866166 | queued |
 | task3_k1_h128_nv | 22866167 | queued |
 | task3_k2_h1024_nv_c1 | 22866168 | queued |
-| task1r_k2_h128_nv | 22866169 | queued |
+| task1r_k2_h128_nv | ~~22866169~~ → 22869636 (mit_normal_gpu 6 h) | moved 00:20 |
 
 - 2026-09-16 22:19 — wave 2 launched, seed 42, 12 h walls, ou_bcs_normal
   (8 of 8 slots with the three surviving wave-1 arms).
@@ -136,3 +136,18 @@ beeline through visited cells (2.0 per ~10 steps).
   revisits 0.97 at 42 steps, follow_q 0.37). Wave-2 task3_k2_h128_nv at
   u150: train found 0.86 (rising), 3.4 post-store touches at 36 steps,
   revisits 1.00; held-out found 0.36–0.47, revisits 0.83.
+- 2026-09-17 00:20 — wave 2 at u250–u450. **Exploit generalises, search
+  does not.** task3_k2_h128_nv held-out: revisits 1.00 at 26–29 steps,
+  post-store 20 steps/touch, follow_q 0.47–0.49 (best of any arm) — but
+  held-out found slides 0.48 (u250) → 0.42 → 0.38 → 0.29 (u450) while train
+  found is 0.90–0.95 with the first touch at ~46–50 steps and 9–10 %
+  coverage: on fixed-goal arenas the search phase becomes a walk to the
+  known goal, so sweeping stops improving. task3_k1_h128_nv (K=1) same
+  shape at u250: train 0.97 at 42 steps / 8 % coverage; held-out found
+  0.42, revisits 1.00 at 47, follow_q 0.31. The wave-1 survivor, forced to
+  keep sweeping by its own avoidance, is the better held-out searcher
+  (found 0.56–0.66 at u550–u700, revisits 0.96–1.00 at 35–42, follow_q
+  0.35–0.42). The redraw control decides whether search transfers once the
+  shortcut is removed: task1r_k2_h128_nv and the h1024_nv re-seed moved to
+  mit_normal_gpu (6 h walls) as 22869636 / 22869638 because ou_bcs_normal's
+  backlog was holding them; `_c1` (22866168) still queued there.
