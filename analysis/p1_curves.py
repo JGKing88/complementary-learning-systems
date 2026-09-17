@@ -1,0 +1,104 @@
+"""Phase 1 learning curves: decode vs encoder on the same walks (plan sec 6.4).
+
+    python -m analysis.p1_curves --size 20 --out docs/figures/p1_size20.png
+
+Held-out direction error against env-steps for every `train_decode_walk` run
+(`final_tables.json`) and `train_encoder_walk` run (`final.json`) whose tag
+matches the size, with the pre-trained encoders' readout on the same arenas
+and A1's supervised number as reference lines.
+"""
+from __future__ import annotations
+
+import argparse
+import glob
+import json
+import os
+
+import matplotlib
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt
+import numpy as np
+
+from cls_paths import checkpoints_dir
+
+
+def decode_curve(path: str):
+    d = json.load(open(path))
+    hs = d["history"]
+    held = [k for k in hs[0]["tables"] if k.startswith("heldout")][0]
+    x = np.array([h["env_steps"] for h in hs], float)
+    y = np.array([h["tables"][held]["trainxtrain"]["model"]["metric"] for h in hs], float)
+    return x, y, d["argv"]
+
+
+def encoder_curve(path: str):
+    d = json.load(open(path))
+    hs = d["history"]
+    x = np.array([h["env_steps"] for h in hs], float)
+    y = np.array([h["heldout"] for h in hs], float)
+    return x, y, d["argv"]
+
+
+def label_decode(a: dict) -> str:
+    bits = [a.get("mode", "grid"), f"{a['n_envs']} envs"]
+    bits.append("balanced |Δ|" if a.get("balance_range") else "raw walk pairs")
+    if a.get("target", "direction") != "direction":
+        bits.append(a["target"])
+    return "decode: " + ", ".join(bits)
+
+
+def label_encoder(a: dict) -> str:
+    return f"encoder: {a['labels']} labels, r={a['radius']:.0f}"
+
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--size", type=int, default=20)
+    ap.add_argument("--out", default="")
+    ap.add_argument("--refs", default="pre-trained encoders (att0.5 6.00 / ur029 5.96) + harness readout:6.0,A1 decode (teacher-labelled i.i.d. pairs):0.23",
+                    help="name:value reference lines, degrees")
+    ap.add_argument("--title", default="")
+    args = ap.parse_args()
+    root = str(checkpoints_dir())
+    sz = "" if args.size == 20 else f"_sz{args.size}"
+    dec = sorted(glob.glob(os.path.join(root, f"goal_pairs_p1_*{sz}_s*", "final_tables.json")))
+    enc = sorted(glob.glob(os.path.join(root, f"goal_pairs_p1e_*_sz{args.size}_s*", "final.json")))
+    if args.size == 20:
+        dec = [p for p in dec if "_sz" not in p]
+    fig, ax = plt.subplots(figsize=(11, 5.6))
+    styles = {}
+    for p in dec:
+        x, y, a = decode_curve(p)
+        lab = label_decode(a)
+        seed = a["seed"]
+        color = styles.setdefault(lab, f"C{len(styles)}")
+        ax.plot(x, y, "-", color=color, lw=1.8 if seed == 0 else 1.2, alpha=1.0 if seed == 0 else 0.6,
+                label=lab if seed == 0 else None)
+    for p in enc:
+        x, y, a = encoder_curve(p)
+        lab = label_encoder(a)
+        seed = a["seed"]
+        color = styles.setdefault(lab, f"C{len(styles)}")
+        ax.plot(x, y, "--", color=color, lw=1.8 if seed == 0 else 1.2, alpha=1.0 if seed == 0 else 0.6,
+                label=lab if seed == 0 else None)
+    for spec in args.refs.split(","):
+        name, val = spec.rsplit(":", 1)
+        ax.axhline(float(val), color="0.4", ls=":", lw=1)
+        ax.text(2.0e4, float(val) * 1.08, name, fontsize=8, color="0.3")
+    ax.set_xscale("log")
+    ax.set_yscale("log")
+    ax.set_xlabel("env-steps walked (same walks for every curve)")
+    ax.set_ylabel("held-out direction error (deg), pairs within 19 cells" if args.size == 20
+                  else f"held-out direction error (deg), pairs within {args.size - 1} cells")
+    ax.set_title(args.title or f"Phase 1: decode vs encoder from random walks, {args.size}x{args.size} arenas, 64 envs")
+    ax.grid(True, which="both", alpha=0.25)
+    ax.legend(fontsize=8, loc="center left", bbox_to_anchor=(1.01, 0.5), frameon=False)
+    out = args.out or f"p1_size{args.size}.png"
+    os.makedirs(os.path.dirname(out) or ".", exist_ok=True)
+    fig.tight_layout()
+    fig.savefig(out, dpi=150)
+    print(f"wrote {out}: {len(dec)} decode runs, {len(enc)} encoder runs")
+
+
+if __name__ == "__main__":
+    main()
