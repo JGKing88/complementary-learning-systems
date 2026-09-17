@@ -20,6 +20,7 @@ LOG = """\
   [navigate_u25] expl={0: {'swept_coverage': 0.540, 'mean_coverage': 0.45}, 10: {'swept_coverage': 0.500, 'mean_coverage': 0.4}}
   [navigate_u25] task={0: {'found_rate': 0.88, 'steps_first': 42.0, 'revisit_found': 0.96, 'revisit_steps_first': 19.0, 'cos_aq_post': 0.81}, 10: {'found_rate': 0.8, 'steps_first': 50.0, 'revisit_found': 0.9, 'revisit_steps_first': 25.0, 'cos_aq_post': 0.7}}
   [navigate_u50] samples={'episodes': 12800, 'env_steps': 2560000}
+  [navigate_u50] nav={0: {'success_rate': 1.0, 'mean_steps': 18.0}, 10: {'success_rate': 0.95, 'mean_steps': 19.0}}
   [navigate_u50] expl={0: {'swept_coverage': 0.300, 'mean_coverage': 0.25}, 10: {'swept_coverage': 0.290, 'mean_coverage': nan}}
   [navigate_u50] task={0: {'found_rate': 0.5, 'steps_first': nan, 'revisit_found': 1.0, 'revisit_steps_first': 15.0, 'cos_aq_post': 0.9}, 10: {'found_rate': 0.5, 'steps_first': 70.0, 'revisit_found': 1.0, 'revisit_steps_first': 18.0, 'cos_aq_post': 0.85}}
 """
@@ -101,3 +102,18 @@ def test_last_occurrence_wins(tmp_path):
     text = LOG + "  [navigate_u50] task={0: {'found_rate': 0.7, 'steps_first': 1.0, 'revisit_found': 1.0, 'revisit_steps_first': 10.0, 'cos_aq_post': 0.95}}\n"
     s = S.parse_log(_write(tmp_path, text))
     assert s[50]["task"][0]["found_rate"] == 0.7
+
+
+def test_path_optimality_and_exploit_columns(tmp_path):
+    assert S.path_optimality(10.0, 11.0) == 1.0
+    assert S.path_optimality(20.0, 11.0) == 0.5
+    assert S.path_optimality(5.0, 0.5) == 0.0          # clipped at 0
+    assert S.path_optimality(None, 11.0) is None
+    assert S.path_optimality(10.0, None) is None
+    s = S.parse_log(_write(tmp_path))
+    arm = S.arm_table("E0", s, {0: 10.0, 10: 10.5})
+    assert "| 0.10 / 0.10 | 0.10 / 0.10 |" in arm       # u0: sr 0.1, steps 90 / 95
+    arm_blank = S.arm_table("E0", s)
+    assert "| 0.10 / 0.10 | — / — |" in arm_blank
+    summ = S.summary_table({"E0": s}, {0: 10.0, 10: 10.5})
+    assert summ.splitlines()[-1].endswith("| 1.00 / 0.95 | 0.50 / 0.50 |")

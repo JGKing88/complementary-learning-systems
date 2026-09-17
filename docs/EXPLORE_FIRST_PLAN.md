@@ -166,6 +166,23 @@ Four readings, all against the u0 baseline of §1:
 | **corner-trap signature** on search steps | `behavior_probe` at the final checkpoint, pre-store steps only | `chase_q` on search steps stays at the specialist's level (≈0.01–0.03), `edge_frac` does not rise |
 | **continual protocol** | `agenthash` 5 envs × 100 iterations × 500 cap, `--stochastic_policy`, `--lock_store_after_goal` | primary (search) trials keep finding the goal; revisits ≥ 0.95; retention delta ≈ 0 |
 
+**And the original three metrics, by regime** (Jack, 2026-09-17: *"we
+should evaluate these models on the original metrics, with exploit and
+explore distinction as well. so swept coverage, success rate, path
+optimality"*). Every arm is also read the way `d0_base` was:
+
+| regime | metric | during training (trainer log, deterministic) | at the end (`behavior_probe`, sampled) |
+|---|---|---|---|
+| **exploit** — goal pre-stored by the oracle, U[0,10] distractors | success rate | `nav=` block, d = 0 / 10 | `success_rate` |
+| **exploit** | path optimality = (start distance − goal radius) / steps | from `nav=` `mean_steps` with the run's measured start-distance constant (`analysis/explore_first/series.py --start_dist`) | exact per-episode `path_efficiency` |
+| **explore** — memory holds distractors only, goal off | swept coverage @200 | `expl=` `swept_coverage`, d = 0 / 10 | `swept_from_traj` on the probe's trajectories, with `swept_eff` against the billiard at the model's own speed |
+
+The trainer's numbers are the series; the probe's are the headline row per
+arm (the same instrument that produced d0_base's, so the tables in
+`DUAL_TRAINING.md` §9.8 are directly comparable). Reference, d0_base u725
+by the probe: success 1.000 / 0.995, steps 1.167× / 1.186× optimal
+(path optimality ≈ 0.86 / 0.84), swept 0.607 / 0.587, at d = 0 / 10.
+
 And "exploit learned" is the task line's criterion so the two lines compare:
 held-out **revisit success ≥ 0.95 at ≤ 20 steps** and **`follow_q` ≥ 0.80**.
 `task1r_k4_h128` (from scratch, novelty on before the store) reached revisits
