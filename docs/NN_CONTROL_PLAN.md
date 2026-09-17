@@ -744,17 +744,37 @@ recorded displacement — the walker's own odometry. 32k pairs per update
 (A1's batch), sampled from the buffer.
 
 **Model and loss.** A1's, unchanged: 5×768 ReLU, `1 − cos`, Adam 1e-3
-with the step to 1e-4 at 70%. Two input modes: **grid** (`gbook`, learns
-geometry, perception given) and **regular** (`omni` views, learns
-perception and geometry together — no scaffold at all).
+with the step to 1e-4 at 70%. Two input modes: **grid** (`gbook`, the
+encoder's own input — the like-for-like arm) and **regular** (`omni`
+views, learns perception and geometry together — no scaffold at all, the
+reference for what a network gets from self-motion with no code).
 
 **Evaluation.** Every 50 updates on the held-out envs: the enumerated
 direction error over every pair (readout 1, A1's metric), and the far-rect
 probe on coordinate values never walked. Reported: env-steps to 5° and
 1° on held-out envs, final error, seen/unseen split — against A1's
-supervised number (~50M teacher pairs, 64 envs) and the encoder's curve
-on the same axis (proximity supervision, which is looser than a direction
-per pair; stated, and optionally ablated by quantising the target).
+supervised number (~50M teacher pairs, 64 envs) and the encoder's cost
+on the same axis.
+
+**The encoder, precisely (read off the headline checkpoint,
+`sweeps/ur_loss2_repel_low/029`).** It is not perception: its input is
+the grid code (`Phi_flat`), and Agent-HaSH's direction signal is
+`q = W · (z(goal) − z(current))` with `z = encoder(gbook)` and `W` the
+Gram-Schmidt frame of the encoded codes at the two neighbouring scaffold
+positions of the agent's *true* coordinates (`rollout/signal.py`,
+`scaffold.project_displacement`). So encoder + projection is a learned
+displacement decode of the grid code — the same object phase 1 learns —
+with three differences: the supervision is a near/far proximity bit per
+pair (near = within 10 cells; `mse_contrastive`, attract 2, repel 2), the
+local frame is supplied by the scaffold (privileged), and the readout is
+linear in the embedding. Its cost: a 4×512 GELU MLP → 1024-d, trained on
+**60 patches of 100×100 positions** (600k unique positions; our 64
+arenas hold 25.6k), batch 8192, 1000 epochs ≈ 600M position draws;
+unique radius 21–28 cells (the decode's range, against our 19). The
+comparison is therefore like-for-like in what is learned; it is reported
+as unique positions covered and samples drawn, with the supervision and
+the frame stated. Perception, in Agent-HaSH, is not learned at all: the
+memory stores it.
 
 **Arms.** (1) grid, 64 envs, two seeds — the number. (2) grid, 32 envs —
 the env count. (3) regular, 64 envs, two seeds — total learned content.
