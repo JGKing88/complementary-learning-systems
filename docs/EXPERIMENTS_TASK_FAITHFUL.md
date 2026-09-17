@@ -228,9 +228,9 @@ Two task-faithful ways, both run:
 
 | arm | job | status |
 |---|---|---|
-| task1r_k4_h128 (wave-1 rule, K=4) | | |
-| task3r_k2_h128 (wave-1 rule, 3 redrawn arenas) | | |
-| task1r_k4_h128_nv_c1_g5 | | |
+| task1r_k4_h128 (wave-1 rule, K=4) | 22883645 | queued 05:53 (ou_bcs 12 h) |
+| task3r_k2_h128 (wave-1 rule, 3 redrawn arenas) | 22883646 | queued 05:53 |
+| task1r_k4_h128_nv_c1_g5 | 22883647 | queued 05:53 |
 
 `task3r_*` added to the launcher (3 arenas, goal redrawn per visit
 sequence). h128 only (h1024 collapses under `_nv`).
