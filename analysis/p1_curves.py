@@ -63,7 +63,7 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--size", type=int, default=20)
     ap.add_argument("--out", default="")
-    ap.add_argument("--refs", default="pre-trained encoders (att0.5 6.00 / ur029 5.96) + harness readout:6.0,A1 decode (teacher-labelled i.i.d. pairs):0.23",
+    ap.add_argument("--refs", default="reference level: shipped att0.5 + ur029 (NOT trained on walks; no x position):6.0|reference level: A1 decode from teacher-labelled pairs (no x position):0.23",
                     help="name:value reference lines, degrees")
     ap.add_argument("--title", default="")
     ap.add_argument("--clean", action="store_true",
@@ -111,7 +111,7 @@ def main():
             pts.sort()
             color = styles.setdefault(lab, f"C{len(styles)}")
             ax.plot([q[0] for q in pts], [q[1] for q in pts], "s--", color=color, ms=7, mfc="white", mew=1.8, label=lab)
-    for spec in args.refs.split(","):
+    for spec in args.refs.split("|"):
         name, val = spec.rsplit(":", 1)
         ax.axhline(float(val), color="0.4", ls=":", lw=1)
         ax.text(2.0e4, float(val) * 1.08, name, fontsize=8, color="0.3")
