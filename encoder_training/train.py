@@ -110,24 +110,45 @@ def train(cfg: TrainConfig) -> str:
     lazy = cfg.lazy_codes and cfg.eval_every <= 0
     full_Npos = int(np.prod(cfg.model.lambdas))
     Phi_full = None
-    if not lazy:
-        Phi_full, full_Npos = build_full_grid(cfg.model.lambdas, cfg.fwhm_ratio)
     patch_cfg = cfg.patches
-    npos_arg = patch_cfg.npos_list if patch_cfg.npos_list else patch_cfg.npos
-    nenv_arg = None if patch_cfg.npos_list else patch_cfg.nenv
-    y0s, x0s, sizes = sample_nonoverlapping_patches(
-        full_Npos, full_Npos, npos_arg, nenv_arg,
-        placement=patch_cfg.patch_placement)
-    print(f"Patches: {len(sizes)} envs, sizes {sorted(set(sizes))}"
-          + f"  [{patch_cfg.patch_placement} placement]"
-          + ("  [lazy codes]" if lazy else ""))
-
-    if lazy:
-        Phi_flat, coords, env_ids = build_patch_codes(
-            cfg.model.lambdas, y0s, x0s, sizes, device, cfg.fwhm_ratio)
+    if cfg.walk_data:
+        # Rows from random walks (hopfield_nav.dump_walks); no patches, no
+        # full grid. Every walker (or env) is one "env" for the masks.
+        if cfg.eval_every > 0:
+            raise SystemExit("--walk_data needs --eval_every 0 (the nav eval needs the full grid)")
+        d = np.load(cfg.walk_data)
+        group = d["walker"] if cfg.walk_group == "walker" else d["env"]
+        Phi_flat = torch.as_tensor(d["phi"], dtype=torch.float32, device=device)
+        coords = torch.as_tensor(d["coords"], dtype=torch.float32, device=device)
+        env_ids = torch.as_tensor(group, dtype=torch.long, device=device)
+        n_groups = int(group.max()) + 1
+        size = int(d["size"])
+        offs = d["offsets"]
+        per_group_env = (np.arange(n_groups) // int(d["walkers"])) if cfg.walk_group == "walker" \
+            else np.arange(n_groups)
+        y0s = [int(offs[e][1]) for e in per_group_env]
+        x0s = [int(offs[e][0]) for e in per_group_env]
+        sizes = [size] * n_groups
+        print(f"Walk data {cfg.walk_data}: {Phi_flat.shape[0]:,} rows, {n_groups} groups by "
+              f"{cfg.walk_group}, arena {size}x{size}, {int(d['steps']):,} env-steps")
     else:
-        Phi_flat, coords, env_ids = extract_patches(
-            Phi_full, y0s, x0s, sizes, device)
+        if not lazy:
+            Phi_full, full_Npos = build_full_grid(cfg.model.lambdas, cfg.fwhm_ratio)
+        npos_arg = patch_cfg.npos_list if patch_cfg.npos_list else patch_cfg.npos
+        nenv_arg = None if patch_cfg.npos_list else patch_cfg.nenv
+        y0s, x0s, sizes = sample_nonoverlapping_patches(
+            full_Npos, full_Npos, npos_arg, nenv_arg,
+            placement=patch_cfg.patch_placement)
+        print(f"Patches: {len(sizes)} envs, sizes {sorted(set(sizes))}"
+              + f"  [{patch_cfg.patch_placement} placement]"
+              + ("  [lazy codes]" if lazy else ""))
+
+        if lazy:
+            Phi_flat, coords, env_ids = build_patch_codes(
+                cfg.model.lambdas, y0s, x0s, sizes, device, cfg.fwhm_ratio)
+        else:
+            Phi_flat, coords, env_ids = extract_patches(
+                Phi_full, y0s, x0s, sizes, device)
     N = Phi_flat.shape[0]
     print(f"Total points N={N} ({N / (full_Npos**2) * 100:.2f}% of grid)")
 
@@ -466,7 +487,7 @@ def _build_cfg_from_args(args) -> TrainConfig:
         epochs=args.epochs,
         batch_size=batch_size, seed=args.seed, device=args.device,
         gain_start=args.gain_start, gain_end=args.gain_end,
-        shuffle_inputs=args.shuffle, lazy_codes=args.lazy_codes,
+        shuffle_inputs=args.shuffle, lazy_codes=args.lazy_codes, walk_data=args.walk_data, walk_group=args.walk_group,
         save_dir=args.save_dir, run_name=args.run_name,
         eval_every=args.eval_every,
     )
@@ -548,6 +569,9 @@ def main():
     p.add_argument("--gain_start", type=float, default=1.0)
     p.add_argument("--gain_end", type=float, default=5.0)
     p.add_argument("--shuffle", action="store_true")
+    p.add_argument("--walk_data", type=str, default="",
+                   help="a hopfield_nav.dump_walks .npz in place of patches (needs --eval_every 0)")
+    p.add_argument("--walk_group", choices=["walker", "env"], default="walker")
     p.add_argument("--lazy_codes", action="store_true",
                    help="build patch codes directly (~1 GB instead of ~20 GB); "
                         "ignored unless --eval_every 0")

@@ -215,6 +215,14 @@ class TrainConfig:
     # takes the same path, but a seed-for-seed replay of an older run needs this
     # off.
     lazy_codes: bool = False
+    # A walk dump from `hopfield_nav.dump_walks` in place of patches: rows of
+    # (code, coords, walker, env) from random walks in the goal-conditioned
+    # control's arenas (docs/NN_CONTROL_PLAN.md sec 6.4). `walk_group` picks
+    # what "same env" means for the near/far masks -- "walker" relates only a
+    # walker's own moments (odometry labels), "env" any two positions of an
+    # arena (true-coordinate labels). Needs eval_every 0 (no full grid).
+    walk_data: str = ""
+    walk_group: str = "walker"
 
     # Checkpointing
     save_dir: str = str(encoders_dir())

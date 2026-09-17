@@ -18,7 +18,11 @@ NENV=${NENV:-25}
 NPOS=${NPOS:-50}
 EPOCHS=${EPOCHS:-1000}
 SEED=${SEED:-43}
+WALK_DATA=${WALK_DATA:-}                # a hopfield_nav.dump_walks .npz: train on the walks instead of patches
+WALK_GROUP=${WALK_GROUP:-walker}        # walker (odometry labels) | env (true-coordinate labels)
 RUN_NAME=${RUN_NAME:-enc_repl_att05_n${NENV}_p${NPOS}_s${SEED}}
+WALK_FLAGS=""
+[[ -n "$WALK_DATA" ]] && WALK_FLAGS="--walk_data $WALK_DATA --walk_group $WALK_GROUP"
 
 module load miniforge/24.3.0-0
 module load cuda/13.0.1
@@ -33,4 +37,4 @@ PYTHONUNBUFFERED=1 python -m encoder_training.train \
   --out_dim 1024 --hidden_dim 256 --num_hidden_layers 4 --gain_start 1.0 --gain_end 100.0 \
   --lr 3e-4 --weight_decay 1e-4 --epochs "$EPOCHS" --batch_size 4096 --seed "$SEED" \
   --lazy_codes --eval_every 0 --no_unique_radius \
-  --save_dir "$CLS_RUNS/agent_ckpts" --run_name "$RUN_NAME" ${EXTRA:-}
+  --save_dir "$CLS_RUNS/agent_ckpts" --run_name "$RUN_NAME" $WALK_FLAGS ${EXTRA:-}
