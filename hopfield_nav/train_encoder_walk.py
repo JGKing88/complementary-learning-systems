@@ -162,6 +162,10 @@ def parse_args():
     p.add_argument("--rate_eps", type=float, default=1.0)
     p.add_argument("--radius", type=float, default=20.0)
     p.add_argument("--labels", choices=["odometry", "coords"], default="odometry")
+    p.add_argument("--batch_mode", choices=["envs", "mixed"], default="envs",
+                   help="envs: batch_envs envs x every walker x per_walker moments; mixed: the same "
+                        "batch size drawn uniformly over ALL envs (the encoder trainer's own batching, "
+                        "~B/n_envs positions per env)")
     p.add_argument("--positions", choices=["walk", "iid"], default="walk",
                    help="walk: moments of the walkers' histories (the decode's data); iid: cells drawn "
                         "uniformly from the same envs -- the encoder's own sampling, on our arenas "
@@ -307,7 +311,15 @@ def main() -> None:
         encoder.train()
         losses = []
         for _ in range(args.batches_per_update):
-            if args.positions == "iid":
+            if args.batch_mode == "mixed":
+                e = data_rng.randint(0, len(train), size=B)
+                if args.positions == "iid":
+                    w = np.zeros(B, dtype=np.int64)
+                    pos = data_rng.randint(0, args.size, size=(B, 2))
+                else:
+                    w = data_rng.randint(0, args.walkers, size=B)
+                    pos = buf._at(e, w, data_rng.randint(0, buf.n, size=B))
+            elif args.positions == "iid":
                 envs = data_rng.choice(len(train), size=args.batch_envs, replace=False)
                 e = np.repeat(envs, args.walkers * args.per_walker)
                 w = np.zeros(len(e), dtype=np.int64)
