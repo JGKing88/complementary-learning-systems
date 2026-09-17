@@ -272,8 +272,8 @@ exactly that.
 | arm | job | shape | updates | trajectories |
 |---|---|---|---|---|
 | phase 1 `xf_explorer` | 22889945 | 20 × 64, h1024 | 700 | 896k (not charged) |
-| B0 `task1r_k4_h1024` | 22889972 | 1 × 4 × 64, h1024, from scratch | 1000 | 256k |
-| B1 `xf_scratch_nonov` | 22889973 | same, from scratch | 1000 | 256k |
+| B0 `task1r_k4_h1024` | 22891316 | 1 × 4 × 64, h1024, from scratch | 1000 | 256k |
+| B1 `xf_scratch_nonov` | 22891317 | same, from scratch | 1000 | 256k |
 | E0 `xf_naive` | after phase 1 | same, fork | 1000 | 256k |
 | E0' `xf_naive_lr03` | after phase 1 | same | 1000 | 256k |
 | E1 `xf_ewc_1e3`, `xf_ewc_1e4` | after phase 1 | same | 1000 | 256k each |

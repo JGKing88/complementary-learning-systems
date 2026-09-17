@@ -4,8 +4,9 @@ Plan: `docs/EXPLORE_FIRST_PLAN.md`. Started 2026-09-17. Branch `explore-first`.
 
 The question, in one line: **given an agent that already explores, how many
 exploit trajectories does it take to learn the water maze, and does the
-exploring survive?** Phase 1 is the existing explore specialist
-`p20_e_kcap u700`; phase 2 is the task regime with every explore reward off;
+exploring survive?** Phase 1 is an explore specialist retrained
+under this line (`xf_explorer`, the `p20_e_kcap` recipe); phase 2 is the
+task regime with every explore reward off;
 the arms differ only in how forgetting is prevented.
 
 Conventions. "Trajectory" = one 200-step rollout of one batch row
@@ -19,13 +20,13 @@ explorer's u0 row.
 
 | arm | job | status | u_criterion | traj_criterion | revisit sr / steps | follow_q | coverage d0 / d10 (Δ vs u0) | found_rate | CL |
 |---|---|---|---|---|---|---|---|---|---|
-| phase 1 `xf_explorer` | 22889945 | running (submitted 2026-09-17 ~09:10) | — | 0 | | | | | |
+| phase 1 `xf_explorer` | 22889945 | queued (submitted 2026-09-17 ~09:10) | — | 0 | | | | | |
 | **E0 `xf_naive`** *(central)* | | waits on phase 1 | | | | | | | |
 | **E0' `xf_naive_lr03`** *(central)* | | waits on phase 1 | | | | | | | |
 | E1 `xf_ewc_1e3` / `_1e4` | | waits on phase 1 | | | | | | | |
 | E3 `xf_kl_1` / `_10` | | waits on phase 1 | | | | | | | |
-| B0 `task1r_k4_h1024` | 22889972 | running | | | | | | | |
-| B1 `xf_scratch_nonov` | 22889973 | running | | | | | | | |
+| B0 `task1r_k4_h1024` | 22891316 | queued | | | | | | | |
+| B1 `xf_scratch_nonov` | 22891317 | queued | | | | | | | |
 
 `u_criterion` / `traj_criterion`: first eval at which held-out revisit
 success ≥ 0.95 at ≤ 20 steps AND `follow_q` ≥ 0.80 (the task line's level;
@@ -84,6 +85,13 @@ shape from scratch: `task1r_k4_h1024` (novelty on before the store) and
 - 2026-09-17 ~09:10 — submitted `xf_explorer` 22889945 (ou_bcs_normal, 8 h),
   `task1r_k4_h1024` 22889972 and `xf_scratch_nonov` 22889973 (12 h). The
   `xf_*` forks wait on the explorer (~4 h).
+- 2026-09-17 ~09:25 — the two 12 h controls had an estimated start of
+  **2026-09-22** (`squeue --start`): ou_bcs_normal is saturated by the task
+  line's ten 12 h jobs and a 12 h request cannot backfill. The h1024 task
+  shape measured 11.5 s/update at 6 slots (`task3_k1_h1024`), so 4 slots is
+  ~8 s/update: 1000 updates plus 40 evals at ~60 s is ~3 h. Cancelled and
+  resubmitted at **5 h**: `task1r_k4_h1024` **22891316**, `xf_scratch_nonov`
+  **22891317**. The phase-2 forks will go up at 5 h as well.
 
 ## 3. Wave 1
 
