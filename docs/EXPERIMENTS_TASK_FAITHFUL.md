@@ -241,6 +241,16 @@ Two task-faithful ways, both run:
 | task1r_k4_h128 (wave-1 rule, K=4) | 22883645 | queued 05:53 (ou_bcs 12 h) |
 | task3r_k2_h128 (wave-1 rule, 3 redrawn arenas) | 22883646 | queued 05:53 |
 | task1r_k4_h128_nv_c1_g5 | 22883647 | queued 05:53 |
+| task3r_k2_h128 s43 (replicate) | 22897775 (mit_normal_gpu 6 h) | launched 11:05 |
+
+- 2026-09-17 11:05 — task3r_k2_h128_nv_c1 s42 u3000: found 0.51 / 0.51,
+  revisits 1.00 at **11.3**, 12.0 steps/touch, 10.3 touches, follow_q
+  0.92. Its s43 twin at u2000 is still in the `nv` trough (54 steps/touch,
+  follow_q 0.16) — the one-rule route's timing is seed-dependent; the
+  wave-1-rule arms show no trough. Timed out at their walls (records
+  complete): 22866166 task3_k2_h128_nv (~u3500), 22866167 task3_k1_h128_nv
+  (~u3500), 22882203 K=4 nv s43 (~u3100, mid-recovery). Replicate of the
+  winning recipe launched: task3r_k2_h128 s43 (22897775).
 
 - 2026-09-17 06:45 — **task3r_k2_h128_nv_c1 (3 redrawn arenas) is the first
   arm strong on both halves**: held-out u1500 found 0.66–0.68, revisits
