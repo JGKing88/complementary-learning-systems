@@ -1882,6 +1882,7 @@ case "$VARIANT" in
         #   _nv   novelty stays on after the store (one reward rule per rollout)
         #   _c1   flat novelty: NOVELTY_SCALE_CAP=1 (no remaining-scaling)
         #   _c3   NOVELTY_SCALE_CAP=3
+        #   _g5   GOAL_REWARD=5.0 (tilts the post-store tie toward beelining)
         _rest="${VARIANT#task*_k?}"
         case "$_rest" in
           _h128*)  HIDDEN_SIZE=128;  _rest="${_rest#_h128}" ;;
@@ -1893,6 +1894,7 @@ case "$VARIANT" in
             _nv*) TASK_NOVELTY_AFTER_STORE=1; _rest="${_rest#_nv}" ;;
             _c1*) NOVELTY_SCALE_CAP=1; _rest="${_rest#_c1}" ;;
             _c3*) NOVELTY_SCALE_CAP=3; _rest="${_rest#_c3}" ;;
+            _g5*) GOAL_REWARD=5.0; _rest="${_rest#_g5}" ;;
             *) echo "ERROR: unknown TASK lever '$_rest' in $VARIANT" >&2; exit 1 ;;
           esac
         done
