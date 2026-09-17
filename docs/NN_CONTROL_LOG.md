@@ -1895,3 +1895,65 @@ the two whose readout keeps improving with more data. The encoder
 objective's 6° in Agent-HaSH is a product of its own data regime (many
 large patches, i.i.d. draws, a long anneal), not something the walks
 withhold from it.
+
+## 2026-09-17 — correction: the encoder in its own trainer, on the walks
+
+Jack: "we could train a good encoder with 25 patches of 50×50" — and "why
+didn't you just use their trainer?" Both right. My `train_encoder_walk.py`
+rebuilt the training loop around the encoder package's model and loss, and
+the rebuild differed from `encoder_training.train` in **batch composition**:
+their batches draw ~B/n_env positions from *every* env (a shuffled pass over
+all rows), mine took 512 positions from 8 envs. That one difference is the
+whole "erodes to 60–77°" result of the previous entry: with their batching
+(`--batch_mode mixed`) my trainer gives 20.6° at 50×50 (their trainer
+verbatim: 19.0°) and does not erode. The previous entry's encoder numbers
+are therefore a property of my replication, not of the objective, and are
+superseded by what follows. Two things it did get right and which stand:
+the label source does not matter (odometry ≡ true coordinates with perfect
+odometry), and radius 20 is wrong for a 20×20 arena.
+
+**Their trainer, verbatim** (`hopfield_nav/run_encoder_repl.sh`; att0.5's
+config: 4×256 GELU → 1024, attract 0.5 / repel 1 / rate 0.5, r 20, gain
+1 → 100, lr 3e-4, batch 4096, 1000 epochs), read out with the harness
+projection on our held-out arenas:
+
+| trained on | 20×20 within 19 | 50×50 within 19 / 49 |
+|---|---|---|
+| att0.5 itself (25 patches of 50×50, seed 43) | 6.0 | 7.3 / 15.7 |
+| 25 patches of 50×50, seed 43, rerun | 15.0 | 16.6 / 32.1 |
+| **64 patches of 50×50** | **7.1** | **8.2 / 19.0** |
+
+The att0.5 checkpoint sits on the good side of its own recipe's seed
+variance (15° on a rerun); 64 patches reproduce it cleanly.
+
+**Their trainer on the walks** (`--walk_data`, added to
+`encoder_training.train`; `hopfield_nav/dump_walks.py` writes a walker's
+visited cells as rows with the walker as the "env", so the near/far masks
+relate only a walker's own moments — odometry labels — and everything else
+is their code). With 8 walkers per arena a mixed batch holds ~8 rows per
+walker and almost no labelled pairs (35.7° at 50×50 even with their
+batching), so the dumps use **one walker per arena**: it covers every cell
+of a 20×20 arena within 0.5M total env-steps and 1,501 / 2,395 / 2,500 of a
+50×50 arena's cells at 0.5M / 2M / 8M. Gradient budget as the 64-patch run.
+
+| walk budget (env-steps) | 50×50 within 19 / 49 | 20×20 within 19 |
+|---|---|---|
+| 0.5M | **10.5 / 24.5** | **16.3** (r 10); 62 (r 20) |
+| 2M | **8.8 / 20.2** | (same rows: the arena is covered) |
+| 8M | **8.6 / 20.1** | — |
+| decode, balanced, at the same steps | ~80 at 2M; 10° at 9.8–13M; **0.5–0.6 at 131M** | 10° at 8.2M; **0.5 at 131M** |
+
+**Reading — a crossover, not a rout.** The encoder objective reaches its
+ceiling — 8–9° within its radius, ~20° beyond it — from **0.5–2M env-steps**,
+as soon as a walker has covered its arena, because it needs only proximity
+structure over the visited cells. At those step counts the decode is still
+near chance; it needs ~10M steps to reach 10° and ~40–60M to reach 1°, and
+then continues to 0.5° at any range it trained on. So: proximity is learned
+from very little experience, the full displacement table from 10–50× more
+— but the table ends 15× more accurate within the encoder's radius and 40×
+beyond it, and it is the only one of the two that keeps improving with data.
+The previous entry's "50–100× better use of a random walk" was the asymptote
+only; at ≤ 2M steps the encoder is far ahead.
+
+Figures regenerated with these points (`analysis/p1_curves.py --points`):
+`$CLS_RUNS/figures/nn_control/p1_size20.png`, `p1_size50.png`.

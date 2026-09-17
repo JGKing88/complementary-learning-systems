@@ -66,6 +66,9 @@ def main():
     ap.add_argument("--refs", default="pre-trained encoders (att0.5 6.00 / ur029 5.96) + harness readout:6.0,A1 decode (teacher-labelled i.i.d. pairs):0.23",
                     help="name:value reference lines, degrees")
     ap.add_argument("--title", default="")
+    ap.add_argument("--points", default="",
+                    help="extra markers 'label:x:y|label:x:y' (e.g. the encoder package's own trainer "
+                         "on walk dumps at a few step budgets)")
     args = ap.parse_args()
     root = str(checkpoints_dir())
     sz = "" if args.size == 20 else f"_sz{args.size}"
@@ -93,6 +96,15 @@ def main():
         labelled.add(lab)
         i = int(np.argmin(y))
         ax.plot(x[i], y[i], "o", color=color, ms=5, mfc="white")     # its best point (its own protocol selects by eval)
+    if args.points:
+        groups = {}
+        for spec in args.points.split("|"):
+            lab, x, y = spec.rsplit(":", 2)
+            groups.setdefault(lab, []).append((float(x), float(y)))
+        for lab, pts in groups.items():
+            pts.sort()
+            color = styles.setdefault(lab, f"C{len(styles)}")
+            ax.plot([q[0] for q in pts], [q[1] for q in pts], "s--", color=color, ms=7, mfc="white", mew=1.8, label=lab)
     for spec in args.refs.split(","):
         name, val = spec.rsplit(":", 1)
         ax.axhline(float(val), color="0.4", ls=":", lw=1)
