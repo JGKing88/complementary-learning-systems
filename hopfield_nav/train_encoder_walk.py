@@ -162,6 +162,10 @@ def parse_args():
     p.add_argument("--rate_eps", type=float, default=1.0)
     p.add_argument("--radius", type=float, default=20.0)
     p.add_argument("--labels", choices=["odometry", "coords"], default="odometry")
+    p.add_argument("--buffer", choices=["window", "visited"], default="window",
+                   help="window: rows are moments of the last buffer_updates segments; visited: rows are "
+                        "every (walker, cell) visited so far -- the online form of the walk dumps the "
+                        "encoder package's trainer reads (one walker per arena, mixed batches)")
     p.add_argument("--batch_mode", choices=["envs", "mixed"], default="envs",
                    help="envs: batch_envs envs x every walker x per_walker moments; mixed: the same "
                         "batch size drawn uniformly over ALL envs (the encoder trainer's own batching, "
@@ -285,6 +289,7 @@ def main() -> None:
 
     walkers = Walkers(train.envs, args.walkers, args.seed + 1000 * (u0 + 1))
     buf = Buffer(len(train), args.walkers, args.steps_per_update, args.buffer_updates)
+    visited = np.zeros((len(train), args.walkers, args.size * args.size), dtype=bool)
     data_rng = np.random.RandomState(args.seed + 1 + u0)
     eval_rng = np.random.RandomState(args.seed + 99)
     steps_per_update = len(train) * args.walkers * args.steps_per_update
@@ -305,13 +310,27 @@ def main() -> None:
         return path
 
     for u in range(u0 + 1, args.n_updates + 1):
-        buf.add(walkers.segment(args.steps_per_update))
+        seg = walkers.segment(args.steps_per_update)
+        buf.add(seg)
+        ids = seg[..., 0] * args.size + seg[..., 1]                 # (E, W, T+1)
+        for e_ in range(len(train)):
+            for w_ in range(args.walkers):
+                visited[e_, w_, ids[e_, w_]] = True
         env_steps += steps_per_update
         gain = gain_at(u)
         encoder.train()
         losses = []
         for _ in range(args.batches_per_update):
-            if args.batch_mode == "mixed":
+            if args.buffer == "visited":
+                # Rows uniform over walkers, then uniform over that walker's visited cells.
+                e = data_rng.randint(0, len(train), size=B)
+                w = data_rng.randint(0, args.walkers, size=B)
+                cells = np.empty(B, dtype=np.int64)
+                for i in range(B):
+                    vis = np.flatnonzero(visited[e[i], w[i]])
+                    cells[i] = vis[data_rng.randint(len(vis))]
+                pos = np.stack([cells // args.size, cells % args.size], 1)
+            elif args.batch_mode == "mixed":
                 e = data_rng.randint(0, len(train), size=B)
                 if args.positions == "iid":
                     w = np.zeros(B, dtype=np.int64)
