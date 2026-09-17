@@ -107,7 +107,7 @@ beeline through visited cells (2.0 per ~10 steps).
 
 | arm | job | status |
 |---|---|---|
-| task3_k2_h1024_nv | 22866165 | queued 22:19 |
+| task3_k2_h1024_nv | ~~22866165~~ → 22866716 (s43) | s42 dead at u60 (polar fixed point: std 0.045, approx_kl = clip_frac = 0.000 from u60 on); re-seeded 22:58 |
 | task3_k2_h128_nv | 22866166 | queued |
 | task3_k1_h128_nv | 22866167 | queued |
 | task3_k2_h1024_nv_c1 | 22866168 | queued |
@@ -115,3 +115,16 @@ beeline through visited cells (2.0 per ~10 steps).
 
 - 2026-09-16 22:19 — wave 2 launched, seed 42, 12 h walls, ou_bcs_normal
   (8 of 8 slots with the three surviving wave-1 arms).
+- 2026-09-16 22:58 — first wave-2 points at u100: **task3_k2_h128_nv train
+  found 0.73** (wave-1 twin: 0.30 at u100), cov_first 0.15, revisits 0.82 at
+  79 steps — the one-rule reward searches as it should. task3_k2_h1024_nv
+  s42 hit the polar-head fixed point (std frozen at 0.045, approx_kl =
+  clip_frac = 0.000 from u60, reward flat at 0.063/step) — cancelled and
+  re-seeded as s43 (22866716). Wave-1 avoidance, now unambiguous:
+  task3_k1_h1024 at u300 finds the goal on HELD-OUT arenas 49–52 % but on
+  its own train arenas 20 %, with more coverage at touch on train
+  (0.16–0.21) — it sweeps the arenas whose goal it knows without touching
+  it. Wave-1 held-out at u300–u350 for the record: task3_k2_h128 found
+  0.36–0.40, revisits 1.00 at 34 steps, follow_q 0.35; task3_k2_h1024 found
+  0.38–0.44, revisits 1.00 at 53, follow_q 0.31; task3_k1_h1024 revisits
+  0.72 at 96, follow_q 0.27, std 0.032 and falling.
