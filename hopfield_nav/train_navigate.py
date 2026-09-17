@@ -373,6 +373,17 @@ def run_navigate(
     cum_episodes = int((resume_state or {}).get("cum_episodes", 0))
     cum_env_steps = int((resume_state or {}).get("cum_env_steps", 0))
 
+    # A fork is scored BEFORE its first step, on this run's own validation
+    # envs: the parent's row at u0, so every later eval of the run is a
+    # delta against what it started from rather than against a number
+    # measured elsewhere on other envs (docs/EXPLORE_FIRST_PLAN.md §1). A
+    # fresh run has nothing to score, and a continued run already has it.
+    if eval_world is not None and parent_ckpt is not None and not start_update:
+        print(f"  [navigate_u0] samples={{'episodes': 0, 'env_steps': 0}}",
+              flush=True)
+        do_eval(cfg, agent, eval_world, device, "navigate_u0", use_wandb,
+                max_steps=eval_max_steps)
+
     for update in range(start_update + 1, n_updates_total + 1):
         stage, local_update = stage_at(stages, update)
 

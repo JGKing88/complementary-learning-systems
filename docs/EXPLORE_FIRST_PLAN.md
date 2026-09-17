@@ -8,7 +8,13 @@ the merged `nav-tri-metric` line). Predecessors: `docs/DUAL_TRAINING.md`
 this line trains on), `docs/CONTINUAL_CONTROLS_PLAN.md` (the regularizers
 this line borrows).
 
-> **Status: plan written, awaiting Jack's answers to §9 before code or jobs.**
+> **Status: §9 answered 2026-09-17, wave 1 in flight.** Decisions: the task
+> regime only; the frozen-adapter arm dropped; the explorer retrained under
+> this line (`xf_explorer`, job 22889945); goal reward stays at the
+> baseline's 2.0. Jack: *"I would love if this worked without the continual
+> learning algos, so it's a good arm but is not the central arm"* — so the
+> **naive fork is the central arm**, EWC and the KL are supporting arms.
+> Implementation is done and tested (§6). Log: `EXPERIMENTS_EXPLORE_FIRST.md`.
 
 ## 0. What this is
 
@@ -72,33 +78,41 @@ Whether a gate can be learned from that (rather than unconditional
 q-following, which is the corner trap) is the mechanistic question behind
 part 2 of the claim.
 
-## 1. Phase 1 — the explorer (exists; not trained here)
+## 1. Phase 1 — the explorer (retrained under this line)
 
-`/orcd/pool/003/jackking/cls_runs/agent_ckpts/navigate_navp2_p20_e_kcap_s42_21695408/navigate_u700.pt`
+Launcher variant **`xf_explorer`**, job 22889945, seed 42: the `p20_e_kcap`
+recipe — `explore:700` on 20 arenas, hidden 1024, polar action head,
+state-dependent spread, `LOG_KAPPA_MAX 2.5`, `input_hopfield_raw`, encoder
+`w52_attract_fwhm/001_att0.5_seed=43` gain 100, shuffle regime assignment,
+U[0,10] distractors in memory, novelty 0.3 / wall −0.1 / persistence +0.2 /
+time −0.05, ε 0.1→0 over 200 updates, PPO 4×4 at 3e-4 — run under **today's
+launcher defaults**. Jack asked for the retrain; the concrete reason it is
+right: the Aug 31 `p20_e_kcap` checkpoint carries `input_hopfield_multistep
+[1, 2, 3]` (74 input dims), while every run since 2026-09-06, `d0_base`
+included, uses `"1"` (70 dims). A fork of the old explorer would have
+inherited the old channel layout. Everything else in its config was checked
+against `d0_base`'s and `task1r_k4_h128`'s and is identical
+(`ent_coef 0.005`, `clip 0.15`, `explore_goals_off`, `rnn/relu`).
 
-Recipe `p20_e_kcap`: `explore:700` on 20 arenas, hidden 1024, polar action
-head, state-dependent spread, `LOG_KAPPA_MAX 2.5`, `input_hopfield_raw`,
-encoder `w52_attract_fwhm/001_att0.5_seed=43` gain 100, shuffle regime
-assignment, distractors in memory. The same channels and the same κ cap as
-`d0_base`, so it forks into the exploit recipe with no architecture change
-(`--load_checkpoint`, which drops Adam's moments by design — correct here,
-the objective changes).
+The κ cap is kept at 2.5 (not `p20_e`'s 5.0) so it is constant across
+phases: the cap is exploit's single largest unlock (§2.5 of DUAL_TRAINING)
+and changing it at the boundary would confound the forgetting measurement
+with the orbit-trap effect the cap has on explore.
 
-Chosen over `p20_e` (uncapped κ, `log_kappa_max 5.0`) so the cap is constant
-across phases: the cap is exploit's single largest unlock (§2.5 of
-DUAL_TRAINING) and changing it at the phase boundary would confound the
-forgetting measurement with the orbit-trap effect the cap has on explore.
-
-Its cost (700 updates × 20 envs × 64 = 896k explore trajectories) is
+Its cost (700 updates × 20 envs × 64 = 896k explore trajectories, ~4 h) is
 **recorded and not charged**: under the hypothesis it is the lifetime prior.
 The sample-efficiency claim is about phase 2 alone. Both numbers go in the
-table so a reader can charge it if they disagree.
+table so a reader can charge it if they disagree. The checkpoint the arms
+fork is the one at the coverage plateau of its own `expl` evals (u700
+unless the series says the plateau came earlier and then eroded).
 
-**u0 baseline.** Before anything trains, the explorer is scored on the full
-task eval scope (`EVAL_SCOPE=task`: nav + exploration + task-faithful) so
-every later eval is a delta against it. Expected: coverage ≈ 0.63 at d=0 and
-flat in distractors; first-visit `found_frac` high; revisit navigation at
-chance (it has no gate, so a stored goal does not change its behaviour).
+**u0 baseline.** Every fork now scores its parent **before its first
+gradient step, on the fork's own held-out envs** (`[navigate_u0]` block,
+`train_navigate` change in this line) — so every later eval of a run is a
+delta against what that run started from, on the same envs, not against a
+number measured elsewhere. Expected: coverage ≈ 0.6 at d=0 and flat in
+distractors; first-visit `found_rate` high; revisit navigation at chance
+(the explorer has no gate, so a stored goal does not change its behaviour).
 
 ## 2. Phase 2 — the task
 
@@ -129,11 +143,17 @@ EVAL_SCOPE=task  EVAL_EVERY=25  CKPT_EVERY=25
   `cum_episodes` / `cum_env_steps` are in every checkpoint, so the cost axis
   is read from the run, not reconstructed.
 
-**Alternative (not default): the pre-stored exploit regime.** `exploit:N`
-with the goal oracle-stored before every rollout, as in `d0_base`'s exploit
-half. It has no search segment, so the policy never sees a goal-absent input
-in phase 2 and the gate would have to come from the mechanism alone. It is the
-cleaner "exploit only" reading and the harsher forgetting test. §9 Q1.
+**Goal reward 2.0, not 5.0.** The task line's wave 4 tests 5.0 under the
+*other* rule (novelty kept on after the store, `_nv_c1_g5`), so its result
+would not transfer to this rule; and the baseline this line is measured
+against, `task1r_k4_h128`, is at 2.0. Matching the baseline keeps the
+sample-efficiency comparison like-for-like.
+
+**Not run (Jack, §9 Q1: default only): the pre-stored exploit regime.**
+`exploit:N` with the goal oracle-stored before every rollout, as in
+`d0_base`'s exploit half — no search segment, so the policy never sees a
+goal-absent input in phase 2 and the gate would have to come from the
+mechanism alone. The harsher forgetting test; available if E0 holds.
 
 ## 3. What "no forgetting" means, measured
 
@@ -156,23 +176,35 @@ series, no directional claim from fewer than 4 points.
 
 ## 4. The arms — mechanisms against forgetting
 
-All arms fork `p20_e_kcap u700` into the §2 recipe. Names are launcher
-variants under a new `xf_*` family (`x`plore-`f`irst).
+All arms fork the `xf_explorer` checkpoint into the §2 recipe. Names are
+launcher variants under a new `xf_*` family (`x`plore-`f`irst).
+
+**The central arm is E0** — the plain fork, no algorithm. Jack: *"I would
+love if this worked without the continual learning algos, so it's a good
+arm but is not the central arm."* It gets the one lever that is not a
+continual-learning method, the learning rate. E1 and E3 are the supporting
+arms: if E0 forgets, they say whether the forgetting is stoppable and at
+what cost to exploit; if E0 holds, they are the controls that show the
+holding was not luck.
 
 | arm | mechanism | trains | what it tests |
 |---|---|---|---|
-| **E0 `xf_naive`** | none | everything | the unprotected control; the wave-3 prediction is a collapse |
-| **E1 `xf_ewc_<λ>`** | online EWC toward the explorer's weights. Fisher estimated **once, at u0**, from the explorer's own explore-regime rollouts (one collection of the training shape, used for the Fisher only, never for a gradient step) | everything, penalised | a weight-space prior; λ is a trade-off knob, two log-spaced values then a third if the two bracket nothing |
-| **E2 `xf_adp`** | **frozen explorer + residual exploit module**: rnn, direction head and spread heads frozen; a zero-initialised MLP on `[h_frozen, x]` adds to the direction logits (and optionally to `log κ`); value head retrained | adapter + value | zero forgetting by construction; the question becomes whether a residual on the explorer's own features can express the gate and q-following. A magnitude gate is *free* for an additive `W·q` term — small ‖q‖ perturbs the explorer's direction little, large ‖q‖ overrides it — which is the same mechanism §9 of DUAL_TRAINING found in the one model |
-| **E2b `xf_adp_gru`** | as E2 with a small recurrent column (64) in the adapter | adapter + value | whether the d=10 tail needs memory the frozen trunk does not provide |
-| **E3 `xf_kl_<β>`** | full fine-tune + **search-masked distillation**: `β · KL(π_explorer ‖ π)` on the steps where `explore_mask = 1` (before the store), against a frozen copy of the explorer | everything, penalised on search steps | behaviour-space prior placed exactly where explore is supposed to be used; no explore rollouts, but the explorer re-enters as a teacher on the task's own search steps |
+| **E0 `xf_naive`** *(central)* | none | everything | does the plain fork keep exploring? The wave-3 prediction is a collapse |
+| **E0' `xf_naive_lr03`** *(central)* | none, lr 3e-5 | everything | the plain lever: does a 3× smaller step keep the explorer without any algorithm? |
+| **E1 `xf_ewc_<λ>`** | online EWC toward the explorer's weights. Fisher estimated **once**, on the first update's rollouts before the first step, on their search steps (`explore_mask`) — the explorer, on the task, searching. No explore-regime collection anywhere | everything, penalised | a weight-space prior; λ is a trade-off knob, two log-spaced values (1e3, 1e4) then a third if the two bracket nothing |
+| **E3 `xf_kl_<β>`** | full fine-tune + **search-masked distillation**: `β · KL(π_explorer ‖ π)` on the steps where `explore_mask = 1` (before the store), against a frozen copy of the explorer | everything, penalised on search steps | behaviour-space prior placed exactly where explore is supposed to be used; no explore rollouts, but the explorer re-enters as a teacher on the task's own search steps (β = 1, 10) |
 | **B0 `task1r_k4_h1024`** | from scratch, novelty on before the store (the task line's rule) | everything | the matched-shape baseline for part 1 of the claim. The task line has this at h128 only; h1024 is the explorer's width, so it is the honest comparison |
 | **B1 `xf_scratch_nonov`** | from scratch, `novelty=0, eps=0` | everything | what the prior buys: exploit-only reward with no explorer |
 
-E2 and E3 are both "the explorer stays": E2 by freezing, E3 by teaching. E3 is
-the arm closest to Jack's sentence — one network, nothing frozen, no explore
-trials — and E2 is the arm that cannot fail on part 2, which makes it the
-cleanest reading of part 1. Both are labelled for what they import.
+**Dropped (Jack, §9 Q2): E2 `xf_adp`**, the frozen explorer with a residual
+exploit module. It cannot forget by construction, which made it the cleanest
+reading of part 1 — and two modules, which is not the object under study.
+The argument it rested on stays in the record because it is a prediction
+about E0/E3's mechanism: an additive `W·q` term gets a magnitude gate for
+free (small ‖q‖ perturbs the explorer's heading little, large ‖q‖ overrides
+it), and that is the same mechanism §9 of DUAL_TRAINING found in the one
+model. If E0 learns exploit without losing search, the probe should find
+exactly that.
 
 ## 5. Pre-registered predictions
 
@@ -186,85 +218,101 @@ cleanest reading of part 1. Both are labelled for what they import.
   fractions. *Falsifier:* E0 holds coverage within 10% — then ordering was
   never the problem and the wave-3 collapse was the novelty/goal-reward
   interference of the interleave.
-- **P3 (E2).** Coverage identical to u0 (by construction); d=0 revisit
-  criterion met; d=10 `mean_steps_all` worse than `d0_base`'s tail. If E2b
-  closes that gap, the tail needs memory.
+- **P3 (E0').** lr 3e-5 slows both: forgetting *and* exploit. Prediction is
+  that it does not change the ordering — coverage still falls > 30% by u500,
+  later — because the drift that removes explore is the same drift that
+  installs q-following. *Falsifier:* E0' holds coverage and still meets the
+  criterion before u500 — then the whole thing was a step-size problem.
 - **P4 (E3).** Holds coverage within 10% and meets the exploit criterion; the
   mechanism in the probe is a ‖q‖ gate on search steps (low `chase_q` before
   the store, high after).
-- **P5 (E1).** A monotone trade-off in λ: high λ ≈ E2's numbers, low λ ≈ E0's,
-  no λ dominating E3.
+- **P5 (E1).** A monotone trade-off in λ: high λ holds coverage and slows
+  exploit, low λ ≈ E0's numbers, no λ dominating E3.
 - **P6 (B1).** Slow or never: without novelty the from-scratch searcher rarely
   touches the goal in 200 steps, so the signal is sparse.
 
-## 6. Implementation (what has to be built)
+## 6. Implementation (built 2026-09-17, commit 39c6f5b and after)
 
-1. Launcher: `xf_*` family in `hopfield_nav/run_nav_p2.sh` — forks the
-   explorer, sets the §2 shape, parses `_ewc<λ>`, `_adp`, `_adp_gru`,
-   `_kl<β>` levers. `task1r_k4_h1024` already parses.
-2. `NavAgent`: `--exploit_adapter {none,mlp,gru}` — a zero-initialised
-   residual on the direction logits reading `[features.detach(), x]`, plus
-   `--freeze_trunk` (rnn + direction head + spread heads) in
-   `set_phase_freeze`. Checkpoint load with the new module absent is a
-   fork, so it is created fresh at zero.
-3. PPO hooks: `ppo_update(..., extra_loss=...)` taking a callable over
-   `(agent, minibatch, new_dist)`; EWC penalty from
-   `hopfield_nav/continual/regularize.OnlineEWC` (its Fisher estimator, run
-   once at u0 on explore rollouts) and the masked KL against a frozen copy
-   (`continual/distill._frozen_copy`, `_masked_kl` already exist for the
-   polar distribution). Both are logged per update.
-4. Accounting: nothing new — `cum_episodes` / `cum_env_steps` are in the
-   checkpoints; the u0 eval is `eval_all` on the explorer.
-5. Tests: adapter at init is the identity policy; frozen params have no grad
-   after a step; EWC penalty is 0 at θ* and > 0 after a step; masked KL is 0
-   on post-store steps and equals the unmasked KL when the mask is all ones.
+1. **`hopfield_nav/training/prior.py` — `ExplorerPrior`.** Anchored to the
+   weights as loaded from `--load_checkpoint`, before any step. EWC:
+   `0.5·λ·Σ Fᵢ(θᵢ−θ*ᵢ)²`, F a diagonal *true* Fisher of the movement
+   log-prob, estimated once on the first update's rollouts before the first
+   gradient step, on their search steps only (`explore_mask × alive ×
+   policy_action`, ≤ `--fisher_trajectories` rows). Value and store heads get
+   zero importance (the movement log-prob has no gradient there), so the
+   value is free to re-learn the new objective. KL: `coef ·
+   KL(π_explorer ‖ π)` on the search steps of every rollout against a frozen
+   copy, teacher run once per update over the pooled buffer.
+2. **`policy/polar_head.py` — `vonmises_kl`, `polar_kl`.** torch registers
+   no KL for VonMises and `PolarMove` is not a `Distribution`, so the
+   continual suite's `kl_divergence` path cannot serve the polar head.
+   Analytic `log I0(κ₂) − log I0(κ₁) + A(κ₁)(κ₁ − κ₂ cos(μ₁−μ₂))` with the
+   scaled Bessels (κ = 148 stays finite), plus torch's Beta KL for speed.
+   Checked against Monte Carlo at four (μ, κ) pairs.
+3. **`updates/ppo.py` — `ppo_update(..., prior=None)`.** The terms join
+   every gradient step's loss; reported as `prior_ewc` / `prior_kl`; the
+   trainer adds `prior_drift` (RMS distance from the anchor). Refused
+   without `--load_checkpoint` and under `--continue_from` (the anchor would
+   be the resumed weights).
+4. **`train_navigate` — the u0 eval.** A fork scores its parent before its
+   first step on its own held-out envs (`[navigate_u0]`).
+5. **Launcher.** `xf_explorer`, `xf_naive`, `xf_naive_lr03`, `xf_ewc_<λ>`,
+   `xf_kl_<β>`, `xf_scratch_nonov`; `EWC_LAMBDA` / `PRIOR_KL_COEF` /
+   `FISHER_TRAJECTORIES` pass-throughs; `DRY_RUN=1` prints the assembled
+   command. Not built: the adapter (dropped).
+6. **Tests.** `test_explorer_prior.py` (25: KL vs Monte Carlo, zero at the
+   anchor, grows with drift, heads free, mask selects steps, teacher frozen,
+   pooled indexing == direct forward, inside `ppo_update` a large λ ends
+   nearer the anchor and a large β nearer the teacher) and
+   `test_explore_first_smoke.py` (4, end to end: u0 block before u1, Fisher
+   once, terms in the log, no-parent refused). Suite: 1,652 pass.
 
-## 7. Wave 1
+## 7. Wave 1 (submitted 2026-09-17)
 
-| arm | job shape | updates | trajectories |
-|---|---|---|---|
-| explorer u0 eval | eval only | — | — |
-| E0 `xf_naive` | 1 × 4 × 64, h1024 | 1000 | 256k |
-| E1 `xf_ewc_lo`, `xf_ewc_hi` | same | 1000 | 256k each |
-| E2 `xf_adp` | same | 1000 | 256k |
-| E3 `xf_kl_lo`, `xf_kl_hi` | same | 1000 | 256k each |
-| B0 `task1r_k4_h1024` | same, from scratch | 1000 | 256k |
-| B1 `xf_scratch_nonov` | same, from scratch | 1000 | 256k |
+| arm | job | shape | updates | trajectories |
+|---|---|---|---|---|
+| phase 1 `xf_explorer` | 22889945 | 20 × 64, h1024 | 700 | 896k (not charged) |
+| B0 `task1r_k4_h1024` | 22889972 | 1 × 4 × 64, h1024, from scratch | 1000 | 256k |
+| B1 `xf_scratch_nonov` | 22889973 | same, from scratch | 1000 | 256k |
+| E0 `xf_naive` | after phase 1 | same, fork | 1000 | 256k |
+| E0' `xf_naive_lr03` | after phase 1 | same | 1000 | 256k |
+| E1 `xf_ewc_1e3`, `xf_ewc_1e4` | after phase 1 | same | 1000 | 256k each |
+| E3 `xf_kl_1`, `xf_kl_10` | after phase 1 | same | 1000 | 256k each |
 
-Eight training jobs, seed 42; the winner and E0 get seeds 43/44 in wave 2.
-1000 updates is 2× the task line's u500 crossing so the forgetting curve has
-room after the exploit criterion is met. Timing: `task1r_k4_h128` ran ~10
-s/update; h1024 is expected 15–20 s/update, so 1000 updates is 4–6 h —
-submit on the 12 h partition with `CKPT_EVERY=25`, and a TIMEOUT is a normal
-outcome (compare at the largest common checkpoint).
+Eight phase-2 jobs, seed 42; the central arm and the best supporting arm
+get seeds 43/44 in wave 2. 1000 updates is 2× the task line's u500 crossing
+so the forgetting curve has room after the exploit criterion is met. Timing:
+`task1r_k4_h128` ran ~8 s/update; h1024 is expected 15–20 s/update, so 1000
+updates is 4–6 h on the 12 h `ou_bcs_normal` partition with
+`CKPT_EVERY=25`; a TIMEOUT is a normal outcome (compare at the largest
+common checkpoint). The λ and β values are first guesses on the scale the
+continual suite found (λ = 1e4 partial, 1e5 frozen, under a BC loss); the
+penalty and the PPO loss are both in the log so the ratio is visible, and
+wave 2 moves them if the two values bracket nothing.
 
 ## 8. What is deliberately not in wave 1
 
-- Re-training the explorer on the current recipe (Jack's "lifetime" prior is
-  whatever explorer exists; the checkpoint's recipe is recorded).
+- The pre-stored exploit regime (§2; Jack: default only).
+- The frozen-explorer adapter (§4; dropped).
 - The three-arena fixed-goal setting: the redraw arena is the task line's
   current rule and the one where search is honest.
-- Adapter capacity sweeps, EWC on the value head, distillation on post-store
-  steps (that would teach the explorer's *non*-following after the store,
-  which is the wrong prior).
+- EWC on the value head; distillation on post-store steps (that would teach
+  the explorer's *non*-following after the store, which is the wrong prior).
 - Lifting the κ cap for the explorer (`p23_kanneal`'s explore-safe anneal):
   exploit needs the cap; changing it at the boundary confounds the reading.
+- Dropping persistence/wall from the search segment (§2): a lever for wave 2
+  if E0's search behaviour drifts in a way the shaping explains.
 
-## 9. Questions for Jack (answers change what gets built)
+## 9. Questions for Jack — asked and answered 2026-09-17
 
-1. **Phase-2 task.** Default: the water-maze task regime with novelty and ε
-   off (§2) — the search segment is the task's own, not an explore trial.
-   The alternative is the pre-stored exploit regime with no search at all
-   (§2, last paragraph). Run the default only, or both?
-2. **Which mechanisms count.** E2 freezes the explorer (a residual module
-   learns exploit — nothing can be forgotten, but it is two modules). E3
-   keeps one network and uses the explorer as a *teacher on search steps*
-   (no explore rollouts, but explore knowledge re-enters through the KL).
-   E1 is weight-space only. Are all three acceptable under "without
-   interleaving explore trials", or should any be dropped?
-3. **The explorer.** Default: `p20_e_kcap u700` (exists, κ cap 2.5, 20
-   arenas). Alternative: train a fresh explorer on the current recipe first
-   (~3 h) so phase 1 is recorded under this line's rules.
-4. **Goal reward.** Default 2.0 (the task line's). Wave 4 of the task line is
-   testing 5.0 for the post-store tie; if that lands before wave 1 launches,
-   adopt it?
+1. **Phase-2 task.** Default (the task regime with novelty and ε off) only,
+   or also the pre-stored exploit regime? — **Default only.**
+2. **Which mechanisms count.** E2 freezes the explorer; E3 uses it as a
+   teacher on search steps; E1 is weight-space only. — **Drop E2.** And:
+   *"I would love if this worked without the continual learning algos, so
+   it's a good arm but is not the central arm."* → E0 is the central arm.
+3. **The explorer.** Fork the existing `p20_e_kcap u700`, or retrain? —
+   **Retrain** (§1; the channel-layout drift made this the right call).
+4. **Goal reward.** 2.0, or 5.0 if the task line's wave 4 lands first? —
+   **"Sure"**; resolved to 2.0 because the 5.0 arm runs under a different
+   reward rule and the baseline is at 2.0 (§2).
