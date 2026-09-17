@@ -354,6 +354,20 @@ forgetting result of the fixed-goal line with no fixed goal ever seen, at
 1000–1500 updates; their revisits are ~4 steps longer than fix1_h128's,
 consistent with the probe's × optimal (1.3–1.4 vs 1.14).
 
+**Probe round 2** (22911869, `se_task_r2_*`, d0_base u725 in process):
+
+| checkpoint | success d 0/5/10 | × optimal | align_true | swept d0 | speed | swept_eff d0 |
+|---|---|---|---|---|---|---|
+| task3r_k2_h128 u2500 (wave-1 rule) | 1.00/1.00/1.00 | 1.36/1.31/1.56 | 0.83/0.86/0.69 | 0.57 | 0.91 | **0.92** |
+| task1r_k4_h128 u3500 (wave-1 rule) | 1.00/1.00/1.00 | 1.26/1.33/1.49 | 0.89/0.86/0.71 | 0.51 | 0.82 | 0.88 |
+| **task3r_k2_h128_nv_c1 u4000** | 1.00/1.00/1.00 | **1.19/1.19/1.26** | **0.92/0.93/0.83** | 0.54 | 0.89 | 0.88 |
+| d0_base u725 | 1.00/1.00/0.99 | 1.20/1.21/1.27 | 0.91/0.90/0.76 | 0.61 | 0.96 | 0.95 |
+
+The one-rule three-arena model at u4000 equals d0_base on every exploit
+number including d=10 (align 0.83 vs 0.76); the wave-1-rule three-arena
+model at u2500 has the best sweep efficiency of the task arms (0.92) with
+exploit 10–20 % less direct.
+
 `task3r_*` added to the launcher (3 arenas, goal redrawn per visit
 sequence). h128 only (h1024 collapses under `_nv`).
 
