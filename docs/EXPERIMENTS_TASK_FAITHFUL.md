@@ -151,7 +151,7 @@ beeline through visited cells (2.0 per ~10 steps).
   shortcut is removed: task1r_k2_h128_nv and the h1024_nv re-seed moved to
   mit_normal_gpu (6 h walls) as 22869636 / 22869638 because ou_bcs_normal's
   backlog was holding them; `_c1` (22866168) still queued there.
-- 2026-09-17 00:55 — task3_k2_h1024_nv s43 (22869638) collapsed too: u10
+- 2026-09-17 00:10 — task3_k2_h1024_nv s43 (22869638) collapsed too: u10
   approx_kl 0.74 (one blow-up update; wave-1 h1024 arms sat at 0.02–0.05),
   u20 onward kappa 11.7 against the 12.2 cap, sigma 0.027, approx_kl =
   clip_frac = 0.000. 2/2 seeds → the one-rule reward's higher-variance
@@ -162,3 +162,25 @@ beeline through visited cells (2.0 per ~10 steps).
   held-out u500: revisits 1.00 at **19 steps**, post-store 20 steps/touch,
   follow_q 0.52, found 0.54 / 0.33 (d 0 / 10). task1r_k2_h128_nv u100: train
   found 0.49 at 13 % coverage, held-out 0.25–0.34, revisits 0.38.
+- 2026-09-17 00:25 — the two `nv` settings have complementary halves.
+  Fixed goals (task3_k2_h128_nv, u600): held-out revisits 1.00 at 29 steps,
+  follow_q 0.49, post-store 22 steps/touch — but held-out found 0.22–0.24
+  (from 0.54 at u500; train 0.95 at 50 steps / 10 % coverage). Redrawn goal
+  (task1r_k2_h128_nv, u350): held-out found 0.58 / 0.67 (d 0 / 10) and
+  rising — but revisits 0.89 at 62 steps, 55 steps/touch, follow_q 0.09.
+  Reading: without a position map there is nothing cheap to bootstrap
+  q-following from, and with novelty on post-store and remaining-scaled
+  (up to 3.0/cell late in a rollout) sweeping out-earns a 50-step beeline,
+  so exploit stays slow. Flat novelty (`_c1`, 0.3/cell) makes a 20-step
+  touch (0.1/step) beat late sweeping (≤ 0.3 × ~0.1 new cells/step) — the
+  directness lever from plan §7, now aimed at the redraw arm.
+
+## 5. Wave 3 — redraw + flat novelty
+
+| arm | job | status |
+|---|---|---|
+| task1r_k2_h128_nv_c1 | 22872240 (mit_normal_gpu 6 h) | launched 00:27 |
+| task3r_k2_h128_nv_c1 | 22872241 (ou_bcs 12 h) | queued 00:27 |
+
+`task3r_*` added to the launcher (3 arenas, goal redrawn per visit
+sequence). h128 only (h1024 collapses under `_nv`).
