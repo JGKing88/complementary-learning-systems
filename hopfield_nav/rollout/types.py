@@ -12,6 +12,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+import numpy as np
 import torch
 
 
@@ -52,5 +53,13 @@ class RolloutBatch:
     # is what turns the corner trap (D2) into a time series with an onset.
     # None in discrete movement mode, where cos(a, q) has no meaning.
     diag: dict | None = None
+    # Task-faithful regime only (rollout/collector.py `task_mode`): the same
+    # diagnostics over the steps AFTER a trajectory's goal was stored (`diag`
+    # then covers the steps before), the per-trajectory task statistics
+    # (rollout/task_stats.py), and the (B,) "goal stored" flags at the end of
+    # the rollout, handed to the next visit.
+    diag_post: dict | None = None
+    task: dict | None = None
+    store_fired_final: "np.ndarray | None" = None
 
 __all__ = ["RolloutBatch"]

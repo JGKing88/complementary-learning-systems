@@ -50,6 +50,8 @@ from .evaluation.checkpoint_io import cfg_from_checkpoint
 from .training.cfg_args import settle_encoder
 from .training.explore import ExploreRegime
 from .training.exploit import ExploitRegime
+from .training.task import TaskRegime
+from .rollout import task_stats
 from .training.refresh import Cadence, Refresher
 from .training import resume as resume_io
 from .training.stages import (
@@ -208,6 +210,40 @@ def run_navigate(
                                    use_distractors=use_emp_distractors,
                                    ends_on_goal=cfg.explore_ends_on_goal)
 
+    # The task-faithful regime (docs/TASK_FAITHFUL_PLAN.md). Built whenever a
+    # `task` stage exists; its distractor range is the exploit one
+    # (`dist_min..dist_max`) -- there is one memory per trajectory and it
+    # starts with distractors only.
+    task_stages = [st for st in stages if st.kind == "task"]
+    task_regime = None
+    if task_stages:
+        task_regime = TaskRegime(cfg, embed_dim, device, dist_rng,
+                                 use_distractors=use_distractors,
+                                 batch_size=cfg.batch_envs)
+        _n_reps_chk = max(int(getattr(cfg, "env_repeats", 1) or 1), 1)
+        for st in task_stages:
+            _v = int(st.visits or 1)
+            if _n_reps_chk % _v != 0:
+                raise ValueError(
+                    f"task stage visits={_v} needs --env_repeats to be a "
+                    f"multiple of it (got {_n_reps_chk}): a visit sequence is "
+                    f"consecutive rollouts of one env within one update")
+        _vis = ", ".join(str(int(st.visits or 1)) for st in task_stages)
+        print(f"Task regime: search -> oracle store at the first goal touch "
+              f"(once, never off-goal, head never writes) -> teleport and "
+              f"continue; novelty/epsilon before the store only; one Hopfield "
+              f"per trajectory"
+              + (f" with ~U[{cfg.n_train_distractors_min}, "
+                 f"{cfg.n_train_distractors_max}] distractors"
+                 if use_distractors else " (no distractors)")
+              + f"; visits={_vis} (memory kept across consecutive rollouts "
+              f"of an env, state reset each rollout); input_goal_in_memory="
+              f"{bool(getattr(cfg.agent, 'input_goal_in_memory', False))}",
+              flush=True)
+        if bool(getattr(cfg.agent, "input_goal_in_memory", False)):
+            raise ValueError("the task regime never runs with "
+                             "input_goal_in_memory (docs/TASK_FAITHFUL_PLAN.md §0.6)")
+
     if refresher is not None:
         print(f"Env refresh: {refresher.cadence.describe()} (train envs only; "
               f"the validation set is drawn once and held)", flush=True)
@@ -256,7 +292,7 @@ def run_navigate(
     # `exploit.py` hard-zeros it, because with the goal already in memory a
     # random action is a wasted step rather than exploration.
     if cfg.epsilon_explore > 0 and not any(
-            s.kind in ("explore", "interleave") for s in stages):
+            s.kind in ("explore", "interleave", "task") for s in stages):
         print(f"  WARNING: --epsilon_explore {cfg.epsilon_explore} is INERT for "
               f"this schedule. Epsilon applies to explore rollouts only, and "
               f"this run has none ({', '.join(s.kind for s in stages)}). The "
@@ -454,21 +490,43 @@ def run_navigate(
         t_roll0 = time.time()
         _base_obs_dropout = float(getattr(cfg, "obs_dropout", 0.0) or 0.0)
         _base_heading_dropout = float(getattr(cfg.hopfield, "heading_dropout", 0.0) or 0.0)
+        is_task = stage.kind == "task"
+        n_visits = int(getattr(knobs, "visits", 1) or 1) if is_task else 1
         for w_idx, world in enumerate(worlds):
             vh = world.field
             collector = RolloutCollector(vh, cfg, embed_dim, device)
             for local_idx, env in enumerate(world.envs):
                 env_offset = world.offsets[local_idx]
+                # The memory a visit sequence carries: None at the start of a
+                # sequence, otherwise the previous rollout's Hopfields and
+                # "goal stored" flags (task regime only).
+                _carry_hops, _carry_fired = None, None
                 for slot in range(local_idx * n_reps, (local_idx + 1) * n_reps):
-                    regime = (exploit_regime if is_pre[slot]
-                              else explore_regime)
+                    if is_task:
+                        regime = task_regime
+                    else:
+                        regime = (exploit_regime if is_pre[slot]
+                                  else explore_regime)
                     pre_flags.append(bool(is_pre[slot]))
                     # Before the spec: the exploit regime reads
-                    # `env.goal_location` when it builds the memory.
-                    if getattr(cfg, "redraw_goal_per_rollout", False):
+                    # `env.goal_location` when it builds the memory. Under
+                    # the task regime a redraw happens once per visit
+                    # sequence -- the goal the memory holds must stay the
+                    # goal the arena pays at.
+                    _visit = (slot - local_idx * n_reps) % n_visits
+                    if getattr(cfg, "redraw_goal_per_rollout", False) and (
+                            not is_task or _visit == 0):
                         env.reset_goal()
-                    spec = regime.spec(w_idx, world, local_idx, env, env_offset,
-                                       knobs)
+                    if is_task:
+                        if _visit == 0:
+                            _carry_hops, _carry_fired = None, None
+                        spec = regime.spec(w_idx, world, local_idx, env,
+                                           env_offset, knobs,
+                                           hops=_carry_hops,
+                                           store_fired=_carry_fired)
+                    else:
+                        spec = regime.spec(w_idx, world, local_idx, env,
+                                           env_offset, knobs)
                     # The collector reads novelty off cfg and the goal reward
                     # off the env, so the regime's choice has to be written
                     # into both.
@@ -491,8 +549,13 @@ def run_navigate(
                         epsilon_now=spec.epsilon,
                         goal_in_memory_init=spec.goal_in_memory_init,
                         ends_on_goal=spec.ends_on_goal,
+                        task_mode=spec.task_mode,
+                        store_fired_init=spec.store_fired_init,
                     )
                     rollouts.append(rollout)
+                    if is_task:
+                        _carry_hops = spec.hop
+                        _carry_fired = rollout.store_fired_final
         cfg.hopfield.novelty_reward = 0.0
         cfg.obs_dropout = _base_obs_dropout
         cfg.hopfield.heading_dropout = _base_heading_dropout
@@ -541,6 +604,10 @@ def run_navigate(
             tot = sum(r.rewards.sum().item() for r in rs)
             n = sum(r.rewards.numel() for r in rs)
             return tot / max(n, 1)
+        task_now = (task_stats.merge(
+            [r.task for r in rollouts if r.task is not None],
+            n_cells=float(cfg.env.size * cfg.env.size))
+            if is_task else {})
 
         if use_wandb:
             import wandb
@@ -568,8 +635,18 @@ def run_navigate(
             # `cos_aq` is one statistic wearing two names: in a goal-present
             # rollout it is `follow_q`, in a goal-absent one it is `chase_q`.
             # `pre` here means the goal was pre-stored, i.e. the exploit rows.
-            pre_d = [r.diag for r in pre_rs if r.diag is not None]
-            emp_d = [r.diag for r in emp_rs if r.diag is not None]
+            if is_task:
+                # Same names, split by phase instead of regime: `expt` is
+                # the steps after a trajectory's goal was stored, `expl`
+                # the steps before.
+                pre_d = [r.diag_post for r in rollouts if r.diag_post is not None]
+                emp_d = [r.diag for r in rollouts if r.diag is not None]
+            else:
+                pre_d = [r.diag for r in pre_rs if r.diag is not None]
+                emp_d = [r.diag for r in emp_rs if r.diag is not None]
+            for k, v in task_now.items():
+                if v == v:  # skip NaN
+                    log[f"train/task/{k}"] = v
             for name, ds in (("expt", pre_d), ("expl", emp_d)):
                 for k, v in rollout_diag.merge(ds).items():
                     log[f"train/{name}/{k}"] = v
@@ -612,6 +689,8 @@ def run_navigate(
                   f"eps_cum={cum_episodes} steps_cum={cum_env_steps} | "
                   + " ".join((f"{k}={v:.2e}" if k == "lr" else f"{k}={v:.3f}")
                              for k, v in losses.items())
+                  + (f" | task: {task_stats.format_line(task_now)}"
+                     if task_now else "")
                   + (f" | refresh={','.join(refreshed)}" if refreshed else ""),
                   flush=True)
             t_update_mark, n_updates_timed = time.time(), 0
@@ -1374,7 +1453,7 @@ def build_parser() -> argparse.ArgumentParser:
                         "action a consequence first (see --allow_store paths), "
                         "or it learns from pure noise.")
     p.add_argument("--eval_scope", type=str, default="all",
-                   choices=("all", "navexpl", "expl"),
+                   choices=("all", "navexpl", "expl", "task"),
                    help="Which evaluators an in-training eval runs. 'all' is "
                         "nav + goal-discovery + exploration. 'navexpl' drops "
                         "goal discovery, which is the only evaluator that "
@@ -1382,7 +1461,9 @@ def build_parser() -> argparse.ArgumentParser:
                         "trains -- and the only unbatched one, so it costs "
                         "~73 s against ~5 s for the other two together. "
                         "'expl' is exploration only, for pure-explore "
-                        "schedules where the other two are undefined.")
+                        "schedules where the other two are undefined. "
+                        "'task' is nav + exploration + the task-faithful "
+                        "protocol (docs/TASK_FAITHFUL_PLAN.md §3.5).")
     p.add_argument("--eval_max_steps", type=int, default=None,
                    help="Step budget for in-training evals. Default: follow "
                         "--steps_per_rollout, which is what this did "

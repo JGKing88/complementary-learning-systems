@@ -25,6 +25,7 @@ from ..config import TrainConfig
 from ..world.env import make_env
 from ..evaluation.metrics import (
     evaluate_exploration, evaluate_goal_discovery, evaluate_navigation,
+    evaluate_task,
 )
 from hopfield import Hopfield
 from ..world import domains as dom
@@ -601,6 +602,9 @@ def do_eval(cfg, agent, eval_world: World, device, update_tag: str,
     scope = getattr(cfg, "eval_scope", "all")
     expl_only = scope == "expl"
     run_disc = scope == "all"
+    # `task`: the task-faithful protocol on the held-out arenas (sampled,
+    # visits=2) alongside nav + expl, so the old numbers stay comparable.
+    run_task = scope == "task"
 
     t0 = time.time()
     nav = {} if expl_only else evaluate_navigation(
@@ -614,12 +618,17 @@ def do_eval(cfg, agent, eval_world: World, device, update_tag: str,
     expl = evaluate_exploration(agent, val_envs, val_vh, val_offsets, cfg, device,
                                 num_trials=nt, max_steps=max_steps,
                                 n_distractors_list=dist)
+    task = evaluate_task(agent, val_envs, val_vh, val_offsets, cfg, device,
+                         num_trials=nt, max_steps=max_steps,
+                         n_distractors_list=dist) if run_task else {}
     eval_s = time.time() - t0
     if not expl_only:
         print(f"  [{update_tag}] nav={nav}")
     if run_disc:
         print(f"  [{update_tag}] disc={disc}")
     print(f"  [{update_tag}] expl={expl}")
+    if run_task:
+        print(f"  [{update_tag}] task={task}")
     # Sizing a run needs the eval's own cost, not just the per-update total it
     # is folded into -- see docs/EXPERIMENTS_SCHEDULE_REPRO.md on how badly a
     # run can be mis-sized when that number has to be inferred after the fact.
@@ -633,6 +642,9 @@ def do_eval(cfg, agent, eval_world: World, device, update_tag: str,
             for k, v in disc.get(n_d, {}).items(): log[f"eval/disc_{n_d}/{k}"] = v
             # union_coverage / redundancy now arrive inside expl.
             for k, v in expl[n_d].items(): log[f"eval/expl_{n_d}/{k}"] = v
+            for k, v in task.get(n_d, {}).items():
+                if v == v:
+                    log[f"eval/task_{n_d}/{k}"] = v
         log["phase_tag"] = update_tag
         wandb.log(log)
 

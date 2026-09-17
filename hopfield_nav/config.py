@@ -397,7 +397,7 @@ class TrainConfig:
     # only goal discovery -- the one evaluator that measures the store head,
     # which `train_navigate` never trains, and the only unbatched one, so it
     # costs ~73 s against ~5 s for the other two together.
-    eval_scope: str = "all"                 # "all" | "navexpl" | "expl"
+    eval_scope: str = "all"                 # "all" | "navexpl" | "expl" | "task"
     # Step budget for in-training evals. None keeps the historical behavior of
     # following steps_per_rollout. They need to come apart whenever rollout
     # length is itself the variable: mean_coverage is cells / grid-cells, so a

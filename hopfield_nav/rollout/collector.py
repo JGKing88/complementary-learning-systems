@@ -21,6 +21,7 @@ from ..policy import channels
 from . import signal
 from . import visited as visited_mod
 from .diagnostics import RegimeDiagnostics, on_perimeter
+from .task_stats import TaskTracker
 from ..world import episode
 from ..config import TrainConfig
 from hopfield import Hopfield, recall_per_env_batch, recall_per_env_batch_trajectory
@@ -64,6 +65,8 @@ class RolloutCollector:
         epsilon_now: float = 0.0,
         goal_in_memory_init: bool = False,
         ends_on_goal: bool = False,
+        task_mode: bool = False,
+        store_fired_init: np.ndarray | None = None,
     ) -> RolloutBatch:
         """Collect one rollout of T steps across B parallel episodes in one env.
 
@@ -80,6 +83,14 @@ class RolloutCollector:
             h_rnn: Initial RNN hidden state or None.
             env_offset: (C_X, C_Y) global offset for this env in the VectorHash grid.
             update_idx: Current training update (1-indexed). Used for auto_store_warmup gating.
+            task_mode: The task-faithful regime (docs/TASK_FAITHFUL_PLAN.md):
+                an oracle writes the goal at each trajectory's FIRST touch and
+                never again, the agent's store head never writes, novelty /
+                revisit shaping and epsilon apply only before that write, and
+                per-trajectory task statistics are returned. Needs a list of
+                B Hopfields (allow_store=True).
+            store_fired_init: (B,) bool -- task_mode visits > 1: which
+                trajectories arrive with the goal already in their memory.
             aux_scale: Scalar in [0, 1] applied to store_bonus this rollout (for linear annealing).
 
         Returns:
@@ -102,6 +113,12 @@ class RolloutCollector:
             and cfg.hopfield.auto_store_warmup > 0
             and update_idx <= cfg.hopfield.auto_store_warmup
         )
+        if task_mode:
+            if not allow_store:
+                raise ValueError("task_mode needs allow_store=True (the oracle "
+                                 "write at the first goal touch)")
+            # The write is the protocol, not a warm-up device.
+            auto_store_active = True
         auto_nav_active = (
             cfg.hopfield.auto_nav_warmup > 0
             and update_idx <= cfg.hopfield.auto_nav_warmup
@@ -126,6 +143,15 @@ class RolloutCollector:
         # to True. This matches eval-time semantics for evaluate_navigation
         # (which hardcodes goal_in_memory=True since the eval pre-loads goal).
         agent_goal_store_fired = np.full(B, goal_in_memory_init, dtype=bool)
+        if store_fired_init is not None:
+            agent_goal_store_fired = np.asarray(store_fired_init, dtype=bool).copy()
+            if agent_goal_store_fired.shape != (B,):
+                raise ValueError(f"store_fired_init must be ({B},), got "
+                                 f"{agent_goal_store_fired.shape}")
+        # Task statistics (docs/TASK_FAITHFUL_PLAN.md §4): which trajectories
+        # arrived with the goal stored, when each first touched it, how much
+        # it had covered by then, and how the later touches are spaced.
+        _task = TaskTracker(agent_goal_store_fired) if task_mode else None
 
         if cfg.agent.movement_mode == "continuous":
             vec = ContinuousVecEnv(
@@ -233,6 +259,11 @@ class RolloutCollector:
         # continuous. Costs one dot product and four norms per step.
         _diag = (RegimeDiagnostics(B)
                  if cfg.agent.movement_mode == "continuous" else None)
+        # task_mode splits the same statistics by phase: `_diag` takes the
+        # steps before a trajectory's goal was stored (its cos_aq is chase_q),
+        # `_diag_post` the steps after (follow_q).
+        _diag_post = (RegimeDiagnostics(B)
+                      if (task_mode and _diag is not None) else None)
 
         # §7.7.2's channel: the fraction of the 1024-dim recall the local 2-D
         # chart explains. Resolved once so the two input-assembly sites and
@@ -282,6 +313,13 @@ class RolloutCollector:
 
                 # 2. Current reward from current position (before acting)
                 at_goal_mask = at_goal(vec)
+                # The flag as it stood when this step's action is chosen; the
+                # store below may flip it for the at-goal rows.
+                fired_pre = agent_goal_store_fired.copy()
+                if _task is not None:
+                    _task.observe(
+                        t, at_goal_mask,
+                        visited_cells.sum(axis=(1, 2)) if need_visited else None)
                 if vec.goals_active:
                     current_reward = np.where(
                         at_goal_mask, cfg.env.goal_reward, -cfg.env.time_penalty
@@ -358,6 +396,11 @@ class RolloutCollector:
                 if epsilon_now > 0 and not collect_teacher:
                     eps_roll = torch.rand(B, device=self.device)
                     candidate_mask = eps_roll < epsilon_now
+                    if task_mode:
+                        # Epsilon is a search device: off once the goal is
+                        # in this trajectory's memory.
+                        candidate_mask &= torch.from_numpy(
+                            ~fired_pre).to(self.device)
                     if candidate_mask.any():
                         if cfg.agent.movement_mode == "continuous":
                             theta = torch.rand(B, device=self.device) * (2 * math.pi)
@@ -580,6 +623,10 @@ class RolloutCollector:
                     policy_chose &= ~move_override_mask
                 all_policy_action_mask[:, t] = policy_chose.float()
                 agent_store = (result["store_action"] > 0.5).cpu().numpy()
+                if task_mode:
+                    # The head never writes; the only write is the oracle's,
+                    # at the first touch.
+                    agent_store = np.zeros(B, dtype=bool)
 
                 # 7. Apply stores BEFORE the env step. Under the new vec_env semantics,
                 #    the agent observably sits at the goal for one step before teleport,
@@ -587,6 +634,8 @@ class RolloutCollector:
                 #    embeddings[b] is the goal embedding — so auto_store and agent_store
                 #    can both just store embeddings[b] directly.
                 effective_store = agent_store | (auto_store_active & at_goal_mask)
+                if task_mode:
+                    effective_store &= ~agent_goal_store_fired
                 # Update agent_goal_store_fired for the BC teacher's trust gate
                 # (BC mode) AND for the agent's input bit (PPO + BC modes when
                 # cfg.agent.input_goal_in_memory is True). Only count stores
@@ -653,14 +702,25 @@ class RolloutCollector:
                     # via `moved`: their realized displacement is a teleport
                     # jump, not a move, and averaging it in would inflate
                     # realized_mag exactly where the agent is succeeding.
+                    _alive = ~done & ~at_goal_mask
                     _diag.observe(
                         q=q_full,
                         action=actions,
                         realized=vec.last_displacement(),
                         at_edge=on_perimeter(vec.positions(), cfg.env.size),
-                        alive=~done & ~at_goal_mask,
+                        alive=(_alive & ~fired_pre) if _diag_post is not None
+                        else _alive,
                         from_policy=policy_chose.cpu().numpy(),
                     )
+                    if _diag_post is not None:
+                        _diag_post.observe(
+                            q=q_full,
+                            action=actions,
+                            realized=vec.last_displacement(),
+                            at_edge=on_perimeter(vec.positions(), cfg.env.size),
+                            alive=_alive & fired_pre,
+                            from_policy=policy_chose.cpu().numpy(),
+                        )
 
                 if ends_on_goal:
                     # After this step, whoever was at the goal is finished.
@@ -688,6 +748,12 @@ class RolloutCollector:
                     new_pos = vec.positions()  # (B, 2) post-step snapped ints
                     xs, ys = new_pos[:, 0], new_pos[:, 1]
                     moved = (~at_goal_mask).astype(np.float32)  # zero out teleport rows
+                    # task_mode: novelty and revisit are search shaping --
+                    # they stop for a trajectory once its goal is stored.
+                    # Wall, persistence and time run on, as they do in both
+                    # regimes of the interleaved schedule.
+                    searching = ((~agent_goal_store_fired).astype(np.float32)
+                                 if task_mode else np.ones(B, dtype=np.float32))
 
                     if need_visited:
                         not_visited = ~visited_cells[np.arange(B), xs, ys]
@@ -706,15 +772,15 @@ class RolloutCollector:
                                 rewards += (cfg.hopfield.novelty_reward
                                             * not_visited.astype(np.float32)
                                             * scale
-                                            * moved)
+                                            * moved * searching)
                             else:
                                 rewards += (cfg.hopfield.novelty_reward
                                             * not_visited.astype(np.float32)
-                                            * moved)
+                                            * moved * searching)
                         if revisit_on:
                             rewards -= (cfg.hopfield.revisit_penalty
                                         * (~not_visited).astype(np.float32)
-                                        * moved)
+                                        * moved * searching)
                         # Mark post-step positions as visited (including
                         # teleport targets) so a future deliberate visit
                         # doesn't re-claim novelty for that cell.
@@ -936,6 +1002,10 @@ class RolloutCollector:
             move_label_mask=move_label_mask if collect_teacher else None,
             store_label_mask=store_label_mask if collect_teacher else None,
             diag=_diag.summary() if _diag is not None else None,
+            diag_post=_diag_post.summary() if _diag_post is not None else None,
+            task=_task.arrays() if _task is not None else None,
+            store_fired_final=(agent_goal_store_fired.copy()
+                               if task_mode else None),
         )
 
     # The three helpers below moved to signal.py so that eval.agent_step runs

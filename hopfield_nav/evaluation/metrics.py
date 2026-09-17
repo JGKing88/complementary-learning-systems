@@ -1193,3 +1193,112 @@ def evaluate_sequential_episodes(
             "stored_at_goal_count": stored_at_goal_count,
         },
     }
+
+
+def evaluate_task(
+    agent: NavAgent,
+    val_envs: list[GridEnv],
+    vectorhash: VectorHash,
+    env_offsets: list[tuple[int, int]],
+    cfg: TrainConfig,
+    device: torch.device,
+    num_trials: int = 32,
+    max_steps: int = 200,
+    n_distractors_list: list[int] | None = None,
+    seed: int = 0,
+    visits: int = 2,
+) -> dict[int, dict[str, float]]:
+    """The task-faithful protocol itself, on held-out arenas.
+
+    `docs/TASK_FAITHFUL_PLAN.md` §3.5. Runs the training collector in
+    `task_mode` -- search, oracle store at the first touch, teleport, keep
+    going -- so the eval is the training rollout by construction, with the
+    policy SAMPLED (the convention for uncertain policies) and no epsilon.
+    `num_trials` trajectories per arena, each with its own Hopfield holding
+    `n_dist` outside-arena distractors. With `visits` >= 2 the memory each
+    trajectory built is kept for a second rollout from a fresh state -- the
+    continual protocol's revisit -- and reported as `revisit_*`.
+
+    Per distractor count: `found_rate`, `steps_first`, `cov_first` (fraction
+    of the arena visited when the goal was first touched), `reaches_post`,
+    `steps_per_reach` from the first visit; `revisit_found`,
+    `revisit_steps_first`, `revisit_steps_per_reach` from the second, over the
+    trajectories that arrived with the goal stored; `cos_aq_pre` /
+    `cos_aq_post` (chase_q / follow_q) pooled over both.
+    """
+    import copy
+    from ..rollout.collector import RolloutCollector
+    from ..rollout import task_stats, diagnostics as rollout_diag
+
+    if n_distractors_list is None:
+        n_distractors_list = [0]
+    embed_dim = vectorhash.encoded_Phi.shape[2]
+    # A private config: the collector reads its batch and horizon off it, and
+    # the shaping it applies is irrelevant here except that novelty > 0 is
+    # what makes it keep the visited-cell buffer `cov_first` needs.
+    ecfg = copy.deepcopy(cfg)
+    ecfg.batch_envs = int(num_trials)
+    ecfg.steps_per_rollout = int(max_steps)
+    ecfg.hopfield.novelty_reward = max(float(cfg.hopfield.novelty_reward), 0.3)
+    ecfg.obs_dropout = 0.0
+    ecfg.hopfield.heading_dropout = 0.0
+    ecfg.hopfield.auto_store_warmup = 0
+    ecfg.hopfield.auto_nav_warmup = 0
+    collector = RolloutCollector(vectorhash, ecfg, embed_dim, device)
+
+    results: dict[int, dict[str, float]] = {}
+    for n_dist in n_distractors_list:
+        rng = np.random.RandomState(seed)
+        torch_state = torch.random.get_rng_state()
+        torch.manual_seed(seed)
+        first_recs, later_recs, diag_pre, diag_post = [], [], [], []
+        for local_idx, env in enumerate(val_envs):
+            env_offset = env_offsets[local_idx]
+            grid_size = int(env.size)
+            hops = []
+            for _ in range(num_trials):
+                hop = Hopfield(embed_dim, beta=cfg.hopfield.beta,
+                               device=str(device))
+                for pat in sample_distractors(vectorhash, env_offset,
+                                              grid_size, n_dist, rng):
+                    hop.input_memory(torch.from_numpy(pat).float())
+                hops.append(hop)
+            was_active = getattr(env, "goals_active", True)
+            env.goals_active = True
+            try:
+                fired = None
+                for v in range(max(int(visits), 1)):
+                    r = collector.collect_rollout(
+                        env, agent, hops, allow_store=True, h_rnn=None,
+                        env_offset=env_offset, update_idx=0, aux_scale=1.0,
+                        epsilon_now=0.0, goal_in_memory_init=False,
+                        ends_on_goal=False, task_mode=True,
+                        store_fired_init=fired)
+                    (first_recs if v == 0 else later_recs).append(r.task)
+                    if r.diag is not None:
+                        diag_pre.append(r.diag)
+                    if r.diag_post is not None:
+                        diag_post.append(r.diag_post)
+                    fired = r.store_fired_final
+            finally:
+                env.goals_active = was_active
+        n_cells = float(grid_size * grid_size)
+        out: dict[str, float] = {}
+        f = task_stats.merge(first_recs, n_cells=n_cells)
+        for k in ("found_frac", "steps_first", "cov_first", "reaches_post",
+                  "steps_per_reach"):
+            out[k if k != "found_frac" else "found_rate"] = f.get(k, float("nan"))
+        if later_recs:
+            l = task_stats.merge(later_recs, n_cells=n_cells)
+            for k in ("revisit_found_frac", "revisit_steps_first",
+                      "revisit_steps_per_reach"):
+                out[k.replace("found_frac", "found")] = l.get(k, float("nan"))
+        if diag_pre:
+            out["cos_aq_pre"] = rollout_diag.merge(diag_pre).get("cos_aq", float("nan"))
+        if diag_post:
+            out["cos_aq_post"] = rollout_diag.merge(diag_post).get("cos_aq", float("nan"))
+        out = {k: (round(float(v), 4) if v == v else float("nan"))
+               for k, v in out.items()}
+        results[n_dist] = out
+        torch.random.set_rng_state(torch_state)
+    return results

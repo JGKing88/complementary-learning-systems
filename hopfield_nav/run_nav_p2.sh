@@ -1642,7 +1642,7 @@ case "$VARIANT" in
   #
   #   VARIANT=se_b8_e10 REPO=<worktree> sbatch --partition=ou_bcs_normal \
   #       --time=24:00:00 hopfield_nav/run_nav_p2.sh
-  d0_base|d1_kanneal|d1_persr|d1_ms3|ood_place|ood_place_rp|ood_place_rp10|ood_corner|ood_corner_rp|se_*|one_*|fix3_*|fix1_*)
+  d0_base|d1_kanneal|d1_persr|d1_ms3|ood_place|ood_place_rp|ood_place_rp10|ood_corner|ood_corner_rp|se_*|one_*|fix3_*|fix1_*|task*)
     ENCODER=/orcd/pool/003/jackking/cls_runs/sweeps/w52_attract_fwhm/001_att0.5_seed=43/encoder_final.pt
     ENCODER_GAIN=100
     HOPFIELD_BETA=100
@@ -1846,6 +1846,43 @@ case "$VARIANT" in
           *) echo "ERROR: unknown FIX variant $VARIANT" >&2; exit 1 ;;
         esac
         ;;
+      # === TASK -- the task-faithful protocol (docs/TASK_FAITHFUL_PLAN.md). ===
+      #
+      # No explore/exploit split. Every rollout: search with distractors only
+      # in memory -> oracle store of the goal at the first touch (once, never
+      # off-goal, the head never writes) -> teleport and keep going. Novelty
+      # and epsilon until the store, goal reward and teleport after; wall /
+      # persistence / time throughout. One Hopfield per trajectory. Memory
+      # and state reset per rollout; `visits=K` keeps each trajectory's memory
+      # for K consecutive rollouts of its env (state still resets), which is
+      # the continual protocol's revisit. NEVER input_goal_in_memory.
+      #   task3_<k><lever>   3 envs, FIXED goals (primary)
+      #   task1_<k><lever>   1 env, fixed goal (memorisation control)
+      #   task1r_<k><lever>  1 env, goal redrawn per visit sequence (protocol control)
+      #   k1 / k2            visits; ENV_REPEATS is 2 either way so the
+      #                      trajectories per update match fix3 / fix1
+      #   h128 / h1024       trunk
+      task3_*|task1_*|task1r_*)
+        TASK_VISITS=1
+        case "$VARIANT" in *_k2*) TASK_VISITS=2 ;; esac
+        [ -z "${SCHEDULE_SET:-}" ] && SCHEDULE=${TASK_SCHEDULE:-"task:4000,visits=${TASK_VISITS}"}
+        EVAL_EVERY=${SE_EVAL_EVERY:-50}; CKPT_EVERY=${SE_CKPT_EVERY:-50}
+        EVAL_SCOPE=task
+        PPO_EPOCHS=10; N_MINIBATCHES=8; TARGET_KL=0.1; LR=1e-4
+        ENV_REPEATS=${TASK_ENV_REPEATS:-2}
+        case "$VARIANT" in
+          task3_*)  ENVS_PER_WORLD=3; BATCH_ENVS=${FIX_BATCH_ENVS:-32} ;;
+          task1r_*) ENVS_PER_WORLD=1; BATCH_ENVS=${FIX_BATCH_ENVS:-64}; REDRAW_GOAL_PER_ROLLOUT=1 ;;
+          task1_*)  ENVS_PER_WORLD=1; BATCH_ENVS=${FIX_BATCH_ENVS:-64} ;;
+        esac
+        case "${VARIANT#task*_k?}" in
+          "") ;;
+          _h128)  HIDDEN_SIZE=128 ;;
+          _h1024) HIDDEN_SIZE=1024 ;;
+          _h256)  HIDDEN_SIZE=256 ;;
+          *) echo "ERROR: unknown TASK variant $VARIANT" >&2; exit 1 ;;
+        esac
+        ;;
     esac
     ;;
 
@@ -1910,6 +1947,7 @@ echo "    rollout    : ${ENVS_PER_WORLD} envs x ${BATCH_ENVS} batch x ${STEPS_PE
 [ -n "${ENV_REPEATS:-}" ] && echo "    repeats    : ${ENV_REPEATS} rollouts per env per update (regime slots = envs x repeats)"
 [ -n "${REDRAW_GOAL_PER_ROLLOUT:-}" ] && echo "    goals      : re-drawn per rollout slot (redraw_goal_per_rollout=${REDRAW_GOAL_PER_ROLLOUT})"
 [ -n "${OBS_DROPOUT:-}" ] && echo "    obs_dropout: ${OBS_DROPOUT} (training rollouts only)"
+[ -n "${TASK_VISITS:-}" ] && echo "    regime     : TASK-FAITHFUL (search -> oracle store once at goal -> teleport; visits=${TASK_VISITS}; eval_scope=${EVAL_SCOPE})"
 [ -n "${EXPLOIT_OBS_DROPOUT:-}${EXPLOIT_HEADING_DROPOUT:-}" ] && echo "    exploit-only dropout: obs=${EXPLOIT_OBS_DROPOUT:-run-wide} heading=${EXPLOIT_HEADING_DROPOUT:-run-wide}"
 echo "                 pool=$((ENVS_PER_WORLD * BATCH_ENVS)) trajectories, \
 $((ENVS_PER_WORLD * BATCH_ENVS * STEPS_PER_ROLLOUT)) env-steps/update, \

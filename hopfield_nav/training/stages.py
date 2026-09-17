@@ -30,6 +30,10 @@ KIND_FRACTIONS: dict[str, float | None] = {
     "explore": 1.0,
     "exploit": 0.0,
     "interleave": None,
+    # The task-faithful regime (docs/TASK_FAITHFUL_PLAN.md): every slot starts
+    # without the goal and stores it itself on the first touch, so the empty
+    # fraction is 1.0 by construction and the composer ignores it.
+    "task": 1.0,
 }
 
 INTERLEAVE_DEFAULT_FRACTION = 0.5
@@ -38,6 +42,7 @@ INTERLEAVE_DEFAULT_FRACTION = 0.5
 STAGE_KEYS = (
     "lr", "empty_frac", "anneal", "novelty", "eps",
     "dist_min", "dist_max", "emp_dist_min", "emp_dist_max",
+    "visits",
 )
 
 
@@ -70,6 +75,9 @@ class Stage:
     dist_max: int | None = None
     emp_dist_min: int | None = None
     emp_dist_max: int | None = None
+    # `task` only: consecutive rollouts of one env that share each
+    # trajectory's memory (state resets every rollout). 1 = the pure protocol.
+    visits: int | None = None
 
 
 @dataclass
@@ -87,6 +95,7 @@ class Knobs:
     dist_max: int
     emp_dist_min: int
     emp_dist_max: int
+    visits: int = 1
 
 
 @dataclass
@@ -107,6 +116,14 @@ class RolloutSpec:
     # Reaching the goal ends this trajectory rather than teleporting it to a
     # fresh start. Per-row: the rollout keeps running for the rows still going.
     ends_on_goal: bool = False
+    # The task-faithful regime: `hop` is a list of B Hopfields, the goal is
+    # written by an oracle at each trajectory's first touch and never again,
+    # the agent's store head never writes, and novelty / epsilon apply only
+    # before that write. See rollout/collector.py `task_mode`.
+    task_mode: bool = False
+    # Per-trajectory "goal already stored" flags carried in from the previous
+    # visit (task_mode, visits > 1). None = every trajectory starts without.
+    store_fired_init: Any = None
 
 
 # ---------------------------------------------------------------------------
@@ -229,7 +246,15 @@ def _parse_stage(text: str) -> Stage:
         dist_max=_num("dist_max", int),
         emp_dist_min=_num("emp_dist_min", int),
         emp_dist_max=_num("emp_dist_max", int),
+        visits=_num("visits", int),
     )
+    if stage.visits is not None:
+        if kind != "task":
+            raise ScheduleError(
+                f"stage {text!r}: visits only applies to the 'task' kind")
+        if stage.visits < 1:
+            raise ScheduleError(
+                f"stage {text!r}: visits must be at least 1, got {stage.visits}")
     for key in ("lr", "novelty", "eps"):
         v = getattr(stage, key)
         if v is not None and v < 0:
@@ -272,7 +297,8 @@ def format_schedule(stages: list[Stage]) -> str:
         if s.anneal is not None:
             parts.append(f"anneal={s.anneal}")
         for key in ("lr", "novelty", "eps",
-                    "dist_min", "dist_max", "emp_dist_min", "emp_dist_max"):
+                    "dist_min", "dist_max", "emp_dist_min", "emp_dist_max",
+                    "visits"):
             v = getattr(s, key)
             if v is not None:
                 parts.append(f"{key}={v:g}")
@@ -328,7 +354,8 @@ def resolve(stage: Stage, local_update: int, defaults: Knobs) -> Knobs:
     """
     knobs = replace(defaults, empty_frac=empty_fraction_at(stage, local_update))
     for field in ("lr", "novelty", "eps",
-                  "dist_min", "dist_max", "emp_dist_min", "emp_dist_max"):
+                  "dist_min", "dist_max", "emp_dist_min", "emp_dist_max",
+                  "visits"):
         v = getattr(stage, field)
         if v is not None:
             setattr(knobs, field, v)
