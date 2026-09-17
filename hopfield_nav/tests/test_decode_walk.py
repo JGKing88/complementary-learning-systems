@@ -89,3 +89,33 @@ def test_targets_direction_and_heading8():
     assert np.allclose(np.linalg.norm(h, axis=1), 1.0)
     assert np.allclose(h[2], HEADINGS8[1])                # 45 deg
     assert np.allclose(h[3], HEADINGS8[1])                # 26.6 deg is nearer 45 than 0
+
+
+def test_encoder_walk_masks_and_readout():
+    """Phase 1, encoder side: odometry masks are the coordinate masks restricted to
+    a walker's own moments; the projected readout recovers direction exactly on a
+    linear embedding."""
+    from hopfield_nav.train_encoder_walk import near_far_masks, readout_direction, angular_error
+    rng = np.random.RandomState(0)
+    e = np.repeat(np.arange(3), 8)
+    w = np.tile(np.repeat(np.arange(2), 4), 3)
+    pos = rng.randint(0, 20, size=(24, 2))
+    near_o, far_o = near_far_masks(e, w, pos, 6.0, "odometry")
+    near_c, far_c = near_far_masks(e, w, pos, 6.0, "coords")
+    same_walker = (e[:, None] == e[None, :]) & (w[:, None] == w[None, :])
+    assert np.array_equal(near_o, near_c & same_walker)
+    assert np.array_equal(far_o, far_c & same_walker)
+    assert not near_o.diagonal().any() and not far_o.diagonal().any()
+    assert not (near_c & (e[:, None] != e[None, :])).any()
+    # Linear embedding z = A [x, y] with orthogonal rows (the frame the harness's
+    # Gram-Schmidt assumes): the projection of z(g) - z(p) is exactly (dx, dy)
+    # up to scale.
+    S = 12
+    A = np.linalg.qr(rng.randn(16, 2))[0].T * 3.0
+    cells = np.array([(x, y) for x in range(S) for y in range(S)], dtype=float)
+    Z = cells @ A
+    p = rng.randint(0, S, size=(300, 2))
+    g = rng.randint(0, S, size=(300, 2))
+    ok = (np.abs(g - p).max(1) >= 1)
+    err = angular_error(readout_direction(Z, S, p[ok], g[ok]), (g - p)[ok].astype(float))
+    assert err.max() < 1e-3
