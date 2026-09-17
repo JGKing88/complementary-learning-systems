@@ -517,6 +517,15 @@ class TrainConfig:
     # while explore rollouts keep clean inputs for sweeping.
     exploit_obs_dropout: float | None = None
     exploit_heading_dropout: float | None = None
+    # The explorer prior (training/prior.py, docs/EXPLORE_FIRST_PLAN.md §4):
+    # for a run forked from an explorer with --load_checkpoint, keep the
+    # policy near it without collecting explore rollouts. `ewc_lambda` is a
+    # quadratic penalty in weight space with a diagonal Fisher estimated once
+    # on the first update's search steps; `prior_kl_coef` is
+    # KL(explorer || policy) on the search steps of every rollout. 0 = off.
+    ewc_lambda: float = 0.0
+    prior_kl_coef: float = 0.0
+    fisher_trajectories: int = 256
     novelty_anneal: bool = False            # linearly scale novelty_reward -> 0 across the whole run
     epsilon_explore: float = 0.0            # per-step chance of a uniform-random move, explore regime only
     epsilon_anneal_updates: int = 0         # linearly scale epsilon_explore -> 0 over this many updates; 0 = constant

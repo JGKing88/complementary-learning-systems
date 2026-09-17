@@ -1642,7 +1642,7 @@ case "$VARIANT" in
   #
   #   VARIANT=se_b8_e10 REPO=<worktree> sbatch --partition=ou_bcs_normal \
   #       --time=24:00:00 hopfield_nav/run_nav_p2.sh
-  d0_base|d1_kanneal|d1_persr|d1_ms3|ood_place|ood_place_rp|ood_place_rp10|ood_corner|ood_corner_rp|se_*|one_*|fix3_*|fix1_*|task*)
+  d0_base|d1_kanneal|d1_persr|d1_ms3|ood_place|ood_place_rp|ood_place_rp10|ood_corner|ood_corner_rp|se_*|one_*|fix3_*|fix1_*|task*|xf_*)
     ENCODER=/orcd/pool/003/jackking/cls_runs/sweeps/w52_attract_fwhm/001_att0.5_seed=43/encoder_final.pt
     ENCODER_GAIN=100
     HOPFIELD_BETA=100
@@ -1899,6 +1899,56 @@ case "$VARIANT" in
           esac
         done
         ;;
+      # === XF -- explore first (docs/EXPLORE_FIRST_PLAN.md). =============
+      #
+      # Phase 1, `xf_explorer`: the p20_e_kcap recipe (explore:700, 20
+      # arenas, kappa cap 2.5) under TODAY'S defaults -- multistep "1", 70
+      # input dims -- so the explorer this line forks is on its own books
+      # and its channels match the phase-2 run's. EVAL_SCOPE=expl during
+      # training; its u0 task-scope row comes from eval_all afterwards.
+      #
+      # Phase 2, everything else: fork XF_EXPLORER into the task regime with
+      # the explore shaping OFF. task:1000,visits=4,novelty=0,eps=0 on one
+      # arena with the goal redrawn per visit sequence -- the task line's
+      # task1r_k4 shape, so `task1r_k4_h1024` is the from-scratch control
+      # at the same shape. Nothing in phase 2 pays for covering the arena;
+      # the search segment of each visit-1 rollout is the task's own. The
+      # arms differ ONLY in what holds the policy near the explorer:
+      #
+      #   xf_naive          nothing -- the central arm (Jack, 2026-09-17:
+      #                     "I would love if this worked without the
+      #                     continual learning algos")
+      #   xf_naive_lr03     nothing, lr 3e-5: the one plain lever
+      #   xf_ewc_<lambda>   EWC toward the explorer (--ewc_lambda)
+      #   xf_kl_<coef>      KL(explorer || policy) on search steps
+      #                     (--prior_kl_coef)
+      #   xf_scratch_nonov  from scratch, same shape, novelty off: what
+      #                     the prior buys
+      #
+      #   XF_EXPLORER=<.../navigate_u700.pt> VARIANT=xf_naive REPO=<worktree> \
+      #       sbatch --partition=ou_bcs_normal --time=12:00:00 hopfield_nav/run_nav_p2.sh
+      xf_explorer)
+        [ -z "${SCHEDULE_SET:-}" ] && SCHEDULE='explore:700'
+        EVAL_SCOPE=expl
+        ;;
+      xf_*)
+        [ -z "${SCHEDULE_SET:-}" ] && SCHEDULE='task:1000,visits=4,novelty=0,eps=0'
+        TASK_VISITS=4; ENV_REPEATS=4
+        ENVS_PER_WORLD=1; BATCH_ENVS=${FIX_BATCH_ENVS:-64}; REDRAW_GOAL_PER_ROLLOUT=1
+        PPO_EPOCHS=10; N_MINIBATCHES=8; TARGET_KL=0.1; LR=1e-4
+        EVAL_SCOPE=task; EVAL_EVERY=${SE_EVAL_EVERY:-25}; CKPT_EVERY=${SE_CKPT_EVERY:-25}
+        case "$VARIANT" in
+          xf_scratch_nonov) ;;
+          *) LOAD_CKPT=${XF_EXPLORER:?xf_* arms fork the explorer -- set XF_EXPLORER=<navigate_uN.pt>} ;;
+        esac
+        case "$VARIANT" in
+          xf_naive|xf_scratch_nonov) ;;
+          xf_naive_lr03) LR=3e-5 ;;
+          xf_ewc_*) EWC_LAMBDA=${VARIANT#xf_ewc_} ;;
+          xf_kl_*)  PRIOR_KL_COEF=${VARIANT#xf_kl_} ;;
+          *) echo "ERROR: unknown XF variant $VARIANT" >&2; exit 1 ;;
+        esac
+        ;;
     esac
     ;;
 
@@ -1965,9 +2015,12 @@ echo "    rollout    : ${ENVS_PER_WORLD} envs x ${BATCH_ENVS} batch x ${STEPS_PE
 [ -n "${OBS_DROPOUT:-}" ] && echo "    obs_dropout: ${OBS_DROPOUT} (training rollouts only)"
 [ -n "${TASK_VISITS:-}" ] && echo "    regime     : TASK-FAITHFUL (search -> oracle store once at goal -> teleport; visits=${TASK_VISITS}; novelty after store=${TASK_NOVELTY_AFTER_STORE:-0}; eval_scope=${EVAL_SCOPE})"
 [ -n "${EXPLOIT_OBS_DROPOUT:-}${EXPLOIT_HEADING_DROPOUT:-}" ] && echo "    exploit-only dropout: obs=${EXPLOIT_OBS_DROPOUT:-run-wide} heading=${EXPLOIT_HEADING_DROPOUT:-run-wide}"
-echo "                 pool=$((ENVS_PER_WORLD * BATCH_ENVS)) trajectories, \
-$((ENVS_PER_WORLD * BATCH_ENVS * STEPS_PER_ROLLOUT)) env-steps/update, \
-$((ENVS_PER_WORLD * STEPS_PER_ROLLOUT)) serial calls/update"
+# Repeats multiply every per-update count: each is one more rollout of the
+# same env in the same update (the trainer's own header agrees).
+_slots=$((ENVS_PER_WORLD * ${ENV_REPEATS:-1}))
+echo "                 pool=$((_slots * BATCH_ENVS)) trajectories, \
+$((_slots * BATCH_ENVS * STEPS_PER_ROLLOUT)) env-steps/update, \
+$((_slots * STEPS_PER_ROLLOUT)) serial calls/update"
 # goal_reward is echoed with the shaping, not with the env, because from wave 3
 # on it is a shaping knob: inside one pooled advantage normalization it sets the
 # ratio between the explore and exploit regimes. See docs §3.5.

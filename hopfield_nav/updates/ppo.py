@@ -161,6 +161,7 @@ def ppo_update(
     optimizer: torch.optim.Optimizer,
     aux_scale: float = 1.0,
     trace: list | None = None,
+    prior=None,
 ) -> dict[str, float]:
     """Run PPO epochs on a pooled rollout buffer with minibatching.
 
@@ -178,6 +179,9 @@ def ppo_update(
     Args:
         aux_scale: Multiplier applied to auxiliary losses (store_bc_weight) this update,
             for linear annealing from 1.0 → 0.0 over training.
+        prior: An ``ExplorerPrior`` (training/prior.py) or None. Adds its
+            EWC penalty and/or its search-step KL to every gradient step's
+            loss and reports them as ``prior_ewc`` / ``prior_kl``.
 
     Returns dict of loss components (averaged over all gradient steps) for logging.
     """
@@ -223,6 +227,12 @@ def ppo_update(
     advantages = (advantages - adv_mean) / adv_std
 
     effective_bc_weight = cfg.store_bc_weight * aux_scale
+
+    if prior is not None and prior.active:
+        prior.begin_update(obs)
+    else:
+        prior = None
+    prior_totals: dict[str, float] = {}
 
     N = obs.shape[0]
     n_mb = max(1, min(cfg.n_minibatches, N))
@@ -475,6 +485,16 @@ def ppo_update(
                     - cfg.store_ent_coef * store_ent
                     + effective_bc_weight * store_bc_loss
                 )
+            if prior is not None:
+                # The KL is over the search steps only (before the store, on
+                # rows still alive); the EWC penalty does not depend on the
+                # minibatch at all and is simply added once per step.
+                mb_search = mb_mask if mb_alive is None else mb_mask * mb_alive
+                extra, plogs = prior.loss(agent, idx, move_dist, mb_search)
+                if extra is not None:
+                    loss = loss + extra
+                for k, v in plogs.items():
+                    prior_totals[k] = prior_totals.get(k, 0.0) + v
 
             optimizer.zero_grad(set_to_none=True)
             loss.backward()
@@ -618,6 +638,10 @@ def ppo_update(
     # a genuinely broken run gets caught. Absent is the unambiguous option.
     if n_kappa:
         stats["kappa"] = total_kappa / n_kappa
+    # The explorer prior's terms, averaged over the gradient steps that
+    # carried them; absent when there is no prior, for the same reason.
+    for k, v in prior_totals.items():
+        stats[k] = v / denom
         # The direction head's magnitude: a gauge freedom nothing in the
         # objective pressures. Logged because the softening only BOUNDS what
         # happens when it decays -- it does not stop it decaying, and a run

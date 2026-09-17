@@ -169,6 +169,9 @@ _bool task_novelty_after_store        "${TASK_NOVELTY_AFTER_STORE:-}"
 _arg  obs_dropout                     "${OBS_DROPOUT:-}"
 _arg  exploit_obs_dropout             "${EXPLOIT_OBS_DROPOUT:-}"
 _arg  exploit_heading_dropout         "${EXPLOIT_HEADING_DROPOUT:-}"
+_arg  ewc_lambda                      "${EWC_LAMBDA:-}"
+_arg  prior_kl_coef                   "${PRIOR_KL_COEF:-}"
+_arg  fisher_trajectories             "${FISHER_TRAJECTORIES:-}"
 _bool explore_goals_off               "${EXPLORE_GOALS_OFF:-}"
 _bool explore_ends_on_goal            "${EXPLORE_ENDS_ON_GOAL:-}"
 _arg  epsilon_explore                 "${EPSILON_EXPLORE:-}"
@@ -237,6 +240,13 @@ if [ -n "${LOAD_CKPT:-}" ]; then
     echo "    (config inherited from it; only the flags set above override)"
 else
     echo "    fresh init, encoder=$ENCODER"
+fi
+
+# DRY_RUN=1 prints the assembled command, one flag per line, and stops --
+# for checking what a launcher variant resolves to without a GPU.
+if [ -n "${DRY_RUN:-}" ]; then
+    printf '  %s\n' python -u -m hopfield_nav.train_navigate "${ARGS[@]}" ${EXTRA:-}
+    exit 0
 fi
 
 # EXTRA is unquoted on purpose: it is a flag string, not one argument.

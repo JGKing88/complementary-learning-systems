@@ -91,6 +91,45 @@ def circular_sd(kappa: torch.Tensor) -> torch.Tensor:
     return (-2.0 * r_bar.clamp(1e-7, 1.0 - 1e-7).log()).sqrt()
 
 
+def vonmises_kl(mu1: torch.Tensor, k1: torch.Tensor,
+                mu2: torch.Tensor, k2: torch.Tensor) -> torch.Tensor:
+    """``KL(VM(mu1, k1) || VM(mu2, k2))``, elementwise.
+
+    ``E_p[log p - log q] = log I0(k2) - log I0(k1) + A(k1) (k1 - k2 cos(mu1 - mu2))``
+    with ``A = I1/I0``, since ``E_p[cos(theta - mu2)] = A(k1) cos(mu1 - mu2)``.
+    ``torch.distributions`` registers no KL for VonMises, so it is supplied
+    here, with the scaled Bessels for the same overflow reason as
+    :func:`vm_entropy`. Zero when the two coincide; the ``cos`` makes it
+    periodic in the heading difference.
+    """
+    a1 = torch.special.i1e(k1) / torch.special.i0e(k1)
+    log_i0_1 = torch.special.i0e(k1).log() + k1
+    log_i0_2 = torch.special.i0e(k2).log() + k2
+    return log_i0_2 - log_i0_1 + a1 * (k1 - k2 * torch.cos(mu1 - mu2))
+
+
+def polar_kl(p: "PolarMove", q: "PolarMove") -> torch.Tensor:
+    """``KL(p || q)`` of two polar moves, heading plus speed, shape ``(...)``.
+
+    Heading and speed are independent factors, so the joint KL is the sum:
+    the analytic VonMises term above plus torch's registered Beta KL (or
+    nothing, when both speeds are the same constant). Used by the explorer
+    prior (``training/prior.py``) to keep a fine-tuned policy close to the
+    explorer it was forked from, on the steps where exploring is what it is
+    supposed to be doing.
+    """
+    kl = vonmises_kl(p.theta, p.kappa, q.theta, q.kappa)
+    if p.speed_const is None and q.speed_const is None:
+        kl = kl + torch.distributions.kl_divergence(p._beta, q._beta)
+    elif (p.speed_const is None) != (q.speed_const is None):
+        raise ValueError("polar_kl: one speed is constant and the other is "
+                         "a Beta; the KL between them is infinite")
+    elif abs(float(p.speed_const) - float(q.speed_const)) > 1e-9:
+        raise ValueError("polar_kl: two different constant speeds have "
+                         "disjoint support; the KL is infinite")
+    return kl
+
+
 class PolarMove:
     """Heading x speed, packaged to stand in for ``Normal(mean, std)``.
 

@@ -51,6 +51,7 @@ from .training.cfg_args import settle_encoder
 from .training.explore import ExploreRegime
 from .training.exploit import ExploitRegime
 from .training.task import TaskRegime
+from .training.prior import ExplorerPrior
 from .rollout import task_stats
 from .training.refresh import Cadence, Refresher
 from .training import resume as resume_io
@@ -138,6 +139,28 @@ def run_navigate(
                      freeze_value=False, freeze_rnn=False)
     trainable = [p for p in agent.parameters() if p.requires_grad]
     optimizer = torch.optim.Adam(trainable, lr=cfg.ppo.lr)
+    # The explorer prior (training/prior.py, docs/EXPLORE_FIRST_PLAN.md §4):
+    # anchored to the weights as they are RIGHT HERE, which is the parent
+    # checkpoint's, before any step. A continued run would anchor to its own
+    # mid-run weights, which is a different and wrong prior, so it is refused
+    # rather than silently redefined.
+    prior = None
+    if (float(getattr(cfg, "ewc_lambda", 0.0)) > 0
+            or float(getattr(cfg, "prior_kl_coef", 0.0)) > 0):
+        if parent_ckpt is None:
+            raise ValueError("--ewc_lambda / --prior_kl_coef anchor the policy "
+                             "to the checkpoint it was forked from; they need "
+                             "--load_checkpoint")
+        if start_update:
+            raise ValueError("the explorer prior does not support "
+                             "--continue_from (the anchor would be the "
+                             "resumed weights, not the explorer's)")
+        prior = ExplorerPrior(
+            agent, ewc_lambda=float(getattr(cfg, "ewc_lambda", 0.0)),
+            kl_coef=float(getattr(cfg, "prior_kl_coef", 0.0)),
+            fisher_trajectories=int(getattr(cfg, "fisher_trajectories", 256)))
+        print(f"Explorer prior: {prior.describe()} (anchor = {parent_ckpt})",
+              flush=True)
     # One optimizer for the whole run: stages are segments of a single training
     # trajectory, so Adam's moments carry across a boundary. A stage-level `lr`
     # retunes the existing group instead of building a new optimizer.
@@ -574,7 +597,19 @@ def run_navigate(
 
         agent.train()
         t_ppo0 = time.time()
-        losses = ppo_update(agent, rollouts, cfg.ppo, optimizer, aux_scale=1.0)
+        if prior is not None and prior.needs_fisher:
+            # Once, on the first update's rollouts, before the first step:
+            # the Fisher is of the explorer, on the task, on its search
+            # steps. See training/prior.py.
+            _fs = prior.estimate_fisher(agent, rollouts)
+            print("  explorer prior: Fisher estimated on "
+                  f"{int(_fs['fisher_rows'])} rows / {int(_fs['fisher_steps'])} "
+                  f"search steps (max {_fs['fisher_max']:.3e}, "
+                  f"mean {_fs['fisher_mean']:.3e})", flush=True)
+        losses = ppo_update(agent, rollouts, cfg.ppo, optimizer, aux_scale=1.0,
+                            prior=prior)
+        if prior is not None:
+            losses["prior_drift"] = prior.drift(agent)
         t_ppo_acc += time.time() - t_ppo0
 
         _akl = getattr(cfg.ppo, "adaptive_kl", None)
@@ -1058,6 +1093,9 @@ CFG_FIELDS: dict[str, tuple[str, ...]] = {
     "obs_dropout": ("obs_dropout",),
     "exploit_obs_dropout": ("exploit_obs_dropout",),
     "exploit_heading_dropout": ("exploit_heading_dropout",),
+    "ewc_lambda": ("ewc_lambda",),
+    "prior_kl_coef": ("prior_kl_coef",),
+    "fisher_trajectories": ("fisher_trajectories",),
     "novelty_anneal": ("novelty_anneal",),
     "epsilon_explore": ("epsilon_explore",),
     "epsilon_anneal_updates": ("epsilon_anneal_updates",),
@@ -1635,6 +1673,19 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--exploit_heading_dropout", type=float, default=None,
                    help="heading_dropout (prev_action + prev_displacement) for"
                         " EXPLOIT rollouts only.")
+    p.add_argument("--ewc_lambda", type=float, default=None,
+                   help="Explorer prior, weight space: 0.5*lambda*sum F_i "
+                        "(theta_i - theta*_i)^2 toward the --load_checkpoint "
+                        "weights, F a diagonal Fisher estimated once on the "
+                        "first update's search steps. 0 = off "
+                        "(docs/EXPLORE_FIRST_PLAN.md section 4).")
+    p.add_argument("--prior_kl_coef", type=float, default=None,
+                   help="Explorer prior, behaviour space: coef * "
+                        "KL(explorer || policy) on the search steps (before "
+                        "the store) of every rollout, the explorer being a "
+                        "frozen copy of the --load_checkpoint weights. 0 = off.")
+    p.add_argument("--fisher_trajectories", type=int, default=None,
+                   help="Rows the EWC Fisher is estimated on (default 256).")
     p.add_argument("--obs_dropout", type=float, default=None,
                    help="Training-only dropout probability on the sensory"
                         " (wall-code) input, per entry per step. Eval sees"
