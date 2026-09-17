@@ -848,6 +848,47 @@ rule, at a slower curve. P29: regular mode reaches A2's ~5° from
 self-motion alone. P30: 8-heading targets cost ≤ 2× the steps of full
 directions — the decode is not label-limited.
 
+**What is fed to each model, exactly (plain terms).**
+
+*Data, shared.* 64 arenas (20×20 or 50×50 cells) at random spots on the
+scaffold. In each, a walker takes random unit steps (walls block). Every
+step is one record: `(arena, cell, grid code of that cell)` — the 434-number
+bump vector the agent's scaffold gives. No goals, no rewards, no true
+coordinates reach either model.
+
+*The MLP (decode).* Input: two codes from one walk, `[code(p_t),
+code(p_{t+k})]` (868 numbers). Target: the direction the walker actually
+moved between the two moments — the sum of its own steps, as a unit
+vector. Each of 4,000 updates: every walker takes 64 more steps (32,768
+new records over all arenas) and 32,768 pairs `(t, t+k)` are drawn from
+the recent history, chosen so displacement sizes 1..19 (or 1..49) are
+equally represented. Loss `1 − cos`. Test: in 16 arenas never walked,
+every pair of cells `(p, g)` → `[code(p), code(g)]` → compare the output
+direction with `g − p`.
+
+*The encoder.* Input: one code (434 numbers). Output: a 1024-number
+embedding `z`. No per-sample target: on a batch of 4,096 codes, for every
+pair of rows from the same walker, if the two cells were within 20 cells
+of each other (from the walker's own displacement between the moments)
+pull the embeddings together (cosine → 1), otherwise push them apart
+(cosine → 0); pairs from different walkers get no label; plus a small
+coding-rate term that keeps the embedding spread. Its trainer
+(`encoder_training.train`) reads a dataset from a file, so the walkers
+walk for a fixed budget (0.5M / 2M / 8M steps) and every (walker, visited
+cell, code) row is written to a dump (`hopfield_nav.dump_walks`); one
+walker per arena, so "same walker" = "same arena". Each epoch shuffles
+the N rows into batches of 4,096 rows — **one gradient update per batch,
+the loss over all 4,096² pairs in it, of which the ~64 rows per arena give
+~64 × 63 labelled pairs per arena (~260k per batch)** — for as many
+epochs as give the same gradient budget as its real encoders (39k updates
+at 50×50, 20k at 20×20; N = 160k / 25.6k rows). Test: embed every cell of
+the held-out arenas and read direction the way the agent does — project
+`z(g) − z(p)` onto the embedding's own east/north step directions at `p`
+(`rollout/signal.py`) — same pairs, same angular error.
+
+*The one asymmetry that matters:* the MLP's label is a direction, the
+encoder's is a proximity bit; each objective is built around its own.
+
 **Result.** §1.8. One design change on the way: raw random-walk pairs
 (k ≤ 30) are mostly 1–5 cells apart and the decode learned from them is
 short-range (8–10°); the arms were rerun on one code path with a
