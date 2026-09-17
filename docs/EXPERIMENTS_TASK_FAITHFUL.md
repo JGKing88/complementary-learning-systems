@@ -19,12 +19,12 @@ follow_q 0.83, exploit 1.25/1.29/1.35 (d = 0/5/10, steps ÷ shortest path);
 
 | arm | job | status | found_frac | steps_first | steps_per_reach | revisit steps | held-out follow_q | CL |
 |---|---|---|---|---|---|---|---|---|
-| task3_k1_h128 | – | not launched | | | | | | |
-| task3_k2_h128 | – | not launched | | | | | | |
-| task3_k1_h1024 | – | not launched | | | | | | |
-| task3_k2_h1024 | – | not launched | | | | | | |
-| task1_k2_h128 s43 | – | not launched | | | | | | |
-| task1r_k2_h128 | – | not launched | | | | | | |
+| task3_k1_h128 | 22864186 | queued | | | | | | |
+| task3_k2_h128 | 22864187 | queued | | | | | | |
+| task3_k1_h1024 | 22864188 | queued | | | | | | |
+| task3_k2_h1024 | 22864189 | queued | | | | | | |
+| task1_k2_h128 s43 | 22864192 | queued | | | | | | |
+| task1r_k2_h128 | 22864190 | queued | | | | | | |
 
 ## 1. Protocol (as run)
 
@@ -56,4 +56,13 @@ rollouts of its env with the state reset each rollout. No
 
 ## 3. Wave 1
 
-(entries added as jobs launch)
+- 2026-09-16 — smoke `task3_k2_h128` `task:6,visits=2` (job 22863755):
+  COMPLETED in 7 min; 192 trajectories/update, 12.2 s/update (h128), eval
+  at scope `task` 61 s; untrained numbers as expected (found 1–4 %, a few
+  step-0 touches from spawns inside the goal ball).
+- 2026-09-16 — wave 1 launched, seed 42 (task1 seed 43 = interior goal
+  (11,6)), `task:4000,visits=K`, ENV_REPEATS 2, batch 32 (task3) / 64
+  (task1*), eval every 50, 12 h walls on ou_bcs_normal: 22864186
+  task3_k1_h128, 22864187 task3_k2_h128, 22864188 task3_k1_h1024, 22864189
+  task3_k2_h1024, 22864190 task1r_k2_h128, 22864192 task1_k2_h128. Expect
+  ~15 h for h128 at 4000 updates → one `--continue_from` leg after the wall.
