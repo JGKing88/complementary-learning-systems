@@ -22,29 +22,62 @@ def test_walkers_take_unit_steps_and_never_teleport():
     assert np.array_equal(seg2[:, :, 0], seg[:, :, -1])
 
 
+def _walk_segments(rng, n_envs, W, T, n_seg):
+    """Continuous random walks cut into segments whose first position repeats the previous last."""
+    pos = rng.randint(5, 15, size=(n_envs, W, 2))
+    segs = []
+    for _ in range(n_seg):
+        seg = np.zeros((n_envs, W, T + 1, 2), dtype=np.int64)
+        seg[:, :, 0] = pos
+        for t in range(T):
+            step = rng.randint(-1, 2, size=(n_envs, W, 2))
+            pos = np.clip(pos + step, 0, 19)
+            seg[:, :, t + 1] = pos
+        segs.append(seg)
+    return segs
+
+
 def test_buffer_pairs_are_odometry_and_within_range():
     rng = np.random.RandomState(0)
     n_envs, W, T = 3, 2, 10
     buf = Buffer(n_envs, W, T, n_updates=4)
-    for _ in range(6):                                     # ring wraps after 4
-        seg = rng.randint(0, 20, size=(n_envs, W, T + 1, 2))
+    segs = _walk_segments(rng, n_envs, W, T, 6)
+    for seg in segs:                                       # ring holds 4 * T + 1 positions
         buf.add(seg)
-    assert buf.n == 4
-    envs, p, g, d = buf.sample(rng, 500, k_max=5, max_abs=3)
+    assert buf.n == 4 * T + 1
+    # The stored history is the tail of the true continuous walk.
+    full = np.concatenate([segs[0]] + [s[:, :, 1:] for s in segs[1:]], axis=2)   # (n_envs, W, 6T+1, 2)
+    for i in range(buf.n):
+        assert np.array_equal(buf._at(np.arange(n_envs), np.zeros(n_envs, int), i), full[:, 0, full.shape[2] - buf.n + i])
+    envs, p, g, d = buf.sample(rng, 500, k_max=25, max_abs=3)
     assert len(envs) == 500 and (np.abs(d).max(1) >= 1).all() and (np.abs(d).max(1) <= 3).all()
     assert np.array_equal(d, (g - p).astype(np.float32))
-    # Every pair really is two positions of one stored walk.
-    for e, pp, gg in zip(envs[:50], p[:50], g[:50]):
-        walks = buf.pos[:buf.n, e]                         # (n, W, T+1, 2)
+    # Every pair is two positions of one stored walk, at most k_max apart.
+    for e, pp, gg in zip(envs[:60], p[:60], g[:60]):
         hit = False
-        for s in range(buf.n):
-            for w in range(W):
-                path = walks[s, w]
-                ip = np.where((path == pp).all(1))[0]
-                ig = np.where((path == gg).all(1))[0]
-                if any(0 < j - i <= 5 for i in ip for j in ig):
-                    hit = True
+        for w in range(W):
+            path = full[e, w, full.shape[2] - buf.n:]
+            ip = np.where((path == pp).all(1))[0]
+            ig = np.where((path == gg).all(1))[0]
+            if any(0 < j - i <= 25 for i in ip for j in ig):
+                hit = True
         assert hit
+
+
+def test_buffer_balance_flattens_the_displacement_sizes():
+    rng = np.random.RandomState(1)
+    n_envs, W, T = 4, 4, 50
+    buf = Buffer(n_envs, W, T, n_updates=8)
+    for seg in _walk_segments(rng, n_envs, W, T, 8):
+        buf.add(seg)
+    _, _, _, d = buf.sample(rng, 4000, k_max=300, max_abs=6)
+    r = np.abs(d).max(1).astype(int)
+    plain = np.bincount(r, minlength=7)[1:]
+    _, _, _, d = buf.sample(rng, 4000, k_max=300, max_abs=6, balance=True)
+    r = np.abs(d).max(1).astype(int)
+    bal = np.bincount(r, minlength=7)[1:]
+    assert plain.max() / plain.min() > 1.5                # a walk's own sizes are uneven
+    assert bal.max() / bal.min() < 1.3                    # balanced within 30%
 
 
 def test_targets_direction_and_heading8():

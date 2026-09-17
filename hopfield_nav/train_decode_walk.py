@@ -14,7 +14,8 @@ supervision) on one axis: env-steps of experience.
            goals inert (no reward, no teleport). Segments go into a replay
            buffer of the last `buffer_updates` updates.
   pairs    (t, t + k) of one walk, k ~ U[1, k_max], kept if the displacement
-           is non-zero and within Chebyshev `max_abs` (A1's 19).
+           is non-zero and within Chebyshev `max_abs` (A1's 19); with
+           `--balance_range`, uniform over that Chebyshev size.
   target   unit(p_{t+k} - p_t), or the nearest of 8 headings (`--target
            heading8`, the label-richness ablation).
   eval     every `eval_every` updates the static quadrant table on the
@@ -83,34 +84,73 @@ class Walkers:
 
 
 class Buffer:
-    """Ring of the last `n_updates` segments per env."""
+    """Each walker's last `history` positions, as one continuous walk.
+
+    Segments are appended in order and every walker's segment continues its
+    previous one, so a pair `(t, t + k)` may span segment boundaries and `k`
+    may be as long as the history. `sample` draws `k ~ U[1, k_max]`; with
+    `balance` it then keeps pairs so that the Chebyshev size of the
+    displacement is uniform over `1..max_abs` -- the walker choosing which
+    of its own experiences to learn from, since a random walk's own
+    displacement distribution is concentrated at a few cells."""
 
     def __init__(self, n_envs: int, walkers: int, T: int, n_updates: int):
-        self.pos = np.zeros((n_updates, n_envs, walkers, T + 1, 2), dtype=np.int64)
-        self.n, self.head, self.cap = 0, 0, n_updates
+        self.L = n_updates * T + 1
+        self.pos = np.zeros((n_envs, walkers, self.L, 2), dtype=np.int64)
+        self.n, self.head = 0, 0                    # valid length, next write slot (ring)
         self.T, self.W, self.n_envs = T, walkers, n_envs
 
     def add(self, seg: np.ndarray) -> None:
-        self.pos[self.head] = seg
-        self.head = (self.head + 1) % self.cap
-        self.n = min(self.n + 1, self.cap)
+        """`seg` is `(n_envs, W, T + 1, 2)`; its first position repeats the last stored one."""
+        block = seg[:, :, 1:] if self.n > 0 else seg
+        for j in range(block.shape[2]):
+            self.pos[:, :, self.head] = block[:, :, j]
+            self.head = (self.head + 1) % self.L
+            self.n = min(self.n + 1, self.L)
 
-    def sample(self, rng, n: int, k_max: int, max_abs: int):
-        """`n` pairs: env id, start cell (x, y), end cell, displacement. Pairs
-        with a zero displacement or one beyond `max_abs` are rejected."""
+    def _at(self, e, w, i):
+        """Position at logical index `i` (0 = oldest valid)."""
+        return self.pos[e, w, (self.head - self.n + i) % self.L]
+
+    def sample(self, rng, n: int, k_max: int, max_abs: int, balance: bool = False):
+        """`n` pairs: env id, start cell, end cell, displacement. Zero and
+        out-of-range displacements are rejected; with `balance`, at most
+        `n / max_abs` per Chebyshev size, topped up from the leftovers."""
+        k_max = min(k_max, self.n - 1)
         envs, ps, gs = [], [], []
         got = 0
+        per_bin = int(np.ceil(n / max_abs))
+        counts = np.zeros(max_abs + 1, dtype=np.int64)
+        spare_e, spare_p, spare_g = [], [], []
+        tries = 0
         while got < n:
-            m = 2 * (n - got)
-            s = rng.randint(0, self.n, size=m)
+            tries += 1
+            m = 4 * (n - got) if balance else 2 * (n - got)
             e = rng.randint(0, self.n_envs, size=m)
             w = rng.randint(0, self.W, size=m)
             k = rng.randint(1, k_max + 1, size=m)
-            t = np.floor(rng.rand(m) * (self.T + 1 - k)).astype(np.int64)
-            p = self.pos[s, e, w, t]
-            g = self.pos[s, e, w, t + k]
+            t = np.floor(rng.rand(m) * (self.n - k)).astype(np.int64)
+            p = self._at(e, w, t)
+            g = self._at(e, w, t + k)
             d = g - p
-            ok = (np.abs(d).max(1) >= 1) & (np.abs(d).max(1) <= max_abs)
+            r = np.abs(d).max(1)
+            ok = (r >= 1) & (r <= max_abs)
+            if balance:
+                keep = np.zeros(m, dtype=bool)
+                for rr in range(1, max_abs + 1):
+                    idx = np.where(ok & (r == rr))[0]
+                    room = per_bin - counts[rr]
+                    if room > 0 and len(idx) > 0:
+                        idx = idx[:room]
+                        keep[idx] = True
+                        counts[rr] += len(idx)
+                spare = ok & ~keep
+                spare_e.append(e[spare]); spare_p.append(p[spare]); spare_g.append(g[spare])
+                ok = keep
+                if tries > 50:                      # the walk cannot supply some sizes: top up
+                    fill = np.concatenate(spare_e), np.concatenate(spare_p), np.concatenate(spare_g)
+                    envs.append(fill[0]); ps.append(fill[1]); gs.append(fill[2])
+                    got += len(fill[0])
             envs.append(e[ok]); ps.append(p[ok]); gs.append(g[ok])
             got += int(ok.sum())
         envs = np.concatenate(envs)[:n]
@@ -167,6 +207,9 @@ def parse_args():
     p.add_argument("--max_abs", type=int, default=19, help="Chebyshev range kept (A1's 19)")
     p.add_argument("--pairs_per_update", type=int, default=32768)
     p.add_argument("--target", choices=["direction", "heading8"], default="direction")
+    p.add_argument("--balance_range", action=argparse.BooleanOptionalAction, default=False,
+                   help="keep training pairs uniform over Chebyshev |Delta| = 1..max_abs (a random "
+                        "walk's own displacements are concentrated at a few cells)")
     # World
     p.add_argument("--size", type=int, default=20)
     p.add_argument("--observation_size", type=int, default=120)
@@ -283,7 +326,8 @@ def main() -> None:
     for u in range(u0 + 1, args.n_updates + 1):
         buf.add(walkers.segment(args.steps_per_update))
         env_steps += steps_per_update
-        envs, p, g, d = buf.sample(data_rng, args.pairs_per_update, args.k_max, args.max_abs)
+        envs, p, g, d = buf.sample(data_rng, args.pairs_per_update, args.k_max, args.max_abs,
+                                   balance=args.balance_range)
         x = torch.from_numpy(batch_inputs(train, acfg, args.size, envs, p, g)).to(device)
         y = torch.from_numpy(targets_for(d, args.target)).to(device)
         loss = model.loss(x, y)
