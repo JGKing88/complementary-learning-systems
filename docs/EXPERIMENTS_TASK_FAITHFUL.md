@@ -277,6 +277,31 @@ Two task-faithful ways, both run:
   `xfB0_task1r_k4_h1024` is another session's run of this launcher, not
   part of this log.
 
+## 7. Verdicts (held-out probe, 22893595, `se_task_r1_*`)
+
+Six unseen arenas; exploit = pre-stored goal, deterministic, 32 trials × 6
+envs, "× optimal" = steps / (start_dist − 1); explore = 144 sampled trials,
+swept at 200 steps, swept_eff = swept / billiard at the model's own speed.
+
+| checkpoint | success d 0/5/10 | × optimal | align_true | swept d0/d10 | speed | swept_eff d0 |
+|---|---|---|---|---|---|---|
+| task3r_k2_h128 u1000 (wave-1 rule) | 1.00/1.00/0.99 | 1.40/1.38/1.46 | 0.83/0.83/0.73 | 0.49/0.48 | 0.85 | 0.82 |
+| task1r_k4_h128 u1500 (wave-1 rule) | 1.00/1.00/0.98 | 1.32/1.31/1.50 | 0.86/0.83/0.59 | 0.48/0.47 | 0.81 | 0.82 |
+| **task3r_k2_h128_nv_c1 u2500** | 1.00/1.00/0.99 | **1.17/1.20/1.29** | **0.93/0.91/0.75** | 0.54/0.53 | 0.93 | 0.85 |
+| task3_k2_h128_nv u2500 (fixed goals) | 1.00/1.00/1.00 | 2.44/2.25/2.67 | 0.45/0.48/0.39 | 0.26/0.37 | 0.52 | 0.58 |
+| d0_base u725 | 1.00/1.00/1.00 | 1.20/1.21/1.31 | 0.91/0.90/0.81 | 0.61/0.59 | 0.96 | 0.95 |
+
+Reading: the three-redrawn-arena one-rule arm at u2500 exploits as well
+as d0_base on unseen arenas (and matches fix1_h128 s43's 1.14/1.14/1.19
+without ever seeing a fixed goal); the wave-1-rule arms are 10–20 % less
+direct at 1000–1500 updates and still improving; all redraw arms sweep at
+82–85 % of d0_base's efficiency and move more slowly (0.81–0.93 vs 0.96),
+which is most of the raw swept gap. The fixed-goal arm's deterministic
+exploit is a position-map walk (2.4× optimal, align 0.45) although sampled
+it reaches the goal in ~15 steps — the two evals disagree exactly when the
+policy is not following q. Collapsed-tail fraction 0.29–0.32 for every arm
+including d0_base (0.32).
+
 `task3r_*` added to the launcher (3 arenas, goal redrawn per visit
 sequence). h128 only (h1024 collapses under `_nv`).
 
