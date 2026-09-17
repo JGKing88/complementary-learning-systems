@@ -36,6 +36,7 @@ MAX_ABS=${MAX_ABS:-19}
 PAIRS_PER_UPDATE=${PAIRS_PER_UPDATE:-32768}
 TARGET=${TARGET:-direction}             # direction | heading8
 BALANCE=${BALANCE:-0}                   # 1: --balance_range
+RANGE_WARMUP=${RANGE_WARMUP:-0}
 SIZE=${SIZE:-20}
 OBS=${OBS:-120}
 LAMBDAS=${LAMBDAS:-"11 12 13"}
@@ -71,7 +72,7 @@ PYTHONUNBUFFERED=1 python -m hopfield_nav.train_decode_walk \
   --mode "$MODE" --hidden_size "$HIDDEN" --num_layers "$LAYERS" --nonlinearity "$NONLIN" \
   --n_envs "$N_ENVS" --n_val_envs "$N_VAL_ENVS" --n_same_envs "$N_SAME_ENVS" \
   --walkers "$WALKERS" --steps_per_update "$STEPS_PER_UPDATE" --buffer_updates "$BUFFER_UPDATES" \
-  --k_max "$K_MAX" --max_abs "$MAX_ABS" --pairs_per_update "$PAIRS_PER_UPDATE" --target "$TARGET" $BALANCE_FLAG \
+  --k_max "$K_MAX" --max_abs "$MAX_ABS" --pairs_per_update "$PAIRS_PER_UPDATE" --target "$TARGET" $BALANCE_FLAG --range_warmup_updates "$RANGE_WARMUP" \
   --size "$SIZE" --observation_size "$OBS" --lambdas $LAMBDAS --fwhm_ratio "$FWHM" \
   --place_margin "$PLACE_MARGIN" --place_region "$PLACE_REGION" \
   --n_updates "$N_UPDATES" --lr "$LR" --lr_step_at "$LR_STEP_AT" --lr_step_gamma "$LR_STEP_GAMMA" \

@@ -207,6 +207,10 @@ def parse_args():
     p.add_argument("--max_abs", type=int, default=19, help="Chebyshev range kept (A1's 19)")
     p.add_argument("--pairs_per_update", type=int, default=32768)
     p.add_argument("--target", choices=["direction", "heading8"], default="direction")
+    p.add_argument("--range_warmup_updates", type=int, default=0,
+                   help="grow the kept Chebyshev range from 19 to max_abs over this many updates "
+                        "(size-50 arenas: a 1..49-balanced batch from the start stalls on the 1-cos "
+                        "plateau in two of three seeds; short pairs first is the walker's own curriculum)")
     p.add_argument("--balance_range", action=argparse.BooleanOptionalAction, default=False,
                    help="keep training pairs uniform over Chebyshev |Delta| = 1..max_abs (a random "
                         "walk's own displacements are concentrated at a few cells)")
@@ -326,7 +330,11 @@ def main() -> None:
     for u in range(u0 + 1, args.n_updates + 1):
         buf.add(walkers.segment(args.steps_per_update))
         env_steps += steps_per_update
-        envs, p, g, d = buf.sample(data_rng, args.pairs_per_update, args.k_max, args.max_abs,
+        max_abs_u = args.max_abs
+        if args.range_warmup_updates > 0 and u <= args.range_warmup_updates:
+            lo = min(19, args.max_abs)
+            max_abs_u = int(round(lo + (args.max_abs - lo) * u / args.range_warmup_updates))
+        envs, p, g, d = buf.sample(data_rng, args.pairs_per_update, args.k_max, max_abs_u,
                                    balance=args.balance_range)
         x = torch.from_numpy(batch_inputs(train, acfg, args.size, envs, p, g)).to(device)
         y = torch.from_numpy(targets_for(d, args.target)).to(device)
