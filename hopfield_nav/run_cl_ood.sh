@@ -67,6 +67,13 @@ declare -A RUN=(
   [fix1_h128_s43]=navigate_navp2_fix1_h128_s43_22825505
   [fix1_h128_s44]=navigate_navp2_fix1_h128_s44_22826509
   [fix3_h128]=navigate_navp2_fix3_h128_s42_22783800
+  # EXPERIMENTS_TASK_FAITHFUL: the task regime (search -> store once -> keep
+  # going). Wave-1 rule under redraw (novelty off after the store) and the
+  # one-rule (nv) three-redrawn-arena arm.
+  [task3r_k2_h128]=navigate_navp2_task3r_k2_h128_s42_22883646
+  [task1r_k4_h128]=navigate_navp2_task1r_k4_h128_s42_22883645
+  [task3r_k2_h128_nv_c1]=navigate_navp2_task3r_k2_h128_nv_c1_s42_22872241
+  [task3_k2_h128_nv]=navigate_navp2_task3_k2_h128_nv_s42_22866166
 )
 
 for arm in $ARMS; do
