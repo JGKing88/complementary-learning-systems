@@ -106,8 +106,11 @@ class ExplorerPrior:
         acc = {n: torch.zeros_like(p) for n, p in params.items()}
         n_rows = 0
         n_steps = 0.0
-        was_training = agent.training
-        agent.eval()
+        # Stays in whatever mode the agent is in -- normally train(): cuDNN's
+        # RNN backward refuses to run in eval mode ("cudnn RNN backward can
+        # only be called in training mode"), and the agent has no dropout or
+        # batch-norm, so the forward is the same either way. Found on the
+        # first GPU run; the CPU tests never hit it.
         try:
             for r in rollouts:
                 mask = r.explore_mask
@@ -138,8 +141,6 @@ class ExplorerPrior:
                     break
         finally:
             agent.zero_grad(set_to_none=True)
-            if was_training:
-                agent.train()
         if n_rows == 0:
             raise RuntimeError(
                 "explorer prior: no search steps in the first update's "
