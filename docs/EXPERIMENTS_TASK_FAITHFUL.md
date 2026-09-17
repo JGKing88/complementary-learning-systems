@@ -232,6 +232,16 @@ Two task-faithful ways, both run:
 | task3r_k2_h128 (wave-1 rule, 3 redrawn arenas) | 22883646 | queued 05:53 |
 | task1r_k4_h128_nv_c1_g5 | 22883647 | queued 05:53 |
 
+- 2026-09-17 06:45 — **task3r_k2_h128_nv_c1 (3 redrawn arenas) is the first
+  arm strong on both halves**: held-out u1500 found 0.66–0.68, revisits
+  1.00 at **20 steps**, 21 steps/touch, follow_q 0.54; u1000 was 0.54–0.59
+  / 1.00 at 28 / 27 / 0.41 — still improving, no decay yet. Seed 43
+  replicate launched (22884953, mit_normal_gpu 6 h). K=4 s42 at u2000:
+  found 0.64, revisits 0.95 at 34, 45 steps/touch, follow_q 0.17 (partial
+  recovery from u1500, well below its u1000 peak). K=4 s43 u500: found
+  0.40, revisits 1.00 at 44, follow_q 0.16. task1r_k2_h128_nv_c1 hit its
+  6 h wall at ~u3600 (22872240): exploit never left ~50 steps/touch.
+
 `task3r_*` added to the launcher (3 arenas, goal redrawn per visit
 sequence). h128 only (h1024 collapses under `_nv`).
 
