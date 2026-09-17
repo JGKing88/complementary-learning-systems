@@ -48,7 +48,10 @@ def label_decode(a: dict) -> str:
 
 
 def label_encoder(a: dict) -> str:
-    return f"encoder: {a['labels']} labels, r={a['radius']:.0f}"
+    lab = f"encoder: {a['labels']} labels, r={a['radius']:.0f}"
+    if float(a.get("gain_end", 100)) != 100:
+        lab += f", gain\u2192{a['gain_end']:.0f}"
+    return lab
 
 
 def main():
@@ -81,6 +84,8 @@ def main():
         color = styles.setdefault(lab, f"C{len(styles)}")
         ax.plot(x, y, "--", color=color, lw=1.8 if seed == 0 else 1.2, alpha=1.0 if seed == 0 else 0.6,
                 label=lab if seed == 0 else None)
+        i = int(np.argmin(y))
+        ax.plot(x[i], y[i], "o", color=color, ms=5, mfc="white")     # its best point (its own protocol selects by eval)
     for spec in args.refs.split(","):
         name, val = spec.rsplit(":", 1)
         ax.axhline(float(val), color="0.4", ls=":", lw=1)

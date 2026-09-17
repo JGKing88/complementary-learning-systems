@@ -21,6 +21,7 @@ set -euo pipefail
 REPO=${REPO:-/orcd/home/002/jackking/cls/.claude/worktrees/nn-generalization-control}
 
 LABELS=${LABELS:-odometry}              # odometry | coords
+POSITIONS=${POSITIONS:-walk}            # walk | iid
 RADIUS=${RADIUS:-20}
 HIDDEN=${HIDDEN:-256}
 LAYERS=${LAYERS:-4}
@@ -65,7 +66,7 @@ EVAL_FLAG=""
 [[ -n "$EVAL_ONLY" ]] && EVAL_FLAG="--eval_only $EVAL_ONLY"
 
 PYTHONUNBUFFERED=1 python -m hopfield_nav.train_encoder_walk \
-  --labels "$LABELS" --radius "$RADIUS" --hidden_dim "$HIDDEN" --num_hidden_layers "$LAYERS" --out_dim "$OUT_DIM" \
+  --labels "$LABELS" --positions "$POSITIONS" --radius "$RADIUS" --hidden_dim "$HIDDEN" --num_hidden_layers "$LAYERS" --out_dim "$OUT_DIM" \
   --gain_start "$GAIN_START" --gain_end "$GAIN_END" --attract "$ATTRACT" --repel "$REPEL" --rate "$RATE" --lr "$LR" \
   --n_envs "$N_ENVS" --n_val_envs "$N_VAL_ENVS" --n_same_envs "$N_SAME_ENVS" \
   --walkers "$WALKERS" --steps_per_update "$STEPS_PER_UPDATE" --buffer_updates "$BUFFER_UPDATES" \

@@ -162,6 +162,10 @@ def parse_args():
     p.add_argument("--rate_eps", type=float, default=1.0)
     p.add_argument("--radius", type=float, default=20.0)
     p.add_argument("--labels", choices=["odometry", "coords"], default="odometry")
+    p.add_argument("--positions", choices=["walk", "iid"], default="walk",
+                   help="walk: moments of the walkers' histories (the decode's data); iid: cells drawn "
+                        "uniformly from the same envs -- the encoder's own sampling, on our arenas "
+                        "(coords labels only; env-steps then count the walks still taken, for the axis)")
     p.add_argument("--lr", type=float, default=3e-4)
     p.add_argument("--weight_decay", type=float, default=1e-4)
     p.add_argument("--grad_clip", type=float, default=1.0)
@@ -303,7 +307,13 @@ def main() -> None:
         encoder.train()
         losses = []
         for _ in range(args.batches_per_update):
-            e, w, pos = sample_batch(buf, data_rng, args.batch_envs, args.per_walker)
+            if args.positions == "iid":
+                envs = data_rng.choice(len(train), size=args.batch_envs, replace=False)
+                e = np.repeat(envs, args.walkers * args.per_walker)
+                w = np.zeros(len(e), dtype=np.int64)
+                pos = data_rng.randint(0, args.size, size=(len(e), 2))
+            else:
+                e, w, pos = sample_batch(buf, data_rng, args.batch_envs, args.per_walker)
             # Gather codes per env (one indexed take per env in the batch).
             x = np.empty((B, vh.Ng), dtype=np.float32)
             ids = pos[:, 0] * args.size + pos[:, 1]
