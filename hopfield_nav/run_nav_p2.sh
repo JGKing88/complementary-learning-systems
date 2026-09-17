@@ -1859,10 +1859,11 @@ case "$VARIANT" in
       #   task3_<k><lever>   3 envs, FIXED goals (primary)
       #   task1_<k><lever>   1 env, fixed goal (memorisation control)
       #   task1r_<k><lever>  1 env, goal redrawn per visit sequence (protocol control)
+      #   task3r_<k><lever>  3 envs, goals redrawn per visit sequence (wave 3)
       #   k1 / k2            visits; ENV_REPEATS is 2 either way so the
       #                      trajectories per update match fix3 / fix1
       #   h128 / h1024       trunk
-      task3_*|task1_*|task1r_*)
+      task3_*|task3r_*|task1_*|task1r_*)
         TASK_VISITS=1
         case "$VARIANT" in *_k2*) TASK_VISITS=2 ;; esac
         [ -z "${SCHEDULE_SET:-}" ] && SCHEDULE=${TASK_SCHEDULE:-"task:4000,visits=${TASK_VISITS}"}
@@ -1872,6 +1873,7 @@ case "$VARIANT" in
         ENV_REPEATS=${TASK_ENV_REPEATS:-2}
         case "$VARIANT" in
           task3_*)  ENVS_PER_WORLD=3; BATCH_ENVS=${FIX_BATCH_ENVS:-32} ;;
+          task3r_*) ENVS_PER_WORLD=3; BATCH_ENVS=${FIX_BATCH_ENVS:-32}; REDRAW_GOAL_PER_ROLLOUT=1 ;;
           task1r_*) ENVS_PER_WORLD=1; BATCH_ENVS=${FIX_BATCH_ENVS:-64}; REDRAW_GOAL_PER_ROLLOUT=1 ;;
           task1_*)  ENVS_PER_WORLD=1; BATCH_ENVS=${FIX_BATCH_ENVS:-64} ;;
         esac
