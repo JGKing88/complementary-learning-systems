@@ -22,9 +22,9 @@ sampled trials) at the update shown; probe / CL columns from §7.
 
 | arm | job | status | held-out found | revisit steps | steps/touch | follow_q (eval) | probe × opt d0/5/10 | CL revisits |
 |---|---|---|---|---|---|---|---|---|
-| **task3r_k2_h128** (wave-1 rule, 3 redrawn, K=2) | 22883646 | running | 0.61 / 0.46 (u1000) | 14.6 | 12.7 | 0.89 | 1.40/1.38/1.46 (u1000) | 3000/3000 at 15.4, Δ +0.00 |
+| **task3r_k2_h128** (wave-1 rule, 3 redrawn, K=2) | 22883646 | running | **0.73 / 0.73** (u2500) | 12.7 | 12.7 | 0.94 | 1.36/1.31/1.56 (u2500); 1.40/1.38/1.46 (u1000) | **3000/3000 at 12.8**, Δ +0.00 (u2500); 3000/3000 at 15.4 (u1000) |
 | **task1r_k4_h128** (wave-1 rule, 1 redrawn, K=4) | 22883645 | running | 0.52–0.54 (u1500) | 15.9 | 14.4 | 0.87 | 1.32/1.31/1.50 (u1500) | 2997/3000 at 15.9, Δ −0.01 |
-| **task3r_k2_h128_nv_c1** (one rule, 3 redrawn) | 22872241 | running | 0.42–0.52 (u2500) | 12.4 | 12.5 | 0.91 | **1.17/1.20/1.29** (u2500) | – |
+| **task3r_k2_h128_nv_c1** (one rule, 3 redrawn) | 22872241 | done u4000 | 0.50–0.57 (u4000) | 11.3 | 12.1 | 0.92 | **1.19/1.19/1.26**, align 0.92/0.93/0.83 (u4000) | – |
 | task1r_k4_h128_nv_c1 (one rule, K=4) | 22874710 | done u4000 | 0.46–0.49 | 13.5 | 13.4 | 0.89 (after a u1150–u2000 trough) | – | – |
 | task1r_k4_h128_nv_c1_g5 | 22883647 | running | 0.33 (u1500) | 16.3 | 16.0 | 0.80 | – | – |
 | task3_k2_h128_nv (fixed goals) | 22866166 | running | 0.17–0.20 (u3000) | 25 | 15 | 0.66 | 2.44/2.25/2.67 (u2500, position map) | – |
@@ -347,6 +347,7 @@ sampled; outputs `results/nav_tri_probe/cl_i200/cl_task*`):
 |---|---|---|---|---|
 | task3r_k2_h128 u1000 | 22893661 | 0.9925 at 15.2 steps | **3000/3000 at 15.4** | +0.00 |
 | task1r_k4_h128 u1500 | 22893662 | 0.9875 at 17.0 | 2997/3000 at 15.9 | −0.01 (one arena 0.98 in the last block) |
+| **task3r_k2_h128 u2500** | 22911870 | 0.9992 at 12.6 | **3000/3000 at 12.8** | +0.00 |
 | fix1_h128 s43 u3000 (§8.15, for reference) | 22859040 | 0.993 at 11.8 | 3000/3000 at 11.6 | +0.00 |
 
 No dead arena in either. The task-trained models reproduce the zero-
