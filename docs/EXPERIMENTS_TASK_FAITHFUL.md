@@ -22,11 +22,13 @@ sampled trials) at the update shown; probe / CL columns from §7.
 
 | arm | job | status | held-out found | revisit steps | steps/touch | follow_q (eval) | probe × opt d0/5/10 | CL revisits |
 |---|---|---|---|---|---|---|---|---|
-| **task3r_k2_h128** (wave-1 rule, 3 redrawn, K=2) | 22883646 | running | **0.73 / 0.73** (u2500) | 12.7 | 12.7 | 0.94 | 1.36/1.31/1.56 (u2500); 1.40/1.38/1.46 (u1000) | **3000/3000 at 12.8**, Δ +0.00 (u2500); 3000/3000 at 15.4 (u1000) |
-| **task1r_k4_h128** (wave-1 rule, 1 redrawn, K=4) | 22883645 | running | 0.52–0.54 (u1500) | 15.9 | 14.4 | 0.87 | 1.32/1.31/1.50 (u1500) | 2997/3000 at 15.9, Δ −0.01 |
+| **task3r_k2_h128** (wave-1 rule, 3 redrawn, K=2) | 22883646 | wall at ~u3400 | **0.79 / 0.63** (u3000); 0.73 / 0.73 (u2500) | 11.2 | 12.1 | 0.94 | 1.36/1.31/1.56 (u2500); 1.40/1.38/1.46 (u1000) | **3000/3000 at 12.8**, Δ +0.00 (u2500); 3000/3000 at 15.4 (u1000) |
+| **task1r_k4_h128** (wave-1 rule, 1 redrawn, K=4) | 22883645 | done u4000 | 0.53 / 0.47 (u4000) | 12.5 | 13.0 | 0.94 | 1.32/1.31/1.50 (u1500) | 2997/3000 at 15.9, Δ −0.01 |
 | **task3r_k2_h128_nv_c1** (one rule, 3 redrawn) | 22872241 | done u4000 | 0.50–0.57 (u4000) | 11.3 | 12.1 | 0.92 | **1.19/1.19/1.26**, align 0.92/0.93/0.83 (u4000) | – |
 | task1r_k4_h128_nv_c1 (one rule, K=4) | 22874710 | done u4000 | 0.46–0.49 | 13.5 | 13.4 | 0.89 (after a u1150–u2000 trough) | – | – |
-| task1r_k4_h128_nv_c1_g5 | 22883647 | running | 0.33 (u1500) | 16.3 | 16.0 | 0.80 | – | – |
+| task1r_k4_h128_nv_c1_g5 | 22883647 | done u4000 | 0.59 / 0.49 (u4000) | 16.9 | 16.2 | 0.77 | – | – |
+| task3r_k2_h128 s43 (replicate) | 22897775 | wall at ~u2900 | 0.55 / 0.61 (u2500) | 14.8 | 12.6 | 0.93 | – | – |
+| task3r_k2_h128_nv_c1 s43 (replicate) | 22884953 | wall at ~u2600 | 0.57 (u2500) | 56 (still in the trough) | 49 | 0.15 | – | – |
 | task3_k2_h128_nv (fixed goals) | 22866166 | running | 0.17–0.20 (u3000) | 25 | 15 | 0.66 | 2.44/2.25/2.67 (u2500, position map) | – |
 | task3_k1_h128_nv (fixed goals) | 22866167 | running | 0.43–0.49 (u3000) | 37 | 17 | 0.56 | – | – |
 | task3_k2_h128 (wave-1 rule, fixed goals) | 22864187 | timed out u3400 | 0.57 (u3000) | 42 | 24 | 0.20 | – | – |
@@ -268,6 +270,22 @@ Two task-faithful ways, both run:
   trough. Verdicts round 2 submitted: probe 22911869 (task3r_k2 u2500,
   task1r_k4 u3500, task3r_nv_c1 u4000 + d0_base), CL 22911870
   (task3r_k2_h128 u2500).
+- 2026-09-17 18:00 — **all arms finished.** task3r_k2_h128 s42 u3000
+  (last 500-mark before its 12 h wall at ~u3400): search **0.79 / 0.63**,
+  revisits 1.00 at **11.2**, 12.1 steps/touch, follow_q 0.94 — the line's
+  best point on both halves; CL at u2500 3000/3000 at 12.8, Δ +0.00. s43
+  replicate (wall at ~u2900) tracked it: u2500 search 0.55 / 0.61,
+  revisits 1.00 at 14.8, follow_q 0.93. task1r_k4_h128 done u4000: search
+  0.53 / 0.47, revisits 1.00 at 12.5, 13.0 steps/touch, follow_q 0.94.
+  `_g5` done u4000: 0.59 / 0.49, revisits 1.00 at 16.9, follow_q 0.77 —
+  behind the wave-1-rule arms on both halves. task3r_nv_c1 s43 hit its
+  6 h wall at ~u2600 still in the one-rule trough (its s42 twin had
+  cleared it by u2000). Page v14 carries Part IV with the u2500 continual
+  figures and both verdict tables. Open: the search half of every redraw
+  arm sits at 0.5–0.8 held-out found within 200 steps (swept_eff
+  0.88–0.92 vs d0_base 0.95) — the remaining gap to d0_base is search
+  speed (0.82–0.93 vs 0.96), not direction; the parked levers are §7 of
+  the plan.
 
 - 2026-09-17 06:45 — **task3r_k2_h128_nv_c1 (3 redrawn arenas) is the first
   arm strong on both halves**: held-out u1500 found 0.66–0.68, revisits
