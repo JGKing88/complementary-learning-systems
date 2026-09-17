@@ -250,6 +250,19 @@ Two task-faithful ways, both run:
   was the *known* goal, not the rule. For the record at the same hour:
   task3_k2_h128_nv u2500 14.4 steps/touch, revisits 1.00 at 19, follow_q
   0.79, found 0.25–0.38; K=4 s43 u1000 revisits 1.00 at 31, follow_q 0.28.
+- 2026-09-17 08:50 — wave 4 at u1000, held-out: **task1r_k4_h128** (wave-1
+  rule) found 0.53–0.57, revisits 1.00 at 18 steps, 15 steps/touch,
+  follow_q 0.87 — holding, no decay; **task3r_k2_h128** (wave-1 rule) u500
+  revisits 1.00 at 17.3, 18.4 steps/touch, follow_q 0.69, found 0.41–0.47;
+  `_g5` u1000 revisits 1.00 at 18, follow_q 0.73 but found 0.29–0.32 — the
+  big goal reward starves the sweep. The one-rule (`nv`) tie is a slow
+  oscillation, not a dead end: K=4 nv s42 recovered by u3000 (revisits
+  1.00 at 14.7, follow_q 0.44, found 0.52–0.60) after its u1500 trough; s43
+  shows the same trough at u1500 (45 steps/touch, follow_q 0.19).
+  task3r_k2_h128_nv_c1 s42 u2000: revisits 1.00 at **12.8**, 13.7
+  steps/touch, follow_q 0.84, found 0.43–0.50 (from 0.66–0.68 at u1500).
+  Fixed-goal task3_k2_h128_nv u3000: held-out found 0.17–0.20, exploit
+  intact (14–15 steps/touch) — the shortcut keeps eroding sweep.
 
 `task3r_*` added to the launcher (3 arenas, goal redrawn per visit
 sequence). h128 only (h1024 collapses under `_nv`).
