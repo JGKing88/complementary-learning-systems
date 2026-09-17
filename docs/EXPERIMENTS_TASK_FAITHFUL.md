@@ -17,14 +17,24 @@ follow_q 0.83, exploit 1.25/1.29/1.35 (d = 0/5/10, steps ÷ shortest path);
 
 ## 0. Summary
 
-| arm | job | status | found_frac | steps_first | steps_per_reach | revisit steps | held-out follow_q | CL |
+Held-out numbers are the in-training task eval (6 unseen arenas × 16
+sampled trials) at the update shown; probe / CL columns from §7.
+
+| arm | job | status | held-out found | revisit steps | steps/touch | follow_q (eval) | probe × opt d0/5/10 | CL revisits |
 |---|---|---|---|---|---|---|---|---|
-| task3_k1_h128 | 22864186 | queued | | | | | | |
-| task3_k2_h128 | 22864187 | queued | | | | | | |
-| task3_k1_h1024 | 22864188 | queued | | | | | | |
-| task3_k2_h1024 | 22864189 | queued | | | | | | |
-| task1_k2_h128 s43 | 22864192 | queued | | | | | | |
-| task1r_k2_h128 | 22864190 | queued | | | | | | |
+| **task3r_k2_h128** (wave-1 rule, 3 redrawn, K=2) | 22883646 | running | 0.61 / 0.46 (u1000) | 14.6 | 12.7 | 0.89 | 1.40/1.38/1.46 (u1000) | 3000/3000 at 15.4, Δ +0.00 |
+| **task1r_k4_h128** (wave-1 rule, 1 redrawn, K=4) | 22883645 | running | 0.52–0.54 (u1500) | 15.9 | 14.4 | 0.87 | 1.32/1.31/1.50 (u1500) | 2997/3000 at 15.9, Δ −0.01 |
+| **task3r_k2_h128_nv_c1** (one rule, 3 redrawn) | 22872241 | running | 0.42–0.52 (u2500) | 12.4 | 12.5 | 0.91 | **1.17/1.20/1.29** (u2500) | – |
+| task1r_k4_h128_nv_c1 (one rule, K=4) | 22874710 | done u4000 | 0.46–0.49 | 13.5 | 13.4 | 0.89 (after a u1150–u2000 trough) | – | – |
+| task1r_k4_h128_nv_c1_g5 | 22883647 | running | 0.33 (u1500) | 16.3 | 16.0 | 0.80 | – | – |
+| task3_k2_h128_nv (fixed goals) | 22866166 | running | 0.17–0.20 (u3000) | 25 | 15 | 0.66 | 2.44/2.25/2.67 (u2500, position map) | – |
+| task3_k1_h128_nv (fixed goals) | 22866167 | running | 0.43–0.49 (u3000) | 37 | 17 | 0.56 | – | – |
+| task3_k2_h128 (wave-1 rule, fixed goals) | 22864187 | timed out u3400 | 0.57 (u3000) | 42 | 24 | 0.20 | – | – |
+| task1r_k2_h128_nv / _c1 | 22869636 / 22872240 | done / timed out | 0.50–0.60 | 64 | 53 | 0.13 | – | – |
+| task3_k1_h1024, task3_k2_h1024 (wave-1 rule) | 22864188/89 | cancelled u400 | 0.53–0.56 / 0.49 | – | – | – | avoidance on train | – |
+| task3_k2_h1024_nv (s42, s43) | 22866165 / 22869638 | cancelled | polar fixed point 2/2 | | | | | |
+| task1_k2_h128 s43, task1r_k2_h128 (wave-1 rule) | 22864192 / 22864190 | cancelled (unstarted / u300) | | | | | | |
+| d0_base u725 (reference) | 22133273 | – | – | 11.6 (CL) | – | – | 1.20/1.21/1.31 | 3000/3000 (§8) |
 
 ## 1. Protocol (as run)
 
@@ -301,6 +311,21 @@ exploit is a position-map walk (2.4× optimal, align 0.45) although sampled
 it reaches the goal in ~15 steps — the two evals disagree exactly when the
 policy is not following q. Collapsed-tail fraction 0.29–0.32 for every arm
 including d0_base (0.32).
+
+**Continual protocol** (`run_cl_ood.sh`, six unseen arenas, 200 iterations
+per block, 200-step cap, one oracle store per arena, Hopfield never reset,
+sampled; outputs `results/nav_tri_probe/cl_i200/cl_task*`):
+
+| checkpoint | job | first visits (1200) | locked-store revisits (3000) | worst retention Δ |
+|---|---|---|---|---|
+| task3r_k2_h128 u1000 | 22893661 | 0.9925 at 15.2 steps | **3000/3000 at 15.4** | +0.00 |
+| task1r_k4_h128 u1500 | 22893662 | 0.9875 at 17.0 | 2997/3000 at 15.9 | −0.01 (one arena 0.98 in the last block) |
+| fix1_h128 s43 u3000 (§8.15, for reference) | 22859040 | 0.993 at 11.8 | 3000/3000 at 11.6 | +0.00 |
+
+No dead arena in either. The task-trained models reproduce the zero-
+forgetting result of the fixed-goal line with no fixed goal ever seen, at
+1000–1500 updates; their revisits are ~4 steps longer than fix1_h128's,
+consistent with the probe's × optimal (1.3–1.4 vs 1.14).
 
 `task3r_*` added to the launcher (3 arenas, goal redrawn per visit
 sequence). h128 only (h1024 collapses under `_nv`).
