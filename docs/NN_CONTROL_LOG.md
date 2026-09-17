@@ -1727,3 +1727,74 @@ is not a regularisation problem but a coverage-structure one, which is
 what A1xd (one contiguous run of 400 values → 1°) and A1 (64 scattered
 clusters → 0.3°) showed from the other side. P23 ✓, P24 ✗ (partway),
 P25 ✗, P26 ✓ (dropout ≈ noise 0.1, both short of noise 0.3).
+
+## 2026-09-16 — Phase 1: the self-taught decode (plan §6.4)
+
+From the sample-efficiency discussion with Jack (plan §6.4 records the
+reasoning): the only content in an MLP-vs-Agent-HaSH comparison is the
+cost of acquiring the displacement decode, and the version worth having
+needs no teacher, no goal and no position. `train_decode_walk.py`
+(commit f74e22f, buffer e0c9abb): random walkers in N scattered envs,
+goals inert; pairs of steps of one walk with the unit vector of the
+walker's own recorded displacement as target; A1's 5×768 / `1 − cos` /
+schedule unchanged; readout 1 on 16 held-out envs every 50 updates;
+env-steps counted; resumable (needed — `mit_preemptable` preempted five
+of eight runs, all resumed from `pairs_latest.pt`).
+
+**The walk's own displacements are the first finding.** With `k ≤ 30`
+steps between the two ends of a pair, a random walk's displacement is
+mostly 1–5 cells; pairs at 10–19 — the cross-module band the rule needs
+— are rare. The plain arm learned the rule to exactly the range its data
+covered (probe: 0–2° to |Δ| = 10, 31° at 15–19) and sat at 8–9° on the
+enumerated held-out table, train = held-out. So the arms were rerun on
+one code path with a per-walker continuous history and an optional
+**displacement-balanced sampler** (`--balance_range`, `k ≤ 400`): pairs
+kept uniform over Chebyshev |Δ| = 1..19 — the walker choosing which of
+its own experiences to learn from, no new information.
+
+| arm | held-out at 4000 updates (131M steps; 65M for 32 envs) | env-steps to 10° / 5° / 2° / 1° |
+|---|---|---|
+| grid, 64 envs, plain walk, s0 | 8.2 (train 8.2) | 62M / – / – / – |
+| grid, 64 envs, plain walk, s1 | 10.4 (train 10.7) | – |
+| grid, 32 envs, plain walk | 9.1 (train 9.2) | 40M / – / – / – |
+| **grid, 64 envs, balanced, s0** | **0.48** (train 0.36; every quadrant 0.5) | **8.2M / 11.5M / 19.7M / 41M** |
+| **grid, 64 envs, balanced, s1** | **0.46** (train 0.35) | **8.2M / 11.5M / 18.0M / 39M** |
+| grid, 64 envs, balanced, 8-heading target | 10.7 (train 10.7; the label's own floor ≈ 11°) | 8.2M / – / – / – |
+| grid, 64 envs, plain walk, 8-heading target | 16.3 | – |
+| regular (views), 64 envs, plain walk, s0 | 9.8 (train 8.1) | 106M / – / – / – |
+| regular (views), 64 envs, plain walk, s1 | 8.3 (train 7.4) | 80M / – / – / – |
+| **regular (views), 64 envs, balanced, s0 / s1** | **6.3 / 5.7** (train 3.7 / 3.7) | 25M / 18M, then – |
+| A1 (teacher, i.i.d. pairs, 64 envs), reference | 0.23 | ~50M teacher pairs to ≤ 1° |
+
+Decode probe on the balanced s0 final: far rect 0.6°, never-walked
+coordinate values 0.6°, seen 0.5° — the rule; by |Δ|: 2° at 19, 16° at
+22, 87° at 35, anti-aligned 140° at 50 — A1's profile to the degree.
+
+**Reading.** A plain MLP acquires the attractor's translation-invariant
+displacement decode from its own motion alone — no teacher, no goal, no
+position — to 0.5° on envs it never walked, at **41M env-steps to 1°**,
+the same order as A1's ~50M teacher-labelled pairs (P27 ✓). The one
+condition is that the learner sees its experience across displacement
+sizes; a raw random walk supplies mostly short ones and the decode
+learned from it is short-range (8–9°, range ~10). The 32-env plain arm
+lands where the 64-env plain arm does, so the env count is not the
+limit at 32 (P28: the crossing is below 32, at least for plain walks).
+Regular mode — the ray-cast views, no scaffold, no code — reaches
+**5.7–6.3°** on unseen walls from balanced self-motion (A2's teacher
+number was 5.5°; P29 ✓ to within a degree), 8–10° from plain walks;
+there the train/held-out gap (3.7 vs 6) is real, since walls are
+env-specific. The 8-heading label (P30 ✓): same curve as the full
+direction down to its own quantisation floor — 10° crossed at the same
+8.2M steps, 10.7° final where the direction arm continues to 0.5° — and
+the probe reads it as the rule (10.9° on never-walked coordinates vs
+10.7° on walked ones; the same range profile). The decode is not
+label-limited: a coarse heading per pair carries enough.
+
+**Against the encoder (plan §6.4).** The headline encoder is the same
+kind of object — a learned decode of the grid code — trained with a
+near/far proximity bit per pair on 60 patches of 100×100 positions
+(600k unique positions, 600M draws), with the local frame handed to it
+by the scaffold at the agent's true coordinates. Phase 1 gets the full
+decode from 64 arenas of 400 cells (25.6k unique positions), 41M
+env-steps, a direction per pair from odometry, and no frame. Same axis,
+different labels, stated.

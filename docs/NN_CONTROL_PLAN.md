@@ -290,7 +290,46 @@ raw-code `full` as the null and `rec` as the no-action control:
 
 The mechanism inferred from behaviour in §1.4 is what the state holds.
 
-### 1.8 Standing conclusions
+### 1.8 The decode from self-motion alone (phase 1, §6.4)
+
+A1's network and loss, trained on pairs of steps of random walks in 64
+scattered envs with the walker's own recorded displacement as the
+target — no teacher, no goal, no position (log 2026-09-16):
+
+| arm | held-out envs, 131M env-steps | env-steps to 10° / 5° / 2° / 1° |
+|---|---|---|
+| grid code, displacement-balanced pairs, two seeds | **0.48 / 0.46°** (every quadrant 0.5) | **8.2M / 11.5M / 18–20M / 39–41M** |
+| grid code, raw random-walk pairs (k ≤ 30), two seeds | 8.2 / 10.4° (train = held-out) | 62M / – |
+| grid code, 32 envs, raw pairs | 9.1° | 40M / – |
+| grid code, balanced, 8-heading labels | 10.7° = the label's floor | 10° at 8.2M, as the full label |
+| ray-cast views (no scaffold), balanced, two seeds | 5.7 / 6.3° | 18–25M / – |
+| A1, teacher-labelled i.i.d. pairs (reference) | 0.23° | ~50M pairs to ≤ 1° |
+
+- **A plain MLP acquires the translation-invariant decode from its own
+  motion**, to 0.5° on envs it never walked (decode probe: never-walked
+  coordinate values 0.6°, far rect 0.6°, A1's range profile to the
+  degree), at 41M env-steps to 1° — the same order as A1's ~50M
+  teacher-labelled pairs. The supervision that was "free" is enough.
+- **The one condition is which experiences it learns from.** A raw
+  random walk's displacements are mostly 1–5 cells; the decode learned
+  from them is the rule out to ~10 cells and 8–10° on the enumerated
+  table, train = held-out — a data limit, not a generalisation limit.
+  Keeping pairs uniform over displacement size (the walker's own choice;
+  no new information) gives the full decode.
+- **A coarse label is enough.** Eight headings per pair learn the rule
+  on the same curve as the full direction, to their own 11° floor.
+- **No scaffold at all**: from views, balanced self-motion reaches
+  5.7–6.3° on unseen walls (A2's teacher number: 5.5°).
+- **Against the encoder.** Agent-HaSH's "encoder" is the same kind of
+  object — a learned decode of the grid code (its direction signal is
+  `W · (z(goal) − z(current))`, `z = encoder(gbook)`, `W` the local
+  frame from the scaffold at the agent's true coordinates) — trained on
+  a proximity bit per pair over 60 patches of 100×100 positions (600k
+  unique positions, 600M draws). Phase 1 gets the full decode from 64
+  arenas of 400 cells (25.6k unique positions), 41M env-steps, a
+  direction per pair from odometry, and no frame.
+
+### 1.9 Standing conclusions
 
 1. A memoryless network does not learn the attractor's given frame; it
    learns the code it was shown — the rule on differences from scattered
@@ -307,9 +346,10 @@ The mechanism inferred from behaviour in §1.4 is what the state holds.
    lifetime, ~20° in ten steps, ~14° in five on B3.
 4. What the attractor has built in — a translation-invariant code and a
    frame — a plain network can acquire: the invariance from positions
-   that leave it no cheap absolute coordinate, the frame from lifetimes
-   that deny it a fixed lattice. What it does not acquire from either is the full-range
-   decode (§1.2).
+   that leave it no cheap absolute coordinate — and from nothing but its
+   own motion, at the cost of the teacher-labelled version (§1.8) — the
+   frame from lifetimes that deny it a fixed lattice. What it does not
+   acquire from either is the full-range decode (§1.2).
 
 ---
 
@@ -704,7 +744,7 @@ networks build a smaller table. The residue-to-displacement table needs
 the phase triples seen in enough combinations — coverage structure
 (A1xd, A1), not regularisation. P23 ✓, P24 ✗ (partway), P25 ✗, P26 ✓.
 
-### 6.4 Phase 1 — the self-taught decode (the sample-efficiency comparison with Agent-HaSH)
+### 6.4 Phase 1 — the self-taught decode (the sample-efficiency comparison with Agent-HaSH) (run 2026-09-16; results in §1.8)
 
 Asked 2026-09-16: a direct sample-efficiency comparison between the MLP
 and Agent-HaSH. Worked through with Jack; what survives is this.
@@ -786,6 +826,14 @@ env-step cost within 3× of `dist@90`'s rollout BC (~600 updates). P28:
 rule, at a slower curve. P29: regular mode reaches A2's ~5° from
 self-motion alone. P30: 8-heading targets cost ≤ 2× the steps of full
 directions — the decode is not label-limited.
+
+**Result.** §1.8. One design change on the way: raw random-walk pairs
+(k ≤ 30) are mostly 1–5 cells apart and the decode learned from them is
+short-range (8–10°); the arms were rerun on one code path with a
+continuous per-walker history and `--balance_range` (pairs uniform over
+|Δ| = 1..19, k ≤ 400). P27 ✓ (0.5°; 1° at 39–41M env-steps, ~A1's cost),
+P28 ✓ for plain walks (32 envs = 64 envs at 9°; the balanced 32-env arm
+was not run), P29 ✓ (5.7–6.3°), P30 ✓ (same curve to the label's floor).
 
 ### 6.5 Open, lower priority
 
@@ -905,7 +953,7 @@ readout 2 samples actions, so a policy's floor is ~6–8°, not 0.
 | P21 | probes: θ is linearly decodable from the GRU state after 1–2 steps in the frozen-decode and S1 models; Δ′ from the encoder at R² > 0.95; P-swap error ≈ θ₂ − θ₁ for a few steps | ✓ θ at 33–50° after 2 steps, 12–22° after 5; Δ′ at R² 0.986–0.999; P-swap +87–90° for the *whole* episode, not a few steps (§1.7) |
 | P22 | A1xd: dense fixed tiling of the corner still takes the lookup (coverage alone is not enough) | ✗ 3.6° / 6.4° outside by u = 500, 0.7 / 1.7° final — the rule; the arrangement of the seen values is the lever (§1.2, §6.3) |
 | P23–P26 | A1m memorisation test (§6.3) | P23 ✓ (84° unseen at K = 8); P24 ✗ noise 0.3 reaches 44°, the short-range half only; P25 ✗ small nets 85–89°, a smaller table; P26 ✓ dropout 61° ≈ noise 0.1 |
-| P27–P30 | Phase 1, the self-taught decode (§6.4) | open |
+| P27–P30 | Phase 1, the self-taught decode (§6.4) | P27 ✓ 0.48 / 0.46°, 1° at 41M / 39M env-steps; P28 ✓ (plain walks: 32 envs 9.1° = 64 envs 8–10°); P29 ✓ 5.7 / 6.3° from views; P30 ✓ 8 headings learn on the same curve to their 11° floor |
 
 ---
 
