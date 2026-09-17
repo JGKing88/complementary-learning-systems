@@ -1877,8 +1877,10 @@ encoder dashed with its best checkpoint circled, references dotted.
    unique positions over 25–60 patches of 50–100 cells, and 15k–73k
    gradient steps with the gain annealed over all of them. On our 64
    arenas (25.6k / 160k positions) with 32k gradient steps the objective
-   does not reach their 6–7°. The remaining untested difference is the
-   anneal length; a 16k-update single-batch replication is running.
+   does not reach their 6–7°. The anneal length is not it either: the
+   16k-update single-batch replication of att0.5's schedule (i.i.d.
+   positions, 50×50) peaks at 40.3° (91M steps, gain 18) and ends at
+   62° — the same curve.
 4. At 50×50 the decode learns the full 49-cell table to 0.5–0.6° at
    1.5× the size-20 cost (1° at 46–62M env-steps), given the range
    warm-up; two of three seeds without it stall on the `1 − cos` plateau

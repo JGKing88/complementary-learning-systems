@@ -345,8 +345,9 @@ target — no teacher, no goal, no position (log 2026-09-16):
   20-cell radius, then erodes. The pre-trained att0.5 gives 6.0° (20×20,
   within 19) and 15.7 / 7.3° (50×50, within 49 / 19) with the same
   readout: its number comes from its own regime (62.5k–600k positions in
-  25–60 large patches, 15k–73k gradient steps), not from anything the
-  walks withhold. On identical experience the odometry-supervised decode
+  25–60 large patches), not from anything the walks withhold — nor from
+  the anneal length (its 16k-step schedule replicated on our arenas:
+  40° best, 62° final). On identical experience the odometry-supervised decode
   is the better use of a random walk by 50–100× in angular error and the
   only one whose readout keeps improving with data.
 
