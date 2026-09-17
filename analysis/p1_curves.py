@@ -66,6 +66,9 @@ def main():
     ap.add_argument("--refs", default="pre-trained encoders (att0.5 6.00 / ur029 5.96) + harness readout:6.0,A1 decode (teacher-labelled i.i.d. pairs):0.23",
                     help="name:value reference lines, degrees")
     ap.add_argument("--title", default="")
+    ap.add_argument("--clean", action="store_true",
+                    help="only the valid comparison: the balanced decode (and the raw-walk decode), the "
+                         "encoder package's own-trainer points, and the reference lines")
     ap.add_argument("--points", default="",
                     help="extra markers 'label:x:y|label:x:y' (e.g. the encoder package's own trainer "
                          "on walk dumps at a few step budgets)")
@@ -76,6 +79,9 @@ def main():
     enc = sorted(glob.glob(os.path.join(root, f"goal_pairs_p1e_*_sz{args.size}_s*", "final.json")))
     if args.size == 20:
         dec = [p for p in dec if "_sz" not in p]
+    if args.clean:
+        dec = [p for p in dec if "heading8" not in p and "regular" not in p and "grid32" not in p]
+        enc = []
     fig, ax = plt.subplots(figsize=(11, 5.6))
     styles, labelled = {}, set()
     for p in dec:
