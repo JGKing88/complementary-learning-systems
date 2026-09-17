@@ -203,6 +203,34 @@ beeline through visited cells (2.0 per ~10 steps).
   revisits 1.00 at 30 steps, 33 steps/touch, follow_q 0.34 — both halves
   improving together, the first arm to do that. Seed 43 replicate launched
   (22882203, mit_normal_gpu 6 h).
+- 2026-09-17 05:50 — **the K=4 exploit decays after u1100: a reward tie.**
+  Held-out (d 0) per 50 updates: follow_q 0.25 (u450) → 0.38 (u850) →
+  0.37 (u1050) → 0.25 / 0.20 / 0.14 / 0.14 / 0.14 / 0.12 / 0.13 / 0.10
+  (u1150–u1500); steps/touch 30 → 47; revisits 1.00 at 28 → 0.85 at 42;
+  found rises to 0.74. Train side the same: post-store touches 3–4 at
+  24–30 steps (u840–u1140) → 1.0 at 50 (u1290–u1490) while **reward per
+  step is flat at 0.34–0.36** and std 0.021–0.024. At ~27 steps/touch a
+  touch pays 2.0/27 ≈ 0.074 per step — about what flat novelty (0.3/cell)
+  pays a freshly-teleported sweeper — so beelining and sweeping tie and the
+  narrow policy drifts along the reward-neutral direction. The fixed-goal
+  arms escape because their beeline is 14 steps (0.14/step ≫ novelty).
+  task3r_k2_h128_nv_c1 u1000: found 0.54–0.59, revisits 1.00 at 28, 27
+  steps/touch, follow_q 0.41 — watch for the same decay.
+
+## 6. Wave 4 — break the post-store tie under redraw
+
+Two task-faithful ways, both run:
+- **Wave-1 rule under redraw** (novelty off after the store). The
+  avoidance failure of wave 1 needs a *known* goal; redraw removes it.
+  Visits 2..K are then pure exploit on the agent's own memory.
+- **Goal reward 5.0** with the one-rule reward (`_g5`, launcher lever):
+  0.19/step at 27 steps/touch, well above novelty.
+
+| arm | job | status |
+|---|---|---|
+| task1r_k4_h128 (wave-1 rule, K=4) | | |
+| task3r_k2_h128 (wave-1 rule, 3 redrawn arenas) | | |
+| task1r_k4_h128_nv_c1_g5 | | |
 
 `task3r_*` added to the launcher (3 arenas, goal redrawn per visit
 sequence). h128 only (h1024 collapses under `_nv`).
