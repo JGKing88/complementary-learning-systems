@@ -251,6 +251,12 @@ Two task-faithful ways, both run:
   complete): 22866166 task3_k2_h128_nv (~u3500), 22866167 task3_k1_h128_nv
   (~u3500), 22882203 K=4 nv s43 (~u3100, mid-recovery). Replicate of the
   winning recipe launched: task3r_k2_h128 s43 (22897775).
+- 2026-09-17 11:40 — task3r_k2_h128 u1500: found **0.65 / 0.72**, revisits
+  1.00 at 13.6, 12.3 steps/touch, 9.2 touches, follow_q 0.92 — both halves
+  still climbing. Results page **v13** adds Part IV: `analysis/nav_tri/
+  task_curves.py` (held-out task series, four panels, runs overlaid) →
+  `task_fixed_by_update.png`, `task_redraw_by_update.png`; the continual
+  figures for task3r_k2_h128 u1000; findings and the two verdict tables.
 
 - 2026-09-17 06:45 — **task3r_k2_h128_nv_c1 (3 redrawn arenas) is the first
   arm strong on both halves**: held-out u1500 found 0.66–0.68, revisits
