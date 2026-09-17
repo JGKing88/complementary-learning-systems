@@ -704,7 +704,70 @@ networks build a smaller table. The residue-to-displacement table needs
 the phase triples seen in enough combinations — coverage structure
 (A1xd, A1), not regularisation. P23 ✓, P24 ✗ (partway), P25 ✗, P26 ✓.
 
-### 6.4 Open, lower priority
+### 6.4 Phase 1 — the self-taught decode (the sample-efficiency comparison with Agent-HaSH)
+
+Asked 2026-09-16: a direct sample-efficiency comparison between the MLP
+and Agent-HaSH. Worked through with Jack; what survives is this.
+
+**Why not an RL comparison.** The two systems differ in exactly two
+places. The *memory*: a learned associative map in Agent-HaSH versus, for
+an MLP agent, a goal slot written by the harness at contact — and for one
+goal per env the slot *is* the memory, nothing to learn on either side.
+The *decode*: analytic (scaffold geometry) in Agent-HaSH, learned in
+weights for the MLP. An MLP agent with a pre-learned decode fed as a 2-D
+channel sees the same input as Agent-HaSH's `q`; a controller trained on
+either learns to follow a vector, and the curves would overlap for a
+reason unrelated to the question. So the only content is **the cost of
+acquiring the decode** — and the version worth having is the one that
+needs no teacher, no goal and no position: learned from the agent's own
+motion, the way the encoder is learned from proximity.
+
+**Why many envs.** Agent-HaSH's one-arena headline is a statement about
+its controller; the env-specific parts (encoder, many envs; decode, built
+in) were paid for elsewhere. The MLP's decode pays the same way. One env
+gives a within-env table (§6.3); re-placing one env at random scaffold
+offsets would give the rule (it is B3's translation) but injects the
+attractor's frame prior through the data. Many envs is what an agent
+experiences.
+
+**Data.** Goal-free random walks: N scattered training envs (A1's
+placement, margin 20; N = 64 and 32), 16 held-out envs never walked.
+Discrete unit steps, uniform random actions, walls block, `goals_active`
+off (no goal, no reward, no teleport). 8 walkers per env × 64 steps per
+update, appended to a replay buffer of the last 20 updates. Experience
+is counted in env-steps walked.
+
+**Pairs and target.** Steps `(t, t + k)` of one walk, `k ~ U[1, 30]`,
+kept if the displacement is non-zero and within Chebyshev 19 (A1's
+range). Input `[code(p_t), code(p_{t+k})]`; target the unit vector of the
+recorded displacement — the walker's own odometry. 32k pairs per update
+(A1's batch), sampled from the buffer.
+
+**Model and loss.** A1's, unchanged: 5×768 ReLU, `1 − cos`, Adam 1e-3
+with the step to 1e-4 at 70%. Two input modes: **grid** (`gbook`, learns
+geometry, perception given) and **regular** (`omni` views, learns
+perception and geometry together — no scaffold at all).
+
+**Evaluation.** Every 50 updates on the held-out envs: the enumerated
+direction error over every pair (readout 1, A1's metric), and the far-rect
+probe on coordinate values never walked. Reported: env-steps to 5° and
+1° on held-out envs, final error, seen/unseen split — against A1's
+supervised number (~50M teacher pairs, 64 envs) and the encoder's curve
+on the same axis (proximity supervision, which is looser than a direction
+per pair; stated, and optionally ablated by quantising the target).
+
+**Arms.** (1) grid, 64 envs, two seeds — the number. (2) grid, 32 envs —
+the env count. (3) regular, 64 envs, two seeds — total learned content.
+(4) grid, 64 envs, target quantised to 8 headings — label richness.
+
+**Predictions.** P27: arm 1 reaches ≤ 1° on held-out envs, at an
+env-step cost within 3× of `dist@90`'s rollout BC (~600 updates). P28:
+32 envs lands between A1m's K = 16 (70°) and 64 (rule) — most likely the
+rule, at a slower curve. P29: regular mode reaches A2's ~5° from
+self-motion alone. P30: 8-heading targets cost ≤ 2× the steps of full
+directions — the decode is not label-limited.
+
+### 6.5 Open, lower priority
 
 - From scratch with mix 0 after the warm-up (pure random lattices) — the
   09-13 attempt failed for the lr reason, not the mix.
@@ -822,6 +885,7 @@ readout 2 samples actions, so a policy's floor is ~6–8°, not 0.
 | P21 | probes: θ is linearly decodable from the GRU state after 1–2 steps in the frozen-decode and S1 models; Δ′ from the encoder at R² > 0.95; P-swap error ≈ θ₂ − θ₁ for a few steps | ✓ θ at 33–50° after 2 steps, 12–22° after 5; Δ′ at R² 0.986–0.999; P-swap +87–90° for the *whole* episode, not a few steps (§1.7) |
 | P22 | A1xd: dense fixed tiling of the corner still takes the lookup (coverage alone is not enough) | ✗ 3.6° / 6.4° outside by u = 500, 0.7 / 1.7° final — the rule; the arrangement of the seen values is the lever (§1.2, §6.3) |
 | P23–P26 | A1m memorisation test (§6.3) | P23 ✓ (84° unseen at K = 8); P24 ✗ noise 0.3 reaches 44°, the short-range half only; P25 ✗ small nets 85–89°, a smaller table; P26 ✓ dropout 61° ≈ noise 0.1 |
+| P27–P30 | Phase 1, the self-taught decode (§6.4) | open |
 
 ---
 
