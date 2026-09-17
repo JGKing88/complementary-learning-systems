@@ -110,8 +110,14 @@ between 0.29 and 0.60 from one checkpoint to the next (u250 0.42, u275 0.39,
 u300 0.60, u350 0.29, u375 0.54), which is the κ-cap orbit effect on the
 mean policy, not learning and unlearning; on the plateau the swing is gone.
 No erosion, so **u700 is the fork checkpoint**, as the plan said. The
-sampled re-score of the whole series (`run_xf_reeval.sh`, job 22918309) is
-for the record.
+sampled re-score of the whole series (`run_xf_reeval.sh`, job 22918309,
+`$CLS_RESULTS/explore_first/xf_explorer_reeval_stoch.log`) agrees and is
+tighter: **sampled swept 0.59–0.61 from u475 to u700, u700 = 0.603 /
+0.612** (d = 0 / 10), the plateau maximum. The deterministic dips are mostly
+the mean-policy artefact — u350 reads 0.29 deterministic against 0.38
+sampled, u250 0.42 against 0.49 — and before u175 the sampled series is
+far above the deterministic one (u50: 0.40 vs 0.15). Sampled exploit-
+regime success (goal pre-stored, no gate, stumbling onto it) is 0.6 at u700.
 
 Against the Aug `p20_e_kcap`: its deterministic `mean_coverage` plateaued at
 0.33–0.36 from u200; this one is at 0.34–0.36 from u200 — the same explorer,
