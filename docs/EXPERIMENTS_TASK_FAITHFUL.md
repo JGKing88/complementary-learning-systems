@@ -403,6 +403,18 @@ spots. Held-out arenas share the geometry, so a tour "transfers" and fails.
 | task3_k2_h128_nv_nos (fixed goals, one rule, blind) | 22989778 | queued |
 | task3r_k2_h128_nos (redrawn goals, wave-1 rule, blind — control) | 22989779 | queued |
 
+Input width 10 (current reward, prev_reward, q, prev_action, prev_disp).
+
+- 2026-09-18 12:40 — **blind fixed goals under the wave-1 rule search on
+  held-out arenas**: task3_k2_h128_nos u500 found **0.72 / 0.65** (the
+  sighted fixed-goal arms never passed 0.40), revisits 1.00 at 37.6 steps,
+  32.6 steps/touch, follow_q 0.36 — exploit slower than the sighted redraw
+  arm at u500 (17 steps) because wall avoidance is by feel. The one-rule
+  blind twin (task3_k2_h128_nv_nos) is failing at u1000: coverage 0.04–0.06,
+  found 0.25, cos(action, q) −0.45 in both phases with post-store touches
+  15–25 steps apart — a degenerate oscillation near the goal, not
+  navigation. Redraw blind control at u350.
+
 - 2026-09-17 06:45 — **task3r_k2_h128_nv_c1 (3 redrawn arenas) is the first
   arm strong on both halves**: held-out u1500 found 0.66–0.68, revisits
   1.00 at **20 steps**, 21 steps/touch, follow_q 0.54; u1000 was 0.54–0.59
