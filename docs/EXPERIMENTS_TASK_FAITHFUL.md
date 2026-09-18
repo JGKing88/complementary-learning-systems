@@ -287,6 +287,21 @@ Two task-faithful ways, both run:
   speed (0.82–0.93 vs 0.96), not direction; the parked levers are §7 of
   the plan.
 
+## 8. Wave 5 — is the split-like part load-bearing? (K=1)
+
+Jack: "is this even any different really from the interleaved training?"
+With K ≥ 2 a revisit rollout is functionally an exploit rollout. K=1 under
+the wave-1 rule with redrawn goals has no rollout that starts with the goal
+stored: every bit of exploit learning comes from the post-store segment of
+a trajectory that searched successfully. If it reaches the K=2/K=4 numbers
+the revisits were convenience, not the mechanism; if it stalls, the regime
+needs its split-like half.
+
+| arm | job | status |
+|---|---|---|
+| task3r_k1_h128 (wave-1 rule, 3 redrawn, K=1) | 22941535 (ou_bcs 12 h) | queued 2026-09-17 18:20 |
+| task1r_k1_h128 (wave-1 rule, 1 redrawn, K=1) | 22941536 (mit_normal_gpu 6 h) | queued |
+
 - 2026-09-17 06:45 — **task3r_k2_h128_nv_c1 (3 redrawn arenas) is the first
   arm strong on both halves**: held-out u1500 found 0.66–0.68, revisits
   1.00 at **20 steps**, 21 steps/touch, follow_q 0.54; u1000 was 0.54–0.59
