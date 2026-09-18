@@ -448,3 +448,78 @@ a fork's mean policy and sampled policy cover the same, the explorer's do
 not (0.54 → 0.60) — which is itself a symptom of what the fork lost. The
 KL arms are the sampled explorer to the third decimal. EWC 1e3 at 84 %
 stays the best protected arm that learned anything. Ordering unchanged.
+
+### 4.2 Wave 2 — results (2026-09-18, all eight done by ~08:30)
+
+Series tables and figure: `$CLS_RESULTS/explore_first/wave2_series.{md,png}`.
+All wave-2 `nav=` / `expl=` rows are **sampled**, so the coverage numbers
+here compare with §4.1's sampled column, not with §3.4's deterministic
+one. The u0 row (sampled) is swept 0.595–0.607 in every arm; the κ reset
+and the cap change nothing at u0 — coverage does not depend on the head's
+confidence.
+
+| arm | crossed | trajectories | last-8 swept d0 / d10 (× u0 ≈ 0.60) | last-8 found | last-8 cos_post | last-8 revisit steps | exploit sr d0 / d10 | path opt d0 / d10 (log) |
+|---|---|---|---|---|---|---|---|---|
+| **`xf_naive` s43** (central, replicate) | **u800** | **204,800** | 0.457 / 0.459 (0.76) | 0.46 | 0.80 | 13.1 | 1.00 / 1.00 | 0.65 / 0.55 |
+| `kreset` s42 | u850 | 217,600 | 0.398 / 0.389 (0.66) | 0.36 | 0.79 | 16.2 | 1.00 / 1.00 | 0.57 / 0.53 |
+| `kreset` s43 | u900 | 230,400 | 0.469 / 0.475 (0.78) | 0.44 | 0.71 | 19.0 | 1.00 / 1.00 | 0.47 / 0.41 |
+| `ent02` | never (0.71) | — | 0.342 / 0.348 (0.57) | 0.32 | 0.71 | 17.4 | 1.00 / 0.98 | 0.47 / 0.39 |
+| `kreset_ent02` | u725 (one eval at 0.80) | 185,600 | 0.368 / 0.372 (0.61) | 0.36 | 0.70 | 20.5 | 1.00 / 1.00 | 0.44 / 0.38 |
+| `kreset_ewc_1e3` | never (0.77) | — | 0.431 / 0.430 (0.72) | 0.35 | 0.77 | 18.0 | 1.00 / 1.00 | 0.58 / 0.47 |
+| `kcap20` (κ ≤ 7.4 throughout) | u825 | 211,200 | 0.408 / 0.413 (0.68) | 0.41 | 0.81 | 14.6 | 1.00 / 1.00 | 0.64 / 0.55 |
+| `kcap20a` (κ ≤ 7.4 → 12.2 over 300) | never (0.76) | — | 0.422 / 0.388 (0.70) | 0.28 | 0.76 | 16.3 | 1.00 / 1.00 | 0.59 / 0.51 |
+| *wave 1, for reference:* E0 s42 | u925 | 236,800 | 0.424 / 0.414 (sampled re-score) | 0.37 | 0.76 | 15.9 | 1.00 / 0.97 | 0.56 / 0.54 |
+| *from scratch, novelty on (B0)* | u250 | 64,000 | 0.457 / 0.433 (sampled re-score) | 0.51 | 0.92 | 14.1 | 1.00 / 0.99 | 0.73 / 0.65 |
+
+**The spread is not the bottleneck.** The κ reset is transient (§4, 01:10
+entry: back at the cap by u50), the entropy bonus at 0.02 does not hold it,
+and the one lever that *does* hold it — the cap at κ ≤ 7.4, verified in
+the PPO diagnostics at every update — changes nothing about the pace:
+`kcap20` crossed at u825, inside the band of every other fork (u725–u925)
+and 3.3× from-scratch. Its `cos_post` series is E0's to within 0.05 at
+every eval from u50 to u250 (0.18, 0.32, 0.32, 0.36, 0.33, 0.34, 0.45,
+0.44 against E0's 0.16, 0.29, 0.27, 0.30, 0.35, 0.34, 0.35, 0.38). So the
+slowness lives in the trunk: the explorer's features encode a confident
+sweep, and the policy gradient has to move *those* before q-following
+appears, however wide the heading distribution is made. Pre-registered
+outcome (2) of §4.
+
+**Seeds replicate wave 1.** The central arm at seed 43 crossed at u800 =
+204,800 trajectories (seed 42: u925 = 236,800) and kept 76 % of the
+explorer's sampled coverage (seed 42: 70 %). The κ reset at seed 43:
+u900 / 78 %. Two seeds, four forks, one band: **3.2–3.7× the from-scratch
+cost, 66–78 % of the coverage.**
+
+**Nothing in wave 2 improves on wave 1's trade-off.** Coverage kept, best
+to worst: kreset s43 0.47 ≈ naive s43 0.46 > kreset_ewc 0.43 ≈ kcap20a
+0.42 ≈ E0 0.42 > kcap20 0.41 ≈ kreset s42 0.40 > kreset_ent 0.37 > ent02
+0.34. Every one of these is below from-scratch-with-novelty's 0.46 or
+level with it, and every one is 0.13–0.26 below the explorer. On path
+optimality (from the log, deterministic-comparable): naive s43 0.65,
+kcap20 0.64, kcap20a 0.59, kreset_ewc 0.58, kreset s42 0.57 — all below
+B0's 0.73. The entropy bonus is actively harmful (0.34 coverage, never
+crossed): it spends the search segment's steps on noise the task does not
+pay for.
+
+**Predictions, scored.** (1) falsified — no fork crossed by u250; the
+earliest, `kreset_ent02` at u725, touched 0.80 for one eval and fell back
+to 0.70. (2) confirmed — the reset did not speed exploit, and the cap that
+held the spread did not either; the slowness is in the trunk. (3)
+confirmed — sampled coverage sits 0.02–0.13 above the deterministic
+reading (forks +0.02–0.04, B0 +0.13) and the ordering is unchanged.
+
+**What this closes, and what it leaves open.** Closed: "the explorer is
+slow to fine-tune because it is too confident." The head's confidence
+was reset, held at the fresh policy's level, and annealed; the pace did
+not move. Open: *why* the trunk is slow. The candidate is that the
+explorer's recurrent features carry no representation of `q` at all — it
+learned to ignore the readout (DUAL_TRAINING §9: `chase_q` flat over a
+10× ‖q‖ sweep), so the first thing PPO has to build is a `q`-channel
+through a 1024-unit RNN whose input weights for `q` were driven to
+uselessness. A fresh policy starts with random `q` weights, which is
+better than trained-to-zero ones. That is testable (read the input-weight
+norms of the `q` channel at u0 in the explorer vs the fresh policy; or
+fork with the `q` input weights re-initialised) and is the natural wave 3
+if the line continues — but it changes the question from "does a lifetime
+of exploring help" to "which parts of the explorer are worth keeping",
+which is a different hypothesis from the one this line set out to test.
