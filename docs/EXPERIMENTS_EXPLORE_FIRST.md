@@ -18,19 +18,26 @@ explorer's u0 row.
 
 ## 0. Summary
 
-| arm | job | status | u_criterion | traj_criterion | revisit sr / steps (last) | cos_post (last) | swept d0 / d10 (last; band) | found_rate (last 8 mean) | exploit sr d0 / d10 | CL |
+| arm | job | status | u_criterion | traj_criterion | last-8 revisit steps | last-8 cos_post | last-8 swept d0 / d10 (× u0) | last-8 found | exploit sr d0 / d10 (last) | probe (§3.5) |
 |---|---|---|---|---|---|---|---|---|---|---|
-| phase 1 `xf_explorer` | 22889945 | **done** u700, 6.2 h, 896k traj | — | 0 | (no gate) | — | **0.538 / 0.538** (plateau u475–700: 0.556 / 0.551, min 0.528) | — | — | |
-| **E0 `xf_naive`** *(central)* | 22918221 | queued 16:25 | | | | | | | | |
-| **E0' `xf_naive_lr03`** *(central)* | 22918222 | queued | | | | | | | | |
-| E1 `xf_ewc_1e3` / `_1e4` | 22918223 / 4 | queued | | | | | | | | |
-| E3 `xf_kl_1` / `_10` | 22918226 / 7 | queued | | | | | | | | |
-| B0 `task1r_k4_h1024` | 22891316 | **done** u1000, 3.3 h | **250** | **64,000** | 1.00 @ 15.6 | 0.91 | 0.396 / 0.385 (0.11–0.43; last-8 mean 0.325 / 0.298) | 0.51 | 1.00 / 0.99 | |
-| B1 `xf_scratch_nonov` | 22891317 | **done** u1000, 3.3 h | **300** | **76,800** | 1.00 @ 21.5 | 0.86 | 0.284 / 0.244 (0.09–0.41; last-8 mean 0.282 / 0.253) | 0.39 | 1.00 / 1.00 | |
+| phase 1 `xf_explorer` | 22889945 | done u700, 6.2 h, 896k traj (not charged) | — | 0 | 90 (no gate) | 0.04 | **0.539 / 0.544** = u0 row; sampled 0.603 / 0.612 | 0.57 | 0.45 / 0.41 | pending |
+| **E0 `xf_naive`** *(central)* | 22918221 | done u1000 | **925** | **236,800** | 15.9 | 0.76 | 0.419 / 0.383 (0.78 / 0.70) | 0.37 | 1.00 / 0.97 | pending |
+| **E0' `xf_naive_lr03`** *(central)* | 22918222 | done u1000 | **750** | **192,000** | 14.9 | 0.86 | 0.403 / 0.387 (0.75 / 0.71) | 0.33 | 1.00 / 0.99 | pending |
+| E1 `xf_ewc_1e3` | 22919093 | done u1000 | never (0.79 @ u900) | — | 20.4 | 0.70 | 0.486 / 0.477 (0.90 / 0.88) | 0.31 | 0.85 / 0.82 | pending |
+| E1 `xf_ewc_1e4` | 22919094 | done u1000 | never | — | 20.0 | 0.64 | 0.391 / 0.365 (0.73 / 0.67) | 0.29 | 1.00 / 0.98 | pending |
+| E3 `xf_kl_1` | 22918226 | done u1000 | never | — | 79.1 | 0.06 | 0.526 / 0.528 (0.98 / 0.97) | 0.50 | 0.41 / 0.43 | pending |
+| E3 `xf_kl_10` | 22918227 | done u1000 | never | — | 83.7 | 0.05 | 0.535 / 0.540 (0.99 / 0.99) | 0.55 | 0.47 / 0.42 | pending |
+| B0 `task1r_k4_h1024` (scratch, novelty on) | 22891316 | done u1000 | **250** | **64,000** | 14.1 | 0.92 | 0.325 / 0.298 | 0.51 | 1.00 / 0.99 | pending |
+| B1 `xf_scratch_nonov` (scratch, novelty off) | 22891317 | done u1000 | **300** | **76,800** | 18.6 | 0.86 | 0.282 / 0.253 | 0.39 | 1.00 / 1.00 | pending |
 
-Series tables and figure: `$CLS_RESULTS/explore_first/wave1_phase1_controls_series.{md,png}`
-(`analysis/explore_first/series.py`). Deterministic trainer evals; the
-sampled probe pass on the final checkpoints comes after the forks land.
+**Wave 1 in one line: the explorer prior made exploit 3–3.7× *slower* to
+learn, not faster, and kept 70–78 % of its coverage in the plain fork; no
+arm held both (§3.4).**
+
+Series tables and figure: `$CLS_RESULTS/explore_first/wave1_series.{md,png}`
+(`analysis/explore_first/series.py`). Deterministic trainer evals, last-8 =
+mean of the last eight evals (u825–u1000); the sampled probe pass on the
+final checkpoints is §3.5.
 
 `u_criterion` / `traj_criterion`: first eval at which held-out revisit
 success ≥ 0.95 at ≤ 20 steps AND `follow_q` ≥ 0.80 (the task line's level;
@@ -152,3 +159,110 @@ u250.
 `submit_xf_forks.sh` from `xf_explorer/navigate_u700.pt`: `xf_naive`
 22918221, `xf_naive_lr03` 22918222, `xf_ewc_1e3` 22918223, `xf_ewc_1e4`
 22918224, `xf_kl_1` 22918226, `xf_kl_10` 22918227 (ou_bcs_normal, 5 h).
+
+The two EWC arms died at their first update — `estimate_fisher` put the
+agent in `eval()` for its backward passes and cuDNN refuses the RNN backward
+there ("cudnn RNN backward can only be called in training mode"; the CPU
+tests never hit it). Fixed (the Fisher pass stays in train mode; the agent
+has no dropout or batch-norm) and resubmitted as `xf_ewc_1e3` **22919093**
+and `xf_ewc_1e4` **22919094** at ~17:20.
+
+### 3.4 Wave 1 — results (2026-09-17, forks finished 20:00–22:10)
+
+Series tables and the four-panel figure:
+`$CLS_RESULTS/explore_first/wave1_series.{md,png}`. All numbers held-out,
+deterministic trainer evals; "last-8" = mean over the run's last eight
+evals (u825–u1000), which is the honest level given the deterministic
+eval's ±0.1 wobble. The u0 row is the explorer scored on the forks' own
+held-out envs: swept **0.539 / 0.544** (d = 0 / 10), first-visit
+`found_rate` 0.57, revisits 0.51 at 90 steps, `cos_post` 0.04, exploit-
+regime success 0.45 / 0.41 (stumbling; no gate).
+
+| arm | crossed | trajectories | last-8 swept d0 / d10 (× u0) | min swept d0 | last-8 found | last-8 cos_post | last-8 revisit steps | exploit sr d0 / d10 (last) |
+|---|---|---|---|---|---|---|---|---|
+| **E0 `xf_naive`** *(central)* | **u925** | **236,800** | 0.419 / 0.383 (0.78 / 0.70) | 0.287 (u775) | 0.37 | 0.76 | 15.9 | 1.00 / 0.97 |
+| **E0' `xf_naive_lr03`** *(central)* | **u750** | **192,000** | 0.403 / 0.387 (0.75 / 0.71) | 0.214 (u425) | 0.33 | 0.86 | 14.9 | 1.00 / 0.99 |
+| E1 `xf_ewc_1e3` | never (0.79 at u900) | — | 0.486 / 0.477 (0.90 / 0.88) | 0.305 (u400) | 0.31 | 0.70 | 20.4 | 0.85 / 0.82 (u1000 dip; 1.00 / 0.99 at u975) |
+| E1 `xf_ewc_1e4` | never | — | 0.391 / 0.365 (0.73 / 0.67) | 0.340 (u625) | 0.29 | 0.64 | 20.0 | 1.00 / 0.98 |
+| E3 `xf_kl_1` | never | — | 0.526 / 0.528 (0.98 / 0.97) | 0.518 | 0.50 | 0.06 | 79.1 | 0.41 / 0.43 |
+| E3 `xf_kl_10` | never | — | 0.535 / 0.540 (0.99 / 0.99) | 0.524 | 0.55 | 0.05 | 83.7 | 0.47 / 0.42 |
+| B0 `task1r_k4_h1024` (scratch, novelty) | **u250** | **64,000** | 0.325 / 0.298 | 0.112 | 0.51 | 0.92 | 14.1 | 1.00 / 0.99 |
+| B1 `xf_scratch_nonov` (scratch, no novelty) | **u300** | **76,800** | 0.282 / 0.253 | 0.089 | 0.39 | 0.86 | 18.6 | 1.00 / 1.00 |
+
+**Part 1 — "exploit is cheap given explore" — is falsified, and in the
+wrong direction.** The plain fork needed **3.7× the trajectories** the
+from-scratch control needed to reach the same exploit level (236.8k vs
+64k; the lr 3e-5 fork 3.0×). From scratch with no explore reward at all
+(B1) crossed at 76.8k — P6 falsified too: the untrained searcher touches the
+goal on ~40 % of first visits within 200 steps, which is signal enough. And
+the explorer's first-visit advantage was small to begin with: `found_rate`
+0.57 at u0 against 0.4–0.5 for the from-scratch runs after a few dozen
+updates — the deterministic explorer sweeps the arena but does not stop at
+goals any better than a random-ish walker does.
+
+*Why slower, mechanistically.* The PPO diagnostics say it: the explorer
+sits **at the κ cap** (κ 12.1 = e^2.5, σ 0.02–0.03, movement entropy −1.4
+to −1.7) from u10 on, while the from-scratch policy at the same updates has
+κ 7–10, σ 0.09–0.13, entropy +0.5 → −0.1. The explorer is a near-
+deterministic sweeper: PPO has ~4× less angular noise with which to
+discover that turning toward `q` pays after the store, and the confident
+sweep is a local optimum it must first leave. The specialist's sharpness,
+which is what makes it a good explorer, is what makes it a bad
+initialisation for exploration in the RL sense. (The lower learning rate
+crossing *earlier* — u750 vs u925 — is one seed and inside the
+eval-to-eval wobble; not a finding.)
+
+**Part 2 — "explore survives" — partially, as a slide, not a cliff.** E0's
+swept coverage goes 0.54 → 0.49 → 0.47 → 0.34 (u75) and then wanders
+between 0.29 and 0.49 for the rest of the run, last-8 mean **0.42 / 0.38 —
+78 % / 70 % of u0**, minimum 0.29 (53 %). That is P2 confirmed (> 30 %
+loss at the minimum; ~25 % at the level), and the shape is arm C's slide,
+not arm A's cliff. It is also **not** the from-scratch level: E0 ends 0.10
+above B0 (0.33 / 0.30) and 0.14 above B1 (0.28 / 0.25). So the prior is
+neither kept nor erased — about half the gap to from-scratch survives. What
+does not survive is the search competence the task actually needs:
+first-visit `found_rate` falls 0.57 → 0.37, *below* B0's 0.51. The fork
+keeps more of the sweep's shape than of its usefulness.
+
+**The supporting arms map the trade-off, and it has no free point.**
+- **KL (β = 1, 10):** holds the explorer to 97–99 % on coverage and learns
+  **nothing** — `cos_post` 0.05–0.07, revisits 0.55–0.68 at 80 steps,
+  exploit-regime success 0.41–0.47 — the u0 row, unchanged after 1000
+  updates and 256k trajectories. `prior_kl` sat at 0.001–0.02 and PPO's
+  per-step `approx_kl` at 0.001–0.005 (E0: 0.006–0.012): the search-step
+  KL on the shared trunk held the whole policy to a few-times-smaller
+  step, and q-following, which changes the function on inputs that differ
+  from search inputs only by ‖q‖, never started. Both β are past the knee.
+- **EWC (λ = 1e3, 1e4):** the mild end. Fisher mean 4.9e-5 / max 0.75 over
+  3.4M parameters, penalty 0.01–0.06 — the PPO surrogate's own scale — and
+  the policy still moves (drift 0.006–0.014 RMS). **λ = 1e3 is the closest
+  any arm came to holding both**: last-8 swept 0.486 / 0.477 (90 % / 88 %
+  of u0), revisits 1.00 at 20 steps, `cos_post` 0.70 last-8 and **0.79 at
+  u900** (swept 0.51, found 0.57 at that eval) — one eval-point short of
+  the criterion, and the series is still oscillating (0.59–0.79 over the
+  last five evals) rather than settled. Its u1000 row dipped (exploit-
+  regime success 0.85 / 0.82, revisits 0.97 at 24), so the checkpoint to
+  carry forward would be u900, not u1000. λ = 1e4 kept 73 % at `cos_post`
+  0.64 and never crossed. The Fisher's own noise is larger than the λ
+  effect at these two values: 1e4 retained *less* coverage than 1e3.
+
+**Ordering, on coverage kept:** KL (99 %) > EWC 1e3 (90 %) > E0 (78 %) ≈
+E0' (75 %) ≈ EWC 1e4 (73 %) > from-scratch (—). **Ordering, on exploit
+reached:** from-scratch (u250–300) > E0' (u750) > E0 (u925) > EWC 1e3
+(0.79, not crossed) > EWC 1e4 (0.64) > KL (never). Nearly the same list
+reversed, which is what "trade-off" means — with EWC 1e3 the one arm that
+sits off the line: 90 % of the coverage at ~90 % of the exploit level.
+
+**The original metrics, by regime (trainer, deterministic).** Exploit-
+regime success is 1.00 / 0.97–1.00 for every arm that learned and
+0.41–0.47 for the KL arms (the explorer's stumbling rate). Explore-regime
+swept coverage is the column above. Path optimality and the sampled
+headline row come from the probe pass (§3.5).
+
+**Predictions, scored.** P1 falsified (no fork before u250; E0 at u925).
+P2 confirmed (slide; −22 % level, −47 % minimum). P3 (lr) not supported —
+the lower rate crossed earlier, one seed. P4 (KL holds and learns)
+falsified — holds and does not learn, at both β. P5 (EWC monotone in λ)
+not supported at these two values — 1e4 kept *less* coverage than 1e3 and
+learned exploit slower, so the λ effect is inside the eval wobble here;
+the two arms differ mostly in which local optimum the search fell into. P6 falsified (B1 crosses at 76.8k).
