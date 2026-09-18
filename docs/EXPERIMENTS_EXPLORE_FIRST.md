@@ -18,21 +18,23 @@ explorer's u0 row.
 
 ## 0. Summary
 
-| arm | job | status | u_criterion | traj_criterion | last-8 revisit steps | last-8 cos_post | last-8 swept d0 / d10 (× u0) | last-8 found | exploit sr d0 / d10 (last) | probe (§3.5) |
+| arm | job | status | u_criterion | traj_criterion | last-8 revisit steps | last-8 cos_post | last-8 swept d0 / d10 (× u0) | last-8 found | exploit sr d0 / d10 (last) | probe, sampled (§3.5): swept d0 / d10; exploit d0 / d10 |
 |---|---|---|---|---|---|---|---|---|---|---|
-| phase 1 `xf_explorer` | 22889945 | done u700, 6.2 h, 896k traj (not charged) | — | 0 | 90 (no gate) | 0.04 | **0.539 / 0.544** = u0 row; sampled 0.603 / 0.612 | 0.57 | 0.45 / 0.41 | pending |
-| **E0 `xf_naive`** *(central)* | 22918221 | done u1000 | **925** | **236,800** | 15.9 | 0.76 | 0.419 / 0.383 (0.78 / 0.70) | 0.37 | 1.00 / 0.97 | pending |
-| **E0' `xf_naive_lr03`** *(central)* | 22918222 | done u1000 | **750** | **192,000** | 14.9 | 0.86 | 0.403 / 0.387 (0.75 / 0.71) | 0.33 | 1.00 / 0.99 | pending |
-| E1 `xf_ewc_1e3` | 22919093 | done u1000 | never (0.79 @ u900) | — | 20.4 | 0.70 | 0.486 / 0.477 (0.90 / 0.88) | 0.31 | 0.85 / 0.82 | pending |
-| E1 `xf_ewc_1e4` | 22919094 | done u1000 | never | — | 20.0 | 0.64 | 0.391 / 0.365 (0.73 / 0.67) | 0.29 | 1.00 / 0.98 | pending |
-| E3 `xf_kl_1` | 22918226 | done u1000 | never | — | 79.1 | 0.06 | 0.526 / 0.528 (0.98 / 0.97) | 0.50 | 0.41 / 0.43 | pending |
-| E3 `xf_kl_10` | 22918227 | done u1000 | never | — | 83.7 | 0.05 | 0.535 / 0.540 (0.99 / 0.99) | 0.55 | 0.47 / 0.42 | pending |
-| B0 `task1r_k4_h1024` (scratch, novelty on) | 22891316 | done u1000 | **250** | **64,000** | 14.1 | 0.92 | 0.325 / 0.298 | 0.51 | 1.00 / 0.99 | pending |
-| B1 `xf_scratch_nonov` (scratch, novelty off) | 22891317 | done u1000 | **300** | **76,800** | 18.6 | 0.86 | 0.282 / 0.253 | 0.39 | 1.00 / 1.00 | pending |
+| phase 1 `xf_explorer` | 22889945 | done u700, 6.2 h, 896k traj (not charged) | — | 0 | 90 (no gate) | 0.04 | **0.539 / 0.544** = u0 row; sampled 0.603 / 0.612 | 0.57 | 0.45 / 0.41 | swept 0.60 / 0.60; exploit 0.46 / 0.35 |
+| **E0 `xf_naive`** *(central)* | 22918221 | done u1000 | **925** | **236,800** | 15.9 | 0.76 | 0.419 / 0.383 (0.78 / 0.70) | 0.37 | 1.00 / 0.97 | swept 0.48 / 0.42; sr 1.00, path opt 0.71 / 0.69 |
+| **E0' `xf_naive_lr03`** *(central)* | 22918222 | done u1000 | **750** | **192,000** | 14.9 | 0.86 | 0.403 / 0.387 (0.75 / 0.71) | 0.33 | 1.00 / 0.99 | swept 0.45 / 0.44; sr 1.00, path opt 0.72 / 0.68 |
+| E1 `xf_ewc_1e3` | 22919093 | done u1000 | never (0.79 @ u900) | — | 20.4 | 0.70 | 0.486 / 0.477 (0.90 / 0.88) | 0.31 | 0.85 / 0.82 | swept 0.45 / 0.49; sr 1.00, path opt 0.58 / 0.58 |
+| E1 `xf_ewc_1e4` | 22919094 | done u1000 | never | — | 20.0 | 0.64 | 0.391 / 0.365 (0.73 / 0.67) | 0.29 | 1.00 / 0.98 | swept 0.40 / 0.31; sr 1.00, path opt 0.60 / 0.58 |
+| E3 `xf_kl_1` | 22918226 | done u1000 | never | — | 79.1 | 0.06 | 0.526 / 0.528 (0.98 / 0.97) | 0.50 | 0.41 / 0.43 | swept 0.60 / 0.60; exploit 0.45 / 0.26 |
+| E3 `xf_kl_10` | 22918227 | done u1000 | never | — | 83.7 | 0.05 | 0.535 / 0.540 (0.99 / 0.99) | 0.55 | 0.47 / 0.42 | swept 0.61 / 0.60; exploit 0.48 / 0.27 |
+| B0 `task1r_k4_h1024` (scratch, novelty on) | 22891316 | done u1000 | **250** | **64,000** | 14.1 | 0.92 | 0.325 / 0.298 | 0.51 | 1.00 / 0.99 | swept 0.48 / 0.47; sr 1.00, path opt 0.76 / 0.75 |
+| B1 `xf_scratch_nonov` (scratch, novelty off) | 22891317 | done u1000 | **300** | **76,800** | 18.6 | 0.86 | 0.282 / 0.253 | 0.39 | 1.00 / 1.00 | swept 0.38 / 0.36; sr 1.00, path opt 0.60 / 0.58 |
 
 **Wave 1 in one line: the explorer prior made exploit 3–3.7× *slower* to
-learn, not faster, and kept 70–78 % of its coverage in the plain fork; no
-arm held both (§3.4).**
+learn, not faster, and the plain fork kept 71–80 % of the explorer's
+coverage — level with a from-scratch run that is paid to explore, +0.06–0.10
+over one that is not; no arm held both, and from-scratch-with-novelty
+dominates every fork on the sampled metrics (§3.4, §3.5).**
 
 Series tables and figure: `$CLS_RESULTS/explore_first/wave1_series.{md,png}`
 (`analysis/explore_first/series.py`). Deterministic trainer evals, last-8 =
@@ -266,3 +268,93 @@ falsified — holds and does not learn, at both β. P5 (EWC monotone in λ)
 not supported at these two values — 1e4 kept *less* coverage than 1e3 and
 learned exploit slower, so the λ effect is inside the eval wobble here;
 the two arms differ mostly in which local optimum the search fell into. P6 falsified (B1 crosses at 76.8k).
+
+### 3.5 The original metrics, by regime — the probe pass (job 22933923)
+
+`run_se_probe.sh` over every final checkpoint plus the explorer, one process,
+`d0_base u725` appended by the script: **sampled** policies on held-out
+place envs (6 envs × 24 explore trials / × 32 nav trials), the instrument
+`DUAL_TRAINING` §9.8 was measured with. Files:
+`$CLS_RESULTS/explore_first/se_xf_wave1_{d0,d10,nav}.json`, log
+`$CLS_LOGS/se_probe_22933923.out`. The probe's `mean_start_dist` is
+10.70 / 11.20 / 10.87 at d = 0 / 5 / 10 — the same constants as d0_base's
+world — so path optimality is directly comparable, and the series tables
+now carry it (`--start_dist 10.70 10.87`).
+
+**Explore regime** (memory holds distractors only; swept @200; `swept_eff`
+= swept ÷ billiard at the model's own realized speed; `frac<t` = share of
+trials below half the billiard, the collapsed tail):
+
+| | d=0 swept | swept_eff | tail | d=10 swept | swept_eff | tail | chase_t (d=10) |
+|---|---|---|---|---|---|---|---|
+| explorer u700 | **0.599** | 0.929 | 0.000 | **0.598** | 0.928 | 0.000 | — |
+| **E0 `xf_naive`** | 0.482 (80 %) | 0.747 | 0.014 | 0.424 (71 %) | 0.670 | 0.104 | 0.13 |
+| **E0' `xf_naive_lr03`** | 0.450 (75 %) | 0.724 | 0.028 | 0.436 (73 %) | 0.714 | 0.090 | 0.26 |
+| EWC 1e3 | 0.450 (75 %) | 0.719 | 0.028 | **0.494 (83 %)** | 0.797 | 0.069 | 0.12 |
+| EWC 1e4 | 0.402 (67 %) | 0.624 | 0.125 | 0.309 (52 %) | 0.498 | **0.514** | 0.09 |
+| KL 1 / 10 | 0.604 / 0.607 | 0.940 / 0.944 | 0.000 | 0.604 / 0.604 | 0.937 | 0.000 | — |
+| B0 scratch, novelty on | 0.477 | **0.826** | 0.035 | 0.469 | **0.828** | 0.069 | 0.28 |
+| B1 scratch, no novelty | 0.383 | 0.723 | 0.076 | 0.357 | 0.696 | 0.160 | 0.23 |
+| d0_base u725 | 0.610 | 0.954 | 0.000 | 0.586 | 0.932 | 0.028 | 0.43 |
+
+**Exploit regime** (goal pre-stored by the oracle; success / mean steps /
+per-episode path optimality / `follow_q`):
+
+| | d=0 | d=5 | d=10 |
+|---|---|---|---|
+| explorer u700 | 0.46 / 56.7 / 0.35 / 0.08 | 0.43 / 47.7 / 0.31 / 0.08 | 0.47 / 50.2 / 0.27 / 0.09 |
+| **E0 `xf_naive`** | 1.00 / 14.6 / **0.71** / 0.77 | 0.99 / 15.4 / 0.69 / 0.71 | 0.99 / 14.7 / 0.69 / 0.72 |
+| **E0' `xf_naive_lr03`** | 1.00 / 13.4 / 0.72 / 0.86 | 0.99 / 17.6 / 0.70 / 0.71 | 0.99 / 14.8 / 0.68 / 0.78 |
+| EWC 1e3 | 1.00 / 25.2 / 0.58 / 0.56 | 0.99 / 26.5 / 0.58 / 0.54 | 0.99 / 25.7 / 0.58 / 0.52 |
+| EWC 1e4 | 1.00 / 17.9 / 0.60 / 0.69 | 1.00 / 20.6 / 0.58 / 0.65 | 0.99 / 19.0 / 0.58 / 0.66 |
+| KL 1 / 10 | 0.45–0.48 / 58–81 / 0.26–0.27 / 0.07–0.08 | 0.46 / 47–56 / 0.32–0.39 | 0.46–0.50 / 69–81 / 0.25–0.29 |
+| B0 scratch, novelty on | 1.00 / 12.7 / **0.76** / 0.92 | 0.99 / 13.0 / 0.76 / 0.86 | 0.99 / 12.9 / 0.75 / 0.87 |
+| B1 scratch, no novelty | 1.00 / 16.7 / 0.60 / 0.83 | 1.00 / 18.0 / 0.58 / 0.81 | 1.00 / 17.2 / 0.58 / 0.83 |
+| d0_base u725 | 1.00 / 11.7 / **0.82** / 0.92 | 0.99 / 13.3 / 0.80 / 0.84 | 0.99 / 12.0 / 0.80 / 0.82 |
+
+**What the probe adds to §3.4.**
+
+1. **The explorer is d0_base's equal on explore** — sampled swept 0.599 /
+   0.598 against 0.610 / 0.586, `swept_eff` 0.93 against 0.95, tail 0.000
+   at both distractor levels. Phase 1 produced the specialist it was meant
+   to. The KL arms are that specialist, untouched, after 256k trajectories.
+2. **The plain fork's retained coverage is not better than from-scratch-
+   with-novelty.** Sampled, E0 keeps 0.48 / 0.42; B0, trained from scratch
+   with the explore reward on before the store, reaches 0.48 / 0.47 — and
+   does it at a lower speed, so its `swept_eff` is higher (0.83 vs 0.75 /
+   0.67). The deterministic trainer eval had E0 0.10 above B0; the sampled
+   probe puts them level at d=0 and B0 ahead at d=10. The like-for-like
+   comparison — same objective, no explore reward anywhere — is E0 against
+   B1: **0.48 vs 0.38 at d=0, 0.42 vs 0.36 at d=10**. That +0.06–0.10 is
+   what the prior leaves behind after 1000 updates; it is a quarter of the
+   0.22–0.24 it started with.
+3. **At d=10 the fork's tail carries a corner-trap signature.** E0's
+   `frac<t` is 0.104 with `chase_t` 0.13 above `chase_r` 0.07 (E0': 0.258
+   vs 0.055): in a tenth of the trials the fork chases phantoms — the
+   wave-3 D2 mechanism, mild, present. The explorer and the KL arms have
+   none. EWC 1e3 has the least of any learning fork (0.069, chase 0.12)
+   and is the best fork on d=10 coverage (0.494, 83 %).
+4. **On the exploit metrics the fork is behind from-scratch at the same
+   budget.** Path optimality at u1000: d0_base 0.82 > B0 0.76 > E0 0.71 ≈
+   E0' 0.72 > EWC 0.58–0.60 ≈ B1 0.60; success 1.00 / 0.99 for every
+   learning arm. `follow_q` orders the same way (0.92 > 0.77–0.86 > 0.56–
+   0.69). So after 256k trajectories the prior has cost exploit quality as
+   well as time: B0 navigates straighter than either fork.
+5. **The trade-off, on the sampled measures, at u1000** (explore d=10 swept
+   → exploit d=10 path optimality): KL 0.60 → 0.27 (the explorer); EWC 1e3
+   0.49 → 0.58; E0 0.42 → 0.69; E0' 0.44 → 0.68; B0 0.47 → 0.75; d0_base
+   0.59 → 0.80. **B0 dominates every fork** — more coverage than E0 and
+   straighter paths — and d0_base dominates B0. Nothing in wave 1 is on
+   the d0_base frontier; the interleaved recipe remains the only one that
+   has both.
+
+**The one-line verdict, on the metrics Jack asked for.** Given this
+explorer, exploit is learned 3–3.7× slower than from scratch and ends
+straighter-than-nothing but worse than from scratch (0.71 vs 0.76 path
+optimality); the exploring that survives is 71–80 % of the explorer's
+sweep, level with what a from-scratch run paid to explore reaches and
+0.06–0.10 above one that is not; and no protection tried keeps the
+explorer without also keeping it from learning. The sharpness that makes
+the specialist a good explorer (κ at the cap) is what makes it a poor RL
+initialisation, and that — not forgetting — is the first thing wave 2
+should attack (plan §10.2).
