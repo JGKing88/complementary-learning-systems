@@ -414,6 +414,23 @@ Input width 10 (current reward, prev_reward, q, prev_action, prev_disp).
   found 0.25, cos(action, q) −0.45 in both phases with post-store touches
   15–25 steps apart — a degenerate oscillation near the goal, not
   navigation. Redraw blind control at u350.
+- 2026-09-18 14:15 — task3_k2_h128_nos u1000 held-out: search **0.76 /
+  0.65** (coverage at touch 0.18), pure-explore mean coverage **0.31**
+  (d0_base's explorer level), revisits 0.97 at 43 steps, 27 steps/touch,
+  follow_q 0.40 — blind sweeping by path integration transfers; blind
+  exploit is the weak half (bumping along walls). Train side: found
+  0.04–0.21 at coverage 0.08–0.12 — avoidance. **Empty-memory test on its
+  own arenas (23009187, sampled): found 0.08 / 0.11 (d 0 / 10) at 72 / 64
+  steps with coverage 0.37**; goal pre-stored: 1.00 / 0.98 at 21.8 / 23.7.
+  A full sweep of its own arena that touches the goal one time in twelve,
+  where the same sweep on an unfamiliar arena touches it three times in
+  four: a coarse goal map from wall contacts + path integration, used to
+  steer clear. Blindness removes the barcode shortcut but not localisation,
+  and under the wave-1 rule the map shows as avoidance; under the one rule
+  (where it would show as a beeline) the blind agent does not learn to
+  sweep at all (task3_k2_h128_nv_nos u1500: coverage 0.05). Redraw blind
+  control (task3r_k2_h128_nos) u500: found 0.17, coverage 0.03, cos_aq_post
+  −0.70 — also degenerate so far.
 
 - 2026-09-17 06:45 — **task3r_k2_h128_nv_c1 (3 redrawn arenas) is the first
   arm strong on both halves**: held-out u1500 found 0.66–0.68, revisits
