@@ -300,7 +300,29 @@ needs its split-like half.
 | arm | job | status |
 |---|---|---|
 | task3r_k1_h128 (wave-1 rule, 3 redrawn, K=1) | 22941535 (ou_bcs 12 h) | queued 2026-09-17 18:20 |
-| task1r_k1_h128 (wave-1 rule, 1 redrawn, K=1) | 22941536 (mit_normal_gpu 6 h) | queued |
+| task1r_k1_h128 (wave-1 rule, 1 redrawn, K=1) | 22941536 (mit_normal_gpu 6 h) | running |
+
+Held-out task eval (6 unseen arenas, sampled; K=4 / K=2 twins for comparison):
+
+| arm | update | search d0/10 | revisit (fresh state) | steps/touch | follow_q |
+|---|---|---|---|---|---|
+| task1r **K=1** | 500 | 0.41 / 0.43 | 1.00 at 60 | 38 | 0.39 |
+| task1r **K=1** | 1000 | 0.48 / 0.42 | 0.98 at 29 | 18 | 0.70 |
+| task1r **K=1** | 1500 | 0.49 / 0.49 | 1.00 at 21 | 19 | 0.68 |
+| task1r **K=1** | 2000 | 0.36 / 0.33 | **0.66 at 69** | 14 | 0.59 (chase_q 0.32) |
+| task1r **K=1** | 2500 | 0.59 / 0.57 | **0.79 at 34** | 13.2 | 0.74 |
+| task1r K=4 | 500 / 1000 / 1500 / 2500 | 0.52–0.57 | 1.00 at 19 / 18 / 16 / 12 | 18 / 15 / 14 / 13 | 0.80 / 0.87 / 0.87 / 0.93 |
+| task3r **K=1** | 500 | 0.61 / 0.49 | 1.00 at 41 | 29 | 0.46 |
+| task3r K=2 | 500 | 0.41 / 0.47 | 1.00 at 17 | 18 | 0.69 |
+
+- 2026-09-18 01:00 — reading so far: K=1 learns the within-rollout exploit
+  to the same level (13 steps/touch by u2500, at about half the pace of
+  K≥2), but the **fresh-state revisit** — arriving with the goal already
+  stored and no reward seen — is the one case it never trains, and from
+  u2000 it diverges from the in-rollout number (0.66 at 69, 0.79 at 34 vs
+  13 steps/touch after a store; K=4 1.00 at 12). The plan's §5 latch
+  concern, observed. The continual protocol is exactly fresh-state
+  revisits; running it on task1r_k1 u2500 (below).
 
 - 2026-09-17 06:45 — **task3r_k2_h128_nv_c1 (3 redrawn arenas) is the first
   arm strong on both halves**: held-out u1500 found 0.66–0.68, revisits
