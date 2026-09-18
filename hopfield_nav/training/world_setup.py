@@ -606,18 +606,26 @@ def do_eval(cfg, agent, eval_world: World, device, update_tag: str,
     # visits=2) alongside nav + expl, so the old numbers stay comparable.
     run_task = scope == "task"
 
+    # Mean policy by default for nav= and expl=; --no-eval_deterministic
+    # samples them. Every run before 2026-09-18 had them deterministic, so a
+    # sampled series is not comparable with an older one without a re-score
+    # (analysis/nav_tri/reeval_series.py --no-deterministic).
+    det = bool(getattr(cfg, "eval_deterministic", True))
     t0 = time.time()
     nav = {} if expl_only else evaluate_navigation(
         agent, val_envs, val_vh, val_offsets, cfg, device,
         num_trials=nt, max_steps=max_steps,
-        n_distractors_list=dist, deterministic=True)
+        n_distractors_list=dist, deterministic=det)
     disc = evaluate_goal_discovery(
         agent, val_envs, val_vh, val_offsets, cfg, device,
         num_trials=nt, max_steps=max_steps,
         n_distractors_list=dist) if run_disc else {}
     expl = evaluate_exploration(agent, val_envs, val_vh, val_offsets, cfg, device,
                                 num_trials=nt, max_steps=max_steps,
-                                n_distractors_list=dist)
+                                n_distractors_list=dist, deterministic=det)
+    # evaluate_task runs the training collector, which always SAMPLES: the
+    # task= rows have been sampled in every run; only nav= and expl= follow
+    # `det`.
     task = evaluate_task(agent, val_envs, val_vh, val_offsets, cfg, device,
                          num_trials=nt, max_steps=max_steps,
                          n_distractors_list=dist) if run_task else {}
@@ -627,6 +635,8 @@ def do_eval(cfg, agent, eval_world: World, device, update_tag: str,
     if run_disc:
         print(f"  [{update_tag}] disc={disc}")
     print(f"  [{update_tag}] expl={expl}")
+    if not det:
+        print(f"  [{update_tag}] eval_policy=sampled")
     if run_task:
         print(f"  [{update_tag}] task={task}")
     # Sizing a run needs the eval's own cost, not just the per-update total it

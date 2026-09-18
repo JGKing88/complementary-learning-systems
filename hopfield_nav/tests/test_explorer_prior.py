@@ -325,3 +325,40 @@ class TestInsidePPO:
         kl_free = float(teacher.kl(idx, d_free, r.explore_mask))
         kl_held = float(teacher.kl(idx, d_held, r.explore_mask))
         assert kl_held < kl_free
+
+
+class TestKappaReset:
+    """`PolarHead.reset_spread`: the parent's headings stay, its confidence goes."""
+
+    def test_state_dependent_head_goes_back_to_init(self):
+        agent = _agent()
+        head = agent.polar_head
+        assert head.log_kappa_head is not None
+        with torch.no_grad():
+            head.log_kappa_head.weight.fill_(0.3)
+            head.log_kappa_head.bias.fill_(2.5)          # at the cap
+            before_dir = agent.movement_mean.weight.clone()
+        head.reset_spread(1.85)
+        assert float(head.log_kappa_head.weight.abs().max()) == 0.0
+        assert float(head.log_kappa_head.bias) == pytest.approx(1.85)
+        assert torch.equal(agent.movement_mean.weight, before_dir)   # headings untouched
+        x = torch.randn(2, 5, D)
+        with torch.no_grad():
+            dist, _, _, _ = agent(x)
+        # zero weight + init bias: every state gets the init concentration
+        # (up to the dir_soft shrink, which is tiny for a unit-scale head)
+        assert torch.allclose(dist.kappa, torch.full_like(dist.kappa, math.exp(1.85)), rtol=0.05)
+
+    def test_global_param_goes_back_to_init(self):
+        torch.manual_seed(0)
+        cfg = AgentConfig(movement_mode="continuous", hopfield_mode="continuous",
+                          hidden_size=16, action_polar=True,
+                          state_dependent_std=False, input_encoded_state=False,
+                          input_hopfield_signal=False)
+        agent = NavAgent(cfg, input_dim=D, action_bounds=(LO, HI))
+        head = agent.polar_head
+        assert head.log_kappa_head is None and head.log_kappa is not None
+        with torch.no_grad():
+            head.log_kappa.fill_(2.5)
+        head.reset_spread(1.0)
+        assert float(head.log_kappa) == pytest.approx(1.0)

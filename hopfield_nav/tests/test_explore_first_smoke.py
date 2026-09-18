@@ -91,6 +91,7 @@ def forked(sandbox, tiny_encoder, explorer):
                        "--print_every", "1",
                        "--ewc_lambda", "10", "--prior_kl_coef", "1",
                        "--fisher_trajectories", "4",
+                       "--reset_kappa_head", "--no-eval_deterministic",
                        "--save_dir", str(save)], env), "fork")
     return save, proc.stdout
 
@@ -132,3 +133,25 @@ def test_prior_without_a_parent_is_refused(sandbox, tiny_encoder):
                  "--ewc_lambda", "10", "--save_dir", str(root / "noparent")], env)
     assert proc.returncode != 0
     assert "need --load_checkpoint" in proc.stderr
+
+
+@pytest.mark.slow
+def test_fork_can_reset_kappa_and_evaluate_sampled(forked):
+    save, out = forked
+    assert "Reset the log-kappa head to init_log_kappa=" in out
+    # every eval in the run is sampled, the u0 one included
+    assert out.count("eval_policy=sampled") == out.count("] task=")
+    ck = torch.load(save / "navigate_u2.pt", map_location="cpu", weights_only=False)
+    assert ck["config"]["reset_kappa_head"] is True
+    assert ck["config"]["eval_deterministic"] is False
+
+
+@pytest.mark.slow
+def test_reset_kappa_without_a_parent_is_refused(sandbox, tiny_encoder):
+    root, env = sandbox
+    proc = _run(["hopfield_nav.train_navigate",
+                 "--encoder_checkpoint", str(tiny_encoder), *TINY_WORLD,
+                 "--schedule", "task:1,visits=1", "--eval_every", "1000",
+                 "--reset_kappa_head", "--save_dir", str(root / "noparent_k")], env)
+    assert proc.returncode != 0
+    assert "only makes sense with" in proc.stderr

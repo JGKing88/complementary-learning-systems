@@ -1938,16 +1938,28 @@ case "$VARIANT" in
         PPO_EPOCHS=10; N_MINIBATCHES=8; TARGET_KL=0.1; LR=1e-4
         EVAL_SCOPE=task; EVAL_EVERY=${SE_EVAL_EVERY:-25}; CKPT_EVERY=${SE_CKPT_EVERY:-25}
         case "$VARIANT" in
-          xf_scratch_nonov) ;;
+          xf_scratch_nonov*) ;;
           *) LOAD_CKPT=${XF_EXPLORER:?xf_* arms fork the explorer -- set XF_EXPLORER=<navigate_uN.pt>} ;;
         esac
-        case "$VARIANT" in
-          xf_naive|xf_scratch_nonov) ;;
-          xf_naive_lr03) LR=3e-5 ;;
-          xf_ewc_*) EWC_LAMBDA=${VARIANT#xf_ewc_} ;;
-          xf_kl_*)  PRIOR_KL_COEF=${VARIANT#xf_kl_} ;;
-          *) echo "ERROR: unknown XF variant $VARIANT" >&2; exit 1 ;;
-        esac
+        # Levers, as suffix tokens after the family name, any order:
+        #   _lr03      lr 3e-5                     _ewc_<l>  EWC lambda l
+        #   _kl_<b>    search-step KL coef b        _kreset   reset the
+        #              log-kappa head at the fork (wave 2: the explorer sits
+        #              at the kappa cap)            _ent02    move_ent_coef 0.02
+        #   _sev       sampled nav=/expl= evals (--no-eval_deterministic)
+        _rest="${VARIANT#xf_naive}"; _rest="${_rest#xf_scratch_nonov}"
+        [ "$_rest" = "$VARIANT" ] && _rest="${VARIANT#xf}"
+        while [ -n "$_rest" ]; do
+          case "$_rest" in
+            _lr03*)   LR=3e-5; _rest="${_rest#_lr03}" ;;
+            _kreset*) RESET_KAPPA_HEAD=1; _rest="${_rest#_kreset}" ;;
+            _ent02*)  MOVE_ENT_COEF=0.02; _rest="${_rest#_ent02}" ;;
+            _sev*)    EVAL_DETERMINISTIC=0; _rest="${_rest#_sev}" ;;
+            _ewc_*)   _v="${_rest#_ewc_}"; EWC_LAMBDA="${_v%%_*}"; _rest="${_v#"${_v%%_*}"}" ;;
+            _kl_*)    _v="${_rest#_kl_}"; PRIOR_KL_COEF="${_v%%_*}"; _rest="${_v#"${_v%%_*}"}" ;;
+            *) echo "ERROR: unknown XF lever '$_rest' in $VARIANT" >&2; exit 1 ;;
+          esac
+        done
         ;;
     esac
     ;;

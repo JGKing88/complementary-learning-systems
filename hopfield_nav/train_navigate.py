@@ -22,6 +22,7 @@ The store head never trains here -- that is `train_store`'s job.
 from __future__ import annotations
 
 import argparse
+import math
 import os
 import sys
 import time
@@ -886,6 +887,17 @@ def train_navigate(
         ck = torch.load(load_checkpoint, map_location=device, weights_only=False)
         agent.load_state_dict(ck["agent_state_dict"])
         print(f"Loaded agent state from {load_checkpoint}", flush=True)
+        if getattr(cfg, "reset_kappa_head", False):
+            head = getattr(agent, "polar_head", None)
+            if head is None:
+                raise ValueError("--reset_kappa_head needs the polar head")
+            head.reset_spread(float(cfg.agent.init_log_kappa))
+            print(f"Reset the log-kappa head to init_log_kappa="
+                  f"{cfg.agent.init_log_kappa} (kappa "
+                  f"{math.exp(cfg.agent.init_log_kappa):.2f})", flush=True)
+    elif getattr(cfg, "reset_kappa_head", False):
+        raise ValueError("--reset_kappa_head only makes sense with "
+                         "--load_checkpoint")
     elif resume_ck is not None:
         agent.load_state_dict(resume_ck["agent_state_dict"])
         print(f"Continuing {resume_ck['_path']} from u{start_update}", flush=True)
@@ -1107,6 +1119,8 @@ CFG_FIELDS: dict[str, tuple[str, ...]] = {
     "ewc_lambda": ("ewc_lambda",),
     "prior_kl_coef": ("prior_kl_coef",),
     "fisher_trajectories": ("fisher_trajectories",),
+    "reset_kappa_head": ("reset_kappa_head",),
+    "eval_deterministic": ("eval_deterministic",),
     "novelty_anneal": ("novelty_anneal",),
     "epsilon_explore": ("epsilon_explore",),
     "epsilon_anneal_updates": ("epsilon_anneal_updates",),
@@ -1697,6 +1711,21 @@ def build_parser() -> argparse.ArgumentParser:
                         "frozen copy of the --load_checkpoint weights. 0 = off.")
     p.add_argument("--fisher_trajectories", type=int, default=None,
                    help="Rows the EWC Fisher is estimated on (default 256).")
+    p.add_argument("--reset_kappa_head", action=argparse.BooleanOptionalAction,
+                   default=None,
+                   help="With --load_checkpoint: re-initialise the polar "
+                        "head's log-kappa head (zero weight, bias = "
+                        "init_log_kappa) so the fork starts at the fresh "
+                        "policy's heading spread instead of the parent's. "
+                        "The explore specialist sits at the kappa cap "
+                        "(EXPERIMENTS_EXPLORE_FIRST section 3.4).")
+    p.add_argument("--eval_deterministic", action=argparse.BooleanOptionalAction,
+                   default=None,
+                   help="Evaluate with the policy mean (default) or sampled "
+                        "(--no-eval_deterministic). Sampled is the honest "
+                        "read of an uncertain policy; the mean policy under "
+                        "the kappa cap falls into orbits the sampled one "
+                        "does not.")
     p.add_argument("--obs_dropout", type=float, default=None,
                    help="Training-only dropout probability on the sensory"
                         " (wall-code) input, per entry per step. Eval sees"

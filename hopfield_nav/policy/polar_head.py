@@ -360,6 +360,21 @@ class PolarHead(nn.Module):
             self.speed_mu_head = self.speed_nu_head = None
             self.speed_mu = self.speed_nu = None
 
+    @torch.no_grad()
+    def reset_spread(self, init_log_kappa: float) -> None:
+        """Put the heading spread back at its initial value.
+
+        The state-dependent head goes back to zero weight + ``init`` bias
+        (the same init as construction), the global parameter to ``init``.
+        For a fork of a policy that has driven kappa to the cap: the parent's
+        headings are kept, its confidence is not.
+        """
+        if self.log_kappa_head is not None:
+            nn.init.zeros_(self.log_kappa_head.weight)
+            nn.init.constant_(self.log_kappa_head.bias, float(init_log_kappa))
+        elif self.log_kappa is not None:
+            self.log_kappa.fill_(float(init_log_kappa))
+
     @staticmethod
     def _read(head, param, features):
         if head is not None:
