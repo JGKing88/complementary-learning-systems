@@ -313,6 +313,11 @@ Held-out task eval (6 unseen arenas, sampled; K=4 / K=2 twins for comparison):
 | task1r **K=1** | 2500 | 0.59 / 0.57 | **0.79 at 34** | 13.2 | 0.74 |
 | task1r K=4 | 500 / 1000 / 1500 / 2500 | 0.52–0.57 | 1.00 at 19 / 18 / 16 / 12 | 18 / 15 / 14 / 13 | 0.80 / 0.87 / 0.87 / 0.93 |
 | task3r **K=1** | 500 | 0.61 / 0.49 | 1.00 at 41 | 29 | 0.46 |
+| task3r **K=1** | 1000 | 0.57 / 0.59 | 1.00 at 31 | 18 | 0.71 |
+| task3r **K=1** | 1500 | 0.59 / 0.64 | 1.00 at 26 | 12.9 | 0.84 |
+| task3r **K=1** | 2000 | 0.58 / 0.55 | **0.89 at 70** | 12.4 | 0.60 |
+| task3r **K=1** | 2500 | **0.75 / 0.81** | **0.99 at 50** | 12.9 | 0.82 |
+| task3r K=2 | 1000 / 1500 / 2500 | 0.61 / 0.65–0.72 / 0.73 | 1.00 at 14.6 / 13.6 / 12.7 | 12.7 / 12.3 / 12.7 | 0.89 / 0.92 / 0.94 |
 | task3r K=2 | 500 | 0.41 / 0.47 | 1.00 at 17 | 18 | 0.69 |
 
 - 2026-09-18 01:00 — reading so far: K=1 learns the within-rollout exploit
@@ -336,6 +341,14 @@ Held-out task eval (6 unseen arenas, sampled; K=4 / K=2 twins for comparison):
   from the interleaved split": the memory is self-produced and the switch
   is in-trajectory, but the split-like "start with the goal stored"
   experience (visits ≥ 2) is required for the deployment case.
+- 2026-09-18 06:00 — task3r_k1_h128 replicates it on three arenas: at
+  u2500 search **0.75 / 0.81** (the best search of any arm — every rollout
+  is a search rollout), in-rollout exploit 12.9 steps/touch, follow_q 0.82,
+  but fresh-state revisits 0.99 at **49.7 steps** (K=2: 1.00 at 12.7); at
+  u2000 0.89 at 70. Same divergence from u2000 as the one-arena K=1.
+  Closing the line here: recipe = wave-1 rule + redrawn goals + 3 arenas +
+  K=2 (`task3r_k2_h128`), with K=1's search numbers a hint that a K=2 run
+  with more search rollouts (e.g. ENV_REPEATS 4, visits 2) could have both.
 
 - 2026-09-17 06:45 — **task3r_k2_h128_nv_c1 (3 redrawn arenas) is the first
   arm strong on both halves**: held-out u1500 found 0.66–0.68, revisits
