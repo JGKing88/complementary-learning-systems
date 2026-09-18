@@ -30,6 +30,12 @@ explorer's u0 row.
 | B0 `task1r_k4_h1024` (scratch, novelty on) | 22891316 | done u1000 | **250** | **64,000** | 14.1 | 0.92 | 0.325 / 0.298 | 0.51 | 1.00 / 0.99 | swept 0.48 / 0.47; sr 1.00, path opt 0.76 / 0.75 |
 | B1 `xf_scratch_nonov` (scratch, novelty off) | 22891317 | done u1000 | **300** | **76,800** | 18.6 | 0.86 | 0.282 / 0.253 | 0.39 | 1.00 / 1.00 | swept 0.38 / 0.36; sr 1.00, path opt 0.60 / 0.58 |
 
+**Wave 2 (§4.2–4.3), in one line: re-opening the spread — κ reset,
+entropy bonus, cap held at 7.4, cap annealed — does not change the fork's
+pace (u725–u925, 3.2–3.7× from scratch, two seeds) or what it keeps
+(57–78 %); eight arms on one curve; the slowness is in the trunk. The
+interleaved recipe is the only one on the frontier.**
+
 **Wave 1 in one line: the explorer prior made exploit 3–3.7× *slower* to
 learn, not faster, and the plain fork kept 71–80 % of the explorer's
 coverage — level with a from-scratch run that is paid to explore, +0.06–0.10
@@ -523,3 +529,53 @@ fork with the `q` input weights re-initialised) and is the natural wave 3
 if the line continues — but it changes the question from "does a lifetime
 of exploring help" to "which parts of the explorer are worth keeping",
 which is a different hypothesis from the one this line set out to test.
+
+### 4.3 Wave 2 — the original metrics, by regime (probe job 22959947)
+
+Same instrument as §3.5 (`run_se_probe.sh`, sampled, held-out place envs;
+B0 and d0_base re-measured in the same process, so within-table
+comparisons are exact; this probe's start distance is 10.32 / 10.38, so
+its path-optimality column is not numerically identical to §3.5's — read
+each table against its own d0_base row). Files:
+`$CLS_RESULTS/explore_first/se_xf_wave2_{d0,d10,nav}.json`.
+
+| arm | explore swept d0 / d10 | swept_eff d0 / d10 | exploit sr d0 / d10 | steps d0 / d10 | **path opt d0 / d10** | follow_q d0 / d10 |
+|---|---|---|---|---|---|---|
+| `naive` s43 (central) | 0.422 / 0.431 | 0.67 / 0.68 | 1.00 / 0.99 | 13.2 / 13.3 | **0.70 / 0.71** | 0.81 / 0.77 |
+| `kreset` s42 | 0.372 / 0.376 | 0.60 / 0.60 | 1.00 / 0.99 | 14.4 / 14.4 | 0.64 / 0.64 | 0.77 / 0.74 |
+| `kreset` s43 | 0.442 / 0.435 | 0.71 / 0.70 | 1.00 / 1.00 | 16.1 / 16.3 | 0.64 / 0.63 | 0.69 / 0.67 |
+| `ent02` | 0.380 / 0.374 | 0.67 / 0.66 | 1.00 / 0.99 | 15.3 / 16.9 | 0.65 / 0.62 | 0.79 / 0.68 |
+| `kreset_ent02` | 0.401 / 0.404 | 0.71 / 0.71 | 1.00 / 1.00 | 17.7 / 20.2 | 0.59 / 0.56 | 0.76 / 0.67 |
+| `kreset_ewc_1e3` | **0.460 / 0.466** | 0.74 / 0.75 | 1.00 / 0.99 | 13.4 / 14.5 | 0.71 / 0.69 | 0.81 / 0.70 |
+| `kcap20` | 0.356 / 0.389 | 0.56 / 0.62 | 1.00 / 1.00 | **11.6 / 12.3** | **0.79 / 0.76** | 0.89 / 0.85 |
+| `kcap20a` | 0.421 / 0.396 | 0.66 / 0.63 | 1.00 / 0.99 | 12.6 / 13.4 | 0.72 / 0.70 | 0.87 / 0.80 |
+| B0 scratch, novelty on | **0.467 / 0.460** | **0.82 / 0.82** | 1.00 / 0.99 | 12.6 / 12.7 | 0.74 / 0.74 | 0.89 / 0.85 |
+| d0_base u725 | 0.603 / 0.598 | 0.95 / 0.95 | 1.00 / 0.99 | 11.5 / 11.2 | 0.79 / 0.80 | 0.90 / 0.82 |
+
+Three things the probe adds:
+
+1. **The one arm that navigates like d0_base is the one that explores
+   worst.** `kcap20` — κ held at 7.4 for the whole run — ends at path
+   optimality 0.79 / 0.76, d0_base's own 0.79 / 0.80 and above B0's 0.74,
+   with the straightest paths of any fork (11.6 steps). Its coverage is
+   the lowest of the wave (0.36 / 0.39, 59 % of the explorer). The cap
+   did not speed learning, but it did make what was learned straighter —
+   and it did so by giving up more of the sweep. Same trade-off, other
+   end.
+2. **`kreset_ewc_1e3` is again the arm nearest to both**, as EWC 1e3 was
+   in wave 1: coverage 0.46 / 0.47 (77 %, level with B0's 0.47), path
+   optimality 0.71 / 0.69, one eval-point short of the criterion at the
+   end. Two waves, two seeds' worth of runs, and the mild weight-space
+   anchor is consistently the least-bad compromise — and consistently
+   below the interleaved recipe on both axes.
+3. **From scratch with novelty still dominates the forks on the joint.**
+   B0: coverage 0.47, `swept_eff` 0.82, path optimality 0.74. No fork
+   beats it on coverage; only `kcap20` beats it on path optimality, at
+   0.36 coverage. d0_base dominates everything: 0.60 / 0.95 / 0.79.
+
+**Wave 2 in one line.** Re-opening the policy's spread — reset, held by
+the cap, or annealed — does not make the explorer a faster starting point
+for exploit (every fork crosses at 3.2–3.7× the from-scratch cost, two
+seeds) and does not change what it keeps (57–78 % of the sweep). The plain
+fork's problem is in the trunk, not the head; and on the original metrics
+the interleaved recipe remains the only one on the frontier.
