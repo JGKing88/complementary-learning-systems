@@ -167,12 +167,23 @@ class VisitedBuffer:
         self.visited = np.zeros((n_envs, walkers, size * size), dtype=bool)
         self.size, self.W, self.n_envs = size, walkers, n_envs
         self.n = 1
+        # Padded index lists of the visited cells per walker, for vectorised draws.
+        self.lists = np.zeros((n_envs, walkers, size * size), dtype=np.int64)
+        self.counts = np.zeros((n_envs, walkers), dtype=np.int64)
 
     def add(self, seg: np.ndarray) -> None:
         ids = seg[..., 0] * self.size + seg[..., 1]
         for e in range(self.n_envs):
             for w in range(self.W):
                 self.visited[e, w, ids[e, w]] = True
+                vis = np.flatnonzero(self.visited[e, w])
+                self.lists[e, w, :len(vis)] = vis
+                self.counts[e, w] = len(vis)
+
+    def _draw(self, rng, e, w):
+        k = np.floor(rng.rand(len(e)) * self.counts[e, w]).astype(np.int64)
+        c = self.lists[e, w, k]
+        return np.stack([c // self.size, c % self.size], 1)
 
     def sample(self, rng, n: int, k_max: int, max_abs: int, balance: bool = False):
         S = self.size
@@ -186,13 +197,8 @@ class VisitedBuffer:
             m = 4 * (n - got) if balance else 2 * (n - got)
             e = rng.randint(0, self.n_envs, size=m)
             w = rng.randint(0, self.W, size=m)
-            p = np.empty((m, 2), dtype=np.int64)
-            g = np.empty((m, 2), dtype=np.int64)
-            for i in range(m):
-                vis = np.flatnonzero(self.visited[e[i], w[i]])
-                a, b = vis[rng.randint(len(vis), size=2)]
-                p[i] = a // S, a % S
-                g[i] = b // S, b % S
+            p = self._draw(rng, e, w)
+            g = self._draw(rng, e, w)
             d = g - p
             r = np.abs(d).max(1)
             ok = (r >= 1) & (r <= max_abs)

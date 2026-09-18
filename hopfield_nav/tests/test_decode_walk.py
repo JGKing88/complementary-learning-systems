@@ -119,3 +119,23 @@ def test_encoder_walk_masks_and_readout():
     ok = (np.abs(g - p).max(1) >= 1)
     err = angular_error(readout_direction(Z, S, p[ok], g[ok]), (g - p)[ok].astype(float))
     assert err.max() < 1e-3
+
+
+def test_visited_buffer_pairs_are_visited_cells_of_one_walker():
+    from hopfield_nav.train_decode_walk import VisitedBuffer
+    rng = np.random.RandomState(0)
+    n_envs, W, T, S = 3, 2, 30, 12
+    buf = VisitedBuffer(n_envs, W, S)
+    pos = rng.randint(0, S, size=(n_envs, W, 2))
+    for _ in range(3):
+        seg = np.zeros((n_envs, W, T + 1, 2), dtype=np.int64)
+        seg[:, :, 0] = pos
+        for t in range(T):
+            pos = np.clip(pos + rng.randint(-1, 2, size=(n_envs, W, 2)), 0, S - 1)
+            seg[:, :, t + 1] = pos
+        buf.add(seg)
+    envs, p, g, d = buf.sample(rng, 300, k_max=0, max_abs=5, balance=True)
+    assert len(envs) == 300 and (np.abs(d).max(1) >= 1).all() and (np.abs(d).max(1) <= 5).all()
+    # both ends visited by some walker of that env (the walker id is not returned; check the env's union)
+    for e_, pp, gg in zip(envs, p, g):
+        assert buf.visited[e_, :, pp[0] * S + pp[1]].any() and buf.visited[e_, :, gg[0] * S + gg[1]].any()
