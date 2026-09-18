@@ -159,6 +159,67 @@ class Buffer:
         return envs, p, g, (g - p).astype(np.float32)
 
 
+class VisitedBuffer:
+    """Every cell each walker has visited so far (the encoder's online buffer):
+    pairs are any two visited cells of one walker, displacement from its odometry."""
+
+    def __init__(self, n_envs: int, walkers: int, size: int):
+        self.visited = np.zeros((n_envs, walkers, size * size), dtype=bool)
+        self.size, self.W, self.n_envs = size, walkers, n_envs
+        self.n = 1
+
+    def add(self, seg: np.ndarray) -> None:
+        ids = seg[..., 0] * self.size + seg[..., 1]
+        for e in range(self.n_envs):
+            for w in range(self.W):
+                self.visited[e, w, ids[e, w]] = True
+
+    def sample(self, rng, n: int, k_max: int, max_abs: int, balance: bool = False):
+        S = self.size
+        envs, ps, gs = [], [], []
+        got, tries = 0, 0
+        per_bin = int(np.ceil(n / max_abs))
+        counts = np.zeros(max_abs + 1, dtype=np.int64)
+        spare_e, spare_p, spare_g = [], [], []
+        while got < n:
+            tries += 1
+            m = 4 * (n - got) if balance else 2 * (n - got)
+            e = rng.randint(0, self.n_envs, size=m)
+            w = rng.randint(0, self.W, size=m)
+            p = np.empty((m, 2), dtype=np.int64)
+            g = np.empty((m, 2), dtype=np.int64)
+            for i in range(m):
+                vis = np.flatnonzero(self.visited[e[i], w[i]])
+                a, b = vis[rng.randint(len(vis), size=2)]
+                p[i] = a // S, a % S
+                g[i] = b // S, b % S
+            d = g - p
+            r = np.abs(d).max(1)
+            ok = (r >= 1) & (r <= max_abs)
+            if balance:
+                keep = np.zeros(m, dtype=bool)
+                for rr in range(1, max_abs + 1):
+                    idx = np.where(ok & (r == rr))[0]
+                    room = per_bin - counts[rr]
+                    if room > 0 and len(idx) > 0:
+                        idx = idx[:room]
+                        keep[idx] = True
+                        counts[rr] += len(idx)
+                spare = ok & ~keep
+                spare_e.append(e[spare]); spare_p.append(p[spare]); spare_g.append(g[spare])
+                ok = keep
+                if tries > 50:
+                    fill = np.concatenate(spare_e), np.concatenate(spare_p), np.concatenate(spare_g)
+                    envs.append(fill[0]); ps.append(fill[1]); gs.append(fill[2])
+                    got += len(fill[0])
+            envs.append(e[ok]); ps.append(p[ok]); gs.append(g[ok])
+            got += int(ok.sum())
+        envs = np.concatenate(envs)[:n]
+        p = np.concatenate(ps)[:n]
+        g = np.concatenate(gs)[:n]
+        return envs, p, g, (g - p).astype(np.float32)
+
+
 def targets_for(d: np.ndarray, kind: str) -> np.ndarray:
     u = d / np.linalg.norm(d, axis=1, keepdims=True)
     if kind == "direction":
@@ -207,6 +268,9 @@ def parse_args():
     p.add_argument("--max_abs", type=int, default=19, help="Chebyshev range kept (A1's 19)")
     p.add_argument("--pairs_per_update", type=int, default=32768)
     p.add_argument("--target", choices=["direction", "heading8"], default="direction")
+    p.add_argument("--buffer", choices=["window", "visited"], default="window",
+                   help="window: pairs of moments within the last buffer_updates segments; visited: pairs of "
+                        "any two cells a walker has visited so far (the encoder's online buffer)")
     p.add_argument("--range_warmup_updates", type=int, default=0,
                    help="grow the kept Chebyshev range from 19 to max_abs over this many updates "
                         "(size-50 arenas: a 1..49-balanced batch from the start stalls on the 1-cos "
@@ -314,7 +378,8 @@ def main() -> None:
 
     sets = [train, heldout, same]
     walkers = Walkers(train.envs, args.walkers, args.seed + 1000 * (u0 + 1))
-    buf = Buffer(len(train), args.walkers, args.steps_per_update, args.buffer_updates)
+    buf = (VisitedBuffer(len(train), args.walkers, args.size) if args.buffer == "visited"
+           else Buffer(len(train), args.walkers, args.steps_per_update, args.buffer_updates))
     data_rng = np.random.RandomState(args.seed + 1 + u0)
     steps_per_update = len(train) * args.walkers * args.steps_per_update
     t_train = time.time()
