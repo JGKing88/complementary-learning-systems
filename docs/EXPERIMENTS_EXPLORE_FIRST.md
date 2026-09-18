@@ -419,3 +419,32 @@ ordering.
   (2.0 → 2.5 over 300 updates, the `d1_kanneal` machinery). Submitted
   `xf_naive_kcap20_sev` **22946511** and `xf_naive_kcap20a_sev`
   **22946512** (commit for the levers: see git log).
+
+### 4.1 Wave 1 re-scored sampled (jobs 22942335–42, done 2026-09-18 ~02:30)
+
+`nav=` + `expl=` of every wave-1 run re-scored with the policy sampled,
+every 25 updates, same held-out envs (`$CLS_RESULTS/explore_first/
+<arm>_reeval_stoch.log`). Held-out swept @200 at d=0, last-8 means:
+
+| arm | deterministic (trainer) | **sampled** | sampled min | sampled d=10 | sampled exploit-regime sr d0/d10 |
+|---|---|---|---|---|---|
+| explorer u700 | 0.538 | **0.603** | — | 0.612 | 0.62 / 0.69 |
+| E0 `xf_naive` | 0.419 | **0.424** (70 %) | 0.317 | 0.414 | 1.00 / 0.99 |
+| E0' `xf_naive_lr03` | 0.403 | 0.441 (73 %) | 0.241 | 0.425 | 1.00 / 0.99 |
+| E1 `xf_ewc_1e3` | 0.486 | **0.504 (84 %)** | 0.331 | 0.495 | 0.99 / 0.99 |
+| E1 `xf_ewc_1e4` | 0.391 | 0.413 (68 %) | 0.352 | 0.400 | 1.00 / 1.00 |
+| E3 `xf_kl_1` / `_10` | 0.526 / 0.535 | 0.600 / 0.598 (99 %) | 0.589 | 0.601 | 0.52 / 0.52 |
+| B0 scratch, novelty on | 0.325 | **0.457** | 0.113 | 0.433 | 1.00 / 0.99 |
+| B1 scratch, no novelty | 0.282 | 0.338 | 0.109 | 0.338 | 1.00 / 1.00 |
+
+Two corrections to the deterministic reading, both in the direction the
+probe (§3.5) already pointed: **(1)** the from-scratch-with-novelty control
+was understated by 0.13 — its mean policy orbits, its sampled policy
+explores — so sampled, **B0 (0.46) is above the plain fork (0.42)**, not
+0.10 below it; the fork's retained coverage is what a from-scratch run paid
+to explore reaches anyway, and +0.09 over one that is not (B1 0.34).
+**(2)** The forks themselves barely move under sampling (E0 0.419 → 0.424):
+a fork's mean policy and sampled policy cover the same, the explorer's do
+not (0.54 → 0.60) — which is itself a symptom of what the fork lost. The
+KL arms are the sampled explorer to the third decimal. EWC 1e3 at 84 %
+stays the best protected arm that learned anything. Ordering unchanged.
