@@ -2047,3 +2047,35 @@ decode's per-pair direction target is informative at any range present,
 which is why it is indifferent. Figures updated (all four arms on the
 clean plots): `$CLS_RUNS/figures/nn_control/p1_size20_clean.png`,
 `p1_size50_clean.png`.
+
+## 2026-09-18 — balanced encoder rows, and the no-memory regime
+
+Two more of Jack's questions, run.
+
+**Balanced rows for the encoder** (`--balance_rows`: each walker's 64 rows
+are the endpoints of 32 displacement-balanced pairs from its window — the
+decode's sampler applied to the encoder): 20×20 **19.6°** (time-uniform
+rows 24.0°, visited set 24.9°); 50×50 **28.7° / 48.4°** within 19 / 49
+(time-uniform 23.8 / 45.8; visited set 14.7 / 27.6). Balancing helps at
+20×20 and not at 50×50, so the window deficit at 50×50 is not (only)
+far-pair starvation: the same 1,280 recent cells recur batch after batch,
+and the objective seems to need the arena's positional coverage as much
+as its pair mix. The visited set remains the encoder's best online regime.
+
+**No memory at all** ("why a window — why not a fresh long rollout each
+update?"): one walker per arena, a fresh 512-step rollout every update
+(32,768 steps, the same budget), pairs / rows only from that rollout,
+nothing kept. Decode: 20×20 **0.87°** (1° at 90M steps; window 0.46°,
+visited 0.45°), 50×50 **47°** with the loss stuck at 0.38 (window /
+visited 0.5–0.6°). Encoder (balanced rows): 20×20 **62°**, 50×50 **73 /
+80°**. A single 512-step walk holds too few distinct long-displacement
+pairs per update for either model; keeping recent experience eligible for
+a while (the window: ~20 updates) is load-bearing. It also settles the
+replay-ratio question: the window is the same data as a fresh rollout
+with each step used ~once instead of ~0.16 times; the fresh-rollout
+result is not that curve shifted right, it is a worse model, because the
+sampler cannot find the pairs it needs inside one rollout.
+
+Figures: the clean plots now carry window, visited-set and fresh-rollout
+regimes for both models (balanced-rows encoder in the full plots only);
+`$CLS_RUNS/figures/nn_control/p1_size{20,50}_clean.png`, `p1_size{20,50}.png`.

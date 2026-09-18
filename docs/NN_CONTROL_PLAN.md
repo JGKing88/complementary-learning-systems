@@ -361,7 +361,13 @@ target — no teacher, no goal, no position (log 2026-09-16):
   arena per batch) is 24.0° at 20×20 (as on the visited set) but 23.8° /
   45.8° at 50×50 (vs 14.7 / 27.6): a compact recent window starves its
   near/far objective of far pairs, which the decode's direction target
-  does not need. Clean figures (the 2×2): `p1_size20_clean.png`,
+  does not need. Balancing the encoder's rows (endpoints of
+  displacement-balanced pairs) helps at 20×20 (19.6°) but not at 50×50
+  (28.7 / 48.4°) — the window's positional coverage matters too. With no
+  memory at all (a fresh 512-step rollout per update, nothing kept) both
+  models fail: decode 0.87° / 47°, encoder 62° / 73–80° — recent
+  experience kept eligible for ~20 updates is load-bearing. Clean figures
+  (window / visited set / no memory, both models): `p1_size20_clean.png`,
   `p1_size50_clean.png`.
 
 ### 1.9 Standing conclusions
