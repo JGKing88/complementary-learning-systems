@@ -1883,6 +1883,9 @@ case "$VARIANT" in
         #   _c1   flat novelty: NOVELTY_SCALE_CAP=1 (no remaining-scaling)
         #   _c3   NOVELTY_SCALE_CAP=3
         #   _g5   GOAL_REWARD=5.0 (tilts the post-store tie toward beelining)
+        #   _nos  INPUT_SENSORY=0 -- blind agent (q + path integration + prev_reward
+        #         only); EXPERIMENTS_TASK_FAITHFUL §10: can a fixed goal be
+        #         memorised without the wall barcode?
         _rest="${VARIANT#task*_k?}"
         case "$_rest" in
           _h128*)  HIDDEN_SIZE=128;  _rest="${_rest#_h128}" ;;
@@ -1895,6 +1898,7 @@ case "$VARIANT" in
             _c1*) NOVELTY_SCALE_CAP=1; _rest="${_rest#_c1}" ;;
             _c3*) NOVELTY_SCALE_CAP=3; _rest="${_rest#_c3}" ;;
             _g5*) GOAL_REWARD=5.0; _rest="${_rest#_g5}" ;;
+            _nos*) INPUT_SENSORY=0; _rest="${_rest#_nos}" ;;
             *) echo "ERROR: unknown TASK lever '$_rest' in $VARIANT" >&2; exit 1 ;;
           esac
         done
