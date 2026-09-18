@@ -354,7 +354,10 @@ target — no teacher, no goal, no position (log 2026-09-16):
   24.9° (20×20) and 14.7° / 27.6° (50×50 within 19 / 49), 6–8° above
   their trainer on the same walker's dumps, and its early readout follows
   its gain schedule rather than its data — the dump points are its honest
-  early numbers. Clean figures: `p1_size20_clean.png`, `p1_size50_clean.png`.
+  early numbers. With the decode on the same visited-set buffer (one
+  walker per arena; identical rows into both models) it reaches 0.45° /
+  0.51°, 1° at 34M / 46M steps — indifferent to the replay policy. Clean
+  figures: `p1_size20_clean.png`, `p1_size50_clean.png`.
 
 ### 1.9 Standing conclusions
 

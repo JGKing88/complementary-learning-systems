@@ -42,6 +42,8 @@ def encoder_curve(path: str):
 def label_decode(a: dict) -> str:
     bits = [a.get("mode", "grid"), f"{a['n_envs']} envs"]
     bits.append("balanced |Δ|" if a.get("balance_range") else "raw walk pairs")
+    if a.get("buffer") == "visited":
+        bits.append(f"{a['walkers']} walker/arena, visited-set buffer (matched to the encoder)")
     if a.get("range_warmup_updates", 0):
         bits.append("range warm-up")
     if a.get("target", "direction") != "direction":
@@ -80,9 +82,9 @@ def main():
     dec = sorted(glob.glob(os.path.join(root, f"goal_pairs_p1_*{sz}_s*", "final_tables.json")))
     enc = sorted(glob.glob(os.path.join(root, f"goal_pairs_p1e_*sz{args.size}*", "final.json")))
     if args.size == 20:
-        dec = [p for p in dec if "_sz" not in p]
+        dec = [p for p in dec if "_sz50" not in p]
     if args.clean:
-        dec = [p for p in dec if "heading8" not in p and "regular" not in p and "grid32" not in p]
+        dec = [p for p in dec if "h8" not in p and "regular" not in p and "grid32" not in p]
         enc = [p for p in enc if "online" in p]
     fig, ax = plt.subplots(figsize=(11, 5.6))
     styles, labelled = {}, set()

@@ -1996,3 +1996,25 @@ between 10M and 20M steps and ends at 0.5°.
 Figures (clean, valid arms only, both encoder forms):
 `$CLS_RUNS/figures/nn_control/p1_size20_clean.png`, `p1_size50_clean.png`
 (`analysis/p1_curves.py --clean --points ...`).
+
+## 2026-09-18 — matched replay: the decode on the encoder's buffer
+
+Jack: the online encoder samples from every cell a walker has visited,
+while the decode sampled pairs from a sliding window of the last 20
+updates — different replay policies on the same walks. Fixed by giving the
+decode the same buffer (`train_decode_walk.py --buffer visited`: one walker
+per arena, 32,768 steps per update, pairs of any two cells the walker has
+visited, displacement from its odometry, balanced over |Δ|). The two
+models now draw from identical rows at every update.
+
+| decode, visited-set buffer | held-out final | env-steps to 10 / 5 / 2 / 1° |
+|---|---|---|
+| 20×20, within 19 | **0.45°** | 8.2M / 11.5M / 18M / 34M |
+| 50×50, within 49 (range warm-up) | **0.51°** | 11.5M / 14.7M / 21M / 46M |
+| (sliding window, for reference) | 0.46–0.48 / 0.49–0.64 | 39–41M / 46–62M to 1° |
+
+The decode is indifferent to the replay policy; the visited set is if
+anything slightly faster to 1°. The clean figures now show the matched
+pair — decode (visited set) and online encoder — as the primary
+comparison, with the encoder's own-trainer dump points beside them.
+(`--points` labels and the sliding-window arms kept for the record.)
