@@ -350,6 +350,42 @@ Held-out task eval (6 unseen arenas, sampled; K=4 / K=2 twins for comparison):
   K=2 (`task3r_k2_h128`), with K=1's search numbers a hint that a K=2 run
   with more search rollouts (e.g. ENV_REPEATS 4, visits 2) could have both.
 
+## 9. Is the fixed goal "known in the weights"? (empty-memory test)
+
+Jack: "In a new rollout it's not known in the Hopfield ... so it's known in
+the weights? It would have to navigate to the goal from sensory input, which
+seems unlikely." The sensory channel (`world/env.py:92`) is not distance:
+each of the 60 rays reports the ±1 identity code of the wall *segment* it
+lands on — every arena's walls carry a random ±1 paint. It is a global
+position-and-arena code with no geometry in it, so a barcode→heading lookup
+for three fixed goals is ~1,200 entries and cheap. Test (22983606,
+`reeval_series --which train --n_distractors 0 10`, 3 training arenas × 96
+trials, 200 steps): the explore eval with an EMPTY Hopfield on the model's
+own training arenas.
+
+| model, own arenas, empty memory (d 0 / 10) | found | steps | coverage |
+|---|---|---|---|
+| task3_k2_h128_nv u2500 (fixed goals), sampled | 1.00 / 0.97 | 29.5 / 32.9 | 0.20 / 0.24 |
+| task3_k2_h128_nv u2500, deterministic | 1.00 / 0.94 | **23.8** / 28.5 | 0.15 / 0.18 |
+| task3r_k2_h128 u2500 (redrawn goals), sampled | 0.37 / 0.40 | 85 / 86 | 0.37 / 0.37 |
+
+The fixed-goal model walks to its goals with nothing in memory (24 steps,
+15 % of the arena covered on the way); the redraw model sweeps its own
+arenas exactly as it sweeps unseen ones. The map is in the weights. Its
+deterministic held-out probe (2.4× optimal, align 0.45) is the same map
+firing on barcodes it does not know; sampled, the noise washes it out and
+`q` wins (revisits 1.00 at 19). The fixed-goal model on unseen arenas is
+not exploring either: swept_eff 0.58 (below a billiard at its own speed) —
+the "weak sweep" is the persistence bonus's default motion.
+
+Proposed next arm: **repaint the walls per visit sequence** (redraw
+`_wall_code`, goal position unchanged) — landmarks stable within a
+sequence, no barcode→goal association possible across sequences. Honestly
+stated, a fresh arena every sequence with the same geometry. Removing the
+sensory input outright would blind the sweep (wall avoidance is learned
+through the barcode); distance rays would be arena-agnostic and admit a
+memorised tour of the three goal spots instead.
+
 - 2026-09-17 06:45 — **task3r_k2_h128_nv_c1 (3 redrawn arenas) is the first
   arm strong on both halves**: held-out u1500 found 0.66–0.68, revisits
   1.00 at **20 steps**, 21 steps/touch, follow_q 0.54; u1000 was 0.54–0.59
