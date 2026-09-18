@@ -22,7 +22,7 @@ REPO=${REPO:-/orcd/home/002/jackking/cls/.claude/worktrees/nn-generalization-con
 
 LABELS=${LABELS:-odometry}              # odometry | coords
 POSITIONS=${POSITIONS:-walk}            # walk | iid
-BATCH_MODE=${BATCH_MODE:-envs}          # envs | mixed
+BATCH_MODE=${BATCH_MODE:-envs}          # envs | mixed | arena1
 BUFFER=${BUFFER:-window}               # window | visited
 RADIUS=${RADIUS:-20}
 HIDDEN=${HIDDEN:-256}

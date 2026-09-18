@@ -166,10 +166,12 @@ def parse_args():
                    help="window: rows are moments of the last buffer_updates segments; visited: rows are "
                         "every (walker, cell) visited so far -- the online form of the walk dumps the "
                         "encoder package's trainer reads (one walker per arena, mixed batches)")
-    p.add_argument("--batch_mode", choices=["envs", "mixed"], default="envs",
-                   help="envs: batch_envs envs x every walker x per_walker moments; mixed: the same "
-                        "batch size drawn uniformly over ALL envs (the encoder trainer's own batching, "
-                        "~B/n_envs positions per env)")
+    p.add_argument("--batch_mode", choices=["envs", "mixed", "arena1"], default="envs",
+                   help="envs: batch_envs envs x every walker x per_walker moments; mixed: the same batch "
+                        "size drawn uniformly over ALL envs (the encoder trainer's own batching); arena1: "
+                        "every env contributes ONE randomly chosen walker's per_walker moments (B = n_envs x "
+                        "per_walker) -- one animal's own recent experience per arena, the per-arena row "
+                        "count of the encoder's own trainer")
     p.add_argument("--positions", choices=["walk", "iid"], default="walk",
                    help="walk: moments of the walkers' histories (the decode's data); iid: cells drawn "
                         "uniformly from the same envs -- the encoder's own sampling, on our arenas "
@@ -293,7 +295,8 @@ def main() -> None:
     data_rng = np.random.RandomState(args.seed + 1 + u0)
     eval_rng = np.random.RandomState(args.seed + 99)
     steps_per_update = len(train) * args.walkers * args.steps_per_update
-    B = args.batch_envs * args.walkers * args.per_walker
+    B = (len(train) * args.per_walker if args.batch_mode == "arena1"
+         else args.batch_envs * args.walkers * args.per_walker)
     t_train = time.time()
 
     def gain_at(u: int) -> float:
@@ -321,7 +324,12 @@ def main() -> None:
         encoder.train()
         losses = []
         for _ in range(args.batches_per_update):
-            if args.buffer == "visited":
+            if args.batch_mode == "arena1" and args.buffer != "visited":
+                envs_ = np.arange(len(train))
+                e = np.repeat(envs_, args.per_walker)
+                w = np.repeat(data_rng.randint(0, args.walkers, size=len(train)), args.per_walker)
+                pos = buf._at(e, w, data_rng.randint(0, buf.n, size=len(e)))
+            elif args.buffer == "visited":
                 # Rows uniform over walkers, then uniform over that walker's visited cells.
                 e = data_rng.randint(0, len(train), size=B)
                 w = data_rng.randint(0, args.walkers, size=B)
