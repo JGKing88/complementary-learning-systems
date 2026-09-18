@@ -386,6 +386,23 @@ sensory input outright would blind the sweep (wall avoidance is learned
 through the barcode); distance rays would be arena-agnostic and admit a
 memorised tour of the three goal spots instead.
 
+## 10. Wave 6 — no sensory input (Jack: "let's try without sensory input")
+
+`_nos` lever = `INPUT_SENSORY=0`: the policy sees `q`, prev_action,
+prev_displacement, prev_reward (and current reward) — 74 → 14 input dims.
+Precedent P2 §25 (`p22_nos`): a blind explorer sweeps at 0.56 vs 0.63 with
+the sensor, slower and more variable, so the regime is viable. Prediction
+on record: a blind agent can still localise by wall contacts (clipped
+`prev_disp`), after which a position→goal map is learnable again — slower,
+and on three identical-geometry arenas it would be a tour of the three goal
+spots. Held-out arenas share the geometry, so a tour "transfers" and fails.
+
+| arm | job | status |
+|---|---|---|
+| task3_k2_h128_nos (fixed goals, wave-1 rule, blind) | 22989777 | queued 2026-09-18 10:25 (ou_bcs 12 h) |
+| task3_k2_h128_nv_nos (fixed goals, one rule, blind) | 22989778 | queued |
+| task3r_k2_h128_nos (redrawn goals, wave-1 rule, blind — control) | 22989779 | queued |
+
 - 2026-09-17 06:45 — **task3r_k2_h128_nv_c1 (3 redrawn arenas) is the first
   arm strong on both halves**: held-out u1500 found 0.66–0.68, revisits
   1.00 at **20 steps**, 21 steps/touch, follow_q 0.54; u1000 was 0.54–0.59
