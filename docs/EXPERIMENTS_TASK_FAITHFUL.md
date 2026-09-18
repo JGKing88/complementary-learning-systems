@@ -323,6 +323,19 @@ Held-out task eval (6 unseen arenas, sampled; K=4 / K=2 twins for comparison):
   13 steps/touch after a store; K=4 1.00 at 12). The plan's §5 latch
   concern, observed. The continual protocol is exactly fresh-state
   revisits; running it on task1r_k1 u2500 (below).
+- 2026-09-18 01:30 — **continual protocol on task1r_k1_h128 u2500
+  (22954666): revisits are load-bearing.** Own-block success 0.912 at 33.9
+  steps; locked-store revisits on live arenas 0.997 at **28.8** steps
+  (K=4 u1500: 0.999 at 15.9; task3r K=2 u2500: 1.000 at 12.8); **one dead
+  arena** (e2: 0.31 in its own block, 0.17 on revisits; e5 0.59 in its own
+  block) — revisits including dead 0.847; worst retention delta −0.01 (not
+  forgetting — the arena was never learned). K=1 learns to exploit once
+  the +2 has been seen in the current rollout (13 steps/touch after a store
+  on held-out arenas) but arriving cold with the goal in memory it is twice
+  as slow and has an arena it never exploits. Answer to "is this different
+  from the interleaved split": the memory is self-produced and the switch
+  is in-trajectory, but the split-like "start with the goal stored"
+  experience (visits ≥ 2) is required for the deployment case.
 
 - 2026-09-17 06:45 — **task3r_k2_h128_nv_c1 (3 redrawn arenas) is the first
   arm strong on both halves**: held-out u1500 found 0.66–0.68, revisits
@@ -402,6 +415,7 @@ sampled; outputs `results/nav_tri_probe/cl_i200/cl_task*`):
 |---|---|---|---|---|
 | task3r_k2_h128 u1000 | 22893661 | 0.9925 at 15.2 steps | **3000/3000 at 15.4** | +0.00 |
 | task1r_k4_h128 u1500 | 22893662 | 0.9875 at 17.0 | 2997/3000 at 15.9 | −0.01 (one arena 0.98 in the last block) |
+| task1r_k1_h128 u2500 (K=1) | 22954666 | 0.912 at 33.9 | 2392/2400 live at 28.8; **one dead arena** (0.847 incl.) | −0.01 |
 | **task3r_k2_h128 u2500** | 22911870 | 0.9992 at 12.6 | **3000/3000 at 12.8** | +0.00 |
 | fix1_h128 s43 u3000 (§8.15, for reference) | 22859040 | 0.993 at 11.8 | 3000/3000 at 11.6 | +0.00 |
 
