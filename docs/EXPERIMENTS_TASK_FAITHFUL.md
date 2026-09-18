@@ -431,6 +431,15 @@ Input width 10 (current reward, prev_reward, q, prev_action, prev_disp).
   sweep at all (task3_k2_h128_nv_nos u1500: coverage 0.05). Redraw blind
   control (task3r_k2_h128_nos) u500: found 0.17, coverage 0.03, cos_aq_post
   −0.70 — also degenerate so far.
+- 2026-09-18 18:00 — task3_k2_h128_nos held-out u1500 / u2000: search
+  0.69 / 0.61 and 0.70 / 0.66, revisits 1.00 at 28.4 / 28.5 steps, 21.1 /
+  21.6 steps/touch, follow_q 0.53 / 0.53 — search holds, blind exploit
+  plateaus at ~21–28 steps (sighted 12–13). The one-rule blind arm was
+  cancelled at u2350 (coverage 0.04 throughout); the redraw blind control
+  at u1000 is the same shape (coverage 0.03, found 0.24, cos_aq_post
+  −0.67). Of three blind arms only the fixed-goal wave-1-rule one learned
+  to sweep — blind sweeping by path integration is hard to discover, and
+  this seed found it where avoidance of a known goal pushed it outward.
 
 - 2026-09-17 06:45 — **task3r_k2_h128_nv_c1 (3 redrawn arenas) is the first
   arm strong on both halves**: held-out u1500 found 0.66–0.68, revisits
