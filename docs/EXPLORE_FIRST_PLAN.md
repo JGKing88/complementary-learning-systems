@@ -8,13 +8,25 @@ the merged `nav-tri-metric` line). Predecessors: `docs/DUAL_TRAINING.md`
 this line trains on), `docs/CONTINUAL_CONTROLS_PLAN.md` (the regularizers
 this line borrows).
 
-> **Status: §9 answered 2026-09-17, wave 1 in flight.** Decisions: the task
-> regime only; the frozen-adapter arm dropped; the explorer retrained under
-> this line (`xf_explorer`, job 22889945); goal reward stays at the
-> baseline's 2.0. Jack: *"I would love if this worked without the continual
-> learning algos, so it's a good arm but is not the central arm"* — so the
-> **naive fork is the central arm**, EWC and the KL are supporting arms.
-> Implementation is done and tested (§6). Log: `EXPERIMENTS_EXPLORE_FIRST.md`.
+> **Status: wave 1 done 2026-09-17 (log §3.4); the probe pass is §3.5.**
+> Decisions: the task regime only; the frozen-adapter arm dropped; the
+> explorer retrained under this line (`xf_explorer`, job 22889945); goal
+> reward stays at the baseline's 2.0. Jack: *"I would love if this worked
+> without the continual learning algos, so it's a good arm but is not the
+> central arm"* — so the **naive fork is the central arm**, EWC and the KL
+> are supporting arms.
+>
+> **Wave 1 verdict.** P1 is falsified in the wrong direction: the plain
+> fork reached the exploit criterion at **236,800 trajectories against
+> 64,000 from scratch (3.7×)**; the lr 3e-5 fork at 192,000 (3.0×). The
+> explorer sits at the κ cap (σ 0.02–0.03) and PPO has ~4× less angular
+> noise to discover q-following with than a fresh policy has. P2 confirmed
+> as a slide: the fork keeps **70–78 %** of the explorer's swept coverage
+> (min 53 %), 0.10 above from-scratch, but first-visit `found_rate` falls
+> 0.57 → 0.37, below from-scratch. KL (β = 1, 10) holds 97–99 % and learns
+> nothing; EWC λ = 1e3 is the nearest to both (90 % coverage, `cos_post`
+> 0.79 at u900, not crossed). P6 falsified: from scratch with no explore
+> reward crosses at 76,800. See §10 for what this says and wave 2.
 
 ## 0. What this is
 
@@ -333,3 +345,55 @@ wave 2 moves them if the two values bracket nothing.
 4. **Goal reward.** 2.0, or 5.0 if the task line's wave 4 lands first? —
    **"Sure"**; resolved to 2.0 because the 5.0 arm runs under a different
    reward rule and the baseline is at 2.0 (§2).
+
+## 10. What wave 1 says, and wave 2
+
+### 10.1 The reading
+
+The hypothesis had two halves and wave 1 separated them.
+
+**"An agent that already explores learns exploit cheaply" — no, at least
+not this explorer, this way.** The from-scratch policy is a noisy walker
+that touches the goal on ~40 % of first visits; the explorer touches it on
+57 %. That 17-point head start is worth little against what the explorer
+costs PPO: a policy pinned at the κ cap with σ 0.02 has almost no action
+variance on the post-store steps, so the advantage signal for "turn toward
+`q`" is 4× weaker than a fresh policy's, and the confident sweep is a
+local optimum the optimiser first has to leave. The result is 3–3.7× more
+trajectories to the same exploit level. The specialist's sharpness is the
+property that makes it a good explorer and a bad RL initialisation.
+
+**"Explore survives" — partly, and the part that survives is the wrong
+part.** Swept coverage is kept at 70–78 % (a slide over the first 75
+updates, then a wander); first-visit goal-finding falls to 0.37, below the
+from-scratch 0.51. The fork keeps the *shape* of the sweep and loses its
+*usefulness to the task*. That is what forgetting looks like when the
+objective never paid for the thing being forgotten.
+
+**The gate is never built from one side.** In no arm does `cos_pre` leave
+0 while `cos_post` rises — the forks do learn "follow `q` after the store,
+not before" — so the discrimination is there. But it is learned the slow
+way, by the reward, not inherited; and the KL arms show that pinning the
+search steps pins the post-store steps with them: the two input
+distributions differ only by ‖q‖ and share every weight.
+
+### 10.2 Wave 2 — the levers wave 1 points at, in order
+
+1. **Re-open the spread at the fork** (plain, not a CL method): reset the
+   `log κ` head bias to `init_log_kappa` (κ 6.4) and/or add a movement
+   entropy bonus for the first ~100 updates. Tests the mechanism in §10.1
+   directly: if the fork then crosses before u250, the prior's only problem
+   was its confidence. `xf_naive_kreset`, `xf_naive_ent`.
+2. **EWC λ between 1e3 and the KL regime, and a β below 1** (0.1, 0.3):
+   the two families bracketed the knee from both sides; the interesting
+   point is where EWC 1e3's 90 % / 0.79 becomes 90 % / 0.85.
+3. **A softer explorer**: fork from an earlier checkpoint (u225–u300,
+   where sampled coverage is already 0.58–0.60 but κ has not saturated) or
+   from an explorer trained with `p23_kanneal`'s lifted cap. Same
+   mechanism, other end.
+4. **Seeds**: the central arm and EWC 1e3 at 43/44 before any wave-2
+   reading is trusted; the deterministic eval's wobble (±0.1) is as large
+   as several of the effects above.
+5. The probe pass (log §3.5) decides whether the trainer's deterministic
+   coverage numbers over- or under-state the retained explore; the
+   d0_base-comparable headline row per arm comes from there.
