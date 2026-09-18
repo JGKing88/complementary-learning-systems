@@ -8,7 +8,7 @@ the merged `nav-tri-metric` line). Predecessors: `docs/DUAL_TRAINING.md`
 this line trains on), `docs/CONTINUAL_CONTROLS_PLAN.md` (the regularizers
 this line borrows).
 
-> **Status: wave 1 done 2026-09-17 (log §3.4); the probe pass is §3.5.**
+> **Status: waves 1 and 2 done 2026-09-18 (log §3.4–3.5, §4.1–4.3). The line's question is answered; see the wave-2 verdict below and §10.3.**
 > Decisions: the task regime only; the frozen-adapter arm dropped; the
 > explorer retrained under this line (`xf_explorer`, job 22889945); goal
 > reward stays at the baseline's 2.0. Jack: *"I would love if this worked
@@ -27,6 +27,15 @@ this line borrows).
 > nothing; EWC λ = 1e3 is the nearest to both (90 % coverage, `cos_post`
 > 0.79 at u900, not crossed). P6 falsified: from scratch with no explore
 > reward crosses at 76,800. See §10 for what this says and wave 2.
+>
+> **Wave 2 verdict (2026-09-18).** The spread is not the bottleneck. The
+> κ reset is transient (back at the cap by u50); the entropy bonus does
+> not hold it; the cap that *does* hold κ at the fresh policy's level for
+> the whole run crosses at u825 — the same band (u725–u925, 3.2–3.7×
+> from-scratch) as every other fork, two seeds. Eight arms lie on one
+> curve in every panel of `wave2_series.png`. Sampled coverage kept:
+> 57–78 % of the explorer's 0.60; from-scratch-with-novelty reaches 0.46
+> on its own. The slowness lives in the trunk (§10.3).
 
 ## 0. What this is
 
@@ -397,3 +406,27 @@ distributions differ only by ‖q‖ and share every weight.
 5. The probe pass (log §3.5) decides whether the trainer's deterministic
    coverage numbers over- or under-state the retained explore; the
    d0_base-comparable headline row per arm comes from there.
+
+### 10.3 After wave 2
+
+The plain fork's problem is not confidence. With the heading spread reset,
+held, or annealed, the fork learns exploit at the same slow pace, so what
+PPO has to move is in the recurrent trunk: the explorer's features carry no
+usable representation of `q` (it learned to ignore the readout —
+DUAL_TRAINING §9), and building a `q`-channel through a 1024-unit RNN whose
+`q` input weights were driven to uselessness is slower than building one
+from random weights. That is the natural wave-3 test (re-initialise the
+`q` input weights at the fork; or compare the `q` input-weight norms at u0),
+but it turns the question into "which parts of the explorer are worth
+keeping" — a different hypothesis from the one this line set out to test,
+and one the interleaved recipe already answers in practice by never letting
+the two be learned apart.
+
+On the metrics Jack asked for, the line's answer is: given this explorer,
+exploit costs 3.2–3.7× more trajectories than from scratch and ends
+straighter than nothing but worse than from scratch (path optimality
+0.57–0.65 vs 0.73, sampled probe 0.71 vs 0.76); exploring survives at
+57–78 % of the explorer's sweep, which is the level a from-scratch run paid
+to explore reaches anyway; and no protection tried — EWC, search-step KL,
+κ reset, cap, entropy — moves any fork onto the d0_base frontier. The
+interleaved recipe remains the only one that has both.
