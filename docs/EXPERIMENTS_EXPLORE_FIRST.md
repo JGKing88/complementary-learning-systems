@@ -358,3 +358,50 @@ explorer without also keeping it from learning. The sharpness that makes
 the specialist a good explorer (κ at the cap) is what makes it a poor RL
 initialisation, and that — not forgetting — is the first thing wave 2
 should attack (plan §10.2).
+
+## 4. Wave 2 — re-open the spread at the fork; sampled evals (submitted 2026-09-18 ~00:05)
+
+Jack, on the wave-1 verdict: *"Ok do that. You can also try eval with
+stochastic."*
+
+**Built (commit f0a8287).** `--reset_kappa_head`: after `--load_checkpoint`,
+`PolarHead.reset_spread(init_log_kappa)` puts the state-dependent log-κ
+head back to zero weight + 1.85 bias (κ 6.4, the construction init; the
+from-scratch run's early noise level), headings untouched.
+`--no-eval_deterministic`: `do_eval` now passes `deterministic` to
+`evaluate_navigation` and `evaluate_exploration`; **`evaluate_task` always
+sampled** (it runs the training collector), so the `task=` rows in every
+wave-1 log — found_rate, revisits, cos_post, i.e. the exploit criterion —
+were sampled already, and only the `nav=` / `expl=` rows (exploit-regime
+success and swept coverage) were deterministic. Sampled blocks are marked
+`eval_policy=sampled` in the log. Launcher levers `_kreset`, `_ent02`
+(move_ent_coef 0.02), `_sev`.
+
+**Arms** (all fork `xf_explorer u700`, `task:1000,visits=4,novelty=0,eps=0`,
+sampled `nav=`/`expl=` evals, ou_bcs_normal 5 h):
+
+| arm | job | what it isolates |
+|---|---|---|
+| `xf_naive_kreset_sev` s42 | 22942303 | the reset alone — does a fork at κ 6.4 cross by u250? |
+| `xf_naive_ent02_sev` s42 | 22942304 | entropy bonus alone (0.02 vs 0.005), no reset |
+| `xf_naive_kreset_ent02_sev` s42 | 22942305 | both |
+| `xf_naive_kreset_ewc_1e3_sev` s42 | 22942306 | the reset with wave 1's nearest-to-both protection |
+| `xf_naive_sev` **s43** | 22942307 | the central arm's seed replicate, sampled evals |
+| `xf_naive_kreset_sev` **s43** | 22942330 | the reset's seed replicate |
+
+**Sampled re-score of wave 1** (`run_xf_reeval.sh`, `nav=` + `expl=`,
+`--no-deterministic`, every 25 updates): jobs 22942335–42, one per wave-1
+run, → `$CLS_RESULTS/explore_first/<arm>_reeval_stoch.log`. This gives the
+wave-1 coverage series on the same footing as wave 2's.
+
+**Pre-registered.** (1) If the reset alone crosses the criterion by u250
+(the from-scratch time), §3.4's mechanism is confirmed and the prior's
+problem was confidence; the coverage it keeps at the crossing is then the
+number to compare with wave 1's 0.42 (sampled) — the drift argument (fewer
+updates, less drift) predicts *more* kept. (2) If the reset does not speed
+exploit, the slowness is in the trunk (the sweep as a local optimum), not
+in the spread, and the entropy arm will not help either. (3) Sampled
+coverage series for the wave-1 forks are predicted to sit 0.03–0.08 above
+the deterministic ones (the probe: E0 0.48 sampled vs 0.42–0.46
+deterministic at the end) with less wobble, and not to change the
+ordering.
