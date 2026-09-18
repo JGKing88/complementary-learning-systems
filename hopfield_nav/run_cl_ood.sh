@@ -74,6 +74,9 @@ declare -A RUN=(
   [task1r_k4_h128]=navigate_navp2_task1r_k4_h128_s42_22883645
   [task3r_k2_h128_nv_c1]=navigate_navp2_task3r_k2_h128_nv_c1_s42_22872241
   [task3_k2_h128_nv]=navigate_navp2_task3_k2_h128_nv_s42_22866166
+  # K=1 (no revisit rollouts) under the same rule -- the fresh-state test.
+  [task1r_k1_h128]=navigate_navp2_task1r_k1_h128_s42_22941536
+  [task3r_k1_h128]=navigate_navp2_task3r_k1_h128_s42_22941535
 )
 
 for arm in $ARMS; do
