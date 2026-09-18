@@ -139,3 +139,25 @@ def test_visited_buffer_pairs_are_visited_cells_of_one_walker():
     # both ends visited by some walker of that env (the walker id is not returned; check the env's union)
     for e_, pp, gg in zip(envs, p, g):
         assert buf.visited[e_, :, pp[0] * S + pp[1]].any() and buf.visited[e_, :, gg[0] * S + gg[1]].any()
+
+
+def test_balanced_rows_are_endpoints_of_balanced_pairs_of_one_walker():
+    from hopfield_nav.train_encoder_walk import balanced_rows
+    rng = np.random.RandomState(0)
+    n_envs, W, T = 4, 3, 40
+    buf = Buffer(n_envs, W, T, n_updates=6)
+    for seg in _walk_segments(rng, n_envs, W, T, 6):
+        buf.add(seg)
+    chosen = rng.randint(0, W, size=n_envs)
+    rows = balanced_rows(buf, rng, chosen, per_walker=64, k_max=200, max_abs=6)
+    assert rows.shape == (n_envs * 64, 2)
+    for i in range(n_envs):
+        r = rows[i * 64:(i + 1) * 64]
+        p, g = r[:32], r[32:]
+        d = np.abs(g - p).max(1)
+        assert (d >= 1).all() and (d <= 6).all()
+        hist = np.bincount(d, minlength=7)[1:]
+        assert hist.max() - hist.min() <= 3                    # balanced up to top-up
+        hist_walk = buf.pos[i, chosen[i], :buf.n]
+        for q in r:                                            # every row is a moment of that walker
+            assert (hist_walk == q).all(1).any()

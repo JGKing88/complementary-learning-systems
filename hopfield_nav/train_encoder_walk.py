@@ -87,6 +87,49 @@ def near_far_masks(e, w, pos, radius: float, labels: str):
     return near, far
 
 
+def balanced_rows(buf: Buffer, rng, chosen_walkers: np.ndarray, per_walker: int, k_max: int, max_abs: int):
+    """For each env's chosen walker, `per_walker / 2` pairs (t, t + k) of its window kept
+    uniform over Chebyshev |Delta| = 1..max_abs (the decode's balanced sampler, per walker);
+    the rows are the pairs' endpoints, `(n_envs * per_walker, 2)`, env-major."""
+    half = per_walker // 2
+    k_max = min(k_max, buf.n - 1)
+    out = np.empty((len(chosen_walkers) * per_walker, 2), dtype=np.int64)
+    per_bin = int(np.ceil(half / max_abs))
+    for i, w in enumerate(chosen_walkers):
+        counts = np.zeros(max_abs + 1, dtype=np.int64)
+        ps, gs, spare_p, spare_g = [], [], [], []
+        got, tries = 0, 0
+        while got < half:
+            tries += 1
+            m = 8 * (half - got)
+            k = rng.randint(1, k_max + 1, size=m)
+            t = np.floor(rng.rand(m) * (buf.n - k)).astype(np.int64)
+            e = np.full(m, i)
+            ww = np.full(m, w)
+            p = buf._at(e, ww, t)
+            g = buf._at(e, ww, t + k)
+            r = np.abs(g - p).max(1)
+            ok = (r >= 1) & (r <= max_abs)
+            keep = np.zeros(m, dtype=bool)
+            for rr in range(1, max_abs + 1):
+                idx = np.where(ok & (r == rr))[0]
+                room = per_bin - counts[rr]
+                if room > 0 and len(idx) > 0:
+                    idx = idx[:room]
+                    keep[idx] = True
+                    counts[rr] += len(idx)
+            spare = ok & ~keep
+            spare_p.append(p[spare]); spare_g.append(g[spare])
+            if tries > 30:                       # the window cannot supply some sizes: top up
+                fp, fg = np.concatenate(spare_p), np.concatenate(spare_g)
+                ps.append(fp); gs.append(fg); got += len(fp)
+            ps.append(p[keep]); gs.append(g[keep]); got += int(keep.sum())
+        p = np.concatenate(ps)[:half]
+        g = np.concatenate(gs)[:half]
+        out[i * per_walker:(i + 1) * per_walker] = np.concatenate([p, g])
+    return out
+
+
 # ---------------------------------------------------------------------------
 # The harness's readout: local frame from scaffold neighbours, q = W (z_g - z_p)
 # ---------------------------------------------------------------------------
@@ -166,6 +209,10 @@ def parse_args():
                    help="window: rows are moments of the last buffer_updates segments; visited: rows are "
                         "every (walker, cell) visited so far -- the online form of the walk dumps the "
                         "encoder package's trainer reads (one walker per arena, mixed batches)")
+    p.add_argument("--balance_rows", action=argparse.BooleanOptionalAction, default=False,
+                   help="arena1 only: a walker's rows are the endpoints of per_walker/2 displacement-balanced "
+                        "pairs (the decode's sampler, uniform over Chebyshev |Delta| = 1..max_abs) instead of "
+                        "moments uniform in time -- the encoder choosing what to learn from, as the decode does")
     p.add_argument("--batch_mode", choices=["envs", "mixed", "arena1"], default="envs",
                    help="envs: batch_envs envs x every walker x per_walker moments; mixed: the same batch "
                         "size drawn uniformly over ALL envs (the encoder trainer's own batching); arena1: "
@@ -190,6 +237,7 @@ def parse_args():
     p.add_argument("--batch_envs", type=int, default=8)
     p.add_argument("--per_walker", type=int, default=64)
     p.add_argument("--max_abs", type=int, default=19, help="eval pairs within this Chebyshev range")
+    p.add_argument("--k_max_rows", type=int, default=400, help="--balance_rows: max steps between a pair's ends")
     # World
     p.add_argument("--size", type=int, default=20)
     p.add_argument("--observation_size", type=int, default=120)
@@ -327,8 +375,12 @@ def main() -> None:
             if args.batch_mode == "arena1" and args.buffer != "visited":
                 envs_ = np.arange(len(train))
                 e = np.repeat(envs_, args.per_walker)
-                w = np.repeat(data_rng.randint(0, args.walkers, size=len(train)), args.per_walker)
-                pos = buf._at(e, w, data_rng.randint(0, buf.n, size=len(e)))
+                chosen = data_rng.randint(0, args.walkers, size=len(train))
+                w = np.repeat(chosen, args.per_walker)
+                if args.balance_rows:
+                    pos = balanced_rows(buf, data_rng, chosen, args.per_walker, args.k_max_rows, args.max_abs)
+                else:
+                    pos = buf._at(e, w, data_rng.randint(0, buf.n, size=len(e)))
             elif args.buffer == "visited":
                 # Rows uniform over walkers, then uniform over that walker's visited cells.
                 e = data_rng.randint(0, len(train), size=B)
