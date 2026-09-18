@@ -405,3 +405,17 @@ coverage series for the wave-1 forks are predicted to sit 0.03–0.08 above
 the deterministic ones (the probe: E0 0.48 sampled vs 0.42–0.46
 deterministic at the end) with less wobble, and not to change the
 ordering.
+
+- 2026-09-18 ~01:10 — **the κ reset is transient.** In every reset arm κ is
+  6.5 at u1, 9.4–10.8 at u10 and back at the cap (12.08) by u50; the
+  entropy bonus at 0.02 does not hold it (`xf_naive_kreset_ent02`: 12.08 at
+  u50, entropy −1.04). B0 from scratch sat at κ 7.4 through u50 and 8.3 at
+  u100 — it *earned* its sharpness over ~200 updates; the fork's trunk
+  already encodes the confident sweep and the κ head reads it straight
+  back off the features. So the six arms above are, on this axis,
+  replicates of E0 (still worth having: seeds 43 and sampled series).
+  The plain lever that pins the spread is the cap itself: **`_kcap20`**
+  (`LOG_KAPPA_MAX` 2.0 → κ ≤ 7.4, B0's own early level) and **`_kcap20a`**
+  (2.0 → 2.5 over 300 updates, the `d1_kanneal` machinery). Submitted
+  `xf_naive_kcap20_sev` **22946511** and `xf_naive_kcap20a_sev`
+  **22946512** (commit for the levers: see git log).
