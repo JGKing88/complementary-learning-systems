@@ -2018,3 +2018,32 @@ anything slightly faster to 1°. The clean figures now show the matched
 pair — decode (visited set) and online encoder — as the primary
 comparison, with the encoder's own-trainer dump points beside them.
 (`--points` labels and the sliding-window arms kept for the record.)
+
+## 2026-09-18 — the 2×2: each model on each buffer
+
+Jack: train the encoder on the decode's original buffer too, one walker per
+arena per batch — the ecological version (an animal relates its own recent
+experience). `train_encoder_walk.py --batch_mode arena1 --buffer window`:
+8 walkers per arena, the decode's sliding window of the last 20 updates,
+each batch = 64 arenas × one randomly chosen walker × 64 of its recent
+moments (4,096 rows, the per-arena row count of the encoder's own
+trainer), odometry labels, att0.5's objective and schedule.
+
+| held-out, final at 131M env-steps | window buffer (decode's original) | visited-set buffer (encoder's) |
+|---|---|---|
+| decode, 20×20 within 19 | 0.46–0.48° | 0.45° |
+| decode, 50×50 within 49 | 0.49–0.64° | 0.51° |
+| encoder, 20×20 within 19 (r 10) | **24.0°** | 24.9° |
+| encoder, 50×50 within 19 | **23.8°** (best 18.5° at 16M, then erodes) | 14.7° |
+| encoder, 50×50 within 49 | **45.8°** | 27.6° |
+
+The decode does not care which buffer it gets. The encoder does, at 50×50:
+a walker's last 1,280 moments span about a third of a 20×20 arena but a
+small fraction of a 50×50 one, so the window supplies few far pairs and
+the binary near/far objective has little to repel against — the loss it
+is defined by is starved, most visibly beyond its radius (45.8° within
+49). At 20×20 the window is wide enough and the two buffers agree. The
+decode's per-pair direction target is informative at any range present,
+which is why it is indifferent. Figures updated (all four arms on the
+clean plots): `$CLS_RUNS/figures/nn_control/p1_size20_clean.png`,
+`p1_size50_clean.png`.

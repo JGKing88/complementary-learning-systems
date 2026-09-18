@@ -43,7 +43,9 @@ def label_decode(a: dict) -> str:
     bits = [a.get("mode", "grid"), f"{a['n_envs']} envs"]
     bits.append("balanced |Δ|" if a.get("balance_range") else "raw walk pairs")
     if a.get("buffer") == "visited":
-        bits.append(f"{a['walkers']} walker/arena, visited-set buffer (matched to the encoder)")
+        bits.append(f"visited-set buffer ({a['walkers']} walker/arena)")
+    else:
+        bits.append("window buffer")
     if a.get("range_warmup_updates", 0):
         bits.append("range warm-up")
     if a.get("target", "direction") != "direction":
@@ -53,7 +55,9 @@ def label_decode(a: dict) -> str:
 
 def label_encoder(a: dict) -> str:
     if a.get("buffer") == "visited":
-        return f"encoder, online (att0.5 objective, {a['walkers']} walker/arena), r={a['radius']:.0f}; within {a['max_abs']}"
+        return f"encoder, visited-set buffer ({a['walkers']} walker/arena); within {a['max_abs']}"
+    if a.get("batch_mode") == "arena1":
+        return f"encoder, window buffer ({a['walkers']} walkers/arena, 1 per batch); within {a['max_abs']}"
     src = "i.i.d. positions (its own sampling)" if a.get("positions", "walk") == "iid" else "walk moments"
     lab = f"encoder: {src}, {a['labels']} labels, r={a['radius']:.0f}"
     if a.get("n_updates", 4000) != 4000:
@@ -85,7 +89,7 @@ def main():
         dec = [p for p in dec if "_sz50" not in p]
     if args.clean:
         dec = [p for p in dec if "h8" not in p and "regular" not in p and "grid32" not in p]
-        enc = [p for p in enc if "online" in p]
+        enc = [p for p in enc if "online" in p or "window" in p]
     fig, ax = plt.subplots(figsize=(11, 5.6))
     styles, labelled = {}, set()
     for p in dec:

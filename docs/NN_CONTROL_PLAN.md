@@ -356,8 +356,13 @@ target — no teacher, no goal, no position (log 2026-09-16):
   its gain schedule rather than its data — the dump points are its honest
   early numbers. With the decode on the same visited-set buffer (one
   walker per arena; identical rows into both models) it reaches 0.45° /
-  0.51°, 1° at 34M / 46M steps — indifferent to the replay policy. Clean
-  figures: `p1_size20_clean.png`, `p1_size50_clean.png`.
+  0.51°, 1° at 34M / 46M steps — indifferent to the replay policy. The
+  encoder on the decode's sliding window (one walker's recent moments per
+  arena per batch) is 24.0° at 20×20 (as on the visited set) but 23.8° /
+  45.8° at 50×50 (vs 14.7 / 27.6): a compact recent window starves its
+  near/far objective of far pairs, which the decode's direction target
+  does not need. Clean figures (the 2×2): `p1_size20_clean.png`,
+  `p1_size50_clean.png`.
 
 ### 1.9 Standing conclusions
 
