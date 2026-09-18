@@ -1947,6 +1947,7 @@ case "$VARIANT" in
         #              log-kappa head at the fork (wave 2: the explorer sits
         #              at the kappa cap)            _ent02    move_ent_coef 0.02
         #   _sev       sampled nav=/expl= evals (--no-eval_deterministic)
+        #   _kcap20    LOG_KAPPA_MAX 2.0 for phase 2   _kcap20a  2.0 -> 2.5 over 300
         _rest="${VARIANT#xf_naive}"; _rest="${_rest#xf_scratch_nonov}"
         [ "$_rest" = "$VARIANT" ] && _rest="${VARIANT#xf}"
         while [ -n "$_rest" ]; do
@@ -1955,6 +1956,13 @@ case "$VARIANT" in
             _kreset*) RESET_KAPPA_HEAD=1; _rest="${_rest#_kreset}" ;;
             _ent02*)  MOVE_ENT_COEF=0.02; _rest="${_rest#_ent02}" ;;
             _sev*)    EVAL_DETERMINISTIC=0; _rest="${_rest#_sev}" ;;
+            # The cap is what holds the spread: a reset head re-sharpens
+            # to the cap within ~50 updates and an entropy bonus of 0.02
+            # does not stop it (wave 2, log section 4). kappa <= e^2.0 =
+            # 7.4 is the from-scratch policy's own level over its first
+            # 150 updates; _kcap20a anneals it back to 2.5 over 300.
+            _kcap20a*) LOG_KAPPA_MAX=2.0; LOG_KAPPA_MAX_END=2.5; LOG_KAPPA_ANNEAL_UPDATES=300; _rest="${_rest#_kcap20a}" ;;
+            _kcap20*)  LOG_KAPPA_MAX=2.0; _rest="${_rest#_kcap20}" ;;
             _ewc_*)   _v="${_rest#_ewc_}"; EWC_LAMBDA="${_v%%_*}"; _rest="${_v#"${_v%%_*}"}" ;;
             _kl_*)    _v="${_rest#_kl_}"; PRIOR_KL_COEF="${_v%%_*}"; _rest="${_v#"${_v%%_*}"}" ;;
             *) echo "ERROR: unknown XF lever '$_rest' in $VARIANT" >&2; exit 1 ;;
