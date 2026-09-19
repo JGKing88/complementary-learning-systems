@@ -456,6 +456,15 @@ Input width 10 (current reward, prev_reward, q, prev_action, prev_disp).
   alignment (0.56; 0.37 at d=10) — following `q` without seeing walls is
   what it cannot do well, and distractors hurt it most. The sighted redraw
   recipe at u3000 matches d0_base on every exploit number.
+- 2026-09-18 20:45 — **continual protocol on the blind model** (23052982,
+  u3000): first visits 0.9975 at 19.8 steps, **3000/3000 locked-store
+  revisits at 17.7 steps, Δ +0.00, no dead arena** — passes the deployment
+  bar, ~5 steps slower per revisit than the sighted recipe (12.8). Wave-6
+  reading: blindness removes the barcode shortcut (sweep transfers at
+  swept_eff 0.91) but not localisation (a wall-contact map shows as
+  avoidance on the training arenas); exploit costs ~5 steps blind and
+  distractors hurt it more (align 0.37 at d=10); and it is fragile — 1 of 3
+  blind arms learned to sweep, the other two sat at 3–5 % coverage.
 
 - 2026-09-17 06:45 — **task3r_k2_h128_nv_c1 (3 redrawn arenas) is the first
   arm strong on both halves**: held-out u1500 found 0.66–0.68, revisits
@@ -537,6 +546,7 @@ sampled; outputs `results/nav_tri_probe/cl_i200/cl_task*`):
 | task1r_k4_h128 u1500 | 22893662 | 0.9875 at 17.0 | 2997/3000 at 15.9 | −0.01 (one arena 0.98 in the last block) |
 | task1r_k1_h128 u2500 (K=1) | 22954666 | 0.912 at 33.9 | 2392/2400 live at 28.8; **one dead arena** (0.847 incl.) | −0.01 |
 | **task3r_k2_h128 u2500** | 22911870 | 0.9992 at 12.6 | **3000/3000 at 12.8** | +0.00 |
+| task3_k2_h128_nos u3000 (blind, fixed goals) | 23052982 | 0.9975 at 19.8 | 3000/3000 at 17.7 | +0.00 |
 | fix1_h128 s43 u3000 (§8.15, for reference) | 22859040 | 0.993 at 11.8 | 3000/3000 at 11.6 | +0.00 |
 
 No dead arena in either. The task-trained models reproduce the zero-
