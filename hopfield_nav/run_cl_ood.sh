@@ -77,6 +77,8 @@ declare -A RUN=(
   # K=1 (no revisit rollouts) under the same rule -- the fresh-state test.
   [task1r_k1_h128]=navigate_navp2_task1r_k1_h128_s42_22941536
   [task3r_k1_h128]=navigate_navp2_task3r_k1_h128_s42_22941535
+  # Blind (no sensory input), fixed goals, wave-1 rule -- EXPERIMENTS_TASK_FAITHFUL §10.
+  [task3_k2_h128_nos]=navigate_navp2_task3_k2_h128_nos_s42_22989777
 )
 
 for arm in $ARMS; do
