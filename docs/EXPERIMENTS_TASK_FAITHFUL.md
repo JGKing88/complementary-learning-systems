@@ -440,6 +440,22 @@ Input width 10 (current reward, prev_reward, q, prev_action, prev_disp).
   −0.67). Of three blind arms only the fixed-goal wave-1-rule one learned
   to sweep — blind sweeping by path integration is hard to discover, and
   this seed found it where avoidance of a known goal pushed it outward.
+- 2026-09-18 20:30 — task3_k2_h128_nos u2500 / u3000 held-out: search 0.76
+  / 0.75 and 0.67 / 0.68, revisits 1.00 at 25.0 / **20.0**, 19.2 / 14.9
+  steps/touch, follow_q 0.67 / 0.78 — blind exploit still improving.
+  **Probe round 3** (23052950, `se_task_r3_*`, d0_base in process):
+
+| checkpoint | success d 0/5/10 | × optimal | align_true | swept | speed | swept_eff |
+|---|---|---|---|---|---|---|
+| **blind** task3_k2_h128_nos u3000 | 1.00/1.00/0.98 | 2.02/2.08/2.81 | 0.56/0.57/0.37 | 0.57 | 0.92 | **0.91** |
+| sighted task3r_k2_h128 u3000 | 1.00/1.00/1.00 | **1.18/1.22/1.26** | **0.93/0.90/0.82** | 0.56 | 0.90 | 0.91 |
+| d0_base u725 | 1.00/1.00/0.99 | 1.20/1.21/1.27 | 0.91/0.90/0.76 | 0.61 | 0.96 | 0.95 |
+
+  The blind model sweeps as efficiently as the sighted recipe (0.91 — path
+  integration alone); its deterministic exploit is 2× optimal with weak
+  alignment (0.56; 0.37 at d=10) — following `q` without seeing walls is
+  what it cannot do well, and distractors hurt it most. The sighted redraw
+  recipe at u3000 matches d0_base on every exploit number.
 
 - 2026-09-17 06:45 — **task3r_k2_h128_nv_c1 (3 redrawn arenas) is the first
   arm strong on both halves**: held-out u1500 found 0.66–0.68, revisits
