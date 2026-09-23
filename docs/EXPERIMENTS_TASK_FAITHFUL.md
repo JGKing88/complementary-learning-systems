@@ -483,7 +483,41 @@ Input width 10 (current reward, prev_reward, q, prev_action, prev_disp).
   redraw recipe (`task3r_k2_h128`) remains the line's answer.
 - 2026-09-23 — page **v15**: Part IV extended with waves 5–6 (the K=1
   bullet and the empty-memory / blind bullet, three rows in the held-out
-  table, three in the probe table). Line complete; nothing running.
+  table, three in the probe table).
+
+## 11. The avoidance control: is it the goal, or the wall?
+
+Jack: "the issue with the no-sensory model is still that it's memorizing
+goal location?" The §9/§10 avoidance reading had a confound I had not
+checked: this world's three TRAIN goals are (17,0), (0,13), (0,15) — all
+three on the perimeter — while five of six val goals are interior, and
+`wall_penalty` 0.1 makes every model keep off the walls. A blind model
+that simply avoids walls would show the same own-arena gap.
+`analysis/nav_tri/goal_avoidance.py` (new) settles it: per-env find rate
+with an EMPTY memory on train and val arenas, tagged perimeter/interior
+(job 23584320, sampled, 96 trials/env, u3000 / u2500).
+
+| model | own arenas (3, all perimeter) | val perimeter (12,0) | val interior (5) | coverage |
+|---|---|---|---|---|
+| blind, wave-1 rule (`task3_k2_h128_nos`) | 0.135 / **0.000** / 0.021 | **0.573** | 0.56–0.81 | 0.375–0.378 everywhere |
+| sighted, one rule (`task3_k2_h128_nv`) | **1.000 / 1.000 / 1.000** at 19–48 steps | 0.167 | 0.05–0.63 | 0.12–0.27 own, 0.17 val |
+| sighted redraw recipe (`task3r_k2_h128`) | 0.52 / 0.69 / 0.57 | 0.875 | 0.50–0.89 | 0.37 everywhere |
+
+**Not the wall: the goal.** The blind model finds a *perimeter* goal on an
+unfamiliar arena 57 % of the time while sweeping exactly as much space, and
+its own three 0–14 %. Mechanism, given that a blind agent cannot tell the
+three arenas apart (identical geometry, no sensation): not three maps but
+**one allocentric set of cells to skip**, applied in every arena, localised
+by wall contact + path integration — free on held-out arenas because their
+goals sit elsewhere. The sighted one-rule model is the mirror image: it
+marches to the same three remembered cells in *every* arena (own 1.000; val
+0.274 at coverage 0.17). Same memorised cells; the reward rule sets the
+sign (novelty-on → go there; novelty-off-after-store → steer clear). The
+redraw recipe shows no own-arena gap at all (0.594 vs 0.731, perimeter
+0.664 vs interior 0.702) — the control that says the test detects
+memorisation rather than arena familiarity.
+
+Line complete; nothing running.
 
 - 2026-09-17 06:45 — **task3r_k2_h128_nv_c1 (3 redrawn arenas) is the first
   arm strong on both halves**: held-out u1500 found 0.66–0.68, revisits
