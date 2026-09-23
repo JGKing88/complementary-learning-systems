@@ -517,7 +517,8 @@ redraw recipe shows no own-arena gap at all (0.594 vs 0.731, perimeter
 0.664 vs interior 0.702) — the control that says the test detects
 memorisation rather than arena familiarity.
 
-Line complete; nothing running.
+Page **v16** carries §11 as the last Part IV bullet. Line complete;
+nothing running.
 
 - 2026-09-17 06:45 — **task3r_k2_h128_nv_c1 (3 redrawn arenas) is the first
   arm strong on both halves**: held-out u1500 found 0.66–0.68, revisits
