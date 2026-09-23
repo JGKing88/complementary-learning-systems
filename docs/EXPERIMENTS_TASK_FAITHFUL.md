@@ -517,8 +517,35 @@ redraw recipe shows no own-arena gap at all (0.594 vs 0.731, perimeter
 0.664 vs interior 0.702) — the control that says the test detects
 memorisation rather than arena familiarity.
 
-Page **v16** carries §11 as the last Part IV bullet. Line complete;
-nothing running.
+Page **v16** carries §11 as the last Part IV bullet.
+
+### 11.1 Does a memoriser still follow `q` on a new arena?
+
+Yes, at about half the alignment — it is not a non-follower. Deterministic
+probe, goal pre-stored, 32 trials × 6 held-out arenas (`se_task_r1_*`,
+`se_task_r3_*`):
+
+| model | follow_q d 0/5/10 | align_true | × optimal | success |
+|---|---|---|---|---|
+| `task3_k2_h128_nv` (sighted, walks to the 3 cells) | **0.44 / 0.47 / 0.40** | 0.45/0.48/0.39 | 2.44/2.25/2.67 | 1.00/1.00/0.99 |
+| `task3_k2_h128_nos` (blind, avoids the 3 cells) | **0.58 / 0.58 / 0.39** | 0.56/0.57/0.37 | 2.02/2.08/2.81 | 1.00/1.00/0.98 |
+| `task3r_k2_h128` u3000 (redraw, no memorisation) | 0.94 / 0.91 / 0.85 | 0.93/0.90/0.82 | 1.18/1.22/1.26 | 1.00 |
+| `d0_base u725` | 0.91 / 0.91 / 0.80 | 0.91/0.90/0.76 | 1.20/1.21/1.27 | 1.00 |
+
+Per-arena the memorisers run 0.27–0.79 (the blind one 0.42–0.79 at d=0),
+against 0.62–0.97 for the redraw model: they follow `q` well on some unseen
+arenas and poorly on others. Success stays 1.00 because weak following
+still arrives inside 200 steps; the cost is directness. Distinguish this
+from `EXPERIMENTS_SAMPLE_EFF.md` §8, where a fixed WALL goal *outside* the
+task regime gave genuine non-followers (follow_q 0.05–0.20, 59 steps) — in
+the task regime the revisit rollouts force `q`-following to be learned, and
+memorisation degrades it rather than preventing it. NOTE the measurement
+split: the sampled in-training eval reports `cos_aq_post` 0.79 for the same
+sighted memoriser against 0.44 here. Sampled and deterministic agree for
+the redraw models (0.91–0.94 both ways) and disagree for the memorisers —
+argmax blends in the map, sampling washes it out. Quote the probe.
+
+Line complete; nothing running.
 
 - 2026-09-17 06:45 — **task3r_k2_h128_nv_c1 (3 redrawn arenas) is the first
   arm strong on both halves**: held-out u1500 found 0.66–0.68, revisits
