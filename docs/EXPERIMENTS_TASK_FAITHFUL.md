@@ -545,6 +545,59 @@ sighted memoriser against 0.44 here. Sampled and deterministic agree for
 the redraw models (0.91–0.94 both ways) and disagree for the memorisers —
 argmax blends in the map, sampling washes it out. Quote the probe.
 
+### 11.2 Does the deviation from `q` point at the memorised cells? NO
+
+Prediction on record (mine): if the post-store policy is a blend of "follow
+`q`" and "walk to cell C", then on a held-out arena the part of the action
+`q` does not explain should point at C. `analysis/nav_tri/map_residual.py`
+(new), goal pre-stored, `r = a − (a·q̂)q̂` against `m⊥`, scored for the three
+memorised cells and for 120 random cells in the same geometry (job
+23586509):
+
+| model | memorised mean | null mean ± sd | percentile | z |
+|---|---|---|---|---|
+| sighted memoriser, d=0 | −0.070 | −0.178 ± 0.130 | 76th | +0.82 |
+| blind memoriser, d=0 | −0.113 | −0.106 ± 0.167 | 54th | −0.04 |
+| redraw control, d=0 | +0.042 | −0.084 ± 0.317 | 65th | +0.40 |
+| sighted memoriser, d=10 | −0.097 | −0.209 ± 0.192 | 76th | +0.58 |
+| redraw control, d=10 | +0.018 | −0.083 ± 0.246 | 63rd | +0.41 |
+
+Null. The memorisers' own cells sit where the control's sit. **The map is
+not a competing vector field on an arena the model has never seen** — it is
+gated on barcode familiarity and contributes nothing there, which is why
+§11.1's memorisers look like *sloppy* `q`-followers rather than pulled ones.
+
+### 11.3 Relocate the goal on the arena it memorised: interference
+
+`analysis/nav_tri/goal_conflict.py` (new), job 23587052: own three arenas,
+goal moved ≥ 10 cells, stored in the Hopfield and paid at the new cell, 4
+relocations × 32 trials × 3 arenas, deterministic.
+
+| model | reach | steps | follow_q | align(new) |
+|---|---|---|---|---|
+| sighted memoriser (`task3_k2_h128_nv` u2500) | 0.84 | 30.0 | **0.10** | 0.09 |
+| blind memoriser (`task3_k2_h128_nos` u3000) | 1.00 | 23.9 | 0.53 | 0.52 |
+| redraw control (`task3r_k2_h128` u3000) | 1.00 | 11.4 | **0.93** | 0.93 |
+
+**The sighted memoriser's `q`-following collapses on the arena it
+memorised** — 0.10, against 0.44 on an arena it has never seen (§11.1) and
+0.93 for the control on the identical trials — and it does *not* go to its
+trained goal instead (0.096 visits vs 0.116 for random cells). Neither
+behaviour: it wanders into the goal 84 % of the time in 30 steps. So what
+training produced is not a map *plus* a `q`-follower but one function of
+both that only behaves where they agree — on their own arenas they agree
+exactly, and nothing ever forced them apart. Held-out: map silent, residual
+`q`-following shows (0.44). Own arena, goal moved: map confident and wrong,
+policy destroyed (0.10). The blind model is unaffected by the conflict
+(0.53 at home vs 0.58 away) — after a teleport it cannot localise, so its
+memorisation lives entirely in the pre-store sweep.
+
+CAVEAT: the old-goal visit rates (0.83× / 0.14× / 0.14× the random-cell
+null) are confounded — the trained goals are all perimeter and the null is
+mostly interior, and a direct path crosses interior cells more often. Do
+not read them as avoidance; the `follow_q` comparisons are the clean ones
+(within model across conditions, within condition across models).
+
 Line complete; nothing running.
 
 - 2026-09-17 06:45 — **task3r_k2_h128_nv_c1 (3 redrawn arenas) is the first
