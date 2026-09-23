@@ -154,7 +154,9 @@ beeline through visited cells (2.0 per ~10 steps).
   u150: train found 0.86 (rising), 3.4 post-store touches at 36 steps,
   revisits 1.00; held-out found 0.36–0.47, revisits 0.83.
 - 2026-09-17 00:20 — wave 2 at u250–u450. **Exploit generalises, search
-  does not.** task3_k2_h128_nv held-out: revisits 1.00 at 26–29 steps,
+  does not.** [CORRECTED 2026-09-23, see §11.4: "generalises" was read off
+  the SAMPLED task eval; on the strict probe this model is 2.4x optimal at
+  follow_q 0.44. It transfers, indirectly.] task3_k2_h128_nv held-out: revisits 1.00 at 26–29 steps,
   post-store 20 steps/touch, follow_q 0.47–0.49 (best of any arm) — but
   held-out found slides 0.48 (u250) → 0.42 → 0.38 → 0.29 (u450) while train
   found is 0.90–0.95 with the first touch at ~46–50 steps and 9–10 %
@@ -597,6 +599,33 @@ null) are confounded — the trained goals are all perimeter and the null is
 mostly interior, and a direct path crosses interior cells more often. Do
 not read them as avoidance; the `follow_q` comparisons are the clean ones
 (within model across conditions, within condition across models).
+
+### 11.4 Correction: the memorisers do not do well on eval
+
+Jack: "but don't they not do well on eval?" Right, and the wave-2 headline
+above ("exploit generalises") was too generous. Held-out, `task3_k2_h128_nv`
+u2500 against the redraw recipe and `d0_base`:
+
+| | memoriser | redraw | d0_base |
+|---|---|---|---|
+| exploit, strict probe (x optimal, d 0/5/10) | **2.44 / 2.25 / 2.67** | 1.18 / 1.22 / 1.26 | 1.20 / 1.21 / 1.27 |
+| follow_q | 0.44 | 0.94 | 0.91 |
+| search: found within 200 steps | **0.17-0.25** | 0.73-0.79 | - |
+| swept_eff | **0.58** | 0.91 | 0.95 |
+
+Both halves are poor; the one thing it does is *arrive* (success 1.00 --
+weak `q`-following still gets there inside 200 steps). The overclaim came
+from the SAMPLED in-training task eval (14-19 steps, `cos_aq_post` 0.79)
+being quoted as if it were the verdict. The two measures disagree only for
+the memorisers -- argmax lets the map through, sampling washes it out --
+and even sampled the model needs 19-25 steps to a revisit against the
+redraw recipe's 12.7. RULE: quote the probe for exploit quality; the task
+eval's `cos_aq_post` is a training-progress signal, not a verdict.
+
+This is what §11.3 predicts rather than a surprise: no clean `q`-follower
+ever formed, so the model is mediocre where the map is silent (2.4x on an
+unseen arena) and broken where the map is active and wrong (follow_q 0.10
+at home with the goal relocated).
 
 Line complete; nothing running.
 
