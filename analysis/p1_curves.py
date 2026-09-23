@@ -79,6 +79,11 @@ def main():
     ap.add_argument("--refs", default="pre-trained encoders (att0.5 6.00 / ur029 5.96) + harness readout:6.0,A1 decode (teacher-labelled i.i.d. pairs):0.23",
                     help="name:value reference lines, degrees")
     ap.add_argument("--title", default="")
+    ap.add_argument("--only", default="",
+                    help="comma-separated substrings; keep only runs whose directory matches one of them")
+    ap.add_argument("--linear_y", action="store_true", help="linear y axis (default log)")
+    ap.add_argument("--legend_inside", action="store_true", help="legend inside the axes (few curves)")
+    ap.add_argument("--labels", default="", help="'substring=label' pairs, ';'-separated, overriding the auto labels")
     ap.add_argument("--clean", action="store_true",
                     help="only the valid comparison: the balanced decode (and the raw-walk decode), the "
                          "encoder package's own-trainer points, and the reference lines")
@@ -92,14 +97,30 @@ def main():
     enc = sorted(glob.glob(os.path.join(root, f"goal_pairs_p1e_*sz{args.size}*", "final.json")))
     if args.size == 20:
         dec = [p for p in dec if "_sz50" not in p]
+    if args.only:
+        keys = [k.strip() for k in args.only.split(",") if k.strip()]
+        dec = [p for p in dec if any(k in p for k in keys)]
+        enc = [p for p in enc if any(k in p for k in keys)]
     if args.clean:
         dec = [p for p in dec if "h8" not in p and "regular" not in p and "grid32" not in p]
         enc = [p for p in enc if ("online" in p or "window" in p or "fresh" in p) and "windowbal" not in p]
-    fig, ax = plt.subplots(figsize=(11, 5.6))
+    overrides = {}
+    for spec in args.labels.split(";"):
+        if "=" in spec:
+            k, v = spec.split("=", 1)
+            overrides[k.strip()] = v.strip()
+
+    def over(path: str, lab: str) -> str:
+        for k, v in overrides.items():
+            if k in path:
+                return v
+        return lab
+
+    fig, ax = plt.subplots(figsize=(8.5, 5.2) if args.legend_inside else (11, 5.6))
     styles, labelled = {}, set()
     for p in dec:
         x, y, a = decode_curve(p)
-        lab = label_decode(a)
+        lab = over(p, label_decode(a))
         first = lab not in labelled
         color = styles.setdefault(lab, f"C{len(styles)}")
         ax.plot(x, y, "-", color=color, lw=1.8 if first else 1.2, alpha=1.0 if first else 0.6,
@@ -107,7 +128,7 @@ def main():
         labelled.add(lab)
     for p in enc:
         x, y, a = encoder_curve(p)
-        lab = label_encoder(a)
+        lab = over(p, label_encoder(a))
         first = lab not in labelled
         color = styles.setdefault(lab, f"C{len(styles)}")
         ax.plot(x, y, "--", color=color, lw=1.8 if first else 1.2, alpha=1.0 if first else 0.6,
@@ -125,17 +146,23 @@ def main():
             color = styles.setdefault(lab, f"C{len(styles)}")
             ax.plot([q[0] for q in pts], [q[1] for q in pts], "s--", color=color, ms=7, mfc="white", mew=1.8, label=lab)
     for spec in args.refs.split(","):
+        if not spec.strip():
+            continue
         name, val = spec.rsplit(":", 1)
         ax.axhline(float(val), color="0.4", ls=":", lw=1)
         ax.text(2.0e4, float(val) * 1.08, name, fontsize=8, color="0.3")
     ax.set_xscale("log")
-    ax.set_yscale("log")
+    if not args.linear_y:
+        ax.set_yscale("log")
     ax.set_xlabel("env-steps walked (same walks for every curve)")
     ax.set_ylabel("held-out direction error (deg), pairs within 19 cells" if args.size == 20
                   else f"held-out direction error (deg), pairs within {args.size - 1} cells")
     ax.set_title(args.title or f"Phase 1: decode vs encoder from random walks, {args.size}x{args.size} arenas, 64 envs")
     ax.grid(True, which="both", alpha=0.25)
-    ax.legend(fontsize=8, loc="center left", bbox_to_anchor=(1.01, 0.5), frameon=False)
+    if args.legend_inside:
+        ax.legend(fontsize=9, loc="upper right", frameon=True, framealpha=0.9)
+    else:
+        ax.legend(fontsize=8, loc="center left", bbox_to_anchor=(1.01, 0.5), frameon=False)
     out = args.out or f"p1_size{args.size}.png"
     os.makedirs(os.path.dirname(out) or ".", exist_ok=True)
     fig.tight_layout()
