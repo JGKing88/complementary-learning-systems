@@ -273,6 +273,10 @@ def parse_args():
     p.add_argument("--k_max", type=int, default=30, help="steps between the two ends of a pair")
     p.add_argument("--max_abs", type=int, default=19, help="Chebyshev range kept (A1's 19)")
     p.add_argument("--pairs_per_update", type=int, default=32768)
+    p.add_argument("--grad_steps", type=int, default=1,
+                   help="gradient steps per update; each sees pairs_per_update / grad_steps pairs, so the "
+                        "pairs per update (and the env-step axis) are unchanged. 8 matches the encoder's "
+                        "8 x 4096 schedule (plan sec 6.4, the budget-matched control)")
     p.add_argument("--target", choices=["direction", "heading8"], default="direction")
     p.add_argument("--buffer", choices=["window", "visited"], default="window",
                    help="window: pairs of moments within the last buffer_updates segments; visited: pairs of "
@@ -405,15 +409,17 @@ def main() -> None:
         if args.range_warmup_updates > 0 and u <= args.range_warmup_updates:
             lo = min(19, args.max_abs)
             max_abs_u = int(round(lo + (args.max_abs - lo) * u / args.range_warmup_updates))
-        envs, p, g, d = buf.sample(data_rng, args.pairs_per_update, args.k_max, max_abs_u,
-                                   balance=args.balance_range)
-        x = torch.from_numpy(batch_inputs(train, acfg, args.size, envs, p, g)).to(device)
-        y = torch.from_numpy(targets_for(d, args.target)).to(device)
-        loss = model.loss(x, y)
-        opt.zero_grad(set_to_none=True)
-        loss.backward()
-        gn = torch.nn.utils.clip_grad_norm_(model.parameters(), args.max_grad_norm)
-        opt.step()
+        per_step = args.pairs_per_update // args.grad_steps
+        for _ in range(args.grad_steps):
+            envs, p, g, d = buf.sample(data_rng, per_step, args.k_max, max_abs_u,
+                                       balance=args.balance_range)
+            x = torch.from_numpy(batch_inputs(train, acfg, args.size, envs, p, g)).to(device)
+            y = torch.from_numpy(targets_for(d, args.target)).to(device)
+            loss = model.loss(x, y)
+            opt.zero_grad(set_to_none=True)
+            loss.backward()
+            gn = torch.nn.utils.clip_grad_norm_(model.parameters(), args.max_grad_norm)
+            opt.step()
         sched.step()
 
         if u == 1 or u % args.eval_every == 0 or u == args.n_updates:
