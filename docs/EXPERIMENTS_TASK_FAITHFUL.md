@@ -29,8 +29,13 @@ sampled trials) at the update shown; probe / CL columns from §7.
 | task1r_k4_h128_nv_c1_g5 | 22883647 | done u4000 | 0.59 / 0.49 (u4000) | 16.9 | 16.2 | 0.77 | – | – |
 | task3r_k2_h128 s43 (replicate) | 22897775 | wall at ~u2900 | 0.55 / 0.61 (u2500) | 14.8 | 12.6 | 0.93 | – | – |
 | task3r_k2_h128_nv_c1 s43 (replicate) | 22884953 | wall at ~u2600 | 0.57 (u2500) | 56 (still in the trough) | 49 | 0.15 | – | – |
-| task3_k2_h128_nv (fixed goals) | 22866166 | running | 0.17–0.20 (u3000) | 25 | 15 | 0.66 | 2.44/2.25/2.67 (u2500, position map) | – |
-| task3_k1_h128_nv (fixed goals) | 22866167 | running | 0.43–0.49 (u3000) | 37 | 17 | 0.56 | – | – |
+| task3_k2_h128_nv (fixed goals) | 22866166 | wall at ~u3500 | 0.17–0.20 (u3000) | 25 | 15 | 0.66 | 2.44/2.25/2.67 (u2500, position map) | – |
+| task3_k1_h128_nv (fixed goals) | 22866167 | wall at ~u3500 | 0.43–0.49 (u3000) | 37 | 17 | 0.56 | – | – |
+| task3r_k1_h128 (wave-1 rule, K=1) | 22941535 | wall at ~u3400 | **0.75 / 0.81** (u2500) | 50 | 12.9 | 0.82 | – | – |
+| task1r_k1_h128 (wave-1 rule, K=1) | 22941536 | wall at ~u3600 | 0.59 / 0.57 (u2500) | 34 | 13.2 | 0.74 | – | 2392/2400 live at 28.8, **one dead arena** |
+| **task3_k2_h128_nos** (blind, fixed goals) | 22989777 | done u4000 | 0.70 / 0.67 | 18.9 | 14.7 | 0.80 | 2.02/2.08/2.81, swept_eff **0.91** (u3000) | 3000/3000 at 17.7, Δ +0.00 |
+| task3_k2_h128_nv_nos (blind, one rule) | 22989778 | cancelled u2350 | 0.24 | 97 | 61 | −0.38 | degenerate (coverage 0.04) | – |
+| task3r_k2_h128_nos (blind, redrawn) | 22989779 | wall at ~u2600 | 0.19 / 0.25 | 26 | 11 | −0.68 | degenerate (coverage 0.04) | – |
 | task3_k2_h128 (wave-1 rule, fixed goals) | 22864187 | timed out u3400 | 0.57 (u3000) | 42 | 24 | 0.20 | – | – |
 | task1r_k2_h128_nv / _c1 | 22869636 / 22872240 | done / timed out | 0.50–0.60 | 64 | 53 | 0.13 | – | – |
 | task3_k1_h1024, task3_k2_h1024 (wave-1 rule) | 22864188/89 | cancelled u400 | 0.53–0.56 / 0.49 | – | – | – | avoidance on train | – |
@@ -465,6 +470,20 @@ Input width 10 (current reward, prev_reward, q, prev_action, prev_disp).
   avoidance on the training arenas); exploit costs ~5 steps blind and
   distractors hurt it more (align 0.37 at d=10); and it is fragile — 1 of 3
   blind arms learned to sweep, the other two sat at 3–5 % coverage.
+- 2026-09-23 — **wave 6 closed.** task3_k2_h128_nos COMPLETED 4000 updates
+  (11 h 56): final held-out search 0.70 / 0.67, revisits 0.985 at 18.9
+  steps, 14.7 steps/touch, follow_q 0.80 — blind exploit converged ~5 steps
+  behind the sighted recipe and stopped improving after u3000. The blind
+  redraw control (task3r_k2_h128_nos) hit its wall at u2600 never having
+  learned to sweep (coverage 0.037, found 0.19 / 0.25, cos_aq_post −0.68),
+  so 1 of 3 blind arms worked. Verdict on removing the sensory input: it
+  does remove the barcode lookup and the blind sweep transfers, but it does
+  not remove localisation (the wall-contact map shows as avoidance), it
+  costs ~5 steps per revisit, and it is fragile to train. The sighted
+  redraw recipe (`task3r_k2_h128`) remains the line's answer.
+- 2026-09-23 — page **v15**: Part IV extended with waves 5–6 (the K=1
+  bullet and the empty-memory / blind bullet, three rows in the held-out
+  table, three in the probe table). Line complete; nothing running.
 
 - 2026-09-17 06:45 — **task3r_k2_h128_nv_c1 (3 redrawn arenas) is the first
   arm strong on both halves**: held-out u1500 found 0.66–0.68, revisits
