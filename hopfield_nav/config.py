@@ -517,6 +517,25 @@ class TrainConfig:
     # while explore rollouts keep clean inputs for sweeping.
     exploit_obs_dropout: float | None = None
     exploit_heading_dropout: float | None = None
+    # The explorer prior (training/prior.py, docs/EXPLORE_FIRST_PLAN.md §4):
+    # for a run forked from an explorer with --load_checkpoint, keep the
+    # policy near it without collecting explore rollouts. `ewc_lambda` is a
+    # quadratic penalty in weight space with a diagonal Fisher estimated once
+    # on the first update's search steps; `prior_kl_coef` is
+    # KL(explorer || policy) on the search steps of every rollout. 0 = off.
+    ewc_lambda: float = 0.0
+    prior_kl_coef: float = 0.0
+    fisher_trajectories: int = 256
+    # Re-open the heading spread at a fork: re-initialise the polar head's
+    # log-kappa head (zero weight, bias = init_log_kappa) after
+    # --load_checkpoint. The explore specialist sits AT the kappa cap
+    # (EXPERIMENTS_EXPLORE_FIRST §3.4), which leaves PPO ~4x less angular
+    # noise than a fresh policy has to discover q-following with.
+    reset_kappa_head: bool = False
+    # Evaluate nav= / expl= with the policy mean (True, the historical
+    # default) or sampled. task= always samples (it runs the training
+    # collector). Mirrors RNNTrainConfig.eval_deterministic.
+    eval_deterministic: bool = True
     novelty_anneal: bool = False            # linearly scale novelty_reward -> 0 across the whole run
     epsilon_explore: float = 0.0            # per-step chance of a uniform-random move, explore regime only
     epsilon_anneal_updates: int = 0         # linearly scale epsilon_explore -> 0 over this many updates; 0 = constant
