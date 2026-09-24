@@ -333,6 +333,11 @@ def main() -> None:
                         "explicit baseline-matching path.")
     p.add_argument("--val_seed", type=int, default=0,
                    help="Seed for minting a --split env set.")
+    p.add_argument("--val_size", type=int, default=None,
+                   help="Mint the --split env set at this arena size instead "
+                        "of the trained one (the size-OOD axis). Needs a "
+                        "minted level, not 'recorded': the recorded set is a "
+                        "fixed list of envs at the size they were built.")
     p.add_argument("--env_seed", type=int, default=None,
                    help="If set: rebuild val_envs with RandomState(env_seed) using "
                         "baseline-compatible draw order (no envs_per_world skip), "
@@ -418,17 +423,19 @@ def main() -> None:
             # seed, same skip loop), and nothing in the output said so.
             es = eval_env_set(cfg, encoder, str(device), ckpt_path=args.ckpt,
                               levels=gen.parse_levels(args.split),
-                              val_seed=args.val_seed, spec=spec, field=vh)
+                              val_seed=args.val_seed, spec=spec, field=vh,
+                              size=args.val_size)
             val_envs, offsets = es["envs"], es["offsets"]
             r = es["report"]
             print(f"[agenthash] split={es['key']}: {len(val_envs)} envs"
                   + (f", place_gap>={r.get('min_place_gap_vs_train')} "
                      f"(margin {r.get('margin')})" if r else ""), flush=True)
         elif args.env_seed is None:
-            if gen.parse_levels(args.split) is not None:
+            if gen.parse_levels(args.split) is not None or args.val_size is not None:
                 raise SystemExit(
-                    f"--split {args.split} needs a world.json, and {args.ckpt} "
-                    "has none: the legacy replay below cannot mint a level.")
+                    f"--split {args.split} / --val_size {args.val_size} needs a "
+                    f"world.json, and {args.ckpt} has none: the legacy replay "
+                    "below cannot mint a level or a size.")
             # Mirror build_eval_world's val_env construction (rng skip + draws).
             rng = np.random.RandomState(cfg.seed)
             for _ in range(cfg.envs_per_world * cfg.num_worlds):
@@ -449,7 +456,7 @@ def main() -> None:
         # conventions for runs predating the record. Envs constant across iters.
         val_envs, vh, offsets = eval_world_for_split(
             cfg, encoder, str(device), ckpt_path=args.ckpt, split=args.split,
-            val_seed=args.val_seed)
+            val_seed=args.val_seed, size=args.val_size)
     else:
         vh = VectorHash(cfg.vectorhash)
         vh.build_scaffold()
@@ -546,7 +553,9 @@ def main() -> None:
             "model_class": "agenthash",
             "run_name": run_name,
             "n_envs": len(val_envs),
-            "env_size": cfg.env.size,
+            # The size these envs actually are: --val_size can make it differ
+            # from the config's, and the plotter's ceiling reads this.
+            "env_size": (int(val_envs[0].size) if val_envs else cfg.env.size),
             "iters_per_block": args.iters_per_block,
             "max_steps": args.max_steps,
             "x_axis_label": "outer iteration",

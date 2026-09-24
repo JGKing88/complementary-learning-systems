@@ -494,3 +494,31 @@ def test_the_scaled_budget_grows_as_the_metric_does():
     assert b["nav"] == 400            # 200 * (12/6)
     assert b["fixed"] == 200
     assert (b["trained_size"], b["val_size"]) == (6, 12)
+
+
+# ---------------------------------------------------------------------------
+# The continual protocol's own plumbing
+# ---------------------------------------------------------------------------
+
+def test_agenthash_forwards_val_size_to_the_shared_resolver():
+    """`agenthash --val_size` must reach `eval_env_set`/`eval_world_for_split`.
+
+    Both call sites take the size as a keyword, so dropping it is not a
+    TypeError: the call still succeeds and mints at the TRAINED size, and the
+    only symptom is a continual history whose envs are the wrong size while its
+    filename and `run_name` say otherwise. That is the silent failure this
+    module exists for, so it is pinned on the source rather than on behavior.
+    """
+    import inspect
+
+    from analysis.continual import agenthash
+
+    src = inspect.getsource(agenthash.main)
+    # One forward per minted path: the --scaffold_cache branch (eval_env_set)
+    # and the uncached branch (eval_world_for_split).
+    assert src.count("size=args.val_size") == 2, (
+        "both minted paths must forward --val_size; "
+        f"found {src.count('size=args.val_size')}")
+    # The history records the size the envs ARE, not the config's: the
+    # plotter's failed-trial ceiling and every downstream reader use it.
+    assert '"env_size": cfg.env.size' not in src
