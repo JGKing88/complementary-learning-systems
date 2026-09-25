@@ -2079,3 +2079,55 @@ sampler cannot find the pairs it needs inside one rollout.
 Figures: the clean plots now carry window, visited-set and fresh-rollout
 regimes for both models (balanced-rows encoder in the full plots only);
 `$CLS_RUNS/figures/nn_control/p1_size{20,50}_clean.png`, `p1_size{20,50}.png`.
+
+## 2026-09-24 — same data, proven; and the budget controls
+
+Two of Jack's checks on the encoder-vs-decode comparison.
+
+**1. Are they trained on the same data?** The first two-line figure was
+*not* a same-data comparison: it paired the decode's seed-1 run with the
+encoder's seed 0, and the seed fixes the world (different arenas, wall
+seeds, walks). Corrected to seed 0 on both sides, and then verified at
+runtime rather than by construction (`verify_same_walks.py`, job
+23635335): at the same seed the two trainers build identical worlds
+(train offsets and wall seeds equal) and their walkers produce
+**element-wise identical** position arrays over three consecutive
+64-step segments across all 64 arenas x 8 walkers. What is *not*
+identical, and cannot be: which moments enter a given batch — the decode
+draws 32,768 pairs, the encoder 4,096 rows, from separate RNG streams.
+
+**2. Is the decode getting more training?** Budgets at 131M env-steps
+each: decode 4,000 gradient steps x 32,768 pairs, 262M code
+presentations, 3.03M params, a direction per sample; encoder 32,000
+steps x 4,096 rows, 131M presentations, 0.57M params, ~8.3e9 near/far
+bits. Both sides controlled (`--grad_steps` on the decode,
+`--batches_per_update`/`--per_walker` on the encoder), 50x50, balanced
+window, seed 0, pairs within 49:
+
+| decode | params | final | 1 deg at |
+|---|---|---|---|
+| 5x768, 1 x 32768 (the plotted arm) | 3.03M | 0.64 | 62M |
+| 4x256, 1 x 32768 | 0.42M | 1.51 | - |
+| 4x256, 1 x 32768, range warm-up | 0.42M | 0.84 | 84M |
+| **4x256, 8 x 4096 (encoder's size and schedule)** | 0.42M | **0.14** | **23M** |
+| 4x256, 8 x 4096, warm-up | 0.42M | **0.10** | 25M |
+
+| encoder (same walks, same eval) | final | best |
+|---|---|---|
+| 8 x 4096 (the plotted arm) | 48.4 | 46.2 at u2700 |
+| 4 x 8192 | 56.8 | 49.5 at u900 |
+| 2 x 16384 | 68.6 | 47.5 at u1400 |
+
+**The confound runs the other way.** Matching the decode *down* to the
+encoder's capacity and schedule makes it **better** (0.64 -> 0.14 deg,
+1 deg in a third the env-steps): one 32,768-pair step per update was the
+weaker configuration, not an advantage. Moving the encoder toward the
+decode's schedule makes it worse in the final and leaves its best point
+flat at 46-50 deg — step count and batch composition are not what limits
+it. (An exact 1 x 32,768 encoder step is infeasible without a
+block-wise loss: its mask alone materialises a [B, B, 2] tensor, 8.6 GB
+at B = 32,768.)
+
+Headline figure, everything matched (walks, size, schedule, eval):
+`$CLS_RUNS/figures/nn_control/p1_sz50_matched.png` — decode 0.14 deg,
+encoder 48.4 deg.

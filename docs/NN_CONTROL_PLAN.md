@@ -369,6 +369,15 @@ target — no teacher, no goal, no position (log 2026-09-16):
   experience kept eligible for ~20 updates is load-bearing. Clean figures
   (window / visited set / no memory, both models): `p1_size20_clean.png`,
   `p1_size50_clean.png`.
+- **Same data and same budget, checked (09-24).** At a matching seed the
+  two trainers build identical worlds and walk element-wise identical
+  walks (verified at runtime); only which moments enter a batch differs,
+  as it must. Controlling capacity and schedule moves the comparison in
+  the decode's favour, not against it: the decode at the encoder's size
+  and schedule (4x256, 8 x 4096/update) reaches **0.14°** (vs 0.64° for
+  5x768 with one big step), while the encoder with fewer, larger steps
+  gets worse (48.4 → 56.8 → 68.6°) with its best point flat at 46–50°.
+  Headline figure `p1_sz50_matched.png`.
 
 ### 1.9 Standing conclusions
 
