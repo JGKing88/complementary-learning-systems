@@ -204,6 +204,11 @@ def parse_args():
     p.add_argument("--rate", type=float, default=0.5)
     p.add_argument("--rate_eps", type=float, default=1.0)
     p.add_argument("--radius", type=float, default=20.0)
+    p.add_argument("--graded_sigma", type=float, default=0.0,
+                   help="distance-graded targets, the encoder package's `graded_sigma`: every labelled pair "
+                        "is pulled to exp(-d^2 / 2 sigma^2) instead of 1 (near) / 0 (far); the radius then "
+                        "only chooses the attract vs repel weight. d is the pair's displacement from the "
+                        "walker's own odometry (same-walker pairs only). 0 = binary targets")
     p.add_argument("--labels", choices=["odometry", "coords"], default="odometry")
     p.add_argument("--buffer", choices=["window", "visited"], default="window",
                    help="window: rows are moments of the last buffer_updates segments; visited: rows are "
@@ -416,7 +421,13 @@ def main() -> None:
             xb = torch.from_numpy(x).to(device)
             z = encoder(xb, gain)
             K = (z @ z.T).clamp(-1.0, 1.0)
-            loss = mse_attract_repel(K, near, attract_lambda=args.attract, repel_weight=args.repel, far_mask=far)
+            target = None
+            if args.graded_sigma > 0:
+                pt = torch.from_numpy(pos).float().to(device)
+                d2 = torch.cdist(pt, pt).square()
+                target = torch.exp(-d2 / (2.0 * args.graded_sigma ** 2))
+            loss = mse_attract_repel(K, near, attract_lambda=args.attract, repel_weight=args.repel, far_mask=far,
+                                     target=target)
             if args.rate > 0:
                 loss = loss + args.rate * coding_rate_loss(z, eps=args.rate_eps)
             opt.zero_grad(set_to_none=True)

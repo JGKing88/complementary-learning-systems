@@ -26,6 +26,7 @@ BATCH_MODE=${BATCH_MODE:-envs}          # envs | mixed | arena1
 BUFFER=${BUFFER:-window}               # window | visited
 BALANCE_ROWS=${BALANCE_ROWS:-0}         # 1: --balance_rows (arena1)
 RADIUS=${RADIUS:-20}
+GRADED_SIGMA=${GRADED_SIGMA:-0}
 HIDDEN=${HIDDEN:-256}
 LAYERS=${LAYERS:-4}
 OUT_DIM=${OUT_DIM:-1024}
@@ -71,7 +72,7 @@ EVAL_FLAG=""
 [[ -n "$EVAL_ONLY" ]] && EVAL_FLAG="--eval_only $EVAL_ONLY"
 
 PYTHONUNBUFFERED=1 python -m hopfield_nav.train_encoder_walk \
-  --labels "$LABELS" --positions "$POSITIONS" --batch_mode "$BATCH_MODE" --buffer "$BUFFER" $BALROWS_FLAG --radius "$RADIUS" --hidden_dim "$HIDDEN" --num_hidden_layers "$LAYERS" --out_dim "$OUT_DIM" \
+  --labels "$LABELS" --positions "$POSITIONS" --batch_mode "$BATCH_MODE" --buffer "$BUFFER" $BALROWS_FLAG --radius "$RADIUS" --graded_sigma "$GRADED_SIGMA" --hidden_dim "$HIDDEN" --num_hidden_layers "$LAYERS" --out_dim "$OUT_DIM" \
   --gain_start "$GAIN_START" --gain_end "$GAIN_END" --attract "$ATTRACT" --repel "$REPEL" --rate "$RATE" --lr "$LR" \
   --n_envs "$N_ENVS" --n_val_envs "$N_VAL_ENVS" --n_same_envs "$N_SAME_ENVS" \
   --walkers "$WALKERS" --steps_per_update "$STEPS_PER_UPDATE" --buffer_updates "$BUFFER_UPDATES" \
