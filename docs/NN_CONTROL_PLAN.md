@@ -378,6 +378,13 @@ target — no teacher, no goal, no position (log 2026-09-16):
   5x768 with one big step), while the encoder with fewer, larger steps
   gets worse (48.4 → 56.8 → 68.6°) with its best point flat at 46–50°.
   Headline figure `p1_sz50_matched.png`.
+- **Other readouts from the memory (09-28, `analysis/encoder_readouts.py`).**
+  The agent's recall-based signal equals the frame readout of the stored
+  goal within the encoder's radius; an energy look-ahead (gradient of the
+  memory's energy over the 8 neighbours) is the best readout for the
+  walk-trained encoders — the matched arm 27.8 → 12.8° (within 19) and
+  47.7 → 33.0° (within 49) — and no better for the well-trained ones
+  (att0.5 6.0 vs 6.6°). The gap to the decode (0.14°) stands.
 
 ### 1.9 Standing conclusions
 

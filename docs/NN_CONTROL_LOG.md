@@ -2131,3 +2131,43 @@ at B = 32,768.)
 Headline figure, everything matched (walks, size, schedule, eval):
 `$CLS_RUNS/figures/nn_control/p1_sz50_matched.png` — decode 0.14 deg,
 encoder 48.4 deg.
+
+## 2026-09-28 — the other Hopfield readouts
+
+Jack: other ways to decode direction from the memory. `analysis/
+encoder_readouts.py` stores the goal embedding exactly as the agent does
+(one pattern, W = (1/D) g g^T, zero diagonal) and scores five readouts on
+fixed held-out pairs: `frame_goal` W_frame(z_g - z_p) (what I had
+scored), `frame_recall` W_frame(recall(z_p) - z_p) with the agent's
+recall (one step, alpha 1, beta = encoder gain — the actual policy
+signal), and an energy look-ahead over the neighbours of p — `grad4` /
+`grad8` (central-difference / Sobel gradient of -E) and `argmax4` /
+`argmax8` (best neighbour; floors = a perfect argmax on the same pairs).
+
+| encoder (final) | size, range | frame_goal | frame_recall | grad4 | grad8 | argmax8 (floor 10.8-11.1) |
+|---|---|---|---|---|---|---|
+| walk, balanced window (the matched arm) | 20, 19 | 19.7 | 19.8 | 12.2 | **11.5** | 21.1 |
+| walk, visited set | 20, 19 | 25.0 | 25.7 | 16.0 | **14.8** | 23.1 |
+| its own trainer, walk dump 0.5M | 20, 19 | 16.2 | 16.3 | 10.1 | **9.7** | 19.9 |
+| att0.5 pre-trained | 20, 19 | **6.0** | 6.0 | 6.7 | 6.6 | 18.9 |
+| walk, balanced window, u4000 (matched) | 50, 19 / 49 | 27.8 / 47.7 | 27.9 / 49.2 | 13.9 / 34.3 | **12.8 / 33.0** | 20.9 / 39.0 |
+| walk, visited set | 50, 19 / 49 | 14.6 / 27.0 | 14.6 / 28.8 | 12.3 / 22.3 | **11.7 / 21.7** | 19.9 / 29.9 |
+| its own trainer, dump 8M | 50, 19 / 49 | **8.7** / 19.9 | 8.7 / 21.6 | 9.7 / 19.2 | 9.6 / **19.1** | 19.2 / 28.3 |
+| att0.5 pre-trained | 50, 19 / 49 | **7.4** / 15.5 | 7.4 / 17.8 | 7.6 / 15.8 | 7.5 / 15.6 | 18.9 / 26.7 |
+
+(1) The recall changes nothing within the encoder's radius (frame_goal ≡
+frame_recall to 0.1°) and costs 1-7° beyond it — the agent's signal is
+the frame readout of the stored goal. (2) The energy-gradient look-ahead
+is the better readout for the walk-trained encoders — 40-55% lower error
+(e.g. the matched arm 27.8 -> 12.8° within 19, 47.7 -> 33.0° within 49)
+— and the same or slightly worse for the well-trained ones (att0.5, own
+trainer on dumps), which are locally linear enough for the frame. So the
+frame readout was indeed pessimistic for the weaker encoders. (3) Argmax
+look-ahead sits near its quantisation floor at best (19-23° against 11°)
+and is never the best readout. (4) None of it closes the gap: the best
+encoder readout on the matched run is 12.8° / 33.0° against the matched
+decode's 0.14° on the same walks.
+
+Figures: `$CLS_RUNS/figures/nn_control/p1_sz50_readouts_49.png`,
+`p1_sz50_readouts_19.png` (matched run's 16 checkpoints, four readouts,
+the matched decode); data `encoder_readouts_sz{20,50}.json` beside them.
