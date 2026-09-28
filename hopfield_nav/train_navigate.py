@@ -991,6 +991,7 @@ CFG_FIELDS: dict[str, tuple[str, ...]] = {
     "reset_state_on_teleport": ("env.reset_state_on_teleport",),
     "explore_ends_on_goal": ("explore_ends_on_goal",),
     "wall_resolution": ("env.wall_resolution",),
+    "distal_amp": ("env.distal_amp",),
     "time_penalty": ("env.time_penalty",),
     "continuous_normalize": ("env.continuous_normalize",),
     "max_action_norm": ("env.max_action_norm",),
@@ -1222,6 +1223,8 @@ def build_parser() -> argparse.ArgumentParser:
                         "to North, reproducing pre-2026-08 runs.")
     p.add_argument("--wall_resolution", type=int, default=1,
                    help="How many +/-1 wall segments span one grid cell. 1 (default) is one segment per cell, the original coarse barcode. Above 1 a stripe edge can fall inside a cell, which is the only way a ray can report where within a cell it is looking from; at 1 roughly 9-14%% of cells share a bit-identical observation with another cell. 8 drives that to ~0. Changes env identity, so splits and checkpoints are tied to it.")
+    p.add_argument("--distal_amp", type=float, default=0.0,
+                   help="Distal panorama amplitude: each ray adds distal_amp x a per-env ±1 skyline value read by its ABSOLUTE angle (2-degree slices), so views identify the env from any cell and carry a compass. 0 (default) is off, bit-identical. See EnvConfig.distal_amp.")
     p.add_argument("--movement_mode", default="continuous")
     p.add_argument("--hopfield_mode", default="continuous")
     p.add_argument("--input_prev_reward", action=argparse.BooleanOptionalAction, default=True)

@@ -122,6 +122,20 @@ class EnvConfig:
     # computed against it (world/generate.py) and checkpoints from a different
     # value describe a different world.
     wall_resolution: int = 1
+    # Distal panorama: a per-env skyline at infinity. The full 360 degrees of
+    # absolute direction is cut into 2-degree slices (world/env.PANORAMA_BINS),
+    # each a random ±1 drawn once per env from its own seed stream; every ray
+    # reads the slice its *absolute* angle points into and adds
+    # ``distal_amp`` x that value to the near-wall code, so views stay the same
+    # width. It reads the same from every cell, so the four-heading view
+    # identifies the env from anywhere (the near walls, which decorrelate
+    # within one cell step, cannot), while the near walls still carry
+    # position. It also gives a single egocentric view a compass. 0 (default)
+    # is no panorama, bit-identical to before. 1.0 is what the offline
+    # sensory-key test needed (analysis/sensory_key/): own-env goal key 0.50
+    # vs best other-env key 0.20, argmax correct at N=100 from every cell.
+    # Changes what every env looks like, so checkpoints are tied to it.
+    distal_amp: float = 0.0
 
 
 @dataclass

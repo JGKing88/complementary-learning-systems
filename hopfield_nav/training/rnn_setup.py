@@ -93,6 +93,7 @@ def build_envs_from_config(cfg: RNNTrainConfig,
             goal_radius=cfg.env.goal_radius,
             egocentric_heading=cfg.env.egocentric_heading,
             wall_resolution=cfg.env.wall_resolution,
+            distal_amp=cfg.env.distal_amp,
         ))
     return envs
 

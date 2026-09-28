@@ -17,6 +17,17 @@ CARDINAL_ACTIONS = [(0, 1), (1, 0), (0, -1), (-1, 0)]  # N, E, S, W
 # evenly spaced in angle; θ is measured clockwise from forward.
 FOVEAL_HALF_ANGLE_DEG = 60.0
 
+# Distal panorama: a skyline at infinity around the arena, one value per
+# PANORAMA_BIN_DEG slice of *absolute* direction. At the 60-ray, 120-degree cone
+# the rays are 2 degrees apart and bin-centred on odd degrees, so every
+# cardinal-heading ray lands in its own slice and the cones' 30-degree overlaps
+# read the same values. See ``EnvConfig.distal_amp``.
+PANORAMA_BIN_DEG = 2.0
+PANORAMA_BINS = int(round(360.0 / PANORAMA_BIN_DEG))
+# Mixed into the seed that draws a panorama, so it is its own stream: the wall
+# code and goal still come off ``env.rng`` exactly as with no panorama.
+_PANORAMA_SEED_SALT = 0xD157A1
+
 # ---------------------------------------------------------------------------
 # Heading
 # ---------------------------------------------------------------------------
@@ -89,8 +100,29 @@ def cone_offsets(n_rays: int) -> np.ndarray:
     return -half + (np.arange(n_rays) + 0.5) * (2 * half / n_rays)
 
 
+def panorama_for(seed: int | None, amp: float) -> np.ndarray | None:
+    """An env's distal panorama, pre-scaled: ``(PANORAMA_BINS,)`` of ±amp.
+
+    ``None`` at ``amp == 0`` -- no panorama, and ``raycast_codes`` is then
+    bit-identical to before the knob existed. Drawn from its own stream keyed
+    on the env's seed, so it never consumes ``env.rng``.
+    """
+    if not amp:
+        return None
+    rng = (np.random.RandomState() if seed is None
+           else np.random.RandomState([int(seed) % (2 ** 32), _PANORAMA_SEED_SALT]))
+    return (float(amp) * rng.choice([-1.0, 1.0], PANORAMA_BINS)).astype(np.float32)
+
+
+def panorama_bins(angles: np.ndarray) -> np.ndarray:
+    """Slice index of each absolute ray angle (radians, clockwise from North)."""
+    deg = np.mod(np.rad2deg(angles), 360.0)
+    return np.floor(deg / PANORAMA_BIN_DEG).astype(np.int64) % PANORAMA_BINS
+
+
 def raycast_codes(wall_code: np.ndarray, size: int, xs, ys, psi,
-                  n_rays: int, resolution: int = 1) -> np.ndarray:
+                  n_rays: int, resolution: int = 1,
+                  panorama: np.ndarray | None = None) -> np.ndarray:
     """Foveal view from each (x, y) facing each ψ: ``(N, n_rays)`` of ±1 codes.
 
     The vectorized form of the four plane intersections ``_raycast_segment_code``
@@ -108,6 +140,10 @@ def raycast_codes(wall_code: np.ndarray, size: int, xs, ys, psi,
     scan in N, E, S, W order (``argmin`` returns the first minimum). A ray that
     hits nothing reads 0.0, as it did before -- unreachable from inside the box,
     but the box is not re-derived here.
+
+    ``panorama`` (from ``panorama_for``) adds each ray's distal value, read
+    by its absolute angle alone -- the same from every position -- onto the
+    near-wall code. ``None`` leaves the codes untouched.
 
     xs, ys, psi: (N,) broadcastable. Returns float32.
     """
@@ -164,7 +200,10 @@ def raycast_codes(wall_code: np.ndarray, size: int, xs, ys, psi,
     seg = np.clip(np.floor(fine), 0, size * resolution - 1).astype(np.int64)
 
     codes = wall_code[wall, seg].astype(np.float32)
-    return np.where(np.isfinite(ts).any(axis=-1), codes, 0.0).astype(np.float32)
+    codes = np.where(np.isfinite(ts).any(axis=-1), codes, 0.0).astype(np.float32)
+    if panorama is not None:
+        codes = codes + panorama[panorama_bins(angles)]
+    return codes
 
 
 def at_goal(env):
@@ -293,6 +332,7 @@ class GridEnv:
         goal_radius: float = 0.5,
         egocentric_heading: bool = True,
         wall_resolution: int = 1,
+        distal_amp: float = 0.0,
     ) -> None:
         self.size = size
         if int(wall_resolution) < 1:
@@ -341,6 +381,10 @@ class GridEnv:
         # (world/generate.py) are both defined on the four cardinal views -- and
         # as the fast path whenever ψ happens to be exactly cardinal, which in
         # discrete movement it always is.
+        # Distal panorama (EnvConfig.distal_amp). Drawn off its own stream, so
+        # everything above and the goal draw below are unchanged by it.
+        self.distal_amp = float(distal_amp)
+        self._panorama = panorama_for(seed, self.distal_amp)
         self._codebook = self._build_sensory_codebook(observation_size)
 
         # Pick random goal and start
@@ -391,7 +435,8 @@ class GridEnv:
         if k >= 0:
             return self._codebook[pos[0], pos[1], k].copy()
         return raycast_codes(self._wall_code, self.size, pos[0], pos[1], psi,
-                             self._observation_size, self.wall_resolution)[0]
+                             self._observation_size, self.wall_resolution,
+                             self._panorama)[0]
 
     def omni_obs_at(self, pos: tuple[int, int]) -> np.ndarray:
         """All four cardinal views from ``pos``, concatenated: (4*obs_size,).
@@ -507,7 +552,7 @@ class GridEnv:
         ys = np.repeat(gy.ravel(), N_HEADINGS)
         psi = np.tile(CARDINAL_RADIANS, size * size)
         codes = raycast_codes(self._wall_code, size, xs, ys, psi, n_rays,
-                              self.wall_resolution)
+                              self.wall_resolution, self._panorama)
         return codes.reshape(size, size, N_HEADINGS, n_rays)
 
     def fully_explore_random(self) -> list[tuple[tuple[int, int], np.ndarray, tuple[int, int]]]:
@@ -624,6 +669,7 @@ def make_env(env_cfg: EnvConfig, movement_mode: str, seed: int) -> GridEnv:
             goal_radius=env_cfg.goal_radius,
             egocentric_heading=env_cfg.egocentric_heading,
             wall_resolution=env_cfg.wall_resolution,
+            distal_amp=env_cfg.distal_amp,
         )
     return GridEnv(
         size=env_cfg.size,
@@ -636,4 +682,5 @@ def make_env(env_cfg: EnvConfig, movement_mode: str, seed: int) -> GridEnv:
         goal_radius=env_cfg.goal_radius,
         egocentric_heading=env_cfg.egocentric_heading,
         wall_resolution=env_cfg.wall_resolution,
+        distal_amp=env_cfg.distal_amp,
     )
