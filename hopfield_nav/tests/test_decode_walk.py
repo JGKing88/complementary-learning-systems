@@ -161,3 +161,33 @@ def test_balanced_rows_are_endpoints_of_balanced_pairs_of_one_walker():
         hist_walk = buf.pos[i, chosen[i], :buf.n]
         for q in r:                                            # every row is a moment of that walker
             assert (hist_walk == q).all(1).any()
+
+
+def test_encoder_readouts_gradient_argmax_and_recall():
+    """analysis/encoder_readouts: on a field that peaks at the goal the gradient
+    readouts point exactly at it (central differences are exact for a quadratic),
+    argmax picks the neighbour nearest the goal, and one recall step returns the
+    stored pattern's direction."""
+    from analysis.encoder_readouts import gradient_dirs, argmax_dirs, recall, OFF4, OFF8
+    S, n = 9, 40
+    rng = np.random.RandomState(0)
+    p = rng.randint(1, S - 1, size=(n, 2))
+    g = rng.randint(0, S, size=(n, 2))
+    g[(g == p).all(1)] = (g[(g == p).all(1)] + 3) % S
+    cells = np.array([(x, y) for x in range(S) for y in range(S)], dtype=float)
+    field = -((cells[:, None, :] - g[None, :, :]) ** 2).sum(-1)          # (S*S, n), peaks at g
+    for sob in (False, True):
+        v = gradient_dirs(field, S, p, sob)
+        u = (g - p) / np.linalg.norm(g - p, axis=1, keepdims=True)
+        vn = v / np.linalg.norm(v, axis=1, keepdims=True)
+        assert np.allclose((u * vn).sum(1), 1.0, atol=1e-9)
+    a8 = argmax_dirs(field, S, p, OFF8)
+    dist_best = np.linalg.norm(p + a8 - g, axis=1)
+    dist_any = np.min(np.stack([np.linalg.norm(p + o - g, axis=1) for o in OFF8]), axis=0)
+    assert np.allclose(dist_best, dist_any)
+    D = 64
+    G = rng.randn(n, D); Zp = G + 0.5 * rng.randn(n, D)
+    Zp /= np.linalg.norm(Zp, axis=1, keepdims=True)
+    r = recall(Zp, G, beta=100.0)
+    Gn = G / np.linalg.norm(G, axis=1, keepdims=True)
+    assert ((r * Gn).sum(1) > 0.95).all()
