@@ -385,6 +385,14 @@ target — no teacher, no goal, no position (log 2026-09-16):
   walk-trained encoders — the matched arm 27.8 → 12.8° (within 19) and
   47.7 → 33.0° (within 49) — and no better for the well-trained ones
   (att0.5 6.0 vs 6.6°). The gap to the decode (0.14°) stands.
+- **The distance kernel (09-28).** With `--graded_sigma` (every labelled
+  pair pulled to exp(-d²/2σ²), d from odometry) and the coding-rate term
+  off, the same matched run reaches **5° over the full 49-cell range**
+  under the agent's own frame readout (σ = 25), and 1.2° within 19 with
+  the look-ahead (σ = 10) — against 49 / 33° for the binary encoder and
+  0.14° for the decode. With the rate term on, the kernel fails under the
+  frame (78–82°). Distance labels are what the encoder was missing; the
+  decode still leads by ~35× in accuracy and in env-steps to any error.
 
 ### 1.9 Standing conclusions
 

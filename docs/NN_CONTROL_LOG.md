@@ -2171,3 +2171,48 @@ decode's 0.14° on the same walks.
 Figures: `$CLS_RUNS/figures/nn_control/p1_sz50_readouts_49.png`,
 `p1_sz50_readouts_19.png` (matched run's 16 checkpoints, four readouts,
 the matched decode); data `encoder_readouts_sz{20,50}.json` beside them.
+
+## 2026-09-28 — the distance kernel, online: full curves
+
+Jack: move the encoder from proximity to distance labels — the encoder
+package's `graded_sigma` (every labelled pair pulled to exp(-d^2 / 2s^2)
+instead of 1 / 0; the radius then only picks the attract vs repel weight;
+`--loss_mode cka` is NOT an alternative, as coded it aligns to a binary
+near kernel). Added `--graded_sigma` to the online trainer (d from the
+walker's own odometry, same-walker pairs only) and ran it in the matched
+configuration of `p1e_windowbal_sz50_ev49_s0`: seed-0 walks, window buffer,
+one walker per arena per batch, balanced rows, 4x256 -> 1024, 8 x 4096 per
+update, radius 20, gain 1 -> 100, 50x50. Scored with all readouts
+(`analysis/encoder_readouts.py`) at every 250-update checkpoint.
+
+**With att0.5's coding-rate term (0.5) the kernel fails under the frame**
+(78-82 deg throughout): the loss goes steadily negative — the rate term
+dominates — and the embedding is not locally linear. The look-ahead still
+finds an overlap field monotone toward the goal (s10: grad8 17.5 / 45.1
+deg within 19 / 49; s25: 27 -> 36 / 31 -> 41), no better than binary.
+
+**Without the rate term it works** (final, u4000):
+
+| encoder | within 19: frame (agent) / grad8 | within 49: frame (agent) / grad8 |
+|---|---|---|
+| binary near/far (the matched arm) | 27.9 / 12.8 | 49.2 / 33.0 |
+| graded s10, no rate | 6.4 / **1.2** | 44.2 / 32.3 |
+| graded s25, no rate | **4.0** / 3.3 | **5.9** / **5.0** (frame_goal 4.9) |
+| att0.5 pre-trained (reference) | 7.4 / 7.5 | 17.8 / 15.6 |
+| decode, matched (4x256, 8x4096) | 0.14 over all pairs within 49 | |
+
+- A distance label, self-supervised from odometry, gives the encoder a
+  locally linear, globally ordered embedding: s25 reaches 5 deg over the
+  full 49-cell range under the agent's own readout — 3x better than the
+  pre-trained att0.5 on these arenas and 10x better than the binary
+  encoder on the same walks.
+- The kernel width sets the range: s10 is the most accurate inside ~20
+  cells (1.2 deg with the look-ahead) and flat beyond it (the target is
+  ~0 past ~30 cells, so there is no gradient there); s25 covers the arena.
+- The s25 curve drops late (32 -> 6 deg between ~40M and ~60M steps,
+  gain ~40-50): its readout follows the gain anneal as the binary one did.
+- The gap to the decode shrinks from ~200x to ~35x (5 vs 0.14 deg); the
+  decode still reaches any given error with fewer env-steps.
+
+Figures: `$CLS_RUNS/figures/nn_control/p1_sz50_graded_49.png`,
+`p1_sz50_graded_19.png`; data `encoder_readouts_graded{,_norate}_sz50.json`.
