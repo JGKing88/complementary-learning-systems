@@ -35,23 +35,24 @@ def view_stats(obs):
 def main():
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--ells", default="0,0.5,1,2,4,8,16")
-    p.add_argument("--modes", default="cont,sign")
+    p.add_argument("--modes", default="cont;sign", help="semicolon-separated")
     p.add_argument("--Ns", default="6,30")
     p.add_argument("--draws", type=int, default=5)
     p.add_argument("--out", required=True)
     a = p.parse_args()
     os.makedirs(a.out, exist_ok=True)
     rows = []
-    for mode in a.modes.split(","):
+    for mode in a.modes.split(";"):
         for ell in [float(x) for x in a.ells.split(",")]:
-            if ell == 0 and mode != a.modes.split(",")[0]:
+            fixed = mode.startswith(("wallconst", "multi:", "distal:"))
+            if fixed and ell != 0:
                 continue
-            if mode.startswith("wallconst") and ell != 0:
+            if not fixed and ell == 0 and mode != a.modes.split(";")[0]:
                 continue
             obs, goals, n_rec = load_envs(94, 0, ell, mode)
             vs = view_stats(obs)
             rng = np.random.RandomState(1)
-            row = dict(mode=mode if (ell > 0 or mode.startswith("wallconst")) else "iid", ell=ell, **vs)
+            row = dict(mode=mode if (ell > 0 or mode.startswith(("wallconst", "multi:", "distal:"))) else "iid", ell=ell, **vs)
             for N in [int(x) for x in a.Ns.split(",")]:
                 subsets = ([list(range(n_rec))] if N == n_rec else
                            [sorted(rng.choice(len(goals), N, replace=False).tolist())

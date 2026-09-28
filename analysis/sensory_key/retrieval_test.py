@@ -32,6 +32,7 @@ D0_ENV = dict(size=20, observation_size=60, wall_resolution=4, goal_radius=1.0,
               time_penalty=0.05, goal_reward=2.0, egocentric_heading=True)
 D0_WORLD = ("/orcd/pool/003/jackking/cls_runs/agent_ckpts/"
             "navigate_navp2_d0_base_s42_22133273/world.json")
+MULTI_ELLS = (8.0, 4.0, 2.0)
 DIST_BINS = [("0 (goal)", 0.0, 0.5), ("1-2", 0.5, 2.5), ("3-5", 2.5, 5.5),
              ("6-10", 5.5, 10.5), (">10", 10.5, 1e9)]
 
@@ -44,6 +45,25 @@ def smooth_walls(env, ell_cells: float, mode: str) -> None:
     to ±1 with long runs ("sign"). ``ell_cells`` 0 leaves the walls untouched.
     The seed's code is the noise source, so each env stays distinct.
     """
+    if mode.startswith("multi:"):
+        # Sum of independent components at several spatial frequencies, each
+        # scaled to unit std then weighted: per-wall constant, Gaussian-smoothed
+        # noise at each length in MULTI_ELLS (cells), and the env's own fine ±1
+        # barcode. Weights are "multi:w_const,w_ell1,...,w_fine".
+        w = [float(x) for x in mode.split(":")[1].split(",")]
+        assert len(w) == len(MULTI_ELLS) + 2, (w, MULTI_ELLS)
+        from scipy.ndimage import gaussian_filter1d
+        rng = np.random.RandomState(env.seed + 1)
+        shape = env._wall_code.shape
+        code = w[0] * rng.randn(4, 1) * np.ones(shape)
+        for wk, ell in zip(w[1:-1], MULTI_ELLS):
+            sm = gaussian_filter1d(rng.randn(*shape), sigma=ell * env.wall_resolution,
+                                   axis=1, mode="nearest")
+            code = code + wk * sm / sm.std()
+        code = code + w[-1] * env._wall_code
+        env._wall_code = code.astype(np.float32)
+        env._codebook = env._build_sensory_codebook(env._codebook.shape[-1])
+        return
     if mode.startswith("wallconst"):
         # Each wall one random N(0,1) value; "wallconst+A" adds the original
         # fine ±1 barcode on top, scaled so the constant has weight A.
@@ -89,7 +109,16 @@ def load_envs(n_fresh: int, seed: int, ell_cells: float = 0.0, mode: str = "cont
             env.set_goal(g)
         smooth_walls(env, ell_cells, mode)
         goals.append(tuple(int(x) for x in env._goal))
-        obs.append(env.omni_obs_all())
+        o = env.omni_obs_all()
+        if mode.startswith("distal:"):
+            # Distal panorama: a per-env ±1 pattern indexed by ABSOLUTE ray
+            # angle, so it reads the same from every cell (walls at infinity).
+            # The omni view's 4x60 rays sit at fixed absolute angles, so the
+            # panorama is one fixed 240-vector per env added to every cell.
+            amp = float(mode.split(":")[1])
+            pano = np.random.RandomState(env.seed + 7).choice([-1.0, 1.0], o.shape[-1])
+            o = o + amp * pano.astype(np.float32)
+        obs.append(o)
     return np.stack(obs), np.array(goals), len(recorded)  # (E,S,S,D), (E,2)
 
 
