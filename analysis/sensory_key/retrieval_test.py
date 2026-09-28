@@ -36,7 +36,41 @@ DIST_BINS = [("0 (goal)", 0.0, 0.5), ("1-2", 0.5, 2.5), ("3-5", 2.5, 5.5),
              ("6-10", 5.5, 10.5), (">10", 10.5, 1e9)]
 
 
-def load_envs(n_fresh: int, seed: int):
+def smooth_walls(env, ell_cells: float, mode: str) -> None:
+    """Replace the env's i.i.d. ±1 barcode with a spatially correlated one.
+
+    Gaussian-filters the env's own white code along each wall (sigma =
+    ``ell_cells`` cells), then either rescales it by one env-wide std ("cont") or re-binarises it
+    to ±1 with long runs ("sign"). ``ell_cells`` 0 leaves the walls untouched.
+    The seed's code is the noise source, so each env stays distinct.
+    """
+    if mode.startswith("wallconst"):
+        # Each wall one random N(0,1) value; "wallconst+A" adds the original
+        # fine ±1 barcode on top, scaled so the constant has weight A.
+        rng = np.random.RandomState(env.seed + 1)
+        const = rng.randn(4, 1) * np.ones_like(env._wall_code)
+        amp = float(mode.split("+")[1]) if "+" in mode else None
+        code = const if amp is None else amp * const + env._wall_code
+        env._wall_code = code.astype(np.float32)
+        env._codebook = env._build_sensory_codebook(env._codebook.shape[-1])
+        return
+    if ell_cells <= 0:
+        return
+    from scipy.ndimage import gaussian_filter1d
+    sm = gaussian_filter1d(env._wall_code.astype(np.float64),
+                           sigma=ell_cells * env.wall_resolution, axis=1,
+                           mode="nearest")
+    if mode == "sign":
+        code = np.where(sm >= 0, 1.0, -1.0)
+    else:
+        # One scale for the whole env: per-wall centring would delete each
+        # wall's level, which is most of the signal once smoothing is long.
+        code = sm / sm.std()
+    env._wall_code = code.astype(np.float32)
+    env._codebook = env._build_sensory_codebook(env._codebook.shape[-1])
+
+
+def load_envs(n_fresh: int, seed: int, ell_cells: float = 0.0, mode: str = "cont"):
     cfg = EnvConfig(**D0_ENV)
     with open(D0_WORLD) as f:
         recorded = json.load(f)["split"]["base_val"]
@@ -53,6 +87,7 @@ def load_envs(n_fresh: int, seed: int):
         env = make_env(cfg, "continuous", seed=w)
         if g is not None:
             env.set_goal(g)
+        smooth_walls(env, ell_cells, mode)
         goals.append(tuple(int(x) for x in env._goal))
         obs.append(env.omni_obs_all())
     return np.stack(obs), np.array(goals), len(recorded)  # (E,S,S,D), (E,2)
