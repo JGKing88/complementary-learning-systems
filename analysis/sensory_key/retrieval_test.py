@@ -25,7 +25,7 @@ import os
 import numpy as np
 
 from hopfield_nav.config import EnvConfig
-from hopfield_nav.world.env import make_env
+from hopfield_nav.world.env import CARDINAL_RADIANS, cone_offsets, make_env
 
 # d0_base (navigate_navp2_d0_base_s42_22133273) env config, read from the ckpt.
 D0_ENV = dict(size=20, observation_size=60, wall_resolution=4, goal_radius=1.0,
@@ -111,13 +111,17 @@ def load_envs(n_fresh: int, seed: int, ell_cells: float = 0.0, mode: str = "cont
         goals.append(tuple(int(x) for x in env._goal))
         o = env.omni_obs_all()
         if mode.startswith("distal:"):
-            # Distal panorama: a per-env ±1 pattern indexed by ABSOLUTE ray
-            # angle, so it reads the same from every cell (walls at infinity).
-            # The omni view's 4x60 rays sit at fixed absolute angles, so the
-            # panorama is one fixed 240-vector per env added to every cell.
+            # Distal panorama: per env, a ±1 value for each 2-degree bin of
+            # ABSOLUTE direction (180 bins round the compass), read by every ray
+            # at its absolute angle -- so it is the same from every cell (walls
+            # at infinity), and the overlapping parts of the four cardinal
+            # cones read the same values. Summed onto the near-wall code.
             amp = float(mode.split(":")[1])
-            pano = np.random.RandomState(env.seed + 7).choice([-1.0, 1.0], o.shape[-1])
-            o = o + amp * pano.astype(np.float32)
+            pano = np.random.RandomState(env.seed + 7).choice([-1.0, 1.0], 180)
+            n_rays = o.shape[-1] // 4
+            ang = np.rad2deg(CARDINAL_RADIANS[:, None] + cone_offsets(n_rays)[None, :])
+            bins = (np.floor(np.mod(ang, 360.0) / 2.0).astype(int) % 180).ravel()
+            o = o + amp * pano[bins].astype(np.float32)
         obs.append(o)
     return np.stack(obs), np.array(goals), len(recorded)  # (E,S,S,D), (E,2)
 
