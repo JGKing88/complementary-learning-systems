@@ -1886,6 +1886,13 @@ case "$VARIANT" in
         #   _nos  INPUT_SENSORY=0 -- blind agent (q + path integration + prev_reward
         #         only); EXPERIMENTS_TASK_FAITHFUL §10: can a fixed goal be
         #         memorised without the wall barcode?
+        #   _distal  DISTAL_AMP=1.0 -- the per-env distal panorama
+        #            (docs/GRID_MLP_NAV_PLAN.md §2.3); Agent-HaSH's baseline
+        #            for the grid-MLP comparison is task3r_k2_h128_distal
+        #   _gmlp    idea 1 of GRID_MLP_NAV_PLAN: MEMORY_BACKEND=sensory_kv
+        #            with the Phase-1 grid MLP; implies _distal and drops the
+        #            multistep channel (a second Hopfield readout)
+        #   _scq     with _gmlp: SCALE_Q_BY_C=1, feed c*d (Agent-HaSH parity)
         _rest="${VARIANT#task*_k?}"
         case "$_rest" in
           _h128*)  HIDDEN_SIZE=128;  _rest="${_rest#_h128}" ;;
@@ -1899,6 +1906,11 @@ case "$VARIANT" in
             _c3*) NOVELTY_SCALE_CAP=3; _rest="${_rest#_c3}" ;;
             _g5*) GOAL_REWARD=5.0; _rest="${_rest#_g5}" ;;
             _nos*) INPUT_SENSORY=0; _rest="${_rest#_nos}" ;;
+            _distal*) DISTAL_AMP=1.0; _rest="${_rest#_distal}" ;;
+            _gmlp*) MEMORY_BACKEND=sensory_kv; DISTAL_AMP=${DISTAL_AMP:-1.0}
+                    GRID_MLP_CHECKPOINT=${GRID_MLP_CHECKPOINT:-/orcd/pool/003/jackking/cls_runs/agent_ckpts/goal_pairs_p1_grid64_bal_s0/pairs_final.pt}
+                    INPUT_HOPFIELD_MULTISTEP=""; _rest="${_rest#_gmlp}" ;;
+            _scq*) SCALE_Q_BY_C=1; _rest="${_rest#_scq}" ;;
             *) echo "ERROR: unknown TASK lever '$_rest' in $VARIANT" >&2; exit 1 ;;
           esac
         done

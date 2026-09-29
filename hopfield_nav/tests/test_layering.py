@@ -82,6 +82,10 @@ LAYERS: dict[str, int] = {
 
     "hopfield_nav.world": 1,           # env, vec_env, scaffold, memory, episode
     "hopfield_nav.policy": 2,          # agent, agent_rnn, channels
+    # Alternative goal memories (GRID_MLP_NAV_PLAN): sensory key-value store,
+    # grid code, frozen grid MLP. Reads world and gridcode; rollout,
+    # evaluation and training select it through memory.backend.
+    "hopfield_nav.memory": 2,
     "hopfield_nav.rollout": 3,         # collector, rnn, signal, oracles, distractors, types
     "hopfield_nav.updates": 4,         # ppo, bc, bc_rnn
     # The continual-learning methods. Same layer as `updates` and not below it:

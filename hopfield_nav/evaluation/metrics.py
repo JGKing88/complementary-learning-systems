@@ -34,6 +34,7 @@ from ..rollout.distractors import goal_encoding, sample_distractors
 from ..world.scaffold import VectorHash
 from hopfield import Hopfield
 from ..policy.agent import NavAgent
+from ..memory import backend as memory_backend
 
 
 def random_start(env_size: int, goal: tuple[int, int], rng: np.random.RandomState) -> tuple[int, int]:
@@ -84,6 +85,7 @@ def agent_step(
     is overridden to a greedy best cardinal step (discrete) or a unit step
     toward the goal in continuous space, while the store head is unchanged.
     """
+    memory_backend.require_hopfield(cfg, "agent_step")
     signal_dim = 4 if cfg.agent.hopfield_mode == "discrete" else 2
     prev_action_dim = 4 if cfg.agent.movement_mode == "discrete" else 2
 
@@ -303,6 +305,7 @@ def evaluate_navigation(
     they survive changes to batching and RNG consumption order that would move
     the aggregates -- so this is what the golden fixtures pin.
     """
+    memory_backend.require_hopfield(cfg, "evaluate_navigation")
     if n_distractors_list is None:
         n_distractors_list = [0]
 
@@ -442,6 +445,7 @@ def evaluate_goal_discovery(
     n_arrivals, n_stores)``. See evaluate_navigation for why per-trial records,
     not aggregates, are what the golden fixtures pin.
     """
+    memory_backend.require_hopfield(cfg, "evaluate_goal_discovery")
     if n_distractors_list is None:
         n_distractors_list = [0]
 
@@ -629,6 +633,7 @@ def evaluate_exploration(
     If ``per_trial`` is a list, one record per trial is appended to it:
     ``(n_dist, env_local_idx, trial_idx, n_cells, found_goal, steps_to_goal)``.
     """
+    memory_backend.require_hopfield(cfg, "evaluate_exploration")
     if n_distractors_list is None:
         n_distractors_list = [0]
 
@@ -790,6 +795,7 @@ def evaluate_realistic(
       - "summary": {mean_primary_reaches, mean_final_retest_reaches,
                     interference_drop, hopfield_final_memories}
     """
+    memory_backend.require_hopfield(cfg, "evaluate_realistic")
     agent.eval()
     embed_dim = vectorhash.encoded_Phi.shape[2]
     hopfield = Hopfield(embed_dim, beta=cfg.hopfield.beta, device=str(device))
@@ -960,6 +966,7 @@ def evaluate_repeat(
     each ``trial_entry`` has ``intervals``, ``stored_at_reach``, ``tail_steps``,
     ``n_reaches``, ``start``, ``trial_idx``.
     """
+    memory_backend.require_hopfield(cfg, "evaluate_repeat")
     agent.eval()
     embed_dim = vectorhash.encoded_Phi.shape[2]
     rng = np.random.RandomState(seed)
@@ -1102,6 +1109,7 @@ def evaluate_sequential_episodes(
     store-event markers. Also returns per-block boundaries and summary
     statistics.
     """
+    memory_backend.require_hopfield(cfg, "evaluate_sequential_episodes")
     agent.eval()
     N = len(val_envs)
     embed_dim = vectorhash.encoded_Phi.shape[2]
@@ -1257,6 +1265,10 @@ def evaluate_task(
             grid_size = int(env.size)
             hops = []
             for _ in range(num_trials):
+                if memory_backend.is_kv(cfg):
+                    hops.append(memory_backend.new_kv_memory(
+                        cfg, env_offset, grid_size, n_dist, rng))
+                    continue
                 hop = Hopfield(embed_dim, beta=cfg.hopfield.beta,
                                device=str(device))
                 for pat in sample_distractors(vectorhash, env_offset,

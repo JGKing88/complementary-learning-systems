@@ -39,6 +39,7 @@ import torch
 
 from ..world.env import GridEnv, at_goal
 from ..world import episode
+from ..memory import backend as memory_backend
 
 
 @dataclass(frozen=True)
@@ -96,6 +97,7 @@ def run_mini_episode(
     ``on_step(features, at_goal)`` is called after each agent step with the
     last-layer recurrent features -- the same trunk output the store head reads.
     """
+    memory_backend.require_hopfield(cfg, "run_mini_episode")
     # Deferred import: agent_step still lives in eval.py, which imports this
     # module. Phase 6 moves it to evaluation/agent_step.py and this becomes a
     # normal top-level import.
@@ -215,6 +217,7 @@ def run_sequential_protocol(
     output schema requires without this function knowing about either. The
     control flow is the shared part; the bookkeeping is not.
     """
+    memory_backend.require_hopfield(cfg, "run_sequential_protocol")
     cur_iter = 0
     for i in range(len(val_envs)):
         block_start = cur_iter

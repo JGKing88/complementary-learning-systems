@@ -291,6 +291,19 @@ class AgentConfig:
     # Recurrent trunk. Defaults reproduce the historical GRU exactly.
     rnn_cell: str = "gru"                   # "gru" | "rnn" (vanilla Elman)
     rnn_nonlinearity: str = "tanh"          # "tanh" | "relu" | "softplus"; rnn_cell="rnn" only
+    # Goal memory (docs/GRID_MLP_NAV_PLAN.md). "hopfield" (default) is
+    # Agent-HaSH, unchanged. "sensory_kv" is idea 1: a sensory-keyed argmax
+    # store of goal grid codes, read every step; the frozen grid MLP turns
+    # (current grid code, recalled one) into a unit direction d, which rides
+    # the hopfield_signal channel, and the recall similarity c gets its own
+    # memory_conf channel. See hopfield_nav/memory/backend.py for what it
+    # supports (task training path; needs --distal_amp > 0).
+    memory_backend: str = "hopfield"
+    grid_mlp_checkpoint: str | None = None  # sensory_kv: the Phase-1 grid MLP (pairs_final.pt)
+    # sensory_kv: feed c * d instead of d on hopfield_signal. Off by default;
+    # the Agent-HaSH-parity variant (its raw q carries magnitude). c is fed on
+    # memory_conf either way.
+    scale_q_by_c: bool = False
 
 
 @dataclass

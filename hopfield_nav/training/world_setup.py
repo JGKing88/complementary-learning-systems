@@ -33,6 +33,7 @@ from ..world import generate
 from ..world.scaffold import VectorHash, goal_encodings
 from ..world.spec import EnvSpec, GeneratedSplit, TraitDomains, WorldSpec
 from ..world.world import World, build_world
+from ..memory import backend as memory_backend
 
 
 # ---------------------------------------------------------------------------
@@ -611,8 +612,15 @@ def do_eval(cfg, agent, eval_world: World, device, update_tag: str,
     # sampled series is not comparable with an older one without a re-score
     # (analysis/nav_tri/reeval_series.py --no-deterministic).
     det = bool(getattr(cfg, "eval_deterministic", True))
+    # memory_backend='sensory_kv' (GRID_MLP_NAV_PLAN stage 1): only the task
+    # protocol knows that memory; nav / expl come back empty, and the scope
+    # must say so rather than silently scoring nothing.
+    kv = memory_backend.is_kv(cfg)
+    if kv and not run_task:
+        raise ValueError("memory_backend='sensory_kv' needs --eval_scope task "
+                         "(the only evaluator stage 1 supports)")
     t0 = time.time()
-    nav = {} if expl_only else evaluate_navigation(
+    nav = {} if (expl_only or kv) else evaluate_navigation(
         agent, val_envs, val_vh, val_offsets, cfg, device,
         num_trials=nt, max_steps=max_steps,
         n_distractors_list=dist, deterministic=det)
@@ -620,9 +628,10 @@ def do_eval(cfg, agent, eval_world: World, device, update_tag: str,
         agent, val_envs, val_vh, val_offsets, cfg, device,
         num_trials=nt, max_steps=max_steps,
         n_distractors_list=dist) if run_disc else {}
-    expl = evaluate_exploration(agent, val_envs, val_vh, val_offsets, cfg, device,
-                                num_trials=nt, max_steps=max_steps,
-                                n_distractors_list=dist, deterministic=det)
+    expl = {n_d: {} for n_d in dist} if kv else evaluate_exploration(
+        agent, val_envs, val_vh, val_offsets, cfg, device,
+        num_trials=nt, max_steps=max_steps,
+        n_distractors_list=dist, deterministic=det)
     # evaluate_task runs the training collector, which always SAMPLES: the
     # task= rows have been sampled in every run; only nav= and expl= follow
     # `det`.

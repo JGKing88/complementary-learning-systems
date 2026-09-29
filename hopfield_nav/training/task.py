@@ -29,6 +29,7 @@ import torch
 
 from hopfield import Hopfield
 from ..config import TrainConfig
+from ..memory import backend as memory_backend
 from ..rollout.distractors import sample_distractors
 from .stages import Knobs, RolloutSpec
 
@@ -53,7 +54,19 @@ class TaskRegime:
 
     def new_memory(self, vh, env, env_offset, knobs: Knobs) -> list[Hopfield]:
         """B fresh Hopfields, each with its own distractor draw
-        (n ~ U[dist_min, dist_max], from cells outside this arena)."""
+        (n ~ U[dist_min, dist_max], from cells outside this arena).
+
+        Under ``memory_backend='sensory_kv'`` the B memories are sensory
+        key-value stores and a distractor is a foreign arena's goal key paired
+        with an outside-arena cell's grid code (``memory/backend.py``)."""
+        if memory_backend.is_kv(self.cfg):
+            mems = []
+            for _ in range(self.B):
+                n_dist = (int(self.dist_rng.randint(knobs.dist_min, knobs.dist_max + 1))
+                          if self.use_distractors else 0)
+                mems.append(memory_backend.new_kv_memory(
+                    self.cfg, env_offset, env.size, n_dist, self.dist_rng))
+            return mems
         hops = []
         for _ in range(self.B):
             hop = Hopfield(self.embed_dim, beta=self.cfg.hopfield.beta,

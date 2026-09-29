@@ -35,7 +35,7 @@ def _views(vec, pos: np.ndarray, psi: np.ndarray) -> np.ndarray:
                          vec._obs_size, vec.wall_resolution, vec._panorama)
 
 
-def _obs_psi(vec, indices: np.ndarray | None) -> np.ndarray:
+def obs_psi(vec, indices: np.ndarray | None) -> np.ndarray:
     """The ψ observations are read at: live headings, or North when fixed."""
     psi = vec._heading_rad if indices is None else vec._heading_rad[indices]
     return psi if vec.egocentric_heading else np.zeros_like(psi)
@@ -116,7 +116,7 @@ class VecEnv:
         Returns (B, obs_size) or (len(indices), obs_size).
         """
         pos = self._pos if indices is None else self._pos[indices]
-        return _views(self, pos, _obs_psi(self, indices))
+        return _views(self, pos, obs_psi(self, indices))
 
     def last_displacement(self, indices: np.ndarray | None = None) -> np.ndarray:
         """Displacement the last ``step_batch`` actually produced, (B, 2).
@@ -375,7 +375,7 @@ class ContinuousVecEnv:
     def obs_batch(self, indices: np.ndarray | None = None) -> np.ndarray:
         """Views from the snapped cell, facing the continuous heading."""
         pos = self._pos if indices is None else self._pos[indices]
-        return _views(self, pos, _obs_psi(self, indices))
+        return _views(self, pos, obs_psi(self, indices))
 
     # ------------------------------------------------------------------
     # Step

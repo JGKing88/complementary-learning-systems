@@ -56,6 +56,7 @@ from .training.prior import ExplorerPrior
 from .rollout import task_stats
 from .training.refresh import Cadence, Refresher
 from .training import resume as resume_io
+from .memory import backend as memory_backend
 from .training.stages import (
     Knobs, ScheduleError, Stage, format_schedule, parse_schedule, resolve,
     stage_at, total_updates,
@@ -1039,6 +1040,9 @@ CFG_FIELDS: dict[str, tuple[str, ...]] = {
     "num_rnn_layers": ("agent.num_rnn_layers",),
     "rnn_cell": ("agent.rnn_cell",),
     "rnn_nonlinearity": ("agent.rnn_nonlinearity",),
+    "memory_backend": ("agent.memory_backend",),
+    "grid_mlp_checkpoint": ("agent.grid_mlp_checkpoint",),
+    "scale_q_by_c": ("agent.scale_q_by_c",),
     # ppo
     "lr": ("ppo.lr",),
     "move_ent_coef": ("ppo.ent_coef",),
@@ -1225,6 +1229,13 @@ def build_parser() -> argparse.ArgumentParser:
                    help="How many +/-1 wall segments span one grid cell. 1 (default) is one segment per cell, the original coarse barcode. Above 1 a stripe edge can fall inside a cell, which is the only way a ray can report where within a cell it is looking from; at 1 roughly 9-14%% of cells share a bit-identical observation with another cell. 8 drives that to ~0. Changes env identity, so splits and checkpoints are tied to it.")
     p.add_argument("--distal_amp", type=float, default=0.0,
                    help="Distal panorama amplitude: each ray adds distal_amp x a per-env ±1 skyline value read by its ABSOLUTE angle (2-degree slices), so views identify the env from any cell and carry a compass. 0 (default) is off, bit-identical. See EnvConfig.distal_amp.")
+    p.add_argument("--memory_backend", choices=["hopfield", "sensory_kv"],
+                   default="hopfield",
+                   help="Goal memory. hopfield (default): Agent-HaSH. sensory_kv: idea 1 of docs/GRID_MLP_NAV_PLAN.md -- sensory-keyed argmax store of goal grid codes; the frozen grid MLP's direction d rides the hopfield_signal channel and the recall similarity c gets a memory_conf channel. Task schedule + --eval_scope task + --distal_amp > 0 only (hopfield_nav/memory/backend.py).")
+    p.add_argument("--grid_mlp_checkpoint", default=None,
+                   help="sensory_kv: the Phase-1 grid MLP, e.g. $CLS_RUNS/agent_ckpts/goal_pairs_p1_grid64_bal_s0/pairs_final.pt")
+    p.add_argument("--scale_q_by_c", action=argparse.BooleanOptionalAction, default=False,
+                   help="sensory_kv: feed c*d instead of d (Agent-HaSH-parity variant). c is fed on memory_conf either way.")
     p.add_argument("--movement_mode", default="continuous")
     p.add_argument("--hopfield_mode", default="continuous")
     p.add_argument("--input_prev_reward", action=argparse.BooleanOptionalAction, default=True)
@@ -1839,6 +1850,19 @@ def main():
     # it happened to be typed.
     cfg.schedule = format_schedule(stages)
     cfg.n_updates = total_updates(stages)
+
+    if memory_backend.is_kv(cfg):
+        # Stage 1 of GRID_MLP_NAV_PLAN: the task regime and its evaluator only.
+        other = sorted({st.kind for st in stages} - {"task"})
+        if other:
+            p.error(f"--memory_backend sensory_kv runs task stages only; "
+                    f"the schedule also has {other}")
+        if getattr(cfg, "eval_scope", "all") != "task":
+            p.error("--memory_backend sensory_kv needs --eval_scope task")
+        try:
+            memory_backend.validate(cfg)
+        except ValueError as exc:
+            p.error(str(exc))
 
     if resume_ck is not None:
         _check_schedule_extends(resume_ck, stages, cfg, p.error)

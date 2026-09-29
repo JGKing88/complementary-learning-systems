@@ -47,6 +47,7 @@ from ..rollout import visited as visited_mod
 from hopfield import Hopfield
 from ..world.vec_env import make_vec
 from ..world import episode
+from ..memory import backend as memory_backend
 
 
 @torch.no_grad()
@@ -76,6 +77,7 @@ def batched_navigation_trials(
     Returns, per trial, the number of steps taken to reach the goal, or -1 if
     the step budget ran out.
     """
+    memory_backend.require_hopfield(cfg, "batched_navigation_trials")
     B = len(hopfields)
     assert len(starts) == B
 
@@ -253,6 +255,7 @@ def batched_exploration_trials(
     for a uniform goal is P(found). See evaluation/swept.py for why that is the
     headline number and cell coverage is not.
     """
+    memory_backend.require_hopfield(cfg, "batched_exploration_trials")
     B = len(hopfields)
     assert len(starts) == B
 
