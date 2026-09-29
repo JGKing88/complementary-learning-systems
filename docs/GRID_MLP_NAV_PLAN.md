@@ -12,14 +12,19 @@ is (random walks + odometry, no goals). **If a navigator built on the grid MLP
 matches Agent-HaSH under the same continual protocol, it is a competitor
 model.**
 
-This is idea 1 of two. Idea 2 is not yet written down.
+Two models share everything except the memory: **idea 1** (§1) uses a
+nonparametric key-value store; **idea 2** (§6) uses a meta-learned network whose
+weights stay plastic at evaluation. Both share one controller with Agent-HaSH's
+arrangement, so the three differ only in what fills the memory-readout input.
 
 ## 1. Model (idea 1)
 
 A key-value goal memory keyed on *sensory* input, whose value is the goal's
-*grid state*. Exploiting means handing (current grid state, recalled goal grid
-state) to the frozen grid MLP and taking the step it gives; exploring means the
-policy chooses its own move. A learned gate chooses between them every step.
+*grid state*. The frozen grid MLP turns (current grid state, recalled goal
+grid state) into a direction, and that direction is an **input** to the
+controller, which learns whether to follow it — the same arrangement as
+Agent-HaSH, where the recalled displacement `q` is a policy input. There is no
+explicit explore / exploit gate.
 
 | Part | What it is |
 |---|---|
@@ -27,22 +32,27 @@ policy chooses its own move. A learned gate chooses between them every step.
 | Grid MLP | frozen Phase-1 decode (random walks + odometry, displacement-balanced pairs; 0.5° held-out) — `MLP(g_t, g_goal)` → unit direction. Input `[gbook(p), gbook(g)]` |
 | Memory | ONE memory shared by every env (as in `analysis/continual/agenthash.py`), one goal per env |
 | Write | oracle store on first arrival at the goal: key = four-heading view at the goal, re-indexed by absolute direction (180 two-degree slices); value = `g(goal)` |
-| Read, every step | query = the agent's *live* single view plus its absolute heading, compared to each key on the slices the view covers; argmax cosine; returns `(g_goal, s)` with `s` the top similarity; empty memory → zeros, `s = 0` |
-| Controller | RNN, hidden 128 |
-| RNN inputs | live view, `g_goal`, `s`, the MLP direction `MLP(g_t, g_goal)`, previous action, previous reward |
-| Heads | gate (Bernoulli: explore / exploit); direction (von Mises, as d0_base); step length (Beta on [0.5, 1.0], as d0_base) |
+| Read, every step | query = the agent's *live* single view plus its absolute heading, compared to each key on the slices the view covers; argmax cosine; returns `(g_goal, s)` with `s` the top similarity; empty memory → `s = 0` |
+| Memory readout to the controller | `d = MLP(g_t, g_goal)` (unit; zeros when memory is empty) and **`c = s`, always as its own input**. Flag `scale_q_by_c` (default **off**) feeds `c · d` in place of `d` |
+| Controller | RNN, hidden 128, **not plastic at evaluation** |
+| RNN inputs | live view, `d`, `c`, previous action, previous reward |
+| Heads | as d0_base / `task3r_k2_h128`: direction (von Mises), step length (Beta on [0.5, 1.0]) |
 
-**Step.** Explore: the policy's direction × learned step length. Exploit: the
-MLP's direction × learned step length. The MLP decides *direction only*;
-step length stays learned on both branches, as in Agent-HaSH.
+**Following is learned.** The controller must learn to follow `d` when `c`
+says the recall is the own env's goal (≈ 0.5, §2) and to ignore it when memory
+is empty (`c = 0`) or holds only another env's goal (`c` ≈ 0.2–0.3).
 
-**Gate.** Learned, no masking. It must learn to refuse exploit when memory is
-empty (`s = 0`) *and* when the recalled goal belongs to another env (`s` ≈
-0.2–0.3 vs ≈ 0.5 for the own goal, §2).
+**`scale_q_by_c`.** Agent-HaSH feeds raw `q` (`input_hopfield_raw`), whose
+magnitude is its gate, so a small readout is a weak pull even to a linear
+readout. With the flag off (default) `d` is unit and the controller has to
+learn the product "follow `d` only when `c` is high" itself; `c` stays
+interpretable, and idea 1's `c` (a similarity) and idea 2's (a probability)
+need not share a scale. The flag is the Agent-HaSH-parity variant, to try if
+following lags.
 
-**PPO log-prob.** `log p(gate) + log p(step length) + [explore] · log p(direction)`.
-Exploit steps are deterministic in direction given the gate, so they carry no
-direction term.
+**Gradient into the memory.** The direction is always a sampled action
+conditioned on `d`, so PPO's gradient reaches whatever produced `d`. Idea 1's
+memory has no parameters, so this matters only for idea 2 (§6).
 
 ## 2. Why the memory works: offline evidence
 
@@ -126,8 +136,8 @@ memory kept for K = 2 rollouts; hidden 128. **Oracle store for now** — no
 store head. No goal-in-memory input (task-faithful rule).
 
 **Foreign goals in training memory.** Each rollout's memory is pre-filled with
-goals from other envs. Without them the gate never sees a foreign recall with
-`s` ≈ 0.3, which is the case it has to learn to reject.
+goals from other envs. Without them the controller never sees a foreign recall
+with `c` ≈ 0.3, which is the case it has to learn to ignore.
 
 **Later variant:** the d0_base recipe, for both models.
 
@@ -139,29 +149,90 @@ goals from other envs. Without them the gate never sees a foreign recall with
 - Metrics: nav_det, disc, expl; retention / forgetting.
 - **Baseline:** Agent-HaSH retrained as `task3r_k2_h128` at `--distal_amp 1.0`
   (the existing checkpoints saw no panorama).
-- Diagnostics: gate decision vs `s`; exploit steps taken with only a foreign
-  goal in memory; the MLP's angular error along exploit paths.
+- Diagnostics: alignment of the taken direction with `d`, binned by `c`
+  (the learned gate); steps that follow `d` with only a foreign goal in
+  memory; the MLP's angular error along followed paths.
 
-## 6. Decisions and open items
+## 6. Idea 2: meta-learned plastic memory
+
+Same env, grid MLP and controller as idea 1; the argmax store is replaced by a
+network `M` whose **weights are the memory**.
+
+| Part | What it is |
+|---|---|
+| `M` | an MLP (not an RNN: the memory must live in the weights, and the controller already carries within-episode state) |
+| Input | the live view (with panorama) plus absolute heading, as idea 1's query |
+| Output | the goal's grid state as module phases — (cos, sin) of the 2-D phase for each of the 3 modules, 12 numbers — decoded to `gbook`, so it is always a valid grid state; plus a confidence `c` ("do I know this env?") |
+| Write | no write operation: at the oracle store, `M`'s weights take a few gradient steps so this env's views map to `g_goal` (and `c` to 1) |
+| Read | every step, `ĝ, c = M(view, heading)`; the controller gets `d = MLP(g_t, ĝ)` and `c` exactly as in idea 1 |
+| Plastic at eval | `M` only. The controller is frozen at evaluation |
+
+`M` is **meta-trained** so that a few inner-loop gradient steps store a new
+env→goal association without erasing the earlier ones — plain SGD on a
+sequence of envs would forget. Precedents: OML (Javed & White 2019; a
+meta-learned representation feeding a plastic head) and ANML (Beaulieu et al.
+2020; a meta-learned mask gating which weights an update may touch).
+
+The question idea 2 answers: idea 1's memory cannot forget by construction;
+can a *parametric, gradient-written* memory be meta-learned to retain as well?
+
+### 6.1 Where the training signal comes from
+
+With the direction as a sampled action conditioned on `d` (§1), PPO's
+gradient reaches `M` through `d` and `c`. It teaches `c` well (the controller's
+decision to follow depends on it) and `ĝ` only noisily (one advantage per step,
+through the frozen MLP), and not at all while the controller still ignores
+`d`. With an oracle store the exact target `g(goal)` is known — the inner loop
+needs it anyway to write the memory — so the proposal is to train **jointly**:
+
+- controller: PPO (`task3r_k2_h128` protocol, oracle store);
+- `M`: a supervised meta-loss on the same rollouts — after the inner updates at
+  each store, `M`'s error on every env seen so far, plus `c` on seen vs unseen
+  envs — and PPO's gradient through `d` and `c`;
+- optional warm start: `M` meta-trained alone on random-walk views with oracle
+  goal labels, which also gives a cheap **retention-vs-N go/no-go** (N = 6 /
+  30 / 100 envs learned in sequence) before any RL. Idea 1's memory scores
+  0.96–1.00 there (§2.4).
+
+Pure-RL training of `M` (no supervised meta-loss) stays possible as a later,
+stronger claim.
+
+### 6.2 Training — still to settle
+
+- the outer-loop unit: how many envs per sequence, and how that relates to the
+  N used at evaluation;
+- the inner loop: which views (the episode so far, the four-heading view at
+  the goal), how many steps, learned per-parameter learning rates or not,
+  which parameters are plastic (all, a head only as in OML, or masked as in
+  ANML);
+- second-order through the inner steps vs first-order, and how far back the
+  outer gradient reaches;
+- how PPO's epochs interact with weights that changed during collection;
+- where unseen-env (`c` → 0) and foreign-goal cases come from.
+
+## 7. Decisions and open items
 
 | | |
 |---|---|
 | Protocol | `task3r_k2_h128`, oracle store — **decided** |
 | Grid MLP | Phase-1 decode — **decided**; checkpoint path to find on `worktree-nn-generalization-control` |
 | Panorama | summed, weight 1 — **decided** |
-| Memory | four-heading key at store, live-view query by absolute direction — **decided** |
-| Exploit step | MLP direction × learned step length — proposed |
+| Memory (idea 1) | four-heading key at store, live-view query by absolute direction — **decided** |
+| Controller | no explicit gate: `d = MLP(g_t, ĝ)` and `c` as inputs, direction and step length learned — **decided** |
+| `c` | always its own input; `scale_q_by_c` flag, default off — **decided** |
+| Plasticity | controller never plastic at evaluation — **decided** |
+| Idea 2 `M` | MLP; phase outputs + confidence; panorama view input — **agreed**; training §6.2 **to discuss** |
 | d0_base recipe | later variant |
 | Learned store head | later, once the oracle version works |
-| Idea 2 | not yet written |
 
-## 7. Implementation order
+## 8. Implementation order
 
 1. Memory module (argmax key-value, direction-indexed keys, heading-sliced
    query) with a unit test reproducing §2.4.
-2. Rollout wiring: gate, exploit path through the frozen MLP, oracle store,
-   foreign-goal pre-fill.
-3. Hybrid PPO log-prob.
-4. Smoke run.
-5. Agent-HaSH `task3r_k2_h128` baseline at `--distal_amp 1.0`.
-6. Continual evaluation of both.
+2. Rollout wiring: `d` and `c` inputs through the frozen MLP, oracle store,
+   foreign-goal pre-fill, `scale_q_by_c` flag.
+3. Smoke run.
+4. Agent-HaSH `task3r_k2_h128` baseline at `--distal_amp 1.0`.
+5. Continual evaluation of both.
+6. Idea 2, once §6.2 is settled: `M` meta-training (warm start + retention-vs-N
+   gate first), then joint training.
