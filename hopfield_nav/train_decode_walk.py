@@ -176,9 +176,30 @@ class VisitedBuffer:
         for e in range(self.n_envs):
             for w in range(self.W):
                 self.visited[e, w, ids[e, w]] = True
+        self._refresh()
+
+    def _refresh(self) -> None:
+        for e in range(self.n_envs):
+            for w in range(self.W):
                 vis = np.flatnonzero(self.visited[e, w])
                 self.lists[e, w, :len(vis)] = vis
                 self.counts[e, w] = len(vis)
+
+    @classmethod
+    def from_dump(cls, path: str, offsets, size: int) -> "VisitedBuffer":
+        """The visited sets of a `dump_walks` file -- the rows the encoder's own
+        trainer reads with `--walk_data` -- for training on a fixed dataset."""
+        d = np.load(path)
+        if int(d["size"]) != size or not np.array_equal(d["offsets"], np.asarray(offsets, dtype=np.int64)):
+            raise SystemExit(f"{path}: not this world (size {int(d['size'])} vs {size}, or other offsets)")
+        W = int(d["walkers"])
+        buf = cls(int(d["n_envs"]), W, size)
+        env, walker = d["env"], d["walker"]
+        local = d["coords"].astype(np.int64) - d["offsets"][env]
+        buf.visited[env, walker - env * W, local[:, 0] * size + local[:, 1]] = True
+        buf._refresh()
+        buf.env_steps = int(d["steps"])
+        return buf
 
     def _draw(self, rng, e, w):
         k = np.floor(rng.rand(len(e)) * self.counts[e, w]).astype(np.int64)
@@ -285,6 +306,10 @@ def parse_args():
                    help="grow the kept Chebyshev range from 19 to max_abs over this many updates "
                         "(size-50 arenas: a 1..49-balanced batch from the start stalls on the 1-cos "
                         "plateau in two of three seeds; short pairs first is the walker's own curriculum)")
+    p.add_argument("--walk_data", type=str, default="",
+                   help="a dump_walks .npz: train on its fixed visited sets (pairs of two cells one walker "
+                        "visited, displacement from its odometry) with no walking -- the decode on exactly "
+                        "the rows the encoder's own trainer reads; env-steps stay at the dump's")
     p.add_argument("--balance_range", action=argparse.BooleanOptionalAction, default=False,
                    help="keep training pairs uniform over Chebyshev |Delta| = 1..max_abs (a random "
                         "walk's own displacements are concentrated at a few cells)")
@@ -388,10 +413,16 @@ def main() -> None:
 
     sets = [train, heldout, same]
     walkers = Walkers(train.envs, args.walkers, args.seed + 1000 * (u0 + 1))
-    buf = (VisitedBuffer(len(train), args.walkers, args.size) if args.buffer == "visited"
-           else Buffer(len(train), args.walkers, args.steps_per_update, args.buffer_updates))
+    if args.walk_data:
+        buf = VisitedBuffer.from_dump(args.walk_data, train.offsets, args.size)
+        env_steps, steps_per_update = buf.env_steps, 0
+        print(f"walk_data {args.walk_data}: {buf.counts.sum():,} visited cells "
+              f"({buf.counts.mean():.0f} per walker, {buf.W} walker(s) per env), {env_steps:,} env-steps")
+    else:
+        buf = (VisitedBuffer(len(train), args.walkers, args.size) if args.buffer == "visited"
+               else Buffer(len(train), args.walkers, args.steps_per_update, args.buffer_updates))
+        steps_per_update = len(train) * args.walkers * args.steps_per_update
     data_rng = np.random.RandomState(args.seed + 1 + u0)
-    steps_per_update = len(train) * args.walkers * args.steps_per_update
     t_train = time.time()
 
     def save(name: str, u: int) -> str:
@@ -403,8 +434,9 @@ def main() -> None:
         return path
 
     for u in range(u0 + 1, args.n_updates + 1):
-        buf.add(walkers.segment(args.steps_per_update))
-        env_steps += steps_per_update
+        if not args.walk_data:
+            buf.add(walkers.segment(args.steps_per_update))
+            env_steps += steps_per_update
         max_abs_u = args.max_abs
         if args.range_warmup_updates > 0 and u <= args.range_warmup_updates:
             lo = min(19, args.max_abs)

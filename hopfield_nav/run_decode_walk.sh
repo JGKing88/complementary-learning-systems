@@ -39,6 +39,7 @@ TARGET=${TARGET:-direction}             # direction | heading8
 BALANCE=${BALANCE:-0}                   # 1: --balance_range
 RANGE_WARMUP=${RANGE_WARMUP:-0}
 BUFFER=${BUFFER:-window}                 # window | visited
+WALK_DATA=${WALK_DATA:-}                 # a dump_walks .npz: train on its fixed rows, no walking
 SIZE=${SIZE:-20}
 OBS=${OBS:-120}
 LAMBDAS=${LAMBDAS:-"11 12 13"}
@@ -69,6 +70,8 @@ BALANCE_FLAG=--no-balance_range
 WANDB_FLAG=--no-use_wandb
 [[ "$USE_WANDB" == "1" ]] && WANDB_FLAG=--use_wandb
 SAVE_DIR=${SAVE_DIR:-$CLS_RUNS/agent_ckpts/goal_pairs_${TAG}}
+WALK_FLAG=""
+[[ -n "$WALK_DATA" ]] && WALK_FLAG="--walk_data $WALK_DATA"
 
 PYTHONUNBUFFERED=1 python -m hopfield_nav.train_decode_walk \
   --mode "$MODE" --hidden_size "$HIDDEN" --num_layers "$LAYERS" --nonlinearity "$NONLIN" \
@@ -79,4 +82,4 @@ PYTHONUNBUFFERED=1 python -m hopfield_nav.train_decode_walk \
   --place_margin "$PLACE_MARGIN" --place_region "$PLACE_REGION" \
   --n_updates "$N_UPDATES" --lr "$LR" --lr_step_at "$LR_STEP_AT" --lr_step_gamma "$LR_STEP_GAMMA" \
   --eval_every "$EVAL_EVERY" --eval_pairs "$EVAL_PAIRS" --ckpt_every "$CKPT_EVERY" \
-  --seed "$SEED" --tag "$TAG" --save_dir "$SAVE_DIR" $WANDB_FLAG ${EXTRA:-}
+  --seed "$SEED" --tag "$TAG" --save_dir "$SAVE_DIR" $WANDB_FLAG $WALK_FLAG ${EXTRA:-}
