@@ -89,7 +89,17 @@ def load_probe_encoder(
     trained, so this raises instead.
 
     Returns ``(encoder, model_config, gain, fwhm_ratio, header)``.
+
+    ``path`` may instead be an analytic-encoder spec, ``ideal:r=4[,n_freq=512]
+    [,seed=0][,gain=100]`` (``ideal_encoder.py``), so every script built on
+    this loader scores the ideal code through the identical pipeline.
     """
+    from .ideal_encoder import is_ideal_spec, load_ideal_encoder
+    if is_ideal_spec(path):
+        return load_ideal_encoder(path, device=device,
+                                  fwhm_override=fwhm_override,
+                                  fwhm_fallback=fwhm_fallback)
+
     from hopfield_nav.encoder_io import load_encoder
 
     encoder, cfg, gain = load_encoder(path, device)
@@ -211,6 +221,12 @@ class ProbeConfig:
     n_worlds: int = 50
     n_envs_per_world: int = 50        # pinned at max(k_values); see Sec 2.3
     spread_jitter: float = 0.4
+    # Where on the scaffold the worlds' envs may sit: ``(x0, y0, side)`` spreads
+    # them over ``[x0, x0 + side)^2`` instead of the whole ``[0, Npos)^2``. The
+    # codes are unchanged; only the offsets move. For encoders trained on one
+    # corner (``--patch_arena``), inside-versus-outside is the whole question.
+    # (Ported from worktree-encoder-hopfield-eval-spec 5ffe1aa.)
+    world_region: tuple[int, int, int] | None = None
     seed: int = 0
 
     # memory
@@ -300,6 +316,14 @@ class ProbeConfig:
         if self.storage_rule not in STORAGE_RULES:
             raise ValueError(
                 f"storage_rule={self.storage_rule!r} not in {STORAGE_RULES}")
+        if self.world_region is not None:
+            x0, y0, side = self.world_region
+            if not (0 <= x0 and 0 <= y0 and side > self.env_size
+                    and x0 + side <= self.Npos and y0 + side <= self.Npos):
+                raise ValueError(
+                    f"world_region={self.world_region} must be a square "
+                    f"larger than env_size={self.env_size} inside "
+                    f"[0, {self.Npos})^2")
         if self.storage_rule == "proj" and self.memory_mode == "same_env_goals":
             raise ValueError(
                 "storage_rule='proj' with memory_mode='same_env_goals' is the "
@@ -358,10 +382,12 @@ def sample_worlds(cfg: ProbeConfig) -> list[World]:
     for w in range(cfg.n_worlds):
         seed = int(cfg.seed) * 1_000_003 + w
         rng = np.random.RandomState(seed)
+        x0, y0, side = cfg.world_region or (0, 0, cfg.Npos)
         offsets = place_envs(
-            cfg.n_envs_per_world, cfg.env_size, cfg.Npos, rng,
+            cfg.n_envs_per_world, cfg.env_size, side, rng,
             placement="spread", spread_jitter=cfg.spread_jitter,
         )
+        offsets = [(ox + x0, oy + y0) for ox, oy in offsets]
         goals = rng.randint(0, cfg.env_size, size=(cfg.n_envs_per_world, 2))
         wall_seeds = rng.randint(0, 2 ** 31 - 1, size=cfg.n_envs_per_world)
         specs = tuple(

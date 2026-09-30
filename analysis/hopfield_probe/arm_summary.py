@@ -69,17 +69,19 @@ def show(title, files):
         print(f"{'median cont':16s}{'':40s}{np.median(conts):8.3f}")
 
 
-if len(sys.argv) > 1:
-    show(sys.argv[1], [f for f in glob.glob(sys.argv[1] + "/*.json") if "manifest" not in f])
+# Guarded so row() is importable (ideal_summary.py).
+if __name__ == "__main__":
+    if len(sys.argv) > 1:
+        show(sys.argv[1], [f for f in glob.glob(sys.argv[1] + "/*.json") if "manifest" not in f])
 
-print("\n\n--- archived reference arms, same settings ---")
-for arm, keep in (("production", ("v35", "L7-s42", "L7-s43")),
-                  ("gain300_beta1e6", ("v35", "L7-s42", "L7-s43")),
-                  ("v35_gain100_beta1e6", ("v35-g100-sat",))):
-    fs = []
-    for f in glob.glob(f"{ROOT}/{arm}/*.json"):
-        r = json.load(open(f))
-        lab = r.get("header", {}).get("label") or os.path.basename(f)[:-5]
-        if lab in keep:
-            fs.append(f)
-    show(arm, fs)
+    print("\n\n--- archived reference arms, same settings ---")
+    for arm, keep in (("production", ("v35", "L7-s42", "L7-s43")),
+                      ("gain300_beta1e6", ("v35", "L7-s42", "L7-s43")),
+                      ("v35_gain100_beta1e6", ("v35-g100-sat",))):
+        fs = []
+        for f in glob.glob(f"{ROOT}/{arm}/*.json"):
+            r = json.load(open(f))
+            lab = r.get("header", {}).get("label") or os.path.basename(f)[:-5]
+            if lab in keep:
+                fs.append(f)
+        show(arm, fs)
