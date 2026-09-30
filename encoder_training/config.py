@@ -30,6 +30,13 @@ class EncoderModelConfig:
     # and out_dim is twice that.
     char_p_max: int = 2
     char_m_max: int = 120
+    # ideal_net-specific (docs/EXPERIMENTS_IDEAL_ENCODER.md): fixed phase
+    # readout + atan2, trainable 6 -> ideal_n_freq harmonic layer, cos/sin out.
+    # out_dim is 2 * ideal_n_freq; gain and the output nonlinearity do not apply.
+    ideal_r: float = 16.0
+    ideal_n_freq: int = 512
+    ideal_seed: int = 0
+    ideal_init: str = "random"          # "integer" | "noisy" | "random"
 
     @property
     def in_dim(self) -> int:

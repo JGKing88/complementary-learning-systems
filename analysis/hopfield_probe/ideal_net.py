@@ -109,9 +109,14 @@ class IdealNet(torch.nn.Module):
                 self.harmonics.weight.copy_(torch.from_numpy(J))
             elif init == "random":
                 torch.nn.init.uniform_(self.harmonics.weight, -6.0, 6.0)
+            elif init == "noisy":
+                self.harmonics.weight.copy_(torch.from_numpy(J))
+                self.harmonics.weight.add_(
+                    torch.empty_like(self.harmonics.weight).uniform_(-0.3, 0.3))
             else:
                 raise ValueError(f"init={init!r}")
         self.harmonics.weight.requires_grad_(bool(trainable_harmonics))
+        self.init = init
         self.out = CosSin()
         self.in_dim = W1.shape[1]
 
@@ -133,3 +138,55 @@ class IdealNet(torch.nn.Module):
         """Max |w - round(w)| over the harmonic weights (0 = exact integers)."""
         w = self.harmonics.weight.detach()
         return float((w - torch.round(w)).abs().max())
+
+
+# --- checkpoints and the probe-harness hook ----------------------------------
+
+IDEALNET_PREFIX = "idealnet:"
+
+
+def save_ideal_net(net: IdealNet, path: str, **extra) -> None:
+    """Enough to rebuild the net exactly: its constructor args and layer 3."""
+    torch.save({"kind": "ideal_net", "r": net.r, "n_freq": net.n_freq,
+                "seed": net.seed, "lambdas": net.lambdas, "gain": net.gain,
+                "init": getattr(net, "init", None),
+                "harmonics": net.harmonics.weight.detach().cpu(), **extra}, path)
+
+
+def load_ideal_net(path: str) -> tuple[IdealNet, dict]:
+    ck = torch.load(path, map_location="cpu", weights_only=False)
+    net = IdealNet(r=ck["r"], n_freq=ck["n_freq"], seed=ck["seed"],
+                   lambdas=ck["lambdas"], gain=ck.get("gain", 100.0))
+    with torch.no_grad():
+        net.harmonics.weight.copy_(ck["harmonics"].to(torch.float64))
+    return net.eval(), ck
+
+
+def is_idealnet_spec(path) -> bool:
+    return isinstance(path, str) and path.startswith(IDEALNET_PREFIX)
+
+
+def load_idealnet_encoder(spec: str, *, device="cpu", fwhm_override=None,
+                          fwhm_fallback=None):
+    """``harness.load_probe_encoder``'s return shape for ``idealnet:<ckpt>``."""
+    path = spec[len(IDEALNET_PREFIX):]
+    net, ck = load_ideal_net(path)
+    net = net.to(device)
+    fwhm = (fwhm_override if fwhm_override is not None else
+            fwhm_fallback if fwhm_fallback is not None else 0.25)
+    cfg = net.model_config()
+    header = {
+        "path": spec, "name": spec, "coverage": None, "n_patches": None,
+        "patch_sizes": None, "gain": net.gain, "fwhm_ratio": float(fwhm),
+        "fwhm_was_overridden": fwhm_override is not None,
+        "lambdas": list(net.lambdas), "out_dim": net.out_dim,
+        "hidden_dim": 0, "num_hidden_layers": 0,
+        "encoder_type": cfg.encoder_type,
+        "output_nonlinearity": cfg.output_nonlinearity,
+        "n_params": int(net.harmonics.weight.numel()), "epoch": ck.get("epoch"),
+        "val_nav_acc": None, "unique_radius": None,
+        "ideal": {"r": net.r, "n_freq": net.n_freq, "seed": net.seed,
+                  "init": ck.get("init"),
+                  "integer_distance": net.integer_distance()},
+    }
+    return net, cfg, net.gain, float(fwhm), header
