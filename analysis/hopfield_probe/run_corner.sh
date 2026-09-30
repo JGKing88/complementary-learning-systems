@@ -7,16 +7,21 @@
 #   probe          a CPU array: the probe suite (basin, direction, reach,
 #                  alias) with the worlds confined to one of three 500-cell
 #                  squares -- the training corner, the arena centre, and the
-#                  opposite corner -- for each of the six trained encoders.
+#                  opposite corner -- for each of the ten trained encoders.
 #
-# Encoders: w62_corner corner500 / scatter100 at seeds 42, 43, and the same
-# recipe on 118 scattered patches (w53 att16) as the full-budget reference.
+# Encoders: w62_corner corner500 / scatter100 at seeds 42, 43; the same recipe
+# on 118 scattered patches (w53 att16) as the full-budget reference; and
+# w63_corner_a0.5, both arms again at the ladder's attract level.
 # encoder_final.pt throughout: encoder_best.pt is chosen by a whole-arena
 # unique-radius eval, which for corner500 would let the unseen region pick the
 # checkpoint.
 #
-#   sbatch analysis/hopfield_probe/run_corner.sh check [ONLY]
-#   sbatch analysis/hopfield_probe/run_corner.sh probe [ARRAY]
+#   bash analysis/hopfield_probe/run_corner.sh check [ONLY]
+#   bash analysis/hopfield_probe/run_corner.sh probe [ARRAY]
+#
+# Run it with bash, not sbatch: it submits itself with the resources the mode
+# needs (a GPU for check, the array for probe). Handing it to sbatch directly
+# skips that and runs with none of them.
 #
 # check takes an optional label substring (corner_check --only); one encoder
 # is ~20 min of GPU (the per-row grid-code build is CPU-bound), so run the
@@ -25,31 +30,37 @@
 # of it (0-29). w63 (the att0.5 replication) is encoders 6-9, tasks 18-29.
 set -euo pipefail
 
-WT=/orcd/home/002/jackking/cls/.claude/worktrees/encoder-hopfield-eval-spec
 PY=/home/jackking/.conda/envs/cls/bin/python
 S=/orcd/pool/003/jackking/cls_runs/sweeps
 OUT=/orcd/pool/003/jackking/cls_runs/results/hopfield_probe/20260914
-TMP=/home/jackking/.claude/jobs/d05f5770/tmp
+LOGS=$OUT/slurm
 
 MODE=${1:-check}
 ARG=${2:-}
 
 if [[ -z "${SLURM_JOB_ID:-}" ]]; then
-    # Submit ourselves with the right resources for the mode.
+    # Submit ourselves with the right resources for the mode. Slurm runs a
+    # spooled copy of this file, so the checkout it belongs to is resolved
+    # here and reaches the job through the exported environment.
+    CORNER_REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+    export CORNER_REPO
+    mkdir -p "$LOGS"
     if [[ "$MODE" == check ]]; then
         exec sbatch --job-name="corner_check_${ARG:-all}" \
             --partition=ou_bcs_normal \
             --time=1:00:00 --gres=gpu:1 --cpus-per-task=4 --mem=16G \
-            --output="$TMP/corner_check_${ARG:-all}_%j.out" "$0" check "$ARG"
+            --output="$LOGS/corner_check_${ARG:-all}_%j.out" "$0" check "$ARG"
     else
+        # A task takes 4-15 min. Keep the limit short: a long one can overlap
+        # the monthly maintenance reservation and sit in ReqNodeNotAvail.
         exec sbatch --job-name=corner_probe --partition=ou_bcs_normal \
-            --time=4:00:00 --cpus-per-task=16 --mem=32G \
+            --time=1:00:00 --cpus-per-task=16 --mem=32G \
             --array="${ARG:-0-29}" \
-            --output="$TMP/corner_probe_%A_%a.out" "$0" probe
+            --output="$LOGS/corner_probe_%A_%a.out" "$0" probe
     fi
 fi
 
-cd "$WT"
+cd "${CORNER_REPO:?run this with bash, which submits it; or export CORNER_REPO=<repo root> before a bare sbatch}"
 export OMP_NUM_THREADS=${SLURM_CPUS_PER_TASK:-4}
 
 if [[ "$MODE" == check ]]; then
