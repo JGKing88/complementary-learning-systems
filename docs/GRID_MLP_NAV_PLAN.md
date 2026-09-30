@@ -289,3 +289,62 @@ first-order.
 5. Continual evaluation of both.
 6. Idea 2 (§6.1): `M` meta-trained alone on random-walk lifetimes →
    retention-vs-N go/no-go → joint training with the controller.
+
+## 9. Idea 1 results — first head-to-head (2026-09-30)
+
+Implementation: stage 1 on this branch (`hopfield_nav/memory/`, commit
+`8a51297`); Hopfield path regression-tested bit-identical
+(`tests/golden_task_run.py`). Both runs: `task3r_k2_h128` recipe, 4000 updates,
+`--distal_amp 1.0`, one 16 h job each on `ou_bcs_normal`, no segmenting.
+
+| run | job | wall |
+|---|---|---|
+| idea 1, `task3r_k2_h128_gmlp` | 24342872 | 11.5 h |
+| Agent-HaSH, `task3r_k2_h128_distal` | 24342873 | 12.2 h |
+| Agent-HaSH, `task3r_k2_h128`, no panorama (reference) | 22883646 | to u3450 |
+
+Task eval (held-out arenas, sampled, visits = 2), means over update windows
+(10–20 eval points each; `python -m analysis.sensory_key.compare_runs`).
+`steps/reach` = steps between goal reaches after the store; `revisit` = the
+second visit, memory kept.
+
+**0 distractors**
+
+| window | run | found | steps/reach | revisit found | revisit steps to goal | cos(a, readout) post-store |
+|---|---|---|---|---|---|---|
+| u0–500 | idea 1 | 0.41 | **27.3** | **0.94** | **31.5** | **0.58** |
+| | Agent-HaSH | 0.27 | 57.0 | 0.68 | 68.3 | −0.01 |
+| u500–1000 | idea 1 | 0.55 | **12.8** | 1.00 | **14.2** | **0.91** |
+| | Agent-HaSH | 0.47 | 16.6 | 1.00 | 19.3 | 0.77 |
+| u2000–3000 | idea 1 | 0.58 | 11.9 | 1.00 | 11.8 | 0.94 |
+| | Agent-HaSH | 0.58 | 12.2 | 1.00 | 12.6 | 0.93 |
+| u3000–4000 | idea 1 | 0.61 | 12.0 | 1.00 | 11.8 | 0.93 |
+| | Agent-HaSH | 0.63 | 12.1 | 1.00 | 12.6 | 0.94 |
+
+**10 distractors**
+
+| window | run | found | steps/reach | revisit found | revisit steps to goal | cos(a, readout) post-store |
+|---|---|---|---|---|---|---|
+| u0–500 | idea 1 | 0.35 | **25.6** | **0.92** | **31.4** | **0.57** |
+| | Agent-HaSH | 0.26 | 62.9 | 0.60 | 78.4 | −0.04 |
+| u1000–2000 | idea 1 | 0.57 | **12.2** | 1.00 | **12.2** | **0.93** |
+| | Agent-HaSH | 0.47 | 13.3 | 1.00 | 16.3 | 0.89 |
+| u3000–4000 | idea 1 | 0.56 | 12.2 | 1.00 | **11.9** | 0.93 |
+| | Agent-HaSH | 0.60 | 12.7 | 1.00 | 13.9 | 0.91 |
+
+**Reading.**
+- **Exploit is learned much faster with the grid MLP.** By u500 idea 1
+  follows its readout (cos 0.58) while Agent-HaSH does not yet (≈ 0);
+  steps/reach 27 vs 57, revisit found 0.94 vs 0.68. Agent-HaSH catches up by
+  ~u2000 at 0 distractors.
+- **With distractors idea 1 stays ahead to the end**: revisit steps to goal
+  11.9 vs 13.9 at u3000–4000, and its pre-store readout-chasing is ≈ 0 (0.008
+  vs 0.037) — it ignores foreign goals, as the memory_conf gate should allow.
+- **Search (found rate) is not different** late in training (0.56–0.63 both).
+- **The panorama is not what helps.** Agent-HaSH with and without it (22883646)
+  is the same late and slightly *slower* early with it, so the compass the
+  panorama provides does not explain idea 1's lead.
+
+**Not yet measured.** The continual protocol (`agenthash.py`: N envs in
+sequence, retention) and nav / disc / expl need stage 2 for the sensory_kv
+backend. One seed each.
