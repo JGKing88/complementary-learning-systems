@@ -2280,3 +2280,51 @@ early; the online encoder's slowness is not a schedule artefact.
 Figure: `$CLS_RUNS/figures/nn_control/p1_sz50_dump_gain.png`
 (`analysis/plot_dump_gain.py`): online decode and the three encoder curves,
 with both models' dump points.
+
+## 2026-09-30 — corner layouts: where the lookup comes from (plan §6.5)
+
+Jack: find the tipping point between lookup and rule. A1x's recipe
+verbatim (5×768, 512 teacher pairs per env, 8,000 updates, step lr at
+0.7, `rect:0,0,400,400`), 64 arenas always (A1x's count), train offsets
+replaced by `--place_offsets` (`analysis/corner_layouts.py`). Two seeds.
+`decode_probe`, far rect [700, 1200)², |Δ| ≤ 19. Jobs 24486801–812,
+24486905 (perm_s3 s0; the first attempt hit a busy GPU on node3804),
+24489184/85 (seed-1 perms moved off pi_fiete's memory cap).
+
+| layout | values / axis | distinct arena X-ranges | inside | far (mean, median) | seen X & Y | one unseen | neither | `heldout_out` |
+|---|---|---|---|---|---|---|---|---|
+| `grid_p50` 8×8 pitch 50 | 160 | 8, aligned | 55 / 48 | **59 / 48** (43 / 30) | 6.7 / 0.2 | 42–58 | 88 / 83 | 63.0 / 50.9 |
+| `grid_p30` 8×8 pitch 30 | 160 | 8, aligned | 26 / 25 | **27 / 27** (12 / 10) | 6.6 / 6.1 | 16–23 | 35 / 33 | 44.8 / 41.2 |
+| `block_p20` 8×8 pitch 20 (abutting) | 160, one run | 8, aligned | 40 / 43 | **38 / 42** (22 / 27) | **34 / 33** | 38–43 | 43 / 50 | 47.3 / 53.7 |
+| `perm_s3` (3i, 3π(i)) | 209, one run | 64, staggered | 5.9 / 2.1 | **6.0 / 2.0** (0.5 / 0.5) | 0.4 / 0.5 | 0.5–11 | 12 / 3.8 | 15.2 / 4.9 |
+| `perm_s6` (6i, 6π(i)) | 398, one run | 64, staggered | 0.8 / 1.0 | **0.9 / 1.1** (0.2 / 0.2) | 0.8 / 1.0 | 0.2–0.3 | 0.4 / 0.3 | 0.50 / 0.43 |
+| A1x (ref.) | 226 | 12, aligned | 46.4 | 48.5 | 0.3 | 37–51 | 87.7 | 44.5 |
+| A1xd (ref., 384 arenas) | 400 | 20, aligned | 0.9 / 1.8 | 1.2 / 2.4 | — | — | — | — |
+
+P32 ✓ (`perm_s6` far 0.9 / 1.1 — the rule from A1x's 64 arenas, better
+than A1xd's 384). P33 ✓ (`grid_p50` lookup). P35 ✓ (`grid_p30` 27 vs
+`grid_p50` 48–59). **P34 ✗:** `block_p20` is not "rule inside its range" —
+it is 34° on pairs whose X and Y were both trained, worse than either grid
+there. Its arenas abut on an aligned pitch-20 lattice, so nearly every
+probe pair crosses a tile edge, and no training pair ever did: it is a
+per-tile table with no cross-tile rule at all.
+
+**What decides it is how many distinct arena intervals cut each axis, not
+how many coordinate values are seen or whether they are contiguous.**
+Every training pair lies inside one arena. When the arenas' X-ranges are
+a few aligned intervals (8 here, 12 for A1x), "which interval, where in
+it" is readable from either endpoint and a per-interval table fits every
+pair; when they are many (64 staggered here; ~64 scattered for A1; 20
+aligned for A1xd) that table is as large as the rule and the rule wins.
+Staggering is the strongest form: in `perm_s6` each X value lies inside
+~3 arenas at different local positions, so "where in the interval" is not
+even defined, and 64 arenas give 0.9° 300 cells away. Contiguity is
+irrelevant (`block_p20`, one contiguous run of 160, is among the worst);
+the value count matters only through the interval count (`perm_s3`, 209
+values, is already mostly the rule). The tipping point on this account is
+between 12 and 20 aligned intervals per axis; the layouts here jump from 8
+to 64, so it is bracketed, not located.
+
+By |Δ| the rule layouts are exact to the trained range and fall off past
+it (`perm_s6` far: 0–1° to 15, 5–6° at 19, 17–18° at 22–30, 70–140° from
+35): generalisation is across position, not across range.

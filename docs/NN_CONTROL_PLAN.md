@@ -954,7 +954,7 @@ continuous per-walker history and `--balance_range` (pairs uniform over
 P28 ✓ for plain walks (32 envs = 64 envs at 9°; the balanced 32-env arm
 was not run), P29 ✓ (5.7–6.3°), P30 ✓ (same curve to the label's floor).
 
-### 6.5 Corner layouts — where is the tipping point from lookup to rule? (run 2026-09-30)
+### 6.5 Corner layouts — where is the tipping point from lookup to rule? (run 2026-09-30; result below)
 
 The working account of the corner results (A1x lookup, A1xd rule, phase-1
 sparse / dense the same): the network takes an absolute lookup when the
@@ -990,6 +990,18 @@ axis values; the trainer's `heldout_out` curve.
   whether one contiguous band of 160 is "long" enough.
 - **P35** `grid_p30` vs `grid_p50`: narrower gaps push toward the rule
   (the bands are less separable), so `grid_p30` far < `grid_p50` far.
+
+**Result (09-30, log).** Far-rect error, seeds 0 / 1: `grid_p50` 59 / 48,
+`block_p20` 38 / 42, `grid_p30` 27 / 27, `perm_s3` 6.0 / 2.0 (medians
+0.5), `perm_s6` **0.9 / 1.1**. The variable is the number of distinct
+arena intervals per axis, not the values seen or their contiguity: 8–12
+aligned intervals (grids, block, A1x) give a per-interval table; 20
+aligned (A1xd) or 64 staggered (perms) or ~64 scattered (A1) give the
+rule. `block_p20` — one contiguous run — fails even on trained values
+(34°), because no training pair ever crosses a tile edge. Staggered
+arenas are the strongest route: A1x's 64 arenas, offset in 6-cell steps,
+generalise 300 cells away at 0.9°. Next if wanted: 64 arenas on K aligned
+intervals per axis, K ∈ {8, 12, 16, 20, 32}, to locate the tip.
 
 ### 6.6 Open, lower priority
 
@@ -1111,7 +1123,7 @@ readout 2 samples actions, so a policy's floor is ~6–8°, not 0.
 | P23–P26 | A1m memorisation test (§6.3) | P23 ✓ (84° unseen at K = 8); P24 ✗ noise 0.3 reaches 44°, the short-range half only; P25 ✗ small nets 85–89°, a smaller table; P26 ✓ dropout 61° ≈ noise 0.1 |
 | P27–P30 | Phase 1, the self-taught decode (§6.4) | P27 ✓ 0.48 / 0.46°, 1° at 41M / 39M env-steps; P28 ✓ (plain walks: 32 envs 9.1° = 64 envs 8–10°); P29 ✓ 5.7 / 6.3° from views; P30 ✓ 8 headings learn on the same curve to their 11° floor |
 | P31 | encoder objective on the same walks: within 2× of the decode's env-steps to its own 6° | ✗ in the other direction: in its own trainer it reaches 8.6–10.5° (within radius) from 0.5–2M steps, where the decode is near chance; the decode passes it at ~10M steps and ends at 0.5° (a crossover; a first reimplementation's 24–48° was a batching artefact). **09-29: the crossover was an axis artefact** — the decode trained on the same dumps reaches 0.16–0.27° from 0.5M steps |
-| P32–P35 | corner layouts (§6.5) | pending |
+| P32–P35 | corner layouts (§6.5) | P32 ✓ `perm_s6` far 0.9 / 1.1° with 64 arenas; P33 ✓ `grid_p50` 48–59°; P34 ✗ `block_p20` is a per-tile table, 34° even on trained values; P35 ✓ `grid_p30` 27 < `grid_p50` |
 
 ---
 
