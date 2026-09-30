@@ -74,3 +74,64 @@ def test_loader_resolves_an_ideal_spec():
     assert cfg.out_dim == 128 and list(cfg.lambdas) == LAMBDAS
     assert gain == 100.0 and fwhm == 0.25
     assert header["ideal"] == {"r": 4.0, "n_freq": 64, "seed": 3}
+
+
+# --- IdealNet: the same computation as explicit layers ----------------------
+
+def test_ideal_net_matches_ideal_encoder_and_closed_form():
+    import numpy as np
+    import torch
+    from analysis.hopfield_probe.encode import grid_codes
+    from analysis.hopfield_probe.ideal_encoder import IdealEncoder
+    from analysis.hopfield_probe.ideal_net import IdealNet
+
+    rng = np.random.RandomState(3)
+    xs, ys = rng.randint(0, 1716, 300), rng.randint(0, 1716, 300)
+    for fwhm in (0.25, 0.0):
+        codes = torch.from_numpy(grid_codes([11, 12, 13], xs, ys, fwhm))
+        for r in (4.0, 16.0, 48.0):
+            net, enc = IdealNet(r=r), IdealEncoder(r=r)
+            a = net(codes).double().numpy()
+            assert np.abs(a - enc(codes).double().numpy()).max() < 2e-6
+            assert np.abs(a - net_closed(enc, xs, ys)).max() < 2e-6
+            assert np.allclose(np.linalg.norm(a, axis=1), 1.0, atol=1e-5)
+
+
+def net_closed(enc, xs, ys):
+    return enc.closed_form(xs, ys)
+
+
+def test_ideal_net_weights_are_integer_and_shaped():
+    from analysis.hopfield_probe.ideal_net import IdealNet
+
+    net = IdealNet(r=16.0)
+    assert tuple(net.readout.weight.shape) == (12, 434)
+    assert tuple(net.harmonics.weight.shape) == (512, 6)
+    assert net.integer_distance() == 0.0
+    assert not net.harmonics.weight.requires_grad
+    assert IdealNet(r=16.0, trainable_harmonics=True,
+                    init="random").integer_distance() > 0.0
+
+
+def test_non_integer_harmonics_break_at_module_wraps():
+    """With the integer weights nudged, the code jumps where atan2 wraps.
+
+    atan2 returns (-pi, pi], so module 11's x phase 2 pi (x mod 11)/11 jumps
+    by -2 pi between x mod 11 = 5 and 6. Modules 12 and 13 do not wrap there.
+    """
+    import numpy as np
+    import torch
+    from analysis.hopfield_probe.encode import grid_codes
+    from analysis.hopfield_probe.ideal_net import IdealNet
+
+    net = IdealNet(r=16.0)
+    xs = np.array([4, 5, 6]); ys = np.zeros(3, dtype=int)
+    codes = torch.from_numpy(grid_codes([11, 12, 13], xs, ys, 0.25))
+    z = net(codes).double().numpy()
+    ordinary, across = np.linalg.norm(z[1] - z[0]), np.linalg.norm(z[2] - z[1])
+    assert abs(across - ordinary) < 0.02 * ordinary     # integers: no seam
+    with torch.no_grad():
+        net.harmonics.weight[:, 0].add_(0.3)            # nudge the 11-x weight
+    z2 = net(codes).double().numpy()
+    ordinary2, across2 = np.linalg.norm(z2[1] - z2[0]), np.linalg.norm(z2[2] - z2[1])
+    assert across2 > 2 * ordinary2                       # a seam at the wrap
