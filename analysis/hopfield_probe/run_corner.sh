@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Does an encoder trained on one 500x500 corner work outside it? Two jobs.
 #
-#   corner_check   one GPU: the full-arena cosine map at 40 reference positions
+#   corner_scan   one GPU: the full-arena cosine map at 40 reference positions
 #                  per encoder, binned by distance from the corner (kernel
 #                  width, unique radius, alias ceiling and where it sits).
 #   probe          a CPU array: the probe suite (basin, direction, reach,
@@ -23,7 +23,7 @@
 # needs (a GPU for check, the array for probe). Handing it to sbatch directly
 # skips that and runs with none of them.
 #
-# check takes an optional label substring (corner_check --only); one encoder
+# check takes an optional label substring (corner_scan --only); one encoder
 # is ~20 min of GPU (the per-row grid-code build is CPU-bound), so run the
 # encoders as separate jobs rather than one. The probe array is
 # index = 3 * encoder + region over the ENCS list below; ARRAY defaults to all
@@ -46,10 +46,10 @@ if [[ -z "${SLURM_JOB_ID:-}" ]]; then
     export CORNER_REPO
     mkdir -p "$LOGS"
     if [[ "$MODE" == check ]]; then
-        exec sbatch --job-name="corner_check_${ARG:-all}" \
+        exec sbatch --job-name="corner_scan_${ARG:-all}" \
             --partition=ou_bcs_normal \
             --time=1:00:00 --gres=gpu:1 --cpus-per-task=4 --mem=16G \
-            --output="$LOGS/corner_check_${ARG:-all}_%j.out" "$0" check "$ARG"
+            --output="$LOGS/corner_scan_${ARG:-all}_%j.out" "$0" check "$ARG"
     else
         # A task takes 4-15 min. Keep the limit short: a long one can overlap
         # the monthly maintenance reservation and sit in ReqNodeNotAvail.
@@ -66,9 +66,9 @@ export OMP_NUM_THREADS=${SLURM_CPUS_PER_TASK:-4}
 if [[ "$MODE" == check ]]; then
     ONLY=()
     [[ -n "$ARG" ]] && ONLY=(--only "$ARG")
-    "$PY" -m analysis.hopfield_probe.corner_check --n_per_band 8 --seed 0 \
-        "${ONLY[@]}" --out "$OUT/corner_check"
-    echo "DONE corner_check ${ARG:-all} -> $OUT/corner_check"
+    "$PY" -m analysis.hopfield_probe.corner_scan --n_per_band 8 --seed 0 \
+        "${ONLY[@]}" --out "$OUT/corner_scan"
+    echo "DONE corner_scan ${ARG:-all} -> $OUT/corner_scan"
     exit 0
 fi
 

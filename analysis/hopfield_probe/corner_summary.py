@@ -1,4 +1,4 @@
-"""Tables for the corner experiment: ``corner_check`` and the region probe.
+"""Tables for the corner experiment: ``corner_scan`` and the region probe.
 
 Groups the seeds of each arm (corner500, scatter100, scatter118, untrained)
 and prints, for the scan, one row per distance band, and for the probe, one row
@@ -14,7 +14,7 @@ import os
 import numpy as np
 
 from analysis.hopfield_probe.arm_summary import row as probe_row
-from analysis.hopfield_probe.corner_check import BANDS
+from analysis.hopfield_probe.corner_scan import BANDS
 
 from cls_paths import results_dir
 
@@ -116,7 +116,7 @@ def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--root", default=ROOT)
     args = ap.parse_args()
-    scan_tables(os.path.join(args.root, "corner_check"))
+    scan_tables(os.path.join(args.root, "corner_scan"))
     print()
     probe_tables(os.path.join(args.root, "corner_probe"))
 

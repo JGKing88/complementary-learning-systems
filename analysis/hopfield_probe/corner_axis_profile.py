@@ -23,7 +23,7 @@ import torch
 
 from analysis.hopfield_probe.encode import Field
 from analysis.hopfield_probe.harness import load_probe_encoder
-from analysis.hopfield_probe.corner_check import default_encoders, unit
+from analysis.hopfield_probe.corner_scan import default_encoders, unit
 
 NPOS = 1716
 LAMBDAS = (11, 12, 13)

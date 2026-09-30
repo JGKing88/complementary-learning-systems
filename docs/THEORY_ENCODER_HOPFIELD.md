@@ -851,7 +851,7 @@ unique-radius eval, which for corner500 would let the unseen region pick the
 checkpoint). Recipe: the w53 att16 one — note this is `attract_lambda` 16, not
 the ladder's 0.5; see the side finding at the end.
 
-Two measurements. `corner_check.py` takes the full 1716² cosine map at 40
+Two measurements. `corner_scan.py` takes the full 1716² cosine map at 40
 reference positions per encoder, binned by Chebyshev distance beyond the corner
 (inside; 1–100; 100–300; 300–700; 700+, the opposite corner), and reads off the
 kernel and the alias. `--world_region` runs the probe suite with the worlds

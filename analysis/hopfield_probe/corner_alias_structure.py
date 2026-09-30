@@ -1,6 +1,6 @@
 """Where does an unseen position's worst alias sit, and why there?
 
-Reads ``corner_check`` JSONs. For every reference outside the training corner
+Reads ``corner_scan`` JSONs. For every reference outside the training corner
 it takes the displacement ``a = alias_at - ref`` to the reference's worst alias
 and asks two things:
 
@@ -24,7 +24,7 @@ import os
 
 import numpy as np
 
-from analysis.hopfield_probe.corner_check import BANDS, DEFAULT_OUT
+from analysis.hopfield_probe.corner_scan import BANDS, DEFAULT_OUT
 
 LAMBDAS = (11, 12, 13)
 
