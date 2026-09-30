@@ -345,6 +345,20 @@ second visit, memory kept.
   is the same late and slightly *slower* early with it, so the compass the
   panorama provides does not explain idea 1's lead.
 
+**Not comparable with d0_base's exploit probe.** d0_base u725's "12.14 steps
+at 10 distractors" (`DUAL_TRAINING.md`, `EXPERIMENTS_SAMPLE_EFF.md`) is the
+exploit *probe*: goal pre-stored, held-out envs, 192 sampled trials. The
+numbers above are `evaluate_task`'s revisit on the 6 recorded val envs. Same
+idea, different protocol; a like-for-like needs d0_base through
+`evaluate_task`, or the probe run on the idea-1 checkpoint (stage 2).
+
+**Why the early gap is open.** Hopfield recall already gives a near-exact
+direction (d0_base `q_accuracy` 0.98 / 0.97 at 0 / 10 distractors), so it is
+not that Agent-HaSH must learn to turn recall into a direction. Untested
+candidates: raw `q`'s varying magnitude (its gate) versus idea 1's unit `d`
+with `c` apart; and linear recall blending distractors into `q` (d0_base
+`follow_q` 0.92 → 0.82 with 10) versus argmax returning one clean goal.
+
 **Not yet measured.** The continual protocol (`agenthash.py`: N envs in
 sequence, retention) and nav / disc / expl need stage 2 for the sensory_kv
 backend. One seed each.
