@@ -954,7 +954,44 @@ continuous per-walker history and `--balance_range` (pairs uniform over
 P28 ✓ for plain walks (32 envs = 64 envs at 9°; the balanced 32-env arm
 was not run), P29 ✓ (5.7–6.3°), P30 ✓ (same curve to the label's floor).
 
-### 6.5 Open, lower priority
+### 6.5 Corner layouts — where is the tipping point from lookup to rule? (run 2026-09-30)
+
+The working account of the corner results (A1x lookup, A1xd rule, phase-1
+sparse / dense the same): the network takes an absolute lookup when the
+seen coordinate values make one cheap (a few bands: "which band, where in
+it"), and the difference rule when they do not (one long run of values, or
+many scattered clusters). "Cheap" has not been measured. This sweep holds
+the arena count at A1x's 64 (25,600 cells) and moves only the layout.
+
+A1x's recipe verbatim (5×768, 512 teacher pairs per env, 8,000 updates,
+step lr at 0.7, `rect:0,0,400,400`, 16 `heldout_out` envs), train offsets
+replaced by `--place_offsets` (`analysis/corner_layouts.py`; walls, goals
+and `heldout_in` unchanged). Two seeds each.
+
+| layout | values per axis | bands per axis | distinct cells |
+|---|---|---|---|
+| `block_p20` 8×8, pitch 20 | 160 | 1 | 25,600 |
+| `grid_p30` 8×8, pitch 30 | 160 | 8 (10-cell gaps) | 25,600 |
+| `grid_p50` 8×8, pitch 50 | 160 | 8 (30-cell gaps) | 25,600 |
+| `perm_s3` (3i, 3π(i)) | 209 | 1 (64 staggered arenas) | 20,373 |
+| `perm_s6` (6i, 6π(i)) | 398 | 1 (64 staggered arenas) | 24,520 |
+| A1x (reference) | 226 | 12 | 25,600 |
+| A1xd (reference, 384 arenas) | 400 | 1 | 153,600 |
+
+Readout: `decode_probe` inside / far rect [700, 1200)² and by seen / unseen
+axis values; the trainer's `heldout_out` curve.
+
+- **P32** `perm_s6` gives the rule (far < 5°): per-axis contiguous coverage
+  is what matters, not 2D cell coverage — 64 arenas suffice if their X and
+  Y values tile the corner.
+- **P33** `grid_p50` takes the lookup (far > 30°, seen X & Y < 2°), as A1x.
+- **P34** `block_p20` (one band of 160) sits between: rule inside its
+  block's value range, worse far than `perm_s6`. The open question is
+  whether one contiguous band of 160 is "long" enough.
+- **P35** `grid_p30` vs `grid_p50`: narrower gaps push toward the rule
+  (the bands are less separable), so `grid_p30` far < `grid_p50` far.
+
+### 6.6 Open, lower priority
 
 - From scratch with mix 0 after the warm-up (pure random lattices) — the
   09-13 attempt failed for the lr reason, not the mix.
@@ -1074,6 +1111,7 @@ readout 2 samples actions, so a policy's floor is ~6–8°, not 0.
 | P23–P26 | A1m memorisation test (§6.3) | P23 ✓ (84° unseen at K = 8); P24 ✗ noise 0.3 reaches 44°, the short-range half only; P25 ✗ small nets 85–89°, a smaller table; P26 ✓ dropout 61° ≈ noise 0.1 |
 | P27–P30 | Phase 1, the self-taught decode (§6.4) | P27 ✓ 0.48 / 0.46°, 1° at 41M / 39M env-steps; P28 ✓ (plain walks: 32 envs 9.1° = 64 envs 8–10°); P29 ✓ 5.7 / 6.3° from views; P30 ✓ 8 headings learn on the same curve to their 11° floor |
 | P31 | encoder objective on the same walks: within 2× of the decode's env-steps to its own 6° | ✗ in the other direction: in its own trainer it reaches 8.6–10.5° (within radius) from 0.5–2M steps, where the decode is near chance; the decode passes it at ~10M steps and ends at 0.5° (a crossover; a first reimplementation's 24–48° was a batching artefact). **09-29: the crossover was an axis artefact** — the decode trained on the same dumps reaches 0.16–0.27° from 0.5M steps |
+| P32–P35 | corner layouts (§6.5) | pending |
 
 ---
 

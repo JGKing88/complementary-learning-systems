@@ -730,6 +730,10 @@ class RNNTrainConfig:
     goal_region: str = "any"
     wall_seeds: str = "0,10000000"
     place_margin: int | None = None
+    # A JSON list of [x, y] scaffold offsets, one per training env: replaces the
+    # generator's placement of the TRAIN envs only (walls and goals unchanged,
+    # base_val untouched) -- the corner-layout sweep (plan sec 6.5).
+    place_offsets: str = ""
     goal_val_frac: float = 0.2
     n_val_envs: int = 2                     # held-out envs recorded alongside the train set
     # Cells reserved from BOTH starts and goals, as a fraction of size**2,

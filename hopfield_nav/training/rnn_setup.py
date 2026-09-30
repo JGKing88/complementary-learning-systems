@@ -190,6 +190,17 @@ def rnn_world(cfg: RNNTrainConfig, rng: np.random.RandomState):
         # only meaningful against that partition.
         refresh_goal=float(getattr(cfg, "region_val_frac", 0.0)) > 0.0,
         region_frac=float(getattr(cfg, "region_val_frac", 0.0)))
+    if getattr(cfg, "place_offsets", ""):
+        # Explicit training layout: the offsets are the only thing replaced, so
+        # walls, goals and base_val are those the generator drew for this seed.
+        import dataclasses
+        import json
+        with open(cfg.place_offsets) as f:
+            offs = [tuple(int(v) for v in o) for o in json.load(f)]
+        if len(offs) != len(split.train):
+            raise SystemExit(f"--place_offsets has {len(offs)} offsets for {len(split.train)} train envs")
+        split.train = [dataclasses.replace(sp, offset=o) for sp, o in zip(split.train, offs)]
+        print(f"  place_offsets: {cfg.place_offsets} ({len(offs)} train offsets replaced)", flush=True)
     envs = gen.build_envs(split.train, cfg.env, "discrete")
     return envs, [s.offset for s in split.train], split, field, "declared"
 

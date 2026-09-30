@@ -111,6 +111,9 @@ def main() -> None:
     p.add_argument("--place_region", type=str, default="anywhere",
                    help="'anywhere' or 'rect:X0,Y0,W,H' in scaffold cells. With a rect, "
                         "every training env (and base_val) sits inside it.")
+    p.add_argument("--place_offsets", type=str, default="",
+                   help="JSON list of [x, y] offsets, one per training env, replacing the "
+                        "generator's train placement (walls/goals unchanged): the corner-layout sweep")
     p.add_argument("--n_ood_place", type=int, default=0,
                    help="Mint this many envs OUTSIDE --place_region as a fourth env "
                         "set, heldout_out (plan sec 2.4, corner holdout). 0 = off.")
@@ -179,7 +182,7 @@ def main() -> None:
         env_generator=True, place_margin=args.place_margin,
         goal_val_frac=args.goal_val_frac, region_val_frac=args.region_val_frac,
         wall_seeds=args.wall_seeds, pairs_per_env=args.pairs_per_env,
-        place_region=args.place_region,
+        place_region=args.place_region, place_offsets=args.place_offsets,
     )
     # rnn_world builds a scaffold only when grid state is on or the generator
     # is declared; the generator IS declared, so every mode gets a scaffold and
