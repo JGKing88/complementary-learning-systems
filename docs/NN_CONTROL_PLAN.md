@@ -340,7 +340,9 @@ target — no teacher, no goal, no position (log 2026-09-16):
   → 20.2 → 20.1° within 49) at 0.5M / 2M / 8M steps; 20×20 **16.3°** (with
   radius 10; radius 20 covers the arena and gives 62°). At those step
   counts the decode is near chance; it reaches 10° at ~10M steps, 1° at
-  40–60M, and 0.5° at 131M at every range it trained on. **A crossover:**
+  40–60M, and 0.5° at 131M at every range it trained on. [09-29: the
+  decode trained on the same dumps reaches 0.16–0.27° — the crossover
+  below compares a converged encoder with an online decode.] **A crossover:**
   proximity structure is learned from very little experience, the full
   displacement table from 10–50× more, and the table ends 15× more
   accurate within the encoder's radius and 40× beyond it. (A first
@@ -393,6 +395,17 @@ target — no teacher, no goal, no position (log 2026-09-16):
   0.14° for the decode. With the rate term on, the kernel fails under the
   frame (78–82°). Distance labels are what the encoder was missing; the
   decode still leads by ~35× in accuracy and in env-steps to any error.
+- **The crossover was an axis artefact (09-29).** The decode trained to
+  convergence on the same walk dumps (4×256, 32k steps) reaches **0.16°**
+  (20×20) and **0.18–0.27°** (50×50, within 49) from 0.5 / 2 / 8M steps —
+  against the encoder's 8.6–24.5° on the same rows. On equal terms the
+  decode is 50–100× more accurate at every data budget. Holding the
+  encoder's gain at 30 or 100 from the start does not speed it: it sits
+  near chance for ~80M steps and ends at 47° / 61° (annealed: 48°).
+- **The phase-1 decode obeys the corner rule (09-29).** Walk-trained in
+  `rect:0,0,400,400`: 64 clustered arenas give A1x's lookup (46° far,
+  0.5° on seen values); 384 arenas tiling the corner give the rule (3.2°
+  mean, 0.7° median, 300+ cells away). Coverage, not the label source.
 
 ### 1.9 Standing conclusions
 
@@ -1060,7 +1073,7 @@ readout 2 samples actions, so a policy's floor is ~6–8°, not 0.
 | P22 | A1xd: dense fixed tiling of the corner still takes the lookup (coverage alone is not enough) | ✗ 3.6° / 6.4° outside by u = 500, 0.7 / 1.7° final — the rule; the arrangement of the seen values is the lever (§1.2, §6.3) |
 | P23–P26 | A1m memorisation test (§6.3) | P23 ✓ (84° unseen at K = 8); P24 ✗ noise 0.3 reaches 44°, the short-range half only; P25 ✗ small nets 85–89°, a smaller table; P26 ✓ dropout 61° ≈ noise 0.1 |
 | P27–P30 | Phase 1, the self-taught decode (§6.4) | P27 ✓ 0.48 / 0.46°, 1° at 41M / 39M env-steps; P28 ✓ (plain walks: 32 envs 9.1° = 64 envs 8–10°); P29 ✓ 5.7 / 6.3° from views; P30 ✓ 8 headings learn on the same curve to their 11° floor |
-| P31 | encoder objective on the same walks: within 2× of the decode's env-steps to its own 6° | ✗ in the other direction: in its own trainer it reaches 8.6–10.5° (within radius) from 0.5–2M steps, where the decode is near chance; the decode passes it at ~10M steps and ends at 0.5° (a crossover; a first reimplementation's 24–48° was a batching artefact) |
+| P31 | encoder objective on the same walks: within 2× of the decode's env-steps to its own 6° | ✗ in the other direction: in its own trainer it reaches 8.6–10.5° (within radius) from 0.5–2M steps, where the decode is near chance; the decode passes it at ~10M steps and ends at 0.5° (a crossover; a first reimplementation's 24–48° was a batching artefact). **09-29: the crossover was an axis artefact** — the decode trained on the same dumps reaches 0.16–0.27° from 0.5M steps |
 
 ---
 

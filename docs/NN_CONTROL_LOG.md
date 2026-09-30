@@ -2216,3 +2216,67 @@ deg within 19 / 49; s25: 27 -> 36 / 31 -> 41), no better than binary.
 
 Figures: `$CLS_RUNS/figures/nn_control/p1_sz50_graded_49.png`,
 `p1_sz50_graded_19.png`; data `encoder_readouts_graded{,_norate}_sz50.json`.
+
+## 2026-09-29 — the decode on the dumps, the phase-1 corner, the encoder at fixed gain
+
+Jack: (1) train the decode on the walk dumps, as the encoder's own trainer
+was, to see whether the encoder's early lead is real; (2) the corner test
+for the phase-1 decode; (3) the encoder without the gain schedule (high
+gain from the first update), proximity labels.
+
+**(1) The decode on the dumps.** `--walk_data` on `train_decode_walk`:
+the dump's fixed visited sets (the rows the encoder's trainer reads), pairs
+of two cells one walker visited, displacement from its odometry, balanced
+over |Δ|, no walking. Encoder-sized network (4×256), 8 × 4,096 pairs per
+update, 4,000 updates (32k gradient steps; the encoder's trainer ran ~37k
+on the 2M dump). Held-out arenas; 50×50 finals sampled (the enumerated
+table OOMs at 48 GB and does not finish in 2 h at size 50).
+
+| dump (env-steps) | decode 20×20 | decode 50×50 (within 49) | encoder, own trainer, same dump |
+|---|---|---|---|
+| 0.5M | **0.16** | **0.21** | 16.3 (20×20, within 19); 10.5 / 24.5 (50×50, 19 / 49) |
+| 2M | 0.16 | 0.27 | 8.8 / 20.2 |
+| 8M | 0.15 | 0.18 | 8.6 / 20.1 |
+
+At 20×20 the three dumps are the same rows (one walker covers its arena
+by 0.5M). **The 09-17 "crossover" was an axis artefact:** the encoder
+looked ahead at ≤ 2M steps only because it was trained to convergence on
+the dump while the decode was plotted online. Given the same fixed rows
+and full training, the decode is 50–100× more accurate at every budget,
+and 0.5M walked steps are already enough for 0.2°.
+
+**(2) The phase-1 corner.** The size-20 headline recipe (5×768, balanced,
+window) with arenas in `rect:0,0,400,400`; `analysis/decode_probe.py`,
+far rect [700, 1200)².
+
+| run | inside corner | far rect | seen X & Y / one unseen / neither |
+|---|---|---|---|
+| sparse: 64 fixed arenas (A1x's placement; 226 / 400 values) | 44.3 | **45.7** | 0.5 / 31–50 / 84 |
+| dense: 384 arenas tiling the corner at margin 0, 1 walker each | 2.1 (median 0.5) | **3.2** (median 0.7) | every value seen |
+| A1x / A1xd (teacher labels), for reference | 46.4 / 0.9–1.8 | 48.5 / 1.2–2.4 | |
+
+Self-supervision from walks changes nothing about the lookup: clustered
+coverage gives A1x's table, dense coverage gives the rule 300+ cells
+away (far-rect error by |Δ|: 1° to 10, 2° at 15, 8° at 19). The dense run
+reached 1° held-out at 26M steps (sparse: 41M).
+
+**(3) The encoder at fixed gain.** The matched online run
+(`p1e_windowbal_sz50_ev49_s0`: window, arena1, balanced rows, att0.5 loss
+incl. the rate term, 4×256 → 1024, 8 × 4,096) with gain held at 100 or 30
+from update 1.
+
+| gain | u500 (16M) | u1500 (49M) | u2500 (82M) | u3000 | u3500 | u4000 (131M) |
+|---|---|---|---|---|---|---|
+| annealed 1 → 100 | 49.8 | 50.3 | 46.9 | 47.2 | 47.6 | **48.4** |
+| fixed 30 | 78.8 | 76.9 | 76.4 | 68.2 | 55.5 | **46.7** |
+| fixed 100 | 79.2 | 78.9 | 75.9 | 71.8 | 64.4 | **60.6** |
+
+No lr schedule in this trainer, so the late drop is the encoder leaving a
+plateau on its own. Removing the anneal does not reveal a faster
+encoder: at high gain it sits near chance for ~2,500 updates (~80M steps)
+and at best ends where the anneal does. The anneal is what lets it learn
+early; the online encoder's slowness is not a schedule artefact.
+
+Figure: `$CLS_RUNS/figures/nn_control/p1_sz50_dump_gain.png`
+(`analysis/plot_dump_gain.py`): online decode and the three encoder curves,
+with both models' dump points.
