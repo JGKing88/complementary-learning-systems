@@ -133,3 +133,60 @@ Results: `/orcd/pool/003/jackking/cls_runs/results/hopfield_probe/ideal_encoder/
 - How many goals K can the ideal code hold before cross-talk kills exact retrieval?
 - Can a network learn this function? The ideal code is cos/sin of (integer-weighted sum of module phases), which suggests a phase decoder, then a linear layer with integer weights, then a cos/sin activation. Test it with frozen random integer frequencies (should match exactly), then with trainable frequencies under the usual loss and patch sampling: does gradient descent find integer j from 10% coverage?
 - Is the trained encoder's structured aliasing (0.79 at the triple near-realignments 780/792) a failure to use the weak high-j harmonics? Measure its effective frequency content against the ideal's.
+
+## 10. Recall dynamics and saturated recall (2026-09-30, second run)
+
+Page: "Ideal Encoder Probe" (claude.ai artifact XZHyrhhWjXocQHRWSumohn), built by
+`python -m analysis.hopfield_probe.ideal_report OUT --lede OUT/lede.html`.
+Runs: `run_ideal_dyn.sh dyn` (job 24446458, `ideal_dynamics_check.py`, 4 headers)
+and `run_ideal_dyn.sh sat` (job 24446459, run.py with `--beta 1e6`). Results in
+`OUT/dynamics/*.json` and `OUT/sat/t*/`.
+
+**Projection storage gives exact fixed points without saturation.** Self-recall
+at α = 1, cos to its own stored pattern at steps 1 / 5 / 15 / 30 (K = 5):
+
+| encoder, recall | hebb | proj |
+|---|---|---|
+| att0.5 s42, β = 100 | 0.998 / 0.960 / 0.830 / 0.689 | 1.0000 throughout (K = 20 too) |
+| ideal r = 16, β = 100 | 0.998 / 0.960 / 0.795 / 0.617 | 1.0000 throughout (K = 20 too) |
+| ideal r = 16, β = 1e6 | 0.906 / 0.902 / 0.901 / 0.901 | 0.906 → 0.905 |
+| arm B, gain = β = 1e6 | 1.0000 | 1.0000 |
+
+`proj` stores the orthogonal projector onto span(Z) with the diagonal kept, so
+P z = z. Every vector in span(Z) is fixed, so these are fixed points but not
+isolated attractors. Saturated recall moves the ideal code's patterns to the
+nearest sign pattern (a hypercube corner), at cos ≈ (2/π)/(1/√2) ≈ 0.90 for a
+cos/sin code.
+
+**α walk, K = 5, cues ~10.5 cells out** (decoded distance at steps 1, 2, 3, 5, 8, 12, 20, 30; min cos over steps 1–12; cos at step 30):
+
+| encoder · storage · α | walk | min cos 1–12 | cos s30 |
+|---|---|---|---|
+| ideal r=16 · proj · 0.9 | 6.82 3.63 1.79 0.41 0.00 0.00 0.00 0.00 | 0.993 | 0.999 |
+| ideal r=16 · hebb · 0.9 | 6.81 3.60 1.78 0.40 0.00 0.00 0.24 0.34 | 0.955 | 0.811 |
+| att0.5 · proj · 0.9 | 7.91 3.57 1.40 0.13 0.03 0.02 0.02 0.02 | 0.972 | 0.992 |
+| att0.5 · hebb · 0.9 | 7.89 3.53 1.37 0.16 0.12 0.23 0.31 0.36 | 0.945 | 0.846 |
+| ideal r=16 β=1e6 · hebb · 0.01 | 8.48 6.59 4.93 2.71 1.19 0.43 0.28 0.34 | 0.910 | 0.902 |
+| arm B · hebb · 0.01 | 10.46 10.46 0.00 0.00 … | 0.919 | 1.000 |
+
+The att0.5 hebb row reproduces THEORY §7.1 exactly.
+
+**Chord** x(t) = (1−t) z(here) + t z(goal), decoded distance at t = 0, 0.2, 0.4, 0.5, 0.6, 0.8, 1:
+
+| encoder | start 10 | min cos | start 20 | min cos |
+|---|---|---|---|---|
+| ideal r = 16 | 10.0 8.1 6.0 5.0 4.1 1.9 0.0 | 0.998 | 20.0 17.5 13.0 10.0 7.0 2.5 0.0 | 0.969 |
+| att0.5 s42 | 10.0 8.5 6.4 4.9 3.8 1.6 0.0 | 0.990 | 20.0 18.6 15.3 11.0 5.3 1.8 0.0 | 0.930 |
+| arm B | 10.0 10.0 10.0 2.7 0.0 0.0 0.0 | 0.918 | 20.0 20.0 20.0 1.7 0.0 0.0 0.0 | 0.827 |
+
+**Full probe with saturated recall (β = 1e6)**, K = 5, one step:
+
+| encoder | region | \|err\| ° | acc45 | exact | basin | reach cont |
+|---|---|---|---|---|---|---|
+| ideal r = 16 | whole / corner / centre / opposite | 2.72 / 2.50 / 2.93 / 2.73 | 1.000 | 0.719 / 0.928 / 0.762 / 0.790 | 10.2 / 18.4 / 15.3 / 11.9 | 0.977 / 0.939 / 0.924 / 0.996 |
+| att0.5 s42 | whole | 8.87 | 0.998 | 0.941 | 22.4 | 0.987 |
+
+**Reading.**
+1. Walking in and stopping is available without saturation: projection storage plus α < 1. On the ideal code it is cleaner than on att0.5 (cos ≥ 0.993 against ≥ 0.972, rest at 0.00 against 0.02 cells).
+2. Snapping is a property of a binary CODE, not of saturated recall. The ideal code's chord is on-manifold at every start distance tested (predicted up to ~2r = 32). Saturated recall on the ideal code still walks at small α, but off-manifold at a constant cos ≈ 0.90, and it rests near, not on, the goal.
+3. Saturated recall costs the ideal code precision (exact and basin) and position-independence, but not direction.
