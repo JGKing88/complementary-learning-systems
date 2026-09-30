@@ -190,3 +190,45 @@ The att0.5 hebb row reproduces THEORY §7.1 exactly.
 1. Walking in and stopping is available without saturation: projection storage plus α < 1. On the ideal code it is cleaner than on att0.5 (cos ≥ 0.993 against ≥ 0.972, rest at 0.00 against 0.02 cells).
 2. Snapping is a property of a binary CODE, not of saturated recall. The ideal code's chord is on-manifold at every start distance tested (predicted up to ~2r = 32). Saturated recall on the ideal code still walks at small α, but off-manifold at a constant cos ≈ 0.90, and it rests near, not on, the goal.
 3. Saturated recall costs the ideal code precision (exact and basin) and position-independence, but not direction.
+
+## 11. Stage A: does gradient descent find the integers? (2026-09-30)
+
+`IdealNet` with layers 1–2 fixed and the 6 → 512 harmonic layer trainable
+(`encoder_training/train_ideal_net.py`, `run_ideal_net_stageA.sh`, job 24487677;
+task 7 re-run as 24488275 after two failures on node3804, "CUDA device busy").
+Data = the att0.5 recipe (118 random 50² patches, 10% of the scaffold, fwhm 0.25,
+batch 4096, within-patch pairs only). Loss = mean (z(p)·z(q) − exp(−d²/2·16²))²
+on those pairs. Adam lr 1e-2, 500 epochs, about 4.5 min per run on one GPU.
+Diagnostics: `encoder_training/ideal_net_diagnostics.py`. Results:
+`/orcd/pool/003/jackking/cls_runs/results/ideal_net/stageA/<init>_s<seed>/`.
+
+| start | loss | rows within 0.05 of an integer | r_eff (integral rows) | \|n\| p10/50/90 | C(1) | r_half | kernel RMSE, 0–71 cells | far sd | alias ceiling |
+|---|---|---|---|---|---|---|---|---|---|
+| exact integers (3 seeds) | 0.0001–0.0002 | 0.95–0.96 | 16.5–16.7 | 7 / 20 / 35 | 0.992–0.995 | 19 | 0.009–0.015 | 0.037 | 0.13–0.14 |
+| integers ± 0.3 (3 seeds) | 0.0001 | 0.955–0.959 (by epoch 10) | 15.4–16.6 | 7 / 20 / 34 | 0.994–0.995 | 19 | 0.008–0.011 | 0.036 | 0.13–0.15 |
+| uniform [−6, 6] (3 seeds) | 0.107–0.133 | 0.55–0.62, still rising | 11.1–11.9 | ~24 / 32 / 39 | 0.67–0.71 | 10 | 0.24–0.25 | 0.033 | 0.18–0.22 |
+
+Integral fraction by epoch, random starts: 0.10–0.15 (10) → 0.23–0.29 (50) →
+0.33–0.36 (100) → 0.44–0.48 (200) → 0.51–0.55 (300) → 0.55–0.62 (500). Not
+converged at 500 epochs.
+
+**Reading.**
+1. **Integers are strong local attractors.** From ±0.3 every seed reaches ~96%
+   integral within 10 epochs, with the same kernel as the ideal encoder.
+2. **From a random start, gradient descent finds integers for only about half
+   the rows, and the kernel is poor.** Loss 0.11–0.13 against 0.0001;
+   similarity at one cell 0.67–0.71; half-height at 10 cells against 19. The
+   integral rows sit in a narrow band of frequencies (|n| ≈ 21–40), not the
+   Gaussian's spread (median 20).
+3. **Non-integrality is being used as a volume knob.** Even from the exact
+   integers, ~4.5% of rows (23–25) leave, and they are the highest-frequency
+   waves of the draw (median |n| 39 against 20), moving ~0.2 off. The layer has
+   no per-row amplitude, so detuning a row is the only way to turn a wave down.
+   98% of the rows that stay integral keep the ideal integers they started on.
+   This is also the likely story for the random start: rows whose nearby integers
+   give an unhelpful frequency stay detuned instead of becoming integral.
+
+**Next.** Give each row a learnable non-negative amplitude, so a wave can be
+turned down without breaking integrality, and train longer (the random runs are
+still improving at 500 epochs). Then repeat the random start. Stage B (the
+campaign's own loss) and Stage C (corner-only training) wait on that.
