@@ -115,11 +115,17 @@ def train(cfg: TrainConfig) -> str:
     patch_cfg = cfg.patches
     npos_arg = patch_cfg.npos_list if patch_cfg.npos_list else patch_cfg.npos
     nenv_arg = None if patch_cfg.npos_list else patch_cfg.nenv
+    arena = patch_cfg.patch_arena or full_Npos
+    if not 0 < arena <= full_Npos:
+        raise ValueError(f"patch_arena={patch_cfg.patch_arena} must lie in "
+                         f"(0, {full_Npos}]")
     y0s, x0s, sizes = sample_nonoverlapping_patches(
-        full_Npos, full_Npos, npos_arg, nenv_arg,
+        arena, arena, npos_arg, nenv_arg,
         placement=patch_cfg.patch_placement)
     print(f"Patches: {len(sizes)} envs, sizes {sorted(set(sizes))}"
           + f"  [{patch_cfg.patch_placement} placement]"
+          + (f"  [confined to the {arena}x{arena} corner]"
+             if arena < full_Npos else "")
           + ("  [lazy codes]" if lazy else ""))
 
     if lazy:
@@ -442,6 +448,7 @@ def _build_cfg_from_args(args) -> TrainConfig:
         local_radius=args.radius,
         single_env_batch=args.single_env_batch,
         patch_placement=args.patch_placement,
+        patch_arena=args.patch_arena,
         spread_arena_frac=args.spread_arena_frac,
     )
     nav = NavEvalConfig(
@@ -500,6 +507,10 @@ def main():
                    choices=["random", "stratified"],
                    help="where patches sit: uniform rejection sampling, or a "
                         "jittered lattice (one per coarse-grid cell)")
+    p.add_argument("--patch_arena", type=int, default=0,
+                   help="confine the patches to the [0, N)^2 corner of the "
+                        "scaffold (0 = the whole arena); the codes are the "
+                        "same, only where the training set may sit moves")
     p.add_argument("--spread_arena_frac", type=float, default=0.0,
                    help="OUT OF BRIEF, DIAGNOSTIC ONLY (§5.6k): extra positions "
                         "from the whole arena, as a fraction of batch_size, fed "

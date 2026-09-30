@@ -69,10 +69,10 @@ def show(title, files):
         print(f"{'median cont':16s}{'':40s}{np.median(conts):8.3f}")
 
 
-# Guarded so row() is importable (ideal_summary.py).
-if __name__ == "__main__":
+def main() -> None:
     if len(sys.argv) > 1:
-        show(sys.argv[1], [f for f in glob.glob(sys.argv[1] + "/*.json") if "manifest" not in f])
+        show(sys.argv[1], [f for f in glob.glob(sys.argv[1] + "/*.json")
+                           if "manifest" not in f])
 
     print("\n\n--- archived reference arms, same settings ---")
     for arm, keep in (("production", ("v35", "L7-s42", "L7-s43")),
@@ -85,3 +85,7 @@ if __name__ == "__main__":
             if lab in keep:
                 fs.append(f)
         show(arm, fs)
+
+
+if __name__ == "__main__":
+    main()

@@ -605,6 +605,13 @@ a location, and the numbers are far above anything the ±48-cell view showed
 
 #### The peak is not a lattice revival, and that is the interesting part
 
+> *Refined 2026-09-14 (§3.7):* the point 784 is not a revival, but the ridge it
+> sits on is anchored on the grid code's **near-revivals of the full triple** —
+> 780, 792, 793 and 924, 935, 936, where all three module phases return to
+> within one cell and the input is at 0.9–0.96. The trained output is a plateau
+> bridging them. "Not at the revivals" was true of the point and not of the
+> ridge.
+
 Localising the 10% peak: `dx = 784` on-axis, cos 0.600, a broad **ridge**
 (780–785 within 0.01) rather than a spike — and `784 mod (11,12,13) = (3,4,4)`,
 so it is not a grid revival at all. Over 40 reference positions the displacement
@@ -645,7 +652,11 @@ starts from "everything is identical" and pushes apart the pairs the loss
 actually *samples*. A displacement the training batches never cover keeps its
 initial value, which is ~1. **The peak alias is a hole in the training pair
 distribution, not an artefact the encoder invented.** **[G]**, but with two
-measurements behind it:
+measurements behind it — *and retracted 2026-09-14: the pair terms never see
+any displacement beyond 70 cells (§3.6's box), so 784 and 400 are equally
+"holes" and this cannot be what separates them. What survives is the untrained
+baseline and the coverage trend; the mechanism is the rate term's covariance,
+below.*
 
 * the untrained baseline really is ~1.0 everywhere, so "left alone" means "left
   high"; and
@@ -686,9 +697,12 @@ measurements behind it:
 >
 > The rate term generalises and sets the 0.034 floor; the pairwise terms do not,
 > and the outliers are where the statistical mechanism alone did not finish the
-> job. (§3.6 revises *why* the pairwise terms leave a residue: not because the
-> pairs go unsampled — they do not — but because both objectives are
-> average-case and the failure is worst-case.) That is why `rate_lambda = 0` collapses `d_eff` to 16 and the alias rate
+> job. (Corrected 2026-09-14, see §3.6's box: the pairwise terms leave the far
+> field alone not because of sampling but because `exclude_cross_env_pairs`
+> masks every cross-patch pair — no displacement beyond 70 cells is in a pair
+> term. The rate term is not merely the *main* far-field mechanism, it is the
+> *only* one, and it is average-case where the failure is worst-case.) That is
+> why `rate_lambda = 0` collapses `d_eff` to 16 and the alias rate
 > to 0.21 (§2.1 R1) — it removes the only mechanism that covers unsampled pairs.
 >
 > The coverage ladder degrades both halves together: the floor rises
@@ -714,15 +728,52 @@ The natural follow-up to §3.5 is Jack's: *is there a way to sample envs that
 prevents aliasing?* Chasing it killed my own hypothesis, so the honest state is
 three candidate mechanisms with different consequences.
 
+> ### ⚠ Corrected 2026-09-14 — (a) below argued from the CLI defaults, not the run.
+>
+> I wrote that the ladder encoders train with `batch_size` 16384 and
+> `exclude_cross_env_pairs` False. Those are `train.py`'s argparse defaults.
+> The checkpoints' own `train_config` says **4096** and **True** — for the
+> ladder's 10% (w52 att0.5), for w53 att16, and for every wave in
+> `sweep_ecp.BASE`, whose comment calls the mask "THE constraint". In the loss
+> that mask is `far = ~near & same_env`, so the repel term only ever sees
+> same-patch pairs: with 50-cell patches, **no displacement beyond 70 cells is
+> in any pair term, ever.** (The v35-lineage encoder, batch 8192 and no mask,
+> is the one that fits what I wrote; it is not in the ladder.)
+>
+> What that changes:
+>
+> * **(a) is false for a simpler reason.** Not "far pairs are sampled and pushed
+>   on without moving" — far pairs are never pushed on pairwise at all. The 784
+>   ridge and the quiet 400 are *equally* unsampled by the pair terms, so
+>   sampling cannot be what separates them, and §3.5's "hole in the training
+>   pair distribution" is the wrong picture: beyond 70 cells everything is a
+>   hole, and 94.7% of it is fine.
+> * **The whole far field is the coding-rate term's.** It constrains the batch
+>   *covariance* — a second-moment quantity over whatever positions the batch
+>   holds — and the far field is what the network extrapolates under that
+>   constraint. The coverage trend (peak 0.68 → 0.94 as coverage falls) is
+>   therefore about which **positions**, i.e. which joint phases, enter that
+>   covariance, not about which pairs are drawn.
+> * **"Sample far pairs by displacement" is off the table by construction**,
+>   not by argument: withholding cross-env pairs is the brief the campaign was
+>   run under. The lever that remains is the one below — a term with a maximum
+>   in it — and it would have to live in the spread family, the only family the
+>   brief lets see a far displacement.
+>
+> The corner experiment (§3.7) is the direct test of the corrected story: same
+> recipe, same point budget, positions confined to one 500×500 corner, so the
+> rate term's covariance covers 8.5% of the joint-phase space in one block.
+
 **(a) Aliases live at displacements training never samples → sampling fixes it.
-Probably false.** `batch_size` is **16384** drawn from 118 randomly placed
-patches, so a batch holds ~139 positions from *every* patch and ~1.3×10⁸ pairs;
-and `exclude_cross_env_pairs` defaults to **False**, so every non-near pair is
-in the repel term. The displacement space is covered densely, many times per
-batch — there is no hole to fill. Worse for the hypothesis: an aliased pair at
-cos 0.67 contributes 0.45 to an MSE where a typical pair contributes 0.001, so
-the outliers get ~450× the per-pair gradient. They are not being ignored; they
-are being pushed on and not moving.
+False, see the box above.** *(Original text, kept for the record:)* `batch_size`
+is **16384** drawn from 118 randomly placed patches, so a batch holds ~139
+positions from *every* patch and ~1.3×10⁸ pairs; and `exclude_cross_env_pairs`
+defaults to **False**, so every non-near pair is in the repel term. The
+displacement space is covered densely, many times per batch — there is no hole
+to fill. Worse for the hypothesis: an aliased pair at cos 0.67 contributes 0.45
+to an MSE where a typical pair contributes 0.001, so the outliers get ~450× the
+per-pair gradient. They are not being ignored; they are being pushed on and not
+moving.
 
 **(b) It is the extreme value of a finite-dimensional code → sampling cannot fix
 it, only `d_eff` can.** With `N` = 2.94 M positions there are `M` = 4.3×10¹²
@@ -779,6 +830,230 @@ outputs, randomly permute which position gets which code, and recompute the
 full-scaffold peak. That destroys all spatial structure while preserving the
 exact distribution of pairwise cosines, so it isolates how much of the excess is
 extreme-value statistics and how much is structure. Cheap — no retraining.
+
+**3.7 — An encoder trained on one 500×500 corner does not work outside it,
+and the way it fails says which loss term does what.** *(2026-09-14)*
+
+Jack: *I'd like to see how well an encoder trained on a 500×500 corner
+generalises outside of the corner.* This is the direct test of §3.6's corrected
+story. Production sees 10% of the arena as 118 scattered patches and (§3.5)
+holds up on the 90% it never saw; here the unseen region is everything but one
+corner, up to 1,200 cells deep.
+
+**Setup.** `--patch_arena 500` confines the training patches to `[0, 500)²`.
+`w62_corner`: **corner500** — 100 patches of 50 under stratified placement,
+which at this size is a 10×10 grid with 50-cell cells and no jitter, i.e. an
+exact tiling (250k points, 8.5% of the arena); **scatter100** — the same 100
+patches at random over the full arena, the budget-matched control; and
+**scatter118**, the recipe's usual 118 patches (w53 att16). Two seeds each,
+`encoder_final.pt` throughout (`encoder_best.pt` is chosen by a whole-arena
+unique-radius eval, which for corner500 would let the unseen region pick the
+checkpoint). Recipe: the w53 att16 one — note this is `attract_lambda` 16, not
+the ladder's 0.5; see the side finding at the end.
+
+Two measurements. `corner_scan.py` takes the full 1716² cosine map at 40
+reference positions per encoder, binned by Chebyshev distance beyond the corner
+(inside; 1–100; 100–300; 300–700; 700+, the opposite corner), and reads off the
+kernel and the alias. `--world_region` runs the probe suite with the worlds
+confined to one 500-cell square — the training corner, the arena centre, the
+opposite corner — with the alias bank still drawn over the *whole* scaffold,
+since retrieval has to be unique over every candidate cell.
+
+#### The result
+
+**Probe** (K = 5, s = 1, 8 worlds × 20 envs per region; means of two seeds):
+
+| arm | region | acc45 | \|err\| | exact | basin | reach |
+|---|---|---|---|---|---|---|
+| **corner500** | its corner | 0.836 | 26° | 0.244 | 1.6 | 0.408 |
+| **corner500** | centre | **0.390** | **73°** | 0.265 | 1.2 | **0.051** |
+| **corner500** | opposite corner | **0.431** | **70°** | 0.387 | 7.2 | **0.057** |
+| scatter100 | corner / centre / opposite | 0.982 / 0.972 / 0.974 | 12–13° | 0.45 / 0.42 / 0.26 | 7.0 / 2.1 / 1.1 | 0.63 / 0.66 / 0.54 |
+| scatter118 | corner / centre / opposite | 0.989 / 0.987 / 0.981 | 10–12° | 0.48 / 0.43 / 0.30 | 9.8 / −0.1 / 3.2 | 0.73 / 0.66 / 0.54 |
+
+**[M]**. A uniformly random bearing scores 0.25 on acc45, so outside its corner
+the corner encoder's direction field is near chance and reach is 5%. The
+budget-matched control holds 0.97+ everywhere. The three regions share an
+*identical* world layout, translated, so a scattered encoder's spread across
+them (0.73 / 0.66 / 0.54) is seed noise plus the code's non-stationarity, not a
+region effect — and the corner effect is ten times larger than that spread.
+
+Two things the table also says. The corner encoder is worse **inside its own
+corner** than the control is in the same square (acc45 0.84 vs 0.98, exact 0.24
+vs 0.45, reach 0.41 vs 0.63). And its retrieval failures have a different
+composition: outside the corner, beyond ~24 cells, 64–86% of misses land on a
+*different stored goal* — the five stored codes are not separable and Hebbian
+recall blends them — while inside the corner 71% of misses are `far`, a foreign
+cell winning the argmax.
+
+**Scan** (medians over 16 references per band, both seeds pooled; alias = max
+cos beyond 50 cells; `@corner` = fraction of those aliases lying inside the
+training corner; `<0.1` = fraction of the arena below cos 0.1):
+
+| arm | band | C(1) | r₀.₉ | r_mono | r_u16 | alias | max | @corner | <0.1 |
+|---|---|---|---|---|---|---|---|---|---|
+| corner500 | inside | 0.999 | 8.0 | 25.0 | 3.0 | 0.937 | 0.984 | 0.00 | 0.927 |
+| corner500 | out 1–100 | **0.945** | **5.0** | **2.0** | 0.0 | **0.966** | 0.994 | 0.00 | 0.787 |
+| corner500 | out 100–300 | **0.915** | **3.5** | **2.5** | 0.0 | **0.975** | 0.995 | 0.06 | 0.774 |
+| corner500 | out 300–700 | 0.968 | 6.5 | 3.5 | 0.0 | 0.901 | 0.997 | 0.19 | 0.868 |
+| corner500 | out 700+ | 0.957 | 4.5 | 3.0 | 0.0 | 0.943 | 0.996 | 0.06 | 0.836 |
+| scatter100 | every band | 0.999 | 13–14 | 58–63 | 2.5–3.5 | 0.78–0.85 | 0.86–0.93 | 0–0.12 | 0.91–0.93 |
+| scatter118 | every band | 0.999 | 13–15 | 62–66 | 3–4 | 0.74–0.81 | 0.83–0.89 | 0–0.19 | 0.92–0.93 |
+| untrained | every band | 1.000 | — | 1.0 | 0.0 | 1.000 | 1.000 | — | 0.000 |
+
+**[M]**. Read against the three conditions of §5.2:
+
+* **J2, localisation.** Outside the corner `C(1)` drops from 0.999 to
+  0.92–0.96: one cell of motion moves the code `N(1) = √(2(1 − C(1)))` =
+  0.26–0.41 instead of 0.045, a 6–9× larger step. Cosine falls through 0.9
+  within ~3.5 cells instead of 13.
+* **J3, differentiation.** `r_mono`, the radius over which similarity keeps
+  falling along a ray, collapses from ~60 cells (scattered) and 22.5 (inside the
+  corner) to **2–3.5 cells**. Beyond three cells the similarity field is not
+  monotone in distance — which is exactly why the direction readout, a
+  one-cell finite difference of that field (§2, §7.1), returns a near-random
+  bearing: it is differentiating cell-scale roughness.
+* **J1, addressing.** The alias ceiling is 0.96–0.99 outside (0.78–0.86 for the
+  scattered encoders), the unique radius is 0, and the worst alias of an outside
+  reference is **another outside position**, not a corner one (`@corner` ≈ 0).
+  The outside code has *not* collapsed onto the training set — 77–87% of the
+  arena is still below 0.1, against 0% for the untrained floor. It is a trained
+  code with the wrong structure, not an untrained one.
+
+Even the corner's own references pay: their worst alias (0.885, vs 0.81 for the
+control in the same band) always lies outside the corner.
+
+#### Where the aliases are, and why there
+
+`corner_alias_structure.py`: for **all 64** outside references (both seeds) the
+worst alias is **on-axis** — one coordinate unchanged to within six cells — and
+for 77% of them at a displacement in one of two narrow ranges, **781–796** or
+**918–938**. The scattered controls' worst aliases sit in the same two ranges
+(99–100% of 80 references each, 88–90% on-axis) — at 0.57–0.93. **The alias
+locations are a property of the recipe and the grid code; corner training
+changes their height, ~0.8 → 0.96–0.99.**
+
+What those two ranges are: `corner_axis_profile.py` takes the 1-D similarity
+profile along each axis, and its peaks sit at displacements whose residues
+mod (11, 12, 13) are **all within one cell of zero** — 780 ≡ (−1, 0, 0),
+792 ≡ (0, 0, −1), 793 ≡ (1, 1, 0), 924 ≡ (0, 0, 1), 935 ≡ (0, −1, −1),
+936 ≡ (1, 0, 0). These are the grid code's **near-revivals of the full
+triple**: every module phase returns to within a cell, the input itself is at
+cos ~0.9–0.96, and the encoder has to tell the two positions apart from a
+one-cell phase shift in one or two modules. The trained output is a plateau
+bridging them (781–796, 918–938), which is why the single point §3.5 looked at
+(784, input 0.13) read as "not a revival": the ridge is anchored on
+near-revivals a few cells to either side of it. (§3.5's other claim stands: the
+encoder *does* suppress these, from 0.96 at the input to ~0.8 — when it has
+seen them.)
+
+The other 23% of the corner encoder's outside aliases are all seed 43's, all
+along one axis (Δy ≈ 0) at displacements anywhere from 111 to 1,198 cells, at
+cos 0.90–0.997 — and its profile along the unseen axis is a plateau (916–940
+at ≥ 0.90). That is the same failure carried further: the code's dependence on
+an unseen x-phase triple has nearly vanished, so positions along a row alias at
+arbitrary spacing. Seed 42 kept enough of it to alias only at the near-revivals.
+At one unseen-x reference, (700, 300), the code also varies *less along the
+seen axis* — mean similarity along y 0.34–0.49 against 0.10–0.13 inside — though
+not at (1100, 300); whether losing one axis-triple degrades the other axis is
+not settled by two references.
+
+Counting what each layout contains settles why (seed-42 layouts; a revival
+pair is two training cells at one of those near-revival displacements):
+
+| layout | x-phase triples seen | y-phase triples seen | on-axis pairs at Δ = 792 | at Δ = 924 | at Δ = 400 |
+|---|---|---|---|---|---|
+| corner500 | **29%** | **29%** | **0** | **0** | 100,000 |
+| scatter100 | 97% | 96% | 33,153 | 21,385 | 30,541 |
+
+The code at a position is a function of six phases (x and y for each of three
+modules), and by the CRT the x-phase triple *is* `x mod 1716`. A 500-wide
+corner shows the encoder 500 of the 1716 x-triples and 500 of the y-triples;
+100 scattered 50-cell patches show it essentially all of both. And a revival
+pair — every module phase back to within a cell — needs a displacement of 780
+or more, so **no such pair fits inside a 500-wide corner**, while the scattered
+layout holds tens of thousands. So:
+
+* the rate term, the only term that sees a far pair (§3.6's box), was never
+  handed a revival pair to separate — and the revivals stay at 0.96–0.99;
+* the attract term, which only ever acts within a patch, built smoothness over
+  29% of the phase triples, and the network does not extrapolate it to the
+  other 71% — `C(1)` 0.92 even 1–100 cells outside. The scattered encoder's
+  unseen positions are unseen *combinations* of seen x- and y-triples, and there
+  smoothness interpolates.
+
+This is the concrete content of §3.6's "which positions enter the covariance":
+what has to be covered is not the arena in cells but the **phase triples per
+axis and the revival displacements**, and 100 scattered 50-cell patches cover
+both while one 500-cell corner covers neither. It also says what an encoder
+trained in one place needs from its training distribution if it is to be used
+elsewhere: not proximity in space, but every per-axis phase triple, and pairs at
+the near-revival displacements (780, 792, 793, 924, 935, 936).
+
+**Testable prediction.** Two 500-cell corners 792 cells apart on one axis put
+revival pairs back in the training set while raising x-triple coverage only to
+58%: the alias ceiling should come down toward the scattered value, and whether
+the near field outside stays rough would say whether smoothness needs the
+triples or only the pairs. Not run.
+
+**Side finding — the recipe.** Three extra probe runs separate recipe from
+region density. The ladder's 10% encoder (w52 **att0.5**) in the corner region
+scores acc45 1.000, exact 0.924, basin 21.8, reach 0.980 — its whole-arena
+numbers (the `hebb` controls of the §7.1 projection run: 0.997 / 0.982 / 25–28
+/ 0.99) — so confining 20 envs to a 500-cell square costs nothing. But w53 **att16** on the *whole* arena scores 0.969 /
+0.594 / 13.3 / 0.781. `att16` was "level 7 — new best" by unique radius
+(EXPERIMENTS_UNIQUE_RADIUS), and it is a substantially weaker Hopfield encoder
+than att0.5 on exactness, basin and reach. That does not touch the corner
+conclusion, which is a same-recipe comparison, but the ladder and this section
+use different attract levels, so `w63_corner_a0.5` repeats both arms at att0.5.
+
+#### Replication at the ladder's attract level (w63, att0.5)
+
+Same two layouts, same seeds, `attract_lambda` 0.5. **Probe** (K = 5, s = 1,
+means of two seeds; `att0.5` is the ladder's own 118-patch encoder in the same
+square, one seed):
+
+| arm | region | acc45 | \|err\| | exact | basin | reach |
+|---|---|---|---|---|---|---|
+| **corner500** | its corner | 0.892 | 18° | 0.981 | 16.0 | 0.888 |
+| **corner500** | centre | **0.512** | **59°** | 0.862 | 10.3 | **0.164** |
+| **corner500** | opposite corner | **0.534** | **57°** | 0.743 | 14.5 | **0.205** |
+| scatter100 | corner / centre / opposite | 0.998 / 0.996 / 0.999 | 8–9° | 0.86 / 0.87 / 0.85 | 19.7 / 16.3 / 16.9 | 0.95 / 0.94 / 0.95 |
+| att0.5 (118 patches) | corner | 1.000 | 8° | 0.924 | 21.8 | 0.980 |
+
+**Scan** (medians over 16 references per band, both seeds pooled):
+
+| arm | band | C(1) | r₀.₉ | r_mono | r_u16 | alias | max | <0.1 |
+|---|---|---|---|---|---|---|---|---|
+| corner500 | inside | 0.996 | 5.0 | 25.0 | 3.0 | 0.661 | 0.777 | 0.984 |
+| corner500 | out 1–100 | **0.938** | 3.5 | **6.5** | 0.0 | **0.924** | 0.958 | 0.869 |
+| corner500 | out 100–300 | **0.923** | 3.0 | **11.5** | 0.0 | **0.941** | 0.972 | 0.866 |
+| corner500 | out 300–700 | 0.966 | 5.0 | 11.0 | 1.0 | 0.845 | 0.976 | 0.919 |
+| corner500 | out 700+ | 0.955 | 3.5 | 10.0 | 1.0 | 0.897 | 0.964 | 0.892 |
+| scatter100 | every band | 0.995–0.996 | 6 | 33.5–36 | 3–4 | 0.80–0.84 | 0.88–0.90 | 0.97 |
+
+**[M]**. The conclusion is the same at the ladder's recipe — outside its corner
+the corner encoder's bearing is at 57–59° error and reach is 0.16–0.21, against
+8–9° and 0.94–0.95 for the scattered control; and it is again worse inside its
+own corner than the control is there (acc45 0.89 vs 0.998, reach 0.89 vs 0.95).
+But the two halves of the failure now **separate**, which the att16 wave could
+not show:
+
+* **Retrieval mostly survives outside.** `exact` 0.74–0.86 and basin 10–15
+  against the control's 0.85–0.87 and 16–20. At att0.5 the alias ceiling
+  outside is 0.85–0.94, below where the bank's argmax flips away from the goal;
+  at att16 it was 0.96–0.99 and retrieval went with it (`exact` 0.27–0.39).
+  (J1) is degraded, not lost.
+* **The direction field does not.** `C(1)` 0.92–0.97 and `r_mono` 6–12 cells
+  against 33–36 — the same (J2)/(J3) failure as at att16, to the same degree,
+  and acc45 sits at 0.51–0.53 either way. The readout is a one-cell derivative
+  of the similarity field; retrieval is an argmax over it. The derivative dies
+  as soon as the field is rough at the cell scale; the argmax tolerates
+  roughness until an alias overtakes the goal.
+
+So what an encoder loses first outside its training distribution is
+*differentiability*, not *addressability* — and the attract level sets only how
+much of the second goes with the first.
 
 ---
 
@@ -2477,6 +2752,43 @@ than one number. (ii) R4 was unreadable; split into four statements. (iii) Do
 not assume basin and reach share a variable — measured instead, §3.2, and found
 the basin metric mixes a cross-talk term with a precision term. Bug found and
 fixed on the way (§3.3).
+
+**Turn 26 — "how well does an encoder trained on a 500×500 corner generalise
+outside the corner?"** (2026-09-14) It does not, and the failure is specific
+(§3.7). `w62_corner`: the recipe's 100 patches of 50 either tiling one corner or
+scattered — 250k points either way. Outside its corner the corner encoder's
+direction field is at chance (acc45 0.39–0.43, a random bearing scores 0.25)
+and reach is 0.05, against 0.97+ / 0.54–0.66 for the scattered control in the
+same squares. The scan says why: `C(1)` 0.999 → 0.92–0.96 (a one-cell step
+moves the code 6–9× further), the similarity stops falling after 2–3 cells so
+the one-cell readout differentiates roughness, and the alias ceiling is
+0.96–0.99 — at the *same* on-axis near-revival displacements (781–796,
+918–938) where every encoder of this recipe has its worst aliases at ~0.8.
+Counting the layouts: a 500-wide corner contains **zero** pairs at 792 or 924
+and shows the encoder 29% of the per-axis phase triples; 100 scattered patches
+contain tens of thousands and show it 97%. So the rate term — the only term that
+sees a far pair — never met a revival pair, and the attract term's smoothness
+does not extrapolate to phase triples it never saw. The outside code is not
+untrained (77–87% of the arena below 0.1 vs 0% untrained); it is trained with
+the wrong structure. Side finding: w53 `att16`, "level 7" by unique radius, is a
+much weaker Hopfield encoder than the ladder's `att0.5` (exact 0.59 vs 0.98,
+reach 0.78 vs 0.99 on the whole arena). Replicated at att0.5 (`w63`): outside
+the corner acc45 0.51–0.53 and reach 0.16–0.21 against 0.996 and 0.94 for the
+scattered control — and there the two halves separate: retrieval mostly
+survives (exact 0.74–0.86, basin 10–15) while the direction field does not
+(C(1) 0.92–0.97, r_mono 6–12 vs 33–36). Differentiability is lost before
+addressability; the attract level only sets how much of the second goes with
+the first.
+
+**Turn 25 — a correction, found on the way.** §3.6(a) had argued from
+`train.py`'s argparse defaults (batch 16384, cross-env pairs in the repel
+term). The ladder checkpoints' own `train_config` says batch 4096 and
+`exclude_cross_env_pairs=True`, and the loss masks `far = ~near & same_env`, so
+**no displacement beyond 70 cells is in any pair term**. (a) is false for a
+simpler reason than the doc gave, §3.5's "hole in the training pair
+distribution" is retired (beyond 70 cells everything is a hole), and the
+coding-rate term is the *only* far-field mechanism. Corrected in place, original
+text kept.
 
 **Turn 24 — the full-scaffold alias panel, and "it's really weird that the alias
 point isn't a lattice revival, right?"** It is weird, and chasing it inverted the

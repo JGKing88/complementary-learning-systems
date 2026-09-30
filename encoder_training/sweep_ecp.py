@@ -113,6 +113,7 @@ SIZE_MIXES: dict[str, str] = {
     "sm100": _mix((100, 29)),                             #  9.8%,  29 envs
     "sm70":  _mix((70, 60)),                              # 10.0%,  60 envs
     "sm50":  _mix((50, 118)),                             # 10.0%, 118 envs
+    "sm50_100": _mix((50, 100)),                          #  8.5%, 100 envs: a 500^2 corner, tiled
     "sm30":  _mix((30, 327)),                             # 10.0%, 327 envs
     "sm20":  _mix((20, 736)),                             # 10.0%, 736 envs
     "smmix": _mix((100, 15), (70, 15), (50, 20), (30, 25)),   # 10.1%, 75 envs
@@ -2222,6 +2223,66 @@ WAVES: dict[str, dict] = {
     # Sec 6.3 identified -- if sm27_y still wins, patch size matters even less
     # to this objective than Sec 10.15 suggested; if it loses to sm35_y or
     # sm50_y, the crossover reverses and there is a genuine size floor after all.
+    # W62 -- does an encoder trained on one 500x500 corner work anywhere else?
+    #
+    # Production (w53 att16) sees 10% of the arena as 118 scattered 50-cell
+    # patches, and THEORY Sec 3.5 found it generalises to the 90% it never saw:
+    # 94.7% of displacements have cos < 0.1, and its worst alias sits in a hole
+    # of the training distribution rather than being something the encoder
+    # made. Here the hole is the whole arena but one corner. The input at any
+    # position is three module phases, and a 500-cell corner covers every
+    # single-module and every pair-of-modules phase many times over -- only
+    # the joint triple, period 1716, is 8.5% covered -- so the question is
+    # whether what the MLP learned is a function of the phases (transfers) or
+    # of the corner (does not).
+    #
+    #   corner500   100 patches of 50 confined to [0, 500)^2 under stratified
+    #               placement: a 10x10 grid with 50-cell cells and zero jitter,
+    #               i.e. an exact tiling. The encoder sees every cell of the
+    #               corner and nothing else.
+    #   scatter100  the same 100 patches placed at random over the full arena.
+    #               The budget-matched control: 250k points either way, so any
+    #               difference is arrangement, not point count.
+    #
+    # Use encoder_final.pt. encoder_best.pt is picked by the unique-radius eval,
+    # whose references cover the whole arena, which for corner500 would let
+    # the unseen region choose the checkpoint.
+    "w62_corner": {
+        "arm": {
+            name: {**dict(npos_list=SIZE_MIXES["sm50_100"], batch_size=4096,
+                          lr=3e-4, per_env_radius_frac=0.0, radius=20.0,
+                          rate_lambda=0.5, rate_eps=1.0, out_dim=1024,
+                          hidden_dim=256, gain_end=100.0, attract_lambda=16.0),
+                   **over}
+            for name, over in (
+                ("corner500", dict(patch_arena=500,
+                                   patch_placement="stratified")),
+                ("scatter100", dict()),
+            )
+        },
+        "seed": [42, 43],
+    },
+    # W63 -- w62 at the ladder's attract level. w62 used att16 (w53, "level 7"
+    # by unique radius), and the region probe then showed att16 to be a much
+    # weaker Hopfield encoder than the ladder's att0.5 (exact 0.59 vs 0.98,
+    # reach 0.78 vs 0.99 on the whole arena). The corner conclusion is a
+    # same-recipe comparison and does not depend on that, but the headline
+    # should sit beside the ladder's numbers, so: the same two arms at att0.5.
+    "w63_corner_a0.5": {
+        "arm": {
+            name: {**dict(npos_list=SIZE_MIXES["sm50_100"], batch_size=4096,
+                          lr=3e-4, per_env_radius_frac=0.0, radius=20.0,
+                          rate_lambda=0.5, rate_eps=1.0, out_dim=1024,
+                          hidden_dim=256, gain_end=100.0, attract_lambda=0.5),
+                   **over}
+            for name, over in (
+                ("corner500", dict(patch_arena=500,
+                                   patch_placement="stratified")),
+                ("scatter100", dict()),
+            )
+        },
+        "seed": [42, 43],
+    },
     "w61_cov0.75": {
         "arm": {
             name: {**dict(batch_size=4096, lr=3e-4, per_env_radius_frac=0.0,

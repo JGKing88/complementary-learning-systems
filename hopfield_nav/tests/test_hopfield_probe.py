@@ -339,6 +339,26 @@ def test_world_is_pinned_at_max_k_so_placement_does_not_move_with_load():
     assert [s.to_json() for s in w.specs] == [s.to_json() for s in again.specs]
 
 
+def test_world_region_confines_every_env_and_only_moves_offsets():
+    """`world_region` must place every env inside the square, leave goals and
+    walls alone, and reject a square the scaffold cannot hold."""
+    base = dict(n_worlds=2, n_envs_per_world=6, k_values=(2,), env_size=4,
+                Npos=132, seed=5)
+    whole = ProbeConfig(**base)
+    whole.validate()
+    cfg = ProbeConfig(world_region=(100, 20, 30), **base)
+    cfg.validate()
+    for w, w0 in zip(sample_worlds(cfg), sample_worlds(whole)):
+        for s, s0 in zip(w.specs, w0.specs):
+            ox, oy = s.offset
+            assert 100 <= ox and ox + 4 <= 130 and 20 <= oy and oy + 4 <= 50
+            assert (s.goal, s.wall_seed) == (s0.goal, s0.wall_seed)
+    with pytest.raises(ValueError, match="world_region"):
+        ProbeConfig(world_region=(110, 0, 30), **base).validate()   # spills
+    with pytest.raises(ValueError, match="world_region"):
+        ProbeConfig(world_region=(0, 0, 4), **base).validate()      # too small
+
+
 def test_scored_env_population_is_capped_so_k_is_a_load_axis():
     """Scoring all K envs would make the K axis change *which* envs are
     measured, not just how many memories compete.

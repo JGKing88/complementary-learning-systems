@@ -106,3 +106,56 @@ def test_unknown_placement_rejected():
     except ValueError:
         return
     raise AssertionError("expected ValueError for an unknown placement")
+
+
+def test_corner_arena_tiles_exactly():
+    """w62_corner relies on this: 100 patches of 50 in a 500-cell arena under
+    stratified placement is a 10x10 grid with 50-cell cells and no jitter room,
+    so the corner is tiled exactly and the encoder sees every cell of it."""
+    torch.manual_seed(42)
+    y0s, x0s, sizes = sample_nonoverlapping_patches(
+        500, 500, [50] * 100, placement="stratified")
+    assert sorted(zip(y0s, x0s)) == [(50 * r, 50 * c)
+                                     for r in range(10) for c in range(10)]
+    assert all(s == 50 for s in sizes)
+
+
+
+def _train_with_arena(tmp_path, monkeypatch, arena: int):
+    """Run `train()` up to patch placement and return the (H, W) it asked for.
+
+    Everything after the placer is irrelevant to the flag, so the placer is
+    replaced by one that records its bounds and raises -- no epochs run.
+    """
+    from encoder_training import train as tr
+    from encoder_training.config import (EncoderModelConfig, PatchConfig,
+                                         TrainConfig)
+
+    class Placed(Exception):
+        pass
+
+    seen = {}
+
+    def fake(H, W, *a, **k):
+        seen["HW"] = (H, W)
+        raise Placed
+
+    monkeypatch.setattr(tr, "sample_nonoverlapping_patches", fake)
+    cfg = TrainConfig(model=EncoderModelConfig(lambdas=[3, 4, 5]),
+                      patches=PatchConfig(npos_list=[4], patch_arena=arena),
+                      lazy_codes=True, eval_every=0,
+                      save_dir=str(tmp_path), run_name=f"a{arena}")
+    try:
+        tr.train(cfg)
+    except Placed:
+        return seen["HW"]
+    raise AssertionError("placer was never called")
+
+
+def test_patch_arena_reaches_the_placer(tmp_path, monkeypatch):
+    """The flag must bound the placer; 0 must mean the whole arena."""
+    import pytest
+    assert _train_with_arena(tmp_path, monkeypatch, 12) == (12, 12)
+    assert _train_with_arena(tmp_path, monkeypatch, 0) == (60, 60)
+    with pytest.raises(ValueError, match="patch_arena"):
+        _train_with_arena(tmp_path, monkeypatch, 61)

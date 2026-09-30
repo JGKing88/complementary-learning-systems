@@ -120,6 +120,16 @@ class PatchConfig:
     # the holes rejection sampling leaves are large (§5.4 step 3).
     patch_placement: str = "random"
 
+    # Confine the patches to the ``[0, patch_arena)^2`` corner of the scaffold;
+    # 0 places them over the whole ``full_Npos x full_Npos`` arena. The codes
+    # are unchanged (a patch at (y0, x0) is the same patch either way) -- only
+    # where the training set is allowed to sit moves. It exists to ask how an
+    # encoder that never saw a position outside one corner behaves outside it:
+    # 500 holds a hundred 50-cell patches as an exact 10x10 tiling under
+    # ``stratified`` placement, 250k points against production's 295k, so the
+    # comparison is contiguous-versus-scattered at a matched budget.
+    patch_arena: int = 0
+
     # OUT OF BRIEF -- DIAGNOSTIC ONLY, NEVER PART OF A HEADLINE (§5.6k).
     #
     # Fraction of batch_size in extra positions drawn uniformly from the *whole

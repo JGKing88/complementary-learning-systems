@@ -225,7 +225,6 @@ class ProbeConfig:
     # them over ``[x0, x0 + side)^2`` instead of the whole ``[0, Npos)^2``. The
     # codes are unchanged; only the offsets move. For encoders trained on one
     # corner (``--patch_arena``), inside-versus-outside is the whole question.
-    # (Ported from worktree-encoder-hopfield-eval-spec 5ffe1aa.)
     world_region: tuple[int, int, int] | None = None
     seed: int = 0
 
