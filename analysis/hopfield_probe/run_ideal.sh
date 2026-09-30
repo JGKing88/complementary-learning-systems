@@ -40,6 +40,8 @@ ENCS=(
     "ideal:r=16,n_freq=512,seed=0,gain=100|ideal r=16"
     "$S/w52_attract_fwhm/000_att0.5_seed=42/encoder_final.pt|att0.5 s42"
     "$S/w52_attract_fwhm/001_att0.5_seed=43/encoder_final.pt|att0.5 s43"
+    "ideal:r=32,n_freq=512,seed=0,gain=100|ideal r=32"
+    "ideal:r=48,n_freq=512,seed=0,gain=100|ideal r=48"
 )
 REGIONS=("|whole" "0 0 500|corner" "608 608 500|centre"
          "1216 1216 500|opposite")
@@ -53,7 +55,7 @@ if [[ -z "${SLURM_ARRAY_TASK_ID:-}" ]]; then
             --output="$OUT/logs/probe_%A_%a.out" "$0" probe
     else
         exec sbatch --job-name=ideal_scan --partition=ou_bcs_normal \
-            --time=3:00:00 --cpus-per-task=8 --mem=24G \
+            --time=${SCAN_TIME:-3:00:00} --cpus-per-task=8 --mem=24G \
             --array="${ARG:-0-5}" \
             --output="$OUT/logs/scan_%A_%a.out" "$0" scan
     fi

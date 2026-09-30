@@ -55,6 +55,10 @@ HEADERS = [
      "beta": 100.0, "fwhm_ratio": 0.25},
     {"label": "att0.5 s42 · gain=β=1e6 (arm B)", "path": PROD, "gain": 1e6,
      "beta": 1e6, "fwhm_ratio": 0.25},
+    {"label": "ideal r=32 · β=100", "path": IDEAL.replace("r=16", "r=32"),
+     "gain": 100.0, "beta": 100.0, "fwhm_ratio": 0.25},
+    {"label": "ideal r=48 · β=100", "path": IDEAL.replace("r=16", "r=48"),
+     "gain": 100.0, "beta": 100.0, "fwhm_ratio": 0.25},
 ]
 ALPHAS = (1.0, 0.95, 0.9, 0.8, 0.5, 0.2, 0.05, 0.01, 0.003)
 SEPS = (5.0, 10.0, 15.0, 20.0)

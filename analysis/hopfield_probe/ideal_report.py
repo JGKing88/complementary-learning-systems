@@ -32,15 +32,17 @@ PROBE_ENCS = ["ideal r=2", "ideal r=4", "ideal r=8", "ideal r=16",
 # report label for each whole-arena result, in page order (first = primary)
 REPORT = [
     ("probe", 12, "ideal r=16"),
+    ("probe", 24, "ideal r=32"),
+    ("probe", 28, "ideal r=48"),
     ("probe", 8, "ideal r=8"),
-    ("probe", 4, "ideal r=4"),
     ("sat", 0, "ideal r=16, saturated recall (β=1e6)"),
     ("probe", 16, "att0.5 · s42"),
     ("probe", 20, "att0.5 · s43"),
     ("sat", 4, "att0.5, saturated recall (β=1e6) · s42"),
 ]
 DYN = ["ideal r=16 · β=100", "ideal r=16 · β=1e6", "att0.5 s42 · β=100",
-       "att0.5 s42 · gain=β=1e6 (arm B)"]
+       "att0.5 s42 · gain=β=1e6 (arm B)", "ideal r=32 · β=100",
+       "ideal r=48 · β=100"]
 
 
 def _one(path_glob):
@@ -69,7 +71,8 @@ def probe_section(out: str) -> str:
                 continue
             rows.append((enc + lab_sfx, reg or "whole", d))
     order = {e: i for i, e in enumerate(
-        ["ideal r=16", "ideal r=16 (β=1e6)", "ideal r=8", "ideal r=4",
+        ["ideal r=16", "ideal r=32", "ideal r=48", "ideal r=16 (β=1e6)",
+         "ideal r=8", "ideal r=4",
          "ideal r=2", "att0.5 s42", "att0.5 s42 (β=1e6)", "att0.5 s43"])}
     rows.sort(key=lambda x: (order.get(x[0], 99), REGIONS.index(x[1])
                              if x[1] in REGIONS else 9))
