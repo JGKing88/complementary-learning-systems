@@ -44,7 +44,7 @@ ENCS=(
 REGIONS=("|whole" "0 0 500|corner" "608 608 500|centre"
          "1216 1216 500|opposite")
 
-if [[ -z "${SLURM_JOB_ID:-}" ]]; then
+if [[ -z "${SLURM_ARRAY_TASK_ID:-}" ]]; then
     mkdir -p "$OUT/logs"
     if [[ "$MODE" == probe ]]; then
         exec sbatch --job-name=ideal_probe --partition=ou_bcs_normal \
