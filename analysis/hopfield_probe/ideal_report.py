@@ -58,7 +58,8 @@ def _fmt(v, f=".3f"):
 
 def probe_section(out: str) -> str:
     rows = []
-    for tree, lab_sfx in (("probe", ""), ("sat", " (β=1e6)")):
+    for tree, lab_sfx in (("probe", ""), ("sat", " (β=1e6)"),
+                          ("probe_proj", " (proj)")):
         for f in sorted(glob.glob(f"{out}/{tree}/t*/*.json")):
             if f.endswith("manifest.json"):
                 continue
@@ -71,9 +72,11 @@ def probe_section(out: str) -> str:
                 continue
             rows.append((enc + lab_sfx, reg or "whole", d))
     order = {e: i for i, e in enumerate(
-        ["ideal r=16", "ideal r=32", "ideal r=48", "ideal r=16 (β=1e6)",
-         "ideal r=8", "ideal r=4",
-         "ideal r=2", "att0.5 s42", "att0.5 s42 (β=1e6)", "att0.5 s43"])}
+        ["ideal r=16", "ideal r=16 (proj)", "ideal r=32", "ideal r=32 (proj)",
+         "ideal r=48", "ideal r=48 (proj)", "ideal r=16 (β=1e6)",
+         "ideal r=8", "ideal r=4", "ideal r=2",
+         "att0.5 s42", "att0.5 s42 (proj)", "att0.5 s42 (β=1e6)", "att0.5 s43",
+         "ideal r=16 lsq", "table top512 refit"])}
     rows.sort(key=lambda x: (order.get(x[0], 99), REGIONS.index(x[1])
                              if x[1] in REGIONS else 9))
     body = [[e, reg, _fmt(d["err"], ".2f"), _fmt(d["acc"]), _fmt(d["exact"]),
@@ -86,9 +89,14 @@ def probe_section(out: str) -> str:
         ["encoder", "region", "|err| °", "acc45", "exact", "basin",
          "reach disc", "reach cont", "acc45 @15", "dead @ K 1/3/5/10/20"],
         body, summary="table"),
-        note="multi_env_goals memory, 8 worlds × 20 envs, env 20×20, Hebbian "
-             "storage. β=1e6 rows use saturated recall (the ideal code itself "
-             "has no tanh).")
+        note="multi_env_goals memory, 8 worlds × 20 envs, env 20×20. Hebbian "
+             "storage unless marked (proj) = projection storage (the projector "
+             "onto the stored goals' span). β=1e6 rows use saturated recall (the "
+             "ideal code itself has no tanh). 'exact' and 'basin' are one-shot: "
+             "does a single recall from the cue decode to exactly the goal cell, "
+             "and out to what radius does that hold for every cue. 'reach' "
+             "follows the direction field from every cell, recomputing recall at "
+             "each step, and needs only the direction to be right.")
 
 
 def scan_section(out: str) -> str:
