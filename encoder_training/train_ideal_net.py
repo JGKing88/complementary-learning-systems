@@ -68,6 +68,9 @@ def main() -> None:
                     help="translation-invariance penalty: variance of z(p).z(q) "
                          "across within-batch pairs with the same displacement "
                          "(Delta and -Delta pooled)")
+    ap.add_argument("--inv_ramp_epochs", type=int, default=0,
+                    help="ramp inv_lambda linearly from 0 over this many epochs "
+                         "(0 = full strength from the start)")
     ap.add_argument("--near_weight", action="store_true",
                     help="weight each pair's MSE by 1/(pairs in its 2-cell "
                          "distance bin), so near pairs count as much as far ones")
@@ -125,6 +128,8 @@ def main() -> None:
     for ep in range(1, a.epochs + 1):
         run, nb = 0.0, 0
         acc = {"mse": 0.0, "inv": 0.0, "rate": 0.0}
+        inv_lam = a.inv_lambda * (min(1.0, (ep - 1) / a.inv_ramp_epochs)
+                                  if a.inv_ramp_epochs > 0 else 1.0)
         for idx in mixed_batch_iterator(N, RECIPE["batch_size"]):
             idx = idx.to(dev).long()
             e = env_ids[idx]
@@ -155,7 +160,7 @@ def main() -> None:
                 gmean = torch.zeros_like(cnt).scatter_add(0, gid, k) / cnt
                 valid = cnt[gid] > 1
                 inv = (k - gmean[gid])[valid].square().mean()
-                loss = loss + a.inv_lambda * inv
+                loss = loss + inv_lam * inv
                 acc["inv"] += inv.item()
             if a.rate_lambda > 0:
                 rate = coding_rate_loss(z, eps=a.rate_eps)
