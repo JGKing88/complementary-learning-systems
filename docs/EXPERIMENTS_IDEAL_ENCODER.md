@@ -378,3 +378,47 @@ structure.
 Caveats: the frequency table is a strong inductive bias (it assumes the answer
 is a set of integer waves); duplicates in step 2 reduce the effective count
 below 512; and the result is only as good as a single random draw of 512.
+
+## 15. A translation-invariance penalty (2026-10-01)
+
+`train_ideal_net.py --inv_lambda` (variance of z(p)·z(q) across within-batch pairs
+with the same displacement; Δ and −Δ pooled; within-patch pairs only),
+`--near_weight` (MSE weighted by 1/pairs per 2-cell distance bin) and
+`--inv_ramp_epochs`. All runs add 0.5 × rate. `run_ideal_net_inv.sh`; results in
+`.../ideal_net/inv_{a,b,c}/`. Penalty size: ~1e-31 at the ideal integers,
+2.8e-4 for the rate-seamed codes of §13.
+
+**(a) Is the ideal stable?** Exact-integer start, 100 epochs (job 24511536):
+
+| λ_inv | integral at 10 / 100 (near off; near on) | C(1) | r_half | kernel RMSE < 71 |
+|---|---|---|---|---|
+| 0 (§13) | 0.49 / 0.50 | 0.90 | 18 | 0.049 |
+| 10 | 0.58 / 0.59; 0.66 / 0.67 | 0.97 | 17 | 0.046–0.047 |
+| 30 | 0.64 / 0.62; 0.70 / 0.71 | 0.98 | 17 | 0.039–0.046 |
+| 100 | 0.77 / 0.72; 0.79 / 0.76 | 0.99 | 18 | 0.026–0.030 |
+| 300 | 0.95 / 0.91; 0.92 / 0.89 | 0.997 | 20 | 0.0125 |
+
+λ_inv = 300 largely cancels the rate term's incentive to seam.
+
+**(b) Random starts, full strength** (λ_inv 300 / 1000 × near off/on × 3 seeds;
+jobs 24513157–9): 97–100% integral by epoch 10, but MSE 0.21, C(1) ≈ 0,
+r_half 1, r_eff 0.6 — a hash-like code. Every integer is translation-invariant,
+and the penalty freezes each row on the nearest one.
+
+**(c) Random starts, annealed** (λ_inv 0 → 300 over 250 of 500 epochs; jobs
+24540147–9): 76–96% integral already at epoch 10 (λ_inv ≈ 11), 99–100% at the
+end; MSE 0.15–0.20, C(1) 0.08–0.45, r_half 1. Same failure.
+
+**Why random starts fail: the parametrisation, not the loss.** A row's frequency
+is n = 156 j₁₁ + 143 j₁₂ + 132 j₁₃ (mod 1716) per axis. Changing one weight by 1
+moves n by 132–156; a random start in [−6, 6] lands on an essentially random
+frequency. The low frequencies a width-16 peak needs (|n| ≲ 50) come only from
+near-cancelling combinations (e.g. (1, −1, 0) → 13), a few percent of integer
+points per axis, isolated from each other. Gradient descent in weight space has
+no smooth path to them; the Chinese remainder map scrambles frequency space.
+
+**Options.** (1) The fixed integer table with sampling by weight (§14).
+(2) Learn frequencies directly in n-space: decode position from the three phases
+(exact by the CRT) and learn continuous frequency vectors with a cos/sin layer,
+which is smooth for gradient descent. (3) A discrete search over n under the
+convex objective.
