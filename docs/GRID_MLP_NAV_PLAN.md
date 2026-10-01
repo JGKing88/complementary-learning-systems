@@ -399,3 +399,37 @@ with `c` apart; and linear recall blending distractors into `q` (d0_base
 **Not yet measured.** The continual protocol (`agenthash.py`: N envs in
 sequence, retention) and nav / disc / expl need stage 2 for the sensory_kv
 backend. One seed each.
+
+### 9.3 Why idea 1 learns exploit sooner: the inputs themselves (2026-09-30)
+
+The two controllers get the same *information* -- a 2-D goal direction to
+follow when trustworthy, same view, same previous action / reward, same
+action head -- so the difference has to be in how that input behaves.
+`analysis/sensory_key/readout_compare.py` (job 24498430) measures exactly what
+each controller is handed, with no policy: every cell of the 6 task3r val
+arenas, 8 goals each, Hopfield `q` (the distal run's encoder / beta) vs idea
+1's `(d, c)` queried with one live view per cell. Results
+`/orcd/pool/003/jackking/cls_runs/sensory_key/readout_compare.json`.
+
+| distance | q error (d = 0 / 10) | d error (0 / 10) | median ‖q‖ | presence AUC ‖q‖, d = 10 | presence AUC c, d = 10 |
+|---|---|---|---|---|---|
+| 1–2 | 5.1° / 9.4° | 0.6° / 1.9° | **0.13** | **0.67** | 0.996 |
+| 3–5 | 5.8° / 7.8° | 0.5° / 0.7° | 0.25 | 0.92 | 0.995 |
+| 6–10 | 6.1° / 7.4° | 0.4° / 1.1° | 0.35 | 0.97 | 0.994 |
+| > 10 | 7.0° / 8.8° | 0.4° / 1.0° | 0.38 | 0.98 | 0.994 |
+
+(presence AUC: own goal stored vs only distractors stored, from the model's own
+presence signal.) Empty memory gives exactly 0 for both, so that case is equal.
+
+1. **Direction**: both good (< 2% of cells > 45° off), `d` ~10× more precise.
+2. **Scale**: ‖q‖ shrinks 3× toward the goal; `d` is unit everywhere. Agent-HaSH
+   must learn to follow a vector whose strength depends on where it is --
+   weakest where precision matters most.
+3. **Gate with distractors**: ‖q‖ cannot tell own goal from distractors near
+   the goal (AUC 0.67 within 2 cells) because ‖q‖ is small there either way;
+   `c` separates at 0.99 everywhere.
+
+Consistent with §9.2: at d = 0 (no gate needed) idea 1 is ~2× sooner -- (1)
+and (2); at d = 10, (3) adds and the gap grows to 2.5–3×. Correlational.
+**Causal test**: Agent-HaSH task3r with `--no-input_hopfield_raw` (unit q,
+still 0 when empty). If it closes most of the d = 0 gap, the scale is the cause.
