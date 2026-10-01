@@ -514,3 +514,46 @@ the same 40 training batches (recipe patches, seed 0):
 - **The exact ideal is still not that loss's minimum:** the 91%-integral
   near-ideal scores slightly lower (−0.1264).
 - Random starts are far worse under every version, so they remain an SGD failure.
+
+## 17. Different training dynamics, same loss (2026-10-01)
+
+Loss fixed at MSE (r = 16) + 0.5 × rate + 300 × invariance; random starts in
+[−6, 6]; 3 seeds each. New trainer options: `--inv_delay_epochs` (invariance off,
+then ramped over `--inv_ramp_epochs`), `--noise_std` (Gaussian noise on the
+harmonic weights after each step, decaying linearly to 0), and
+`--pair_sampling uniform_delta` (displacements drawn uniformly from the 99×99
+window, 16 anchors each, ~65k pairs per step; checked in-loop that each pair lies
+in one patch at the drawn displacement). Schedule for all: 250 epochs off, 250
+ramp, 250 full (750 epochs). Jobs 24570517–25 (`inv_d/`) and 24573525–42
+(`inv_e/`).
+
+Paired loss on the same 40 batch-sampled pairs (`ideal_net_loss_compare.py`,
+seed 0 of each), plus each run's own diagnostics (3 seeds):
+
+| network | total loss | gap to ideal | C(1) | r_half |
+|---|---|---|---|---|
+| exact ideal | −0.126 | — | 0.998 | 19 |
+| near-ideal (from the ideal, §15a) | −0.1264 | −0.001 | 0.997 | 20 |
+| delayed invariance, no noise | ≈ −0.035 | ≈ +0.09 | 0.51–0.54 | 6–8 |
+| batch, noise 0.01 | ≈ −0.047 | ≈ +0.08 | 0.58–0.59 | 9–10 |
+| batch, noise 0.03 | −0.093 | +0.033 | 0.75–0.78 | 12–14 |
+| **uniform-Δ, noise 0.03** | **−0.107** | **+0.019** | 0.60–0.61 | 8–10 |
+| batch, noise 0.06 | −0.082 | +0.044 | 0.50–0.53 | 1–2 |
+| uniform-Δ, noise 0.06 | – | – | 0.35–0.37 | 1 |
+| batch or uniform-Δ, noise 0.1 | ≈ +0.02 | – | 0.03–0.09 | 1 |
+| batch + near weighting, noise 0.03 | −0.014 | +0.112 | 0.95 | 8 |
+
+(Rows without a paired loss give the total from each run's own logged
+components, MSE + 0.5·rate, under its own sampling.)
+
+**Reading.**
+1. **Uniform-Δ sampling + noise 0.03 is the best random start so far.** It cuts the
+   remaining gap to the ideal by ~40% (0.033 → 0.019), consistently across seeds,
+   but the code is still not the ideal (C(1) 0.6, r_half 9 vs 20).
+2. **More noise hurts:** σ = 0.03 is the sweet spot; at 0.06 the code roughens and
+   at 0.1 it is hash-like under either sampling.
+3. **Near weighting fits the near field (C(1) 0.95) but not the shoulder**
+   (r_half 8), and is the worst on the actual loss. Each change captures a
+   different part of the kernel; none gets all of it.
+
+No training-dynamics change so far brings a random start to the ideal.
