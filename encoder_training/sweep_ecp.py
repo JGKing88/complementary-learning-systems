@@ -2435,6 +2435,9 @@ def main() -> None:
                    help="resubmit just the runs whose name contains this. For "
                         "relaunching the few cells of a wave that died or were "
                         "fixed, without disturbing the ones still running.")
+    p.add_argument("--exclude", default="",
+                   help="nodes for sbatch --exclude (e.g. one whose GPUs report "
+                        "busy/unavailable: node3804 on 2026-09-30)")
     p.add_argument("--dry-run", action="store_true")
     args = p.parse_args()
 
@@ -2525,7 +2528,8 @@ for r in {names}; do
   echo "--- $r"; tail -2 {sweep_dir}/$r/train.log
 done
 """
-        r = subprocess.run(["sbatch"], input=sbatch, text=True,
+        cmd = ["sbatch"] + ([f"--exclude={args.exclude}"] if args.exclude else [])
+        r = subprocess.run(cmd, input=sbatch, text=True,
                            capture_output=True)
         msg = r.stdout.strip() or r.stderr.strip()
         print(f"  [g{g:2d}] {len(group)} runs: {msg}")

@@ -24,7 +24,7 @@ ROOT = os.path.join(str(results_dir()), "hopfield_probe/20260914")
 # once to separate recipe from region density; "whole" is the unconfined
 # probe, the ladder's own setting. Longer names first so prefix matching is
 # unambiguous.
-ARMS = ("corner500_a0.5", "scatter100_a0.5", "corner500", "scatter100",
+ARMS = ("stagger500_a0.5", "corner500_a0.5", "scatter100_a0.5", "corner500", "scatter100",
         "scatter118", "att0.5", "untrained")
 REGIONS = ("corner", "centre", "opposite", "whole")
 
