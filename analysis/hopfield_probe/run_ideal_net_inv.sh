@@ -38,11 +38,12 @@ SEED=${SEED:-0}
 RAMP=${RAMP:-0}                       # epochs over which inv_lambda ramps from 0
 DELAY=${DELAY:-0}                     # epochs with inv_lambda = 0 before the ramp
 NOISE=${NOISE:-0}                     # per-step weight noise, decays to 0
+SAMPLING=${SAMPLING:-batch}           # batch | uniform_delta
 NW=(); [[ "$NEAR" == 1 ]] && NW=(--near_weight)
-name="inv${INV}_near${NEAR}_d${DELAY}_r${RAMP}_n${NOISE}_${INIT}_s${SEED}"
+name="inv${INV}_near${NEAR}_${SAMPLING}_d${DELAY}_r${RAMP}_n${NOISE}_${INIT}_s${SEED}"
 "$PY" -m encoder_training.train_ideal_net --r 16 --init "$INIT" --seed "$SEED" \
     --epochs "$EPOCHS" --lr 1e-2 --rate_lambda 0.5 --rate_eps 1.0 \
     --inv_lambda "$INV" --inv_ramp_epochs "$RAMP" --inv_delay_epochs "$DELAY" \
-    --noise_std "$NOISE" ${NW[@]+"${NW[@]}"} --log_every 10 \
+    --noise_std "$NOISE" --pair_sampling "$SAMPLING" ${NW[@]+"${NW[@]}"} --log_every 10 \
     --save_at 0 "$EPOCHS" --out "$OUT/$name"
 echo "DONE $name"

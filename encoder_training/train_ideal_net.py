@@ -76,6 +76,11 @@ def main() -> None:
     ap.add_argument("--noise_std", type=float, default=0.0,
                     help="Gaussian noise added to the harmonic weights after each "
                          "step, decaying linearly to 0 at the last epoch")
+    ap.add_argument("--pair_sampling", choices=["batch", "uniform_delta"],
+                    default="batch")
+    ap.add_argument("--n_delta", type=int, default=4096,
+                    help="uniform_delta: displacements drawn per step")
+    ap.add_argument("--anchors_per_delta", type=int, default=16)
     ap.add_argument("--near_weight", action="store_true",
                     help="weight each pair's MSE by 1/(pairs in its 2-cell "
                          "distance bin), so near pairs count as much as far ones")
@@ -113,6 +118,45 @@ def main() -> None:
 
     hist = []
 
+    # --- pair sampling ------------------------------------------------------
+    # "batch": all within-patch pairs among a random batch of points (the
+    # recipe; short displacements are rare). "uniform_delta": displacement
+    # vectors drawn uniformly from the (2s-1)^2 window, several anchors each.
+    sizes_t = torch.tensor(sizes, device=dev)
+    starts = torch.cumsum(sizes_t * sizes_t, 0) - sizes_t * sizes_t
+    steps_per_epoch = N // RECIPE["batch_size"]
+
+    def pair_batches():
+        if a.pair_sampling == "batch":
+            for idx in mixed_batch_iterator(N, RECIPE["batch_size"]):
+                idx = idx.to(dev).long()
+                e = env_ids[idx]
+                ii, jj = torch.triu_indices(len(idx), len(idx), 1, device=dev)
+                keep = e[ii] == e[jj]
+                yield idx[ii[keep]], idx[jj[keep]], idx
+            return
+        s = int(sizes[0])
+        assert all(int(x) == s for x in sizes), "uniform_delta needs equal patch sizes"
+        D, A = a.n_delta, a.anchors_per_delta
+        for _ in range(steps_per_epoch):
+            dy = torch.randint(-(s - 1), s, (D,), device=dev)
+            dx = torch.randint(-(s - 1), s, (D,), device=dev)
+            zero = (dy == 0) & (dx == 0)
+            dx = torch.where(zero, torch.ones_like(dx), dx)   # no self-pairs
+            dy, dx = dy[:, None].expand(D, A), dx[:, None].expand(D, A)
+            e = torch.randint(0, len(sizes), (D, A), device=dev)
+            ay = (torch.rand(D, A, device=dev) * (s - dy.abs())).long() + (-dy).clamp_min(0)
+            ax = (torch.rand(D, A, device=dev) * (s - dx.abs())).long() + (-dx).clamp_min(0)
+            pi = (starts[e] + ay * s + ax).reshape(-1)
+            pj = (starts[e] + (ay + dy) * s + (ax + dx)).reshape(-1)
+            # every pair lies in one patch, at exactly the drawn displacement
+            assert bool((env_ids[pi] == env_ids[pj]).all())
+            got = (coords[pj] - coords[pi]).long()
+            assert bool((got[:, 0] == dy.reshape(-1)).all()
+                        and (got[:, 1] == dx.reshape(-1)).all())
+            ridx = torch.randint(0, N, (RECIPE["batch_size"],), device=dev)
+            yield pi, pj, ridx
+
     def log(ep, loss, parts=None):
         d = integrality(W.detach().cpu().numpy())
         d.update(epoch=ep, loss=loss, time=time.time() - t0, **(parts or {}))
@@ -140,16 +184,12 @@ def main() -> None:
             inv_lam = a.inv_lambda * (min(1.0, e_on / a.inv_ramp_epochs)
                                       if a.inv_ramp_epochs > 0 else 1.0)
         noise_t = a.noise_std * max(0.0, 1.0 - (ep - 1) / a.epochs)
-        for idx in mixed_batch_iterator(N, RECIPE["batch_size"]):
-            idx = idx.to(dev).long()
-            e = env_ids[idx]
-            ii, jj = torch.triu_indices(len(idx), len(idx), 1, device=dev)
-            keep = e[ii] == e[jj]
-            ii, jj = ii[keep], jj[keep]
-            th = phases[idx] @ W.T                               # (B, F)
-            z = torch.cat([torch.cos(th), torch.sin(th)], 1) / math.sqrt(F)
-            k = (z[ii] * z[jj]).sum(1)
-            d2 = (coords[idx[ii]] - coords[idx[jj]]).square().sum(1).double()
+        for pi, pj, ridx in pair_batches():
+            def code(ix):
+                th = phases[ix] @ W.T
+                return torch.cat([torch.cos(th), torch.sin(th)], 1) / math.sqrt(F)
+            k = (code(pi) * code(pj)).sum(1)
+            d2 = (coords[pi] - coords[pj]).square().sum(1).double()
             err2 = (k - torch.exp(-d2 / two_r2)).square()
             if a.near_weight:
                 dbin = (d2.sqrt() / 2).long()
@@ -161,7 +201,7 @@ def main() -> None:
             acc["mse"] += mse.item()
             if a.inv_lambda > 0:
                 # pairs with the same displacement should have the same similarity
-                dxy = (coords[idx[jj]] - coords[idx[ii]]).long()
+                dxy = (coords[pj] - coords[pi]).long()
                 flip = (dxy[:, 0] < 0) | ((dxy[:, 0] == 0) & (dxy[:, 1] < 0))
                 dxy = torch.where(flip[:, None], -dxy, dxy)
                 key = (dxy[:, 0] + 128) * 512 + (dxy[:, 1] + 128)
@@ -173,7 +213,7 @@ def main() -> None:
                 loss = loss + inv_lam * inv
                 acc["inv"] += inv.item()
             if a.rate_lambda > 0:
-                rate = coding_rate_loss(z, eps=a.rate_eps)
+                rate = coding_rate_loss(code(ridx), eps=a.rate_eps)
                 loss = loss + a.rate_lambda * rate
                 acc["rate"] += rate.item()
             opt.zero_grad()
