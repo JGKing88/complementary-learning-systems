@@ -434,3 +434,33 @@ learns frequencies "directly" (the current net already does, locally) but becaus
 a non-integer frequency on a decoded position seams once, at the 1716 arena edge,
 instead of at every module wrap, so integrality barely matters. (3) A discrete
 search over n under the convex objective.
+
+## 16. The probe with projection storage (2026-10-01)
+
+Every probe number above used Hebbian storage; projection storage had only been
+used in the dynamics check (§10). `STORAGE=proj run_ideal.sh probe 12-19,24-31`
+(job 24547428), the same settings plus `--storage_rule proj`; results in
+`.../ideal_encoder/probe_proj/`.
+
+| (K = 5, s = 1) | storage | \|err\| ° | acc45 | exact | basin | reach (cont) | dead K 3/5/10/20 |
+|---|---|---|---|---|---|---|---|
+| ideal r = 48, 500-cell regions | hebb | 7.76 | 0.975 | 0.355 | 7.4 | 0.52 | 0.42/0.54/0.54/0.54 |
+| | **proj** | **0.85** | **1.000** | **0.733** | **14.5** | **0.99** | **0/0/0/0** |
+| ideal r = 48, whole | hebb / proj | 1.16 / 0.62 | 1.000 | 1.000 | 54.6 / 50.2 | 0.99 | 0 |
+| ideal r = 32, regions | hebb / proj | 0.87 / 0.59 | 1.000 | 1.000 | 44.4 / 44.0 | 0.99 | 0 |
+| ideal r = 16, regions | hebb / proj | 1.12 / 1.02 | 1.000 | 0.999 | 29.2 / 28.9 | 0.99 | 0 |
+| att0.5 s42, regions | hebb | 8.1–10.5 | 0.996–1.000 | 0.86–0.98 | 14.7–21.8 | 0.98–0.995 | up to 0.08 |
+| | proj | 7.8–10.0 | 0.997–1.000 | 0.97–0.99 | 18.1–23.7 | 0.975–0.995 | ≤ 0.04 |
+
+**Reading.**
+1. **The navigation width limit of §9 was Hebbian cross-talk.** Projection
+   storage takes r = 48 in the regions from 54% dead goals and reach 0.52 to no
+   dead goals, reach 0.99 and ~1° direction error. "Usable r ≲ goal spacing / 3"
+   is a property of Hebbian storage, not of wide codes.
+2. **What remains is a precision limit from the kernel itself.** Exact retrieval
+   of the goal cell reaches only 0.73 (basin 14.5) at r = 48, against 1.00 at
+   r = 32: neighbouring cells differ by 1 − k(1) ≈ 2×10⁻⁴, so the exact cell is
+   fragile. Projection storage removes the other goals' leak but not that flatness.
+3. **Projection storage also helps the trained encoder:** att0.5's
+   region-dependent exact retrieval rises from 0.86–0.98 to 0.97–0.99.
+4. At r = 16 and 32 the ideal code barely changes (direction error drops slightly).
