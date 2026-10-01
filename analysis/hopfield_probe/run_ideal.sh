@@ -42,6 +42,7 @@ ENCS=(
     "$S/w52_attract_fwhm/001_att0.5_seed=43/encoder_final.pt|att0.5 s43"
     "ideal:r=32,n_freq=512,seed=0,gain=100|ideal r=32"
     "ideal:r=48,n_freq=512,seed=0,gain=100|ideal r=48"
+    "ideal:r=16,n_freq=512,seed=0,gain=100,weights=/orcd/pool/003/jackking/cls_runs/results/ideal_net/lsq_weights_r16_seed0.npy|ideal r=16 lsq"
 )
 REGIONS=("|whole" "0 0 500|corner" "608 608 500|centre"
          "1216 1216 500|opposite")

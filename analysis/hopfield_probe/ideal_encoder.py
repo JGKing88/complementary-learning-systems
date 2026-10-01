@@ -97,8 +97,21 @@ class IdealEncoder(torch.nn.Module):
     """Grid code ``(N, sum l^2)`` -> Gaussian-kernel RFF ``(N, 2 n_freq)``."""
 
     def __init__(self, r: float, n_freq: int = 512, seed: int = 0,
-                 lambdas=DEFAULT_LAMBDAS, gain: float = 100.0):
+                 lambdas=DEFAULT_LAMBDAS, gain: float = 100.0,
+                 weights: str | np.ndarray | None = None):
         super().__init__()
+        # Optional per-frequency weights a_i >= 0 (e.g. a least-squares fit for
+        # this draw): wave i is scaled by sqrt(a_i / sum a), so z.z' =
+        # sum_i a_i cos(omega_i . Delta) / sum a. None = equal weights.
+        self.weights_path = weights if isinstance(weights, str) else None
+        if weights is None:
+            a = np.ones(int(n_freq))
+        else:
+            a = np.load(weights) if isinstance(weights, str) else np.asarray(weights)
+            a = np.clip(np.asarray(a, dtype=np.float64), 0.0, None)
+            if a.shape != (int(n_freq),):
+                raise ValueError(f"weights shape {a.shape} != ({n_freq},)")
+        self.register_buffer("amp", torch.from_numpy(np.sqrt(a / a.sum())))
         self.r = float(r)
         self.n_freq = int(n_freq)
         self.seed = int(seed)
@@ -150,7 +163,7 @@ class IdealEncoder(torch.nn.Module):
                              f"{tuple(codes.shape)}")
         theta = self._phases(codes) @ self.harmonics.to(codes.device)
         out = torch.cat([torch.cos(theta), torch.sin(theta)], dim=1)
-        out = out / math.sqrt(self.n_freq)
+        out = out * torch.cat([self.amp, self.amp]).to(out)
         return out.to(codes.dtype if codes.is_floating_point()
                       else torch.float32)
 
@@ -161,8 +174,9 @@ class IdealEncoder(torch.nn.Module):
         # Integer phase mod Npos first: exact, no float blow-up at large n.p.
         k = np.mod(p @ n.T, self.npos).astype(np.float64)
         theta = 2.0 * math.pi * k / self.npos
+        amp = self.amp.cpu().numpy()
         return np.concatenate([np.cos(theta), np.sin(theta)], axis=1) \
-            / math.sqrt(self.n_freq)
+            * np.concatenate([amp, amp])
 
 
 # --- probe-harness hook ------------------------------------------------------
@@ -185,6 +199,9 @@ def parse_ideal_spec(spec: str) -> dict:
     for part in filter(None, re.split(r"[,;]", body)):
         k, _, v = part.partition("=")
         k = k.strip()
+        if k == "weights":
+            kw[k] = v.strip()
+            continue
         if k not in ("r", "n_freq", "seed", "gain"):
             raise ValueError(f"unknown ideal-encoder key {k!r} in {spec!r}")
         kw[k] = int(v) if k in ("n_freq", "seed") else float(v)
@@ -215,7 +232,8 @@ def load_ideal_encoder(spec: str, *, device="cpu",
         "output_nonlinearity": cfg.output_nonlinearity,
         "n_params": 0, "epoch": None, "val_nav_acc": None,
         "unique_radius": None,
-        "ideal": {"r": enc.r, "n_freq": enc.n_freq, "seed": enc.seed},
+        "ideal": {"r": enc.r, "n_freq": enc.n_freq, "seed": enc.seed,
+                  "weights": enc.weights_path},
     }
     return enc, cfg, enc.gain, float(fwhm), header
 

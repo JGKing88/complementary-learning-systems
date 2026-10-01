@@ -86,3 +86,7 @@ for lo, hi in [(0, 10), (10, 20), (20, 30), (30, 40), (40, 50), (50, 80)]:
     m = (absn >= lo) & (absn < hi)
     if m.any():
         print(f"  |n| {lo:>2d}–{hi:<2d}: median z {np.median(z[m]):+.2f}  ({m.sum()} rows)")
+
+out = "/orcd/pool/003/jackking/cls_runs/results/ideal_net/lsq_weights_r16_seed0.npy"
+np.save(out, w_opt)
+print(f"saved NNLS weights -> {out}")
