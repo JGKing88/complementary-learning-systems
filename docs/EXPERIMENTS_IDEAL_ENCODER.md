@@ -464,3 +464,24 @@ used in the dynamics check (§10). `STORAGE=proj run_ideal.sh probe 12-19,24-31`
 3. **Projection storage also helps the trained encoder:** att0.5's
    region-dependent exact retrieval rises from 0.86–0.98 to 0.97–0.99.
 4. At r = 16 and 32 the ideal code barely changes (direction error drops slightly).
+
+### 16.1 Dimension cannot fix kernel overlap; the kernel shape can (noted for later)
+
+In the linear recall regime (β = 100, tanh inert), every step of the probe is a
+function of inner products between codes only:
+- Hebbian recall Σₖ (zₖ·x) zₖ has similarity Σₖ k(x−gₖ) k(c−gₖ) to a cell c;
+- projection recall P x, P = Z(ZᵀZ)⁻¹Zᵀ, has similarity k_cᵀ G⁻¹ k_x;
+- normalisation, the direction readout and decoding are dot products too.
+
+So a code that matches a target kernel exactly gives the same probe results at
+any dimension. The r = 48 overlap (similarity 0.12 between goals ~99 cells
+apart) is the kernel's own value, and more dimensions cannot remove it.
+
+Caveats: (1) a saturating recall nonlinearity (β = 1e6) acts element-wise and does
+depend on the representation; (2) at finite D the code only approximates the
+kernel, with random far-field wobble ~1/√(2·waves); more D shrinks that, but it is
+not what limits r = 48; (3) **the lever is the kernel's shape** — a target with
+a sharper fall-off or slight negative lobes, instead of a Gaussian, could cut
+neighbour overlap at a given peak width. More dimensions matter there only in that
+sharper kernels need more frequencies to realise. **To do later:** compare kernel
+shapes at fixed near-field width.
