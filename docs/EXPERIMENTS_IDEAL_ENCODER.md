@@ -355,7 +355,11 @@ peak comes out too wide:
 | top-512, refit | 0.027 | 233 | 26 | 24 | 0.32 | 0.048 |
 
 This is the 2D budget problem of the explainer page's step 06 ("exact lowest N").
-Probe of the refit code: job 24510166 (pending).
+Probe of the refit code (job 24510166; `table top512 refit`): whole arena
+(stored goals ~350 cells apart) exact 0.977, basin 26, reach 0.99, direction
+error 0.8°; but every 500-cell region (goals ~99 cells apart) exact 0.42, basin
+4.5, reach 0.82, 33–38% dead goals at K ≥ 10. The same failure as r = 48 (§9):
+the too-wide peak and high far tail let neighbouring goals leak into recall.
 
 ### One possible solution (not yet run)
 
