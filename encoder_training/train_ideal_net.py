@@ -36,7 +36,8 @@ import time
 import numpy as np
 import torch
 
-from analysis.hopfield_probe.ideal_net import IdealNet, save_ideal_net
+from analysis.hopfield_probe.ideal_net import (IdealNet, load_ideal_net,
+                                               save_ideal_net)
 from encoder_training.data import (build_patch_codes, mixed_batch_iterator,
                                    sample_nonoverlapping_patches)
 from encoder_training.ideal_net_diagnostics import diagnose, integrality
@@ -76,6 +77,11 @@ def main() -> None:
     ap.add_argument("--noise_std", type=float, default=0.0,
                     help="Gaussian noise added to the harmonic weights after each "
                          "step, decaying linearly to 0 at the last epoch")
+    ap.add_argument("--init_ckpt", default=None,
+                    help="start from this saved IdealNet's harmonic weights")
+    ap.add_argument("--kick", type=float, default=0.0,
+                    help="add uniform(-kick, kick) to every harmonic weight at "
+                         "the start (basin test)")
     ap.add_argument("--pair_sampling", choices=["batch", "uniform_delta"],
                     default="batch")
     ap.add_argument("--n_delta", type=int, default=4096,
@@ -112,6 +118,13 @@ def main() -> None:
                             for i in range(0, N, 65536)])
     del Phi
     W = net.harmonics.weight                       # (F, 6), the only parameter
+    if a.init_ckpt:
+        src, _ = load_ideal_net(a.init_ckpt)
+        with torch.no_grad():
+            W.copy_(src.harmonics.weight.to(W))
+    if a.kick > 0:
+        with torch.no_grad():
+            W.add_(torch.empty_like(W).uniform_(-a.kick, a.kick))
     opt = torch.optim.Adam([W], lr=a.lr)
     F = W.shape[0]
     two_r2 = 2.0 * a.r * a.r
