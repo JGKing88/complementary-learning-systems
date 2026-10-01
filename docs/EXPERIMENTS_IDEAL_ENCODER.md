@@ -263,3 +263,46 @@ target exp(−|Δ|²/2·16²).
 the network collapse toward the sparse, ringing optimum. The objective needs a
 far-field term (random scaffold pairs with target ≈ 0, or the coding-rate term)
 alongside the amplitudes.
+
+## 12. Objective first: the optimum of kernel MSE + coding rate (2026-09-30)
+
+`encoder_training/ideal_net_rate_optimum.py`, GPU job 24504580; weights and
+`rate_optimum.json` in `/orcd/pool/003/jackking/cls_runs/results/ideal_net/rate_optimum/`.
+Frequencies fixed, amplitudes a on the simplex (unit-norm codes). Loss =
+within-patch kernel MSE (r = 16) − λ·rate, with the rate exactly
+`losses.coding_rate_loss` (ε = 1) on the recipe's training positions. MSE is
+convex in a, and the log-det is concave in a (Sylvester), so the problem is
+convex; solved by exponentiated gradient from equal weights.
+
+**First, the least-squares encoder in the probe** (§11.1's 34-wave optimum,
+`ideal:r=16,...,weights=lsq_weights_r16_seed0.npy`, job 24503516): acc45
+0.989–0.995, direction error 7–8°, but exact 0.12–0.15, basin ≈ 0, reach
+0.58–0.72, 75% dead goals at K ≥ 10. So minimising the within-patch loss
+alone can give a bad Hopfield input.
+
+| menu | λ | MSE | waves (PR) | C(1) | r_half | r_eff | max beyond 71 | far sd |
+|---|---|---|---|---|---|---|---|---|
+| 512 draw | 0 – 0.1 | 2e-6 – 4e-5 | ~470 | 0.998 | 19 | 15.9–16.1 | 0.05–0.06 | 0.035–0.038 |
+| 512 draw | 0.5 | 0.00047 | 471 | 0.998 | 19 | 15.5 | 0.059 | 0.035 |
+| 512 draw | equal | 0.00048 | 512 | 0.998 | 20 | 16.2 | 0.050 | 0.037 |
+| flat \|n\| ≤ 40 (2513) | 0 – 0.1 | 1.3e-5 – 1.2e-4 | 1265–1600 | 0.998 | 19 | 16.2–16.3 | 0.12–0.16 | 0.020–0.021 |
+| flat | 0.5 | 0.0013 | 1731 | 0.998 | 18 | 15.5 | 0.090 | 0.019 |
+| flat | equal | 0.035 | 2513 | 0.997 | 16 | – | 0.041 | 0.015 |
+
+**Reading.**
+1. **With the rate term, the optimum is a good code at every λ on both menus.**
+   On the flat menu (no Gaussian shape built in) the MSE reshapes the spectrum
+   to the target (r_eff 15.5–16.3, half-height 18–19) and the rate keeps
+   1300–1700 waves in use.
+2. **The within-patch MSE is not simply broken; it is degenerate.** Exponentiated
+   gradient from equal weights at λ = 0 also reaches near-zero MSE with a dense,
+   good code (470 waves, far sd 0.038). NNLS's 34-wave solution is a vertex of a
+   flat set of near-optimal solutions. The rate term breaks that tie toward the
+   dense one.
+3. My prediction that "at λ = 0.5 the rate dominates and the target barely
+   matters" held on the 512 draw (the optimum ≈ equal weights) but not on the
+   flat menu, where the MSE still shapes the kernel.
+
+**Objective chosen:** kernel MSE (r = 16) + coding rate, λ = 0.5, ε = 1, as in
+the recipe. **Next:** Stage A from random starts with this loss: does SGD find
+integer weights implementing it?
