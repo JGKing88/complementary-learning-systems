@@ -456,3 +456,46 @@ So §9.1–9.2's Agent-HaSH task numbers carry it. Reruns on the fixed code:
 `task3r_k2_h128_distal` (24504515) and the unit-q + ‖q‖ variant
 `task3r_k2_h128_distal_qmag` (24504516; `--no-input_hopfield_raw
 --input_q_magnitude`, the Hopfield analog of idea 1's (d, c)).
+
+### 9.5 Fixed-code head-to-head, and the causal test (2026-10-02)
+
+All on the fixed code (§9.4), `task3r_k2_h128` at `distal_amp 1`, one seed each:
+idea 1 (24342872, unaffected by the bug), Agent-HaSH raw `q` rerun
+(`_distal`, 24504515), Agent-HaSH unit `q` + ‖q‖ (`_distal_qmag`, 24504516;
+`--no-input_hopfield_raw --input_q_magnitude` -- the Hopfield analog of idea
+1's (d, c)).
+
+**Learning speed** (first update where the 3-eval rolling mean of the
+in-training task eval crosses; idea 1 / raw q / unit q + ‖q‖):
+
+| target | d = 0 | d = 10 |
+|---|---|---|
+| revisit found ≥ 0.99 | u250 / u700 / u300 | u250 / u600 / u300 |
+| revisit steps ≤ 15 | u750 / u1300 / **u550** | **u650** / u1400 / u900 |
+| revisit steps ≤ 13 | u950 / u1850 / **u850** | **u1050** / u3000 / u1150 |
+| cos(a, readout) post ≥ 0.9 | **u750** / u1650 / u800 | **u750** / u2050 / u850 |
+
+**End of training** (`eval_task_ckpts`, job 24560734: the 6 task3r val envs,
+u3800–4000 pooled, 5 eval seeds each, ± across checkpoints;
+`eval_task_ckpts_fixed.json`):
+
+| run | revisit steps d = 0 | revisit steps d = 10 | found d = 0 / 10 | pre-store chase, d = 10 |
+|---|---|---|---|---|
+| idea 1 | **11.60 ± 0.13** | **11.48 ± 0.24** | 0.54 / 0.52 (0.60 / 0.57 without u4000) | **0.007** |
+| Agent-HaSH, unit q + ‖q‖ | 11.68 ± 0.38 | 12.41 ± 1.03 | 0.56 / 0.60 | 0.042 |
+| Agent-HaSH, raw q | 12.26 ± 0.38 | 13.25 ± 0.79 | **0.65 / 0.62** | 0.023 |
+
+**Reading.**
+1. **Most of idea 1's learning-speed advantage was the representation of
+   Agent-HaSH's readout, not the memory.** Split ‖q‖ out of `q` and Agent-HaSH
+   learns exploit as fast as idea 1 -- slightly faster at d = 0, close behind
+   at d = 10 -- and 2–3× faster than with raw `q`. Raw `q` folds the magnitude
+   (its gate) into the vector and shrinks 3× toward the goal (§9.3).
+2. **At d = 0 the end state ties**: unit q + ‖q‖ 11.68 vs idea 1 11.60.
+3. **With 10 distractors idea 1 is still best at the end** (11.5 vs 12.4 vs
+   13.2) and chases foreign goals least before storing (0.007 vs 0.042 /
+   0.023). This residual is the memory: near the goal ‖q‖ cannot tell the own
+   goal from a distractor (presence AUC 0.67 within 2 cells, §9.3), while the
+   argmax store's `c` separates them at 0.99.
+4. **Search: raw-q Agent-HaSH is the best searcher** (found 0.65 / 0.62 vs
+   0.54–0.60). Idea 1's search also collapsed once (u4000) -- one seed.
