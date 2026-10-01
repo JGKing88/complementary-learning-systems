@@ -43,6 +43,7 @@ ENCS=(
     "ideal:r=32,n_freq=512,seed=0,gain=100|ideal r=32"
     "ideal:r=48,n_freq=512,seed=0,gain=100|ideal r=48"
     "ideal:r=16,n_freq=512,seed=0,gain=100,weights=/orcd/pool/003/jackking/cls_runs/results/ideal_net/lsq_weights_r16_seed0.npy|ideal r=16 lsq"
+    "ideal:r=16,n_freq=512,seed=0,gain=100,freqs=/orcd/pool/003/jackking/cls_runs/results/ideal_net/topk/freqs_512.npy,weights=/orcd/pool/003/jackking/cls_runs/results/ideal_net/topk/weights_512.npy|table top512 refit"
 )
 REGIONS=("|whole" "0 0 500|corner" "608 608 500|centre"
          "1216 1216 500|opposite")

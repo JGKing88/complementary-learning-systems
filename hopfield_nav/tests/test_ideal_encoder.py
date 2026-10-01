@@ -74,7 +74,7 @@ def test_loader_resolves_an_ideal_spec():
     assert cfg.out_dim == 128 and list(cfg.lambdas) == LAMBDAS
     assert gain == 100.0 and fwhm == 0.25
     assert header["ideal"] == {"r": 4.0, "n_freq": 64, "seed": 3,
-                               "weights": None}
+                               "weights": None, "freqs": None}
 
 
 # --- IdealNet: the same computation as explicit layers ----------------------

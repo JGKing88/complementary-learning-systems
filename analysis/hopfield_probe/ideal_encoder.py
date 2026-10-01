@@ -98,7 +98,8 @@ class IdealEncoder(torch.nn.Module):
 
     def __init__(self, r: float, n_freq: int = 512, seed: int = 0,
                  lambdas=DEFAULT_LAMBDAS, gain: float = 100.0,
-                 weights: str | np.ndarray | None = None):
+                 weights: str | np.ndarray | None = None,
+                 freqs: str | np.ndarray | None = None):
         super().__init__()
         # Optional per-frequency weights a_i >= 0 (e.g. a least-squares fit for
         # this draw): wave i is scaled by sqrt(a_i / sum a), so z.z' =
@@ -119,7 +120,16 @@ class IdealEncoder(torch.nn.Module):
         self.npos = int(np.prod(self.lambdas))
         self.gain = float(gain)
 
-        freqs = draw_frequencies(self.r, self.n_freq, self.seed, self.npos)
+        # Optional explicit (n_freq, 2) integer frequency list (e.g. a chosen
+        # subset of a larger table) in place of the Gaussian draw.
+        self.freqs_path = freqs if isinstance(freqs, str) else None
+        if freqs is None:
+            freqs = draw_frequencies(self.r, self.n_freq, self.seed, self.npos)
+        else:
+            freqs = np.load(freqs) if isinstance(freqs, str) else np.asarray(freqs)
+            freqs = np.rint(freqs).astype(np.int64)
+            if freqs.shape != (self.n_freq, 2):
+                raise ValueError(f"freqs shape {freqs.shape} != ({self.n_freq}, 2)")
         jx = crt_harmonics(freqs[:, 0], self.lambdas)       # (M, n_freq)
         jy = crt_harmonics(freqs[:, 1], self.lambdas)
         # Rows ordered (m0 x, m0 y, m1 x, m1 y, ...) to match _phases.
@@ -199,7 +209,7 @@ def parse_ideal_spec(spec: str) -> dict:
     for part in filter(None, re.split(r"[,;]", body)):
         k, _, v = part.partition("=")
         k = k.strip()
-        if k == "weights":
+        if k in ("weights", "freqs"):
             kw[k] = v.strip()
             continue
         if k not in ("r", "n_freq", "seed", "gain"):
@@ -233,7 +243,7 @@ def load_ideal_encoder(spec: str, *, device="cpu",
         "n_params": 0, "epoch": None, "val_nav_acc": None,
         "unique_radius": None,
         "ideal": {"r": enc.r, "n_freq": enc.n_freq, "seed": enc.seed,
-                  "weights": enc.weights_path},
+                  "weights": enc.weights_path, "freqs": enc.freqs_path},
     }
     return enc, cfg, enc.gain, float(fwhm), header
 
