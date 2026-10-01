@@ -32,6 +32,10 @@ OUT=${OUT:-/orcd/pool/003/jackking/cls_runs/results/hopfield_probe/ideal_encoder
 
 MODE=${1:-probe}
 ARG=${2:-}
+# STORAGE=proj stores the projector onto span(Z) instead of the Hebbian sum
+# (harness storage_rule) and writes to probe_proj/ so the hebb runs are kept.
+STORAGE=${STORAGE:-hebb}
+PROBE_DIR=probe; [[ "$STORAGE" != hebb ]] && PROBE_DIR=probe_$STORAGE
 
 ENCS=(
     "ideal:r=2,n_freq=512,seed=0,gain=100|ideal r=2"
@@ -89,6 +93,7 @@ REG=()
     --steps 1 2 3 5 10 15 --env_size 20 --Npos 1716 \
     --n_alias 5000 --n_cont_samples 60000 --n_cont_annulus 20000 \
     --seed 0 --device cpu --fwhm_fallback 0.25 \
-    --out "$OUT/probe/t$i"
+    --storage_rule "$STORAGE" \
+    --out "$OUT/$PROBE_DIR/t$i"
 
-echo "DONE probe $i  $elabel  region=$rlabel -> $OUT/probe/t$i"
+echo "DONE probe $i  $elabel  region=$rlabel storage=$STORAGE -> $OUT/$PROBE_DIR/t$i"
