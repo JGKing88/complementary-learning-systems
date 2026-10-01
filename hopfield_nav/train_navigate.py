@@ -1044,6 +1044,8 @@ CFG_FIELDS: dict[str, tuple[str, ...]] = {
     "memory_backend": ("agent.memory_backend",),
     "grid_mlp_checkpoint": ("agent.grid_mlp_checkpoint",),
     "scale_q_by_c": ("agent.scale_q_by_c",),
+    "input_memory_conf": ("agent.input_memory_conf",),
+    "hopfield_storage_rule": ("hopfield.storage_rule",),
     # ppo
     "lr": ("ppo.lr",),
     "move_ent_coef": ("ppo.ent_coef",),
@@ -1237,6 +1239,10 @@ def build_parser() -> argparse.ArgumentParser:
                    help="sensory_kv: the Phase-1 grid MLP, e.g. $CLS_RUNS/agent_ckpts/goal_pairs_p1_grid64_bal_s0/pairs_final.pt")
     p.add_argument("--scale_q_by_c", action=argparse.BooleanOptionalAction, default=False,
                    help="sensory_kv: feed c*d instead of d (Agent-HaSH-parity variant). c is fed on memory_conf either way.")
+    p.add_argument("--input_memory_conf", action=argparse.BooleanOptionalAction, default=True,
+                   help="sensory_kv: feed c on its own memory_conf channel (default). --no-input_memory_conf with --scale_q_by_c leaves only c*d, the analog of Agent-HaSH's raw q.")
+    p.add_argument("--hopfield_storage_rule", choices=["hebb", "proj"], default="hebb",
+                   help="Hopfield storage rule: hebb (default) or proj, the projection rule (stored patterns are exact fixed points, no cross-talk). hopfield/core.py.")
     p.add_argument("--movement_mode", default="continuous")
     p.add_argument("--hopfield_mode", default="continuous")
     p.add_argument("--input_prev_reward", action=argparse.BooleanOptionalAction, default=True)
@@ -1855,6 +1861,8 @@ def main():
     cfg.schedule = format_schedule(stages)
     cfg.n_updates = total_updates(stages)
 
+    if not cfg.agent.input_memory_conf and not memory_backend.is_kv(cfg):
+        p.error("--no-input_memory_conf only applies to --memory_backend sensory_kv")
     if cfg.agent.input_q_magnitude and cfg.agent.hopfield_mode != "continuous":
         p.error("--input_q_magnitude needs continuous hopfield_mode")
     if memory_backend.is_kv(cfg):

@@ -112,7 +112,8 @@ def run_phase1(cfg: TrainConfig, pcfg: PhasedConfig, worlds, agent,
     def phase_hops(w_idx, local_idx):
         # Per-env Hopfields so auto_store_warmup writes are visible: writing
         # needs one memory per trajectory, hence allow_store=True below.
-        return [Hopfield(embed_dim, beta=cfg.hopfield.beta, device=str(device))
+        return [Hopfield(embed_dim, beta=cfg.hopfield.beta,
+            storage_rule=cfg.hopfield.storage_rule, device=str(device))
                 for _ in range(cfg.batch_envs)]
 
     for update in range(1, pcfg.phase1_updates + 1):
@@ -225,7 +226,8 @@ def run_ppo_phase(
         if shared_per_env is not None:
             return shared_per_env[w_idx][local_idx]  # single Hopfield, shared across B
         # empty_per_env: fresh list of B per rollout
-        return [Hopfield(embed_dim, beta=cfg.hopfield.beta, device=str(device))
+        return [Hopfield(embed_dim, beta=cfg.hopfield.beta,
+            storage_rule=cfg.hopfield.storage_rule, device=str(device))
                 for _ in range(cfg.batch_envs)]
 
     # Only the per-env role hands out one memory per trajectory, so only it can

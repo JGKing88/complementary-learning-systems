@@ -485,18 +485,21 @@ def make_hops(
     if role == "pre_stored_shared":
         per_env_templates = []
         for pattern in goal_encodings(world.field, envs, world.offsets):
-            hop = Hopfield(embed_dim, beta=cfg.hopfield.beta, device=str(device))
+            hop = Hopfield(embed_dim, beta=cfg.hopfield.beta,
+            storage_rule=cfg.hopfield.storage_rule, device=str(device))
             hop.input_memory(torch.from_numpy(pattern).float())
             per_env_templates.append(hop)
         return per_env_templates  # one per env; shared across the B trajectories
     if role == "empty_shared":
-        return [Hopfield(embed_dim, beta=cfg.hopfield.beta, device=str(device))
+        return [Hopfield(embed_dim, beta=cfg.hopfield.beta,
+            storage_rule=cfg.hopfield.storage_rule, device=str(device))
                 for _ in envs]
     if role == "empty_per_env":
         # For each env we build a fresh list of B Hopfields each rollout; here
         # we just return a factory.
         def factory():
-            return [Hopfield(embed_dim, beta=cfg.hopfield.beta, device=str(device))
+            return [Hopfield(embed_dim, beta=cfg.hopfield.beta,
+            storage_rule=cfg.hopfield.storage_rule, device=str(device))
                     for _ in range(B)]
         return factory
     raise ValueError(f"unknown role: {role}")

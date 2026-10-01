@@ -98,7 +98,8 @@ def channel_specs(
         # ||q|| apart from its direction (GRID_MLP_NAV_PLAN §9.3); appended so
         # every existing layout is unchanged.
         specs.append(ChannelSpec("q_magnitude", 1))
-    if getattr(cfg, "memory_backend", "hopfield") == "sensory_kv":
+    if (getattr(cfg, "memory_backend", "hopfield") == "sensory_kv"
+            and getattr(cfg, "input_memory_conf", True)):
         # The recall similarity c (GRID_MLP_NAV_PLAN §1). Always on for that
         # backend; appended last so every existing layout is unchanged.
         specs.append(ChannelSpec("memory_conf", 1))

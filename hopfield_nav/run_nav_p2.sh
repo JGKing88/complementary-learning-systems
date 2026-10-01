@@ -1896,6 +1896,9 @@ case "$VARIANT" in
         #   _qmag    Agent-HaSH with unit q + ||q|| on its own channel
         #            (INPUT_HOPFIELD_RAW=0, INPUT_Q_MAGNITUDE=1): the Hopfield
         #            analog of _gmlp's (d, c); GRID_MLP_NAV_PLAN 9.3
+        #   _proj    HOPFIELD_STORAGE_RULE=proj (projection rule; 9.6)
+        #   _noc     with _gmlp: INPUT_MEMORY_CONF=0, no c channel (with _scq:
+        #            only c*d -- the analog of raw q; 9.6)
         _rest="${VARIANT#task*_k?}"
         case "$_rest" in
           _h128*)  HIDDEN_SIZE=128;  _rest="${_rest#_h128}" ;;
@@ -1915,6 +1918,8 @@ case "$VARIANT" in
                     INPUT_HOPFIELD_MULTISTEP=""; _rest="${_rest#_gmlp}" ;;
             _scq*) SCALE_Q_BY_C=1; _rest="${_rest#_scq}" ;;
             _qmag*) INPUT_HOPFIELD_RAW=0; INPUT_Q_MAGNITUDE=1; _rest="${_rest#_qmag}" ;;
+            _proj*) HOPFIELD_STORAGE_RULE=proj; _rest="${_rest#_proj}" ;;
+            _noc*) INPUT_MEMORY_CONF=0; _rest="${_rest#_noc}" ;;
             *) echo "ERROR: unknown TASK lever '$_rest' in $VARIANT" >&2; exit 1 ;;
           esac
         done

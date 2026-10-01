@@ -341,7 +341,8 @@ def evaluate_navigation(
             starts: list[tuple[int, int]] = []
             start_dists: list[float] = []
             for _trial_idx in range(num_trials):
-                hopfield = Hopfield(embed_dim, beta=cfg.hopfield.beta, device=str(device))
+                hopfield = Hopfield(embed_dim, beta=cfg.hopfield.beta,
+            storage_rule=cfg.hopfield.storage_rule, device=str(device))
                 # Goal + distractors, shuffled so storage order is random.
                 patterns = [goal_enc]
                 # `env.size`, not `cfg.env.size`: the exclusion box is this
@@ -479,7 +480,8 @@ def evaluate_goal_discovery(
                 distractors = sample_distractors(
                     vectorhash, env_offset, env.size, n_dist, rng,
                 )
-                hopfield = Hopfield(embed_dim, beta=cfg.hopfield.beta, device=str(device))
+                hopfield = Hopfield(embed_dim, beta=cfg.hopfield.beta,
+            storage_rule=cfg.hopfield.storage_rule, device=str(device))
                 for pat in distractors:
                     hopfield.input_memory(torch.from_numpy(pat).float())
 
@@ -675,6 +677,7 @@ def evaluate_exploration(
                     vectorhash, env_offset, grid_size, n_dist, rng,
                 )
                 hopfield = Hopfield(embed_dim, beta=cfg.hopfield.beta,
+            storage_rule=cfg.hopfield.storage_rule,
                                     device=str(device))
                 for pat in distractors:
                     hopfield.input_memory(torch.from_numpy(pat).float())
@@ -802,7 +805,8 @@ def evaluate_realistic(
     memory_backend.require_hopfield(cfg, "evaluate_realistic")
     agent.eval()
     embed_dim = vectorhash.encoded_Phi.shape[2]
-    hopfield = Hopfield(embed_dim, beta=cfg.hopfield.beta, device=str(device))
+    hopfield = Hopfield(embed_dim, beta=cfg.hopfield.beta,
+            storage_rule=cfg.hopfield.storage_rule, device=str(device))
     rng = np.random.RandomState(seed)
     # Declared, not inherited: this evaluator measures reach intervals against
     # the training distribution, so it takes the training contract at the goal.
@@ -1044,7 +1048,8 @@ def evaluate_repeat(
     for i, env in enumerate(val_envs):
         env_offset = env_offsets[i]
         for t in range(n_trials):
-            hopfield = Hopfield(embed_dim, beta=cfg.hopfield.beta, device=str(device))
+            hopfield = Hopfield(embed_dim, beta=cfg.hopfield.beta,
+            storage_rule=cfg.hopfield.storage_rule, device=str(device))
             entry = _run_trial(env, env_offset, hopfield)
             entry["trial_idx"] = int(t)
             trials[i].append(entry)
@@ -1117,7 +1122,8 @@ def evaluate_sequential_episodes(
     agent.eval()
     N = len(val_envs)
     embed_dim = vectorhash.encoded_Phi.shape[2]
-    hopfield = Hopfield(embed_dim, beta=cfg.hopfield.beta, device=str(device))
+    hopfield = Hopfield(embed_dim, beta=cfg.hopfield.beta,
+            storage_rule=cfg.hopfield.storage_rule, device=str(device))
     rng = np.random.RandomState(seed)
     goal_in_mem: dict[int, bool] = {i: False for i in range(N)}
     env_iters: dict[int, list[tuple[int, int]]] = {i: [] for i in range(N)}
@@ -1274,6 +1280,7 @@ def evaluate_task(
                         cfg, env_offset, grid_size, n_dist, rng))
                     continue
                 hop = Hopfield(embed_dim, beta=cfg.hopfield.beta,
+            storage_rule=cfg.hopfield.storage_rule,
                                device=str(device))
                 for pat in sample_distractors(vectorhash, env_offset,
                                               grid_size, n_dist, rng):

@@ -222,7 +222,8 @@ def run_sequential(
     agent.eval()
     N = len(val_envs)
     embed_dim = vectorhash.encoded_Phi.shape[2]
-    hopfield = Hopfield(embed_dim, beta=cfg.hopfield.beta, device=str(device))
+    hopfield = Hopfield(embed_dim, beta=cfg.hopfield.beta,
+            storage_rule=cfg.hopfield.storage_rule, device=str(device))
     rng = np.random.RandomState(seed)
     goal_in_mem: dict[int, bool] = {i: False for i in range(N)}
     stored_at_goal_count: dict[int, int] = {i: 0 for i in range(N)}

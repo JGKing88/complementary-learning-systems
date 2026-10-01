@@ -57,6 +57,8 @@ def validate(cfg) -> None:
         problems.append("no input_chart_frac (a Hopfield-recall statistic)")
     if a.input_goal_in_memory:
         problems.append("no input_goal_in_memory")
+    if getattr(cfg.hopfield, "storage_rule", "hebb") != "hebb":
+        problems.append("no --hopfield_storage_rule (there is no Hopfield)")
     if getattr(a, "input_q_magnitude", False):
         problems.append("no input_q_magnitude (c on memory_conf is its analog)")
     if not a.grid_mlp_checkpoint:

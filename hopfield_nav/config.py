@@ -155,6 +155,12 @@ class HopfieldConfig:
     alpha: float = 1.0
     steps: int = 1
     init_mode: str = "empty"                # "empty" | "pre_stored"
+    # Hopfield storage rule (hopfield/core.py): "hebb" (default, every run
+    # before 2026-10-02) or "proj", the projection rule -- W is the projector
+    # onto span(stored patterns), so each stored pattern is an exact fixed
+    # point and stored patterns do not cross-talk. Passed to every Hopfield
+    # the trainers and evaluators build. GRID_MLP_NAV_PLAN §9.6.
+    storage_rule: str = "hebb"
     # May the agent's store action write to the Hopfield? Read by `train.py`,
     # which passes it to `collect_rollout(allow_store=...)`. The other
     # trainers decide per rollout instead: `train_navigate` off the regime's
@@ -309,6 +315,10 @@ class AgentConfig:
     # the Agent-HaSH-parity variant (its raw q carries magnitude). c is fed on
     # memory_conf either way.
     scale_q_by_c: bool = False
+    # sensory_kv: feed c on its own memory_conf channel (default). Off, with
+    # scale_q_by_c, the policy gets only c * d -- magnitude folded into the
+    # direction, the analog of Agent-HaSH's raw q. GRID_MLP_NAV_PLAN §9.6.
+    input_memory_conf: bool = True
 
 
 @dataclass

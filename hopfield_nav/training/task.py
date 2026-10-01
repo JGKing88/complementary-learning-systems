@@ -70,6 +70,7 @@ class TaskRegime:
         hops = []
         for _ in range(self.B):
             hop = Hopfield(self.embed_dim, beta=self.cfg.hopfield.beta,
+            storage_rule=self.cfg.hopfield.storage_rule,
                            device=str(self.device))
             if self.use_distractors:
                 n_dist = int(self.dist_rng.randint(

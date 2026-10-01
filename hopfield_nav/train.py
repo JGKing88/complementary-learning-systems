@@ -59,7 +59,8 @@ def build_templates(cfg: TrainConfig, worlds, embed_dim: int) -> list:
         if cfg.hopfield.init_mode != "pre_stored":
             out.append(None)
             continue
-        hop = Hopfield(embed_dim, beta=cfg.hopfield.beta, device=cfg.device)
+        hop = Hopfield(embed_dim, beta=cfg.hopfield.beta,
+            storage_rule=cfg.hopfield.storage_rule, device=cfg.device)
         for pattern in goal_encodings(world.field, world.envs, world.offsets):
             hop.input_memory(torch.from_numpy(pattern).float())
         print(f"  train world {w_idx}: pre-stored {hop.num_memories} "
@@ -293,11 +294,13 @@ def train(cfg: TrainConfig, resume_ck: dict | None = None) -> None:
                     if template_hop is not None:
                         hops = [template_hop.clone() for _ in range(B)]
                     else:
-                        hops = [Hopfield(embed_dim, beta=cfg.hopfield.beta, device=str(device))
+                        hops = [Hopfield(embed_dim, beta=cfg.hopfield.beta,
+            storage_rule=cfg.hopfield.storage_rule, device=str(device))
                                 for _ in range(B)]
                 else:
                     hops = template_hop if template_hop is not None else Hopfield(
-                        embed_dim, beta=cfg.hopfield.beta, device=str(device))
+                        embed_dim, beta=cfg.hopfield.beta,
+            storage_rule=cfg.hopfield.storage_rule, device=str(device))
 
                 # Optionally preload N distractor patterns into each per-env Hopfield
                 # so training distribution matches eval (where `evaluate_goal_discovery`

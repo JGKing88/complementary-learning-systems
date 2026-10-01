@@ -90,6 +90,8 @@ _arg  distal_amp                      "${DISTAL_AMP:-}"
 _arg  memory_backend                  "${MEMORY_BACKEND:-}"
 _arg  grid_mlp_checkpoint             "${GRID_MLP_CHECKPOINT:-}"
 _bool scale_q_by_c                    "${SCALE_Q_BY_C:-}"
+_bool input_memory_conf               "${INPUT_MEMORY_CONF:-}"
+_arg  hopfield_storage_rule           "${HOPFIELD_STORAGE_RULE:-}"
 _bool egocentric_heading              "${EGOCENTRIC_HEADING:-}"
 _bool reset_state_on_teleport         "${RESET_STATE_ON_TELEPORT:-}"
 
