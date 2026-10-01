@@ -71,6 +71,11 @@ def main() -> None:
     ap.add_argument("--inv_ramp_epochs", type=int, default=0,
                     help="ramp inv_lambda linearly from 0 over this many epochs "
                          "(0 = full strength from the start)")
+    ap.add_argument("--inv_delay_epochs", type=int, default=0,
+                    help="keep inv_lambda at 0 for this many epochs, then ramp")
+    ap.add_argument("--noise_std", type=float, default=0.0,
+                    help="Gaussian noise added to the harmonic weights after each "
+                         "step, decaying linearly to 0 at the last epoch")
     ap.add_argument("--near_weight", action="store_true",
                     help="weight each pair's MSE by 1/(pairs in its 2-cell "
                          "distance bin), so near pairs count as much as far ones")
@@ -128,8 +133,13 @@ def main() -> None:
     for ep in range(1, a.epochs + 1):
         run, nb = 0.0, 0
         acc = {"mse": 0.0, "inv": 0.0, "rate": 0.0}
-        inv_lam = a.inv_lambda * (min(1.0, (ep - 1) / a.inv_ramp_epochs)
-                                  if a.inv_ramp_epochs > 0 else 1.0)
+        e_on = ep - 1 - a.inv_delay_epochs           # epochs since the delay ended
+        if e_on < 0:
+            inv_lam = 0.0
+        else:
+            inv_lam = a.inv_lambda * (min(1.0, e_on / a.inv_ramp_epochs)
+                                      if a.inv_ramp_epochs > 0 else 1.0)
+        noise_t = a.noise_std * max(0.0, 1.0 - (ep - 1) / a.epochs)
         for idx in mixed_batch_iterator(N, RECIPE["batch_size"]):
             idx = idx.to(dev).long()
             e = env_ids[idx]
@@ -171,6 +181,9 @@ def main() -> None:
             if a.grad_clip > 0:
                 torch.nn.utils.clip_grad_norm_([W], a.grad_clip)
             opt.step()
+            if noise_t > 0:
+                with torch.no_grad():
+                    W.add_(torch.randn_like(W) * noise_t)
             run += loss.item()
             nb += 1
         if ep % a.log_every == 0 or ep == a.epochs:
