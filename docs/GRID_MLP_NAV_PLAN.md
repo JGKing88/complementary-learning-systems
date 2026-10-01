@@ -332,25 +332,45 @@ second visit, memory kept.
 | u3000–4000 | idea 1 | 0.56 | 12.2 | 1.00 | **11.9** | 0.93 |
 | | Agent-HaSH | 0.60 | 12.7 | 1.00 | 13.9 | 0.91 |
 
-**Reading.**
+**Reading of the training curves.**
 - **Exploit is learned much faster with the grid MLP.** By u500 idea 1
   follows its readout (cos 0.58) while Agent-HaSH does not yet (≈ 0);
   steps/reach 27 vs 57, revisit found 0.94 vs 0.68. Agent-HaSH catches up by
   ~u2000 at 0 distractors.
-- **With distractors idea 1 stays ahead to the end**: revisit steps to goal
-  11.9 vs 13.9 at u3000–4000, and its pre-store readout-chasing is ≈ 0 (0.008
-  vs 0.037) — it ignores foreign goals, as the memory_conf gate should allow.
-- **Search (found rate) is not different** late in training (0.56–0.63 both).
 - **The panorama is not what helps.** Agent-HaSH with and without it (22883646)
   is the same late and slightly *slower* early with it, so the compass the
   panorama provides does not explain idea 1's lead.
 
-**Not comparable with d0_base's exploit probe.** d0_base u725's "12.14 steps
-at 10 distractors" (`DUAL_TRAINING.md`, `EXPERIMENTS_SAMPLE_EFF.md`) is the
-exploit *probe*: goal pre-stored, held-out envs, 192 sampled trials. The
-numbers above are `evaluate_task`'s revisit on the 6 recorded val envs. Same
-idea, different protocol; a like-for-like needs d0_base through
-`evaluate_task`, or the probe run on the idea-1 checkpoint (stage 2).
+### 9.1 Like-for-like at the end of training, with d0_base (2026-09-30)
+
+`python -m analysis.sensory_key.eval_task_ckpts` (jobs 24487511, 24489724):
+`evaluate_task` on ONE env set -- the 6 `base_val` envs the task3r runs
+recorded -- each checkpoint with its own env config (panorama or not), 16
+trials per env, visits = 2, sampled; 5–10 eval seeds per checkpoint. Late
+checkpoints pooled per run (± = spread across checkpoints). d0_base u725 is
+one checkpoint, h1024, trained under its own (non-task) recipe. Results
+`/orcd/pool/003/jackking/cls_runs/sensory_key/eval_task_ckpts*.json`.
+
+| run (checkpoints) | revisit steps, d = 0 | revisit steps, d = 10 | found, d = 0 / 10 | cos(a, readout) post, 0 / 10 |
+|---|---|---|---|---|
+| d0_base (u725) | 12.03 | 12.21 | 0.62 / 0.60 | 0.87 / 0.85 |
+| task3r, no panorama (u3250–3450) | 12.45 ± 0.27 | 13.15 ± 0.24 | 0.68 / 0.65 | 0.94 / 0.91 |
+| Agent-HaSH + panorama (u3800–4000) | 12.35 ± 0.51 | 13.41 ± 1.25 | 0.66 / 0.62 | 0.94 / 0.92 |
+| **idea 1 (u3800–3950)** | **11.56 ± 0.11** | **11.55 ± 0.22** | 0.60 / 0.57 | 0.93 / 0.93 |
+
+- **Exploit: idea 1 is best, by a modest margin**: ~0.5 step (4%) fewer
+  than d0_base at d = 0 and ~0.7 step (5%) fewer at d = 10; ~1.6 steps (12%)
+  fewer than the matched task3r Hopfield runs at d = 10. Its revisit time does
+  not grow with distractors at all (11.56 → 11.55); every Hopfield run's does.
+- **Search: idea 1 is slightly worse** (found 0.60 / 0.57 against 0.66–0.68 /
+  0.62–0.65 for the task3r Hopfield runs; ≈ d0_base) **and less stable**: its
+  u4000 checkpoint collapsed to 0.33 / 0.34 (10 eval seeds; its own
+  in-training eval reads 0.33 there too), after 0.53–0.70 for all of
+  u2500–3950. Revisit and following stayed normal at u4000 -- the collapse is
+  in search only. No Hopfield run shows a drop like it. One seed: whether this
+  is a real instability needs a second seed.
+- d0_base's 12.21 at d = 10 matches its exploit-probe 12.14 (`DUAL_TRAINING.md`)
+  -- the two protocols agree on it.
 
 **Why the early gap is open.** Hopfield recall already gives a near-exact
 direction (d0_base `q_accuracy` 0.98 / 0.97 at 0 / 10 distractors), so it is
