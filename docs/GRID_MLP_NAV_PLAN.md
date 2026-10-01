@@ -433,3 +433,26 @@ Consistent with §9.2: at d = 0 (no gate needed) idea 1 is ~2× sooner -- (1)
 and (2); at d = 10, (3) adds and the gap grows to 2.5–3×. Correlational.
 **Causal test**: Agent-HaSH task3r with `--no-input_hopfield_raw` (unit q,
 still 0 when empty). If it closes most of the d = 0 gap, the scale is the cause.
+
+### 9.4 Bug found: an empty Hopfield read a spurious q (fixed 2026-10-01)
+
+With a list of per-trajectory Hopfields where only some were empty,
+`signal.hopfield_signal_at` and `multistep_q` projected the empty rows with
+recall = 0, giving `q = project(0 − x)` -- a position-only vector, about as
+large as a real recall -- and masked only the *normalized* signal. Every
+Agent-HaSH run feeds raw `q` (and multistep), so a still-searching trajectory
+with an empty memory was handed that vector whenever another trajectory in the
+batch held a memory. A known quirk, pinned by a characterization test during a
+behavior-preserving refactor; fixed in `d2ec758` (q zeroed for empty rows).
+
+**Affected**: task-regime training (trajectories with 0 distractors, before
+their store -- both task3r Agent-HaSH baselines, 22883646 and 24342873) and
+`evaluate_task` at 0 distractors for every Hopfield model once any trajectory
+had stored (the §9.1 d = 0 rows for d0_base / task3r). **Not affected**:
+d = 10 evals (no empty rows), d0_base's training (one shared Hopfield per
+rollout), `agenthash` continual, batched nav / expl evals, and idea 1.
+
+So §9.1–9.2's Agent-HaSH task numbers carry it. Reruns on the fixed code:
+`task3r_k2_h128_distal` (24504515) and the unit-q + ‖q‖ variant
+`task3r_k2_h128_distal_qmag` (24504516; `--no-input_hopfield_raw
+--input_q_magnitude`, the Hopfield analog of idea 1's (d, c)).
