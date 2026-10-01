@@ -504,7 +504,7 @@ def main():
     p.add_argument("--per_env_radius_frac", type=float, default=0.0)
     p.add_argument("--single_env_batch", action="store_true")
     p.add_argument("--patch_placement", default="random",
-                   choices=["random", "stratified"],
+                   choices=["random", "stratified", "staggered"],
                    help="where patches sit: uniform rejection sampling, or a "
                         "jittered lattice (one per coarse-grid cell)")
     p.add_argument("--patch_arena", type=int, default=0,

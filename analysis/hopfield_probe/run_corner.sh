@@ -27,7 +27,8 @@
 # is ~20 min of GPU (the per-row grid-code build is CPU-bound), so run the
 # encoders as separate jobs rather than one. The probe array is
 # index = 3 * encoder + region over the ENCS list below; ARRAY defaults to all
-# of it (0-29). w63 (the att0.5 replication) is encoders 6-9, tasks 18-29.
+# of it (0-29). w63 (the att0.5 replication) is encoders 6-9, tasks 18-29;
+# w64 (w63's corner with staggered patches) is encoders 10-11, tasks 30-35.
 set -euo pipefail
 
 PY=/home/jackking/.conda/envs/cls/bin/python
@@ -87,6 +88,8 @@ ENCS=(
     "w63_corner_a0.5/001_corner500_seed=43|corner500_a0.5 · s43"
     "w63_corner_a0.5/002_scatter100_seed=42|scatter100_a0.5 · s42"
     "w63_corner_a0.5/003_scatter100_seed=43|scatter100_a0.5 · s43"
+    "w64_corner_stagger/000_stagger500_seed=42|stagger500_a0.5 · s42"
+    "w64_corner_stagger/001_stagger500_seed=43|stagger500_a0.5 · s43"
 )
 REGIONS=("0 0 500|corner" "608 608 500|centre" "1216 1216 500|opposite")
 

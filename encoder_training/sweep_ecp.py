@@ -2283,6 +2283,24 @@ WAVES: dict[str, dict] = {
         },
         "seed": [42, 43],
     },
+    # W64 -- w63's corner arm with the 100 patches STAGGERED instead of tiled:
+    # patch i at (4.5 i, 4.5 pi(i)) inside the same 500x500 corner, so no two
+    # patches share a row or column band and every coordinate value lies inside
+    # ~11 patches at different local positions. The NN-control decode learned
+    # the rule out of its corner from exactly this layout (perm_s6, 0.9 deg 300
+    # cells away) and a lookup from a tiling. Same budget (100 x 50^2 points),
+    # same corner, so beside w63 it isolates arrangement. encoder_final.pt, as
+    # for w62/w63.
+    "w64_corner_stagger": {
+        "arm": {
+            "stagger500": dict(npos_list=SIZE_MIXES["sm50_100"], batch_size=4096,
+                               lr=3e-4, per_env_radius_frac=0.0, radius=20.0,
+                               rate_lambda=0.5, rate_eps=1.0, out_dim=1024,
+                               hidden_dim=256, gain_end=100.0, attract_lambda=0.5,
+                               patch_arena=500, patch_placement="staggered"),
+        },
+        "seed": [42, 43],
+    },
     "w61_cov0.75": {
         "arm": {
             name: {**dict(batch_size=4096, lr=3e-4, per_env_radius_frac=0.0,

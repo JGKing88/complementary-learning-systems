@@ -72,7 +72,8 @@ def default_encoders() -> list[tuple[str, str]]:
     """``(label, path)``; the label's first word is the arm the tables group by.
 
     w62 is the att16 wave, w63 the same two arms at the ladder's att0.5 (the
-    ``_a0.5`` arms). Missing checkpoints are skipped at run time.
+    ``_a0.5`` arms), w64 w63's corner with staggered patches. Missing
+    checkpoints are skipped at run time.
     """
     S, E = sweeps_dir(), encoders_dir()
     out = []
@@ -82,6 +83,11 @@ def default_encoders() -> list[tuple[str, str]]:
                 out.append((f"{arm}{suffix} s{seed}",
                             str(S / f"{wave}/{i + j:03d}_{arm}_seed={seed}"
                                   "/encoder_final.pt")))
+    # w64: w63's corner arm with the patches staggered instead of tiled.
+    for j, seed in enumerate((42, 43)):
+        out.append((f"stagger500_a0.5 s{seed}",
+                    str(S / f"w64_corner_stagger/{j:03d}_stagger500_seed={seed}"
+                          "/encoder_final.pt")))
     for i, seed in ((4, 42), (5, 43)):
         out.append((f"scatter118 att16 s{seed}",
                     str(S / f"w53_attract_knee/{i:03d}_att16_seed={seed}"

@@ -150,6 +150,30 @@ def _stratified_patches(
     return y0s, x0s
 
 
+def _staggered_patches(H: int, W: int, sizes: List[int]) -> Tuple[List[int], List[int]]:
+    """Patch ``i`` at ``(step * i, step * pi(i))``: no two share a row or column band.
+
+    ``step = (H - s) / (n - 1)`` spreads the n patches across the arena on each
+    axis and ``pi`` (``torch.randperm``) pairs the y and x offsets, so every
+    coordinate value lies inside several patches at different local positions
+    and the patches never line up into rows or columns. The NN-control decode's
+    corner-layout sweep (``perm_s6``, plan sec 6.5) generalised out of its
+    corner from this layout and not from a tiling; this asks the same of the
+    encoder. Patches may overlap where both axes coincide (rare); the codes are
+    global, so an overlapping cell is just seen twice.
+    """
+    if len(set(sizes)) != 1:
+        raise ValueError("staggered placement needs equal patch sizes")
+    n, s = len(sizes), sizes[0]
+    if n < 2 or s > min(H, W):
+        raise ValueError(f"staggered placement: {n} patches of {s} in {H}x{W}")
+    perm = torch.randperm(n).tolist()
+    sy, sx = (H - s) / (n - 1), (W - s) / (n - 1)
+    y0s = [int(round(sy * i)) for i in range(n)]
+    x0s = [int(round(sx * perm[i])) for i in range(n)]
+    return y0s, x0s
+
+
 def _overlaps(y0a, x0a, sa, y0b, x0b, sb):
     return not (y0a + sa <= y0b or y0b + sb <= y0a or
                 x0a + sa <= x0b or x0b + sb <= x0a)
@@ -172,8 +196,9 @@ def sample_nonoverlapping_patches(
             across the whole layout — the budget is shared, not per patch, so
             the last patches spend what the earlier ones left.
         placement: ``"random"`` for uniform rejection sampling (everything
-            through §4 used this), or ``"stratified"`` for a jittered lattice —
-            see :func:`_stratified_patches`.
+            through §4 used this), ``"stratified"`` for a jittered lattice —
+            see :func:`_stratified_patches` — or ``"staggered"`` (may overlap;
+            see :func:`_staggered_patches`).
 
     Returns (y0s, x0s, sizes) as parallel lists of length nenv.
 
@@ -199,6 +224,9 @@ def sample_nonoverlapping_patches(
 
     if placement == "stratified":
         y0s, x0s = _stratified_patches(H, W, sizes, max_attempts)
+        return y0s, x0s, sizes
+    if placement == "staggered":
+        y0s, x0s = _staggered_patches(H, W, sizes)
         return y0s, x0s, sizes
     if placement != "random":
         raise ValueError(f"unknown placement {placement!r}")
