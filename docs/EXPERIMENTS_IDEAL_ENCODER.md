@@ -409,16 +409,28 @@ and the penalty freezes each row on the nearest one.
 24540147–9): 76–96% integral already at epoch 10 (λ_inv ≈ 11), 99–100% at the
 end; MSE 0.15–0.20, C(1) 0.08–0.45, r_half 1. Same failure.
 
-**Why random starts fail: the parametrisation, not the loss.** A row's frequency
-is n = 156 j₁₁ + 143 j₁₂ + 132 j₁₃ (mod 1716) per axis. Changing one weight by 1
-moves n by 132–156; a random start in [−6, 6] lands on an essentially random
-frequency. The low frequencies a width-16 peak needs (|n| ≲ 50) come only from
-near-cancelling combinations (e.g. (1, −1, 0) → 13), a few percent of integer
-points per axis, isolated from each other. Gradient descent in weight space has
-no smooth path to them; the Chinese remainder map scrambles frequency space.
+**It is an optimisation failure, not the loss.** Under rate 0.5 + invariance 300,
+the trained exact-integer start sits at total loss ≈ −0.126 (MSE 0.00046), while
+the random starts end at ≈ −0.02 to +0.05 (MSE 0.15–0.22). The rate term alone
+prefers the hash-like code (−0.33 vs −0.255), but the MSE gap dominates. A much
+better solution exists; SGD does not reach it. (Not shown: that the ideal is the
+global minimum.)
+
+**Why random starts fail: exact periodicity, not frequency learning.** Within one
+module period a row is a plane wave with local frequency j₁/11 + j₂/12 + j₃/13
+cycles per cell per axis, linear in the weights, so gradient descent does move a
+row's frequency smoothly. What is hard is exactness: only integer weights line
+the wave up at every module wrap, and the integer points with the low arena
+frequencies a width-16 peak needs (|n| ≲ 50 in n = 156 j₁₁ + 143 j₁₂ + 132 j₁₃
+mod 1716; e.g. (1, −1, 0) → 13) are rare and far apart. So rows reach roughly the
+right local frequency and then either sit between integers (seams, which the rate
+term rewards) or, under the invariance penalty, snap to the nearest integer,
+usually a wrong, high frequency.
 
 **Options.** (1) The fixed integer table with sampling by weight (§14).
-(2) Learn frequencies directly in n-space: decode position from the three phases
-(exact by the CRT) and learn continuous frequency vectors with a cos/sin layer,
-which is smooth for gradient descent. (3) A discrete search over n under the
-convex objective.
+(2) Decode position from the three phases (exact by the CRT), then learn
+continuous frequency vectors with a cos/sin layer. This helps not because it
+learns frequencies "directly" (the current net already does, locally) but because
+a non-integer frequency on a decoded position seams once, at the 1716 arena edge,
+instead of at every module wrap, so integrality barely matters. (3) A discrete
+search over n under the convex objective.
