@@ -123,6 +123,7 @@ def batched_navigation_trials(
         embeddings = torch.from_numpy(embeddings_np).float().to(device)
 
         _chart = None
+        q = np.zeros((B, 2), dtype=np.float32)   # q_magnitude when no signal
         if cfg.agent.input_hopfield_signal:
             _chart_on = getattr(cfg.agent, "input_chart_frac", False)
             _o = signal_ops.hopfield_signal_at(
@@ -159,6 +160,9 @@ def batched_navigation_trials(
         }
         if _chart_v is not None:
             values["chart_frac"] = _chart_v
+        if getattr(cfg.agent, "input_q_magnitude", False):
+            values["q_magnitude"] = torch.from_numpy(
+                signal_ops.q_magnitude(q)).to(device)
         if cfg.agent.input_sensory:
             values["sensory"] = torch.from_numpy(
                 vec.obs_batch()).float().to(device)
@@ -317,6 +321,7 @@ def batched_exploration_trials(
         embeddings = torch.from_numpy(embeddings_np).float().to(device)
 
         _chart = None
+        q = np.zeros((B, 2), dtype=np.float32)   # q_magnitude when no signal
         if cfg.agent.input_hopfield_signal:
             _chart_on = getattr(cfg.agent, "input_chart_frac", False)
             _o = signal_ops.hopfield_signal_at(
@@ -352,6 +357,9 @@ def batched_exploration_trials(
         }
         if _chart_v is not None:
             values["chart_frac"] = _chart_v
+        if getattr(cfg.agent, "input_q_magnitude", False):
+            values["q_magnitude"] = torch.from_numpy(
+                signal_ops.q_magnitude(q)).to(device)
         if cfg.agent.input_sensory:
             values["sensory"] = torch.from_numpy(
                 vec.obs_batch()).float().to(device)

@@ -579,6 +579,9 @@ class RolloutCollector:
                 if self.memory_readout is not None:
                     values["memory_conf"] = torch.from_numpy(
                         memory_conf).float().to(self.device).unsqueeze(-1)
+                if getattr(cfg.agent, "input_q_magnitude", False):
+                    values["q_magnitude"] = torch.from_numpy(
+                        signal.q_magnitude(q_full)).to(self.device)
                 for s, q_s in multistep_q.items():
                     values[channels.multistep_name(s)] = (
                         torch.from_numpy(q_s).float().to(self.device))
@@ -993,6 +996,9 @@ class RolloutCollector:
             if self.memory_readout is not None:
                 values_final["memory_conf"] = torch.from_numpy(
                     conf_final).float().to(self.device).unsqueeze(-1)
+            if getattr(cfg.agent, "input_q_magnitude", False):
+                values_final["q_magnitude"] = torch.from_numpy(
+                    signal.q_magnitude(q_final)).to(self.device)
             for s, q_s in multistep_q_final.items():
                 values_final[channels.multistep_name(s)] = (
                     torch.from_numpy(q_s).float().to(self.device))

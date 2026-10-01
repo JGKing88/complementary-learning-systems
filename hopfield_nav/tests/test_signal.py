@@ -79,9 +79,8 @@ def test_empty_hopfield_gives_zero_signal_and_no_basis():
 def test_per_env_rows_without_memory_get_zero_signal():
     """A batch may mix envs that have stored with envs that have not.
 
-    The *signal* is masked to zero for memoryless rows. ``q`` is NOT -- see
-    test_q_is_not_masked_for_memoryless_rows below, which pins that as the
-    current (pre-existing) behavior.
+    The *signal* is masked to zero for memoryless rows, and since 2026-10-01
+    so is ``q`` -- see test_q_is_masked_for_memoryless_rows below.
     """
     cfg = make_stub_cfg()
     vh = StubVectorHash(Npos=16, embed_dim=EMBED_DIM)
@@ -100,22 +99,17 @@ def test_per_env_rows_without_memory_get_zero_signal():
     assert torch.any(sig[0] != 0) and torch.any(sig[2] != 0)
 
 
-def test_q_is_not_masked_for_memoryless_rows():
-    """CHARACTERIZATION -- pins a pre-existing quirk, not an endorsement.
+def test_q_is_masked_for_memoryless_rows():
+    """A row whose Hopfield is empty reads q = 0, like its masked signal.
 
-    For a row whose Hopfield is empty, the recalled vector is left as zeros and
-    then projected anyway, so q = W @ (0 - embedding): a nonzero direction
-    derived from nothing. Consumers that gate on memory_mask (auto-nav, the BC
-    teacher's trust_hop) never see it.
-
-    One consumer does not gate: with ``input_hopfield_raw`` set, both callers
-    feed raw q to the policy in place of the masked signal, so a memoryless env
-    receives this spurious direction where it would otherwise receive zeros.
-    train_phase_a_only defaults --input_hopfield_raw to True, and the empty
-    Hopfield is the normal case during phase-A explore, so this was live.
-
-    Left as-is deliberately: changing it changes training results, and this
-    phase is behavior-preserving.
+    Until 2026-10-01 this pinned the opposite, as a known quirk kept during a
+    behavior-preserving refactor: the empty row's recall was left as zeros and
+    projected anyway, so q = W @ (0 - embedding), a nonzero direction derived
+    from nothing. Consumers gating on memory_mask never saw it, but with
+    ``input_hopfield_raw`` (every Agent-HaSH run) the policy was fed it in
+    place of zeros whenever another row of the batch held a memory -- the task
+    regime and evaluate_task at 0 distractors. Fixed deliberately, changing
+    training results (GRID_MLP_NAV_PLAN §9.4; tests/test_empty_memory_q.py).
     """
     cfg = make_stub_cfg()
     vh = StubVectorHash(Npos=16, embed_dim=EMBED_DIM)
@@ -130,14 +124,8 @@ def test_q_is_not_masked_for_memoryless_rows():
         vh, cfg, emb_np, emb, positions, (0, 0), hops, False,
         torch.device("cpu"), EMBED_DIM)
     assert not mask[1]
-    assert not np.allclose(q[1], 0.0), (
-        "q for a memoryless row is expected to be nonzero here; if this now "
-        "passes, the quirk was fixed -- update the docstring and check whether "
-        "the input_hopfield_raw path changed")
-    # It is exactly the projection of the negated embedding.
-    expected = vh.project_displacement(
-        emb_np[1:2], np.zeros((1, EMBED_DIM), dtype=np.float32), W[1:2])
-    assert np.allclose(q[1], expected[0], atol=1e-6)
+    assert np.allclose(q[1], 0.0)
+    assert not np.allclose(q[0], 0.0) and not np.allclose(q[2], 0.0)
 
 
 @pytest.mark.parametrize("movement_mode,width", [("discrete", 4), ("continuous", 2)])

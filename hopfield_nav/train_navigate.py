@@ -1017,6 +1017,7 @@ CFG_FIELDS: dict[str, tuple[str, ...]] = {
     "log_kappa_max": ("agent.log_kappa_max",),
     "input_abs_position": ("agent.input_abs_position",),
     "input_chart_frac": ("agent.input_chart_frac",),
+    "input_q_magnitude": ("agent.input_q_magnitude",),
     "input_visited": ("agent.input_visited",),
     "aux_visited_weight": ("agent.aux_visited_weight",),
     "aux_visited_radius": ("agent.aux_visited_radius",),
@@ -1276,6 +1277,9 @@ def build_parser() -> argparse.ArgumentParser:
                         "jumping means localization was the blocker; "
                         "unchanged means optimization. ORACLE, not "
                         "shippable.")
+    p.add_argument("--input_q_magnitude", action=argparse.BooleanOptionalAction,
+                   default=False,
+                   help="Feed ||q|| as its own 1-wide channel (0 when memory is empty). With --no-input_hopfield_raw the q slot is unit, so direction and magnitude arrive apart -- the Hopfield analog of sensory_kv's (d, c); GRID_MLP_NAV_PLAN 9.3. Continuous hopfield_mode only.")
     p.add_argument("--input_chart_frac",
                    action=argparse.BooleanOptionalAction, default=False,
                    help="Feed ||q|| / ||recall - x||, the fraction of "
@@ -1851,6 +1855,8 @@ def main():
     cfg.schedule = format_schedule(stages)
     cfg.n_updates = total_updates(stages)
 
+    if cfg.agent.input_q_magnitude and cfg.agent.hopfield_mode != "continuous":
+        p.error("--input_q_magnitude needs continuous hopfield_mode")
     if memory_backend.is_kv(cfg):
         # Stage 1 of GRID_MLP_NAV_PLAN: the task regime and its evaluator only.
         other = sorted({st.kind for st in stages} - {"task"})

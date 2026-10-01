@@ -1893,6 +1893,9 @@ case "$VARIANT" in
         #            with the Phase-1 grid MLP; implies _distal and drops the
         #            multistep channel (a second Hopfield readout)
         #   _scq     with _gmlp: SCALE_Q_BY_C=1, feed c*d (Agent-HaSH parity)
+        #   _qmag    Agent-HaSH with unit q + ||q|| on its own channel
+        #            (INPUT_HOPFIELD_RAW=0, INPUT_Q_MAGNITUDE=1): the Hopfield
+        #            analog of _gmlp's (d, c); GRID_MLP_NAV_PLAN 9.3
         _rest="${VARIANT#task*_k?}"
         case "$_rest" in
           _h128*)  HIDDEN_SIZE=128;  _rest="${_rest#_h128}" ;;
@@ -1911,6 +1914,7 @@ case "$VARIANT" in
                     GRID_MLP_CHECKPOINT=${GRID_MLP_CHECKPOINT:-/orcd/pool/003/jackking/cls_runs/agent_ckpts/goal_pairs_p1_grid64_bal_s0/pairs_final.pt}
                     INPUT_HOPFIELD_MULTISTEP=""; _rest="${_rest#_gmlp}" ;;
             _scq*) SCALE_Q_BY_C=1; _rest="${_rest#_scq}" ;;
+            _qmag*) INPUT_HOPFIELD_RAW=0; INPUT_Q_MAGNITUDE=1; _rest="${_rest#_qmag}" ;;
             *) echo "ERROR: unknown TASK lever '$_rest' in $VARIANT" >&2; exit 1 ;;
           esac
         done

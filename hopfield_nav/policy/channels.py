@@ -94,6 +94,10 @@ def channel_specs(
         specs.append(ChannelSpec("chart_frac", 1))
     if cfg.input_goal_in_memory:
         specs.append(ChannelSpec("goal_in_memory", 1))
+    if getattr(cfg, "input_q_magnitude", False):
+        # ||q|| apart from its direction (GRID_MLP_NAV_PLAN §9.3); appended so
+        # every existing layout is unchanged.
+        specs.append(ChannelSpec("q_magnitude", 1))
     if getattr(cfg, "memory_backend", "hopfield") == "sensory_kv":
         # The recall similarity c (GRID_MLP_NAV_PLAN §1). Always on for that
         # backend; appended last so every existing layout is unchanged.

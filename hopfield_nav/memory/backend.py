@@ -57,6 +57,8 @@ def validate(cfg) -> None:
         problems.append("no input_chart_frac (a Hopfield-recall statistic)")
     if a.input_goal_in_memory:
         problems.append("no input_goal_in_memory")
+    if getattr(a, "input_q_magnitude", False):
+        problems.append("no input_q_magnitude (c on memory_conf is its analog)")
     if not a.grid_mlp_checkpoint:
         problems.append("--grid_mlp_checkpoint")
     if getattr(cfg, "training_mode", "ppo") != "ppo":

@@ -140,6 +140,7 @@ def agent_step(
         return sig
 
     _chart = None
+    q = np.zeros((1, 2), dtype=np.float32)       # q_magnitude when no recall
     if not cfg.agent.input_hopfield_signal:
         hop_signal = torch.zeros(1, signal_dim, device=device)
     elif use_oracle:
@@ -185,6 +186,9 @@ def agent_step(
     }
     if _chart_v is not None:
         values["chart_frac"] = _chart_v
+    if getattr(cfg.agent, "input_q_magnitude", False):
+        values["q_magnitude"] = torch.from_numpy(
+            signal_ops.q_magnitude(q)).to(device)
     if cfg.agent.input_sensory:
         # env.obs() reads at the env's own heading; pos_tuple IS env's current
         # cell, so this was the same call before headings existed and is the

@@ -27,6 +27,15 @@ from hopfield import (
 from ..utils import classify_direction_batch, direction_to_onehot
 
 
+def q_magnitude(q: np.ndarray) -> np.ndarray:
+    """``(B, 1)`` float32 ||q|| for the ``q_magnitude`` channel.
+
+    ``q`` is exactly zero where memory is empty, so this is too.
+    """
+    q = np.asarray(q, dtype=np.float32).reshape(-1, 2)
+    return np.linalg.norm(q, axis=1, keepdims=True).astype(np.float32)
+
+
 def q_to_signal(q: np.ndarray, agent_cfg: AgentConfig) -> np.ndarray:
     """Turn a projected displacement into the agent's direction channel.
 
@@ -212,6 +221,16 @@ def hopfield_signal_at(
         vectorhash, embeddings_np, recalled_np_full,
         positions, env_offset, cfg.agent, cached_W, recompute_mask,
     )
+    # Rows with no memory went through the projection with recall = 0, which
+    # yields project(0 - x): a position-only vector, not "no direction". Until
+    # 2026-10-01 only the normalized signal below was masked, so raw q
+    # (input_hopfield_raw -- every Agent-HaSH run) carried that vector for an
+    # empty trajectory whenever another trajectory in the batch had a memory
+    # (task regime, evaluate_task at 0 distractors). GRID_MLP_NAV_PLAN §9.4.
+    q_full = np.asarray(q_full, dtype=np.float32).copy()
+    empty = np.ones(B, dtype=bool)
+    empty[has_memory] = False
+    q_full[empty] = 0.0
     memory_mask[idx] = True
     hopfield_signal = torch.where(
         memory_mask.unsqueeze(-1),
@@ -299,12 +318,18 @@ def multistep_q(
         embeddings.index_select(0, idx_t), W_stack, multistep_steps,
         beta=cfg.hopfield.beta, alpha=cfg.hopfield.alpha,
     )
+    empty = np.ones(B, dtype=bool)
+    empty[has_memory] = False
     for s, X_s in traj.items():
         recalled_np_full = np.zeros((B, embed_dim), dtype=np.float32)
         recalled_np_full[has_memory] = X_s.cpu().numpy()
-        out[s] = vectorhash.project_displacement(
+        q_s = vectorhash.project_displacement(
             embeddings_np, recalled_np_full, cached_W,
-        ).astype(np.float32, copy=False)
+        ).astype(np.float32, copy=True)
+        # Same as hopfield_signal_at: an empty row is "no memory", not
+        # project(0 - x). Zeroed since 2026-10-01 (GRID_MLP_NAV_PLAN §9.4).
+        q_s[empty] = 0.0
+        out[s] = q_s
     return out
 
 
