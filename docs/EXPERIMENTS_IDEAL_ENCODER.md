@@ -306,3 +306,33 @@ alone can give a bad Hopfield input.
 **Objective chosen:** kernel MSE (r = 16) + coding rate, λ = 0.5, ε = 1, as in
 the recipe. **Next:** Stage A from random starts with this loss: does SGD find
 integer weights implementing it?
+
+## 13. Stage A with the coding-rate term: the rate term breaks integrality (2026-09-30)
+
+Job 24506866 (`RATE_LAMBDA=0.5 run_ideal_net_stageA.sh 0,6,7,8`; results in
+`.../ideal_net/stageA_rate/`). Same as §11 plus 0.5 × `coding_rate_loss(z, eps=1)`
+on each batch's codes.
+
+| start | loss | integral (< 0.05) | C(1) | r_half | kernel RMSE < 71 | far sd | alias |
+|---|---|---|---|---|---|---|---|
+| exact integers | −0.135 | **0.50 from epoch 10 on** | 0.90 | 18 | 0.049 | 0.032 | 0.136 |
+| random (3 seeds) | −0.036 to −0.048 | 0.45–0.48 | 0.60–0.64 | 8–9 | 0.23–0.24 | 0.032 | 0.15–0.19 |
+| random, no rate (§11) | – | 0.55–0.62 | 0.67–0.71 | 10 | 0.24–0.25 | 0.033 | 0.18–0.22 |
+
+**Reading.**
+1. **The rate term pushes rows off the integers.** From the exact ideal integers,
+   half the rows leave within 10 epochs and stay off. The likely mechanism: a
+   detuned row adds a phase jump at every module wrap, which looks like noise
+   across positions and raises the batch's spread, which is what the rate term
+   rewards. The cost is near-field roughness: C(1) 0.998 → 0.90.
+2. **Random starts are not helped** (slightly worse than without the rate term).
+3. **§12's objective check was incomplete.** It held the frequencies at integers
+   and varied amplitudes. The trainable network has a third way to lower the
+   loss, breaking integrality, and under the full network the loss's optimum is
+   not the integral ideal code.
+
+**Next (proposed).** Make integrality architectural instead of learned: a fixed
+integer frequency table (e.g. every |n| ≤ 40, ~2500 waves) with learnable
+amplitudes only. That is exactly §12's convex model, whose optimum is a good
+code, so SGD reaches it by construction. Open design question: the 1024-number
+budget (sparsity pressure, or keep the top 512 amplitudes), then the probe.
