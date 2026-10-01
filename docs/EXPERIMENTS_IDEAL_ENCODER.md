@@ -294,11 +294,20 @@ alone can give a bad Hopfield input.
    On the flat menu (no Gaussian shape built in) the MSE reshapes the spectrum
    to the target (r_eff 15.5–16.3, half-height 18–19) and the rate keeps
    1300–1700 waves in use.
-2. **The within-patch MSE is not simply broken; it is degenerate.** Exponentiated
-   gradient from equal weights at λ = 0 also reaches near-zero MSE with a dense,
-   good code (470 waves, far sd 0.038). NNLS's 34-wave solution is a vertex of a
-   flat set of near-optimal solutions. The rate term breaks that tie toward the
-   dense one.
+2. **The within-patch MSE does not match the kernel; it matches the kernel inside
+   one patch window.** It only sees pairs inside a 50×50 patch, i.e. displacements
+   in a 99×99 window (up to 71 cells), so it constrains the kernel there and says
+   nothing beyond. Many codes fit the window equally well: over 99 cells the
+   low-frequency waves have barely turned and look alike, so different amplitude
+   combinations give nearly the same window kernel but completely different far
+   kernels. Exponentiated gradient from equal weights at λ = 0 lands on a dense,
+   good one (470 waves, far sd 0.038); NNLS lands on the 34-wave one that rings
+   outside the window (far sd 0.19). By §16.1, a loss that matched the kernel at
+   **all** displacements would have a unique, good optimum; that would need
+   cross-patch pairs, which `exclude_cross_env_pairs` forbids. The rate term is the
+   in-constraint substitute: it constrains the far field on average (the batch's
+   spread), not pair by pair, which breaks the tie toward the dense code but also
+   rewards seams (§13).
 3. My prediction that "at λ = 0.5 the rate dominates and the target barely
    matters" held on the 512 draw (the optimum ≈ equal weights) but not on the
    flat menu, where the MSE still shapes the kernel.
