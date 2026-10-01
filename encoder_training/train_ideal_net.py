@@ -64,6 +64,13 @@ def main() -> None:
                     help="weight on losses.coding_rate_loss of the batch codes "
                          "(the recipe's far-field term; Sec 12 chose 0.5)")
     ap.add_argument("--rate_eps", type=float, default=1.0)
+    ap.add_argument("--inv_lambda", type=float, default=0.0,
+                    help="translation-invariance penalty: variance of z(p).z(q) "
+                         "across within-batch pairs with the same displacement "
+                         "(Delta and -Delta pooled)")
+    ap.add_argument("--near_weight", action="store_true",
+                    help="weight each pair's MSE by 1/(pairs in its 2-cell "
+                         "distance bin), so near pairs count as much as far ones")
     ap.add_argument("--log_every", type=int, default=10)
     ap.add_argument("--save_at", type=int, nargs="*", default=[0, 50, 100, 250])
     ap.add_argument("--patch_arena", type=int, default=0,
@@ -98,11 +105,12 @@ def main() -> None:
 
     hist = []
 
-    def log(ep, loss):
+    def log(ep, loss, parts=None):
         d = integrality(W.detach().cpu().numpy())
-        d.update(epoch=ep, loss=loss, time=time.time() - t0)
+        d.update(epoch=ep, loss=loss, time=time.time() - t0, **(parts or {}))
         hist.append(d)
-        print(f"ep {ep:4d}  loss {loss:.5f}  row dev median {d['dev_median']:.3f}"
+        pt = "".join(f"  {k} {v:.5f}" for k, v in (parts or {}).items())
+        print(f"ep {ep:4d}  loss {loss:.5f}{pt}  row dev median {d['dev_median']:.3f}"
               f"  integral(<0.05) {d['frac_int_05']:.3f}"
               f"  (<0.01) {d['frac_int_01']:.3f}", flush=True)
 
@@ -116,6 +124,7 @@ def main() -> None:
         snap(0)
     for ep in range(1, a.epochs + 1):
         run, nb = 0.0, 0
+        acc = {"mse": 0.0, "inv": 0.0, "rate": 0.0}
         for idx in mixed_batch_iterator(N, RECIPE["batch_size"]):
             idx = idx.to(dev).long()
             e = env_ids[idx]
@@ -126,9 +135,32 @@ def main() -> None:
             z = torch.cat([torch.cos(th), torch.sin(th)], 1) / math.sqrt(F)
             k = (z[ii] * z[jj]).sum(1)
             d2 = (coords[idx[ii]] - coords[idx[jj]]).square().sum(1).double()
-            loss = (k - torch.exp(-d2 / two_r2)).square().mean()
+            err2 = (k - torch.exp(-d2 / two_r2)).square()
+            if a.near_weight:
+                dbin = (d2.sqrt() / 2).long()
+                w = 1.0 / torch.bincount(dbin)[dbin].double()
+                mse = (w * err2).sum() / w.sum()
+            else:
+                mse = err2.mean()
+            loss = mse
+            acc["mse"] += mse.item()
+            if a.inv_lambda > 0:
+                # pairs with the same displacement should have the same similarity
+                dxy = (coords[idx[jj]] - coords[idx[ii]]).long()
+                flip = (dxy[:, 0] < 0) | ((dxy[:, 0] == 0) & (dxy[:, 1] < 0))
+                dxy = torch.where(flip[:, None], -dxy, dxy)
+                key = (dxy[:, 0] + 128) * 512 + (dxy[:, 1] + 128)
+                _, gid = torch.unique(key, return_inverse=True)
+                cnt = torch.bincount(gid).double()
+                gmean = torch.zeros_like(cnt).scatter_add(0, gid, k) / cnt
+                valid = cnt[gid] > 1
+                inv = (k - gmean[gid])[valid].square().mean()
+                loss = loss + a.inv_lambda * inv
+                acc["inv"] += inv.item()
             if a.rate_lambda > 0:
-                loss = loss + a.rate_lambda * coding_rate_loss(z, eps=a.rate_eps)
+                rate = coding_rate_loss(z, eps=a.rate_eps)
+                loss = loss + a.rate_lambda * rate
+                acc["rate"] += rate.item()
             opt.zero_grad()
             loss.backward()
             if a.grad_clip > 0:
@@ -137,7 +169,8 @@ def main() -> None:
             run += loss.item()
             nb += 1
         if ep % a.log_every == 0 or ep == a.epochs:
-            log(ep, run / max(nb, 1))
+            log(ep, run / max(nb, 1),
+                {k_: v / max(nb, 1) for k_, v in acc.items()})
         if ep in a.save_at:
             snap(ep)
 
