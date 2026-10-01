@@ -232,3 +232,34 @@ converged at 500 epochs.
 turned down without breaking integrality, and train longer (the random runs are
 still improving at 500 epochs). Then repeat the random start. Stage B (the
 campaign's own loss) and Stage C (corner-only training) wait on that.
+
+### 11.1 Correction: why the high-frequency rows drift (least-squares and local-gradient check)
+
+`encoder_training/ideal_net_lsq_check.py`. Fixed frequencies = the ideal r=16
+draw; features cos(ω_i·Δ) on ~1M within-patch pairs (the Stage A distribution);
+target exp(−|Δ|²/2·16²).
+
+- **Measured damping.** Each drifted row's contribution to pair similarity, as a
+  fraction of its ideal wave's: 0.80–0.85 at every distance from 3 to 71 cells,
+  and 0.90–0.92 below 3 cells. Integral rows: 1.000. So the drift is an amplitude
+  cut done through the frequency weights (the layer has no amplitude), nearly
+  flat in distance. My earlier claim that it damps mainly mid-distance pairs was
+  wrong.
+- **Global optimum (non-negative least squares).** Loss ≈ 0 (equal weights:
+  0.00048) using **34 of 512** waves, with far-field sd **0.19** (equal weights:
+  0.036). The within-patch objective sees only offsets inside a 99×99 window and
+  can be fit exactly by a sparse set that rings elsewhere: the §9 blind spot again.
+- **Local gradient at equal weights** (z-scored, + = wants the weight lower):
+  |n| 0–10 +1.01, 10–20 +0.58, 20–30 −0.42, 30–40 −0.57, 40–50 −0.66; corr(z, |n|)
+  = −0.52. The loss wants low frequencies down and high ones up. **This
+  contradicts the explanation in §11** ("the loss sees the high-frequency waves'
+  wobble but not their benefit"). The drifted rows are enriched for individually
+  positive gradients (78% vs 54%; 5 of the top 23 against ~1 by chance), but they
+  are not a band effect. Detuning can only turn a wave down, so the network acted
+  on particular high-|n| rows. Why those rows and not equally penalised low-|n|
+  rows is not explained.
+
+**Consequence for the next run.** Learnable per-row amplitudes alone would let
+the network collapse toward the sparse, ringing optimum. The objective needs a
+far-field term (random scaffold pairs with target ≈ 0, or the coding-rate term)
+alongside the amplitudes.
