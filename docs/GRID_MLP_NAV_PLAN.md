@@ -372,6 +372,23 @@ one checkpoint, h1024, trained under its own (non-task) recipe. Results
 - d0_base's 12.21 at d = 10 matches its exploit-probe 12.14 (`DUAL_TRAINING.md`)
   -- the two protocols agree on it.
 
+### 9.2 How much sooner (same recipe, same experience per update)
+
+First update at which the 3-eval rolling mean of the in-training task eval
+crosses a target (idea 1 / Agent-HaSH + panorama / Agent-HaSH no panorama).
+d0_base is not comparable here (h1024, its own recipe).
+
+| target | d = 0 | d = 10 |
+|---|---|---|
+| revisit found ≥ 0.99 | **u250** / u550 / u400 | **u250** / u550 / u400 |
+| revisit steps ≤ 20 | u550 / u700 / u550 | **u500** / u850 / u600 |
+| revisit steps ≤ 15 | **u750** / u1250 / u1000 | **u650** / u1850 / u1250 |
+| revisit steps ≤ 13 | **u950** / u1850 / u1850 | **u1050** / u3200 / u2600 |
+| cos(a, readout) post ≥ 0.9 | **u750** / u1200 / u1150 | **u750** / u1800 / u1450 |
+
+Loose targets: close. Tight ones: ~2× sooner at d = 0, 2.5–3× at d = 10.
+Exploit only -- search is not faster. One seed per run.
+
 **Why the early gap is open.** Hopfield recall already gives a near-exact
 direction (d0_base `q_accuracy` 0.98 / 0.97 at 0 / 10 distractors), so it is
 not that Agent-HaSH must learn to turn recall into a direction. Untested
