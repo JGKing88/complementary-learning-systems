@@ -13,6 +13,7 @@ PY=/home/jackking/.conda/envs/cls/bin/python
 OUT=${OUT:-/orcd/pool/003/jackking/cls_runs/results/ideal_net/stageA}
 EPOCHS=${EPOCHS:-500}
 LR=${LR:-1e-2}
+RATE_LAMBDA=${RATE_LAMBDA:-0}       # Sec 12: 0.5 with the recipe's eps = 1
 
 if [[ -z "${SLURM_ARRAY_TASK_ID:-}" ]]; then
     mkdir -p "$OUT/logs"
@@ -27,5 +28,6 @@ i=$SLURM_ARRAY_TASK_ID
 init=${INITS[$(( i / 3 ))]}
 seed=$(( i % 3 ))
 "$PY" -m encoder_training.train_ideal_net --r 16 --init "$init" --seed "$seed" \
-    --epochs "$EPOCHS" --lr "$LR" --out "$OUT/${init}_s${seed}"
+    --epochs "$EPOCHS" --lr "$LR" --rate_lambda "$RATE_LAMBDA" --rate_eps 1.0 \
+    --out "$OUT/${init}_s${seed}"
 echo "DONE $init s$seed"

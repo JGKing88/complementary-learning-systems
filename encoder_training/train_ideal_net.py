@@ -40,6 +40,7 @@ from analysis.hopfield_probe.ideal_net import IdealNet, save_ideal_net
 from encoder_training.data import (build_patch_codes, mixed_batch_iterator,
                                    sample_nonoverlapping_patches)
 from encoder_training.ideal_net_diagnostics import diagnose, integrality
+from encoder_training.losses import coding_rate_loss
 
 LAMBDAS = [11, 12, 13]
 NPOS = 1716
@@ -59,6 +60,10 @@ def main() -> None:
     ap.add_argument("--epochs", type=int, default=500)
     ap.add_argument("--lr", type=float, default=1e-2)
     ap.add_argument("--grad_clip", type=float, default=1.0)
+    ap.add_argument("--rate_lambda", type=float, default=0.0,
+                    help="weight on losses.coding_rate_loss of the batch codes "
+                         "(the recipe's far-field term; Sec 12 chose 0.5)")
+    ap.add_argument("--rate_eps", type=float, default=1.0)
     ap.add_argument("--log_every", type=int, default=10)
     ap.add_argument("--save_at", type=int, nargs="*", default=[0, 50, 100, 250])
     ap.add_argument("--patch_arena", type=int, default=0,
@@ -122,6 +127,8 @@ def main() -> None:
             k = (z[ii] * z[jj]).sum(1)
             d2 = (coords[idx[ii]] - coords[idx[jj]]).square().sum(1).double()
             loss = (k - torch.exp(-d2 / two_r2)).square().mean()
+            if a.rate_lambda > 0:
+                loss = loss + a.rate_lambda * coding_rate_loss(z, eps=a.rate_eps)
             opt.zero_grad()
             loss.backward()
             if a.grad_clip > 0:
