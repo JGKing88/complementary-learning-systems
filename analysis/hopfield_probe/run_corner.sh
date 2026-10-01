@@ -49,7 +49,7 @@ if [[ -z "${SLURM_JOB_ID:-}" ]]; then
     if [[ "$MODE" == check ]]; then
         exec sbatch --job-name="corner_scan_${ARG:-all}" \
             --partition=ou_bcs_normal \
-            --time=1:00:00 --gres=gpu:1 --cpus-per-task=4 --mem=16G \
+            --time=1:00:00 --gres=gpu:1 --cpus-per-task=4 --mem=16G --exclude=node3804 \
             --output="$LOGS/corner_scan_${ARG:-all}_%j.out" "$0" check "$ARG"
     else
         # A task takes 4-15 min. Keep the limit short: a long one can overlap

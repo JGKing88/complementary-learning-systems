@@ -1055,6 +1055,46 @@ So what an encoder loses first outside its training distribution is
 *differentiability*, not *addressability* — and the attract level sets only how
 much of the second goes with the first.
 
+**3.7b — Staggering the same patches inside the same corner restores most of
+the direction field (2026-09-30, `w64_corner_stagger`).** **[M]** The NN-control
+line found that a memoryless direction decode trained in a 400×400 corner
+learns a per-tile lookup when its arenas line up into a few rows and columns,
+and the general rule when the same number of arenas are *staggered* (no two
+share a row or column band) — 0.9° 300 cells away from 64 staggered arenas
+(`docs/NN_CONTROL_PLAN.md` §6.5, on branch `worktree-nn-generalization-control`).
+w64 asks the same of the encoder: w63's corner arm (att0.5, 100 patches of 50,
+the same 250k-point budget, the same corner, `encoder_final.pt`) with patch `i`
+at `(4.5 i, 4.5 π(i))` (`--patch_placement staggered`). Every X and Y value of
+the corner lies inside ~11 patches at different local positions; the patches
+overlap, so they cover 160k distinct cells against the tiling's 250k.
+
+Probe (K=5, s=1, both seeds; acc45 / reach):
+
+| arm (att0.5) | corner | centre | opposite |
+|---|---|---|---|
+| corner500 (tiled) | 0.892 / 0.888 | 0.512 / 0.164 | 0.534 / 0.205 |
+| **stagger500** | 0.998 / 0.988 | **0.824 / 0.800** (s42 0.835, s43 0.814) | **0.930 / 0.797** (0.942, 0.918) |
+| scatter100 (whole arena) | 0.998 / 0.951 | 0.996 / 0.936 | 0.999 / 0.950 |
+
+Scan, outside the corner (medians, both seeds): `C(1)` **0.993–0.996**
+(tiled 0.92–0.97, scattered 0.995–0.996); `r_mono` **24.5–31** (tiled 6.5–11.5,
+scattered 33.5–35); alias ceiling **0.90–0.96** (tiled 0.85–0.94, scattered
+0.80–0.84).
+
+The two halves of §3.7's mechanism come apart. The near field — cell-scale
+smoothness and a similarity that keeps falling for 25–30 cells, which is what
+the direction readout differentiates — is learned from the corner once the
+patches stop lining up: it depends on each module's phase, every phase of
+every module occurs in the corner, and staggering makes a per-patch table more
+expensive than the per-module structure. The far field does not come back:
+the near-revival displacements (~792, ~924) still never occur inside a
+500-wide corner, so outside it the encoder still confuses those look-alikes as
+much as the tiled one does (alias 0.90–0.96), and retrieval is no better than
+tiled (`exact` 0.62–0.78 vs 0.74–0.86). So arrangement fixes
+differentiability; only coverage of the revival displacements can fix
+addressability. The two-corners-792-apart prediction above is now the test of
+the second half alone.
+
 ---
 
 ## 4. Cheap next measurements
