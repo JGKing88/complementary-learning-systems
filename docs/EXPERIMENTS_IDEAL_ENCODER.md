@@ -494,3 +494,23 @@ a sharper fall-off or slight negative lobes, instead of a Gaussian, could cut
 neighbour overlap at a given peak width. More dimensions matter there only in that
 sharper kernels need more frequencies to realise. **To do later:** compare kernel
 shapes at fixed near-field width.
+
+### 13.1 Paired loss check: the rate term prefers the seamed code (2026-10-01)
+
+`encoder_training/ideal_net_loss_compare.py`: four harmonic layers evaluated on
+the same 40 training batches (recipe patches, seed 0):
+
+| network | integral | MSE | rate | inv | MSE + 0.5·rate | + 300·inv |
+|---|---|---|---|---|---|---|
+| exact ideal | 1.00 | 0.00049 | −0.2531 | ≈ 0 | −0.1261 | −0.1261 |
+| seamed (§13, rate from the ideal) | 0.50 | 0.00482 | −0.2789 | 2.8e-4 | **−0.1346** | −0.0518 |
+| near-ideal (§15a, rate + inv 300) | 0.91 | 0.00046 | −0.2549 | 1.9e-6 | −0.1270 | −0.1264 |
+| random start (§13, rate) | 0.48 | 0.110 | −0.3142 | 3.0e-4 | −0.0475 | +0.0413 |
+
+- **Under MSE + rate the seamed code scores 0.0086 below the ideal** (paired
+  s.e. < 1e-4) while being a worse code (MSE 10×, C(1) 0.90). A flaw of the loss,
+  not of SGD. (An earlier estimate put the ideal at −0.132; measured −0.126.)
+- **Adding 300 × invariance reverses it:** ideal −0.126 vs seamed −0.052.
+- **The exact ideal is still not that loss's minimum:** the 91%-integral
+  near-ideal scores slightly lower (−0.1264).
+- Random starts are far worse under every version, so they remain an SGD failure.
