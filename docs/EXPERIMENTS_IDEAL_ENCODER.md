@@ -336,3 +336,41 @@ integer frequency table (e.g. every |n| ≤ 40, ~2500 waves) with learnable
 amplitudes only. That is exactly §12's convex model, whose optimum is a good
 code, so SGD reaches it by construction. Open design question: the 1024-number
 budget (sparsity pressure, or keep the top 512 amplitudes), then the probe.
+
+## 14. Fixed integer table + learned amplitudes (2026-10-01)
+
+Make integrality architectural: a fixed table of integer frequencies (every
+half-plane |n| ≤ 40, 2513 waves) with learned amplitudes only. Training is then
+§12's convex problem, whose optimum (kernel MSE + 0.5 × rate) is a good code:
+1731 effective waves, MSE 0.0013, r_half 18, far sd 0.019.
+
+**Top-512 by weight does not fit the 1024-number budget well**
+(`encoder_training/ideal_net_topk_refit.py`; `.../ideal_net/topk/`). The 512
+largest weights are the low-|n| centre of the disc (45% of the weight), so the
+peak comes out too wide:
+
+| | MSE | waves (PR) | r_half (target 19) | r_eff | max beyond 71 | far sd |
+|---|---|---|---|---|---|---|
+| top-512, renormalised | 0.095 | 499 | 34 | 30 | 0.15 | 0.034 |
+| top-512, refit | 0.027 | 233 | 26 | 24 | 0.32 | 0.048 |
+
+This is the 2D budget problem of the explainer page's step 06 ("exact lowest N").
+Probe of the refit code: job 24510166 (pending).
+
+### One possible solution (not yet run)
+
+1. **Train amplitudes over the fixed table.** Convex, so SGD reaches §12's
+   optimum.
+2. **Sample 512 frequencies with probability ∝ amplitude** (importance sampling,
+   as in random Fourier features), merging repeated draws.
+3. **Refit the amplitudes of the sampled 512** under the same objective (convex).
+
+Why it should work: sampling ∝ the learned spectrum keeps the disc's high
+frequencies in proportion, which is how the ideal encoder itself is built. That
+construction already works at r = 16 (§4–5). Steps 1 and 3 are convex, and step
+2 is the random-features construction, so nothing relies on SGD finding discrete
+structure.
+
+Caveats: the frequency table is a strong inductive bias (it assumes the answer
+is a set of integer waves); duplicates in step 2 reduce the effective count
+below 512; and the result is only as good as a single random draw of 512.
