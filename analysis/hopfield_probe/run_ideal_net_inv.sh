@@ -29,7 +29,8 @@ fi
 
 cd "$WT"
 #        inv_lambda  near_weight
-CONFIGS=("10 0" "30 0" "100 0" "300 0" "10 1" "30 1" "100 1" "300 1")
+CONFIGS=("10 0" "30 0" "100 0" "300 0" "10 1" "30 1" "100 1" "300 1"
+         "1000 0" "1000 1")
 read -r INV NEAR <<< "${CONFIGS[$SLURM_ARRAY_TASK_ID]}"
 if [[ "$TEST" == a ]]; then INIT=${INIT:-integer}; EPOCHS=${EPOCHS:-100}
 else INIT=${INIT:-random}; EPOCHS=${EPOCHS:-500}; fi
