@@ -557,3 +557,24 @@ components, MSE + 0.5·rate, under its own sampling.)
    different part of the kernel; none gets all of it.
 
 No training-dynamics change so far brings a random start to the ideal.
+
+### 17.1 Kick test: these are local minima, not slow convergence
+
+`train_ideal_net.py --init_ckpt --kick K` (uniform ±K added to every weight, then
+200 epochs under MSE + 0.5 rate + 300 inv at full strength, no noise; jobs
+24590500–07, `.../ideal_net/kick/`). Bases: the best random start (uniform-Δ,
+noise 0.03, s0; retrained with uniform-Δ sampling) and the near-ideal (§15a;
+batch sampling). Losses are each run's own sampling, so compare within a base.
+
+| base | kick | rows back on original integers | integral | loss after 200 epochs |
+|---|---|---|---|---|
+| best random | 0 / 0.2 / 0.5 / 1.0 | 1.00 / **1.00** / 0.59 / 0.02 | 0.93 / 0.94 / 0.93 / 0.87 | −0.1340 / −0.1339 / −0.1272 / −0.1058 |
+| near-ideal | 0 / 0.2 / 0.5 / 1.0 | 1.00 / **1.00** / 0.47 / 0.04 | 0.90 / 0.91 / 0.88 / 0.66 | −0.1265 / −0.1265 / −0.1130 / −0.0673 |
+
+A ±0.2 kick is undone exactly (same integers, same loss); larger kicks move rows
+into other integer basins and the loss always gets worse, never better. Both
+solutions sit at the bottom of their basins; the near-ideal is a better local
+minimum, reached only by starting there. Training is not failing to converge:
+each row settles in the integer basin nearest where it is when invariance takes
+over. Reaching the ideal from a random start is a basin-selection (search)
+problem, not an optimisation-speed problem.
