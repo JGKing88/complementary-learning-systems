@@ -499,3 +499,54 @@ u3800–4000 pooled, 5 eval seeds each, ± across checkpoints;
    argmax store's `c` separates them at 0.99.
 4. **Search: raw-q Agent-HaSH is the best searcher** (found 0.65 / 0.62 vs
    0.54–0.60). Idea 1's search also collapsed once (u4000) -- one seed.
+
+### 9.6 Projection storage, and idea 1 with magnitude folded in (2026-10-03)
+
+Two more runs, same recipe, fixed code, one seed each:
+`task3r_k2_h128_distal_qmag_proj` (24570179; Agent-HaSH unit q + ‖q‖ with
+`--hopfield_storage_rule proj`, the projection rule -- stored patterns exact
+fixed points, no cross-talk) and `task3r_k2_h128_gmlp_scq_noc` (24569423;
+idea 1 with only `c·d`, no `c` channel -- magnitude folded into the direction,
+like raw q). Expectations going in: projection storage should be the best
+Agent-HaSH, especially with distractors; idea 1 with `c·d` should look like
+raw-q Agent-HaSH.
+
+**Learning speed** (first update the 3-eval rolling mean crosses; idea 1 /
+idea 1 c·d / raw q / q + ‖q‖ / q + ‖q‖ proj):
+
+| target | d = 0 | d = 10 |
+|---|---|---|
+| revisit steps ≤ 15 | u750 / u1000 / u1300 / **u550** / **u550** | **u650** / u1000 / u1400 / u900 / u950 |
+| revisit steps ≤ 13 | u950 / u1100 / u1850 / **u850** / u1250 | **u1050** / u1450 / u3000 / u1150 / u1450 |
+| cos(a, readout) post ≥ 0.9 | u750 / u1050 / u1650 / u800 / **u700** | u750 / u1050 / u2050 / u850 / **u700** |
+
+**End of training** (`eval_task_ckpts`, u3800–4000 pooled, 5 eval seeds each,
+± across checkpoints; jobs 24560734 + 24643905):
+
+| run | revisit steps d = 0 | revisit steps d = 10 | found d = 0 / 10 |
+|---|---|---|---|
+| idea 1 (d + c) | **11.60 ± 0.13** | **11.48 ± 0.24** | 0.54 / 0.52 |
+| idea 1, c·d only | 12.08 ± 0.15 | 11.90 ± 0.29 | 0.63 / 0.61 |
+| Agent-HaSH raw q | 12.26 ± 0.38 | 13.25 ± 0.79 | **0.65 / 0.62** |
+| Agent-HaSH q + ‖q‖ | 11.68 ± 0.38 | 12.41 ± 1.03 | 0.56 / 0.60 |
+| Agent-HaSH q + ‖q‖, proj | 12.28 ± 0.52 | 12.87 ± 0.99 | 0.64 / 0.62 |
+
+**Reading.**
+1. **Projection storage is not the best Agent-HaSH at the end.** Early it is
+   as fast as q + ‖q‖ (fastest to follow its readout of all five), but its
+   final exploit is no better: 12.28 at d = 0 (≈ raw q) and 12.87 ± 0.99 at
+   d = 10 (between q + ‖q‖ and raw q, inside their spread). It searches like
+   raw q (0.64 / 0.62). The near-goal own-vs-distractor confusion (§9.3) is
+   about how strongly the *query* overlaps each stored pattern, which the
+   projection rule does not change -- a plausible reason it does not fix the
+   d = 10 gap. Not tested.
+2. **Idea 1 with c·d sits between, and keeps its distractor advantage.**
+   Folding the magnitude in slows its learning (1.3–1.5× vs idea 1) but it is
+   still 1.3–2× faster than raw q; at the end it is comparable to raw q at
+   d = 0 (12.08 vs 12.26) but much better at d = 10 (11.90 vs 13.25). So the
+   d = 10 edge belongs to the argmax memory, independent of representation.
+3. **A representation trade-off appears.** The two variants that feed
+   magnitude *apart* (idea 1 d + c, Agent-HaSH q + ‖q‖) exploit best at d = 0
+   (11.6–11.7) but search worst (found 0.54–0.56); the folded ones (raw q,
+   c·d) and proj search better (0.63–0.65) and exploit ~12.1–12.3. One seed
+   each -- worth a second seed before reading much into it.
