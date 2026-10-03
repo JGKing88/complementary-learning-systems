@@ -550,3 +550,37 @@ idea 1 c·d / raw q / q + ‖q‖ / q + ‖q‖ proj):
    (11.6–11.7) but search worst (found 0.54–0.56); the folded ones (raw q,
    c·d) and proj search better (0.63–0.65) and exploit ~12.1–12.3. One seed
    each -- worth a second seed before reading much into it.
+
+### 9.7 Two seeds, over training: idea 1 vs Agent-HaSH q + ‖q‖ + projection (2026-10-03)
+
+Second seeds (seed 43): idea 1 `task3r_k2_h128_gmlp` (24660241; 20 h limit,
+replaced 24659510 that would have finished minutes inside 16 h) and
+`task3r_k2_h128_distal_qmag_proj` (24659511). Seed 42 = 24342872 / 24570179.
+
+Figure: `/orcd/pool/003/jackking/cls_runs/sensory_key/figs/perf_over_training_d10.png`
+(and `_d0.png`), made by `python -m analysis.sensory_key.plot_training`. One
+0–1 axis, both models, two quantities from the in-training task eval:
+- **path optimality** (solid) -- optimal steps / steps taken on the revisit
+  (goal stored, fresh start), ratio of means; the optimal count is exact, over
+  every start cell of the run's own val arenas (start uniform over cells ≠ goal,
+  reached within the 1-cell goal radius, ≤ 1 cell per step), E[opt] = 10.1 /
+  10.6 steps for the seed-42 / seed-43 worlds;
+- **found on first visit** (dashed) -- fraction finding the goal within the
+  200-step search, before it is stored.
+Seed mean, band = seed range, rolling mean over 5 evals.
+
+Late window (u3000–4000, mean over evals; per seed in brackets):
+
+| | path optimality d = 0 | d = 10 | found d = 0 | d = 10 |
+|---|---|---|---|---|
+| idea 1 | **0.87** [0.86, 0.88] | **0.88** [0.86, 0.90] | 0.52 [0.61, 0.42] | 0.48 [0.56, 0.40] |
+| Agent-HaSH q + ‖q‖ proj | 0.82 [0.85, 0.80] | 0.76 [0.81, 0.70] | 0.51 [0.60, 0.43] | 0.53 [0.59, 0.46] |
+
+**Reading.** Idea 1 takes more direct paths to a stored goal in both seeds;
+the gap is small without distractors and large with 10 (seed ranges do not
+overlap: 0.86–0.90 vs 0.70–0.81) -- the argmax memory's distractor advantage
+(§9.5–9.6) holds across seeds. Search is the same for both models (found
+0.48–0.53), and varies more between seeds (≈ 0.2) than between models. The
+seed-43 Agent-HaSH run dips at the very end (u4000 eval: revisit 19.8 steps at
+d = 0), so its end-point labels on the figure (0.70 / 0.74) understate its
+late-window level; the window means above are the fair comparison.
