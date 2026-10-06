@@ -33,11 +33,15 @@ What each part measures, and the decisions behind it:
    largest single-step drop <= 50% of the distance covered (a one-step jump is
    not an interpolation) AND mean closest approach <= 1 cell. ``snap`` = median
    largest drop >= 80% of the path, taken after >= 2 steps, with an inbound
-   cos dip below 0.95. Best alpha: interpolating first, then the fraction of
-   cues whose final (converged / T_MAX) state decodes exactly to the goal, then
-   the inbound min cos, then the larger alpha.
-2. **fixed point**: ``attractor.fixed_point_probe`` at alpha = 1 (steps 1, 5,
-   15, 30) and at the best alpha (adds T_MAX), 8 worlds.
+   cos dip below 0.95. Best alpha: see ``pick_alpha`` -- among interpolating
+   alphas if any (tag "interpolating"), else the alpha closest to
+   interpolating, i.e. the least snap (tag "closest").
+2. **fixed point**: ``self_fixed_point`` at alpha = 1 and at the best alpha,
+   8 worlds x K stored goals: does self-recall STOP (cos of the last two
+   states > 0.99999 within T_MAX), and is the stopped state the goal's own
+   cell (decoded against the cell bank)? If not: cells off and cos to the
+   goal's code. ``attractor.fixed_point_probe``'s cos-to-self at steps 1, 5,
+   15, 30 is kept alongside.
 3. **correct fixed point and basin (ii)**: every scaffold cell within
    ``BASIN_R`` of the goal is a cue, iterated at the best alpha to convergence,
    decoded over the disc + the other stored goals (``attractor.basin_bank``).
@@ -103,6 +107,8 @@ SHOW = (1, 2, 3, 5, 8, 12, 20, 30, 60, 100, 200, 400, 600)
 FP_STEPS = (1, 5, 15, 30)
 BASIN_R = 64
 BOX_R = 40
+N_BOX = 8
+FP_COS = 0.99999        # "stopped": cos between the last two states
 NEIGHBOURS = ((1, 0), (-1, 0), (0, 1), (0, -1))      # (East, North) order
 
 
@@ -300,6 +306,7 @@ def walk_stats(D, C, E, d0, cos_goal_final, conv, steps_run, alpha):
         "mincos_in_p10": float(np.nanpercentile(mincos_in, 10)),
         "mincos_whole_mean": float(C.min(1).mean()),
         "jump_median": float(np.nanmedian(jump)),
+        "jump_mean": float(np.nanmean(np.clip(jump, 0, 1))),
         "jump_step_median": float(np.median(jump_at[np.isfinite(jump)]))
         if np.isfinite(jump).any() else None,
         "dmin_mean": float(np.mean(np.where(np.isfinite(dmin), dmin, 99.0))),
@@ -328,14 +335,87 @@ def walk_stats(D, C, E, d0, cos_goal_final, conv, steps_run, alpha):
     return st
 
 
-def pick_alpha(sweep: list[dict]) -> dict:
-    return max(sweep, key=lambda s: (s["interpolates"], round(s["final_exact"], 2),
-                                     round(s["mincos_in_mean"], 3), s["alpha"]))
+def pick_alpha(sweep: list[dict]) -> tuple[dict, str]:
+    """``(best, how)``, ``how`` in {"interpolating", "closest"}.
+
+    (a) Some alpha interpolates: among those, the most final states exactly on
+    the goal, then the higher inbound min cos, then the larger alpha.
+    (b) None does: the alpha that comes CLOSEST to interpolating -- the least
+    snap, i.e. the smallest median largest-single-step fraction, then the
+    smallest mean of it (the median is 1.00 for every saturated alpha; the mean
+    still separates a walk that sometimes takes two steps from a one-step
+    jump), then the fraction ending exactly on the goal, then min cos.
+    Candidates are restricted to alphas whose walk gets in (mean closest
+    approach <= 1 cell) when any do: one that never leaves the cue has no
+    large step either, and is not "close to interpolating". alpha = 1 wins
+    only if it genuinely jumps least -- not, as under the old rule, because a
+    one-step jump has inbound min cos 1.000.
+    """
+    interp = [s for s in sweep if s["interpolates"]]
+    if interp:
+        return max(interp, key=lambda s: (round(s["final_exact"], 2),
+                                          round(s["mincos_in_mean"], 3),
+                                          s["alpha"])), "interpolating"
+    arrive = [s for s in sweep if s["dmin_mean"] <= 1.0] or sweep
+
+    def j(v):
+        return 1.0 if v is None or not np.isfinite(v) else v
+
+    return min(arrive, key=lambda s: (round(j(s["jump_median"]), 2),
+                                      round(j(s.get("jump_mean")), 3),
+                                      -round(s["final_exact"], 2),
+                                      -round(s["mincos_in_mean"], 3))), "closest"
 
 
 # ---------------------------------------------------------------------------
 # 3. disc probe: correct fixed point + basin (ii)
 # ---------------------------------------------------------------------------
+
+def self_fixed_point(field, worlds, cfg, k, alpha):
+    """Self-recall from every stored goal, run to T_MAX (early stop).
+
+    ``exists``: the state has stopped -- cos between the last two states
+    > FP_COS (the early stop at per-step change < CONV_TOL implies it).
+    ``correct``: that end state decodes exactly to its own goal cell, against
+    the world's cell bank (the K envs' cells + 5000 alias cells). For the rest,
+    ``off`` is the decoded distance from the goal (cells, same env only),
+    ``other_env`` the fraction decoding outside the goal's env, and
+    ``cos_goal`` the end state's cosine to the goal's code.
+    """
+    exists, correct, off, other, cosg = [], [], [], [], []
+    for w in worlds:
+        rng = np.random.RandomState(w.seed * 31 + k)
+        mem = build_memory(field, w, k, cfg, rng)
+        bank = build_cell_bank(field, w, k, cfg, rng)
+        tr = iterate(mem, mem.Z, alpha, (T_MAX - 1, T_MAX))
+        x0, x1 = _unit(tr[T_MAX - 1]), _unit(tr[T_MAX])
+        exists.append((x0 * x1).sum(1) > FP_COS)
+        idx, _v = Decoder(bank.Z)(x1)
+        r_env, r_x, r_y = bank.decode(idx)
+        goals = w.goals()[:k]
+        owner = mem.owner
+        same = r_env == owner
+        d = np.hypot(r_x - goals[owner, 0], r_y - goals[owner, 1])
+        correct.append(same & (d == 0))
+        off.append(np.where(same, d, np.nan))
+        other.append(~same)
+        cosg.append((x1 * mem.Z).sum(1))
+    exists, correct = np.concatenate(exists), np.concatenate(correct)
+    off, other, cosg = (np.concatenate(off), np.concatenate(other),
+                        np.concatenate(cosg))
+    bad = ~correct
+    return {
+        "n": int(exists.size),
+        "exists": float(exists.mean()),
+        "correct": float(correct.mean()),
+        "off_mean_wrong": float(np.nanmean(off[bad]))
+        if np.isfinite(off[bad]).any() else None,
+        "off_mean_all": float(np.nanmean(off)) if np.isfinite(off).any() else None,
+        "other_env": float(other.mean()),
+        "cos_goal": float(cosg.mean()),
+        "cos_goal_wrong": float(cosg[bad].mean()) if bad.any() else None,
+    }
+
 
 def disc_probe(field, w, env, mem, cfg, alpha):
     R = BASIN_R
@@ -511,10 +591,11 @@ def run_task(i: int, out_dir: str, alphas=ALPHAS) -> str:
             f"final exact {st['final_exact']:.3f} conv {st['frac_converged']:.2f}"
             f" steps {st['steps_run']}")
     res["sweep"] = sweep
-    best = pick_alpha(sweep)
+    best, how = pick_alpha(sweep)
     alpha = best["alpha"]
     res["best_alpha"] = alpha
-    log(f"best alpha {alpha}")
+    res["best_alpha_how"] = how
+    log(f"best alpha {alpha} ({how})")
 
     res["fixed_point"] = {}
     for tag, al, steps in (("alpha1", 1.0, FP_STEPS),
@@ -530,6 +611,11 @@ def run_task(i: int, out_dir: str, alphas=ALPHAS) -> str:
                                    for s, v in pooled.items()}
     log(f"fixed point {res['fixed_point']}")
 
+    res["self_fixed"] = {}
+    for tag, al in (("alpha1", 1.0), ("best", alpha)):
+        res["self_fixed"][tag] = self_fixed_point(field, worlds, cfg, k, al)
+        log(f"self fixed point {tag} (alpha {al}): {res['self_fixed'][tag]}")
+
     disc = []
     for w in worlds[:4]:
         mem = build_memory(field, w, k, cfg, np.random.RandomState(w.seed * 31 + k))
@@ -543,10 +629,17 @@ def run_task(i: int, out_dir: str, alphas=ALPHAS) -> str:
     res["nav_env"] = nav_envs(field, worlds, cfg, k, alpha)
     log(f"nav env {json.dumps(res['nav_env'])}")
 
+    # Up to N_BOX goals, scanning worlds and scored envs in order and skipping
+    # boxes that do not fit inside the scaffold. (The first run took only
+    # worlds[:4] x envs[:2]; in the 500-cell region only 1 of those 8 fit.)
     box = []
-    for w in worlds[:4]:
+    for w in worlds:
+        if len(box) >= N_BOX:
+            break
         mem = build_memory(field, w, k, cfg, np.random.RandomState(w.seed * 13 + k))
-        for e in scored_envs(cfg, k)[:2]:
+        for e in scored_envs(cfg, k):
+            if len(box) >= N_BOX:
+                break
             b = nav_box(field, w, e, mem, cfg, alpha)
             if b is not None:
                 box.append(b)
