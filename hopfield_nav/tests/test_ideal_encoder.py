@@ -136,3 +136,54 @@ def test_non_integer_harmonics_break_at_module_wraps():
     z2 = net(codes).double().numpy()
     ordinary2, across2 = np.linalg.norm(z2[1] - z2[0]), np.linalg.norm(z2[2] - z2[1])
     assert across2 > 2 * ordinary2                       # a seam at the wrap
+
+
+# --- binary=1: the saturated ideal code --------------------------------------
+
+@pytest.mark.parametrize("fwhm", [0.25, 0.0])
+def test_binary_is_sign_of_closed_form_and_unit(fwhm):
+    enc = IdealEncoder(r=32, n_freq=512, seed=0, binary=True)
+    cont = IdealEncoder(r=32, n_freq=512, seed=0)
+    rng = np.random.RandomState(7)
+    xs = rng.randint(0, NPOS, 300)
+    ys = rng.randint(0, NPOS, 300)
+    # Include positions where some wave has n.p == 0 mod Npos (sin = 0 exactly).
+    xs[:3] = 0
+    ys[:3] = 0
+    codes = torch.from_numpy(grid_codes(LAMBDAS, xs, ys, fwhm))
+    with torch.no_grad():
+        z = enc(codes).numpy().astype(np.float64)
+    ref = enc.closed_form(xs, ys)
+    np.testing.assert_array_equal(z, ref)
+    np.testing.assert_allclose(np.abs(z), 1 / np.sqrt(1024), rtol=1e-6)
+    np.testing.assert_allclose(np.linalg.norm(z, axis=1), 1.0, atol=1e-6)
+    c = cont.closed_form(xs, ys)
+    big = np.abs(c) > 1e-6
+    assert np.array_equal(np.sign(z[big]), np.sign(c[big]))
+
+
+def test_binary_kernel_is_mean_arcsin_of_the_waves():
+    """<z_b(p), z_b(p+D)> ~= mean_i (2/pi) arcsin(cos(omega_i . D)).
+
+    Translation invariant only on average over p, so average over 400 p.
+    """
+    r = 16
+    enc = IdealEncoder(r=r, seed=0, binary=True)
+    n = enc.freqs.numpy().astype(np.float64)
+    rng = np.random.RandomState(1)
+    xs = rng.randint(0, NPOS - 64, 400)
+    ys = rng.randint(0, NPOS - 64, 400)
+    z0 = enc.closed_form(xs, ys)
+    for d in (0, 1, 3, 8, 16, 40):
+        sim = float(np.mean((z0 * enc.closed_form(xs + d, ys)).sum(1)))
+        pred = float(np.mean(2 / np.pi * np.arcsin(
+            np.cos(2 * np.pi * n[:, 0] * d / NPOS))))
+        assert abs(sim - pred) < 0.01, (d, sim, pred)
+
+
+def test_loader_resolves_binary_and_default_is_unchanged():
+    enc, cfg, *_rest, header = load_probe_encoder("ideal:r=32,binary=1")
+    assert enc.binary and header["ideal"]["binary"] is True
+    assert cfg.output_nonlinearity == "sign"
+    enc0, _c, *_r, h0 = load_probe_encoder("ideal:r=32")
+    assert not enc0.binary and "binary" not in h0["ideal"]

@@ -38,6 +38,22 @@ It is computed FROM THE GRID CODE, not from (x, y), so it is a drop-in encoder
 below beta ~ D^1.5 the recall divides beta out anyway -- THEORY Sec 1.3). Set
 it to the reference encoder's so the recall regime is the same.
 
+``binary=True`` (spec ``binary=1``) binarises the output, ``z -> sign(z) /
+sqrt(D)``: the "saturated encoder" arm, the analogue of running a tanh encoder
+at gain 1e6. Each coordinate becomes +-1/sqrt(D), rows stay exactly unit norm.
+Its kernel is no longer Gaussian. For one wave, averaging over its phase,
+``E sign(cos a) sign(cos(a + d)) = 1 - 2|d|/pi = (2/pi) arcsin(cos d)``, so
+
+    <z_b(p), z_b(p + D)>  ~=  mean_i (2/pi) arcsin(cos(omega_i . D)),
+
+which is linear in |D| near 0 (a cusp) -- the "diffusive" binary profile. It
+is close to, but not exactly, the Gaussian-vector arc-sine law ``(2/pi)
+arcsin(k(D))`` (the slope at 0 differs by sqrt(2/pi)), and it is translation
+invariant only on average over the wave phases. Zeros of cos/sin (which occur
+exactly, e.g. ``sin(0)``) are sent to +1 through a 1e-9 tie band, so the module
+and ``closed_form`` agree bit-for-bit on the sign. Per-frequency ``weights``
+are ignored by the sign (every coordinate gets the same magnitude).
+
 Layout convention: block row ``i * l + j`` with ``i`` the x phase, ``j`` the y
 phase, as ``encode.grid_codes`` builds it.
 """
@@ -99,8 +115,10 @@ class IdealEncoder(torch.nn.Module):
     def __init__(self, r: float, n_freq: int = 512, seed: int = 0,
                  lambdas=DEFAULT_LAMBDAS, gain: float = 100.0,
                  weights: str | np.ndarray | None = None,
-                 freqs: str | np.ndarray | None = None):
+                 freqs: str | np.ndarray | None = None,
+                 binary: bool = False):
         super().__init__()
+        self.binary = bool(binary)
         # Optional per-frequency weights a_i >= 0 (e.g. a least-squares fit for
         # this draw): wave i is scaled by sqrt(a_i / sum a), so z.z' =
         # sum_i a_i cos(omega_i . Delta) / sum a. None = equal weights.
@@ -174,6 +192,8 @@ class IdealEncoder(torch.nn.Module):
         theta = self._phases(codes) @ self.harmonics.to(codes.device)
         out = torch.cat([torch.cos(theta), torch.sin(theta)], dim=1)
         out = out * torch.cat([self.amp, self.amp]).to(out)
+        if self.binary:
+            out = _binarize(out)
         return out.to(codes.dtype if codes.is_floating_point()
                       else torch.float32)
 
@@ -185,14 +205,29 @@ class IdealEncoder(torch.nn.Module):
         k = np.mod(p @ n.T, self.npos).astype(np.float64)
         theta = 2.0 * math.pi * k / self.npos
         amp = self.amp.cpu().numpy()
-        return np.concatenate([np.cos(theta), np.sin(theta)], axis=1) \
+        out = np.concatenate([np.cos(theta), np.sin(theta)], axis=1) \
             * np.concatenate([amp, amp])
+        return _binarize(out) if self.binary else out
+
+
+# Below this |value| a coordinate counts as a zero of cos/sin and goes to +1.
+# The module's angle carries ~1e-14 of float error, so without the band an
+# exact zero (sin 0) could take either sign in the module vs the closed form.
+_TIE = 1e-9
+
+
+def _binarize(z):
+    """``sign(z) / sqrt(D)`` with ties (|z| < 1e-9) sent to +1."""
+    d = z.shape[-1]
+    if isinstance(z, torch.Tensor):
+        return torch.where(z >= -_TIE, 1.0, -1.0).to(z) / math.sqrt(d)
+    return np.where(z >= -_TIE, 1.0, -1.0) / math.sqrt(d)
 
 
 # --- probe-harness hook ------------------------------------------------------
 #
 # ``load_probe_encoder`` treats a ``--ckpt`` of the form
-#     ideal:r=4[,n_freq=512][,seed=0][,gain=100]
+#     ideal:r=4[,n_freq=512][,seed=0][,gain=100][,binary=1]
 # as this encoder, so every existing script that takes a checkpoint path runs
 # it unchanged.
 
@@ -211,6 +246,9 @@ def parse_ideal_spec(spec: str) -> dict:
         k = k.strip()
         if k in ("weights", "freqs"):
             kw[k] = v.strip()
+            continue
+        if k == "binary":
+            kw[k] = bool(int(v))
             continue
         if k not in ("r", "n_freq", "seed", "gain"):
             raise ValueError(f"unknown ideal-encoder key {k!r} in {spec!r}")
@@ -245,6 +283,9 @@ def load_ideal_encoder(spec: str, *, device="cpu",
         "ideal": {"r": enc.r, "n_freq": enc.n_freq, "seed": enc.seed,
                   "weights": enc.weights_path, "freqs": enc.freqs_path},
     }
+    if enc.binary:              # only when set, so existing headers are unchanged
+        header["ideal"]["binary"] = True
+        cfg.output_nonlinearity = "sign"
     return enc, cfg, enc.gain, float(fwhm), header
 
 
