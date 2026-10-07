@@ -86,13 +86,24 @@ def best_tag(r):
 
 
 def fp_cells(sf):
-    """('y'/'n', correct cell) for one self_fixed_point result -- terse."""
-    exists = "y" if sf["exists"] >= 1.0 else f"n ({sf['exists']:.2f})"
-    if sf["correct"] >= 1.0:
-        return exists, "y"
-    if sf["off_mean_wrong"] is None:
-        return exists, f"n, other env, cos {sf['cos_goal_wrong']:.3f}"
-    return exists, f"n, {sf['off_mean_wrong']:.1f} cells off, cos {sf['cos_goal_wrong']:.3f}"
+    """('goal is a fixed point?', 'where self-recall settles') for one
+    self_fixed_point result -- terse.
+
+    Self-recall always stops somewhere under Hebbian storage (power iteration
+    onto a cue-independent state), so "the state stopped" alone says nothing
+    about the goal; the first cell is y only if every goal stops on itself.
+    """
+    if sf["correct"] >= 1.0 and sf["exists"] >= 1.0:
+        return "y", "goal"
+    where = []
+    if sf["exists"] < 1.0:
+        where.append(f"{1 - sf['exists']:.0%} still moving")
+    if sf["off_mean_wrong"] is not None:
+        where.append(f"{sf['off_mean_wrong']:.1f} cells off")
+    if sf["other_env"] > 0:
+        where.append(f"{sf['other_env']:.0%} other env")
+    where.append(f"cos {sf['cos_goal_wrong']:.3f}")
+    return "n", ", ".join(where)
 
 
 def nav_rows(r):
@@ -161,15 +172,16 @@ def main():
 def doc_memory(rows, lay, k, compact=False):
     """One row per condition, rsat side rows included.
 
-    Fixed point / correct come from ``self_fixed_point`` (self-recall from the
-    stored goal) at alpha = 1 and at the chosen alpha; 'near-goal' is the
+    'Goal is fixed pt' / 'settles at' come from ``self_fixed_point``
+    (self-recall from the stored goal) at alpha = 1 and at the chosen alpha; 'near-goal' is the
     second line of evidence -- starts within 2 cells, converged walk, fraction
     ending exactly on the goal; basin ii is after the walk.
     """
     head = ["encoder · sat · storage", "best α", "interpolates (min cos)"]
     if not compact:
         head.append("snaps at α (dip cos)")
-    head += ["fixed pt α=1", "correct α=1", "fixed pt best α", "correct best α",
+    head += ["goal is fixed pt α=1", "settles at α=1", "goal is fixed pt best α",
+             "settles at best α",
              "goals correct α=1 / best", "near-goal exact", "basin ii 100/95"]
     out = ["| " + " | ".join(head) + " |", "|" + "---|" * len(head)]
     for s, e, st in ORDER:
