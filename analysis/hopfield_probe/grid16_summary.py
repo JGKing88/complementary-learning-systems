@@ -68,11 +68,31 @@ def memory_row(r):
     }
 
 
+def _r(d, tag, key, cap):
+    """Mean radius over goals; '≥' when any goal hit the cap (a lower bound)."""
+    hit = any(x[tag][key] >= cap for x in d)
+    return f"{'≥' if hit else ''}{_m(d, key, tag):.1f}"
+
+
 def _basin(d, tag, cap, k1="r_exact_all", k2="r_exact_95"):
-    """mean 100% / 95% radius; [n/m at cap] = goals whose 95% radius hit it."""
-    n = sum(x[tag][k2] >= cap for x in d)
-    return (f"{_m(d, k1, tag):.1f} / {_m(d, k2, tag):.1f}"
-            + (f" [{n}/{len(d)} at cap {cap}]" if n else ""))
+    """mean 100% / 95% radius, each marked '≥' if any goal hit the cap."""
+    return f"{_r(d, tag, k1, cap)} / {_r(d, tag, k2, cap)}"
+
+
+def best_tag(r):
+    how = r.get("best_alpha_how")
+    a = f"{r['best_alpha']:g}"
+    return a if how in (None, "interpolating") else f"{a} (none interp.)"
+
+
+def fp_cells(sf):
+    """('y'/'n', correct cell) for one self_fixed_point result -- terse."""
+    exists = "y" if sf["exists"] >= 1.0 else f"n ({sf['exists']:.2f})"
+    if sf["correct"] >= 1.0:
+        return exists, "y"
+    if sf["off_mean_wrong"] is None:
+        return exists, f"n, other env, cos {sf['cos_goal_wrong']:.3f}"
+    return exists, f"n, {sf['off_mean_wrong']:.1f} cells off, cos {sf['cos_goal_wrong']:.3f}"
 
 
 def nav_rows(r):
@@ -139,41 +159,53 @@ def main():
 # --- compact tables for the EXPERIMENTS doc (``--doc``) -----------------------
 
 def doc_memory(rows, lay, k, compact=False):
-    if compact:
-        out = ["| encoder · sat · storage | best α | interpolates (min cos) | fixed pt: cos self s30, α=1 | correct: self exact / near exact / off (cells) | basin ii walk 100/95 | basin ii 1-step 100/95 |",
-               "|---|---|---|---|---|---|---|"]
-    else:
-        out = ["| encoder · sat · storage | best α | interpolates (min cos) | snaps at α (dip cos) | fixed point: cos self s1/5/15/30, α=1 | correct: self exact / near exact / off (cells) / cos to goal | basin ii walk 100/95 | basin ii 1-step 100/95 |",
-               "|---|---|---|---|---|---|---|---|"]
+    """One row per condition, rsat side rows included.
+
+    Fixed point / correct come from ``self_fixed_point`` (self-recall from the
+    stored goal) at alpha = 1 and at the chosen alpha; 'near-goal' is the
+    second line of evidence -- starts within 2 cells, converged walk, fraction
+    ending exactly on the goal; basin ii is after the walk.
+    """
+    head = ["encoder · sat · storage", "best α", "interpolates (min cos)"]
+    if not compact:
+        head.append("snaps at α (dip cos)")
+    head += ["fixed pt α=1", "correct α=1", "fixed pt best α", "correct best α",
+             "goals correct α=1 / best", "near-goal exact", "basin ii 100/95"]
+    out = ["| " + " | ".join(head) + " |", "|" + "---|" * len(head)]
     for s, e, st in ORDER:
         r = rows[(e, s, st, lay, k)]
         m = memory_row(r)
         d, c = r["disc"], "converged"
-        corr = (f"{np.mean([x[c]['self_exact'] for x in d]):.2f} / "
-                f"{_m(d, 'near_exact', c):.2f} / {_m(d, 'self_land_dist', c):.2f}")
-        name = f"{e} · {s} · {st}"
-        fp = r["fixed_point"]["alpha1"]
-        if compact:
-            out.append(f"| {name} | {m['best_alpha']:g} | {m['interp']} | {fp['30']:.3f} "
-                       f"| {corr} | {m['basin']} | {m['basin1']} |")
-        else:
-            out.append(f"| {name} | {m['best_alpha']:g} | {m['interp']} | {m['snap_alphas']} | "
-                       + "/".join(f"{fp[x]:.3f}" for x in ("1", "5", "15", "30"))
-                       + f" | {corr} / {_m(d, 'self_cos_goal', c):.3f} | {m['basin']} | {m['basin1']} |")
+        f1, c1 = fp_cells(r["self_fixed"]["alpha1"])
+        fb, cb = fp_cells(r["self_fixed"]["best"])
+        cells = [f"{e} · {s} · {st}", best_tag(r), m["interp"]]
+        if not compact:
+            cells.append(m["snap_alphas"])
+        cells += [f1, c1, fb, cb,
+                  f"{r['self_fixed']['alpha1']['correct']:.2f} / "
+                  f"{r['self_fixed']['best']['correct']:.2f}",
+                  f"{_m(d, 'near_exact', c):.2f}",
+                  _basin(d, c, r["BASIN_R"])]
+        out.append("| " + " | ".join(cells) + " |")
     return "\n".join(out)
 
 
 def doc_nav(rows, lay, k):
-    out = ["| encoder · sat · storage | readout | 1 step: acc45 / \\|err\\|° / reach | 1 step: basin iii 100/95 | walk: acc45 / \\|err\\|° / reach | walk: basin iii 100/95 |",
-           "|---|---|---|---|---|---|"]
+    """One row per condition; each cell acc45 / |err|° / reach / basin iii
+    (100% first-failure radius on the goal-centred box; '≥' = at the cap)."""
+    head = ["encoder · sat · storage", "best α", "(a) q, 1 step", "(a) q, after walk",
+            "(b) grad, 1 step", "(b) grad, after walk"]
+    out = ["| " + " | ".join(head) + " |", "|" + "---|" * len(head)]
     for s, e, st in ORDER:
         r = rows[(e, s, st, lay, k)]
-        n = {(x["readout"], x["timing"].split()[0]): x for x in nav_rows(r)}
-        for rd in ("(a) q", "(b) grad"):
-            a, b = n[(rd, "1")], n[(rd, "walk")]
-            out.append(f"| {e} · {s} · {st} | {rd} | {a['acc45']:.3f} / {a['err']:.1f} / {a['reach']:.3f} "
-                       f"| {a['basin']} | {b['acc45']:.3f} / {b['err']:.1f} / {b['reach']:.3f} "
-                       f"(α={r['best_alpha']:g}) | {b['basin']} |")
+        box = r["nav_box"]
+        cells = [f"{e} · {s} · {st}", best_tag(r)]
+        for key in ("a|one_step", "a|converged", "b|one_step", "b|converged"):
+            v = r["nav_env"][key]
+            bas = (_r([{"x": b[key]} for b in box], "x", "r_reach_all", r["BOX_R"])
+                   if box else "n/a")
+            cells.append(f"{v['acc45']:.3f} / {v['abs_err']:.1f} / {v['reach']:.2f} / {bas}")
+        out.append("| " + " | ".join(cells) + " |")
     return "\n".join(out)
 
 

@@ -581,22 +581,27 @@ problem, not an optimisation-speed problem.
 
 ## 18. The 16-condition grid: encoder × saturation × storage × readout (2026-10-06)
 
-**The point: with the gradient readout (b), every condition navigates, and only
-projection storage gives a slow walk that stops on the goal.** Saturation does not
-cost the memory anything. It is exact everywhere, and the ideal code's basin
-grows from ~49 to ~57 cells. But saturation breaks readout (a): acc45 falls to
-0.39–0.42 and reach to 0.10–0.12, the §7.1 offset, now shown on the ideal code
-too. Readout (b) restores it to acc45 0.97–1.00 and reach 0.93–0.98. A saturated
-memory cannot walk at any α: at α ≤ 0.01 it stalls on the cue and then jumps to
-the goal. With an unsaturated code at K = 5, the α walk interpolates (cos ≥ 0.96 along
-the way) under both storage rules; at K = 20 it still does under proj, but not
-under hebb for att0.5. Only projection storage then holds the goal
-(exact fixed point, basin unchanged). Under Hebbian storage the converged walk
-drifts off: at K = 20 basin (ii) collapses to ~2 cells, and readouts taken after
-the walk lose reach (att0.5 region K = 5: reach 0.98 → 0.16). Recall-only
-saturation is the one bad corner for the ideal code. Each stored pattern moves to
-its nearest sign corner (cos ≈ 0.90), which decodes ~1 cell off, so reach drops
-to 0.6–0.7.
+**Readout (b) navigates in every condition. Only projection storage gives a slow
+walk that ends on the goal.**
+
+- **Saturation leaves the memory exact but breaks readout (a).** Every stored
+  goal is a correct fixed point, and the ideal code's basin grows from ~49 to
+  ~57 cells. But readout (a) falls to acc45 0.39–0.44 and reach 0.10–0.14, the
+  §7.1 offset, which the binary ideal code shows as well. Readout (b) brings it
+  back to acc45 0.97–1.00 and reach 0.93–0.98.
+- **A saturated memory cannot walk at any α.** At α ≤ 0.01 it stalls on the cue
+  and then jumps to the goal.
+- **An unsaturated code walks (interpolates) at K = 5 under both storage rules,
+  but only projection storage keeps the goal as the fixed point.**
+  - Under Hebbian storage, self-recall at α = 1 still converges, but to the
+    wrong state. That state is cue-independent: cos 0.36–0.44 to the goal,
+    mostly decoding to another env.
+  - At K = 20 the Hebbian walk's basin (ii) is ~2 cells, and after-walk
+    navigation fails for att0.5.
+- **Recall-only saturation (rsat) has fixed points, but slightly wrong ones.**
+  Each stored goal settles about 1 cell from its own cell.
+  - Ideal code: 20–25% of goals correct, cos 0.90 to the goal; reach 0.6–0.7.
+  - att0.5: 93–97% of goals correct, and navigation is unaffected.
 
 ### Conditions
 
@@ -612,8 +617,10 @@ to 0.6–0.7.
   - Side row *rsat*: recall-only saturation, β = 1e6 with the encoder
     unsaturated.
   - Note on the binary ideal kernel: it is mean_i (2/π)·arcsin(cos ω_i·Δ),
-    linear in |Δ| at 0. It is not exactly (2/π)·arcsin(k), whose slope at 0 is
-    larger by 1/√(2/π). Both forms are tested in `test_ideal_encoder.py`.
+    linear in |Δ| at 0. It is not exactly (2/π)·arcsin(k); the two are tested in
+    `test_ideal_encoder.py`.
+  - The binary ideal code is **not injective**: 2.5% of cells share their exact
+    sign pattern with a cell within 2 cells (3000-cell check).
 - **Storage.** `hebb` and `proj`.
 - **Readout.**
   - (a) the production q = basis·(recalled − current).
@@ -626,292 +633,245 @@ to 0.6–0.7.
 - **Layout.** multi_env_goals, 8 worlds × 20 envs, env 20. Whole arena, and the
   region `0 0 500`. K = 5 and K = 20.
 
-### Metrics and the decisions they encode
+### Metrics
 
 - **α sweep.** α ∈ {1, 0.95, 0.9, 0.8, 0.5, 0.2, 0.05, 0.01, 0.003, 0.001},
   2 worlds × 5 envs, every non-goal cell as a cue (start ~10.5 cells out). Each
   step is decoded against the K envs' cells plus 5000 alias cells.
   - *Interpolates* requires all of:
     - ≥ 90% of cues monotone on the inbound segment (start to first closest
-      approach; drift after arrival belongs to the fixed-point columns);
+      approach);
     - mean per-cue inbound min cos ≥ 0.95, which is the "(min cos)" column;
-    - median largest single step ≤ 50% of the path, so a one-step jump does not
-      count;
+    - median largest single step ≤ 50% of the path;
     - mean closest approach ≤ 1 cell.
   - *Snap* means a stall, then a single step covering ≥ 80% of the path at
     step ≥ 2. The dip cos is printed beside it.
-  - *Best α* is chosen in this order: it interpolates; then the most final
-    states exactly on the goal; then the higher min cos; then the larger α.
-- **Fixed point.** `fixed_point_probe` at α = 1, 8 worlds. Reported as cos to
-  itself at steps 1/5/15/30.
-- **Correct fixed point and basin (ii).** Every scaffold cell within 64 of the
-  goal is a cue (8 goals). Each is iterated at the best α to convergence and
-  decoded over the disc plus the other goals.
-  - *self*: the start is the goal cell.
-  - *near*: starts within 2 cells.
-  - *off*: how far the endpoint lands from the goal.
-  - Basin (ii) is the first-failure radius at 100% and 95%.
-  - "[n/8 at cap 64]" marks goals where the radius reached the disc edge; the
-    mean is then a lower bound.
-- **Navigation.** acc45 and |err| over the cells of 8 worlds × 5 envs, and reach
-  from `continuous_flow` (arrival within 0.5 cell).
-  - Basin (iii) is measured on an 81 × 81 box of scaffold cells around the goal,
-    because a 20-cell env censors it at ~27. It is the first-failure radius of
-    "reached" from the same flow, capped at 40.
-  - Boxes that did not fit inside the scaffold were skipped. That left 6 goals
-    per condition in the whole arena but **only 1 in the region** (its goals sit
-    near the scaffold edge). **Basin (iii) for the region is a single goal; read
-    it as anecdotal.**
-- Radii are means over goals. A goal whose radius is −1 (the goal cell itself
-  fails) pulls the mean down, so a mean like 7.1 can be a mixture of 64 and −1.
+- **Best α.**
+  - If some α interpolates: among those, the most final states exactly on the
+    goal, then the higher min cos, then the larger α.
+  - Otherwise, the α **closest to interpolating**, tagged "(none interp.)": the
+    least snap (smallest median, then mean, largest-step fraction), then the
+    most states exactly on the goal, then min cos. Only α whose walk gets in are
+    candidates.
+  - α = 1 now wins only if it genuinely jumps least. In the first version it won
+    every saturated row, because a one-step jump has inbound min cos 1.000.
+- **Fixed point** (`self_fixed_point`). Self-recall from each stored goal
+  (8 worlds × K), at α = 1 and at the best α, up to 600 steps.
+  - *Fixed pt*: the state stops (cos of the last two states > 0.99999). The
+    fraction is shown if it is below 1.
+  - *Correct*: the stopped state decodes exactly to the goal's own cell (cell
+    bank). "n, X cells off, cos Y" gives the mean decoded distance and cos to
+    the goal's code over the incorrect goals. "other env" means they decode
+    outside the goal's env. The share of goals that are correct is in its own
+    column.
+  - *Near-goal exact* is the second line of evidence: starts within 2 cells,
+    converged walk, fraction ending exactly on the goal (8 goals, disc bank).
+- **Basin (ii).** Every scaffold cell within 64 of the goal is a cue (8 goals),
+  run through the converged walk; first-failure radius at 100% / 95%.
+- **Navigation.** Each cell reads acc45 / |err|° / reach / basin (iii).
+  - acc45, |err| and reach (`continuous_flow`, arrival within 0.5 cell) come from
+    the cells of 8 worlds × 5 envs.
+  - Basin (iii) is the 100% first-failure radius of "reached", flowing on an
+    81 × 81 scaffold box around each of 8 goals (boxes are now taken from all
+    worlds, so both layouts have 8).
+- **Caps.** "≥" marks a mean in which at least one goal hit the cap (64 for
+  basin ii, 40 for basin iii), so it is a lower bound. A radius of −1 (the goal
+  cell itself fails) pulls the mean down.
 
 ### Results
 
-Run: `run_grid16.sh` (Slurm 25087393, 48 tasks, all completed).
-Tables: `python -m analysis.hopfield_probe.grid16_summary OUT [--doc]`.
-Results: `.../hopfield_probe/ideal_encoder/grid16/{json,logs,summary.md,doc_tables.md}`.
-`summary.md` also holds every α sweep's trajectory.
+Run: `run_grid16.sh` with OUT=`.../grid16/v2` (Slurm 25093041, 48 tasks, all
+completed). Tables: `python -m analysis.hopfield_probe.grid16_summary OUT [--doc]`.
+`summary.md` holds every α sweep. The first run is kept in `.../grid16/json`.
 
 Controls reproduce:
-- Arm B with readout (a) gives 0.389 / 0.100 (published 0.392 / 0.103).
-- Arm B with readout (b) gives 0.998 / 11.8° (THEORY Stage 0: 0.998 / 11.8°).
-- Ideal r = 32 unsat, one step, readout (a) gives |err| 0.6–0.8° (§16:
-  0.59–0.87).
+- Arm B with readout (a) gives 0.389 / 0.10 (published 0.392 / 0.103).
+- Arm B with readout (b) gives 0.998 / 11.8° (Stage 0: 0.998 / 11.8°).
+- Ideal unsat, readout (a), one step gives |err| 0.6–0.8° (§16: 0.59–0.87).
 
 #### K = 5, whole: memory
 
-| encoder · sat · storage | best α | interpolates (min cos) | snaps at α (dip cos) | fixed point: cos self s1/5/15/30, α=1 | correct: self exact / near exact / off (cells) / cos to goal | basin ii walk 100/95 | basin ii 1-step 100/95 |
-|---|---|---|---|---|---|---|---|
-| ideal · unsat · hebb | 0.2 | y (0.984) | none | 0.998/0.952/0.787/0.638 | 0.38 / 0.39 / 0.78 / 0.829 | 15.2 / 18.1 [1/8 at cap 64] | 51.6 / 59.1 [1/8 at cap 64] |
-| ideal · unsat · proj | 0.9 | y (0.999) | none | 1.000/1.000/1.000/1.000 | 1.00 / 1.00 / 0.00 / 1.000 | 49.4 / 56.8 [2/8 at cap 64] | 49.4 / 56.8 [2/8 at cap 64] |
-| att0.5 · unsat · hebb | 0.05 | y (0.961) | none | 0.997/0.950/0.803/0.664 | 1.00 / 0.99 / 0.00 / 0.986 | 13.0 / 16.4 | 25.1 / 29.2 |
-| att0.5 · unsat · proj | 0.9 | y (0.969) | none | 1.000/1.000/1.000/1.000 | 1.00 / 1.00 / 0.00 / 1.000 | 24.9 / 28.9 | 24.9 / 28.9 |
-| ideal · sat · hebb | 1 | n (1.000) | 0.01 (0.967), 0.003 (0.959), 0.001 (0.958) | 1.000/1.000/1.000/1.000 | 1.00 / 1.00 / 0.00 / 1.000 | 56.8 / 63.8 [7/8 at cap 64] | 55.4 / 63.6 [7/8 at cap 64] |
-| ideal · sat · proj | 1 | n (1.000) | 0.01 (0.967), 0.003 (0.959), 0.001 (0.958) | 1.000/1.000/1.000/1.000 | 1.00 / 1.00 / 0.00 / 1.000 | 57.1 / 63.8 [7/8 at cap 64] | 54.6 / 63.8 [7/8 at cap 64] |
-| att0.5 · sat · hebb | 1 | n (1.000) | 0.01 (0.919), 0.003 (0.904), 0.001 (0.902) | 1.000/1.000/1.000/1.000 | 1.00 / 1.00 / 0.00 / 1.000 | 25.4 / 30.1 | 26.0 / 30.6 |
-| att0.5 · sat · proj | 1 | n (1.000) | 0.01 (0.919), 0.003 (0.904), 0.001 (0.902) | 1.000/1.000/1.000/1.000 | 1.00 / 1.00 / 0.00 / 1.000 | 25.6 / 30.2 | 26.0 / 30.6 |
-| ideal · rsat · hebb | 0.001 | n (0.922) | none | 0.907/0.903/0.902/0.902 | 0.12 / 0.12 / 0.98 / 0.903 | 7.1 / 7.1 [1/8 at cap 64] | 4.5 / 5.8 |
-| ideal · rsat · proj | 0.003 | n (0.924) | none | 0.908/0.907/0.906/0.906 | 0.12 / 0.12 / 1.00 / 0.905 | 7.1 / 7.1 [1/8 at cap 64] | 3.9 / 5.1 |
-| att0.5 · rsat · hebb | 0.2 | n (0.959) | none | 0.959/0.958/0.958/0.958 | 1.00 / 1.00 / 0.00 / 0.953 | 26.9 / 31.4 | 22.5 / 27.1 |
-| att0.5 · rsat · proj | 0.2 | n (0.960) | none | 0.959/0.959/0.959/0.959 | 1.00 / 1.00 / 0.00 / 0.953 | 26.9 / 31.4 | 20.1 / 24.8 |
+| encoder · sat · storage | best α | interpolates (min cos) | snaps at α (dip cos) | fixed pt α=1 | correct α=1 | fixed pt best α | correct best α | goals correct α=1 / best | near-goal exact | basin ii 100/95 |
+|---|---|---|---|---|---|---|---|---|---|---|
+| ideal · unsat · hebb | 0.2 | y (0.984) | none | y | n, 2.1 cells off, cos 0.412 | y | n, 1.5 cells off, cos 0.768 | 0.00 / 0.28 | 0.39 | 15.2 / ≥18.1 |
+| ideal · unsat · proj | 0.9 | y (0.999) | none | y | y | y | y | 1.00 / 1.00 | 1.00 | 49.4 / ≥56.8 |
+| att0.5 · unsat · hebb | 0.05 | y (0.961) | none | y | n, 1.6 cells off, cos 0.364 | y | n, 1.0 cells off, cos 0.954 | 0.12 / 0.97 | 0.99 | 13.0 / 16.4 |
+| att0.5 · unsat · proj | 0.9 | y (0.969) | none | y | y | y | y | 1.00 / 1.00 | 1.00 | 24.9 / 28.9 |
+| ideal · sat · hebb | 0.01 (none interp.) | n (0.967) | 0.01 (0.967), 0.003 (0.959), 0.001 (0.958) | y | y | y | y | 1.00 / 1.00 | 1.00 | 56.8 / ≥63.8 |
+| ideal · sat · proj | 0.01 (none interp.) | n (0.967) | 0.01 (0.967), 0.003 (0.959), 0.001 (0.958) | y | y | y | y | 1.00 / 1.00 | 1.00 | 57.1 / ≥63.8 |
+| att0.5 · sat · hebb | 0.001 (none interp.) | n (0.902) | 0.01 (0.919), 0.003 (0.904), 0.001 (0.902) | y | y | y | y | 1.00 / 1.00 | 1.00 | 25.5 / 30.2 |
+| att0.5 · sat · proj | 0.001 (none interp.) | n (0.902) | 0.01 (0.919), 0.003 (0.904), 0.001 (0.902) | y | y | y | y | 1.00 / 1.00 | 1.00 | 25.5 / 30.2 |
+| ideal · rsat · hebb | 0.001 (none interp.) | n (0.922) | none | y | n, 1.2 cells off, cos 0.902 | y | n, 1.2 cells off, cos 0.903 | 0.25 / 0.25 | 0.12 | ≥7.1 / ≥7.1 |
+| ideal · rsat · proj | 0.001 (none interp.) | n (0.924) | none | y | n, 1.1 cells off, cos 0.906 | y | n, 1.1 cells off, cos 0.906 | 0.20 / 0.20 | 0.12 | ≥7.1 / ≥7.1 |
+| att0.5 · rsat · hebb | 0.001 (none interp.) | n (0.946) | none | y | n, 1.0 cells off, cos 0.941 | y | n, 1.0 cells off, cos 0.941 | 0.97 / 0.97 | 1.00 | 26.9 / 31.4 |
+| att0.5 · rsat · proj | 0.001 (none interp.) | n (0.946) | none | y | n, 1.0 cells off, cos 0.947 | y | n, 1.0 cells off, cos 0.947 | 0.93 / 0.93 | 1.00 | 26.9 / 31.4 |
 
 #### K = 5, whole: navigation
 
-| encoder · sat · storage | readout | 1 step: acc45 / \|err\|° / reach | 1 step: basin iii 100/95 | walk: acc45 / \|err\|° / reach | walk: basin iii 100/95 |
+| encoder · sat · storage | best α | (a) q, 1 step | (a) q, after walk | (b) grad, 1 step | (b) grad, after walk |
 |---|---|---|---|---|---|
-| ideal · unsat · hebb | (a) q | 1.000 / 0.8 / 0.989 | 40.0 / 40.0 [6/6 at cap 40] | 0.990 / 6.4 / 0.552 (α=0.2) | 26.7 / 26.7 [4/6 at cap 40] |
-| ideal · unsat · hebb | (b) grad | 1.000 / 1.4 / 0.992 | 40.0 / 40.0 [6/6 at cap 40] | 0.990 / 6.4 / 0.578 (α=0.2) | 26.7 / 26.7 [4/6 at cap 40] |
-| ideal · unsat · proj | (a) q | 1.000 / 0.6 / 0.991 | 40.0 / 40.0 [6/6 at cap 40] | 1.000 / 0.6 / 0.991 (α=0.9) | 40.0 / 40.0 [6/6 at cap 40] |
-| ideal · unsat · proj | (b) grad | 1.000 / 1.2 / 0.978 | 34.5 / 40.0 [6/6 at cap 40] | 1.000 / 1.2 / 0.977 (α=0.9) | 39.7 / 40.0 [6/6 at cap 40] |
-| att0.5 · unsat · hebb | (a) q | 0.997 / 8.7 / 0.993 | 30.5 / 35.3 [2/6 at cap 40] | 0.997 / 8.9 / 0.994 (α=0.05) | 30.7 / 35.8 [2/6 at cap 40] |
-| att0.5 · unsat · hebb | (b) grad | 1.000 / 8.3 / 0.967 | 30.5 / 35.5 [2/6 at cap 40] | 1.000 / 8.5 / 0.988 (α=0.05) | 30.5 / 35.7 [2/6 at cap 40] |
-| att0.5 · unsat · proj | (a) q | 0.998 / 8.6 / 0.989 | 30.5 / 35.3 [2/6 at cap 40] | 0.998 / 8.6 / 0.992 (α=0.9) | 30.5 / 35.3 [2/6 at cap 40] |
-| att0.5 · unsat · proj | (b) grad | 1.000 / 8.2 / 0.963 | 30.5 / 35.3 [2/6 at cap 40] | 1.000 / 8.2 / 0.963 (α=0.9) | 30.5 / 35.3 [2/6 at cap 40] |
-| ideal · sat · hebb | (a) q | 0.413 / 61.4 / 0.116 | 0.0 / 0.0 | 0.413 / 61.4 / 0.116 (α=1) | 0.0 / 0.0 |
-| ideal · sat · hebb | (b) grad | 0.967 / 15.2 / 0.970 | 40.0 / 40.0 [6/6 at cap 40] | 0.967 / 15.2 / 0.970 (α=1) | 40.0 / 40.0 [6/6 at cap 40] |
-| ideal · sat · proj | (a) q | 0.413 / 61.4 / 0.116 | 0.0 / 0.0 | 0.413 / 61.4 / 0.116 (α=1) | 0.0 / 0.0 |
-| ideal · sat · proj | (b) grad | 0.967 / 15.2 / 0.970 | 40.0 / 40.0 [6/6 at cap 40] | 0.967 / 15.2 / 0.970 (α=1) | 40.0 / 40.0 [6/6 at cap 40] |
-| att0.5 · sat · hebb | (a) q | 0.389 / 66.5 / 0.100 | 0.0 / 0.0 | 0.389 / 66.5 / 0.100 (α=1) | 0.0 / 0.0 |
-| att0.5 · sat · hebb | (b) grad | 0.998 / 11.8 / 0.984 | 28.0 / 32.8 | 0.998 / 11.8 / 0.984 (α=1) | 27.0 / 32.3 |
-| att0.5 · sat · proj | (a) q | 0.389 / 66.5 / 0.100 | 0.0 / 0.0 | 0.389 / 66.5 / 0.100 (α=1) | 0.0 / 0.0 |
-| att0.5 · sat · proj | (b) grad | 0.998 / 11.8 / 0.984 | 28.2 / 32.8 | 0.998 / 11.8 / 0.984 (α=1) | 27.0 / 32.5 |
-| ideal · rsat · hebb | (a) q | 0.995 / 4.5 / 0.725 | 20.0 / 20.0 [3/6 at cap 40] | 0.994 / 4.7 / 0.680 (α=0.001) | 26.7 / 26.7 [4/6 at cap 40] |
-| ideal · rsat · hebb | (b) grad | 0.994 / 4.5 / 0.725 | 20.0 / 20.0 [3/6 at cap 40] | 0.995 / 4.7 / 0.657 (α=0.001) | 26.7 / 26.7 [4/6 at cap 40] |
-| ideal · rsat · proj | (a) q | 0.995 / 4.5 / 0.739 | 33.3 / 33.3 [5/6 at cap 40] | 0.995 / 4.5 / 0.671 (α=0.003) | 20.0 / 20.0 [3/6 at cap 40] |
-| ideal · rsat · proj | (b) grad | 0.995 / 4.5 / 0.719 | 33.3 / 33.3 [5/6 at cap 40] | 0.995 / 4.5 / 0.695 (α=0.003) | 20.0 / 20.0 [3/6 at cap 40] |
-| att0.5 · rsat · hebb | (a) q | 0.998 / 8.9 / 0.987 | 29.2 / 34.7 [2/6 at cap 40] | 0.998 / 8.8 / 0.990 (α=0.2) | 28.5 / 33.8 |
-| att0.5 · rsat · hebb | (b) grad | 1.000 / 8.5 / 0.984 | 29.3 / 35.0 [2/6 at cap 40] | 1.000 / 8.5 / 0.984 (α=0.2) | 28.5 / 33.5 [1/6 at cap 40] |
-| att0.5 · rsat · proj | (a) q | 0.998 / 8.9 / 0.986 | 29.3 / 34.7 [2/6 at cap 40] | 0.998 / 8.9 / 0.983 (α=0.2) | 28.7 / 34.0 |
-| att0.5 · rsat · proj | (b) grad | 1.000 / 8.5 / 0.986 | 29.5 / 35.0 [2/6 at cap 40] | 1.000 / 8.5 / 0.985 (α=0.2) | 29.0 / 33.8 [1/6 at cap 40] |
+| ideal · unsat · hebb | 0.2 | 1.000 / 0.8 / 0.99 / ≥31.0 | 0.990 / 6.4 / 0.55 / ≥25.0 | 1.000 / 1.4 / 0.99 / ≥40.0 | 0.990 / 6.4 / 0.58 / ≥25.0 |
+| ideal · unsat · proj | 0.9 | 1.000 / 0.6 / 0.99 / ≥40.0 | 1.000 / 0.6 / 0.99 / ≥40.0 | 1.000 / 1.2 / 0.98 / ≥35.9 | 1.000 / 1.2 / 0.98 / ≥40.0 |
+| att0.5 · unsat · hebb | 0.05 | 0.997 / 8.7 / 0.99 / 27.9 | 0.997 / 8.9 / 0.99 / 27.8 | 1.000 / 8.3 / 0.97 / 27.8 | 1.000 / 8.5 / 0.99 / 27.6 |
+| att0.5 · unsat · proj | 0.9 | 0.998 / 8.6 / 0.99 / 27.9 | 0.998 / 8.6 / 0.99 / 27.9 | 1.000 / 8.2 / 0.96 / 27.8 | 1.000 / 8.2 / 0.96 / 27.8 |
+| ideal · sat · hebb | 0.01 (none interp.) | 0.413 / 61.4 / 0.12 / 0.0 | 0.444 / 58.0 / 0.14 / 0.0 | 0.966 / 15.2 / 0.97 / ≥40.0 | 0.966 / 15.2 / 0.97 / ≥40.0 |
+| ideal · sat · proj | 0.01 (none interp.) | 0.413 / 61.4 / 0.12 / 0.0 | 0.444 / 58.0 / 0.14 / 0.0 | 0.967 / 15.2 / 0.97 / ≥40.0 | 0.967 / 15.2 / 0.97 / ≥40.0 |
+| att0.5 · sat · hebb | 0.001 (none interp.) | 0.389 / 66.5 / 0.10 / 0.0 | 0.389 / 66.5 / 0.11 / 0.0 | 0.998 / 11.8 / 0.98 / 25.5 | 0.998 / 11.8 / 0.98 / 25.1 |
+| att0.5 · sat · proj | 0.001 (none interp.) | 0.389 / 66.5 / 0.10 / 0.0 | 0.389 / 66.5 / 0.11 / 0.0 | 0.998 / 11.8 / 0.98 / 25.5 | 0.998 / 11.8 / 0.98 / 25.2 |
+| ideal · rsat · hebb | 0.001 (none interp.) | 0.995 / 4.5 / 0.72 / ≥25.0 | 0.994 / 4.7 / 0.68 / ≥25.0 | 0.994 / 4.5 / 0.72 / ≥25.0 | 0.995 / 4.7 / 0.66 / ≥25.0 |
+| ideal · rsat · proj | 0.001 (none interp.) | 0.995 / 4.5 / 0.74 / ≥30.0 | 0.995 / 4.5 / 0.66 / ≥19.9 | 0.995 / 4.5 / 0.72 / ≥30.0 | 0.995 / 4.5 / 0.69 / ≥20.0 |
+| att0.5 · rsat · hebb | 0.001 (none interp.) | 0.998 / 8.9 / 0.99 / 26.9 | 0.998 / 8.8 / 0.99 / 26.5 | 1.000 / 8.5 / 0.98 / 26.8 | 1.000 / 8.5 / 0.98 / 26.6 |
+| att0.5 · rsat · proj | 0.001 (none interp.) | 0.998 / 8.9 / 0.99 / 26.9 | 0.998 / 8.9 / 0.98 / 26.4 | 1.000 / 8.5 / 0.99 / 26.6 | 1.000 / 8.5 / 0.98 / 26.4 |
 
 #### K = 5, region: memory
 
-| encoder · sat · storage | best α | interpolates (min cos) | snaps at α (dip cos) | fixed point: cos self s1/5/15/30, α=1 | correct: self exact / near exact / off (cells) / cos to goal | basin ii walk 100/95 | basin ii 1-step 100/95 |
-|---|---|---|---|---|---|---|---|
-| ideal · unsat · hebb | 0.05 | y (0.976) | none | 0.995/0.915/0.721/0.606 | 0.88 / 0.88 / 0.12 / 0.964 | 4.8 / 5.9 | 47.6 / 54.6 |
-| ideal · unsat · proj | 0.9 | y (0.999) | none | 1.000/1.000/1.000/1.000 | 1.00 / 1.00 / 0.00 / 1.000 | 46.6 / 53.9 | 46.6 / 53.9 |
-| att0.5 · unsat · hebb | 0.9 | y (0.956) | none | 0.991/0.892/0.657/0.494 | 0.00 / 0.00 / 1.71 / 0.418 | -1.0 / -1.0 | 22.1 / 27.8 |
-| att0.5 · unsat · proj | 0.9 | y (0.976) | none | 1.000/1.000/1.000/1.000 | 1.00 / 1.00 / 0.00 / 1.000 | 24.9 / 30.9 | 24.9 / 30.9 |
-| ideal · sat · hebb | 1 | n (1.000) | 0.01 (0.968), 0.003 (0.960), 0.001 (0.959) | 1.000/1.000/1.000/1.000 | 1.00 / 1.00 / 0.00 / 1.000 | 49.4 / 58.5 [2/8 at cap 64] | 46.4 / 57.2 [1/8 at cap 64] |
-| ideal · sat · proj | 1 | n (1.000) | 0.01 (0.968), 0.003 (0.960), 0.001 (0.959) | 1.000/1.000/1.000/1.000 | 1.00 / 1.00 / 0.00 / 1.000 | 49.8 / 58.6 [2/8 at cap 64] | 48.8 / 58.1 [2/8 at cap 64] |
-| att0.5 · sat · hebb | 1 | n (1.000) | 0.01 (0.929), 0.003 (0.915), 0.001 (0.914) | 1.000/1.000/1.000/1.000 | 1.00 / 1.00 / 0.00 / 1.000 | 28.8 / 37.9 | 29.9 / 39.5 |
-| att0.5 · sat · proj | 1 | n (1.000) | 0.01 (0.929), 0.003 (0.915), 0.001 (0.914) | 1.000/1.000/1.000/1.000 | 1.00 / 1.00 / 0.00 / 1.000 | 29.4 / 38.8 | 30.2 / 39.6 |
-| ideal · rsat · hebb | 0.001 | n (0.919) | none | 0.906/0.900/0.898/0.897 | 0.25 / 0.25 / 0.93 / 0.893 | 13.5 / 15.2 [2/8 at cap 64] | 3.0 / 3.9 |
-| ideal · rsat · proj | 0.01 | n (0.919) | none | 0.907/0.905/0.904/0.903 | 0.50 / 0.50 / 0.60 / 0.893 | 23.2 / 26.2 [2/8 at cap 64] | 3.4 / 4.9 |
-| att0.5 · rsat · hebb | 0.01 | y (0.953) | none | 0.954/0.953/0.953/0.953 | 0.88 / 0.88 / 0.12 / 0.957 | 25.1 / 32.1 | 17.4 / 22.0 |
-| att0.5 · rsat · proj | 0.01 | y (0.955) | none | 0.957/0.957/0.957/0.957 | 1.00 / 1.00 / 0.00 / 0.962 | 30.9 / 38.4 | 19.6 / 26.2 |
+| encoder · sat · storage | best α | interpolates (min cos) | snaps at α (dip cos) | fixed pt α=1 | correct α=1 | fixed pt best α | correct best α | goals correct α=1 / best | near-goal exact | basin ii 100/95 |
+|---|---|---|---|---|---|---|---|---|---|---|
+| ideal · unsat · hebb | 0.05 | y (0.976) | none | y | n, 2.2 cells off, cos 0.437 | y | n, 1.0 cells off, cos 0.954 | 0.05 / 0.85 | 0.88 | 4.8 / 5.9 |
+| ideal · unsat · proj | 0.9 | y (0.999) | none | y | y | y | y | 1.00 / 1.00 | 1.00 | 46.6 / 53.9 |
+| att0.5 · unsat · hebb | 0.9 | y (0.956) | none | y | n, 1.6 cells off, cos 0.416 | y | n, 1.6 cells off, cos 0.416 | 0.03 / 0.03 | 0.00 | -1.0 / -1.0 |
+| att0.5 · unsat · proj | 0.9 | y (0.976) | none | y | y | y | y | 1.00 / 1.00 | 1.00 | 24.9 / 30.9 |
+| ideal · sat · hebb | 0.01 (none interp.) | n (0.968) | 0.01 (0.968), 0.003 (0.960), 0.001 (0.959) | y | y | y | y | 1.00 / 1.00 | 1.00 | 49.4 / ≥58.5 |
+| ideal · sat · proj | 0.01 (none interp.) | n (0.968) | 0.01 (0.968), 0.003 (0.960), 0.001 (0.959) | y | y | y | y | 1.00 / 1.00 | 1.00 | 49.8 / ≥58.6 |
+| att0.5 · sat · hebb | 0.003 (none interp.) | n (0.915) | 0.01 (0.929), 0.003 (0.915), 0.001 (0.914) | y | y | y | y | 1.00 / 1.00 | 1.00 | 28.6 / 37.9 |
+| att0.5 · sat · proj | 0.001 (none interp.) | n (0.914) | 0.01 (0.929), 0.003 (0.915), 0.001 (0.914) | y | y | y | y | 1.00 / 1.00 | 1.00 | 29.2 / 38.5 |
+| ideal · rsat · hebb | 0.001 (none interp.) | n (0.919) | none | y | n, 1.2 cells off, cos 0.899 | y | n, 1.2 cells off, cos 0.898 | 0.20 / 0.17 | 0.25 | 13.5 / ≥15.2 |
+| ideal · rsat · proj | 0.001 (none interp.) | n (0.920) | none | y | n, 1.3 cells off, cos 0.904 | y | n, 1.3 cells off, cos 0.905 | 0.35 / 0.33 | 0.38 | 20.1 / ≥22.6 |
+| att0.5 · rsat · hebb | 0.01 | y (0.953) | none | y | n, 1.1 cells off, cos 0.945 | y | n, 1.1 cells off, cos 0.945 | 0.90 / 0.90 | 0.88 | 25.1 / 32.1 |
+| att0.5 · rsat · proj | 0.01 | y (0.955) | none | y | n, 1.0 cells off, cos 0.957 | y | n, 1.0 cells off, cos 0.957 | 0.97 / 0.97 | 1.00 | 30.9 / 38.4 |
 
 #### K = 5, region: navigation
 
-| encoder · sat · storage | readout | 1 step: acc45 / \|err\|° / reach | 1 step: basin iii 100/95 | walk: acc45 / \|err\|° / reach | walk: basin iii 100/95 |
+| encoder · sat · storage | best α | (a) q, 1 step | (a) q, after walk | (b) grad, 1 step | (b) grad, after walk |
 |---|---|---|---|---|---|
-| ideal · unsat · hebb | (a) q | 1.000 / 0.9 / 0.989 | 40.0 / 40.0 [1/1 at cap 40] | 1.000 / 2.0 / 0.982 (α=0.05) | 40.0 / 40.0 [1/1 at cap 40] |
-| ideal · unsat · hebb | (b) grad | 1.000 / 1.4 / 0.990 | 40.0 / 40.0 [1/1 at cap 40] | 1.000 / 2.3 / 0.983 (α=0.05) | 40.0 / 40.0 [1/1 at cap 40] |
-| ideal · unsat · proj | (a) q | 1.000 / 0.6 / 0.992 | 40.0 / 40.0 [1/1 at cap 40] | 1.000 / 0.6 / 0.987 (α=0.9) | 40.0 / 40.0 [1/1 at cap 40] |
-| ideal · unsat · proj | (b) grad | 1.000 / 1.3 / 0.987 | 40.0 / 40.0 [1/1 at cap 40] | 1.000 / 1.3 / 0.985 (α=0.9) | 40.0 / 40.0 [1/1 at cap 40] |
-| att0.5 · unsat · hebb | (a) q | 1.000 / 8.1 / 0.980 | 37.0 / 40.0 [1/1 at cap 40] | 0.749 / 38.4 / 0.155 (α=0.9) | 0.0 / 0.0 |
-| att0.5 · unsat · hebb | (b) grad | 0.999 / 8.3 / 0.971 | 39.0 / 40.0 [1/1 at cap 40] | 0.811 / 30.9 / 0.235 (α=0.9) | 0.0 / 0.0 |
-| att0.5 · unsat · proj | (a) q | 1.000 / 7.8 / 0.976 | 37.0 / 40.0 [1/1 at cap 40] | 1.000 / 7.8 / 0.977 (α=0.9) | 37.0 / 40.0 [1/1 at cap 40] |
-| att0.5 · unsat · proj | (b) grad | 0.999 / 8.0 / 0.976 | 39.0 / 40.0 [1/1 at cap 40] | 0.999 / 8.0 / 0.976 (α=0.9) | 39.0 / 40.0 [1/1 at cap 40] |
-| ideal · sat · hebb | (a) q | 0.417 / 61.1 / 0.111 | 0.0 / 0.0 | 0.417 / 61.1 / 0.111 (α=1) | 0.0 / 0.0 |
-| ideal · sat · hebb | (b) grad | 0.977 / 14.8 / 0.931 | 40.0 / 40.0 [1/1 at cap 40] | 0.977 / 14.8 / 0.931 (α=1) | 40.0 / 40.0 [1/1 at cap 40] |
-| ideal · sat · proj | (a) q | 0.417 / 61.1 / 0.111 | 0.0 / 0.0 | 0.417 / 61.1 / 0.111 (α=1) | 0.0 / 0.0 |
-| ideal · sat · proj | (b) grad | 0.977 / 14.8 / 0.931 | 40.0 / 40.0 [1/1 at cap 40] | 0.977 / 14.8 / 0.931 (α=1) | 40.0 / 40.0 [1/1 at cap 40] |
-| att0.5 · sat · hebb | (a) q | 0.393 / 66.2 / 0.101 | 0.0 / 0.0 | 0.393 / 66.2 / 0.101 (α=1) | 0.0 / 0.0 |
-| att0.5 · sat · hebb | (b) grad | 0.996 / 12.0 / 0.968 | 25.0 / 36.0 | 0.995 / 12.1 / 0.968 (α=1) | 25.0 / 34.0 |
-| att0.5 · sat · proj | (a) q | 0.393 / 66.2 / 0.101 | 0.0 / 0.0 | 0.393 / 66.2 / 0.101 (α=1) | 0.0 / 0.0 |
-| att0.5 · sat · proj | (b) grad | 0.995 / 12.1 / 0.968 | 26.0 / 38.0 | 0.995 / 12.1 / 0.967 (α=1) | 25.0 / 35.0 |
-| ideal · rsat · hebb | (a) q | 0.994 / 4.8 / 0.581 | 0.0 / 0.0 | 0.994 / 4.9 / 0.634 (α=0.001) | 40.0 / 40.0 [1/1 at cap 40] |
-| ideal · rsat · hebb | (b) grad | 0.995 / 5.0 / 0.646 | 0.0 / 0.0 | 0.995 / 5.1 / 0.624 (α=0.001) | 40.0 / 40.0 [1/1 at cap 40] |
-| ideal · rsat · proj | (a) q | 0.994 / 4.7 / 0.643 | 40.0 / 40.0 [1/1 at cap 40] | 0.994 / 5.1 / 0.614 (α=0.01) | 40.0 / 40.0 [1/1 at cap 40] |
-| ideal · rsat · proj | (b) grad | 0.995 / 4.9 / 0.652 | 40.0 / 40.0 [1/1 at cap 40] | 0.994 / 5.3 / 0.628 (α=0.01) | 40.0 / 40.0 [1/1 at cap 40] |
-| att0.5 · rsat · hebb | (a) q | 0.999 / 8.7 / 0.973 | 37.0 / 40.0 [1/1 at cap 40] | 0.998 / 8.8 / 0.968 (α=0.01) | 28.0 / 39.0 |
-| att0.5 · rsat · hebb | (b) grad | 0.998 / 8.8 / 0.964 | 38.0 / 40.0 [1/1 at cap 40] | 0.998 / 8.9 / 0.964 (α=0.01) | 38.0 / 40.0 [1/1 at cap 40] |
-| att0.5 · rsat · proj | (a) q | 0.998 / 8.5 / 0.964 | 37.0 / 40.0 [1/1 at cap 40] | 0.997 / 8.5 / 0.962 (α=0.01) | 27.0 / 38.0 |
-| att0.5 · rsat · proj | (b) grad | 0.998 / 8.7 / 0.956 | 39.0 / 40.0 [1/1 at cap 40] | 0.997 / 8.8 / 0.957 (α=0.01) | 27.0 / 36.0 |
+| ideal · unsat · hebb | 0.05 | 1.000 / 0.9 / 0.99 / ≥40.0 | 1.000 / 2.0 / 0.98 / ≥40.0 | 1.000 / 1.4 / 0.99 / ≥40.0 | 1.000 / 2.3 / 0.98 / ≥40.0 |
+| ideal · unsat · proj | 0.9 | 1.000 / 0.6 / 0.99 / ≥40.0 | 1.000 / 0.6 / 0.99 / ≥36.1 | 1.000 / 1.3 / 0.99 / ≥40.0 | 1.000 / 1.3 / 0.97 / ≥40.0 |
+| att0.5 · unsat · hebb | 0.9 | 1.000 / 8.1 / 0.98 / ≥34.8 | 0.749 / 38.4 / 0.16 / 4.1 | 0.999 / 8.3 / 0.97 / ≥35.1 | 0.811 / 30.9 / 0.24 / 9.0 |
+| att0.5 · unsat · proj | 0.9 | 1.000 / 7.8 / 0.98 / ≥34.2 | 1.000 / 7.8 / 0.98 / ≥30.6 | 0.999 / 8.0 / 0.98 / ≥34.9 | 0.999 / 8.0 / 0.98 / ≥34.9 |
+| ideal · sat · hebb | 0.01 (none interp.) | 0.417 / 61.1 / 0.11 / 0.0 | 0.446 / 58.2 / 0.13 / 0.0 | 0.977 / 14.8 / 0.93 / ≥40.0 | 0.977 / 14.8 / 0.93 / ≥40.0 |
+| ideal · sat · proj | 0.01 (none interp.) | 0.417 / 61.1 / 0.11 / 0.0 | 0.445 / 58.2 / 0.13 / 0.0 | 0.977 / 14.8 / 0.93 / ≥40.0 | 0.977 / 14.8 / 0.93 / ≥40.0 |
+| att0.5 · sat · hebb | 0.003 (none interp.) | 0.393 / 66.2 / 0.10 / 0.0 | 0.394 / 66.1 / 0.10 / 0.0 | 0.996 / 12.0 / 0.97 / 25.5 | 0.995 / 12.1 / 0.97 / 25.2 |
+| att0.5 · sat · proj | 0.001 (none interp.) | 0.393 / 66.2 / 0.10 / 0.0 | 0.394 / 66.1 / 0.12 / 0.0 | 0.995 / 12.1 / 0.97 / 26.0 | 0.994 / 12.1 / 0.97 / 25.4 |
+| ideal · rsat · hebb | 0.001 (none interp.) | 0.994 / 4.8 / 0.58 / ≥20.0 | 0.994 / 4.9 / 0.63 / ≥25.0 | 0.995 / 5.0 / 0.65 / ≥20.0 | 0.995 / 5.1 / 0.62 / ≥23.1 |
+| ideal · rsat · proj | 0.001 (none interp.) | 0.994 / 4.7 / 0.64 / ≥20.0 | 0.994 / 5.0 / 0.64 / ≥25.0 | 0.995 / 4.9 / 0.65 / ≥21.6 | 0.994 / 5.2 / 0.63 / ≥20.0 |
+| att0.5 · rsat · hebb | 0.01 | 0.999 / 8.7 / 0.97 / ≥33.0 | 0.998 / 8.8 / 0.97 / 26.4 | 0.998 / 8.8 / 0.96 / ≥33.8 | 0.998 / 8.9 / 0.96 / 27.2 |
+| att0.5 · rsat · proj | 0.01 | 0.998 / 8.5 / 0.96 / ≥32.1 | 0.997 / 8.5 / 0.96 / 26.8 | 0.998 / 8.7 / 0.96 / ≥33.8 | 0.997 / 8.8 / 0.96 / 26.5 |
 
 #### K = 20, whole: memory
 
-| encoder · sat · storage | best α | interpolates (min cos) | fixed pt: cos self s30, α=1 | correct: self exact / near exact / off (cells) | basin ii walk 100/95 | basin ii 1-step 100/95 |
-|---|---|---|---|---|---|---|
-| ideal · unsat · hebb | 0.05 | y (0.951) | 0.355 | 0.50 / 0.50 / 1.77 | 1.6 / 2.0 | 27.1 / 33.8 |
-| ideal · unsat · proj | 0.9 | y (0.998) | 1.000 | 1.00 / 0.97 / 0.00 | 17.6 / 21.1 | 17.6 / 21.1 |
-| att0.5 · unsat · hebb | 0.05 | n (0.892) | 0.213 | 0.75 / 0.80 / 0.14 | 1.8 / 2.0 | 10.9 / 14.6 |
-| att0.5 · unsat · proj | 0.9 | y (0.958) | 1.000 | 1.00 / 1.00 / 0.00 | 11.0 / 14.2 | 11.0 / 14.2 |
-| ideal · sat · hebb | 1 | n (1.000) | 1.000 | 1.00 / 1.00 / 0.00 | 41.6 / 54.2 [1/8 at cap 64] | 40.5 / 52.6 [1/8 at cap 64] |
-| ideal · sat · proj | 1 | n (1.000) | 1.000 | 1.00 / 1.00 / 0.00 | 42.0 / 56.8 [2/8 at cap 64] | 40.1 / 51.5 |
-| att0.5 · sat · hebb | 1 | n (0.970) | 0.998 | 1.00 / 1.00 / 0.00 | 17.6 / 21.6 | 21.1 / 25.9 |
-| att0.5 · sat · proj | 1 | n (0.984) | 1.000 | 1.00 / 1.00 / 0.00 | 21.1 / 25.9 | 21.4 / 25.9 |
-| ideal · rsat · hebb | 0.003 | n (0.918) | 0.865 | 0.12 / 0.12 / 2.32 | 1.2 / 1.8 | 2.8 / 3.6 |
-| ideal · rsat · proj | 0.001 | n (0.922) | 0.897 | 0.00 / 0.01 / 1.33 | -1.0 / -1.0 | 1.9 / 2.4 |
-| att0.5 · rsat · hebb | 0.2 | n (0.934) | 0.916 | 0.75 / 0.75 / 0.14 | 14.1 / 16.5 | 6.4 / 12.0 |
-| att0.5 · rsat · proj | 0.2 | n (0.946) | 0.956 | 1.00 / 1.00 / 0.00 | 21.6 / 26.0 | 9.8 / 12.0 |
+| encoder · sat · storage | best α | interpolates (min cos) | fixed pt α=1 | correct α=1 | fixed pt best α | correct best α | goals correct α=1 / best | near-goal exact | basin ii 100/95 |
+|---|---|---|---|---|---|---|---|---|---|
+| ideal · unsat · hebb | 0.05 | y (0.951) | y | n, 4.2 cells off, cos 0.207 | y | n, 1.3 cells off, cos 0.912 | 0.00 / 0.54 | 0.50 | 1.6 / 2.0 |
+| ideal · unsat · proj | 0.9 | y (0.998) | y | y | y | y | 1.00 / 1.00 | 0.97 | 17.6 / 21.2 |
+| att0.5 · unsat · hebb | 0.5 (none interp.) | n (0.855) | y | n, 3.0 cells off, cos 0.181 | y | n, 3.0 cells off, cos 0.186 | 0.00 / 0.00 | 0.00 | -1.0 / -1.0 |
+| att0.5 · unsat · proj | 0.9 | y (0.958) | y | y | y | y | 1.00 / 1.00 | 1.00 | 11.0 / 14.2 |
+| ideal · sat · hebb | 0.01 (none interp.) | n (0.967) | y | n, 1.5 cells off, cos 1.000 | y | n, 1.5 cells off, cos 1.000 | 0.99 / 0.99 | 1.00 | 41.5 / ≥54.2 |
+| ideal · sat · proj | 0.01 (none interp.) | n (0.967) | y | n, 1.5 cells off, cos 1.000 | y | n, 1.5 cells off, cos 1.000 | 0.99 / 0.99 | 1.00 | 42.0 / ≥56.8 |
+| att0.5 · sat · hebb | 0.001 (none interp.) | n (0.898) | y | n, 2.0 cells off, cos 0.752 | y | n, 2.0 cells off, cos 0.752 | 0.99 / 0.99 | 1.00 | 17.8 / 21.8 |
+| att0.5 · sat · proj | 0.001 (none interp.) | n (0.902) | y | y | y | y | 1.00 / 1.00 | 1.00 | 21.1 / 25.8 |
+| ideal · rsat · hebb | 0.001 (none interp.) | n (0.918) | y | n, 1.7 cells off, cos 0.847 | n (0.99) | n, 1.7 cells off, cos 0.873 | 0.12 / 0.16 | 0.12 | 1.2 / 1.8 |
+| ideal · rsat · proj | 0.001 (none interp.) | n (0.922) | y | n, 1.6 cells off, cos 0.897 | y | n, 1.6 cells off, cos 0.897 | 0.19 / 0.19 | 0.01 | -1.0 / -1.0 |
+| att0.5 · rsat · hebb | 0.001 (none interp.) | n (0.932) | y | n, 1.7 cells off, cos 0.802 | n (0.99) | n, 1.5 cells off, cos 0.815 | 0.76 / 0.76 | 0.75 | 14.4 / 16.9 |
+| att0.5 · rsat · proj | 0.001 (none interp.) | n (0.945) | y | n, 1.0 cells off, cos 0.948 | y | n, 1.0 cells off, cos 0.948 | 0.97 / 0.97 | 1.00 | 21.6 / 26.0 |
 
 #### K = 20, whole: navigation
 
-| encoder · sat · storage | readout | 1 step: acc45 / \|err\|° / reach | 1 step: basin iii 100/95 | walk: acc45 / \|err\|° / reach | walk: basin iii 100/95 |
+| encoder · sat · storage | best α | (a) q, 1 step | (a) q, after walk | (b) grad, 1 step | (b) grad, after walk |
 |---|---|---|---|---|---|
-| ideal · unsat · hebb | (a) q | 0.996 / 1.7 / 0.970 | 40.0 / 40.0 [6/6 at cap 40] | 0.994 / 3.9 / 0.906 (α=0.05) | 40.0 / 40.0 [6/6 at cap 40] |
-| ideal · unsat · hebb | (b) grad | 0.997 / 2.2 / 0.970 | 40.0 / 40.0 [6/6 at cap 40] | 0.994 / 4.1 / 0.876 (α=0.05) | 40.0 / 40.0 [6/6 at cap 40] |
-| ideal · unsat · proj | (a) q | 1.000 / 0.7 / 0.988 | 40.0 / 40.0 [6/6 at cap 40] | 1.000 / 0.7 / 0.986 (α=0.9) | 40.0 / 40.0 [6/6 at cap 40] |
-| ideal · unsat · proj | (b) grad | 1.000 / 1.4 / 0.977 | 33.8 / 33.8 [5/6 at cap 40] | 1.000 / 1.4 / 0.958 (α=0.9) | 40.0 / 40.0 [6/6 at cap 40] |
-| att0.5 · unsat · hebb | (a) q | 0.982 / 11.2 / 0.894 | 27.3 / 32.7 [2/6 at cap 40] | 0.949 / 15.1 / 0.733 (α=0.05) | 23.5 / 27.5 [2/6 at cap 40] |
-| att0.5 · unsat · hebb | (b) grad | 0.990 / 10.0 / 0.937 | 27.0 / 32.2 [2/6 at cap 40] | 0.967 / 13.0 / 0.722 (α=0.05) | 19.5 / 23.0 [1/6 at cap 40] |
-| att0.5 · unsat · proj | (a) q | 0.989 / 9.6 / 0.988 | 27.7 / 33.0 [2/6 at cap 40] | 0.989 / 9.6 / 0.986 (α=0.9) | 27.7 / 33.0 [2/6 at cap 40] |
-| att0.5 · unsat · proj | (b) grad | 0.993 / 9.0 / 0.962 | 28.0 / 32.8 [2/6 at cap 40] | 0.993 / 9.0 / 0.962 (α=0.9) | 28.0 / 32.8 [2/6 at cap 40] |
-| ideal · sat · hebb | (a) q | 0.417 / 61.0 / 0.117 | 0.0 / 0.0 | 0.413 / 61.4 / 0.116 (α=1) | 0.0 / 0.0 |
-| ideal · sat · hebb | (b) grad | 0.967 / 15.2 / 0.970 | 39.2 / 40.0 [6/6 at cap 40] | 0.967 / 15.2 / 0.970 (α=1) | 40.0 / 40.0 [6/6 at cap 40] |
-| ideal · sat · proj | (a) q | 0.412 / 61.4 / 0.116 | 0.0 / 0.0 | 0.413 / 61.4 / 0.116 (α=1) | 0.0 / 0.0 |
-| ideal · sat · proj | (b) grad | 0.967 / 15.2 / 0.970 | 39.5 / 40.0 [6/6 at cap 40] | 0.967 / 15.2 / 0.970 (α=1) | 39.2 / 40.0 [6/6 at cap 40] |
-| att0.5 · sat · hebb | (a) q | 0.384 / 67.2 / 0.101 | 0.0 / 0.0 | 0.386 / 66.9 / 0.100 (α=1) | 0.0 / 0.0 |
-| att0.5 · sat · hebb | (b) grad | 0.987 / 12.8 / 0.979 | 23.7 / 29.5 | 0.983 / 13.1 / 0.973 (α=1) | 21.5 / 27.3 |
-| att0.5 · sat · proj | (a) q | 0.387 / 66.8 / 0.100 | 0.0 / 0.0 | 0.388 / 66.7 / 0.100 (α=1) | 0.0 / 0.0 |
-| att0.5 · sat · proj | (b) grad | 0.988 / 12.7 / 0.980 | 24.0 / 30.0 | 0.990 / 12.7 / 0.977 (α=1) | 22.5 / 27.3 |
-| ideal · rsat · hebb | (a) q | 0.992 / 5.0 / 0.769 | 33.3 / 33.3 [5/6 at cap 40] | 0.971 / 8.5 / 0.380 (α=0.003) | 26.7 / 26.7 [4/6 at cap 40] |
-| ideal · rsat · hebb | (b) grad | 0.992 / 5.1 / 0.764 | 33.3 / 33.3 [5/6 at cap 40] | 0.971 / 8.5 / 0.404 (α=0.003) | 26.7 / 26.7 [4/6 at cap 40] |
-| ideal · rsat · proj | (a) q | 0.994 / 4.8 / 0.733 | 33.3 / 33.3 [5/6 at cap 40] | 0.984 / 6.7 / 0.452 (α=0.001) | 19.8 / 20.0 [3/6 at cap 40] |
-| ideal · rsat · proj | (b) grad | 0.993 / 4.8 / 0.721 | 27.8 / 33.3 [5/6 at cap 40] | 0.984 / 6.8 / 0.458 (α=0.001) | 20.0 / 20.0 [3/6 at cap 40] |
-| att0.5 · rsat · hebb | (a) q | 0.988 / 10.6 / 0.947 | 27.0 / 31.7 [2/6 at cap 40] | 0.970 / 12.5 / 0.879 (α=0.2) | 19.0 / 22.8 [1/6 at cap 40] |
-| att0.5 · rsat · hebb | (b) grad | 0.990 / 9.9 / 0.952 | 27.0 / 31.5 [2/6 at cap 40] | 0.972 / 11.8 / 0.864 (α=0.2) | 19.7 / 22.7 [1/6 at cap 40] |
-| att0.5 · rsat · proj | (a) q | 0.991 / 9.6 / 0.983 | 27.5 / 32.3 [2/6 at cap 40] | 0.991 / 9.8 / 0.973 (α=0.2) | 23.3 / 29.0 |
-| att0.5 · rsat · proj | (b) grad | 0.993 / 9.2 / 0.983 | 27.3 / 32.5 [2/6 at cap 40] | 0.991 / 9.5 / 0.982 (α=0.2) | 24.0 / 28.5 [1/6 at cap 40] |
+| ideal · unsat · hebb | 0.05 | 0.996 / 1.7 / 0.97 / ≥40.0 | 0.994 / 3.9 / 0.91 / ≥40.0 | 0.997 / 2.2 / 0.97 / ≥40.0 | 0.994 / 4.1 / 0.88 / ≥40.0 |
+| ideal · unsat · proj | 0.9 | 1.000 / 0.7 / 0.99 / ≥40.0 | 1.000 / 0.7 / 0.99 / ≥40.0 | 1.000 / 1.4 / 0.97 / ≥40.0 | 1.000 / 1.4 / 0.97 / ≥40.0 |
+| att0.5 · unsat · hebb | 0.5 (none interp.) | 0.982 / 11.2 / 0.89 / 18.9 | 0.487 / 61.9 / 0.12 / 4.6 | 0.990 / 10.0 / 0.94 / 21.8 | 0.640 / 48.2 / 0.14 / 4.6 |
+| att0.5 · unsat · proj | 0.9 | 0.989 / 9.6 / 1.00 / 25.1 | 0.989 / 9.6 / 0.99 / 25.1 | 0.993 / 9.0 / 0.96 / 25.5 | 0.993 / 9.0 / 0.96 / 25.5 |
+| ideal · sat · hebb | 0.01 (none interp.) | 0.417 / 61.0 / 0.12 / 0.0 | 0.445 / 58.0 / 0.14 / 0.0 | 0.966 / 15.2 / 0.97 / ≥39.6 | 0.966 / 15.2 / 0.97 / ≥40.0 |
+| ideal · sat · proj | 0.01 (none interp.) | 0.412 / 61.4 / 0.12 / 0.0 | 0.444 / 58.0 / 0.14 / 0.0 | 0.967 / 15.2 / 0.97 / ≥39.9 | 0.967 / 15.2 / 0.97 / ≥39.4 |
+| att0.5 · sat · hebb | 0.001 (none interp.) | 0.384 / 67.2 / 0.10 / 0.0 | 0.387 / 66.9 / 0.11 / 0.0 | 0.987 / 12.8 / 0.98 / 23.4 | 0.984 / 13.1 / 0.97 / 19.9 |
+| att0.5 · sat · proj | 0.001 (none interp.) | 0.387 / 66.8 / 0.10 / 0.0 | 0.389 / 66.6 / 0.11 / 0.0 | 0.988 / 12.7 / 0.98 / 21.8 | 0.990 / 12.7 / 0.98 / 21.8 |
+| ideal · rsat · hebb | 0.001 (none interp.) | 0.992 / 5.0 / 0.77 / ≥35.0 | 0.983 / 7.2 / 0.40 / ≥20.0 | 0.992 / 5.1 / 0.76 / ≥30.0 | 0.983 / 7.3 / 0.44 / ≥20.0 |
+| ideal · rsat · proj | 0.001 (none interp.) | 0.994 / 4.8 / 0.73 / ≥30.0 | 0.984 / 6.7 / 0.45 / ≥14.9 | 0.993 / 4.8 / 0.72 / ≥30.0 | 0.984 / 6.8 / 0.46 / ≥15.0 |
+| att0.5 · rsat · hebb | 0.001 (none interp.) | 0.988 / 10.6 / 0.95 / 21.2 | 0.973 / 12.1 / 0.88 / 16.8 | 0.990 / 9.9 / 0.95 / 21.2 | 0.975 / 11.5 / 0.87 / 17.0 |
+| att0.5 · rsat · proj | 0.001 (none interp.) | 0.991 / 9.6 / 0.98 / 24.6 | 0.991 / 9.8 / 0.97 / 23.9 | 0.993 / 9.2 / 0.98 / 24.6 | 0.991 / 9.4 / 0.98 / 21.9 |
 
 #### K = 20, region: memory
 
-| encoder · sat · storage | best α | interpolates (min cos) | fixed pt: cos self s30, α=1 | correct: self exact / near exact / off (cells) | basin ii walk 100/95 | basin ii 1-step 100/95 |
-|---|---|---|---|---|---|---|
-| ideal · unsat · hebb | 0.05 | n (0.938) | 0.385 | 0.62 / 0.66 / 0.38 | 1.5 / 2.0 | 34.1 / 40.6 |
-| ideal · unsat · proj | 0.9 | y (0.998) | 1.000 | 1.00 / 1.00 / 0.00 | 20.0 / 23.4 | 19.9 / 23.4 |
-| att0.5 · unsat · hebb | 0.05 | n (0.839) | 0.275 | 0.50 / 0.36 / 0.77 | 1.9 / 2.4 | 11.1 / 14.0 |
-| att0.5 · unsat · proj | 0.9 | y (0.970) | 1.000 | 1.00 / 1.00 / 0.00 | 13.0 / 17.1 | 13.0 / 17.0 |
-| ideal · sat · hebb | 1 | n (1.000) | 1.000 | 1.00 / 1.00 / 0.00 | 48.2 / 57.5 [1/8 at cap 64] | 43.0 / 52.1 |
-| ideal · sat · proj | 1 | n (1.000) | 1.000 | 1.00 / 1.00 / 0.00 | 49.5 / 58.5 [1/8 at cap 64] | 43.9 / 53.6 |
-| att0.5 · sat · hebb | 1 | n (0.983) | 0.995 | 1.00 / 1.00 / 0.00 | 20.6 / 25.2 | 24.4 / 30.6 |
-| att0.5 · sat · proj | 1 | n (0.997) | 1.000 | 1.00 / 1.00 / 0.00 | 25.4 / 31.9 | 25.1 / 31.1 |
-| ideal · rsat · hebb | 0.003 | n (0.914) | 0.872 | 0.12 / 0.12 / 1.21 | -0.1 / 0.0 | -0.4 / -0.2 |
-| ideal · rsat · proj | 0.2 | n (0.911) | 0.898 | 0.12 / 0.12 / 1.82 | 0.2 / 0.5 | 0.6 / 1.0 |
-| att0.5 · rsat · hebb | 0.2 | n (0.940) | 0.783 | 0.62 / 0.62 / 0.34 | 11.9 / 14.4 | 7.9 / 10.9 |
-| att0.5 · rsat · proj | 0.01 | y (0.954) | 0.956 | 1.00 / 1.00 / 0.00 | 25.6 / 31.9 | 10.6 / 14.4 |
+| encoder · sat · storage | best α | interpolates (min cos) | fixed pt α=1 | correct α=1 | fixed pt best α | correct best α | goals correct α=1 / best | near-goal exact | basin ii 100/95 |
+|---|---|---|---|---|---|---|---|---|---|
+| ideal · unsat · hebb | 0.05 (none interp.) | n (0.938) | y | n, 2.8 cells off, cos 0.213 | y | n, 1.2 cells off, cos 0.905 | 0.02 / 0.51 | 0.66 | 1.5 / 2.0 |
+| ideal · unsat · proj | 0.9 | y (0.998) | y | y | y | y | 1.00 / 1.00 | 1.00 | 20.0 / 23.4 |
+| att0.5 · unsat · hebb | 0.5 (none interp.) | n (0.841) | y | n, 2.7 cells off, cos 0.218 | n (0.99) | n, 2.7 cells off, cos 0.224 | 0.00 / 0.00 | 0.00 | -1.0 / -1.0 |
+| att0.5 · unsat · proj | 0.9 | y (0.970) | y | y | y | y | 1.00 / 1.00 | 1.00 | 13.0 / 17.1 |
+| ideal · sat · hebb | 0.01 (none interp.) | n (0.968) | y | n, 2.2 cells off, cos 1.000 | y | n, 2.2 cells off, cos 1.000 | 0.99 / 0.99 | 1.00 | 48.2 / ≥57.5 |
+| ideal · sat · proj | 0.01 (none interp.) | n (0.968) | y | n, 2.2 cells off, cos 1.000 | y | n, 2.2 cells off, cos 1.000 | 0.99 / 0.99 | 1.00 | 49.5 / ≥58.5 |
+| att0.5 · sat · hebb | 0.001 (none interp.) | n (0.911) | y | n, other env, cos 0.652 | y | n, other env, cos 0.652 | 0.99 / 0.99 | 1.00 | 20.6 / 25.4 |
+| att0.5 · sat · proj | 0.001 (none interp.) | n (0.914) | y | y | y | y | 1.00 / 1.00 | 1.00 | 25.4 / 31.9 |
+| ideal · rsat · hebb | 0.001 (none interp.) | n (0.914) | y | n, 1.5 cells off, cos 0.870 | y | n, 1.5 cells off, cos 0.874 | 0.17 / 0.19 | 0.12 | -0.1 / 0.0 |
+| ideal · rsat · proj | 0.001 (none interp.) | n (0.920) | y | n, 1.5 cells off, cos 0.898 | y | n, 1.5 cells off, cos 0.898 | 0.21 / 0.21 | 0.12 | -0.6 / -0.5 |
+| att0.5 · rsat · hebb | 0.001 (none interp.) | n (0.937) | y | n, 1.5 cells off, cos 0.623 | n (0.94) | n, 1.6 cells off, cos 0.720 | 0.46 / 0.47 | 0.62 | 12.0 / 14.8 |
+| att0.5 · rsat · proj | 0.01 | y (0.954) | y | n, 1.1 cells off, cos 0.954 | y | n, 1.1 cells off, cos 0.954 | 0.96 / 0.96 | 1.00 | 25.6 / 31.9 |
 
 #### K = 20, region: navigation
 
-| encoder · sat · storage | readout | 1 step: acc45 / \|err\|° / reach | 1 step: basin iii 100/95 | walk: acc45 / \|err\|° / reach | walk: basin iii 100/95 |
+| encoder · sat · storage | best α | (a) q, 1 step | (a) q, after walk | (b) grad, 1 step | (b) grad, after walk |
 |---|---|---|---|---|---|
-| ideal · unsat · hebb | (a) q | 1.000 / 1.2 / 0.996 | 40.0 / 40.0 [1/1 at cap 40] | 0.998 / 3.2 / 0.873 (α=0.05) | 40.0 / 40.0 [1/1 at cap 40] |
-| ideal · unsat · hebb | (b) grad | 1.000 / 1.6 / 0.994 | 40.0 / 40.0 [1/1 at cap 40] | 0.999 / 3.3 / 0.881 (α=0.05) | 40.0 / 40.0 [1/1 at cap 40] |
-| ideal · unsat · proj | (a) q | 1.000 / 0.5 / 0.996 | 40.0 / 40.0 [1/1 at cap 40] | 1.000 / 0.5 / 0.995 (α=0.9) | 40.0 / 40.0 [1/1 at cap 40] |
-| ideal · unsat · proj | (b) grad | 1.000 / 1.2 / 0.975 | 40.0 / 40.0 [1/1 at cap 40] | 1.000 / 1.2 / 0.981 (α=0.9) | 40.0 / 40.0 [1/1 at cap 40] |
-| att0.5 · unsat · hebb | (a) q | 0.996 / 9.2 / 0.986 | 35.0 / 40.0 [1/1 at cap 40] | 0.941 / 16.7 / 0.540 (α=0.05) | 0.0 / 0.0 |
-| att0.5 · unsat · hebb | (b) grad | 0.999 / 9.1 / 0.979 | 37.0 / 40.0 [1/1 at cap 40] | 0.981 / 13.2 / 0.643 (α=0.05) | 0.0 / 0.0 |
-| att0.5 · unsat · proj | (a) q | 0.997 / 8.3 / 0.972 | 35.0 / 40.0 [1/1 at cap 40] | 0.997 / 8.3 / 0.974 (α=0.9) | 35.0 / 40.0 [1/1 at cap 40] |
-| att0.5 · unsat · proj | (b) grad | 0.999 / 8.4 / 0.976 | 28.0 / 40.0 [1/1 at cap 40] | 0.999 / 8.4 / 0.976 (α=0.9) | 28.0 / 40.0 [1/1 at cap 40] |
-| ideal · sat · hebb | (a) q | 0.420 / 60.8 / 0.111 | 0.0 / 0.0 | 0.417 / 61.1 / 0.111 (α=1) | 0.0 / 0.0 |
-| ideal · sat · hebb | (b) grad | 0.977 / 14.8 / 0.931 | 40.0 / 40.0 [1/1 at cap 40] | 0.977 / 14.8 / 0.931 (α=1) | 40.0 / 40.0 [1/1 at cap 40] |
-| ideal · sat · proj | (a) q | 0.417 / 61.0 / 0.111 | 0.0 / 0.0 | 0.417 / 61.1 / 0.111 (α=1) | 0.0 / 0.0 |
-| ideal · sat · proj | (b) grad | 0.977 / 14.8 / 0.931 | 40.0 / 40.0 [1/1 at cap 40] | 0.977 / 14.8 / 0.931 (α=1) | 40.0 / 40.0 [1/1 at cap 40] |
-| att0.5 · sat · hebb | (a) q | 0.391 / 67.1 / 0.103 | 0.0 / 0.0 | 0.393 / 66.9 / 0.103 (α=1) | 0.0 / 0.0 |
-| att0.5 · sat · hebb | (b) grad | 0.990 / 12.6 / 0.965 | 25.0 / 34.0 | 0.976 / 14.1 / 0.949 (α=1) | 25.0 / 30.0 |
-| att0.5 · sat · proj | (a) q | 0.391 / 66.5 / 0.101 | 0.0 / 0.0 | 0.393 / 66.3 / 0.101 (α=1) | 0.0 / 0.0 |
-| att0.5 · sat · proj | (b) grad | 0.992 / 12.4 / 0.968 | 24.0 / 32.0 | 0.989 / 12.7 / 0.962 (α=1) | 25.0 / 31.0 |
-| ideal · rsat · hebb | (a) q | 0.994 / 5.2 / 0.631 | 0.0 / 0.0 | 0.988 / 7.2 / 0.369 (α=0.003) | 0.0 / 0.0 |
-| ideal · rsat · hebb | (b) grad | 0.994 / 5.4 / 0.596 | 0.0 / 0.0 | 0.988 / 7.4 / 0.386 (α=0.003) | 40.0 / 40.0 [1/1 at cap 40] |
-| ideal · rsat · proj | (a) q | 0.994 / 4.8 / 0.644 | 40.0 / 40.0 [1/1 at cap 40] | 0.987 / 7.2 / 0.452 (α=0.2) | 0.0 / 0.0 |
-| ideal · rsat · proj | (b) grad | 0.994 / 4.9 / 0.649 | 40.0 / 40.0 [1/1 at cap 40] | 0.987 / 7.3 / 0.461 (α=0.2) | 0.0 / 0.0 |
-| att0.5 · rsat · hebb | (a) q | 0.996 / 9.1 / 0.940 | 35.0 / 40.0 [1/1 at cap 40] | 0.898 / 19.1 / 0.799 (α=0.2) | 28.0 / 32.0 |
-| att0.5 · rsat · hebb | (b) grad | 0.999 / 9.1 / 0.954 | 37.0 / 40.0 [1/1 at cap 40] | 0.908 / 18.1 / 0.811 (α=0.2) | 26.0 / 32.0 |
-| att0.5 · rsat · proj | (a) q | 0.997 / 8.8 / 0.958 | 34.0 / 40.0 [1/1 at cap 40] | 0.992 / 9.1 / 0.956 (α=0.01) | 27.0 / 32.0 |
-| att0.5 · rsat · proj | (b) grad | 0.998 / 8.9 / 0.958 | 28.0 / 36.0 | 0.992 / 9.4 / 0.954 (α=0.01) | 27.0 / 31.0 |
+| ideal · unsat · hebb | 0.05 (none interp.) | 1.000 / 1.2 / 1.00 / ≥40.0 | 0.998 / 3.2 / 0.87 / ≥35.0 | 1.000 / 1.6 / 0.99 / ≥40.0 | 0.999 / 3.3 / 0.88 / ≥35.0 |
+| ideal · unsat · proj | 0.9 | 1.000 / 0.5 / 1.00 / ≥40.0 | 1.000 / 0.5 / 1.00 / ≥35.6 | 1.000 / 1.2 / 0.97 / ≥40.0 | 1.000 / 1.2 / 0.98 / ≥35.4 |
+| att0.5 · unsat · hebb | 0.5 (none interp.) | 0.996 / 9.2 / 0.99 / 33.6 | 0.328 / 78.4 / 0.04 / 0.0 | 0.999 / 9.1 / 0.98 / ≥34.6 | 0.447 / 66.9 / 0.03 / 0.2 |
+| att0.5 · unsat · proj | 0.9 | 0.997 / 8.3 / 0.98 / ≥33.6 | 0.997 / 8.3 / 0.98 / ≥33.6 | 0.999 / 8.4 / 0.98 / 32.2 | 0.999 / 8.4 / 0.98 / 32.2 |
+| ideal · sat · hebb | 0.01 (none interp.) | 0.421 / 60.8 / 0.11 / 0.0 | 0.446 / 58.2 / 0.13 / 0.0 | 0.977 / 14.8 / 0.93 / ≥39.0 | 0.977 / 14.8 / 0.93 / ≥39.4 |
+| ideal · sat · proj | 0.01 (none interp.) | 0.417 / 61.0 / 0.11 / 0.0 | 0.445 / 58.2 / 0.13 / 0.0 | 0.977 / 14.8 / 0.93 / ≥39.2 | 0.977 / 14.8 / 0.93 / ≥40.0 |
+| att0.5 · sat · hebb | 0.001 (none interp.) | 0.391 / 67.1 / 0.10 / 0.0 | 0.393 / 66.8 / 0.12 / 0.0 | 0.990 / 12.6 / 0.97 / 24.9 | 0.977 / 13.9 / 0.95 / 22.2 |
+| att0.5 · sat · proj | 0.001 (none interp.) | 0.391 / 66.5 / 0.10 / 0.0 | 0.394 / 66.3 / 0.12 / 0.0 | 0.992 / 12.4 / 0.97 / 25.8 | 0.989 / 12.7 / 0.96 / 24.6 |
+| ideal · rsat · hebb | 0.001 (none interp.) | 0.994 / 5.2 / 0.63 / ≥25.0 | 0.988 / 7.2 / 0.39 / ≥15.0 | 0.994 / 5.4 / 0.60 / ≥20.4 | 0.988 / 7.4 / 0.41 / ≥20.0 |
+| ideal · rsat · proj | 0.001 (none interp.) | 0.994 / 4.8 / 0.64 / ≥20.0 | 0.987 / 7.2 / 0.45 / ≥20.0 | 0.994 / 4.9 / 0.65 / ≥25.0 | 0.986 / 7.3 / 0.41 / ≥20.0 |
+| att0.5 · rsat · hebb | 0.001 (none interp.) | 0.996 / 9.1 / 0.94 / ≥31.2 | 0.958 / 12.8 / 0.85 / 20.2 | 0.999 / 9.1 / 0.95 / 33.1 | 0.968 / 12.1 / 0.89 / 19.4 |
+| att0.5 · rsat · proj | 0.01 | 0.997 / 8.8 / 0.96 / 29.8 | 0.992 / 9.1 / 0.96 / 21.4 | 0.998 / 8.9 / 0.96 / 31.4 | 0.992 / 9.4 / 0.95 / 25.2 |
 
 ### Reading
 
-1. **Readout, not memory, is what saturation breaks.** In every *sat* row the
-   memory is perfect: the fixed point holds at cos 1.000, the walk ends exactly
-   on the goal, and the ideal code's basin (ii) is 57/64 against 49/57 unsaturated
-   (whole arena, K = 5). Readout (a) still fails at acc45 ~0.4 and reach ~0.1, on
-   the ideal code as on arm B. So the §7.1 constant-offset failure belongs to any
-   binary code, not to the trained one. Readout (b) recovers both. The binary
-   ideal code is coarser than arm B in angle (15° against 12°) but has a longer
-   basin (iii): ≥ 40 against 25–28.
-2. **No saturated memory interpolates.** At α ≥ 0.05 it jumps in one step. At
-   α ≤ 0.01 it sits on the cue's cell for 2–23 steps and then jumps the whole way
-   in one step. The cos dip during the jump is shallower for the ideal code
-   (0.96) than for arm B (0.90–0.92), but it is still a snap. Its best α is 1:
-   the walk adds nothing.
-3. **Unsaturated memories interpolate. Projection storage is what makes the walk
-   stop on the goal.**
-   - Under proj, α = 0.9 walks in (e.g. ideal: 5.9 → 3.2 → 1.7 → 0.4 → 0 cells
-     at cos 0.999) and rests on the goal with an exact fixed point. Basin (ii),
-     the readouts and reach are identical after one step and after the walk.
-   - Under hebb at K = 5, the walk also gets in, but the state then keeps
-     drifting (at K = 20 the hebb walk no longer interpolates for att0.5, min
-     cos 0.84–0.89, nor for the ideal code in the region, 0.94):
-     - At α = 1 the cos to the stored pattern decays 0.998 → 0.64 by step 30.
-     - In the ideal code, the converged state ends on the goal in only 38% of
-       cases. In att0.5 region K = 5 it ends at cos 0.42 to the goal.
-     - Basin (ii) after the walk falls to 13–15 at K = 5 and ~2 at K = 20,
-       against 25–52 after one step.
-     - Navigation from the drifted state degrades with it: att0.5 region K = 5
-       reach 0.98 → 0.16, ideal whole K = 5 0.99 → 0.55.
-   - The one-step readout is unaffected by the storage rule.
-4. **Recall-only saturation (side row) hurts the ideal code and spares att0.5.**
-   - The ideal cos/sin code is far from any hypercube corner. Saturated recall
-     moves each stored pattern to the nearest sign corner (cos 0.90). That corner
-     decodes ~1 cell off: self-exact 0.12, one-step basin (ii) 4–6, reach
-     0.6–0.7, although the direction stays good (acc45 0.99, ~5°).
-   - att0.5's tanh code is already near-binary. Its patterns move once to
-     cos 0.96 and then hold on the right cell, and navigation matches the
-     unsaturated row.
+1. **Saturation breaks the readout, not the memory.**
+   - In every *sat* row at K = 5, every stored goal is a correct fixed point at
+     both α values, near-goal starts end exactly on the goal, and the ideal
+     basin (ii) is 57/≥64, against 49/≥57 unsaturated.
+   - Readout (a) still fails, at acc45 0.39–0.44, on the ideal code as on arm B.
+     So the §7.1 offset failure belongs to any binary code.
+   - Readout (b) navigates: ideal 15° and basin (iii) ≥ 40; arm B 12° and ~25.
+2. **No saturated memory interpolates.** Even the "closest" α (ideal 0.01,
+   att0.5 0.001–0.003) sits on the cue's cell for 2–23 steps and then covers
+   the whole path in one step. The cos dip is 0.96 for the ideal code and
+   0.90–0.92 for arm B. Taking the readouts after that walk changes nothing
+   material (readout (a) 0.41 → 0.44 on the ideal code).
+3. **Hebbian storage has fixed points, but not at the goals.**
+   - Self-recall at α = 1 always stops, but on a cue-independent state: cos
+     0.36–0.44 to the goal at K = 5 and 0.18–0.22 at K = 20, decoding mostly
+     into another env.
+   - At the best (small) α the walk stops earlier and nearer: 28% (ideal) and
+     97% (att0.5) of goals correct at K = 5, whole arena.
+   - Projection storage gets every goal exactly at both α. The walk then ends
+     on the goal, and after-walk navigation equals one-step navigation.
+   - Under Hebbian storage, after-walk navigation degrades where the drift is
+     large: att0.5 region K = 5 reach 0.98 → 0.16, and K = 20 → 0.03–0.14.
+4. **Recall-only saturation: right place, wrong exact cell.** Fixed points
+   exist, about 1 cell off the goal.
+   - The ideal cos/sin code is far from any sign corner. Its stored patterns
+     move to cos 0.90 and are correct for only 20–25% of goals, so reach drops
+     to 0.6–0.7 even though direction stays good (acc45 0.99, ~5°).
+   - att0.5's tanh code is already near-binary. 93–97% of goals stay on their
+     cell, and navigation matches unsat.
 5. **K = 20.**
-   - Projection storage keeps every unsaturated condition exact; its basin (ii)
-     shrinks with load (ideal 49 → 18, att0.5 25 → 11).
-   - Saturation is the most load-robust memory: ideal basin 42–57, att0.5
-     21–25.
-   - Readout (b) holds at acc45 ≥ 0.97 everywhere except the hebb walks.
-6. **What is not settled.**
-   - Basins at the 64-cell disc cap (ideal *sat*) and the 40-cell box cap are
-     lower bounds.
-   - Region basin (iii) rests on one goal.
-   - The interpolation verdicts depend on the thresholds stated above, but the
-     separation is wide where it matters: the saturated rows' largest step is
-     always the whole path (jump fraction 1.0), against 0.1–0.45 for every
-     interpolating α of the unsaturated rows.
+   - Projection storage keeps every unsaturated goal exact; its basin (ii)
+     shrinks (ideal 49 → 18, att0.5 25 → 11).
+   - Saturated memories keep the largest basins (ideal 42–50, att0.5 18–25).
+     Their few "wrong" fixed points are of two kinds:
+     - Ideal: 1–2 of 160 goals sit at cos 1.000 to the goal's code, i.e. the
+       memory is exact, but a cell 1–2 away has the same binary code (the
+       non-injectivity above).
+     - att0.5 · sat · hebb: 1 of 160 is a spurious state, cos 0.65–0.75. Under
+       proj, none.
+6. **Changes from the first version of this section.**
+   - Best α for *sat* moved from 1 to 0.01 (ideal) or 0.001–0.003 (att0.5); for
+     att0.5 *rsat* in the whole arena it moved from 0.2 to 0.001.
+   - The old "fixed point y/n" (cos ≥ 0.999 to the stored pattern) is replaced
+     by exists / correct. Hebbian rows are now "fixed point y, correct n"
+     instead of "n".
+   - att0.5 *rsat*, previously "correct y" on 8 goals, is n: 1–3 of 40 goals end
+     1 cell off.
+   - Region basin (iii) now rests on 8 goals instead of 1.
