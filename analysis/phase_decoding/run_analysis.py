@@ -84,7 +84,7 @@ def with_q_norms(x: np.ndarray, channel_layout: list) -> np.ndarray:
 def select(data: dict, mask: np.ndarray, how: str, cfg: dict,
            rng: np.random.Generator) -> np.ndarray:
     idx = np.flatnonzero(mask)
-    if how == "matched_dist_ge1":
+    if how in ("matched_dist_ge1", "matched_qnorm"):
         idx = idx[data["n_dist"][idx] >= 1]
     # Definition B arenas where no search found the goal have no phase-1 rows.
     idx = idx[_arenas_with_both_phases(data, idx)]
@@ -92,10 +92,23 @@ def select(data: dict, mask: np.ndarray, how: str, cfg: dict,
     if how == "balanced":
         keep = g.balance_rows(ph, ar, cap=cfg["cap_rows_per_phase"], rng=rng)
     else:
-        nuis = np.stack([data["t_seg"][idx], data["dist"][idx]], 1).astype(float)
+        nuis = [data["t_seg"][idx], data["dist"][idx]]
         edges = [np.asarray(cfg["match"]["t_seg_edges"], float),
                  np.asarray(cfg["match"]["dist_edges"], float)]
-        keep = g.match_rows(ph, ar, nuis, edges, rng=rng)
+        if how == "matched_qnorm":
+            # Match time and the length of the current Hopfield readout, so
+            # the input's ||q|| cannot tell the phases apart. Distance is
+            # dropped: the ||q|| distributions overlap only partly (explore
+            # 95th percentile ~ exploit 5th), and a third matched variable
+            # leaves too few rows per arena. The behaviour-only decoder
+            # reports the distance confound that remains. Edges are quantiles
+            # of the pooled (phase-blind) distribution, open at both ends.
+            qn = data["qnorm"][idx].astype(float)
+            e = np.quantile(qn, np.linspace(0, 1, cfg["match"]["qnorm_bins"] + 1))
+            e[0], e[-1] = -np.inf, np.inf
+            nuis = [nuis[0], qn]
+            edges = [edges[0], e]
+        keep = g.match_rows(ph, ar, np.stack(nuis, 1).astype(float), edges, rng=rng)
         keep = keep[g.balance_rows(ph[keep], ar[keep], cap=cfg["cap_rows_per_phase"], rng=rng)]
     return idx[keep]
 

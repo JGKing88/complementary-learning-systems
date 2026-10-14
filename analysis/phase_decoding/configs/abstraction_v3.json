@@ -8,12 +8,13 @@
  },
  "seed": 0,
  "features": ["h", "x", "xq", "qn"],
- "selections": ["balanced", "matched", "matched_dist_ge1"],
+ "selections": ["balanced", "matched", "matched_dist_ge1", "matched_qnorm"],
  "min_std": 1e-6,
  "cap_rows_per_phase": 1500,
  "match": {
   "t_seg_edges": [0, 3, 6, 9, 12, 15, 18, 21, 24, 27, 30, 36, 42, 48, 54, 61],
-  "dist_edges": [0, 2, 4, 6, 8, 10, 12, 14, 16, 18, 20, 22, 24, 28]
+  "dist_edges": [0, 2, 4, 6, 8, 10, 12, 14, 16, 18, 20, 22, 24, 28],
+  "qnorm_bins": 10
  },
  "parallelism": {"n_shuffle": 1000},
  "ccgp": {"k_train": [1, 2, 5, 10, 25, 50], "n_rep": 10, "n_test_arenas": 40, "n_null": 10, "C": 1.0},
