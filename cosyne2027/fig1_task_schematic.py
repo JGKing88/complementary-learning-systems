@@ -36,6 +36,7 @@ ITERS_SHOWN = [4, 3, 2]         # iterations drawn per block before the '...'
 # Layout, in inches (the axes spans the figure with 1 data unit = 1 inch).
 # FIG_W and FIG_H are the final size; keep them snug to the key's text.
 FIG_W, FIG_H = 4.18, 1.26
+MARGIN = 0.02                   # keeps edge strokes inside the canvas
 ARENA_SIDE = 0.9
 COL_X = [0.45, 1.5, 2.55]       # column centers
 ELLIPSIS_X = 3.14
@@ -177,10 +178,10 @@ def draw_key(ax):
 
 
 def main():
-    fig = plt.figure(figsize=(FIG_W, FIG_H))
+    fig = plt.figure(figsize=(FIG_W + 2 * MARGIN, FIG_H + 2 * MARGIN))
     ax = fig.add_axes([0, 0, 1, 1])
-    ax.set_xlim(0, FIG_W)
-    ax.set_ylim(0, FIG_H)
+    ax.set_xlim(-MARGIN, FIG_W + MARGIN)
+    ax.set_ylim(-MARGIN, FIG_H + MARGIN)
     ax.set_aspect("equal")
     ax.axis("off")
 

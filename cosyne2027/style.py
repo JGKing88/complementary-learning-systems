@@ -7,11 +7,17 @@ Arena colors are the first three slots of the dataviz reference palette
 (blue, orange, aqua). Those three are the only slots that stay
 distinguishable in every pair under colorblind simulation; a fourth arena
 should get a letter label and a neutral gray, not a fourth hue.
+
+The font is Helvetica, as Nimbus Sans: URW's clone with Helvetica's design
+and metrics (the face Ghostscript substitutes for Helvetica). Licensed
+Helvetica is not on the cluster. Matplotlib embeds it as Type 42 subsets,
+which Chrome's PDF engine renders correctly.
 """
 from pathlib import Path
 
 import matplotlib as mpl
 import matplotlib.colors as mcolors
+from matplotlib import font_manager
 
 HERE = Path(__file__).resolve().parent
 
@@ -23,6 +29,16 @@ INK_MUTED = "#8a8985"    # search paths, rules
 WATER = "#eef3f7"        # arena floor
 GRID = "#d5dde4"         # cell lines
 
+# Model-schematic fills, one per module type
+FROZEN = "#f9e0a6"       # pretrained, fixed weights
+PLASTIC = "#f5b39a"      # online Hebbian
+FIXED_OP = "#e3e2de"     # no weights
+ENV = "#dfe9f2"          # environment and perception
+BOX_EDGE = INK_2
+
+HELVETICA_DIR = Path("/usr/share/fonts/urw-base35")
+HELVETICA_FACES = ["Regular", "Bold", "Italic", "BoldItalic"]
+
 FONT_PT = 9
 
 
@@ -33,11 +49,20 @@ def tint(color, frac):
 
 
 def apply():
+    for face in HELVETICA_FACES:
+        f = HELVETICA_DIR / f"NimbusSans-{face}.otf"
+        if f.exists():
+            font_manager.fontManager.addfont(str(f))
     mpl.rcParams.update({
         "pdf.fonttype": 42,
         "svg.fonttype": "none",
         "font.family": "sans-serif",
-        "font.sans-serif": ["Arial", "Liberation Sans", "DejaVu Sans"],
+        "font.sans-serif": ["Nimbus Sans", "Helvetica", "Arial",
+                            "Liberation Sans"],
+        "mathtext.fontset": "custom",
+        "mathtext.rm": "Nimbus Sans",
+        "mathtext.it": "Nimbus Sans:italic",
+        "mathtext.bf": "Nimbus Sans:bold",
         "font.size": FONT_PT,
         "text.color": INK,
         "lines.solid_capstyle": "round",
@@ -46,9 +71,9 @@ def apply():
 
 
 def save(fig, stem):
-    """Write ``stem``.pdf and ``stem``.png next to the scripts with a 0.01 in
-    pad. The figure size is the output size, so size figures to their content:
-    the abstract has no room for empty margins."""
+    """Write ``stem``.pdf and ``stem``.png next to the scripts, with no pad.
+    The figure size is the output size exactly, so size figures to their
+    content: the abstract has no room for empty margins."""
     for ext in ("pdf", "png"):
         fig.savefig(HERE / f"{stem}.{ext}", dpi=600 if ext == "png" else None,
-                    bbox_inches="tight", pad_inches=0.01)
+                    bbox_inches="tight", pad_inches=0)
