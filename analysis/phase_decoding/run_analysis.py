@@ -84,7 +84,7 @@ def with_q_norms(x: np.ndarray, channel_layout: list) -> np.ndarray:
 def select(data: dict, mask: np.ndarray, how: str, cfg: dict,
            rng: np.random.Generator) -> np.ndarray:
     idx = np.flatnonzero(mask)
-    if how in ("matched_dist_ge1", "matched_qnorm"):
+    if how in ("matched_dist_ge1", "matched_qnorm", "matched_all"):
         idx = idx[data["n_dist"][idx] >= 1]
     # Definition B arenas where no search found the goal have no phase-1 rows.
     idx = idx[_arenas_with_both_phases(data, idx)]
@@ -102,6 +102,15 @@ def select(data: dict, mask: np.ndarray, how: str, cfg: dict,
             # of time since the last teleport.
             nuis[0] = data["t"][idx]
             edges[0] = np.asarray(cfg["match"]["abs_t_edges"], float)
+        if how == "matched_all":
+            # Time, distance and ||q|| together, on coarser bins so enough
+            # rows survive; costs about 40% of the arenas.
+            qn = data["qnorm"][idx].astype(float)
+            e = np.quantile(qn, np.linspace(0, 1, cfg["match"]["all_qnorm_bins"] + 1))
+            e[0], e[-1] = -np.inf, np.inf
+            nuis.append(qn)
+            edges = [np.asarray(cfg["match"]["all_t_seg_edges"], float),
+                     np.asarray(cfg["match"]["all_dist_edges"], float), e]
         if how == "matched_qnorm":
             # Match time and the length of the current Hopfield readout, so
             # the input's ||q|| cannot tell the phases apart. Distance is

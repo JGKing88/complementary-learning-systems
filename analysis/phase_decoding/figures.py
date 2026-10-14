@@ -28,12 +28,17 @@ plt.rcParams.update({
     "axes.linewidth": 0.6, "xtick.major.width": 0.6, "ytick.major.width": 0.6,
 })
 # Categorical slots 1-3 of the reference palette, fixed order; grey for nulls.
-BLUE, ORANGE, AQUA, GREY, INK = "#2a78d6", "#eb6834", "#1baf7a", "#8a8a85", "#3b3b38"
+BLUE, ORANGE, AQUA, YELLOW = "#2a78d6", "#eb6834", "#1baf7a", "#eda100"
+GREY, INK = "#8a8a85", "#3b3b38"
 SERIES = [  # (label, run suffix, feature, colour, marker)
     ("RNN state h", "", "h", BLUE, "o"),
     ("policy input x", "", "x", ORANGE, "s"),
     ("h, random weights", "_random", "h", AQUA, "^"),
+    ("||q|| alone (input)", "", "qn", YELLOW, "D"),
 ]
+# Parallelism of the 2-D ||q|| features is not comparable with the others: in
+# two dimensions with a consistent sign the cosine is near 1 by construction.
+PS_SERIES = [s for s in SERIES if s[2] != "qn"]
 SELECTION = "matched"
 
 
@@ -46,7 +51,7 @@ def _save(fig, out: Path, stem: str) -> None:
 def fig_definition_a(res: dict, model: str, out: Path) -> None:
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(6.4, 2.4),
                                    gridspec_kw={"width_ratios": [1.6, 1]})
-    for i, (label, suf, feat, col, mk) in enumerate(SERIES):
+    for label, suf, feat, col, mk in SERIES:
         m = res[model + suf]["by_condition"]["all"][SELECTION][feat]
         ks = sorted(int(k) for k in m["ccgp"])
         mean = [m["ccgp"][str(k)]["mean"] for k in ks]
@@ -55,7 +60,8 @@ def fig_definition_a(res: dict, model: str, out: Path) -> None:
         ax1.errorbar(ks, mean, yerr=sd, color=col, marker=mk, ms=4, lw=1.5,
                      capsize=0, label=label)
         ax1.plot(ks, q95, color=col, lw=0.8, ls=":")
-        p = m["parallelism"]
+    for i, (label, suf, feat, col, mk) in enumerate(PS_SERIES):
+        p = res[model + suf]["by_condition"]["all"][SELECTION][feat]["parallelism"]
         ax2.bar(i, p["ps"], width=0.6, color=col)
         ax2.plot([i - 0.3, i + 0.3], [p["null_q95"]] * 2, color=INK, lw=1)
     ax1.set_xscale("log")
@@ -67,7 +73,7 @@ def fig_definition_a(res: dict, model: str, out: Path) -> None:
     ax1.set_ylabel("balanced accuracy")
     ax1.set_title("cross-arena decoding of phase; dotted = geometric null 95%", fontsize=8)
     fig.legend(*ax1.get_legend_handles_labels(), frameon=False, fontsize=7,
-               loc="lower center", ncol=3)
+               loc="lower center", ncol=4)
     ax2.set_xticks(range(3), ["h", "x", "h random"])
     ax2.axhline(0, color=GREY, lw=0.6)
     ax2.set_ylabel("parallelism score")
