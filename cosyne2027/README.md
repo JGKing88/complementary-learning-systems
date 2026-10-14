@@ -36,9 +36,13 @@ Draft caption. Values in braces depend on which run the results figures use:
 ## Figure 2: model
 
 `fig2_model_schematic.py` redraws `model_schematic.pdf` (the hand-made
-version, kept here as the reference) in the style of figure 1, without the
-small network drawings, at exactly 3:1 (6.5 x 2.17 in). Box fill gives the
-module type; the key is in the top right.
+version, kept here as the reference) in the style of figure 1 at exactly
+3:1 (5.58 x 1.86 in). Arrows carry words, not symbols, and each box names
+its brain region. Box fill gives the module type, and the key sits under
+the embedding net. The Vector-HaSH modules are gray because they do not
+learn; the Hebbian link between hippocampus and sensory input is drawn in
+the plastic color. There is no direction-decoder box: the attractor's
+recall direction goes straight to the controller.
 
 ## Font
 

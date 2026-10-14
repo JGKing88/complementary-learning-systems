@@ -41,6 +41,7 @@ GRID = "#d5dde4"         # cell lines
 # Model-schematic fills, one per module type
 FROZEN = "#f9e0a6"       # pretrained, fixed weights
 PLASTIC = "#f5b39a"      # online Hebbian
+PLASTIC_INK = "#eb6834"  # Hebbian connections drawn as arrows
 FIXED_OP = "#e3e2de"     # no weights
 ENV = "#dfe9f2"          # environment and perception
 BOX_EDGE = INK_2
@@ -51,7 +52,7 @@ URW_DIR = Path("/usr/share/fonts/urw-base35")
 URW_FACES = ["Regular", "Bold", "Italic", "BoldItalic"]
 
 # Symbol-font codes for the non-Latin-1 characters the figures use
-SYMBOL_CODES = {"θ": "q", "π": "p", "−": "-"}
+SYMBOL_CODES = {"θ": "q", "π": "p", "−": "-", "→": "\xae"}
 
 
 def tint(color, frac):
@@ -115,17 +116,21 @@ class Rich(Artist):
         items, x, start = [], 0.0, 0.0
         for text, kind in self.runs:
             size = self.size * (self.SCRIPT if set(kind) & {"_", "^"} else 1)
-            if "g" in kind and core:
-                text = "".join(SYMBOL_CODES.get(c, c) for c in text)
-                family = "Symbol"
-            else:
-                family = "sans-serif"
+            symbol = "g" in kind and core
             prop = FontProperties(
-                family=family, size=size,
+                family="Symbol" if symbol else "sans-serif", size=size,
                 style="italic" if "i" in kind else "normal",
                 weight="bold" if "b" in kind else "normal")
             w, h, d = renderer.get_text_width_height_descent(
                 text, prop, ismath=False)
+            if symbol:
+                text = "".join(SYMBOL_CODES.get(c, c) for c in text)
+            if core:
+                # The PDF renderer measures ink, which drops spaces at the
+                # ends of a run; advance by the core-font metrics instead.
+                afm = getattr(renderer, "_renderer", renderer)._get_font_afm(
+                    prop)
+                w = afm.string_width_height(text)[0] / 1000 * size * px
             dy = (self.SUB if "_" in kind else self.SUP if "^" in kind
                   else 0.0) * self.size * px
             if "k" in kind:
