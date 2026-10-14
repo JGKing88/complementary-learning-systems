@@ -1,0 +1,3 @@
+# The figures are the deliverable here; the repo-wide ignore drops them.
+!*.pdf
+!*.png
