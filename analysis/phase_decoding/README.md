@@ -1,5 +1,9 @@
 # Phase decoding v2 — parallelism, decodability, PCA viz
 
+> **Do not use the results of this pipeline.** The collector honours the store
+> head on every step, so "exploit" trials never exploit (success 0.16-0.21 vs
+> 1.00 in the training eval). See `docs/PHASE_DECODING_AUDIT.md`.
+
 Two analyses on a trained Hopfield-nav controller's hidden state:
 
 - **Exp 1** — bar plots of cross-arena **parallelism score** and **decodability**
