@@ -41,6 +41,9 @@ module type; the key is in the top right.
 
 ## Font
 
-Both figures use Helvetica as Nimbus Sans, URW's clone with the same design
-and metrics (licensed Helvetica is not on the cluster). `style.apply()`
-loads it from `/usr/share/fonts/urw-base35` and the PDFs embed it.
+The PDFs name the core fonts Helvetica and Symbol without embedding them,
+so Illustrator opens them with the Mac's own Helvetica and the text stays
+editable. Greek letters and the minus sign come from Symbol. The PNG
+previews render with Nimbus Sans, URW's metric-identical clone. Set math
+with `style.rich`, not mathtext: mathtext places glyphs from its own font,
+which Illustrator flags as missing.
