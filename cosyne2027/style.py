@@ -23,7 +23,7 @@ INK_MUTED = "#8a8985"    # search paths, rules
 WATER = "#eef3f7"        # arena floor
 GRID = "#d5dde4"         # cell lines
 
-FONT_PT = 7
+FONT_PT = 9
 
 
 def tint(color, frac):
@@ -46,6 +46,9 @@ def apply():
 
 
 def save(fig, stem):
-    """Write ``stem``.pdf and ``stem``.png next to the scripts."""
+    """Write ``stem``.pdf and ``stem``.png next to the scripts with a 0.01 in
+    pad. The figure size is the output size, so size figures to their content:
+    the abstract has no room for empty margins."""
     for ext in ("pdf", "png"):
-        fig.savefig(HERE / f"{stem}.{ext}", dpi=600 if ext == "png" else None)
+        fig.savefig(HERE / f"{stem}.{ext}", dpi=600 if ext == "png" else None,
+                    bbox_inches="tight", pad_inches=0.01)
