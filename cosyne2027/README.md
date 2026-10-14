@@ -23,8 +23,9 @@ Draft caption. Values in braces depend on which run the results figures use:
 `run_cl_ood.sh` uses 6 arenas, 40 iterations and 200 steps, and
 `run_agenthash.sh` uses 5, 200 and 100.
 
-> **Sequential water maze.** The agent meets {N} arenas, each 20x20 cells
-> with one hidden goal, one at a time. Each trial starts at a random cell
+> **Sequential water maze.** The agent meets {N} arenas one at a time.
+> Each is 20x20 cells with one hidden goal, and each has its own random
+> wall pattern, the only visual cue that tells arenas apart. Each trial starts at a random cell
 > and ends when the agent reaches the goal or after {max_steps} steps. In
 > block *i*, each of {iters} iterations runs one trial in every arena seen
 > so far; each column is one block, each square one trial. The first trial

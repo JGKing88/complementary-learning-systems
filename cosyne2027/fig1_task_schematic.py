@@ -4,14 +4,17 @@ Run: ~/.conda/envs/cls/bin/python cosyne2027/fig1_task_schematic.py
 
 Draws the task in hopfield_nav/evaluation/protocols.py, model-free: nothing
 here depends on how an agent solves it. Each column is one block. Top row:
-the arena introduced in that block, with its hidden goal, a first-trial
-search path and a later direct path. Bottom row: the block's trials in
+the arena introduced in that block, with its wall pattern, hidden goal, a
+first-trial search path and a later direct path. Bottom row: the block's trials in
 order. Block i runs one trial in every arena seen so far (A, then A B, then
 A B C, repeated); trials in earlier arenas are revisits.
 
 The paths are illustrations, not agent rollouts. They live on the real
 20x20 cell lattice: the search path is a novelty-seeking walk that ends at
-the goal, and the later path is a shortest 4-connected path.
+the goal, and the later path is a shortest 4-connected path. The wall
+pattern is the env's ±1 barcode (GridEnv._wall_code: one segment per wall
+cell, drawn per arena from its own rng). It is the only thing that tells
+arenas apart, so each arena gets its own draw here.
 """
 import matplotlib.pyplot as plt
 import numpy as np
@@ -38,6 +41,7 @@ ITERS_SHOWN = [4, 3, 2]         # iterations drawn per block before the '...'
 FIG_W, FIG_H = 4.18, 1.26
 MARGIN = 0.02                   # keeps edge strokes inside the canvas
 ARENA_SIDE = 0.9
+WALL = 0.05                     # wall-pattern band, inside ARENA_SIDE
 COL_X = [0.45, 1.5, 2.55]       # column centers
 ELLIPSIS_X = 3.14
 ARENA_Y0 = 0.22                 # arena bottom edge
@@ -46,7 +50,7 @@ TICK = 0.1
 TICK_GAP = 0.03
 DOTS_W = 0.15                   # room for the '...' after each block's ticks
 KEY_X = 3.32
-KEY_PITCH = 0.194
+KEY_PITCH = 0.162
 
 
 def search_path(start, goal, rng, max_steps=400):
@@ -108,22 +112,49 @@ def smooth(path, passes=3):
     return p
 
 
-def draw_arena(ax, cx, color, name, goal, s_start, d_start):
+def segment(ax, x, y, w, h, color, bit):
+    """One wall segment: +1 in the arena color, -1 in its tint."""
+    ax.add_patch(Rectangle((x, y), w, h, ec="none", zorder=5,
+                           fc=color if bit > 0 else style.tint(color, 0.72)))
+
+
+def draw_walls(ax, x0, y0, color, code):
+    """±1 barcode around the floor, one segment per wall cell, plus corners."""
+    inner = ARENA_SIDE - 2 * WALL
+    c = inner / ARENA_CELLS
+    far = x0 + WALL + inner, y0 + WALL + inner
+    for k in range(ARENA_CELLS):
+        segment(ax, x0 + WALL + k * c, far[1], c, WALL, color, code[0, k])
+        segment(ax, far[0], y0 + WALL + k * c, WALL, c, color, code[1, k])
+        segment(ax, x0 + WALL + k * c, y0, c, WALL, color, code[2, k])
+        segment(ax, x0, y0 + WALL + k * c, WALL, c, color, code[3, k])
+    for cx in (x0, far[0]):
+        for cy in (y0, far[1]):
+            ax.add_patch(Rectangle((cx, cy), WALL, WALL, fc=color, ec="none",
+                                   zorder=5))
+    for off, side in ((0, ARENA_SIDE), (WALL, inner)):   # outer, floor edge
+        ax.add_patch(Rectangle((x0 + off, y0 + off), side, side, fc="none",
+                               ec=color, lw=0.5, zorder=6))
+
+
+def draw_arena(ax, cx, color, name, goal, s_start, d_start, seed):
     x0, y0 = cx - ARENA_SIDE / 2, ARENA_Y0
-    c = ARENA_SIDE / ARENA_CELLS
-    ax.add_patch(Rectangle((x0, y0), ARENA_SIDE, ARENA_SIDE,
+    inner = ARENA_SIDE - 2 * WALL
+    c = inner / ARENA_CELLS
+    fx0, fy0 = x0 + WALL, y0 + WALL       # floor origin
+    ax.add_patch(Rectangle((fx0, fy0), inner, inner,
                            fc=style.WATER, ec="none", zorder=0))
     for k in range(1, ARENA_CELLS):
-        ax.plot([x0 + k * c] * 2, [y0, y0 + ARENA_SIDE],
+        ax.plot([fx0 + k * c] * 2, [fy0, fy0 + inner],
                 color=style.GRID, lw=0.25, zorder=1)
-        ax.plot([x0, x0 + ARENA_SIDE], [y0 + k * c] * 2,
+        ax.plot([fx0, fx0 + inner], [fy0 + k * c] * 2,
                 color=style.GRID, lw=0.25, zorder=1)
-    ax.add_patch(Rectangle((x0, y0), ARENA_SIDE, ARENA_SIDE,
-                           fc="none", ec=color, lw=1.4, zorder=5))
+    code = np.random.default_rng(seed).choice([-1, 1], size=(4, ARENA_CELLS))
+    draw_walls(ax, x0, y0, color, code)
 
     def xy(p):
         p = np.asarray(p, float)
-        return x0 + (p[..., 0] + 0.5) * c, y0 + (p[..., 1] + 0.5) * c
+        return fx0 + (p[..., 0] + 0.5) * c, fy0 + (p[..., 1] + 0.5) * c
 
     ax.plot(*xy(smooth(find_search_path(s_start, goal))),
             color=style.INK_MUTED, lw=0.7, zorder=2)
@@ -158,7 +189,15 @@ def draw_block(ax, i):
 
 def draw_key(ax):
     gx, tx = KEY_X, KEY_X + 0.22
-    y = ARENA_Y0 + ARENA_SIDE - 0.08 - KEY_PITCH * np.arange(6)
+    y = ARENA_Y0 + ARENA_SIDE - 0.05 - KEY_PITCH * np.arange(7)
+    for k, bit in enumerate([1, -1, 1, 1, -1, 1, -1, -1]):
+        segment(ax, gx + k * 0.02, y[0] - WALL / 2, 0.02, WALL,
+                style.INK_MUTED, bit)
+    labels = ["wall pattern", "search", "later trial", "hidden goal",
+              "start", "new arena", "revisit"]
+    for yy, label in zip(y, labels):
+        ax.text(tx, yy, label, va="center", color=style.INK_2)
+    y = y[1:]
 
     t = np.linspace(0, 1, 30)
     ax.plot(gx + 0.16 * t, y[0] + 0.03 * np.sin(t * 4 * np.pi),
@@ -171,10 +210,6 @@ def draw_key(ax):
     tick(ax, gx + 0.08 - TICK / 2, y[4], style.INK_MUTED, revisit=False)
     tick(ax, gx + 0.08 - TICK / 2, y[5], style.INK_MUTED, revisit=True)
 
-    labels = ["search", "later trial", "hidden goal", "start", "new arena",
-              "revisit"]
-    for yy, label in zip(y, labels):
-        ax.text(tx, yy, label, va="center", color=style.INK_2)
 
 
 def main():
@@ -187,7 +222,7 @@ def main():
 
     for i, (goal, s_start, d_start) in enumerate(ARENAS):
         draw_arena(ax, COL_X[i], style.ARENA_COLORS[i], NAMES[i],
-                   goal, s_start, d_start)
+                   goal, s_start, d_start, seed=i)
         draw_block(ax, i)
     ax.text(ELLIPSIS_X, ARENA_Y0 + ARENA_SIDE / 2, "...", ha="center",
             va="center", color=style.INK_2)
