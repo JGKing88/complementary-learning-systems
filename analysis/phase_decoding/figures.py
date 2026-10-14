@@ -39,7 +39,11 @@ SERIES = [  # (label, run suffix, feature, colour, marker)
 # Parallelism of the 2-D ||q|| features is not comparable with the others: in
 # two dimensions with a consistent sign the cosine is near 1 by construction.
 PS_SERIES = [s for s in SERIES if s[2] != "qn"]
-SELECTION = "matched"
+SELECTION_TEXT = {
+    "matched": "matched on time and distance to goal",
+    "matched_qnorm": "matched on time and ||q||",
+    "matched_all": "matched on time, distance to goal and ||q||",
+}
 
 
 def _save(fig, out: Path, stem: str) -> None:
@@ -48,11 +52,11 @@ def _save(fig, out: Path, stem: str) -> None:
     plt.close(fig)
 
 
-def fig_definition_a(res: dict, model: str, out: Path) -> None:
+def fig_definition_a(res: dict, model: str, out: Path, selection: str) -> None:
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(6.4, 2.4),
                                    gridspec_kw={"width_ratios": [1.6, 1]})
     for label, suf, feat, col, mk in SERIES:
-        m = res[model + suf]["by_condition"]["all"][SELECTION][feat]
+        m = res[model + suf]["by_condition"]["all"][selection][feat]
         ks = sorted(int(k) for k in m["ccgp"])
         mean = [m["ccgp"][str(k)]["mean"] for k in ks]
         sd = [m["ccgp"][str(k)]["sd"] for k in ks]
@@ -61,7 +65,7 @@ def fig_definition_a(res: dict, model: str, out: Path) -> None:
                      capsize=0, label=label)
         ax1.plot(ks, q95, color=col, lw=0.8, ls=":")
     for i, (label, suf, feat, col, mk) in enumerate(PS_SERIES):
-        p = res[model + suf]["by_condition"]["all"][SELECTION][feat]["parallelism"]
+        p = res[model + suf]["by_condition"]["all"][selection][feat]["parallelism"]
         ax2.bar(i, p["ps"], width=0.6, color=col)
         ax2.plot([i - 0.3, i + 0.3], [p["null_q95"]] * 2, color=INK, lw=1)
     ax1.set_xscale("log")
@@ -79,9 +83,9 @@ def fig_definition_a(res: dict, model: str, out: Path) -> None:
     ax2.set_ylabel("parallelism score")
     ax2.set_title("mean pairwise cosine; line = shuffle 95%", fontsize=8)
     fig.suptitle(f"{model}: explore vs exploit set by memory content "
-                 f"(matched on time and distance to goal)", fontsize=8)
+                 f"({SELECTION_TEXT[selection]})", fontsize=8)
     fig.tight_layout(rect=(0, 0.08, 1, 1))
-    _save(fig, out, f"fig_A_{model}")
+    _save(fig, out, f"fig_A_{model}_{selection}")
 
 
 def fig_definition_b(res: dict, out: Path) -> None:
@@ -130,14 +134,16 @@ def summary(res: dict, out: Path) -> None:
     for name, r in res.items():
         for cond, sels in r["by_condition"].items():
             for sel, m in sels.items():
-                for feat in ("h", "x"):
-                    lines.append(_row(name, cond, sel, feat, m))
+                for feat in ("h", "x", "xq", "qn"):
+                    if feat in m:
+                        lines.append(_row(name, cond, sel, feat, m))
     (out / "summary.md").write_text("\n".join(lines) + "\n")
 
 
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--results", required=True)
+    ap.add_argument("--selection", required=True, choices=sorted(SELECTION_TEXT))
     a = ap.parse_args()
     out = Path(a.results)
     res = {p.stem: json.loads(p.read_text()) for p in sorted(out.glob("*.json"))
@@ -145,7 +151,7 @@ def main() -> None:
     summary(res, out)
     for model in ("d0_A", "t3_A"):
         if model in res and model + "_random" in res:
-            fig_definition_a(res, model, out)
+            fig_definition_a(res, model, out, a.selection)
     if "t3_B" in res:
         fig_definition_b(res, out)
 

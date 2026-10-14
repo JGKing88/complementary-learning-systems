@@ -24,7 +24,7 @@ import torch
 
 from hopfield_nav.evaluation.metrics import evaluate_navigation, evaluate_task
 
-from .collect import CollectConfig, run_trial, _signal_slice, collect
+from .collect import CollectConfig, run_trial, signal_slice, collect
 from .rollout import RolloutEngine
 from hopfield_nav.rollout.distractors import goal_encoding, sample_distractors
 
@@ -32,7 +32,7 @@ VALIDATE_N_DIST = 5
 
 
 def _collector_stats(engine, bundle, cc: CollectConfig, n_arenas: int) -> dict:
-    sig = _signal_slice(engine)
+    sig = signal_slice(engine)
     rng = np.random.RandomState(cc.seed + 1)
     succ, steps = [], []
     for a in range(n_arenas):

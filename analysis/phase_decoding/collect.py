@@ -71,7 +71,7 @@ def _place(env, pos: tuple[int, int]) -> None:
     env._last_displacement = np.zeros(2)
 
 
-def _signal_slice(engine: RolloutEngine) -> slice:
+def signal_slice(engine: RolloutEngine) -> slice:
     specs = channels.channel_specs(engine.cfg.agent, engine.embed_dim,
                                    engine.cfg.env.observation_size)
     off = 0
@@ -170,7 +170,7 @@ def collect(engine: RolloutEngine, cc: CollectConfig, out_dir: Path) -> None:
     out_dir = Path(out_dir)
     (out_dir / "per_arena").mkdir(parents=True, exist_ok=True)
     bundle = engine.build_bundle()
-    sig = _signal_slice(engine)
+    sig = signal_slice(engine)
     rng = np.random.RandomState(cc.seed)
     torch.manual_seed(cc.seed)
     conditions = (("explore", "end", 0), ("exploit", "end", 1)) if cc.definition == "A" \

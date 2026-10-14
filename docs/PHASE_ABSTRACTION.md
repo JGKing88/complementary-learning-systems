@@ -5,7 +5,27 @@ Replaces the `analysis/phase_decoding` results voided by
 
 ## Summary
 
-RESULTS_PENDING
+- Both trained RNNs hold explore versus exploit (goal in memory or not) as an
+  abstract variable by Bernardi's criteria, and it survives every control.
+  With time, distance to goal and the Hopfield readout length `||q||` all
+  matched, a decoder trained on one arena reads phase in held-out arenas at
+  0.82 (d0_base) and 0.80 (task3r), against a geometric null at or below 0.59.
+  The parallelism scores are 0.63 and 0.74, against a shuffle null of 0.01.
+  The policy input, with or without `||q||`, reaches 0.54 to 0.67 on the same
+  rows, and random-weight networks reach 0.54 to 0.61.
+- Without the `||q||` control the result is much less specific. `||q||` alone
+  decodes phase across arenas at 0.92 to 0.93, so most of the phase signal in
+  `h` under ordinary matching is the readout length. What survives matching
+  `||q||` is the part the RNN builds over time rather than reads off its
+  current input.
+- At the agent's own switch (task3r, oracle write at first arrival), the
+  post-store state is abstract (one-arena CCGP 0.88 with everything matched)
+  and persists for at least 40 steps.
+- The arrival itself, with no write (sham), also sets an abstract state in `h`
+  (one-arena CCGP 0.96, parallelism 0.98) that the input does not carry (0.50
+  to 0.58). It is not drift with time since the trial began (0.94 with that
+  time matched). It decays over about 35 steps but stays well away from the
+  pre-arrival level for at least 40.
 
 ## 1. Method
 
@@ -112,4 +132,126 @@ validated on synthetic geometries in `hopfield_nav/tests/test_phase_geometry.py`
 A segment is a (trial, phase) pair; it is the resampling unit throughout.
 Nothing is split by timestep.
 
-RESULTS_SECTIONS_PENDING
+## 2. Results
+
+Outputs in `$CLS_RUNS/results/phase_abstraction/`: `analysis_v3/`
+(balanced, matched, matched_dist_ge1), `analysis_v3_qnorm/`,
+`analysis_v3_all/`, `analysis_v3_abs_t/`. Each holds one JSON per run, the
+config it ran with, and a `summary.md` with every number. CCGP is given as
+"train on 1 arena / train on 50 arenas".
+
+### 2.1 Definition A, every control applied (`matched_all`)
+
+Matched per arena on time (6-step bins), distance to goal (4-cell bins) and
+`||q||` quintiles, trials with at least one distractor. Behaviour alone then
+decodes phase at 0.54 (d0_base) and 0.56 (task3r).
+
+| run | feature | parallelism (shuffle 95%) | CCGP 1 / 50 | geometric null 95% | within-arena |
+|---|---|---|---|---|---|
+| d0_base | `h` | 0.63 (0.01) | 0.82 / 0.84 | 0.52 to 0.55 | 0.87 |
+| d0_base | `x` + `||q||` | 0.09 | 0.54 / 0.67 | 0.53 to 0.57 | 0.67 |
+| d0_base | `||q||` | | 0.55 / 0.51 | 0.52 to 0.58 | 0.58 |
+| d0_base random | `h` | 0.01 | 0.54 / 0.60 | 0.51 to 0.52 | 0.54 |
+| task3r | `h` | 0.74 (0.01) | 0.80 / 0.85 | 0.53 to 0.59 | 0.87 |
+| task3r | `x` + `||q||` | 0.12 | 0.57 / 0.65 | 0.52 to 0.57 | 0.68 |
+| task3r | `||q||` | | 0.56 / 0.54 | 0.51 to 0.58 | 0.57 |
+| task3r random | `h` | 0.07 | 0.54 / 0.61 | 0.51 to 0.52 | 0.54 |
+
+`h` CCGP is flat in the number of training arenas: one arena is enough.
+That is the signature of a factorised geometry, where the phase direction does
+not depend on the arena.
+
+Matching on `||q||` was incomplete for the random-weight agents: their `||q||`
+features still decode phase at 0.81 to 0.84 in this selection, because they
+wander and their readout channels behave differently. The input carries phase
+there and their RNN state still does not.
+
+### 2.2 What each control removes (definition A)
+
+CCGP for task3r (d0_base in brackets), train on 1 / 50 arenas:
+
+| selection | behaviour only | `h` | `x` + `||q||` | `||q||` |
+|---|---|---|---|---|
+| balanced | 0.87 (0.87) | 0.93 / 0.98 (0.96 / 0.98) | 0.82 / 0.92 (0.82 / 0.92) | 0.89 / 0.89 (0.89 / 0.90) |
+| matched (time, distance) | 0.56 (0.54) | 0.88 / 0.97 (0.91 / 0.97) | 0.89 / 0.94 (0.86 / 0.95) | 0.93 / 0.93 (0.92 / 0.93) |
+| matched_qnorm (time, `||q||`) | 0.85 (0.85) | 0.86 / 0.91 (0.86 / 0.90) | 0.59 / 0.74 (0.58 / 0.71) | 0.51 / 0.52 (0.53 / 0.53) |
+| matched_all | 0.56 (0.54) | 0.80 / 0.85 (0.82 / 0.84) | 0.57 / 0.65 (0.54 / 0.67) | 0.56 / 0.54 (0.55 / 0.51) |
+
+Matching behaviour costs `h` about 0.05 at one training arena and nothing at
+50. Matching `||q||` removes the input's advantage and leaves `h` above 0.8. With behaviour matched but not
+`||q||`, the input with `||q||` decodes phase as well as `h` does: under the
+analysis in its usual form, the RNN would add little over its input.
+
+### 2.3 Definition B, the agent's own switch (task3r)
+
+Store and sham trials find the goal equally often (69.5%). After the switch,
+store trials reach the goal 4.6 times in 60 steps and sham trials 0.21 times.
+
+| arm | selection | behaviour only | `h` parallelism | `h` CCGP 1 / 50 | `x` + `||q||` | `||q||` |
+|---|---|---|---|---|---|---|
+| store | matched (time since teleport, distance) | 0.57 | 0.89 | 0.96 / 0.99 | 0.83 / 0.95 | 0.94 / 0.94 |
+| store | matched_all | 0.56 | 0.82 | 0.88 / 0.97 | 0.57 / 0.66 | 0.54 / 0.51 |
+| sham | matched | 0.57 | 0.99 | 0.94 / 0.97 | 0.56 / 0.57 | 0.51 / 0.52 |
+| sham | matched_all | 0.58 | 0.98 | 0.96 / 0.97 | 0.56 / 0.58 | 0.50 / 0.50 |
+| sham | matched_abs_t (time since trial start, distance) | 0.89 | 0.98 | 0.94 / 0.96 | 0.59 / 0.61 | 0.51 / 0.52 |
+
+`fig_B_switch` shows a decoder on `h` fit to store rows of 50 arenas and
+applied to the other 50, aligned on the first arrival. It sits at -12 logits
+before arrival in both arms and jumps to +10 at arrival in both. In store
+trials it stays near +10 for all 40 steps shown. In sham trials it falls to
+about +1 within 10 steps and crosses zero at about 35. The jump is the arrival
+(the goal reward enters the input and the agent is teleported); the lasting
+part depends on the write.
+
+The sham result needs care. Post-arrival rows are later in the trial and
+closer to their last teleport. Matching time since the trial began leaves
+decoding at 0.94, so this is not a clock that runs from the start of the
+trial. In that selection, time since the last teleport is unmatched
+(behaviour-only 0.89), but the RNN can only know that time by registering the
+arrival. The state is an arrival trace.
+
+### 2.4 Figures
+
+- `analysis_v3_all/fig_A_d0_A_matched_all.pdf`, `fig_A_t3_A_matched_all.pdf`:
+  CCGP against training arenas for `h`, `x`, random-weight `h` and `||q||`,
+  with geometric-null 95% lines; parallelism with shuffle 95% lines.
+- `analysis_v3/fig_A_*_matched.pdf`: the same without the `||q||` match.
+- `analysis_v3/fig_B_switch.pdf`: switch-aligned decoder output, store and
+  sham, for decoders on `h` and on `x`.
+
+## 3. Limits
+
+- One seed per model, and one checkpoint each.
+- Arenas are minted from the base-validation distribution, not the training
+  arenas (task3r trained on 3).
+- The parallelism score of the two-dimensional `||q||` feature is near 1 by
+  construction (two coordinates of consistent sign) and is not compared with
+  the others.
+- Matching discards rows: `matched_all` keeps about 5,600 rows per phase out of
+  about 45,000 exploit rows, mostly early-trial rows where the two phases
+  overlap in distance and `||q||`.
+- Definition B cannot match time since trial start and time since teleport
+  together; the arrival-trace reading rests on the two selections and the
+  switch traces jointly.
+
+## 4. Reproduce
+
+```bash
+# collection (validates against the training eval first; aborts on mismatch)
+NAME=d0_A CKPT=checkpoint/navigate_navp2_d0_base_s42_22133273/navigate_u725.pt \
+  DEFINITION=A MAX_STEPS=60 POST_STEPS=0 \
+  sbatch --time=02:00:00 analysis/phase_decoding/run_collect.sh
+# (d0_A_random: add RANDOM_AGENT=1; t3_*: the task3r checkpoint;
+#  t3_B: DEFINITION=B MAX_STEPS=300 POST_STEPS=60)
+
+# metrics
+ONLY=d0_A sbatch --time=06:00:00 analysis/phase_decoding/run_analysis.sh
+CONFIG=analysis/phase_decoding/configs/abstraction_v3_all.json \
+  OUT=$CLS_RUNS/results/phase_abstraction/analysis_v3_all \
+  ONLY=d0_A,d0_A_random,t3_A,t3_A_random,t3_B \
+  sbatch --time=08:00:00 analysis/phase_decoding/run_analysis.sh
+
+# figures
+python -m analysis.phase_decoding.figures \
+  --results $CLS_RUNS/results/phase_abstraction/analysis_v3_all --selection matched_all
+```
