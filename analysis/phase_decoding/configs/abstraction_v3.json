@@ -7,7 +7,7 @@
   "t3_B":        {"path": "/orcd/pool/003/jackking/cls_runs/results/phase_abstraction/t3_B", "definition": "B"}
  },
  "seed": 0,
- "features": ["h", "x"],
+ "features": ["h", "x", "xq", "qn"],
  "selections": ["balanced", "matched", "matched_dist_ge1"],
  "min_std": 1e-6,
  "cap_rows_per_phase": 1500,

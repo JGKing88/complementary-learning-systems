@@ -58,7 +58,27 @@ def load_run(path: Path) -> tuple[dict, dict]:
             cols.setdefault(k, []).append(v)
     data = {k: np.concatenate(v) for k, v in cols.items()}
     assert data["h"].shape[1] == meta["hidden_size"]
+    data["xq"] = with_q_norms(data["x"], meta["channels"])
+    data["qn"] = data["xq"][:, data["x"].shape[1]:]          # the norms alone
     return data, meta
+
+
+def with_q_norms(x: np.ndarray, channel_layout: list) -> np.ndarray:
+    """The policy input plus the length of every Hopfield readout channel.
+
+    A linear decoder on ``x`` cannot compute ||q||, and the exploit policy is
+    known to gate on it. Appending the norms gives the input baseline that
+    nonlinearity for free, so ``h`` has to beat it to claim more than ||q||.
+    """
+    off, norms = 0, []
+    for name, width in channel_layout:
+        if name == "hopfield_signal" or name.startswith("hopfield_multistep_"):
+            assert width == 2, (name, width)
+            norms.append(np.linalg.norm(x[:, off:off + width], axis=1))
+        off += width
+    assert off == x.shape[1], (off, x.shape)
+    assert norms, "no Hopfield readout channel in the policy input"
+    return np.concatenate([x, np.stack(norms, 1).astype(np.float32)], 1)
 
 
 def select(data: dict, mask: np.ndarray, how: str, cfg: dict,
