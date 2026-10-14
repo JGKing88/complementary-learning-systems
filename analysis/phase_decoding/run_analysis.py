@@ -95,6 +95,13 @@ def select(data: dict, mask: np.ndarray, how: str, cfg: dict,
         nuis = [data["t_seg"][idx], data["dist"][idx]]
         edges = [np.asarray(cfg["match"]["t_seg_edges"], float),
                  np.asarray(cfg["match"]["dist_edges"], float)]
+        if how == "matched_abs_t":
+            # Definition B: post-arrival rows are always later in the trial,
+            # so an RNN state that drifts with time since the trial began
+            # would decode phase. Match time since the trial began instead
+            # of time since the last teleport.
+            nuis[0] = data["t"][idx]
+            edges[0] = np.asarray(cfg["match"]["abs_t_edges"], float)
         if how == "matched_qnorm":
             # Match time and the length of the current Hopfield readout, so
             # the input's ||q|| cannot tell the phases apart. Distance is
