@@ -87,6 +87,23 @@ shared y axis, one line per arena in the fig 1 arena colors (A-E; D and E
 extend the palette with its next two slots, yellow and magenta, so the
 figure carries an arena key).
 
+### 20 arenas
+
+`run_controls_n20.sh` runs the six figure controls at 20 arenas (each
+method's 5-arena choice at T_eval = 100, not re-tuned; 8 seeds; slurm
+25958246, 2 h 47 min, all 48 runs OK), and `run_agenthash_heldout.sh` with
+`N_ENVS=20` runs Agent-HaSH (8 one-seed GPU jobs, 51 min to 3 h). Then
+`cl_results.py --n_envs 20`, `fig3_main_results.py --n_envs 20` and
+`fig_agenthash_n20.py`. `fig3_main_results_n20` is figure 3 at 20 arenas
+(a1 labels placed for the 20-arena cluster); `fig_agenthash_n20` is
+Agent-HaSH alone: per-arena success shaded by arena order, and the 20 x 20
+success matrix. At 20 arenas (8 seeds), P / ACC: Agent-HaSH 0.99 / 0.98;
+XdG + SI 0.34 / 0.36, replay 0.57 / 0.28, CLEAR 0.59 / 0.17, EWC
+0.34 / 0.15, multi-head 0.69 / 0.12, naive 0.53 / 0.07. With one
+configuration per method there is nothing to select, so the usable gate
+(current arena >= 0.5) is not applied; at 20 arenas most controls end
+below it.
+
 ## Encoder figure
 
 `encoder_similarity.py` (run as `python -m cosyne2027.encoder_similarity`)

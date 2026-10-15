@@ -129,7 +129,10 @@ def summarise(paths):
                            / np.sqrt(len(seen))).tolist(),
         # Success on each env per update, mean over seeds; None before the
         # env is introduced. [update][env]
-        "env_curves": [[None if np.isnan(x) else float(x) for x in row]
+        # 4 decimals: far below the 1/8 step of an 8-seed mean, and it keeps
+        # the N=20 file (4000 x 20 per model) a few MB
+        "env_curves": [[None if np.isnan(x) else round(float(x), 4)
+                        for x in row]
                        for row in env_mean(curves)],
     }
 
@@ -156,6 +159,10 @@ def select(prefixes):
         if all(p.exists() for p in paths):
             rows[c] = summarise(paths)
     usable = {c: r for c, r in rows.items() if r["current"] >= USABLE_CURRENT}
+    if len(rows) == 1:
+        # One configuration (N=20 runs only each method's N=5 choice):
+        # nothing to select, so the usable gate does not apply.
+        return next(iter(rows)), rows
     if not usable:              # nothing complete (or nothing learns) yet
         return None, rows
     best = max(usable, key=lambda c: usable[c]["retained"])
@@ -196,7 +203,8 @@ def main():
         print("Agent-HaSH histories not all present yet:", AGENTHASH)
     (HERE / "data").mkdir(exist_ok=True)
     with open(HERE / "data" / OUT_NAME, "w") as f:
-        json.dump(out, f, indent=1)
+        # compact: indenting puts each of ~600k curve values on its own line
+        json.dump(out, f, separators=(",", ":"))
 
 
 if __name__ == "__main__":

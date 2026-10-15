@@ -37,6 +37,13 @@ LABEL_AT = {"Agent-HaSH": (-8, -3, "right"), "XdG + SI": (-9, 0, "right"),
             "Experience Replay": (8, 0, "left"), "CLEAR": (-9, 0, "right"),
             "Multi-head oracle": (8, 0, "left"), "Naive SGD": (0, -10, "center"),
             "Online EWC": (-8, 2, "right")}
+# At N=20 the controls cluster low and left, so they need their own places
+# (and EWC its short name, beside the y axis)
+LABEL_AT_N20 = {"Agent-HaSH": (-8, -3, "right"), "XdG + SI": (-9, 0, "right"),
+                "Experience Replay": (0, 8, "center"), "CLEAR": (8, 3, "left"),
+                "Multi-head oracle": (8, -2, "left"),
+                "Naive SGD": (-8, -2, "right"), "Online EWC": (-8, 1, "right")}
+SHORT_N20 = {**SHORT, "Online EWC": "EWC"}
 
 
 def color(name):
@@ -55,7 +62,9 @@ def smooth_within_windows(y):
     return out
 
 
-def panel_a1(ax, models):
+def panel_a1(ax, models, n_envs=5):
+    label_at, short = ((LABEL_AT, SHORT) if n_envs == 5
+                       else (LABEL_AT_N20, SHORT_N20))
     ax.plot([0, 1], [0, 1], color=style.INK_MUTED, lw=0.7,
             ls=(0, (3, 2)), zorder=0)
     # Key for the diagonal, in the empty upper-left corner: the label is
@@ -71,8 +80,8 @@ def panel_a1(ax, models):
         ax.errorbar(r["P"], r["ACC"], xerr=r["P_sem"], yerr=r["ACC_sem"],
                     fmt="o", ms=4.5, color=c, mec="white", mew=0.6,
                     elinewidth=0.7, capsize=0, zorder=3)
-        dx, dy, ha = LABEL_AT.get(name, (5, 0, "left"))
-        ax.annotate(SHORT[name], (r["P"], r["ACC"]), xytext=(dx, dy),
+        dx, dy, ha = label_at.get(name, (5, 0, "left"))
+        ax.annotate(short[name], (r["P"], r["ACC"]), xytext=(dx, dy),
                     textcoords="offset points", ha=ha, va="center",
                     color=style.INK, zorder=4,
                     # the diagonal passes behind, not through, a label
@@ -124,7 +133,7 @@ def main():
     fig = plt.figure(figsize=(FIG_W, FIG_H))
     ax1 = fig.add_axes([0.085, 0.21, 0.27, 0.75])
     ax2 = fig.add_axes([0.5, 0.21, 0.36, 0.75])
-    panel_a1(ax1, models)
+    panel_a1(ax1, models, args.n_envs)
     panel_a2(ax2, models)
     style.save(fig, "fig3_main_results" + ("" if args.n_envs == 5
                                            else f"_n{args.n_envs}"))
