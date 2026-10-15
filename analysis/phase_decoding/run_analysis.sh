@@ -13,6 +13,8 @@ source activate cls 2>/dev/null || true
 cd "$SLURM_SUBMIT_DIR"
 CONFIG="${CONFIG:-analysis/phase_decoding/configs/abstraction_v3.json}"
 OUT="${OUT:-/orcd/pool/003/jackking/cls_runs/results/phase_abstraction/analysis_v3}"
-python -m analysis.phase_decoding.run_analysis --config "$CONFIG" --out "$OUT" \
+# MODULE=history runs the input-history / ||q|| decomposition (history.py).
+MODULE="${MODULE:-run_analysis}"
+python -m "analysis.phase_decoding.$MODULE" --config "$CONFIG" --out "$OUT" \
     --only "${ONLY:?}"
 echo ANALYSIS_DONE
