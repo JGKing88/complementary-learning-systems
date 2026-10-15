@@ -242,11 +242,16 @@ def run_definition_b(name, data, meta, cfg, rng) -> dict:
     kw = dict(k_train=hb["k_train"], n_rep=hb["n_rep"], n_test=hb["n_test_arenas"],
               n_jobs=cfg["n_jobs"], spline_cfg=hb["spline"], ridge_alpha=hb["ridge_alpha"],
               C=hb["C"])
-    res = {"meta": meta, "definition": "B", "by_condition": {}}
+    res = {"meta": meta, "definition": "B", "min_post_lag": hb["min_post_lag"],
+           "by_condition": {}}
+    # Post-arrival rows closer than min_post_lag steps to the arrival are
+    # dropped before matching, so every decoder trains and tests only on rows
+    # whose recent input no longer contains the arrival event.
+    keep_lag = (data["phase"] == 0) | (lag_all >= hb["min_post_lag"])
     for cond in hb["conditions"]:
         res["by_condition"][cond] = {}
         for sel in hb["selections"]:
-            idx = select(data, base & (data["condition"] == cond), sel, cfg, rng)
+            idx = select(data, base & keep_lag & (data["condition"] == cond), sel, cfg, rng)
             feats, _ = build_features(data, hb["windows"], idx)
             feats["h"] = data["h"][idx]
             y, ar, lag = data["phase"][idx], data["arena"][idx], lag_all[idx]
