@@ -80,3 +80,9 @@ single ratios huge.
 - Each model keeps the wall resolution it was trained on (controls 1 barcode
   segment per cell, Agent-HaSH 4), so the arenas are different random draws
   from the same generator; the goal radius is common.
+
+`fig3_a2_per_env.py` is the per-arena alternative to panel a2: one small
+multiple per model (Agent-HaSH, naive SGD, XdG + SI), each 35 x 25 mm with a
+shared y axis, one line per arena in the fig 1 arena colors (A-E; D and E
+extend the palette with its next two slots, yellow and magenta, so the
+figure carries an arena key).

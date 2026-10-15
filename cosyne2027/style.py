@@ -30,7 +30,10 @@ from matplotlib.transforms import Bbox, IdentityTransform
 
 HERE = Path(__file__).resolve().parent
 
-ARENA_COLORS = ["#2a78d6", "#eb6834", "#1baf7a"]
+# Arenas A-E: the first five slots of the dataviz reference palette, in its
+# order (validated for adjacent pairs, the line-chart case). Yellow and
+# magenta are below 3:1 on white, so a figure using them carries a key.
+ARENA_COLORS = ["#2a78d6", "#eb6834", "#1baf7a", "#eda100", "#e87ba4"]
 
 INK = "#0b0b0b"          # primary text
 INK_2 = "#52514e"        # secondary text, keys

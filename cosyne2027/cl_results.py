@@ -117,7 +117,19 @@ def summarise(paths):
         "seen_curve": seen.mean(axis=0).tolist(),
         "seen_curve_sem": (seen.std(axis=0, ddof=1)
                            / np.sqrt(len(seen))).tolist(),
+        # Success on each env per update, mean over seeds; None before the
+        # env is introduced. [update][env]
+        "env_curves": [[None if np.isnan(x) else float(x) for x in row]
+                       for row in env_mean(curves)],
     }
+
+
+def env_mean(curves):
+    """Mean over seeds of (update, env) success; NaN where never evaluated."""
+    c = np.array(curves)
+    n = np.sum(~np.isnan(c), axis=0)
+    total = np.nansum(c, axis=0)
+    return np.where(n > 0, total / np.maximum(n, 1), np.nan)
 
 
 def control_paths(config):
