@@ -11,10 +11,10 @@ untrained encoder of the same architecture (thin, gray, dashed). Bands are
 translation-invariant, so its curve is exact and has no band. Triangles mark
 the grid periods (11, 12, 13 cells).
 
-Side panel: six trained units with one dominant place field in a 100-cell
-arena (151 of 1024 units qualify; selection and processing in
-encoder_similarity.unit_maps), viridis, each map normalised to its own
-peak, with a 50-cell scale bar. It sits beside the plot rather than
+Side panel: six trained units with one dominant, peaked place field over
+the full 200-cell window, 3 x 2 maps of 11 mm (93 of 1024 units qualify;
+selection and processing in encoder_similarity.unit_maps), viridis, each
+map normalised to its own peak, with a 50-cell scale bar. It sits beside the plot rather than
 inside it: along an axis the grid code oscillates up to ~0.65 at every
 distance, so no empty region inside the axes is tall enough.
 """
@@ -32,8 +32,8 @@ FIG_W, FIG_H = 3.73, 1.78
 AX = [0.43, 0.3, 2.2, 1.4]           # axes: left, bottom, w, h (in)
 MAPS = style.HERE / "data" / "encoder_unit_maps.npz"
 MM = 1 / 25.4
-MAP, MAP_GAP = 7 * MM, 0.9 * MM      # map side and gap (in)
-PANEL_X, PANEL_TOP = 2.8, 1.58       # side panel: left edge, top of maps (in)
+MAP, MAP_GAP = 11 * MM, 0.9 * MM     # map side and gap (in)
+PANEL_X, PANEL_TOP = 2.8, 1.6        # side panel: left edge, top of maps (in)
 SCALE_CELLS = 50
 CURVES = {  # name: (color, lw, linestyle)
     "trained encoder": ("#a35f00", 2.0, "-"),
@@ -83,8 +83,9 @@ def main():
 def unit_panel(fig):
     data = np.load(MAPS)
     maps, window = data["maps"], int(data["window"])
+    n_rows, n_cols = int(data["rows"]), int(data["cols"])
     for k, m in enumerate(maps):
-        row, col = divmod(k, 3)
+        row, col = divmod(k, n_cols)
         x = PANEL_X + col * (MAP + MAP_GAP)
         y = PANEL_TOP - (row + 1) * MAP - row * MAP_GAP
         a = fig.add_axes([x / FIG_W, y / FIG_H, MAP / FIG_W, MAP / FIG_H])
@@ -98,13 +99,13 @@ def unit_panel(fig):
             sp.set_visible(True)
             sp.set_linewidth(0.4)
             sp.set_color(style.INK_2)
-    width = 3 * MAP + 2 * MAP_GAP
+    width = n_cols * MAP + (n_cols - 1) * MAP_GAP
     fig.text((PANEL_X + width / 2) / FIG_W, (PANEL_TOP + 0.03) / FIG_H,
              "example units", ha="center", va="bottom", fontsize=8,
              color=style.INK_2)
     # Scale bar under the bottom-left map, its label on the same line
     bar = SCALE_CELLS / window * MAP
-    yb = PANEL_TOP - 2 * MAP - MAP_GAP - 0.08
+    yb = PANEL_TOP - n_rows * MAP - (n_rows - 1) * MAP_GAP - 0.08
     fig.add_artist(plt.Line2D([PANEL_X / FIG_W, (PANEL_X + bar) / FIG_W],
                               [yb / FIG_H] * 2, color=style.INK, lw=1.2,
                               solid_capstyle="butt"))

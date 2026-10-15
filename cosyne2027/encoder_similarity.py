@@ -46,13 +46,15 @@ NPOS = 11 * 12 * 13
 D_MAX = 100
 N_REF = 2000
 BORDER = 150
-# Example units: explore.ipynb cell 5's processing, then single-field units
-FIELD_WINDOW = 200        # processing region
-ARENA = 100               # arena shown, cropped from the region's centre
-DOMINANT = 0.7            # largest field's share of a unit's active mass
+# Example units: explore.ipynb cell 5's processing, sharpened into peaks
+FIELD_WINDOW = 200        # window processed and shown
+DOMINANT = 0.7            # largest field's share of a unit's map mass
+PEAK_BLUR = 3.0
+PEAK_POWER = 2
+N_ROWS, N_COLS = 3, 2     # panel layout; the fields tile the same partition
 HIGHPASS_SIGMA = 30.0
 BLUR_SIGMA = 2.0
-FIELD_THRESHOLD = 0.6     # final ReLU at this fraction of the unit's max
+FIELD_THRESHOLD = 0.7     # ReLU at this fraction of the unit's max
 
 
 @torch.no_grad()
@@ -97,52 +99,53 @@ def similarity_curves(encoders, rng):
 
 
 def unit_maps(encoder):
-    """Six trained units with one dominant place field, tiling an arena.
+    """Six trained units with one dominant, peaked place field, tiling the
+    FIELD_WINDOW-cell window at the scaffold centre.
 
-    Each unit is processed over a FIELD_WINDOW-cell region at the scaffold
-    centre as in explore.ipynb cell 5 (subtract the unit's mean, ReLU,
-    subtract a sigma-30 Gaussian blur, blur at sigma 2), then thresholded at
-    FIELD_THRESHOLD of its peak, and cropped to the central ARENA cells (the
-    processing runs on the larger region so the high-pass has no edge
-    effects). A unit qualifies if its largest field holds at least
-    DOMINANT of the active mass and does not touch the arena wall. The raw
-    units are near-binary +-0.034 sign patterns over large regions; only
-    some have one dominant field at this scale, and the count is returned
-    for the caption. From the qualifying units, the one whose field centroid
-    is nearest each cell centre of a 2 x 3 partition of the arena is taken,
-    row-major from the top-left, so the six fields tile the arena and map k
-    sits where panel k sits.
+    Each unit is processed as in explore.ipynb cell 5 (subtract the unit's
+    mean, ReLU, subtract a sigma-30 Gaussian blur, blur at sigma 2), then
+    sharpened into peaks: ReLU at FIELD_THRESHOLD of the map's maximum,
+    a sigma-PEAK_BLUR blur and a power PEAK_POWER. The raw units are
+    near-binary +-0.034 sign patterns over large regions, so after the
+    notebook's steps a field is a plateau; the last three steps keep its
+    core and round it into a peak. A unit qualifies if its largest field
+    holds at least DOMINANT of the map's mass and does not touch the window
+    edge; the count is returned for the caption. From the qualifying units,
+    the one whose field centroid is nearest each cell centre of an
+    N_ROWS x N_COLS partition of the window is taken, row-major from the
+    top-left, so the six fields tile the window and map k sits where panel
+    k sits.
 
-    Returns maps (6, ARENA, ARENA) indexed [unit, x, y], the unit ids and
-    the number of qualifying units.
+    Returns maps (6, W, W) indexed [unit, x, y], the unit ids and the number
+    of qualifying units.
     """
     s = FIELD_WINDOW
     c0 = NPOS // 2 - s // 2
     xs, ys = np.meshgrid(np.arange(c0, c0 + s), np.arange(c0, c0 + s),
                          indexing="ij")
     z = embed(encoder, xs.ravel(), ys.ravel()).reshape(s, s, -1)
-    lo = s // 2 - ARENA // 2
     cands = []
     for u in range(z.shape[2]):
         x = np.maximum(z[:, :, u].astype(np.float64) - z[:, :, u].mean(), 0.0)
         x = x - gaussian_filter(x, HIGHPASS_SIGMA)
         x = gaussian_filter(x, BLUR_SIGMA)
         x = np.maximum(x - FIELD_THRESHOLD * x.max(), 0.0)
-        m = x[lo:lo + ARENA, lo:lo + ARENA]
-        lab, n = ndimage.label(m > 0)
-        if n == 0:
+        m = gaussian_filter(x, PEAK_BLUR) ** PEAK_POWER
+        if m.max() <= 0:
             continue
+        lab, n = ndimage.label(m > 1e-3 * m.max())
         mass = ndimage.sum(m, lab, range(1, n + 1))
         big = lab == int(np.argmax(mass)) + 1
-        on_wall = (big[0].any() or big[-1].any() or big[:, 0].any()
+        on_edge = (big[0].any() or big[-1].any() or big[:, 0].any()
                    or big[:, -1].any())
-        if mass.max() / mass.sum() >= DOMINANT and not on_wall:
-            cands.append((u, np.array(ndimage.center_of_mass(big)), m))
+        if mass.max() / mass.sum() >= DOMINANT and not on_edge:
+            cands.append((u, np.array(ndimage.center_of_mass(m * big)), m))
     cents = np.array([c for _, c, _ in cands])
     chosen = []
-    for row in range(2):
-        for col in range(3):
-            target = np.array([(col + 0.5) / 3, 1 - (row + 0.5) / 2]) * ARENA
+    for row in range(N_ROWS):
+        for col in range(N_COLS):
+            target = np.array([(col + 0.5) / N_COLS,
+                               1 - (row + 0.5) / N_ROWS]) * s
             d = np.linalg.norm(cents - target, axis=1)
             d[chosen] = np.inf
             chosen.append(int(np.argmin(d)))
@@ -169,7 +172,8 @@ def main():
         json.dump(out, f)
     maps, units, n_qual = unit_maps(trained)
     np.savez_compressed(HERE / "data" / "encoder_unit_maps.npz", maps=maps,
-                        units=units, window=ARENA, n_qualifying=n_qual)
+                        units=units, window=FIELD_WINDOW,
+                        n_qualifying=n_qual, rows=N_ROWS, cols=N_COLS)
     print(f"unit maps: {units.tolist()}  {n_qual} of 1024 units qualify "
           f"({n_qual / 1024:.0%})")
     for name, s in curves.items():

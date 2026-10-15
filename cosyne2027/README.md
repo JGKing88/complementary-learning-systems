@@ -105,17 +105,18 @@ mean-centred because that is what the attractor compares: the untrained
 encoder maps every position to nearly one vector (cosine ~1 everywhere),
 and centred it would retrace the grid-code curve.
 
-Side panel, "example units": six of d0_base's trained units with a single
-dominant place field, tiling a 100-cell arena (`encoder_similarity.unit_maps`,
-saved to `data/encoder_unit_maps.npz`). Each unit is processed over a
-200-cell region as in `encoder_training/notebooks/explore.ipynb` cell 5
-(mean-subtract, ReLU, sigma-30 high-pass, sigma-2 blur), thresholded at 0.6
-of its peak and cropped to the central 100 cells. A unit qualifies if its
-largest field holds >= 70% of the active mass and does not touch the arena
-wall: 151 of 1024 units (15%). One per cell of a 2 x 3 partition of the
-arena is shown, each normalised to its own peak. For the caption: the raw
-units are near-binary +-0.034 sign patterns over large regions; these are
-the 15% with one dominant field after processing. (The notebook's own
-single fields came from the April gain-3.7 encoder
+Side panel, "example units": six of d0_base's trained units with one
+dominant, peaked place field over the full 200 x 200-cell window, 3 x 2
+maps of 11 mm (`encoder_similarity.unit_maps`, saved to
+`data/encoder_unit_maps.npz`). Processing per unit: the notebook's recipe
+(`encoder_training/notebooks/explore.ipynb` cell 5: mean-subtract, ReLU,
+sigma-30 high-pass, sigma-2 blur), then ReLU at 0.7 of the map's peak, a
+sigma-3 blur and squaring, which turn each field's plateau into a peak. A
+unit qualifies if its largest field holds >= 70% of the map's mass and
+avoids the window edge: 93 of 1024 units (9%). One per cell of a 3 x 2
+partition of the window is shown, each normalised to its own peak. For the
+caption: the raw units are near-binary +-0.034 sign patterns over large
+regions; these are the 9% with one dominant field after processing. (The
+notebook's own single fields came from the April gain-3.7 encoder
 `encoders/run_20260422_185816`.) The panel sits beside the plot because the
 axis-aligned grid code fills the axes' empty space.
