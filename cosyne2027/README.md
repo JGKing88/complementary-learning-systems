@@ -52,3 +52,31 @@ editable. Greek letters and the minus sign come from Symbol. The PNG
 previews render with Nimbus Sans, URW's metric-identical clone. Set math
 with `style.rich`, not mathtext: mathtext places glyphs from its own font,
 which Illustrator flags as missing.
+
+## Figure 3: main results
+
+`cl_results.py` builds every number from one matrix and writes
+`data/cl_results.json`; `fig3_main_results.py` draws from that file only.
+a[k, j] is success on arena j over the last 20% of arena k's 200-update
+window, where success is a held-out rollout from a random start reaching the
+goal (radius 0.5) within T_eval = 100 steps. P = mean_j a[j, j] (plasticity),
+ACC = mean_j a[4, j] (final success), F = P - ACC (forgetting). Path ratio is
+path length over the straight-line optimum on successful final-window
+rollouts; it is reported as a median because starts next to the goal make
+single ratios huge.
+
+- Controls: the continuous, pretrained, previous-action-channel cell of the
+  continual control suite (`analysis/continual/run_wave_prev.sh`, 8 seeds,
+  one deterministic held-out rollout per seen arena after every update,
+  200-step cap). Success within 100 steps is read from those rollouts as
+  `steps_to_goal < 100`, which is exact for a deterministic policy, so no
+  control was retrained. Each method's configuration is re-selected at
+  T_eval = 100 with the suite's own rule (current arena >= 0.5, then best
+  retention); that moves naive SGD to lr 3e-4 and XdG + SI to lambda 1e4.
+- Agent-HaSH (d0_base u725): `run_agenthash_heldout.sh`, the same schedule
+  (one store-allowed episode per update, 200-step cap; held-out no-store
+  episodes on every seen arena, 100-step cap), sampled actions, one store per
+  arena at the goal, 8 seeds with `--env_seed` = the controls' seeds.
+- Each model keeps the wall resolution it was trained on (controls 1 barcode
+  segment per cell, Agent-HaSH 4), so the arenas are different random draws
+  from the same generator; the goal radius is common.

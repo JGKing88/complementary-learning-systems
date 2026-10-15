@@ -46,6 +46,17 @@ FIXED_OP = "#e3e2de"     # no weights
 ENV = "#dfe9f2"          # environment and perception
 BOX_EDGE = INK_2
 
+# Results figures: the three models shown in every panel get a fixed color;
+# the other controls are gray and carry direct labels. All pairs, gray
+# included, clear OKLab dE 15 (normal) and 8 (protan/deutan/tritan); none is
+# an arena color.
+MODEL_COLORS = {
+    "Agent-HaSH": INK,
+    "Naive SGD": "#e34948",
+    "XdG + SI": "#6250d6",
+}
+OTHER_MODEL = INK_MUTED
+
 FONT_PT = 9
 
 URW_DIR = Path("/usr/share/fonts/urw-base35")
@@ -74,6 +85,20 @@ def apply():
         # Agg looks among installed fonts and falls through to Nimbus Sans.
         "font.sans-serif": ["Helvetica", "Nimbus Sans"],
         "font.size": FONT_PT,
+        "axes.unicode_minus": False,     # U+2212 is outside Latin-1
+        "axes.linewidth": 0.6,
+        "axes.edgecolor": INK_2,
+        "axes.labelcolor": INK,
+        "axes.spines.top": False,
+        "axes.spines.right": False,
+        "xtick.color": INK_2,
+        "ytick.color": INK_2,
+        "xtick.labelcolor": INK,
+        "ytick.labelcolor": INK,
+        "xtick.major.width": 0.6,
+        "ytick.major.width": 0.6,
+        "xtick.major.size": 2.5,
+        "ytick.major.size": 2.5,
         "text.color": INK,
         "lines.solid_capstyle": "round",
         "lines.solid_joinstyle": "round",
