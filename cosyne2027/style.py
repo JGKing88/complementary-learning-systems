@@ -66,7 +66,7 @@ URW_DIR = Path("/usr/share/fonts/urw-base35")
 URW_FACES = ["Regular", "Bold", "Italic", "BoldItalic"]
 
 # Symbol-font codes for the non-Latin-1 characters the figures use
-SYMBOL_CODES = {"θ": "q", "π": "p", "−": "-", "→": "\xae"}
+SYMBOL_CODES = {"θ": "q", "π": "p", "λ": "l", "−": "-", "→": "\xae"}
 
 
 def tint(color, frac):

@@ -1,0 +1,107 @@
+"""Encoder figure numbers: similarity against distance.
+
+Run: ~/.conda/envs/cls/bin/python -m cosyne2027.encoder_similarity
+Writes cosyne2027/data/encoder_similarity.json for fig_encoder.py. CPU only;
+grid codes are computed per position (eval_unique_radius.grid_code_batch),
+so the 12 GB scaffold is never loaded.
+
+Three representations of a scaffold position: the smoothed grid code (434-d,
+lambdas 11/12/13, fwhm 0.25), d0_base's trained encoder applied to it, and an
+untrained encoder of the same architecture (create_encoder, torch seed 0,
+same gain). For each distance d = 0..D_MAX, N_REF reference positions at
+least BORDER cells from the scaffold edge are paired with an integer offset
+whose Euclidean length rounds to d, uniform over all such offsets; the curve
+is the mean and SD over those pairs of the raw cosine similarity. Raw, not
+mean-centred: it is what the attractor compares. (An untrained encoder maps
+every position to nearly one vector, so its raw cosine sits near 1; centred,
+it would retrace the grid-code curve.)
+"""
+import argparse
+import json
+from pathlib import Path
+
+import numpy as np
+import torch
+
+from encoder_training.eval_unique_radius import grid_code_batch
+from encoder_training.models import create_encoder
+from hopfield_nav.encoder_io import load_encoder
+
+HERE = Path(__file__).resolve().parent
+ENCODER = ("/orcd/pool/003/jackking/cls_runs/sweeps/w52_attract_fwhm/"
+           "001_att0.5_seed=43/encoder_final.pt")
+LAMBDAS = [11, 12, 13]
+FWHM = 0.25
+NPOS = 11 * 12 * 13
+D_MAX = 100
+N_REF = 2000
+BORDER = 150
+
+
+@torch.no_grad()
+def embed(encoder, xs, ys, batch=8192):
+    out = []
+    for i in range(0, len(xs), batch):
+        g = torch.from_numpy(grid_code_batch(LAMBDAS, xs[i:i + batch],
+                                             ys[i:i + batch], FWHM))
+        out.append(encoder(g).numpy())
+    return np.concatenate(out)
+
+
+def unit(v):
+    return v / np.linalg.norm(v, axis=1, keepdims=True)
+
+
+def offsets_at(d):
+    """All integer offsets whose Euclidean length rounds to d."""
+    r = np.arange(-d - 1, d + 2)
+    dx, dy = np.meshgrid(r, r, indexing="ij")
+    keep = np.rint(np.hypot(dx, dy)) == d
+    return np.stack([dx[keep], dy[keep]], axis=1)
+
+
+def similarity_curves(encoders, rng):
+    lo, hi = BORDER, NPOS - BORDER - 1
+    stats = {name: {"mean": [], "sd": []} for name in ["grid code", *encoders]}
+    for d in range(D_MAX + 1):
+        ref = rng.integers(lo, hi + 1, size=(N_REF, 2))
+        offs = offsets_at(d)
+        other = ref + offs[rng.integers(0, len(offs), N_REF)]
+        g1 = unit(grid_code_batch(LAMBDAS, ref[:, 0], ref[:, 1], FWHM))
+        g2 = unit(grid_code_batch(LAMBDAS, other[:, 0], other[:, 1], FWHM))
+        reps = {"grid code": (g1, g2)}
+        for name, enc in encoders.items():
+            reps[name] = (embed(enc, ref[:, 0], ref[:, 1]),
+                          embed(enc, other[:, 0], other[:, 1]))
+        for name, (a, b) in reps.items():
+            c = np.sum(a * b, axis=1)
+            stats[name]["mean"].append(float(c.mean()))
+            stats[name]["sd"].append(float(c.std()))
+    return stats
+
+
+def main():
+    p = argparse.ArgumentParser()
+    p.add_argument("--seed", type=int, default=0)
+    args = p.parse_args()
+
+    trained, cfg, _gain = load_encoder(ENCODER, "cpu")
+    trained.eval()
+    torch.manual_seed(0)
+    untrained = create_encoder(cfg, "cpu").eval()
+    rng = np.random.default_rng(args.seed)
+    curves = similarity_curves({"trained encoder": trained,
+                                "untrained encoder": untrained}, rng)
+    out = {"distances": list(range(D_MAX + 1)), "n_ref": N_REF,
+           "lambdas": LAMBDAS, "encoder": ENCODER, "curves": curves}
+    (HERE / "data").mkdir(exist_ok=True)
+    with open(HERE / "data" / "encoder_similarity.json", "w") as f:
+        json.dump(out, f)
+    for name, s in curves.items():
+        m = np.array(s["mean"])
+        print(f"{name:18s} d=1 {m[1]:.3f}  d=12 {m[12]:.3f}  d=20 {m[20]:.3f}"
+              f"  d=60 {m[60]:.3f}  d=100 {m[100]:.3f}")
+
+
+if __name__ == "__main__":
+    main()

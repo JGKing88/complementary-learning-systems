@@ -86,3 +86,23 @@ multiple per model (Agent-HaSH, naive SGD, XdG + SI), each 35 x 25 mm with a
 shared y axis, one line per arena in the fig 1 arena colors (A-E; D and E
 extend the palette with its next two slots, yellow and magenta, so the
 figure carries an arena key).
+
+## Encoder figure
+
+`encoder_similarity.py` (run as `python -m cosyne2027.encoder_similarity`)
+writes `data/encoder_similarity.json`; `fig_encoder.py` draws it. Raw
+cosine similarity against Euclidean distance (0-100 cells) for d0_base's
+trained encoder, the smoothed grid code it reads (lambdas 11/12/13) and an
+untrained encoder of the same architecture (torch seed 0, gain 100); mean
++-1 SD over 2000 position pairs per distance, CPU only. Raw rather than
+mean-centred because that is what the attractor compares: the untrained
+encoder maps every position to nearly one vector (cosine ~1 everywhere),
+and centred it would retrace the grid-code curve.
+
+No place-field inset. The clean single fields in
+`encoder_training/notebooks/explore.ipynb` (cell 5) come from the April
+encoder `encoders/run_20260422_185816` (gain 3.7) after mean-subtraction, a
+floor, a sigma-30 high-pass and a sigma-2 blur. d0_base's encoder runs at
+gain 100: its units are near-binary sign codes over large regions (98.7%
+touch the wall of a 50-cell arena), and the same recipe gives multi-blob
+patterns, not single fields.
