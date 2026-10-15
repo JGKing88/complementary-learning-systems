@@ -22,18 +22,22 @@ import json
 
 import matplotlib.pyplot as plt
 import numpy as np
+from matplotlib.patches import Rectangle
 
 import style
 
 style.apply()
 
 DATA = style.HERE / "data" / "encoder_similarity.json"
-FIG_W, FIG_H = 3.73, 1.78
+FIG_W, FIG_H = 3.73, 1.93
 AX = [0.43, 0.3, 2.2, 1.4]           # axes: left, bottom, w, h (in)
 MAPS = style.HERE / "data" / "encoder_unit_maps.npz"
 MM = 1 / 25.4
 MAP, MAP_GAP = 11 * MM, 0.9 * MM     # map side and gap (in)
-PANEL_X, PANEL_TOP = 2.8, 1.6        # side panel: left edge, top of maps (in)
+PANEL_X, PANEL_TOP = 2.8, 1.7        # side panel: left edge, top of maps (in)
+ARENA = 20                           # task arena side (cells)
+ARENA_DIAG = ARENA * np.sqrt(2)      # largest distance inside one arena
+SHADE = "#ecebe7"
 SCALE_CELLS = 50
 CURVES = {  # name: (color, lw, linestyle)
     "trained encoder": ("#a35f00", 2.0, "-"),
@@ -69,6 +73,14 @@ def main():
                 mec="none", clip_on=False, zorder=6)
     style.rich(ax, np.mean(d["lambdas"]), 0.085, [("λ", "g")])
 
+    # Distances that occur inside one task arena, bracketed above the axes
+    ax.axvspan(0, ARENA_DIAG, color=SHADE, lw=0, zorder=0)
+    yb = 1.075
+    ax.plot([0, 0, ARENA_DIAG, ARENA_DIAG], [yb - 0.025, yb, yb, yb - 0.025],
+            color=style.INK_2, lw=0.6, clip_on=False, solid_joinstyle="miter")
+    ax.text(ARENA_DIAG / 2, yb + 0.02, "one arena", ha="center", va="bottom",
+            color=style.INK_2, clip_on=False)
+
     ax.set_xlim(0, x[-1])
     ax.set_ylim(0, 1.03)
     ax.set_xticks([0, 50, 100])
@@ -99,6 +111,12 @@ def unit_panel(fig):
             sp.set_visible(True)
             sp.set_linewidth(0.4)
             sp.set_color(style.INK_2)
+        if k == 0:
+            # One task arena, centred on this unit's field peak (the centre
+            # of mass is pulled off it by faint specks elsewhere)
+            cx, cy = np.unravel_index(np.argmax(m), m.shape)
+            a.add_patch(Rectangle((cx - ARENA / 2, cy - ARENA / 2), ARENA,
+                                  ARENA, fc="none", ec="white", lw=0.6))
     width = n_cols * MAP + (n_cols - 1) * MAP_GAP
     fig.text((PANEL_X + width / 2) / FIG_W, (PANEL_TOP + 0.03) / FIG_H,
              "example units", ha="center", va="bottom", fontsize=8,
@@ -111,6 +129,16 @@ def unit_panel(fig):
                               solid_capstyle="butt"))
     fig.text((PANEL_X + bar + 0.04) / FIG_W, yb / FIG_H,
              f"{SCALE_CELLS} cells", ha="left", va="center", fontsize=8,
+             color=style.INK_2)
+    # Key for the arena outline, on the line below
+    yk, sq = yb - 0.13, 0.09
+    fig.add_artist(Rectangle(((PANEL_X + bar / 2 - sq / 2) / FIG_W,
+                              (yk - sq / 2) / FIG_H), sq / FIG_W, sq / FIG_H,
+                             transform=fig.transFigure,
+                             fc=plt.get_cmap("viridis")(0.0), ec="white",
+                             lw=0.9))
+    fig.text((PANEL_X + bar + 0.04) / FIG_W, yk / FIG_H,
+             f"arena ({ARENA} cells)", ha="left", va="center", fontsize=8,
              color=style.INK_2)
 
 

@@ -118,5 +118,10 @@ partition of the window is shown, each normalised to its own peak. For the
 caption: the raw units are near-binary +-0.034 sign patterns over large
 regions; these are the 9% with one dominant field after processing. (The
 notebook's own single fields came from the April gain-3.7 encoder
-`encoders/run_20260422_185816`.) The panel sits beside the plot because the
+`encoders/run_20260422_185816`.) Arena scale: the shaded band and "one arena" bracket on the plot cover
+distances up to a 20-cell arena's diagonal (28 cells), where the trained
+encoder's similarity stays between ~0.3 and 1, so the recall direction
+toward a stored goal is defined from anywhere in an arena; the first map
+carries a 20-cell arena outline centred on its field peak. The panel sits
+beside the plot because the
 axis-aligned grid code fills the axes' empty space.
