@@ -5,31 +5,41 @@ Replaces the `analysis/phase_decoding` results voided by
 
 ## Summary
 
-- Both trained RNNs hold explore versus exploit (goal in memory or not) as an
-  abstract variable by Bernardi's criteria, and it survives every control.
-  With time, distance to goal and the Hopfield readout length `||q||` all
-  matched, a decoder trained on one arena reads phase in held-out arenas at
-  0.82 (d0_base) and 0.80 (task3r), against a geometric null at or below 0.59.
-  The parallelism scores are 0.63 and 0.74, against a shuffle null of 0.01.
-  The policy input, with or without `||q||`, reaches 0.54 to 0.67 on the same
-  rows, and random-weight networks reach 0.54 to 0.61.
-- Without the `||q||` control the result is much less specific. `||q||` alone
-  decodes phase across arenas at 0.92 to 0.93, so most of the phase signal in
-  `h` under ordinary matching is the readout length. What survives matching
-  the current `||q||` is past `||q||` (section 2.5): for both models, a linear
-  decoder on the `||q||` history of the trial reads phase across arenas as
-  well as `h` does (0.97 to 0.98 vs 0.97), `h` adds nothing on top of it, and
-  `h` with that history regressed out falls to 0.53 to 0.56. The RNN's
-  abstract explore/exploit variable is, in decodable content, the memory
-  readout length integrated over the trial.
-- At the agent's own switch (task3r, oracle write at first arrival), the
-  post-store state is abstract (one-arena CCGP 0.88 with everything matched)
-  and persists for at least 40 steps.
-- The arrival itself, with no write (sham), also sets an abstract state in `h`
-  (one-arena CCGP 0.96, parallelism 0.98) that the input does not carry (0.50
-  to 0.58). It is not drift with time since the trial began (0.94 with that
-  time matched). It decays over about 35 steps but stays well away from the
-  pre-arrival level for at least 40.
+The claim this supports: the memory circuit supplies a recall-strength signal,
+and a trained recurrent network turns it into an arena-invariant
+explore/exploit representation with the geometric signatures of abstraction
+reported in hippocampus and PFC (Bernardi et al. 2020). The representation is
+absent from the raw input and from untrained networks, it integrates recall
+strength over the trial, and the same network also builds an abstract task
+state the circuit never signals.
+
+- **Abstract, and not present in the input.** Both trained RNNs hold explore
+  versus exploit (goal in memory or not) along one arena-invariant direction.
+  With behaviour matched, a decoder trained on one arena reads phase in
+  held-out arenas at 0.88 to 0.91, against a geometric null at or below 0.60.
+  In the raw policy input phase is not abstract (parallelism 0.07 to 0.09;
+  0.61 from the current input, 0.75 to 0.80 from a 20-step window).
+  Random-weight networks given the same input do not form it (0.53 to 0.61).
+- **Its content is recall strength over the trial.** The arena-invariant
+  part of the input is the length of the Hopfield readout, `||q||`, a
+  nonlinear feature the network has to compute. `||q||` alone decodes phase
+  across arenas at 0.93; its history over the trial (20-step window plus
+  running mean, max and min) decodes at 0.97 to 0.98, matching `h` (0.97).
+  `h` adds nothing on top of that history, and `h` with it regressed out
+  falls to 0.53 to 0.56 (section 2.5). d0_base and task3r agree within 0.01.
+  This is the representational side of the known policy result that the
+  explore/exploit switch is a gate on `||q||`.
+- **The network also builds a state the circuit does not supply.** In task3r
+  sham trials (the agent reaches the goal and is teleported, memory unchanged)
+  `h` keeps an abstract record of the arrival (section 2.6). More than 30
+  steps later, when the 20-step input window no longer contains the event,
+  `h` still separates before from after arrival across arenas at 0.92 (one
+  training arena) to 0.95 (50), against 0.56 to 0.78 for the input window
+  and chance for `||q||`, with time since the trial began matched. It lasts
+  at least the 60 steps recorded.
+- **Not yet shown:** whether abstraction is specific to this circuit. A
+  network trained on the same task without the memory circuit (the
+  `rollout_rnn.py` baseline) is the comparison that would say so.
 
 ## 1. Method
 
@@ -255,12 +265,59 @@ measure. The residual of 0.53 to 0.56 is all that is left of `h` beyond the
 history. Dilution could make it understate what `h` holds on the ambiguous
 rows, but the undiluted incremental measure shows no gain from `h` either.
 
-This reframes 2.1 and 2.2. The trained RNNs do hold phase in an arena-invariant
-format that random-weight networks do not, but what they hold is the memory
-readout length accumulated over the trial, not a variable separate from it.
-Definition B's sham arrival trace was not tested this way.
+This says what 2.1 and 2.2's abstract variable contains, not that it is
+absent. Phase is not arena-invariant in the raw input (parallelism 0.07 to
+0.09); the network computes the readout length, a nonlinear feature, integrates
+it over the trial and holds it along a fixed direction. Random-weight networks
+with the same input do not.
 
-### 2.6 Figures
+### 2.6 Arrival memory without a memory write (definition B, sham)
+
+In sham trials nothing in memory changes at the first arrival; the goal
+reward enters the input for a step and the agent is teleported. `history.py`
+asks how long `h` keeps this, against input windows. Rows matched on time
+since the trial began and distance to goal (`matched_abs_t`; `matched` gives
+the same picture). Decoders trained on 1 / 10 / 50 arenas.
+
+All post-arrival rows:
+
+| feature | 1 | 10 | 50 |
+|---|---|---|---|
+| `h` | 0.94 | 0.96 | 0.96 |
+| current input | 0.58 | 0.61 | 0.61 |
+| input, last 20 steps | 0.67 | 0.82 | 0.84 |
+| `||q||`, current or history | 0.50 | 0.51 | 0.52 |
+
+The 20-step window contains the reward event for the first 20 steps after
+arrival, so this table favours it. The fair test drops post-arrival rows
+closer than 21 (or 31) steps to the arrival, re-matches, and trains and tests
+every decoder on the remaining rows only:
+
+| post rows kept | `h` | input, last 20 steps | + `||q||` since start | current input |
+|---|---|---|---|---|
+| > 20 steps after arrival | 0.92 / 0.95 / 0.95 | 0.58 / 0.74 / 0.78 | 0.57 / 0.75 / 0.78 | 0.59 / 0.63 / 0.64 |
+| > 30 steps after arrival | 0.92 / 0.94 / 0.95 | 0.56 / 0.74 / 0.78 | 0.56 / 0.75 / 0.78 | 0.59 / 0.64 / 0.65 |
+
+By steps since arrival (decoder trained on 50 arenas, rows > 30 steps): `h`
+0.96 at 31 to 45 and 0.94 at 46 to 60; input window 0.79 and 0.76.
+
+`h` keeps the arrival for at least the 60 steps recorded, in a format that
+generalises from one arena (0.92). The input window keeps 0.74 to 0.78 with
+many training arenas and 0.56 from one; that residue is most likely the
+agent's own changed behaviour after the arrival coming back as input
+(previous action, displacement, view), and it is barely arena-invariant.
+Neither memory (`||q||` at chance) nor a clock from the trial start (matched)
+explains `h`. The arrival is a task event the memory circuit does not signal;
+the network builds an abstract state from it.
+
+Store trials, for comparison: `||q||` history decodes post-store rows at 0.98
+and `h` at 0.998, as in definition A.
+
+Scope: task3r only (d0_base never trained with a mid-episode arrival).
+Results: `analysis_v3_history_b/`, `analysis_v3_history_b_late21/`,
+`analysis_v3_history_b_late31/`.
+
+### 2.7 Figures
 
 - `analysis_v3_all/fig_A_d0_A_matched_all.pdf`, `fig_A_t3_A_matched_all.pdf`:
   CCGP against training arenas for `h`, `x`, random-weight `h` and `||q||`,
