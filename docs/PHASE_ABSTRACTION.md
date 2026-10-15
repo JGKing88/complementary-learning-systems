@@ -16,8 +16,12 @@ Replaces the `analysis/phase_decoding` results voided by
 - Without the `||q||` control the result is much less specific. `||q||` alone
   decodes phase across arenas at 0.92 to 0.93, so most of the phase signal in
   `h` under ordinary matching is the readout length. What survives matching
-  `||q||` is the part the RNN builds over time rather than reads off its
-  current input.
+  the current `||q||` is past `||q||` (section 2.5): for both models, a linear
+  decoder on the `||q||` history of the trial reads phase across arenas as
+  well as `h` does (0.97 to 0.98 vs 0.97), `h` adds nothing on top of it, and
+  `h` with that history regressed out falls to 0.53 to 0.56. The RNN's
+  abstract explore/exploit variable is, in decodable content, the memory
+  readout length integrated over the trial.
 - At the agent's own switch (task3r, oracle write at first arrival), the
   post-store state is abstract (one-arena CCGP 0.88 with everything matched)
   and persists for at least 40 steps.
@@ -210,7 +214,53 @@ trial. In that selection, time since the last teleport is unmatched
 (behaviour-only 0.89), but the RNN can only know that time by registering the
 arrival. The state is an arrival trace.
 
-### 2.4 Figures
+### 2.5 Is the part beyond `||q||` just past `||q||`? (definition A)
+
+Matching equalises only the current `||q||`; the decoders see one timestep.
+`analysis/phase_decoding/history.py` asks whether the input history accounts
+for what `h` adds. Rows: `matched` (time since teleport and distance to goal),
+all of them. Three measures, each as cross-arena decoding trained on 1 / 10 /
+50 arenas:
+
+- input-history baselines: `||q||` or `x` over the last 5, 10 or 20 steps of
+  the trial with a lag mask; `q_hist` is the 20-step `||q||` window plus the
+  running mean, max and min of `||q||` since the trial began;
+- incremental: a spline basis of the `||q||` history alone, then the basis
+  plus `h`; the gain is what `h` adds, on every row;
+- residual: `h` minus its ridge prediction from that basis. This measures the
+  same thing as matching, and rows where `||q||` already settles the phase
+  carry no residual signal, which pulls it toward 0.5.
+
+Results at 50 training arenas (1 arena in brackets):
+
+| | task3r | d0_base |
+|---|---|---|
+| `h` | 0.97 (0.89) | 0.97 (0.95) |
+| current `||q||` | 0.93 (0.92) | 0.93 (0.93) |
+| `||q||`, last 5 steps | 0.95 (0.94) | 0.96 (0.95) |
+| `||q||`, last 20 steps | 0.95 (0.94) | 0.96 (0.95) |
+| `||q||` history incl. since-start summaries | 0.97 (0.96) | 0.98 (0.96) |
+| `x`, last 20 steps, no norms | 0.80 (0.63) | 0.75 (0.63) |
+| basis of current `||q||` → + `h` | 0.93 → 0.97 | 0.93 → 0.97 |
+| basis of `||q||` history → + `h` | 0.97 → 0.97 | 0.98 → 0.97 |
+| `h` residual given current `||q||` | 0.72 | 0.73 |
+| `h` residual given `||q||` history | 0.56 | 0.53 |
+
+Given the current `||q||`, `h` adds 0.04; given the `||q||` history it adds
+nothing. The history of the readout length decodes phase across arenas as
+well as `h` from 50 training arenas and better from one (0.96 vs 0.89 for
+task3r). Most of it is within 5 steps; the since-start summaries (running
+mean and maximum) add the rest. The two models agree to within 0.01 on every
+measure. The residual of 0.53 to 0.56 is all that is left of `h` beyond the
+history. Dilution could make it understate what `h` holds on the ambiguous
+rows, but the undiluted incremental measure shows no gain from `h` either.
+
+This reframes 2.1 and 2.2. The trained RNNs do hold phase in an arena-invariant
+format that random-weight networks do not, but what they hold is the memory
+readout length accumulated over the trial, not a variable separate from it.
+Definition B's sham arrival trace was not tested this way.
+
+### 2.6 Figures
 
 - `analysis_v3_all/fig_A_d0_A_matched_all.pdf`, `fig_A_t3_A_matched_all.pdf`:
   CCGP against training arenas for `h`, `x`, random-weight `h` and `||q||`,
