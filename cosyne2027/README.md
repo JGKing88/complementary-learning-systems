@@ -105,10 +105,14 @@ mean-centred because that is what the attractor compares: the untrained
 encoder maps every position to nearly one vector (cosine ~1 everywhere),
 and centred it would retrace the grid-code curve.
 
-No place-field inset. The clean single fields in
-`encoder_training/notebooks/explore.ipynb` (cell 5) come from the April
-encoder `encoders/run_20260422_185816` (gain 3.7) after mean-subtraction, a
-floor, a sigma-30 high-pass and a sigma-2 blur. d0_base's encoder runs at
-gain 100: its units are near-binary sign codes over large regions (98.7%
-touch the wall of a 50-cell arena), and the same recipe gives multi-blob
-patterns, not single fields.
+Side panel, "example units": six of d0_base's trained units (RandomState(11),
+the notebook's draw, not selected) over a 200 x 200-cell window, processed
+as in `encoder_training/notebooks/explore.ipynb` cell 5: mean-subtract,
+ReLU, sigma-30 high-pass, sigma-2 blur (`encoder_similarity.unit_maps`,
+saved to `data/encoder_unit_maps.npz`). The caption should say so: the raw
+units are near-binary +-0.034 sign patterns over large regions, and the
+processing makes their positive regions graded fields. They are multi-field
+at this scale, like place cells in large environments. (The single compact
+fields in the notebook's own output came from the April gain-3.7 encoder
+`encoders/run_20260422_185816`.) The panel sits beside the plot because the
+axis-aligned grid code fills the axes' empty space.

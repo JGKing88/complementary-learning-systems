@@ -30,6 +30,7 @@ from pathlib import Path
 
 import numpy as np
 import torch
+from scipy.ndimage import gaussian_filter
 
 from encoder_training.eval_unique_radius import grid_code_batch
 from encoder_training.models import create_encoder
@@ -44,6 +45,12 @@ NPOS = 11 * 12 * 13
 D_MAX = 100
 N_REF = 2000
 BORDER = 150
+# Example units: explore.ipynb cell 5's view (window, unit draw, processing)
+FIELD_WINDOW = 200
+FIELD_SEED = 11
+N_UNITS = 6
+HIGHPASS_SIGMA = 30.0
+BLUR_SIGMA = 2.0
 
 
 @torch.no_grad()
@@ -87,6 +94,30 @@ def similarity_curves(encoders, rng):
     return stats
 
 
+def unit_maps(encoder):
+    """Six trained units over a FIELD_WINDOW-cell window at the scaffold centre,
+    processed as in explore.ipynb cell 5: subtract the unit's mean, ReLU,
+    subtract a sigma-30 Gaussian blur (high-pass), blur at sigma 2. The raw
+    units are near-binary +-0.034 sign patterns; the processing turns their
+    positive regions into graded fields. Units are drawn with
+    RandomState(FIELD_SEED), the notebook's draw, not selected for looks.
+    Returns (n_units, W, W) maps indexed [unit, x, y] and the unit ids."""
+    s = FIELD_WINDOW
+    c0 = NPOS // 2 - s // 2
+    xs, ys = np.meshgrid(np.arange(c0, c0 + s), np.arange(c0, c0 + s),
+                         indexing="ij")
+    z = embed(encoder, xs.ravel(), ys.ravel()).reshape(s, s, -1)
+    units = np.random.RandomState(FIELD_SEED).choice(z.shape[2], N_UNITS,
+                                                     replace=False)
+    maps = []
+    for u in units:
+        x = z[:, :, u].astype(np.float64)
+        x = np.maximum(x - x.mean(), 0.0)
+        x = x - gaussian_filter(x, HIGHPASS_SIGMA)
+        maps.append(gaussian_filter(x, BLUR_SIGMA))
+    return np.array(maps, dtype=np.float32), units
+
+
 def main():
     p = argparse.ArgumentParser()
     p.add_argument("--seed", type=int, default=0)
@@ -104,6 +135,10 @@ def main():
     (HERE / "data").mkdir(exist_ok=True)
     with open(HERE / "data" / "encoder_similarity.json", "w") as f:
         json.dump(out, f)
+    maps, units = unit_maps(trained)
+    np.savez_compressed(HERE / "data" / "encoder_unit_maps.npz", maps=maps,
+                        units=units, window=FIELD_WINDOW)
+    print("unit maps:", units.tolist(), maps.shape)
     for name, s in curves.items():
         m = np.array(s["mean"])
         print(f"{name:18s} d=1 {m[1]:.3f}  d=12 {m[12]:.3f}  d=20 {m[20]:.3f}"
