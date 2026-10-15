@@ -11,11 +11,10 @@ untrained encoder of the same architecture (thin, gray, dashed). Bands are
 translation-invariant, so its curve is exact and has no band. Triangles mark
 the grid periods (11, 12, 13 cells).
 
-Side panel: six trained units over a 200 x 200-cell window, processed as in
-encoder_training/notebooks/explore.ipynb (mean-subtract, ReLU, sigma-30
-high-pass, sigma-2 blur) plus a final ReLU at 0.6 of each map's peak (see
-encoder_similarity.unit_maps); viridis, each map normalised to its own peak,
-with a 50-cell scale bar. It sits beside the plot rather than
+Side panel: six trained units with one dominant place field in a 100-cell
+arena (151 of 1024 units qualify; selection and processing in
+encoder_similarity.unit_maps), viridis, each map normalised to its own
+peak, with a 50-cell scale bar. It sits beside the plot rather than
 inside it: along an axis the grid code oscillates up to ~0.65 at every
 distance, so no empty region inside the axes is tall enough.
 """
