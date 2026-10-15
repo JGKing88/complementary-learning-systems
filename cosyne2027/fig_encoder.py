@@ -13,8 +13,9 @@ the grid periods (11, 12, 13 cells).
 
 Side panel: six trained units over a 200 x 200-cell window, processed as in
 encoder_training/notebooks/explore.ipynb (mean-subtract, ReLU, sigma-30
-high-pass, sigma-2 blur; see encoder_similarity.unit_maps), one shared
-viridis scale, with a 50-cell scale bar. It sits beside the plot rather than
+high-pass, sigma-2 blur) plus a final ReLU at 0.6 of each map's peak (see
+encoder_similarity.unit_maps); viridis, each map normalised to its own peak,
+with a 50-cell scale bar. It sits beside the plot rather than
 inside it: along an axis the grid code oscillates up to ~0.65 at every
 distance, so no empty region inside the axes is tall enough.
 """
@@ -83,15 +84,15 @@ def main():
 def unit_panel(fig):
     data = np.load(MAPS)
     maps, window = data["maps"], int(data["window"])
-    vmax = float(maps.max())
     for k, m in enumerate(maps):
         row, col = divmod(k, 3)
         x = PANEL_X + col * (MAP + MAP_GAP)
         y = PANEL_TOP - (row + 1) * MAP - row * MAP_GAP
         a = fig.add_axes([x / FIG_W, y / FIG_H, MAP / FIG_W, MAP / FIG_H])
         # maps are [x][y]; show x across and y up
-        a.imshow(m.T, origin="lower", cmap="viridis", vmin=0, vmax=vmax,
-                 interpolation="bilinear")
+        # Each map normalised to its own peak, as rate maps usually are
+        a.imshow(m.T / m.max(), origin="lower", cmap="viridis", vmin=0,
+                 vmax=1, interpolation="bilinear")
         a.set_xticks([])
         a.set_yticks([])
         for sp in a.spines.values():

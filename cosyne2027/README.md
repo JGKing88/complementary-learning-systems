@@ -107,9 +107,12 @@ and centred it would retrace the grid-code curve.
 
 Side panel, "example units": six of d0_base's trained units (RandomState(11),
 the notebook's draw, not selected) over a 200 x 200-cell window, processed
-as in `encoder_training/notebooks/explore.ipynb` cell 5: mean-subtract,
-ReLU, sigma-30 high-pass, sigma-2 blur (`encoder_similarity.unit_maps`,
-saved to `data/encoder_unit_maps.npz`). The caption should say so: the raw
+as in `encoder_training/notebooks/explore.ipynb` cell 5 (mean-subtract,
+ReLU, sigma-30 high-pass, sigma-2 blur), then a final ReLU at 0.6 of each
+map's peak, which leaves 16% of the window active instead of 43%
+(`encoder_similarity.unit_maps`, saved to `data/encoder_unit_maps.npz`);
+each map is shown normalised to its own peak. A stronger high-pass (sigma
+10-15) gives ridges along region borders rather than fields. The caption should say so: the raw
 units are near-binary +-0.034 sign patterns over large regions, and the
 processing makes their positive regions graded fields. They are multi-field
 at this scale, like place cells in large environments. (The single compact

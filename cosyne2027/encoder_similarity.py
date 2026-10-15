@@ -51,6 +51,7 @@ FIELD_SEED = 11
 N_UNITS = 6
 HIGHPASS_SIGMA = 30.0
 BLUR_SIGMA = 2.0
+FIELD_THRESHOLD = 0.6     # final ReLU at this fraction of the unit's max
 
 
 @torch.no_grad()
@@ -97,7 +98,10 @@ def similarity_curves(encoders, rng):
 def unit_maps(encoder):
     """Six trained units over a FIELD_WINDOW-cell window at the scaffold centre,
     processed as in explore.ipynb cell 5: subtract the unit's mean, ReLU,
-    subtract a sigma-30 Gaussian blur (high-pass), blur at sigma 2. The raw
+    subtract a sigma-30 Gaussian blur (high-pass), blur at sigma 2; then a
+    final ReLU at FIELD_THRESHOLD of the map's maximum, which keeps the
+    peaks (16% of the window active instead of 43%). A stronger high-pass
+    (sigma 10-15) gives ridges along region borders, not fields. The raw
     units are near-binary +-0.034 sign patterns; the processing turns their
     positive regions into graded fields. Units are drawn with
     RandomState(FIELD_SEED), the notebook's draw, not selected for looks.
@@ -114,7 +118,8 @@ def unit_maps(encoder):
         x = z[:, :, u].astype(np.float64)
         x = np.maximum(x - x.mean(), 0.0)
         x = x - gaussian_filter(x, HIGHPASS_SIGMA)
-        maps.append(gaussian_filter(x, BLUR_SIGMA))
+        x = gaussian_filter(x, BLUR_SIGMA)
+        maps.append(np.maximum(x - FIELD_THRESHOLD * x.max(), 0.0))
     return np.array(maps, dtype=np.float32), units
 
 
