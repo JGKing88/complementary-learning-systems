@@ -4,11 +4,12 @@ Run: ~/.conda/envs/cls/bin/python cosyne2027/fig_encoder.py
 Reads cosyne2027/data/encoder_similarity.json (encoder_similarity.py).
 
 Main plot: raw cosine similarity between two positions' representations
-against their Euclidean distance, for the trained encoder (thick, the
+against their axis-aligned distance, for the trained encoder (thick, the
 embedding net's hue in fig 2), the grid code it reads (medium) and an
 untrained encoder of the same architecture (thin, gray, dashed). Bands are
-+-1 SD over the 2000 position pairs at each distance. Triangles mark the grid
-periods (11, 12, 13 cells).
++-1 SD over the 2000 position pairs at each distance; the grid code is
+translation-invariant, so its curve is exact and has no band. Triangles mark
+the grid periods (11, 12, 13 cells).
 """
 import json
 
@@ -28,8 +29,8 @@ CURVES = {  # name: (color, lw, linestyle)
     "untrained encoder": ("#b5b4af", 0.9, (0, (3, 2))),
 }
 # Label anchors in data coordinates: (x, y, ha)
-LABEL_AT = {"trained encoder": (14, 0.78, "left"),
-            "grid code": (100, 0.33, "right"),
+LABEL_AT = {"trained encoder": (98, 0.1, "right"),
+            "grid code": (14.5, 0.92, "left"),
             "untrained encoder": (100, 0.91, "right")}
 
 

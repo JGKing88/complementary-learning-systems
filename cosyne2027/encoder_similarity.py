@@ -9,9 +9,17 @@ Three representations of a scaffold position: the smoothed grid code (434-d,
 lambdas 11/12/13, fwhm 0.25), d0_base's trained encoder applied to it, and an
 untrained encoder of the same architecture (create_encoder, torch seed 0,
 same gain). For each distance d = 0..D_MAX, N_REF reference positions at
-least BORDER cells from the scaffold edge are paired with an integer offset
-whose Euclidean length rounds to d, uniform over all such offsets; the curve
-is the mean and SD over those pairs of the raw cosine similarity. Raw, not
+least BORDER cells from the scaffold edge are paired with a position d cells
+away along x or y (an axis-aligned offset, uniform over the four); the
+curve is the mean and SD over those pairs of the raw cosine similarity.
+Axis-aligned, as in encoder_training/notebooks/explore.ipynb's slice: the
+grid code is a 2-D lattice code, so its similarity depends on direction,
+and averaging over all directions at a Euclidean distance mixes a finite,
+ring-dependent set of lattice offsets into a jagged curve that dilutes the
+lambda bump (0.25 against 0.91 along an axis). The grid code is
+translation-invariant (each module's bump shifts with position), so its
+curve is exact and its SD is zero; the encoders' SD is spread across
+positions. Raw, not
 mean-centred: it is what the attractor compares. (An untrained encoder maps
 every position to nearly one vector, so its raw cosine sits near 1; centred,
 it would retrace the grid-code curve.)
@@ -53,11 +61,10 @@ def unit(v):
 
 
 def offsets_at(d):
-    """All integer offsets whose Euclidean length rounds to d."""
-    r = np.arange(-d - 1, d + 2)
-    dx, dy = np.meshgrid(r, r, indexing="ij")
-    keep = np.rint(np.hypot(dx, dy)) == d
-    return np.stack([dx[keep], dy[keep]], axis=1)
+    """The axis-aligned offsets of length d: (+-d, 0) and (0, +-d)."""
+    if d == 0:
+        return np.zeros((1, 2), dtype=int)
+    return np.array([[d, 0], [-d, 0], [0, d], [0, -d]])
 
 
 def similarity_curves(encoders, rng):

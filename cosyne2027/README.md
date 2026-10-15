@@ -91,10 +91,16 @@ figure carries an arena key).
 
 `encoder_similarity.py` (run as `python -m cosyne2027.encoder_similarity`)
 writes `data/encoder_similarity.json`; `fig_encoder.py` draws it. Raw
-cosine similarity against Euclidean distance (0-100 cells) for d0_base's
-trained encoder, the smoothed grid code it reads (lambdas 11/12/13) and an
-untrained encoder of the same architecture (torch seed 0, gain 100); mean
-+-1 SD over 2000 position pairs per distance, CPU only. Raw rather than
+cosine similarity against axis-aligned distance (0-100 cells, offsets along
+x or y) for d0_base's trained encoder, the smoothed grid code it reads
+(lambdas 11/12/13) and an untrained encoder of the same architecture (torch
+seed 0, gain 100); mean +-1 SD over 2000 position pairs per distance, CPU
+only. The grid code is translation-invariant, so its curve is exact (SD 0,
+no band): 0.91 at lambda = 12, 0.70 at 24, partial realignments out to 100.
+Axis-aligned rather than all-direction Euclidean: averaged over a distance
+ring, the lattice code's direction dependence gives a jagged curve (real
+structure, not sampling: the exact ring average is as rough) that dilutes
+the lambda bump to 0.25. Raw rather than
 mean-centred because that is what the attractor compares: the untrained
 encoder maps every position to nearly one vector (cosine ~1 everywhere),
 and centred it would retrace the grid-code curve.
