@@ -55,6 +55,34 @@ def test_window_finds_phase_at_a_past_lag():
     assert a_now < 0.65 and a_win > 0.95
 
 
+def test_lag_resolved_tracks_a_trace_that_fades():
+    """B-style trials: arrival at step 20, then 40 post steps. z carries a
+    post-arrival signal for 10 steps only."""
+    rng = np.random.default_rng(3)
+    rows = {k: [] for k in ("trial", "t", "arena", "phase", "at_goal_in")}
+    tid = 0
+    for a in range(10):
+        for _ in range(10):
+            T = 61
+            t = np.arange(T)
+            rows["trial"].append(np.full(T, tid))
+            rows["t"].append(t)
+            rows["arena"].append(np.full(T, a))
+            rows["phase"].append((t > 20).astype(int))
+            rows["at_goal_in"].append(t == 20)
+            tid += 1
+    d = {k: np.concatenate(v) for k, v in rows.items()}
+    lag = hs.steps_since_arrival(d)
+    keep = ~d["at_goal_in"]
+    z = rng.standard_normal((len(lag), 5)).astype(np.float32)
+    z[:, 0] += 3.0 * ((lag >= 1) & (lag <= 10))
+    r = hs.lag_resolved(z[keep], d["phase"][keep], d["arena"][keep], lag[keep],
+                        bins=[[1, 10], [21, 40]], k=5, n_rep=3, n_test=5, rng=rng,
+                        n_jobs=1, C=1.0)
+    early, late = r["balanced_mean"]
+    assert early > late + 0.25
+
+
 def _h(rng, shift):
     """h = smooth function of q + noise (+ an independent phase axis in
     h_extra). q = U[0,1] + shift * phase, so ``shift`` sets how much q alone

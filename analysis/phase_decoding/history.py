@@ -183,6 +183,91 @@ def cross_arena(z, y, arena, *, reg, mode, k_train, n_rep, n_test, rng, n_jobs,
                      "values": scores[keys == k].tolist()} for k in k_train}
 
 
+# ------------------------------------------------- definition B: time since arrival
+
+def steps_since_arrival(data: dict) -> np.ndarray:
+    """Per row, steps since the trial's first arrival (the at-goal input step),
+    or -1 for rows at or before it."""
+    trial, t, arr = data["trial"], data["t"], data["at_goal_in"].astype(bool)
+    first = {}
+    for tid, tt in zip(trial[arr], t[arr]):
+        first.setdefault(int(tid), int(tt))
+    t_arr = np.array([first.get(int(k), -1) for k in trial])
+    lag = np.where((t_arr >= 0) & (t > t_arr), t - t_arr, -1)
+    # phase 1 is exactly "after the first arrival"
+    assert ((lag > 0) == (data["phase"] == 1)).all()
+    return lag
+
+
+def _lag_job(z, y, arena, lag, tr_ar, te_ar, bins, C):
+    mtr, mte = np.isin(arena, tr_ar), np.isin(arena, te_ar)
+    sc = StandardScaler().fit(z[mtr])
+    clf = LogisticRegression(C=C, max_iter=2000, class_weight="balanced")
+    clf.fit(sc.transform(z[mtr]), y[mtr])
+    pred = clf.predict(sc.transform(z[mte]))
+    yt, lt = y[mte], lag[mte]
+    tnr = float((pred[yt == 0] == 0).mean())
+    out = []
+    for lo, hi in bins:
+        m = (yt == 1) & (lt >= lo) & (lt <= hi)
+        out.append((float((pred[m] == 1).mean()) if m.any() else np.nan, int(m.sum())))
+    return tnr, out
+
+
+def lag_resolved(z, y, arena, lag, *, bins, k, n_rep, n_test, rng, n_jobs, C) -> dict:
+    """Train on k arenas, test on held-out arenas. Balanced accuracy per bin of
+    steps since arrival: (recall of post-arrival rows in the bin + recall of
+    pre-arrival rows) / 2."""
+    arenas = np.unique(arena)
+    n_te = min(n_test, len(arenas) - k)
+    jobs = []
+    for _ in range(n_rep):
+        p = rng.permutation(arenas)
+        jobs.append(delayed(_lag_job)(z, y, arena, lag, p[:k], p[k:k + n_te], bins, C))
+    res = Parallel(n_jobs=n_jobs)(jobs)
+    tnr = np.array([r[0] for r in res])
+    tpr = np.array([[b[0] for b in r[1]] for r in res])
+    n = np.array([[b[1] for b in r[1]] for r in res])
+    bal = (tpr + tnr[:, None]) / 2
+    return {"bins": [list(b) for b in bins], "pre_recall": float(tnr.mean()),
+            "balanced_mean": np.nanmean(bal, 0).tolist(),
+            "balanced_sd": np.nanstd(bal, 0, ddof=1).tolist(),
+            "n_post_rows_per_rep": n.mean(0).tolist(), "k_train": k, "n_rep": n_rep}
+
+
+def run_definition_b(name, data, meta, cfg, rng) -> dict:
+    hb = cfg["history_b"]
+    base = ~data["at_goal_in"].astype(bool)
+    lag_all = steps_since_arrival(data)
+    kw = dict(k_train=hb["k_train"], n_rep=hb["n_rep"], n_test=hb["n_test_arenas"],
+              n_jobs=cfg["n_jobs"], spline_cfg=hb["spline"], ridge_alpha=hb["ridge_alpha"],
+              C=hb["C"])
+    res = {"meta": meta, "definition": "B", "by_condition": {}}
+    for cond in hb["conditions"]:
+        res["by_condition"][cond] = {}
+        for sel in hb["selections"]:
+            idx = select(data, base & (data["condition"] == cond), sel, cfg, rng)
+            feats, _ = build_features(data, hb["windows"], idx)
+            feats["h"] = data["h"][idx]
+            y, ar, lag = data["phase"][idx], data["arena"][idx], lag_all[idx]
+            r = {"n_rows": int(len(idx)), "baselines": {}, "by_lag": {}}
+            for fname in hb["baseline_features"]:
+                r["baselines"][fname] = cross_arena(feats[fname], y, ar, reg=None,
+                                                    mode="plain", rng=rng, **kw)
+                print(f"[history-B] {name} {cond} {sel} {fname}: "
+                      f"{ {k: round(v['mean'], 3) for k, v in r['baselines'][fname].items()} }",
+                      flush=True)
+            for fname in hb["lag_features"]:
+                r["by_lag"][fname] = lag_resolved(
+                    feats[fname], y, ar, lag, bins=hb["lag_bins"], k=hb["lag_k"],
+                    n_rep=hb["n_rep"], n_test=hb["n_test_arenas"], rng=rng,
+                    n_jobs=cfg["n_jobs"], C=hb["C"])
+                print(f"[history-B] {name} {cond} {sel} by-lag {fname}: "
+                      f"{[round(v, 3) for v in r['by_lag'][fname]['balanced_mean']]}", flush=True)
+            res["by_condition"][cond][sel] = r
+    return res
+
+
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--config", required=True)
@@ -190,15 +275,19 @@ def main() -> None:
     ap.add_argument("--only", required=True)
     a = ap.parse_args()
     cfg = json.loads(Path(a.config).read_text())
-    hc = cfg["history"]
     out = Path(a.out)
     out.mkdir(parents=True, exist_ok=True)
     shutil.copy(a.config, out / "config.json")
     for name in a.only.split(","):
         run = cfg["runs"][name]
-        assert run["definition"] == "A", "history windows are defined for definition A"
         rng = np.random.default_rng([cfg["seed"], zlib.crc32(name.encode())])
         data, meta = load_run(Path(run["path"]))
+        if run["definition"] == "B":
+            res = run_definition_b(name, data, meta, cfg, rng)
+            (out / f"{name}.json").write_text(json.dumps(res, indent=1))
+            print(f"[history-B] wrote {out / (name + '.json')}", flush=True)
+            continue
+        hc = cfg["history"]
         mask = ~data["at_goal_in"].astype(bool)
         idx = select(data, mask, hc["selection"], cfg, rng)
         feats, reg = build_features(data, hc["windows"], idx)
