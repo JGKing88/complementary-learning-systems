@@ -11,6 +11,7 @@ a2: success on all arenas seen so far against update, for Agent-HaSH, naive
     Smoothed within each arena's window, never across a boundary; dashed
     lines mark the window boundaries.
 """
+import argparse
 import json
 
 import matplotlib.pyplot as plt
@@ -21,7 +22,8 @@ import style
 
 style.apply()
 
-DATA = style.HERE / "data" / "cl_results.json"
+DATA = {5: style.HERE / "data" / "cl_results.json",
+        20: style.HERE / "data" / "cl_results_n20.json"}
 FIG_W, FIG_H = 5.58, 1.95
 CURVES = ["Agent-HaSH", "XdG + SI", "Naive SGD"]
 SMOOTH = 20                     # updates in the moving average
@@ -106,20 +108,26 @@ def panel_a2(ax, models):
                     textcoords="offset points", va="center", color=style.INK)
     ax.set_xlim(0, n)
     ax.set_ylim(0, 1.02)
-    ax.xaxis.set_major_locator(MultipleLocator(WINDOW))
+    # A tick per window at N=5; every 1000 updates when windows are many
+    ax.xaxis.set_major_locator(MultipleLocator(WINDOW if n <= 5 * WINDOW
+                                               else 1000))
     ax.yaxis.set_major_locator(MultipleLocator(0.5))
     ax.set_xlabel("Update")
     ax.set_ylabel("Success, seen arenas")
 
 
 def main():
-    models = json.load(open(DATA))["models"]
+    p = argparse.ArgumentParser()
+    p.add_argument("--n_envs", type=int, default=5, choices=sorted(DATA))
+    args = p.parse_args()
+    models = json.load(open(DATA[args.n_envs]))["models"]
     fig = plt.figure(figsize=(FIG_W, FIG_H))
     ax1 = fig.add_axes([0.085, 0.21, 0.27, 0.75])
     ax2 = fig.add_axes([0.5, 0.21, 0.36, 0.75])
     panel_a1(ax1, models)
     panel_a2(ax2, models)
-    style.save(fig, "fig3_main_results")
+    style.save(fig, "fig3_main_results" + ("" if args.n_envs == 5
+                                           else f"_n{args.n_envs}"))
 
 
 if __name__ == "__main__":

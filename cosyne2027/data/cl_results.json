@@ -1,6 +1,7 @@
 {
  "T_eval": 100,
  "tail_frac": 0.2,
+ "n_envs": 5,
  "models": {
   "Naive SGD": {
    "config": "A_lr3e-4_rst0_ep1",

@@ -30,15 +30,25 @@ current-env score a[N-1, N-1] is at least 0.5, the highest mean retention on
 envs 0..N-2. Agent-HaSH: cosyne2027/run_agenthash_heldout.sh, the same
 schedule with sampled actions and no gradient training.
 """
+import argparse
 import json
 from pathlib import Path
 
 import numpy as np
 
 HERE = Path(__file__).resolve().parent
-CONTROLS = Path("/orcd/pool/003/jackking/cls_runs/histories/wave1_p")
-AGENTHASH = Path("/orcd/pool/003/jackking/cls_runs/results/cosyne2027/"
-                 "agenthash_heldout")
+RUNS = Path("/orcd/pool/003/jackking/cls_runs")
+# Arena count -> (control histories, Agent-HaSH histories, output file).
+# N=20: run_controls_n20.sh (each method's N=5 configuration only) and
+# run_agenthash_heldout.sh with N_ENVS=20.
+SOURCES = {
+    5: (RUNS / "histories/wave1_p",
+        RUNS / "results/cosyne2027/agenthash_heldout", "cl_results.json"),
+    20: (RUNS / "histories/cosyne2027_n20",
+         RUNS / "results/cosyne2027/agenthash_heldout_n20",
+         "cl_results_n20.json"),
+}
+CONTROLS, AGENTHASH, OUT_NAME = SOURCES[5]
 SEEDS = range(1, 9)
 T_EVAL = 100
 TAIL_FRAC = 0.2
@@ -146,15 +156,28 @@ def select(prefixes):
         if all(p.exists() for p in paths):
             rows[c] = summarise(paths)
     usable = {c: r for c, r in rows.items() if r["current"] >= USABLE_CURRENT}
+    if not usable:              # nothing complete (or nothing learns) yet
+        return None, rows
     best = max(usable, key=lambda c: usable[c]["retained"])
     return best, rows
 
 
 def main():
-    out = {"T_eval": T_EVAL, "tail_frac": TAIL_FRAC, "models": {},
-           "selection": {}}
+    global CONTROLS, AGENTHASH, OUT_NAME
+    p = argparse.ArgumentParser()
+    p.add_argument("--n_envs", type=int, default=5, choices=sorted(SOURCES))
+    args = p.parse_args()
+    CONTROLS, AGENTHASH, OUT_NAME = SOURCES[args.n_envs]
+    out = {"T_eval": T_EVAL, "tail_frac": TAIL_FRAC, "n_envs": args.n_envs,
+           "models": {}, "selection": {}}
     for method, prefixes in FAMILIES.items():
+        if not any(p.name.startswith(prefixes) for p in CONTROLS.glob("*.json")):
+            print(f"{method}: no histories in {CONTROLS} yet, skipped")
+            continue
         best, rows = select(prefixes)
+        if best is None:
+            print(f"{method}: no complete, usable configuration yet, skipped")
+            continue
         out["models"][method] = {"config": best, **rows[best]}
         out["selection"][method] = {
             c: {"retained": r["retained"], "current": r["current"]}
@@ -172,7 +195,7 @@ def main():
     else:
         print("Agent-HaSH histories not all present yet:", AGENTHASH)
     (HERE / "data").mkdir(exist_ok=True)
-    with open(HERE / "data" / "cl_results.json", "w") as f:
+    with open(HERE / "data" / OUT_NAME, "w") as f:
         json.dump(out, f, indent=1)
 
 
