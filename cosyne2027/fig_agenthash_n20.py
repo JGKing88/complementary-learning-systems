@@ -85,7 +85,7 @@ def main():
     ax2 = fig.add_axes([0.7, 0.21, 0.2, 0.72])
     panel_curves(ax1, r)
     panel_matrix(ax2, r)
-    style.save(fig, "fig_agenthash_n20")
+    style.save(fig, "fig_agenthash_n20", pad=0.02)
 
 
 if __name__ == "__main__":

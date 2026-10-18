@@ -136,7 +136,7 @@ def main():
     panel_a1(ax1, models, args.n_envs)
     panel_a2(ax2, models)
     style.save(fig, "fig3_main_results" + ("" if args.n_envs == 5
-                                           else f"_n{args.n_envs}"))
+                                           else f"_n{args.n_envs}"), pad=0.02)
 
 
 if __name__ == "__main__":

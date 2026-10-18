@@ -96,7 +96,7 @@ def main():
         axes.append(ax)
     axes[1].set_xlabel("Update", labelpad=1)
     key(fig)
-    style.save(fig, "fig3_a2_per_env")
+    style.save(fig, "fig3_a2_per_env", pad=0.02)
 
 
 if __name__ == "__main__":

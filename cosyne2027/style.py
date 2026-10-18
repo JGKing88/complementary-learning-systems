@@ -200,10 +200,15 @@ def rich(ax, x, y, runs, **kw):
     return r
 
 
-def save(fig, stem):
-    """Write ``stem``.pdf and ``stem``.png next to the scripts, with no pad.
-    The figure size is the output size exactly, so size figures to their
-    content: the abstract has no room for empty margins."""
+def save(fig, stem, pad=0.0):
+    """Write ``stem``.pdf and ``stem``.png next to the scripts.
+
+    With the default ``pad=0`` the figure size is the output size exactly,
+    so size figures to their content: the abstract has no room for empty
+    margins. A figure whose text reaches its edge needs ``pad`` (0.02 in is
+    enough): the tight crop uses the core-font metric box, which sits below
+    Helvetica's tallest glyphs and above its descenders, so text at an edge
+    is shaved in the PDF."""
     for ext in ("pdf", "png"):
         fig.savefig(HERE / f"{stem}.{ext}", dpi=600 if ext == "png" else None,
-                    bbox_inches="tight", pad_inches=0)
+                    bbox_inches="tight", pad_inches=pad)

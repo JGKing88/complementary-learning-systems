@@ -89,7 +89,7 @@ def main():
     ax.set_ylabel("Cosine similarity")
 
     unit_panel(fig)
-    style.save(fig, "fig_encoder")
+    style.save(fig, "fig_encoder", pad=0.02)
 
 
 def unit_panel(fig):
