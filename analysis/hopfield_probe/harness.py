@@ -89,7 +89,22 @@ def load_probe_encoder(
     trained, so this raises instead.
 
     Returns ``(encoder, model_config, gain, fwhm_ratio, header)``.
+
+    ``path`` may instead be an analytic-encoder spec, ``ideal:r=4[,n_freq=512]
+    [,seed=0][,gain=100]`` (``ideal_encoder.py``), so every script built on
+    this loader scores the ideal code through the identical pipeline.
     """
+    from .ideal_net import is_idealnet_spec, load_idealnet_encoder
+    if is_idealnet_spec(path):
+        return load_idealnet_encoder(path, device=device,
+                                     fwhm_override=fwhm_override,
+                                     fwhm_fallback=fwhm_fallback)
+    from .ideal_encoder import is_ideal_spec, load_ideal_encoder
+    if is_ideal_spec(path):
+        return load_ideal_encoder(path, device=device,
+                                  fwhm_override=fwhm_override,
+                                  fwhm_fallback=fwhm_fallback)
+
     from hopfield_nav.encoder_io import load_encoder
 
     encoder, cfg, gain = load_encoder(path, device)

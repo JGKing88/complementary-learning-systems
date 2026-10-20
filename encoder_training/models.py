@@ -167,6 +167,18 @@ def create_encoder(cfg: EncoderModelConfig, device: str | None = None) -> GridEn
         enc = EquivariantCharacterEncoder(
             lambdas=cfg.lambdas, p_max=cfg.char_p_max, m_max=cfg.char_m_max,
         )
+    elif cfg.encoder_type == "ideal_net":
+        # The ideal encoder as a network with a trainable integer layer
+        # (analysis/hopfield_probe/ideal_net.py). Layers 1-2 are fixed.
+        from analysis.hopfield_probe.ideal_net import IdealNet
+
+        class _IdealNetEncoder(IdealNet):
+            def forward(self, x, gain=None):          # gain does not apply
+                return super().forward(x).float()
+
+        enc = _IdealNetEncoder(r=cfg.ideal_r, n_freq=cfg.ideal_n_freq,
+                               seed=cfg.ideal_seed, lambdas=cfg.lambdas,
+                               trainable_harmonics=True, init=cfg.ideal_init)
     else:
         raise ValueError(f"Unknown encoder_type: {cfg.encoder_type}")
     if device is not None:
