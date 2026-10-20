@@ -1,0 +1,29 @@
+{
+ "runs": {
+  "t3_B": {"path": "/orcd/pool/003/jackking/cls_runs/results/phase_abstraction/t3_B", "definition": "B"}
+ },
+ "seed": 0,
+ "cap_rows_per_phase": 1500,
+ "match": {
+  "t_seg_edges": [0, 3, 6, 9, 12, 15, 18, 21, 24, 27, 30, 36, 42, 48, 54, 61],
+  "dist_edges": [0, 2, 4, 6, 8, 10, 12, 14, 16, 18, 20, 22, 24, 28],
+  "abs_t_edges": [0, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100, 110, 120, 130, 140, 150, 160, 170, 180, 190, 200, 220, 240, 260, 280, 300, 361]
+ },
+ "history_b": {
+  "conditions": ["sham"],
+  "selections": ["matched_abs_t", "matched"],
+  "windows": [5, 10, 20],
+  "k_train": [1, 10, 50],
+  "n_rep": 10,
+  "n_test_arenas": 40,
+  "spline": {"n_knots": 6, "degree": 3},
+  "ridge_alpha": 0.001,
+  "C": 1.0,
+  "baseline_features": ["h", "x_now", "x_win5", "x_win10", "x_win20", "q_hist", "x_hist"],
+  "lag_features": ["h", "x_win20", "x_hist"],
+  "lag_bins": [[31, 45], [46, 60]],
+  "lag_k": 50,
+  "min_post_lag": 31
+ },
+ "n_jobs": 16
+}

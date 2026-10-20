@@ -264,6 +264,9 @@ def agent_step(
         # For the caller to thread into the next agent_step call:
         "next_prev_reward": current_reward,        # (1, 1)
         "next_prev_action": next_prev_action,      # (1, D)
+        # The exact vector the policy read on this step, for analyses that
+        # compare the hidden state against its own input.
+        "policy_input": rnn_input,                 # (1, 1, input_dim)
     }
 
 

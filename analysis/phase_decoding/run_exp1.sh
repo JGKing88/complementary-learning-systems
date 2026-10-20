@@ -36,7 +36,7 @@ unset CUDA_VISIBLE_DEVICES
 cd /home/jackking/cls
 
 source scripts/cls_env.sh
-CKPT="/orcd/home/002/jackking/cls/checkpoint/phase_a_only_glamorous-field-97/phase_a_u360.pt"
+CKPT="${CKPT:?CKPT is required}"
 ENCODER="${ENCODER:-}"
 TRIALS_DIR="${TRIALS_DIR:-}"
 NUM_ARENAS="${NUM_ARENAS:-100}"
