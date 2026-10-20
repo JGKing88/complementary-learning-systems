@@ -55,6 +55,9 @@ class EpisodeRecord:
     path_to_goal: float | None
     stored_at_goal: int
     stored_off_goal: int
+    # Float (x, y) the episode started from, so a caller can compute the
+    # straight-line optimum (evaluation.rnn.optimal_path_to_goal) afterwards.
+    start_xy: tuple[float, float] | None = None
 
 
 def env_xy_float(env: GridEnv) -> np.ndarray:
@@ -115,6 +118,7 @@ def run_mini_episode(
     path_to_goal: float | None = None
     path_acc = 0.0
     prev_xy = env_xy_float(env)
+    start_xy = (float(prev_xy[0]), float(prev_xy[1]))
     stored_at_goal = 0
     stored_off_goal = 0
 
@@ -168,6 +172,7 @@ def run_mini_episode(
         path_to_goal=path_to_goal,
         stored_at_goal=stored_at_goal,
         stored_off_goal=stored_off_goal,
+        start_xy=start_xy,
     )
 
 

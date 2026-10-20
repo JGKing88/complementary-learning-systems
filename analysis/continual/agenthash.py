@@ -35,6 +35,7 @@ from hopfield_nav.world.env import GridEnv, at_goal
 from hopfield_nav.evaluation import protocols
 from hopfield_nav.world.env import make_env
 from hopfield_nav.evaluation.metrics import agent_step, random_start
+from hopfield_nav.evaluation.rnn import optimal_path_to_goal
 from hopfield_nav.evaluation.checkpoint_io import (
     cfg_from_checkpoint, eval_env_set, eval_world_for_split, load_agent,
     world_spec_for,
@@ -291,6 +292,89 @@ def run_sequential(
     return trace, blocks, stored_at_goal_count
 
 
+def run_sequential_heldout(
+    *,
+    agent: NavAgent,
+    val_envs: list[GridEnv],
+    vectorhash: VectorHash,
+    env_offsets: list[tuple[int, int]],
+    cfg,
+    device: torch.device,
+    iters_per_block: int,
+    max_steps: int,
+    eval_max_steps: int,
+    seed: int,
+    deterministic: bool,
+    oracle_store_at_goal: bool,
+    oracle_lock_store_not_at_goal: bool,
+    lock_store_after_goal: bool,
+) -> tuple[list, list, dict[int, int], list]:
+    """The controls' schedule (``baseline.py``), for the Hopfield agent.
+
+    Each update is one store-allowed episode in the current env (cap
+    ``max_steps``), the analogue of a control's one training rollout, followed
+    by one held-out, no-store episode from a random start in every env seen
+    so far (cap ``eval_max_steps``). Only the held-out episodes go in
+    ``trace``, in the controls' schema, so one reader scores both; the
+    training episodes go in the fourth return value.
+
+    Held-out episodes draw starts from their own RNG stream, so evaluating
+    cannot change the training episodes. Steps are numbered from 1 and blocks
+    are ``[start, end_incl, env]``, as in the controls' histories.
+    """
+    agent.eval()
+    N = len(val_envs)
+    embed_dim = vectorhash.encoded_Phi.shape[2]
+    hopfield = Hopfield(embed_dim, beta=cfg.hopfield.beta, device=str(device))
+    rng = np.random.RandomState(seed)
+    eval_rng = np.random.RandomState(seed + 1_000_003)
+    goal_in_mem: dict[int, bool] = {i: False for i in range(N)}
+    stored_at_goal_count: dict[int, int] = {i: 0 for i in range(N)}
+    common = dict(agent=agent, vectorhash=vectorhash, hopfield=hopfield,
+                  cfg=cfg, device=device, goal_in_mem=goal_in_mem,
+                  stored_at_goal_count=stored_at_goal_count,
+                  deterministic=deterministic,
+                  oracle_store_at_goal=oracle_store_at_goal,
+                  suppress_off_goal_stores=oracle_lock_store_not_at_goal,
+                  lock_store_after_goal=lock_store_after_goal)
+
+    trace, train_trace, blocks = [], [], []
+    step = 1
+    for i in range(N):
+        block_start = step
+        for _k in range(iters_per_block):
+            tr = protocols.run_mini_episode(
+                env=val_envs[i], env_offset=env_offsets[i], local_idx=i,
+                allow_store=True, max_steps=max_steps, rng=rng, **common)
+            train_trace.append([step, i, {"reached": tr.reached,
+                                          "steps_to_goal": tr.steps_to_goal,
+                                          "stored_at_goal": tr.stored_at_goal}])
+            inner: dict[str, dict] = {}
+            for j in range(i + 1):
+                env_j = val_envs[j]
+                rec = protocols.run_mini_episode(
+                    env=env_j, env_offset=env_offsets[j], local_idx=j,
+                    allow_store=False, max_steps=eval_max_steps, rng=eval_rng,
+                    **common)
+                optimal = float(optimal_path_to_goal(
+                    np.asarray([rec.start_xy]), env_j.goal_location,
+                    env_j.goal_radius, cfg.agent.movement_mode)[0])
+                inner[str(j)] = {
+                    "reached": rec.reached,
+                    "steps_to_goal": rec.steps_to_goal,
+                    "path_to_goal": rec.path_to_goal,
+                    "optimal_to_goal": optimal if rec.reached else None,
+                    "optimal_all": optimal,
+                }
+            trace.append([step, i, inner])
+            step += 1
+        blocks.append([block_start, step - 1, i])
+        print(f"  block {i} done  step={step - 1}  "
+              f"hopfield_mem={hopfield.num_memories}  "
+              f"goal_in_mem={goal_in_mem[i]}", flush=True)
+    return trace, blocks, stored_at_goal_count, train_trace
+
+
 def main() -> None:
     p = argparse.ArgumentParser(description=__doc__)
     # I/O
@@ -371,6 +455,12 @@ def main() -> None:
                    help="BCE updates after each mini-episode (rollout). "
                         "Batch is the just-finished episode's per-step "
                         "(features, at_goal) pairs.")
+    p.add_argument("--heldout_eval_steps", type=int, default=None,
+                   help="Run the controls' schedule instead of the revisit "
+                        "protocol: per update, one store-allowed episode in "
+                        "the current env (cap --max_steps), then one held-out "
+                        "no-store episode per seen env at this cap. See "
+                        "run_sequential_heldout. Needs --num_full_iters 1.")
     p.add_argument("--goal_radius", type=float, default=None,
                    help="Override EnvConfig.goal_radius from the saved checkpoint. "
                         "Default: use the value saved at training time (or 0.5 for "
@@ -526,6 +616,30 @@ def main() -> None:
                 print(f"  env {i}: goal={env.goal_location}  "
                       f"offset={offsets[i]}")
 
+        if args.heldout_eval_steps is not None:
+            if n_full_iters != 1:
+                raise SystemExit("--heldout_eval_steps writes one seed per "
+                                 "file, like baseline.py: use --num_full_iters 1")
+            trace, blocks, stored_at_goal_count, train_trace = (
+                run_sequential_heldout(
+                    agent=agent, val_envs=val_envs, vectorhash=vh,
+                    env_offsets=offsets, cfg=cfg, device=device,
+                    iters_per_block=args.iters_per_block,
+                    max_steps=args.max_steps,
+                    eval_max_steps=args.heldout_eval_steps,
+                    seed=seed_k,
+                    deterministic=(not args.stochastic_policy),
+                    oracle_store_at_goal=args.oracle_store_at_goal,
+                    oracle_lock_store_not_at_goal=(
+                        args.oracle_lock_store_not_at_goal),
+                    lock_store_after_goal=args.lock_store_after_goal))
+            iter_traces.append((trace, blocks))
+            iter_env_goals.append([list(env.goal_location) for env in val_envs])
+            iter_env_offsets.append([list(offsets[i])
+                                     for i in range(len(val_envs))])
+            iter_stored_at_goal.append(
+                {int(j): int(c) for j, c in stored_at_goal_count.items()})
+            continue
         trace, blocks, stored_at_goal_count = run_sequential(
             agent=agent, val_envs=val_envs, vectorhash=vh, env_offsets=offsets,
             cfg=cfg, device=device,
@@ -546,7 +660,11 @@ def main() -> None:
             {int(j): int(c) for j, c in stored_at_goal_count.items()}
         )
 
-    trace, blocks = merge_iter_traces(iter_traces)
+    if args.heldout_eval_steps is not None:
+        trace, blocks = iter_traces[0]
+    else:
+        trace, blocks = merge_iter_traces(iter_traces)
+        train_trace = None
     run_name = args.run_name or os.path.splitext(os.path.basename(args.out))[0]
     history = {
         "metadata": {
@@ -558,7 +676,9 @@ def main() -> None:
             "env_size": (int(val_envs[0].size) if val_envs else cfg.env.size),
             "iters_per_block": args.iters_per_block,
             "max_steps": args.max_steps,
-            "x_axis_label": "outer iteration",
+            "heldout_eval_steps": args.heldout_eval_steps,
+            "x_axis_label": ("update" if args.heldout_eval_steps is not None
+                             else "outer iteration"),
             "raw_metric_is_binary": True,
             "ckpt_path": args.ckpt,
             "num_full_iters": n_full_iters,
@@ -575,6 +695,8 @@ def main() -> None:
                 "base_seed": int(args.seed),
                 "env_seed_base": int(args.env_seed) if args.env_seed is not None else None,
                 "movement_mode": cfg.env.movement_mode,
+                "goal_radius": float(cfg.env.goal_radius),
+                "wall_resolution": int(getattr(cfg.env, "wall_resolution", 1)),
                 "stored_at_goal_count_per_iter": iter_stored_at_goal,
                 "env_goals_per_iter": iter_env_goals,
                 "env_offsets_per_iter": iter_env_offsets,
@@ -586,6 +708,8 @@ def main() -> None:
         ],
         "blocks": [list(b) for b in blocks],
     }
+    if train_trace is not None:
+        history["train_trace"] = train_trace
 
     os.makedirs(os.path.dirname(args.out) or ".", exist_ok=True)
     with open(args.out, "w") as f:
