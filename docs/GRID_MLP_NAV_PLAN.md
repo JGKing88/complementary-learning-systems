@@ -153,114 +153,120 @@ with `c` ≈ 0.3, which is the case it has to learn to ignore.
   (the learned gate); steps that follow `d` with only a foreign goal in
   memory; the MLP's angular error along followed paths.
 
-## 6. Idea 2: meta-learned plastic memory
+## 6. Idea 2: a memory written by gradient steps
 
-Same env, grid MLP and controller as idea 1; the argmax store is replaced by a
-network `M` whose **weights are the memory**.
+Idea 2 keeps everything from idea 1 except the memory. Idea 1 stores each goal
+as a row in a table and looks it up by similarity. Idea 2 stores goals in the
+weights of a small network, `M`. Writing a goal means taking a few gradient
+steps on `M`. Reading means running `M` on the current view.
 
-| Part | What it is |
-|---|---|
-| `M` | an MLP (not an RNN: the memory must live in the weights, and the controller already carries within-episode state) |
-| Input | the live view (with panorama) plus absolute heading, as idea 1's query |
-| Output | the goal's grid state as module phases — (cos, sin) of the 2-D phase for each of the 3 modules, 12 numbers — decoded to `gbook`, so it is always a valid grid state; plus a confidence `c` ("do I know this env?") |
-| Write | no write operation: at the oracle store, `M`'s weights take a few gradient steps so this env's views map to `g_goal` (and `c` to 1) |
-| Read | every step, `ĝ, c = M(view, heading)`; the controller gets `d = MLP(g_t, ĝ)` and `c` exactly as in idea 1 |
-| Plastic at eval | `M` only. The controller is frozen at evaluation |
+The question is whether a memory written this way can keep old goals as well
+as a table does. A table never forgets, because each env gets its own row. A
+network that learns env after env usually forgets, because the gradient steps
+for a new env also change the weights that held the earlier goals. Idea 2
+tests whether meta-learning can prevent that.
 
-`M` is **meta-trained** so that a few inner-loop gradient steps store a new
-env→goal association without erasing the earlier ones — plain SGD on a
-sequence of envs would forget. Precedents: OML (Javed & White 2019; a
-meta-learned representation feeding a plastic head) and ANML (Beaulieu et al.
-2020; a meta-learned mask gating which weights an update may touch).
+None of idea 2 is built yet.
 
-The question idea 2 answers: idea 1's memory cannot forget by construction;
-can a *parametric, gradient-written* memory be meta-learned to retain as well?
+### 6.1 How the memory works
 
-### 6.1 Default training: naive meta-learning
+`M` is a small MLP. Its input is the same as idea 1's query, the live view
+with the panorama and the agent's absolute heading. It has two outputs.
 
-`M` is one small MLP with weights θ, all of them plastic. The **only**
-meta-learned quantities are θ₀ (the initial weights every lifetime starts
-from) and α (the inner learning rate — a scalar, or one per parameter as in
-Meta-SGD).
+- `ĝ` is its guess of this env's goal grid state. `M` outputs the phase of
+  each of the 3 grid modules as a cos, sin pair, 12 numbers in all, and these
+  are turned into a grid code. That way the output is always a valid grid
+  state.
+- `c` is its confidence that it holds a goal for this env.
 
-**One lifetime** — a sequence of T envs, no replay. This is also exactly what
-happens at evaluation:
+Reading happens every step. The controller receives `d = MLP(g_t, ĝ)` and `c`,
+exactly as in idea 1. The controller never changes during evaluation. Only `M`
+does.
 
-```
-θ ← θ₀                                   # fresh memory
-for env t = 1 … T:
-    run the episode (controller frozen within the lifetime):
-        every step: ĝ, c = M_θ(view, heading) → d = MLP(g_t, ĝ) → controller acts
-    on reaching the goal (oracle store):
-        target  = g_t                    # the agent's OWN grid state now = the goal's
-        data    = the views seen so far this episode (all from env t)
-        repeat k times:  θ ← θ − α ∇θ L(θ; data → target, c → 1)
-    continue; the K = 2 revisits use the updated θ
-```
+Writing happens once per env, at the oracle store. When the agent reaches the
+goal, its own grid state at that moment is the goal's grid state, so it has the
+right answer without a teacher. `M` takes a few gradient steps so that the
+views the agent saw in this env map to that grid state, with `c` pushed to 1.
+This stores the same thing Agent-HaSH and idea 1 store, in weights instead of
+a table.
 
-**The inner loop is supervised with a self-generated label.** At the store
-the agent stands on the goal, so its current grid state *is* the goal's grid
-state — no teacher is involved. The update says "everything I have been
-seeing in this env maps to where I am now": the same value Agent-HaSH and
-idea 1 write, written into weights instead of a table.
+### 6.2 Why it needs meta-learning
 
-**Outer loop.** After a lifetime, the final θ is scored on held-out views from
-every env in it (does it still output each env's goal?) plus `c` — high on
-envs it wrote, low on envs it never wrote. θ_T is θ₀ pushed through every
-inner update, each differentiable in θ and α, so `∇_{θ₀, α} L_outer` is
-backprop through the whole chain; an Adam step updates θ₀ and α. Exact
-second-order is affordable for a small MLP, T up to ~10 and a few inner
-steps; first-order is the fallback.
+If `M` starts from random weights and takes ordinary gradient steps, writing
+env 5 damages what it stored for envs 1 to 4. Meta-learning sets two things in
+advance so that this happens less.
 
-**Unseen-env cases come for free.** Before env t's store `M` has never been
-written for it, so every pre-store step is an "unseen env" example (`c` → 0)
-whose `ĝ` is effectively some other env's goal — the case idea 1 needed an
-explicit foreign-goal pre-fill for, provided lifetimes are long enough that
-`M` already holds a few envs.
+- θ₀, the weights `M` starts every lifetime from.
+- α, the learning rate a write uses. It can be one number, or one per weight.
 
-**Controller.** PPO on the same lifetimes (`task3r_k2_h128` protocol, oracle
-store), reading `d` and `c` as inputs. By default PPO does not backprop into
-`M`: `d` and `c` go into the rollout buffer as fixed observations, so PPO's
-epochs never recompute `M`'s changing weights. (With the direction a sampled
-action conditioned on `d`, a PPO path into `M` exists — it teaches `c` well
-and `ĝ` only noisily; a later variant.)
+Every other change to `M` happens during the writes themselves. This is the
+default design because it has the fewest parts.
 
-**Warm start and go/no-go.** Meta-train θ₀ and α alone on random-walk
-lifetimes with no controller, and measure retention against N (6 / 30 / 100
-envs written in sequence) before any RL. Idea 1's memory scores 0.96–1.00
-there (§2.4).
+### 6.3 Training
 
-### 6.2 Variant: PPO inner loop
+Training repeats one unit, a lifetime. A lifetime is a sequence of T envs, T
+about 3 to 10, with no replay of earlier envs. A lifetime runs the same way in
+training and in evaluation.
 
-The inner update can instead be a policy-gradient step,
-`θ ← θ + α ∇θ J_PPO(episode)` — MAML-RL (Finn et al. 2017). It supports a
-stronger claim: a memory written by reward alone. Not the default because:
-the step has to write the goal from one episode, and a PPO gradient carries
-the goal's location only through rewards and sampled actions' log-probs
-(MAML-RL used ~20 rollouts per inner step on simple tasks); the exact target
-is available at the store for free; and meta-gradients through
-policy-gradient steps are high-variance (hence E-MAML / ProMP), with
-continual retention stacked on top. Worth trying once the supervised default
-works.
+1. Reset `M` to θ₀.
+2. In the next env, the agent searches. `M` has never been written for this
+   env, so it should report `c` near 0.
+3. When the agent reaches the goal, `M` takes k gradient steps with learning
+   rate α. That is the write. The agent then keeps going, and visits the env a
+   second time (K = 2 visits) using the updated `M`.
+4. Move to the next env without resetting `M`, and repeat from step 2.
 
-### 6.3 Variant: fixed representation + plastic head (OML)
+At the end of the lifetime, an outer loop scores `M`. For every env in the
+lifetime, it checks whether `M` still returns that env's goal from views the
+writes did not use. It also checks that `c` is high for envs `M` wrote and low
+for envs it did not. The final weights are θ₀ changed by every write in the
+lifetime, and each write is differentiable. So the error can be backpropagated
+through all the writes to θ₀ and α, and an Adam step updates both. For a small
+MLP, a lifetime of up to about 10 envs and a few steps per write, the exact
+second-order gradient is affordable. A first-order approximation is the
+fallback.
 
-Split `M` into `R`, a representation network that is meta-learned but never
-updated at evaluation, and `H`, a small linear head that is the only plastic
-part (Javed & White 2019). If `R` learns sparse, near-orthogonal features per
-env — the panorama makes that easy — writing env t into `H` barely disturbs
-env t−1: `R` effectively learns its own key-value store, and forgetting
-becomes something the meta-learning can shape. Second-order through inner
-steps on a linear head is cheap, so the outer gradient can span the whole
-lifetime, and per-parameter learning rates come almost free. ANML (a
-meta-learned mask gating which weights an update may touch; Beaulieu et al.
-2020) is the other standard structure.
+The controller trains with PPO on the same lifetimes, using the
+`task3r_k2_h128` recipe with the oracle store. PPO's gradient does not reach
+`M`. The rollout buffer records `d` and `c` as fixed inputs, so PPO never has
+to recompute `M` while its weights change within a lifetime.
 
-### 6.4 Remaining choices
+The steps before each store also train the controller on the case "my goal is
+not stored". Idea 1 needed memory pre-filled with other envs' goals to create
+that case. Here it arises by itself, once a lifetime is long enough that `M`
+already holds some other envs' goals.
 
-`M`'s size; scalar or per-parameter α; k; the range of T in training (and how
-retention extends to N = 30 / 100 at evaluation); second-order vs
-first-order.
+### 6.4 Order of work
+
+1. Train `M` alone first, with no controller and no RL, on random-walk
+   lifetimes with the true goals as labels. Then measure retention. After
+   writing N envs in sequence, for N = 6, 30 and 100, how often does `M` still
+   return each env's goal? Idea 1's table scores 0.96 to 1.00 on the same test
+   (§2.4). If `M` falls far short, stop here.
+2. Only if it passes, train the controller with PPO together with `M`.
+
+### 6.5 Variants for later
+
+- Write with PPO instead of a supervised step. This is MAML-RL (Finn et al.
+  2017). The memory would then be written from reward alone, which is a
+  stronger claim. It isn't the default for three reasons. A PPO gradient from
+  one episode carries little information about where the goal is, and MAML-RL
+  needed about 20 rollouts per write even on simple tasks. The exact label is
+  free at the store. And meta-gradients through policy-gradient steps have
+  high variance.
+- Split `M` into a fixed part and a plastic part. This is OML (Javed and White
+  2019). A representation network `R` is meta-learned and never changes at
+  evaluation. Only a small linear head `H` on top of it gets written. If `R`
+  gives each env its own nearly separate features, which the panorama makes
+  easy, writing one env barely touches the others. The other standard design
+  is ANML (Beaulieu et al. 2020), where a meta-learned mask decides which
+  weights each write may change.
+
+### 6.6 Open choices
+
+The size of `M`, one learning rate or one per weight, the number of steps per
+write, the range of lifetime lengths T in training, and exact versus
+first-order gradients.
 
 ## 7. Decisions and open items
 
@@ -274,7 +280,7 @@ first-order.
 | `c` | always its own input; `scale_q_by_c` flag, default off — **decided** |
 | Plasticity | controller never plastic at evaluation — **decided** |
 | Idea 2 `M` | MLP; phase outputs + confidence; panorama view input — **agreed** |
-| Idea 2 training | naive default (§6.1): one plastic MLP, meta-learn θ₀ and α, supervised inner loop at the store, PPO not into `M` — **decided**; variants PPO inner loop (§6.2), `R` + `H` (§6.3); small choices §6.4 |
+| Idea 2 training | Default in §6.2 and §6.3. One plastic MLP, meta-learn θ₀ and α, supervised write at the store, PPO does not train `M`. **Decided.** Variants in §6.5, small choices in §6.6. |
 | d0_base recipe | later variant |
 | Learned store head | later, once the oracle version works |
 
@@ -287,7 +293,7 @@ first-order.
 3. Smoke run.
 4. Agent-HaSH `task3r_k2_h128` baseline at `--distal_amp 1.0`.
 5. Continual evaluation of both.
-6. Idea 2 (§6.1): `M` meta-trained alone on random-walk lifetimes →
+6. Idea 2 (§6.4): `M` meta-trained alone on random-walk lifetimes →
    retention-vs-N go/no-go → joint training with the controller.
 
 ## 9. Idea 1 results — first head-to-head (2026-09-30)
