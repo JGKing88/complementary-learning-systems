@@ -183,12 +183,19 @@ Reading happens every step. The controller receives `d = MLP(g_t, ĝ)` and `c`,
 exactly as in idea 1. The controller never changes during evaluation. Only `M`
 does.
 
-Writing happens once per env, at the oracle store. When the agent reaches the
-goal, its own grid state at that moment is the goal's grid state, so it has the
-right answer without a teacher. `M` takes a few gradient steps so that the
-views the agent saw in this env map to that grid state, with `c` pushed to 1.
-This stores the same thing Agent-HaSH and idea 1 store, in weights instead of
-a table.
+Writing happens each time the agent reaches the goal, on every visit to an
+env. At that moment the agent's own grid state is the goal's grid state, so it
+has the right answer without a teacher. `M` takes a few gradient steps so that
+the views the agent saw on this visit map to that grid state, with `c` pushed
+to 1. This stores the same thing Agent-HaSH and idea 1 store, in weights
+instead of a table.
+
+Writing on every visit, not just the first, matters because one visit sees
+little of the arena. In the task evals the agent has seen 15 to 20% of the
+cells (`cov_first` 0.15 to 0.18) when it first finds the goal, yet `M` must
+recognise the env from any cell. Each later visit adds views from other parts
+of the arena. Idea 1 never had this problem, because its key is one view
+stored at the goal and compared by direction.
 
 ### 6.2 Why it needs meta-learning
 
@@ -204,17 +211,27 @@ default design because it has the fewest parts.
 
 ### 6.3 Training
 
-Training repeats one unit, a lifetime. A lifetime is a sequence of T envs, T
-about 3 to 10, with no replay of earlier envs. A lifetime runs the same way in
-training and in evaluation.
+Training repeats one unit, a lifetime. A lifetime brings in T new envs, T
+about 3 to 10, and it has the structure of the continual protocol
+(`analysis/continual/agenthash.py`). After each new env, the agent revisits
+every env it has already learned. A lifetime runs the same way in training and
+in evaluation.
 
 1. Reset `M` to θ₀.
-2. In the next env, the agent searches. `M` has never been written for this
-   env, so it should report `c` near 0.
-3. When the agent reaches the goal, `M` takes k gradient steps with learning
-   rate α. That is the write. The agent then keeps going, and visits the env a
-   second time (K = 2 visits) using the updated `M`.
-4. Move to the next env without resetting `M`, and repeat from step 2.
+2. Bring in the next new env. The agent searches it. `M` has never been
+   written for this env, so it should report `c` near 0.
+3. Each time the agent reaches the goal, `M` takes k gradient steps with
+   learning rate α. That is a write. k stays small, 1 to 3, because a learned
+   per-weight α lets one step do the work of several, and each step adds to
+   the cost of the outer loop.
+4. The agent then revisits every env from earlier in the lifetime, one visit
+   each, writing again whenever it reaches a goal.
+5. Repeat from step 2 until all T envs are in.
+
+The revisits in step 4 are what test idea 2. A visit right after a write, as
+in the `task3r` protocol's consecutive visits, repeats the easy case. A visit
+to env 1 after envs 2 to 5 have been written shows whether those writes erased
+it. The revisits also give `M` its extra views of each arena.
 
 At the end of the lifetime, an outer loop scores `M`. For every env in the
 lifetime, it checks whether `M` still returns that env's goal from views the
@@ -226,8 +243,15 @@ MLP, a lifetime of up to about 10 envs and a few steps per write, the exact
 second-order gradient is affordable. A first-order approximation is the
 fallback.
 
+This design has two costs. More of each lifetime is spent revisiting envs
+whose goal is already stored, which shifts training toward exploit; in §9.6
+the variants that exploit best already search worst. And every write is one
+more step the outer loop backpropagates through, so a lifetime with many
+writes may need first-order gradients or the `R` + `H` split of §6.5, where
+backpropagating through writes to a linear head is cheap.
+
 The controller trains with PPO on the same lifetimes, using the
-`task3r_k2_h128` recipe with the oracle store. PPO's gradient does not reach
+`task3r_k2_h128` recipe's PPO settings with the oracle store. PPO's gradient does not reach
 `M`. The rollout buffer records `d` and `c` as fixed inputs, so PPO never has
 to recompute `M` while its weights change within a lifetime.
 
@@ -264,9 +288,10 @@ already holds some other envs' goals.
 
 ### 6.6 Open choices
 
-The size of `M`, one learning rate or one per weight, the number of steps per
-write, the range of lifetime lengths T in training, and exact versus
-first-order gradients.
+The size of `M`, one learning rate or one per weight, k within 1 to 3, the
+range of lifetime lengths T in training, how many earlier envs to revisit when
+T is large (all of them, or a random subset), and exact versus first-order
+gradients.
 
 ## 7. Decisions and open items
 
