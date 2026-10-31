@@ -59,9 +59,10 @@ def lifetime_loss(theta, log_alpha, pool, rng, a, device):
             _, c = forward(params, T_(x, device))
             total = total + F.binary_cross_entropy_with_logits(c, torch.zeros_like(c))
             n += 1
-        for j in range(t):
-            params = write(params, log_alpha, T_(envs[j].visit(rng, a.visit_steps), device),
-                           T_(envs[j].target, device), a.k, create_graph=True)
+        if a.train_revisit:
+            for j in range(t):
+                params = write(params, log_alpha, T_(envs[j].visit(rng, a.visit_steps), device),
+                               T_(envs[j].target, device), a.k, create_graph=True)
     return total / n
 
 
@@ -124,6 +125,8 @@ def main():
     p.add_argument("--T_min", type=int, default=2)
     p.add_argument("--T_max", type=int, default=6)
     p.add_argument("--n_unseen", type=int, default=2)
+    p.add_argument("--train_revisit", action=argparse.BooleanOptionalAction, default=True,
+                   help="training lifetimes revisit every earlier env after each new one (plan §6.3)")
     p.add_argument("--visit_steps", type=int, default=40)
     p.add_argument("--test_views", type=int, default=16)
     p.add_argument("--eval_views", type=int, default=64)
@@ -132,6 +135,10 @@ def main():
     p.add_argument("--eval_every", type=int, default=500)
     p.add_argument("--eval_N", type=int, nargs="+", default=[6, 30, 100])
     p.add_argument("--baseline_only", action="store_true")
+    p.add_argument("--eval_ckpt", default=None,
+                   help="evaluate a saved meta_memory.pt (and the baselines) and exit")
+    p.add_argument("--eval_modes", nargs="+", default=["once", "revisit"],
+                   choices=["once", "revisit"])
     p.add_argument("--baseline_alphas", type=float, nargs="+",
                    default=[0.003, 0.01, 0.03, 0.1, 0.3])
     a = p.parse_args()
@@ -152,15 +159,43 @@ def main():
         with open(os.path.join(a.out, "log.json"), "w") as f:
             json.dump(log, f, indent=1)
 
+    if a.eval_ckpt:
+        # Evaluation only. "once" is the go/no-go of plan §6.4: N envs written
+        # once each, in sequence, then all tested, which is what idea 1's
+        # 0.96-1.00 measures. "revisit" is the training protocol; with many
+        # revisits even a plain network rehearses, so it is not a memory test.
+        ck = torch.load(a.eval_ckpt, map_location="cpu", weights_only=False)
+        models = [("meta", [t.to(device) for t in ck["theta"]],
+                   [t.to(device) for t in ck["log_alpha"]])]
+        for alpha in a.baseline_alphas:
+            th = [t.to(device) for t in init_params(in_dim, a.hidden, a.layers, gen)]
+            models.append((f"baseline_{alpha:g}", th,
+                           [torch.full_like(t, math.log(alpha)) for t in th]))
+        res = []
+        for name, th, la in models:
+            for mode in a.eval_modes:
+                for N in a.eval_N:
+                    r = retention(th, la, eval_pool, N, 10_000 + N, a, device,
+                                  revisit=(mode == "revisit"))
+                    r.update(model=name, mode=mode, ckpt_step=ck.get("step"))
+                    res.append(r)
+                    print(f"{name:14} {mode:7} N={N:3d} acc={r['acc']:.3f} "
+                          f"(oldest {r['acc_oldest_quarter']:.3f}, newest "
+                          f"{r['acc_newest_quarter']:.3f}) c_auc={r['c_auc']:.3f}", flush=True)
+        with open(os.path.join(a.out, f"eval_step{ck.get('step')}.json"), "w") as f:
+            json.dump(res, f, indent=1)
+        return
+
     # Baseline: random start, fixed rate, no meta-learning.
     for alpha in a.baseline_alphas:
         theta_b = [t.to(device) for t in init_params(in_dim, a.hidden, a.layers, gen)]
         la_b = [torch.full_like(t, math.log(alpha)) for t in theta_b]
-        for N in a.eval_N:
-            r = retention(theta_b, la_b, eval_pool, N, 10_000 + N, a, device)
-            r["alpha"] = alpha
+        for mode, N in [(m, N) for m in a.eval_modes for N in a.eval_N]:
+            r = retention(theta_b, la_b, eval_pool, N, 10_000 + N, a, device,
+                          revisit=(mode == "revisit"))
+            r.update(alpha=alpha, mode=mode)
             log["baseline"].append(r)
-            print(f"baseline alpha={alpha:g} N={N:3d} acc={r['acc']:.3f} "
+            print(f"baseline alpha={alpha:g} {mode} N={N:3d} acc={r['acc']:.3f} "
                   f"(oldest {r['acc_oldest_quarter']:.3f}, newest {r['acc_newest_quarter']:.3f}) "
                   f"c_auc={r['c_auc']:.3f}", flush=True)
     save()
@@ -186,11 +221,12 @@ def main():
                   f"({time.time() - t0:.0f}s)", flush=True)
         if step % a.eval_every == 0 or step == a.steps:
             Ns = a.eval_N if step == a.steps else a.eval_N[:1]
-            for N in Ns:
-                r = retention(theta, log_alpha, eval_pool, N, 10_000 + N, a, device)
-                r["step"] = step
+            for mode, N in [(m, N) for m in a.eval_modes for N in Ns]:
+                r = retention(theta, log_alpha, eval_pool, N, 10_000 + N, a, device,
+                              revisit=(mode == "revisit"))
+                r.update(step=step, mode=mode)
                 log["eval"].append(r)
-                print(f"eval step {step} N={N:3d} acc={r['acc']:.3f} "
+                print(f"eval step {step} {mode} N={N:3d} acc={r['acc']:.3f} "
                       f"(oldest {r['acc_oldest_quarter']:.3f}, newest {r['acc_newest_quarter']:.3f}) "
                       f"c_written={r['c_written']:.2f} c_unseen={r['c_unseen']:.2f} "
                       f"c_auc={r['c_auc']:.3f}", flush=True)
