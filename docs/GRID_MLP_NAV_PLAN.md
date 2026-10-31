@@ -626,3 +626,50 @@ overlap: 0.86–0.90 vs 0.70–0.81) -- the argmax memory's distractor advantage
 seed-43 Agent-HaSH run dips at the very end (u4000 eval: revisit 19.8 steps at
 d = 0), so its end-point labels on the figure (0.70 / 0.74) understate its
 late-window level; the window means above are the fair comparison.
+
+### 9.8 Stage 2: nav, expl, disc and the continual protocol (2026-10-31)
+
+Both models from §9.7 (idea 1 and Agent-HaSH q + ‖q‖ with projection storage),
+seeds 42 and 43, each scored at u3800 and u3950. Each cell is the mean of
+those four values, with their range in brackets. `eval_all` used 32 trials per
+env on each run's 6 recorded val envs (jobs 27456617 to 27456620). The
+continual protocol is `run_cl_ood.sh` with the sampled policy: 6 envs, 40
+iterations per block, a 200-step cap, seed 3000, one store per env, 600
+revisits per run (jobs 27456628 to 27456634 and 27456636). Pooled by
+`python -m analysis.sensory_key.summarise_stage2`; raw files in
+`/orcd/pool/003/jackking/cls_runs/sensory_key/eval_all/` and `.../cl/`.
+
+| metric | idea 1 | Agent-HaSH q + ‖q‖ proj |
+|---|---|---|
+| nav det success, d = 0 / 10 | 1.000 / 1.000 | 0.995 / 0.993 |
+| nav det steps, d = 0 | **11.15** [10.94, 11.34] | 13.01 [11.33, 15.64] |
+| nav det steps, d = 10 | **11.09** [10.81, 11.42] | 14.15 [13.04, 15.73] |
+| nav stoch steps, d = 0 / 10 | **11.98 / 11.94** | 14.30 / 16.37 |
+| expl swept coverage, d = 0 / 10 | 0.54 / 0.54 | 0.55 / 0.53 |
+| expl goal found, d = 0 / 10 | 0.42 / 0.36 | 0.45 / 0.43 |
+| disc goal reached, d = 0 / 10 | 0.16 / 0.15 | 0.50 / 0.48 |
+| continual, first visit reached | 0.968 [0.938, 0.983] | 0.957 [0.904, 0.988] |
+| continual, revisit reached | **1.000** (2400 of 2400) | 0.997 [0.990, 1.000] |
+| continual, revisit steps | **12.85** [12.54, 13.23] | 15.58 [13.34, 19.30] |
+| continual, worst per-env retention change | **0.000** | −0.013 [−0.050, 0.000] |
+
+Reading.
+1. Navigation to a stored goal. Both models nearly always succeed, and idea 1
+   takes fewer steps: 11.1 against 13.0 to 14.2 with the deterministic policy.
+   At 10 distractors the two ranges do not overlap. This agrees with the
+   path optimality in §9.7.
+2. Continual protocol. Neither model forgets much. Idea 1 reached the goal on
+   all 2400 revisits with no loss in any env, and it reaches it faster (12.8
+   against 15.6 steps; the ranges do not overlap). Agent-HaSH lost 5% of one
+   env's revisits in one run.
+3. Exploration is a tie. Swept coverage is the same, and Agent-HaSH finds the
+   goal slightly more often, inside a wide spread across runs.
+4. Discovery favours Agent-HaSH (0.48 to 0.50 against 0.15 to 0.16), but it
+   is not a fair test of either model. It lets the agent's own store head
+   write memory, and `task3r` training never trains that head; both models
+   were trained with the oracle store. A likely cause of idea 1's low score,
+   not yet tested: an untrained head writes the agent's current cell into
+   memory, idea 1's own-env key then matches that cell's entry with high `c`,
+   and the agent follows a confident direction to a cell that is not the
+   goal. A Hopfield memory blends such a write with everything else it holds.
+   A fair disc comparison needs a trained store head (§7).
