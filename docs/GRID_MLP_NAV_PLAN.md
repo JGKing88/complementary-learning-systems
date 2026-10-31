@@ -312,14 +312,25 @@ gradients.
 ## 8. Implementation order
 
 1. Memory module (argmax key-value, direction-indexed keys, heading-sliced
-   query) with a unit test reproducing §2.4.
+   query) with a unit test reproducing §2.4. Done.
 2. Rollout wiring: `d` and `c` inputs through the frozen MLP, oracle store,
-   foreign-goal pre-fill, `scale_q_by_c` flag.
-3. Smoke run.
-4. Agent-HaSH `task3r_k2_h128` baseline at `--distal_amp 1.0`.
-5. Continual evaluation of both.
-6. Idea 2 (§6.4): `M` meta-trained alone on random-walk lifetimes →
-   retention-vs-N go/no-go → joint training with the controller.
+   foreign-goal pre-fill, `scale_q_by_c` flag. Done (stage 1, `8a51297`).
+3. Smoke run. Done.
+4. Agent-HaSH `task3r_k2_h128` baseline at `--distal_amp 1.0`. Done (§9).
+5. Stage 2, the sensory_kv backend in the other evaluators. Done (`74f79f2`).
+   `evaluate_navigation`, `evaluate_goal_discovery`, `evaluate_exploration`,
+   `evaluate_sequential_episodes` and `analysis/continual/agenthash.py` now
+   run idea 1. Under sensory_kv the store payload is a `KVEntry`, so every
+   existing store line serves both memories, and the evaluators' distractor
+   draws consume the random stream exactly as the Hopfield draws do, so both
+   models get the same trials. `evaluate_realistic` and `evaluate_repeat`
+   still refuse the backend. The Hopfield path is unchanged: the stub
+   goldens, the task-run golden and a new continual-protocol golden
+   (`tests/golden_agenthash_run.py`) all match.
+6. Evaluate both models on nav_det, disc, expl and the continual protocol.
+   Not run yet.
+7. Idea 2 (§6.4): `M` meta-trained alone on random-walk lifetimes, a
+   retention-vs-N go/no-go, then joint training with the controller.
 
 ## 9. Idea 1 results — first head-to-head (2026-09-30)
 
