@@ -270,6 +270,9 @@ already holds some other envs' goals.
    (§2.4). If `M` falls far short, stop here.
 2. Only if it passes, train the controller with PPO together with `M`.
 
+Result (§10.9). Step 1 fails. Written once per env, the best `M` keeps 0.26 of
+goals at N = 30 and 0.11 at N = 100, so step 2 was not started.
+
 ### 6.5 Variants for later
 
 - Write with PPO instead of a supervised step. This is MAML-RL (Finn et al.
@@ -417,7 +420,8 @@ the training sequence length, and the curriculum schedule.
 6. Evaluate both models on nav_det, disc, expl and the continual protocol.
    Not run yet.
 7. Idea 2 (§6.4): `M` meta-trained alone on random-walk lifetimes, a
-   retention-vs-N go/no-go, then joint training with the controller.
+   retention-vs-N go/no-go, then joint training with the controller. The
+   go/no-go is done and fails (§10.9), so joint training was not started.
 8. Idea 3 (§7.4): stage 1 with the hidden state carried across visits, then
    stage 2 on short lifetimes, then length generalisation on the full
    protocol.
@@ -763,3 +767,113 @@ Reading.
    and the agent follows a confident direction to a cell that is not the
    goal. A Hopfield memory blends such a write with everything else it holds.
    A fair disc comparison needs a trained store head (§8).
+
+### 10.9 Idea 2 offline, retention against N (2026-10-31)
+
+Idea 2 fails the go/no-go of §6.4, so it stops before any controller training.
+Written once per env, the best plastic memory keeps 0.68 to 0.72 of goals at
+N = 6, 0.26 at N = 30 and 0.11 at N = 100. Idea 1 keeps 0.96 to 1.00 on the
+same test (§2.4). The cause is crosstalk. Every write lands in the same
+weights, so reading one env's goal also returns a share of every other stored
+goal, and the total share grows with N. Meta-learning did not remove it. The
+best meta-learned memory scores below a linear head on hand-built canvas keys
+that has no training at all.
+
+Setup. Every run trains `M` alone on random-walk lifetimes
+(`analysis/idea2/meta_train.py`, envs from `analysis/idea2/lifetimes.py`, distal
+panorama at amplitude 1). A write is one 40-step random walk in the env,
+labelled with the goal's grid phases. The test writes N held-out envs in
+sequence, then decodes each env's goal from 64 fresh views at uniform random
+cells and headings. A view counts as correct when the decoded cell is within
+1.5 cells of the goal, so chance is about 0.02, and returning one goal for
+every env scores 1/N. Each run's last checkpoint was scored with
+`--eval_ckpt`. `python -m analysis.idea2.summarise` prints the tables below
+from `/orcd/pool/003/jackking/cls_runs/idea2/*/eval_step*.json`.
+
+Two protocols. The first version of the test was wrong. After each new env it
+rewrote every earlier env, so at N = 100 env 1 was written 100 times. That is
+rehearsal. A plain network with no meta-learning scored 0.71 to 0.85 at
+N = 100 under it, with its oldest envs above its newest. The go/no-go uses
+"once", which writes each env one time, as idea 1's store does. The revisit
+numbers are kept because the §6.3 lifetime revisits, but they do not test
+memory.
+
+References, with no meta-learning ("once"):
+
+| reference | N = 6 | N = 30 | N = 100 |
+|---|---|---|---|
+| offline ceiling, one walk per env (`ceiling.py`) | 0.96 | 0.72 | 0.46 |
+| offline ceiling, five walks per env | 1.00 | 0.97 | 0.91 |
+| linear head on centred canvas keys, one delta-rule write per env (`fixed_keys.py`) | 0.870 | 0.417 | 0.144 |
+| nearest neighbour on the same keys | 1.000 | 0.998 | 0.992 |
+| random-start network, best fixed rate | 0.17 to 0.25 | 0.04 to 0.05 | 0.04 to 0.07 |
+
+The offline ceiling trains the 256-wide network on all N envs at once with
+Adam, so nothing is forgotten. It is the best any learning rule can do with
+this network and these views.
+
+Meta-learned memories ("once"). Each cell is the accuracy, with the oldest and
+newest quarter of envs in brackets.
+
+| run | step | N = 6 | N = 30 | N = 100 | c AUC, N = 6 / 100 |
+|---|---|---|---|---|---|
+| whole MLP, revisits in training, T 2 to 6 | 7000 | 0.167 (0.00 / 1.00) | 0.000 (0.00 / 0.00) | 0.060 (0.00 / 0.10) | 0.96 / 0.63 |
+| whole MLP, T 2 to 10 | 6000 | 0.000 (0.00 / 0.00) | 0.000 (0.00 / 0.00) | 0.048 (0.00 / 0.08) | 0.94 / 0.60 |
+| whole MLP, 200-step visits | 4000 | 0.333 (0.00 / 0.00) | 0.016 (0.00 / 0.01) | 0.034 (0.00 / 0.06) | 0.98 / 0.61 |
+| whole MLP, k = 3 | 4000 | 0.180 (0.00 / 1.00) | 0.044 (0.00 / 0.01) | 0.012 (0.01 / 0.00) | 0.93 / 0.59 |
+| R + H, ReLU keys | 4500 | 0.357 (0.05 / 0.75) | 0.083 (0.02 / 0.18) | 0.052 (0.03 / 0.12) | 0.63 / 0.53 |
+| R + H, signed keys | 5000 | 0.664 (0.66 / 0.77) | 0.234 (0.14 / 0.35) | 0.110 (0.04 / 0.28) | 0.86 / 0.58 |
+| R + H, signed keys, 200-step visits | 4000 | **0.716** (0.58 / 1.00) | 0.240 (0.11 / 0.41) | 0.108 (0.04 / 0.30) | 0.90 / 0.56 |
+| R + H, signed keys, then T 20 to 100 | 3000 + 2000 | 0.680 (0.67 / 0.64) | **0.262** (0.17 / 0.36) | **0.113** (0.06 / 0.23) | 0.80 / 0.55 |
+
+Every run after the first trains without revisits, on T = 2 to 10 envs for the
+whole MLP and T = 2 to 20 for R + H. The R + H runs write only the head, with
+a squared-error write loss on unit-length keys (`--plastic_tensors 2
+--normalize_hidden --write_loss mse`); "signed" adds `--linear_key`. The last
+row continues the signed-key run's step-3000 checkpoint on lifetimes of 20 to
+100 envs, scoring 8 random written envs after each write (`--init_ckpt
+--score_envs 8`). Each run stopped once its evals stopped rising. Under the
+revisit protocol the best meta-learned memory reaches 0.78 at N = 6, 0.37 at
+N = 30 and 0.14 at N = 100.
+
+Reading.
+1. A whole-network write is not specific to one env. All four whole-MLP runs
+   stored at most the newest goal and were at chance from N = 30. At step 1500,
+   an env's goal decoded on only 9% of views right after its own write, and
+   after a lifetime the output barely changed from view to view. These runs
+   did learn `c`. It separates written from unseen envs with AUC 0.93 to 0.98
+   at N = 6.
+2. The cosine write loss limits itself. Its gradient shrinks as the raw output
+   grows, so after one large write the later writes barely move the output,
+   and the network returns env 1's goal for every env. That is the "oldest
+   1.00, newest 0.00" pattern of the high-rate baselines. A squared error on
+   the raw phases (`--write_loss mse`) stores the newest env reliably.
+3. R + H (§6.5) helps, but only with signed keys. With a ReLU on the key layer
+   every key lies in the positive orthant, where any two overlap, and the
+   memory plateaued at 0.36 at N = 6. Without that ReLU it reached 0.66 to
+   0.75, and the oldest env is kept nearly as well as the newest.
+4. Longer visits and longer lifetimes leave N = 30 and N = 100 where they
+   were. 200-step visits gave 0.240 and 0.108 against 0.234 and 0.110 at
+   40 steps. Training on lifetimes of up to 100 envs moved N = 30 from 0.228
+   to 0.262 and N = 100 from 0.093 to 0.113.
+5. The limit is crosstalk, and fixed keys show its size
+   (`analysis/idea2/fixed_keys.py`). A linear head reads, for each stored env,
+   the view's cosine with that env's key times that env's goal, and sums them.
+   A single view fills 60 of the 180 direction slots, so its cosine with its
+   own env's stored key is only 0.38. Its cosine with another env's key is
+   small, 0.075 root mean square, but the read adds N − 1 of them. The noise
+   is 0.16, 0.41 and 0.75 at N = 6, 30 and 100, and the delta rule's accuracy
+   falls with it (0.87, 0.42, 0.14). Nearest neighbour only needs the own-env
+   cosine to be the largest, so it stays at 0.99 to 1.00.
+6. Familiarity is easy and goals are hard. Every meta-learned memory learned
+   `c`, but its AUC falls to 0.53 to 0.63 by N = 100, for the same crosstalk
+   reason.
+
+What a working idea 2 would need. A plastic linear head reaches idea 1's
+retention only if two things change together. Keys must look the same from
+every view of an env, so the own-env cosine approaches 1. And keys must be
+much wider than N, since random 256-dimensional keys already overlap by about
+1/16. The other route is a nonlinear read over the stored keys, which is
+idea 1's argmax memory. A whole-network write would need ANML-style masks
+(§6.5) to stay local. None of these was run. Code is on branch
+`worktree-sensory-key-retrieval` (commits `d2467d0` to `94e49ce`).
