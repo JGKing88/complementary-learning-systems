@@ -79,6 +79,11 @@ declare -A RUN=(
   [task3r_k1_h128]=navigate_navp2_task3r_k1_h128_s42_22941535
   # Blind (no sensory input), fixed goals, wave-1 rule -- EXPERIMENTS_TASK_FAITHFUL §10.
   [task3_k2_h128_nos]=navigate_navp2_task3_k2_h128_nos_s42_22989777
+  # GRID_MLP_NAV_PLAN: idea 1 (sensory_kv) and Agent-HaSH q + |q| + proj
+  [gmlp_s42]=navigate_navp2_task3r_k2_h128_gmlp_s42_24342872
+  [gmlp_s43]=navigate_navp2_task3r_k2_h128_gmlp_s43_24660241
+  [qmagproj_s42]=navigate_navp2_task3r_k2_h128_distal_qmag_proj_s42_24570179
+  [qmagproj_s43]=navigate_navp2_task3r_k2_h128_distal_qmag_proj_s43_24659511
 )
 
 for arm in $ARMS; do
