@@ -45,7 +45,7 @@ from ..world.env import GridEnv, at_goal
 from .swept import SweptArea, swept_positions
 from ..rollout import visited as visited_mod
 from hopfield import Hopfield
-from ..world.vec_env import make_vec
+from ..world.vec_env import make_vec, obs_psi
 from ..world import episode
 from ..memory import backend as memory_backend
 
@@ -77,7 +77,6 @@ def batched_navigation_trials(
     Returns, per trial, the number of steps taken to reach the goal, or -1 if
     the step budget ran out.
     """
-    memory_backend.require_hopfield(cfg, "batched_navigation_trials")
     B = len(hopfields)
     assert len(starts) == B
 
@@ -124,7 +123,14 @@ def batched_navigation_trials(
 
         _chart = None
         q = np.zeros((B, 2), dtype=np.float32)   # q_magnitude when no signal
-        if cfg.agent.input_hopfield_signal:
+        kv_conf = None
+        if memory_backend.is_kv(cfg):
+            # Sensory-keyed recall + grid MLP, as in the rollout collector.
+            _ch, q, _m, kv_conf = memory_backend.readout_for(cfg).signal(
+                hopfields, vec.obs_batch(), obs_psi(vec, None), positions,
+                env_offset)
+            hop_signal = torch.from_numpy(_ch).float().to(device)
+        elif cfg.agent.input_hopfield_signal:
             _chart_on = getattr(cfg.agent, "input_chart_frac", False)
             _o = signal_ops.hopfield_signal_at(
                 vectorhash, cfg, embeddings_np, embeddings, positions,
@@ -160,6 +166,9 @@ def batched_navigation_trials(
         }
         if _chart_v is not None:
             values["chart_frac"] = _chart_v
+        if kv_conf is not None:
+            values["memory_conf"] = torch.from_numpy(
+                kv_conf).float().to(device).unsqueeze(-1)
         if getattr(cfg.agent, "input_q_magnitude", False):
             values["q_magnitude"] = torch.from_numpy(
                 signal_ops.q_magnitude(q)).to(device)
@@ -259,7 +268,6 @@ def batched_exploration_trials(
     for a uniform goal is P(found). See evaluation/swept.py for why that is the
     headline number and cell coverage is not.
     """
-    memory_backend.require_hopfield(cfg, "batched_exploration_trials")
     B = len(hopfields)
     assert len(starts) == B
 
@@ -322,7 +330,14 @@ def batched_exploration_trials(
 
         _chart = None
         q = np.zeros((B, 2), dtype=np.float32)   # q_magnitude when no signal
-        if cfg.agent.input_hopfield_signal:
+        kv_conf = None
+        if memory_backend.is_kv(cfg):
+            # Sensory-keyed recall + grid MLP, as in the rollout collector.
+            _ch, q, _m, kv_conf = memory_backend.readout_for(cfg).signal(
+                hopfields, vec.obs_batch(), obs_psi(vec, None), positions,
+                env_offset)
+            hop_signal = torch.from_numpy(_ch).float().to(device)
+        elif cfg.agent.input_hopfield_signal:
             _chart_on = getattr(cfg.agent, "input_chart_frac", False)
             _o = signal_ops.hopfield_signal_at(
                 vectorhash, cfg, embeddings_np, embeddings, positions,
@@ -357,6 +372,9 @@ def batched_exploration_trials(
         }
         if _chart_v is not None:
             values["chart_frac"] = _chart_v
+        if kv_conf is not None:
+            values["memory_conf"] = torch.from_numpy(
+                kv_conf).float().to(device).unsqueeze(-1)
         if getattr(cfg.agent, "input_q_magnitude", False):
             values["q_magnitude"] = torch.from_numpy(
                 signal_ops.q_magnitude(q)).to(device)

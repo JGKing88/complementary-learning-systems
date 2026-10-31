@@ -18,6 +18,8 @@ similarity ≈ 0.50 against ≈ 0.32 for the best foreign key (§2.4).
 """
 from __future__ import annotations
 
+from typing import NamedTuple
+
 import numpy as np
 
 from ..world.env import CARDINAL_RADIANS, PANORAMA_BINS, cone_offsets, panorama_bins
@@ -34,6 +36,18 @@ def omni_key(env, pos) -> np.ndarray:
     total = np.bincount(bins, weights=view, minlength=PANORAMA_BINS)
     count = np.bincount(bins, minlength=PANORAMA_BINS)
     return (total / np.maximum(count, 1)).astype(np.float32)
+
+
+class KVEntry(NamedTuple):
+    """One write: a goal key and the grid code it maps to.
+
+    The evaluators store whatever ``agent_step`` returns under
+    ``"store_embedding"`` with ``memory.input_memory(...)``; under the
+    sensory_kv backend that is a KVEntry, so the same store line serves both
+    memories, and a KVEntry handed to a Hopfield fails loudly.
+    """
+    key: np.ndarray
+    value: np.ndarray
 
 
 class SensoryKVMemory:
@@ -60,6 +74,12 @@ class SensoryKVMemory:
             raise ValueError(f"value width {value.shape[0]} != {self.value_dim}")
         self.keys.append(key)
         self.values.append(value)
+
+    def input_memory(self, entry: KVEntry) -> None:
+        """Hopfield-shaped store call: write one ``KVEntry``."""
+        if not isinstance(entry, KVEntry):
+            raise TypeError(f"SensoryKVMemory stores a KVEntry, got {type(entry).__name__}")
+        self.write(entry.key, entry.value)
 
     def copy(self) -> "SensoryKVMemory":
         m = SensoryKVMemory(self.key_dim, self.value_dim)

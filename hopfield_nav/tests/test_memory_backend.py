@@ -203,12 +203,9 @@ def test_kv_refuses_non_task_rollouts(tmp_path):
 # 5 ---------------------------------------------------------------------------
 
 @pytest.mark.parametrize("where", [
-    "metrics.agent_step", "metrics.evaluate_navigation",
-    "metrics.evaluate_goal_discovery", "metrics.evaluate_exploration",
+    # Stage 2 taught the rest; these two are not primary metrics and still
+    # refuse (test_memory_backend_stage2.py covers the supported ones).
     "metrics.evaluate_realistic", "metrics.evaluate_repeat",
-    "metrics.evaluate_sequential_episodes", "protocols.run_mini_episode",
-    "protocols.run_sequential_protocol", "batched.batched_navigation_trials",
-    "batched.batched_exploration_trials",
 ])
 def test_unsupported_evaluators_refuse_kv(tmp_path, where):
     """The guard is each function's first statement, so every other argument

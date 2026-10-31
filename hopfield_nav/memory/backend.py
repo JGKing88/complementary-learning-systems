@@ -16,7 +16,7 @@ from functools import lru_cache
 import numpy as np
 
 from .readout import GridMemoryReadout
-from .sensory_kv import SensoryKVMemory, omni_key
+from .sensory_kv import KVEntry, SensoryKVMemory, omni_key
 
 HOPFIELD = "hopfield"
 SENSORY_KV = "sensory_kv"
@@ -65,6 +65,8 @@ def validate(cfg) -> None:
         problems.append("--grid_mlp_checkpoint")
     if getattr(cfg, "training_mode", "ppo") != "ppo":
         problems.append("training_mode ppo (the BC teachers read Hopfield q)")
+    if getattr(cfg, "hopfield_oracle", False):
+        problems.append("no hopfield_oracle (an encoded_Phi oracle)")
     if cfg.hopfield.auto_nav_warmup or cfg.hopfield.auto_store_warmup:
         problems.append("no auto_nav_warmup / auto_store_warmup")
     from ..world.env import FOVEAL_HALF_ANGLE_DEG, PANORAMA_BIN_DEG
@@ -148,6 +150,43 @@ def sample_offarena_cells(Npos: int, offset, env_size: int, n: int,
     return np.array(out, dtype=np.int64).reshape(n, 2)
 
 
+def kv_entry_at(cfg, env, cell, env_offset) -> KVEntry:
+    """What a store at ``cell`` writes: its four-heading key, its grid code."""
+    ro = readout_for(cfg)
+    return KVEntry(omni_key(env, cell), ro.goal_value(cell, env_offset))
+
+
+def kv_distractor_entries(cfg, env_offset, env_size: int, n: int,
+                          rng: np.random.RandomState) -> list[KVEntry]:
+    """``n`` foreign goals for the evaluators, drawn so ``rng`` advances
+    exactly as ``rollout.distractors.sample_distractors`` advances it.
+
+    The evaluators draw distractors and then trial starts from one stream; a
+    different consumption here would hand the sensory_kv model different
+    starts from the Hopfield model's. Cells come from the same rejection loop
+    (``sample_offarena_cells``); which foreign arena's key each cell gets is
+    drawn from a second stream seeded by the cells, so it never touches
+    ``rng``.
+    """
+    ro = readout_for(cfg)
+    cells = sample_offarena_cells(ro.grid_code.Npos, env_offset, env_size, n, rng)
+    if n == 0:
+        return []
+    keys = foreign_pool_for(cfg, env_size).keys
+    side = np.random.RandomState(
+        int((cells[:, 0] * 7919 + cells[:, 1] * 104729).sum() + n) % (2 ** 32))
+    vals = ro.grid_code.at(cells[:, 0], cells[:, 1])
+    return [KVEntry(keys[side.randint(len(keys))], vals[i]) for i in range(n)]
+
+
+def kv_memory_with(cfg, entries) -> SensoryKVMemory:
+    """A fresh store holding ``entries`` in order."""
+    mem = SensoryKVMemory(value_dim=readout_for(cfg).grid_code.Ng)
+    for e in entries:
+        mem.input_memory(e)
+    return mem
+
+
 def new_kv_memory(cfg, env_offset, env_size: int, n_distractors: int,
                   rng: np.random.RandomState) -> SensoryKVMemory:
     """A fresh store holding ``n_distractors`` foreign goals."""
@@ -164,7 +203,8 @@ def new_kv_memory(cfg, env_offset, env_size: int, n_distractors: int,
 
 
 __all__ = [
-    "BACKENDS", "ForeignKeyPool", "HOPFIELD", "SENSORY_KV", "foreign_pool_for",
-    "is_kv", "new_kv_memory", "readout_for", "require_hopfield",
+    "BACKENDS", "ForeignKeyPool", "HOPFIELD", "KVEntry", "SENSORY_KV",
+    "foreign_pool_for", "is_kv", "kv_distractor_entries", "kv_entry_at",
+    "kv_memory_with", "new_kv_memory", "readout_for", "require_hopfield",
     "sample_offarena_cells", "validate",
 ]

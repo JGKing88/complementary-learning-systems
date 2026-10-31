@@ -41,6 +41,7 @@ from hopfield_nav.evaluation.checkpoint_io import (
 )
 from .baseline import merge_iter_traces
 from hopfield import Hopfield
+from hopfield_nav.memory import backend as memory_backend
 from hopfield_nav.world import generate as gen
 from hopfield_nav.world.scaffold import VectorHash, place_envs
 
@@ -222,8 +223,12 @@ def run_sequential(
     agent.eval()
     N = len(val_envs)
     embed_dim = vectorhash.encoded_Phi.shape[2]
-    hopfield = Hopfield(embed_dim, beta=cfg.hopfield.beta,
-            storage_rule=cfg.hopfield.storage_rule, device=str(device))
+    # memory_backend='sensory_kv' (GRID_MLP_NAV_PLAN stage 2): the same one
+    # never-reset memory, as a sensory key-value store.
+    hopfield = (memory_backend.kv_memory_with(cfg, [])
+                if memory_backend.is_kv(cfg) else
+                Hopfield(embed_dim, beta=cfg.hopfield.beta,
+            storage_rule=cfg.hopfield.storage_rule, device=str(device)))
     rng = np.random.RandomState(seed)
     goal_in_mem: dict[int, bool] = {i: False for i in range(N)}
     stored_at_goal_count: dict[int, int] = {i: 0 for i in range(N)}

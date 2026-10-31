@@ -1871,8 +1871,6 @@ def main():
         if other:
             p.error(f"--memory_backend sensory_kv runs task stages only; "
                     f"the schedule also has {other}")
-        if getattr(cfg, "eval_scope", "all") != "task":
-            p.error("--memory_backend sensory_kv needs --eval_scope task")
         try:
             memory_backend.validate(cfg)
         except ValueError as exc:

@@ -85,7 +85,6 @@ def agent_step(
     is overridden to a greedy best cardinal step (discrete) or a unit step
     toward the goal in continuous space, while the store head is unchanged.
     """
-    memory_backend.require_hopfield(cfg, "agent_step")
     signal_dim = 4 if cfg.agent.hopfield_mode == "discrete" else 2
     prev_action_dim = 4 if cfg.agent.movement_mode == "discrete" else 2
 
@@ -141,7 +140,24 @@ def agent_step(
 
     _chart = None
     q = np.zeros((1, 2), dtype=np.float32)       # q_magnitude when no recall
-    if not cfg.agent.input_hopfield_signal:
+    kv_conf = None
+    if memory_backend.is_kv(cfg):
+        # Sensory-keyed recall + grid MLP, as in the rollout collector: d on
+        # the hopfield_signal slot, c on memory_conf. The query is the view
+        # the agent sees, at the heading it was cast at.
+        _psi = env._obs_heading()
+        _ch, q, _m, kv_conf = memory_backend.readout_for(cfg).signal(
+            [hopfield], env.obs_at(pos_tuple, _psi)[None, :], np.array([_psi]),
+            pos_arr, env_offset)
+        hop_signal = torch.from_numpy(_ch).float().to(device)
+        # What a store on this step writes: the goal cell when at goal with
+        # off-cell stores suppressed (as get_store_patterns), else this cell.
+        _cell = (goal_local
+                 if (goal_local is not None and at_goal(env)
+                     and not getattr(cfg.env, "allow_offcell_store", True))
+                 else pos_tuple)
+        store_embeddings = [memory_backend.kv_entry_at(cfg, env, _cell, env_offset)]
+    elif not cfg.agent.input_hopfield_signal:
         hop_signal = torch.zeros(1, signal_dim, device=device)
     elif use_oracle:
         sig_np, q = signal_ops.oracle_signal_at(
@@ -186,6 +202,9 @@ def agent_step(
     }
     if _chart_v is not None:
         values["chart_frac"] = _chart_v
+    if kv_conf is not None:
+        values["memory_conf"] = torch.from_numpy(
+            kv_conf).float().to(device).unsqueeze(-1)
     if getattr(cfg.agent, "input_q_magnitude", False):
         values["q_magnitude"] = torch.from_numpy(
             signal_ops.q_magnitude(q)).to(device)
@@ -309,7 +328,6 @@ def evaluate_navigation(
     they survive changes to batching and RNG consumption order that would move
     the aggregates -- so this is what the golden fixtures pin.
     """
-    memory_backend.require_hopfield(cfg, "evaluate_navigation")
     if n_distractors_list is None:
         n_distractors_list = [0]
 
@@ -341,20 +359,29 @@ def evaluate_navigation(
             starts: list[tuple[int, int]] = []
             start_dists: list[float] = []
             for _trial_idx in range(num_trials):
-                hopfield = Hopfield(embed_dim, beta=cfg.hopfield.beta,
-            storage_rule=cfg.hopfield.storage_rule, device=str(device))
-                # Goal + distractors, shuffled so storage order is random.
-                patterns = [goal_enc]
-                # `env.size`, not `cfg.env.size`: the exclusion box is this
-                # arena's footprint, and a val set at a size the run never
-                # trained on would otherwise draw "distractors" from inside it.
-                patterns.extend(sample_distractors(
-                    vectorhash, env_offset, env.size, n_dist, rng,
-                ))
-                rng.shuffle(patterns)
-                for pat in patterns:
-                    hopfield.input_memory(torch.from_numpy(pat).float())
-                hopfields.append(hopfield)
+                if memory_backend.is_kv(cfg):
+                    # Same draws as the Hopfield branch, so both backends get
+                    # the same trials.
+                    entries = [memory_backend.kv_entry_at(cfg, env, goal, env_offset)]
+                    entries.extend(memory_backend.kv_distractor_entries(
+                        cfg, env_offset, env.size, n_dist, rng))
+                    rng.shuffle(entries)
+                    hopfields.append(memory_backend.kv_memory_with(cfg, entries))
+                else:
+                    hopfield = Hopfield(embed_dim, beta=cfg.hopfield.beta,
+                storage_rule=cfg.hopfield.storage_rule, device=str(device))
+                    # Goal + distractors, shuffled so storage order is random.
+                    patterns = [goal_enc]
+                    # `env.size`, not `cfg.env.size`: the exclusion box is this
+                    # arena's footprint, and a val set at a size the run never
+                    # trained on would otherwise draw "distractors" from inside it.
+                    patterns.extend(sample_distractors(
+                        vectorhash, env_offset, env.size, n_dist, rng,
+                    ))
+                    rng.shuffle(patterns)
+                    for pat in patterns:
+                        hopfield.input_memory(torch.from_numpy(pat).float())
+                    hopfields.append(hopfield)
 
                 start = random_start(env.size, goal, rng)
                 starts.append(start)
@@ -450,7 +477,6 @@ def evaluate_goal_discovery(
     n_arrivals, n_stores)``. See evaluate_navigation for why per-trial records,
     not aggregates, are what the golden fixtures pin.
     """
-    memory_backend.require_hopfield(cfg, "evaluate_goal_discovery")
     if n_distractors_list is None:
         n_distractors_list = [0]
 
@@ -477,13 +503,18 @@ def evaluate_goal_discovery(
             goal = env.goal_location
 
             for _trial_idx in range(num_trials):
-                distractors = sample_distractors(
-                    vectorhash, env_offset, env.size, n_dist, rng,
-                )
-                hopfield = Hopfield(embed_dim, beta=cfg.hopfield.beta,
-            storage_rule=cfg.hopfield.storage_rule, device=str(device))
-                for pat in distractors:
-                    hopfield.input_memory(torch.from_numpy(pat).float())
+                if memory_backend.is_kv(cfg):
+                    hopfield = memory_backend.kv_memory_with(
+                        cfg, memory_backend.kv_distractor_entries(
+                            cfg, env_offset, env.size, n_dist, rng))
+                else:
+                    distractors = sample_distractors(
+                        vectorhash, env_offset, env.size, n_dist, rng,
+                    )
+                    hopfield = Hopfield(embed_dim, beta=cfg.hopfield.beta,
+                storage_rule=cfg.hopfield.storage_rule, device=str(device))
+                    for pat in distractors:
+                        hopfield.input_memory(torch.from_numpy(pat).float())
 
                 start = random_start(env.size, goal, rng)
                 env.set_position(start)
@@ -639,7 +670,6 @@ def evaluate_exploration(
     If ``per_trial`` is a list, one record per trial is appended to it:
     ``(n_dist, env_local_idx, trial_idx, n_cells, found_goal, steps_to_goal)``.
     """
-    memory_backend.require_hopfield(cfg, "evaluate_exploration")
     if n_distractors_list is None:
         n_distractors_list = [0]
 
@@ -673,15 +703,20 @@ def evaluate_exploration(
             # one would have.
             hopfields, starts = [], []
             for _trial_idx in range(num_trials):
-                distractors = sample_distractors(
-                    vectorhash, env_offset, grid_size, n_dist, rng,
-                )
-                hopfield = Hopfield(embed_dim, beta=cfg.hopfield.beta,
-            storage_rule=cfg.hopfield.storage_rule,
-                                    device=str(device))
-                for pat in distractors:
-                    hopfield.input_memory(torch.from_numpy(pat).float())
-                hopfields.append(hopfield)
+                if memory_backend.is_kv(cfg):
+                    hopfields.append(memory_backend.kv_memory_with(
+                        cfg, memory_backend.kv_distractor_entries(
+                            cfg, env_offset, grid_size, n_dist, rng)))
+                else:
+                    distractors = sample_distractors(
+                        vectorhash, env_offset, grid_size, n_dist, rng,
+                    )
+                    hopfield = Hopfield(embed_dim, beta=cfg.hopfield.beta,
+                storage_rule=cfg.hopfield.storage_rule,
+                                        device=str(device))
+                    for pat in distractors:
+                        hopfield.input_memory(torch.from_numpy(pat).float())
+                    hopfields.append(hopfield)
                 starts.append(random_start(grid_size, goal, rng))
 
             visited, found, steps_to_goal, swept_res = batched_exploration_trials(
@@ -1118,12 +1153,13 @@ def evaluate_sequential_episodes(
     store-event markers. Also returns per-block boundaries and summary
     statistics.
     """
-    memory_backend.require_hopfield(cfg, "evaluate_sequential_episodes")
     agent.eval()
     N = len(val_envs)
     embed_dim = vectorhash.encoded_Phi.shape[2]
-    hopfield = Hopfield(embed_dim, beta=cfg.hopfield.beta,
-            storage_rule=cfg.hopfield.storage_rule, device=str(device))
+    hopfield = (memory_backend.kv_memory_with(cfg, [])
+                if memory_backend.is_kv(cfg) else
+                Hopfield(embed_dim, beta=cfg.hopfield.beta,
+            storage_rule=cfg.hopfield.storage_rule, device=str(device)))
     rng = np.random.RandomState(seed)
     goal_in_mem: dict[int, bool] = {i: False for i in range(N)}
     env_iters: dict[int, list[tuple[int, int]]] = {i: [] for i in range(N)}
