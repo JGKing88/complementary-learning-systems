@@ -12,10 +12,11 @@ is (random walks + odometry, no goals). **If a navigator built on the grid MLP
 matches Agent-HaSH under the same continual protocol, it is a competitor
 model.**
 
-Two models share everything except the memory: **idea 1** (§1) uses a
-nonparametric key-value store; **idea 2** (§6) uses a meta-learned network whose
-weights stay plastic at evaluation. Both share one controller with Agent-HaSH's
-arrangement, so the three differ only in what fills the memory-readout input.
+Three models are planned. Idea 1 (§1) uses a nonparametric key-value store,
+and idea 2 (§6) a meta-learned network whose weights stay plastic at
+evaluation. Both share one controller with Agent-HaSH's arrangement, so they
+and Agent-HaSH differ only in what fills the memory-readout input. Idea 3 (§7)
+has no memory module: a GRU holds the goals in its hidden state.
 
 ## 1. Model (idea 1)
 
@@ -244,7 +245,7 @@ second-order gradient is affordable. A first-order approximation is the
 fallback.
 
 This design has two costs. More of each lifetime is spent revisiting envs
-whose goal is already stored, which shifts training toward exploit; in §9.6
+whose goal is already stored, which shifts training toward exploit; in §10.6
 the variants that exploit best already search worst. And every write is one
 more step the outer loop backpropagates through, so a lifetime with many
 writes may need first-order gradients or the `R` + `H` split of §6.5, where
@@ -293,7 +294,92 @@ range of lifetime lengths T in training, how many earlier envs to revisit when
 T is large (all of them, or a random subset), and exact versus first-order
 gradients.
 
-## 7. Decisions and open items
+## 7. Idea 3: a plain GRU, with the goal held in its state
+
+Idea 3 is the most naive model. It has no memory module. A GRU gets the same
+inputs as idea 1 minus the memory readout, and has to hold each goal in its
+hidden state. The question is whether a memory module is needed at all.
+
+It is also the control the continual-learning comparison is missing. The
+existing RNN baseline (`train_rnn.py`) learns envs one at a time in its
+weights, which is the forgetting setup the continual-learning controls test.
+Nothing in the repo yet tests goals held in activations across the protocol.
+If a plain GRU manages it, it is a serious competitor. If it fails in a
+characteristic way, that failure is the argument for a memory module.
+
+None of idea 3 is built yet.
+
+### 7.1 Model
+
+- The controller is a GRU with the same polar action head as the other models.
+- Its inputs are the live view (with the panorama, `distal_amp` 1), the grid
+  code `g_t` (the smoothed grid code at the agent's position, 434 numbers),
+  the previous action and the previous reward. There is no memory readout
+  and no goal-in-memory bit.
+- It gets `g_t` so that the only difference from idea 1 is where the goal
+  lives. Without it, the GRU would also have to learn path integration, which
+  makes stage 1 harder and the result harder to interpret.
+- The hidden state is never reset within a lifetime. In stage 1 it carries
+  across the K visits to one env; in stage 2 it carries across the whole
+  continual protocol.
+
+### 7.2 Stage 1: one env
+
+The agent explores, finds the goal, holds it in its state, and keeps going back
+to it. This is the RL² setting (Duan et al. 2016; Wang et al. 2016), which
+recurrent agents learn routinely, and this repo's teacher-swap test
+(2026-09-01, a frozen RNN adapts in context) points the same way.
+
+Training is the `task3r_k2_h128` recipe with two changes.
+1. There is no memory, so there is no store. The first goal touch still ends
+   novelty, as the store does in `task3r`.
+2. The hidden state carries across the K visits. Today `task3r` resets it
+   every visit, because the Hopfield memory carries the goal. PPO then has to
+   backpropagate across visit boundaries, so a whole visit sequence trains
+   as one sequence. That is a contained code change in the collector and the
+   PPO update.
+
+It passes if revisits find the goal nearly every time, in close to idea 1's
+11 to 12 steps.
+
+### 7.3 Stage 2: the continual protocol
+
+One GRU runs the whole continual protocol, revisits included, and has to keep
+every env's goal in its state while it learns new envs.
+
+Model size is not the obstacle. Six goals is a few dozen numbers, and a
+512-unit state holds that easily. Data is not the obstacle either, since
+lifetimes can be generated without limit. Time is. At evaluation size the
+protocol is 840 mini-episodes. Env 1's goal is written near the start and
+needed again tens of thousands of steps later. Backpropagation through time
+cannot span that, and with truncated backpropagation the gradient never
+connects the moment a goal is stored to the moment it is needed. So the
+network gets no signal to protect env 1's goal while it learns env 5.
+
+The plan works around that.
+1. Train on short lifetimes where full backpropagation fits: 2 or 3 envs, a
+   few revisits each, and a step cap after the goal is found. That is a few
+   hundred to about a thousand steps per sequence.
+2. Use a curriculum on the number of envs and on the gap between finding a
+   goal and revisiting it.
+3. Make length generalisation the test. Train short, evaluate on the full
+   6-env protocol with `run_cl_ood.sh` (as in §10.8), and plot retention
+   against the time since the goal was found. If the GRU learns stable
+   storage, retention stays flat at long gaps. If it learns decaying storage,
+   retention falls off, and that curve is the result.
+
+### 7.4 Order of work and open choices
+
+1. Stage 1: carry the hidden state across visits in the collector and PPO,
+   then train on the `task3r` recipe.
+2. Stage 2 on short lifetimes, at 2 and 3 envs.
+3. Length generalisation on the full protocol, scored like §10.8 so all three
+   models sit side by side.
+
+Still open are the hidden size (128 as in `task3r`, or larger), GRU or LSTM,
+the training sequence length, and the curriculum schedule.
+
+## 8. Decisions and open items
 
 | | |
 |---|---|
@@ -306,17 +392,18 @@ gradients.
 | Plasticity | controller never plastic at evaluation — **decided** |
 | Idea 2 `M` | MLP; phase outputs + confidence; panorama view input — **agreed** |
 | Idea 2 training | Default in §6.2 and §6.3. One plastic MLP, meta-learn θ₀ and α, supervised write at the store, PPO does not train `M`. **Decided.** Variants in §6.5, small choices in §6.6. |
+| Idea 3 | GRU with the live view, `g_t`, previous action and reward; no memory readout. Hidden state carried across visits (stage 1), then across the continual protocol (stage 2). **Decided**; rest open (§7.4). |
 | d0_base recipe | later variant |
 | Learned store head | later, once the oracle version works |
 
-## 8. Implementation order
+## 9. Implementation order
 
 1. Memory module (argmax key-value, direction-indexed keys, heading-sliced
    query) with a unit test reproducing §2.4. Done.
 2. Rollout wiring: `d` and `c` inputs through the frozen MLP, oracle store,
    foreign-goal pre-fill, `scale_q_by_c` flag. Done (stage 1, `8a51297`).
 3. Smoke run. Done.
-4. Agent-HaSH `task3r_k2_h128` baseline at `--distal_amp 1.0`. Done (§9).
+4. Agent-HaSH `task3r_k2_h128` baseline at `--distal_amp 1.0`. Done (§10).
 5. Stage 2, the sensory_kv backend in the other evaluators. Done (`74f79f2`).
    `evaluate_navigation`, `evaluate_goal_discovery`, `evaluate_exploration`,
    `evaluate_sequential_episodes` and `analysis/continual/agenthash.py` now
@@ -331,8 +418,11 @@ gradients.
    Not run yet.
 7. Idea 2 (§6.4): `M` meta-trained alone on random-walk lifetimes, a
    retention-vs-N go/no-go, then joint training with the controller.
+8. Idea 3 (§7.4): stage 1 with the hidden state carried across visits, then
+   stage 2 on short lifetimes, then length generalisation on the full
+   protocol.
 
-## 9. Idea 1 results — first head-to-head (2026-09-30)
+## 10. Idea 1 results — first head-to-head (2026-09-30)
 
 Implementation: stage 1 on this branch (`hopfield_nav/memory/`, commit
 `8a51297`); Hopfield path regression-tested bit-identical
@@ -383,7 +473,7 @@ second visit, memory kept.
   is the same late and slightly *slower* early with it, so the compass the
   panorama provides does not explain idea 1's lead.
 
-### 9.1 Like-for-like at the end of training, with d0_base (2026-09-30)
+### 10.1 Like-for-like at the end of training, with d0_base (2026-09-30)
 
 `python -m analysis.sensory_key.eval_task_ckpts` (jobs 24487511, 24489724):
 `evaluate_task` on ONE env set -- the 6 `base_val` envs the task3r runs
@@ -414,7 +504,7 @@ one checkpoint, h1024, trained under its own (non-task) recipe. Results
 - d0_base's 12.21 at d = 10 matches its exploit-probe 12.14 (`DUAL_TRAINING.md`)
   -- the two protocols agree on it.
 
-### 9.2 How much sooner (same recipe, same experience per update)
+### 10.2 How much sooner (same recipe, same experience per update)
 
 First update at which the 3-eval rolling mean of the in-training task eval
 crosses a target (idea 1 / Agent-HaSH + panorama / Agent-HaSH no panorama).
@@ -442,7 +532,7 @@ with `c` apart; and linear recall blending distractors into `q` (d0_base
 sequence, retention) and nav / disc / expl need stage 2 for the sensory_kv
 backend. One seed each.
 
-### 9.3 Why idea 1 learns exploit sooner: the inputs themselves (2026-09-30)
+### 10.3 Why idea 1 learns exploit sooner: the inputs themselves (2026-09-30)
 
 The two controllers get the same *information* -- a 2-D goal direction to
 follow when trustworthy, same view, same previous action / reward, same
@@ -471,12 +561,12 @@ presence signal.) Empty memory gives exactly 0 for both, so that case is equal.
    the goal (AUC 0.67 within 2 cells) because ‖q‖ is small there either way;
    `c` separates at 0.99 everywhere.
 
-Consistent with §9.2: at d = 0 (no gate needed) idea 1 is ~2× sooner -- (1)
+Consistent with §10.2: at d = 0 (no gate needed) idea 1 is ~2× sooner -- (1)
 and (2); at d = 10, (3) adds and the gap grows to 2.5–3×. Correlational.
 **Causal test**: Agent-HaSH task3r with `--no-input_hopfield_raw` (unit q,
 still 0 when empty). If it closes most of the d = 0 gap, the scale is the cause.
 
-### 9.4 Bug found: an empty Hopfield read a spurious q (fixed 2026-10-01)
+### 10.4 Bug found: an empty Hopfield read a spurious q (fixed 2026-10-01)
 
 With a list of per-trajectory Hopfields where only some were empty,
 `signal.hopfield_signal_at` and `multistep_q` projected the empty rows with
@@ -490,18 +580,18 @@ behavior-preserving refactor; fixed in `d2ec758` (q zeroed for empty rows).
 **Affected**: task-regime training (trajectories with 0 distractors, before
 their store -- both task3r Agent-HaSH baselines, 22883646 and 24342873) and
 `evaluate_task` at 0 distractors for every Hopfield model once any trajectory
-had stored (the §9.1 d = 0 rows for d0_base / task3r). **Not affected**:
+had stored (the §10.1 d = 0 rows for d0_base / task3r). **Not affected**:
 d = 10 evals (no empty rows), d0_base's training (one shared Hopfield per
 rollout), `agenthash` continual, batched nav / expl evals, and idea 1.
 
-So §9.1–9.2's Agent-HaSH task numbers carry it. Reruns on the fixed code:
+So §10.1–10.2's Agent-HaSH task numbers carry it. Reruns on the fixed code:
 `task3r_k2_h128_distal` (24504515) and the unit-q + ‖q‖ variant
 `task3r_k2_h128_distal_qmag` (24504516; `--no-input_hopfield_raw
 --input_q_magnitude`, the Hopfield analog of idea 1's (d, c)).
 
-### 9.5 Fixed-code head-to-head, and the causal test (2026-10-02)
+### 10.5 Fixed-code head-to-head, and the causal test (2026-10-02)
 
-All on the fixed code (§9.4), `task3r_k2_h128` at `distal_amp 1`, one seed each:
+All on the fixed code (§10.4), `task3r_k2_h128` at `distal_amp 1`, one seed each:
 idea 1 (24342872, unaffected by the bug), Agent-HaSH raw `q` rerun
 (`_distal`, 24504515), Agent-HaSH unit `q` + ‖q‖ (`_distal_qmag`, 24504516;
 `--no-input_hopfield_raw --input_q_magnitude` -- the Hopfield analog of idea
@@ -532,17 +622,17 @@ u3800–4000 pooled, 5 eval seeds each, ± across checkpoints;
    Agent-HaSH's readout, not the memory.** Split ‖q‖ out of `q` and Agent-HaSH
    learns exploit as fast as idea 1 -- slightly faster at d = 0, close behind
    at d = 10 -- and 2–3× faster than with raw `q`. Raw `q` folds the magnitude
-   (its gate) into the vector and shrinks 3× toward the goal (§9.3).
+   (its gate) into the vector and shrinks 3× toward the goal (§10.3).
 2. **At d = 0 the end state ties**: unit q + ‖q‖ 11.68 vs idea 1 11.60.
 3. **With 10 distractors idea 1 is still best at the end** (11.5 vs 12.4 vs
    13.2) and chases foreign goals least before storing (0.007 vs 0.042 /
    0.023). This residual is the memory: near the goal ‖q‖ cannot tell the own
-   goal from a distractor (presence AUC 0.67 within 2 cells, §9.3), while the
+   goal from a distractor (presence AUC 0.67 within 2 cells, §10.3), while the
    argmax store's `c` separates them at 0.99.
 4. **Search: raw-q Agent-HaSH is the best searcher** (found 0.65 / 0.62 vs
    0.54–0.60). Idea 1's search also collapsed once (u4000) -- one seed.
 
-### 9.6 Projection storage, and idea 1 with magnitude folded in (2026-10-03)
+### 10.6 Projection storage, and idea 1 with magnitude folded in (2026-10-03)
 
 Two more runs, same recipe, fixed code, one seed each:
 `task3r_k2_h128_distal_qmag_proj` (24570179; Agent-HaSH unit q + ‖q‖ with
@@ -578,7 +668,7 @@ idea 1 c·d / raw q / q + ‖q‖ / q + ‖q‖ proj):
    as fast as q + ‖q‖ (fastest to follow its readout of all five), but its
    final exploit is no better: 12.28 at d = 0 (≈ raw q) and 12.87 ± 0.99 at
    d = 10 (between q + ‖q‖ and raw q, inside their spread). It searches like
-   raw q (0.64 / 0.62). The near-goal own-vs-distractor confusion (§9.3) is
+   raw q (0.64 / 0.62). The near-goal own-vs-distractor confusion (§10.3) is
    about how strongly the *query* overlaps each stored pattern, which the
    projection rule does not change -- a plausible reason it does not fix the
    d = 10 gap. Not tested.
@@ -593,7 +683,7 @@ idea 1 c·d / raw q / q + ‖q‖ / q + ‖q‖ proj):
    c·d) and proj search better (0.63–0.65) and exploit ~12.1–12.3. One seed
    each -- worth a second seed before reading much into it.
 
-### 9.7 Two seeds, over training: idea 1 vs Agent-HaSH q + ‖q‖ + projection (2026-10-03)
+### 10.7 Two seeds, over training: idea 1 vs Agent-HaSH q + ‖q‖ + projection (2026-10-03)
 
 Second seeds (seed 43): idea 1 `task3r_k2_h128_gmlp` (24660241; 20 h limit,
 replaced 24659510 that would have finished minutes inside 16 h) and
@@ -621,15 +711,15 @@ Late window (u3000–4000, mean over evals; per seed in brackets):
 **Reading.** Idea 1 takes more direct paths to a stored goal in both seeds;
 the gap is small without distractors and large with 10 (seed ranges do not
 overlap: 0.86–0.90 vs 0.70–0.81) -- the argmax memory's distractor advantage
-(§9.5–9.6) holds across seeds. Search is the same for both models (found
+(§10.5–10.6) holds across seeds. Search is the same for both models (found
 0.48–0.53), and varies more between seeds (≈ 0.2) than between models. The
 seed-43 Agent-HaSH run dips at the very end (u4000 eval: revisit 19.8 steps at
 d = 0), so its end-point labels on the figure (0.70 / 0.74) understate its
 late-window level; the window means above are the fair comparison.
 
-### 9.8 Stage 2: nav, expl, disc and the continual protocol (2026-10-31)
+### 10.8 Stage 2: nav, expl, disc and the continual protocol (2026-10-31)
 
-Both models from §9.7 (idea 1 and Agent-HaSH q + ‖q‖ with projection storage),
+Both models from §10.7 (idea 1 and Agent-HaSH q + ‖q‖ with projection storage),
 seeds 42 and 43, each scored at u3800 and u3950. Each cell is the mean of
 those four values, with their range in brackets. `eval_all` used 32 trials per
 env on each run's 6 recorded val envs (jobs 27456617 to 27456620). The
@@ -657,7 +747,7 @@ Reading.
 1. Navigation to a stored goal. Both models nearly always succeed, and idea 1
    takes fewer steps: 11.1 against 13.0 to 14.2 with the deterministic policy.
    At 10 distractors the two ranges do not overlap. This agrees with the
-   path optimality in §9.7.
+   path optimality in §10.7.
 2. Continual protocol. Neither model forgets much. Idea 1 reached the goal on
    all 2400 revisits with no loss in any env, and it reaches it faster (12.8
    against 15.6 steps; the ranges do not overlap). Agent-HaSH lost 5% of one
@@ -672,4 +762,4 @@ Reading.
    memory, idea 1's own-env key then matches that cell's entry with high `c`,
    and the agent follows a confident direction to a cell that is not the
    goal. A Hopfield memory blends such a write with everything else it holds.
-   A fair disc comparison needs a trained store head (§7).
+   A fair disc comparison needs a trained store head (§8).
