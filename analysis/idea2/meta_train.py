@@ -53,7 +53,10 @@ def lifetime_loss(theta, log_alpha, pool, rng, a, device):
     for t, env in enumerate(envs):
         params = write(params, log_alpha, T_(env.visit(rng, a.visit_steps), device),
                        T_(env.target, device), a.k, create_graph=True, **_wkw(a))
-        for j in range(t + 1):
+        scored = range(t + 1)
+        if a.score_envs and t + 1 > a.score_envs:
+            scored = rng.choice(t + 1, size=a.score_envs, replace=False)
+        for j in scored:
             x, _ = envs[j].test_views(rng, a.test_views)
             ph, c = forward(params, T_(x, device), a.key)
             total = total + phase_loss(ph, T_(envs[j].target, device).expand_as(ph)) \
@@ -150,6 +153,11 @@ def main():
     p.add_argument("--n_eval_envs", type=int, default=300)
     p.add_argument("--eval_every", type=int, default=500)
     p.add_argument("--eval_N", type=int, nargs="+", default=[6, 30, 100])
+    p.add_argument("--score_envs", type=int, default=None,
+                   help="after each write, score a random this many written envs instead of "
+                        "all of them, so long lifetimes cost O(T) rather than O(T^2)")
+    p.add_argument("--init_ckpt", default=None,
+                   help="start meta-training from a saved meta_memory.pt (same architecture)")
     p.add_argument("--baseline_only", action="store_true")
     p.add_argument("--eval_ckpt", default=None,
                    help="evaluate a saved meta_memory.pt (and the baselines) and exit")
@@ -223,6 +231,12 @@ def main():
 
     theta = [torch.nn.Parameter(t.to(device)) for t in init_params(in_dim, a.hidden, a.layers, gen)]
     log_alpha = [torch.nn.Parameter(torch.full_like(t, math.log(a.alpha0))) for t in theta]
+    if a.init_ckpt:
+        ck = torch.load(a.init_ckpt, map_location="cpu", weights_only=False)
+        with torch.no_grad():
+            for p, t in zip(theta + log_alpha, ck["theta"] + ck["log_alpha"]):
+                p.copy_(t.to(device))
+        print(f"started from {a.init_ckpt} (step {ck.get('step')})", flush=True)
     opt = torch.optim.Adam(theta + log_alpha, lr=a.lr)
     rng = np.random.RandomState(a.seed + 3)
     for step in range(1, a.steps + 1):
