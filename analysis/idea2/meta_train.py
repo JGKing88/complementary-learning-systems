@@ -39,6 +39,11 @@ def T_(x, device):
     return torch.from_numpy(np.asarray(x, np.float32)).to(device)
 
 
+def _wkw(a):
+    return dict(n_plastic=a.plastic_tensors, normalize=a.normalize_hidden,
+                loss_kind=a.write_loss)
+
+
 def lifetime_loss(theta, log_alpha, pool, rng, a, device):
     T = rng.randint(a.T_min, a.T_max + 1)
     idx = rng.choice(len(pool), size=T + a.n_unseen, replace=False)
@@ -47,31 +52,31 @@ def lifetime_loss(theta, log_alpha, pool, rng, a, device):
     params, total, n = list(theta), 0.0, 0
     for t, env in enumerate(envs):
         params = write(params, log_alpha, T_(env.visit(rng, a.visit_steps), device),
-                       T_(env.target, device), a.k, create_graph=True)
+                       T_(env.target, device), a.k, create_graph=True, **_wkw(a))
         for j in range(t + 1):
             x, _ = envs[j].test_views(rng, a.test_views)
-            ph, c = forward(params, T_(x, device))
+            ph, c = forward(params, T_(x, device), a.normalize_hidden)
             total = total + phase_loss(ph, T_(envs[j].target, device).expand_as(ph)) \
                 + F.binary_cross_entropy_with_logits(c, torch.ones_like(c))
             n += 1
         for u in unseen:
             x, _ = u.test_views(rng, a.test_views)
-            _, c = forward(params, T_(x, device))
+            _, c = forward(params, T_(x, device), a.normalize_hidden)
             total = total + F.binary_cross_entropy_with_logits(c, torch.zeros_like(c))
             n += 1
         if a.train_revisit:
             for j in range(t):
                 params = write(params, log_alpha, T_(envs[j].visit(rng, a.visit_steps), device),
-                               T_(envs[j].target, device), a.k, create_graph=True)
+                               T_(envs[j].target, device), a.k, create_graph=True, **_wkw(a))
     return total / n
 
 
 @torch.no_grad()
-def _test(params, envs, rng, n_views, device):
+def _test(params, envs, rng, n_views, device, normalize=False):
     acc, conf = [], []
     for env in envs:
         x, _ = env.test_views(rng, n_views)
-        ph, c = forward(params, T_(x, device))
+        ph, c = forward(params, T_(x, device), normalize)
         cell = decode_cells(ph.cpu().numpy(), env.cells_global, LAMBDAS)
         d = np.linalg.norm(env.cells_local[cell] - env.goal, axis=1)
         acc.append(float((d <= 1.5).mean()))
@@ -92,7 +97,7 @@ def retention(theta, log_alpha, pool, N, seed, a, device, revisit=True):
         nonlocal params
         with torch.enable_grad():
             new = write(params, log_alpha, T_(env.visit(rng, a.visit_steps), device),
-                        T_(env.target, device), a.k, create_graph=False)
+                        T_(env.target, device), a.k, create_graph=False, **_wkw(a))
         params = [p.detach().requires_grad_(True) for p in new]
 
     for t, env in enumerate(envs):
@@ -100,8 +105,8 @@ def retention(theta, log_alpha, pool, N, seed, a, device, revisit=True):
         if revisit:
             for j in range(t):
                 do_write(envs[j])
-    acc, conf_w = _test(params, envs, rng, a.eval_views, device)
-    _, conf_u = _test(params, unseen, rng, a.eval_views, device)
+    acc, conf_w = _test(params, envs, rng, a.eval_views, device, a.normalize_hidden)
+    _, conf_u = _test(params, unseen, rng, a.eval_views, device, a.normalize_hidden)
     cw, cu = np.concatenate(conf_w), np.concatenate(conf_u)
     auc = float((cw[:, None] > cu[None, :]).mean() + 0.5 * (cw[:, None] == cu[None, :]).mean())
     q = max(1, N // 4)
@@ -125,6 +130,14 @@ def main():
     p.add_argument("--T_min", type=int, default=2)
     p.add_argument("--T_max", type=int, default=6)
     p.add_argument("--n_unseen", type=int, default=2)
+    p.add_argument("--plastic_tensors", type=int, default=None,
+                   help="writes change only the last this many tensors; 2 = head only "
+                        "(plan §6.5 R + H, the rest is meta-learned and fixed in a lifetime)")
+    p.add_argument("--write_loss", choices=["cos", "mse"], default="cos",
+                   help="loss a write minimises; mse on raw phases avoids the cosine "
+                        "loss's shrinking gradient after a large write")
+    p.add_argument("--normalize_hidden", action="store_true",
+                   help="unit-length last hidden layer, so a head write acts like a delta rule")
     p.add_argument("--train_revisit", action=argparse.BooleanOptionalAction, default=True,
                    help="training lifetimes revisit every earlier env after each new one (plan §6.3)")
     p.add_argument("--visit_steps", type=int, default=40)
@@ -214,7 +227,8 @@ def main():
         torch.nn.utils.clip_grad_norm_(theta + log_alpha, 1.0)
         opt.step()
         if step % 50 == 0:
-            lr_med = float(torch.cat([la.detach().exp().flatten() for la in log_alpha]).median())
+            plastic = log_alpha[-(a.plastic_tensors or len(log_alpha)):]
+            lr_med = float(torch.cat([la.detach().exp().flatten() for la in plastic]).median())
             log["train"].append(dict(step=step, loss=float(loss.detach()), alpha_median=lr_med,
                                      seconds=time.time() - t0))
             print(f"step {step} loss {float(loss.detach()):.4f} alpha_med {lr_med:.4f} "

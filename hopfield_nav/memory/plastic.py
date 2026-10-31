@@ -80,12 +80,22 @@ def init_params(in_dim: int, hidden: int, layers: int, gen: torch.Generator | No
     return params
 
 
-def forward(params: list[torch.Tensor], x: torch.Tensor):
-    """x (B, in) -> (phases (B, 12) unit pairs, c logit (B,))."""
+def raw_output(params: list[torch.Tensor], x: torch.Tensor, normalize: bool = False):
+    """x (B, in) -> (B, 13): phases before normalisation, then the c logit.
+
+    ``normalize`` scales the last hidden layer to unit length, so a gradient
+    step on the head alone acts like a delta rule with a fixed step size."""
     h = x
     for i in range(0, len(params) - 2, 2):
         h = F.relu(h @ params[i] + params[i + 1])
-    out = h @ params[-2] + params[-1]
+    if normalize:
+        h = h / (h.norm(dim=1, keepdim=True) + 1e-6)
+    return h @ params[-2] + params[-1]
+
+
+def forward(params: list[torch.Tensor], x: torch.Tensor, normalize: bool = False):
+    """x (B, in) -> (phases (B, 12) unit pairs, c logit (B,))."""
+    out = raw_output(params, x, normalize)
     ph = out[:, :N_PHASE].reshape(-1, 6, 2)
     ph = ph / (ph.norm(dim=2, keepdim=True) + 1e-6)
     return ph.reshape(-1, N_PHASE), out[:, N_PHASE]
@@ -96,25 +106,42 @@ def phase_loss(pred: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
     return 1.0 - (pred * target).reshape(-1, 6, 2).sum(2).mean()
 
 
-def write_loss(params, x, target_phase) -> torch.Tensor:
-    """What a write minimises: these views map to this goal, with c -> 1."""
-    ph, c = forward(params, x)
-    return phase_loss(ph, target_phase.expand_as(ph)) + F.binary_cross_entropy_with_logits(
-        c, torch.ones_like(c))
+def write_loss(params, x, target_phase, normalize: bool = False, kind: str = "cos"
+               ) -> torch.Tensor:
+    """What a write minimises: these views map to this goal, with c -> 1.
+
+    ``kind="cos"`` scores the unit phase pairs. Its gradient shrinks as the raw
+    output grows, so after one large write later writes barely move the output.
+    ``kind="mse"`` is squared error on the raw phases (summed over the 12,
+    averaged over views), the loss under which a head-only step is a delta rule.
+    """
+    if kind == "mse":
+        out = raw_output(params, x, normalize)
+        ph_loss = ((out[:, :N_PHASE] - target_phase) ** 2).sum(1).mean()
+        c = out[:, N_PHASE]
+    else:
+        ph, c = forward(params, x, normalize)
+        ph_loss = phase_loss(ph, target_phase.expand_as(ph))
+    return ph_loss + F.binary_cross_entropy_with_logits(c, torch.ones_like(c))
 
 
-def write(params, log_alpha, x, target_phase, k: int = 1, create_graph: bool = True):
+def write(params, log_alpha, x, target_phase, k: int = 1, create_graph: bool = True,
+          n_plastic: int | None = None, normalize: bool = False, loss_kind: str = "cos"):
     """``k`` gradient steps with per-weight learning rates exp(log_alpha).
 
     ``create_graph=True`` keeps the steps differentiable, so the outer loss can
     reach the initial weights and the learning rates through every write.
+    ``n_plastic`` limits the steps to the last that many tensors (2 = the head
+    only, plan §6.5's R + H); the rest stay at their initial values.
     """
+    n = len(params) if n_plastic is None else n_plastic
     for _ in range(k):
-        loss = write_loss(params, x, target_phase)
-        grads = torch.autograd.grad(loss, params, create_graph=create_graph)
-        params = [p - la.exp() * g for p, la, g in zip(params, log_alpha, grads)]
+        loss = write_loss(params, x, target_phase, normalize, loss_kind)
+        grads = torch.autograd.grad(loss, params[-n:], create_graph=create_graph)
+        params = params[:-n] + [p - la.exp() * g
+                                for p, la, g in zip(params[-n:], log_alpha[-n:], grads)]
     return params
 
 
 __all__ = ["N_PHASE", "canvas", "decode_cells", "forward", "goal_phases",
-           "init_params", "phase_loss", "write", "write_loss"]
+           "init_params", "phase_loss", "raw_output", "write", "write_loss"]
