@@ -40,7 +40,7 @@ def T_(x, device):
 
 
 def _wkw(a):
-    return dict(n_plastic=a.plastic_tensors, normalize=a.normalize_hidden,
+    return dict(n_plastic=a.plastic_tensors, key=a.key,
                 loss_kind=a.write_loss)
 
 
@@ -55,13 +55,13 @@ def lifetime_loss(theta, log_alpha, pool, rng, a, device):
                        T_(env.target, device), a.k, create_graph=True, **_wkw(a))
         for j in range(t + 1):
             x, _ = envs[j].test_views(rng, a.test_views)
-            ph, c = forward(params, T_(x, device), a.normalize_hidden)
+            ph, c = forward(params, T_(x, device), a.key)
             total = total + phase_loss(ph, T_(envs[j].target, device).expand_as(ph)) \
                 + F.binary_cross_entropy_with_logits(c, torch.ones_like(c))
             n += 1
         for u in unseen:
             x, _ = u.test_views(rng, a.test_views)
-            _, c = forward(params, T_(x, device), a.normalize_hidden)
+            _, c = forward(params, T_(x, device), a.key)
             total = total + F.binary_cross_entropy_with_logits(c, torch.zeros_like(c))
             n += 1
         if a.train_revisit:
@@ -72,11 +72,11 @@ def lifetime_loss(theta, log_alpha, pool, rng, a, device):
 
 
 @torch.no_grad()
-def _test(params, envs, rng, n_views, device, normalize=False):
+def _test(params, envs, rng, n_views, device, key="relu"):
     acc, conf = [], []
     for env in envs:
         x, _ = env.test_views(rng, n_views)
-        ph, c = forward(params, T_(x, device), normalize)
+        ph, c = forward(params, T_(x, device), key)
         cell = decode_cells(ph.cpu().numpy(), env.cells_global, LAMBDAS)
         d = np.linalg.norm(env.cells_local[cell] - env.goal, axis=1)
         acc.append(float((d <= 1.5).mean()))
@@ -105,8 +105,8 @@ def retention(theta, log_alpha, pool, N, seed, a, device, revisit=True):
         if revisit:
             for j in range(t):
                 do_write(envs[j])
-    acc, conf_w = _test(params, envs, rng, a.eval_views, device, a.normalize_hidden)
-    _, conf_u = _test(params, unseen, rng, a.eval_views, device, a.normalize_hidden)
+    acc, conf_w = _test(params, envs, rng, a.eval_views, device, a.key)
+    _, conf_u = _test(params, unseen, rng, a.eval_views, device, a.key)
     cw, cu = np.concatenate(conf_w), np.concatenate(conf_u)
     auc = float((cw[:, None] > cu[None, :]).mean() + 0.5 * (cw[:, None] == cu[None, :]).mean())
     q = max(1, N // 4)
@@ -138,6 +138,9 @@ def main():
                         "loss's shrinking gradient after a large write")
     p.add_argument("--normalize_hidden", action="store_true",
                    help="unit-length last hidden layer, so a head write acts like a delta rule")
+    p.add_argument("--linear_key", action="store_true",
+                   help="with --normalize_hidden, no ReLU on the last hidden layer, so keys "
+                        "can be signed and different envs' keys can be orthogonal")
     p.add_argument("--train_revisit", action=argparse.BooleanOptionalAction, default=True,
                    help="training lifetimes revisit every earlier env after each new one (plan §6.3)")
     p.add_argument("--visit_steps", type=int, default=40)
@@ -155,6 +158,9 @@ def main():
     p.add_argument("--baseline_alphas", type=float, nargs="+",
                    default=[0.003, 0.01, 0.03, 0.1, 0.3])
     a = p.parse_args()
+    if a.linear_key and not a.normalize_hidden:
+        p.error("--linear_key needs --normalize_hidden")
+    a.key = "linear_unit" if a.linear_key else ("unit" if a.normalize_hidden else "relu")
     os.makedirs(a.out, exist_ok=True)
     device = torch.device(a.device if torch.cuda.is_available() else "cpu")
     torch.manual_seed(a.seed)

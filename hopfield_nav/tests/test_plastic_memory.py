@@ -10,6 +10,7 @@ from __future__ import annotations
 import math
 
 import numpy as np
+import pytest
 import torch
 
 from hopfield_nav.memory.plastic import (
@@ -58,17 +59,18 @@ def test_write_lowers_its_loss_and_is_differentiable():
         assert t.grad.abs().sum() > 0
 
 
-def test_head_only_write_keeps_the_representation():
+@pytest.mark.parametrize("key", ["unit", "linear_unit"])
+def test_head_only_write_keeps_the_representation(key):
     torch.manual_seed(0)
     theta = [p.requires_grad_(True) for p in init_params(2 * PANORAMA_BINS, 32, 2)]
     log_alpha = [torch.full_like(p, math.log(0.5)).requires_grad_(True) for p in theta]
     x = torch.randn(16, 2 * PANORAMA_BINS)
     target = torch.from_numpy(goal_phases([100], [200], LAMBDAS))
-    before = float(write_loss(theta, x, target, normalize=True))
-    new = write(theta, log_alpha, x, target, k=3, n_plastic=2, normalize=True)
+    before = float(write_loss(theta, x, target, key=key))
+    new = write(theta, log_alpha, x, target, k=3, n_plastic=2, key=key)
     assert all(n is t for n, t in zip(new[:-2], theta[:-2]))
     assert not torch.equal(new[-2], theta[-2])
-    after = write_loss(new, x, target, normalize=True)
+    after = write_loss(new, x, target, key=key)
     assert float(after) < before
     after.backward()
     # The fixed layers still get a meta-gradient through the head's write.
