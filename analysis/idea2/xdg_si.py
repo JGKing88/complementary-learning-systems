@@ -87,7 +87,7 @@ def accuracy(ps, envs, rng, units=None):
     return np.array(acc)
 
 
-def run(pool, N, a, p, c):
+def run(pool, N, a, p, c, replay=0, per_env=40):
     rng = np.random.RandomState(10_000 + N)                 # same envs as meta_train's eval
     envs = [Placed(pool, i, rng) for i in rng.choice(len(pool), size=N, replace=False)]
     mrng, crng = np.random.RandomState(1), np.random.RandomState(2)
@@ -95,6 +95,7 @@ def run(pool, N, a, p, c):
     Omega = [torch.zeros_like(q) for q in ps]
     star = [q.detach().clone() for q in ps]
     right_after, env_units = [], []
+    buf_x, buf_y, rrng = [], [], np.random.RandomState(3)
     for e in envs:
         x, y = T_(e.visit(rng, a.visit_steps)), T_(e.target)
         units = draw_units(a.hidden, p, mrng) if p < 1 else None
@@ -103,8 +104,15 @@ def run(pool, N, a, p, c):
         u_act = units if a.gate_activity else None
         start = [q.detach().clone() for q in ps]
         omega = [torch.zeros_like(q) for q in ps]
+        if replay and buf_x:
+            bx, by = torch.cat(buf_x), torch.cat(buf_y)
         for _ in range(a.steps):
             task = ((fwd(ps, x, u_act) - y) ** 2).sum(1).mean()
+            if replay and buf_x:
+                # Experience replay: stored views of earlier envs, each with its
+                # env's goal, weighted equally with the current env's views.
+                i = torch.from_numpy(rrng.randint(len(bx), size=replay))
+                task = task + ((fwd(ps, bx[i]) - by[i]) ** 2).sum(1).mean()
             grads = torch.autograd.grad(task, ps)
             with torch.no_grad():
                 for i, (q, g) in enumerate(zip(ps, grads)):
@@ -122,6 +130,10 @@ def run(pool, N, a, p, c):
             for i, q in enumerate(ps):
                 Omega[i] += (omega[i] / ((q - start[i]) ** 2 + a.xi)).clamp(min=0)
                 star[i] = q.detach().clone()
+        if replay:
+            keep = torch.from_numpy(rrng.choice(len(x), size=min(per_env, len(x)), replace=False))
+            buf_x.append(x[keep])
+            buf_y.append(y.expand(len(keep), -1))
         right_after.append(accuracy(ps, [e], crng, [u_act] if a.gate_activity else None)[0])
     acc = accuracy(ps, envs, rng, env_units if a.gate_activity else None)
     q = max(1, N // 4)
@@ -142,18 +154,29 @@ def main():
     pa.add_argument("--gate_activity", action="store_true",
                     help="original XdG control: also gate hidden activity with the env's units, "
                          "in the write and in the read, so the read must know the env (an oracle)")
+    pa.add_argument("--replay", type=int, nargs="+", default=[0],
+                    help="stored views of earlier envs replayed per write step (0 = none)")
+    pa.add_argument("--buffer_per_env", type=int, nargs="+", default=[40],
+                    help="walk views kept per env for replay")
+    pa.add_argument("--threads", type=int, default=4)
     a = pa.parse_args()
     if a.gate_activity and min(a.p) >= 1:
         pa.error("--gate_activity needs some p < 1")
-    torch.set_num_threads(4)
+    if a.gate_activity and max(a.replay) > 0:
+        pa.error("--replay with --gate_activity is not supported")
+    torch.set_num_threads(a.threads)
     pool = EnvPool(300, seed=2)                            # meta_train's eval pool at seed 0
     for p in a.p:
         for c in a.c:
-            for N in a.N:
-                acc, old, new, after = run(pool, N, a, p, c)
-                tag = "activity-gated (oracle) " if a.gate_activity else ""
-                print(f"{tag}p={p:<5g} c={c:<5g} N={N:3d}: once {acc:.3f} (oldest {old:.2f}, newest "
-                      f"{new:.2f}), right after own write {after:.2f}", flush=True)
+            for R in a.replay:
+                for B in (a.buffer_per_env if R else [0]):
+                    for N in a.N:
+                        acc, old, new, after = run(pool, N, a, p, c, R, B)
+                        tag = "activity-gated (oracle) " if a.gate_activity else ""
+                        rep = f"replay={R} buffer/env={B} steps={a.steps} " if R else ""
+                        print(f"{tag}{rep}p={p:<5g} c={c:<5g} N={N:3d}: once {acc:.3f} (oldest "
+                              f"{old:.2f}, newest {new:.2f}), right after own write {after:.2f}",
+                              flush=True)
 
 
 if __name__ == "__main__":
