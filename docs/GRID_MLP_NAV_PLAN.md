@@ -940,3 +940,45 @@ Reading.
    regularisation, target exactly this, but they need stored views of earlier
    envs. Storing views and matching the current one against them is idea 1,
    which keeps 0.99 at N = 100. Commit `b14da98`.
+
+### 10.11 Idea 2 with experience replay (2026-11-01)
+
+Replay removes the forgetting. With every env's walk views stored and replayed,
+the whole MLP written one env at a time matches joint training of the same
+network, and does slightly better at N = 30 and 100. It still trails idea 1 at
+N = 100 (0.75 against 0.99), because joint training itself is capped by
+generalising from one 40-step walk per env. And it needs many stored views per
+env; one stored view barely helps.
+
+Setup. As §10.10 (1024-wide MLP from a random start, each env written once by
+50 SGD steps on one walk, no gating, no SI), plus replay. Each step adds R
+stored views of earlier envs, each labelled with its env's goal, weighted
+equally with the current env's views. After its write, B of each env's 40 walk
+views go into the buffer. `python -m analysis.idea2.xdg_si --p 1 --c 0
+--replay 8 40 200 --buffer_per_env 40 8 1` (job 27592897). The range in each
+cell is over R = 8, 40, 200, which barely matters.
+
+| views stored per env | N = 6 | N = 30 | N = 100 |
+|---|---|---|---|
+| none (no replay) | 0.167 | 0.039 | 0.038 |
+| 1 | 0.29 to 0.32 | 0.13 | 0.19 |
+| 8 | 0.72 to 0.79 | 0.63 to 0.71 | 0.51 to 0.55 |
+| 40, every walk view | 0.92 to 0.95 | 0.87 to 0.89 | 0.72 to 0.75 |
+| joint training, same network, one walk per env | 0.97 | 0.81 | 0.67 |
+| idea 1 keys, nearest neighbour (§10.9) | 1.00 | 1.00 | 0.99 |
+
+Reading.
+1. With full storage the oldest envs are kept as well as the newest (0.77 to
+   0.80 against 0.69 to 0.70 at N = 100), so what remains is not forgetting.
+   It is the joint-training limit. One walk per env does not cover the views
+   the test uses. The 256-wide ceiling rose from 0.46 to 0.91 at N = 100 with
+   five walks per env (§10.9), so longer visits would lift this too.
+2. Storage is the cost. Below 8 views per env, retention falls fast, and the
+   oldest envs go first (0.43 to 0.50 at N = 100 with 8 views). One stored
+   view is a 60-degree slice of the panorama, so replaying it does not pin the
+   env's output at other headings.
+3. Idea 1 stores one key per env, an all-around view at the goal, and reads
+   by nearest neighbour. Replay here stores 40 partial views per env and
+   still trails at N = 100. A like-for-like test would replay idea 1's single
+   all-around key per env, as six 60-degree slices, through the MLP. Not run.
+   Commit `7ca1249`.
