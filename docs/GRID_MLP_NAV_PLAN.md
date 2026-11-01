@@ -886,9 +886,12 @@ idea 1's argmax memory. A whole-network write would need ANML-style masks
 
 ### 10.10 Idea 2 with a continual-learning write, XdG and SI (2026-11-01)
 
-The whole-MLP memory forgot in the classic way, so this tries the standard fix
-for that. It fixes the forgetting, but retention stays at chance from N = 30,
-because the read cannot tell which units belong to which env.
+The whole-MLP memory forgets catastrophically. Trained on all envs at once, a
+1024-wide MLP keeps 0.97, 0.81 and 0.67 at N = 6, 30 and 100 with one walk per
+env (`ceiling.py --hidden 1024`); written one env at a time it is at chance
+from N = 30. This tries the standard fix, and it does not close that gap.
+XdG and SI stop old weights being overwritten, but here the forgetting comes
+mostly from new weights acting on old inputs, which they do not cover.
 
 Setup (`python -m analysis.idea2.xdg_si`, no meta-learning). `M` is a
 1024-wide two-layer MLP from a random start. Each env is written once by
@@ -915,18 +918,25 @@ memory. Same envs and test views as §10.9, "once" protocol.
 | activity gating p = 0.05, SI c = 10 (oracle) | 1.000 | 1.000 | 1.000 |
 
 Reading.
-1. XdG + SI removes the interference between writes. When the read uses only
-   the current env's units, every goal survives, at N = 100 too.
-2. Without that, it does nothing. Plasticity gating protects env 1's weights,
-   but later envs train other units, and at read time those units also fire
-   for env 1's views and push its output toward their own goals. SI then only
-   trades plasticity away. At c = 100 a write stores 0.12 to 0.53 of its goal,
-   and retention is no better.
-3. So the missing piece is the same as in §10.9, telling from the current
-   view which stored env it belongs to. The oracle supplies it. A gate
-   computed from a single view does not: with a 20% random-projection gate, a
-   test view shares 0.47 of its active units with its best-matching write
-   view from its own env and 0.28 with other envs' (chance 0.20), because
-   views at different headings see different parts of the panorama. Idea 1
-   answers it by comparing the view with the stored keys, and keeps 0.99 at
-   N = 100. Commit `b14da98`.
+1. The forgetting comes through new weights. Plasticity gating leaves env 1's
+   units alone and SI holds the shared weights in place, but later envs train
+   other units, and at read time those units also fire for env 1's views and
+   push its output toward their own goals. SI and XdG protect parameters, not
+   what the network outputs on old inputs, so they cannot stop this. Stronger
+   SI only trades plasticity away. At c = 100 a write stores 0.12 to 0.53 of
+   its goal, and retention is no better.
+2. Silencing the other envs' units removes it. With activity gating and SI,
+   every goal survives at N = 100, but that read is told the env (oracle).
+   Joint training gets part of the way by another route. It sees env 1's
+   views while it learns env 2, so it can shape env 2's features to stay quiet
+   on them. A sequential write never sees env 1's views.
+3. Without an oracle, the network would have to pick the units from the
+   current view. A gate computed from a single view does not do this well.
+   With a 20% random-projection gate, a test view shares 0.47 of its active
+   units with its best-matching write view from its own env and 0.28 with
+   other envs' (chance 0.20), because views at different headings see
+   different parts of the panorama.
+4. Methods that constrain outputs on old inputs, replay or functional
+   regularisation, target exactly this, but they need stored views of earlier
+   envs. Storing views and matching the current one against them is idea 1,
+   which keeps 0.99 at N = 100. Commit `b14da98`.
