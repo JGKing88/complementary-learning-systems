@@ -8,9 +8,12 @@ unit length. An env's stored key is the mean over one 40-step walk.
 
 1. A linear head, written once per env by an exact delta rule on the stored
    key, then read from fresh views ("once" retention at N = 6, 30, 100).
-2. Nearest neighbour on the same keys: return the goal of the stored key with
+2. The same linear head stored all at once by least squares, so every stored
+   key maps exactly to its goal and nothing is forgotten. If it matches 1, the
+   limit is the read, not forgetting.
+3. Nearest neighbour on the same keys: return the goal of the stored key with
    the highest cosine (idea 1's argmax read).
-3. Why 1 falls short of 2. A linear head reads sum_j (k . k_j) y_j, so a view's
+4. Why 1 falls short of 3. A linear head reads sum_j (k . k_j) y_j, so a view's
    cosine with its own env's key is the signal and the cosines with the other
    N-1 envs' keys add up as noise, growing as their root sum of squares.
 """
@@ -59,19 +62,23 @@ def main():
             stored.append(k)
             H += np.outer(e.target[0] - H @ k, k)          # one exact delta-rule write
         stored = np.array(stored)
-        lin, nn, own, other = [], [], [], []
+        # Least squares: H_all k_j = y_j exactly for every stored key.
+        H_all = np.array([e.target[0] for e in envs]).T @ np.linalg.pinv(stored.T)
+        lin, lsq, nn, own, other = [], [], [], [], []
         for j, e in enumerate(envs):
             c, _ = e.test_views(rng, 64)
             k = keys_of(c, mu)
             cos = k @ stored.T
             lin.append(hits(unit_pairs(k @ H.T), e))
+            lsq.append(hits(unit_pairs(k @ H_all.T), e))
             nn.append(hits(np.array([envs[m].target[0] for m in cos.argmax(1)]), e))
             own.append(cos[:, j])
             other.append(np.delete(cos, j, axis=1))
         own, other = np.concatenate(own), np.concatenate(other)
         q = max(1, N // 4)
         print(f"N={N:3d}: delta rule {np.mean(lin):.3f} (oldest {np.mean(lin[:q]):.3f}, newest "
-              f"{np.mean(lin[-q:]):.3f}) | nearest neighbour {np.mean(nn):.3f} | own-key cos "
+              f"{np.mean(lin[-q:]):.3f}) | all at once {np.mean(lsq):.3f} | "
+              f"nearest neighbour {np.mean(nn):.3f} | own-key cos "
               f"{own.mean():.3f}, other-key rms cos {np.sqrt((other ** 2).mean()):.3f}, "
               f"crosstalk noise {np.sqrt(((other ** 2).sum(1)).mean()):.3f}", flush=True)
 

@@ -805,6 +805,7 @@ References, with no meta-learning ("once"):
 | offline ceiling, one walk per env (`ceiling.py`) | 0.96 | 0.72 | 0.46 |
 | offline ceiling, five walks per env | 1.00 | 0.97 | 0.91 |
 | linear head on centred canvas keys, one delta-rule write per env (`fixed_keys.py`) | 0.870 | 0.417 | 0.144 |
+| the same head stored all at once by least squares, no forgetting | 0.875 | 0.415 | 0.115 |
 | nearest neighbour on the same keys | 1.000 | 0.998 | 0.992 |
 | random-start network, best fixed rate | 0.17 to 0.25 | 0.04 to 0.05 | 0.04 to 0.07 |
 
@@ -864,7 +865,12 @@ Reading.
    small, 0.075 root mean square, but the read adds N − 1 of them. The noise
    is 0.16, 0.41 and 0.75 at N = 6, 30 and 100, and the delta rule's accuracy
    falls with it (0.87, 0.42, 0.14). Nearest neighbour only needs the own-env
-   cosine to be the largest, so it stays at 0.99 to 1.00.
+   cosine to be the largest, so it stays at 0.99 to 1.00. This is not
+   forgetting. Storing all N goals at once by least squares, so that every
+   stored key maps exactly to its goal, gives the same 0.88, 0.42 and 0.12.
+   The whole-MLP runs did forget in the classic way (newest 1.00, older 0.00),
+   but for a linear head the limit is the read, so replay, EWC or slower
+   writes would not help. Better-separated keys or a nonlinear read would.
 6. Familiarity is easy and goals are hard. Every meta-learned memory learned
    `c`, but its AUC falls to 0.53 to 0.63 by N = 100, for the same crosstalk
    reason.
