@@ -883,3 +883,50 @@ much wider than N, since random 256-dimensional keys already overlap by about
 idea 1's argmax memory. A whole-network write would need ANML-style masks
 (§6.5) to stay local. None of these was run. Code is on branch
 `worktree-sensory-key-retrieval` (commits `d2467d0` to `94e49ce`).
+
+### 10.10 Idea 2 with a continual-learning write, XdG and SI (2026-11-01)
+
+The whole-MLP memory forgot in the classic way, so this tries the standard fix
+for that. It fixes the forgetting, but retention stays at chance from N = 30,
+because the read cannot tell which units belong to which env.
+
+Setup (`python -m analysis.idea2.xdg_si`, no meta-learning). `M` is a
+1024-wide two-layer MLP from a random start. Each env is written once by
+50 SGD steps on one 40-step walk, squared error on the raw goal phases, and
+every write stores its goal (0.98 to 1.00 right after it at c = 0). XdG gates
+plasticity. On entering a new env a random fraction p of each hidden layer's
+units is drawn, and only the weights into those units, and out of the last
+layer's chosen units, may change. Every unit is used when reading, so the read
+needs no env identity. SI (Zenke et al. 2017) penalises changes to weights in
+proportion to how much earlier writes relied on them, with strength c. It uses
+an exact proximal step, since an explicit step on its penalty diverges. The
+control is the original XdG, which gates activity too, in the write and in the
+read. That read is told which env it is in, so it is an oracle and not a valid
+memory. Same envs and test views as §10.9, "once" protocol.
+
+| write | N = 6 | N = 30 | N = 100 |
+|---|---|---|---|
+| no gating, no SI | 0.167 | 0.039 | 0.038 |
+| SI only, best of c = 1 to 100 | 0.362 | 0.083 | 0.067 |
+| plasticity gating p = 0.2, best of c = 0 to 100 | 0.310 | 0.067 | 0.051 |
+| plasticity gating p = 0.05, best of c = 0 to 100 | 0.167 | 0.053 | 0.057 |
+| activity gating p = 0.2, no SI (oracle) | 0.667 | 0.583 | 0.556 |
+| activity gating p = 0.2, SI c = 10 (oracle) | 1.000 | 1.000 | 0.965 |
+| activity gating p = 0.05, SI c = 10 (oracle) | 1.000 | 1.000 | 1.000 |
+
+Reading.
+1. XdG + SI removes the interference between writes. When the read uses only
+   the current env's units, every goal survives, at N = 100 too.
+2. Without that, it does nothing. Plasticity gating protects env 1's weights,
+   but later envs train other units, and at read time those units also fire
+   for env 1's views and push its output toward their own goals. SI then only
+   trades plasticity away. At c = 100 a write stores 0.12 to 0.53 of its goal,
+   and retention is no better.
+3. So the missing piece is the same as in §10.9, telling from the current
+   view which stored env it belongs to. The oracle supplies it. A gate
+   computed from a single view does not: with a 20% random-projection gate, a
+   test view shares 0.47 of its active units with its best-matching write
+   view from its own env and 0.28 with other envs' (chance 0.20), because
+   views at different headings see different parts of the panorama. Idea 1
+   answers it by comparing the view with the stored keys, and keeps 0.99 at
+   N = 100. Commit `b14da98`.
