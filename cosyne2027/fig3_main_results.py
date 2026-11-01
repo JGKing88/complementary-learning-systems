@@ -28,10 +28,15 @@ FIG_W, FIG_H = 5.58, 1.95
 CURVES = ["Agent-HaSH", "XdG + SI", "Naive SGD"]
 SMOOTH = 20                     # updates in the moving average
 WINDOW = 200                    # updates per arena
+# XdG + SI and multi-head are told which arena they are in, during training and
+# at test (`set_agent_task` in hopfield_nav). Agent-HaSH and the other controls
+# get no arena ID. a1 marks them with an asterisk and a key (the full words do
+# not fit beside the points); a2 has room to spell it out.
 SHORT = {"Agent-HaSH": "Agent-HaSH", "Naive SGD": "Naive SGD",
          "Experience Replay": "Replay", "CLEAR": "CLEAR",
-         "Online EWC": "Online EWC", "XdG + SI": "XdG + SI",
-         "Multi-head oracle": "Multi-head"}
+         "Online EWC": "Online EWC", "XdG + SI": "XdG + SI *",
+         "Multi-head oracle": "Multi-head *"}
+A2_LABEL = {**SHORT, "XdG + SI": "XdG + SI\n(given arena ID)"}
 # Label offsets in points from each a1 point: (dx, dy, ha)
 LABEL_AT = {"Agent-HaSH": (-8, -3, "right"), "XdG + SI": (-9, 0, "right"),
             "Experience Replay": (8, 0, "left"), "CLEAR": (-9, 0, "right"),
@@ -72,6 +77,7 @@ def panel_a1(ax, models, n_envs=5):
     ax.plot([0.03, 0.13], [0.86, 0.86], color=style.INK_MUTED, lw=0.7,
             ls=(0, (3, 2)))
     ax.text(0.16, 0.86, "no forgetting", va="center", color=style.INK_2)
+    ax.text(0.03, 0.77, "*  given arena ID", va="center", color=style.INK_2)
     # Featured models on top
     order = sorted(models, key=lambda m: m in style.MODEL_COLORS)
     for name in order:
@@ -113,7 +119,7 @@ def panel_a2(ax, models):
             ax.fill_between(x[sl], (y - e)[sl], (y + e)[sl], color=c,
                             alpha=0.15, lw=0, zorder=1)
             ax.plot(x[sl], y[sl], color=c, lw=1.3, zorder=2)
-        ax.annotate(SHORT[name], (n, min(y[-1], 0.96)), xytext=(4, 0),
+        ax.annotate(A2_LABEL[name], (n, min(y[-1], 0.96)), xytext=(4, 0),
                     textcoords="offset points", va="center", color=style.INK)
     ax.set_xlim(0, n)
     ax.set_ylim(0, 1.02)

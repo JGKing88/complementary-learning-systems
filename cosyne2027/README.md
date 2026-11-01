@@ -80,6 +80,12 @@ single ratios huge.
 - Each model keeps the wall resolution it was trained on (controls 1 barcode
   segment per cell, Agent-HaSH 4), so the arenas are different random draws
   from the same generator; the goal radius is common.
+- XdG + SI and multi-head are told which arena they are in, in training and at
+  test: their gate or head is chosen by the true arena index
+  (`set_agent_task` in `hopfield_nav/policy/agent_rnn.py`). Agent-HaSH and the
+  other controls get no arena ID. The figures mark those two with an asterisk
+  and "given arena ID", so the strongest control is an upper bound for its
+  family rather than a peer.
 
 `fig3_a2_per_env.py` is the per-arena alternative to panel a2: one small
 multiple per model (Agent-HaSH, naive SGD, XdG + SI), each 35 x 25 mm with a

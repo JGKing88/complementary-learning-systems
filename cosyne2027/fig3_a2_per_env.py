@@ -92,7 +92,9 @@ def main():
         ax = fig.add_axes([x0, BOTTOM / FIG_H, PANEL_W / FIG_W,
                            PANEL_H / FIG_H])
         curves = np.array(models[name]["env_curves"], dtype=float)
-        panel(ax, curves, name, first=(i == 0))
+        # XdG + SI is told which arena it is in, in training and at test
+        title = "XdG + SI (given arena ID)" if name == "XdG + SI" else name
+        panel(ax, curves, title, first=(i == 0))
         axes.append(ax)
     axes[1].set_xlabel("Update", labelpad=1)
     key(fig)
