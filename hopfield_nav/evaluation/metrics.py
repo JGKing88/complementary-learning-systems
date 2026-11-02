@@ -205,6 +205,9 @@ def agent_step(
     if kv_conf is not None:
         values["memory_conf"] = torch.from_numpy(
             kv_conf).float().to(device).unsqueeze(-1)
+    if getattr(cfg.agent, "input_grid_code", False):
+        values["grid_code"] = torch.from_numpy(
+            memory_backend.grid_code_for(cfg).at_local(pos_arr, env_offset)).to(device)
     if getattr(cfg.agent, "input_q_magnitude", False):
         values["q_magnitude"] = torch.from_numpy(
             signal_ops.q_magnitude(q)).to(device)
@@ -328,6 +331,7 @@ def evaluate_navigation(
     they survive changes to batching and RNG consumption order that would move
     the aggregates -- so this is what the golden fixtures pin.
     """
+    memory_backend.require_memory(cfg, "evaluate_navigation")
     if n_distractors_list is None:
         n_distractors_list = [0]
 
@@ -477,6 +481,7 @@ def evaluate_goal_discovery(
     n_arrivals, n_stores)``. See evaluate_navigation for why per-trial records,
     not aggregates, are what the golden fixtures pin.
     """
+    memory_backend.require_memory(cfg, "evaluate_goal_discovery")
     if n_distractors_list is None:
         n_distractors_list = [0]
 
@@ -1155,6 +1160,7 @@ def evaluate_sequential_episodes(
     store-event markers. Also returns per-block boundaries and summary
     statistics.
     """
+    memory_backend.require_memory(cfg, "evaluate_sequential_episodes")
     agent.eval()
     N = len(val_envs)
     embed_dim = vectorhash.encoded_Phi.shape[2]

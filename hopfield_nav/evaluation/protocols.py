@@ -31,8 +31,8 @@ mini-episode ends instead. That is the ENDS_ON_ARRIVAL row of
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
-from typing import Callable, Iterator
+from dataclasses import dataclass, field
+from typing import Any, Callable, Iterator
 
 import numpy as np
 import torch
@@ -56,6 +56,9 @@ class EpisodeRecord:
     path_to_goal: float | None
     stored_at_goal: int
     stored_off_goal: int
+    # The recurrent state after the episode's last step. Idea 3 (memory
+    # backend "none") carries it into the next episode; nobody else reads it.
+    h_final: Any = field(default=None, compare=False, repr=False)
 
 
 def env_xy_float(env: GridEnv) -> np.ndarray:
@@ -87,6 +90,7 @@ def run_mini_episode(
     suppress_off_goal_stores: bool = False,
     lock_store_after_goal: bool = False,
     on_step: Callable[[torch.Tensor, bool], None] | None = None,
+    h_init: torch.Tensor | None = None,
 ) -> EpisodeRecord:
     """One mini-episode from a random non-goal start, up to ``max_steps``.
 
@@ -96,6 +100,11 @@ def run_mini_episode(
 
     ``on_step(features, at_goal)`` is called after each agent step with the
     last-layer recurrent features -- the same trunk output the store head reads.
+
+    ``h_init`` starts the episode from a carried recurrent state instead of
+    zeros (idea 3, where the state is the memory); prev_reward and
+    prev_action still start at zero, as a new trial does in training.
+    ``hopfield`` may then be None: the oracle store only marks the goal found.
     """
     # Deferred import: agent_step still lives in eval.py, which imports this
     # module. Phase 6 moves it to evaluation/agent_step.py and this becomes a
@@ -108,7 +117,7 @@ def run_mini_episode(
 
     goal = env.goal_location
     env.set_position(random_start(env.size, goal, rng))
-    h_rnn = None
+    h_rnn = h_init
     prev_reward = None
     prev_action = None
     reached = False
@@ -144,7 +153,8 @@ def run_mini_episode(
         if at_g:
             store_fired = True if oracle_store_at_goal else agent_wants_store
             if allow_store_now and store_fired:
-                hopfield.input_memory(out["store_embedding"][0])
+                if hopfield is not None:
+                    hopfield.input_memory(out["store_embedding"][0])
                 goal_in_mem[local_idx] = True
                 stored_at_goal_count[local_idx] += 1
                 stored_at_goal = 1
@@ -159,7 +169,7 @@ def run_mini_episode(
         prev_xy = new_xy
 
         if not suppress_off_goal_stores:
-            if allow_store_now and agent_wants_store:
+            if allow_store_now and agent_wants_store and hopfield is not None:
                 hopfield.input_memory(out["store_embedding"][0])
                 stored_off_goal = 1
 
@@ -169,6 +179,7 @@ def run_mini_episode(
         path_to_goal=path_to_goal,
         stored_at_goal=stored_at_goal,
         stored_off_goal=stored_off_goal,
+        h_final=h_rnn,
     )
 
 

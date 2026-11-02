@@ -165,8 +165,13 @@ def mini_episode(
     oracle_lock_store_not_at_goal: bool,
     lock_store_after_goal: bool,
     store_trainer: "_StoreTrainer | None" = None,
+    carry: dict | None = None,
 ) -> tuple[int, int | None, float | None, int, int]:
     """Run one mini-episode from a random non-goal start.
+
+    ``carry`` (idea 3, memory_backend 'none'): ``{"h": state}``, read as the
+    episode's starting recurrent state and overwritten with its final one, so
+    the state runs through the whole protocol as a memory would.
 
     Thin wrapper over ``evaluation.protocols.run_mini_episode``, which is
     shared with ``eval.evaluate_sequential_episodes``. The tuple return is kept
@@ -189,7 +194,10 @@ def mini_episode(
         suppress_off_goal_stores=oracle_lock_store_not_at_goal,
         lock_store_after_goal=lock_store_after_goal,
         on_step=(None if store_trainer is None else store_trainer.add),
+        h_init=None if carry is None else carry["h"],
     )
+    if carry is not None:
+        carry["h"] = rec.h_final
     return (rec.reached, rec.steps_to_goal, rec.path_to_goal,
             rec.stored_at_goal, rec.stored_off_goal)
 
@@ -225,7 +233,13 @@ def run_sequential(
     embed_dim = vectorhash.encoded_Phi.shape[2]
     # memory_backend='sensory_kv' (GRID_MLP_NAV_PLAN stage 2): the same one
     # never-reset memory, as a sensory key-value store.
-    hopfield = (memory_backend.kv_memory_with(cfg, [])
+    # memory_backend='none' (idea 3, GRID_MLP_NAV_PLAN §7.3): no memory at
+    # all; the recurrent state is carried through every mini-episode instead.
+    carry = {"h": None} if memory_backend.is_none(cfg) else None
+    if store_trainer is not None and carry is not None:
+        raise ValueError("idea 3 has no store head to train")
+    hopfield = (None if carry is not None else
+                memory_backend.kv_memory_with(cfg, [])
                 if memory_backend.is_kv(cfg) else
                 Hopfield(embed_dim, beta=cfg.hopfield.beta,
             storage_rule=cfg.hopfield.storage_rule, device=str(device)))
@@ -262,6 +276,7 @@ def run_sequential(
                     oracle_lock_store_not_at_goal=oracle_lock_store_not_at_goal,
                     lock_store_after_goal=lock_store_after_goal,
                     store_trainer=store_trainer,
+                    carry=carry,
                 )
                 if store_trainer is not None:
                     info = store_trainer.end_episode_train(
@@ -285,7 +300,7 @@ def run_sequential(
             cur_iter += 1
         blocks.append((block_start, cur_iter - 1, i))
         line = (f"  block {i} done  cur_iter={cur_iter}  "
-                f"hopfield_mem={hopfield.num_memories}  "
+                f"hopfield_mem={0 if hopfield is None else hopfield.num_memories}  "
                 f"goal_in_mem={goal_in_mem[i]}")
         if store_trainer is not None:
             mean_bce = (block_bce_sum / block_bce_n) if block_bce_n > 0 else float("nan")

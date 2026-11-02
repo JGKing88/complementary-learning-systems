@@ -84,6 +84,11 @@ declare -A RUN=(
   [gmlp_s43]=navigate_navp2_task3r_k2_h128_gmlp_s43_24660241
   [qmagproj_s42]=navigate_navp2_task3r_k2_h128_distal_qmag_proj_s42_24570179
   [qmagproj_s43]=navigate_navp2_task3r_k2_h128_distal_qmag_proj_s43_24659511
+  # GRID_MLP_NAV_PLAN §7: idea 3 (memory_backend none, a GRU whose state is
+  # the memory; agenthash carries it through the whole protocol). Stage 1
+  # (task, arenas moving every update).
+  [i3_h128]=navigate_navp2_task3r_k2_h128_i3_rp_s42_27665224
+  [i3_h512]=navigate_navp2_task3r_k2_h512_i3_rp_s42_27665225
 )
 
 for arm in $ARMS; do

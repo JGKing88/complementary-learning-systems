@@ -57,6 +57,17 @@ def require_hopfield(cfg, where: str) -> None:
             "evaluators taught it)")
 
 
+def require_memory(cfg, where: str) -> None:
+    """For evaluators that are about a memory (pre-loading a goal into it, a
+    store head writing it, a protocol that resets the state between trials):
+    idea 3 has none, so a number from them would mean nothing."""
+    if is_none(cfg):
+        raise NotImplementedError(
+            f"{where} needs a memory module; memory_backend='none' (idea 3) "
+            "has none. Its continual protocol is analysis/continual/agenthash.py, "
+            "which carries the recurrent state.")
+
+
 def validate_none(cfg) -> None:
     """Refuse configurations the no-memory backend (idea 3) does not implement."""
     a, problems = cfg.agent, []
@@ -271,5 +282,6 @@ __all__ = [
     "BACKENDS", "ForeignKeyPool", "HOPFIELD", "KVEntry", "NONE", "SENSORY_KV",
     "foreign_pool_for", "grid_code_dim", "grid_code_for", "is_kv", "is_none", "kv_distractor_entries", "kv_entry_at",
     "kv_memory_with", "new_kv_memory", "readout_for", "require_hopfield",
+    "require_memory",
     "sample_offarena_cells", "validate", "validate_none",
 ]

@@ -258,6 +258,57 @@ def test_freeze_done_state_needs_ends_on_goal():
                                   task_mode=True, freeze_done_state=True)
 
 
+def test_continual_protocol_carries_state_without_memory():
+    """agenthash's mini-episodes under 'none': no memory object, the oracle
+    store only marks the goal found, and the state carries from one
+    mini-episode into the next."""
+    from analysis.continual.agenthash import mini_episode
+    from hopfield_nav.evaluation import protocols
+    from hopfield_nav.world.env import make_env
+    cfg = none_cfg()
+    _c, agent, vh = make_collector(cfg, 8, seed=0)
+    env = make_env(cfg.env, "continuous", seed=100)
+    env.set_goal((2, 2))
+    common = dict(agent=agent, env=env, env_offset=(0, 0), vectorhash=vh,
+                  hopfield=None, cfg=cfg, device=torch.device("cpu"),
+                  local_idx=0, allow_store=True, max_steps=40,
+                  deterministic=False, oracle_store_at_goal=True)
+
+    def one(h_init, seed):
+        torch.manual_seed(seed)
+        return protocols.run_mini_episode(
+            **common, rng=np.random.RandomState(seed), goal_in_mem={0: False},
+            stored_at_goal_count={0: 0}, h_init=h_init)
+
+    first = one(None, 0)
+    assert first.h_final is not None
+    carried, fresh = one(first.h_final, 1), one(None, 1)
+    assert not torch.allclose(carried.h_final, fresh.h_final)
+
+    carry = {"h": None}
+    gim, cnt = {0: False}, {0: 0}
+    rng = np.random.RandomState(3)
+    for _ in range(3):
+        mini_episode(**{k: v for k, v in common.items()},
+                     rng=rng, goal_in_mem=gim, stored_at_goal_count=cnt,
+                     oracle_lock_store_not_at_goal=True,
+                     lock_store_after_goal=True, carry=carry)
+    assert carry["h"].shape == (1, 1, cfg.agent.hidden_size)
+
+
+@pytest.mark.parametrize("name", ["evaluate_navigation", "evaluate_goal_discovery",
+                                  "evaluate_sequential_episodes"])
+def test_memory_evaluators_refuse_none(name):
+    import inspect
+    from hopfield_nav.evaluation import metrics
+    f = getattr(metrics, name)
+    kwargs = {n: None for n, prm in inspect.signature(f).parameters.items()
+              if prm.default is inspect.Parameter.empty}
+    kwargs["cfg"] = none_cfg()
+    with pytest.raises(NotImplementedError, match=name):
+        f(**kwargs)
+
+
 def test_lifetime_schedule_parses():
     from hopfield_nav.training.stages import (ScheduleError, format_schedule,
                                                parse_schedule)
