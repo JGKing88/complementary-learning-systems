@@ -467,6 +467,27 @@ arm learns to return, storage was the bottleneck and RL can learn to turn
 grid codes into a direction. If it stores the goal and still cannot return,
 that step is the obstacle. Launched from `code/i3_43e1dc4`.
 
+By u500 the goal head has done its job but the agent still cannot return.
+Its loss fell from 13.6 to 1.1, and the goal probe on the u500 checkpoint
+reads the goal's phase at R² 0.50 after the find (−0.26 before). The
+displacement to the goal is still not readable (R² −0.20, direction error 47°
+after the find against 51° before). Behaviour got worse in one way. After a
+find the plain runs keep searching and touch the goal again 0.3 to 0.5 times
+per visit. This arm almost stops (0.0 to 0.1), though the returns it does
+make are fast (5 to 25 steps). The state after a find now differs from the
+state before it, so the policy is in a regime where search no longer runs and
+steering by grid codes has not been learned. So storage was one bottleneck,
+and turning (grid code now, stored goal code) into a direction is the second.
+
+A fourth arm adds `--aux_disp_weight 1.0` (lever `_ad`, with `_ag`): a second
+head predicts the displacement to the cell of the last reward, worked out
+exactly from the two grid codes (`updates/ppo.py: code_displacement`, tested
+against the code itself, scaffold wrap included). That is the
+code-pair-to-displacement supervision the Phase-1 grid MLP was trained with,
+from the agent's own inputs. The head is never read by the policy. Job
+27685876, from `code/i3_4c79274`. (The probe's cell-from-code inversion was
+checked exact on 500 random cells, so its direction numbers stand.)
+
 ## 8. Decisions and open items
 
 | | |
