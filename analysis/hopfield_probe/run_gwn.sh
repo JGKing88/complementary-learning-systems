@@ -8,6 +8,7 @@
 #           Compare with ideal r=16 at ideal_encoder/probe/t12-t15.
 #
 #   bash analysis/hopfield_probe/run_gwn.sh build
+#   bash analysis/hopfield_probe/run_gwn.sh step1      # step 1 alone (GWN_DEP=afterany:JOB to chain)
 #   bash analysis/hopfield_probe/run_gwn.sh probe [ARRAY]     # default 0-21
 #
 # Runs from THIS worktree: do not delete it while jobs are live.
@@ -46,10 +47,10 @@ done
 
 if [[ -z "${GWN_IN_JOB:-}" ]]; then
     mkdir -p "$OUT/logs"
-    if [[ $MODE == build ]]; then
-        GWN_IN_JOB=1 exec sbatch --job-name=gwn_build --partition=pi_evelina9,pi_fiete,ou_bcs_normal,mit_normal_gpu \
+    if [[ $MODE == build || $MODE == step1 ]]; then
+        GWN_IN_JOB=1 exec sbatch ${GWN_DEP:+--dependency=$GWN_DEP} --job-name=gwn_$MODE --partition=pi_evelina9,pi_fiete,ou_bcs_normal,mit_normal_gpu \
             --gres=gpu:1 --exclude=node3804 --time=${GWN_TIME:-5:00:00} --cpus-per-task=2 \
-            --mem=${GWN_MEM:-32G} --output="$OUT/logs/build_%j.out" "$0" build
+            --mem=${GWN_MEM:-32G} --output="$OUT/logs/${MODE}_%j.out" "$0" $MODE
     else
         GWN_IN_JOB=1 exec sbatch --job-name=gwn_probe --partition=pi_evelina9,pi_fiete,ou_bcs_normal,mit_normal \
             ${GWN_DEP:+--dependency=$GWN_DEP} --time=4:00:00 --cpus-per-task=16 --mem=32G --array="${ARG:-0-$(( ${#TASKS[@]} - 1 ))}" \
@@ -60,6 +61,10 @@ fi
 cd "$WT"
 export OMP_NUM_THREADS=${SLURM_CPUS_PER_TASK:-2}
 
+if [[ $MODE == step1 ]]; then
+    "$PY" -m analysis.hopfield_probe.gwn_l1_learn --out "$OUT"; echo "DONE step1"
+    exit 0
+fi
 if [[ $MODE == build ]]; then
     nvidia-smi --query-gpu=name,memory.total --format=csv,noheader
     "$PY" -m analysis.hopfield_probe.gwn_check step0 --out "$OUT"; echo "DONE step0"

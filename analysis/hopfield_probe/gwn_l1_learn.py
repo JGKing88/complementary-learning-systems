@@ -11,7 +11,12 @@ visits in the scattered environments:
   (ridge least squares, e = +x, +y; a -x step is a +x step read backwards),
   then the left eigenvectors w of ``T_x + 0.618 T_y``. Each pattern j has its
   own eigenvalue exp(2 pi i jx/l) + 0.618 exp(2 pi i jy/l), so the tied groups
-  separate. The pair is (Re w . g, Im w . g); one of each conjugate pair kept.
+  separate. The pair is (Re w . g, Im w . g).
+
+Every learner also emits each complex pair's conjugate (c, -s): pattern -j,
+which exact L1 has as its own pair. With one of each conjugate pair only, the
+network can build just a structured subset of frequencies, and it aliases
+(first run of Sec 20: alias ~0.4 at purity 1.000).
 
 Purity of a pair = the largest share of the power of (wc + i ws) on the module
 torus in one frequency (1 for an exact pattern). Every pair is scaled to mean
@@ -79,7 +84,7 @@ def pca_l1(codes, fwhm):
         V = V[:, np.argsort(ev)[::-1]]
         pairs = [(np.ones(l * l), np.zeros(l * l))]                 # the constant pair
         for i in range(0, l * l - 1, 2):
-            pairs.append((V[:, i], V[:, i + 1]))
+            pairs += [(V[:, i], V[:, i + 1]), (V[:, i], -V[:, i + 1])]
         if (l * l) % 2:
             pairs.append((V[:, -1], np.zeros(l * l)))
         per.append(pairs)
@@ -113,6 +118,8 @@ def move_l1(g0, g1, d, ridge):
             w = Wl[:, k]
             w = w * np.exp(-1j * np.angle(w[np.argmax(np.abs(w))]))
             pairs.append((w.real, w.imag))
+            if mu[k].imag > 1e-6:
+                pairs.append((w.real, -w.imag))                  # the -j pattern
         per.append(pairs)
     return per
 
@@ -161,7 +168,7 @@ def online_l1(g0, g1, d, iters=4000, batch=1024, lr=0.02, seed=0):
             loss = loss + 10 * ((Cr.diagonal() - 1) ** 2).mean() + off / L
             opt.zero_grad(); loss.backward(); opt.step()
         Wr_, Wi_ = Wr.detach().cpu().numpy(), Wi.detach().cpu().numpy()
-        per.append([(Wr_[:, k], Wi_[:, k]) for k in range(L)])
+        per.append([p for k in range(L) for p in ((Wr_[:, k], Wi_[:, k]), (Wr_[:, k], -Wi_[:, k]))])
         print(f"  online module {l}: final loss {float(loss):.4f}", flush=True)
     return per
 
