@@ -337,6 +337,14 @@ class AgentConfig:
     # the goal directly, where PPO rewards it only once the policy already
     # steers by it. 0 = off.
     aux_goal_weight: float = 0.0
+    # Idea 3 diagnostic: weight of a second auxiliary loss in which a head
+    # predicts the displacement from the agent's cell to the cell of its last
+    # reward (in units of 10 cells), worked out from the two grid codes -- the
+    # pairing of codes with displacement the Phase-1 grid MLP was trained on.
+    # grid_lambdas (filled at startup with grid_code_dim) lets the update
+    # invert a code to its phases.
+    aux_disp_weight: float = 0.0
+    grid_lambdas: list[int] = field(default_factory=list)
 
 
 @dataclass

@@ -106,6 +106,38 @@ def last_reward_code(obs: torch.Tensor, goal_reached: torch.Tensor,
     return tgt, (last >= 0).float()
 
 
+def code_displacement(code_now: torch.Tensor, code_ref: torch.Tensor,
+                      lambdas, reach: int = 40) -> tuple[torch.Tensor, torch.Tensor]:
+    """Displacement ref - now, in cells, from two smoothed grid codes.
+
+    Each module's peak gives the cell's phase (index x_phase * lambda +
+    y_phase, as ``SmoothedGridCode`` lays it out); the displacement d on each
+    axis is the one in [-reach, reach] with d = phase difference mod lambda
+    for every module. Returns ((..., 2) float, (...) valid), valid where both
+    axes have such a d (any pair of cells in one arena does).
+    """
+    d_axes, ok_axes, o = [[], []], [], 0
+    phases_now, phases_ref = [], []
+    for l in lambdas:
+        a = code_now[..., o:o + l * l].argmax(-1)
+        b = code_ref[..., o:o + l * l].argmax(-1)
+        phases_now.append((a // l, a % l))
+        phases_ref.append((b // l, b % l))
+        o += l * l
+    D = torch.arange(-reach, reach + 1, device=code_now.device)
+    out, valid = [], None
+    for axis in range(2):
+        ok = None
+        for l, pn, pr in zip(lambdas, phases_now, phases_ref):
+            diff = (pr[axis] - pn[axis]) % l
+            m = (D - diff.unsqueeze(-1)) % l == 0
+            ok = m if ok is None else ok & m
+        out.append(D[ok.float().argmax(-1)].float())
+        v = ok.any(-1)
+        valid = v if valid is None else valid & v
+    return torch.stack(out, -1), valid
+
+
 def _pool_rollouts(
     rollouts: list[RolloutBatch],
     gamma: float,
@@ -237,9 +269,15 @@ def ppo_update(
     visited_targets = pool["visited_targets"]
     aux_vis_w = float(getattr(agent, "aux_visited_weight", 0.0))
     aux_goal_w = float(getattr(agent, "aux_goal_weight", 0.0))
-    if aux_goal_w > 0:
-        goal_tgt, goal_mask = last_reward_code(
-            obs, goal_reached, agent.goal_code_head.out_features)
+    aux_disp_w = float(getattr(agent, "aux_disp_weight", 0.0))
+    if aux_goal_w > 0 or aux_disp_w > 0:
+        _ng = int(agent.cfg.grid_code_dim)
+        goal_tgt, goal_mask = last_reward_code(obs, goal_reached, _ng)
+    if aux_disp_w > 0:
+        disp_tgt, disp_ok = code_displacement(
+            obs[..., -_ng:], goal_tgt, list(agent.cfg.grid_lambdas))
+        disp_tgt = disp_tgt / 10.0
+        disp_mask = goal_mask * disp_ok.float()
 
     # Normalize advantages across the full pool (not per-minibatch — that would
     # inject minibatch-dependent bias into the policy gradient).
@@ -269,6 +307,7 @@ def ppo_update(
     total_store_bc = 0.0
     total_aux_vis = 0.0
     total_aux_goal = 0.0
+    total_aux_disp = 0.0
     total_approx_kl = 0.0
     total_clip_frac = 0.0
     last_epoch_kl: list[float] = []
@@ -498,6 +537,12 @@ def ppo_update(
                 aux_goal_loss = (_err * _m).sum() / _m.sum().clamp_min(1.0)
             else:
                 aux_goal_loss = torch.zeros((), device=obs.device)
+            if aux_disp_w > 0:
+                _m = disp_mask[idx] if mb_alive is None else disp_mask[idx] * mb_alive
+                _err = ((agent.goal_disp_head(features) - disp_tgt[idx]) ** 2).sum(-1)
+                aux_disp_loss = (_err * _m).sum() / _m.sum().clamp_min(1.0)
+            else:
+                aux_disp_loss = torch.zeros((), device=obs.device)
 
             # The store terms are still computed above, because they are the
             # diagnostics the run logs -- but a frozen store head contributes
@@ -510,6 +555,7 @@ def ppo_update(
                 - cfg.ent_coef * move_ent
                 + aux_vis_w * aux_vis_loss
                 + aux_goal_w * aux_goal_loss
+                + aux_disp_w * aux_disp_loss
             )
             if store_trainable:
                 loss = (
@@ -612,6 +658,7 @@ def ppo_update(
             total_store_bc += store_bc_loss.item()
             total_aux_vis += aux_vis_loss.item()
             total_aux_goal += aux_goal_loss.item()
+            total_aux_disp += aux_disp_loss.item()
             total_approx_kl += approx_kl
             total_clip_frac += clip_frac
             last_epoch_kl.append(approx_kl)
@@ -648,6 +695,7 @@ def ppo_update(
         "store_bc_loss": total_store_bc / denom,
         "aux_visited_loss": total_aux_vis / denom,
         **({"aux_goal_loss": total_aux_goal / denom} if aux_goal_w > 0 else {}),
+        **({"aux_disp_loss": total_aux_disp / denom} if aux_disp_w > 0 else {}),
         # Minibatches whose gradient was non-finite and therefore skipped. A
         # persistent nonzero here is a real problem being survived, not solved
         # -- it belongs in the log where it can be seen, not swallowed.

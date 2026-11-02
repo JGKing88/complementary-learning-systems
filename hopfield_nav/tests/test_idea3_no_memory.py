@@ -38,6 +38,7 @@ def none_cfg(**kw):
     cfg.agent.memory_backend = "none"
     cfg.agent.input_grid_code = True
     cfg.agent.grid_code_dim = mb.grid_code_dim(cfg)
+    cfg.agent.grid_lambdas = list(cfg.vectorhash.lambdas)
     cfg.env.distal_amp = 1.0
     cfg.env.goal_radius = 1.0
     return cfg
@@ -339,6 +340,41 @@ def test_aux_goal_head_trains_in_ppo():
     stats = ppo_update(agent, [merge_visits([r1, r2])], cfg.ppo, opt)
     assert np.isfinite(stats["aux_goal_loss"]) and stats["aux_goal_loss"] > 0
     assert not torch.equal(before, agent.goal_code_head.weight)
+
+
+def test_code_displacement_inverts_grid_codes():
+    from hopfield_nav.memory.grid_code import SmoothedGridCode
+    from hopfield_nav.updates.ppo import code_displacement
+    lam = [11, 12, 13]
+    g = SmoothedGridCode(lam, 0.25, 1716)
+    rng = np.random.RandomState(0)
+    now = rng.randint(0, 1716, (300, 2))
+    d = rng.randint(-19, 20, (300, 2))
+    ref = (now + d) % 1716               # the scaffold wraps at 1716
+    out, ok = code_displacement(torch.from_numpy(g.at(now[:, 0], now[:, 1])),
+                                torch.from_numpy(g.at(ref[:, 0], ref[:, 1])), lam)
+    assert ok.all() and torch.equal(out, torch.from_numpy(d).float())
+
+
+def test_aux_disp_head_trains_in_ppo():
+    from hopfield_nav.training.task import merge_visits
+    from hopfield_nav.updates.ppo import ppo_update
+    from hopfield_nav.world.env import make_env
+    cfg = none_cfg(batch_envs=6, steps_per_rollout=40)
+    cfg.agent.aux_goal_weight = 0.1
+    cfg.agent.aux_disp_weight = 1.0
+    collector, agent, _ = make_collector(cfg, seed=0)
+    env = make_env(cfg.env, "continuous", seed=5)
+    env.set_goal((2, 3))
+    r1 = _visit(collector, agent, env, cfg, None, None, seed=0)
+    r2 = _visit(collector, agent, env, cfg, r1.h_final, r1.store_fired_final, seed=1)
+    assert r1.goal_reached.any()
+    before = agent.goal_disp_head.weight.detach().clone()
+    opt = torch.optim.Adam(agent.parameters(), lr=1e-3)
+    agent.train()
+    stats = ppo_update(agent, [merge_visits([r1, r2])], cfg.ppo, opt)
+    assert np.isfinite(stats["aux_disp_loss"]) and stats["aux_disp_loss"] > 0
+    assert not torch.equal(before, agent.goal_disp_head.weight)
 
 
 def test_lifetime_schedule_parses():

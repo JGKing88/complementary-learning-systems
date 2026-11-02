@@ -97,6 +97,11 @@ class NavAgent(nn.Module):
         self.goal_code_head = (
             nn.Linear(cfg.hidden_size, int(cfg.grid_code_dim))
             if self.aux_goal_weight > 0 else None)
+        # Idea 3 diagnostic (AgentConfig.aux_disp_weight): predicts the
+        # displacement to the last rewarded cell. Read only by the PPO update.
+        self.aux_disp_weight = float(getattr(cfg, "aux_disp_weight", 0.0))
+        self.goal_disp_head = (
+            nn.Linear(cfg.hidden_size, 2) if self.aux_disp_weight > 0 else None)
 
     def forward(
         self,
