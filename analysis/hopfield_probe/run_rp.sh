@@ -32,7 +32,7 @@ if [[ -z "${RP_IN_JOB:-}" ]]; then
     # ask for 2; the other partitions are fallbacks, whichever starts first.
     RP_IN_JOB=1 exec sbatch --job-name=rp_$MODE --partition=pi_fiete,ou_bcs_normal,mit_normal_gpu \
         --gres=gpu:1 --exclude=node3804 --time=${RP_TIME:-5:00:00} --cpus-per-task=2 \
-        --mem=64G --output="$OUT/logs/${MODE}_%j.out" "$0" "$MODE"
+        --mem=${RP_MEM:-64G} --output="$OUT/logs/${MODE}_%j.out" "$0" "$MODE"
 fi
 
 cd "$WT"

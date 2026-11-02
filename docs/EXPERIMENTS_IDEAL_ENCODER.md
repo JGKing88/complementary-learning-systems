@@ -880,3 +880,140 @@ Controls reproduce:
    - att0.5 *rsat*, previously "correct y" on 8 goals, is n: 1–3 of 40 goals end
      1 cell off.
    - Region basin (iii) now rests on 8 goals instead of 1.
+
+## 19. A random projection, a threshold and a learned linear readout (2026-11-02)
+
+**No tested random threshold layer gets to the ideal code.** A fixed random
+layer on the grid code fits the ideal code only where it was trained, and
+transfers nothing to held-out environments. Slow feature analysis on the same
+layer finds each module's own period as its slowest feature, and that is the
+most aliased function on offer. A positive control, the same pipeline on a
+layer of pure waves, passes. So the failure belongs to the random layer, not
+to the readout or the objective.
+
+The question was whether a biologically plausible route exists: a fixed random
+"hippocampal" layer (genetic), then a linear readout learned from experience.
+The environments follow the ecological regime: squares of side 10–100
+(log-uniform), dropped at random on the 1716 × 1716 scaffold until their union
+covers 1%, 5% or 20% of it (13, ~68 and ~270 environments). Results are split
+into visited cells, unvisited cells, and far cells (unvisited, more than 50
+cells from any visited one).
+
+### Setup
+
+- **Layer** (`rp_encoder.py`): `h = act((g W - mu)/sd - tau)`, with `W ~ N(0, 1)`
+  of shape 434 × H and H ∈ {2048, 8192, 32768}. `mu`, `sd` and `tau` are
+  calibrated once on uniform positions. `tau` sets the activity (50%, or 10% for
+  `hard10`).
+- **Nonlinearities**: sigmoid of slope 1, 4 or 16 (`sig1`, `sig4`, `sig16`), and
+  a hard step (`hard50`, `hard10`).
+- **Bump widths**: the grid code at 0.25 (production), 0.15 and 0.10 of the
+  period.
+- **Readout**: `z = (h - hbar) A`, unit-normalised. The probe can load it as
+  `rpnet:<path.pt>`.
+- **Metrics**: C(1) and the half-width of the near-field profile; far-field
+  spread; and "alias max", the cosine at the grid code's own 64 most similar
+  far displacements, where every overlap-based code is most similar to itself.
+  For the ideal r = 16 code these are C(1) 0.998, half-width 19, far sd 0.032
+  and alias max 0.06. For the grid code itself, alias max is 0.95.
+
+### Step 1: best-case readout (`rp_readout_check.py`)
+
+A ridge regression of the ideal r = 16 code on the hidden layer, fitted on every
+cell of 90% of the environments. The ridge is chosen on the other 10%, so it is
+picked for transfer. 135 fits: 5 nonlinearities × 3 bump widths × 3 H × 3
+coverages.
+
+**The layer fits the code only by memorising cells.** In-sample R², best ridge,
+H = 2048 / 8192 / 32768:
+
+| bump | coverage | sig1 | sig4 | sig16 | hard50 | hard10 |
+|---|---|---|---|---|---|---|
+| 0.25 | 5% | 0.14 / 0.35 / 0.67 | 0.12 / 0.30 / 0.58 | 0.09 / 0.24 / 0.50 | 0.07 / 0.21 / 0.47 | 0.10 / 0.22 / 0.46 |
+| 0.15 | 5% | 0.05 / 0.18 / 0.46 | 0.04 / 0.15 / 0.41 | 0.03 / 0.12 / 0.36 | 0.02 / 0.11 / 0.34 | 0.04 / 0.14 / 0.35 |
+| 0.10 | 5% | 0.01 / 0.07 / 0.26 | 0.01 / 0.06 / 0.25 | 0.01 / 0.06 / 0.24 | 0.01 / 0.05 / 0.24 | 0.01 / 0.07 / 0.26 |
+| 0.25 | 20% | 0.03 / 0.10 / 0.21 | 0.03 / 0.08 / 0.18 | 0.02 / 0.06 / 0.15 | 0.02 / 0.05 / 0.14 | 0.02 / 0.06 / 0.14 |
+| 0.15 | 20% | 0.01 / 0.04 / 0.13 | 0.01 / 0.04 / 0.11 | 0.01 / 0.03 / 0.10 | 0.00 / 0.03 / 0.09 | 0.01 / 0.03 / 0.09 |
+| 0.10 | 20% | 0.00 / 0.02 / 0.07 | 0.00 / 0.01 / 0.06 | 0.00 / 0.01 / 0.06 | 0.00 / 0.01 / 0.06 | 0.00 / 0.02 / 0.07 |
+
+- The fit falls as the covered area grows and rises less than linearly with H
+  (about H^0.66 at 20% coverage). At 1% coverage with H = 32768 (more units than
+  fitted cells) every layer fits R² 0.958.
+- Narrower bumps and harder thresholds fit *worse*. The prediction that they
+  would help (they make the fine module harmonics available) was wrong. A
+  sharper unit spreads its variance over more frequencies, so less of it lands
+  in the slow band the ideal is made of.
+
+**Nothing transfers.** In every fit, R² on held-out environments falls
+monotonically as the ridge shrinks (e.g. bump 0.25, sig1, H = 32768, 5%: −0.12 at
+the largest ridge, −1.34 at the smallest). Every fit therefore picks the largest
+ridge, which predicts almost nothing. On far cells the cosine to the ideal code
+is at most 0.00 over all 135 fits, and alias max never falls below 0.57.
+
+The layer's own similarity is a function of grid-code overlap: high for nearby
+cells and for grid aliases. So whatever a readout learns on visited cells
+spreads only to their neighbours and to their aliases.
+
+### Step 2: slowness readout (`rp_sfa_check.py`)
+
+Exact slow feature analysis: the covariance of h over all visited cells, pooled
+across environments, and the covariance of its one-step changes within each
+environment; output i has unit variance and slowness λ_i. Two readouts, each
+randomly projected to 1024 dims when wider:
+
+- `top1024`: the 1024 slowest features.
+- `gauss16`: every feature, weighted `exp(-λ_i 16² / 2)`, which is exactly the
+  Gaussian kernel of width 16 when the features are waves.
+
+**The random layer has no slow cross-module features.** A complete set of waves
+has 3661 features slower than a wave of the r = 16 scale. Every random layer at
+H = 8192 has none, at every coverage. Rows below are 5% coverage, far cells:
+
+| layer | bump | slowest feature, as a wavelength | gauss16: C(1) / half-width / far sd / alias max | top1024: C(1) / half-width / far sd / alias max |
+|---|---|---|---|---|
+| sig1 | 0.25 | 31 cells | 0.976 / 34 / 0.46 / 0.98 | 0.790 / 1.9 / 0.034 / 0.85 |
+| hard50 | 0.25 | 13 | 0.941 / 3.2 / 0.51 / 1.00 | 0.495 / 1.0 / 0.032 / 0.67 |
+| sig1 | 0.15 | 13 | 0.942 / 3.2 / 0.51 / 1.00 | 0.530 / 1.1 / 0.032 / 0.74 |
+| hard50 | 0.10 | 12 | 0.934 / 3.2 / 0.51 / 0.99 | 0.108 / 1.0 / 0.031 / 0.28 |
+| *control: pure waves (r = 8), 20%* | — | — | 0.999 / 28 / 0.065 / 0.045 | 0.999 / 28 / 0.062 / 0.047 |
+
+- The slowest feature is a wave of 11–18 cells in 14 of the 15 settings: each
+  module's own period (11–13), a function of one module's phase. Such a function
+  changes slowly along the sheet and is identical on neighbouring strands, so
+  slowness prefers exactly the aliased functions. Only the smoothest layer at
+  the widest bump reaches 31 cells, and its slow features still alias (0.98).
+- The two readouts fail in opposite ways. `gauss16` keeps a near field but
+  aliases at 0.92–1.00. `top1024` aliases less but has no near field (half-width
+  about 1 cell).
+- Visited and far cells give the same numbers. Slow features are global
+  functions, so they transfer; they are simply the wrong functions.
+- The control passes: a layer of pure waves gives an unaliased large-field code
+  (alias 0.045, the ideal's level). The method works when the layer contains
+  slow waves.
+
+### Step 3: not run
+
+Every learned code either aliases at ≥ 0.9 or has no near field. One far-field
+alias is enough to kill reach (PROBE §10), so the Hopfield probe would only
+restate that.
+
+### Reading
+
+- A random threshold layer dilutes the slow cross-module waves. Each unit puts
+  a tiny share of its variance on any one of them. A linear readout can only
+  assemble them by memorising cells (step 1), and slowness never finds them
+  (step 2).
+- The positive control says what the layer needs instead: units that are close
+  to pure waves. In network terms, one unit would be a product of one harmonic
+  of each module's phase, `cos(j₁φ₁ + j₂φ₂ + j₃φ₃)`. Per-module harmonics are
+  linear readouts of a module's cells (amplitude 0.28 at j = 6 with 0.10 bumps),
+  and the cross-module combination is multiplicative. Random integer `j` with
+  slowness selecting among them is the untested next step. By a rough count
+  (uniform integer frequencies against the r = 16 disc), about 1 in 800 random
+  combinations is slow enough, and the control shows slowness then builds the
+  right kernel.
+
+Results: `/orcd/pool/003/jackking/cls_runs/results/hopfield_probe/rp_readout/`
+(`step1/`, `step2/`, `logs/`; `step1_v0/` is a first pass whose ridge was picked
+on cells interleaved with the fitted ones). Launcher: `run_rp.sh all`. Tables:
+`python -m analysis.hopfield_probe.rp_summary step1|step2 DIR`.
