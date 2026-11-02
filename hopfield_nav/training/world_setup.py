@@ -30,6 +30,7 @@ from ..evaluation.metrics import (
 from hopfield import Hopfield
 from ..world import domains as dom
 from ..world import generate
+from ..memory import backend as memory_backend
 from ..world.scaffold import VectorHash, goal_encodings
 from ..world.spec import EnvSpec, GeneratedSplit, TraitDomains, WorldSpec
 from ..world.world import World, build_world
@@ -603,6 +604,12 @@ def do_eval(cfg, agent, eval_world: World, device, update_tag: str,
     # stale values, so a scope switch mid-project cannot be mistaken for a
     # collapse in nav.
     scope = getattr(cfg, "eval_scope", "all")
+    # Idea 3 (memory_backend "none") has no memory to pre-load a goal into, so
+    # there is no nav= to score, and distractors (memory content) do not exist:
+    # one distractor level stands for all.
+    no_memory = memory_backend.is_none(cfg)
+    if no_memory:
+        dist = [0]
     expl_only = scope == "expl"
     run_disc = scope == "all"
     # `task`: the task-faithful protocol on the held-out arenas (sampled,
@@ -615,7 +622,7 @@ def do_eval(cfg, agent, eval_world: World, device, update_tag: str,
     # (analysis/nav_tri/reeval_series.py --no-deterministic).
     det = bool(getattr(cfg, "eval_deterministic", True))
     t0 = time.time()
-    nav = {} if expl_only else evaluate_navigation(
+    nav = {} if (expl_only or no_memory) else evaluate_navigation(
         agent, val_envs, val_vh, val_offsets, cfg, device,
         num_trials=nt, max_steps=max_steps,
         n_distractors_list=dist, deterministic=det)
@@ -633,7 +640,7 @@ def do_eval(cfg, agent, eval_world: World, device, update_tag: str,
                          num_trials=nt, max_steps=max_steps,
                          n_distractors_list=dist) if run_task else {}
     eval_s = time.time() - t0
-    if not expl_only:
+    if not expl_only and not no_memory:
         print(f"  [{update_tag}] nav={nav}")
     if run_disc:
         print(f"  [{update_tag}] disc={disc}")

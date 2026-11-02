@@ -319,6 +319,16 @@ class AgentConfig:
     # scale_q_by_c, the policy gets only c * d -- magnitude folded into the
     # direction, the analog of Agent-HaSH's raw q. GRID_MLP_NAV_PLAN §9.6.
     input_memory_conf: bool = True
+    # memory_backend "none" is idea 3 (GRID_MLP_NAV_PLAN §7): no memory
+    # module, so the GRU's hidden state is the only place a goal can live, and
+    # every path that would keep a memory across visits keeps the hidden
+    # state instead. input_grid_code feeds the smoothed grid code at the
+    # agent's cell (sum of lambda^2 numbers, 434 at 11/12/13) on its own
+    # channel; grid_code_dim is that width, filled in at startup from the
+    # scaffold's lambdas so the channel layout can be rebuilt from a
+    # checkpoint's agent config alone.
+    input_grid_code: bool = False
+    grid_code_dim: int = 0
 
 
 @dataclass

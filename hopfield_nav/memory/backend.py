@@ -1,10 +1,12 @@
 """The ``memory_backend`` switch: what the old code calls when it is not Hopfield.
 
 ``AgentConfig.memory_backend`` is ``"hopfield"`` (default; every existing path
-unchanged) or ``"sensory_kv"`` (idea 1, docs/GRID_MLP_NAV_PLAN.md §1). The call
-sites -- the rollout collector, ``TaskRegime``, ``evaluate_task`` -- branch on
-``is_kv(cfg)`` and call the functions here; every evaluator that has not been
-taught the new backend refuses it through ``require_hopfield``.
+unchanged), ``"sensory_kv"`` (idea 1, docs/GRID_MLP_NAV_PLAN.md §1) or
+``"none"`` (idea 3, §7: no memory module; the GRU's hidden state is kept
+wherever a memory would be). The call sites -- the rollout collector,
+``TaskRegime``, ``evaluate_task`` -- branch on ``is_kv(cfg)`` / ``is_none(cfg)``
+and call the functions here; every evaluator that has not been taught the new
+backends refuses them through ``require_hopfield``.
 
 Stage 1 supports the task-faithful training path only (``task`` schedule stages,
 oracle store). ``validate`` states the rest of the contract up front.
@@ -20,30 +22,75 @@ from .sensory_kv import KVEntry, SensoryKVMemory, omni_key
 
 HOPFIELD = "hopfield"
 SENSORY_KV = "sensory_kv"
-BACKENDS = (HOPFIELD, SENSORY_KV)
+NONE = "none"
+BACKENDS = (HOPFIELD, SENSORY_KV, NONE)
 
 # How many foreign arenas feed the distractor keys (``ForeignKeyPool``).
 FOREIGN_POOL_SIZE = 256
 
 
-def is_kv(cfg) -> bool:
+def _backend(cfg) -> str:
     backend = getattr(cfg.agent, "memory_backend", HOPFIELD)
     if backend not in BACKENDS:
         raise ValueError(f"memory_backend must be one of {BACKENDS}, got {backend!r}")
-    return backend == SENSORY_KV
+    return backend
+
+
+def is_kv(cfg) -> bool:
+    return _backend(cfg) == SENSORY_KV
+
+
+def is_none(cfg) -> bool:
+    """Idea 3: no memory module. Wherever a memory would persist (across the
+    visits of a task sequence, across the continual protocol), the policy's
+    hidden state persists instead."""
+    return _backend(cfg) == NONE
 
 
 def require_hopfield(cfg, where: str) -> None:
-    """For evaluators not yet taught the sensory_kv backend: fail loudly."""
-    if is_kv(cfg):
+    """For evaluators not yet taught the other backends: fail loudly."""
+    backend = _backend(cfg)
+    if backend != HOPFIELD:
         raise NotImplementedError(
-            f"{where} does not support memory_backend='sensory_kv' yet "
-            "(GRID_MLP_NAV_PLAN stage 1 covers the task training path and "
-            "evaluate_task only)")
+            f"{where} does not support memory_backend={backend!r} yet "
+            "(GRID_MLP_NAV_PLAN covers the task training path and the "
+            "evaluators taught it)")
+
+
+def validate_none(cfg) -> None:
+    """Refuse configurations the no-memory backend (idea 3) does not implement."""
+    a, problems = cfg.agent, []
+    if a.input_hopfield_signal:
+        problems.append("--no-input_hopfield_signal (there is no memory readout)")
+    if a.input_hopfield_multistep:
+        problems.append("no input_hopfield_multistep")
+    if getattr(a, "input_chart_frac", False):
+        problems.append("no input_chart_frac")
+    if a.input_goal_in_memory:
+        problems.append("no input_goal_in_memory")
+    if getattr(a, "input_q_magnitude", False):
+        problems.append("no input_q_magnitude")
+    if getattr(cfg, "training_mode", "ppo") != "ppo":
+        problems.append("training_mode ppo (the BC teachers read Hopfield q)")
+    if getattr(cfg, "hopfield_oracle", False):
+        problems.append("no hopfield_oracle")
+    if cfg.hopfield.auto_nav_warmup:
+        problems.append("no auto_nav_warmup (it follows a memory readout)")
+    if a.movement_mode != "continuous":
+        problems.append("continuous movement")
+    if getattr(cfg.env, "reset_state_on_teleport", False):
+        # The state is the memory; PPO also replays each sequence from its
+        # start without resets.
+        problems.append("no reset_state_on_teleport")
+    if problems:
+        raise ValueError("memory_backend='none' needs: " + "; ".join(problems))
 
 
 def validate(cfg) -> None:
-    """Refuse configurations the sensory_kv backend does not implement."""
+    """Refuse configurations the sensory_kv and none backends do not implement."""
+    if is_none(cfg):
+        validate_none(cfg)
+        return
     if not is_kv(cfg):
         return
     a, problems = cfg.agent, []
@@ -100,6 +147,24 @@ def readout_for(cfg) -> GridMemoryReadout:
     npos = vh.Npos or int(np.prod(vh.lambdas))
     return _readout(cfg.agent.grid_mlp_checkpoint, tuple(vh.lambdas),
                     float(cfg.fwhm_ratio), int(npos), bool(cfg.agent.scale_q_by_c))
+
+
+@lru_cache(maxsize=4)
+def _grid_code(lambdas: tuple, fwhm: float, npos: int):
+    from .grid_code import SmoothedGridCode
+    return SmoothedGridCode(list(lambdas), fwhm, npos)
+
+
+def grid_code_for(cfg):
+    """The smoothed grid code on the run's scaffold, shared by every caller
+    (the ``grid_code`` input channel; the same code idea 1's MLP reads)."""
+    vh = cfg.vectorhash
+    npos = vh.Npos or int(np.prod(vh.lambdas))
+    return _grid_code(tuple(int(l) for l in vh.lambdas), float(cfg.fwhm_ratio), int(npos))
+
+
+def grid_code_dim(cfg) -> int:
+    return sum(int(l) ** 2 for l in cfg.vectorhash.lambdas)
 
 
 class ForeignKeyPool:
@@ -203,8 +268,8 @@ def new_kv_memory(cfg, env_offset, env_size: int, n_distractors: int,
 
 
 __all__ = [
-    "BACKENDS", "ForeignKeyPool", "HOPFIELD", "KVEntry", "SENSORY_KV",
-    "foreign_pool_for", "is_kv", "kv_distractor_entries", "kv_entry_at",
+    "BACKENDS", "ForeignKeyPool", "HOPFIELD", "KVEntry", "NONE", "SENSORY_KV",
+    "foreign_pool_for", "grid_code_dim", "grid_code_for", "is_kv", "is_none", "kv_distractor_entries", "kv_entry_at",
     "kv_memory_with", "new_kv_memory", "readout_for", "require_hopfield",
-    "sample_offarena_cells", "validate",
+    "sample_offarena_cells", "validate", "validate_none",
 ]

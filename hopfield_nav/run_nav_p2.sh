@@ -1899,11 +1899,27 @@ case "$VARIANT" in
         #   _proj    HOPFIELD_STORAGE_RULE=proj (projection rule; 9.6)
         #   _noc     with _gmlp: INPUT_MEMORY_CONF=0, no c channel (with _scq:
         #            only c*d -- the analog of raw q; 9.6)
+        #   _i3      idea 3 of GRID_MLP_NAV_PLAN (§7): MEMORY_BACKEND=none, a
+        #            plain GRU with no memory module, fed the grid code g_t
+        #            (INPUT_GRID_CODE) and the view with the panorama; its
+        #            hidden state is carried across the visits of a sequence
+        #            and PPO trains each sequence as one trajectory. No
+        #            distractors (there is no memory to hold them). A GRU, as
+        #            the plan says, not the line's ReLU RNN: the state is the
+        #            only memory, and gates are what let it hold a value.
+        #   _rp      arenas move: ENV_GENERATOR=1 with placements re-drawn
+        #            every update across the scaffold (REFRESH_PLACE=1) and
+        #            goals every update (REFRESH_GOAL=1, which replaces the
+        #            legacy per-sequence redraw: one visit sequence per arena
+        #            per update). Jack, 2026-11-02, option B for idea 3: the
+        #            GRU has to learn to turn grid codes into a direction at
+        #            places it has not seen, so it trains on many places.
         _rest="${VARIANT#task*_k?}"
         case "$_rest" in
           _h128*)  HIDDEN_SIZE=128;  _rest="${_rest#_h128}" ;;
           _h1024*) HIDDEN_SIZE=1024; _rest="${_rest#_h1024}" ;;
           _h256*)  HIDDEN_SIZE=256;  _rest="${_rest#_h256}" ;;
+          _h512*)  HIDDEN_SIZE=512;  _rest="${_rest#_h512}" ;;
         esac
         while [ -n "$_rest" ]; do
           case "$_rest" in
@@ -1920,6 +1936,15 @@ case "$VARIANT" in
             _qmag*) INPUT_HOPFIELD_RAW=0; INPUT_Q_MAGNITUDE=1; _rest="${_rest#_qmag}" ;;
             _proj*) HOPFIELD_STORAGE_RULE=proj; _rest="${_rest#_proj}" ;;
             _noc*) INPUT_MEMORY_CONF=0; _rest="${_rest#_noc}" ;;
+            _i3*) MEMORY_BACKEND=none; INPUT_GRID_CODE=1; INPUT_HOPFIELD_SIGNAL=0
+                  RNN_CELL=gru; RNN_NONLINEARITY=tanh
+                  INPUT_HOPFIELD_MULTISTEP=""; DISTAL_AMP=${DISTAL_AMP:-1.0}
+                  N_TRAIN_DISTRACTORS_MIN=0; N_TRAIN_DISTRACTORS_MAX=0
+                  _rest="${_rest#_i3}" ;;
+            _rp*) ENV_GENERATOR=1; REFRESH_PLACE=${REFRESH_PLACE:-1}
+                  PLACE_REGION=${PLACE_REGION:-anywhere}; PLACE_MARGIN=${PLACE_MARGIN:-80}
+                  REFRESH_GOAL=${REFRESH_GOAL:-1}; REDRAW_GOAL_PER_ROLLOUT=""
+                  _rest="${_rest#_rp}" ;;
             *) echo "ERROR: unknown TASK lever '$_rest' in $VARIANT" >&2; exit 1 ;;
           esac
         done

@@ -703,7 +703,9 @@ def evaluate_exploration(
             # one would have.
             hopfields, starts = [], []
             for _trial_idx in range(num_trials):
-                if memory_backend.is_kv(cfg):
+                if memory_backend.is_none(cfg):
+                    hopfields.append(None)      # idea 3: no memory to hold distractors
+                elif memory_backend.is_kv(cfg):
                     hopfields.append(memory_backend.kv_memory_with(
                         cfg, memory_backend.kv_distractor_entries(
                             cfg, env_offset, grid_size, n_dist, rng)))
@@ -1311,6 +1313,10 @@ def evaluate_task(
             grid_size = int(env.size)
             hops = []
             for _ in range(num_trials):
+                if memory_backend.is_none(cfg):
+                    # Idea 3: no memory, and so no distractors either.
+                    hops.append(None)
+                    continue
                 if memory_backend.is_kv(cfg):
                     hops.append(memory_backend.new_kv_memory(
                         cfg, env_offset, grid_size, n_dist, rng))
@@ -1325,10 +1331,12 @@ def evaluate_task(
             was_active = getattr(env, "goals_active", True)
             env.goals_active = True
             try:
-                fired = None
+                fired, h_carry = None, None
                 for v in range(max(int(visits), 1)):
+                    # Idea 3 keeps its recurrent state where the other
+                    # backends keep their memory: across the visits.
                     r = collector.collect_rollout(
-                        env, agent, hops, allow_store=True, h_rnn=None,
+                        env, agent, hops, allow_store=True, h_rnn=h_carry,
                         env_offset=env_offset, update_idx=0, aux_scale=1.0,
                         epsilon_now=0.0, goal_in_memory_init=False,
                         ends_on_goal=False, task_mode=True,
@@ -1339,6 +1347,8 @@ def evaluate_task(
                     if r.diag_post is not None:
                         diag_post.append(r.diag_post)
                     fired = r.store_fired_final
+                    if memory_backend.is_none(cfg):
+                        h_carry = r.h_final
             finally:
                 env.goals_active = was_active
         n_cells = float(grid_size * grid_size)

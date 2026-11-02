@@ -61,5 +61,9 @@ class RolloutBatch:
     diag_post: dict | None = None
     task: dict | None = None
     store_fired_final: "np.ndarray | None" = None
+    # (num_layers, B, hidden) -- the recurrent state after the last step.
+    # Idea 3 (memory_backend "none") hands it to the next visit, the way the
+    # other backends hand over their memory.
+    h_final: "torch.Tensor | None" = None
 
 __all__ = ["RolloutBatch"]

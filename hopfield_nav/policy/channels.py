@@ -103,6 +103,13 @@ def channel_specs(
         # The recall similarity c (GRID_MLP_NAV_PLAN §1). Always on for that
         # backend; appended last so every existing layout is unchanged.
         specs.append(ChannelSpec("memory_conf", 1))
+    if getattr(cfg, "input_grid_code", False):
+        # The smoothed grid code at the agent's cell (GRID_MLP_NAV_PLAN §7.1,
+        # idea 3); appended last so every existing layout is unchanged.
+        if not getattr(cfg, "grid_code_dim", 0):
+            raise ValueError("input_grid_code needs grid_code_dim (set at "
+                             "startup from the scaffold's lambdas)")
+        specs.append(ChannelSpec("grid_code", int(cfg.grid_code_dim)))
     return specs
 
 

@@ -51,7 +51,7 @@ from .evaluation.checkpoint_io import cfg_from_checkpoint
 from .training.cfg_args import settle_encoder
 from .training.explore import ExploreRegime
 from .training.exploit import ExploitRegime
-from .training.task import TaskRegime
+from .training.task import TaskRegime, merge_visits
 from .training.prior import ExplorerPrior
 from .rollout import task_stats
 from .training.refresh import Cadence, Refresher
@@ -530,6 +530,11 @@ def run_navigate(
         _base_heading_dropout = float(getattr(cfg.hopfield, "heading_dropout", 0.0) or 0.0)
         is_task = stage.kind == "task"
         n_visits = int(getattr(knobs, "visits", 1) or 1) if is_task else 1
+        # Idea 3 (memory_backend "none"): the recurrent state is the memory,
+        # so it is carried across a visit sequence the way the other backends
+        # carry theirs, and PPO trains each sequence as one trajectory.
+        carry_state = is_task and memory_backend.is_none(cfg)
+        seq_of: list[tuple] = []
         for w_idx, world in enumerate(worlds):
             vh = world.field
             collector = RolloutCollector(vh, cfg, embed_dim, device)
@@ -538,7 +543,7 @@ def run_navigate(
                 # The memory a visit sequence carries: None at the start of a
                 # sequence, otherwise the previous rollout's Hopfields and
                 # "goal stored" flags (task regime only).
-                _carry_hops, _carry_fired = None, None
+                _carry_hops, _carry_fired, _carry_h = None, None, None
                 for slot in range(local_idx * n_reps, (local_idx + 1) * n_reps):
                     if is_task:
                         regime = task_regime
@@ -557,7 +562,7 @@ def run_navigate(
                         env.reset_goal()
                     if is_task:
                         if _visit == 0:
-                            _carry_hops, _carry_fired = None, None
+                            _carry_hops, _carry_fired, _carry_h = None, None, None
                         spec = regime.spec(w_idx, world, local_idx, env,
                                            env_offset, knobs,
                                            hops=_carry_hops,
@@ -582,7 +587,8 @@ def run_navigate(
                         else _base_heading_dropout)
                     rollout = collector.collect_rollout(
                         env, agent, spec.hop, allow_store=spec.allow_store,
-                        h_rnn=None, env_offset=env_offset,
+                        h_rnn=_carry_h if carry_state else None,
+                        env_offset=env_offset,
                         update_idx=update, aux_scale=1.0,
                         epsilon_now=spec.epsilon,
                         goal_in_memory_init=spec.goal_in_memory_init,
@@ -591,9 +597,12 @@ def run_navigate(
                         store_fired_init=spec.store_fired_init,
                     )
                     rollouts.append(rollout)
+                    seq_of.append((w_idx, local_idx,
+                                   (slot - local_idx * n_reps) // n_visits))
                     if is_task:
                         _carry_hops = spec.hop
                         _carry_fired = rollout.store_fired_final
+                        _carry_h = rollout.h_final
         cfg.hopfield.novelty_reward = 0.0
         cfg.obs_dropout = _base_obs_dropout
         cfg.hopfield.heading_dropout = _base_heading_dropout
@@ -619,8 +628,17 @@ def run_navigate(
                   f"{int(_fs['fisher_rows'])} rows / {int(_fs['fisher_steps'])} "
                   f"search steps (max {_fs['fisher_max']:.3e}, "
                   f"mean {_fs['fisher_mean']:.3e})", flush=True)
-        losses = ppo_update(agent, rollouts, cfg.ppo, optimizer, aux_scale=1.0,
-                            prior=prior)
+        if carry_state:
+            # seq_of is in collection order, so each sequence's visits are
+            # consecutive and already in visit order.
+            ppo_rollouts, _seqs = [], {}
+            for r, sid in zip(rollouts, seq_of):
+                _seqs.setdefault(sid, []).append(r)
+            ppo_rollouts = [merge_visits(v) for v in _seqs.values()]
+        else:
+            ppo_rollouts = rollouts
+        losses = ppo_update(agent, ppo_rollouts, cfg.ppo, optimizer,
+                            aux_scale=1.0, prior=prior)
         if prior is not None:
             losses["prior_drift"] = prior.drift(agent)
         t_ppo_acc += time.time() - t_ppo0
@@ -1045,6 +1063,7 @@ CFG_FIELDS: dict[str, tuple[str, ...]] = {
     "grid_mlp_checkpoint": ("agent.grid_mlp_checkpoint",),
     "scale_q_by_c": ("agent.scale_q_by_c",),
     "input_memory_conf": ("agent.input_memory_conf",),
+    "input_grid_code": ("agent.input_grid_code",),
     "hopfield_storage_rule": ("hopfield.storage_rule",),
     # ppo
     "lr": ("ppo.lr",),
@@ -1232,7 +1251,9 @@ def build_parser() -> argparse.ArgumentParser:
                    help="How many +/-1 wall segments span one grid cell. 1 (default) is one segment per cell, the original coarse barcode. Above 1 a stripe edge can fall inside a cell, which is the only way a ray can report where within a cell it is looking from; at 1 roughly 9-14%% of cells share a bit-identical observation with another cell. 8 drives that to ~0. Changes env identity, so splits and checkpoints are tied to it.")
     p.add_argument("--distal_amp", type=float, default=0.0,
                    help="Distal panorama amplitude: each ray adds distal_amp x a per-env ±1 skyline value read by its ABSOLUTE angle (2-degree slices), so views identify the env from any cell and carry a compass. 0 (default) is off, bit-identical. See EnvConfig.distal_amp.")
-    p.add_argument("--memory_backend", choices=["hopfield", "sensory_kv"],
+    p.add_argument("--input_grid_code", action=argparse.BooleanOptionalAction, default=False,
+                   help="Feed the smoothed grid code at the agent's cell (434 numbers at lambdas 11/12/13) on its own channel. Idea 3 of GRID_MLP_NAV_PLAN (with --memory_backend none).")
+    p.add_argument("--memory_backend", choices=["hopfield", "sensory_kv", "none"],
                    default="hopfield",
                    help="Goal memory. hopfield (default): Agent-HaSH. sensory_kv: idea 1 of docs/GRID_MLP_NAV_PLAN.md -- sensory-keyed argmax store of goal grid codes; the frozen grid MLP's direction d rides the hopfield_signal channel and the recall similarity c gets a memory_conf channel. Task schedule + --eval_scope task + --distal_amp > 0 only (hopfield_nav/memory/backend.py).")
     p.add_argument("--grid_mlp_checkpoint", default=None,
@@ -1865,12 +1886,14 @@ def main():
         p.error("--no-input_memory_conf only applies to --memory_backend sensory_kv")
     if cfg.agent.input_q_magnitude and cfg.agent.hopfield_mode != "continuous":
         p.error("--input_q_magnitude needs continuous hopfield_mode")
-    if memory_backend.is_kv(cfg):
+    if cfg.agent.input_grid_code:
+        cfg.agent.grid_code_dim = memory_backend.grid_code_dim(cfg)
+    if memory_backend.is_kv(cfg) or memory_backend.is_none(cfg):
         # Stage 1 of GRID_MLP_NAV_PLAN: the task regime and its evaluator only.
         other = sorted({st.kind for st in stages} - {"task"})
         if other:
-            p.error(f"--memory_backend sensory_kv runs task stages only; "
-                    f"the schedule also has {other}")
+            p.error(f"--memory_backend {cfg.agent.memory_backend} runs task "
+                    f"stages only; the schedule also has {other}")
         try:
             memory_backend.validate(cfg)
         except ValueError as exc:

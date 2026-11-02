@@ -31,6 +31,7 @@ from hopfield import Hopfield
 from ..config import TrainConfig
 from ..memory import backend as memory_backend
 from ..rollout.distractors import sample_distractors
+from ..rollout.types import RolloutBatch
 from .stages import Knobs, RolloutSpec
 
 
@@ -58,7 +59,12 @@ class TaskRegime:
 
         Under ``memory_backend='sensory_kv'`` the B memories are sensory
         key-value stores and a distractor is a foreign arena's goal key paired
-        with an outside-arena cell's grid code (``memory/backend.py``)."""
+        with an outside-arena cell's grid code (``memory/backend.py``).
+
+        Under ``memory_backend='none'`` (idea 3) there is no memory: B Nones,
+        and the recurrent state is what the composer carries across visits."""
+        if memory_backend.is_none(self.cfg):
+            return [None] * self.B
         if memory_backend.is_kv(self.cfg):
             mems = []
             for _ in range(self.B):
@@ -106,4 +112,43 @@ class TaskRegime:
         )
 
 
-__all__ = ["TaskRegime"]
+def merge_visits(rollouts: list[RolloutBatch]) -> RolloutBatch:
+    """One visit sequence as one trajectory: its rollouts end to end in time.
+
+    Idea 3 (memory_backend "none") carries the recurrent state from one visit
+    to the next, so PPO has to replay the whole sequence from its start for
+    the re-forwarded states to match the collected ones, and GAE has to run
+    across the visit boundary (the sequence is one episode; only its last
+    visit's bootstrap value is a truncation). Only the fields PPO reads are
+    joined; the per-visit diagnostics stay on the original rollouts, which is
+    where the trainer logs them from.
+    """
+    if len(rollouts) == 1:
+        return rollouts[0]
+    for r in rollouts:
+        if (r.alive_mask is not None or r.visited_targets is not None
+                or r.teacher_move_action is not None):
+            raise ValueError("merge_visits joins plain PPO task rollouts only "
+                             "(no ends_on_goal, aux visited head or BC labels)")
+
+    def cat(name):
+        return torch.cat([getattr(r, name) for r in rollouts], dim=1)
+
+    return RolloutBatch(
+        obs=cat("obs"),
+        move_actions=cat("move_actions"),
+        store_actions=cat("store_actions"),
+        move_log_probs=cat("move_log_probs"),
+        store_log_probs=cat("store_log_probs"),
+        values=cat("values"),
+        rewards=cat("rewards"),
+        bootstrap_value=rollouts[-1].bootstrap_value,
+        goal_reached=cat("goal_reached"),
+        explore_mask=cat("explore_mask"),
+        policy_action_mask=cat("policy_action_mask"),
+        store_fired_final=rollouts[-1].store_fired_final,
+        h_final=rollouts[-1].h_final,
+    )
+
+
+__all__ = ["TaskRegime", "merge_visits"]

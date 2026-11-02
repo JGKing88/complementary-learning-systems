@@ -56,6 +56,12 @@ class RolloutCollector:
         memory_backend.validate(cfg)
         self.memory_readout = (memory_backend.readout_for(cfg)
                                if memory_backend.is_kv(cfg) else None)
+        # Idea 3 (GRID_MLP_NAV_PLAN §7): no memory at all. The task regime's
+        # first-touch "store" still flips the goal-found flag (it ends the
+        # search shaping), but nothing is written and nothing is read.
+        self.no_memory = memory_backend.is_none(cfg)
+        self.grid_code = (memory_backend.grid_code_for(cfg)
+                          if getattr(cfg.agent, "input_grid_code", False) else None)
 
     def collect_rollout(
         self,
@@ -119,10 +125,10 @@ class RolloutCollector:
             and cfg.hopfield.auto_store_warmup > 0
             and update_idx <= cfg.hopfield.auto_store_warmup
         )
-        if self.memory_readout is not None and not task_mode:
+        if (self.memory_readout is not None or self.no_memory) and not task_mode:
             raise NotImplementedError(
-                "memory_backend='sensory_kv' runs the task regime only "
-                "(GRID_MLP_NAV_PLAN stage 1)")
+                f"memory_backend={cfg.agent.memory_backend!r} runs the task "
+                "regime only (GRID_MLP_NAV_PLAN stage 1)")
         if task_mode:
             if not allow_store:
                 raise ValueError("task_mode needs allow_store=True (the oracle "
@@ -367,7 +373,14 @@ class RolloutCollector:
                     recompute_mask = invalidated_envs.copy()
                 invalidated_envs[:] = False
 
-                if self.memory_readout is not None:
+                if self.no_memory:
+                    # Nothing to read. q is zero so the diagnostics' cos(a, q)
+                    # stays undefined rather than inventing a direction.
+                    q_full = np.zeros((B, 2), dtype=np.float32)
+                    memory_mask = np.zeros(B, dtype=bool)
+                    hopfield_signal = torch.zeros(B, signal_dim, device=self.device)
+                    new_W, chart_np, multistep_q = None, None, {}
+                elif self.memory_readout is not None:
                     # Sensory-keyed recall + grid MLP: d rides the q slot,
                     # c goes on memory_conf. Queried with the view the agent
                     # actually saw (before obs_dropout), at its heading.
@@ -579,6 +592,9 @@ class RolloutCollector:
                 if self.memory_readout is not None:
                     values["memory_conf"] = torch.from_numpy(
                         memory_conf).float().to(self.device).unsqueeze(-1)
+                if self.grid_code is not None:
+                    values["grid_code"] = torch.from_numpy(
+                        self.grid_code.at_local(positions, env_offset)).to(self.device)
                 if getattr(cfg.agent, "input_q_magnitude", False):
                     values["q_magnitude"] = torch.from_numpy(
                         signal.q_magnitude(q_full)).to(self.device)
@@ -684,7 +700,7 @@ class RolloutCollector:
                     # the goal cell's pattern. cfg.env.allow_offcell_store
                     # decides which one a store writes; the default (True)
                     # returns `embeddings` unchanged.
-                    if self.memory_readout is not None:
+                    if self.memory_readout is not None or self.no_memory:
                         pass
                     elif cfg.env.allow_offcell_store:
                         store_patterns = embeddings
@@ -698,7 +714,8 @@ class RolloutCollector:
                             )
                         ).float().to(self.device)
                     for b in range(B):
-                        if effective_store[b] and self.memory_readout is None:
+                        if (effective_store[b] and self.memory_readout is None
+                                and not self.no_memory):
                             hopfields[b].input_memory(store_patterns[b])
 
                 # 8. Step environment — teleports envs that were at goal this step.
@@ -958,7 +975,11 @@ class RolloutCollector:
                     pos_final, getattr(cfg.hopfield, 'alias_mod', 0)),
                 env_offset)
             emb_final = torch.from_numpy(emb_final_np).float().to(self.device)
-            if self.memory_readout is not None:
+            if self.no_memory:
+                q_final = np.zeros((B, 2), dtype=np.float32)
+                sig_final = torch.zeros(B, signal_dim, device=self.device)
+                multistep_q_final = {}
+            elif self.memory_readout is not None:
                 _d_final, q_final, _, conf_final = self.memory_readout.signal(
                     hopfields, vec.obs_batch(), obs_psi(vec, None),
                     pos_final, env_offset)
@@ -996,6 +1017,9 @@ class RolloutCollector:
             if self.memory_readout is not None:
                 values_final["memory_conf"] = torch.from_numpy(
                     conf_final).float().to(self.device).unsqueeze(-1)
+            if self.grid_code is not None:
+                values_final["grid_code"] = torch.from_numpy(
+                    self.grid_code.at_local(pos_final, env_offset)).to(self.device)
             if getattr(cfg.agent, "input_q_magnitude", False):
                 values_final["q_magnitude"] = torch.from_numpy(
                     signal.q_magnitude(q_final)).to(self.device)
@@ -1057,6 +1081,7 @@ class RolloutCollector:
             task=_task.arrays() if _task is not None else None,
             store_fired_final=(agent_goal_store_fired.copy()
                                if task_mode else None),
+            h_final=None if h_rnn is None else h_rnn.detach().clone(),
         )
 
     # The three helpers below moved to signal.py so that eval.agent_step runs

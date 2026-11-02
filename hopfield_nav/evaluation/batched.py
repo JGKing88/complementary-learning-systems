@@ -169,6 +169,10 @@ def batched_navigation_trials(
         if kv_conf is not None:
             values["memory_conf"] = torch.from_numpy(
                 kv_conf).float().to(device).unsqueeze(-1)
+        if getattr(cfg.agent, "input_grid_code", False):
+            values["grid_code"] = torch.from_numpy(
+                memory_backend.grid_code_for(cfg).at_local(
+                    positions, env_offset)).to(device)
         if getattr(cfg.agent, "input_q_magnitude", False):
             values["q_magnitude"] = torch.from_numpy(
                 signal_ops.q_magnitude(q)).to(device)
@@ -375,6 +379,10 @@ def batched_exploration_trials(
         if kv_conf is not None:
             values["memory_conf"] = torch.from_numpy(
                 kv_conf).float().to(device).unsqueeze(-1)
+        if getattr(cfg.agent, "input_grid_code", False):
+            values["grid_code"] = torch.from_numpy(
+                memory_backend.grid_code_for(cfg).at_local(
+                    positions, env_offset)).to(device)
         if getattr(cfg.agent, "input_q_magnitude", False):
             values["q_magnitude"] = torch.from_numpy(
                 signal_ops.q_magnitude(q)).to(device)
