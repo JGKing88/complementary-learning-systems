@@ -7,8 +7,8 @@
 #           r=16 code), every nonlinearity x coverage 1/5/20% for each bump
 #           width (0.25, 0.15, 0.10) and H (8192, 2048, 32768).
 #   step2   rp_sfa_check.py, the slowness readout: every nonlinearity and bump
-#           width at H = 8192, the pure-wave control (rff8), then H = 32768 for
-#           hard50 and sig1 at bump 0.10.
+#           width at H = 8192, the pure-wave control (rff8), then the H trend
+#           (2048, 24576) for sig1 at bump 0.25 and hard50 at bump 0.10.
 #   all     step1 then step2.
 #
 #   bash analysis/hopfield_probe/run_rp.sh all
@@ -58,7 +58,13 @@ if [[ "$MODE" == step2 || "$MODE" == all ]]; then
     "$PY" -m analysis.hopfield_probe.rp_sfa_check --fwhm 0.25 --H 8192 --variants rff8 \
         --out "$OUT/step2"
     echo "DONE step2 control rff8"
-    "$PY" -m analysis.hopfield_probe.rp_sfa_check --fwhm 0.10 --H 32768 \
-        --variants hard50,sig1 --coverages 0.05 --save gauss16 --out "$OUT/step2"
-    echo "DONE step2 fwhm 0.10 H 32768"
+    # H trend for the two most promising layers (cuSOLVER's eigh refuses
+    # n = 32768, so 24576 is the large point)
+    for H in 2048 24576; do
+        "$PY" -m analysis.hopfield_probe.rp_sfa_check --fwhm 0.25 --H "$H" \
+            --variants sig1 --coverages 0.05 --out "$OUT/step2"
+        "$PY" -m analysis.hopfield_probe.rp_sfa_check --fwhm 0.10 --H "$H" \
+            --variants hard50 --coverages 0.05 --out "$OUT/step2"
+        echo "DONE step2 trend H $H"
+    done
 fi

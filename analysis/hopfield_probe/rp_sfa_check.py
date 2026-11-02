@@ -100,10 +100,14 @@ def env_stats(layer, rects, fwhm, device):
 
 def sfa(B, S, rel_floor=1e-9):
     """Slowness ``lam`` (ascending) and projection ``P`` (H, k): y = (h - hbar) @ P."""
-    if B.is_cuda and B.shape[0] > 20_000:
-        # cuSOLVER's syevd workspace query rejects n = 32768 (INVALID_VALUE)
-        torch.backends.cuda.preferred_linalg_library("magma")
-    eb, Ub = torch.linalg.eigh(B)
+    try:
+        eb, Ub = torch.linalg.eigh(B)
+    except torch.linalg.LinAlgError:
+        # cuSOLVER's syevd workspace query rejects n = 32768 in float64 and
+        # float32 alike (MAGMA segfaults there); fall back to LAPACK
+        print(f"eigh: cuSOLVER refused n = {B.shape[0]}, using the CPU", flush=True)
+        lam, P, k = sfa(B.cpu(), S.cpu(), rel_floor)
+        return lam.to(B.device), P.to(B.device), k
     keep = eb > rel_floor * eb.max()
     Wb = Ub[:, keep] / eb[keep].sqrt()
     del Ub

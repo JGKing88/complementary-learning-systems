@@ -991,6 +991,22 @@ H = 8192 has none, at every coverage. Rows below are 5% coverage, far cells:
   (alias 0.045, the ideal's level). The method works when the layer contains
   slow waves.
 
+**A bigger layer helps the smooth layer a little, and it still aliases.** H
+trend at 5% coverage, far cells (cuSOLVER's eigensolver refuses n = 32768 in
+float64 and float32, and MAGMA segfaults there, so 24576 is the large point):
+
+| layer | H | slowest feature, as a wavelength | slower than an r = 16 wave (of 3661) | gauss16: far sd / alias max |
+|---|---|---|---|---|
+| sig1, bump 0.25 | 2048 / 8192 / 24576 | 13 / 31 / 86 cells | 0 / 0 / 4 | 0.51 / 0.46 / 0.24 and 1.00 / 0.98 / 0.96 |
+| hard50, bump 0.10 | 2048 / 8192 / 24576 | 10 / 12 / 13 cells | 0 / 0 / 0 | 0.56 / 0.51 / 0.51 and 0.97 / 0.99 / 1.00 |
+
+The smooth layer's slow features get slower and its far field quieter as H
+grows, but they still alias at 0.96. A smooth unit is smooth in every direction
+of phase space, so its slow combinations are smooth across strands too: they
+take nearly the same value on strands 0.82 cells apart. The ideal's waves need
+the opposite, slow along the sheet and fast across it. The hard layer never
+gets past the module period.
+
 ### Step 3: not run
 
 Every learned code either aliases at ≥ 0.9 or has no near field. One far-field
@@ -1015,5 +1031,6 @@ restate that.
 
 Results: `/orcd/pool/003/jackking/cls_runs/results/hopfield_probe/rp_readout/`
 (`step1/`, `step2/`, `logs/`; `step1_v0/` is a first pass whose ridge was picked
-on cells interleaved with the fitted ones). Launcher: `run_rp.sh all`. Tables:
+on cells interleaved with the fitted ones; full tables in `step1_summary.md` and
+`step2_summary.md`). Launcher: `run_rp.sh all`. Tables:
 `python -m analysis.hopfield_probe.rp_summary step1|step2 DIR`.
