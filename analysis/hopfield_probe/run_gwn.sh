@@ -47,12 +47,12 @@ done
 if [[ -z "${GWN_IN_JOB:-}" ]]; then
     mkdir -p "$OUT/logs"
     if [[ $MODE == build ]]; then
-        GWN_IN_JOB=1 exec sbatch --job-name=gwn_build --partition=pi_fiete,ou_bcs_normal,mit_normal_gpu \
+        GWN_IN_JOB=1 exec sbatch --job-name=gwn_build --partition=pi_evelina9,pi_fiete,ou_bcs_normal,mit_normal_gpu \
             --gres=gpu:1 --exclude=node3804 --time=${GWN_TIME:-5:00:00} --cpus-per-task=2 \
             --mem=${GWN_MEM:-32G} --output="$OUT/logs/build_%j.out" "$0" build
     else
-        GWN_IN_JOB=1 exec sbatch --job-name=gwn_probe --partition=ou_bcs_normal,mit_normal \
-            --time=4:00:00 --cpus-per-task=16 --mem=32G --array="${ARG:-0-$(( ${#TASKS[@]} - 1 ))}" \
+        GWN_IN_JOB=1 exec sbatch --job-name=gwn_probe --partition=pi_evelina9,pi_fiete,ou_bcs_normal,mit_normal \
+            ${GWN_DEP:+--dependency=$GWN_DEP} --time=4:00:00 --cpus-per-task=16 --mem=32G --array="${ARG:-0-$(( ${#TASKS[@]} - 1 ))}" \
             --output="$OUT/logs/probe_%A_%a.out" "$0" probe
     fi
 fi
