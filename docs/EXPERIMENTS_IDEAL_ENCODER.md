@@ -1034,3 +1034,88 @@ Results: `/orcd/pool/003/jackking/cls_runs/results/hopfield_probe/rp_readout/`
 on cells interleaved with the fitted ones; full tables in `step1_summary.md` and
 `step2_summary.md`). Launcher: `run_rp.sh all`. Tables:
 `python -m analysis.hopfield_probe.rp_summary step1|step2 DIR`.
+
+## 20. The grid wave network (plan written 2026-11-02, before any run)
+
+**The network.** L0 grid cells (434) → L1 per-module waves → L2 wave units →
+L3 slowness gains → code. Page: "Grid Wave Network"
+(claude.ai/artifact/AhAWfeS2AB546xayRMj8gj).
+
+- **L1**: for module m and pattern j = (jx, jy) ∈ Z_λ², the pair
+  c = Σ_ab cos(2π(jx a + jy b)/λ) g_ab / A_m(j) = cos θ, s = the same with sin.
+  θ = 2π(jx x + jy y)/λ. Exact L1 holds all λ² patterns per module.
+- **L2**: unit k picks one L1 pair per module at random (the only random
+  wiring) and multiplies: u = c₁₁c₁₂ − s₁₁s₁₂, v = s₁₁c₁₂ + c₁₁s₁₂,
+  C = u c₁₃ − v s₁₃, S = v c₁₃ + u s₁₃. So C = cos Θ, Θ = 2π n·p/1716, with
+  n = 156 j₁₁ + 143 j₁₂ + 132 j₁₃ mod 1716 per axis.
+- **L3**: each unit's slowness v_k = mean over walk steps of (ΔC)² + (ΔS)²
+  (≈ |ω|²/2 for a pure wave, the same at every position). Gain w_k = g(v_k).
+  The code is [w C, w S] over the units with w above 10⁻⁴, normalised.
+
+**Regime throughout.** Walk steps are sampled inside scattered square
+environments of side 10–100 (log-uniform) covering 5% of the scaffold (1% and
+20% as a check). Target r = 16. Metrics as in §19 (C(1), half-width, far sd,
+alias max at the grid code's 64 strongest far displacements) on visited,
+unvisited and far cells. The probe is `run.py` with the `run_ideal.sh`
+settings, Hebbian storage, against the existing ideal r = 16 rows
+(`probe/t12`–`t15`).
+
+**No gating.** Every step runs with exact L1, whether or not L1 can be learned.
+Learned L1 variants are run alongside wherever they apply.
+
+### Step 0: exact network
+1. Units N_u ∈ {25k, 100k, 400k, all 1716² = 2.94M}, exact L1, exact products,
+   Gaussian gains: survivors, kernel metrics, and the gain estimate's error
+   against the analytic |ω|²/2.
+2. Gain rules at N_u = 400k, each scaled to r = 16: Gaussian
+   exp(−r²v/2); cut 1[v < 2/r²]; rational 1/(1 + r²v/2); linear
+   max(0, 1 − r²v/4). Kernel metrics.
+3. Coverage 1/5/20% for the walk steps (expected not to matter).
+4. Probe: 400k Gaussian (4 regions); all-triples Gaussian, and 400k with cut,
+   rational and linear gains (whole + corner).
+
+### Step 1: learning L1 (bump widths 0.25 and 0.10)
+1. **Hebbian PCA baseline**: per-module covariance from visited cells,
+   eigenvectors paired in order as (c, s), plus a constant unit (the j = 0
+   pattern). Purity = the share of a pair's power (as c + i s on the module
+   torus) in one frequency; exact L1 = 1.
+2. **Movement (offline)**: estimate per-module shift operators T_x, T_y
+   from walk steps (ridge least squares g(p + e) ≈ T_e g(p)), take the left
+   eigenvectors of T_x + α T_y (α = 0.618), and use their real and imaginary
+   parts as (c, s), normalised to mean c² + s² = 1. Purity against the number
+   of steps (1k, 10k, 100k) and bump width.
+3. **Local online rule** (stretch, time-boxed): a velocity-gated update that
+   learns rotating pairs step by step. Reported as not done if not reached.
+4. Plug learned L1 (PCA, movement) into the 400k network: survivors and kernel
+   metrics; probe both (whole + corner).
+
+### Step 2: robustness (exact L1; repeated with movement-learned L1)
+1. **Imperfect multiplication**:
+   - static coefficient errors, each ±1 coefficient × (1 + δ), δ ~ N(0, s²),
+     s ∈ {0.01, 0.05, 0.1, 0.3};
+   - products by quarter squares, xy = (f(x+y) − f(x−y))/4 with f = |·|^p,
+     p ∈ {1.5, 1.8, 2.2, 2.5} (p = 2 is exact).
+
+   Kernel metrics. Probe s = 0.1 (whole + corner).
+2. **Grid noise**, at bump widths 0.25 and 0.10, for the network and for the
+   ideal code:
+   - additive cell-activity noise σ ∈ {0.001, 0.01, 0.05};
+   - a coherent phase shift per module, ε ∈ {0.05, 0.1, 0.2, 0.4} cells.
+
+   Measured: self-similarity cos(z_clean(p), z_noisy(p)), the decoded
+   position error (best match among clean codes within 64 cells), and the
+   share of errors beyond 5 cells.
+
+### Step 3: cost
+1. Unit count against kernel quality (from step 0.1).
+2. **Staged selection**: pair units over all 121 · 144 = 17,424 (j₁₁, j₁₂)
+   with gain scale r/13 (modules 11 and 12 repeat every 132 = 1716/13 cells),
+   then each kept pair is multiplied with all 169 module-13 patterns and gained
+   at r. Report neurons and product synapses against 400k random triples and
+   the 2.94M full set, and the final kernel.
+
+### Deliverables
+`gwn_encoder.py` (with the `gwn:` probe spec and tests), `gwn_check.py`
+(steps 0, 2, 3), `gwn_l1_learn.py` (step 1), `run_gwn.sh`, results under
+`.../hopfield_probe/gwn/`, this section's results, and a results section on
+the page.
