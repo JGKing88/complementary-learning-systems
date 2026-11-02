@@ -18,11 +18,16 @@ fit on half the trajectories and scored on the other half:
 
 Each is scored separately on steps after the row first touched this arena's
 goal (``known``) and before (``unknown``, the chance level). ``--mode task``
-runs evaluate_task's protocol (two visits per arena, state carried);
-``--mode lifetime`` runs one lifetime over ``n_envs`` arenas
-(rollout/lifetime.py) and also probes, at every step, the goals of the arenas
-found earlier that the agent is NOT in (``other_goal_phase``): is more than
-one goal held at once?
+runs evaluate_task's protocol (two visits per arena, state carried) for
+``n_groups`` goals per arena; ``--mode lifetime`` runs ``n_groups`` lifetimes
+over ``n_envs`` arenas (rollout/lifetime.py), each with fresh goals, and also
+probes the goals of the arenas found earlier that the agent is NOT in
+(``other_goal_phase_r2``): is more than one goal held at once?
+
+Goals are redrawn for every group and the readouts are trained on even groups
+and scored on odd ones, so a readout cannot get the goal from which arena the
+agent is in. With one fixed goal per arena it could (the arena is readable
+from the grid code), and the "unknown" steps then decode the goal too.
 """
 from __future__ import annotations
 
@@ -123,9 +128,31 @@ def ridge_fit_score(Xtr, Ytr, Xte, Yte, alphas=(1e-2, 1e-1, 1, 10, 100)):
 
 
 def collect(agent, cfg, vh, envs, offsets, mode, trials, max_steps, n_envs,
-            iters, seed, device):
-    """Per-step records: hidden state, own cell, goal cell, arena, known flag,
-    and the goal cells of the arenas this row found earlier."""
+            iters, seed, device, n_groups):
+    """Per-step records over ``n_groups`` goal draws: hidden state, own cell,
+    goal cell, arena, known flag, group, and the goal cells of the arenas this
+    row found earlier."""
+    rng = np.random.RandomState(seed + 7919)
+    parts = []
+    for grp in range(n_groups):
+        for e in envs:
+            e.set_goal(tuple(int(v) for v in rng.randint(0, e.size, 2)))
+        d = _collect_one(agent, cfg, vh, envs, offsets, mode, trials, max_steps,
+                         n_envs, iters, seed + grp, device)
+        d["group"] = np.full(len(d["H"]), grp)
+        d["goal"] = d["goal_global"][d["arena"]]
+        d["found_goal"] = np.where(d["found_before"][..., None],
+                                   d["goal_global"][None], -1)
+        parts.append(d)
+    keys = ("H", "cell", "arena", "known", "row", "found_before", "group",
+            "goal", "found_goal")
+    out = {k: np.concatenate([p[k] for p in parts]) for k in keys}
+    out["lambdas"] = parts[0]["lambdas"]
+    return out
+
+
+def _collect_one(agent, cfg, vh, envs, offsets, mode, trials, max_steps, n_envs,
+                 iters, seed, device):
     ecfg = copy.deepcopy(cfg)
     ecfg.batch_envs = int(trials)
     ecfg.steps_per_rollout = int(max_steps)
@@ -198,7 +225,10 @@ def collect(agent, cfg, vh, envs, offsets, mode, trials, max_steps, n_envs,
             fb = np.repeat(found_so_far[b][None], n, 0)
             fb[:, j] = False
             found_before.append(fb)
-        found_so_far[:, j] |= reached.any(1) | k0
+        if mode == "lifetime":
+            # Task mode resets the state between arenas, so only a lifetime
+            # can hold another arena's goal.
+            found_so_far[:, j] |= reached.any(1) | k0
     return dict(H=np.concatenate(H), cell=np.concatenate(cell),
                 arena=np.concatenate(arena), known=np.concatenate(known),
                 row=np.concatenate(row), found_before=np.concatenate(found_before),
@@ -207,14 +237,15 @@ def collect(agent, cfg, vh, envs, offsets, mode, trials, max_steps, n_envs,
 
 def score(d):
     lam = d["lambdas"]
-    goal = d["goal_global"][d["arena"]]
+    goal = d["goal"]
     disp = goal - d["cell"]
     targets = {
         "goal_phase": phases(goal[:, 0], goal[:, 1], lam),
         "goal_disp": disp.astype(np.float64),
         "pos_phase": phases(d["cell"][:, 0], d["cell"][:, 1], lam),
     }
-    train = d["row"] % 2 == 0
+    # Held-out goals: train on even goal draws, score on odd ones.
+    train = d["group"] % 2 == 0
     test = ~train
     out = {}
     for split, m in (("known", d["known"]), ("unknown", ~d["known"])):
@@ -231,33 +262,23 @@ def score(d):
                 res["goal_dir_err_deg"] = float(np.degrees(
                     np.abs(np.angle(np.exp(1j * ang)))).mean())
         out[split] = res
-    # Other arenas' goals while in this one (lifetime mode): one probe per
-    # arena, on steps where that arena's goal was found earlier and the agent
-    # is elsewhere; pooled R^2.
+    # Other arenas' goals while in this one (lifetime mode): one readout per
+    # arena k, on steps where the row found k's goal earlier and is now in
+    # another arena; R^2 pooled over arenas, on held-out lifetimes.
     fb = d["found_before"]
     if fb.any():
-        num = den = 0.0
+        res = {}
         for k in range(fb.shape[1]):
             m = fb[:, k]
             tr, te = train & m, test & m
             if tr.sum() < 50 or te.sum() < 50:
                 continue
-            gk = np.repeat(d["goal_global"][k][None], len(m), 0)
+            gk = d["found_goal"][:, k]
             Y = phases(gk[:, 0], gk[:, 1], lam)
-            # The target is constant within a lifetime, so a probe needs
-            # several lifetimes to mean anything; with one goal per arena it
-            # is fit against the steps where the arena's goal was NOT found.
-            neg = train & ~m & (d["arena"] != k)
-            if neg.sum() < 50:
-                continue
-            Yneg = np.zeros_like(Y[neg])
-            Xtr = np.concatenate([d["H"][tr], d["H"][neg]])
-            Ytr = np.concatenate([Y[tr], Yneg])
-            r2, P = ridge_fit_score(Xtr, Ytr, d["H"][te], Y[te])
-            num += ((P - Y[te]) ** 2).sum()
-            den += (Y[te] ** 2).sum()
-        if den > 0:
-            out["other_goal_rel_err"] = float(num / den)
+            r2, _ = ridge_fit_score(d["H"][tr], Y[tr], d["H"][te], Y[te])
+            res[f"arena{k}"] = r2
+        if res:
+            out["other_goal_phase_r2"] = res
     return out
 
 
@@ -270,6 +291,9 @@ def main():
     p.add_argument("--max_steps", type=int, default=200)
     p.add_argument("--n_envs", type=int, default=6)
     p.add_argument("--iters", type=int, default=2)
+    p.add_argument("--n_groups", type=int, default=8,
+                   help="goal draws (task: per arena; lifetime: lifetimes); "
+                        "readouts train on even draws and score on odd ones")
     p.add_argument("--seed", type=int, default=0)
     p.add_argument("--device", default="cuda")
     p.add_argument("--out", required=True)
@@ -293,7 +317,7 @@ def main():
     agent = load_agent(cfg, ck["agent_state_dict"], enc_cfg.out_dim, device)
     envs = build_envs(specs, cfg.env, cfg.agent.movement_mode)
     d = collect(agent, cfg, vh, envs, offsets, a.mode, a.trials, a.max_steps,
-                min(a.n_envs, len(envs)), a.iters, a.seed, device)
+                min(a.n_envs, len(envs)), a.iters, a.seed, device, a.n_groups)
     res = {"ckpt": a.ckpt, "mode": a.mode, "n_steps": int(len(d["H"])),
            "known_frac": float(d["known"].mean()), **score(d)}
     print(json.dumps(res, indent=1), flush=True)
