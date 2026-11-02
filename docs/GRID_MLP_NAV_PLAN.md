@@ -965,7 +965,7 @@ cell is over R = 8, 40, 200, which barely matters.
 | 8 | 0.72 to 0.79 | 0.63 to 0.71 | 0.51 to 0.55 |
 | 40, every walk view | 0.92 to 0.95 | 0.87 to 0.89 | 0.72 to 0.75 |
 | joint training, same network, one walk per env | 0.97 | 0.81 | 0.67 |
-| idea 1 keys, nearest neighbour (§10.9) | 1.00 | 1.00 | 0.99 |
+| nearest neighbour on centred canvas keys (§10.9) | 1.00 | 1.00 | 0.99 |
 
 Reading.
 1. With full storage the oldest envs are kept as well as the newest (0.77 to
@@ -975,10 +975,50 @@ Reading.
    five walks per env (§10.9), so longer visits would lift this too.
 2. Storage is the cost. Below 8 views per env, retention falls fast, and the
    oldest envs go first (0.43 to 0.50 at N = 100 with 8 views). One stored
-   view is a 60-degree slice of the panorama, so replaying it does not pin the
-   env's output at other headings.
+   view covers 120 degrees, a third of the panorama, so replaying it does not
+   pin the env's output at other headings.
 3. Idea 1 stores one key per env, an all-around view at the goal, and reads
    by nearest neighbour. Replay here stores 40 partial views per env and
-   still trails at N = 100. A like-for-like test would replay idea 1's single
-   all-around key per env, as six 60-degree slices, through the MLP. Not run.
+   still trails at N = 100. §10.12 replays only idea 1's store.
    Commit `7ca1249`.
+
+### 10.12 Replay with idea 1's storage (2026-11-01)
+
+This asks whether the MLP, trained by replay, can match idea 1 when it keeps
+exactly what idea 1 keeps. It cannot. With one all-around snapshot per env it
+keeps 0.57 at N = 100, against idea 1's 0.96 to 1.00 (§2.4). So idea 1's
+direct lookup is the better use of the same storage, and idea 2 closes.
+
+Setup. As §10.11, but after each env's write the buffer keeps only one
+snapshot, taken from the goal cell and covering all 180 direction slots
+(ray-cast at 6 headings and merged), which is the information in idea 1's key.
+Each replay sample is an earlier env and a random heading, and its input is
+the 120-degree view at that heading cut out of the env's snapshot, labelled
+with the env's goal (`--buffer_mode omni`). A diagnostic replays exact
+ray-cast views from the goal cell at random headings instead
+(`--buffer_mode goalcell`). That is the same position and information without
+the snapshot's 2-degree slots, so it needs the env at replay time and is not
+equal storage. Jobs 27607617 and 27607620. The range in each cell is over 8
+and 40 replayed per step.
+
+| replayed for each earlier env | N = 6 | N = 30 | N = 100 |
+|---|---|---|---|
+| views cut from idea 1's snapshot (equal storage) | 0.70 to 0.71 | 0.63 to 0.64 | 0.57 to 0.58 |
+| exact views from the goal cell (diagnostic) | 0.88 to 0.89 | 0.84 to 0.85 | 0.74 |
+| all 40 walk views (§10.11) | 0.92 to 0.95 | 0.87 to 0.89 | 0.72 to 0.75 |
+| idea 1 (§2.4) | 0.96 to 1.00 | 0.96 to 1.00 | 0.96 to 1.00 |
+
+Reading.
+1. At equal storage the replayed MLP keeps 0.57 at N = 100, and its oldest
+   envs fall to 0.44 to 0.45. Idea 1 keeps 0.96 or more from the same
+   snapshot.
+2. Part of the gap is the snapshot's 2-degree slots. A view cut from it
+   samples every slot at one fixed angle, while a real view samples each slot
+   at an angle that shifts with heading, and nearby walls change within a
+   slot (cut and real views differ by 0.06 on values of about 0.33). The MLP
+   trained on cut views generalises worse to real ones. Idea 1's cosine match
+   tolerates the same jitter. Exact views from the goal cell lift retention to
+   0.74 at N = 100, as good as replaying all 40 walk views.
+3. Even then replay stops near 0.74 at N = 100, the one-walk generalisation
+   limit of §10.11. Idea 1's nearest-neighbour read does not have that limit.
+   Commit `6ea5007`.
