@@ -152,7 +152,9 @@ def test_merge_refuses_ends_on_goal_rollouts():
 # 5 ---------------------------------------------------------------------------
 
 @pytest.mark.slow
-def test_cli_task_run_under_none(tmp_path):
+@pytest.mark.parametrize("schedule", ["task:3,visits=2",
+                                      "task:2,visits=2 ; lifetime:2,envs=2,iters=2"])
+def test_cli_task_run_under_none(tmp_path, schedule):
     root = tmp_path
     env = dict(os.environ, CLS_RUNS=str(root), WANDB_MODE="disabled",
                PYTHONPATH=str(REPO_ROOT) + os.pathsep + os.environ.get("PYTHONPATH", ""))
@@ -167,17 +169,100 @@ def test_cli_task_run_under_none(tmp_path):
     i = args.index("--input_hopfield_multistep")
     del args[i:i + 2]
     args.remove("--input_hopfield_raw")
+    args[args.index("--schedule") + 1] = schedule
     save = root / "run"
     proc = subprocess.run(
         [sys.executable, "-m", "hopfield_nav.train_navigate",
          "--encoder_checkpoint", str(enc), *args, "--distal_amp", "1.0",
          "--memory_backend", "none", "--input_grid_code",
          "--no-input_hopfield_signal", "--n_train_distractors_max", "0",
-         "--save_dir", str(save)],
+         "--print_every", "1", "--save_dir", str(save)],
         cwd=REPO_ROOT, env=env, capture_output=True, text=True, timeout=900)
     assert proc.returncode == 0, proc.stdout[-3000:] + proc.stderr[-3000:]
     assert "task={0:" in proc.stdout
+    assert "lifetime={'first_found'" in proc.stdout
     assert "] nav=" not in proc.stdout
+    if "lifetime:" in schedule:
+        assert "| lifetime: first_found=" in proc.stdout
     ck = torch.load(save / "navigate_final.pt", map_location="cpu", weights_only=False)
     assert ck["config"]["agent"]["memory_backend"] == "none"
     assert ck["config"]["agent"]["grid_code_dim"] == 3 * 3 + 4 * 4
+
+
+# 6 (stage 2) -----------------------------------------------------------------
+
+def test_protocol_order_is_the_continual_protocol():
+    from hopfield_nav.rollout.lifetime import protocol_order
+    assert protocol_order(3, 2) == [0, 0, 0, 1, 0, 1, 0, 1, 2, 0, 1, 2]
+    assert protocol_order(1, 3) == [0, 0, 0]
+
+
+def test_lifetime_packs_and_replays_exactly():
+    from hopfield_nav.rollout import lifetime
+    from hopfield_nav.world.env import make_env
+    cfg = none_cfg(batch_envs=5, steps_per_rollout=30)
+    collector, agent, _ = make_collector(cfg, seed=0)
+    envs = [make_env(cfg.env, "continuous", seed=s) for s in (5, 6)]
+    envs[0].set_goal((2, 3))
+    envs[1].set_goal((1, 1))
+    torch.manual_seed(0)
+    np.random.seed(0)
+    rs, order = lifetime.run_lifetime(collector, agent, envs, [(3, 4), (40, 9)],
+                                      n_envs=2, iters=2, epsilon=0.0)
+    assert order == [0, 0, 0, 1, 0, 1]
+    # A finished row's steps are dead to the end of the trial: alive steps
+    # are a prefix of each trial.
+    alive = [r.alive_mask for r in rs]
+    for a in alive:
+        lens = a.sum(1)
+        for b in range(5):
+            n = int(lens[b])
+            assert a[b, :n].all() and not a[b, n:].any()
+    out = lifetime.trial_outcomes(rs, order)
+    assert out["reached"].any(), "no row reached a goal; lengthen the trial"
+    assert out["first"].tolist() == [True, False, False, True, False, False]
+    assert not out["known"][:, 0].any()
+    # known <=> reached that arena's goal on an earlier trial
+    for b in range(5):
+        for k in range(len(order)):
+            prev = [kk for kk in range(k) if order[kk] == order[k]]
+            assert out["known"][b, k] == any(out["reached"][b, kk] for kk in prev)
+
+    packed = lifetime.pack(rs)
+    assert packed.obs.shape[1] == int(max(sum(a[b].sum() for a in alive)
+                                          for b in range(5)))
+    assert torch.equal(packed.alive_mask.sum(1), sum(a.sum(1) for a in alive))
+    with torch.no_grad():
+        dist, _, values, _ = agent(packed.obs)
+        lp = dist.log_prob(packed.move_actions).sum(-1)
+    keep = packed.alive_mask > 0
+    assert torch.allclose(lp[keep], packed.move_log_probs[keep], atol=1e-4)
+    assert torch.allclose(values[keep], packed.values[keep], atol=1e-5)
+    # The packed row is the trials' alive steps, in order, then zeros.
+    b = 0
+    want = torch.cat([r.obs[b][r.alive_mask[b] > 0] for r in rs])
+    assert torch.equal(packed.obs[b, :len(want)], want)
+    assert not packed.obs[b, len(want):].any()
+    s = lifetime.summarise([out])
+    assert set(s) == {"first_found", "known_reached", "known_steps",
+                      "unknown_found", "known_frac"}
+
+
+def test_freeze_done_state_needs_ends_on_goal():
+    from hopfield_nav.world.env import make_env
+    cfg = none_cfg(batch_envs=2, steps_per_rollout=6)
+    collector, agent, _ = make_collector(cfg)
+    env = make_env(cfg.env, "continuous", seed=5)
+    with pytest.raises(ValueError, match="ends_on_goal"):
+        collector.collect_rollout(env, agent, [None, None], allow_store=True,
+                                  task_mode=True, freeze_done_state=True)
+
+
+def test_lifetime_schedule_parses():
+    from hopfield_nav.training.stages import (ScheduleError, format_schedule,
+                                               parse_schedule)
+    st = parse_schedule("lifetime:10,envs=3,iters=2 ; task:5,visits=2")
+    assert (st[0].kind, st[0].envs, st[0].iters) == ("lifetime", 3, 2)
+    assert format_schedule(st) == "lifetime:10,envs=3,iters=2 ; task:5,visits=2"
+    with pytest.raises(ScheduleError, match="lifetime"):
+        parse_schedule("task:5,envs=3")

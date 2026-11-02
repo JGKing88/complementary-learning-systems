@@ -54,6 +54,7 @@ from .training.exploit import ExploitRegime
 from .training.task import TaskRegime, merge_visits
 from .training.prior import ExplorerPrior
 from .rollout import task_stats
+from .rollout import lifetime
 from .training.refresh import Cadence, Refresher
 from .training import resume as resume_io
 from .memory import backend as memory_backend
@@ -535,74 +536,96 @@ def run_navigate(
         # carry theirs, and PPO trains each sequence as one trajectory.
         carry_state = is_task and memory_backend.is_none(cfg)
         seq_of: list[tuple] = []
-        for w_idx, world in enumerate(worlds):
-            vh = world.field
-            collector = RolloutCollector(vh, cfg, embed_dim, device)
-            for local_idx, env in enumerate(world.envs):
-                env_offset = world.offsets[local_idx]
-                # The memory a visit sequence carries: None at the start of a
-                # sequence, otherwise the previous rollout's Hopfields and
-                # "goal stored" flags (task regime only).
-                _carry_hops, _carry_fired, _carry_h = None, None, None
-                for slot in range(local_idx * n_reps, (local_idx + 1) * n_reps):
-                    if is_task:
-                        regime = task_regime
-                    else:
-                        regime = (exploit_regime if is_pre[slot]
-                                  else explore_regime)
-                    pre_flags.append(bool(is_pre[slot]))
-                    # Before the spec: the exploit regime reads
-                    # `env.goal_location` when it builds the memory. Under
-                    # the task regime a redraw happens once per visit
-                    # sequence -- the goal the memory holds must stay the
-                    # goal the arena pays at.
-                    _visit = (slot - local_idx * n_reps) % n_visits
-                    if getattr(cfg, "redraw_goal_per_rollout", False) and (
-                            not is_task or _visit == 0):
-                        env.reset_goal()
-                    if is_task:
-                        if _visit == 0:
-                            _carry_hops, _carry_fired, _carry_h = None, None, None
-                        spec = regime.spec(w_idx, world, local_idx, env,
-                                           env_offset, knobs,
-                                           hops=_carry_hops,
-                                           store_fired=_carry_fired)
-                    else:
-                        spec = regime.spec(w_idx, world, local_idx, env,
-                                           env_offset, knobs)
-                    # The collector reads novelty off cfg and the goal reward
-                    # off the env, so the regime's choice has to be written
-                    # into both.
-                    cfg.hopfield.novelty_reward = spec.novelty_reward
-                    env.goals_active = spec.goals_active
-                    # Regime-specific input dropout: exploit rollouts may run
-                    # under their own rates; the run-wide values are restored
-                    # after the loop (as novelty is).
-                    _eod = getattr(cfg, "exploit_obs_dropout", None)
-                    _ehd = getattr(cfg, "exploit_heading_dropout", None)
-                    cfg.obs_dropout = (float(_eod) if (is_pre[slot] and _eod is not None)
-                                       else _base_obs_dropout)
-                    cfg.hopfield.heading_dropout = (
-                        float(_ehd) if (is_pre[slot] and _ehd is not None)
-                        else _base_heading_dropout)
-                    rollout = collector.collect_rollout(
-                        env, agent, spec.hop, allow_store=spec.allow_store,
-                        h_rnn=_carry_h if carry_state else None,
-                        env_offset=env_offset,
-                        update_idx=update, aux_scale=1.0,
-                        epsilon_now=spec.epsilon,
-                        goal_in_memory_init=spec.goal_in_memory_init,
-                        ends_on_goal=spec.ends_on_goal,
-                        task_mode=spec.task_mode,
-                        store_fired_init=spec.store_fired_init,
-                    )
-                    rollouts.append(rollout)
-                    seq_of.append((w_idx, local_idx,
-                                   (slot - local_idx * n_reps) // n_visits))
-                    if is_task:
-                        _carry_hops = spec.hop
-                        _carry_fired = rollout.store_fired_final
-                        _carry_h = rollout.h_final
+        # Idea 3, stage 2: one short continual-protocol lifetime per row
+        # (rollout/lifetime.py), recurrent state carried through it, each
+        # row's lifetime one PPO trajectory.
+        is_lifetime = stage.kind == "lifetime"
+        lifetime_packed, lifetime_out = [], []
+        if is_lifetime:
+            cfg.hopfield.novelty_reward = knobs.novelty
+            for w_idx, world in enumerate(worlds):
+                collector = RolloutCollector(world.field, cfg, embed_dim, device)
+                for _rep in range(n_reps):
+                    # Which arenas, and in which order they are introduced,
+                    # re-drawn per lifetime from the run's own RNG.
+                    pick = np.random.permutation(len(world.envs))[:knobs.envs]
+                    _rs, _order = lifetime.run_lifetime(
+                        collector, agent, [world.envs[k] for k in pick],
+                        [world.offsets[k] for k in pick], n_envs=knobs.envs,
+                        iters=knobs.iters, epsilon=knobs.eps, update_idx=update)
+                    rollouts.extend(_rs)
+                    pre_flags.extend([False] * len(_rs))
+                    lifetime_packed.append(lifetime.pack(_rs))
+                    lifetime_out.append(lifetime.trial_outcomes(_rs, _order))
+        else:
+            for w_idx, world in enumerate(worlds):
+                vh = world.field
+                collector = RolloutCollector(vh, cfg, embed_dim, device)
+                for local_idx, env in enumerate(world.envs):
+                    env_offset = world.offsets[local_idx]
+                    # The memory a visit sequence carries: None at the start of a
+                    # sequence, otherwise the previous rollout's Hopfields and
+                    # "goal stored" flags (task regime only).
+                    _carry_hops, _carry_fired, _carry_h = None, None, None
+                    for slot in range(local_idx * n_reps, (local_idx + 1) * n_reps):
+                        if is_task:
+                            regime = task_regime
+                        else:
+                            regime = (exploit_regime if is_pre[slot]
+                                      else explore_regime)
+                        pre_flags.append(bool(is_pre[slot]))
+                        # Before the spec: the exploit regime reads
+                        # `env.goal_location` when it builds the memory. Under
+                        # the task regime a redraw happens once per visit
+                        # sequence -- the goal the memory holds must stay the
+                        # goal the arena pays at.
+                        _visit = (slot - local_idx * n_reps) % n_visits
+                        if getattr(cfg, "redraw_goal_per_rollout", False) and (
+                                not is_task or _visit == 0):
+                            env.reset_goal()
+                        if is_task:
+                            if _visit == 0:
+                                _carry_hops, _carry_fired, _carry_h = None, None, None
+                            spec = regime.spec(w_idx, world, local_idx, env,
+                                               env_offset, knobs,
+                                               hops=_carry_hops,
+                                               store_fired=_carry_fired)
+                        else:
+                            spec = regime.spec(w_idx, world, local_idx, env,
+                                               env_offset, knobs)
+                        # The collector reads novelty off cfg and the goal reward
+                        # off the env, so the regime's choice has to be written
+                        # into both.
+                        cfg.hopfield.novelty_reward = spec.novelty_reward
+                        env.goals_active = spec.goals_active
+                        # Regime-specific input dropout: exploit rollouts may run
+                        # under their own rates; the run-wide values are restored
+                        # after the loop (as novelty is).
+                        _eod = getattr(cfg, "exploit_obs_dropout", None)
+                        _ehd = getattr(cfg, "exploit_heading_dropout", None)
+                        cfg.obs_dropout = (float(_eod) if (is_pre[slot] and _eod is not None)
+                                           else _base_obs_dropout)
+                        cfg.hopfield.heading_dropout = (
+                            float(_ehd) if (is_pre[slot] and _ehd is not None)
+                            else _base_heading_dropout)
+                        rollout = collector.collect_rollout(
+                            env, agent, spec.hop, allow_store=spec.allow_store,
+                            h_rnn=_carry_h if carry_state else None,
+                            env_offset=env_offset,
+                            update_idx=update, aux_scale=1.0,
+                            epsilon_now=spec.epsilon,
+                            goal_in_memory_init=spec.goal_in_memory_init,
+                            ends_on_goal=spec.ends_on_goal,
+                            task_mode=spec.task_mode,
+                            store_fired_init=spec.store_fired_init,
+                        )
+                        rollouts.append(rollout)
+                        seq_of.append((w_idx, local_idx,
+                                       (slot - local_idx * n_reps) // n_visits))
+                        if is_task:
+                            _carry_hops = spec.hop
+                            _carry_fired = rollout.store_fired_final
+                            _carry_h = rollout.h_final
         cfg.hopfield.novelty_reward = 0.0
         cfg.obs_dropout = _base_obs_dropout
         cfg.hopfield.heading_dropout = _base_heading_dropout
@@ -628,7 +651,9 @@ def run_navigate(
                   f"{int(_fs['fisher_rows'])} rows / {int(_fs['fisher_steps'])} "
                   f"search steps (max {_fs['fisher_max']:.3e}, "
                   f"mean {_fs['fisher_mean']:.3e})", flush=True)
-        if carry_state:
+        if is_lifetime:
+            ppo_rollouts = lifetime.pad_common(lifetime_packed)
+        elif carry_state:
             # seq_of is in collection order, so each sequence's visits are
             # consecutive and already in visit order.
             ppo_rollouts, _seqs = [], {}
@@ -676,6 +701,7 @@ def run_navigate(
             [r.task for r in rollouts if r.task is not None],
             n_cells=float(cfg.env.size * cfg.env.size))
             if is_task else {})
+        lt_now = lifetime.summarise(lifetime_out) if is_lifetime else {}
 
         if use_wandb:
             import wandb
@@ -712,6 +738,9 @@ def run_navigate(
             else:
                 pre_d = [r.diag for r in pre_rs if r.diag is not None]
                 emp_d = [r.diag for r in emp_rs if r.diag is not None]
+            for k, v in lt_now.items():
+                if v == v:
+                    log[f"train/lifetime/{k}"] = v
             for k, v in task_now.items():
                 if v == v:  # skip NaN
                     log[f"train/task/{k}"] = v
@@ -759,6 +788,8 @@ def run_navigate(
                              for k, v in losses.items())
                   + (f" | task: {task_stats.format_line(task_now)}"
                      if task_now else "")
+                  + (" | lifetime: " + " ".join(f"{k}={v:.3f}" for k, v in lt_now.items())
+                     if lt_now else "")
                   + (f" | refresh={','.join(refreshed)}" if refreshed else ""),
                   flush=True)
             t_update_mark, n_updates_timed = time.time(), 0
@@ -1888,9 +1919,21 @@ def main():
         p.error("--input_q_magnitude needs continuous hopfield_mode")
     if cfg.agent.input_grid_code:
         cfg.agent.grid_code_dim = memory_backend.grid_code_dim(cfg)
+    kinds = {st.kind for st in stages}
+    if "lifetime" in kinds:
+        # Idea 3, stage 2: the recurrent state is the only memory there is.
+        if not memory_backend.is_none(cfg):
+            p.error("lifetime stages are idea 3's (--memory_backend none)")
+        too_many = [st.envs for st in stages
+                    if st.kind == "lifetime" and (st.envs or 2) > cfg.envs_per_world]
+        if too_many:
+            p.error(f"a lifetime of {max(too_many)} arenas needs "
+                    f"--envs_per_world >= {max(too_many)}")
     if memory_backend.is_kv(cfg) or memory_backend.is_none(cfg):
-        # Stage 1 of GRID_MLP_NAV_PLAN: the task regime and its evaluator only.
-        other = sorted({st.kind for st in stages} - {"task"})
+        # Stage 1 of GRID_MLP_NAV_PLAN: the task regime and its evaluator only
+        # (and, under 'none', the lifetimes of stage 2).
+        other = sorted(kinds - ({"task", "lifetime"} if memory_backend.is_none(cfg)
+                                else {"task"}))
         if other:
             p.error(f"--memory_backend {cfg.agent.memory_backend} runs task "
                     f"stages only; the schedule also has {other}")

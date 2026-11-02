@@ -34,6 +34,12 @@ KIND_FRACTIONS: dict[str, float | None] = {
     # without the goal and stores it itself on the first touch, so the empty
     # fraction is 1.0 by construction and the composer ignores it.
     "task": 1.0,
+    # Idea 3, stage 2 (GRID_MLP_NAV_PLAN §7.3): a short copy of the continual
+    # protocol per trajectory -- `envs` arenas introduced one at a time,
+    # `iters` trials of every arena seen so far per block, each trial ending
+    # at the goal -- with the recurrent state carried through the whole
+    # lifetime. No memory, so no empty fraction to speak of.
+    "lifetime": 1.0,
 }
 
 INTERLEAVE_DEFAULT_FRACTION = 0.5
@@ -42,7 +48,7 @@ INTERLEAVE_DEFAULT_FRACTION = 0.5
 STAGE_KEYS = (
     "lr", "empty_frac", "anneal", "novelty", "eps",
     "dist_min", "dist_max", "emp_dist_min", "emp_dist_max",
-    "visits",
+    "visits", "envs", "iters",
 )
 
 
@@ -78,6 +84,10 @@ class Stage:
     # `task` only: consecutive rollouts of one env that share each
     # trajectory's memory (state resets every rollout). 1 = the pure protocol.
     visits: int | None = None
+    # `lifetime` only: arenas per lifetime, and trials of each seen arena per
+    # block (the continual protocol's iterations per block).
+    envs: int | None = None
+    iters: int | None = None
 
 
 @dataclass
@@ -96,6 +106,8 @@ class Knobs:
     emp_dist_min: int
     emp_dist_max: int
     visits: int = 1
+    envs: int = 2
+    iters: int = 1
 
 
 @dataclass
@@ -247,7 +259,18 @@ def _parse_stage(text: str) -> Stage:
         emp_dist_min=_num("emp_dist_min", int),
         emp_dist_max=_num("emp_dist_max", int),
         visits=_num("visits", int),
+        envs=_num("envs", int),
+        iters=_num("iters", int),
     )
+    for key in ("envs", "iters"):
+        v = getattr(stage, key)
+        if v is not None:
+            if kind != "lifetime":
+                raise ScheduleError(
+                    f"stage {text!r}: {key} only applies to the 'lifetime' kind")
+            if v < 1:
+                raise ScheduleError(
+                    f"stage {text!r}: {key} must be at least 1, got {v}")
     if stage.visits is not None:
         if kind != "task":
             raise ScheduleError(
@@ -298,7 +321,7 @@ def format_schedule(stages: list[Stage]) -> str:
             parts.append(f"anneal={s.anneal}")
         for key in ("lr", "novelty", "eps",
                     "dist_min", "dist_max", "emp_dist_min", "emp_dist_max",
-                    "visits"):
+                    "visits", "envs", "iters"):
             v = getattr(s, key)
             if v is not None:
                 parts.append(f"{key}={v:g}")
@@ -355,7 +378,7 @@ def resolve(stage: Stage, local_update: int, defaults: Knobs) -> Knobs:
     knobs = replace(defaults, empty_frac=empty_fraction_at(stage, local_update))
     for field in ("lr", "novelty", "eps",
                   "dist_min", "dist_max", "emp_dist_min", "emp_dist_max",
-                  "visits"):
+                  "visits", "envs", "iters"):
         v = getattr(stage, field)
         if v is not None:
             setattr(knobs, field, v)

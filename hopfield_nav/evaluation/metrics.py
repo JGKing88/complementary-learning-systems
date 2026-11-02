@@ -1371,3 +1371,57 @@ def evaluate_task(
         results[n_dist] = out
         torch.random.set_rng_state(torch_state)
     return results
+
+
+def evaluate_lifetime(
+    agent: NavAgent,
+    val_envs: list[GridEnv],
+    vectorhash: VectorHash,
+    env_offsets: list[tuple[int, int]],
+    cfg: TrainConfig,
+    device: torch.device,
+    *,
+    n_envs: int = 3,
+    iters: int = 2,
+    num_trials: int = 16,
+    max_steps: int = 200,
+    seed: int = 0,
+) -> dict[str, float]:
+    """Idea 3's continual protocol in small, on held-out arenas.
+
+    One lifetime per row over the first ``n_envs`` arenas
+    (``rollout/lifetime.py``): arenas introduced one at a time, ``iters``
+    passes over the seen ones per block, each trial ending at the goal or
+    after ``max_steps``, the recurrent state carried through the whole
+    lifetime. Sampled policy, no epsilon. Returns ``lifetime.summarise``:
+    ``first_found``, ``known_reached``, ``known_steps``, ``unknown_found``,
+    ``known_frac``.
+    """
+    import copy
+    from ..rollout.collector import RolloutCollector
+    from ..rollout import lifetime
+
+    embed_dim = vectorhash.encoded_Phi.shape[2]
+    ecfg = copy.deepcopy(cfg)
+    ecfg.batch_envs = int(num_trials)
+    ecfg.steps_per_rollout = int(max_steps)
+    ecfg.obs_dropout = 0.0
+    ecfg.hopfield.heading_dropout = 0.0
+    ecfg.hopfield.auto_store_warmup = 0
+    ecfg.hopfield.auto_nav_warmup = 0
+    collector = RolloutCollector(vectorhash, ecfg, embed_dim, device)
+    torch_state = torch.random.get_rng_state()
+    np_state = np.random.get_state()
+    torch.manual_seed(seed)
+    np.random.seed(seed)
+    try:
+        rs, order = lifetime.run_lifetime(
+            collector, agent, val_envs, env_offsets,
+            n_envs=min(int(n_envs), len(val_envs)), iters=int(iters),
+            epsilon=0.0)
+    finally:
+        torch.random.set_rng_state(torch_state)
+        np.random.set_state(np_state)
+    out = lifetime.summarise([lifetime.trial_outcomes(rs, order)])
+    return {k: (round(float(v), 4) if v == v else float("nan"))
+            for k, v in out.items()}

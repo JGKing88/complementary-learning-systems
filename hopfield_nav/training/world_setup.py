@@ -24,8 +24,8 @@ from ..policy.agent import NavAgent
 from ..config import TrainConfig
 from ..world.env import make_env
 from ..evaluation.metrics import (
-    evaluate_exploration, evaluate_goal_discovery, evaluate_navigation,
-    evaluate_task,
+    evaluate_exploration, evaluate_goal_discovery, evaluate_lifetime,
+    evaluate_navigation, evaluate_task,
 )
 from hopfield import Hopfield
 from ..world import domains as dom
@@ -639,6 +639,11 @@ def do_eval(cfg, agent, eval_world: World, device, update_tag: str,
     task = evaluate_task(agent, val_envs, val_vh, val_offsets, cfg, device,
                          num_trials=nt, max_steps=max_steps,
                          n_distractors_list=dist) if run_task else {}
+    # Idea 3: the continual protocol in small (3 arenas, 2 passes per block),
+    # the state carried through, so every eval point reports retention.
+    life = evaluate_lifetime(agent, val_envs, val_vh, val_offsets, cfg, device,
+                             num_trials=nt, max_steps=max_steps) \
+        if (run_task and no_memory) else {}
     eval_s = time.time() - t0
     if not expl_only and not no_memory:
         print(f"  [{update_tag}] nav={nav}")
@@ -649,6 +654,8 @@ def do_eval(cfg, agent, eval_world: World, device, update_tag: str,
         print(f"  [{update_tag}] eval_policy=sampled")
     if run_task:
         print(f"  [{update_tag}] task={task}")
+    if life:
+        print(f"  [{update_tag}] lifetime={life}")
     # Sizing a run needs the eval's own cost, not just the per-update total it
     # is folded into -- see docs/EXPERIMENTS_SCHEDULE_REPRO.md on how badly a
     # run can be mis-sized when that number has to be inferred after the fact.
@@ -665,6 +672,9 @@ def do_eval(cfg, agent, eval_world: World, device, update_tag: str,
             for k, v in task.get(n_d, {}).items():
                 if v == v:
                     log[f"eval/task_{n_d}/{k}"] = v
+        for k, v in life.items():
+            if v == v:
+                log[f"eval/lifetime/{k}"] = v
         log["phase_tag"] = update_tag
         wandb.log(log)
 

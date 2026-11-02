@@ -79,6 +79,7 @@ class RolloutCollector:
         ends_on_goal: bool = False,
         task_mode: bool = False,
         store_fired_init: np.ndarray | None = None,
+        freeze_done_state: bool = False,
     ) -> RolloutBatch:
         """Collect one rollout of T steps across B parallel episodes in one env.
 
@@ -104,6 +105,13 @@ class RolloutCollector:
             store_fired_init: (B,) bool -- task_mode visits > 1: which
                 trajectories arrive with the goal already in their memory.
             aux_scale: Scalar in [0, 1] applied to store_bonus this rollout (for linear annealing).
+            freeze_done_state: with ``ends_on_goal``, a finished row's
+                recurrent state stops changing (it would otherwise keep
+                stepping on its frozen at-goal input), and the rollout stops
+                once every row has finished, its remaining steps marked not
+                alive. Idea 3's lifetimes (training/lifetime.py) carry that
+                state into the next trial, so it must be the state right
+                after the row's last real step.
 
         Returns:
             RolloutBatch with all tensors on self.device.
@@ -125,6 +133,8 @@ class RolloutCollector:
             and cfg.hopfield.auto_store_warmup > 0
             and update_idx <= cfg.hopfield.auto_store_warmup
         )
+        if freeze_done_state and not ends_on_goal:
+            raise ValueError("freeze_done_state needs ends_on_goal")
         if (self.memory_readout is not None or self.no_memory) and not task_mode:
             raise NotImplementedError(
                 f"memory_backend={cfg.agent.memory_backend!r} runs the task "
@@ -631,7 +641,14 @@ class RolloutCollector:
                     move_action_override=move_action_override,
                     move_override_mask=move_override_mask,
                 )
-                h_rnn = result["h_next"]
+                if freeze_done_state and done.any() and h_rnn is not None:
+                    # `done` is still the state before this step: rows that
+                    # finished earlier keep their state; a row on its at-goal
+                    # step takes it in (that step is its last real one).
+                    keep = torch.from_numpy(done).to(self.device).view(1, -1, 1)
+                    h_rnn = torch.where(keep, h_rnn, result["h_next"])
+                else:
+                    h_rnn = result["h_next"]
 
                 # Store in buffers
                 all_obs[:, t] = rnn_input.squeeze(1)
@@ -955,6 +972,12 @@ class RolloutCollector:
                     # would pay a bonus for a displacement the agent did not
                     # make from where it now stands.
                     prev_disp_shaping[np.where(reset)[0]] = 0.0
+
+                if freeze_done_state and done.all():
+                    # Every row has finished: nothing left to collect. The
+                    # unrun steps are not transitions.
+                    all_alive_mask[:, t + 1:] = 0.0
+                    break
 
             # Bootstrap value at truncation
             pos_final = vec.positions()
