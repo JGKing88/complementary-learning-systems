@@ -94,6 +94,10 @@ def load_probe_encoder(
     [,seed=0][,gain=100]`` (``ideal_encoder.py``), so every script built on
     this loader scores the ideal code through the identical pipeline.
     """
+    from .gwn_encoder import is_gwn_spec, load_gwn_encoder
+    if is_gwn_spec(path):
+        return load_gwn_encoder(path, device=device, fwhm_override=fwhm_override,
+                                fwhm_fallback=fwhm_fallback)
     from .rp_encoder import is_rpnet_spec, load_rpnet_encoder
     if is_rpnet_spec(path):
         return load_rpnet_encoder(path, device=device, fwhm_override=fwhm_override,
