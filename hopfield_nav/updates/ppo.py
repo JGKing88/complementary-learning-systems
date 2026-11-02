@@ -89,6 +89,23 @@ def compute_gae(
 # PPO update
 # ---------------------------------------------------------------------------
 
+def last_reward_code(obs: torch.Tensor, goal_reached: torch.Tensor,
+                     ng: int) -> tuple[torch.Tensor, torch.Tensor]:
+    """(target, mask) for the idea 3 goal head (AgentConfig.aux_goal_weight).
+
+    At each step, the grid code the agent saw at its most recent at-goal step
+    up to and including this one (the code is the last ``ng`` input columns,
+    the ``grid_code`` channel); mask 1 once there has been one.
+    """
+    N, T, _ = obs.shape
+    t = torch.arange(T, device=obs.device).expand(N, T)
+    idx = torch.where(goal_reached > 0, t, torch.full_like(t, -1))
+    last = torch.cummax(idx, dim=1).values
+    code = obs[..., -ng:]
+    tgt = torch.gather(code, 1, last.clamp_min(0).unsqueeze(-1).expand(N, T, ng))
+    return tgt, (last >= 0).float()
+
+
 def _pool_rollouts(
     rollouts: list[RolloutBatch],
     gamma: float,
@@ -219,6 +236,10 @@ def ppo_update(
     returns = pool["returns"]
     visited_targets = pool["visited_targets"]
     aux_vis_w = float(getattr(agent, "aux_visited_weight", 0.0))
+    aux_goal_w = float(getattr(agent, "aux_goal_weight", 0.0))
+    if aux_goal_w > 0:
+        goal_tgt, goal_mask = last_reward_code(
+            obs, goal_reached, agent.goal_code_head.out_features)
 
     # Normalize advantages across the full pool (not per-minibatch — that would
     # inject minibatch-dependent bias into the policy gradient).
@@ -247,6 +268,7 @@ def ppo_update(
     n_diag = n_kappa = 0
     total_store_bc = 0.0
     total_aux_vis = 0.0
+    total_aux_goal = 0.0
     total_approx_kl = 0.0
     total_clip_frac = 0.0
     last_epoch_kl: list[float] = []
@@ -467,6 +489,16 @@ def ppo_update(
             else:
                 aux_vis_loss = torch.zeros((), device=obs.device)
 
+            # Idea 3 diagnostic: the goal head predicts the grid code at the
+            # last rewarded step. Not detached -- storing the goal in the
+            # trunk is the point.
+            if aux_goal_w > 0:
+                _m = goal_mask[idx] if mb_alive is None else goal_mask[idx] * mb_alive
+                _err = ((agent.goal_code_head(features) - goal_tgt[idx]) ** 2).sum(-1)
+                aux_goal_loss = (_err * _m).sum() / _m.sum().clamp_min(1.0)
+            else:
+                aux_goal_loss = torch.zeros((), device=obs.device)
+
             # The store terms are still computed above, because they are the
             # diagnostics the run logs -- but a frozen store head contributes
             # none of them to the gradient. All three go together: with the
@@ -477,6 +509,7 @@ def ppo_update(
                 + cfg.vf_coef * value_loss
                 - cfg.ent_coef * move_ent
                 + aux_vis_w * aux_vis_loss
+                + aux_goal_w * aux_goal_loss
             )
             if store_trainable:
                 loss = (
@@ -578,6 +611,7 @@ def ppo_update(
             total_store_ent += store_ent.item()
             total_store_bc += store_bc_loss.item()
             total_aux_vis += aux_vis_loss.item()
+            total_aux_goal += aux_goal_loss.item()
             total_approx_kl += approx_kl
             total_clip_frac += clip_frac
             last_epoch_kl.append(approx_kl)
@@ -613,6 +647,7 @@ def ppo_update(
         "store_entropy": total_store_ent / denom,
         "store_bc_loss": total_store_bc / denom,
         "aux_visited_loss": total_aux_vis / denom,
+        **({"aux_goal_loss": total_aux_goal / denom} if aux_goal_w > 0 else {}),
         # Minibatches whose gradient was non-finite and therefore skipped. A
         # persistent nonzero here is a real problem being survived, not solved
         # -- it belongs in the log where it can be seen, not swallowed.

@@ -309,6 +309,38 @@ def test_memory_evaluators_refuse_none(name):
         f(**kwargs)
 
 
+def test_last_reward_code_targets():
+    from hopfield_nav.updates.ppo import last_reward_code
+    obs = torch.arange(2 * 5 * 3, dtype=torch.float32).view(2, 5, 3)
+    goal = torch.tensor([[0, 1, 0, 0, 1], [0, 0, 0, 0, 0]], dtype=torch.float32)
+    tgt, mask = last_reward_code(obs, goal, ng=2)
+    assert mask.tolist() == [[0, 1, 1, 1, 1], [0, 0, 0, 0, 0]]
+    assert torch.equal(tgt[0, 1], obs[0, 1, -2:])
+    assert torch.equal(tgt[0, 3], obs[0, 1, -2:])
+    assert torch.equal(tgt[0, 4], obs[0, 4, -2:])
+
+
+def test_aux_goal_head_trains_in_ppo():
+    from hopfield_nav.training.task import merge_visits
+    from hopfield_nav.updates.ppo import ppo_update
+    from hopfield_nav.world.env import make_env
+    cfg = none_cfg(batch_envs=6, steps_per_rollout=40)
+    cfg.agent.aux_goal_weight = 0.1
+    collector, agent, _ = make_collector(cfg, seed=0)
+    assert agent.goal_code_head.out_features == mb.grid_code_dim(cfg)
+    env = make_env(cfg.env, "continuous", seed=5)
+    env.set_goal((2, 3))
+    r1 = _visit(collector, agent, env, cfg, None, None, seed=0)
+    r2 = _visit(collector, agent, env, cfg, r1.h_final, r1.store_fired_final, seed=1)
+    assert r1.goal_reached.any(), "no goal reached; lengthen the rollout"
+    before = agent.goal_code_head.weight.detach().clone()
+    opt = torch.optim.Adam(agent.parameters(), lr=1e-3)
+    agent.train()
+    stats = ppo_update(agent, [merge_visits([r1, r2])], cfg.ppo, opt)
+    assert np.isfinite(stats["aux_goal_loss"]) and stats["aux_goal_loss"] > 0
+    assert not torch.equal(before, agent.goal_code_head.weight)
+
+
 def test_lifetime_schedule_parses():
     from hopfield_nav.training.stages import (ScheduleError, format_schedule,
                                                parse_schedule)

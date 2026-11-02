@@ -1941,6 +1941,9 @@ case "$VARIANT" in
                   INPUT_HOPFIELD_MULTISTEP=""; DISTAL_AMP=${DISTAL_AMP:-1.0}
                   N_TRAIN_DISTRACTORS_MIN=0; N_TRAIN_DISTRACTORS_MAX=0
                   _rest="${_rest#_i3}" ;;
+            _ag*) # Idea 3 diagnostic: auxiliary goal head (aux_goal_weight;
+                  # §7.5). Plain runs stored no goal by u1000 (goal probe).
+                  AUX_GOAL_WEIGHT=${AUX_GOAL_WEIGHT:-0.1}; _rest="${_rest#_ag}" ;;
             _life*)
                   # Idea 3 stage 2 (GRID_MLP_NAV_PLAN §7.3, §7.5): short
                   # continual-protocol lifetimes, a curriculum on the number of

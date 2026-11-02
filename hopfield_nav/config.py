@@ -329,6 +329,14 @@ class AgentConfig:
     # checkpoint's agent config alone.
     input_grid_code: bool = False
     grid_code_dim: int = 0
+    # Idea 3 diagnostic: weight of an AUXILIARY loss in which a linear head on
+    # the recurrent features predicts the grid code the agent saw at its last
+    # rewarded step (squared error summed over the code). The target is the
+    # agent's own input at that moment, so nothing privileged enters, and the
+    # head is never read by the policy or at evaluation. It rewards storing
+    # the goal directly, where PPO rewards it only once the policy already
+    # steers by it. 0 = off.
+    aux_goal_weight: float = 0.0
 
 
 @dataclass

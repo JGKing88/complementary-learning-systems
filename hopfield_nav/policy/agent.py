@@ -91,6 +91,12 @@ class NavAgent(nn.Module):
         self.visited_head = (
             nn.Linear(cfg.hidden_size, 8)
             if self.aux_visited_weight > 0 else None)
+        # Idea 3 diagnostic (AgentConfig.aux_goal_weight): predicts the grid
+        # code at the last rewarded step. Read only by the PPO update.
+        self.aux_goal_weight = float(getattr(cfg, "aux_goal_weight", 0.0))
+        self.goal_code_head = (
+            nn.Linear(cfg.hidden_size, int(cfg.grid_code_dim))
+            if self.aux_goal_weight > 0 else None)
 
     def forward(
         self,

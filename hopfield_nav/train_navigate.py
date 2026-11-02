@@ -1095,6 +1095,7 @@ CFG_FIELDS: dict[str, tuple[str, ...]] = {
     "scale_q_by_c": ("agent.scale_q_by_c",),
     "input_memory_conf": ("agent.input_memory_conf",),
     "input_grid_code": ("agent.input_grid_code",),
+    "aux_goal_weight": ("agent.aux_goal_weight",),
     "hopfield_storage_rule": ("hopfield.storage_rule",),
     # ppo
     "lr": ("ppo.lr",),
@@ -1284,6 +1285,8 @@ def build_parser() -> argparse.ArgumentParser:
                    help="Distal panorama amplitude: each ray adds distal_amp x a per-env ±1 skyline value read by its ABSOLUTE angle (2-degree slices), so views identify the env from any cell and carry a compass. 0 (default) is off, bit-identical. See EnvConfig.distal_amp.")
     p.add_argument("--input_grid_code", action=argparse.BooleanOptionalAction, default=False,
                    help="Feed the smoothed grid code at the agent's cell (434 numbers at lambdas 11/12/13) on its own channel. Idea 3 of GRID_MLP_NAV_PLAN (with --memory_backend none).")
+    p.add_argument("--aux_goal_weight", type=float, default=0.0,
+                   help="Idea 3 diagnostic: weight of an auxiliary loss in which a head on the recurrent features predicts the grid code seen at the last rewarded step (the agent's own input then; never read by the policy). Needs --input_grid_code under --memory_backend none.")
     p.add_argument("--memory_backend", choices=["hopfield", "sensory_kv", "none"],
                    default="hopfield",
                    help="Goal memory. hopfield (default): Agent-HaSH. sensory_kv: idea 1 of docs/GRID_MLP_NAV_PLAN.md -- sensory-keyed argmax store of goal grid codes; the frozen grid MLP's direction d rides the hopfield_signal channel and the recall similarity c gets a memory_conf channel. Task schedule + --eval_scope task + --distal_amp > 0 only (hopfield_nav/memory/backend.py).")
@@ -1919,6 +1922,11 @@ def main():
         p.error("--input_q_magnitude needs continuous hopfield_mode")
     if cfg.agent.input_grid_code:
         cfg.agent.grid_code_dim = memory_backend.grid_code_dim(cfg)
+    if cfg.agent.aux_goal_weight > 0 and not (
+            cfg.agent.input_grid_code and memory_backend.is_none(cfg)):
+        # The target is read off the grid_code channel, which is the last
+        # input column only under 'none' (sensory_kv appends memory_conf).
+        p.error("--aux_goal_weight needs --input_grid_code and --memory_backend none")
     kinds = {st.kind for st in stages}
     if "lifetime" in kinds:
         # Idea 3, stage 2: the recurrent state is the only memory there is.
