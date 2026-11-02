@@ -30,12 +30,34 @@ import argparse
 import numpy as np
 import torch
 
-from hopfield_nav.memory.plastic import decode_cells
-from analysis.idea2.lifetimes import LAMBDAS, EnvPool, Placed
+from hopfield_nav.memory.plastic import canvas, decode_cells
+from hopfield_nav.world.env import PANORAMA_BINS, cone_offsets, panorama_bins
+from analysis.idea2.lifetimes import LAMBDAS, OBS, EnvPool, Placed
 
 
 def T_(x):
     return torch.from_numpy(np.asarray(x, np.float32))
+
+
+def omni_key(env, n_dirs=6):
+    """Idea 1's store for one env: a 360-degree snapshot from the goal cell,
+    as one value per absolute-direction slot (views at n_dirs headings merged)."""
+    psi = np.arange(n_dirs) * 2 * np.pi / n_dirs
+    g = np.full(n_dirs, 1.0)
+    c = canvas(env.pool.views(env.idx, g * env.goal[0], g * env.goal[1], psi), psi)
+    filled = c[:, PANORAMA_BINS:].sum(0)
+    assert (filled > 0).all(), "the snapshot should cover every direction"
+    return ((c[:, :PANORAMA_BINS] * c[:, PANORAMA_BINS:]).sum(0) / filled).astype(np.float32)
+
+
+def view_from_key(keys, psi):
+    """The 120-degree view at heading psi cut out of each 360-degree snapshot."""
+    out = np.zeros((len(keys), 2 * PANORAMA_BINS), np.float32)
+    for i, (k, p) in enumerate(zip(keys, psi)):
+        b = panorama_bins(p + cone_offsets(OBS))
+        out[i, b] = k[b]
+        out[i, PANORAMA_BINS + b] = 1.0
+    return out
 
 
 def init(hidden, seed):
@@ -105,14 +127,27 @@ def run(pool, N, a, p, c, replay=0, per_env=40):
         start = [q.detach().clone() for q in ps]
         omega = [torch.zeros_like(q) for q in ps]
         if replay and buf_x:
-            bx, by = torch.cat(buf_x), torch.cat(buf_y)
+            bx, by = (np.stack(buf_x), torch.cat(buf_y)) if a.buffer_mode != "walk" \
+                else (torch.cat(buf_x), torch.cat(buf_y))
         for _ in range(a.steps):
             task = ((fwd(ps, x, u_act) - y) ** 2).sum(1).mean()
             if replay and buf_x:
                 # Experience replay: stored views of earlier envs, each with its
                 # env's goal, weighted equally with the current env's views.
-                i = torch.from_numpy(rrng.randint(len(bx), size=replay))
-                task = task + ((fwd(ps, bx[i]) - by[i]) ** 2).sum(1).mean()
+                i = rrng.randint(len(bx), size=replay)
+                if a.buffer_mode == "omni":     # a random heading cut from each snapshot
+                    xr = T_(view_from_key(bx[i], rrng.uniform(-np.pi, np.pi, replay)))
+                elif a.buffer_mode == "goalcell":
+                    # Diagnostic: exact views ray-cast from the goal cell at random
+                    # headings, the snapshot's information without its 2-degree slots.
+                    psi = rrng.uniform(-np.pi, np.pi, replay)
+                    xr = T_(np.concatenate([canvas(envs[j].pool.views(
+                        envs[j].idx, np.array([float(envs[j].goal[0])]),
+                        np.array([float(envs[j].goal[1])]), psi[n:n + 1]), psi[n:n + 1])
+                        for n, j in enumerate(i)]))
+                else:
+                    xr = bx[torch.from_numpy(i)]
+                task = task + ((fwd(ps, xr) - by[torch.from_numpy(i)]) ** 2).sum(1).mean()
             grads = torch.autograd.grad(task, ps)
             with torch.no_grad():
                 for i, (q, g) in enumerate(zip(ps, grads)):
@@ -130,7 +165,10 @@ def run(pool, N, a, p, c, replay=0, per_env=40):
             for i, q in enumerate(ps):
                 Omega[i] += (omega[i] / ((q - start[i]) ** 2 + a.xi)).clamp(min=0)
                 star[i] = q.detach().clone()
-        if replay:
+        if replay and a.buffer_mode != "walk":
+            buf_x.append(omni_key(e))       # goalcell mode only uses its length
+            buf_y.append(y)
+        elif replay:
             keep = torch.from_numpy(rrng.choice(len(x), size=min(per_env, len(x)), replace=False))
             buf_x.append(x[keep])
             buf_y.append(y.expand(len(keep), -1))
@@ -158,6 +196,11 @@ def main():
                     help="stored views of earlier envs replayed per write step (0 = none)")
     pa.add_argument("--buffer_per_env", type=int, nargs="+", default=[40],
                     help="walk views kept per env for replay")
+    pa.add_argument("--buffer_mode", choices=["walk", "omni", "goalcell"], default="walk",
+                    help="walk = keep walk views; omni = keep only idea 1's store, one "
+                         "360-degree snapshot from the goal cell, and replay random "
+                         "120-degree views cut from it (--buffer_per_env is ignored); "
+                         "goalcell = diagnostic, exact views from the goal cell")
     pa.add_argument("--threads", type=int, default=4)
     a = pa.parse_args()
     if a.gate_activity and min(a.p) >= 1:
@@ -169,11 +212,13 @@ def main():
     for p in a.p:
         for c in a.c:
             for R in a.replay:
-                for B in (a.buffer_per_env if R else [0]):
+                Bs = a.buffer_per_env if R and a.buffer_mode == "walk" else [0]
+                for B in Bs:
                     for N in a.N:
                         acc, old, new, after = run(pool, N, a, p, c, R, B)
                         tag = "activity-gated (oracle) " if a.gate_activity else ""
-                        rep = f"replay={R} buffer/env={B} steps={a.steps} " if R else ""
+                        store = f"buffer/env={B}" if a.buffer_mode == "walk" else f"buffer={a.buffer_mode}"
+                        rep = f"replay={R} {store} steps={a.steps} " if R else ""
                         print(f"{tag}{rep}p={p:<5g} c={c:<5g} N={N:3d}: once {acc:.3f} (oldest "
                               f"{old:.2f}, newest {new:.2f}), right after own write {after:.2f}",
                               flush=True)
