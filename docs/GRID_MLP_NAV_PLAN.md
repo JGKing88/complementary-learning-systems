@@ -382,6 +382,67 @@ The plan works around that.
 Still open are the hidden size (128 as in `task3r`, or larger), GRU or LSTM,
 the training sequence length, and the curriculum schedule.
 
+### 7.5 What was built (2026-11-02)
+
+Jack chose to train the plain GRU on many places. Idea 3 has no grid MLP, so
+to walk back to a remembered goal the GRU has to learn by RL to turn its own
+grid code and a stored goal into a direction. On task3r's 3 fixed arenas it
+could learn that only at those 3 places, and the held-out arenas sit at other
+places on the scaffold. The NN-control line found that a decode learned at a
+few scattered places does not transfer (A1m). So the training arenas move to
+new places every update. The question this asks is whether a plain GRU can do
+the whole task, not only whether it can hold a goal. If it fails, the goal
+probe below says which part failed.
+
+Model. A GRU, not the ReLU RNN that idea 1 and Agent-HaSH use, because here
+the state is the only memory and gates are what let a state hold a value.
+Inputs are the current reward, the previous reward, action and displacement,
+the 60-ray view with the panorama, and the grid code at the agent's cell (434
+numbers). There is no memory readout and no distractors. Hidden 128 (as
+task3r) and 512.
+
+Code (commits a582262, 5132b08, 7bb8034).
+- `--memory_backend none` skips every memory read and write
+  (`memory/backend.py`). The first goal touch still ends the search shaping,
+  as the store does in task3r.
+- `--input_grid_code` adds the `grid_code` channel, last in the layout.
+- Stage 1. The GRU state carries across the visits of a task sequence, in
+  training and in `evaluate_task`. PPO trains each sequence as one trajectory
+  (`training/task.py: merge_visits`), and a test checks that replaying it from
+  a zero state reproduces the collected log-probs exactly.
+- Stage 2. A `lifetime:N,envs=E,iters=K` stage runs, for each row, a small
+  copy of the continual protocol: E arenas introduced one at a time, K passes
+  over the seen arenas per block, each trial ending at the goal or the 200-step
+  cap (`rollout/lifetime.py`). The state runs through the whole lifetime. A row
+  that finishes a trial early keeps its state unchanged until the others
+  finish. Each row's real steps are packed into one PPO trajectory, and the
+  lifetime is one episode, so returns run across trials.
+- Evaluation. Every in-training eval runs `evaluate_task` (two visits, state
+  carried) and `evaluate_lifetime` (3 held-out arenas, 2 passes per block).
+  nav= and disc= do not apply (there is no memory to pre-load or store into)
+  and refuse the backend. The continual protocol is `agenthash.py`, which now
+  carries the state from each trial to the next through all 840 trials
+  (`run_cl_ood.sh` arms `i3_h128`, `i3_h512`).
+- `analysis/idea3/goal_probe.py` fits linear readouts of the goal's grid
+  phases and of the displacement to the goal from the GRU state, on held-out
+  trajectories, before and after the goal was first found. In lifetime mode
+  it also asks whether the goals of other arenas are held.
+
+Launcher levers on `task3r_*`: `_i3` (the model above), `_rp` (arenas and
+goals redrawn every update across the whole scaffold, 80-cell margin from the
+held-out arenas; `--refresh_goal 1` replaces the per-sequence redraw, which is
+the same thing here since each arena gets one visit sequence per update),
+`_h512`.
+
+Stage 1 runs, 4000 updates, launched from a frozen copy of the code at
+`/orcd/pool/003/jackking/cls_runs/code/i3_5132b08` so later edits cannot reach
+them. A 20-update smoke run (27664925) took 8.6 s per update.
+
+| run | job |
+|---|---|
+| `task3r_k2_h128_i3_rp` | 27665224 |
+| `task3r_k2_h512_i3_rp` | 27665225 |
+
 ## 8. Decisions and open items
 
 | | |
@@ -424,7 +485,7 @@ the training sequence length, and the curriculum schedule.
    go/no-go is done and fails (§10.9), so joint training was not started.
 8. Idea 3 (§7.4): stage 1 with the hidden state carried across visits, then
    stage 2 on short lifetimes, then length generalisation on the full
-   protocol.
+   protocol. Code for all three is built (§7.5); stage 1 is training.
 
 ## 10. Idea 1 results — first head-to-head (2026-09-30)
 

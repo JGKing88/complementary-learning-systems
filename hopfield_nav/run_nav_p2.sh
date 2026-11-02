@@ -1941,6 +1941,16 @@ case "$VARIANT" in
                   INPUT_HOPFIELD_MULTISTEP=""; DISTAL_AMP=${DISTAL_AMP:-1.0}
                   N_TRAIN_DISTRACTORS_MIN=0; N_TRAIN_DISTRACTORS_MAX=0
                   _rest="${_rest#_i3}" ;;
+            _life*)
+                  # Idea 3 stage 2 (GRID_MLP_NAV_PLAN §7.3, §7.5): short
+                  # continual-protocol lifetimes, a curriculum on the number of
+                  # arenas, forked from a stage-1 checkpoint (I3_STAGE1; unset
+                  # = from scratch). 6 arenas per world so the last stage can
+                  # draw 6; one lifetime batch of 64 rows per update.
+                  [ -z "${SCHEDULE_SET:-}" ] && SCHEDULE=${I3_LIFE_SCHEDULE:-'lifetime:1000,envs=2,iters=2 ; lifetime:1000,envs=3,iters=2 ; lifetime:1000,envs=4,iters=2 ; lifetime:1000,envs=6,iters=1'}
+                  ENVS_PER_WORLD=6; BATCH_ENVS=${FIX_BATCH_ENVS:-64}; ENV_REPEATS=1
+                  LOAD_CKPT=${I3_STAGE1:-}
+                  _rest="${_rest#_life}" ;;
             _rp*) ENV_GENERATOR=1; REFRESH_PLACE=${REFRESH_PLACE:-1}
                   PLACE_REGION=${PLACE_REGION:-anywhere}; PLACE_MARGIN=${PLACE_MARGIN:-80}
                   REFRESH_GOAL=${REFRESH_GOAL:-1}; REDRAW_GOAL_PER_ROLLOUT=""
