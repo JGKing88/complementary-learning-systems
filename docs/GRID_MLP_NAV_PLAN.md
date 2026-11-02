@@ -488,6 +488,33 @@ from the agent's own inputs. The head is never read by the policy. Job
 27685876, from `code/i3_4c79274`. (The probe's cell-from-code inversion was
 checked exact on 500 random cells, so its direction numbers stand.)
 
+The displacement head learns on the training rollouts (loss 0.12 to 0.24 by
+u1500, against about 1.3 for always predicting zero), but behaviour does not
+change: revisits find the goal 0.34 of the time in 68 to 88 steps, and returns
+within a visit take 50 to 65 steps. The probe on the u1500 checkpoint, held-out
+arenas, after the find, now also scores the agent's own moves.
+
+| u1500, GRU 512 + both heads, after the find | value |
+|---|---|
+| goal phase R² | 0.53 |
+| displacement R² / direction error | 0.09 / 62° |
+| cosine of action with true goal direction | 0.005 |
+| cosine of action with the direction decoded from its own state | −0.04 |
+
+The goal is held, the direction to it reads only weakly on new arenas, and the
+policy does not follow either. The plain GRU 128 ended at u4000 (153.6M env
+steps) the same as it was at u1000: first visits find the goal 0.32 to 0.36
+of the time, revisits 0.34 to 0.39 in 90 to 97 steps, and in the 3-arena
+lifetime a known goal is reached no more often than an unknown one.
+
+A negative result needs a positive control, so a fifth run trains the plain
+GRU 512 on task3r's 3 fixed arenas, goals redrawn each sequence
+(`task3r_k2_h512_i3`, job 27718237). There it only has to return at 3 places
+and can use the fixed walls. If it learns to return, the setup can teach
+RL² goal return and the failure above is about doing it at new places. If it
+cannot, the training setup itself is the obstacle. Option A as a control,
+not as the experiment.
+
 ## 8. Decisions and open items
 
 | | |

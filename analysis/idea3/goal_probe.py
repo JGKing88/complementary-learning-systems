@@ -144,7 +144,7 @@ def collect(agent, cfg, vh, envs, offsets, mode, trials, max_steps, n_envs,
         d["found_goal"] = np.where(d["found_before"][..., None],
                                    d["goal_global"][None], -1)
         parts.append(d)
-    keys = ("H", "cell", "arena", "known", "row", "found_before", "group",
+    keys = ("H", "cell", "arena", "known", "row", "found_before", "act", "group",
             "goal", "found_goal")
     out = {k: np.concatenate([p[k] for p in parts]) for k in keys}
     out["lambdas"] = parts[0]["lambdas"]
@@ -199,7 +199,7 @@ def _collect_one(agent, cfg, vh, envs, offsets, mode, trials, max_steps, n_envs,
             h, fired[j] = r.h_final, r.store_fired_final
 
     goal_global = [np.array(e.goal_location) + np.array(o) for e, o in zip(envs, offsets)]
-    H, cell, arena, known, row, found_before = [], [], [], [], [], []
+    H, cell, arena, known, row, found_before, act = [], [], [], [], [], [], []
     found_so_far = np.zeros((trials, len(envs)), dtype=bool)
     for r, j, hs, fired0 in runs:
         g = r.obs[..., gsl].cpu().numpy()                     # (B, T, Ng)
@@ -218,6 +218,7 @@ def _collect_one(agent, cfg, vh, envs, offsets, mode, trials, max_steps, n_envs,
             if n == 0:
                 continue
             H.append(hs[b, :T][m])
+            act.append(r.move_actions[b].cpu().numpy()[m])
             cell.append(cells_from_code(g[b][m], lambdas, npos))
             arena.append(np.full(n, j))
             known.append(kn[b][m])
@@ -232,6 +233,7 @@ def _collect_one(agent, cfg, vh, envs, offsets, mode, trials, max_steps, n_envs,
     return dict(H=np.concatenate(H), cell=np.concatenate(cell),
                 arena=np.concatenate(arena), known=np.concatenate(known),
                 row=np.concatenate(row), found_before=np.concatenate(found_before),
+                act=np.concatenate(act),
                 goal_global=np.stack(goal_global), lambdas=lambdas)
 
 
@@ -261,6 +263,14 @@ def score(d):
                 ang = np.arctan2(P[far, 1], P[far, 0]) - np.arctan2(Y[te][far, 1], Y[te][far, 0])
                 res["goal_dir_err_deg"] = float(np.degrees(
                     np.abs(np.angle(np.exp(1j * ang)))).mean())
+                # Does the agent move the way the goal lies, and the way its
+                # own state says it lies? Mean cosine of the action with the
+                # true and with the decoded direction, goals 2+ cells away.
+                a = d["act"][te][far]
+                an = a / np.maximum(np.linalg.norm(a, axis=1, keepdims=True), 1e-8)
+                for tag, v in (("true", Y[te][far]), ("decoded", P[far])):
+                    vn = v / np.maximum(np.linalg.norm(v, axis=1, keepdims=True), 1e-8)
+                    res[f"action_cos_{tag}_dir"] = float((an * vn).sum(1).mean())
         out[split] = res
     # Other arenas' goals while in this one (lifetime mode): one readout per
     # arena k, on steps where the row found k's goal earlier and is now in
