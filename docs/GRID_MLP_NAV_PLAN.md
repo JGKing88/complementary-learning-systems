@@ -442,6 +442,30 @@ them. A 20-update smoke run (27664925) took 8.6 s per update.
 |---|---|
 | `task3r_k2_h128_i3_rp` | 27665224 |
 | `task3r_k2_h512_i3_rp` | 27665225 |
+| `task3r_k2_h512_i3_rp_ag` (auxiliary goal head, below) | 27679116 |
+
+By u1000 neither plain run uses a found goal. Revisits find it as often as
+first visits (0.3 to 0.4, 20 evals each) and take as long (67 to 90 steps),
+and returns after a teleport within the first visit take 50 to 77 steps,
+search speed. Idea 1 revisited every time in about 12.5 steps by then. The
+goal probe on the u1000 checkpoints (held-out goals, 614k steps each) says the
+goal is not stored at all.
+
+| u1000 | goal phase R², before find / after | own cell phase R² | direction to goal error, after find |
+|---|---|---|---|
+| GRU 128 | −0.13 / −0.13 | 0.26 | 69° |
+| GRU 512 | −0.24 / −0.24 | 0.64 to 0.77 | 67° |
+
+The 128-unit GRU also lost most of its own position (0.68 to 0.82 at u20).
+Storing the goal pays only once the policy steers by it, and steering cannot
+start before it is stored. The plain runs continue to u4000. A third arm adds
+`--aux_goal_weight 0.1` (lever `_ag`): a linear head on the GRU features
+predicts the grid code the agent saw at its last rewarded step. The target is
+the agent's own input at that moment, and the head is never read by the
+policy or at evaluation, so the tested model is still a plain GRU. If this
+arm learns to return, storage was the bottleneck and RL can learn to turn
+grid codes into a direction. If it stores the goal and still cannot return,
+that step is the obstacle. Launched from `code/i3_43e1dc4`.
 
 ## 8. Decisions and open items
 
