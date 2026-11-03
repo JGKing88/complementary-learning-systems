@@ -1155,3 +1155,42 @@ Reading.
 3. Even then replay stops near 0.74 at N = 100, the one-walk generalisation
    limit of §10.11. Idea 1's nearest-neighbour read does not have that limit.
    Commit `6ea5007`.
+
+### 10.13 Idea 3 stage 1, and the continual protocol (2026-11-02)
+
+A plain GRU trained on arenas that move every update (§7.5, option B) does
+not learn to use a goal it has found. Both plain runs went 4000 updates
+(153.6M env steps), and after a find they do no better than searching again.
+
+Continual protocol, the §10.8 settings (`run_cl_ood.sh`, sampled, 6 arenas, 40
+iterations per block, 200-step cap, seed 3000, each run's own held-out arenas),
+with idea 3's state carried through all 840 trials. `retention.py` scores
+revisits only in arenas learned in their own block, which leaves idea 3 with
+no row, so every model is scored here on every arena by
+`python -m analysis.idea3.cl_summary` (idea 1 and Agent-HaSH from their §10.8
+histories). "After the find" is every trial in an arena after the agent first
+reached its goal there.
+
+| run | own block | revisit found | revisit steps | after the find | worst arena change |
+|---|---|---|---|---|---|
+| idea 1 (s42 u3800, s43 u3950) | 0.94 to 0.98 | 1.00 | 12.6 to 13.1 | 1.00 | 0.00 |
+| Agent-HaSH q + ‖q‖ proj (same) | 0.90 to 0.98 | 0.99 to 1.00 | 13.3 to 16.2 | 0.99 to 1.00 | −0.05 to 0.00 |
+| idea 3 GRU 128 (u3800, u3950) | 0.31 to 0.33 | 0.32 to 0.35 | 70 to 75 | 0.32 to 0.34 | −0.15 |
+| idea 3 GRU 512 (u3800, u3950) | 0.34 to 0.40 | 0.40 | 79 to 87 | 0.38 to 0.40 | −0.15 |
+
+Idea 3's revisits succeed at its search rate and take as long as a search, so
+there is no retention to lose. That makes "worst arena change" sampling noise
+rather than forgetting. Results in `/orcd/pool/003/jackking/cls_runs/idea3/cl/`.
+
+Why, from the goal probe (§7.5). The plain GRU never stores the goal (goal
+phase R² at chance after the find). With an auxiliary head that rewards
+storing it, the goal is stored (R² 0.50 to 0.53) but the direction to it reads
+poorly on new arenas, and the agent's moves ignore it (cosine with the goal
+direction 0.005). Turning a stored grid code into a direction at places not
+seen before is what RL does not find. Idea 1 gets that step from the frozen
+grid MLP, trained in Phase 1 on code pairs and odometry.
+
+Still running when written: the two auxiliary-head arms (to u4000) and the
+fixed-arena positive control (`task3r_k2_h512_i3`, §7.5). Stage 2 (several
+goals across arenas) was not launched, because no stage-1 model returns to one
+goal.
