@@ -106,22 +106,23 @@ def shift_ops(g0, g1, d, m, ridge):
     return out
 
 
+def eig_pairs(Tx, Ty):
+    """(c, s) pairs from the left eigenvectors of T_x + 0.618 T_y, with conjugates."""
+    mu, Wl = np.linalg.eig((Tx + ALPHA * Ty).T)                   # left eigenvectors
+    pairs = []
+    for k in np.argsort(-mu.real):
+        if mu[k].imag < -1e-6:
+            continue                                             # conjugate of a kept one
+        w = Wl[:, k]
+        w = w * np.exp(-1j * np.angle(w[np.argmax(np.abs(w))]))
+        pairs.append((w.real, w.imag))
+        if mu[k].imag > 1e-6:
+            pairs.append((w.real, -w.imag))                      # the -j pattern
+    return pairs
+
+
 def move_l1(g0, g1, d, ridge):
-    per = []
-    for m, l in enumerate(LAMBDAS):
-        Tx, Ty = shift_ops(g0, g1, d, m, ridge)
-        mu, Wl = np.linalg.eig((Tx + ALPHA * Ty).T)               # left eigenvectors
-        pairs = []
-        for k in np.argsort(-mu.real):
-            if mu[k].imag < -1e-6:
-                continue                                         # conjugate of a kept one
-            w = Wl[:, k]
-            w = w * np.exp(-1j * np.angle(w[np.argmax(np.abs(w))]))
-            pairs.append((w.real, w.imag))
-            if mu[k].imag > 1e-6:
-                pairs.append((w.real, -w.imag))                  # the -j pattern
-        per.append(pairs)
-    return per
+    return [eig_pairs(*shift_ops(g0, g1, d, m, ridge)) for m in range(len(LAMBDAS))]
 
 
 def online_l1(g0, g1, d, iters=4000, batch=1024, lr=0.02, seed=0):

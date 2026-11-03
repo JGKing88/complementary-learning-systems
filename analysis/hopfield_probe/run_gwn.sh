@@ -12,6 +12,8 @@
 #   bash analysis/hopfield_probe/run_gwn.sh probe [ARRAY]     # default all (0-25)
 #   bash analysis/hopfield_probe/run_gwn.sh extra      # step3b + step2b
 #   bash analysis/hopfield_probe/run_gwn.sh local      # Sec 20.1: gains from one small environment
+#   bash analysis/hopfield_probe/run_gwn.sh l1online [ARRAY]  # Sec 21: GPU array, one task per
+#                                                        # condition (gwn_l1_online.CONDS), 4 at a time
 #
 # Runs from THIS worktree: do not delete it while jobs are live.
 set -euo pipefail
@@ -52,6 +54,12 @@ done
 
 if [[ -z "${GWN_IN_JOB:-}" ]]; then
     mkdir -p "$OUT/logs"
+    if [[ $MODE == l1online ]]; then
+        GWN_IN_JOB=1 exec sbatch ${GWN_DEP:+--dependency=$GWN_DEP} --job-name=gwn_l1online \
+            --partition=pi_evelina9,pi_fiete,ou_bcs_normal,mit_normal_gpu --gres=gpu:1 --exclude=node3804 \
+            --time=${GWN_TIME:-3:00:00} --cpus-per-task=2 --mem=${GWN_MEM:-32G} --array="${ARG:-0-15}%4" \
+            --output="$OUT/logs/l1online_%A_%a.out" "$0" l1online
+    fi
     if [[ $MODE == build || $MODE == step1 || $MODE == extra || $MODE == local ]]; then
         GWN_IN_JOB=1 exec sbatch ${GWN_DEP:+--dependency=$GWN_DEP} --job-name=gwn_$MODE --partition=pi_evelina9,pi_fiete,ou_bcs_normal,mit_normal_gpu \
             --gres=gpu:1 --exclude=node3804 --time=${GWN_TIME:-5:00:00} --cpus-per-task=2 \
@@ -66,6 +74,12 @@ fi
 cd "$WT"
 export OMP_NUM_THREADS=${SLURM_CPUS_PER_TASK:-2}
 
+if [[ $MODE == l1online ]]; then
+    nvidia-smi --query-gpu=name,memory.total --format=csv,noheader
+    "$PY" -m analysis.hopfield_probe.gwn_l1_online run --task "$SLURM_ARRAY_TASK_ID" --out "$OUT/l1_online"
+    echo "DONE l1online $SLURM_ARRAY_TASK_ID"
+    exit 0
+fi
 if [[ $MODE == local ]]; then
     "$PY" -m analysis.hopfield_probe.gwn_local_gain --out "$OUT"; echo "DONE local"
     exit 0
