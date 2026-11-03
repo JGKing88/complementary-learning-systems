@@ -199,7 +199,7 @@ def _init_units(M, Lp, K, gen):
 
 
 @torch.no_grad()
-def lock_in(IN, OUT, ax, rule, seed, checks):
+def lock_in(IN, OUT, ax, rule, seed, checks, phi_ratio=1.0):
     """Run one rule over the steps; {T: (W (M, LP, K) complex numpy, phi (2, M, K))}."""
     T, M, Lp = IN.shape
     gen = torch.Generator(device="cpu").manual_seed(seed)
@@ -229,7 +229,7 @@ def lock_in(IN, OUT, ax, rule, seed, checks):
             U[a] += (eta_u * (z1 - pred))[:, None, :] * g0[:, :, None]
             W.mul_(1 - eta).add_((eta * rot[a])[:, None, :] * U[a])
         if pll:
-            phi[a] += eta * torch.angle(z1 * z0.conj() * rot[a])
+            phi[a] += (phi_ratio * eta) * torch.angle(z1 * z0.conj() * rot[a])
             rot[a] = torch.exp(-1j * phi[a])
         W /= torch.linalg.vector_norm(W, dim=1, keepdim=True).clamp_min(1e-30)
         if t + 1 in checks:

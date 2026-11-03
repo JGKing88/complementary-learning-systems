@@ -14,6 +14,8 @@
 #   bash analysis/hopfield_probe/run_gwn.sh local      # Sec 20.1: gains from one small environment
 #   bash analysis/hopfield_probe/run_gwn.sh l1online [ARRAY]  # Sec 21: GPU array, one task per
 #                                                        # condition (gwn_l1_online.CONDS), 4 at a time
+#   bash analysis/hopfield_probe/run_gwn.sh l1twin     # Sec 21: learned L1 vs its exact twin (gwn_l1_twin)
+#   bash analysis/hopfield_probe/run_gwn.sh l1lms      # Sec 21: route 1c learning rate (gwn_l1_lms)
 #
 # Runs from THIS worktree: do not delete it while jobs are live.
 set -euo pipefail
@@ -54,6 +56,12 @@ done
 
 if [[ -z "${GWN_IN_JOB:-}" ]]; then
     mkdir -p "$OUT/logs"
+    if [[ $MODE == l1twin || $MODE == l1lms ]]; then
+        GWN_IN_JOB=1 exec sbatch ${GWN_DEP:+--dependency=$GWN_DEP} --job-name=gwn_$MODE \
+            --partition=pi_evelina9,pi_fiete,ou_bcs_normal,mit_normal_gpu --gres=gpu:1 --exclude=node3804 \
+            --time=${GWN_TIME:-4:00:00} --cpus-per-task=2 --mem=${GWN_MEM:-32G} \
+            --output="$OUT/logs/${MODE}_%j.out" "$0" $MODE
+    fi
     if [[ $MODE == l1online ]]; then
         GWN_IN_JOB=1 exec sbatch ${GWN_DEP:+--dependency=$GWN_DEP} --job-name=gwn_l1online \
             --partition=pi_evelina9,pi_fiete,ou_bcs_normal,mit_normal_gpu --gres=gpu:1 --exclude=node3804 \
@@ -74,6 +82,16 @@ fi
 cd "$WT"
 export OMP_NUM_THREADS=${SLURM_CPUS_PER_TASK:-2}
 
+if [[ $MODE == l1twin ]]; then
+    nvidia-smi --query-gpu=name,memory.total --format=csv,noheader
+    "$PY" -m analysis.hopfield_probe.gwn_l1_twin --out "$OUT/l1_online"; echo "DONE l1twin"
+    exit 0
+fi
+if [[ $MODE == l1lms ]]; then
+    nvidia-smi --query-gpu=name,memory.total --format=csv,noheader
+    "$PY" -m analysis.hopfield_probe.gwn_l1_lms --out "$OUT/l1_online"; echo "DONE l1lms"
+    exit 0
+fi
 if [[ $MODE == l1online ]]; then
     nvidia-smi --query-gpu=name,memory.total --format=csv,noheader
     "$PY" -m analysis.hopfield_probe.gwn_l1_online run --task "$SLURM_ARRAY_TASK_ID" --out "$OUT/l1_online"
