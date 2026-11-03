@@ -68,11 +68,13 @@ memory compute, and can a biologically plausible network reach it?
 | 20 | Grid wave network | Works; requirements above |
 | 20.1 | Is the gain local and incremental? | Yes; a few steps in one 10-cell box suffice; depression rule r = √(2κT) |
 | 20.2 | Pruning instead of weighting | Stochastic pruning at keep-probability ∝ P(n) = the ideal's construction |
+| 21 | Can L1 be learned locally and online, inside one environment? | **Planned, not run** (plan written; next step) |
 
 **Open**
 
 - A local, online rule for L1. The movement method is offline; my online
-  rotation-consistency rule reaches purity 0.95, not enough (§20).
+  rotation-consistency rule reaches purity 0.95, not enough (§20). **§21 is the
+  plan to test this next.**
 - L1 learning inside one environment (a box of at least about 13 cells is
   probably needed so every module phase is visited) and with noisy cells.
 - Stochastic pruning simulated as an online process (§20.2).
