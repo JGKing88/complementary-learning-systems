@@ -1268,3 +1268,38 @@ thousands of noise-dominated units come out looking slow.
 
 The branch design's 17,424 neurons carry 17,424 distinct frequencies. The one
 with |n| = 132 is the pair whose slowest branch would be the excluded constant.
+
+#### Hopfield probe (K = 5, one step, Hebbian; `run_ideal.sh` settings)
+
+| encoder | region | abs err (°) | acc45 | exact | basin | reach | dead goals at K = 5 / 10 / 20 |
+|---|---|---|---|---|---|---|---|
+| ideal r = 16 | whole | 1.04 | 1.000 | 1.000 | 32.1 | 0.998 | 0 / 0 / 0 |
+| ideal r = 16 | corner, centre, opposite | 1.12 | 1.000 | 0.999 | 29.2–29.5 | 0.987–0.988 | 0 / 0 / 0 |
+| network, 400k random units | whole | 1.16 | 1.000 | 1.000 | 34.2 | 0.995 | 0 / 0 / 0 |
+| network, 400k random units | corner, centre, opposite | 1.13 | 1.000 | 1.000 | 34.6–34.8 | 0.979–0.981 | 0 / 0 / 0 |
+| network, all triples | whole / corner | 0.67 | 1.000 | 1.000 | 64.0 / 52.9 | 0.993 / 0.998 | 0 / 0 / 0 |
+| branch design, 17,424 neurons | corner | 0.67 | 1.000 | 1.000 | 52.9 | 0.998 | 0 / 0 / 0 |
+| movement-learned L1, bump 0.10 | whole / corner | 1.07 / 1.09 | 1.000 | 1.000 | 32.1 / 32.8 | 0.995 / 0.989 | 0 / 0 / 0 |
+| movement-learned L1, bump 0.25 | whole / corner | 1.33 | 1.000 | 1.000 | 33.1 / 31.7 | 0.988 / 0.991 | 0 / 0 / 0 |
+| 400k, cut gain | whole / corner | 0.81 / 0.84 | 1.000 | 1.000 / 0.998 | 26.0 / 24.9 | 0.994 / 0.982 | 0 / 0 / 0 |
+| 400k, linear gain | whole / corner | 1.23 / 1.20 | 1.000 | 1.000 | 29.8 / 29.7 | 0.993 / 0.979 | 0 / 0 / 0 |
+| 400k, rational gain | whole / corner | 7.08 / 7.03 | 1.000 | 1.000 | 33.1 / 33.7 | 0.993 / 0.979 | 0 / 0 / 0 |
+| 400k, coefficient error 0.1 | whole | 10.0 | 0.999 | 0.974 | 19.7 | 0.945 | 0.04 / 0.12 / 0.08 |
+| 400k, coefficient error 0.1 | corner | 10.6 | 0.995 | 0.785 | 11.9 | 0.821 | 0.12 / 0.25 / 0.42 |
+| Hebbian PCA L1, bump 0.25 / 0.10 | whole / corner | 87–89 | 0.26 | 0.000 | none | 0.02 | 1 / 1 / 1 |
+| bump 0.25, gains learned at cell noise 0.01 (corrected) | whole / corner | 92.3 | 0.23 | 0.95 | 14.8 | 0.08 | 1 / 1 / 1 |
+
+- The 400k network performs like the ideal in every region, with a slightly
+  larger exact-retrieval basin (34 against 29–32).
+- The all-frequency codes (all triples, branch design) beat the ideal: basin
+  53–64 and direction error 0.67°. They contain every slow frequency once, so
+  they have no far-field noise; the ideal's 512 random waves leave sd 0.032.
+- Movement-learned L1 performs like exact L1 at both bump widths. These probe
+  codes are clean, so the 0.25 bump's noise problem does not show here.
+- A 10% multiplication error costs most in a region: exact 0.79, reach 0.82,
+  42% dead goals at K = 20.
+- PCA-learned L1, and gains learned under noise with 0.25 bumps, fail
+  completely.
+
+The branch design's whole-arena run timed out at 4 h (12,000-dim code) and is
+rerunning (job 27747697).

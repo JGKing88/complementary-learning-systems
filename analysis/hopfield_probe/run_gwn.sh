@@ -57,7 +57,7 @@ if [[ -z "${GWN_IN_JOB:-}" ]]; then
             --mem=${GWN_MEM:-32G} --output="$OUT/logs/${MODE}_%j.out" "$0" $MODE
     else
         GWN_IN_JOB=1 exec sbatch --job-name=gwn_probe --partition=pi_evelina9,pi_fiete,ou_bcs_normal,mit_normal \
-            ${GWN_DEP:+--dependency=$GWN_DEP} --time=4:00:00 --cpus-per-task=16 --mem=32G --array="${ARG:-0-$(( ${#TASKS[@]} - 1 ))}" \
+            ${GWN_DEP:+--dependency=$GWN_DEP} --time=${GWN_PTIME:-4:00:00} --cpus-per-task=16 --mem=32G --array="${ARG:-0-$(( ${#TASKS[@]} - 1 ))}" \
             --output="$OUT/logs/probe_%A_%a.out" "$0" probe
     fi
 fi
