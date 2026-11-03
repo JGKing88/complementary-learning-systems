@@ -4,7 +4,9 @@
 `worktree-agent-a792a678d5a963123`. Pages: "The Ideal Grid Encoder" (teaching,
 claude.ai/artifact/FSKXEs5KkvwNxk7Ad7PTeZ, republished 2026-10-31 under the
 current account; the original C5p2GC3F6j1RxCQjGx6X1h is on the old account);
-"Grid Wave Network" (claude.ai/artifact/AhAWfeS2AB546xayRMj8gj); "Ideal Encoder
+"Grid Wave Network" (claude.ai/artifact/AhAWfeS2AB546xayRMj8gj); "Learning the
+Grid Wave Network" (teaching: L1 from movement, L3 local rules;
+claude.ai/artifact/RBo3jTbaPEtaweGyu3fF3G); "Ideal Encoder
 Probe" (results, old account only, XZHyrhhWjXocQHRWSumohn, not republished).*
 
 ## Status and map (read this first)
