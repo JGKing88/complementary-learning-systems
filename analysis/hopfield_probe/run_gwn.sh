@@ -9,7 +9,7 @@
 #
 #   bash analysis/hopfield_probe/run_gwn.sh build
 #   bash analysis/hopfield_probe/run_gwn.sh step1      # step 1 alone (GWN_DEP=afterany:JOB to chain)
-#   bash analysis/hopfield_probe/run_gwn.sh probe [ARRAY]     # default all (0-25)
+#   bash analysis/hopfield_probe/run_gwn.sh probe [ARRAY]     # default all (0-31)
 #   bash analysis/hopfield_probe/run_gwn.sh extra      # step3b + step2b
 #   bash analysis/hopfield_probe/run_gwn.sh local      # Sec 20.1: gains from one small environment
 #   bash analysis/hopfield_probe/run_gwn.sh l1online [ARRAY]  # Sec 21: GPU array, one task per
@@ -43,6 +43,10 @@ PROBES=(
     # appended after the first array (tasks 22-25): from `extra`
     "exact_branch17k_gauss|branch design 17k neurons|wc"
     "exact_400k_noise0.01_fwhm0.25|gains learned at cell noise 0.01, bump 0.25|wc"
+    # Sec 21 (tasks 26-31): L1 learned in one 14-cell box, bump 0.10
+    "../l1_online/encoders/side14_fwhm0.1_1c|one box, online shift rule 1c|wc"
+    "../l1_online/encoders/side14_fwhm0.1_1b|one box, shift estimate 1b|wc"
+    "../l1_online/encoders/side14_fwhm0.1_noise0.01_1b|one box, 1b at cell noise 0.01|wc"
 )
 TASKS=()
 for p in "${PROBES[@]}"; do
