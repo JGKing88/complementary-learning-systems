@@ -1119,3 +1119,152 @@ Learned L1 variants are run alongside wherever they apply.
 (steps 0, 2, 3), `gwn_l1_learn.py` (step 1), `run_gwn.sh`, results under
 `.../hopfield_probe/gwn/`, this section's results, and a results section on
 the page.
+
+### Results (2026-11-02)
+
+**The network works, and the circuit-level questions now have numbers.**
+
+- **The exact network matches the ideal.** 400k random units leave 527 strong
+  survivors (predicted about 500). The code's far-cell kernel is C(1) 0.998,
+  half-width 19.3, far sd 0.032, alias max 0.041; the ideal's is 0.998 / 19.3 /
+  0.032 / 0.058. All 1716² triples give the exact Gaussian kernel (far sd 0.000).
+- **L1 can be learned from movement, not from variance.**
+  - Diagonalising the module's one-step shift operators gives pure patterns
+    (purity 1.000) from 10k walk steps. With bumps 0.10 wide, its network
+    equals the exact one (alias 0.064 at 100k steps).
+  - Hebbian PCA fails (purity 0.37–0.39, no strong units).
+  - The online rule reaches purity 0.95, which is not enough: no strong
+    units. Impurities multiply across the three modules, so L1 must be
+    much purer than 0.99.
+- **Multiplication must be accurate to a few percent.** Coefficient errors of
+  1% are harmless; 5% gives alias 0.18 and 10% gives 0.41. Products built from
+  squaring units tolerate an exponent of 1.8–2.2.
+- **Bump width decides noise tolerance.** With 0.10 bumps, gains learned under
+  cell noise and corrected for each unit's jitter at rest rebuild the exact
+  network at noise 0.01 (alias 0.054, decode error 0, self-similarity 0.97).
+  At noise 0.05 decoding is still perfect. With 0.25 bumps the fine patterns
+  are amplified 10⁴–10⁷ times and no rule recovers them. The ideal encoder is
+  the reverse: its atan2 decode pools a whole module, so it tolerates noise at
+  0.25 and fails at 0.10.
+- **17,424 neurons are enough for the exact kernel.** Give each module-11 ×
+  module-12 pair one neuron with 169 module-13 branches, and keep the slowest
+  branch. The neurons cover every frequency with |n_x|, |n_y| ≤ 66 once. That
+  reproduces the full 2.94M-unit network with no randomness.
+  - Staged selection by pair slowness fails. The final wave has
+    n ≡ 13 m′ (mod 132), so slow pairs (small m′) only make multiples of 13.
+    That spectrum repeats every 132 cells: alias 0.66.
+
+**Correction during the run.** The first pass of step 1 kept one of each
+conjugate pair in the movement method: pattern j but not −j. Its network
+aliased at 0.40 despite purity 1.000, because only a structured subset of
+frequencies could be built. Every learner now also emits (c, −s), which is
+the −j pair. The first pass is kept in `step1_v0/`.
+
+#### Step 0: exact network (far cells; 5% coverage unless stated)
+
+| condition | strong units | n_eff | C(1) / half-width / far sd / alias max |
+|---|---|---|---|
+| ideal r = 16 | 512 waves | 512 | 0.998 / 19.3 / 0.032 / 0.058 |
+| 25k random units | 30 | 30 | 0.998 / 19.7 / 0.129 / 0.183 |
+| 100k | 128 | 128 | 0.998 / 17.5 / 0.062 / 0.066 |
+| 400k | 527 | 512 | 0.998 / 19.3 / 0.032 / 0.041 |
+| all 1716² triples | 3672 | 3393 | 0.998 / 19.8 / 0.000 / 0.000 |
+| 400k, cut gain (keep / prune) | 527 | 524 | 0.998 / 17.8 / 0.031 / 0.036 |
+| 400k, rational gain | 883 | 1295 | 0.993 / 11.1 / 0.020 / 0.035 |
+| 400k, linear gain | 634 | 565 | 0.998 / 18.5 / 0.030 / 0.043 |
+| 400k, steps from 1% or 20% coverage | 527 | 512 | identical to 5% |
+
+The slowness estimated from 8192 walk steps matches |ω|²/2 to a relative
+0.02% on slow units. (All-triples and branch codes keep the 6000 largest gains,
+96.2% of the total; the rest keep 99.5%.) Coverage does not matter, because a pure wave's change per
+step is the same everywhere. The gain rule sets the kernel shape. Gaussian,
+cut and linear gains all work here. The rational gain's heavy tail narrows the
+peak (half-width 11).
+
+#### Step 1: learned L1 in the 400k network (far cells)
+
+| L1 | bump | purity mean | pairs > 0.99 | strong | C(1) / half-width / far sd / alias max |
+|---|---|---|---|---|---|
+| PCA | 0.25 | 0.390 | 0.01 | 0 | 0.917 / 3.1 / 0.690 / 1.000 |
+| movement, 1k steps | 0.25 | 0.958 | 0.86 | 335 | 0.998 / 19.4 / 0.039 / 0.284 |
+| movement, 10k | 0.25 | 0.999 | 0.98 | 476 | 0.998 / 19.5 / 0.033 / 0.132 |
+| movement, 100k | 0.25 | 1.000 | 1.00 | 486 | 0.998 / 19.7 / 0.034 / 0.120 |
+| online rule, 100k | 0.25 | 0.376 | 0.00 | 0 | 0.948 / 7.6 / 0.374 / 0.805 |
+| PCA | 0.10 | 0.370 | 0.01 | 0 | 0.924 / 3.0 / 0.570 / 1.000 |
+| movement, 1k | 0.10 | 0.762 | 0.09 | 0 | 0.997 / 21.3 / 0.200 / 0.924 |
+| movement, 10k | 0.10 | 1.000 | 1.00 | 523 | 0.998 / 19.5 / 0.031 / 0.079 |
+| movement, 100k | 0.10 | 1.000 | 1.00 | 553 | 0.998 / 18.9 / 0.029 / 0.064 |
+| online rule, 100k | 0.10 | 0.952 | 0.60 | 0 | 0.986 / 17.4 / 0.213 / 0.857 |
+
+With 1k steps and 0.10 bumps, some phase-to-phase transitions are never seen,
+so the shift operator is wrong (max error 0.96 against the exact permutation;
+2e-10 at 10k steps). Wide bumps overlap and interpolate from fewer steps. At
+0.25 the residual alias (0.12) probably comes from the weakest fine patterns,
+which the ridge (1e-10 of the mean eigenvalue) suppresses.
+
+#### Step 2: imperfect multiplication (400k, far cells)
+
+| condition | strong | C(1) / half-width / far sd / alias max |
+|---|---|---|
+| coefficient error sd 0.01 | 505 | 0.998 / 19.3 / 0.032 / 0.041 |
+| coefficient error sd 0.05 | 206 | 0.997 / 18.8 / 0.041 / 0.179 |
+| coefficient error sd 0.1 | 40 | 0.996 / 18.9 / 0.079 / 0.408 |
+| coefficient error sd 0.3 | 2 | 0.996 / 27.7 / 0.368 / 0.735 |
+| quarter squares, p = 1.5 | 9 | 0.994 / 18.7 / 0.064 / 0.081 |
+| quarter squares, p = 1.8 | 399 | 0.997 / 19.3 / 0.032 / 0.041 |
+| quarter squares, p = 2.2 | 370 | 0.997 / 19.2 / 0.033 / 0.044 |
+| quarter squares, p = 2.5 | 0 | 0.992 / 17.9 / 0.076 / 0.114 |
+
+A wrong coefficient mixes in the wave with one module's phase subtracted
+instead of added (a fast frequency). That makes the unit look faster, so its
+gain drops. Hence fewer strong units and a noisier far field.
+
+#### Step 2: grid noise, gains learned on clean codes (200 unvisited anchors)
+
+Cells give self-similarity / mean decoded error (cells) / share of errors
+beyond 5 cells. Decoding is the best match among clean codes within 32 cells.
+
+| noise | level | network, bump 0.25 | ideal, bump 0.25 | network, bump 0.10 | ideal, bump 0.10 |
+|---|---|---|---|---|---|
+| cell activity | 0.001 | 0.000 / 35.6 / 1.00 | 1.000 / 0.0 / 0.00 | 1.000 / 0.0 / 0.00 | 0.997 / 0.0 / 0.00 |
+| cell activity | 0.01 | 0.000 / 35.7 / 1.00 | 0.987 / 0.0 / 0.00 | 0.971 / 0.0 / 0.00 | 0.725 / 2.1 / 0.06 |
+| cell activity | 0.05 | 0.000 / 35.5 / 1.00 | 0.726 / 2.1 / 0.06 | 0.548 / 0.8 / 0.00 | 0.019 / 25.4 / 0.85 |
+| module phase | 0.05 | 0.979 / 0.0 / 0.00 | 0.924 / 0.2 / 0.00 | 0.994 / 0.0 / 0.00 | 0.943 / 0.1 / 0.00 |
+| module phase | 0.1 | 0.920 / 0.1 / 0.00 | 0.731 / 1.9 / 0.04 | 0.974 / 0.0 / 0.00 | 0.787 / 0.9 / 0.01 |
+| module phase | 0.2 | 0.710 / 0.7 / 0.00 | 0.312 / 12.5 / 0.32 | 0.836 / 0.4 / 0.00 | 0.370 / 11.1 / 0.29 |
+| module phase | 0.4 | 0.268 / 10.2 / 0.38 | 0.044 / 22.5 / 0.76 | 0.341 / 8.7 / 0.34 | 0.051 / 22.8 / 0.78 |
+
+#### Step 2b: gains learned under cell noise
+
+"Raw" uses the change per step. "Corrected" subtracts the change at rest (two
+noise draws at one position) and normalises by signal power.
+
+| bump | noise | rule | strong | C(1) / half-width / far sd / alias max | self-sim / err / > 5 |
+|---|---|---|---|---|---|
+| 0.10 | 0.001 | raw | 428 | 0.998 / 19.3 / 0.032 / 0.094 | 1.000 / 0.0 / 0.00 |
+| 0.10 | 0.001 | corrected | 526 | 0.998 / 19.3 / 0.032 / 0.054 | 1.000 / 0.0 / 0.00 |
+| 0.10 | 0.01 | raw | 0 | 0.998 / 20.0 / 0.188 / 0.919 | 0.992 / 0.3 / 0.00 |
+| 0.10 | 0.01 | corrected | 516 | 0.998 / 18.6 / 0.032 / 0.054 | 0.971 / 0.0 / 0.00 |
+| 0.10 | 0.05 | raw | 0 | dead | 0.000 / 32.8 / 1.00 |
+| 0.10 | 0.05 | corrected | 2202 | 0.973 / 5.2 / 0.018 / 0.101 | 0.535 / 0.0 / 0.00 |
+| 0.25 | 0.001 | corrected | 11171 | 0.849 / 4.1 / 0.025 / 0.224 | 0.201 / 0.8 / 0.01 |
+| 0.25 | 0.01 | corrected | 15324 | 0.764 / 2.1 / 0.027 / 0.480 | 0.167 / 1.2 / 0.05 |
+| 0.25 | 0.05 | corrected | 14693 | 0.811 / 2.6 / 0.041 / 0.629 | 0.162 / 0.8 / 0.03 |
+
+Raw slowness under noise makes every unit look fast, so it keeps only a few
+coarse, aliased units. With 0.25 bumps the corrected rule is swamped. The
+at-rest estimate of a 10⁴–10⁷-times-amplified noise is itself noisy, and
+thousands of noise-dominated units come out looking slow.
+
+#### Step 3: cost
+
+| design | neurons | product branches | strong | C(1) / half-width / far sd / alias max |
+|---|---|---|---|---|
+| random triples | 400,000 | 400,000 | 527 | 0.998 / 19.3 / 0.032 / 0.041 |
+| all triples | 2,944,656 | 2,944,656 | 3672 | 0.998 / 19.8 / 0.000 / 0.000 |
+| staged, pair gain > 0.1 | 31,783 | 2,426,671 | 3004 | 0.998 / 19.3 / 0.008 / 0.163 |
+| staged, pair gain > 0.37 | 21,937 | 762,697 | 916 | 0.998 / 18.8 / 0.029 / 0.660 |
+| branch: 1 neuron per (j₁₁, j₁₂), slowest of 169 branches | 17,424 | 2,944,656 (pruned to 17,424) | 3672 | 0.998 / 19.8 / 0.000 / 0.000 |
+
+The branch design's 17,424 neurons carry 17,424 distinct frequencies. The one
+with |n| = 132 is the pair whose slowest branch would be the excluded constant.
