@@ -1198,8 +1198,18 @@ task eval, u3500 to 4000).
 | GRU 512 + goal head | 0.47 | 0.32 | 72 |
 | GRU 512 + goal and displacement heads | 0.34 | 0.38 | 93 |
 
-The fixed-arena positive control (`task3r_k2_h512_i3`, §7.5) had not learned
-to return by u1250 either: on its own 3 training arenas, returns after a find
-take 45 to 65 steps and revisits 80 to 90. It runs to u4000. Stage 2 (several
-goals across arenas) was not launched, because no stage-1 model returns to one
-goal.
+The fixed-arena positive control (`task3r_k2_h512_i3`, §7.5) has not learned
+to return either. At u2500 (96M env steps), on its own 3 training arenas,
+returns after a find take 50 to 80 steps and revisits 67 to 101, flat since
+u500. There it could look the answer up, since the walls and the grid codes
+of each arena are the same every update. So the failure is not only about
+working at new places: PPO does not teach this GRU to return to a goal it has
+just found, in this task, within 100 to 150M env steps. It is not the
+visit-carry code either. A return after a teleport within one visit uses only
+the ordinary within-rollout state, and those are not learned.
+
+Reading. The hard step is not holding the goal (an auxiliary head gets it
+stored) but turning the held goal and the current grid code into a direction,
+which RL does not find even at 3 fixed places. Idea 1 is handed that step by
+the frozen grid MLP. Stage 2 (several goals across arenas) was not launched,
+because no stage-1 model returns to one goal.
