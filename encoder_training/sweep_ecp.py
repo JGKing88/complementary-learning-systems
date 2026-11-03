@@ -2283,6 +2283,26 @@ WAVES: dict[str, dict] = {
         },
         "seed": [42, 43],
     },
+    # W64 -- att0.5 with one environment per gradient step.
+    #
+    # att0.5 (w52) withholds cross-env pairs from the loss but still draws each
+    # step from all 118 envs. ur_seb_C found that step composition does not
+    # move r_min, but that base config had no coding-rate term. att0.5 has
+    # rate_lambda 0.5, a batch statistic, so in mixed batches it spreads codes
+    # across envs and in one-env batches only within one env. This wave
+    # changes that one flag. Each env is 50x50 = 2500 points, under
+    # batch_size, so every batch is one whole env. Steps are matched below
+    # (118 steps/epoch, 600 epochs = 70,800 steps against att0.5's 72,000).
+    "w64_seb_att0.5": {
+        "arm": {
+            "seb_att0.5": dict(npos_list=SIZE_MIXES["sm50"], batch_size=4096,
+                               lr=3e-4, per_env_radius_frac=0.0, radius=20.0,
+                               rate_lambda=0.5, rate_eps=1.0, out_dim=1024,
+                               hidden_dim=256, gain_end=100.0,
+                               attract_lambda=0.5, single_env_batch=True),
+        },
+        "seed": [42, 43, 44, 45],
+    },
     "w61_cov0.75": {
         "arm": {
             name: {**dict(batch_size=4096, lr=3e-4, per_env_radius_frac=0.0,
@@ -2391,6 +2411,9 @@ def build_runs(wave: dict) -> list[tuple[str, dict]]:
         # so it never reaches the CLI.
         n_pts = mix_points(cfg["npos_list"])
         steps_per_epoch = max(1, n_pts // cfg["batch_size"])
+        if cfg.get("single_env_batch"):
+            # single_env_batch_iterator yields one batch per env per epoch.
+            steps_per_epoch = len(cfg["npos_list"].split(","))
         target = TARGET_STEPS * float(cfg.pop("_step_scale", 1.0))
         cfg["epochs"] = max(100, round(target / steps_per_epoch / 50) * 50)
         cfg["ur_every"] = max(10, cfg["epochs"] // 10)
