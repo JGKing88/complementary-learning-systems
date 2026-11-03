@@ -1303,3 +1303,49 @@ with |n| = 132 is the pair whose slowest branch would be the excluded constant.
 
 The branch design's whole-arena run timed out at 4 h on the first try
 (12,000-dimensional code) and finished in 3 h on the rerun (job 27747697).
+
+### 20.1 The gain is local and has an incremental rule (2026-11-03)
+
+**A walk inside one small environment sets the gains.** A single per-step
+depression rule gives the Gaussian gain, and its width grows with time spent
+learning.
+
+A unit whose (C, S) pair is one wave changes by 2 − 2cos(ω·e) on a step in
+direction e, at every position. So its slowness is measured exactly by a few x-
+and y-steps anywhere. The many-environment averaging in step 0 was not needed.
+(A lone cosine unit's change depends on its phase, and would need the walk to
+cover the wave's whole cycle.)
+
+Setup (`gwn_local_gain.py`): the exact 400k network (bump 0.25), and a random
+walk of 57,600 steps inside one square of side 20, and of side 10, reflecting at
+the walls. Kernel metrics on far cells. Results in `gwn/local_gain.json`.
+
+- **Locality**: each unit's change per step differs across positions by at most
+  2.6e-6 (float rounding), in both environments.
+- **Trace rule**, gain = exp(−r² × mean change / 2) with r = 16:
+
+  | steps | half-width | far sd | alias max |
+  |---|---|---|---|
+  | 10 | 18.1–18.4 | 0.030–0.031 | 0.035–0.044 |
+  | 100 | 19.1–19.2 | 0.031 | 0.038–0.039 |
+  | 1k–10k | 19.2 | 0.032 | 0.039 |
+  | many environments (step 0) | 19.3 | 0.032 | 0.041 |
+
+- **Depression rule**: every step w ← w (1 − κ |ΔC|² − κ |ΔS|²), κ = 0.005,
+  w₀ = 1. After T steps w ≈ exp(−κ T × mean change), the Gaussian gain with
+  r = √(2κT):
+
+  | T | √(2κT) | Gaussian half-width | measured half-width | strong units | far sd | alias max |
+  |---|---|---|---|---|---|---|
+  | 6,400 | 8 | 9.4 | 9.6 | 2,038 | 0.016 | 0.036 |
+  | 14,400 | 12 | 14.1 | 14.3 | 918 | 0.024 | 0.043 |
+  | 25,600 | 16 | 18.8 | 19.2 | 529 | 0.032 | 0.039 |
+  | 57,600 | 24 | 28.3 | 28.5 | 241 | 0.047 | 0.029 |
+
+  Side 10 gives the same numbers.
+
+The depression rule needs no built-in transfer function: the exponential comes
+from multiplying many small decrements. Its kernel keeps widening as long as
+plasticity runs. As it widens, fewer waves stay strong, so the far field gets
+noisier (0.016 at r = 8, 0.047 at r = 24) unless the pool of units grows. When
+plasticity stops therefore sets both the field size and the noise.
