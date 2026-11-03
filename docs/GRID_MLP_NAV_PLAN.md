@@ -1190,7 +1190,16 @@ direction 0.005). Turning a stored grid code into a direction at places not
 seen before is what RL does not find. Idea 1 gets that step from the frozen
 grid MLP, trained in Phase 1 on code pairs and odometry.
 
-Still running when written: the two auxiliary-head arms (to u4000) and the
-fixed-arena positive control (`task3r_k2_h512_i3`, §7.5). Stage 2 (several
+Both auxiliary-head arms also ended at u4000 without returning (held-out
+task eval, u3500 to 4000).
+
+| arm | first visit found | revisit found | revisit steps |
+|---|---|---|---|
+| GRU 512 + goal head | 0.47 | 0.32 | 72 |
+| GRU 512 + goal and displacement heads | 0.34 | 0.38 | 93 |
+
+The fixed-arena positive control (`task3r_k2_h512_i3`, §7.5) had not learned
+to return by u1250 either: on its own 3 training arenas, returns after a find
+take 45 to 65 steps and revisits 80 to 90. It runs to u4000. Stage 2 (several
 goals across arenas) was not launched, because no stage-1 model returns to one
 goal.
