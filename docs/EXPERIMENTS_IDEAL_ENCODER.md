@@ -1278,7 +1278,7 @@ with |n| = 132 is the pair whose slowest branch would be the excluded constant.
 | network, 400k random units | whole | 1.16 | 1.000 | 1.000 | 34.2 | 0.995 | 0 / 0 / 0 |
 | network, 400k random units | corner, centre, opposite | 1.13 | 1.000 | 1.000 | 34.6–34.8 | 0.979–0.981 | 0 / 0 / 0 |
 | network, all triples | whole / corner | 0.67 | 1.000 | 1.000 | 64.0 / 52.9 | 0.993 / 0.998 | 0 / 0 / 0 |
-| branch design, 17,424 neurons | corner | 0.67 | 1.000 | 1.000 | 52.9 | 0.998 | 0 / 0 / 0 |
+| branch design, 17,424 neurons | whole / corner | 0.67 | 1.000 | 1.000 | 64.0 / 52.9 | 0.993 / 0.998 | 0 / 0 / 0 |
 | movement-learned L1, bump 0.10 | whole / corner | 1.07 / 1.09 | 1.000 | 1.000 | 32.1 / 32.8 | 0.995 / 0.989 | 0 / 0 / 0 |
 | movement-learned L1, bump 0.25 | whole / corner | 1.33 | 1.000 | 1.000 | 33.1 / 31.7 | 0.988 / 0.991 | 0 / 0 / 0 |
 | 400k, cut gain | whole / corner | 0.81 / 0.84 | 1.000 | 1.000 / 0.998 | 26.0 / 24.9 | 0.994 / 0.982 | 0 / 0 / 0 |
@@ -1301,5 +1301,5 @@ with |n| = 132 is the pair whose slowest branch would be the excluded constant.
 - PCA-learned L1, and gains learned under noise with 0.25 bumps, fail
   completely.
 
-The branch design's whole-arena run timed out at 4 h (12,000-dim code) and is
-rerunning (job 27747697).
+The branch design's whole-arena run timed out at 4 h on the first try
+(12,000-dimensional code) and finished in 3 h on the rerun (job 27747697).
