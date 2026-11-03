@@ -1,8 +1,118 @@
 # The ideal encoder as Hopfield input
 
-*2026-09-30. Branch `worktree-agent-a792a678d5a963123`. Explainer page: "The Ideal Grid Encoder" (claude.ai artifact C5p2GC3F6j1RxCQjGx6X1h).*
+*Started 2026-09-30; map current as of 2026-11-03. Branch
+`worktree-agent-a792a678d5a963123`. Pages: "The Ideal Grid Encoder" (teaching,
+claude.ai/artifact/FSKXEs5KkvwNxk7Ad7PTeZ, republished 2026-10-31 under the
+current account; the original C5p2GC3F6j1RxCQjGx6X1h is on the old account);
+"Grid Wave Network" (claude.ai/artifact/AhAWfeS2AB546xayRMj8gj); "Ideal Encoder
+Probe" (results, old account only, XZHyrhhWjXocQHRWSumohn, not republished).*
 
-## Summary
+## Status and map (read this first)
+
+**The question.** What should the encoder from the grid code to the Hopfield
+memory compute, and can a biologically plausible network reach it?
+
+**Headline results**
+
+1. **The ideal encoder exists and is the best Hopfield input tested** (§1–10,
+   §16). It is random Fourier features of a Gaussian kernel, r = 16, 512
+   waves, computed from grid phases through the Chinese remainder theorem
+   (CRT). It has ~1° direction error, exact retrieval ~1.0, and is the same in
+   every region. The trained att0.5 encoder's excess aliasing is structure,
+   not dimension.
+2. **Gradient descent cannot find it** (§11–17). Training the integer layer of
+   IdealNet fails because the correct integers are isolated local minima (the
+   kick test, §17.1): a search problem. Kernel MSE plus coding rate prefers a
+   seamed code (§13.1). An invariance penalty fixes the loss ranking but not
+   the search (§15).
+3. **A random projection, a threshold and a learned readout cannot either**
+   (§19). A readout fitted to the ideal memorises and transfers nothing.
+   Slowness learning finds each module's own period, which is aliased.
+4. **The grid wave network can** (§20). It has three layers:
+   - L1: per-module sinusoidal readouts;
+   - L2: random triples, one pattern per module, multiplied into one plane wave;
+   - L3: a slowness gain per unit.
+
+   It is the ideal encoder with selection in place of search. 400k units match
+   the ideal. A 17,424-neuron branch design gives the exact kernel and beats
+   the ideal in the probe (basin 64 against 32).
+   - L3 is local and incremental: per-step depression gives r = √(2κT)
+     (§20.1).
+   - L3 can instead be stochastic pruning, which is the ideal's own
+     construction (§20.2).
+5. **What the circuit needs** (§20):
+   - L1 purity well above 0.99. Learnable offline from movement (eigenvectors
+     of each module's one-step shift operators); not from Hebbian PCA, where
+     patterns tie in groups of 4–8.
+   - Multiplication accurate to a few percent.
+   - Narrow grid bumps (0.10 of the period) to survive cell noise, with gains
+     corrected for jitter at rest.
+
+**Routes**
+
+| § | question | verdict |
+|---|---|---|
+| 1–9 | Does the analytic ideal encoder work in the Hopfield probe? | Yes at r = 16 (also 8, 32); r ≤ 4 fails |
+| 10 | Recall dynamics, saturation, projection storage | Projection storage gives exact fixed points; saturation snaps; binary codes cannot walk |
+| 11 | Train IdealNet's integer harmonics by kernel MSE (Stage A) | Exact start stays; random starts only 55–62% integral |
+| 12 | The objective's optimum over amplitudes | Within-window MSE is degenerate; MSE minus rate gives a good dense code |
+| 13, 13.1 | Add the coding-rate term | Fails: rate rewards seams, and a seamed code beats the ideal under MSE + rate |
+| 14 | Fixed integer table plus learned amplitudes | Proposed; a top-512 refit works on the whole arena, fails in regions |
+| 15 | Translation-invariance penalty | Fixes the loss ranking; random starts snap to the wrong integers |
+| 16, 16.1 | Projection storage in the probe; dimension against kernel | Rescues r = 48 for navigation; more dimensions cannot fix kernel overlap, the kernel shape can (open) |
+| 17, 17.1 | Training dynamics (delay, noise, uniform-Δ pairs); kick test | Best gap 0.019, still worse; the ideal sits in a separate basin |
+| 18 | 16 conditions: encoder × saturation × storage × readout | Gradient readout navigates everywhere; only unsaturated projection walks in and stops; Hebbian recall stops on a cue-independent state |
+| 19 | Random projection + threshold + learned readout or slow feature analysis | Fails (memorises; slowest features alias ≥ 0.92) |
+| 20 | Grid wave network | Works; requirements above |
+| 20.1 | Is the gain local and incremental? | Yes; a few steps in one 10-cell box suffice; depression rule r = √(2κT) |
+| 20.2 | Pruning instead of weighting | Stochastic pruning at keep-probability ∝ P(n) = the ideal's construction |
+
+**Open**
+
+- A local, online rule for L1. The movement method is offline; my online
+  rotation-consistency rule reaches purity 0.95, not enough (§20).
+- L1 learning inside one environment (a box of at least about 13 cells is
+  probably needed so every module phase is visited) and with noisy cells.
+- Stochastic pruning simulated as an online process (§20.2).
+- Kernel shape as a lever for wide kernels, r ≥ 48 (§16.1).
+- The probe with noisy grid codes (all probe runs use clean codes).
+- Whether real neurons multiply accurately enough (a few percent).
+
+**Where things are**
+
+- Encoders and probe loader specs (`analysis/hopfield_probe/`):
+  - `ideal_encoder.py` (`ideal:r=…`);
+  - `ideal_net.py` (`idealnet:`);
+  - `rp_encoder.py` (`rpnet:`, §19);
+  - `gwn_encoder.py` (`gwn:`, §20).
+
+  All load through `harness.load_probe_encoder`.
+- Checks and launchers:
+  - §10: `ideal_dynamics_check.py`.
+  - §18: `grid16_check.py`, `grid16_summary.py`, `run_grid16.sh`.
+  - §19: `rp_readout_check.py`, `rp_sfa_check.py`, `rp_summary.py`,
+    `run_rp.sh`.
+  - §20: `gwn_check.py` (steps 0, 2, 3, `extra`), `gwn_l1_learn.py`
+    (step 1), `gwn_local_gain.py` (20.1), `gwn_prune_vs_grade.py` (20.2),
+    `gwn_summary.py`, `run_gwn.sh`.
+  - Probe: `run_ideal.sh` (`STORAGE=proj`).
+- Training (§11–17): `encoder_training/train_ideal_net.py`, plus
+  `ideal_net_*` diagnostics.
+- Tests: `hopfield_nav/tests/test_ideal_encoder.py`, `test_rp_encoder.py`,
+  `test_gwn_encoder.py`.
+- Results, under `/orcd/pool/003/jackking/cls_runs/results/`:
+  - `hopfield_probe/ideal_encoder/` (probe, probe_proj, scan, dynamics,
+    grid16);
+  - `hopfield_probe/rp_readout/`;
+  - `hopfield_probe/gwn/` (`summary.md`, step JSON, encoders, probe);
+  - `ideal_net/` (training runs).
+- Conventions:
+  - Probe settings are those of `run_ideal.sh`, with Hebbian storage unless
+    stated. The ideal r = 16 reference rows are `ideal_encoder/probe/t12`–`t15`.
+  - Learning tests use many scattered environments of side 10–100 covering
+    1–20% of the scaffold, and report unvisited cells separately.
+
+## First result: the ideal encoder in the probe (2026-09-30)
 
 We built the encoder that the grid code *should* map to, written in closed form rather than trained, and scored it with the standard Hopfield probe suite next to the production trained encoder (w52 att0.5).
 
@@ -346,6 +456,26 @@ amplitudes only. That is exactly §12's convex model, whose optimum is a good
 code, so SGD reaches it by construction. Open design question: the 1024-number
 budget (sparsity pressure, or keep the top 512 amplitudes), then the probe.
 
+### 13.1 Paired loss check: the rate term prefers the seamed code (2026-10-01)
+
+`encoder_training/ideal_net_loss_compare.py`: four harmonic layers evaluated on
+the same 40 training batches (recipe patches, seed 0):
+
+| network | integral | MSE | rate | inv | MSE + 0.5·rate | + 300·inv |
+|---|---|---|---|---|---|---|
+| exact ideal | 1.00 | 0.00049 | −0.2531 | ≈ 0 | −0.1261 | −0.1261 |
+| seamed (§13, rate from the ideal) | 0.50 | 0.00482 | −0.2789 | 2.8e-4 | **−0.1346** | −0.0518 |
+| near-ideal (§15a, rate + inv 300) | 0.91 | 0.00046 | −0.2549 | 1.9e-6 | −0.1270 | −0.1264 |
+| random start (§13, rate) | 0.48 | 0.110 | −0.3142 | 3.0e-4 | −0.0475 | +0.0413 |
+
+- **Under MSE + rate the seamed code scores 0.0086 below the ideal** (paired
+  s.e. < 1e-4) while being a worse code (MSE 10×, C(1) 0.90). A flaw of the loss,
+  not of SGD. (An earlier estimate put the ideal at −0.132; measured −0.126.)
+- **Adding 300 × invariance reverses it:** ideal −0.126 vs seamed −0.052.
+- **The exact ideal is still not that loss's minimum:** the 91%-integral
+  near-ideal scores slightly lower (−0.1264).
+- Random starts are far worse under every version, so they remain an SGD failure.
+
 ## 14. Fixed integer table + learned amplitudes (2026-10-01)
 
 Make integrality architectural: a fixed table of integer frequencies (every
@@ -494,26 +624,6 @@ a sharper fall-off or slight negative lobes, instead of a Gaussian, could cut
 neighbour overlap at a given peak width. More dimensions matter there only in that
 sharper kernels need more frequencies to realise. **To do later:** compare kernel
 shapes at fixed near-field width.
-
-### 13.1 Paired loss check: the rate term prefers the seamed code (2026-10-01)
-
-`encoder_training/ideal_net_loss_compare.py`: four harmonic layers evaluated on
-the same 40 training batches (recipe patches, seed 0):
-
-| network | integral | MSE | rate | inv | MSE + 0.5·rate | + 300·inv |
-|---|---|---|---|---|---|---|
-| exact ideal | 1.00 | 0.00049 | −0.2531 | ≈ 0 | −0.1261 | −0.1261 |
-| seamed (§13, rate from the ideal) | 0.50 | 0.00482 | −0.2789 | 2.8e-4 | **−0.1346** | −0.0518 |
-| near-ideal (§15a, rate + inv 300) | 0.91 | 0.00046 | −0.2549 | 1.9e-6 | −0.1270 | −0.1264 |
-| random start (§13, rate) | 0.48 | 0.110 | −0.3142 | 3.0e-4 | −0.0475 | +0.0413 |
-
-- **Under MSE + rate the seamed code scores 0.0086 below the ideal** (paired
-  s.e. < 1e-4) while being a worse code (MSE 10×, C(1) 0.90). A flaw of the loss,
-  not of SGD. (An earlier estimate put the ideal at −0.132; measured −0.126.)
-- **Adding 300 × invariance reverses it:** ideal −0.126 vs seamed −0.052.
-- **The exact ideal is still not that loss's minimum:** the 91%-integral
-  near-ideal scores slightly lower (−0.1264).
-- Random starts are far worse under every version, so they remain an SGD failure.
 
 ## 17. Different training dynamics, same loss (2026-10-01)
 
