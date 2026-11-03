@@ -11,6 +11,7 @@
 #   bash analysis/hopfield_probe/run_gwn.sh step1      # step 1 alone (GWN_DEP=afterany:JOB to chain)
 #   bash analysis/hopfield_probe/run_gwn.sh probe [ARRAY]     # default all (0-25)
 #   bash analysis/hopfield_probe/run_gwn.sh extra      # step3b + step2b
+#   bash analysis/hopfield_probe/run_gwn.sh local      # Sec 20.1: gains from one small environment
 #
 # Runs from THIS worktree: do not delete it while jobs are live.
 set -euo pipefail
@@ -51,7 +52,7 @@ done
 
 if [[ -z "${GWN_IN_JOB:-}" ]]; then
     mkdir -p "$OUT/logs"
-    if [[ $MODE == build || $MODE == step1 || $MODE == extra ]]; then
+    if [[ $MODE == build || $MODE == step1 || $MODE == extra || $MODE == local ]]; then
         GWN_IN_JOB=1 exec sbatch ${GWN_DEP:+--dependency=$GWN_DEP} --job-name=gwn_$MODE --partition=pi_evelina9,pi_fiete,ou_bcs_normal,mit_normal_gpu \
             --gres=gpu:1 --exclude=node3804 --time=${GWN_TIME:-5:00:00} --cpus-per-task=2 \
             --mem=${GWN_MEM:-32G} --output="$OUT/logs/${MODE}_%j.out" "$0" $MODE
@@ -65,6 +66,10 @@ fi
 cd "$WT"
 export OMP_NUM_THREADS=${SLURM_CPUS_PER_TASK:-2}
 
+if [[ $MODE == local ]]; then
+    "$PY" -m analysis.hopfield_probe.gwn_local_gain --out "$OUT"; echo "DONE local"
+    exit 0
+fi
 if [[ $MODE == extra ]]; then
     "$PY" -m analysis.hopfield_probe.gwn_check extra --out "$OUT"; echo "DONE extra"
     exit 0
