@@ -1349,3 +1349,38 @@ from multiplying many small decrements. Its kernel keeps widening as long as
 plasticity runs. As it widens, fewer waves stay strong, so the far field gets
 noisier (0.016 at r = 8, 0.047 at r = 24) unless the pool of units grows. When
 plasticity stops therefore sets both the field size and the noise.
+
+### 20.2 L3 can be pruning instead of weighting (2026-11-03)
+
+**Keeping each unit with probability ∝ P(n), at full weight, builds the ideal
+encoder itself.** The survivors are a sample drawn in proportion to P(n) with
+equal weights, which is how the ideal draws its 512 waves. Graded gains are not
+needed. A hard keep/drop threshold is not the same thing: it gives a flat disc
+of frequencies, and its kernel rings.
+
+Uniform random waves, r = 16, keep probability = exp(−r² v), the Gaussian
+spectrum shape (`gwn_prune_vs_grade.py`; frequencies only, no grid code):
+
+| pool | rule | units used | half-width | far sd | most negative |
+|---|---|---|---|---|---|
+| 400k | graded, w = exp(−r² v / 2) | n_eff 481 | 19 | 0.032 | |
+| 400k | stochastic pruning, keep w.p. w² | 219 kept | 19 | 0.046 | |
+| 400k | hard cut, inside the 2σ disc | 480 kept | 18 | 0.032 | −0.121 |
+| 820k | graded | n_eff 986 | 20 | 0.022 | |
+| 820k | stochastic pruning | 519 kept | 20 | 0.031 | |
+| 820k | hard cut | 1003 kept | 18 | 0.023 | −0.118 |
+| ideal | 512 drawn from the Gaussian, equal weights | 512 | 20 | 0.030 | |
+
+- From 820k units, stochastic pruning keeps 519 and matches the ideal.
+- Graded gains use the same pool about twice as well (n_eff 481 against 219
+  kept), because partly weighted units still count. Pruning keeps fewer neurons;
+  grading needs fewer drawn.
+- The hard cut has the right width but a −0.12 lobe. In the step 0 probe the
+  cut gain had basin 25–26 against 34 for the Gaussian.
+
+**Incremental form.** The depression rule of 20.1, applied to survival instead of
+gain: on every step, eliminate the unit with probability κ |Δz|². After T steps
+its survival probability is ∏(1 − κ d_t) ≈ exp(−κ T v), which is ∝ P(n) when
+κT = r². This is activity-driven elimination of cells or synapses. Like the
+depression rule, the field width grows while it runs. Not yet simulated as an
+online process; the table samples the final survival probabilities directly.
