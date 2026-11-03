@@ -1496,3 +1496,118 @@ its survival probability is ∏(1 − κ d_t) ≈ exp(−κ T v), which is ∝ P
 κT = r². This is activity-driven elimination of cells or synapses. Like the
 depression rule, the field width grows while it runs. Not yet simulated as an
 online process; the table samples the final survival probabilities directly.
+
+## 21. Learning L1 locally and online (plan written 2026-11-03, before any run)
+
+**Goal.** Learn L1, the per-module readout pairs, with a local and incremental
+rule, inside one environment where possible. A local rule uses only a unit's
+inputs, its own output at two moments, and the step direction. The target is
+what §20 needs: every pair pure (purity > 0.99), every pattern j of every module
+present, and the −j pairs as well. Today's method (§20 step 1) works but is
+offline: a least-squares fit over stored steps, then an eigendecomposition.
+
+### Why it should be possible
+
+- **Coverage, not environments.** Estimating a module's shift needs steps out
+  of every phase of that module. A box at least 13 × 13 cells covers every phase
+  of all three modules. A 10-cell box covers only 100 of module 13's 169
+  phases.
+- **Covariance and shift share eigenvectors.** With phases visited uniformly,
+  the covariance C of a module's activity is translation-invariant on the module
+  torus, and so is the shift T. The two commute, and their shared eigenvectors
+  are the patterns. So a plain Hebbian product g(t) z(t+1), whose average is
+  C Tᵀ w, has the patterns as its fixed directions, even with wide bumps. It is
+  biased, though: pattern j's growth is scaled by its power c_j, which spans
+  10⁹ at bump 0.25 and 5–20× at 0.10.
+- **Lock-in selectivity.** Rotate a unit's update back by its own intrinsic
+  turn φ. Then pattern j's part is multiplied each step by about
+  (1 − η) + η e^{i(θ_j − φ)}. That has magnitude 1 only when the pattern's turn
+  θ_j matches φ, and is smaller otherwise. With η = 0.05 and the smallest
+  angular gap between patterns (2π/13 ≈ 0.48 rad), a competing pattern shrinks
+  about 0.6% per step, so about 2,000 steps should purify a unit. x-steps use
+  φ_x and y-steps use φ_y, so only one 2D pattern survives.
+
+### Common setup
+
+- **Walks.** A continuous 4-direction random walk, reflecting at the walls,
+  inside one square box of side s ∈ {10, 13, 20, 40} placed on the scaffold.
+  Reference: single steps over the 5% scattered environment set (as §20).
+  Steps T ∈ {1k, 10k, 100k}. Bump widths 0.10 and 0.25. Noise-free first,
+  then cell noise 0.01 at bump 0.10.
+- **Purity** as in `gwn_l1_learn.purity`. Report the share of pairs above 0.99,
+  and **pattern coverage**: the share of each module's λ² patterns matched by at
+  least one pair above 0.99.
+- **Downstream.** `gwn_l1_learn._assemble` (adding (c, −s) conjugates), 400k
+  random triples, trace-rule gains from the same walk (`gwn_local_gain` style),
+  and `World.metrics`. Exact L1 gives alias 0.041 and far sd 0.032.
+
+### Route 1: a velocity-gated temporal Hebbian estimate of the shift
+
+Per module and axis, stream two sums over the walk: A_e += g(t+1) g(t)ᵀ on +e
+steps (−e steps are reversed), and C += g(t) g(t)ᵀ. Two readouts:
+
+- **1a, Hebbian only.** T_e ≈ A_e with each row normalised. Near-exact for
+  narrow bumps, where C ≈ cI.
+- **1b, ridge.** T_e = A_e (C + ρI)⁻¹ with one solve at the end. This is §20's
+  estimate, accumulated online.
+
+Then the eigenvectors of (T_x + 0.618 T_y)ᵀ, offline as in §20.
+
+Measure purity, pattern coverage and the error max|T − P| against the exact
+permutation, as functions of s, T and bump width.
+
+Expectation: s ≥ 13 is pure from about 10k steps; at s = 10, module-13
+patterns are missing or impure. Route 1 makes the shift estimate local; the
+eigenvector step is still offline.
+
+### Route 2: the lock-in rule (local, online, no matrix)
+
+Per module, K units (K ∈ {2λ², 6λ²}), each with complex weights w_k (random
+start, length λ²) and intrinsic turns (φ_x, φ_y) drawn uniformly. On each step
+in direction e (a −e step is treated as +e read backwards), with z = wᵀ g:
+
+- **2a, plain Hebbian lock-in.**
+  w ← normalise(w + η e^{−iφ_e} g(t) z(t+1)).
+  The simplest form. Expect a bias toward strong, coarse patterns at bump 0.25.
+- **2b, predictive lock-in.** A fast delta rule learns u_e to predict the
+  unit's own next output from its current input:
+  u_e ← u_e + η_u (z(t+1) − u_eᵀ g(t)) g(t), which converges to Tᵀ w.
+  Then w ← normalise((1 − η) w + η e^{−iφ_e} u_e). This removes C, so the
+  power bias goes away.
+- **2c, 2b plus an adaptive turn.** A phase-locked loop moves φ_e toward the
+  turn the unit actually sees:
+  φ_e ← φ_e + η_φ · angle(z(t+1) z(t)* e^{−iφ_e}).
+
+Sweep η ∈ {0.01, 0.05, 0.2} (η_u = 4η, η_φ = η). Measure purity against steps
+(convergence speed), pattern coverage against K (fixed random turns need about
+λ² ln λ² ≈ 850 units for module 13; 2c should need fewer), and the bias of 2a
+at each bump width.
+
+### Route 3 (low priority): the existing online rule, trained longer
+
+`gwn_l1_learn.online_l1` with 20k iterations and a decaying learning rate. Run
+it only if routes 1–2 leave a gap. It needs lateral decorrelation, so it is
+less local.
+
+### Then
+
+- The best two learners (s ≥ 13, T = 100k) through the 400k network: kernel
+  metrics, then the probe (whole + corner) via `run_gwn.sh`-style tasks.
+- Repeat the best learner with cell noise 0.01, bump 0.10.
+- **Success**: purity > 0.99 for at least 99% of pairs, every pattern covered,
+  network alias ≤ 0.08 and far sd ≤ 0.035, from one environment.
+
+### Implementation notes
+
+- **New script** `analysis/hopfield_probe/gwn_l1_online.py`, with routes 1–3.
+  Reuse `gwn_check` (World, kernel metrics, `build`), `gwn_l1_learn` (purity,
+  `_assemble`, `move_l1`'s eigen step) and `gwn_local_gain.walk_in_env`.
+  Support `GWN_SMOKE=1` for a login-node smoke test.
+- **Route 2 cost.** Vectorise over units and modules on the GPU; the steps are
+  a sequential loop. 100k steps × about 1,000 units × 169 weights is about a
+  minute.
+- **Launcher.** Add a `l1online` mode to `run_gwn.sh`. Partitions:
+  pi_evelina9 first. Throttle probe arrays to 4. Arm a watch on every sbatch.
+- **Outputs**: `.../hopfield_probe/gwn/l1_online/` (JSON per route,
+  `summary.md`, encoders). Results go into this section. Update
+  "Learning the Grid Wave Network" A8 and the memory.
