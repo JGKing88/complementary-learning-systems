@@ -15,6 +15,7 @@ units holding 99.5% of sum w^2 (``gwn_encoder.prune``). Kernel metrics are
     python -m analysis.hopfield_probe.gwn_check step0 --out DIR
     python -m analysis.hopfield_probe.gwn_check step2 --out DIR
     python -m analysis.hopfield_probe.gwn_check step3 --out DIR
+    python -m analysis.hopfield_probe.gwn_check extra --out DIR   # step3b + step2b
 """
 from __future__ import annotations
 
@@ -73,10 +74,34 @@ def l1_out(l1: L1, pos, fwhm, codes_fn=None):
     return g @ l1.Wc, g @ l1.Ws
 
 
-def slowness(l1, triples, steps, fwhm, mult="exact", param=None, coef=None, chunk=16384):
-    """Normalised slowness v (U,) and power mean(C^2 + S^2) (U,) of each unit."""
-    c0, s0 = (t.float() for t in l1_out(l1, steps[0], fwhm))
-    c1, s1 = (t.float() for t in l1_out(l1, steps[1], fwhm))
+def _noisy(sigma, seed):
+    """Grid codes plus independent Gaussian cell noise of sd ``sigma``."""
+    g = torch.Generator(device="cpu").manual_seed(seed)
+    def fn(x, y):
+        c = grid_codes_torch(x, y, LAMBDAS, _noisy.fwhm).double()
+        return c + sigma * torch.randn(c.shape, generator=g, dtype=torch.float64).to(c.device)
+    return fn
+
+
+def slowness(l1, triples, steps, fwhm, mult="exact", param=None, coef=None, chunk=16384,
+             noise=0.0, correct=False):
+    """Normalised slowness v (U,) and power mean(C^2 + S^2) (U,) of each unit.
+
+    ``noise`` > 0 adds independent cell noise to the grid code at every step
+    position, as an animal with noisy grid cells would see while learning.
+    ``correct`` subtracts each unit's jitter at rest (two noise draws at the
+    same position) from its change per step, and normalises by signal power
+    (total minus noise); the returned power stays total, so noisy units are
+    still down-weighted by 1/sqrt(power).
+    """
+    fn0 = fn1 = fn2 = None
+    if noise > 0:
+        _noisy.fwhm = fwhm
+        fn0, fn1, fn2 = _noisy(noise, 101), _noisy(noise, 202), _noisy(noise, 303)
+    c0, s0 = (t.float() for t in l1_out(l1, steps[0], fwhm, fn0))
+    c1, s1 = (t.float() for t in l1_out(l1, steps[1], fwhm, fn1))
+    if correct and noise > 0:
+        c2, s2 = (t.float() for t in l1_out(l1, steps[0], fwhm, fn2))
     U = len(triples)
     v = torch.empty(U, dtype=torch.float64, device=DEV)
     pw = torch.empty(U, dtype=torch.float64, device=DEV)
@@ -86,12 +111,20 @@ def slowness(l1, triples, steps, fwhm, mult="exact", param=None, coef=None, chun
         C0, S0 = unit_waves(c0, s0, tr, mult, param, cf)
         C1, S1 = unit_waves(c1, s1, tr, mult, param, cf)
         p = ((C0 ** 2 + S0 ** 2).mean(0) + (C1 ** 2 + S1 ** 2).mean(0)) / 2
-        vk = ((C1 - C0) ** 2 + (S1 - S0) ** 2).mean(0) / p.clamp_min(1e-12)
+        step = ((C1 - C0) ** 2 + (S1 - S0) ** 2).mean(0)
+        var = C0.var(0) + S0.var(0)
+        ps = p
+        if correct and noise > 0:
+            C2, S2 = unit_waves(c2, s2, tr, mult, param, cf)
+            rest = ((C2 - C0) ** 2 + (S2 - S0) ** 2).mean(0)    # = 2 x noise power
+            step = (step - rest).clamp_min(1e-12)
+            ps = (p - rest / 2).clamp_min(1e-12)
+            var = var - rest / 2
+        vk = step / ps.clamp_min(1e-12)
         # a unit that barely varies across positions (the n = 0 wave, or a
         # learned unit that collapsed to a constant) carries no information:
         # infinite slowness, so its gain is 0
-        var = (C0.var(0) + S0.var(0)) / p.clamp_min(1e-12)
-        vk = torch.where(var < 0.01, torch.full_like(vk, float("inf")), vk)
+        vk = torch.where(var / ps.clamp_min(1e-12) < 0.01, torch.full_like(vk, float("inf")), vk)
         v[a:a + chunk] = vk.double()
         pw[a:a + chunk] = p.double()
     return v, pw
@@ -307,15 +340,70 @@ def step3(out, encdir):
     _dump(os.path.join(out, "step3.json"), res)
 
 
+def step2b(out, encdir):
+    """Gains learned with noisy grid cells, then the activity-noise test."""
+    tr = random_triples(exact_l1(0.25), NU, seed=0)        # pattern indexing is the same at any width
+    res = {}
+    for fwhm in (0.25, 0.10):
+        W = World(fwhm=fwhm)
+        anchors = W.sets["unvisited"][:4 if SMOKE else 200]
+        l1f = exact_l1(fwhm).to(DEV)
+        for sig in (0.001, 0.01, 0.05):
+            for corr in (False, True):
+                v, pw = slowness(l1f, tr, W.steps, fwhm, noise=sig, correct=corr)
+                enc, info = build(l1f, tr, v, pw, fwhm,
+                                  meta={"units": "400k", "learned_noise": sig, "rest_corrected": corr})
+                m = W.metrics(enc)
+                with torch.no_grad():
+                    r = noise_test(enc, fwhm, "activity", sig, anchors, radius=3 if SMOKE else 32)
+                tag = f"fwhm{fwhm:g}_noise{sig:g}_{'corrected' if corr else 'raw'}"
+                res[tag] = {**info, **m, "noise_test": r}
+                _line(f"step2b {tag}", info, m)
+                print(f"step2b {tag}: selfsim {r['selfsim']:.3f} err mean {r['err_mean']:.2f} "
+                      f">5 cells {r['frac_gt5']:.2f}", flush=True)
+                if fwhm == 0.25 and sig == 0.01 and corr:
+                    save_gwn(enc.cpu(), os.path.join(encdir, "exact_400k_noise0.01_fwhm0.25.pt"))
+    _dump(os.path.join(out, "step2b.json"), res)
+
+
+def step3b(out, encdir):
+    """One neuron per (j11, j12) pair with 169 module-13 branches; branch-level
+    slowness keeps the slowest. Per axis, pair m' and the best branch give the
+    unique n in (-66, 66] with n = 13 m' (mod 132), so the 17,424 neurons cover
+    every frequency with |n_x|, |n_y| <= 66 once."""
+    W = World()
+    l1 = exact_l1(W.fwhm).to(DEV)
+    tr_all = all_triples(l1)                               # module-13 index varies fastest
+    nC = len(l1.pairs_of(2))
+    v, pw = slowness(l1, tr_all, W.steps, W.fwhm)
+    vv = v.view(-1, nC)
+    best = torch.argmin(vv, 1)
+    idx = torch.arange(vv.shape[0], device=DEV) * nC + best
+    tr = tr_all[idx.cpu()]
+    n = triple_frequencies(l1, tr)
+    enc, info = build(l1, tr, v[idx], pw[idx], W.fwhm, meta={"design": "branch", "neurons": int(len(tr))})
+    m = W.metrics(enc)
+    cover = {"neurons": int(len(tr)), "branch_products": int(len(tr_all)),
+             "distinct_n": int(len({tuple(x) for x in n.tolist()})),
+             "max_abs_n": int(n.abs().max())}
+    _dump(os.path.join(out, "step3b.json"), {**cover, **info, **m})
+    _line(f"step3b branch design ({cover})", info, m)
+    save_gwn(enc.cpu(), os.path.join(encdir, "exact_branch17k_gauss.pt"))
+
+
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("step", choices=["step0", "step2", "step3"])
+    ap.add_argument("step", choices=["step0", "step2", "step3", "extra"])
     ap.add_argument("--out", required=True)
     a = ap.parse_args()
     torch.backends.cuda.matmul.allow_tf32 = False
     encdir = os.path.join(a.out, "encoders")
     os.makedirs(encdir, exist_ok=True)
-    {"step0": step0, "step2": step2, "step3": step3}[a.step](a.out, encdir)
+    if a.step == "extra":
+        step3b(a.out, encdir)
+        step2b(a.out, encdir)
+    else:
+        {"step0": step0, "step2": step2, "step3": step3}[a.step](a.out, encdir)
 
 
 if __name__ == "__main__":
