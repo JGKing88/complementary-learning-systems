@@ -1208,8 +1208,29 @@ just found, in this task, within 100 to 150M env steps. It is not the
 visit-carry code either. A return after a teleport within one visit uses only
 the ordinary within-rollout state, and those are not learned.
 
+The control ended at u4000 the same way (returns after a find 36 to 80
+steps, revisits 57 to 93, on its own arenas).
+
 Reading. The hard step is not holding the goal (an auxiliary head gets it
 stored) but turning the held goal and the current grid code into a direction,
 which RL does not find even at 3 fixed places. Idea 1 is handed that step by
 the frozen grid MLP. Stage 2 (several goals across arenas) was not launched,
 because no stage-1 model returns to one goal.
+
+Depth (Jack, 2026-11-03). One GRU step combines the new input with the held
+state through a single tanh layer, and the heads read the result linearly. So
+comparing the current grid code with a held goal code gets one nonlinear
+layer, where the grid MLP that does it for idea 1 has 5 ReLU layers of 768.
+The units holding the goal also have to keep their update gates closed, so
+the comparison has to be computed in other units that reach the goal through
+that one layer. Two arms add depth, both GRU 512 with both auxiliary heads on
+moving arenas, from `code/i3_dab7e79`:
+
+| arm | what | job |
+|---|---|---|
+| `task3r_k2_h512_i3_rp_mlp3_ag_ad` | a 3-layer ReLU MLP between the GRU and every head, reading the GRU output and the step's input (`--head_mlp_layers 3`); the GRU holds, the MLP compares | 27796255 |
+| `task3r_k2_h512_i3_rp_l3_ag_ad` | 3 stacked GRU layers (`NUM_RNN_LAYERS=3`) | 27796256 |
+
+The auxiliary heads read the features the policy reads (the MLP output in the
+first arm), so the displacement supervision trains the comparison network
+directly.
