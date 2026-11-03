@@ -345,6 +345,14 @@ class AgentConfig:
     # invert a code to its phases.
     aux_disp_weight: float = 0.0
     grid_lambdas: list[int] = field(default_factory=list)
+    # Idea 3: a feedforward MLP between the recurrent trunk and every head,
+    # reading the trunk's output and the step's input, ReLU, hidden_size wide,
+    # this many layers. 0 = none (the heads read the trunk directly). One GRU
+    # step combines its input with its held state through a single tanh
+    # layer, and comparing the current grid code with a held goal code needs
+    # more depth (the Phase-1 grid MLP that does it has 5 layers); the GRU
+    # can hold the goal and the MLP compare, as in idea 1's split.
+    head_mlp_layers: int = 0
 
 
 @dataclass

@@ -41,6 +41,18 @@ class NavAgent(nn.Module):
         self.action_bounds = action_bounds
 
         self.rnn = build_recurrent_core(cfg, input_dim)
+        # Optional MLP between the trunk and the heads (AgentConfig.
+        # head_mlp_layers). Its output is hidden_size wide, so every head below
+        # is unchanged; absent, the state_dict keys are the historical ones.
+        n_mlp = int(getattr(cfg, "head_mlp_layers", 0) or 0)
+        if n_mlp > 0:
+            layers, d_in = [], cfg.hidden_size + input_dim
+            for _ in range(n_mlp):
+                layers += [nn.Linear(d_in, cfg.hidden_size), nn.ReLU()]
+                d_in = cfg.hidden_size
+            self.head_mlp = nn.Sequential(*layers)
+        else:
+            self.head_mlp = None
 
         # Movement head
         if cfg.movement_mode == "discrete":
@@ -121,6 +133,10 @@ class NavAgent(nn.Module):
         return_features=True, (move_dist, store_dist, values, h_next, features).
         """
         features, h_next = self.rnn(x, h)  # (B, T, hidden)
+        if self.head_mlp is not None:
+            # The step's own input rides along, so the MLP compares the
+            # current grid code with whatever the trunk holds.
+            features = self.head_mlp(torch.cat([features, x], dim=-1))
 
         # Movement distribution
         if self.cfg.movement_mode == "discrete":

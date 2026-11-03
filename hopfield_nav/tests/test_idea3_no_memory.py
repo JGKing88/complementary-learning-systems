@@ -377,6 +377,44 @@ def test_aux_disp_head_trains_in_ppo():
     assert not torch.equal(before, agent.goal_disp_head.weight)
 
 
+@pytest.mark.parametrize("mlp,layers", [(3, 1), (0, 3)])
+def test_deeper_models_replay_exactly(mlp, layers):
+    """The MLP head and a stacked GRU keep the exact replay of joined visits
+    and packed lifetimes (a stacked GRU carries and freezes every layer)."""
+    from hopfield_nav.rollout import lifetime
+    from hopfield_nav.training.task import merge_visits
+    from hopfield_nav.world.env import make_env
+    cfg = none_cfg(batch_envs=5, steps_per_rollout=30)
+    cfg.agent.head_mlp_layers = mlp
+    cfg.agent.num_rnn_layers = layers
+    collector, agent, _ = make_collector(cfg, seed=0)
+    assert (agent.head_mlp is not None) == (mlp > 0)
+    assert agent.rnn.num_layers == layers
+    envs = [make_env(cfg.env, "continuous", seed=s) for s in (5, 6)]
+    envs[0].set_goal((2, 3))
+    envs[1].set_goal((1, 1))
+
+    def replay_ok(batch):
+        with torch.no_grad():
+            dist, _, values, _ = agent(batch.obs)
+            lp = dist.log_prob(batch.move_actions).sum(-1)
+        keep = (batch.alive_mask > 0 if batch.alive_mask is not None
+                else torch.ones_like(lp, dtype=torch.bool))
+        return (torch.allclose(lp[keep], batch.move_log_probs[keep], atol=1e-4)
+                and torch.allclose(values[keep], batch.values[keep], atol=1e-5))
+
+    r1 = _visit(collector, agent, envs[0], cfg, None, None, seed=0)
+    r2 = _visit(collector, agent, envs[0], cfg, r1.h_final, r1.store_fired_final, seed=1)
+    assert r1.h_final.shape == (layers, 5, cfg.agent.hidden_size)
+    assert replay_ok(merge_visits([r1, r2]))
+    torch.manual_seed(0)
+    np.random.seed(0)
+    rs, _ = lifetime.run_lifetime(collector, agent, envs, [(3, 4), (40, 9)],
+                                  n_envs=2, iters=2, epsilon=0.0)
+    assert any(r.goal_reached.any() for r in rs)
+    assert replay_ok(lifetime.pack(rs))
+
+
 def test_lifetime_schedule_parses():
     from hopfield_nav.training.stages import (ScheduleError, format_schedule,
                                                parse_schedule)

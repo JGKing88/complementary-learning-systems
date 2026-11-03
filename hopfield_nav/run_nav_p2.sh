@@ -1948,6 +1948,13 @@ case "$VARIANT" in
                   # (aux_disp_weight; §7.5). With _ag the goal is stored by
                   # u500 (goal probe) but the direction to it is not.
                   AUX_DISP_WEIGHT=${AUX_DISP_WEIGHT:-1.0}; _rest="${_rest#_ad}" ;;
+            _mlp3*) # Idea 3: a 3-layer ReLU MLP between the GRU and the heads,
+                  # reading the GRU output and the step's input (Jack,
+                  # 2026-11-03: the comparison of the current grid code with a
+                  # held goal needs depth one GRU step does not have).
+                  HEAD_MLP_LAYERS=3; _rest="${_rest#_mlp3}" ;;
+            _l3*) # Idea 3: a 3-layer stacked GRU (depth per step, same reason).
+                  NUM_RNN_LAYERS=3; _rest="${_rest#_l3}" ;;
             _life*)
                   # Idea 3 stage 2 (GRID_MLP_NAV_PLAN §7.3, §7.5): short
                   # continual-protocol lifetimes, a curriculum on the number of

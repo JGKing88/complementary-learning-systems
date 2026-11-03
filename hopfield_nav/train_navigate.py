@@ -1097,6 +1097,7 @@ CFG_FIELDS: dict[str, tuple[str, ...]] = {
     "input_grid_code": ("agent.input_grid_code",),
     "aux_goal_weight": ("agent.aux_goal_weight",),
     "aux_disp_weight": ("agent.aux_disp_weight",),
+    "head_mlp_layers": ("agent.head_mlp_layers",),
     "hopfield_storage_rule": ("hopfield.storage_rule",),
     # ppo
     "lr": ("ppo.lr",),
@@ -1290,6 +1291,8 @@ def build_parser() -> argparse.ArgumentParser:
                    help="Idea 3 diagnostic: weight of an auxiliary loss in which a head on the recurrent features predicts the grid code seen at the last rewarded step (the agent's own input then; never read by the policy). Needs --input_grid_code under --memory_backend none.")
     p.add_argument("--aux_disp_weight", type=float, default=0.0,
                    help="Idea 3 diagnostic: weight of an auxiliary loss in which a head on the recurrent features predicts the displacement to the cell of the last reward, worked out from the two grid codes (the code-pair-to-displacement supervision the Phase-1 grid MLP had). Never read by the policy. Needs --input_grid_code under --memory_backend none.")
+    p.add_argument("--head_mlp_layers", type=int, default=0,
+                   help="Layers of a ReLU MLP (hidden_size wide) between the recurrent trunk and every head, reading the trunk output and the step's input. 0 = none. Idea 3: the GRU holds the goal, the MLP compares it with the current grid code.")
     p.add_argument("--memory_backend", choices=["hopfield", "sensory_kv", "none"],
                    default="hopfield",
                    help="Goal memory. hopfield (default): Agent-HaSH. sensory_kv: idea 1 of docs/GRID_MLP_NAV_PLAN.md -- sensory-keyed argmax store of goal grid codes; the frozen grid MLP's direction d rides the hopfield_signal channel and the recall similarity c gets a memory_conf channel. Task schedule + --eval_scope task + --distal_amp > 0 only (hopfield_nav/memory/backend.py).")
