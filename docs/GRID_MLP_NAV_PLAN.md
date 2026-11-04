@@ -1255,3 +1255,22 @@ arm so far. A sixth arm redraws the walls every update as well (lever `_rw`,
 `task3r_k2_h512_i3_rp_rw_l3_ag_ad`, job 27828068, from `code/i3_69c3c8b`;
 rebuilding 3 arenas costs 0.4 s, 11.3 s per update in all), so the grid code
 is the only position signal that transfers.
+
+Both depth arms ran to u4000. The MLP head never helped (revisits 0.20 to
+0.31, at or below first visits). The stacked GRU's gain was partial and
+faded.
+
+| stacked GRU, held-out arenas | u1000 to 1500 | u3500 to 4000 |
+|---|---|---|
+| revisit found vs first visit (task eval) | 0.55 vs 0.37 | 0.32 vs 0.45 |
+| known goal vs first visit (lifetime eval) | 0.66 vs 0.25 | 0.45 vs 0.29 |
+| revisit steps | 75 | 84 |
+
+Its revisits never got faster than a search, so at best it searched with a
+pull toward the goal.
+
+In the wall-refresh arm every update's arenas are new (place and walls), so
+its training-side losses already score unseen arenas. By u1190 its
+displacement loss is 0.16, so it does compute the direction to the goal from
+grid codes at arenas it has never seen, yet its revisits (0.49 to 0.51) barely
+beat its first visits (0.43 to 0.48).
