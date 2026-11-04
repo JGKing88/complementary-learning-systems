@@ -486,6 +486,40 @@ Evaluation as before: the in-training task and lifetime evals, the goal
 probe, `follow_head`, and the continual protocol with the state carried
 (`cl_summary.py`, side by side with idea 1 and Agent-HaSH).
 
+Built (commit f66ea77).
+- `collect_rollout(teacher_beta=..., teacher_noise_deg=...)`: the teacher
+  labels every step (toward the nearest unvisited cell before the row's first
+  goal touch, straight at the goal after, at 0.9 of the speed range), makes a
+  `beta` share of the moves with its direction turned by Gaussian noise (30°
+  default; the label stays clean), and records the vector to the goal and
+  whether the goal was known. `merge_visits`, `pack` and `pad_common` carry
+  the new fields.
+- `updates/sup.py: sup_update` replays each sequence whole and fits the
+  policy to the labels (the polar head's heading likelihood plus 0.2 of its
+  speed likelihood, on steps not at the goal), the displacement head to the
+  goal vector on known steps, and the value head to the rollout's own
+  returns. 2 passes per update.
+- Schedule keys `sup=1` and `beta=a->b` on `task` and `lifetime` stages.
+  Lever `_sup` runs the plan as one schedule, 3000 updates:
+  `task:800,visits=2,sup=1,beta=1->0 ; task:700,visits=2,sup=1,beta=0 ;
+  lifetime:800,envs=3,iters=2,sup=1,beta=0 ; lifetime:700,envs=6,iters=1,sup=1,beta=0`,
+  6 arenas x 16 rows x 2 visits per update, places, walls and goals redrawn
+  every update (`_rp_rw`). The PPO fine-tune (stage 3) forks from its end.
+- Tests: teacher labels point exactly at the goal after the find and are the
+  executed moves at beta 1 without noise; the fields survive joining and
+  packing; repeated `sup_update` steps reduce both losses; a CLI run of a
+  supervised schedule completes. A GPU smoke run (27894170) took 17 s per
+  supervised task update and 48 s per 6-arena lifetime update with an
+  untrained student.
+
+| run | model | job |
+|---|---|---|
+| `task3r_k2_h512_i3_rp_rw_sup` | GRU 512, one layer | 27895152 |
+| `task3r_k2_h512_i3_rp_rw_l3_sup` | GRU 512, three layers | 27895153 |
+
+Both from `code/i3_f66ea77`, 1-day limit (`--continue_from` if a run needs
+more).
+
 ### 7.7 Stage 1 runs (RL, superseded by §7.6)
 
 Stage 1 runs, 4000 updates, launched from a frozen copy of the code at
