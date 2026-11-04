@@ -2303,6 +2303,26 @@ WAVES: dict[str, dict] = {
         },
         "seed": [42, 43, 44, 45],
     },
+    # W65 -- w64 plus a queue of past codes for the rate term.
+    #
+    # w64 collapsed to participation ratio 8-9 because a one-env batch gives
+    # the rate term one env to spread. rate_queue lets it also see the last
+    # 10k / 40k detached codes (~4 / ~16 envs of 2500), which is the mixed
+    # batch's second-moment statistic delivered across time. Still no
+    # cross-env pair anywhere in the loss.
+    "w65_seb_queue": {
+        "arm": {
+            f"q{q // 1000}k": dict(npos_list=SIZE_MIXES["sm50"],
+                                   batch_size=4096, lr=3e-4,
+                                   per_env_radius_frac=0.0, radius=20.0,
+                                   rate_lambda=0.5, rate_eps=1.0,
+                                   out_dim=1024, hidden_dim=256,
+                                   gain_end=100.0, attract_lambda=0.5,
+                                   single_env_batch=True, rate_queue=q)
+            for q in (10_000, 40_000)
+        },
+        "seed": [42, 43, 44, 45],
+    },
     "w61_cov0.75": {
         "arm": {
             name: {**dict(batch_size=4096, lr=3e-4, per_env_radius_frac=0.0,

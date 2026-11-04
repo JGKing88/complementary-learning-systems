@@ -175,6 +175,9 @@ def train(cfg: TrainConfig) -> str:
         env_indices_list = [torch.where(env_ids == e)[0]
                             for e in range(len(sizes))]
 
+    # FIFO of detached codes for the rate term (LossConfig.rate_queue).
+    rate_queue: torch.Tensor | None = None
+
     best_val_nav = -1.0
     best_r_min = -1.0
     last_ur: dict = {}          # most recent unique-radius summary, for ckpts
@@ -269,9 +272,17 @@ def train(cfg: TrainConfig) -> str:
                 v = cfg.loss.var_lambda * var_l + cfg.loss.cov_lambda * cov_l
                 loss, extra = loss + v, extra + float(v.item())
             if cfg.loss.rate_lambda > 0:
+                z_rate = z_spread
+                if rate_queue is not None and len(rate_queue) > 0:
+                    z_rate = torch.cat([z_spread, rate_queue], dim=0)
                 r = cfg.loss.rate_lambda * coding_rate_loss(
-                    z_spread, eps=cfg.loss.rate_eps)
+                    z_rate, eps=cfg.loss.rate_eps)
                 loss, extra = loss + r, extra + float(r.item())
+                if cfg.loss.rate_queue > 0:
+                    new = z_spread.detach()
+                    rate_queue = new if rate_queue is None else \
+                        torch.cat([new, rate_queue], dim=0)
+                    rate_queue = rate_queue[:cfg.loss.rate_queue]
             running_extra += extra
             # The quantity that separates the regimes; see losses.
             if n_batches == 0:
@@ -436,6 +447,7 @@ def _build_cfg_from_args(args) -> TrainConfig:
         var_gamma=args.var_gamma,
         rate_lambda=args.rate_lambda,
         rate_eps=args.rate_eps,
+        rate_queue=args.rate_queue,
         graded_sigma=args.graded_sigma,
         input_far_tau=args.input_far_tau,
     )
@@ -542,6 +554,9 @@ def main():
                    help="MCR^2 log-det coding rate; rewards an even covariance "
                         "spectrum, which is the deficit the collapsed codes have")
     p.add_argument("--rate_eps", type=float, default=0.5)
+    p.add_argument("--rate_queue", type=int, default=0,
+                   help="rows of detached past codes the rate term also sees "
+                        "(FIFO); 0 = off")
     p.add_argument("--graded_sigma", type=float, default=0.0,
                    help="distance-graded pair target exp(-d^2/2s^2); "
                         "0 keeps the binary near=1/far=0 targets")

@@ -81,6 +81,14 @@ class LossConfig:
     var_gamma: float = 1.0              # std target, in units of 1/sqrt(out_dim)
     rate_lambda: float = 0.0            # MCR^2 log-det coding rate
     rate_eps: float = 0.5
+    # Codes from earlier steps that the rate term also sees, as a FIFO of up
+    # to this many detached rows. 0 is off. With single_env_batch a step holds
+    # one env, so without this the rate term can only spread codes within that
+    # env (participation ratio 8-9 against mixed batches' 429, probe doc
+    # §10.21). The queue delivers the same second-moment statistic across
+    # time. It holds no labelled pair; gradient flows only through the current
+    # batch.
+    rate_queue: int = 0
 
     # Distance-graded pair target: target = exp(-d^2 / (2 sigma^2)) instead of
     # the binary 1-on-near / 0-on-far. 0 keeps the binary targets.
