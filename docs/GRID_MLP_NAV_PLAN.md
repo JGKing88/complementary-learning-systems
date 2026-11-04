@@ -1234,3 +1234,24 @@ moving arenas, from `code/i3_dab7e79`:
 The auxiliary heads read the features the policy reads (the MLP output in the
 first arm), so the displacement supervision trains the comparison network
 directly.
+
+At u1000 to 1500 the stacked GRU is the first idea 3 arm whose revisits beat
+its first visits on held-out arenas (found 0.55 to 0.56 against 0.36 to 0.38;
+lifetime eval, a known goal reached 0.63 to 0.70 against 0.22 to 0.29 on a
+first visit). They are not faster (75 steps), which looks like a search
+biased toward the goal rather than a beeline. It stores the goal best of any
+arm (goal loss 0.5) and its displacement head reaches loss 0.09 on training
+rollouts, about 90% of the variance. The MLP-head arm never stores the goal
+(goal loss stuck near 8) and shows no gain.
+
+The goal probe on the stacked GRU at u1500, held-out arenas, after the find:
+goal phase R² 0.58, but displacement R² −0.32 (direction error 68°), and the
+agent's moves barely follow the goal direction (cosine 0.03). So the
+displacement it computes on training arenas does not carry over. A likely
+reason: `_rp` moves the 3 training arenas every update but keeps their 3 wall
+layouts, and with 3 layouts the view can tell the GRU where it is, standing in
+for the grid code. That shortcut fails on new walls, and it was open to every
+arm so far. A sixth arm redraws the walls every update as well (lever `_rw`,
+`task3r_k2_h512_i3_rp_rw_l3_ag_ad`, job 27828068, from `code/i3_69c3c8b`;
+rebuilding 3 arenas costs 0.4 s, 11.3 s per update in all), so the grid code
+is the only position signal that transfers.
