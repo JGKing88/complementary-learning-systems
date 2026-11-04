@@ -2039,14 +2039,23 @@ alias ceiling is 0.93.
 
 This does not repeat `ur_seb_C`, where step composition did not move r_min.
 That config had no coding-rate term; att0.5 has `rate_lambda` 0.5, which is a
-statistic over the batch. In mixed batches it spreads codes across all 118
-envs, and the participation ratio of the codes climbs from 5 to **429** over
-training. With one env per batch it only spreads one env's 2500 points, and
-the participation ratio ends at **8–9** on every seed. The loss converges
-(0.067) and the gain reaches 100, so the training ran; it fit a ~9-dimensional
-code that is locally contrastive within each env and aliased across them.
+statistic over the batch. In mixed batches it can spread codes across all 118
+envs. With one env per batch it only sees one env's 2500 points. The loss
+converges (0.067) and the gain reaches 100, so the training ran.
 
-So for att0.5, which environments share a step matters, through the rate term
-alone: the loss still sees no cross-env pair in either arm.
+The arena-wide statistic that separates the arms is the probe's
+`cos_floor_mean`, the mean cosine between distant codes: **0.009** for att0.5
+against **0.169** for one env per step. att0.5's distant codes are orthogonal;
+the one-env codes share a common direction.
+
+CORRECTION (11-04). An earlier version of this section cited the training
+log's participation ratio, 429 for att0.5 against 8–9 here. That number is
+computed on the first batch of each epoch, which is a mixed batch in one arm
+and a single env in the other, so it does not compare the two. Use
+`cos_floor_mean`.
+
+So for att0.5, which environments share a step matters, even though the loss
+sees no cross-env pair in either arm. The rate term is the only batch-level
+term in the config, which makes it the candidate; §10.22 tests it directly.
 
 Raw: `results/probe_seb_att05/g100`; encoders `sweeps/w64_seb_att0.5`.

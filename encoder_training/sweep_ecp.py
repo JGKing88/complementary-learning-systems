@@ -2323,6 +2323,27 @@ WAVES: dict[str, dict] = {
         },
         "seed": [42, 43, 44, 45],
     },
+    # W66 -- w65 with the rate gradient on the current batch restored.
+    #
+    # coding_rate_loss normalises by the total row count B, so the gradient on
+    # each current row scales as 1/B. att0.5 has B = 4096; w65's queues made it
+    # 12,500 and 42,500, a 3x and 10x weaker per-row push, which may be why
+    # the larger queue did worse (cont 0.14 against 0.19). Scaling rate_lambda
+    # by B/4096 puts the per-row gradient back at att0.5's.
+    "w66_seb_queue_rescaled": {
+        "arm": {
+            f"q{q // 1000}k_r": dict(npos_list=SIZE_MIXES["sm50"],
+                                     batch_size=4096, lr=3e-4,
+                                     per_env_radius_frac=0.0, radius=20.0,
+                                     rate_lambda=round(0.5 * (q + 2500) / 4096, 3),
+                                     rate_eps=1.0, out_dim=1024,
+                                     hidden_dim=256, gain_end=100.0,
+                                     attract_lambda=0.5,
+                                     single_env_batch=True, rate_queue=q)
+            for q in (10_000, 40_000)
+        },
+        "seed": [42, 43, 44, 45],
+    },
     "w61_cov0.75": {
         "arm": {
             name: {**dict(batch_size=4096, lr=3e-4, per_env_radius_frac=0.0,
