@@ -434,6 +434,60 @@ held-out arenas; `--refresh_goal 1` replaces the per-sequence redraw, which is
 the same thing here since each arena gets one visit sequence per update),
 `_h512`.
 
+### 7.6 Training idea 3 by supervision (plan, 2026-11-04)
+
+The RL runs of §7.5 and §10.13 failed on the training, not necessarily on the
+model (Jack, 2026-11-04: "our training process, not the model, is probably
+quite far off"). This section is the replacement, and it need not match how
+ideas 1 and 2 were trained.
+
+Why PPO from scratch was the wrong tool. Storing the goal pays only once the
+policy steers by it, and steering cannot start before the goal is stored, so
+PPO never left the ground. The hard function, turning (grid code now, held
+goal code) into a direction, got a noisy scalar a few times per episode,
+where Phase 1 needed dense supervised pairs balanced over displacement to
+learn it at all. And each update saw 3 arenas, with the same 3 wall layouts
+for a whole run. Almost everything the GRU needs has a known right answer at
+every step, so it can be taught directly.
+
+The plan, three stages, each a stage of one `train_navigate` schedule.
+
+1. Pretrain the memory and the direction step, supervised. A teacher drives
+   the agent through the real task (the same collector, so the inputs are
+   exactly what the agent sees later): before the goal is found it searches
+   (the novelty teacher, toward the nearest unvisited cell), after it goes
+   straight to the goal, and the task teleports it after each touch, as now.
+   Teacher moves carry direction noise, so the previous action does not give
+   the next one away. At every step after the first touch the GRU's
+   displacement head must output the vector to the goal, and its policy must
+   assign high likelihood to the teacher's move. Backpropagation from every
+   later step reaches the touch, so storing the goal is taught directly, and
+   every teleport gives a fresh displacement from a random cell. Walls and
+   places are redrawn every update, and more arenas are used per update.
+2. Imitation on the agent's own states (DAgger). The probability that the
+   teacher, not the student, acts anneals from 1 to 0; the labels stay the
+   teacher's. This removes the gap between the teacher's states and the
+   student's. Then the same on short continual-protocol lifetimes
+   (`lifetime` stages), where the label after a find is the direction to the
+   current arena's goal, so several goals have to be held at once.
+3. PPO fine-tune from the imitation checkpoint, if search or speed need it.
+
+The teacher knows the true goal, but only to produce training labels. The
+trained model never sees it and is a plain GRU at test (Jack agreed,
+2026-11-04). This is not the goal-in-memory input ruled out for the
+task-faithful line, which is an input at test.
+
+What it shows. If this trains a GRU that returns to goals at new arenas and
+keeps them through the continual protocol, a plain GRU can do the task and
+the earlier failure was the training. If it fails even with dense supervision,
+the architecture is the limit.
+
+Evaluation as before: the in-training task and lifetime evals, the goal
+probe, `follow_head`, and the continual protocol with the state carried
+(`cl_summary.py`, side by side with idea 1 and Agent-HaSH).
+
+### 7.7 Stage 1 runs (RL, superseded by §7.6)
+
 Stage 1 runs, 4000 updates, launched from a frozen copy of the code at
 `/orcd/pool/003/jackking/cls_runs/code/i3_5132b08` so later edits cannot reach
 them. A 20-update smoke run (27664925) took 8.6 s per update.
