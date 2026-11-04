@@ -557,6 +557,31 @@ never gave the decode enough dense, varied examples to get past the plateau
 `/orcd/pool/003/jackking/cls_runs/idea3/pretrain_h512.pt` and
 `pretrain_h512_l3.pt`.
 
+Stages 2 and 3 forked from the pretrained models (jobs 27921631 one layer,
+27921633 three layers; `code/i3_60d0bd8`, `LOAD_CKPT` = the pretrained
+checkpoint), lr 3e-4 to keep the decode:
+`task:200,visits=2,sup=1,beta=1 ; task:600,...,beta=1->0 ; task:400,...,beta=0 ;
+lifetime:600,envs=3,iters=2,sup=1,beta=0 ; lifetime:600,envs=6,iters=1,sup=1,beta=0`.
+In the real task, teacher-driven, the decode carries over at once: by u200
+the displacement loss is 0.045 (one layer) and 0.020 (three layers), and the
+student's heading after a find is 12° and 7° off the teacher's, against 0.31
+to 0.38 and 30 to 36° for wave 2 without pretraining.
+
+The in-training evals run the student alone on the held-out arenas (new walls,
+places and goals), sampled. Over u50 to u200, still before the handover:
+
+| student alone | revisit found | revisit steps | steps per return in a visit | lifetime, known goal reached |
+|---|---|---|---|---|
+| three layers | 0.91 to 1.00 | 11.7 to 13.8 | 12.1 to 12.4 | 0.51 to 0.94 |
+| one layer | 0.33 to 0.46 | 19 to 76 | 20 to 32 | 0.14 to 0.32 |
+| idea 1, late (§10.1, §10.5) | 1.00 | 11.5 to 11.8 | about 12 | |
+
+The three-layer GRU returns to a goal it found as fast as idea 1 does, at
+arenas it has never seen, and already holds goals across 3-arena lifetimes
+it has not trained on. Its search is weaker than idea 1's (first visits find
+the goal 0.23 to 0.45 of the time against 0.5 to 0.6); imitating the novelty
+teacher's search is hard (73° off its moves).
+
 ### 7.7 Stage 1 runs (RL, superseded by §7.6)
 
 Stage 1 runs, 4000 updates, launched from a frozen copy of the code at
