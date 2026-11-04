@@ -107,29 +107,57 @@ memory compute, and can a biologically plausible network reach it?
   - §18: `grid16_check.py`, `grid16_summary.py`, `run_grid16.sh`.
   - §19: `rp_readout_check.py`, `rp_sfa_check.py`, `rp_summary.py`,
     `run_rp.sh`.
-  - §20: `gwn_check.py` (steps 0, 2, 3, `extra`), `gwn_l1_learn.py`
-    (step 1), `gwn_local_gain.py` (20.1), `gwn_prune_vs_grade.py` (20.2),
-    `gwn_summary.py`, `run_gwn.sh`.
-  - §21: `gwn_l1_online.py` (main array), `gwn_l1_twin.py`, `gwn_l1_lms.py`,
-    `gwn_l1_noisefix.py`, `gwn_l1_decay.py`, `gwn_l1_lockin2.py`,
-    `gwn_l1_mult.py`; `run_gwn.sh` modes `l1*`.
-  - Probe: `run_ideal.sh` (`STORAGE=proj`).
+  - §20–22 (the grid wave network): see the table below.
+  - Probe: `run_ideal.sh` (`STORAGE=proj`); the grid wave network's probe
+    tasks are in `run_gwn.sh probe`.
 - Training (§11–17): `encoder_training/train_ideal_net.py`, plus
   `ideal_net_*` diagnostics.
 - Tests: `hopfield_nav/tests/test_ideal_encoder.py`, `test_rp_encoder.py`,
-  `test_gwn_encoder.py`, `test_gwn_l1_online.py`.
+  `test_gwn_encoder.py`, `test_gwn_l1_online.py`, `test_gwn_online.py`,
+  `test_probe_noise.py`.
 - Results, under `/orcd/pool/003/jackking/cls_runs/results/`:
   - `hopfield_probe/ideal_encoder/` (probe, probe_proj, scan, dynamics,
     grid16);
   - `hopfield_probe/rp_readout/`;
-  - `hopfield_probe/gwn/` (`summary.md`, step JSON, encoders, probe;
-    `l1_online/` for §21);
+  - `hopfield_probe/gwn/` (`summary.md` with every probe row, step JSON,
+    encoders, `probe/tN`; `l1_online/` for §21–21.1; `online/` for §22);
   - `ideal_net/` (training runs).
 - Conventions:
   - Probe settings are those of `run_ideal.sh`, with Hebbian storage unless
     stated. The ideal r = 16 reference rows are `ideal_encoder/probe/t12`–`t15`.
+  - A learned L1 is judged against its **exact twin** (same triples, exact
+    pairs): absolute alias varies 0.03–0.08 with the triple sample (§21).
+  - L3 is the depression rule by default (Jack's preference, §22).
   - Learning tests use many scattered environments of side 10–100 covering
     1–20% of the scaffold, and report unvisited cells separately.
+
+**Grid wave network scripts (§20–22)**, all in `analysis/hopfield_probe/`,
+launched by `run_gwn.sh <mode>`; results under `.../hopfield_probe/gwn/`.
+
+| script | question | § | output |
+|---|---|---|---|
+| `gwn_encoder.py` | the network itself (`gwn:` loader spec) | 20 | |
+| `gwn_check.py` | built and measured: units, gain rules, multiplication, noise | 20 | `step0/2/3.json`, `step2b/3b.json` |
+| `gwn_l1_learn.py` | L1 offline: Hebbian PCA vs movement (shift eigenvectors) | 20 | `step1.json` |
+| `gwn_local_gain.py` | L3 local: trace and depression rules in one box | 20.1 | `local_gain.json` |
+| `gwn_prune_vs_grade.py` | stochastic pruning vs graded gains | 20.2 | stdout |
+| `gwn_summary.py` | tables for §20 and every probe row | 20–22 | `summary.md` |
+| `gwn_l1_online.py` | L1 in one box: routes 1a–1c, 2a–2e (16-task array) | 21 | `l1_online/side*.json`, `summary.md` |
+| `gwn_l1_twin.py` | learned L1 vs its exact twin; triple-seed spread | 21 | `l1_online/twin.json` |
+| `gwn_l1_lms.py` | learning rate of the shift rule 1c | 21 | `l1_online/lms_rate.json` |
+| `gwn_l1_noisefix.py` | noise-bias correction of the shift estimate | 21 | `l1_online/noisefix.json` |
+| `gwn_l1_decay.py` | 1c with a per-synapse rate 1/(1 + n) | 21 | `l1_online/decay.json` |
+| `gwn_l1_lockin2.py` | lock-in turn fixes: slow turn, rule 2e | 21 | `l1_online/lockin2.json` |
+| `gwn_l1_mult.py` | uneven units per pattern (simulated counts) | 21 | `l1_online/mult.json` |
+| `gwn_l1_multienv.py` | 6 boxes or one 40-box, 1M steps | 21.1 | `l1_online/multienv.json` |
+| `gwn_l1_noise_slow.py` | slow rates plus correction under noise | 21.1 | `l1_online/noise_slow.json` |
+| `gwn_l1l3_local.py` | L1 and L3 both local, L3 after L1 | 21.1 | `l1_online/l1l3_local.json`, `encoders/local_*` |
+| `gwn_online.py` | streaming learners and online L2/L3 (a module) | 22 | |
+| `gwn_noise_scaling.py` | noise robustness vs steps, environments, box size | 22.2 | `online/scaling_*.json`, `scaling_summary.md` |
+| `gwn_concurrent.py` | L1 and L3 together; noisy-trained networks | 22.1, 22.3 | `online/concurrent.json`, `online/encoders/conc_*` |
+
+Probe tasks (`run_gwn.sh probe`, rows in `gwn/summary.md`): 0–25 §20, 26–31
+§21, 32–37 §21.1, 38–45 §22.4 (test-time noise), 46 on §22.1/22.3.
 
 ## First result: the ideal encoder in the probe (2026-09-30)
 

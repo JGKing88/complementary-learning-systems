@@ -498,7 +498,9 @@ def build_cell_bank(
 
     gx = np.concatenate(gx_parts)
     gy = np.concatenate(gy_parts)
-    return CellBank(Z=field.encode(gx, gy), k=k, size=size,
+    # the bank is the probe's ruler for decoding a recalled state to a cell, not
+    # part of the agent, so it stays clean under test-time grid noise
+    return CellBank(Z=field.encode(gx, gy, noisy=False), k=k, size=size,
                     n_alias=cfg.n_alias)
 
 
