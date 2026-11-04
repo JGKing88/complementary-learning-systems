@@ -22,6 +22,7 @@
 #   bash analysis/hopfield_probe/run_gwn.sh l1mult     # Sec 21: uneven units per pattern (gwn_l1_mult)
 #   bash analysis/hopfield_probe/run_gwn.sh l1multienv # Sec 21: 6 boxes / one 40-box, 1M steps (gwn_l1_multienv)
 #   bash analysis/hopfield_probe/run_gwn.sh l1l3       # Sec 21.1: L1 and L3 from local rules (gwn_l1l3_local)
+#   bash analysis/hopfield_probe/run_gwn.sh l1noiseslow # Sec 21: slow rates + bias correction under noise
 #
 # Runs from THIS worktree: do not delete it while jobs are live.
 set -euo pipefail
@@ -70,7 +71,7 @@ done
 
 if [[ -z "${GWN_IN_JOB:-}" ]]; then
     mkdir -p "$OUT/logs"
-    if [[ $MODE == l1twin || $MODE == l1lms || $MODE == l1noisefix || $MODE == l1decay || $MODE == l1lockin2 || $MODE == l1mult || $MODE == l1multienv || $MODE == l1l3 ]]; then
+    if [[ $MODE == l1twin || $MODE == l1lms || $MODE == l1noisefix || $MODE == l1decay || $MODE == l1lockin2 || $MODE == l1mult || $MODE == l1multienv || $MODE == l1l3 || $MODE == l1noiseslow ]]; then
         GWN_IN_JOB=1 exec sbatch ${GWN_DEP:+--dependency=$GWN_DEP} --job-name=gwn_$MODE \
             --partition=pi_evelina9,pi_fiete,ou_bcs_normal,mit_normal_gpu --gres=gpu:1 --exclude=node3804 \
             --time=${GWN_TIME:-4:00:00} --cpus-per-task=2 --mem=${GWN_MEM:-32G} \
@@ -104,6 +105,11 @@ fi
 if [[ $MODE == l1lms ]]; then
     nvidia-smi --query-gpu=name,memory.total --format=csv,noheader
     "$PY" -m analysis.hopfield_probe.gwn_l1_lms --out "$OUT/l1_online"; echo "DONE l1lms"
+    exit 0
+fi
+if [[ $MODE == l1noiseslow ]]; then
+    nvidia-smi --query-gpu=name,memory.total --format=csv,noheader
+    "$PY" -m analysis.hopfield_probe.gwn_l1_noise_slow --out "$OUT/l1_online"; echo "DONE l1noiseslow"
     exit 0
 fi
 if [[ $MODE == l1l3 ]]; then
