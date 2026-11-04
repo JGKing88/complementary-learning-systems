@@ -1820,3 +1820,69 @@ same conclusion as for noise in §20.
   longer walks.
 - The eigenvector step of route 1 as a network (it is what route 2 does per
   unit; combining 1c's shift with 2c's units is untested).
+
+### 21.1 More environments, longer walks, and both layers local (2026-11-04)
+
+Two questions after §21: would a bigger box or a few more environments help
+the online rules, and does the network navigate when L1 and L3 both come from
+their local rules?
+
+**More environments trim the lock-in unevenness a little; the cause is a
+bias toward strong patterns** (`gwn_l1_multienv.py`; 1M steps; "6 boxes" =
+sessions of 10k steps cycling through boxes of side 14, 18, 24, 30, 36 and 40
+at random scaffold positions; 2c with the 0.001 turn, η 0.2; no noise).
+
+| condition | all units (= exact twin) | one unit per pattern | units per pattern, strong half / weak half | corr(count, log strength) |
+|---|---|---|---|---|
+| 14-box, 300k steps (§21) | 0.335 | 0.095 | | |
+| 40-box | 0.301 | 0.069 | 13.4–16.3 / 7.6–10.7 | 0.57–0.68 |
+| 6 boxes | 0.227 | 0.094 | 13.2–15.9 / 8.1–10.8 | 0.39–0.68 |
+
+- Network alias, far cells. The weak half of each module's patterns (by
+  A(j)/A(0)) gets 30–50% fewer units than the strong half, and the bias grows
+  at smaller η (correlation 0.60–0.78 at η 0.02). This measures directly what
+  §21 inferred. Walking more places trims the alias from about 0.30 to 0.23;
+  it does not remove the bias, which comes from the bump's power spectrum.
+- The shift rule 1c is exact in both conditions without noise (alias 0.064
+  and 0.056, equal to the twins).
+
+**Under noise, a slow rate over more steps rescues the shift rule**
+(`gwn_l1_noise_slow.py`; cell noise 0.01; 1M steps). Network alias, learned /
+exact twin:
+
+| learner | 6 boxes | 14-box |
+|---|---|---|
+| 1c, rate 0.02 | 0.225 / 0.090 | 0.13–0.19 / 0.07–0.10 (300k steps, §21) |
+| 1c, rate 0.005 | 0.105 / 0.069 | 0.107 / 0.096 |
+| 1c, rate 0.005, bias-corrected | 0.104 / 0.084 | 0.084 / 0.093 |
+| 1c, rate 0.002 (91–95% pure) | 0.176 / 0.072 | 0.155 / 0.103 |
+| 1b (offline least squares) | 0.111 / 0.093 | 0.092 / 0.095 |
+| 1b, bias-corrected | 0.090 / 0.073 | 0.104 / 0.098 |
+
+- At rate 0.005 the local rule equals offline least squares and sits within
+  0.01–0.04 of its exact twin. One 14-box does as well as six boxes, so the
+  number of steps matters, not the number of places. The bias correction cuts
+  |T − P| (1c 0.047 to 0.019, 1b 0.03 to 0.002) but changes the network
+  little.
+- The lock-in rule under noise does not recover with more steps. Across 6
+  boxes at η 0.05 every unit is above 0.99, yet the network aliases at 0.697
+  (exact twin 0.340, one unit per pattern 0.634): the units' residual
+  impurity, not their counts, sets the alias. One 40-box is the same (0.662;
+  twin 0.326; one unit per pattern 0.588).
+
+**Both layers from local rules** (`gwn_l1l3_local.py`; one 14-box, bump
+0.10, no noise). L1 is learned first; L3 then runs the step-by-step
+depression rule w ← w·max(0, 1 − κ|Δz|²) over 25,600 further steps
+(√(2κT) = r = 16), and the encoder keeps the units holding 99.5% of Σw².
+
+| L1 | depression L3: alias / far sd | trace L3: alias | probe (whole / corner): basin, reach |
+|---|---|---|---|
+| exact | 0.054 / 0.032 | 0.054 | PROBE_EXACT |
+| 1c (100k steps) | 0.094 / 0.029 | 0.094 | PROBE_1C |
+| 2c, every unit (300k steps) | 0.340 / 0.037 | 0.340 | PROBE_2C |
+
+- The depression rule gives the same gains as the trace rule to three
+  decimals. L3 learned after L1 had finished; learning both at once is
+  untested, and early, impure L1 units would be depressed hard, so L3
+  plasticity probably has to start late.
+- Probe tasks 32–37 (`run_gwn.sh probe`).
