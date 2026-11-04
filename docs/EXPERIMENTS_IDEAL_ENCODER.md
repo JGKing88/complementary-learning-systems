@@ -43,9 +43,14 @@ memory compute, and can a biologically plausible network reach it?
    - L3 can instead be stochastic pruning, which is the ideal's own
      construction (§20.2).
 5. **What the circuit needs** (§20):
-   - L1 purity well above 0.99. Learnable offline from movement (eigenvectors
-     of each module's one-step shift operators); not from Hebbian PCA, where
-     patterns tie in groups of 4–8.
+   - L1 purity well above 0.99. Learnable from movement (eigenvectors of each
+     module's one-step shift operators); not from Hebbian PCA, where patterns
+     tie in groups of 4–8.
+   - L1 can be learned inside one 14 × 14 box (§21). A local online delta rule
+     learns the shift; with the eigenvector step the network equals exact L1
+     (probe basin 34). A fully online lock-in rule with a slow turn learns exact
+     pairs too, but holds patterns with uneven numbers of units, which aliases
+     (0.27–0.34) unless units per pattern are equalised (0.07–0.10).
    - Multiplication accurate to a few percent.
    - Narrow grid bumps (0.10 of the period) to survive cell noise, with gains
      corrected for jitter at rest.
@@ -68,15 +73,16 @@ memory compute, and can a biologically plausible network reach it?
 | 20 | Grid wave network | Works; requirements above |
 | 20.1 | Is the gain local and incremental? | Yes; a few steps in one 10-cell box suffice; depression rule r = √(2κT) |
 | 20.2 | Pruning instead of weighting | Stochastic pruning at keep-probability ∝ P(n) = the ideal's construction |
-| 21 | Can L1 be learned locally and online, inside one environment? | **Planned, not run** (plan written; next step) |
+| 21 | Can L1 be learned locally and online, inside one environment? | Yes in one 14-box: online shift rule + eigenvectors = exact; fully online lock-in exact per unit but uneven counts alias; noise doubles the shift learners' alias and breaks lock-in; side 13 fails (wrap step unseen) |
 
 **Open**
 
-- A local, online rule for L1. The movement method is offline; my online
-  rotation-consistency rule reaches purity 0.95, not enough (§20). **§21 is the
-  plan to test this next.**
-- L1 learning inside one environment (a box of at least about 13 cells is
-  probably needed so every module phase is visited) and with noisy cells.
+- Equal units per pattern in the fully online L1 route (§21): lateral
+  competition among L1 units, or an unbiased selection with more units.
+- L1 under cell noise with a local rule: the online shift rule at rate 0.02
+  aliases about twice its exact twin after 300k steps (§21); a rate schedule
+  is untested.
+- The eigenvector step of route 1 as a network (§21).
 - Stochastic pruning simulated as an online process (§20.2).
 - Kernel shape as a lever for wide kernels, r ≥ 48 (§16.1).
 - The probe with noisy grid codes (all probe runs use clean codes).
@@ -99,16 +105,20 @@ memory compute, and can a biologically plausible network reach it?
   - §20: `gwn_check.py` (steps 0, 2, 3, `extra`), `gwn_l1_learn.py`
     (step 1), `gwn_local_gain.py` (20.1), `gwn_prune_vs_grade.py` (20.2),
     `gwn_summary.py`, `run_gwn.sh`.
+  - §21: `gwn_l1_online.py` (main array), `gwn_l1_twin.py`, `gwn_l1_lms.py`,
+    `gwn_l1_noisefix.py`, `gwn_l1_decay.py`, `gwn_l1_lockin2.py`,
+    `gwn_l1_mult.py`; `run_gwn.sh` modes `l1*`.
   - Probe: `run_ideal.sh` (`STORAGE=proj`).
 - Training (§11–17): `encoder_training/train_ideal_net.py`, plus
   `ideal_net_*` diagnostics.
 - Tests: `hopfield_nav/tests/test_ideal_encoder.py`, `test_rp_encoder.py`,
-  `test_gwn_encoder.py`.
+  `test_gwn_encoder.py`, `test_gwn_l1_online.py`.
 - Results, under `/orcd/pool/003/jackking/cls_runs/results/`:
   - `hopfield_probe/ideal_encoder/` (probe, probe_proj, scan, dynamics,
     grid16);
   - `hopfield_probe/rp_readout/`;
-  - `hopfield_probe/gwn/` (`summary.md`, step JSON, encoders, probe);
+  - `hopfield_probe/gwn/` (`summary.md`, step JSON, encoders, probe;
+    `l1_online/` for §21);
   - `ideal_net/` (training runs).
 - Conventions:
   - Probe settings are those of `run_ideal.sh`, with Hebbian storage unless
@@ -1613,3 +1623,200 @@ less local.
 - **Outputs**: `.../hopfield_probe/gwn/l1_online/` (JSON per route,
   `summary.md`, encoders). Results go into this section. Update
   "Learning the Grid Wave Network" A8 and the memory.
+
+### Results (run 2026-11-03)
+
+**Answer.** L1 can be learned inside one 14 × 14 box, from a walk alone.
+
+- **Shift rule plus eigenvectors (route 1c).** A local, online delta rule
+  learns each module's one-step shift. The eigenvectors of T_x + 0.618 T_y
+  then give every L1 pair pure and every pattern covered, from about 30k steps.
+  The network built on it is identical to its exact twin and navigates like
+  exact L1 (probe basin 34, reach 0.98–0.99). The eigenvector step is still
+  offline.
+- **Fully online lock-in (route 2c with a slow turn).** Single units, no
+  matrix. With the turn adapting 1000 times more slowly than the weights,
+  every unit ends pure and 94–98% of patterns are held. The learned weights
+  are exact (learned network = twin), but the network wired from every unit
+  aliases at 0.27–0.34 because patterns are held by unevenly many units. With
+  one unit per pattern it is 0.07–0.10.
+- **Cell noise 0.01** roughly doubles the alias of the shift learners and
+  breaks the lock-in rules. **Bump 0.25** makes the finest patterns too weak
+  to learn locally.
+
+#### What the plan got wrong
+
+- **The box needs side 14, not 13.** A box of side s never makes the step from
+  phase s − 1 to phase s, because that step would leave the box. For module 13
+  in a 13-box that is the wrap from phase 12 to phase 0, so one transition per
+  row is never seen. That column of the shift stays unknown and every
+  eigenvector of the module is impure (1b at side 13: modules 11 and 12 pure,
+  module 13 not, 61% of pairs). Under the lock-in rules the ring becomes an
+  open chain, and on an open chain a wave of any angle fits every step. Side
+  14 sees every transition of every module. Both facts are pinned in
+  `test_gwn_l1_online.py`.
+- **The lock-in rules are about λ² times slower than estimated.** With narrow
+  bumps a step updates only the weights at the current phase, so each weight
+  changes about once per λ² steps. Convergence takes 30k–300k steps, not
+  2,000.
+- **1a is not near-exact for narrow bumps.** A reflecting walk visits phases
+  unevenly. Edge cells get half the visits, and a 20-box sees phases 0–6 of
+  module 13 twice as often as phases 7–12. The covariance then no longer
+  commutes with the shift. 1a reaches 0.21–0.97 pure at 100k steps and its
+  networks alias at 0.43–0.71.
+- **2c does not need fewer units; it collapses.** Its turn follows the unit's
+  output, and the output is dominated by the strongest-input pattern long
+  before that pattern dominates the weights. 27–44% of units end on the
+  constant pattern and no weak pattern is held.
+- **"Alias ≤ 0.08" cannot be a pass mark.** Over 8 random-triple seeds the
+  exact network's alias ranges 0.032–0.083 (bump 0.10; far sd 0.031–0.032),
+  because each seed samples a different set of frequencies. A learned L1 lists
+  its pairs in its own order, so it samples its own set; the same learner gave
+  0.058 in one job and 0.085 in another when GPU rounding reordered tied
+  eigenvalues. The right test is the **exact twin**: the same triples, with
+  each learned pair replaced by the exact pair of its dominant pattern
+  (`gwn_l1_twin.py`).
+
+#### Route 1: the shift, estimated in one box (bump 0.10, no noise)
+
+Share of pairs above purity 0.99 after 1k / 10k / 100k steps, and the 400k
+network's alias at 100k steps (learned; the exact twin gives the same value to
+three decimals wherever every pair is pure).
+
+| box | cells | 1a | 1b | 1c | alias, 1b / 1c |
+|---|---|---|---|---|---|
+| 10 | 100 | 0 / 0 / 0 | 0 / 0 / 0 | 0 / 0 / 0 | code collapses |
+| 13 | 169 | 0 / 0 / 0.54 | 0 / 0.61 / 0.61 | 0 / 0.60 / 0.61 | 0.686 / 0.674 |
+| 14 | 196 | 0 / 0.06 / 0.77 | 0 / 1.00 / 1.00 | 0 / 0.94 / 1.00 | 0.058 / 0.044 |
+| 20 | 400 | 0 / 0 / 0.21 | 0 / 1.00 / 1.00 | 0 / 0.79 / 1.00 | 0.076 / 0.097 |
+| 40 | 1600 | 0 / 0.18 / 0.91 | 0 / 1.00 / 1.00 | 0 / 0.92 / 1.00 | 0.084 / 0.056 |
+| 5% scattered steps | 50,000 | 0 / 0.68 / 0.97 | 0.03 / 1.00 / 1.00 | 0 / 1.00 / 1.00 | 0.048 / 0.064 |
+
+- **Twins.** For boxes 14, 20, 40 and the scattered steps, learned and twin
+  networks agree to three decimals for 1b and 1c (C(1) 0.998, half-width
+  18.3–19.5, far sd 0.029–0.031). L1 learned in one 14-cell box adds no
+  measurable error.
+- **Rate of 1c** (`gwn_l1_lms.py`). Rate 0.5 is best without noise: |T − P| is
+  2×10⁻³ after 30k steps in a 14-box and 10⁻⁷ after 100k. Rates 0.1, 0.02 and
+  0.005 are slower.
+- **Probe** (whole / corner, K = 5, one step):
+
+  | network | abs err | exact | basin | reach |
+  |---|---|---|---|---|
+  | 1c, one 14-box | 1.70 / 1.70 | 1.000 / 1.000 | 34.1 / 34.8 | 0.994 / 0.983 |
+  | 1b, one 14-box | 1.25 / 1.24 | 1.000 / 1.000 | 33.4 / 33.3 | 0.993 / 0.984 |
+  | exact 400k | 1.16 / 1.13 | 1.000 / 1.000 | 34.2 / 34.8 | 0.995 / 0.980 |
+  | ideal r = 16 | 1.04 / 1.12 | 1.000 / 0.999 | 32.1 / 29.5 | 0.998 / 0.987 |
+
+#### Route 2: lock-in rules (fully online)
+
+First run (`gwn_l1_online.py`, 100k steps, 6 l² units per module, η 0.01–0.5):
+
+- **2a** (plain Hebbian) and **2d** (2a plus the adaptive turn) never purify
+  (median purity 0.14–0.36). Each update changes only the visited weights, by a
+  phase that is not exactly the pattern's, so the relative phases diffuse; and
+  uneven visits tilt the mean fixed point.
+- **2b** (predictive, fixed turns) has no power bias (1% of units on the
+  constant pattern, coverage 0.62–0.78 in boxes at η 0.2) but purifies slowly: 14–21%
+  of units above 0.99 after 100k steps in a box, 43% with scattered steps. With
+  the turn not exactly the pattern's, the weights' overall phase drifts every
+  step and the predictor lags behind.
+- **2c** (2b plus a phase-locked turn) makes every unit pure but collapses
+  (coverage 5–10%).
+
+Turn rate (`gwn_l1_lockin2.py`; 300k steps, η 0.2, boxes 14 and 20 and the
+scattered steps):
+
+| rule, turn rate ÷ weight rate | pure | coverage | weak-half coverage | on constant pattern |
+|---|---|---|---|---|
+| 2c, 1 (first run) | 1.00 | 0.07–0.10 | 0 | 0.36–0.44 |
+| 2c, 0.1 | 1.00 | 0.12–0.15 | 0 | 0.18–0.19 |
+| 2c, 0.01 | 1.00 | 0.54–0.65 | 0.13–0.29 | 0.02 |
+| 2c, 0.001 | 1.00 | 0.94–0.98 | 0.88–0.95 | 0.01–0.02 |
+| 2e (turn read from the weights), 1 | 1.00 | 0.20–0.34 | 0–0.05 | 0.09–0.30 |
+| 2e, 0.1 | 1.00 | 0.65–0.79 | 0.36–0.57 | 0.02–0.03 |
+
+- **Why the slow turn works.** Each unit first selects the pattern nearest its
+  starting turn, as under 2b. The turn then locks onto that pattern, which
+  makes it an exact fixed point (`test_gwn_l1_online.py` pins that a pattern
+  with its own turn and a learned predictor stays put step by step).
+- **2e** reads the turn as angle(Σ_a w̄_a u_a), which weights each pattern by
+  its share of the unit's weights instead of its input power. It helps, but
+  less than slowing the turn.
+- **Network for 2c at 0.001** (box 14 / box 20 / scattered steps): wired from
+  every unit, learned 0.335 / 0.300 / 0.269 and the exact twin identical; one
+  unit per pattern 0.095 / 0.093 / 0.066. The learned weights are exact; the alias comes from how many
+  units hold each pattern (count CV 0.35–0.56 per module).
+- **Uneven counts** (`gwn_l1_mult.py`, exact L1 with simulated counts).
+  Random (Poisson) counts cost little: mean 12 per pattern (CV 0.27) gives
+  alias 0.083–0.114, mean 50 or more 0.05–0.09, one per pattern 0.052–0.096.
+  The 2c counts have a similar CV but cost 0.27–0.34, so they are structured: weak,
+  fine patterns are held by fewer units (weak-half coverage 0.88–0.95). A
+  per-module bias that varies smoothly with |j| puts a periodic comb on the
+  spectrum, which lands on the grid code's self-similar displacements.
+  Equalising units per pattern (for example lateral competition between L1
+  units with the same output) is the missing piece of the fully online route.
+
+#### Cell noise 0.01 (bump 0.10)
+
+| learner | steps | pure | network alias, learned / twin |
+|---|---|---|---|
+| 1b | 100k | 0.93–1.00 | 0.115–0.205 / 0.073–0.097 |
+| 1b | 300k | 1.00 | 0.081–0.145 / 0.087–0.124 |
+| 1c, rate 0.5 | 100k | 0.03–0.07 | 0.90–0.93 |
+| 1c, rate 0.1 | 300k | 0.95–0.97 | 0.62–0.66 |
+| 1c, rate 0.02 | 300k | 1.00 | 0.13–0.19 / 0.07–0.10 |
+| 1c, rate 1/(1 + n) | 300k | 0.97–0.99 | 0.17–0.24 / 0.07–0.12 |
+
+- **1b reaches its twin** given 300k steps (`gwn_l1_noisefix.py`,
+  `gwn_l1_decay.py`).
+- **1c needs a slow rate.** At rate 0.5 each noisy step overwrites half a
+  synapse's estimate and nothing averages. At 0.02 every pair is pure, but the
+  network still aliases at about twice its twin.
+- **The bias is not the problem.** Noise adds σ²I to the input covariance but
+  not to the cross-time product, so the estimate shrinks pattern j by
+  c_j / (c_j + σ²), unevenly in a box. Subtracting it (1b with C − Nσ²I; 1c
+  with T ← T + rate[(g₁ − T g₀) g₀ᵀ + σ² T] / |g₀|², σ² measurable at rest)
+  cuts |T − P| 3–10 times but leaves the network unchanged. The remaining
+  error is variance.
+- **A per-synapse rate 1 / (1 + n)** (online least squares; n = the
+  presynaptic cell's summed activity) is worse than a fixed 0.02. It freezes
+  before the coupling through the bump tails has settled.
+- **Probe of 1b at noise** (one 14-box, 100k steps): basin 28.9 / 30.3, reach
+  0.986 / 0.973, abs err 3.9°. It still navigates.
+- **Lock-in at noise** (2c and 2e, box 14, 300k steps). At η 0.2 no variant
+  has a unit above 0.99: each noisy step moves the weights by a fifth. At
+  η 0.05, 2c with the 0.001 turn reaches 97% pure and coverage 0.85, but the
+  network aliases at 0.67 (exact twin 0.34, one unit per pattern 0.63). Under
+  noise the fully online route fails at these rates.
+
+#### Bump 0.25
+
+1b reaches 96–98% pure with network alias 0.12–0.18 (twins 0.05–0.11). 1c
+stays at 31–63% pure, alias 0.86–0.89 (twins 0.05–0.08). The finest patterns
+carry about 10⁻⁹ of the coarsest one's power, so a delta rule learns them too
+slowly and the ridge suppresses them. Every lock-in rule collapses onto coarse
+patterns (2c coverage 3–5%). Bump 0.10 is the setting for local learning, the
+same conclusion as for noise in §20.
+
+#### Code and results
+
+- Code (`analysis/hopfield_probe/`): `gwn_l1_online.py` (routes 1a–1c and
+  2a–2e, summary), `gwn_l1_twin.py`, `gwn_l1_lms.py`, `gwn_l1_noisefix.py`,
+  `gwn_l1_decay.py`, `gwn_l1_lockin2.py`, `gwn_l1_mult.py`. `run_gwn.sh` modes
+  `l1online` (16-task array), `l1twin`, `l1lms`, `l1noisefix`, `l1decay`,
+  `l1lockin2`, `l1mult`; probe tasks 26–31. Tests:
+  `hopfield_nav/tests/test_gwn_l1_online.py`.
+- Results (`.../hopfield_probe/gwn/l1_online/`): `side*.json` and
+  `summary.md` (main array), `twin.json`, `lms_rate.json`, `noisefix.json`,
+  `decay.json`, `lockin2.json`, `mult.json`, `encoders/` (boxes 14 and 20);
+  probe rows in `gwn/summary.md` (t26–t31).
+
+#### Next
+
+- Equalise units per pattern in the fully online route: lateral competition
+  among L1 units, or more units with an unbiased selection.
+- 1c under noise: a rate schedule between fixed 0.02 and 1 / (1 + n), over
+  longer walks.
+- The eigenvector step of route 1 as a network (it is what route 2 does per
+  unit; combining 1c's shift with 2c's units is untested).
