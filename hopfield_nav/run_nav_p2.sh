@@ -1955,6 +1955,13 @@ case "$VARIANT" in
                   HEAD_MLP_LAYERS=3; _rest="${_rest#_mlp3}" ;;
             _l3*) # Idea 3: a 3-layer stacked GRU (depth per step, same reason).
                   NUM_RNN_LAYERS=3; _rest="${_rest#_l3}" ;;
+            _rw*) # Idea 3: re-draw the training arenas' WALLS every update too
+                  # (with _rp). With 3 fixed wall layouts the stacked GRU learned
+                  # a displacement that reads at R^2 0.9 on its training arenas
+                  # and -0.3 on held-out ones: the view can stand in for the
+                  # grid code when there are only 3 layouts. Rebuilding 3 arenas
+                  # costs 0.4 s.
+                  REFRESH_WALL=${REFRESH_WALL:-1}; _rest="${_rest#_rw}" ;;
             _life*)
                   # Idea 3 stage 2 (GRID_MLP_NAV_PLAN §7.3, §7.5): short
                   # continual-protocol lifetimes, a curriculum on the number of
