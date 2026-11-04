@@ -2004,3 +2004,131 @@ a comparison).
 
 **Outputs**: `.../gwn/online/` (one JSON per script, encoders); probe tasks
 from 38 on in `run_gwn.sh`. Results go here, with a short verdict per question.
+
+### 22 results (run 2026-11-04)
+
+**Verdicts**
+
+- **22.1 Concurrent learning works if L3 starts late.** L1 and L3 learning on
+  the same walk, with L3's depression window opening once L1 has settled,
+  gives the same network as learning them one after the other, and it
+  navigates like the ideal (basin 29–30, reach 0.99). L3 switched on from
+  step 0 destroys the code.
+- **22.2 Steps matter most; places and box size barely.** Under cell noise
+  0.01 both rules approach their exact twins as steps grow, and the best
+  learning rate falls as steps grow. By 3M steps the shift rule is at its twin
+  in every condition, and lock-in is within 0.05–0.10.
+- **22.3 Noisy-trained networks:** PENDING_22_3
+- **22.4 The grid wave network is robust to test-time noise; the ideal
+  encoder is not.** At test noise 0.01 the network navigates as if the codes
+  were clean (basin 32, reach 0.99–1.0); the ideal falls to reach 0.58 with
+  no basin.
+
+#### 22.1 Concurrent learning (`gwn_concurrent.py`; one 14-box, bump 0.10)
+
+Without noise (lock-in η 0.2, 300k steps; L1 ends 100% pure, coverage 0.96;
+99.9% of units count as settled by 100k steps). Kernel alias / far sd /
+strong units, and the probe (whole / corner):
+
+| L3 | kernel | probe basin | probe reach | exact |
+|---|---|---|---|---|
+| always on from step 0 | 0.860 / 0.594 / 0 | | | |
+| late window (last 25,600 steps) | 0.192 / 0.034 / 480 | 29.9 / 29.0 | 0.986 / 0.991 | 1.000 |
+| self-timed, gate 0.9 | 0.458 / 0.123 / 0 | | | |
+| self-timed, gate 0.99 | 0.365 / 0.040 / 151 | 28.2 / 27.2 | 0.984 / 0.985 | 0.996 / 1.000 |
+| sequential (fresh walk after) | 0.192 / 0.034 / 480 | (= late) | | |
+| shift-rule L1, sequential | 0.060 / 0.030 / 540 | | | |
+
+- Always on: units built from early, impure L1 are worn down before L1
+  settles, and depression never recovers. Only 9 units survive.
+- The late window gives exactly the sequential gains: once L1 has settled,
+  whether L3 runs during or after the walk makes no difference.
+- The self-timed critical period (each L2 unit silent until its three inputs
+  settle, then 25,600 steps of depression) works at a strict gate. Units
+  born before their inputs are fully pure are over-depressed, so fewer units
+  are strong (151 against 480); a stricter gate or a delay after settling is
+  the obvious refinement.
+
+Under cell noise 0.01 (1M steps; depression with rest recovery):
+
+| L1 | L3 | kernel alias / far sd / strong |
+|---|---|---|
+| lock-in η 0.05 (impurity 3.6e-3) | late / sequential | 0.681 / 0.057 / 25; 0.678 |
+| lock-in η 0.02 (impurity 1.5e-3) | late / sequential | 0.502 / 0.041 / 249; 0.495 |
+| lock-in η 0.02 | self-timed 0.99 | 0.446 / 0.060 / 47 |
+| lock-in, either η | always on | 0.83–0.85, nearly no units |
+| shift rule, rate 0.005 | sequential, rest recovery | 0.097 / 0.032 / 457 |
+
+- Depression with rest recovery works: the shift-rule network reaches 0.097,
+  as the trace rule with its at-rest correction did (0.105, §21.1).
+- Under noise only 76% of lock-in units pass the 0.99 settledness bar by 1M
+  steps, so the self-timed version leaves many units unborn.
+
+#### 22.2 Noise scaling (`gwn_noise_scaling.py`; cell noise 0.01, bump 0.10)
+
+Full tables: `gwn/online/scaling_summary.md`. Network alias, learned / exact
+twin, with the best rate chosen at each checkpoint:
+
+| condition | shift rule 1c: 100k | 300k | 1M | 3M |
+|---|---|---|---|---|
+| 1 box, side 20 | 0.663 / 0.077 | 0.335 / 0.076 | 0.253 / 0.096 | 0.151 / 0.060 |
+| 3 boxes, side 20 | 0.426 / 0.093 | 0.269 / 0.088 | 0.175 / 0.072 | 0.082 / 0.073 |
+| 6 boxes, side 20 | 0.453 / 0.103 | 0.159 / 0.133 | 0.125 / 0.076 | 0.115 / 0.080 |
+| 12 boxes, side 20 | 0.407 / 0.090 | 0.215 / 0.069 | 0.198 / 0.092 | 0.079 / 0.082 |
+| 1 box, side 14 | 0.413 / 0.141 | 0.187 / 0.105 | 0.179 / 0.076 | 0.066 / 0.060 |
+| 1 box, side 40 | 0.341 / 0.086 | 0.155 / 0.096 | 0.226 / 0.084 | 0.115 / 0.126 |
+| 1 box, side 80 | 0.353 / 0.107 | 0.164 / 0.070 | 0.208 / 0.084 | 0.104 / 0.092 |
+
+| condition | lock-in 2c: 100k | 300k | 1M | 3M |
+|---|---|---|---|---|
+| 1 box, side 20 | 0.844 / 0.416 | 0.757 / 0.397 | 0.575 / 0.421 | 0.509 / 0.407 |
+| 3 boxes, side 20 | 0.739 / 0.322 | 0.648 / 0.338 | 0.534 / 0.388 | 0.481 / 0.425 |
+| 6 boxes, side 20 | 0.792 / 0.372 | 0.673 / 0.354 | 0.515 / 0.371 | 0.488 / 0.438 |
+| 12 boxes, side 20 | 0.817 / 0.333 | 0.660 / 0.327 | 0.495 / 0.367 | 0.439 / 0.362 |
+| 1 box, side 14 | 0.780 / 0.348 | 0.674 / 0.361 | 0.548 / 0.415 | 0.417 / 0.359 |
+| 1 box, side 40 | 0.805 / 0.398 | 0.678 / 0.396 | 0.545 / 0.403 | 0.465 / 0.416 |
+| 1 box, side 80 | 0.829 / 0.444 | 0.725 / 0.435 | 0.551 / 0.455 | 0.434 / 0.366 |
+
+- **Steps.** In every condition the gap to the twin shrinks with steps. The
+  shift rule's mean impurity falls from 4e-3–9e-2 at 100k steps to
+  2e-4–3e-3 at 3M (about 4 times per tenfold more steps between 300k and
+  3M); lock-in's from 7e-2–9e-2 to 6e-4–2e-3.
+- **The best rate falls with steps.** The shift rule's best rate is 0.02 up
+  to 1M steps and 0.005 at 3M; lock-in's best η goes 0.05, 0.05, 0.02, 0.01.
+  A rate that winds down as experience accumulates is what noise asks for,
+  the same winding down the depression rule already needs.
+- **Number of environments and box size** are second order. At 3M steps
+  every condition is within the sampling spread of its twin for the shift
+  rule. One exception: a single box of side 20 leaves module 13 ten times
+  more impure (5.0e-3 against about 2.2e-4 for boxes of side 14, 40 and 80),
+  and several side-20 boxes reduce it (0.7–1.8e-3). A per-axis count of visits
+  per phase does not separate side 20 from side 14, so the cause is not
+  pinned down.
+- The lock-in twins (0.36–0.44) are the uneven units per pattern, which cost
+  only basin in the probe (§21.1).
+
+#### 22.4 Test-time noise (`run.py --grid_noise`, whole region)
+
+The decoding bank (the probe's ruler for which cell a recalled state is) stays
+clean; stored goals and cues are noisy. A first run with a noisy ruler scored
+exact retrieval and basin wrongly (neighbouring cells' codes differ by less than
+the noise) and was rerun; reach and direction were unaffected.
+
+| network | test noise | abs err (°) | exact | basin | reach | dead (K = 5 / 10 / 20) |
+|---|---|---|---|---|---|---|
+| ideal r = 16, bump 0.10 | 0 | 1.04 | 1.000 | 32.1 | 0.998 | 0 / 0 / 0 |
+| ideal r = 16, bump 0.10 | 0.01 | 25.97 | 0.328 | none | 0.583 | 0.29 / 0.42 / 0.38 |
+| ideal r = 16, bump 0.10 | 0.03 | 84.24 | 0.020 | none | 0.029 | 1 / 1 / 1 |
+| exact L1 + depression L3 | 0 | 1.12 | 1.000 | 34.4 | 0.994 | 0 / 0 / 0 |
+| exact L1 + depression L3 | 0.01 | 1.66 | 1.000 | 31.7 | 0.997 | 0 / 0 / 0 |
+| exact L1 + depression L3 | 0.03 | 3.35 | 0.811 | 10.8 | 0.976 | 0 / 0 / 0.04 |
+| shift-rule L1 + depression L3 | 0.01 | 1.88 | 1.000 | 32.1 | 0.993 | 0 / 0 / 0 |
+| shift-rule L1 + depression L3 | 0.03 | 3.65 | 0.845 | 15.1 | 0.961 | 0.08 / 0 / 0.08 |
+| lock-in L1 + depression L3 | 0.01 | PENDING_2C_001 |
+| lock-in L1 + depression L3 | 0.03 | PENDING_2C_003 |
+
+- The ideal reads phases with atan2, which amplifies noise when bumps are
+  narrow (§20 step 2); the grid wave network sums over many cells per
+  pattern and averages noise out. At 0.01 the network is unaffected; at 0.03
+  it loses exact retrieval at a distance (basin 11–15) but still reaches
+  96–98% of goals.
