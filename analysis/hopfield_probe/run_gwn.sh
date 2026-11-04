@@ -9,7 +9,7 @@
 #
 #   bash analysis/hopfield_probe/run_gwn.sh build
 #   bash analysis/hopfield_probe/run_gwn.sh step1      # step 1 alone (GWN_DEP=afterany:JOB to chain)
-#   bash analysis/hopfield_probe/run_gwn.sh probe [ARRAY]     # default all (0-45)
+#   bash analysis/hopfield_probe/run_gwn.sh probe [ARRAY]     # default all (0-49)
 #   bash analysis/hopfield_probe/run_gwn.sh extra      # step3b + step2b
 #   bash analysis/hopfield_probe/run_gwn.sh local      # Sec 20.1: gains from one small environment
 #   bash analysis/hopfield_probe/run_gwn.sh l1online [ARRAY]  # Sec 21: GPU array, one task per
@@ -69,6 +69,9 @@ PROBES=(
     "../l1_online/encoders/local_1c_dep|online shift-rule L1, depression L3, test noise 0.03|w|--grid_noise 0.03"
     "../l1_online/encoders/local_2c_dep|lock-in L1 (all units), depression L3, test noise 0.01|w|--grid_noise 0.01"
     "../l1_online/encoders/local_2c_dep|lock-in L1 (all units), depression L3, test noise 0.03|w|--grid_noise 0.03"
+    # Sec 22.1 (tasks 46-49): L1 and L3 learning on the same walk, no noise
+    "../online/encoders/conc_clean_eta0.2_late|concurrent: lock-in L1 + late-window depression L3|wc"
+    "../online/encoders/conc_clean_eta0.2_self0.99|concurrent: lock-in L1 + self-timed depression L3 (0.99)|wc"
 )
 # regions: all = 4 regions, wc = whole + corner, w = whole only. An optional 4th
 # field holds extra run.py arguments (e.g. --grid_noise 0.01). An encoder with a
