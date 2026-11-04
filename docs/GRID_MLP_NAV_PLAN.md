@@ -1274,3 +1274,41 @@ its training-side losses already score unseen arenas. By u1190 its
 displacement loss is 0.16, so it does compute the direction to the goal from
 grid codes at arenas it has never seen, yet its revisits (0.49 to 0.51) barely
 beat its first visits (0.43 to 0.48).
+
+How good is the direction it holds, and would following it be enough? The
+goal probe now also applies the agent's own trained displacement head to the
+held-out states. (Its ridge readouts, refit on only 6 arenas, underestimate:
+R² 0.09 refit against 0.48 for the trained head on the same states.)
+
+| stacked GRU at u1500, held-out arenas, after the find | trained head R² | direction error |
+|---|---|---|
+| walls fixed (`_l3`) | 0.26 | 51° |
+| walls redrawn every update (`_rw_l3`) | 0.48 | 45° |
+
+So the wall shortcut was real: redrawing walls nearly doubles how well the
+direction carries to new arenas. But 45° on average is rough.
+`analysis/idea3/follow_head.py` then runs the two-visit task with every move
+after the find steered by the agent's own head, at full length, nothing else
+changed. That is the most the policy could get from the direction it holds.
+
+| held-out arenas, two visits | steps per return within a visit | revisit found | revisit steps |
+|---|---|---|---|
+| `_rw_l3` u1500, its policy | 56 | 0.52 | 73 |
+| `_rw_l3` u1500, steered by its head | 34 | 0.36 | 65 |
+| `_l3` u4000, its policy | 57 | 0.38 | 88 |
+| `_l3` u4000, steered by its head | 47 | 0.17 | 78 |
+| idea 1, for scale | about 12 | 1.00 | about 12 |
+
+Following its own direction shortens returns within a visit but nowhere near
+idea 1's, and makes revisits fail more often (a direction 45° off at full
+speed drives into walls). So the direction is too rough to navigate by, not
+only unused.
+
+Answer to the depth question. Depth helps the GRU store the goal and compute
+part of the direction, and the stacked GRU is the only arm with any revisit
+gain. It does not make the GRU return. The direction it computes at new arenas
+is far less accurate than the grid MLP's (45° against 0.4 to 2°), and the
+policy does not follow it. The Phase-1 grid MLP reached sub-degree accuracy
+only with dense, displacement-balanced supervised pairs (raw walks plateau at
+8 to 10°, §10 of the NN-control plan); RL rollouts plus an auxiliary head give
+far less of that signal. The `_rw_l3` arm runs to u4000.
