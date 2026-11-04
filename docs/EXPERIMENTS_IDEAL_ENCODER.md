@@ -50,7 +50,10 @@ memory compute, and can a biologically plausible network reach it?
      learns the shift; with the eigenvector step the network equals exact L1
      (probe basin 34). A fully online lock-in rule with a slow turn learns exact
      pairs too, but holds patterns with uneven numbers of units, which aliases
-     (0.27–0.34) unless units per pattern are equalised (0.07–0.10).
+     (0.27–0.34) unless units per pattern are equalised (0.07–0.10). In the
+     probe that alias barely matters: with L1 and L3 both from local rules,
+     the fully online network navigates like the ideal (basin 30, reach
+     0.98–0.995, exact 1.000; §21.1).
    - Multiplication accurate to a few percent.
    - Narrow grid bumps (0.10 of the period) to survive cell noise, with gains
      corrected for jitter at rest.
@@ -74,14 +77,16 @@ memory compute, and can a biologically plausible network reach it?
 | 20.1 | Is the gain local and incremental? | Yes; a few steps in one 10-cell box suffice; depression rule r = √(2κT) |
 | 20.2 | Pruning instead of weighting | Stochastic pruning at keep-probability ∝ P(n) = the ideal's construction |
 | 21 | Can L1 be learned locally and online, inside one environment? | Yes in one 14-box: online shift rule + eigenvectors = exact; fully online lock-in exact per unit but uneven counts alias; noise doubles the shift learners' alias and breaks lock-in; side 13 fails (wrap step unseen) |
+| 21.1 | More boxes, longer walks; L1 and L3 both local in the probe | Fully online network (lock-in L1 + depression L3, one 14-box) navigates like the ideal; more boxes barely help the lock-in counts (a strong-pattern bias); under noise a slow rate over 1M steps brings the shift rule to its twin, lock-in still fails |
 
 **Open**
 
-- Equal units per pattern in the fully online L1 route (§21): lateral
-  competition among L1 units, or an unbiased selection with more units.
-- L1 under cell noise with a local rule: the online shift rule at rate 0.02
-  aliases about twice its exact twin after 300k steps (§21); a rate schedule
-  is untested.
+- Equal units per pattern in the fully online L1 route (§21): it costs about
+  4 cells of probe basin, not retrieval (§21.1).
+- The lock-in L1 under cell noise: units reach purity 0.99 but the network
+  aliases at 0.66–0.70 even after 1M steps (§21.1). The shift rule is fine
+  under noise at rate 0.005 over 1M steps.
+- L1 and L3 learning at the same time (all tests so far learn L3 after L1).
 - The eigenvector step of route 1 as a network (§21).
 - Stochastic pruning simulated as an online process (§20.2).
 - Kernel shape as a lever for wide kernels, r ≥ 48 (§16.1).
@@ -1877,10 +1882,17 @@ depression rule w ← w·max(0, 1 − κ|Δz|²) over 25,600 further steps
 
 | L1 | depression L3: alias / far sd | trace L3: alias | probe (whole / corner): basin, reach |
 |---|---|---|---|
-| exact | 0.054 / 0.032 | 0.054 | PROBE_EXACT |
-| 1c (100k steps) | 0.094 / 0.029 | 0.094 | PROBE_1C |
-| 2c, every unit (300k steps) | 0.340 / 0.037 | 0.340 | PROBE_2C |
+| exact | 0.054 / 0.032 | 0.054 | 34.4 / 34.9, 0.994 / 0.981 |
+| 1c (100k steps) | 0.094 / 0.029 | 0.094 | 33.4 / 34.1, 0.984 / 0.996 |
+| 2c, every unit (300k steps) | 0.340 / 0.037 | 0.340 | 30.2 / 29.4, 0.995 / 0.981 |
 
+- **All three navigate.** Exact retrieval is 1.000 everywhere, direction
+  error 1.1–1.6°, no dead goals. The fully online network has no offline step
+  anywhere (lock-in L1, depression L3, one 14-box, 325k steps in all) and
+  navigates like the ideal encoder (ideal r = 16: basin 32.1 / 29.5, reach
+  0.998 / 0.987). Its kernel alias of 0.34 costs about 4 cells of basin
+  against exact L1 and nothing else, so the alias metric overstates what
+  uneven units per pattern cost the memory.
 - The depression rule gives the same gains as the trace rule to three
   decimals. L3 learned after L1 had finished; learning both at once is
   untested, and early, impure L1 units would be depressed hard, so L3
