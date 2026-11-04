@@ -1970,9 +1970,18 @@ case "$VARIANT" in
                   # lifetimes of 3 and 6 arenas. 6 arenas x 16 rows per update
                   # (more arenas per gradient step than task3r's 3 x 32, same
                   # steps); the displacement head carries the dense goal signal.
-                  [ -z "${SCHEDULE_SET:-}" ] && SCHEDULE=${I3_SUP_SCHEDULE:-'task:800,visits=2,sup=1,beta=1->0 ; task:700,visits=2,sup=1,beta=0 ; lifetime:800,envs=3,iters=2,sup=1,beta=0 ; lifetime:700,envs=6,iters=1,sup=1,beta=0'}
+                  # Wave 2 (2026-11-04): wave 1 (lr 1e-4, 2 passes, noise 30,
+                  # disp weight 1) learned to copy the previous move while
+                  # the teacher drove (31 deg) and fell to chance as it
+                  # handed over; its displacement loss stayed 0.35-0.9 where
+                  # the RL arms reached 0.1 with 80 steps per update. So: lr
+                  # 1e-3 (the BC line's), 4 passes, displacement weight 2,
+                  # noise 60 (copying the last move is then ~48 deg off), and
+                  # 300 updates of pure teacher before the handover.
+                  [ -z "${SCHEDULE_SET:-}" ] && SCHEDULE=${I3_SUP_SCHEDULE:-'task:300,visits=2,sup=1,beta=1,lr=1e-3 ; task:700,visits=2,sup=1,beta=1->0,lr=1e-3 ; task:500,visits=2,sup=1,beta=0,lr=1e-3 ; lifetime:800,envs=3,iters=2,sup=1,beta=0,lr=1e-3 ; lifetime:700,envs=6,iters=1,sup=1,beta=0,lr=1e-3'}
                   ENVS_PER_WORLD=6; BATCH_ENVS=${FIX_BATCH_ENVS:-16}; ENV_REPEATS=2
-                  AUX_DISP_WEIGHT=${AUX_DISP_WEIGHT:-1.0}
+                  AUX_DISP_WEIGHT=${AUX_DISP_WEIGHT:-2.0}
+                  SUP_EPOCHS=${SUP_EPOCHS:-4}; TEACHER_NOISE_DEG=${TEACHER_NOISE_DEG:-60}
                   _rest="${_rest#_sup}" ;;
             _life*)
                   # Idea 3 stage 2 (GRID_MLP_NAV_PLAN §7.3, §7.5): short
