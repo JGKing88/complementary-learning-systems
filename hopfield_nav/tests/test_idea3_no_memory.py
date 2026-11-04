@@ -154,7 +154,9 @@ def test_merge_refuses_ends_on_goal_rollouts():
 
 @pytest.mark.slow
 @pytest.mark.parametrize("schedule", ["task:3,visits=2",
-                                      "task:2,visits=2 ; lifetime:2,envs=2,iters=2"])
+                                      "task:2,visits=2 ; lifetime:2,envs=2,iters=2",
+                                      "task:2,visits=2,sup=1,beta=1->0 ; "
+                                      "lifetime:2,envs=2,iters=2,sup=1,beta=0"])
 def test_cli_task_run_under_none(tmp_path, schedule):
     root = tmp_path
     env = dict(os.environ, CLS_RUNS=str(root), WANDB_MODE="disabled",
@@ -177,7 +179,7 @@ def test_cli_task_run_under_none(tmp_path, schedule):
          "--encoder_checkpoint", str(enc), *args, "--distal_amp", "1.0",
          "--memory_backend", "none", "--input_grid_code",
          "--no-input_hopfield_signal", "--n_train_distractors_max", "0",
-         "--print_every", "1", "--save_dir", str(save)],
+         "--print_every", "1", "--aux_disp_weight", "1.0", "--save_dir", str(save)],
         cwd=REPO_ROOT, env=env, capture_output=True, text=True, timeout=900)
     assert proc.returncode == 0, proc.stdout[-3000:] + proc.stderr[-3000:]
     assert "task={0:" in proc.stdout
@@ -413,6 +415,96 @@ def test_deeper_models_replay_exactly(mlp, layers):
                                   n_envs=2, iters=2, epsilon=0.0)
     assert any(r.goal_reached.any() for r in rs)
     assert replay_ok(lifetime.pack(rs))
+
+
+def _teacher_visit(collector, agent, env, cfg, h, fired, seed, beta):
+    torch.manual_seed(seed)
+    np.random.seed(seed)
+    return collector.collect_rollout(
+        env, agent, [None] * cfg.batch_envs, allow_store=True, h_rnn=h,
+        env_offset=(3, 4), task_mode=True, store_fired_init=fired,
+        teacher_beta=beta, teacher_noise_deg=0.0)
+
+
+def test_teacher_labels_and_forcing():
+    from hopfield_nav.world.env import make_env
+    cfg = none_cfg(batch_envs=6, steps_per_rollout=40)
+    collector, agent, _ = make_collector(cfg, seed=0)
+    env = make_env(cfg.env, "continuous", seed=5)
+    env.set_goal((2, 3))
+    r = _teacher_visit(collector, agent, env, cfg, None, None, 0, beta=1.0)
+    lbl, disp, known = r.teacher_move_action, r.goal_disp, r.goal_known
+    assert lbl.shape == (6, 40, 2) and disp.shape == (6, 40, 2) and known.shape == (6, 40)
+    # beta 1 with no noise: the executed move IS the label (up to the speed
+    # clamp, which leaves a move inside [min, max] unchanged).
+    assert torch.allclose(r.move_actions, lbl, atol=1e-5)
+    # Known flips on after the first touch and stays on; after it the label
+    # points straight at the goal.
+    g = r.goal_reached.numpy() > 0
+    k = known.numpy() > 0
+    for b in range(6):
+        if g[b].any():
+            t0 = int(np.argmax(g[b]))
+            assert not k[b, :t0 + 1].any() and k[b, t0 + 1:].all()
+    m = known > 0
+    u = disp[m] / disp[m].norm(dim=-1, keepdim=True).clamp_min(1e-6)
+    lu = lbl[m] / lbl[m].norm(dim=-1, keepdim=True)
+    far = disp[m].norm(dim=-1) > 0.1
+    assert m.any() and torch.allclose(u[far], lu[far], atol=1e-4)
+    # The teacher goes straight back: reaches after the first are frequent.
+    assert int(g.sum()) > 6
+    # beta 0: nothing is overridden, the student acts.
+    r0 = _teacher_visit(collector, agent, env, cfg, None, None, 0, beta=0.0)
+    assert not torch.allclose(r0.move_actions, r0.teacher_move_action, atol=1e-3)
+
+
+def test_teacher_fields_survive_merge_and_pack():
+    from hopfield_nav.rollout import lifetime
+    from hopfield_nav.training.task import merge_visits
+    from hopfield_nav.world.env import make_env
+    cfg = none_cfg(batch_envs=4, steps_per_rollout=30)
+    collector, agent, _ = make_collector(cfg, seed=0)
+    envs = [make_env(cfg.env, "continuous", seed=s) for s in (5, 6)]
+    envs[0].set_goal((2, 3))
+    envs[1].set_goal((1, 1))
+    r1 = _teacher_visit(collector, agent, envs[0], cfg, None, None, 0, beta=0.5)
+    r2 = _teacher_visit(collector, agent, envs[0], cfg, r1.h_final,
+                        r1.store_fired_final, 1, beta=0.5)
+    mrg = merge_visits([r1, r2])
+    assert torch.equal(mrg.goal_known, torch.cat([r1.goal_known, r2.goal_known], 1))
+    assert torch.equal(mrg.teacher_move_action,
+                       torch.cat([r1.teacher_move_action, r2.teacher_move_action], 1))
+    torch.manual_seed(0)
+    np.random.seed(0)
+    rs, _ = lifetime.run_lifetime(collector, agent, envs, [(3, 4), (40, 9)],
+                                  n_envs=2, iters=2, epsilon=0.0, teacher_beta=1.0,
+                                  teacher_noise_deg=0.0)
+    pk = lifetime.pack(rs)
+    b = 0
+    want = torch.cat([r.goal_disp[b][r.alive_mask[b] > 0] for r in rs])
+    assert torch.equal(pk.goal_disp[b, :len(want)], want)
+    assert lifetime.pad_common([pk, lifetime.pack(rs[:2])])[1].goal_known is not None
+
+
+def test_sup_update_learns():
+    from hopfield_nav.training.task import merge_visits
+    from hopfield_nav.updates.sup import sup_update
+    from hopfield_nav.world.env import make_env
+    cfg = none_cfg(batch_envs=8, steps_per_rollout=40)
+    cfg.agent.aux_disp_weight = 1.0
+    collector, agent, _ = make_collector(cfg, seed=0)
+    env = make_env(cfg.env, "continuous", seed=5)
+    env.set_goal((2, 3))
+    r1 = _teacher_visit(collector, agent, env, cfg, None, None, 0, beta=1.0)
+    r2 = _teacher_visit(collector, agent, env, cfg, r1.h_final, r1.store_fired_final, 1, beta=1.0)
+    batch = [merge_visits([r1, r2])]
+    opt = torch.optim.Adam(agent.parameters(), lr=3e-3)
+    agent.train()
+    first = sup_update(agent, batch, cfg.ppo, opt, epochs=1, n_minibatches=1)
+    for _ in range(30):
+        last = sup_update(agent, batch, cfg.ppo, opt, epochs=1, n_minibatches=1)
+    assert last["act_nll"] < first["act_nll"] and last["disp_loss"] < first["disp_loss"]
+    assert np.isfinite(last["dir_err_known_deg"])
 
 
 def test_lifetime_schedule_parses():

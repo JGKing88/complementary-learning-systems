@@ -1962,6 +1962,18 @@ case "$VARIANT" in
                   # grid code when there are only 3 layouts. Rebuilding 3 arenas
                   # costs 0.4 s.
                   REFRESH_WALL=${REFRESH_WALL:-1}; _rest="${_rest#_rw}" ;;
+            _sup*) # Idea 3 trained by supervision (GRID_MLP_NAV_PLAN §7.6; Jack,
+                  # 2026-11-04). The collector's teacher labels every step
+                  # (search before the find, straight at the goal after) and
+                  # makes a beta share of the moves: pretraining at beta 1
+                  # hands over to DAgger at beta 0, on two-visit tasks, then on
+                  # lifetimes of 3 and 6 arenas. 6 arenas x 16 rows per update
+                  # (more arenas per gradient step than task3r's 3 x 32, same
+                  # steps); the displacement head carries the dense goal signal.
+                  [ -z "${SCHEDULE_SET:-}" ] && SCHEDULE=${I3_SUP_SCHEDULE:-'task:800,visits=2,sup=1,beta=1->0 ; task:700,visits=2,sup=1,beta=0 ; lifetime:800,envs=3,iters=2,sup=1,beta=0 ; lifetime:700,envs=6,iters=1,sup=1,beta=0'}
+                  ENVS_PER_WORLD=6; BATCH_ENVS=${FIX_BATCH_ENVS:-16}; ENV_REPEATS=2
+                  AUX_DISP_WEIGHT=${AUX_DISP_WEIGHT:-1.0}
+                  _rest="${_rest#_sup}" ;;
             _life*)
                   # Idea 3 stage 2 (GRID_MLP_NAV_PLAN §7.3, §7.5): short
                   # continual-protocol lifetimes, a curriculum on the number of

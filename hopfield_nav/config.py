@@ -566,6 +566,11 @@ class TrainConfig:
     # which is what made `--randomize_goal_per_rollout` wrong under the env
     # generator and is why this is a separate, legacy-path-only knob.
     redraw_goal_per_rollout: bool = False
+    # Idea 3, supervised stages (sup=1; GRID_MLP_NAV_PLAN §7.6): SD in degrees
+    # of the Gaussian turn on the teacher's executed moves (its labels stay
+    # clean), and passes of the supervised update over each update's data.
+    teacher_noise_deg: float = 30.0
+    sup_epochs: int = 2
     # Task regime only (docs/TASK_FAITHFUL_PLAN.md, wave 2): keep the novelty
     # / revisit shaping running after a trajectory's goal is stored instead of
     # switching to goal-reward-only. Wave 1 showed why: with novelty

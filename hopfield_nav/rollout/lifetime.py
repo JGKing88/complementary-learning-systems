@@ -29,6 +29,10 @@ from .types import RolloutBatch
 _PACKED = ("obs", "move_actions", "store_actions", "move_log_probs",
            "store_log_probs", "values", "rewards", "goal_reached",
            "explore_mask", "policy_action_mask")
+# Time-axis fields only the supervised teacher fills (§7.6); joined or packed
+# when every rollout has them.
+OPTIONAL_TIME_FIELDS = ("teacher_move_action", "move_label_mask", "goal_disp",
+                        "goal_known")
 
 
 def protocol_order(n_envs: int, iters: int) -> list[int]:
@@ -41,7 +45,8 @@ def protocol_order(n_envs: int, iters: int) -> list[int]:
 
 
 def run_lifetime(collector, agent, envs, offsets, *, n_envs: int, iters: int,
-                 epsilon: float, update_idx: int = 0, h0=None):
+                 epsilon: float, update_idx: int = 0, h0=None,
+                 teacher_beta: float | None = None, teacher_noise_deg: float = 30.0):
     """Run one lifetime per row over ``envs[:n_envs]``; returns
     ``(rollouts, order)``, one rollout per trial.
 
@@ -67,7 +72,8 @@ def run_lifetime(collector, agent, envs, offsets, *, n_envs: int, iters: int,
                 env_offset=offsets[j], update_idx=update_idx,
                 epsilon_now=epsilon, goal_in_memory_init=False,
                 ends_on_goal=True, task_mode=True, store_fired_init=fired[j],
-                freeze_done_state=True)
+                freeze_done_state=True, teacher_beta=teacher_beta,
+                teacher_noise_deg=teacher_noise_deg)
         finally:
             env.goals_active = was_active
         h = r.h_final
@@ -90,7 +96,9 @@ def pack(rollouts: list[RolloutBatch]) -> RolloutBatch:
     idx = torch.argsort(key, dim=1)[:, :L]                            # (B, L)
     keep = torch.gather(alive, 1, idx)
     out = {}
-    for name in _PACKED:
+    names = _PACKED + tuple(n for n in OPTIONAL_TIME_FIELDS
+                            if all(getattr(r, n) is not None for r in rollouts))
+    for name in names:
         x = torch.cat([getattr(r, name) for r in rollouts], dim=1)
         ix = idx.view(B, L, *([1] * (x.dim() - 2))).expand(B, L, *x.shape[2:])
         g = torch.gather(x, 1, ix)
@@ -118,8 +126,10 @@ def pad_common(batches: list[RolloutBatch]) -> list[RolloutBatch]:
             z = x.new_zeros(x.shape[0], n, *x.shape[2:])
             return torch.cat([x, z], dim=1)
 
+        names = _PACKED + tuple(n for n in OPTIONAL_TIME_FIELDS
+                                if getattr(b, n) is not None)
         out.append(RolloutBatch(
-            **{name: pad(getattr(b, name)) for name in _PACKED},
+            **{name: pad(getattr(b, name)) for name in names},
             bootstrap_value=b.bootstrap_value,
             alive_mask=pad(b.alive_mask),
             h_final=b.h_final,
@@ -191,4 +201,4 @@ def summarise(outcomes: list[dict]) -> dict[str, float]:
     }
 
 
-__all__ = ["pack", "pad_common", "protocol_order", "run_lifetime", "summarise", "trial_outcomes"]
+__all__ = ["OPTIONAL_TIME_FIELDS", "pack", "pad_common", "protocol_order", "run_lifetime", "summarise", "trial_outcomes"]

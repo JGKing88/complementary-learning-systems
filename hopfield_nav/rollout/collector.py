@@ -80,6 +80,8 @@ class RolloutCollector:
         task_mode: bool = False,
         store_fired_init: np.ndarray | None = None,
         freeze_done_state: bool = False,
+        teacher_beta: float | None = None,
+        teacher_noise_deg: float = 30.0,
     ) -> RolloutBatch:
         """Collect one rollout of T steps across B parallel episodes in one env.
 
@@ -112,6 +114,17 @@ class RolloutCollector:
                 alive. Idea 3's lifetimes (training/lifetime.py) carry that
                 state into the next trial, so it must be the state right
                 after the row's last real step.
+            teacher_beta: idea 3's supervised training (GRID_MLP_NAV_PLAN
+                §7.6). None = no teacher, and nothing below changes. Otherwise
+                every step is labelled with the teacher's move -- toward the
+                nearest unvisited cell until this row has touched the goal
+                (``novelty_action_batch_continuous``), straight at the goal
+                after -- and with probability ``teacher_beta`` per row and
+                step the teacher's move, turned by Gaussian noise of
+                ``teacher_noise_deg``, is the one executed. The label is the
+                clean move, so the previous action does not give the next one
+                away. Also records the vector to the goal and whether the goal
+                was known before each step (``goal_disp``, ``goal_known``).
 
         Returns:
             RolloutBatch with all tensors on self.device.
@@ -133,6 +146,9 @@ class RolloutCollector:
             and cfg.hopfield.auto_store_warmup > 0
             and update_idx <= cfg.hopfield.auto_store_warmup
         )
+        teacher_on = teacher_beta is not None
+        if teacher_on and (cfg.agent.movement_mode != "continuous" or not task_mode):
+            raise ValueError("the supervised teacher runs continuous task-mode rollouts")
         if freeze_done_state and not ends_on_goal:
             raise ValueError("freeze_done_state needs ends_on_goal")
         if (self.memory_readout is not None or self.no_memory) and not task_mode:
@@ -306,7 +322,7 @@ class RolloutCollector:
         # visited_cells is needed for novelty + revisit shaping (and BC novelty
         # teacher). Wall + persistence shaping only need positional / action
         # info, not visited_cells.
-        need_visited = novelty_on or revisit_on or collect_teacher
+        need_visited = novelty_on or revisit_on or collect_teacher or teacher_on
         if need_visited:
             visited_cells = np.zeros((B, cfg.env.size, cfg.env.size), dtype=bool)
             # Mark initial positions as visited so first step doesn't award novelty for starting cell
@@ -323,6 +339,20 @@ class RolloutCollector:
             move_label_mask = torch.zeros(B, T, device=self.device)
             store_label_mask = torch.zeros(B, T, device=self.device)
             trust_hop_mask = torch.zeros(B, T, device=self.device)
+
+        # Idea 3's supervised teacher (see the docstring). Its own RNG, seeded
+        # from numpy's global stream, so the env's streams are untouched.
+        if teacher_on:
+            teacher_rng = np.random.RandomState(np.random.randint(2 ** 31 - 1))
+            # Inside the speed Beta's support: the label must have a finite
+            # likelihood under the polar head.
+            _lo = float(cfg.env.min_action_norm or 0.0)
+            _hi = float(cfg.env.max_action_norm or 1.0)
+            teacher_speed = _lo + 0.9 * (_hi - _lo)
+            teacher_lbl = torch.zeros(B, T, 2, device=self.device)
+            teacher_lmask = torch.zeros(B, T, device=self.device)
+            goal_disp_buf = torch.zeros(B, T, 2, device=self.device)
+            goal_known_buf = torch.zeros(B, T, device=self.device)
 
         # Caching for the Gram-Schmidt basis. We invalidate the cache for an
         # env on (a) the very first step (cached_W=None forces full recompute),
@@ -491,6 +521,38 @@ class RolloutCollector:
                 elif nav_action is not None:
                     move_action_override = nav_action
                     move_override_mask = nav_mask
+
+                if teacher_on:
+                    # The labels, every step; the executed move on a beta
+                    # fraction of rows (epsilon is off in supervised stages).
+                    pos_c = vec.positions_continuous()
+                    to_goal = np.asarray(vec._goal, dtype=np.float32)[None, :] - pos_c
+                    g_unit = to_goal / np.maximum(
+                        np.linalg.norm(to_goal, axis=1, keepdims=True), 1e-6)
+                    nov = novelty_action_batch_continuous(
+                        pos_c, visited_cells, cfg.env.size, teacher_rng)
+                    clean = np.where(fired_pre[:, None], g_unit, nov).astype(np.float32)
+                    ang = np.arctan2(clean[:, 1], clean[:, 0]) + teacher_rng.normal(
+                        0.0, np.deg2rad(teacher_noise_deg), B)
+                    noisy = np.stack([np.cos(ang), np.sin(ang)], 1).astype(np.float32)
+                    teacher_lbl[:, t] = torch.from_numpy(clean * teacher_speed).to(self.device)
+                    goal_disp_buf[:, t] = torch.from_numpy(to_goal.astype(np.float32)).to(self.device)
+                    goal_known_buf[:, t] = torch.from_numpy(
+                        fired_pre.astype(np.float32)).to(self.device)
+                    # An at-goal step's move is discarded, so it is not a label.
+                    teacher_lmask[:, t] = torch.from_numpy(
+                        (~at_goal_mask).astype(np.float32)).to(self.device)
+                    take = torch.from_numpy(
+                        teacher_rng.rand(B) < float(teacher_beta)).to(self.device)
+                    if take.any():
+                        t_act = torch.from_numpy(noisy * teacher_speed).to(
+                            self.device).unsqueeze(1)
+                        if move_action_override is None:
+                            move_action_override, move_override_mask = t_act, take
+                        else:
+                            move_action_override = torch.where(
+                                take.view(-1, 1, 1), t_act, move_action_override)
+                            move_override_mask = move_override_mask | take
 
                 # 4c. BC teacher-label computation. Movement label:
                 #   has_memory=True  -> Hopfield-derived direction (student
@@ -1095,9 +1157,11 @@ class RolloutCollector:
             alive_mask=all_alive_mask if ends_on_goal else None,
             visited_targets=all_visited_targets,
             trust_hop_mask=trust_hop_mask if collect_teacher else None,
-            teacher_move_action=teacher_move if collect_teacher else None,
+            teacher_move_action=(teacher_lbl if teacher_on else
+                                 teacher_move if collect_teacher else None),
             teacher_store_action=teacher_store if collect_teacher else None,
-            move_label_mask=move_label_mask if collect_teacher else None,
+            move_label_mask=(teacher_lmask if teacher_on else
+                             move_label_mask if collect_teacher else None),
             store_label_mask=store_label_mask if collect_teacher else None,
             diag=_diag.summary() if _diag is not None else None,
             diag_post=_diag_post.summary() if _diag_post is not None else None,
@@ -1105,6 +1169,8 @@ class RolloutCollector:
             store_fired_final=(agent_goal_store_fired.copy()
                                if task_mode else None),
             h_final=None if h_rnn is None else h_rnn.detach().clone(),
+            goal_disp=goal_disp_buf if teacher_on else None,
+            goal_known=goal_known_buf if teacher_on else None,
         )
 
     # The three helpers below moved to signal.py so that eval.agent_step runs

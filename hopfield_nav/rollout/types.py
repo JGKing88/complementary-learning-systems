@@ -65,5 +65,12 @@ class RolloutBatch:
     # Idea 3 (memory_backend "none") hands it to the next visit, the way the
     # other backends hand over their memory.
     h_final: "torch.Tensor | None" = None
+    # Idea 3 supervised training (GRID_MLP_NAV_PLAN §7.6; collector
+    # ``teacher_beta``): (B, T, 2) the vector from the agent to the goal, in
+    # cells, and (B, T) 1 where the goal had been touched before this step
+    # (this visit or a carried one). The teacher's labels ride
+    # ``teacher_move_action`` / ``move_label_mask`` above.
+    goal_disp: "torch.Tensor | None" = None
+    goal_known: "torch.Tensor | None" = None
 
 __all__ = ["RolloutBatch"]

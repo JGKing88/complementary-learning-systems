@@ -48,7 +48,7 @@ INTERLEAVE_DEFAULT_FRACTION = 0.5
 STAGE_KEYS = (
     "lr", "empty_frac", "anneal", "novelty", "eps",
     "dist_min", "dist_max", "emp_dist_min", "emp_dist_max",
-    "visits", "envs", "iters",
+    "visits", "envs", "iters", "sup", "beta",
 )
 
 
@@ -88,6 +88,13 @@ class Stage:
     # block (the continual protocol's iterations per block).
     envs: int | None = None
     iters: int | None = None
+    # `task` / `lifetime`, idea 3 (GRID_MLP_NAV_PLAN §7.6): sup=1 trains by
+    # the supervised update on the collector teacher's labels instead of PPO;
+    # beta is the share of moves the teacher makes, `a` or `a->b` (linear over
+    # the stage).
+    sup: int | None = None
+    beta_start: float | None = None
+    beta_end: float | None = None
 
 
 @dataclass
@@ -108,6 +115,8 @@ class Knobs:
     visits: int = 1
     envs: int = 2
     iters: int = 1
+    sup: bool = False
+    beta: float = 0.0
 
 
 @dataclass
@@ -261,7 +270,19 @@ def _parse_stage(text: str) -> Stage:
         visits=_num("visits", int),
         envs=_num("envs", int),
         iters=_num("iters", int),
+        sup=_num("sup", int),
     )
+    if "beta" in kwargs:
+        stage.beta_start, stage.beta_end = _parse_fraction(
+            kwargs["beta"], f"stage {text!r} (beta)")
+    for key in ("sup", "beta"):
+        if key in kwargs and kind not in ("task", "lifetime"):
+            raise ScheduleError(
+                f"stage {text!r}: {key} applies to the 'task' and 'lifetime' kinds")
+    if stage.sup is not None and stage.sup not in (0, 1):
+        raise ScheduleError(f"stage {text!r}: sup is 0 or 1, got {stage.sup}")
+    if stage.beta_start is not None and not stage.sup:
+        raise ScheduleError(f"stage {text!r}: beta needs sup=1")
     for key in ("envs", "iters"):
         v = getattr(stage, key)
         if v is not None:
@@ -321,10 +342,13 @@ def format_schedule(stages: list[Stage]) -> str:
             parts.append(f"anneal={s.anneal}")
         for key in ("lr", "novelty", "eps",
                     "dist_min", "dist_max", "emp_dist_min", "emp_dist_max",
-                    "visits", "envs", "iters"):
+                    "visits", "envs", "iters", "sup"):
             v = getattr(s, key)
             if v is not None:
                 parts.append(f"{key}={v:g}")
+        if s.beta_start is not None:
+            parts.append("beta=" + (f"{s.beta_start:g}" if s.beta_start == s.beta_end
+                                    else f"{s.beta_start:g}->{s.beta_end:g}"))
         out.append(",".join(parts))
     return " ; ".join(out)
 
@@ -382,6 +406,12 @@ def resolve(stage: Stage, local_update: int, defaults: Knobs) -> Knobs:
         v = getattr(stage, field)
         if v is not None:
             setattr(knobs, field, v)
+    knobs.sup = bool(stage.sup)
+    if stage.beta_start is not None:
+        t = min(1.0, max(0.0, (local_update - 1) / float(max(stage.updates - 1, 1))))
+        knobs.beta = stage.beta_start + t * (stage.beta_end - stage.beta_start)
+    else:
+        knobs.beta = 0.0
     return knobs
 
 

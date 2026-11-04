@@ -47,6 +47,7 @@ from .rollout import diagnostics as rollout_diag
 # steps carrying a recall is a low bar that still excludes that case.
 MIN_COS_FRAC = 0.5
 from .updates.ppo import ppo_update
+from .updates.sup import sup_update
 from .evaluation.checkpoint_io import cfg_from_checkpoint
 from .training.cfg_args import settle_encoder
 from .training.explore import ExploreRegime
@@ -541,6 +542,10 @@ def run_navigate(
         # row's lifetime one PPO trajectory.
         is_lifetime = stage.kind == "lifetime"
         lifetime_packed, lifetime_out = [], []
+        # Idea 3, supervised (GRID_MLP_NAV_PLAN §7.6): the collector's teacher
+        # labels every step and makes a `beta` share of the moves; no epsilon.
+        is_sup = bool(getattr(knobs, "sup", False))
+        t_beta = float(knobs.beta) if is_sup else None
         if is_lifetime:
             cfg.hopfield.novelty_reward = knobs.novelty
             for w_idx, world in enumerate(worlds):
@@ -552,7 +557,9 @@ def run_navigate(
                     _rs, _order = lifetime.run_lifetime(
                         collector, agent, [world.envs[k] for k in pick],
                         [world.offsets[k] for k in pick], n_envs=knobs.envs,
-                        iters=knobs.iters, epsilon=knobs.eps, update_idx=update)
+                        iters=knobs.iters, epsilon=0.0 if is_sup else knobs.eps,
+                        update_idx=update, teacher_beta=t_beta,
+                        teacher_noise_deg=cfg.teacher_noise_deg)
                     rollouts.extend(_rs)
                     pre_flags.extend([False] * len(_rs))
                     lifetime_packed.append(lifetime.pack(_rs))
@@ -613,11 +620,13 @@ def run_navigate(
                             h_rnn=_carry_h if carry_state else None,
                             env_offset=env_offset,
                             update_idx=update, aux_scale=1.0,
-                            epsilon_now=spec.epsilon,
+                            epsilon_now=0.0 if is_sup else spec.epsilon,
                             goal_in_memory_init=spec.goal_in_memory_init,
                             ends_on_goal=spec.ends_on_goal,
                             task_mode=spec.task_mode,
                             store_fired_init=spec.store_fired_init,
+                            teacher_beta=t_beta,
+                            teacher_noise_deg=cfg.teacher_noise_deg,
                         )
                         rollouts.append(rollout)
                         seq_of.append((w_idx, local_idx,
@@ -662,8 +671,14 @@ def run_navigate(
             ppo_rollouts = [merge_visits(v) for v in _seqs.values()]
         else:
             ppo_rollouts = rollouts
-        losses = ppo_update(agent, ppo_rollouts, cfg.ppo, optimizer,
-                            aux_scale=1.0, prior=prior)
+        if is_sup:
+            losses = sup_update(agent, ppo_rollouts, cfg.ppo, optimizer,
+                                epochs=cfg.sup_epochs,
+                                n_minibatches=cfg.ppo.n_minibatches)
+            losses["beta"] = t_beta
+        else:
+            losses = ppo_update(agent, ppo_rollouts, cfg.ppo, optimizer,
+                                aux_scale=1.0, prior=prior)
         if prior is not None:
             losses["prior_drift"] = prior.drift(agent)
         t_ppo_acc += time.time() - t_ppo0
@@ -1097,6 +1112,8 @@ CFG_FIELDS: dict[str, tuple[str, ...]] = {
     "input_grid_code": ("agent.input_grid_code",),
     "aux_goal_weight": ("agent.aux_goal_weight",),
     "aux_disp_weight": ("agent.aux_disp_weight",),
+    "teacher_noise_deg": ("teacher_noise_deg",),
+    "sup_epochs": ("sup_epochs",),
     "head_mlp_layers": ("agent.head_mlp_layers",),
     "hopfield_storage_rule": ("hopfield.storage_rule",),
     # ppo
@@ -1293,6 +1310,10 @@ def build_parser() -> argparse.ArgumentParser:
                    help="Idea 3 diagnostic: weight of an auxiliary loss in which a head on the recurrent features predicts the displacement to the cell of the last reward, worked out from the two grid codes (the code-pair-to-displacement supervision the Phase-1 grid MLP had). Never read by the policy. Needs --input_grid_code under --memory_backend none.")
     p.add_argument("--head_mlp_layers", type=int, default=0,
                    help="Layers of a ReLU MLP (hidden_size wide) between the recurrent trunk and every head, reading the trunk output and the step's input. 0 = none. Idea 3: the GRU holds the goal, the MLP compares it with the current grid code.")
+    p.add_argument("--teacher_noise_deg", type=float, default=30.0,
+                   help="sup=1 stages: SD of the Gaussian turn applied to the teacher's executed moves (labels stay clean).")
+    p.add_argument("--sup_epochs", type=int, default=2,
+                   help="sup=1 stages: passes of the supervised update over each update's sequences.")
     p.add_argument("--memory_backend", choices=["hopfield", "sensory_kv", "none"],
                    default="hopfield",
                    help="Goal memory. hopfield (default): Agent-HaSH. sensory_kv: idea 1 of docs/GRID_MLP_NAV_PLAN.md -- sensory-keyed argmax store of goal grid codes; the frozen grid MLP's direction d rides the hopfield_signal channel and the recall similarity c gets a memory_conf channel. Task schedule + --eval_scope task + --distal_amp > 0 only (hopfield_nav/memory/backend.py).")
@@ -1936,6 +1957,14 @@ def main():
         p.error("--aux_goal_weight / --aux_disp_weight need --input_grid_code "
                 "and --memory_backend none")
     kinds = {st.kind for st in stages}
+    if any(st.sup for st in stages):
+        # The teacher's labels need idea 3's carried state and the
+        # displacement head (GRID_MLP_NAV_PLAN §7.6).
+        if not memory_backend.is_none(cfg):
+            p.error("sup=1 stages are idea 3's (--memory_backend none)")
+        if cfg.agent.aux_disp_weight <= 0:
+            p.error("sup=1 stages need --aux_disp_weight > 0 (the displacement "
+                    "head carries the dense goal signal)")
     if "lifetime" in kinds:
         # Idea 3, stage 2: the recurrent state is the only memory there is.
         if not memory_backend.is_none(cfg):

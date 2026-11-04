@@ -32,6 +32,7 @@ from ..config import TrainConfig
 from ..memory import backend as memory_backend
 from ..rollout.distractors import sample_distractors
 from ..rollout.types import RolloutBatch
+from ..rollout.lifetime import OPTIONAL_TIME_FIELDS
 from .stages import Knobs, RolloutSpec
 
 
@@ -126,13 +127,16 @@ def merge_visits(rollouts: list[RolloutBatch]) -> RolloutBatch:
     if len(rollouts) == 1:
         return rollouts[0]
     for r in rollouts:
-        if (r.alive_mask is not None or r.visited_targets is not None
-                or r.teacher_move_action is not None):
-            raise ValueError("merge_visits joins plain PPO task rollouts only "
-                             "(no ends_on_goal, aux visited head or BC labels)")
+        if r.alive_mask is not None or r.visited_targets is not None:
+            raise ValueError("merge_visits joins task rollouts without "
+                             "ends_on_goal or the aux visited head")
 
     def cat(name):
         return torch.cat([getattr(r, name) for r in rollouts], dim=1)
+
+    # The supervised teacher's labels (§7.6), when every visit has them.
+    optional = {name: cat(name) for name in OPTIONAL_TIME_FIELDS
+                if all(getattr(r, name) is not None for r in rollouts)}
 
     return RolloutBatch(
         obs=cat("obs"),
@@ -148,6 +152,7 @@ def merge_visits(rollouts: list[RolloutBatch]) -> RolloutBatch:
         policy_action_mask=cat("policy_action_mask"),
         store_fired_final=rollouts[-1].store_fired_final,
         h_final=rollouts[-1].h_final,
+        **optional,
     )
 
 
