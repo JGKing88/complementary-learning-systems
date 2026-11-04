@@ -1399,4 +1399,7 @@ is far less accurate than the grid MLP's (45° against 0.4 to 2°), and the
 policy does not follow it. The Phase-1 grid MLP reached sub-degree accuracy
 only with dense, displacement-balanced supervised pairs (raw walks plateau at
 8 to 10°, §10 of the NN-control plan); RL rollouts plus an auxiliary head give
-far less of that signal. The `_rw_l3` arm runs to u4000.
+far less of that signal. The `_rw_l3` arm ended at u4000 the same way:
+over u2000 to 4000 its revisits found the goal 0.37 to 0.47 of the time
+against 0.55 to 0.61 on first visits, in 74 to 81 steps. All RL arms are
+closed; the supervised training of §7.6 replaces them.
