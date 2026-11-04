@@ -210,6 +210,7 @@ def lock_in(IN, OUT, ax, rule, seed, checks, phi_ratio=1.0):
     W /= torch.linalg.vector_norm(W, dim=1, keepdim=True)
     rot = torch.exp(-1j * phi)
     hebb, pll = rule in ("2a", "2d"), rule in ("2c", "2d")
+    wpll = rule == "2e"          # 2b + a turn read from the weights: angle(w^H u_e)
     U = None
     if not hebb:
         U = (torch.zeros(2, M, Lp, K, dtype=torch.complex64) if U0 is None else U0).to(DEV)
@@ -227,6 +228,11 @@ def lock_in(IN, OUT, ax, rule, seed, checks, phi_ratio=1.0):
         else:
             pred = _proj(IN[t], U[a])
             U[a] += (eta_u * (z1 - pred))[:, None, :] * g0[:, :, None]
+            if wpll:
+                # u_e ~ T_e^T w, so w^H u_e = sum_j |a_j|^2 e^{i theta_j}: the turn
+                # weighted by the unit's own weights, not by input power
+                phi[a] += (phi_ratio * eta) * torch.angle((W.conj() * U[a]).sum(1) * rot[a])
+                rot[a] = torch.exp(-1j * phi[a])
             W.mul_(1 - eta).add_((eta * rot[a])[:, None, :] * U[a])
         if pll:
             phi[a] += (phi_ratio * eta) * torch.angle(z1 * z0.conj() * rot[a])
