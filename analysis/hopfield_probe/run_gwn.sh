@@ -16,6 +16,7 @@
 #                                                        # condition (gwn_l1_online.CONDS), 4 at a time
 #   bash analysis/hopfield_probe/run_gwn.sh l1twin     # Sec 21: learned L1 vs its exact twin (gwn_l1_twin)
 #   bash analysis/hopfield_probe/run_gwn.sh l1lms      # Sec 21: route 1c learning rate (gwn_l1_lms)
+#   bash analysis/hopfield_probe/run_gwn.sh l1noisefix # Sec 21: noise-bias correction (gwn_l1_noisefix)
 #
 # Runs from THIS worktree: do not delete it while jobs are live.
 set -euo pipefail
@@ -60,7 +61,7 @@ done
 
 if [[ -z "${GWN_IN_JOB:-}" ]]; then
     mkdir -p "$OUT/logs"
-    if [[ $MODE == l1twin || $MODE == l1lms ]]; then
+    if [[ $MODE == l1twin || $MODE == l1lms || $MODE == l1noisefix ]]; then
         GWN_IN_JOB=1 exec sbatch ${GWN_DEP:+--dependency=$GWN_DEP} --job-name=gwn_$MODE \
             --partition=pi_evelina9,pi_fiete,ou_bcs_normal,mit_normal_gpu --gres=gpu:1 --exclude=node3804 \
             --time=${GWN_TIME:-4:00:00} --cpus-per-task=2 --mem=${GWN_MEM:-32G} \
@@ -94,6 +95,11 @@ fi
 if [[ $MODE == l1lms ]]; then
     nvidia-smi --query-gpu=name,memory.total --format=csv,noheader
     "$PY" -m analysis.hopfield_probe.gwn_l1_lms --out "$OUT/l1_online"; echo "DONE l1lms"
+    exit 0
+fi
+if [[ $MODE == l1noisefix ]]; then
+    nvidia-smi --query-gpu=name,memory.total --format=csv,noheader
+    "$PY" -m analysis.hopfield_probe.gwn_l1_noisefix --out "$OUT/l1_online"; echo "DONE l1noisefix"
     exit 0
 fi
 if [[ $MODE == l1online ]]; then
