@@ -2026,7 +2026,7 @@ else changed except step-matching: 118 steps/epoch × 600 epochs = 70,800 steps
 against att0.5's 72,000. Each 50×50 env is 2500 points, under batch_size 4096,
 so each step is one whole env. Both arms were probed in one call
 (`run_seb_att05.sh`, gain 100, β = gain, the `run_att_low.sh` settings). The
-att0.5 rows reproduce §10.12's numbers.
+att0.5 rows reproduce §10.9's numbers.
 
 | (K=5, s=1) | \|err\| | acc45 | exact | basin | disc | **cont** | dead, all K |
 |---|---|---|---|---|---|---|---|
