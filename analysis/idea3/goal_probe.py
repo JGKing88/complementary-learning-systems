@@ -330,6 +330,21 @@ def main():
                 min(a.n_envs, len(envs)), a.iters, a.seed, device, a.n_groups)
     res = {"ckpt": a.ckpt, "mode": a.mode, "n_steps": int(len(d["H"])),
            "known_frac": float(d["known"].mean()), **score(d)}
+    head = getattr(agent, "goal_disp_head", None)
+    if head is not None and getattr(agent, "head_mlp", None) is None:
+        # The trained displacement head itself, on these held-out arenas (it
+        # reads the top recurrent layer's output, which is what H records).
+        # Unlike the ridge readouts it is not refit on 6 arenas.
+        with torch.no_grad():
+            P = head(torch.from_numpy(d["H"]).float().to(device)).cpu().numpy() * 10.0
+        Y = (d["goal"] - d["cell"]).astype(np.float64)
+        m = d["known"]
+        far = m & (np.linalg.norm(Y, axis=1) >= 2)
+        r2 = 1 - ((P[m] - Y[m]) ** 2).sum() / ((Y[m] - Y[m].mean(0)) ** 2).sum()
+        ang = np.arctan2(P[far, 1], P[far, 0]) - np.arctan2(Y[far, 1], Y[far, 0])
+        res["trained_disp_head"] = {
+            "r2_known": float(r2),
+            "dir_err_deg_known": float(np.degrees(np.abs(np.angle(np.exp(1j * ang)))).mean())}
     print(json.dumps(res, indent=1), flush=True)
     with open(a.out, "w") as f:
         json.dump(res, f, indent=1)
