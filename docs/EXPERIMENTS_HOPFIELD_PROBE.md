@@ -2059,3 +2059,43 @@ sees no cross-env pair in either arm. The rate term is the only batch-level
 term in the config, which makes it the candidate; §10.22 tests it directly.
 
 Raw: `results/probe_seb_att05/g100`; encoders `sweeps/w64_seb_att0.5`.
+
+### 10.22 A queue of past codes for the rate term rescues most of it
+
+`--rate_queue N` lets the rate term see the current env's codes plus a FIFO of
+up to N detached codes from earlier steps. Gradient flows only through the
+current batch, and the loss still holds no cross-env pair. The term divides by
+the total row count, so a queue also weakens the per-row push on the current
+rows. w65 left `rate_lambda` at 0.5. w66 scales it by (N + 2500)/4096 (1.53
+and 5.19), which gives each current row att0.5's per-row gradient. Same probe
+settings as §10.21, 4 seeds per arm.
+
+| arm | \|err\| | acc45 | **cont** | dead K=3 / K=20 | cos_floor | alias ceiling |
+|---|---|---|---|---|---|---|
+| att0.5, mixed batches | 7–9° | 0.995–1.00 | **0.984–0.993** | 0.00 / 0.04–0.12 | 0.009 | 0.88 |
+| one env per step (w64) | 90° | 0.24 | **0.042–0.047** | 1.00 / 1.00 | 0.169 | 0.93 |
+| + 10k queue (w65) | 27–29° | 0.81–0.83 | **0.18–0.22** | 0.71–0.79 / 0.96–1.00 | 0.152 | 0.988 |
+| + 40k queue (w65) | 34–38° | 0.69–0.74 | **0.14** | 0.75–0.79 / 0.92–1.00 | 0.177 | 0.994 |
+| + 10k queue, rescaled (w66) | 15–17° | 0.94–0.96 | **0.79–0.87** | 0.08–0.17 / 0.62–0.83 | 0.086–0.094 | 0.95 |
+| + 40k queue, rescaled (w66) | 9–11° | 0.98–0.99 | **0.84–0.92** | 0.00–0.04 / 0.50–0.62 | 0.037–0.048 | 0.94–0.95 |
+
+(cos_floor and alias ceiling for w66 are from seeds 42–43; the others from
+seed 42.)
+
+Without the rescale the queue barely helps, and the bigger queue is worse,
+because the rows that get gradient get a 3× / 10× weaker push. With it, the
+bigger queue is better on every column. `cos_floor` (mean cosine between
+distant codes) falls 0.17 → 0.09 → 0.04 as the queue grows, against att0.5's
+0.009, and reach rises with it. The 40k arm is level with the production
+encoders in `arm_summary`'s reference rows (v35 0.867, L7 0.76–0.81), but
+still 0.07–0.15 below att0.5, and it dies at K=20 half the time where att0.5
+does not.
+
+The remaining gap tracks `cos_floor`, which has not reached att0.5's value.
+The direct next test is a larger queue (the full 295k points is ~118 steps of
+history), with the same rescale. A queue that long holds codes from ~1 epoch
+ago, so staleness may then limit it; a decaying running covariance is the
+alternative if it does.
+
+Raw: `results/probe_seb_queue/g100`, `results/probe_seb_queue_r/g100`;
+encoders `sweeps/w65_seb_queue`, `sweeps/w66_seb_queue_rescaled`.
