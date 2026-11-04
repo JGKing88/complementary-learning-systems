@@ -520,6 +520,43 @@ Built (commit f66ea77).
 Both from `code/i3_f66ea77`, 1-day limit (`--continue_from` if a run needs
 more).
 
+Wave 1 (those two runs) learned to copy the previous move. While the teacher
+drove, the student's direction error after a find was 31°, about what copying
+a move with 30° noise gives (24°), and it rose to chance as the teacher handed
+over (99° at beta 0.33). Its displacement loss stayed 0.35 to 0.9. Wave 2
+(27906089, 27906090; lr 1e-3, 4 passes, displacement weight 2, noise 60°, 300
+pure-teacher updates first) plateaued in the same place during the pure-teacher
+phase: displacement loss 0.31 to 0.38 and 30 to 36° after a find, flat from
+u70 to u300, for 1 and 3 layers alike.
+
+Stage 1 in its pure form works. `analysis/idea3/pretrain_decode.py` builds
+synthetic sequences on the GPU from table lookups, with the collector's input
+layout (views zero, their input weights zeroed in the saved model): a fresh
+arena place and goal per sequence, noisy goal pursuit, a teleport at each
+touch with the previous displacement zero as in the collector, a new visit
+every 200 steps. The displacement head learns the vector to the goal at every
+step after the first touch. The step right after a teleport can only be
+answered from the grid codes, so it is scored on its own. 20,000 steps of
+256 sequences x 400 steps, lr 1e-3, about 1.5 h on one GPU (jobs 27912919,
+27912920).
+
+| fresh places and goals, step 20,000 | all steps after a find | step after a teleport (grid decode only) |
+|---|---|---|
+| GRU 512, one layer | R² 0.997, 2.2° | R² 0.995, 2.8° (median 1.9°) |
+| GRU 512, three layers | R² 0.998, 1.7° | R² 0.997, 2.2° (median 1.6°) |
+
+Both sat near 47° on the step after a teleport for the first 3,000 to 6,000
+steps and then dropped within a few hundred steps, to 4 to 6° by step 6,000 to
+8,000. So a plain GRU can hold a goal and turn the held goal code and the
+current grid code into a direction about as accurately as idea 1's frozen
+grid MLP (0.4 to 2°), at places and goals it has never seen. The RL failure
+and the teacher-driven waves' plateau were the training, not the model: they
+never gave the decode enough dense, varied examples to get past the plateau
+(the teacher-driven waves saw about 2,400 steps a second against roughly
+18,000 here, and far fewer teleports). Checkpoints
+`/orcd/pool/003/jackking/cls_runs/idea3/pretrain_h512.pt` and
+`pretrain_h512_l3.pt`.
+
 ### 7.7 Stage 1 runs (RL, superseded by §7.6)
 
 Stage 1 runs, 4000 updates, launched from a frozen copy of the code at
