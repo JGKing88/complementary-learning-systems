@@ -1,6 +1,6 @@
 # The ideal encoder as Hopfield input
 
-*Started 2026-09-30; map current as of 2026-11-03. Branch
+*Started 2026-09-30; map current as of 2026-11-04 (through §22). Branch
 `worktree-agent-a792a678d5a963123`. Pages: "The Ideal Grid Encoder" (teaching,
 claude.ai/artifact/FSKXEs5KkvwNxk7Ad7PTeZ, republished 2026-10-31 under the
 current account; the original C5p2GC3F6j1RxCQjGx6X1h is on the old account);
@@ -54,6 +54,12 @@ memory compute, and can a biologically plausible network reach it?
      probe that alias barely matters: with L1 and L3 both from local rules,
      the fully online network navigates like the ideal (basin 30, reach
      0.98–0.995, exact 1.000; §21.1).
+   - L1 and L3 can learn on the same walk if L3's plasticity opens late,
+     once L1 has settled (§22.1). Under cell noise both layers' learning
+     rates must wind down as experience accumulates (§22.2); trained that way
+     under noise, the shift-rule network navigates like exact L1 (§22.3).
+   - The network is robust to test-time cell noise 0.01, where the ideal
+     encoder fails (§22.4).
    - Multiplication accurate to a few percent.
    - Narrow grid bumps (0.10 of the period) to survive cell noise, with gains
      corrected for jitter at rest.
@@ -78,15 +84,20 @@ memory compute, and can a biologically plausible network reach it?
 | 20.2 | Pruning instead of weighting | Stochastic pruning at keep-probability ∝ P(n) = the ideal's construction |
 | 21 | Can L1 be learned locally and online, inside one environment? | Yes in one 14-box: online shift rule + eigenvectors = exact; fully online lock-in exact per unit but uneven counts alias; noise doubles the shift learners' alias and breaks lock-in; side 13 fails (wrap step unseen) |
 | 21.1 | More boxes, longer walks; L1 and L3 both local in the probe | Fully online network (lock-in L1 + depression L3, one 14-box) navigates like the ideal; more boxes barely help the lock-in counts (a strong-pattern bias); under noise a slow rate over 1M steps brings the shift rule to its twin, lock-in still fails |
+| 22 | Fully online and noise-robust: concurrent L1/L3, noise scaling, noise-trained networks, test-time noise | Concurrent works with a late L3 window (basin 29–30); under noise steps matter most and the best rate falls with steps; the noise-trained shift-rule network navigates like exact; the fully online one navigates with 9° error and some dead goals; the network shrugs off test noise 0.01, the ideal does not |
 
 **Open**
 
 - Equal units per pattern in the fully online L1 route (§21): it costs about
   4 cells of probe basin, not retrieval (§21.1).
-- The lock-in L1 under cell noise: units reach purity 0.99 but the network
-  aliases at 0.66–0.70 even after 1M steps (§21.1). The shift rule is fine
-  under noise at rate 0.005 over 1M steps.
-- L1 and L3 learning at the same time (all tests so far learn L3 after L1).
+- The fully online network under noise: 9° direction error and up to 17%
+  dead goals after 1M steps at η 0.02 (§22.3); a longer walk at a falling
+  rate is the expected fix (alias 0.42–0.51 at 3M steps, η 0.01, §22.2), not
+  yet probed.
+- A self-timed L3 critical period that matches the late window: units born
+  before their inputs are fully pure are over-depressed (§22.1).
+- Why a single box of side 20 leaves module 13 ten times noisier than boxes of
+  side 14, 40 or 80 (§22.2).
 - The eigenvector step of route 1 as a network (§21).
 - Stochastic pruning simulated as an online process (§20.2).
 - Kernel shape as a lever for wide kernels, r ≥ 48 (§16.1).
@@ -2018,7 +2029,13 @@ from 38 on in `run_gwn.sh`. Results go here, with a short verdict per question.
   0.01 both rules approach their exact twins as steps grow, and the best
   learning rate falls as steps grow. By 3M steps the shift rule is at its twin
   in every condition, and lock-in is within 0.05–0.10.
-- **22.3 Noisy-trained networks:** PENDING_22_3
+- **22.3 Noise-trained networks navigate; the fully online one with a cost.**
+  Trained under cell noise 0.01 in one 14-box, the shift-rule network
+  navigates like exact L1, with noisy test codes too (basin 31–35, reach
+  0.99). The fully online lock-in network at η 0.02 navigates with a 9°
+  direction error and up to 17% dead goals; at η 0.05 (kernel alias 0.68) a
+  third to a half of the goals die. A slower rate over more steps (22.2) is
+  the remedy.
 - **22.4 The grid wave network is robust to test-time noise; the ideal
   encoder is not.** At test noise 0.01 the network navigates as if the codes
   were clean (basin 32, reach 0.99–1.0); the ideal falls to reach 0.58 with
@@ -2107,6 +2124,28 @@ twin, with the best rate chosen at each checkpoint:
 - The lock-in twins (0.36–0.44) are the uneven units per pattern, which cost
   only basin in the probe (§21.1).
 
+#### 22.3 Noise-trained networks in the probe (cell noise 0.01, one 14-box, 1M steps)
+
+Probe tasks 50–58; clean test codes unless marked.
+
+| network | kernel alias | abs err (°) | exact | basin (whole / corner) | reach | dead (K = 5 / 10 / 20) |
+|---|---|---|---|---|---|---|
+| shift-rule L1 + depression L3 | 0.097 | 3.37 / 3.36 | 1.000 | 33.9 / 35.2 | 0.993 / 0.985 | 0 / 0 / 0 |
+| same, test noise 0.01 | | 3.89 | 1.000 | 31.1 | 0.987 | 0 / 0 / 0.04 |
+| lock-in η 0.02 + late L3 | 0.502 | 8.85 / 8.75 | 0.996 / 0.988 | 29.4 / 25.6 | 0.932 / 0.979 | 0.08 / 0.08 / 0.17 (whole) |
+| same, test noise 0.01 | | 9.11 | 0.995 | 28.3 | 0.967 | 0.04 / 0 / 0.17 |
+| lock-in η 0.02 + self-timed L3 (0.99) | 0.446 | 9.24 | 0.991 | 22.2 | 0.971 | 0 / 0 / 0.17 |
+| lock-in η 0.05 + late L3 | 0.681 | 13.64 / 13.77 | 0.992 / 0.952 | 24.7 / 18.6 | 0.753 / 0.709 | 0.29 / 0.29–0.54 / 0.50 |
+
+- The shift-rule network is the robust one: local except the eigenvector
+  step, learned under noise, and tested under noise, it navigates like exact
+  L1.
+- For the lock-in network, kernel alias predicts the cost here. Alias 0.34
+  from uneven counts alone (no noise) cost only basin (§21.1); alias 0.50 under
+  noise costs direction (9°) and some goals; alias 0.68 costs a third to a
+  half of the goals. At 3M steps and η 0.01 the scaling study reached alias
+  0.42–0.51 (22.2); that network was not probed.
+
 #### 22.4 Test-time noise (`run.py --grid_noise`, whole region)
 
 The decoding bank (the probe's ruler for which cell a recalled state is) stays
@@ -2124,8 +2163,8 @@ the noise) and was rerun; reach and direction were unaffected.
 | exact L1 + depression L3 | 0.03 | 3.35 | 0.811 | 10.8 | 0.976 | 0 / 0 / 0.04 |
 | shift-rule L1 + depression L3 | 0.01 | 1.88 | 1.000 | 32.1 | 0.993 | 0 / 0 / 0 |
 | shift-rule L1 + depression L3 | 0.03 | 3.65 | 0.845 | 15.1 | 0.961 | 0.08 / 0 / 0.08 |
-| lock-in L1 + depression L3 | 0.01 | PENDING_2C_001 |
-| lock-in L1 + depression L3 | 0.03 | PENDING_2C_003 |
+| lock-in L1 + depression L3 | 0.01 | 1.94 | 1.000 | 28.4 | 0.987 | 0 / 0 / 0 |
+| lock-in L1 + depression L3 | 0.03 | 3.33 | 0.892 | 13.6 | 0.941 | 0.04 / 0 / 0.04 |
 
 - The ideal reads phases with atan2, which amplifies noise when bumps are
   narrow (§20 step 2); the grid wave network sums over many cells per
