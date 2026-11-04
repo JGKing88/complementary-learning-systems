@@ -1898,3 +1898,81 @@ depression rule w ← w·max(0, 1 − κ|Δz|²) over 25,600 further steps
   untested, and early, impure L1 units would be depressed hard, so L3
   plasticity probably has to start late.
 - Probe tasks 32–37 (`run_gwn.sh probe`).
+
+## 22. Toward a fully online, noise-robust network (plan written 2026-11-04, before any run)
+
+§21.1 showed that a network whose L1 and L3 both come from local rules, learned
+in one 14-cell box, navigates like the ideal. Three things stop that from being
+the full answer. This section tests them, plus how noise robustness scales.
+L3 is the depression rule throughout (Jack's preference; the trace rule only as
+a comparison).
+
+**Questions**
+
+- **22.1 Concurrent learning.** Can L1 and L3 learn at the same time, from step
+  0, on one walk? The depression rule never recovers, so L2 units built from
+  early, impure L1 units may be worn down before L1 settles.
+- **22.2 Noise scaling.** Under cell noise 0.01, how do the shift rule (1c) and
+  the lock-in rule (2c) improve with the number of steps, the number of
+  environments and the box size?
+- **22.3 Noisy-trained networks in the probe.** Does the lock-in network trained
+  under noise (kernel alias 0.66–0.70) still navigate? Alias 0.34 cost only
+  about 4 cells of basin.
+- **22.4 Noisy grid codes at test time.** Every probe so far fed clean codes.
+
+**Shared pieces** (`analysis/hopfield_probe/gwn_online.py`)
+
+- Walks stream in sessions of 10k steps, each a reflecting walk inside one box,
+  cycling through the environments. No step crosses between boxes. Codes are
+  made per session, so walks can reach 3M steps without holding them in memory.
+- Stateful learners with the same updates as §21: `LockIn` (rules 2a–2e, slow
+  turn) and `ShiftLMS` (1c at several rates, optionally bias-compensated). A
+  test pins `LockIn` to `gwn_l1_online.lock_in` exactly.
+- L2 outputs are computed online from the current L1 units, with each L1 unit
+  scaled by a running estimate of its own output power (a local homeostatic
+  gain), so concurrent L3 sees what the network sees.
+- **Depression with rest recovery under noise.** Noise adds jitter to every
+  step's change, so plain depression would wear every unit down by an amount
+  that depends on its noise, not its frequency (§20 step 2b found the
+  uncorrected gains fatal). The animal also rests. At rest a unit's change is
+  pure noise, and the synapse recovers by that amount:
+  log w += log(1 − κ d_move) − log(1 − κ d_rest). This is the depression form
+  of the trace rule's at-rest correction.
+
+**22.1 design** (bump 0.10, 14-box; no noise, then noise 0.01)
+
+- L1 = lock-in 2c with the 0.001 turn: η 0.2 for 300k steps without noise;
+  η 0.05 and 0.02 for 1M steps at noise 0.01.
+- L3 variants, all with κ chosen so the exposure gives r = 16:
+  - (a) always on from step 0, κ = r² / (2 T_total);
+  - (b) a late window: κ = 0.005 for the last 25,600 steps;
+  - (c) a self-timed critical period per L2 unit: the unit starts silent
+    (w = 0), is "born" (w = 1) once its three L1 inputs have settled (each L1
+    unit's own phase-lock error stays small), depresses for 25,600 steps, then
+    freezes.
+- Reference: §21.1's sequential version (L3 on a fresh walk after L1).
+- Also at noise: 1c (rate 0.005, 1M steps) plus eigenvectors, then depression
+  with rest recovery, for a "local except the eigenvector step" network.
+- Kernel metrics, then the probe for every variant that passes.
+
+**22.2 design** (noise 0.01, bump 0.10; checkpoints 100k, 300k, 1M, 3M steps)
+
+- Number of environments: 1, 3, 6 and 12 boxes of side 20.
+- Box size: one box of side 14, 20, 40 or 80.
+- Learners: 1c at rates 0.02, 0.005, 0.002, 0.001; 2c at η 0.05, 0.02, 0.01.
+- At each checkpoint the best rate per learner goes through the network,
+  learned and as its exact twin. Also reported: |T − P| (1c) and the mean
+  impurity 1 − purity (2c), which is more sensitive than the share above 0.99.
+
+**22.3–22.4 design**
+
+- `run.py --grid_noise σ` adds fresh Gaussian noise of sd σ to every grid code
+  the probe encodes: stored goals and every cue. The direction readout's local
+  basis stays clean by default (`--grid_noise_basis` adds noise there too),
+  because a single-step difference of two noisy codes is mostly noise and would
+  test the readout, not the memory.
+- Test-time noise σ = 0.01 and 0.03, whole region, for the ideal (bump 0.10),
+  the three §21.1 networks, and the noisy-trained networks of 22.1.
+
+**Outputs**: `.../gwn/online/` (one JSON per script, encoders); probe tasks
+from 38 on in `run_gwn.sh`. Results go here, with a short verdict per question.

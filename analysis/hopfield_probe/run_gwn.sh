@@ -9,7 +9,7 @@
 #
 #   bash analysis/hopfield_probe/run_gwn.sh build
 #   bash analysis/hopfield_probe/run_gwn.sh step1      # step 1 alone (GWN_DEP=afterany:JOB to chain)
-#   bash analysis/hopfield_probe/run_gwn.sh probe [ARRAY]     # default all (0-37)
+#   bash analysis/hopfield_probe/run_gwn.sh probe [ARRAY]     # default all (0-45)
 #   bash analysis/hopfield_probe/run_gwn.sh extra      # step3b + step2b
 #   bash analysis/hopfield_probe/run_gwn.sh local      # Sec 20.1: gains from one small environment
 #   bash analysis/hopfield_probe/run_gwn.sh l1online [ARRAY]  # Sec 21: GPU array, one task per
@@ -23,6 +23,8 @@
 #   bash analysis/hopfield_probe/run_gwn.sh l1multienv # Sec 21: 6 boxes / one 40-box, 1M steps (gwn_l1_multienv)
 #   bash analysis/hopfield_probe/run_gwn.sh l1l3       # Sec 21.1: L1 and L3 from local rules (gwn_l1l3_local)
 #   bash analysis/hopfield_probe/run_gwn.sh l1noiseslow # Sec 21: slow rates + bias correction under noise
+#   bash analysis/hopfield_probe/run_gwn.sh scaling [ARRAY] # Sec 22.2: noise scaling, 7-task GPU array
+#   bash analysis/hopfield_probe/run_gwn.sh concurrent # Sec 22.1/22.3: L1 and L3 learning together
 #
 # Runs from THIS worktree: do not delete it while jobs are live.
 set -euo pipefail
@@ -58,15 +60,29 @@ PROBES=(
     "../l1_online/encoders/local_exact_dep|exact L1, depression L3|wc"
     "../l1_online/encoders/local_1c_dep|online shift-rule L1, depression L3|wc"
     "../l1_online/encoders/local_2c_dep|lock-in L1 (all units), depression L3|wc"
+    # Sec 22.4 (tasks 38-45): test-time grid noise, whole region only
+    "ideal:r=16|ideal r=16 bump 0.10, test noise 0.01|w|--fwhm_override 0.1 --grid_noise 0.01"
+    "ideal:r=16|ideal r=16 bump 0.10, test noise 0.03|w|--fwhm_override 0.1 --grid_noise 0.03"
+    "../l1_online/encoders/local_exact_dep|exact L1, depression L3, test noise 0.01|w|--grid_noise 0.01"
+    "../l1_online/encoders/local_exact_dep|exact L1, depression L3, test noise 0.03|w|--grid_noise 0.03"
+    "../l1_online/encoders/local_1c_dep|online shift-rule L1, depression L3, test noise 0.01|w|--grid_noise 0.01"
+    "../l1_online/encoders/local_1c_dep|online shift-rule L1, depression L3, test noise 0.03|w|--grid_noise 0.03"
+    "../l1_online/encoders/local_2c_dep|lock-in L1 (all units), depression L3, test noise 0.01|w|--grid_noise 0.01"
+    "../l1_online/encoders/local_2c_dep|lock-in L1 (all units), depression L3, test noise 0.03|w|--grid_noise 0.03"
 )
+# regions: all = 4 regions, wc = whole + corner, w = whole only. An optional 4th
+# field holds extra run.py arguments (e.g. --grid_noise 0.01). An encoder with a
+# ':' is a full probe spec (e.g. ideal:r=16); otherwise gwn:$E/<enc>.pt.
 TASKS=()
 for p in "${PROBES[@]}"; do
-    IFS='|' read -r enc lab regs <<< "$p"
+    IFS='|' read -r enc lab regs extra <<< "$p"
     if [[ $regs == all ]]; then
         for r in "|whole" "0 0 500|corner" "608 608 500|centre" "1216 1216 500|opposite"; do
-            TASKS+=("$enc|$lab|$r"); done
+            TASKS+=("$enc|$lab|$r|$extra"); done
+    elif [[ $regs == w ]]; then
+        TASKS+=("$enc|$lab||whole|$extra")
     else
-        TASKS+=("$enc|$lab||whole" "$enc|$lab|0 0 500|corner"); fi
+        TASKS+=("$enc|$lab||whole|$extra" "$enc|$lab|0 0 500|corner|$extra"); fi
 done
 
 if [[ -z "${GWN_IN_JOB:-}" ]]; then
@@ -76,6 +92,18 @@ if [[ -z "${GWN_IN_JOB:-}" ]]; then
             --partition=pi_evelina9,pi_fiete,ou_bcs_normal,mit_normal_gpu --gres=gpu:1 --exclude=node3804 \
             --time=${GWN_TIME:-4:00:00} --cpus-per-task=2 --mem=${GWN_MEM:-32G} \
             --output="$OUT/logs/${MODE}_%j.out" "$0" $MODE
+    fi
+    if [[ $MODE == scaling ]]; then
+        GWN_IN_JOB=1 exec sbatch ${GWN_DEP:+--dependency=$GWN_DEP} --job-name=gwn_scaling \
+            --partition=pi_evelina9,pi_fiete,ou_bcs_normal,mit_normal_gpu --gres=gpu:1 --exclude=node3804 \
+            --time=${GWN_TIME:-3:00:00} --cpus-per-task=2 --mem=${GWN_MEM:-32G} --array="${ARG:-0-6}%4" \
+            --output="$OUT/logs/scaling_%A_%a.out" "$0" scaling
+    fi
+    if [[ $MODE == concurrent ]]; then
+        GWN_IN_JOB=1 exec sbatch ${GWN_DEP:+--dependency=$GWN_DEP} --job-name=gwn_concurrent \
+            --partition=pi_evelina9,pi_fiete,ou_bcs_normal,mit_normal_gpu --gres=gpu:1 --exclude=node3804 \
+            --time=${GWN_TIME:-4:00:00} --cpus-per-task=2 --mem=${GWN_MEM:-32G} \
+            --output="$OUT/logs/concurrent_%j.out" "$0" concurrent
     fi
     if [[ $MODE == l1online ]]; then
         GWN_IN_JOB=1 exec sbatch ${GWN_DEP:+--dependency=$GWN_DEP} --job-name=gwn_l1online \
@@ -105,6 +133,17 @@ fi
 if [[ $MODE == l1lms ]]; then
     nvidia-smi --query-gpu=name,memory.total --format=csv,noheader
     "$PY" -m analysis.hopfield_probe.gwn_l1_lms --out "$OUT/l1_online"; echo "DONE l1lms"
+    exit 0
+fi
+if [[ $MODE == scaling ]]; then
+    nvidia-smi --query-gpu=name,memory.total --format=csv,noheader
+    "$PY" -m analysis.hopfield_probe.gwn_noise_scaling run --task "$SLURM_ARRAY_TASK_ID" --out "$OUT/online"
+    echo "DONE scaling $SLURM_ARRAY_TASK_ID"
+    exit 0
+fi
+if [[ $MODE == concurrent ]]; then
+    nvidia-smi --query-gpu=name,memory.total --format=csv,noheader
+    "$PY" -m analysis.hopfield_probe.gwn_concurrent --out "$OUT/online"; echo "DONE concurrent"
     exit 0
 fi
 if [[ $MODE == l1noiseslow ]]; then
@@ -170,10 +209,12 @@ if [[ $MODE == build ]]; then
 fi
 
 i=$SLURM_ARRAY_TASK_ID
-IFS='|' read -r enc lab region rlabel <<< "${TASKS[$i]}"
+IFS='|' read -r enc lab region rlabel extra <<< "${TASKS[$i]}"
 REG=(); [[ -n "$region" ]] && REG=(--world_region $region)
+CK="gwn:$E/$enc.pt"; [[ $enc == *:* ]] && CK=$enc
+read -ra EXTRA <<< "$extra"
 "$PY" -m analysis.hopfield_probe.run \
-    --ckpt "gwn:$E/$enc.pt" --label "$lab | $rlabel" ${REG[@]+"${REG[@]}"} \
+    --ckpt "$CK" --label "$lab | $rlabel" ${REG[@]+"${REG[@]}"} ${EXTRA[@]+"${EXTRA[@]}"} \
     --n_worlds 8 --n_envs_per_world 20 --k 1 3 5 10 20 \
     --steps 1 2 3 5 10 15 --env_size 20 --Npos 1716 \
     --n_alias 5000 --n_cont_samples 60000 --n_cont_annulus 20000 \
