@@ -2018,3 +2018,35 @@ nearly double anything binary can reach.
 
 Raw: `probe_sat10`; the ladder page carries both as the tabs `10% β=1e6` and
 `10% gain=1e6, β=1e6`.
+
+### 10.21 One env per gradient step breaks att0.5
+
+`w64_seb_att0.5` is att0.5's config with `single_env_batch=True` and nothing
+else changed except step-matching: 118 steps/epoch × 600 epochs = 70,800 steps
+against att0.5's 72,000. Each 50×50 env is 2500 points, under batch_size 4096,
+so each step is one whole env. Both arms were probed in one call
+(`run_seb_att05.sh`, gain 100, β = gain, the `run_att_low.sh` settings). The
+att0.5 rows reproduce §10.12's numbers.
+
+| (K=5, s=1) | \|err\| | acc45 | exact | basin | disc | **cont** | dead, all K |
+|---|---|---|---|---|---|---|---|
+| att0.5, 4 seeds | 7.0–8.7° | 0.995–1.000 | 0.962–0.989 | 24.4–27.7 | 0.997–1.000 | **0.984–0.993** | 0.00 (0.04–0.12 at K=20) |
+| one env per step, 4 seeds | 90.4–90.8° | 0.241–0.244 | 0.575–0.699 | 6.1–9.3 | 0.079–0.096 | **0.042–0.047** | 1.00 |
+
+The direction readout is at chance (90° mean error, acc45 0.24 against a
+chance rate of 0.25) on every seed, with no seed spread. r_min is 0 and the
+alias ceiling is 0.93.
+
+This does not repeat `ur_seb_C`, where step composition did not move r_min.
+That config had no coding-rate term; att0.5 has `rate_lambda` 0.5, which is a
+statistic over the batch. In mixed batches it spreads codes across all 118
+envs, and the participation ratio of the codes climbs from 5 to **429** over
+training. With one env per batch it only spreads one env's 2500 points, and
+the participation ratio ends at **8–9** on every seed. The loss converges
+(0.067) and the gain reaches 100, so the training ran; it fit a ~9-dimensional
+code that is locally contrastive within each env and aliased across them.
+
+So for att0.5, which environments share a step matters, through the rate term
+alone: the loss still sees no cross-env pair in either arm.
+
+Raw: `results/probe_seb_att05/g100`; encoders `sweeps/w64_seb_att0.5`.
