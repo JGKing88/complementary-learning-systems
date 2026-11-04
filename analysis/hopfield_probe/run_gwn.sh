@@ -9,7 +9,7 @@
 #
 #   bash analysis/hopfield_probe/run_gwn.sh build
 #   bash analysis/hopfield_probe/run_gwn.sh step1      # step 1 alone (GWN_DEP=afterany:JOB to chain)
-#   bash analysis/hopfield_probe/run_gwn.sh probe [ARRAY]     # default all (0-31)
+#   bash analysis/hopfield_probe/run_gwn.sh probe [ARRAY]     # default all (0-37)
 #   bash analysis/hopfield_probe/run_gwn.sh extra      # step3b + step2b
 #   bash analysis/hopfield_probe/run_gwn.sh local      # Sec 20.1: gains from one small environment
 #   bash analysis/hopfield_probe/run_gwn.sh l1online [ARRAY]  # Sec 21: GPU array, one task per
@@ -21,6 +21,7 @@
 #   bash analysis/hopfield_probe/run_gwn.sh l1lockin2  # Sec 21: lock-in turn fixes (gwn_l1_lockin2)
 #   bash analysis/hopfield_probe/run_gwn.sh l1mult     # Sec 21: uneven units per pattern (gwn_l1_mult)
 #   bash analysis/hopfield_probe/run_gwn.sh l1multienv # Sec 21: 6 boxes / one 40-box, 1M steps (gwn_l1_multienv)
+#   bash analysis/hopfield_probe/run_gwn.sh l1l3       # Sec 21.1: L1 and L3 from local rules (gwn_l1l3_local)
 #
 # Runs from THIS worktree: do not delete it while jobs are live.
 set -euo pipefail
@@ -52,6 +53,10 @@ PROBES=(
     "../l1_online/encoders/side14_fwhm0.1_1c|one box, online shift rule 1c|wc"
     "../l1_online/encoders/side14_fwhm0.1_1b|one box, shift estimate 1b|wc"
     "../l1_online/encoders/side14_fwhm0.1_noise0.01_1b|one box, 1b at cell noise 0.01|wc"
+    # Sec 21.1 (tasks 32-37): L3 by the depression rule, all learned in one 14-cell box
+    "../l1_online/encoders/local_exact_dep|exact L1, depression L3|wc"
+    "../l1_online/encoders/local_1c_dep|online shift-rule L1, depression L3|wc"
+    "../l1_online/encoders/local_2c_dep|lock-in L1 (all units), depression L3|wc"
 )
 TASKS=()
 for p in "${PROBES[@]}"; do
@@ -65,7 +70,7 @@ done
 
 if [[ -z "${GWN_IN_JOB:-}" ]]; then
     mkdir -p "$OUT/logs"
-    if [[ $MODE == l1twin || $MODE == l1lms || $MODE == l1noisefix || $MODE == l1decay || $MODE == l1lockin2 || $MODE == l1mult || $MODE == l1multienv ]]; then
+    if [[ $MODE == l1twin || $MODE == l1lms || $MODE == l1noisefix || $MODE == l1decay || $MODE == l1lockin2 || $MODE == l1mult || $MODE == l1multienv || $MODE == l1l3 ]]; then
         GWN_IN_JOB=1 exec sbatch ${GWN_DEP:+--dependency=$GWN_DEP} --job-name=gwn_$MODE \
             --partition=pi_evelina9,pi_fiete,ou_bcs_normal,mit_normal_gpu --gres=gpu:1 --exclude=node3804 \
             --time=${GWN_TIME:-4:00:00} --cpus-per-task=2 --mem=${GWN_MEM:-32G} \
@@ -99,6 +104,11 @@ fi
 if [[ $MODE == l1lms ]]; then
     nvidia-smi --query-gpu=name,memory.total --format=csv,noheader
     "$PY" -m analysis.hopfield_probe.gwn_l1_lms --out "$OUT/l1_online"; echo "DONE l1lms"
+    exit 0
+fi
+if [[ $MODE == l1l3 ]]; then
+    nvidia-smi --query-gpu=name,memory.total --format=csv,noheader
+    "$PY" -m analysis.hopfield_probe.gwn_l1l3_local --out "$OUT/l1_online"; echo "DONE l1l3"
     exit 0
 fi
 if [[ $MODE == l1multienv ]]; then
