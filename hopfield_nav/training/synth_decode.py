@@ -89,7 +89,8 @@ class Synth:
             prev_r, prev_a, prev_d = cur_r, a, moved
         return obs, tgt, msk, fst
 
-    def lifetime(self, B, n_envs, iters, cap=50, noise_lo=30.0, noise_hi=120.0):
+    def lifetime(self, B, n_envs, iters, cap=50, noise_lo=30.0, noise_hi=120.0,
+                 offsets=None, goals=None, return_arena=False):
         """A short continual protocol per row, packed (stage 2, §7.6).
 
         ``n_envs`` arenas at random scaffold places, each with a goal; trials
@@ -104,8 +105,14 @@ class Synth:
         from ..rollout.lifetime import protocol_order
         d, S = self.device, self.size
         order = protocol_order(n_envs, iters)
-        off = torch.randint(0, self.npos - S, (B, n_envs, 2), device=d)
-        goal = torch.randint(0, S, (B, n_envs, 2), device=d).float()
+        # Fixed arenas (``offsets``, ``goals``: (n_envs, 2)) for diagnostics,
+        # e.g. a run's held-out arenas; otherwise fresh draws per row.
+        off = (torch.as_tensor(offsets, device=d).long()[None].expand(B, -1, -1)
+               if offsets is not None else
+               torch.randint(0, self.npos - S, (B, n_envs, 2), device=d))
+        goal = (torch.as_tensor(goals, device=d).float()[None].expand(B, -1, -1)
+                if goals is not None else
+                torch.randint(0, S, (B, n_envs, 2), device=d).float())
         known = torch.zeros(B, n_envs, dtype=torch.bool, device=d)
         sigma = (torch.rand(B, device=d) * (noise_hi - noise_lo) + noise_lo) * math.pi / 180
         D = sum(s.width for s in self.specs)
@@ -163,8 +170,9 @@ class Synth:
                 done = done | at
                 prev_r, prev_a, prev_d = cur_r, a, moved
             known[:, j] = k_j
-            chunks.append((obs, tgt, msk, kn, fst, alive))
-        cat = [torch.cat([c[i] for c in chunks], 1) for i in range(6)]
+            chunks.append((obs, tgt, msk, kn, fst, alive,
+                           torch.full((B, cap), float(j), device=d)))
+        cat = [torch.cat([c[i] for c in chunks], 1) for i in range(7)]
         alive = cat[5]
         Ltot = alive.shape[1]
         L = int(alive.sum(1).max().item())
@@ -175,7 +183,8 @@ class Synth:
         for x in cat:
             ix = idx.view(B, L, *([1] * (x.dim() - 2))).expand(B, L, *x.shape[2:])
             out.append(torch.gather(x, 1, ix) * keep.view(B, L, *([1] * (x.dim() - 2))))
-        return tuple(out)
+        # The 7th, the arena index of each step, only on request.
+        return tuple(out) if return_arena else tuple(out[:6])
 
 
 def rehearse(agent, synth, optimizer, *, steps: int, batch: int,
