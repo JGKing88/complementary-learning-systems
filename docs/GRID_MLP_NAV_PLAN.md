@@ -640,6 +640,61 @@ lever `_reh`), so the real-task stages cannot wear down what pretraining taught.
 lifetime:400,envs=3,iters=2,sup=1,beta=0.5->0 ; lifetime:600,envs=6,iters=1,sup=1,beta=0`,
 lr 3e-4.
 
+By u500 (end of its two-visit stages) the student alone, held-out arenas,
+revisits 0.99 to 1.00 in 12 to 17 steps and reaches a known goal in 3-arena
+lifetimes 0.90 to 0.95 of the time in 16 to 26 steps. The full continual
+protocol at u500 (840 trials, state carried) is much worse:
+
+| u500, protocol | a0 | a1 | a2 | a3 | a4 | a5 |
+|---|---|---|---|---|---|---|
+| own block | 1.00 | 0.05 | 0.38 | 0.90 | 0.05 | 0.10 |
+| final block | 1.00 | 0.00 | 0.65 | 0.80 | 0.03 | 0.10 |
+
+Success after the find 0.52 (`cl_summary`), against 0.32 for the model
+without lifetime pretraining and 1.00 for idea 1. Three things checked:
+
+1. A protocol input bug, specific to idea 3. `run_mini_episode` placed the
+   agent with `set_position`, which does not reset the env's last
+   displacement, so a trial's first prev_displacement input was the env's last
+   move from its previous trial. The collector starts every rollout at zero.
+   `fresh_prev_displacement` (on for memory backend none, off otherwise, so
+   earlier models' protocol and goldens are unchanged) fixes it. Effect small:
+   success after the find 0.52 at 40 passes per block (unchanged), 0.59 to
+   0.68 at 2. The same three arenas fail.
+2. Length. Passes per block 2 / 5 / 10 / 40 give success after the find 0.59 /
+   0.70 / 0.71 / 0.52: not the main cause in the real protocol.
+3. Memory or policy? `analysis/idea3/synth_val_arenas.py` runs synthetic
+   lifetimes over the run's own 6 held-out arenas (their places and goals; no
+   views, no policy) and scores recall per arena: median direction error at
+   the first step of a trial in an arena found before.
+
+| median error at a trial start | a0 | a1 | a2 | a3 | a4 | a5 |
+|---|---|---|---|---|---|---|
+| synthetic-lifetime model, 2 passes per block | 6° | 10° | 15° | 28° | 33° | 26° |
+| same, 10 passes per block | 14° | 41° | 29° | 64° | 54° | 63° |
+| real-task fork u500, 2 passes per block | 17° | 105° | 95° | 88° | 68° | 109° |
+
+Two problems. Length does matter for the memory itself: trained on at most
+2 passes per block, recall degrades with 10 (the protocol has 40). And the
+real-task stages wore the memory down despite rehearsal: after them only
+arena 0 is still recalled, and the rehearsal loss sat near 0.2 throughout
+against 0.017 at the end of pretraining. One likely route is the view input,
+whose weights start at zero and grow in the real task, changing the trunk's
+dynamics on real inputs in a way synthetic rehearsal (no views) cannot
+constrain.
+
+Fixes, both running.
+- Long synthetic lifetimes: `--iters_choices 2 5 10 20 --tbptt 600`
+  (truncated BPTT, windows of 600 steps, state carried detached), from the
+  synthetic-lifetime model, 1,500 lifetimes of 64, lr 3e-4 (job 27988918).
+- `--freeze_trunk` (lever `_ft`): in the real-task stages only the heads
+  train, so the memory cannot be worn down and the view weights stay zero
+  (the trunk then sees the same inputs as in pretraining). The cost is that
+  search is a linear readout of features not trained for search. First fork
+  from the 2-pass synthetic model (job 27989094, `code/i3_ed115bd`; heads at
+  lr 1e-3: two-visit stages with the handover, then 6-arena lifetimes). The
+  rehearsal fork was stopped at u550.
+
 ### 7.7 Stage 1 runs (RL, superseded by §7.6)
 
 Stage 1 runs, 4000 updates, launched from a frozen copy of the code at
