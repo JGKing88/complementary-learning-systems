@@ -89,6 +89,10 @@ declare -A RUN=(
   # (task, arenas moving every update).
   [i3_h128]=navigate_navp2_task3r_k2_h128_i3_rp_s42_27665224
   [i3_h512]=navigate_navp2_task3r_k2_h512_i3_rp_s42_27665225
+  # Idea 3 trained by supervision (§7.6): synthetic pretraining, then the
+  # teacher stages and lifetimes; one and three GRU layers.
+  [i3sup_h512]=navigate_navp2_task3r_k2_h512_i3_rp_rw_sup_s42_27921631
+  [i3sup_l3]=navigate_navp2_task3r_k2_h512_i3_rp_rw_l3_sup_s42_27921633
 )
 
 for arm in $ARMS; do
