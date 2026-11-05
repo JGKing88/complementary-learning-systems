@@ -41,6 +41,10 @@ class NavAgent(nn.Module):
         self.action_bounds = action_bounds
 
         self.rnn = build_recurrent_core(cfg, input_dim)
+        if getattr(cfg, "freeze_trunk", False):
+            # Idea 3 after synthetic pretraining (AgentConfig.freeze_trunk).
+            for p in self.rnn.parameters():
+                p.requires_grad_(False)
         # Optional MLP between the trunk and the heads (AgentConfig.
         # head_mlp_layers). Its output is hidden_size wide, so every head below
         # is unchanged; absent, the state_dict keys are the historical ones.

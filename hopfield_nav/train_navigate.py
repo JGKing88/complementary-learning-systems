@@ -1127,6 +1127,7 @@ CFG_FIELDS: dict[str, tuple[str, ...]] = {
     "synth_rehearsal_steps": ("synth_rehearsal_steps",),
     "synth_rehearsal_batch": ("synth_rehearsal_batch",),
     "head_mlp_layers": ("agent.head_mlp_layers",),
+    "freeze_trunk": ("agent.freeze_trunk",),
     "hopfield_storage_rule": ("hopfield.storage_rule",),
     # ppo
     "lr": ("ppo.lr",),
@@ -1320,6 +1321,8 @@ def build_parser() -> argparse.ArgumentParser:
                    help="Idea 3 diagnostic: weight of an auxiliary loss in which a head on the recurrent features predicts the grid code seen at the last rewarded step (the agent's own input then; never read by the policy). Needs --input_grid_code under --memory_backend none.")
     p.add_argument("--aux_disp_weight", type=float, default=0.0,
                    help="Idea 3 diagnostic: weight of an auxiliary loss in which a head on the recurrent features predicts the displacement to the cell of the last reward, worked out from the two grid codes (the code-pair-to-displacement supervision the Phase-1 grid MLP had). Never read by the policy. Needs --input_grid_code under --memory_backend none.")
+    p.add_argument("--freeze_trunk", action=argparse.BooleanOptionalAction, default=False,
+                   help="Idea 3: fix the recurrent trunk's weights so training reaches only the heads (after synthetic pretraining).")
     p.add_argument("--head_mlp_layers", type=int, default=0,
                    help="Layers of a ReLU MLP (hidden_size wide) between the recurrent trunk and every head, reading the trunk output and the step's input. 0 = none. Idea 3: the GRU holds the goal, the MLP compares it with the current grid code.")
     p.add_argument("--teacher_noise_deg", type=float, default=30.0,

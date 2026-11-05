@@ -1983,6 +1983,9 @@ case "$VARIANT" in
                   AUX_DISP_WEIGHT=${AUX_DISP_WEIGHT:-2.0}
                   SUP_EPOCHS=${SUP_EPOCHS:-4}; TEACHER_NOISE_DEG=${TEACHER_NOISE_DEG:-60}
                   _rest="${_rest#_sup}" ;;
+            _ft*) # Idea 3: freeze the recurrent trunk (heads only) for the
+                  # real-task stages after synthetic pretraining (§7.6).
+                  FREEZE_TRUNK=1; _rest="${_rest#_ft}" ;;
             _reh*) # Idea 3: rehearse synthetic lifetimes after every update
                   # (training/synth_decode.py), so the real-task stages keep
                   # what synthetic pretraining taught (§7.6).

@@ -353,6 +353,11 @@ class AgentConfig:
     # more depth (the Phase-1 grid MLP that does it has 5 layers); the GRU
     # can hold the goal and the MLP compare, as in idea 1's split.
     head_mlp_layers: int = 0
+    # Idea 3: the recurrent trunk's weights are fixed (requires_grad off), so
+    # training reaches only the heads. For real-task stages after synthetic
+    # pretraining, which otherwise wear down the goal memory (§7.6); the view
+    # input weights pretraining zeroed then stay zero.
+    freeze_trunk: bool = False
 
 
 @dataclass

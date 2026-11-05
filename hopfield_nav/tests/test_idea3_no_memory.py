@@ -532,6 +532,28 @@ def test_synth_lifetime_and_rehearse():
     assert np.isfinite(loss) and not torch.equal(before, agent.goal_disp_head.weight)
 
 
+def test_freeze_trunk_trains_heads_only():
+    from hopfield_nav.training.task import merge_visits
+    from hopfield_nav.updates.sup import sup_update
+    from hopfield_nav.world.env import make_env
+    cfg = none_cfg(batch_envs=6, steps_per_rollout=30)
+    cfg.agent.aux_disp_weight = 1.0
+    cfg.agent.freeze_trunk = True
+    collector, agent, _ = make_collector(cfg, seed=0)
+    assert not any(p.requires_grad for p in agent.rnn.parameters())
+    env = make_env(cfg.env, "continuous", seed=5)
+    env.set_goal((2, 3))
+    r1 = _teacher_visit(collector, agent, env, cfg, None, None, 0, beta=1.0)
+    r2 = _teacher_visit(collector, agent, env, cfg, r1.h_final, r1.store_fired_final, 1, beta=1.0)
+    trunk = [p.detach().clone() for p in agent.rnn.parameters()]
+    head = agent.movement_mean.weight.detach().clone()
+    opt = torch.optim.Adam(agent.parameters(), lr=1e-3)
+    agent.train()
+    sup_update(agent, [merge_visits([r1, r2])], cfg.ppo, opt, epochs=1, n_minibatches=1)
+    assert all(torch.equal(a, b) for a, b in zip(trunk, agent.rnn.parameters()))
+    assert not torch.equal(head, agent.movement_mean.weight)
+
+
 def test_lifetime_schedule_parses():
     from hopfield_nav.training.stages import (ScheduleError, format_schedule,
                                                parse_schedule)
