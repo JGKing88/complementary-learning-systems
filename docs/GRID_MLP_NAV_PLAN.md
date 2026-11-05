@@ -600,6 +600,46 @@ change −0.83 (one layer: 0.28, 0.15, −0.90). This is the baseline for the
 lifetime stages, which train exactly this: a new arena means an unknown goal,
 and several goals have to be held at once.
 
+The real-task lifetime stage did not teach it and undid the single-arena
+skill. Over u1200 to u1800 (3-arena lifetimes, student alone in training) the
+three-layer student's revisits on held-out arenas fell from 0.95 in 16 steps to
+0.55 to 0.63 in 64 to 79, and in the 3-arena lifetime eval a known goal was
+reached 0.41 to 0.62 of the time in 77 to 87 steps (from 0.79 in 41). In
+training lifetimes its heading after a find stayed 53 to 64° off the teacher.
+The one-layer run was stopped at u1850; the three-layer one runs on to u2400
+as a comparison.
+
+So stage 2 got a synthetic version too (`pretrain_decode.py --mode lifetime`,
+generator in `hopfield_nav/training/synth_decode.py`): per sequence 2 to 6
+arenas at random scaffold places, each with a goal, trials in the protocol's
+order (block i: one or two passes over arenas 0..i), each from a random cell
+with no previous step and ending at the goal or after 50 steps, rows packed.
+In an arena whose goal the row has not reached the walker wanders first, so
+its moves do not give the goal away. Targets: the vector to the current
+arena's goal when it is known, and whether it is known (a pretraining-only
+head). Started from the single-arena model, 10,000 steps of 128 lifetimes, lr
+5e-4, about 2 h (job 27969855).
+
+| step 10,000, fresh places and goals | 3 arenas | 6 arenas |
+|---|---|---|
+| knows whether this arena's goal was found | 0.998 | 0.994 |
+| direction at the first step of a trial in a known arena | 10.9° (median 6.2°) | 23.1° (median 12.1°) |
+| all known steps | R² 0.97, 7.2° | R² 0.88, 13.7° |
+
+A plain three-layer GRU holds up to 6 goals keyed by arena place, tells a new
+arena from a known one, and on entering a known arena from a random cell
+recalls that arena's goal and decodes its direction, with a median error of 6°
+(3 arenas) and 12° (6 arenas). The 6-arena figure was still falling; 20,000
+more steps at lr 3e-4 run as job 27975446.
+
+Then the real-task stages again, from this model, with rehearsal: after every
+update, 2 optimizer steps on 64 synthetic lifetimes (`--synth_rehearsal_steps`,
+lever `_reh`), so the real-task stages cannot wear down what pretraining taught.
+`task3r_k2_h512_i3_rp_rw_l3_sup_reh`, job 27975445, `code/i3_01ef8f8`:
+`task:300,visits=2,sup=1,beta=1->0 ; task:200,visits=2,sup=1,beta=0 ;
+lifetime:400,envs=3,iters=2,sup=1,beta=0.5->0 ; lifetime:600,envs=6,iters=1,sup=1,beta=0`,
+lr 3e-4.
+
 ### 7.7 Stage 1 runs (RL, superseded by §7.6)
 
 Stage 1 runs, 4000 updates, launched from a frozen copy of the code at
