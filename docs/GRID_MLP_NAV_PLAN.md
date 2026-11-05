@@ -582,6 +582,24 @@ it has not trained on. Its search is weaker than idea 1's (first visits find
 the goal 0.23 to 0.45 of the time against 0.5 to 0.6); imitating the novelty
 teacher's search is hard (73° off its moves).
 
+At the end of the two-visit stages (u1200, teacher fully handed over) the
+three-layer student revisits 0.92 to 0.95 of the time in 16 to 17 steps (a
+little slower than at u200; the goal probe at u200 and u800 shows the decode
+did not erode, held-out trained-head R² 0.66 then 0.78, the agent's moves
+following the goal direction at cosine 0.73 then 0.84). The one-layer student
+stays behind (revisits 0.57 to 0.66 in 37 to 42 steps).
+
+The full continual protocol at u1200, before any lifetime training (state
+carried through all 840 trials, the §10.8 settings): the three-layer GRU holds
+one goal and applies it everywhere. Arena 0 alone succeeds 0.90; when arena 1
+arrives, arena 0 goes to 1.00 and arena 1 to 0.05, so in a new arena the GRU
+keeps steering for arena 0's goal instead of searching. Later arena 4's goal
+takes over (0.65, then 0.93) and arena 0 collapses (0.07). Scored on every
+arena (`cl_summary.py`): own block 0.33, after the find 0.32, worst arena
+change −0.83 (one layer: 0.28, 0.15, −0.90). This is the baseline for the
+lifetime stages, which train exactly this: a new arena means an unknown goal,
+and several goals have to be held at once.
+
 ### 7.7 Stage 1 runs (RL, superseded by §7.6)
 
 Stage 1 runs, 4000 updates, launched from a frozen copy of the code at
