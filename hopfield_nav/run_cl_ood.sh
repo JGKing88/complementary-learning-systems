@@ -95,6 +95,8 @@ declare -A RUN=(
   [i3sup_l3]=navigate_navp2_task3r_k2_h512_i3_rp_rw_l3_sup_s42_27921633
   # ... and from synthetic lifetime pretraining, with synthetic rehearsal.
   [i3reh_l3]=navigate_navp2_task3r_k2_h512_i3_rp_rw_l3_sup_reh_s42_27975445
+  # ... and with the trunk frozen in the real-task stages (heads only).
+  [i3ft_l3]=navigate_navp2_task3r_k2_h512_i3_rp_rw_l3_sup_ft_s42_27989094
 )
 
 for arm in $ARMS; do
