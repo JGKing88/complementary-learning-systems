@@ -695,6 +695,34 @@ Fixes, both running.
   lr 1e-3: two-visit stages with the handover, then 6-arena lifetimes). The
   rehearsal fork was stopped at u550.
 
+Results of those two.
+- Long synthetic lifetimes fixed length for the memory. On a held-out set of
+  6 arenas (the frozen fork's), synthetic recall at a trial start, median:
+  7 / 10 / 12 / 25 / 48 / 46° for arenas 0 to 5 at 40 passes per block, the
+  same as at 2 passes (7 / 10 / 12 / 23 / 32 / 37°). The fifth and sixth
+  arenas are held only roughly.
+- A frozen trunk with linear heads cannot gate "follow the goal if known, else
+  search" (a product of two signals); its revisits slowed from 18 to 39 steps
+  as it trained (stopped). With a fresh 2-layer MLP head
+  (`analysis/idea3/add_head_mlp.py`, job 27998044, from the long-lifetime
+  trunk) the heads can gate, but the frozen trunk does not fit the student's
+  own trajectories: its heading after a find is 8° off while the teacher
+  drives and 30 to 35° once the student does, and the displacement loss goes
+  0.04 to 0.3. Held-out revisits 0.67 to 0.86 in 20 to 45 steps.
+- So the trunk has to adapt to real trajectories without wearing the memory
+  down. `--freeze_view_input` (lever `_fv`) masks the gradient of the trunk's
+  view-input weights, which then stay at pretraining's zeros, while the rest of
+  the trunk trains (lr 1e-4, rehearsal 4 steps per update). Job 28010359,
+  `code/i3_v10` (commit 77838e3), from the long-lifetime trunk.
+
+The protocol before the real-task lifetime stage measures the wrong thing.
+On the frozen-MLP fork at u400, arena 0 is held throughout (0.88 to 1.00 per
+block) and arena 1 almost never solved (0.03 in its own block), yet synthetic
+recall on these arenas is good (arena 1 at 10°). Until then the policy has only
+seen one arena per sequence, never a second arena while holding another's
+goal; the lifetime stage is what teaches that. Both forks are scored on the
+protocol at the end of their lifetime stage.
+
 ### 7.7 Stage 1 runs (RL, superseded by §7.6)
 
 Stage 1 runs, 4000 updates, launched from a frozen copy of the code at
