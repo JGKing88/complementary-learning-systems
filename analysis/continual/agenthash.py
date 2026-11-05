@@ -195,6 +195,8 @@ def mini_episode(
         lock_store_after_goal=lock_store_after_goal,
         on_step=(None if store_trainer is None else store_trainer.add),
         h_init=None if carry is None else carry["h"],
+        # Idea 3: a trial starts with no previous move, as in training.
+        fresh_prev_displacement=carry is not None,
     )
     if carry is not None:
         carry["h"] = rec.h_final

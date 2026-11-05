@@ -91,6 +91,7 @@ def run_mini_episode(
     lock_store_after_goal: bool = False,
     on_step: Callable[[torch.Tensor, bool], None] | None = None,
     h_init: torch.Tensor | None = None,
+    fresh_prev_displacement: bool = False,
 ) -> EpisodeRecord:
     """One mini-episode from a random non-goal start, up to ``max_steps``.
 
@@ -105,6 +106,14 @@ def run_mini_episode(
     zeros (idea 3, where the state is the memory); prev_reward and
     prev_action still start at zero, as a new trial does in training.
     ``hopfield`` may then be None: the oracle store only marks the goal found.
+
+    ``fresh_prev_displacement`` zeroes the env's last displacement at the
+    start, so the first step's prev_displacement input is zero as in the
+    training collector. Without it that input is the env's last move from its
+    previous episode (often the move made on the goal, which the collector
+    would have discarded). Off by default, the protocol as every model before
+    idea 3 was scored under; idea 3 turns it on (its state is its memory, and
+    a stale move at a trial start reads as mid-trial).
     """
     # Deferred import: agent_step still lives in eval.py, which imports this
     # module. Phase 6 moves it to evaluation/agent_step.py and this becomes a
@@ -117,6 +126,8 @@ def run_mini_episode(
 
     goal = env.goal_location
     env.set_position(random_start(env.size, goal, rng))
+    if fresh_prev_displacement and hasattr(env, "_last_displacement"):
+        env._last_displacement = np.zeros_like(env._last_displacement)
     h_rnn = h_init
     prev_reward = None
     prev_action = None
