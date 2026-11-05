@@ -48,6 +48,7 @@ from .rollout import diagnostics as rollout_diag
 MIN_COS_FRAC = 0.5
 from .updates.ppo import ppo_update
 from .updates.sup import sup_update
+from .training.synth_decode import Synth, rehearse
 from .evaluation.checkpoint_io import cfg_from_checkpoint
 from .training.cfg_args import settle_encoder
 from .training.explore import ExploreRegime
@@ -388,6 +389,10 @@ def run_navigate(
         do_eval(cfg, agent, eval_world, device, "navigate_u0", use_wandb,
                 max_steps=eval_max_steps)
 
+    # Idea 3: rehearse synthetic lifetimes after every update (§7.6).
+    synth = (Synth(cfg, device) if getattr(cfg, "synth_rehearsal_steps", 0) > 0
+             else None)
+
     for update in range(start_update + 1, n_updates_total + 1):
         stage, local_update = stage_at(stages, update)
 
@@ -679,6 +684,11 @@ def run_navigate(
         else:
             losses = ppo_update(agent, ppo_rollouts, cfg.ppo, optimizer,
                                 aux_scale=1.0, prior=prior)
+        if synth is not None:
+            losses["rehearse"] = rehearse(
+                agent, synth, optimizer, steps=cfg.synth_rehearsal_steps,
+                batch=cfg.synth_rehearsal_batch,
+                max_grad_norm=cfg.ppo.max_grad_norm)
         if prior is not None:
             losses["prior_drift"] = prior.drift(agent)
         t_ppo_acc += time.time() - t_ppo0
@@ -1114,6 +1124,8 @@ CFG_FIELDS: dict[str, tuple[str, ...]] = {
     "aux_disp_weight": ("agent.aux_disp_weight",),
     "teacher_noise_deg": ("teacher_noise_deg",),
     "sup_epochs": ("sup_epochs",),
+    "synth_rehearsal_steps": ("synth_rehearsal_steps",),
+    "synth_rehearsal_batch": ("synth_rehearsal_batch",),
     "head_mlp_layers": ("agent.head_mlp_layers",),
     "hopfield_storage_rule": ("hopfield.storage_rule",),
     # ppo
@@ -1312,6 +1324,9 @@ def build_parser() -> argparse.ArgumentParser:
                    help="Layers of a ReLU MLP (hidden_size wide) between the recurrent trunk and every head, reading the trunk output and the step's input. 0 = none. Idea 3: the GRU holds the goal, the MLP compares it with the current grid code.")
     p.add_argument("--teacher_noise_deg", type=float, default=30.0,
                    help="sup=1 stages: SD of the Gaussian turn applied to the teacher's executed moves (labels stay clean).")
+    p.add_argument("--synth_rehearsal_steps", type=int, default=0,
+                   help="Idea 3: optimizer steps per update on synthetic lifetimes (training/synth_decode.py), keeping what synthetic pretraining taught. 0 = off.")
+    p.add_argument("--synth_rehearsal_batch", type=int, default=64)
     p.add_argument("--sup_epochs", type=int, default=2,
                    help="sup=1 stages: passes of the supervised update over each update's sequences.")
     p.add_argument("--memory_backend", choices=["hopfield", "sensory_kv", "none"],
@@ -1957,6 +1972,11 @@ def main():
         p.error("--aux_goal_weight / --aux_disp_weight need --input_grid_code "
                 "and --memory_backend none")
     kinds = {st.kind for st in stages}
+    if cfg.synth_rehearsal_steps > 0 and not (
+            memory_backend.is_none(cfg) and cfg.agent.input_grid_code
+            and cfg.agent.aux_disp_weight > 0):
+        p.error("--synth_rehearsal_steps needs --memory_backend none, "
+                "--input_grid_code and --aux_disp_weight > 0")
     if any(st.sup for st in stages):
         # The teacher's labels need idea 3's carried state and the
         # displacement head (GRID_MLP_NAV_PLAN §7.6).

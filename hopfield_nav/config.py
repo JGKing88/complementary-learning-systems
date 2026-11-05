@@ -571,6 +571,11 @@ class TrainConfig:
     # clean), and passes of the supervised update over each update's data.
     teacher_noise_deg: float = 30.0
     sup_epochs: int = 2
+    # Idea 3: optimizer steps per update on synthetic lifetimes
+    # (training/synth_decode.py: displacement to the current arena's goal),
+    # so the real-task stages keep what synthetic pretraining taught. 0 = off.
+    synth_rehearsal_steps: int = 0
+    synth_rehearsal_batch: int = 64
     # Task regime only (docs/TASK_FAITHFUL_PLAN.md, wave 2): keep the novelty
     # / revisit shaping running after a trajectory's goal is stored instead of
     # switching to goal-reward-only. Wave 1 showed why: with novelty

@@ -507,6 +507,31 @@ def test_sup_update_learns():
     assert np.isfinite(last["dir_err_known_deg"])
 
 
+def test_synth_lifetime_and_rehearse():
+    """Synthetic lifetimes keep the collector's layout, pack each row's real
+    steps, and a rehearsal step trains the displacement head."""
+    from hopfield_nav.training.synth_decode import Synth, rehearse
+    cfg = none_cfg()
+    cfg.agent.aux_disp_weight = 1.0
+    cfg.env.size = 20
+    _c, agent, _ = make_collector(cfg, seed=0)
+    synth = Synth(cfg, torch.device("cpu"))
+    torch.manual_seed(0)
+    obs, tgt, msk, kn, fst, alive = synth.lifetime(4, 2, 1, cap=30)
+    D = sum(s.width for s in channels.channel_specs(cfg.agent, 1, cfg.env.observation_size))
+    assert obs.shape[0] == 4 and obs.shape[2] == D
+    # alive steps are a prefix; known steps carry targets; trial starts in a
+    # known arena are known steps.
+    for b in range(4):
+        n = int(alive[b].sum())
+        assert alive[b, :n].all() and not alive[b, n:].any()
+    assert ((msk > 0) <= (kn > 0)).all() and ((fst > 0) <= (msk > 0)).all()
+    before = agent.goal_disp_head.weight.detach().clone()
+    opt = torch.optim.Adam(agent.parameters(), lr=1e-3)
+    loss = rehearse(agent, synth, opt, steps=2, batch=4, max_envs=2)
+    assert np.isfinite(loss) and not torch.equal(before, agent.goal_disp_head.weight)
+
+
 def test_lifetime_schedule_parses():
     from hopfield_nav.training.stages import (ScheduleError, format_schedule,
                                                parse_schedule)

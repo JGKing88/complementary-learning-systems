@@ -1983,6 +1983,10 @@ case "$VARIANT" in
                   AUX_DISP_WEIGHT=${AUX_DISP_WEIGHT:-2.0}
                   SUP_EPOCHS=${SUP_EPOCHS:-4}; TEACHER_NOISE_DEG=${TEACHER_NOISE_DEG:-60}
                   _rest="${_rest#_sup}" ;;
+            _reh*) # Idea 3: rehearse synthetic lifetimes after every update
+                  # (training/synth_decode.py), so the real-task stages keep
+                  # what synthetic pretraining taught (§7.6).
+                  SYNTH_REHEARSAL_STEPS=${SYNTH_REHEARSAL_STEPS:-2}; _rest="${_rest#_reh}" ;;
             _life*)
                   # Idea 3 stage 2 (GRID_MLP_NAV_PLAN §7.3, §7.5): short
                   # continual-protocol lifetimes, a curriculum on the number of
