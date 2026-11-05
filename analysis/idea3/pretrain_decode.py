@@ -99,6 +99,11 @@ def main():
     p.add_argument("--max_envs", type=int, default=6)
     p.add_argument("--max_iters", type=int, default=2)
     p.add_argument("--known_weight", type=float, default=0.5)
+    p.add_argument("--iters_choices", type=int, nargs="*", default=None,
+                   help="passes per block to draw from (uniformly), e.g. 2 5 10 20; "
+                        "default 1..max_iters")
+    p.add_argument("--tbptt", type=int, default=0,
+                   help="truncated-BPTT window in steps (0 = whole sequence)")
     a = p.parse_args()
     device = torch.device(a.device if torch.cuda.is_available() else "cpu")
     torch.manual_seed(a.seed)
@@ -116,27 +121,42 @@ def main():
     opt = torch.optim.Adam(list(agent.parameters()) + list(known_head.parameters()), lr=a.lr)
     t0 = time.time()
     hist = []
+    import random
     for step in range(1, a.steps + 1):
         if a.mode == "lifetime":
             E = int(torch.randint(2, a.max_envs + 1, ()).item())
-            K = int(torch.randint(1, a.max_iters + 1, ()).item())
+            K = (random.choice(a.iters_choices) if a.iters_choices
+                 else int(torch.randint(1, a.max_iters + 1, ()).item()))
             obs, tgt, msk, kn, _, alive = synth.lifetime(a.batch, E, K)
         else:
             obs, tgt, msk, _ = synth.batch(a.batch, a.seq)
-        _, _, _, _, feats = agent(obs, return_features=True)
-        err = ((agent.goal_disp_head(feats) - tgt) ** 2).sum(-1)
-        loss = (err * msk).sum() / msk.sum().clamp_min(1.0)
-        if a.mode == "lifetime":
-            bce = torch.nn.functional.binary_cross_entropy_with_logits(
-                known_head(feats).squeeze(-1), kn, reduction="none")
-            loss = loss + a.known_weight * (bce * alive).sum() / alive.sum().clamp_min(1.0)
-        opt.zero_grad(set_to_none=True)
-        loss.backward()
-        torch.nn.utils.clip_grad_norm_(agent.parameters(), 1.0)
-        opt.step()
+            kn = alive = None
+        # Truncated BPTT for long lifetimes (--tbptt W): windows of W steps,
+        # the state carried detached from one to the next, one optimizer step
+        # per window. 0 = the whole sequence at once.
+        L = obs.shape[1]
+        W = a.tbptt if a.tbptt > 0 else L
+        h = None
+        for s0 in range(0, L, W):
+            sl = slice(s0, s0 + W)
+            if alive is not None and alive[:, sl].sum() == 0:
+                break
+            _, _, _, h_next, feats = agent(obs[:, sl], h, return_features=True)
+            err = ((agent.goal_disp_head(feats) - tgt[:, sl]) ** 2).sum(-1)
+            loss = (err * msk[:, sl]).sum() / msk[:, sl].sum().clamp_min(1.0)
+            if a.mode == "lifetime":
+                bce = torch.nn.functional.binary_cross_entropy_with_logits(
+                    known_head(feats).squeeze(-1), kn[:, sl], reduction="none")
+                loss = loss + a.known_weight * (bce * alive[:, sl]).sum() / \
+                    alive[:, sl].sum().clamp_min(1.0)
+            opt.zero_grad(set_to_none=True)
+            loss.backward()
+            torch.nn.utils.clip_grad_norm_(agent.parameters(), 1.0)
+            opt.step()
+            h = h_next.detach()
         if (step % a.eval_every == 0 or step == a.steps) and a.mode == "lifetime":
-            ev = {f"E{E}": evaluate_lifetime(agent, known_head, synth, 128, E, 2)
-                  for E in (3, 6)}
+            ev = {f"E{E}k{k}": evaluate_lifetime(agent, known_head, synth, 64, E, k)
+                  for E, k in ((3, 2), (6, 2), (6, 10))}
             hist.append({"step": step, "loss": loss.item(), **ev})
             print(f"step {step} loss {loss.item():.4f} | " + " | ".join(
                 f"{k}: known r2 {v['known']['r2']:.3f} dir {v['known']['dir_err_deg']:.1f}, "
