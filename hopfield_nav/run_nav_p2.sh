@@ -1983,6 +1983,9 @@ case "$VARIANT" in
                   AUX_DISP_WEIGHT=${AUX_DISP_WEIGHT:-2.0}
                   SUP_EPOCHS=${SUP_EPOCHS:-4}; TEACHER_NOISE_DEG=${TEACHER_NOISE_DEG:-60}
                   _rest="${_rest#_sup}" ;;
+            _fv*) # Idea 3: hold the view-input weights at zero (after synthetic
+                  # pretraining) while the rest of the trunk trains (§7.6).
+                  FREEZE_VIEW_INPUT=1; _rest="${_rest#_fv}" ;;
             _ft*) # Idea 3: freeze the recurrent trunk (heads only) for the
                   # real-task stages after synthetic pretraining (§7.6).
                   FREEZE_TRUNK=1; _rest="${_rest#_ft}" ;;

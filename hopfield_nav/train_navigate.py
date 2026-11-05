@@ -38,6 +38,7 @@ from .encoder_io import load_encoder, validate_config
 from .world.env import warn_if_offcell_stores
 from .policy.agent import NavAgent, compute_input_dim
 from .policy.recurrent import add_recurrent_args
+from .policy import channels
 from .rollout.collector import RolloutCollector
 from .rollout import diagnostics as rollout_diag
 
@@ -977,6 +978,18 @@ def train_navigate(
         agent.load_state_dict(resume_ck["agent_state_dict"])
         print(f"Continuing {resume_ck['_path']} from u{start_update}", flush=True)
 
+    if getattr(cfg.agent, "freeze_view_input", False):
+        # A gradient mask on the first layer's view columns: Adam then never
+        # moves them (its moments stay zero), so zeros stay zero.
+        _o = 0
+        for _s in channels.channel_specs(cfg.agent, embed_dim, cfg.env.observation_size):
+            if _s.name == "sensory":
+                _mask = torch.ones_like(agent.rnn.weight_ih_l0)
+                _mask[:, _o:_o + _s.width] = 0.0
+                agent.rnn.weight_ih_l0.register_hook(lambda g, m=_mask: g * m)
+                print(f"View input weights held (columns {_o}:{_o + _s.width})", flush=True)
+            _o += _s.width
+
     if cfg.use_wandb:
         import wandb
         # Same run, same wandb run: a continuation that opened a second one
@@ -1128,6 +1141,7 @@ CFG_FIELDS: dict[str, tuple[str, ...]] = {
     "synth_rehearsal_batch": ("synth_rehearsal_batch",),
     "head_mlp_layers": ("agent.head_mlp_layers",),
     "freeze_trunk": ("agent.freeze_trunk",),
+    "freeze_view_input": ("agent.freeze_view_input",),
     "hopfield_storage_rule": ("hopfield.storage_rule",),
     # ppo
     "lr": ("ppo.lr",),
@@ -1321,6 +1335,8 @@ def build_parser() -> argparse.ArgumentParser:
                    help="Idea 3 diagnostic: weight of an auxiliary loss in which a head on the recurrent features predicts the grid code seen at the last rewarded step (the agent's own input then; never read by the policy). Needs --input_grid_code under --memory_backend none.")
     p.add_argument("--aux_disp_weight", type=float, default=0.0,
                    help="Idea 3 diagnostic: weight of an auxiliary loss in which a head on the recurrent features predicts the displacement to the cell of the last reward, worked out from the two grid codes (the code-pair-to-displacement supervision the Phase-1 grid MLP had). Never read by the policy. Needs --input_grid_code under --memory_backend none.")
+    p.add_argument("--freeze_view_input", action=argparse.BooleanOptionalAction, default=False,
+                   help="Idea 3: hold the trunk's view-input weights where they are (zero after synthetic pretraining) while the rest trains.")
     p.add_argument("--freeze_trunk", action=argparse.BooleanOptionalAction, default=False,
                    help="Idea 3: fix the recurrent trunk's weights so training reaches only the heads (after synthetic pretraining).")
     p.add_argument("--head_mlp_layers", type=int, default=0,

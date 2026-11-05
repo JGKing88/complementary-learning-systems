@@ -358,6 +358,12 @@ class AgentConfig:
     # pretraining, which otherwise wear down the goal memory (§7.6); the view
     # input weights pretraining zeroed then stay zero.
     freeze_trunk: bool = False
+    # Idea 3: hold the trunk's input weights from the view (the sensory
+    # channel) where they are -- zero, after synthetic pretraining -- while
+    # the rest of the trunk trains. Growing view weights change the trunk's
+    # dynamics on real inputs in a way synthetic rehearsal (no views) cannot
+    # constrain (§7.6).
+    freeze_view_input: bool = False
 
 
 @dataclass
