@@ -93,6 +93,8 @@ declare -A RUN=(
   # teacher stages and lifetimes; one and three GRU layers.
   [i3sup_h512]=navigate_navp2_task3r_k2_h512_i3_rp_rw_sup_s42_27921631
   [i3sup_l3]=navigate_navp2_task3r_k2_h512_i3_rp_rw_l3_sup_s42_27921633
+  # ... and from synthetic lifetime pretraining, with synthetic rehearsal.
+  [i3reh_l3]=navigate_navp2_task3r_k2_h512_i3_rp_rw_l3_sup_reh_s42_27975445
 )
 
 for arm in $ARMS; do
