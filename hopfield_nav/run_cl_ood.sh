@@ -99,6 +99,8 @@ declare -A RUN=(
   [i3ft_l3]=navigate_navp2_task3r_k2_h512_i3_rp_rw_l3_sup_ft_s42_27989094
   # ... long-block synthetic lifetimes, frozen trunk, a 2-layer MLP head.
   [i3ftmlp_l3]=navigate_navp2_task3r_k2_h512_i3_rp_rw_l3_sup_ft_s42_27998044
+  # ... long-block trunk trainable at lr 1e-4, view weights held, rehearsal 4.
+  [i3fv_l3]=navigate_navp2_task3r_k2_h512_i3_rp_rw_l3_sup_reh_fv_s42_28010359
 )
 
 for arm in $ARMS; do
