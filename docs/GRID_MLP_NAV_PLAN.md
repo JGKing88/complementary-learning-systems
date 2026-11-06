@@ -723,6 +723,32 @@ seen one arena per sequence, never a second arena while holding another's
 goal; the lifetime stage is what teaches that. Both forks are scored on the
 protocol at the end of their lifetime stage.
 
+The frozen trunk with the MLP head got worse in its real-task lifetime stage
+(held-out revisits 0.29 to 0.31 in 78 to 83 steps over u400 to 800, from 0.80
+in 33); freezing the trunk is a dead end. The view-held trainable fork is the
+best idea 3 model so far:
+
+| `_reh_fv`, held-out arenas, student alone | u0-200 | u200-400 | u400-600 | u600-750 |
+|---|---|---|---|---|
+| revisit found | 0.99 | 1.00 | 0.99 | 1.00 |
+| revisit steps | 10.9 | 10.9 | 14.8 | 22.2 |
+| 3-arena lifetime, known goal reached | 0.82 | 0.91 | 0.97 | 0.97 |
+| steps to a known goal | 21 | 16 | 14 | 22 |
+
+Its revisits match idea 1's speed (11.5 to 11.8) through u400. In the full
+protocol at u750, mid-way through its lifetime stage, the second arena is now
+solved (own block 0.90; every earlier checkpoint 0.03 to 0.05):
+
+| u750, protocol | a0 | a1 | a2 | a3 | a4 | a5 |
+|---|---|---|---|---|---|---|
+| own block | 0.97 | 0.90 | 0.23 | 0.35 | 0.38 | 0.60 |
+| final block | 0.53 | 0.78 | 0.35 | 0.30 | 0.45 | 0.60 |
+
+Success after the find 0.65 in 57 steps (idea 1 1.00 in 13), worst arena
+change −0.45 (arena 0, from 0.97 to 0.53 as later arenas arrive): interference
+between held goals, as the synthetic recall of the fifth and sixth arena
+already suggested.
+
 ### 7.7 Stage 1 runs (RL, superseded by §7.6)
 
 Stage 1 runs, 4000 updates, launched from a frozen copy of the code at
