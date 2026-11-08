@@ -2344,6 +2344,32 @@ WAVES: dict[str, dict] = {
         },
         "seed": [42, 43, 44, 45],
     },
+    # W67 -- push w66's 40k arm (cont 0.84-0.92, cos_floor 0.04 vs att0.5's
+    # 0.009) toward att0.5. Every arm keeps one env per step and no cross-env
+    # pair. rate_lambda = mult * 0.5 * (N + 2500) / 4096 as in w66.
+    #   q100k_r, q295k_r  longer history (295k = every point, ~1 epoch)
+    #   q40k_r2x          twice the matched rate strength
+    #   q40k_fresh        DIAGNOSTIC: the queue's points are re-encoded each
+    #                     step, so it is never stale. Replays past inputs; it
+    #                     sizes the staleness cost, it is not a candidate.
+    "w67_seb_queue_push": {
+        "arm": {
+            name: dict(npos_list=SIZE_MIXES["sm50"], batch_size=4096,
+                       lr=3e-4, per_env_radius_frac=0.0, radius=20.0,
+                       rate_lambda=round(mult * 0.5 * (q + 2500) / 4096, 3),
+                       rate_eps=1.0, out_dim=1024, hidden_dim=256,
+                       gain_end=100.0, attract_lambda=0.5,
+                       single_env_batch=True, rate_queue=q,
+                       rate_queue_fresh=fresh)
+            for name, q, mult, fresh in (
+                ("q100k_r", 100_000, 1.0, False),
+                ("q295k_r", 295_000, 1.0, False),
+                ("q40k_r2x", 40_000, 2.0, False),
+                ("q40k_fresh", 40_000, 1.0, True),
+            )
+        },
+        "seed": [42, 43, 44],
+    },
     "w61_cov0.75": {
         "arm": {
             name: {**dict(batch_size=4096, lr=3e-4, per_env_radius_frac=0.0,
@@ -2374,6 +2400,7 @@ def _flatten(cfg: dict) -> dict:
 
 
 _BOOL_FLAGS = {"single_env_batch", "shuffle", "exclude_cross_env_pairs",
+               "rate_queue_fresh",
                "lazy_codes"}
 
 # MEASURED, against the obvious guess. Four runs sharing one A100 each ran

@@ -175,8 +175,12 @@ def train(cfg: TrainConfig) -> str:
         env_indices_list = [torch.where(env_ids == e)[0]
                             for e in range(len(sizes))]
 
-    # FIFO of detached codes for the rate term (LossConfig.rate_queue).
+    # FIFO for the rate term (LossConfig.rate_queue): detached codes, or point
+    # indices when rate_queue_fresh re-encodes them every step.
     rate_queue: torch.Tensor | None = None
+    if cfg.loss.rate_queue_fresh and patch_cfg.spread_arena_frac > 0:
+        raise ValueError("rate_queue_fresh stores batch indices; the "
+                         "spread_arena_frac rows have none")
 
     best_val_nav = -1.0
     best_r_min = -1.0
@@ -274,12 +278,20 @@ def train(cfg: TrainConfig) -> str:
             if cfg.loss.rate_lambda > 0:
                 z_rate = z_spread
                 if rate_queue is not None and len(rate_queue) > 0:
-                    z_rate = torch.cat([z_spread, rate_queue], dim=0)
+                    if cfg.loss.rate_queue_fresh:
+                        # Diagnostic: re-encode the stored points with the
+                        # current weights, so the queue is never stale.
+                        with torch.no_grad():
+                            z_q = encoder(Phi_flat[rate_queue], gain)
+                    else:
+                        z_q = rate_queue
+                    z_rate = torch.cat([z_spread, z_q], dim=0)
                 r = cfg.loss.rate_lambda * coding_rate_loss(
                     z_rate, eps=cfg.loss.rate_eps)
                 loss, extra = loss + r, extra + float(r.item())
                 if cfg.loss.rate_queue > 0:
-                    new = z_spread.detach()
+                    new = idx if cfg.loss.rate_queue_fresh \
+                        else z_spread.detach()
                     rate_queue = new if rate_queue is None else \
                         torch.cat([new, rate_queue], dim=0)
                     rate_queue = rate_queue[:cfg.loss.rate_queue]
@@ -448,6 +460,7 @@ def _build_cfg_from_args(args) -> TrainConfig:
         rate_lambda=args.rate_lambda,
         rate_eps=args.rate_eps,
         rate_queue=args.rate_queue,
+        rate_queue_fresh=args.rate_queue_fresh,
         graded_sigma=args.graded_sigma,
         input_far_tau=args.input_far_tau,
     )
@@ -557,6 +570,10 @@ def main():
     p.add_argument("--rate_queue", type=int, default=0,
                    help="rows of detached past codes the rate term also sees "
                         "(FIFO); 0 = off")
+    p.add_argument("--rate_queue_fresh", action="store_true",
+                   help="DIAGNOSTIC: store the queue's point indices and "
+                        "re-encode them each step (no gradient), so the "
+                        "queue is never stale")
     p.add_argument("--graded_sigma", type=float, default=0.0,
                    help="distance-graded pair target exp(-d^2/2s^2); "
                         "0 keeps the binary near=1/far=0 targets")

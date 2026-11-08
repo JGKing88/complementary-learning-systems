@@ -89,6 +89,11 @@ class LossConfig:
     # time. It holds no labelled pair; gradient flows only through the current
     # batch.
     rate_queue: int = 0
+    # DIAGNOSTIC. Store the queue's point indices and re-encode them with the
+    # current weights each step (no gradient), so the queue is never stale.
+    # This replays past inputs, which a one-env-at-a-time learner storing codes
+    # would not have; it measures how much staleness costs the plain queue.
+    rate_queue_fresh: bool = False
 
     # Distance-graded pair target: target = exp(-d^2 / (2 sigma^2)) instead of
     # the binary 1-on-near / 0-on-far. 0 keeps the binary targets.
