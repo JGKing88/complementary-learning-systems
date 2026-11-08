@@ -1954,6 +1954,12 @@ def main():
             # Checked against the original below: lengthening is allowed,
             # rewriting an update that already ran is not.
             cfg.schedule = args.schedule
+        # Idea 3's rehearsal recipe (passes per block, BPTT window) is a
+        # training knob like the schedule's lr: it touches no env, goal or
+        # placement, so a segment may change it. The new values go into this
+        # segment's checkpoints, and run.json records the segment's argv.
+        for k in _CONTINUE_RECIPE & explicit:
+            setattr(cfg, k, getattr(args, k))
     elif args.load_checkpoint is not None:
         ck = torch.load(args.load_checkpoint, map_location="cpu",
                         weights_only=False)
@@ -2045,7 +2051,8 @@ def main():
 # typed alongside --continue_from. Everything else comes from the resume point:
 # a continuation that silently accepted --goal_reward would be the same class of
 # bug as an optimizer dropped without a word.
-_CONTINUE_ALLOWED = frozenset({"continue_from", "device", "schedule"})
+_CONTINUE_RECIPE = frozenset({"synth_rehearsal_iters", "synth_rehearsal_tbptt"})
+_CONTINUE_ALLOWED = frozenset({"continue_from", "device", "schedule"}) | _CONTINUE_RECIPE
 
 
 # Sentinel defaults for the schedule comparison below. `resolve` overwrites a
