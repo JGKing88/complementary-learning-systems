@@ -188,22 +188,41 @@ class Synth:
 
 
 def rehearse(agent, synth, optimizer, *, steps: int, batch: int,
-             max_envs: int = 6, weight: float = 1.0, max_grad_norm: float = 1.0) -> float:
+             max_envs: int = 6, weight: float = 1.0, max_grad_norm: float = 1.0,
+             iters_choices=(2,), tbptt: int = 0) -> float:
     """``steps`` optimizer steps on synthetic lifetimes (displacement to the
     current arena's goal when known), so the real-task stages do not wear down
-    what pretraining taught. Returns the mean loss."""
+    what pretraining taught. Returns the mean loss.
+
+    Each lifetime has ``iters`` passes per block, drawn from ``iters_choices``.
+    With ``tbptt`` > 0 the lifetime runs in windows of that many steps, the
+    state carried detached between them and each window's gradient added to
+    the last, so a long lifetime fits in memory and still costs one optimizer
+    step."""
+    choices = [int(k) for k in iters_choices] or [2]
     tot = 0.0
     for _ in range(int(steps)):
         E = int(torch.randint(1, max_envs + 1, ()).item())
-        obs, tgt, msk, _, _, _ = synth.lifetime(batch, E, 2)
-        _, _, _, _, feats = agent(obs, return_features=True)
-        err = ((agent.goal_disp_head(feats) - tgt) ** 2).sum(-1)
-        loss = weight * (err * msk).sum() / msk.sum().clamp_min(1.0)
+        K = choices[int(torch.randint(len(choices), ()).item())]
+        obs, tgt, msk, _, _, alive = synth.lifetime(batch, E, K)
+        L = obs.shape[1]
+        W = int(tbptt) if int(tbptt) > 0 else L
+        denom = msk.sum().clamp_min(1.0)
         optimizer.zero_grad(set_to_none=True)
-        loss.backward()
+        h, loss_sum = None, 0.0
+        for s0 in range(0, L, W):
+            sl = slice(s0, s0 + W)
+            if alive[:, sl].sum() == 0:
+                break
+            _, _, _, h_next, feats = agent(obs[:, sl], h, return_features=True)
+            err = ((agent.goal_disp_head(feats) - tgt[:, sl]) ** 2).sum(-1)
+            loss = weight * (err * msk[:, sl]).sum() / denom
+            loss.backward()
+            loss_sum += float(loss.detach())
+            h = h_next.detach()
         torch.nn.utils.clip_grad_norm_(agent.parameters(), max_grad_norm)
         optimizer.step()
-        tot += float(loss.detach())
+        tot += loss_sum
     return tot / max(int(steps), 1)
 
 

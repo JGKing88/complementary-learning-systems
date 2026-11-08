@@ -1993,6 +1993,13 @@ case "$VARIANT" in
                   # (training/synth_decode.py), so the real-task stages keep
                   # what synthetic pretraining taught (§7.6).
                   SYNTH_REHEARSAL_STEPS=${SYNTH_REHEARSAL_STEPS:-2}; _rest="${_rest#_reh}" ;;
+            _rl*) # Idea 3: rehearse LONG lifetimes, 2/5/10/20 passes per
+                  # block in windows of 600 steps, as long-block pretraining
+                  # did (§7.6). 2-pass rehearsal let the view-held fork lose
+                  # the 2-to-40-pass recall pretraining gave it.
+                  SYNTH_REHEARSAL_ITERS=${SYNTH_REHEARSAL_ITERS:-"2 5 10 20"}
+                  SYNTH_REHEARSAL_TBPTT=${SYNTH_REHEARSAL_TBPTT:-600}
+                  _rest="${_rest#_rl}" ;;
             _life*)
                   # Idea 3 stage 2 (GRID_MLP_NAV_PLAN §7.3, §7.5): short
                   # continual-protocol lifetimes, a curriculum on the number of

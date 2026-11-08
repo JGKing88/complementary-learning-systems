@@ -587,6 +587,12 @@ class TrainConfig:
     # so the real-task stages keep what synthetic pretraining taught. 0 = off.
     synth_rehearsal_steps: int = 0
     synth_rehearsal_batch: int = 64
+    # Passes per block of each rehearsed lifetime, drawn uniformly from this
+    # list, and the truncated-BPTT window in steps (0 = the whole lifetime).
+    # (2,) rehearses only short lifetimes, and the view-held fork lost the
+    # 2-to-40-pass recall that long-block pretraining had given it (§7.6).
+    synth_rehearsal_iters: tuple = (2,)
+    synth_rehearsal_tbptt: int = 0
     # Task regime only (docs/TASK_FAITHFUL_PLAN.md, wave 2): keep the novelty
     # / revisit shaping running after a trajectory's goal is stored instead of
     # switching to goal-reward-only. Wave 1 showed why: with novelty

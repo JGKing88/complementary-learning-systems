@@ -689,6 +689,8 @@ def run_navigate(
             losses["rehearse"] = rehearse(
                 agent, synth, optimizer, steps=cfg.synth_rehearsal_steps,
                 batch=cfg.synth_rehearsal_batch,
+                iters_choices=cfg.synth_rehearsal_iters,
+                tbptt=cfg.synth_rehearsal_tbptt,
                 max_grad_norm=cfg.ppo.max_grad_norm)
         if prior is not None:
             losses["prior_drift"] = prior.drift(agent)
@@ -1139,6 +1141,8 @@ CFG_FIELDS: dict[str, tuple[str, ...]] = {
     "sup_epochs": ("sup_epochs",),
     "synth_rehearsal_steps": ("synth_rehearsal_steps",),
     "synth_rehearsal_batch": ("synth_rehearsal_batch",),
+    "synth_rehearsal_iters": ("synth_rehearsal_iters",),
+    "synth_rehearsal_tbptt": ("synth_rehearsal_tbptt",),
     "head_mlp_layers": ("agent.head_mlp_layers",),
     "freeze_trunk": ("agent.freeze_trunk",),
     "freeze_view_input": ("agent.freeze_view_input",),
@@ -1346,6 +1350,10 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--synth_rehearsal_steps", type=int, default=0,
                    help="Idea 3: optimizer steps per update on synthetic lifetimes (training/synth_decode.py), keeping what synthetic pretraining taught. 0 = off.")
     p.add_argument("--synth_rehearsal_batch", type=int, default=64)
+    p.add_argument("--synth_rehearsal_iters", type=int, nargs="+", default=[2],
+                   help="Idea 3: passes per block of each rehearsed lifetime, drawn uniformly from these (long-block pretraining used 2 5 10 20).")
+    p.add_argument("--synth_rehearsal_tbptt", type=int, default=0,
+                   help="Idea 3: truncated-BPTT window in steps for rehearsed lifetimes, gradients accumulated over windows into one optimizer step (0 = whole lifetime; pretraining used 600).")
     p.add_argument("--sup_epochs", type=int, default=2,
                    help="sup=1 stages: passes of the supervised update over each update's sequences.")
     p.add_argument("--memory_backend", choices=["hopfield", "sensory_kv", "none"],
