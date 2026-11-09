@@ -593,6 +593,8 @@ class TrainConfig:
     # 2-to-40-pass recall that long-block pretraining had given it (§7.6).
     synth_rehearsal_iters: tuple = (2,)
     synth_rehearsal_tbptt: int = 0
+    # Weight each arena position equally in the rehearsal loss (§7.6).
+    synth_rehearsal_balance: bool = False
     # Task regime only (docs/TASK_FAITHFUL_PLAN.md, wave 2): keep the novelty
     # / revisit shaping running after a trajectory's goal is stored instead of
     # switching to goal-reward-only. Wave 1 showed why: with novelty

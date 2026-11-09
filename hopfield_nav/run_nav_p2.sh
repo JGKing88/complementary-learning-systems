@@ -2000,6 +2000,11 @@ case "$VARIANT" in
                   SYNTH_REHEARSAL_ITERS=${SYNTH_REHEARSAL_ITERS:-"2 5 10 20"}
                   SYNTH_REHEARSAL_TBPTT=${SYNTH_REHEARSAL_TBPTT:-600}
                   _rest="${_rest#_rl}" ;;
+            _bal*) # Idea 3: weight each arena position equally in the
+                  # rehearsal loss. Recall fell with the position a goal
+                  # arrives in, and a balanced loss halved the later
+                  # positions' error in pretraining (§7.6).
+                  SYNTH_REHEARSAL_BALANCE=1; _rest="${_rest#_bal}" ;;
             _life*)
                   # Idea 3 stage 2 (GRID_MLP_NAV_PLAN §7.3, §7.5): short
                   # continual-protocol lifetimes, a curriculum on the number of

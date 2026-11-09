@@ -189,7 +189,7 @@ class Synth:
 
 def rehearse(agent, synth, optimizer, *, steps: int, batch: int,
              max_envs: int = 6, weight: float = 1.0, max_grad_norm: float = 1.0,
-             iters_choices=(2,), tbptt: int = 0) -> float:
+             iters_choices=(2,), tbptt: int = 0, balance: bool = False) -> float:
     """``steps`` optimizer steps on synthetic lifetimes (displacement to the
     current arena's goal when known), so the real-task stages do not wear down
     what pretraining taught. Returns the mean loss.
@@ -198,13 +198,22 @@ def rehearse(agent, synth, optimizer, *, steps: int, batch: int,
     With ``tbptt`` > 0 the lifetime runs in windows of that many steps, the
     state carried detached between them and each window's gradient added to
     the last, so a long lifetime fits in memory and still costs one optimizer
-    step."""
+    step.
+
+    With ``balance`` each arena position carries the same total weight. In
+    protocol order the first arena has many times the trials of the last, and
+    recall falls with the position a goal arrives in (GRID_MLP_NAV_PLAN §7.6)."""
     choices = [int(k) for k in iters_choices] or [2]
     tot = 0.0
     for _ in range(int(steps)):
         E = int(torch.randint(1, max_envs + 1, ()).item())
         K = choices[int(torch.randint(len(choices), ()).item())]
-        obs, tgt, msk, _, _, alive = synth.lifetime(batch, E, K)
+        obs, tgt, msk, _, _, alive, arena = synth.lifetime(
+            batch, E, K, return_arena=True)
+        if balance:
+            cnt = torch.stack([(msk * (arena == j)).sum() for j in range(E)])
+            w = (cnt.sum() / E) / cnt.clamp_min(1.0)
+            msk = msk * w[arena.long().clamp(0, E - 1)]
         L = obs.shape[1]
         W = int(tbptt) if int(tbptt) > 0 else L
         denom = msk.sum().clamp_min(1.0)
