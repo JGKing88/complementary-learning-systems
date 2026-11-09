@@ -73,7 +73,7 @@ corner, K = 5, clean codes unless stated)
 
 | model | how it is built or learned | better at | worse at | biological plausibility |
 |---|---|---|---|---|
-| Ideal encoder (§1–10) | Not learned. Reads each module's phase (atan2), then 512 random integer frequencies through the CRT, Gaussian r = 16 | Best clean probe (basin 32 / 30, error 1°), smallest code | More fragile to test-time noise at narrow bumps: as implemented (harmonics up to l − 1) reach 0.58 at noise 0.01; with symmetric harmonics (|j| ≤ l/2) SYM_IDEAL_SHORT (§22.4, §23); its integer frequencies cannot be found by gradient descent (§11–17) | Low: atan2 and chosen integers |
+| Ideal encoder (§1–10) | Not learned. Reads each module's phase (atan2), then 512 random integer frequencies through the CRT, Gaussian r = 16 | Best clean probe (basin 32 / 30, error 1°), smallest code | More fragile to test-time noise at narrow bumps: as implemented (harmonics up to l − 1) reach 0.58 at noise 0.01; with symmetric harmonics (|j| ≤ l/2) basin 17 and reach 0.99 at noise 0.01 (network 32 and 1.0) and reach 0.23 at noise 0.03 (network 0.98) (§22.4, §23); its integer frequencies cannot be found by gradient descent (§11–17) | Low: atan2 and chosen integers |
 | Trained att0.5 (production baseline) | Gradient descent on kernel objectives | Learned end to end | Direction error ~8°, exact retrieval 0.81–0.98 depending on region, aliasing | Low: backprop |
 | Random projection + threshold + readout or slowness (§19) | Random weights, learned linear readout | The canonical plausible circuit | Does not work: readout memorises, slowest features alias ≥ 0.92 | High, but fails |
 | Grid wave network, exact L1 (§20) | L1 hand-wired (every pattern of every module); random triples; L3 gains | Equals the ideal kernel; robust to test noise (§22.4) | L1 not learned | Reference only |
@@ -1838,9 +1838,13 @@ scattered steps):
 
 #### Cell noise 0.01 (bump 0.10)
 
+Network gains here are the trace rule with the at-rest correction. The 100k rows were rerun after the
+`local_slowness` fix (§23; before: 1b 0.115–0.205 / 0.073–0.097); the other rows predate it, which
+narrows every kernel (half-width ~17) on both sides of each comparison.
+
 | learner | steps | pure | network alias, learned / twin |
 |---|---|---|---|
-| 1b | 100k | 0.93–1.00 | 0.115–0.205 / 0.073–0.097 |
+| 1b | 100k | 0.93–1.00 | 0.101–0.208 / 0.053–0.106 |
 | 1b | 300k | 1.00 | 0.081–0.145 / 0.087–0.124 |
 | 1c, rate 0.5 | 100k | 0.03–0.07 | 0.90–0.93 |
 | 1c, rate 0.1 | 300k | 0.95–0.97 | 0.62–0.66 |
@@ -1930,19 +1934,20 @@ at random scaffold positions; 2c with the 0.001 turn, η 0.2; no noise).
 
 **Under noise, a slow rate over more steps rescues the shift rule**
 (`gwn_l1_noise_slow.py`; cell noise 0.01; 1M steps). Network alias, learned /
-exact twin:
+exact twin. Rerun 2026-11-08 after the `local_slowness` fix (§23); the rate 0.02
+row predates it (narrower kernels on both sides):
 
 | learner | 6 boxes | 14-box |
 |---|---|---|
 | 1c, rate 0.02 | 0.225 / 0.090 | 0.13–0.19 / 0.07–0.10 (300k steps, §21) |
-| 1c, rate 0.005 | 0.105 / 0.069 | 0.107 / 0.096 |
-| 1c, rate 0.005, bias-corrected | 0.104 / 0.084 | 0.084 / 0.093 |
-| 1c, rate 0.002 (91–95% pure) | 0.176 / 0.072 | 0.155 / 0.103 |
-| 1b (offline least squares) | 0.111 / 0.093 | 0.092 / 0.095 |
-| 1b, bias-corrected | 0.090 / 0.073 | 0.104 / 0.098 |
+| 1c, rate 0.005 | 0.071 / 0.052 | 0.058 / 0.059 |
+| 1c, rate 0.005, bias-corrected | 0.074 / 0.062 | 0.057 / 0.053 |
+| 1c, rate 0.002 (91–95% pure) | 0.173 / 0.074 | 0.166 / 0.081 |
+| 1b (offline least squares) | 0.078 / 0.072 | 0.073 / 0.070 |
+| 1b, bias-corrected | 0.062 / 0.058 | 0.060 / 0.059 |
 
 - At rate 0.005 the local rule equals offline least squares and sits within
-  0.01–0.04 of its exact twin. One 14-box does as well as six boxes, so the
+  0.00–0.02 of its exact twin (in one 14-box, 0.058 against 0.059). One 14-box does as well as six boxes, so the
   number of steps matters, not the number of places. The bias correction cuts
   |T − P| (1c 0.047 to 0.019, 1b 0.03 to 0.002) but changes the network
   little.
@@ -2079,7 +2084,11 @@ from 38 on in `run_gwn.sh`. Results go here, with a short verdict per question.
   the remedy.
 - **22.4 With noisy cues and stored goals, the network navigates as if the
   codes were clean.** At test noise 0.01 (readout basis clean) basin 32 and
-  reach 0.99–1.0. SYM_IDEAL_VERDICT
+  reach 0.99–1.0. The ideal encoder is hurt more. As implemented it falls to reach 0.58 at 0.01,
+  but most of that is its choice of harmonic (j up to l − 1); with |j| ≤ l/2
+  it keeps reach 0.99 but loses exact retrieval (0.77) and half its basin
+  (17). At 0.03 the network still reaches 98% of goals and the symmetric ideal
+  23%. All of this is with a clean readout basis (§23).
 
 #### 22.1 Concurrent learning (`gwn_concurrent.py`; one 14-box, bump 0.10)
 
@@ -2223,7 +2232,15 @@ the noise) and was rerun; reach and direction were unaffected.
   network reads the j-th Fourier coefficient directly, so its error goes as
   noise / A(j). At 0.01 the network is unaffected; at 0.03 it loses exact
   retrieval at a distance (basin 11–15) but still reaches 94–98% of goals.
-SYM_IDEAL_ROWS
+
+Audit rows (§23): the ideal with symmetric harmonics, and noise in the readout
+basis too.
+
+| network | test noise | abs err (°) | exact | basin | reach | dead (K = 5 / 10 / 20) |
+|---|---|---|---|---|---|---|
+| ideal r = 16, symmetric harmonics | 0.01 | 3.12 | 0.768 | 16.8 | 0.987 | 0 / 0 / 0.04 |
+| ideal r = 16, symmetric harmonics | 0.03 | 38.96 | 0.079 | none | 0.233 | 0.75 / 0.50 / 0.88 |
+NOISY_BASIS_ROWS
 
 ## 23. Audit of the final model and its claims (2026-11-08)
 
@@ -2299,7 +2316,10 @@ the noise claims.
   j in 0 … l − 1; the representative with |j| ≤ l/2 gives the identical clean
   code and amplifies phase noise about half as much. Option added
   (`ideal:r=16,sym=1`, off by default so older results reproduce).
-  SYM_IDEAL_AUDIT
+  With it, at test noise 0.01 the ideal reaches 0.987 of goals
+  (exact 0.77, basin 17) instead of 0.58; at 0.03 it reaches 0.23 against the
+  network's 0.976. The ordering holds, but "the ideal fails at noise 0.01" was
+  mostly an artefact of the harmonic choice.
 - **The readout basis stays clean** in every noisy-test task. The noise claims
   cover noisy cues and stored goals; a basis built from single-step
   differences of noisy codes is mostly noise (code noise 0.24 against a
