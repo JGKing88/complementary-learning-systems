@@ -2099,3 +2099,41 @@ alternative if it does.
 
 Raw: `results/probe_seb_queue/g100`, `results/probe_seb_queue_r/g100`;
 encoders `sweeps/w65_seb_queue`, `sweeps/w66_seb_queue_rescaled`.
+
+### 10.23 Pushing the queue: 40k at the matched strength is near the optimum
+
+w67, seeds 42–44, same probe settings. `rate_lambda` = mult × 0.5 × (N + 2500)/4096.
+`q40k_fresh` is a diagnostic: it stores point indices and re-encodes them
+with the current weights at every step (no gradient), so the queue is never
+stale. It replays past inputs, so it is not a candidate method.
+
+| arm | rate_lambda | \|err\| | **cont** | dead K=3 / K=20 | cos_floor (s42) | alias (s42) |
+|---|---|---|---|---|---|---|
+| w66 q40k, 1× (§10.22) | 5.19 | 9–11° | **0.84–0.92** | 0.00–0.04 / 0.50–0.62 | 0.037 | 0.95 |
+| q40k fresh, 1× | 5.19 | 8–10° | **0.90–0.94** | 0.00 / 0.42–0.54 | 0.033 | 0.96 |
+| q100k, 1× | 12.5 | 15–19° | **0.64–0.71** | 0.17–0.25 / 0.58–0.96 | 0.070 | 0.98 |
+| q295k, 1× | 36.3 | 71–78° | **0.08–0.12** | 0.92–1.00 / 1.00 | 0.113 | 0.998 |
+| q40k, 2× | 10.4 | 81–90° | **0.05–0.09** | 1.00 / 1.00 | **0.020** | **0.80** |
+
+Three readings.
+
+**Staleness costs about 0.04 of reach at 40k.** The fresh queue beats the
+plain one on every column, but it does not close the gap to att0.5 (0.98–0.99,
+K=20 dead 0.04–0.12). Something other than stale codes holds the rest.
+
+**2× strength is past a cliff.** It gives the best-spread codes of any
+one-env arm (cos_floor 0.020, alias 0.80) and exact retrieval of 0.999, but
+the direction readout is at chance. That is the failure the
+`coding_rate_loss` docstring records at `rate_lambda=3` under mixed batches:
+too much rate pressure flattens the neighbourhood the gradient readout needs.
+
+**Longer queues get worse, and through cos_floor, not locality.** The
+per-row push is matched, yet cos_floor rises from 0.04 to 0.07 to 0.11 from
+40k to 100k to 295k. A 295k queue is a full epoch of codes, mostly made by
+older weights, and pushing current codes away from where other envs used to
+be does not decorrelate them from where those envs are now.
+
+Next: bracket the 40k / 1× point (w68: 0.7× and 1.4× at 40k; 25k and 60k at
+1×).
+
+Raw: `results/probe_seb_queue_push/g100`; encoders `sweeps/w67_seb_queue_push`.
