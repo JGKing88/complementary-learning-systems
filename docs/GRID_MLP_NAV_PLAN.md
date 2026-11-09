@@ -749,6 +749,57 @@ change −0.45 (arena 0, from 0.97 to 0.53 as later arenas arrive): interference
 between held goals, as the synthetic recall of the fifth and sixth arena
 already suggested.
 
+#### More 2-pass lifetimes do not help (2026-11-06 to 11-08)
+
+The run hit its 16 h limit near u870. A continuation (`--continue_from`, job
+28088456, `code/i3_v10`) added a 600-update lifetime stage at teacher share 0
+and reached u1290 before its own limit. Its in-training evals stayed flat over
+the 8 points from u900 to u1250. In 3-arena lifetimes known goals were reached
+0.93 to 0.99 of the time in 17 to 25 steps, and new goals were found 0.18 to
+0.36 of the time. The protocol, one run per checkpoint, got no better:
+
+| protocol, held-out arenas | u750 | u850 | u1050 | u1250 |
+|---|---|---|---|---|
+| own block | 0.57 | 0.73 | 0.43 | 0.63 |
+| success after the find | 0.65 | 0.71 | 0.40 | 0.58 |
+| steps after the find | 57 | 53 | 40 | 54 |
+| worst arena change | −0.45 | −0.53 | −0.43 | −0.75 |
+
+At u850 the loss is in arena 0. It holds 0.95 with one more arena and falls to
+0.47 once a third arrives.
+
+The real-task stages wear down the long retention that long-block pretraining
+gave the trunk. This is synthetic recall on the same six held-out arenas
+(`analysis/idea3/synth_val_arenas.py`, no views, no policy), as the median
+direction error at a trial start for arenas 0 to 5, in degrees:
+
+| checkpoint | 2 passes per block | 40 passes per block |
+|---|---|---|
+| `pretrain_long_h512_l3` | 7/10/12/23/32/37 | 7/10/12/25/48/46 |
+| u400 | 11/12/14/28/40/40 | 14/29/22/45/59/58 |
+| u850 | 11/16/19/39/46/58 | 18/30/34/57/48/67 |
+| u1250 | 13/18/18/41/48/38 | 24/46/33/56/69/53 |
+
+Recall at 2 passes changes little, and recall at 40 passes decays as training
+goes on. Both the real lifetimes (6 arenas, 2 passes, 42 trials) and the
+synthetic rehearsal (2 passes, hard-coded) are short. The protocol runs 40
+passes per block (840 trials), and arena 0 starts failing near trial 120.
+After pretraining, nothing trains a goal to survive that long. This is not
+the whole story, because arena 0 is still the best-recalled arena here but the
+one the protocol loses, so the policy on real trajectories adds a second
+failure.
+
+The fix now running rehearses long lifetimes. `--synth_rehearsal_iters 2 5 10
+20 --synth_rehearsal_tbptt 600` (lever `_rl`, commit d96bd25) draws
+pretraining's passes per block and runs each lifetime in windows of 600 steps,
+with the gradients summed into one optimizer step. A `--load_checkpoint` fork
+from u850 cannot place its arenas. It must clear all 7,491 of the parent's
+refreshed placements, and 6 clear offsets remain. So `--continue_from` now
+accepts the two rehearsal flags (commit dd88c88), and job 28372096
+(`code/i3_v12`) continues the run from u1250 with long rehearsal on the same
+held-out arenas. It is scored by synthetic recall at 40 passes, then by the
+protocol.
+
 ### 7.7 Stage 1 runs (RL, superseded by §7.6)
 
 Stage 1 runs, 4000 updates, launched from a frozen copy of the code at
