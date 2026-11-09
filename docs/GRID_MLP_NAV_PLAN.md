@@ -800,6 +800,41 @@ accepts the two rehearsal flags (commit dd88c88), and job 28372096
 held-out arenas. It is scored by synthetic recall at 40 passes, then by the
 protocol.
 
+#### Long rehearsal holds old goals and learns new ones worse (2026-11-09)
+
+Long rehearsal brings 40-pass recall back on arenas 0 to 3, over four
+checkpoints. Arena 4 goes the other way and is near chance by u1450 even at 2
+passes (78°), an arena-specific decode failure rather than a retention one.
+
+| 40 passes, trial start, arenas 0 to 5 | degrees |
+|---|---|
+| `pretrain_long_h512_l3` | 7/10/12/25/48/46 |
+| u1250 (long rehearsal starts) | 24/46/33/56/69/53 |
+| u1300 | 18/35/28/44/70/52 |
+| u1350 | 19/35/23/42/69/55 |
+| u1400 | 13/24/20/40/77/49 |
+| u1450 | 17/27/21/40/95/54 |
+
+The protocol was run with two seeds (3000, 3001; second seed in
+`idea3/cl_s3001`) on u850 and u1450:
+
+| protocol | u850 s3000 | u850 s3001 | u1450 s3000 | u1450 s3001 |
+|---|---|---|---|---|
+| success after the find | 0.71 | 0.67 | 0.59 | 0.57 |
+| own block | 0.73 | 0.63 | 0.40 | 0.44 |
+| arena 0, final block | 0.47 | 0.35 | 0.97 | 0.93 |
+| worst arena change | −0.53 | −0.48 | −0.23 | −0.58 |
+
+In both seeds, long rehearsal fixes the loss of arena 0, and new arenas are
+used worse in their own block (arena 1 0.15 to 0.20 there, then 0.65 to 0.80
+in later blocks; arenas 4 and 5 0.10 to 0.15). Success after the find falls
+from about 0.69 to about 0.58. The worst arena change swings 0.35 between
+seeds at u1450, because the forgetting moves from arena 0 to arenas 2 and 3,
+so one protocol run cannot rank checkpoints on it. Success after the find
+agrees across seeds to within 0.04. Long rehearsal trades plasticity for
+stability. It does not raise the total, which stays far below idea 1 (1.00 in
+13 steps).
+
 ### 7.7 Stage 1 runs (RL, superseded by §7.6)
 
 Stage 1 runs, 4000 updates, launched from a frozen copy of the code at
