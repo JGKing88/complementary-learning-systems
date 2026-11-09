@@ -2162,3 +2162,35 @@ of 16 envs. w69 tests a balanced queue (a random 340 rows of each batch, so
 40k spans all 118 envs) and a lower lr (1e-4).
 
 Raw: `results/probe_seb_queue_bracket/g100`; encoders `sweeps/w68_seb_queue_bracket`.
+
+### 10.25 Queue age is the constraint, not env coverage
+
+w69, seeds 42–44. `rate_queue_push` puts a random k rows of each batch into
+the queue instead of all 2500, so the same queue size spans more envs. But it
+also holds older codes: a 40k queue at 340 rows per step reaches 118 steps
+back to cover every env once, and 470 steps (4 epochs) to fill.
+
+| arm | oldest code | \|err\| | **cont** | dead K=20 | cos_floor (s42) |
+|---|---|---|---|---|---|
+| plain 40k, lr 3e-4 (w66) | 16 steps | 9–11° | **0.84–0.92** | 0.50–0.62 | 0.037 |
+| plain 40k, lr 1e-4 | 16 steps | 10–11° | **0.83–0.86** | 0.62–0.67 | 0.033 |
+| balanced 10k (85 rows/step) | 118 steps | 26–28° | **0.36–0.54** | 0.88–0.92 | 0.136 |
+| balanced 40k (340 rows/step) | 470 steps | 21–43° | **0.21–0.46** | 0.92–0.96 | 0.221 |
+| balanced 40k, lr 1e-4 | 470 steps | 26–42° | **0.18–0.32** | 0.96 | 0.115 |
+
+Every queue reaching back an epoch or more has failed: these two and the 295k
+queue of §10.23. cos_floor rises with queue age, which is what pushing current
+codes away from out-of-date ones would do. The clumping hypothesis (16 whole
+envs against a mixed batch's 118 thin slices) is not what limits the plain
+40k queue, or spreading the queue over all envs would have helped.
+
+lr 1e-4 tightens the seeds but does not raise the mean: it slows the drift
+that makes codes stale, and the training, by the same factor.
+
+Where the line stands. The best one-env-per-step encoder that stores only
+codes is the plain 40k queue at the matched strength (w66), cont 0.84–0.92.
+The fresh 40k queue (§10.23) reaches 0.90–0.94, but replays past inputs.
+att0.5 is 0.98–0.99. The knobs tested so far trade spread against either
+locality (strength) or freshness (queue size, push rate).
+
+Raw: `results/probe_seb_queue_balance/g100`; encoders `sweeps/w69_seb_queue_balance`.
