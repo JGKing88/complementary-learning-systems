@@ -830,10 +830,54 @@ used worse in their own block (arena 1 0.15 to 0.20 there, then 0.65 to 0.80
 in later blocks; arenas 4 and 5 0.10 to 0.15). Success after the find falls
 from about 0.69 to about 0.58. The worst arena change swings 0.35 between
 seeds at u1450, because the forgetting moves from arena 0 to arenas 2 and 3,
-so one protocol run cannot rank checkpoints on it. Success after the find
-agrees across seeds to within 0.04. Long rehearsal trades plasticity for
-stability. It does not raise the total, which stays far below idea 1 (1.00 in
-13 steps).
+so one protocol run cannot rank checkpoints on it.
+
+The run hit its time limit at u1690. The last two checkpoints, two seeds each:
+
+| protocol | u850 | u1450 | u1550 | u1650 |
+|---|---|---|---|---|
+| success after the find | 0.71 / 0.67 | 0.59 / 0.57 | 0.55 / 0.73 | 0.65 / 0.56 |
+| steps after the find | 53 / 60 | 47 / 39 | 42 / 35 | 41 / 41 |
+| worst arena change | −0.53 / −0.48 | −0.23 / −0.58 | −0.25 / −0.40 | −0.18 / −0.25 |
+
+Synthetic recall at 40 passes is 16/25/21/43/57/46° at u1550 and
+15/22/20/47/59/42° at u1650, so arena 4 is back from chance. Long rehearsal
+cut forgetting and made revisits faster (about 40 steps after the find
+against 55), but success after the find did not move. The seeds differ by up
+to 0.18 on it (u1550), so two runs per checkpoint is the minimum for any
+claim. At u1650 both seeds learn and hold arenas 0 and 1 (final block 0.75 to
+0.93) and solve arenas 2 to 5 at 0.12 to 0.57 in every block, their own
+included.
+
+#### Recall falls with the order a goal arrives in, set by pretraining
+
+Introducing the same six arenas in reverse order (`synth_val_arenas.py
+--order 5 4 3 2 1 0`) shows that error follows the position, not the arena.
+Median error at a trial start, 40 passes, by position introduced:
+
+| position | 0 | 1 | 2 | 3 | 4 | 5 |
+|---|---|---|---|---|---|---|
+| `pretrain_long`, forward | 7 (a0) | 10 (a1) | 12 (a2) | 25 (a3) | 48 (a4) | 46 (a5) |
+| `pretrain_long`, reversed | 7 (a5) | 11 (a4) | 20 (a3) | 12 (a2) | 26 (a1) | 28 (a0) |
+| u1650, forward | 15 (a0) | 22 (a1) | 20 (a2) | 47 (a3) | 59 (a4) | 42 (a5) |
+| u1650, reversed | 14 (a5) | 33 (a4) | 31 (a3) | 29 (a2) | 39 (a1) | 77 (a0) |
+
+Arena 4 is recalled at 11° when it comes first and at 48° when it comes
+fifth. The GRU writes the first goals well and each later one worse.
+Pretraining set this, and the real-task stages make the later positions worse
+still. The training process accounts for it. In protocol order the first arena
+is in every block and the last only in the final one, and lifetimes draw 2 to
+6 arenas, so the sixth position exists in one lifetime in five. In a 6-arena,
+2-pass lifetime position 0 has 1,876 known steps and position 5 has 76, so
+the sixth goal gets a 25th of the gradient.
+
+Test running: `pretrain_decode.py --balance_positions` weights the
+displacement loss so every position carries the same total weight (mean
+weight per known step 1). Job 28468381 (`code/i3_v13`, commit c8d219d)
+fine-tunes `pretrain_long` with it at pretraining's other settings (2/5/10/20
+passes, window 600, lr 3e-4, 1,500 lifetimes of 64). It is read by recall per
+position, forward and reversed. If the later positions come down to the
+first ones, the real-task stages are rerun from it with balanced rehearsal.
 
 ### 7.7 Stage 1 runs (RL, superseded by §7.6)
 
