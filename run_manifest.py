@@ -82,8 +82,15 @@ def _warn(what: str, exc: BaseException) -> None:
           f"continuing without it", file=sys.stderr, flush=True)
 
 
+SNAPSHOT_COMMIT_FILE = "GIT_COMMIT"
+
+
 def _git_state() -> dict[str, Any]:
-    """Current commit and whether the tree is dirty. Empty dict if not a repo."""
+    """Current commit and whether the tree is dirty. Empty dict if not a repo.
+
+    A frozen code snapshot (``scripts/snapshot_code.sh``: ``git archive`` of a
+    commit) has no ``.git``, so it carries the commit in ``GIT_COMMIT`` at its
+    root instead, read here when git cannot answer."""
     def _git(*args: str) -> str:
         return subprocess.run(
             ["git", "-C", str(REPO_ROOT), *args],
@@ -96,8 +103,15 @@ def _git_state() -> dict[str, Any]:
             "dirty": bool(_git("status", "--porcelain")),
         }
     except Exception as exc:                       # pragma: no cover - env dependent
-        _warn("reading git state", exc)
-        return {}
+        snap = os.path.join(str(REPO_ROOT), SNAPSHOT_COMMIT_FILE)
+        try:
+            with open(snap) as f:
+                state = json.load(f)
+            state["snapshot"] = str(REPO_ROOT)
+            return state
+        except Exception:
+            _warn("reading git state", exc)
+            return {}
 
 
 def file_digest(path: str | os.PathLike[str] | None) -> str | None:
