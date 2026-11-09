@@ -64,6 +64,29 @@ memory compute, and can a biologically plausible network reach it?
    - Narrow grid bumps (0.10 of the period) to survive cell noise, with gains
      corrected for jitter at rest.
 
+**Models at a glance** (the ones worth comparing; probe numbers are whole /
+corner, K = 5, clean codes unless stated)
+
+| model | how it is built or learned | better at | worse at | biological plausibility |
+|---|---|---|---|---|
+| Ideal encoder (§1–10) | Not learned. Reads each module's phase (atan2), then 512 random integer frequencies through the CRT, Gaussian r = 16 | Best clean probe (basin 32 / 30, error 1°), smallest code | Fails under test-time noise at narrow bumps (reach 0.58 at noise 0.01, §22.4); its integer frequencies cannot be found by gradient descent (§11–17) | Low: atan2 and chosen integers |
+| Trained att0.5 (production baseline) | Gradient descent on kernel objectives | Learned end to end | Direction error ~8°, exact retrieval 0.81–0.98 depending on region, aliasing | Low: backprop |
+| Random projection + threshold + readout or slowness (§19) | Random weights, learned linear readout | The canonical plausible circuit | Does not work: readout memorises, slowest features alias ≥ 0.92 | High, but fails |
+| Grid wave network, exact L1 (§20) | L1 hand-wired (every pattern of every module); random triples; L3 gains | Equals the ideal kernel; robust to test noise (§22.4) | L1 not learned | Reference only |
+| Branch design (§20) | Exact L1; one neuron per (j11, j12) pair keeping the slowest of 169 module-13 branches | Exact kernel with 17,424 neurons; best probe (basin 64 / 53) | Needs selection among dendritic branches; no learning rule tested | Medium (dendritic branch selection) |
+| Shift rule + eigenvectors (route 1c, §21–22) | A delta rule learns each module's one-step shift from the walk (local, online); the eigenvectors of that shift give exactly one pair per pattern | Exact without noise from ~30k steps in one 14-box (basin 33–35); under noise, with a slow rate and ~1M–3M steps, matches its exact twin and navigates like exact L1 (basin 34 / 35, §22.3) | The eigenvector step is linear algebra, not a learning rule | Medium: one non-neural step |
+| Lock-in, fully online (route 2c, §21–22) | Each L1 neuron learns one wave by itself (predictor synapses, an intrinsic turn that locks 1000 times more slowly than the weights); depression L3 on the same walk, window opening late | No offline step anywhere; navigates like the ideal (basin 30 / 29, reach 0.99, §21.1, §22.1) | Needs ~6× more L1 neurons than patterns (2,604 for 434) and holds patterns unevenly (kernel alias 0.27–0.34, about 4 cells of basin); under training noise 9° error and up to 17% dead goals after 1M steps (§22.3) | Highest: needs paired (complex) outputs, predictor synapses, an oscillator-like turn per direction, and velocity input |
+| Lock-in + lateral competition (proposed) | As above, with units that hold the same pattern suppressing each other | Should hold one unit per pattern (434), removing the uneven counts (one-per-pattern reference: alias 0.07–0.10) | Untested | High (anti-Hebbian lateral inhibition is local) |
+
+L3 options, all equivalent once L1 has settled: **depression** (the default:
+one multiplicative update per step, nothing stored, kernel width set by how long
+plasticity runs), **trace** (running mean of the change, then exp(−r²v̄/2);
+width a parameter), **stochastic pruning** (keep each unit with probability
+P(n) at full weight, the ideal's own construction, like cell death; §20.2).
+Ruled out for L1: Hebbian PCA (patterns tie in groups of 4–8), the plain
+Hebbian lock-in rules 2a and 2d (never purify), a fast adaptive turn (units
+collapse onto coarse patterns).
+
 **Routes**
 
 | § | question | verdict |
@@ -88,8 +111,12 @@ memory compute, and can a biologically plausible network reach it?
 
 **Open**
 
-- Equal units per pattern in the fully online L1 route (§21): it costs about
-  4 cells of probe basin, not retrieval (§21.1).
+- **Next: lateral competition among lock-in L1 units.** Units whose outputs
+  match (the same pattern) inhibit each other, so about one unit per pattern
+  stays active: 434 units instead of 2,604, and no uneven-count aliasing
+  (0.27–0.34 now; the one-per-pattern reference gives 0.07–0.10). An
+  anti-Hebbian lateral rule (Földiák) is local. Uneven counts currently cost
+  about 4 cells of probe basin, not retrieval (§21.1).
 - The fully online network under noise: 9° direction error and up to 17%
   dead goals after 1M steps at η 0.02 (§22.3); a longer walk at a falling
   rate is the expected fix (alias 0.42–0.51 at 3M steps, η 0.01, §22.2), not
@@ -101,7 +128,6 @@ memory compute, and can a biologically plausible network reach it?
 - The eigenvector step of route 1 as a network (§21).
 - Stochastic pruning simulated as an online process (§20.2).
 - Kernel shape as a lever for wide kernels, r ≥ 48 (§16.1).
-- The probe with noisy grid codes (all probe runs use clean codes).
 - Whether real neurons multiply accurately enough (a few percent).
 
 **Where things are**
