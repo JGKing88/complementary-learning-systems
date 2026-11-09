@@ -104,6 +104,11 @@ def main():
                         "default 1..max_iters")
     p.add_argument("--tbptt", type=int, default=0,
                    help="truncated-BPTT window in steps (0 = whole sequence)")
+    p.add_argument("--balance_positions", action="store_true",
+                   help="lifetime mode: weight the displacement loss so each arena "
+                        "position carries the same total weight. In protocol order the "
+                        "first arena has 6x the trials of the sixth, and recall falls "
+                        "with position (GRID_MLP_NAV_PLAN s7.6).")
     a = p.parse_args()
     device = torch.device(a.device if torch.cuda.is_available() else "cpu")
     torch.manual_seed(a.seed)
@@ -127,7 +132,14 @@ def main():
             E = int(torch.randint(2, a.max_envs + 1, ()).item())
             K = (random.choice(a.iters_choices) if a.iters_choices
                  else int(torch.randint(1, a.max_iters + 1, ()).item()))
-            obs, tgt, msk, kn, _, alive = synth.lifetime(a.batch, E, K)
+            obs, tgt, msk, kn, _, alive, arena = synth.lifetime(
+                a.batch, E, K, return_arena=True)
+            if a.balance_positions:
+                # Each position's known steps get total weight sum/E, so the
+                # mean weight per known step stays 1.
+                cnt = torch.stack([(msk * (arena == j)).sum() for j in range(E)])
+                w = (cnt.sum() / E) / cnt.clamp_min(1.0)
+                msk = msk * w[arena.long().clamp(0, E - 1)]
         else:
             obs, tgt, msk, _ = synth.batch(a.batch, a.seq)
             kn = alive = None
