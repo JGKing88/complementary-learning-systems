@@ -114,8 +114,9 @@ collapse onto coarse patterns).
 | 20.1 | Is the gain local and incremental? | Yes; a few steps in one 10-cell box suffice; depression rule r = √(2κT) |
 | 20.2 | Pruning instead of weighting | Stochastic pruning at keep-probability ∝ P(n) = the ideal's construction |
 | 21 | Can L1 be learned locally and online, inside one environment? | Yes in one 14-box: online shift rule + eigenvectors = exact; fully online lock-in exact per unit but uneven counts alias; noise doubles the shift learners' alias and breaks lock-in; side 13 fails (wrap step unseen) |
-| 21.1 | More boxes, longer walks; L1 and L3 both local in the probe | Fully online network (lock-in L1 + depression L3, one 14-box) navigates like the ideal; more boxes barely help the lock-in counts (a strong-pattern bias); under noise a slow rate over 1M steps brings the shift rule to its twin, lock-in still fails |
-| 22 | Fully online and noise-robust: concurrent L1/L3, noise scaling, noise-trained networks, test-time noise | Concurrent works with a late L3 window (basin 29–30); under noise steps matter most and the best rate falls with steps; the noise-trained shift-rule network navigates like exact; the fully online one navigates with 9° error and some dead goals; the network shrugs off test noise 0.01, the ideal does not |
+| 21.1 | More boxes, longer walks; L1 and L3 both local in the probe | Fully online network (lock-in L1 + depression L3, one 14-box) matches the ideal on reach and exact retrieval, basin ~2 cells smaller; the lock-in counts are biased toward strong patterns in every run; under noise a slow rate over 1M steps brings the shift rule to its twin, lock-in still falls short |
+| 22 | Fully online and noise-robust: concurrent L1/L3, noise scaling, noise-trained networks, test-time noise | Concurrent works with a late L3 window (basin 29–30); under noise steps matter most and a slow fixed rate reaches the twin by 3M steps; the noise-trained shift-rule network navigates like exact; the fully online one navigates with 9° error and some dead goals; with noisy cues and goals the network is unaffected at test noise 0.01, the ideal (fairly implemented) keeps reach but half the basin and fails at 0.03 |
+| 23 | Audit of §21–22 | No supervision reaches the weights; one bug (noisy trace gains dropped slow units) fixed and rerun; tuning against the truth, oracle what-ifs, the ideal's harmonics, the clean readout basis and the edge-strip regions now stated |
 
 **Open**
 
@@ -2074,7 +2075,11 @@ from 38 on in `run_gwn.sh`. Results go here, with a short verdict per question.
   reach 0.99, exact 1.000). A window timed by each unit's own inputs settling
   gets most of the way (basin 27–28). L3 from step 0 destroys the code.
 - **22.2 Steps matter most; places and box size barely.** Under cell noise
-  0.01 both rules approach their exact twins as steps grow. SCALING_VERDICT
+  0.01 both rules approach their exact twins as steps grow. At a fixed slow rate (no selection) the shift rule is
+  within 0.03 of its exact twin by 3M steps in 6 of 7 conditions (the single
+  side-20 box is the exception), and lock-in within 0.06–0.12. A faster rate
+  learns sooner but plateaus higher, so noise asks for a rate that winds down
+  with experience.
 - **22.3 Noise-trained networks navigate; the fully online one with a cost.**
   Trained under cell noise 0.01 in one 14-box, the shift-rule network
   navigates like exact L1, with noisy test codes too (basin 31–35, reach
@@ -2138,48 +2143,52 @@ Under cell noise 0.01 (1M steps; depression with rest recovery):
 
 #### 22.2 Noise scaling (`gwn_noise_scaling.py`; cell noise 0.01, bump 0.10)
 
-SCALING_TABLES_NOTE
+Rerun 2026-11-08 after the `local_slowness` fix (§23), with networks at a
+fixed rate at every checkpoint (shift rule 0.005, lock-in η 0.01), so nothing is
+chosen against the truth. Full tables, including the oracle-chosen rates:
+`gwn/online/scaling_summary.md`; pre-fix results in `online/v0_slowness_bug/`.
+Network alias, learned / exact twin:
 
-Full tables: `gwn/online/scaling_summary.md`. Network alias, learned / exact
-twin, with the best rate chosen at each checkpoint:
-
-| condition | shift rule 1c: 100k | 300k | 1M | 3M |
+| condition | shift rule 1c, rate 0.005: 100k | 300k | 1M | 3M |
 |---|---|---|---|---|
-| 1 box, side 20 | 0.663 / 0.077 | 0.335 / 0.076 | 0.253 / 0.096 | 0.151 / 0.060 |
-| 3 boxes, side 20 | 0.426 / 0.093 | 0.269 / 0.088 | 0.175 / 0.072 | 0.082 / 0.073 |
-| 6 boxes, side 20 | 0.453 / 0.103 | 0.159 / 0.133 | 0.125 / 0.076 | 0.115 / 0.080 |
-| 12 boxes, side 20 | 0.407 / 0.090 | 0.215 / 0.069 | 0.198 / 0.092 | 0.079 / 0.082 |
-| 1 box, side 14 | 0.413 / 0.141 | 0.187 / 0.105 | 0.179 / 0.076 | 0.066 / 0.060 |
-| 1 box, side 40 | 0.341 / 0.086 | 0.155 / 0.096 | 0.226 / 0.084 | 0.115 / 0.126 |
-| 1 box, side 80 | 0.353 / 0.107 | 0.164 / 0.070 | 0.208 / 0.084 | 0.104 / 0.092 |
+| 1 box, side 20 | 0.941 / 0.054 | 0.694 / 0.108 | 0.304 / 0.093 | 0.151 / 0.051 |
+| 3 boxes, side 20 | 0.868 / 0.065 | 0.445 / 0.042 | 0.182 / 0.091 | 0.089 / 0.082 |
+| 6 boxes, side 20 | 0.870 / 0.065 | 0.373 / 0.070 | 0.129 / 0.080 | 0.092 / 0.072 |
+| 12 boxes, side 20 | 0.855 / 0.074 | 0.420 / 0.053 | 0.083 / 0.055 | 0.074 / 0.064 |
+| 1 box, side 14 | 0.860 / 0.065 | 0.364 / 0.060 | 0.085 / 0.066 | 0.072 / 0.072 |
+| 1 box, side 40 | 0.794 / 0.079 | 0.307 / 0.066 | 0.057 / 0.053 | 0.100 / 0.101 |
+| 1 box, side 80 | 0.775 / 0.101 | 0.313 / 0.086 | 0.094 / 0.061 | 0.110 / 0.081 |
 
-| condition | lock-in 2c: 100k | 300k | 1M | 3M |
+| condition | lock-in 2c, η 0.01: 100k | 300k | 1M | 3M |
 |---|---|---|---|---|
-| 1 box, side 20 | 0.844 / 0.416 | 0.757 / 0.397 | 0.575 / 0.421 | 0.509 / 0.407 |
-| 3 boxes, side 20 | 0.739 / 0.322 | 0.648 / 0.338 | 0.534 / 0.388 | 0.481 / 0.425 |
-| 6 boxes, side 20 | 0.792 / 0.372 | 0.673 / 0.354 | 0.515 / 0.371 | 0.488 / 0.438 |
-| 12 boxes, side 20 | 0.817 / 0.333 | 0.660 / 0.327 | 0.495 / 0.367 | 0.439 / 0.362 |
-| 1 box, side 14 | 0.780 / 0.348 | 0.674 / 0.361 | 0.548 / 0.415 | 0.417 / 0.359 |
-| 1 box, side 40 | 0.805 / 0.398 | 0.678 / 0.396 | 0.545 / 0.403 | 0.465 / 0.416 |
-| 1 box, side 80 | 0.829 / 0.444 | 0.725 / 0.435 | 0.551 / 0.455 | 0.434 / 0.366 |
+| 1 box, side 20 | 0.985 / 0.394 | 0.874 / 0.396 | 0.567 / 0.395 | 0.509 / 0.393 |
+| 3 boxes, side 20 | 0.977 / 0.438 | 0.881 / 0.391 | 0.526 / 0.395 | 0.488 / 0.408 |
+| 6 boxes, side 20 | 0.917 / 0.425 | 0.817 / 0.394 | 0.537 / 0.413 | 0.488 / 0.409 |
+| 12 boxes, side 20 | 0.911 / 0.368 | 0.824 / 0.329 | 0.477 / 0.351 | 0.449 / 0.353 |
+| 1 box, side 14 | 0.965 / 0.361 | 0.834 / 0.311 | 0.459 / 0.320 | 0.422 / 0.346 |
+| 1 box, side 40 | 0.904 / 0.409 | 0.820 / 0.413 | 0.533 / 0.405 | 0.458 / 0.393 |
+| 1 box, side 80 | 0.839 / 0.432 | 0.834 / 0.351 | 0.471 / 0.385 | 0.434 / 0.370 |
 
 - **Steps.** In every condition the gap to the twin shrinks with steps. The
   shift rule's mean impurity falls from 4e-3–9e-2 at 100k steps to
   2e-4–3e-3 at 3M (about 4 times per tenfold more steps between 300k and
   3M); lock-in's from 7e-2–9e-2 to 6e-4–2e-3.
-- **The best rate falls with steps.** The shift rule's best rate is 0.02 up
-  to 1M steps and 0.005 at 3M; lock-in's best η goes 0.05, 0.05, 0.02, 0.01.
-  A rate that winds down as experience accumulates is what noise asks for,
-  the same winding down the depression rule already needs.
+- **Rate trade-off.** A faster rate (shift rule 0.02, lock-in η 0.05) is
+  better early (shift rule alias 0.34–0.66 at 100k steps, against 0.78–0.94
+  at 0.005) but plateaus. The slow fixed rate needs about 1M steps and then
+  wins: by 1M it already beats the oracle-chosen rate in most conditions
+  (e.g. 40-box 0.057 against 0.221), because the oracle minimises |T − P|,
+  not the network's error. A rate that winds down with experience gets both,
+  the same winding down the depression rule needs.
 - **Number of environments and box size** are second order. At 3M steps
-  every condition is within the sampling spread of its twin for the shift
-  rule. One exception: a single box of side 20 leaves module 13 ten times
+  every condition but one is within 0.03 of its twin for the shift rule. The
+  exception: a single box of side 20 leaves module 13 ten times
   more impure (5.0e-3 against about 2.2e-4 for boxes of side 14, 40 and 80),
   and several side-20 boxes reduce it (0.7–1.8e-3). A per-axis count of visits
   per phase does not separate side 20 from side 14, so the cause is not
   pinned down.
-- The lock-in twins (0.36–0.44) are the uneven units per pattern, which cost
-  only basin in the probe (§21.1).
+- The lock-in twins (0.35–0.41 at 3M) are the uneven units per pattern,
+  which cost only basin in the probe (§21.1).
 
 #### 22.3 Noise-trained networks in the probe (cell noise 0.01, one 14-box, 1M steps)
 
@@ -2270,7 +2279,13 @@ the noise claims.
 
 | finding | consequence | status |
 |---|---|---|
-| `local_slowness` under noise dropped slow units whose at-rest-corrected change per step came out ≤ 0 by sampling error (v = inf, gain 0) | 8–13% of the kernel's weight lost, all from its broadest units: half-width ~17 instead of 18.5–19, alias slightly higher. Affects every noisy trace-rule network (§21 noise rows, §21.1 noise table, §22.2), learned and twin alike, so learned-vs-twin comparisons stayed fair. Depression with rest recovery (the probed §22.3 networks) was not affected | Fixed (clamp at 0; only units that never change are dropped), with a regression test that fails on the old rule (3 of 10 slow units dropped). Reruns: AUDIT_RERUNS |
+| `local_slowness` under noise dropped slow units whose at-rest-corrected change per step came out ≤ 0 by sampling error (v = inf, gain 0) | 8–13% of the kernel's weight lost, all from its broadest units: half-width ~17 instead of 18.5–19, alias slightly higher. Affects every noisy trace-rule network (§21 noise rows, §21.1 noise table, §22.2), learned and twin alike, so learned-vs-twin comparisons stayed fair. Depression with rest recovery (the probed §22.3 networks) was not affected | Fixed (clamp at 0; only units that never change are dropped), with a regression test that fails on the old rule (3 of 10 slow units dropped). Reruns: noisy twins (§21: twin half-widths back to 18.3–19.1,
+conclusions unchanged), the slow-rate noise table (§21.1: the shift rule at
+rate 0.005 now matches its twin, 0.058 against 0.059 in one box), and the
+scaling study (§22.2: conclusions unchanged, now at fixed rates). The other
+pre-fix noisy rows (rate sweep, bias correction, decaying rate,
+multi-environment noise) are labelled; their learned-vs-twin comparisons stay
+valid. |
 
 **Supervision and tuning**
 
