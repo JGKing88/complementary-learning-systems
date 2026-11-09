@@ -42,7 +42,7 @@ from .rp_encoder import grid_codes_torch
 
 FWHM = 0.10
 NPOS = 1716
-G.ETAS = (0.2, 0.05) if SMOKE else (0.2, 0.05, 0.02)
+ETAS = (0.2, 0.05) if SMOKE else (0.2, 0.05, 0.02)           # set on G at run time (not at import)
 PHI_RATIO = 0.001
 T_CHECK = (4_000, 12_000) if SMOKE else (100_000, 300_000, 1_000_000)
 BLOCK = 2_000 if SMOKE else 10_000
@@ -124,6 +124,7 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--out", required=True)
     a = ap.parse_args()
+    G.ETAS = ETAS
     torch.backends.cuda.matmul.allow_tf32 = False
     W = World(fwhm=FWHM)
     Tmax = max(T_CHECK)

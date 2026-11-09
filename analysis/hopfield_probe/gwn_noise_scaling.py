@@ -12,11 +12,13 @@ once: the lock-in rule 2c (turn 0.001 of the weight rate; eta 0.05, 0.02, 0.01;
 
 * L1 quality: share of units/pairs above purity 0.99, coverage, mean impurity
   1 - purity (more sensitive than the share), and |T - P| for 1c;
-* the network for the best eta (share >= 0.95, then lowest mean impurity) and
-  the best rate (lowest |T - P|): learned and its exact twin
+* networks, learned and as their exact twin, for a FIXED eta (0.01) and rate
+  (0.005) at every checkpoint, and for the ORACLE pick (the eta with share >=
+  0.95 then lowest impurity; the rate with lowest |T - P|), which is chosen
+  against the truth
   (``gwn_l1_twin.network``: random triples, gains from this walk's steps with
-  the at-rest correction, which equals depression with rest recovery to the
-  precision that matters here).
+  the at-rest correction; ``local_slowness`` fixed 2026-11-08 so slow units are
+  no longer dropped under noise).
 
     python -m analysis.hopfield_probe.gwn_noise_scaling run --task I --out DIR
     python -m analysis.hopfield_probe.gwn_noise_scaling summary --out DIR
@@ -43,6 +45,9 @@ NOISE = 0.01
 ETAS = (0.05,) if SMOKE else (0.05, 0.02, 0.01)
 RATES = (0.02, 0.005) if SMOKE else (0.02, 0.005, 0.002, 0.001)
 PHI_RATIO = 0.001
+# fixed choices built at every checkpoint, with no selection against the truth
+FIXED_ETA = ETAS[-1]
+FIXED_RATE = 0.005
 T_CHECK = (2_000, 6_000) if SMOKE else (100_000, 300_000, 1_000_000, 3_000_000)
 CONDS = ([("envs3", 3, 20)] if SMOKE else
          [("envs1", 1, 20), ("envs3", 3, 20), ("envs6", 6, 20), ("envs12", 12, 20),
@@ -114,12 +119,18 @@ def run(task, out):
                   f"cov {st[f'cov_conj_q{G.QMAX}_min']:.3f} mean impurity {st['impurity']['pooled']['mean']:.2e}",
                   flush=True)
         r["2c"] = {f"eta{e:g}": v for e, v in lk.items()}
+        # oracle pick: chosen with the true patterns (impurity); fixed: no selection
         best = min(lk, key=lambda e: (lk[e]["frac_pure_0.99"] < 0.95, lk[e]["impurity"]["pooled"]["mean"]))
-        per = G.route2_pairs(Wsnap, ETAS.index(best), dedup=False)
-        l1, _ = _assemble(per, codes, FWHM)
         r["2c_best_eta"] = best
-        r["2c_learned"] = network(l1, gsteps, FWHM, NOISE, W, f"{name} T={t} 2c eta {best:g} learned")
-        r["2c_twin"] = network(twin_l1(per, FWHM), gsteps, FWHM, NOISE, W, f"{name} T={t} 2c eta {best:g} twin")
+        for key, eta in (("fixed", FIXED_ETA), ("best", best)):
+            if key == "best" and eta == FIXED_ETA:
+                r["2c_best_is_fixed"] = True
+                continue
+            per = G.route2_pairs(Wsnap, ETAS.index(eta), dedup=False)
+            l1, _ = _assemble(per, codes, FWHM)
+            r[f"2c_{key}_learned"] = network(l1, gsteps, FWHM, NOISE, W, f"{name} T={t} 2c {key} eta {eta:g} learned")
+            r[f"2c_{key}_twin"] = network(twin_l1(per, FWHM), gsteps, FWHM, NOISE, W,
+                                          f"{name} T={t} 2c {key} eta {eta:g} twin")
         sc, bestr = {}, None
         for (rate, _), X in lms.snapshot().items():
             per1, err = shift_pairs(X)
@@ -130,12 +141,18 @@ def run(task, out):
             print(f"{name} T={t} 1c rate {rate:g}: pure {st['frac_pure_0.99']:.3f} |T-P| {err:.2e} "
                   f"mean impurity {st['impurity']['pooled']['mean']:.2e}", flush=True)
         r["1c"] = {f"rate{k:g}": v[0] for k, v in sc.items()}
+        # oracle pick: chosen with the exact shift (|T - P|); fixed: no selection
         bestr = min(sc, key=lambda k: sc[k][0]["max_abs_T_minus_P"])
-        per1 = sc[bestr][1]
-        l1c, _ = _assemble(per1, codes, FWHM)
         r["1c_best_rate"] = bestr
-        r["1c_learned"] = network(l1c, gsteps, FWHM, NOISE, W, f"{name} T={t} 1c rate {bestr:g} learned")
-        r["1c_twin"] = network(twin_l1(per1, FWHM), gsteps, FWHM, NOISE, W, f"{name} T={t} 1c rate {bestr:g} twin")
+        for key, rate in (("fixed", FIXED_RATE), ("best", bestr)):
+            if key == "best" and rate == FIXED_RATE:
+                r["1c_best_is_fixed"] = True
+                continue
+            per1 = sc[rate][1]
+            l1c, _ = _assemble(per1, codes, FWHM)
+            r[f"1c_{key}_learned"] = network(l1c, gsteps, FWHM, NOISE, W, f"{name} T={t} 1c {key} rate {rate:g} learned")
+            r[f"1c_{key}_twin"] = network(twin_l1(per1, FWHM), gsteps, FWHM, NOISE, W,
+                                          f"{name} T={t} 1c {key} rate {rate:g} twin")
         res["checkpoints"][str(t)] = r
         _dump(os.path.join(out, f"scaling_{name}.json"), res)
     print(f"DONE {name}", flush=True)
@@ -149,25 +166,32 @@ def summary(out):
     rows = {json.load(open(p))["name"]: json.load(open(p)) for p in glob.glob(os.path.join(out, "scaling_*.json"))}
     order = [c[0] for c in CONDS if c[0] in rows]
     L = ["# Sec 22.2: noise scaling (cell noise 0.01, bump 0.10)", "",
-         "Network alias (far cells), learned / exact twin, at 100k / 300k / 1M / 3M steps. "
-         "In brackets: the best rate (1c) or eta (2c) and the pooled mean impurity 1 - purity.", ""]
-    for learner in ("1c", "2c"):
-        L += [f"## {learner}", "", "| condition | cells | " + " | ".join(f"{int(t) // 1000}k" for t in T_CHECK) + " |",
-              "|---|---|" + "---|" * len(T_CHECK)]
-        for nm in order:
-            ck = rows[nm]["checkpoints"]
-            cells = []
-            for t in T_CHECK:
-                r = ck.get(str(t))
-                if r is None:
-                    cells.append(""); continue
-                key = "1c_best_rate" if learner == "1c" else "2c_best_eta"
-                sub = r[learner][f"{'rate' if learner == '1c' else 'eta'}{r[key]:g}"]
-                cells.append(f"{_a(r[learner + '_learned']):.3f} / {_a(r[learner + '_twin']):.3f} "
-                             f"({r[key]:g}, {sub['impurity']['pooled']['mean']:.1e})")
-            last = ck.get(str(max(int(k) for k in ck)), {})
-            L.append(f"| {nm} | {last.get('cells_visited', '')} | " + " | ".join(cells) + " |")
-        L.append("")
+         "Network alias (far cells), learned / exact twin, at each checkpoint. `fixed` = the same "
+         f"rate at every checkpoint (1c rate {FIXED_RATE:g}, 2c eta {FIXED_ETA:g}), no selection. `oracle` = the "
+         "rate chosen at each checkpoint against the truth (|T - P| for 1c, impurity for 2c); in brackets "
+         "the chosen rate and the pooled mean impurity 1 - purity.", ""]
+    for learner, unit in (("1c", "rate"), ("2c", "eta")):
+        for key in ("fixed", "best"):
+            L += [f"## {learner}, {'fixed' if key == 'fixed' else 'oracle-chosen'} {unit}", "",
+                  "| condition | cells | " + " | ".join(f"{int(t) // 1000}k" for t in T_CHECK) + " |",
+                  "|---|---|" + "---|" * len(T_CHECK)]
+            for nm in order:
+                ck = rows[nm]["checkpoints"]
+                cells = []
+                for t in T_CHECK:
+                    r = ck.get(str(t))
+                    if r is None:
+                        cells.append("")
+                        continue
+                    k = key if (key == "fixed" or not r.get(f"{learner}_best_is_fixed")) else "fixed"
+                    chosen = (FIXED_RATE if learner == "1c" else FIXED_ETA) if k == "fixed" else \
+                        r[f"{learner}_best_{unit}"]
+                    sub = r[learner][f"{unit}{chosen:g}"]
+                    cells.append(f"{_a(r[f'{learner}_{k}_learned']):.3f} / {_a(r[f'{learner}_{k}_twin']):.3f}"
+                                 + ("" if key == "fixed" else f" ({chosen:g}, {sub['impurity']['pooled']['mean']:.1e})"))
+                last = ck.get(str(max(int(x) for x in ck)), {})
+                L.append(f"| {nm} | {last.get('cells_visited', '')} | " + " | ".join(cells) + " |")
+            L.append("")
     open(os.path.join(out, "scaling_summary.md"), "w").write("\n".join(L) + "\n")
     print("\n".join(L))
 

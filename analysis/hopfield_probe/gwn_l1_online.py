@@ -337,7 +337,14 @@ def local_slowness(l1, triples, steps, fwhm, noise=0.0, chunk=16384):
     """``gwn_check.slowness`` without its across-position variance test, which one
     small box cannot do (a slow wave barely varies inside it): v = mean change per
     step / mean power over this walk's steps; a unit that does not change at all
-    (after the at-rest correction when noisy) gets v = inf."""
+    gets v = inf.
+
+    With noise the at-rest jitter is subtracted from the change per step. For the
+    slowest units the true change (~7e-6 |n|^2) is below the sampling error of
+    that difference, so it can come out negative; it is clamped at 0 (the unit
+    is slow, gain ~1). Fixed 2026-11-08: before, a non-positive corrected change
+    gave v = inf, which dropped 8-13% of the kernel's weight, all from its
+    broadest units (audit, doc section 23)."""
     fns = [None] * 3
     if noise > 0:
         _noisy.fwhm = fwhm
@@ -355,14 +362,16 @@ def local_slowness(l1, triples, steps, fwhm, noise=0.0, chunk=16384):
         C1, S1 = unit_waves(c1, s1, tr)
         p = ((C0 ** 2 + S0 ** 2).mean(0) + (C1 ** 2 + S1 ** 2).mean(0)) / 2
         step = ((C1 - C0) ** 2 + (S1 - S0) ** 2).mean(0)
+        raw = step
         ps = p
         if noise > 0:
             C2, S2 = unit_waves(c2, s2, tr)
             rest = ((C2 - C0) ** 2 + (S2 - S0) ** 2).mean(0)
-            step = step - rest
+            step = (step - rest).clamp_min(0.0)
             ps = (p - rest / 2).clamp_min(1e-12)
         vk = step / ps
-        vk = torch.where(step <= 1e-12 * ps, torch.full_like(vk, float("inf")), vk)
+        # only a unit whose output never changes at all is dropped
+        vk = torch.where(raw <= 1e-12 * p, torch.full_like(vk, float("inf")), vk)
         v[a:a + chunk] = vk.double()
         pw[a:a + chunk] = p.double()
     return v, pw

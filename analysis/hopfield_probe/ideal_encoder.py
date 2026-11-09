@@ -116,9 +116,15 @@ class IdealEncoder(torch.nn.Module):
                  lambdas=DEFAULT_LAMBDAS, gain: float = 100.0,
                  weights: str | np.ndarray | None = None,
                  freqs: str | np.ndarray | None = None,
-                 binary: bool = False):
+                 binary: bool = False, symmetric: bool = False):
         super().__init__()
         self.binary = bool(binary)
+        # symmetric: use the harmonic representative j - l for j > l/2, so each
+        # decoded phase is multiplied by |j| <= l/2 instead of up to l - 1. The
+        # clean code is identical (the phases are exact multiples of 2 pi / l);
+        # phase noise is amplified about half as much. Off by default so older
+        # results reproduce.
+        self.symmetric = bool(symmetric)
         # Optional per-frequency weights a_i >= 0 (e.g. a least-squares fit for
         # this draw): wave i is scaled by sqrt(a_i / sum a), so z.z' =
         # sum_i a_i cos(omega_i . Delta) / sum a. None = equal weights.
@@ -154,6 +160,10 @@ class IdealEncoder(torch.nn.Module):
         J = np.empty((2 * len(self.lambdas), self.n_freq), dtype=np.float64)
         J[0::2] = jx
         J[1::2] = jy
+        if self.symmetric:
+            for row in range(J.shape[0]):
+                l = self.lambdas[row // 2]
+                J[row] = np.where(J[row] > l / 2, J[row] - l, J[row])
         self.register_buffer("freqs", torch.from_numpy(freqs))
         self.register_buffer("harmonics", torch.from_numpy(J))
 
@@ -249,6 +259,9 @@ def parse_ideal_spec(spec: str) -> dict:
             continue
         if k == "binary":
             kw[k] = bool(int(v))
+            continue
+        if k == "sym":
+            kw["symmetric"] = bool(int(v))
             continue
         if k not in ("r", "n_freq", "seed", "gain"):
             raise ValueError(f"unknown ideal-encoder key {k!r} in {spec!r}")

@@ -29,7 +29,7 @@ def test_lockin_matches_lock_in(monkeypatch):
     monkeypatch.setattr(G, "ETAS", (0.2, 0.05))
     monkeypatch.setattr(G, "KPER", 12)
     IN, OUT, ax, _ = _steps()
-    for rule, ratio in (("2c", 0.001), ("2b", 1.0), ("2e", 0.1)):
+    for rule, ratio in (("2c", 0.001), ("2b", 1.0), ("2e", 0.1), ("2a", 1.0), ("2d", 0.1)):
         ref = G.lock_in(IN, OUT, ax, rule, seed=3, checks={len(IN)}, phi_ratio=ratio)[len(IN)][0]
         lk = O.LockIn((0.2, 0.05), rule=rule, phi_ratio=ratio, seed=3, kper=12)
         lk.run(IN, OUT, ax)

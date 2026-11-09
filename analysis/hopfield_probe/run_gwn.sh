@@ -9,12 +9,13 @@
 #
 #   bash analysis/hopfield_probe/run_gwn.sh build
 #   bash analysis/hopfield_probe/run_gwn.sh step1      # step 1 alone (GWN_DEP=afterany:JOB to chain)
-#   bash analysis/hopfield_probe/run_gwn.sh probe [ARRAY]     # default all (0-58)
+#   bash analysis/hopfield_probe/run_gwn.sh probe [ARRAY]     # default all (0-63)
 #   bash analysis/hopfield_probe/run_gwn.sh extra      # step3b + step2b
 #   bash analysis/hopfield_probe/run_gwn.sh local      # Sec 20.1: gains from one small environment
 #   bash analysis/hopfield_probe/run_gwn.sh l1online [ARRAY]  # Sec 21: GPU array, one task per
 #                                                        # condition (gwn_l1_online.CONDS), 4 at a time
 #   bash analysis/hopfield_probe/run_gwn.sh l1twin     # Sec 21: learned L1 vs its exact twin (gwn_l1_twin)
+#   bash analysis/hopfield_probe/run_gwn.sh l1twinnoise # same, noisy conditions only (after the 11-08 fix)
 #   bash analysis/hopfield_probe/run_gwn.sh l1lms      # Sec 21: route 1c learning rate (gwn_l1_lms)
 #   bash analysis/hopfield_probe/run_gwn.sh l1noisefix # Sec 21: noise-bias correction (gwn_l1_noisefix)
 #   bash analysis/hopfield_probe/run_gwn.sh l1decay    # Sec 21: 1c with a falling rate (gwn_l1_decay)
@@ -79,6 +80,13 @@ PROBES=(
     "../online/encoders/conc_noise_eta0.02_late|noise-trained: lock-in L1 eta 0.02 + late L3, test noise 0.01|w|--grid_noise 0.01"
     "../online/encoders/conc_noise_1c_seq|noise-trained: shift-rule L1 + depression L3, test noise 0.01|w|--grid_noise 0.01"
     "../online/encoders/conc_noise_eta0.02_self0.99|noise-trained: lock-in L1 eta 0.02 + self-timed L3 (0.99)|w"
+    # Audit (tasks 59-63): the ideal with symmetric harmonics (|j| <= l/2), and test noise
+    # in the direction readout's local basis too
+    "ideal:r=16,sym=1|ideal r=16 symmetric harmonics, bump 0.10, test noise 0.01|w|--fwhm_override 0.1 --grid_noise 0.01"
+    "ideal:r=16,sym=1|ideal r=16 symmetric harmonics, bump 0.10, test noise 0.03|w|--fwhm_override 0.1 --grid_noise 0.03"
+    "../l1_online/encoders/local_exact_dep|exact L1, depression L3, test noise 0.01 incl. basis|w|--grid_noise 0.01 --grid_noise_basis"
+    "../l1_online/encoders/local_2c_dep|lock-in L1 (all units), depression L3, test noise 0.01 incl. basis|w|--grid_noise 0.01 --grid_noise_basis"
+    "ideal:r=16,sym=1|ideal r=16 symmetric harmonics, bump 0.10, test noise 0.01 incl. basis|w|--fwhm_override 0.1 --grid_noise 0.01 --grid_noise_basis"
 )
 # regions: all = 4 regions, wc = whole + corner, w = whole only. An optional 4th
 # field holds extra run.py arguments (e.g. --grid_noise 0.01). An encoder with a
@@ -97,7 +105,7 @@ done
 
 if [[ -z "${GWN_IN_JOB:-}" ]]; then
     mkdir -p "$OUT/logs"
-    if [[ $MODE == l1twin || $MODE == l1lms || $MODE == l1noisefix || $MODE == l1decay || $MODE == l1lockin2 || $MODE == l1mult || $MODE == l1multienv || $MODE == l1l3 || $MODE == l1noiseslow ]]; then
+    if [[ $MODE == l1twin || $MODE == l1twinnoise || $MODE == l1lms || $MODE == l1noisefix || $MODE == l1decay || $MODE == l1lockin2 || $MODE == l1mult || $MODE == l1multienv || $MODE == l1l3 || $MODE == l1noiseslow ]]; then
         GWN_IN_JOB=1 exec sbatch ${GWN_DEP:+--dependency=$GWN_DEP} --job-name=gwn_$MODE \
             --partition=pi_evelina9,pi_fiete,ou_bcs_normal,mit_normal_gpu --gres=gpu:1 --exclude=node3804 \
             --time=${GWN_TIME:-4:00:00} --cpus-per-task=2 --mem=${GWN_MEM:-32G} \
@@ -135,6 +143,11 @@ fi
 cd "$WT"
 export OMP_NUM_THREADS=${SLURM_CPUS_PER_TASK:-2}
 
+if [[ $MODE == l1twinnoise ]]; then
+    nvidia-smi --query-gpu=name,memory.total --format=csv,noheader
+    "$PY" -m analysis.hopfield_probe.gwn_l1_twin --noise_only --out "$OUT/l1_online"; echo "DONE l1twinnoise"
+    exit 0
+fi
 if [[ $MODE == l1twin ]]; then
     nvidia-smi --query-gpu=name,memory.total --format=csv,noheader
     "$PY" -m analysis.hopfield_probe.gwn_l1_twin --out "$OUT/l1_online"; echo "DONE l1twin"

@@ -70,4 +70,22 @@ def test_pattern_with_its_own_turn_is_a_fixed_point_of_2c(monkeypatch):
     W = G.lock_in(IN, OUT, ax, "2c", seed=0, checks={2_000})[2_000][0]
     for m, l in enumerate(G.LAMBDAS):
         pur, j = G.unit_purity(W[m][:l * l], l)
-        assert pur[0] > 0.999 and j[0] == 2 * l + 5
+        # exactly stationary: every error term is zero, so purity stays 1 to
+        # rounding (a wrong turn drifts to ~0.996-0.9999 in the same steps)
+        assert pur[0] > 1 - 1e-6 and j[0] == 2 * l + 5
+
+
+def test_noisy_slowness_keeps_the_slowest_units():
+    """Under noise the at-rest-corrected change of a slow unit can come out
+    negative from sampling error; it must stay slow (finite v, gain ~1), not be
+    dropped as constant (the bug fixed 2026-11-08)."""
+    from analysis.hopfield_probe.gwn_encoder import exact_l1, random_triples, triple_frequencies
+    l1 = exact_l1(0.10).to(G.DEV)
+    tr = random_triples(l1, 20_000, seed=0)
+    n = triple_frequencies(l1, tr).abs().max(1).values
+    from analysis.hopfield_probe.gwn_local_gain import walk_in_env
+    pos = walk_in_env(700, 900, 14, 600, 3)
+    v, _ = G.local_slowness(l1, tr, (pos[:-1], pos[1:]), 0.10, noise=0.01)
+    slow = (n <= 12).to(v.device)
+    assert int(slow.sum()) > 0
+    assert torch.isfinite(v[slow]).all()

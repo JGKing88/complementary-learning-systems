@@ -55,17 +55,22 @@ def twin_l1(per, fwhm):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--out", required=True)
+    ap.add_argument("--noise_only", action="store_true",
+                    help="only the noisy conditions (rerun after the local_slowness fix), to twin_noise.json")
     a = ap.parse_args()
     torch.backends.cuda.matmul.allow_tf32 = False
+    out_json = os.path.join(a.out, "twin_noise.json" if a.noise_only else "twin.json")
     worlds = {f: World(fwhm=f) for f in (0.10, 0.25)}
     res = {}
     for f, W in worlds.items():
+        if a.noise_only:
+            break
         ex = exact_l1(f).to(DEV)
         res[f"exact_fwhm{f:g}"] = [network(ex, W.steps, f, 0.0, W, f"exact bump {f:g} triple seed {s}", s)
                                    for s in SEEDS]
     Tmax = max(T_CHECK)
     for task, (side, fwhm, noise) in enumerate(CONDS):
-        if side not in SIDES:
+        if side not in SIDES or (a.noise_only and noise == 0):
             continue
         W = worlds[fwhm]
         name = cond_name(side, fwhm, noise)
@@ -87,8 +92,8 @@ def main():
             res[f"{name}_{k}"] = {
                 "learned": network(l1, gsteps, fwhm, noise, W, f"{name} {k} learned"),
                 "twin": network(twin_l1(per, fwhm), gsteps, fwhm, noise, W, f"{name} {k} twin")}
-        _dump(os.path.join(a.out, "twin.json"), res)
-    _dump(os.path.join(a.out, "twin.json"), res)
+        _dump(out_json, res)
+    _dump(out_json, res)
     print("DONE twin", flush=True)
 
 

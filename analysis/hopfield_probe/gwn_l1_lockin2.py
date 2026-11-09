@@ -34,7 +34,7 @@ from .gwn_l1_learn import _assemble, codes_at
 from .gwn_l1_twin import network, twin_l1
 
 FWHM = 0.10
-G.ETAS = (0.2,) if SMOKE else (0.05, 0.2)
+ETAS = (0.2,) if SMOKE else (0.05, 0.2)           # set on G at run time (not at import)
 T_CHECK = (2_000, 8_000) if SMOKE else (30_000, 100_000, 300_000)
 VARIANTS = ([("2c", 0.1), ("2e", 1.0)] if SMOKE else
             [("2c", 0.1), ("2c", 0.01), ("2c", 0.001), ("2e", 1.0), ("2e", 0.1)])
@@ -45,6 +45,7 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--out", required=True)
     a = ap.parse_args()
+    G.ETAS = ETAS
     torch.backends.cuda.matmul.allow_tf32 = False
     W = World(fwhm=FWHM)
     Tmax = max(T_CHECK)

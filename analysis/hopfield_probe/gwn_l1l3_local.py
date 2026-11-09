@@ -45,7 +45,7 @@ SIDE = 14
 T1 = 4_000 if SMOKE else 100_000
 T2 = 8_000 if SMOKE else 300_000
 T3 = 2_000 if SMOKE else int(round(R * R / (2 * KAPPA)))
-G.ETAS = (0.2,)
+ETAS = (0.2,)           # set on G at run time (not at import)
 PHI_RATIO = 0.001
 
 
@@ -72,6 +72,7 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--out", required=True)
     a = ap.parse_args()
+    G.ETAS = ETAS
     torch.backends.cuda.matmul.allow_tf32 = False
     encdir = os.path.join(a.out, "encoders")
     os.makedirs(encdir, exist_ok=True)
