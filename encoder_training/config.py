@@ -94,6 +94,11 @@ class LossConfig:
     # This replays past inputs, which a one-env-at-a-time learner storing codes
     # would not have; it measures how much staleness costs the plain queue.
     rate_queue_fresh: bool = False
+    # Rows of each step's batch pushed into the queue, chosen at random; 0
+    # pushes all of them. With one env per step a full push fills a 40k queue
+    # from only 16 envs; pushing 340 rows spreads the same 40k over all 118,
+    # which is the per-env makeup of a mixed batch.
+    rate_queue_push: int = 0
 
     # Distance-graded pair target: target = exp(-d^2 / (2 sigma^2)) instead of
     # the binary 1-on-near / 0-on-far. 0 keeps the binary targets.

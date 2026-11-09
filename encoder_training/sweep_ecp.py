@@ -2390,6 +2390,32 @@ WAVES: dict[str, dict] = {
         },
         "seed": [42, 43, 44],
     },
+    # W69 -- w68 put the 40k / 1x point at a narrow optimum (cont 0.84-0.92).
+    # Two levers not yet tried:
+    #   bal*   push a random subsample of each batch into the queue, so it
+    #          spans all 118 envs (~340 / ~85 rows each) as a mixed batch does,
+    #          instead of 16 / 4 whole envs.
+    #   *lr1e-4  a third of att0.5's lr at the same step count, so each
+    #          one-env step moves the weights less: less staleness, less
+    #          per-env overshoot.
+    "w69_seb_queue_balance": {
+        "arm": {
+            name: dict(npos_list=SIZE_MIXES["sm50"], batch_size=4096,
+                       lr=lr, per_env_radius_frac=0.0, radius=20.0,
+                       rate_lambda=round(0.5 * (q + 2500) / 4096, 3),
+                       rate_eps=1.0, out_dim=1024, hidden_dim=256,
+                       gain_end=100.0, attract_lambda=0.5,
+                       single_env_batch=True, rate_queue=q,
+                       rate_queue_push=push)
+            for name, q, push, lr in (
+                ("bal40k", 40_000, 340, 3e-4),
+                ("bal10k", 10_000, 85, 3e-4),
+                ("q40k_lr1e-4", 40_000, 0, 1e-4),
+                ("bal40k_lr1e-4", 40_000, 340, 1e-4),
+            )
+        },
+        "seed": [42, 43, 44],
+    },
     "w61_cov0.75": {
         "arm": {
             name: {**dict(batch_size=4096, lr=3e-4, per_env_radius_frac=0.0,

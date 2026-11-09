@@ -292,6 +292,10 @@ def train(cfg: TrainConfig) -> str:
                 if cfg.loss.rate_queue > 0:
                     new = idx if cfg.loss.rate_queue_fresh \
                         else z_spread.detach()
+                    k = cfg.loss.rate_queue_push
+                    if 0 < k < len(new):
+                        keep = torch.randperm(len(new), device=new.device)[:k]
+                        new = new[keep]
                     rate_queue = new if rate_queue is None else \
                         torch.cat([new, rate_queue], dim=0)
                     rate_queue = rate_queue[:cfg.loss.rate_queue]
@@ -461,6 +465,7 @@ def _build_cfg_from_args(args) -> TrainConfig:
         rate_eps=args.rate_eps,
         rate_queue=args.rate_queue,
         rate_queue_fresh=args.rate_queue_fresh,
+        rate_queue_push=args.rate_queue_push,
         graded_sigma=args.graded_sigma,
         input_far_tau=args.input_far_tau,
     )
@@ -574,6 +579,9 @@ def main():
                    help="DIAGNOSTIC: store the queue's point indices and "
                         "re-encode them each step (no gradient), so the "
                         "queue is never stale")
+    p.add_argument("--rate_queue_push", type=int, default=0,
+                   help="rows of each batch pushed into the rate queue, "
+                        "chosen at random; 0 = all")
     p.add_argument("--graded_sigma", type=float, default=0.0,
                    help="distance-graded pair target exp(-d^2/2s^2); "
                         "0 keeps the binary near=1/far=0 targets")

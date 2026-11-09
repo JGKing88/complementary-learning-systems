@@ -2137,3 +2137,28 @@ Next: bracket the 40k / 1× point (w68: 0.7× and 1.4× at 40k; 25k and 60k at
 1×).
 
 Raw: `results/probe_seb_queue_push/g100`; encoders `sweeps/w67_seb_queue_push`.
+
+### 10.24 The 40k / 1× point is a narrow optimum in strength, a flat ridge in queue size
+
+w68, seeds 42–44, plain (stale) queue, same probe settings.
+
+| arm | rate_lambda | \|err\| | **cont** | dead K=20 | cos_floor (s42) |
+|---|---|---|---|---|---|
+| 40k, 0.7× | 3.63 | 13–15° | **0.46–0.68** | 0.71–0.88 | 0.066 |
+| 40k, 1× (w66, 4 seeds) | 5.19 | 9–11° | **0.84–0.92** | 0.50–0.62 | 0.037 |
+| 40k, 1.4× | 7.26 | 34–41° | **0.51–0.71** | 0.58–0.75 | 0.021 |
+| 25k, 1× | 3.36 | 11° | **0.77–0.89** | 0.50–0.62 | 0.047 |
+| 60k, 1× | 7.63 | 12–15° | **0.71–0.88** | 0.46–0.67 | 0.046 |
+
+Strength has one good value. Below it the codes under-spread (cos_floor
+0.066); above it the direction readout starts to go (|err| 34–41° at 1.4×,
+chance at 2×, §10.23) while cos_floor keeps falling. Queue size between 25k
+and 60k barely matters. Inside these two knobs the ceiling is about 0.87
+median, against att0.5's 0.99.
+
+A structural difference remains. att0.5's rate term sees ~35 codes from each
+of 118 envs per step; a 40k queue of whole batches holds 2500 codes from each
+of 16 envs. w69 tests a balanced queue (a random 340 rows of each batch, so
+40k spans all 118 envs) and a lower lr (1e-4).
+
+Raw: `results/probe_seb_queue_bracket/g100`; encoders `sweeps/w68_seb_queue_bracket`.
