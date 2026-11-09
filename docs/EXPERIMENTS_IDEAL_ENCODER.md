@@ -50,16 +50,20 @@ memory compute, and can a biologically plausible network reach it?
      learns the shift; with the eigenvector step the network equals exact L1
      (probe basin 34). A fully online lock-in rule with a slow turn learns exact
      pairs too, but holds patterns with uneven numbers of units, which aliases
-     (0.27–0.34) unless units per pattern are equalised (0.07–0.10). In the
-     probe that alias barely matters: with L1 and L3 both from local rules,
-     the fully online network navigates like the ideal (basin 30, reach
-     0.98–0.995, exact 1.000; §21.1).
-   - L1 and L3 can learn on the same walk if L3's plasticity opens late,
-     once L1 has settled (§22.1). Under cell noise both layers' learning
+     (0.19–0.34 across runs; an oracle keeping one unit per pattern gives
+     0.07–0.10). In the probe that alias costs little: with L1 and L3 both
+     from local rules, the fully online network matches the ideal on reach
+     (0.98–0.995) and exact retrieval (1.000), with a basin about 2 cells
+     smaller (29–30 against 32) and direction error 1.5–2.6° against 1.0°
+     (§21.1, §22.1).
+   - L1 and L3 can learn on the same walk if L3's plasticity opens late (a
+     fixed window long after L1 has settled; a window timed by the units'
+     own settling gets most of the way) (§22.1). Under cell noise both layers' learning
      rates must wind down as experience accumulates (§22.2); trained that way
      under noise, the shift-rule network navigates like exact L1 (§22.3).
-   - The network is robust to test-time cell noise 0.01, where the ideal
-     encoder fails (§22.4).
+   - With noisy cues and stored goals (readout basis clean), the network is
+     unaffected by test-time cell noise 0.01; the ideal is hurt more, mostly
+     because of how it reads harmonics (§22.4, §23).
    - Multiplication accurate to a few percent.
    - Narrow grid bumps (0.10 of the period) to survive cell noise, with gains
      corrected for jitter at rest.
@@ -69,14 +73,18 @@ corner, K = 5, clean codes unless stated)
 
 | model | how it is built or learned | better at | worse at | biological plausibility |
 |---|---|---|---|---|
-| Ideal encoder (§1–10) | Not learned. Reads each module's phase (atan2), then 512 random integer frequencies through the CRT, Gaussian r = 16 | Best clean probe (basin 32 / 30, error 1°), smallest code | Fails under test-time noise at narrow bumps (reach 0.58 at noise 0.01, §22.4); its integer frequencies cannot be found by gradient descent (§11–17) | Low: atan2 and chosen integers |
+| Ideal encoder (§1–10) | Not learned. Reads each module's phase (atan2), then 512 random integer frequencies through the CRT, Gaussian r = 16 | Best clean probe (basin 32 / 30, error 1°), smallest code | More fragile to test-time noise at narrow bumps: as implemented (harmonics up to l − 1) reach 0.58 at noise 0.01; with symmetric harmonics (|j| ≤ l/2) SYM_IDEAL_SHORT (§22.4, §23); its integer frequencies cannot be found by gradient descent (§11–17) | Low: atan2 and chosen integers |
 | Trained att0.5 (production baseline) | Gradient descent on kernel objectives | Learned end to end | Direction error ~8°, exact retrieval 0.81–0.98 depending on region, aliasing | Low: backprop |
 | Random projection + threshold + readout or slowness (§19) | Random weights, learned linear readout | The canonical plausible circuit | Does not work: readout memorises, slowest features alias ≥ 0.92 | High, but fails |
 | Grid wave network, exact L1 (§20) | L1 hand-wired (every pattern of every module); random triples; L3 gains | Equals the ideal kernel; robust to test noise (§22.4) | L1 not learned | Reference only |
 | Branch design (§20) | Exact L1; one neuron per (j11, j12) pair keeping the slowest of 169 module-13 branches | Exact kernel with 17,424 neurons; best probe (basin 64 / 53) | Needs selection among dendritic branches; no learning rule tested | Medium (dendritic branch selection) |
 | Shift rule + eigenvectors (route 1c, §21–22) | A delta rule learns each module's one-step shift from the walk (local, online); the eigenvectors of that shift give exactly one pair per pattern | Exact without noise from ~30k steps in one 14-box (basin 33–35); under noise, with a slow rate and ~1M–3M steps, matches its exact twin and navigates like exact L1 (basin 34 / 35, §22.3) | The eigenvector step is linear algebra, not a learning rule | Medium: one non-neural step |
-| Lock-in, fully online (route 2c, §21–22) | Each L1 neuron learns one wave by itself (predictor synapses, an intrinsic turn that locks 1000 times more slowly than the weights); depression L3 on the same walk, window opening late | No offline step anywhere; navigates like the ideal (basin 30 / 29, reach 0.99, §21.1, §22.1) | Needs ~6× more L1 neurons than patterns (2,604 for 434) and holds patterns unevenly (kernel alias 0.27–0.34, about 4 cells of basin); under training noise 9° error and up to 17% dead goals after 1M steps (§22.3) | Highest: needs paired (complex) outputs, predictor synapses, an oscillator-like turn per direction, and velocity input |
-| Lock-in + lateral competition (proposed) | As above, with units that hold the same pattern suppressing each other | Should hold one unit per pattern (434), removing the uneven counts (one-per-pattern reference: alias 0.07–0.10) | Untested | High (anti-Hebbian lateral inhibition is local) |
+| Lock-in, fully online (route 2c, §21–22) | Each L1 neuron learns one wave by itself (predictor synapses, an intrinsic turn that locks 1000 times more slowly than the weights); depression L3 on the same walk, window opening late | No offline learning step in the §22.1 version (pair scales by a running power; pruning only drops near-zero units for compute); reach and exact retrieval like the ideal, basin about 2 cells smaller (29–30), direction error ~2.3° | Needs ~6× more L1 neurons than patterns (2,604 for 434) and holds patterns unevenly (kernel alias 0.19–0.34 across runs, about 2–4 cells of basin); under training noise 9° error and up to 17% dead goals after 1M steps (§22.3) | Highest: needs paired (complex) outputs, predictor synapses, an oscillator-like turn per direction, and velocity input |
+| Lock-in + lateral competition (proposed) | As above, with units that hold the same pattern suppressing each other | Should hold one unit per pattern (434), removing the uneven counts (an oracle keeping one unit per pattern gives alias 0.07–0.10) | Untested | High (anti-Hebbian lateral inhibition is local) |
+
+The tuned settings (lock-in η 0.2 and turn ratio 0.001, shift-rule rates)
+were chosen by comparing against the true patterns or shift (§23); the
+networks' weights never see the truth.
 
 L3 options, all equivalent once L1 has settled: **depression** (the default:
 one multiplicative update per step, nothing stored, kernel width set by how long
@@ -1708,8 +1716,9 @@ less local.
   matrix. With the turn adapting 1000 times more slowly than the weights,
   every unit ends pure and 94–98% of patterns are held. The learned weights
   are exact (learned network = twin), but the network wired from every unit
-  aliases at 0.27–0.34 because patterns are held by unevenly many units. With
-  one unit per pattern it is 0.07–0.10.
+  aliases at 0.27–0.34 because patterns are held by unevenly many units. An
+  oracle that keeps one unit per pattern (chosen with the true patterns) gives
+  0.07–0.10; that is a what-if, not something the route does.
 - **Cell noise 0.01** roughly doubles the alias of the shift learners and
   breaks the lock-in rules. **Bump 0.25** makes the finest patterns too weak
   to learn locally.
@@ -1911,8 +1920,11 @@ at random scaffold positions; 2c with the 0.001 turn, η 0.2; no noise).
 - Network alias, far cells. The weak half of each module's patterns (by
   A(j)/A(0)) gets 30–50% fewer units than the strong half, and the bias grows
   at smaller η (correlation 0.60–0.78 at η 0.02). This measures directly what
-  §21 inferred. Walking more places trims the alias from about 0.30 to 0.23;
-  it does not remove the bias, which comes from the bump's power spectrum.
+  §21 inferred. Each condition is one run, and the same 14-box recipe gave
+  0.192 in another run (§22.1) against 0.335 here, so run-to-run spread (at
+  least 0.14) is larger than any effect of more boxes. The bias itself (fewer
+  units on weak patterns) is in every run; it comes from the bump's power
+  spectrum.
 - The shift rule 1c is exact in both conditions without noise (alias 0.064
   and 0.056, equal to the twins).
 
@@ -1952,14 +1964,18 @@ depression rule w ← w·max(0, 1 − κ|Δz|²) over 25,600 further steps
 | 2c, every unit (300k steps) | 0.340 / 0.037 | 0.340 | 30.2 / 29.4, 0.995 / 0.981 |
 
 - **All three navigate.** Exact retrieval is 1.000 everywhere, direction
-  error 1.1–1.6°, no dead goals. The fully online network has no offline step
-  anywhere (lock-in L1, depression L3, one 14-box, 325k steps in all) and
-  navigates like the ideal encoder (ideal r = 16: basin 32.1 / 29.5, reach
-  0.998 / 0.987). Its kernel alias of 0.34 costs about 4 cells of basin
-  against exact L1 and nothing else, so the alias metric overstates what
-  uneven units per pattern cost the memory.
-- The depression rule gives the same gains as the trace rule to three
-  decimals. L3 learned after L1 had finished; learning both at once is
+  error 1.1–1.6°, no dead goals. The fully online network learns everything
+  from the walk (lock-in L1, depression L3, one 14-box, 325k steps in all);
+  here each pair's scale is a batch average over the visited cells
+  (`_assemble`), and §22.1's running-power version reproduces the result
+  (basin 29.9 / 29.0). Against the ideal encoder (basin 32.1 / 29.5, reach
+  0.998 / 0.987) it matches reach and exact retrieval; its basin is about 2
+  cells smaller in a paired comparison (−1.9 ± 0.7, §23). Its kernel alias of
+  0.34 costs about 4 cells of basin against exact L1 and nothing else, so the
+  alias metric overstates what uneven units per pattern cost the memory.
+- Depression and trace give the same kernel metrics to three decimals (alias
+  within 3e-4, strong counts within 3), without noise; the gains themselves
+  were not compared one by one. L3 learned after L1 had finished; learning both at once is
   untested, and early, impure L1 units would be depressed hard, so L3
   plasticity probably has to start late.
 - Probe tasks 32–37 (`run_gwn.sh probe`).
@@ -2046,15 +2062,14 @@ from 38 on in `run_gwn.sh`. Results go here, with a short verdict per question.
 
 **Verdicts**
 
-- **22.1 Concurrent learning works if L3 starts late.** L1 and L3 learning on
-  the same walk, with L3's depression window opening once L1 has settled,
-  gives the same network as learning them one after the other, and it
-  navigates like the ideal (basin 29–30, reach 0.99). L3 switched on from
-  step 0 destroys the code.
+- **22.1 Concurrent learning works if L3 starts late.** With L1 and L3 on
+  the same walk, a depression window fixed over the last 25,600 steps (L1 had
+  settled by ~100k of 300k steps) gives the sequential network to three
+  decimals, and it navigates nearly like the ideal (basin 29–30 against 32,
+  reach 0.99, exact 1.000). A window timed by each unit's own inputs settling
+  gets most of the way (basin 27–28). L3 from step 0 destroys the code.
 - **22.2 Steps matter most; places and box size barely.** Under cell noise
-  0.01 both rules approach their exact twins as steps grow, and the best
-  learning rate falls as steps grow. By 3M steps the shift rule is at its twin
-  in every condition, and lock-in is within 0.05–0.10.
+  0.01 both rules approach their exact twins as steps grow. SCALING_VERDICT
 - **22.3 Noise-trained networks navigate; the fully online one with a cost.**
   Trained under cell noise 0.01 in one 14-box, the shift-rule network
   navigates like exact L1, with noisy test codes too (basin 31–35, reach
@@ -2062,10 +2077,9 @@ from 38 on in `run_gwn.sh`. Results go here, with a short verdict per question.
   direction error and up to 17% dead goals; at η 0.05 (kernel alias 0.68) a
   third to a half of the goals die. A slower rate over more steps (22.2) is
   the remedy.
-- **22.4 The grid wave network is robust to test-time noise; the ideal
-  encoder is not.** At test noise 0.01 the network navigates as if the codes
-  were clean (basin 32, reach 0.99–1.0); the ideal falls to reach 0.58 with
-  no basin.
+- **22.4 With noisy cues and stored goals, the network navigates as if the
+  codes were clean.** At test noise 0.01 (readout basis clean) basin 32 and
+  reach 0.99–1.0. SYM_IDEAL_VERDICT
 
 #### 22.1 Concurrent learning (`gwn_concurrent.py`; one 14-box, bump 0.10)
 
@@ -2082,15 +2096,20 @@ strong units, and the probe (whole / corner):
 | sequential (fresh walk after) | 0.192 / 0.034 / 480 | (= late) | | |
 | shift-rule L1, sequential | 0.060 / 0.030 / 540 | | | |
 
-- Always on: units built from early, impure L1 are worn down before L1
-  settles, and depression never recovers. Only 9 units survive.
-- The late window gives exactly the sequential gains: once L1 has settled,
-  whether L3 runs during or after the walk makes no difference.
+- Always on: depression never recovers, and early depression differs from
+  unit to unit (impure L1 outputs, and a running power estimate that starts
+  from a single sample), so only a scrambled handful of units survives (9).
+- The late window and the sequential walk give the same kernel to three
+  decimals (alias 0.1924 / 0.1923, kept 1306 / 1307; different walks, so not
+  identical): once L1 has settled, running L3 during or after the walk makes
+  no difference. The window opens at a fixed time chosen in advance, not by a
+  settling signal.
 - The self-timed critical period (each L2 unit silent until its three inputs
   settle, then 25,600 steps of depression) works at a strict gate. Units
   born before their inputs are fully pure are over-depressed, so fewer units
   are strong (151 against 480); a stricter gate or a delay after settling is
-  the obvious refinement.
+  the obvious refinement. Units born too late to finish their 25,600 steps keep
+  partial gains (1.1% of units in the noisy η 0.02 run).
 
 Under cell noise 0.01 (1M steps; depression with rest recovery):
 
@@ -2102,12 +2121,15 @@ Under cell noise 0.01 (1M steps; depression with rest recovery):
 | lock-in, either η | always on | 0.83–0.85, nearly no units |
 | shift rule, rate 0.005 | sequential, rest recovery | 0.097 / 0.032 / 457 |
 
-- Depression with rest recovery works: the shift-rule network reaches 0.097,
-  as the trace rule with its at-rest correction did (0.105, §21.1).
+- Depression with rest recovery gives a working network: the shift-rule
+  network reaches alias 0.097 and probe basin 34 / 35 (one walk; there is no
+  same-L1 control with the trace rule).
 - Under noise only 76% of lock-in units pass the 0.99 settledness bar by 1M
   steps, so the self-timed version leaves many units unborn.
 
 #### 22.2 Noise scaling (`gwn_noise_scaling.py`; cell noise 0.01, bump 0.10)
+
+SCALING_TABLES_NOTE
 
 Full tables: `gwn/online/scaling_summary.md`. Network alias, learned / exact
 twin, with the best rate chosen at each checkpoint:
@@ -2166,7 +2188,8 @@ Probe tasks 50–58; clean test codes unless marked.
 - The shift-rule network is the robust one: local except the eigenvector
   step, learned under noise, and tested under noise, it navigates like exact
   L1.
-- For the lock-in network, kernel alias predicts the cost here. Alias 0.34
+- For these lock-in networks, kernel alias ranks the probe cost (but clean
+  all-unit networks spread 0.19–0.34 across runs, so it is a coarse guide). Alias 0.34
   from uneven counts alone (no noise) cost only basin (§21.1); alias 0.50 under
   noise costs direction (9°) and some goals; alias 0.68 costs a third to a
   half of the goals. At 3M steps and η 0.01 the scaling study reached alias
@@ -2175,13 +2198,14 @@ Probe tasks 50–58; clean test codes unless marked.
 #### 22.4 Test-time noise (`run.py --grid_noise`, whole region)
 
 The decoding bank (the probe's ruler for which cell a recalled state is) stays
-clean; stored goals and cues are noisy. A first run with a noisy ruler scored
+clean, and so does the direction readout's local basis; stored goals and cues
+are noisy. A first run with a noisy ruler scored
 exact retrieval and basin wrongly (neighbouring cells' codes differ by less than
 the noise) and was rerun; reach and direction were unaffected.
 
 | network | test noise | abs err (°) | exact | basin | reach | dead (K = 5 / 10 / 20) |
 |---|---|---|---|---|---|---|
-| ideal r = 16, bump 0.10 | 0 | 1.04 | 1.000 | 32.1 | 0.998 | 0 / 0 / 0 |
+| ideal r = 16 (clean code identical at any bump) | 0 | 1.04 | 1.000 | 32.1 | 0.998 | 0 / 0 / 0 |
 | ideal r = 16, bump 0.10 | 0.01 | 25.97 | 0.328 | none | 0.583 | 0.29 / 0.42 / 0.38 |
 | ideal r = 16, bump 0.10 | 0.03 | 84.24 | 0.020 | none | 0.029 | 1 / 1 / 1 |
 | exact L1 + depression L3 | 0 | 1.12 | 1.000 | 34.4 | 0.994 | 0 / 0 / 0 |
@@ -2192,8 +2216,127 @@ the noise) and was rerun; reach and direction were unaffected.
 | lock-in L1 + depression L3 | 0.01 | 1.94 | 1.000 | 28.4 | 0.987 | 0 / 0 / 0 |
 | lock-in L1 + depression L3 | 0.03 | 3.33 | 0.892 | 13.6 | 0.941 | 0.04 / 0 / 0.04 |
 
-- The ideal reads phases with atan2, which amplifies noise when bumps are
-  narrow (§20 step 2); the grid wave network sums over many cells per
-  pattern and averages noise out. At 0.01 the network is unaffected; at 0.03
-  it loses exact retrieval at a distance (basin 11–15) but still reaches
-  96–98% of goals.
+- Both encoders sum all cells of a module, so averaging is not the
+  difference. The ideal decodes each module's phase, then multiplies the
+  noisy phase by the harmonic j, so its error grows with |j|; as implemented
+  j runs up to l − 1, where |j| ≤ l/2 gives the same clean code (§23). The
+  network reads the j-th Fourier coefficient directly, so its error goes as
+  noise / A(j). At 0.01 the network is unaffected; at 0.03 it loses exact
+  retrieval at a distance (basin 11–15) but still reaches 94–98% of goals.
+SYM_IDEAL_ROWS
+
+## 23. Audit of the final model and its claims (2026-11-08)
+
+Scope: everything behind §21–22, from L1 learning to the probe. Three
+independent reviews, each given the code and the claims rather than my
+conclusions (L1 learning and leakage; L2/L3, network construction and kernel
+metrics; the Hopfield evaluation), plus checks of my own.
+
+**Bottom line.** No supervision reaches any network's weights: every learner
+reads only the walk's grid codes and each step's direction, and the exact
+patterns, exact shift and positions appear only in diagnostics and evaluation.
+The evaluation is wired correctly. There was one real bug (noisy trace-rule
+gains), several overstated claims (corrected in place above), hyperparameters
+tuned against the truth (now stated), and two evaluation choices that narrow
+the noise claims.
+
+**Bug**
+
+| finding | consequence | status |
+|---|---|---|
+| `local_slowness` under noise dropped slow units whose at-rest-corrected change per step came out ≤ 0 by sampling error (v = inf, gain 0) | 8–13% of the kernel's weight lost, all from its broadest units: half-width ~17 instead of 18.5–19, alias slightly higher. Affects every noisy trace-rule network (§21 noise rows, §21.1 noise table, §22.2), learned and twin alike, so learned-vs-twin comparisons stayed fair. Depression with rest recovery (the probed §22.3 networks) was not affected | Fixed (clamp at 0; only units that never change are dropped), with a regression test that fails on the old rule (3 of 10 slow units dropped). Reruns: AUDIT_RERUNS |
+
+**Supervision and tuning**
+
+- The learners (`lms_shift` / `ShiftLMS`, `lock_in` / `LockIn`, `_init_units`,
+  `eig_pairs`) read only the start and end codes of each step and its axis.
+- Tuned against the truth: lock-in η 0.2 and turn ratio 0.001 (chosen by
+  purity and coverage, `gwn_l1_lockin2.py`), shift-rule rate 0.5 (by
+  |T − P|). These are global scalars, chosen on other seeds and stable across
+  the 14-box, 20-box and scattered steps. The turn ratio 0.001 is at the edge
+  of the tested grid, and no label-free way to choose it was tested.
+- Oracle picks now labelled as such: §22.2's per-checkpoint best rate (by
+  |T − P|) and best η (by impurity), and "one unit per pattern" (each unit's
+  pattern found with the true patterns). The §22.2 rerun also builds networks
+  at a fixed rate with no selection.
+- Pair scale under noise: the shift-rule pairs were scaled to unit power with
+  clean codes over the visited cells. An at-rest-corrected estimate from noisy
+  codes gives the same scale within 0.5% (the raw noisy estimate is off by up
+  to 5.6%), so the clean scale stands in for a local mechanism and changes
+  nothing.
+
+**Overstated claims, corrected in place**
+
+- "No offline step anywhere" (§21.1): that network's pair scale was a batch
+  average over visited cells; §22.1's running-power version is the online one.
+- "L3's window opens once L1 has settled": it opens at a fixed time chosen in
+  advance (long after L1 settled); the self-timed version does worse.
+- "Exactly the sequential gains": the same to three decimals, from different
+  walks.
+- "Rest recovery works as the trace rule did": single runs, no same-L1 control.
+- "More boxes trim the alias from 0.30 to 0.23": run-to-run spread is at least
+  0.14 (the same recipe gave 0.192 and 0.335).
+- "Depression gives the same gains as the trace rule": the kernel metrics
+  agree, without noise; gains were not compared one by one.
+- "Navigates like the ideal": reach and exact retrieval are like the ideal's;
+  basin is about 2 cells smaller in paired comparisons (concurrent late window
+  −2.2 ± 0.6, §21.1 lock-in −1.9 ± 0.7), direction error 1.5–2.6° against 1.0°.
+- "One unit per pattern gives 0.07–0.10" read as a result of the route: it is
+  an oracle what-if.
+- The fixed-point test showed that a pattern with its own turn and a learned
+  predictor is a fixed point, not that the rule converges to it (attraction
+  rests on the runs). The test now requires purity above 1 − 1e-6; a wrong
+  turn drifts to 0.996–0.9999 in the same steps.
+
+**Evaluation**
+
+- Verified: each probe task loads the encoder it names; grid wave network
+  encoders use their stored bump (0.10), and the ideal's override applies;
+  noise is a fresh draw on every encode; the decoding bank is clean in both
+  places it is built; reruns overwrote their JSON and the summary holds no
+  stale rows; the ideal reference rows used the same settings.
+- **The ideal's harmonics.** `IdealEncoder` multiplies each decoded phase by
+  j in 0 … l − 1; the representative with |j| ≤ l/2 gives the identical clean
+  code and amplifies phase noise about half as much. Option added
+  (`ideal:r=16,sym=1`, off by default so older results reproduce).
+  SYM_IDEAL_AUDIT
+- **The readout basis stays clean** in every noisy-test task. The noise claims
+  cover noisy cues and stored goals; a basis built from single-step
+  differences of noisy codes is mostly noise (code noise 0.24 against a
+  one-cell step of 0.06). NOISY_BASIS_AUDIT
+- **Regions.** At K = 5 the scored environments lie in one row along the
+  x = 0 edge: "whole" is an edge strip (x 4–232), "corner" lies inside it, and
+  "centre" and "opposite" are translates of "corner". Cues past the edge are
+  dropped from the basin disc, which can only inflate basin (35 of 40 corner
+  goals, 10 of 40 whole goals). This holds for every encoder, so comparisons
+  stay paired and fair; absolute basins and whole-vs-corner contrasts are
+  affected.
+- Test D follows a field computed once per cell with one noise draw, not
+  redrawn on each visit.
+- Statistics: at K = 5, basin rests on 16 (world, env) pairs, reach on 40 ×
+  400 starts, dead goals on 24 goals (steps of 0.042; "0.17" is 4 goals).
+  Settings and seeds are identical across tasks, so comparisons are paired.
+  Each learned network comes from one training walk; training-seed variance
+  was not sampled, so close learned variants (basin 29.9 against 28.2) cannot
+  be ranked.
+
+**Assumptions, not bugs**
+
+- An idealised lattice world: unit, axis-aligned steps; integer periods;
+  square cell sheets. The animal knows each step's axis and sign (velocity
+  input) and which module each cell belongs to.
+- L1 units have paired (complex) outputs, and L2 can read either sign of the
+  sine part (the conjugate pair, pattern −j).
+- L2 multiplies its three inputs exactly (§20: a few percent error is
+  tolerated).
+- Pruning to 99.5% of Σw² is a global compute economy; its 6,000 cap never
+  binds.
+- r = 16 and κ = 0.005 are fixed by design.
+
+**Minor**
+
+- α = 0.618 leaves an eigenvalue gap of 0.043 for module 11, comparable to the
+  noisy |T − P| (0.03–0.06), so near-degenerate eigenvectors can mix under
+  noise.
+- `G.ETAS` was set at import by three scripts; now set at run time. The
+  `LockIn` equivalence test now covers rules 2a and 2d too.
