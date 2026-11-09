@@ -33,6 +33,10 @@ def main():
     p.add_argument("--iters", type=int, nargs="+", default=[2, 10])
     p.add_argument("--batch", type=int, default=128)
     p.add_argument("--device", default="cuda")
+    p.add_argument("--order", type=int, nargs="+", default=None,
+                   help="introduce the held-out arenas in this order (indices into "
+                        "base_val); results stay keyed by arena, so a reversed order "
+                        "separates an arena's own difficulty from its position")
     a = p.parse_args()
     device = torch.device(a.device if torch.cuda.is_available() else "cpu")
     ck = torch.load(a.ckpt, map_location="cpu", weights_only=False)
@@ -40,6 +44,11 @@ def main():
     agent = load_agent(cfg, ck["agent_state_dict"], 1024, device)
     world = a.world or os.path.join(os.path.dirname(a.ckpt), "world.json")
     specs = WorldSpec.read(world).split.base_val
+    if a.order is not None:
+        if sorted(a.order) != list(range(len(specs))):
+            p.error(f"--order must be a permutation of 0..{len(specs) - 1}")
+        specs = [specs[i] for i in a.order]
+    ids = list(a.order) if a.order is not None else list(range(len(specs)))
     offs = np.array([s.offset for s in specs])
     goals = np.array([s.goal for s in specs])
     synth = Synth(cfg, device)
@@ -64,13 +73,16 @@ def main():
                 err = (torch.remainder(ang + math.pi, 2 * math.pi) - math.pi).abs() * 180 / math.pi
                 row[name + "_median_deg"] = float(err.median())
                 row[name + "_n"] = int(far.sum())
-            per[f"arena{j}"] = row
+            per[f"arena{ids[j]}"] = dict(row, position=j)
         res[f"iters{it}"] = per
+        # Printed by arena, with the position it was introduced at.
         print(f"iters {it}: " + " | ".join(
-            f"a{j} start {r.get('trial_start_median_deg', float('nan')):.0f} "
-            f"known {r.get('known_median_deg', float('nan')):.0f}"
-            for j, r in enumerate(per.values())), flush=True)
-    out = os.path.splitext(a.ckpt)[0] + "_synth_val.json"
+            f"a{i}@{per[f'arena{i}']['position']} "
+            f"start {per[f'arena{i}'].get('trial_start_median_deg', float('nan')):.0f} "
+            f"known {per[f'arena{i}'].get('known_median_deg', float('nan')):.0f}"
+            for i in sorted(ids)), flush=True)
+    tag = "" if a.order is None else "_order" + "".join(str(i) for i in a.order)
+    out = os.path.splitext(a.ckpt)[0] + f"_synth_val{tag}.json"
     with open(out, "w") as f:
         json.dump({"ckpt": a.ckpt, "offsets": offs.tolist(), "goals": goals.tolist(), **res},
                   f, indent=1)
