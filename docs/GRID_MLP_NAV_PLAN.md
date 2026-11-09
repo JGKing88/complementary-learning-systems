@@ -871,13 +871,29 @@ is in every block and the last only in the final one, and lifetimes draw 2 to
 2-pass lifetime position 0 has 1,876 known steps and position 5 has 76, so
 the sixth goal gets a 25th of the gradient.
 
-Test running: `pretrain_decode.py --balance_positions` weights the
-displacement loss so every position carries the same total weight (mean
-weight per known step 1). Job 28468381 (`code/i3_v13`, commit c8d219d)
-fine-tunes `pretrain_long` with it at pretraining's other settings (2/5/10/20
-passes, window 600, lr 3e-4, 1,500 lifetimes of 64). It is read by recall per
-position, forward and reversed. If the later positions come down to the
-first ones, the real-task stages are rerun from it with balanced rehearsal.
+`pretrain_decode.py --balance_positions` weights the displacement loss so
+every position carries the same total weight (mean weight per known step 1).
+Job 28468381 (`code/i3_v13`, commit c8d219d) fine-tuned `pretrain_long` with
+it at pretraining's other settings (2/5/10/20 passes, window 600, lr 3e-4,
+1,500 lifetimes of 64), giving `idea3/pretrain_long_bal_h512_l3.pt`. It
+halves the error of the later positions and costs the early ones nothing:
+
+| 40 passes, by position | 0 | 1 | 2 | 3 | 4 | 5 |
+|---|---|---|---|---|---|---|
+| `pretrain_long`, forward | 7 | 10 | 12 | 25 | 48 | 46 |
+| balanced, forward | 7 | 10 | 12 | 18 | 25 | 16 |
+| `pretrain_long`, reversed | 7 | 11 | 20 | 12 | 26 | 28 |
+| balanced, reversed | 7 | 11 | 14 | 11 | 18 | 12 |
+
+Recall stays flat from 2 to 40 passes. A smaller position effect remains (7°
+first, up to 25° later).
+
+The real-task stages are rerun from it with long, balanced rehearsal
+(`--synth_rehearsal_balance`, lever `_bal`, commit 3500428): variant
+`task3r_k2_h512_i3_rp_rw_l3_sup_reh_fv_rl_bal`, job 28482187 (`code/i3_v14`),
+the best model's schedule plus a 600-update lifetime stage. The real-task
+lifetimes are still unbalanced (6 arenas at 2 passes give the first arena 12
+trials and the last 2).
 
 ### 7.7 Stage 1 runs (RL, superseded by §7.6)
 
