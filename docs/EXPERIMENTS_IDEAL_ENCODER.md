@@ -2240,7 +2240,16 @@ basis too.
 |---|---|---|---|---|---|---|
 | ideal r = 16, symmetric harmonics | 0.01 | 3.12 | 0.768 | 16.8 | 0.987 | 0 / 0 / 0.04 |
 | ideal r = 16, symmetric harmonics | 0.03 | 38.96 | 0.079 | none | 0.233 | 0.75 / 0.50 / 0.88 |
-NOISY_BASIS_ROWS
+| exact L1 + depression L3, noisy basis | 0.01 | 23.73 | 1.000 | 31.7 | 0.682 | 0.25 / 0.33 / 0.33 |
+| lock-in L1 + depression L3, noisy basis | 0.01 | 21.47 | 1.000 | 28.4 | 0.719 | 0.29 / 0.33 / 0.29 |
+| ideal, symmetric harmonics, noisy basis | 0.01 | 78.34 | 0.768 | 16.8 | 0.025 | 1 / 1 / 1 |
+
+- With noise in the readout basis too (a basis built from single-step
+  differences of noisy codes), the network's direction error rises to
+  21–24° and a third of goals die (reach 0.68–0.72); retrieval is unchanged
+  because it does not use the basis. The symmetric ideal fails outright
+  (reach 0.03). A readout basis averaged over visits would sit between these
+  and the clean-basis rows; that was not tested.
 
 ## 23. Audit of the final model and its claims (2026-11-08)
 
@@ -2323,7 +2332,10 @@ the noise claims.
 - **The readout basis stays clean** in every noisy-test task. The noise claims
   cover noisy cues and stored goals; a basis built from single-step
   differences of noisy codes is mostly noise (code noise 0.24 against a
-  one-cell step of 0.06). NOISY_BASIS_AUDIT
+  one-cell step of 0.06). Probe rows with the basis noisy too (§22.4): the network's
+  direction error rises to 21–24° and reach to 0.68–0.72 (a third of goals
+  dead), against reach 0.03 for the symmetric ideal. So the robustness claim
+  holds for noisy cues and stored goals, and only partly for a noisy readout.
 - **Regions.** At K = 5 the scored environments lie in one row along the
   x = 0 edge: "whole" is an edge strip (x 4–232), "corner" lies inside it, and
   "centre" and "opposite" are translates of "corner". Cues past the edge are
