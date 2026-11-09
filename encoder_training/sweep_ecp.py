@@ -2370,6 +2370,26 @@ WAVES: dict[str, dict] = {
         },
         "seed": [42, 43, 44],
     },
+    # W68 -- bracket w66's 40k / 1x point (cont 0.84-0.92). w67 put cliffs on
+    # both sides of it: 2x strength flattens the neighbourhood (cont 0.07) and
+    # a 100k queue is staler (0.67). Plain stale queue throughout.
+    "w68_seb_queue_bracket": {
+        "arm": {
+            name: dict(npos_list=SIZE_MIXES["sm50"], batch_size=4096,
+                       lr=3e-4, per_env_radius_frac=0.0, radius=20.0,
+                       rate_lambda=round(mult * 0.5 * (q + 2500) / 4096, 3),
+                       rate_eps=1.0, out_dim=1024, hidden_dim=256,
+                       gain_end=100.0, attract_lambda=0.5,
+                       single_env_batch=True, rate_queue=q)
+            for name, q, mult in (
+                ("q40k_r0.7", 40_000, 0.7),
+                ("q40k_r1.4", 40_000, 1.4),
+                ("q25k_r", 25_000, 1.0),
+                ("q60k_r", 60_000, 1.0),
+            )
+        },
+        "seed": [42, 43, 44],
+    },
     "w61_cov0.75": {
         "arm": {
             name: {**dict(batch_size=4096, lr=3e-4, per_env_radius_frac=0.0,
