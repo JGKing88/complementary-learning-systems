@@ -49,6 +49,9 @@ STOCHASTIC=${STOCHASTIC:-0}
 # the agent's own displacement head (agenthash --follow_disp_head); outputs get
 # a _head tag.
 FOLLOW_HEAD=${FOLLOW_HEAD:-0}
+# PROBE_HEAD=1: record the displacement head's error on the agent's own
+# protocol trajectories without steering (--probe_disp_head); tag _probe.
+PROBE_HEAD=${PROBE_HEAD:-0}
 
 cd "$REPO"
 module load miniforge/24.3.0-0
@@ -121,6 +124,7 @@ for arm in $ARMS; do
     tag=$(echo "$split" | tr '=' '-' | tr ',' '_')
     if [ "$STOCHASTIC" = "1" ]; then tag="${tag}_stoch"; fi
     if [ "$FOLLOW_HEAD" = "1" ]; then tag="${tag}_head"; fi
+    if [ "$PROBE_HEAD" = "1" ]; then tag="${tag}_probe"; fi
     prefix="$OUT/cl_${arm}_u${UPDATE}_${tag}"
     echo; echo "=== $arm u$UPDATE split=$split  ($(date))"
     python -u -m analysis.continual.agenthash \
@@ -135,6 +139,7 @@ for arm in $ARMS; do
         --oracle_lock_store_not_at_goal --goal_radius 1 \
         $([ "$STOCHASTIC" = "1" ] && echo --stochastic_policy) \
         $([ "$FOLLOW_HEAD" = "1" ] && echo --follow_disp_head) \
+        $([ "$PROBE_HEAD" = "1" ] && echo --probe_disp_head) \
       || { echo "!!! $arm $split agenthash FAILED"; continue; }
     python -u -m analysis.continual.plotting \
         --history "$prefix.json" --out_prefix "$prefix" \

@@ -204,33 +204,73 @@ def mini_episode(
             rec.stored_at_goal, rec.stored_off_goal)
 
 
-def install_disp_head_steer(agent, speed: float) -> dict:
-    """Make ``agent`` move along its own displacement head while
-    ``state["known"]`` is set (idea 3 diagnostic, GRID_MLP_NAV_PLAN s7.6).
+def install_disp_head_hooks(agent, speed: float, steer: bool) -> dict:
+    """Read the agent's own displacement head in trials whose arena goal is
+    stored (``state["known"]``; idea 3 diagnostic, GRID_MLP_NAV_PLAN s7.6).
 
-    The head is read from the same step's features, so only the agent's own
-    state steers. Returns the state dict, which also counts steered steps."""
+    Every such step records the angle between the head and the straight line
+    to the goal (``state["env"]``), when the goal is 2 or more cells away, as
+    synthetic recall does. With ``steer`` the move also goes at full length
+    along the head. The head is read from the same step's features, so only
+    the agent's own state counts."""
     if getattr(agent, "goal_disp_head", None) is None:
-        raise SystemExit("--follow_disp_head needs a displacement head "
-                         "(aux_disp_weight > 0)")
-    state = {"known": False, "n_steered": 0}
+        raise SystemExit("--follow_disp_head / --probe_disp_head need a "
+                         "displacement head (aux_disp_weight > 0)")
+    state = {"known": False, "env": None, "arena": -1, "block": -1, "t": 0,
+             "n_steered": 0, "records": []}
     orig = agent.get_action_and_value
 
-    def steered(x, h=None, **k):
+    def hooked(x, h=None, **k):
         if not state["known"]:
             return orig(x, h, **k)
         with torch.no_grad():
             _, _, _, _, feats = agent(x, h, return_features=True)
             d = agent.goal_disp_head(feats)
+        env = state["env"]
+        if env is not None:
+            v = (np.asarray(env._goal, dtype=np.float64)
+                 - np.asarray(env._continuous_pos, dtype=np.float64))
+            dist = float(np.linalg.norm(v))
+            if dist >= 2.0:
+                p = d[0, -1].detach().cpu().numpy().astype(np.float64)
+                ang = np.arctan2(p[1], p[0]) - np.arctan2(v[1], v[0])
+                err = abs((ang + np.pi) % (2 * np.pi) - np.pi) * 180.0 / np.pi
+                state["records"].append(
+                    (state["block"], state["arena"], state["t"], float(err), dist))
+        state["t"] += 1
+        if steer:
             d = d / d.norm(dim=-1, keepdim=True).clamp_min(1e-6) * float(speed)
-        k["move_action_override"] = d
-        k["move_override_mask"] = torch.ones(x.shape[0], dtype=torch.bool,
-                                             device=x.device)
-        state["n_steered"] += int(x.shape[0])
+            k["move_action_override"] = d
+            k["move_override_mask"] = torch.ones(x.shape[0], dtype=torch.bool,
+                                                 device=x.device)
+            state["n_steered"] += int(x.shape[0])
         return orig(x, h, **k)
 
-    agent.get_action_and_value = steered
+    agent.get_action_and_value = hooked
     return state
+
+
+def summarise_disp_head(records: list) -> dict:
+    """Median head error per arena: at a trial's first recorded step, and over
+    all recorded steps, by block too."""
+    out: dict = {}
+    if not records:
+        return out
+    arr = np.array(records, dtype=np.float64)
+    for j in sorted(set(arr[:, 1].astype(int))):
+        a = arr[arr[:, 1] == j]
+        # First recorded step of each trial: t resets per trial, so t == 0
+        # is the trial start when the start is 2+ cells from the goal.
+        start = a[a[:, 2] == 0]
+        out[f"arena{j}"] = {
+            "start_median_deg": float(np.median(start[:, 3])) if len(start) else None,
+            "all_median_deg": float(np.median(a[:, 3])),
+            "n_start": int(len(start)), "n_all": int(len(a)),
+            "all_median_by_block": {
+                int(b): float(np.median(a[a[:, 0] == b][:, 3]))
+                for b in sorted(set(a[:, 0].astype(int)))},
+        }
+    return out
 
 
 def run_sequential(
@@ -299,7 +339,8 @@ def run_sequential(
                 env_offset_j = env_offsets[j]
                 allow_store = (j == i)
                 if steer is not None:
-                    steer["known"] = bool(goal_in_mem[j])
+                    steer.update(known=bool(goal_in_mem[j]), env=env_j,
+                                 arena=j, block=i, t=0)
                 reached, stg, ptg, sag, sog = mini_episode(
                     agent=agent, env=env_j, env_offset=env_offset_j,
                     vectorhash=vectorhash, hopfield=hopfield,
@@ -416,6 +457,12 @@ def main() -> None:
                         "arenas not yet found still search with the policy. The "
                         "ceiling of what the policy could do with the direction "
                         "its state holds.")
+    p.add_argument("--probe_disp_head", action="store_true",
+                   help="Idea 3 diagnostic: record, without steering, the angle "
+                        "between the agent's displacement head and the straight "
+                        "line to the goal at each step of a trial whose arena "
+                        "goal is stored (2+ cells away); per-arena medians go "
+                        "into metadata.disp_head_probe.")
     # Store-control flags
     p.add_argument("--lock_store_after_goal", action="store_true",
                    help="Once an env's goal has been stored, suppress further "
@@ -530,11 +577,12 @@ def main() -> None:
         offsets = []       # ditto
 
     agent = load_agent(cfg, ck["agent_state_dict"], embed_dim, device)
-    steer = (install_disp_head_steer(agent, cfg.env.max_action_norm)
-             if args.follow_disp_head else None)
+    steer = (install_disp_head_hooks(agent, cfg.env.max_action_norm,
+                                     steer=args.follow_disp_head)
+             if (args.follow_disp_head or args.probe_disp_head) else None)
     if steer is not None:
-        print("[agenthash] follow_disp_head=True: known arenas steer along "
-              "the displacement head")
+        print(f"[agenthash] displacement head: probe=True  "
+              f"follow_disp_head={args.follow_disp_head}")
 
     n_full_iters = max(1, int(args.num_full_iters))
     print(f"[agenthash] iters_per_block={args.iters_per_block}  "
@@ -645,6 +693,8 @@ def main() -> None:
                 "stochastic_policy": bool(args.stochastic_policy),
                 "follow_disp_head": bool(args.follow_disp_head),
                 "steered_steps": int(steer["n_steered"]) if steer is not None else 0,
+                "disp_head_probe": (summarise_disp_head(steer["records"])
+                                    if steer is not None else None),
                 "base_seed": int(args.seed),
                 "env_seed_base": int(args.env_seed) if args.env_seed is not None else None,
                 "movement_mode": cfg.env.movement_mode,
@@ -665,6 +715,12 @@ def main() -> None:
         json.dump(history, f, indent=2)
     print(f"[agenthash] wrote {args.out}  "
           f"trace={len(trace)} steps  blocks={len(blocks)}")
+    probe = history["metadata"].get("disp_head_probe")
+    if probe:
+        print("[agenthash] displacement head vs goal, median deg "
+              "(trial start / all known steps):  " + "  ".join(
+                  f"{k} {v['start_median_deg'] if v['start_median_deg'] is None else round(v['start_median_deg'])}"
+                  f"/{round(v['all_median_deg'])}" for k, v in probe.items()))
 
 
 if __name__ == "__main__":
