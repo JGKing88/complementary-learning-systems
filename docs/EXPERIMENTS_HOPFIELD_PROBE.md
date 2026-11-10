@@ -2194,3 +2194,47 @@ att0.5 is 0.98–0.99. The knobs tested so far trade spread against either
 locality (strength) or freshness (queue size, push rate).
 
 Raw: `results/probe_seb_queue_balance/g100`; encoders `sweeps/w69_seb_queue_balance`.
+
+### 10.26 Age weighting does not beat the plain queue; what the remaining gap is made of
+
+w70, seeds 42–44. `rate_queue_tau` weights each queued row by exp(−age/τ),
+age in steps, normalises the covariance by the total weight W and scales the
+term by W/4096, so `rate_lambda` is att0.5's 0.5. With no decay this equals
+w66's manual rescale exactly (checked numerically).
+
+| arm | **cont** | \|err\| | dead K=20 | cos_floor (s42) |
+|---|---|---|---|---|
+| plain 40k, stale (w66) | **0.84–0.92** | 9–11° | 0.50–0.62 | 0.037 |
+| 100k whole batches, τ = 16 | **0.84–0.93** | 9–11° | 0.58–0.62 | 0.040 |
+| 340 rows/step over 40k, τ = 16 | **0.72–0.82** | 17–19° | 0.67–0.96 | 0.090 |
+| 340 rows/step over 40k, τ = 40 | **0.62–0.68** | 19–20° | 0.83–0.88 | 0.088 |
+| fresh 40k, 16 envs (§10.23, diagnostic) | **0.90–0.94** | 8–10° | 0.42–0.54 | 0.033 |
+| fresh 340 rows/step over 40k, all envs (diagnostic) | **0.93–0.97** | 8° | 0.46–0.54 | 0.036 |
+| att0.5, mixed batches | **0.98–0.99** | 7–9° | 0.04–0.12 | 0.009 |
+
+A soft age cutoff on whole batches is the plain queue again. Subsampling
+340 rows per step to widen coverage leaves the decayed queue with ~5.4k rows
+of weight at τ = 16 against the current env's 2500, so the current env
+dominates the covariance and cos_floor doubles. From stored codes, recent mass
+and wide coverage cannot both be had: mass M from codes younger than A steps
+needs M/A rows per step, and only whole batches supply that, which fixes the
+coverage at about A envs.
+
+The diagnostics split the remaining gap to att0.5 into two parts.
+
+1. **Stale codes and narrow coverage, about 0.05.** A queue re-encoded every
+   step and spread over all envs reaches 0.93–0.97. That needs the past
+   *inputs*, i.e. replay, not stored codes.
+2. **Gradient only on the current env, about 0.03 in reach and most of the
+   K=20 tail.** Even the never-stale all-env queue dies at K=20 half the time
+   (att0.5: 4–12%) and its cos_floor is 0.036 against 0.009. In a mixed batch
+   every env's codes get the rate gradient at every step; here only the
+   current env's do.
+
+So the best one-env-per-step encoder that stores only codes is the plain 40k
+queue at the matched strength (§10.22), cont 0.84–0.92. Replaying 40k past
+positions per step (re-encoded, no gradient) gets 0.93–0.97. What remains past
+that needs the other envs' codes to move too, which one env per step does not
+give.
+
+Raw: `results/probe_seb_queue_decay/g100`; encoders `sweeps/w70_seb_queue_decay`.
