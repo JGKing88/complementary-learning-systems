@@ -33,6 +33,11 @@ def main():
     p.add_argument("--iters", type=int, nargs="+", default=[2, 10])
     p.add_argument("--batch", type=int, default=128)
     p.add_argument("--device", default="cuda")
+    p.add_argument("--cap", type=int, default=50, help="steps per trial")
+    p.add_argument("--prefind", choices=["pursue", "random"], default="pursue",
+                   help="walker before an arena's goal is found: heads for it "
+                        "after a short wander (pursue, leaks the goal) or keeps "
+                        "random-walking until it touches it by chance (random)")
     p.add_argument("--order", type=int, nargs="+", default=None,
                    help="introduce the held-out arenas in this order (indices into "
                         "base_val); results stay keyed by arena, so a reversed order "
@@ -57,7 +62,8 @@ def main():
     for it in a.iters:
         with torch.no_grad():
             obs, tgt, msk, kn, fst, alive, arena = synth.lifetime(
-                a.batch, len(specs), it, offsets=offs, goals=goals, return_arena=True)
+                a.batch, len(specs), it, offsets=offs, goals=goals, return_arena=True,
+                cap=a.cap, prefind=a.prefind)
             _, _, _, _, feats = agent(obs, return_features=True)
             pred = agent.goal_disp_head(feats)
         per = {}
@@ -82,6 +88,8 @@ def main():
             f"known {per[f'arena{i}'].get('known_median_deg', float('nan')):.0f}"
             for i in sorted(ids)), flush=True)
     tag = "" if a.order is None else "_order" + "".join(str(i) for i in a.order)
+    if a.cap != 50 or a.prefind != "pursue":
+        tag += f"_cap{a.cap}_{a.prefind}"
     out = os.path.splitext(a.ckpt)[0] + f"_synth_val{tag}.json"
     with open(out, "w") as f:
         json.dump({"ckpt": a.ckpt, "offsets": offs.tolist(), "goals": goals.tolist(), **res},

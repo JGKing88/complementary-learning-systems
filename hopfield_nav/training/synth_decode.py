@@ -90,7 +90,7 @@ class Synth:
         return obs, tgt, msk, fst
 
     def lifetime(self, B, n_envs, iters, cap=50, noise_lo=30.0, noise_hi=120.0,
-                 offsets=None, goals=None, return_arena=False):
+                 offsets=None, goals=None, return_arena=False, prefind="pursue"):
         """A short continual protocol per row, packed (stage 2, §7.6).
 
         ``n_envs`` arenas at random scaffold places, each with a goal; trials
@@ -98,10 +98,16 @@ class Synth:
         A trial starts at a random cell with no previous step and ends at the
         goal or after ``cap`` steps; a finished row waits. In an arena whose
         goal this row has not reached yet the walker first wanders (a random
-        number of steps), then heads for the goal, so its moves do not give an
-        unseen goal away. Returns packed (obs, disp target, disp mask, known,
-        trial-start-in-a-known-arena mask, alive), all (B, L, ...).
+        number of steps), then heads for the goal. That pursuit does give an
+        unseen goal away: the moves and the grid-code path point at it before
+        the find (GRID_MLP_NAV_PLAN s7.6). ``prefind="random"`` keeps the walker
+        on its random walk until it touches the goal by chance, so only the
+        find itself can tell the state where the goal is. Returns packed (obs,
+        disp target, disp mask, known, trial-start-in-a-known-arena mask,
+        alive), all (B, L, ...).
         """
+        if prefind not in ("pursue", "random"):
+            raise ValueError(f"prefind must be 'pursue' or 'random', got {prefind!r}")
         from ..rollout.lifetime import protocol_order
         d, S = self.device, self.size
         order = protocol_order(n_envs, iters)
@@ -124,8 +130,9 @@ class Synth:
             prev_a = torch.zeros(B, 2, device=d)
             prev_d = torch.zeros(B, 2, device=d)
             heading = torch.rand(B, device=d) * 2 * math.pi
-            wander = torch.where(known[:, j], torch.zeros(B, device=d),
-                                 torch.randint(0, 30, (B,), device=d).float())
+            unseen = (torch.full((B,), float(cap), device=d) if prefind == "random"
+                      else torch.randint(0, 30, (B,), device=d).float())
+            wander = torch.where(known[:, j], torch.zeros(B, device=d), unseen)
             done = torch.zeros(B, dtype=torch.bool, device=d)
             g = goal[:, j]
             o_j = off[:, j]
