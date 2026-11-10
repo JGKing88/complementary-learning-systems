@@ -204,6 +204,35 @@ def mini_episode(
             rec.stored_at_goal, rec.stored_off_goal)
 
 
+def install_disp_head_steer(agent, speed: float) -> dict:
+    """Make ``agent`` move along its own displacement head while
+    ``state["known"]`` is set (idea 3 diagnostic, GRID_MLP_NAV_PLAN s7.6).
+
+    The head is read from the same step's features, so only the agent's own
+    state steers. Returns the state dict, which also counts steered steps."""
+    if getattr(agent, "goal_disp_head", None) is None:
+        raise SystemExit("--follow_disp_head needs a displacement head "
+                         "(aux_disp_weight > 0)")
+    state = {"known": False, "n_steered": 0}
+    orig = agent.get_action_and_value
+
+    def steered(x, h=None, **k):
+        if not state["known"]:
+            return orig(x, h, **k)
+        with torch.no_grad():
+            _, _, _, _, feats = agent(x, h, return_features=True)
+            d = agent.goal_disp_head(feats)
+            d = d / d.norm(dim=-1, keepdim=True).clamp_min(1e-6) * float(speed)
+        k["move_action_override"] = d
+        k["move_override_mask"] = torch.ones(x.shape[0], dtype=torch.bool,
+                                             device=x.device)
+        state["n_steered"] += int(x.shape[0])
+        return orig(x, h, **k)
+
+    agent.get_action_and_value = steered
+    return state
+
+
 def run_sequential(
     *,
     agent: NavAgent,
@@ -221,12 +250,16 @@ def run_sequential(
     lock_store_after_goal: bool,
     store_trainer: "_StoreTrainer | None" = None,
     train_store_updates_per_rollout: int = 1,
+    steer: dict | None = None,
 ) -> tuple[
     list[tuple[int, int, dict[int, dict]]],
     list[tuple[int, int, int]],
     dict[int, int],
 ]:
     """Outer continual protocol. Hopfield is created once and never reset.
+
+    ``steer`` (from ``install_disp_head_steer``) is told before each trial
+    whether that arena's goal is stored.
 
     Returns (trace, blocks, stored_at_goal_count). `blocks` end is inclusive.
     """
@@ -265,6 +298,8 @@ def run_sequential(
                 env_j = val_envs[j]
                 env_offset_j = env_offsets[j]
                 allow_store = (j == i)
+                if steer is not None:
+                    steer["known"] = bool(goal_in_mem[j])
                 reached, stg, ptg, sag, sog = mini_episode(
                     agent=agent, env=env_j, env_offset=env_offset_j,
                     vectorhash=vectorhash, hopfield=hopfield,
@@ -374,6 +409,13 @@ def main() -> None:
     p.add_argument("--stochastic_policy", action="store_true",
                    help="Sample actions from the policy distribution instead "
                         "of using greedy argmax action selection.")
+    p.add_argument("--follow_disp_head", action="store_true",
+                   help="Idea 3 diagnostic (GRID_MLP_NAV_PLAN s7.6): in a trial "
+                        "whose arena goal is already stored, every move goes at "
+                        "full length along the agent's own displacement head; "
+                        "arenas not yet found still search with the policy. The "
+                        "ceiling of what the policy could do with the direction "
+                        "its state holds.")
     # Store-control flags
     p.add_argument("--lock_store_after_goal", action="store_true",
                    help="Once an env's goal has been stored, suppress further "
@@ -488,6 +530,11 @@ def main() -> None:
         offsets = []       # ditto
 
     agent = load_agent(cfg, ck["agent_state_dict"], embed_dim, device)
+    steer = (install_disp_head_steer(agent, cfg.env.max_action_norm)
+             if args.follow_disp_head else None)
+    if steer is not None:
+        print("[agenthash] follow_disp_head=True: known arenas steer along "
+              "the displacement head")
 
     n_full_iters = max(1, int(args.num_full_iters))
     print(f"[agenthash] iters_per_block={args.iters_per_block}  "
@@ -561,6 +608,7 @@ def main() -> None:
             lock_store_after_goal=args.lock_store_after_goal,
             store_trainer=store_trainer,
             train_store_updates_per_rollout=args.train_store_updates_per_rollout,
+            steer=steer,
         )
         iter_traces.append((trace, blocks))
         iter_env_goals.append([list(env.goal_location) for env in val_envs])
@@ -595,6 +643,8 @@ def main() -> None:
                 "train_store_lr": float(args.train_store_lr),
                 "train_store_updates_per_rollout": int(args.train_store_updates_per_rollout),
                 "stochastic_policy": bool(args.stochastic_policy),
+                "follow_disp_head": bool(args.follow_disp_head),
+                "steered_steps": int(steer["n_steered"]) if steer is not None else 0,
                 "base_seed": int(args.seed),
                 "env_seed_base": int(args.env_seed) if args.env_seed is not None else None,
                 "movement_mode": cfg.env.movement_mode,

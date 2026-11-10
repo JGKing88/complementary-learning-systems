@@ -45,6 +45,10 @@ SMOOTH=${SMOOTH:-10}
 # argmax explorer's dead spots are what a "dead env" is, and sampling removes
 # most of them.
 STOCHASTIC=${STOCHASTIC:-0}
+# FOLLOW_HEAD=1 (idea 3 diagnostic): in arenas whose goal is stored, move along
+# the agent's own displacement head (agenthash --follow_disp_head); outputs get
+# a _head tag.
+FOLLOW_HEAD=${FOLLOW_HEAD:-0}
 
 cd "$REPO"
 module load miniforge/24.3.0-0
@@ -116,11 +120,12 @@ for arm in $ARMS; do
   for split in $SPLITS; do
     tag=$(echo "$split" | tr '=' '-' | tr ',' '_')
     if [ "$STOCHASTIC" = "1" ]; then tag="${tag}_stoch"; fi
+    if [ "$FOLLOW_HEAD" = "1" ]; then tag="${tag}_head"; fi
     prefix="$OUT/cl_${arm}_u${UPDATE}_${tag}"
     echo; echo "=== $arm u$UPDATE split=$split  ($(date))"
     python -u -m analysis.continual.agenthash \
         --out "$prefix.json" \
-        --run_name "$arm u$UPDATE, $split, one store per env$([ "$STOCHASTIC" = "1" ] && echo ", sampled")" \
+        --run_name "$arm u$UPDATE, $split, one store per env$([ "$STOCHASTIC" = "1" ] && echo ", sampled")$([ "$FOLLOW_HEAD" = "1" ] && echo ", head-steered")" \
         --ckpt "$ckpt" --device cuda \
         --n_envs "$N_ENVS" --iters_per_block "$ITERS_PER_BLOCK" \
         --max_steps "$MAX_STEPS" --seed "$SEED" --num_full_iters 1 \
@@ -129,6 +134,7 @@ for arm in $ARMS; do
         --lock_store_after_goal --oracle_store_at_goal \
         --oracle_lock_store_not_at_goal --goal_radius 1 \
         $([ "$STOCHASTIC" = "1" ] && echo --stochastic_policy) \
+        $([ "$FOLLOW_HEAD" = "1" ] && echo --follow_disp_head) \
       || { echo "!!! $arm $split agenthash FAILED"; continue; }
     python -u -m analysis.continual.plotting \
         --history "$prefix.json" --out_prefix "$prefix" \
