@@ -979,6 +979,26 @@ lifetimes of 64 (`code/i3_v15`, commit 88f8901): `pursue_known 0`
 `pretrain_np05_h512_l3.pt`). If no-pursuit recall comes near the pursued
 numbers, the real-task stages are rerun from the better one.
 
+Both arms reach their level by about step 100 (in-run `E6k2np`, median trial
+start, 21 to 22°) and hold it. Half pursuit is the better arm. On the
+held-out arenas, trial start, degrees:
+
+| | no pursuit, 10 passes | pursued, 40 passes |
+|---|---|---|
+| `pretrain_long_bal` | 27/59/39/77/65/93 | 7/10/12/18/25/16 |
+| `pretrain_np0` | 14/22/21/40/77/71 | 18/47/25/63/59/82 |
+| `pretrain_np05` | 11/19/22/40/48/49 | 11/17/18/38/35/34 |
+
+Without pursuit, the first three arenas come down from 27 to 59° to 11 to 22°
+and the last three from 65 to 93° to 40 to 49°. Pursued recall of the later
+positions costs 16 to 25° to 34 to 38°, a trade the protocol favours. The
+real-task stages are rerun from `pretrain_np05` with the same walker in the
+rehearsal (`--synth_rehearsal_cap 200 --synth_rehearsal_prefind random
+--synth_rehearsal_pursue_known 0.5`, lever `_np`, passes 2/5/10, 4 steps per
+update; commit 8fd2eaa): variant
+`task3r_k2_h512_i3_rp_rw_l3_sup_reh_fv_rl_bal_np`, job 28593952
+(`code/i3_v16`), the balanced run's schedule.
+
 ### 7.7 Stage 1 runs (RL, superseded by §7.6)
 
 Stage 1 runs, 4000 updates, launched from a frozen copy of the code at
