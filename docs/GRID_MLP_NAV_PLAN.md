@@ -945,8 +945,39 @@ protocol the student's own moves do not head for an unlearned goal, so that
 memory is absent. `Synth.lifetime(prefind="random")` (commit 104c125) keeps the
 walker random-walking until it touches the goal by chance. With 200-step
 trials it finds about as many goals as the pursuing walker (known trial starts
-per position 155/78/92/43/26/7 against 159/132/90/59/37/12). Test running:
-synthetic recall with this walker on `pretrain_long_bal`, u500 and u750.
+per position 155/78/92/43/26/7 against 159/132/90/59/37/12).
+
+The pre-find leak is not the cause. With the non-leaking walker, synthetic
+recall at u500 is almost unchanged (10 passes, trial start 12/18/15/26/43/27°
+against 12/18/13/25/38/19°), so the write at the find works. The cause is the
+pursuit after the find. With `pursue_known=False` the walker random-walks in
+found arenas too, so no later trial re-reads the goal from moves that head
+to it, and the goal has to survive from the one write:
+
+| 10 passes, trial start, degrees | walker pursues found goals | never pursues |
+|---|---|---|
+| `pretrain_long_bal` | 7/9/11/19/23/17 | 27/59/39/77/65/93 |
+| bal u500 | 12/18/15/26/43/27 | 33/78/56/58/102/126 |
+| bal u500, real protocol probe | | 18/100/47/55/135/119 |
+
+Without pursuit, synthetic recall at u500 reproduces the real-protocol
+failure. Every pretraining stage (single-arena, lifetime, long-block,
+balanced) used a walker that heads straight to a found goal on every later
+trial. The GRU learned to keep a goal by re-reading it from those
+trajectories, not by holding the write. In the protocol one failed revisit
+leaves nothing to re-read, and the failures cascade. The real lifetime stage
+helps only the arenas whose revisits the policy already wins.
+
+The no-pursuit recall is therefore the proxy to train against.
+`pretrain_decode.py` gains `--cap`, `--prefind` and `--pursue_known` (the
+chance that a trial in a found arena pursues the goal), and its evals add
+`E6k2np` (6 arenas, 2 passes, 200-step trials, no pursuit). Two arms
+fine-tune `pretrain_long_bal` with 200-step trials, the non-leaking pre-find
+walk, balanced positions, 2/5/10 passes, window 600, lr 3e-4, 1,500
+lifetimes of 64 (`code/i3_v15`, commit 88f8901): `pursue_known 0`
+(job 28580665, `idea3/pretrain_np0_h512_l3.pt`) and `0.5` (job 28580667,
+`pretrain_np05_h512_l3.pt`). If no-pursuit recall comes near the pursued
+numbers, the real-task stages are rerun from the better one.
 
 ### 7.7 Stage 1 runs (RL, superseded by §7.6)
 
