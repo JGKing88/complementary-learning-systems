@@ -103,10 +103,11 @@ class Synth:
         unseen goal away: the moves and the grid-code path point at it before
         the find (GRID_MLP_NAV_PLAN s7.6). ``prefind="random"`` keeps the walker
         on its random walk until it touches the goal by chance, so only the
-        find itself can tell the state where the goal is. With
-        ``pursue_known=False`` the walker random-walks in found arenas too, so
-        no trial after the find refreshes the state from its own moves: the
-        goal has to survive from the one write. Returns packed (obs,
+        find itself can tell the state where the goal is. ``pursue_known`` is
+        the chance that a trial in a found arena heads for the goal (True = 1,
+        False = 0); otherwise the walker random-walks there too, so that trial
+        does not refresh the state from its own moves and the goal has to
+        survive from the write at the find. Returns packed (obs,
         disp target, disp mask, known, trial-start-in-a-known-arena mask,
         alive), all (B, L, ...).
         """
@@ -136,8 +137,10 @@ class Synth:
             heading = torch.rand(B, device=d) * 2 * math.pi
             unseen = (torch.full((B,), float(cap), device=d) if prefind == "random"
                       else torch.randint(0, 30, (B,), device=d).float())
-            seen = (torch.zeros(B, device=d) if pursue_known
-                    else torch.full((B,), float(cap), device=d))
+            p_pursue = float(pursue_known)
+            seen = torch.where(torch.rand(B, device=d) < p_pursue,
+                               torch.zeros(B, device=d),
+                               torch.full((B,), float(cap), device=d))
             wander = torch.where(known[:, j], seen, unseen)
             done = torch.zeros(B, dtype=torch.bool, device=d)
             g = goal[:, j]

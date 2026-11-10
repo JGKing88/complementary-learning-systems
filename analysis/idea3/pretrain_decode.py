@@ -35,14 +35,14 @@ from hopfield_nav.policy import channels
 from hopfield_nav.training.synth_decode import Synth
 
 
-def evaluate_lifetime(agent, known_head, synth, B, n_envs, iters):
+def evaluate_lifetime(agent, known_head, synth, B, n_envs, iters, **walk):
     """Packed synthetic lifetimes: displacement on known steps, and at the
     first step of a trial in an arena whose goal was found before (recall the
     arena's goal and decode it from a fresh start); whether the current
     arena's goal is known, from the state."""
     agent.eval()
     with torch.no_grad():
-        obs, tgt, msk, kn, fst, alive = synth.lifetime(B, n_envs, iters)
+        obs, tgt, msk, kn, fst, alive = synth.lifetime(B, n_envs, iters, **walk)
         _, _, _, _, feats = agent(obs, return_features=True)
         pred = agent.goal_disp_head(feats)
         kp = known_head(feats).squeeze(-1) > 0
@@ -104,6 +104,14 @@ def main():
                         "default 1..max_iters")
     p.add_argument("--tbptt", type=int, default=0,
                    help="truncated-BPTT window in steps (0 = whole sequence)")
+    p.add_argument("--cap", type=int, default=50,
+                   help="lifetime mode: steps per trial (the protocol uses 200)")
+    p.add_argument("--prefind", choices=["pursue", "random"], default="pursue",
+                   help="lifetime mode: walker before a find (pursue leaks the goal)")
+    p.add_argument("--pursue_known", type=float, default=1.0,
+                   help="lifetime mode: chance a trial in a found arena heads for the "
+                        "goal; below 1 the goal must survive trials that do not "
+                        "refresh it (GRID_MLP_NAV_PLAN s7.6)")
     p.add_argument("--balance_positions", action="store_true",
                    help="lifetime mode: weight the displacement loss so each arena "
                         "position carries the same total weight. In protocol order the "
@@ -133,7 +141,8 @@ def main():
             K = (random.choice(a.iters_choices) if a.iters_choices
                  else int(torch.randint(1, a.max_iters + 1, ()).item()))
             obs, tgt, msk, kn, _, alive, arena = synth.lifetime(
-                a.batch, E, K, return_arena=True)
+                a.batch, E, K, return_arena=True, cap=a.cap, prefind=a.prefind,
+                pursue_known=a.pursue_known)
             if a.balance_positions:
                 # Each position's known steps get total weight sum/E, so the
                 # mean weight per known step stays 1.
@@ -169,6 +178,11 @@ def main():
         if (step % a.eval_every == 0 or step == a.steps) and a.mode == "lifetime":
             ev = {f"E{E}k{k}": evaluate_lifetime(agent, known_head, synth, 64, E, k)
                   for E, k in ((3, 2), (6, 2), (6, 10))}
+            # The protocol-like walk: 200-step trials, no pursuit before or
+            # after the find, so the goal lives only in the write (s7.6).
+            ev["E6k2np"] = evaluate_lifetime(agent, known_head, synth, 64, 6, 2,
+                                             cap=200, prefind="random",
+                                             pursue_known=0.0)
             hist.append({"step": step, "loss": loss.item(), **ev})
             print(f"step {step} loss {loss.item():.4f} | " + " | ".join(
                 f"{k}: known r2 {v['known']['r2']:.3f} dir {v['known']['dir_err_deg']:.1f}, "
