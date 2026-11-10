@@ -99,6 +99,14 @@ class LossConfig:
     # from only 16 envs; pushing 340 rows spreads the same 40k over all 118,
     # which is the per-env makeup of a mixed batch.
     rate_queue_push: int = 0
+    # Weight each queued row by exp(-age / tau), age in optimizer steps, so a
+    # long queue can cover many envs while old codes count less (w67-w69: any
+    # queue reaching back an epoch failed). The weighted covariance is
+    # normalised by the total weight W, and the term is scaled by
+    # W / batch_size, which gives each current row a batch_size mixed batch's
+    # per-row push. With no decay that is exactly w66's manual rescale, so
+    # rate_lambda stays at the mixed-batch value. 0 is off.
+    rate_queue_tau: float = 0.0
 
     # Distance-graded pair target: target = exp(-d^2 / (2 sigma^2)) instead of
     # the binary 1-on-near / 0-on-far. 0 keeps the binary targets.

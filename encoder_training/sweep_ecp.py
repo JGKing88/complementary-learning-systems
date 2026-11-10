@@ -2416,6 +2416,36 @@ WAVES: dict[str, dict] = {
         },
         "seed": [42, 43, 44],
     },
+    # W70 -- age-weighted queue. w67-w69: every queue reaching back an epoch
+    # failed, so age, not coverage, limits the plain 40k queue (cont
+    # 0.84-0.92). Here queued rows weigh exp(-age/tau) and the term rescales
+    # itself by total weight / 4096, so rate_lambda is att0.5's 0.5.
+    #   t16_p340  340 rows/step over a 40k queue (all 118 envs), mean age 16
+    #             steps, about the plain 40k queue's
+    #   t40_p340  same, mean age 40
+    #   t16_full  whole batches, 100k queue, mean age 16: the plain queue
+    #             with a soft cutoff instead of a hard one
+    #   fresh_bal40k  DIAGNOSTIC: 340 rows/step, re-encoded every step, no
+    #             decay -- a never-stale view of all envs (replays inputs)
+    "w70_seb_queue_decay": {
+        "arm": {
+            name: dict(npos_list=SIZE_MIXES["sm50"], batch_size=4096,
+                       lr=3e-4, per_env_radius_frac=0.0, radius=20.0,
+                       rate_lambda=lam, rate_eps=1.0, out_dim=1024,
+                       hidden_dim=256, gain_end=100.0, attract_lambda=0.5,
+                       single_env_batch=True, rate_queue=q,
+                       rate_queue_push=push, rate_queue_tau=tau,
+                       rate_queue_fresh=fresh)
+            for name, q, push, tau, lam, fresh in (
+                ("t16_p340", 40_000, 340, 16.0, 0.5, False),
+                ("t40_p340", 40_000, 340, 40.0, 0.5, False),
+                ("t16_full", 100_000, 0, 16.0, 0.5, False),
+                ("fresh_bal40k", 40_000, 340, 0.0,
+                 round(0.5 * 42_500 / 4096, 3), True),
+            )
+        },
+        "seed": [42, 43, 44],
+    },
     "w61_cov0.75": {
         "arm": {
             name: {**dict(batch_size=4096, lr=3e-4, per_env_radius_frac=0.0,

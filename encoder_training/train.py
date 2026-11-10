@@ -178,6 +178,8 @@ def train(cfg: TrainConfig) -> str:
     # FIFO for the rate term (LossConfig.rate_queue): detached codes, or point
     # indices when rate_queue_fresh re-encodes them every step.
     rate_queue: torch.Tensor | None = None
+    rate_queue_born: torch.Tensor | None = None   # step each row was pushed
+    rate_step = 0
     if cfg.loss.rate_queue_fresh and patch_cfg.spread_arena_frac > 0:
         raise ValueError("rate_queue_fresh stores batch indices; the "
                          "spread_arena_frac rows have none")
@@ -285,9 +287,25 @@ def train(cfg: TrainConfig) -> str:
                             z_q = encoder(Phi_flat[rate_queue], gain)
                     else:
                         z_q = rate_queue
+                    if cfg.loss.rate_queue_tau > 0:
+                        w_q = torch.exp(-(rate_step - rate_queue_born).float()
+                                        / cfg.loss.rate_queue_tau)
+                        z_q = z_q * w_q.sqrt().unsqueeze(1)
                     z_rate = torch.cat([z_spread, z_q], dim=0)
-                r = cfg.loss.rate_lambda * coding_rate_loss(
-                    z_rate, eps=cfg.loss.rate_eps)
+                if cfg.loss.rate_queue_tau > 0:
+                    # Weighted covariance, normalised by the total weight W,
+                    # and scaled by W / batch_size so each current row gets
+                    # the per-row push of a batch_size mixed batch (the w66
+                    # rescale, done every step).
+                    w_tot = float(len(z_spread))
+                    if z_rate is not z_spread:
+                        w_tot += float(w_q.sum())
+                    r = (cfg.loss.rate_lambda * w_tot / cfg.batch_size
+                         * coding_rate_loss(z_rate, eps=cfg.loss.rate_eps,
+                                            n_eff=w_tot))
+                else:
+                    r = cfg.loss.rate_lambda * coding_rate_loss(
+                        z_rate, eps=cfg.loss.rate_eps)
                 loss, extra = loss + r, extra + float(r.item())
                 if cfg.loss.rate_queue > 0:
                     new = idx if cfg.loss.rate_queue_fresh \
@@ -296,9 +314,15 @@ def train(cfg: TrainConfig) -> str:
                     if 0 < k < len(new):
                         keep = torch.randperm(len(new), device=new.device)[:k]
                         new = new[keep]
+                    born = torch.full((len(new),), rate_step,
+                                      dtype=torch.long, device=new.device)
                     rate_queue = new if rate_queue is None else \
                         torch.cat([new, rate_queue], dim=0)
+                    rate_queue_born = born if rate_queue_born is None else \
+                        torch.cat([born, rate_queue_born], dim=0)
                     rate_queue = rate_queue[:cfg.loss.rate_queue]
+                    rate_queue_born = rate_queue_born[:cfg.loss.rate_queue]
+                rate_step += 1
             running_extra += extra
             # The quantity that separates the regimes; see losses.
             if n_batches == 0:
@@ -466,6 +490,7 @@ def _build_cfg_from_args(args) -> TrainConfig:
         rate_queue=args.rate_queue,
         rate_queue_fresh=args.rate_queue_fresh,
         rate_queue_push=args.rate_queue_push,
+        rate_queue_tau=args.rate_queue_tau,
         graded_sigma=args.graded_sigma,
         input_far_tau=args.input_far_tau,
     )
@@ -582,6 +607,11 @@ def main():
     p.add_argument("--rate_queue_push", type=int, default=0,
                    help="rows of each batch pushed into the rate queue, "
                         "chosen at random; 0 = all")
+    p.add_argument("--rate_queue_tau", type=float, default=0.0,
+                   help="weight queued rows by exp(-age/tau), age in steps, "
+                        "and scale the rate term by total weight / "
+                        "batch_size; 0 = off (unweighted, rate_lambda as "
+                        "given)")
     p.add_argument("--graded_sigma", type=float, default=0.0,
                    help="distance-graded pair target exp(-d^2/2s^2); "
                         "0 keeps the binary near=1/far=0 targets")

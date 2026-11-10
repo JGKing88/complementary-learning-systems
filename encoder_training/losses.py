@@ -124,7 +124,8 @@ def participation_ratio(z: torch.Tensor) -> torch.Tensor:
     return C.diagonal().sum().square() / C.square().sum().clamp_min(1e-20)
 
 
-def coding_rate_loss(z: torch.Tensor, eps: float = 0.5) -> torch.Tensor:
+def coding_rate_loss(z: torch.Tensor, eps: float = 0.5,
+                     n_eff: float | None = None) -> torch.Tensor:
     """Negative log-det coding rate: ``-1/(2D) logdet(I + D/(B eps^2) Z^T Z)``.
 
     The MCR^2 rate term. Like the VICReg pair it is a statistic of the batch's
@@ -149,6 +150,8 @@ def coding_rate_loss(z: torch.Tensor, eps: float = 0.5) -> torch.Tensor:
     B, D = z.shape
     if B < 2:
         return z.new_zeros(())
+    if n_eff is not None:
+        B = n_eff       # rows pre-scaled by sqrt(weight); B is the total weight
     scale = D / (B * eps * eps)
     gram = torch.eye(D, device=z.device, dtype=z.dtype) + scale * (z.T @ z)
     return -torch.linalg.cholesky(gram).diagonal().log().sum() / D
