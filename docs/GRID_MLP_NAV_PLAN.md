@@ -999,6 +999,26 @@ update; commit 8fd2eaa): variant
 `task3r_k2_h512_i3_rp_rw_l3_sup_reh_fv_rl_bal_np`, job 28593952
 (`code/i3_v16`), the balanced run's schedule.
 
+At u500 (end of the task stages) it is no better. Protocol, two seeds:
+success after the find 0.26 / 0.40 (balanced run 0.26 / 0.32); arena 1 is
+0.00 to 0.07 in its own block. Steering by the head does no better (0.35 /
+0.40). The head probe at a trial start is 25/101/57/88/–/119° (arena 4 never
+found); its all-steps medians look good (42/24/30/18/36°) but long failed
+trials, with the agent pressed against a wall while the head points through
+it, inflate that measure, so trial start is the one to read. No-pursuit
+synthetic recall at u500 (10 passes) is 28/51/56/69/58/77°, against
+11/19/22/40/48/49° for `pretrain_np05`: the task stages wore the fix down
+despite 4 steps per update of no-pursuit rehearsal.
+
+The task stages carry the same leak. For their first 300 updates the teacher
+drives (share 1 falling to 0), so the inputs are the teacher's moves, which
+head straight for the goal: the pursuit shortcut again, in real data. A
+variant keeps the teacher at share 0 from the start (the student drives, the
+teacher only labels), so no move hands the goal to the state; an untrained
+policy's trajectories are close to the no-pursuit walk. Job 28640809, same
+checkpoint, rehearsal and code, schedule `task:500,visits=2,sup=1,beta=0 ;
+lifetime:1000,envs=6,iters=2,sup=1,beta=0` (lr 1e-4).
+
 ### 7.7 Stage 1 runs (RL, superseded by §7.6)
 
 Stage 1 runs, 4000 updates, launched from a frozen copy of the code at
