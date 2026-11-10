@@ -595,6 +595,13 @@ class TrainConfig:
     synth_rehearsal_tbptt: int = 0
     # Weight each arena position equally in the rehearsal loss (§7.6).
     synth_rehearsal_balance: bool = False
+    # The rehearsal walker: steps per trial, walk before a find ("pursue"
+    # leaks the goal, "random" does not), and the chance a trial in a found
+    # arena pursues the goal. Below 1 the goal must survive trials that do
+    # not refresh it, as in the protocol (§7.6).
+    synth_rehearsal_cap: int = 50
+    synth_rehearsal_prefind: str = "pursue"
+    synth_rehearsal_pursue_known: float = 1.0
     # Task regime only (docs/TASK_FAITHFUL_PLAN.md, wave 2): keep the novelty
     # / revisit shaping running after a trajectory's goal is stored instead of
     # switching to goal-reward-only. Wave 1 showed why: with novelty

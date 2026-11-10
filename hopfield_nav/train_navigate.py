@@ -692,6 +692,9 @@ def run_navigate(
                 iters_choices=cfg.synth_rehearsal_iters,
                 tbptt=cfg.synth_rehearsal_tbptt,
                 balance=cfg.synth_rehearsal_balance,
+                cap=cfg.synth_rehearsal_cap,
+                prefind=cfg.synth_rehearsal_prefind,
+                pursue_known=cfg.synth_rehearsal_pursue_known,
                 max_grad_norm=cfg.ppo.max_grad_norm)
         if prior is not None:
             losses["prior_drift"] = prior.drift(agent)
@@ -1145,6 +1148,9 @@ CFG_FIELDS: dict[str, tuple[str, ...]] = {
     "synth_rehearsal_iters": ("synth_rehearsal_iters",),
     "synth_rehearsal_tbptt": ("synth_rehearsal_tbptt",),
     "synth_rehearsal_balance": ("synth_rehearsal_balance",),
+    "synth_rehearsal_cap": ("synth_rehearsal_cap",),
+    "synth_rehearsal_prefind": ("synth_rehearsal_prefind",),
+    "synth_rehearsal_pursue_known": ("synth_rehearsal_pursue_known",),
     "head_mlp_layers": ("agent.head_mlp_layers",),
     "freeze_trunk": ("agent.freeze_trunk",),
     "freeze_view_input": ("agent.freeze_view_input",),
@@ -1358,6 +1364,12 @@ def build_parser() -> argparse.ArgumentParser:
                    help="Idea 3: truncated-BPTT window in steps for rehearsed lifetimes, gradients accumulated over windows into one optimizer step (0 = whole lifetime; pretraining used 600).")
     p.add_argument("--synth_rehearsal_balance", action=argparse.BooleanOptionalAction, default=False,
                    help="Idea 3: weight each arena position equally in the rehearsal loss (protocol order gives the first arena many times the trials of the last).")
+    p.add_argument("--synth_rehearsal_cap", type=int, default=50,
+                   help="Idea 3: steps per trial in rehearsed lifetimes (the protocol uses 200).")
+    p.add_argument("--synth_rehearsal_prefind", choices=["pursue", "random"], default="pursue",
+                   help="Idea 3: rehearsal walker before a find; pursue leaks the goal, random does not.")
+    p.add_argument("--synth_rehearsal_pursue_known", type=float, default=1.0,
+                   help="Idea 3: chance a rehearsed trial in a found arena heads for the goal; below 1 the goal must survive trials that do not refresh it.")
     p.add_argument("--sup_epochs", type=int, default=2,
                    help="sup=1 stages: passes of the supervised update over each update's sequences.")
     p.add_argument("--memory_backend", choices=["hopfield", "sensory_kv", "none"],
@@ -2056,7 +2068,9 @@ def main():
 # a continuation that silently accepted --goal_reward would be the same class of
 # bug as an optimizer dropped without a word.
 _CONTINUE_RECIPE = frozenset({"synth_rehearsal_iters", "synth_rehearsal_tbptt",
-                              "synth_rehearsal_balance"})
+                              "synth_rehearsal_balance", "synth_rehearsal_cap",
+                              "synth_rehearsal_prefind",
+                              "synth_rehearsal_pursue_known"})
 _CONTINUE_ALLOWED = frozenset({"continue_from", "device", "schedule"}) | _CONTINUE_RECIPE
 
 

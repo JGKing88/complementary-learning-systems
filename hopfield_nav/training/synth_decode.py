@@ -205,7 +205,8 @@ class Synth:
 
 def rehearse(agent, synth, optimizer, *, steps: int, batch: int,
              max_envs: int = 6, weight: float = 1.0, max_grad_norm: float = 1.0,
-             iters_choices=(2,), tbptt: int = 0, balance: bool = False) -> float:
+             iters_choices=(2,), tbptt: int = 0, balance: bool = False,
+             cap: int = 50, prefind: str = "pursue", pursue_known: float = 1.0) -> float:
     """``steps`` optimizer steps on synthetic lifetimes (displacement to the
     current arena's goal when known), so the real-task stages do not wear down
     what pretraining taught. Returns the mean loss.
@@ -218,14 +219,19 @@ def rehearse(agent, synth, optimizer, *, steps: int, batch: int,
 
     With ``balance`` each arena position carries the same total weight. In
     protocol order the first arena has many times the trials of the last, and
-    recall falls with the position a goal arrives in (GRID_MLP_NAV_PLAN §7.6)."""
+    recall falls with the position a goal arrives in (GRID_MLP_NAV_PLAN §7.6).
+
+    ``cap``, ``prefind`` and ``pursue_known`` set the walker
+    (``Synth.lifetime``). The default walker pursues found goals on every
+    trial, which lets the state re-read a goal instead of holding it."""
     choices = [int(k) for k in iters_choices] or [2]
     tot = 0.0
     for _ in range(int(steps)):
         E = int(torch.randint(1, max_envs + 1, ()).item())
         K = choices[int(torch.randint(len(choices), ()).item())]
         obs, tgt, msk, _, _, alive, arena = synth.lifetime(
-            batch, E, K, return_arena=True)
+            batch, E, K, return_arena=True, cap=cap, prefind=prefind,
+            pursue_known=pursue_known)
         if balance:
             cnt = torch.stack([(msk * (arena == j)).sum() for j in range(E)])
             w = (cnt.sum() / E) / cnt.clamp_min(1.0)

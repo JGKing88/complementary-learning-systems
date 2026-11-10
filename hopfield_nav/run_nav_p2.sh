@@ -2005,6 +2005,16 @@ case "$VARIANT" in
                   # arrives in, and a balanced loss halved the later
                   # positions' error in pretraining (§7.6).
                   SYNTH_REHEARSAL_BALANCE=1; _rest="${_rest#_bal}" ;;
+            _np*) # Idea 3: rehearse with the protocol-like walker (200-step
+                  # trials, no pursuit before a find, pursuit of a found goal
+                  # in half the trials), so the state must hold a goal it
+                  # cannot re-read (§7.6). Passes 2/5/10; 20 is too long at
+                  # 200-step trials.
+                  SYNTH_REHEARSAL_CAP=${SYNTH_REHEARSAL_CAP:-200}
+                  SYNTH_REHEARSAL_PREFIND=${SYNTH_REHEARSAL_PREFIND:-random}
+                  SYNTH_REHEARSAL_PURSUE_KNOWN=${SYNTH_REHEARSAL_PURSUE_KNOWN:-0.5}
+                  SYNTH_REHEARSAL_ITERS=${SYNTH_REHEARSAL_ITERS:-"2 5 10"}
+                  _rest="${_rest#_np}" ;;
             _life*)
                   # Idea 3 stage 2 (GRID_MLP_NAV_PLAN §7.3, §7.5): short
                   # continual-protocol lifetimes, a curriculum on the number of
