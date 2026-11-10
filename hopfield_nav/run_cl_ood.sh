@@ -110,6 +110,9 @@ declare -A RUN=(
   [i3fv_l3]=navigate_navp2_task3r_k2_h512_i3_rp_rw_l3_sup_reh_fv_s42_28010359
   # ... from position-balanced long-block pretraining, long balanced rehearsal.
   [i3bal_l3]=navigate_navp2_task3r_k2_h512_i3_rp_rw_l3_sup_reh_fv_rl_bal_s42_28482187
+  # ... from no-pursuit pretraining (half the found-arena trials do not head
+  # for the goal), rehearsed with the same walker.
+  [i3np_l3]=navigate_navp2_task3r_k2_h512_i3_rp_rw_l3_sup_reh_fv_rl_bal_np_s42_28593952
 )
 
 for arm in $ARMS; do
