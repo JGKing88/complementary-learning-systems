@@ -895,6 +895,59 @@ the best model's schedule plus a 600-update lifetime stage. The real-task
 lifetimes are still unbalanced (6 arenas at 2 passes give the first arena 12
 trials and the last 2).
 
+#### Synthetic recall does not predict the protocol (2026-11-10)
+
+The balanced run is no better in the protocol. Two seeds, with u500 the end
+of the task stages:
+
+| protocol | fv u850 | bal u500 | bal u750 |
+|---|---|---|---|
+| success after the find | 0.71 / 0.67 | 0.26 / 0.32 | 0.73 / 0.59 |
+| steps after the find | 53 / 60 | 33 / 18 | 37 / 46 |
+| own block | 0.73 / 0.63 | 0.23 / 0.18 | 0.70 / 0.34 |
+
+At u500 only arena 0 is solved, yet synthetic recall at u500 holds every
+arrival position within 10 to 24° (40 passes, reversed order
+10/18/17/19/19/24). The lifetime stage then makes the protocol work for
+arenas 0 and 1 while synthetic recall of the later positions erodes (u750,
+reversed, 15/28/27/31/49/43).
+
+Steering by the agent's own displacement head in known arenas
+(`agenthash --follow_disp_head`) does worse than the policy (u500 0.19/0.20,
+u750 0.41/0.51), but straight-line steering in walled arenas confounds that.
+The clean measure lets the policy act and records the head's error against
+the straight line to the goal on the protocol's own trajectories
+(`--probe_disp_head`, `run_cl_ood.sh PROBE_HEAD=1`). Median error per arena,
+goal 2 or more cells away, degrees:
+
+| real protocol trajectories | trial start | all known steps |
+|---|---|---|
+| bal u500 | 18/100/47/55/135/119 | 41/103/125/135/166/131 |
+| bal u750 | 14/28/29/42/94/118 | 10/34/70/62/94/117 |
+| fv u850 | 15/53/40/64/74/93 | 69/49/33/66/69/69 |
+
+On real trajectories the memory is the bottleneck, not the policy. At u500 the
+head is at chance for arena 1 and worse than chance for arenas 2 to 5, which
+fits a head still pointing at arena 0's goal (y = 3; the others lie at y = 10
+to 18). Protocol success per arena tracks this error: the arenas the policy
+solves are the ones whose head error is under about 30°. The lifetime stage
+is what teaches the real-trajectory memory to hold arena 1 (and partly 2 and
+3). For fv u850 the head error on arena 0 grows block by block (8, 22, 74,
+87°), which is its forgetting.
+
+Synthetic recall overstates the memory because the generator leaks the goal.
+In an arena whose goal is not yet found, the walker wanders 0 to 30 steps and
+then heads straight for the goal, so its moves and grid-code path reveal the
+goal before the find. In a known arena it pursues the goal every trial, which
+keeps refreshing the state from its own moves. A model can then hold a goal
+as "where my moves head" rather than writing it once at the find. On the
+protocol the student's own moves do not head for an unlearned goal, so that
+memory is absent. `Synth.lifetime(prefind="random")` (commit 104c125) keeps the
+walker random-walking until it touches the goal by chance. With 200-step
+trials it finds about as many goals as the pursuing walker (known trial starts
+per position 155/78/92/43/26/7 against 159/132/90/59/37/12). Test running:
+synthetic recall with this walker on `pretrain_long_bal`, u500 and u750.
+
 ### 7.7 Stage 1 runs (RL, superseded by §7.6)
 
 Stage 1 runs, 4000 updates, launched from a frozen copy of the code at
