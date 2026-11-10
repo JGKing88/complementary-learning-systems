@@ -38,6 +38,9 @@ def main():
                    help="walker before an arena's goal is found: heads for it "
                         "after a short wander (pursue, leaks the goal) or keeps "
                         "random-walking until it touches it by chance (random)")
+    p.add_argument("--no_pursue_known", action="store_true",
+                   help="random-walk in found arenas too, so the goal must "
+                        "survive from the one write at the find")
     p.add_argument("--order", type=int, nargs="+", default=None,
                    help="introduce the held-out arenas in this order (indices into "
                         "base_val); results stay keyed by arena, so a reversed order "
@@ -63,7 +66,7 @@ def main():
         with torch.no_grad():
             obs, tgt, msk, kn, fst, alive, arena = synth.lifetime(
                 a.batch, len(specs), it, offsets=offs, goals=goals, return_arena=True,
-                cap=a.cap, prefind=a.prefind)
+                cap=a.cap, prefind=a.prefind, pursue_known=not a.no_pursue_known)
             _, _, _, _, feats = agent(obs, return_features=True)
             pred = agent.goal_disp_head(feats)
         per = {}
@@ -90,6 +93,8 @@ def main():
     tag = "" if a.order is None else "_order" + "".join(str(i) for i in a.order)
     if a.cap != 50 or a.prefind != "pursue":
         tag += f"_cap{a.cap}_{a.prefind}"
+    if a.no_pursue_known:
+        tag += "_nopursue"
     out = os.path.splitext(a.ckpt)[0] + f"_synth_val{tag}.json"
     with open(out, "w") as f:
         json.dump({"ckpt": a.ckpt, "offsets": offs.tolist(), "goals": goals.tolist(), **res},

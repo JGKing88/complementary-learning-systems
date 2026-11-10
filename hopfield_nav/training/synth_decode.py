@@ -90,7 +90,8 @@ class Synth:
         return obs, tgt, msk, fst
 
     def lifetime(self, B, n_envs, iters, cap=50, noise_lo=30.0, noise_hi=120.0,
-                 offsets=None, goals=None, return_arena=False, prefind="pursue"):
+                 offsets=None, goals=None, return_arena=False, prefind="pursue",
+                 pursue_known=True):
         """A short continual protocol per row, packed (stage 2, §7.6).
 
         ``n_envs`` arenas at random scaffold places, each with a goal; trials
@@ -102,7 +103,10 @@ class Synth:
         unseen goal away: the moves and the grid-code path point at it before
         the find (GRID_MLP_NAV_PLAN s7.6). ``prefind="random"`` keeps the walker
         on its random walk until it touches the goal by chance, so only the
-        find itself can tell the state where the goal is. Returns packed (obs,
+        find itself can tell the state where the goal is. With
+        ``pursue_known=False`` the walker random-walks in found arenas too, so
+        no trial after the find refreshes the state from its own moves: the
+        goal has to survive from the one write. Returns packed (obs,
         disp target, disp mask, known, trial-start-in-a-known-arena mask,
         alive), all (B, L, ...).
         """
@@ -132,7 +136,9 @@ class Synth:
             heading = torch.rand(B, device=d) * 2 * math.pi
             unseen = (torch.full((B,), float(cap), device=d) if prefind == "random"
                       else torch.randint(0, 30, (B,), device=d).float())
-            wander = torch.where(known[:, j], torch.zeros(B, device=d), unseen)
+            seen = (torch.zeros(B, device=d) if pursue_known
+                    else torch.full((B,), float(cap), device=d))
+            wander = torch.where(known[:, j], seen, unseen)
             done = torch.zeros(B, dtype=torch.bool, device=d)
             g = goal[:, j]
             o_j = off[:, j]
