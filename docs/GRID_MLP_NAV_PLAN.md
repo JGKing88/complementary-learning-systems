@@ -1019,6 +1019,17 @@ policy's trajectories are close to the no-pursuit walk. Job 28640809, same
 checkpoint, rehearsal and code, schedule `task:500,visits=2,sup=1,beta=0 ;
 lifetime:1000,envs=6,iters=2,sup=1,beta=0` (lr 1e-4).
 
+The teacher was not the cause. With the student driving from the start,
+held-out revisits are still 1.00 in 11 to 12.6 steps from u50, but no-pursuit
+recall erodes as much as in the teacher-driven run (10 passes, trial start,
+u250: share 0 18/33/25/50/59/61°, teacher-driven 20/31/39/45/65/45°, from
+11/19/22/40/48/49°). The erosion comes from the real-task training itself,
+most likely the single-arena task stages: 500 updates in which nothing
+requires holding a goal across arenas. The share-0 run was stopped at about
+u300. Job 28656514 (same checkpoint, rehearsal and code) skips them and trains
+on 6-arena real lifetimes from the start with the student driving:
+`lifetime:1500,envs=6,iters=2,sup=1,beta=0` (lr 1e-4).
+
 ### 7.7 Stage 1 runs (RL, superseded by §7.6)
 
 Stage 1 runs, 4000 updates, launched from a frozen copy of the code at
