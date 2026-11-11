@@ -1,7 +1,9 @@
 # The ideal encoder as Hopfield input
 
-*Started 2026-09-30; map current as of 2026-11-04 (through §22). Branch
-`worktree-agent-a792a678d5a963123`. Pages: "The Ideal Grid Encoder" (teaching,
+*Started 2026-09-30; map current as of 2026-11-11 (through the §23 audit).
+Branch `worktree-agent-a792a678d5a963123`. **The final model, written up on its
+own: "Grid Wave Encoder" (claude.ai/artifact/Y5MEj7eVXURFJJg6MKih4J).** Other
+pages: "The Ideal Grid Encoder" (teaching,
 claude.ai/artifact/FSKXEs5KkvwNxk7Ad7PTeZ, republished 2026-10-31 under the
 current account; the original C5p2GC3F6j1RxCQjGx6X1h is on the old account);
 "Grid Wave Network" (claude.ai/artifact/AhAWfeS2AB546xayRMj8gj); "Learning the
