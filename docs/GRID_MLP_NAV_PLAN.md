@@ -1074,8 +1074,13 @@ steps), and both hold more than two goals: arena 0 at 1.00, arena 2 at 0.85
 to 0.95 for most of the protocol, arenas 3 and 4 at 0.45 to 0.95 in places.
 Arena 1 is weak in its own block (0.03 to 0.17) and good only later; some
 arenas still decay by the final block. No-pursuit recall (10 passes)
-22/61/31/53/70/63°. Skipping the single-arena task stages is the first change
-that moves the protocol past the two-goal plateau. Idea 1 is 1.00 in 13 steps.
+22/61/31/53/70/63°. Idea 1 is 1.00 in 13 steps.
+
+u400 did not hold it: success after the find 0.60 / 0.45 in 42 / 49 steps
+(seed means 0.53, 0.72, 0.74, 0.52 at u100 to u400), with arena 0 decaying
+again in seed 3001 (0.88 to 0.30) and arena 2 never solved there. The rise
+to u300 is not yet a gain over the plateau; the series is being filled in at
+every 50 updates (u350, u450, u500) before any claim.
 
 ### 7.7 Stage 1 runs (RL, superseded by §7.6)
 
