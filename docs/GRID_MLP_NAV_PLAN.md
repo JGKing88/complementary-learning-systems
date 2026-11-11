@@ -1063,6 +1063,20 @@ goals held, not two. Seed 3000 holds only arenas 0 and 1. No-pursuit recall
 (10 passes) 22/44/27/43/77/59°. Two points (u100, u200) show a direction, not
 a result; the run continues to about u550.
 
+| lifetime-only run, two seeds | u100 | u200 | u300 |
+|---|---|---|---|
+| success after the find | 0.56 / 0.49 | 0.62 / 0.82 | 0.76 / 0.72 |
+| steps after the find | 32 / 32 | 32 / 29 | 31 / 30 |
+| worst arena change | −0.40 / 0.00 | −0.33 / −0.23 | −0.38 / −0.63 |
+
+At u300 both seeds beat the earlier best (fv u850, 0.71 / 0.67 in 53 to 60
+steps), and both hold more than two goals: arena 0 at 1.00, arena 2 at 0.85
+to 0.95 for most of the protocol, arenas 3 and 4 at 0.45 to 0.95 in places.
+Arena 1 is weak in its own block (0.03 to 0.17) and good only later; some
+arenas still decay by the final block. No-pursuit recall (10 passes)
+22/61/31/53/70/63°. Skipping the single-arena task stages is the first change
+that moves the protocol past the two-goal plateau. Idea 1 is 1.00 in 13 steps.
+
 ### 7.7 Stage 1 runs (RL, superseded by §7.6)
 
 Stage 1 runs, 4000 updates, launched from a frozen copy of the code at
