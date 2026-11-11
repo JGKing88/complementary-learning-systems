@@ -137,7 +137,11 @@ collapse onto coarse patterns).
 - Why a single box of side 20 leaves module 13 ten times noisier than boxes of
   side 14, 40 or 80 (§22.2).
 - The eigenvector step of route 1 as a network (§21).
-- Stochastic pruning simulated as an online process (§20.2).
+- Stochastic pruning (elimination) simulated as an online process (§20.2):
+  remove each L2 unit with probability κ′d per step, κ′T = 2κT = 256 (twice
+  the depression rule's κT, because survival must equal w²); on the final
+  model's learned L1 and in the probe. Written up as the alternative L3 rule
+  on the "Grid Wave Encoder" page.
 - Kernel shape as a lever for wide kernels, r ≥ 48 (§16.1).
 - How L2's neurons multiply. Each L2 pair computes
   C = c₁c₂c₃ − c₁s₂s₃ − s₁c₂s₃ − s₁s₂c₃ and S = s₁c₂c₃ + c₁s₂c₃ + c₁c₂s₃ − s₁s₂s₃.
