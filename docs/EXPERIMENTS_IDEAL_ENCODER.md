@@ -139,7 +139,31 @@ collapse onto coarse patterns).
 - The eigenvector step of route 1 as a network (§21).
 - Stochastic pruning simulated as an online process (§20.2).
 - Kernel shape as a lever for wide kernels, r ≥ 48 (§16.1).
-- Whether real neurons multiply accurately enough (a few percent).
+- How L2's neurons multiply. Each L2 pair computes
+  C = c₁c₂c₃ − c₁s₂s₃ − s₁c₂s₃ − s₁s₂c₃ and S = s₁c₂c₃ + c₁s₂c₃ + c₁c₂s₃ − s₁s₂s₃.
+  §20 step 2 measured the precision this needs: coefficient errors of 1% are
+  harmless, 5% give alias 0.18, 10% give 0.41; quarter squares with |·|^p
+  match exact multiplication for p = 1.8–2.2. Tests to run on the final model:
+  - Learned coefficients. Give each L2 pair eight weights on the products
+    c₁c₂c₃ … s₁s₂s₃, start them random or imprecise, and train them with a
+    local rule like L1's lock-in (or slowness on the unit's own output). The
+    eight products span cos and sin of θ₁ ± θ₂ ± θ₃, so the rule should settle
+    each unit on one combination with exact cancellation, and the random
+    mirror choice becomes unnecessary. Check the bias toward the slowest of
+    the four combinations and whether L3 must correct for it.
+  - One-sign squaring. Quarter squares from rectified power-law neurons
+    ([x]₊^p, so each square needs an ON and an OFF neuron, and c, s travel as
+    ON/OFF pairs), with per-neuron gain errors. The §20 test let the squaring
+    unit respond to both signs.
+  - Multiplying dendrites (sigma-pi). Four branches per output neuron, each
+    multiplying its three inputs, the soma adding branches with fixed signs;
+    branch gain errors at measured synaptic variability (20–50%). The
+    coefficient table predicts failure at those errors unless the
+    coefficients learn (first item).
+  - Angle addition without multiplication. Each angle a bump on a ring of K
+    neurons; conjunctive cells shift one bump by another, as heading and
+    turning speed combine in the fly compass. About K² cells per pairwise
+    addition.
 
 **Where things are**
 
@@ -1589,6 +1613,18 @@ its survival probability is ∏(1 − κ d_t) ≈ exp(−κ T v), which is ∝ P
 κT = r². This is activity-driven elimination of cells or synapses. Like the
 depression rule, the field width grows while it runs. Not yet simulated as an
 online process; the table samples the final survival probabilities directly.
+
+**Measured on the final model (2026-11-11).** The depression rule's weights are
+the Gaussian kernel's spectrum at each unit's frequency: log w² = −256 v̄
+(correlation 0.9999995 over the 1,306 kept units; 256 = 2κT = r²), with
+v̄ = 2 − cos ω_x − cos ω_y, the lattice form of |ω|²/2. The kept units are every
+sampled wave with |n| ≤ 56, w² down to 0.005 of the largest. That disc holds
+4,935 waves (n and −n counted once); the 400k random triples land on 1,080 of
+them (888 once, 162 twice, 26 three times, 4 four times). n_eff = 484, as in the
+400k graded row above. So graded L3 is importance weighting of a uniform random
+sample, not a weight on every frequency: L3's weights are exact, and the
+kernel's remaining error is in how many units sit at each frequency (random
+gaps here, plus uneven L1 counts for lock-in).
 
 ## 21. Learning L1 locally and online (plan written 2026-11-03, before any run)
 
