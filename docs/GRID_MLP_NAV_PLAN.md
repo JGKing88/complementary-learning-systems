@@ -1046,6 +1046,13 @@ recall (10 passes) 20/53/40/53/53/92°. Long rehearsal, position balancing,
 no-pursuit pretraining and a student-driven task stage all end at two goals
 held and about 0.6 to 0.7 success after the find.
 
+The lifetime-only run (28656514) at u100, two seeds: success after the find
+0.56 / 0.49 in 32 steps (faster than any earlier run's 48 to 60), arena 0
+held at 1.00 in every block in both seeds (worst arena change −0.40 / 0.00),
+arena 1 failing (0.05 to 0.40), arenas 2 and 3 solved in one seed (0.70 to
+0.85). Head probe at a trial start 24/71/93/67/82/113°; no-pursuit recall
+(10 passes) 22/66/36/54/77/81°. One early point; u300 follows.
+
 ### 7.7 Stage 1 runs (RL, superseded by §7.6)
 
 Stage 1 runs, 4000 updates, launched from a frozen copy of the code at
