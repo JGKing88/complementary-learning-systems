@@ -1053,6 +1053,16 @@ arena 1 failing (0.05 to 0.40), arenas 2 and 3 solved in one seed (0.70 to
 0.85). Head probe at a trial start 24/71/93/67/82/113°; no-pursuit recall
 (10 passes) 22/66/36/54/77/81°. One early point; u300 follows.
 
+The cluster cancelled the run at u230 (2026-11-11 08:12, during a Slurm
+controller outage; no reason recorded). It resumes from its u200 state with
+`--continue_from` (job 28685740, `code/i3_v16`). At u200, two seeds: success
+after the find 0.62 / 0.82 in 32 / 29 steps, worst arena change −0.33 /
+−0.23. Seed 3001 is the best idea 3 protocol so far: arenas 0 and 1 held at
+0.97 to 1.00 to the end, arenas 2 and 4 at 0.47 to 0.95, so three to four
+goals held, not two. Seed 3000 holds only arenas 0 and 1. No-pursuit recall
+(10 passes) 22/44/27/43/77/59°. Two points (u100, u200) show a direction, not
+a result; the run continues to about u550.
+
 ### 7.7 Stage 1 runs (RL, superseded by §7.6)
 
 Stage 1 runs, 4000 updates, launched from a frozen copy of the code at
