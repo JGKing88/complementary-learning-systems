@@ -1030,6 +1030,22 @@ u300. Job 28656514 (same checkpoint, rehearsal and code) skips them and trains
 on 6-arena real lifetimes from the start with the student driving:
 `lifetime:1500,envs=6,iters=2,sup=1,beta=0` (lr 1e-4).
 
+The original-schedule run from `pretrain_np05` (28593952) hit its time limit
+150 updates into its lifetime stage. At u650 it lands where every variant has:
+
+| protocol, two seeds | fv u850 | np run u650 |
+|---|---|---|
+| success after the find | 0.71 / 0.67 | 0.57 / 0.68 |
+| steps after the find | 53 / 60 | 51 / 48 |
+| worst arena change | −0.53 / −0.48 | −0.33 / −0.35 |
+
+Forgetting is lower, and both seeds hold arenas 0 and 1 to the end (final
+block 0.93 to 0.97 and 0.82 to 0.97), but arenas 2 to 5 stay at 0.12 to 0.47
+in every block. Head probe at a trial start 20/52/76/66/59/120°; no-pursuit
+recall (10 passes) 20/53/40/53/53/92°. Long rehearsal, position balancing,
+no-pursuit pretraining and a student-driven task stage all end at two goals
+held and about 0.6 to 0.7 success after the find.
+
 ### 7.7 Stage 1 runs (RL, superseded by §7.6)
 
 Stage 1 runs, 4000 updates, launched from a frozen copy of the code at
