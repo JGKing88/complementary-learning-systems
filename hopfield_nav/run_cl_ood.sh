@@ -113,6 +113,8 @@ declare -A RUN=(
   # ... from no-pursuit pretraining (half the found-arena trials do not head
   # for the goal), rehearsed with the same walker.
   [i3np_l3]=navigate_navp2_task3r_k2_h512_i3_rp_rw_l3_sup_reh_fv_rl_bal_np_s42_28593952
+  # ... same start, no single-arena stage: 6-arena lifetimes, student driving.
+  [i3nplife_l3]=navigate_navp2_task3r_k2_h512_i3_rp_rw_l3_sup_reh_fv_rl_bal_np_s42_28656514
 )
 
 for arm in $ARMS; do
