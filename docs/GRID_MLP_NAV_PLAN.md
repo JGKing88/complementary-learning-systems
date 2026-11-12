@@ -1082,6 +1082,54 @@ again in seed 3001 (0.88 to 0.30) and arena 2 never solved there. The rise
 to u300 is not yet a gain over the plateau; the series is being filled in at
 every 50 updates (u350, u450, u500) before any claim.
 
+| success after the find | u100 | u200 | u300 | u350 | u400 | u450 | u500 |
+|---|---|---|---|---|---|---|---|
+| seed 3000 | 0.56 | 0.62 | 0.76 | 0.65 | 0.60 | 0.56 | 0.58 |
+| seed 3001 | 0.49 | 0.82 | 0.72 | 0.48 | 0.45 | 0.63 | 0.56 |
+| steps after the find, mean | 32 | 31 | 30 | 50 | 45 | 30 | 44 |
+
+Seven checkpoints, no lasting trend, centred near 0.6. The run was stopped
+at about u520 (2026-11-11).
+
+#### Where idea 3 stands (2026-11-11)
+
+One goal in one arena is solved: on held-out arenas the student alone
+revisits 0.98 to 1.00 of the time in 10 to 12 steps, idea 1's speed, in every
+run since §7.6's pretraining. First finds are weak (about 40% within 200
+steps), which Jack ruled not the interesting question.
+
+Holding goals across arenas is not solved. Every training variant here ends
+at 0.45 to 0.82 success after the find (two seeds each; typical 0.6 to 0.7)
+in 28 to 60 steps, holding two goals well and later ones poorly, against idea
+1's 1.00 in 13 steps:
+
+| variant | success after the find |
+|---|---|
+| view-held run, u850 | 0.71 / 0.67 |
+| + long rehearsal, u1450 to u1650 | 0.55 to 0.73 |
+| balanced-position pretraining, u750 | 0.73 / 0.59 |
+| no-pursuit pretraining, original schedule, u650 | 0.57 / 0.68 |
+| no-pursuit, lifetimes only, u100 to u500 | 0.45 to 0.82 |
+
+What the work established:
+- Synthetic recall with a walker that pursues found goals overstates the
+  memory. The GRU can keep a goal by re-reading it from trajectories that
+  head to it. The valid proxy is no-pursuit recall (`synth_val_arenas.py
+  --cap 200 --prefind random --no_pursue_known`), which reproduces the
+  protocol probe (`agenthash --probe_disp_head`).
+- Pretraining can build a memory that holds goals without pursuit
+  (`pretrain_np05`: 11/19/22/40/48/49° at 10 passes), but every real-task
+  training tried wears it down (to about 20/50/35/50/60/70°), with or
+  without the teacher driving and with or without single-arena stages.
+- Recall falls with arrival order because protocol-order lifetimes give the
+  sixth goal a 25th of the gradient; balancing fixes that on the synthetic
+  test only.
+
+Untested levers, if the line is reopened: a larger recurrent state (hidden
+1024 or 2048, the capacity question); real-task lifetimes with the loss
+balanced by position and with more passes per block; several training seeds
+per variant, since checkpoint-to-checkpoint swing is 0.2 to 0.3.
+
 ### 7.7 Stage 1 runs (RL, superseded by §7.6)
 
 Stage 1 runs, 4000 updates, launched from a frozen copy of the code at
