@@ -15,12 +15,11 @@ import matplotlib.pyplot as plt
 from matplotlib.ticker import FixedLocator, NullLocator
 
 import style
-from style import INK, INK_2, INK_MUTED
+from style import INK_2, INK_MUTED
 
 style.apply()
 HERE = Path(__file__).resolve().parent
 COLS = {8.0: "#2a78d6", 16.0: "#eb6834", 32.0: "#1baf7a"}
-TRAINED = (400_000, 0.195)          # trained grid wave network (r = 16): pool, largest alias
 REFS = [(np.exp(-0.5), ""), (np.exp(-2.0), "2")]
 
 recs = json.loads((HERE / "pool_quality.json").read_text())
@@ -49,9 +48,6 @@ for r, col in COLS.items():
     ax.vlines(pools, a.min(1), a.max(1), color=col, lw=1.0, zorder=2)
     ax.plot(pools, a.mean(1), "o-", color=col, ms=3.0, lw=1.3, zorder=3, label=f"r = {r:.0f} cells")
 
-ax.plot(*TRAINED, "D", mfc="white", mec=INK, mew=0.9, ms=4.0, zorder=4)
-ax.annotate("trained network", TRAINED, xytext=(1_300_000, 0.36), fontsize=7, color=INK,
-            arrowprops=dict(arrowstyle="-", color=INK_2, lw=0.6, shrinkA=1, shrinkB=3))
 ax.legend(loc="lower left", fontsize=7, frameon=False, handlelength=1.2, borderaxespad=0.3)
 ax.set_xlabel("pool size (random units built)", fontsize=8)
 ax.set_ylabel("largest alias", fontsize=8)
