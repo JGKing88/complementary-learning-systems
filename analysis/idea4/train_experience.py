@@ -198,7 +198,7 @@ def _line(r):
 
 def build(a, device):
     return RecurrentMemory(hidden=a.hidden, layers=a.layers, enc=a.enc, read=a.read,
-                           chrono=a.chrono).to(device)
+                           chrono=a.chrono, enc_kind=a.enc_kind).to(device)
 
 
 def main():
@@ -213,6 +213,8 @@ def main():
     p.add_argument("--layers", type=int, default=1)
     p.add_argument("--enc", type=int, default=256)
     p.add_argument("--read", type=int, default=256)
+    p.add_argument("--enc_kind", default="relu", choices=["relu", "linear", "none"],
+                   help="view encoder: ends in ReLU (first runs), signed, or the raw canvas")
     p.add_argument("--chrono", type=int, default=0)
     p.add_argument("--T_min", type=int, default=2)
     p.add_argument("--T_max", type=int, default=20)
@@ -259,6 +261,7 @@ def main():
         ck = torch.load(a.eval_ckpt, map_location="cpu", weights_only=False)
         for k in ("hidden", "layers", "enc", "read"):
             setattr(a, k, ck["args"][k])
+        a.enc_kind = ck["args"].get("enc_kind", "relu")
         a.chrono = 0
         model = build(a, device)
         model.load_state_dict(ck["model"])

@@ -24,11 +24,23 @@ from .plastic import N_PHASE
 
 class RecurrentMemory(nn.Module):
     def __init__(self, hidden: int = 512, layers: int = 1, enc: int = 256,
-                 read: int = 256, in_dim: int = 2 * PANORAMA_BINS, chrono: int = 0):
+                 read: int = 256, in_dim: int = 2 * PANORAMA_BINS, chrono: int = 0,
+                 enc_kind: str = "relu"):
         super().__init__()
         self.hidden, self.layers = hidden, layers
-        self.enc = nn.Sequential(nn.Linear(in_dim, enc), nn.ReLU(),
-                                 nn.Linear(enc, enc), nn.ReLU())
+        # The view encoder. "relu" (the first runs) ends in a ReLU, so every
+        # code lies in the positive orthant and different arenas' codes
+        # overlap heavily; "linear" drops that last ReLU (signed codes);
+        # "none" feeds the raw canvas.
+        if enc_kind == "none":
+            self.enc, enc = nn.Identity(), in_dim
+        elif enc_kind == "linear":
+            self.enc = nn.Sequential(nn.Linear(in_dim, enc), nn.ReLU(), nn.Linear(enc, enc))
+        elif enc_kind == "relu":
+            self.enc = nn.Sequential(nn.Linear(in_dim, enc), nn.ReLU(),
+                                     nn.Linear(enc, enc), nn.ReLU())
+        else:
+            raise ValueError(f"enc_kind must be relu, linear or none, got {enc_kind!r}")
         self.gru = nn.GRU(enc + N_PHASE + 1, hidden, num_layers=layers)
         self.read = nn.Sequential(nn.Linear(hidden + enc, read), nn.ReLU(),
                                   nn.Linear(read, N_PHASE + 1))

@@ -175,7 +175,8 @@ def _line(r):
 
 def build(a, device):
     return RecurrentMemory(hidden=a.hidden, layers=a.layers, enc=a.enc,
-                           read=a.read, chrono=a.chrono).to(device)
+                           read=a.read, chrono=a.chrono,
+                           enc_kind=a.enc_kind).to(device)
 
 
 def main():
@@ -190,6 +191,8 @@ def main():
     p.add_argument("--layers", type=int, default=1, help="GRU layers")
     p.add_argument("--enc", type=int, default=256, help="view encoder width (idea 2's M)")
     p.add_argument("--read", type=int, default=256, help="read MLP width")
+    p.add_argument("--enc_kind", default="relu", choices=["relu", "linear", "none"],
+                   help="view encoder: ends in ReLU (first runs), signed, or the raw canvas")
     p.add_argument("--chrono", type=int, default=0,
                    help="chrono-initialise the GRU's update gate for memory timescales up to "
                         "this many steps (0 = PyTorch's default, half-life about one step)")
@@ -245,6 +248,7 @@ def main():
         ck = torch.load(a.eval_ckpt, map_location="cpu", weights_only=False)
         for k in ("hidden", "layers", "enc", "read"):
             setattr(a, k, ck["args"][k])
+        a.enc_kind = ck["args"].get("enc_kind", "relu")
         a.chrono = 0                       # the weights are loaded over it
         a.full_pano = ck["args"].get("full_pano", False)
         model = build(a, device)
