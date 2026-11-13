@@ -12,11 +12,14 @@ is (random walks + odometry, no goals). **If a navigator built on the grid MLP
 matches Agent-HaSH under the same continual protocol, it is a competitor
 model.**
 
-Three models are planned. Idea 1 (§1) uses a nonparametric key-value store,
+Four models are planned. Idea 1 (§1) uses a nonparametric key-value store,
 and idea 2 (§6) a meta-learned network whose weights stay plastic at
 evaluation. Both share one controller with Agent-HaSH's arrangement, so they
 and Agent-HaSH differ only in what fills the memory-readout input. Idea 3 (§7)
-has no memory module: a GRU holds the goals in its hidden state.
+has no memory module: a GRU holds the goals in its hidden state. Idea 4 (§7b)
+keeps ideas 1 and 2's arrangement with a recurrent network as the memory
+module, so its goals live in activity, as the control for why plastic weights
+help.
 
 ## 1. Model (idea 1)
 
@@ -1252,6 +1255,83 @@ and can use the fixed walls. If it learns to return, the setup can teach
 RL² goal return and the failure above is about doing it at new places. If it
 cannot, the training setup itself is the obstacle. Option A as a control,
 not as the experiment.
+
+## 7b. Idea 4: a recurrent memory module, goals held in activity (plan, 2026-11-12)
+
+Idea 4 is a memory-only control: how many goals can persistent activity hold?
+It keeps ideas 1 and 2's arrangement and changes only the memory module, which
+becomes a small recurrent network. Its weights are fixed after training, so
+every stored goal has to live in its activity. The grid code, the frozen grid
+MLP, the controller and the oracle store are unchanged, so ideas 1, 2 and 4
+and Agent-HaSH differ only in how the memory stores a goal. With them it is
+the control for why an associative memory with plastic weights helps at all,
+over persistent activity alone.
+
+Idea 4 differs from idea 3 (§7). Idea 3's GRU has to decode directions, hold
+goals and choose actions in one state. Idea 4's network only holds goals, and
+no actions are learned for its main result.
+
+### 7b.1 Model
+
+| | idea 1 | idea 2 | idea 4 |
+|---|---|---|---|
+| memory | table of (view key, goal) rows | small MLP | small recurrent network (GRU) |
+| where goals live | table rows | weights, changed by gradient steps | activity; weights fixed after training |
+| write | add a row at the goal | a few gradient steps on the visit's views | feed the visit's views with the goal as input |
+| read, every step | nearest key to the live view | run the MLP on the live view | step the network on the live view |
+
+- Inputs each step: the same query as ideas 1 and 2 (live view with the
+  panorama, plus absolute heading). During a write, also the goal's grid
+  phases (cos and sin for each of the 3 modules, 12 numbers) and a write flag;
+  at other steps these are zero.
+- State: the GRU hidden state, never reset within a lifetime.
+- Outputs each step: `ĝ`, the goal phases, turned into a grid code as in idea
+  2, and `c`, its confidence that it holds this env's goal.
+- Downstream, unchanged: `d = MLP(g_t, ĝ)` through the frozen grid MLP, and the
+  controller receives `d` and `c` as in ideas 1 and 2.
+
+### 7b.2 Step 1: memory alone (the main result)
+
+No controller and no actions. It reuses idea 2's harness and go/no-go test
+(`analysis/idea2/`, §6.4, §10.9) with the recurrent network in place of the
+plastic MLP.
+
+- Training: supervised, on random-walk lifetimes of a few envs. A write is a
+  40-step random walk in the env with the goal phases fed in. After the
+  writes, fresh views of each written env are queried, and the loss asks for
+  that env's goal phases, with `c` high for written envs and low for unseen
+  ones. Gradients flow by backpropagation through time over the lifetime.
+- Test: write N held-out envs once each, for N = 6, 30 and 100, then decode
+  each env's goal from 64 fresh views at random cells and headings. A view is
+  correct when the decoded cell is within 1.5 cells of the goal (chance about
+  0.02).
+- Reads change a recurrent memory, so the test scores reads two ways: each
+  from a copy of the state right after the last write (storage), and in
+  sequence as navigation would (storage plus the erosion reading causes).
+- Sweep: the hidden size of the network, from idea 2's `M` size up to 2048,
+  for a capacity curve. The training lifetimes stay short (a few envs), as in
+  idea 2, so N = 30 and 100 also test how storage extends past training.
+
+Reference numbers on the same test (§10.9):
+
+| memory | N = 6 | N = 30 | N = 100 |
+|---|---|---|---|
+| idea 1, table | 0.96 to 1.00 | | |
+| nearest neighbour on fixed keys | 1.000 | 0.998 | 0.992 |
+| linear delta rule on fixed keys | 0.870 | 0.417 | 0.144 |
+| idea 2, best meta-learned plastic MLP | 0.68 to 0.72 | 0.26 | 0.11 |
+
+### 7b.3 Step 2, only if step 1 is competitive
+
+Train the controller with PPO on top of the recurrent memory, as §6.3 planned
+for idea 2.
+
+### 7b.4 Open choices
+
+The hidden sizes in the sweep, the number of envs per training lifetime, the
+truncation window for backpropagation through time, and whether the network
+also gets the write signal's timing as a separate input (a flag) or only
+through the value input.
 
 ## 8. Decisions and open items
 
