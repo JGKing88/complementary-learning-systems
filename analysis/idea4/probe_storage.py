@@ -17,6 +17,7 @@ about where its goal is. A view counts as correct within 1.5 cells.
 from __future__ import annotations
 
 import argparse
+import copy
 import types
 
 import torch
@@ -93,6 +94,29 @@ def train_probe(kind, dtr, gp, N, V, in_dim, a_cli, device):
     return net
 
 
+def finetune_read(model, dtr, N, V, a_cli, device):
+    """Train a copy of the model's whole read path (the GRU step taken on the
+    view, and the read MLP) on the frozen post-visit states. The states stay
+    exactly as the trained network wrote them, so only retrieval improves."""
+    m = copy.deepcopy(model)
+    m.train()
+    opt = torch.optim.Adam(m.parameters(), lr=a_cli.ft_lr)
+    B = dtr["h"].shape[1]
+    for step in range(a_cli.ft_steps):
+        bi = torch.randint(0, B, (a_cli.ft_batch,), device=device)
+        ni = torch.randint(0, N, (a_cli.ft_batch,), device=device)
+        vi = torch.randint(0, V, (a_cli.ft_batch,), device=device)
+        ph, _, _ = m(dtr["x"][bi, ni, vi][None], dtr["h"][:, bi].contiguous(),
+                     extra=dtr["ex"][bi, ni, vi][None])
+        loss = (1 - angle_cos(ph[0], dtr["tgt"][bi, ni])).mean()
+        opt.zero_grad()
+        loss.backward()
+        torch.nn.utils.clip_grad_norm_(m.parameters(), 1.0)
+        opt.step()
+    m.eval()
+    return m
+
+
 @torch.no_grad()
 def score(net_or_model, kind, dte, gp, N, V, device):
     """Accuracy and cosine by visit position on the test lifetimes."""
@@ -120,11 +144,19 @@ def main():
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--ckpt", nargs="+", required=True)
     p.add_argument("--N", type=int, nargs="+", default=[6, 10, 20])
-    p.add_argument("--train_lifetimes", type=int, default=8192)
+    p.add_argument("--train_lifetimes", type=int, default=16384)
     p.add_argument("--test_lifetimes", type=int, default=1024)
     p.add_argument("--views", type=int, default=4)
     p.add_argument("--probe_steps", type=int, default=4000)
     p.add_argument("--probe_batch", type=int, default=1024)
+    p.add_argument("--probes", nargs="+", default=["finetune"],
+                   choices=["finetune", "ordinal", "key", "view"],
+                   help="finetune = the model's own read path trained on frozen states; "
+                        "the others are fresh MLP read-outs, which stall on the matching "
+                        "problem and come out below the model's own read")
+    p.add_argument("--ft_steps", type=int, default=20000)
+    p.add_argument("--ft_batch", type=int, default=2048)
+    p.add_argument("--ft_lr", type=float, default=3e-4)
     p.add_argument("--seed", type=int, default=0)
     p.add_argument("--device", default="cuda")
     a_cli = p.parse_args()
@@ -149,8 +181,14 @@ def main():
             dtr = lifetimes(model, gp, a, N, a_cli.train_lifetimes, V, g, device)
             dte = lifetimes(model, gp, a, N, a_cli.test_lifetimes, V, g, device)
             rows = [("model's own read", score(model, "model", dte, gp, N, V, device))]
-            for kind, in_dim in (("ordinal", H + N_MAX), ("key", H + 180), ("view", H + 372)):
-                net = train_probe(kind, dtr, gp, N, V, in_dim, a_cli, device)
+            if "finetune" in a_cli.probes:
+                m = finetune_read(model, dtr, N, V, a_cli, device)
+                rows.append(("read fine-tuned", score(m, "model", dte, gp, N, V, device)))
+                rows.append(("  same, train set", score(m, "model", {k: (v[:, :a_cli.test_lifetimes] if k == "h" else v[:a_cli.test_lifetimes]) for k, v in dtr.items()}, gp, N, V, device)))
+                del m
+            dims = {"ordinal": H + N_MAX, "key": H + 180, "view": H + 372}
+            for kind in [k for k in a_cli.probes if k != "finetune"]:
+                net = train_probe(kind, dtr, gp, N, V, dims[kind], a_cli, device)
                 rows.append((f"probe: {kind}", score(net, kind, dte, gp, N, V, device)))
             print(f"N = {N}", flush=True)
             for name, (acc, cos) in rows:
