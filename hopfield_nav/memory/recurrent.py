@@ -24,7 +24,7 @@ from .plastic import N_PHASE
 
 class RecurrentMemory(nn.Module):
     def __init__(self, hidden: int = 512, layers: int = 1, enc: int = 256,
-                 read: int = 256, in_dim: int = 2 * PANORAMA_BINS):
+                 read: int = 256, in_dim: int = 2 * PANORAMA_BINS, chrono: int = 0):
         super().__init__()
         self.hidden, self.layers = hidden, layers
         self.enc = nn.Sequential(nn.Linear(in_dim, enc), nn.ReLU(),
@@ -32,6 +32,25 @@ class RecurrentMemory(nn.Module):
         self.gru = nn.GRU(enc + N_PHASE + 1, hidden, num_layers=layers)
         self.read = nn.Sequential(nn.Linear(hidden + enc, read), nn.ReLU(),
                                   nn.Linear(read, N_PHASE + 1))
+        if chrono:
+            self.chrono_init(chrono)
+
+    @torch.no_grad()
+    def chrono_init(self, T_max: int):
+        """Chrono initialisation (Tallec & Ollivier 2018). PyTorch's default
+        leaves the update gate z near 0.5, a memory half-life of about one
+        step, so a goal written 40 steps before the next write leaves no trace
+        and no gradient. Here z's bias is log(u), u ~ U(1, T_max - 1), so unit i
+        keeps its state for about u_i steps at the start of training. PyTorch
+        packs the gates as (reset, update, new) and sets
+        h' = (1 - z) * n + z * h."""
+        H = self.hidden
+        for k in range(self.layers):
+            b_ih = getattr(self.gru, f"bias_ih_l{k}")
+            b_hh = getattr(self.gru, f"bias_hh_l{k}")
+            u = torch.empty(H).uniform_(1.0, T_max - 1.0)
+            b_ih[H:2 * H] = torch.log(u)
+            b_hh[H:2 * H] = 0.0
 
     def init_state(self, B: int, device) -> torch.Tensor:
         return torch.zeros(self.layers, B, self.hidden, device=device)
