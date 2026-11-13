@@ -1642,6 +1642,32 @@ smaller loss from reading in sequence, since training carries at most 40 read
 steps between visits while the test reads for hundreds. The runs: chrono,
 long reads, and both, each curriculum width 512 to 60k steps.
 
+Result (jobs 28951386 to 28951388; 64 lifetimes, held-out arenas, copy
+accuracy with sequence accuracy in brackets):
+
+| run | N = 2 | N = 6 | N = 10 | N = 20 |
+|---|---|---|---|---|
+| baseline (§7b.6) | 0.82 (0.59) | 0.47 (0.33) | 0.27 (0.18) | 0.16 (0.10) |
+| chrono | 0.85 (0.57) | 0.43 (0.26) | 0.26 (0.15) | 0.14 (0.08) |
+| reads up to 120 | 0.81 (0.61) | 0.45 (0.34) | 0.28 (0.22) | 0.16 (0.11) |
+| both | 0.83 (0.53) | 0.34 (0.23) | 0.20 (0.15) | 0.11 (0.09) |
+
+Neither raised storage. Longer reads helped reading in sequence a little at
+large N (0.22 against 0.18 at N = 10). Chrono passed the curriculum gates far
+more slowly (T = 4 at step 18k against 14.5k; T = 13 at 49k against 28k).
+
+Chrono did produce a gated write. At 60k, 13 units (9 with long reads) sit
+shut away from the goal (z about 0.997, keeping about half their value over
+200 steps) and open at the goal (z below 0.3); the baseline and long-read runs
+have none. But every one of these units opens at every goal arrival (fraction
+1.00 for 12 of 13 units and 8 of 9). So they form one register that each new
+goal overwrites, not a slot per arena. This is why the newest goal is held at
+0.8 to 0.9 and older goals are not: the networks learned to latch the goal
+when the flag fires, but not to choose where to put it from the view. Choosing
+the slot needs the gate to depend jointly on the flag and the arena's view,
+and reading needs the matching slot to be selected by the view at read time.
+A generic GRU trained by gradient descent found neither.
+
 ## 8. Decisions and open items
 
 | | |

@@ -76,3 +76,14 @@ for hold, open_ in ((0.95, 0.3), (0.97, 0.3), (0.98, 0.5)):
     print(f"  write units (z > {hold} elsewhere, < {open_} at the flag): {int(w.sum())}; "
           f"their mean z elsewhere {float(zn[w].mean()) if w.any() else 0:.3f}, "
           f"fraction kept over 200 steps {float(keep):.2f}")
+# Are the write units addressed by arena? For each write unit, the fraction of
+# goal arrivals at which it opens (z < 0.3). Near 1 = it opens at every goal
+# (one shared register); well below 1 = it opens only for some arenas (slots).
+w = (zn > 0.95) & (zf < 0.3)
+if w.any():
+    zflag = z[fl]                                   # (events, H): z at each goal arrival
+    opens = (zflag[:, w] < 0.3).float().mean(0)     # per write unit
+    print(f"  write units open at this fraction of goal arrivals: "
+          + " ".join(f"{float(v):.2f}" for v in opens.sort(descending=True).values))
+    k = (zflag < 0.3) & (zn > 0.95)[None]           # holder-ish units opening per event
+    print(f"  holder-ish units opening per goal arrival: mean {float(k.sum(1).float().mean()):.1f}")
