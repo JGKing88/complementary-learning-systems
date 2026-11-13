@@ -19,9 +19,11 @@ and Agent-HaSH differ only in what fills the memory-readout input. Idea 3 (§7)
 has no memory module: a GRU holds the goals in its hidden state. Idea 4 (§7b)
 keeps ideas 1 and 2's arrangement with a recurrent network as the memory
 module, so its goals live in activity, as the control for why plastic weights
-help. It holds one goal, the newest, because a recurrent network trained by
-gradient descent does not learn to bind a goal to a view, which an
-outer-product write does in one step (§7b.5).
+help. Trained from experience (its own grid phases and a flag at the goal,
+no write input), it holds several goals: the newest at 0.9 or better and
+older ones fading, 0.34 to 0.43 at N = 6 against idea 2's 0.68 to 0.72
+(§7b.6). A first version that seemed to hold only the newest goal had a
+view encoder that blocked binding (§7b.5, superseded).
 
 ## 1. Model (idea 1)
 
@@ -1453,6 +1455,112 @@ Not tested. Training far longer (10^7 or more lifetimes), a recurrent cell
 with explicit products of input and state large enough to hold an outer
 product in its activity (that is a fast-weight memory by another name), and
 a rerun at width 2048 with the guard.
+
+### 7b.6 Redo: goals from experience, no view encoder (2026-11-12)
+
+A recurrent memory trained from experience holds several goals. It keeps the
+newest arena's goal at 0.9 or better at any N, and older goals fade. The
+best run so far (width 512, curriculum) decodes 1.00 at N = 1, 0.81 at
+N = 2, 0.66 at N = 3, 0.43 at N = 6 and 0.24 at N = 10, read from copies of
+the state on held-out arenas. Idea 2's best plastic memory keeps 0.68 to 0.72
+at N = 6 and idea 1 keeps 0.96 to 1.00, so idea 4 is not yet competitive at
+N = 6. Reading in sequence erodes it further. Both §7b.5 problems are fixed
+here.
+
+What was wrong in §7b.5.
+1. The view encoder. Every first-round run passed the view through a learned
+   MLP (360 to 256 to 256) before the GRU. With that encoder no recurrent cell
+   learned to match a query against stored keys. Without it they do.
+   - A sanity check in Ba et al. 2016's associative-retrieval format
+     (`analysis/idea4/ba_recall.py`, raw input into the recurrent net)
+     learned in every variant by 50k to 75k steps: LSTM 100 on Ba's own
+     format 0.95, LSTM with key and value in one step 0.998, LSTM 2 pairs
+     0.999, GRU 100 0.985, and the §7b.5 probe's own format (GRU 256, random
+     180-dimensional keys, phase values, MLP read) cosine 0.998.
+   - The probe with the encoder switched (`recall_probe.py --enc`, GRU 256,
+     two pairs, 30k steps): no encoder 0.99 at both batch sizes and LSTM
+     0.94 to 0.95; the encoder ending in a ReLU 0.64, and without its last
+     ReLU also 0.64, the bisector. At six pairs, no encoder reached 0.60 to
+     0.71 and still rising, the signed encoder 0.37.
+   - A likely reason: the encoder gives every key a large shared component,
+     so at the start different keys look alike to the GRU's gates. Raw +-1
+     keys are zero-mean and near orthogonal. Not tested further.
+2. The goal was handed in. A "write" fed the goal's grid phases during a
+   walk that need not pass the goal. The agent never gets that.
+
+The redo (`analysis/idea4/train_experience.py`, `--enc_kind none`).
+- Inputs every step: the raw canvas view (360), the agent's own grid phases
+  at its current cell (12), and a flag that is 1 on the first arrival at the
+  arena's goal and 0 otherwise (idea 1's oracle store signal). Nothing else
+  carries the goal.
+- A lifetime visits T arenas in turn. Each visit is a 40-step random walk
+  that stands on the goal at a random step (`gpu_views.walk_through`).
+  From the first arrival on, every step is scored on the goal phases with
+  `c` to 1; before it `c` goes to 0.
+- After each visit, copies of the state read 16 views at random cells of
+  every visited arena and two unseen ones. Then the state walks 0 to 40
+  steps in one arena and carries forward: a revisit, or with probability 0.2
+  an unseen arena or the next one to be visited. The flag stays 0 on
+  revisits, as the store is locked after the first arrival. The loss
+  backpropagates through the whole lifetime. Adam 1e-3, 32 lifetimes per
+  step.
+- Schedules. "Plain" draws T from 2 to 20 from the start. "Curriculum"
+  starts at T = 2 and adds one arena when the copy-read cosine on goals
+  older than the newest averages 0.8 over 50 steps.
+- Test (`analysis/idea4/eval_many.py`): 64 lifetimes per N on the 300
+  held-out arenas, 32 views per arena at random cells and headings, correct
+  within 1.5 cells. "Copy" reads each view from a copy of the state after
+  the last visit; "seq" reads all views in sequence, arena by arena. The
+  in-training test (`retention`, one lifetime per N) rests on two arenas at
+  N = 2 and swings by 0.3 between evals, so it is used only to watch runs.
+
+Results (copy accuracy, sequence accuracy in brackets; 64 lifetimes,
+held-out arenas).
+
+| run | step | N = 1 | N = 2 | N = 3 | N = 6 | N = 10 | N = 20 |
+|---|---|---|---|---|---|---|---|
+| plain, width 256 | 20k | 0.84 (0.65) | 0.53 (0.43) | 0.35 (0.27) | 0.21 (0.15) | 0.12 (0.09) | |
+| plain, width 512 | 20k | 0.97 (0.74) | 0.55 (0.50) | 0.39 (0.38) | 0.26 (0.23) | 0.15 (0.13) | |
+| curriculum, width 256 | 60k | 1.00 (0.80) | 0.91 (0.55) | 0.62 (0.35) | 0.34 (0.19) | 0.20 (0.12) | 0.11 (0.07) |
+| curriculum, width 512 | 37k | 1.00 (0.75) | 0.81 (0.48) | 0.66 (0.40) | 0.43 (0.24) | 0.24 (0.13) | 0.14 (0.08) |
+| curriculum, width 1024 | 16k | 0.90 (0.83) | 0.51 (0.45) | 0.34 (0.28) | 0.18 (0.16) | | |
+
+By visit position, curriculum width 512 at step 37k (copy reads): the newest
+arena 0.96, 0.92, 0.89, 0.87, 0.86 at N = 2, 3, 6, 10, 20; the oldest 0.66,
+0.56, 0.41, 0.25, 0.17.
+
+Reading.
+1. Binding works. Once the encoder is gone, the GRU tells arenas apart by
+   view and returns the goal of the arena it is in. `c` separates visited
+   from unseen arenas at AUC 0.99 to 1.00 at N = 2.
+2. Memory fades with age rather than filling up. The newest goal stays near
+   0.9 at every N, and each older goal is kept less well. This is a recency
+   store, unlike idea 1's table, which keeps every row equally.
+3. Reading erodes it. Sequence reads score well below copy reads for the
+   curriculum runs. The test reads 32 views per arena back to back, up to
+   640 read steps at N = 20, while training carries at most 40 read steps
+   between visits. Navigation reads every step, so this matters for step 2.
+   The plain schedule, trained on long lifetimes with many carried reads,
+   erodes much less (sequence close to copy) but is less precise.
+4. The curriculum learns faster and reaches higher precision. Width 512
+   passed T = 2 at step 11.6k and reached T = 18 by 39k. At 20k, plain
+   width 512 decoded 0.55 at N = 2 where the curriculum run decoded 0.78.
+5. Width. At the same step, width 512 holds more than 256 at N >= 3. Width
+   1024 passes the curriculum gates as fast as the others but reads out less
+   precisely (0.90 even at N = 1 at 16k), which looks like too high a
+   learning rate for the wider net. Not tested.
+
+Next, if idea 4 is pursued.
+- Longer carried reads in training, up to hundreds of steps, so that
+  reading stops eroding the state.
+- A lower learning rate for width 1024, and widths above it.
+- Train past 60k steps or lengthen lifetimes past 20 arenas, to see whether
+  N = 6 keeps rising toward idea 2's 0.7.
+- Step 2 (the controller) only once N = 6 is competitive, per §7b.3.
+
+Runs: `/orcd/pool/003/jackking/cls_runs/idea4/experience_h*_raw*`, logs
+`idea4_<job>_<task>.out`; code snapshots `i4_v5` to `i4_v8`. Commits
+`03cfc99` to `e65d4af`.
 
 ## 8. Decisions and open items
 
