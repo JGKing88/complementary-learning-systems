@@ -71,6 +71,13 @@ class GpuPool:
         out.scatter_(1, bins + PANORAMA_BINS, torch.ones_like(codes))
         return out.reshape(*shape, 2 * PANORAMA_BINS)
 
+    def pano_canvas(self, env):
+        """Diagnostic input: the env's whole distal panorama with a full mask,
+        the same from every cell and heading, so a write's key and a read's key
+        are identical. (..., 360)."""
+        p = self.panos[env]
+        return torch.cat([p, torch.ones_like(p)], -1)
+
 
 def walk(B: int, steps: int, device, gen=None):
     """``B`` random walks of ``steps`` moves, as ``Placed.visit`` makes them:

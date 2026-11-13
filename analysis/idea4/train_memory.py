@@ -62,10 +62,11 @@ def lifetime_loss(model, gp, a, rng, gen, device, T_max=None):
     h = model.init_state(B, device)
     total, weight = 0.0, 0.0
     stats = {"copy_cos": [], "seq_cos": [], "old_cos": []}
+    views = (lambda e, xs, ys, psi: gp.pano_canvas(e)) if a.full_pano else gp.canvas
     for t in range(T):
         S = a.visit_steps
         xs, ys, psi = walk(B, S, device, gen)
-        x = gp.canvas(env[:, t].expand(S, B), xs, ys, psi)
+        x = views(env[:, t].expand(S, B), xs, ys, psi)
         _, _, h = model(x, h, target[:, t].expand(S, B, N_PHASE))
 
         # Copy reads: one step from the post-write state on Q fresh views of
@@ -77,7 +78,7 @@ def lifetime_loss(model, gp, a, rng, gen, device, T_max=None):
         is_w = cols < T
         J, Q = len(cols), a.test_views
         xs, ys, psi = random_cells((B, J, Q), device, gen)
-        x = gp.canvas(env[:, cols][:, :, None].expand(B, J, Q), xs, ys, psi)
+        x = views(env[:, cols][:, :, None].expand(B, J, Q), xs, ys, psi)
         ph, c, _ = model(x.reshape(1, B * J * Q, -1), h.repeat_interleave(J * Q, dim=1))
         ph, c = ph.reshape(B, J, Q, N_PHASE), c.reshape(B, J, Q)
         cos = angle_cos(ph, target[:, cols][:, :, None])
@@ -99,7 +100,7 @@ def lifetime_loss(model, gp, a, rng, gen, device, T_max=None):
                 torch.randint(0, len(not_yet), (B,), device=device, generator=gen)]
             which = torch.where(unseen, pick_u, pick_w)
             xs, ys, psi = walk(B, L, device, gen)
-            x = gp.canvas(env[ar, which].expand(L, B), xs, ys, psi)
+            x = views(env[ar, which].expand(L, B), xs, ys, psi)
             ph, c, h = model(x, h)
             cos = angle_cos(ph, target[ar, which][None])                 # (L, B)
             wr = (~unseen).float()[None].expand(L, B)
@@ -128,13 +129,21 @@ def retention(model, pool, N, seed, a, device):
     envs = [Placed(pool, i, rng) for i in idx[:N]]
     unseen = [Placed(pool, i, rng) for i in idx[N:]]
     h = model.init_state(1, device)
-    S = a.visit_steps
+    S, V = a.visit_steps, a.eval_views
+
+    def fix(x, env):
+        # --full_pano: the same random calls are made, then each view is
+        # replaced by the env's whole panorama.
+        if not a.full_pano:
+            return x
+        p = env.pool.panos[env.idx]
+        return np.tile(np.concatenate([p, np.ones_like(p)]), (len(x), 1))
+
     for env in envs:
-        x = T_(env.visit(rng, S), device)[:, None]
+        x = T_(fix(env.visit(rng, S), env), device)[:, None]
         _, _, h = model(x, h, T_(env.target, device).expand(S, 1, N_PHASE))
-    V = a.eval_views
-    X = torch.cat([T_(env.test_views(rng, V)[0], device) for env in envs])
-    Xu = torch.cat([T_(u.test_views(rng, V)[0], device) for u in unseen])
+    X = torch.cat([T_(fix(env.test_views(rng, V)[0], env), device) for env in envs])
+    Xu = torch.cat([T_(fix(u.test_views(rng, V)[0], u), device) for u in unseen])
     ph_c, c_w, _ = model(X[None], h.repeat_interleave(len(X), dim=1))
     _, c_u, _ = model(Xu[None], h.repeat_interleave(len(Xu), dim=1))
     ph_s, c_s, _ = model(X[:, None], h)
@@ -197,6 +206,9 @@ def main():
     p.add_argument("--curriculum", action="store_true",
                    help="start lifetimes at T <= 2 and lengthen them as older goals are held")
     p.add_argument("--curriculum_cos", type=float, default=0.8)
+    p.add_argument("--full_pano", action="store_true",
+                   help="diagnostic: every view is the env's whole panorama, so write and "
+                        "read keys are identical (plain associative recall)")
     p.add_argument("--n_train_envs", type=int, default=4000)
     p.add_argument("--n_eval_envs", type=int, default=300)
     p.add_argument("--eval_views", type=int, default=64)
@@ -230,6 +242,7 @@ def main():
         ck = torch.load(a.eval_ckpt, map_location="cpu", weights_only=False)
         for k in ("hidden", "layers", "enc", "read"):
             setattr(a, k, ck["args"][k])
+        a.full_pano = ck["args"].get("full_pano", False)
         model = build(a, device)
         model.load_state_dict(ck["model"])
         model.eval()
