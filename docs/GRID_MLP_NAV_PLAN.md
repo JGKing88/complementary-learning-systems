@@ -1130,6 +1130,46 @@ Untested levers, if the line is reopened: a larger recurrent state (hidden
 balanced by position and with more passes per block; several training seeds
 per variant, since checkpoint-to-checkpoint swing is 0.2 to 0.3.
 
+#### Next step: one generic recipe, varied only by hidden size (agreed 2026-11-12)
+
+The training above became a curriculum built for one architecture: a scripted
+walker, its pursuit probability, teacher stages, view freezing, long and
+balanced rehearsal. Each piece patched the last symptom. A result from it
+cannot be read as a property of recurrent networks, in either direction: a
+success would belong to the curriculum, and the plateau cannot be called the
+GRU's limit. Jack (2026-11-12): the setup is "incredibly contrived".
+
+The next idea 3 result uses one simple, generic recipe, applied unchanged to
+every arm. The only thing varied is the hidden size, so the question becomes
+capacity, not curriculum.
+
+Recipe, identical for every arm:
+1. Optional single pretraining stage: the existing single-arena grid-decode
+   pretraining (`analysis/idea3/pretrain_decode.py --mode single`, its
+   original settings, no lifetimes, no walker variants). It is kept only
+   because nothing learned the grid decode from the real task in feasible
+   compute (RL arms, §7.5). If it is used, it is used for every arm with the
+   same settings; an arm without it is the cleaner control if compute allows.
+2. One real-task stage: supervised DAgger on 6-arena protocol-order lifetimes
+   (`lifetime:N,envs=6,iters=2,sup=1,beta=0`). The student drives from the
+   first update and the teacher only labels moves. One auxiliary loss, the
+   goal displacement when the goal is known, at one fixed weight. All weights
+   train.
+3. Dropped: synthetic rehearsal, view freezing (`_fv`), long or balanced
+   rehearsal (`_rl`, `_bal`), the no-pursuit walker (`_np`), teacher-driven
+   stages, single-arena task stages.
+
+Arms: a plain 1-layer GRU at hidden 256, 512, 1024 and 2048, the same input
+set as §7 and the same env-step budget per arm. Two training seeds per size if
+the budget allows.
+
+Read-out, per arm: the continual protocol with two seeds at four or more
+checkpoints (success after the find, steps after the find, per-arena
+retention), and the head probe at a trial start (`agenthash
+--probe_disp_head`). Report the series, not single checkpoints. The answer is
+how many of the six goals a plain recurrent state holds as it grows, against
+idea 1 and Agent-HaSH at 1.00.
+
 ### 7.7 Stage 1 runs (RL, superseded by §7.6)
 
 Stage 1 runs, 4000 updates, launched from a frozen copy of the code at
