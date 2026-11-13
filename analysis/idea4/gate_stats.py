@@ -69,3 +69,10 @@ for thr in (0.9, 0.5, 0.1):
 drop = zn - zf
 print(f"  largest drops in z at the flag (z elsewhere -> z at flag): " + ", ".join(
     f"{float(zn[i]):.3f}->{float(zf[i]):.3f}" for i in drop.argsort(descending=True)[:8]))
+# Gated-write units: shut away from the flag, open at it.
+for hold, open_ in ((0.95, 0.3), (0.97, 0.3), (0.98, 0.5)):
+    w = (zn > hold) & (zf < open_)
+    keep = (zn[w] ** 200).mean() if w.any() else torch.tensor(0.)
+    print(f"  write units (z > {hold} elsewhere, < {open_} at the flag): {int(w.sum())}; "
+          f"their mean z elsewhere {float(zn[w].mean()) if w.any() else 0:.3f}, "
+          f"fraction kept over 200 steps {float(keep):.2f}")
