@@ -1,0 +1,55 @@
+"""Idea 4's memory: a recurrent network whose activity holds the goals
+(GRID_MLP_NAV_PLAN §7b).
+
+The arrangement is ideas 1 and 2's, with only the memory module changed. Its
+weights are fixed after training, so a stored goal can live only in the
+hidden state, which is never reset within a lifetime.
+
+Each step the module reads the same query as ideas 1 and 2, the live view on
+the direction-aligned canvas (``plastic.canvas``). During a write it also gets
+the goal's grid phases (12 numbers) and a write flag of 1; at other steps both
+are zero. A view encoder (idea 2's 360 -> 256 -> 256 ReLU trunk) feeds a GRU,
+and a read MLP on the GRU's output and the encoded view returns the goal
+phases (unit cos, sin pairs, as ``plastic.forward``) and the logit of ``c``,
+the confidence that this env's goal is stored.
+"""
+from __future__ import annotations
+
+import torch
+import torch.nn as nn
+
+from ..world.env import PANORAMA_BINS
+from .plastic import N_PHASE
+
+
+class RecurrentMemory(nn.Module):
+    def __init__(self, hidden: int = 512, layers: int = 1, enc: int = 256,
+                 read: int = 256, in_dim: int = 2 * PANORAMA_BINS):
+        super().__init__()
+        self.hidden, self.layers = hidden, layers
+        self.enc = nn.Sequential(nn.Linear(in_dim, enc), nn.ReLU(),
+                                 nn.Linear(enc, enc), nn.ReLU())
+        self.gru = nn.GRU(enc + N_PHASE + 1, hidden, num_layers=layers)
+        self.read = nn.Sequential(nn.Linear(hidden + enc, read), nn.ReLU(),
+                                  nn.Linear(read, N_PHASE + 1))
+
+    def init_state(self, B: int, device) -> torch.Tensor:
+        return torch.zeros(self.layers, B, self.hidden, device=device)
+
+    def forward(self, x, h, goal=None):
+        """Step through a sequence.
+
+        x (T, B, 360) canvas views; h (layers, B, hidden); goal (T, B, 12) goal
+        phases for a write, or None for reads. Returns phases (T, B, 12), the
+        c logit (T, B) and the new state."""
+        e = self.enc(x)
+        flag = torch.zeros(*x.shape[:2], 1, device=x.device)
+        if goal is None:
+            w = torch.zeros(*x.shape[:2], N_PHASE + 1, device=x.device)
+        else:
+            w = torch.cat([goal, flag + 1.0], -1)
+        y, h = self.gru(torch.cat([e, w], -1), h)
+        out = self.read(torch.cat([y, e], -1))
+        ph = out[..., :N_PHASE].reshape(*out.shape[:-1], 6, 2)
+        ph = ph / (ph.norm(dim=-1, keepdim=True) + 1e-6)
+        return ph.reshape(*out.shape[:-1], N_PHASE), out[..., N_PHASE], h
