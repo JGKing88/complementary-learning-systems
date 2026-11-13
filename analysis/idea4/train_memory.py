@@ -52,16 +52,16 @@ def angle_cos(ph, tgt):
     return (ph * tgt).reshape(*ph.shape[:-1], 6, 2).sum(-1).mean(-1)
 
 
-def lifetime_loss(model, gp, a, rng, gen, device):
+def lifetime_loss(model, gp, a, rng, gen, device, T_max=None):
     B = a.batch
-    T = rng.randint(a.T_min, a.T_max + 1)
+    T = rng.randint(a.T_min, (T_max or a.T_max) + 1)
     K = T + a.n_unseen
     env = torch.rand(B, len(gp), device=device, generator=gen).argsort(1)[:, :K]
     _, _, target = place(B, K, device, gen)                    # (B, K, 12)
     ar = torch.arange(B, device=device)
     h = model.init_state(B, device)
     total, weight = 0.0, 0.0
-    stats = {"copy_cos": [], "seq_cos": []}
+    stats = {"copy_cos": [], "seq_cos": [], "old_cos": []}
     for t in range(T):
         S = a.visit_steps
         xs, ys, psi = walk(B, S, device, gen)
@@ -85,6 +85,9 @@ def lifetime_loss(model, gp, a, rng, gen, device):
             c, is_w[None, :, None].expand_as(c).float())
         weight += 1.0
         stats["copy_cos"].append(float(cos[:, is_w].mean().detach()))
+        old = is_w & (cols != t)
+        if old.any():                      # written before the newest write
+            stats["old_cos"].append(float(cos[:, old].mean().detach()))
 
         # Navigation-like reads, carried forward.
         L = rng.randint(0, a.R_max + 1)
@@ -191,6 +194,9 @@ def main():
     p.add_argument("--seq_weight", type=float, default=1.0)
     p.add_argument("--tbptt_envs", type=int, default=0,
                    help="detach the state every this many envs (0 = full lifetime)")
+    p.add_argument("--curriculum", action="store_true",
+                   help="start lifetimes at T <= 2 and lengthen them as older goals are held")
+    p.add_argument("--curriculum_cos", type=float, default=0.8)
     p.add_argument("--n_train_envs", type=int, default=4000)
     p.add_argument("--n_eval_envs", type=int, default=300)
     p.add_argument("--eval_views", type=int, default=64)
@@ -262,27 +268,42 @@ def main():
         with open(os.path.join(a.out, "log.json"), "w") as f:
             json.dump(log, f, indent=1)
 
+    # Curriculum on lifetime length: T is drawn from [T_min, T_cur], and T_cur
+    # grows by one whenever the copy-read cosine on goals written before the
+    # newest one averages --curriculum_cos over 50 steps. Holding only the
+    # newest goal cannot pass the gate.
+    T_cur = a.T_max
+    if a.curriculum:
+        T_cur = max(a.T_min, 2)
+        if log["train"] and "T_cur" in log["train"][-1]:
+            T_cur = log["train"][-1]["T_cur"]
     window = []
     for step in range(start, a.steps + 1):
         model.train()
-        loss, T, st = lifetime_loss(model, gp, a, rng, gen, device)
+        loss, T, st = lifetime_loss(model, gp, a, rng, gen, device, T_max=T_cur)
         opt.zero_grad()
         loss.backward()
         gn = float(torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0))
         opt.step()
         window.append((float(loss.detach()), T, np.mean(st["copy_cos"]),
-                       np.mean(st["seq_cos"]) if st["seq_cos"] else np.nan, gn))
+                       np.mean(st["seq_cos"]) if st["seq_cos"] else np.nan, gn,
+                       np.mean(st["old_cos"]) if st["old_cos"] else np.nan))
         if step % 50 == 0:
             w = np.array(window)
+            old_cos = float(np.nanmean(w[:, 5]))
             log["train"].append(dict(step=step, loss=float(w[:, 0].mean()),
                                      copy_cos=float(w[:, 2].mean()),
                                      seq_cos=float(np.nanmean(w[:, 3])),
+                                     old_cos=old_cos, T_cur=T_cur,
                                      grad_norm=float(w[:, 4].mean()),
                                      seconds=time.time() - t0))
             print(f"step {step} loss {w[:, 0].mean():.4f} copy_cos {w[:, 2].mean():.3f} "
-                  f"seq_cos {np.nanmean(w[:, 3]):.3f} grad {w[:, 4].mean():.2f} "
-                  f"({time.time() - t0:.0f}s)", flush=True)
+                  f"old_cos {old_cos:.3f} seq_cos {np.nanmean(w[:, 3]):.3f} T_cur {T_cur} "
+                  f"grad {w[:, 4].mean():.2f} ({time.time() - t0:.0f}s)", flush=True)
             window = []
+            if a.curriculum and T_cur < a.T_max and old_cos >= a.curriculum_cos:
+                T_cur += 1
+                print(f"curriculum: T_max now {T_cur} at step {step}", flush=True)
         if step % a.eval_every == 0 or step == a.steps:
             model.eval()
             for N in a.eval_N:
