@@ -297,22 +297,32 @@ def main():
         opt.zero_grad()
         loss.backward()
         gn = float(torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0))
-        opt.step()
+        # A gradient that overflows to inf would be clipped to inf * 0 = NaN
+        # and poison every weight through Adam; skip that step instead.
+        skipped = not np.isfinite(gn)
+        if skipped:
+            opt.zero_grad()
+        else:
+            opt.step()
         window.append((float(loss.detach()), T, np.mean(st["copy_cos"]),
-                       np.mean(st["seq_cos"]) if st["seq_cos"] else np.nan, gn,
-                       np.mean(st["old_cos"]) if st["old_cos"] else np.nan))
+                       np.mean(st["seq_cos"]) if st["seq_cos"] else np.nan,
+                       np.nan if skipped else gn,
+                       np.mean(st["old_cos"]) if st["old_cos"] else np.nan, skipped))
         if step % 50 == 0:
-            w = np.array(window)
+            w = np.array(window, dtype=np.float64)
             old_cos = float(np.nanmean(w[:, 5]))
-            log["train"].append(dict(step=step, loss=float(w[:, 0].mean()),
-                                     copy_cos=float(w[:, 2].mean()),
+            n_skip = int(w[:, 6].sum())
+            log["train"].append(dict(step=step, loss=float(np.nanmean(w[:, 0])),
+                                     copy_cos=float(np.nanmean(w[:, 2])),
                                      seq_cos=float(np.nanmean(w[:, 3])),
                                      old_cos=old_cos, T_cur=T_cur,
-                                     grad_norm=float(w[:, 4].mean()),
-                                     seconds=time.time() - t0))
-            print(f"step {step} loss {w[:, 0].mean():.4f} copy_cos {w[:, 2].mean():.3f} "
-                  f"old_cos {old_cos:.3f} seq_cos {np.nanmean(w[:, 3]):.3f} T_cur {T_cur} "
-                  f"grad {w[:, 4].mean():.2f} ({time.time() - t0:.0f}s)", flush=True)
+                                     grad_norm=float(np.nanmean(w[:, 4])),
+                                     skipped=n_skip, seconds=time.time() - t0))
+            print(f"step {step} loss {np.nanmean(w[:, 0]):.4f} copy_cos "
+                  f"{np.nanmean(w[:, 2]):.3f} old_cos {old_cos:.3f} seq_cos "
+                  f"{np.nanmean(w[:, 3]):.3f} T_cur {T_cur} grad {np.nanmean(w[:, 4]):.2f}"
+                  f"{f' SKIPPED {n_skip} non-finite steps' if n_skip else ''} "
+                  f"({time.time() - t0:.0f}s)", flush=True)
             window = []
             if a.curriculum and T_cur < a.T_max and old_cos >= a.curriculum_cos:
                 T_cur += 1
