@@ -7,7 +7,8 @@ rule on one random walk of T steps (kappa = 0.005, kappa T = r^2 / 2) gives each
 w^2 = (1 - kappa d1)^(2 T1) (1 - kappa d2)^(2 T2), with d_i = 2 - 2 cos(omega_i) and T1 + T2 = T
 the steps along each axis (binomial). Kernel over the whole arena by one 2D FFT.
 Measured: effective units n_eff = (sum w^2)^2 / sum w^4, largest similarity beyond 3r
-(largest alias), and half-width along an axis.
+(largest alias), half-width along an axis, the least similarity within r and 2r, and the
+mean similarity on the circles of radius r and 2r.
 """
 import json
 from pathlib import Path
@@ -40,7 +41,9 @@ for r in RS:
             row = k[0, : int(4 * r)]
             half = float(np.interp(0.5, row[::-1], np.arange(len(row))[::-1]))
             rec = dict(r=r, pool=pool, seed=seed, T=T, n_eff=float(w2.sum() ** 2 / (w2 ** 2).sum()),
-                       alias=float(k[RAD > 3 * r].max()), half_width=half)
+                       alias=float(k[RAD > 3 * r].max()), half_width=half,
+                       min_within_r=float(k[RAD <= r].min()), min_within_2r=float(k[RAD <= 2 * r].min()),
+                       ring_r=float(k[np.abs(RAD - r) < 0.5].mean()), ring_2r=float(k[np.abs(RAD - 2 * r) < 0.5].mean()))
             out.append(rec)
             print(rec, flush=True)
             del n, w2, A, k
