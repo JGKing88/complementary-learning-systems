@@ -1337,6 +1337,15 @@ through the value input.
 
 ### 7b.5 Step 1 result: activity holds one goal, the newest (2026-11-12)
 
+**Superseded the same day. The conclusion below is wrong.** The recurrent
+cell was not the limit. The view encoder in front of it was. A sanity check
+in Ba et al. 2016's associative-retrieval format (`analysis/idea4/ba_recall.py`)
+learned in every variant, including this probe's own format at cosine 0.997.
+`recall_probe.py` with no encoder learns two pairs to 0.97 by 10k steps, while
+idea 4's encoder, with or without its last ReLU, stays at the bisector. The
+step-1 runs below also handed the goal in as a "write" input rather than
+taking it from experience. The redo is §7b.6.
+
 Idea 4 fails step 1, so step 2 is not run. Every recurrent memory trained
 holds one goal, the one written last. Written once each, the best run
 decodes 1.00 at N = 1, 0.67 at N = 2, 0.22 at N = 6 and chance from N = 10.
