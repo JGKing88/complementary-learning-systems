@@ -68,6 +68,8 @@ def main():
     p.add_argument("--seed", type=int, default=0)
     p.add_argument("--device", default="cuda")
     p.add_argument("--out", default=None, help="write all results as JSON here")
+    p.add_argument("--pool", type=int, default=0,
+                   help="test on the first this many training arenas instead of held-out ones")
     a_cli = p.parse_args()
     device = torch.device(a_cli.device if torch.cuda.is_available() else "cpu")
     res = []
@@ -78,12 +80,13 @@ def main():
         a.chrono = 0
         a.enc_kind = getattr(a, "enc_kind", "relu")
         if gp is None:
-            gp = GpuPool(EnvPool(a.n_eval_envs, seed=a.seed + 2), device)   # held-out arenas
+            gp = GpuPool(EnvPool(a_cli.pool, seed=a.seed + 1) if a_cli.pool
+                         else EnvPool(a.n_eval_envs, seed=a.seed + 2), device)   # held-out arenas
         model = te.build(a, device)
         model.load_state_dict(ck["model"])
         model.eval()
         print(f"\n{path}  step {ck['step']}  hidden {a.hidden}")
-        for N in a_cli.N:
+        for N in [n for n in a_cli.N if n <= len(gp)]:
             r = evaluate(model, gp, a, N, a_cli.lifetimes, a_cli.views, a_cli.seed + N, device)
             r.update(ckpt=path, step=ck["step"], hidden=a.hidden)
             res.append(r)
