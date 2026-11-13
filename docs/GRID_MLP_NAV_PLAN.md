@@ -1578,6 +1578,53 @@ Runs: `/orcd/pool/003/jackking/cls_runs/idea4/experience_h*_raw*`, logs
 `idea4_<job>_<task>.out`; code snapshots `i4_v5` to `i4_v8`. Commits
 `03cfc99` to `e65d4af`.
 
+### 7b.7 Storage, not retrieval (2026-11-13)
+
+The older goals are lost from the state, not hidden in it. Retraining the
+read on frozen states does not raise held-out accuracy at all, so retrieval
+already gets everything the state holds. The limit is keeping old goals intact
+while later visits and reads update the state. It is not raw size: six goals
+need far fewer than 512 numbers, and width 1024 is no better.
+
+Test (`analysis/idea4/probe_storage.py`, job 28950906). After N visits the
+final state is frozen. A copy of the model's whole read path (the GRU step on
+the view, and the read MLP) is trained for 20k steps of 2048 reads on 16384
+lifetimes' frozen states, then scored on 1024 held-out lifetimes (accuracy
+within 1.5 cells; 4 views per arena).
+
+| run | N | model's own read | read retrained | same, on its training lifetimes |
+|---|---|---|---|---|
+| curriculum, width 512 | 6 | 0.449 | 0.452 | 0.646 |
+| | 10 | 0.305 | 0.302 | 0.418 |
+| | 20 | 0.160 | 0.160 | 0.200 |
+| curriculum, width 1024 | 6 | 0.394 | 0.395 | 0.634 |
+| | 10 | 0.267 | 0.262 | 0.395 |
+| | 20 | 0.136 | 0.137 | 0.184 |
+| plain, width 512 | 6 | 0.400 | 0.398 | 0.627 |
+| | 10 | 0.281 | 0.278 | 0.414 |
+| | 20 | 0.153 | 0.158 | 0.208 |
+
+The retrained read improves only on the lifetimes it trained on, so it
+memorised those states and found no better general read. Accuracy by visit
+position did not move either (curriculum width 512 at N = 6: oldest 0.41 to
+0.39, newest 0.90 to 0.92).
+
+Fresh read-outs trained on the frozen state from scratch (an MLP given the
+state and the visit number, the arena's whole panorama, or one live view)
+scored 0.05 to 0.25, below the model's own read, so they cannot test storage.
+They face the same matching problem as the GRU and stall on it within 4000
+steps.
+
+Reading. Training already asks for every earlier goal after each visit and
+backpropagates through the whole lifetime, so forgetting is in the loss. The
+network still does not learn to protect old goals. Two likely reasons, being
+tested next: PyTorch's GRU starts with its update gate near 0.5, so every step
+half-replaces the state and protecting old goals has to be learned against a
+gradient that crosses hundreds of steps; and training carries at most 40 read
+steps between visits, while the test reads for hundreds. The runs: chrono
+initialisation of the update gate (`--chrono 2000`), carried reads up to 120
+steps (`--R_max 120`), and both, each curriculum width 512 to 60k steps.
+
 ## 8. Decisions and open items
 
 | | |
