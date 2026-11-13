@@ -19,7 +19,9 @@ and Agent-HaSH differ only in what fills the memory-readout input. Idea 3 (§7)
 has no memory module: a GRU holds the goals in its hidden state. Idea 4 (§7b)
 keeps ideas 1 and 2's arrangement with a recurrent network as the memory
 module, so its goals live in activity, as the control for why plastic weights
-help.
+help. It holds one goal, the newest, because a recurrent network trained by
+gradient descent does not learn to bind a goal to a view, which an
+outer-product write does in one step (§7b.5).
 
 ## 1. Model (idea 1)
 
@@ -1332,6 +1334,116 @@ The hidden sizes in the sweep, the number of envs per training lifetime, the
 truncation window for backpropagation through time, and whether the network
 also gets the write signal's timing as a separate input (a flag) or only
 through the value input.
+
+### 7b.5 Step 1 result: activity holds one goal, the newest (2026-11-12)
+
+Idea 4 fails step 1, so step 2 is not run. Every recurrent memory trained
+holds one goal, the one written last. Written once each, the best run
+decodes 1.00 at N = 1, 0.67 at N = 2, 0.22 at N = 6 and chance from N = 10.
+On the same test idea 2's best plastic memory keeps 0.68 to 0.72 at N = 6 and
+idea 1 keeps 0.96 to 1.00. Capacity is not the limit. A stripped-down test
+with two random keys shows that no recurrent cell tried learns to pick a goal
+by matching the query against a stored key, at widths up to 1024 and over
+1.9M training lifetimes. An outer-product fast-weight memory with the same
+encoder and read MLP learns six pairs to cosine 0.99 within 5000 steps. So
+plastic weights help because an outer-product write binds a key to a goal in
+one step, and a recurrent network trained by gradient descent does not learn
+to do that binding in its activity.
+
+What was built (branch `worktree-sensory-key-retrieval`, commits `719f230` to
+`27ab82a`).
+- `hopfield_nav/memory/recurrent.py`, the memory module. Idea 2's view
+  encoder (360 to 256 to 256) feeds a GRU, together with the goal phases and a
+  write flag during a write. A read MLP on the GRU output and the encoded view
+  returns the goal phases and the `c` logit. `--chrono` sets chrono
+  initialisation of the update gate (Tallec and Ollivier 2018).
+- `analysis/idea4/gpu_views.py`, a torch port of `raycast_codes` and `canvas`.
+  It matches numpy exactly on 4000 views, so training views are made on the
+  GPU.
+- `analysis/idea4/train_memory.py` trains on random-walk lifetimes of T envs
+  (T from 2 to 20) by backpropagation through the whole lifetime. Each env is
+  written once by a 40-step walk. After each write, copies of the state read
+  16 fresh views of every written env and two unseen envs. Then the state
+  reads a walk of 0 to 40 steps in one env and carries the result forward.
+  The test is idea 2's "once" test (§10.9), with the same envs, goals, walks
+  and views at the same seeds, scored two ways: "copy" reads each view from a
+  copy of the state after the last write, and "seq" reads all views in
+  sequence. `--curriculum` starts at T = 2 and lengthens lifetimes when older
+  goals are held. `--full_pano` replaces every view with the env's whole
+  panorama, so write and read keys are identical.
+- `analysis/idea4/recall_probe.py`, plain associative recall. Each lifetime
+  draws fresh random keys (+-1 vectors, like panoramas) and goals (random
+  phase pairs), writes each key with its goal, then queries each key.
+- `hopfield_nav/run_idea4.sh` (width sweep) and `hopfield_nav/run_idea4_probe.sh`.
+  Outputs are in `/orcd/pool/003/jackking/cls_runs/idea4/`, logs
+  `idea4_*`, `i4probe_*`, and `python -m analysis.idea4.summarise` prints the
+  tables.
+
+Runs on the arena task (1-layer GRU, Adam 1e-3, 32 lifetimes per step).
+
+| run | steps | result |
+|---|---|---|
+| widths 256, 512, 1024, T 2 to 20 | 6k to 20k (512 ran the full 20k) | the newest goal only, from step 250 on; `c` at chance |
+| width 2048 | | NaN within 50 steps; one overflowing gradient clipped to inf x 0 (a guard now skips such steps; not rerun) |
+| width 256, curriculum | 20k | never passed T = 2; final test below |
+| width 512, curriculum, whole panorama as every view | 8k | the same as with real views |
+
+Final tests after 20k steps, copy reads, mean of 3 test seeds (sequence reads
+in brackets):
+
+| run | N = 1 | N = 2 | N = 3 | N = 6 | N = 10 | N = 30 | N = 100 |
+|---|---|---|---|---|---|---|---|
+| width 256, curriculum | 1.00 (1.00) | 0.67 (0.50) | 0.22 (0.11) | 0.22 (0.11) | 0.10 (0.03) | 0.03 (0.04) | 0.01 (0.02) |
+| width 512 | 1.00 (1.00) | 0.67 (0.67) | 0.11 (0.11) | 0.17 (0.17) | 0.07 (0.07) | 0.01 (0.02) | 0.04 (0.04) |
+
+Holding one goal of N scores about 1/N, which is what both runs score from
+N = 3 on.
+
+Plain associative recall (`recall_probe.py`, 64 lifetimes per step, cosine
+per pair after the given steps; outputting the bisector of two goals scores
+2/pi = 0.64 on both):
+
+| memory | pairs | steps | cosine |
+|---|---|---|---|
+| GRU 256, Adam 1e-3 / 3e-4 / 3e-4 with chrono init | 2 | 30k | 0.63 to 0.64 |
+| GRU 1024, Adam 3e-4 | 2 | 30k | 0.64 |
+| GRU 256, two layers | 2 | 30k | 0.64 |
+| GRU 256, each query read for 4 steps | 2 | 30k | 0.64 |
+| GRU 256, 8-bit keys | 2 | 30k | 0.64 |
+| GRU 64, 1-bit keys (0.82 is possible) | 2 | 6k | 0.64 |
+| LSTM 256 | 2 | 30k | 0.64 |
+| GRU 256 with multiplicative integration (Wu et al. 2016) | 2 | 30k | 0.64 |
+| GRU 64, the same two keys in every lifetime | 2 | 2k | 1.00 |
+| outer-product fast weights, H 256 | 6 | 5k | 0.99 |
+| outer-product fast weights, H 256 | 30 | 10k | 0.93 |
+
+Reading.
+1. The recurrent memory stores and reads back one goal without trouble
+   (1.00 at N = 1). On the arena task it settles on returning the newest goal
+   whatever the view. In the probe it returns the bisector of the two goals.
+   In both cases the read ignores the query.
+2. The failure is binding, not storage or capacity. With the same keys in
+   every lifetime a GRU holds two goals perfectly within 2000 steps, because
+   it only has to keep them in order. With keys drawn fresh in each lifetime,
+   even 1-bit keys, it never starts to match. Matching needs a product
+   between the query and stored content. A fast-weight write stores the
+   outer product of key and goal and the read takes an inner product with the
+   query, so the product is built in. A gated RNN can only approximate it
+   through its gates, and gradient descent did not find that approximation at
+   any width, cell type or learning rate tried. Associative-recall tasks in
+   the literature point the same way (fast weights against LSTMs in Ba et
+   al. 2016; the H3 paper, Fu et al. 2023, on models without multiplicative
+   interactions). Their exact numbers were not checked here.
+3. For the control question of §7b this is the answer. Persistent activity
+   in a network trained by gradient descent holds one goal, because it does
+   not learn to bind goals to views. A memory with plastic weights binds
+   them in one write. Idea 2 shows plastic weights alone are not enough at
+   large N (crosstalk), and idea 1's argmax read is what reaches 0.96 to 1.00.
+
+Not tested. Training far longer (10^7 or more lifetimes), a recurrent cell
+with explicit products of input and state large enough to hold an outer
+product in its activity (that is a fast-weight memory by another name), and
+a rerun at width 2048 with the guard.
 
 ## 8. Decisions and open items
 
