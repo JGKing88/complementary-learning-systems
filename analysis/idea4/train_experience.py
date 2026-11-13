@@ -65,11 +65,15 @@ def visit_path(goal, a, device, gen):
     return path, headings(path, device, gen), first, first.long().cumsum(0) > 0
 
 
-def lifetime_loss(model, gp, a, rng, gen, device, T_max=None):
+def lifetime_loss(model, gp, a, rng, gen, device, T_max=None, pool=None):
+    """``pool`` limits lifetimes to the first ``pool`` training arenas, so a
+    small pool's arenas recur across lifetimes (with fresh goals each time)."""
     B = a.batch
-    T = rng.randint(a.T_min, (T_max or a.T_max) + 1)
+    P = min(pool or len(gp), len(gp))
+    hi = min(T_max or a.T_max, P - a.n_unseen)
+    T = rng.randint(min(a.T_min, hi), hi + 1)
     K = T + a.n_unseen
-    env = torch.rand(B, len(gp), device=device, generator=gen).argsort(1)[:, :K]
+    env = torch.rand(B, P, device=device, generator=gen).argsort(1)[:, :K]
     off, goal, target = place(B, K, device, gen)
     ar = torch.arange(B, device=device)
     h = model.init_state(B, device)
@@ -235,6 +239,9 @@ def main():
     p.add_argument("--R_max", type=int, default=40)
     p.add_argument("--p_unseen", type=float, default=0.2)
     p.add_argument("--seq_weight", type=float, default=1.0)
+    p.add_argument("--pool_schedule", type=str, default="",
+                   help="'step:size,...': from each step on, draw lifetimes from the first "
+                        "size training arenas only (e.g. '0:8,10000:16,20000:64,30000:4000')")
     p.add_argument("--age_power", type=float, default=0.0,
                    help="weight each visited arena's goal in the copy reads by (age + 1) ** this, "
                         "age = visits since it was written; 0 = equal weights")
@@ -251,6 +258,8 @@ def main():
     p.add_argument("--init_ckpt", default=None)
     p.add_argument("--eval_ckpt", default=None)
     a = p.parse_args()
+    a.pool_schedule = [tuple(int(v) for v in item.split(":"))
+                       for item in a.pool_schedule.split(",") if item]
     os.makedirs(a.out, exist_ok=True)
     device = torch.device(a.device if torch.cuda.is_available() else "cpu")
     torch.manual_seed(a.seed)
@@ -318,7 +327,11 @@ def main():
     window = []
     for step in range(start, a.steps + 1):
         model.train()
-        loss, T, st = lifetime_loss(model, gp, a, rng, gen, device, T_max=T_cur)
+        pool = None
+        for at, size in sorted(a.pool_schedule):
+            if step >= at:
+                pool = size
+        loss, T, st = lifetime_loss(model, gp, a, rng, gen, device, T_max=T_cur, pool=pool)
         opt.zero_grad()
         loss.backward()
         gn = float(torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0))
