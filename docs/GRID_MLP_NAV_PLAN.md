@@ -20,9 +20,9 @@ has no memory module: a GRU holds the goals in its hidden state. Idea 4 (§7b)
 keeps ideas 1 and 2's arrangement with a recurrent network as the memory
 module, so its goals live in activity, as the control for why plastic weights
 help. Trained from experience (its own grid phases and a flag at the goal,
-no write input), it holds several goals: the newest at 0.9 or better and
-older ones fading, 0.34 to 0.43 at N = 6 against idea 2's 0.68 to 0.72
-(§7b.6). A first version that seemed to hold only the newest goal had a
+no write input), it holds several goals, but at N = 6 decodes only 0.40 to
+0.47 (0.33 to 0.38 reading in sequence) against idea 2's 0.68 to 0.72 and
+idea 1's 0.96 to 1.00 (§7b.6). A first version that seemed to hold only the newest goal had a
 view encoder that blocked binding (§7b.5, superseded).
 
 ## 1. Model (idea 1)
@@ -1458,14 +1458,15 @@ a rerun at width 2048 with the guard.
 
 ### 7b.6 Redo: goals from experience, no view encoder (2026-11-12)
 
-A recurrent memory trained from experience holds several goals. It keeps the
-newest arena's goal at 0.9 or better at any N, and older goals fade. The
-best run so far (width 512, curriculum) decodes 1.00 at N = 1, 0.81 at
-N = 2, 0.66 at N = 3, 0.43 at N = 6 and 0.24 at N = 10, read from copies of
-the state on held-out arenas. Idea 2's best plastic memory keeps 0.68 to 0.72
-at N = 6 and idea 1 keeps 0.96 to 1.00, so idea 4 is not yet competitive at
-N = 6. Reading in sequence erodes it further. Both §7b.5 problems are fixed
-here.
+A recurrent memory trained from experience holds several goals, but not
+enough to compete. The best run (width 512, curriculum, 60k steps) decodes
+1.00 at N = 1, 0.82 at N = 2, 0.69 at N = 3, 0.47 at N = 6 and 0.27 at
+N = 10, read from copies of the state on held-out arenas; read in sequence,
+as navigation would, it decodes 0.33 at N = 6. Every run at widths 512 and
+1024 lands at 0.40 to 0.47 at N = 6 from copies. Idea 2's best plastic
+memory keeps 0.68 to 0.72 at N = 6 and idea 1 keeps 0.96 to 1.00, so idea 4
+fails the step 1 go/no-go and step 2 is not run. Both §7b.5 problems are
+fixed here.
 
 What was wrong in §7b.5.
 1. The view encoder. Every first-round run passed the view through a learned
@@ -1521,34 +1522,49 @@ held-out arenas).
 |---|---|---|---|---|---|---|---|
 | plain, width 256 | 20k | 0.84 (0.65) | 0.53 (0.43) | 0.35 (0.27) | 0.21 (0.15) | 0.12 (0.09) | |
 | plain, width 512 | 20k | 0.97 (0.74) | 0.55 (0.50) | 0.39 (0.38) | 0.26 (0.23) | 0.15 (0.13) | |
+| plain, width 512 | 60k | 1.00 (0.82) | 0.66 (0.60) | 0.55 (0.53) | 0.40 (0.37) | 0.29 (0.26) | 0.16 (0.14) |
 | curriculum, width 256 | 60k | 1.00 (0.80) | 0.91 (0.55) | 0.62 (0.35) | 0.34 (0.19) | 0.20 (0.12) | 0.11 (0.07) |
-| curriculum, width 512 | 37k | 1.00 (0.75) | 0.81 (0.48) | 0.66 (0.40) | 0.43 (0.24) | 0.24 (0.13) | 0.14 (0.08) |
-| curriculum, width 1024 | 16k | 0.90 (0.83) | 0.51 (0.45) | 0.34 (0.28) | 0.18 (0.16) | | |
+| curriculum, width 512 | 60k | 1.00 (0.78) | 0.82 (0.59) | 0.69 (0.49) | 0.47 (0.33) | 0.27 (0.18) | 0.16 (0.10) |
+| curriculum, width 1024 | 60k | 0.98 (0.85) | 0.66 (0.65) | 0.56 (0.57) | 0.40 (0.38) | 0.24 (0.24) | 0.14 (0.13) |
 
-By visit position, curriculum width 512 at step 37k (copy reads): the newest
-arena 0.96, 0.92, 0.89, 0.87, 0.86 at N = 2, 3, 6, 10, 20; the oldest 0.66,
-0.56, 0.41, 0.25, 0.17.
+By visit position at 60k (copy reads, oldest arena / newest arena, at
+N = 2, 3, 6, 10, 20):
+
+| run | oldest | newest |
+|---|---|---|
+| curriculum, width 512 | 0.65, 0.57, 0.41, 0.28, 0.14 | 0.98, 0.94, 0.88, 0.84, 0.84 |
+| curriculum, width 1024 | 0.64, 0.60, 0.44, 0.25, 0.23 | 0.68, 0.54, 0.41, 0.33, 0.25 |
+| plain, width 512 | 0.59, 0.53, 0.38, 0.29, 0.21 | 0.74, 0.61, 0.50, 0.45, 0.35 |
+
+Results are in `/orcd/pool/003/jackking/cls_runs/idea4/eval_many/`.
 
 Reading.
 1. Binding works. Once the encoder is gone, the GRU tells arenas apart by
    view and returns the goal of the arena it is in. `c` separates visited
    from unseen arenas at AUC 0.99 to 1.00 at N = 2.
-2. Memory fades with age rather than filling up. The newest goal stays near
-   0.9 at every N, and each older goal is kept less well. This is a recency
-   store, unlike idea 1's table, which keeps every row equally.
-3. Reading erodes it. Sequence reads score well below copy reads for the
-   curriculum runs. The test reads 32 views per arena back to back, up to
-   640 read steps at N = 20, while training carries at most 40 read steps
-   between visits. Navigation reads every step, so this matters for step 2.
-   The plain schedule, trained on long lifetimes with many carried reads,
-   erodes much less (sequence close to copy) but is less precise.
-4. The curriculum learns faster and reaches higher precision. Width 512
-   passed T = 2 at step 11.6k and reached T = 18 by 39k. At 20k, plain
-   width 512 decoded 0.55 at N = 2 where the curriculum run decoded 0.78.
-5. Width. At the same step, width 512 holds more than 256 at N >= 3. Width
-   1024 passes the curriculum gates as fast as the others but reads out less
-   precisely (0.90 even at N = 1 at 16k), which looks like too high a
-   learning rate for the wider net. Not tested.
+2. Two kinds of memory came out. The curriculum runs at widths 256 and 512
+   are recency stores. The newest goal stays at 0.84 to 0.98 at every N and
+   older goals fade, and reading in sequence erodes them (at N = 6, 0.33
+   against 0.47 from copies). Plain width 512 and curriculum width 1024
+   ended as even stores. Old and new goals are kept about equally, and
+   sequence reads are within 0.03 of copy reads, but the newest goal is held
+   less well. Idea 1's table is an even store too.
+3. Why reading erodes the recency stores. The test reads 32 views per arena
+   back to back, up to 640 read steps at N = 20, while training carries at
+   most 40 read steps between visits. Navigation reads every step, so step 2
+   would see the sequence numbers, not the copy numbers.
+4. Capacity ends up similar across runs. At N = 6 every run at widths 512
+   and 1024 decodes 0.40 to 0.47 from copies and 0.33 to 0.38 in sequence,
+   and at N = 20 0.14 to 0.16. Going from width 512 to 1024 bought nothing at
+   60k steps; width 256 is lower from N = 3 on. None comes near idea 2's
+   0.68 to 0.72 at N = 6 or idea 1's 0.96 to 1.00.
+5. The curriculum learns faster. Width 512 passed T = 2 at step 11.6k and
+   reached T = 20 at 47.7k. At 20k, plain width 512 decoded 0.55 at N = 2
+   where the curriculum run decoded 0.78. By 60k the plain run had caught up
+   at N = 6 and passed it at N = 10.
+6. Width 1024 read out less precisely than 512 for most of training (0.90
+   at N = 1 at 16k), which may mean the learning rate was too high for it.
+   Not tested.
 
 Next, if idea 4 is pursued.
 - Longer carried reads in training, up to hundreds of steps, so that
