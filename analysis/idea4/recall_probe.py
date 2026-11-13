@@ -127,6 +127,8 @@ def main():
     p.add_argument("--dwell", type=int, default=1, help="steps per query")
     p.add_argument("--key_dim", type=int, default=180,
                    help="random +-1 key entries; the rest of the 180 slots are zero")
+    p.add_argument("--fixed_keys", action="store_true",
+                   help="control: the same keys in every lifetime, so recall is by write order")
     p.add_argument("--lr", type=float, default=1e-3)
     p.add_argument("--chrono", type=int, default=0)
     p.add_argument("--batch", type=int, default=64)
@@ -142,9 +144,12 @@ def main():
     tag = (f"{a.cell} H{a.H} L{a.layers} pairs {P} rep {a.rep} dwell {a.dwell} "
            f"key_dim {a.key_dim} lr {a.lr:g} chrono {a.chrono}")
     t0, run = time.time(), []
+    fixed = torch.randint(0, 2, (P, 180), device=dev).float() * 2 - 1
     for step in range(1, a.steps + 1):
         keys = torch.zeros(P, B, 180, device=dev)
         keys[..., :a.key_dim] = torch.randint(0, 2, (P, B, a.key_dim), device=dev).float() * 2 - 1
+        if a.fixed_keys:                   # control: the same P keys in every lifetime
+            keys = fixed[:, None].expand(P, B, 180)
         x = torch.cat([keys, (keys != 0).float()], -1)
         ang = torch.rand(P, B, 6, device=dev) * 2 * math.pi
         g = torch.stack([ang.cos(), ang.sin()], -1).reshape(P, B, N_PHASE)
