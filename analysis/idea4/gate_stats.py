@@ -1,6 +1,11 @@
 """Update-gate statistics of a trained idea 4 GRU (GRID_MLP_NAV_PLAN §7b.7).
 
-    python -m analysis.idea4.gate_stats <run>/memory.pt
+    python -m analysis.idea4.gate_stats <run>/memory.pt [pool]
+
+With ``pool``, lifetimes use the first ``pool`` training arenas instead of
+held-out ones (for runs trained on a small recurring pool), and the report adds
+arena-selective write units: holder units that open at the goal for some
+arenas and stay shut for others, the slot-per-arena mechanism.
 
 Runs 64 lifetimes of 6 visits on held-out arenas and records the GRU's update
 gate z (h_new = z * h_old + (1 - z) * n) at every step: how much of each
@@ -24,14 +29,16 @@ model = te.build(a, dev)
 model.load_state_dict(ck["model"])
 model.eval()
 H, B, N, S = a.hidden, 64, 6, a.visit_steps
-gp = GpuPool(EnvPool(100, seed=a.seed + 2), dev)
+POOL = int(sys.argv[2]) if len(sys.argv) > 2 else 0
+gp = GpuPool(EnvPool(POOL, seed=a.seed + 1) if POOL else EnvPool(100, seed=a.seed + 2), dev)
+N = min(N, len(gp))
 g = torch.Generator().manual_seed(0)
 W_i, W_h = model.gru.weight_ih_l0[H:2 * H], model.gru.weight_hh_l0[H:2 * H]
 b = model.gru.bias_ih_l0[H:2 * H] + model.gru.bias_hh_l0[H:2 * H]
 env = torch.rand(B, len(gp), generator=g).argsort(1)[:, :N]
 off, goal, _ = place(B, N, dev, g)
 h = model.init_state(B, dev)
-zs, flags = [], []
+zs, flags, arenas = [], [], []
 with torch.no_grad():
     for t in range(N):
         path, psi, first, _ = te.visit_path(goal[:, t], a, dev, g)
@@ -42,9 +49,11 @@ with torch.no_grad():
             z = torch.sigmoid(inp @ W_i.T + h[-1] @ W_h.T + b)        # (B, H)
             zs.append(z)
             flags.append(first[s])
+            arenas.append(env[:, t])
             _, _, h = model(x[s:s + 1], h, extra=ex[s:s + 1])
 z = torch.stack(zs)                       # (steps, B, H)
 fl = torch.stack(flags)                   # (steps, B)
+ar = torch.stack(arenas)                  # (steps, B) arena index at each step
 print(f"{sys.argv[1].split('/')[-2]}  step {ck['step']}")
 print(f"mean z: all steps {z.mean():.3f} | steps at the goal flag {z[fl].mean():.3f} | "
       f"other steps {z[~fl].mean():.3f}")
@@ -87,3 +96,17 @@ if w.any():
           + " ".join(f"{float(v):.2f}" for v in opens.sort(descending=True).values))
     k = (zflag < 0.3) & (zn > 0.95)[None]           # holder-ish units opening per event
     print(f"  holder-ish units opening per goal arrival: mean {float(k.sum(1).float().mean()):.1f}")
+# Arena-selective write units (the slot mechanism): holder-ish units whose
+# opening at the goal depends on the arena. Per unit and arena, the fraction of
+# goal arrivals in that arena at which the unit opens (z < 0.3).
+zflag, aflag = z[fl], ar[fl]
+arena_ids = aflag.unique()
+if len(arena_ids) <= 32:
+    P = torch.stack([(zflag[aflag == e] < 0.3).float().mean(0) for e in arena_ids])  # (arenas, H)
+    hold = zn > 0.95
+    sel = hold & (P.max(0).values > 0.5) & (P.min(0).values < 0.1)
+    print(f"  arena-selective write units (z > 0.95 elsewhere; open in > half the arrivals "
+          f"for some arena, < 10% for another): {int(sel.sum())} of {H}")
+    if sel.any():
+        print(f"    arenas each opens for (of {len(arena_ids)}): "
+              + " ".join(str(int((P[:, i] > 0.5).sum())) for i in sel.nonzero().flatten()[:20]))
