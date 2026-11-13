@@ -1615,15 +1615,32 @@ scored 0.05 to 0.25, below the model's own read, so they cannot test storage.
 They face the same matching problem as the GRU and stall on it within 4000
 steps.
 
+How the trained networks use their gates (`analysis/idea4/gate_stats.py`,
+64 lifetimes of 6 visits). A GRU unit updates as h_new = z h_old + (1 - z) n,
+where z, the update gate, is set by the input and state. The networks split
+their units in two. About 40 to 50% are holders: z above 0.999 at nearly
+every step, keeping over 90% of their value through a whole 40-step visit.
+The rest are fast units, overwritten within a few steps. But no holder ever
+opens at the goal flag: of the units with z above 0.99 away from the flag,
+none drops below 0.9 at the flag (0 of 215 at width 512, 0 of 489 at width
+1024). The units whose gate does drop at the flag are leaky ones (z about 0.7
+to 0.9 elsewhere, 0.1 to 0.3 at the flag), and they keep almost nothing
+through a later visit. So the networks write goals into units that do not
+hold and hold with units that are never written. They have not learned to
+open a protected slot at the goal, write it, and close it again. The old goals
+they keep at 0.3 to 0.4 presumably survive by being passed around among the
+leaky units, which degrades with every later visit.
+
 Reading. Training already asks for every earlier goal after each visit and
 backpropagates through the whole lifetime, so forgetting is in the loss. The
-network still does not learn to protect old goals. Two likely reasons, being
-tested next: PyTorch's GRU starts with its update gate near 0.5, so every step
-half-replaces the state and protecting old goals has to be learned against a
-gradient that crosses hundreds of steps; and training carries at most 40 read
-steps between visits, while the test reads for hundreds. The runs: chrono
-initialisation of the update gate (`--chrono 2000`), carried reads up to 120
-steps (`--R_max 120`), and both, each curriculum width 512 to 60k steps.
+network still does not learn the gated write. Two things are being tested.
+Chrono initialisation of the update gate (`--chrono 2000`) starts every unit
+as a holder, so the network has to learn to open units at the goal, and the
+gradient for an old goal crosses held units nearly intact instead of shrinking
+at every step. Carried reads up to 120 steps (`--R_max 120`) target only the
+smaller loss from reading in sequence, since training carries at most 40 read
+steps between visits while the test reads for hundreds. The runs: chrono,
+long reads, and both, each curriculum width 512 to 60k steps.
 
 ## 8. Decisions and open items
 
