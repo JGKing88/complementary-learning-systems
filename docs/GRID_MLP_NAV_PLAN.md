@@ -1668,6 +1668,59 @@ the slot needs the gate to depend jointly on the flag and the arena's view,
 and reading needs the matching slot to be selected by the view at read time.
 A generic GRU trained by gradient descent found neither.
 
+### 7b.8 Training pushes: weighting old goals, a recurring arena pool (2026-11-13)
+
+No training change raised how much the memory holds. Every recipe tried holds
+about 2.5 to 3 goals' worth: accuracy times N is 2.4 to 2.8 at N = 6, 2.4 to
+2.9 at N = 10 and 2.8 to 3.2 at N = 20, for widths 512 and 1024, with or
+without the curriculum, chrono, long reads or the weighting below. The
+weighting moves which goals are kept, not how many.
+
+Runs (width 512, no curriculum, 60k steps; jobs 28984875, 28984876,
+28984878, 28992265). `--age_power g` weights each visited arena's goal in the
+copy-read loss by (age + 1) ** g, age = visits since it was written, rescaled
+to mean 1. `--pool_schedule` draws lifetimes from a small pool of training
+arenas that recur with fresh goals, growing 8 (from step 0), 16 (10k), 64
+(20k), 256 (30k), 4000 (40k). Test as §7b.6 (64 lifetimes, held-out arenas,
+copy accuracy with sequence accuracy in brackets):
+
+| run | N = 2 | N = 6 | N = 10 | N = 20 |
+|---|---|---|---|---|
+| plain (control, §7b.6) | 0.66 (0.60) | 0.40 (0.37) | 0.29 (0.26) | 0.16 (0.14) |
+| g = 1 | 0.64 (0.62) | 0.41 (0.38) | 0.27 (0.25) | 0.15 (0.14) |
+| g = 2 | 0.60 (0.54) | 0.39 (0.32) | 0.24 (0.18) | 0.15 (0.11) |
+| g = 1, 6 to 20 arenas | 0.64 (0.65) | 0.40 (0.39) | 0.26 (0.26) | 0.16 (0.15) |
+| growing pool | 0.68 (0.43) | 0.25 (0.16) | 0.16 (0.10) | 0.10 (0.06) |
+
+With the weighting, the oldest arena is kept better than the newest (at
+N = 6, oldest 0.49 and newest 0.28 for g = 1; 0.56 and 0.25 for g = 2), the
+reverse of every unweighted run.
+
+The pool run says where the barrier is. While arenas recur, gradient descent
+finds a memory in activity that holds many goals with little forgetting:
+
+| pool, at the end of its stage | recurring arenas, N = 6 | N = 10 | held-out, N = 2 | held-out, N = 6 |
+|---|---|---|---|---|
+| 8 (step 9k) | 0.89 (seq 0.85) | | 0.14 | 0.06 |
+| 16 (19k) | 0.88 (0.84) | 0.70 | 0.31 | 0.11 |
+| 64 (29k) | 0.60 (0.52) | 0.41 | 0.38 | 0.16 |
+| 256 (39k) | 0.46 (0.37) | 0.31 | 0.56 | 0.19 |
+
+On 8 recurring arenas it holds 6 goals at 0.89, oldest 0.94, close to idea 1,
+within 9k steps. Its gates show no arena-selective write units, so the
+arena-specific routing is learned into the input weights, not chosen by view
+in the state. That memory does not carry over to new arenas (0.06 at N = 6
+held out), and as the pool grows it degrades into the same recency store as
+every other run (newest 0.88, oldest 0.47 at 256 arenas).
+
+Reading. The capacity of the state and the coordination of writes and reads
+are not the barrier: with known arenas the same network holds 6 to 10 goals.
+The barrier is addressing a new arena: giving a never-seen arena a place in
+the state from its views within the lifetime, and finding that place again
+from a different view. Gradient descent learns the arena-specific version when
+arena identities can be stored in the weights, and does not turn it into the
+general one.
+
 ## 8. Decisions and open items
 
 | | |
