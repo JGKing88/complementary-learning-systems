@@ -40,9 +40,9 @@ def edge_point(x0, y0, x1, y1, r):
     return x1 + r * dx / d, y1 + r * dy / d
 
 
-fig = plt.figure(figsize=(4.6, 2.6))
+fig = plt.figure(figsize=(4.85, 2.6))
 ax = fig.add_axes([0, 0, 1, 1])
-ax.set_xlim(-2.4, 19.2)
+ax.set_xlim(-2.4, 20.4)
 ax.set_ylim(1.0, 12.9)
 ax.set_aspect("equal")
 ax.axis("off")
@@ -104,7 +104,9 @@ for k in range(3):   # more angle units
 
 bx = 17.3
 ax.plot([bx, bx + 0.3, bx + 0.3, bx], [9.9, 9.9, 4.0, 4.0], color=INK_2, lw=0.7)
-rich(ax, bx + 0.6, 6.95, [("z", "i"), ("(", ""), ("x", "i"), (")", "")], ha="left", size=8.5)
+rich(ax, bx + 0.6, 7.35, [("z", "i"), ("(", ""), ("x", "i"), (")", "")], ha="left", size=8.5)
+rich(ax, bx + 0.6, 6.45, [("×", "g"), (" ", ""), ("√", "g"), ("(2/", ""), ("M", "i"), (")", "")], ha="left",
+     size=7.5, color=INK_2)
 
 style.save(fig, "phase_network", pad=0.02)
 print("saved; weights", {n: crt_weights(n) for n, _, _ in ANGLES}, "active", [X % l for l in LAMS])
