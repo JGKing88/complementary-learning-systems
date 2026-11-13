@@ -5,7 +5,7 @@
 Same network as phase_network.py (modules of period 3, 4, 5, L = 60), but each
 angle unit's weights j_l are random whole numbers in 0..lambda_l - 1, so its
 frequency n is uniform over all 60. Panel a: 12 such units, each with its output
-cos(omega_n x) over the arena. Panel b: each unit kept with probability
+cos(omega_n x), drawn as a smooth curve over the first 20 cells. Panel b: each unit kept with probability
 exp(-r^2 omega_n^2 / 2) (r = 2.5 cells); the survivors are mostly slow.
 Writes phase_network_pruned.pdf (core Helvetica/Symbol) and .png here.
 """
@@ -30,6 +30,7 @@ PHX, PR = 3.4, 0.5
 ANX, AR = 7.0, 0.26
 WX0, WX1, WAMP = 7.6, 11.4, 0.3
 OFFSET_B = 14.8
+XSPAN = 20                                # cells of arena shown beside each unit
 
 g = np.random.default_rng(SEED)
 J = np.stack([g.integers(0, lam, U) for lam in LAMS], 1)
@@ -74,7 +75,7 @@ def panel(ox, pruned):
         top = ys[-1] - PITCH - GAP
 
     ys = np.linspace(11.45, 1.75, U)
-    xs = np.arange(L)
+    xs = np.linspace(0, XSPAN, 600)          # smooth curve over the first XSPAN cells
     for u, y in enumerate(ys):
         alive = KEEP[u] or not pruned
         node_col = KEEP_COL if (pruned and KEEP[u]) else (INK_2 if alive else FADED)
@@ -86,7 +87,7 @@ def panel(ox, pruned):
                         lw=0.8 if pruned else 0.4, zorder=1)
         ax.add_patch(Circle((ox + ANX, y), AR, facecolor=node_col if (pruned and KEEP[u]) else "white",
                             edgecolor=node_col, lw=0.9, zorder=3))
-        wx = ox + WX0 + (WX1 - WX0) * xs / (L - 1)
+        wx = ox + WX0 + (WX1 - WX0) * xs / XSPAN
         ax.plot(wx, y + WAMP * np.cos(2 * np.pi * N[u] * xs / L),
                 color=node_col if alive else FADED, lw=0.6 if alive else 0.5, zorder=2)
 
