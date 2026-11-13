@@ -1,6 +1,6 @@
 # The ideal encoder as Hopfield input
 
-*Started 2026-09-30; map current as of 2026-11-11 (through the §23 audit).
+*Started 2026-09-30; map current as of 2026-11-13 (through §25).
 Branch `worktree-agent-a792a678d5a963123`. **The final model, written up on its
 own: "Grid Wave Encoder" (claude.ai/artifact/Y5MEj7eVXURFJJg6MKih4J).** Other
 pages: "The Ideal Grid Encoder" (teaching,
@@ -119,6 +119,8 @@ collapse onto coarse patterns).
 | 21.1 | More boxes, longer walks; L1 and L3 both local in the probe | Fully online network (lock-in L1 + depression L3, one 14-box) matches the ideal on reach and exact retrieval, basin ~2 cells smaller; the lock-in counts are biased toward strong patterns in every run; under noise a slow rate over 1M steps brings the shift rule to its twin, lock-in still falls short |
 | 22 | Fully online and noise-robust: concurrent L1/L3, noise scaling, noise-trained networks, test-time noise | Concurrent works with a late L3 window (basin 29–30); under noise steps matter most and a slow fixed rate reaches the twin by 3M steps; the noise-trained shift-rule network navigates like exact; the fully online one navigates with 9° error and some dead goals; with noisy cues and goals the network is unaffected at test noise 0.01, the ideal (fairly implemented) keeps reach but half the basin and fails at 0.03 |
 | 23 | Audit of §21–22 | No supervision reaches the weights; one bug (noisy trace gains dropped slow units) fixed and rerun; tuning against the truth, oracle what-ifs, the ideal's harmonics, the clean readout basis and the edge-strip regions now stated |
+| 24 | Is gradient descent (att0.5) finding the ideal's function? Spectra of the trained encoders | Near field yes (half-width 18.7, 661 effective waves); far field no: low module harmonics give aliases at one-module shifts (0.70 at 786 cells) and a position-dependent code; the grid wave network matches the ideal except a larger alias (0.18–0.20) |
+| 25 | Pool size, keep rules, alternatives to pruning | Quality is set by effective units: pool/(πr²) for depression, pool/(2πr²) for pruning (alias about √2 higher); every code is monotonic near the goal, and fewer units fail by far aliases; phase noise breaks monotonicity, walks fail at 0.1 cells; biasing j small copies the goal 787 cells away; rewiring trades pool for time (about 2πr² tries per neuron, τ ≈ 9r²/κ′) |
 
 **Open**
 
@@ -137,7 +139,12 @@ collapse onto coarse patterns).
 - Why a single box of side 20 leaves module 13 ten times noisier than boxes of
   side 14, 40 or 80 (§22.2).
 - The eigenvector step of route 1 as a network (§21).
-- Stochastic pruning (elimination) simulated as an online process (§20.2):
+- Rewiring instead of pruning (§25.7) in the full network: grid code, learned L1 and the
+  probe; and whether stabilising a set after T steps can be a local rule.
+- The trap and walk test (§25.3) with cell-activity noise for the grid wave network, to
+  compare with the phase-jitter result for phase-readout codes.
+- Stochastic pruning (elimination) simulated as an online process (§20.2; frequency-level
+  scaling in §25.4):
   remove each L2 unit with probability κ′d per step, κ′T = 2κT = 256 (twice
   the depression rule's κT, because survival must equal w²); on the final
   model's learned L1 and in the probe. Written up as the alternative L3 rule
@@ -234,6 +241,24 @@ launched by `run_gwn.sh <mode>`; results under `.../hopfield_probe/gwn/`.
 
 Probe tasks (`run_gwn.sh probe`, rows in `gwn/summary.md`): 0–25 §20, 26–31
 §21, 32–37 §21.1, 38–45 §22.4 (test-time noise), 46 on §22.1/22.3.
+
+**Kernel-scaling scripts (§25)**, in `analysis/hopfield_probe/kernel_scaling/` unless noted.
+Frequency-level, CPU only; run on a compute node. They print results to stdout except the
+pool figures (`gwn/figures/`).
+
+| script | question | § | output |
+|---|---|---|---|
+| `monotone_rays.py` | is the kernel strictly decreasing along rays to 2r and 3r? | 25.2 | stdout |
+| `local_maxima.py` | traps on the 2D grid within 2r and 3r; trained network included | 25.2 | stdout |
+| `stress_units_noise.py` | traps and greedy walks with fewer units and phase noise | 25.3 | stdout |
+| `aliases_whole_arena.py` | largest similarity and far peaks over the whole arena | 25.3 | stdout |
+| `figures/pool_quality_data.py`, `figures/pool_quality.py` | pool size vs largest alias and near-goal similarity; `prune` argument for pruning | 25.4 | `gwn/figures/pool_quality*.{json,pdf,png}` |
+| `prune_scaling.py` | stochastic pruning: survivors, far sd and alias vs predictions | 25.4 | stdout |
+| `keep_rules.py` | keep rules at equal output size | 25.5 | stdout |
+| `lenient_prune.py` | lenient pruning plus graded weights | 25.5 | stdout |
+| `small_j_bias.py` | weights biased toward small values | 25.6 | stdout |
+| `rewire.py` | rewiring instead of pruning | 25.7 | stdout |
+| `kappa_steps.py` | depression: κ against steps at a fixed width | 25.8 | stdout |
 
 ## First result: the ideal encoder in the probe (2026-09-30)
 
@@ -2505,3 +2530,242 @@ one A100), `figures/trained_spectrum_figs.py` (spectrum_main, spectrum_maps, spe
 spectrum_translation, spectrum_summary.json). Data:
 `/orcd/pool/003/jackking/cls_runs/results/hopfield_probe/spectrum/`.
 
+## 25. Pool size, keep rules and alternatives to pruning (2026-11-12/13)
+
+**Question.** How large must the L2 pool be, how does each L3 rule spend it, and can learning
+time replace pool size?
+
+**Method.** Frequency-level simulations of the exact twin unless stated. A pool of P units has
+frequencies uniform over the 1716 × 1716 torus, which is what random triples of exact L1 waves
+give (each triple is one frequency, §20). L3 weights or survival come in closed form: for an
+exact wave, the change on a step along axis i is always 2 − 2 cos ω_i, so after a walk with
+T_1 and T_2 steps on the two axes (binomial), depression leaves
+w² = (1 − κ(2 − 2cos ω₁))^(2T₁) (1 − κ(2 − 2cos ω₂))^(2T₂), and elimination leaves the unit with
+probability (1 − κ′(2 − 2cos ω₁))^(T₁) (1 − κ′(2 − 2cos ω₂))^(T₂). The kernel over all 1716²
+displacements comes from one 2D FFT (each unit's w² placed at its frequency). No grid code, no
+learned L1, no probe, except where the trained network is named.
+
+### 25.1 Measures
+
+- **Largest alias:** the largest similarity to the goal beyond 3r over the whole arena, exact.
+  An alias a looks like a point r√(2 ln(1/a)) from the goal: 0.5 → 1.18r, 0.25 → 1.67r,
+  0.195 → 1.81r, 0.12 → 2.06r. Earlier probe work lost reach once far aliases passed about 0.25.
+- **Shape:** half-width against r√(2 ln 2) (18.84 at r = 16).
+- **Near the goal:** the mean similarity on the circles at r and 2r, the least similarity within
+  r and 2r, and traps (cells other than the goal with no more-similar 4-neighbour).
+- **Effective units** n_eff = (Σw²)²/Σw⁴, the count for equal weights. The far-field sd is
+  1/√(2 n_eff), and the largest alias is a few times that. A closed form from the peaks of a
+  smooth Gaussian field, a ≈ t/√(2 n_eff) with t² = 2 ln B + ln(2 ln B),
+  B = L²/((2π)^(3/2) ℓ²), ℓ = r for sampled codes and √2 r for graded weights, fits the measured
+  aliases to 5% at the median; √(2 ln(L/r)/n_eff) runs 10–20% high. The figures stay empirical.
+
+### 25.2 Near the goal: strictly decreasing, no traps (clean codes)
+
+| code | traps within 2r | traps within 3r | rays (of 16) rising before 3r |
+|---|---|---|---|
+| trained network (1,306 units) | 0 | 0 | 0 |
+| ideal, 512 frequencies (10 draws) | 0 | 0 | 0–3, first at 45–47 cells |
+| uniform 400k + depression (10 draws) | 0 | 0 | 0–1, first at 47–48 cells |
+
+The exact depression kernel (every frequency, 300 walks per κ, along the axes) never rises before
+3r for κ ≤ 2; at κ = 5 (T = 26), 6 of 600 rise between 2r and 3r. At 2r the Gaussian falls
+0.017 per cell while the far-field noise slopes about 0.002 per cell; at 3r both are about
+0.002, which is where the first rises appear.
+
+### 25.3 Fewer units and phase noise
+
+Phase noise: each evaluation adds N(0, s²) cells to each of the six phases of a phase-readout code
+(the ideal's construction with centred CRT weights; uniform-pool codes use the same readout).
+Traps are counted in one noisy snapshot of the ~3,200 cells within 2r; walks step to the most
+similar 4-neighbour, re-reading the noisy code each step, from 16 starts at 2r (success = within
+2 cells by 100 steps). Three networks per row.
+
+| code | units | traps within 2r at s = 0 / 0.02 / 0.05 / 0.1 cells | walks reaching the goal (of 48) |
+|---|---|---|---|
+| ideal | 512 | 0 / 3–9 / 206–240 / 535–566 | 48 / 48 / 48 / 9 |
+| ideal | 128 | 0 / 13–20 / 248–325 / 556–605 | 48 / 48 / 48 / 17 |
+| ideal | 32 | 0 / 86–125 / 394–400 / 553–588 | 46 / 47 / 45 / 11 |
+| uniform 400k + depression | 1,300 | 0 / 4–8 / 177–240 / 570–584 | 48 / 48 / 47 / 12 |
+| uniform 100k + depression | 340 | 0 / 9–12 / 168–313 / 485–569 | 48 / 48 / 48 / 25 |
+| uniform 25k + depression | 71 | 0 / 63–213 / 366–517 / 580–616 | 48 / 48 / 46 / 9 |
+
+Clean codes over the whole arena:
+
+| code | units | largest similarity beyond 3r | far peaks above k(2r) = 0.135 | far peaks above 0.25 |
+|---|---|---|---|---|
+| trained network | 1,306 | 0.195 | 8 | 0 |
+| ideal | 512 | 0.11–0.14 | 0–4 | 0 |
+| ideal | 128 | 0.24–0.29 | 146–193 | 0–4 |
+| ideal | 32 | 0.46–0.53 | 714–932 | 224–284 |
+| uniform 400k + depression | 1,300 | 0.11–0.13 | 0 | 0 |
+| uniform 100k + depression | 340 | 0.21–0.26 | 62–86 | 0–1 |
+| uniform 25k + depression | 71 | 0.40–0.54 | 307–452 | 72–268 |
+
+1. **Fewer units fail by far aliases, not near the goal.** Even 32 frequencies leave no trap
+   within 2r, but they leave hundreds of far peaks above 0.25.
+2. **Phase noise breaks monotonicity, and more units do not help.** Every unit reads the same six
+   noisy phases, and slow units need weights near λ/2, which amplify each phase error. Walks
+   survive s = 0.05 because they re-read the code; they fail at 0.1.
+3. The noise test is jitter in decoded phases. It does not apply as is to the grid wave network,
+   which reads wave amplitudes from the cells (§22.4).
+
+### 25.4 Pool size against quality: depression and pruning
+
+Depression with κ = 0.005 and κT = r²/2; elimination with κ′ = 0.01 and κ′T = r² (survival must
+equal P_n/P_0, while a weight enters the kernel squared), survivors at weight 1. Pools 25k–6.4M,
+r = 8, 16, 32, three seeds. Figures `pool_quality.pdf` (depression) and `pool_quality_prune.pdf`.
+
+| r | pool | depression: n_eff, largest alias | pruning: survivors, largest alias |
+|---|---|---|---|
+| 8 | 100k | 505, 0.131 | 249, 0.185 |
+| 8 | 400k | 2,039, 0.065 | 1,003, 0.096 |
+| 16 | 100k | 128, 0.233 | 62, 0.331 |
+| 16 | 400k | 507, 0.115 | 264, 0.166 |
+| 16 | 1.6M | 1,983, 0.056 | 1,030, 0.085 |
+| 16 | 6.4M | 7,984, 0.031 | 4,037, 0.043 |
+| 32 | 400k | 121, 0.225 | 61, 0.315 |
+| 32 | 1.6M | 498, 0.092 | 247, 0.146 |
+| 32 | 6.4M | 1,987, 0.049 | 1,020, 0.081 |
+
+1. **One number sets the quality.** n_eff = P/(πr²) for depression and survivors = P/(2πr²) for
+   pruning, as predicted (P/(πr²) = 497 and P/(2πr²) = 249 at r = 16, 400k). Plotted against
+   effective units, all widths fall on one curve, and the far-field sd is exactly 1/√(2 n_eff).
+2. **The largest alias falls as 1/√pool.** Pruning's is about √2 higher at every pool (ratio
+   1.36–1.64). To bring it below k(2r) = 0.135 takes about 100k / 250k / 1M units for depression
+   and 250k / 800k / 2M for pruning at r = 8 / 16 / 32. Doubling r costs 4× the pool.
+3. **The shape is unbiased but noisy at small counts.** With 250 or more effective units the
+   half-width is within −4% to +4% of the target for depression and −7% to +6% for pruning,
+   scattered around it; below 100 the scatter reaches −13% to +22% (depression) and −39% to +60%
+   (pruning, r = 32).
+4. **Near the goal the Gaussian holds on average, and the weakest point dips by the noise.**
+
+   | r | pool | mean at r (0.607) | least within r | mean at 2r (0.135) | least within 2r |
+   |---|---|---|---|---|---|
+   | 16 | 100k | 0.603 | 0.583 | 0.133 | 0.086 |
+   | 16 | 400k | 0.597 | 0.589 | 0.126 | 0.099 |
+   | 16 | 1.6M | 0.608 | 0.604 | 0.140 | 0.133 |
+   | 16 | 6.4M | 0.606 | 0.605 | 0.137 | 0.133 |
+   | 8 | 100k | 0.609 | 0.601 | 0.139 | 0.118 |
+   | 32 | 400k | 0.612 | 0.589 | 0.153 | 0.099 |
+   | 32 | 100k | 0.609 | 0.550 | 0.132 | 0.021 (−0.16 to 0.13) |
+
+5. **Why the pool is so large.** Each L2 unit picks its three inputs independently, so its
+   frequency is uniform over all L² frequencies, while the kernel uses a disc of radius about 1/r:
+   one unit in πr² counts (one in 2πr² for pruning), about 1 in 800 at r = 16. A uniform pool
+   weighted by P is statistically the same as draws from P (400k uniform units ≈ 500 effective
+   ≈ the ideal's 512 draws, alias 0.115 against 0.12); the cost is only the waste. Slowness is a
+   property of the three inputs together (n = 1 needs j = (6, −1, 7)), so no bias on single
+   inputs can target it (§25.6).
+
+The pruning simulation agrees with the scaling run `prune_scaling.py` (r = 16: 251 survivors at
+400k against 249 predicted, far sd 0.045 against 0.045, half-width 18.7).
+
+### 25.5 Keep rules at equal output size; lenient pruning plus weights
+
+At 512 kept units (M = 1024), r = 16, three seeds:
+
+| keep rule | units kept | n_eff | half-width (18.84) | largest alias |
+|---|---|---|---|---|
+| ideal: 512 drawn from P | 512 | 512 | 19.2 | 0.12–0.13 |
+| stochastic pruning, 823k pool | 533 | 533 | 19.2 | 0.11–0.13 |
+| graded, 155k pool, top 512 hold 99.4% of Σw² | 512 | 199 | 18.3 | 0.17–0.19 |
+| graded, 400k pool, top 512 (hold 87%) | 512 | 383 | **21.6** | 0.13–0.15 |
+
+A fixed count from a large graded pool truncates the spectrum and widens the kernel; with graded
+weights, cut by mass (the dropped share bounds the kernel error at 2× that share). Graded weights
+cost about ln(200)/2 = 2.65 kept units per effective unit at a 99.5% cut. Pruning matches the
+ideal per kept unit and costs 2πr² pool units per survivor.
+
+Lenient pruning (survival exp(−r₁² v̄), r₁ < r) followed by graded weights for the rest
+(w² = exp(−(r² − r₁²) v̄)), 400k pool, r = 16:
+
+| r₁ | survivors (P/(2πr₁²)) | n_eff (P(2r² − r₁²)/(2πr⁴)) | half-width | largest alias |
+|---|---|---|---|---|
+| 16 (pure pruning) | 251 (249) | 251 (249) | 18.7 | 0.155–0.167 |
+| 12 | 461 (442) | 368 (357) | 18.2 | 0.122–0.140 |
+| 8 | 1,026 (995) | 437 (435) | 18.4 | 0.121–0.124 |
+| 4 | 4,102 (3,979) | 487 (482) | 18.4 | 0.118–0.121 |
+| 0 (pure graded) | 400,000 | 507 (497) | 18.3 | 0.111–0.118 |
+
+r₁ = r/2 keeps 87% of the graded limit with 1,026 survivors instead of 400,000 weighted units.
+No keep or weighting rule on a uniform pool beats n_eff = P/(πr²) = P/(L² Σ P_n²).
+
+### 25.6 Biasing the weights toward small values
+
+Each module's centred weight j drawn from a discrete Gaussian of sd s instead of uniformly;
+pools sized for about 512 survivors (pruning) or 512 effective units (importance weights
+w² = P/q, q the biased sampling distribution), capped at 4M units:
+
+| j distribution | pruning: units per survivor, half-width, largest alias | importance weights: units per effective unit, largest alias |
+|---|---|---|
+| uniform | 1,607, 19.9, 0.116 | 803, 0.101 |
+| sd 3 | 1,043, 20.2, **0.69 at (786, 0)** | 5,738, 0.116 |
+| sd 2 | 363, 21.1, **0.91 at (786, 0)** | 1.2 million (n_eff 89 from 4M), 0.31 |
+| sd 1 | 37, 26.6, **0.98 at (787, 0)** | astronomical (n_eff 31 from 4M), 0.91 |
+
+Small weights with opposite signs read only the beats between neighbouring modules, 1/132 and
+1/156 cycles per cell, so the slow waves they make are n = 13a − 11b with small a, b. The two
+beats realign after about 787 cells (6 × 132 = 792, 5 × 156 = 780), where every such wave is
+back in phase: a copy of the goal. This is the mechanism of att0.5's aliases at one-module
+shifts (§24, power on |j| ≤ 1). Importance weights remove the copy only by down-weighting the
+over-sampled waves, and the waves that need large weights (n = 1: (−5, −1, −6) centred) become
+rare, so the pool grows. The bias pays only if every arena is smaller than about 787 cells.
+
+### 25.7 Rewiring instead of pruning
+
+**Rule.** A unit not yet permanent is removed with probability κ′d per step, as in elimination,
+but the neuron survives: it replaces its three inputs with a new random set and resets its age.
+A set that lasts T = r²/κ′ steps becomes permanent, at weight 1.
+
+**Why kept sets follow P.** A new set has a uniform frequency and passes with probability
+s_n ≈ P_n/P_0, so P(kept n) = s_n / Σ_m s_m = P_n. Each permanent unit is an independent draw
+from P. A try passes with probability 1/(2πr²), so a neuron needs about 2πr² ≈ 1,600 tries at
+r = 16. Most tries fail in a few dozen steps (a random wave changes by d ≈ 2 per step).
+
+512 neurons, r = 16:
+
+| κ′ (T) | steps until 50% / 90% / 100% permanent | tries per neuron, mean (median) | half-width | largest alias |
+|---|---|---|---|---|
+| 0.01 (25,600) | 157k / 498k / 1.56M | 1,626 (1,043) | 18.84 | 0.102 |
+| 0.05 (5,120) | 34k / 97k / 331k | 1,612 (1,175) | 19.9 | 0.120 |
+| 0.2 (1,280) | 7.6k / 26k / 82k | 1,587 (997) | 18.7 | 0.127 |
+
+1. 512 neurons reach the 512-frequency ideal's quality, against 400–800k units built for
+   depression or pruning.
+2. The fraction permanent after t steps is about 1 − exp(−t/τ), τ ≈ 9r²/κ′ (225k steps at
+   κ′ = 0.01, 45k at 0.05, 11k at 0.2). To end with m units after t steps takes about
+   N ≈ m/(1 − exp(−t/τ)) neurons: N ≈ m for a 300k-step walk at κ′ = 0.05, 1.35m at κ′ = 0.01,
+   23m for a 10k-step walk at κ′ = 0.01. Starting with 1.1m and stopping at 90% skips the tail.
+3. A larger κ′ is faster but shortens T, so the width varies more between walks (§25.8).
+4. Biology needed: synapse turnover driven by the unit's own output change, stabilisation of a
+   set that lasted T steps, and random new partners. Neurons do not die.
+
+### 25.8 κ against steps for the depression rule
+
+Only κT sets the width (r² = 2κT). At r = 16 (κT = 128), exact weights with all frequencies,
+300 walks per κ, along one axis:
+
+| κ | T | half-width (18.84) | walk-to-walk spread | max gap from the Gaussian | same with exactly T/2 steps per axis |
+|---|---|---|---|---|---|
+| 0.005 | 25,600 | 18.83 | 0.3% | 0.002 | 0.0005 |
+| 0.05 | 2,560 | 18.84 | 1.0% | 0.006 | 0.0004 |
+| 0.5 | 256 | 18.83 | 3.2% | 0.019 | 0.0010 |
+| 1 | 128 | 18.85 | 4.5% | 0.027 | 0.0026 |
+| 2 | 64 | 18.85 | 6.1% | 0.036 | 0.0057 |
+| 5 | 26 | 19.25 | 10% | 0.063 | 0.020 |
+
+The binomial split of steps between the axes makes the width wobble by about 1/(2√T) and the
+kernel slightly elliptical; that dominates. The log approximation log(1 − κd) ≈ −κd costs little,
+because the slow units that matter have κd ≈ c/(2T); it shows only near T = 26 (+3% width).
+
+**Not done.** Rewiring and stochastic pruning in the full network (grid code, learned L1, probe);
+the trap and walk test with cell-activity noise for the grid wave network, to compare with the
+phase-jitter result for phase-readout codes.
+
+Files: `analysis/hopfield_probe/kernel_scaling/` (`monotone_rays.py`, `local_maxima.py`,
+`stress_units_noise.py`, `aliases_whole_arena.py`, `prune_scaling.py`, `keep_rules.py`,
+`lenient_prune.py`, `small_j_bias.py`, `rewire.py`, `kappa_steps.py`; stdout only) and
+`analysis/hopfield_probe/figures/pool_quality_data.py`, `pool_quality.py` (argument `prune` for
+the pruning version). Figures and data:
+`/orcd/pool/003/jackking/cls_runs/results/hopfield_probe/gwn/figures/` (`pool_quality*.{json,pdf,png}`,
+`phase_network*.{pdf,png}`). Runs were on a pi_evelina9 allocation, CPU only.
