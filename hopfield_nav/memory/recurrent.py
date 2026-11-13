@@ -55,15 +55,19 @@ class RecurrentMemory(nn.Module):
     def init_state(self, B: int, device) -> torch.Tensor:
         return torch.zeros(self.layers, B, self.hidden, device=device)
 
-    def forward(self, x, h, goal=None):
+    def forward(self, x, h, goal=None, extra=None):
         """Step through a sequence.
 
-        x (T, B, 360) canvas views; h (layers, B, hidden); goal (T, B, 12) goal
-        phases for a write, or None for reads. Returns phases (T, B, 12), the
-        c logit (T, B) and the new state."""
+        x (T, B, 360) canvas views; h (layers, B, hidden). The 13 extra inputs
+        are either ``extra`` (T, B, 13) as given, which the experience-based
+        trainer uses for the agent's own grid phases and the at-goal flag, or
+        ``goal`` (T, B, 12) goal phases plus a write flag of 1, or zeros.
+        Returns phases (T, B, 12), the c logit (T, B) and the new state."""
         e = self.enc(x)
         flag = torch.zeros(*x.shape[:2], 1, device=x.device)
-        if goal is None:
+        if extra is not None:
+            w = extra
+        elif goal is None:
             w = torch.zeros(*x.shape[:2], N_PHASE + 1, device=x.device)
         else:
             w = torch.cat([goal, flag + 1.0], -1)

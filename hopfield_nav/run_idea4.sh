@@ -28,6 +28,8 @@ SEED=${SEED:-0}
 STEPS=${STEPS:-20000}
 TAG=${TAG:-}
 EXTRA=${EXTRA:-}
+# SCRIPT=train_experience: goals from experience (grid phases + at-goal flag), no writes.
+SCRIPT=${SCRIPT:-train_memory}
 
 cd "$REPO"
 module load miniforge/24.3.0-0
@@ -36,12 +38,12 @@ source activate cls
 unset CUDA_VISIBLE_DEVICES
 source scripts/cls_env.sh
 
-OUT=$CLS_RUNS/idea4/h${H}${TAG:+_$TAG}_s${SEED}
+OUT=$CLS_RUNS/idea4/${SCRIPT#train_}_h${H}${TAG:+_$TAG}_s${SEED}
 mkdir -p "$OUT"
 RESUME=()
 if [ -f "$OUT/memory.pt" ]; then RESUME=(--init_ckpt "$OUT/memory.pt"); fi
 echo "[idea4] hidden $H seed $SEED -> $OUT  repo $REPO  $(date)"
 nvidia-smi --query-gpu=name,memory.total --format=csv,noheader
-python -u -m analysis.idea4.train_memory --out "$OUT" --hidden "$H" --seed "$SEED" \
+python -u -m analysis.idea4.$SCRIPT --out "$OUT" --hidden "$H" --seed "$SEED" \
     --steps "$STEPS" "${RESUME[@]}" $EXTRA
 echo "[idea4] done $(date)"

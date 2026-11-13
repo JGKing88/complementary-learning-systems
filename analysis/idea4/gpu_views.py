@@ -95,6 +95,45 @@ def walk(B: int, steps: int, device, gen=None):
     return xy[..., 0], xy[..., 1], k * (math.pi / 2) + jitter
 
 
+def rw_from(start, steps: int, device, gen=None):
+    """Random walks from ``start`` (B, 2): positions (steps, B, 2) with
+    position 0 at the start, uniform moves clipped at the walls."""
+    moves = torch.tensor(MOVES, device=device)
+    k = torch.randint(0, 4, (steps - 1, len(start)), device=device, generator=gen)
+    pos, out = start, [start]
+    for s in range(steps - 1):
+        pos = (pos + moves[k[s]]).clamp(0, SIZE - 1)
+        out.append(pos)
+    return torch.stack(out)
+
+
+def walk_through(goal, steps: int, tau, device, gen=None):
+    """Random walks of ``steps`` positions that stand on ``goal`` (B, 2) at
+    step ``tau`` (B,): a walk from the goal run backwards up to tau, then a
+    fresh walk from the goal after it. The first arrival can be before tau if
+    the walk happens to pass the goal earlier. Returns (steps, B, 2)."""
+    back = rw_from(goal, steps, device, gen)
+    fwd = rw_from(goal, steps, device, gen)
+    s = torch.arange(steps, device=device)[:, None]
+    ib = (tau[None] - s).clamp(min=0)
+    jf = (s - tau[None]).clamp(min=0)
+    pb = back.gather(0, ib[..., None].expand(-1, -1, 2))
+    pf = fwd.gather(0, jf[..., None].expand(-1, -1, 2))
+    return torch.where((s <= tau[None])[..., None], pb, pf)
+
+
+def headings(path, device, gen=None):
+    """Heading along each step's move (clockwise from North, as ``walk``),
+    a random cardinal where a wall stopped the move, then +- 45 deg."""
+    d = path[1:] - path[:-1]
+    d = torch.cat([d[:1], d]).float()
+    psi = torch.atan2(d[..., 0], d[..., 1])
+    still = (d == 0).all(-1)
+    k = torch.randint(0, 4, still.shape, device=device, generator=gen)
+    psi = torch.where(still, k * (math.pi / 2), psi)
+    return psi + torch.rand(psi.shape, device=device, generator=gen) * (math.pi / 2) - math.pi / 4
+
+
 def random_cells(shape, device, gen=None):
     """Uniform cells and headings, as ``Placed.test_views`` draws them."""
     c = torch.randint(0, SIZE, (*shape, 2), device=device, generator=gen)
