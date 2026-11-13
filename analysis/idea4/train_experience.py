@@ -99,7 +99,15 @@ def lifetime_loss(model, gp, a, rng, gen, device, T_max=None):
                          extra=ex.reshape(1, B * J * Q, -1))
         ph, c = ph.reshape(B, J, Q, N_PHASE), c.reshape(B, J, Q)
         cos = angle_cos(ph, target[:, cols][:, :, None])
-        total = total + (1 - cos[:, is_w]).mean() + F.binary_cross_entropy_with_logits(
+        err = 1 - cos[:, is_w]                                     # (B, t + 1, Q)
+        if a.age_power:
+            # Weight each visited arena's goal by (age + 1) ** age_power,
+            # age = visits since it was written (0 = newest), rescaled to mean
+            # 1, so older goals carry more of the loss than the newest.
+            age = (t - cols[is_w]).float()
+            wts = (age + 1) ** a.age_power
+            err = err * (wts / wts.mean())[None, :, None]
+        total = total + err.mean() + F.binary_cross_entropy_with_logits(
             c, is_w[None, :, None].expand_as(c).float())
         weight += 1.0
         st["copy_cos"].append(float(cos[:, is_w].mean().detach()))
@@ -227,6 +235,9 @@ def main():
     p.add_argument("--R_max", type=int, default=40)
     p.add_argument("--p_unseen", type=float, default=0.2)
     p.add_argument("--seq_weight", type=float, default=1.0)
+    p.add_argument("--age_power", type=float, default=0.0,
+                   help="weight each visited arena's goal in the copy reads by (age + 1) ** this, "
+                        "age = visits since it was written; 0 = equal weights")
     p.add_argument("--tbptt_envs", type=int, default=0)
     p.add_argument("--curriculum", action="store_true")
     p.add_argument("--curriculum_cos", type=float, default=0.8)
