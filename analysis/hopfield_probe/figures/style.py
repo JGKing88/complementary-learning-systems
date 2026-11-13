@@ -70,7 +70,7 @@ URW_FACES = ["Regular", "Bold", "Italic", "BoldItalic"]
 
 # Symbol-font codes for the non-Latin-1 characters the figures use
 SYMBOL_CODES = {"θ": "q", "π": "p", "λ": "l", "φ": "f", "ω": "w", "Σ": "S",
-                "−": "-", "→": "\xae", "≡": "\xba", "√": "\xd6", "∝": "\xb5", "×": "\xb4"}
+                "−": "-", "→": "\xae", "≡": "\xba", "√": "\xd6", "∝": "\xb5", "×": "\xb4", "≤": "\xa3"}
 
 
 def tint(color, frac):

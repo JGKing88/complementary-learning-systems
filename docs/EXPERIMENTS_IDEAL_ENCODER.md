@@ -365,7 +365,7 @@ Results: `/orcd/pool/003/jackking/cls_runs/results/hopfield_probe/ideal_encoder/
 - Where does r stop helping? (r = 24, 32; not run yet.)
 - How many goals K can the ideal code hold before cross-talk kills exact retrieval?
 - Can a network learn this function? The ideal code is cos/sin of (integer-weighted sum of module phases), which suggests a phase decoder, then a linear layer with integer weights, then a cos/sin activation. Test it with frozen random integer frequencies (should match exactly), then with trainable frequencies under the usual loss and patch sampling: does gradient descent find integer j from 10% coverage?
-- Is the trained encoder's structured aliasing (0.79 at the triple near-realignments 780/792) a failure to use the weak high-j harmonics? Measure its effective frequency content against the ideal's.
+- Is the trained encoder's structured aliasing (0.79 at the triple near-realignments 780/792) a failure to use the weak high-j harmonics? Measure its effective frequency content against the ideal's. **Answered in §24: yes.**
 
 ## 10. Recall dynamics and saturated recall (2026-09-30, second run)
 
@@ -2429,3 +2429,79 @@ valid. |
   noise.
 - `G.ETAS` was set at import by three scripts; now set at run time. The
   `LockIn` equivalence test now covers rules 2a and 2d too.
+
+## 24. The trained encoder's spectrum against the ideal (2026-11-13)
+
+**Question.** Is gradient descent (w52 att0.5) finding the ideal encoder's function?
+
+**Method.** Every grid-code encoder is a function on the 1716 × 1716 torus, so each output
+unit's map z_i(x) is a sum of the plane waves e^{2πi n·x/L}, with n = (n1, n2) whole numbers.
+`trained_spectrum.py` encodes all 2.94M positions, takes the 2D FFT F_i of each unit's map,
+and saves S(n) = Σ_i |F_i(n)|² / L⁴, the share of the code's power on wave n (it sums to 1).
+The position-averaged kernel is its inverse FFT, k̄(Δ) = Σ_n S(n) cos(2π n·Δ/L), so checking
+whether k̄ is Gaussian and checking whether S is Gaussian are the same test. The script also
+samples z(x)·z(x+Δ) at 20,000 positions x for fixed Δ. The ideal's expected spectrum is
+P(n), each axis of n being round(Normal(0, L/(2πr))) at r = 16. Encoders: ideal r = 16 (seed 0),
+att0.5 seeds 42 and 43 (encoder_final.pt), the same two before the tanh (u/|u|), the locally
+learned grid wave network (conc_clean_eta0.2_late.pt) and the grid code itself.
+
+**Checks.** S sums to 1.000000 for every encoder. The ideal's similarity at fixed Δ varies across
+positions by about 1e-9, every ideal unit is one wave (purity 1.000), its half-width is 18.82
+(target 18.84), and its largest average-kernel value beyond 3r is 0.133, the alias the probe scan
+measured.
+
+| encoder | half-width | effective waves | largest k̄ beyond 3r | k̄ at 780 / 143 / 792 | power on \|j\| ≤ 1, module 11 / 12 / 13 | sd of z(x)·z(x+19) over x |
+|---|---|---|---|---|---|---|
+| ideal, expected | 18.84 | 3,662 | | 0 / 0 / 0 | 0.27 / 0.25 / 0.23 | |
+| ideal, 512 waves | 18.82 | 758 | 0.13 | 0.02 / −0.01 / 0.01 | 0.28 / 0.26 / 0.24 | 0 |
+| att0.5 s42 | 18.68 | 661 | 0.70 at (786, 0) | 0.65 / 0.34 / 0.65 | 0.69 / 0.43 / 0.62 | 0.081 |
+| att0.5 s43 | 18.69 | 644 | 0.70 at (0, 786) | 0.64 / 0.33 / 0.65 | 0.68 / 0.42 / 0.61 | 0.088 |
+| att0.5 s42 before tanh | 27.23 | 145 | 0.88 | 0.85 / 0.64 / 0.86 | 0.88 / 0.63 / 0.83 | 0.103 |
+| grid wave network | 19.97 | 705 | 0.20 | 0.17 / −0.03 / 0.18 | 0.38 / 0.22 / 0.28 | 0 |
+| grid code input | 196 | 43 | 0.95 | 0.95 / 0.95 / 0.95 | 0.96 / 0.95 / 0.94 | 0 |
+
+(Effective waves = (Σ S)² / Σ S² without the constant wave. j_m is wave n's harmonic of module m,
+j = (6n, −n, 7n) mod (11, 12, 13) for the x component.)
+
+**Results.**
+1. **The near field is the ideal's.** att0.5's power per wave follows the Gaussian out to
+   |n| ≈ 50 and its half-width is 18.7 against 18.8. It has about as many effective waves as one
+   ideal draw (661 against 758), so it is not short of waves.
+2. **Above |n| ≈ 50 it has a long tail** that falls off far more slowly than the Gaussian (about
+   10^-6.5 per wave at |n| = 120, where the Gaussian is below 10^-12). The tanh makes this tail: before
+   the tanh the code has 97% of its power within 2 sd of the target (ideal 87%), a wider peak
+   (half-width 27) and only 145 effective waves.
+3. **The aliases are low-harmonic power, and the decomposition is exact.** A shift of 792 cells is
+   a whole number of periods of modules 11 and 12 and moves module 13 by one cell, so
+   k̄(792, 0) = Σ_n S(n) cos(2π j13(n1)/13). The same holds for 780 and 936 (module 11) and 143
+   (module 12). The sum reproduces the measured kernel to three decimals for every encoder.
+   att0.5 puts 62–69% of its power on |j| ≤ 1 of modules 11 and 13, against 23–27% for a uniform
+   spread, so a one-cell shift of either module barely changes the code (similarity 0.65).
+   The ideal spreads power evenly over each module's harmonics and the shifts cancel (≤ 0.02).
+   This is the input's own weakness carried through: the smoothed grid code has 95% of its power
+   on |j| ≤ 1 (bump fwhm 0.25λ weakens harmonic j by exp(−(0.666j)²/2)), and the trained network
+   only partly undoes it (0.85 before the tanh, 0.65 after). In the on-axis spectrum it shows as
+   power alternating with n1, high on n1 ≡ 0, ±2 (mod 13 or 11), the waves with |j| ≤ 1. My
+   prediction before the run, a comb at multiples of 11 and 13, was wrong.
+4. **The trained code depends on position; the ideal's does not.** At 19 cells apart, att0.5's
+   similarity ranges 0.26–0.64 over positions (1st–99th percentile; ideal 0.514 everywhere), and at
+   792 cells 0.28–0.83. This is the region dependence of §4.
+5. **Units are not waves** (median 3% of a unit's power on its strongest wave pair). That is
+   expected and not a difference that matters: any rotation of the code keeps the kernel.
+6. The grid wave network matches the ideal on every measure except a larger alias (0.18–0.20,
+   uneven units per pattern, §21), with exact translation invariance.
+
+**Answer.** Partly. Gradient descent finds the ideal's near field (peak width and shape out to about
+2r), but not its far field. It keeps the input's low module harmonics, which gives aliases at the
+one-module-shift displacements (143, 780, 792, 924, 936) and a code that depends on position.
+The ideal needs the high harmonics, up to j = 6 for the slowest wave n = 1, which the smoothed
+input carries at 3×10⁻⁴ of the first harmonic's strength.
+
+**Not done.** Reshaping att0.5's spectrum to P (multiply each wave by √(P/S)) and rerunning the
+probe, to test whether the spectrum explains the whole navigation gap.
+
+Files: `analysis/hopfield_probe/trained_spectrum.py`, `run_spectrum.sh` (job 28951969, 10 min on
+one A100), `figures/trained_spectrum_figs.py` (spectrum_main, spectrum_maps, spectrum_kernel_maps,
+spectrum_translation, spectrum_summary.json). Data:
+`/orcd/pool/003/jackking/cls_runs/results/hopfield_probe/spectrum/`.
+
