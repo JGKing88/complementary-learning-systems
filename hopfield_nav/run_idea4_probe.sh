@@ -36,6 +36,8 @@ VARIANTS=(
   "--cell fw --H 256 --pairs 6"
   "--cell fw --H 256 --pairs 30"
 )
+# VARIANTS_FILE: one variant per line, replacing the list above.
+if [ -n "${VARIANTS_FILE:-}" ]; then mapfile -t VARIANTS < "$VARIANTS_FILE"; fi
 for v in "${VARIANTS[@]}"; do
   python -u -m analysis.idea4.recall_probe $v --steps "$STEPS" &
 done

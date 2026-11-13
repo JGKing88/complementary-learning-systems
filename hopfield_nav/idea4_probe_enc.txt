@@ -1,0 +1,8 @@
+--cell gru --H 256 --enc relu --batch 64
+--cell gru --H 256 --enc relu --batch 128
+--cell gru --H 256 --enc linear --batch 128
+--cell gru --H 256 --enc none --batch 128
+--cell gru --H 256 --enc none --batch 64
+--cell lstm --H 256 --enc none --batch 128
+--cell gru --H 256 --enc none --batch 128 --pairs 6
+--cell gru --H 256 --enc linear --batch 128 --pairs 6

@@ -28,7 +28,7 @@ def latest(run_dir):
 
 
 def width(name):
-    m = re.match(r"h(\d+)", name)
+    m = re.search(r"h(\d+)", name)
     return (int(m.group(1)) if m else 0, name)
 
 

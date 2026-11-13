@@ -55,10 +55,18 @@ class MIGRUCell(nn.Module):
 
 
 class Memory(nn.Module):
-    def __init__(self, cell, H, key_in, enc=128, read=128, layers=1, chrono=0):
+    def __init__(self, cell, H, key_in, enc=128, read=128, layers=1, chrono=0, enc_kind="relu"):
         super().__init__()
         self.cell, self.H, self.layers = cell, H, layers
-        self.enc = nn.Sequential(nn.Linear(key_in, enc), nn.ReLU(), nn.Linear(enc, enc), nn.ReLU())
+        # "relu": idea 4's encoder, ending in a ReLU (all codes in the positive
+        # orthant); "linear": the same without the last ReLU (signed codes);
+        # "none": the raw input.
+        if enc_kind == "none":
+            self.enc, enc = nn.Identity(), key_in
+        elif enc_kind == "linear":
+            self.enc = nn.Sequential(nn.Linear(key_in, enc), nn.ReLU(), nn.Linear(enc, enc))
+        else:
+            self.enc = nn.Sequential(nn.Linear(key_in, enc), nn.ReLU(), nn.Linear(enc, enc), nn.ReLU())
         D = enc + N_PHASE + 1
         if cell == "gru":
             self.rnn = nn.GRU(D, H, num_layers=layers)
@@ -127,6 +135,9 @@ def main():
     p.add_argument("--dwell", type=int, default=1, help="steps per query")
     p.add_argument("--key_dim", type=int, default=180,
                    help="random +-1 key entries; the rest of the 180 slots are zero")
+    p.add_argument("--enc", default="relu", choices=["relu", "linear", "none"],
+                   help="view encoder before the cell: idea 4's (ends in ReLU), without "
+                        "its last ReLU, or none")
     p.add_argument("--fixed_keys", action="store_true",
                    help="control: the same keys in every lifetime, so recall is by write order")
     p.add_argument("--lr", type=float, default=1e-3)
@@ -138,10 +149,10 @@ def main():
     a = p.parse_args()
     dev = torch.device(a.device if torch.cuda.is_available() else "cpu")
     torch.manual_seed(a.seed)
-    m = Memory(a.cell, a.H, 360, layers=a.layers, chrono=a.chrono).to(dev)
+    m = Memory(a.cell, a.H, 360, layers=a.layers, chrono=a.chrono, enc_kind=a.enc).to(dev)
     opt = torch.optim.Adam(m.parameters(), lr=a.lr)
     P, B = a.pairs, a.batch
-    tag = (f"{a.cell} H{a.H} L{a.layers} pairs {P} rep {a.rep} dwell {a.dwell} "
+    tag = (f"{a.cell} H{a.H} L{a.layers} enc {a.enc} pairs {P} rep {a.rep} dwell {a.dwell} "
            f"key_dim {a.key_dim} lr {a.lr:g} chrono {a.chrono}")
     t0, run = time.time(), []
     fixed = torch.randint(0, 2, (P, 180), device=dev).float() * 2 - 1
