@@ -419,7 +419,7 @@ def _build_cfg_from_args(args) -> TrainConfig:
         num_hidden_layers=args.num_hidden_layers,
         hidden_channels=args.hidden_channels,
         num_conv_layers=args.num_conv_layers, kernel_size=args.kernel_size,
-        gain=args.gain_end,
+        gain=args.gain_end, output_nonlinearity=args.output_nonlinearity,
         char_p_max=args.char_p_max, char_m_max=args.char_m_max,
     )
     loss = LossConfig(
@@ -496,6 +496,10 @@ def main():
     p.add_argument("--hidden_channels", type=int, default=128)
     p.add_argument("--num_conv_layers", type=int, default=3)
     p.add_argument("--kernel_size", type=int, default=5)
+    p.add_argument("--output_nonlinearity", default="tanh",
+                   choices=["tanh", "sigmoid", "relu", "none"],
+                   help="applied before the L2 norm. relu ignores gain (the "
+                        "norm removes any positive scale); 'none' is linear")
     # Patches
     p.add_argument("--nenv", type=int, default=25)
     p.add_argument("--npos", type=int, default=100)
