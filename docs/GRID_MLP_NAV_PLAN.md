@@ -1723,6 +1723,13 @@ the same ceiling.)
 
 ### 7b.9 Basic control: associative recall with perfect keys (2026-11-14)
 
+**Revised the same day: the ceiling below was mostly the learning rate.**
+Every run here and in §7b.6 to §7b.8 used Adam at 1e-3. At 3e-4 the same
+6-pair task gives GRU 512 0.52 and LSTM 512 0.74 by 25k steps (0.17 and 0.47
+at 1e-3), and width adds more: an LSTM of width 2048 at 3e-4 reaches 0.97 at
+6 pairs by 75k and holds about 6 fresh goals when tested on 10 or 20 pairs
+(keeping the first six). The pushes are in §7b.10 (in progress).
+
 The roughly 3-goal ceiling is the recurrent memory's own, not the arena
 task's. In plain in-context associative recall, with keys that are fresh in
 every sequence but identical at write and read, a width-512 GRU or LSTM holds
