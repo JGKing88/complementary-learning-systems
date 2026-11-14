@@ -1771,6 +1771,58 @@ that are new in each lifetime are not, even when they are clean and identical
 at write and read. An outer-product memory binds them in one write, and that
 is the case for plastic weights that idea 4 was set up to test.
 
+### 7b.10 Pushing the clean control: learning rate, width, curriculum (2026-11-14)
+
+With a lower learning rate, more width and a curriculum on the number of
+pairs, a recurrent memory binds fresh keys nearly as well as fast weights. An
+LSTM of width 2048, Adam 3e-4, curriculum from 2 to 20 pairs, decodes 0.998,
+0.983 and 0.875 at 6, 10 and 20 pairs after 300k steps: 17.5 of 20 goals held,
+against 18.2 for a width-512 fast-weight memory after 100k. The ceiling of
+§7b.6 to §7b.9 came from training at 1e-3, not from activity as a store. The
+remaining gap is cost: the recurrent memory needs four times the width,
+several times the training, and a curriculum.
+
+Runs (`analysis/idea4/recall_grid.py`, `hopfield_nav/run_idea4_recall_push.sh`,
+jobs 29106987, 29106989, 29107805, 29108864; outputs
+`/orcd/pool/003/jackking/cls_runs/idea4/recall/*/log.json`). Task and scoring
+as §7b.9; every arm tested at 6, 10 and 20 pairs; accuracy within 1.5 cells,
+goals held = accuracy times pairs. All 300k steps.
+
+| arm | 6 pairs | 10 pairs | 20 pairs (goals held) |
+|---|---|---|---|
+| GRU 512, lr 1e-3, 6 pairs | 0.61 | 0.13 | 0.06 (1.2) |
+| LSTM 512, lr 1e-3, 6 pairs | 0.66 | 0.23 | 0.11 (2.3) |
+| GRU 512, lr 1e-3, mixed 2 to 20 | 0.50 | 0.34 | 0.17 (3.4) |
+| GRU 512, lr 1e-3, curriculum (reached 6) | 0.78 | 0.44 | 0.19 (3.8) |
+| GRU 512, lr 3e-4, 6 pairs | 0.94 | 0.06 | 0.05 (1.0) |
+| LSTM 512, lr 3e-4, 6 pairs | 0.87 | 0.45 | 0.24 (4.7) |
+| GRU 2048, lr 3e-4, 6 pairs | 1.00 | 0.22 | 0.04 (0.8) |
+| LSTM 2048, lr 3e-4, 6 pairs | 1.00 | 0.49 | 0.11 (2.1) |
+| GRU 1024, lr 3e-4, curriculum (reached 14) | 0.99 | 0.94 | 0.71 (14.1) |
+| LSTM 1024, lr 3e-4, curriculum (reached 15) | 0.99 | 0.95 | 0.69 (13.7) |
+| GRU 2048, lr 3e-4, curriculum (reached 16) | 0.99 | 0.95 | 0.76 (15.2) |
+| LSTM 2048, lr 3e-4, curriculum (reached 20) | 1.00 | 0.98 | 0.88 (17.5) |
+| fast weights 512, lr 1e-3, fixed pairs (§7b.9) | 1.00 | 0.98 | 0.91 (18.2) |
+
+Reading.
+1. The learning rate was the main barrier. At 1e-3 nothing passed about 4
+   goals in 300k steps, whatever the schedule. At 3e-4 every recurrent arm
+   learned 6 fresh pairs to 0.87 to 1.00.
+2. Capacity follows the training size. Trained on 6 pairs, networks hold
+   about 6 goals or fewer when tested on more. With the curriculum, each held
+   about as many goals as the curriculum had reached (14 to 17.5 of 20).
+3. Width helps, LSTM over GRU at the top end. Width 2048 beat 1024 for both
+   cells under the curriculum; the LSTM reached 20 pairs, the GRU 16.
+4. The cost difference remains. Fast weights of width 512 reach 18.2 of 20 at
+   a fixed size with no curriculum, at 1e-3, within 20k steps (§7b.9). The
+   recurrent memory gets close only with 4x the width, 3e-4, a curriculum and
+   300k steps.
+
+What this changes for idea 4. Every arena run (§7b.6 to §7b.8) used 1e-3
+and widths up to 1024 without a pair curriculum. The arena memory should be
+retrained at 3e-4, width 1024 to 2048, with the lifetime-length curriculum,
+before any conclusion about the arena task.
+
 ## 8. Decisions and open items
 
 | | |
