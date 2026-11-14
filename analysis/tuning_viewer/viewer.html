@@ -272,7 +272,8 @@ const MAX_RES = 512;              // maps above this many cells per side are blo
 const THUMB_RES = 160;
 const DETAIL_RES = 512;
 const SIZE_MIN = 4;
-const POP_ORDER = ["grid", "ideal", "trained", "untrained", "hippocampus"];
+const POP_ORDER = ["grid", "ideal", "ideal_rot", "trained", "untrained", "hippocampus"];
+const ROT_CACHE_FLOATS = 1 << 25;  // the rotated ideal keeps every unit for arenas up to this many values
 const TF_URL = "https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.22.0/dist/tf.min.js";
 let NPOS = 1716;
 
@@ -352,6 +353,7 @@ async function loadAll() {
     fetchText(P.hippocampus.wpg_file), fetchText(P.trained.weights_file), fetchText(P.untrained.weights_file)]);
   st.pops.grid = makeGrid(P.grid);
   st.pops.ideal = makeIdeal(P.ideal);
+  st.pops.ideal_rot = makeIdealRot(P.ideal_rot, P.ideal);
   st.pops.hippocampus = makeHpc(P.hippocampus, f64(wpg));
   st.mlp.trained = unpackMlp(P.trained, f32(wTr));
   st.mlp.untrained = unpackMlp(P.untrained, f32(wUn));
@@ -439,6 +441,70 @@ function makeIdeal(meta) {
       });
       finishPool(out, units.length, pl);
       return { data: out, W, f: pl.f };
+    },
+  };
+}
+
+// The ideal code remixed by one fixed orthogonal matrix Q = H D3 H D2 H D1 / 1024^1.5, with H the
+// Walsh-Hadamard matrix and D_t the random signs in the manifest. Every similarity equals the
+// ideal's; only the single-unit maps change. Each cell needs all 1024 ideal units, so one pass
+// computes every rotated unit and keeps them for the arena; larger arenas keep only the units asked for.
+function makeIdealRot(meta, idealMeta) {
+  const F = idealMeta.freqs, nf = F.length, amp = idealMeta.amp, D = 2 * nf;
+  if (D & (D - 1)) throw new Error("rotated ideal: the unit count must be a power of two");
+  const signs = meta.signs.map(s => Float64Array.from(s));
+  const scale = Math.pow(D, -signs.length / 2);
+  const cosT = new Float64Array(NPOS), sinT = new Float64Array(NPOS);
+  for (let k = 0; k < NPOS; k++) { const th = 2 * Math.PI * k / NPOS; cosT[k] = Math.cos(th); sinT[k] = Math.sin(th); }
+  const fwht = v => {
+    for (let h = 1; h < D; h <<= 1)
+      for (let i = 0; i < D; i += h << 1)
+        for (let j = i; j < i + h; j++) { const x = v[j], y = v[j + h]; v[j] = x + y; v[j + h] = x - y; }
+  };
+  // Cell-major values (block b, unit u at b * K + u) for the units in `keep`, or all units if null.
+  function compute(a, keep) {
+    const S = a.S, pl = poolPlan(S), W = pl.W, WW = W * W, K = keep ? keep.length : D;
+    const data = new Float32Array(WW * K), kx = new Int32Array(nf * S), ky = new Int32Array(nf * S);
+    for (let w = 0; w < nf; w++) {
+      const nx = F[w][0], ny = F[w][1];
+      for (let c = 0; c < S; c++) kx[w * S + c] = mod(nx * mod(a.x0 + c, NPOS), NPOS);
+      for (let r = 0; r < S; r++) ky[w * S + r] = mod(ny * mod(a.y0 + r, NPOS), NPOS);
+    }
+    const v = new Float64Array(D);
+    for (let r = 0; r < S; r++) {
+      const rb = pl.bi[r] * W;
+      for (let c = 0; c < S; c++) {
+        for (let w = 0; w < nf; w++) {
+          let k = kx[w * S + c] + ky[w * S + r];
+          if (k >= NPOS) k -= NPOS;
+          v[w] = amp * cosT[k]; v[w + nf] = amp * sinT[k];
+        }
+        for (const s of signs) { for (let i = 0; i < D; i++) v[i] *= s[i]; fwht(v); }
+        const o = (rb + pl.bi[c]) * K;
+        if (keep) for (let q = 0; q < K; q++) data[o + q] += v[keep[q]] * scale;
+        else for (let i = 0; i < D; i++) data[o + i] += v[i] * scale;
+      }
+    }
+    if (pl.f > 1) for (let b = 0; b < WW; b++) { const m = pl.inv[b]; for (let q = 0; q < K; q++) data[b * K + q] *= m; }
+    return { data, W, f: pl.f, K };
+  }
+  let cache = null;
+  return {
+    key: "ideal_rot", meta, n: D, signed: true,
+    label(u) { return "unit " + u; },
+    info(u) { return [["Output unit", String(u)], ["Mixes", "all " + nf + " waves of the ideal code"],
+                      ["Rotation", signs.length + " rounds of signs and Walsh-Hadamard, seed " + meta.seed]]; },
+    async maps(units, a) {
+      const pl = poolPlan(a.S), WW = pl.W * pl.W, out = new Float32Array(units.length * WW);
+      let src, idx;
+      if (WW * D <= ROT_CACHE_FLOATS) {
+        const key = a.x0 + "," + a.y0 + "," + a.S;
+        if (!cache || cache.key !== key) cache = Object.assign(compute(a, null), { key });
+        src = cache; idx = units;
+      } else { src = compute(a, units); idx = units.map((_, q) => q); }
+      const K = src.K;
+      units.forEach((u, q) => { const col = idx[q], base = q * WW; for (let b = 0; b < WW; b++) out[base + b] = src.data[b * K + col]; });
+      return { data: out, W: src.W, f: src.f };
     },
   };
 }

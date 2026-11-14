@@ -1,4 +1,4 @@
-"""Export the five place-code populations for the tuning-map viewer.
+"""Export the six place-code populations for the tuning-map viewer.
 
     python -m analysis.tuning_viewer.export [--out DIR]
 
@@ -25,6 +25,13 @@ ideal
     ``IdealEncoder`` (``ideal:r=16,n_freq=512,seed=0``): units ``0..511`` are
     ``cos``, ``512..1023`` ``sin`` of ``2 pi ((n . p) mod Npos) / Npos``,
     times ``amp``.
+ideal_rot
+    the ideal code remixed by one fixed orthogonal matrix
+    ``Q = H D3 H D2 H D1 / 1024^1.5`` (``H`` the Sylvester Walsh-Hadamard
+    matrix, ``D_t`` diagonal random signs, stored in the manifest). Unit ``u``
+    is ``(Q z_ideal)_u``. Because ``Q`` is orthogonal, the similarity between
+    any two places equals the ideal's; only the single-unit maps differ. The
+    page applies ``Q`` with a fast Walsh-Hadamard transform.
 trained, untrained
     the MLP with its first layer folded into per-module tables (see
     ``export_bench``). The untrained encoder is the cosyne figure's control:
@@ -59,6 +66,7 @@ RUNS = Path("/orcd/pool/003/jackking/cls_runs")
 ENCODER = str(RUNS / "sweeps/w52_attract_fwhm/001_att0.5_seed=43/encoder_final.pt")
 IDEAL = "ideal:r=16,n_freq=512,seed=0,gain=100"
 HPC = {"Np": 400, "thresh": 2.0, "c": 0.5, "seed": 0}
+ROT = {"seed": 0, "rounds": 3}
 # Reference arena: crosses both scaffold edges, so the check covers the
 # page's modular indexing as well as its arithmetic.
 REF = {"x0": 1708, "y0": 1710, "S": 16}
@@ -128,6 +136,22 @@ def export_mlp(name, encoder, gain, lambdas, fwhm, npos, out: Path, label, descr
         "weights_file": f"{name}_weights.b64.txt", "arrays": meta,
         "fold_check_max_abs_diff": diff,
     }
+
+
+# ---------------------------------------------------------------- rotated ideal
+def hadamard_rotation(signs: np.ndarray) -> np.ndarray:
+    """``Q = H D_k ... H D_1 / D^(k/2)``, ``H`` Sylvester (natural order), ``D_t = diag(signs[t])``.
+
+    This is the matrix the page's in-place fast Walsh-Hadamard transform applies.
+    """
+    D = signs.shape[1]
+    H = np.array([[1.0]])
+    while H.shape[0] < D:
+        H = np.block([[H, H], [H, -H]])
+    Q = np.eye(D)
+    for s in signs:
+        Q = H @ (s[:, None] * Q)
+    return Q / D ** (len(signs) / 2)
 
 
 # ---------------------------------------------------------------- hippocampus
@@ -230,6 +254,24 @@ def main() -> None:
     refs["ideal"] = encode_positions(ideal, lambdas, ifwhm, xs_r, ys_r)
     cf = ideal.closed_form(xs_r, ys_r)
     pops["ideal"]["closed_form_max_abs_diff"] = float(np.abs(cf - refs["ideal"]).max())
+
+    # ideal, rotated
+    D = 2 * len(freqs)
+    signs = np.random.default_rng(ROT["seed"]).choice([-1, 1], size=(ROT["rounds"], D))
+    Q = hadamard_rotation(signs)
+    refs["ideal_rot"] = (refs["ideal"].astype(np.float64) @ Q.T).astype(np.float32)
+    zi, zr = refs["ideal"].astype(np.float64), refs["ideal_rot"].astype(np.float64)
+    pops["ideal_rot"] = {
+        "kind": "ideal_rot", "label": "Ideal, rotated",
+        "description": f"The ideal encoder's {D} units remixed by one fixed random rotation "
+                       f"({ROT['rounds']} rounds of random signs and a Walsh-Hadamard transform). "
+                       f"The rotation is orthogonal, so the similarity between any two places is "
+                       f"exactly the ideal's. Only the single-unit maps differ.",
+        "n_units": D, "signed": True, "seed": ROT["seed"], "rounds": ROT["rounds"],
+        "signs": signs.astype(int).tolist(),
+        "orthogonality_max_abs_diff": float(np.abs(Q @ Q.T - np.eye(D)).max()),
+        "kernel_max_abs_diff": float(np.abs(zr @ zr.T - zi @ zi.T).max()),
+    }
 
     # trained, untrained
     pops["trained"] = export_mlp(
