@@ -32,6 +32,15 @@ if [ "$GROUP" = "w2048" ]; then
     "gru_h2048_p6|--cell gru --H 2048 --pairs 6 --lr 3e-4"
     "lstm_h2048_p6|--cell lstm --H 2048 --pairs 6 --lr 3e-4"
   )
+elif [ "$GROUP" = "cur3e4" ]; then
+  # Curriculum up to 20 pairs at the lower learning rate that lifted the
+  # fixed-6 runs; trained at 6 pairs only, capacity stays near 6.
+  ARMS=(
+    "lstm_h2048_cur_lr3e-4|--cell lstm --H 2048 --pairs 20 --curriculum --lr 3e-4"
+    "gru_h2048_cur_lr3e-4|--cell gru --H 2048 --pairs 20 --curriculum --lr 3e-4"
+    "lstm_h1024_cur_lr3e-4|--cell lstm --H 1024 --pairs 20 --curriculum --lr 3e-4"
+    "gru_h1024_cur_lr3e-4|--cell gru --H 1024 --pairs 20 --curriculum --lr 3e-4"
+  )
 elif [ "$GROUP" = "lr" ]; then
   # Separates width from learning rate: the w2048 arms run at 3e-4, the
   # w512 arms at 1e-3.
