@@ -32,6 +32,15 @@ if [ "$GROUP" = "w2048" ]; then
     "gru_h2048_p6|--cell gru --H 2048 --pairs 6 --lr 3e-4"
     "lstm_h2048_p6|--cell lstm --H 2048 --pairs 6 --lr 3e-4"
   )
+elif [ "$GROUP" = "lr" ]; then
+  # Separates width from learning rate: the w2048 arms run at 3e-4, the
+  # w512 arms at 1e-3.
+  ARMS=(
+    "gru_h512_p6_lr3e-4|--cell gru --H 512 --pairs 6 --lr 3e-4"
+    "lstm_h512_p6_lr3e-4|--cell lstm --H 512 --pairs 6 --lr 3e-4"
+    "gru_h1024_p6_lr3e-4|--cell gru --H 1024 --pairs 6 --lr 3e-4"
+    "lstm_h1024_p6_lr3e-4|--cell lstm --H 1024 --pairs 6 --lr 3e-4"
+  )
 else
   ARMS=(
     "gru_h512_p6|--cell gru --H 512 --pairs 6"
