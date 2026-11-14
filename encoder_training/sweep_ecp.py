@@ -2305,10 +2305,11 @@ WAVES: dict[str, dict] = {
 
 # W64 -- the best encoder with a relu output in place of tanh(gain * z).
 #
-# Built from w52's own att0.5 dict, so nothing but the output nonlinearity and
-# the seed can differ from `w52_attract_fwhm/001_att0.5_seed=43`. gain_end stays
-# 100: the relu forward ignores it, but the checkpoint stores it and the
-# Hopfield probe reads it as beta, so the probe sees the same beta as att0.5.
+# Built from w52's own att0.5 dict, so only the output nonlinearity, the gain
+# and the seed differ from `w52_attract_fwhm/001_att0.5_seed=43`. Gain is 1
+# throughout: the relu forward ignores it, so training is unchanged, but the
+# checkpoint stores it and encoder_io hands it to the Hopfield as beta. At 1
+# the Hopfield applies no gain.
 #
 # relu changes what the loss can reach. Far pairs are asked for cosine 0; tanh
 # codes get there by sign cancellation, relu codes only with disjoint support.
@@ -2316,7 +2317,8 @@ WAVES: dict[str, dict] = {
 WAVES["w64_relu_out"] = {
     "arm": {
         "att0.5_relu": {**WAVES["w52_attract_fwhm"]["arm"]["att0.5"],
-                        "output_nonlinearity": "relu"},
+                        "output_nonlinearity": "relu",
+                        "gain_start": 1.0, "gain_end": 1.0},
     },
     "seed": [43, 44],
 }
