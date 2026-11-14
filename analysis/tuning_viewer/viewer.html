@@ -1,0 +1,1355 @@
+<title>Place Code Tuning Viewer</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+/* Layout: control rail on the left, unit grid in the middle, selected unit on the right; stacks on narrow screens. */
+:root {
+  --bg: #f2f4f7;
+  --surface: #ffffff;
+  --surface-2: #e7ebf0;
+  --fg: #151b24;
+  --muted: #5a6475;
+  --line: #d6dbe3;
+  --ink: #1d2533;
+  --ink-fg: #ffffff;
+  --ring: #c77c00;
+  --ok: #136038; --ok-bg: #dcf0e4;
+  --bad: #9f2219; --bad-bg: #f9e0dc;
+  --font: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0e1217; --surface: #161b22; --surface-2: #1f262f; --fg: #e4e8ee; --muted: #98a2b1; --line: #2a313b;
+    --ink: #e4e8ee; --ink-fg: #10151c; --ring: #f0b54a;
+    --ok: #86d9a9; --ok-bg: #123020; --bad: #ff9d92; --bad-bg: #3b1b17;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0e1217; --surface: #161b22; --surface-2: #1f262f; --fg: #e4e8ee; --muted: #98a2b1; --line: #2a313b;
+  --ink: #e4e8ee; --ink-fg: #10151c; --ring: #f0b54a;
+  --ok: #86d9a9; --ok-bg: #123020; --bad: #ff9d92; --bad-bg: #3b1b17;
+  color-scheme: dark;
+}
+body { background: var(--bg); color: var(--fg); font: 14px/1.45 var(--font); }
+.app {
+  max-width: 1720px; margin: 0 auto;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 18px 36px;
+  display: grid; gap: 16px;
+}
+h1 { font-size: 1.35rem; font-weight: 600; margin: 0; letter-spacing: -0.01em; text-wrap: balance; }
+h2 { font-size: 1.05rem; font-weight: 600; margin: 0; text-wrap: balance; }
+p { margin: 0; }
+.mono { font-family: var(--mono); }
+.top { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 16px; }
+.top .sub { color: var(--muted); }
+.layout { display: grid; gap: 16px; grid-template-columns: minmax(0, 1fr); align-items: start; }
+@media (min-width: 760px) {
+  .layout { grid-template-columns: 264px minmax(0, 1fr); }
+  .rail { grid-row: 1 / span 2; }
+}
+@media (min-width: 1240px) {
+  .layout { grid-template-columns: 264px minmax(0, 1fr) 380px; }
+  .rail { grid-row: 1; }
+  .detail { grid-column: 3; grid-row: 1; position: sticky; top: calc(12px + env(safe-area-inset-top, 0px)); }
+}
+.rail { display: grid; gap: 14px; min-width: 0; }
+.panel { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 12px; display: grid; gap: 10px; min-width: 0; }
+.panel > .ptitle { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.07em; color: var(--muted); font-weight: 500; }
+.seg { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; }
+.seg button {
+  font: inherit; font-size: 0.86rem; text-align: left; padding: 6px 8px; border-radius: 5px; cursor: pointer;
+  background: var(--surface-2); color: var(--fg); border: 1px solid transparent;
+}
+.seg button[aria-pressed="true"] { background: var(--ink); color: var(--ink-fg); }
+.seg button:last-child:nth-child(odd) { grid-column: 1 / -1; }
+.row { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.row label, .lbl { font-size: 0.84rem; color: var(--muted); }
+.row .grow { flex: 1; min-width: 0; }
+.out { font-family: var(--mono); font-size: 0.8rem; min-width: 4.5ch; text-align: right; }
+input[type="number"], select {
+  font: inherit; font-size: 0.86rem; padding: 4px 6px; border-radius: 5px;
+  border: 1px solid var(--line); background: var(--surface); color: var(--fg); min-width: 0;
+}
+input[type="number"] { width: 6.5ch; font-family: var(--mono); }
+select { width: 100%; }
+input[type="range"] { width: 100%; accent-color: var(--ring); }
+input[type="checkbox"] { accent-color: var(--ring); }
+.xy { display: grid; grid-template-columns: auto 1fr auto 1fr; gap: 6px; align-items: center; }
+.xy input { width: 100%; }
+.hint { font-size: 0.76rem; color: var(--muted); }
+canvas.minimap { width: 100%; aspect-ratio: 1; border-radius: 6px; touch-action: none; cursor: crosshair; display: block; }
+button.plain {
+  font: inherit; font-size: 0.84rem; padding: 5px 10px; border-radius: 5px; cursor: pointer;
+  border: 1px solid var(--line); background: var(--surface); color: var(--fg);
+}
+button.plain:disabled { opacity: 0.45; cursor: not-allowed; }
+button:focus-visible, select:focus-visible, input:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; }
+.main { display: grid; gap: 10px; min-width: 0; }
+.pophead { display: grid; gap: 4px; }
+.pophead p { color: var(--muted); max-width: 80ch; }
+.chip { display: inline-block; font-size: 0.74rem; font-family: var(--mono); padding: 1px 7px; border-radius: 4px; vertical-align: 1px; }
+.chip.ok { color: var(--ok); background: var(--ok-bg); }
+.chip.bad { color: var(--bad); background: var(--bad-bg); }
+.chip.wait { color: var(--muted); background: var(--surface-2); }
+#status { font-size: 0.82rem; color: var(--muted); font-variant-numeric: tabular-nums; min-height: 1.2em; }
+#status.err { color: var(--bad); }
+.pager { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(92px, 1fr)); gap: 8px; }
+.tile {
+  font: inherit; padding: 0; border: 0; background: none; color: inherit; cursor: pointer; text-align: left;
+  display: grid; gap: 3px; min-width: 0; border-radius: 4px;
+}
+.tile canvas { width: 100%; aspect-ratio: 1; display: block; border-radius: 3px; image-rendering: pixelated; outline: 1px solid var(--line); outline-offset: -1px; }
+.tile.sel canvas { outline: 3px solid var(--ring); outline-offset: 1px; }
+.tile .cap { display: flex; justify-content: space-between; gap: 4px; font-family: var(--mono); font-size: 0.68rem; color: var(--muted); min-width: 0; }
+.tile .cap span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tile .lab { color: var(--fg); }
+.empty { padding: 28px 12px; text-align: center; color: var(--muted); border: 1px dashed var(--line); border-radius: 8px; }
+.detail { display: grid; gap: 10px; min-width: 0; }
+.dhead { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+.dhead h2 { font-size: 0.98rem; }
+.mapwrap { position: relative; width: 100%; aspect-ratio: 1; }
+.mapwrap canvas { position: absolute; inset: 0; width: 100%; height: 100%; border-radius: 4px; }
+#d-canvas { image-rendering: pixelated; cursor: grab; touch-action: none; }
+#d-canvas.dragging { cursor: grabbing; }
+#d-overlay { pointer-events: none; }
+.cbar { display: grid; gap: 2px; }
+.cbar canvas { width: 100%; height: 10px; border-radius: 2px; display: block; image-rendering: auto; }
+.cbar .ticks { display: flex; justify-content: space-between; font-family: var(--mono); font-size: 0.72rem; color: var(--muted); }
+#d-hover { font-family: var(--mono); font-size: 0.78rem; color: var(--muted); min-height: 1.2em; }
+dl.stats { display: grid; grid-template-columns: auto 1fr; gap: 4px 12px; margin: 0; font-size: 0.84rem; }
+dl.stats dt { color: var(--muted); }
+dl.stats dd { margin: 0; font-family: var(--mono); font-size: 0.8rem; text-align: right; overflow-wrap: anywhere; }
+footer { display: grid; gap: 6px; font-size: 0.8rem; color: var(--muted); }
+footer ul { margin: 0; padding: 0; list-style: none; display: flex; flex-wrap: wrap; gap: 4px 16px; }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+
+<div class="app">
+  <div class="top">
+    <h1>Place code tuning</h1>
+    <span class="sub">Single-unit maps over any arena on the 1716 × 1716 scaffold</span>
+  </div>
+
+  <div class="layout">
+    <aside class="rail" aria-label="Controls">
+      <section class="panel" aria-labelledby="t-pop">
+        <div class="ptitle" id="t-pop">Population</div>
+        <div class="seg" id="pops"></div>
+      </section>
+
+      <section class="panel" aria-labelledby="t-arena">
+        <div class="ptitle" id="t-arena">Arena</div>
+        <canvas class="minimap" id="minimap" aria-label="Scaffold map. Click or drag to move the arena." role="img"></canvas>
+        <div class="row">
+          <label for="size">Size</label>
+          <input type="range" class="grow" id="size-range" min="0" max="1000" step="1" aria-label="Arena size, log scale">
+          <input type="number" id="size" min="1" max="1716" step="1">
+        </div>
+        <div class="xy">
+          <label class="lbl" for="x0">x</label><input type="number" id="x0" min="0" max="1715" step="1">
+          <label class="lbl" for="y0">y</label><input type="number" id="y0" min="0" max="1715" step="1">
+        </div>
+        <select id="jump" aria-label="Jump to a recorded arena"></select>
+        <p class="hint">x and y are the arena's lower-left cell. Drag the map or the large unit view to move it, or use the arrow keys (Shift moves 10 cells). The scaffold wraps at its edges.</p>
+      </section>
+
+      <section class="panel" aria-labelledby="t-filt">
+        <div class="ptitle" id="t-filt">Rate-map processing</div>
+        <div class="row"><input type="checkbox" id="rectify" checked><label for="rectify">Rectify (negative values to zero)</label></div>
+        <div class="row">
+          <label for="sigma">Smoothing σ</label>
+          <input type="range" class="grow" id="sigma" min="0" max="5" step="0.5" value="0">
+          <span class="out" id="sigma-out">off</span>
+        </div>
+        <div class="row">
+          <label for="thresh">Field threshold</label>
+          <input type="range" class="grow" id="thresh" min="5" max="90" step="5" value="20">
+          <span class="out" id="thresh-out">20%</span>
+        </div>
+        <div class="row">
+          <label for="minsize" class="grow">Minimum field size (cells)</label>
+          <input type="number" id="minsize" min="1" max="100000" step="1" value="9">
+        </div>
+        <p class="hint">Gaussian smoothing in cells, normalised at the arena edge. A field is a 4-connected region at or above the threshold fraction of the unit's peak with at least the minimum size. Statistics use the positive part of the map and assume every cell is visited equally.</p>
+      </section>
+
+      <section class="panel" aria-labelledby="t-view">
+        <div class="ptitle" id="t-view">Units</div>
+        <div class="row">
+          <label for="sort">Sort</label>
+          <select id="sort" class="grow"></select>
+        </div>
+        <div class="row">
+          <button class="plain" id="resort" type="button" disabled>Re-sort</button>
+          <span class="hint" id="sort-note"></span>
+        </div>
+        <div class="row">
+          <label for="perpage">Per page</label>
+          <select id="perpage" class="grow">
+            <option value="36">36</option><option value="64" selected>64</option>
+            <option value="100">100</option><option value="144">144</option>
+          </select>
+        </div>
+        <div class="row">
+          <label for="scale">Colour scale</label>
+          <select id="scale" class="grow">
+            <option value="unit" selected>Each unit to its own peak</option>
+            <option value="page">Shared across the page</option>
+          </select>
+        </div>
+      </section>
+    </aside>
+
+    <section class="main" aria-label="Units">
+      <div class="pophead">
+        <h2 id="pop-title">Loading…</h2>
+        <p id="pop-desc"></p>
+      </div>
+      <div class="pager">
+        <button class="plain" id="prev" type="button" aria-label="Previous page">Previous</button>
+        <span id="pageinfo" class="mono" style="font-size:0.82rem"></span>
+        <button class="plain" id="next" type="button" aria-label="Next page">Next</button>
+      </div>
+      <div id="status" role="status">Loading the populations…</div>
+      <div class="tiles" id="tiles"></div>
+    </section>
+
+    <aside class="detail panel" aria-label="Selected unit">
+      <div class="dhead">
+        <h2 id="d-title">Selected unit</h2>
+        <div class="row">
+          <button class="plain" id="d-prev" type="button" aria-label="Previous unit">◀</button>
+          <button class="plain" id="d-next" type="button" aria-label="Next unit">▶</button>
+        </div>
+      </div>
+      <div class="mapwrap">
+        <canvas id="d-canvas" aria-label="Map of the selected unit. Drag to move the arena."></canvas>
+        <canvas id="d-overlay" aria-hidden="true"></canvas>
+      </div>
+      <div class="cbar">
+        <canvas id="d-bar" width="256" height="1" aria-hidden="true"></canvas>
+        <div class="ticks"><span id="d-lo"></span><span id="d-mid"></span><span id="d-hi"></span></div>
+      </div>
+      <div id="d-hover">Hover over the map to read a cell.</div>
+      <div class="row"><input type="checkbox" id="outlines" checked><label for="outlines">Outline fields</label></div>
+      <dl class="stats" id="d-stats"></dl>
+    </aside>
+  </div>
+
+  <footer>
+    <div id="engine"></div>
+    <div>Checks against the repo's Python code, on a 16 × 16 arena that wraps around both scaffold edges:</div>
+    <ul id="checks"></ul>
+    <div id="prov"></div>
+  </footer>
+</div>
+
+<script>
+"use strict";
+// ================================================================ constants
+const $ = id => document.getElementById(id);
+const CHUNK = 16384;              // cells per GPU batch
+const EXT_FLOATS = 16384 * 256;   // floats per GPU read-back
+const STAT_BATCH = 128;           // units per batch when sorting by a statistic
+const MAX_RES = 512;              // maps above this many cells per side are block-averaged
+const THUMB_RES = 160;
+const DETAIL_RES = 512;
+const SIZE_MIN = 4;
+const POP_ORDER = ["grid", "ideal", "trained", "untrained", "hippocampus"];
+const TF_URL = "https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.22.0/dist/tf.min.js";
+let NPOS = 1716;
+
+const st = {
+  M: null, pops: {}, mlp: {}, popKey: "trained",
+  x0: 808, y0: 808, S: 100,
+  perPage: 64, page: 0, scale: "unit",
+  sort: "id", order: null, orderPop: null, sortedFor: null, sortToken: 0, shuffleSeed: 1,
+  f: { rectify: true, sigma: 0, thresh: 20, minSize: 9 },
+  sel: null, outlines: true, detail: null,
+  engine: null, engineName: "", engineNote: "", engineError: "",
+  checks: {},
+};
+
+const mod = (a, n) => ((a % n) + n) % n;
+const errText = e => (e && e.message) ? e.message : String(e);
+function setStatus(msg, isErr) { const s = $("status"); s.textContent = msg; s.classList.toggle("err", !!isErr); }
+function fmtVal(x) {
+  if (!isFinite(x)) return "–";
+  if (x === 0) return "0";
+  const a = Math.abs(x);
+  return (a < 1e-3 || a >= 1e4) ? x.toExponential(2) : x.toPrecision(3);
+}
+const fmtMs = ms => ms >= 1000 ? (ms / 1000).toFixed(2) + " s" : ms >= 10 ? Math.round(ms) + " ms" : ms.toFixed(1) + " ms";
+
+// ================================================================ colour
+// Sequential: one blue ramp, light (zero) to dark (peak); reversed in dark mode.
+// Diverging: blue (negative) and red (positive) arms around a neutral grey zero.
+const SEQ_LIGHT = ["#cde2fb", "#b7d3f6", "#9ec5f4", "#86b6ef", "#6da7ec", "#5598e7", "#3987e5",
+                   "#2a78d6", "#256abf", "#1c5cab", "#184f95", "#104281", "#0d366b"];
+const SEQ_DARK = SEQ_LIGHT.slice().reverse();
+const DIV_LIGHT = ["#0d366b", "#1c5cab", "#3987e5", "#9ec5f4", "#f0efec", "#f3b4ad", "#e8706b", "#c5383a", "#7a1b1d"];
+const DIV_DARK = ["#b7d3f6", "#6da7ec", "#2a78d6", "#184f95", "#383835", "#8f2526", "#c5383a", "#e8706b", "#f3b4ad"];
+const OUTLINE = "#ffb000";
+const hexRgb = h => { const n = parseInt(h.slice(1), 16); return [(n >> 16) & 255, (n >> 8) & 255, n & 255]; };
+const toLin = c => { c /= 255; return c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4); };
+const toSrgb = c => { const v = c <= 0.0031308 ? 12.92 * c : 1.055 * Math.pow(c, 1 / 2.4) - 0.055; return Math.round(Math.max(0, Math.min(1, v)) * 255); };
+function makeLut(stops) {
+  const lin = stops.map(h => hexRgb(h).map(toLin)), lut = new Uint8ClampedArray(256 * 3), last = stops.length - 1;
+  for (let i = 0; i < 256; i++) {
+    const t = i / 255 * last, k = Math.min(Math.floor(t), last - 1), f = t - k;
+    for (let ch = 0; ch < 3; ch++) lut[i * 3 + ch] = toSrgb(lin[k][ch] * (1 - f) + lin[k + 1][ch] * f);
+  }
+  return lut;
+}
+function isDark() {
+  const t = document.documentElement.getAttribute("data-theme");
+  if (t === "dark") return true;
+  if (t === "light") return false;
+  return window.matchMedia("(prefers-color-scheme: dark)").matches;
+}
+let LUT = null;
+function buildLuts() { const d = isDark(); LUT = { seq: makeLut(d ? SEQ_DARK : SEQ_LIGHT), div: makeLut(d ? DIV_DARK : DIV_LIGHT) }; }
+
+// ================================================================ data
+async function fetchText(u) { const r = await fetch(u); if (!r.ok) throw new Error(u + ": HTTP " + r.status); return r.text(); }
+function b64Bytes(t) { const bin = atob(t.trim()), u8 = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) u8[i] = bin.charCodeAt(i); return u8; }
+const f32 = t => new Float32Array(b64Bytes(t).buffer);
+const f64 = t => new Float64Array(b64Bytes(t).buffer);
+
+function unpackMlp(meta, all) {
+  const get = n => {
+    const a = meta.arrays.find(x => x.name === n);
+    if (!a) throw new Error(meta.label + ": no array " + n);
+    return all.subarray(a.offset, a.offset + a.shape.reduce((p, q) => p * q, 1));
+  };
+  return { T: get("T"), b1: get("b1"), W: ["W2", "W3", "W4", "W5"].map(get), b: ["b2", "b3", "b4", "b5"].map(get),
+           gain: meta.gain, hidden: meta.hidden, out: meta.n_units, rowOff: meta.row_offsets };
+}
+
+async function loadAll() {
+  const M = JSON.parse(await fetchText("manifest.json"));
+  st.M = M; NPOS = M.npos;
+  const P = M.populations;
+  const [wpg, wTr, wUn] = await Promise.all([
+    fetchText(P.hippocampus.wpg_file), fetchText(P.trained.weights_file), fetchText(P.untrained.weights_file)]);
+  st.pops.grid = makeGrid(P.grid);
+  st.pops.ideal = makeIdeal(P.ideal);
+  st.pops.hippocampus = makeHpc(P.hippocampus, f64(wpg));
+  st.mlp.trained = unpackMlp(P.trained, f32(wTr));
+  st.mlp.untrained = unpackMlp(P.untrained, f32(wUn));
+  st.pops.trained = makeMlp("trained", P.trained);
+  st.pops.untrained = makeMlp("untrained", P.untrained);
+}
+
+// ================================================================ block averaging
+// Maps above MAX_RES cells per side come back as means over f x f blocks.
+function poolPlan(S) {
+  const f = Math.max(1, Math.ceil(S / MAX_RES)), W = Math.ceil(S / f);
+  const bi = new Int32Array(S);
+  for (let i = 0; i < S; i++) bi[i] = (i / f) | 0;
+  let inv = null;
+  if (f > 1) {
+    inv = new Float32Array(W * W);
+    for (let R = 0; R < W; R++) for (let C = 0; C < W; C++)
+      inv[R * W + C] = 1 / ((Math.min(S, (R + 1) * f) - R * f) * (Math.min(S, (C + 1) * f) - C * f));
+  }
+  return { f, W, bi, inv };
+}
+function finishPool(out, K, pl) {
+  if (pl.f === 1) return;
+  const WW = pl.W * pl.W;
+  for (let q = 0; q < K; q++) for (let b = 0; b < WW; b++) out[q * WW + b] *= pl.inv[b];
+}
+
+// ================================================================ populations computed in JavaScript
+function makeGrid(meta) {
+  const L = st.M.lambdas, fw = st.M.fwhm_ratio, mods = [];
+  let off = 0;
+  for (const l of L) { mods.push({ l, off, sigma: l * fw / (2 * Math.sqrt(2 * Math.LN2)) }); off += l * l; }
+  const unitMod = [];
+  mods.forEach(m => { for (let k = 0; k < m.l * m.l; k++) unitMod[m.off + k] = m; });
+  const phase = u => { const m = unitMod[u], k = u - m.off; return [m, Math.floor(k / m.l), k % m.l]; };
+  return {
+    key: "grid", meta, n: meta.n_units, signed: false,
+    label(u) { const [m, i, j] = phase(u); return "λ" + m.l + " " + i + "," + j; },
+    info(u) { const [m, i, j] = phase(u); return [["Module", "period " + m.l + " cells"], ["Phase (x, y)", i + ", " + j]]; },
+    async maps(units, a) {
+      const S = a.S, pl = poolPlan(S), W = pl.W, WW = W * W, out = new Float32Array(units.length * WW);
+      const ex = new Float64Array(S), ey = new Float64Array(S);
+      units.forEach((u, q) => {
+        const [m, i, j] = phase(u), l = m.l;
+        for (let c = 0; c < S; c++) { let d = Math.abs(i - mod(a.x0 + c, NPOS) % l); d = Math.min(d, l - d); const z = d / m.sigma; ex[c] = Math.exp(-0.5 * z * z); }
+        for (let r = 0; r < S; r++) { let d = Math.abs(j - mod(a.y0 + r, NPOS) % l); d = Math.min(d, l - d); const z = d / m.sigma; ey[r] = Math.exp(-0.5 * z * z); }
+        const base = q * WW;
+        for (let r = 0; r < S; r++) {
+          const e = ey[r], rb = base + pl.bi[r] * W;
+          for (let c = 0; c < S; c++) out[rb + pl.bi[c]] += e * ex[c];
+        }
+      });
+      finishPool(out, units.length, pl);
+      return { data: out, W, f: pl.f };
+    },
+  };
+}
+
+function makeIdeal(meta) {
+  const F = meta.freqs, nf = F.length, amp = meta.amp;
+  const cosT = new Float64Array(NPOS), sinT = new Float64Array(NPOS);
+  for (let k = 0; k < NPOS; k++) { const th = 2 * Math.PI * k / NPOS; cosT[k] = Math.cos(th); sinT[k] = Math.sin(th); }
+  const wave = u => ({ w: u % nf, n: F[u % nf], sin: u >= nf });
+  return {
+    key: "ideal", meta, n: 2 * nf, signed: true,
+    label(u) { const v = wave(u); return (v.sin ? "sin " : "cos ") + v.w; },
+    info(u) {
+      const v = wave(u), nx = v.n[0], ny = v.n[1], k = Math.hypot(nx, ny);
+      return [["Wave", (v.sin ? "sin" : "cos") + " of wave " + v.w], ["Frequency n", nx + ", " + ny],
+              ["Wavelength", k ? (NPOS / k).toFixed(1) + " cells" : "constant"],
+              ["Direction", k ? (Math.atan2(ny, nx) * 180 / Math.PI).toFixed(0) + "°" : "–"]];
+    },
+    async maps(units, a) {
+      const S = a.S, pl = poolPlan(S), W = pl.W, WW = W * W, out = new Float32Array(units.length * WW);
+      const kx = new Int32Array(S), ky = new Int32Array(S);
+      units.forEach((u, q) => {
+        const v = wave(u), T = v.sin ? sinT : cosT;
+        for (let c = 0; c < S; c++) kx[c] = mod(v.n[0] * mod(a.x0 + c, NPOS), NPOS);
+        for (let r = 0; r < S; r++) ky[r] = mod(v.n[1] * mod(a.y0 + r, NPOS), NPOS);
+        const base = q * WW;
+        for (let r = 0; r < S; r++) {
+          const y = ky[r], rb = base + pl.bi[r] * W;
+          for (let c = 0; c < S; c++) { let k = kx[c] + y; if (k >= NPOS) k -= NPOS; out[rb + pl.bi[c]] += amp * T[k]; }
+        }
+      });
+      finishPool(out, units.length, pl);
+      return { data: out, W, f: pl.f };
+    },
+  };
+}
+
+function makeHpc(meta, Wpg) {
+  const L = st.M.lambdas, ng = L.reduce((s, l) => s + l * l, 0), offs = [];
+  let o = 0;
+  for (const l of L) { offs.push(o); o += l * l; }
+  const th = meta.thresh;
+  return {
+    key: "hippocampus", meta, n: meta.n_units, signed: false,
+    label(u) { return "cell " + u; },
+    info(u) { return [["Place cell", String(u)], ["Threshold", String(th)]]; },
+    async maps(units, a) {
+      const S = a.S, pl = poolPlan(S), W = pl.W, WW = W * W, out = new Float32Array(units.length * WW);
+      const cx = L.map(() => new Int32Array(S)), cy = L.map(() => new Int32Array(S));
+      for (let m = 0; m < L.length; m++) {
+        const l = L[m];
+        for (let c = 0; c < S; c++) cx[m][c] = offs[m] + (mod(a.x0 + c, NPOS) % l) * l;
+        for (let r = 0; r < S; r++) cy[m][r] = mod(a.y0 + r, NPOS) % l;
+      }
+      const [cx0, cx1, cx2] = cx, [cy0, cy1, cy2] = cy;
+      units.forEach((u, q) => {
+        const row0 = u * ng, base = q * WW;
+        for (let r = 0; r < S; r++) {
+          const y0 = row0 + cy0[r], y1 = row0 + cy1[r], y2 = row0 + cy2[r], rb = base + pl.bi[r] * W;
+          for (let c = 0; c < S; c++) {
+            const v = Wpg[y0 + cx0[c]] + Wpg[y1 + cx1[c]] + Wpg[y2 + cx2[c]] - th;
+            if (v > 0) out[rb + pl.bi[c]] += v;
+          }
+        }
+      });
+      finishPool(out, units.length, pl);
+      return { data: out, W, f: pl.f };
+    },
+  };
+}
+
+function makeMlp(key, meta) {
+  return {
+    key, meta, n: meta.n_units, signed: true,
+    label(u) { return "unit " + u; },
+    info(u) { return [["Output unit", String(u)]]; },
+    maps(units, a) {
+      if (!st.engine) return Promise.reject(new Error(st.engineError || "the GPU engine is still starting"));
+      return st.engine.maps(key, units, a);
+    },
+  };
+}
+
+// ================================================================ GPU engines for the MLPs
+let gpuChain = Promise.resolve();
+function gpuLock(fn) { const p = gpuChain.then(fn); gpuChain = p.catch(() => {}); return p; }
+
+function wgslCommon(P) {
+  return `
+struct Params { n: u32, start: u32, S: u32, x0: u32, y0: u32, K: u32, p1: u32, p2: u32 };
+const NPOS: u32 = ${P.npos}u;
+const HID: u32 = ${P.hidden}u;
+const GAIN: f32 = ${Number(P.gain).toFixed(6)};
+fn erf4(x: vec4f) -> vec4f {
+  let a = abs(x);
+  let t = 1.0 / (1.0 + 0.3275911 * a);
+  let p = ((((1.061405429 * t - 1.453152027) * t + 1.421413741) * t - 0.284496736) * t + 0.254829592) * t;
+  return sign(x) * (1.0 - p * exp(-a * a));
+}
+fn gelu4(x: vec4f) -> vec4f { return 0.5 * x * (1.0 + erf4(x * 0.7071067811865476)); }
+fn gelu1(x: f32) -> f32 { return gelu4(vec4f(x)).x; }
+`;
+}
+function wgslLayer1(P) {
+  const L = P.lambdas, O = P.rowOff;
+  const row = m => `${O[m]}u + (x % ${L[m]}u) * ${L[m]}u + (y % ${L[m]}u)`;
+  return wgslCommon(P) + `
+@group(0) @binding(0) var<uniform> prm: Params;
+@group(0) @binding(1) var<storage, read> T: array<f32>;
+@group(0) @binding(2) var<storage, read> b1: array<f32>;
+@group(0) @binding(3) var<storage, read_write> H: array<f32>;
+@compute @workgroup_size(${P.hidden})
+fn main(@builtin(workgroup_id) wg: vec3u, @builtin(local_invocation_id) lid: vec3u) {
+  let i = wg.x;
+  if (i >= prm.n) { return; }
+  let c = prm.start + i;
+  let row = c / prm.S;
+  let col = c - row * prm.S;
+  let x = (prm.x0 + col) % NPOS;
+  let y = (prm.y0 + row) % NPOS;
+  let k = lid.x;
+  let r0 = ${row(0)};
+  let r1 = ${row(1)};
+  let r2 = ${row(2)};
+  let h = b1[k] + T[r0 * HID + k] + T[r1 * HID + k] + T[r2 * HID + k];
+  H[i * HID + k] = gelu1(h);
+}`;
+}
+function wgslMatmul(P, K, M, act) {
+  let inner = "";
+  for (let kq = 0; kq < 4; kq++) {
+    inner += "    {\n";
+    for (let i = 0; i < 4; i++) inner += `      let a${i} = As[(ty * 4u + ${i}u) * 4u + ${kq}u];\n`;
+    ["x", "y", "z", "w"].forEach((comp, kk) => {
+      inner += `      { let b = Bs[${kq * 4 + kk}u * 16u + tx];` +
+        ` acc0 += a0.${comp} * b; acc1 += a1.${comp} * b; acc2 += a2.${comp} * b; acc3 += a3.${comp} * b; }\n`;
+    });
+    inner += "    }\n";
+  }
+  const actExpr = act === "gelu" ? "gelu4(v)" : "tanh(clamp(v * GAIN, vec4f(-15.0), vec4f(15.0)))";
+  return wgslCommon(P) + `
+@group(0) @binding(0) var<uniform> prm: Params;
+@group(0) @binding(1) var<storage, read> A: array<vec4f>;
+@group(0) @binding(2) var<storage, read> B: array<vec4f>;
+@group(0) @binding(3) var<storage, read> bias: array<vec4f>;
+@group(0) @binding(4) var<storage, read_write> C: array<vec4f>;
+var<workgroup> As: array<vec4f, 256>;
+var<workgroup> Bs: array<vec4f, 256>;
+const KDIM: u32 = ${K}u;
+const K4: u32 = ${K / 4}u;
+const M4: u32 = ${M / 4}u;
+fn applyAct(v: vec4f) -> vec4f { return ${actExpr}; }
+@compute @workgroup_size(16, 16)
+fn main(@builtin(workgroup_id) wg: vec3u, @builtin(local_invocation_id) lid: vec3u) {
+  let tx = lid.x;
+  let ty = lid.y;
+  let tid = ty * 16u + tx;
+  let row0 = wg.y * 64u;
+  let col40 = wg.x * 16u;
+  let aRow = row0 + tid / 4u;
+  let aCol = tid % 4u;
+  let bRow = tid / 16u;
+  let bCol = tid % 16u;
+  var acc0 = vec4f(0.0);
+  var acc1 = vec4f(0.0);
+  var acc2 = vec4f(0.0);
+  var acc3 = vec4f(0.0);
+  for (var k0 = 0u; k0 < KDIM; k0 = k0 + 16u) {
+    var av = vec4f(0.0);
+    if (aRow < prm.n) { av = A[aRow * K4 + k0 / 4u + aCol]; }
+    As[tid] = av;
+    Bs[tid] = B[(k0 + bRow) * M4 + col40 + bCol];
+    workgroupBarrier();
+${inner}    workgroupBarrier();
+  }
+  let bv = bias[col40 + tx];
+  let r = row0 + ty * 4u;
+  if (r < prm.n) { C[r * M4 + col40 + tx] = applyAct(acc0 + bv); }
+  if (r + 1u < prm.n) { C[(r + 1u) * M4 + col40 + tx] = applyAct(acc1 + bv); }
+  if (r + 2u < prm.n) { C[(r + 2u) * M4 + col40 + tx] = applyAct(acc2 + bv); }
+  if (r + 3u < prm.n) { C[(r + 3u) * M4 + col40 + tx] = applyAct(acc3 + bv); }
+}`;
+}
+function wgslNormalize(P) {
+  return wgslCommon(P) + `
+@group(0) @binding(0) var<uniform> prm: Params;
+@group(0) @binding(1) var<storage, read_write> C: array<vec4f>;
+var<workgroup> red: array<f32, 256>;
+const R4: u32 = ${P.out / 4}u;
+@compute @workgroup_size(256)
+fn main(@builtin(workgroup_id) wg: vec3u, @builtin(local_invocation_id) lid: vec3u) {
+  let r = wg.x;
+  if (r >= prm.n) { return; }
+  let v = C[r * R4 + lid.x];
+  red[lid.x] = dot(v, v);
+  workgroupBarrier();
+  for (var s = 128u; s > 0u; s = s >> 1u) {
+    if (lid.x < s) { red[lid.x] = red[lid.x] + red[lid.x + s]; }
+    workgroupBarrier();
+  }
+  let nrm = max(sqrt(red[0]), 1e-12);
+  C[r * R4 + lid.x] = v / nrm;
+}`;
+}
+function wgslExtract(P) {
+  return wgslCommon(P) + `
+@group(0) @binding(0) var<uniform> prm: Params;
+@group(0) @binding(1) var<storage, read> C: array<f32>;
+@group(0) @binding(2) var<storage, read> unitIdx: array<u32>;
+@group(0) @binding(3) var<storage, read_write> E: array<f32>;
+const OUTD: u32 = ${P.out}u;
+@compute @workgroup_size(64)
+fn main(@builtin(global_invocation_id) g: vec3u, @builtin(num_workgroups) nw: vec3u) {
+  let i = g.x + g.y * nw.x * 64u;
+  if (i >= prm.n * prm.K) { return; }
+  let r = i / prm.K;
+  let k = i - r * prm.K;
+  E[i] = C[r * OUTD + unitIdx[k]];
+}`;
+}
+
+// Accumulates a read-back chunk (cell-major, n x K) into unit-major pooled maps.
+function scatterChunk(out, ch, s, n, K, S, pl) {
+  const W = pl.W, WW = W * W;
+  if (pl.f === 1) {
+    for (let i = 0; i < n; i++) { const cell = s + i, b = i * K; for (let q = 0; q < K; q++) out[q * WW + cell] = ch[b + q]; }
+  } else {
+    for (let i = 0; i < n; i++) {
+      const cell = s + i, r = (cell / S) | 0, c = cell - r * S, blk = pl.bi[r] * W + pl.bi[c], b = i * K;
+      for (let q = 0; q < K; q++) out[q * WW + blk] += ch[b + q];
+    }
+  }
+}
+
+async function makeWebGpuEngine() {
+  if (!navigator.gpu) throw new Error("this browser has no WebGPU");
+  const adapter = await navigator.gpu.requestAdapter({ powerPreference: "high-performance" });
+  if (!adapter) throw new Error("no WebGPU adapter");
+  const dev = await adapter.requestDevice();
+  dev.lost.then(info => {
+    st.engine = null;
+    st.engineError = "The GPU stopped responding (" + info.message + "). Reload the page.";
+    setStatus(st.engineError, true);
+  });
+  const any = st.mlp.trained;
+  for (const k of ["trained", "untrained"]) {
+    const m = st.mlp[k];
+    if (m.hidden !== 256 || m.out !== 1024) throw new Error(k + ": the shaders expect 256 hidden units and 1024 outputs");
+  }
+  const P = { npos: NPOS, hidden: any.hidden, out: any.out, lambdas: st.M.lambdas, rowOff: any.rowOff, gain: 1 };
+  const U = GPUBufferUsage;
+  const upload = arr => {
+    const b = dev.createBuffer({ size: Math.ceil(arr.byteLength / 16) * 16, usage: U.STORAGE | U.COPY_DST });
+    dev.queue.writeBuffer(b, 0, arr);
+    return b;
+  };
+  const sh = {
+    prm: dev.createBuffer({ size: 32, usage: U.UNIFORM | U.COPY_DST }),
+    hA: dev.createBuffer({ size: CHUNK * P.hidden * 4, usage: U.STORAGE }),
+    hB: dev.createBuffer({ size: CHUNK * P.hidden * 4, usage: U.STORAGE }),
+    out: dev.createBuffer({ size: CHUNK * P.out * 4, usage: U.STORAGE }),
+    units: dev.createBuffer({ size: P.out * 4, usage: U.STORAGE | U.COPY_DST }),
+    ext: dev.createBuffer({ size: EXT_FLOATS * 4, usage: U.STORAGE | U.COPY_SRC }),
+    map: dev.createBuffer({ size: EXT_FLOATS * 4, usage: U.MAP_READ | U.COPY_DST }),
+  };
+  dev.pushErrorScope("validation");
+  const compile = async (code, label) => {
+    const module = dev.createShaderModule({ code, label });
+    const info = await module.getCompilationInfo();
+    const errs = info.messages.filter(m => m.type === "error");
+    if (errs.length) throw new Error(label + " shader: " + errs.map(m => "line " + m.lineNum + ": " + m.message).join("; "));
+    return dev.createComputePipelineAsync({ layout: "auto", compute: { module, entryPoint: "main" }, label });
+  };
+  const [pL1, pMM, pNorm, pExt] = await Promise.all([
+    compile(wgslLayer1(P), "layer 1"), compile(wgslMatmul(P, 256, 256, "gelu"), "hidden matmul"),
+    compile(wgslNormalize(P), "normalize"), compile(wgslExtract(P), "extract")]);
+  const bg = (p, list) => dev.createBindGroup({
+    layout: p.getBindGroupLayout(0), entries: list.map((b, i) => ({ binding: i, resource: { buffer: b } })) });
+  const mm = M => n => [M / 64, Math.ceil(n / 64)];
+  const outPipes = {}, sets = {};
+  for (const k of ["trained", "untrained"]) {
+    const m = st.mlp[k];
+    if (!outPipes[m.gain]) outPipes[m.gain] = await compile(wgslMatmul(Object.assign({}, P, { gain: m.gain }), 256, 1024, "tanh"), "output matmul");
+    const pOut = outPipes[m.gain];
+    const w = { T: upload(m.T), b1: upload(m.b1), W: m.W.map(upload), b: m.b.map(upload) };
+    sets[k] = [
+      { p: pL1, g: bg(pL1, [sh.prm, w.T, w.b1, sh.hA]), wg: n => [n, 1] },
+      { p: pMM, g: bg(pMM, [sh.prm, sh.hA, w.W[0], w.b[0], sh.hB]), wg: mm(P.hidden) },
+      { p: pMM, g: bg(pMM, [sh.prm, sh.hB, w.W[1], w.b[1], sh.hA]), wg: mm(P.hidden) },
+      { p: pMM, g: bg(pMM, [sh.prm, sh.hA, w.W[2], w.b[2], sh.hB]), wg: mm(P.hidden) },
+      { p: pOut, g: bg(pOut, [sh.prm, sh.hB, w.W[3], w.b[3], sh.out]), wg: mm(P.out) },
+      { p: pNorm, g: bg(pNorm, [sh.prm, sh.out]), wg: n => [n, 1] },
+    ];
+  }
+  const ext = { p: pExt, g: bg(pExt, [sh.prm, sh.out, sh.units, sh.ext]) };
+  const err = await dev.popErrorScope();
+  if (err) throw new Error("WebGPU validation: " + err.message);
+
+  async function run(key, units, a) {
+    const K = units.length, S = a.S, N = S * S, pl = poolPlan(S), WW = pl.W * pl.W;
+    const out = new Float32Array(K * WW);
+    dev.queue.writeBuffer(sh.units, 0, Uint32Array.from(units));
+    const per = Math.min(CHUNK, Math.floor(EXT_FLOATS / K));
+    for (let s = 0; s < N; s += per) {
+      const n = Math.min(per, N - s);
+      dev.queue.writeBuffer(sh.prm, 0, new Uint32Array([n, s, S, a.x0, a.y0, K, 0, 0]));
+      const enc = dev.createCommandEncoder(), pass = enc.beginComputePass();
+      for (const p of sets[key]) { pass.setPipeline(p.p); pass.setBindGroup(0, p.g); const [x, y] = p.wg(n); pass.dispatchWorkgroups(x, y); }
+      const groups = Math.ceil(n * K / 64), wx = Math.min(groups, 32768);
+      pass.setPipeline(ext.p); pass.setBindGroup(0, ext.g); pass.dispatchWorkgroups(wx, Math.ceil(groups / wx));
+      pass.end();
+      const bytes = n * K * 4;
+      enc.copyBufferToBuffer(sh.ext, 0, sh.map, 0, bytes);
+      dev.queue.submit([enc.finish()]);
+      await sh.map.mapAsync(GPUMapMode.READ, 0, bytes);
+      scatterChunk(out, new Float32Array(sh.map.getMappedRange(0, bytes)), s, n, K, S, pl);
+      sh.map.unmap();
+    }
+    finishPool(out, K, pl);
+    return { data: out, W: pl.W, f: pl.f };
+  }
+  const ai = adapter.info || {};
+  return {
+    name: "WebGPU", adapter: [ai.vendor, ai.architecture].filter(Boolean).join(" "),
+    maps: (key, units, a) => gpuLock(() => run(key, units, a)),
+  };
+}
+
+function loadScript(src) {
+  return new Promise((res, rej) => {
+    const s = document.createElement("script");
+    s.src = src; s.onload = res; s.onerror = () => rej(new Error("could not load " + src));
+    document.head.appendChild(s);
+  });
+}
+function tfErfPoly(x) {
+  const a = tf.abs(x), t = tf.div(1, tf.add(1, tf.mul(a, 0.3275911)));
+  let p = tf.add(tf.mul(t, 1.061405429), -1.453152027);
+  p = tf.add(tf.mul(p, t), 1.421413741);
+  p = tf.add(tf.mul(p, t), -0.284496736);
+  p = tf.add(tf.mul(p, t), 0.254829592);
+  p = tf.mul(p, t);
+  return tf.mul(tf.sign(x), tf.sub(1, tf.mul(p, tf.exp(tf.neg(tf.square(a))))));
+}
+async function makeTfEngine() {
+  if (!window.tf) await loadScript(TF_URL);
+  let ok = false;
+  try { ok = await tf.setBackend("webgl"); } catch (e) { throw new Error("tf.js WebGL backend: " + errText(e)); }
+  if (!ok) throw new Error("tf.js could not start its WebGL backend");
+  await tf.ready();
+  let erfOk = false;
+  try { erfOk = !!tf.getKernel("Erf", "webgl"); } catch (e) { erfOk = false; }
+  const gelu = x => { const u = tf.mul(x, Math.SQRT1_2); return tf.mul(tf.mul(x, 0.5), tf.add(erfOk ? tf.erf(u) : tfErfPoly(u), 1)); };
+  const sets = {};
+  for (const k of ["trained", "untrained"]) {
+    const m = st.mlp[k];
+    sets[k] = { m, T: tf.tensor2d(m.T, [m.T.length / m.hidden, m.hidden]), b1: tf.tensor1d(m.b1),
+                W: m.W.map((w, i) => tf.tensor2d(w, [m.hidden, i < 3 ? m.hidden : m.out])), b: m.b.map(x => tf.tensor1d(x)) };
+  }
+  const L = st.M.lambdas;
+  function forward(w, a, start, n) {
+    const O = w.m.rowOff, idx = [new Int32Array(n), new Int32Array(n), new Int32Array(n)];
+    for (let i = 0; i < n; i++) {
+      const c = start + i, r = Math.floor(c / a.S), col = c - r * a.S;
+      const x = (a.x0 + col) % NPOS, y = (a.y0 + r) % NPOS;
+      for (let m = 0; m < 3; m++) idx[m][i] = O[m] + (x % L[m]) * L[m] + (y % L[m]);
+    }
+    return tf.tidy(() => {
+      let h = tf.gather(w.T, tf.tensor1d(idx[0], "int32"));
+      h = tf.add(h, tf.gather(w.T, tf.tensor1d(idx[1], "int32")));
+      h = tf.add(h, tf.gather(w.T, tf.tensor1d(idx[2], "int32")));
+      h = gelu(tf.add(h, w.b1));
+      for (let l = 0; l < 3; l++) h = gelu(tf.add(tf.matMul(h, w.W[l]), w.b[l]));
+      const z = tf.tanh(tf.clipByValue(tf.mul(tf.add(tf.matMul(h, w.W[3]), w.b[3]), w.m.gain), -15, 15));
+      return tf.div(z, tf.maximum(tf.sqrt(tf.sum(tf.square(z), 1, true)), 1e-12));
+    });
+  }
+  async function run(key, units, a) {
+    const w = sets[key], K = units.length, S = a.S, N = S * S, pl = poolPlan(S);
+    const out = new Float32Array(K * pl.W * pl.W), uT = tf.tensor1d(Int32Array.from(units), "int32");
+    for (let s = 0; s < N; s += CHUNK) {
+      const n = Math.min(CHUNK, N - s);
+      const g = tf.tidy(() => tf.gather(forward(w, a, s, n), uT, 1));
+      const d = await g.data();
+      g.dispose();
+      scatterChunk(out, d, s, n, K, S, pl);
+    }
+    uT.dispose();
+    finishPool(out, K, pl);
+    return { data: out, W: pl.W, f: pl.f };
+  }
+  return { name: "WebGL (tf.js)", adapter: "", maps: (key, units, a) => gpuLock(() => run(key, units, a)) };
+}
+
+async function initEngine() {
+  try { st.engine = await makeWebGpuEngine(); }
+  catch (e) {
+    st.engineNote = "WebGPU is unavailable here (" + errText(e) + "), so the encoders run on WebGL through tf.js, about four times slower.";
+    try { st.engine = await makeTfEngine(); }
+    catch (e2) { st.engine = null; st.engineError = "No GPU engine could start: " + errText(e2) + ". Grid, ideal and hippocampus still work."; }
+  }
+  const eng = $("engine");
+  if (st.engine) eng.textContent = "Encoders run on " + st.engine.name + (st.engine.adapter ? " (" + st.engine.adapter + ")" : "") + ". " + st.engineNote;
+  else eng.textContent = st.engineError;
+}
+
+// ================================================================ rate-map processing
+function smoothMap(v, W, sigma) {
+  const R = Math.ceil(3 * sigma), w = new Float64Array(2 * R + 1);
+  for (let k = -R; k <= R; k++) w[k + R] = Math.exp(-(k * k) / (2 * sigma * sigma));
+  const tmp = new Float32Array(W * W), out = new Float32Array(W * W);
+  for (let r = 0; r < W; r++) for (let c = 0; c < W; c++) {
+    let s = 0, ws = 0;
+    const lo = Math.max(-R, -c), hi = Math.min(R, W - 1 - c);
+    for (let k = lo; k <= hi; k++) { s += w[k + R] * v[r * W + c + k]; ws += w[k + R]; }
+    tmp[r * W + c] = s / ws;
+  }
+  for (let r = 0; r < W; r++) for (let c = 0; c < W; c++) {
+    let s = 0, ws = 0;
+    const lo = Math.max(-R, -r), hi = Math.min(R, W - 1 - r);
+    for (let k = lo; k <= hi; k++) { s += w[k + R] * tmp[(r + k) * W + c]; ws += w[k + R]; }
+    out[r * W + c] = s / ws;
+  }
+  return out;
+}
+
+// One unit's processed map and statistics. Sizes and positions are reported in cells.
+function processUnit(data, off, W, f, filt, wantLabels) {
+  const WW = W * W;
+  let v = new Float32Array(WW);
+  for (let i = 0; i < WW; i++) { const x = data[off + i]; v[i] = filt.rectify ? (x > 0 ? x : 0) : x; }
+  if (filt.sigma > 0) v = smoothMap(v, W, filt.sigma / f);
+  let vmin = Infinity, vmax = -Infinity, peak = 0, peakI = -1, sum = 0, sum2 = 0;
+  for (let i = 0; i < WW; i++) {
+    const x = v[i];
+    if (x < vmin) vmin = x;
+    if (x > vmax) vmax = x;
+    if (x > 0) { sum += x; sum2 += x * x; if (x > peak) { peak = x; peakI = i; } }
+  }
+  const mean = sum / WW;
+  let info = NaN, sparsity = NaN;
+  if (mean > 0) {
+    let I = 0;
+    for (let i = 0; i < WW; i++) { const x = v[i]; if (x > 0) { const q = x / mean; I += q * Math.log2(q); } }
+    info = I / WW;
+    sparsity = (mean * mean) / (sum2 / WW);
+  }
+  let nFields = 0, fieldCells = 0, maxField = 0, labels = null, keep = null;
+  if (peak > 0) {
+    const thr = filt.thresh / 100 * peak, minB = Math.max(1, Math.ceil(filt.minSize / (f * f)));
+    labels = new Int32Array(WW);
+    keep = [false];
+    const stack = new Int32Array(WW);
+    let next = 1;
+    for (let i = 0; i < WW; i++) {
+      if (labels[i] !== 0 || !(v[i] >= thr)) continue;
+      let sp = 0, size = 0;
+      stack[sp++] = i; labels[i] = next;
+      while (sp) {
+        const j = stack[--sp], r = (j / W) | 0, c = j - r * W;
+        size++;
+        if (c > 0 && labels[j - 1] === 0 && v[j - 1] >= thr) { labels[j - 1] = next; stack[sp++] = j - 1; }
+        if (c < W - 1 && labels[j + 1] === 0 && v[j + 1] >= thr) { labels[j + 1] = next; stack[sp++] = j + 1; }
+        if (r > 0 && labels[j - W] === 0 && v[j - W] >= thr) { labels[j - W] = next; stack[sp++] = j - W; }
+        if (r < W - 1 && labels[j + W] === 0 && v[j + W] >= thr) { labels[j + W] = next; stack[sp++] = j + W; }
+      }
+      const ok = size >= minB;
+      keep.push(ok);
+      if (ok) { nFields++; fieldCells += size; if (size > maxField) maxField = size; }
+      next++;
+    }
+  }
+  const peakR = peakI < 0 ? -1 : (peakI / W) | 0, peakC = peakI < 0 ? -1 : peakI - peakR * W;
+  return {
+    v, vmin, vmax, peak, peakR, peakC, mean, info, sparsity, nFields,
+    meanField: nFields ? fieldCells * f * f / nFields : NaN, maxField: maxField * f * f,
+    peakKey: peakI < 0 ? NaN : (W - 1 - peakR) * W + peakC,
+    labels: wantLabels ? labels : null, keep: wantLabels ? keep : null,
+  };
+}
+
+// ================================================================ drawing
+function drawMap(cv, v, W, lo, hi, lut, maxRes) {
+  const f = Math.max(1, Math.ceil(W / maxRes)), D = Math.ceil(W / f);
+  if (cv.width !== D || cv.height !== D) { cv.width = D; cv.height = D; }
+  const ctx = cv.getContext("2d"), img = ctx.createImageData(D, D), d = img.data;
+  const span = hi - lo, flat = !(span > 0), midT = lo < 0 ? 0.5 : 0;
+  for (let R = 0; R < D; R++) {
+    const r0 = R * f, r1 = Math.min(W, r0 + f);
+    for (let C = 0; C < D; C++) {
+      const c0 = C * f, c1 = Math.min(W, c0 + f);
+      let val;
+      if (f === 1) val = v[r0 * W + c0];
+      else { let s = 0; for (let r = r0; r < r1; r++) for (let c = c0; c < c1; c++) s += v[r * W + c]; val = s / ((r1 - r0) * (c1 - c0)); }
+      let t = flat ? midT : (val - lo) / span;
+      t = t < 0 ? 0 : t > 1 ? 1 : t;
+      const li = ((t * 255 + 0.5) | 0) * 3, o = ((D - 1 - R) * D + C) * 4;
+      d[o] = lut[li]; d[o + 1] = lut[li + 1]; d[o + 2] = lut[li + 2]; d[o + 3] = 255;
+    }
+  }
+  ctx.putImageData(img, 0, 0);
+}
+function drawOutlines(cv, res, W) {
+  const dpr = window.devicePixelRatio || 1, px = Math.max(1, Math.round(cv.clientWidth * dpr));
+  if (cv.width !== px || cv.height !== px) { cv.width = px; cv.height = px; }
+  const ctx = cv.getContext("2d");
+  ctx.clearRect(0, 0, px, px);
+  if (!st.outlines || !res.labels) return;
+  const k = px / W, lab = res.labels, keep = res.keep;
+  ctx.strokeStyle = OUTLINE; ctx.lineWidth = Math.max(1.5, 2 * dpr); ctx.lineCap = "square";
+  ctx.beginPath();
+  for (let r = 0; r < W; r++) for (let c = 0; c < W; c++) {
+    const i = r * W + c, L = lab[i];
+    if (!L || !keep[L]) continue;
+    const x = c * k, yTop = (W - 1 - r) * k;
+    if (c === 0 || lab[i - 1] !== L) { ctx.moveTo(x, yTop); ctx.lineTo(x, yTop + k); }
+    if (c === W - 1 || lab[i + 1] !== L) { ctx.moveTo(x + k, yTop); ctx.lineTo(x + k, yTop + k); }
+    if (r === W - 1 || lab[i + W] !== L) { ctx.moveTo(x, yTop); ctx.lineTo(x + k, yTop); }
+    if (r === 0 || lab[i - W] !== L) { ctx.moveTo(x, yTop + k); ctx.lineTo(x + k, yTop + k); }
+  }
+  ctx.stroke();
+}
+function drawColorbar(lut) {
+  const cv = $("d-bar"), ctx = cv.getContext("2d"), img = ctx.createImageData(256, 1);
+  for (let i = 0; i < 256; i++) { img.data[i * 4] = lut[i * 3]; img.data[i * 4 + 1] = lut[i * 3 + 1]; img.data[i * 4 + 2] = lut[i * 3 + 2]; img.data[i * 4 + 3] = 255; }
+  ctx.putImageData(img, 0, 0);
+}
+function rangeFor(r, div) {
+  if (div) { const a = Math.max(Math.abs(r.vmin), Math.abs(r.vmax)); return [-a, a]; }
+  return [0, Math.max(r.vmax, 0)];
+}
+
+// ================================================================ minimap
+function drawMinimap() {
+  const cv = $("minimap"), dpr = window.devicePixelRatio || 1, px = Math.max(1, Math.round((cv.clientWidth || 220) * dpr));
+  if (cv.width !== px) { cv.width = px; cv.height = px; }
+  const ctx = cv.getContext("2d"), k = px / NPOS, cs = getComputedStyle(document.documentElement);
+  ctx.fillStyle = cs.getPropertyValue("--surface-2").trim();
+  ctx.fillRect(0, 0, px, px);
+  const rect = (x0, y0, S, fill) => {
+    for (const dx of [0, -NPOS]) for (const dy of [0, -NPOS]) {
+      const w = Math.max(S * k, fill ? 2 * dpr : 4 * dpr), x = (x0 + dx) * k, y = (NPOS - (y0 + dy) - S) * k;
+      if (x > px || y > px || x + w < 0 || y + w < 0) continue;
+      if (fill) ctx.fillRect(x, y, w, w); else ctx.strokeRect(x, y, w, w);
+    }
+  };
+  if (st.M) {
+    ctx.fillStyle = cs.getPropertyValue("--muted").trim();
+    ctx.globalAlpha = 0.55;
+    for (const r of st.M.arenas) rect(r.x0, r.y0, r.S, true);
+    ctx.globalAlpha = 1;
+  }
+  ctx.strokeStyle = cs.getPropertyValue("--ring").trim();
+  ctx.lineWidth = 2 * dpr;
+  rect(st.x0, st.y0, st.S, false);
+}
+
+// ================================================================ sorting
+const SORTS = {
+  id: { label: "Unit order" },
+  random: { label: "Random" },
+  fields: { label: "Most fields", stat: true, key: r => r.nFields, desc: true },
+  fieldsize: { label: "Largest fields", stat: true, key: r => r.meanField, desc: true },
+  info: { label: "Most spatial information", stat: true, key: r => r.info, desc: true },
+  sparse: { label: "Sparsest", stat: true, key: r => r.sparsity, desc: false },
+  peak: { label: "Peak position", stat: true, key: r => r.peakKey, desc: false },
+};
+function cmpKeys(a, b, desc) {
+  const na = Number.isNaN(a), nb = Number.isNaN(b);
+  if (na || nb) return na === nb ? 0 : na ? 1 : -1;
+  return desc ? b - a : a - b;
+}
+function mulberry32(seed) {
+  return () => { seed |= 0; seed = seed + 0x6D2B79F5 | 0; let t = Math.imul(seed ^ seed >>> 15, 1 | seed); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; };
+}
+const viewKey = () => JSON.stringify([st.popKey, st.x0, st.y0, st.S, st.f]);
+function currentOrder(pop) {
+  if (st.order && st.orderPop === pop.key) return st.order;
+  return Array.from({ length: pop.n }, (_, i) => i);
+}
+function shuffleOrder() {
+  const pop = st.pops[st.popKey], ids = Array.from({ length: pop.n }, (_, i) => i), rnd = mulberry32(st.shuffleSeed);
+  for (let i = ids.length - 1; i > 0; i--) { const j = Math.floor(rnd() * (i + 1)); [ids[i], ids[j]] = [ids[j], ids[i]]; }
+  st.order = ids; st.orderPop = pop.key; st.sortedFor = viewKey(); st.page = 0; st.sel = ids[0];
+}
+function updateSortNote() {
+  const s = SORTS[st.sort], note = $("sort-note"), btn = $("resort");
+  if (st.sort === "id") { note.textContent = ""; btn.disabled = true; return; }
+  if (st.sort === "random") { note.textContent = "Shuffled. Re-sort draws a new order."; btn.disabled = false; return; }
+  const fresh = st.sortedFor === viewKey() && st.orderPop === st.popKey;
+  note.textContent = fresh ? "Sorted for this arena and these filters." : "Sorted for an earlier view. Re-sort to update.";
+  btn.disabled = fresh;
+}
+async function computeSort() {
+  const sort = SORTS[st.sort], pop = st.pops[st.popKey];
+  if (!sort.stat) return;
+  const token = ++st.sortToken, a = { x0: st.x0, y0: st.y0, S: st.S }, filt = Object.assign({}, st.f), vk = viewKey();
+  const keys = new Float64Array(pop.n);
+  $("resort").disabled = true;
+  $("sort-note").textContent = "Sorting…";
+  for (let u0 = 0; u0 < pop.n; u0 += STAT_BATCH) {
+    const units = [];
+    for (let u = u0; u < Math.min(pop.n, u0 + STAT_BATCH); u++) units.push(u);
+    let res;
+    try { res = await pop.maps(units, a); }
+    catch (e) { if (token === st.sortToken) $("sort-note").textContent = "Sorting failed: " + errText(e); return; }
+    const WW = res.W * res.W;
+    units.forEach((u, q) => { keys[u] = sort.key(processUnit(res.data, q * WW, res.W, res.f, filt, false)); });
+    if (token !== st.sortToken) return;
+    $("sort-note").textContent = "Sorting: " + Math.min(pop.n, u0 + STAT_BATCH) + " of " + pop.n + " units…";
+    await new Promise(r => setTimeout(r, 0));
+  }
+  const ids = Array.from({ length: pop.n }, (_, i) => i);
+  ids.sort((p, q) => cmpKeys(keys[p], keys[q], sort.desc) || p - q);
+  st.order = ids; st.orderPop = pop.key; st.sortedFor = vk; st.page = 0; st.sel = ids[0];
+  updateSortNote();
+  requestRender();
+}
+function setSort(key) {
+  st.sort = key; st.sortToken++;
+  if (key === "id") { st.order = null; st.orderPop = null; st.page = 0; }
+  else if (key === "random") shuffleOrder();
+  updateSortNote();
+  if (SORTS[key].stat) computeSort();
+  requestRender();
+}
+
+// ================================================================ rendering
+let renderQueued = false, rendering = false, renderAgain = false;
+function requestRender() {
+  if (renderQueued) return;
+  renderQueued = true;
+  requestAnimationFrame(() => { renderQueued = false; render(); });
+}
+async function render() {
+  if (rendering) { renderAgain = true; return; }
+  rendering = true;
+  try { await renderOnce(); }
+  catch (e) { setStatus("Something went wrong drawing the maps: " + errText(e), true); console.error(e); }
+  rendering = false;
+  if (renderAgain) { renderAgain = false; requestRender(); }
+}
+function ensureTiles(n) {
+  const box = $("tiles");
+  while (box.children.length < n) {
+    const b = document.createElement("button");
+    b.type = "button"; b.className = "tile";
+    const cv = document.createElement("canvas"), cap = document.createElement("span"), lab = document.createElement("span"), val = document.createElement("span");
+    cap.className = "cap"; lab.className = "lab"; val.className = "val";
+    cap.append(lab, val); b.append(cv, cap);
+    b.addEventListener("click", () => { const u = Number(b.dataset.u); if (!Number.isNaN(u)) { st.sel = u; requestRender(); } });
+    box.append(b);
+  }
+  for (let i = 0; i < box.children.length; i++) box.children[i].hidden = i >= n;
+}
+function caption(r) {
+  if (!(r.peak > 0)) return "silent";
+  switch (st.sort) {
+    case "fieldsize": return isFinite(r.meanField) ? Math.round(r.meanField) + " c" : "no field";
+    case "info": return isFinite(r.info) ? r.info.toFixed(2) + " b" : "–";
+    case "sparse": return isFinite(r.sparsity) ? r.sparsity.toFixed(2) : "–";
+    default: return r.nFields + (r.nFields === 1 ? " field" : " fields");
+  }
+}
+function renderPopHead() {
+  const pop = st.pops[st.popKey], ck = st.checks[st.popKey];
+  $("pop-title").textContent = pop.meta.label + " · " + pop.n + " units";
+  const desc = $("pop-desc");
+  desc.replaceChildren(document.createTextNode(pop.meta.description + " "));
+  const chip = document.createElement("span");
+  if (!ck) { chip.className = "chip wait"; chip.textContent = "checking against Python…"; }
+  else if (ck.error) { chip.className = "chip bad"; chip.textContent = "check failed: " + ck.error; }
+  else if (ck.bad) { chip.className = "chip bad"; chip.textContent = ck.bad + " values differ from Python"; }
+  else { chip.className = "chip ok"; chip.textContent = "matches Python to " + ck.maxAbs.toExponential(1); }
+  desc.append(chip);
+}
+async function renderOnce() {
+  const pop = st.pops[st.popKey];
+  if (!pop) return;
+  renderPopHead();
+  const a = { x0: st.x0, y0: st.y0, S: st.S };
+  const order = currentOrder(pop), pages = Math.max(1, Math.ceil(order.length / st.perPage));
+  st.page = Math.min(Math.max(st.page, 0), pages - 1);
+  const units = order.slice(st.page * st.perPage, (st.page + 1) * st.perPage);
+  if (st.sel === null || st.sel >= pop.n) st.sel = units[0];
+  const want = units.includes(st.sel) ? units.slice() : units.concat([st.sel]);
+  $("pageinfo").textContent = "Page " + (st.page + 1) + " of " + pages;
+  $("prev").disabled = st.page === 0; $("next").disabled = st.page >= pages - 1;
+
+  const t0 = performance.now();
+  let res;
+  try { res = await pop.maps(want, a); }
+  catch (e) {
+    ensureTiles(0);
+    setStatus("Could not compute " + pop.meta.label.toLowerCase() + ": " + errText(e), true);
+    return;
+  }
+  const tMaps = performance.now() - t0, t1 = performance.now();
+  const W = res.W, WW = W * W;
+  const out = want.map((u, q) => processUnit(res.data, q * WW, W, res.f, st.f, u === st.sel));
+  const tProc = performance.now() - t1;
+  const div = pop.signed && !st.f.rectify, lut = div ? LUT.div : LUT.seq;
+  let pageRange = null;
+  if (st.scale === "page") {
+    let hi = 0;
+    for (let i = 0; i < units.length; i++) { const r = out[i]; hi = Math.max(hi, div ? Math.max(Math.abs(r.vmin), Math.abs(r.vmax)) : r.vmax); }
+    pageRange = [div ? -hi : 0, hi];
+  }
+  ensureTiles(units.length);
+  const tiles = $("tiles").children;
+  units.forEach((u, i) => {
+    const r = out[i], b = tiles[i], [lo, hi] = pageRange || rangeFor(r, div);
+    b.dataset.u = String(u);
+    b.classList.toggle("sel", u === st.sel);
+    b.setAttribute("aria-pressed", u === st.sel ? "true" : "false");
+    drawMap(b.firstChild, r.v, W, lo, hi, lut, THUMB_RES);
+    const cap = caption(r);
+    b.querySelector(".lab").textContent = pop.label(u);
+    b.querySelector(".val").textContent = cap;
+    b.setAttribute("aria-label", pop.label(u) + ", " + cap);
+  });
+  const si = want.indexOf(st.sel);
+  renderDetail(pop, st.sel, out[si], res, a, div, lut, pageRange);
+  const engine = (pop.key === "trained" || pop.key === "untrained") ? (st.engine ? st.engine.name : "GPU") : "JavaScript";
+  setStatus(units.length + " of " + pop.n + " units · " + a.S + " × " + a.S + " arena at (" + a.x0 + ", " + a.y0 + ")" +
+    (res.f > 1 ? " · each pixel is the mean of " + res.f + " × " + res.f + " cells" : "") +
+    " · maps " + fmtMs(tMaps) + " in " + engine + " · processing " + fmtMs(tProc));
+}
+function renderDetail(pop, u, r, res, a, div, lut, pageRange) {
+  const W = res.W;
+  $("d-title").textContent = pop.label(u);
+  const [lo, hi] = pageRange || rangeFor(r, div);
+  drawMap($("d-canvas"), r.v, W, lo, hi, lut, DETAIL_RES);
+  drawOutlines($("d-overlay"), r, W);
+  drawColorbar(lut);
+  $("d-lo").textContent = fmtVal(lo);
+  $("d-mid").textContent = div ? "0" : "";
+  $("d-hi").textContent = hi > lo ? fmtVal(hi) : "silent";
+  const cellAt = (R, C) => [mod(a.x0 + C * res.f, NPOS), mod(a.y0 + R * res.f, NPOS)];
+  const rows = [];
+  if (r.peak > 0) {
+    const [px, py] = cellAt(r.peakR, r.peakC);
+    rows.push(["Peak", fmtVal(r.peak) + " at (" + px + ", " + py + ")"]);
+  } else rows.push(["Peak", "silent in this arena"]);
+  rows.push(["Mean", fmtVal(r.mean)]);
+  rows.push(["Fields", r.nFields + " (≥ " + st.f.thresh + "% of peak, ≥ " + st.f.minSize + " cells)"]);
+  if (r.nFields) rows.push(["Field size", "mean " + Math.round(r.meanField) + ", largest " + Math.round(r.maxField) + " cells"]);
+  rows.push(["Spatial information", isFinite(r.info) ? r.info.toFixed(3) + " bits" : "–"]);
+  rows.push(["Sparsity", isFinite(r.sparsity) ? r.sparsity.toFixed(3) : "–"]);
+  for (const kv of pop.info(u)) rows.push(kv);
+  const dl = $("d-stats");
+  dl.replaceChildren(...rows.flatMap(([k, v]) => { const dt = document.createElement("dt"), dd = document.createElement("dd"); dt.textContent = k; dd.textContent = v; return [dt, dd]; }));
+  st.detail = { u, r, W, f: res.f, a };
+}
+
+// ================================================================ checks
+async function runChecks() {
+  const R = st.M.ref_arena, N = R.S * R.S;
+  for (const key of POP_ORDER) {
+    const pop = st.pops[key];
+    try {
+      const ref = f32(await fetchText(pop.meta.ref_file)), U = pop.n;
+      const all = Array.from({ length: U }, (_, i) => i);
+      const ours = (await pop.maps(all, R)).data;
+      let maxAbs = 0, bad = 0;
+      for (let u = 0; u < U; u++) for (let i = 0; i < N; i++) {
+        const d = Math.abs(ours[u * N + i] - ref[i * U + u]);
+        if (!(d <= 1e-4)) bad++;
+        if (d > maxAbs) maxAbs = d;
+      }
+      st.checks[key] = { maxAbs, bad };
+    } catch (e) { st.checks[key] = { error: errText(e) }; }
+    renderChecks();
+    if (key === st.popKey) renderPopHead();
+  }
+}
+function renderChecks() {
+  $("checks").replaceChildren(...POP_ORDER.map(k => {
+    const li = document.createElement("li"), ck = st.checks[k], chip = document.createElement("span");
+    li.append(document.createTextNode(st.pops[k].meta.label + " "));
+    if (!ck) { chip.className = "chip wait"; chip.textContent = "pending"; }
+    else if (ck.error) { chip.className = "chip bad"; chip.textContent = ck.error; }
+    else if (ck.bad) { chip.className = "chip bad"; chip.textContent = ck.bad + " values off"; }
+    else { chip.className = "chip ok"; chip.textContent = "max diff " + ck.maxAbs.toExponential(1); }
+    li.append(chip);
+    return li;
+  }));
+}
+
+// ================================================================ controls
+const sizeToT = S => Math.round(1000 * Math.log(Math.max(S, SIZE_MIN) / SIZE_MIN) / Math.log(NPOS / SIZE_MIN));
+const tToSize = t => Math.round(SIZE_MIN * Math.pow(NPOS / SIZE_MIN, t / 1000));
+function syncInputs() {
+  $("size").value = st.S; $("size-range").value = sizeToT(st.S);
+  $("x0").value = st.x0; $("y0").value = st.y0;
+}
+function setArena(x0, y0, S, fromJump) {
+  st.S = Math.min(NPOS, Math.max(1, Math.round(S)));
+  st.x0 = mod(Math.round(x0), NPOS); st.y0 = mod(Math.round(y0), NPOS);
+  if (!fromJump) $("jump").value = "";
+  syncInputs(); drawMinimap(); updateSortNote(); requestRender();
+}
+function setSize(S) {
+  const cx = st.x0 + st.S / 2, cy = st.y0 + st.S / 2;
+  S = Math.min(NPOS, Math.max(1, Math.round(S)));
+  setArena(cx - S / 2, cy - S / 2, S);
+}
+function setPop(key) {
+  if (!st.pops[key] || key === st.popKey) return;
+  st.popKey = key; st.sel = null; st.page = 0; st.sortToken++;
+  document.querySelectorAll("#pops button").forEach(b => b.setAttribute("aria-pressed", b.dataset.pop === key ? "true" : "false"));
+  if (st.sort === "random") shuffleOrder();
+  updateSortNote();
+  if (SORTS[st.sort].stat) computeSort();
+  requestRender();
+}
+function changePage(d) { st.page += d; requestRender(); }
+function stepSel(d) {
+  const pop = st.pops[st.popKey], order = currentOrder(pop);
+  const i = order.indexOf(st.sel), j = mod((i < 0 ? 0 : i) + d, order.length);
+  st.sel = order[j];
+  st.page = Math.floor(j / st.perPage);
+  requestRender();
+}
+function filtersChanged() { updateSortNote(); requestRender(); }
+
+function buildControls() {
+  const pops = $("pops");
+  pops.replaceChildren(...POP_ORDER.map(k => {
+    const b = document.createElement("button");
+    b.type = "button"; b.dataset.pop = k; b.textContent = st.pops[k].meta.label;
+    b.setAttribute("aria-pressed", k === st.popKey ? "true" : "false");
+    b.addEventListener("click", () => setPop(k));
+    return b;
+  }));
+  const sort = $("sort");
+  sort.replaceChildren(...Object.entries(SORTS).map(([k, s]) => { const o = document.createElement("option"); o.value = k; o.textContent = s.label; return o; }));
+  const jump = $("jump"), first = document.createElement("option");
+  first.value = ""; first.textContent = "Jump to a recorded arena…";
+  const groups = new Map();
+  st.M.arenas.forEach((r, i) => {
+    if (!groups.has(r.group)) { const g = document.createElement("optgroup"); g.label = r.group; groups.set(r.group, g); }
+    const o = document.createElement("option");
+    o.value = String(i); o.textContent = r.label + " (" + r.x0 + ", " + r.y0 + ")";
+    groups.get(r.group).append(o);
+  });
+  jump.replaceChildren(first, ...groups.values());
+  $("prov").textContent = "Data exported by analysis/tuning_viewer/export.py at commit " + st.M.git_sha +
+    ". Trained encoder: " + (st.M.populations.trained.encoder || "") + ".";
+}
+
+function wireControls() {
+  $("size-range").addEventListener("input", () => setSize(tToSize(+$("size-range").value)));
+  $("size").addEventListener("change", () => { const v = parseInt($("size").value, 10); if (v > 0) setSize(v); else syncInputs(); });
+  $("x0").addEventListener("change", () => { const v = parseInt($("x0").value, 10); if (Number.isFinite(v)) setArena(v, st.y0, st.S); else syncInputs(); });
+  $("y0").addEventListener("change", () => { const v = parseInt($("y0").value, 10); if (Number.isFinite(v)) setArena(st.x0, v, st.S); else syncInputs(); });
+  $("jump").addEventListener("change", () => {
+    const v = $("jump").value;
+    if (v === "") return;
+    const r = st.M.arenas[+v];
+    setArena(r.x0, r.y0, r.S, true);
+  });
+  const mm = $("minimap");
+  let mmDrag = false;
+  const mmMove = e => {
+    const rect = mm.getBoundingClientRect();
+    const cx = (e.clientX - rect.left) / rect.width * NPOS, cy = (1 - (e.clientY - rect.top) / rect.height) * NPOS;
+    setArena(cx - st.S / 2, cy - st.S / 2, st.S);
+  };
+  mm.addEventListener("pointerdown", e => { mmDrag = true; mm.setPointerCapture(e.pointerId); mmMove(e); });
+  mm.addEventListener("pointermove", e => { if (mmDrag) mmMove(e); });
+  mm.addEventListener("pointerup", () => { mmDrag = false; });
+  mm.addEventListener("pointercancel", () => { mmDrag = false; });
+
+  const dc = $("d-canvas");
+  let drag = null;
+  dc.addEventListener("pointerdown", e => {
+    drag = { x: e.clientX, y: e.clientY, x0: st.x0, y0: st.y0 };
+    dc.setPointerCapture(e.pointerId); dc.classList.add("dragging");
+  });
+  dc.addEventListener("pointermove", e => {
+    const d = st.detail;
+    if (drag) {
+      const k = dc.clientWidth / st.S;
+      const dx = Math.round((e.clientX - drag.x) / k), dy = Math.round((e.clientY - drag.y) / k);
+      if (drag.x0 - dx !== st.x0 || drag.y0 + dy !== st.y0) setArena(drag.x0 - dx, drag.y0 + dy, st.S);
+      return;
+    }
+    if (!d) return;
+    const rect = dc.getBoundingClientRect();
+    const C = Math.floor((e.clientX - rect.left) / rect.width * d.W), R = d.W - 1 - Math.floor((e.clientY - rect.top) / rect.height * d.W);
+    if (C < 0 || R < 0 || C >= d.W || R >= d.W) return;
+    const x = mod(d.a.x0 + C * d.f, NPOS), y = mod(d.a.y0 + R * d.f, NPOS), val = d.r.v[R * d.W + C];
+    $("d-hover").textContent = (d.f > 1 ? "cells from (" + x + ", " + y + "), " + d.f + " × " + d.f : "cell (" + x + ", " + y + ")") + ": " + fmtVal(val);
+  });
+  const endDrag = () => { drag = null; dc.classList.remove("dragging"); };
+  dc.addEventListener("pointerup", endDrag);
+  dc.addEventListener("pointercancel", endDrag);
+  dc.addEventListener("pointerleave", () => { if (!drag) $("d-hover").textContent = "Hover over the map to read a cell."; });
+
+  $("rectify").addEventListener("change", () => { st.f.rectify = $("rectify").checked; filtersChanged(); });
+  $("sigma").addEventListener("input", () => { st.f.sigma = +$("sigma").value; $("sigma-out").textContent = st.f.sigma ? st.f.sigma.toFixed(1) : "off"; filtersChanged(); });
+  $("thresh").addEventListener("input", () => { st.f.thresh = +$("thresh").value; $("thresh-out").textContent = st.f.thresh + "%"; filtersChanged(); });
+  $("minsize").addEventListener("change", () => { const v = parseInt($("minsize").value, 10); st.f.minSize = v > 0 ? v : 1; $("minsize").value = st.f.minSize; filtersChanged(); });
+  $("sort").addEventListener("change", () => setSort($("sort").value));
+  $("resort").addEventListener("click", () => {
+    if (st.sort === "random") { st.shuffleSeed++; shuffleOrder(); updateSortNote(); requestRender(); }
+    else computeSort();
+  });
+  $("perpage").addEventListener("change", () => { st.perPage = +$("perpage").value; st.page = 0; requestRender(); });
+  $("scale").addEventListener("change", () => { st.scale = $("scale").value; requestRender(); });
+  $("prev").addEventListener("click", () => changePage(-1));
+  $("next").addEventListener("click", () => changePage(1));
+  $("d-prev").addEventListener("click", () => stepSel(-1));
+  $("d-next").addEventListener("click", () => stepSel(1));
+  $("outlines").addEventListener("change", () => { st.outlines = $("outlines").checked; if (st.detail) drawOutlines($("d-overlay"), st.detail.r, st.detail.W); });
+
+  document.addEventListener("keydown", e => {
+    const t = e.target;
+    if (t && (t.tagName === "INPUT" || t.tagName === "SELECT" || t.tagName === "TEXTAREA")) return;
+    if (e.metaKey || e.ctrlKey || e.altKey) return;
+    const step = e.shiftKey ? 10 : 1;
+    let dx = 0, dy = 0;
+    if (e.key === "ArrowLeft") dx = -step;
+    else if (e.key === "ArrowRight") dx = step;
+    else if (e.key === "ArrowUp") dy = step;
+    else if (e.key === "ArrowDown") dy = -step;
+    else if (e.key === "PageDown" || e.key === "]") { e.preventDefault(); changePage(1); return; }
+    else if (e.key === "PageUp" || e.key === "[") { e.preventDefault(); changePage(-1); return; }
+    else return;
+    e.preventDefault();
+    setArena(st.x0 + dx, st.y0 + dy, st.S);
+  });
+
+  const onTheme = () => { buildLuts(); drawMinimap(); requestRender(); };
+  window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", onTheme);
+  new MutationObserver(onTheme).observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
+  window.addEventListener("resize", () => { drawMinimap(); if (st.detail) drawOutlines($("d-overlay"), st.detail.r, st.detail.W); });
+}
+
+// ================================================================ start
+(async () => {
+  buildLuts();
+  try { await loadAll(); }
+  catch (e) { setStatus("Could not load the population data: " + errText(e), true); return; }
+  buildControls();
+  wireControls();
+  syncInputs();
+  drawMinimap();
+  renderChecks();
+  setStatus("Starting the GPU…");
+  await initEngine();
+  if (!st.engine) setPop("grid");
+  requestRender();
+  await new Promise(r => setTimeout(r, 300));
+  runChecks();
+})();
+</script>
