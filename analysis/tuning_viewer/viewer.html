@@ -157,8 +157,8 @@ footer ul { margin: 0; padding: 0; list-style: none; display: flex; flex-wrap: w
           <label class="lbl" for="x0">x</label><input type="number" id="x0" min="0" max="1715" step="1">
           <label class="lbl" for="y0">y</label><input type="number" id="y0" min="0" max="1715" step="1">
         </div>
-        <select id="jump" aria-label="Go to an arena from an experiment"></select>
-        <p class="hint">x and y are the arena's lower-left cell. Drag the map or the large unit view to move it, or use the arrow keys (Shift moves 10 cells). The scaffold wraps at its edges. Grey squares are the 20 × 20 arenas used in the cosyne figures and the controller's training world.</p>
+        <select id="jump" aria-label="Go to a training patch of the trained encoder"></select>
+        <p class="hint">x and y are the arena's lower-left cell. Drag the map or the large unit view to move it, or use the arrow keys (Shift moves 10 cells). The scaffold wraps at its edges. Grey squares are the 118 patches of 50 × 50 cells the trained encoder was trained on, 10% of the scaffold.</p>
       </section>
 
       <section class="panel" aria-labelledby="t-map">
@@ -1262,7 +1262,7 @@ function buildControls() {
   const sort = $("sort");
   sort.replaceChildren(...Object.entries(SORTS).map(([k, s]) => { const o = document.createElement("option"); o.value = k; o.textContent = s.label; return o; }));
   const jump = $("jump"), first = document.createElement("option");
-  first.value = ""; first.textContent = "Go to an arena from an experiment…";
+  first.value = ""; first.textContent = "Go to a training patch of the trained encoder…";
   const groups = new Map();
   st.M.arenas.forEach((r, i) => {
     if (!groups.has(r.group)) { const g = document.createElement("optgroup"); g.label = r.group; groups.set(r.group, g); }

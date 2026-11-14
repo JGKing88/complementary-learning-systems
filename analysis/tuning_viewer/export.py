@@ -7,8 +7,8 @@ size at any scaffold location, from what this script writes to ``DIR``
 (default ``viewer_data/`` beside this module, which git ignores):
 
 ``manifest.json``
-    every population's parameters, the reference arena, the real arena
-    placements, and the result of each check below.
+    every population's parameters, the reference arena, the trained
+    encoder's training patches, and the result of each check below.
 ``<pop>_*.b64.txt``
     arrays as base64 of their little-endian bytes (artifacts serve no raw
     binary type): the folded MLP weights (float32), the hippocampal ``Wpg``
@@ -63,7 +63,6 @@ HPC = {"Np": 400, "thresh": 2.0, "c": 0.5, "seed": 0}
 # page's modular indexing as well as its arithmetic.
 REF = {"x0": 1708, "y0": 1710, "S": 16}
 N_CHECK = 4096
-CONTROLLER = "navigate_navp2_d0_base_s42_22133273"
 
 
 def write_b64(path: Path, arr: np.ndarray, dtype: str) -> None:
@@ -167,41 +166,26 @@ def check_hpc_recipe() -> dict:
             "pbook_max_abs_diff": float(np.abs(rates - pbook).max())}
 
 
-# ---------------------------------------------------------------- real arenas
-def real_arenas() -> list[dict]:
-    out = []
-    for n_arenas, sub in ((5, "agenthash_heldout"), (20, "agenthash_heldout_n20")):
-        for seed in range(1, 9):
-            path = RUNS / f"results/cosyne2027/{sub}/agenthash_s{seed}.json"
-            try:
-                offs = json.load(open(path))["metadata"]["extra"]["env_offsets_per_iter"][0]
-            except (OSError, KeyError, IndexError, ValueError) as e:
-                print(f"  skip {path}: {e}")
-                continue
-            for k, (x0, y0) in enumerate(offs, start=1):
-                out.append({"group": f"Fig 3, {n_arenas} arenas", "label": f"Seed {seed}, arena {k}",
-                            "x0": int(x0), "y0": int(y0), "S": 20})
-    per_arena = RUNS / "results/phase_abstraction/d0_A/per_arena"
-    for i in range(100):
-        path = per_arena / f"{i:04d}.npz"
-        try:
-            with np.load(path) as z:
-                x0, y0 = (int(v) for v in np.asarray(z["offset"]).ravel()[:2])
-        except (OSError, KeyError, ValueError) as e:
-            print(f"  skip {path}: {e}")
-            continue
-        out.append({"group": "Fig 4, held-out arenas", "label": f"Arena {i + 1}",
-                    "x0": x0, "y0": y0, "S": 20})
-    try:
-        split = json.load(open(RUNS / f"agent_ckpts/{CONTROLLER}/world.json"))["split"]
-        for key, name in (("train", "Training arena"), ("base_val", "Validation arena")):
-            for k, env in enumerate(split.get(key, []), start=1):
-                x0, y0 = env["offset"]
-                out.append({"group": "Controller's training world", "label": f"{name} {k}",
-                            "x0": int(x0), "y0": int(y0), "S": int(env.get("size", 20))})
-    except (OSError, KeyError, ValueError) as e:
-        print(f"  skip training world: {e}")
-    return out
+# ---------------------------------------------------------------- training patches
+def encoder_patches(path: str, lambdas, fwhm) -> list[dict]:
+    """The trained encoder's training patches, in the viewer's (x, y).
+
+    ``encoder_training`` names a patch ``(y0, x0)`` but passes ``y0`` as the
+    first argument of ``grid_code_batch`` (``data.py``), which indexes the
+    codebook's first spatial axis: the axis ``grid_codes`` and this viewer
+    call x. So viewer ``x0 = y0s[i]`` and ``y0 = x0s[i]``. The assert pins
+    that the two code functions agree on which argument is which.
+    """
+    from encoder_training.eval_unique_radius import grid_code_batch
+
+    a, b = np.array([3]), np.array([7])
+    if not np.allclose(grid_code_batch(lambdas, a, b, fwhm), grid_codes(lambdas, a, b, fwhm)):
+        raise RuntimeError("grid_code_batch and grid_codes disagree on axis order")
+    ck = torch.load(path, map_location="cpu", weights_only=False)
+    ys, xs, sizes = ck["y0s"], ck["x0s"], ck["sizes"]
+    return [{"group": "Trained encoder's training patches", "label": f"Patch {i + 1}",
+             "x0": int(ys[i]), "y0": int(xs[i]), "S": int(sizes[i])}
+            for i in range(len(sizes))]
 
 
 # ---------------------------------------------------------------- main
@@ -289,7 +273,7 @@ def main() -> None:
         pops[name]["ref_file"] = fname
         assert ref.shape == (REF["S"] ** 2, pops[name]["n_units"]), (name, ref.shape)
 
-    arenas = real_arenas()
+    arenas = encoder_patches(ENCODER, lambdas, fwhm)
     manifest = {
         "git_sha": git_sha(), "lambdas": lambdas, "npos": npos, "fwhm_ratio": float(fwhm),
         "ref_arena": REF, "populations": pops, "arenas": arenas,
@@ -301,7 +285,9 @@ def main() -> None:
     for name, pop in pops.items():
         checks = {k: v for k, v in pop.items() if "diff" in k or k == "recipe_check"}
         print(f"  {name:12s} {pop['n_units']:5d} units  {checks}")
-    print(f"  {len(arenas)} real arenas; wrote {out} ({total / 1e6:.1f} MB)")
+    cover = sum(a["S"] ** 2 for a in arenas) / npos ** 2
+    print(f"  {len(arenas)} encoder training patches ({cover:.1%} of the scaffold); "
+          f"wrote {out} ({total / 1e6:.1f} MB)")
 
 
 if __name__ == "__main__":
