@@ -1715,11 +1715,54 @@ every other run (newest 0.88, oldest 0.47 at 256 arenas).
 
 Reading. The capacity of the state and the coordination of writes and reads
 are not the barrier: with known arenas the same network holds 6 to 10 goals.
-The barrier is addressing a new arena: giving a never-seen arena a place in
-the state from its views within the lifetime, and finding that place again
-from a different view. Gradient descent learns the arena-specific version when
-arena identities can be stored in the weights, and does not turn it into the
-general one.
+The barrier is binding goals to arenas that are new in each lifetime.
+Gradient descent learns the arena-specific version when arena identities can
+be stored in the weights, and does not turn it into the general one. (§7b.9
+shows partial views are not what makes it hard: perfect, identical keys give
+the same ceiling.)
+
+### 7b.9 Basic control: associative recall with perfect keys (2026-11-14)
+
+The roughly 3-goal ceiling is the recurrent memory's own, not the arena
+task's. In plain in-context associative recall, with keys that are fresh in
+every sequence but identical at write and read, a width-512 GRU or LSTM holds
+2.7 to 3.4 goals at 6 pairs, the same as the best arena GRU (2.8 at N = 6). A
+fast-weight memory of the same width holds 6.0 of 6, 9.8 of 10 and 18.2 of 20.
+This matches the associative-recall literature: Miconi et al. 2018
+(differentiable plasticity), where plastic recurrent networks memorise new
+high-dimensional patterns within an episode and non-plastic RNNs and LSTMs do
+far worse, and Zoology (Arora et al. 2023), where recurrent models without
+attention fall behind attention on multi-query associative recall.
+
+Task (`analysis/idea4/recall_grid.py`, job 29098684). Each sequence draws
+P fresh random keys (+-1 over the 180 panorama slots, full mask, as a whole
+panorama would be) and for each a goal, a random cell of a 20 x 20 arena at a
+random scaffold offset, given as its 12 grid phases. The network is written
+each (key, goal) pair once (key, goal phases, write flag), then queried with
+every key from a copy of its state. Read-outs are decoded to the best cell of
+the goal's arena as in idea 4's retention test: correct within 1.5 cells
+(chance about 0.02; chance mean distance about 10 cells). Width 512, no view
+encoder, read MLP 256, Adam 1e-3, batch 128, 100k steps, 1024 test sequences.
+
+| memory | P = 2 | P = 6 | P = 10 | P = 20 |
+|---|---|---|---|---|
+| GRU | 1.00 (0.0 cells) | 0.45 (6.5 cells; 2.7 goals) | 0.15 (1.5 goals) | 0.06 (1.2 goals) |
+| LSTM | 1.00 (0.0 cells) | 0.57 (5.4 cells; 3.4 goals) | 0.09 (0.9 goals) | 0.02 (0.4 goals) |
+| fast weights | 1.00 (0.0 cells) | 1.00 (0.1 cells; 6.0 goals) | 0.98 (9.8 goals) | 0.91 (1.2 cells; 18.2 goals) |
+
+At 6 pairs the recurrent memories were still rising slowly (LSTM 0.46, 0.52,
+0.57 at 20k, 50k, 100k; GRU 0.16, 0.28, 0.45). At 10 and 20 pairs, trained
+only at that size, they never left the plateau, so they hold fewer goals than
+at 6; the arena runs, trained on mixed lifetime lengths, did not show that
+collapse.
+
+Reading. Idea 4's ceiling is the ceiling of in-context binding in a recurrent
+network's activity under gradient descent. It is not caused by partial views,
+walking, the grid code or the arena task. Keys that recur across lifetimes are
+easy (the fixed-key probe in §7b.5, the recurring arena pool in §7b.8); keys
+that are new in each lifetime are not, even when they are clean and identical
+at write and read. An outer-product memory binds them in one write, and that
+is the case for plastic weights that idea 4 was set up to test.
 
 ## 8. Decisions and open items
 
