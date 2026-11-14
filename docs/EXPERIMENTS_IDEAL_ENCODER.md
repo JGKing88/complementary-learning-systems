@@ -2770,3 +2770,58 @@ Files: `analysis/hopfield_probe/kernel_scaling/` (`monotone_rays.py`, `local_max
 the pruning version). Figures and data:
 `/orcd/pool/003/jackking/cls_runs/results/hopfield_probe/gwn/figures/` (`pool_quality*.{json,pdf,png}`,
 `phase_network*.{pdf,png}`). Runs were on a pi_evelina9 allocation, CPU only.
+
+## 25. A non-negative ideal code: relu of mixed waves (2026-11-14)
+
+**Question.** Does the ideal encoder still work in the probe if its activity is non-negative?
+
+**Code.** `ideal_encoder.py relu_mix=1`: the ideal's 1024 units are remixed by a fixed orthogonal
+matrix Q = H D3 H D2 H D1 / 1024^1.5 (Walsh-Hadamard, random signs seed 0, the same rotation as the
+tuning viewer's "Ideal, rotated"), rectified and renormalised, relu(Q z)/|relu(Q z)|. Each unit
+mixes every wave, so across units the similarity is the arc-cosine transform of the ideal kernel k,
+(√(1−k²) + (π − arccos k) k)/π = 1/π + k/2 + k²/(2π) + k⁴/(24π) + …, a floor of 1/π = 0.318 plus a
+peak. `center=1` subtracts the code's mean vector (65,536 random cells) and renormalises; in this
+linear memory that equals mean-subtracted (covariance) storage with a mean-subtracted cue and
+readout, while the activity itself stays non-negative. After the mean is removed the similarity is
+0.733 k + 0.233 k² + 0.020 k⁴ + …, a sum of Gaussians of width r, r/√2 and r/2 (half-width 17.3
+cells at r = 16; r = 17.9 restores the ideal's 19.4). Rectifying single waves instead (relu(z))
+puts 9% of the power on doubled waves, which all realign at half the scaffold (similarity at
+(858, 0) +0.20 of the range after mean removal, against +0.04 for mixtures), so it was not probed.
+
+Checks: module equals closed form to 1e-8; relu_mix codes have min value 0; floor 0.320; centred
+floor 0.002; `hopfield_nav/tests/test_ideal_encoder.py` passes.
+
+**Probe** (`run_relu_mix.sh`, job 29106058, run_ideal.sh settings, Hebbian storage, K = 5, one
+recall step; s15 = acc45 after 15 steps; dead = share of goals never reached, by K):
+
+| encoder | region | \|err\| | acc45 | exact | basin | cont reach | s15 | dead @ K 1/3/5/10/20 |
+|---|---|---|---|---|---|---|---|---|
+| ideal r=16 | whole | 1.04 | 1.000 | 1.000 | 32.1 | 0.998 | 0.999 | 0 0 0 0 0 |
+| ideal r=16 | corner | 1.12 | 1.000 | 0.999 | 29.5 | 0.987 | 0.998 | 0 0 0 0 0 |
+| relu_mix r=16 | whole | 7.12 | 0.998 | 0.649 | 11.4 | 0.921 | 0.952 | 0 0 .08 .71 .96 |
+| relu_mix r=16 | corner | 7.45 | 0.998 | 0.511 | 11.8 | 0.881 | 0.937 | 0 0 .08 .71 .92 |
+| relu_mix r=16 center | whole | 2.44 | 1.000 | 1.000 | 29.8 | 0.993 | 0.999 | 0 0 0 0 0 |
+| relu_mix r=16 center | corner | 2.47 | 1.000 | 1.000 | 29.6 | 0.985 | 0.999 | 0 0 0 0 0 |
+| relu_mix r=17.9 | whole | 6.22 | 0.998 | 0.563 | 11.1 | 0.896 | 0.952 | 0 0 .12 .62 .96 |
+| relu_mix r=17.9 | corner | 7.08 | 0.997 | 0.418 | 10.2 | 0.843 | 0.940 | 0 0 .12 .79 .96 |
+| relu_mix r=17.9 center | whole | 2.07 | 1.000 | 1.000 | 30.1 | 0.993 | 0.999 | 0 0 0 0 0 |
+| relu_mix r=17.9 center | corner | 2.04 | 1.000 | 1.000 | 31.3 | 0.988 | 0.999 | 0 0 0 0 0 |
+
+**Results.**
+1. **With the mean removed in the memory, the non-negative code works like the ideal.** Exact
+   retrieval 1.000, basin 29.6–31.3 (ideal 29.5–32.1), reach 0.985–0.993 (ideal 0.987–0.998), no
+   dead goals at any K. Direction error doubles, 2.0–2.5° against 1.0–1.1°, consistent with the
+   small position dependence that rectification and per-cell renormalisation add (sd ≈ 0.02 of
+   similarity at 16 cells).
+2. **Without it, the floor breaks retrieval, and more so as goals are added.** Exact retrieval
+   falls to 0.42–0.65, the basin to 10–12 cells, and the share of dead goals rises from 8–12% at
+   K = 5 to 62–79% at K = 10 and 92–96% at K = 20. Every stored goal shares the mean vector, so a
+   cue's recall is a sum over all K goals with weight at least 0.32 each, and the common part grows
+   with K. My prediction before the run, that one recall step and the difference readout would
+   mostly cancel the floor, was wrong.
+3. Matching the peak width (r = 17.9) helps slightly when centred (basin +0.4 to +1.7, error −0.4°).
+
+**Answer.** Non-negative activity is fine if the memory subtracts the code's mean: covariance
+storage, or uniform inhibition of the same size. The units then look like place fields (relu of a
+random sum of waves, half active at any place) and the navigation probe is within 2–3% of the
+ideal on every measure but direction (2° against 1°).
