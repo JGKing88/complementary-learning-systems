@@ -259,6 +259,7 @@ pool figures (`gwn/figures/`).
 | `small_j_bias.py` | weights biased toward small values | 25.6 | stdout |
 | `rewire.py` | rewiring instead of pruning | 25.7 | stdout |
 | `kappa_steps.py` | depression: κ against steps at a fixed width | 25.8 | stdout |
+| `kernel_error_checks.py` | checks for `docs/kernel_error.tex`: kernel error from finite M, independent noise (decoder, similarity climber), shared grid-phase noise and the choice of j representatives, edge of the monotone region | tex | stdout |
 
 ## First result: the ideal encoder in the probe (2026-09-30)
 

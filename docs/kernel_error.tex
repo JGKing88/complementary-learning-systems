@@ -1,0 +1,352 @@
+\documentclass[11pt]{article}
+\usepackage[margin=1in]{geometry}
+\usepackage{amsmath,amssymb,booktabs}
+
+\newcommand{\E}{\mathbb{E}}
+\newcommand{\Var}{\operatorname{Var}}
+\newcommand{\Cov}{\operatorname{Cov}}
+\newcommand{\sinc}{\operatorname{sinc}}
+
+\title{Kernel error of the ideal encoder:\\finite size, independent noise, shared grid noise}
+\author{}
+\date{}
+
+\begin{document}
+\maketitle
+
+\noindent Three sources make the similarity the memory reads differ from the target Gaussian.
+A finite number of waves gives an error that is frozen into the code. Independent noise on each
+unit gives an error that is redrawn on every read. Noise in the grid phases is shared by every
+wave. Each has a different dependence on the number of waves $M$, the kernel width $r$ and the
+arena size $L$. Every check quoted below comes from
+\texttt{analysis/hopfield\_probe/kernel\_scaling/kernel\_error\_checks.py} ($L = 1716$, $r = 16$
+unless stated).
+
+\section{Setup}
+
+The arena is a torus of side $L$ cells in $d$ dimensions ($d = 2$ for navigation). The code has
+$M$ waves. Wave $k$ has an integer frequency $n_k \in \mathbb{Z}^d$, drawn independently from a
+Gaussian with standard deviation $\sigma_n = L/(2\pi r)$ per axis and rounded, so its angular
+frequency $\omega_k = 2\pi n_k/L$ is approximately $\mathcal{N}(0, I/r^2)$. The code is
+\begin{equation}
+  z(p) = \frac{1}{\sqrt{M}}\bigl(\cos\omega_k\!\cdot p,\; \sin\omega_k\!\cdot p\bigr)_{k=1}^{M}
+  \in \mathbb{R}^{2M}, \qquad |z(p)| = 1 .
+\end{equation}
+Two positions a displacement $\Delta$ apart have similarity
+\begin{equation}
+  K_M(\Delta) = z(p)\cdot z(p+\Delta) = \frac{1}{M}\sum_{k=1}^{M}\cos(\omega_k\!\cdot\Delta),
+\end{equation}
+which does not depend on $p$. The target is
+\begin{equation}
+  k(\Delta) = \E_\omega\cos(\omega\cdot\Delta) = e^{-|\Delta|^2/2r^2},
+\end{equation}
+the characteristic function of the Gaussian. The kernel width is set by the spread of the
+frequencies alone. $M$ only controls how closely the sum follows its mean.
+
+\section{Error from a finite number of waves}
+
+\subsection{Size at each displacement}
+
+Each term $\cos(\omega_k\cdot\Delta)$ has mean $k(\Delta)$. Its mean square is
+$\E\cos^2(\omega\cdot\Delta) = \tfrac12\bigl(1 + k(2\Delta)\bigr) = \tfrac12\bigl(1 + k(\Delta)^4\bigr)$,
+so its variance is $\tfrac12(1 - k(\Delta)^2)^2$. The $M$ terms are independent, so
+\begin{equation}
+  K_M(\Delta) = k(\Delta) + \varepsilon(\Delta), \qquad
+  \E\varepsilon = 0, \qquad
+  \operatorname{sd}\varepsilon(\Delta) = \frac{1 - e^{-|\Delta|^2/r^2}}{\sqrt{2M}} .
+  \label{eq:sdM}
+\end{equation}
+The error is zero at the goal, where $K_M(0) = 1$ exactly, and reaches $1/\sqrt{2M}$ beyond about
+$2r$. The same argument gives the covariance
+\begin{equation}
+  \Cov\bigl(\varepsilon(\Delta), \varepsilon(\Delta')\bigr)
+  = \frac{1}{2M}\bigl[k(\Delta-\Delta') + k(\Delta+\Delta')\bigr] - \frac{1}{M}k(\Delta)k(\Delta') .
+  \label{eq:covM}
+\end{equation}
+
+\noindent Check (1D, 400 seeds, $M = 512$): at $\Delta = 8, 16, 32, 400$ the measured standard
+deviations are $0.0072, 0.0206, 0.0309, 0.0299$ against $0.0069, 0.0198, 0.0307, 0.0312$ from
+\eqref{eq:sdM}.
+
+\subsection{Near the goal}
+
+Expanding the cosines, $K_M(\delta) = 1 - \tfrac12\,\delta^\top C\,\delta + O(|\delta|^4)$ with the
+curvature matrix
+\begin{equation}
+  C = \frac{1}{M}\sum_k \omega_k\omega_k^\top, \qquad \E C = I/r^2 .
+\end{equation}
+Since $\omega_a^2 r^2$ is $\chi^2_1$ with variance $2$, each diagonal entry has relative standard
+deviation $\sqrt{2/M}$. So the hill has the right shape on average but its width along any
+direction is off by a random fraction $\sqrt{2/M}$ (measured $0.479, 0.250, 0.063$ at $M = 8, 32,
+512$ against $0.500, 0.250, 0.0625$). The gradient near the goal is $-C\delta$ instead of
+$-\delta/r^2$, wrong by a fraction of order $\sqrt{2/M}$. The error never reverses the slope near
+the goal unless $M$ is tiny.
+
+\subsection{Far from the goal}
+
+Beyond about $3r$, $k \approx 0$ and \eqref{eq:covM} reduces to $k(\Delta - \Delta')/2M$ (the second
+term only reflects $K_M(\Delta) = K_M(-\Delta)$). For large $M$ the central limit theorem makes
+$\varepsilon$ a smooth stationary Gaussian field with variance $\sigma_\varepsilon^2 = 1/2M$, correlation
+$k(\tau)$, correlation length $r$, and gradient variance $\sigma_\varepsilon^2/r^2$ per axis.
+
+The largest far value follows from the expected number of excursions of the field above a level
+$u\sigma_\varepsilon$. Count both signs and use the evenness of $K_M$, so the far region has volume
+$V_1 = L - 6r$ in 1D and $V_2 = L^2 - \pi(3r)^2$ in 2D. The Rice formula (1D) and the Euler
+characteristic of the excursion set (2D) give
+\begin{equation}
+  \mu_1(u) = \frac{V_1}{2\pi r}\,e^{-u^2/2}, \qquad
+  \mu_2(u) = \frac{V_2}{(2\pi)^{3/2} r^2}\,u\,e^{-u^2/2} .
+\end{equation}
+Let $u^*$ solve $\mu(u^*) = 1$. Excursions above $u^*$ are rare and close to Poisson, so the
+maximum is Gumbel distributed and
+\begin{equation}
+  A \equiv \E\max_{|\Delta| > 3r}|K_M(\Delta)| \approx \frac{u^* + \gamma/u^*}{\sqrt{2M}},
+  \qquad \gamma = 0.577 .
+  \label{eq:alias}
+\end{equation}
+For $L = 1716$ and $r = 16$, $u^* = 2.36$ in 1D and $3.99$ in 2D.
+
+\begin{center}
+\begin{tabular}{lrrr}
+  \toprule
+  & $M$ & predicted $A$ & measured mean \\
+  \midrule
+  1D & 32 & 0.326 & 0.321 \\
+  1D & 128 & 0.163 & 0.162 \\
+  1D & 512 & 0.081 & 0.082 \\
+  1D & 2048 & 0.041 & 0.041 \\
+  2D & 32 & 0.517 & 0.498 \\
+  2D & 512 & 0.129 & 0.128 \\
+  \bottomrule
+\end{tabular}
+\end{center}
+
+\noindent To leading order $u^* \approx \sqrt{2\ln N}$ with $N \sim (L/r)^d$ effectively independent
+far values, so
+\begin{equation}
+  A \approx \sqrt{\frac{d\,\ln(L/r)}{M}}, \qquad
+  M \approx \frac{d\,\ln(L/r)}{A^2} \quad\text{for a target alias } A .
+\end{equation}
+The arena size enters only through a logarithm. The kernel width enters the same way.
+
+With very few waves the Gaussian approximation fails and the code makes copies of the goal. A far
+point is a near copy if all $M$ angles fall within $\epsilon$ of zero, which has probability
+$(\epsilon/\pi)^M$. Among $N$ far points the closest copy has $\epsilon \approx \pi N^{-1/M}$: about
+$0.03$ rad for $M = 2$ (four units) and $0.3$ rad for $M = 4$ in 2D, which means similarity close
+to $1$ far from the goal (an estimate, not checked).
+
+\subsection{Edge of the monotone region}
+
+A climber gets past a point as long as the true slope beats the slope of the frozen error.
+Along a ray the true slope is $(\rho/r)\,e^{-\rho^2/2}$ with $\rho = |\Delta|/r$. Far from the goal
+the gradient of $\varepsilon$ has standard deviation $1/(r\sqrt{2M})$. Setting the two equal gives
+the edge of the monotone region,
+\begin{equation}
+  \rho\,e^{-\rho^2/2} = \frac{1}{\sqrt{2M}}, \qquad \rho^2 \approx \ln(2M) + 2\ln\rho ,
+\end{equation}
+which is $39, 44, 48, 52$ cells for $M = 32, 128, 512, 2048$ at $r = 16$. This one-standard-deviation
+criterion matches the 10th percentile of where a 1D profile first stops decreasing ($38, 43, 47, 51$
+cells over 300 seeds; medians $53, 55, 60, 61$). In 2D the nearest trap, a strict local maximum
+other than the goal, lies at $41$ to $58$ cells at the closest over 8 seeds (medians $55$ to $69$).
+The criterion is scale free, so the edge is proportional to $r$ (not checked at other $r$). It grows
+with $M$ only as $\sqrt{\ln M}$: 64 times more waves move the early edge from $38$ to $51$ cells.
+
+\subsection{Comparison with an exact kernel}
+
+The exact kernel has Fourier weights $P_n \propto e^{-r^2|\omega_n|^2/2}$ on all integer
+frequencies. Its effective number of dimensions is the participation ratio
+\begin{equation}
+  D_{\text{exact}} = \frac{(\sum_n P_n)^2}{\sum_n P_n^2}
+  = \bigl(4\pi\sigma_n^2\bigr)^{d/2} = \Bigl(\frac{L}{\sqrt{\pi}\,r}\Bigr)^{d},
+\end{equation}
+which in 2D is $L^2/\pi r^2 \approx 3{,}700$ at $r = 16$. That is the arena's area divided by the
+area of one field, the number of place cells of radius $r$ needed to tile it. Random waves do not
+reproduce the kernel exactly. They reproduce it up to the alias $A$, and that costs $\ln L$
+instead of $L^d$. With unequal weights $w_k$ the far-field results hold with $M$ replaced by
+$n_{\text{eff}} = (\sum_k w_k)^2/\sum_k w_k^2$.
+
+\section{Independent noise on each unit}
+
+Each unit carries independent Gaussian noise of standard deviation $s$ relative to its amplitude.
+After the $1/\sqrt{M}$ normalisation,
+\begin{equation}
+  \tilde z(p) = z(p) + \xi, \qquad \xi \sim \mathcal{N}\bigl(0, (s^2/M)\,I_{2M}\bigr).
+\end{equation}
+
+\subsection{Error in one similarity read}
+
+With the goal stored clean,
+\begin{equation}
+  \tilde K = \tilde z(p)\cdot z(q) = K_M(p - q) + \xi\cdot z(q), \qquad
+  \xi\cdot z(q) \sim \mathcal{N}(0, s^2/M),
+\end{equation}
+because $|z(q)| = 1$. The error is $s/\sqrt{M}$ at every displacement. It does not depend on
+$r$ or $L$. If the goal is also noisy the variance is $2s^2(1+s^2)/M$. Noise in a stored goal is
+drawn once, so it acts as an extra frozen error of size $s/\sqrt{M}$ everywhere. Normalising
+$\tilde z$ rescales every read by the same factor and does not move any maximum.
+
+\subsection{Position error of a decoder}
+
+The likelihood of $p$ is $\exp(-M|\tilde z - z(p)|^2/2s^2)$. Since
+$\sum_i \partial_a z_i\,\partial_b z_i = C_{ab}$, the Fisher information is
+\begin{equation}
+  J = \frac{M}{s^2}\,C \approx \frac{M}{s^2 r^2}\,I, \qquad
+  \sigma_p \ge \frac{s\,r}{\sqrt{M}} \quad\text{per axis.}
+\end{equation}
+Precision is set by the curvature of the kernel at its peak. At $r = 16$, $M = 512$, $s = 0.1$
+this is $0.07$ cells. A decoder confuses the position with a far alias only when
+$s \gtrsim \sqrt{M(1 - A)/(4\ln N)}$, about $3.5$ here, so global errors play no role.
+
+\subsection{Spread of an agent that climbs similarity}
+
+A greedy agent reads $\tilde K$ at $p-1$, $p$, $p+1$, each with fresh noise of standard deviation
+$\eta = s/\sqrt{M}$, and moves to the largest. At distance $d$ from the goal the three true
+values are $K(d) - g\,i$ for $i = -1, 0, 1$ (outward positive), with slope $g = d/r^2$. For three
+Gaussian values, $\partial P(\text{argmax}=i)/\partial\mu_i = 1/2\sqrt{\pi}$ and
+$\partial P(\text{argmax}=i)/\partial\mu_j = -1/4\sqrt{\pi}$ for $j\ne i$, so for $g \ll \eta$
+\begin{equation}
+  \E[\text{step}] = -\beta\,\frac{g}{\eta}, \qquad \beta = \frac{3}{2\sqrt{\pi}} = 0.846,
+  \qquad \Var[\text{step}] \approx \tfrac23 .
+\end{equation}
+The distance is then an autoregressive process $d_{t+1} = (1-\kappa)\,d_t + \text{noise}$ with
+$\kappa = \beta/(r^2\eta)$, whose stationary variance is
+\begin{equation}
+  \langle d^2\rangle = \frac{2/3}{2\kappa - \kappa^2}
+  \approx \frac{r^2 s}{3\beta\sqrt{M}}, \qquad
+  d_{\text{rms}} \approx 0.63\; r\,\sqrt{s}\;M^{-1/4} .
+\end{equation}
+The spread depends on $r$, $s$ and $M$ only through $r^2 s/\sqrt{M}$. Check (1D, eight
+combinations of $r$, $M$, $s$): at $r^2 s/\sqrt{M} = 2.26, 4.53, 9.05$ the prediction is $1.05,
+1.40, 1.93$ cells and the measured spreads are $1.01$, $1.38$ to $1.42$, and $1.89$. Averaging
+$T$ reads per step replaces $s$ by $s/\sqrt{T}$.
+
+The climber does worse than the decoder by a factor of about $0.63\,M^{1/4}/\sqrt{s}$. The decoder
+uses all $2M$ directions in which the code moves, to first order in the step. The climber reads
+one scalar, which is second order in the step at the peak.
+
+\section{Shared noise in the grid phases}
+
+If the code is read out from grid modules, noise there is shared by every wave.
+
+\subsection{Setup}
+
+Work on one axis; in 2D the phase errors add over the axes and the attenuation factors below
+multiply. The modules have periods $\lambda_\ell \in \{11, 12, 13\}$ with
+$L = \prod_\ell\lambda_\ell = 1716$. Module $\ell$ reports position $p + e_\ell$ (in cells), that
+is, phase $\psi_\ell = 2\pi(p + e_\ell)/\lambda_\ell$. Wave $k$ forms
+$\tilde\theta_k = \sum_\ell j_{k\ell}\,\psi_\ell$ with integers satisfying
+$\sum_\ell j_{k\ell}L/\lambda_\ell \equiv n_k \pmod L$, for example
+$j = (6n, -n, 7n) \bmod (11, 12, 13)$. Write $u_{k\ell} = j_{k\ell}/\lambda_\ell$ and
+\begin{equation}
+  \sum_\ell u_{k\ell} = \frac{n_k}{L} + m_k, \qquad m_k \in \mathbb{Z},
+\end{equation}
+where $m_k$ depends on which integer represents each residue. At an integer position with no
+error, $\theta_k = 2\pi p\sum_\ell u_{k\ell} \equiv \omega_k p \pmod{2\pi}$ for any choice. With
+error,
+\begin{equation}
+  \tilde\theta_k = \omega_k p + \phi_k, \qquad \phi_k = 2\pi\sum_\ell u_{k\ell}\,e_\ell .
+\end{equation}
+
+\subsection{Consistent error and the choice of representatives}
+
+If every module is off by the same $x$, then $\phi_k = \omega_k x + 2\pi m_k x$. The first term
+moves the hill by $x$, so the code inherits the grid's own position error and nothing more. The
+second term gives each wave a different extra phase, which scrambles the code, unless $m_k = 0$.
+So the representatives should satisfy
+\begin{equation}
+  \sum_\ell j_{k\ell}\,\frac{L}{\lambda_\ell} = n_k \quad\text{exactly},
+\end{equation}
+which is always possible: choose $|j| \le \lambda/2$ for two modules and solve for the third. This
+is also the condition for $z$ to be a smooth function of continuous position, since moving by
+$x$ between lattice points is exactly a consistent error. With $m_k \ne 0$, wave $k$ oscillates
+about $m_k$ times per cell between lattice points while looking slow on the lattice.
+
+\noindent Check ($M = 512$), peak similarity after a consistent error $x$:
+\begin{center}
+\begin{tabular}{lrrr}
+  \toprule
+  representatives & $x = 0.10$ & $x = 0.25$ & $x = 0.50$ \\
+  \midrule
+  $j \in [0, \lambda-1]$ & 0.62 & $-0.35$ & $-0.15$ \\
+  $|j| \le \lambda/2$ & 0.93 & 0.64 & 0.28 \\
+  $\sum_\ell j_\ell L/\lambda_\ell = n$ & 1.00 & 1.00 & 1.00 \\
+  \bottomrule
+\end{tabular}
+\end{center}
+
+\subsection{Mismatched modules}
+
+With $m_k = 0$, solve for module 13: $u_{k,13} = n_k/L - u_{k,11} - u_{k,12}$. Then
+\begin{equation}
+  \phi_k = \omega_k e_{13} + 2\pi\bigl(u_{k,11}\,x + u_{k,12}\,y\bigr),
+  \qquad x = e_{11} - e_{13}, \quad y = e_{12} - e_{13} .
+\end{equation}
+Only the differences between modules scramble the code. The similarity to a clean goal is
+\begin{equation}
+  \tilde K(p) = \frac{1}{M}\sum_k \cos\bigl(\omega_k(p + e_{13}) + 2\pi(u_{k,11}x + u_{k,12}y)\bigr).
+\end{equation}
+For a broad frequency distribution the residues are close to uniform, so $u_{k,11}$ and $u_{k,12}$
+are close to independent and uniform on $[-\tfrac12, \tfrac12]$ (measured: $12\Var u_{11} = 0.91$,
+$12\Var u_{12} = 1.04$, correlation $0.11$). Then $\E\cos(2\pi u x) = \sinc x = \sin(\pi x)/\pi x$,
+the sine terms average to zero, and
+\begin{equation}
+  \tilde K(p) \approx a\,k(p + e_{13}), \qquad
+  a = \sinc(x)\,\sinc(y) \approx e^{-\pi^2(x^2 + y^2)/6} .
+  \label{eq:atten}
+\end{equation}
+Check (random $e_\ell$ with standard deviation $\sigma_e$, 300 draws): mean peak $0.930, 0.750,
+0.616$ against $\sinc\,\sinc$ means $0.932, 0.757, 0.615$ at $\sigma_e = 0.1, 0.2, 0.3$. At
+$\sigma_e = 0.5$ the hill is low enough that the maximum picks up the far field ($0.39$ against
+$0.35$).
+
+Properties of \eqref{eq:atten}:
+\begin{itemize}
+  \item Neither $M$ nor $r$ appears. The factor $a$ multiplies the whole hill. The only role of
+  $r$ is to make the residues uniform, which needs $\sigma_n \gtrsim \lambda$, that is
+  $r \lesssim L/2\pi\lambda \approx 21$ here.
+  \item It is a bias in the height of the hill, not a fluctuation, so averaging reads does not
+  remove it while the modules disagree.
+  \item $a = 0$ at a mismatch of one cell. That mismatch is a valid code for another position, so
+  the read sees only far-field similarity.
+  \item The goal stops being the highest point when $a < A$, that is when
+  $x^2 + y^2 > (6/\pi^2)\ln(1/A)$, summed over axes in 2D. For $M = 512$ ($A = 0.13$) this is
+  about $1.25$ cells$^2$. More waves help only through $\ln(1/A)$, which grows as
+  $\tfrac12\ln M$.
+\end{itemize}
+
+For any representatives, the variance of $\phi$ over waves is $4\pi^2 e^\top U e$ with
+$U = \Cov_k(u)$. With $m_k = 0$, $U$ has the all-ones vector as an approximate null vector, so
+consistent errors drop out. Symmetric representatives have a smaller $U$ overall ($12\operatorname{tr}U
+= 2.86$ against $4.12$) and do a little better when the modules err independently (mean peak
+$0.95, 0.84, 0.69$ against $0.93, 0.75, 0.62$ at $\sigma_e = 0.1, 0.2, 0.3$), but they fail
+under consistent errors. Coupled modules mostly drift together (Mosheiff and Burak, 2019) and
+continuous movement is itself a consistent change, so $m_k = 0$ is the right choice.
+
+\section{Summary}
+
+\begin{center}
+\small
+\begin{tabular}{p{2.3cm}p{4.2cm}p{1.6cm}p{2.6cm}p{2.4cm}}
+  \toprule
+  source & error in $K$ & $M$ & $r$, $L$ & where, when \\
+  \midrule
+  finite $M$ &
+  sd $(1 - k^2)/\sqrt{2M}$; largest far value $(u^* + \gamma/u^*)/\sqrt{2M}$ &
+  $1/\sqrt{M}$ &
+  through $\ln(L/r)$ only &
+  zero at the goal, full beyond $2r$; frozen \\[4pt]
+  independent noise &
+  $s/\sqrt{M}$ per read &
+  $1/\sqrt{M}$ &
+  none; position error $s r/\sqrt{M}$ (decoder), $0.63\,r\sqrt{s}M^{-1/4}$ (climber) &
+  same everywhere; fresh each read \\[4pt]
+  shared grid noise &
+  factor $\sinc(x)\sinc(y)$ on the whole hill &
+  none, except through $A$ &
+  none while residues are uniform &
+  whole hill; lasts while modules disagree \\
+  \bottomrule
+\end{tabular}
+\end{center}
+
+\end{document}
