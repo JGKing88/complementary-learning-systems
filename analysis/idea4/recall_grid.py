@@ -21,6 +21,8 @@ reported too, both by pair position (oldest written first).
 from __future__ import annotations
 
 import argparse
+import json
+import os
 import time
 
 import torch
@@ -88,6 +90,18 @@ def main():
     p.add_argument("--steps", type=int, default=100000)
     p.add_argument("--eval_every", type=int, default=10000)
     p.add_argument("--eval_n", type=int, default=1024)
+    p.add_argument("--pairs_min", type=int, default=0,
+                   help="if set, each batch draws its pair count uniformly from "
+                        "[pairs_min, pairs] (mixed sizes)")
+    p.add_argument("--curriculum", action="store_true",
+                   help="start at 2 pairs and add one whenever the training cosine at the "
+                        "current maximum averages --curriculum_cos over 500 steps; each "
+                        "batch draws its size from [2, current maximum]")
+    p.add_argument("--curriculum_cos", type=float, default=0.95)
+    p.add_argument("--eval_pairs", type=int, nargs="+", default=None,
+                   help="pair counts to test at (default: the training size only)")
+    p.add_argument("--out", default=None,
+                   help="directory for a resumable checkpoint and the eval log")
     p.add_argument("--seed", type=int, default=0)
     p.add_argument("--device", default="cuda")
     a = p.parse_args()
@@ -96,24 +110,58 @@ def main():
     m = Memory(a.cell, a.H, 360, read=a.read, enc_kind="none").to(dev)
     opt = torch.optim.Adam(m.parameters(), lr=a.lr)
     P = a.pairs
-    tag = f"{a.cell} H{a.H} pairs {P} rep {a.rep}"
+    mode = "curriculum" if a.curriculum else (f"mixed {a.pairs_min}-{P}" if a.pairs_min else "fixed")
+    tag = f"{a.cell} H{a.H} pairs {P} {mode} lr {a.lr:g}"
+    eval_pairs = a.eval_pairs or [P]
+    P_cur, start, log = (2 if a.curriculum else P), 1, []
+    ck_path = os.path.join(a.out, "recall.pt") if a.out else None
+    if ck_path and os.path.exists(ck_path):
+        ck = torch.load(ck_path, map_location="cpu", weights_only=False)
+        m.load_state_dict(ck["model"])
+        opt.load_state_dict(ck["opt"])
+        start, P_cur, log = ck["step"] + 1, ck["P_cur"], ck["log"]
+        torch.manual_seed(a.seed + start)
+        print(f"{tag} | resumed at step {ck['step']} (curriculum max {P_cur})", flush=True)
     t0 = time.time()
-    for step in range(1, a.steps + 1):
-        x, off, goal, tgt = sample(P, a.batch, dev)
-        loss = (1 - angle_cos(run(m, x, tgt, a.rep), tgt)).mean()
+    window = []
+    for step in range(start, a.steps + 1):
+        lo = 2 if a.curriculum else (a.pairs_min or P)
+        hi = P_cur if a.curriculum else P
+        Pb = int(torch.randint(lo, hi + 1, (1,)))
+        x, off, goal, tgt = sample(Pb, a.batch, dev)
+        cos_b = angle_cos(run(m, x, tgt, a.rep), tgt)
+        loss = (1 - cos_b).mean()
         opt.zero_grad()
         loss.backward()
         gn = torch.nn.utils.clip_grad_norm_(m.parameters(), 1.0)
         if torch.isfinite(gn):
             opt.step()
+        if a.curriculum and Pb == P_cur:
+            window.append(float(cos_b.mean().detach()))
+            if len(window) >= 500:
+                if sum(window[-500:]) / 500 >= a.curriculum_cos and P_cur < P:
+                    P_cur += 1
+                    print(f"{tag} | step {step}: curriculum max now {P_cur} pairs", flush=True)
+                    window = []                  # judge the new size on its own batches
+                else:
+                    window = window[-500:]
         if step % a.eval_every == 0 or step == a.steps:
-            g = torch.Generator(device=dev).manual_seed(a.seed + 1)
-            acc, dist, cos = evaluate(m, P, a.rep, a.eval_n, dev, g)
-            print(f"{tag} | step {step}: acc {float(acc.mean()):.3f} (oldest {float(acc[0]):.2f}, "
-                  f"newest {float(acc[-1]):.2f}) | mean distance {float(dist.mean()):.1f} cells "
-                  f"(oldest {float(dist[0]):.1f}, newest {float(dist[-1]):.1f}) | cos "
-                  f"{float(cos):.3f} | goals held {float(acc.mean()) * P:.1f} "
-                  f"({time.time() - t0:.0f}s)", flush=True)
+            for Pe in eval_pairs:
+                g = torch.Generator(device=dev).manual_seed(a.seed + 1 + Pe)
+                acc, dist, cos = evaluate(m, Pe, a.rep, a.eval_n, dev, g)
+                log.append(dict(step=step, P=Pe, acc=float(acc.mean()), dist=float(dist.mean()),
+                                cos=float(cos), P_cur=P_cur))
+                print(f"{tag} | step {step} | test {Pe} pairs: acc {float(acc.mean()):.3f} (oldest "
+                      f"{float(acc[0]):.2f}, newest {float(acc[-1]):.2f}) | mean distance "
+                      f"{float(dist.mean()):.1f} cells | cos {float(cos):.3f} | goals held "
+                      f"{float(acc.mean()) * Pe:.1f} | train max {P_cur} ({time.time() - t0:.0f}s)",
+                      flush=True)
+            if ck_path:
+                os.makedirs(a.out, exist_ok=True)
+                torch.save({"model": m.state_dict(), "opt": opt.state_dict(), "step": step,
+                            "P_cur": P_cur, "log": log, "args": vars(a)}, ck_path)
+                with open(os.path.join(a.out, "log.json"), "w") as f:
+                    json.dump(log, f, indent=1)
 
 
 if __name__ == "__main__":
