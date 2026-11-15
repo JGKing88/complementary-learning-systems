@@ -17,6 +17,7 @@
 #
 #   bash analysis/hopfield_probe/run_relu_mix.sh [ARRAY]          # default 0-9
 #   SET=b bash analysis/hopfield_probe/run_relu_mix.sh [ARRAY]
+#   SET=c bash analysis/hopfield_probe/run_relu_mix.sh [ARRAY]    # slow waves removed (relu_band)
 #   python -m analysis.hopfield_probe.ideal_summary "$OUT"        # the table
 #
 # Runs from THIS worktree: do not delete it while jobs are live.
@@ -29,7 +30,25 @@ SET=${SET:-a}
 export SET
 B="n_freq=512,seed=0,gain=100"
 
-if [[ "$SET" == b ]]; then
+if [[ "$SET" == c ]]; then
+# Remove slow waves: draws with |n| < nmin rejected and replaced from the same Gaussian (r = 16),
+# encoder relu(Q z) with one global inhibition constant. Controls: no waves removed, r lowered to
+# give the same half-width as nmin = 10, 25, 50 (16, 12, 7 cells), to separate "no slow waves"
+# from "narrower peak". The nmin = 0, r = 16 row is SET=b's "relu r=16 global inh".
+OUT=${OUT:-/orcd/pool/003/jackking/cls_runs/results/hopfield_probe/relu_band}
+G="relu_mix=1,center_global=1"
+ENCS=(
+    "ideal:r=16,$B,$G,nmin=5|relu inh r=16 no |n|<5"
+    "ideal:r=16,$B,$G,nmin=10|relu inh r=16 no |n|<10"
+    "ideal:r=16,$B,$G,nmin=17|relu inh r=16 no |n|<17"
+    "ideal:r=16,$B,$G,nmin=25|relu inh r=16 no |n|<25"
+    "ideal:r=16,$B,$G,nmin=34|relu inh r=16 no |n|<34"
+    "ideal:r=16,$B,$G,nmin=50|relu inh r=16 no |n|<50"
+    "ideal:r=14.2,$B,$G|relu inh r=14.2 (width of no<10)"
+    "ideal:r=10.7,$B,$G|relu inh r=10.7 (width of no<25)"
+    "ideal:r=6.2,$B,$G|relu inh r=6.2 (width of no<50)"
+)
+elif [[ "$SET" == b ]]; then
 OUT=${OUT:-/orcd/pool/003/jackking/cls_runs/results/hopfield_probe/relu_mix_b}
 ENCS=(
     "ideal:r=16,$B,relu_mix=1,center_global=1|relu r=16 global inh"
@@ -54,7 +73,7 @@ if [[ -z "${SLURM_ARRAY_TASK_ID:-}" ]]; then
     mkdir -p "$OUT/logs"
     exec sbatch --job-name=relu_mix_probe --partition=pi_evelina9,ou_bcs_normal \
         --time=4:00:00 --cpus-per-task=16 --mem=32G \
-        --array="${1:-0-9}%4" \
+        --array="${1:-0-$(( 2 * ${#ENCS[@]} - 1 ))}%4" \
         --output="$OUT/logs/probe_%A_%a.out" "$0"
 fi
 

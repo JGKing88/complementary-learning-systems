@@ -99,15 +99,27 @@ def crt_harmonics(n: np.ndarray, lambdas) -> np.ndarray:
     return np.stack(out, axis=0)
 
 
-def draw_frequencies(r: float, n_freq: int, seed: int, npos: int) -> np.ndarray:
-    """``(n_freq, 2)`` int64 frequency vectors in ``(-npos/2, npos/2]``."""
+def draw_frequencies(r: float, n_freq: int, seed: int, npos: int,
+                     nmin: float = 0.0) -> np.ndarray:
+    """``(n_freq, 2)`` int64 frequency vectors in ``(-npos/2, npos/2]``.
+
+    ``nmin > 0`` removes the slow waves: candidates with ``|n| < nmin`` are rejected and the
+    draw continues from the same stream until ``n_freq`` are kept, so the kept set is the
+    ``nmin = 0`` set's fast waves plus faster replacements. ``nmin = 0`` is the original draw.
+    """
     sigma = npos / (2.0 * math.pi * float(r))
     rng = np.random.RandomState(int(seed))
-    n = np.rint(rng.normal(0.0, sigma, size=(int(n_freq), 2))).astype(np.int64)
     half = npos // 2
-    # Reduce mod npos into (-half, half] (npos even here; odd works too).
-    n = np.mod(n + half - 1, npos) - (half - 1)
-    return n
+    kept, total = [], 0
+    while total < int(n_freq):
+        n = np.rint(rng.normal(0.0, sigma, size=(int(n_freq), 2))).astype(np.int64)
+        # Reduce mod npos into (-half, half] (npos even here; odd works too).
+        n = np.mod(n + half - 1, npos) - (half - 1)
+        if nmin > 0:
+            n = n[np.hypot(n[:, 0], n[:, 1]) >= nmin]
+        kept.append(n)
+        total += len(n)
+    return np.concatenate(kept)[:int(n_freq)]
 
 
 @dataclass
@@ -135,7 +147,7 @@ class IdealEncoder(torch.nn.Module):
                  freqs: str | np.ndarray | None = None,
                  binary: bool = False, symmetric: bool = False,
                  relu_mix: bool = False, center: bool = False, rot_seed: int = 0,
-                 center_global: bool = False, active: float = 0.5):
+                 center_global: bool = False, active: float = 0.5, nmin: float = 0.0):
         super().__init__()
         self.binary = bool(binary)
         self.relu_mix = bool(relu_mix)
@@ -143,6 +155,7 @@ class IdealEncoder(torch.nn.Module):
         self.rot_seed = int(rot_seed)
         self.center_global = bool(center_global)
         self.active = float(active)
+        self.nmin = float(nmin)
         if (self.center or self.center_global or self.active != 0.5) and not self.relu_mix:
             raise ValueError("center, center_global and active need relu_mix=1")
         if self.center and self.center_global:
@@ -180,7 +193,7 @@ class IdealEncoder(torch.nn.Module):
         # subset of a larger table) in place of the Gaussian draw.
         self.freqs_path = freqs if isinstance(freqs, str) else None
         if freqs is None:
-            freqs = draw_frequencies(self.r, self.n_freq, self.seed, self.npos)
+            freqs = draw_frequencies(self.r, self.n_freq, self.seed, self.npos, self.nmin)
         else:
             freqs = np.load(freqs) if isinstance(freqs, str) else np.asarray(freqs)
             freqs = np.rint(freqs).astype(np.int64)
@@ -359,7 +372,7 @@ def parse_ideal_spec(spec: str) -> dict:
         if k in ("relu_mix", "center", "center_global"):
             kw[k] = bool(int(v))
             continue
-        if k == "active":
+        if k in ("active", "nmin"):
             kw[k] = float(v)
             continue
         if k == "rot_seed":
@@ -401,6 +414,8 @@ def load_ideal_encoder(spec: str, *, device="cpu",
     if enc.binary:              # only when set, so existing headers are unchanged
         header["ideal"]["binary"] = True
         cfg.output_nonlinearity = "sign"
+    if enc.nmin > 0:
+        header["ideal"]["nmin"] = enc.nmin
     if enc.relu_mix:
         header["ideal"].update(relu_mix=True, center=enc.center, rot_seed=enc.rot_seed,
                                center_global=enc.center_global, active=enc.active)
