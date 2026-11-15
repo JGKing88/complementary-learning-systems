@@ -25,9 +25,9 @@ from .plastic import N_PHASE
 class RecurrentMemory(nn.Module):
     def __init__(self, hidden: int = 512, layers: int = 1, enc: int = 256,
                  read: int = 256, in_dim: int = 2 * PANORAMA_BINS, chrono: int = 0,
-                 enc_kind: str = "relu"):
+                 enc_kind: str = "relu", cell: str = "gru"):
         super().__init__()
-        self.hidden, self.layers = hidden, layers
+        self.hidden, self.layers, self.cell = hidden, layers, cell
         # The view encoder. "relu" (the first runs) ends in a ReLU, so every
         # code lies in the positive orthant and different arenas' codes
         # overlap heavily; "linear" drops that last ReLU (signed codes);
@@ -41,10 +41,21 @@ class RecurrentMemory(nn.Module):
                                      nn.Linear(enc, enc), nn.ReLU())
         else:
             raise ValueError(f"enc_kind must be relu, linear or none, got {enc_kind!r}")
-        self.gru = nn.GRU(enc + N_PHASE + 1, hidden, num_layers=layers)
+        # The recurrent cell. An LSTM's state is kept as one tensor, h and c
+        # side by side on the last axis (layers, B, 2 * hidden), so callers
+        # copy, index and detach it exactly as a GRU's.
+        if cell == "gru":
+            self.gru = nn.GRU(enc + N_PHASE + 1, hidden, num_layers=layers)
+        elif cell == "lstm":
+            self.lstm = nn.LSTM(enc + N_PHASE + 1, hidden, num_layers=layers)
+            with torch.no_grad():                        # forget-gate bias 1
+                for k in range(layers):
+                    getattr(self.lstm, f"bias_ih_l{k}")[hidden:2 * hidden] = 1.0
+        else:
+            raise ValueError(f"cell must be gru or lstm, got {cell!r}")
         self.read = nn.Sequential(nn.Linear(hidden + enc, read), nn.ReLU(),
                                   nn.Linear(read, N_PHASE + 1))
-        if chrono:
+        if chrono and cell == "gru":
             self.chrono_init(chrono)
 
     @torch.no_grad()
@@ -65,7 +76,8 @@ class RecurrentMemory(nn.Module):
             b_hh[H:2 * H] = 0.0
 
     def init_state(self, B: int, device) -> torch.Tensor:
-        return torch.zeros(self.layers, B, self.hidden, device=device)
+        width = 2 * self.hidden if self.cell == "lstm" else self.hidden
+        return torch.zeros(self.layers, B, width, device=device)
 
     def forward(self, x, h, goal=None, extra=None):
         """Step through a sequence.
@@ -83,7 +95,13 @@ class RecurrentMemory(nn.Module):
             w = torch.zeros(*x.shape[:2], N_PHASE + 1, device=x.device)
         else:
             w = torch.cat([goal, flag + 1.0], -1)
-        y, h = self.gru(torch.cat([e, w], -1), h)
+        inp = torch.cat([e, w], -1)
+        if self.cell == "lstm":
+            H = self.hidden
+            y, (hh, cc) = self.lstm(inp, (h[..., :H].contiguous(), h[..., H:].contiguous()))
+            h = torch.cat([hh, cc], -1)
+        else:
+            y, h = self.gru(inp, h)
         out = self.read(torch.cat([y, e], -1))
         ph = out[..., :N_PHASE].reshape(*out.shape[:-1], 6, 2)
         ph = ph / (ph.norm(dim=-1, keepdim=True) + 1e-6)

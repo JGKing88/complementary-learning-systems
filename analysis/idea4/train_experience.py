@@ -210,7 +210,8 @@ def _line(r):
 
 def build(a, device):
     return RecurrentMemory(hidden=a.hidden, layers=a.layers, enc=a.enc, read=a.read,
-                           chrono=a.chrono, enc_kind=a.enc_kind).to(device)
+                           chrono=a.chrono, enc_kind=a.enc_kind,
+                           cell=getattr(a, "cell", "gru")).to(device)
 
 
 def main():
@@ -228,6 +229,7 @@ def main():
     p.add_argument("--enc_kind", default="relu", choices=["relu", "linear", "none"],
                    help="view encoder: ends in ReLU (first runs), signed, or the raw canvas")
     p.add_argument("--chrono", type=int, default=0)
+    p.add_argument("--cell", default="gru", choices=["gru", "lstm"])
     p.add_argument("--T_min", type=int, default=2)
     p.add_argument("--T_max", type=int, default=20)
     p.add_argument("--n_unseen", type=int, default=2)
@@ -282,6 +284,7 @@ def main():
         for k in ("hidden", "layers", "enc", "read"):
             setattr(a, k, ck["args"][k])
         a.enc_kind = ck["args"].get("enc_kind", "relu")
+        a.cell = ck["args"].get("cell", "gru")
         a.chrono = 0
         model = build(a, device)
         model.load_state_dict(ck["model"])
@@ -308,7 +311,7 @@ def main():
             log["train"], log["eval"] = prev["train"], prev["eval"]
         print(f"resumed from {a.init_ckpt} (step {ck['step']})", flush=True)
     n_par = sum(q.numel() for q in model.parameters())
-    print(f"model: GRU {a.layers} x {a.hidden}, {n_par / 1e6:.2f}M parameters", flush=True)
+    print(f"model: {a.cell.upper()} {a.layers} x {a.hidden}, {n_par / 1e6:.2f}M parameters", flush=True)
     rng = np.random.RandomState(a.seed + 3 + 7919 * (start - 1))
     gen = torch.Generator(device=device).manual_seed(a.seed + 4 + 7919 * (start - 1))
 
