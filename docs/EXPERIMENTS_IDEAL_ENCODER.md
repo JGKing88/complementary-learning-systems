@@ -2825,3 +2825,62 @@ recall step; s15 = acc45 after 15 steps; dead = share of goals never reached, by
 storage, or uniform inhibition of the same size. The units then look like place fields (relu of a
 random sum of waves, half active at any place) and the navigation probe is within 2–3% of the
 ideal on every measure but direction (2° against 1°).
+
+## 26. Global inhibition, a sparse code, and removing slow waves (2026-11-15)
+
+All rows: relu(Q z) from §25, Hebbian storage, run_ideal.sh probe settings, K = 5, one recall step,
+values whole arena / corner. `run_relu_mix.sh SET=b` (job 29235475) and `SET=c` (job 29238111).
+
+**26.1 One inhibition constant, and 10% of units active** (`center_global=1`: subtract the mean of
+the per-unit means from every unit, which leaves a floor of 0.004 because the units' means differ by
+5.8%; `active=0.1`: threshold Φ⁻¹(0.9)/√1024, so exactly 10% of units fire at each place, floor
+0.058 with no inhibition, peak half-width 13.4 cells at r = 16; r = 23.2 restores 19.4).
+
+| encoder | \|err\| | exact | basin | cont reach | s15 | dead @ K ≤ 20 |
+|---|---|---|---|---|---|---|
+| relu, per-unit mean removed (§25) | 2.44 / 2.47 | 1.000 / 1.000 | 29.8 / 29.6 | 0.993 / 0.985 | 0.999 | 0 |
+| relu, one global constant | 2.45 / 2.47 | 1.000 / 1.000 | 29.8 / 29.8 | 0.993 / 0.985 | 0.999 | 0 |
+| 10% active, r=16, no inhibition | 7.04 / 6.96 | 0.999 / 0.999 | 21.3 / 23.9 | 0.977 / 0.989 | 0.963 / 0.951 | 0 |
+| 10% active, r=16, global constant | 6.79 / 6.65 | 0.998 / 1.000 | 21.3 / 23.3 | 0.986 / 0.990 | 0.995 / 0.999 | 0 |
+| 10% active, r=23.2, no inhibition | 4.83 / 4.76 | 1.000 / 1.000 | 28.4 / 25.6 | 0.996 / 0.987 | 0.977 / 0.983 | 0 |
+| 10% active, r=23.2, global constant | 4.70 / 4.61 | 1.000 / 1.000 | 29.8 / 28.3 | 0.994 / 0.985 | 0.999 | 0 |
+
+One constant is as good as per-unit means. The sparse code needs no inhibition at all: its floor is
+low enough for exact retrieval 0.999–1.000 and no dead goals up to K = 20; inhibition adds 1–3
+cells of basin and keeps 15-step recall at 0.999. With the peak width matched (r = 23.2) the sparse
+code equals the ideal except direction, 4.7° against 2.5° (dense relu) and 1.0° (ideal).
+
+**26.2 Removing slow waves** (`nmin=c`: Gaussian draws with |n| < c rejected and replaced from the
+same stream, so the code keeps 512 waves; encoder relu + one global constant, r = 16; controls keep
+all waves and lower r to match the half-width). Kernel numbers are for the signed code along an axis.
+
+| slow waves removed | share of the Gaussian removed | half-width | first rise of similarity | \|err\| | exact | basin | cont reach | dead @ K 1–20 |
+|---|---|---|---|---|---|---|---|---|
+| none (26.1) | 0 | 20 | 67 | 2.45 / 2.47 | 1.000 / 1.000 | 29.8 / 29.8 | 0.993 / 0.985 | 0 |
+| \|n\| < 5 | 4% | 19 | 66 | 2.36 / 2.38 | 1.000 / 1.000 | 28.7 / 27.5 | 0.986 / 0.987 | 0 |
+| \|n\| < 10 | 16% | 18 | 58 | 2.48 / 2.57 | 1.000 / 0.998 | 24.7 / 24.8 | 0.986 / 0.987 | 0 |
+| \|n\| < 17 | 37% | 16 | 41 | 2.98 / 3.10 | 0.996 / 0.987 | 21.3 / 20.3 | 0.986 / 0.990 | 0 |
+| \|n\| < 25 | 66% | 13 | 33 | 8.53 / 8.91 | 0.945 / 0.934 | 17.8 / 17.2 | 0.958 / 0.967 | 0 |
+| \|n\| < 34 | 86% | 11 | 26 | 30.2 / 30.4 | 0.801 / 0.790 | 14.2 / 14.1 | 0.833 / 0.822 | 0–0.12 |
+| \|n\| < 50 | 99% | 8 | 20 | 60.3 / 59.7 | 0.561 / 0.547 | 10.1 / 10.0 | 0.588 / 0.590 | 0.25–0.50 |
+| control r=14.2 (width of < 10) | 0 | | | 2.92 / 2.82 | 1.000 / 1.000 | 26.6 / 26.3 | 0.995 / 0.989 | 0 |
+| control r=10.7 (width of < 25) | 0 | | | 5.90 / 6.26 | 0.996 / 0.997 | 20.7 / 21.2 | 0.994 / 0.988 | 0 |
+| control r=6.2 (width of < 50) | 0 | | | 38.2 / 39.5 | 0.849 / 0.844 | 12.8 / 12.4 | 0.806 / 0.785 | 0.08–0.25 |
+
+1. **Up to |n| < 17 (37% of the Gaussian's waves, every wavelength above 100 cells) the loss is
+   the narrower peak.** Basin falls 30 → 21 cells, about what a full Gaussian of the same width gives
+   (cutoff 10: 24.7 against 26.4 for r = 14.2); direction, exact retrieval and reach stay at the
+   ideal's level.
+2. **Beyond that the missing slow waves cost more than their width.** At |n| < 25 the code is worse
+   than a full Gaussian of the same width on every measure (err 8.7° vs 6.1°, exact 0.94 vs 0.996,
+   reach 0.96 vs 0.99, basin 17.5 vs 21). At |n| < 50 (all wavelengths under 34 cells): err 60°,
+   exact 0.55, reach 0.59 and a quarter of goals dead, against 39°, 0.85, 0.80 and 8–17% for the
+   width-matched Gaussian. The removed slow waves leave a negative ring and side bumps in the
+   similarity (minimum −0.28 at |n| < 25, −0.41 at < 50; the similarity first rises 33 and 20 cells
+   from the goal), which are traps for the readout.
+3. So the slow waves do two jobs: they set the width of the peak, and they keep the similarity
+   monotonic beyond it. A code needs waves down to about |n| ≈ 17 here (wavelengths of about 6r)
+   before the second job starts to fail.
+
+The tuning viewer (branch worktree-tuning-viewer, version 6) shows these exact draws under
+"Remove slow waves" for the ideal and rotated-ideal populations.
