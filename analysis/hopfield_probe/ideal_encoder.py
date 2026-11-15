@@ -65,7 +65,11 @@ near-Gaussian peak. ``center=True`` (spec ``center=1``, needs ``relu_mix``) then
 code's mean vector ``mu`` (each unit's mean over 65,536 random scaffold cells) and renormalises.
 For the linear probe memory this is the same as keeping the activity non-negative and removing
 the mean in the memory (covariance storage ``sum (z - mu)(z - mu)^T``, a cue minus ``mu``, and
-readouts against ``z - mu``), up to the final renormalisation.
+readouts against ``z - mu``), up to the final renormalisation. ``center_global=True`` subtracts one
+constant, the mean of ``mu`` over units, from every unit instead (uniform inhibition).
+``active=f`` raises the threshold to ``t = Phi^-1(1 - f) / sqrt(D)``: every position's ``Q z`` has
+mean square exactly ``1/D`` over units and is close to Gaussian, so about a fraction ``f`` of units
+are active at each place (``f = 0.5`` is the plain ReLU).
 
 Layout convention: block row ``i * l + j`` with ``i`` the x phase, ``j`` the y
 phase, as ``encode.grid_codes`` builds it.
@@ -130,14 +134,21 @@ class IdealEncoder(torch.nn.Module):
                  weights: str | np.ndarray | None = None,
                  freqs: str | np.ndarray | None = None,
                  binary: bool = False, symmetric: bool = False,
-                 relu_mix: bool = False, center: bool = False, rot_seed: int = 0):
+                 relu_mix: bool = False, center: bool = False, rot_seed: int = 0,
+                 center_global: bool = False, active: float = 0.5):
         super().__init__()
         self.binary = bool(binary)
         self.relu_mix = bool(relu_mix)
         self.center = bool(center)
         self.rot_seed = int(rot_seed)
-        if self.center and not self.relu_mix:
-            raise ValueError("center=1 needs relu_mix=1")
+        self.center_global = bool(center_global)
+        self.active = float(active)
+        if (self.center or self.center_global or self.active != 0.5) and not self.relu_mix:
+            raise ValueError("center, center_global and active need relu_mix=1")
+        if self.center and self.center_global:
+            raise ValueError("center and center_global are alternatives")
+        if not 0.0 < self.active < 1.0:
+            raise ValueError("active must be a fraction in (0, 1)")
         if self.binary and self.relu_mix:
             raise ValueError("binary and relu_mix are separate arms")
         # symmetric: use the harmonic representative j - l for j > l/2, so each
@@ -200,16 +211,21 @@ class IdealEncoder(torch.nn.Module):
             signs = np.random.default_rng(self.rot_seed).choice([-1, 1], size=(3, D))
             self.register_buffer("rot", torch.from_numpy(hadamard_rotation(signs)))
             self.register_buffer("mu", torch.zeros(D, dtype=torch.float64))
-            if self.center:
-                # mu = mean of the uncentred code relu(Q z)/|.| over random scaffold cells
-                self.center = False
+            from statistics import NormalDist
+            self.thresh = NormalDist().inv_cdf(1.0 - self.active) / math.sqrt(D)
+            if self.center or self.center_global:
+                # mu = mean of the uncentred code relu(Q z - t)/|.| over random scaffold cells
+                saved = (self.center, self.center_global)
+                self.center = self.center_global = False
                 g = np.random.default_rng(12345)
                 xs, ys = g.integers(0, self.npos, 65536), g.integers(0, self.npos, 65536)
                 acc = np.zeros(D)
                 for i in range(0, len(xs), 8192):
                     acc += self._nonneg(self._waves_np(xs[i:i + 8192], ys[i:i + 8192])).sum(0)
-                self.mu = torch.from_numpy(acc / len(xs))
-                self.center = True
+                mu = acc / len(xs)
+                self.mu_unit_spread = float(mu.std() / mu.mean())
+                self.mu = torch.from_numpy(np.full(D, mu.mean()) if saved[1] else mu)
+                self.center, self.center_global = saved
 
     @property
     def out_dim(self) -> int:
@@ -234,16 +250,17 @@ class IdealEncoder(torch.nn.Module):
 
     def _nonneg(self, z):
         """``relu(Q z) / |.|``, then ``- mu`` and renormalised if ``center`` (numpy or torch)."""
+        sub = self.center or self.center_global
         if isinstance(z, torch.Tensor):
-            y = torch.clamp(z @ self.rot.to(z).T, min=0.0)
+            y = torch.clamp(z @ self.rot.to(z).T - self.thresh, min=0.0)
             y = y / torch.linalg.norm(y, dim=1, keepdim=True).clamp_min(1e-12)
-            if self.center:
+            if sub:
                 y = y - self.mu.to(y)
                 y = y / torch.linalg.norm(y, dim=1, keepdim=True).clamp_min(1e-12)
             return y
-        y = np.maximum(z @ self.rot.cpu().numpy().T, 0.0)
+        y = np.maximum(z @ self.rot.cpu().numpy().T - self.thresh, 0.0)
         y = y / np.maximum(np.linalg.norm(y, axis=1, keepdims=True), 1e-12)
-        if self.center:
+        if sub:
             y = y - self.mu.cpu().numpy()
             y = y / np.maximum(np.linalg.norm(y, axis=1, keepdims=True), 1e-12)
         return y
@@ -339,8 +356,11 @@ def parse_ideal_spec(spec: str) -> dict:
         if k == "sym":
             kw["symmetric"] = bool(int(v))
             continue
-        if k in ("relu_mix", "center"):
+        if k in ("relu_mix", "center", "center_global"):
             kw[k] = bool(int(v))
+            continue
+        if k == "active":
+            kw[k] = float(v)
             continue
         if k == "rot_seed":
             kw[k] = int(v)
@@ -382,8 +402,10 @@ def load_ideal_encoder(spec: str, *, device="cpu",
         header["ideal"]["binary"] = True
         cfg.output_nonlinearity = "sign"
     if enc.relu_mix:
-        header["ideal"].update(relu_mix=True, center=enc.center, rot_seed=enc.rot_seed)
-        cfg.output_nonlinearity = "relu_mix_centered" if enc.center else "relu_mix"
+        header["ideal"].update(relu_mix=True, center=enc.center, rot_seed=enc.rot_seed,
+                               center_global=enc.center_global, active=enc.active)
+        cfg.output_nonlinearity = ("relu_mix_centered" if enc.center or enc.center_global
+                                   else "relu_mix")
     return enc, cfg, enc.gain, float(fwhm), header
 
 

@@ -9,10 +9,15 @@
 #                             in this linear memory); activity itself stays non-negative
 #   relu_mix r=17.9 (center)  r raised so the peak's half-width matches the ideal's 19.4 cells
 #
+# SET=b (OUT relu_mix_b): one global inhibition constant (center_global=1) in place of the
+# per-unit mean, and a sparser code with 10% of units active (active=0.1), with and without the
+# constant, at r = 16 and at r = 23.2 (the sparse code's half-width matched to the ideal's 19.4).
+#
 # Index = 2 * encoder + region (whole, corner). Throttled to 4 tasks at a time.
 #
-#   bash analysis/hopfield_probe/run_relu_mix.sh [ARRAY]      # default 0-9
-#   python -m analysis.hopfield_probe.ideal_summary "$OUT"    # the table
+#   bash analysis/hopfield_probe/run_relu_mix.sh [ARRAY]          # default 0-9
+#   SET=b bash analysis/hopfield_probe/run_relu_mix.sh [ARRAY]
+#   python -m analysis.hopfield_probe.ideal_summary "$OUT"        # the table
 #
 # Runs from THIS worktree: do not delete it while jobs are live.
 set -euo pipefail
@@ -20,9 +25,21 @@ set -euo pipefail
 WT=${RELU_WT:-"$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"}
 export RELU_WT=$WT
 PY=/home/jackking/.conda/envs/cls/bin/python
-OUT=${OUT:-/orcd/pool/003/jackking/cls_runs/results/hopfield_probe/relu_mix}
+SET=${SET:-a}
+export SET
 B="n_freq=512,seed=0,gain=100"
 
+if [[ "$SET" == b ]]; then
+OUT=${OUT:-/orcd/pool/003/jackking/cls_runs/results/hopfield_probe/relu_mix_b}
+ENCS=(
+    "ideal:r=16,$B,relu_mix=1,center_global=1|relu r=16 global inh"
+    "ideal:r=16,$B,relu_mix=1,active=0.1|relu10% r=16"
+    "ideal:r=16,$B,relu_mix=1,active=0.1,center_global=1|relu10% r=16 global inh"
+    "ideal:r=23.2,$B,relu_mix=1,active=0.1|relu10% r=23.2"
+    "ideal:r=23.2,$B,relu_mix=1,active=0.1,center_global=1|relu10% r=23.2 global inh"
+)
+else
+OUT=${OUT:-/orcd/pool/003/jackking/cls_runs/results/hopfield_probe/relu_mix}
 ENCS=(
     "ideal:r=16,$B|ideal r=16"
     "ideal:r=16,$B,relu_mix=1|relu_mix r=16"
@@ -30,6 +47,7 @@ ENCS=(
     "ideal:r=17.9,$B,relu_mix=1|relu_mix r=17.9"
     "ideal:r=17.9,$B,relu_mix=1,center=1|relu_mix r=17.9 center"
 )
+fi
 REGIONS=("|whole" "0 0 500|corner")
 
 if [[ -z "${SLURM_ARRAY_TASK_ID:-}" ]]; then
