@@ -187,7 +187,7 @@ footer ul { margin: 0; padding: 0; list-style: none; display: flex; flex-wrap: w
           <label for="minsize" class="grow">Minimum field size (cells)</label>
           <input type="number" id="minsize" min="1" max="100000" step="1" value="9">
         </div>
-        <p class="hint">These set the field outlines and the statistics and never change the map. A field is a 4-connected region at or above the threshold fraction of the unit's peak, with at least the minimum size. Statistics use the positive part of the map and assume every cell is visited equally.</p>
+        <p class="hint">These set the field outlines, field counts and field sizes, and never change the map. A field is a 4-connected region at or above the threshold fraction of the unit's peak, with at least the minimum size.</p>
       </section>
 
       <section class="panel" aria-labelledby="t-view">
@@ -904,21 +904,15 @@ function processUnit(data, off, W, f, filt, wantLabels) {
   let v = new Float32Array(WW);
   for (let i = 0; i < WW; i++) { const x = data[off + i]; v[i] = filt.rectify ? (x > 0 ? x : 0) : x; }
   if (filt.sigma > 0) v = smoothMap(v, W, filt.sigma / f);
-  let vmin = Infinity, vmax = -Infinity, peak = 0, peakI = -1, sum = 0, sum2 = 0;
+  let vmin = Infinity, vmax = -Infinity, peak = 0, peakI = -1, tot = 0;
   for (let i = 0; i < WW; i++) {
     const x = v[i];
+    tot += x;
     if (x < vmin) vmin = x;
     if (x > vmax) vmax = x;
-    if (x > 0) { sum += x; sum2 += x * x; if (x > peak) { peak = x; peakI = i; } }
+    if (x > peak) { peak = x; peakI = i; }
   }
-  const mean = sum / WW;
-  let info = NaN, sparsity = NaN;
-  if (mean > 0) {
-    let I = 0;
-    for (let i = 0; i < WW; i++) { const x = v[i]; if (x > 0) { const q = x / mean; I += q * Math.log2(q); } }
-    info = I / WW;
-    sparsity = (mean * mean) / (sum2 / WW);
-  }
+  const mean = tot / WW;
   let nFields = 0, fieldCells = 0, maxField = 0, labels = null, keep = null;
   if (peak > 0) {
     const thr = filt.thresh / 100 * peak, minB = Math.max(1, Math.ceil(filt.minSize / (f * f)));
@@ -946,7 +940,7 @@ function processUnit(data, off, W, f, filt, wantLabels) {
   }
   const peakR = peakI < 0 ? -1 : (peakI / W) | 0, peakC = peakI < 0 ? -1 : peakI - peakR * W;
   return {
-    v, vmin, vmax, peak, peakR, peakC, mean, info, sparsity, nFields,
+    v, vmin, vmax, peak, peakR, peakC, mean, nFields,
     meanField: nFields ? fieldCells * f * f / nFields : NaN, maxField: maxField * f * f,
     peakKey: peakI < 0 ? NaN : (W - 1 - peakR) * W + peakC,
     labels: wantLabels ? labels : null, keep: wantLabels ? keep : null,
@@ -1035,8 +1029,6 @@ const SORTS = {
   random: { label: "Random" },
   fields: { label: "Most fields", stat: true, key: r => r.nFields, desc: true },
   fieldsize: { label: "Largest fields", stat: true, key: r => r.meanField, desc: true },
-  info: { label: "Most spatial information", stat: true, key: r => r.info, desc: true },
-  sparse: { label: "Sparsest", stat: true, key: r => r.sparsity, desc: false },
   peak: { label: "Peak position", stat: true, key: r => r.peakKey, desc: false },
 };
 function cmpKeys(a, b, desc) {
@@ -1136,8 +1128,6 @@ function caption(r) {
   if (!(r.peak > 0)) return r.vmin < 0 ? "all negative" : "silent";
   switch (st.sort) {
     case "fieldsize": return isFinite(r.meanField) ? Math.round(r.meanField) + " c" : "no field";
-    case "info": return isFinite(r.info) ? r.info.toFixed(2) + " b" : "–";
-    case "sparse": return isFinite(r.sparsity) ? r.sparsity.toFixed(2) : "–";
     default: return r.nFields + (r.nFields === 1 ? " field" : " fields");
   }
 }
@@ -1225,8 +1215,6 @@ function renderDetail(pop, u, r, res, a, div, lut, pageRange) {
   rows.push(["Mean", fmtVal(r.mean)]);
   rows.push(["Fields", r.nFields + " (≥ " + st.f.thresh + "% of peak, ≥ " + st.f.minSize + " cells)"]);
   if (r.nFields) rows.push(["Field size", "mean " + Math.round(r.meanField) + ", largest " + Math.round(r.maxField) + " cells"]);
-  rows.push(["Spatial information", isFinite(r.info) ? r.info.toFixed(3) + " bits" : "–"]);
-  rows.push(["Sparsity", isFinite(r.sparsity) ? r.sparsity.toFixed(3) : "–"]);
   for (const kv of pop.info(u)) rows.push(kv);
   const dl = $("d-stats");
   dl.replaceChildren(...rows.flatMap(([k, v]) => { const dt = document.createElement("dt"), dd = document.createElement("dd"); dt.textContent = k; dd.textContent = v; return [dt, dd]; }));
