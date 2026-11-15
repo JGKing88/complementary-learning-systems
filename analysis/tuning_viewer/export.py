@@ -67,6 +67,9 @@ ENCODER = str(RUNS / "sweeps/w52_attract_fwhm/001_att0.5_seed=43/encoder_final.p
 IDEAL = "ideal:r=16,n_freq=512,seed=0,gain=100"
 HPC = {"Np": 400, "thresh": 2.0, "c": 0.5, "seed": 0}
 ROT = {"seed": 0, "rounds": 3}
+# Slow-wave cutoffs for the ideal populations: waves with |n| < cutoff rejected and replaced from
+# the same Gaussian (hopfield_probe ideal_encoder nmin=..., branch worktree-agent-a792a678d5a963123).
+BAND_CUTOFFS = [0, 5, 10, 17, 25, 34, 50]
 # Reference arena: crosses both scaffold edges, so the check covers the
 # page's modular indexing as well as its arithmetic.
 REF = {"x0": 1708, "y0": 1710, "S": 16}
@@ -136,6 +139,27 @@ def export_mlp(name, encoder, gain, lambdas, fwhm, npos, out: Path, label, descr
         "weights_file": f"{name}_weights.b64.txt", "arrays": meta,
         "fold_check_max_abs_diff": diff,
     }
+
+
+# ---------------------------------------------------------------- slow-wave cutoffs
+def draw_frequencies_nmin(r: float, n_freq: int, seed: int, npos: int, nmin: float) -> np.ndarray:
+    """``ideal_encoder.draw_frequencies(..., nmin)`` on the probe branch, line for line.
+
+    ``nmin = 0`` is ``IdealEncoder``'s draw; ``main`` asserts that, and the probe-branch
+    function itself was checked equal for every cutoff when this was written.
+    """
+    sigma = npos / (2.0 * math.pi * float(r))
+    rng = np.random.RandomState(int(seed))
+    half = npos // 2
+    kept, total = [], 0
+    while total < int(n_freq):
+        n = np.rint(rng.normal(0.0, sigma, size=(int(n_freq), 2))).astype(np.int64)
+        n = np.mod(n + half - 1, npos) - (half - 1)
+        if nmin > 0:
+            n = n[np.hypot(n[:, 0], n[:, 1]) >= nmin]
+        kept.append(n)
+        total += len(n)
+    return np.concatenate(kept)[:int(n_freq)]
 
 
 # ---------------------------------------------------------------- rotated ideal
@@ -252,6 +276,11 @@ def main() -> None:
         "freqs": freqs.tolist(), "amp": float(amp[0]), "r": float(ideal.r),
     }
     refs["ideal"] = encode_positions(ideal, lambdas, ifwhm, xs_r, ys_r)
+    bands = {str(c): draw_frequencies_nmin(ideal.r, len(freqs), ideal.seed, npos, c).tolist()
+             for c in BAND_CUTOFFS}
+    if bands["0"] != freqs.tolist():
+        raise RuntimeError("cutoff 0 draw differs from the ideal encoder's frequencies")
+    pops["ideal"]["bands"] = {"cutoffs": BAND_CUTOFFS, "freqs": bands}
     cf = ideal.closed_form(xs_r, ys_r)
     pops["ideal"]["closed_form_max_abs_diff"] = float(np.abs(cf - refs["ideal"]).max())
 

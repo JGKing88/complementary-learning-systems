@@ -143,6 +143,11 @@ footer ul { margin: 0; padding: 0; list-style: none; display: flex; flex-wrap: w
       <section class="panel" aria-labelledby="t-pop">
         <div class="ptitle" id="t-pop">Population</div>
         <div class="seg" id="pops"></div>
+        <div class="row" id="band-row" hidden>
+          <label for="band">Remove slow waves</label>
+          <select id="band" class="grow"></select>
+        </div>
+        <p class="hint" id="band-hint" hidden>Waves with |n| below the cutoff are dropped and replaced by faster draws from the same Gaussian, so there are always 512. |n| counts cycles across the 1716-cell scaffold, so a cutoff c removes every wavelength longer than 1716 / c cells. These are the probe's draws (ideal encoder option nmin). The check against Python uses the full draw.</p>
       </section>
 
       <section class="panel" aria-labelledby="t-arena">
@@ -287,7 +292,14 @@ const st = {
   sel: null, outlines: true, detail: null,
   engine: null, engineName: "", engineNote: "", engineError: "",
   checks: {},
+  nmin: 0,
 };
+// The ideal encoder's frequencies: the full draw, or the draw with slow waves removed (st.nmin).
+function idealFreqs(ref) {
+  const P = st.M.populations.ideal, b = P.bands;
+  return (ref || !b || !st.nmin) ? P.freqs : b.freqs[String(st.nmin)];
+}
+const isIdealPop = key => key === "ideal" || key === "ideal_rot";
 
 const mod = (a, n) => ((a % n) + n) % n;
 const errText = e => (e && e.message) ? e.message : String(e);
@@ -413,24 +425,24 @@ function makeGrid(meta) {
 }
 
 function makeIdeal(meta) {
-  const F = meta.freqs, nf = F.length, amp = meta.amp;
+  const nf = meta.freqs.length, amp = meta.amp;
   const cosT = new Float64Array(NPOS), sinT = new Float64Array(NPOS);
   for (let k = 0; k < NPOS; k++) { const th = 2 * Math.PI * k / NPOS; cosT[k] = Math.cos(th); sinT[k] = Math.sin(th); }
-  const wave = u => ({ w: u % nf, n: F[u % nf], sin: u >= nf });
+  const wave = (u, F) => ({ w: u % nf, n: F[u % nf], sin: u >= nf });
   return {
     key: "ideal", meta, n: 2 * nf, signed: true,
-    label(u) { const v = wave(u); return (v.sin ? "sin " : "cos ") + v.w; },
+    label(u) { const v = wave(u, meta.freqs); return (v.sin ? "sin " : "cos ") + v.w; },
     info(u) {
-      const v = wave(u), nx = v.n[0], ny = v.n[1], k = Math.hypot(nx, ny);
+      const v = wave(u, idealFreqs(false)), nx = v.n[0], ny = v.n[1], k = Math.hypot(nx, ny);
       return [["Wave", (v.sin ? "sin" : "cos") + " of wave " + v.w], ["Frequency n", nx + ", " + ny],
               ["Wavelength", k ? (NPOS / k).toFixed(1) + " cells" : "constant"],
               ["Direction", k ? (Math.atan2(ny, nx) * 180 / Math.PI).toFixed(0) + "°" : "–"]];
     },
-    async maps(units, a) {
-      const S = a.S, pl = poolPlan(S), W = pl.W, WW = W * W, out = new Float32Array(units.length * WW);
+    async maps(units, a, ref) {
+      const F = idealFreqs(ref), S = a.S, pl = poolPlan(S), W = pl.W, WW = W * W, out = new Float32Array(units.length * WW);
       const kx = new Int32Array(S), ky = new Int32Array(S);
       units.forEach((u, q) => {
-        const v = wave(u), T = v.sin ? sinT : cosT;
+        const v = wave(u, F), T = v.sin ? sinT : cosT;
         for (let c = 0; c < S; c++) kx[c] = mod(v.n[0] * mod(a.x0 + c, NPOS), NPOS);
         for (let r = 0; r < S; r++) ky[r] = mod(v.n[1] * mod(a.y0 + r, NPOS), NPOS);
         const base = q * WW;
@@ -450,7 +462,7 @@ function makeIdeal(meta) {
 // ideal's; only the single-unit maps change. Each cell needs all 1024 ideal units, so one pass
 // computes every rotated unit and keeps them for the arena; larger arenas keep only the units asked for.
 function makeIdealRot(meta, idealMeta) {
-  const F = idealMeta.freqs, nf = F.length, amp = idealMeta.amp, D = 2 * nf;
+  const nf = idealMeta.freqs.length, amp = idealMeta.amp, D = 2 * nf;
   if (D & (D - 1)) throw new Error("rotated ideal: the unit count must be a power of two");
   const signs = meta.signs.map(s => Float64Array.from(s));
   const scale = Math.pow(D, -signs.length / 2);
@@ -462,7 +474,7 @@ function makeIdealRot(meta, idealMeta) {
         for (let j = i; j < i + h; j++) { const x = v[j], y = v[j + h]; v[j] = x + y; v[j + h] = x - y; }
   };
   // Cell-major values (block b, unit u at b * K + u) for the units in `keep`, or all units if null.
-  function compute(a, keep) {
+  function compute(a, keep, F) {
     const S = a.S, pl = poolPlan(S), W = pl.W, WW = W * W, K = keep ? keep.length : D;
     const data = new Float32Array(WW * K), kx = new Int32Array(nf * S), ky = new Int32Array(nf * S);
     for (let w = 0; w < nf; w++) {
@@ -492,16 +504,16 @@ function makeIdealRot(meta, idealMeta) {
   return {
     key: "ideal_rot", meta, n: D, signed: true,
     label(u) { return "unit " + u; },
-    info(u) { return [["Output unit", String(u)], ["Mixes", "all " + nf + " waves of the ideal code"],
+    info(u) { return [["Output unit", String(u)], ["Mixes", "all " + nf + " waves of the ideal code" + (st.nmin ? ", |n| ≥ " + st.nmin : "")],
                       ["Rotation", signs.length + " rounds of signs and Walsh-Hadamard, seed " + meta.seed]]; },
-    async maps(units, a) {
-      const pl = poolPlan(a.S), WW = pl.W * pl.W, out = new Float32Array(units.length * WW);
+    async maps(units, a, ref) {
+      const F = idealFreqs(ref), pl = poolPlan(a.S), WW = pl.W * pl.W, out = new Float32Array(units.length * WW);
       let src, idx;
       if (WW * D <= ROT_CACHE_FLOATS) {
-        const key = a.x0 + "," + a.y0 + "," + a.S;
-        if (!cache || cache.key !== key) cache = Object.assign(compute(a, null), { key });
+        const key = a.x0 + "," + a.y0 + "," + a.S + "," + (ref ? 0 : st.nmin);
+        if (!cache || cache.key !== key) cache = Object.assign(compute(a, null, F), { key });
         src = cache; idx = units;
-      } else { src = compute(a, units); idx = units.map((_, q) => q); }
+      } else { src = compute(a, units, F); idx = units.map((_, q) => q); }
       const K = src.K;
       units.forEach((u, q) => { const col = idx[q], base = q * WW; for (let b = 0; b < WW; b++) out[base + b] = src.data[b * K + col]; });
       return { data: out, W: src.W, f: src.f };
@@ -1044,7 +1056,7 @@ function eff() {
   const rate = st.mode === "rate";
   return { rectify: rate && st.f.rectify, sigma: rate ? st.f.sigma : 0, thresh: st.f.thresh, minSize: st.f.minSize };
 }
-const viewKey = () => JSON.stringify([st.popKey, st.x0, st.y0, st.S, eff()]);
+const viewKey = () => JSON.stringify([st.popKey, st.x0, st.y0, st.S, eff(), isIdealPop(st.popKey) ? st.nmin : 0]);
 function currentOrder(pop) {
   if (st.order && st.orderPop === pop.key) return st.order;
   return Array.from({ length: pop.n }, (_, i) => i);
@@ -1135,12 +1147,14 @@ function renderPopHead() {
   const pop = st.pops[st.popKey], ck = st.checks[st.popKey];
   $("pop-title").textContent = pop.meta.label + " · " + pop.n + " units";
   const desc = $("pop-desc");
-  desc.replaceChildren(document.createTextNode(pop.meta.description + " "));
+  const band = isIdealPop(st.popKey) && st.nmin
+    ? "Slow waves removed: |n| < " + st.nmin + ", so no wavelength above " + Math.round(NPOS / st.nmin) + " cells. " : "";
+  desc.replaceChildren(document.createTextNode(pop.meta.description + " " + band));
   const chip = document.createElement("span");
   if (!ck) { chip.className = "chip wait"; chip.textContent = "checking against Python…"; }
   else if (ck.error) { chip.className = "chip bad"; chip.textContent = "check failed: " + ck.error; }
   else if (ck.bad) { chip.className = "chip bad"; chip.textContent = ck.bad + " values differ from Python"; }
-  else { chip.className = "chip ok"; chip.textContent = "matches Python to " + ck.maxAbs.toExponential(1); }
+  else { chip.className = "chip ok"; chip.textContent = (band ? "full draw " : "") + "matches Python to " + ck.maxAbs.toExponential(1); }
   desc.append(chip);
 }
 async function renderOnce() {
@@ -1229,7 +1243,7 @@ async function runChecks() {
     try {
       const ref = f32(await fetchText(pop.meta.ref_file)), U = pop.n;
       const all = Array.from({ length: U }, (_, i) => i);
-      const ours = (await pop.maps(all, R)).data;
+      const ours = (await pop.maps(all, R, true)).data;
       let maxAbs = 0, bad = 0;
       for (let u = 0; u < U; u++) for (let i = 0; i < N; i++) {
         const d = Math.abs(ours[u * N + i] - ref[i * U + u]);
@@ -1273,9 +1287,20 @@ function setSize(S) {
   S = Math.min(NPOS, Math.max(1, Math.round(S)));
   setArena(cx - S / 2, cy - S / 2, S);
 }
+function showBand() {
+  const on = isIdealPop(st.popKey) && !!st.M.populations.ideal.bands;
+  $("band-row").hidden = !on; $("band-hint").hidden = !on;
+}
+function setBand(c) {
+  st.nmin = c; st.sortToken++;
+  updateSortNote();
+  if (isIdealPop(st.popKey) && SORTS[st.sort].stat) computeSort();
+  requestRender();
+}
 function setPop(key) {
   if (!st.pops[key] || key === st.popKey) return;
   st.popKey = key; st.sel = null; st.page = 0; st.sortToken++;
+  showBand();
   document.querySelectorAll("#pops button").forEach(b => b.setAttribute("aria-pressed", b.dataset.pop === key ? "true" : "false"));
   if (st.sort === "random") shuffleOrder();
   updateSortNote();
@@ -1325,6 +1350,14 @@ function buildControls() {
     groups.get(r.group).append(o);
   });
   jump.replaceChildren(first, ...groups.values());
+  const bands = st.M.populations.ideal.bands;
+  if (bands) $("band").replaceChildren(...bands.cutoffs.map(c => {
+    const o = document.createElement("option");
+    o.value = String(c);
+    o.textContent = c ? "|n| < " + c + " (wavelengths over " + Math.round(NPOS / c) + " cells)" : "None (full Gaussian)";
+    return o;
+  }));
+  showBand();
   $("prov").textContent = "Data exported by analysis/tuning_viewer/export.py at commit " + st.M.git_sha +
     ". Trained encoder: " + (st.M.populations.trained.encoder || "") + ".";
 }
@@ -1384,6 +1417,7 @@ function wireControls() {
   $("thresh").addEventListener("input", () => { st.f.thresh = +$("thresh").value; $("thresh-out").textContent = st.f.thresh + "%"; filtersChanged(); });
   $("minsize").addEventListener("change", () => { const v = parseInt($("minsize").value, 10); st.f.minSize = v > 0 ? v : 1; $("minsize").value = st.f.minSize; filtersChanged(); });
   $("sort").addEventListener("change", () => setSort($("sort").value));
+  $("band").addEventListener("change", () => setBand(+$("band").value));
   $("resort").addEventListener("click", () => {
     if (st.sort === "random") { st.shuffleSeed++; shuffleOrder(); updateSortNote(); requestRender(); }
     else computeSort();
