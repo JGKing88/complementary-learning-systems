@@ -54,6 +54,10 @@ ENCODERS = {
     "att43u": (f"{SW}/001_att0.5_seed=43/encoder_final.pt", "pretanh"),
     "gwn": ("gwn:" + GWN, "final"),
     "input": (None, "input"),
+    # 2026-11-16: the sparse ideal code and encoders trained toward its form (w67_relu_rank10)
+    "sparse_ideal": ("ideal:r=23.2,n_freq=512,seed=0,gain=100,relu_mix=1,active=0.1", "final"),
+    "rank43": ("/orcd/pool/003/jackking/cls_runs/sweeps/w67_relu_rank10/000_att0.5_relu_rank10_seed=43/encoder_final.pt", "final"),
+    "rank44": ("/orcd/pool/003/jackking/cls_runs/sweeps/w67_relu_rank10/001_att0.5_relu_rank10_seed=44/encoder_final.pt", "final"),
 }
 # displacements (along x unless the second entry is set) for the translation test
 SHIFTS = [(1, 0), (2, 0), (5, 0), (10, 0), (11, 0), (13, 0), (19, 0), (24, 0), (32, 0),

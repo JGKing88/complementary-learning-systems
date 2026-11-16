@@ -18,6 +18,7 @@
 #   bash analysis/hopfield_probe/run_relu_mix.sh [ARRAY]          # default 0-9
 #   SET=b bash analysis/hopfield_probe/run_relu_mix.sh [ARRAY]
 #   SET=c bash analysis/hopfield_probe/run_relu_mix.sh [ARRAY]    # slow waves removed (relu_band)
+#   SET=d bash analysis/hopfield_probe/run_relu_mix.sh [ARRAY]    # trained relu_rank encoders
 #   python -m analysis.hopfield_probe.ideal_summary "$OUT"        # the table
 #
 # Runs from THIS worktree: do not delete it while jobs are live.
@@ -30,7 +31,17 @@ SET=${SET:-a}
 export SET
 B="n_freq=512,seed=0,gain=100"
 
-if [[ "$SET" == c ]]; then
+if [[ "$SET" == d ]]; then
+# Trained encoders with the sparse ideal's output form (branch worktree-relu-sparse-encoder,
+# wave w67_relu_rank10: w52 att0.5 loss and data, output = the sparse ideal's sorted profile by
+# rank). Compare with SET=b's "relu10% r=23.2" (the sparse ideal, no inhibition).
+OUT=${OUT:-/orcd/pool/003/jackking/cls_runs/results/hopfield_probe/relu_trained}
+W=/orcd/pool/003/jackking/cls_runs/sweeps/w67_relu_rank10
+ENCS=(
+    "$W/000_att0.5_relu_rank10_seed=43/encoder_final.pt|trained relu_rank s43"
+    "$W/001_att0.5_relu_rank10_seed=44/encoder_final.pt|trained relu_rank s44"
+)
+elif [[ "$SET" == c ]]; then
 # Remove slow waves: draws with |n| < nmin rejected and replaced from the same Gaussian (r = 16),
 # encoder relu(Q z) with one global inhibition constant. Controls: no waves removed, r lowered to
 # give the same half-width as nmin = 10, 25, 50 (16, 12, 7 cells), to separate "no slow waves"
