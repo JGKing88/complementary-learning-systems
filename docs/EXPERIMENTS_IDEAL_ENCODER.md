@@ -3077,6 +3077,24 @@ correlate 0.973 with att0.5's over random place pairs (0.998 within 40 cells). T
 larger (0.112 against 0.087): rectifying kinks the graded units, which costs direction. It is
 non-negative and dense (half the units on), not sparse.
 
+**Three seeds, and the inhibition control** (`SET=k`). Over three att0.5 seeds, relu(output) +
+inhibition against att0.5:
+
+| seed | \|err\| | exact | basin | dead @ K 20 |
+|---|---|---|---|---|
+| 42, tanh / relu + inh | 8.7, 8.1 / 12.4, 11.5 | 0.982, 0.924 / 0.991, 0.984 | 25.4, 21.8 / 26.8, 25.6 | 0.12, 0 / 0.08, 0.04 |
+| 43, tanh / relu + inh | 7.8, 6.6 / 11.7, 9.7 | 0.982, 0.930 / 0.991, 0.985 | 27.7, 20.6 / 29.5, 24.5 | 0.08, 0.04 / 0, 0.04 |
+| 44, tanh / relu + inh | 7.0, 7.5 / 10.2, 11.1 | 0.989, 0.943 / 0.997, 0.987 | 26.9, 23.6 / 28.1, 26.3 | 0.08, 0.08 / 0, 0.04 |
+
+(whole, corner in each cell.) On every seed the ReLU raises corner exact retrieval from 0.92–0.94 to
+0.98–0.99 and the corner basin by 3–4 cells, and costs 3.1–3.9° of direction. att0.5 with the same
+inhibition and no ReLU gives att0.5's numbers to the third decimal on all three seeds: the tanh
+code's mean over the arena is already ~0, so the inhibition does nothing to it. The gain is the
+ReLU's, and the inhibition is what makes the ReLU usable (without it the floor is 0.46). A sigmoid
+output is then exactly as good as att0.5, not better: sigmoid(2x) = (1 + tanh x)/2, which after
+the inhibition is att0.5 at half scale. So a non-negative rate code can have att0.5's direction
+(sigmoid) or better retrieval and basin at a 3–4° cost (ReLU).
+
 **Summary of §27–30.** Non-negativity costs almost nothing when the memory subtracts one constant
 (rectified att0.5). Sparsity costs direction and crowding; training the encoder with the sparse
 output (rank profile + slow homeostatic thresholds) and 2048 units at 20% recovers att0.5's
