@@ -86,6 +86,9 @@ from gridcode.assoc import nonlin
 HERE = Path(__file__).resolve().parent
 RUNS = Path("/orcd/pool/003/jackking/cls_runs")
 ENCODER = str(RUNS / "sweeps/w52_attract_fwhm/001_att0.5_seed=43/encoder_final.pt")
+# Trained sparse non-negative encoder (branch worktree-relu-sparse-encoder, wave w72): w52 att0.5's
+# loss and data, 2048 outputs, relu_rank_homeo output with 20% of units active.
+SPARSE_ENCODER = str(RUNS / "sweeps/w72_rank_homeo_2048/002_att0.5_rank_homeo2048_20_seed=43/encoder_final.pt")
 IDEAL = "ideal:r=16,n_freq=512,seed=0,gain=100"
 HPC = {"Np": 400, "thresh": 2.0, "c": 0.5, "seed": 0}
 ROT = {"seed": 0, "rounds": 3}
@@ -127,8 +130,8 @@ def fold_mlp(encoder, lambdas, fwhm):
     acts = [m for m in encoder.net if isinstance(m, torch.nn.GELU)]
     if len(acts) != len(linears) - 1 or any(a.approximate != "none" for a in acts):
         raise ValueError("expected exact GELU between every pair of Linear layers")
-    if encoder.output_nonlinearity != "tanh":
-        raise ValueError(f"expected tanh output, got {encoder.output_nonlinearity}")
+    if encoder.output_nonlinearity not in ("tanh", "relu_rank_homeo"):
+        raise ValueError(f"expected a tanh or relu_rank_homeo output, got {encoder.output_nonlinearity}")
     Wb = [(m.weight.detach().double().numpy(), m.bias.detach().double().numpy())
           for m in linears]
     W1, b1 = Wb[0]
@@ -173,6 +176,63 @@ def export_mlp(name, encoder, gain, lambdas, fwhm, npos, out: Path, label, descr
 
 
 # ---------------------------------------------------------------- slow-wave cutoffs
+def sparse_folded_forward(xs, ys, T, b1, layers, lambdas, row_offsets, bias, profile, erf):
+    """The page's computation for relu_rank_homeo, in float64: the folded layers with a linear
+    output u, then per input standardise u over units, subtract the per-unit homeostatic offsets,
+    and give the unit of rank k the k-th profile value."""
+    h = b1[None, :].copy()
+    for l, off in zip(lambdas, row_offsets):
+        h = h + T[off + (xs % l) * l + (ys % l)]
+    gelu = lambda v: 0.5 * v * (1.0 + erf(v / math.sqrt(2.0)))
+    h = gelu(h)
+    for W, b in layers[:-1]:
+        h = gelu(h @ W + b)
+    W, b = layers[-1]
+    u = h @ W + b
+    u = (u - u.mean(1, keepdims=True)) / np.maximum(u.std(1, keepdims=True), 1e-6) - bias
+    order = np.argsort(-u, axis=1, kind="stable")
+    z = np.zeros_like(u)
+    np.put_along_axis(z, order, np.broadcast_to(profile, u.shape).copy(), axis=1)
+    return z
+
+
+def export_sparse_mlp(name, encoder, lambdas, fwhm, npos, out: Path, label, description):
+    """export_mlp for a relu_rank_homeo encoder: the same packed weights, plus the homeostatic
+    offsets and the rank profile, a check of the page's computation against the encoder, and the
+    global inhibition constant the probe's memory subtracts (mean output over 65,536 cells)."""
+    T, b1, layers, row_offsets = fold_mlp(encoder, lambdas, fwhm)
+    bias = encoder.homeo_bias.detach().double().numpy()
+    profile = encoder.rank_profile.detach().double().numpy()
+    rng = np.random.default_rng(0)
+    xs, ys = rng.integers(0, npos, N_CHECK), rng.integers(0, npos, N_CHECK)
+    truth = encode_positions(encoder, lambdas, fwhm, xs, ys).astype(np.float64)
+    got = sparse_folded_forward(xs, ys, T, b1, layers, lambdas, row_offsets, bias, profile, erf_poly)
+    diff = np.abs(got - truth)
+    g = np.random.default_rng(12345)
+    cx, cy = g.integers(0, npos, 65536), g.integers(0, npos, 65536)
+    inhib = float(encode_positions(encoder, lambdas, fwhm, cx, cy).mean())
+    arrays = [("T", T), ("b1", b1)]
+    for i, (W, b) in enumerate(layers, start=2):
+        arrays += [(f"W{i}", W), (f"b{i}", b)]
+    meta, offset, flat = [], 0, []
+    for an, a in arrays:
+        meta.append({"name": an, "shape": list(a.shape), "offset": offset})
+        offset += a.size
+        flat.append(np.asarray(a, dtype=np.float64).ravel())
+    write_b64(out / f"{name}_weights.b64.txt", np.concatenate(flat), "<f4")
+    return {
+        "kind": "mlp_sparse", "label": label, "description": description,
+        "n_units": int(layers[-1][0].shape[1]), "signed": False,
+        "gain": 1.0, "hidden": int(T.shape[1]), "row_offsets": row_offsets,
+        "weights_file": f"{name}_weights.b64.txt", "arrays": meta,
+        "sparse_active": float(encoder.sparse_active),
+        "homeo_bias": bias.astype(np.float32).tolist(), "profile": profile.astype(np.float32).tolist(),
+        "inhibition_constant": inhib,
+        "fold_check_max_abs_diff": float(diff.max()),
+        "fold_check_values_off": int((diff > 1e-4).sum()),
+    }
+
+
 def draw_frequencies_nmin(r: float, n_freq: int, seed: int, npos: int, nmin: float) -> np.ndarray:
     """``ideal_encoder.draw_frequencies(..., nmin)`` on the probe branch, line for line.
 
@@ -543,6 +603,21 @@ def main() -> None:
         "Same architecture and gain as the trained encoder, with its random initial "
         "weights (torch seed 0), the control in the cosyne encoder figure.")
     refs["untrained"] = encode_positions(untrained, lambdas, fwhm, xs_r, ys_r)
+
+    # trained, sparse non-negative (w72)
+    sparse_enc, _scfg, _sgain, sfwhm, _sheader = load_probe_encoder(SPARSE_ENCODER)
+    sparse_enc.eval()
+    pops["trained_sparse"] = export_sparse_mlp(
+        "trained_sparse", sparse_enc, lambdas, sfwhm, npos, out, "Trained, ReLU 20%",
+        "Encoder trained with att0.5's loss and data (w52, attract 0.5, within-environment pairs) but "
+        "a sparse non-negative output and 2048 units (wave w72, seed 43): at each place the 2048 "
+        "values are standardised, each unit's homeostatic offset is subtracted, and the top 20% by "
+        "rank take a fixed graded profile, so 410 units fire. The offsets were set during training "
+        "so each unit fires at about 20% of places. In the navigation probe the memory subtracts "
+        "one inhibition constant from every unit (global inhibition); the maps show the "
+        "encoder's activity before that.")
+    pops["trained_sparse"]["encoder"] = SPARSE_ENCODER
+    refs["trained_sparse"] = encode_positions(sparse_enc, lambdas, sfwhm, xs_r, ys_r)
 
     # hippocampus
     hpc_check = check_hpc_recipe()
