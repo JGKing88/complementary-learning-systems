@@ -260,6 +260,7 @@ pool figures (`gwn/figures/`).
 | `rewire.py` | rewiring instead of pruning | 25.7 | stdout |
 | `kappa_steps.py` | depression: κ against steps at a fixed width | 25.8 | stdout |
 | `kernel_error_checks.py` | checks for `docs/kernel_error.tex`: kernel error from finite M, independent noise (decoder, similarity climber), shared grid-phase noise and the choice of j representatives, edge of the monotone region | tex | stdout |
+| `place_fields_rotation.py` | checks for `docs/place_fields_rotation.tex`: the field from one row z(c), and N rows z(c_i) made orthonormal (G^{-1/2} Z) up to a full rotation, N = 2M | tex | stdout |
 
 ## First result: the ideal encoder in the probe (2026-09-30)
 

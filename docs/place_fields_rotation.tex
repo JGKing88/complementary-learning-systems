@@ -1,0 +1,228 @@
+\documentclass[11pt]{article}
+\usepackage[margin=1in]{geometry}
+\usepackage{amsmath,amssymb,booktabs}
+
+\newcommand{\E}{\mathbb{E}}
+\emergencystretch=3em
+
+\title{Place fields from a rotation of the ideal code}
+\author{}
+\date{}
+
+\begin{document}
+\maketitle
+
+\noindent A rotation of the ideal code changes which functions of position the units carry, not
+the similarity between positions. Each rotated unit is the same $M$ waves with its own amplitudes
+and phases. Setting every phase so that all waves peak at one position $c$ gives a place field
+centred on $c$. With equal amplitudes the field is the kernel itself, with standard deviation $r$,
+peak $1$, plus a weak ripple over the whole arena. A full rotation can give every one of the $2M$
+units such a field, with centres about $3.35r$ apart and peaks about $0.87$, but each field then
+holds only about a fifth of its unit's energy and the ripple holds the rest. A place code without
+ripples would need about $7{,}300$ units, seven times the $2M$ the ideal has. Checks are in
+\texttt{analysis/hopfield\_probe/kernel\_scaling/place\_fields\_rotation.py}
+($L = 1716$, $r = 16$, $M = 512$).
+
+\section{Setup}
+
+The arena is a 2D torus of side $L$ cells. The ideal code has $M$ waves with integer frequencies
+$n_k$, drawn from a Gaussian with standard deviation $\sigma_n = L/(2\pi r)$ per axis, and angular
+frequencies $\omega_k = 2\pi n_k/L$, so $\omega \sim \mathcal{N}(0, \sigma_\omega^2 I)$ with
+$\sigma_\omega = 1/r$. Here the frequencies are distinct up to sign and nonzero, so the $2M$
+coordinates are orthogonal functions on the torus. The code and its kernel are
+\begin{gather}
+  z(p) = \frac{1}{\sqrt M}\bigl(\cos\omega_k\!\cdot p,\ \sin\omega_k\!\cdot p\bigr)_{k=1}^M, \\
+  K_M(\Delta) = z(p)\cdot z(p+\Delta) = \frac1M\sum_k \cos(\omega_k\!\cdot\Delta) \approx
+  k(\Delta) = e^{-|\Delta|^2/2r^2}.
+\end{gather}
+It is convenient to define
+\begin{equation}
+  D = \frac{L^2}{\pi r^2} \approx 3{,}660,
+\end{equation}
+the effective number of dimensions of the exact Gaussian kernel on this arena, derived in
+\texttt{kernel\_error.tex}.
+
+\section{A rotation recombines the waves}
+
+A rotation is $y(p) = Q\,z(p)$ with $Q$ orthogonal. It keeps every similarity,
+$y(p)\cdot y(q) = z(p)\cdot z(q) = K_M(p - q)$. Unit $i$ is row $q_i = (a_{ik}, b_{ik})_k$ of $Q$
+applied to the code:
+\begin{equation}
+  y_i(p) = \frac{1}{\sqrt M}\sum_k \bigl(a_{ik}\cos\omega_k\!\cdot p + b_{ik}\sin\omega_k\!\cdot p\bigr)
+         = \frac{1}{\sqrt M}\sum_k \rho_{ik}\cos(\omega_k\!\cdot p - \varphi_{ik}),
+  \qquad \sum_k \rho_{ik}^2 = 1 .
+  \label{eq:unit}
+\end{equation}
+So every rotated unit is a sum of the same $M$ waves. The row chooses an amplitude $\rho_{ik}$ and a
+phase $\varphi_{ik}$ for each wave, and orthogonality of $Q$ couples the choices across rows.
+
+Two identities hold for every rotation. Since $|z(p)| = 1$ and $Q$ is orthogonal,
+\begin{equation}
+  \sum_i y_i(p)^2 = 1 \ \text{at every } p, \qquad |y_i(p)| \le 1 .
+  \label{eq:norm}
+\end{equation}
+Since distinct waves are orthogonal on the torus and $\sum_p \cos^2 = \sum_p \sin^2 = L^2/2$,
+\begin{equation}
+  \sum_p y_i(p)^2 = \frac{L^2}{2M}\sum_k\rho_{ik}^2 = \frac{L^2}{2M}\quad\text{for every unit.}
+  \label{eq:energy}
+\end{equation}
+Call this the energy of a unit. It does not depend on $Q$.
+
+\section{One place field: align the phases}
+
+Choose the phases so that every wave peaks at a centre $c$, $\varphi_{ik} = \omega_k\cdot c$. Then
+\begin{equation}
+  y(p) = \frac{1}{\sqrt M}\sum_k \rho_k\cos\bigl(\omega_k\!\cdot(p - c)\bigr),\qquad
+  y(c) = \frac{1}{\sqrt M}\sum_k\rho_k \le 1,
+\end{equation}
+by Cauchy--Schwarz, with equality only for equal amplitudes $\rho_k = 1/\sqrt M$. Equal amplitudes
+and aligned phases make the row equal to the code of the centre, $q = z(c)$, and the unit's tuning
+is the kernel centred on $c$:
+\begin{equation}
+  y_c(p) = z(c)\cdot z(p) = K_M(p - c) = k(p - c) + \varepsilon(p - c).
+  \label{eq:matched}
+\end{equation}
+
+Why this is a field. At $p = c$ every wave is at its peak. Moving a displacement $\Delta$ away
+advances wave $k$ by the phase $\omega_k\cdot\Delta$. Averaged over the frequency distribution,
+\begin{equation}
+  \frac1M\sum_k\cos(\omega_k\!\cdot\Delta) \approx \E_\omega\cos(\omega\cdot\Delta)
+  = e^{-\sigma_\omega^2|\Delta|^2/2},
+\end{equation}
+so the waves stay in step for $|\Delta| \lesssim 1/\sigma_\omega$ and then drift out of step and
+cancel. The field is the Fourier transform of the frequency distribution, and its width is the
+distance over which the waves stay in step:
+\begin{equation}
+  \text{field sd} = \frac{1}{\sigma_\omega} = r .
+\end{equation}
+Unequal amplitudes reweight the frequency distribution. Weighting high frequencies more makes the
+field narrower, down to roughly the shortest wavelength in the code, and weighting low frequencies
+more makes it wider. Either way the peak falls below $1$.
+
+The ripple $\varepsilon$ is the part of the cancellation that $M$ waves cannot complete. Its size
+follows from the energy \eqref{eq:energy}. The field holds $\sum_p k^2 = \pi r^2$, so
+\begin{equation}
+  \text{fraction of energy in the field} = \frac{\pi r^2}{L^2/2M} = \frac{2M}{D},\qquad
+  \text{ripple rms} = \sqrt{\frac{1 - 2M/D}{2M}},
+\end{equation}
+valid while $2M \ll D$. At $M = 512$ the field holds $28\%$ of the energy and the ripple has rms
+$0.0265$, spread over the whole arena.
+
+\noindent Check (one row $z(c)$): peak $1.000$; half-maximum area equivalent to a standard
+deviation of $15.3$ cells against $r = 16$ (drawing distinct frequencies flattens the spectrum
+slightly); energy $2875.6 = L^2/2M$, of which $25\%$ lies within $3r$ of the centre (predicted
+$28\%$); ripple rms $0.027$ (predicted $0.0265$); largest ripple value $0.11$.
+
+The same budget bounds any unit whose field has the kernel's width. A field with peak $h \le 1$
+and standard deviation $r$ holds $\pi h^2 r^2$, so
+\begin{equation}
+  \text{share of a unit's energy in a field of width } r \;\le\; \frac{2M}{D} = 0.28,
+\end{equation}
+and at least $72\%$ of every such unit is ripple.
+
+\section{Several place fields in one rotation}
+
+Rows $z(c_1), \dots, z(c_N)$ can all belong to one rotation only if they are orthonormal:
+\begin{equation}
+  z(c_i)\cdot z(c_j) = K_M(c_i - c_j) = k(c_i - c_j) + \varepsilon(c_i - c_j) = \delta_{ij}.
+\end{equation}
+This needs two things.
+\begin{itemize}
+  \item The fields must not overlap, $k(c_i - c_j) \approx 0$, so centres must be at least about
+  $3r$ apart ($k(3r) = 0.011$).
+  \item The ripples must not add up. Beyond the fields, the overlaps $\varepsilon(c_i - c_j)$ are
+  like random numbers with standard deviation $1/\sqrt{2M}$, so the rows behave like $N$ random
+  unit vectors in $2M$ dimensions. Their Gram matrix has eigenvalues in
+  $\bigl[(1 - \sqrt{N/2M})^2,\ (1 + \sqrt{N/2M})^2\bigr]$ (Marchenko--Pastur), close to $1$ only
+  when $N \ll 2M$.
+\end{itemize}
+The orthonormal rows closest to $z(c_1), \dots, z(c_N)$ are $Q = G^{-1/2}Z$, where $Z$ stacks the
+rows and $G = ZZ^\top$. When $N \ll 2M$, $Q \approx Z - \tfrac12(G - I)Z$, so each unit keeps its
+field with peak close to $1$ and picks up small bumps of height about $\tfrac12|\varepsilon| \sim
+0.015$ at the other centres. The correction grows with $N$, but the fields survive all the way to a
+full rotation, $N = 2M$, with one field per unit:
+\begin{center}
+\small
+\setlength{\tabcolsep}{5pt}
+\begin{tabular}{rrcccccc}
+  \toprule
+  $N$ & spacing & eig.\ of $G$ & MP range & peak & field sd & in field & beyond $3r$ \\
+  \midrule
+  16 & $26.8r$ & 0.80--1.25 & 0.77--1.27 & 0.997 & 15.3 & 0.25 & 0.11 \\
+  64 & $13.4r$ & 0.56--1.44 & 0.56--1.56 & 0.993 & 15.4 & 0.25 & 0.12 \\
+  256 & $6.7r$ & 0.00--2.25 & 0.25--2.25 & 0.971 & 15.4 & 0.24 & 0.12 \\
+  1024 & $3.35r$ & $2\times10^{-7}$--3.27 & 0--4 & 0.87 & 15.5 & 0.20 & 0.13 \\
+  \bottomrule
+\end{tabular}
+\end{center}
+MP is the Marchenko--Pastur range, ``in field'' the share of a unit's energy within $3r$ of its
+centre, and ``beyond $3r$'' the largest $|y|$ farther out. The first three rows use centres on an
+exact lattice. That makes $G$ a circulant whose eigenvalues
+count the frequencies in each residue class, so a class with no frequency gives a zero eigenvalue
+at $N = 256$, and at $N = 1024$ the exact lattice leaves $G$ singular. The last row therefore
+jitters each centre by up to a quarter of the spacing. $Q$ is then orthogonal to $10^{-12}$, and
+over 96 units the peak ranges from $0.86$ to $0.88$ (5th to 95th percentile) and the largest value
+outside $3r$ stays below $0.15$. Jittering by half the spacing gives the same numbers within
+$0.01$, except for a 5th-percentile peak of $0.82$.
+
+So a full rotation turns the units into place cells (every one of the 96 checked): $2M = 1024$
+fields, one per unit, with centres $L/\sqrt{2M} \approx 3.35r$ apart, standard deviation about $r$
+and peak about $0.87$.
+Each field holds about a fifth of its unit's energy, close to the bound $2M/D \times 0.87^2 = 0.21$,
+and the rest is a ripple of rms $0.028$ over the whole arena.
+
+\section{What the rotated code is and is not}
+
+Summing \eqref{eq:norm} over the arena gives $\sum_i\sum_p y_i(p)^2 = L^2$ for any code of unit
+norm with any number of units. A unit that is a single bump with peak $h \le 1$ and standard
+deviation $\sigma$ has energy $\pi h^2\sigma^2 \le \pi\sigma^2$. Two consequences follow.
+
+\paragraph{A place code with this kernel needs many units.} In a place code the similarity between
+two positions is the overlap of their field patterns. For Gaussian fields of standard deviation
+$\sigma_f$ this overlap is a Gaussian of standard deviation $\sqrt2\,\sigma_f$, so matching the
+kernel needs $\sigma_f = r/\sqrt2$. Equivalently, the frequency density $p(\omega)$ of the ideal is
+the power spectrum $|\hat f(\omega)|^2$ of the field. Each such field holds at most
+$\pi\sigma_f^2 = \pi r^2/2$, so the number of units is at least
+\begin{equation}
+  N_{\text{place}} \ge \frac{L^2}{\pi\sigma_f^2} = \frac{2L^2}{\pi r^2} = 2D \approx 7{,}300 .
+\end{equation}
+The ideal has $2M = 1024$ units, and a rotation keeps that number. So no rotation of the ideal at
+$M = 512$ is a place code with its kernel.
+
+\paragraph{If every unit were a single bump, the bumps would be wide.} With $2M$ units each a single
+bump, $\sum_i \pi h_i^2\sigma_i^2 = L^2$ gives
+\begin{equation}
+  \sqrt{\langle\sigma^2\rangle} \ge \frac{L}{\sqrt{2\pi M}} \approx 30\ \text{cells},
+\end{equation}
+set by $L$ and $M$, not by $r$. A tiling of bumps that wide would have population similarity with
+standard deviation $\sqrt2 \times 30 \approx 43$ cells, but a rotation keeps it at $r = 16$. So no
+rotation makes every unit a single clean bump.
+
+\paragraph{What it is.} The full rotation of Section~4 sits between these two limits. Its fields
+have the kernel's width, so each unit's field holds at most $2M/D$ of its energy and the ripple
+holds the rest. Averaged over positions, the fields make up about a fifth of each code vector's
+squared length. At half maximum they cover about a third of the arena; a position between fields
+is coded by the ripples. The fields alone give a similarity of about
+$0.2\,e^{-|\Delta|^2/4r^2}$ (the overlap of fields of width $r$), and the ripples supply the rest of
+$K_M$. The ripple is what fitting the kernel into $2M < 2D$ dimensions costs.
+
+\section{Summary}
+
+\begin{center}
+\begin{tabular}{ll}
+  \toprule
+  quantity & value \\
+  \midrule
+  field from one row $z(c)$ & $K_M(p - c)$: sd $r = 1/\sigma_\omega$, peak $1$ \\
+  share of energy in a field of width $r$ & $\le 2M/D$ ($0.28$ at $M = 512$) \\
+  ripple rms of one row $z(c)$ & $\sqrt{(1 - 2M/D)/2M}$ ($0.027$) \\
+  full rotation into place cells & one field per unit, centres $3.35r$ apart, \\
+  & sd $\approx r$, peak $\approx 0.87$, field $\approx 20\%$ of energy \\
+  place-code field with the same kernel & sd $r/\sqrt2$, power spectrum $= p(\omega)$ \\
+  units such a place code needs & $\ge 2L^2/\pi r^2 \approx 7{,}300$ \\
+  width if all $2M$ units were single bumps & $\ge L/\sqrt{2\pi M} \approx 30$ cells \\
+  \bottomrule
+\end{tabular}
+\end{center}
+
+\end{document}
