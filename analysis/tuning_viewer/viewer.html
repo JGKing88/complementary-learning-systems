@@ -162,8 +162,8 @@ footer ul { margin: 0; padding: 0; list-style: none; display: flex; flex-wrap: w
           <label class="lbl" for="x0">x</label><input type="number" id="x0" min="0" max="1715" step="1">
           <label class="lbl" for="y0">y</label><input type="number" id="y0" min="0" max="1715" step="1">
         </div>
-        <select id="jump" aria-label="Go to a training patch of the trained encoder"></select>
-        <p class="hint">x and y are the arena's lower-left cell. Drag the map or the large unit view to move it, or use the arrow keys (Shift moves 10 cells). The scaffold wraps at its edges. Grey squares are the 118 patches of 50 × 50 cells the trained encoder was trained on, 10% of the scaffold.</p>
+        <select id="jump" aria-label="Go to a training patch of the trained encoders"></select>
+        <p class="hint">x and y are the arena's lower-left cell. Drag the map or the large unit view to move it, or use the arrow keys (Shift moves 10 cells). The scaffold wraps at its edges. Grey squares are the 118 patches of 50 × 50 cells both trained encoders (tanh and ReLU k128, seed 43) were trained on, 10% of the scaffold.</p>
       </section>
 
       <section class="panel" aria-labelledby="t-map">
@@ -277,7 +277,9 @@ const MAX_RES = 512;              // maps above this many cells per side are blo
 const THUMB_RES = 160;
 const DETAIL_RES = 512;
 const SIZE_MIN = 4;
-const POP_ORDER = ["grid", "ideal", "ideal_rot", "ideal_place", "ideal_sparse", "ideal_sparse20", "trained", "untrained", "hippocampus", "hippocampus_smooth"];
+const POP_ORDER = ["grid", "ideal", "ideal_rot", "ideal_place", "ideal_sparse", "ideal_sparse20", "trained", "trained_relu", "untrained", "hippocampus", "hippocampus_smooth"];
+// The MLP encoders, all computed by the GPU engine. Each one's output activation is its manifest "output".
+const MLP_KEYS = ["trained", "trained_relu", "untrained"];
 const ROT_CACHE_FLOATS = 1 << 25;  // the rotated ideal keeps every unit for arenas up to this many values
 const TF_URL = "https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.22.0/dist/tf.min.js";
 let NPOS = 1716;
@@ -368,16 +370,16 @@ function unpackMlp(meta, all) {
     return all.subarray(a.offset, a.offset + a.shape.reduce((p, q) => p * q, 1));
   };
   return { T: get("T"), b1: get("b1"), W: ["W2", "W3", "W4", "W5"].map(get), b: ["b2", "b3", "b4", "b5"].map(get),
-           gain: meta.gain, hidden: meta.hidden, out: meta.n_units, rowOff: meta.row_offsets };
+           gain: meta.gain, act: meta.output || "tanh", hidden: meta.hidden, out: meta.n_units, rowOff: meta.row_offsets };
 }
 
 async function loadAll() {
   const M = JSON.parse(await fetchText("manifest.json"));
   st.M = M; NPOS = M.npos;
   const P = M.populations;
-  const [wpg, wpgS, wTr, wUn, qPlace] = await Promise.all([
-    fetchText(P.hippocampus.wpg_file), fetchText(P.hippocampus_smooth.wpg_file),
-    fetchText(P.trained.weights_file), fetchText(P.untrained.weights_file), fetchText(P.ideal_place.q_file)]);
+  const [wpg, wpgS, qPlace, ...wMlp] = await Promise.all([
+    fetchText(P.hippocampus.wpg_file), fetchText(P.hippocampus_smooth.wpg_file), fetchText(P.ideal_place.q_file),
+    ...MLP_KEYS.map(k => fetchText(P[k].weights_file))]);
   st.pops.grid = makeGrid(P.grid);
   st.pops.ideal = makeIdeal(P.ideal);
   st.pops.ideal_rot = makeIdealRot(P.ideal_rot, P.ideal);
@@ -386,10 +388,10 @@ async function loadAll() {
   st.pops.ideal_sparse20 = makeIdealSparse("ideal_sparse20", P.ideal_sparse20, st.pops.ideal_rot.signs);
   st.pops.hippocampus = makeHpc("hippocampus", P.hippocampus, f64(wpg));
   st.pops.hippocampus_smooth = makeHpc("hippocampus_smooth", P.hippocampus_smooth, f64(wpgS));
-  st.mlp.trained = unpackMlp(P.trained, f32(wTr));
-  st.mlp.untrained = unpackMlp(P.untrained, f32(wUn));
-  st.pops.trained = makeMlp("trained", P.trained);
-  st.pops.untrained = makeMlp("untrained", P.untrained);
+  MLP_KEYS.forEach((k, i) => {
+    st.mlp[k] = unpackMlp(P[k], f32(wMlp[i]));
+    st.pops[k] = makeMlp(k, P[k]);
+  });
 }
 
 // ================================================================ block averaging
@@ -756,7 +758,7 @@ function makeHpc(key, meta, Wpg) {
 
 function makeMlp(key, meta) {
   return {
-    key, meta, n: meta.n_units, signed: true,
+    key, meta, n: meta.n_units, signed: meta.signed !== false,
     label(u) { return "unit " + u; },
     info(u) { return [["Output unit", String(u)]]; },
     maps(units, a) {
@@ -822,7 +824,8 @@ function wgslMatmul(P, K, M, act) {
     });
     inner += "    }\n";
   }
-  const actExpr = act === "gelu" ? "gelu4(v)" : act === "none" ? "v" : "tanh(clamp(v * GAIN, vec4f(-15.0), vec4f(15.0)))";
+  const actExpr = act === "gelu" ? "gelu4(v)" : act === "none" ? "v" : act === "relu" ? "max(v, vec4f(0.0))" :
+    "tanh(clamp(v * GAIN, vec4f(-15.0), vec4f(15.0)))";
   return wgslCommon(P) + `
 @group(0) @binding(0) var<uniform> prm: Params;
 @group(0) @binding(1) var<storage, read> A: array<vec4f>;
@@ -1023,9 +1026,10 @@ async function makeWebGpuEngine() {
     setStatus(st.engineError, true);
   });
   const any = st.mlp.trained;
-  for (const k of ["trained", "untrained"]) {
+  for (const k of MLP_KEYS) {
     const m = st.mlp[k];
     if (m.hidden !== 256 || m.out !== 1024) throw new Error(k + ": the shaders expect 256 hidden units and 1024 outputs");
+    if (m.act !== "tanh" && m.act !== "relu") throw new Error(k + ": unknown output activation " + m.act);
   }
   const P = { npos: NPOS, hidden: any.hidden, out: any.out, lambdas: st.M.lambdas, rowOff: any.rowOff, gain: 1 };
   const U = GPUBufferUsage;
@@ -1058,10 +1062,10 @@ async function makeWebGpuEngine() {
     layout: p.getBindGroupLayout(0), entries: list.map((b, i) => ({ binding: i, resource: { buffer: b } })) });
   const mm = M => n => [M / 64, Math.ceil(n / 64)];
   const outPipes = {}, sets = {};
-  for (const k of ["trained", "untrained"]) {
-    const m = st.mlp[k];
-    if (!outPipes[m.gain]) outPipes[m.gain] = await compile(wgslMatmul(Object.assign({}, P, { gain: m.gain }), 256, 1024, "tanh"), "output matmul");
-    const pOut = outPipes[m.gain];
+  for (const k of MLP_KEYS) {
+    const m = st.mlp[k], pk = m.act + ":" + m.gain;
+    if (!outPipes[pk]) outPipes[pk] = await compile(wgslMatmul(Object.assign({}, P, { gain: m.gain }), 256, 1024, m.act), "output matmul");
+    const pOut = outPipes[pk];
     const w = { T: upload(m.T), b1: upload(m.b1), W: m.W.map(upload), b: m.b.map(upload) };
     sets[k] = [
       { p: pL1, g: bg(pL1, [sh.prm, w.T, w.b1, sh.hA]), wg: n => [n, 1] },
@@ -1232,7 +1236,7 @@ async function makeTfEngine() {
   try { erfOk = !!tf.getKernel("Erf", "webgl"); } catch (e) { erfOk = false; }
   const gelu = x => { const u = tf.mul(x, Math.SQRT1_2); return tf.mul(tf.mul(x, 0.5), tf.add(erfOk ? tf.erf(u) : tfErfPoly(u), 1)); };
   const sets = {};
-  for (const k of ["trained", "untrained"]) {
+  for (const k of MLP_KEYS) {
     const m = st.mlp[k];
     sets[k] = { m, T: tf.tensor2d(m.T, [m.T.length / m.hidden, m.hidden]), b1: tf.tensor1d(m.b1),
                 W: m.W.map((w, i) => tf.tensor2d(w, [m.hidden, i < 3 ? m.hidden : m.out])), b: m.b.map(x => tf.tensor1d(x)) };
@@ -1251,7 +1255,8 @@ async function makeTfEngine() {
       h = tf.add(h, tf.gather(w.T, tf.tensor1d(idx[2], "int32")));
       h = gelu(tf.add(h, w.b1));
       for (let l = 0; l < 3; l++) h = gelu(tf.add(tf.matMul(h, w.W[l]), w.b[l]));
-      const z = tf.tanh(tf.clipByValue(tf.mul(tf.add(tf.matMul(h, w.W[3]), w.b[3]), w.m.gain), -15, 15));
+      const v = tf.add(tf.matMul(h, w.W[3]), w.b[3]);
+      const z = w.m.act === "relu" ? tf.relu(v) : tf.tanh(tf.clipByValue(tf.mul(v, w.m.gain), -15, 15));
       return tf.div(z, tf.maximum(tf.sqrt(tf.sum(tf.square(z), 1, true)), 1e-12));
     });
   }
@@ -1673,7 +1678,7 @@ async function renderOnce() {
   });
   const si = want.indexOf(st.sel);
   renderDetail(pop, st.sel, out[si], res, a, div, lut, pageRange, lite);
-  const onGpu = pop.key === "trained" || pop.key === "untrained" || (pop.key === "ideal_rot" && st.engine && st.engine.rotMaps) ||
+  const onGpu = MLP_KEYS.includes(pop.key) || (pop.key === "ideal_rot" && st.engine && st.engine.rotMaps) ||
     (pop.key === "ideal_place" && st.engine && st.engine.placeMaps);
   const engine = onGpu ? (st.engine ? st.engine.name : "GPU") : res.fromWorker ? "a background thread" : "JavaScript";
   setStatus(units.length + " of " + pop.n + " units · " + a.S + " × " + a.S + " arena at (" + a.x0 + ", " + a.y0 + ")" +
@@ -1821,7 +1826,7 @@ function buildControls() {
   sort.replaceChildren(...Object.entries(SORTS).map(([k, s]) => { const o = document.createElement("option"); o.value = k; o.textContent = s.label; return o; }));
   syncSortOptions();
   const jump = $("jump"), first = document.createElement("option");
-  first.value = ""; first.textContent = "Go to a training patch of the trained encoder…";
+  first.value = ""; first.textContent = "Go to a training patch of the trained encoders…";
   const groups = new Map();
   st.M.arenas.forEach((r, i) => {
     if (!groups.has(r.group)) { const g = document.createElement("optgroup"); g.label = r.group; groups.set(r.group, g); }
@@ -1839,7 +1844,8 @@ function buildControls() {
   }));
   showBand();
   $("prov").textContent = "Data exported by analysis/tuning_viewer/export.py at commit " + st.M.git_sha +
-    ". Trained encoder: " + (st.M.populations.trained.encoder || "") + ".";
+    ". Trained encoder: " + (st.M.populations.trained.encoder || "") +
+    ". ReLU k128: " + (st.M.populations.trained_relu.encoder || "") + ".";
 }
 
 function wireControls() {

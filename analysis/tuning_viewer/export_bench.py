@@ -81,8 +81,9 @@ def erf_poly(x: np.ndarray) -> np.ndarray:
     return np.sign(x) * (1.0 - p * np.exp(-a * a))
 
 
-def folded_forward(xs, ys, tables, layers, lambdas, row_offsets, gain, erf):
-    """The page's computation, in float64."""
+def folded_forward(xs, ys, tables, layers, lambdas, row_offsets, gain, erf, act="tanh"):
+    """The page's computation, in float64. ``act`` is the output activation:
+    ``tanh(gain * v)`` or ``relu(v)``, which takes no gain."""
     T, b1 = tables
     h = b1[None, :].copy()
     for l, off in zip(lambdas, row_offsets):
@@ -92,7 +93,12 @@ def folded_forward(xs, ys, tables, layers, lambdas, row_offsets, gain, erf):
     for W, b in layers[:-1]:
         h = gelu(h @ W + b)
     W, b = layers[-1]
-    z = np.tanh(np.clip(gain * (h @ W + b), -15.0, 15.0))
+    if act == "relu":
+        z = np.maximum(h @ W + b, 0.0)
+    elif act == "tanh":
+        z = np.tanh(np.clip(gain * (h @ W + b), -15.0, 15.0))
+    else:
+        raise ValueError(f"unknown output activation {act!r}")
     return z / np.maximum(np.linalg.norm(z, axis=1, keepdims=True), 1e-12)
 
 

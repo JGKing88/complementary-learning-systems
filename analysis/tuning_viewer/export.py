@@ -47,10 +47,14 @@ ideal_sparse, ideal_sparse20
     units active, scaled to unit length at each cell. The 20% code is the
     same with ``t`` for 20% and r = 18.8, which matches its similarity
     peak's half-width to the ideal's.
-trained, untrained
+trained, trained_relu, untrained
     the MLP with its first layer folded into per-module tables (see
     ``export_bench``). The untrained encoder is the cosyne figure's control:
     ``create_encoder(cfg)`` after ``torch.manual_seed(0)``, same gain.
+    ``trained_relu`` is the trained encoder's config with ``relu(v)`` in
+    place of ``tanh(gain v)`` and a floor of 128 effective active units per
+    code (``w65_relu_density``, k128, seed 43); the manifest's ``output``
+    names each MLP's output activation.
 hippocampus
     the Vector-HaSH place layer ``relu(Wpg g - thresh)`` on the one-hot grid
     code, with the headline controller's settings (Np 400, thresh 2.0,
@@ -86,6 +90,10 @@ from gridcode.assoc import nonlin
 HERE = Path(__file__).resolve().parent
 RUNS = Path("/orcd/pool/003/jackking/cls_runs")
 ENCODER = str(RUNS / "sweeps/w52_attract_fwhm/001_att0.5_seed=43/encoder_final.pt")
+# The same config with a relu output, gain 1 and a floor of 128 effective active units per code
+# (branch worktree-relu-output-encoder, wave w65_relu_density, commit aa43f22). Same seed, so the
+# same training patches; main() checks that.
+ENCODER_RELU = str(RUNS / "sweeps/w65_relu_density/004_relu_k128_seed=43/encoder_final.pt")
 IDEAL = "ideal:r=16,n_freq=512,seed=0,gain=100"
 HPC = {"Np": 400, "thresh": 2.0, "c": 0.5, "seed": 0}
 ROT = {"seed": 0, "rounds": 3}
@@ -127,8 +135,8 @@ def fold_mlp(encoder, lambdas, fwhm):
     acts = [m for m in encoder.net if isinstance(m, torch.nn.GELU)]
     if len(acts) != len(linears) - 1 or any(a.approximate != "none" for a in acts):
         raise ValueError("expected exact GELU between every pair of Linear layers")
-    if encoder.output_nonlinearity != "tanh":
-        raise ValueError(f"expected tanh output, got {encoder.output_nonlinearity}")
+    if encoder.output_nonlinearity not in ("tanh", "relu"):
+        raise ValueError(f"expected tanh or relu output, got {encoder.output_nonlinearity}")
     Wb = [(m.weight.detach().double().numpy(), m.bias.detach().double().numpy())
           for m in linears]
     W1, b1 = Wb[0]
@@ -146,10 +154,11 @@ def fold_mlp(encoder, lambdas, fwhm):
 
 def export_mlp(name, encoder, gain, lambdas, fwhm, npos, out: Path, label, description):
     T, b1, layers, row_offsets = fold_mlp(encoder, lambdas, fwhm)
+    act = encoder.output_nonlinearity
     rng = np.random.default_rng(0)
     xs, ys = rng.integers(0, npos, N_CHECK), rng.integers(0, npos, N_CHECK)
     truth = encode_positions(encoder, lambdas, fwhm, xs, ys).astype(np.float64)
-    got = folded_forward(xs, ys, (T, b1), layers, lambdas, row_offsets, float(gain), erf_poly)
+    got = folded_forward(xs, ys, (T, b1), layers, lambdas, row_offsets, float(gain), erf_poly, act)
     diff = float(np.abs(got - truth).max())
     if diff > 1e-4:
         raise RuntimeError(f"{name}: folded forward differs from the encoder by {diff:.2e}")
@@ -165,7 +174,7 @@ def export_mlp(name, encoder, gain, lambdas, fwhm, npos, out: Path, label, descr
     write_b64(out / f"{name}_weights.b64.txt", np.concatenate(flat), "<f4")
     return {
         "kind": "mlp", "label": label, "description": description,
-        "n_units": int(layers[-1][0].shape[1]), "signed": True,
+        "n_units": int(layers[-1][0].shape[1]), "signed": act != "relu", "output": act,
         "gain": float(gain), "hidden": int(T.shape[1]), "row_offsets": row_offsets,
         "weights_file": f"{name}_weights.b64.txt", "arrays": meta,
         "fold_check_max_abs_diff": diff,
@@ -535,6 +544,21 @@ def main() -> None:
     pops["trained"]["encoder"] = ENCODER
     refs["trained"] = encode_positions(trained, lambdas, fwhm, xs_r, ys_r)
 
+    relu_enc, rcfg, rgain, rfwhm, _ = load_probe_encoder(ENCODER_RELU)
+    relu_enc.eval()
+    if rcfg.output_nonlinearity != "relu" or list(rcfg.lambdas) != lambdas or rfwhm != fwhm:
+        raise RuntimeError(f"{ENCODER_RELU}: expected a relu encoder on the same grid code")
+    pops["trained_relu"] = export_mlp(
+        "trained_relu", relu_enc, rgain, lambdas, fwhm, npos, out, "Trained encoder, ReLU k128",
+        "The trained encoder's config (att0.5, seed 43, same training patches) with relu(z) in "
+        "place of tanh(100 z), gain 1, and a loss floor of 128 effective active units per code "
+        "(w65_relu_density, k128). Non-negative, unit norm. Hopfield probe continuous reach "
+        "0.935 against the tanh encoder's 0.982 (K=5, three scaffold draws).")
+    pops["trained_relu"]["encoder"] = ENCODER_RELU
+    refs["trained_relu"] = encode_positions(relu_enc, lambdas, fwhm, xs_r, ys_r)
+    pops["trained_relu"]["mean_active_fraction"] = float(
+        (refs["trained_relu"] > 0).mean())
+
     torch.manual_seed(0)
     untrained = create_encoder(cfg, "cpu").eval()
     pops["untrained"] = export_mlp(
@@ -599,6 +623,9 @@ def main() -> None:
         assert ref.shape == (REF["S"] ** 2, pops[name]["n_units"]), (name, ref.shape)
 
     arenas = encoder_patches(ENCODER, lambdas, fwhm)
+    if encoder_patches(ENCODER_RELU, lambdas, fwhm) != arenas:
+        raise RuntimeError("the two trained encoders' training patches differ; the page "
+                           "draws one set for both")
     manifest = {
         "git_sha": git_sha(), "lambdas": lambdas, "npos": npos, "fwhm_ratio": float(fwhm),
         "ref_arena": REF, "populations": pops, "arenas": arenas,

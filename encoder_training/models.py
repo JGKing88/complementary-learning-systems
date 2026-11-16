@@ -50,6 +50,10 @@ class GridEncoder(nn.Module):
             z = torch.tanh(g * z)
         elif self.output_nonlinearity == "sigmoid":
             z = torch.sigmoid(g * z)
+        elif self.output_nonlinearity == "relu":
+            # No gain: relu commutes with a positive scale and the L2
+            # normalisation below removes it, so gain would do nothing.
+            z = F.relu(z)
         z = F.normalize(z, p=2, dim=-1)
 
         if squeeze_time:
@@ -132,6 +136,10 @@ class GridEncoderCNN(nn.Module):
             z = torch.tanh(g * z)
         elif self.output_nonlinearity == "sigmoid":
             z = torch.sigmoid(g * z)
+        elif self.output_nonlinearity == "relu":
+            # No gain: relu commutes with a positive scale and the L2
+            # normalisation below removes it, so gain would do nothing.
+            z = F.relu(z)
         z = F.normalize(z, p=2, dim=-1)
 
         if squeeze_time:
