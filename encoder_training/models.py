@@ -54,7 +54,12 @@ class GridEncoder(nn.Module):
         # signed_rank_homeo: the same with signs kept, the control for sparsity without
         # non-negativity. The top sparse_active share of units by |pre-activation| are non-zero,
         # each taking the profile sign(g) relu(|g| - Phi^-1(1 - sparse_active / 2)) by rank of |z|.
-        self.homeo_eta = 0.01
+        # w69 used eta 0.01 from the first step and stalled at 10% active: early codes barely
+        # depend on position, so fast thresholds decided the winners and the codes flickered.
+        # Since w70 the rule is slow and starts after homeo_warmup training forward passes.
+        self.homeo_eta = 1e-3
+        self.homeo_warmup = 10000
+        self._homeo_calls = 0
         if "homeo" in output_nonlinearity:     # registered only here, so older checkpoints load
             self.register_buffer("homeo_bias", torch.zeros(out_dim))
         else:
@@ -97,9 +102,11 @@ class GridEncoder(nn.Module):
             hard = torch.zeros_like(z).scatter_(
                 -1, order, self.signed_profile.to(z.dtype).expand_as(z).contiguous()) * sgn
             if self.training:
-                with torch.no_grad():
-                    rate = (hard != 0).float().mean(0)
-                    self.homeo_bias += self.homeo_eta * (rate - self.sparse_active)
+                self._homeo_calls += 1
+                if self._homeo_calls > self.homeo_warmup:
+                    with torch.no_grad():
+                        rate = (hard != 0).float().mean(0)
+                        self.homeo_bias += self.homeo_eta * (rate - self.sparse_active)
             z = soft + (hard - soft).detach()
         elif self.output_nonlinearity in ("relu_sparse", "relu_rank", "relu_rank_homeo"):
             # No gain either: the standardisation removes any scale.
@@ -114,9 +121,11 @@ class GridEncoder(nn.Module):
                 hard = torch.zeros_like(z).scatter_(
                     -1, order, self.rank_profile.to(z.dtype).expand_as(z).contiguous())
                 if self.output_nonlinearity == "relu_rank_homeo" and self.training:
-                    with torch.no_grad():
-                        rate = (hard > 0).float().mean(0)
-                        self.homeo_bias += self.homeo_eta * (rate - self.sparse_active)
+                    self._homeo_calls += 1
+                    if self._homeo_calls > self.homeo_warmup:
+                        with torch.no_grad():
+                            rate = (hard > 0).float().mean(0)
+                            self.homeo_bias += self.homeo_eta * (rate - self.sparse_active)
                 z = soft + (hard - soft).detach()
         z = F.normalize(z, p=2, dim=-1)
 

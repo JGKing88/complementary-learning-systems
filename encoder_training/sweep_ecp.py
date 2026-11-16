@@ -2414,6 +2414,12 @@ WAVES["w69_rank_homeo"] = {
 }
 
 
+# W70 -- w69's three arms with the slow, delayed homeostatic rule (eta 1e-3 after 10,000 training
+# forward passes; models.GridEncoder). w69's fast rule stalled all four 10% runs (loss back up to
+# ~0.30, median radius 0); its 20% runs learned.
+WAVES["w70_rank_homeo_slow"] = {"arm": dict(WAVES["w69_rank_homeo"]["arm"]), "seed": [43, 44]}
+
+
 def _flatten(cfg: dict) -> dict:
     """Expand an ``arm`` dict of overrides into the config it stands for."""
     arm = cfg.pop("arm", None)
