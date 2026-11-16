@@ -106,6 +106,35 @@ def load_inhibited_encoder(spec: str, *, device="cpu", fwhm_override=None, fwhm_
     return InhibitedEncoder(base, c).eval(), cfg, gain, fwhm, header
 
 
+# ``rectify:<out|pre>:<checkpoint>``: a trained MLP encoder with a plain ReLU added after training,
+# then unit norm. ``out`` rectifies its actual output (for att0.5, tanh(100 u) normalised: nearly
+# +-1 per unit, so the result is nearly binary with about half the units on); ``pre`` rectifies the
+# graded values u = net(x) before the output nonlinearity. No sparsity target, no standardisation.
+RECTIFY_PREFIX = "rectify:"
+
+
+class RectifiedEncoder(torch.nn.Module):
+    def __init__(self, base, which):
+        super().__init__()
+        self.base, self.which = base, which
+
+    def forward(self, x, *args, **kwargs):
+        z = self.base(x, *args, **kwargs) if self.which == "out" else self.base.net(x)
+        z = torch.relu(z)
+        return z / z.norm(dim=-1, keepdim=True).clamp_min(1e-12)
+
+
+def load_rectified_encoder(spec: str, *, device="cpu", fwhm_override=None, fwhm_fallback=None):
+    """``load_probe_encoder``'s return shape for ``rectify:<out|pre>:<checkpoint>``."""
+    which, _, ck = spec[len(RECTIFY_PREFIX):].partition(":")
+    if which not in ("out", "pre"):
+        raise ValueError(f"rectify: expects out or pre, got {which!r}")
+    base, cfg, gain, fwhm, header = load_probe_encoder(
+        ck, device=device, fwhm_override=fwhm_override, fwhm_fallback=fwhm_fallback)
+    header = dict(header, path=spec, name=spec, rectify=which)
+    return RectifiedEncoder(base, which).eval(), cfg, gain, fwhm, header
+
+
 # ``sparsify:<active>:<checkpoint>``: a trained MLP encoder made sparse and non-negative after
 # training, with no retraining. Its pre-output-nonlinearity values u = net(x) (graded, before the
 # tanh) are standardised per unit with means and sds over 65,536 random scaffold cells (so every
@@ -181,6 +210,9 @@ def load_probe_encoder(
     [,seed=0][,gain=100]`` (``ideal_encoder.py``), so every script built on
     this loader scores the ideal code through the identical pipeline.
     """
+    if isinstance(path, str) and path.startswith(RECTIFY_PREFIX):
+        return load_rectified_encoder(path, device=device, fwhm_override=fwhm_override,
+                                      fwhm_fallback=fwhm_fallback)
     if isinstance(path, str) and path.startswith(SPARSIFY_PREFIX):
         return load_sparsified_encoder(path, device=device, fwhm_override=fwhm_override,
                                        fwhm_fallback=fwhm_fallback)

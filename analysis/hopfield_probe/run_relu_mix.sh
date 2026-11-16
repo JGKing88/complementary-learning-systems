@@ -24,6 +24,7 @@
 #   SET=g bash analysis/hopfield_probe/run_relu_mix.sh [ARRAY]    # w71 radius 24, raw and inhibited
 #   SET=h bash analysis/hopfield_probe/run_relu_mix.sh [ARRAY]    # att0.5 sparsified after training
 #   SET=i bash analysis/hopfield_probe/run_relu_mix.sh [ARRAY]    # w72 2048 units, raw and inhibited
+#   SET=j bash analysis/hopfield_probe/run_relu_mix.sh [ARRAY]    # att0.5 with a plain ReLU after training
 #   python -m analysis.hopfield_probe.ideal_summary "$OUT"        # the table
 #
 # Runs from THIS worktree: do not delete it while jobs are live.
@@ -36,7 +37,18 @@ SET=${SET:-a}
 export SET
 B="n_freq=512,seed=0,gain=100"
 
-if [[ "$SET" == h ]]; then
+if [[ "$SET" == j ]]; then
+# att0.5 s43 with a plain ReLU added after training (harness rectify: prefix): on its output
+# (nearly binary, ~half on) and on its graded pre-tanh values; raw and with global inhibition.
+OUT=${OUT:-/orcd/pool/003/jackking/cls_runs/results/hopfield_probe/att05_rectified}
+A=/orcd/pool/003/jackking/cls_runs/sweeps/w52_attract_fwhm/001_att0.5_seed=43/encoder_final.pt
+ENCS=(
+    "rectify:out:$A|att0.5 s43 relu(output)"
+    "inhib:rectify:out:$A|att0.5 s43 relu(output) + inhibition"
+    "rectify:pre:$A|att0.5 s43 relu(pre-tanh)"
+    "inhib:rectify:pre:$A|att0.5 s43 relu(pre-tanh) + inhibition"
+)
+elif [[ "$SET" == h ]]; then
 # att0.5 s43 made sparse and non-negative after training (harness sparsify: prefix), 20% and 10%,
 # raw and with global inhibition. No retraining.
 OUT=${OUT:-/orcd/pool/003/jackking/cls_runs/results/hopfield_probe/att05_sparsified}
