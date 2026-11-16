@@ -2420,6 +2420,16 @@ WAVES["w69_rank_homeo"] = {
 WAVES["w70_rank_homeo_slow"] = {"arm": dict(WAVES["w69_rank_homeo"]["arm"]), "seed": [43, 44]}
 
 
+# W71 -- w70's non-negative arms with the attract radius 24 instead of 20 (same loss, one
+# parameter). w70's sparse peaks are narrower than att0.5's (half-width 16-17.5 against 18.5
+# cells), which accounts for most of the basin gap (20-23 against 27.7).
+WAVES["w71_rank_homeo_r24"] = {
+    "arm": {k: {**v, "radius": 24.0} for k, v in WAVES["w70_rank_homeo_slow"]["arm"].items()
+            if "signed" not in k},
+    "seed": [43, 44],
+}
+
+
 def _flatten(cfg: dict) -> dict:
     """Expand an ``arm`` dict of overrides into the config it stands for."""
     arm = cfg.pop("arm", None)
