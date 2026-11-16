@@ -57,6 +57,8 @@ ENCODERS = {
     # 2026-11-16: the sparse ideal code and encoders trained toward its form (w67_relu_rank10)
     "sparse_ideal": ("ideal:r=23.2,n_freq=512,seed=0,gain=100,relu_mix=1,active=0.1", "final"),
     "rank43": ("/orcd/pool/003/jackking/cls_runs/sweeps/w67_relu_rank10/000_att0.5_relu_rank10_seed=43/encoder_final.pt", "final"),
+    "fwhm015_42": ("/orcd/pool/003/jackking/cls_runs/sweeps/w52_attract_fwhm/012_fwhm0.15_seed=42/encoder_final.pt", "final"),
+    "fwhm05_42": ("/orcd/pool/003/jackking/cls_runs/sweeps/w52_attract_fwhm/016_fwhm0.5_seed=42/encoder_final.pt", "final"),
     "rank44": ("/orcd/pool/003/jackking/cls_runs/sweeps/w67_relu_rank10/001_att0.5_relu_rank10_seed=44/encoder_final.pt", "final"),
 }
 # displacements (along x unless the second entry is set) for the translation test
