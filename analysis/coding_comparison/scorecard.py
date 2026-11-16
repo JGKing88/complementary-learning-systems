@@ -31,6 +31,8 @@ import json
 import math
 from pathlib import Path
 
+import numpy as np
+
 from cls_paths import results_dir
 
 HERE = Path(__file__).resolve().parent
@@ -116,6 +118,39 @@ def _cos(R, b, field):
     return math.inf if x is None else x / W
 
 
+def _rows2(R, v):
+    return [r for r in (_get(R.get("fields_2d"), "variants", v, "rows") or [])
+            if r.get("fields_per_active") is not None]
+
+
+def _area_r(R, v):
+    """Pearson r of fields per active unit against area (Tanni and Harland count place cells)."""
+    rows = _rows2(R, v)
+    if len(rows) < 3:
+        return None
+    a = np.array([r["area_cells"] for r in rows], dtype=float)
+    f = np.array([r["fields_per_active"] for r in rows], dtype=float)
+    return float(np.corrcoef(a, f)[0, 1]) if f.std() > 0 else None
+
+
+def _area_ratio(R, v):
+    rows = {r["k"]: r["fields_per_active"] for r in _rows2(R, v)}
+    for k in sorted(rows):
+        if 8 * k in rows and rows[k] > 0:
+            return rows[8 * k] / rows[k]
+    return None
+
+
+def _at_Af(R, v, target):
+    """Fields per active unit where the arena is ``target`` mean fields (Fenton 2008), log-interpolated."""
+    pts = sorted((r["arena_over_Af"], r["fields_per_active"]) for r in _rows2(R, v)
+                 if r.get("arena_over_Af"))
+    if len(pts) < 2 or not (pts[0][0] <= target <= pts[-1][0]):
+        return None
+    x = np.log([p[0] for p in pts])
+    return float(np.interp(math.log(target), x, [p[1] for p in pts]))
+
+
 def _remap(R, b, *path):
     return _get(R.get("remapping"), "bases", b, *path)
 
@@ -167,17 +202,14 @@ ROWS = [
      lambda R, b, v, T: _f1(R, v, "33.8", "five_plus_frac_active")),
     ("active_frac_33W", "Active fraction, 34 widths", "Ap",
      lambda R, b, v, T: _f1(R, v, "33.8", "active_frac")),
-    ("area_linear_r", "Fields per unit against arena area: Pearson r", "B",
-     lambda R, b, v, T: _get(R.get("fields_2d"), "variants", v, "scaling", "pearson_r")),
-    ("area_ratio_8x", "Fields per unit, ratio over an 8-fold area step (not scored)", "B",
-     lambda R, b, v, T: _get(R.get("fields_2d"), "variants", v, "scaling", "ratio_first_to_8x",
-                             "ratio")),
-    ("fields_at_3p7Af", "Fields per unit in an arena of 3.7 mean fields", "A",
-     lambda R, b, v, T: _get(R.get("fields_2d"), "variants", v, "scaling",
-                             "fields_per_unit_at_arena_over_Af", "3.7")),
-    ("fields_at_13p7Af", "Fields per unit in an arena of 13.7 mean fields", "A",
-     lambda R, b, v, T: _get(R.get("fields_2d"), "variants", v, "scaling",
-                             "fields_per_unit_at_arena_over_Af", "13.7")),
+    ("area_linear_r", "Fields per active unit against arena area: Pearson r", "B",
+     lambda R, b, v, T: _area_r(R, v)),
+    ("area_ratio_8x", "Fields per active unit, ratio over an 8-fold area step (not scored)", "B",
+     lambda R, b, v, T: _area_ratio(R, v)),
+    ("fields_at_3p7Af", "Fields per active unit in an arena of 3.7 mean fields", "A",
+     lambda R, b, v, T: _at_Af(R, v, 3.7)),
+    ("fields_at_13p7Af", "Fields per active unit in an arena of 13.7 mean fields", "A",
+     lambda R, b, v, T: _at_Af(R, v, 13.7)),
     ("fields_per_active_small", "Fields per active unit, small arena (8 A0)", "B",
      lambda R, b, v, T: (_f2row(R, v, 8) or {}).get("fields_per_active")),
     ("active_frac_small", "Active fraction, small arena (8 A0)", "B",

@@ -66,7 +66,7 @@ PARAMS = {
     "n_loops": 8,
     "n_tracks": 16,
     "gap_W": 4.0,
-    "area_steps": [2, 4, 8, 16, 32, 64, 128],
+    "area_steps": [1, 2, 4, 8, 16, 32, 64, 128],
     "n_arena_locs": 2,
     "arena_side_cap": 1024,
     "kernel_far_W": [5.0, 15.0],
