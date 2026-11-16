@@ -1,4 +1,4 @@
-"""Export the nine place-code populations for the tuning-map viewer.
+"""Export the ten place-code populations for the tuning-map viewer.
 
     python -m analysis.tuning_viewer.export [--out DIR]
 
@@ -41,10 +41,12 @@ ideal_place
     ``G^{-1/2}`` is taken on its range; ``Q^T Q`` is then the projector onto
     the code's span, which still keeps every similarity. The page reads ``Q``
     (float32) and computes ``Q z(cell)``.
-ideal_sparse
+ideal_sparse, ideal_sparse20
     the probe's sparse non-negative code: the ideal code drawn at r = 23.2,
     remixed by the same ``Q``, ``relu(Q z - t)`` with ``t`` set for 10% of
-    units active, scaled to unit length at each cell.
+    units active, scaled to unit length at each cell. The 20% code is the
+    same with ``t`` for 20% and r = 18.8, which matches its similarity
+    peak's half-width to the ideal's.
 trained, untrained
     the MLP with its first layer folded into per-module tables (see
     ``export_bench``). The untrained encoder is the cosyne figure's control:
@@ -93,6 +95,9 @@ BAND_CUTOFFS = [0, 5, 10, 17, 25, 34, 50]
 # Sparse non-negative code, the probe's ideal:r=23.2,...,relu_mix=1,active=0.1 (branch
 # worktree-agent-a792a678d5a963123): relu(Q z - t) / |.| with Q the rotation above.
 SPARSE = {"r": 23.2, "active": 0.1}
+# The same code with 20% of units active. Not a probe run: r = 18.8 matches its similarity peak's
+# half-width to the ideal's (19.1 cells each by kernel_half_width; r = 18.7 gives 19.0, 18.9 gives 19.3).
+SPARSE20 = {"r": 18.8, "active": 0.2}
 # Place-field rotation of the ideal code (docs/place_fields_rotation.tex, commit f928d29): 2M centres on a
 # jittered square lattice, jitter up to this fraction of the spacing.
 PLACE = {"seed": 0, "jitter": 0.25}
@@ -245,6 +250,30 @@ def ideal_code(freqs: np.ndarray, amp: float, npos: int, xs, ys) -> np.ndarray:
     p = np.stack([np.asarray(xs), np.asarray(ys)], 1).astype(np.int64)
     th = np.mod(p @ freqs.T.astype(np.int64), npos) * (2 * np.pi / npos)
     return np.concatenate([np.cos(th), np.sin(th)], 1) * amp
+
+
+def sparse_code(freqs, amp, npos, Q, thresh, xs, ys) -> np.ndarray:
+    """``relu(Q z - thresh) / |.|``, the probe's ``relu_mix=1,active=f`` code."""
+    y = np.maximum(ideal_code(freqs, amp, npos, xs, ys) @ Q.T - thresh, 0)
+    return y / np.linalg.norm(y, axis=1, keepdims=True)
+
+
+def kernel_half_width(code, npos: int, n: int = 1500, dmax: int = 40, seed: int = 7) -> float:
+    """Where the mean similarity ``code(p) . code(p + d e_axis)`` first falls to 0.5, both axes averaged.
+
+    The probe's half-width uses the exact kernel along one axis and gives 19.4 for the ideal at
+    r = 16, where this sample gives 19.1, so compare values from this function with each other.
+    """
+    p = np.random.default_rng(seed).integers(0, npos, (n, 2))
+    y0 = code(p[:, 0], p[:, 1])
+    C = np.zeros(dmax + 1)
+    for d in range(dmax + 1):
+        C[d] = 0.5 * ((y0 * code((p[:, 0] + d) % npos, p[:, 1])).sum(1).mean()
+                      + (y0 * code(p[:, 0], (p[:, 1] + d) % npos)).sum(1).mean())
+    i = int(np.argmax(C < 0.5))
+    if i == 0:
+        raise ValueError(f"similarity stays above 0.5 out to {dmax} cells")
+    return float(i - 1 + (C[i - 1] - 0.5) / (C[i - 1] - C[i]))
 
 
 def place_rotation(freqs: np.ndarray, amp: float, npos: int, seed: int, jitter: float):
@@ -462,27 +491,41 @@ def main() -> None:
         if pops["ideal_place"][k] > 1e-9:
             raise RuntimeError(f"place-field rotation changes the ideal's similarity: {k} {pops['ideal_place'][k]}")
 
-    # ideal, sparse ReLU: the r = 23.2 draw, the same rotation, threshold for 10% active, unit length
+    # ideal, sparse ReLU: a draw at r, the same rotation, threshold for a fraction active, unit length
     from statistics import NormalDist
-    sfreqs = draw_frequencies_nmin(SPARSE["r"], len(freqs), ideal.seed, npos, 0)
-    th = np.mod(np.stack([xs_r, ys_r], 1).astype(np.int64) @ sfreqs.T, npos) * 2 * np.pi / npos
-    zs = np.concatenate([np.cos(th), np.sin(th)], 1) * float(amp[0])
-    thresh = NormalDist().inv_cdf(1 - SPARSE["active"]) / math.sqrt(D)
-    ys_ = np.maximum(zs @ Q.T - thresh, 0)
-    refs["ideal_sparse"] = (ys_ / np.linalg.norm(ys_, axis=1, keepdims=True)).astype(np.float32)
-    pops["ideal_sparse"] = {
-        "kind": "ideal_sparse", "label": "Sparse ReLU (10%)",
-        "description": "The probe's sparse non-negative code (spec ideal:r=23.2,relu_mix=1,active=0.1). "
-                       "The ideal code drawn at r = 23.2, remixed by the same rotation as Ideal, rotated, "
-                       "thresholded so about 10% of units fire at each place, then scaled to unit length at "
-                       "each place. r = 23.2 makes its similarity peak as wide as the ideal's (half-width "
-                       "19.4 cells). In the navigation probe it matches the ideal except direction (4.7 "
-                       "against 1 degree) and needs no inhibition.",
-        "n_units": D, "signed": False, "r": SPARSE["r"], "active": SPARSE["active"],
-        "thresh": thresh, "amp": float(amp[0]), "freqs": sfreqs.tolist(),
-        "spec": "ideal:r=23.2,n_freq=512,seed=0,gain=100,relu_mix=1,active=0.1",
-        "active_fraction_ref_arena": float((zs @ Q.T > thresh).mean()),
+    a0 = float(amp[0])
+    hw_ideal = kernel_half_width(lambda x, y: ideal_code(freqs, a0, npos, x, y), npos)
+    pops["ideal"]["half_width_sampled"] = hw_ideal
+    sparse_text = {
+        "ideal_sparse": "The probe's sparse non-negative code (spec ideal:r=23.2,relu_mix=1,active=0.1). "
+                        "The ideal code drawn at r = 23.2, remixed by the same rotation as Ideal, rotated, "
+                        "thresholded so about 10% of units fire at each place, then scaled to unit length at "
+                        "each place. r = 23.2 makes its similarity peak as wide as the ideal's (half-width "
+                        "19.4 cells). In the navigation probe it matches the ideal except direction (4.7 "
+                        "against 1 degree) and needs no inhibition.",
+        "ideal_sparse20": "The same construction as Sparse ReLU (10%) with 20% of units active (spec "
+                          "ideal:r=18.8,relu_mix=1,active=0.2). The ideal code drawn at r = 18.8, remixed by "
+                          "the same rotation as Ideal, rotated, thresholded so about 20% of units fire at each "
+                          "place, then scaled to unit length at each place. r = 18.8 makes its similarity peak "
+                          "as wide as the ideal's (half-width {hw:.1f} cells against {hwi:.1f}, both measured "
+                          "the same way). It has not been run through the navigation probe.",
     }
+    for key, spec_p, label in [("ideal_sparse", SPARSE, "Sparse ReLU (10%)"),
+                               ("ideal_sparse20", SPARSE20, "Sparse ReLU (20%)")]:
+        sfreqs = draw_frequencies_nmin(spec_p["r"], len(freqs), ideal.seed, npos, 0).astype(np.int64)
+        thresh = NormalDist().inv_cdf(1 - spec_p["active"]) / math.sqrt(D)
+        refs[key] = sparse_code(sfreqs, a0, npos, Q, thresh, xs_r, ys_r).astype(np.float32)
+        hw = kernel_half_width(lambda x, y: sparse_code(sfreqs, a0, npos, Q, thresh, x, y), npos)
+        pre = ideal_code(sfreqs, a0, npos, xs_r, ys_r) @ Q.T
+        pops[key] = {
+            "kind": "ideal_sparse", "label": label,
+            "description": sparse_text[key].format(hw=hw, hwi=hw_ideal),
+            "n_units": D, "signed": False, "r": spec_p["r"], "active": spec_p["active"],
+            "thresh": thresh, "amp": a0, "freqs": sfreqs.tolist(),
+            "spec": f"ideal:r={spec_p['r']:g},n_freq=512,seed=0,gain=100,relu_mix=1,active={spec_p['active']:g}",
+            "active_fraction_ref_arena": float((pre > thresh).mean()),
+            "half_width_sampled": hw,
+        }
 
     # trained, untrained
     pops["trained"] = export_mlp(

@@ -277,7 +277,7 @@ const MAX_RES = 512;              // maps above this many cells per side are blo
 const THUMB_RES = 160;
 const DETAIL_RES = 512;
 const SIZE_MIN = 4;
-const POP_ORDER = ["grid", "ideal", "ideal_rot", "ideal_place", "ideal_sparse", "trained", "untrained", "hippocampus", "hippocampus_smooth"];
+const POP_ORDER = ["grid", "ideal", "ideal_rot", "ideal_place", "ideal_sparse", "ideal_sparse20", "trained", "untrained", "hippocampus", "hippocampus_smooth"];
 const ROT_CACHE_FLOATS = 1 << 25;  // the rotated ideal keeps every unit for arenas up to this many values
 const TF_URL = "https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.22.0/dist/tf.min.js";
 let NPOS = 1716;
@@ -382,7 +382,8 @@ async function loadAll() {
   st.pops.ideal = makeIdeal(P.ideal);
   st.pops.ideal_rot = makeIdealRot(P.ideal_rot, P.ideal);
   st.pops.ideal_place = makeIdealPlace(P.ideal_place, P.ideal, f32(qPlace));
-  st.pops.ideal_sparse = makeIdealSparse(P.ideal_sparse, st.pops.ideal_rot.signs);
+  st.pops.ideal_sparse = makeIdealSparse("ideal_sparse", P.ideal_sparse, st.pops.ideal_rot.signs);
+  st.pops.ideal_sparse20 = makeIdealSparse("ideal_sparse20", P.ideal_sparse20, st.pops.ideal_rot.signs);
   st.pops.hippocampus = makeHpc("hippocampus", P.hippocampus, f64(wpg));
   st.pops.hippocampus_smooth = makeHpc("hippocampus_smooth", P.hippocampus_smooth, f64(wpgS));
   st.mlp.trained = unpackMlp(P.trained, f32(wTr));
@@ -719,19 +720,20 @@ function makeIdealPlace(meta, idealMeta, Q) {
   };
 }
 
-// The probe's sparse non-negative code (meta.spec): the ideal code drawn at r = 23.2, remixed by the
-// rotated ideal's matrix Q, thresholded so about 10% of units fire at each place, and scaled to unit
-// length at each place, relu(Q z - t) / |relu(Q z - t)|. The threshold and the scaling need every
-// unit at a cell, so it runs in JavaScript (idealRotCompute with R.thresh), on the background thread if it started.
-function makeIdealSparse(meta, signs) {
+// The probe's sparse non-negative code (meta.spec): the ideal code drawn at meta.r, remixed by the
+// rotated ideal's matrix Q, thresholded so a fraction meta.active of units fire at each place (10% at
+// r = 23.2, or 20% at r = 18.8), and scaled to unit length at each place, relu(Q z - t) / |relu(Q z - t)|.
+// The threshold and the scaling need every unit at a cell, so it runs in JavaScript (idealRotCompute
+// with R.thresh), on the background thread if it started.
+function makeIdealSparse(key, meta, signs) {
   const nf = meta.freqs.length, D = 2 * nf, F = Int32Array.from(meta.freqs.flat()), box = { cache: null };
   return {
-    key: "ideal_sparse", meta, n: D, signed: false,
+    key, meta, n: D, signed: false,
     label(u) { return "unit " + u; },
     info(u) { return [["Output unit", String(u)], ["Active", "about " + Math.round(100 * meta.active) + "% of units at each place"],
                       ["Waves", nf + ", Gaussian r = " + meta.r + " cells"], ["Rotation", "the same as Ideal, rotated"]]; },
     maps(units, a) {
-      const R = { npos: NPOS, F, amp: meta.amp, thresh: meta.thresh, key: "sparse," + a.x0 + "," + a.y0 + "," + a.S };
+      const R = { npos: NPOS, F, amp: meta.amp, thresh: meta.thresh, key: key + "," + a.x0 + "," + a.y0 + "," + a.S };
       return jsMaps("ideal_rot", units, a, R, () => idealRotMapsCore(units, a, Object.assign({ signs }, R), allocMain, box));
     },
   };
