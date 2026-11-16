@@ -182,6 +182,18 @@ def git_state() -> dict:
         return {"sha": None}
 
 
+def place(n: int, side: int, npos: int, sep: int, seed: int) -> dict:
+    """Arena corners: ``sep`` cells apart if possible, else touching, else spaced on the diagonal."""
+    for s in (sep, 0):
+        try:
+            offs = geo.spread_offsets(n, side, npos, s, seed)
+            return {"offsets": offs, "sep": s, "disjoint": True}
+        except RuntimeError:
+            continue
+    offs = geo.spread_offsets(n, side, npos, 0, seed, strict=False)
+    return {"offsets": offs, "sep": None, "disjoint": geo.spread_ok(offs, side, npos)}
+
+
 def nanmean(x) -> float | None:
     x = np.asarray(x, dtype=np.float64)
     x = x[np.isfinite(x)]
@@ -400,10 +412,11 @@ def fields_2d(pop, P, bases, variants, cal, W_ref, rng, t0) -> tuple[dict, dict]
         (sizes if 3 <= side <= P["arena_side_cap"] else skipped).append((k, side))
     acc: dict = {}
     sp_acc: dict = {}
+    placements: dict = {}
     for k, side in sizes:
-        offs = geo.spread_offsets(P["n_arena_locs"], side, npos, int(2 * W_ref) + 1,
-                                  seed=int(rng.integers(1 << 30)))
-        for (x0, y0) in offs:
+        pl = place(P["n_arena_locs"], side, npos, int(2 * W_ref) + 1, int(rng.integers(1 << 30)))
+        placements[k] = {"sep": pl["sep"], "disjoint": pl["disjoint"]}
+        for (x0, y0) in pl["offsets"]:
             z = pop.code(*geo.arena(x0, y0, side))
             for rot in sorted({v.rot for v in variants}):
                 zr = to_basis(z, bases[rot])
@@ -423,7 +436,8 @@ def fields_2d(pop, P, bases, variants, cal, W_ref, rng, t0) -> tuple[dict, dict]
 
     out = {"A0_cells": A0, "A0_rule": "pi/4 * W_ref^2, W_ref the primary variant's W_A",
            "W_ref": W_ref, "sizes": [{"k": k, "side": s} for k, s in sizes],
-           "skipped_sizes": [{"k": k, "side": s} for k, s in skipped], "variants": {}}
+           "skipped_sizes": [{"k": k, "side": s} for k, s in skipped],
+           "placements": placements, "variants": {}}
     for v in variants:
         if v.key not in acc:
             continue
@@ -580,12 +594,13 @@ def remapping(pop, P, bases, variants, cal, W_ref, rng, t0) -> dict:
     side = int(round(math.sqrt(P["remap_area_A0"] * A0)))
     capped = side > P["remap_side_cap"]
     side = int(max(3, min(side, P["remap_side_cap"])))
-    offs = geo.spread_offsets(P["remap_n"], side, npos, int(2 * W_ref) + 1,
-                              seed=int(rng.integers(1 << 30)))
+    pl = place(P["remap_n"], side, npos, int(2 * W_ref) + 1, int(rng.integers(1 << 30)))
+    offs = pl["offsets"]
     codes = [pop.code(*geo.arena(x0, y0, side)) for x0, y0 in offs]
     pairs = [(i, j) for i in range(len(codes)) for j in range(i + 1, len(codes))]
     out = {"side": side, "side_capped": capped, "area_over_A0": side * side / A0,
-           "offsets": offs, "n_pairs": len(pairs), "bases": {}}
+           "offsets": offs, "sep_cells": pl["sep"], "disjoint": pl["disjoint"],
+           "n_pairs": len(pairs), "bases": {}}
 
     def summarize(vals):
         x = np.asarray([v for v in vals if v is not None], dtype=np.float64)

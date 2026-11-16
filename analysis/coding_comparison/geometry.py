@@ -60,8 +60,13 @@ def torus_distance(a: np.ndarray, b: np.ndarray, npos: int) -> np.ndarray:
 
 
 def spread_offsets(n: int, side: int, npos: int, min_sep: int, seed: int,
-                   tries: int = 20000) -> list[tuple[int, int]]:
-    """``n`` arena corners whose arenas sit at least ``min_sep`` cells apart on the torus."""
+                   tries: int = 20000, strict: bool = True) -> list[tuple[int, int]]:
+    """``n`` arena corners whose arenas sit at least ``min_sep`` cells apart on the torus.
+
+    With ``strict=False``, a layout that cannot fit (large arenas on the
+    1716-cell torus) falls back to corners spaced evenly along the diagonal
+    from a random start, which may overlap; ``spread_ok`` reports which.
+    """
     rng = np.random.default_rng(seed)
     out: list[tuple[int, int]] = []
     for _ in range(tries):
@@ -77,7 +82,21 @@ def spread_offsets(n: int, side: int, npos: int, min_sep: int, seed: int,
             out.append((int(c[0]), int(c[1])))
             if len(out) == n:
                 return out
-    raise RuntimeError(f"could not place {n} arenas of side {side} {min_sep} apart")
+    if strict:
+        raise RuntimeError(f"could not place {n} arenas of side {side} {min_sep} apart")
+    x0, y0 = (int(v) for v in rng.integers(0, npos, 2))
+    return [((x0 + i * npos // n) % npos, (y0 + i * npos // n) % npos) for i in range(n)]
+
+
+def spread_ok(offsets, side: int, npos: int) -> bool:
+    """True if no two arenas share a cell."""
+    for i, a in enumerate(offsets):
+        for b in offsets[i + 1:]:
+            dx = int(torus_distance(np.array(a[0]), np.array(b[0]), npos))
+            dy = int(torus_distance(np.array(a[1]), np.array(b[1]), npos))
+            if max(dx, dy) < side:
+                return False
+    return True
 
 
 def rings(radii: np.ndarray, n_angles: int) -> tuple[np.ndarray, np.ndarray, np.ndarray]:

@@ -87,6 +87,28 @@ def fig_kernel(res, T, out):
            out / "kernel_1d.png")
 
 
+def fig_kernel_far(res, T, out):
+    pops = list(res)
+    fig, axs = grid_axes(len(pops))
+    for ax, pop in zip(axs, pops):
+        R = res[pop]
+        b = primary_basis(R)
+        W = R["meta"]["calibration"][f"{b}|A"]["W"]
+        k = R["kernel_1d"]["constructions"]
+        d = np.arange(len(k["raw|cosine"]["s"])) / W
+        far = R["kernel_1d"]["far_W"]
+        ax.axvspan(far[0], far[1], color=GRID, lw=0, label="floor range")
+        ax.plot(d, k["raw|cosine"]["s"], color=BLUE, lw=1.2, label="cosine, raw code")
+        ax.plot(d, k[f"{b}|pearson"]["s"], color=ORANGE, lw=1.2, label=f"Pearson, rates")
+        ax.axhline(0, color=MUTED, lw=0.8)
+        ax.set_xlim(0, max(16, min(d[-1], 16)))
+        ax.set_title(LABELS.get(pop, pop))
+        ax.set_xlabel("separation / mean field width")
+    axs[0].set_ylabel("PV similarity")
+    finish(fig, axs, "PV similarity out to 16 field widths (half a scaffold period is 858 cells)",
+           out / "kernel_far.png")
+
+
 def fig_zero_curve(res, T, out):
     pops = [p for p in res if "fields_1d" in res[p]]
     fig, axs = grid_axes(len(pops))
@@ -258,7 +280,7 @@ def main() -> None:
             R = load_results(root / pop)
             if "elapsed_s" in R["meta"] and "kernel_1d" in R:
                 res[pop] = R
-    for f in (fig_kernel, fig_zero_curve, fig_counts, fig_area, fig_basis, fig_phase2):
+    for f in (fig_kernel, fig_kernel_far, fig_zero_curve, fig_counts, fig_area, fig_basis, fig_phase2):
         f(res, T, out)
     print(f"wrote figures to {out}")
 

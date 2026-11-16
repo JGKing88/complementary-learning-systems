@@ -264,6 +264,16 @@ def test_serpentine_is_continuous_and_unique():
     assert geo.serpentine_capacity(1716, 1716, 200) == 9 * 1716 + 8 * 200
 
 
+def test_arena_placement_degrades_gracefully():
+    from analysis.coding_comparison.run import place
+    ok = place(4, 100, 1716, 50, seed=0)
+    assert ok["sep"] == 50 and ok["disjoint"] and geo.spread_ok(ok["offsets"], 150, 1716)
+    tight = place(2, 504, 1716, 570, seed=1)          # cannot be 570 apart
+    assert tight["sep"] == 0 and tight["disjoint"]
+    huge = place(3, 1000, 1716, 0, seed=2)            # cannot even be disjoint
+    assert huge["sep"] is None and not huge["disjoint"] and len(huge["offsets"]) == 3
+
+
 # --------------------------------------------------------------- populations
 
 def test_rotated_ideal_has_the_ideals_similarity():
