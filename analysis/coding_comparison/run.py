@@ -690,20 +690,25 @@ def run_population(name: str, spec: str, P: dict, out_root: Path,
     if "kernels" in measures:
         write(out, "kernel_1d", kernel_1d(pop, P, bases, variants, cal, cb["loops"], t0))
         write(out, "kernel_2d", kernel_2d(pop, P, cal, W_ref or 1.0, sub(1), t0, variants))
-    # "fields" runs both; "fields1d" or "fields2d" reruns one and keeps the
-    # other's half of sparsity.json.
-    sp = {}
-    if (out / "sparsity.json").exists():
-        with open(out / "sparsity.json") as f:
-            sp = json.load(f)
+    # "fields" runs both; "fields1d" or "fields2d" reruns one. Each half of
+    # sparsity.json is merged into the file as it stands at write time, so two
+    # jobs running the two halves at once keep both.
+    def write_sparsity(part, value):
+        sp = {}
+        if (out / "sparsity.json").exists():
+            with open(out / "sparsity.json") as f:
+                sp = json.load(f)
+        sp[part] = value
+        write(out, "sparsity", sp)
+
     if W_ref is not None and ({"fields", "fields1d"} & set(measures)):
-        f1, sp["tracks"] = fields_1d(pop, P, bases, variants, cal, W_ref, sub(2), t0)
+        f1, sp1 = fields_1d(pop, P, bases, variants, cal, W_ref, sub(2), t0)
         write(out, "fields_1d", f1)
-        write(out, "sparsity", sp)
+        write_sparsity("tracks", sp1)
     if W_ref is not None and ({"fields", "fields2d"} & set(measures)):
-        f2, sp["arenas"] = fields_2d(pop, P, bases, variants, cal, W_ref, sub(3), t0)
+        f2, sp2 = fields_2d(pop, P, bases, variants, cal, W_ref, sub(3), t0)
         write(out, "fields_2d", f2)
-        write(out, "sparsity", sp)
+        write_sparsity("arenas", sp2)
     if W_ref is not None and "remapping" in measures:
         write(out, "remapping", remapping(pop, P, bases, variants, cal, W_ref, sub(4), t0))
     if "phase2" in measures:
