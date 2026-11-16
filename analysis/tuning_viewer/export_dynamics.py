@@ -31,6 +31,15 @@ Per arena ``a``:
     reference recalls from the repo's own Hopfield and frame: q at every cell
     (float32 ``(K, S*S, 2)``) and the state at the manifest's check cells
     (float32 ``(K, n_cells, D)``), for the configurations in the manifest.
+    The collector computed these on the scaffold at the model's settings
+    (Hebbian storage, alpha 1).
+``chk2_a{a}_q``, ``chk2_a{a}_x``
+    the same for ``RULE_CHECKS``: projection and Hebbian storage, alpha below
+    1, several steps (the iterative recall of EXPERIMENTS_IDEAL_ENCODER.md
+    Sec 18). Computed here on the CPU by ``hopfield.Hopfield`` from the
+    exported cue patch and distractors, with the frame from
+    ``gram_schmidt_2d_batch`` on the patch's North and East neighbours, which
+    is what ``VectorHash.gram_schmidt_projection`` does on the scaffold.
 """
 from __future__ import annotations
 
@@ -45,6 +54,32 @@ HERE = Path(__file__).resolve().parent
 EX_EXPLORE = 3          # example explore trials kept per goal
 EX_EXPLOIT = 4          # example exploit trials kept per goal
 EX_CAP = 120            # steps kept per example trial
+# (goal index or -1, distractors, draw, recall steps, storage rule, alpha)
+RULE_CHECKS = ((0, 0, 0, 1, "proj", 0.9), (1, 3, 0, 5, "proj", 0.9), (2, 10, 1, 30, "proj", 0.9),
+               (-1, 5, 2, 10, "proj", 0.5), (3, 10, 3, 3, "proj", 1.0), (0, 3, 4, 10, "hebb", 0.9))
+
+
+def rule_checks(cue_patch, dist, goals, beta, cells):
+    import torch
+    from hopfield import Hopfield
+    from hopfield_nav.utils import gram_schmidt_2d_batch
+    torch.set_num_threads(4)
+    P, D = cue_patch.shape[0], cue_patch.shape[2]
+    S = P - 1
+    xs, ys = np.meshgrid(np.arange(S), np.arange(S), indexing="ij")
+    xs, ys = xs.ravel(), ys.ravel()
+    cues = np.ascontiguousarray(cue_patch[xs, ys])                         # x-major, (S*S, D)
+    frame = gram_schmidt_2d_batch(cue_patch[xs, ys + 1] - cues, cue_patch[xs + 1, ys] - cues)
+    qs, xk = [], []
+    for g, nd, draw, k, rule, alpha in RULE_CHECKS:
+        hop = Hopfield(D, beta=beta, storage_rule=rule)
+        pats = ([cue_patch[goals[g][0], goals[g][1]]] if g >= 0 else []) + list(dist[draw, :nd])
+        for pat in pats:
+            hop.input_memory(torch.from_numpy(np.ascontiguousarray(pat)).float())
+        x = hop.recall_batch(torch.from_numpy(cues), steps=k, beta=beta, alpha=alpha).numpy()
+        qs.append(np.einsum("bij,bj->bi", frame, x - cues).astype(np.float32))
+        xk.append(x[list(cells)].astype(np.float32))
+    return np.stack(qs), np.stack(xk)
 
 
 def write_b64(out: Path, name: str, arr: np.ndarray, files: dict) -> None:
@@ -123,6 +158,10 @@ def main() -> None:
         write_b64(out, f"dist_a{ai}", z["distractors"].astype(np.float32), files)
         write_b64(out, f"chk_a{ai}_q", z["check_q"].astype(np.float32), files)
         write_b64(out, f"chk_a{ai}_x", z["check_x"].astype(np.float32), files)
+        q2, x2 = rule_checks(z["cue_patch"], z["distractors"], meta["goals"], float(meta["hopfield"]["beta"]),
+                             z["check_cells"].tolist())
+        write_b64(out, f"chk2_a{ai}_q", q2, files)
+        write_b64(out, f"chk2_a{ai}_x", x2, files)
 
         # Behaviour per goal and condition, from every trial.
         beh = [[None] * C for _ in range(G)]
@@ -138,6 +177,7 @@ def main() -> None:
                       | {"wall_code": z["wall_code"].tolist(), "examples": keep, "behaviour": beh,
                          "quant_err": qerr,
                          "check_configs": z["check_configs"].tolist(),
+                         "check2_configs": [list(c) for c in RULE_CHECKS],
                          "check_cells": z["check_cells"].tolist()})
         print(f"[export] {am['name']}: quantization error {qerr:.2e}, "
               f"{len(keep)} example trials, {int(count.sum())} steps", flush=True)

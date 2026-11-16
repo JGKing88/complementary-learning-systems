@@ -204,10 +204,31 @@ footer ul { margin: 0; padding: 0; list-style: none; display: flex; flex-wrap: w
         </div>
         <div class="row">
           <label for="steps">Recall steps k</label>
-          <input type="range" class="grow" id="steps" min="1" max="10" step="1" value="1">
+          <input type="range" class="grow" id="steps" min="0" max="10" step="1" value="0">
           <span class="out" id="steps-out">1</span>
         </div>
-        <p class="hint">Distractors are encoder patterns from random scaffold cells outside the arena, drawn by the model's own sampler. Draws are nested: raising the count adds patterns and keeps the earlier ones. The model takes k = 1. Clicking the arena or the large map moves the goal to that cell.</p>
+        <p class="hint">Distractors are encoder patterns from random scaffold cells outside the arena, drawn by the model's own sampler. Draws are nested: raising the count adds patterns and keeps the earlier ones. The last step setting runs until the state stops moving (no cell moves more than 1e-6 in a step), at most 600 steps. Clicking the arena or the large map moves the goal to that cell.</p>
+      </section>
+
+      <section class="panel" aria-labelledby="t-rule" id="rule-panel" hidden>
+        <div class="ptitle" id="t-rule">Recall rule</div>
+        <div class="seg" id="presets">
+          <button type="button" data-preset="model" aria-pressed="true">Model</button>
+          <button type="button" data-preset="iter" aria-pressed="false">Iterative</button>
+        </div>
+        <div class="row">
+          <label for="rule">Storage</label>
+          <select id="rule" class="grow">
+            <option value="hebb">Hebbian, zero diagonal</option>
+            <option value="proj">Projection</option>
+          </select>
+        </div>
+        <div class="row">
+          <label for="alpha">α</label>
+          <input type="range" class="grow" id="alpha" min="0.05" max="1" step="0.05" value="1">
+          <span class="out" id="alpha-out">1</span>
+        </div>
+        <p class="hint">Each step is x ← normalize((1 − α) x + α tanh(β W x)) with β = 100, starting from the cue. Model: Hebbian storage, α = 1, one step, which is what the controller was trained on. Iterative: projection storage, where W is the projector onto the stored patterns so each one is a fixed point, with α = 0.9, run until the state stops moving. With this unsaturated att0.5 code that recall walks from the cue toward the goal and ends on it (EXPERIMENTS_IDEAL_ENCODER.md §18).</p>
       </section>
 
       <section class="panel" aria-labelledby="t-cmp">
@@ -293,7 +314,14 @@ footer ul { margin: 0; padding: 0; list-style: none; display: flex; flex-wrap: w
       <div id="d-hover">Hover over the map to read a cell.</div>
       <div class="row"><input type="checkbox" id="outlines" checked><label for="outlines">Outline fields</label></div>
       <div class="row" id="trials-row"><input type="checkbox" id="showtrials" checked><label for="showtrials">Example trials, dots coloured by this unit</label></div>
-      <div class="row" id="arrows-row" hidden><input type="checkbox" id="showarrows" checked><label for="showarrows">Readout q as arrows</label></div>
+      <div class="row" id="arrows-row" hidden>
+        <label for="arrows">Arrows</label>
+        <select id="arrows" class="grow">
+          <option value="q" selected>Readout q at step k</option>
+          <option value="decode">Where x_t+k decodes (nearest arena cell)</option>
+          <option value="none">None</option>
+        </select>
+      </div>
       <dl class="stats" id="d-stats"></dl>
 
       <div id="d-ctrl" style="display:grid;gap:8px">
@@ -319,7 +347,7 @@ footer ul { margin: 0; padding: 0; list-style: none; display: flex; flex-wrap: w
 
   <footer>
     <div id="prov"></div>
-    <div>Hopfield checks: the page's recall and readout against the repo's Python, eight memory settings per arena, run when an arena's Hopfield data loads.</div>
+    <div>Hopfield checks: the page's recall and readout against the repo's Python (Hebbian and projection storage, several α and step counts) for every arena, run when an arena's Hopfield data loads.</div>
     <ul id="checks"></ul>
     <div><button class="plain" id="checkall" type="button">Check every arena</button></div>
   </footer>
@@ -331,16 +359,17 @@ const $ = id => document.getElementById(id);
 const DATA = "dynamics_data/";
 const S = 20, N = S * S, P = S + 1;
 const TILE_K = 6;                      // canvas pixels per cell in the grid
-const CMP_STEPS = [1, 2, 3, 5, 10];
+const CMP_STEPS = [1, 3, 10, 50, "conv"];
+const CMP_ALPHAS = [1, 0.95, 0.9, 0.8, 0.5];
 const CMP_DISTS = [0, 1, 3, 10];
-const MEMO_MAX = 10;
+const MEMO_MAX = 8;
 
 let M = null, U = 0, D = 0, C = 2, G = 4;
 const st = {
   pop: "ctrl", hs: "next", arena: 0, goal: 0, hopGoal: null, phase: 1,
-  stored: true, nd: 0, draw: 0, steps: 1, compare: "one",
+  stored: true, nd: 0, draw: 0, rule: "hebb", alpha: 1, kIdx: 0, compare: "one",
   minVis: 1, thresh: 20, minSize: 9, sort: "unit", hideSilent: true, perPage: 32, scale: "unit",
-  page: 0, sel: 0, outlines: true, showTrials: true, showArrows: true, trial: 0,
+  page: 0, sel: 0, outlines: true, showTrials: true, arrows: "q", trial: 0,
   order: null, orderNote: "",
 };
 
@@ -432,9 +461,13 @@ function loadCtrl(a) {
 function loadHop(a) {
   if (!cache.hop[a]) {
     cache.hop[a] = (async () => {
-      const [cue, dist, cq, cx] = await Promise.all(["cue_a" + a, "dist_a" + a, "chk_a" + a + "_q", "chk_a" + a + "_x"].map(fileArr));
-      const H = buildHop(a, cue, dist);
-      H.check = runCheck(H, cq, cx);
+      const names = ["cue_a" + a, "dist_a" + a, "chk_a" + a + "_q", "chk_a" + a + "_x"], two = !!M.files["chk2_a" + a + "_q"];
+      if (two) names.push("chk2_a" + a + "_q", "chk2_a" + a + "_x");
+      const [cue, dist, cq, cx, cq2, cx2] = await Promise.all(names.map(fileArr));
+      const H = buildHop(a, cue, dist), ar = M.arenas[a];
+      const sets = [{ cfgs: ar.check_configs.map(r => r.concat(["hebb", M.hopfield.alpha])), q: cq, x: cx }];
+      if (two) sets.push({ cfgs: ar.check2_configs, q: cq2, x: cx2 });
+      H.check = await runCheck(H, sets);
       hopDone[a] = H;
       renderChecks();
       return H;
@@ -446,6 +479,15 @@ function loadHop(a) {
 
 // ================================================================ Hopfield
 // Cells are x-major: cell i = x * S + y. The cue patch is (P, P, D) with the same order.
+// Recall: x <- normalize((1 - alpha) x + alpha tanh(beta W x)), from the cue x_0.
+//   hebb: W = scale * sum_j m_j m_j^T with a zero diagonal (the model).
+//   proj: W = scale * the orthogonal projector onto span(m_j), diagonal kept, so each m_j is a fixed point.
+const K_LIST = [1, 2, 3, 5, 10, 20, 50, 100, 200, 600, "conv"];
+const K_CAP = 600, CONV_TOL = 1e-6, PROJ_EPS = 1e-6;
+const SNAP_KS = new Set(K_LIST.filter(k => k !== "conv"));
+class Cancelled extends Error {}
+function kLabel(k) { return k === "conv" ? "until it stops" : String(k); }
+function ruleLabel(r) { return r === "proj" ? "projection" : "Hebbian"; }
 function buildHop(a, cue, dist) {
   const X0 = new Float32Array(N * D), FE = new Float32Array(N * D), FN = new Float32Array(N * D);
   const df = new Float64Array(D), dr = new Float64Array(D);
@@ -466,7 +508,9 @@ function buildHop(a, cue, dist) {
     n2 = Math.max(Math.sqrt(n2), 1e-12);
     for (let k = 0; k < D; k++) { FN[i * D + k] = df[k]; FE[i * D + k] = dr[k] / n2; }
   }
-  return { a, cue, dist, X0, FE, FN, memo: new Map() };
+  const n0 = new Float64Array(N);
+  for (let i = 0; i < N; i++) { let s = 0; for (let k = 0; k < D; k++) s += X0[i * D + k] * X0[i * D + k]; n0[i] = Math.sqrt(s); }
+  return { a, cue, dist, X0, FE, FN, n0, bases: new Map(), memo: new Map() };
 }
 function normalized(src, off) {
   const v = new Float64Array(D);
@@ -484,126 +528,206 @@ function memPatterns(H, mem) {
   for (let j = 0; j < mem.nd; j++) { pats.push(normalized(H.dist, ((mem.draw * M.d_max) + j) * D)); labels.push("d" + (j + 1)); }
   return { pats, labels };
 }
-function memEntry(H, mem) {
-  const key = memKey(mem);
-  let e = H.memo.get(key);
-  if (e) { H.memo.delete(key); H.memo.set(key, e); return e; }
-  const { pats, labels } = memPatterns(H, mem), K = pats.length;
-  const PM = new Float64Array(K * D), diag = new Float64Array(D);
-  pats.forEach((v, j) => { for (let k = 0; k < D; k++) { PM[j * D + k] = v[k]; diag[k] += v[k] * v[k]; } });
-  // Overlap of each stored pattern with the cue at every cell.
+// What recall needs from one memory content under one storage rule: rows B with W x = scale * B^T (B x)
+// (minus the diagonal under hebb), and each stored pattern's overlap with the cue at every cell.
+function memBase(H, mem, rule) {
+  const key = memKey(mem) + "|" + rule;
+  let b = H.bases.get(key);
+  if (b) return b;
+  const { pats, labels } = memPatterns(H, mem), K = pats.length, diag = new Float64Array(D);
+  for (const v of pats) for (let k = 0; k < D; k++) diag[k] += v[k] * v[k];
+  let rows = pats;
+  if (rule === "proj") {
+    // An orthonormal basis of the stored patterns' span, in storage order (Gram-Schmidt, two passes).
+    // A pattern whose residual is below the repo's proj_eps adds nothing, as in Hopfield._store_proj.
+    rows = [];
+    for (const v of pats) {
+      const r = Float64Array.from(v);
+      for (let pass = 0; pass < 2; pass++) for (const q of rows) {
+        let d = 0;
+        for (let k = 0; k < D; k++) d += q[k] * r[k];
+        for (let k = 0; k < D; k++) r[k] -= d * q[k];
+      }
+      let n2 = 0;
+      for (let k = 0; k < D; k++) n2 += r[k] * r[k];
+      if (n2 <= PROJ_EPS) continue;
+      const n = Math.sqrt(n2);
+      for (let k = 0; k < D; k++) r[k] /= n;
+      rows.push(r);
+    }
+  }
+  const R = rows.length, B = new Float64Array(R * D);
+  rows.forEach((v, j) => B.set(v, j * D));
   const ov = new Float64Array(K * N);
   for (let i = 0; i < N; i++) for (let j = 0; j < K; j++) {
     let s = 0;
-    for (let k = 0; k < D; k++) s += PM[j * D + k] * H.X0[i * D + k];
+    for (let k = 0; k < D; k++) s += pats[j][k] * H.X0[i * D + k];
     ov[j * N + i] = s;
   }
-  e = { key, K, PM, diag, labels, ov, states: [], q: [] };
+  b = { key, rule, K, R, B, diag, labels, ov };
+  H.bases.set(key, b);
+  return b;
+}
+// One recall trajectory: memory content, storage rule and alpha. Keeps the states at K_LIST's steps.
+function memEntry(H, mem, rule, alpha) {
+  const base = memBase(H, mem, rule), key = base.key + "|" + alpha;
+  let e = H.memo.get(key);
+  if (e) { H.memo.delete(key); H.memo.set(key, e); return e; }
+  e = { key, base, rule, alpha, K: base.K, labels: base.labels, ov: base.ov,
+        snaps: new Map(), last: null, lastK: 0, convK: null, conv: null, q: new Map(), dec: new Map() };
   H.memo.set(key, e);
   while (H.memo.size > MEMO_MAX) H.memo.delete(H.memo.keys().next().value);
   return e;
 }
-// x <- normalize((1 - a) x + a tanh(beta W x)), W = scale * sum_j m_j m_j^T with a zero diagonal.
-function recallTo(H, e, k) {
-  if (e.K === 0) return;
-  const hp = M.hopfield, scale = hp.scale, beta = hp.beta, alpha = hp.alpha, K = e.K, PM = e.PM, diag = e.diag;
-  const dots = new Float64Array(K), y = new Float64Array(D);
-  while (e.states.length < k) {
-    const X = e.states.length ? e.states[e.states.length - 1] : H.X0, Y = new Float32Array(N * D);
-    for (let i = 0; i < N; i++) {
-      const o = i * D;
-      for (let j = 0; j < K; j++) {
-        let s = 0;
-        for (let kk = 0; kk < D; kk++) s += PM[j * D + kk] * X[o + kk];
-        dots[j] = s;
-      }
-      let nrm = 0;
-      for (let kk = 0; kk < D; kk++) {
-        let h = hp.zero_diag ? -diag[kk] * X[o + kk] : 0;
-        for (let j = 0; j < K; j++) h += PM[j * D + kk] * dots[j];
-        const v = (1 - alpha) * X[o + kk] + alpha * Math.tanh(beta * scale * h);
-        y[kk] = v; nrm += v * v;
-      }
-      nrm = Math.max(Math.sqrt(nrm), 1e-12);
-      for (let kk = 0; kk < D; kk++) Y[o + kk] = y[kk] / nrm;
+function recallStep(H, e, X) {
+  const hp = M.hopfield, scale = hp.scale, beta = hp.beta, alpha = e.alpha, b = e.base, R = b.R, B = b.B, hebb = b.rule === "hebb";
+  const dots = new Float64Array(R), y = new Float64Array(D), Y = new Float32Array(N * D);
+  let move = 0;
+  for (let i = 0; i < N; i++) {
+    const o = i * D;
+    for (let j = 0; j < R; j++) {
+      let s = 0;
+      for (let kk = 0; kk < D; kk++) s += B[j * D + kk] * X[o + kk];
+      dots[j] = s;
     }
-    e.states.push(Y);
+    let nrm = 0;
+    for (let kk = 0; kk < D; kk++) {
+      let h = hebb ? -b.diag[kk] * X[o + kk] : 0;
+      for (let j = 0; j < R; j++) h += B[j * D + kk] * dots[j];
+      const v = (1 - alpha) * X[o + kk] + alpha * Math.tanh(beta * scale * h);
+      y[kk] = v; nrm += v * v;
+    }
+    nrm = Math.max(Math.sqrt(nrm), 1e-12);
+    let dm = 0;
+    for (let kk = 0; kk < D; kk++) { const v = y[kk] / nrm; Y[o + kk] = v; const d = v - X[o + kk]; dm += d * d; }
+    if (dm > move) move = dm;
+  }
+  return { Y, move: Math.sqrt(move) };
+}
+// Run recall until step `target` (a number, or "conv": until no cell moves more than CONV_TOL in a step,
+// at most K_CAP steps). Yields to the page every ~40 ms; a newer render cancels it, keeping the progress.
+async function recallTo(H, e, target, tok) {
+  if (e.K === 0) return;
+  const done = () => target === "conv" ? e.convK !== null : e.lastK >= target;
+  let t0 = performance.now();
+  while (!done()) {
+    const { Y, move } = recallStep(H, e, e.last || H.X0);
+    e.last = Y; e.lastK++;
+    if (SNAP_KS.has(e.lastK)) e.snaps.set(e.lastK, Y);
+    if (e.convK === null && (move < CONV_TOL || e.lastK >= K_CAP)) { e.convK = e.lastK; e.conv = Y; e.convStill = move < CONV_TOL; }
+    if (performance.now() - t0 > 40) {
+      setStatus("Recall step " + e.lastK + (target === "conv" ? ", running until the state stops moving (at most " + K_CAP + ")" : " of " + target) + "…");
+      await new Promise(r => setTimeout(r, 0));
+      if (tok !== undefined && tok !== renderToken) throw new Cancelled();
+      t0 = performance.now();
+    }
   }
 }
-// q after k steps: the local East and North components of x_{t+k} - x_t.
+function stateAt(e, k) { return k === "conv" ? e.conv : e.snaps.get(k); }
+// q after k steps: the local East and North components of x_k - x_0.
 function readout(H, e, k) {
   if (e.K === 0) return new Float64Array(2 * N);
-  if (e.q[k]) return e.q[k];
-  recallTo(H, e, k);
-  const X = e.states[k - 1], q = new Float64Array(2 * N);
+  if (e.q.has(k)) return e.q.get(k);
+  const X = stateAt(e, k), q = new Float64Array(2 * N);
   for (let i = 0; i < N; i++) {
     const o = i * D;
     let qe = 0, qn = 0;
     for (let kk = 0; kk < D; kk++) { const d = X[o + kk] - H.X0[o + kk]; qe += H.FE[o + kk] * d; qn += H.FN[o + kk] * d; }
     q[2 * i] = qe; q[2 * i + 1] = qn;
   }
-  e.q[k] = q;
+  e.q.set(k, q);
   return q;
 }
-function runCheck(H, cq, cx) {
-  const cfgs = M.arenas[H.a].check_configs, cells = M.arenas[H.a].check_cells, nc = cells.length;
-  let qErr = 0, qMax = 0, xErr = 0;
-  cfgs.forEach(([g, nd, draw, k], j) => {
-    const e = memEntry(H, { goal: g >= 0 ? goalCellOf(g) : null, nd, draw });
-    const q = readout(H, e, k);
-    for (let i = 0; i < 2 * N; i++) { qErr = Math.max(qErr, Math.abs(q[i] - cq[j * 2 * N + i])); qMax = Math.max(qMax, Math.abs(cq[j * 2 * N + i])); }
-    if (e.K === 0) return;
-    const X = e.states[k - 1];
-    cells.forEach((cell, ci) => {
-      for (let kk = 0; kk < D; kk++) xErr = Math.max(xErr, Math.abs(X[cell * D + kk] - cx[(j * nc + ci) * D + kk]));
-    });
-  });
+// The arena cell whose cue is most similar (cosine) to the state at cell i.
+function decodeOne(H, X, i) {
+  let best = -1, bc = -Infinity, nx = 0;
+  const o = i * D;
+  for (let kk = 0; kk < D; kk++) nx += X[o + kk] * X[o + kk];
+  nx = Math.sqrt(nx) || 1;
+  for (let j = 0; j < N; j++) {
+    let s = 0;
+    const oj = j * D;
+    for (let kk = 0; kk < D; kk++) s += X[o + kk] * H.X0[oj + kk];
+    const c = s / (nx * H.n0[j]);
+    if (c > bc) { bc = c; best = j; }
+  }
+  return { cell: best, cos: bc };
+}
+function decodeAll(H, e, k) {
+  if (e.dec.has(k)) return e.dec.get(k);
+  const X = stateAt(e, k), cell = new Int32Array(N), cos = new Float32Array(N);
+  for (let i = 0; i < N; i++) { const r = decodeOne(H, X, i); cell[i] = r.cell; cos[i] = r.cos; }
+  const out = { cell, cos };
+  e.dec.set(k, out);
+  return out;
+}
+// sets: [{ cfgs: [[goal index or -1, distractors, draw, k, rule, alpha]], q, x }]
+async function runCheck(H, sets) {
+  const cells = M.arenas[H.a].check_cells, nc = cells.length;
+  let qErr = 0, qMax = 0, xErr = 0, n = 0;
+  for (const set of sets) {
+    for (let j = 0; j < set.cfgs.length; j++) {
+      const [g, nd, draw, k, rule, alpha] = set.cfgs[j];
+      const e = memEntry(H, { goal: g >= 0 ? goalCellOf(g) : null, nd, draw }, rule, alpha);
+      await recallTo(H, e, k);
+      const q = readout(H, e, k), cq = set.q, cx = set.x;
+      for (let i = 0; i < 2 * N; i++) { qErr = Math.max(qErr, Math.abs(q[i] - cq[j * 2 * N + i])); qMax = Math.max(qMax, Math.abs(cq[j * 2 * N + i])); }
+      n++;
+      if (e.K === 0) continue;
+      const X = stateAt(e, k);
+      cells.forEach((cell, ci) => {
+        for (let kk = 0; kk < D; kk++) xErr = Math.max(xErr, Math.abs(X[cell * D + kk] - cx[(j * nc + ci) * D + kk]));
+      });
+    }
+  }
   const ok = qErr <= 1e-5 * Math.max(1, qMax) && xErr <= 1e-5;
-  return { ok, qErr, xErr, qMax, n: cfgs.length };
+  return { ok, qErr, xErr, qMax, n };
 }
 
 // ================================================================ columns: what each map shows
 function hopMem(goalCell) { return { goal: st.stored ? goalCell : null, nd: st.nd, draw: st.draw }; }
 function baseCol() {
   if (st.pop === "ctrl") return { pop: "ctrl", arena: st.arena, goal: st.goal, phase: st.phase };
-  return { pop: "hop", arena: st.arena, goalCell: curGoalCell(), goalIdx: st.hopGoal ? -1 : st.goal, mem: hopMem(curGoalCell()), steps: st.steps, hs: st.hs };
+  const gc = curGoalCell();
+  return { pop: "hop", arena: st.arena, goalCell: gc, goalIdx: st.hopGoal ? -1 : st.goal, mem: hopMem(gc),
+           rule: st.rule, alpha: st.alpha, k: K_LIST[st.kIdx], hs: st.hs };
 }
 function columns() {
   const b = baseCol(), cols = [];
-  const ctrlLike = (patch, label, prim) => Object.assign({}, b, patch, { label, prim });
+  const col = (patch, label, prim) => Object.assign({}, b, patch, { label, prim });
   if (st.compare === "one") return [Object.assign(b, { label: "", prim: true })];
   if (st.compare === "goals") {
     for (let g = 0; g < G; g++) {
-      if (b.pop === "ctrl") cols.push(ctrlLike({ goal: g }, "Goal " + cellStr(M.goals[g]), g === st.goal));
-      else cols.push(ctrlLike({ goalCell: M.goals[g], goalIdx: g, mem: hopMem(M.goals[g]) }, "Goal " + cellStr(M.goals[g]), !st.hopGoal && g === st.goal));
+      if (b.pop === "ctrl") cols.push(col({ goal: g }, "Goal " + cellStr(M.goals[g]), g === st.goal));
+      else cols.push(col({ goalCell: M.goals[g], goalIdx: g, mem: hopMem(M.goals[g]) }, "Goal " + cellStr(M.goals[g]), !st.hopGoal && g === st.goal));
     }
   } else if (st.compare === "arenas") {
-    for (let a = 0; a < M.arenas.length; a++) cols.push(ctrlLike({ arena: a }, arenaName(a), a === st.arena));
+    for (let a = 0; a < M.arenas.length; a++) cols.push(col({ arena: a }, arenaName(a), a === st.arena));
   } else if (st.compare === "phases") {
-    cols.push(ctrlLike({ phase: 0 }, "Explore", st.phase === 0), ctrlLike({ phase: 1 }, "Exploit", st.phase === 1));
+    cols.push(col({ phase: 0 }, "Explore", st.phase === 0), col({ phase: 1 }, "Exploit", st.phase === 1));
   } else if (st.compare === "dists") {
-    for (const d of CMP_DISTS) cols.push(ctrlLike({ mem: Object.assign({}, b.mem, { nd: d }) }, d + " distractor" + (d === 1 ? "" : "s"), d === st.nd));
+    for (const d of CMP_DISTS) cols.push(col({ mem: Object.assign({}, b.mem, { nd: d }) }, d + " distractor" + (d === 1 ? "" : "s"), d === st.nd));
   } else if (st.compare === "steps") {
-    for (const k of CMP_STEPS) cols.push(ctrlLike({ steps: k }, "k = " + k, k === st.steps));
+    for (const k of CMP_STEPS) cols.push(col({ k }, k === "conv" ? "until it stops" : "k = " + k, k === b.k));
+  } else if (st.compare === "alphas") {
+    for (const a of CMP_ALPHAS) cols.push(col({ alpha: a }, "α = " + a, a === st.alpha));
+  } else if (st.compare === "rules") {
+    for (const r of ["hebb", "proj"]) cols.push(col({ rule: r }, r === "proj" ? "Projection" : "Hebbian", r === st.rule));
   }
   return cols;
 }
 const COMPARE = {
   ctrl: [["one", "One map per unit"], ["goals", "Across the four goals"], ["arenas", "Across the six arenas"], ["phases", "Explore and exploit"]],
-  hop: [["one", "One map per unit"], ["goals", "Across the four goals"], ["arenas", "Across the six arenas"], ["dists", "Across distractor counts"], ["steps", "Across recall steps"]],
+  hop: [["one", "One map per unit"], ["goals", "Across the four goals"], ["arenas", "Across the six arenas"], ["dists", "Across distractor counts"],
+        ["steps", "Across recall steps"], ["alphas", "Across α"], ["rules", "Hebbian and projection storage"]],
 };
 
 // A column's data, once loaded: getMap(u, dest) fills dest (length N, NaN for no data) or returns false.
-async function prepare(cols) {
+async function prepare(cols, tok) {
   const out = [];
-  for (const col of cols) {
-    if (col.pop === "ctrl") {
-      const d = await loadCtrl(col.arena);
-      out.push(ctrlSource(col, d));
-    } else {
-      const H = await loadHop(col.arena);
-      out.push(hopSource(col, H));
-    }
+  for (const c of cols) {
+    if (c.pop === "ctrl") out.push(ctrlSource(c, await loadCtrl(c.arena)));
+    else out.push(await hopSource(c, await loadHop(c.arena), tok));
   }
   return out;
 }
@@ -623,10 +747,11 @@ function ctrlSource(col, d) {
     },
   };
 }
-function hopSource(col, H) {
-  const e = memEntry(H, col.mem), k = col.steps, hs = col.hs;
-  if (hs !== "cur" && e.K > 0) recallTo(H, e, k);
-  const X = hs === "cur" ? H.X0 : e.states[k - 1];
+async function hopSource(col, H, tok) {
+  const e = memEntry(H, col.mem, col.rule, col.alpha), k = col.k, hs = col.hs;
+  // The current state needs no recall, but the selected column's readout panel does.
+  if (e.K > 0 && (hs !== "cur" || col.prim)) await recallTo(H, e, k, tok);
+  const X = hs === "cur" ? H.X0 : stateAt(e, k);
   return {
     col, signed: true, H, e,
     silent() { return false; },
@@ -893,11 +1018,12 @@ async function render() {
     const cols = columns();
     const need = cols.filter(c => !(c.pop === "ctrl" ? cache.ctrl[c.arena] : hopDone[c.arena])).map(c => c.arena);
     if (need.length) setStatus("Loading " + (new Set(need).size > 1 ? new Set(need).size + " arenas" : arenaName(need[0])) + (cols[0].pop === "hop" ? " and checking the Hopfield against Python" : "") + "…");
-    const srcs = await prepare(cols);
+    const srcs = await prepare(cols, tok);
     if (tok !== renderToken) return;
     drawPage(srcs, performance.now() - t0);
     renderDetail(srcs);
   } catch (e) {
+    if (e instanceof Cancelled) return;
     console.error(e);
     if (tok === renderToken) setStatus(String(e.message || e), true);
   }
@@ -984,7 +1110,9 @@ function adoptColumn(c) {
   else if (st.compare === "arenas") st.arena = c.arena;
   else if (st.compare === "phases") st.phase = c.phase;
   else if (st.compare === "dists") st.nd = c.mem.nd;
-  else if (st.compare === "steps") st.steps = c.steps;
+  else if (st.compare === "steps") st.kIdx = K_LIST.indexOf(c.k);
+  else if (st.compare === "alphas") st.alpha = c.alpha;
+  else if (st.compare === "rules") st.rule = c.rule;
   syncControls();
 }
 function selectUnit(u) { st.sel = u; requestRender(); }
@@ -1006,11 +1134,18 @@ function renderHead(srcs) {
     const names = { cur: "current state x_t", next: "next state x_t+k", upd: "update x_t+k − x_t" };
     title = "Hopfield " + names[b.hs] + ": 1024 units";
     if (b.hs === "cur") desc = "The current state is the cue: the encoder's output at the agent's cell. It does not depend on what is stored, so it only changes with the arena.";
-    else if (b.hs === "next") desc = "x_t+k is the state after k recall steps x ← normalize((1 − α) x + α tanh(β W x)), with W = (1/1024) Σ m mᵀ over the stored patterns, zero diagonal, β = " + M.hopfield.beta + ", α = " + M.hopfield.alpha + ". With one stored pattern every unit's map is that pattern's value times the sign of its overlap with the cue.";
-    else desc = "The update x_t+k − x_t. The controller reads q, this update projected onto the cell's local East and North directions (shown on the right).";
-    const mem = b.mem, K = (mem.goal ? 1 : 0) + mem.nd;
+    const model = b.rule === "hebb" && b.alpha === 1 && b.k === 1;
+    const rd = b.rule === "proj" ? "W = (1/1024) × the projector onto the stored patterns, diagonal kept, so every stored pattern is a fixed point"
+                                 : "W = (1/1024) Σ m mᵀ over the stored patterns, zero diagonal";
+    if (b.hs === "next") desc = "x_t+k is the state after k recall steps of x ← normalize((1 − α) x + α tanh(β W x)), β = " + M.hopfield.beta + ", with " + rd + ". " +
+      (model ? "These are the model's settings. With one stored pattern every unit's map is that pattern's value times the sign of its overlap with the cue." : "The controller was trained on Hebbian storage, α = 1, one step.");
+    else if (b.hs === "upd") desc = "The update x_t+k − x_t. The controller reads q, this update projected onto the cell's local East and North directions (shown on the right)" +
+      (model ? "." : ", at Hebbian storage, α = 1, k = 1.");
+    const mem = b.mem, K = (mem.goal ? 1 : 0) + mem.nd, e0 = srcs[0].e;
+    const conv = b.k === "conv" && e0 && e0.convK !== null ? (e0.convStill ? ", stopped after " + e0.convK + " steps" : ", still moving after " + e0.convK + " steps") : "";
     beh = arenaName(b.arena) + " · memory: " + (mem.goal ? "goal " + cellStr(mem.goal) : "no goal") + (mem.nd ? " + " + mem.nd + " distractors (draw " + (mem.draw + 1) + ")" : "") +
-      (b.hs !== "cur" ? " · k = " + b.steps : "") + (K === 0 && b.hs !== "cur" ? " · memory empty: the model skips recall and the readout is zero" : "");
+      (b.hs !== "cur" ? " · " + ruleLabel(b.rule) + " storage, α = " + b.alpha + ", k = " + kLabel(b.k) + conv : "") +
+      (K === 0 && b.hs !== "cur" ? " · memory empty: the model skips recall and the readout is zero" : "");
   }
   $("pop-title").textContent = title;
   $("pop-desc").textContent = desc;
@@ -1018,7 +1153,7 @@ function renderHead(srcs) {
 }
 
 // ================================================================ detail panel
-const det = { labels: new Int32Array(N), src: null, v: new Float64Array(N), range: [0, 1], q: null };
+const det = { labels: new Int32Array(N), src: null, v: new Float64Array(N), range: [0, 1], q: null, H: null, X: null };
 function renderDetail(srcs) {
   const src = srcs.find(s => s.col.prim) || srcs[0], c = src.col, u = st.sel, v = det.v;
   det.src = src;
@@ -1038,8 +1173,11 @@ function renderDetail(srcs) {
     if (st.showTrials) drawTrials(ctx, k, dpr, src, u, rg);
     markGoal(ctx, goalCell, k, dpr);
   } else {
-    if (src.e.K > 0) det.q = readout(src.H, src.e, c.steps);
-    if (st.showArrows && det.q) drawArrows(ctx, det.q, k, dpr, COL.fg);
+    det.H = src.H;
+    det.X = src.e.K > 0 ? stateAt(src.e, c.k) || null : null;
+    if (det.X) det.q = readout(src.H, src.e, c.k);
+    if (st.arrows === "q" && det.q) drawArrows(ctx, det.q, k, dpr, COL.fg);
+    if (st.arrows === "decode" && det.X) drawDecode(ctx, decodeAll(src.H, src.e, c.k), k, dpr);
     markGoal(ctx, goalCell, k, dpr);
   }
 
@@ -1065,6 +1203,7 @@ function renderDetail(srcs) {
       let qm = 0; for (let i = 0; i < N; i++) qm = Math.max(qm, Math.hypot(det.q[2 * i], det.q[2 * i + 1]));
       add("Largest |q|", fmtVal(qm));
     }
+    if (c.k === "conv" && src.e.convK !== null) add("Recall ran", src.e.convK + " steps" + (src.e.convStill ? ", then stopped" : ", still moving at the cap"));
   }
   $("d-stats").innerHTML = rows.join("");
   $("d-ctrl").hidden = c.pop !== "ctrl";
@@ -1147,8 +1286,23 @@ function drawArrows(ctx, q, k, dpr, color) {
     ctx.closePath(); ctx.fill();
   }
 }
+// A line from each cell to the arena cell its state decodes to; fainter where that match is weaker.
+function drawDecode(ctx, dec, k, dpr) {
+  ctx.save();
+  ctx.strokeStyle = COL.fg; ctx.fillStyle = COL.fg; ctx.lineWidth = dpr; ctx.lineCap = "round";
+  for (let i = 0; i < N; i++) {
+    const j = dec.cell[i];
+    if (j === i) continue;
+    const xi = (i / S) | 0, yi = i - xi * S, xj = (j / S) | 0, yj = j - xj * S;
+    ctx.globalAlpha = Math.max(0.15, Math.min(1, (dec.cos[i] - 0.5) / 0.5));
+    const x0 = (xi + 0.5) * k, y0 = (S - 0.5 - yi) * k, x1 = (xj + 0.5) * k, y1 = (S - 0.5 - yj) * k;
+    ctx.beginPath(); ctx.moveTo(x0, y0); ctx.lineTo(x1, y1); ctx.stroke();
+    ctx.beginPath(); ctx.arc(x1, y1, 0.12 * k, 0, 2 * Math.PI); ctx.fill();
+  }
+  ctx.restore();
+}
 function renderReadout(src) {
-  const c = src.col, e = src.e, q = e.K > 0 ? readout(src.H, e, c.steps) : null, mag = new Float64Array(N);
+  const c = src.col, e = src.e, q = e.K > 0 && stateAt(e, c.k) ? readout(src.H, e, c.k) : null, mag = new Float64Array(N);
   let qm = 0;
   for (let i = 0; i < N; i++) { mag[i] = q ? Math.hypot(q[2 * i], q[2 * i + 1]) : 0; qm = Math.max(qm, mag[i]); }
   paintMap($("r-canvas"), mag, 0, qm, LUT.seq, 1);
@@ -1156,7 +1310,7 @@ function renderReadout(src) {
   if (q) drawArrows(ctx, q, k, dpr, isDark() ? "#10151c" : "#ffffff");
   markGoal(ctx, c.goalCell, k, dpr);
   $("r-hint").textContent = q
-    ? "Colour is |q|, from 0 to " + fmtVal(qm) + "; arrows point along q, scaled to the largest. From step k = " + c.steps + (c.steps === 1 ? ", what the controller reads." : "; the controller reads k = 1.")
+    ? "Colour is |q|, from 0 to " + fmtVal(qm) + "; arrows point along q, scaled to the largest. From step k = " + kLabel(c.k) + (c.k === 1 && e.rule === "hebb" && e.alpha === 1 ? ", what the controller reads." : "; the controller reads Hebbian storage, α = 1, k = 1.")
     : "Memory is empty, so the model skips recall and q is zero.";
   // Overlaps with each stored pattern, one shared symmetric scale.
   const box = $("mems");
@@ -1183,7 +1337,10 @@ function hoverDetail(ev) {
   const i = x * S + y;
   let s = "cell " + cellStr([x, y]) + "  value " + fmtVal(det.v[i]);
   if (src.col.pop === "ctrl") s += "  visits " + src.cnt[i];
-  else if (det.q) s += "  q (" + fmtVal(det.q[2 * i]) + ", " + fmtVal(det.q[2 * i + 1]) + ")";
+  else {
+    if (det.q) s += "  q (" + fmtVal(det.q[2 * i]) + ", " + fmtVal(det.q[2 * i + 1]) + ")";
+    if (det.X) { const d = decodeOne(det.H, det.X, i), dx = (d.cell / S) | 0; s += "  x_t+k decodes to " + cellStr([dx, d.cell - dx * S]) + ", cos " + d.cos.toFixed(3); }
+  }
   $("d-hover").textContent = s;
 }
 function clickDetail(ev) {
@@ -1201,7 +1358,7 @@ function renderChecks() {
     if (!H) return '<li><span class="chip wait">' + arenaName(i) + ": not loaded</span></li>";
     const c = H.check;
     return '<li><span class="chip ' + (c.ok ? "ok" : "bad") + '">' + arenaName(i) + ": " + (c.ok ? "match" : "MISMATCH") +
-      ", q error " + c.qErr.toExponential(1) + ", state error " + c.xErr.toExponential(1) + "</span></li>";
+      " (" + c.n + " settings), q error " + c.qErr.toExponential(1) + ", state error " + c.xErr.toExponential(1) + "</span></li>";
   }).join("");
 }
 function renderProv() {
@@ -1247,7 +1404,10 @@ function syncControls() {
   $("trials-row").hidden = hop; $("arrows-row").hidden = !hop;
   $("silent-row").classList.toggle("off", hop); $("silent").disabled = hop;
   $("stored").checked = st.stored; $("nd").value = st.nd; $("nd-out").textContent = st.nd;
-  $("draw").value = String(st.draw); $("steps").value = st.steps; $("steps-out").textContent = st.steps;
+  $("draw").value = String(st.draw); $("steps").value = st.kIdx; $("steps-out").textContent = K_LIST[st.kIdx] === "conv" ? "stops" : K_LIST[st.kIdx];
+  $("rule-panel").hidden = !hop; $("rule").value = st.rule; $("alpha").value = st.alpha; $("alpha-out").textContent = st.alpha;
+  const kk = K_LIST[st.kIdx];
+  setPressed("presets", "preset", st.rule === "hebb" && st.alpha === 1 && kk === 1 ? "model" : st.rule === "proj" && st.alpha === 0.9 && kk === "conv" ? "iter" : "");
   $("pop-hint").textContent = hop
     ? "Current: the cue x_t, the encoder's output at the cell. Next: x_t+k after k recall steps. Update: next minus current. Computed live in this page, exactly for every cell."
     : "The recurrent controller's hidden units, from runs.";
@@ -1288,7 +1448,16 @@ function wireControls() {
   on("stored", "change", () => { st.stored = $("stored").checked; syncControls(); });
   on("nd", "input", () => { st.nd = +$("nd").value; $("nd-out").textContent = st.nd; requestRender(); });
   on("draw", "change", () => { st.draw = +$("draw").value; requestRender(); });
-  on("steps", "input", () => { st.steps = +$("steps").value; $("steps-out").textContent = st.steps; requestRender(); });
+  on("steps", "input", () => { st.kIdx = +$("steps").value; syncControls(); });
+  on("rule", "change", () => { st.rule = $("rule").value; syncControls(); });
+  on("alpha", "input", () => { st.alpha = Math.round(+$("alpha").value * 100) / 100; syncControls(); });
+  on("presets", "click", e => {
+    const b = e.target.closest("button");
+    if (!b) return;
+    if (b.dataset.preset === "model") { st.rule = "hebb"; st.alpha = 1; st.kIdx = 0; }
+    else { st.rule = "proj"; st.alpha = 0.9; st.kIdx = K_LIST.length - 1; }
+    syncControls();
+  });
   on("compare", "change", () => { st.compare = $("compare").value; requestRender(); });
   on("thresh", "input", () => { st.thresh = +$("thresh").value; $("thresh-out").textContent = st.thresh + "%"; requestRender(); });
   on("minsize", "change", () => { st.minSize = Math.max(1, Math.round(+$("minsize").value) || 1); requestRender(); });
@@ -1301,7 +1470,7 @@ function wireControls() {
   on("next", "click", () => { st.page++; requestRender(); });
   on("outlines", "change", () => { st.outlines = $("outlines").checked; requestRender(); });
   on("showtrials", "change", () => { st.showTrials = $("showtrials").checked; requestRender(); });
-  on("showarrows", "change", () => { st.showArrows = $("showarrows").checked; requestRender(); });
+  on("arrows", "change", () => { st.arrows = $("arrows").value; requestRender(); });
   on("d-trial", "change", () => { st.trial = +$("d-trial").value; requestRender(); });
   on("d-canvas", "mousemove", hoverDetail);
   on("d-canvas", "mouseleave", () => { $("d-hover").textContent = "Hover over the map to read a cell."; });
