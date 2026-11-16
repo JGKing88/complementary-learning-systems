@@ -1,0 +1,1339 @@
+<title>Dynamics Tuning Viewer</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+/* Layout: control rail on the left, unit maps in the middle, selected unit on the right; stacks on narrow screens. */
+:root {
+  --bg: #f2f4f7;
+  --surface: #ffffff;
+  --surface-2: #e7ebf0;
+  --fg: #151b24;
+  --muted: #5a6475;
+  --line: #d6dbe3;
+  --ink: #1d2533;
+  --ink-fg: #ffffff;
+  --ring: #c77c00;
+  --nan: #dde1e7;
+  --path: rgba(21, 27, 36, 0.55);
+  --ok: #136038; --ok-bg: #dcf0e4;
+  --bad: #9f2219; --bad-bg: #f9e0dc;
+  --font: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0e1217; --surface: #161b22; --surface-2: #1f262f; --fg: #e4e8ee; --muted: #98a2b1; --line: #2a313b;
+    --ink: #e4e8ee; --ink-fg: #10151c; --ring: #f0b54a; --nan: #252c35; --path: rgba(228, 232, 238, 0.6);
+    --ok: #86d9a9; --ok-bg: #123020; --bad: #ff9d92; --bad-bg: #3b1b17;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0e1217; --surface: #161b22; --surface-2: #1f262f; --fg: #e4e8ee; --muted: #98a2b1; --line: #2a313b;
+  --ink: #e4e8ee; --ink-fg: #10151c; --ring: #f0b54a; --nan: #252c35; --path: rgba(228, 232, 238, 0.6);
+  --ok: #86d9a9; --ok-bg: #123020; --bad: #ff9d92; --bad-bg: #3b1b17;
+  color-scheme: dark;
+}
+body { background: var(--bg); color: var(--fg); font: 14px/1.45 var(--font); }
+.app {
+  max-width: 1720px; margin: 0 auto;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 18px 36px;
+  display: grid; gap: 16px;
+}
+h1 { font-size: 1.35rem; font-weight: 600; margin: 0; letter-spacing: -0.01em; text-wrap: balance; }
+h2 { font-size: 1.05rem; font-weight: 600; margin: 0; text-wrap: balance; }
+h3 { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.07em; color: var(--muted); font-weight: 500; margin: 4px 0 0; }
+p { margin: 0; }
+.mono { font-family: var(--mono); }
+.top { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 16px; }
+.top .sub { color: var(--muted); }
+.layout { display: grid; gap: 16px; grid-template-columns: minmax(0, 1fr); align-items: start; }
+@media (min-width: 760px) {
+  .layout { grid-template-columns: 264px minmax(0, 1fr); }
+  .rail { grid-row: 1 / span 2; }
+}
+@media (min-width: 1240px) {
+  .layout { grid-template-columns: 264px minmax(0, 1fr) 380px; }
+  .rail { grid-row: 1; }
+  .detail { grid-column: 3; grid-row: 1; position: sticky; top: calc(12px + env(safe-area-inset-top, 0px)); max-height: calc(100vh - 24px); overflow-y: auto; }
+}
+.rail { display: grid; gap: 14px; min-width: 0; }
+.panel { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 12px; display: grid; gap: 10px; min-width: 0; }
+.panel > .ptitle { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.07em; color: var(--muted); font-weight: 500; }
+.seg { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; }
+.seg.three { grid-template-columns: 1fr 1fr 1fr; }
+.seg button {
+  font: inherit; font-size: 0.86rem; text-align: left; padding: 6px 8px; border-radius: 5px; cursor: pointer;
+  background: var(--surface-2); color: var(--fg); border: 1px solid transparent;
+}
+.seg button[aria-pressed="true"] { background: var(--ink); color: var(--ink-fg); }
+.seg:not(.three) button:last-child:nth-child(odd) { grid-column: 1 / -1; }
+.seg button:disabled { opacity: 0.45; cursor: not-allowed; }
+.row { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.row label, .lbl { font-size: 0.84rem; color: var(--muted); }
+.row .grow { flex: 1; min-width: 0; }
+.out { font-family: var(--mono); font-size: 0.8rem; min-width: 3.5ch; text-align: right; }
+input[type="number"], select {
+  font: inherit; font-size: 0.86rem; padding: 4px 6px; border-radius: 5px;
+  border: 1px solid var(--line); background: var(--surface); color: var(--fg); min-width: 0;
+}
+input[type="number"] { width: 6.5ch; font-family: var(--mono); }
+select { width: 100%; }
+input[type="range"] { width: 100%; accent-color: var(--ring); }
+input[type="checkbox"] { accent-color: var(--ring); }
+.hint { font-size: 0.76rem; color: var(--muted); }
+.row.off { opacity: 0.45; }
+canvas.arena { width: 100%; aspect-ratio: 1; border-radius: 6px; cursor: crosshair; display: block; touch-action: none; }
+button.plain {
+  font: inherit; font-size: 0.84rem; padding: 5px 10px; border-radius: 5px; cursor: pointer;
+  border: 1px solid var(--line); background: var(--surface); color: var(--fg);
+}
+button.plain:disabled { opacity: 0.45; cursor: not-allowed; }
+button:focus-visible, select:focus-visible, input:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; }
+.main { display: grid; gap: 10px; min-width: 0; }
+.pophead { display: grid; gap: 4px; }
+.pophead p { color: var(--muted); max-width: 86ch; }
+.chip { display: inline-block; font-size: 0.74rem; font-family: var(--mono); padding: 1px 7px; border-radius: 4px; vertical-align: 1px; }
+.chip.ok { color: var(--ok); background: var(--ok-bg); }
+.chip.bad { color: var(--bad); background: var(--bad-bg); }
+.chip.wait { color: var(--muted); background: var(--surface-2); }
+#status { font-size: 0.82rem; color: var(--muted); font-variant-numeric: tabular-nums; min-height: 1.2em; }
+#status.err { color: var(--bad); }
+.pager { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(92px, 1fr)); gap: 8px; }
+.tile {
+  font: inherit; padding: 0; border: 0; background: none; color: inherit; cursor: pointer; text-align: left;
+  display: grid; gap: 3px; min-width: 0; border-radius: 4px;
+}
+.tile canvas, .cmp canvas { width: 100%; aspect-ratio: 1; display: block; border-radius: 3px; image-rendering: pixelated; outline: 1px solid var(--line); outline-offset: -1px; }
+.tile.sel canvas { outline: 3px solid var(--ring); outline-offset: 1px; }
+.tile .cap { display: flex; justify-content: space-between; gap: 4px; font-family: var(--mono); font-size: 0.68rem; color: var(--muted); min-width: 0; }
+.tile .cap span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tile .lab { color: var(--fg); }
+.cmp { display: grid; gap: 6px; }
+.cmp .crow { display: grid; grid-template-columns: 3.4em repeat(var(--n), minmax(0, 1fr)); gap: 6px; align-items: center; }
+.cmp .chead span { font-size: 0.72rem; color: var(--muted); text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cmp .chead span.prim { color: var(--fg); font-weight: 500; }
+.cmp .ulab { font: inherit; font-family: var(--mono); font-size: 0.74rem; color: var(--fg); background: none; border: 0; padding: 0; text-align: left; cursor: pointer; }
+.cmp .crow.sel .ulab { color: var(--ring); font-weight: 600; }
+.cmp .mapbtn { padding: 0; border: 0; background: none; cursor: pointer; display: block; min-width: 0; }
+.cmp .crow.sel canvas { outline: 2px solid var(--ring); outline-offset: 0; }
+.empty { padding: 28px 12px; text-align: center; color: var(--muted); border: 1px dashed var(--line); border-radius: 8px; }
+.detail { display: grid; gap: 10px; min-width: 0; }
+.dhead { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+.dhead h2 { font-size: 0.98rem; }
+.mapwrap { position: relative; width: 100%; aspect-ratio: 1; }
+.mapwrap canvas { position: absolute; inset: 0; width: 100%; height: 100%; border-radius: 4px; }
+#d-canvas, #r-canvas { image-rendering: pixelated; }
+#d-overlay, #r-overlay { pointer-events: none; }
+.cbar { display: grid; gap: 2px; }
+.cbar canvas { width: 100%; height: 10px; border-radius: 2px; display: block; image-rendering: auto; }
+.cbar .ticks { display: flex; justify-content: space-between; font-family: var(--mono); font-size: 0.72rem; color: var(--muted); }
+#d-hover { font-family: var(--mono); font-size: 0.78rem; color: var(--muted); min-height: 1.2em; }
+dl.stats { display: grid; grid-template-columns: auto 1fr; gap: 4px 12px; margin: 0; font-size: 0.84rem; }
+dl.stats dt { color: var(--muted); }
+dl.stats dd { margin: 0; font-family: var(--mono); font-size: 0.8rem; text-align: right; overflow-wrap: anywhere; }
+canvas.spark { width: 100%; height: 84px; display: block; }
+.mems { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; }
+.mems figure { margin: 0; display: grid; gap: 2px; min-width: 0; }
+.mems canvas { width: 100%; aspect-ratio: 1; display: block; border-radius: 3px; image-rendering: pixelated; outline: 1px solid var(--line); outline-offset: -1px; }
+.mems figcaption { font-family: var(--mono); font-size: 0.68rem; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+footer { display: grid; gap: 6px; font-size: 0.8rem; color: var(--muted); }
+footer ul { margin: 0; padding: 0; list-style: none; display: flex; flex-wrap: wrap; gap: 4px 16px; }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+
+<div class="app">
+  <div class="top">
+    <h1>Dynamics tuning</h1>
+    <span class="sub">Controller and Hopfield memory of the Cosyne Agent-HaSH model, in six arenas with four goals each</span>
+  </div>
+
+  <div class="layout">
+    <aside class="rail" aria-label="Controls">
+      <section class="panel" aria-labelledby="t-pop">
+        <div class="ptitle" id="t-pop">Population</div>
+        <div class="seg" id="pops">
+          <button type="button" data-pop="ctrl" aria-pressed="true">Controller</button>
+          <button type="button" data-pop="hop" aria-pressed="false">Hopfield</button>
+        </div>
+        <div class="seg three" id="hstates" hidden>
+          <button type="button" data-hs="cur" aria-pressed="false">Current</button>
+          <button type="button" data-hs="next" aria-pressed="true">Next</button>
+          <button type="button" data-hs="upd" aria-pressed="false">Update</button>
+        </div>
+        <p class="hint" id="pop-hint"></p>
+      </section>
+
+      <section class="panel" aria-labelledby="t-arena">
+        <div class="ptitle" id="t-arena">Arena and goal</div>
+        <div class="seg" id="arenas"></div>
+        <canvas class="arena" id="arena-cv" role="img" aria-label="The arena, its wall barcode and the goals. Click to pick a goal."></canvas>
+        <div class="seg" id="goals"></div>
+        <p class="hint" id="arena-hint"></p>
+      </section>
+
+      <section class="panel" aria-labelledby="t-trials" id="ctrl-panel">
+        <div class="ptitle" id="t-trials">Trials</div>
+        <div class="seg" id="phases">
+          <button type="button" data-phase="0" aria-pressed="false">Explore</button>
+          <button type="button" data-phase="1" aria-pressed="true">Exploit</button>
+        </div>
+        <div class="row">
+          <label for="minvis">Hide cells with fewer visits than</label>
+          <input type="number" id="minvis" min="1" max="1000" step="1" value="1">
+        </div>
+        <p class="hint">Explore: memory empty. Exploit: the goal's pattern is stored. Each trial starts from a fresh RNN state at a random cell and ends when the agent comes within one cell of the goal, or after 200 steps. Actions are sampled. No distractors. Grey cells had too few visits.</p>
+      </section>
+
+      <section class="panel" aria-labelledby="t-mem" id="hop-panel" hidden>
+        <div class="ptitle" id="t-mem">Memory</div>
+        <div class="row"><input type="checkbox" id="stored" checked><label for="stored">Goal stored (exploit); off for explore</label></div>
+        <div class="row">
+          <label for="nd">Distractors</label>
+          <input type="range" class="grow" id="nd" min="0" max="10" step="1" value="0">
+          <span class="out" id="nd-out">0</span>
+        </div>
+        <div class="row">
+          <label for="draw">Draw</label>
+          <select id="draw" class="grow"></select>
+        </div>
+        <div class="row">
+          <label for="steps">Recall steps k</label>
+          <input type="range" class="grow" id="steps" min="1" max="10" step="1" value="1">
+          <span class="out" id="steps-out">1</span>
+        </div>
+        <p class="hint">Distractors are encoder patterns from random scaffold cells outside the arena, drawn by the model's own sampler. Draws are nested: raising the count adds patterns and keeps the earlier ones. The model takes k = 1. Clicking the arena or the large map moves the goal to that cell.</p>
+      </section>
+
+      <section class="panel" aria-labelledby="t-cmp">
+        <div class="ptitle" id="t-cmp">Columns</div>
+        <select id="compare" aria-labelledby="t-cmp"></select>
+        <p class="hint">Each unit gets one map per column, so you can see its tuning change with the goal, the arena or the memory. The highlighted column is the current setting; clicking a map makes its column current.</p>
+      </section>
+
+      <section class="panel" aria-labelledby="t-filt">
+        <div class="ptitle" id="t-filt">Field detection</div>
+        <div class="row">
+          <label for="thresh">Field threshold</label>
+          <input type="range" class="grow" id="thresh" min="5" max="90" step="5" value="20">
+          <span class="out" id="thresh-out">20%</span>
+        </div>
+        <div class="row">
+          <label for="minsize" class="grow">Minimum field size (cells)</label>
+          <input type="number" id="minsize" min="1" max="400" step="1" value="9">
+        </div>
+        <p class="hint">A field is a 4-connected region at or above the threshold fraction of the map's peak, with at least the minimum size. Negative values never count. These set the outlines and field counts, never the map.</p>
+      </section>
+
+      <section class="panel" aria-labelledby="t-view">
+        <div class="ptitle" id="t-view">Units</div>
+        <div class="row">
+          <label for="sort">Sort</label>
+          <select id="sort" class="grow"></select>
+        </div>
+        <div class="row">
+          <button class="plain" id="resort" type="button">Re-sort</button>
+          <span class="hint" id="sort-note"></span>
+        </div>
+        <div class="row" id="silent-row"><input type="checkbox" id="silent" checked><label for="silent">Hide units silent in every column</label></div>
+        <div class="row">
+          <label for="perpage">Per page</label>
+          <select id="perpage" class="grow">
+            <option value="16">16</option><option value="32" selected>32</option>
+            <option value="64">64</option><option value="128">128</option>
+          </select>
+        </div>
+        <div class="row">
+          <label for="scale">Colour scale</label>
+          <select id="scale" class="grow">
+            <option value="map">Each map to its own range</option>
+            <option value="unit" selected>Shared across a unit's maps</option>
+            <option value="page">Shared across the page</option>
+          </select>
+        </div>
+      </section>
+    </aside>
+
+    <section class="main" aria-label="Units">
+      <div class="pophead">
+        <h2 id="pop-title">Loading…</h2>
+        <p id="pop-desc"></p>
+        <p id="pop-beh" class="mono" style="font-size:0.8rem"></p>
+      </div>
+      <div class="pager">
+        <button class="plain" id="prev" type="button" aria-label="Previous page">Previous</button>
+        <span id="pageinfo" class="mono" style="font-size:0.82rem"></span>
+        <button class="plain" id="next" type="button" aria-label="Next page">Next</button>
+      </div>
+      <div id="status" role="status">Loading…</div>
+      <div id="grid"></div>
+    </section>
+
+    <aside class="detail panel" aria-label="Selected unit">
+      <div class="dhead">
+        <h2 id="d-title">Selected unit</h2>
+        <div class="row">
+          <button class="plain" id="d-prev" type="button" aria-label="Previous unit">◀</button>
+          <button class="plain" id="d-next" type="button" aria-label="Next unit">▶</button>
+        </div>
+      </div>
+      <div class="mapwrap">
+        <canvas id="d-canvas" aria-label="Map of the selected unit"></canvas>
+        <canvas id="d-overlay" aria-hidden="true"></canvas>
+      </div>
+      <div class="cbar">
+        <canvas id="d-bar" width="256" height="1" aria-hidden="true"></canvas>
+        <div class="ticks"><span id="d-lo"></span><span id="d-mid"></span><span id="d-hi"></span></div>
+      </div>
+      <div id="d-hover">Hover over the map to read a cell.</div>
+      <div class="row"><input type="checkbox" id="outlines" checked><label for="outlines">Outline fields</label></div>
+      <div class="row" id="trials-row"><input type="checkbox" id="showtrials" checked><label for="showtrials">Example trials, dots coloured by this unit</label></div>
+      <div class="row" id="arrows-row" hidden><input type="checkbox" id="showarrows" checked><label for="showarrows">Readout q as arrows</label></div>
+      <dl class="stats" id="d-stats"></dl>
+
+      <div id="d-ctrl" style="display:grid;gap:8px">
+        <h3>Activity along one trial</h3>
+        <select id="d-trial" aria-label="Example trial"></select>
+        <canvas class="spark" id="d-spark" aria-label="This unit's activity at each step of the chosen trial"></canvas>
+        <p class="hint">The chosen trial is drawn thicker on the map. The line is this unit's activity at each step. Its start is the square marker.</p>
+      </div>
+
+      <div id="d-hop" style="display:grid;gap:8px" hidden>
+        <h3>Readout q, what the controller reads</h3>
+        <div class="mapwrap">
+          <canvas id="r-canvas" aria-label="Length of the readout q at each cell"></canvas>
+          <canvas id="r-overlay" aria-hidden="true"></canvas>
+        </div>
+        <p class="hint" id="r-hint"></p>
+        <h3>Overlap of the current state with each stored pattern</h3>
+        <div class="mems" id="mems"></div>
+        <p class="hint">m · x_t for each stored pattern m at each cell, on one colour scale. The goal pattern overlaps strongly near the goal. Distractors come from elsewhere on the scaffold, so inside the arena they overlap only by chance.</p>
+      </div>
+    </aside>
+  </div>
+
+  <footer>
+    <div id="prov"></div>
+    <div>Hopfield checks: the page's recall and readout against the repo's Python, eight memory settings per arena, run when an arena's Hopfield data loads.</div>
+    <ul id="checks"></ul>
+    <div><button class="plain" id="checkall" type="button">Check every arena</button></div>
+  </footer>
+</div>
+
+<script>
+"use strict";
+const $ = id => document.getElementById(id);
+const DATA = "dynamics_data/";
+const S = 20, N = S * S, P = S + 1;
+const TILE_K = 6;                      // canvas pixels per cell in the grid
+const CMP_STEPS = [1, 2, 3, 5, 10];
+const CMP_DISTS = [0, 1, 3, 10];
+const MEMO_MAX = 10;
+
+let M = null, U = 0, D = 0, C = 2, G = 4;
+const st = {
+  pop: "ctrl", hs: "next", arena: 0, goal: 0, hopGoal: null, phase: 1,
+  stored: true, nd: 0, draw: 0, steps: 1, compare: "one",
+  minVis: 1, thresh: 20, minSize: 9, sort: "unit", hideSilent: true, perPage: 32, scale: "unit",
+  page: 0, sel: 0, outlines: true, showTrials: true, showArrows: true, trial: 0,
+  order: null, orderNote: "",
+};
+
+// ================================================================ small helpers
+function setStatus(msg, isErr) { const s = $("status"); s.textContent = msg; s.classList.toggle("err", !!isErr); }
+function fmtVal(x) {
+  if (!isFinite(x)) return "–";
+  if (x === 0) return "0";
+  const a = Math.abs(x);
+  return (a < 1e-3 || a >= 1e4) ? x.toExponential(2) : x.toPrecision(3);
+}
+const fmtMs = ms => ms >= 1000 ? (ms / 1000).toFixed(2) + " s" : Math.round(ms) + " ms";
+const pct = x => (100 * x).toFixed(0) + "%";
+function arenaName(a) { const r = M.arenas[a]; return (r.kind === "train" ? "Training " : "Held out ") + r.index; }
+function cellStr(c) { return "(" + c[0] + ", " + c[1] + ")"; }
+function goalCellOf(g) { return M.goals[g]; }
+function curGoalCell() { return st.pop === "hop" && st.hopGoal ? st.hopGoal : goalCellOf(st.goal); }
+
+// ================================================================ colour
+const SEQ_LIGHT = ["#cde2fb", "#b7d3f6", "#9ec5f4", "#86b6ef", "#6da7ec", "#5598e7", "#3987e5",
+                   "#2a78d6", "#256abf", "#1c5cab", "#184f95", "#104281", "#0d366b"];
+const SEQ_DARK = SEQ_LIGHT.slice().reverse();
+const DIV_LIGHT = ["#0d366b", "#1c5cab", "#3987e5", "#9ec5f4", "#f0efec", "#f3b4ad", "#e8706b", "#c5383a", "#7a1b1d"];
+const DIV_DARK = ["#b7d3f6", "#6da7ec", "#2a78d6", "#184f95", "#383835", "#8f2526", "#c5383a", "#e8706b", "#f3b4ad"];
+const OUTLINE = "#ffb000";
+const hexRgb = h => { const n = parseInt(h.slice(1), 16); return [(n >> 16) & 255, (n >> 8) & 255, n & 255]; };
+const toLin = c => { c /= 255; return c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4); };
+const toSrgb = c => { const v = c <= 0.0031308 ? 12.92 * c : 1.055 * Math.pow(c, 1 / 2.4) - 0.055; return Math.round(Math.max(0, Math.min(1, v)) * 255); };
+function makeLut(stops) {
+  const lin = stops.map(h => hexRgb(h).map(toLin)), lut = new Uint8ClampedArray(256 * 3), last = stops.length - 1;
+  for (let i = 0; i < 256; i++) {
+    const t = i / 255 * last, k = Math.min(Math.floor(t), last - 1), f = t - k;
+    for (let ch = 0; ch < 3; ch++) lut[i * 3 + ch] = toSrgb(lin[k][ch] * (1 - f) + lin[k + 1][ch] * f);
+  }
+  return lut;
+}
+function isDark() {
+  const t = document.documentElement.getAttribute("data-theme");
+  if (t === "dark") return true;
+  if (t === "light") return false;
+  return window.matchMedia("(prefers-color-scheme: dark)").matches;
+}
+let LUT = null, COL = null;
+function cssColor(name) {
+  const probe = document.createElement("span");
+  probe.style.color = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+  document.body.appendChild(probe);
+  const m = getComputedStyle(probe).color.match(/[\d.]+/g).map(Number);
+  probe.remove();
+  return m;
+}
+function buildLuts() {
+  const d = isDark(), cs = getComputedStyle(document.documentElement);
+  LUT = { seq: makeLut(d ? SEQ_DARK : SEQ_LIGHT), div: makeLut(d ? DIV_DARK : DIV_LIGHT) };
+  COL = {
+    nan: cssColor("--nan"), fg: cs.getPropertyValue("--fg").trim(), muted: cs.getPropertyValue("--muted").trim(),
+    line: cs.getPropertyValue("--line").trim(), ring: cs.getPropertyValue("--ring").trim(),
+    path: cs.getPropertyValue("--path").trim(), surface2: cs.getPropertyValue("--surface-2").trim(),
+  };
+}
+
+// ================================================================ data
+async function fetchText(u) { const r = await fetch(u); if (!r.ok) throw new Error(u + ": HTTP " + r.status); return r.text(); }
+function b64Bytes(t) { const bin = atob(t.trim()), u8 = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) u8[i] = bin.charCodeAt(i); return u8; }
+async function fileArr(name) {
+  const f = M.files[name];
+  if (!f) throw new Error("missing file " + name);
+  const u8 = b64Bytes(await fetchText(DATA + name + ".b64.txt"));
+  if (f.dtype === "uint8") return u8;
+  if (f.dtype === "uint16") return new Uint16Array(u8.buffer);
+  if (f.dtype === "float32") return new Float32Array(u8.buffer);
+  throw new Error("unknown dtype " + f.dtype);
+}
+const cache = { ctrl: [], hop: [] }, hopDone = [];
+function loadCtrl(a) {
+  if (!cache.ctrl[a]) {
+    cache.ctrl[a] = (async () => {
+      const names = ["ctrl_a", "ctrl_a{}_scale", "count_a", "ex_a{}_pos", "ex_a{}_q", "ex_a{}_h", "ex_a{}_hscale"]
+        .map(n => n.includes("{}") ? n.replace("{}", a) : n + a);
+      const [maps, scale, count, pos, q, h, hs] = await Promise.all(names.map(fileArr));
+      let off = 0;
+      const ex = M.arenas[a].examples.map(e => { const r = Object.assign({ off }, e); off += e.len; return r; });
+      return { maps, scale, count, pos, q, h, hs, ex };
+    })();
+    cache.ctrl[a].catch(() => { cache.ctrl[a] = null; });
+  }
+  return cache.ctrl[a];
+}
+function loadHop(a) {
+  if (!cache.hop[a]) {
+    cache.hop[a] = (async () => {
+      const [cue, dist, cq, cx] = await Promise.all(["cue_a" + a, "dist_a" + a, "chk_a" + a + "_q", "chk_a" + a + "_x"].map(fileArr));
+      const H = buildHop(a, cue, dist);
+      H.check = runCheck(H, cq, cx);
+      hopDone[a] = H;
+      renderChecks();
+      return H;
+    })();
+    cache.hop[a].catch(() => { cache.hop[a] = null; });
+  }
+  return cache.hop[a];
+}
+
+// ================================================================ Hopfield
+// Cells are x-major: cell i = x * S + y. The cue patch is (P, P, D) with the same order.
+function buildHop(a, cue, dist) {
+  const X0 = new Float32Array(N * D), FE = new Float32Array(N * D), FN = new Float32Array(N * D);
+  const df = new Float64Array(D), dr = new Float64Array(D);
+  for (let x = 0; x < S; x++) for (let y = 0; y < S; y++) {
+    const i = x * S + y, c = (x * P + y) * D, n = (x * P + y + 1) * D, e = ((x + 1) * P + y) * D;
+    let n1 = 0;
+    for (let k = 0; k < D; k++) {
+      X0[i * D + k] = cue[c + k];
+      df[k] = cue[n + k] - cue[c + k];
+      dr[k] = cue[e + k] - cue[c + k];
+      n1 += df[k] * df[k];
+    }
+    n1 = Math.max(Math.sqrt(n1), 1e-12);
+    let p = 0;
+    for (let k = 0; k < D; k++) { df[k] /= n1; p += dr[k] * df[k]; }
+    let n2 = 0;
+    for (let k = 0; k < D; k++) { dr[k] -= p * df[k]; n2 += dr[k] * dr[k]; }
+    n2 = Math.max(Math.sqrt(n2), 1e-12);
+    for (let k = 0; k < D; k++) { FN[i * D + k] = df[k]; FE[i * D + k] = dr[k] / n2; }
+  }
+  return { a, cue, dist, X0, FE, FN, memo: new Map() };
+}
+function normalized(src, off) {
+  const v = new Float64Array(D);
+  let n = 0;
+  for (let k = 0; k < D; k++) { v[k] = src[off + k]; n += v[k] * v[k]; }
+  n = Math.max(Math.sqrt(n), 1e-12);
+  for (let k = 0; k < D; k++) v[k] /= n;
+  return v;
+}
+// mem: { goal: [x, y] or null, nd, draw }
+function memKey(mem) { return (mem.goal ? mem.goal.join(",") : "-") + "|" + mem.nd + "|" + mem.draw; }
+function memPatterns(H, mem) {
+  const pats = [], labels = [];
+  if (mem.goal) { pats.push(normalized(H.cue, (mem.goal[0] * P + mem.goal[1]) * D)); labels.push("goal"); }
+  for (let j = 0; j < mem.nd; j++) { pats.push(normalized(H.dist, ((mem.draw * M.d_max) + j) * D)); labels.push("d" + (j + 1)); }
+  return { pats, labels };
+}
+function memEntry(H, mem) {
+  const key = memKey(mem);
+  let e = H.memo.get(key);
+  if (e) { H.memo.delete(key); H.memo.set(key, e); return e; }
+  const { pats, labels } = memPatterns(H, mem), K = pats.length;
+  const PM = new Float64Array(K * D), diag = new Float64Array(D);
+  pats.forEach((v, j) => { for (let k = 0; k < D; k++) { PM[j * D + k] = v[k]; diag[k] += v[k] * v[k]; } });
+  // Overlap of each stored pattern with the cue at every cell.
+  const ov = new Float64Array(K * N);
+  for (let i = 0; i < N; i++) for (let j = 0; j < K; j++) {
+    let s = 0;
+    for (let k = 0; k < D; k++) s += PM[j * D + k] * H.X0[i * D + k];
+    ov[j * N + i] = s;
+  }
+  e = { key, K, PM, diag, labels, ov, states: [], q: [] };
+  H.memo.set(key, e);
+  while (H.memo.size > MEMO_MAX) H.memo.delete(H.memo.keys().next().value);
+  return e;
+}
+// x <- normalize((1 - a) x + a tanh(beta W x)), W = scale * sum_j m_j m_j^T with a zero diagonal.
+function recallTo(H, e, k) {
+  if (e.K === 0) return;
+  const hp = M.hopfield, scale = hp.scale, beta = hp.beta, alpha = hp.alpha, K = e.K, PM = e.PM, diag = e.diag;
+  const dots = new Float64Array(K), y = new Float64Array(D);
+  while (e.states.length < k) {
+    const X = e.states.length ? e.states[e.states.length - 1] : H.X0, Y = new Float32Array(N * D);
+    for (let i = 0; i < N; i++) {
+      const o = i * D;
+      for (let j = 0; j < K; j++) {
+        let s = 0;
+        for (let kk = 0; kk < D; kk++) s += PM[j * D + kk] * X[o + kk];
+        dots[j] = s;
+      }
+      let nrm = 0;
+      for (let kk = 0; kk < D; kk++) {
+        let h = hp.zero_diag ? -diag[kk] * X[o + kk] : 0;
+        for (let j = 0; j < K; j++) h += PM[j * D + kk] * dots[j];
+        const v = (1 - alpha) * X[o + kk] + alpha * Math.tanh(beta * scale * h);
+        y[kk] = v; nrm += v * v;
+      }
+      nrm = Math.max(Math.sqrt(nrm), 1e-12);
+      for (let kk = 0; kk < D; kk++) Y[o + kk] = y[kk] / nrm;
+    }
+    e.states.push(Y);
+  }
+}
+// q after k steps: the local East and North components of x_{t+k} - x_t.
+function readout(H, e, k) {
+  if (e.K === 0) return new Float64Array(2 * N);
+  if (e.q[k]) return e.q[k];
+  recallTo(H, e, k);
+  const X = e.states[k - 1], q = new Float64Array(2 * N);
+  for (let i = 0; i < N; i++) {
+    const o = i * D;
+    let qe = 0, qn = 0;
+    for (let kk = 0; kk < D; kk++) { const d = X[o + kk] - H.X0[o + kk]; qe += H.FE[o + kk] * d; qn += H.FN[o + kk] * d; }
+    q[2 * i] = qe; q[2 * i + 1] = qn;
+  }
+  e.q[k] = q;
+  return q;
+}
+function runCheck(H, cq, cx) {
+  const cfgs = M.arenas[H.a].check_configs, cells = M.arenas[H.a].check_cells, nc = cells.length;
+  let qErr = 0, qMax = 0, xErr = 0;
+  cfgs.forEach(([g, nd, draw, k], j) => {
+    const e = memEntry(H, { goal: g >= 0 ? goalCellOf(g) : null, nd, draw });
+    const q = readout(H, e, k);
+    for (let i = 0; i < 2 * N; i++) { qErr = Math.max(qErr, Math.abs(q[i] - cq[j * 2 * N + i])); qMax = Math.max(qMax, Math.abs(cq[j * 2 * N + i])); }
+    if (e.K === 0) return;
+    const X = e.states[k - 1];
+    cells.forEach((cell, ci) => {
+      for (let kk = 0; kk < D; kk++) xErr = Math.max(xErr, Math.abs(X[cell * D + kk] - cx[(j * nc + ci) * D + kk]));
+    });
+  });
+  const ok = qErr <= 1e-5 * Math.max(1, qMax) && xErr <= 1e-5;
+  return { ok, qErr, xErr, qMax, n: cfgs.length };
+}
+
+// ================================================================ columns: what each map shows
+function hopMem(goalCell) { return { goal: st.stored ? goalCell : null, nd: st.nd, draw: st.draw }; }
+function baseCol() {
+  if (st.pop === "ctrl") return { pop: "ctrl", arena: st.arena, goal: st.goal, phase: st.phase };
+  return { pop: "hop", arena: st.arena, goalCell: curGoalCell(), goalIdx: st.hopGoal ? -1 : st.goal, mem: hopMem(curGoalCell()), steps: st.steps, hs: st.hs };
+}
+function columns() {
+  const b = baseCol(), cols = [];
+  const ctrlLike = (patch, label, prim) => Object.assign({}, b, patch, { label, prim });
+  if (st.compare === "one") return [Object.assign(b, { label: "", prim: true })];
+  if (st.compare === "goals") {
+    for (let g = 0; g < G; g++) {
+      if (b.pop === "ctrl") cols.push(ctrlLike({ goal: g }, "Goal " + cellStr(M.goals[g]), g === st.goal));
+      else cols.push(ctrlLike({ goalCell: M.goals[g], goalIdx: g, mem: hopMem(M.goals[g]) }, "Goal " + cellStr(M.goals[g]), !st.hopGoal && g === st.goal));
+    }
+  } else if (st.compare === "arenas") {
+    for (let a = 0; a < M.arenas.length; a++) cols.push(ctrlLike({ arena: a }, arenaName(a), a === st.arena));
+  } else if (st.compare === "phases") {
+    cols.push(ctrlLike({ phase: 0 }, "Explore", st.phase === 0), ctrlLike({ phase: 1 }, "Exploit", st.phase === 1));
+  } else if (st.compare === "dists") {
+    for (const d of CMP_DISTS) cols.push(ctrlLike({ mem: Object.assign({}, b.mem, { nd: d }) }, d + " distractor" + (d === 1 ? "" : "s"), d === st.nd));
+  } else if (st.compare === "steps") {
+    for (const k of CMP_STEPS) cols.push(ctrlLike({ steps: k }, "k = " + k, k === st.steps));
+  }
+  return cols;
+}
+const COMPARE = {
+  ctrl: [["one", "One map per unit"], ["goals", "Across the four goals"], ["arenas", "Across the six arenas"], ["phases", "Explore and exploit"]],
+  hop: [["one", "One map per unit"], ["goals", "Across the four goals"], ["arenas", "Across the six arenas"], ["dists", "Across distractor counts"], ["steps", "Across recall steps"]],
+};
+
+// A column's data, once loaded: getMap(u, dest) fills dest (length N, NaN for no data) or returns false.
+async function prepare(cols) {
+  const out = [];
+  for (const col of cols) {
+    if (col.pop === "ctrl") {
+      const d = await loadCtrl(col.arena);
+      out.push(ctrlSource(col, d));
+    } else {
+      const H = await loadHop(col.arena);
+      out.push(hopSource(col, H));
+    }
+  }
+  return out;
+}
+function ctrlSource(col, d) {
+  const gc = col.goal * C + col.phase, minVis = st.minVis;
+  const cnt = d.count.subarray(gc * N, gc * N + N);
+  return {
+    col, signed: false, d, cnt,
+    silent(u) { return !(d.scale[(gc * U + u) * 2 + 1] > 1e-9); },
+    getMap(u, dest) {
+      const base = (gc * U + u) * N, lo = d.scale[(gc * U + u) * 2], hi = d.scale[(gc * U + u) * 2 + 1], sp = (hi - lo) / 254;
+      for (let i = 0; i < N; i++) {
+        const q = d.maps[base + i];
+        dest[i] = (q === 255 || cnt[i] < minVis) ? NaN : lo + q * sp;
+      }
+      return true;
+    },
+  };
+}
+function hopSource(col, H) {
+  const e = memEntry(H, col.mem), k = col.steps, hs = col.hs;
+  if (hs !== "cur" && e.K > 0) recallTo(H, e, k);
+  const X = hs === "cur" ? H.X0 : e.states[k - 1];
+  return {
+    col, signed: true, H, e,
+    silent() { return false; },
+    getMap(u, dest) {
+      if (hs !== "cur" && e.K === 0) return false;
+      if (hs === "upd") for (let i = 0; i < N; i++) dest[i] = X[i * D + u] - H.X0[i * D + u];
+      else for (let i = 0; i < N; i++) dest[i] = X[i * D + u];
+      return true;
+    },
+  };
+}
+
+// ================================================================ per-map statistics and fields
+const scratch = { stack: new Int32Array(N) };
+function analyse(v, filt, labels) {
+  let vmin = Infinity, vmax = -Infinity, tot = 0, totAbs = 0, n = 0, peak = -Infinity, peakI = -1;
+  for (let i = 0; i < N; i++) {
+    const x = v[i];
+    if (x !== x) continue;
+    n++; tot += x; totAbs += Math.abs(x);
+    if (x < vmin) vmin = x;
+    if (x > vmax) vmax = x;
+    if (x > peak) { peak = x; peakI = i; }
+  }
+  let nFields = 0, maxField = 0, fieldCells = 0;
+  const keep = [false];
+  if (labels) labels.fill(0);
+  if (peak > 0 && filt) {
+    const lab = labels || (scratch.labels = scratch.labels || new Int32Array(N));
+    if (!labels) lab.fill(0);
+    const thr = filt.thresh / 100 * peak, stack = scratch.stack;
+    let next = 1;
+    for (let i = 0; i < N; i++) {
+      if (lab[i] !== 0 || !(v[i] >= thr)) continue;
+      let sp = 0, size = 0;
+      stack[sp++] = i; lab[i] = next;
+      while (sp) {
+        const j = stack[--sp], x = (j / S) | 0, y = j - x * S;
+        size++;
+        if (y > 0 && lab[j - 1] === 0 && v[j - 1] >= thr) { lab[j - 1] = next; stack[sp++] = j - 1; }
+        if (y < S - 1 && lab[j + 1] === 0 && v[j + 1] >= thr) { lab[j + 1] = next; stack[sp++] = j + 1; }
+        if (x > 0 && lab[j - S] === 0 && v[j - S] >= thr) { lab[j - S] = next; stack[sp++] = j - S; }
+        if (x < S - 1 && lab[j + S] === 0 && v[j + S] >= thr) { lab[j + S] = next; stack[sp++] = j + S; }
+      }
+      const ok = size >= filt.minSize;
+      keep.push(ok);
+      if (ok) { nFields++; fieldCells += size; if (size > maxField) maxField = size; }
+      next++;
+    }
+  }
+  const px = peakI < 0 ? -1 : (peakI / S) | 0, py = peakI < 0 ? -1 : peakI - px * S;
+  return {
+    n, vmin: n ? vmin : NaN, vmax: n ? vmax : NaN, mean: n ? tot / n : NaN, meanAbs: n ? totAbs / n : NaN,
+    peak: n ? peak : NaN, peakCell: peakI < 0 ? null : [px, py], peakKey: peakI < 0 ? NaN : (S - 1 - py) * S + px,
+    nFields: filt ? nFields : NaN, maxField: filt && nFields ? maxField : (filt ? 0 : NaN), keep,
+  };
+}
+function filt() { return { thresh: st.thresh, minSize: st.minSize }; }
+
+// Pearson correlation of A[x, y] with B[x + dx, y + dy] over cells where both have data.
+function corrShift(A, B, dx, dy) {
+  let n = 0, sa = 0, sb = 0, saa = 0, sbb = 0, sab = 0;
+  for (let x = 0; x < S; x++) {
+    const xb = x + dx;
+    if (xb < 0 || xb >= S) continue;
+    for (let y = 0; y < S; y++) {
+      const yb = y + dy;
+      if (yb < 0 || yb >= S) continue;
+      const a = A[x * S + y], b = B[xb * S + yb];
+      if (a !== a || b !== b) continue;
+      n++; sa += a; sb += b; saa += a * a; sbb += b * b; sab += a * b;
+    }
+  }
+  if (n < 10) return NaN;
+  const cov = sab - sa * sb / n, va = saa - sa * sa / n, vb = sbb - sb * sb / n;
+  return va > 0 && vb > 0 ? cov / Math.sqrt(va * vb) : NaN;
+}
+function meanFinite(xs) { const f = xs.filter(isFinite); return f.length ? f.reduce((s, x) => s + x, 0) / f.length : NaN; }
+// Agreement of one controller unit's maps across the four goals: in room coordinates, and after
+// shifting each map so its goal sits at the origin.
+function lockScores(d, u, phase) {
+  const maps = [];
+  for (let g = 0; g < G; g++) {
+    const src = ctrlSource({ goal: g, phase }, d), v = new Float64Array(N);
+    src.getMap(u, v);
+    maps.push(v);
+  }
+  const room = [], goal = [];
+  for (let g = 0; g < G; g++) for (let h = g + 1; h < G; h++) {
+    room.push(corrShift(maps[g], maps[h], 0, 0));
+    goal.push(corrShift(maps[g], maps[h], M.goals[h][0] - M.goals[g][0], M.goals[h][1] - M.goals[g][1]));
+  }
+  return { room: meanFinite(room), goal: meanFinite(goal) };
+}
+
+// ================================================================ drawing
+function paintMap(cv, v, lo, hi, lut, k) {
+  const W = S * k;
+  if (cv.width !== W || cv.height !== W) { cv.width = W; cv.height = W; cv._img = null; }
+  const ctx = cv._ctx || (cv._ctx = cv.getContext("2d"));
+  const img = cv._img || (cv._img = ctx.createImageData(W, W)), dd = img.data;
+  const span = hi - lo, flat = !(span > 0), mid = lo < 0 ? 0.5 : 0, nan = COL.nan;
+  for (let x = 0; x < S; x++) for (let y = 0; y < S; y++) {
+    const val = v ? v[x * S + y] : NaN;
+    let r, g, b;
+    if (val !== val) { r = nan[0]; g = nan[1]; b = nan[2]; }
+    else {
+      let t = flat ? mid : (val - lo) / span;
+      t = t < 0 ? 0 : t > 1 ? 1 : t;
+      const li = ((t * 255 + 0.5) | 0) * 3;
+      r = lut[li]; g = lut[li + 1]; b = lut[li + 2];
+    }
+    const row0 = (S - 1 - y) * k, col0 = x * k;
+    for (let dy = 0; dy < k; dy++) {
+      let o = ((row0 + dy) * W + col0) * 4;
+      for (let dx = 0; dx < k; dx++, o += 4) { dd[o] = r; dd[o + 1] = g; dd[o + 2] = b; dd[o + 3] = 255; }
+    }
+  }
+  ctx.putImageData(img, 0, 0);
+  return ctx;
+}
+// The goal region: a circle of the goal radius around the goal cell's centre.
+function markGoal(ctx, cell, k, scale) {
+  if (!cell) return;
+  const cx = (cell[0] + 0.5) * k, cy = (S - 0.5 - cell[1]) * k, r = M.goal_radius * k;
+  ctx.save();
+  ctx.beginPath(); ctx.arc(cx, cy, r, 0, 2 * Math.PI);
+  ctx.lineWidth = 2.6 * scale; ctx.strokeStyle = "rgba(0,0,0,0.7)"; ctx.stroke();
+  ctx.lineWidth = 1.2 * scale; ctx.strokeStyle = "#ffffff"; ctx.stroke();
+  ctx.restore();
+}
+function rangeOf(stats, signed) {
+  if (signed) { let a = 0; for (const r of stats) if (r) a = Math.max(a, Math.abs(r.vmin) || 0, Math.abs(r.vmax) || 0); return [-a, a]; }
+  let hi = 0; for (const r of stats) if (r && r.vmax > hi) hi = r.vmax;
+  return [0, hi];
+}
+function sizeOverlay(cv) {
+  const dpr = window.devicePixelRatio || 1, px = Math.max(1, Math.round(cv.clientWidth * dpr));
+  if (cv.width !== px || cv.height !== px) { cv.width = px; cv.height = px; }
+  const ctx = cv.getContext("2d");
+  ctx.clearRect(0, 0, px, px);
+  return { ctx, px, k: px / S, dpr };
+}
+function drawOutlines(ctx, labels, keep, k, dpr) {
+  ctx.strokeStyle = OUTLINE; ctx.lineWidth = Math.max(1.5, 2 * dpr); ctx.lineCap = "square";
+  ctx.beginPath();
+  for (let x = 0; x < S; x++) for (let y = 0; y < S; y++) {
+    const i = x * S + y, L = labels[i];
+    if (!L || !keep[L]) continue;
+    const left = x * k, top = (S - 1 - y) * k;
+    if (x === 0 || labels[i - S] !== L) { ctx.moveTo(left, top); ctx.lineTo(left, top + k); }
+    if (x === S - 1 || labels[i + S] !== L) { ctx.moveTo(left + k, top); ctx.lineTo(left + k, top + k); }
+    if (y === S - 1 || labels[i + 1] !== L) { ctx.moveTo(left, top); ctx.lineTo(left + k, top); }
+    if (y === 0 || labels[i - 1] !== L) { ctx.moveTo(left, top + k); ctx.lineTo(left + k, top + k); }
+  }
+  ctx.stroke();
+}
+function drawColorbar(lut, lo, hi) {
+  const cv = $("d-bar"), ctx = cv.getContext("2d"), img = ctx.createImageData(256, 1);
+  for (let i = 0; i < 256; i++) { img.data[i * 4] = lut[i * 3]; img.data[i * 4 + 1] = lut[i * 3 + 1]; img.data[i * 4 + 2] = lut[i * 3 + 2]; img.data[i * 4 + 3] = 255; }
+  ctx.putImageData(img, 0, 0);
+  $("d-lo").textContent = fmtVal(lo); $("d-mid").textContent = fmtVal((lo + hi) / 2); $("d-hi").textContent = fmtVal(hi);
+}
+function lutOf(src) { return src.signed ? LUT.div : LUT.seq; }
+
+// The arena schematic: the four walls' barcodes (N, E, S, W; one stripe per segment), the goals.
+function drawArena() {
+  if (!M) return;
+  const cv = $("arena-cv"), dpr = window.devicePixelRatio || 1, px = Math.max(1, Math.round(cv.clientWidth * dpr));
+  if (cv.width !== px || cv.height !== px) { cv.width = px; cv.height = px; }
+  const ctx = cv.getContext("2d"), m = 1.3, k = px / (S + 2 * m), res = M.wall_resolution, nseg = S * res;
+  const X = x => (m + x + 0.5) * k, Y = y => (m + S - 0.5 - y) * k;
+  ctx.clearRect(0, 0, px, px);
+  ctx.fillStyle = COL.surface2; ctx.fillRect(m * k, m * k, S * k, S * k);
+  ctx.strokeStyle = COL.line; ctx.lineWidth = 1;
+  for (let i = 1; i < S; i++) {
+    ctx.beginPath(); ctx.moveTo((m + i) * k, m * k); ctx.lineTo((m + i) * k, (m + S) * k); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(m * k, (m + i) * k); ctx.lineTo((m + S) * k, (m + i) * k); ctx.stroke();
+  }
+  const wc = M.arenas[st.arena].wall_code, w = 0.8 * k, dark = isDark() ? "#e4e8ee" : "#1d2533", light = isDark() ? "#3a434f" : "#c9d0da";
+  for (let s = 0; s < nseg; s++) {
+    const a0 = s / res - 0.5, a1 = (s + 1) / res - 0.5;
+    const seg = (wall, x0, y0, x1, y1) => { ctx.fillStyle = wc[wall][s] > 0 ? dark : light; ctx.fillRect(x0, y0, x1 - x0, y1 - y0); };
+    seg(0, (m + a0 + 0.5) * k, m * k - w, (m + a1 + 0.5) * k, m * k);                      // N: along x
+    seg(2, (m + a0 + 0.5) * k, (m + S) * k, (m + a1 + 0.5) * k, (m + S) * k + w);          // S: along x
+    seg(1, (m + S) * k, (m + S - a1 - 0.5) * k, (m + S) * k + w, (m + S - a0 - 0.5) * k);  // E: along y
+    seg(3, m * k - w, (m + S - a1 - 0.5) * k, m * k, (m + S - a0 - 0.5) * k);              // W: along y
+  }
+  M.goals.forEach((g, i) => {
+    const on = !(st.pop === "hop" && st.hopGoal) && i === st.goal;
+    ctx.beginPath(); ctx.arc(X(g[0]), Y(g[1]), (on ? 0.62 : 0.42) * k, 0, 2 * Math.PI);
+    ctx.fillStyle = on ? COL.ring : COL.muted; ctx.fill();
+  });
+  if (st.pop === "hop" && st.hopGoal) {
+    ctx.beginPath(); ctx.arc(X(st.hopGoal[0]), Y(st.hopGoal[1]), 0.62 * k, 0, 2 * Math.PI);
+    ctx.fillStyle = COL.ring; ctx.fill();
+  }
+  const own = M.arenas[st.arena].own_goal;
+  ctx.strokeStyle = COL.fg; ctx.lineWidth = 1.5 * dpr;
+  ctx.beginPath(); ctx.moveTo(X(own[0]) - 0.35 * k, Y(own[1]) - 0.35 * k); ctx.lineTo(X(own[0]) + 0.35 * k, Y(own[1]) + 0.35 * k);
+  ctx.moveTo(X(own[0]) + 0.35 * k, Y(own[1]) - 0.35 * k); ctx.lineTo(X(own[0]) - 0.35 * k, Y(own[1]) + 0.35 * k); ctx.stroke();
+}
+function arenaCellAt(ev) {
+  const cv = $("arena-cv"), r = cv.getBoundingClientRect(), m = 1.3, k = r.width / (S + 2 * m);
+  const x = Math.floor((ev.clientX - r.left) / k - m), y = S - 1 - Math.floor((ev.clientY - r.top) / k - m);
+  return x >= 0 && x < S && y >= 0 && y < S ? [x, y] : null;
+}
+
+// ================================================================ sorting
+const SORTS = {
+  unit: { label: "Unit order" },
+  random: { label: "Random" },
+  active: { label: "Most active", key: r => r.meanAbs, desc: true },
+  peak: { label: "Peak position", key: r => r.peakKey, desc: false },
+  fields: { label: "Most fields", key: r => r.nFields, desc: true },
+  largest: { label: "Largest field", key: r => r.maxField, desc: true },
+  room: { label: "Most stable across goals (room)", ctrl: true, desc: true },
+  goal: { label: "Most goal-anchored", ctrl: true, desc: true },
+};
+function mulberry32(seed) {
+  return () => { seed |= 0; seed = seed + 0x6D2B79F5 | 0; let t = Math.imul(seed ^ seed >>> 15, 1 | seed); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; };
+}
+async function computeSort() {
+  const key = st.sort, s = SORTS[key], idx = Array.from({ length: U }, (_, u) => u);
+  const where = () => st.pop === "ctrl"
+    ? arenaName(st.arena) + ", goal " + cellStr(M.goals[st.goal]) + ", " + (st.phase ? "exploit" : "explore")
+    : arenaName(st.arena) + ", goal " + cellStr(curGoalCell());
+  if (key === "unit") { st.order = idx; st.orderNote = ""; return; }
+  if (key === "random") {
+    const rnd = mulberry32(12345);
+    for (let i = U - 1; i > 0; i--) { const j = Math.floor(rnd() * (i + 1)); [idx[i], idx[j]] = [idx[j], idx[i]]; }
+    st.order = idx; st.orderNote = "Fixed shuffle."; return;
+  }
+  const keys = new Float64Array(U);
+  if (s.ctrl) {
+    if (st.pop !== "ctrl") { st.sort = "unit"; $("sort").value = "unit"; st.order = idx; st.orderNote = ""; return; }
+    const d = await loadCtrl(st.arena);
+    for (let u = 0; u < U; u++) { const L = lockScores(d, u, st.phase); keys[u] = key === "room" ? L.room : L.goal - L.room; }
+    st.orderNote = "Sorted for " + arenaName(st.arena) + ", " + (st.phase ? "exploit" : "explore") + (key === "goal" ? ", by goal-centred minus room agreement." : ".");
+  } else {
+    const [src] = await prepare([baseCol()]), v = new Float64Array(N), f = filt();
+    for (let u = 0; u < U; u++) { keys[u] = src.getMap(u, v) ? s.key(analyse(v, f, null)) : NaN; }
+    st.orderNote = "Sorted for " + where() + ".";
+  }
+  idx.sort((a, b) => {
+    const ka = keys[a], kb = keys[b], fa = isFinite(ka), fb = isFinite(kb);
+    if (fa !== fb) return fa ? -1 : 1;
+    if (!fa || ka === kb) return a - b;
+    return s.desc ? kb - ka : ka - kb;
+  });
+  st.order = idx;
+}
+async function resort() {
+  try { setStatus("Sorting…"); await computeSort(); $("sort-note").textContent = st.orderNote; st.page = 0; requestRender(); }
+  catch (e) { setStatus(String(e.message || e), true); }
+}
+
+// ================================================================ main render
+let renderToken = 0, pending = false;
+function requestRender() { if (pending) return; pending = true; requestAnimationFrame(() => { pending = false; render(); }); }
+async function render() {
+  const tok = ++renderToken, t0 = performance.now();
+  try {
+    const cols = columns();
+    const need = cols.filter(c => !(c.pop === "ctrl" ? cache.ctrl[c.arena] : hopDone[c.arena])).map(c => c.arena);
+    if (need.length) setStatus("Loading " + (new Set(need).size > 1 ? new Set(need).size + " arenas" : arenaName(need[0])) + (cols[0].pop === "hop" ? " and checking the Hopfield against Python" : "") + "…");
+    const srcs = await prepare(cols);
+    if (tok !== renderToken) return;
+    drawPage(srcs, performance.now() - t0);
+    renderDetail(srcs);
+  } catch (e) {
+    console.error(e);
+    if (tok === renderToken) setStatus(String(e.message || e), true);
+  }
+}
+function visibleUnits(srcs) {
+  const order = st.order || Array.from({ length: U }, (_, u) => u);
+  if (!(st.hideSilent && st.pop === "ctrl")) return { list: order, hidden: 0 };
+  const list = order.filter(u => srcs.some(s => !s.silent(u)));
+  return { list, hidden: order.length - list.length };
+}
+function drawPage(srcs, ms) {
+  const cols = srcs.map(s => s.col), nc = cols.length, { list, hidden } = visibleUnits(srcs);
+  const pages = Math.max(1, Math.ceil(list.length / st.perPage));
+  st.page = Math.min(Math.max(0, st.page), pages - 1);
+  const units = list.slice(st.page * st.perPage, (st.page + 1) * st.perPage);
+  if (!list.includes(st.sel) && units.length) st.sel = units[0];
+  $("pageinfo").textContent = list.length ? "units " + (st.page * st.perPage + 1) + "–" + (st.page * st.perPage + units.length) + " of " + list.length : "no units";
+  $("prev").disabled = st.page === 0; $("next").disabled = st.page >= pages - 1;
+  renderHead(srcs);
+
+  // Maps and their statistics for every unit and column on the page.
+  const f = filt(), maps = [], stats = [];
+  for (const u of units) {
+    const mrow = [], srow = [];
+    for (const s of srcs) {
+      const v = new Float64Array(N), ok = s.getMap(u, v);
+      mrow.push(ok ? v : null); srow.push(ok ? analyse(v, null, null) : null);
+    }
+    maps.push(mrow); stats.push(srow);
+  }
+  const signed = srcs[0].signed, lut = lutOf(srcs[0]);
+  const pageRange = rangeOf(stats.flat(), signed);
+  const grid = $("grid");
+  grid.textContent = "";
+  if (!units.length) { grid.innerHTML = '<div class="empty">No units to show.</div>'; }
+  else if (nc === 1) {
+    const box = document.createElement("div"); box.className = "tiles";
+    units.forEach((u, r) => {
+      const b = document.createElement("button"); b.type = "button"; b.className = "tile" + (u === st.sel ? " sel" : "");
+      b.setAttribute("aria-label", "Unit " + u);
+      const cv = document.createElement("canvas"), cap = document.createElement("div");
+      cap.className = "cap";
+      const sr = stats[r][0];
+      cap.innerHTML = '<span class="lab">u' + u + '</span><span>' + (sr ? fmtVal(signed ? Math.max(Math.abs(sr.vmin), Math.abs(sr.vmax)) : sr.vmax) : "empty") + "</span>";
+      b.append(cv, cap);
+      b.addEventListener("click", () => selectUnit(u));
+      box.appendChild(b);
+      const rg = st.scale === "page" ? pageRange : rangeOf([sr], signed);
+      const ctx = paintMap(cv, maps[r][0], rg[0], rg[1], lut, TILE_K);
+      markGoal(ctx, cols[0].pop === "ctrl" ? M.goals[cols[0].goal] : cols[0].goalCell, TILE_K, 1);
+    });
+    grid.appendChild(box);
+  } else {
+    const box = document.createElement("div"); box.className = "cmp"; box.style.setProperty("--n", nc);
+    const head = document.createElement("div"); head.className = "crow chead";
+    head.appendChild(document.createElement("span"));
+    cols.forEach(c => { const sp = document.createElement("span"); sp.textContent = c.label; sp.title = c.label; if (c.prim) sp.className = "prim"; head.appendChild(sp); });
+    box.appendChild(head);
+    units.forEach((u, r) => {
+      const row = document.createElement("div"); row.className = "crow" + (u === st.sel ? " sel" : "");
+      const lab = document.createElement("button"); lab.type = "button"; lab.className = "ulab"; lab.textContent = "u" + u;
+      lab.addEventListener("click", () => selectUnit(u));
+      row.appendChild(lab);
+      const unitRange = rangeOf(stats[r], signed);
+      cols.forEach((c, j) => {
+        const b = document.createElement("button"); b.type = "button"; b.className = "mapbtn";
+        b.setAttribute("aria-label", "Unit " + u + ", " + c.label);
+        const cv = document.createElement("canvas"); b.appendChild(cv); row.appendChild(b);
+        b.addEventListener("click", () => { adoptColumn(c); selectUnit(u); });
+        const rg = st.scale === "page" ? pageRange : st.scale === "unit" ? unitRange : rangeOf([stats[r][j]], signed);
+        const ctx = paintMap(cv, maps[r][j], rg[0], rg[1], lut, TILE_K);
+        markGoal(ctx, c.pop === "ctrl" ? M.goals[c.goal] : c.goalCell, TILE_K, 1);
+      });
+      box.appendChild(row);
+    });
+    grid.appendChild(box);
+  }
+  setStatus((hidden ? hidden + " silent units hidden. " : "") + "Maps drawn in " + fmtMs(ms + 0) + ".");
+}
+// Clicking a column's map makes its setting the current one.
+function adoptColumn(c) {
+  if (c.prim) return;
+  if (st.compare === "goals") { st.goal = c.pop === "ctrl" ? c.goal : c.goalIdx; st.hopGoal = null; }
+  else if (st.compare === "arenas") st.arena = c.arena;
+  else if (st.compare === "phases") st.phase = c.phase;
+  else if (st.compare === "dists") st.nd = c.mem.nd;
+  else if (st.compare === "steps") st.steps = c.steps;
+  syncControls();
+}
+function selectUnit(u) { st.sel = u; requestRender(); }
+
+function renderHead(srcs) {
+  const b = srcs[0].col, nc = srcs.length;
+  let title, desc, beh = "";
+  if (b.pop === "ctrl") {
+    title = "Controller: 1024 ReLU RNN units";
+    desc = "Each map is a unit's mean activity in each cell, over every step of fresh trials in that arena with that goal. The RNN reads the readout q, a 60-ray view of the wall barcode, its previous action and displacement, and the rewards. White circles mark the goal region.";
+    const parts = srcs.map(s => {
+      const bh = M.arenas[s.col.arena].behaviour[s.col.goal][s.col.phase];
+      return (nc > 1 ? s.col.label + ": " : "") + bh.trials + " trials, " + pct(bh.success) + " reached the goal" +
+        (bh.mean_steps ? " in " + bh.mean_steps.toFixed(1) + " steps" : "") + ", " + bh.steps_binned.toLocaleString() + " steps, " + bh.cells_visited + "/400 cells";
+    });
+    beh = parts.join(" · ");
+    if (nc === 1) title += " · " + arenaName(b.arena) + ", goal " + cellStr(M.goals[b.goal]) + ", " + (b.phase ? "exploit" : "explore");
+  } else {
+    const names = { cur: "current state x_t", next: "next state x_t+k", upd: "update x_t+k − x_t" };
+    title = "Hopfield " + names[b.hs] + ": 1024 units";
+    if (b.hs === "cur") desc = "The current state is the cue: the encoder's output at the agent's cell. It does not depend on what is stored, so it only changes with the arena.";
+    else if (b.hs === "next") desc = "x_t+k is the state after k recall steps x ← normalize((1 − α) x + α tanh(β W x)), with W = (1/1024) Σ m mᵀ over the stored patterns, zero diagonal, β = " + M.hopfield.beta + ", α = " + M.hopfield.alpha + ". With one stored pattern every unit's map is that pattern's value times the sign of its overlap with the cue.";
+    else desc = "The update x_t+k − x_t. The controller reads q, this update projected onto the cell's local East and North directions (shown on the right).";
+    const mem = b.mem, K = (mem.goal ? 1 : 0) + mem.nd;
+    beh = arenaName(b.arena) + " · memory: " + (mem.goal ? "goal " + cellStr(mem.goal) : "no goal") + (mem.nd ? " + " + mem.nd + " distractors (draw " + (mem.draw + 1) + ")" : "") +
+      (b.hs !== "cur" ? " · k = " + b.steps : "") + (K === 0 && b.hs !== "cur" ? " · memory empty: the model skips recall and the readout is zero" : "");
+  }
+  $("pop-title").textContent = title;
+  $("pop-desc").textContent = desc;
+  $("pop-beh").textContent = beh;
+}
+
+// ================================================================ detail panel
+const det = { labels: new Int32Array(N), src: null, v: new Float64Array(N), range: [0, 1], q: null };
+function renderDetail(srcs) {
+  const src = srcs.find(s => s.col.prim) || srcs[0], c = src.col, u = st.sel, v = det.v;
+  det.src = src;
+  $("d-title").textContent = (c.pop === "ctrl" ? "Controller unit " : "Hopfield unit ") + u;
+  const ok = src.getMap(u, v);
+  if (!ok) v.fill(NaN);
+  const r = analyse(v, filt(), det.labels);
+  const rg = rangeOf([r], src.signed);
+  det.range = rg;
+  paintMap($("d-canvas"), v, rg[0], rg[1], lutOf(src), 1);
+  drawColorbar(lutOf(src), rg[0], rg[1]);
+  const goalCell = c.pop === "ctrl" ? M.goals[c.goal] : c.goalCell;
+  const { ctx, k, dpr } = sizeOverlay($("d-overlay"));
+  if (st.outlines) drawOutlines(ctx, det.labels, r.keep, k, dpr);
+  det.q = null;
+  if (c.pop === "ctrl") {
+    if (st.showTrials) drawTrials(ctx, k, dpr, src, u, rg);
+    markGoal(ctx, goalCell, k, dpr);
+  } else {
+    if (src.e.K > 0) det.q = readout(src.H, src.e, c.steps);
+    if (st.showArrows && det.q) drawArrows(ctx, det.q, k, dpr, COL.fg);
+    markGoal(ctx, goalCell, k, dpr);
+  }
+
+  const rows = [];
+  const add = (k2, val) => rows.push("<dt>" + k2 + "</dt><dd>" + val + "</dd>");
+  if (c.pop === "ctrl") {
+    add("Mean over visited cells", fmtVal(r.mean));
+    add("Peak", fmtVal(r.peak) + (r.peakCell ? " at " + cellStr(r.peakCell) : ""));
+    add("Cells with data", r.n + " / " + N);
+    add("Fields", isFinite(r.nFields) ? r.nFields + (r.nFields ? ", largest " + r.maxField + " cells" : "") : "–");
+    const L = lockScores(src.d, u, c.phase);
+    add("Agreement across goals, room", fmtVal(L.room));
+    add("Agreement across goals, goal-centred", fmtVal(L.goal));
+    const other = ctrlSource({ goal: c.goal, phase: 1 - c.phase }, src.d), w = new Float64Array(N);
+    other.getMap(u, w);
+    add("Explore vs exploit, same goal", fmtVal(corrShift(v, w, 0, 0)));
+  } else {
+    add("Range", fmtVal(r.vmin) + " to " + fmtVal(r.vmax));
+    add("Mean |value|", fmtVal(r.meanAbs));
+    if (goalCell) add("Value at the goal cell", fmtVal(v[goalCell[0] * S + goalCell[1]]));
+    add("Fields (positive part)", isFinite(r.nFields) ? r.nFields + (r.nFields ? ", largest " + r.maxField + " cells" : "") : "–");
+    if (det.q) {
+      let qm = 0; for (let i = 0; i < N; i++) qm = Math.max(qm, Math.hypot(det.q[2 * i], det.q[2 * i + 1]));
+      add("Largest |q|", fmtVal(qm));
+    }
+  }
+  $("d-stats").innerHTML = rows.join("");
+  $("d-ctrl").hidden = c.pop !== "ctrl";
+  $("d-hop").hidden = c.pop !== "hop";
+  if (c.pop === "ctrl") renderTrial(src, u);
+  else renderReadout(src);
+}
+function examplesFor(d, goal, phase) { return d.ex.filter(e => e.goal === goal && e.cond === phase); }
+function trialAct(d, e, u, s) { return d.h[(e.off + s) * U + u] / 255 * d.hs[u]; }
+function drawTrials(ctx, k, dpr, src, u, rg) {
+  const d = src.d, exs = examplesFor(d, src.col.goal, src.col.phase), lut = LUT.seq, span = rg[1] - rg[0];
+  const X = x => (x + 0.5) * k, Y = y => (S - 0.5 - y) * k;
+  exs.forEach((e, ei) => {
+    const chosen = ei === st.trial;
+    ctx.strokeStyle = COL.path; ctx.lineWidth = (chosen ? 2.2 : 1) * dpr; ctx.globalAlpha = chosen ? 1 : 0.6;
+    ctx.beginPath();
+    for (let s = 0; s < e.len; s++) {
+      const px = d.pos[(e.off + s) * 2], py = d.pos[(e.off + s) * 2 + 1];
+      if (s === 0) ctx.moveTo(X(px), Y(py)); else ctx.lineTo(X(px), Y(py));
+    }
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+    for (let s = 0; s < e.len; s++) {
+      const px = d.pos[(e.off + s) * 2], py = d.pos[(e.off + s) * 2 + 1];
+      let t = span > 0 ? (trialAct(d, e, u, s) - rg[0]) / span : 0;
+      t = t < 0 ? 0 : t > 1 ? 1 : t;
+      const li = ((t * 255 + 0.5) | 0) * 3;
+      ctx.fillStyle = "rgb(" + lut[li] + "," + lut[li + 1] + "," + lut[li + 2] + ")";
+      ctx.strokeStyle = COL.path; ctx.lineWidth = 0.8 * dpr;
+      ctx.beginPath();
+      const rad = (chosen ? 0.24 : 0.17) * k;
+      if (s === 0) { ctx.rect(X(px) - rad, Y(py) - rad, 2 * rad, 2 * rad); }
+      else ctx.arc(X(px), Y(py), rad, 0, 2 * Math.PI);
+      ctx.fill(); ctx.stroke();
+    }
+  });
+}
+function renderTrial(src, u) {
+  const d = src.d, exs = examplesFor(d, src.col.goal, src.col.phase), sel = $("d-trial");
+  if (st.trial >= exs.length) st.trial = 0;
+  sel.innerHTML = exs.map((e, i) => '<option value="' + i + '">' + (e.cond ? "Exploit" : "Explore") + " trial " + (e.trial + 1) + ": " +
+    e.full_len + " steps, " + (e.reached ? "reached the goal" : "did not reach the goal") + (e.full_len > e.len ? " (first " + e.len + " shown)" : "") + "</option>").join("");
+  sel.value = String(st.trial);
+  const cv = $("d-spark"), dpr = window.devicePixelRatio || 1, w = Math.max(1, Math.round(cv.clientWidth * dpr)), h = Math.max(1, Math.round(cv.clientHeight * dpr));
+  if (cv.width !== w || cv.height !== h) { cv.width = w; cv.height = h; }
+  const ctx = cv.getContext("2d");
+  ctx.clearRect(0, 0, w, h);
+  const e = exs[st.trial];
+  if (!e) return;
+  const top = d.hs[u] > 0 ? d.hs[u] : 1, pad = 14 * dpr, bot = h - 14 * dpr;
+  const X = s => pad + (w - 2 * pad) * (e.len > 1 ? s / (e.len - 1) : 0), Y = a => bot - (bot - 4 * dpr) * a / top;
+  ctx.strokeStyle = COL.line; ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(pad, bot + 0.5); ctx.lineTo(w - pad, bot + 0.5); ctx.stroke();
+  ctx.strokeStyle = COL.fg; ctx.lineWidth = 1.6 * dpr; ctx.lineJoin = "round";
+  ctx.beginPath();
+  for (let s = 0; s < e.len; s++) { const y = Y(trialAct(d, e, u, s)); if (s === 0) ctx.moveTo(X(s), y); else ctx.lineTo(X(s), y); }
+  ctx.stroke();
+  ctx.fillStyle = COL.muted; ctx.font = (10 * dpr) + "px " + getComputedStyle(document.body).fontFamily;
+  ctx.textBaseline = "top";
+  ctx.fillText("step 0", pad, bot + 2 * dpr);
+  const endLab = "step " + (e.len - 1);
+  ctx.fillText(endLab, w - pad - ctx.measureText(endLab).width, bot + 2 * dpr);
+  ctx.textBaseline = "alphabetic";
+  ctx.fillText("max " + fmtVal(d.hs[u]), pad, 11 * dpr);
+}
+function drawArrows(ctx, q, k, dpr, color) {
+  let qm = 0;
+  for (let i = 0; i < N; i++) qm = Math.max(qm, Math.hypot(q[2 * i], q[2 * i + 1]));
+  if (!(qm > 0)) return;
+  ctx.strokeStyle = color; ctx.fillStyle = color; ctx.lineWidth = 1.2 * dpr; ctx.lineCap = "round";
+  for (let x = 0; x < S; x++) for (let y = 0; y < S; y++) {
+    const i = x * S + y, qe = q[2 * i], qn = q[2 * i + 1], len = Math.hypot(qe, qn) / qm;
+    if (len < 0.03) continue;
+    const cx = (x + 0.5) * k, cy = (S - 0.5 - y) * k, L = 0.9 * k * len, ux = qe / Math.hypot(qe, qn), uy = -qn / Math.hypot(qe, qn);
+    const x0 = cx - ux * L / 2, y0 = cy - uy * L / 2, x1 = cx + ux * L / 2, y1 = cy + uy * L / 2, hd = Math.min(0.28 * k, 0.5 * L);
+    ctx.beginPath(); ctx.moveTo(x0, y0); ctx.lineTo(x1, y1); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(x1, y1);
+    ctx.lineTo(x1 - ux * hd - uy * hd * 0.5, y1 - uy * hd + ux * hd * 0.5);
+    ctx.lineTo(x1 - ux * hd + uy * hd * 0.5, y1 - uy * hd - ux * hd * 0.5);
+    ctx.closePath(); ctx.fill();
+  }
+}
+function renderReadout(src) {
+  const c = src.col, e = src.e, q = e.K > 0 ? readout(src.H, e, c.steps) : null, mag = new Float64Array(N);
+  let qm = 0;
+  for (let i = 0; i < N; i++) { mag[i] = q ? Math.hypot(q[2 * i], q[2 * i + 1]) : 0; qm = Math.max(qm, mag[i]); }
+  paintMap($("r-canvas"), mag, 0, qm, LUT.seq, 1);
+  const { ctx, k, dpr } = sizeOverlay($("r-overlay"));
+  if (q) drawArrows(ctx, q, k, dpr, isDark() ? "#10151c" : "#ffffff");
+  markGoal(ctx, c.goalCell, k, dpr);
+  $("r-hint").textContent = q
+    ? "Colour is |q|, from 0 to " + fmtVal(qm) + "; arrows point along q, scaled to the largest. From step k = " + c.steps + (c.steps === 1 ? ", what the controller reads." : "; the controller reads k = 1.")
+    : "Memory is empty, so the model skips recall and q is zero.";
+  // Overlaps with each stored pattern, one shared symmetric scale.
+  const box = $("mems");
+  box.textContent = "";
+  let a = 0;
+  for (let i = 0; i < e.K * N; i++) a = Math.max(a, Math.abs(e.ov[i]));
+  for (let j = 0; j < e.K; j++) {
+    const fig = document.createElement("figure"), cv = document.createElement("canvas"), cap = document.createElement("figcaption");
+    let mx = -Infinity;
+    for (let i = 0; i < N; i++) mx = Math.max(mx, e.ov[j * N + i]);
+    cap.textContent = e.labels[j] + " max " + fmtVal(mx);
+    fig.append(cv, cap); box.appendChild(fig);
+    const ctx2 = paintMap(cv, e.ov.subarray(j * N, j * N + N), -a, a, LUT.div, TILE_K);
+    markGoal(ctx2, c.goalCell, TILE_K, 1);
+  }
+  if (!e.K) box.innerHTML = '<p class="hint" style="grid-column:1/-1">Nothing is stored.</p>';
+}
+function hoverDetail(ev) {
+  const src = det.src;
+  if (!src) return;
+  const cv = $("d-canvas"), r = cv.getBoundingClientRect();
+  const x = Math.floor((ev.clientX - r.left) / r.width * S), y = S - 1 - Math.floor((ev.clientY - r.top) / r.height * S);
+  if (x < 0 || x >= S || y < 0 || y >= S) { $("d-hover").textContent = "Hover over the map to read a cell."; return; }
+  const i = x * S + y;
+  let s = "cell " + cellStr([x, y]) + "  value " + fmtVal(det.v[i]);
+  if (src.col.pop === "ctrl") s += "  visits " + src.cnt[i];
+  else if (det.q) s += "  q (" + fmtVal(det.q[2 * i]) + ", " + fmtVal(det.q[2 * i + 1]) + ")";
+  $("d-hover").textContent = s;
+}
+function clickDetail(ev) {
+  if (!det.src || det.src.col.pop !== "hop") return;
+  const cv = $("d-canvas"), r = cv.getBoundingClientRect();
+  const x = Math.floor((ev.clientX - r.left) / r.width * S), y = S - 1 - Math.floor((ev.clientY - r.top) / r.height * S);
+  if (x >= 0 && x < S && y >= 0 && y < S) setHopGoal([x, y]);
+}
+
+// ================================================================ checks and provenance
+function renderChecks() {
+  const ul = $("checks");
+  ul.innerHTML = M.arenas.map((a, i) => {
+    const H = hopDone[i];
+    if (!H) return '<li><span class="chip wait">' + arenaName(i) + ": not loaded</span></li>";
+    const c = H.check;
+    return '<li><span class="chip ' + (c.ok ? "ok" : "bad") + '">' + arenaName(i) + ": " + (c.ok ? "match" : "MISMATCH") +
+      ", q error " + c.qErr.toExponential(1) + ", state error " + c.xErr.toExponential(1) + "</span></li>";
+  }).join("");
+}
+function renderProv() {
+  const v = M.validation, ex = M.arenas.map(a => a.q_err), git = M.collect.git;
+  $("prov").innerHTML =
+    "Model: <span class='mono'>" + M.model.ckpt.split("/").slice(-2).join("/") + "</span>, encoder <span class='mono'>" + M.model.encoder.split("/").slice(-2).join("/") + "</span>. " +
+    "Collector check against <span class='mono'>evaluate_navigation</span> on these arenas (exploit, sampled): success " + pct(v.collector.success) + " vs " + pct(v.reference.success) +
+    ", mean steps " + (v.collector.steps || 0).toFixed(1) + " vs " + (v.reference.steps || 0).toFixed(1) + " (gap " + v.success_gap_se.toFixed(1) + " standard errors). " +
+    "The readout q in every collected step matched the exact recall to " + Math.max(...ex).toExponential(1) + ". " +
+    "Collected at <span class='mono'>" + git.sha.slice(0, 8) + (git.dirty ? "+dirty" : "") + "</span>.";
+}
+async function checkAll() {
+  $("checkall").disabled = true;
+  try {
+    for (let a = 0; a < M.arenas.length; a++) { setStatus("Checking " + arenaName(a) + "…"); await loadHop(a); }
+    setStatus("Checked every arena.");
+  } catch (e) { setStatus(String(e.message || e), true); }
+  $("checkall").disabled = false;
+}
+
+// ================================================================ controls
+function setPressed(box, attr, val) { for (const b of $(box).querySelectorAll("button")) b.setAttribute("aria-pressed", String(b.dataset[attr] === String(val))); }
+function fillCompare() {
+  const opts = COMPARE[st.pop];
+  if (!opts.some(o => o[0] === st.compare)) st.compare = "one";
+  $("compare").innerHTML = opts.map(o => '<option value="' + o[0] + '">' + o[1] + "</option>").join("");
+  $("compare").value = st.compare;
+}
+function fillSorts() {
+  $("sort").innerHTML = Object.entries(SORTS).filter(([, s]) => !s.ctrl || st.pop === "ctrl")
+    .map(([k, s]) => '<option value="' + k + '">' + s.label + "</option>").join("");
+  if (SORTS[st.sort].ctrl && st.pop !== "ctrl") st.sort = "unit";
+  $("sort").value = st.sort;
+}
+function syncControls() {
+  setPressed("pops", "pop", st.pop);
+  setPressed("hstates", "hs", st.hs);
+  setPressed("phases", "phase", st.phase);
+  setPressed("arenas", "arena", st.arena);
+  setPressed("goals", "goal", st.pop === "hop" && st.hopGoal ? -1 : st.goal);
+  const hop = st.pop === "hop";
+  $("hstates").hidden = !hop; $("hop-panel").hidden = !hop; $("ctrl-panel").hidden = hop;
+  $("trials-row").hidden = hop; $("arrows-row").hidden = !hop;
+  $("silent-row").classList.toggle("off", hop); $("silent").disabled = hop;
+  $("stored").checked = st.stored; $("nd").value = st.nd; $("nd-out").textContent = st.nd;
+  $("draw").value = String(st.draw); $("steps").value = st.steps; $("steps-out").textContent = st.steps;
+  $("pop-hint").textContent = hop
+    ? "Current: the cue x_t, the encoder's output at the cell. Next: x_t+k after k recall steps. Update: next minus current. Computed live in this page, exactly for every cell."
+    : "The recurrent controller's hidden units, from runs.";
+  const ar = M.arenas[st.arena];
+  $("arena-hint").textContent = (ar.kind === "train" ? "One of the model's 20 training arenas" : "One of the model's 6 validation arenas, not trained on") +
+    ", at scaffold cell (" + ar.offset[0] + ", " + ar.offset[1] + "). The stripes are the wall barcode the RNN sees; the cross is the goal this arena had in the run. " +
+    (hop ? "Click any cell to put the goal there." : "Click near a goal to pick it.");
+  drawArena();
+  requestRender();
+}
+function setHopGoal(cell) {
+  const i = M.goals.findIndex(g => g[0] === cell[0] && g[1] === cell[1]);
+  if (i >= 0) { st.goal = i; st.hopGoal = null; } else st.hopGoal = cell;
+  syncControls();
+}
+function buildControls() {
+  $("arenas").innerHTML = M.arenas.map((a, i) => '<button type="button" data-arena="' + i + '" aria-pressed="false">' + arenaName(i) + "</button>").join("");
+  $("goals").innerHTML = M.goals.map((g, i) => '<button type="button" data-goal="' + i + '" aria-pressed="false">Goal ' + cellStr(g) + "</button>").join("");
+  $("draw").innerHTML = Array.from({ length: M.n_draws }, (_, i) => '<option value="' + i + '">' + (i + 1) + " of " + M.n_draws + "</option>").join("");
+  fillCompare(); fillSorts();
+}
+function wireControls() {
+  const on = (id, ev, fn) => $(id).addEventListener(ev, fn);
+  on("pops", "click", e => { const b = e.target.closest("button"); if (!b) return; st.pop = b.dataset.pop; fillCompare(); fillSorts(); st.order = null; $("sort-note").textContent = ""; if (st.sort !== "unit") resort(); syncControls(); });
+  on("hstates", "click", e => { const b = e.target.closest("button"); if (!b) return; st.hs = b.dataset.hs; syncControls(); });
+  on("phases", "click", e => { const b = e.target.closest("button"); if (!b) return; st.phase = +b.dataset.phase; syncControls(); });
+  on("arenas", "click", e => { const b = e.target.closest("button"); if (!b) return; st.arena = +b.dataset.arena; st.trial = 0; syncControls(); });
+  on("goals", "click", e => { const b = e.target.closest("button"); if (!b) return; st.goal = +b.dataset.goal; st.hopGoal = null; st.trial = 0; syncControls(); });
+  on("arena-cv", "click", e => {
+    const cell = arenaCellAt(e);
+    if (!cell) return;
+    if (st.pop === "hop") { setHopGoal(cell); return; }
+    let best = 0, bd = Infinity;
+    M.goals.forEach((g, i) => { const dd = Math.hypot(g[0] - cell[0], g[1] - cell[1]); if (dd < bd) { bd = dd; best = i; } });
+    st.goal = best; st.trial = 0; syncControls();
+  });
+  on("minvis", "change", () => { st.minVis = Math.max(1, Math.round(+$("minvis").value) || 1); requestRender(); });
+  on("stored", "change", () => { st.stored = $("stored").checked; syncControls(); });
+  on("nd", "input", () => { st.nd = +$("nd").value; $("nd-out").textContent = st.nd; requestRender(); });
+  on("draw", "change", () => { st.draw = +$("draw").value; requestRender(); });
+  on("steps", "input", () => { st.steps = +$("steps").value; $("steps-out").textContent = st.steps; requestRender(); });
+  on("compare", "change", () => { st.compare = $("compare").value; requestRender(); });
+  on("thresh", "input", () => { st.thresh = +$("thresh").value; $("thresh-out").textContent = st.thresh + "%"; requestRender(); });
+  on("minsize", "change", () => { st.minSize = Math.max(1, Math.round(+$("minsize").value) || 1); requestRender(); });
+  on("sort", "change", () => { st.sort = $("sort").value; resort(); });
+  on("resort", "click", resort);
+  on("silent", "change", () => { st.hideSilent = $("silent").checked; requestRender(); });
+  on("perpage", "change", () => { st.perPage = +$("perpage").value; st.page = 0; requestRender(); });
+  on("scale", "change", () => { st.scale = $("scale").value; requestRender(); });
+  on("prev", "click", () => { st.page--; requestRender(); });
+  on("next", "click", () => { st.page++; requestRender(); });
+  on("outlines", "change", () => { st.outlines = $("outlines").checked; requestRender(); });
+  on("showtrials", "change", () => { st.showTrials = $("showtrials").checked; requestRender(); });
+  on("showarrows", "change", () => { st.showArrows = $("showarrows").checked; requestRender(); });
+  on("d-trial", "change", () => { st.trial = +$("d-trial").value; requestRender(); });
+  on("d-canvas", "mousemove", hoverDetail);
+  on("d-canvas", "mouseleave", () => { $("d-hover").textContent = "Hover over the map to read a cell."; });
+  on("d-canvas", "click", clickDetail);
+  on("checkall", "click", checkAll);
+  const step = d => {
+    const order = st.order || Array.from({ length: U }, (_, u) => u), i = order.indexOf(st.sel);
+    st.sel = order[Math.min(order.length - 1, Math.max(0, i + d))];
+    const pageOf = Math.floor(order.indexOf(st.sel) / st.perPage);
+    if (!(st.hideSilent && st.pop === "ctrl")) st.page = pageOf;
+    requestRender();
+  };
+  on("d-prev", "click", () => step(-1));
+  on("d-next", "click", () => step(1));
+  window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => { buildLuts(); drawArena(); requestRender(); });
+  new MutationObserver(() => { buildLuts(); drawArena(); requestRender(); }).observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
+  let rt = 0;
+  window.addEventListener("resize", () => { clearTimeout(rt); rt = setTimeout(() => { drawArena(); requestRender(); }, 120); });
+}
+
+// ================================================================ start
+(async function main() {
+  try {
+    buildLuts();
+    M = JSON.parse(await fetchText(DATA + "manifest.json"));
+    U = M.model.hidden_size; D = M.files["cue_a0"].shape[2]; C = M.conditions.length; G = M.goals.length;
+    if (M.env_size !== S || M.patch !== P) throw new Error("this page expects 20 × 20 arenas");
+    buildControls(); wireControls(); renderProv(); renderChecks();
+    syncControls();
+  } catch (e) {
+    console.error(e);
+    setStatus("Could not load the data: " + (e.message || e), true);
+  }
+})();
+</script>
