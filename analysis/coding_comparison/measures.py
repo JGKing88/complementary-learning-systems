@@ -532,7 +532,7 @@ def bin_curve(dist: np.ndarray, sim: np.ndarray, edges: np.ndarray) -> dict:
         return {"d": (d / n).tolist(), "s": (s / n).tolist(), "n": n.tolist()}
 
 
-def _first_crossing(d: np.ndarray, s: np.ndarray, level: float) -> float | None:
+def first_crossing(d: np.ndarray, s: np.ndarray, level: float) -> float | None:
     """First distance where ``s`` drops to ``level`` or below, linearly interpolated."""
     ok = np.isfinite(s)
     d, s = d[ok], s[ok]
@@ -558,8 +558,9 @@ def kernel_summary(d, s, *, width: float, far: tuple[float, float] = (10.0, 20.0
     """
     d = np.asarray(d, dtype=np.float64)
     s = np.asarray(s, dtype=np.float64)
-    hw = _first_crossing(d, s, 0.5)
-    zc = _first_crossing(d, s, 0.0)
+    hw = first_crossing(d, s, 0.5)
+    h2 = first_crossing(d, s, 0.2)
+    zc = first_crossing(d, s, 0.0)
     lo, hi = far[0] * width, far[1] * width
     sel = (d >= lo) & (d <= hi) & np.isfinite(s)
     floor = float(s[sel].mean()) if sel.any() and d.max() >= hi * 0.999 else None
@@ -570,6 +571,8 @@ def kernel_summary(d, s, *, width: float, far: tuple[float, float] = (10.0, 20.0
         "width_bins": float(width),
         "half_width_05": hw, "full_width_05": None if hw is None else 2 * hw,
         "zero_crossing": zc,
+        "full_width_02": None if h2 is None else 2 * h2,
+        "full_width_02_W": None if h2 is None else w(2 * h2),
         "half_width_05_W": w(hw), "full_width_05_W": None if hw is None else w(2 * hw),
         "zero_crossing_W": w(zc),
         "floor": floor, "floor_range_W": list(far),
@@ -667,7 +670,7 @@ def ratemap_correlations(maps_a: np.ndarray, maps_b: np.ndarray, *, seed: int = 
 __all__ = [
     "CONVENTIONS", "SIMILARITIES", "FieldDef", "Fields1D", "Fields2D",
     "active_set_overlap", "apply_convention", "bin_curve", "detect_fields_1d",
-    "detect_fields_2d", "field_size_stats", "fit_count_models", "kernel_summary",
+    "detect_fields_2d", "field_size_stats", "first_crossing", "fit_count_models", "kernel_summary",
     "lag_profile_1d", "mean_rate_correlation", "pair_similarity", "prepare_columns",
     "random_orthogonal", "ratemap_correlations", "sample_gamma_poisson",
     "similarity_matrix", "smooth_1d", "smooth_2d", "within_unit_layout",

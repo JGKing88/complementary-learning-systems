@@ -151,6 +151,18 @@ def _at_Af(R, v, target):
     return float(np.interp(math.log(target), x, [p[1] for p in pts]))
 
 
+def _fw(R, construction, b, level):
+    """Full width (2 x first crossing of ``level``) of a stored 1D curve over the basis's W_A."""
+    from .measures import first_crossing
+    c = _get(R.get("kernel_1d"), "constructions", construction)
+    W = _get(R.get("meta"), "calibration", f"{b}|A", "W")
+    if c is None or not W:
+        return None
+    s = np.asarray([np.nan if x is None else x for x in c["s"]], dtype=float)
+    x = first_crossing(np.arange(s.size, dtype=float), s, level)
+    return math.inf if x is None else 2 * x / W
+
+
 def _remap(R, b, *path):
     return _get(R.get("remapping"), "bases", b, *path)
 
@@ -220,12 +232,16 @@ ROWS = [
      lambda R, b, v, T: _sparsity(R, b, "4.6")),
     ("kernel_fullwidth_W", "PV kernel full width at r = 0.5 / W_A (Pearson, rates)", "A",
      lambda R, b, v, T: _kernel(R, f"{b}|pearson", f"{b.split('|')[-1]}|A", "full_width_05_W")),
+    ("kernel_fullwidth02_W", "PV kernel full width at r = 0.2 / W_A (Pearson, rates)", "A",
+     lambda R, b, v, T: _fw(R, f"{b}|pearson", b, 0.2)),
     ("kernel_zero_W", "PV kernel zero crossing / W_A (Pearson, rates)", "A",
      lambda R, b, v, T: _zero(R, f"{b}|pearson", f"{b.split('|')[-1]}|A")),
     ("kernel_floor", "PV kernel floor, 5 to 15 W_A (Pearson, rates)", "A",
      lambda R, b, v, T: _kernel(R, f"{b}|pearson", f"{b.split('|')[-1]}|A", "floor")),
     ("kernel_fullwidth_W_cos", "Cosine kernel full width at 0.5 / W_A (raw code)", "A",
      lambda R, b, v, T: _cos(R, b, "full_width_05"), "kernel_fullwidth_W"),
+    ("kernel_fullwidth02_W_cos", "Cosine kernel full width at 0.2 / W_A (raw code)", "A",
+     lambda R, b, v, T: _fw(R, "raw|cosine", b, 0.2), "kernel_fullwidth02_W"),
     ("kernel_zero_W_cos", "Cosine kernel zero crossing / W_A (raw code)", "A",
      lambda R, b, v, T: _cos(R, b, "zero_crossing"), "kernel_zero_W"),
     ("remap_pv", "PV correlation between arenas at matched places (Pearson, rates)", None,

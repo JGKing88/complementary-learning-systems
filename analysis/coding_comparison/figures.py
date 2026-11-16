@@ -273,12 +273,12 @@ def main() -> None:
     out = a.out or (figures_dir() / "coding_comparison" / a.tag)
     out.mkdir(parents=True, exist_ok=True)
     T = load_targets()
-    # Only populations whose phase-1 run finished (meta.json carries elapsed_s then).
+    # Only populations whose kernels have been measured.
     res = {}
     for pop in POP_ORDER:
         if (root / pop / "meta.json").exists():
             R = load_results(root / pop)
-            if "elapsed_s" in R["meta"] and "kernel_1d" in R:
+            if "kernel_1d" in R:
                 res[pop] = R
     for f in (fig_kernel, fig_kernel_far, fig_zero_curve, fig_counts, fig_area, fig_basis, fig_phase2):
         f(res, T, out)
