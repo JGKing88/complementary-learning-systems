@@ -2323,6 +2323,26 @@ WAVES["w64_relu_out"] = {
     "seed": [43, 44],
 }
 
+# W65 -- w64's relu arm with a floor on code density.
+#
+# w64 collapsed: ~5 of 1024 units active per code, r_min 0, far alias ~1.0,
+# while beating tanh on train loss. Both the repel term (far cos -> 0) and the
+# rate term (log-det of the raw gram) reward disjoint support, and with five
+# units there are too few distinct codes for 1716^2 positions. The floor
+# penalises codes below k effective active units (||z||_1^2 for unit norm).
+# It is a floor on the output, not a far-cosine target, because a single
+# always-on unit would satisfy a positive far target and still leave the
+# aliases. k is 3%, 6% and 12.5% of out_dim; a random code of k units has
+# mean raw far cosine k/1024, all below the 0.25 alias screen. Gain stays 1.
+WAVES["w65_relu_density"] = {
+    "arm": {
+        f"relu_k{k}": {**WAVES["w64_relu_out"]["arm"]["att0.5_relu"],
+                       "density_lambda": 1.0, "density_k": float(k)}
+        for k in (32, 64, 128)
+    },
+    "seed": [43, 44],
+}
+
 
 def _flatten(cfg: dict) -> dict:
     """Expand an ``arm`` dict of overrides into the config it stands for."""

@@ -81,6 +81,12 @@ class LossConfig:
     var_gamma: float = 1.0              # std target, in units of 1/sqrt(out_dim)
     rate_lambda: float = 0.0            # MCR^2 log-det coding rate
     rate_eps: float = 0.5
+    # Density floor for relu outputs: penalise codes with fewer than
+    # `density_k` effective active units, k_eff = ||z||_1^2 for unit-norm z.
+    # The repel term (far cos -> 0) and the raw-gram rate term both reward
+    # disjoint support, which drove w64_relu_out to ~5 of 1024 units active.
+    density_lambda: float = 0.0
+    density_k: float = 0.0
 
     # Distance-graded pair target: target = exp(-d^2 / (2 sigma^2)) instead of
     # the binary 1-on-near / 0-on-far. 0 keeps the binary targets.

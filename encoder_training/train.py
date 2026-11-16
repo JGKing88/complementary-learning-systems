@@ -38,8 +38,8 @@ from .data import (
     extract_patches, mixed_batch_iterator, single_env_batch_iterator,
 )
 from .losses import (
-    cka_loss, coding_rate_loss, mse_attract_repel, participation_ratio,
-    uniformity_loss, vicreg_terms,
+    cka_loss, coding_rate_loss, density_floor_loss, effective_active_units,
+    mse_attract_repel, participation_ratio, uniformity_loss, vicreg_terms,
 )
 from .models import create_encoder
 from .evaluate import encode_grid, run_nav_eval
@@ -194,6 +194,7 @@ def train(cfg: TrainConfig) -> str:
         running = 0.0
         running_extra = 0.0        # the spread terms alone, to see if they dominate
         epoch_pr = float("nan")
+        epoch_keff = float("nan")
         n_batches = 0
 
         for idx in batch_iter:
@@ -272,10 +273,17 @@ def train(cfg: TrainConfig) -> str:
                 r = cfg.loss.rate_lambda * coding_rate_loss(
                     z_spread, eps=cfg.loss.rate_eps)
                 loss, extra = loss + r, extra + float(r.item())
+            if cfg.loss.density_lambda > 0:
+                # On the batch's own codes, not z_spread: the floor is per
+                # code, and the batch is what the pair terms are pushing on.
+                loss = loss + cfg.loss.density_lambda * density_floor_loss(
+                    zb, cfg.loss.density_k)
             running_extra += extra
             # The quantity that separates the regimes; see losses.
             if n_batches == 0:
                 epoch_pr = float(participation_ratio(zb.detach()).item())
+                epoch_keff = float(
+                    effective_active_units(zb.detach()).mean().item())
 
             optimizer.zero_grad(set_to_none=True)
             loss.backward()
@@ -289,7 +297,8 @@ def train(cfg: TrainConfig) -> str:
         avg_loss = running / max(n_batches, 1)
         avg_extra = running_extra / max(n_batches, 1)
         print(f"Epoch {ep:3d} | loss={avg_loss:.4f} | spread={avg_extra:+.4f} "
-              f"| pr={epoch_pr:6.1f} | gain={gain:.2f} | unif_lam={unif_lam:.4f}")
+              f"| pr={epoch_pr:6.1f} | gain={gain:.2f} | unif_lam={unif_lam:.4f}"
+              f" | keff={epoch_keff:6.1f}")
 
         # --- Nav eval ---
         if cfg.eval_every > 0 and ep % cfg.eval_every == 0:
@@ -436,6 +445,8 @@ def _build_cfg_from_args(args) -> TrainConfig:
         var_gamma=args.var_gamma,
         rate_lambda=args.rate_lambda,
         rate_eps=args.rate_eps,
+        density_lambda=args.density_lambda,
+        density_k=args.density_k,
         graded_sigma=args.graded_sigma,
         input_far_tau=args.input_far_tau,
     )
@@ -546,6 +557,11 @@ def main():
                    help="MCR^2 log-det coding rate; rewards an even covariance "
                         "spectrum, which is the deficit the collapsed codes have")
     p.add_argument("--rate_eps", type=float, default=0.5)
+    p.add_argument("--density_lambda", type=float, default=0.0,
+                   help="weight of the density floor (relu outputs); 0 = off")
+    p.add_argument("--density_k", type=float, default=0.0,
+                   help="floor on effective active units per code, "
+                        "||z||_1^2 for unit-norm z")
     p.add_argument("--graded_sigma", type=float, default=0.0,
                    help="distance-graded pair target exp(-d^2/2s^2); "
                         "0 keeps the binary near=1/far=0 targets")

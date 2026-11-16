@@ -124,6 +124,26 @@ def participation_ratio(z: torch.Tensor) -> torch.Tensor:
     return C.diagonal().sum().square() / C.square().sum().clamp_min(1e-20)
 
 
+def effective_active_units(z: torch.Tensor) -> torch.Tensor:
+    """Per-code ``||z||_1^2 / ||z||_2^2``: k for k equal nonzero entries.
+
+    For unit-norm z this is ``||z||_1^2``. It ranges from 1 (one unit carries
+    the code) to D (all units equal).
+    """
+    return z.abs().sum(-1).square() / z.square().sum(-1).clamp_min(1e-12)
+
+
+def density_floor_loss(z: torch.Tensor, k: float) -> torch.Tensor:
+    """Mean squared hinge ``relu(1 - k_eff / k)^2``; zero for codes at or
+    above ``k`` effective active units.
+
+    relu passes no gradient to a unit that is off, so this cannot turn units
+    back on after a collapse. It has to be on from the first epoch, while the
+    codes are still dense, and resist units leaving the active set.
+    """
+    return torch.relu(1.0 - effective_active_units(z) / k).square().mean()
+
+
 def coding_rate_loss(z: torch.Tensor, eps: float = 0.5) -> torch.Tensor:
     """Negative log-det coding rate: ``-1/(2D) logdet(I + D/(B eps^2) Z^T Z)``.
 
