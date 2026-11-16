@@ -411,15 +411,35 @@ def summarize(card: dict, regions: list[str]) -> dict:
 # Markdown
 # ---------------------------------------------------------------------------
 
-def cell_text(cells: list[dict] | None) -> str:
+LEGEND = ("Cells: C consistent, I inconsistent, U no literature number, U* no model value; "
+          "~ the verdict changes within the 0.5 to 1 Hz sweep, r it changes under a random rotation. "
+          "Brackets give the band and the source tag: ft full text, abs abstract, fig figure-read, "
+          "der derived, inf inference, rev the review's summary table, asm assumed formula, "
+          "sec secondary.")
+
+TAG_CODES = [("full text", "ft"), ("abstract", "abs"), ("figure-read", "fig"),
+             ("derived", "der"), ("infer", "inf"), ("review summary", "rev"),
+             ("assume", "asm"), ("secondary", "sec")]
+
+
+def tag_code(tag: str) -> str:
+    """Short form of a verification tag: ft, abs, fig, der, inf, rev, asm, sec."""
+    t = tag.lower()
+    return "/".join(c for k, c in TAG_CODES if k in t) or "?"
+
+
+def cell_text(cells: list[dict] | None, detail: bool = True) -> str:
     if not cells:
         return "U"
     prim = [c for c in cells if c["primary"]] or cells
     c = prim[0]
-    return "" if c["verdict"] == "info" else c["verdict"] + c["flags"]
+    if c["verdict"] == "info":
+        return f"[{c['band']}]" if detail else ""
+    head = c["verdict"] + c["flags"]
+    return f"{head} [{c['band']}; {tag_code(c['tag'])}]" if detail else head
 
 
-def population_table(rows: list[dict], regions: list[str]) -> str:
+def population_table(rows: list[dict], regions: list[str], detail: bool = True) -> str:
     head = "| Measure | Def. | Model | " + " | ".join(REGION_SHORT[r] for r in regions) + " |"
     sep = "|---|---|---|" + "---|" * len(regions)
     lines = [head, sep]
@@ -427,7 +447,7 @@ def population_table(rows: list[dict], regions: list[str]) -> str:
         if not row["cells"]:
             continue
         lines.append(f"| {row['label']} | {row['definition'] or 'none'} | {fmt_value(row['value'])} | "
-                     + " | ".join(cell_text(row["cells"].get(r)) for r in regions) + " |")
+                     + " | ".join(cell_text(row["cells"].get(r), detail) for r in regions) + " |")
     return "\n".join(lines)
 
 
@@ -474,7 +494,7 @@ def main() -> None:
         json.dump(cards, f, indent=1, default=lambda o: None if isinstance(o, float) else str(o))
     md = ["# Coding comparison scorecard", "",
           "Primary-target counts: consistent / scored, per region.", "",
-          summary_table(cards, regions), ""]
+          summary_table(cards, regions), "", LEGEND, ""]
     for pop, card in cards.items():
         for basis, rows in card.items():
             md += [f"## {pop}, {basis}", "", population_table(rows, regions), ""]
