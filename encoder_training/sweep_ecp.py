@@ -2430,6 +2430,16 @@ WAVES["w71_rank_homeo_r24"] = {
 }
 
 
+# W72 -- w70's non-negative arms with 2048 output units instead of 1024 (same loss). With the floor
+# removed by inhibition, w70's remaining gap to att0.5 is crowding at large K: the random overlap
+# of sparse codes varies more than that of dense graded ones, and doubling the units should halve it.
+WAVES["w72_rank_homeo_2048"] = {
+    "arm": {k.replace("homeo", "homeo2048_"): {**v, "out_dim": 2048}
+            for k, v in WAVES["w70_rank_homeo_slow"]["arm"].items() if "signed" not in k},
+    "seed": [43, 44],
+}
+
+
 def _flatten(cfg: dict) -> dict:
     """Expand an ``arm`` dict of overrides into the config it stands for."""
     arm = cfg.pop("arm", None)
