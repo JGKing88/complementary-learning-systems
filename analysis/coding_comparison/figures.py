@@ -147,7 +147,7 @@ def fig_counts(res, T, out):
         ax.set_title(LABELS.get(pop, pop))
         ax.set_xlabel("fields per unit, 74 widths")
         if x is None:
-            ax.text(0.5, 0.5, "no fields", transform=ax.transAxes, ha="center", color=INK2)
+            ax.text(0.5, 0.5, "no fields at 0.75 Hz", transform=ax.transAxes, ha="center", color=INK2)
             continue
         fit = x["fit"]
         mean = fit["mean"]
@@ -156,7 +156,7 @@ def fig_counts(res, T, out):
         hist = x.get("count_hist")
         if hist:
             h = np.asarray(hist[:kmax + 1], dtype=np.float64) / max(1, sum(hist))
-            ax.bar(np.arange(h.size), h, width=0.8, color=GRID, label="model units")
+            ax.bar(np.arange(h.size), h, width=0.8, color="#c9c7c0", label="model units")
         pois = stats.poisson.pmf(k, mean)
         nb = fit["negbin"]
         ax.plot(k, pois, color=AQUA, label="Poisson fit")
