@@ -1,4 +1,4 @@
-"""Export the six place-code populations for the tuning-map viewer.
+"""Export the eight place-code populations for the tuning-map viewer.
 
     python -m analysis.tuning_viewer.export [--out DIR]
 
@@ -32,6 +32,10 @@ ideal_rot
     is ``(Q z_ideal)_u``. Because ``Q`` is orthogonal, the similarity between
     any two places equals the ideal's; only the single-unit maps differ. The
     page applies ``Q`` with a fast Walsh-Hadamard transform.
+ideal_sparse
+    the probe's sparse non-negative code: the ideal code drawn at r = 23.2,
+    remixed by the same ``Q``, ``relu(Q z - t)`` with ``t`` set for 10% of
+    units active, scaled to unit length at each cell.
 trained, untrained
     the MLP with its first layer folded into per-module tables (see
     ``export_bench``). The untrained encoder is the cosyne figure's control:
@@ -42,6 +46,13 @@ hippocampus
     c 0.5). That controller ran with ``static_vectorhash=True`` and never
     built this layer, so ``Wpg`` is a fresh draw: ``build_scaffold``'s recipe
     after ``np.random.seed(0)``, the cosyne evaluation's seed.
+hippocampus_smooth
+    the same layer and ``Wpg`` fed the smoothed grid code (the encoder's
+    input) instead of the one-hot code. Smoothing acts on each module's phase
+    alone, so ``Wpg g_smooth = W_s g_onehot`` with ``W_s = Wpg B`` (``B`` the
+    block-diagonal smoothing matrix), and the page reuses the one-hot code
+    path with ``W_s``. Its threshold makes the same fraction of (cell,
+    position) pairs active over the whole scaffold as the one-hot layer.
 """
 from __future__ import annotations
 
@@ -217,6 +228,58 @@ def check_hpc_recipe() -> dict:
             "pbook_max_abs_diff": float(np.abs(rates - pbook).max())}
 
 
+def smoothed_wpg(Wpg: np.ndarray, lambdas, fwhm: float) -> np.ndarray:
+    """``W_s`` with ``Wpg @ grid_codes(.., fwhm) == W_s @ grid_codes(.., 0)`` at every position.
+
+    Module ``m``'s block of the smoothed code depends only on that module's
+    phase, so it is ``B_m e_phase`` with ``B_m[r, c]`` the block's unit ``r``
+    at phase ``c``. Positions ``(i, j)`` with ``i, j < l`` sit at phase
+    ``(i, j)`` of module ``l``, which reads ``B_m`` off ``grid_codes``.
+    """
+    Ws, off = np.array(Wpg, dtype=np.float64), 0
+    for l in lambdas:
+        i, j = np.meshgrid(np.arange(l), np.arange(l), indexing="ij")
+        B = grid_codes(lambdas, i.ravel(), j.ravel(), fwhm).astype(np.float64)[:, off:off + l * l].T
+        Ws[:, off:off + l * l] = Wpg[:, off:off + l * l] @ B
+        off += l * l
+    return Ws
+
+
+def _phase_sums(W: np.ndarray, lambdas) -> list[tuple[np.ndarray, np.ndarray]]:
+    """Per cell: sorted sums over every phase of all modules but the last, and the last module's weights."""
+    offs = np.cumsum([0] + [l * l for l in lambdas])
+    out = []
+    for row in W:
+        rest = np.zeros(1)
+        for m in range(len(lambdas) - 1):
+            rest = (rest[:, None] + row[offs[m]:offs[m + 1]][None, :]).ravel()
+        out.append((np.sort(rest), row[offs[-2]:offs[-1]]))
+    return out
+
+
+def active_fraction(W: np.ndarray, lambdas, thresh: float, sums=None) -> float:
+    """Fraction of (cell, position) pairs with ``W g_onehot > thresh`` over the whole scaffold, exactly.
+
+    The periods are pairwise coprime and ``Npos`` is their product, so along
+    each axis every combination of module phases occurs exactly once (Chinese
+    remainder theorem). A cell's input over the scaffold is therefore its
+    weight sum over every combination of one phase per module.
+    """
+    sums = sums if sums is not None else _phase_sums(W, lambdas)
+    above = sum(int((a.size - np.searchsorted(a, thresh - b, side="right")).sum()) for a, b in sums)
+    return above / (len(sums) * sums[0][0].size * sums[0][1].size)
+
+
+def matched_thresh(W: np.ndarray, lambdas, target: float) -> float:
+    """The threshold at which ``active_fraction`` is ``target``, by bisection."""
+    sums = _phase_sums(W, lambdas)
+    lo, hi = 0.0, float(max(a[-1] + b.max() for a, b in sums))
+    for _ in range(60):
+        mid = 0.5 * (lo + hi)
+        lo, hi = (mid, hi) if active_fraction(W, lambdas, mid, sums) > target else (lo, mid)
+    return 0.5 * (lo + hi)
+
+
 # ---------------------------------------------------------------- training patches
 def encoder_patches(path: str, lambdas, fwhm) -> list[dict]:
     """The trained encoder's training patches, in the viewer's (x, y).
@@ -362,6 +425,35 @@ def main() -> None:
         "zeroed_fraction": float((Wpg == 0).mean()),
     }
     refs["hippocampus"] = hpc_rates(Wpg, lambdas, HPC["thresh"], xs_r, ys_r)
+
+    # hippocampus on the smoothed grid code, at the threshold that keeps the one-hot layer's sparsity
+    assert npos == math.prod(lambdas) and all(
+        math.gcd(a, b) == 1 for k, a in enumerate(lambdas) for b in lambdas[k + 1:]), lambdas
+    Ws = smoothed_wpg(Wpg, lambdas, fwhm)
+    f_onehot = active_fraction(Wpg, lambdas, HPC["thresh"])
+    ts = round(matched_thresh(Ws, lambdas, f_onehot), 2)
+    f_smooth = active_fraction(Ws, lambdas, ts)
+    f_same = active_fraction(Ws, lambdas, HPC["thresh"])
+    write_b64(out / "hippocampus_smooth_wpg.b64.txt", Ws, "<f8")
+    g_s = grid_codes(lambdas, xs_r, ys_r, fwhm).astype(np.float64)
+    refs["hippocampus_smooth"] = nonlin(g_s @ Wpg.T, thresh=ts)          # direct, not through Ws
+    pops["hippocampus"]["active_fraction"] = f_onehot
+    pops["hippocampus_smooth"] = {
+        "kind": "hpc", "label": "Hippocampus, smoothed input",
+        "description": f"The same place layer and weights as Hippocampus, fed the smoothed grid "
+                       f"code (bump FWHM {fwhm:g} of the period, the encoder's input) instead of "
+                       f"the one-hot code. Threshold {ts:g} keeps the one-hot layer's sparsity "
+                       f"({f_smooth:.1%} of cell-position pairs active over the scaffold). At the "
+                       f"one-hot layer's threshold {HPC['thresh']:g}, {f_same:.1%} would be active.",
+        "n_units": HPC["Np"], "signed": False, "thresh": ts, "fwhm_ratio": float(fwhm),
+        "c": HPC["c"], "seed": HPC["seed"], "wpg_file": "hippocampus_smooth_wpg.b64.txt",
+        "active_fraction": f_smooth, "active_fraction_onehot": f_onehot,
+        "active_fraction_at_onehot_thresh": f_same,
+        "fold_max_abs_diff": float(np.abs(hpc_rates(Ws, lambdas, ts, xs_r, ys_r)
+                                          - refs["hippocampus_smooth"]).max()),
+    }
+    if pops["hippocampus_smooth"]["fold_max_abs_diff"] > 1e-9:
+        raise RuntimeError(f"smoothed Wpg disagrees with the direct projection: {pops['hippocampus_smooth']}")
 
     for name, ref in refs.items():
         fname = f"{name}_ref.b64.txt"

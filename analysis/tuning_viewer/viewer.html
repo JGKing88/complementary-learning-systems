@@ -277,7 +277,7 @@ const MAX_RES = 512;              // maps above this many cells per side are blo
 const THUMB_RES = 160;
 const DETAIL_RES = 512;
 const SIZE_MIN = 4;
-const POP_ORDER = ["grid", "ideal", "ideal_rot", "ideal_sparse", "trained", "untrained", "hippocampus"];
+const POP_ORDER = ["grid", "ideal", "ideal_rot", "ideal_sparse", "trained", "untrained", "hippocampus", "hippocampus_smooth"];
 const ROT_CACHE_FLOATS = 1 << 25;  // the rotated ideal keeps every unit for arenas up to this many values
 const TF_URL = "https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.22.0/dist/tf.min.js";
 let NPOS = 1716;
@@ -375,13 +375,15 @@ async function loadAll() {
   const M = JSON.parse(await fetchText("manifest.json"));
   st.M = M; NPOS = M.npos;
   const P = M.populations;
-  const [wpg, wTr, wUn] = await Promise.all([
-    fetchText(P.hippocampus.wpg_file), fetchText(P.trained.weights_file), fetchText(P.untrained.weights_file)]);
+  const [wpg, wpgS, wTr, wUn] = await Promise.all([
+    fetchText(P.hippocampus.wpg_file), fetchText(P.hippocampus_smooth.wpg_file),
+    fetchText(P.trained.weights_file), fetchText(P.untrained.weights_file)]);
   st.pops.grid = makeGrid(P.grid);
   st.pops.ideal = makeIdeal(P.ideal);
   st.pops.ideal_rot = makeIdealRot(P.ideal_rot, P.ideal);
   st.pops.ideal_sparse = makeIdealSparse(P.ideal_sparse, st.pops.ideal_rot.signs);
-  st.pops.hippocampus = makeHpc(P.hippocampus, f64(wpg));
+  st.pops.hippocampus = makeHpc("hippocampus", P.hippocampus, f64(wpg));
+  st.pops.hippocampus_smooth = makeHpc("hippocampus_smooth", P.hippocampus_smooth, f64(wpgS));
   st.mlp.trained = unpackMlp(P.trained, f32(wTr));
   st.mlp.untrained = unpackMlp(P.untrained, f32(wUn));
   st.pops.trained = makeMlp("trained", P.trained);
@@ -526,7 +528,7 @@ function idealRotMapsCore(units, a, R, alloc, box) {
 }
 // The background thread's message loop. Output buffers come back from the page after use and are reused.
 function workerMain() {
-  let wpg = null, signs = null;
+  let wpgs = null, signs = null;
   const box = { cache: null }, pool = new Map();
   const take = n => {
     const list = pool.get(n);
@@ -542,11 +544,11 @@ function workerMain() {
       return;
     }
     try {
-      if (m.type === "init") { wpg = m.wpg; signs = m.signs; self.postMessage({ id: m.id, res: true }); return; }
+      if (m.type === "init") { wpgs = m.wpgs; signs = m.signs; self.postMessage({ id: m.id, res: true }); return; }
       let res;
       if (m.type === "grid") res = gridMapsCore(m.units, m.a, m.args, take);
       else if (m.type === "ideal") res = idealMapsCore(m.units, m.a, m.args, take);
-      else if (m.type === "hpc") res = hpcMapsCore(m.units, m.a, Object.assign({ Wpg: wpg }, m.args), take);
+      else if (m.type === "hpc") res = hpcMapsCore(m.units, m.a, Object.assign({ Wpg: wpgs[m.args.key] }, m.args), take);
       else if (m.type === "ideal_rot") res = idealRotMapsCore(m.units, m.a, Object.assign({ signs }, m.args), take, box);
       else throw new Error("unknown job " + m.type);
       self.postMessage({ id: m.id, res }, [res.data.buffer]);
@@ -589,7 +591,8 @@ async function startWorker() {
     w.onerror = e => { if (e.preventDefault) e.preventDefault(); stopWorker("the background thread stopped (" + (e.message || "unknown error") + ")"); };
     wk.w = w;
     await Promise.race([
-      callWorker("init", { wpg: st.pops.hippocampus.Wpg, signs: st.pops.ideal_rot.signs }),
+      callWorker("init", { wpgs: { hippocampus: st.pops.hippocampus.Wpg, hippocampus_smooth: st.pops.hippocampus_smooth.Wpg },
+                           signs: st.pops.ideal_rot.signs }),
       new Promise((_, reject) => setTimeout(() => reject(new Error("no reply within 5 s")), 5000)),
     ]);
   } catch (e) { stopWorker("the background thread could not start (" + errText(e) + ")"); }
@@ -686,13 +689,15 @@ function makeIdealSparse(meta, signs) {
   };
 }
 
-function makeHpc(meta, Wpg) {
+// A Vector-HaSH place layer: relu(Wpg g - thresh) on the one-hot grid code. The smoothed-input layer
+// is the same computation with Wpg pre-multiplied by the smoothing matrix (export.smoothed_wpg).
+function makeHpc(key, meta, Wpg) {
   const L = st.M.lambdas, ng = L.reduce((s, l) => s + l * l, 0), offs = [];
   let o = 0;
   for (const l of L) { offs.push(o); o += l * l; }
-  const th = meta.thresh, H = { npos: NPOS, L, offs, ng, thresh: th };
+  const th = meta.thresh, H = { key, npos: NPOS, L, offs, ng, thresh: th };
   return {
-    key: "hippocampus", meta, n: meta.n_units, signed: false, Wpg,
+    key, meta, n: meta.n_units, signed: false, Wpg,
     label(u) { return "cell " + u; },
     info(u) { return [["Place cell", String(u)], ["Threshold", String(th)]]; },
     maps(units, a) { return jsMaps("hpc", units, a, H, () => hpcMapsCore(units, a, Object.assign({ Wpg }, H), allocMain)); },
