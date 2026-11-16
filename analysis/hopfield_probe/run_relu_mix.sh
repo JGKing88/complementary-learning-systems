@@ -33,10 +33,10 @@ export SET
 B="n_freq=512,seed=0,gain=100"
 
 if [[ "$SET" == e ]]; then
-# w69_rank_homeo (old loss, within-env): even unit usage at 10% and 20% non-negative, and the signed
+# w70_rank_homeo_slow (old loss, within-env; slow delayed homeostasis): even unit usage at 10% and 20% non-negative, and the signed
 # 10% control (sparsity without non-negativity), beside att0.5 s43 rerun at this commit.
 OUT=${OUT:-/orcd/pool/003/jackking/cls_runs/results/hopfield_probe/relu_homeo}
-W=/orcd/pool/003/jackking/cls_runs/sweeps/w69_rank_homeo
+W=/orcd/pool/003/jackking/cls_runs/sweeps/w70_rank_homeo_slow
 ENCS=(
     "/orcd/pool/003/jackking/cls_runs/sweeps/w52_attract_fwhm/001_att0.5_seed=43/encoder_final.pt|att0.5 s43 tanh"
     "$W/000_att0.5_rank_homeo10_seed=43/encoder_final.pt|relu10 homeo s43"
