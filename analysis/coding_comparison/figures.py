@@ -75,7 +75,7 @@ def fig_kernel(res, T, out):
         k = R["kernel_1d"]["constructions"]
         d = np.arange(len(k["raw|cosine"]["s"])) / W
         ax.plot(d, k["raw|cosine"]["s"], color=BLUE, label="cosine, raw code")
-        ax.plot(d, k[f"{b}|pearson"]["s"], color=ORANGE, label=f"Pearson, {b} rates")
+        ax.plot(d, k[f"{b}|pearson"]["s"], color=ORANGE, label="Pearson, rates")
         ax.plot(pts[:, 0], pts[:, 1], "o", ms=3.5, color=INK, label="ventral CA3 (Kjelstrup)")
         ax.axvline(1.0, color=MUTED, lw=0.8, ls="--")
         ax.axhline(0, color=MUTED, lw=0.8)
@@ -198,7 +198,7 @@ def fig_basis(res, T, out):
     measures = [("var/mean, 74 W (B)", "B0.75", "73.8", ("fit", "var_over_mean")),
                 ("gap CV, 74 W (B)", "B0.75", "73.8", ("layout", "gap_cv_median")),
                 ("field size CV, 74 W (B)", "B0.75", "73.8", ("field_size", "cv")),
-                ("active fraction, 34 W (Ap)", "Ap", "33.8", ("active_frac",)),
+                ("per-location activity, 74 W (B)", "B0.75", "73.8", ("coverage_per_location",)),
                 ("single-field share, 34 W (Ap)", "Ap", "33.8", ("single_field_frac_active",))]
     fig, axs = plt.subplots(1, len(measures), figsize=(2.0 * len(measures), 0.45 * len(pops) + 1.2),
                             sharey=True, layout="constrained")
