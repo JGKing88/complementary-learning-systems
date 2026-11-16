@@ -25,6 +25,7 @@
 #   SET=h bash analysis/hopfield_probe/run_relu_mix.sh [ARRAY]    # att0.5 sparsified after training
 #   SET=i bash analysis/hopfield_probe/run_relu_mix.sh [ARRAY]    # w72 2048 units, raw and inhibited
 #   SET=j bash analysis/hopfield_probe/run_relu_mix.sh [ARRAY]    # att0.5 with a plain ReLU after training
+#   SET=k bash analysis/hopfield_probe/run_relu_mix.sh [ARRAY]    # SET=j on seeds 42/44 + tanh-with-inhibition control
 #   python -m analysis.hopfield_probe.ideal_summary "$OUT"        # the table
 #
 # Runs from THIS worktree: do not delete it while jobs are live.
@@ -37,7 +38,21 @@ SET=${SET:-a}
 export SET
 B="n_freq=512,seed=0,gain=100"
 
-if [[ "$SET" == j ]]; then
+if [[ "$SET" == k ]]; then
+# Is SET=j's gain over att0.5 (retrieval, basin, dead goals) from the ReLU or from the inhibition?
+# "tanh + inhibition" is att0.5 with one constant subtracted. It is also a sigmoid-rate encoder:
+# sigmoid(2x) = (1 + tanh x) / 2, so a sigmoid output plus inhibition is this row, halved. Plus
+# SET=j's relu(output) + inhibition on two more seeds.
+OUT=${OUT:-/orcd/pool/003/jackking/cls_runs/results/hopfield_probe/att05_rectified_seeds}
+S=/orcd/pool/003/jackking/cls_runs/sweeps/w52_attract_fwhm
+ENCS=("inhib:$S/001_att0.5_seed=43/encoder_final.pt|att0.5 s43 tanh + inhibition")
+for x in "000 42" "002 44"; do
+    read -r n sd <<< "$x"
+    A="$S/${n}_att0.5_seed=$sd/encoder_final.pt"
+    ENCS+=("$A|att0.5 s$sd tanh" "inhib:$A|att0.5 s$sd tanh + inhibition"
+           "inhib:rectify:out:$A|att0.5 s$sd relu(output) + inhibition")
+done
+elif [[ "$SET" == j ]]; then
 # att0.5 s43 with a plain ReLU added after training (harness rectify: prefix): on its output
 # (nearly binary, ~half on) and on its graded pre-tanh values; raw and with global inhibition.
 OUT=${OUT:-/orcd/pool/003/jackking/cls_runs/results/hopfield_probe/att05_rectified}
