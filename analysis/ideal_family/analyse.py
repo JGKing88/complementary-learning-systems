@@ -357,12 +357,14 @@ def arenas(rows, kind="grf", M=None) -> tuple[str, dict]:
                 r = x["config"]["r"]
                 side = a["side"]
                 uA = get(st, "level.uA_mean")
+                sq = T.square_fields(uA, side, r) if uA and uA > 0 else None
                 pts.append({"r": r, "side": side, "fpu": st["fields_per_unit"],
                             "area_r2": (st["mean_field_size"] or np.nan) / r ** 2,
                             "single": st["single_field_share_active"], "vm": st["var_over_mean"],
                             "cov": st["coverage_all"], "uA": uA,
-                            "ec": float(T.ec_square(uA, side, r)) if uA else None,
-                            "area_pred": float(T.mean_area_2d(uA, r)) / r ** 2 if uA and uA > 0 else None,
+                            "ec": sq["count"] if sq else None,
+                            "area_pred": sq["area"] / r ** 2 if sq else None,
+                            "area_interior": float(T.mean_area_2d(uA, r)) / r ** 2 if uA and uA > 0 else None,
                             "a95": st["area95_active"], "tr": st["tr"]["active"]})
             if not pts:
                 continue
@@ -371,13 +373,14 @@ def arenas(rows, kind="grf", M=None) -> tuple[str, dict]:
 
             def m(key):
                 return ms([q[key] for q in use])
-            data[f"{v}|{k}r"] = {kk: m(kk) for kk in ("fpu", "ec", "area_r2", "area_pred", "single",
+            data[f"{v}|{k}r"] = {kk: m(kk) for kk in ("fpu", "ec", "area_r2", "area_pred", "area_interior", "single",
                                                       "vm", "cov", "uA", "a95", "tr")}
             data[f"{v}|{k}r"]["by_r"] = pts
             body.append([v, f"{k} r", fmt(m("uA"), 2), fmt(m("fpu"), 2), fmt(m("ec"), 2),
                          fmt(m("area_r2"), 2), fmt(m("area_pred"), 2), fmt(m("single")), fmt(m("vm")),
                          fmt(m("cov")), fmt(m("a95")), fmt(m("tr"))])
-    head = ["variant", "side", "u_A", "fields per unit", "(EC)", "field area / r^2", "(EC)",
+    head = ["variant", "side", "u_A", "fields per unit", "(EC, 9-cell cut)", "field area / r^2",
+            "(EC in the box, 9-cell cut)",
             "single-field share (active)", "var/mean", "coverage", "95% area (active)", "TR (active)"]
     return table(head, body), data
 

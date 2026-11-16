@@ -348,6 +348,21 @@ def ec_square(u, side, r):
             + side * side * ec_density_2d(u, r))
 
 
+def square_fields(u, side, r, min_area: float = 9.0) -> dict:
+    """Fields in a ``side x side`` arena at level ``u``: EC count, wall-cut mean area, and a minimum-area cut.
+
+    The mean area of all fields in the box, wall-cut ones included, is
+    ``(1 - Phi(u)) side^2 / EC``. A high excursion is a paraboloid cap whose
+    area is proportional to its overshoot, so areas are taken as exponential:
+    dropping fields under ``min_area`` keeps ``exp(-min_area / A)`` of them,
+    with mean area ``A + min_area``. Valid where the EC counts fields, ``u >= 0.5``.
+    """
+    ec = float(ec_square(u, side, r))
+    A = float(Phibar(u)) * side * side / ec
+    keep = math.exp(-min_area / A) if min_area > 0 else 1.0
+    return {"ec": ec, "area_box": A, "count": ec * keep, "area": A + min_area if min_area > 0 else A}
+
+
 def expected_max_2d(side, r, grid=None) -> float:
     """``E[max]`` over a square, with ``P(max > u) = 1 - exp(-E chi(A_u))`` (Poisson clumping).
 
