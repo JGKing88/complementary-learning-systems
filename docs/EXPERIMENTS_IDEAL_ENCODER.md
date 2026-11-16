@@ -2998,3 +2998,38 @@ k̄(792) 0.74–0.75 relative (att0.5 0.57, 0.65).
 3. **Still short of att0.5 on every measure.** The nearest, 10% homeostatic, trails by ~5° of
    direction, ~7 cells of basin (its peak is narrower, 16 against 18.5 cells) and more dead goals
    at large K. The far field is unchanged by any output form: the aliases come from the network.
+
+## 29. Global inhibition in the memory, and a wider attract radius (2026-11-16)
+
+**Inhibition, no retraining** (`run_relu_mix.sh SET=f`; harness `inhib:` prefix: one constant c,
+the mean of all units over 65,536 random cells, subtracted from every unit of every code, then unit
+norm; for the 20% code the mean similarity of random place pairs falls from 0.121 to 0.003).
+**Radius 24** (w71_rank_homeo_r24: w70's ReLU arms with attract radius 24; `SET=g`, raw and
+inhibited). K = 5, one step; whole / corner.
+
+| encoder | \|err\| | exact | basin | cont reach | dead @ K 20 |
+|---|---|---|---|---|---|
+| att0.5 s43 (tanh) | 7.8 / 6.6 | 0.982 / 0.930 | 27.7 / 20.6 | 0.987 / 0.970 | 0.08 / 0.04 |
+| relu 20% homeo, raw (§28) | 9.1–9.5 / 9.9–10.5 | 0.91–0.97 / 0.68–0.74 | 21–23 / 14 | 0.93–0.97 / 0.85–0.88 | 0.42–0.54 / 0.62 |
+| relu 20% homeo + inhibition | 8.4–8.8 / 8.9–9.4 | 0.97–0.99 / 0.82–0.83 | 23.4–25.2 / 16.8–17.6 | 0.986–0.989 / 0.944–0.959 | 0.17–0.33 / 0.25–0.33 |
+| relu 10% homeo + inhibition | 12.2 / 13.1 | 0.94–0.98 / 0.86–0.90 | 21.4–21.6 / 16.6–19.8 | 0.95–0.98 / 0.91–0.94 | 0.12–0.25 / 0.25–0.29 |
+| relu 20% r24, raw | 9.8–10.4 / 11.3–11.5 | 0.90–0.96 / 0.66–0.74 | 21.2–21.4 / 11.9–17.2 | 0.95–0.97 / 0.82–0.89 | 0.33 / 0.50–0.71 |
+| relu 20% r24 + inhibition | 9.1–9.6 / 10.3 | 0.96–0.99 / 0.83–0.87 | 22.0–24.5 / 15.5–19.7 | 0.97–0.98 / 0.89–0.94 | 0.21–0.25 / 0.25–0.29 |
+| relu 10% r24 + inhibition | 13.3–13.5 / 13.9–14.7 | 0.95–0.98 / 0.83–0.87 | 21.1–21.4 / 16.4–18.3 | 0.96–0.97 / 0.88–0.92 | 0.25–0.29 / 0.17–0.38 |
+
+Half-width (along x, 400 random cells, seed 43): att0.5 18.6; relu 20% 17.4 at radius 20, 17.7 at
+24; relu 10% 16.3 at 20, 17.2 at 24.
+
+**Results.**
+1. **Inhibition is worth most at 20%.** It halves the dead goals and lifts exact retrieval, basin
+   and reach. Over the whole arena the 20% code with inhibition is close to att0.5 (direction 8.6°
+   against 7.8°, exact 0.97–0.99 against 0.98, reach 0.99 against 0.99, basin 24 against 28).
+2. **The remaining gap is large-K crowding and the corner.** With the floor gone, 17–33% of goals
+   are still dead at K = 20 (att0.5 4–8%), and corner exact retrieval is 0.82–0.83 against 0.93.
+   This is the variance of random overlap between sparse codes, which is larger than for dense
+   graded codes with the same number of units.
+3. **The attract radius barely sets the sparse codes' width** (+0.3 to +0.9 cells for 20 → 24) and
+   radius 24 costs ~1° of direction. Width was not the main source of the basin gap.
+
+**Best non-negative trained encoder so far:** relu 20% homeostatic (w70, slow rule), old loss,
+with one global inhibition constant in the memory.
