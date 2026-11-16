@@ -19,7 +19,8 @@
 #   SET=b bash analysis/hopfield_probe/run_relu_mix.sh [ARRAY]
 #   SET=c bash analysis/hopfield_probe/run_relu_mix.sh [ARRAY]    # slow waves removed (relu_band)
 #   SET=d bash analysis/hopfield_probe/run_relu_mix.sh [ARRAY]    # trained relu_rank encoders
-#   SET=e bash analysis/hopfield_probe/run_relu_mix.sh [ARRAY]    # w69 homeostatic + signed control
+#   SET=e bash analysis/hopfield_probe/run_relu_mix.sh [ARRAY]    # w70 homeostatic + signed control
+#   SET=f bash analysis/hopfield_probe/run_relu_mix.sh [ARRAY]    # w70 relu codes + global inhibition
 #   python -m analysis.hopfield_probe.ideal_summary "$OUT"        # the table
 #
 # Runs from THIS worktree: do not delete it while jobs are live.
@@ -32,7 +33,18 @@ SET=${SET:-a}
 export SET
 B="n_freq=512,seed=0,gain=100"
 
-if [[ "$SET" == e ]]; then
+if [[ "$SET" == f ]]; then
+# Global inhibition in the memory, no retraining: the w70 non-negative encoders (and w69's 20%)
+# with one constant subtracted from every unit (harness inhib: prefix). Compare with SET=e.
+OUT=${OUT:-/orcd/pool/003/jackking/cls_runs/results/hopfield_probe/relu_inhib}
+W=/orcd/pool/003/jackking/cls_runs/sweeps/w70_rank_homeo_slow
+ENCS=(
+    "inhib:$W/000_att0.5_rank_homeo10_seed=43/encoder_final.pt|relu10 homeo s43 + inhibition"
+    "inhib:$W/001_att0.5_rank_homeo10_seed=44/encoder_final.pt|relu10 homeo s44 + inhibition"
+    "inhib:$W/002_att0.5_rank_homeo20_seed=43/encoder_final.pt|relu20 homeo s43 + inhibition"
+    "inhib:$W/003_att0.5_rank_homeo20_seed=44/encoder_final.pt|relu20 homeo s44 + inhibition"
+)
+elif [[ "$SET" == e ]]; then
 # w70_rank_homeo_slow (old loss, within-env; slow delayed homeostasis): even unit usage at 10% and 20% non-negative, and the signed
 # 10% control (sparsity without non-negativity), beside att0.5 s43 rerun at this commit.
 OUT=${OUT:-/orcd/pool/003/jackking/cls_runs/results/hopfield_probe/relu_homeo}

@@ -70,6 +70,42 @@ def _dig(ckpt: dict, key: str):
     return ckpt.get(key)
 
 
+# ``inhib:<spec>``: any encoder with uniform (global) inhibition. One constant c, the mean of
+# every unit's activity over 65,536 random scaffold cells, is subtracted from every unit of every
+# code, which is then rescaled to unit length. The same as ideal_encoder's center_global, for
+# trained encoders: stored goals, cues and readouts all see z - c. For a non-negative code it
+# removes the shared floor without touching the activity the encoder itself produces.
+INHIB_PREFIX = "inhib:"
+
+
+class InhibitedEncoder(torch.nn.Module):
+    def __init__(self, base: torch.nn.Module, c: float):
+        super().__init__()
+        self.base = base
+        self.c = float(c)
+
+    def forward(self, x, *args, **kwargs):
+        z = self.base(x, *args, **kwargs) - self.c
+        return z / z.norm(dim=-1, keepdim=True).clamp_min(1e-12)
+
+
+def load_inhibited_encoder(spec: str, *, device="cpu", fwhm_override=None, fwhm_fallback=None):
+    """``load_probe_encoder``'s return shape for ``inhib:<spec>``."""
+    import numpy as np
+    from .encode import encode_positions
+    base, cfg, gain, fwhm, header = load_probe_encoder(
+        spec[len(INHIB_PREFIX):], device=device, fwhm_override=fwhm_override,
+        fwhm_fallback=fwhm_fallback)
+    lambdas = [int(l) for l in cfg.lambdas]
+    npos = int(np.prod(lambdas))
+    g = np.random.default_rng(12345)
+    xs, ys = g.integers(0, npos, 65536), g.integers(0, npos, 65536)
+    with torch.no_grad():
+        c = float(encode_positions(base, lambdas, fwhm, xs, ys, device=device).mean())
+    header = dict(header, path=spec, name=spec, inhibition_constant=c)
+    return InhibitedEncoder(base, c).eval(), cfg, gain, fwhm, header
+
+
 def load_probe_encoder(
     path: str,
     *,
@@ -94,6 +130,9 @@ def load_probe_encoder(
     [,seed=0][,gain=100]`` (``ideal_encoder.py``), so every script built on
     this loader scores the ideal code through the identical pipeline.
     """
+    if isinstance(path, str) and path.startswith(INHIB_PREFIX):
+        return load_inhibited_encoder(path, device=device, fwhm_override=fwhm_override,
+                                      fwhm_fallback=fwhm_fallback)
     from .gwn_encoder import is_gwn_spec, load_gwn_encoder
     if is_gwn_spec(path):
         return load_gwn_encoder(path, device=device, fwhm_override=fwhm_override,
