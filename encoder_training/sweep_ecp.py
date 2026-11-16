@@ -2379,6 +2379,20 @@ WAVES["w67_relu_rank10"] = {
 }
 
 
+# W68 -- w67 with cross-environment pairs back in the repel term (train.py's own default; the
+# w52 ladder masked them with exclude_cross_env_pairs). Same loss formula. w67's codes alias at
+# ~0.96 by epoch 400 although every code has the sparse ideal's shape, which fits the earlier
+# finding that within-patch pairs (<= ~70 cells) never see the far field. Breaks the
+# no-cross-environment rule on purpose: it tests whether the missing far pairs are the cause.
+WAVES["w68_relu_rank10_xenv"] = {
+    "arm": {
+        "att0.5_relu_rank10_xenv": {**WAVES["w67_relu_rank10"]["arm"]["att0.5_relu_rank10"],
+                                    "exclude_cross_env_pairs": False},
+    },
+    "seed": [43, 44],
+}
+
+
 def _flatten(cfg: dict) -> dict:
     """Expand an ``arm`` dict of overrides into the config it stands for."""
     arm = cfg.pop("arm", None)
