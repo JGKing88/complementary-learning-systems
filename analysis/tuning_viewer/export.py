@@ -445,7 +445,10 @@ def main() -> None:
                        f"and standard deviation about {np.median(sds):.1f} cells (r = {ideal.r:g}), plus a "
                        f"weak ripple over the whole scaffold. This frequency draw repeats some frequencies, "
                        f"so the code spans {rank} of {D} dimensions and G^-1/2 is taken on that span. Every "
-                       f"similarity between places still equals the ideal's.",
+                       f"similarity between places still equals the ideal's. A 100 x 100 arena holds on "
+                       f"average {D * (100 / npos) ** 2:.1f} of the {D} field centres. Every other unit "
+                       f"shows only its ripple there, which looks like Ideal, rotated, so the page lists "
+                       f"units by field centre in the arena.",
         "n_units": D, "signed": True, "seed": PLACE["seed"], "jitter": PLACE["jitter"],
         "spacing": sp, "centres": cs.tolist(), "q_file": "ideal_place_q.b64.txt",
         "rank": rank, "gram_eig_min_kept": float(ev[keep].min()),

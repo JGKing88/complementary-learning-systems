@@ -1449,6 +1449,7 @@ function drawMinimap() {
 // ================================================================ sorting
 const SORTS = {
   id: { label: "Unit order" },
+  centre: { label: "Field centre in arena", centres: true },
   random: { label: "Random" },
   fields: { label: "Most fields", stat: true, key: r => r.nFields, desc: true },
   fieldsize: { label: "Largest fields", stat: true, key: r => r.meanField, desc: true },
@@ -1477,9 +1478,35 @@ function shuffleOrder() {
   for (let i = ids.length - 1; i > 0; i--) { const j = Math.floor(rnd() * (i + 1)); [ids[i], ids[j]] = [ids[j], ids[i]]; }
   st.order = ids; st.orderPop = pop.key; st.sortedFor = viewKey(); st.page = 0; st.sel = ids[0];
 }
+// Populations built around field centres (meta.centres, the place-field rotation) can list the units
+// whose centre lies in the arena first, ordered by the centre's distance from the arena's middle (the
+// larger of the two torus axis distances, so every unit centred inside comes before any outside). It
+// needs no maps, so it is redone whenever the arena moves.
+const hasCentres = pop => !!(pop && pop.meta.centres);
+function centreOrder() {
+  const pop = st.pops[st.popKey], cs = pop.meta.centres, mx = st.x0 + (st.S - 1) / 2, my = st.y0 + (st.S - 1) / 2;
+  const tor = d => { d = mod(d, NPOS); return Math.min(d, NPOS - d); };
+  const key = cs.map(c => { const dx = tor(c[0] - mx), dy = tor(c[1] - my); return Math.max(dx, dy) + 1e-6 * Math.hypot(dx, dy); });
+  st.order = Array.from({ length: pop.n }, (_, i) => i).sort((p, q) => key[p] - key[q] || p - q);
+  st.orderPop = pop.key; st.sortedFor = viewKey(); st.page = 0;
+}
+function centresInArena() {
+  return st.pops[st.popKey].meta.centres.filter(c => mod(c[0] - st.x0, NPOS) < st.S && mod(c[1] - st.y0, NPOS) < st.S).length;
+}
+function syncSortOptions() {
+  const opt = $("sort").querySelector('option[value="centre"]'), on = hasCentres(st.pops[st.popKey]);
+  if (opt) { opt.hidden = !on; opt.disabled = !on; }
+  $("sort").value = st.sort;
+}
 function updateSortNote() {
   const s = SORTS[st.sort], note = $("sort-note"), btn = $("resort");
   if (st.sort === "id") { note.textContent = ""; btn.disabled = true; return; }
+  if (st.sort === "centre") {
+    const n = centresInArena(), pop = st.pops[st.popKey];
+    note.textContent = n + " of " + pop.n + " units have their field centre in this arena. They come first; the rest show only their ripple here.";
+    btn.disabled = true;
+    return;
+  }
   if (st.sort === "random") { note.textContent = "Shuffled. Re-sort draws a new order."; btn.disabled = false; return; }
   const fresh = st.sortedFor === viewKey() && st.orderPop === st.popKey;
   note.textContent = fresh ? "Sorted for this arena and these filters." : "Sorted for an earlier view. Re-sort to update.";
@@ -1514,6 +1541,7 @@ async function computeSort() {
 function setSort(key) {
   st.sort = key; st.sortToken++;
   if (key === "id") { st.order = null; st.orderPop = null; st.page = 0; }
+  else if (key === "centre") { centreOrder(); st.sel = st.order[0]; }
   else if (key === "random") shuffleOrder();
   updateSortNote();
   if (SORTS[key].stat) computeSort();
@@ -1723,6 +1751,7 @@ function setArena(x0, y0, S, fromJump) {
   st.S = Math.min(NPOS, Math.max(1, Math.round(S)));
   st.x0 = mod(Math.round(x0), NPOS); st.y0 = mod(Math.round(y0), NPOS);
   if (!fromJump) $("jump").value = "";
+  if (st.sort === "centre") centreOrder();
   syncInputs(); drawMinimap(); updateSortNote(); requestRender();
 }
 function setSize(S) {
@@ -1745,6 +1774,11 @@ function setPop(key) {
   st.popKey = key; st.sel = null; st.page = 0; st.sortToken++;
   showBand();
   document.querySelectorAll("#pops button").forEach(b => b.setAttribute("aria-pressed", b.dataset.pop === key ? "true" : "false"));
+  // The place-field rotation opens on its field-centre order; other populations cannot use it.
+  if (hasCentres(st.pops[key]) && st.sort === "id") st.sort = "centre";
+  else if (!hasCentres(st.pops[key]) && st.sort === "centre") { st.sort = "id"; st.order = null; st.orderPop = null; }
+  syncSortOptions();
+  if (st.sort === "centre") centreOrder();
   if (st.sort === "random") shuffleOrder();
   updateSortNote();
   if (SORTS[st.sort].stat) computeSort();
@@ -1783,6 +1817,7 @@ function buildControls() {
   }));
   const sort = $("sort");
   sort.replaceChildren(...Object.entries(SORTS).map(([k, s]) => { const o = document.createElement("option"); o.value = k; o.textContent = s.label; return o; }));
+  syncSortOptions();
   const jump = $("jump"), first = document.createElement("option");
   first.value = ""; first.textContent = "Go to a training patch of the trained encoder…";
   const groups = new Map();
