@@ -8,29 +8,58 @@ Each finding carries a tag that says how it was checked. **[full text]** means t
 
 The largest single fields come from dorsal CA1 of Egyptian fruit bats flying a 194 m tunnel, 185.3 m between the two landing balls. In 5 wild-born bats, 196 of 235 putative pyramidal cells were place cells, with 1,629 fields in total. **Field size ran from 0.6 to 32 m** and fit a log-normal distribution whose median is about 4.8 m and mean about 5.7 m [full text; median and mean derived] ([Eliav et al. 2021](https://www.weizmann.ac.il/brain-sciences/labs/ulanovsky/sites/brain-sciences.labs.ulanovsky/files/2024-11/Eliav2021.pdf)). The fields of one neuron differed up to 20-fold in size, with a mean largest-to-smallest ratio of 4.4, and the 12.2% of neurons with a single field had fields averaging 5.9 ± 3.5 m [full text] ([Eliav et al. 2021](https://www.weizmann.ac.il/brain-sciences/labs/ulanovsky/sites/brain-sciences.labs.ulanovsky/files/2024-11/Eliav2021.pdf)). The authors bounded each field at 20% of its peak and measured size as the span from the 5th to the 95th percentile of in-field spike positions. The size distribution held across nine detection variants, although a stricter 20th-to-80th percentile rule ended the tail near 20 m instead of 32 m [full text] ([Eliav et al. 2021](https://www.weizmann.ac.il/brain-sciences/labs/ulanovsky/sites/brain-sciences.labs.ulanovsky/files/2024-11/Eliav2021.pdf)). Rats in large environments have smaller fields in absolute terms. On a novel 48 m track, dorsal CA1 fields averaged **65 ± 43 cm**, and the largest reached about 3.3 m, read from a scatter plot [full text, supplement] ([Rich et al. 2014 supplement](https://www.its.caltech.edu/~jkenny/nb250c/papers/Rich-2014-supp.pdf)). In an 18.6 m² arena, dorsal CA1 subfields ranged from 0.023 to 3.46 m², with 78% at 1 m² or less [full text, accepted manuscript] ([Harland et al. 2021](https://par.nsf.gov/servlets/purl/10294326)). Ventral rat CA3 is the one rodent site with fields near 10 m. On an 18 m track, ventral fields averaged 5.52 ± 0.54 m, the authors write that "few fields were longer than 10 m", and the longest field drawn in the paper, from a ventral cell, ran about 15.7 m in one running direction [full text; 15.7 m figure-read] ([Kjelstrup et al. 2008](https://doi.org/10.1126/science.1157086)).
 
-Relative to the environment the ranking reverses. The table lists the largest or typical fields as a fraction of the space, roughly from largest share to smallest, with related rows kept together.
+Relative to the environment the ranking reverses. The tables list the largest or typical fields as a fraction of the space, one table per region, each from largest share to smallest with descriptive reports last. The CA1 table gives dorsal or ventral where the source states it.
 
-| Study | Species, region | Environment | Field measure | Fraction of environment | Status |
+### CA1
+
+| Study | Animal | Environment | Field measure | Fraction of environment | Status |
 |---|---|---|---|---|---|
-| [Kjelstrup et al. 2008](https://doi.org/10.1126/science.1157086) | Rat CA3, one ventral cell at 83% of the long axis | 18 m linear track | Single field about 15.7 m in one running direction | about 87% | full text, figure-read |
-| [Kjelstrup et al. 2008](https://doi.org/10.1126/science.1157086) | Rat CA3, ventral group, 70 to 100% of the long axis | 18 m linear track | Mean 5.52 ± 0.54 m, 61 cells, 4 rats | 31% | full text, derived |
-| [Kjelstrup et al. 2008](https://doi.org/10.1126/science.1157086) | Rat CA3, intermediate group, 40 to 70% of the long axis | 18 m linear track | Mean 3.73 ± 0.43 m, 37 cells, 3 rats | 21% | full text, derived |
-| [Courellis et al. 2019](https://pmc.ncbi.nlm.nih.gov/articles/PMC6922474/) | Marmoset hippocampus, DG, CA3 and CA1 pooled | 2.44 m track | Mean width 141.85 ± 45.96 cm | 58% | full text, N cells not stated |
-| [Diba & Buzsáki 2008](https://pmc.ncbi.nlm.nih.gov/articles/PMC2656938/) | Rat dorsal CA1 and CA3 | 1.0 m track, shortened from 1.7 m | Mean 42 cm | 42% | full text, derived |
-| [Diba & Buzsáki 2008](https://pmc.ncbi.nlm.nih.gov/articles/PMC2656938/) | Rat dorsal CA1 and CA3 | 1.7 m track | Mean 52 cm | 31% | full text, derived |
-| [Mizuseki et al. 2012](https://pmc.ncbi.nlm.nih.gov/articles/PMC3718552/) | Rat dorsal CA1 | 2.5 m track | 75 cm | 30% | full text, derived |
-| [Ziv et al. 2013](https://pmc.ncbi.nlm.nih.gov/articles/PMC3784308) | Mouse CA1, calcium imaging | 84 cm track | Mean about 27% of track, median 24 cm | 27% | full text |
-| [Fenton et al. 2008](https://pmc.ncbi.nlm.nih.gov/articles/PMC2695947/) | Rat dorsal CA1 | 68 cm cylinder | Per field | 27% | full text |
-| [Eliav et al. 2021](https://www.weizmann.ac.il/brain-sciences/labs/ulanovsky/sites/brain-sciences.labs.ulanovsky/files/2024-11/Eliav2021.pdf) | Bat dorsal CA1 | 6 m tunnel | Mean 1.32 m | 22% | full text, derived |
-| [Harland et al. 2021](https://par.nsf.gov/servlets/purl/10294326) | Rat dorsal CA1 | 18.6 m² arena | Largest subfield 3.46 m² | 18.7% | full text, derived |
-| [Eliav et al. 2021](https://www.weizmann.ac.il/brain-sciences/labs/ulanovsky/sites/brain-sciences.labs.ulanovsky/files/2024-11/Eliav2021.pdf) | Bat dorsal CA1 | 185 m flight path | Largest 32 m | 17% | full text, derived |
-| [Fenton et al. 2008](https://pmc.ncbi.nlm.nih.gov/articles/PMC2695947/) | Rat dorsal CA1 | 2.1 m² chamber floor | Per field | 7.3% | full text |
-| [Rich et al. 2014, supplement](https://www.its.caltech.edu/~jkenny/nb250c/papers/Rich-2014-supp.pdf) | Rat dorsal CA1 | 48 m track | Largest about 3.3 m, mean 0.65 m | about 7%, 1.4% | full text, derived |
-| [Sharp & Green 1994](https://doi.org/10.1523/JNEUROSCI.14-04-02339.1994) | Rat subiculum | 76 cm cylinder | Visited 2.9 cm pixels with any spikes | 84% over all cells; 70 and 79% for bursting and non-bursting cells | full text, nonzero-rate fraction |
-| [Kim, Ganguli & Frank 2012](https://pmc.ncbi.nlm.nih.gov/articles/PMC3458125) | Rat subiculum, distal | 350 cm track | Spatial activity fraction 0.69 | 69%, a sparseness index | full text |
-| [Ledergerber et al. 2021](https://pmc.ncbi.nlm.nih.gov/articles/PMC8170370) | Rat subiculum | 150 × 150 cm box | Bins holding 95% of spikes | 56%, against CA1 26% | full text, spike spread |
-| [Keinath et al. 2014](https://pmc.ncbi.nlm.nih.gov/articles/PMC4447627/) | Mouse ventral CA1 | 35 and 70 cm cylinders | "frequently span the entirety of the environment" | qualitative | full text |
-| [Tingley & Buzsáki 2018](https://pmc.ncbi.nlm.nih.gov/articles/PMC6605060/) | Rat lateral septum | about 3.2 m maze | Theta-phase field, not rate | "virtually the entire length" | full text |
+| [Mizuseki et al. 2012](https://pmc.ncbi.nlm.nih.gov/articles/PMC3718552/) | Rat, dorsal | 2.5 m track | 75 cm | 30% | full text, derived |
+| [Ziv et al. 2013](https://pmc.ncbi.nlm.nih.gov/articles/PMC3784308) | Mouse, calcium imaging | 84 cm track | Mean about 27% of track, median 24 cm | 27% | full text |
+| [Fenton et al. 2008](https://pmc.ncbi.nlm.nih.gov/articles/PMC2695947/) | Rat, dorsal | 68 cm cylinder | Per field | 27% | full text |
+| [Harland et al. 2021](https://par.nsf.gov/servlets/purl/10294326) | Rat, dorsal | 18.6 m² arena | Largest subfield 3.46 m² | 18.7% | full text, derived |
+| [Fenton et al. 2008](https://pmc.ncbi.nlm.nih.gov/articles/PMC2695947/) | Rat, dorsal | 2.1 m² chamber floor | Per field | 7.3% | full text |
+| [Rich et al. 2014, supplement](https://www.its.caltech.edu/~jkenny/nb250c/papers/Rich-2014-supp.pdf) | Rat, dorsal | 48 m track | Largest about 3.3 m, mean 0.65 m | about 7%, 1.4% | full text, derived |
+| [Keinath et al. 2014](https://pmc.ncbi.nlm.nih.gov/articles/PMC4447627/) | Mouse, ventral | 35 and 70 cm cylinders | "frequently span the entirety of the environment" | qualitative | full text |
+
+### CA3
+
+| Study | Animal | Environment | Field measure | Fraction of environment | Status |
+|---|---|---|---|---|---|
+| [Kjelstrup et al. 2008](https://doi.org/10.1126/science.1157086) | Rat, one ventral cell at 83% of the long axis | 18 m linear track | Single field about 15.7 m in one running direction | about 87% | full text, figure-read |
+| [Kjelstrup et al. 2008](https://doi.org/10.1126/science.1157086) | Rat, ventral group, 70 to 100% of the long axis | 18 m linear track | Mean 5.52 ± 0.54 m, 61 cells, 4 rats | 31% | full text, derived |
+| [Kjelstrup et al. 2008](https://doi.org/10.1126/science.1157086) | Rat, intermediate group, 40 to 70% of the long axis | 18 m linear track | Mean 3.73 ± 0.43 m, 37 cells, 3 rats | 21% | full text, derived |
+
+### Pooled subfields
+
+| Study | Animal | Environment | Field measure | Fraction of environment | Status |
+|---|---|---|---|---|---|
+| [Courellis et al. 2019](https://pmc.ncbi.nlm.nih.gov/articles/PMC6922474/) | Marmoset, DG, CA3 and CA1 | 2.44 m track | Mean width 141.85 ± 45.96 cm | 58% | full text, N cells not stated |
+| [Diba & Buzsáki 2008](https://pmc.ncbi.nlm.nih.gov/articles/PMC2656938/) | Rat, dorsal CA1 and CA3 | 1.0 m track, shortened from 1.7 m | Mean 42 cm | 42% | full text, derived |
+| [Diba & Buzsáki 2008](https://pmc.ncbi.nlm.nih.gov/articles/PMC2656938/) | Rat, dorsal CA1 and CA3 | 1.7 m track | Mean 52 cm | 31% | full text, derived |
+
+### Bat CA1
+
+| Study | Animal | Environment | Field measure | Fraction of environment | Status |
+|---|---|---|---|---|---|
+| [Eliav et al. 2021](https://www.weizmann.ac.il/brain-sciences/labs/ulanovsky/sites/brain-sciences.labs.ulanovsky/files/2024-11/Eliav2021.pdf) | Bat, dorsal | 6 m tunnel | Mean 1.32 m | 22% | full text, derived |
+| [Eliav et al. 2021](https://www.weizmann.ac.il/brain-sciences/labs/ulanovsky/sites/brain-sciences.labs.ulanovsky/files/2024-11/Eliav2021.pdf) | Bat, dorsal | 185 m flight path | Largest 32 m | 17% | full text, derived |
+
+### Subiculum
+
+| Study | Animal | Environment | Field measure | Fraction of environment | Status |
+|---|---|---|---|---|---|
+| [Sharp & Green 1994](https://doi.org/10.1523/JNEUROSCI.14-04-02339.1994) | Rat | 76 cm cylinder | Visited 2.9 cm pixels with any spikes | 84% over all cells; 70 and 79% for bursting and non-bursting cells | full text, nonzero-rate fraction |
+| [Kim, Ganguli & Frank 2012](https://pmc.ncbi.nlm.nih.gov/articles/PMC3458125) | Rat, distal | 350 cm track | Spatial activity fraction 0.69 | 69%, a sparseness index | full text |
+| [Ledergerber et al. 2021](https://pmc.ncbi.nlm.nih.gov/articles/PMC8170370) | Rat | 150 × 150 cm box | Bins holding 95% of spikes | 56%, against CA1 26% | full text, spike spread |
+
+### Lateral septum
+
+| Study | Animal | Environment | Field measure | Fraction of environment | Status |
+|---|---|---|---|---|---|
+| [Tingley & Buzsáki 2018](https://pmc.ncbi.nlm.nih.gov/articles/PMC6605060/) | Rat | about 3.2 m maze | Theta-phase field, not rate | "virtually the entire length" | full text |
+
+### Shares fall as spaces grow, and no dorsal field covers a third of a large one
 
 The fraction falls in large spaces because field size grows more slowly than the environment. From their 6 m and 200 m tunnels, Eliav et al. fitted mean field size as rising with tunnel length to the power **0.36** and mean per-cell coverage as falling with length to the power -0.24 [full text] ([Eliav et al. 2021](https://www.weizmann.ac.il/brain-sciences/labs/ulanovsky/sites/brain-sciences.labs.ulanovsky/files/2024-11/Eliav2021.pdf)). In rats, a 5.8-fold larger floor made CA1 fields only 30% larger [full text] ([Fenton et al. 2008](https://pmc.ncbi.nlm.nih.gov/articles/PMC2695947/)), and the fraction of the arena covered per cell was the same in 8.2 and 18.6 m² arenas, Tukey P = 0.92 [full text] ([Harland et al. 2021](https://par.nsf.gov/servlets/purl/10294326)). Eliav et al. also tested whether small environments hide whole-environment fields among cells that look non-spatial. They argued against it because the share of active cells that were place cells was the same in the 6 m and 200 m tunnels, **83.3% and 83.4%** [full text] ([Eliav et al. 2021](https://www.weizmann.ac.il/brain-sciences/labs/ulanovsky/sites/brain-sciences.labs.ulanovsky/files/2024-11/Eliav2021.pdf)). Detection rules still bias the record against the broadest cells. Tanni et al. rejected candidate fields larger than half the rate map [full text] ([Tanni, de Cothi & Barry 2022](https://www.ebi.ac.uk/europepmc/webservices/rest/PMC9616721/fullTextXML)), Mankin et al. kept only cells with fields under 25% of the enclosure in at least one session [full text] ([Mankin et al. 2015](https://pmc.ncbi.nlm.nih.gov/articles/PMC4392894/)), Tingley and Buzsáki capped field width at 120 cm, which is 37.5% of their 3.2 m maze [full text, derived] ([Tingley & Buzsáki 2018](https://pmc.ncbi.nlm.nih.gov/articles/PMC6605060/)), and spatial-information cutoffs such as 1 bit/spike in macaques remove diffuse cells by construction [full text] ([Mao et al. 2021](https://pmc.ncbi.nlm.nih.gov/articles/PMC8571030/)).
 
