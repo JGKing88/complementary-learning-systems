@@ -229,14 +229,14 @@ def counts(rows, kind="grf", M=None, r_list=None) -> tuple[str, dict]:
                 gap = ms([get(x, f"variants.{v}.{key}.gap_cv_median") for x in xs])
                 fpu = ms([get(x, f"variants.{v}.{key}.fields_per_active") for x in xs])
                 use = pr["total"] if t < 1.0 else pr["total_peaks"]
+                nf = T.def_A_1d(t, L, r)["fields_per_active_unit_peak"]
                 data[f"{v}|r{r:g}|{env}"] = {"var_over_mean": vm, "pred": use, "pred_low": pr["total"],
                                              "pred_high": pr["total_peaks"], "F": pr["F"],
                                              "gap_cv": gap, "renewal_gap_cv": math.sqrt(pr["F"]),
-                                             "fields_per_active": fpu,
-                                             "pred_fields": pr["fields_per_active_unit"]}
-                body.append([v, f"{r:g}", env, fmt(fpu, 1), f"{pr['fields_per_active_unit']:.1f}",
+                                             "fields_per_active": fpu, "pred_fields": nf}
+                body.append([v, f"{r:g}", env, fmt(fpu, 1), f"{nf:.1f}",
                              fmt(vm), f"{use:.3f}", f"{pr['F']:.3f}", fmt(gap), f"{math.sqrt(pr['F']):.3f}"])
-    head = ["variant", "r", "env", "fields per active unit", "(Rice)", "var / mean", "(predicted)",
+    head = ["variant", "r", "env", "fields per active unit", "(Rice + top field)", "var / mean", "(predicted)",
             "F(u_A)", "gap CV (median)", "sqrt F (renewal)"]
     return table(head, body), data
 

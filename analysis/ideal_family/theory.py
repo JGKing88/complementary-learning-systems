@@ -279,7 +279,8 @@ def min_len_cut(mean_len, min_len: float):
     return keep, kept_mean
 
 
-def def_A_1d(t: float, length, r, frac: float = DEF_A_FRAC, min_len: float = 3.0) -> dict:
+def def_A_1d(t: float, length, r, frac: float = DEF_A_FRAC, min_len: float = 3.0,
+             cut_offset: float = 0.5) -> dict:
     """Definition A on a 1D loop of ``length`` cells, from the GRF maximum's distribution.
 
     Each unit's level is ``u_A(M) = t + frac (M - t)`` with ``M`` its maximum;
@@ -291,7 +292,14 @@ def def_A_1d(t: float, length, r, frac: float = DEF_A_FRAC, min_len: float = 3.0
     ``crude`` plugs ``E[M]`` in instead of averaging. ``*_cont`` are the
     continuum values; the headline values also drop fields shorter than
     ``min_len`` cells (definition A's 3-cell minimum, ``min_len_cut``), which
-    matters once W_A is a few cells (r below about 8).
+    matters once W_A is a few cells (r below about 8). A continuous run of
+    length l covers at least 3 lattice cells with probability clip(l - 2, 0, 1),
+    so the cut is applied at the ramp's midpoint, ``min_len - cut_offset``.
+
+    ``fields_per_active_unit_peak`` adds the field around the unit's own
+    maximum, which an active unit always has: ``E[N | M] = 1 + L (nu(u_A) - nu(M))``,
+    so ``E[N | active] = L E[nu(u_A)] + 1 - E[L nu(M) | M > t]``. It matters
+    when units have few fields (large r, small p, short environments).
     """
     g, f = max_density_1d(length, r)
     act = g > t
@@ -299,14 +307,16 @@ def def_A_1d(t: float, length, r, frac: float = DEF_A_FRAC, min_len: float = 3.0
     Z = np.trapezoid(w, g)
     uA = level_A(t, g, frac)
     nu = nu_1d(uA, r)
-    keep, kmean = min_len_cut(mean_len_1d(uA, r), min_len)
+    keep, kmean = min_len_cut(mean_len_1d(uA, r), max(min_len - cut_offset, 0.0))
     e_bar = np.trapezoid(w * Phibar(uA), g) / Z
     e_nu = np.trapezoid(w * nu, g) / Z
     e_nu_cut = np.trapezoid(w * nu * keep, g) / Z
     e_len_cut = np.trapezoid(w * nu * keep * kmean, g) / Z
     EM = float(np.trapezoid(g * f, g) / np.trapezoid(f, g))
     uc = float(level_A(t, EM, frac))
+    e_lnuM = np.trapezoid(w * length * nu_1d(g, r), g) / Z
     return {"E_max": EM, "u_A_crude": uc, "W_A_crude": float(mean_len_1d(uc, r)),
+            "fields_per_active_unit_peak": float(length * e_nu_cut + 1.0 - e_lnuM),
             "W_A_cont": float(e_bar / e_nu), "fields_per_active_unit_cont": float(length * e_nu),
             "W_A": float(e_len_cut / e_nu_cut),
             "fields_per_unit": float(length * e_nu_cut * Z),
