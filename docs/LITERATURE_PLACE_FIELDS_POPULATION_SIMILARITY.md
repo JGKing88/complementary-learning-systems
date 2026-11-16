@@ -45,7 +45,7 @@ Every measurement found, from most local to broadest. The share is the distance 
 | Study | Region | Space | Similarity near zero at | Pattern | Status |
 |---|---|---|---|---|---|
 | Green et al. 2022 | Rat dorsal CA1 | 1.8 m track | 30 to 40 cm, 17 to 22% | Local | full text |
-| Wang, Monaco & Knierim 2020 | Rat CA1 and CA3 | 76 cm circular track | One field, 17 to 20% | Local | full text |
+| Wang, Monaco & Knierim 2020 | Rat CA1 and CA3 | 76 cm circular track | Not measured; authors expect one field, median fields 17% (CA1) and 20% (CA3) | Local, narrower at texture boundaries, especially CA3 | full text, derived |
 | Battaglia et al. 2004 | Rat dorsal CA1 | 1.8 m tracks | Narrower on a cue-rich track | Local | full text, figure only |
 | Mao et al. 2017 | Mouse retrosplenial cortex | 1.5 m belt | About 35 cm, 23% | Local | full text |
 | Rubin et al. 2015 | Mouse CA1 | 96 cm track | "Low" between locations, no curve | Local | full text |
