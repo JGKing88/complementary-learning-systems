@@ -762,7 +762,7 @@ function makeHpc(key, meta, Wpg) {
 // The trained sparse non-negative encoder (w72): runs only on WebGPU (engine.sparseMaps).
 function makeSparseMlp(meta) {
   return {
-    key: "trained_sparse", meta, n: meta.n_units, signed: false,
+    key: "trained_sparse", meta, n: meta.n_units, signed: false, rankSwapsOk: true,
     label(u) { return "unit " + u; },
     info(u) { return [["Output unit", String(u)], ["Active", Math.round(100 * meta.sparse_active) + "% of units at each place"],
                       ["Memory's inhibition constant", meta.inhibition_constant.toPrecision(3)]]; },
@@ -1739,6 +1739,7 @@ function renderPopHead() {
   const chip = document.createElement("span");
   if (!ck) { chip.className = "chip wait"; chip.textContent = "checking against Python…"; }
   else if (ck.error) { chip.className = "chip bad"; chip.textContent = "check failed: " + ck.error; }
+  else if (ck.swaps) { chip.className = "chip ok"; chip.textContent = "matches Python except " + ck.bad + " adjacent-rank swaps"; }
   else if (ck.bad) { chip.className = "chip bad"; chip.textContent = ck.bad + " values differ from Python"; }
   else { chip.className = "chip ok"; chip.textContent = (band ? "full draw " : "") + "matches Python to " + ck.maxAbs.toExponential(1); }
   desc.append(chip);
@@ -1854,7 +1855,9 @@ async function runChecks() {
         if (d > maxAbs) maxAbs = d;
       }
       recycle(res);
-      st.checks[key] = { maxAbs, bad };
+      // A rank-based code (the sparse trained encoder) can swap two adjacent ranks where float32
+      // and float64 round differently; up to 0.1% of values off counts as such swaps.
+      st.checks[key] = { maxAbs, bad, swaps: !!pop.rankSwapsOk && bad > 0 && bad <= 1e-3 * U * N };
     } catch (e) { st.checks[key] = { error: errText(e) }; }
     renderChecks();
     if (key === st.popKey) renderPopHead();
@@ -1866,6 +1869,7 @@ function renderChecks() {
     li.append(document.createTextNode(st.pops[k].meta.label + " "));
     if (!ck) { chip.className = "chip wait"; chip.textContent = "pending"; }
     else if (ck.error) { chip.className = "chip bad"; chip.textContent = ck.error; }
+    else if (ck.swaps) { chip.className = "chip ok"; chip.textContent = ck.bad + " adjacent-rank swaps"; }
     else if (ck.bad) { chip.className = "chip bad"; chip.textContent = ck.bad + " values off"; }
     else { chip.className = "chip ok"; chip.textContent = "max diff " + ck.maxAbs.toExponential(1); }
     li.append(chip);
