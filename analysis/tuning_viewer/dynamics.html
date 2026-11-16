@@ -1424,7 +1424,7 @@ function syncControls() {
     : "The recurrent controller's hidden units, from runs.";
   const ar = M.arenas[st.arena];
   $("arena-hint").textContent = (ar.kind === "train" ? "One of the model's 20 training arenas" : "One of the model's 6 validation arenas, not trained on") +
-    ", at scaffold cell (" + ar.offset[0] + ", " + ar.offset[1] + "). The stripes are the wall barcode the RNN sees; the cross is the goal this arena had in the run. " +
+    ", at scaffold cell (" + ar.offset[0] + ", " + ar.offset[1] + "). The stripes are the wall barcode the RNN sees. The dots are the four goals used on this page. The cross is this arena's own goal in the model's run: " + (ar.kind === "train" ? "the one goal it was trained to find here, which never moved during training. " : "the goal the run's evaluations used here. ") +
     (hop ? "Click any cell to put the goal there." : "Click near a goal to pick it.");
   drawArena();
   requestRender();
