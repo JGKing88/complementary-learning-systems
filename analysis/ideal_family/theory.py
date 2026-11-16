@@ -260,7 +260,26 @@ def level_A(t: float, peak, frac: float = DEF_A_FRAC):
     return t + frac * (np.asarray(peak, dtype=np.float64) - t)
 
 
-def def_A_1d(t: float, length, r, frac: float = DEF_A_FRAC, min_len: float = 0.0) -> dict:
+def min_len_cut(mean_len, min_len: float):
+    """Fields shorter than ``min_len`` cells dropped: (kept fraction, mean length of kept fields).
+
+    Excursion lengths are taken as Rayleigh with the Rice mean. Rayleigh is the
+    high-level limit (a high excursion is a parabolic cap, its length squared
+    exponential); matching its mean to the Rice mean extends it to moderate
+    levels. With ``s = mean_len / sqrt(pi/2)``: kept ``= exp(-m^2 / 2 s^2)`` and
+    ``E[l | l > m] = m + sqrt(2 pi) s exp(m^2 / 2 s^2) Phibar(m / s)``.
+    """
+    L = np.asarray(mean_len, dtype=np.float64)
+    if min_len <= 0:
+        return np.ones_like(L), L
+    sR = L / math.sqrt(math.pi / 2)
+    x = min_len / sR
+    keep = np.exp(-0.5 * x * x)
+    kept_mean = min_len + SQ2PI * sR * np.exp(0.5 * x * x) * Phibar(x)
+    return keep, kept_mean
+
+
+def def_A_1d(t: float, length, r, frac: float = DEF_A_FRAC, min_len: float = 3.0) -> dict:
     """Definition A on a 1D loop of ``length`` cells, from the GRF maximum's distribution.
 
     Each unit's level is ``u_A(M) = t + frac (M - t)`` with ``M`` its maximum;
@@ -269,22 +288,31 @@ def def_A_1d(t: float, length, r, frac: float = DEF_A_FRAC, min_len: float = 0.0
         W_A = E[Phibar(u_A)] / E[nu(u_A)]          (total length over total count),
         fields per unit = length E[nu(u_A)],   field coverage = E[Phibar(u_A)].
 
-    ``crude`` plugs ``E[M]`` in instead of averaging. ``min_len`` is ignored by
-    the formulas (fields shorter than 3 cells only matter at small ``r``).
+    ``crude`` plugs ``E[M]`` in instead of averaging. ``*_cont`` are the
+    continuum values; the headline values also drop fields shorter than
+    ``min_len`` cells (definition A's 3-cell minimum, ``min_len_cut``), which
+    matters once W_A is a few cells (r below about 8).
     """
     g, f = max_density_1d(length, r)
     act = g > t
     w = f * act
     Z = np.trapezoid(w, g)
     uA = level_A(t, g, frac)
+    nu = nu_1d(uA, r)
+    keep, kmean = min_len_cut(mean_len_1d(uA, r), min_len)
     e_bar = np.trapezoid(w * Phibar(uA), g) / Z
-    e_nu = np.trapezoid(w * nu_1d(uA, r), g) / Z
+    e_nu = np.trapezoid(w * nu, g) / Z
+    e_nu_cut = np.trapezoid(w * nu * keep, g) / Z
+    e_len_cut = np.trapezoid(w * nu * keep * kmean, g) / Z
     EM = float(np.trapezoid(g * f, g) / np.trapezoid(f, g))
     uc = float(level_A(t, EM, frac))
     return {"E_max": EM, "u_A_crude": uc, "W_A_crude": float(mean_len_1d(uc, r)),
-            "W_A": float(e_bar / e_nu), "fields_per_unit": float(length * e_nu * Z),
-            "fields_per_active_unit": float(length * e_nu),
-            "active_frac": float(Z), "field_coverage": float(e_bar),
+            "W_A_cont": float(e_bar / e_nu), "fields_per_active_unit_cont": float(length * e_nu),
+            "W_A": float(e_len_cut / e_nu_cut),
+            "fields_per_unit": float(length * e_nu_cut * Z),
+            "fields_per_active_unit": float(length * e_nu_cut),
+            "active_frac": float(Z), "field_coverage": float(e_len_cut),
+            "field_coverage_cont": float(e_bar),
             "u_A_mean": float(np.trapezoid(w * uA, g) / Z)}
 
 
