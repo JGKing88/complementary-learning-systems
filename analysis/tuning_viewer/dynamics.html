@@ -608,12 +608,19 @@ function recallStep(H, e, X) {
 // at most K_CAP steps). Yields to the page every ~40 ms; a newer render cancels it, keeping the progress.
 async function recallTo(H, e, target, tok) {
   if (e.K === 0) return;
+  if (target !== "conv" && e.lastK > target && !e.snaps.has(target)) {
+    // This trajectory already ran past the step without keeping it: replay from the cue.
+    let X = H.X0;
+    for (let k = 1; k <= target; k++) X = recallStep(H, e, X).Y;
+    e.snaps.set(target, X);
+    return;
+  }
   const done = () => target === "conv" ? e.convK !== null : e.lastK >= target;
   let t0 = performance.now();
   while (!done()) {
     const { Y, move } = recallStep(H, e, e.last || H.X0);
     e.last = Y; e.lastK++;
-    if (SNAP_KS.has(e.lastK)) e.snaps.set(e.lastK, Y);
+    if (SNAP_KS.has(e.lastK) || e.lastK === target) e.snaps.set(e.lastK, Y);
     if (e.convK === null && (move < CONV_TOL || e.lastK >= K_CAP)) { e.convK = e.lastK; e.conv = Y; e.convStill = move < CONV_TOL; }
     if (performance.now() - t0 > 40) {
       setStatus("Recall step " + e.lastK + (target === "conv" ? ", running until the state stops moving (at most " + K_CAP + ")" : " of " + target) + "…");
