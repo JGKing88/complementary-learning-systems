@@ -2954,3 +2954,46 @@ function of a module's phase costs the same to represent) multiplied across modu
 harmonic combination is equally easy, then the rank output; old loss. (b) Batch-level
 standardisation of each unit before the rank step, so every unit fires at about 10% of places;
 addresses the floor, not the aliases.
+
+## 28. Even unit usage, 20% active, and a signed control (2026-11-16)
+
+Goal changed to: as good as att0.5, not the ideal. All runs: w52 att0.5 loss and data, within-env
+pairs only (branch `worktree-relu-sparse-encoder`). `relu_rank_homeo` = §27's rank output plus a
+per-unit threshold offset moved by a homeostatic rule (not gradient) toward each unit firing in
+`sparse_active` of all codes. w69 used eta 0.01 from step 0 and stalled all four 10% runs (loss
+back to ~0.30, median radius 0; early codes barely depend on position, so fast thresholds decided
+the winners); its 20% runs learned. w70 uses eta 1e-3 after 10,000 training forward passes.
+`signed_rank_homeo` keeps the top 10% of units by |value| with their signs (profile
+sign(g)·relu(|g| − Φ⁻¹(0.95))): sparsity without non-negativity. Probe `run_relu_mix.sh SET=e`
+(att0.5 s43 rerun at the same commit), spectra `trained_spectrum.py`.
+
+**Probe** (K = 5, one step; whole / corner):
+
+| encoder | \|err\| | exact | basin | cont reach | dead @ K 10 / 20 (whole; corner) |
+|---|---|---|---|---|---|
+| att0.5 s43 (tanh) | 7.8 / 6.6 | 0.982 / 0.930 | 27.7 / 20.6 | 0.987 / 0.970 | 0 / 0.08; 0.04 / 0.04 |
+| relu 10% homeo s43 | 12.4 / 13.7 | 0.965 / 0.816 | 20.4 / 15.9 | 0.972 / 0.891 | 0.08 / 0.25; 0.33 / 0.38 |
+| relu 10% homeo s44 | 12.6 / 13.7 | 0.937 / 0.850 | 20.6 / 18.3 | 0.945 / 0.894 | 0.04 / 0.17; 0.29 / 0.29 |
+| relu 20% homeo s43 | 9.5 / 10.5 | 0.969 / 0.682 | 22.6 / 14.4 | 0.966 / 0.852 | 0.04 / 0.54; 0.46 / 0.62 |
+| relu 20% homeo s44 | 9.1 / 9.9 | 0.914 / 0.744 | 21.3 / 14.0 | 0.929 / 0.882 | 0.12 / 0.42; 0.50 / 0.62 |
+| relu 20% fast-homeo s43 (w69) | 9.9 / 9.8 | 0.978 / 0.735 | 22.8 / 12.8 | 0.973 / 0.897 | 0.08 / 0.54; 0.58 / 0.67 |
+| relu 20% fast-homeo s44 (w69) | 8.9 / 9.9 | 0.929 / 0.737 | 21.1 / 17.0 | 0.953 / 0.938 | 0.04 / 0.33; 0.38 / 0.54 |
+| signed 10% homeo s43 | 12.3 / 13.2 | 0.987 / 0.906 | 21.8 / 17.5 | 0.961 / 0.953 | 0.12 / 0.25; 0.12 / 0.12 |
+| signed 10% homeo s44 | 12.1 / 12.6 | 0.972 / 0.874 | 23.9 / 18.2 | 0.970 / 0.985 | 0.08 / 0.29; 0.12 / 0.17 |
+
+**Spectrum:** floor 0.060 (10% homeo; the sparse ideal's is 0.058), 0.120 (20%), 0.022–0.029
+(signed), against 0.11–0.13 for w67. Half-width 16.2 (10%), 17.4 (20%), 16.5 (signed), against
+att0.5's 18.5. Every code keeps att0.5's low-harmonic structure: power on |j13| ≤ 1 0.66–0.68,
+k̄(792) 0.74–0.75 relative (att0.5 0.57, 0.65).
+
+**Results.**
+1. **Even unit usage fixes the floor and most of w67's deficit.** At 10% the floor falls to the
+   sparse ideal's 0.060; exact retrieval rises to 0.94–0.97 (w67 0.72–0.88), basin to 20.5
+   (13–17), dead goals at K = 20 fall to 17–25% (62–79%).
+2. **Sparsity costs direction; non-negativity costs crowding.** Signed and non-negative 10% codes
+   have the same direction error (12–13°, att0.5 7.8°); the signed code (floor 0.02–0.03) keeps
+   more goals alive in the corner (dead 12–17% against 29–38%). A 20% non-negative code brings
+   direction to 9–10° but doubles the floor (0.12) and loses more goals at K = 10–20.
+3. **Still short of att0.5 on every measure.** The nearest, 10% homeostatic, trails by ~5° of
+   direction, ~7 cells of basin (its peak is narrower, 16 against 18.5 cells) and more dead goals
+   at large K. The far field is unchanged by any output form: the aliases come from the network.
