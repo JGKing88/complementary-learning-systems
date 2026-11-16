@@ -277,6 +277,8 @@ footer ul { margin: 0; padding: 0; list-style: none; display: flex; flex-wrap: w
             <option value="page">Shared across the page</option>
           </select>
         </div>
+        <div class="row" id="rectify-row"><input type="checkbox" id="rectify"><label for="rectify">Negative values to zero</label></div>
+        <p class="hint">Hopfield units are signed. With this on, each map shows max(0, value), like a firing rate, on a one-sided colour scale, and field detection and sorting use the same values. Controller units are ReLU and never negative.</p>
       </section>
     </aside>
 
@@ -369,7 +371,7 @@ const st = {
   pop: "ctrl", hs: "next", arena: 0, goal: 0, hopGoal: null, phase: 1,
   stored: true, nd: 0, draw: 0, rule: "hebb", alpha: 1, kIdx: 0, compare: "one",
   minVis: 1, thresh: 20, minSize: 9, sort: "unit", hideSilent: true, perPage: 32, scale: "unit",
-  page: 0, sel: 0, outlines: true, showTrials: true, arrows: "q", trial: 0,
+  page: 0, sel: 0, outlines: true, showTrials: true, arrows: "q", trial: 0, rectify: false,
   order: null, orderNote: "",
 };
 
@@ -758,14 +760,15 @@ async function hopSource(col, H, tok) {
   const e = memEntry(H, col.mem, col.rule, col.alpha), k = col.k, hs = col.hs;
   // The current state needs no recall, but the selected column's readout panel does.
   if (e.K > 0 && (hs !== "cur" || col.prim)) await recallTo(H, e, k, tok);
-  const X = hs === "cur" ? H.X0 : stateAt(e, k);
+  const X = hs === "cur" ? H.X0 : stateAt(e, k), rect = st.rectify;
   return {
-    col, signed: true, H, e,
+    col, signed: !rect, H, e,
     silent() { return false; },
     getMap(u, dest) {
       if (hs !== "cur" && e.K === 0) return false;
       if (hs === "upd") for (let i = 0; i < N; i++) dest[i] = X[i * D + u] - H.X0[i * D + u];
       else for (let i = 0; i < N; i++) dest[i] = X[i * D + u];
+      if (rect) for (let i = 0; i < N; i++) if (dest[i] < 0) dest[i] = 0;
       return true;
     },
   };
@@ -1152,7 +1155,7 @@ function renderHead(srcs) {
     const conv = b.k === "conv" && e0 && e0.convK !== null ? (e0.convStill ? ", stopped after " + e0.convK + " steps" : ", still moving after " + e0.convK + " steps") : "";
     beh = arenaName(b.arena) + " · memory: " + (mem.goal ? "goal " + cellStr(mem.goal) : "no goal") + (mem.nd ? " + " + mem.nd + " distractors (draw " + (mem.draw + 1) + ")" : "") +
       (b.hs !== "cur" ? " · " + ruleLabel(b.rule) + " storage, α = " + b.alpha + ", k = " + kLabel(b.k) + conv : "") +
-      (K === 0 && b.hs !== "cur" ? " · memory empty: the model skips recall and the readout is zero" : "");
+      (st.rectify ? " · shown as max(0, value)" : "") + (K === 0 && b.hs !== "cur" ? " · memory empty: the model skips recall and the readout is zero" : "");
   }
   $("pop-title").textContent = title;
   $("pop-desc").textContent = desc;
@@ -1410,6 +1413,7 @@ function syncControls() {
   $("hstates").hidden = !hop; $("hop-panel").hidden = !hop; $("ctrl-panel").hidden = hop;
   $("trials-row").hidden = hop; $("arrows-row").hidden = !hop;
   $("silent-row").classList.toggle("off", hop); $("silent").disabled = hop;
+  $("rectify-row").classList.toggle("off", !hop); $("rectify").disabled = !hop;
   $("stored").checked = st.stored; $("nd").value = st.nd; $("nd-out").textContent = st.nd;
   $("draw").value = String(st.draw); $("steps").value = st.kIdx; $("steps-out").textContent = K_LIST[st.kIdx] === "conv" ? "stops" : K_LIST[st.kIdx];
   $("rule-panel").hidden = !hop; $("rule").value = st.rule; $("alpha").value = st.alpha; $("alpha-out").textContent = st.alpha;
@@ -1473,6 +1477,7 @@ function wireControls() {
   on("silent", "change", () => { st.hideSilent = $("silent").checked; requestRender(); });
   on("perpage", "change", () => { st.perPage = +$("perpage").value; st.page = 0; requestRender(); });
   on("scale", "change", () => { st.scale = $("scale").value; requestRender(); });
+  on("rectify", "change", () => { st.rectify = $("rectify").checked; requestRender(); });
   on("prev", "click", () => { st.page--; requestRender(); });
   on("next", "click", () => { st.page++; requestRender(); });
   on("outlines", "change", () => { st.outlines = $("outlines").checked; requestRender(); });
