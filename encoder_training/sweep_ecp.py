@@ -2344,6 +2344,25 @@ WAVES["w65_relu_density"] = {
 }
 
 
+# W66 -- w52's att0.5 encoder, loss and data unchanged, with a sparse non-negative output.
+#
+# The output is relu(standardise(z) - 1.2816), then unit norm: at every input the 1024
+# pre-activations are standardised and only those above the 90th percentile of a standard
+# normal survive, so about 10% of units fire whatever the weights do. That is how the sparse
+# ideal code is built (hopfield_probe ideal_encoder relu_mix=1, active=0.1; it navigates like
+# the ideal with no inhibition), so the question is whether the OLD loss finds it once the
+# output has that form. w64's free relu collapsed to ~5 active units because far cos -> 0
+# needs disjoint support; here the share of active units cannot change. Gain 1 as in w64.
+WAVES["w66_relu_sparse10"] = {
+    "arm": {
+        "att0.5_relu_sparse10": {**WAVES["w52_attract_fwhm"]["arm"]["att0.5"],
+                                 "output_nonlinearity": "relu_sparse", "sparse_active": 0.1,
+                                 "gain_start": 1.0, "gain_end": 1.0},
+    },
+    "seed": [43, 44],
+}
+
+
 def _flatten(cfg: dict) -> dict:
     """Expand an ``arm`` dict of overrides into the config it stands for."""
     arm = cfg.pop("arm", None)
@@ -2448,6 +2467,8 @@ def main() -> None:
     p.add_argument("--runs-per-job", type=int, default=RUNS_PER_JOB,
                    help="training runs sharing one GPU (throughput lever: the "
                         "partition is GPU-limited and a run uses ~6%% of one)")
+    p.add_argument("--partition", default=SLURM["partition"],
+                   help="Slurm partition list, e.g. pi_evelina9,ou_bcs_normal")
     p.add_argument("--time", default=SLURM["time"],
                    help="wall clock. The default suits an arm at ~17 "
                         "epochs/min; uniformity runs at ~11 and needs more. A "
@@ -2531,7 +2552,7 @@ def main() -> None:
 #SBATCH --ntasks=1
 #SBATCH --gres={SLURM["gres"]}
 #SBATCH --mem={SLURM["mem"]}
-#SBATCH --partition={SLURM["partition"]}
+#SBATCH --partition={args.partition}
 #SBATCH --output={sweep_dir}/slurm/slurm-%j_g{g:03d}.out
 
 module load miniforge/24.3.0-0

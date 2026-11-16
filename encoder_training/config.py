@@ -15,6 +15,9 @@ class EncoderModelConfig:
     nonlinearity: str = "gelu"
     output_nonlinearity: str = "tanh"
     gain: float = 5.0
+    # relu_sparse only: the fraction of output units active at each input. The output is
+    # relu(standardise(z) - Phi^-1(1 - sparse_active)), then unit norm (models.GridEncoder).
+    sparse_active: float = 0.1
     # MLP-specific
     hidden_dim: int = 1024
     num_hidden_layers: int = 4

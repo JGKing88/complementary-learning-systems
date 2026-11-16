@@ -430,6 +430,7 @@ def _build_cfg_from_args(args) -> TrainConfig:
         num_conv_layers=args.num_conv_layers, kernel_size=args.kernel_size,
         gain=args.gain_end, output_nonlinearity=args.output_nonlinearity,
         char_p_max=args.char_p_max, char_m_max=args.char_m_max,
+        sparse_active=args.sparse_active,
     )
     loss = LossConfig(
         mode=args.loss_mode,
@@ -508,9 +509,13 @@ def main():
     p.add_argument("--num_conv_layers", type=int, default=3)
     p.add_argument("--kernel_size", type=int, default=5)
     p.add_argument("--output_nonlinearity", default="tanh",
-                   choices=["tanh", "sigmoid", "relu", "none"],
+                   choices=["tanh", "sigmoid", "relu", "relu_sparse", "none"],
                    help="applied before the L2 norm. relu ignores gain (the "
-                        "norm removes any positive scale); 'none' is linear")
+                        "norm removes any positive scale); 'none' is linear; "
+                        "relu_sparse standardises each code and keeps the top "
+                        "--sparse_active share of units (relu above the quantile)")
+    p.add_argument("--sparse_active", type=float, default=0.1,
+                   help="relu_sparse: fraction of output units active per input")
     # Patches
     p.add_argument("--nenv", type=int, default=25)
     p.add_argument("--npos", type=int, default=100)

@@ -21,13 +21,21 @@ class GridEncoder(nn.Module):
     def __init__(self, lambdas: list[int], hidden_dim: int = 512,
                  num_hidden_layers: int = 2, out_dim: int = 128,
                  nonlinearity: str = "gelu", output_nonlinearity: str = "tanh",
-                 gain: float = 1.0, in_dim: int | None = None):
+                 gain: float = 1.0, in_dim: int | None = None,
+                 sparse_active: float = 0.1):
         super().__init__()
         if in_dim is None:
             in_dim = sum(l * l for l in lambdas)
         self.out_dim = out_dim
         self.output_nonlinearity = output_nonlinearity
         self.gain = gain
+        # relu_sparse: standardise the out_dim pre-activations of each input to mean 0 and
+        # sd 1, subtract the standard-normal quantile that leaves `sparse_active` above it
+        # (1.2816 for 0.1), rectify. A fixed share of units fires at every input whatever
+        # the weights do, as in the sparse ideal code (hopfield_probe ideal_encoder active=).
+        from statistics import NormalDist
+        self.sparse_active = float(sparse_active)
+        self.sparse_thresh = NormalDist().inv_cdf(1.0 - self.sparse_active)
 
         act = {"relu": nn.ReLU, "gelu": nn.GELU, "tanh": nn.Tanh}.get(
             nonlinearity.lower(), nn.GELU)
@@ -54,6 +62,10 @@ class GridEncoder(nn.Module):
             # No gain: relu commutes with a positive scale and the L2
             # normalisation below removes it, so gain would do nothing.
             z = F.relu(z)
+        elif self.output_nonlinearity == "relu_sparse":
+            # No gain either: the standardisation removes any scale.
+            z = (z - z.mean(-1, keepdim=True)) / z.std(-1, keepdim=True, unbiased=False).clamp_min(1e-6)
+            z = F.relu(z - self.sparse_thresh)
         z = F.normalize(z, p=2, dim=-1)
 
         if squeeze_time:
@@ -154,7 +166,7 @@ def create_encoder(cfg: EncoderModelConfig, device: str | None = None) -> GridEn
             lambdas=cfg.lambdas, hidden_dim=cfg.hidden_dim,
             num_hidden_layers=cfg.num_hidden_layers, out_dim=cfg.out_dim,
             nonlinearity=cfg.nonlinearity, output_nonlinearity=cfg.output_nonlinearity,
-            gain=cfg.gain,
+            gain=cfg.gain, sparse_active=getattr(cfg, "sparse_active", 0.1),
         )
     elif cfg.encoder_type == "cnn":
         enc = GridEncoderCNN(
