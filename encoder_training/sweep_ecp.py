@@ -2363,6 +2363,22 @@ WAVES["w66_relu_sparse10"] = {
 }
 
 
+# W67 -- w66 with the output's shape fixed up to a permutation of units (relu_rank).
+#
+# w66's relu_sparse collapsed in a few epochs to keff ~8 effective units (the sparse ideal has
+# ~59): standardising and thresholding fixes the share above threshold only while the
+# pre-activations stay Gaussian, and the old loss pushes a few units to huge values. relu_rank
+# gives every code the sparse ideal's sorted profile (102 of 1024 active, graded), assigned to
+# units by rank, with relu_sparse's gradient (straight-through). Loss and data are still w52's.
+WAVES["w67_relu_rank10"] = {
+    "arm": {
+        "att0.5_relu_rank10": {**WAVES["w66_relu_sparse10"]["arm"]["att0.5_relu_sparse10"],
+                               "output_nonlinearity": "relu_rank"},
+    },
+    "seed": [43, 44],
+}
+
+
 def _flatten(cfg: dict) -> dict:
     """Expand an ``arm`` dict of overrides into the config it stands for."""
     arm = cfg.pop("arm", None)

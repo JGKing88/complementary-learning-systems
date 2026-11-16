@@ -36,6 +36,16 @@ class GridEncoder(nn.Module):
         from statistics import NormalDist
         self.sparse_active = float(sparse_active)
         self.sparse_thresh = NormalDist().inv_cdf(1.0 - self.sparse_active)
+        # relu_rank: the forward value of each code is fixed up to a permutation of units.
+        # The unit with the k-th largest pre-activation takes the k-th value of the sparse
+        # ideal's profile relu(Phi^-1(1 - (k - 1/2) / out_dim) - thresh), unit norm, so exactly
+        # the top sparse_active share fire with the ideal's graded values and no unit can
+        # dominate. Sorting has no gradient, so the backward pass is relu_sparse's
+        # (straight-through: z = soft + (hard - soft).detach()).
+        nd = NormalDist()
+        prof = [max(nd.inv_cdf(1.0 - (k + 0.5) / out_dim) - self.sparse_thresh, 0.0) for k in range(out_dim)]
+        prof = torch.tensor(prof, dtype=torch.float32)
+        self.register_buffer("rank_profile", prof / prof.norm(), persistent=False)
 
         act = {"relu": nn.ReLU, "gelu": nn.GELU, "tanh": nn.Tanh}.get(
             nonlinearity.lower(), nn.GELU)
@@ -62,10 +72,17 @@ class GridEncoder(nn.Module):
             # No gain: relu commutes with a positive scale and the L2
             # normalisation below removes it, so gain would do nothing.
             z = F.relu(z)
-        elif self.output_nonlinearity == "relu_sparse":
+        elif self.output_nonlinearity in ("relu_sparse", "relu_rank"):
             # No gain either: the standardisation removes any scale.
             z = (z - z.mean(-1, keepdim=True)) / z.std(-1, keepdim=True, unbiased=False).clamp_min(1e-6)
-            z = F.relu(z - self.sparse_thresh)
+            soft = F.normalize(F.relu(z - self.sparse_thresh), p=2, dim=-1)
+            if self.output_nonlinearity == "relu_sparse":
+                z = soft
+            else:
+                order = z.argsort(dim=-1, descending=True)
+                hard = torch.zeros_like(z).scatter_(
+                    -1, order, self.rank_profile.to(z.dtype).expand_as(z).contiguous())
+                z = soft + (hard - soft).detach()
         z = F.normalize(z, p=2, dim=-1)
 
         if squeeze_time:
