@@ -3033,3 +3033,52 @@ Half-width (along x, 400 random cells, seed 43): att0.5 18.6; relu 20% 17.4 at r
 
 **Best non-negative trained encoder so far:** relu 20% homeostatic (w70, slow rule), old loss,
 with one global inhibition constant in the memory.
+
+## 30. 2048 units, and making att0.5 non-negative after training (2026-11-16)
+
+K = 5, one step; whole / corner. att0.5 s43 (tanh, §28's paired rerun): |err| 7.8 / 6.6, exact
+0.982 / 0.930, basin 27.7 / 20.6, reach 0.987 / 0.970, dead at K = 20 0.08 / 0.04.
+
+**2048 units** (w72_rank_homeo_2048: w70's ReLU arms with out_dim 2048; `run_relu_mix.sh SET=i`):
+
+| encoder | \|err\| | exact | basin | cont reach | dead @ K 20 |
+|---|---|---|---|---|---|
+| relu 10% 2048, s43 / s44 | 10.8, 9.4 / 10.4, 11.3 | 0.989, 0.996 / 0.900, 0.841 | 23.8, 21.8 / 21.0, 20.6 | 0.970, 0.989 / 0.969, 0.887 | 0.17, 0.21 / 0.17, 0.33 |
+| relu 10% 2048 + inhibition | 10.5, 9.2 / 10.0, 10.8 | 0.992, 0.999 / 0.927, 0.873 | 24.3, 22.8 / 21.6, 20.9 | 0.976, 0.983 / 0.964, 0.908 | 0.17, 0.25 / 0.08, 0.17 |
+| relu 20% 2048, s43 / s44 | 8.0, 8.0 / 9.2, 8.8 | 0.950, 0.895 / 0.701, 0.709 | 23.1, 20.6 / 15.4, 16.1 | 0.992, 0.979 / 0.894, 0.889 | 0.38, 0.25 / 0.54, 0.46 |
+| **relu 20% 2048 + inhibition** | **7.5, 7.4 / 8.2, 7.8** | 0.978, 0.960 / 0.825, 0.848 | 25.4, 24.1 / 17.5, 19.1 | 0.983, 0.976 / 0.936, 0.915 | 0.21, 0.17 / 0.17, 0.29 |
+
+Doubling the units helps both sparsities (10%: direction 12.5 → ~10°, corner exact 0.82–0.85 →
+0.87–0.93; 20%: direction 9 → 8°). **The 20% 2048-unit code with inhibition matches att0.5 on
+direction (7.4–7.5° against 7.8° whole; 7.8–8.2° against 6.6° corner)**, and over the whole arena
+on exact retrieval and reach. It still trails in the corner (exact 0.83–0.85 against 0.93, basin
+17.5–19 against 20.6) and on goals at large K (17–29% dead at K = 20 against 4–8%).
+
+**att0.5 made sparse after training** (harness `sparsify:<active>:` prefix: per-unit standardised
+pre-tanh values, top share by rank get the sparse profile; `SET=h`): 20% + inhibition |err| 9.4 /
+9.8, exact 0.84 / 0.65, basin 21.0 / 10.4, dead at K = 20 0.38 / 0.50; 10% + inhibition 12.5 /
+12.4, 0.79 / 0.70, 19.3 / 11.8. Worse than training with the sparse output: att0.5's pre-tanh values
+are only constrained in sign (its tanh at gain 100 saturates), so ranking them keeps magnitudes
+training never shaped. The ideal's graded values carry its code, which is why thresholding the ideal
+gave a good sparse code (§25–26).
+
+**att0.5 with a plain ReLU after training** (harness `rectify:<out|pre>:` prefix; `SET=j`):
+
+| encoder | \|err\| | exact | basin | cont reach | dead @ K 20 |
+|---|---|---|---|---|---|
+| relu(att0.5 output) | 32.3 / 29.3 | 0.499 / 0.339 | 10.5 / 5.8 | 0.379 / 0.351 | 1.00 / 1.00 |
+| relu(att0.5 output) + inhibition | 11.7 / 9.7 | 0.991 / 0.985 | 29.5 / 24.5 | 0.982 / 0.984 | 0 / 0.04 |
+| relu(att0.5 pre-tanh) + inhibition | 10.6 / 12.7 | 0.537 / 0.210 | 10.6 / 0.8 | 0.741 / 0.423 | 0.62 / 0.83 |
+
+ReLU on att0.5's output plus one inhibition constant matches or beats att0.5 on retrieval, basin and
+dead goals, and loses ~3–4° of direction. 76% of att0.5's units are within 10% of saturation, so for
+most units relu(z) = (z + a)/2 and subtracting the constant gives back z/2: the code's similarities
+correlate 0.973 with att0.5's over random place pairs (0.998 within 40 cells). The one-cell step is
+larger (0.112 against 0.087): rectifying kinks the graded units, which costs direction. It is
+non-negative and dense (half the units on), not sparse.
+
+**Summary of §27–30.** Non-negativity costs almost nothing when the memory subtracts one constant
+(rectified att0.5). Sparsity costs direction and crowding; training the encoder with the sparse
+output (rank profile + slow homeostatic thresholds) and 2048 units at 20% recovers att0.5's
+direction and most of its retrieval. The tuning viewer with this encoder is a separate page,
+https://claude.ai/artifact/2dpV4XT183Ef6eTQDuoq4h (branch `worktree-tuning-viewer-sparse`, seed 43).
