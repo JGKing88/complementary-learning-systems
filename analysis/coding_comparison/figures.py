@@ -205,6 +205,42 @@ def fig_basis(res, T, out):
            out / "basis_dependence.png")
 
 
+def fig_phase2(res, T, out):
+    pops = [p for p in res if res[p].get("phase2", {}).get("decoding")]
+    if not pops:
+        return
+    fig, axs = plt.subplots(1, 2, figsize=(7.2, 2.6), layout="constrained")
+    cols = {"grid": BLUE, "ideal": ORANGE, "ideal_rot": AQUA, "ideal_sparse": YELLOW,
+            "trained": "#e87ba4", "untrained": "#008300", "hippocampus": "#6250d6"}
+    for pop in pops:
+        R = res[pop]
+        b = primary_basis(R)
+        dec = R["phase2"]["decoding"].get(b)
+        if dec:
+            n = sorted(int(k) for k in dec["median_error_W"])
+            e = [dec["median_error_W"][str(k)] for k in n]
+            axs[0].plot(n, np.maximum(e, 1e-3), "o-", ms=3, color=cols.get(pop, INK),
+                        label=LABELS.get(pop, pop))
+        cd = R["phase2"].get("corr_dim_by_arena", {})
+        ks = sorted(int(k) for k in cd)
+        dims = [cd[str(k)].get(b, {}).get("dimension") for k in ks]
+        axs[1].plot(ks, [np.nan if d is None else d for d in dims], "o-", ms=3,
+                    color=cols.get(pop, INK))
+    axs[0].set_xscale("log")
+    axs[0].set_yscale("log")
+    axs[0].set_xlabel("units decoded")
+    axs[0].set_ylabel("median error / W_B (floor 1e-3 = exact)")
+    axs[0].set_title("ML decoding, 0.5 s window, 0.75 Hz mean rate")
+    axs[1].axhspan(2.51, 4.71, color=GRID, lw=0)
+    axs[1].axhspan(5.05, 6.63, color="#f3e3c8", lw=0)
+    axs[1].set_xscale("log")
+    axs[1].set_xlabel("arena area / A0")
+    axs[1].set_ylabel("correlation dimension")
+    axs[1].set_title("Bands: CA1 (gray), subiculum (tan), Nakai 2024")
+    finish(fig, [axs[0]], "Phase 2: decoding and correlation dimension (primary convention)",
+           out / "phase2.png", ncol=7)
+
+
 def main() -> None:
     p = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     p.add_argument("--tag", default="v1")
@@ -222,7 +258,7 @@ def main() -> None:
             R = load_results(root / pop)
             if "elapsed_s" in R["meta"] and "kernel_1d" in R:
                 res[pop] = R
-    for f in (fig_kernel, fig_zero_curve, fig_counts, fig_area, fig_basis):
+    for f in (fig_kernel, fig_zero_curve, fig_counts, fig_area, fig_basis, fig_phase2):
         f(res, T, out)
     print(f"wrote figures to {out}")
 

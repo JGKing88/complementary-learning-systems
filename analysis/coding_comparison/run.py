@@ -66,7 +66,7 @@ PARAMS = {
     "n_loops": 8,
     "n_tracks": 16,
     "gap_W": 4.0,
-    "area_steps": [4, 8, 16, 32, 64, 128],
+    "area_steps": [2, 4, 8, 16, 32, 64, 128],
     "n_arena_locs": 2,
     "arena_side_cap": 1024,
     "kernel_far_W": [5.0, 15.0],
@@ -675,12 +675,20 @@ def run_population(name: str, spec: str, P: dict, out_root: Path,
     if "kernels" in measures:
         write(out, "kernel_1d", kernel_1d(pop, P, bases, variants, cal, cb["loops"], t0))
         write(out, "kernel_2d", kernel_2d(pop, P, cal, W_ref or 1.0, sub(1), t0, variants))
-    if W_ref is not None and "fields" in measures:
-        f1, sp1 = fields_1d(pop, P, bases, variants, cal, W_ref, sub(2), t0)
+    # "fields" runs both; "fields1d" or "fields2d" reruns one and keeps the
+    # other's half of sparsity.json.
+    sp = {}
+    if (out / "sparsity.json").exists():
+        with open(out / "sparsity.json") as f:
+            sp = json.load(f)
+    if W_ref is not None and ({"fields", "fields1d"} & set(measures)):
+        f1, sp["tracks"] = fields_1d(pop, P, bases, variants, cal, W_ref, sub(2), t0)
         write(out, "fields_1d", f1)
-        f2, sp2 = fields_2d(pop, P, bases, variants, cal, W_ref, sub(3), t0)
+        write(out, "sparsity", sp)
+    if W_ref is not None and ({"fields", "fields2d"} & set(measures)):
+        f2, sp["arenas"] = fields_2d(pop, P, bases, variants, cal, W_ref, sub(3), t0)
         write(out, "fields_2d", f2)
-        write(out, "sparsity", {"tracks": sp1, "arenas": sp2})
+        write(out, "sparsity", sp)
     if W_ref is not None and "remapping" in measures:
         write(out, "remapping", remapping(pop, P, bases, variants, cal, W_ref, sub(4), t0))
     if "phase2" in measures:
@@ -702,7 +710,7 @@ def main() -> None:
     p.add_argument("--out", type=Path, default=None)
     p.add_argument("--quick", action="store_true", help="small settings for a smoke test")
     p.add_argument("--measures", default=",".join(PHASE1),
-                   help="comma-separated subset of kernels,fields,remapping,phase2")
+                   help="comma-separated subset of kernels,fields (or fields1d, fields2d),remapping,phase2")
     a = p.parse_args()
     P = dict(PARAMS, **(QUICK if a.quick else {}))
     root = a.out or (results_dir() / "coding_comparison" / a.tag)
