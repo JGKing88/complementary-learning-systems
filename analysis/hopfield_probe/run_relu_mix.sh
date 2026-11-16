@@ -40,6 +40,8 @@ W=/orcd/pool/003/jackking/cls_runs/sweeps/w67_relu_rank10
 ENCS=(
     "$W/000_att0.5_relu_rank10_seed=43/encoder_final.pt|trained relu_rank s43"
     "$W/001_att0.5_relu_rank10_seed=44/encoder_final.pt|trained relu_rank s44"
+    "${W/w67_relu_rank10/w68_relu_rank10_xenv}/000_att0.5_relu_rank10_xenv_seed=43/encoder_final.pt|trained relu_rank xenv s43"
+    "${W/w67_relu_rank10/w68_relu_rank10_xenv}/001_att0.5_relu_rank10_xenv_seed=44/encoder_final.pt|trained relu_rank xenv s44"
 )
 elif [[ "$SET" == c ]]; then
 # Remove slow waves: draws with |n| < nmin rejected and replaced from the same Gaussian (r = 16),
