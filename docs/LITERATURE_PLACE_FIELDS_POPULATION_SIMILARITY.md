@@ -56,8 +56,8 @@ Every measurement found, from most local to broadest. The share is the distance 
 | Kjelstrup et al. 2008 | Rat ventral CA3 | 18 m track | About 10.7 m, 65%; 0.5 at 3.3 m | Broad | full text, figure-read |
 | Maurer et al. 2005 | Rat CA1, dorsal and middle | Track | Faster dorsally, no distances given | Gradient | abstract |
 | Terrazas et al. 2005 | Rat dorsal CA1 | 4 m ring | About 3 times wider when the rat drives a car | Broad only with altered self-motion | full text, figure only |
-| Nielson et al. 2015 | Human anterior hippocampus, fMRI | Real world, 100 m to 30 km | Grows with log distance | Broad, remembered places | full text |
-| Deuker et al. 2016 | Human hippocampus, fMRI | Virtual city, about 390 m | Tracks distance | Broad, remembered places | full text |
+| Nielson et al. 2015 | Human left anterior hippocampus, fMRI, 9 people | Real world, 100 m to 30 km | No zero or plateau in range; pattern distance rises linearly with log distance (slope 0.71, t = 5.55) | Broad, remembered places | full text |
+| Deuker et al. 2016 | Human hippocampus, fMRI, 26 people | Virtual city, about 390 m | No length scale reported; similarity gain correlates with distance (group Z = -3.7 remembered, -2.85 true) | Broad, remembered places | full text |
 | Maimon et al. 2026 | Bat CA1 | 174 to 194 m tunnels | Route history lasts over 90 m | Not a distance measure | full text |
 | Rich 2014, Eliav 2021, Harland 2021 | Rat and bat CA1 | 48 m, 200 m, 18.6 m² | Not measured | No data | full text |
 
