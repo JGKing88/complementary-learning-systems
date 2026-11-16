@@ -92,6 +92,30 @@ class FieldDef:
         return replace(self, **kw)
 
 
+# Above this SD (bins) the Gaussian is applied by FFT: the direct filter costs
+# about 8 SD operations per bin, the FFT a few log(n).
+FFT_SD = 6.0
+
+
+def _gauss_axis(x: np.ndarray, sd: float, axis: int) -> np.ndarray:
+    """``ndimage.gaussian_filter1d(x, sd, axis, mode="constant")``, by FFT for wide kernels.
+
+    The kernel is the one ndimage builds (truncated at 4 SD, summed to 1), so
+    the two paths agree to rounding; ``test_fft_smoothing_matches_direct``
+    checks it.
+    """
+    if sd <= FFT_SD:
+        return ndimage.gaussian_filter1d(x, sd, axis=axis, mode="constant", cval=0.0)
+    from scipy.signal import fftconvolve
+    radius = int(4.0 * sd + 0.5)
+    t = np.arange(-radius, radius + 1, dtype=np.float64)
+    w = np.exp(-0.5 * (t / sd) ** 2)
+    w /= w.sum()
+    shape = [1] * x.ndim
+    shape[axis] = w.size
+    return fftconvolve(x, w.reshape(shape), mode="same", axes=axis)
+
+
 def smooth_1d(rates: np.ndarray, sd: float) -> np.ndarray:
     """Gaussian smoothing along the last axis, renormalized at the ends.
 
@@ -101,9 +125,8 @@ def smooth_1d(rates: np.ndarray, sd: float) -> np.ndarray:
     """
     if sd <= 0:
         return rates
-    num = ndimage.gaussian_filter1d(rates.astype(np.float64), sd, axis=-1,
-                                    mode="constant", cval=0.0)
-    den = ndimage.gaussian_filter1d(np.ones(rates.shape[-1]), sd, mode="constant", cval=0.0)
+    num = _gauss_axis(rates.astype(np.float64), sd, -1)
+    den = _gauss_axis(np.ones(rates.shape[-1]), sd, -1)
     return num / den
 
 
@@ -111,9 +134,9 @@ def smooth_2d(rates: np.ndarray, sd: float) -> np.ndarray:
     """Gaussian smoothing over the last two axes, renormalized at the walls."""
     if sd <= 0:
         return rates
-    sig = (0,) * (rates.ndim - 2) + (sd, sd)
-    num = ndimage.gaussian_filter(rates.astype(np.float64), sig, mode="constant", cval=0.0)
-    den = ndimage.gaussian_filter(np.ones(rates.shape[-2:]), sd, mode="constant", cval=0.0)
+    num = _gauss_axis(_gauss_axis(rates.astype(np.float64), sd, -1), sd, -2)
+    one = np.ones(rates.shape[-2:])
+    den = _gauss_axis(_gauss_axis(one, sd, -1), sd, -2)
     return num / den
 
 

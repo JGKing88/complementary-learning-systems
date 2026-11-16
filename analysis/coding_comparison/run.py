@@ -340,6 +340,7 @@ def fields_1d(pop, P, bases, variants, cal, W_ref, rng, t0) -> tuple[dict, dict]
                 "length_W": LW, "length_cells": a["length_cells"], "n_tracks": len(a["counts"]),
                 "n_samples": int(counts.size),
                 "fit": M.fit_count_models(counts),
+                "count_hist": np.bincount(counts).tolist(),
                 "frac_zero_per_track": per_track,
                 "mean_per_track": [float(np.mean(c)) for c in a["counts"]],
                 "active_frac": float(active.mean()),

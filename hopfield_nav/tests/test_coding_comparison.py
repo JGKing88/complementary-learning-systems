@@ -153,6 +153,20 @@ def test_detector_finds_gaussian_bumps_2d():
     assert F.coverage_frac[40, 40] == pytest.approx(1 / 3)
 
 
+def test_fft_smoothing_matches_direct():
+    from scipy import ndimage
+    rng = np.random.default_rng(11)
+    x = rng.random((3, 400))
+    m = rng.random((2, 90, 90))
+    for sd in (2.0, 9.0, 30.0):
+        want = ndimage.gaussian_filter1d(x, sd, axis=-1, mode="constant") / \
+            ndimage.gaussian_filter1d(np.ones(400), sd, mode="constant")
+        assert np.allclose(M.smooth_1d(x, sd), want, atol=1e-10)
+        want2 = ndimage.gaussian_filter(m, (0, sd, sd), mode="constant") / \
+            ndimage.gaussian_filter(np.ones((90, 90)), sd, mode="constant")
+        assert np.allclose(M.smooth_2d(m, sd), want2, atol=1e-10)
+
+
 def test_onoff_convention_splits_sign():
     z = np.array([[1.0, -2.0, 0.0]])
     assert M.apply_convention(z, "onoff").tolist() == [[1.0, 0.0, 0.0], [0.0, 2.0, 0.0]]

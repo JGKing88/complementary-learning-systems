@@ -47,11 +47,21 @@ def primary_basis(R) -> str:
 
 def grid_axes(n, ncols=4, w=2.1, h=1.8, sharey=True):
     nrows = math.ceil(n / ncols)
-    fig, axs = plt.subplots(nrows, ncols, figsize=(w * ncols, h * nrows), sharey=sharey,
-                            squeeze=False)
+    fig, axs = plt.subplots(nrows, ncols, figsize=(w * ncols, h * nrows + 0.5), sharey=sharey,
+                            squeeze=False, layout="constrained")
     for ax in axs.flat[n:]:
         ax.set_visible(False)
     return fig, axs.flat
+
+
+def finish(fig, axs, title, path, ncol=4):
+    """One legend under the panels (from the first panel) and a title above them."""
+    h, l = axs[0].get_legend_handles_labels()
+    if h:
+        fig.legend(h, l, loc="outside lower center", ncol=ncol, frameon=False)
+    fig.suptitle(title, fontsize=8.5, color=INK2)
+    fig.savefig(path)
+    plt.close(fig)
 
 
 def fig_kernel(res, T, out):
@@ -70,14 +80,11 @@ def fig_kernel(res, T, out):
         ax.axvline(1.0, color=MUTED, lw=0.8, ls="--")
         ax.axhline(0, color=MUTED, lw=0.8)
         ax.set_xlim(0, 5)
-        ax.set_title(f"{LABELS.get(pop, pop)} (W_A = {W:.3g} cells)")
+        ax.set_title(f"{LABELS.get(pop, pop)}, W_A {W:.3g} cells")
         ax.set_xlabel("separation / mean field width")
     axs[0].set_ylabel("PV similarity")
-    axs[0].legend(loc="upper right", frameon=False)
-    fig.suptitle("PV similarity against separation along scaffold loops; dashed line at one field width",
-                 fontsize=8.5, color=INK2)
-    fig.savefig(out / "kernel_1d.png")
-    plt.close(fig)
+    finish(fig, axs, "PV similarity against separation along scaffold loops (dashed: one field width)",
+           out / "kernel_1d.png")
 
 
 def fig_zero_curve(res, T, out):
@@ -102,11 +109,8 @@ def fig_zero_curve(res, T, out):
         ax.set_title(LABELS.get(pop, pop))
         ax.set_xlabel("track length / mean field width")
     axs[0].set_ylabel("units with no field")
-    axs[0].legend(loc="lower left", frameon=False)
-    fig.suptitle("Zero-field fraction against track length (definition B); band is Rich's curve +- 0.155",
-                 fontsize=8.5, color=INK2)
-    fig.savefig(out / "zero_curve.png")
-    plt.close(fig)
+    finish(fig, axs, "Zero-field fraction against track length, definition B (band: Rich's curve +- 0.155)",
+           out / "zero_curve.png")
 
 
 def fig_counts(res, T, out):
@@ -127,6 +131,10 @@ def fig_counts(res, T, out):
         mean = fit["mean"]
         kmax = int(max(10, np.ceil(mean * 3)))
         k = np.arange(kmax + 1)
+        hist = x.get("count_hist")
+        if hist:
+            h = np.asarray(hist[:kmax + 1], dtype=np.float64) / max(1, sum(hist))
+            ax.bar(np.arange(h.size), h, width=0.8, color=GRID, label="model units")
         pois = stats.poisson.pmf(k, mean)
         nb = fit["negbin"]
         ax.plot(k, pois, color=AQUA, label="Poisson fit")
@@ -137,11 +145,8 @@ def fig_counts(res, T, out):
         ax.text(0.97, 0.95, f"mean {mean:.2f}\nvar/mean {fit['var_over_mean']:.2f}\nr {r_txt}",
                 transform=ax.transAxes, ha="right", va="top", color=INK2, fontsize=7)
     axs[0].set_ylabel("probability")
-    axs[0].legend(loc="center right", frameon=False)
-    fig.suptitle("Field-count fits on the 74-width track (definition B, 0.75 Hz); the histogram itself is in fields_1d.json",
-                 fontsize=8.5, color=INK2)
-    fig.savefig(out / "counts_74W.png")
-    plt.close(fig)
+    finish(fig, axs, "Fitted field-count distributions on the 74-width track, definition B at 0.75 Hz",
+           out / "counts_74W.png")
 
 
 def fig_area(res, T, out):
@@ -159,11 +164,8 @@ def fig_area(res, T, out):
         ax.set_title(LABELS.get(pop, pop))
         ax.set_xlabel("arena area / A0")
     axs[0].set_ylabel("fields per unit")
-    axs[0].legend(loc="upper left", frameon=False)
-    fig.suptitle("Fields per unit against arena area (A0 = pi/4 W_A^2); Tanni 2022 and Harland 2021 find it linear",
-                 fontsize=8.5, color=INK2)
-    fig.savefig(out / "area_scaling.png")
-    plt.close(fig)
+    finish(fig, axs, "Fields per unit against arena area, A0 = (pi/4) W_A^2 (linear in CA1: Tanni 2022, Harland 2021)",
+           out / "area_scaling.png")
 
 
 def fig_basis(res, T, out):
@@ -176,8 +178,8 @@ def fig_basis(res, T, out):
                 ("field size CV, 74 W (B)", "B0.75", "73.8", ("field_size", "cv")),
                 ("active fraction, 34 W (Ap)", "Ap", "33.8", ("active_frac",)),
                 ("single-field share, 34 W (Ap)", "Ap", "33.8", ("single_field_frac_active",))]
-    fig, axs = plt.subplots(1, len(measures), figsize=(2.0 * len(measures), 0.45 * len(pops) + 0.9),
-                            sharey=True)
+    fig, axs = plt.subplots(1, len(measures), figsize=(2.0 * len(measures), 0.45 * len(pops) + 1.2),
+                            sharey=True, layout="constrained")
     for ax, (name, d, L, path) in zip(axs, measures):
         for i, pop in enumerate(pops):
             R = res[pop]
@@ -199,11 +201,8 @@ def fig_basis(res, T, out):
         ax.set_yticks(range(len(pops)))
         ax.set_yticklabels([LABELS.get(p, p) for p in pops])
         ax.set_ylim(-0.6, len(pops) - 0.4)
-    axs[0].legend(loc="lower right", frameon=False)
-    fig.suptitle("Single-unit measures depend on the basis: rectified units, native against three random rotations",
-                 fontsize=8.5, color=INK2)
-    fig.savefig(out / "basis_dependence.png")
-    plt.close(fig)
+    finish(fig, list(axs), "Single-unit measures of rectified units: native basis against three random rotations",
+           out / "basis_dependence.png")
 
 
 def main() -> None:
@@ -216,7 +215,13 @@ def main() -> None:
     out = a.out or (figures_dir() / "coding_comparison" / a.tag)
     out.mkdir(parents=True, exist_ok=True)
     T = load_targets()
-    res = {pop: load_results(root / pop) for pop in POP_ORDER if (root / pop / "meta.json").exists()}
+    # Only populations whose phase-1 run finished (meta.json carries elapsed_s then).
+    res = {}
+    for pop in POP_ORDER:
+        if (root / pop / "meta.json").exists():
+            R = load_results(root / pop)
+            if "elapsed_s" in R["meta"] and "kernel_1d" in R:
+                res[pop] = R
     for f in (fig_kernel, fig_zero_curve, fig_counts, fig_area, fig_basis):
         f(res, T, out)
     print(f"wrote figures to {out}")
