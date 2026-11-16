@@ -16,6 +16,7 @@ import matplotlib
 
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt                                     # noqa: E402
+import matplotlib.ticker                                            # noqa: E402
 import numpy as np                                                  # noqa: E402
 
 from . import theory as T                                           # noqa: E402
@@ -68,6 +69,22 @@ def grid_(ax):
     ax.set_axisbelow(True)
 
 
+def r_axis(ax, ticks=(2, 4, 8, 16, 32)):
+    """Log r axis with plain tick labels."""
+    ax.set_xscale("log")
+    ax.set_xticks(list(ticks))
+    ax.set_xticklabels([f"{t:g}" for t in ticks])
+    ax.xaxis.set_minor_formatter(matplotlib.ticker.NullFormatter())
+
+
+def m_axis(ax, ticks=(32, 128, 512, 2048), extra=None):
+    ax.set_xscale("log", base=2)
+    t = list(ticks) + ([extra[0]] if extra else [])
+    ax.set_xticks(t)
+    ax.set_xticklabels([f"{x:g}" for x in ticks] + ([extra[1]] if extra else []))
+    ax.xaxis.set_minor_formatter(matplotlib.ticker.NullFormatter())
+
+
 # ---------------------------------------------------------------------------
 def fig_kernels(rows, out):
     fig, axs = plt.subplots(1, 3, figsize=(7.2, 2.4))
@@ -112,7 +129,7 @@ def fig_kernels(rows, out):
     ax.set_xlabel("active fraction p")
     ax.set_ylabel("full width at 0.5 / r")
     ax.set_title("Thresholding narrows the kernel\n(filled cosine, open Pearson)")
-    ax.legend(fontsize=6, loc="lower right")
+    ax.legend(fontsize=6, loc="upper left")
     grid_(ax)
 
     ax = axs[2]
@@ -126,7 +143,7 @@ def fig_kernels(rows, out):
     ax.set_xlabel("active fraction p")
     ax.set_ylabel("r (cells)")
     ax.set_title("r that keeps FW05 = 37.7 cells")
-    ax.legend(fontsize=6)
+    ax.legend(fontsize=6, loc="upper right")
     grid_(ax)
     fig.tight_layout()
     save(fig, out, "kernels")
@@ -161,7 +178,7 @@ def fig_single_units(rows, out):
     ax.plot([], [], "^", color=INK2, mfc="white", ms=3, label="4.6 W_A track, firing units")
     ax.set_xscale("log"), ax.set_yscale("log")
     ax.set_xlabel("p"), ax.set_ylabel("Treves-Rolls sparsity")
-    ax.legend(fontsize=5.5, loc="upper left")
+    ax.legend(fontsize=5.5, loc="lower right")
     grid_(ax)
     # W_A / r
     ax = axs[2]
@@ -194,50 +211,50 @@ def fig_single_units(rows, out):
 
 def fig_counts(rows, out):
     fig, axs = plt.subplots(1, 3, figsize=(7.2, 2.4))
+    r = 16.0
     ts = np.linspace(-0.2, 2.2, 25)
-    ps = [float(T.Phibar(t)) for t in ts]
-    for ax, L, key, title in ((axs[0], L_LOOP, "loops", "1716-cell loop"),
-                              (axs[1], L_LONG, "long", "6864-cell environment")):
-        for r in (8.0, 32.0):
-            pr = [T.fano_def_A(t, L, r) for t in ts]
-            ax.plot(ps, [q["total"] for q in pr], color=R_COL[r], ls="--", lw=0.9)
-            ax.plot(ps, [q["total_peaks"] for q in pr], color=R_COL[r], ls="-", lw=0.9)
-            ax.plot(ps, [q["F"] for q in pr], color=R_COL[r], ls=":", lw=0.9)
-            for kind, mk in (("grf", "o"), ("enc", "s")):
-                xs = pick(rows, kind, r, None if kind == "grf" else 512)
-                for p in VARIANT_PS:
-                    errpt(ax, p, ms([get(x, f"variants.{raw_name(p)}.{key}.var_over_mean") for x in xs]),
-                          color=R_COL[r], fmt=mk, mfc=R_COL[r] if kind == "grf" else "white", mec=R_COL[r])
+    ps = np.array([float(T.Phibar(t)) for t in ts])
+    for ax, L, key, title in ((axs[0], L_LOOP, "loops", "1716-cell loop, r = 16"),
+                              (axs[1], L_LONG, "long", "6864-cell environment, r = 16")):
+        pr = [T.fano_def_A(t, L, r) for t in ts]
+        lo = np.array([q["total"] for q in pr])
+        hi = np.array([q["total_peaks"] if q["fields_per_active_unit"] >= 3 else np.nan for q in pr])
+        ax.plot(ps, [q["F"] for q in pr], color=INK2, ls=":", lw=1.0, label="F(u_A), fixed level")
+        ax.plot(ps[ts < 1.0], lo[ts < 1.0], color=INK2, ls="-", lw=1.2, label="+ definition-A level term")
+        ax.plot(ps[ts >= 1.0], hi[ts >= 1.0], color=INK2, ls="--", lw=1.2, label="peak form (u_A > 1)")
+        for kind, mk in (("grf", "o"), ("enc", "s")):
+            xs = pick(rows, kind, r, None if kind == "grf" else 512)
+            for p in VARIANT_PS:
+                errpt(ax, p * (0.96 if kind == "grf" else 1.04),
+                      ms([get(x, f"variants.{raw_name(p)}.{key}.var_over_mean") for x in xs]),
+                      color=P_COL[p], fmt=mk, mfc=P_COL[p] if kind == "grf" else "white", mec=P_COL[p])
         ax.axhline(1, color=INK, lw=0.6)
         ax.set_xscale("log")
-        ax.set_xlabel("p")
+        ax.set_xlabel("active fraction p")
         ax.set_ylabel("variance / mean of field counts")
         ax.set_title(title)
         grid_(ax)
-    axs[0].plot([], [], ":", color=INK2, label="F(u_A), fixed level")
-    axs[0].plot([], [], "--", color=INK2, label="+ level term (low u_A)")
-    axs[0].plot([], [], "-", color=INK2, label="peak form (high u_A)")
     axs[0].plot([], [], "o", color=INK2, ms=3, label="GRF")
-    axs[0].plot([], [], "s", color=INK2, mfc="white", ms=3, label="encoder M = 512")
-    axs[0].legend(fontsize=5.5, loc="upper left")
+    axs[0].plot([], [], "s", color=INK2, mfc="white", ms=3, label="encoder, M = 512")
+    axs[0].legend(fontsize=5.5, loc="upper right")
     ax = axs[2]
-    u = np.linspace(-1, 4, 80)
-    ax.plot(u, [T.fano_upcross(x, 10.0) for x in u], color=INK2, label="F(u), Rice second moment")
-    ax.plot(u, [math.sqrt(T.fano_upcross(x, 10.0)) for x in u], color=INK2, ls="--", label="sqrt F (renewal gap CV)")
     for kind, mk in (("grf", "o"), ("enc", "s")):
-        for r in (8.0, 16.0, 32.0):
-            xs = pick(rows, kind, r, None if kind == "grf" else 512)
+        for x in pick(rows, kind, M=None if kind == "grf" else 512):
             for p in VARIANT_PS:
-                uA = ms([get(x, f"variants.{raw_name(p)}.level.uA_mean") for x in xs])[0]
-                if uA is None:
-                    continue
-                errpt(ax, uA, ms([get(x, f"variants.{raw_name(p)}.loops.gap_cv_median") for x in xs]),
-                      color=R_COL[r], fmt=mk, mfc=R_COL[r] if kind == "grf" else "white", mec=R_COL[r])
+                for key in ("loops", "long"):
+                    st = get(x, f"variants.{raw_name(p)}.{key}")
+                    if not st or not st.get("fields_per_active"):
+                        continue
+                    ax.plot(st["fields_per_active"], st["var_over_mean"], mk, ms=2.5, color=P_COL[p],
+                            mfc=P_COL[p] if kind == "grf" else "white", mec=P_COL[p])
     ax.axhline(1, color=INK, lw=0.6)
-    ax.set_xlabel("level u_A (SDs)")
-    ax.set_ylabel("Fano factor / gap CV")
-    ax.set_title("Gap CV between a unit's fields")
-    ax.legend(fontsize=5.5, loc="lower right")
+    ax.set_xscale("log")
+    ax.set_xlabel("fields per active unit, N")
+    ax.set_ylabel("variance / mean")
+    ax.set_title("Dispersion grows with N\n(all r, loops and long environments)")
+    for p in VARIANT_PS:
+        ax.plot([], [], "o", color=P_COL[p], ms=3, label=f"p = {p:g}")
+    ax.legend(fontsize=5.5, loc="upper left", ncol=2)
     grid_(ax)
     fig.tight_layout()
     save(fig, out, "counts")
@@ -253,8 +270,9 @@ def fig_finite_M(rows, out):
                 lw=0.9, label=f"r = {r:g}")
         for M in Ms:
             errpt(ax, M, ms([get(x, "alias.raw.max") for x in pick(rows, "enc", r, int(M))]), color=R_COL[r])
-    ax.set_xscale("log", base=2), ax.set_yscale("log")
-    ax.set_xlabel("M"), ax.set_ylabel("largest far kernel value")
+    m_axis(ax)
+    ax.set_yscale("log")
+    ax.set_xlabel("M"), ax.set_ylabel("largest far raw kernel value")
     ax.set_title("Alias over the whole scaffold")
     ax.legend(fontsize=5.5)
     grid_(ax)
@@ -274,11 +292,9 @@ def fig_finite_M(rows, out):
                 pred.append(np.nan)
         ax.plot(Ms, pred, color=c, lw=0.9, label=f"{'rectified' if v == 'rotated' else 'p = 0.1'}")
         g = pick(rows, "grf", 16.0)
-        errpt(ax, 4096, ms([get(x, f"variants.{v}.long_x.var_over_mean") for x in g]), color=c, fmt="D")
+        errpt(ax, 8192, ms([get(x, f"variants.{v}.long_x.var_over_mean") for x in g]), color=c, fmt="D")
     ax.axhline(1, color=INK, lw=0.6)
-    ax.set_xscale("log", base=2)
-    ax.set_xticks([32, 128, 512, 2048, 4096])
-    ax.set_xticklabels(["32", "128", "512", "2048", "GRF"])
+    m_axis(ax, extra=(8192, "GRF"))
     ax.set_xlabel("M"), ax.set_ylabel("var / mean, 6864 cells, r = 16")
     ax.set_title("Units of one draw differ")
     ax.legend(fontsize=6)
@@ -290,9 +306,9 @@ def fig_finite_M(rows, out):
         for M in Ms:
             errpt(ax, M, ms([get(x, f"variants.{v}.W_A") / r_eff(x) for x in pick(rows, "enc", 16.0, int(M))]),
                   color=c)
-    ax.set_xscale("log", base=2)
+    m_axis(ax)
     ax.set_xlabel("M"), ax.set_ylabel("W_A / r_eff, r = 16")
-    ax.set_title("Field width")
+    ax.set_title("Field width (dashed: Rice)")
     grid_(ax)
     ax = axs[3]
     for v, c in (("rotated", CAT[0]), ("sparse_raw_p0.1", CAT[1]), ("sparse_raw_p0.02", CAT[2])):
@@ -303,9 +319,9 @@ def fig_finite_M(rows, out):
         for M in Ms:
             errpt(ax, M, ms([get(x, f"variants.{v}.loops.gap_cv_median") for x in pick(rows, "enc", 16.0, int(M))]),
                   color=c)
-    ax.set_xscale("log", base=2)
+    m_axis(ax)
     ax.set_xlabel("M"), ax.set_ylabel("gap CV (median unit), r = 16")
-    ax.set_title("Quasi-periodic units at small M\n(dashed: GRF)")
+    ax.set_title("Gap CV (dashed: GRF)")
     grid_(ax)
     fig.tight_layout()
     save(fig, out, "finite_M")
@@ -331,10 +347,10 @@ def fig_arenas(rows, out):
                     if st["mean_field_size"]:
                         axs[1].plot(sq["area"] / r ** 2, st["mean_field_size"] / r ** 2, mk,
                                     ms=2.5, color=col, mfc=col if kind == "grf" else "white", mec=col)
-    for ax in axs:
-        lim = [0.05, 400]
+    for ax, lim in zip(axs, ([0.05, 40], [0.3, 15])):
         ax.plot(lim, lim, color=INK, lw=0.6)
         ax.set_xscale("log"), ax.set_yscale("log")
+        ax.set_xlim(lim), ax.set_ylim(lim)
         grid_(ax)
     axs[0].set_xlabel("EC count at u_A, 9-cell cut")
     axs[0].set_ylabel("fields per unit (measured)")
@@ -357,7 +373,7 @@ def fig_native(rows, out):
     for r in [4.0, 8.0, 16.0, 23.2, 32.0]:
         for M in Ms:
             errpt(ax, M, ms([get(x, "variants.native.W_A") / r for x in pick(rows, "enc", r, M)]), color=R_COL[r])
-    ax.set_xscale("log", base=2)
+    m_axis(ax)
     ax.set_xlabel("M"), ax.set_ylabel("native W_A / r")
     ax.legend(fontsize=6)
     grid_(ax)
@@ -371,7 +387,7 @@ def fig_native(rows, out):
                 b = get(x, "variants.native.loops_y.mean_field_size")
                 if a and b:
                     ax.plot(M, math.log(a / b), "o", ms=2.5, color=R_COL[r])
-    ax.set_xscale("log", base=2)
+    m_axis(ax)
     ax.set_xlabel("M"), ax.set_ylabel("ln(W_A along x / along y)")
     ax.set_title("Direction dependence of one draw")
     ax.legend(fontsize=6)
@@ -392,73 +408,108 @@ def fig_native(rows, out):
 
 
 def fig_scale(rows, out):
-    fig, axs = plt.subplots(1, 3, figsize=(7.2, 2.4))
+    fig, axs = plt.subplots(1, 3, figsize=(7.2, 2.5))
     rs = sorted({x["config"]["r"] for x in pick(rows, "enc", M=512)})
-    for ax in axs[:2]:
-        ax.axhspan(0.3, 0.5, color=GRID, lw=0)
+    axs[0].axhspan(0.3, 0.5, color=GRID, lw=0)
     for p in VARIANT_PS:
         v = f"sparse_p{p:g}"
         c = P_COL[p]
-        wa = [ms([get(x, f"variants.{v}.W_A") / LAMBDA for x in pick(rows, "enc", r, 512)]) for r in rs]
-        axs[0].errorbar(rs, [w[0] for w in wa], yerr=[w[1] for w in wa], color=c, marker="o", ms=3,
+        fns = ((axs[0], lambda x: get(x, f"variants.{v}.W_A") / LAMBDA),
+               (axs[1], lambda x: get(x, f"variants.{v}.kernel.pearson.fw05") / LAMBDA),
+               (axs[2], lambda x: get(x, f"alias.{v}.measured.pearson")))
+        for ax, f in fns:
+            vals = [ms([f(x) for x in pick(rows, "enc", r, 512) if f(x) is not None]) for r in rs]
+            ax.errorbar(rs, [w[0] for w in vals], yerr=[w[1] or 0 for w in vals], color=c, marker="o", ms=3,
                         lw=1.0, capsize=0, label=f"p = {p:g}")
-        kp = [ms([get(x, f"variants.{v}.kernel.pearson.fw05") / LAMBDA for x in pick(rows, "enc", r, 512)])
-              for r in rs]
-        axs[1].errorbar(rs, [w[0] for w in kp], yerr=[w[1] for w in kp], color=c, marker="o", ms=3, lw=1.0,
-                        capsize=0)
-        al = [ms([(get(x, f"alias.{v}.measured.pearson") or np.nan) for x in pick(rows, "enc", r, 512)])
-              for r in rs]
-        axs[2].errorbar(rs, [w[0] for w in al], yerr=[w[1] for w in al], color=c, marker="o", ms=3, lw=1.0,
-                        capsize=0)
     wa = [ms([get(x, "variants.native.W_A") / LAMBDA for x in pick(rows, "enc", r, 512)]) for r in rs]
     axs[0].plot(rs, [w[0] for w in wa], color=CAT[1], marker="s", ms=3, lw=1.0, label="native")
     raw = [ms([get(x, "raw_kernel.fw05") / LAMBDA for x in pick(rows, "enc", r, 512)]) for r in rs]
     axs[1].plot(rs, [w[0] for w in raw], color=INK, ls=":", marker="s", ms=3, lw=1.0, label="raw code")
+    axs[1].axhline(1.0, color=INK2, lw=0.6)
     for ax in axs:
-        ax.set_xscale("log"), ax.set_yscale("log")
+        r_axis(ax)
+        ax.set_yscale("log")
         ax.set_xlabel("r (cells)")
         grid_(ax)
-    axs[0].set_ylabel("W_A / lambda (lambda = 12 cells)")
-    axs[0].set_title("Field width over the grid period\n(band: dorsal CA1, 0.3 to 0.5)")
+    axs[0].set_ylabel("W_A / lambda")
+    axs[0].set_title("Field width over the grid period\n(lambda = 12 cells; band 0.3 to 0.5)")
     axs[0].legend(fontsize=5.5, loc="upper left")
     axs[1].set_ylabel("kernel FW05 (Pearson) / lambda")
-    axs[1].set_title("Population kernel width")
-    axs[1].legend(fontsize=6)
-    axs[2].set_ylabel("Pearson similarity at the worst far displacement")
-    axs[2].set_title("Largest alias, M = 512")
+    axs[1].set_title("Population kernel width\n(line: one grid period)")
+    axs[1].legend(fontsize=6, loc="upper left")
+    axs[2].set_ylabel("Pearson at the worst far displacement")
+    axs[2].set_title("Largest alias over the scaffold,\nM = 512 (sparse code)")
     fig.tight_layout()
     save(fig, out, "scale")
 
 
 def fig_structural(rows, out):
-    stats_ = [("coverage", "loops.coverage_all"), ("Treves-Rolls", "loops.tr.pooled"),
-              ("W_A / r_eff", None), ("fields per field width", "loops.field_coverage_all"),
-              ("var / mean, loop", "loops.var_over_mean"), ("gap CV", "loops.gap_cv_median")]
-    fig, axs = plt.subplots(1, len(stats_), figsize=(7.2, 2.0))
-    for ax, (name, path) in zip(axs, stats_):
+    one = [("coverage", "loops.coverage_all", lambda t, r: float(T.Phibar(t))),
+           ("Treves-Rolls, pooled", "loops.tr.pooled", lambda t, r: float(T.treves_rolls(t))),
+           ("W_A / r_eff", None, lambda t, r: T.def_A_1d(t, L_LOOP, r)["W_A"] / r),
+           ("fields per field width", "loops.field_coverage_all",
+            lambda t, r: T.def_A_1d(t, L_LOOP, r)["field_coverage"]),
+           ("var / mean, loop", "loops.var_over_mean", None),
+           ("gap CV", "loops.gap_cv_median", None)]
+    two = [("coverage", "coverage_all"), ("TR, active units", "tr.active"),
+           ("field area / r^2", "area_r2"), ("fields per unit", "fields_per_unit"),
+           ("var / mean", "var_over_mean"), ("single-field share", "single_field_share_active")]
+    fig, axs = plt.subplots(2, 6, figsize=(7.2, 3.8))
+    rr = np.geomspace(2, 32, 30)
+    for col, (name, path, th) in enumerate(one):
+        ax = axs[0, col]
         for p in (0.5, 0.1, 0.02):
             v = raw_name(p)
+            t = T.t_of_p(p)
+            if th is not None:
+                ax.plot(rr, [th(t, r) for r in rr], color=P_COL[p], lw=0.9, ls="--")
             for kind, mk in (("grf", "o"), ("enc", "s")):
-                rs = sorted({x["config"]["r"] for x in pick(rows, kind, M=None if kind == "grf" else 512)})
+                M = None if kind == "grf" else 512
+                rs = sorted({x["config"]["r"] for x in pick(rows, kind, M=M)})
                 ys = []
                 for r in rs:
-                    xs = pick(rows, kind, r, None if kind == "grf" else 512)
+                    xs = pick(rows, kind, r, M)
                     vals = [get(x, f"variants.{v}.W_A") / r_eff(x) for x in xs] if path is None else \
                         [get(x, f"variants.{v}.{path}") for x in xs]
                     ys.append(ms(vals)[0])
-                ax.plot(rs, [np.nan if y is None else y for y in ys], marker=mk, ms=2.5, lw=0.8,
-                        color=P_COL[p], mfc=P_COL[p] if kind == "grf" else "white", mec=P_COL[p])
-        ax.set_xscale("log")
-        if name in ("coverage", "Treves-Rolls", "fields per field width"):
+                ax.plot(rs, [np.nan if y is None else y for y in ys], mk, ms=2.5, color=P_COL[p],
+                        mfc=P_COL[p] if kind == "grf" else "white", mec=P_COL[p])
+        r_axis(ax, (2, 4, 8, 16, 32))
+        if name in ("coverage", "Treves-Rolls, pooled", "fields per field width"):
             ax.set_yscale("log")
-        ax.set_xlabel("r")
+        ax.set_title(name)
+        grid_(ax)
+    for col, (name, key) in enumerate(two):
+        ax = axs[1, col]
+        for p in (0.5, 0.1, 0.02):
+            v = raw_name(p)
+            for kind, mk in (("grf", "o"), ("enc", "s")):
+                M = None if kind == "grf" else 512
+                rs = sorted({x["config"]["r"] for x in pick(rows, kind, M=M)})
+                ys = []
+                for r in rs:
+                    vals = []
+                    for x in pick(rows, kind, r, M):
+                        st = get(x, f"arenas.8r.variants.{v}")
+                        if not st:
+                            continue
+                        vals.append((st["mean_field_size"] or np.nan) / r ** 2 if key == "area_r2"
+                                    else get(st, key))
+                    ys.append(ms(vals)[0])
+                ax.plot(rs, [np.nan if y is None else y for y in ys], mk, ms=2.5, color=P_COL[p],
+                        mfc=P_COL[p] if kind == "grf" else "white", mec=P_COL[p], ls="-", lw=0.6)
+        r_axis(ax, (2, 4, 8, 16, 32))
+        if name in ("coverage", "TR, active units"):
+            ax.set_yscale("log")
+        ax.set_xlabel("r (cells)")
         ax.set_title(name)
         grid_(ax)
     for p in (0.5, 0.1, 0.02):
-        axs[0].plot([], [], color=P_COL[p], label=f"p = {p:g}")
-    axs[0].legend(fontsize=5.5)
-    fig.suptitle("Scale-free statistics against r (circles GRF, squares encoder M = 512); "
-                 "fixed 1716-cell loops", fontsize=8)
+        axs[0, 0].plot([], [], "o", color=P_COL[p], ms=3, label=f"p = {p:g}")
+    axs[0, 0].legend(fontsize=5.5)
+    axs[0, 0].set_ylabel("1716-cell loops\n(dashed: theory at each r)")
+    axs[1, 0].set_ylabel("arenas of side 8 r")
+    fig.suptitle("Scale-free statistics against r: circles GRF, open squares encoder M = 512", fontsize=8)
     fig.tight_layout()
     save(fig, out, "structural")
 
