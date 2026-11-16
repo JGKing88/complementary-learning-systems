@@ -143,7 +143,7 @@ def fig_kernels(rows, out):
     ax.set_xlabel("active fraction p")
     ax.set_ylabel("r (cells)")
     ax.set_title("r that keeps FW05 = 37.7 cells")
-    ax.legend(fontsize=6, loc="upper right")
+    ax.legend(fontsize=6, loc="lower left")
     grid_(ax)
     fig.tight_layout()
     save(fig, out, "kernels")
@@ -302,13 +302,15 @@ def fig_finite_M(rows, out):
     ax = axs[2]
     for v, c in (("rotated", CAT[0]), ("sparse_raw_p0.1", CAT[1]), ("sparse_raw_p0.02", CAT[2])):
         t = T.t_of_p({"rotated": 0.5, "sparse_raw_p0.1": 0.1, "sparse_raw_p0.02": 0.02}[v])
-        ax.axhline(T.def_A_1d(t, L_LOOP, 16.0)["W_A"] / 16.0, color=c, lw=0.8, ls="--")
+        ax.axhline(T.def_A_1d(t, L_LOOP, 16.0)["W_A"] / 16.0, color=c, lw=0.8, ls="--",
+                   label={"rotated": "rectified", "sparse_raw_p0.1": "p = 0.1", "sparse_raw_p0.02": "p = 0.02"}[v])
         for M in Ms:
             errpt(ax, M, ms([get(x, f"variants.{v}.W_A") / r_eff(x) for x in pick(rows, "enc", 16.0, int(M))]),
                   color=c)
     m_axis(ax)
     ax.set_xlabel("M"), ax.set_ylabel("W_A / r_eff, r = 16")
     ax.set_title("Field width (dashed: Rice)")
+    ax.legend(fontsize=6, loc="center right")
     grid_(ax)
     ax = axs[3]
     for v, c in (("rotated", CAT[0]), ("sparse_raw_p0.1", CAT[1]), ("sparse_raw_p0.02", CAT[2])):
@@ -379,7 +381,7 @@ def fig_native(rows, out):
     grid_(ax)
     ax = axs[1]
     m = np.array(Ms, dtype=float)
-    ax.fill_between(m, -1.07 / np.sqrt(m), 1.07 / np.sqrt(m), color=GRID, label="+- 1.07 / sqrt(M)")
+    ax.fill_between(m, -1.07 / np.sqrt(m), 1.07 / np.sqrt(m), color=GRID, label="± 1.07 / sqrt(M), the SD over draws")
     for r in [4.0, 8.0, 16.0, 23.2, 32.0]:
         for M in Ms:
             for x in pick(rows, "enc", r, M):
