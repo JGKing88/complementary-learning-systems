@@ -1063,12 +1063,12 @@ fn main(@builtin(workgroup_id) wg: vec3u, @builtin(local_invocation_id) lid: vec
   for (var e = t; e < D; e = e + 256u) { v[e] = (v[e] - mean) / sd - bias[e]; }
   workgroupBarrier();
   for (var q = t; q < prm.K; q = q + 256u) {
-    let unit = unitIdx[q];
-    let x = v[unit];
+    let uid = unitIdx[q];
+    let x = v[uid];
     var rank = 0u;
     for (var j = 0u; j < D; j = j + 1u) {
       let y = v[j];
-      if (y > x || (y == x && j < unit)) { rank = rank + 1u; }
+      if (y > x || (y == x && j < uid)) { rank = rank + 1u; }
     }
     E[i * prm.K + q] = prof[rank];
   }
