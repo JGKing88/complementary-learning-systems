@@ -16,16 +16,17 @@ PY=/home/jackking/.conda/envs/cls/bin/python
 TAG=${TAG:-v1}
 OUT=/orcd/pool/003/jackking/cls_runs/results/coding_comparison/$TAG
 POPS=(grid ideal ideal_rot ideal_sparse trained untrained hippocampus)
-MEASURES=${2:-${MEASURES:-kernels,fields,remapping}}
-
 if [[ -z "${SLURM_ARRAY_TASK_ID:-}" ]]; then
+    MEASURES=${2:-kernels,fields,remapping}
     mkdir -p "$OUT/logs"
+    # MEASURES travels as an argument: sbatch --export would split it at the commas.
     exec sbatch --job-name=coding_cmp --partition=ou_bcs_normal \
         --time=${CC_TIME:-4:00:00} --cpus-per-task=4 --mem=${CC_MEM:-40G} \
-        --array="${1:-0-6}" --export=ALL,TAG="$TAG",MEASURES="$MEASURES" \
-        --output="$OUT/logs/%x_%A_%a.out" "$0"
+        --array="${1:-0-6}" --export=ALL,TAG="$TAG" \
+        --output="$OUT/logs/%x_%A_%a.out" "$0" "$MEASURES"
 fi
 
+MEASURES=$1
 cd "$WT"
 export OMP_NUM_THREADS=${SLURM_CPUS_PER_TASK:-4}
 POP=${POPS[$SLURM_ARRAY_TASK_ID]}

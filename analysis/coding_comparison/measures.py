@@ -83,6 +83,7 @@ class FieldDef:
     smooth_sd: float = 0.0    # Gaussian SD in bins, applied before thresholding
     min_len: float = 1.0      # 1D minimum field length
     min_area: float = 1.0     # 2D minimum field area
+    min_peak_hz: float = 0.0  # a field's own peak, after scaling, must reach this
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -172,6 +173,11 @@ def detect_fields_1d(rates: np.ndarray, fdef: FieldDef) -> Fields1D:
     # the k-th start pairs with the k-th end.
     assert np.array_equal(su, eu)
     keep = (ee - ss) >= fdef.min_len
+    if fdef.min_peak_hz > 0 and su.size:
+        flat = np.concatenate([r.reshape(-1), [0.0]])
+        bounds = np.stack([su * L + ss, su * L + ee], axis=1).reshape(-1)
+        run_max = np.maximum.reduceat(flat, bounds)[0::2]
+        keep &= run_max >= fdef.min_peak_hz
     su, ss, ee = su[keep], ss[keep], ee[keep]
     # Rate-weighted centre of each run, from cumulative sums over the flat map.
     w = np.clip(r, 0, None).reshape(-1)
@@ -232,6 +238,9 @@ def detect_fields_2d(rates: np.ndarray, fdef: FieldDef, *, block: int = 128) -> 
         flat = lab.reshape(-1)
         size = np.bincount(flat, minlength=n + 1).astype(np.float64)
         keep = size >= fdef.min_area
+        if fdef.min_peak_hz > 0:
+            peak = np.concatenate([[0.0], ndimage.maximum(r, labels=lab, index=np.arange(1, n + 1))])
+            keep &= peak >= fdef.min_peak_hz
         keep[0] = False
         uidx = np.repeat(np.arange(r.shape[0], dtype=np.float64), S * S)
         sx = np.bincount(flat, weights=np.tile(xx.reshape(-1), r.shape[0]), minlength=n + 1)

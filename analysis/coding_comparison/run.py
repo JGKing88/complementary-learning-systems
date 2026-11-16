@@ -60,7 +60,8 @@ PARAMS = {
     "rich": RICH,
     "mean_rates": [0.5, 0.75, 1.0],
     "rot_seeds": [1, 2, 3],
-    "rot_defs": ["A", "B0.75"],
+    "def_Ap": {"min_peak_hz": 1.0, "rate": "0.75"},
+    "rot_defs": ["A", "Ap", "B0.75"],
     "n_scale_cells": 16384,
     "n_loops": 8,
     "n_tracks": 16,
@@ -103,7 +104,7 @@ def basis_key(rot: int, conv: str) -> str:
 
 
 def def_names(P) -> list[str]:
-    return ["A"] + [f"B{r:g}" for r in P["mean_rates"]]
+    return ["A", "Ap"] + [f"B{r:g}" for r in P["mean_rates"]]
 
 
 def variants_for(pop: Population, P) -> list[Variant]:
@@ -213,12 +214,30 @@ def calibrate(pop: Population, P, bases: dict, variants: list[Variant], rng, t0)
             "W": WA, "W_median": float(np.median(la)) if la.size else None,
             "n_fields": int(la.size), "fdef": fa.to_dict()}
         for v in variants:
-            if v.basis != (rot, conv) or not v.defn.startswith("B"):
+            if v.basis != (rot, conv) or v.defn == "A":
                 continue
-            scale = scales[basis_key(rot, conv)]["Hz_per_unit"][v.defn[1:]]
-            calib[v.key] = calibrate_B(R_loops, scale, WA, P)
+            hz = scales[basis_key(rot, conv)]["Hz_per_unit"]
+            if v.defn == "Ap":
+                calib[v.key] = calibrate_Ap(R_loops, hz[P["def_Ap"]["rate"]], P)
+                continue
+            calib[v.key] = calibrate_B(R_loops, hz[v.defn[1:]], WA, P)
         log(f"calibrated {basis_key(rot, conv)}: W_A={WA}", t0)
     return {"scales": scales, "calib": calib, "loops": loops, "loop_rows": rows.tolist()}
+
+
+def def_Ap(scale: float, P) -> M.FieldDef:
+    """Eliav 2021: 20% of the field peak, field peaks above 1 Hz (here at the 0.75 Hz scale)."""
+    return def_A(P).with_(name="Ap", rate_scale=scale, min_peak_hz=P["def_Ap"]["min_peak_hz"])
+
+
+def calibrate_Ap(R_loops, scale, P) -> dict:
+    if scale is None:
+        return {"W": None, "fdef": None}
+    fdef = def_Ap(scale, P)
+    lens = np.concatenate([M.detect_fields_1d(R, fdef).length for R in R_loops])
+    return {"W": float(lens.mean()) if lens.size else None,
+            "W_median": float(np.median(lens)) if lens.size else None,
+            "n_fields": int(lens.size), "fdef": fdef.to_dict()}
 
 
 def calibrate_B(R_loops, scale, W0, P) -> dict:
