@@ -509,7 +509,8 @@ def main():
     p.add_argument("--num_conv_layers", type=int, default=3)
     p.add_argument("--kernel_size", type=int, default=5)
     p.add_argument("--output_nonlinearity", default="tanh",
-                   choices=["tanh", "sigmoid", "relu", "relu_sparse", "relu_rank", "none"],
+                   choices=["tanh", "sigmoid", "relu", "relu_sparse", "relu_rank",
+                            "relu_rank_homeo", "signed_rank_homeo", "none"],
                    help="applied before the L2 norm. relu ignores gain (the "
                         "norm removes any positive scale); 'none' is linear; "
                         "relu_sparse standardises each code and keeps the top "

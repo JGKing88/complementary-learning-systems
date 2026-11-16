@@ -46,6 +46,23 @@ class GridEncoder(nn.Module):
         prof = [max(nd.inv_cdf(1.0 - (k + 0.5) / out_dim) - self.sparse_thresh, 0.0) for k in range(out_dim)]
         prof = torch.tensor(prof, dtype=torch.float32)
         self.register_buffer("rank_profile", prof / prof.norm(), persistent=False)
+        # relu_rank_homeo: relu_rank with a per-unit threshold offset set by a homeostatic rule,
+        # not by gradient. After each training forward pass every unit's offset moves by
+        # homeo_eta * (its share of the batch's codes it is active in - sparse_active), so each
+        # unit fires in about sparse_active of all inputs, not only each input having that
+        # share of active units. Saved with the weights; frozen in eval mode.
+        # signed_rank_homeo: the same with signs kept, the control for sparsity without
+        # non-negativity. The top sparse_active share of units by |pre-activation| are non-zero,
+        # each taking the profile sign(g) relu(|g| - Phi^-1(1 - sparse_active / 2)) by rank of |z|.
+        self.homeo_eta = 0.01
+        if "homeo" in output_nonlinearity:     # registered only here, so older checkpoints load
+            self.register_buffer("homeo_bias", torch.zeros(out_dim))
+        else:
+            self.homeo_bias = None
+        self.signed_thresh = nd.inv_cdf(1.0 - self.sparse_active / 2)
+        sprof = [max(nd.inv_cdf(1.0 - (k + 0.5) / (2 * out_dim)) - self.signed_thresh, 0.0) for k in range(out_dim)]
+        sprof = torch.tensor(sprof, dtype=torch.float32)
+        self.register_buffer("signed_profile", sprof / sprof.norm(), persistent=False)
 
         act = {"relu": nn.ReLU, "gelu": nn.GELU, "tanh": nn.Tanh}.get(
             nonlinearity.lower(), nn.GELU)
@@ -72,9 +89,23 @@ class GridEncoder(nn.Module):
             # No gain: relu commutes with a positive scale and the L2
             # normalisation below removes it, so gain would do nothing.
             z = F.relu(z)
-        elif self.output_nonlinearity in ("relu_sparse", "relu_rank"):
+        elif self.output_nonlinearity == "signed_rank_homeo":
+            z = (z - z.mean(-1, keepdim=True)) / z.std(-1, keepdim=True, unbiased=False).clamp_min(1e-6)
+            sgn, mag = torch.sign(z), z.abs() - self.homeo_bias
+            soft = F.normalize(sgn * F.relu(mag - self.signed_thresh), p=2, dim=-1)
+            order = mag.argsort(dim=-1, descending=True)
+            hard = torch.zeros_like(z).scatter_(
+                -1, order, self.signed_profile.to(z.dtype).expand_as(z).contiguous()) * sgn
+            if self.training:
+                with torch.no_grad():
+                    rate = (hard != 0).float().mean(0)
+                    self.homeo_bias += self.homeo_eta * (rate - self.sparse_active)
+            z = soft + (hard - soft).detach()
+        elif self.output_nonlinearity in ("relu_sparse", "relu_rank", "relu_rank_homeo"):
             # No gain either: the standardisation removes any scale.
             z = (z - z.mean(-1, keepdim=True)) / z.std(-1, keepdim=True, unbiased=False).clamp_min(1e-6)
+            if self.output_nonlinearity == "relu_rank_homeo":
+                z = z - self.homeo_bias
             soft = F.normalize(F.relu(z - self.sparse_thresh), p=2, dim=-1)
             if self.output_nonlinearity == "relu_sparse":
                 z = soft
@@ -82,6 +113,10 @@ class GridEncoder(nn.Module):
                 order = z.argsort(dim=-1, descending=True)
                 hard = torch.zeros_like(z).scatter_(
                     -1, order, self.rank_profile.to(z.dtype).expand_as(z).contiguous())
+                if self.output_nonlinearity == "relu_rank_homeo" and self.training:
+                    with torch.no_grad():
+                        rate = (hard > 0).float().mean(0)
+                        self.homeo_bias += self.homeo_eta * (rate - self.sparse_active)
                 z = soft + (hard - soft).detach()
         z = F.normalize(z, p=2, dim=-1)
 

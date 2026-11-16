@@ -2393,6 +2393,27 @@ WAVES["w68_relu_rank10_xenv"] = {
 }
 
 
+# W69 -- w67 (old loss, within-environment pairs only) with even unit usage.
+#
+# w67's codes have the sparse form but a floor of 0.11-0.13 (the sparse ideal's is 0.058): some
+# units fire at many places, so every code shares a large mean part, and dead goals climb with K.
+# relu_rank_homeo adds a per-unit threshold offset moved by a homeostatic rule (not gradient)
+# toward each unit firing in sparse_active of all codes. 10% as before, and 20%, which should cost
+# floor (0.12 for an even 20% code) and may recover direction. signed10 is the control for
+# sparsity without non-negativity: 10% of units non-zero, signs kept, so the floor is ~0.
+WAVES["w69_rank_homeo"] = {
+    "arm": {
+        **{f"att0.5_rank_homeo{int(100 * a)}": {**WAVES["w67_relu_rank10"]["arm"]["att0.5_relu_rank10"],
+                                                "output_nonlinearity": "relu_rank_homeo",
+                                                "sparse_active": a}
+           for a in (0.1, 0.2)},
+        "att0.5_signed_homeo10": {**WAVES["w67_relu_rank10"]["arm"]["att0.5_relu_rank10"],
+                                  "output_nonlinearity": "signed_rank_homeo", "sparse_active": 0.1},
+    },
+    "seed": [43, 44],
+}
+
+
 def _flatten(cfg: dict) -> dict:
     """Expand an ``arm`` dict of overrides into the config it stands for."""
     arm = cfg.pop("arm", None)
