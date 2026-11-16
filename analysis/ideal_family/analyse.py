@@ -423,7 +423,7 @@ def short_tracks(rows) -> tuple[str, dict]:
 
 def scale(rows) -> tuple[str, dict]:
     """W_A and kernel widths over the grid period lambda = 12 cells, M = 512, every r."""
-    body, data = [], {}
+    body, data, dorsal = [], {}, []
     for v in ["native", "rotated"] + SPARSE_N:
         rs = sorted({x["config"]["r"] for x in pick(rows, "enc", M=512)})
         pts = []
@@ -440,22 +440,38 @@ def scale(rows) -> tuple[str, dict]:
                         "fw05_pearson_over_lambda": kp, "alias_cos": al, "alias_floor_cos": alf,
                         "alias_pearson": alp})
             body.append([v, f"{r:g}", fmt(wa, 2), fmt(kc, 2), fmt(kp, 2), fmt(al), fmt(alf), fmt(alp)])
-        # r where W_A / lambda crosses 0.3, 0.4, 0.5 (log-linear interpolation)
+        # r where W_A / lambda crosses 0.3, 0.4, 0.5 (log-linear interpolation), and what that r implies
         if not pts:
             continue
         xr = np.array([q["r"] for q in pts])
         yw = np.array([q["W_A_over_lambda"][0] or np.nan for q in pts])
+
+        def at(key, rr):
+            y = np.array([(q[key][0] if q[key][0] is not None else np.nan) for q in pts])
+            ok = np.isfinite(y)
+            return float(np.interp(math.log(rr), np.log(xr[ok]), y[ok])) if ok.sum() >= 2 else None
         hit = {}
         for target in (0.3, 0.4, 0.5):
             ok = np.isfinite(yw)
             if ok.sum() >= 2 and yw[ok].min() <= target <= yw[ok].max():
-                hit[f"{target:g}"] = float(np.exp(np.interp(math.log(target), np.log(yw[ok]), np.log(xr[ok]))))
+                rr = float(np.exp(np.interp(math.log(target), np.log(yw[ok]), np.log(xr[ok]))))
+                hit[f"{target:g}"] = {"r": rr, "fw05_cos_over_lambda": at("fw05_cos_over_lambda", rr),
+                                      "fw05_pearson_over_lambda": at("fw05_pearson_over_lambda", rr),
+                                      "alias_cos": at("alias_cos", rr), "alias_floor_cos": at("alias_floor_cos", rr),
+                                      "alias_pearson": at("alias_pearson", rr)}
+                dorsal.append([v, f"{target:g}", f"{rr:.2f}", fmt(hit[f'{target:g}']['fw05_cos_over_lambda'], 2),
+                               fmt(hit[f'{target:g}']['fw05_pearson_over_lambda'], 2),
+                               fmt(hit[f'{target:g}']['alias_cos']), fmt(hit[f'{target:g}']['alias_floor_cos']),
+                               fmt(hit[f'{target:g}']['alias_pearson'])])
             else:
                 hit[f"{target:g}"] = None
         data[v] = {"points": pts, "r_for_W_over_lambda": hit}
     head = ["variant", "r", "W_A / lambda", "FW05 cosine / lambda", "FW05 Pearson / lambda",
             "alias, cosine", "far floor, cosine", "alias, Pearson"]
-    return table(head, body), data
+    dhead = ["variant", "target W_A / lambda", "r (cells)", "FW05 cosine / lambda", "FW05 Pearson / lambda",
+             "alias, cosine", "far floor, cosine", "alias, Pearson"]
+    return ("Settings that reach a target W_A / lambda (interpolated in log r):\n\n" + table(dhead, dorsal)
+            + "\n\nEvery r:\n\n" + table(head, body)), data
 
 
 def structural(rows) -> tuple[str, dict]:
