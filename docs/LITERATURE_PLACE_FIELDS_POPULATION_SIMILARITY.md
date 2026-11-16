@@ -40,7 +40,7 @@ The answer to the first question is therefore yes in absolute terms and conditio
 
 ## Only one study, in ventral CA3, shows a population kernel declining across most of an environment
 
-Every measurement found, from most local to broadest. The share is the distance as a fraction of the space's length.
+Every measurement found, from most local to broadest. The share is the distance as a fraction of the space's length; for Kjelstrup et al. it is a fraction of the 16.5 m of the 18 m track that was analysed.
 
 | Study | Region | Space | Similarity near zero at | Pattern | Status |
 |---|---|---|---|---|---|
