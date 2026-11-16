@@ -21,6 +21,7 @@
 #   SET=d bash analysis/hopfield_probe/run_relu_mix.sh [ARRAY]    # trained relu_rank encoders
 #   SET=e bash analysis/hopfield_probe/run_relu_mix.sh [ARRAY]    # w70 homeostatic + signed control
 #   SET=f bash analysis/hopfield_probe/run_relu_mix.sh [ARRAY]    # w70 relu codes + global inhibition
+#   SET=g bash analysis/hopfield_probe/run_relu_mix.sh [ARRAY]    # w71 radius 24, raw and inhibited
 #   python -m analysis.hopfield_probe.ideal_summary "$OUT"        # the table
 #
 # Runs from THIS worktree: do not delete it while jobs are live.
@@ -33,7 +34,18 @@ SET=${SET:-a}
 export SET
 B="n_freq=512,seed=0,gain=100"
 
-if [[ "$SET" == f ]]; then
+if [[ "$SET" == g ]]; then
+# w71: the non-negative 10% and 20% homeostatic codes trained with attract radius 24 (wider peak),
+# raw and with global inhibition.
+OUT=${OUT:-/orcd/pool/003/jackking/cls_runs/results/hopfield_probe/relu_r24}
+W=/orcd/pool/003/jackking/cls_runs/sweeps/w71_rank_homeo_r24
+ENCS=()
+for r in "000_att0.5_rank_homeo10_seed=43|relu10 r24 s43" "001_att0.5_rank_homeo10_seed=44|relu10 r24 s44" \
+         "002_att0.5_rank_homeo20_seed=43|relu20 r24 s43" "003_att0.5_rank_homeo20_seed=44|relu20 r24 s44"; do
+    IFS='|' read -r d lab <<< "$r"
+    ENCS+=("$W/$d/encoder_final.pt|$lab" "inhib:$W/$d/encoder_final.pt|$lab + inhibition")
+done
+elif [[ "$SET" == f ]]; then
 # Global inhibition in the memory, no retraining: the w70 non-negative encoders (and w69's 20%)
 # with one constant subtracted from every unit (harness inhib: prefix). Compare with SET=e.
 OUT=${OUT:-/orcd/pool/003/jackking/cls_runs/results/hopfield_probe/relu_inhib}
