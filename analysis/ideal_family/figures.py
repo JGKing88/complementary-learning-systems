@@ -49,8 +49,20 @@ def raw_name(p):
     return "rotated" if p == 0.5 else f"sparse_raw_p{p:g}"
 
 
+def plain_log_labels(fig):
+    """Default log-axis labels are mathtext (10^-1), which embeds DejaVu; use plain numbers instead."""
+    plain = matplotlib.ticker.FuncFormatter(lambda v, _: f"{v:g}")
+    for ax in fig.axes:
+        for axis in (ax.xaxis, ax.yaxis):
+            if isinstance(axis.get_major_formatter(), matplotlib.ticker.LogFormatter):
+                axis.set_major_formatter(plain)
+            if isinstance(axis.get_minor_formatter(), matplotlib.ticker.LogFormatter):
+                axis.set_minor_formatter(matplotlib.ticker.NullFormatter())
+
+
 def save(fig, out: Path, name: str):
     out.mkdir(parents=True, exist_ok=True)
+    plain_log_labels(fig)
     fig.savefig(out / f"{name}.pdf")
     fig.savefig(out / f"{name}.png", dpi=200)
     plt.close(fig)
