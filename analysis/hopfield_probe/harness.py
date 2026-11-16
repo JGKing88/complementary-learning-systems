@@ -106,6 +106,57 @@ def load_inhibited_encoder(spec: str, *, device="cpu", fwhm_override=None, fwhm_
     return InhibitedEncoder(base, c).eval(), cfg, gain, fwhm, header
 
 
+# ``sparsify:<active>:<checkpoint>``: a trained MLP encoder made sparse and non-negative after
+# training, with no retraining. Its pre-output-nonlinearity values u = net(x) (graded, before the
+# tanh) are standardised per unit with means and sds over 65,536 random scaffold cells (so every
+# unit is used about equally, as the homeostatic rule does in training); at each input the top
+# `active` share of units then take the sparse profile relu(Phi^-1(1 - (k - 1/2) / D) - Phi^-1(1 -
+# active)) by rank, unit norm, as encoder_training's relu_rank output does.
+SPARSIFY_PREFIX = "sparsify:"
+
+
+class SparsifiedEncoder(torch.nn.Module):
+    def __init__(self, base, mu, sd, active):
+        super().__init__()
+        from statistics import NormalDist
+        self.base = base
+        self.register_buffer("mu", torch.as_tensor(mu, dtype=torch.float32))
+        self.register_buffer("sd", torch.as_tensor(sd, dtype=torch.float32))
+        D, nd = len(mu), NormalDist()
+        t = nd.inv_cdf(1.0 - active)
+        prof = torch.tensor([max(nd.inv_cdf(1.0 - (k + 0.5) / D) - t, 0.0) for k in range(D)])
+        self.register_buffer("profile", prof / prof.norm())
+
+    def forward(self, x, *args, **kwargs):
+        u = (self.base.net(x) - self.mu.to(x)) / self.sd.to(x)
+        order = u.argsort(dim=-1, descending=True)
+        return torch.zeros_like(u).scatter_(-1, order, self.profile.to(u).expand_as(u).contiguous())
+
+
+def load_sparsified_encoder(spec: str, *, device="cpu", fwhm_override=None, fwhm_fallback=None):
+    """``load_probe_encoder``'s return shape for ``sparsify:<active>:<checkpoint>``."""
+    import numpy as np
+    from .encode import grid_codes
+    active, _, ck = spec[len(SPARSIFY_PREFIX):].partition(":")
+    base, cfg, gain, fwhm, header = load_probe_encoder(
+        ck, device=device, fwhm_override=fwhm_override, fwhm_fallback=fwhm_fallback)
+    if not hasattr(base, "net"):
+        raise ValueError(f"sparsify needs an MLP encoder with .net, got {type(base).__name__}")
+    lambdas = [int(l) for l in cfg.lambdas]
+    npos = int(np.prod(lambdas))
+    g = np.random.default_rng(12345)
+    xs, ys = g.integers(0, npos, 65536), g.integers(0, npos, 65536)
+    us = []
+    with torch.no_grad():
+        for i in range(0, len(xs), 8192):
+            c = torch.from_numpy(grid_codes(lambdas, xs[i:i + 8192], ys[i:i + 8192], fwhm)).to(device)
+            us.append(base.net(c).double().cpu().numpy())
+    u = np.concatenate(us)
+    header = dict(header, path=spec, name=spec, sparsify_active=float(active))
+    return (SparsifiedEncoder(base, u.mean(0), u.std(0) + 1e-6, float(active)).to(device).eval(),
+            cfg, gain, fwhm, header)
+
+
 def load_probe_encoder(
     path: str,
     *,
@@ -130,6 +181,9 @@ def load_probe_encoder(
     [,seed=0][,gain=100]`` (``ideal_encoder.py``), so every script built on
     this loader scores the ideal code through the identical pipeline.
     """
+    if isinstance(path, str) and path.startswith(SPARSIFY_PREFIX):
+        return load_sparsified_encoder(path, device=device, fwhm_override=fwhm_override,
+                                       fwhm_fallback=fwhm_fallback)
     if isinstance(path, str) and path.startswith(INHIB_PREFIX):
         return load_inhibited_encoder(path, device=device, fwhm_override=fwhm_override,
                                       fwhm_fallback=fwhm_fallback)

@@ -22,6 +22,8 @@
 #   SET=e bash analysis/hopfield_probe/run_relu_mix.sh [ARRAY]    # w70 homeostatic + signed control
 #   SET=f bash analysis/hopfield_probe/run_relu_mix.sh [ARRAY]    # w70 relu codes + global inhibition
 #   SET=g bash analysis/hopfield_probe/run_relu_mix.sh [ARRAY]    # w71 radius 24, raw and inhibited
+#   SET=h bash analysis/hopfield_probe/run_relu_mix.sh [ARRAY]    # att0.5 sparsified after training
+#   SET=i bash analysis/hopfield_probe/run_relu_mix.sh [ARRAY]    # w72 2048 units, raw and inhibited
 #   python -m analysis.hopfield_probe.ideal_summary "$OUT"        # the table
 #
 # Runs from THIS worktree: do not delete it while jobs are live.
@@ -34,7 +36,28 @@ SET=${SET:-a}
 export SET
 B="n_freq=512,seed=0,gain=100"
 
-if [[ "$SET" == g ]]; then
+if [[ "$SET" == h ]]; then
+# att0.5 s43 made sparse and non-negative after training (harness sparsify: prefix), 20% and 10%,
+# raw and with global inhibition. No retraining.
+OUT=${OUT:-/orcd/pool/003/jackking/cls_runs/results/hopfield_probe/att05_sparsified}
+A=/orcd/pool/003/jackking/cls_runs/sweeps/w52_attract_fwhm/001_att0.5_seed=43/encoder_final.pt
+ENCS=(
+    "sparsify:0.2:$A|att0.5 s43 sparsified 20%"
+    "inhib:sparsify:0.2:$A|att0.5 s43 sparsified 20% + inhibition"
+    "sparsify:0.1:$A|att0.5 s43 sparsified 10%"
+    "inhib:sparsify:0.1:$A|att0.5 s43 sparsified 10% + inhibition"
+)
+elif [[ "$SET" == i ]]; then
+# w72: the non-negative 10% and 20% homeostatic codes with 2048 units, raw and inhibited.
+OUT=${OUT:-/orcd/pool/003/jackking/cls_runs/results/hopfield_probe/relu_2048}
+W=/orcd/pool/003/jackking/cls_runs/sweeps/w72_rank_homeo_2048
+ENCS=()
+for r in "000_att0.5_rank_homeo2048_10_seed=43|relu10 2048 s43" "001_att0.5_rank_homeo2048_10_seed=44|relu10 2048 s44" \
+         "002_att0.5_rank_homeo2048_20_seed=43|relu20 2048 s43" "003_att0.5_rank_homeo2048_20_seed=44|relu20 2048 s44"; do
+    IFS='|' read -r d lab <<< "$r"
+    ENCS+=("$W/$d/encoder_final.pt|$lab" "inhib:$W/$d/encoder_final.pt|$lab + inhibition")
+done
+elif [[ "$SET" == g ]]; then
 # w71: the non-negative 10% and 20% homeostatic codes trained with attract radius 24 (wider peak),
 # raw and with global inhibition.
 OUT=${OUT:-/orcd/pool/003/jackking/cls_runs/results/hopfield_probe/relu_r24}
