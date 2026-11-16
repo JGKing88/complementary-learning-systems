@@ -61,6 +61,12 @@ ENCODERS = {
     "fwhm05_42": ("/orcd/pool/003/jackking/cls_runs/sweeps/w52_attract_fwhm/016_fwhm0.5_seed=42/encoder_final.pt", "final"),
     "xenv43": ("/orcd/pool/003/jackking/cls_runs/sweeps/w68_relu_rank10_xenv/000_att0.5_relu_rank10_xenv_seed=43/encoder_final.pt", "final"),
     "xenv44": ("/orcd/pool/003/jackking/cls_runs/sweeps/w68_relu_rank10_xenv/001_att0.5_relu_rank10_xenv_seed=44/encoder_final.pt", "final"),
+    "homeo10_43": ("/orcd/pool/003/jackking/cls_runs/sweeps/w69_rank_homeo/000_att0.5_rank_homeo10_seed=43/encoder_final.pt", "final"),
+    "homeo10_44": ("/orcd/pool/003/jackking/cls_runs/sweeps/w69_rank_homeo/001_att0.5_rank_homeo10_seed=44/encoder_final.pt", "final"),
+    "homeo20_43": ("/orcd/pool/003/jackking/cls_runs/sweeps/w69_rank_homeo/002_att0.5_rank_homeo20_seed=43/encoder_final.pt", "final"),
+    "homeo20_44": ("/orcd/pool/003/jackking/cls_runs/sweeps/w69_rank_homeo/003_att0.5_rank_homeo20_seed=44/encoder_final.pt", "final"),
+    "signed10_43": ("/orcd/pool/003/jackking/cls_runs/sweeps/w69_rank_homeo/004_att0.5_signed_homeo10_seed=43/encoder_final.pt", "final"),
+    "signed10_44": ("/orcd/pool/003/jackking/cls_runs/sweeps/w69_rank_homeo/005_att0.5_signed_homeo10_seed=44/encoder_final.pt", "final"),
     "rank44": ("/orcd/pool/003/jackking/cls_runs/sweeps/w67_relu_rank10/001_att0.5_relu_rank10_seed=44/encoder_final.pt", "final"),
 }
 # displacements (along x unless the second entry is set) for the translation test

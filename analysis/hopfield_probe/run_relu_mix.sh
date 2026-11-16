@@ -19,6 +19,7 @@
 #   SET=b bash analysis/hopfield_probe/run_relu_mix.sh [ARRAY]
 #   SET=c bash analysis/hopfield_probe/run_relu_mix.sh [ARRAY]    # slow waves removed (relu_band)
 #   SET=d bash analysis/hopfield_probe/run_relu_mix.sh [ARRAY]    # trained relu_rank encoders
+#   SET=e bash analysis/hopfield_probe/run_relu_mix.sh [ARRAY]    # w69 homeostatic + signed control
 #   python -m analysis.hopfield_probe.ideal_summary "$OUT"        # the table
 #
 # Runs from THIS worktree: do not delete it while jobs are live.
@@ -31,7 +32,21 @@ SET=${SET:-a}
 export SET
 B="n_freq=512,seed=0,gain=100"
 
-if [[ "$SET" == d ]]; then
+if [[ "$SET" == e ]]; then
+# w69_rank_homeo (old loss, within-env): even unit usage at 10% and 20% non-negative, and the signed
+# 10% control (sparsity without non-negativity), beside att0.5 s43 rerun at this commit.
+OUT=${OUT:-/orcd/pool/003/jackking/cls_runs/results/hopfield_probe/relu_homeo}
+W=/orcd/pool/003/jackking/cls_runs/sweeps/w69_rank_homeo
+ENCS=(
+    "/orcd/pool/003/jackking/cls_runs/sweeps/w52_attract_fwhm/001_att0.5_seed=43/encoder_final.pt|att0.5 s43 tanh"
+    "$W/000_att0.5_rank_homeo10_seed=43/encoder_final.pt|relu10 homeo s43"
+    "$W/001_att0.5_rank_homeo10_seed=44/encoder_final.pt|relu10 homeo s44"
+    "$W/002_att0.5_rank_homeo20_seed=43/encoder_final.pt|relu20 homeo s43"
+    "$W/003_att0.5_rank_homeo20_seed=44/encoder_final.pt|relu20 homeo s44"
+    "$W/004_att0.5_signed_homeo10_seed=43/encoder_final.pt|signed10 homeo s43"
+    "$W/005_att0.5_signed_homeo10_seed=44/encoder_final.pt|signed10 homeo s44"
+)
+elif [[ "$SET" == d ]]; then
 # Trained encoders with the sparse ideal's output form (branch worktree-relu-sparse-encoder,
 # wave w67_relu_rank10: w52 att0.5 loss and data, output = the sparse ideal's sorted profile by
 # rank). Compare with SET=b's "relu10% r=23.2" (the sparse ideal, no inhibition).
