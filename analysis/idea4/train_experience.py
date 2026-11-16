@@ -78,7 +78,7 @@ def lifetime_loss(model, gp, a, rng, gen, device, T_max=None, pool=None):
     ar = torch.arange(B, device=device)
     h = model.init_state(B, device)
     total, weight = 0.0, 0.0
-    st = {"visit_cos": [], "copy_cos": [], "old_cos": [], "seq_cos": []}
+    st = {"visit_cos": [], "copy_cos": [], "old_cos": [], "seq_cos": [], "end_cos": []}
     for t in range(T):
         S = a.visit_steps
         path, psi, first, found = visit_path(goal[:, t], a, device, gen)
@@ -115,6 +115,8 @@ def lifetime_loss(model, gp, a, rng, gen, device, T_max=None, pool=None):
             c, is_w[None, :, None].expand_as(c).float())
         weight += 1.0
         st["copy_cos"].append(float(cos[:, is_w].mean().detach()))
+        if t == T - 1:                       # all T goals written, all read: the clean control's test
+            st["end_cos"].append(float(cos[:, is_w].mean().detach()))
         old = is_w & (cols != t)
         if old.any():
             st["old_cos"].append(float(cos[:, old].mean().detach()))
@@ -250,6 +252,12 @@ def main():
     p.add_argument("--tbptt_envs", type=int, default=0)
     p.add_argument("--curriculum", action="store_true")
     p.add_argument("--curriculum_cos", type=float, default=0.8)
+    p.add_argument("--curriculum_window", type=int, default=0,
+                   help="0: raise T_max when old_cos over each 50-step log window (lifetimes of "
+                        "every length, reads after every visit) reaches --curriculum_cos. K > 0: "
+                        "the clean control's gate (recall_grid.py), the mean end_cos (all goals "
+                        "read after the last visit) over the last K steps whose lifetime has the "
+                        "current maximum length; the window restarts after each raise")
     p.add_argument("--n_train_envs", type=int, default=4000)
     p.add_argument("--n_eval_envs", type=int, default=300)
     p.add_argument("--eval_views", type=int, default=64)
@@ -299,12 +307,14 @@ def main():
     opt = torch.optim.Adam(model.parameters(), lr=a.lr)
     log = {"args": vars(a), "train": [], "eval": []}
     start = 1
+    cwin = []                                # end_cos at the current maximum length (curriculum_window)
     if a.init_ckpt:
         ck = torch.load(a.init_ckpt, map_location="cpu", weights_only=False)
         model.load_state_dict(ck["model"])
         if "opt" in ck:
             opt.load_state_dict(ck["opt"])
         start = ck["step"] + 1
+        cwin = list(ck.get("cwin", []))
         old_log = os.path.join(os.path.dirname(a.init_ckpt), "log.json")
         if os.path.exists(old_log):
             prev = json.load(open(old_log))
@@ -317,16 +327,19 @@ def main():
 
     def save(step):
         torch.save({"model": model.state_dict(), "opt": opt.state_dict(),
-                    "args": vars(a), "step": step}, os.path.join(a.out, "memory.pt"))
+                    "args": vars(a), "step": step, "cwin": cwin, "T_cur": T_cur},
+                   os.path.join(a.out, "memory.pt"))
         with open(os.path.join(a.out, "log.json"), "w") as f:
             json.dump(log, f, indent=1)
 
     T_cur = a.T_max
     if a.curriculum:
         T_cur = max(a.T_min, 2)
-        if log["train"] and "T_cur" in log["train"][-1]:
+        if a.init_ckpt and "T_cur" in ck:   # saved with the weights: exact at any save step
+            T_cur = ck["T_cur"]
+        elif log["train"] and "T_cur" in log["train"][-1]:
             T_cur = log["train"][-1]["T_cur"]
-    keys = ("visit_cos", "copy_cos", "old_cos", "seq_cos")
+    keys = ("visit_cos", "copy_cos", "old_cos", "seq_cos", "end_cos")
     window = []
     for step in range(start, a.steps + 1):
         model.train()
@@ -345,6 +358,16 @@ def main():
             opt.step()
         window.append([float(loss.detach()), np.nan if skipped else gn, skipped]
                       + [np.mean(st[k]) if st[k] else np.nan for k in keys])
+        if a.curriculum and a.curriculum_window and T == T_cur and T_cur < a.T_max:
+            cwin.append(st["end_cos"][0])
+            K = a.curriculum_window
+            if len(cwin) >= K:
+                if sum(cwin[-K:]) / K >= a.curriculum_cos:
+                    T_cur += 1
+                    print(f"curriculum: T_max now {T_cur} at step {step}", flush=True)
+                    cwin = []                # judge the new length on its own lifetimes
+                else:
+                    cwin = cwin[-K:]
         if step % 50 == 0:
             w = np.array(window, dtype=np.float64)
             m = {k: float(np.nanmean(w[:, 3 + i])) for i, k in enumerate(keys)}
@@ -354,10 +377,12 @@ def main():
                                      T_cur=T_cur, seconds=time.time() - t0, **m))
             print(f"step {step} loss {np.nanmean(w[:, 0]):.4f} visit_cos {m['visit_cos']:.3f} "
                   f"copy_cos {m['copy_cos']:.3f} old_cos {m['old_cos']:.3f} seq_cos "
-                  f"{m['seq_cos']:.3f} T_cur {T_cur} grad {np.nanmean(w[:, 1]):.2f}"
+                  f"{m['seq_cos']:.3f} end_cos {m['end_cos']:.3f} T_cur {T_cur} "
+                  f"grad {np.nanmean(w[:, 1]):.2f}"
                   f"{f' SKIPPED {n_skip}' if n_skip else ''} ({time.time() - t0:.0f}s)", flush=True)
             window = []
-            if a.curriculum and T_cur < a.T_max and m["old_cos"] >= a.curriculum_cos:
+            if (a.curriculum and not a.curriculum_window and T_cur < a.T_max
+                    and m["old_cos"] >= a.curriculum_cos):
                 T_cur += 1
                 print(f"curriculum: T_max now {T_cur} at step {step}", flush=True)
         if step % a.eval_every == 0 or step == a.steps:
