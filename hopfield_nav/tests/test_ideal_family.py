@@ -223,32 +223,50 @@ def test_far_field_sd_and_alias_maximum():
 
 
 def test_spectral_moment_spread_across_rotated_units():
+    """Units of one draw share frequencies; Dirichlet weights give CV^2 = (s_a^2 / abar^2) / (M + 1)."""
     rng = np.random.default_rng(10)
     for M in (16, 64):
+        a = rng.standard_normal(M) ** 2                       # one draw, shared by every unit
         w = rng.exponential(1.0, size=(20000, M))
-        om = rng.standard_normal((20000, M))
-        lam = (w * om * om).sum(1) / w.sum(1)
-        assert (lam.var() / lam.mean() ** 2) == pytest.approx(T.lambda2_cv2(M), rel=0.12)
+        w /= w.sum(1, keepdims=True)
+        lam = w @ a
+        a_cv2 = a.var() / a.mean() ** 2
+        assert (lam.var() / lam.mean() ** 2) == pytest.approx(T.lambda2_cv2(M, a_cv2), rel=0.05)
 
 
 def test_finite_M_units_are_overdispersed_on_long_tracks():
-    """Sums of M sinusoids with exponential power: count Fano = F(u) + L nu / (M + 1)."""
+    """Units of one draw (shared frequencies, own weights and phases) on a long track.
+
+    Count Fano = F(u) + L nu a_cv2 / (4 (M + 1)); above 1 for few waves.
+    """
     rng = np.random.default_rng(11)
     r, L, M, u = 8.0, 20000, 16, 1.0
     x = np.arange(L)
+    k = rng.standard_normal(M) / r
+    a_cv2 = (k * k).var() / (k * k).mean() ** 2
     counts = []
     for _ in range(400):
         A = np.sqrt(rng.exponential(1.0, M))
-        k = rng.standard_normal(M) / r
         ph = rng.uniform(0, 2 * math.pi, M)
         y = (A[:, None] * np.cos(k[:, None] * x[None, :] + ph[:, None])).sum(0)
         y /= math.sqrt((A * A).sum() / 2)
         a = y >= u
         counts.append(int((a[1:] & ~a[:-1]).sum()))
     counts = np.asarray(counts)
-    pred = T.fano_upcross(u, r) + T.heterogeneity_fano_excess(M, L * T.nu_1d(u, r))
-    assert counts.var() / counts.mean() == pytest.approx(pred, rel=0.2)
+    nu = (k * k).mean() ** 0.5 * r * T.nu_1d(u, r)          # this draw's mean rate
+    pred = T.fano_upcross(u, r) + T.heterogeneity_fano_excess(M, L * nu, a_cv2)
+    assert counts.var() / counts.mean() == pytest.approx(pred, rel=0.25)
     assert counts.var() / counts.mean() > 1
+
+
+def test_definition_A_level_spread_adds_count_variance():
+    """Identically distributed GRF units: definition A's per-unit level overdisperses long environments."""
+    r, L = 8.0, 4096
+    y = grf.grf_1d(3000, L, r, np.random.default_rng(16))
+    st, F = IM.loop_stats(np.maximum(y, 0))
+    pred = T.fano_def_A(0.0, L, r)
+    assert st["var_over_mean"] == pytest.approx(pred["total"], abs=0.08)
+    assert pred["level_term"] > 0.05
 
 
 def test_edgeworth_coverage_of_few_sinusoids():
@@ -305,3 +323,38 @@ def test_area95_of_a_box_and_of_a_spike():
     R[1, 7] = 1.0
     a = IM.area95(R)
     assert a[0] == pytest.approx(0.38) and a[1] == pytest.approx(0.01)
+
+
+# --------------------------------------------------------------- the encoder family
+
+def test_fast_rotation_is_the_viewers_hadamard_matrix():
+    pytest.importorskip("torch")
+    from analysis.ideal_family.codes import apply_rotation, rotation_signs
+    from analysis.tuning_viewer.export import hadamard_rotation
+    for D in (64, 1024):
+        signs = rotation_signs(D, 0)
+        Q = hadamard_rotation(signs)
+        z = np.random.default_rng(14).standard_normal((5, D))
+        assert np.allclose(apply_rotation(z, signs), z @ Q.T, atol=1e-10)
+        assert np.allclose(Q @ Q.T, np.eye(D), atol=1e-10)
+
+
+def test_family_reproduces_the_viewer_populations():
+    pytest.importorskip("torch")
+    from analysis.coding_comparison.populations import make_population
+    from analysis.ideal_family.codes import Family, rates
+    rng = np.random.default_rng(15)
+    xs, ys = rng.integers(0, 1716, (2, 300))
+    f16 = Family(16.0, 512, 0)
+    z = f16.native(xs, ys)
+    assert np.allclose(z, make_population("ideal").code(xs, ys), atol=1e-6)
+    assert np.allclose(f16.rotated(z), make_population("ideal_rot").code(xs, ys), atol=1e-6)
+    f23 = Family(23.2, 512, 0)
+    y23 = f23.rotated(f23.native(xs, ys))
+    got = rates("sparse_p0.1", None, y23, f23.sd)
+    assert np.allclose(got, make_population("ideal_sparse").code(xs, ys), atol=1e-6)
+    # The torus kernel is the draw's mean cosine.
+    K = f16.raw_kernel_torus()
+    d = np.array([[5, 0], [40, 17], [900, 3]])
+    direct = np.cos(2 * math.pi * (d @ f16.freqs.T) / 1716).mean(axis=1)
+    assert np.allclose(K[d[:, 0], d[:, 1]], direct, atol=1e-10)

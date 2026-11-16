@@ -241,6 +241,14 @@ def expected_max_1d(length, r) -> float:
     return float(np.trapezoid(g * f, g) / np.trapezoid(f, g))
 
 
+def var_max_1d(length, r) -> float:
+    """Variance of the maximum over a stretch, from the same Rice distribution."""
+    g, f = max_density_1d(length, r)
+    Z = np.trapezoid(f, g)
+    m = np.trapezoid(g * f, g) / Z
+    return float(np.trapezoid((g - m) ** 2 * f, g) / Z)
+
+
 def gumbel_max_1d(length, r) -> float:
     """``m* + 0.5772 / m*`` with ``m* = sqrt(2 ln(length / 2 pi r))``: the textbook shortcut."""
     m = math.sqrt(2.0 * math.log(length / (2.0 * math.pi * r)))
@@ -355,28 +363,31 @@ def alias_prediction(M: int, r: float, npos: int = NPOS, excl_radius: float = 0.
             "N_eff": math.exp(u * u / 2.0), "area_over_r2": area / r ** 2}
 
 
-def lambda2_cv2(M: int, omega_kurt: float = 3.0) -> float:
-    """Squared CV, across rotated units, of one unit's second spectral moment along an axis.
+def lambda2_cv2(M: int, a_cv2: float = 2.0) -> float:
+    """Squared CV, across rotated units of one draw, of a unit's second spectral moment along an axis.
 
-    A rotated unit is ``sum_i A_i cos(omega_i . p + phase_i)``. Its weights
-    ``w_i = A_i^2 / sum A^2`` are a row of an orthogonal matrix squared and
-    paired, so for a Haar-like rotation they are Dirichlet(1, ..., 1), with
-    ``E sum w^2 = 2 / (M + 1)``. With ``omega_ix ~ N(0, 1/r^2)``
-    (``Var omega^2 / (E omega^2)^2 = omega_kurt - 1 = 2``),
-    ``CV^2(lambda_2) = 2 (omega_kurt - 1) / (M + 1) = 4 / (M + 1)``.
+    A rotated unit is ``sum_i A_i cos(omega_i . p + phase_i)``; every unit
+    shares the draw's M frequencies and differs only in its weights
+    ``w_i = A_i^2 / sum A^2``, a row of an orthogonal matrix squared and paired.
+    For a Haar-like rotation the weights are Dirichlet(1, ..., 1), and for fixed
+    ``a_i = r^2 omega_ix^2``,
+
+        Var_u(sum_i w_i a_i) = s_a^2 / (M + 1),    s_a^2 = mean_i a_i^2 - (mean_i a_i)^2,
+
+    so ``CV^2(lambda_2) = (s_a^2 / abar^2) / (M + 1)``. ``a_cv2 = s_a^2 / abar^2``
+    is 2 in expectation (``omega_ix^2 r^2`` is chi-square with 1 dof) but varies
+    a lot between draws at small M; pass the draw's own value when known.
     """
-    return 2.0 * (omega_kurt - 1.0) / (M + 1.0)
+    return a_cv2 / (M + 1.0)
 
 
-def heterogeneity_fano_excess(M: int, mean_count: float, dim: int = 1) -> float:
-    """Extra variance over mean from unit-to-unit spread in field rate: ``mean_count * Var(ln nu_u)``.
+def heterogeneity_fano_excess(M: int, mean_count: float, a_cv2: float = 2.0) -> float:
+    """Extra variance over mean in 1D from unit-to-unit spread in field rate.
 
-    In 1D the field rate scales as ``sqrt(lambda_2)``, so ``Var ln nu = CV^2(lambda_2) / 4 = 1 / (M + 1)``.
-    In 2D the Euler-characteristic density scales as ``lambda_2``: ``Var ln nu = CV^2(lambda_2)``,
-    an upper estimate, because ``lambda_2`` along x and y are not perfectly correlated.
+    Field rate ``nu_u ~ sqrt(lambda_2,u)``, so ``Var ln nu = CV^2(lambda_2) / 4``
+    and the excess is ``mean_count * a_cv2 / (4 (M + 1))``, about ``mean_count / (2 (M + 1))``.
     """
-    v = lambda2_cv2(M) / 4.0 if dim == 1 else lambda2_cv2(M)
-    return mean_count * v
+    return mean_count * lambda2_cv2(M, a_cv2) / 4.0
 
 
 def edgeworth_coverage(t: float, M: int) -> float:
@@ -546,12 +557,44 @@ def fano_upcross(u: float, r: float, length: float | None = None, *, periodic: b
     return float(1.0 + 2.0 / nu * np.trapezoid(g, tau))
 
 
-def fano_with_heterogeneity(u: float, r: float, length: float, M: int | None) -> float:
-    """``F(u) + length nu(u) Var(ln nu_u)`` with ``Var ln nu_u = 1 / (M + 1)`` (GRF limit when ``M`` is None)."""
-    F = fano_upcross(u, r)
-    if M is None:
-        return F
-    return F + heterogeneity_fano_excess(M, length * float(nu_1d(u, r)))
+def fano_def_A(t: float, length: float, r: float, *, M: int | None = None,
+               a_cv2: float = 2.0, frac: float = DEF_A_FRAC, periodic: bool = True) -> dict:
+    """Variance over mean of definition-A field counts on a 1D environment of ``length`` cells.
+
+    Low levels (``u_A`` below about 1, e.g. rectification, ``t = 0``): three
+    parts, added as independent contributions to ``Var ln E[N | unit]``:
+
+    ``F(u_A)``
+        the upcrossing Fano factor at the mean level (``fano_upcross``);
+    ``N frac^2 u_A^2 Var(M_env)``
+        the level is ``t + frac (M_env - t)`` with ``M_env`` the unit's own
+        maximum, and ``d ln nu / du = -u``; this grows with the number of fields
+        per unit ``N``, i.e. with the environment's length;
+    ``N a_cv2 / (4 (M + 1))``
+        finite M: units of one draw differ in spectral width (absent for GRFs).
+
+    High levels (sparse codes, ``u_A`` above about 1.2): ``total_peaks``,
+    ``F (1 - 1/N) + (N frac u_A - E[M])^2 Var(M) / N`` plus the same finite-M
+    term. Checked against GRF loops: the low form within 0.02 at ``t = 0``, the
+    high form within 0.04 at ``p = 0.1`` and ``0.02``.
+    """
+    d = def_A_1d(t, length, r, frac)
+    u = d["u_A_mean"]
+    N = d["fields_per_active_unit"]
+    F = fano_upcross(u, r, length, periodic=periodic)
+    vm = var_max_1d(length, r)
+    level = N * frac ** 2 * u * u * vm
+    # Peak-process version, for high u_A where fields are rare peaks. The
+    # field holding the maximum is always counted, and a unit with more fields
+    # also has a higher maximum: E[N | M] ~ 1 + L (nu(u_A(M)) - nu(M)), whose
+    # slope in M is -N frac u_A + M L nu(M) ~ -N frac u_A + E[M], and the
+    # other N - 1 fields carry the Fano factor F.
+    EM = d["E_max"]
+    level_peaks = (N * frac * u - EM) ** 2 * vm / N
+    het = 0.0 if M is None else heterogeneity_fano_excess(M, N, a_cv2)
+    return {"F": F, "level_term": level, "level_term_peaks": level_peaks,
+            "heterogeneity_term": het, "total": F + level + het,
+            "total_peaks": F * (1 - 1 / N) + level_peaks + het, "u_A": u, "fields_per_active_unit": N}
 
 
 __all__ = [n for n in dir() if not n.startswith("_") and n not in (

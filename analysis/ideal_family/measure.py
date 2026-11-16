@@ -98,15 +98,33 @@ def _mean(x) -> float | None:
     return float(x.mean()) if x.size else None
 
 
+def per_unit_arrays(R: np.ndarray, block: int = 128) -> dict:
+    """Per-unit mean, mean square, coverage and 95% area, in blocks of units (bounded memory)."""
+    U = R.shape[0]
+    X = R.reshape(U, -1)
+    out = {k: np.empty(U) for k in ("m1", "m2", "cov", "a95")}
+    for b in range(0, U, block):
+        x = np.asarray(X[b:b + block], dtype=np.float64)
+        out["m1"][b:b + block] = x.mean(1)
+        out["m2"][b:b + block] = (x * x).mean(1)
+        out["cov"][b:b + block] = (x > 0).mean(1)
+        out["a95"][b:b + block] = area95(x)
+    return out
+
+
 def unit_stats(R: np.ndarray, F, counts: np.ndarray, sizes: np.ndarray, env_size: float,
                gaps: np.ndarray | None = None) -> dict:
     """Summaries of one environment for one code. ``env_size`` is cells or cells^2."""
-    X = np.asarray(R, dtype=np.float64).reshape(R.shape[0], -1)
+    U = R.shape[0]
+    P = int(np.prod(R.shape[1:]))
+    a = per_unit_arrays(R)
+    m1, m2, cov = a["m1"], a["m2"], a["cov"]
     act = counts > 0
-    cov = (X > 0).mean(axis=1)
+    fire = m2 > 0
+    tr = np.where(fire, m1 * m1 / np.where(fire, m2, 1), 0.0)
     fit = CM.fit_count_models(counts)
     out = {
-        "n_units": int(X.shape[0]), "env_size": float(env_size),
+        "n_units": int(U), "env_size": float(env_size),
         "active_frac": float(act.mean()),
         "fields_per_unit": float(counts.mean()),
         "fields_per_active": float(counts[act].mean()) if act.any() else None,
@@ -121,13 +139,15 @@ def unit_stats(R: np.ndarray, F, counts: np.ndarray, sizes: np.ndarray, env_size
         "n_fields": int(sizes.size),
         "coverage_all": float(cov.mean()),
         "coverage_active": float(cov[act].mean()) if act.any() else None,
-        "coverage_firing": _mean(np.where(cov > 0, cov, np.nan)),
-        "area95_firing": _mean(area95(X)),
-        "area95_active": _mean(area95(X[act])) if act.any() else None,
-        "tr": tr_summary(X),
+        "coverage_firing": float(cov[fire].mean()) if fire.any() else None,
+        "area95_firing": _mean(a["a95"]),
+        "area95_active": _mean(a["a95"][act]) if act.any() else None,
+        "tr": {"active": float(tr[fire].mean()) if fire.any() else None,
+               "silent_zero": float(tr.mean()),
+               "pooled": float(m1.mean() ** 2 / m2.mean()) if m2.mean() > 0 else None,
+               "frac_firing": float(fire.mean())},
+        "field_coverage_all": float(sizes.sum() / (U * P)),
     }
-    if F is not None:
-        out["field_coverage_all"] = float(sizes.sum() / (X.shape[0] * X.shape[1]))
     if gaps is not None:
         out["gap_cv_median"] = float(np.median(gaps)) if gaps.size else None
         out["gap_cv_mean"] = float(gaps.mean()) if gaps.size else None
@@ -151,7 +171,7 @@ def segment_stats(R: np.ndarray, fdef: CM.FieldDef = DEF_A) -> dict:
 
 def arena_stats(R3: np.ndarray, fdef: CM.FieldDef = DEF_A) -> dict:
     """``R3`` is ``(units, S, S)``."""
-    F = CM.detect_fields_2d(np.asarray(R3, dtype=np.float64), fdef)
+    F = CM.detect_fields_2d(R3, fdef)
     S = R3.shape[1]
     st = unit_stats(R3.reshape(R3.shape[0], -1), F, F.counts, F.area, S * S)
     return st
@@ -176,5 +196,5 @@ def kernel_summary(d: np.ndarray, s: np.ndarray, width: float) -> dict:
 
 
 __all__ = ["DEF_A", "roll_to_min", "loop_fields", "gap_cvs", "area95", "tr_summary",
-           "unit_stats", "loop_stats", "segment_stats", "arena_stats", "pooled",
+           "per_unit_arrays", "unit_stats", "loop_stats", "segment_stats", "arena_stats", "pooled",
            "kernel_summary"]
