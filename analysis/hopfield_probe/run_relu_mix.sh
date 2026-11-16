@@ -45,6 +45,8 @@ ENCS=(
     "$W/003_att0.5_rank_homeo20_seed=44/encoder_final.pt|relu20 homeo s44"
     "$W/004_att0.5_signed_homeo10_seed=43/encoder_final.pt|signed10 homeo s43"
     "$W/005_att0.5_signed_homeo10_seed=44/encoder_final.pt|signed10 homeo s44"
+    "${W/w70_rank_homeo_slow/w69_rank_homeo}/002_att0.5_rank_homeo20_seed=43/encoder_final.pt|relu20 fast-homeo s43"
+    "${W/w70_rank_homeo_slow/w69_rank_homeo}/003_att0.5_rank_homeo20_seed=44/encoder_final.pt|relu20 fast-homeo s44"
 )
 elif [[ "$SET" == d ]]; then
 # Trained encoders with the sparse ideal's output form (branch worktree-relu-sparse-encoder,
