@@ -1,4 +1,4 @@
-"""Export the eight place-code populations for the tuning-map viewer.
+"""Export the nine place-code populations for the tuning-map viewer.
 
     python -m analysis.tuning_viewer.export [--out DIR]
 
@@ -32,6 +32,15 @@ ideal_rot
     is ``(Q z_ideal)_u``. Because ``Q`` is orthogonal, the similarity between
     any two places equals the ideal's; only the single-unit maps differ. The
     page applies ``Q`` with a fast Walsh-Hadamard transform.
+ideal_place
+    the ideal code remixed so every unit is a place cell
+    (``docs/place_fields_rotation.tex``, commit f928d29): row ``u`` of ``Z``
+    is the ideal code at a centre ``c_u`` (32 x 32 lattice, jittered by up to
+    a quarter of the spacing), and ``Q = G^{-1/2} Z`` with ``G = Z Z^T``
+    (Loewdin). This draw repeats frequencies, so ``G`` is singular and
+    ``G^{-1/2}`` is taken on its range; ``Q^T Q`` is then the projector onto
+    the code's span, which still keeps every similarity. The page reads ``Q``
+    (float32) and computes ``Q z(cell)``.
 ideal_sparse
     the probe's sparse non-negative code: the ideal code drawn at r = 23.2,
     remixed by the same ``Q``, ``relu(Q z - t)`` with ``t`` set for 10% of
@@ -84,6 +93,9 @@ BAND_CUTOFFS = [0, 5, 10, 17, 25, 34, 50]
 # Sparse non-negative code, the probe's ideal:r=23.2,...,relu_mix=1,active=0.1 (branch
 # worktree-agent-a792a678d5a963123): relu(Q z - t) / |.| with Q the rotation above.
 SPARSE = {"r": 23.2, "active": 0.1}
+# Place-field rotation of the ideal code (docs/place_fields_rotation.tex, commit f928d29): 2M centres on a
+# jittered square lattice, jitter up to this fraction of the spacing.
+PLACE = {"seed": 0, "jitter": 0.25}
 # Reference arena: crosses both scaffold edges, so the check covers the
 # page's modular indexing as well as its arithmetic.
 REF = {"x0": 1708, "y0": 1710, "S": 16}
@@ -228,6 +240,34 @@ def check_hpc_recipe() -> dict:
             "pbook_max_abs_diff": float(np.abs(rates - pbook).max())}
 
 
+def ideal_code(freqs: np.ndarray, amp: float, npos: int, xs, ys) -> np.ndarray:
+    """``(N, 2M)`` ideal code ``amp * (cos, sin)(2 pi ((n . p) mod Npos) / Npos)``, the page's arithmetic."""
+    p = np.stack([np.asarray(xs), np.asarray(ys)], 1).astype(np.int64)
+    th = np.mod(p @ freqs.T.astype(np.int64), npos) * (2 * np.pi / npos)
+    return np.concatenate([np.cos(th), np.sin(th)], 1) * amp
+
+
+def place_rotation(freqs: np.ndarray, amp: float, npos: int, seed: int, jitter: float):
+    """docs/place_fields_rotation.tex: ``Q = G^{-1/2} Z``, rows of ``Z`` the code at 2M centres.
+
+    Unit ``u = row * g + col`` is centred near ``(col, row) * Npos / g``, ``g = sqrt(2M)``, so
+    unit order runs along x, then y. ``G^{-1/2}`` is taken on the range of ``G``.
+    """
+    D = 2 * len(freqs)
+    g = math.isqrt(D)
+    if g * g != D:
+        raise ValueError(f"place rotation needs a square number of units, got {D}")
+    sp = npos / g
+    base = np.array([(col * sp, row * sp) for row in range(g) for col in range(g)])
+    rng = np.random.default_rng(seed)
+    cs = np.rint(base + rng.uniform(-jitter * sp, jitter * sp, base.shape)).astype(np.int64) % npos
+    Z = ideal_code(freqs, amp, npos, cs[:, 0], cs[:, 1])
+    ev, V = np.linalg.eigh(Z @ Z.T)
+    keep = ev > ev.max() * 1e-10
+    Q = (V[:, keep] / np.sqrt(ev[keep])) @ V[:, keep].T @ Z
+    return Q, Z, cs, ev, keep, sp
+
+
 def smoothed_wpg(Wpg: np.ndarray, lambdas, fwhm: float) -> np.ndarray:
     """``W_s`` with ``Wpg @ grid_codes(.., fwhm) == W_s @ grid_codes(.., 0)`` at every position.
 
@@ -367,6 +407,57 @@ def main() -> None:
         "orthogonality_max_abs_diff": float(np.abs(Q @ Q.T - np.eye(D)).max()),
         "kernel_max_abs_diff": float(np.abs(zr @ zr.T - zi @ zi.T).max()),
     }
+
+    # ideal, place-field rotation
+    Qp, Zp, cs, ev, keep, sp = place_rotation(freqs, float(amp[0]), npos, PLACE["seed"], PLACE["jitter"])
+    Qp32 = Qp.astype(np.float32)
+    write_b64(out / "ideal_place_q.b64.txt", Qp32, "<f4")
+    # float64 code here: the encoder's float32 rounding leaves its span, which Q^T Q then projects out
+    zc = ideal_code(freqs, float(amp[0]), npos, xs_r, ys_r)
+    if np.abs(zc - refs["ideal"]).max() > 1e-6:
+        raise RuntimeError("ideal_code disagrees with the ideal encoder")
+    zp = zc @ Qp.T
+    refs["ideal_place"] = zp.astype(np.float32)
+    rng = np.random.default_rng(1)
+    zrand = ideal_code(freqs, float(amp[0]), npos, rng.integers(0, npos, 512), rng.integers(0, npos, 512))
+    yrand = zrand @ Qp.T
+    peaks = np.einsum("uk,uk->u", Qp, Zp)                       # unit u at its own centre
+    # Half-maximum area within 3r of the centre, as an sd, for 32 units (as in place_fields_rotation.py).
+    rr = int(3 * ideal.r)
+    d = np.arange(-rr, rr + 1)
+    wx, wy = np.meshgrid(d, d, indexing="ij")
+    inner = wx ** 2 + wy ** 2 <= (3 * ideal.r) ** 2
+    sds = []
+    for u in rng.choice(D, 32, replace=False):
+        y = ideal_code(freqs, float(amp[0]), npos, (cs[u, 0] + wx[inner]) % npos,
+                       (cs[u, 1] + wy[inner]) % npos) @ Qp[u]
+        sds.append(math.sqrt((y > peaks[u] / 2).sum() / (2 * math.pi * math.log(2))))
+    pct = lambda a: [float(v) for v in np.percentile(a, [5, 50, 95])]
+    rank = int(keep.sum())
+    pops["ideal_place"] = {
+        "kind": "ideal_place", "label": "Ideal, place-field rotation",
+        "description": f"The ideal code remixed so that every unit is a place cell, as derived in "
+                       f"docs/place_fields_rotation.tex (commit f928d29). Row u of the matrix is the ideal "
+                       f"code at a centre c_u. The {D} centres sit on a {math.isqrt(D)} x {math.isqrt(D)} "
+                       f"lattice {sp:.1f} cells apart, each moved by up to {PLACE['jitter']:g} of the "
+                       f"spacing, and the rows are orthogonalised by Loewdin's symmetric map "
+                       f"Q = G^-1/2 Z. Each unit has one field at its centre, peak {np.median(peaks):.2f} "
+                       f"and standard deviation about {np.median(sds):.1f} cells (r = {ideal.r:g}), plus a "
+                       f"weak ripple over the whole scaffold. This frequency draw repeats some frequencies, "
+                       f"so the code spans {rank} of {D} dimensions and G^-1/2 is taken on that span. Every "
+                       f"similarity between places still equals the ideal's.",
+        "n_units": D, "signed": True, "seed": PLACE["seed"], "jitter": PLACE["jitter"],
+        "spacing": sp, "centres": cs.tolist(), "q_file": "ideal_place_q.b64.txt",
+        "rank": rank, "gram_eig_min_kept": float(ev[keep].min()),
+        "gram_eig_max_dropped": float(ev[~keep].max()) if rank < D else 0.0,
+        "peak_at_centre_pct_5_50_95": pct(peaks), "half_max_sd_pct_5_50_95_of_32": pct(sds),
+        "kernel_max_abs_diff": float(np.abs(zp @ zp.T - zc @ zc.T).max()),
+        "kernel_random_positions_max_abs_diff": float(np.abs(yrand @ yrand.T - zrand @ zrand.T).max()),
+        "float32_max_abs_diff": float(np.abs(zc @ Qp32.T.astype(np.float64) - zp).max()),
+    }
+    for k in ("kernel_max_abs_diff", "kernel_random_positions_max_abs_diff"):
+        if pops["ideal_place"][k] > 1e-9:
+            raise RuntimeError(f"place-field rotation changes the ideal's similarity: {k} {pops['ideal_place'][k]}")
 
     # ideal, sparse ReLU: the r = 23.2 draw, the same rotation, threshold for 10% active, unit length
     from statistics import NormalDist

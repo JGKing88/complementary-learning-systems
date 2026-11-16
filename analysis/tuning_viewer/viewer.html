@@ -277,7 +277,7 @@ const MAX_RES = 512;              // maps above this many cells per side are blo
 const THUMB_RES = 160;
 const DETAIL_RES = 512;
 const SIZE_MIN = 4;
-const POP_ORDER = ["grid", "ideal", "ideal_rot", "ideal_sparse", "trained", "untrained", "hippocampus", "hippocampus_smooth"];
+const POP_ORDER = ["grid", "ideal", "ideal_rot", "ideal_place", "ideal_sparse", "trained", "untrained", "hippocampus", "hippocampus_smooth"];
 const ROT_CACHE_FLOATS = 1 << 25;  // the rotated ideal keeps every unit for arenas up to this many values
 const TF_URL = "https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.22.0/dist/tf.min.js";
 let NPOS = 1716;
@@ -375,12 +375,13 @@ async function loadAll() {
   const M = JSON.parse(await fetchText("manifest.json"));
   st.M = M; NPOS = M.npos;
   const P = M.populations;
-  const [wpg, wpgS, wTr, wUn] = await Promise.all([
+  const [wpg, wpgS, wTr, wUn, qPlace] = await Promise.all([
     fetchText(P.hippocampus.wpg_file), fetchText(P.hippocampus_smooth.wpg_file),
-    fetchText(P.trained.weights_file), fetchText(P.untrained.weights_file)]);
+    fetchText(P.trained.weights_file), fetchText(P.untrained.weights_file), fetchText(P.ideal_place.q_file)]);
   st.pops.grid = makeGrid(P.grid);
   st.pops.ideal = makeIdeal(P.ideal);
   st.pops.ideal_rot = makeIdealRot(P.ideal_rot, P.ideal);
+  st.pops.ideal_place = makeIdealPlace(P.ideal_place, P.ideal, f32(qPlace));
   st.pops.ideal_sparse = makeIdealSparse(P.ideal_sparse, st.pops.ideal_rot.signs);
   st.pops.hippocampus = makeHpc("hippocampus", P.hippocampus, f64(wpg));
   st.pops.hippocampus_smooth = makeHpc("hippocampus_smooth", P.hippocampus_smooth, f64(wpgS));
@@ -449,6 +450,31 @@ function idealMapsCore(units, a, I, alloc) {
     }
   }
   finishPool(out, units.length, pl);
+  return { data: out, W, f: pl.f };
+}
+// The place-field rotation: unit u at a cell is Q[u] . z(cell), z the full ideal code (R.F, R.amp).
+function placeMapsCore(units, a, R, alloc) {
+  const npos = R.npos, nf = R.F.length / 2, D = 2 * nf, tr = trigTables(npos), cosT = tr[0], sinT = tr[1], Q = R.Q;
+  const S = a.S, pl = poolPlan(S), W = pl.W, WW = W * W, K = units.length, out = alloc(K * WW);
+  const z = new Float64Array(D);
+  for (let r = 0; r < S; r++) {
+    const y = mod(a.y0 + r, npos), rb = pl.bi[r] * W;
+    for (let c = 0; c < S; c++) {
+      const x = mod(a.x0 + c, npos), b = rb + pl.bi[c];
+      for (let w = 0; w < nf; w++) {
+        let k = mod(R.F[2 * w] * x, npos) + mod(R.F[2 * w + 1] * y, npos);
+        if (k >= npos) k -= npos;
+        z[w] = R.amp * cosT[k]; z[w + nf] = R.amp * sinT[k];
+      }
+      for (let q = 0; q < K; q++) {
+        const row = units[q] * D;
+        let s = 0;
+        for (let j = 0; j < D; j++) s += Q[row + j] * z[j];
+        out[q * WW + b] += s;
+      }
+    }
+  }
+  finishPool(out, K, pl);
   return { data: out, W, f: pl.f };
 }
 function hpcMapsCore(units, a, H, alloc) {
@@ -528,7 +554,7 @@ function idealRotMapsCore(units, a, R, alloc, box) {
 }
 // The background thread's message loop. Output buffers come back from the page after use and are reused.
 function workerMain() {
-  let wpgs = null, signs = null;
+  let wpgs = null, signs = null, placeQ = null;
   const box = { cache: null }, pool = new Map();
   const take = n => {
     const list = pool.get(n);
@@ -544,12 +570,13 @@ function workerMain() {
       return;
     }
     try {
-      if (m.type === "init") { wpgs = m.wpgs; signs = m.signs; self.postMessage({ id: m.id, res: true }); return; }
+      if (m.type === "init") { wpgs = m.wpgs; signs = m.signs; placeQ = m.placeQ; self.postMessage({ id: m.id, res: true }); return; }
       let res;
       if (m.type === "grid") res = gridMapsCore(m.units, m.a, m.args, take);
       else if (m.type === "ideal") res = idealMapsCore(m.units, m.a, m.args, take);
       else if (m.type === "hpc") res = hpcMapsCore(m.units, m.a, Object.assign({ Wpg: wpgs[m.args.key] }, m.args), take);
       else if (m.type === "ideal_rot") res = idealRotMapsCore(m.units, m.a, Object.assign({ signs }, m.args), take, box);
+      else if (m.type === "ideal_place") res = placeMapsCore(m.units, m.a, Object.assign({ Q: placeQ }, m.args), take);
       else throw new Error("unknown job " + m.type);
       self.postMessage({ id: m.id, res }, [res.data.buffer]);
     } catch (err) {
@@ -577,7 +604,7 @@ function callWorker(type, msg, transfer) {
 }
 async function startWorker() {
   try {
-    const fns = [mod, poolPlan, finishPool, trigTables, gridMapsCore, idealMapsCore, hpcMapsCore,
+    const fns = [mod, poolPlan, finishPool, trigTables, gridMapsCore, idealMapsCore, placeMapsCore, hpcMapsCore,
                  fwhtInPlace, idealRotCompute, idealRotMapsCore, workerMain];
     const src = "\"use strict\";\nconst MAX_RES = " + MAX_RES + ";\nconst ROT_CACHE_FLOATS = " + ROT_CACHE_FLOATS + ";\n" +
       fns.map(f => f.toString()).join("\n\n") + "\nworkerMain();\n";
@@ -592,7 +619,7 @@ async function startWorker() {
     wk.w = w;
     await Promise.race([
       callWorker("init", { wpgs: { hippocampus: st.pops.hippocampus.Wpg, hippocampus_smooth: st.pops.hippocampus_smooth.Wpg },
-                           signs: st.pops.ideal_rot.signs }),
+                           signs: st.pops.ideal_rot.signs, placeQ: st.pops.ideal_place.Q }),
       new Promise((_, reject) => setTimeout(() => reject(new Error("no reply within 5 s")), 5000)),
     ]);
   } catch (e) { stopWorker("the background thread could not start (" + errText(e) + ")"); }
@@ -667,6 +694,27 @@ function makeIdealRot(meta, idealMeta) {
       if (st.engine && st.engine.rotMaps) return st.engine.rotMaps(units, a, F, fkey);
       const R = { npos: NPOS, F, amp, key: a.x0 + "," + a.y0 + "," + a.S + "," + fkey };
       return jsMaps("ideal_rot", units, a, R, () => idealRotMapsCore(units, a, Object.assign({ signs }, R), allocMain, box));
+    },
+  };
+}
+
+// The ideal code remixed so every unit is a place cell (docs/place_fields_rotation.tex, commit f928d29).
+// Row u of Q is the ideal code at centre c_u, orthogonalised by Q = G^{-1/2} Z; unit u at a cell is
+// Q[u] . z(cell). On WebGPU a shader writes z for each cell and the encoders' matrix multiply applies
+// the requested rows (runPlace); without WebGPU it runs in JavaScript (placeMapsCore), on the
+// background thread if it started. It always uses the full frequency draw: Q was built from it.
+function makeIdealPlace(meta, idealMeta, Q) {
+  const nf = idealMeta.freqs.length, D = 2 * nf, cs = meta.centres;
+  if (Q.length !== D * D) throw new Error("place-field rotation: expected a " + D + " × " + D + " matrix");
+  const R = { npos: NPOS, F: Int32Array.from(idealMeta.freqs.flat()), amp: idealMeta.amp };
+  return {
+    key: "ideal_place", meta, n: D, signed: true, Q, F: R.F,
+    label(u) { return "unit " + u; },
+    info(u) { return [["Output unit", String(u)], ["Field centre (x, y)", cs[u][0] + ", " + cs[u][1]],
+                      ["Mixes", "all " + nf + " waves of the ideal code"]]; },
+    maps(units, a) {
+      if (st.engine && st.engine.placeMaps) return st.engine.placeMaps(units, a);
+      return jsMaps("ideal_place", units, a, R, () => placeMapsCore(units, a, Object.assign({ Q }, R), allocMain));
     },
   };
 }
@@ -772,7 +820,7 @@ function wgslMatmul(P, K, M, act) {
     });
     inner += "    }\n";
   }
-  const actExpr = act === "gelu" ? "gelu4(v)" : "tanh(clamp(v * GAIN, vec4f(-15.0), vec4f(15.0)))";
+  const actExpr = act === "gelu" ? "gelu4(v)" : act === "none" ? "v" : "tanh(clamp(v * GAIN, vec4f(-15.0), vec4f(15.0)))";
   return wgslCommon(P) + `
 @group(0) @binding(0) var<uniform> prm: Params;
 @group(0) @binding(1) var<storage, read> A: array<vec4f>;
@@ -913,14 +961,50 @@ fn main(@builtin(workgroup_id) wg: vec3u, @builtin(local_invocation_id) lid: vec
 }`;
 }
 
-// Accumulates a read-back chunk (cell-major, n x K) into unit-major pooled maps.
-function scatterChunk(out, ch, s, n, K, S, pl) {
+// The ideal code at each cell of a chunk, cell-major (cell i, coordinate j at i * D + j), as the
+// input of the place-field rotation's matrix multiply.
+function wgslIdealCode(R) {
+  return `
+struct Params { n: u32, start: u32, S: u32, x0: u32, y0: u32, K: u32, p1: u32, p2: u32 };
+const NPOS: u32 = ${R.npos}u;
+const NF: u32 = ${R.nf}u;
+const D: u32 = ${R.D}u;
+const AMP: f32 = ${R.amp};
+@group(0) @binding(0) var<uniform> prm: Params;
+@group(0) @binding(1) var<storage, read> freqs: array<i32>;
+@group(0) @binding(2) var<storage, read> trig: array<f32>;
+@group(0) @binding(3) var<storage, read_write> Z: array<f32>;
+fn modn(a: i32) -> u32 {
+  let n = i32(NPOS);
+  let r = a % n;
+  return u32(select(r, r + n, r < 0));
+}
+@compute @workgroup_size(256)
+fn main(@builtin(workgroup_id) wg: vec3u, @builtin(local_invocation_id) lid: vec3u) {
+  let i = wg.x;
+  if (i >= prm.n) { return; }
+  let c = prm.start + i;
+  let row = c / prm.S;
+  let col = c - row * prm.S;
+  let x = i32((prm.x0 + col) % NPOS);
+  let y = i32((prm.y0 + row) % NPOS);
+  for (var w = lid.x; w < NF; w = w + 256u) {
+    var k = modn(freqs[2u * w] * x) + modn(freqs[2u * w + 1u] * y);
+    if (k >= NPOS) { k = k - NPOS; }
+    Z[i * D + w] = AMP * trig[k];
+    Z[i * D + w + NF] = AMP * trig[NPOS + k];
+  }
+}`;
+}
+
+// Accumulates a read-back chunk (cell-major, n x K, rows ld apart) into unit-major pooled maps.
+function scatterChunk(out, ch, s, n, K, S, pl, ld = K) {
   const W = pl.W, WW = W * W;
   if (pl.f === 1) {
-    for (let i = 0; i < n; i++) { const cell = s + i, b = i * K; for (let q = 0; q < K; q++) out[q * WW + cell] = ch[b + q]; }
+    for (let i = 0; i < n; i++) { const cell = s + i, b = i * ld; for (let q = 0; q < K; q++) out[q * WW + cell] = ch[b + q]; }
   } else {
     for (let i = 0; i < n; i++) {
-      const cell = s + i, r = (cell / S) | 0, c = cell - r * S, blk = pl.bi[r] * W + pl.bi[c], b = i * K;
+      const cell = s + i, r = (cell / S) | 0, c = cell - r * S, blk = pl.bi[r] * W + pl.bi[c], b = i * ld;
       for (let q = 0; q < K; q++) out[q * WW + blk] += ch[b + q];
     }
   }
@@ -990,14 +1074,14 @@ async function makeWebGpuEngine() {
   // The rotated ideal shares the parameter, unit-list and read-back buffers. It gets its own
   // validation scope so a problem with it leaves the encoders on WebGPU.
   const rotMeta = st.M.populations.ideal_rot, idealMeta = st.M.populations.ideal;
+  const trig = new Float32Array(2 * NPOS);
+  for (let k = 0; k < NPOS; k++) { const th = 2 * Math.PI * k / NPOS; trig[k] = Math.cos(th); trig[NPOS + k] = Math.sin(th); }
   let rot = null;
   if (rotMeta && idealMeta && 2 * idealMeta.freqs.length <= P.out) {
     const nf = idealMeta.freqs.length, D = 2 * nf, rounds = rotMeta.signs.length;
     let rotErr = null, made = null;
     dev.pushErrorScope("validation");
     try {
-      const trig = new Float32Array(2 * NPOS);
-      for (let k = 0; k < NPOS; k++) { const th = 2 * Math.PI * k / NPOS; trig[k] = Math.cos(th); trig[NPOS + k] = Math.sin(th); }
       const pRot = await compile(wgslRot({ npos: NPOS, nf, D, rounds, amp: idealMeta.amp, scale: Math.pow(D, -rounds / 2) }), "rotated ideal");
       const freqs = dev.createBuffer({ size: D * 4, usage: U.STORAGE | U.COPY_DST });
       made = { p: pRot, freqs, fkey: null,
@@ -1006,6 +1090,28 @@ async function makeWebGpuEngine() {
     const ve = await dev.popErrorScope();
     if (ve && !rotErr) rotErr = ve.message;
     if (rotErr) st.rotGpuError = rotErr; else rot = made;
+  }
+  // The place-field rotation: wgslIdealCode writes the ideal code of each cell into sh.out, then the
+  // encoders' matrix multiply (no activation) applies the requested rows of Q, uploaded as the columns
+  // of B and padded to a multiple of 64, writing straight into the read-back buffer. One pipeline per
+  // padded width, compiled on first use. Its own validation scope, like the rotated ideal's.
+  const placePop = st.pops.ideal_place;
+  let place = null;
+  if (placePop && idealMeta && 2 * idealMeta.freqs.length <= P.out) {
+    const nf = idealMeta.freqs.length, D = 2 * nf;
+    let placeErr = null, made = null;
+    dev.pushErrorScope("validation");
+    try {
+      const pZ = await compile(wgslIdealCode({ npos: NPOS, nf, D, amp: idealMeta.amp }), "ideal code");
+      const p64 = await compile(wgslMatmul(P, D, 64, "none"), "place-field matmul");
+      made = { D, pipes: new Map([[64, p64]]), groups: new Map(), bkey: null,
+               B: dev.createBuffer({ size: D * D * 4, usage: U.STORAGE | U.COPY_DST }),
+               zeros: dev.createBuffer({ size: D * 4, usage: U.STORAGE }),
+               z: { p: pZ, g: bg(pZ, [sh.prm, upload(placePop.F), upload(trig), sh.out]) } };
+    } catch (e) { placeErr = errText(e); }
+    const ve = await dev.popErrorScope();
+    if (ve && !placeErr) placeErr = ve.message;
+    if (placeErr) st.placeGpuError = placeErr; else place = made;
   }
   const err = await dev.popErrorScope();
   if (err) throw new Error("WebGPU validation: " + err.message);
@@ -1055,11 +1161,46 @@ async function makeWebGpuEngine() {
     finishPool(out, K, pl);
     return { data: out, W: pl.W, f: pl.f };
   }
+  async function placeStep(M) {
+    if (!place.pipes.has(M)) place.pipes.set(M, await compile(wgslMatmul(P, place.D, M, "none"), "place-field matmul"));
+    if (!place.groups.has(M)) place.groups.set(M, bg(place.pipes.get(M), [sh.prm, sh.out, place.B, place.zeros, sh.ext]));
+    return { p: place.pipes.get(M), g: place.groups.get(M) };
+  }
+  async function runPlace(units, a) {
+    const K = units.length, Kp = Math.ceil(K / 64) * 64, D = place.D, mmStep = await placeStep(Kp);
+    const bkey = Kp + ":" + units.join(",");
+    if (place.bkey !== bkey) {
+      const Bt = new Float32Array(D * Kp), Q = placePop.Q;
+      for (let q = 0; q < Kp; q++) { const row = units[Math.min(q, K - 1)] * D; for (let k = 0; k < D; k++) Bt[k * Kp + q] = Q[row + k]; }
+      dev.queue.writeBuffer(place.B, 0, Bt);
+      place.bkey = bkey;
+    }
+    const S = a.S, N = S * S, pl = poolPlan(S), WW = pl.W * pl.W;
+    const out = new Float32Array(K * WW);
+    const per = Math.min(CHUNK, Math.floor(EXT_FLOATS / Kp));
+    for (let s = 0; s < N; s += per) {
+      const n = Math.min(per, N - s);
+      dev.queue.writeBuffer(sh.prm, 0, new Uint32Array([n, s, S, a.x0, a.y0, Kp, 0, 0]));
+      const enc = dev.createCommandEncoder(), pass = enc.beginComputePass();
+      pass.setPipeline(place.z.p); pass.setBindGroup(0, place.z.g); pass.dispatchWorkgroups(n, 1);
+      pass.setPipeline(mmStep.p); pass.setBindGroup(0, mmStep.g); pass.dispatchWorkgroups(Kp / 64, Math.ceil(n / 64));
+      pass.end();
+      const bytes = n * Kp * 4;
+      enc.copyBufferToBuffer(sh.ext, 0, sh.map, 0, bytes);
+      dev.queue.submit([enc.finish()]);
+      await sh.map.mapAsync(GPUMapMode.READ, 0, bytes);
+      scatterChunk(out, new Float32Array(sh.map.getMappedRange(0, bytes)), s, n, K, S, pl, Kp);
+      sh.map.unmap();
+    }
+    finishPool(out, K, pl);
+    return { data: out, W: pl.W, f: pl.f };
+  }
   const ai = adapter.info || {};
   return {
     name: "WebGPU", adapter: [ai.vendor, ai.architecture].filter(Boolean).join(" "),
     maps: (key, units, a) => gpuLock(() => run(key, units, a)),
     rotMaps: rot ? (units, a, F, fkey) => gpuLock(() => runRot(units, a, F, fkey)) : null,
+    placeMaps: place ? (units, a) => gpuLock(() => runPlace(units, a)) : null,
   };
 }
 
@@ -1139,10 +1280,14 @@ async function initEngine() {
   updateEngineNote();
 }
 function updateEngineNote() {
-  const gpuRot = !!(st.engine && st.engine.rotMaps), parts = [];
-  if (st.engine) parts.push("Encoders" + (gpuRot ? " and the rotated ideal" : "") + " run on " + st.engine.name + (st.engine.adapter ? " (" + st.engine.adapter + ")" : "") + ".");
+  const parts = [], onGpu = ["Encoders"];
+  if (st.engine && st.engine.rotMaps) onGpu.push("the rotated ideal");
+  if (st.engine && st.engine.placeMaps) onGpu.push("the place-field rotation");
+  const who = onGpu.length < 3 ? onGpu.join(" and ") : onGpu.slice(0, -1).join(", ") + " and " + onGpu[onGpu.length - 1];
+  if (st.engine) parts.push(who + " run on " + st.engine.name + (st.engine.adapter ? " (" + st.engine.adapter + ")" : "") + ".");
   if (st.engineNote) parts.push(st.engineNote);
   if (st.rotGpuError) parts.push("The rotated ideal could not use the GPU (" + st.rotGpuError + ").");
+  if (st.placeGpuError) parts.push("The place-field rotation could not use the GPU (" + st.placeGpuError + ").");
   if (!st.engine && st.engineError) parts.push(st.engineError);
   parts.push(wk.w ? "Maps computed in JavaScript run on a background thread."
                   : "Maps computed in JavaScript run on the page's main thread" + (wk.note ? " because " + wk.note : "") + ".");
@@ -1498,7 +1643,8 @@ async function renderOnce() {
   });
   const si = want.indexOf(st.sel);
   renderDetail(pop, st.sel, out[si], res, a, div, lut, pageRange, lite);
-  const onGpu = pop.key === "trained" || pop.key === "untrained" || (pop.key === "ideal_rot" && st.engine && st.engine.rotMaps);
+  const onGpu = pop.key === "trained" || pop.key === "untrained" || (pop.key === "ideal_rot" && st.engine && st.engine.rotMaps) ||
+    (pop.key === "ideal_place" && st.engine && st.engine.placeMaps);
   const engine = onGpu ? (st.engine ? st.engine.name : "GPU") : res.fromWorker ? "a background thread" : "JavaScript";
   setStatus(units.length + " of " + pop.n + " units · " + a.S + " × " + a.S + " arena at (" + a.x0 + ", " + a.y0 + ")" +
     (res.f > 1 ? " · each pixel is the mean of " + res.f + " × " + res.f + " cells" : "") +
