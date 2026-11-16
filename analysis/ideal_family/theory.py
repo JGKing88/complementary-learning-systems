@@ -500,6 +500,22 @@ def native_mean_width_1d(r: float, frac: float = DEF_A_FRAC) -> float:
     return 2.0 * math.acos(frac) * r * math.sqrt(math.pi / 2.0)
 
 
+def native_loop_from_draw(n_axis, npos: int = NPOS, frac: float = DEF_A_FRAC) -> dict:
+    """Definition A on full scaffold loops for one draw's integer frequencies along the loop.
+
+    A wave with ``n != 0`` has ``|n|`` fields of ``(arccos(frac)/pi) npos / |n|``
+    cells. A wave with ``n = 0`` is constant along the loop: its cos and sin
+    units are each one whole-loop field (Treves-Rolls 1) when positive, silent
+    otherwise, so half of them count.
+    """
+    n = np.abs(np.asarray(n_axis, dtype=np.float64))
+    P0 = float(np.mean(n == 0))
+    q = math.acos(frac) / math.pi
+    width = npos * ((1 - P0) * q + P0 / 2) / (n[n > 0].sum() / n.size + P0 / 2)
+    tr = ((1 - P0) * NATIVE_TR + P0 / 2) / (1 - P0 / 2)
+    return {"W_A": width, "tr_active": tr, "P0": P0}
+
+
 def native_fano_1d(length: float, r: float) -> float:
     """Variance over mean of native field counts on a line: ``(L / 2 pi r)(1 - 2/pi) / sqrt(2/pi)``.
 

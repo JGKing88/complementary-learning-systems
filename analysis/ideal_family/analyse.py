@@ -319,26 +319,34 @@ def alias_rates(rows) -> tuple[str, dict]:
 
 
 def native(rows) -> tuple[str, dict]:
+    """Native code on loops, against the closed forms and against each draw's own frequencies."""
+    from analysis.hopfield_probe.ideal_encoder import draw_frequencies
     body, data = [], {}
     for r in sorted({x["config"]["r"] for x in pick(rows, "enc")}):
         for M in sorted({x["config"]["M"] for x in pick(rows, "enc", r)}):
             xs = pick(rows, "enc", r, M)
             wa = ms([get(x, "variants.native.W_A") / r for x in xs])
-            wx = [get(x, "variants.native.loops_x.mean_field_size") for x in xs]
-            wy = [get(x, "variants.native.loops_y.mean_field_size") for x in xs]
-            lr = ms([math.log(a / b) for a, b in zip(wx, wy) if a and b])
+            ratio_w, ratio_tr = [], []
+            for x in xs:
+                n = draw_frequencies(r, M, x["config"]["seed"], L_LOOP)
+                for ax_, key in ((0, "loops_x"), (1, "loops_y")):
+                    pr = T.native_loop_from_draw(n[:, ax_])
+                    ratio_w.append(get(x, f"variants.native.{key}.mean_field_size") / pr["W_A"])
+                    ratio_tr.append(get(x, f"variants.native.{key}.tr.active") / pr["tr_active"])
+            rw, rt = ms(ratio_w), ms(ratio_tr)
             tr = ms([get(x, "variants.native.loops.tr.active") for x in xs])
             cov = ms([get(x, "variants.native.loops.coverage_all") for x in xs])
             fcov = ms([get(x, "variants.native.loops.field_coverage_all") for x in xs])
             vm = ms([get(x, "variants.native.loops.var_over_mean") for x in xs])
             fcv = ms([get(x, "variants.native.loops.field_size_cv") for x in xs])
-            data[f"r{r:g}_M{M}"] = {"W_A_over_r": wa, "log_x_over_y": lr, "tr": tr, "coverage": cov,
-                                    "field_coverage": fcov, "var_over_mean": vm, "field_size_cv": fcv,
-                                    "pred_vm": T.native_fano_1d(L_LOOP, r)}
-            body.append([f"{r:g}", M, fmt(wa, 2), fmt(lr, 3), f"{1.07 / math.sqrt(M):.3f}", fmt(tr),
-                         fmt(cov), fmt(fcov), fmt(vm, 2), f"{T.native_fano_1d(L_LOOP, r):.2f}", fmt(fcv, 2)])
-    head = ["r", "M", "W_A / r (3.433)", "ln(W_x / W_y)", "(SD 1.07/sqrt M)", "TR active (0.405)",
-            "coverage (0.5)", "field coverage (0.436)", "var/mean loop", "(predicted)", "field size CV"]
+            data[f"r{r:g}_M{M}"] = {"W_A_over_r": wa, "W_over_draw_pred": rw, "tr_over_draw_pred": rt,
+                                    "tr": tr, "coverage": cov, "field_coverage": fcov, "var_over_mean": vm,
+                                    "field_size_cv": fcv, "pred_vm": T.native_fano_1d(L_LOOP, r)}
+            body.append([f"{r:g}", M, fmt(wa, 2), fmt(rw, 3), fmt(tr), fmt(rt, 3), fmt(cov), fmt(fcov),
+                         fmt(vm, 2), f"{T.native_fano_1d(L_LOOP, r):.2f}", fmt(fcv, 2)])
+    head = ["r", "M", "W_A / r (3.433)", "W_A / draw's prediction", "TR active (0.405)",
+            "TR / draw's prediction", "coverage (0.5)", "field coverage (0.436)", "var/mean loop",
+            "(predicted)", "field size CV"]
     return table(head, body), data
 
 
