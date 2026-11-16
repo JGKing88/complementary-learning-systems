@@ -70,6 +70,9 @@ ROT = {"seed": 0, "rounds": 3}
 # Slow-wave cutoffs for the ideal populations: waves with |n| < cutoff rejected and replaced from
 # the same Gaussian (hopfield_probe ideal_encoder nmin=..., branch worktree-agent-a792a678d5a963123).
 BAND_CUTOFFS = [0, 5, 10, 17, 25, 34, 50]
+# Sparse non-negative code, the probe's ideal:r=23.2,...,relu_mix=1,active=0.1 (branch
+# worktree-agent-a792a678d5a963123): relu(Q z - t) / |.| with Q the rotation above.
+SPARSE = {"r": 23.2, "active": 0.1}
 # Reference arena: crosses both scaffold edges, so the check covers the
 # page's modular indexing as well as its arithmetic.
 REF = {"x0": 1708, "y0": 1710, "S": 16}
@@ -300,6 +303,28 @@ def main() -> None:
         "signs": signs.astype(int).tolist(),
         "orthogonality_max_abs_diff": float(np.abs(Q @ Q.T - np.eye(D)).max()),
         "kernel_max_abs_diff": float(np.abs(zr @ zr.T - zi @ zi.T).max()),
+    }
+
+    # ideal, sparse ReLU: the r = 23.2 draw, the same rotation, threshold for 10% active, unit length
+    from statistics import NormalDist
+    sfreqs = draw_frequencies_nmin(SPARSE["r"], len(freqs), ideal.seed, npos, 0)
+    th = np.mod(np.stack([xs_r, ys_r], 1).astype(np.int64) @ sfreqs.T, npos) * 2 * np.pi / npos
+    zs = np.concatenate([np.cos(th), np.sin(th)], 1) * float(amp[0])
+    thresh = NormalDist().inv_cdf(1 - SPARSE["active"]) / math.sqrt(D)
+    ys_ = np.maximum(zs @ Q.T - thresh, 0)
+    refs["ideal_sparse"] = (ys_ / np.linalg.norm(ys_, axis=1, keepdims=True)).astype(np.float32)
+    pops["ideal_sparse"] = {
+        "kind": "ideal_sparse", "label": "Sparse ReLU (10%)",
+        "description": "The probe's sparse non-negative code (spec ideal:r=23.2,relu_mix=1,active=0.1). "
+                       "The ideal code drawn at r = 23.2, remixed by the same rotation as Ideal, rotated, "
+                       "thresholded so about 10% of units fire at each place, then scaled to unit length at "
+                       "each place. r = 23.2 makes its similarity peak as wide as the ideal's (half-width "
+                       "19.4 cells). In the navigation probe it matches the ideal except direction (4.7 "
+                       "against 1 degree) and needs no inhibition.",
+        "n_units": D, "signed": False, "r": SPARSE["r"], "active": SPARSE["active"],
+        "thresh": thresh, "amp": float(amp[0]), "freqs": sfreqs.tolist(),
+        "spec": "ideal:r=23.2,n_freq=512,seed=0,gain=100,relu_mix=1,active=0.1",
+        "active_fraction_ref_arena": float((zs @ Q.T > thresh).mean()),
     }
 
     # trained, untrained

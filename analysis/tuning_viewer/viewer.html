@@ -277,7 +277,7 @@ const MAX_RES = 512;              // maps above this many cells per side are blo
 const THUMB_RES = 160;
 const DETAIL_RES = 512;
 const SIZE_MIN = 4;
-const POP_ORDER = ["grid", "ideal", "ideal_rot", "trained", "untrained", "hippocampus"];
+const POP_ORDER = ["grid", "ideal", "ideal_rot", "ideal_sparse", "trained", "untrained", "hippocampus"];
 const ROT_CACHE_FLOATS = 1 << 25;  // the rotated ideal keeps every unit for arenas up to this many values
 const TF_URL = "https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.22.0/dist/tf.min.js";
 let NPOS = 1716;
@@ -380,6 +380,7 @@ async function loadAll() {
   st.pops.grid = makeGrid(P.grid);
   st.pops.ideal = makeIdeal(P.ideal);
   st.pops.ideal_rot = makeIdealRot(P.ideal_rot, P.ideal);
+  st.pops.ideal_sparse = makeIdealSparse(P.ideal_sparse, st.pops.ideal_rot.signs);
   st.pops.hippocampus = makeHpc(P.hippocampus, f64(wpg));
   st.mlp.trained = unpackMlp(P.trained, f32(wTr));
   st.mlp.untrained = unpackMlp(P.untrained, f32(wUn));
@@ -476,6 +477,7 @@ function fwhtInPlace(v, D) {
       for (let j = i; j < i + h; j++) { const x = v[j], y = v[j + h]; v[j] = x + y; v[j + h] = x - y; }
 }
 // Rotated ideal, cell-major (block b, unit u at b * K + u) for the units in `keep`, or all units if null.
+// With R.thresh it is the sparse code instead: relu(Q z - t), scaled to unit length at each cell.
 function idealRotCompute(a, keep, R) {
   const npos = R.npos, nf = R.F.length / 2, D = 2 * nf, tr = trigTables(npos), cosT = tr[0], sinT = tr[1];
   const scale = Math.pow(D, -R.signs.length / 2);
@@ -497,8 +499,14 @@ function idealRotCompute(a, keep, R) {
       }
       for (const s of R.signs) { for (let i = 0; i < D; i++) v[i] *= s[i]; fwhtInPlace(v, D); }
       const o = (rb + pl.bi[c]) * K;
-      if (keep) for (let q = 0; q < K; q++) data[o + q] += v[keep[q]] * scale;
-      else for (let i = 0; i < D; i++) data[o + i] += v[i] * scale;
+      let sc = scale;
+      if (R.thresh !== undefined) {
+        let ss = 0;
+        for (let i = 0; i < D; i++) { const y = v[i] * scale - R.thresh; v[i] = y > 0 ? y : 0; ss += v[i] * v[i]; }
+        sc = ss > 0 ? 1 / Math.sqrt(ss) : 0;
+      }
+      if (keep) for (let q = 0; q < K; q++) data[o + q] += v[keep[q]] * sc;
+      else for (let i = 0; i < D; i++) data[o + i] += v[i] * sc;
     }
   }
   if (pl.f > 1) for (let b = 0; b < WW; b++) { const m = pl.inv[b]; for (let q = 0; q < K; q++) data[b * K + q] *= m; }
@@ -655,6 +663,24 @@ function makeIdealRot(meta, idealMeta) {
       const F = idealFlat(ref), fkey = ref ? "full" : String(st.nmin);
       if (st.engine && st.engine.rotMaps) return st.engine.rotMaps(units, a, F, fkey);
       const R = { npos: NPOS, F, amp, key: a.x0 + "," + a.y0 + "," + a.S + "," + fkey };
+      return jsMaps("ideal_rot", units, a, R, () => idealRotMapsCore(units, a, Object.assign({ signs }, R), allocMain, box));
+    },
+  };
+}
+
+// The probe's sparse non-negative code (meta.spec): the ideal code drawn at r = 23.2, remixed by the
+// rotated ideal's matrix Q, thresholded so about 10% of units fire at each place, and scaled to unit
+// length at each place, relu(Q z - t) / |relu(Q z - t)|. The threshold and the scaling need every
+// unit at a cell, so it runs in JavaScript (idealRotCompute with R.thresh), on the background thread if it started.
+function makeIdealSparse(meta, signs) {
+  const nf = meta.freqs.length, D = 2 * nf, F = Int32Array.from(meta.freqs.flat()), box = { cache: null };
+  return {
+    key: "ideal_sparse", meta, n: D, signed: false,
+    label(u) { return "unit " + u; },
+    info(u) { return [["Output unit", String(u)], ["Active", "about " + Math.round(100 * meta.active) + "% of units at each place"],
+                      ["Waves", nf + ", Gaussian r = " + meta.r + " cells"], ["Rotation", "the same as Ideal, rotated"]]; },
+    maps(units, a) {
+      const R = { npos: NPOS, F, amp: meta.amp, thresh: meta.thresh, key: "sparse," + a.x0 + "," + a.y0 + "," + a.S };
       return jsMaps("ideal_rot", units, a, R, () => idealRotMapsCore(units, a, Object.assign({ signs }, R), allocMain, box));
     },
   };
