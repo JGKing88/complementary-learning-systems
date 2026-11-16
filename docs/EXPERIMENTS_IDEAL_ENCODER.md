@@ -2884,3 +2884,73 @@ all waves and lower r to match the half-width). Kernel numbers are for the signe
 
 The tuning viewer (branch worktree-tuning-viewer, version 6) shows these exact draws under
 "Remove slow waves" for the ideal and rotated-ideal populations.
+
+## 27. Training toward the sparse code with the old loss (2026-11-16)
+
+**Question.** Does w52 att0.5's loss and data (attract/repel/rate, 118 patches of 50, batch 4096,
+no cross-environment pairs) find the sparse ideal code (§26, `ideal:r=23.2,relu_mix=1,active=0.1`)
+if only the output layer is changed to that code's form? Code on branch
+`worktree-relu-sparse-encoder` (encoder_training `relu_sparse`, `relu_rank`; waves w66–w68 in
+sweep_ecp.py); evaluation here (`run_relu_mix.sh SET=d`, `trained_spectrum.py`).
+
+**Rounds.**
+1. **w66 `relu_sparse`**: standardise the 1024 pre-activations of each input, subtract
+   Φ⁻¹(0.9) = 1.2816, ReLU, unit norm. Collapsed within 5 epochs: keff (= ‖z‖₁² for unit z;
+   the sparse ideal has 58.8) fell to 8, then 3.3 by epoch 107, with r_min 0 and alias 1.000.
+   Standardising fixes the share above threshold only while the pre-activations stay Gaussian;
+   the loss pushes a few units to huge values. Cancelled.
+2. **w67 `relu_rank`**: each input's code is the sparse ideal's sorted profile
+   relu(Φ⁻¹(1 − (k − ½)/1024) − 1.2816), unit norm, assigned to units by the rank of their
+   pre-activations, so exactly 102 units fire with the ideal's graded values (keff 58.8 always);
+   straight-through gradient from round 1's output. Trained to the end (r_min 3, median 6, alias
+   0.92–0.94).
+3. **w68 = w67 with cross-environment pairs in the repel term** (`train.py`'s default; the
+   ladder masks them). r_min 4–6, median 8.5–9, alias 0.92.
+
+**Spectrum** (`trained_spectrum.py`; relative = above the floor, as a share of the range above it):
+
+| code | floor | half-width | worst far k̄ (rel) | power on \|j\| ≤ 1, mod 11 / 13 | k̄(792) rel | sd of z·z′ at 19 cells |
+|---|---|---|---|---|---|---|
+| ideal r=16 | 0.002 | 18.8 | 0.13 | 0.26 / 0.22 | 0.01 | 0 |
+| sparse ideal r=23.2 | 0.058 | 18.9 | 0.04 | 0.25 / 0.21 | −0.01 | 0.060 |
+| att0.5 s42 (tanh) | 0.009 | 18.5 | 0.70 | 0.65 / 0.57 | 0.65 | 0.080 |
+| tanh, input fwhm 0.15 (w52) | 0.013 | 24.9 | 0.76 | 0.70 / 0.63 | 0.74 | 0.056 |
+| tanh, input fwhm 0.5 (w52) | 0.011 | 27.5 | 0.65 | 0.60 / 0.54 | 0.64 | 0.077 |
+| w67 rank s43 / s44 | 0.114 / 0.132 | 15.6 / 15.2 | 0.80 / 0.77 | 0.68 / 0.63, 0.66 / 0.62 | 0.70 / 0.69 | 0.077 / 0.079 |
+| w68 rank + xenv s43 / s44 | 0.086 / 0.088 | 20.5 / 20.6 | 0.69 / 0.69 | 0.62 / 0.56, 0.63 / 0.58 | 0.64 / 0.66 | 0.127 / 0.115 |
+
+**Probe** (K = 5, one step, whole / corner):
+
+| encoder | \|err\| | exact | basin | cont reach | dead @ K 10 / 20 |
+|---|---|---|---|---|---|
+| sparse ideal r=23.2 (§26) | 4.8 / 4.8 | 1.000 / 1.000 | 28.4 / 25.6 | 0.996 / 0.987 | 0 / 0 |
+| w67 rank s43 | 14.5 / 14.6 | 0.883 / 0.801 | 17.3 / 13.6 | 0.953 / 0.908 | 0.17–0.67 / 0.62–0.75 |
+| w67 rank s44 | 15.2 / 17.0 | 0.861 / 0.724 | 13.9 / 12.7 | 0.900 / 0.845 | 0.29–0.46 / 0.62–0.79 |
+| w68 rank + xenv s43 | 16.4 / 16.2 | 0.954 / 0.828 | 24.0 / 19.8 | 0.887 / 0.847 | 0.08–0.25 / 0.33–0.42 |
+| w68 rank + xenv s44 | 15.5 / 16.4 | 0.908 / 0.776 | 22.1 / 16.5 | 0.935 / 0.866 | 0.04–0.42 / 0.46–0.58 |
+
+**Results.**
+1. **The old loss does not find the sparse code even when the output has its exact form.** The
+   trained codes are non-negative with 102 graded units per place, but underneath they are
+   att0.5's solution: most power on the first harmonic of modules 11 and 13 (0.62–0.68 against
+   0.21–0.26), the same one-module-shift aliases (k̄(792) 0.64–0.70 against −0.01), and they
+   navigate worse than att0.5 (direction 15–16° against ~8°).
+2. **Their floor is too high.** 0.09–0.13 against the ideal's 0.058: units are used unevenly (some
+   fire at many places), so the mean vector is larger, and dead goals climb with K as for the
+   uncentred dense code (§25).
+3. **Cross-environment pairs help the width and floor, not the aliases.** w68's peak (20.5 cells) is
+   close to the target and its floor and basin improve, but the low-harmonic share and the 792
+   alias are unchanged. This agrees with THEORY §3.6: sampled far pairs are pushed on and stay
+   aliased.
+4. **The low-harmonic bias is not from the smoothed input.** Narrower input bumps (fwhm 0.15),
+   which carry high harmonics strongly, give a larger low-harmonic share (0.70 / 0.63), and wider
+   ones (0.5) a smaller one (0.60 / 0.54). So it belongs to the network and the loss: an MLP trained
+   by gradient descent fits low-order functions of its input first (spectral bias), and the
+   module's first harmonic is the lowest-order function of its phase. (§24 attributed it to the
+   input's attenuation; this test contradicts that.)
+
+**Next options (not run).** (a) A multiplicative architecture: per-module lookup tables (any
+function of a module's phase costs the same to represent) multiplied across modules, so every
+harmonic combination is equally easy, then the rank output; old loss. (b) Batch-level
+standardisation of each unit before the rank step, so every unit fires at about 10% of places;
+addresses the floor, not the aliases.
