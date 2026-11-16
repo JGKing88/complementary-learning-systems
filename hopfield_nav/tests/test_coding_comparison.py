@@ -221,6 +221,24 @@ def test_sparsity_of_binary_maps_is_active_fraction():
     assert M.sparsity(R).tolist() == pytest.approx([0.25, 1.0])
 
 
+def test_correlation_dimension_of_a_plane_is_two():
+    from analysis.coding_comparison.phase2 import corr_dimension
+    rng = np.random.default_rng(10)
+    pts = rng.random((2000, 2))
+    X = pts @ M.random_orthogonal(50, 3)[:2]          # a flat sheet in 50 dimensions
+    assert corr_dimension(X, 1e-3, 1e-1)["dimension"] == pytest.approx(2.0, abs=0.15)
+
+
+def test_decoder_is_exact_without_noise_limit():
+    from analysis.coding_comparison.phase2 import decode_errors
+    # Narrow tuning, many spikes: the ML decoder recovers the true cell.
+    xs = np.arange(30, dtype=np.float64)
+    F = 200.0 * np.exp(-0.5 * (xs[:, None] - xs[None, :]) ** 2) + 0.01
+    xy = np.stack([xs, np.zeros_like(xs)], axis=1)
+    e = decode_errors(F, xy, [30], dt=1.0, n_test=200, repeats=1, rng=np.random.default_rng(0))
+    assert e["30"]["median"] == 0.0
+
+
 # --------------------------------------------------------------- geometry
 
 def test_serpentine_is_continuous_and_unique():

@@ -292,6 +292,28 @@ def variant_key(basis: str, defn: str | None, rate: str = PRIMARY_RATE) -> str:
     return f"{basis}|{defn}" if defn in ("A", "Ap") else f"{basis}|B{rate}"
 
 
+# Rows whose value is a well-defined 0 when the definition finds no field on
+# any of the calibration loops (8 full scaffold rows and columns): no unit is
+# active anywhere, so none is active on a shorter track or in an arena either.
+ZERO_ROWS = {"fields_per_unit_74W", "active_frac_74W", "per_location_74W", "active_frac_33W",
+             "active_frac_small", "per_location_small"}
+
+
+def silent(R: dict, v: str) -> bool:
+    c = _get(R.get("meta"), "calibration", v)
+    if not c or c.get("W") is not None or not c.get("fdef"):
+        return False
+    hist = c.get("history")
+    return (c.get("n_fields") == 0) or bool(hist and hist[-1].get("n_fields") == 0)
+
+
+def value_of(fn, key, R, b, v, T):
+    x = fn(R, b, v, T)
+    if x is None and key in ZERO_ROWS and silent(R, v):
+        return 0.0
+    return x
+
+
 def score_population(R: dict, T: dict) -> dict:
     policy = T["policy"]
     rot_seeds = R["meta"]["params"]["rot_seeds"] if R["meta"]["signed"] else []
@@ -305,15 +327,15 @@ def score_population(R: dict, T: dict) -> dict:
             key, label, defn, fn = row[:4]
             target_row = row[4] if len(row) > 4 else key
             v = variant_key(basis, defn)
-            value = fn(R, basis, v, T)
+            value = value_of(fn, key, R, basis, v, T)
             # Robustness: the same row at the other mean rates and in rotated bases.
-            sweep = {r: fn(R, basis, variant_key(basis, defn, r), T) for r in RATES} \
-                if defn == "B" else {}
+            sweep = {r: value_of(fn, key, R, basis, variant_key(basis, defn, r), T)
+                     for r in RATES} if defn == "B" else {}
             rots = {}
             for s in rot_seeds:
                 rb = f"rot{s}|{basis}"
                 rv = variant_key(rb, defn, PRIMARY_RATE if defn != "B" else "0.75")
-                rots[s] = fn(R, rb, rv, T)
+                rots[s] = value_of(fn, key, R, rb, rv, T)
             cells = {}
             for t in by_row.get(target_row, []):
                 verdict = judge(t, value, policy)
