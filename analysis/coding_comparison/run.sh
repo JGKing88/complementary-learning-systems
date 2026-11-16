@@ -22,7 +22,7 @@ if [[ -z "${SLURM_ARRAY_TASK_ID:-}" ]]; then
     # MEASURES travels as an argument: sbatch --export would split it at the commas.
     exec sbatch --job-name=coding_cmp --partition=ou_bcs_normal \
         --time=${CC_TIME:-4:00:00} --cpus-per-task=4 --mem=${CC_MEM:-40G} \
-        --array="${1:-0-6}" --export=ALL,TAG="$TAG" \
+        --array="${1:-0-6}" --export=ALL,TAG="$TAG",EXTRA="${EXTRA:-}" \
         --output="$OUT/logs/%x_%A_%a.out" "$0" "$MEASURES"
 fi
 
@@ -30,5 +30,7 @@ MEASURES=$1
 cd "$WT"
 export OMP_NUM_THREADS=${SLURM_CPUS_PER_TASK:-4}
 POP=${POPS[$SLURM_ARRAY_TASK_ID]}
-"$PY" -m analysis.coding_comparison.run --pops "$POP" --tag "$TAG" --measures "$MEASURES"
+# EXTRA (exported at submit time) passes --param overrides through, e.g.
+# EXTRA="--param n_arena_locs=1".
+"$PY" -m analysis.coding_comparison.run --pops "$POP" --tag "$TAG" --measures "$MEASURES" ${EXTRA:-}
 echo "DONE $POP $MEASURES -> $OUT/$POP"

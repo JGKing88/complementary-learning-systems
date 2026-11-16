@@ -726,8 +726,15 @@ def main() -> None:
     p.add_argument("--quick", action="store_true", help="small settings for a smoke test")
     p.add_argument("--measures", default=",".join(PHASE1),
                    help="comma-separated subset of kernels,fields (or fields1d, fields2d),remapping,phase2")
+    p.add_argument("--param", action="append", default=[],
+                   help="override one PARAMS entry, key=JSON value (e.g. n_arena_locs=1)")
     a = p.parse_args()
     P = dict(PARAMS, **(QUICK if a.quick else {}))
+    for kv in a.param:
+        k, v = kv.split("=", 1)
+        if k not in P:
+            raise SystemExit(f"unknown param {k!r}")
+        P[k] = json.loads(v)
     root = a.out or (results_dir() / "coding_comparison" / a.tag)
     todo = [(n, POPULATIONS[n]) for n in filter(None, a.pops.split(","))]
     todo += [tuple(s.split("=", 1)) for s in a.pop]
