@@ -17,7 +17,25 @@ In the ideal family, r is the SD in cells of a Gaussian population kernel, and a
 
 ## Structural claim
 
-STRUCTURAL_PLACEHOLDER
+The claim: in the large-M rotated limit r is a pure length scale, so every scale-free statistic depends on p alone, and M sets only the noise floor and how Gaussian the units are.
+
+**It holds for statistics that do not use a peak-relative field definition.** The rotated code at r is the code at r = 1 with distances scaled by r (up to the integer lattice), and three statistics depend on p alone at every r from 2 to 32 and every M from 32:
+
+- coverage is p (spread across r at fixed p below 0.1%);
+- pooled Treves-Rolls is a(t) (spread below 0.2%; +1.4% at M = 32);
+- the kernel is `K(rho(d/r); t)`, with FW05 / r within 0.5% of theory for p of 0.1 and above.
+
+**Definition A adds the environment's size in units of r.** A unit's level is 20% of its own peak, and the peak grows like `sqrt(2 ln(L / 2 pi r))`. On the fixed 1716-cell loops, fields per field width for the rectified code rise from 0.25 at r = 3 to 0.32 at r = 23.2, and var/mean falls from 0.58 to 0.39. The theory at each r reproduces both (`figures/structural.pdf`, top row). Hold `L / r` fixed and the dependence goes away; that is a statement about the environment, not the code.
+
+**Pixelation adds a floor at small r.** Definition A drops runs under 3 cells (areas under 9 in 2D) and counts 4-connected components on the lattice. In 1D the 2.5-cell ramp cut predicts the effect (field coverage within 1% at r = 3). In 2D it is larger: in arenas of side 8 r, which scale with r, field area per r^2 is 1.62 at r = 8, 1.46 at r = 16 and 1.44 at r = 23.2 for p = 0.1, but 2.51 at r = 3; fields per unit are 2.5, 2.7, 2.8 and 1.4. 2D field statistics settle only once fields cover a few hundred cells (r of 16 and above).
+
+**M does more than set a noise floor and Gaussianity.** It sets three things:
+
+- the kernel's far-field noise, SD `1/sqrt(2M)`, and the alias `sqrt(ln N_eff / M)`;
+- how far each draw's realised kernel sits from its expectation (r_eff / r within about `1/sqrt(M)`, and the kernel along x and y can differ by 15% at M = 32);
+- a spread between units. Units of one draw share frequencies but not weights, so each unit's spectral width varies with squared CV `a_cv2 / (M + 1)`. That spread does not average out over an environment: field counts on the 6864-cell environment have var/mean 1.86 at M = 32 against 0.56 for the GRF, and a unit's count correlates 0.83 with its spectral width.
+
+The Gaussianity effects are the small ones. Single-unit marginals (coverage, Treves-Rolls, W_A, gap CV) are within 1 to 2% of the GRF from M = 32. The per-place normalisation of the sparse code matters only when few units fire at a place (`D p` small): it raises Treves-Rolls by 0.5% at p = 0.1 and M = 512, and by 46% at p = 0.02 and M = 32.
 
 ## Scale: metres per scaffold cell
 
@@ -140,6 +158,19 @@ So identically distributed units can be overdispersed under definition A, but on
 
 RESULTS_TABLES_PLACEHOLDER
 
+## Figures
+
+All in `/orcd/pool/003/jackking/cls_runs/figures/ideal_family/v1/`, as PDF (core Helvetica, no mathtext) and PNG. Lines are theory, markers are measurements (mean over 3 seeds, bars one SD). Filled circles are GRF references, open squares encoder draws.
+
+- `kernels.pdf`: the thresholded kernel against d / r for p = 0.5, 0.1 and 0.02 (cosine and Pearson) over GRF points at r = 16; FW05 / r against p; the r that holds FW05 at 37.7 cells, with the viewer's r = 23.2 on the Pearson curve.
+- `single_units.pdf`: coverage, Treves-Rolls (pooled on loops, and over firing units on a 4.6 W_A track), W_A / r and fields per field width against p, at r = 8, 16 and 32, M = 512.
+- `counts.pdf`: variance over mean against p on loops and on the 6864-cell environment at r = 16, with F(u_A) and both dispersion forms; variance over mean against fields per unit for every r and p.
+- `finite_M.pdf`: the whole-scaffold alias against M for every r with `u* / sqrt(2M)`; long-environment dispersion against M with the between-unit prediction; W_A / r_eff and gap CV against M.
+- `arenas_2d.pdf`: measured fields per unit and mean field area in every arena against the EC predictions.
+- `native.pdf`: native W_A / r against M; `ln(W_x / W_y)` against M with the `1.07 / sqrt(M)` band; count dispersion against r.
+- `scale.pdf`: W_A / lambda, Pearson kernel FW05 / lambda and the Pearson alias against r for each p (M = 512), with the dorsal band.
+- `structural.pdf`: scale-free statistics against r, on fixed loops (with the theory at each r) and in arenas of side 8 r.
+
 ## What did not hold
 
 1. **A level of 0.7 for definition A.** The GRF maximum over a 1716-cell loop at r = 16 is 2.56 SD, not 3.5, so `u_A = 0.51` and W_A = 35 cells. The structure of the estimate was right; the maximum was too high.
@@ -182,4 +213,4 @@ bash analysis/ideal_family/run.sh ideal_family_v1 48        # about 1 h on ou_bc
 ~/.conda/envs/cls/bin/python -m analysis.ideal_family.figures     # -> figures/ideal_family/v1/*.pdf, *.png
 ```
 
-The run that produced these numbers is Slurm array 29377065, from snapshot `ideal_family_v1` (commit `db651f1`); every result JSON records the commit in its `git` field. The analysis and figure code changed after that commit, but the measurements did not.
+The run that produced these numbers is Slurm array 29377065, from snapshot `ideal_family_v1` (commit `db651f1`), plus array 29380696 from the same snapshot, which ran 27 configurations that were queued behind the slowest 2D tasks (`run.py --only <name>`). Every result JSON records the commit in its `git` field. The analysis and figure code changed after that commit, but the measurements did not.
