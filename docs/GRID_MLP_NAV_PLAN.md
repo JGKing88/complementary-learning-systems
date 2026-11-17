@@ -1271,6 +1271,12 @@ and Agent-HaSH differ only in how the memory stores a goal. With them it is
 the control for why an associative memory with plastic weights helps at all,
 over persistent activity alone.
 
+Status (2026-11-17). In the arena, activity holds about 5 goals after 300k
+steps whatever the cell, width or curriculum, and each further goal costs
+about two to three times the training of the last (§7b.11). Idea 2's plastic
+MLP holds 7.8 at N = 30 on the same test. With perfect keys and no arena, an
+LSTM of width 2048 holds 17.5 of 20 (§7b.10).
+
 Idea 4 differs from idea 3 (§7). Idea 3's GRU has to decode directions, hold
 goals and choose actions in one state. Idea 4's network only holds goals, and
 no actions are learned for its main result.
@@ -1821,7 +1827,117 @@ Reading.
 What this changes for idea 4. Every arena run (§7b.6 to §7b.8) used 1e-3
 and widths up to 1024 without a pair curriculum. The arena memory should be
 retrained at 3e-4, width 1024 to 2048, with the lifetime-length curriculum,
-before any conclusion about the arena task.
+before any conclusion about the arena task. Done in §7b.11.
+
+### 7b.11 Arena retrain with the clean control's recipe: about 5 goals (2026-11-17)
+
+The §7b.10 recipe does not carry over to the arena. At the clean control's
+width, learning rate, cell and step count, the arena memory holds about 5
+goals (4.4 to 5.5 across seven arms), against 17.5 in the clean control. It
+does lift the arena from about 3 goals (§7b.6) and makes small lifetimes
+clean: every LSTM decodes 0.98 to 1.00 at N = 3. With the clean control's
+curriculum gate, each further lifetime length costs two to three times the
+training of the length before, so after 300k steps the strict arms have
+trained to T = 6 or 7. Cutting the input between writes from about 60 steps
+per arena to 12 leaves that growth in place.
+
+Runs. `analysis/idea4/train_experience.py` with `--enc_kind none --lr 3e-4
+--curriculum`, 300k steps, one seed each, through `hopfield_nav/run_idea4.sh`
+(SCRIPT=train_experience; `--cell` from commit f8652be, snapshot i4_v18;
+`--curriculum_window` from 8cb76b5, snapshot i4_v19). Outputs
+`/orcd/pool/003/jackking/cls_runs/idea4/experience_h<H>_<tag>_s0/`. Three
+curricula:
+- lax (tags `raw_cur_lr3e4_{gru,lstm}`): the §7b.6 gate. T_max rises when
+  `old_cos` over a 50-step log window reaches 0.8. That mean covers
+  lifetimes of every length up to T_max and the reads after every visit, so
+  short histories dominate it, and cosine 0.8 is about 0.5 accuracy.
+- strict (`raw_gate95_lr3e4_lstm`): `--curriculum_window 500
+  --curriculum_cos 0.95`, the gate of `recall_grid.py`. T_max rises when
+  `end_cos`, the cosine over all goals read after the last visit, averages
+  0.95 over the last 500 steps whose lifetime has the current maximum length.
+  The checkpoint now stores T_max and this window, so resumed jobs continue
+  the curriculum exactly.
+- strict, short walks (`raw_gate95_short_lstm`): strict plus
+  `--visit_steps 12 --R_max 0`. The goal falls at step 5 or 6 of a 12-step
+  visit and there are no carried walks, so about 12 input steps per arena
+  instead of about 60.
+
+Test: `analysis/idea4/eval_many.py` through `hopfield_nav/run_idea4_eval_many.sh`,
+64 held-out lifetimes, 32 views per arena, copy reads, correct within 1.5
+cells (chance about 0.02), the same test as idea 2 (§7b.2). Jobs 29467496
+(N up to 20) and 29468216 (N = 30, 100); results
+`.../idea4/eval_many/arena_<H>_<tag>_step300000[_N30_100].json`.
+
+Curriculum (step at which each length was first logged, 50-step resolution):
+
+| run | T = 3 | 4 | 5 | 6 | 7 | T at 300k |
+|---|---|---|---|---|---|---|
+| strict LSTM 1024 | 8.6k | 21.0k | 52.5k | 160.0k | | 6 |
+| strict LSTM 2048 | 7.1k | 17.4k | 37.3k | 91.1k | 236.7k | 7 |
+| strict LSTM 2048, short walks | 5.6k | 17.6k | 32.0k | 63.8k | 168.4k | 7 |
+
+The lax arms reached T = 20 at 28.7k (LSTM 2048), 39.2k (LSTM 1024), 48.1k
+(GRU 2048) and 59.9k steps (GRU 1024). The clean-control LSTM 2048 (§7b.10,
+logged every 25k) trained 8 pairs by 25k, 13 by 50k and 20 by 175k.
+
+Retention at 300k (goals held = N times accuracy, best N up to 30; at
+N = 100 chance alone gives 2):
+
+| arm | trained to | N = 3 | 5 | 6 | 8 | 10 | 20 | 30 | 100 | goals held | first / newest goal, N = 20 |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| GRU 1024, lax | 20 | 0.81 | 0.61 | 0.57 | 0.47 | 0.38 | 0.23 | | | 4.5 | 0.21 / 0.98 |
+| GRU 2048, lax | 20 | 0.76 | 0.59 | 0.57 | 0.49 | 0.40 | 0.24 | | | 4.9 | 0.28 / 0.85 |
+| LSTM 1024, lax | 20 | 0.98 | 0.75 | 0.68 | 0.54 | 0.43 | 0.22 | | | 4.4 | 0.82 / 0.96 |
+| LSTM 2048, lax | 20 | 0.98 | 0.78 | 0.69 | 0.55 | 0.44 | 0.24 | 0.17 | 0.06 | 5.1 | 0.95 / 0.94 |
+| LSTM 1024, strict | 6 | 0.99 | 0.91 | 0.77 | 0.57 | 0.45 | 0.21 | | | 4.6 | 0.45 / 0.91 |
+| LSTM 2048, strict | 7 | 1.00 | 0.95 | 0.86 | 0.61 | 0.48 | 0.23 | 0.15 | 0.03 | 5.2 | 0.67 / 0.94 |
+| LSTM 2048, strict, short walks | 7 | 0.99 | 0.97 | 0.92 | 0.63 | 0.50 | 0.20 | 0.09 | 0.03 | 5.5 | 0.58 / 0.92 |
+| idea 4 before, GRU 512, lr 1e-3 (§7b.6) | | | | 0.47 | | | | | | 2.8 | |
+| idea 2, best plastic MLP (§10.9) | | | | 0.68 to 0.72 | | | | 0.26 | 0.11 | 7.8 (11 at N = 100) | |
+| linear delta rule, fixed keys (§7b.2) | | | | 0.87 | | | | 0.42 | 0.14 | 12.5 (14.4 at N = 100) | |
+
+Reading.
+1. The clean control's recipe does not close the arena gap. Same width,
+   learning rate, cell and steps: 17.5 goals there, 4.4 to 5.5 here.
+2. The lax gate was too loose, but a strict gate does not raise capacity.
+   The lax arms reached T = 20 while holding about 3.5 goals (64-lifetime
+   test at 40k to 80k steps: 3.2 to 3.7), then spent 240k steps at T = 20
+   for about one more. The strict arms hold nearly every goal up to about
+   their trained length (LSTM 2048: 0.95 at N = 5, 0.86 at 6, trained to 7)
+   and fall off past it, to the same 5 goals.
+3. Each further goal costs about two to three times the training of the
+   one before. Steps spent at each length, strict LSTM 2048: 10.3k at T = 3,
+   19.9k at 4, 53.9k at 5, 145.6k at 6. LSTM 1024: 12.4k, 31.5k, 107.5k. At
+   this growth T = 20 is far out of reach; the clean control trained 20
+   pairs by 175k.
+4. Input between writes is not the cause. With 12-step visits and no
+   carried walks the curriculum reaches T = 7 at 168k instead of 237k, and
+   the steps per length still grow 1.2, 2.2 and 3.3 times.
+5. The lax LSTMs keep the first goal and the newest (N = 20: 0.82 to 0.95
+   and 0.94 to 0.96). LSTM 2048 lax decodes the first goal at 0.89 and the
+   newest at 0.92 even at N = 100; at N = 20 the 18 goals between average
+   0.16. The strict arms lose the first goal
+   at N = 100 (0.02 to 0.03) and keep the newest (0.86 to 0.93).
+6. Carried reads are weaker for the strict arms. Reading arena by arena
+   with the state carried, strict LSTM 2048 scores 0.53 at N = 2, against
+   0.85 for lax. The short-walk arm, trained without carried walks, scores
+   0.02 to 0.18 at every N. Copy reads are the measure here, as in §7b.6.
+
+What still differs from the clean control. The short-walk run removes one
+difference. Three remain, and any of them may set the growth in cost. The
+read key is a view from a random cell and heading in an arena seen only
+along one walk, where the clean control reads with the exact write key. The
+goal is the agent's own grid phases at the flagged step, not an input. And
+the loss falls on reads after every visit, not on one read at the end.
+
+What this means for idea 4. In the arena, an activity memory with fixed
+weights holds about 5 goals after 300k steps, whatever the cell, width or
+curriculum, and each further goal costs two to three times the training.
+On the same test the plastic MLP of idea 2 holds 7.8 goals at N = 30 and 11
+at N = 100, a linear delta rule on fixed keys 12.5 and 14.4, and a
+nearest-neighbour table on fixed keys 0.99 of 100. Activity wins for a
+handful of goals (0.86 to 0.92 at N = 6 against idea 2's 0.68 to 0.72) and
+holds fewer at N = 30 (5.1 at best against idea 2's 7.8). One seed per arm.
 
 ## 8. Decisions and open items
 
