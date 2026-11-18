@@ -7,7 +7,8 @@ The in-training test (``train_experience.retention``) writes one lifetime per
 N, so at N = 2 it rests on two arenas. Here each N runs ``--lifetimes``
 lifetimes in parallel on held-out arenas: N arenas visited once each (a walk
 through the goal, flag on the first arrival), then ``--views`` views per arena
-at random cells and headings, each with its grid phases. Reads are scored from
+at random cells and headings (or, with ``--read_views walk`` or a checkpoint trained
+that way, at steps of each arena's own visit walk), each with its grid phases. Reads are scored from
 copies of the state after the last visit ("copy") and carried in sequence,
 arena by arena in visit order ("seq"). A view is correct if the decoded goal
 cell is within 1.5 cells of the goal. Also reported: the mean cosine between
@@ -35,11 +36,17 @@ def evaluate(model, gp, a, N, lifetimes, views, seed, device):
     env = torch.rand(B, len(gp), device=device, generator=g).argsort(1)[:, :N]
     off, goal, target = place(B, N, device, g)
     h = model.init_state(B, device)
+    walks = []
     for t in range(N):
         path, psi, first, _ = te.visit_path(goal[:, t], a, device, g)
+        walks.append((path, psi))
         x = gp.canvas(env[:, t].expand(S, B), path[..., 0], path[..., 1], psi)
         _, _, h = model(x, h, extra=te.extra_of(off[:, t].expand(S, B, 2), path, first))
-    cx, cy, cpsi = random_cells((B, N, V), device, g)
+    if a.read_views == "walk":               # each arena read at steps of its own visit walk
+        cx, cy, cpsi = te.walk_cells(torch.stack([w[0] for w in walks]),
+                                     torch.stack([w[1] for w in walks]), V, g, goal)
+    else:
+        cx, cy, cpsi = random_cells((B, N, V), device, g)
     x = gp.canvas(env[:, :, None].expand(B, N, V), cx, cy, cpsi)
     ex = te.extra_of(off[:, :, None].expand(B, N, V, 2), torch.stack([cx, cy], -1),
                      torch.zeros(B, N, V, device=device))
@@ -70,6 +77,9 @@ def main():
     p.add_argument("--out", default=None, help="write all results as JSON here")
     p.add_argument("--pool", type=int, default=0,
                    help="test on the first this many training arenas instead of held-out ones")
+    p.add_argument("--read_views", default=None, choices=["random", "walk"],
+                   help="read from random cells and headings or from steps of each arena's "
+                        "visit walk; default: as the checkpoint was trained")
     a_cli = p.parse_args()
     device = torch.device(a_cli.device if torch.cuda.is_available() else "cpu")
     res = []
@@ -79,16 +89,17 @@ def main():
         a = types.SimpleNamespace(**ck["args"])
         a.chrono = 0
         a.enc_kind = getattr(a, "enc_kind", "relu")
+        a.read_views = a_cli.read_views or getattr(a, "read_views", "random")
         if gp is None:
             gp = GpuPool(EnvPool(a_cli.pool, seed=a.seed + 1) if a_cli.pool
                          else EnvPool(a.n_eval_envs, seed=a.seed + 2), device)   # held-out arenas
         model = te.build(a, device)
         model.load_state_dict(ck["model"])
         model.eval()
-        print(f"\n{path}  step {ck['step']}  hidden {a.hidden}")
+        print(f"\n{path}  step {ck['step']}  hidden {a.hidden}  reads {a.read_views}")
         for N in [n for n in a_cli.N if n <= len(gp)]:
             r = evaluate(model, gp, a, N, a_cli.lifetimes, a_cli.views, a_cli.seed + N, device)
-            r.update(ckpt=path, step=ck["step"], hidden=a.hidden)
+            r.update(ckpt=path, step=ck["step"], hidden=a.hidden, read_views=a.read_views)
             res.append(r)
             pos = r["acc_copy_by_position"]
             print(f"N={N:3d}: copy acc {r['acc_copy']:.3f} (cos {r['cos_copy']:.3f}) | seq acc "

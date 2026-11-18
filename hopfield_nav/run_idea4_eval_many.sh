@@ -12,7 +12,9 @@
 # experience-trained runs (GRID_MLP_NAV_PLAN §7b.11).
 #
 #   TAGS="h2048_raw_gate95_lr3e4_lstm ..." [NS="1 2 3 6 10 20"] [NTAG=N30_100] \
-#     REPO=<code snapshot> sbatch hopfield_nav/run_idea4_eval_many.sh
+#     [READ=walk|random] REPO=<code snapshot> sbatch hopfield_nav/run_idea4_eval_many.sh
+#
+# READ overrides where reads look from (default: as each run was trained).
 #
 # Each tag reads $CLS_RUNS/idea4/experience_<tag>_s0/memory.pt and writes
 # $CLS_RUNS/idea4/eval_many/arena_<tag>_step<k>[_<NTAG>].json. Give runs tested
@@ -31,6 +33,6 @@ for tag in ${TAGS}; do
   ck=$R/experience_${tag}_s0/memory.pt
   step=$(python -c "import torch, sys; print(torch.load(sys.argv[1], map_location='cpu', weights_only=False)['step'])" "$ck")
   python -u -m analysis.idea4.eval_many --ckpt "$ck" --N ${NS:-1 2 3 6 10 20} --lifetimes 64 \
-      --out "$R/eval_many/arena_${tag}_step${step}${NTAG:+_$NTAG}.json"
+      ${READ:+--read_views $READ} --out "$R/eval_many/arena_${tag}_step${step}${NTAG:+_$NTAG}.json"
 done
 echo "[i4eval] done $(date)"

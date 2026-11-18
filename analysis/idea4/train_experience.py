@@ -22,8 +22,19 @@ c -> 1; before it, c -> 0, since the goal is not known yet. After each visit:
   the store is locked after the first arrival.
 The loss backpropagates through the whole lifetime.
 
+With ``--read_views walk`` every read of a visited arena reuses a step of that
+arena's own visit walk (its cell and heading), so the memory is read with a
+view it saw while writing, as the clean control (``recall_grid.py``) reads
+with the write key. Copy reads draw steps of the walk; a carried revisit
+replays a stretch of it. Unseen arenas keep random cells and walks. A walk
+through the goal spends many steps within 1.5 cells of it, where repeating
+the read cell's own grid phases would score as correct with no memory, so
+copy reads draw only steps farther than that and replayed steps there get no
+phase loss.
+
 Test: N held-out arenas visited once each in sequence, then 64 views at
-random cells and headings per arena, each with its grid phases. A view is
+random cells and headings per arena (steps of the visit walk under
+``--read_views walk``), each with its grid phases. A view is
 correct if the decoded goal cell is within 1.5 cells of the goal (chance
 about 0.02). Reads are scored from copies of the state after the last visit
 ("copy") and in sequence, arena by arena ("seq"). c is read from copies on
@@ -65,6 +76,30 @@ def visit_path(goal, a, device, gen):
     return path, headings(path, device, gen), first, first.long().cumsum(0) > 0
 
 
+def far_from(pos, goal):
+    """True where cells ``pos`` (..., 2) are more than 1.5 cells from ``goal``
+    (broadcastable), i.e. outside the block the test scores as correct. A read
+    there cannot be answered by repeating the read cell's own grid phases."""
+    return (pos - goal).float().norm(dim=-1) > 1.5
+
+
+def walk_cells(wpath, wpsi, Q, gen, goal):
+    """Q views per (lifetime, arena) drawn from steps of the visit walks,
+    only steps more than 1.5 cells from that arena's goal (all steps if a
+    walk has none). wpath (J, S, B, 2) cells and wpsi (J, S, B) headings of
+    J arenas' visits, goal (B, J, 2) -> x, y and headings, each (B, J, Q),
+    as ``random_cells`` returns them."""
+    J, S, B = wpsi.shape
+    dev = wpsi.device
+    far = far_from(wpath.permute(2, 0, 1, 3), goal[:, :, None])           # (B, J, S)
+    w = far.float().reshape(B * J, S) + 1e-6
+    k = torch.multinomial(w, Q, replacement=True, generator=gen).reshape(B, J, Q)
+    jj = torch.arange(J, device=dev)[None, :, None].expand(B, J, Q)
+    bb = torch.arange(B, device=dev)[:, None, None].expand(B, J, Q)
+    pos = wpath[jj, k, bb]
+    return pos[..., 0], pos[..., 1], wpsi[jj, k, bb]
+
+
 def lifetime_loss(model, gp, a, rng, gen, device, T_max=None, pool=None):
     """``pool`` limits lifetimes to the first ``pool`` training arenas, so a
     small pool's arenas recur across lifetimes (with fresh goals each time)."""
@@ -79,9 +114,16 @@ def lifetime_loss(model, gp, a, rng, gen, device, T_max=None, pool=None):
     h = model.init_state(B, device)
     total, weight = 0.0, 0.0
     st = {"visit_cos": [], "copy_cos": [], "old_cos": [], "seq_cos": [], "end_cos": []}
+    walk = getattr(a, "read_views", "random") == "walk"
+    wpath = wpsi = None
     for t in range(T):
         S = a.visit_steps
         path, psi, first, found = visit_path(goal[:, t], a, device, gen)
+        if walk:                             # keep each visit's cells and headings for the reads
+            if wpath is None:
+                wpath = torch.zeros(T, S, B, 2, dtype=path.dtype, device=device)
+                wpsi = torch.zeros(T, S, B, dtype=psi.dtype, device=device)
+            wpath[t], wpsi[t] = path, psi
         x = gp.canvas(env[:, t].expand(S, B), path[..., 0], path[..., 1], psi)
         ph, c, h = model(x, h, extra=extra_of(off[:, t].expand(S, B, 2), path, first))
         f = found.float()
@@ -96,6 +138,11 @@ def lifetime_loss(model, gp, a, rng, gen, device, T_max=None, pool=None):
         is_w = cols < T
         J, Q = len(cols), a.test_views
         cx, cy, cpsi = random_cells((B, J, Q), device, gen)
+        if walk:                             # visited arenas (the first t + 1 columns) from their walks
+            wx, wy, wps = walk_cells(wpath[:t + 1], wpsi[:t + 1], Q, gen, goal[:, :t + 1])
+            cx = torch.cat([wx, cx[:, t + 1:]], 1)
+            cy = torch.cat([wy, cy[:, t + 1:]], 1)
+            cpsi = torch.cat([wps, cpsi[:, t + 1:]], 1)
         x = gp.canvas(env[:, cols][:, :, None].expand(B, J, Q), cx, cy, cpsi)
         ex = extra_of(off[:, cols][:, :, None].expand(B, J, Q, 2), torch.stack([cx, cy], -1),
                       torch.zeros(B, J, Q, device=device))
@@ -123,6 +170,8 @@ def lifetime_loss(model, gp, a, rng, gen, device, T_max=None, pool=None):
 
         # A carried walk: a revisit, or an unseen / not-yet-visited arena.
         L = rng.randint(0, a.R_max + 1)
+        if walk:
+            L = min(L, S)                    # a replay fits inside one visit walk
         if L >= 2:
             not_yet = np.concatenate([[t + 1] if t + 1 < T else [], np.arange(T, K)])
             unseen = torch.rand(B, device=device, generator=gen) < a.p_unseen
@@ -133,16 +182,26 @@ def lifetime_loss(model, gp, a, rng, gen, device, T_max=None, pool=None):
             start = torch.randint(0, SIZE, (B, 2), device=device, generator=gen)
             rpath = rw_from(start, L, device, gen)
             rpsi = headings(rpath, device, gen)
+            if walk:                         # a revisit replays a stretch of that arena's visit
+                s0 = torch.randint(0, S - L + 1, (B,), device=device, generator=gen)
+                ss = s0[None] + torch.arange(L, device=device)[:, None]          # (L, B)
+                jj, bb = pick_w[None].expand(L, B), ar[None].expand(L, B)
+                keep = unseen[None].expand(L, B)
+                rpath = torch.where(keep[..., None], rpath, wpath[jj, ss, bb])
+                rpsi = torch.where(keep, rpsi, wpsi[jj, ss, bb])
             x = gp.canvas(env[ar, which].expand(L, B), rpath[..., 0], rpath[..., 1], rpsi)
             ex = extra_of(off[ar, which][None].expand(L, B, 2), rpath, torch.zeros(L, B, device=device))
             ph, c, h = model(x, h, extra=ex)
             cos = angle_cos(ph, target[ar, which][None])
-            wr = (~unseen).float()[None].expand(L, B)
-            total = total + a.seq_weight * (((1 - cos) * wr).sum() / wr.sum().clamp(min=1.0)
+            wr = (~unseen).float()[None].expand(L, B)              # c target: a visited arena
+            wp = wr
+            if walk:                         # no phase loss where the cell's own phases answer
+                wp = wr * far_from(rpath, goal[ar, which][None]).float()
+            total = total + a.seq_weight * (((1 - cos) * wp).sum() / wp.sum().clamp(min=1.0)
                                             + F.binary_cross_entropy_with_logits(c, wr))
             weight += a.seq_weight
-            if wr.sum() > 0:
-                st["seq_cos"].append(float(((cos * wr).sum() / wr.sum()).detach()))
+            if wp.sum() > 0:
+                st["seq_cos"].append(float(((cos * wp).sum() / wp.sum()).detach()))
         if a.tbptt_envs and (t + 1) % a.tbptt_envs == 0:
             h = h.detach()
     return total / weight, T, st
@@ -171,12 +230,20 @@ def retention(model, gp, N, seed, a, device):
     off, goal = off[0], goal[0]
     h = model.init_state(1, device)
     S = a.visit_steps
+    walks = []
     for t in range(N):
         path, psi, first, _ = visit_path(goal[t:t + 1], a, device, g)
+        walks.append((path, psi))
         x = gp.canvas(env[t:t + 1].expand(S, 1), path[..., 0], path[..., 1], psi)
         _, _, h = model(x, h, extra=extra_of(off[t:t + 1].expand(S, 1, 2), path, first))
     V = a.eval_views
     cx, cy, cpsi = random_cells((K, V), device, g)
+    if getattr(a, "read_views", "random") == "walk":    # visited arenas read from their walks
+        wx, wy, wps = walk_cells(torch.stack([w[0] for w in walks]),
+                                 torch.stack([w[1] for w in walks]), V, g, goal[None, :N])
+        cx = torch.cat([wx[0], cx[N:]])
+        cy = torch.cat([wy[0], cy[N:]])
+        cpsi = torch.cat([wps[0], cpsi[N:]])
     X = gp.canvas(env[:, None].expand(K, V), cx, cy, cpsi)
     EX = extra_of(off[:, None].expand(K, V, 2), torch.stack([cx, cy], -1),
                   torch.zeros(K, V, device=device))
@@ -243,6 +310,10 @@ def main():
     p.add_argument("--R_max", type=int, default=40)
     p.add_argument("--p_unseen", type=float, default=0.2)
     p.add_argument("--seq_weight", type=float, default=1.0)
+    p.add_argument("--read_views", default="random", choices=["random", "walk"],
+                   help="where reads of a visited arena look from: random cells and headings, "
+                        "or steps of that arena's own visit walk (copy reads, carried "
+                        "revisits and the tests)")
     p.add_argument("--pool_schedule", type=str, default="",
                    help="'step:size,...': from each step on, draw lifetimes from the first "
                         "size training arenas only (e.g. '0:8,10000:16,20000:64,30000:4000')")
