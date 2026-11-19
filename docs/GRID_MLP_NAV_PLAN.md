@@ -2049,6 +2049,62 @@ Before the figure:
   delta-rule row; not yet run.
 - A second seed of the strict-gate LSTM 2048, for the cost curve.
 
+### 7b.14 Idea 4 as a full agent, in the 6-goal regime (started 2026-11-19)
+
+Where idea 4 could work as an agent. The continual protocol
+(`analysis/continual/agenthash.py`, settings of `run_cl_ood.sh`) holds at
+most 6 goals: 6 arenas added one per block, 40 iterations per block, each
+iteration one mini-episode (200-step cap) in every arena so far, one write
+per arena at its first arrival, no distractors, one memory never reset.
+That is inside idea 4's range (strict LSTM 2048: 0.95 at N = 5, 0.86 at 6).
+Task training (`task3r_k2_h128`) holds the own goal plus up to 10
+distractors, about 11, so it would need distractors capped at 5. The catch
+is time: arena 0's goal must last about 840 mini-episodes, about 11,700
+steps of the agent's own revisits, and idea 4 was trained on lifetimes of
+about 500 steps.
+
+Stages.
+1. Persistence of the trained memories, no agent (`analysis/idea4/persist.py`,
+   `hopfield_nav/run_idea4_persist.sh`, commit 68315eb). The memory alone
+   on the protocol's schedule: the search is a visit walk storing at the
+   first arrival and ending there; every revisit is a straight path from a
+   random cell to the goal (14.1 steps on average, the agent's are about 13),
+   read at every step, scored more than 1.5 cells from the goal. 64
+   lifetimes, 11,685 memory steps each.
+2. If goals fade, retrain the memory on lifetimes shaped like the protocol.
+3. The agent: a `recurrent` backend in `hopfield_nav` (oracle flag fed on
+   the read step, phases to a grid code per module, c through a sigmoid),
+   PPO for the controller, then the 6-arena continual protocol.
+
+Stage 1 result (job 29680078): the trained memories do not last. Far-read
+accuracy:
+
+| LSTM 2048 | block 0 (1 arena, to step 546) | block 1 (to step 1,652) | block 5 (to step 11,685), first goal / later goals |
+|---|---|---|---|
+| strict gate, random views (§7b.11) | 0.91, last iteration 0.72 | 0.14 to 0.15 | 0.07 / 0.02 to 0.05 |
+| strict gate, walk views (§7b.12) | 0.69 | 0.64 / 0.08 | 0.48 / 0.01 to 0.04 |
+| lax gate, random views (§7b.11) | 0.66, last iteration 0.36 | 0.11 to 0.30 | 0.08 / 0.02 to 0.05 |
+
+Two failures. Reading wears goals down: with one arena and its 40
+revisits the strict memory falls from 0.91 to 0.72. And after long reading
+new goals are not written: the walk-trained memory keeps its first goal at
+about 0.5 through all 11,685 steps while every later goal stays at 0.01 to
+0.04. None of these memories was trained on more than about 40 steps of
+reading between writes; the protocol asks for hundreds to thousands. So
+stage 2 is needed.
+
+Stage 2 design. A trainer on the protocol's own schedule
+(`analysis/idea4/train_protocol.py`): per lifetime, arenas added one per
+block, a search storing at the first arrival, then iterations of straight
+revisits to every arena so far. Loss on every revisit read more than 1.5
+cells from the goal (goal phases) and on c (1 on revisits, 0 during a
+search before the arrival). Trained as a stream: the loss is summed over a
+window of steps, the optimizer steps, the state is carried on detached, so
+a lifetime of thousands of steps gives many updates. A curriculum on the
+number of arenas, gated as §7b.11's strict gate on the reads of the last
+block. Fewer iterations per block in training than the protocol's 40;
+tested with `persist.py` at 40.
+
 ## 8. Decisions and open items
 
 | | |
